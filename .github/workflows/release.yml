@@ -73,7 +73,7 @@ jobs:
           security find-identity -v build.keychain
       - name: Build macOS release (universal DMG, signed + notarized)
         env:
-          CSC_NAME: 'Yuhang Zhong (XXK6GHRZ44)'
+          CSC_NAME: ${{ vars.MAC_CSC_NAME }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -131,15 +131,12 @@ jobs:
         run: corepack yarn market:prepare
       - name: Build Windows installer (website unsigned)
         run: corepack yarn workspace dsh-desktop-next dist:win
-      - name: Verify Windows installer
-        run: corepack yarn workspace dsh-desktop-next check:win-package
       - name: Upload Windows installer
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: OmniMux-win
           path: |
             app/dsh-desktop-next/dist/OmniMux-*.exe
-            app/dsh-desktop-next/dist/OmniMux-*.zip
           if-no-files-found: error
           retention-days: 14
 
@@ -202,7 +199,6 @@ jobs:
           files: |
             app/release-assets/**/*.dmg
             app/release-assets/**/*.exe
-            app/release-assets/**/*.zip
             app/release-assets/plugin-provenance.json
           fail_on_unmatched_files: false
       - name: Sync to Cloudflare R2 (dl.omnimux.ai)
