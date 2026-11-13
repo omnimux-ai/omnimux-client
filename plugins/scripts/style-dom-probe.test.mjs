@@ -294,7 +294,7 @@ test('Ego cleanup rejects a replaced lock without deleting the replacement', () 
 })
 
 test('quality gate retains existing verdict and uploads only explicit failure receipt paths', () => {
-  const workflow = parse(readFileSync(new URL('../.github/workflows/quality-gate.yml', import.meta.url), 'utf8'))
+  const workflow = parse(readFileSync(new URL('../../.github/workflows/quality-gate.yml', import.meta.url), 'utf8'))
   const gates = workflow.jobs.gates
   const regression = gates.steps.find(step => step.name === 'Run regression tests')
   assert.ok(regression.run.split('\n').some(line => {
