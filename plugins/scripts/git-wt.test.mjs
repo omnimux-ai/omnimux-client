@@ -46,10 +46,10 @@ describe('scripts/git-wt.sh worktree helper', () => {
   it('runs list successfully', () => {
     const out = execSync(`"${scriptPath}" list`, { encoding: 'utf8' })
     assert.ok(out.includes('OmniMux 活跃 Worktree 清单'))
-    // `git worktree list` always shows the main working tree on branch main; do
-    // not depend on the checkout directory name (CI uses the repo name, local
-    // verification clones may differ).
-    assert.match(out, /\[main\]/)
+    // `git worktree list` always prints at least the main working tree; assert a
+    // data line exists without depending on the checkout dir name or whether the
+    // CI checkout is a detached HEAD.
+    assert.ok(out.trim().split('\n').length >= 2, 'list should include at least one worktree line')
   })
 
   it('fails finish when topic argument is missing', () => {
