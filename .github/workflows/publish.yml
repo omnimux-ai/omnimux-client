@@ -136,20 +136,28 @@ jobs:
           }
 
           // npm 发布后 registry 传播实测约 2 分钟（发布时会提示 "may take a few
-          // minutes to become available"）；给 5 分钟窗口，避免成功发布会因传播
-          // 延迟假红。窗口内的每次失败都重试，超窗才判定失败。
-          const MAX_ATTEMPTS = 20
+          // minutes to become available"），但 CDN 边缘偶发更慢（0.1.8 实发时超过
+          // 5 分钟才可见）。给 15 分钟窗口，避免成功发布会因传播延迟假红。
+          // 窗口内的每次失败都重试；窗口用尽仍未可见时，因为上一步 `npm publish`
+          // 已 exit 0（包确实已发布），可见性只是最终一致的滞后，故降级为 warning，
+          // 不让一次成功的发布被判成 failure。name@version 与 gitHead 的一致性
+          // 校验在拿到 registry 数据后照常执行（不一致仍 hard fail）。
+          const MAX_ATTEMPTS = 60
           const RETRY_DELAY_SECONDS = 15
           let output = ''
           for (let attempt = 1; attempt <= MAX_ATTEMPTS && !output; attempt += 1) {
             output = viewOnce()
             if (!output) {
               console.log(`waiting for the registry to expose ${name}@${version} (${attempt}/${MAX_ATTEMPTS})`)
-              execFileSync('sleep', [String(RETRY_DELAY_SECONDS)])
+              if (attempt < MAX_ATTEMPTS) {
+                execFileSync('sleep', [String(RETRY_DELAY_SECONDS)])
+              }
             }
           }
           if (!output) {
-            throw new Error(`registry does not expose ${name}@${version} within ${(MAX_ATTEMPTS * RETRY_DELAY_SECONDS) / 60} minutes after publish`)
+            const waitMinutes = (MAX_ATTEMPTS * RETRY_DELAY_SECONDS) / 60
+            console.log(`::warning::registry still does not expose ${name}@${version} after ${waitMinutes} minutes; the package was published (the publish step succeeded) but propagation is lagging. Verify later with: npm view ${name}@${version} dist.tarball gitHead`)
+            process.exit(0)
           }
           console.log(output)
 
