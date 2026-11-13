@@ -71,23 +71,22 @@ jobs:
             -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: -s -k "github-actions" build.keychain
           security find-identity -v build.keychain
-      - name: Build macOS release (arm64 DMG, signed + notarized)
+      - name: Build macOS release (universal DMG, signed + notarized)
         env:
           CSC_NAME: 'Yuhang Zhong (XXK6GHRZ44)'
-          DSH_MAC_RELEASE_ARCH: arm64
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: corepack yarn workspace dsh-desktop-next dist:mac
-      - name: Notarize macOS arm64 DMG
+      - name: Notarize macOS universal DMG
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          dmg_path="$(find dsh-desktop-next/dist/mac-release -name 'OmniMux-*-arm64.dmg' | head -1)"
+          dmg_path="$(find dsh-desktop-next/dist/mac-release -name 'OmniMux-*-universal.dmg' | head -1)"
           if [ -z "$dmg_path" ]; then
-            echo "::error::arm64 DMG not found for notarization"
+            echo "::error::universal DMG not found for notarization"
             exit 1
           fi
           xcrun notarytool submit "$dmg_path" \
@@ -99,82 +98,9 @@ jobs:
       - name: Upload DMG artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
-          name: OmniMux-mac-arm64
+          name: OmniMux-mac-universal
           path: |
-            app/dsh-desktop-next/dist/mac-release/*arm64*.dmg
-          if-no-files-found: error
-          retention-days: 14
-
-  build-mac-x64:
-    if: ${{ inputs.platform == 'mac' || inputs.platform == 'both' }}
-    runs-on: macos-latest
-    timeout-minutes: 45
-    defaults:
-      run:
-        working-directory: app
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6
-        with:
-          fetch-depth: 0
-          submodules: recursive
-          persist-credentials: false
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38  # v6
-        with:
-          node-version: 22.23.2
-      - name: Enable Corepack
-        run: corepack enable
-      - name: Verify version consistency
-        run: node scripts/verify-version.mjs
-      - name: Install dependencies
-        run: corepack yarn install --immutable
-      - name: Refresh Agents Anywhere vendor
-        run: corepack yarn aa:prepare-release
-      - name: Refresh dshmarket package versions
-        run: corepack yarn market:prepare
-      - name: Import Developer ID certificate
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-        run: |
-          echo "$APPLE_CERTIFICATE" | base64 --decode > developerID_application.p12
-          security create-keychain -p "github-actions" build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p "github-actions" build.keychain
-          security import developerID_application.p12 -k build.keychain \
-            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple: -s -k "github-actions" build.keychain
-          security find-identity -v build.keychain
-      - name: Build macOS release (x64 DMG, signed + notarized)
-        env:
-          CSC_NAME: 'Yuhang Zhong (XXK6GHRZ44)'
-          DSH_MAC_RELEASE_ARCH: x64
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: corepack yarn workspace dsh-desktop-next dist:mac
-      - name: Notarize macOS x64 DMG
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          dmg_path="$(find dsh-desktop-next/dist/mac-release -name 'OmniMux-*-x64.dmg' | head -1)"
-          if [ -z "$dmg_path" ]; then
-            echo "::error::x64 DMG not found for notarization"
-            exit 1
-          fi
-          xcrun notarytool submit "$dmg_path" \
-            --apple-id "$APPLE_ID" \
-            --team-id "$APPLE_TEAM_ID" \
-            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
-            --wait --timeout 7200
-          xcrun stapler staple "$dmg_path"
-      - name: Upload DMG artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
-        with:
-          name: OmniMux-mac-x64
-          path: |
-            app/dsh-desktop-next/dist/mac-release/*x64*.dmg
+            app/dsh-desktop-next/dist/mac-release/*universal*.dmg
           if-no-files-found: error
           retention-days: 14
 
@@ -218,8 +144,8 @@ jobs:
           retention-days: 14
 
   # Publish to GitHub Releases + Cloudflare R2 (dl.omnimux.ai).
-  # The market catalog images now come from this monorepo's own plugin source
-  # (plugins/plugins/omnimux-market/catalog); the retired omnimux-dsh checkout is gone.
+  # The market catalog images come from this monorepo's own plugin source
+  # (plugins/plugins/omnimux-market/catalog).
   publish:
     needs: [build-mac, build-win]
     if: ${{ always() && (needs.build-mac.result == 'success' || needs.build-win.result == 'success') }}
