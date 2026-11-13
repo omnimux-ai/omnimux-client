@@ -1,0 +1,429 @@
+import { buildModelCatalog } from '../../../../omnimux/src/catalog/list.js';
+import { projectCanvasCatalog } from '../generationPolicy.ts';
+import { resolveCanvasSubmission, resolveExecutorSubmission } from '../../workflow/seam/submitGuard.ts';
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { findExecutionReadinessFailure } from './executionReadiness.ts';
+
+const pendingVideoNode = {
+  id: 'video-1',
+  type: 'material',
+  data: {
+    materialType: 'video',
+    selectedTool: 'video-generation',
+    params: {
+      pendingVideoParamAdjustment: {
+        suggestedParams: { duration: -1 },
+        notices: ['时长将从 5 调整为 -1'],
+      },
+    },
+  },
+};
+
+test('legacy pending video parameter adjustment does not block execution or raise parameter_adjustment_required', () => {
+  assert.equal(findExecutionReadinessFailure([pendingVideoNode], null)?.reasonCode, 'catalog_unavailable');
+});
+
+test('clearing the decision record leaves contract validation to the selected operation', () => {
+  const node = {
+    ...pendingVideoNode,
+    data: { ...pendingVideoNode.data, params: {} },
+  };
+  assert.equal(findExecutionReadinessFailure([node], null).reasonCode, 'catalog_unavailable');
+});
+
+test('kept invalid declared parameters remain a readiness error after the pending decision is cleared', () => {
+  const catalog = {
+    source: 'omnimux', text: [], image: [], audio: [], video: [],
+    models: [{
+      id: 'minimax-h3', label: 'MiniMax H3', listed: true,
+      parameters: {
+        aspectRatio: { options: [{ value: '16:9' }, { value: '9:16' }], defaultValue: '16:9' },
+        resolution: { options: [{ value: '720p' }, { value: '1080p' }], defaultValue: '720p' },
+      },
+      operations: [{
+        id: 'video_edit', label: '编辑', listed: true, output: { type: 'video' }, inputs: [],
+      }],
+    }],
+  };
+  const failure = findExecutionReadinessFailure([{
+    id: 'video-2', type: 'material', data: {
+      materialType: 'video', selectedTool: 'video-generation',
+      params: { model: 'minimax-h3', aspectRatio: 'auto', resolution: '480p' },
+    },
+  }], catalog);
+  assert.deepEqual(failure, {
+    nodeId: 'video-2',
+    reasonCode: 'parameter_unsupported',
+    message: '参数“aspectRatio”不支持值 "auto"',
+  });
+});
+
+
+const operationOverrideCatalog = {
+  source: 'omnimux', text: [], image: [], audio: [], video: [],
+  models: [{
+    id: 'operation-model', label: 'Operation model', listed: true,
+    operations: [{
+      id: 'video_edit', label: 'Edit', listed: true, output: { type: 'video' }, inputs: [],
+      parameters: { duration: { options: [{ value: -1 }], defaultValue: -1 } },
+    }],
+  }],
+};
+
+test('stale explicit operation blocks readiness instead of falling through to the gateway', () => {
+  const failure = findExecutionReadinessFailure([{
+    id: 'video-stale', type: 'material', data: {
+      materialType: 'video', selectedTool: 'video-generation',
+      params: { model: 'operation-model', operation: 'old_op' },
+    },
+  }], operationOverrideCatalog);
+  assert.deepEqual(failure, {
+    nodeId: 'video-stale',
+    reasonCode: 'operation_incompatible',
+    message: '当前模型不支持已保存的生成方式 old_op',
+  });
+});
+
+test('implicit sole operation validates its override parameters', () => {
+  const failure = findExecutionReadinessFailure([{
+    id: 'video-implicit', type: 'material', data: {
+      materialType: 'video', selectedTool: 'video-generation',
+      params: { model: 'operation-model', duration: 5 },
+    },
+  }], operationOverrideCatalog);
+  assert.deepEqual(failure, {
+    nodeId: 'video-implicit',
+    reasonCode: 'parameter_unsupported',
+    message: '参数“duration”不支持值 5',
+  });
+});
+
+test('implicit sole operation validates its required node fields', () => {
+  const catalog = {
+    source: 'omnimux', text: [], image: [], audio: [], video: [],
+    models: [{
+      id: 'document-model', label: 'Document model', listed: true,
+      operations: [{
+        id: 'document_to_video', label: 'Document', listed: true, output: { type: 'video' },
+        inputs: [{ slot: 'file_url', type: 'document', role: 'document', source: 'node_field', min: 1, max: 1 }],
+      }],
+    }],
+  };
+  const failure = findExecutionReadinessFailure([{
+    id: 'video-document', type: 'material', data: {
+      materialType: 'video', selectedTool: 'video-generation', prompt: '生成视频',
+      params: { model: 'document-model' },
+    },
+  }], catalog);
+  assert.deepEqual(failure, {
+    nodeId: 'video-document',
+    reasonCode: 'metadata_required',
+    message: '槽位 file_url 需要有效 URL',
+  });
+});
+
+test('multiple effective video operations require a persisted selection', () => {
+  const catalog = {
+    source: 'omnimux', text: [], image: [], audio: [], video: [],
+    models: [{
+      id: 'multi-video', label: 'Multi video', listed: true,
+      operations: [
+        { id: 'text_to_video', label: 'Text', listed: true, output: { type: 'video' }, inputs: [] },
+        { id: 'video_edit', label: 'Edit', listed: true, output: { type: 'video' }, inputs: [] },
+      ],
+    }],
+  };
+  const failure = findExecutionReadinessFailure([{
+    id: 'video-multi', type: 'material', data: {
+      materialType: 'video', selectedTool: 'video-generation',
+      params: { model: 'multi-video' },
+    },
+  }], catalog);
+  assert.deepEqual(failure, {
+    nodeId: 'video-multi',
+    reasonCode: 'operation_incompatible',
+    message: '请选择生成方式',
+  });
+});
+
+
+// ============================================================================
+// Seedance 2.0 Canvas Readiness & Submission Tests
+// （2026-10-21 网关对账 #3516：MiniMax H3 渠道停用，改用现役 Seedance 2.0 验证真实目录。）
+// ============================================================================
+const realHubCatalog = projectCanvasCatalog(buildModelCatalog({ env: {} }));
+
+test('Seedance 2.0: text_to_video with valid parameters passes execution readiness (returns null)', () => {
+  const node = {
+    id: 'video-t2v-seedance-2-0',
+    type: 'material',
+    data: {
+      materialType: 'video',
+      selectedTool: 'video-generation',
+      prompt: 'A cinematic drone shot of majestic mountains',
+      params: {
+        model: 'seedance-2-0',
+        operation: 'text_to_video',
+        aspectRatio: '16:9',
+        duration: 5,
+        resolution: '720p',
+      },
+    },
+  };
+  const failure = findExecutionReadinessFailure([node], realHubCatalog);
+  assert.equal(failure, null, 'Expected null failure for seedance-2-0 text_to_video');
+
+  // Boundary values of the published 4–15s duration range and the widest aspect/resolution options.
+  const rangeNode = structuredClone(node);
+  rangeNode.data.params.aspectRatio = '21:9';
+  rangeNode.data.params.duration = 15;
+  rangeNode.data.params.resolution = '4k';
+  assert.equal(findExecutionReadinessFailure([rangeNode], realHubCatalog), null);
+});
+
+test('Seedance 2.0: first_frame with valid image upstream passes execution readiness', () => {
+  const imgNode = {
+    id: 'img-first-frame',
+    type: 'material',
+    data: {
+      nodeKind: 'import',
+      materialType: 'image',
+      mediaUrl: 'https://example.test/first_frame.png',
+      mimeType: 'image/png',
+      sizeBytes: 1024 * 512,
+    },
+  };
+
+  const videoNode = {
+    id: 'video-ff-seedance-2-0',
+    type: 'material',
+    data: {
+      materialType: 'video',
+      selectedTool: 'video-generation',
+      prompt: 'Animate this character walking forward',
+      params: {
+        model: 'seedance-2-0',
+        operation: 'first_frame',
+        aspectRatio: 'adaptive',
+        duration: 5,
+        resolution: '720p',
+      },
+    },
+  };
+  const graph = {
+    nodes: [imgNode, videoNode],
+    edges: [{
+      id: 'e-ff-seedance-2-0',
+      source: 'img-first-frame',
+      target: videoNode.id,
+      data: {
+        role: 'first_frame',
+        targetSlot: 'first_frame',
+      },
+    }],
+  };
+  const failure = findExecutionReadinessFailure([videoNode], realHubCatalog, graph);
+  assert.equal(failure, null, 'Expected null failure for seedance-2-0 first_frame');
+});
+
+test('Seedance 2.0: video_multi_ref with reference image upstream passes execution readiness', () => {
+  const refImgNode = {
+    id: 'img-ref-1',
+    type: 'material',
+    data: {
+      nodeKind: 'import',
+      materialType: 'image',
+      mediaUrl: 'https://example.test/reference_art.png',
+      mimeType: 'image/png',
+      sizeBytes: 1024 * 1024,
+    },
+  };
+  const refNode = {
+    id: 'video-mr-ref',
+    type: 'material',
+    data: {
+      materialType: 'video',
+      selectedTool: 'video-generation',
+      prompt: 'A cyberpunk cityscape matching this art style',
+      params: {
+        model: 'seedance-2-0',
+        operation: 'video_multi_ref',
+        aspectRatio: 'adaptive',
+        duration: 10,
+        resolution: '1080p',
+      },
+    },
+  };
+  const graph = {
+    nodes: [refImgNode, refNode],
+    edges: [{
+      id: 'e-mr-1',
+      source: 'img-ref-1',
+      target: 'video-mr-ref',
+      data: {
+        role: 'reference',
+        targetSlot: 'reference_images',
+      },
+    }],
+  };
+  const failure = findExecutionReadinessFailure([refNode], realHubCatalog, graph);
+  assert.equal(failure, null, 'Expected null failure for seedance-2-0 video_multi_ref');
+
+  // The single-image mode has no reference_images slot, so the same edge must be rejected
+  // as an unsatisfied required slot instead of being silently absorbed.
+  const singleModeNode = structuredClone(refNode);
+  singleModeNode.id = 'video-mr-single';
+  singleModeNode.data.params.operation = 'first_frame';
+  const singleModeGraph = {
+    nodes: [refImgNode, singleModeNode],
+    edges: [{
+      id: 'e-mr-single',
+      source: 'img-ref-1',
+      target: 'video-mr-single',
+      data: {
+        role: 'reference',
+        targetSlot: 'reference_images',
+      },
+    }],
+  };
+  const singleModeFailure = findExecutionReadinessFailure([singleModeNode], realHubCatalog, singleModeGraph);
+  assert.ok(singleModeFailure !== null);
+  assert.equal(singleModeFailure.reasonCode, 'min_unsatisfied');
+});
+
+test('Seedance 2.0: invalid parameters strictly intercepted with parameter_unsupported', () => {
+  const baseNode = {
+    id: 'video-bad-param',
+    type: 'material',
+    data: {
+      materialType: 'video',
+      selectedTool: 'video-generation',
+      prompt: 'Testing invalid parameters',
+      params: {
+        model: 'seedance-2-0',
+        operation: 'text_to_video',
+        aspectRatio: '16:9',
+        duration: 5,
+        resolution: '720p',
+      },
+    },
+  };
+
+  // 1. Duration outside the published 4–15s range
+  for (const badDuration of [3, 16, 0, -1]) {
+    const node = structuredClone(baseNode);
+    node.data.params.duration = badDuration;
+    const failure = findExecutionReadinessFailure([node], realHubCatalog);
+    assert.deepEqual(failure, {
+      nodeId: 'video-bad-param',
+      reasonCode: 'parameter_unsupported',
+      message: '参数“duration”超出合同允许范围',
+    });
+  }
+
+  // 2. Unsupported aspectRatio
+  for (const badAspect of ['3:2', '2:1', 'square', 'invalid']) {
+    const node = structuredClone(baseNode);
+    node.data.params.aspectRatio = badAspect;
+    const failure = findExecutionReadinessFailure([node], realHubCatalog);
+    assert.deepEqual(failure, {
+      nodeId: 'video-bad-param',
+      reasonCode: 'parameter_unsupported',
+      message: `参数“aspectRatio”不支持值 ${JSON.stringify(badAspect)}`,
+    });
+  }
+
+  // 3. Unsupported resolution
+  for (const badRes of ['768P', '2K', '8k']) {
+    const node = structuredClone(baseNode);
+    node.data.params.resolution = badRes;
+    const failure = findExecutionReadinessFailure([node], realHubCatalog);
+    assert.deepEqual(failure, {
+      nodeId: 'video-bad-param',
+      reasonCode: 'parameter_unsupported',
+      message: `参数“resolution”不支持值 ${JSON.stringify(badRes)}`,
+    });
+  }
+});
+
+test('Seedance 2.0: resolveCanvasSubmission and resolveExecutorSubmission produce canonical model and parameters', () => {
+  // Declared alias resolves onto the canonical model id.
+  const t2vSubmission = resolveCanvasSubmission({
+    capability: 'video',
+    model: 'seedance-2.0',
+    operation: 'text_to_video',
+    prompt: 'A sunny beach',
+    aspectRatio: '16:9',
+    duration: 5,
+    resolution: '720p',
+  }, realHubCatalog);
+  assert.equal(t2vSubmission.model, 'seedance-2-0');
+  assert.equal(t2vSubmission.operation, 'text_to_video');
+  assert.equal(t2vSubmission.aspectRatio, '16:9');
+  assert.equal(t2vSubmission.duration, 5);
+  assert.equal(t2vSubmission.resolution, '720p');
+
+  // Canonical id with first_frame references
+  const ffSubmission = resolveCanvasSubmission({
+    capability: 'video',
+    model: 'seedance-2-0',
+    operation: 'first_frame',
+    prompt: 'Dance animation',
+    references: [{
+      pathOrUrl: 'https://example.test/dancer.png',
+      type: 'image',
+      role: 'first_frame',
+      targetSlot: 'first_frame',
+      mimeType: 'image/png',
+      sizeBytes: 1024 * 800,
+    }],
+    aspectRatio: 'adaptive',
+    duration: 10,
+    resolution: '1080p',
+  }, realHubCatalog);
+  assert.equal(ffSubmission.model, 'seedance-2-0');
+  assert.equal(ffSubmission.operation, 'first_frame');
+  assert.equal(ffSubmission.references.length, 1);
+  assert.equal(ffSubmission.references[0].role, 'first_frame');
+  assert.equal(ffSubmission.references[0].targetSlot, 'first_frame');
+  assert.equal(ffSubmission.duration, 10);
+  assert.equal(ffSubmission.resolution, '1080p');
+
+  // video_multi_ref submission with a reference image
+  const mrSubmission = resolveCanvasSubmission({
+    capability: 'video',
+    model: 'seedance-2-0',
+    operation: 'video_multi_ref',
+    prompt: 'Style replication',
+    references: [{
+      pathOrUrl: 'https://example.test/style.png',
+      type: 'image',
+      role: 'reference',
+      targetSlot: 'reference_images',
+      mimeType: 'image/png',
+      sizeBytes: 1024 * 600,
+    }],
+    aspectRatio: '16:9',
+    duration: 5,
+    resolution: '720p',
+  }, realHubCatalog);
+  assert.equal(mrSubmission.model, 'seedance-2-0');
+  assert.equal(mrSubmission.operation, 'video_multi_ref');
+  assert.equal(mrSubmission.references.length, 1);
+  assert.equal(mrSubmission.references[0].role, 'reference');
+  assert.equal(mrSubmission.references[0].targetSlot, 'reference_images');
+
+  // Test resolveExecutorSubmission with explicit operation and declared alias
+  const execSubmission = resolveExecutorSubmission({
+    capability: 'video',
+    model: 'seedance-2.0',
+    operation: 'text_to_video',
+    prompt: 'Quick cinematic cut',
+    aspectRatio: '16:9',
+    duration: 5,
+    resolution: '720p',
+  }, realHubCatalog);
+  assert.equal(execSubmission.model, 'seedance-2-0');
+  assert.equal(execSubmission.operation, 'text_to_video');
+});

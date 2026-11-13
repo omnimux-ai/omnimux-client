@@ -1,0 +1,1406 @@
+{
+  "schemaVersion": "1.0.0",
+  "updatedAt": "2026-10-06T15:19:09.797Z",
+  "topology": {
+    "tiers": [
+      {
+        "tierId": "tier-0-hub",
+        "name": "基础设施与执行Hub",
+        "rootDirectory": "plugins/omnimux",
+        "description": "提供全局身份认证、多模态媒体路由、抓取服务与埋点基础设施"
+      },
+      {
+        "tierId": "tier-1-app",
+        "name": "官方一级商业应用",
+        "rootDirectory": "plugins/omnimux-*",
+        "description": "OmniMux 核心一级功能矩阵：市场、工作流、资产库、商品库、账号池与灵感社区"
+      },
+      {
+        "tierId": "tier-2-vertical",
+        "name": "垂直业务套件",
+        "rootDirectory": "plugins/dsh-*",
+        "description": "垂直生产力套件：短剧全流程制作与本地 FFmpeg 视频重度处理"
+      }
+    ],
+    "summary": {
+      "totalPlugins": 19,
+      "totalTools": 100,
+      "totalSeams": 8
+    }
+  },
+  "plugins": [
+    {
+      "id": "omnimux",
+      "name": "omnimux",
+      "version": "0.1.2",
+      "tier": "tier-0-hub",
+      "entrypoint": "src/index.js",
+      "status": "active",
+      "description": "OmniMux 执行枢纽：负责身份认证注入、模型与多模态路由分发、页面抓取与品牌注入",
+      "tags": [
+        "hub",
+        "core",
+        "auth",
+        "routing",
+        "media",
+        "reader",
+        "chrome"
+      ],
+      "capabilities": {
+        "tools": [
+          {
+            "name": "omnimux_page_fetch",
+            "summary": "抓取网页并提取为干净 Markdown",
+            "category": "reader",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "omnimux_text_complete",
+            "summary": "调用 Hub 统一大模型文本生成接口",
+            "category": "text",
+            "isWriteOperation": false,
+            "requiresAuth": true
+          },
+          {
+            "name": "omnimux_jev_decision",
+            "summary": "调用 TypeSafe Jev 决策模型执行结构化决策与评分",
+            "category": "decision",
+            "isWriteOperation": false,
+            "requiresAuth": true
+          }
+        ],
+        "seamsProvided": [
+          {
+            "name": "identity",
+            "interfaceDoc": "ctx.get('identity').status / .require()"
+          },
+          {
+            "name": "textComplete",
+            "interfaceDoc": "ctx.get('textComplete').generate(params)"
+          },
+          {
+            "name": "modelCatalog",
+            "interfaceDoc": "ctx.get('modelCatalog').list() → { source, fingerprint, defaults, text, image, video, audio }"
+          },
+          {
+            "name": "decisions",
+            "interfaceDoc": "ctx.get('decisions').evaluate(params)"
+          }
+        ],
+        "seamsConsumed": [],
+        "slots": [
+          {
+            "target": "brand.chrome",
+            "componentPath": "src/client/chrome.js"
+          },
+          {
+            "target": "sidebar.extra",
+            "componentPath": "src/client/app-tabs.js"
+          },
+          {
+            "target": "shell.overlay",
+            "componentPath": "src/client/AppsStage.jsx"
+          }
+        ],
+        "storageDomains": [
+          "$DSH_HOME/omnimux/"
+        ]
+      },
+      "dependencies": {
+        "requiredPlugins": [],
+        "systemBinaries": []
+      },
+      "path": "plugins/omnimux"
+    },
+    {
+      "id": "omnimux-analytics",
+      "name": "omnimux-analytics",
+      "version": "0.2.0",
+      "tier": "tier-0-hub",
+      "entrypoint": "src/index.js",
+      "status": "active",
+      "description": "OmniMux 全局工具调用埋点（Umami）与社媒数据分析看板（一级页 Stage）",
+      "tags": [
+        "analytics",
+        "telemetry",
+        "umami",
+        "dashboard",
+        "social",
+        "tracking",
+        "metrics"
+      ],
+      "capabilities": {
+        "tools": [],
+        "seamsProvided": [],
+        "seamsConsumed": [
+          "identity"
+        ],
+        "slots": [
+          {
+            "target": "sidebar.extra",
+            "componentPath": "src/client/sidebar-entry.js"
+          },
+          {
+            "target": "shell.overlay",
+            "componentPath": "src/client/AnalyticsStage.jsx"
+          }
+        ],
+        "storageDomains": []
+      },
+      "dependencies": {
+        "requiredPlugins": [
+          "omnimux"
+        ],
+        "systemBinaries": []
+      },
+      "path": "plugins/omnimux-analytics"
+    },
+    {
+      "id": "omnimux-accounts",
+      "name": "omnimux-accounts",
+      "version": "0.1.1",
+      "tier": "tier-1-app",
+      "entrypoint": "src/index.js",
+      "status": "active",
+      "description": "OmniMux 官方应用：社媒平台绑定、账号矩阵列表、状态刷新与连接断开",
+      "tags": [
+        "accounts",
+        "social-media",
+        "identity",
+        "platforms",
+        "matrix"
+      ],
+      "capabilities": {
+        "tools": [],
+        "seamsProvided": [],
+        "seamsConsumed": [
+          "identity"
+        ],
+        "slots": [
+          {
+            "target": "sidebar.extra",
+            "componentPath": "src/client/sidebar-entry.js"
+          },
+          {
+            "target": "shell.overlay",
+            "componentPath": "src/client/AccountsStage.jsx"
+          }
+        ],
+        "storageDomains": [
+          "$DSH_HOME/omnimux/accounts/"
+        ]
+      },
+      "dependencies": {
+        "requiredPlugins": [
+          "omnimux"
+        ],
+        "systemBinaries": []
+      },
+      "path": "plugins/omnimux-accounts"
+    },
+    {
+      "id": "omnimux-assets",
+      "name": "omnimux-assets",
+      "version": "0.2.0",
+      "tier": "tier-1-app",
+      "entrypoint": "src/index.js",
+      "status": "active",
+      "description": "OmniMux 创作资产库：角色、场景、风格包、道具、知识包与 Prompt 资产纳管",
+      "tags": [
+        "assets",
+        "library",
+        "characters",
+        "scenes",
+        "props",
+        "knowledge",
+        "artifacts"
+      ],
+      "capabilities": {
+        "tools": [
+          {
+            "name": "assets_list",
+            "summary": "列出资产库中的所有资产对象",
+            "category": "library",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "assets_get",
+            "summary": "获取指定资产的详细信息与媒体引用路径",
+            "category": "library",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "assets_search",
+            "summary": "按分类/关键词检索资产库",
+            "category": "library",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "assets_cloud_save",
+            "summary": "将公共/云端素材下载到本地并存入本地资产库",
+            "category": "library",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "assets_upload",
+            "summary": "导入或注册新的资产至资产库",
+            "category": "library",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          }
+        ],
+        "seamsProvided": [],
+        "seamsConsumed": [
+          "identity"
+        ],
+        "slots": [
+          {
+            "target": "sidebar.extra",
+            "componentPath": "src/client/sidebar-entry.js"
+          },
+          {
+            "target": "shell.overlay",
+            "componentPath": "src/client/AssetsStage.jsx"
+          }
+        ],
+        "storageDomains": [
+          "$DSH_HOME/omnimux/assets/"
+        ]
+      },
+      "dependencies": {
+        "requiredPlugins": [
+          "omnimux"
+        ],
+        "systemBinaries": []
+      },
+      "path": "plugins/omnimux-assets"
+    },
+    {
+      "id": "omnimux-avatar",
+      "name": "omnimux-avatar",
+      "version": "0.1.0",
+      "tier": "tier-1-app",
+      "entrypoint": "src/index.js",
+      "status": "active",
+      "description": "数字人管理：结构化角色设定、生成与多视角派生、任务管理，生成结果自动归档到资产库「角色」分类",
+      "tags": [
+        "avatar",
+        "character",
+        "influencer",
+        "image-generation",
+        "library"
+      ],
+      "capabilities": {
+        "tools": [
+          {
+            "name": "avatar_create",
+            "summary": "新建一个数字人（名称 + 设定）",
+            "category": "avatar",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "avatar_list",
+            "summary": "列出全部数字人及其最新任务状态",
+            "category": "avatar",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "avatar_get",
+            "summary": "读取单个数字人的完整设定与任务历史",
+            "category": "avatar",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "avatar_update",
+            "summary": "更新数字人的名称或设定参数",
+            "category": "avatar",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "avatar_delete",
+            "summary": "删除数字人（含其托管文件），需 confirm",
+            "category": "avatar",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "avatar_generate",
+            "summary": "按形象设定提交一次角色设定图生成",
+            "category": "avatar",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "avatar_multiview",
+            "summary": "由形象主图派生多视角设定板",
+            "category": "avatar",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "avatar_tasks",
+            "summary": "查询形象的任务列表或单条任务状态",
+            "category": "avatar",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "avatar_library_sync",
+            "summary": "把形象的主图与多视角同步到资产库「角色」分类",
+            "category": "avatar",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          }
+        ],
+        "seamsProvided": [],
+        "seamsConsumed": [
+          "imageGenerate",
+          "assetLibrary",
+          "modelCatalog",
+          "hubEvents"
+        ],
+        "slots": [],
+        "storageDomains": [
+          "$DSH_HOME/omnimux/avatar/"
+        ]
+      },
+      "dependencies": {
+        "requiredPlugins": [
+          "omnimux"
+        ],
+        "systemBinaries": []
+      },
+      "path": "plugins/omnimux-avatar"
+    },
+    {
+      "id": "omnimux-clip",
+      "name": "omnimux-clip",
+      "version": "0.1.0",
+      "tier": "tier-1-app",
+      "entrypoint": "src/index.js",
+      "status": "active",
+      "description": "OmniMux Clip / 视频剪辑：官方 OpenReel GUI + 管线，挂 better-sidebar Tab。",
+      "tags": [
+        "clip",
+        "nle",
+        "timeline",
+        "video-editor",
+        "openreel",
+        "sidebar-tab"
+      ],
+      "skills": [
+        "skills/clip-craft/SKILL.md"
+      ],
+      "capabilities": {
+        "tools": [
+          {
+            "name": "clip_list",
+            "summary": "列出已有剪辑项目（编号、名称、更新时间、时长）",
+            "category": "clip",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "clip_create",
+            "summary": "新建空剪辑工程（名称/分辨率/帧率），返回项目编号",
+            "category": "clip",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "clip_open",
+            "summary": "拉起并聚焦「视频剪辑」编辑界面，挂载指定工程",
+            "category": "clip",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "clip_get",
+            "summary": "读取剪辑工程时间轴与轨道信息（summary/tracks/clips/full）",
+            "category": "clip",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "clip_edit",
+            "summary": "批处理原子剪辑操作，一次调用等于一个 Undo 步",
+            "category": "clip",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "clip_view",
+            "summary": "控制播放与播放头定位（不属于 Undo）",
+            "category": "clip",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "clip_snapshot",
+            "summary": "截取指定时间点的合成帧供视觉自检",
+            "category": "clip",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "clip_diagnostics",
+            "summary": "检查时间轴黑场缝隙、片段重叠与缺失素材",
+            "category": "clip",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "clip_export",
+            "summary": "触发工程成片导出为 MP4",
+            "category": "clip",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          }
+        ],
+        "seamsProvided": [
+          {
+            "name": "clipEditor",
+            "interfaceDoc": "src/seam/types.js"
+          }
+        ],
+        "seamsConsumed": [
+          "mediaSeam"
+        ],
+        "slots": [
+          {
+            "target": "betterSidebar.registerTab",
+            "id": "omnimux-clip:studio",
+            "componentPath": "src/client/OpenReelStudioTab.jsx"
+          }
+        ],
+        "storageDomains": [
+          "$DSH_HOME/omnimux/clip/"
+        ]
+      },
+      "dependencies": {
+        "requiredPlugins": [
+          "omnimux"
+        ],
+        "systemBinaries": []
+      },
+      "path": "plugins/omnimux-clip"
+    },
+    {
+      "id": "omnimux-device",
+      "name": "omnimux-device",
+      "version": "0.1.0",
+      "tier": "tier-1-app",
+      "entrypoint": "src/index.js",
+      "status": "active",
+      "description": "OmniMux 移动真机矩阵与设备智能体中枢：支持 iOS 真机集群池化管理、无障碍语义树感知、本地 Vision OCR 与 TypeSafe 毫秒级快决策操作",
+      "tags": [
+        "device",
+        "ios",
+        "automation",
+        "phone-farm",
+        "typesafe",
+        "wda",
+        "mobile-agent"
+      ],
+      "capabilities": {
+        "tools": [
+          {
+            "name": "device_list",
+            "summary": "列出当前连接的所有物理 iPhone 及其在线状态与电量",
+            "category": "device"
+          },
+          {
+            "name": "device_get_screen",
+            "summary": "获取指定手机当前的界面语义树（AXe）与 OCR 文本列表",
+            "category": "device"
+          },
+          {
+            "name": "device_execute_action",
+            "summary": "在指定手机上执行原子操作（点击元素/找字点击/划动/输入文案）",
+            "category": "device"
+          },
+          {
+            "name": "device_publish_flow",
+            "summary": "调用 TypeSafe 快决策引擎自动完成短视频导入、选择与发布全流程",
+            "category": "device"
+          }
+        ],
+        "seamsProvided": [
+          "device"
+        ],
+        "seamsConsumed": [
+          "decisions",
+          "identity",
+          "publish"
+        ],
+        "slots": [
+          {
+            "target": "sidebar.extra",
+            "componentPath": "src/client/sidebar-entry.js"
+          },
+          {
+            "target": "shell.overlay",
+            "componentPath": "src/client/DeviceStage.jsx"
+          }
+        ],
+        "storageDomains": [
+          "$DSH_HOME/omnimux/devices/"
+        ]
+      },
+      "dependencies": {
+        "requiredPlugins": [
+          "omnimux"
+        ],
+        "systemBinaries": []
+      },
+      "path": "plugins/omnimux-device"
+    },
+    {
+      "id": "omnimux-forms",
+      "name": "omnimux-forms",
+      "version": "0.1.0",
+      "tier": "tier-1-app",
+      "entrypoint": "src/index.js",
+      "status": "active",
+      "description": "参考视频拆解与复刻任务表单",
+      "capabilities": {
+        "tools": [],
+        "seamsProvided": [],
+        "seamsConsumed": [
+          "omnimuxForms"
+        ],
+        "slots": [],
+        "storageDomains": [
+          "$DSH_HOME/omnimux/forms/"
+        ]
+      },
+      "dependencies": {
+        "requiredPlugins": [
+          "omnimux"
+        ],
+        "systemBinaries": []
+      },
+      "path": "plugins/omnimux-forms"
+    },
+    {
+      "id": "omnimux-inspiration",
+      "name": "omnimux-inspiration",
+      "version": "0.1.0",
+      "tier": "tier-1-app",
+      "entrypoint": "src/index.js",
+      "status": "active",
+      "description": "OmniMux 官方应用：爆款灵感素材库、热点视频切片与创意提取",
+      "tags": [
+        "inspiration",
+        "trends",
+        "ideas",
+        "creative",
+        "workbench"
+      ],
+      "capabilities": {
+        "tools": [
+          {
+            "name": "inspiration_search",
+            "summary": "Search inspiration items in local vault and public repository by keyword, platform, type, tag or favorite."
+          },
+          {
+            "name": "inspiration_get",
+            "summary": "Get full details of a single inspiration item including 5-dimension breakdown, script templates and local file paths."
+          },
+          {
+            "name": "inspiration_create",
+            "summary": "Create and crawl inspiration from social media URLs (TikTok, Instagram, YouTube, X), download media and trigger AI analysis."
+          },
+          {
+            "name": "inspiration_rival_accounts",
+            "summary": "List monitored rival accounts with platform, handle, followers, refresh state and potential post count."
+          },
+          {
+            "name": "inspiration_rival_posts",
+            "summary": "List the cached posts of one rival account, optionally filtered to the potential-flagged ones only."
+          },
+          {
+            "name": "inspiration_rival_post",
+            "summary": "Get one rival post with its account, including media urls, stats and library status."
+          },
+          {
+            "name": "inspiration_rival_posts_add_to_session",
+            "summary": "Build the session attachment payload of one rival post so the workbench can mount it into the active conversation."
+          },
+          {
+            "name": "inspiration_rival_to_inspiration",
+            "summary": "Import one rival post into the local inspiration library through the existing import-url pipeline."
+          },
+          {
+            "name": "inspiration_rival_refresh",
+            "summary": "Queue a refresh of one or all rival accounts, bounded by the per-account cloud call budget."
+          }
+        ],
+        "seamsProvided": [],
+        "seamsConsumed": [
+          "reader"
+        ],
+        "slots": [
+          {
+            "target": "sidebar.extra",
+            "componentPath": "src/client/sidebar-entry.js"
+          },
+          {
+            "target": "shell.overlay",
+            "componentPath": "src/client/InspirationStage.jsx"
+          }
+        ],
+        "storageDomains": [
+          "$DSH_HOME/omnimux/inspirations/"
+        ]
+      },
+      "dependencies": {
+        "requiredPlugins": [
+          "omnimux"
+        ],
+        "systemBinaries": []
+      },
+      "path": "plugins/omnimux-inspiration"
+    },
+    {
+      "id": "omnimux-market",
+      "name": "omnimux-market",
+      "version": "0.2.13-omni.0",
+      "tier": "tier-1-app",
+      "entrypoint": "lib/host.js",
+      "status": "active",
+      "description": "OmniMux 插件/专家/技能/连接器综合市场 (基于 SkillHub 二次开发)",
+      "tags": [
+        "market",
+        "plaza",
+        "skillhub",
+        "skills",
+        "experts",
+        "connectors"
+      ],
+      "capabilities": {
+        "tools": [
+          {
+            "name": "skillhub_search",
+            "summary": "在 SkillHub 市场检索技能卡片",
+            "category": "skills",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "skillhub_install",
+            "summary": "安装指定 SkillHub 技能至本地",
+            "category": "skills",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "skillhub_list",
+            "summary": "列出本地已安装的技能清单",
+            "category": "skills",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "skillhub_uninstall",
+            "summary": "卸载本地已安装的技能",
+            "category": "skills",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "plaza_search",
+            "summary": "在 Plaza 市场检索专家与专家团队",
+            "category": "experts",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "plaza_summon",
+            "summary": "召唤并持久化挂载专家身份至当前会话",
+            "category": "experts",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "plaza_install",
+            "summary": "安装 Plaza 连接器与技能包（兼容路径；Agent 装连接器请用 connector_install）",
+            "category": "connectors",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "plugin_search",
+            "summary": "在 SkillHub 检索可安装的 DSH 插件",
+            "category": "plugins",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "plugin_install",
+            "summary": "按 owner/name 安装已验证的 DSH 插件（不重启 Host）",
+            "category": "plugins",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "plugin_uninstall",
+            "summary": "按 profile 包名卸载 DSH 插件；核心包黑名单拦截",
+            "category": "plugins",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "plugin_list",
+            "summary": "列出 web profile 已装 DSH 插件及 protected 标记",
+            "category": "plugins",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "connector_search",
+            "summary": "检索本地 catalog 连接器；市场源仅展示不可装",
+            "category": "connectors",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "connector_install",
+            "summary": "安装 catalog 连接器（写托管 MCP 行，不重启 Host）",
+            "category": "connectors",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "connector_uninstall",
+            "summary": "卸载 catalog 连接器（删托管 MCP 行，幂等）",
+            "category": "connectors",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "connector_list",
+            "summary": "列出当前已安装的 catalog 连接器",
+            "category": "connectors",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          }
+        ],
+        "seamsProvided": [],
+        "seamsConsumed": [
+          "identity"
+        ],
+        "slots": [
+          {
+            "target": "sidebar.extra",
+            "componentPath": "src/client/portal.js"
+          },
+          {
+            "target": "shell.overlay",
+            "componentPath": "src/client/plaza-shell.js"
+          }
+        ],
+        "storageDomains": [
+          "$DSH_HOME/skills/",
+          "$DSH_HOME/omnimux-market/sessions/"
+        ]
+      },
+      "dependencies": {
+        "requiredPlugins": [
+          "omnimux"
+        ],
+        "systemBinaries": []
+      },
+      "path": "plugins/omnimux-market"
+    },
+    {
+      "id": "omnimux-products",
+      "name": "omnimux-products",
+      "version": "0.1.0",
+      "tier": "tier-1-app",
+      "entrypoint": "src/index.js",
+      "status": "active",
+      "description": "OmniMux 电商产品库：结构化标品、卖点提炼、商品详情与媒体资产纳管",
+      "tags": [
+        "products",
+        "ecommerce",
+        "sku",
+        "spu",
+        "selling-points",
+        "library"
+      ],
+      "capabilities": {
+        "tools": [
+          {
+            "name": "products_create",
+            "summary": "创建新的商品标品对象",
+            "category": "ecommerce",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "products_list",
+            "summary": "列出产品库中所有商品清单",
+            "category": "ecommerce",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "products_get",
+            "summary": "获取指定商品的完整属性与卖点",
+            "category": "ecommerce",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "products_search",
+            "summary": "按名称或品类检索商品",
+            "category": "ecommerce",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "products_update",
+            "summary": "更新商品卖点、描述或主图引用",
+            "category": "ecommerce",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "products_read_media",
+            "summary": "读取商品关联的多模态素材",
+            "category": "ecommerce",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          }
+        ],
+        "seamsProvided": [],
+        "seamsConsumed": [],
+        "slots": [],
+        "storageDomains": [
+          "$DSH_HOME/omnimux/products/"
+        ]
+      },
+      "dependencies": {
+        "requiredPlugins": [
+          "omnimux"
+        ],
+        "systemBinaries": []
+      },
+      "path": "plugins/omnimux-products"
+    },
+    {
+      "id": "omnimux-social-harvest",
+      "name": "omnimux-social-harvest",
+      "version": "0.1.0",
+      "tier": "tier-1-app",
+      "entrypoint": "src/index.js",
+      "status": "active",
+      "description": "OmniMux 社媒采集：封装本机 OpenCLI 官方内置社媒适配器（TikTok/Instagram/Facebook/Pinterest/X/YouTube/小红书/抖音/LinkedIn，只读），服务爆款视频复刻的发现与解构环节。复用浏览器登录态，产品不接触账号密码。",
+      "tags": [
+        "social-media",
+        "harvest",
+        "opencli",
+        "discovery",
+        "deconstruction"
+      ],
+      "capabilities": {
+        "tools": [
+          {
+            "name": "harvest_tiktok_search",
+            "summary": "按关键词搜索 TikTok 视频（爆款发现）",
+            "category": "harvest"
+          },
+          {
+            "name": "harvest_tiktok_user",
+            "summary": "获取 TikTok 创作者近期视频列表",
+            "category": "harvest"
+          },
+          {
+            "name": "harvest_pinterest_pins",
+            "summary": "搜索 Pinterest 图钉（免登录可用）",
+            "category": "harvest"
+          },
+          {
+            "name": "harvest_pinterest_download",
+            "summary": "下载 Pinterest 图钉原图到本地",
+            "category": "harvest"
+          },
+          {
+            "name": "harvest_sites_status",
+            "summary": "查询各社媒平台登录态（whoami 自检）",
+            "category": "harvest"
+          },
+          {
+            "name": "harvest_site_login",
+            "summary": "打开指定平台的浏览器登录页并等待人工完成登录",
+            "category": "harvest"
+          },
+          {
+            "name": "flow_image_generate",
+            "summary": "调用 Google Flow (flow.google.com) AI 文生图",
+            "category": "create"
+          },
+          {
+            "name": "flow_video_generate",
+            "summary": "调用 Google Flow (flow.google.com) 生成 Veo AI 视频",
+            "category": "create"
+          }
+        ],
+        "seamsProvided": [],
+        "seamsConsumed": [],
+        "slots": [
+          {
+            "target": "sidebar.extra",
+            "componentPath": "src/client/sidebar-entry.js"
+          },
+          {
+            "target": "shell.overlay",
+            "componentPath": "src/client/HarvestStage.jsx"
+          }
+        ],
+        "storageDomains": [
+          "$DSH_HOME/omnimux-social-harvest/"
+        ]
+      },
+      "dependencies": {
+        "requiredPlugins": [
+          "omnimux"
+        ],
+        "systemBinaries": [
+          "opencli"
+        ]
+      },
+      "path": "plugins/omnimux-social-harvest"
+    },
+    {
+      "id": "omnimux-workflow",
+      "name": "omnimux-workflow",
+      "version": "1.0.0-rc.1",
+      "tier": "tier-1-app",
+      "entrypoint": "dist/index.js",
+      "status": "active",
+      "description": "OmniMux 创作画布 DAG 工作流编排系统，支持可视化节点拓扑编辑、持久化与异步执行",
+      "tags": [
+        "workflow",
+        "canvas",
+        "dag",
+        "nodes",
+        "graph",
+        "scheduler"
+      ],
+      "capabilities": {
+        "tools": [
+          {
+            "name": "workflow_create",
+            "summary": "创建新的画布工作流工程",
+            "category": "canvas",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "workflow_list",
+            "summary": "列出当前工作区所有工作流工程",
+            "category": "canvas",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "workflow_snapshot",
+            "summary": "获取指定工作流的完整节点与连线快照",
+            "category": "canvas",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "workflow_node_add",
+            "summary": "在画布上新增一个节点",
+            "category": "graph",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "workflow_node_update",
+            "summary": "更新画布指定节点的参数或位置",
+            "category": "graph",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "workflow_node_remove",
+            "summary": "删除画布上的指定节点",
+            "category": "graph",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "workflow_connect",
+            "summary": "在两个节点端口之间建立连线",
+            "category": "graph",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "workflow_disconnect",
+            "summary": "断开两个节点之间的连线",
+            "category": "graph",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "workflow_run",
+            "summary": "触发工作流 DAG 执行调度",
+            "category": "execution",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "workflow_execution_control",
+            "summary": "控制工作流执行状态 (暂停/继续/终止)",
+            "category": "execution",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          }
+        ],
+        "seamsProvided": [],
+        "seamsConsumed": [
+          "mediaSeam",
+          "videoProcess"
+        ],
+        "slots": [
+          {
+            "target": "sidebar.extra",
+            "componentPath": "src/client/sidebar-entry.js"
+          },
+          {
+            "target": "shell.overlay",
+            "componentPath": "src/client/WorkflowStage.jsx"
+          }
+        ],
+        "storageDomains": [
+          "$DSH_HOME/omnimux/workflow/"
+        ]
+      },
+      "dependencies": {
+        "requiredPlugins": [
+          "omnimux"
+        ],
+        "systemBinaries": []
+      },
+      "path": "plugins/omnimux-workflow"
+    },
+    {
+      "id": "omnimux-video",
+      "name": "omnimux-video",
+      "version": "0.1.0",
+      "tier": "tier-2-vertical",
+      "entrypoint": "src/index.js",
+      "status": "active",
+      "description": "FFmpeg 本地高性能视频处理与理解插件，提供 11 项本地剪辑/合并/提取能力与反向 Prompt 视频理解",
+      "tags": [
+        "video",
+        "ffmpeg",
+        "transcode",
+        "video-process",
+        "editing",
+        "understanding"
+      ],
+      "capabilities": {
+        "tools": [
+          {
+            "name": "video_process",
+            "summary": "执行本地 FFmpeg 视频剪辑/合并/拆分/转码等 11 项原子能力",
+            "category": "video",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "video_analyze",
+            "summary": "解析视频结构并进行分镜内容理解",
+            "category": "video",
+            "isWriteOperation": false,
+            "requiresAuth": true
+          },
+          {
+            "name": "video_reverse_prompt",
+            "summary": "基于视频抽帧反推结构化分镜生成提示词",
+            "category": "video",
+            "isWriteOperation": false,
+            "requiresAuth": true
+          }
+        ],
+        "seamsProvided": [
+          {
+            "name": "videoProcess",
+            "interfaceDoc": "ctx.get('videoProcess').execute(task)"
+          }
+        ],
+        "seamsConsumed": [],
+        "storageDomains": [
+          "temp/video_output/"
+        ]
+      },
+      "dependencies": {
+        "requiredPlugins": [],
+        "systemBinaries": [
+          "ffmpeg",
+          "ffprobe"
+        ]
+      },
+      "path": "plugins/omnimux-video"
+    },
+    {
+      "id": "omnimux-intercept",
+      "name": "omnimux-intercept",
+      "version": "0.1.0",
+      "tier": "tier-3-personal",
+      "entrypoint": "src/index.js",
+      "status": "active",
+      "description": "推特推文爆速检测与智能截流：按存活小时数计算时速与三档爆速分级，预估抢评曝光，并生成高赞评论/引用转发草稿（只出草稿，不自动发帖）",
+      "tags": [
+        "twitter",
+        "x",
+        "intercept",
+        "viral",
+        "pace",
+        "comment",
+        "drafts"
+      ],
+      "capabilities": {
+        "tools": [],
+        "seamsProvided": [],
+        "seamsConsumed": [],
+        "slots": [],
+        "storageDomains": [
+          "$DSH_HOME/omnimux-intercept/"
+        ]
+      },
+      "dependencies": {
+        "requiredPlugins": [],
+        "systemBinaries": [
+          "opencli"
+        ]
+      },
+      "path": "plugins/omnimux-intercept"
+    },
+    {
+      "id": "omnimux-publish",
+      "name": "omnimux-publish",
+      "version": "0.1.0",
+      "tier": "tier-3-personal",
+      "entrypoint": "src/index.js",
+      "status": "active",
+      "description": "社媒内容发布编排层：草稿管理、多账号分发、发布状态追踪与失败重试",
+      "tags": [
+        "publish",
+        "social",
+        "distribution",
+        "drafts",
+        "accounts"
+      ],
+      "capabilities": {
+        "tools": [
+          {
+            "name": "publish_create_draft",
+            "summary": "创建新的社媒发布草稿",
+            "category": "draft",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "publish_update_draft",
+            "summary": "更新草稿内容与媒体引用",
+            "category": "draft",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "publish_delete_draft",
+            "summary": "删除指定草稿",
+            "category": "draft",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "publish_list_accounts",
+            "summary": "列出可供发布的目标账号列表",
+            "category": "accounts",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "publish_assign_accounts",
+            "summary": "为指定草稿分配发布目标账号",
+            "category": "distribution",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "publish_submit",
+            "summary": "提交草稿至发布执行通道",
+            "category": "execution",
+            "isWriteOperation": true,
+            "requiresAuth": true
+          },
+          {
+            "name": "publish_list_records",
+            "summary": "查询历史发布任务记录与状态",
+            "category": "records",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "publish_get_record",
+            "summary": "获取单条发布任务详细执行日志",
+            "category": "records",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "publish_retry_task",
+            "summary": "重试失败的发布子任务",
+            "category": "execution",
+            "isWriteOperation": true,
+            "requiresAuth": true
+          }
+        ],
+        "seamsProvided": [],
+        "seamsConsumed": [
+          "identity"
+        ],
+        "slots": [
+          {
+            "target": "sidebar.extra",
+            "componentPath": "src/client/sidebar-entry.js"
+          },
+          {
+            "target": "shell.overlay",
+            "componentPath": "src/client/PublishStage.jsx"
+          }
+        ],
+        "storageDomains": [
+          "$DSH_HOME/publish/"
+        ]
+      },
+      "dependencies": {
+        "requiredPlugins": [
+          "omnimux"
+        ],
+        "systemBinaries": []
+      },
+      "path": "plugins/omnimux-publish"
+    },
+    {
+      "id": "omnimux-video-preview",
+      "name": "omnimux-video-preview",
+      "version": "0.1.0",
+      "tier": "tier-3-extension",
+      "entrypoint": "src/index.js",
+      "status": "active",
+      "description": "DSH 视频内联预览插件：为 better-sidebar 提供高性能视频预览，支持 HTTP Range (206) 流式拖动、沙箱安全校验与元数据探查。",
+      "tags": [
+        "video",
+        "preview",
+        "player",
+        "stream",
+        "range-206",
+        "better-sidebar"
+      ],
+      "capabilities": {
+        "tools": [
+          {
+            "name": "video_preview_info",
+            "summary": "探查指定视频文件的元数据信息并获取本地 Range 206 流式播放地址",
+            "category": "media",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "video_breakdown_analyze",
+            "summary": "分析视频并提取结构化分镜列表与阶段拆解，真实分析成功后在右侧侧边栏打开预览",
+            "category": "media",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "video_breakdown_translate",
+            "summary": "调用大模型统一通道将视频分镜台词/口播翻译为多语言并持久化缓存",
+            "category": "media",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          }
+        ],
+        "seamsProvided": [
+          {
+            "name": "videoPreview",
+            "interfaceDoc": "ctx.get('videoPreview').getStreamUrl(filePath)"
+          }
+        ],
+        "seamsConsumed": [
+          "webServer",
+          "betterSidebar",
+          "textComplete"
+        ],
+        "slots": [
+          {
+            "target": "betterSidebar.fileViewer",
+            "componentPath": "src/client/index.js"
+          }
+        ],
+        "storageDomains": []
+      },
+      "dependencies": {
+        "requiredPlugins": [],
+        "systemBinaries": []
+      },
+      "path": "plugins/omnimux-video-preview"
+    },
+    {
+      "id": "omnimux-viewer",
+      "name": "omnimux-viewer",
+      "version": "0.1.0",
+      "tier": "tier-3-extension",
+      "entrypoint": "lib/index.js",
+      "status": "active",
+      "description": "OmniMux 内联文件预览：把图片、视频、音频、PDF、Office 与 HTML 渲染进对话流（上游 @crosery/dsh-viewer 的 OmniMux fork，见 VENDOR.md）。",
+      "tags": [
+        "viewer",
+        "preview",
+        "display-file",
+        "media",
+        "fork"
+      ],
+      "capabilities": {
+        "tools": [
+          {
+            "name": "display_file",
+            "summary": "在 Web 界面里就地渲染一个文件（图片/视频/音频/PDF/Office/HTML），供用户直接看到或听到",
+            "category": "media",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          }
+        ],
+        "seamsProvided": [],
+        "seamsConsumed": [],
+        "slots": [
+          "tool.call.toolview"
+        ],
+        "storageDomains": []
+      },
+      "dependencies": {
+        "harness": [],
+        "plugins": []
+      },
+      "path": "plugins/omnimux-viewer"
+    }
+  ]
+}

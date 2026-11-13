@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { describe, it } from 'node:test'
+
+const read = file => readFileSync(new URL(file, import.meta.url), 'utf8')
+const installSource = read('./install.js')
+const indexSource = read('../index.js')
+const commandsSource = read('./commands.js')
+
+describe('composer add integration boundaries', () => {
+  it('keeps selection UI separate from the session-scoped submission bridge', () => {
+    assert.match(installSource, /LIBRARY_STAGE_PROMPT_EVENT/)
+    assert.doesNotMatch(indexSource, /AssetHubPanel/, '素材工作台页已迁 omnimux-assets（Issue 2933），hub index 不再引入')
+    assert.doesNotMatch(installSource, /AssetPickerModal|ProductPickerModal|InspirationPickerModal/)
+    assert.match(indexSource, /AttachmentSubmitBridge/)
+    assert.match(indexSource, /export const inject = \['slots', 'locale'\]/)
+  })
+
+  it('uses official command events without intercepting buttons or contributing a second menu', () => {
+    assert.doesNotMatch(installSource, /MutationObserver|stopImmediatePropagation|omnimux:composer-add-(file|folder|library)/)
+    assert.doesNotMatch(commandsSource, /popupSelect|commandUi\.register/)
+    assert.match(commandsSource, /commandUi\.decorate/)
+    assert.match(indexSource, /installComposerAddCommands/)
+    assert.doesNotMatch(indexSource, /conversation\.input\.add-menu|onAddFolder/)
+  })
+})

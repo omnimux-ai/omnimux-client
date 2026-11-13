@@ -1,0 +1,2075 @@
+import assert from 'node:assert/strict'
+import { afterEach, test } from 'node:test'
+import { JSDOM } from 'jsdom'
+import { WORKBENCH_OCCUPANTS } from '../workbench/contract.js'
+import {
+  WORKBENCH_SPLIT_MIN_CSS,
+  applyDefaultWidth,
+  createWorkbenchSidebarStore,
+  installSplitConversationMin,
+  installWorkbenchGlobal,
+  isWorkbenchActive,
+  isWorkbenchOpen,
+  openWorkbench,
+  releaseCurrentProductStage,
+  resetWorkbenchForTests,
+  sweepRetiredWorkbenchTabs,
+  getConversationCollapsed,
+  setConversationCollapsed,
+  setWorkbenchFocus,
+  syncSplitMaxCssVar,
+  syncWorkbenchGuiWidth,
+} from './workbench.js'
+import {
+  WORKBENCH_CONVERSATION_MIN_PX,
+  WORKBENCH_PANEL_ATTR,
+  WORKBENCH_LEFT_RAIL_COLLAPSED_FALLBACK_PX,
+  WORKBENCH_LEFT_RAIL_COLLAPSED_MAX_PX,
+  WORKBENCH_LEFT_RAIL_EXPANDED_FALLBACK_PX,
+  WORKBENCH_LEFT_RAIL_EXPANDED_MIN_PX,
+  clampSplitPanelWidth,
+  collapsedLeftRailFallbackPx,
+  findOfficialSidebarColumn,
+  findWorkbenchPanelElement,
+  isOfficialSidebarCollapsed,
+  officialSessionSidebarWidth,
+  workbenchDefaultWidthPx,
+  workbenchGuiWidthPx,
+  workbenchSplitMaxPanelPx,
+} from './workbench/geometry.js'
+import {
+  WORKBENCH_FOCUS,
+  WORKBENCH_TAB_TITLE_FALLBACKS,
+  WORKBENCH_TAB_TITLE_FALLBACKS_EN,
+  focusRecordForTab,
+  getWorkbenchFocus,
+  inferWorkbenchFocus,
+  isWorkbenchTab,
+  resolveDefaultFocus,
+  resolveWorkbenchTabTitle,
+} from './workbench/focus-state.js'
+import {
+  activeTabId,
+  collectTabs,
+  isSeedFilesTab,
+  tabIsOpen,
+} from './workbench/host-adapter.js'
+
+/** Match workbench column / collapsed-host selectors used by live DOM probes. */
+function selIsSidebarColumn(sel) {
+  return typeof sel === 'string' && (
+    sel.includes('sidebarCol')
+    || sel.includes('dshDesktopSidebarSurface')
+    || sel.includes('data-pane="sidebar"')
+  )
+}
+
+function selIsCollapsedAttr(sel) {
+  return typeof sel === 'string' && sel.includes('data-sidebar-collapsed')
+}
+
+const previousWindow = globalThis.window
+const previousDocument = globalThis.document
+let workbenchDom
+
+afterEach(() => {
+  resetWorkbenchForTests(globalThis.window)
+  workbenchDom?.window.close()
+  workbenchDom = undefined
+  if (previousWindow === undefined) delete globalThis.window
+  else globalThis.window = previousWindow
+  if (previousDocument === undefined) delete globalThis.document
+  else globalThis.document = previousDocument
+})
+
+function makeState(tabs = [], width = 780, panelOpen = true) {
+  return {
+    width,
+    panelOpen,
+    activePane: 'main',
+    splits: {
+      kind: 'leaf',
+      id: 'main',
+      tabs,
+    },
+  }
+}
+
+function setupWindow() {
+  const cssVars = new Map()
+  const headChildren = []
+  const listeners = {}
+  const doc = {
+    documentElement: {
+      dataset: {},
+      style: {
+        setProperty(k, v) { cssVars.set(k, String(v)) },
+        removeProperty(k) { cssVars.delete(k) },
+        getPropertyValue(k) { return cssVars.has(k) ? cssVars.get(k) : '' },
+      },
+    },
+    head: {
+      append(node) { headChildren.push(node) },
+    },
+    body: {
+      dataset: {},
+      _attrs: new Set(),
+      hasAttribute(a) { return this._attrs.has(a) },
+      setAttribute(a) { this._attrs.add(a) },
+      removeAttribute(a) { this._attrs.delete(a) },
+    },
+    getElementById(id) { return headChildren.find((n) => n.id === id) || null },
+    createElement(tag) {
+      return { tagName: String(tag).toUpperCase(), id: '', textContent: '' }
+    },
+    querySelector: () => null,
+    addEventListener(type, fn) { (listeners[type] ||= []).push(fn) },
+    removeEventListener(type, fn) {
+      const list = listeners[type] || []
+      const i = list.indexOf(fn)
+      if (i >= 0) list.splice(i, 1)
+    },
+  }
+  const win = {
+    innerWidth: 1200,
+    document: doc,
+    addEventListener() {},
+    removeEventListener() {},
+    dispatchEvent() {},
+    localStorage: {
+      _data: new Map(),
+      getItem(k) { return this._data.get(k) ?? null },
+      setItem(k, v) { this._data.set(k, String(v)) },
+      removeItem(k) { this._data.delete(k) },
+    },
+  }
+  globalThis.window = win
+  globalThis.document = doc
+  return win
+}
+
+test('collectTabs / isSeedFilesTab / tabIsOpen walk split trees', () => {
+  const node = {
+    kind: 'split',
+    children: [
+      { kind: 'leaf', tabs: [{ id: 't1', type: 'editor', path: '' }] },
+      { kind: 'leaf', tabs: [{ id: 't2', type: 'omnimux-assets:library' }] },
+    ],
+  }
+  const tabs = collectTabs(node)
+  assert.equal(tabs.length, 2)
+  assert.equal(isSeedFilesTab(tabs[0]), true)
+  assert.equal(isSeedFilesTab(tabs[1]), false)
+  assert.equal(tabIsOpen({ splits: node }, 'omnimux-assets:library'), true)
+  assert.equal(tabIsOpen({ splits: node }, 'omnimux-clip:studio'), false)
+})
+
+test('default focus matrix: canvas and all libraries default to gui (Issue #2006)', () => {
+  assert.equal(resolveDefaultFocus('omnimux-workflow:canvas'), WORKBENCH_FOCUS.gui)
+  const libraries = [
+    'omnimux-clip:studio',
+    'omnimux-assets:library',
+    'omnimux-forms:tasks',
+    'omnimux-accounts:library',
+    'omnimux-inspiration:library',
+    'omnimux-publish:library',
+    'omnimux-analytics:library',
+    'omnimux-workflow:library',
+    'omnimux-market:plaza',
+  ]
+  for (const lib of libraries) {
+    assert.equal(resolveDefaultFocus(lib), WORKBENCH_FOCUS.gui, `${lib} must default to gui`)
+    assert.ok(isWorkbenchTab(lib), `${lib} must be recognized as workbench tab`)
+  }
+  assert.equal(WORKBENCH_OCCUPANTS.length, 10)
+})
+
+test('workbenchDefaultWidthPx gives the panel everything the ratio column does not take', () => {
+  // 比例制（Issue #2608）：面板宽 = 可见舞台 − 比例中栏宽。
+  // 1200 视口、无左栏 → 舞台 1200，中栏 = clamp(round(1200 × 0.3), 360, min(864, 880)) = 360
+  // → 面板 840（旧算式「可用宽 − 380」给 820，差额正是中栏地板 360 与旧目标 380 之差）。
+  assert.equal(workbenchDefaultWidthPx(makeState([], 820), { viewportWidth: 1200 }), 840)
+  // 600 视口：中栏被 360px 下限占满 → 面板退到 280 地板。
+  assert.equal(workbenchDefaultWidthPx(makeState([], 820), { viewportWidth: 600 }), 280)
+})
+
+test('releaseCurrentProductStage drops a library overlay without claiming', () => {
+  const win = setupWindow()
+  let released = null
+  win.__omnimuxStage = {
+    release(id) { released = id },
+  }
+  win.document.documentElement.dataset.dshProductStage = 'omnimux-assets-stage'
+  const dropped = releaseCurrentProductStage()
+  assert.equal(dropped, true)
+  assert.equal(released, 'omnimux-assets-stage')
+  assert.equal(win.document.documentElement.dataset.dshProductStage, undefined)
+})
+
+test('installWorkbenchGlobal is idempotent and never claims a product stage', () => {
+  const win = setupWindow()
+  const api1 = installWorkbenchGlobal(win)
+  const api2 = installWorkbenchGlobal(win)
+  assert.equal(api1, api2)
+  assert.equal(win.__omnimuxWorkbench, api1)
+  assert.equal(win.document.documentElement.dataset.dshProductStage, undefined)
+})
+
+test('openWorkbench returns false without better-sidebar and does not throw', async () => {
+  const win = setupWindow()
+  const api = installWorkbenchGlobal(win)
+  const ok = await api.open({ tabId: 'omnimux-assets:library', timeoutMs: 0 })
+  assert.equal(ok, false)
+})
+
+test('bind removes the default Files seed when a new session snapshot materializes', () => {
+  const win = setupWindow()
+  const api = installWorkbenchGlobal(win)
+  let snapshot = { sessionId: undefined, state: undefined }
+  let notifyState = () => {}
+  const closed = []
+  const service = {
+    getSnapshot() { return snapshot },
+    subscribeState(listener) {
+      notifyState = listener
+      return () => {}
+    },
+    closeTab(id, scope) { closed.push({ id, scope }) },
+  }
+
+  api.bind({ betterSidebar: service })
+  snapshot = {
+    sessionId: 's-new',
+    state: makeState([{ id: 'tab:seed', type: 'editor', title: 'Files', meta: { treeOpen: true } }]),
+  }
+  notifyState()
+
+  assert.deepEqual(closed, [{ id: 'tab:seed', scope: { sessionId: 's-new' } }])
+})
+
+test('bind removes the default Files seed from an already materialized new-session snapshot', () => {
+  const win = setupWindow()
+  const api = installWorkbenchGlobal(win)
+  const closed = []
+  api.bind({
+    betterSidebar: {
+      getSnapshot() {
+        return {
+          sessionId: 's-ready',
+          state: makeState([{ id: 'tab:ready-seed', type: 'editor', title: 'Files' }]),
+        }
+      },
+      subscribeState() { return () => {} },
+      closeTab(id, scope) { closed.push({ id, scope }) },
+    },
+  })
+
+  assert.deepEqual(closed, [{ id: 'tab:ready-seed', scope: { sessionId: 's-ready' } }])
+})
+
+test('bind preserves an existing persisted layout even when it contains only Files', () => {
+  const win = setupWindow()
+  const api = installWorkbenchGlobal(win)
+  win.localStorage.setItem('dsh-sidebar:v1:s-saved', JSON.stringify({ panelOpen: true }))
+  const closed = []
+  api.bind({
+    betterSidebar: {
+      getSnapshot() {
+        return {
+          sessionId: 's-saved',
+          state: makeState([{ id: 'tab:saved-files', type: 'editor', title: 'Files' }]),
+        }
+      },
+      subscribeState() { return () => {} },
+      closeTab(id, scope) { closed.push({ id, scope }) },
+    },
+  })
+
+  assert.deepEqual(closed, [])
+})
+
+test('default seed cleanup is once per session so a user-opened Files tab stays open', () => {
+  const win = setupWindow()
+  const api = installWorkbenchGlobal(win)
+  let snapshot = {
+    sessionId: 's-reopen',
+    state: makeState([{ id: 'tab:initial-seed', type: 'editor', title: 'Files' }]),
+  }
+  let notifyState = () => {}
+  const closed = []
+  const service = {
+    getSnapshot() { return snapshot },
+    subscribeState(listener) {
+      notifyState = listener
+      return () => {}
+    },
+    closeTab(id, scope) {
+      closed.push({ id, scope })
+      snapshot = { ...snapshot, state: makeState([]) }
+      notifyState()
+    },
+  }
+
+  api.bind({ betterSidebar: service })
+  assert.deepEqual(closed.map((entry) => entry.id), ['tab:initial-seed'])
+
+  snapshot = {
+    ...snapshot,
+    state: makeState([{ id: 'tab:user-files', type: 'editor', title: 'Files' }]),
+  }
+  notifyState()
+  assert.deepEqual(closed.map((entry) => entry.id), ['tab:initial-seed'])
+})
+
+test('default seed cleanup safely ignores no-session and non-seed snapshots', () => {
+  const win = setupWindow()
+  const api = installWorkbenchGlobal(win)
+  let snapshot = { sessionId: undefined, state: undefined }
+  let notifyState = () => {}
+  const closed = []
+  const service = {
+    getSnapshot() { return snapshot },
+    subscribeState(listener) {
+      notifyState = listener
+      return () => {}
+    },
+    closeTab(id) { closed.push(id) },
+  }
+
+  api.bind({ betterSidebar: service })
+  notifyState()
+  assert.deepEqual(closed, [])
+
+  snapshot = {
+    sessionId: 's-empty',
+    state: makeState([]),
+  }
+  notifyState()
+  assert.deepEqual(closed, [])
+
+  snapshot = {
+    sessionId: 's-non-seed',
+    state: makeState([{ id: 'editor:/tmp/a.ts', type: 'editor', title: 'a.ts', path: '/tmp/a.ts' }]),
+  }
+  notifyState()
+  assert.deepEqual(closed, [])
+
+  snapshot = {
+    sessionId: 's-non-seed',
+    state: makeState([{ id: 'tab:user-files', type: 'editor', title: 'Files' }]),
+  }
+  notifyState()
+  assert.deepEqual(closed, [], 'a session already classified as non-seed must not be watched forever')
+})
+
+test('sweepRetiredWorkbenchTabs: 快照未物化时不做任何关闭，也不打标记', () => {
+  // 快照尚未物化（state 缺失）时不能提前认定「扫过了」，否则真出现旧 Tab 反而漏扫。
+  let snapshot = { sessionId: 's-pending', state: undefined }
+  const closed = []
+  const service = {
+    getSnapshot() { return snapshot },
+    closeTab(id) { closed.push(id) },
+  }
+
+  assert.equal(sweepRetiredWorkbenchTabs(service), 0, '未物化时返回 0')
+  assert.deepEqual(closed, [], '未物化时不关闭任何 Tab')
+
+  // 物化之后必须真的扫到。
+  snapshot = {
+    sessionId: 's-pending',
+    state: makeState([{ id: 'tab:retired', type: 'omnimux-products:library', title: '产品库' }]),
+  }
+  assert.equal(sweepRetiredWorkbenchTabs(service), 1, '物化后补扫')
+  assert.deepEqual(closed, ['tab:retired'])
+})
+
+test('sweepRetiredWorkbenchTabs: 返回关闭数、幂等、不误伤其它 type、失败不冒泡', () => {
+  const makeService = (state, closeImpl, sessionId = 's-direct') => {
+    const closed = []
+    return {
+      closed,
+      service: {
+        getSnapshot() { return { sessionId, state: makeState(state) } },
+        closeTab(id, scope) {
+          closed.push({ id, scope })
+          if (closeImpl) closeImpl(id)
+        },
+      },
+    }
+  }
+
+  // 1. 命中旧产品库 Tab → 关闭并返回 1。
+  const hit = makeService([{ id: 'tab:retired', type: 'omnimux-products:library', title: '产品库' }])
+  assert.equal(sweepRetiredWorkbenchTabs(hit.service), 1, '命中旧 Tab 返回关闭数 1')
+  assert.deepEqual(hit.closed, [{ id: 'tab:retired', scope: { sessionId: 's-direct' } }])
+
+  // 2. 同一 service 同一会话再扫一次 → 返回 0 且不再关闭（幂等）。
+  assert.equal(sweepRetiredWorkbenchTabs(hit.service), 0, '同一会话第二次返回 0')
+  assert.equal(hit.closed.length, 1, '幂等：不重复 closeTab')
+
+  // 3. 只有其它 type → 一个都不关，返回 0（不误伤）。
+  const others = makeService([
+    { id: 'tab:assets', type: 'omnimux-assets:library', title: '资产库' },
+    { id: 'tab:editor', type: 'editor', title: 'Files', path: '/tmp/a.ts' },
+  ])
+  assert.equal(sweepRetiredWorkbenchTabs(others.service), 0, '非旧 Tab 类型不关闭')
+  assert.deepEqual(others.closed, [])
+
+  // 4. closeTab 抛错 → 不冒泡，继续处理后续 Tab（返回值只计成功关闭数）。
+  const boom = makeService([
+    { id: 'tab:retired-a', type: 'omnimux-products:library', title: '产品库' },
+    { id: 'tab:retired-b', type: 'omnimux-products:library', title: '产品库' },
+  ], () => { throw new Error('close refused') })
+  const originalWarn = console.warn
+  const warnings = []
+  console.warn = (...args) => { warnings.push(args) }
+  let closedCount
+  try {
+    closedCount = sweepRetiredWorkbenchTabs(boom.service)
+  } finally {
+    console.warn = originalWarn
+  }
+  assert.equal(closedCount, 0, '抛错的 Tab 不算成功关闭')
+  assert.equal(boom.closed.length, 2, '抛错不阻断后续 Tab，两个都尝试过')
+  assert.equal(warnings.length, 2, '每个失败都留下告警，不静默吞错')
+})
+
+test('sweepRetiredWorkbenchTabs: 幂等按会话记，切到仍带旧 Tab 的会话不漏扫', () => {
+  const closed = []
+  let snapshot = {
+    sessionId: 's-clean',
+    state: makeState([{ id: 'tab:assets', type: 'omnimux-assets:library', title: '资产库' }]),
+  }
+  const service = {
+    getSnapshot() { return snapshot },
+    closeTab(id, scope) { closed.push({ id, scope }) },
+  }
+
+  // 先物化的会话没有旧 Tab：此时不能把「扫过了」记成全局结论。
+  assert.equal(sweepRetiredWorkbenchTabs(service), 0)
+  assert.deepEqual(closed, [])
+
+  // 切到仍持久化了旧 Tab 的会话：必须补扫并关掉它。
+  snapshot = {
+    sessionId: 's-legacy',
+    state: makeState([{ id: 'tab:legacy', type: 'omnimux-products:library', title: '产品库' }]),
+  }
+  assert.equal(sweepRetiredWorkbenchTabs(service), 1, '新会话里的旧 Tab 仍被收编')
+  assert.deepEqual(closed, [{ id: 'tab:legacy', scope: { sessionId: 's-legacy' } }])
+
+  // 同一会话再次触发：不再重复关闭。
+  assert.equal(sweepRetiredWorkbenchTabs(service), 0)
+  assert.equal(closed.length, 1)
+})
+
+test('sweepRetiredWorkbenchTabs: 同一会话晚到的旧 Tab 仍会被补扫', () => {
+  // better-sidebar 的会话快照可能在首次物化时还没有旧 Tab（例如快照尚未恢复完）。
+  // 若那一刻就记下「已扫过」，之后同一会话补回旧 Tab 就永远不再扫 —— AC-305 失效。
+  let snapshot = {
+    sessionId: 's-late',
+    state: makeState([{ id: 'tab:assets', type: 'omnimux-assets:library', title: '资产库' }]),
+  }
+  const closed = []
+  const service = {
+    getSnapshot() { return snapshot },
+    closeTab(id, scope) { closed.push({ id, scope }) },
+  }
+
+  assert.equal(sweepRetiredWorkbenchTabs(service), 0, '首次无残留')
+  assert.deepEqual(closed, [])
+
+  // 同一会话之后补回了旧 Tab：必须补扫并关闭。
+  snapshot = {
+    sessionId: 's-late',
+    state: makeState([
+      { id: 'tab:assets', type: 'omnimux-assets:library', title: '资产库' },
+      { id: 'tab:retired', type: 'omnimux-products:library', title: '产品库' },
+    ]),
+  }
+  assert.equal(sweepRetiredWorkbenchTabs(service), 1, '晚到旧 Tab 仍被收编')
+  assert.deepEqual(closed, [{ id: 'tab:retired', scope: { sessionId: 's-late' } }])
+
+  // 收编完成后再扫：幂等，不再重复关闭。
+  assert.equal(sweepRetiredWorkbenchTabs(service), 0)
+  assert.equal(closed.length, 1)
+})
+
+test('default seed cleanup is a safe no-op when storage or service capabilities are unavailable', () => {
+  const win = setupWindow()
+  const api = installWorkbenchGlobal(win)
+  Object.defineProperty(win, 'localStorage', {
+    configurable: true,
+    get() { throw new Error('storage unavailable') },
+  })
+
+  assert.doesNotThrow(() => {
+    api.bind({
+      betterSidebar: {
+        getSnapshot() {
+          return {
+            sessionId: 's-no-storage',
+            state: makeState([{ id: 'tab:seed', type: 'editor', title: 'Files' }]),
+          }
+        },
+        subscribeState() { return () => {} },
+        closeTab() { throw new Error('must not close without a reliable storage decision') },
+      },
+    })
+  })
+
+  assert.doesNotThrow(() => {
+    api.bind({
+      betterSidebar: {
+        getSnapshot() { throw new Error('snapshot unavailable') },
+        subscribeState() { throw new Error('subscription unavailable') },
+      },
+    })
+  })
+
+  assert.doesNotThrow(() => {
+    api.bind({
+      betterSidebar: {
+        getSnapshot() {
+          return {
+            sessionId: 's-no-close-capability',
+            state: makeState([{ id: 'tab:seed', type: 'editor', title: 'Files' }]),
+          }
+        },
+      },
+    })
+  })
+})
+
+test('bind is idempotent and subscribes to one better-sidebar service only once', () => {
+  const win = setupWindow()
+  const api = installWorkbenchGlobal(win)
+  let subscriptions = 0
+  const service = {
+    getSnapshot() { return { sessionId: undefined, state: undefined } },
+    subscribeState() {
+      subscriptions += 1
+      return () => {}
+    },
+  }
+
+  api.bind({ betterSidebar: service })
+  api.bind({ betterSidebar: service })
+  assert.equal(subscriptions, 1)
+})
+
+test('openWorkbench without current session does not create a session or claim overlay', async () => {
+  const win = setupWindow()
+  const api = installWorkbenchGlobal(win)
+  let claimed = 0
+  let created = 0
+  win.__omnimuxStage = { claim() { claimed += 1 } }
+  const opened = []
+  const state = makeState([])
+  // Minimal body so nudgeWorkbenchNeedsSession can mount a status toast.
+  win.document.body = {
+    appendChild(node) {
+      this._kids = this._kids || []
+      this._kids.push(node)
+      return node
+    },
+  }
+  win.document.getElementById = () => null
+  win.document.createElement = (tag) => ({
+    tagName: String(tag).toUpperCase(),
+    id: '',
+    style: { cssText: '' },
+    setAttribute() {},
+    remove() {},
+    textContent: '',
+  })
+  win.document.querySelector = () => null
+  win.setTimeout = () => 0
+  api.bind({
+    betterSidebar: {
+      openTab(seed, scope) { opened.push({ seed, scope }) },
+      getTab() { return { id: 'omnimux-clip:studio' } },
+      getSnapshot() { return { state } },
+    },
+    sessions: {
+      list: { getSnapshot: () => ({ current: undefined }) },
+      create: async () => { created += 1; throw new Error('no workspace') },
+    },
+  })
+  const ok = await api.open({ tabId: 'omnimux-clip:studio', timeoutMs: 0 })
+  assert.equal(ok, false, 'returns false when no session is active')
+  assert.equal(opened.length, 0)
+  assert.equal(created, 0)
+  assert.equal(claimed, 0)
+  const kids = win.document.body._kids || []
+  assert.equal(kids.length, 1, 'shows needs-session status toast')
+  assert.equal(kids[0].id, 'omnimux-workbench-needs-session')
+  assert.match(String(kids[0].textContent || ''), /工作区|会话/)
+})
+
+test('workbench module reload refreshes binding closures without replacing the global API', async () => {
+  const win = setupWindow()
+  const existing = installWorkbenchGlobal(win)
+  const oldBind = existing.bind
+  const reloaded = await import('./workbench.js?issue2591-reload')
+  const refreshed = reloaded.installWorkbenchGlobal(win)
+  assert.equal(refreshed, existing)
+  assert.equal(win.__omnimuxWorkbench, existing)
+  assert.notEqual(refreshed.bind, oldBind, 'module-owned bind must not retain the old closure')
+  const opened = []
+  const service = {
+    getTab: (id) => ({ id }),
+    getSnapshot: () => ({ sessionId: 's-reload', state: makeState([]) }),
+    openTab(seed) { opened.push(seed) },
+  }
+  try {
+    refreshed.bind({
+      betterSidebar: service,
+      sessions: { list: { getSnapshot: () => ({ current: 's-reload' }) } },
+    })
+    assert.equal(await reloaded.openWorkbench({
+      tabId: 'omnimux-workflow:app', timeoutMs: 0, preserveLayout: true,
+    }), true)
+    assert.equal(opened.length, 1)
+    assert.equal(opened[0].type, 'omnimux-workflow:app')
+  } finally {
+    reloaded.resetWorkbenchForTests(win)
+  }
+})
+
+test('openWorkbench forwards app instance identity without replacing its registered type', async () => {
+  const api = installWorkbenchGlobal(setupWindow())
+  const opened = []
+  const registered = []
+  const manifest = { appId: 'app-home-test', metadata: { name: '首页应用' } }
+  api.bind({
+    betterSidebar: {
+      getTab(id) { registered.push(id); return { id } },
+      getSnapshot: () => ({ sessionId: 's-app', state: makeState([]) }),
+      openTab(seed, scope) { opened.push({ seed, scope }) },
+    },
+    sessions: { list: { getSnapshot: () => ({ current: 's-app' }) } },
+  })
+  const ok = await api.open({
+    tabId: 'omnimux-workflow:app', id: 'app_app-home-test', title: '首页应用',
+    path: 'app://app-home-test', meta: { appId: manifest.appId },
+    extra: { manifest, appId: manifest.appId }, timeoutMs: 0, preserveLayout: true,
+  })
+  assert.equal(ok, true, 'void-returning providers remain valid')
+  assert.deepEqual(registered, ['omnimux-workflow:app'])
+  assert.deepEqual(opened, [{
+    seed: {
+      type: 'omnimux-workflow:app', id: 'app_app-home-test', title: '首页应用',
+      path: 'app://app-home-test', meta: { appId: manifest.appId },
+      extra: { manifest, appId: manifest.appId },
+    },
+    scope: { sessionId: 's-app' },
+  }])
+})
+
+test('openWorkbench refuses an unregistered app without opening or closing seed tabs', async () => {
+  const api = installWorkbenchGlobal(setupWindow())
+  const actions = []
+  api.bind({
+    betterSidebar: {
+      getTab: () => undefined,
+      getSnapshot: () => ({ sessionId: 's-app', state: makeState([{ id: 'seed', type: 'editor' }]) }),
+      openTab() { actions.push('open') },
+      closeTab() { actions.push('close') },
+    },
+    sessions: { list: { getSnapshot: () => ({ current: 's-app' }) } },
+  })
+  // Provider binding independently cleans factory seed tabs; isolate the open action.
+  actions.length = 0
+  assert.equal(await api.open({ tabId: 'omnimux-workflow:app', timeoutMs: 0 }), false)
+  assert.deepEqual(actions, [])
+})
+
+for (const [label, openTab] of [
+  ['false', () => false],
+  ['async false', async () => false],
+  ['throw', () => { throw new Error('app open rejected') }],
+  ['rejection', async () => { throw new Error('app open rejected') }],
+]) {
+  test(`openWorkbench exposes provider ${label} without changing focus`, async () => {
+    const api = installWorkbenchGlobal(setupWindow())
+    let opens = 0
+    api.bind({
+      betterSidebar: {
+        getTab: (id) => ({ id }),
+        getSnapshot: () => ({ sessionId: 's-app', state: makeState([]) }),
+        openTab(...args) { opens += 1; return openTab(...args) },
+      },
+      sessions: { list: { getSnapshot: () => ({ current: 's-app' }) } },
+    })
+    const before = api.getFocus()
+    const result = api.open({ tabId: 'omnimux-workflow:app', timeoutMs: 0 })
+    if (label === 'throw' || label === 'rejection') {
+      await assert.rejects(result, /app open rejected/)
+    } else {
+      assert.equal(await result, false)
+    }
+    assert.equal(opens, 1)
+    assert.equal(api.getFocus(), before)
+  })
+}
+
+function setupPendingNavigation() {
+  const win = setupWindow()
+  const api = installWorkbenchGlobal(win)
+  win.localStorage.setItem('dsh-sidebar:v1:s-app', '{}')
+  let current = 's-app'
+  let snapshot = { sessionId: current, state: makeState([
+    { id: 'seed', type: 'editor' },
+    { id: 'user-file', type: 'editor', path: '/keep.txt' },
+  ]) }
+  const actions = []
+  const service = {
+    getTab: (id) => ({ id }),
+    getSnapshot: () => snapshot,
+    closeTab(id, scope) { actions.push(['close', id, scope]) },
+    openTab() { actions.push(['open']); return true },
+  }
+  const layout = { closeDetails() { actions.push(['details']) } }
+  api.bind({ betterSidebar: service, layout, sessions: { list: { getSnapshot: () => ({ current }) } } })
+  win.document.documentElement.dataset.dshProductStage = 'old-stage'
+  win.__omnimuxStage = { release(id) { actions.push(['stage', id]) } }
+  return { win, api, service, actions, layout,
+    setSession(id) { current = id },
+    setSnapshot(next) { snapshot = next },
+    assertPreserved() {
+      assert.deepEqual(actions.filter(([action]) => action !== 'open'), [])
+      assert.equal(win.document.documentElement.dataset.dshProductStage, 'old-stage')
+    },
+  }
+}
+
+for (const mode of ['unregistered', 'no-provider', 'not-ready', 'false', 'async-false', 'throw', 'rejection']) {
+  test(`open failure ${mode} preserves existing stage, details and seed`, async () => {
+    const env = setupPendingNavigation()
+    if (mode === 'unregistered') env.service.getTab = () => undefined
+    if (mode === 'no-provider') env.api.bind({ betterSidebar: null })
+    if (mode === 'not-ready') env.setSnapshot({ sessionId: 'other', state: makeState([]) })
+    if (mode === 'false') env.service.openTab = () => false
+    if (mode === 'async-false') env.service.openTab = async () => false
+    if (mode === 'throw') env.service.openTab = () => { throw new Error('rejected') }
+    if (mode === 'rejection') env.service.openTab = async () => { throw new Error('rejected') }
+    const result = env.api.open({ tabId: 'omnimux-workflow:app', timeoutMs: 0 })
+    if (mode === 'throw' || mode === 'rejection') await assert.rejects(result, /rejected/)
+    else assert.equal(await result, false)
+    env.assertPreserved()
+  })
+}
+
+test('sidebar session may catch up before navigation commits', async () => {
+  const env = setupPendingNavigation()
+  env.setSnapshot({ sessionId: 'previous', state: makeState([]) })
+  const timer = setTimeout(() => env.setSnapshot({ sessionId: 's-app', state: makeState([]) }), 10)
+  try {
+    assert.equal(await env.api.open({ tabId: 'omnimux-workflow:app', timeoutMs: 200, preserveLayout: true }), true)
+    assert.equal(env.actions.filter(([action]) => action === 'open').length, 1)
+    assert.deepEqual(env.actions.filter(([action]) => action === 'details' || action === 'stage'), [['details'], ['stage', 'old-stage']])
+  } finally {
+    clearTimeout(timer)
+  }
+})
+
+test('sidebar session timeout preserves navigation safety and cannot open late', async () => {
+  const env = setupPendingNavigation()
+  env.setSnapshot({ sessionId: 'previous', state: makeState([]) })
+  const before = env.api.getFocus()
+  assert.equal(await env.api.open({ tabId: 'omnimux-workflow:app', timeoutMs: 1 }), false)
+  env.setSnapshot({ sessionId: 's-app', state: makeState([]) })
+  await new Promise((resolve) => setTimeout(resolve, 60))
+  assert.deepEqual(env.actions, [])
+  assert.equal(env.api.getFocus(), before)
+  env.assertPreserved()
+})
+
+for (const change of ['provider', 'session', 'snapshot', 'stage']) {
+  test(`async open does not commit old navigation after ${change} changes`, async () => {
+    const env = setupPendingNavigation()
+    let finish
+    let enter
+    const entered = new Promise((resolve) => { enter = resolve })
+    env.service.openTab = () => { enter(); return new Promise((resolve) => { finish = resolve }) }
+    const result = env.api.open({ tabId: 'omnimux-workflow:app', timeoutMs: 0 })
+    await entered
+    const before = env.api.getFocus()
+    if (change === 'provider') env.api.bind({ betterSidebar: { getSnapshot: () => ({ sessionId: 's-app', state: makeState([]) }) } })
+    if (change === 'session') env.setSession('s-new')
+    if (change === 'snapshot') env.setSnapshot({ sessionId: 's-new', state: makeState([]) })
+    if (change === 'stage') env.win.document.documentElement.dataset.dshProductStage = 'new-stage'
+    finish(true)
+    assert.equal(await result, false)
+    assert.deepEqual(env.actions, [])
+    assert.equal(env.api.getFocus(), before)
+    assert.equal(env.win.document.documentElement.dataset.dshProductStage, change === 'stage' ? 'new-stage' : 'old-stage')
+  })
+}
+
+for (const change of ['provider', 'session']) {
+  test(`registration readiness does not redirect after ${change} changes`, async () => {
+    const env = setupPendingNavigation()
+    env.service.getTab = (id) => {
+      if (change === 'provider') env.api.bind({ betterSidebar: { getSnapshot: () => ({ sessionId: 's-app', state: makeState([]) }) } })
+      else env.setSession('s-new')
+      return { id }
+    }
+    assert.equal(await env.api.open({ tabId: 'omnimux-workflow:app', timeoutMs: 0 }), false)
+    assert.deepEqual(env.actions, [])
+    env.assertPreserved()
+  })
+}
+
+test('missing session leaves the old stage and details intact while showing a cue', async () => {
+  const env = setupPendingNavigation()
+  env.setSession(undefined)
+  const messages = []
+  env.win.document.createElement = () => ({ style: {}, setAttribute() {}, remove() {}, textContent: '' })
+  env.win.document.body.appendChild = (node) => { messages.push(node.textContent) }
+  env.win.setTimeout = () => 0
+  assert.equal(await env.api.open({ tabId: 'omnimux-workflow:app', timeoutMs: 0 }), false)
+  env.assertPreserved()
+  assert.equal(messages.length, 1)
+  assert.match(messages[0], /会话/)
+})
+
+test('successful open commits old seed cleanup only after confirmation', async () => {
+  const env = setupPendingNavigation()
+  env.service.openTab = (_payload, scope) => {
+    env.assertPreserved()
+    assert.deepEqual(scope, { sessionId: 's-app' })
+    env.actions.push(['open'])
+    env.setSnapshot({ sessionId: 's-app', state: makeState([
+      { id: 'seed', type: 'editor' }, { id: 'new-seed', type: 'editor' },
+      { id: 'user-file', type: 'editor', path: '/keep.txt' },
+    ]) })
+    return true
+  }
+  assert.equal(await env.api.open({ tabId: 'omnimux-workflow:app', timeoutMs: 0, preserveLayout: true }), true)
+  assert.deepEqual(env.actions, [
+    ['open'], ['close', 'seed', { sessionId: 's-app' }], ['details'], ['stage', 'old-stage'],
+  ])
+})
+
+test('openWorkbench waits for provider completion before reporting success', async () => {
+  const api = installWorkbenchGlobal(setupWindow())
+  let resolveOpen
+  let enteredOpen
+  const entered = new Promise((resolve) => { enteredOpen = resolve })
+  const pending = new Promise((resolve) => { resolveOpen = resolve })
+  api.bind({
+    betterSidebar: {
+      getTab: (id) => ({ id }),
+      getSnapshot: () => ({ sessionId: 's-app', state: makeState([]) }),
+      openTab() { enteredOpen(); return pending },
+    },
+    sessions: { list: { getSnapshot: () => ({ current: 's-app' }) } },
+  })
+  let settled = false
+  const result = api.open({ tabId: 'omnimux-workflow:app', timeoutMs: 0, preserveLayout: true })
+  result.then(() => { settled = true })
+  await entered
+  await Promise.resolve()
+  assert.equal(settled, false)
+  resolveOpen(true)
+  assert.equal(await result, true)
+})
+
+test('openWorkbench switches focus mode to default per tab without cross-tab leakage', async () => {
+  const win = setupWindow()
+  const api = installWorkbenchGlobal(win)
+  let state = makeState([{ id: 'omnimux-workflow:canvas', type: 'omnimux-workflow:canvas' }], 780, true)
+  const store = {
+    getSnapshot: () => ({ sessionId: 's1', state }),
+    reduce: (fn) => { state = fn(state) },
+  }
+  const opened = []
+  api.bind({
+    betterSidebar: {
+      openTab(seed, scope) {
+        opened.push({ seed, scope })
+        state = {
+          ...state,
+          splits: {
+            kind: 'leaf',
+            id: 'main',
+            active: seed.id,
+            tabs: [{ id: seed.id, type: seed.type }],
+          },
+        }
+      },
+      getTab(id) { return { id } },
+      getSnapshot() { return { sessionId: 's1', state } },
+    },
+    sessions: {
+      list: { getSnapshot: () => ({ current: 's1' }) },
+    },
+  })
+  api.attachStore(store)
+
+  // 1. Open canvas -> defaults to gui (fullscreen)
+  await api.open({ tabId: 'omnimux-workflow:canvas', timeoutMs: 0 })
+  assert.equal(api.getFocus(), WORKBENCH_FOCUS.gui)
+  assert.equal(state.width, 1200)
+
+  // 2. Open assets library -> defaults to gui
+  await api.open({ tabId: 'omnimux-assets:library', timeoutMs: 0 })
+  assert.equal(api.getFocus(), WORKBENCH_FOCUS.gui)
+  assert.equal(state.width, 1200)
+
+  // 3. Switch back to canvas -> gui
+  await api.open({ tabId: 'omnimux-workflow:canvas', timeoutMs: 0 })
+  assert.equal(api.getFocus(), WORKBENCH_FOCUS.gui)
+})
+
+test('openWorkbench default gui does not mark explicit user intent (Issue #2516)', async () => {
+  const win = setupWindow()
+  const api = installWorkbenchGlobal(win)
+  let state = makeState([{ id: 'omnimux-assets:library', type: 'omnimux-assets:library' }], 780, true)
+  const store = {
+    getSnapshot: () => ({ sessionId: 's-default', state }),
+    reduce: (fn) => { state = fn(state) },
+  }
+  api.bind({
+    betterSidebar: {
+      openTab(seed) {
+        state = {
+          ...state,
+          splits: {
+            kind: 'leaf',
+            id: 'main',
+            active: seed.id,
+            tabs: [{ id: seed.id, type: seed.type }],
+          },
+        }
+      },
+      getTab(id) { return { id } },
+      getSnapshot() { return { sessionId: 's-default', state } },
+    },
+    sessions: {
+      list: { getSnapshot: () => ({ current: 's-default' }) },
+    },
+  })
+  api.attachStore(store)
+  await api.open({ tabId: 'omnimux-assets:library', timeoutMs: 0 })
+  const record = focusRecordForTab('s-default', 'omnimux-assets:library')
+  assert.equal(record.mode, WORKBENCH_FOCUS.gui)
+  assert.equal(record.explicit, false)
+})
+
+test('openWorkbench preserveLayout does not change focus (Issue #2516)', async () => {
+  const win = setupWindow()
+  const api = installWorkbenchGlobal(win)
+  let state = makeState([{ id: 'omnimux-assets:library', type: 'omnimux-assets:library' }], 780, true)
+  const store = {
+    getSnapshot: () => ({ sessionId: 's-agent', state }),
+    reduce: (fn) => { state = fn(state) },
+  }
+  api.bind({
+    betterSidebar: {
+      openTab(seed) {
+        state = {
+          ...state,
+          splits: {
+            kind: 'leaf',
+            id: 'main',
+            active: seed.id,
+            tabs: [{ id: seed.id, type: seed.type }],
+          },
+        }
+      },
+      getTab(id) { return { id } },
+      getSnapshot() { return { sessionId: 's-agent', state } },
+    },
+    sessions: {
+      list: { getSnapshot: () => ({ current: 's-agent' }) },
+    },
+  })
+  api.attachStore(store)
+  const before = state.width
+  await api.open({ tabId: 'omnimux-inspiration:library', timeoutMs: 0, preserveLayout: true })
+  assert.equal(state.width, before)
+})
+
+test('applyDefaultWidth writes via store.reduce and skips a second write', () => {
+  setupWindow()
+  let state = makeState([{ id: 't1', type: 't1' }], 500, true)
+  const store = {
+    getSnapshot: () => ({ sessionId: 's1', state }),
+    reduce: (fn) => { state = fn(state) },
+  }
+  const applied1 = applyDefaultWidth(null, 's1', store, { viewportWidth: 1200 })
+  assert.equal(applied1, 840, '比例制下面板宽 = 可见舞台 1200 − 中栏 360')
+  assert.equal(state.width, 840)
+
+  state.width = 600
+  const applied2 = applyDefaultWidth(null, 's1', store, { viewportWidth: 1200 })
+  assert.equal(applied2, null)
+  assert.equal(state.width, 600)
+})
+
+test('workbenchGuiWidthPx occupies viewport minus the left rail', () => {
+  assert.equal(workbenchGuiWidthPx(makeState([], 780), { viewportWidth: 1200, officialSidebarWidth: 0 }), 1200)
+  assert.equal(workbenchGuiWidthPx(makeState([], 780), { viewportWidth: 1200, officialSidebarWidth: 280 }), 920)
+  assert.equal(workbenchGuiWidthPx(makeState([], 780), { viewportWidth: 300, officialSidebarWidth: 0 }), 300)
+})
+
+test('officialSessionSidebarWidth falls back when expanded rail is crushed to rail size', () => {
+  const column = {
+    getBoundingClientRect: () => ({ width: 56 }),
+    closest() { return null },
+    querySelector() { return null },
+  }
+  const doc = {
+    querySelector(sel) {
+      if (selIsCollapsedAttr(sel)) return null
+      if (selIsSidebarColumn(sel)) return column
+      return null
+    },
+  }
+  globalThis.document = doc
+  globalThis.window = { document: doc }
+  // Seed a healthy expanded width first.
+  assert.equal(officialSessionSidebarWidth({ officialSidebarWidth: 280 }), 280)
+  assert.equal(officialSessionSidebarWidth(), WORKBENCH_LEFT_RAIL_EXPANDED_FALLBACK_PX)
+  assert.equal(
+    workbenchGuiWidthPx(makeState([], 1672), { viewportWidth: 1728 }),
+    1728 - WORKBENCH_LEFT_RAIL_EXPANDED_FALLBACK_PX,
+  )
+})
+
+test('officialSessionSidebarWidth ignores mid-animation widths below expanded min (#356)', () => {
+  let liveWidth = 80
+  const column = {
+    getBoundingClientRect: () => ({ width: liveWidth }),
+    closest() { return null },
+    querySelector() { return null },
+  }
+  const doc = {
+    querySelector(sel) {
+      if (selIsCollapsedAttr(sel)) return null
+      if (selIsSidebarColumn(sel)) return column
+      return null
+    },
+  }
+  globalThis.document = doc
+  globalThis.window = { document: doc }
+  assert.equal(officialSessionSidebarWidth({ officialSidebarWidth: 280 }), 280)
+  // Expand tween 80px must not replace the healthy 280 seed.
+  assert.ok(liveWidth < WORKBENCH_LEFT_RAIL_EXPANDED_MIN_PX)
+  assert.equal(officialSessionSidebarWidth(), 280)
+  assert.equal(workbenchGuiWidthPx(makeState([], 1000), { viewportWidth: 1728 }), 1448)
+  liveWidth = 280
+  assert.equal(officialSessionSidebarWidth(), 280)
+})
+
+test('collapsedLeftRailFallbackPx is 0 when topbar sidebar-toggle feature is on', () => {
+  const doc = {
+    documentElement: {
+      hasAttribute(name) {
+        return name === 'data-omnimux-sidebar-toggle-topbar'
+      },
+    },
+  }
+  assert.equal(collapsedLeftRailFallbackPx(doc), 0)
+  assert.equal(collapsedLeftRailFallbackPx({ documentElement: { hasAttribute: () => false } }), WORKBENCH_LEFT_RAIL_COLLAPSED_FALLBACK_PX)
+  assert.equal(WORKBENCH_LEFT_RAIL_COLLAPSED_FALLBACK_PX, 56)
+})
+
+test('officialSessionSidebarWidth returns 0 when topbar feature on + collapsed (no 56 gutter)', () => {
+  let liveWidth = 56
+  const frame = { tag: 'frame' }
+  const column = {
+    getBoundingClientRect: () => ({ width: liveWidth }),
+    closest(sel) {
+      if (selIsCollapsedAttr(sel)) return frame
+      return null
+    },
+    querySelector() { return null },
+  }
+  const doc = {
+    documentElement: {
+      hasAttribute(name) {
+        return name === 'data-omnimux-sidebar-toggle-topbar'
+      },
+    },
+    querySelector(sel) {
+      if (selIsCollapsedAttr(sel)) return frame
+      if (selIsSidebarColumn(sel)) return column
+      return null
+    },
+  }
+  globalThis.document = doc
+  globalThis.window = { document: doc, innerWidth: 1728 }
+  assert.equal(collapsedLeftRailFallbackPx(doc), 0)
+  assert.equal(officialSessionSidebarWidth(), 0)
+  assert.equal(workbenchGuiWidthPx(makeState([], 1000), { viewportWidth: 1728 }), 1728)
+  // Still-expanded live width while collapsed attr set → also 0 under feature.
+  liveWidth = 280
+  assert.equal(officialSessionSidebarWidth(), 0)
+})
+
+test('officialSessionSidebarWidth uses collapsed rail while attr is set mid-tween', () => {
+  let liveWidth = 280
+  let collapsedEl = { tag: 'frame' }
+  const column = {
+    getBoundingClientRect: () => ({ width: liveWidth }),
+    closest(sel) {
+      if (selIsCollapsedAttr(sel)) return collapsedEl
+      return null
+    },
+    querySelector() { return null },
+  }
+  const doc = {
+    querySelector(sel) {
+      if (selIsCollapsedAttr(sel)) return collapsedEl
+      if (selIsSidebarColumn(sel)) return column
+      return null
+    },
+  }
+  globalThis.document = doc
+  globalThis.window = { document: doc }
+  // Seed expanded history so a wrong branch would return 280 and leave a gap.
+  assert.equal(officialSessionSidebarWidth({ officialSidebarWidth: 280 }), 280)
+
+  // Collapse attr lands first; track still reports expanded width → collapsed fallback (56),
+  // NOT the historic 72 max (that left a permanent 16px panel gutter on the official rail).
+  liveWidth = 280
+  assert.equal(officialSessionSidebarWidth(), WORKBENCH_LEFT_RAIL_COLLAPSED_FALLBACK_PX)
+  assert.equal(
+    workbenchGuiWidthPx(makeState([], 1000), { viewportWidth: 1728 }),
+    1728 - WORKBENCH_LEFT_RAIL_COLLAPSED_FALLBACK_PX,
+  )
+
+  // Mid-tween below expanded min is trusted (not lastExpanded).
+  liveWidth = 120
+  assert.equal(officialSessionSidebarWidth(), 120)
+
+  // Real collapsed measure wins once the track finishes and becomes the next fallback.
+  liveWidth = 56
+  assert.equal(officialSessionSidebarWidth(), 56)
+  assert.equal(workbenchGuiWidthPx(makeState([], 1000), { viewportWidth: 1728 }), 1672)
+
+  // Attr-only frame again after a real 56 measure must keep 56 (no 72 regression gutter).
+  liveWidth = 280
+  assert.equal(officialSessionSidebarWidth(), 56)
+  assert.equal(workbenchGuiWidthPx(makeState([], 1000), { viewportWidth: 1728 }), 1672)
+
+  // Expand again: attr gone + healthy width restores expanded math.
+  collapsedEl = null
+  liveWidth = 280
+  assert.equal(officialSessionSidebarWidth(), 280)
+  assert.equal(workbenchGuiWidthPx(makeState([], 1000), { viewportWidth: 1728 }), 1448)
+})
+
+test('gui collapse settle never leaves 16px gutter (panel = viewport − 56)', () => {
+  setupWindow()
+  let state = makeState([{ id: 'omnimux-workflow:canvas', type: 'omnimux-workflow:canvas' }], 1448, true)
+  const store = {
+    getSnapshot: () => ({ sessionId: 's-no-gutter', state }),
+    reduce: (fn) => { state = fn(state) },
+  }
+  setWorkbenchFocus(WORKBENCH_FOCUS.gui, store, { viewportWidth: 1728, officialSidebarWidth: 280 })
+  assert.equal(state.width, 1448)
+
+  // Mid-tween collapsed attr with stale expanded live width: fallback 56, not 72.
+  // (Live path uses DOM; here we force env after seeding collapsed memory via DOM probe.)
+  let liveWidth = 56
+  let collapsedEl = { tag: 'frame' }
+  const column = {
+    getBoundingClientRect: () => ({ width: liveWidth }),
+    closest(sel) {
+      if (selIsCollapsedAttr(sel)) return collapsedEl
+      return null
+    },
+    querySelector() { return null },
+  }
+  const doc = {
+    querySelector(sel) {
+      if (selIsCollapsedAttr(sel)) return collapsedEl
+      if (selIsSidebarColumn(sel)) return column
+      return null
+    },
+  }
+  globalThis.document = doc
+  globalThis.window = {
+    document: doc,
+    innerWidth: 1728,
+    localStorage: globalThis.window?.localStorage,
+  }
+  assert.equal(officialSessionSidebarWidth(), 56)
+
+  // Stale store still at expanded gui width — sync must grow to 1672.
+  const synced = syncWorkbenchGuiWidth(store, { viewportWidth: 1728 })
+  assert.equal(synced, true)
+  assert.equal(state.width, 1672)
+
+  // Even if live width briefly reports the old COLLAPSED_MAX (72) band as a
+  // sub-expanded measure, width stays rail-sized; after real 56 is remembered,
+  // a pure expanded-stale frame must not regress to 72.
+  liveWidth = 72
+  assert.equal(officialSessionSidebarWidth(), 72)
+  liveWidth = 280
+  assert.equal(officialSessionSidebarWidth(), 72)
+  // Force sync with no env override — uses lastCollapsed 72 only if that was
+  // last trusted; prefer remembering 56 by re-seeding.
+  liveWidth = 56
+  assert.equal(officialSessionSidebarWidth(), 56)
+  liveWidth = 280
+  assert.equal(officialSessionSidebarWidth(), 56)
+  syncWorkbenchGuiWidth(store, { viewportWidth: 1728 })
+  assert.equal(state.width, 1672)
+  assert.equal(getConversationCollapsed(), true)
+})
+
+test('syncWorkbenchGuiWidth expands gui when left rail collapses', () => {
+  setupWindow()
+  let state = makeState([{ id: 'omnimux-assets:library', type: 'omnimux-assets:library' }], 1448, true)
+  const store = {
+    getSnapshot: () => ({ sessionId: 's-collapse-fill', state }),
+    reduce: (fn) => { state = fn(state) },
+  }
+  // Gui sized while left rail was expanded (280).
+  setWorkbenchFocus(WORKBENCH_FOCUS.gui, store, { viewportWidth: 1728, officialSidebarWidth: 280 })
+  assert.equal(state.width, 1448)
+
+  // Left rail collapses to 56 — panel must grow to fill viewport − collapsed rail.
+  const synced = syncWorkbenchGuiWidth(store, { viewportWidth: 1728, officialSidebarWidth: 56 })
+  assert.equal(synced, true)
+  assert.equal(state.width, 1672)
+  assert.equal(inferWorkbenchFocus(state, { viewportWidth: 1728, officialSidebarWidth: 56 }), WORKBENCH_FOCUS.gui)
+
+  // Expand again — panel shrinks back so it does not cover the session list.
+  const expanded = syncWorkbenchGuiWidth(store, { viewportWidth: 1728, officialSidebarWidth: 280 })
+  assert.equal(expanded, true)
+  assert.equal(state.width, 1448)
+})
+
+test('left-rail collapse sync does not call setConversationCollapsed (#372 gate)', () => {
+  const win = setupWindow()
+  const api = installWorkbenchGlobal(win)
+  let state = makeState([{ id: 'omnimux-assets:library', type: 'omnimux-assets:library' }], 1448, true)
+  const store = {
+    getSnapshot: () => ({ sessionId: 's-no-mid-flip', state }),
+    reduce: (fn) => { state = fn(state) },
+  }
+  api.attachStore(store)
+  // Start split with middle visible — left collapse must NOT hide the middle.
+  setWorkbenchFocus(WORKBENCH_FOCUS.split, store, { viewportWidth: 1728, officialSidebarWidth: 280 })
+  assert.equal(getConversationCollapsed(), false)
+
+  let collapseCalls = 0
+  const real = api.setConversationCollapsed.bind(api)
+  api.setConversationCollapsed = (...args) => {
+    collapseCalls += 1
+    return real(...args)
+  }
+
+  // Oversized panel while split: clamp only.
+  state.width = 1448
+  syncWorkbenchGuiWidth(store, { viewportWidth: 1728, officialSidebarWidth: 56 })
+  assert.equal(collapseCalls, 0, 'left-rail sync must not call setConversationCollapsed')
+  assert.equal(getConversationCollapsed(), false)
+  assert.equal(focusRecordForTab('s-no-mid-flip', 'omnimux-assets:library').mode, WORKBENCH_FOCUS.split)
+
+  // Gui fill path also must not re-enter setConversationCollapsed.
+  setWorkbenchFocus(WORKBENCH_FOCUS.gui, store, { viewportWidth: 1728, officialSidebarWidth: 280 })
+  collapseCalls = 0
+  syncWorkbenchGuiWidth(store, { viewportWidth: 1728, officialSidebarWidth: 56 })
+  assert.equal(collapseCalls, 0, 'gui left-rail fill must not re-call setConversationCollapsed')
+  assert.equal(getConversationCollapsed(), true)
+  assert.equal(state.width, 1672)
+})
+
+test('split + left collapse only clamps; mode stays split; convCollapsed stays false', () => {
+  setupWindow()
+  let state = makeState([{ id: 'omnimux-assets:library', type: 'omnimux-assets:library' }], 1448, true)
+  const store = {
+    getSnapshot: () => ({ sessionId: 's-split-clamp', state }),
+    reduce: (fn) => { state = fn(state) },
+  }
+  setWorkbenchFocus(WORKBENCH_FOCUS.split, store, { viewportWidth: 1728, officialSidebarWidth: 280 })
+  // Stale oversized panel (gui-sized) while still split intent.
+  state.width = 1448
+  assert.equal(getConversationCollapsed(), false)
+
+  const synced = syncWorkbenchGuiWidth(store, { viewportWidth: 1728, officialSidebarWidth: 56 })
+  assert.equal(synced, true)
+  // split max = max(280, 1728 - 56 - 360) = 1312
+  assert.equal(state.width, 1312)
+  assert.equal(focusRecordForTab('s-split-clamp', 'omnimux-assets:library').mode, WORKBENCH_FOCUS.split)
+  assert.equal(getConversationCollapsed(), false)
+})
+
+test('gui + left collapse → width = viewport − collapsedRail', () => {
+  setupWindow()
+  let state = makeState([{ id: 'omnimux-assets:library', type: 'omnimux-assets:library' }], 1448, true)
+  const store = {
+    getSnapshot: () => ({ sessionId: 's-gui-fill', state }),
+    reduce: (fn) => { state = fn(state) },
+  }
+  setWorkbenchFocus(WORKBENCH_FOCUS.gui, store, { viewportWidth: 1728, officialSidebarWidth: 280 })
+  assert.equal(state.width, 1448)
+  const convBefore = getConversationCollapsed()
+  assert.equal(convBefore, true)
+
+  const synced = syncWorkbenchGuiWidth(store, { viewportWidth: 1728, officialSidebarWidth: 56 })
+  assert.equal(synced, true)
+  assert.equal(state.width, 1728 - 56)
+  // Middle intent unchanged (still collapsed); left-rail sync must not re-enter setConversationCollapsed path.
+  assert.equal(getConversationCollapsed(), true)
+  assert.equal(focusRecordForTab('s-gui-fill', 'omnimux-assets:library').mode, WORKBENCH_FOCUS.gui)
+})
+
+test('isOfficialSidebarCollapsed finds frame-subtree attr via column.closest', () => {
+  const frame = { tag: 'frame', hasAttribute: (n) => n === 'data-sidebar-collapsed' }
+  const column = {
+    getBoundingClientRect: () => ({ width: 56 }),
+    closest(sel) {
+      if (selIsCollapsedAttr(sel)) return frame
+      return null
+    },
+    querySelector() { return null },
+  }
+  const doc = {
+    querySelector(sel) {
+      // Bare document query would miss if only column.closest works — simulate that.
+      if (selIsCollapsedAttr(sel) && !sel.includes('frame') && !sel.includes('dshDesktopFrame')) {
+        return null
+      }
+      if (selIsCollapsedAttr(sel)) return frame
+      if (selIsSidebarColumn(sel)) return column
+      return null
+    },
+  }
+  assert.equal(isOfficialSidebarCollapsed(doc), true)
+})
+
+test('findOfficialSidebarColumn hits dshDesktopSidebarSurface fixture', () => {
+  const surface = {
+    className: 'dshDesktopSidebarSurface',
+    getBoundingClientRect: () => ({ width: 280 }),
+    closest() { return null },
+    querySelector() { return null },
+  }
+  const doc = {
+    querySelector(sel) {
+      if (typeof sel === 'string' && sel.includes('dshDesktopSidebarSurface')) return surface
+      if (selIsSidebarColumn(sel) && sel.includes('sidebarCol')) return null
+      return null
+    },
+  }
+  assert.equal(findOfficialSidebarColumn(doc), surface)
+})
+
+test('isOfficialSidebarCollapsed ignores phantom attr not above the sidebar column', () => {
+  const phantom = { tag: 'DIV', className: '', getBoundingClientRect: () => ({ width: 0 }) }
+  const column = {
+    getBoundingClientRect: () => ({ width: 280 }),
+    closest() { return null },
+    querySelector() { return null },
+  }
+  const doc = {
+    querySelector(sel) {
+      // Global bare query would return the phantom (the old bug).
+      if (sel === '[data-sidebar-collapsed]') return phantom
+      if (selIsCollapsedAttr(sel) && sel.includes('frame')) return null
+      if (selIsSidebarColumn(sel)) return column
+      return null
+    },
+  }
+  globalThis.document = doc
+  globalThis.window = { document: doc }
+  assert.equal(isOfficialSidebarCollapsed(doc), false)
+  assert.equal(officialSessionSidebarWidth({}), 280)
+})
+
+test('syncWorkbenchGuiWidth resizes gui panel after left rail width changes', () => {
+  setupWindow()
+  let state = makeState([{ id: 'omnimux-assets:library', type: 'omnimux-assets:library' }], 1672, true)
+  const store = {
+    getSnapshot: () => ({ sessionId: 's-sync-gui', state }),
+    reduce: (fn) => { state = fn(state) },
+  }
+  // Stale gui width as if measured while the left rail was collapsed (56px).
+  setWorkbenchFocus(WORKBENCH_FOCUS.gui, store, { viewportWidth: 1728, officialSidebarWidth: 56 })
+  assert.equal(state.width, 1672)
+
+  // Left rail expands to 280 — sync must shrink the panel so it no longer covers the session list.
+  const synced = syncWorkbenchGuiWidth(store, { viewportWidth: 1728, officialSidebarWidth: 280 })
+  assert.equal(synced, true)
+  assert.equal(state.width, 1448)
+  assert.equal(inferWorkbenchFocus(state, { viewportWidth: 1728, officialSidebarWidth: 280 }), WORKBENCH_FOCUS.gui)
+})
+
+test('getFocus keeps gui intent when stale collapsed-rail width looks like split (#356)', () => {
+  setupWindow()
+  let state = makeState([{ id: 'omnimux-assets:library', type: 'omnimux-assets:library' }], 780, true)
+  const store = {
+    getSnapshot: () => ({ sessionId: 's-gui-stale', state }),
+    reduce: (fn) => { state = fn(state) },
+  }
+  const api = installWorkbenchGlobal()
+  api.attachStore(store)
+  setWorkbenchFocus(WORKBENCH_FOCUS.gui, store, { viewportWidth: 1728, officialSidebarWidth: 280 })
+  assert.equal(state.width, 1448)
+  // Simulate the live bug: width still sized for the collapsed 56px rail.
+  state.width = 1672
+
+  // Geometry alone says split once the left rail is 280 (1672 ≉ 1448).
+  assert.equal(
+    inferWorkbenchFocus(state, { viewportWidth: 1728, officialSidebarWidth: 280 }),
+    WORKBENCH_FOCUS.split,
+  )
+  // getFocus must not clobber stored gui — otherwise sync no-ops and the panel covers the rail.
+  assert.equal(
+    getWorkbenchFocus({ viewportWidth: 1728, officialSidebarWidth: 280 }),
+    WORKBENCH_FOCUS.gui,
+  )
+  const synced = syncWorkbenchGuiWidth(store, { viewportWidth: 1728, officialSidebarWidth: 280 })
+  assert.equal(synced, true)
+  assert.equal(state.width, 1448)
+})
+
+test('syncWorkbenchGuiWidth clamps oversized width even after mode was clobbered to split', () => {
+  setupWindow()
+  let state = makeState([{ id: 'omnimux-assets:library', type: 'omnimux-assets:library' }], 1672, true)
+  const store = {
+    getSnapshot: () => ({ sessionId: 's-clamp-split', state }),
+    reduce: (fn) => { state = fn(state) },
+  }
+  const record = focusRecordForTab('s-clamp-split', 'omnimux-assets:library')
+  record.mode = WORKBENCH_FOCUS.split
+
+  const synced = syncWorkbenchGuiWidth(store, { viewportWidth: 1728, officialSidebarWidth: 280 })
+  assert.equal(synced, true)
+  // Split clamp keeps the middle conversation column >= 360:
+  //   max(280, 1728 - 280 - 360) = 1088
+  assert.equal(state.width, 1088)
+})
+
+test('syncWorkbenchGuiWidth clamps split width so the conversation column keeps its min (360px)', () => {
+  setupWindow()
+  let state = makeState([{ id: 'omnimux-workflow:canvas', type: 'omnimux-workflow:canvas' }], 900, true)
+  const store = {
+    getSnapshot: () => ({ sessionId: 's-colsplit', state }),
+    reduce: (fn) => { state = fn(state) },
+  }
+  const record = focusRecordForTab('s-colsplit', 'omnimux-workflow:canvas')
+  record.mode = WORKBENCH_FOCUS.split
+
+  // Viewport 1200, left rail 280 -> split max = 1200 - 280 - 360 = 560.
+  const synced = syncWorkbenchGuiWidth(store, { viewportWidth: 1200, officialSidebarWidth: 280 })
+  assert.equal(synced, true)
+  assert.ok(state.width <= 560, `expected <=560, got ${state.width}`)
+  assert.equal(state.width, 560)
+})
+
+test('syncWorkbenchGuiWidth suspends clamping while user is actively dragging', () => {
+  setupWindow()
+  let state = makeState([{ id: 'omnimux-workflow:canvas', type: 'omnimux-workflow:canvas' }], 900, true)
+  const store = {
+    getSnapshot: () => ({ sessionId: 's-drag-suspend', state }),
+    reduce: (fn) => { state = fn(state) },
+  }
+  const record = focusRecordForTab('s-drag-suspend', 'omnimux-workflow:canvas')
+  record.mode = WORKBENCH_FOCUS.split
+
+  // Simulate active drag on body
+  globalThis.document.body.setAttribute('data-dsh-sidebar-dragging', '')
+  const synced = syncWorkbenchGuiWidth(store, { viewportWidth: 1200, officialSidebarWidth: 280 })
+  assert.equal(synced, false, 'must suspend clamping during drag')
+  assert.equal(state.width, 900, 'state width must not be mutated during drag')
+  globalThis.document.body.removeAttribute('data-dsh-sidebar-dragging')
+})
+
+test('syncWorkbenchGuiWidth never clamps gui / collapsed middle column', () => {
+  setupWindow()
+  let state = makeState([{ id: 'omnimux-assets:library', type: 'omnimux-assets:library' }], 900, true)
+  const store = {
+    getSnapshot: () => ({ sessionId: 's-guiglamp', state }),
+    reduce: (fn) => { state = fn(state) },
+  }
+  // Intentional gui: panel keeps viewport - rail, no conversation-column clamp.
+  setWorkbenchFocus(WORKBENCH_FOCUS.gui, store, { viewportWidth: 1200, officialSidebarWidth: 280 })
+  assert.equal(state.width, 920)
+  state.width = 900
+  const syncedGui = syncWorkbenchGuiWidth(store, { viewportWidth: 1200, officialSidebarWidth: 280 })
+  assert.equal(syncedGui, true)
+  assert.equal(state.width, 920, 'gui must not be clamped to split max')
+
+  // Collapsed middle column: also allowed to be squeezed (column is 0 anyway).
+  state.width = 900
+  setConversationCollapsed(true, { persist: false })
+  const record = focusRecordForTab('s-guiglamp', 'omnimux-assets:library')
+  record.mode = WORKBENCH_FOCUS.split
+  const syncedCollapsed = syncWorkbenchGuiWidth(store, { viewportWidth: 1200, officialSidebarWidth: 280 })
+  assert.equal(syncedCollapsed, true)
+  assert.equal(state.width, 920, 'collapsed middle must not be clamped to split max')
+})
+
+test('inferWorkbenchFocus maps collapsed / full / split geometry', () => {
+  const env = { viewportWidth: 1200, officialSidebarWidth: 0 }
+  assert.equal(inferWorkbenchFocus(makeState([], 780, false), env), WORKBENCH_FOCUS.chat)
+  assert.equal(inferWorkbenchFocus(makeState([], 1200, true), env), WORKBENCH_FOCUS.gui)
+  assert.equal(inferWorkbenchFocus(makeState([], 1180, true), env), WORKBENCH_FOCUS.gui)
+  assert.equal(inferWorkbenchFocus(makeState([], 780, true), env), WORKBENCH_FOCUS.split)
+})
+
+test('setWorkbenchFocus chat/gui/split writes panel geometry and restores split width', () => {
+  setupWindow()
+  const env = { viewportWidth: 1200, officialSidebarWidth: 0 }
+  let state = makeState([{ id: 'omnimux-assets:library', type: 'omnimux-assets:library' }], 820, true)
+  const store = {
+    getSnapshot: () => ({ sessionId: 's1', state }),
+    reduce: (fn) => { state = fn(state) },
+  }
+
+  setWorkbenchFocus(WORKBENCH_FOCUS.chat, store, env)
+  assert.equal(state.panelOpen, false)
+
+  setWorkbenchFocus(WORKBENCH_FOCUS.split, store, env)
+  assert.equal(state.panelOpen, true)
+  assert.equal(state.width, 840, '比例制下 split 默认面板宽 = 可见舞台 1200 − 中栏 360')
+
+  state.width = 650
+  setWorkbenchFocus(WORKBENCH_FOCUS.gui, store, env)
+  assert.equal(state.panelOpen, true)
+  assert.equal(state.width, 1200)
+
+  setWorkbenchFocus(WORKBENCH_FOCUS.split, store, env)
+  assert.equal(state.panelOpen, true)
+  assert.equal(state.width, 650)
+})
+
+test('setWorkbenchFocus chat forces middle conversation open (right-closed session view)', () => {
+  setupWindow()
+  const env = { viewportWidth: 1200, officialSidebarWidth: 0 }
+  let state = makeState([{ id: 'omnimux-assets:library', type: 'omnimux-assets:library' }], 780, true)
+  const store = {
+    getSnapshot: () => ({ sessionId: 's-chat-mid', state }),
+    reduce: (fn) => { state = fn(state) },
+  }
+
+  // Hide mid via gui, then close the right panel — mid must come back.
+  setWorkbenchFocus(WORKBENCH_FOCUS.gui, store, env)
+  assert.equal(getConversationCollapsed(), true)
+  setWorkbenchFocus(WORKBENCH_FOCUS.chat, store, env)
+  assert.equal(state.panelOpen, false)
+  assert.equal(getConversationCollapsed(), false, 'closing right panel must show the session column')
+})
+
+test('attachStore reapplies gui focus so default width cannot stomp it', () => {
+  setupWindow()
+  let state = makeState([{ id: 'omnimux-assets:library', type: 'omnimux-assets:library' }], 500, true)
+  const store = {
+    getSnapshot: () => ({ sessionId: 's-gui', state }),
+    reduce: (fn) => { state = fn(state) },
+  }
+  const api = installWorkbenchGlobal()
+  api.setFocus(WORKBENCH_FOCUS.gui, store, { viewportWidth: 1200, officialSidebarWidth: 0 })
+  assert.equal(state.width, 1200)
+
+  state.width = 500
+  api.attachStore(store)
+  assert.equal(state.width, 1200)
+})
+
+test('applyDefaultWidth skips while focus is gui', () => {
+  setupWindow()
+  let state = makeState([{ id: 'omnimux-assets:library', type: 'omnimux-assets:library' }], 500, true)
+  const store = {
+    getSnapshot: () => ({ sessionId: 's-gui-2', state }),
+    reduce: (fn) => { state = fn(state) },
+  }
+  const api = installWorkbenchGlobal()
+  api.setFocus(WORKBENCH_FOCUS.gui, store, { viewportWidth: 1200, officialSidebarWidth: 0 })
+
+  const applied = applyDefaultWidth(null, 's-gui-2', store, { viewportWidth: 1200 })
+  assert.equal(applied, null)
+})
+
+test('createWorkbenchSidebarStore.open never claims product stage', () => {
+  const win = setupWindow()
+  let claimed = 0
+  win.__omnimuxStage = { claim() { claimed += 1 } }
+  let openedTab = null
+  win.__omnimuxWorkbench = {
+    open(opts) { openedTab = opts },
+    isOpen() { return false },
+    isActive() { return false },
+    subscribe() { return () => {} },
+  }
+  const adapter = createWorkbenchSidebarStore({
+    tabId: 'omnimux-assets:library',
+    title: '资产库',
+  })
+  adapter.open()
+  assert.deepEqual(openedTab, { tabId: 'omnimux-assets:library', title: '资产库' })
+  openedTab = null
+  adapter.set(true)
+  assert.deepEqual(openedTab, { tabId: 'omnimux-assets:library', title: '资产库' })
+  assert.equal(claimed, 0)
+})
+
+test('createWorkbenchSidebarStore.close uses closeTab not closePanel', () => {
+  const win = setupWindow()
+  const closed = []
+  win.__omnimuxWorkbench = {
+    closeTab(id) { closed.push(['tab', id]) },
+    closePanel() { closed.push(['panel']) },
+    isActive() { return false },
+    subscribe() { return () => {} },
+  }
+  const adapter = createWorkbenchSidebarStore({ tabId: 'omnimux-clip:studio' })
+  adapter.close()
+  assert.deepEqual(closed, [['tab', 'omnimux-clip:studio']])
+})
+
+test('isActive is the rail arbitration verdict; isOpen keeps coexistence; a closed panel clears active', () => {
+  const win = setupWindow()
+  const api = installWorkbenchGlobal(win)
+  const assets = 'omnimux-assets:library'
+  const clip = 'omnimux-clip:studio'
+  const state = makeState([
+    { id: assets, type: assets },
+    { id: clip, type: clip },
+  ], 780, true)
+  // 官方右栏聚焦页签是唯一激活真源：旧 better-sidebar 快照的 splits.active 不再参与判定。
+  let native = { expanded: true, kind: assets }
+  api.bind({
+    betterSidebar: {
+      getSnapshot() { return { sessionId: 's-active', state } },
+      subscribeState() { return () => {} },
+    },
+    sidebarRight: {
+      isExpanded: () => native.expanded,
+      active: () => (native.kind ? { id: `tab:${native.kind}`, kind: native.kind } : null),
+    },
+  })
+
+  assert.equal(isWorkbenchOpen(assets), true)
+  assert.equal(isWorkbenchOpen(clip), true)
+  assert.equal(isWorkbenchActive(assets), true)
+  assert.equal(isWorkbenchActive(clip), false)
+  assert.equal(api.isActive(assets), true)
+  assert.equal(api.isActive(clip), false)
+  assert.deepEqual(api.getRailVerdict(), { winner: 'row', tabId: assets, reason: 'focused-tab' })
+
+  native = { expanded: true, kind: clip }
+  api.syncActivation()
+  assert.equal(api.isActive(assets), false)
+  assert.equal(api.isActive(clip), true)
+  // Tab 仍在快照里：存在语义与激活语义解耦，绝不回退成双高亮。
+  assert.equal(isWorkbenchOpen(assets), true)
+
+  const assetsStore = createWorkbenchSidebarStore({ tabId: assets })
+  const clipStore = createWorkbenchSidebarStore({ tabId: clip })
+  assert.equal(assetsStore.getSnapshot(), false)
+  assert.equal(clipStore.getSnapshot(), true)
+
+  native = { expanded: false, kind: clip }
+  api.syncActivation()
+  assert.equal(api.isActive(assets), false)
+  assert.equal(api.isActive(clip), false)
+  assert.equal(assetsStore.getSnapshot(), false)
+  assert.equal(clipStore.getSnapshot(), false)
+  assert.equal(api.getRailVerdict().winner, 'none')
+})
+
+test('a focused tab without a left rail row never lights any plugin row', () => {
+  const win = setupWindow()
+  const api = installWorkbenchGlobal(win)
+  api.bind({
+    sidebarRight: { isExpanded: () => true, active: () => ({ id: 'tab:5', kind: 'tab:5' }) },
+  })
+  assert.equal(api.isActive('omnimux-assets:library'), false)
+  assert.deepEqual(api.getRailVerdict(), { winner: 'none', reason: 'tab-has-no-rail-row' })
+})
+
+test('resolveWorkbenchTabTitle prefers opts, then getTab, then human fallback (#345)', () => {
+  assert.equal(resolveWorkbenchTabTitle('omnimux-assets:library', '自定义', () => ({ title: '资产库' })), '自定义')
+  assert.equal(
+    resolveWorkbenchTabTitle('omnimux-assets:library', '', () => ({ title: () => '资产库' })),
+    '资产库',
+  )
+  assert.equal(
+    resolveWorkbenchTabTitle('omnimux-accounts:library', '', () => ({ title: 'omnimux-accounts:library' })),
+    WORKBENCH_TAB_TITLE_FALLBACKS['omnimux-accounts:library'],
+  )
+  // 产品库已并入资产库：旧 Tab 类型不再是 occupant，也不再有人类可读兜底标题。
+  assert.equal(WORKBENCH_TAB_TITLE_FALLBACKS['omnimux-products:library'], undefined)
+  assert.equal(WORKBENCH_TAB_TITLE_FALLBACKS_EN['omnimux-products:library'], undefined)
+  assert.equal(
+    resolveWorkbenchTabTitle('omnimux-assets:library', undefined, undefined),
+    '资产库',
+  )
+  assert.equal(
+    resolveWorkbenchTabTitle('omnimux-market:plaza', undefined, undefined),
+    '技能/专家',
+  )
+  assert.notEqual(
+    resolveWorkbenchTabTitle('omnimux-publish:library', '', () => null),
+    'omnimux-publish:library',
+  )
+  assert.equal(WORKBENCH_TAB_TITLE_FALLBACKS_EN['omnimux-market:plaza'], 'Skills & Experts')
+  assert.equal(WORKBENCH_TAB_TITLE_FALLBACKS_EN['omnimux-workflow:canvas'], 'Creative Canvas')
+  assert.equal(WORKBENCH_TAB_TITLE_FALLBACKS_EN['omnimux-workflow:library'], 'Projects')
+})
+
+test('openWorkbench uses human title fallback when getTab has no title (#345)', async () => {
+  const win = setupWindow()
+  const api = installWorkbenchGlobal(win)
+  const opened = []
+  const state = makeState([])
+  api.bind({
+    betterSidebar: {
+      openTab(seed, scope) { opened.push({ seed, scope }) },
+      getTab() { return { id: 'omnimux-assets:library' } },
+      getSnapshot() { return { sessionId: 's-title', state } },
+    },
+    sessions: {
+      list: { getSnapshot: () => ({ current: 's-title' }) },
+    },
+  })
+  const ok = await api.open({ tabId: 'omnimux-assets:library', timeoutMs: 0 })
+  assert.equal(ok, true)
+  assert.equal(opened.length, 1)
+  assert.equal(opened[0].seed.title, '资产库')
+  assert.notEqual(opened[0].seed.title, 'omnimux-assets:library')
+})
+
+test('clampSplitPanelWidth keeps a visible conversation at 360px including Files', () => {
+  setupWindow()
+  assert.equal(WORKBENCH_CONVERSATION_MIN_PX, 360)
+  const env = { viewportWidth: 1200, officialSidebarWidth: 280 }
+  const files = makeState([{ id: 'editor:readme', type: 'editor', title: 'Files' }], 900, true)
+  const record = focusRecordForTab('s-files-min', 'editor:readme')
+  record.mode = WORKBENCH_FOCUS.split
+  assert.equal(clampSplitPanelWidth(900, files, { ...env, sessionId: 's-files-min' }), 560)
+  assert.equal(workbenchSplitMaxPanelPx(files, env), 560)
+
+  const gui = makeState([{ id: 'omnimux-assets:library', type: 'omnimux-assets:library' }], 900, true)
+  setConversationCollapsed(true, { persist: false })
+  const guiRecord = focusRecordForTab('s-gui-min', 'omnimux-assets:library')
+  guiRecord.mode = WORKBENCH_FOCUS.gui
+  assert.equal(clampSplitPanelWidth(920, gui, { ...env, sessionId: 's-gui-min' }), 920)
+})
+
+test('syncSplitMaxCssVar writes the live split ceiling', () => {
+  const win = setupWindow()
+  const state = makeState([{ id: 'editor:home', type: 'editor', title: 'Files' }], 900, true)
+  const record = focusRecordForTab('s-live-drag', 'editor:home')
+  record.mode = WORKBENCH_FOCUS.split
+  const env = { viewportWidth: 1200, officialSidebarWidth: 280, sessionId: 's-live-drag' }
+  assert.equal(syncSplitMaxCssVar(state, env), true)
+  assert.equal(win.document.documentElement.style.getPropertyValue('--omnimux-split-max'), '560px')
+  const style = win.document.getElementById('omnimux-split-conversation-min-chrome')
+  assert.ok(style)
+  assert.match(style.textContent, /--omnimux-split-max/)
+  const unsub = installSplitConversationMin(win.document)
+  assert.equal(typeof unsub, 'function')
+})
+
+test('illegal split widths are not persisted', () => {
+  const win = setupWindow()
+  win.innerWidth = 1200
+  const column = { getBoundingClientRect: () => ({ width: 280 }) }
+  win.document.querySelector = (sel) => (String(sel).includes('sidebarCol') || String(sel).includes('data-pane="sidebar"') ? column : null)
+  let state = makeState([{ id: 'omnimux-workflow:canvas', type: 'omnimux-workflow:canvas' }], 900, true)
+  let listener = null
+  const api = installWorkbenchGlobal(win)
+  api.bind({
+    betterSidebar: {
+      getSnapshot: () => ({ sessionId: 's-persist-min', state }),
+      subscribeState(fn) { listener = fn; return () => {} },
+    },
+    sessions: {
+      list: { getSnapshot: () => ({ current: 's-persist-min' }) },
+    },
+  })
+  const record = focusRecordForTab('s-persist-min', 'omnimux-workflow:canvas')
+  record.mode = WORKBENCH_FOCUS.split
+  listener(state)
+  assert.equal(record.splitWidth, 560)
+  const raw = win.localStorage.getItem('omnimux-workbench-focus:v1:s-persist-min')
+  assert.match(String(raw), /"splitWidth":560/)
+})
+
+/**
+ * #505 live-evidence shape: viewport 1728, left rail 280, real better-sidebar
+ * right panel dragged to inline width 1298 (split max = 1728 − 280 − 360 = 1088).
+ * The panel has NO [data-dsh-panel-host] and NO [data-dragging] after release;
+ * an unrelated AppFrame node carries [data-dragging] as a decoy.
+ */
+function makeIssue505Dom({ viewport = 1728, railWidth = 280, panelWidth = 1298, withHandle = true } = {}) {
+  const win = setupWindow()
+  win.innerWidth = viewport
+  const doc = win.document
+  const column = { getBoundingClientRect: () => ({ width: railWidth }) }
+  const mkAttrSet = () => {
+    const set = new Set()
+    return {
+      hasAttribute: (a) => set.has(a),
+      setAttribute: (a) => { set.add(a) },
+      removeAttribute: (a) => { set.delete(a) },
+    }
+  }
+  const panelAttrs = mkAttrSet()
+  const panel = {
+    className: 'nArs4W_panel',
+    style: { width: `${panelWidth}px` },
+    hasAttribute: panelAttrs.hasAttribute,
+    setAttribute: panelAttrs.setAttribute,
+    removeAttribute: panelAttrs.removeAttribute,
+    getBoundingClientRect: () => ({ x: viewport - panelWidth, right: viewport, width: panelWidth }),
+  }
+  const handle = { className: 'nArs4W_panelResize nArs4W_panelResizeActive', parentElement: panel }
+  const decoyAttrs = mkAttrSet()
+  decoyAttrs.setAttribute('data-dragging')
+  const decoy = {
+    className: 'appFrame_dragTarget',
+    style: { width: '' },
+    hasAttribute: decoyAttrs.hasAttribute,
+    setAttribute: decoyAttrs.setAttribute,
+    removeAttribute: decoyAttrs.removeAttribute,
+    getBoundingClientRect: () => ({ x: 0, right: railWidth, width: railWidth }),
+  }
+  doc.querySelector = (sel) => {
+    const s = String(sel)
+    if (s.includes('panelResize')) return withHandle ? handle : null
+    if (s.includes('data-dsh-panel-host')) return null
+    if (s === '[data-dragging]') return decoy
+    if (s.includes(WORKBENCH_PANEL_ATTR)) {
+      return panelAttrs.hasAttribute(WORKBENCH_PANEL_ATTR) ? panel : null
+    }
+    if (selIsSidebarColumn(s)) return column
+    return null
+  }
+  const captured = {}
+  doc.addEventListener = (type, fn) => { (captured[type] ||= []).push(fn) }
+  return { win, doc, panel, handle, decoy, captured }
+}
+
+function bindIssue505Service(win, state, sessionId = 's-505') {
+  const api = installWorkbenchGlobal(win)
+  api.bind({
+    betterSidebar: {
+      getSnapshot: () => ({ sessionId, state }),
+    },
+  })
+  return api
+}
+
+test('#505 regression: post-release oversized Files panel is clamped on the real panel node', () => {
+  const { win, doc, panel, decoy, captured } = makeIssue505Dom({})
+  // better-sidebar's committed drag state: inline width + layout var overshoot.
+  doc.documentElement.style.setProperty('--dsh-sidebar-width', '1298px')
+  const state = makeState([{ id: 'editor:readme', type: 'editor', title: 'Files' }], 1298, true)
+  bindIssue505Service(win, state)
+  const record = focusRecordForTab('s-505', 'editor:readme')
+  record.mode = WORKBENCH_FOCUS.split
+
+  installSplitConversationMin(doc)
+  assert.equal(captured.pointerup?.length, 1)
+  captured.pointerup[0]()
+
+  // The resolver must find the real right panel via its resize-handle parent,
+  // never the AppFrame [data-dragging] decoy.
+  assert.equal(findWorkbenchPanelElement(doc), panel)
+  assert.ok(panel.hasAttribute(WORKBENCH_PANEL_ATTR))
+  // Old code queried [data-dragging]/[data-dsh-panel-host]: after release the
+  // panel has neither, so the 1298px inline width survived and covered the
+  // conversation column down to ~150px. The clamp must land on the panel.
+  assert.equal(panel.style.width, '1088px')
+  assert.equal(doc.documentElement.style.getPropertyValue('--dsh-sidebar-width'), '1088px')
+  assert.equal(doc.documentElement.style.getPropertyValue('--omnimux-split-max'), '1088px')
+  // The decoy is never touched.
+  assert.equal(decoy.style.width, '')
+})
+
+test('#505 regression: mid-drag samples do not fight inline drag writes, release clamps', () => {
+  const { win, doc, panel, captured } = makeIssue505Dom({ panelWidth: 1400 })
+  const state = makeState([{ id: 'editor:readme', type: 'editor', title: 'Files' }], 1400, true)
+  bindIssue505Service(win, state)
+  const record = focusRecordForTab('s-505', 'editor:readme')
+  record.mode = WORKBENCH_FOCUS.split
+  installSplitConversationMin(doc)
+
+  // Mid-drag: better-sidebar sets body[data-dsh-sidebar-dragging] + panel
+  // [data-dragging] and rewrites the inline width every frame.
+  doc.body.setAttribute('data-dsh-sidebar-dragging')
+  panel.setAttribute('data-dragging')
+  panel.style.width = '1400px'
+  captured.pointermove[0]()
+  // No jitter: the inline drag write is NOT rewritten mid-drag; the persistent
+  // marker + --omnimux-split-max clamp the visuals through CSS instead.
+  assert.equal(panel.style.width, '1400px')
+  assert.ok(panel.hasAttribute(WORKBENCH_PANEL_ATTR))
+  assert.equal(doc.documentElement.style.getPropertyValue('--omnimux-split-max'), '1088px')
+
+  // Release: React commits width 1298 (clamped only to the viewport) and both
+  // dragging markers disappear; the panel must now be clamped in the DOM.
+  doc.body.removeAttribute('data-dsh-sidebar-dragging')
+  panel.removeAttribute('data-dragging')
+  panel.style.width = '1298px'
+  doc.documentElement.style.setProperty('--dsh-sidebar-width', '1298px')
+  captured.pointerup[0]()
+  assert.equal(panel.style.width, '1088px')
+  assert.equal(doc.documentElement.style.getPropertyValue('--dsh-sidebar-width'), '1088px')
+})
+
+test('#505 regression: panel resolution never mistakes an AppFrame [data-dragging] node', () => {
+  const { win, doc, decoy, captured } = makeIssue505Dom({ withHandle: false })
+  doc.documentElement.style.setProperty('--dsh-sidebar-width', '1298px')
+  const state = makeState([{ id: 'editor:readme', type: 'editor', title: 'Files' }], 1298, true)
+  bindIssue505Service(win, state)
+  installSplitConversationMin(doc)
+  // No resize handle, no host: the only [data-dragging] node is the decoy,
+  // which is not right-anchored to the viewport — it must be rejected.
+  assert.equal(findWorkbenchPanelElement(doc), null)
+  captured.pointerup[0]()
+  assert.equal(decoy.style.width, '')
+  // The layout var still clamps so #root keeps the 360px conversation floor.
+  assert.equal(doc.documentElement.style.getPropertyValue('--dsh-sidebar-width'), '1088px')
+})
+
+test('#505 split-min CSS clamps the tagged real panel, not only mid-drag nodes', () => {
+  assert.match(WORKBENCH_SPLIT_MIN_CSS, /\[data-omnimux-workbench-panel\]/)
+  assert.doesNotMatch(WORKBENCH_SPLIT_MIN_CSS, /\[data-dsh-panel-host\]/)
+  assert.doesNotMatch(WORKBENCH_SPLIT_MIN_CSS, /\[data-dragging\]/)
+  // better-sidebar reserves the panel inside AppFrame. A root margin would
+  // subtract it twice and make the measured conversation narrower than its area.
+  assert.doesNotMatch(WORKBENCH_SPLIT_MIN_CSS, /#root|margin-right/)
+})
+
+test('#610 regression: panel host is never treated as the workbench panel', () => {
+  const win = setupWindow()
+  const hostAttrs = new Set()
+  const host = {
+    style: { width: '' },
+    hasAttribute: (name) => hostAttrs.has(name),
+    setAttribute: (name) => { hostAttrs.add(name) },
+    removeAttribute: (name) => { hostAttrs.delete(name) },
+    getBoundingClientRect: () => ({ x: 0, right: win.innerWidth, width: win.innerWidth }),
+  }
+  win.document.querySelector = (selector) => (
+    String(selector).includes('data-dsh-panel-host') ? host : null
+  )
+
+  installSplitConversationMin(win.document)
+
+  assert.equal(findWorkbenchPanelElement(win.document), null)
+  assert.equal(host.hasAttribute(WORKBENCH_PANEL_ATTR), false)
+  assert.equal(host.style.width, '')
+})
+
+test('#610 regression: a panel inside the viewport host receives the split marker', () => {
+  workbenchDom = new JSDOM(`<!doctype html><html><head></head><body>
+    <div data-pane="sidebar"></div>
+    <div data-dsh-panel-host style="position:fixed;inset:0;width:1200px">
+      <aside class="_panel_8x" style="position:absolute;right:0;width:900px">
+        <div class="_panelResize_8x"></div>
+      </aside>
+      <aside class="_bottomPanel_8x"><div class="_bottomResize_8x"></div></aside>
+    </div>
+    <div data-dragging class="appFrame_dragTarget"></div>
+  </body></html>`)
+  const { window: win } = workbenchDom
+  Object.defineProperty(win, 'innerWidth', { configurable: true, value: 1200 })
+  globalThis.window = win
+  globalThis.document = win.document
+  const host = win.document.querySelector('[data-dsh-panel-host]')
+  const rail = win.document.querySelector('[data-pane="sidebar"]')
+  const panel = win.document.querySelector('._panel_8x')
+  const bottom = win.document.querySelector('._bottomPanel_8x')
+  const dragging = win.document.querySelector('[data-dragging]')
+  panel.getBoundingClientRect = () => ({ x: 300, right: 1200, width: 900 })
+  rail.getBoundingClientRect = () => ({ x: 0, right: 280, width: 280 })
+  dragging.getBoundingClientRect = () => ({ x: 0, right: 280, width: 280 })
+  const state = makeState([{ id: 'editor:readme', type: 'editor', title: 'Files' }], 900, true)
+  win.document.documentElement.style.setProperty('--dsh-sidebar-width', '900px')
+  const api = installWorkbenchGlobal(win)
+  api.bind({
+    betterSidebar: { getSnapshot: () => ({ sessionId: 's-610', state }) },
+  })
+  focusRecordForTab('s-610', 'editor:readme').mode = WORKBENCH_FOCUS.split
+
+  installSplitConversationMin(win.document)
+  win.document.dispatchEvent(new win.Event('pointermove'))
+
+  assert.equal(findWorkbenchPanelElement(win.document), panel)
+  assert.equal(panel.hasAttribute(WORKBENCH_PANEL_ATTR), true)
+  assert.equal(host.hasAttribute(WORKBENCH_PANEL_ATTR), false)
+  assert.equal(bottom.hasAttribute(WORKBENCH_PANEL_ATTR), false)
+  assert.equal(dragging.hasAttribute(WORKBENCH_PANEL_ATTR), false)
+  assert.equal(host.style.width, '1200px')
+  assert.equal(panel.style.width, '560px')
+  assert.equal(win.document.documentElement.style.getPropertyValue('--dsh-sidebar-width'), '560px')
+})
+
+test('#610 viewport resize updates split limits and preserves focus and drag intent', () => {
+  workbenchDom = new JSDOM('<!doctype html><html><head></head><body><div data-pane="sidebar"></div></body></html>')
+  const { window: win } = workbenchDom
+  globalThis.window = win
+  globalThis.document = win.document
+  win.innerWidth = 1200
+  win.document.querySelector('[data-pane="sidebar"]').getBoundingClientRect = () => ({ width: 280 })
+  let state = makeState([{ id: 'editor:readme', type: 'editor', title: 'Files' }], 560)
+  const store = {
+    getSnapshot: () => ({ sessionId: 's-610-resize', state }),
+    reduce(fn) { state = fn(state) },
+  }
+  const api = installWorkbenchGlobal(win)
+  api.bind({ betterSidebar: store })
+  api.attachStore(store)
+  const record = focusRecordForTab('s-610-resize', 'editor:readme')
+  record.mode = WORKBENCH_FOCUS.split
+  store.reduce(current => ({ ...current, width: 560 }))
+  const uninstall = installSplitConversationMin(win.document)
+  assert.equal(installSplitConversationMin(win.document), uninstall)
+
+  win.innerWidth = 980
+  win.dispatchEvent(new win.Event('resize'))
+  assert.equal(state.width, 340)
+  assert.equal(win.document.documentElement.style.getPropertyValue('--omnimux-split-max'), '340px')
+  assert.equal(record.mode, WORKBENCH_FOCUS.split)
+  assert.equal(getConversationCollapsed(), false)
+
+  win.innerWidth = 1280
+  win.dispatchEvent(new win.Event('resize'))
+  assert.equal(state.width, 340, 'expanding the viewport must not expand a chosen split width')
+  assert.equal(win.document.documentElement.style.getPropertyValue('--omnimux-split-max'), '640px')
+  store.reduce(current => ({ ...current, width: 640 }))
+  win.document.body.setAttribute('data-dsh-sidebar-dragging', '')
+  win.innerWidth = 980
+  win.dispatchEvent(new win.Event('resize'))
+  assert.equal(state.width, 640, 'resize must not fight active drag writes')
+  assert.equal(win.document.documentElement.style.getPropertyValue('--omnimux-split-max'), '340px')
+  win.document.body.removeAttribute('data-dsh-sidebar-dragging')
+  win.document.dispatchEvent(new win.Event('pointerup'))
+  assert.equal(state.width, 340)
+
+  setWorkbenchFocus(WORKBENCH_FOCUS.gui, store)
+  win.innerWidth = 1200
+  win.dispatchEvent(new win.Event('resize'))
+  assert.equal(state.width, 920)
+  assert.equal(focusRecordForTab('s-610-resize', 'editor:readme').mode, WORKBENCH_FOCUS.gui)
+  assert.equal(getConversationCollapsed(), true)
+  assert.equal(win.document.documentElement.style.getPropertyValue('--omnimux-split-max'), '')
+  setWorkbenchFocus(WORKBENCH_FOCUS.chat, store)
+  win.innerWidth = 980
+  win.dispatchEvent(new win.Event('resize'))
+  assert.equal(state.panelOpen, false)
+  assert.equal(getWorkbenchFocus(), WORKBENCH_FOCUS.chat)
+
+  setWorkbenchFocus(WORKBENCH_FOCUS.split, store)
+  uninstall()
+  const width = state.width
+  const ceiling = win.document.documentElement.style.getPropertyValue('--omnimux-split-max')
+  win.innerWidth = 800
+  win.dispatchEvent(new win.Event('resize'))
+  assert.equal(state.width, width)
+  assert.equal(win.document.documentElement.style.getPropertyValue('--omnimux-split-max'), ceiling)
+})

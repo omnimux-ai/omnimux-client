@@ -1,0 +1,59 @@
+{
+  "PreToolUse": [
+    {
+      "matcher": "edit|write|bash|glob|grep",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node scripts/guard-worktree.mjs",
+          "statusMessage": "🛡️ 检查工作区隔离规范与破坏性操作安全守卫",
+          "timeout": 5
+        }
+      ]
+    },
+    {
+      "matcher": "edit|write",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node scripts/guard-ui-design.mjs",
+          "statusMessage": "🎨 检查 UI 设计规范硬门禁（原生控件/内联样式/裸色/字阶）",
+          "timeout": 5
+        }
+      ]
+    },
+    {
+      "matcher": "edit|write",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node scripts/verify-product-baseline.mjs --hook",
+          "statusMessage": "🧭 检查产品基线硬门禁（产品路径不得依赖开发机私有状态）",
+          "timeout": 5
+        }
+      ]
+    },
+    {
+      "matcher": "edit|write|bash",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node scripts/guard-quality-loop.mjs",
+          "statusMessage": "🚦 检查质量五步闭环硬门禁（任务级规格/验证证据/端到端完整性）",
+          "timeout": 8
+        }
+      ]
+    },
+    {
+      "matcher": "edit|write",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node scripts/guard-anti-cheat.mjs",
+          "statusMessage": "🛡️ 检查 AI Agent 防造假与防静默兜底硬门禁",
+          "timeout": 5
+        }
+      ]
+    }
+  ]
+}
