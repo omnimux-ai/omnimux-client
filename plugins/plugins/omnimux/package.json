@@ -1,6 +1,6 @@
 {
   "name": "omnimux",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "type": "module",
   "main": "src/index.js",
   "exports": {
@@ -105,7 +105,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/omnimux-ai/omnimux-client.git",
-    "directory": "plugins/omnimux"
+    "directory": "plugins/plugins/omnimux"
   },
   "description": "OmniMux execution hub for DeepSeek Harness: product chrome, identity, model routes, and video jobs."
 }
