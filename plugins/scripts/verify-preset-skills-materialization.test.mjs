@@ -7,14 +7,16 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /**
- * Gate for issue #3130.
+ * Gate for the preset skill surface after rc.3.
  *
- * A packaged agent preset lives inside the app archive. The filesystem skill
- * provider stats a directory with `{ bigint: true }` and Electron's asar `stat`
- * ignores that option, so listing a preset's own `skills/` throws and the whole
- * provider is skipped — a skill bundled with the preset never reaches the
- * catalog. The preset therefore must not point at its own directory, and the
- * materializer must copy those skills into the Harness Home's real skill root.
+ * rc.3 carries presets through packaged declarations (`preset/agent-presets`
+ * plus shell declarations); `sync-agent-presets.sh` no longer materialises
+ * preset skills into a consumer home. These tests therefore check:
+ *  - no shipped preset registers its own skill directory (`customSkillDirs`);
+ *  - the composition-authoring skills ship with the owning hub package
+ *    (`plugins/omnimux/skills/<id>`), not a `presets/cordis/skills` copy;
+ *  - `sync-agent-presets.sh` writes nothing into the target skill root and
+ *    never clobbers an existing user-owned skill.
  */
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')

@@ -10,6 +10,15 @@ import { inspectTestStandardChange } from './test-authoring-inspection.mjs';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = resolve(__dirname, '..');
 const SAMPLES_DIR = resolve(ROOT_DIR, 'tests/anti-cheat-samples');
+// The guard resolves the real git top-level (repo root), which in omnimux-client
+// is one level above the plugin workspace (ROOT_DIR === <repo>/plugins).
+const GIT_ROOT = (() => {
+  try {
+    const out = spawnSync('git', ['-C', ROOT_DIR, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
+    const top = out.status === 0 ? out.stdout.trim() : '';
+    return top || ROOT_DIR;
+  } catch { return ROOT_DIR; }
+})();
 
 describe('AI Agent 防造假与自适应门禁系统测试 (guard-anti-cheat.test.mjs)', () => {
 
@@ -445,7 +454,7 @@ describe('7. 仓库身份不接受伪造的嵌套 .git', () => {
   // 这些断言必须有区分力：只断言 `handle()` 是 deny 不算——伪造目录在 `scripts/` 下时
   // `createSourceInspection` 会先以 nested-repo 为由拒绝，新旧实现都 deny。
   // 真正的行为差异在 `repoRootOf` 的返回值上。
-  const resolvesToWorktree = dir => assert.equal(repoRootOf(resolve(dir, 'victim.test.mjs')), ROOT_DIR);
+  const resolvesToWorktree = dir => assert.equal(repoRootOf(resolve(dir, 'victim.test.mjs')), GIT_ROOT);
 
   it('空 .git 目录不被当成仓库根', () => {
     withForgedRoot(gitDir => mkdirSync(gitDir, { recursive: true }), resolvesToWorktree);
@@ -456,11 +465,11 @@ describe('7. 仓库身份不接受伪造的嵌套 .git', () => {
   });
 
   it('.git 文件指向门禁自己的 .git 时同样不被当成仓库根', () => {
-    withForgedRoot(gitDir => writeFileSync(gitDir, `gitdir: ${resolve(ROOT_DIR, '.git')}\n`), resolvesToWorktree);
+    withForgedRoot(gitDir => writeFileSync(gitDir, `gitdir: ${resolve(GIT_ROOT, '.git')}\n`), resolvesToWorktree);
   });
 
   it('.git 符号链接指向门禁自己的 .git 时同样不被当成仓库根', () => {
-    withForgedRoot(gitDir => symlinkSync(resolve(ROOT_DIR, '.git'), gitDir), resolvesToWorktree);
+    withForgedRoot(gitDir => symlinkSync(resolve(GIT_ROOT, '.git'), gitDir), resolvesToWorktree);
   });
 
   it('悬空 .git 链接不被当成仓库根', () => {
@@ -471,8 +480,8 @@ describe('7. 仓库身份不接受伪造的嵌套 .git', () => {
   // （`<gitDir>/gitdir` 必须指回本候选的 `.git`）能排除它。在链接工作树里取本工作树
   // 的 gitdir；在主检出里退化为公共目录，等价于上面已覆盖的形态。
   const registeredGitDir = (() => {
-    try { return readFileSync(resolve(ROOT_DIR, '.git'), 'utf8').trim().replace(/^gitdir:\s*/, ''); }
-    catch { return resolve(ROOT_DIR, '.git'); }
+    try { return readFileSync(resolve(GIT_ROOT, '.git'), 'utf8').trim().replace(/^gitdir:\s*/, ''); }
+    catch { return resolve(GIT_ROOT, '.git'); }
   })();
 
   it('.git 文件指向已注册工作树的 gitdir 时不被当成仓库根', () => {
@@ -484,7 +493,7 @@ describe('7. 仓库身份不接受伪造的嵌套 .git', () => {
   });
 
   it('正常的仓库内文件仍解析到工作树根', () => {
-    assert.equal(repoRootOf(resolve(ROOT_DIR, 'scripts/guard-anti-cheat.mjs')), ROOT_DIR);
+    assert.equal(repoRootOf(resolve(ROOT_DIR, 'scripts/guard-anti-cheat.mjs')), GIT_ROOT);
   });
 });
 
