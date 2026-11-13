@@ -18,6 +18,16 @@ const EXCLUDED_GLOBS = [
   'src/**/vendor/**',
   'src/**/build/**',
   'src/**/dist/**',
+  // [client-port] Hub tests that assert against packages / doc data that
+  // omnimux-client does not ship (12-package client). Files are kept; they are
+  // excluded from the package `test` run by scope only — no skip markers, no
+  // deletion. Excluded paths + reasons:
+  'src/catalog/contract/cli.test.js', // reads plugins/omnimux-apps builtin catalog
+  'src/catalog/voices/normalize.test.js', // reads docs/assets/volcengine-voices.json
+  'src/catalog/voices/preview.test.js', // reads docs/evidence/shared-official-voice-preview
+  'src/client/media-viewer/mv-thumbs-rail-scroll.test.js', // depends on omnimux-viewer
+  'src/client/attachments/breakdown-priority.e2e.test.js', // depends on omnimux-viewer
+  'src/media/media-generate-pipeline.e2e.test.js', // depends on omnimux-viewer
 ]
 const NETWORK_GUARD_TEST = 'src/media/test-network-guard.test.js'
 

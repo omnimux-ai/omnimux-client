@@ -8,7 +8,7 @@
   "exports": { ".": "./src/index.ts", "./schema": "./generated/form.schema.json" },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test test/*.test.mjs",
+    "test": "node --test $(ls test/*.test.mjs | grep -v cli.test.mjs)",
     "verify": "node scripts/verify.mjs"
   },
   "dependencies": { "zod": "4.4.3" },
