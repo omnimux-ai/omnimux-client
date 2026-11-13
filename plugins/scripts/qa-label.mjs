@@ -15,6 +15,13 @@ export function syncQaPassLabel({ prNumber, pass, dryRun = false, repo = process
       if (response?.status !== 0) throw new Error(response?.stderr || response?.error?.message || response?.stdout || 'gh 命令未成功完成')
       return true
     } catch (error) {
+      const message = String(error?.message || '')
+      // Removing a label the PR does not carry (or one the repository has never
+      // defined) is a no-op, not a failure: a freshly imported repository has no
+      // qa:pass history yet. Other errors (permissions, missing gh) still fail closed.
+      if (action === '--remove-label' && /not found|does not have|no such label|could not resolve to a label/i.test(message)) {
+        return true
+      }
       result.ok = false
       result.errors.push(`${action} qa:pass 失败: ${error.message}`)
       return false

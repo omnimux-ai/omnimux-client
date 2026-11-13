@@ -1,0 +1,150 @@
+{
+  "presetId": "tiktok-agent",
+  "name": "TikTok 运营操盘手",
+  "description": "TikTok 蓝海选品、爆款短视频拆解、带货脚本与矩阵运营",
+  "categories": [
+    {
+      "id": "蓝海选品",
+      "name": "蓝海选品"
+    },
+    {
+      "id": "爆款短视频",
+      "name": "爆款短视频"
+    },
+    {
+      "id": "达人与账号复盘",
+      "name": "达人与账号复盘"
+    },
+    {
+      "id": "创作者中心",
+      "name": "创作者中心"
+    },
+    {
+      "id": "创作视频",
+      "name": "创作视频"
+    }
+  ],
+  "skills": [
+    {
+      "id": "sk-tk-blue-ocean",
+      "slug": "tiktok-blue-ocean-discovery",
+      "skill": "tiktok-blue-ocean-discovery",
+      "name": "TikTok 蓝海爆品发现",
+      "title": "TikTok 蓝海爆品发现",
+      "category": "蓝海选品",
+      "description": "找出指定地区、指定品类下正在爆卖、但竞争还不饱和的潜力商品，产出可下手的选品清单。",
+      "summary": "找出指定地区、指定品类下正在爆卖、但竞争还不饱和的潜力商品，产出可下手的选品清单。",
+      "installed": true
+    },
+    {
+      "id": "sk-tk-similar-product",
+      "slug": "find-similar-products-by-image",
+      "skill": "find-similar-products-by-image",
+      "name": "以图找同款商品",
+      "title": "以图找同款商品",
+      "category": "蓝海选品",
+      "description": "根据商品图片在跨境货源平台精准检索同款与低价货源，对比利润空间。",
+      "summary": "根据商品图片在跨境货源平台精准检索同款与低价货源，对比利润空间。",
+      "installed": true
+    },
+    {
+      "id": "sk-tk-download-video",
+      "slug": "download-tk-video",
+      "skill": "download-tk-video",
+      "name": "下载 TikTok 无水印视频",
+      "title": "下载 TikTok 无水印视频",
+      "category": "爆款短视频",
+      "description": "一键解析并下载 TikTok 高清无水印视频素材及原声音频，用于对标拆解。",
+      "summary": "一键解析并下载 TikTok 高清无水印视频素材及原声音频，用于对标拆解。",
+      "installed": true
+    },
+    {
+      "id": "sk-tk-viral-selling-prompt",
+      "slug": "viral-selling-prompt-generator",
+      "skill": "viral-selling-prompt-generator",
+      "name": "TikTok 爆款带货提示词生成器",
+      "title": "TikTok 爆款带货提示词生成器",
+      "category": "爆款短视频",
+      "description": "根据目标商品卖点，生成适合 TikTok 前 3 秒黄金吸睛的高转化带货视频分镜提示词。",
+      "summary": "根据目标商品卖点，生成适合 TikTok 前 3 秒黄金吸睛的高转化带货视频分镜提示词。",
+      "installed": true
+    },
+    {
+      "id": "sk-tk-creator-distiller",
+      "slug": "tk-creator-distiller",
+      "skill": "tk-creator-distiller",
+      "name": "TikTok 头部博主对标蒸馏",
+      "title": "TikTok 头部博主对标蒸馏",
+      "category": "达人与账号复盘",
+      "description": "深度解析对标达人的近期高赞视频，提炼其选题模式、完播留存技巧与人设定位。",
+      "summary": "深度解析对标达人的近期高赞视频，提炼其选题模式、完播留存技巧与人设定位。",
+      "installed": true
+    },
+    {
+      "id": "sk-tk-account-review",
+      "slug": "tk-account-review-and-optimization",
+      "skill": "tk-account-review-and-optimization",
+      "name": "TikTok 账号复盘与优化建议",
+      "title": "TikTok 账号复盘与优化建议",
+      "category": "达人与账号复盘",
+      "description": "基于账号近期播放、完播率与互动数据，诊断限流原因并给出针对性提效建议。",
+      "summary": "基于账号近期播放、完播率与互动数据，诊断限流原因并给出针对性提效建议。",
+      "installed": true
+    },
+    {
+      "id": "sk-tk-drama-center",
+      "slug": "tiktok-drama-center",
+      "skill": "tiktok-drama-center",
+      "name": "TikTok 官方创作者与短剧中心",
+      "title": "TikTok 官方创作者与短剧中心",
+      "category": "创作者中心",
+      "description": "TikTok Drama Center 创作者认证、收益结算、原片上传与官方活动指引。",
+      "summary": "TikTok Drama Center 创作者认证、收益结算、原片上传与官方活动指引。",
+      "installed": true
+    },
+    {
+      "id": "sk-tk-replicate-viral",
+      "slug": "replicate-viral-video",
+      "skill": "replicate-viral-video",
+      "name": "复刻爆款视频",
+      "title": "复刻爆款视频",
+      "category": "创作视频",
+      "description": "参考爆款视频结构，为你的产品一键生成同款带货视频。",
+      "summary": "参考爆款视频结构，为你的产品一键生成同款带货视频。",
+      "installed": true
+    },
+    {
+      "id": "sk-tk-create-selling-video",
+      "slug": "create-selling-video",
+      "skill": "create-selling-video",
+      "name": "创作带货视频",
+      "title": "创作带货视频",
+      "category": "创作视频",
+      "description": "从商品或参考视频出发，自动编排分析、脚本、提示词与生成全流程。",
+      "summary": "从商品或参考视频出发，自动编排分析、脚本、提示词与生成全流程。",
+      "installed": true
+    },
+    {
+      "id": "sk-tk-selling-hook-analysis",
+      "slug": "video-hook-analysis",
+      "skill": "video-hook-analysis",
+      "name": "视频拆解",
+      "title": "视频拆解",
+      "category": "创作视频",
+      "description": "拆解短视频叙事结构、黄金Hook与逐镜头分镜脚本。",
+      "summary": "拆解短视频叙事结构、黄金Hook与逐镜头分镜脚本。",
+      "installed": true
+    },
+    {
+      "id": "sk-tk-reverse-prompt",
+      "slug": "reverse-video-prompt",
+      "skill": "reverse-video-prompt",
+      "name": "反推视频提示词",
+      "title": "反推视频提示词",
+      "category": "创作视频",
+      "description": "上传TK视频链接，自动反推出该视频背后，可用于AI视频生成的高质量提示词。",
+      "summary": "上传TK视频链接，自动反推出该视频背后，可用于AI视频生成的高质量提示词。",
+      "installed": true
+    }
+  ]
+}

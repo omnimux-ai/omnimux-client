@@ -107,5 +107,7 @@ test('底座清单缺该引用名时失败；设置清单后生效', () => {
 test('真实仓库当前通过（无已删包残留、peer 容纳新宿主）', () => {
   const result = collectFailures(repoRoot)
   assert.deepEqual(result.failures, [])
-  assert.ok(result.injectChecked > 10)
+  // [client-port] The client ships 12 plugin packages; 10 declare dsh.client.inject.
+  // The legacy single-repo threshold was >10 over the full 21-package monorepo.
+  assert.ok(result.injectChecked >= 10, `injectChecked=${result.injectChecked}`)
 })

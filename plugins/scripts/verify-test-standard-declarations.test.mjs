@@ -224,7 +224,7 @@ test('CLI 对未声明削弱退出码为 1（H5：退出逻辑需有自动化覆
 })
 
 test('quality-gate 中存在声明校验步骤（H5：元门禁）', () => {
-  const workflow = readRepoFile(REPO_ROOT, '.github/workflows/quality-gate.yml')
+  const workflow = readRepoFile(REPO_ROOT + '/..', '.github/workflows/quality-gate.yml')
   assert.ok(workflow, '.github/workflows/quality-gate.yml 必须存在')
   assert.match(workflow, /node scripts\/verify-test-standard-declarations\.mjs/)
   assert.match(workflow, /node --test scripts\/verify-test-standard-declarations\.test\.mjs/)
@@ -258,7 +258,7 @@ test('声明写在 specs/<feature>.md（无 .spec 后缀）同样有效（F2）'
 })
 
 test('声明校验步骤必须真的执行该命令，而不是被 echo 或注释掉（F3 加固）', () => {
-  const workflow = readRepoFile(REPO_ROOT, '.github/workflows/quality-gate.yml')
+  const workflow = readRepoFile(REPO_ROOT + '/..', '.github/workflows/quality-gate.yml')
   assert.ok(workflow)
   assert.match(workflow, /^\s*node scripts\/verify-test-standard-declarations\.mjs \. "\$QA_BASE"\s*$/m)
   assert.match(workflow, /^\s*node --test scripts\/verify-test-standard-declarations\.test\.mjs\s*$/m)

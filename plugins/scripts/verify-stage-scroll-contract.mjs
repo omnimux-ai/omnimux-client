@@ -32,17 +32,8 @@ export const CANONICAL_SCROLL = 'flex:1 1 auto;min-height:0;overflow-y:auto;over
 
 /** 登记的一级页（工作台 Tab 页）。新增一级页时必须在此登记。 */
 export const STAGE_PAGES = [
-  {
-    plugin: 'omnimux-avatar',
-    label: '数字人',
-    styles: 'plugins/omnimux-avatar/src/client/styles.js',
-    pages: ['plugins/omnimux-avatar/src/client/AvatarStage.jsx'],
-    // 双面板例外：页面根不滚动，左栏（形象行/设定/生成栏）与右栏（页眉/画廊）
-    // 各自管理内部 overflow 滚动。契约登记见 first-level-page-layout.md §二·补。
-    // 样式表仍须逐字保留两条 canonical 声明，页面引用 omx-stage-sticky，
-    // 但不再要求引用 omx-stage-scroll。
-    paned: true,
-  },
+  // [client-port] omnimux-avatar is not one of the 12 shipped client packages,
+  // so its Stage page is not part of this repository's contract surface.
   {
     plugin: 'omnimux-assets',
     label: '资产库',

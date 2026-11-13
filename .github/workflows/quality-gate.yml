@@ -1,0 +1,526 @@
+name: Quality Gate & Auto QA
+
+on:
+  pull_request:
+    branches: [main]
+  # 不再监听 push main：Merge Queue 合入的正是 merge_group 已校验的同一棵树，
+  # 重跑只会抢 runner、被后续合并 cancel（Issue #3845）。
+  merge_group:
+    types: [checks_requested]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# 结构（Issue #3845）：gates / plugin-tests 矩阵 / full-scan 并行，
+# static-and-tests 聚合为唯一 required check「Static L0 QA & Tests」。
+defaults:
+  run:
+    working-directory: plugins
+
+jobs:
+  gates:
+    name: Static gates & regression
+    runs-on: ubuntu-latest
+    env:
+      QA_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || 'origin/main' }}
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.18.1
+
+      - name: Ensure qa:pass label exists
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh label create "qa:pass" --repo "${{ github.repository }}" --color 0E8A16 --description "QA gate passed" --force || true
+
+      - name: Clear stale QA label
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          node --input-type=module - <<'JS'
+          import { syncQaPassLabel } from './scripts/qa-label.mjs';
+          const result = syncQaPassLabel({ prNumber: process.env.PR_NUMBER, pass: false });
+          if (!result.ok) throw new Error(result.errors.join('; '));
+          JS
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+          run_install: false
+
+      # 真实工作区安装：QA_DEPS 临时目录方案无法解析 file: 工作区依赖
+      # （packages/dsh-ui-kit），且与锁文件漂移；prepare 脚本产物均已入库，
+      # --ignore-scripts 安全且避开 prepare=build 全量重编。
+      - name: Install workspace dependencies
+        run: corepack pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Build all plugin bundles
+        run: node scripts/build-all.mjs
+
+      - name: Run syntax & contract gates
+        run: |
+          node --check scripts/auto-qa-scan.mjs
+          node --check scripts/auto-qa-gate.mjs
+          node --check scripts/auto-pipeline.mjs
+          node --check scripts/pipeline-state.mjs
+          node --check scripts/ci-verdict.mjs
+          node --check scripts/impact-matrix.mjs
+          node --check scripts/authorization.mjs
+          node --check scripts/qa-label.mjs
+          node --check scripts/check-tracked-artifacts.mjs
+          node --check scripts/verify-model-contracts.mjs
+          node --check scripts/verify-cross-plugin-model-alignment.mjs
+          node --check scripts/verify-product-baseline.mjs
+          bash -n scripts/git-wt.sh
+          node --check scripts/ego-live-qa.mjs
+          node --check scripts/ego-browser-page.mjs
+          node --check scripts/live-page-preparation.mjs
+          node --check scripts/live-qa-request.mjs
+          node --check scripts/live-browser-utils.mjs
+          bash -n scripts/materialize-with-rollback.sh
+          node --check scripts/verify-skill-bilingual.mjs
+          node --check scripts/generate-featured-skills.mjs
+          node --check scripts/report-blocker.mjs
+          node --check scripts/lib/silent-catch-delta.mjs
+          node scripts/verify-plugin-agent-tools.mjs
+
+      # 三分栏收起布局契约门禁：列宽胜负取决于 CSS 层叠（重要性→特异性→顺序），
+      # 源码正则断言只证明规则存在、不证明规则胜出。契约：docs/contracts/three-column-layout.md。
+      - name: Three-column layout contract gate
+        run: node --test plugins/omnimux/src/client/three-column-layout-contract.test.js
+
+      - name: Forbid tracked omnimux-workflow artifacts
+        run: node scripts/check-tracked-artifacts.mjs
+
+      # 仓库静态门禁：插件边界、双语配对、AGENTS.md 预算与链接（侧栏契约需 dsh-ui-kit 实物依赖，暂不入此环境）。
+      # 静默吞错为告警档（恒以成功状态退出，只打印存量清单），豁免清单出现僵尸条目才失败。
+      - name: Repo gate scripts (boundaries, bilingual, AGENTS.md)
+        run: |
+          node scripts/verify-plugin-boundaries.mjs
+          node scripts/verify-bilingual-docs.mjs
+          node scripts/verify-silent-catch.mjs
+          node --test scripts/verify-silent-catch.test.mjs
+          node scripts/verify-message-source-kinds.mjs
+          node --test scripts/verify-message-source-kinds.test.mjs
+          node --test scripts/lib/silent-catch-delta.test.mjs scripts/report-blocker.test.mjs
+          node --test scripts/verify-agents-md.test.mjs
+          node --test scripts/verify-governance-registry.test.mjs scripts/lib/governance-registry.test.mjs
+          node --test scripts/lib/child-lifecycle.test.mjs
+          node --test scripts/guard-anti-cheat.test.mjs
+          node --test scripts/verify-publish-source.test.mjs
+          node --test scripts/release-check.test.mjs
+
+      # 旧测试标准声明闭环：写入时刻的门禁只能做早期反馈——声明被消费之后没人再校验它，
+      # 而声明可以写在未跟踪的 specs/*.md 里（读得到、不进 PR diff），也可以事后删除。
+      # 这里只看**已提交范围**，因此是唯一能真正闭环的位置；判定口径与 hook 共用。
+      - name: Old test standard declaration gate (CI-side closure)
+        run: |
+          node --test scripts/verify-test-standard-declarations.test.mjs
+          node scripts/verify-test-standard-declarations.mjs . "$QA_BASE"
+
+      # 侧栏契约门禁：真实装配 8 个 Stage + market 全生命周期（JSDOM + 真实
+      # dsh-ui-kit 缝位）。file: 依赖在全仓 install 下可解析、kit lib 产物已
+      # 入库，concat-client 于 CI 可运行；此处挡回归只在本地 test:gates。
+      - name: Stage & sidebar contract gate
+        run: node scripts/verify-stage-contracts.mjs
+
+      # 产品基线：产品路径不得依赖开发机私有状态（合同 docs/contracts/product-baseline.md）。
+      - name: Product baseline gate (no dev-machine state in product paths)
+        run: |
+          node scripts/verify-product-baseline.mjs
+          node --test scripts/verify-product-baseline.test.mjs
+
+      - name: Run diff-aware L0 static QA
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/.workbuddy/evidence"
+          node scripts/auto-qa-gate.mjs . --diff --base "$QA_BASE" --json --output "$GITHUB_WORKSPACE/.workbuddy/evidence/auto-qa-report.json"
+
+      - name: Setup Python for managed archives
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: Test managed tarball unit suite
+        run: |
+          set -euo pipefail
+          export HOME="$RUNNER_TEMP/managed-tarball-home"
+          export TMPDIR="$RUNNER_TEMP/managed-tarball-tmp"
+          export COREPACK_HOME="$RUNNER_TEMP/managed-tarball-corepack"
+          export XDG_CONFIG_HOME="$HOME/config" XDG_CACHE_HOME="$HOME/cache" XDG_STATE_HOME="$HOME/state"
+          export npm_config_userconfig="$HOME/empty-user.npmrc" npm_config_globalconfig="$HOME/empty-global.npmrc"
+          export npm_config_cache="$HOME/npm-cache" npm_config_store_dir="$HOME/store" npm_config_global_dir="$HOME/global"
+          export COREPACK_DEFAULT_TO_LATEST=0 COREPACK_ENABLE_AUTO_PIN=0
+          export npm_config_manage_package_manager_versions=false npm_config_verify_deps_before_run=false
+          unset NODE_OPTIONS NODE_PATH PNPM_HOME NPM_CONFIG_USERCONFIG NPM_CONFIG_GLOBALCONFIG
+          mkdir -p "$HOME" "$TMPDIR" "$COREPACK_HOME"
+          printf '' > "$npm_config_userconfig"
+          printf '' > "$npm_config_globalconfig"
+          corepack prepare pnpm@11.7.0 --activate
+          export COREPACK_ENABLE_NETWORK=0
+          test "$(corepack pnpm --version)" = 11.7.0
+          corepack pnpm --config.verify-deps-before-run=false test:managed-tarball:unit
+
+      - name: Verify form contracts, authoring tools and generated references
+        run: pnpm --config.verify-deps-before-run=false verify:forms
+
+      - name: Verify task form runtime and protected draft handoff
+        run: node --test plugins/omnimux-forms/src/*.test.mjs plugins/omnimux-forms/src/client/*.test.mjs plugins/omnimux/src/host/form-attachments*.test.js plugins/omnimux/src/client/forms/*.test.js
+
+      # [client-port] Omitted from the imported Quality Gate workflow: the
+      # "prepare public evidence data repository", "verify public evidence core",
+      # "verify public application composition in a registered task root" and
+      # "retain/clean owned evidence repository" steps assume the repository root
+      # IS the plugin repository (scripts/ at workspace root, git worktree add at
+      # workspace root) and exercise desktop-app composition evidence. In
+      # omnimux-client the plugin tree is plugins/ and the desktop app has its own
+      # ci.yml, so these repo-root-specific steps do not apply here.
+      # Per-step rationale is listed in the PR description (no silent skip).
+
+      - name: Run regression tests
+        run: |
+          node --test scripts/git-wt.test.mjs scripts/test-dx-pipeline.mjs scripts/worktree-delivery.test.mjs scripts/dev-launch-env.test.mjs scripts/dev-app-unlock.test.mjs scripts/app-restart.test.mjs scripts/run-workspace-tests.test.mjs scripts/style-dom-probe.test.mjs
+          node --test scripts/auto-qa-scan.test.mjs
+          node --test scripts/test-authoring-inspection.test.mjs scripts/test-change-review.test.mjs scripts/review-packet.test.mjs
+          node --test scripts/impact-matrix.test.mjs scripts/authorization.test.mjs scripts/qa-label.test.mjs scripts/ci-verdict.test.mjs scripts/auto-pipeline.test.mjs scripts/auto-pipeline-qa.test.mjs scripts/check-tracked-artifacts.test.mjs scripts/live-runtime-proof.test.mjs scripts/ego-browser-page.test.mjs scripts/live-page-preparation.test.mjs scripts/ego-live-qa.test.mjs scripts/repair-inspiration-covers.test.mjs scripts/import-gxgen-inspirations.test.mjs
+          node --test scripts/sync-bypass.test.mjs scripts/resolve-omnimux-profile.test.mjs scripts/sync-plugin-scope.test.mjs scripts/verify-cross-plugin-model-alignment.test.mjs scripts/verify-auto-serving.test.mjs scripts/verify-profile-preflight.test.mjs scripts/test-agent-tools.test.mjs
+          node --test scripts/verify-skill-bilingual.test.mjs scripts/generate-featured-skills.test.mjs
+          node scripts/verify-skill-bilingual.mjs
+          node scripts/verify-dsh-lockfile-uniform.mjs
+          node scripts/verify-dsh-declaration-range.mjs
+          node --test scripts/verify-dsh-lockfile-uniform.test.mjs
+          node --test scripts/verify-modality-matrix.test.mjs
+
+      # 路由声明（cordis.patch.yml 的 input[]）↔ 模型契约（specs/*.yaml 的 inputs[].type）
+      # 模态双向对账在 verify:model-contracts 内（Issue #3236）；本地与 CI 走同一条命令。
+      - name: Verify model contracts (admission + dispositions strict + modality matrix)
+        run: corepack pnpm verify:model-contracts
+
+      # build-all.mjs 对带 build-client.mjs 的插件只跑 build-client，director 包
+      # 必须显式构建；bundleCache.test.mjs 断言 lib/director.js 存在（缓存语义）。
+      - name: Rebuild omnimux-workflow host + canvas + director bundles from src
+        run: |
+          node plugins/omnimux-workflow/scripts/build-host.mjs
+          node plugins/omnimux-workflow/scripts/build-canvas.mjs
+          node plugins/omnimux-workflow/scripts/build-director.mjs
+          test -s plugins/omnimux-workflow/dist/index.js
+          test -s plugins/omnimux-workflow/lib/canvas.js
+          test -s plugins/omnimux-workflow/lib/director.js
+
+      # [client-port] Omitted: "Agent tool context budget ratchet" builds
+      # plugins/omnimux-apps, which is not one of the 12 shipped client packages.
+
+      # verify-plugin-load 在真实 Cordis 内加载每个插件（声明的 inject 由兄弟桩纤维提供），
+      # 替代原静态 verify-dsh-contracts。插件单测见 plugin-tests 矩阵。
+      - name: Plugin load check (Cordis runtime)
+        run: node scripts/verify-plugin-load.mjs
+
+      - name: Isolated right-sidebar chrome geometry gate
+        run: |
+          set -euo pipefail
+          # 合并前真实浏览器几何门禁：真实内核 + 动态端口 + 零污染 + 反向对照。
+          # 反向对照未复现遮挡即判定夹具失真并失败，杜绝「夹具自带答案」的假绿。
+          node scripts/worktree-web-qa.mjs sidebar-chrome
+
+      - name: Upload QA evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-evidence
+          path: |
+            .workbuddy/evidence/
+          retention-days: 7
+          include-hidden-files: true
+
+      # 聚合 job 只需要 verdict 输入这一份报告；整包证据很大，下载会拖慢 required check。
+      - name: Upload L0 report for verdict
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-report
+          path: .workbuddy/evidence/auto-qa-report.json
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # 每个插件的测试在合并前必须全绿：run-workspace-tests 按包 scripts.test 执行并 TAP 汇总。
+  # 分片表在 run-workspace-tests.mjs 的 TEST_SHARDS，rest 兜底收所有未列包；
+  # run-workspace-tests.test.mjs 断言矩阵与分片表一致、分片不重不漏。
+  plugin-tests:
+    name: Plugin tests (${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [hub, inspiration, workflow-market, rest]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.18.1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+          run_install: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: Install workspace dependencies
+        run: corepack pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Build all plugin bundles
+        run: node scripts/build-all.mjs
+
+      # 同 QA job：build-all 只跑 build-client，director.js 需显式构建，
+      # 否则 workflow 单测里的 bundleCache.test.mjs 会因缺产物而红。
+      - name: Rebuild omnimux-workflow host + canvas + director bundles from src
+        run: |
+          node plugins/omnimux-workflow/scripts/build-host.mjs
+          node plugins/omnimux-workflow/scripts/build-canvas.mjs
+          node plugins/omnimux-workflow/scripts/build-director.mjs
+          test -s plugins/omnimux-workflow/lib/director.js
+
+      - name: Plugin unit suites
+        env:
+          OMNIMUX_TEST_SHARD: ${{ matrix.shard }}
+        run: node scripts/run-workspace-tests.mjs --logs .tmp/ci-workspace-logs --json .tmp/ci-workspace-summary.json
+
+      # [client-port] Omitted: "Browser extension vitest suite" targets
+      # dsh-browser-extension, which is not shipped in omnimux-client.
+
+      - name: Upload plugin test logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-tests-${{ matrix.shard }}
+          path: |
+            .tmp/ci-workspace-logs/
+            .tmp/ci-workspace-summary.json
+          retention-days: 7
+          include-hidden-files: true
+
+  # 全仓巡检：不受 git diff 限制，覆盖插件源码的变形凭据与扩展清单的联网出口。
+  # 原在 push main 上跑；push 触发移除后改在合入前的 merge_group 跑。
+  full-scan:
+    name: Full-repo secret & extension outbound scan
+    if: ${{ github.event_name == 'merge_group' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.18.1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+          run_install: false
+
+      - name: Install workspace dependencies
+        run: corepack pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Full-repo secret & extension outbound scan
+        run: node scripts/auto-qa-gate.mjs . --all
+
+  # 泄露门禁（Issue #3851）：只扫本次变更的提交（BASE..HEAD），存量不阻塞。
+  # gitleaks 默认规则 + .gitleaks.toml 的家目录路径规则；部署相关字面量（源站地址、
+  # 内部主机别名）只放在仓库 secret LEAK_DENYLIST_REGEX，公开配置里不写。
+  # fork PR 拿不到 secret 时只告警；merge_group 一定带 secret，缺失即失败。
+  # 用 CLI + sha256 而非 gitleaks-action：后者 v2 对组织仓库要求 license。
+  leak-gate:
+    name: Leak gate (gitleaks + denylist)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    permissions:
+      contents: read
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+      GITLEAKS_VERSION: 8.30.1
+      # gitleaks_8.30.1_linux_x64.tar.gz，取自官方 release 的 gitleaks_8.30.1_checksums.txt
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve change range
+        run: |
+          set -euo pipefail
+          [[ "${BASE_SHA:-}" =~ ^[0-9a-f]{40}$ && "${HEAD_SHA:-}" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::cannot resolve BASE_SHA/HEAD_SHA for event ${GITHUB_EVENT_NAME}"; exit 1; }
+          git cat-file -e "${BASE_SHA}^{commit}"
+          git cat-file -e "${HEAD_SHA}^{commit}"
+          echo "range ${BASE_SHA}..${HEAD_SHA}: $(git rev-list --count "${BASE_SHA}..${HEAD_SHA}") commit(s)"
+
+      - name: Install gitleaks (pinned, sha256-verified)
+        run: |
+          set -euo pipefail
+          f="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/$f" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/$f"
+          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/$f" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$f" -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" version
+
+      - name: gitleaks on the commits in this change
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/gitleaks" git . --config .gitleaks.toml \
+            --log-opts="${BASE_SHA}..${HEAD_SHA}" --redact --no-banner --exit-code 1
+
+      # 只打印命中的提交与文件，绝不打印命中的行或 secret 本身。
+      - name: Private denylist on added lines
+        env:
+          LEAK_DENYLIST_REGEX: ${{ secrets.LEAK_DENYLIST_REGEX }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ -z "${LEAK_DENYLIST_REGEX:-}" ]; then
+            if [ "$EVENT_NAME" = merge_group ]; then
+              echo "::error::secret LEAK_DENYLIST_REGEX is not set; the merge queue requires it (a maintainer must set it)"
+              exit 1
+            fi
+            echo "::warning::secret LEAK_DENYLIST_REGEX is unavailable on this ${EVENT_NAME} run (unset, or a fork PR); denylist skipped here, the merge queue enforces it"
+            exit 0
+          fi
+          diff_file="$RUNNER_TEMP/change.diff"
+          hit_file="$RUNNER_TEMP/denylist-hit-lines"
+          git log -p --no-color --no-ext-diff --no-textconv --format='commit %H' "${BASE_SHA}..${HEAD_SHA}" > "$diff_file"
+          # grep 只输出行号（cut 去掉内容）；退出码 1 = 无命中，2 = 正则无效。
+          set +e
+          grep -nE -e "$LEAK_DENYLIST_REGEX" -- "$diff_file" 2>/dev/null | cut -d: -f1 > "$hit_file"
+          status=("${PIPESTATUS[@]}")
+          set -e
+          if [ "${status[0]}" -gt 1 ]; then
+            echo "::error::LEAK_DENYLIST_REGEX is not a valid extended regular expression (value not printed)"
+            exit 1
+          fi
+          if [ ! -s "$hit_file" ]; then
+            echo "denylist: no added line matches"
+            exit 0
+          fi
+          # 只认 hunk 内的新增行：diff 文件头（diff --git 到第一个 @@）与提交说明都不算。
+          located="$RUNNER_TEMP/denylist-locations"
+          awk -v hits="$hit_file" '
+            BEGIN { while ((getline n < hits) > 0) hit[n] = 1 }
+            /^commit [0-9a-f]+$/ { commit = substr($2, 1, 12); inhunk = 0; next }
+            /^diff --git / { inhunk = 0; file = ""; next }
+            !inhunk && /^\+\+\+ / { file = substr($0, 5); sub(/^b\//, "", file); next }
+            /^@@ / { inhunk = 1; next }
+            inhunk && /^\+/ && (FNR in hit) { print commit " " file }
+          ' "$diff_file" > "$located"
+          count="$(wc -l < "$located" | tr -d ' ')"
+          if [ "$count" = 0 ]; then
+            echo "denylist: no added line matches"
+            exit 0
+          fi
+          echo "::error::${count} added line(s) match the private denylist (values not printed). Remove them from these commits/files:"
+          sort -u "$located" | sed 's/^/  /'
+          exit 1
+
+  static-and-tests:
+    name: Static L0 QA & Tests
+    needs: [gates, plugin-tests, full-scan, leak-gate]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    env:
+      QA_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || 'origin/main' }}
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.18.1
+
+      # ci-verdict 经 impact-matrix → auto-qa-gate 传递依赖 pngjs，需要工作区依赖。
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+          run_install: false
+
+      - name: Install workspace dependencies
+        run: corepack pnpm install --frozen-lockfile --ignore-scripts
+
+      # full-scan 只在 merge_group 运行，其余事件为 skipped；其他 job 必须 success。
+      - name: Require upstream jobs
+        env:
+          GATES: ${{ needs.gates.result }}
+          PLUGIN_TESTS: ${{ needs.plugin-tests.result }}
+          FULL_SCAN: ${{ needs.full-scan.result }}
+          LEAK_GATE: ${{ needs.leak-gate.result }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          echo "gates=$GATES plugin-tests=$PLUGIN_TESTS full-scan=$FULL_SCAN leak-gate=$LEAK_GATE event=$EVENT_NAME"
+          test "$GATES" = success
+          test "$PLUGIN_TESTS" = success
+          test "$LEAK_GATE" = success
+          test "$FULL_SCAN" = success || { test "$EVENT_NAME" != merge_group && test "$FULL_SCAN" = skipped; }
+
+      # 缺失报告时 ci-verdict 读不到输入即判失败，不会放行。
+      - name: Download L0 report
+        if: ${{ always() }}
+        uses: actions/download-artifact@v4
+        with:
+          name: qa-report
+          path: .workbuddy/evidence/
+
+      - name: Ensure qa:pass label exists
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh label create "qa:pass" --repo "${{ github.repository }}" --color 0E8A16 --description "QA gate passed" --force || true
+
+      - name: Evaluate CI verdict
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          CI_STATUS: ${{ job.status }}
+        run: |
+          node scripts/ci-verdict.mjs \
+            --report "$GITHUB_WORKSPACE/.workbuddy/evidence/auto-qa-report.json" \
+            --files-from-git --base "$QA_BASE" \
+            --ci-status "$CI_STATUS" \
+            ${{ github.event.pull_request.number && format('--pr {0}', github.event.pull_request.number) || '--dry-run' }}

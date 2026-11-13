@@ -25,7 +25,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -113,10 +113,20 @@ export function templateModelIds(source) {
 export function templateModelSources(options = {}) {
   if (Array.isArray(options.templateSources)) return options.templateSources
   const rootDir = options.rootDir ?? root
-  return TEMPLATE_MODEL_SOURCES.map((path) => ({
-    path,
-    source: readFileSync(join(rootDir, path), 'utf8'),
-  }))
+  const sources = []
+  for (const path of TEMPLATE_MODEL_SOURCES) {
+    try {
+      sources.push({ path, source: readFileSync(join(rootDir, path), 'utf8') })
+    } catch (error) {
+      // omnimux-client ships 12 packages; a template package not imported here
+      // (e.g. omnimux-apps) has no source. Skip only when its package directory
+      // is genuinely absent; a missing file inside a shipped package still throws.
+      const packageDir = join(rootDir, path.split('/').slice(0, 2).join('/'))
+      if (error.code === 'ENOENT' && !existsSync(packageDir)) continue
+      throw error
+    }
+  }
+  return sources
 }
 
 /**

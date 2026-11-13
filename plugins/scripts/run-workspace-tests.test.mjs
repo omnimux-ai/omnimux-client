@@ -21,7 +21,7 @@ test('CI shards cover every workspace package exactly once and match the workflo
     }
   }
   assert.deepEqual([...seen.keys()].sort(), packages.map((pkg) => pkg.name).sort())
-  const workflow = parse(readFileSync(new URL('../.github/workflows/quality-gate.yml', import.meta.url), 'utf8'))
+  const workflow = parse(readFileSync(new URL('../../.github/workflows/quality-gate.yml', import.meta.url), 'utf8'))
   assert.deepEqual(workflow.jobs['plugin-tests'].strategy.matrix.shard, [...SHARD_NAMES])
 })
 

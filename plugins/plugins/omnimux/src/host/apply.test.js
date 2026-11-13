@@ -1,0 +1,207 @@
+import assert from 'node:assert/strict'
+import { describe, it } from 'node:test'
+import { apply, inject } from '../index.js'
+
+describe('hub apply composition', () => {
+  it('declares every synchronously-read host service', () => {
+    assert.deepEqual(inject, ['tools', 'systemPrompt', 'agents', 'llm'])
+  })
+
+  it('registers attachment entry commands only when the optional commands service is injected', () => {
+    const injections = []
+    apply({
+      tools: { register() {} }, provide() {}, get() {},
+      inject(deps, callback) { injections.push({ deps, callback }) },
+    }, { official: { mount: false } })
+    const registration = injections.filter(({ deps }) => deps.length === 1 && deps[0] === 'commands')
+    assert.equal(registration.length, 1)
+    const definitions = []
+    const commands = { register(definition) { definitions.push(definition) } }
+    registration[0].callback({ commands })
+    assert.deepEqual(definitions.map(({ name, description }) => ({ name, description })), [
+      { name: 'add-file', description: '上传媒体或文件 / Upload media or files' },
+      { name: 'add-from-library', description: '从资产库选择 / Choose from asset library' },
+      { name: 'add-from-product', description: '从商品库选择 / Choose from product library' },
+      { name: 'add-from-inspiration', description: '从灵感库选择 / Choose from inspiration library' },
+    ])
+    for (const definition of definitions) {
+      assert.equal(Object.hasOwn(definition, 'input'), false)
+      assert.deepEqual(definition.handler(), { kind: 'success' })
+    }
+  })
+
+  it('registers media, text, identity, attachments, and catalog seams in a stable order', () => {
+    const names = []
+    const provided = []
+    apply({
+      tools: { register(tool) { names.push(tool.name) } },
+      provide(name) { provided.push(name) },
+      get() { return undefined },
+    }, { official: { mount: false } })
+    const expectedPrefix = ['identity', 'hubEvents', 'workbenchMailbox', 'composerAttachments', 'videoGenerate', 'imageGenerate', 'audioGenerate', 'speechToText', 'textComplete', 'decisions', 'modelCatalog']
+    assert.deepEqual(provided.slice(0, expectedPrefix.length), expectedPrefix)
+    assert.deepEqual(provided, ['identity', 'hubEvents', 'workbenchMailbox', 'composerAttachments', 'videoGenerate', 'imageGenerate', 'audioGenerate', 'speechToText', 'textComplete', 'decisions', 'modelCatalog', 'generationProducts', 'mediaInspect', 'nativeFilePicker'])
+    assert.deepEqual(names, [
+      'omnimux_video_submit',
+      'omnimux_image_submit',
+      'omnimux_audio_submit',
+      'omnimux_audio_voices',
+      'omnimux_speech_to_text',
+      'omnimux_text_complete',
+      'omnimux_jev_decision',
+      'workbench_get_active_view',
+      'workbench_open_tab',
+      'omnimux_marketing_presets_search',
+      'omnimux_creative_templates_search',
+      'omnimux_creative_template_get',
+    ])
+  })
+
+  it('passes token store and credentials seam to media generators', async () => {
+    const provided = {}
+    const tools = {}
+    const credMock = {
+      resolve: async (ref) => (ref === 'OMNIMUX_ACCESS_TOKEN' ? { value: 'pat-from-ctx-cred' } : undefined),
+    }
+    apply({
+      tools: { register(tool) { tools[tool.name] = tool } },
+      provide(name, api) { provided[name] = api },
+      get(name) { return name === 'credentials' ? credMock : undefined },
+    }, { official: { mount: false } })
+
+    assert(provided.imageGenerate && typeof provided.imageGenerate.execute === 'function')
+    assert(provided.videoGenerate && typeof provided.videoGenerate.execute === 'function')
+    assert(provided.audioGenerate && typeof provided.audioGenerate.execute === 'function')
+    assert(provided.modelCatalog && typeof provided.modelCatalog.list === 'function')
+    const catalog = provided.modelCatalog.list()
+    assert.equal(catalog.source, 'omnimux')
+    assert.ok(Array.isArray(catalog.text))
+    // #3516: claude-sonnet-4-6 上游渠道停用（仅登记不上架），文本桶只剩 Gemini 3.8。
+    assert.equal(catalog.text.length, 2)
+    assert.equal(catalog.defaults.text, 'gemini-3.8-flash')
+  })
+
+  it('registers all 55 tools and 20 seams by default', () => {
+    const names = []
+    const provided = []
+    apply({
+      tools: { register(tool) { names.push(tool.name) } },
+      provide(name) { provided.push(name) },
+      get() { return undefined },
+    })
+
+    assert.equal(names.length, 55)
+    assert.ok(names.includes('omnimux_video_submit'))
+    assert.ok(names.includes('omnimux_image_submit'))
+    assert.ok(names.includes('omnimux_audio_submit'))
+    assert.ok(names.includes('omnimux_audio_voices'))
+    assert.ok(names.includes('omnimux_speech_to_text'))
+    assert.ok(names.includes('omnimux_text_complete'))
+    assert.ok(names.includes('omnimux_jev_decision'))
+    assert.ok(names.includes('omnimux_page_fetch'))
+    assert.ok(names.includes('omnimux_social_data'))
+    assert.ok(names.includes('omnimux_youtube_video'))
+    assert.ok(names.includes('omnimux_youtube_channel'))
+    assert.ok(names.includes('omnimux_youtube_posts'))
+    assert.ok(names.includes('omnimux_youtube_search'))
+    assert.ok(names.includes('omnimux_tiktok_video'))
+    assert.ok(names.includes('omnimux_tiktok_user'))
+    assert.ok(names.includes('omnimux_tiktok_posts'))
+    assert.ok(names.includes('omnimux_tiktok_search'))
+    assert.ok(names.includes('omnimux_tiktok_shop_search'))
+    assert.ok(names.includes('omnimux_tiktok_shop_product'))
+    assert.ok(names.includes('omnimux_instagram_post'))
+    assert.ok(names.includes('omnimux_instagram_user'))
+    assert.ok(names.includes('omnimux_instagram_posts'))
+    assert.ok(names.includes('omnimux_instagram_search'))
+    assert.ok(names.includes('omnimux_x_tweet'))
+    assert.ok(names.includes('omnimux_x_user'))
+    assert.ok(names.includes('omnimux_x_posts'))
+    assert.ok(names.includes('omnimux_x_search'))
+    assert.ok(names.includes('omnimux_accounts_list'))
+    assert.ok(names.includes('workbench_get_active_view'))
+    assert.ok(names.includes('workbench_open_tab'))
+    assert.ok(names.includes('omnimux_marketing_presets_search'))
+
+    assert.deepEqual(provided, ['identity', 'hubEvents', 'workbenchMailbox', 'composerAttachments', 'videoGenerate', 'imageGenerate', 'audioGenerate', 'speechToText', 'textComplete', 'inspirationShare', 'socialData', 'youtube', 'tiktok', 'instagram', 'x', 'decisions', 'modelCatalog', 'generationProducts', 'mediaInspect', 'nativeFilePicker'])
+  })
+
+  it('disables all gated capabilities when gate.enabled is false', () => {
+    const names = []
+    const provided = []
+    let attachments
+    apply({
+      tools: { register(tool) { names.push(tool.name) } },
+      provide(name, api) { provided.push(name); if (name === 'composerAttachments') attachments = api },
+      get() { return undefined },
+    }, { gate: { enabled: false } })
+
+    // Local attachment preparation, workbench, presets and templates do not invoke gated providers.
+    assert.equal(names.length, 5)
+    assert.deepEqual(provided, ['identity', 'hubEvents', 'workbenchMailbox', 'composerAttachments', 'inspirationShare', 'socialData', 'youtube', 'tiktok', 'instagram', 'x', 'decisions', 'modelCatalog', 'generationProducts', 'mediaInspect', 'nativeFilePicker'])
+    assert.equal(typeof attachments.registerSource, 'function')
+    assert.equal(typeof attachments.materializeProduced, 'function')
+  })
+
+  it('fine-grained disables media, text models, and official tools via gate', () => {
+    const tools = {}
+    const provided = []
+    apply({
+      tools: { register(tool) { tools[tool.name] = tool } },
+      provide(name) { provided.push(name) },
+      get() { return undefined },
+    }, {
+      gate: {
+        media: { video: false },
+        tools: { omnimux_social_data: false },
+        models: { textComplete: { 'gemini-3.8-flash': false } },
+      },
+    })
+
+    assert.equal(tools.omnimux_video_submit, undefined)
+    assert.ok(tools.omnimux_image_submit)
+    assert.ok(tools.omnimux_audio_submit)
+    assert.ok(tools.omnimux_audio_voices)
+    assert.equal(tools.omnimux_social_data, undefined)
+    assert.ok(tools.omnimux_youtube_video)
+    assert.ok(tools.omnimux_tiktok_video)
+    assert.ok(tools.omnimux_instagram_post)
+    assert.ok(tools.omnimux_x_tweet)
+    assert.ok(tools.omnimux_page_fetch)
+    assert.ok(tools.omnimux_accounts_list)
+
+    assert.deepEqual(provided, ['identity', 'hubEvents', 'workbenchMailbox', 'composerAttachments', 'imageGenerate', 'audioGenerate', 'speechToText', 'textComplete', 'inspirationShare', 'socialData', 'youtube', 'tiktok', 'instagram', 'x', 'decisions', 'modelCatalog', 'generationProducts', 'mediaInspect', 'nativeFilePicker'])
+
+    // The local model is hidden; the gateway-only text model remains offered.
+    const textEnum = tools.omnimux_text_complete.parameters.properties.model.enum
+    assert.deepEqual(textEnum, ['gemini-4-argon'])
+  })
+})
+
+describe('#3272 current generation transport composition', () => {
+  const create = (name, apiKey = 'test-token-unused') => {
+    const provided = {}
+    apply({ tools: { register() {} }, provide(key, api) { provided[key] = api }, get() { return undefined } }, {
+      official: { mount: false }, media: { defaultProvider: name, providers: {
+        [name]: { protocol: 'openai-media', baseUrl: 'https://transport.example.invalid/v1', apiKey,
+          models: { image: 'gpt-image-2.5', video: 'seedance-2-0-mini' } },
+      } },
+    })
+    return provided.generationProducts
+  }
+  it('the mounted product instance follows the actual validated provider registration without publishing it', () => {
+    const a = create('private-a'), b = create('private-b'), first = a.list(), second = b.list()
+    assert.notEqual(first.currentFingerprint, second.currentFingerprint)
+    const checked = b.preparePreview({ schemaVersion: 1, currentFingerprint: first.currentFingerprint,
+      productId: 'generation.image', intent: 'multi_reference', prompt: '角色', parameters: {}, assets: [] })
+    assert.deepEqual(checked.issues, [{ code: 'stale_fingerprint' }]); assert.equal(checked.executable, false)
+    assert.equal(JSON.stringify([first, second, checked]).includes('private-a'), false)
+    assert.equal(JSON.stringify([first, second, checked]).includes('transport.example.invalid'), false)
+  })
+  it('changing only credential data cannot change the product fingerprint or invoke credential resolution', () => {
+    const first = create('omnimux', 'test-token-unused-a').list()
+    const second = create('omnimux', 'test-token-unused-b').list()
+    assert.equal(first.currentFingerprint, second.currentFingerprint)
+    assert.equal(JSON.stringify([first, second]).includes('test-token-unused'), false)
+  })
+})

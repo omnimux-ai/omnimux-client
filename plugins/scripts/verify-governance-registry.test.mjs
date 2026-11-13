@@ -18,7 +18,13 @@ function collect(directory, output, pattern) {
   }
 }
 collect(join(root, 'scripts'), sources, /\.(?:mjs|js|sh|py)$/)
-collect(join(root, '.github/workflows'), workflows, /\.ya?ml$/)
+collect(join(root, '..', '.github', 'workflows'), workflows, /\.ya?ml$/)
+// omnimux-client keeps workflows at the repository root, one level above the
+// plugin workspace; present them with root-relative keys (no '..') so the
+// governance inventory treats them as safe paths rather than unsafe ones.
+for (const key of [...workflows.keys()]) {
+  if (key.startsWith('../')) { workflows.set(key.slice(3), workflows.get(key)); workflows.delete(key) }
+}
 const manifest = JSON.parse(readFileSync(join(root, 'scripts/governance-manifest.json'), 'utf8'))
 const packageJson = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 function readExternalSource(path) {

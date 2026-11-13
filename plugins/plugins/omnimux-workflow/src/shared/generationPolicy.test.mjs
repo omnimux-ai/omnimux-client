@@ -1,0 +1,216 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { CANVAS_GENERATION_POLICY, projectCanvasCatalog } from './generationPolicy.ts';
+import { buildUpstreamFingerprint, evaluateCatalogCompat, planAutoAdaptation } from './validation/compatKernel.ts';
+import { buildFilteredModelOptions, isZeroCandidateEmptyState } from './validation/operationUi.ts';
+import { buildCanvasUpstreamFingerprint, planCanvasInputMutation } from './graph/canvasInputMutationGateway.ts';
+import { reconcileCanvasForCatalog } from './graph/catalogReconcile.ts';
+
+const CLAUDE = 'claude-opus-4-6';
+const GEMINI = 'gemini-3.8-flash';
+const DEEPSEEK = 'deepseek-v4-flash';
+const GPT = 'gpt-5.5';
+// Synthetic contracts exercise policy, not provider support claims.
+function textModel(id, modalities = [], listed = true) {
+  const prompt = { slot: 'prompt', type: 'text', role: 'prompt', source: 'node_field', min: 1, max: 1 };
+  return { id, label: id === GEMINI ? 'Gemini 3.8 Flash' : id, family: 'test', operations: [
+    { id: 'chat', label: '文本对话', listed, output: { type: 'text' }, inputs: [prompt] },
+    ...(modalities.length ? [{ id: 'vision_chat', label: '素材分析', listed, output: { type: 'text' }, inputs: [prompt,
+      ...modalities.map((type) => ({ slot: `reference_${type}`, type, role: 'reference', source: 'upstream_edge', min: 0, max: 4 })),
+    ] }] : []),
+  ] };
+}
+function catalog() {
+  const models = [textModel('unapproved', ['image', 'video', 'audio']), textModel(CLAUDE), textModel(GEMINI, ['image', 'video', 'audio']), textModel(DEEPSEEK), textModel(GPT, ['image'])];
+  return { source: 'omnimux', fingerprint: 'fixture', models, text: models.map(({id,label})=>({id,label})), image: [], video: [], audio: [], defaults: {text:'unapproved'} };
+}
+function fp(type) { return buildUpstreamFingerprint({prompt: 'Analyze', assets: type ? [{sourceNodeId: 'asset', type}] : []}); }
+function node(id, model, materialType='text') { return {id, type:'material', position:{x:0,y:0}, data:{nodeKind:'generate', materialType, params: model ? {model} : {}, prompt:'Analyze'}}; }
+
+test('catalog rows are visible without hidden-set subtraction; policy seeds only supply fallbacks', () => {
+  const raw = catalog();
+  const view = projectCanvasCatalog(raw);
+  // 默认全开：目录里 5 个已上架 text 模型全部可见，目录序即展示序。
+  assert.deepEqual(view.text.map((m)=>m.id), ['unapproved', CLAUDE, GEMINI, DEEPSEEK, GPT]);
+  // catalog.defaults.text='unapproved' 已上架 → 默认是它，不是策略种子 GEMINI。
+  assert.equal(view.defaults.text, 'unapproved');
+  assert.equal(evaluateCatalogCompat(view, fp(), {outputType:'text'}).models.some((m)=>m.modelId==='unapproved'), true);
+  assert.equal(view.models.some((m)=>m.id==='unapproved'), true);
+  assert.notEqual(view.fingerprint, raw.fingerprint);
+  assert.deepEqual(view.audio, []);
+  assert.equal(view.defaults.audio, '');
+  // 旧 canvasHiddenModels 不再改变可见性；目录行本身仍是可见来源。
+  const hidden = projectCanvasCatalog({...catalog(), canvasHiddenModels:{ text:[GEMINI, DEEPSEEK] }});
+  assert.deepEqual(hidden.text.map((m)=>m.id), ['unapproved', CLAUDE, GEMINI, DEEPSEEK, GPT]);
+  // 去掉一个目录行后，该行不再被承认（无隐藏也进不来——它已不在 catalog[kind]）。
+  raw.text = raw.text.filter((m)=>m.id!==GEMINI);
+  assert.equal(projectCanvasCatalog(raw).text.some((m)=>m.id===GEMINI), false);
+  // 目录行即使没有 listed operation 也可见；执行状态由 catalog row 的 executionStatus 决定。
+  raw.models.find((m)=>m.id===GPT).operations.forEach((op)=>{op.listed=false;});
+  assert.equal(projectCanvasCatalog(raw).text.some((m)=>m.id===GPT), false);
+});
+
+test('audio policy admits every listed model; the configured default wins over the policy seed', () => {
+  const audioModel = (id, operationId) => ({ id, label: id, family: 'test', operations: [
+    { id: operationId, label: operationId, listed: true, output: { type: 'audio' }, inputs: [
+      { slot: 'prompt', type: 'text', role: 'prompt', source: 'node_field', min: 1, max: 1 },
+    ] },
+  ] });
+  // 默认全开：所有已上架音频模型都进画布，不再只留 Suno。
+  const models = [audioModel('seed-audio-1.0', 'text_to_speech'), audioModel('indextts-2', 'voice_clone'),
+    audioModel('suno', 'text_to_music'), audioModel('gpt-4o-mini-tts', 'text_to_speech')];
+  const raw = { source: 'omnimux', fingerprint: 'fixture', models,
+    text: [], image: [], video: [], audio: models.map(({ id, label }) => ({ id, label })),
+    defaults: { audio: 'seed-audio-1.0' } };
+  const view = projectCanvasCatalog(raw);
+  assert.deepEqual(view.audio.map((m) => m.id), ['seed-audio-1.0', 'indextts-2', 'suno', 'gpt-4o-mini-tts']);
+  // catalog.defaults.audio='seed-audio-1.0' 已上架 → 默认是它，覆盖策略种子 suno。
+  assert.equal(view.defaults.audio, 'seed-audio-1.0');
+  assert.ok(view.models.some((m) => m.id === 'indextts-2'), '已上架的克隆模型默认可见');
+  assert.ok(view.models.some((m) => m.id === 'suno'
+    && m.operations.some((op) => op.id === 'text_to_music')));
+  // 隐藏集相减仍生效：藏掉 suno 即从画布消失。
+  const hidden = projectCanvasCatalog({...raw, canvasHiddenModels:{ audio:['suno'] }});
+  assert.ok(hidden.audio.some((m) => m.id === 'suno'), '旧 hidden 设置不再过滤目录行');
+});
+
+test('new nodes use compatible manual preference, then type default, then curated order', () => {
+  const view = projectCanvasCatalog(catalog());
+  const select = (overrides={})=>planAutoAdaptation({catalog:view, fingerprint:fp(), outputType:'text', ...overrides});
+  // 'unapproved' 现在是已上架可见模型且是 catalog.defaults.text → 默认落到它。
+  assert.equal(select().modelId, 'unapproved');
+  assert.equal(select({preferredModelId: GEMINI}).modelId, GEMINI);
+  assert.equal(select({preferredModelId: GEMINI, fingerprint:fp('video')}).modelId, GEMINI);
+  // 合法的可见偏好被接受，不再被白名单裁成 GEMINI。
+  assert.equal(select({preferredModelId: 'unapproved'}).modelId, 'unapproved');
+  const withoutUnapproved = projectCanvasCatalog({...catalog(), text:catalog().text.filter((m)=>m.id!=='unapproved'), defaults:{text:'unapproved'}});
+  // 配置的默认 id 不在可见集时回落到策略种子（它仍在剩余可见集里）。
+  assert.equal(select({catalog:withoutUnapproved}).modelId, GEMINI);
+});
+
+test('compatible current model survives preferences; unsupported input prefers default before same family', () => {
+  const view = projectCanvasCatalog(catalog());
+  const selected = planAutoAdaptation({catalog:view, fingerprint:fp('image'), outputType:'text', currentModelId:GEMINI, currentOperationId:'chat', preferredModelId:GEMINI});
+  assert.equal(selected.modelId, GEMINI);
+  assert.equal(selected.operationId, 'vision_chat');
+  const adapted = planAutoAdaptation({catalog:view, fingerprint:fp('video'), outputType:'text', currentModelId:GEMINI});
+  assert.equal(adapted.modelId, GEMINI);
+  assert.equal(adapted.rule, 'same_model');
+});
+
+test('graph atomically assigns new-node preference; manual choice never changes sibling nodes', () => {
+  const view=projectCanvasCatalog(catalog());
+  const sibling=node('old', GEMINI);
+  const created=planCanvasInputMutation({nodes:[sibling],edges:[]},{addNodes:[node('new')]},{catalog:view,preferredModels:{text:GEMINI}});
+  assert.equal(created.nodes.find((n)=>n.id==='new').data.params.model,GEMINI);
+  assert.deepEqual(created.nodes.find((n)=>n.id==='old'),sibling);
+  const manual=planCanvasInputMutation(created,{nodePatches:[{nodeId:'new',data:{params:{model:GEMINI}}}]},{catalog:view,preferredModels:{text:GEMINI}});
+  assert.equal(manual.nodes.find((n)=>n.id==='new').data.params.model,GEMINI);
+  assert.equal(manual.nodes.find((n)=>n.id==='new').data.compat.adaptation,undefined);
+  assert.deepEqual(manual.nodes.find((n)=>n.id==='old'),sibling);
+});
+
+test('supply changes preserve the current model, operation and stored preference', () => {
+  const view=projectCanvasCatalog(catalog());
+  const prefs={text:GEMINI};
+  const asset={...node('asset'),data:{nodeKind:'import',materialType:'video'}};
+  const result=planCanvasInputMutation({nodes:[node('n',GEMINI),asset],edges:[]},{addEdges:[{source:'asset',target:'n'}]},{catalog:view,preferredModels:prefs});
+  assert.equal(result.status,'allowed');
+  assert.equal(result.edges.length,1);
+  const changed=result.nodes.find((n)=>n.id==='n');
+  assert.equal(changed.data.params.model,GEMINI);
+  assert.equal(changed.data.params.operation,'vision_chat');
+  assert.deepEqual(prefs,{text:GEMINI});
+});
+
+test('saved models that fell out of the visible set degrade via not_listed while keeping configuration and outputs', () => {
+  // 'unapproved' 现默认可见；让它脱离可见集的唯一办法是把它从 catalog[kind] 移除或加入隐藏集。
+  const hidden = { ...catalog(), canvasHiddenModels: { text: ['unapproved'] } };
+  const original=node('saved','unapproved'); original.data.content='existing result';
+  const result=reconcileCanvasForCatalog({nodes:[original],edges:[],catalog:projectCanvasCatalog(hidden),preferredModels:{text:GPT},previousFingerprint:'old'});
+  assert.equal(result.nodes[0].data.params.model,'unapproved');
+  assert.equal(result.nodes[0].data.content,'existing result');
+  assert.equal(result.nodes[0].data.compat.status,'ok');
+  // 新建空节点优先采用可用的手动偏好（GPT 可见）而非目录默认 unapproved。
+  const delayed=reconcileCanvasForCatalog({nodes:[node('empty')],edges:[],catalog:projectCanvasCatalog(catalog()),preferredModels:{text:GPT},previousFingerprint:'old'});
+  assert.equal(delayed.nodes[0].data.params.model,GPT);
+});
+
+test('upstream text readiness follows executor prompt precedence and refreshes when content changes', () => {
+  const target=node('target',GEMINI); target.data.prompt='';
+  const source={...node('source'),data:{nodeKind:'import',materialType:'text',content:'upstream text'}};
+  const view=projectCanvasCatalog(catalog());
+  const joined=planCanvasInputMutation({nodes:[source,target],edges:[]},{addEdges:[{source:'source',target:'target'}]},{catalog:view});
+  assert.equal(joined.nodes.find((n)=>n.id==='target').data.compat.readyToSubmit,true);
+  const cleared=planCanvasInputMutation(joined,{nodePatches:[{nodeId:'source',data:{content:''}}]},{catalog:view});
+  assert.equal(cleared.nodes.find((n)=>n.id==='target').data.compat.readyToSubmit,false);
+});
+
+test('video editing intent cannot silently become generation when no compatible editor remains', () => {
+  const view=projectCanvasCatalog(catalog());
+  const m={id:'seedance-2-0-fast',label:'Video',operations:[{id:'text_to_video',listed:true,output:{type:'video'},inputs:[]}]};
+  view.models.push(m);view.video.push({id:m.id,label:m.label});
+  assert.equal(planAutoAdaptation({catalog:view,fingerprint:fp(),outputType:'video',currentModelId:m.id,currentOperationId:'video_edit'}),null);
+});
+
+test('only upstream text contributes prompt; media captions cannot make an empty generation ready', () => {
+  const target = node('target', GPT);
+  target.data.prompt = '';
+  const image = { id: 'image', type: 'material', position: { x: 0, y: 0 }, data: { nodeKind: 'import', materialType: 'image', mediaUrl: '/image.png', content: 'old image caption' } };
+  const text = { id: 'text', type: 'material', position: { x: 0, y: 0 }, data: { nodeKind: 'import', materialType: 'text', content: 'upstream prompt' } };
+  const edge = { id: 'edge', source: 'image', target: 'target' };
+  assert.equal(buildCanvasUpstreamFingerprint('target', [target, image], [edge]).prompt, '');
+  assert.equal(buildCanvasUpstreamFingerprint('target', [target, image], [], ['image']).prompt, '');
+  assert.equal(buildCanvasUpstreamFingerprint('target', [target, image, text], [edge], ['text']).prompt, 'upstream prompt');
+  const result = planCanvasInputMutation({ nodes: [target, image], edges: [] }, { addEdges: [edge] }, { catalog: projectCanvasCatalog(catalog()) });
+  assert.equal(result.nodes.find((n) => n.id === 'target').data.compat.readyToSubmit, false);
+});
+
+test('legacy canvasHiddenModels no longer changes the effective policy or fingerprint', () => {
+  const raw = catalog();
+  const open = projectCanvasCatalog(raw);
+  // 基线：默认全开时 effectivePolicy 覆盖全部可见行。
+  assert.deepEqual(open.generationPolicy.text.allowedModelIds, open.text.map((m) => m.id));
+  assert.equal(open.generationPolicy.text.defaultModelId, 'unapproved');
+  // 隐藏集相减：hidden id 从 allowedModelIds 消失，可见行与其余 kind 不动。
+  const hidden = projectCanvasCatalog({ ...raw, canvasHiddenModels: { text: [GEMINI], video: ['any-id'] } });
+  assert.deepEqual(hidden.text.map((m) => m.id), open.text.map((m) => m.id));
+  assert.deepEqual(hidden.generationPolicy.text.allowedModelIds, open.generationPolicy.text.allowedModelIds);
+  assert.equal(hidden.generationPolicy.text.allowedModelIds.includes(GEMINI), true);
+  assert.deepEqual(hidden.video.map((m) => m.id), open.video.map((m) => m.id), 'unknown hidden ids are ignored');
+  // 隐藏默认 id：默认选择不再被旧 hidden 设置改变。
+  const hiddenDefault = projectCanvasCatalog({ ...raw, canvasHiddenModels: { text: ['unapproved'] } });
+  assert.equal(hiddenDefault.generationPolicy.text.defaultModelId, 'unapproved');
+  assert.equal(hiddenDefault.defaults.text, 'unapproved');
+  assert.equal(projectCanvasCatalog({ ...raw, canvasHiddenModels: { text: [GEMINI] } }).fingerprint, open.fingerprint);
+});
+
+test('capability seam admits only LISTED speech models, and only to the tool that consumes the seam', () => {
+  const asr = (id, listed, seam = 'speechToText') => ({ id, label: id, family: 'bytedance', operations: [
+    { id: 'speech_to_text', label: '语音转文字', listed, output: { type: 'text' }, inputs: [
+      { slot: 'audio_input', type: 'audio', role: 'source', source: 'upstream_edge', min: 1, max: 1 },
+    ], implementation: { status: 'ready', profileId: 'speechToText', seam }, execution: { status: 'live', profileId: 'speechToText', seam } },
+  ] });
+  const models = [asr('asr-listed', true), asr('asr-unlisted', false), asr('asr-other-seam', true, 'videoGenerate')];
+  const raw = { source: 'omnimux', fingerprint: 'fixture', models, text: [], image: [], video: [], audio: [] };
+  const view = projectCanvasCatalog(raw);
+  // Catalog rows are visible; the generative bucket stays empty and only the
+  // listed speech seam is admitted to the transcription tool.
+  assert.deepEqual(view.models.map((m) => m.id), ['asr-listed', 'asr-unlisted', 'asr-other-seam']);
+  assert.deepEqual(view.text, [], 'capability models must not enter a generative bucket');
+
+  const fingerprint = buildUpstreamFingerprint({ prompt: '', assets: [{ sourceNodeId: 'audio', type: 'audio', mimeType: 'audio/mpeg', sizeBytes: 1024 }] });
+  const transcription = buildFilteredModelOptions({ catalog: view, fingerprint, outputType: 'text', tool: 'audio-transcription' });
+  assert.deepEqual(transcription.options.map((o) => o.id), ['asr-listed']);
+  assert.equal(isZeroCandidateEmptyState(transcription), false);
+  // A caller with no tool, and a tool with a different seam, both see nothing.
+  assert.deepEqual(buildFilteredModelOptions({ catalog: view, fingerprint, outputType: 'text' }).options, []);
+  assert.deepEqual(buildFilteredModelOptions({ catalog: view, fingerprint, outputType: 'video', tool: 'video-generation' }).options, []);
+  // Unlisting the contract op still removes the tool option even though the row is visible.
+  models[0].operations[0].listed = false;
+  const afterUnlist = projectCanvasCatalog(raw);
+  assert.equal(afterUnlist.models.some((m) => m.id === 'asr-listed'), true);
+  assert.equal(isZeroCandidateEmptyState(
+    buildFilteredModelOptions({ catalog: afterUnlist, fingerprint, outputType: 'text', tool: 'audio-transcription' }),
+  ), true);
+});

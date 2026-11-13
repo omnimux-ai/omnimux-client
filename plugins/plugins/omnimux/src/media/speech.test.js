@@ -1,0 +1,277 @@
+import assert from 'node:assert/strict'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { test } from 'node:test'
+import { executeOmnimuxAudio, pollAudioTask } from './audio.js'
+import { OmnimuxError } from './errors.js'
+import { assertGuardOutput, assertGuardSubmit } from '../catalog/contract/submit-guard/index.js'
+import { parseMediaConfig, resolveMediaAuth, resolveMediaRoute } from './route.js'
+import { generateSpeech } from './speech.js'
+import { generateCliSpeech } from './cli-speech.js'
+import { mapOmnimuxInput } from './vendors/omnimux.js'
+
+const model = 'seed-audio-1.0'
+const voice = 'zh_male_guanggaojieshuo_uranus_bigtts'
+const env = { OMNIMUX_API_KEY: 'sk-fixture', OMNIMUX_BASE_URL: 'https://speech.example/v1/' }
+const bytes = Buffer.from([0x49, 0x44, 0x33, 0, 1, 255])
+const response = (headers = {}, body = bytes) => new Response(body, { headers: { 'content-type': 'audio/mpeg', ...headers } })
+
+// Keep the media task ledger (resolveMediaTasksDir → hubHomeDir) out of the
+// developer machine's real $DSH_HOME; node:test runs this file in its own
+// process, so the override cannot leak into sibling test files.
+process.env.DSH_HOME = mkdtempSync(join(tmpdir(), 'omnimux-speech-home-'))
+
+function destFor(t) {
+  const dir = mkdtempSync(join(tmpdir(), 'seed-audio-test-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  return join(dir, 'nested', 'speech.mp3')
+}
+
+// 2026-10-21 网关对账 #3516：全部 TTS 型号（seed-audio-1.0 / gemini-3.8-flash-tts）上游渠道停用，
+// 转为「仅登记不上架」，官方默认 text_to_speech 路由已移除。本文件验证的是**同步语音传输层**
+// （generateSpeech / generateCliSpeech + 参数映射 + 认证 + 错误分类）；因此按设计意图以
+// requireListed:false 走「unlisted 放行」契约路径，listing 依赖路径的 fail-closed 由
+// submit-guard / route / audio 等测试锁定。
+async function speak(input) {
+  const route = resolveMediaRoute('audio', { model: input.model ?? model }, parseMediaConfig(input.media), input.env)
+  const guardPlan = assertGuardSubmit({
+    model: route.modelId,
+    operation: input.operation ?? 'text_to_speech',
+    prompt: input.prompt,
+    voice: input.voice,
+    speed: input.speed,
+    format: input.format,
+  }, { seam: 'audioGenerate', capability: 'audio', outputType: 'audio', requireListed: false })
+  const payload = mapOmnimuxInput('audio', {
+    prompt: guardPlan.prompt,
+    model: guardPlan.modelId,
+    voice: input.voice,
+    speed: input.speed,
+    format: input.format,
+    operation: guardPlan.operationId,
+    guardPlan,
+  })
+  const speechRoute = { ...route, modelId: guardPlan.modelId }
+  if (guardPlan.operationId === 'text_to_speech' && guardPlan.modelId === 'gemini-3.8-flash-tts') {
+    return generateCliSpeech({
+      route: speechRoute,
+      guardPlan,
+      payload,
+      dest: input.dest,
+      signal: input.signal,
+      runner: input.cliRunner,
+    })
+  }
+  const auth = await resolveMediaAuth(route, { env: input.env, store: input.store, credentials: input.credentials })
+  return generateSpeech({
+    route: speechRoute,
+    guardPlan,
+    payload,
+    apiKey: auth.apiKey,
+    dest: input.dest,
+    fetcher: input.fetcher,
+    signal: input.signal,
+  })
+}
+
+for (const id of [undefined, model, 'doubao-seed-audio-1.0', 'seed-audio']) {
+  test(`synchronous speech writes raw bytes and sends canonical defaults for ${id ?? 'canonical contract'}`, async (t) => {
+    const dest = destFor(t)
+    const calls = []
+    const result = await speak({
+      dest, prompt: '  文本内容\n第二段  ', model: id, env, wait: false,
+      runtime: { execute() { assert.fail('speech must not create an async runtime task') } },
+      fetcher: async (url, options) => {
+        calls.push({ url, ...options, body: JSON.parse(options.body) })
+        return response({ 'x-audio-duration': '3.75', 'x-audio-url': 'https://cdn.example/listen.mp3' })
+      },
+    })
+    assert.deepEqual(result, { mode: 'live', model, duration: 3.75, url: 'https://cdn.example/listen.mp3', dest })
+    assert.deepEqual(readFileSync(dest), bytes)
+    assert.equal(calls.length, 1, 'no polling or preview URL download')
+    assert.equal(calls[0].url, 'https://speech.example/v1/audio/speech')
+    assert.equal(calls[0].method, 'POST')
+    assert.equal(calls[0].headers.authorization, 'Bearer sk-fixture')
+    assert.equal(calls[0].headers['content-type'], 'application/json')
+    assert.deepEqual(calls[0].body, { model, input: '  文本内容\n第二段  ', voice, speed: 1, response_format: 'mp3' })
+  })
+}
+
+for (const [format, mime] of [['mp3', 'audio/mpeg'], ['wav', 'audio/wav'], ['pcm', 'audio/pcm']]) {
+  test(`shared audio execution supports ${format} without optional response headers`, async (t) => {
+    const dest = destFor(t)
+    const result = await speak({
+      dest, prompt: 'Hello', operation: 'text_to_speech', env: {}, format,
+      voice: 'ICL_uranus_en_female_charlie_tob', speed: 1.25,
+      credentials: { async resolve(ref) { return ref === 'OMNIMUX_API_KEY' ? { value: 'sk-credential-fixture' } : undefined } },
+      fetcher: async (_url, options) => {
+        assert.deepEqual(JSON.parse(options.body), {
+          model, input: 'Hello', voice: 'ICL_uranus_en_female_charlie_tob', speed: 1.25, response_format: format,
+        })
+        assert.equal(options.headers.authorization, 'Bearer sk-credential-fixture')
+        return response({ 'content-type': `${mime}; charset=binary` })
+      },
+    })
+    assert.deepEqual(result, { mode: 'live', model, duration: undefined, url: undefined, dest })
+    assert.deepEqual(readFileSync(dest), bytes)
+  })
+}
+
+test('newly indexed non-core voice reaches only the synchronous speech HTTP body', async (t) => {
+  const selectedVoice = 'zh_female_linxiao_uranus_bigtts'
+  const calls = []
+  const dest = destFor(t)
+  await speak({ dest, model, operation: 'text_to_speech', prompt: '正文', voice: selectedVoice, env,
+    fetcher: async (url, options) => {
+      calls.push({ url, body: JSON.parse(options.body) })
+      return response()
+    },
+  })
+  assert.deepEqual(calls, [{ url: 'https://speech.example/v1/audio/speech',
+    body: { model, input: '正文', voice: selectedVoice, speed: 1, response_format: 'mp3' } }])
+  assert.deepEqual(readFileSync(dest), bytes)
+})
+
+test('admission fails before auth or HTTP for invalid speech input', async (t) => {
+  let authCalls = 0, httpCalls = 0
+  for (const invalid of [{ prompt: '' }, { prompt: '  ' }, { voice: 'alloy' }, { speed: NaN }, { speed: '1' }, { format: 'ogg' }, { model: 'suno' }]) {
+    const dest = destFor(t)
+    await assert.rejects(speak({
+      dest, prompt: 'hi', env: {}, ...invalid,
+      store: { async resolve() { authCalls++; return 'fixture' } },
+      fetcher: async () => { httpCalls++; return response() },
+    }), (err) => err instanceof OmnimuxError && err.code === 'omnimux-invalid-request')
+    assert.equal(existsSync(dest), false)
+  }
+  assert.equal(authCalls, 0)
+  assert.equal(httpCalls, 0)
+})
+
+test('valid speech without auth never issues a request', async (t) => {
+  await assert.rejects(speak({
+    dest: destFor(t), prompt: 'hi', env: {}, fetcher: () => assert.fail('unauthenticated HTTP'),
+  }), { code: 'needs-omnimux' })
+})
+
+for (const [status, body, code] of [
+  [401, 'unauthorized', 'needs-omnimux'], [402, 'payment required', 'quota-exceeded'],
+  [429, JSON.stringify({ error: { code: 'insufficient_user_quota' } }), 'quota-exceeded'],
+  [429, 'rate limited', 'omnimux-request-failed'], [500, 'sk-secret upstream detail', 'omnimux-request-failed'],
+  [503, JSON.stringify({ error: { code: 'CHANNEL_UNAVAILABLE' } }), 'CHANNEL_UNAVAILABLE'],
+  [201, 'unexpected success', 'omnimux-request-failed'], [204, null, 'omnimux-request-failed'],
+]) {
+  test(`speech classifies HTTP ${status} and never writes an error response`, async (t) => {
+    const dest = destFor(t)
+    await assert.rejects(speak({ dest, prompt: 'hi', env,
+      fetcher: async () => new Response(body, { status }),
+    }), (err) => err instanceof OmnimuxError && err.code === code && err.status === status && !err.message.includes('sk-secret'))
+    assert.equal(existsSync(dest), false)
+  })
+}
+
+test('invalid duration headers stay unknown rather than zero or NaN', async (t) => {
+  for (const duration of ['', 'unknown', '-1', 'Infinity']) {
+    const result = await speak({ dest: destFor(t), prompt: 'hi', env,
+      fetcher: async () => response({ 'x-audio-duration': duration }),
+    })
+    assert.equal(result.duration, undefined)
+  }
+})
+
+for (const bad of [new Response('error', { headers: { 'content-type': 'application/json' } }),
+  new Response(bytes), response({}, Buffer.alloc(0))]) {
+  test('speech rejects missing MIME, wrong MIME and empty body without overwriting files', async (t) => {
+    const dest = destFor(t).replace('/nested/', '/')
+    writeFileSync(dest, 'existing')
+    await assert.rejects(speak({ dest, prompt: 'hi', env,
+      fetcher: async () => bad,
+    }), { code: 'omnimux-invalid-response' })
+    assert.equal(readFileSync(dest, 'utf8'), 'existing')
+  })
+}
+
+test('network failures and aborted response bodies become standard errors', async (t) => {
+  const controller = new AbortController()
+  await assert.rejects(speak({ dest: destFor(t), prompt: 'hi', env,
+    fetcher: async () => { throw new TypeError('network down') },
+  }), { code: 'omnimux-request-failed' })
+  const dest = destFor(t)
+  await assert.rejects(speak({ dest, prompt: 'hi', env, signal: controller.signal,
+    fetcher: async (_url, options) => {
+      controller.abort()
+      assert.equal(options.signal.aborted, true)
+      return response()
+    },
+  }), { code: 'omnimux-aborted' })
+  assert.equal(existsSync(dest), false)
+  await assert.rejects(speak({ dest, prompt: 'hi', env, signal: controller.signal,
+    fetcher: () => assert.fail('pre-aborted signal must not fetch'),
+  }), { code: 'omnimux-aborted' })
+})
+
+test('audio output guard accepts verified bytes but not empty bytes or wrong MIME', () => {
+  const plan = assertGuardSubmit(
+    { model, prompt: 'hi', operation: 'text_to_speech' },
+    { seam: 'audioGenerate', requireListed: false },
+  )
+  assert.doesNotThrow(() => assertGuardOutput(plan, { mode: 'live', outputs: [{ type: 'audio', bytes, mime: 'audio/mpeg' }] }, { capability: 'audio' }))
+  for (const output of [{ type: 'audio', bytes: Buffer.alloc(0), mime: 'audio/mpeg' }, { type: 'audio', bytes, mime: 'image/png' }, { type: 'audio', bytes }]) {
+    assert.throws(() => assertGuardOutput(plan, { mode: 'live', outputs: [output] }, { capability: 'audio' }), { code: 'omnimux-invalid-response' })
+  }
+})
+
+test('existing task IDs retain audio polling and download when their lane model is known', async (t) => {
+  const dest = destFor(t)
+  const calls = []
+  // #3516：默认音频模型已切到 video 任务通道的 suno；恢复历史任务必须带原车道模型，
+  // 否则无法区分音频车道与视频车道（本用例固定 legacy 音频车道模型）。
+  const result = await executeOmnimuxAudio({ dest, taskId: 'legacy-task', model: 'seed-audio-1.0', env,
+    fetcher: async (url, options) => {
+      calls.push({ url, method: options?.method })
+      if (url.endsWith('/legacy-task')) return Response.json({ status: 'completed', audio_url: 'https://cdn.example/old.mp3' })
+      return response()
+    },
+  })
+  assert.deepEqual(result, { mode: 'live', taskId: 'legacy-task', url: 'https://cdn.example/old.mp3' })
+  assert.deepEqual(readFileSync(dest), bytes)
+  assert.equal(calls.length, 2)
+  assert.match(calls[0].url, /audio\/generations\/legacy-task$/)
+  assert.equal(calls[0].method, 'GET')
+  assert.equal(calls.some((call) => call.method === 'POST'), false)
+  const polled = await pollAudioTask({ baseUrl: 'https://speech.example/v1', taskId: 'legacy-task',
+    fetcher: async () => Response.json({ status: 'completed', audio_url: 'https://cdn.example/old.mp3' }),
+  })
+  assert.equal(polled.audio_url, result.url)
+})
+
+test('gemini-3.8-flash-tts dispatches to cliRunner without needing remote auth (#2801)', async (t) => {
+  const dest = destFor(t)
+  const cliCalls = []
+  const mockRunner = async (bin, args) => {
+    cliCalls.push({ bin, args })
+    writeFileSync(dest, Buffer.from('RIFF mock wav bytes'))
+    return {
+      stdout: JSON.stringify([{ Status: 'Success', Duration: '4.2s', OutputPath: dest }]),
+      stderr: '',
+    }
+  }
+
+  const result = await speak({
+    dest,
+    model: 'gemini-3.8-flash-tts',
+    prompt: '你好，这是来自 Gemini TTS 的测试',
+    env: {},
+    cliRunner: mockRunner,
+  })
+
+  assert.equal(result.mode, 'live')
+  assert.equal(result.model, 'gemini-3.8-flash-tts')
+  assert.equal(result.duration, 4.2)
+  assert.equal(result.dest, dest)
+  assert.equal(cliCalls.length, 1)
+  assert.equal(cliCalls[0].bin, 'opencli')
+  assert.deepEqual(cliCalls[0].args.slice(0, 2), ['gemini', 'tts'])
+  assert.equal(cliCalls[0].args[2], '你好，这是来自 Gemini TTS 的测试')
+})
+

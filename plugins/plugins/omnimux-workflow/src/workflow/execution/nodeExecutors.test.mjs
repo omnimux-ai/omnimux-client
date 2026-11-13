@@ -1,0 +1,67 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { createDispatchingNodeExecutor } from './nodeExecutors.ts';
+import { createMaterialGatewayExecutor } from './materialGatewayExecutor.ts';
+import { registerExecutor } from '../executors/registry.ts';
+import { findExecutionReadinessFailure } from '../../shared/validation/executionReadiness.ts';
+
+const catalog = { source: 'omnimux', text: [{ id: 'text-model' }], image: [], video: [], audio: [], models: [{ id: 'text-model', listed: true, operations: [{
+  id: 'text_generate', listed: true, output: { type: 'text' }, inputs: [
+    { slot: 'prompt', role: 'prompt', type: 'text', source: 'node_field', min: 1, max: 1 },
+  ],
+}] }] };
+const target = { id: 'target', type: 'material', data: { materialType: 'text', prompt: '缩短到 30 秒', params: { model: 'text-model', operation: 'text_generate' } } };
+const edges = [{ source: 'first', target: 'target' }, { source: 'second', target: 'target' }];
+function dispatch(outputs, requests, node = target, inputCatalog = catalog) {
+  const gateway = {
+    capabilities: async () => inputCatalog,
+    submit: async (request) => { requests.push(request); return { taskId: 'captured', mode: 'mock' }; },
+    awaitTask: async () => ({ text: 'done' }),
+  };
+  registerExecutor(createMaterialGatewayExecutor({ gateway }));
+  return createDispatchingNodeExecutor({ gateway, mediaRoot: '/tmp', executionId: 'readiness', edges, abortController: new AbortController() }).executor(node, {
+    getNodeOutput: (id) => outputs[id], reportProgress() {}, addMediaAsset() {},
+  });
+}
+
+test('dispatch sends both current text outputs and the local instruction in stable edge order', async () => {
+  const requests = [];
+  await dispatch({ first: { text: '第一段剧本' }, second: { text: '第二段剧本' } }, requests);
+  assert.equal(requests.length, 1);
+  assert.ok(requests[0].prompt.includes('第一段剧本'));
+  assert.ok(requests[0].prompt.includes('第二段剧本'));
+  assert.ok(requests[0].prompt.includes('缩短到 30 秒'));
+  assert.ok(requests[0].prompt.indexOf('第一段剧本') < requests[0].prompt.indexOf('第二段剧本'));
+});
+
+test('missing or empty scheduler outputs are omitted when actual text satisfies the prompt', async () => {
+  for (const output of [undefined, {}, { status: 'waiting' }, { text: '' }, { text: '   ' }]) {
+    const requests = [];
+    await dispatch({ first: { text: 'usable' }, second: output }, requests);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].prompt, '来源 1：\nusable\n\n补充要求：\n缩短到 30 秒');
+  }
+});
+
+test('empty generated and imported text does not block either execution mode with a local prompt', () => {
+  const generated = { id: 'first', type: 'material', data: { materialType: 'text', prompt: 'write', params: { model: 'text-model' } } };
+  const imported = { id: 'second', type: 'material', data: { materialType: 'text', nodeKind: 'import', content: 'ready' } };
+  const graph = { nodes: [generated, imported, target], edges };
+  assert.equal(findExecutionReadinessFailure([target], catalog, graph), null);
+  assert.equal(findExecutionReadinessFailure([target], catalog, { ...graph, scheduledNodeIds: new Set(['first', 'second', 'target']) }), null);
+  imported.data.content = '';
+  assert.equal(findExecutionReadinessFailure([target], catalog, { ...graph, scheduledNodeIds: new Set(['first', 'second', 'target']) }), null);
+});
+
+
+test('nonconsumed media stays out of requests; ambiguous audio text remains blocked', async () => {
+  const requests = [];
+  await dispatch({ first: { mediaAssets: [{ type: 'image', url: 'https://example.test/image.png' }] }, second: { text: 'body' } }, requests);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].references, undefined);
+  assert.equal(requests[0].image, undefined);
+  requests.length = 0;
+  const audioCatalog = { source: 'omnimux', models: [{ id: 'voice-model', listed: true, operations: [{ id: 'speak', listed: true, output: { type: 'audio' }, inputs: [{ slot: 'prompt', role: 'prompt', source: 'node_field', type: 'text', min: 1, max: 1 }] }] }] };
+  await assert.rejects(dispatch({ first: { text: '朗读正文' }, second: { text: '另一段正文' } }, requests, { ...target, data: { materialType: 'audio', prompt: '温柔一点', params: { model: 'voice-model', operation: 'speak' } } }, audioCatalog), /正文/);
+  assert.equal(requests.length, 0);
+});

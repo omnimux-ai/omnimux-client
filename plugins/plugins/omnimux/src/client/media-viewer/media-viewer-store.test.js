@@ -1,0 +1,207 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createMediaViewerStore, clearPersistedMediaViewerStore } from './media-viewer-store.js';
+
+test('media-viewer-store: addMedia and activeId tracking', () => {
+  const store = createMediaViewerStore();
+  assert.equal(store.getSnapshot().mediaList.length, 0);
+  assert.equal(store.getSnapshot().activeId, null);
+
+  const item1 = store.addMedia({ url: 'http://example.com/1.jpg', title: '图1' });
+  assert.equal(store.getSnapshot().mediaList.length, 1);
+  assert.equal(store.getSnapshot().activeId, item1.id);
+
+  const item2 = store.addMedia({ url: 'http://example.com/2.jpg', title: '图2' });
+  assert.equal(store.getSnapshot().mediaList.length, 2);
+  // activeId stays item1 unless changed
+  assert.equal(store.getSnapshot().activeId, item1.id);
+
+  store.setActiveId(item2.id);
+  assert.equal(store.getSnapshot().activeId, item2.id);
+});
+
+test('media-viewer-store: layout mode and zoom cycling', () => {
+  const store = createMediaViewerStore();
+  assert.equal(store.getSnapshot().layoutMode, '3col');
+
+  store.setLayoutMode('2col');
+  assert.equal(store.getSnapshot().layoutMode, '2col');
+
+  assert.equal(store.getSnapshot().zoom, 100);
+  store.cycleZoom();
+  assert.equal(store.getSnapshot().zoom, 150);
+  store.cycleZoom();
+  assert.equal(store.getSnapshot().zoom, 50);
+  store.cycleZoom();
+  assert.equal(store.getSnapshot().zoom, 70);
+});
+
+test('media-viewer-store: generating state subscription', () => {
+  const store = createMediaViewerStore();
+  let callCount = 0;
+  const unsub = store.subscribe((s) => {
+    callCount++;
+  });
+
+  store.setGenerating(true, { taskId: 'task_123' });
+  assert.equal(store.getSnapshot().isGenerating, true);
+  assert.equal(store.getSnapshot().generatingTask?.taskId, 'task_123');
+  assert.equal(callCount, 1);
+
+  store.setGenerating(false);
+  assert.equal(store.getSnapshot().isGenerating, false);
+  assert.equal(callCount, 2);
+
+  unsub();
+  store.setGenerating(true);
+  assert.equal(callCount, 2);
+});
+
+test('media-viewer-store: annotations lifecycle, consecutive indexing, and prompt formatting', () => {
+  const store = createMediaViewerStore();
+  const mediaId = 'img_test_1';
+
+  // 1. Initial state
+  assert.equal(store.getSnapshot().isAnnotating, false);
+  assert.deepEqual(store.getAnnotations(mediaId), []);
+
+  store.setAnnotating(true);
+  assert.equal(store.getSnapshot().isAnnotating, true);
+
+  // 2. Add draft annotation #1
+  const draft1 = store.addDraftAnnotation(mediaId, { xPercent: 51.2, yPercent: 27.4 });
+  assert.ok(draft1);
+  assert.equal(draft1.index, 1);
+  assert.equal(draft1.status, 'draft');
+
+  // 3. Commit annotation #1
+  store.commitAnnotation(mediaId, draft1.id, '帮我换一个人');
+  const listAfter1 = store.getAnnotations(mediaId);
+  assert.equal(listAfter1.length, 1);
+  assert.equal(listAfter1[0].text, '帮我换一个人');
+  assert.equal(listAfter1[0].status, 'saved');
+  assert.equal(listAfter1[0].index, 1);
+
+  // 4. Consecutive add draft annotation #2
+  const draft2 = store.addDraftAnnotation(mediaId, { xPercent: 68.5, yPercent: 29.1 });
+  assert.ok(draft2);
+  assert.equal(draft2.index, 2);
+  assert.equal(draft2.status, 'draft');
+
+  // 5. Commit annotation #2
+  store.commitAnnotation(mediaId, draft2.id, '穿吊带');
+  const listAfter2 = store.getAnnotations(mediaId);
+  assert.equal(listAfter2.length, 2);
+  assert.equal(listAfter2[1].text, '穿吊带');
+  assert.equal(listAfter2[1].status, 'saved');
+  assert.equal(listAfter2[1].index, 2);
+
+  // 6. Test structured model prompt formatting
+  const prompt = store.formatAnnotationsPrompt(mediaId);
+  assert.match(prompt, /图片局部修改指示（共 2 处标注）/);
+  assert.match(prompt, /编号 1.*51\.2%.*27\.4%.*帮我换一个人/);
+  assert.match(prompt, /编号 2.*68\.5%.*29\.1%.*穿吊带/);
+
+  // 7. Remove annotation #1 and check reindexing
+  store.removeAnnotation(mediaId, draft1.id);
+  const remaining = store.getAnnotations(mediaId);
+  assert.equal(remaining.length, 1);
+  assert.equal(remaining[0].id, draft2.id);
+  assert.equal(remaining[0].index, 1); // reindexed to 1
+
+  // 8. Clear annotations
+  store.clearAnnotations(mediaId);
+  assert.equal(store.getAnnotations(mediaId).length, 0);
+  assert.equal(store.formatAnnotationsPrompt(mediaId), '');
+});
+
+test('media-viewer-store: session binding, deduplication and session-scoped filtering', () => {
+  const store = createMediaViewerStore();
+  const sessionA = 'session-extract-video-123';
+  const sessionB = 'session-black-theme-456';
+
+  // Add media in session A
+  const itemA1 = store.addMedia({ url: 'http://example.com/a1.jpg', title: 'A1关键帧', sessionId: sessionA });
+  const itemA2 = store.addMedia({ url: 'http://example.com/a2.jpg', title: 'A2关键帧', sessionId: sessionA });
+
+  // Add media in session B
+  const itemB1 = store.addMedia({ url: 'http://example.com/b1.jpg', title: 'B1黑色图表', sessionId: sessionB });
+
+  // Verify full list vs scoped list
+  assert.equal(store.getSnapshot().mediaList.length, 3);
+  const listA = store.getMediaList(sessionA);
+  const listB = store.getMediaList(sessionB);
+  assert.equal(listA.length, 2);
+  assert.equal(listA[0].id, itemA1.id);
+  assert.equal(listA[1].id, itemA2.id);
+  assert.equal(listB.length, 1);
+  assert.equal(listB[0].id, itemB1.id);
+
+  // Verify deduplication within same session
+  store.addMedia({ url: 'http://example.com/a1.jpg', title: 'A1更新标题', sessionId: sessionA });
+  assert.equal(store.getMediaList(sessionA).length, 2);
+  assert.equal(store.getMediaList(sessionA)[0].title, 'A1更新标题');
+
+});
+
+test('media-viewer-store: localStorage persistence and restore', () => {
+  // Mock localStorage
+  const storage = new Map();
+  const mockLocalStorage = {
+    getItem: (key) => storage.get(key) || null,
+    setItem: (key, val) => storage.set(key, String(val)),
+    removeItem: (key) => storage.delete(key),
+    clear: () => storage.clear(),
+  };
+
+  const originalWindow = globalThis.window;
+  globalThis.window = { localStorage: mockLocalStorage };
+
+  try {
+    const store1 = createMediaViewerStore();
+    // 1. Add completed media and generating media
+    // Issue #3011：generating（含 requestKey/taskRef/request）与 failed 项必须随存储持久化，
+    // 刷新后才能按服务端任务记录续传或展示失败原因。
+    store1.addMedia({ id: 'm1', url: 'https://example.com/apple.png', title: '苹果', status: 'completed' });
+    store1.addMedia({
+      id: 'm_gen',
+      title: '生成中',
+      status: 'generating',
+      requestKey: 'm_gen',
+      taskRef: 'task_gen_1',
+      request: { prompt: 'a cat', kind: 'image', model: 'm', channel: 'c' },
+    });
+    store1.addMedia({ id: 'm_fail', title: '失败项', status: 'failed', failure: { reason: '生成失败，请稍后重试', retryable: true } });
+    const draft = store1.addDraftAnnotation('m1', { xPercent: 45, yPercent: 35 });
+    store1.commitAnnotation('m1', draft.id, '加一个猕猴桃');
+
+    // Verify localStorage retains completed + generating + failed items
+    const raw = mockLocalStorage.getItem('omnimux:media-viewer:store:v1');
+    assert.ok(raw, 'localStorage must contain persisted state');
+    const parsed = JSON.parse(raw);
+    assert.deepEqual(
+      parsed.mediaList.map((m) => `${m.id}:${m.status}`).sort(),
+      ['m1:completed', 'm_gen:generating', 'm_fail:failed'].sort(),
+      'generating 与 failed 项必须随存储持久化'
+    );
+    const persistedGen = parsed.mediaList.find((m) => m.id === 'm_gen');
+    assert.equal(persistedGen.taskRef, 'task_gen_1', 'taskRef 随持久化保留以便刷新续传');
+    assert.equal(persistedGen.request?.prompt, 'a cat', '提交参数随持久化保留以便重试');
+    assert.equal(parsed.annotationsByMediaId['m1']?.[0]?.text, '加一个猕猴桃');
+
+    // 2. Initialize new store instance from persisted localStorage
+    const store2 = createMediaViewerStore();
+    assert.equal(store2.getSnapshot().mediaList.length, 3);
+    assert.equal(store2.getSnapshot().mediaList[0].title, '苹果');
+    const restoredGen = store2.getSnapshot().mediaList.find((m) => m.id === 'm_gen');
+    assert.equal(restoredGen?.status, 'generating');
+    assert.equal(restoredGen?.taskRef, 'task_gen_1');
+    assert.equal(store2.getAnnotations('m1')[0]?.text, '加一个猕猴桃');
+
+    // 3. Clear storage
+    clearPersistedMediaViewerStore();
+    assert.equal(mockLocalStorage.getItem('omnimux:media-viewer:store:v1'), null);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});

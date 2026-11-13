@@ -188,7 +188,12 @@ describe('auto-qa-scan：事故反证与全仓回归', () => {
     const files = findFiles(root, undefined, (file) => isExtensionManifestFile(root, file))
     const manifests = files.filter((file) => isExtensionManifestPath(relative(root, file)))
     assert.ok(files.length > 200, `扫描集合过小，疑似收集退化：${files.length}`)
-    assert.ok(manifests.length >= 2, `扩展清单必须进入扫描集合：${manifests.length}`)
+    // [client-port] omnimux-client ships no extension-bearing package (omnimux-
+    // browser is not one of the 12), so the real repository has zero extension
+    // manifests. Keep the matcher liveness check; the scanner path itself is
+    // exercised by the synthetic reverse-proof test below.
+    assert.equal(isExtensionManifestPath('plugins/omnimux-browser/extension/manifest.json'), true)
+    assert.equal(manifests.length, 0, 'client ships no extension manifests')
     assert.deepEqual(securityFindings(files, root), [])
   })
 

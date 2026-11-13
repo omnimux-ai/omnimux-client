@@ -1,0 +1,205 @@
+import assert from 'node:assert/strict'
+import { describe, it } from 'node:test'
+import { registerTextCompleteRoutes as registerRoutes } from './http.js'
+const registerTextCompleteRoutes = (server, deps) => registerRoutes(server, { getConnection: () => ({ requestRejection: () => undefined }), ...deps })
+
+function createMockWebServer() {
+  const routes = new Map()
+  return {
+    routes,
+    register({ kind, path, handler }) {
+      routes.set(`${kind}:${path}`, handler)
+      return () => routes.delete(`${kind}:${path}`)
+    },
+  }
+}
+
+function createMockRes() {
+  return {
+    statusCode: 200,
+    headers: {},
+    body: '',
+    setHeader(k, v) {
+      this.headers[k.toLowerCase()] = v
+    },
+    writeHead(status, headers = {}) {
+      this.statusCode = status
+      for (const [k, v] of Object.entries(headers)) {
+        this.headers[k.toLowerCase()] = v
+      }
+    },
+    end(data = '') {
+      this.body += data
+    },
+  }
+}
+
+async function* createStream(chunks) {
+  for (const c of chunks) yield Buffer.from(c)
+}
+
+describe('registerTextCompleteRoutes HTTP gateway', () => {
+  it('registers route on /omnimux/text/complete and unregisters on stop', () => {
+    const server = createMockWebServer()
+    const stop = registerTextCompleteRoutes(server, {})
+    assert.equal(server.routes.has('exact:/omnimux/text/complete'), true)
+    stop()
+    assert.equal(server.routes.has('exact:/omnimux/text/complete'), false)
+  })
+
+  it('answers authenticated native OPTIONS without cross-origin permission', async () => {
+    const server = createMockWebServer()
+    registerTextCompleteRoutes(server, {})
+    const handler = server.routes.get('exact:/omnimux/text/complete')
+    const req = { method: 'OPTIONS' }
+    const res = createMockRes()
+
+    await handler(req, res)
+    assert.equal(res.statusCode, 204)
+    assert.equal(res.headers['access-control-allow-origin'], undefined)
+    assert.equal(res.headers['access-control-allow-methods'], undefined)
+  })
+
+  it('rejects non-POST method with 405', async () => {
+    const server = createMockWebServer()
+    registerTextCompleteRoutes(server, {})
+    const handler = server.routes.get('exact:/omnimux/text/complete')
+    const req = { method: 'GET' }
+    const res = createMockRes()
+
+    await handler(req, res)
+    assert.equal(res.statusCode, 405)
+    const json = JSON.parse(res.body)
+    assert.equal(json.ok, false)
+  })
+
+  it('handles POST and returns completed text from textComplete', async () => {
+    const server = createMockWebServer()
+    let executedWith = null
+    const textComplete = {
+      execute: async (input) => {
+        executedWith = input
+        return { text: '神评文案测试成功' }
+      },
+    }
+    registerTextCompleteRoutes(server, { textComplete })
+    const handler = server.routes.get('exact:/omnimux/text/complete')
+
+    const payload = JSON.stringify({ prompt: '推文正文', system: '神评专家' })
+    const req = Object.assign(createStream([payload]), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+    })
+    const res = createMockRes()
+
+    await handler(req, res)
+    assert.equal(res.statusCode, 200)
+    assert.equal(res.headers['access-control-allow-origin'], undefined)
+    const json = JSON.parse(res.body)
+    assert.equal(json.ok, true)
+    assert.equal(json.text, '神评文案测试成功')
+    assert.equal(executedWith.prompt, '推文正文')
+    assert.equal(executedWith.system, '神评专家')
+  })
+
+  it('rejects empty prompt with 400', async () => {
+    const server = createMockWebServer()
+    registerTextCompleteRoutes(server, {})
+    const handler = server.routes.get('exact:/omnimux/text/complete')
+
+    const payload = JSON.stringify({ prompt: '', system: '' })
+    const req = Object.assign(createStream([payload]), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+    })
+    const res = createMockRes()
+
+    await handler(req, res)
+    assert.equal(res.statusCode, 400)
+    const json = JSON.parse(res.body)
+    assert.equal(json.ok, false)
+  })
+})
+
+describe('toolModel fail-loud at the HTTP route', () => {
+  it('does not fall back to completeTextViaChat when toolModel is configured and execute throws', async () => {
+    const server = createMockWebServer()
+    const textComplete = {
+      execute: async () => {
+        const error = new Error('工具模型不可用（cpa:x），请在设置中重新选择')
+        error.code = 'omnimux-unconfigured'
+        throw error
+      },
+    }
+    // Even with a working hub credential present, a configured toolModel means
+    // the request may only run on that model — no silent fallback.
+    registerTextCompleteRoutes(server, {
+      textComplete,
+      settings: { get: (key) => key === 'omnimux' ? { toolModel: 'cpa:x' } : undefined },
+      credentials: { async resolve() { return { value: 'sk-real' } } },
+      env: { OMNIMUX_API_KEY: 'sk-real' },
+    })
+    const handler = server.routes.get('exact:/omnimux/text/complete')
+    const payload = JSON.stringify({ prompt: 'hi' })
+    const req = Object.assign(createStream([payload]), { method: 'POST', headers: { 'content-type': 'application/json' } })
+    const res = createMockRes()
+    await handler(req, res)
+    assert.equal(res.statusCode, 500)
+    const json = JSON.parse(res.body)
+    assert.equal(json.ok, false)
+    assert.match(json.error, /cpa:x/)
+  })
+
+  it('preserves a failed selected service even when an account credential exists', async () => {
+    const server = createMockWebServer()
+    const textComplete = { execute: async () => { throw new Error('llm down') } }
+    let credentialReads = 0, accountResolves = 0, requests = 0
+    registerTextCompleteRoutes(server, {
+      textComplete,
+      settings: { get: () => undefined },
+      env: { OMNIMUX_API_KEY: '' },
+      credentials: { resolve: async () => { credentialReads++; return { value: 'unused-explicit-key' } } },
+      resolveOfficialApiKey: async () => { accountResolves++; return 'unused-account-key' },
+      fetcher: async () => { requests++; throw new Error('must not request') },
+    })
+    const handler = server.routes.get('exact:/omnimux/text/complete')
+    const payload = JSON.stringify({ prompt: 'hi' })
+    const req = Object.assign(createStream([payload]), { method: 'POST', headers: { 'content-type': 'application/json' } })
+    const res = createMockRes()
+    await handler(req, res)
+    assert.equal(res.statusCode, 500)
+    assert.equal(JSON.parse(res.body).error, 'llm down')
+    assert.equal(credentialReads, 0)
+    assert.equal(accountResolves, 0)
+    assert.equal(requests, 0)
+  })
+
+  it('does not submit an empty seam result again through another service', async () => {
+    const server = createMockWebServer()
+    let requests = 0
+    registerTextCompleteRoutes(server, { textComplete: { execute: async () => ({ text: '' }) },
+      env: { OMNIMUX_API_KEY: 'unused-explicit-key' },
+      fetcher: async () => { requests++; throw new Error('must not request') } })
+    const handler = server.routes.get('exact:/omnimux/text/complete')
+    const req = Object.assign(createStream(['{"prompt":"hi"}']), { method: 'POST', headers: {} })
+    const res = createMockRes()
+    await handler(req, res)
+    assert.equal(JSON.parse(res.body).code, 'omnimux-invalid-response')
+    assert.equal(requests, 0)
+  })
+
+  it('legacy direct compatibility without a seam never activates account credentials', async () => {
+    const server = createMockWebServer()
+    let accountResolves = 0, requests = 0
+    registerTextCompleteRoutes(server, { env: {},
+      resolveOfficialApiKey: async () => { accountResolves++; return 'unused-account-key' },
+      fetcher: async () => { requests++; throw new Error('must not request') } })
+    const handler = server.routes.get('exact:/omnimux/text/complete')
+    const req = Object.assign(createStream(['{"prompt":"hi"}']), { method: 'POST', headers: {} })
+    const res = createMockRes()
+    await handler(req, res)
+    assert.equal(JSON.parse(res.body).code, 'official-credential-required')
+    assert.equal(accountResolves, 0)
+    assert.equal(requests, 0)
+  })
+})

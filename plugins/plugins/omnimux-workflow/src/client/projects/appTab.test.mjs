@@ -1,0 +1,115 @@
+import assert from 'node:assert/strict'
+import { describe, it } from 'node:test'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { APP_TAB_ID, openAppTab, bindBetterSidebar } from './projectCanvas.js'
+
+const here = dirname(fileURLToPath(import.meta.url))
+
+describe('AppTab and AI App Workflow integration', () => {
+  it('AppTab.jsx: 源码契约验证工作台双栏布局与关键控件几何', () => {
+    const src = readFileSync(join(here, 'AppTab.jsx'), 'utf8')
+    const stylesSrc = readFileSync(join(here, '../styles.js'), 'utf8')
+    // 导出 AppTab 组件
+    assert.match(src, /export function AppTab/)
+    // 读取 seed.extra?.manifest 或 localStorage
+    assert.match(src, /readCachedManifest/)
+    assert.match(src, /omnimux_apps_manifests/)
+    // 左表单 448px 几何与 398px 可用宽
+    assert.match(stylesSrc, /448px/)
+    assert.match(stylesSrc, /398px/)
+    // 44px 主按钮「立即生成」
+    assert.match(src, /立即生成/)
+    assert.match(stylesSrc, /height:\s*44px/)
+    // 右侧任务状态与产物输出
+    assert.match(src, /任务记录/)
+    assert.match(src, /示例演示/)
+    assert.match(src, /mediaUrl/)
+    // 严禁残留 exempt-ui04 文本泄漏
+    assert.doesNotMatch(src, /exempt-ui04/, 'AppTab 严禁残留 exempt-ui04 注释泄漏')
+    // 调用执行接口与异步轮询
+    assert.match(src, /__OMNIMUX_APPS_EXECUTE__|\/executions/)
+    assert.match(src, /pollStatus|__OMNIMUX_APPS_POLL__/, '必须包含真实任务轮询机制')
+    // 标题描述位于左侧容器（紧跟标题、分类徽标与版本）
+    assert.match(src, /omx-apptab-header-left[\s\S]*?omx-apptab-title[\s\S]*?omx-apptab-badge[\s\S]*?omx-apptab-version[\s\S]*?omx-apptab-desc/)
+    // 右上角新增「编辑应用」按钮与处理状态反馈
+    assert.match(src, /omx-apptab-header-right/)
+    assert.match(src, /omx-apptab-edit-btn/)
+    assert.match(src, /编辑应用/)
+    assert.match(src, /handleEditApp/)
+    assert.match(src, /isAppOwnedByUser/)
+    assert.match(src, /ForkAppProjectDialog/)
+    assert.match(src, /forkDialogOpen/)
+    assert.match(src, /handleForkSubmit/)
+    assert.match(src, /createProjectForkFromManifest/)
+    assert.match(stylesSrc, /\.omx-apptab-edit-btn\s*\{/)
+    // 覆盖官方应用时展示「恢复默认」与弹窗
+    assert.match(src, /omx-apptab-restore-btn/)
+    assert.match(src, /恢复默认/)
+    assert.match(src, /restoreBuiltinAppDefault/)
+    assert.match(src, /恢复官方默认配置/)
+    assert.match(stylesSrc, /\.omx-apptab-restore-btn\s*\{/)
+  })
+
+  it('index.js: 源码契约向 betterSidebar 注册 APP_TAB_ID', () => {
+    const src = readFileSync(join(here, '../index.js'), 'utf8')
+    assert.match(src, /APP_TAB_ID/)
+    assert.match(src, /registerAppTab/)
+    assert.match(src, /order:\s*6/)
+    assert.match(src, /single:\s*false/)
+    assert.match(src, /component:\s*\(props\)\s*=>\s*createElement\(AppTab/)
+  })
+
+  it('PublishWizardModal.tsx: 源码契约在发布成功后调度打开 AppTab', () => {
+    const modalPath = join(here, '../../canvas/editor/components/publish/PublishWizardModal.tsx')
+    const src = readFileSync(modalPath, 'utf8')
+    assert.match(src, /__omnimuxOpenAppTab/)
+    assert.match(src, /__omnimuxBetterSidebar/)
+  })
+
+  it('openAppTab coordinates with betterSidebar to open APP_TAB_ID', () => {
+    const opened = []
+    const mockSidebar = {
+      openTab(seed, scope) {
+        opened.push({ seed, scope })
+        return true
+      },
+    }
+
+    bindBetterSidebar(mockSidebar)
+
+    const manifest = {
+      appId: 'app_marketing_v1',
+      version: '1.0.0',
+      metadata: {
+        name: '营销文案视频生成器',
+        category: 'video',
+      },
+    }
+
+    const res = openAppTab(manifest, { scope: { sessionId: 'sess_123' } })
+    assert.equal(res, true)
+    assert.equal(opened.length, 1)
+    assert.equal(opened[0].seed.type, APP_TAB_ID)
+    assert.equal(opened[0].seed.id, 'app_app_marketing_v1')
+    assert.equal(opened[0].seed.title, '营销文案视频生成器')
+    assert.equal(opened[0].seed.path, 'app://app_marketing_v1')
+    assert.deepEqual(opened[0].seed.extra.manifest, manifest)
+    assert.equal(opened[0].scope.sessionId, 'sess_123')
+
+    bindBetterSidebar(null)
+  })
+
+  it('AppTab.jsx: 本地缓存缺失时按 appId 走只读接口解析内置应用 manifest（Issue #3876）', () => {
+    const src = readFileSync(join(here, 'AppTab.jsx'), 'utf8')
+    assert.match(src, /import \{ fetchAppManifest \} from '\.\/builtinApps\.js'/, '必须消费内置应用只读缝')
+    // 缓存命中路径不得回归：仍先读本地缓存
+    assert.match(src, /const cached = readCachedManifest\(appId\)[\s\S]*?if \(cached\)/)
+    // 缓存缺失时才走接口，且接口返回必须校验 appId 一致（不张冠李戴）
+    assert.match(src, /void fetchAppManifest\(appId\)\.then/)
+    assert.match(src, /prev\.appId === remote\.appId/, '接口回填必须核对 appId')
+    // 打开事件通道同样要能解析内置应用
+    assert.match(src, /const next = detail\?\.manifest \|\| readCachedManifest\(nextId\)[\s\S]*?fetchAppManifest\(nextId\)/)
+  })
+})
