@@ -14,8 +14,13 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 export const MANIFEST_URL = new URL('../plugins/omnimux/src/catalog/contract/auto-serving-manifest.json', import.meta.url)
 
-/** Repository-relative path of the shipped snapshot, as `git show` spells it. */
-export const BUNDLED_SNAPSHOT_GIT_PATH = relative(root, join(defaultBundledDir(), BUNDLED_SNAPSHOT_FILENAME)).split('\\').join('/')
+/** Repository-relative path of the shipped snapshot, as `git show` spells it.
+ * Relative to the git top-level, which in omnimux-client is one level above the
+ * plugin workspace (root); in the legacy single-repo layout they coincided. */
+const GIT_TOP = (() => {
+  try { return execFileSync('git', ['-C', root, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim() || root } catch { return root }
+})()
+export const BUNDLED_SNAPSHOT_GIT_PATH = relative(GIT_TOP, join(defaultBundledDir(), BUNDLED_SNAPSHOT_FILENAME)).split('\\').join('/')
 
 /**
  * Offline desired-state validation only; never contacts the gateway.
