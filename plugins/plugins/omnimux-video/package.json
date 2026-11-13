@@ -1,0 +1,30 @@
+{
+  "name": "omnimux-video",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "scripts",
+    "prompts",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "test": "node --test 'src/**/*.test.js'",
+    "prepublishOnly": "node ../../scripts/verify-publish-source.mjs ."
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "license": "SEE LICENSE IN LICENSE",
+  "description": "Local ffmpeg video processing + depth map (Depth Anything V2) + hub-backed video understanding for OmniMux."
+}

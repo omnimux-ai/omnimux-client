@@ -1,0 +1,16 @@
+schemaVersion: "1.1"
+managementGroup: "text"
+models:
+  - id: "fixture-missing-prompt"
+    label: "Fixture Missing Prompt"
+    family: "fixture"
+    operations:
+      - id: "chat"
+        label: "文本对话"
+        output:
+          type: "text"
+        inputs: []
+    research:
+      status: "draft"
+    execution:
+      status: "none"

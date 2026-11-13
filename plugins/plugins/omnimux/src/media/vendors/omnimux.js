@@ -1,0 +1,500 @@
+/** OmniMux catalog defaults and response envelopes. Not a second HTTP client. */
+
+export const TASK_PATH = Object.freeze({
+  video: 'video/generations',
+  image: 'images/generations',
+  audio: 'audio/generations',
+})
+
+/** Text-to-speech returns audio bytes synchronously, without a task handle. */
+export const SPEECH_PATH = 'audio/speech'
+
+/**
+ * Audio-capability models whose artifacts are produced by the shared video task
+ * endpoint. The channel documents these as GxgenAI tasks that reuse
+ * `/v1/video/generations` even though the artifact is audio, so the capability's
+ * default task path would address a route the model is not served on.
+ */
+export const AUDIO_VIDEO_TASK_MODEL_IDS = Object.freeze(['index-tts', 'suno', 'suno-sounds'])
+
+/**
+ * Audio-capability models served by the channel's AutoDL task lane
+ * (`/v1/tasks/*`). Their submit path carries an extra `autodl` segment that the
+ * poll endpoint does not, so submit and poll paths are recorded separately.
+ */
+export const AUDIO_AUTODL_TASK_MODEL_IDS = Object.freeze(['indextts-2'])
+
+/**
+ * Video-capability models served by the channel's AutoDL task lane
+ * (`/v1/tasks/*`). They submit to `tasks/autodl` and poll `tasks/{id}` just like
+ * the audio AutoDL lane; the lane id differs only in the capability namespace
+ * the caller asks for. `minimax-h3-video` is the first video entry — its media
+ * slots travel through the top-level `metadata` block, not the legacy
+ * image/image_tail/reference_images fields, which the AutoDL wire shape does not
+ * accept.
+ */
+export const AUTODL_VIDEO_TASK_MODEL_IDS = Object.freeze(['minimax-h3-video'])
+
+export const AUTODL_SUBMIT_PATH = 'tasks/autodl'
+export const AUTODL_POLL_PATH = 'tasks'
+
+/**
+ * Submit endpoint for one task submission, honouring the model overrides above.
+ * @param {string} capability
+ * @param {unknown} [modelId]
+ * @returns {string | undefined}
+ */
+export function taskPathFor(capability, modelId) {
+  if (modelId && (AUDIO_AUTODL_TASK_MODEL_IDS.includes(String(modelId)) || AUTODL_VIDEO_TASK_MODEL_IDS.includes(String(modelId)))) return AUTODL_SUBMIT_PATH
+  if (modelId && AUDIO_VIDEO_TASK_MODEL_IDS.includes(String(modelId))) return TASK_PATH.video
+  return TASK_PATH[capability]
+}
+
+/**
+ * Poll base path for one task reconcile/finish, honouring the model overrides
+ * above. The AutoDL lane submits to `tasks/autodl` but polls `tasks/{id}`;
+ * every other model polls the same path it submitted to.
+ * @param {string} capability
+ * @param {unknown} [modelId]
+ * @returns {string | undefined}
+ */
+export function taskPollPathFor(capability, modelId) {
+  if (modelId && (AUDIO_AUTODL_TASK_MODEL_IDS.includes(String(modelId)) || AUTODL_VIDEO_TASK_MODEL_IDS.includes(String(modelId)))) return AUTODL_POLL_PATH
+  return taskPathFor(capability, modelId)
+}
+
+/**
+ * True when the persisted submit path belongs to the AutoDL lane.
+ * @param {unknown} taskPath
+ * @returns {boolean}
+ */
+export function isAutodlTaskPath(taskPath) {
+  return String(taskPath || '') === AUTODL_SUBMIT_PATH
+}
+
+/** Speech-to-text is synchronous: one multipart POST, no task poll. */
+export const TRANSCRIPTION_PATH = 'audio/transcriptions'
+
+/**
+ * Catalog ids whose video-class operation is digital_human (talking-head).
+ * Unlike generic video generation, these REQUIRE a driving audio track.
+ */
+export const DIGITAL_HUMAN_MODEL_IDS = Object.freeze(['kling-avatar'])
+
+/**
+ * @param {unknown} modelId
+ * @returns {boolean}
+ */
+export function isDigitalHumanModel(modelId) {
+  const id = typeof modelId === 'string' ? modelId.trim().toLowerCase() : ''
+  return DIGITAL_HUMAN_MODEL_IDS.includes(id)
+}
+
+/**
+ * Transcript text from an OmniMux / OpenAI-compat transcription envelope.
+ * @param {unknown} raw
+ * @returns {string | undefined}
+ */
+export function pickTranscriptionText(raw) {
+  if (typeof raw === 'string') {
+    const text = raw.trim()
+    return text || undefined
+  }
+  if (!raw || typeof raw !== 'object') return undefined
+  const row = /** @type {Record<string, unknown>} */ (raw)
+  const data = row.data && typeof row.data === 'object' && !Array.isArray(row.data)
+    ? /** @type {Record<string, unknown>} */ (row.data)
+    : undefined
+  const direct = row.text ?? row.transcript ?? row.transcription
+    ?? data?.text ?? data?.transcript ?? data?.transcription
+  if (typeof direct === 'string' && direct.trim()) return direct.trim()
+  return undefined
+}
+
+/**
+ * @param {unknown} raw
+ * @returns {string | undefined}
+ */
+export function pickTaskId(raw) {
+  if (!raw || typeof raw !== 'object') return undefined
+  const row = /** @type {Record<string, unknown>} */ (raw)
+  const data = row.data && typeof row.data === 'object'
+    ? /** @type {Record<string, unknown>} */ (row.data)
+    : undefined
+  const id = row.task_id ?? row.taskId ?? row.id ?? data?.task_id ?? data?.taskId ?? data?.id
+  return id == null ? undefined : String(id)
+}
+
+/**
+ * First usable media URL from an OmniMux / OpenAI-compat envelope.
+ * @param {unknown} raw
+ * @returns {string | undefined}
+ */
+export function pickMediaUrl(raw) {
+  if (!raw || typeof raw !== 'object') return undefined
+  const row = /** @type {Record<string, unknown>} */ (raw)
+  const data = row.data && typeof row.data === 'object' && !Array.isArray(row.data)
+    ? /** @type {Record<string, unknown>} */ (row.data)
+    : undefined
+  const dataRows = Array.isArray(row.data) ? row.data : undefined
+  const firstData = dataRows && dataRows[0] && typeof dataRows[0] === 'object'
+    ? /** @type {Record<string, unknown>} */ (dataRows[0])
+    : undefined
+  // Image task records contain the provider's actual output beneath data.data;
+  // prefer it over the gateway content proxy, which may lag the ready artifact.
+  const providerResult = data?.data && typeof data.data === 'object' && !Array.isArray(data.data)
+    ? data.data : undefined
+  const providerUrl = providerResult?.result_data?.[0]?.url ?? providerResult?.results?.[0]
+    ?? data?.result_data?.[0]?.url ?? data?.results?.[0] ?? row.result_data?.[0]?.url ?? row.results?.[0]
+  if (typeof providerUrl === 'string' && /^https?:\/\//i.test(providerUrl)) return providerUrl
+  const direct = row.videoUrl ?? row.video_url ?? row.imageUrl ?? row.image_url
+    ?? row.audioUrl ?? row.audio_url
+    ?? row.contentUrl ?? row.content_url
+    ?? row.url ?? row.result_url
+    ?? data?.videoUrl ?? data?.video_url ?? data?.imageUrl ?? data?.image_url
+    ?? data?.audioUrl ?? data?.audio_url
+    ?? data?.contentUrl ?? data?.content_url
+    ?? data?.url ?? data?.result_url
+    ?? firstData?.content_url ?? firstData?.contentUrl ?? firstData?.url
+  if (typeof direct === 'string' && direct) return direct
+  const b64 = firstData?.b64_json ?? row.b64_json ?? data?.b64_json
+  if (typeof b64 === 'string' && b64.trim()) return `data:image/png;base64,${b64.trim()}`
+  const list = row.videoUrls ?? row.video_urls ?? row.imageUrls ?? row.image_urls
+    ?? row.audioUrls ?? row.audio_urls
+    ?? row.images ?? data?.videoUrls ?? data?.video_urls ?? data?.imageUrls ?? data?.images
+    ?? data?.audioUrls ?? data?.audio_urls
+  if (Array.isArray(list) && typeof list[0] === 'string') return list[0]
+  const outputs = row.outputs
+  if (Array.isArray(outputs)) {
+    for (const item of outputs) {
+      if (item && typeof item === 'object') {
+        const link = item.content_url ?? item.contentUrl ?? item.url
+        if (typeof link === 'string' && /^https?:\/\//i.test(link)) return link
+      }
+    }
+  }
+  // AutoDL lane (`/v1/tasks/{id}/artifacts`): produced files are listed under
+  // `artifacts`, each carrying a downloadable url.
+  const artifacts = Array.isArray(row.artifacts) ? row.artifacts
+    : Array.isArray(data?.artifacts) ? data.artifacts : undefined
+  if (Array.isArray(artifacts)) {
+    for (const item of artifacts) {
+      if (typeof item === 'string' && /^https?:\/\//i.test(item)) return item
+      if (item && typeof item === 'object') {
+        const link = item.content_url ?? item.contentUrl ?? item.url ?? item.download_url ?? item.downloadUrl ?? item.file_url ?? item.fileUrl
+        if (typeof link === 'string' && /^https?:\/\//i.test(link)) return link
+      }
+    }
+  }
+  return undefined
+}
+
+/** @deprecated use pickMediaUrl */
+export const pickVideoUrl = pickMediaUrl
+
+/**
+ * @param {unknown} raw
+ */
+export function pickTaskStatus(raw) {
+  if (!raw || typeof raw !== 'object') return ''
+  const row = /** @type {Record<string, unknown>} */ (raw)
+  const data = row.data && typeof row.data === 'object'
+    ? /** @type {Record<string, unknown>} */ (row.data)
+    : undefined
+  return String(row.status ?? data?.status ?? '').toLowerCase()
+}
+
+/**
+ * Capabilities whose task-detail endpoint is known to answer.
+ *
+ * Evidence (Issue #2092, probed 2026-09-16): `GET /v1/videos/{id}` returns the
+ * task record including `error.message`, while `GET /v1/images/{id}` and
+ * `GET /v1/audios/{id}` both answer `Invalid URL`. A capability without an entry
+ * here still gets a detail read whenever the poll body carries its own resource
+ * URL (see `taskDetailUrl`).
+ */
+export const TASK_DETAIL_PATH = Object.freeze({
+  video: 'videos',
+})
+
+/** Body keys that carry a human-readable failure reason on some envelope. */
+const FAILURE_REASON_KEYS = Object.freeze(['fail_reason', 'failure_reason', 'reason'])
+
+/**
+ * @param {...unknown} values
+ * @returns {string | undefined}
+ */
+function firstNonEmptyString(...values) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return undefined
+}
+
+/**
+ * @param {unknown} value
+ * @returns {Record<string, unknown> | undefined}
+ */
+function asRecord(value) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? /** @type {Record<string, unknown>} */ (value)
+    : undefined
+}
+
+/**
+ * Upstream failure reason from a terminal task body.
+ *
+ * The platform spreads the same reason across different envelopes per façade:
+ * the detail record carries `error.message`, the shallow poll façade may carry
+ * `message` or `data.error`, and some upstreams answer with a bare string. Every
+ * known shape is read before giving up — an empty answer here means "the poll
+ * body has no reason", not "there is no reason".
+ *
+ * @param {unknown} raw
+ * @returns {string | undefined}
+ */
+export function pickTaskFailureReason(raw) {
+  const row = asRecord(raw)
+  if (!row) return undefined
+  const data = asRecord(row.data)
+  const error = asRecord(row.error)
+  const dataError = asRecord(data?.error)
+  return firstNonEmptyString(
+    error?.message,
+    typeof row.error === 'string' ? row.error : undefined,
+    row.message,
+    dataError?.message,
+    typeof data?.error === 'string' ? data.error : undefined,
+    data?.message,
+    ...FAILURE_REASON_KEYS.map((key) => row[key]),
+    ...FAILURE_REASON_KEYS.map((key) => data?.[key]),
+  )
+}
+
+/**
+ * Detail URL for a terminal task.
+ *
+ * The body's own resource URL wins when it is the evidenced content form
+ * (`…/videos/{id}/content` → `…/videos/{id}`): that host is authoritative and is
+ * not guaranteed to equal `baseUrl`. Otherwise the capability's detail endpoint
+ * on `baseUrl` is used, and a capability with neither yields no URL at all.
+ *
+ * @param {unknown} raw
+ * @param {{ capability: string, baseUrl?: string, taskId?: string }} options
+ * @returns {string | undefined}
+ */
+export function taskDetailUrl(raw, options) {
+  // Official image polls omit failure details; the generic task record owns them.
+  if (options.capability === 'image' && options.taskId && options.baseUrl) {
+    try {
+      const base = new URL(options.baseUrl)
+      if (['https://api.omnimux.ai', 'https://omnimux.ai'].includes(base.origin) && /^\/v1\/?$/.test(base.pathname)) {
+        return `${base.origin}/v1/tasks/${encodeURIComponent(options.taskId)}`
+      }
+    } catch { /* Invalid bases retain the existing detail-resolution path. */ }
+  }
+  const row = asRecord(raw)
+  const data = asRecord(row?.data)
+  const candidate = firstNonEmptyString(row?.url, row?.result_url, data?.url, data?.result_url)
+  if (candidate && /^https?:\/\//i.test(candidate) && /\/content\/?$/i.test(candidate)) {
+    return candidate.replace(/\/content\/?$/i, '')
+  }
+  const path = TASK_DETAIL_PATH[options.capability]
+  const baseUrl = typeof options.baseUrl === 'string' ? options.baseUrl.replace(/\/+$/, '') : ''
+  if (!path || !baseUrl || !options.taskId) return undefined
+  return `${baseUrl}/${path}/${options.taskId}`
+}
+
+/**
+ * Chinese reading of a known upstream failure, matched by keyword.
+ *
+ * Order matters: the first match wins, so the most specific signatures sit
+ * first. An unmatched reason still reaches the user verbatim — the mapping only
+ * adds an actionable sentence on top of it.
+ */
+const FAILURE_HINTS = Object.freeze([
+  {
+    match: /file_download_error|failed to download|download the file|could ?not download/i,
+    hint: '模型方下载不到参考图，请重试或换一张参考图',
+  },
+  {
+    match: /moderation|sensitive|nsfw|policy|prohibited|risk|审核|违规/i,
+    hint: '内容未通过审核，请调整提示词或更换参考图',
+  },
+  {
+    match: /insufficient|balance|quota|arrears|欠费|余额/i,
+    hint: '账户额度不足，请充值或更换渠道分组',
+  },
+  {
+    match: /expired|not accessible|invalid url|unreachable|失效/i,
+    hint: '参考素材地址已失效，请重新读取素材后再试',
+  },
+  {
+    match: /timeout|timed out|time out|超时/i,
+    hint: '上游生成超时，请重试',
+  },
+])
+
+/**
+ * Compose the `omnimux-failed` message a terminal task failure deserves.
+ *
+ * The leading `"<capability> task <id> failed"` sentence is kept verbatim so
+ * existing log searches and support runbooks keep matching; the reason and its
+ * reading are appended.
+ *
+ * @param {{ capability: string, taskId: string, reason?: string }} input
+ * @returns {string}
+ */
+export function describeTaskFailure(input) {
+  const base = `${input.capability} task ${input.taskId} failed`
+  const reason = typeof input.reason === 'string' ? input.reason.trim() : ''
+  if (!reason) {
+    return `${base}：上游未返回失败原因，请重试；若持续失败请把任务号反馈给支持`
+  }
+  const hit = FAILURE_HINTS.find((row) => row.match.test(reason))
+  const reading = hit ? hit.hint : '上游生成失败，请重试；若持续失败请更换模型或渠道分组'
+  return `${base}：${reading}（上游：${reason}）`
+}
+
+/**
+ * Map a capability request onto the OmniMux OpenAI-compat body.
+ * When `guardPlan.vendorPayload` is present (SubmitGuard #468), prefer that
+ * profile-constrained body and only fill gaps from legacy heuristics.
+ * @param {string} capability
+ * @param {{
+ *   prompt: string,
+ *   model?: string,
+ *   duration?: number,
+ *   image?: string,
+ *   speech?: string,
+ *   audio?: string,
+ *   references?: Array<{ role?: string, type: string, pathOrUrl: string, [key: string]: unknown }>,
+ *   audioTrack?: { role?: string, type: string, pathOrUrl: string, [key: string]: unknown },
+ *   voice?: string,
+ *   style?: string,
+ *   instrumental?: boolean,
+ *   speed?: number,
+ *   format?: string,
+ *   aspectRatio?: string,
+ *   resolution?: string,
+ *   operation?: string,
+ *   guardPlan?: { vendorPayload?: Record<string, unknown>, operationId?: string, profileId?: string, modelId?: string },
+ * }} request
+ */
+export function mapOmnimuxInput(capability, request) {
+  // Profile-validated payload from SubmitGuard — fail-closed shape already enforced.
+  if (request.guardPlan?.vendorPayload && typeof request.guardPlan.vendorPayload === 'object') {
+    const fromGuard = { ...request.guardPlan.vendorPayload }
+    // Ensure model wire id is not injected here (protocol layer owns model).
+    if (fromGuard.prompt === undefined && fromGuard.input === undefined && request.prompt) fromGuard.prompt = request.prompt
+    return fromGuard
+  }
+
+  if (capability === 'audio' && (request.operation === 'text_to_speech' || request.operation === 'voice_clone' || request.model === 'seed-audio-1.0')) {
+    const speech = { input: request.prompt }
+    if (request.voice !== undefined) speech.voice = request.voice
+    if (request.speed !== undefined) speech.speed = request.speed
+    if (request.format !== undefined) speech.response_format = request.format
+
+    const references = Array.isArray(request.references) ? request.references : []
+    const audioRef = references.find((r) => r && r.type === 'audio' && typeof r.pathOrUrl === 'string' && r.pathOrUrl)
+      ?? (request.audioTrack && typeof request.audioTrack.pathOrUrl === 'string' && request.audioTrack.pathOrUrl ? request.audioTrack : undefined)
+    const audioUrl = audioRef?.pathOrUrl ?? (typeof request.audio === 'string' && request.audio ? request.audio : undefined)
+    if (audioUrl) {
+      speech.references = [{ audio_url: audioUrl }]
+      speech.audio_url = audioUrl
+    }
+    return speech
+  }
+
+  const input = { prompt: request.prompt }
+  if (request.duration) input.duration = request.duration
+
+  if (capability === 'video') {
+    // 视频请求：画幅/分辨率透传；上游网关对 video 结构体启用了 DisallowUnknownFields，
+    // 只允许 image / image_tail / reference_images 等已知字段，绝不能注入
+    // images/references/audioTrack（#429）。last_frame wire 证据见 #566：image_tail。
+    if (request.aspectRatio) input.aspect_ratio = request.aspectRatio
+    if (request.resolution) input.resolution = request.resolution
+
+    const references = Array.isArray(request.references) ? request.references : []
+    /** @type {Array<{ role?: string, type: string, pathOrUrl: string, [key: string]: unknown }>} */
+    const imageRefs = references.filter(
+      (r) => r && r.type === 'image' && typeof r.pathOrUrl === 'string' && r.pathOrUrl,
+    )
+    const firstFrameRef = imageRefs.find((r) => r.role === 'first_frame')
+    const lastFrameRef = imageRefs.find((r) => r.role === 'last_frame')
+    // Generic refs only — last_frame must never collapse into reference_images (#566).
+    const otherImageUrls = []
+    const seenOther = new Set()
+    for (const ref of imageRefs) {
+      if (ref.role === 'first_frame' || ref.role === 'last_frame') continue
+      if (seenOther.has(ref.pathOrUrl)) continue
+      seenOther.add(ref.pathOrUrl)
+      otherImageUrls.push(ref.pathOrUrl)
+    }
+
+    if (firstFrameRef || lastFrameRef) {
+      // Frame roles are independent: first → image, last → image_tail.
+      // Tail never overwrites first; tail never enters reference_images.
+      // Extra generic refs are dropped in frame mode (same exclusivity as #429 first_frame).
+      if (firstFrameRef) {
+        input.image = firstFrameRef.pathOrUrl
+      } else if (request.image) {
+        // only-last + legacy request.image still maps first slot without inventing a fake ref
+        input.image = request.image
+      }
+      if (lastFrameRef) {
+        input.image_tail = lastFrameRef.pathOrUrl
+      }
+    } else if (otherImageUrls.length > 0) {
+      // 参考图模式：用 reference_images 数组（每项 { url }）
+      input.reference_images = otherImageUrls.map((url) => ({ url }))
+    } else if (request.image) {
+      input.image = request.image
+    }
+    // digital_human（如 kling-avatar、minimax-h3 口型版分组）：audioTrack 是驱动音频，
+    // 属于该模型契约的已知字段，必须透传（#538）。普通 video 模型仍严禁携带
+    // audioTrack（#429），网关 Go 结构体 DisallowUnknownFields 会 400。
+    // H3 家族按产品 id minimax-h3 进入本函数（线路候选在更下游才替换），
+    // 故以操作 id 判定，避免给普通 H3 视频操作开口子。
+    if ((isDigitalHumanModel(request.model) || request.operation === 'digital_human') && request.audioTrack && request.audioTrack.pathOrUrl) {
+      input.audioTrack = request.audioTrack
+    }
+    // 严禁向 video 注入 images/references/metadata（#429/#432）。
+    // 网关 Go 结构体 DisallowUnknownFields，metadata 会 400。
+    return input
+  } else {
+    // 非 video（image/audio）保持现存的向后兼容逻辑不变
+    if (request.image) input.image = request.image
+    if (capability === 'image') {
+      if (request.size) input.size = request.size
+      if (request.quality) input.quality = request.quality
+    }
+    if (Array.isArray(request.references) && request.references.length > 0) {
+      input.references = request.references
+      const imageRefs = request.references
+        .filter((r) => r && r.type === 'image' && r.pathOrUrl)
+        .map((r) => r.pathOrUrl)
+      if (imageRefs.length > 0) {
+        input.images = imageRefs
+        if (!input.image) {
+          input.image = imageRefs[0]
+        }
+      }
+    }
+    if (request.audioTrack) {
+      input.audioTrack = request.audioTrack
+    }
+  }
+  /** @type {Record<string, unknown>} */
+  const metadata = {}
+  if (typeof request.speech === 'string' && request.speech.trim()) metadata.speech = request.speech.trim()
+  if (typeof request.audio === 'string' && request.audio.trim()) metadata.audio = request.audio.trim()
+  if (typeof request.voice === 'string' && request.voice.trim()) metadata.voice = request.voice.trim()
+  if (typeof request.style === 'string' && request.style.trim()) metadata.style = request.style.trim()
+  if (request.instrumental !== undefined) metadata.instrumental = Boolean(request.instrumental)
+  if (request.speed !== undefined) metadata.speed = request.speed
+  if (Object.keys(metadata).length > 0) input.metadata = metadata
+  return input
+}

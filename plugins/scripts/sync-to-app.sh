@@ -1,0 +1,574 @@
+#!/bin/bash
+# sync-to-app.sh — 合并后同步：先构建产物，再物化进目标 profile。
+#
+# 默认行为：仅物化到开发版 ~/.omnimux-dev（安全隔离，避免污染生产/官方环境）。
+# 可选参数：可通过 --prod / --dsh / --all 或 --target 指定同步到其他环境。
+# 规范：docs/contracts/dev-pipeline.md
+#
+# 用法：
+#   ./scripts/sync-to-app.sh                     # 默认：构建并同步全部清单插件到 ~/.omnimux-dev
+#   ./scripts/sync-to-app.sh omnimux-assets       # 默认：只同步一个插件到 ~/.omnimux-dev
+#   ./scripts/sync-to-app.sh --prod               # 同步到正式版 ~/.omnimux
+#   ./scripts/sync-to-app.sh --dsh                # 同步到官方底座 ~/.dsh
+#   ./scripts/sync-to-app.sh --all                # 广播同步到全部 Profile (~/.omnimux-dev, ~/.omnimux, ~/.dsh)
+#   ./scripts/sync-to-app.sh --target=dev,prod    # 自定义多目标同步
+#   ./scripts/sync-to-app.sh --skip-build omnimux-assets
+#
+# 主入口（推荐）：在 omnimux-desktop-fork 里跑
+#   yarn omnimux:sync [插件...] [--prod|--dsh|--all]
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PLUGINS_ROOT="${OMNIMUX_PLUGINS_DIR:-$ROOT/plugins}"
+source "$ROOT/scripts/resolve-omnimux-profile.sh"
+# Managed mode is mutually exclusive and branches before build, kit or preset writes.
+ORIGINAL_ARGS=("$@")
+for arg in "$@"; do
+  case "$arg" in
+    --managed-tarball*|--expect-*|--recover-managed-tarball*)
+      exec bash "$ROOT/scripts/sync-stable.sh" "$@"
+      ;;
+  esac
+done
+SKIP_BUILD=0
+PLUGINS=()
+TARGET_SELECTION=()
+TARGET_FLAGS=()
+EXPLICIT_PLUGIN_SCOPE=0
+ALPHA_PLUGINS=()
+if ! alpha_plugins_output="$(node "$ROOT/scripts/plugin-lifecycle.mjs" list-alpha-plugins)"; then
+  echo "❌ 无法读取 Alpha 插件生命周期注册表，拒绝物化。" >&2
+  exit 1
+fi
+[ -n "$alpha_plugins_output" ] || { echo "❌ Alpha 插件生命周期注册表为空，拒绝物化。" >&2; exit 1; }
+ALPHA_PLUGINS_LABEL="${alpha_plugins_output//$'\n'/ }"
+while IFS= read -r plugin_name; do
+  [ -n "$plugin_name" ] && ALPHA_PLUGINS+=("$plugin_name")
+done <<< "$alpha_plugins_output"
+
+is_alpha_plugin() {
+  local candidate="$1"
+  for alpha_plugin in "${ALPHA_PLUGINS[@]}"; do
+    [ "$candidate" = "$alpha_plugin" ] && return 0
+  done
+  return 1
+}
+
+usage() {
+  sed -n '2,16p' "$0"
+  exit 1
+}
+
+for arg in "${@:-}"; do
+  if [ "$arg" = "-h" ] || [ "$arg" = "--help" ]; then
+    usage
+  fi
+done
+
+# ---------------------------------------------------------------------------
+# 目标 Profiles 解析与参数处理
+# ---------------------------------------------------------------------------
+if [ -n "${OMNIMUX_SYNC_TARGETS:-}" ]; then
+  IFS=',' read -ra ENV_TARGETS <<< "$OMNIMUX_SYNC_TARGETS"
+  for t in "${ENV_TARGETS[@]}"; do
+    t=$(normalize_omnimux_sync_target "$t")
+    [ -n "$t" ] && TARGET_SELECTION+=("$t")
+  done
+fi
+
+parse_target_value() {
+  local val="$1"
+  IFS=',' read -ra PARTS <<< "$val"
+  for p in "${PARTS[@]}"; do
+    p=$(normalize_omnimux_sync_target "$p")
+    [ -n "$p" ] && TARGET_SELECTION+=("$p")
+  done
+}
+
+usage() {
+  sed -n '2,16p' "$0"
+  exit 1
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help) usage ;;
+    --skip-build) SKIP_BUILD=1; shift ;;
+    --dev|--omnimux-dev)
+      TARGET_SELECTION+=("dev")
+      TARGET_FLAGS+=("$1")
+      shift ;;
+    --prod|--omnimux)
+      TARGET_SELECTION+=("prod")
+      TARGET_FLAGS+=("$1")
+      shift ;;
+    --dsh)
+      TARGET_SELECTION+=("dsh")
+      TARGET_FLAGS+=("$1")
+      shift ;;
+    --all|--broadcast|--all-profiles)
+      TARGET_SELECTION+=("all")
+      TARGET_FLAGS+=("$1")
+      shift ;;
+    --target=*|--profile=*)
+      val="${1#*=}"
+      parse_target_value "$val"
+      TARGET_FLAGS+=("$1")
+      shift ;;
+    --target|--profile)
+      if [ $# -lt 2 ]; then
+        echo "❌ $1 需要提供参数值 (dev | prod | dsh | all)" >&2
+        exit 1
+      fi
+      parse_target_value "$2"
+      TARGET_FLAGS+=("$1" "$2")
+      shift 2 ;;
+    --*) echo "未知参数: $1" >&2; usage ;;
+    *) PLUGINS+=("$1"); shift ;;
+  esac
+done
+
+if [ ${#PLUGINS[@]} -gt 0 ]; then
+  EXPLICIT_PLUGIN_SCOPE=1
+fi
+
+TARGET_HOMES=()
+add_target_home() {
+  local h="$1"
+  if [ "${#TARGET_HOMES[@]}" -gt 0 ]; then
+    for existing in "${TARGET_HOMES[@]}"; do
+      [ "$existing" = "$h" ] && return 0
+    done
+  fi
+  TARGET_HOMES+=("$h")
+}
+
+if [ ${#TARGET_SELECTION[@]} -eq 0 ]; then
+  # 默认只给 .omnimux-dev
+  add_target_home "$HOME/.omnimux-dev"
+else
+  for item in "${TARGET_SELECTION[@]}"; do
+    case "$item" in
+      all|broadcast)
+        add_target_home "$HOME/.omnimux-dev"
+        add_target_home "$HOME/.omnimux"
+        add_target_home "$HOME/.dsh"
+        ;;
+      dev|omnimux-dev)
+        add_target_home "$HOME/.omnimux-dev"
+        ;;
+      prod|omnimux|omnimux-prod)
+        add_target_home "$HOME/.omnimux"
+        ;;
+      dsh|dsh-desktop)
+        add_target_home "$HOME/.dsh"
+        ;;
+      /*|"~"|"~/"*)
+        expanded_path=$(expand_omnimux_sync_target_home "$item") || exit 1
+        add_target_home "$expanded_path"
+        ;;
+      *)
+        echo "⚠ 未知同步目标 [$item]，忽略。可选值: dev | prod | dsh | all" >&2
+        ;;
+    esac
+  done
+fi
+
+TARGET_PROFILES=()
+
+
+# —— 未合并物化旁路安全门禁 ——
+unmerged_target="${OMNIMUX_ALLOW_UNMERGED_TARGET:-}"
+if [ "${OMNIMUX_ALLOW_UNMERGED_MATERIALIZE:-0}" = "1" ] && [ -z "$unmerged_target" ]; then
+  echo "❌ sync: OMNIMUX_ALLOW_UNMERGED_MATERIALIZE 已废弃：未合并物化必须同时设置 OMNIMUX_ALLOW_UNMERGED_TARGET=<~/.dsh-dev/tasks/... 前缀>，未提交代码禁止物化。" >&2
+  exit 1
+fi
+if [ -n "$unmerged_target" ]; then
+  tasks_prefix="$HOME/.dsh-dev/tasks"
+  case "$unmerged_target" in
+    "$tasks_prefix"|"$tasks_prefix"/*) ;;
+    *)
+      echo "❌ sync: OMNIMUX_ALLOW_UNMERGED_TARGET 必须以 ${tasks_prefix}/ 开头（当前: ${unmerged_target}）。未提交代码禁止物化。" >&2
+      exit 1
+      ;;
+  esac
+  if [ "${#TARGET_HOMES[@]}" -gt 0 ]; then
+    for h in "${TARGET_HOMES[@]}"; do
+      case "$h" in
+        "$unmerged_target"|"$unmerged_target"/*) ;;
+        *)
+          echo "❌ sync: 未合并物化目标 [$h] 不在允许前缀 [$unmerged_target] 内，未提交代码禁止物化。" >&2
+          exit 1
+          ;;
+      esac
+    done
+  fi
+fi
+
+source "$ROOT/scripts/sync-main.sh"
+assert_omnimux_sync_main "$ROOT"
+assert_omnimux_sync_plugins "$ROOT" "$PLUGINS_ROOT"
+
+for home_dir in "${TARGET_HOMES[@]}"; do
+  prof_dir="$(resolve_omnimux_profile_dir "$home_dir")" || exit 1
+  if [ -d "$prof_dir" ] || [ -d "$home_dir" ]; then
+    already=0
+    if [ "${#TARGET_PROFILES[@]}" -gt 0 ]; then
+      for p in "${TARGET_PROFILES[@]}"; do
+        if [ "$p" = "$prof_dir" ]; then
+          already=1
+          break
+        fi
+      done
+    fi
+    if [ "$already" -eq 0 ]; then
+      TARGET_PROFILES+=("$prof_dir")
+    fi
+  fi
+done
+
+if [ "${#TARGET_PROFILES[@]}" -gt 0 ]; then
+  lock_status=0
+  python3 "$ROOT/scripts/managed-tarball-archive.py" check-locks "${TARGET_PROFILES[@]}" || lock_status=$?
+  if [ "$lock_status" -eq 10 ]; then
+    exec python3 "$ROOT/scripts/managed-tarball-archive.py" lock "${TARGET_PROFILES[@]}" -- bash "$0" ${ORIGINAL_ARGS[@]+"${ORIGINAL_ARGS[@]}"}
+  elif [ "$lock_status" -ne 0 ]; then
+    exit 4
+  fi
+  python3 "$ROOT/scripts/managed-tarball-archive.py" pending "${TARGET_PROFILES[@]}" || exit 7
+fi
+
+DEFAULT_PLUGINS=(omnimux omnimux-forms omnimux-accounts omnimux-assets omnimux-products omnimux-workflow omnimux-market omnimux-inspiration omnimux-clip omnimux-video omnimux-video-preview omnimux-analytics omnimux-publish omnimux-browser omnimux-viewer omnimux-apps omnimux-social-harvest omnimux-avatar omnimux-studio)
+if [ ${#PLUGINS[@]} -eq 0 ]; then
+  PLUGINS=("${DEFAULT_PLUGINS[@]}")
+fi
+SYNC_PLUGINS=("${PLUGINS[@]}")
+BUILD_PLUGINS=("${SYNC_PLUGINS[@]}")
+
+# Production policy applies to the target, including named-plugin syncs. A
+# mixed dev+prod run keeps Alpha in Dev while sync-stable filters Prod.
+HAS_PRODUCTION_TARGET=0
+HAS_NON_PRODUCTION_TARGET=0
+for home_dir in "${TARGET_HOMES[@]}"; do
+  release_channel=$(resolve_omnimux_release_channel "$(resolve_omnimux_profile_dir "$home_dir")")
+  if [ "$release_channel" = "production" ]; then
+    HAS_PRODUCTION_TARGET=1
+  else
+    HAS_NON_PRODUCTION_TARGET=1
+  fi
+done
+if [ "$HAS_PRODUCTION_TARGET" -eq 1 ]; then
+  has_hub=0
+  for plugin_name in "${BUILD_PLUGINS[@]}"; do
+    [ "$plugin_name" = "omnimux" ] && has_hub=1
+  done
+  [ "$has_hub" -eq 1 ] || BUILD_PLUGINS+=(omnimux)
+fi
+if [ "$HAS_PRODUCTION_TARGET" -eq 1 ] && [ "$HAS_NON_PRODUCTION_TARGET" -eq 0 ]; then
+  RELEASE_PLUGINS=()
+  for plugin_name in "${BUILD_PLUGINS[@]}"; do
+    is_alpha_plugin "$plugin_name" || RELEASE_PLUGINS+=("$plugin_name")
+  done
+  BUILD_PLUGINS=("${RELEASE_PLUGINS[@]}")
+fi
+
+# ---------------------------------------------------------------------------
+# dsh-ui-kit 版本漂移防护 (Issue #200)
+#
+# 策略：node_modules 只由 stable 的 pnpm 输出。完整同步只更新既有受管 kit
+# snapshot；官方完整 Profile rebuild 负责首次建立该 snapshot。
+# ---------------------------------------------------------------------------
+MANAGED_DSH_UI_KIT_RELATIVE_PATH='.materialize-snapshots/plugins/dsh-ui-kit'
+
+# 权威 dsh-ui-kit 自 2026-10 起固定在仓内 packages/dsh-ui-kit（Issue #2891：
+# 仓库外 file: 依赖让 CI 与干净检出无法安装）。旧的个人目录路径不再作为候选；
+# 需要临时覆盖时用 OMNIMUX_DSH_UI_KIT_DIR 显式指定。
+if [ -z "${OMNIMUX_DSH_UI_KIT_DIR:-}" ]; then
+  DSH_UI_KIT_DIR="$ROOT/packages/dsh-ui-kit"
+else
+  DSH_UI_KIT_DIR="$OMNIMUX_DSH_UI_KIT_DIR"
+fi
+
+managed_dsh_ui_kit_dir() {
+  local PROFILE="$1"
+  local MANAGED_KIT_SOURCE="${PROFILE}/${MANAGED_DSH_UI_KIT_RELATIVE_PATH}"
+  printf '%s\n' "$MANAGED_KIT_SOURCE"
+}
+
+assert_managed_dsh_ui_kit_is_ready() {
+  local PROFILE MANAGED_KIT_SOURCE
+  for PROFILE in "${TARGET_PROFILES[@]}"; do
+    MANAGED_KIT_SOURCE="${PROFILE}/${MANAGED_DSH_UI_KIT_RELATIVE_PATH}"
+    if [ ! -f "$MANAGED_KIT_SOURCE/package.json" ] || [ ! -f "$MANAGED_KIT_SOURCE/lib/index.js" ]; then
+      echo "✗ 缺少受管 dsh-ui-kit: ${MANAGED_KIT_SOURCE}；请先通过官方完整 profile rebuild 建立稳定源。" >&2
+      return 1
+    fi
+  done
+}
+
+# 构建产物在版本控制里，而构建工具链是浮动的（`tsdown: ^0.22.14`），因此每次
+# `corepack pnpm build` 都会把 `lib/` 重写成与入库版本不同的字节——差异是注释
+# 与格式化风格，语义等价，但 `assert_omnimux_sync_main` 看到「已跟踪文件改动」
+# 就会拒绝下一次物化，形成自我污染循环（Issue #3887）。
+#
+# 构建产物已经复制进各 profile，这里把仓库里的 `lib/` 恢复到 HEAD，让工作区回到
+# 干净状态。**只**作用于构建产物目录：开发者自己改的源码永远不在此列，门禁对
+# 真实源码改动的拦截保持原样。
+restore_built_kit_artifacts() {
+  local dir="$DSH_UI_KIT_DIR/lib"
+  [ -d "$dir" ] || return 0
+  # 只在确有改动时才动 git，避免无谓的索引写入。
+  if [ -z "$(git -C "$ROOT" status --porcelain --untracked-files=no -- "$dir" 2>/dev/null)" ]; then
+    return 0
+  fi
+  if git -C "$ROOT" checkout -- "$dir" 2>/dev/null; then
+    echo "· 已把 dsh-ui-kit 构建产物恢复到 HEAD（工具链版本差异，语义等价）"
+  else
+    # 恢复失败不中断物化：产物已进 profile，只是工作区会留一点脏。
+    echo "⚠️ 无法恢复 dsh-ui-kit 构建产物，工作区可能留下未提交改动。" >&2
+  fi
+}
+
+materialize_authoritative_dsh_ui_kit() {
+  local profile="$1" managed_kit parent temporary backup=''
+  managed_kit="$(managed_dsh_ui_kit_dir "$profile")"
+  parent="$(dirname "$managed_kit")"
+  if ! temporary="$(mktemp -d "$parent/.dsh-ui-kit.next.XXXXXX")"; then
+    echo "❌ 无法创建受管 dsh-ui-kit 临时目录：${parent}。" >&2
+    return 1
+  fi
+  if [ -z "$temporary" ] || [ "$temporary" = / ] || [ ! -d "$temporary" ] || [ "$(dirname "$temporary")" != "$parent" ]; then
+    echo "❌ 非法受管 dsh-ui-kit 临时目录，拒绝物化。" >&2
+    return 1
+  fi
+
+  # 受管 Profile 的启动校验拒绝任何软链，产物里出现一个就足以让应用起不来。开发目录
+  # （.worktrees/.git/.agent-backups）里常有 node_modules 软链，必须整体排除；排除规则
+  # 也不带尾斜杠——带尾斜杠只匹配目录，匹配不到同名软链。
+  if ! rsync -a --delete \
+    --exclude 'node_modules' \
+    --exclude '.worktrees/' \
+    --exclude '.git/' \
+    --exclude '.agent-backups/' \
+    "$DSH_UI_KIT_DIR/" "$temporary/"; then
+    rm -rf "$temporary"
+    echo "❌ 无法物化权威 dsh-ui-kit 到 ${managed_kit}。" >&2
+    return 1
+  fi
+  # 兜底门禁：rsync 的排除规则是「尽力而为」，这里对产物做一次硬检查，宁可物化失败，
+  # 也不要把一个带软链的快照留给下一次启动去踩。
+  if [ -n "$(find "$temporary" -type l -print -quit 2>/dev/null)" ]; then
+    rm -rf "$temporary"
+    echo "❌ 权威 dsh-ui-kit 的物化产物含软链，受管 Profile 拒绝加载，已中止物化。" >&2
+    return 1
+  fi
+  if [ ! -f "$temporary/package.json" ] || [ ! -f "$temporary/lib/index.js" ]; then
+    rm -rf "$temporary"
+    echo "❌ 权威 dsh-ui-kit 不完整：需要 package.json 与 lib/index.js。" >&2
+    return 1
+  fi
+
+  backup="$parent/.dsh-ui-kit.previous.$$"
+  if ! mv "$managed_kit" "$backup"; then
+    rm -rf "$temporary"
+    echo "❌ 无法备份受管 dsh-ui-kit：${managed_kit}。" >&2
+    return 1
+  fi
+  if mv "$temporary" "$managed_kit"; then
+    rm -rf "$backup"
+    echo "  ✓ 已物化权威 dsh-ui-kit → ${managed_kit}"
+    return 0
+  fi
+  if ! mv "$backup" "$managed_kit"; then
+    echo "❌ 无法恢复受管 dsh-ui-kit：${managed_kit}。" >&2
+  fi
+  rm -rf "$temporary"
+  echo "❌ 无法替换受管 dsh-ui-kit：${managed_kit}。" >&2
+  return 1
+}
+
+ensure_dsh_ui_kit_fresh() {
+  assert_managed_dsh_ui_kit_is_ready || exit 1
+  if [ ! -f "$DSH_UI_KIT_DIR/package.json" ] || [ ! -f "$DSH_UI_KIT_DIR/lib/index.js" ]; then
+    echo "❌ 权威 dsh-ui-kit 不完整：${DSH_UI_KIT_DIR}。" >&2
+    echo "   请修复权威 source；完整同步不会从已安装 kit 回退。" >&2
+    exit 1
+  fi
+  if [ "${OMNIMUX_SKIP_KIT_BUILD:-0}" = "1" ]; then
+    echo "· OMNIMUX_SKIP_KIT_BUILD=1，跳过权威 kit 构建"
+  else
+    echo "== kit 构建: dsh-ui-kit =="
+    if ! (cd "$DSH_UI_KIT_DIR" && corepack pnpm build >/dev/null 2>&1); then
+      echo "❌ dsh-ui-kit 构建失败，禁止物化（否则插件会消费到残缺 kit）。" >&2
+      echo "   请先在 $DSH_UI_KIT_DIR 修复构建。" >&2
+      exit 1
+    fi
+  fi
+
+  local profile
+  for profile in "${TARGET_PROFILES[@]}"; do
+    materialize_authoritative_dsh_ui_kit "$profile" || exit 1
+  done
+
+  # 产物已复制进每个 profile，此时再把仓库里的构建产物恢复回 HEAD：
+  # 早于物化会让 profile 拿到旧产物，晚于此处则工作区已被下一次门禁判脏。
+  if [ "${OMNIMUX_SKIP_KIT_BUILD:-0}" != "1" ]; then
+    restore_built_kit_artifacts
+  fi
+}
+
+plugin_declares_dsh_ui_kit() {
+  local package_file="$1"
+  node --input-type=commonjs - "$package_file" <<'EOF'
+const fs = require('fs')
+const packageFile = process.argv[2]
+try {
+  const pkg = JSON.parse(fs.readFileSync(packageFile, 'utf8'))
+  process.exit(pkg.dependencies?.['dsh-ui-kit'] ? 0 : 1)
+} catch {
+  process.exit(1)
+}
+EOF
+}
+
+assert_dsh_ui_kit_scope_is_ready() {
+  local name package_file requires_kit=0
+  for name in "${BUILD_PLUGINS[@]}"; do
+    package_file="$PLUGINS_ROOT/$name/package.json"
+    if plugin_declares_dsh_ui_kit "$package_file"; then
+      requires_kit=1
+      break
+    fi
+  done
+
+  if [ "$requires_kit" -eq 0 ]; then
+    echo "· 命名插件不声明 dsh-ui-kit，跳过 shared kit 校验"
+    return 0
+  fi
+
+  assert_managed_dsh_ui_kit_is_ready || exit 1
+
+  local source_kit="$DSH_UI_KIT_DIR/lib/index.js"
+  if [ ! -f "$source_kit" ]; then
+    echo "❌ 命名插件依赖 dsh-ui-kit，但无法读取 ${source_kit}。" >&2
+    echo "   单插件同步不会重建 shared kit；请先修复 kit 构建，或执行无插件参数的完整 yarn omnimux:sync。" >&2
+    exit 1
+  fi
+
+  local source_hash target_hash profile target_kit
+  source_hash=$(shasum -a 256 "$source_kit" | awk '{print $1}')
+  for profile in "${TARGET_PROFILES[@]}"; do
+    target_kit="$(managed_dsh_ui_kit_dir "$profile")/lib/index.js"
+    target_hash=$(shasum -a 256 "$target_kit" | awk '{print $1}')
+    if [ "$source_hash" != "$target_hash" ]; then
+      echo "❌ dsh-ui-kit 漂移: ${profile}。" >&2
+      echo "   单插件同步不会覆盖 shared kit；请执行无插件参数的完整 yarn omnimux:sync。" >&2
+      exit 1
+    fi
+  done
+  echo "  ✓ 命名插件所需受管 dsh-ui-kit 已就绪（未写 shared kit）"
+}
+
+if [ "$EXPLICIT_PLUGIN_SCOPE" -eq 1 ]; then
+  assert_dsh_ui_kit_scope_is_ready
+else
+  ensure_dsh_ui_kit_fresh
+fi
+
+build_one() {
+  local name="$1"
+  local dir="$PLUGINS_ROOT/$name"
+  if [ ! -f "$dir/package.json" ]; then
+    echo "✗ 源码缺失: $dir" >&2
+    exit 1
+  fi
+
+  case "$name" in
+    omnimux)
+      echo "→ build $name (package)"
+      (cd "$dir" && npm run build --silent)
+      ;;
+    omnimux-accounts|omnimux-assets|omnimux-products|omnimux-inspiration|omnimux-clip|omnimux-analytics|omnimux-publish|omnimux-video)
+      # 插件可以没有客户端面（纯服务端插件）：没有构建脚本就跳过，口径与 build:all 的
+      # resolvePluginBuildTask 一致，不能凭空假设脚本存在。
+      if [ -f "$dir/scripts/build-client.mjs" ]; then
+        echo "→ build $name (client)"
+        (cd "$dir" && node scripts/build-client.mjs)
+      else
+        echo "· $name 无客户端构建脚本，跳过 build"
+      fi
+      ;;
+    omnimux-workflow)
+      echo "→ build $name (host + client + canvas + director)"
+      (cd "$dir" && node scripts/build-host.mjs && node scripts/build-client.mjs && node scripts/build-canvas.mjs && node scripts/build-director.mjs)
+      ;;
+    omnimux-apps)
+      echo "→ build $name (host + client)"
+      (cd "$dir" && node scripts/build-host.mjs && node scripts/build-client.mjs)
+      ;;
+    omnimux-market)
+      echo "→ build $name (tsc + concat-client)"
+      (cd "$dir" && npm run build --silent)
+      ;;
+    *)
+      if [ -f "$dir/scripts/build-host.mjs" ] && [ -f "$dir/scripts/build-client.mjs" ]; then
+        echo "→ build $name (host + client, 推断)"
+        (cd "$dir" && node scripts/build-host.mjs && node scripts/build-client.mjs)
+      elif [ -f "$dir/scripts/build-client.mjs" ]; then
+        echo "→ build $name (client, 推断)"
+        (cd "$dir" && node scripts/build-client.mjs)
+      elif node --input-type=commonjs -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.exit(p.scripts&&p.scripts.build?0:1)" "$dir/package.json" >/dev/null 2>&1; then
+        echo "→ build $name (package.json scripts.build)"
+        (cd "$dir" && npm run build --silent)
+      else
+        echo "· $name 无已知构建步骤，跳过 build"
+      fi
+      ;;
+  esac
+}
+
+echo "== sync-to-app: 目标 Profile = [${TARGET_HOMES[*]}] | 请求插件 = [${SYNC_PLUGINS[*]}] =="
+if [ "$SKIP_BUILD" -eq 0 ]; then
+  echo "== 1/3 build =="
+  for name in "${BUILD_PLUGINS[@]}"; do
+    build_one "$name"
+  done
+else
+  echo "== 1/3 build 跳过 (--skip-build) =="
+fi
+
+echo "== 2/3 物化进 Profile 目录 =="
+SYNC_STABLE_ARGS=()
+if [ "${#TARGET_FLAGS[@]}" -gt 0 ]; then
+  SYNC_STABLE_ARGS+=("${TARGET_FLAGS[@]}")
+fi
+SYNC_STABLE_ARGS+=("${SYNC_PLUGINS[@]}")
+OMNIMUX_SYNC_VIA=sync-to-app "$ROOT/scripts/sync-stable.sh" "${SYNC_STABLE_ARGS[@]}"
+
+if [ "$EXPLICIT_PLUGIN_SCOPE" -eq 1 ]; then
+  echo "== 3/3 跳过 Agent Presets（命名插件同步不修改预设或应用包）=="
+else
+  echo "== 3/3 物化出厂 Agent Presets =="
+  "$ROOT/scripts/sync-agent-presets.sh" ${TARGET_FLAGS[@]+"${TARGET_FLAGS[@]}"}
+fi
+
+cat <<EOF
+
+✓ 已完成物化到目标 Profile（零副作用，未重启任何进程）。
+  【同步目标】: ${TARGET_HOMES[*]}
+  【发布策略】: Dev 保留 Alpha；正式版自动剔除 Alpha (${ALPHA_PLUGINS_LABEL})
+  【提示】默认仅同步开发版 (~/.omnimux-dev)。指定其他目标可用参数：
+    - 同步正式版: ./scripts/sync-to-app.sh --prod
+    - 同步底座版: ./scripts/sync-to-app.sh --dsh
+    - 广播全同步: ./scripts/sync-to-app.sh --all
+  【多 Agent 并发与生效规则】
+  - 前端 Client 修改：在浏览器或已打开的客户端窗口中刷新（Cmd+R）即可加载最新 bundle。
+  - 后端 Host/插件扩展修改：产物已静默就绪，在应用下次自然启动或用户闲时手动重启后生效。
+  - 【安全红线】不得强杀不明进程；App 重启须先核实目标、授权和使用冲突。
+EOF
+
+if [ "$EXPLICIT_PLUGIN_SCOPE" -eq 1 ]; then
+  echo "  - 会话预设下拉：本次命名插件同步未更新预设或应用包。"
+else
+  echo "  - 会话预设下拉：已同步为「标准模式 / 社媒内容创作专家团 / 社媒互动增长专家团」，需重启 Host 后生效。"
+fi

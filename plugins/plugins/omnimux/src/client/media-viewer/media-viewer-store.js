@@ -1,0 +1,399 @@
+/**
+ * Media Viewer Store.
+ * Manages media items (images & videos), active selection, and layout modes
+ * (3col vs 2col).
+ */
+
+export const MEDIA_VIEWER_TAB_ID = 'omnimux:media-viewer';
+export const MEDIA_VIEWER_STORAGE_KEY = 'omnimux:media-viewer:store:v1';
+
+function getLocalStorage() {
+  try {
+    return typeof window !== 'undefined' && window.localStorage ? window.localStorage : null;
+  } catch {
+    return null;
+  }
+}
+
+function loadPersistedState() {
+  const storage = getLocalStorage();
+  if (!storage) return null;
+  try {
+    const raw = storage.getItem(MEDIA_VIEWER_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed;
+  } catch (err) {
+    return null;
+  }
+}
+
+/**
+ * 内嵌 data: 参考图可达数 MB，落盘会撑爆 localStorage 配额并让整份持久化失败；
+ * 只剥离素材字节，保留原模型、渠道、操作与参数；收取原 taskRef 不依赖完整输入。
+ */
+function withoutInlineRequest(m) {
+  const refs = m.request?.references;
+  if (!Array.isArray(refs) || !refs.some((r) => typeof r?.url === 'string' && r.url.startsWith('data:'))) return m;
+  const references = refs.map((ref) => {
+    if (typeof ref?.url !== 'string' || !ref.url.startsWith('data:')) return ref;
+    return Object.fromEntries(Object.entries(ref).filter(([, value]) => !(typeof value === 'string' && value.startsWith('data:'))));
+  });
+  const projected = { ...m, request: { ...m.request, references }, requestReplayable: false };
+  const terminal = m.recoverable === false && m.failure?.code === 'omnimux-failed';
+  if (m.status === 'failed' && (!m.taskRef || terminal)) {
+    projected.failure = { ...(m.failure || {}), retryable: false };
+  }
+  return projected;
+}
+
+function persistState(s) {
+  const storage = getLocalStorage();
+  if (!storage) return;
+  try {
+    // Issue #3011：generating（含 requestKey/taskRef/request）与 failed 项同样持久化，
+    // 刷新后可按服务端任务记录续传或展示失败原因，不再静默丢弃。
+    const safeMediaList = (s.mediaList || [])
+      .filter((m) => m && (m.url || m.status === 'generating' || m.status === 'failed'))
+      .slice(-100)
+      .map(withoutInlineRequest);
+    const payload = {
+      mediaList: safeMediaList,
+      annotationsByMediaId: s.annotationsByMediaId || {},
+      activeId: s.activeId,
+      layoutMode: s.layoutMode,
+    };
+    storage.setItem(MEDIA_VIEWER_STORAGE_KEY, JSON.stringify(payload));
+  } catch (err) {
+    // ignore quota error
+  }
+}
+
+export function clearPersistedMediaViewerStore() {
+  const storage = getLocalStorage();
+  if (!storage) return;
+  try {
+    storage.removeItem(MEDIA_VIEWER_STORAGE_KEY);
+  } catch {}
+}
+
+/**
+ * @typedef {Object} MediaItem
+ * @property {string} id
+ * @property {string} [sessionId]
+ * @property {number} timestamp
+ * @property {string} url
+ * @property {string} [title]
+ * @property {'image' | 'video'} type
+ * @property {string} [duration]
+ * @property {string} [groupId]
+ */
+
+export function createMediaViewerStore(initialState = {}) {
+  const persisted = loadPersistedState();
+  const initialMediaList = initialState.mediaList && initialState.mediaList.length > 0
+    ? initialState.mediaList
+    : (persisted?.mediaList || []);
+  const initialAnnotations = initialState.annotationsByMediaId && Object.keys(initialState.annotationsByMediaId).length > 0
+    ? initialState.annotationsByMediaId
+    : (persisted?.annotationsByMediaId || {});
+
+  let state = {
+    mediaList: initialMediaList,
+    activeId: initialState.activeId || persisted?.activeId || initialMediaList[0]?.id || null,
+    layoutMode: initialState.layoutMode || persisted?.layoutMode || '3col',   // '3col' (三栏模式) | '2col' (两栏模式)
+    zoom: initialState.zoom || 100,                  // 50, 70, 100, 150
+    isGenerating: Boolean(initialState.isGenerating),
+    generatingTask: initialState.generatingTask || null,
+    generationTasks: initialState.generationTasks || [],
+    isAnnotating: Boolean(initialState.isAnnotating),  // 是否处于打点评论状态
+    annotationsByMediaId: initialAnnotations, // mediaId -> AnnotationItem[]
+  };
+
+  const listeners = new Set();
+  let composerSessionId = null;
+
+  function notify() {
+    persistState(state);
+    for (const listener of listeners) {
+      try {
+        listener(state);
+      } catch (err) {
+        console.error('[MediaViewerStore] listener error:', err);
+      }
+    }
+  }
+
+  return {
+    getSnapshot() {
+      return state;
+    },
+
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+
+    addMedia(item) {
+      const id = item.id || `media_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const timestamp = item.timestamp || Date.now();
+      const resolvedSessionId = item.sessionId || (composerSessionId && composerSessionId !== 'default' ? composerSessionId : undefined);
+      const newItem = {
+        id,
+        timestamp,
+        type: item.type || 'image',
+        status: item.status || 'completed',
+        url: item.url,
+        title: item.title || '',
+        duration: item.duration || '',
+        groupId: item.groupId || String(timestamp),
+        sessionId: resolvedSessionId,
+        aspectRatio: item.aspectRatio || '1:1',
+        ...item,
+      };
+
+      const existingIndex = state.mediaList.findIndex((m) => m.id === id || (m.url && m.url === item.url && (!item.sessionId || m.sessionId === item.sessionId)));
+      let nextList;
+      if (existingIndex >= 0) {
+        nextList = [...state.mediaList];
+        nextList[existingIndex] = { ...nextList[existingIndex], ...newItem };
+      } else {
+        nextList = [...state.mediaList, newItem];
+      }
+
+      state = {
+        ...state,
+        mediaList: nextList,
+        activeId: state.activeId || id,
+      };
+      notify();
+      return newItem;
+    },
+
+    updateMedia(id, patch) {
+      if (!id) return null;
+      const idx = state.mediaList.findIndex((m) => m.id === id);
+      if (idx < 0) return null;
+      const nextList = [...state.mediaList];
+      nextList[idx] = { ...nextList[idx], ...patch };
+      state = {
+        ...state,
+        mediaList: nextList,
+      };
+      notify();
+      return nextList[idx];
+    },
+
+    getMediaList(targetSessionId) {
+      if (!targetSessionId) return state.mediaList;
+      return state.mediaList.filter((m) => m.sessionId === targetSessionId);
+    },
+
+    setActiveId(id) {
+      if (state.activeId === id) return;
+      state = { ...state, activeId: id };
+      notify();
+    },
+
+    setLayoutMode(mode) {
+      if (state.layoutMode === mode) return;
+      state = { ...state, layoutMode: mode };
+      notify();
+    },
+
+    setZoom(zoom) {
+      if (state.zoom === zoom) return;
+      state = { ...state, zoom };
+      notify();
+    },
+
+    cycleZoom() {
+      const levels = [50, 70, 100, 150];
+      let idx = levels.indexOf(state.zoom);
+      idx = (idx + 1) % levels.length;
+      state = { ...state, zoom: levels[idx] };
+      notify();
+    },
+
+    /** @param {{ sessionId: string, requestId: string, status: string, media?: MediaItem[] }} task */
+    updateGeneration(task) {
+      if (!task.sessionId || !task.requestId) return;
+      if (task.status === 'success' && !task.media?.some((item) => item.url || item.attachment?.attachmentId || (item.type === 'video' && typeof item.path === 'string' && item.path.length))) return;
+      const index = state.generationTasks.findIndex((item) => item.sessionId === task.sessionId && item.requestId === task.requestId);
+      const previous = state.generationTasks[index];
+      if (previous && ['success', 'failure', 'cancelled', 'unresolved'].includes(previous.status)) return;
+      const next = { ...previous, ...task };
+      const tasks = [...state.generationTasks];
+      if (index < 0) tasks.push(next);
+      else tasks[index] = next;
+      state = { ...state, generationTasks: tasks };
+      notify();
+    },
+
+    setGenerating(isGenerating, generatingTask = null) {
+      state = {
+        ...state,
+        isGenerating: Boolean(isGenerating),
+        generatingTask,
+      };
+      notify();
+    },
+
+    setAnnotating(enabled) {
+      const isAnnotating = Boolean(enabled);
+      if (state.isAnnotating === isAnnotating) return;
+      state = { ...state, isAnnotating };
+      notify();
+    },
+
+    getAnnotations(mediaId) {
+      if (!mediaId) return [];
+      return state.annotationsByMediaId[mediaId] || [];
+    },
+
+    addDraftAnnotation(mediaId, { xPercent, yPercent }) {
+      if (!mediaId) return null;
+      const currentList = state.annotationsByMediaId[mediaId] || [];
+      // Clean up any uncommitted drafts first
+      const cleanedList = currentList.filter((a) => a.status === 'saved');
+      const nextIndex = cleanedList.length + 1;
+      const draftItem = {
+        id: `ann_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        index: nextIndex,
+        xPercent: Math.max(0, Math.min(100, xPercent)),
+        yPercent: Math.max(0, Math.min(100, yPercent)),
+        text: '',
+        status: 'draft',
+        createdAt: Date.now(),
+      };
+      state = {
+        ...state,
+        annotationsByMediaId: {
+          ...state.annotationsByMediaId,
+          [mediaId]: [...cleanedList, draftItem],
+        },
+      };
+      notify();
+      return draftItem;
+    },
+
+    bindComposerSession(sessionId) {
+      composerSessionId = sessionId && sessionId !== 'default' ? sessionId : null;
+    },
+
+    removeSubmittedComments(sessionId, ids) {
+      const remove = new Set(ids);
+      const annotationsByMediaId = Object.fromEntries(Object.entries(state.annotationsByMediaId).map(([id, comments]) => [id, comments.filter(comment => comment.sessionId !== sessionId || !remove.has(comment.id))]));
+      state = { ...state, annotationsByMediaId };
+      notify();
+    },
+
+    commitAnnotation(mediaId, annotationId, text) {
+      if (!mediaId || !annotationId) return;
+      const trimmed = (text || '').trim();
+      const currentList = state.annotationsByMediaId[mediaId] || [];
+      if (!trimmed) {
+        // Empty text: cancel draft
+        const filtered = currentList.filter((a) => a.id !== annotationId);
+        state = {
+          ...state,
+          annotationsByMediaId: {
+            ...state.annotationsByMediaId,
+            [mediaId]: filtered,
+          },
+        };
+        notify();
+        return;
+      }
+
+      const nextList = currentList.map((a) => {
+        if (a.id === annotationId) {
+          return { ...a, id: a.status === 'saved' && a.text !== trimmed ? `ann_${crypto.randomUUID()}` : a.id, text: trimmed, status: 'saved', sessionId: a.sessionId || composerSessionId };
+        }
+        return a;
+      });
+
+      state = {
+        ...state,
+        annotationsByMediaId: {
+          ...state.annotationsByMediaId,
+          [mediaId]: nextList,
+        },
+      };
+      notify();
+    },
+
+    cancelDraftAnnotation(mediaId, annotationId) {
+      if (!mediaId) return;
+      const currentList = state.annotationsByMediaId[mediaId] || [];
+      const filtered = annotationId
+        ? currentList.filter((a) => a.id !== annotationId || a.status === 'saved')
+        : currentList.filter((a) => a.status === 'saved');
+      state = {
+        ...state,
+        annotationsByMediaId: {
+          ...state.annotationsByMediaId,
+          [mediaId]: filtered,
+        },
+      };
+      notify();
+    },
+
+    removeAnnotation(mediaId, annotationId) {
+      if (!mediaId || !annotationId) return;
+      const currentList = state.annotationsByMediaId[mediaId] || [];
+      const remaining = currentList.filter((a) => a.id !== annotationId);
+      // Re-index remaining annotations sequentially (1, 2, 3...)
+      const reindexed = remaining.map((a, idx) => ({ ...a, index: idx + 1 }));
+      state = {
+        ...state,
+        annotationsByMediaId: {
+          ...state.annotationsByMediaId,
+          [mediaId]: reindexed,
+        },
+      };
+      notify();
+    },
+
+    clearAnnotations(mediaId) {
+      if (!mediaId) return;
+      state = {
+        ...state,
+        annotationsByMediaId: {
+          ...state.annotationsByMediaId,
+          [mediaId]: [],
+        },
+      };
+      notify();
+    },
+
+    /**
+     * Generate structured model instruction prompt from saved annotations
+     */
+    formatAnnotationsPrompt(mediaId) {
+      if (!mediaId) return '';
+      const list = (state.annotationsByMediaId[mediaId] || []).filter((a) => a.status === 'saved');
+      if (list.length === 0) return '';
+      const lines = [
+        `【图片局部修改指示（共 ${list.length} 处标注）】`,
+        `请参考原图并在以下各编号标记所在局部区域执行修改：`,
+      ];
+      for (const item of list) {
+        lines.push(`- 标记 ❶ (编号 ${item.index}) [位置: 相对原图水平 ${item.xPercent.toFixed(1)}%, 垂直 ${item.yPercent.toFixed(1)}%]：用户的修改意见是「${item.text}」`);
+      }
+      lines.push(`请严格锁定上述标记位置的局部范围进行微调重绘，其他非标记区域与背景保持完全一致。`);
+      return lines.join('\n');
+    },
+
+  };
+}
+
+const GLOBAL_STORE_KEY = Symbol.for('omnimux.mediaViewer.store');
+
+export function getGlobalMediaViewerStore() {
+  if (!globalThis[GLOBAL_STORE_KEY]) {
+    globalThis[GLOBAL_STORE_KEY] = createMediaViewerStore();
+  }
+  return globalThis[GLOBAL_STORE_KEY];
+}

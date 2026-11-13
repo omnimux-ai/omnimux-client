@@ -1,0 +1,689 @@
+/**
+ * 爆款对标真源接入：只从云端精选目录（`/omnimux/inspiration`）拉取可复刻的对标视频。
+ *
+ * 数据只走 Host HTTP 这一层，不 import 灵感库内部模块——插件之间没有私有导入。
+ * 本地导入素材属于「灵感库」，不进本板块；灵感库没装时这条链路照样成立。
+ *
+ * 这里只做两件事：把云端行**如实**映射成卡片行（缺字段就是缺，不补默认值），
+ * 以及从真实数据推导「哪些筛选维度真的有数据」。没有数据的维度不得出现在工具栏里。
+ */
+import { TRENDING_VIEW_BUCKETS } from './trending-data.js'
+
+/** 灵感库本地库列表接口：本板块不再拉取，仅保留常量供历史调用方解析。 */
+export const TRENDING_LOCAL_PATH = '/omnimux/inspiration/local'
+/** 云端精选灵感库接口（包含全量海量对标视频）。 */
+export const TRENDING_CLOUD_PATH = '/omnimux/inspiration'
+/** 兼容既有单路径常量的别名：云端目录。 */
+export const TRENDING_SOURCE_PATH = TRENDING_CLOUD_PATH
+/** 爆款对标只加载云端数据：本地导入素材永远属于灵感库，不混入本板块。 */
+export const DEFAULT_TRENDING_SOURCES = Object.freeze([TRENDING_CLOUD_PATH])
+/**
+ * 一次拉取的窗口大小。
+ *
+ * 窗口是「按播放量取前 N 条」，各维度的过滤在服务端先算再取窗口，
+ * 因此窗口内的分布与筛选一致；互动率门槛在客户端对窗口内结果再过滤。
+ * 库变大到需要翻页时，这里是唯一的改动点。
+ */
+export const TRENDING_SOURCE_PAGE_SIZE = 48
+
+/** 翻页参数名：本地库与云端目录都按 `page` 取窗口（页码从 1 开始）。 */
+export const TRENDING_PAGE_QUERY_KEY = 'page'
+
+/**
+ * 页码归一：只有正整数页号才有意义，其余（缺省 / 0 / 负数 / 非数）一律当第 1 页。
+ *
+ * 无限滚动是**追加**语义：调用方拿到 `hasMore` 为假就必须停下，
+ * 否则同一页会被反复请求，越往下滚越慢。
+ * @param {unknown} raw
+ * @returns {number}
+ */
+export function normalizeTrendingPage(raw) {
+  const page = Number(raw)
+  return Number.isFinite(page) && page >= 1 ? Math.floor(page) : 1
+}
+
+/** 内存缓存：按 query 与 source 存储响应结果，支持 TTL 与 Stale-While-Revalidate。 */
+const TRENDING_CACHE = new Map()
+export const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000 // 默认 5 分钟有效
+
+/** 正在进行的网络请求映射表（并发请求自动复用去重，防重复并发击穿）。 */
+const IN_FLIGHT_REQUESTS = new Map()
+
+/**
+ * 构造稳定的缓存 key。
+ *
+ * 翻页必须进 key：第 2 页与第 1 页是两份不同的窗口，共用一把 key 会让
+ * 后续页覆盖首页缓存，「滚回顶部再滚下来」就成了重新拉取。
+ * @param {object} [opts]
+ * @returns {string}
+ */
+export function getTrendingCacheKey(opts = {}) {
+  const sourcePaths = opts.sourcePaths || (opts.sourcePath ? [opts.sourcePath] : DEFAULT_TRENDING_SOURCES)
+  const sortedSources = [...sourcePaths].sort().join(';')
+  const filters = opts.filters || {}
+  const filterKey = `${filters.region || ''}|${filters.industry || ''}|${filters.views || ''}|${filters.type || ''}`
+  return `${sortedSources}::${filterKey}::p${normalizeTrendingPage(opts.page)}`
+}
+
+/**
+ * 读取缓存，返回数据与是否已过期（stale）。
+ * @param {string} key
+ * @param {number} [nowMs]
+ * @returns {{ data: object, isStale: boolean } | null}
+ */
+export function getTrendingCache(key, nowMs = Date.now()) {
+  const entry = TRENDING_CACHE.get(key)
+  if (!entry) return null
+  const isStale = nowMs > entry.expiresAt
+  return { data: entry.data, isStale }
+}
+
+/**
+ * 写入缓存。
+ * @param {string} key
+ * @param {object} data
+ * @param {number} [ttlMs]
+ * @param {number} [nowMs]
+ */
+export function setTrendingCache(key, data, ttlMs = DEFAULT_CACHE_TTL_MS, nowMs = Date.now()) {
+  TRENDING_CACHE.set(key, {
+    data,
+    expiresAt: nowMs + ttlMs,
+    savedAt: nowMs,
+  })
+}
+
+/** 清理全部缓存与并发请求（用于测试或主动刷新）。 */
+export function clearTrendingCache() {
+  TRENDING_CACHE.clear()
+  IN_FLIGHT_REQUESTS.clear()
+}
+
+/**
+ * 只看缓存、不发网络：给首屏一个同步的初值，避免重新挂载时先闪一屏骨架。
+ *
+ * 与 `getTrendingCache` 的差别是它按「这次加载的入参」自己算 key，
+ * 调用方不必先知道 key 怎么拼；`use-trending-feed` 的初值就是它。
+ *
+ * @param {Parameters<typeof loadTrendingPage>[0]} [opts]
+ * @param {number} [nowMs]
+ * @returns {{ page: object, isStale: boolean } | null}
+ */
+export function peekTrendingCache(opts = {}, nowMs = Date.now()) {
+  const entry = TRENDING_CACHE.get(getTrendingCacheKey(opts))
+  if (!entry) return null
+  return { page: entry.data, isStale: nowMs > entry.expiresAt }
+}
+
+/** 拉取结果状态。 */
+export const TRENDING_SOURCE_STATUS = {
+  ready: 'ready',
+  /** 接口通、库里也确实没有内容。 */
+  empty: 'empty',
+  /** 接口通、库里本来有内容，只是当前筛选条件把它筛空了。 */
+  filtered: 'filtered',
+  unavailable: 'unavailable',
+}
+
+/**
+ * 封面路径归一：本地库给的是 `/omnimux/inspiration/local/media/…`，
+ * 云目录给的是 `/api/inspiration/v1/media/…`，历史行也可能直接给绝对 URL 或裸 key。
+ * 规则与灵感库前端的 `pickCoverSrc` 保持一致（复制而不 import）。
+ * @param {unknown} raw
+ * @returns {string}
+ */
+export function normalizeCoverUrl(raw) {
+  if (typeof raw !== 'string' || raw === '') return ''
+  if (raw.includes('..')) return ''
+  if (/^https?:\/\//i.test(raw)) return raw
+  if (raw.startsWith('/omnimux/inspiration/local/media/')) return raw
+  if (raw.startsWith('/omnimux/inspiration/media/')) return raw
+  if (raw.startsWith('/api/inspiration/v1/media/')) {
+    return `/omnimux/inspiration/media/${raw.slice('/api/inspiration/v1/media/'.length)}`
+  }
+  return `/omnimux/inspiration/media/${raw.replace(/^\/+/, '')}`
+}
+
+/**
+ * 视频路径归一：兼容本地库（/omnimux/inspiration/local/media/…）、
+ * 云目录（/omnimux/inspiration/media/… 或 /api/inspiration/v1/media/…）与标准 HTTP/HTTPS 直链。
+ * @param {unknown} raw
+ * @returns {string}
+ */
+export function normalizeVideoUrl(raw) {
+  if (typeof raw !== 'string' || raw === '') return ''
+  if (raw.includes('..')) return ''
+  if (/^https?:\/\//i.test(raw)) return raw
+  if (raw.startsWith('/omnimux/inspiration/local/media/')) return raw
+  if (raw.startsWith('/omnimux/inspiration/media/')) return raw
+  if (raw.startsWith('/api/inspiration/v1/media/')) {
+    return `/omnimux/inspiration/media/${raw.slice('/api/inspiration/v1/media/'.length)}`
+  }
+  return `/omnimux/inspiration/media/${raw.replace(/^\/+/, '')}`
+}
+
+/**
+ * 从灵感库行中提取视频播放地址。
+ * 优先级：media_urls / mediaUrls 列表项 → video_url / videoUrl / video / play_url 等直链。
+ * @param {object | null | undefined} row
+ * @returns {string}
+ */
+export function readVideoUrl(row) {
+  if (!row || typeof row !== 'object') return ''
+  const urls = Array.isArray(row.media_urls)
+    ? row.media_urls
+    : (Array.isArray(row.mediaUrls) ? row.mediaUrls : [])
+  const firstMedia = urls.find((u) => typeof u === 'string' && u.trim() !== '')
+  if (firstMedia) {
+    const normalized = normalizeVideoUrl(firstMedia)
+    if (normalized) return normalized
+  }
+  const candidate = [row.video_url, row.videoUrl, row.video, row.play_url, row.playUrl]
+    .find((u) => typeof u === 'string' && u.trim() !== '')
+  if (candidate) {
+    const normalized = normalizeVideoUrl(candidate)
+    if (normalized) return normalized
+  }
+  return ''
+}
+
+/**
+ * 从灵感库行中提取图集/多图图片列表。
+ * @param {object | null | undefined} row
+ * @returns {string[]}
+ */
+export function readImages(row) {
+  if (!row || typeof row !== 'object') return []
+  if (Array.isArray(row.images) && row.images.length > 0) {
+    return row.images.map(normalizeCoverUrl).filter(Boolean)
+  }
+  const urls = Array.isArray(row.media_urls)
+    ? row.media_urls
+    : (Array.isArray(row.mediaUrls) ? row.mediaUrls : [])
+  if (urls.length > 1) {
+    return urls.map(normalizeCoverUrl).filter(Boolean)
+  }
+  if (Array.isArray(row.slides) && row.slides.length > 0) {
+    return row.slides.map(normalizeCoverUrl).filter(Boolean)
+  }
+  return []
+}
+
+/** @param {unknown} value */
+function readFiniteNumber(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim() !== '') {
+    const n = Number(value)
+    if (Number.isFinite(n)) return n
+  }
+  return null
+}
+
+/**
+ * 提取灵感对标视频的内容指纹，用于识别并剔除同一视频的换皮镜像或多版本重复数据。
+ *
+ * 识别维度：
+ * 1. 真实 TikTok 数字视频 ID（从 source_url 或 analysis.tiktok_video_id 提取）；
+ * 2. 规范化封面路径；
+ * 3. 规范化博主 Handle（清洗 base64 临时后缀）+ 精确播放量（>10k）；
+ * 4. 标题文本（长度>4字）+ 精确播放量。
+ *
+ * @param {object | null | undefined} row
+ * @returns {string[]}
+ */
+export function getInspirationFingerprints(row) {
+  if (!row || typeof row !== 'object') return []
+  const fingerprints = []
+
+  // 1. 真实数字 TikTok ID
+  const sourceUrl = typeof row.source_url === 'string' ? row.source_url.trim() : ''
+  const urlMatch = sourceUrl.match(/\/video\/(\d{15,22})/)
+  if (urlMatch) {
+    fingerprints.push(`tt:${urlMatch[1]}`)
+  }
+  const analysisTiktokId = String(row.analysis?.tiktok_video_id || '').trim()
+  if (/^\d{15,22}$/.test(analysisTiktokId)) {
+    fingerprints.push(`tt:${analysisTiktokId}`)
+  }
+
+  // 2. 封面归一化路径指纹
+  const cover = typeof row.cover_url === 'string'
+    ? row.cover_url
+    : (typeof row.cover_key === 'string' ? row.cover_key : '')
+  if (cover && !cover.includes('placeholder') && !cover.includes('default')) {
+    const cleanCover = cover.replace(/^https?:\/\/[^/]+/, '').replace(/^\/+/, '')
+    if (cleanCover) fingerprints.push(`cov:${cleanCover}`)
+  }
+
+  // 3. 归一化作者 + 播放量（同一博主同播放量即视为同一视频的镜像条目）
+  let author = String(row.author?.handle || row.author?.name || '').trim().toLowerCase()
+  if (!author && sourceUrl) {
+    const authorMatch = sourceUrl.match(/@([^/]+)/)
+    if (authorMatch) author = authorMatch[1].toLowerCase()
+  }
+  author = author.replace(/-ahr0.*$/i, '').replace(/[^a-z0-9]/g, '')
+  const views = Number(row.views || row.stats?.views)
+  if (author && author !== 'creator' && Number.isFinite(views) && views > 10000) {
+    fingerprints.push(`av:${author}:${views}`)
+  }
+
+  // 4. 相同标题 + 播放量
+  const title = String(row.title || '').trim().toLowerCase()
+  if (title && title.length > 4 && Number.isFinite(views) && views > 10000) {
+    fingerprints.push(`tv:${title}:${views}`)
+  }
+
+  return fingerprints
+}
+
+/**
+ * 播放量：灵感库把计数放在 `stats`，也有历史行放在顶层。
+ *
+ * 读不到**返回 null，不返回 0**——「不知道播放量」与「播放量是 0」是两件事：
+ * 卡片要把前者显示成 `—`，塌成 0 会让两种状态在界面上再也分不出来。
+ * @param {object | null | undefined} row
+ * @returns {number | null}
+ */
+export function readViews(row) {
+  const stats = row?.stats && typeof row.stats === 'object' ? row.stats : {}
+  const value = readFiniteNumber(stats.views) ?? readFiniteNumber(row?.views)
+  return value !== null && value > 0 ? value : null
+}
+
+/**
+ * 互动率（百分比数值）：(点赞 + 评论 + 分享) ÷ 播放量 × 100。
+ *
+ * 缺计数按 0 计（平台没给不等于有互动），缺播放量则返回 null——
+ * 没有分母就算不出率，宁可标成未知也不编一个数。
+ * @param {object | null | undefined} row
+ * @returns {number | null}
+ */
+export function readEngagement(row) {
+  const views = readViews(row)
+  if (!(views > 0)) return null
+  const stats = row?.stats && typeof row.stats === 'object' ? row.stats : {}
+  const sum = ['likes', 'comments', 'shares']
+    .map((key) => readFiniteNumber(stats[key]) ?? 0)
+    .reduce((total, value) => total + value, 0)
+  return (sum / views) * 100
+}
+
+/**
+ * 结构要点：优先取拆解里的钩子高亮，退回钩子、摘要。
+ * 去掉 Markdown 强调符与多余空白，并截断到可读长度。
+ * @param {object | null | undefined} row
+ * @returns {string}
+ */
+export function readStructure(row) {
+  const raw = row?.deconstruction || row?.analysis
+  const dec = raw && typeof raw === 'object' ? raw : null
+  const candidate = [dec?.hook_highlight, dec?.hook, dec?.summary, dec?.target_goal]
+    .find((value) => typeof value === 'string' && value.trim() !== '')
+  if (!candidate) return ''
+  const text = String(candidate)
+    .replace(/^[#\s*I|:\-\.]+/g, '')
+    .replace(/\*\*/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return text.length > 160 ? `${text.slice(0, 157)}…` : text
+}
+
+/**
+ * 入库行距今天数：只能从真实的发布时间推。
+ * 读不到、解析不了、或是未来时间（时钟/数据异常）一律 null，宁可没有这个维度。
+ * @param {unknown} value
+ * @param {number} [nowMs]
+ * @returns {number | null}
+ */
+export function readAgeDays(value, nowMs = Date.now()) {
+  if (typeof value !== 'string' || value.trim() === '') return null
+  const at = Date.parse(value)
+  if (!Number.isFinite(at)) return null
+  const days = Math.floor((nowMs - at) / 86400000)
+  return days >= 0 ? days : null
+}
+
+/**
+ * 灵感库行 → 卡片行。字段缺失一律置空，不补默认值。
+ * @param {object | null | undefined} row
+ * @param {number} [nowMs]
+ * @returns {object | null}
+ */
+export function mapSourceItem(row, nowMs = Date.now()) {
+  if (!row || typeof row !== 'object') return null
+  const id = row.id != null && String(row.id).trim() !== '' ? String(row.id).trim() : ''
+  if (!id) return null
+  const region = String(row.country_code || '').trim().toUpperCase()
+  const industry = String(row.category || '').trim()
+  const tags = Array.isArray(row.tags) ? row.tags.filter((tag) => typeof tag === 'string' && tag !== '') : []
+  const images = readImages(row)
+  const cover = normalizeCoverUrl(row.cover_url || row.cover_key) || images[0] || ''
+  return {
+    id,
+    title: String(row.title || '').trim(),
+    region: region || '',
+    industry,
+    tags,
+    views: readViews(row),
+    engagement: readEngagement(row),
+    days: readAgeDays(row.posted_at || row.published_at, nowMs),
+    cover,
+    images,
+    isCarousel: images.length > 1,
+    videoUrl: readVideoUrl(row),
+    sourceUrl: typeof row.source_url === 'string' ? row.source_url : '',
+    structure: readStructure(row),
+    product: '',
+    angle: '',
+  }
+}
+
+/**
+ * 播放量档位也由数据推导：**只保留真能把结果切小的档位**。
+ *
+ * 库里所有行都 >10M 时，四个阈值任选结果完全一样——那就是本模块要防的假控件；
+ * 此时 views 维度整体不成立，工具栏也不该出现这个下拉。
+ * @param {Array<object>} items
+ * @param {Array<{ value: string, labelKey?: string, label?: string }>} [buckets]
+ * @returns {Array<object>}
+ */
+export function deriveViewBuckets(items, buckets = TRENDING_VIEW_BUCKETS) {
+  const list = Array.isArray(items) ? items : []
+  const views = list
+    .map((item) => Number(item?.views))
+    .filter((value) => Number.isFinite(value) && value > 0)
+  if (views.length === 0) return []
+  const min = Math.min(...views)
+  const usable = buckets.filter((bucket) => bucket.value === '' || Number(bucket.value) > min)
+  // 只剩默认档时它筛不掉任何东西，等于没有这个维度
+  return usable.length > 1 ? usable : []
+}
+
+/**
+ * 从真实数据推导可用维度。工具栏只渲染这里为真的维度，
+ * 否则就会出现「控件能点、数据不变」的假控件。
+ * @param {Array<object>} items
+ * @returns {{ region: boolean, industry: boolean, views: boolean, engagement: boolean, range: boolean }}
+ */
+export function deriveDimensions(items) {
+  const list = Array.isArray(items) ? items : []
+  return {
+    region: list.some((item) => Boolean(item?.region)),
+    industry: list.some((item) => Boolean(item?.industry)),
+    views: deriveViewBuckets(list).length > 0,
+    engagement: list.some((item) => Number.isFinite(item?.engagement)),
+    range: list.some((item) => Number.isFinite(item?.days)),
+  }
+}
+
+/**
+ * 地区档位由数据推导：库里只有 US/TH 时不得凭空出现 GB/VN/DE。
+ * @param {Array<object>} items
+ * @returns {Array<{ value: string, label?: string, labelKey?: string }>}
+ */
+export function deriveRegionOptions(items) {
+  return deriveOptions(items, 'region', 'trending.region.all')
+}
+
+/**
+ * 类目档位同样由数据推导：类目是用户自己的词表，不能拿一套固定枚举去套。
+ * @param {Array<object>} items
+ * @returns {Array<{ value: string, label?: string, labelKey?: string }>}
+ */
+export function deriveIndustryOptions(items) {
+  return deriveOptions(items, 'industry', 'trending.industry.all')
+}
+
+/**
+ * @param {Array<object>} items
+ * @param {'region' | 'industry'} key
+ * @param {string} allKey
+ */
+function deriveOptions(items, key, allKey) {
+  const list = Array.isArray(items) ? items : []
+  const values = [...new Set(list.map((item) => String(item?.[key] || '')).filter(Boolean))].sort()
+  return [{ value: '', labelKey: allKey }, ...values.map((value) => ({ value, label: value }))]
+}
+
+/**
+ * 档位并集：**只增不减**。
+ *
+ * 筛选后服务端只回命中行，若档位跟着当前页重算，选了「地区=TH」之后 US 档位就消失了，
+ * 用户再也换不回别的地区；档位必须记住见过的全部取值。同理维度一旦成立就不该再消失。
+ * @param {Array<{ value: string, label?: string, labelKey?: string }>} [previous]
+ * @param {Array<{ value: string, label?: string, labelKey?: string }>} [next]
+ */
+export function unionOptions(previous = [], next = []) {
+  const map = new Map()
+  for (const option of [...(previous || []), ...(next || [])]) {
+    if (option && !map.has(option.value)) map.set(option.value, option)
+  }
+  return [...map.values()].sort((a, b) => {
+    if (a.value === '') return -1
+    if (b.value === '') return 1
+    return String(a.value).localeCompare(String(b.value))
+  })
+}
+
+/** 空能力集：还没拿到任何数据时的工具栏形态。 */
+export const EMPTY_CAPABILITIES = {
+  dimensions: { region: false, industry: false, views: false, engagement: false, range: false },
+  regionOptions: [],
+  industryOptions: [],
+  viewOptions: [],
+}
+
+/**
+ * 把一次加载结果并入既有能力集（单调）。
+ * @param {{ dimensions: object, regionOptions: Array<object>, industryOptions: Array<object>, viewOptions: Array<object> }} previous
+ * @param {Array<object>} items
+ */
+export function mergeCapabilities(previous, items) {
+  const next = {
+    dimensions: deriveDimensions(items),
+    regionOptions: deriveRegionOptions(items),
+    industryOptions: deriveIndustryOptions(items),
+    viewOptions: deriveViewBuckets(items),
+  }
+  const base = previous || EMPTY_CAPABILITIES
+  return {
+    dimensions: Object.fromEntries(
+      Object.keys(next.dimensions).map((key) => [
+        key,
+        Boolean(base.dimensions?.[key]) || next.dimensions[key],
+      ]),
+    ),
+    regionOptions: unionOptions(base.regionOptions, next.regionOptions),
+    industryOptions: unionOptions(base.industryOptions, next.industryOptions),
+    viewOptions: unionOptions(base.viewOptions, next.viewOptions),
+  }
+}
+
+/**
+ * 组装拉取 query。地区 / 类目 / 播放量下界交给服务端先过滤再取窗口，
+ * 保证窗口内的分布与用户选择一致（互动率没有服务端参数，在客户端再筛）。
+ * @param {object} [filters]
+ * @returns {string}
+ */
+export function buildSourceQuery(filters = {}) {
+  const query = new URLSearchParams()
+  query.set('sort', 'views')
+  query.set('page_size', String(TRENDING_SOURCE_PAGE_SIZE))
+  query.set(TRENDING_PAGE_QUERY_KEY, String(normalizeTrendingPage(filters.page)))
+  if (filters.type) query.set('type', String(filters.type))
+  const country = String(filters.region || '').trim()
+  if (country) query.set('country', country)
+  const category = String(filters.industry || '').trim()
+  if (category) query.set('category', category)
+  const minViews = Number(filters.views)
+  if (Number.isFinite(minViews) && minViews > 0) query.set('views_min', String(minViews))
+  return query.toString()
+}
+
+async function fetchSourcePayload(fetchImpl, url, signal, basePath = '') {
+  try {
+    const res = await fetchImpl(url, { signal })
+    if (!res || !res.ok) {
+      return { ok: false, basePath, status: res?.status ?? 0, reason: `http-${res?.status ?? 0}` }
+    }
+    let payload
+    try {
+      payload = await res.json()
+    } catch {
+      return { ok: false, basePath, status: res.status, reason: 'bad-json' }
+    }
+    const data = payload && typeof payload === 'object' && payload.data ? payload.data : payload
+    const rows = Array.isArray(data?.items) ? data.items : null
+    if (!rows) return { ok: false, basePath, status: res.status, reason: 'bad-shape' }
+    return { ok: true, basePath, rows, total: readFiniteNumber(data?.total) ?? rows.length }
+  } catch (error) {
+    return {
+      ok: false,
+      basePath,
+      status: 0,
+      reason: error?.name === 'AbortError' ? 'aborted' : 'network',
+    }
+  }
+}
+
+/**
+ * 从云端精选目录拉取可复刻对标视频（单源：只打 `/omnimux/inspiration`）。
+ *
+ * 三种结果都要能被调用方区分：`ready`（有数据）/ `empty`（接口通但目录里没有）/
+ * `unavailable`（接口不通或未登录）。任何异常都收敛成 `unavailable`，
+ * 绝不让板块崩，也绝不回落到编造的样本。
+ *
+ * 单页语义：`page` 决定取第几窗口，`hasMore` 由「本页拿到的条数是否填满窗口」判定——
+ * 任一源回满自己的窗口就认为后面还可能有数据（见 `sourcePageSizes`）。
+ * 这条判据同时兜住了「上游忽略 page 参数、每次都回同一批」的情况：
+ * 第二页整页都是旧的，追加去重后不带任何新卡片，调用方的哨兵自然停在末尾，不会空转。
+ *
+ * @param {{
+ *   fetchImpl?: typeof fetch,
+ *   filters?: object,
+ *   signal?: AbortSignal,
+ *   page?: number,
+ *   sourcePath?: string,
+ *   sourcePaths?: string[],
+ *   sourcePageSizes?: Record<string, number>,
+ * }} [opts]
+ * @returns {Promise<{ status: string, items: Array<object>, total: number, page: number, hasMore: boolean, reason?: string }>}
+ */
+export async function loadTrendingPage(opts = {}) {
+  const fetchImpl = opts.fetchImpl || (typeof fetch === 'function' ? fetch : null)
+  const page = normalizeTrendingPage(opts.page)
+  if (!fetchImpl) {
+    return { status: TRENDING_SOURCE_STATUS.unavailable, items: [], total: 0, page, hasMore: false, reason: 'no-fetch' }
+  }
+
+  const cacheKey = getTrendingCacheKey(opts)
+  const useCache = !opts.forceRefresh && (!opts.fetchImpl || opts.cache === true)
+  const cached = useCache ? getTrendingCache(cacheKey) : null
+
+  // 1. 命中新鲜缓存：立即返回（0ms 极速呈现，彻底免除重复网络请求与白屏）
+  if (cached && !cached.isStale) {
+    return cached.data
+  }
+
+  // 2. 并发请求去重：防止组件多次重复触发同一 query 的网络拉取。
+  //    只对首页去重：追加页带 AbortSignal（切筛选要能取消），且与首页不是同一份窗口。
+  if (page === 1 && !opts.signal && useCache && IN_FLIGHT_REQUESTS.has(cacheKey)) {
+    return IN_FLIGHT_REQUESTS.get(cacheKey)
+  }
+
+  const executeFetch = async () => {
+    try {
+      const sourcePaths = opts.sourcePaths || (opts.sourcePath ? [opts.sourcePath] : DEFAULT_TRENDING_SOURCES)
+
+      const outcomes = await Promise.all(
+        sourcePaths.map((basePath) => {
+          const isCloud = basePath === TRENDING_CLOUD_PATH
+          const query = buildSourceQuery({ ...(opts.filters || {}), page, ...(isCloud ? { type: 'video' } : {}) })
+          const url = `${basePath}?${query}`
+          return fetchSourcePayload(fetchImpl, url, opts.signal, basePath)
+        }),
+      )
+
+      const aborted = outcomes.some((o) => !o.ok && o.reason === 'aborted')
+      if (aborted) {
+        return { status: TRENDING_SOURCE_STATUS.unavailable, items: [], total: 0, page, hasMore: false, reason: 'aborted' }
+      }
+
+      const okOutcomes = outcomes.filter((o) => o.ok)
+      if (okOutcomes.length === 0) {
+        // 网络失败时如果有陈旧缓存，降级返回陈旧缓存，提供极佳的离线/弱网韧性
+        if (cached?.data) {
+          return cached.data
+        }
+        const firstReason = outcomes[0]?.reason || 'network'
+        return { status: TRENDING_SOURCE_STATUS.unavailable, items: [], total: 0, page, hasMore: false, reason: firstReason }
+      }
+
+      const combinedRows = []
+      const seenIds = new Set()
+      const seenUrls = new Set()
+      const seenFingerprints = new Set()
+      // 窗口是否被填满：任一源回满它自己的窗口，就说明它后面可能还有下一页
+      let windowFilled = false
+
+      for (const outcome of okOutcomes) {
+        const expectedSize = Number(opts.sourcePageSizes?.[outcome.basePath]) || TRENDING_SOURCE_PAGE_SIZE
+        if (outcome.rows.length >= expectedSize) windowFilled = true
+
+        for (const row of outcome.rows) {
+          if (!row || typeof row !== 'object') continue
+          const id = row.id != null ? String(row.id).trim() : ''
+          const url = typeof row.source_url === 'string' ? row.source_url.trim() : ''
+          if (id && seenIds.has(id)) continue
+          if (url && seenUrls.has(url)) continue
+
+          const fps = getInspirationFingerprints(row)
+          const isDuplicate = fps.some((fp) => seenFingerprints.has(fp))
+          if (isDuplicate) continue
+
+          if (id) seenIds.add(id)
+          if (url) seenUrls.add(url)
+          for (const fp of fps) {
+            seenFingerprints.add(fp)
+          }
+          combinedRows.push(row)
+        }
+      }
+
+      const items = combinedRows.map((row) => mapSourceItem(row)).filter(Boolean)
+      const total = items.length
+
+      const applied = String(opts.filters?.region || '').trim() !== ''
+        || String(opts.filters?.industry || '').trim() !== ''
+        || Number(opts.filters?.views) > 0
+      const emptyStatus = applied ? TRENDING_SOURCE_STATUS.filtered : TRENDING_SOURCE_STATUS.empty
+
+      const result = {
+        status: items.length > 0 ? TRENDING_SOURCE_STATUS.ready : emptyStatus,
+        items,
+        total,
+        page,
+        hasMore: windowFilled,
+      }
+
+      // 写入内存缓存：只缓存首页。追加页缓存住会让「切走再切回」跳过陈旧窗口，
+      // 而首页缓存已经足以消除首屏白屏。
+      // `hasMore` 随首页一并入缓存：重新挂载时的初值直接用它，不必先按「还有下一页」猜一次。
+      if (page === 1 && useCache && (result.status === TRENDING_SOURCE_STATUS.ready || result.status === TRENDING_SOURCE_STATUS.filtered || result.status === TRENDING_SOURCE_STATUS.empty)) {
+        setTrendingCache(cacheKey, result, opts.ttlMs)
+      }
+
+      return result
+    } finally {
+      if (page === 1 && useCache) {
+        IN_FLIGHT_REQUESTS.delete(cacheKey)
+      }
+    }
+  }
+
+  const promise = executeFetch()
+  if (page === 1 && !opts.signal && useCache) {
+    IN_FLIGHT_REQUESTS.set(cacheKey, promise)
+  }
+  return promise
+}

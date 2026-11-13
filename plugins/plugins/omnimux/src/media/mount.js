@@ -1,0 +1,325 @@
+import { readFileSync, existsSync } from 'node:fs'
+import { join } from 'node:path'
+import { homedir } from 'node:os'
+import { assertCapabilityEnabled, isMediaEnabled, isToolEnabled } from '../gate/guard.js'
+import { OmnimuxError } from './errors.js'
+import { resolveExecutionPlan } from './execution-plan.js'
+import { readScenarioSettings } from '../settings/runtime-mode.js'
+import { findMediaTaskByRequestKey } from './task-store.js'
+import { objectParams, rethrow } from '../tools/schema.js'
+
+/**
+ * 核验宿主环境官方 Token 真实性，排除伪造、空值或占位符字符串。
+ * @param {unknown} token
+ * @returns {boolean}
+ */
+export function isAuthenticOfficialToken(token) {
+  if (typeof token !== 'string') return false
+  const trimmed = token.trim()
+  if (!trimmed) return false
+  const lower = trimmed.toLowerCase()
+  const FORGERY_PLACEHOLDERS = new Set([
+    'undefined',
+    'null',
+    'false',
+    'none',
+    '0',
+    'nan',
+    '[object object]',
+    'placeholder',
+    'empty',
+  ])
+  if (FORGERY_PLACEHOLDERS.has(lower)) {
+    return false
+  }
+  if (/[\r\n\t\0]/.test(trimmed)) {
+    return false
+  }
+  return true
+}
+
+/**
+ * 同步解析官方权威凭据 Token：
+ * 优先级：
+ * 1. 显式安全 env / process.env (OMNIMUX_API_KEY / OMNIMUX_TOKEN)
+ * 2. profile 本地 .credentials.yaml 回退 ($DSH_HOME, ~/.omnimux, ~/.dsh)
+ * 3. ~/.config/omnimux/secrets.json 回退
+ * @param {Record<string, string | undefined>} [env]
+ * @param {{ allowDiskFallback?: boolean }} [opts]
+ * @returns {string | undefined}
+ */
+export function resolveSyncOfficialToken(env = process.env, opts = {}) {
+  const fromEnv = env?.OMNIMUX_API_KEY || env?.OMNIMUX_TOKEN
+  if (typeof fromEnv === 'string') {
+    if (isAuthenticOfficialToken(fromEnv)) return fromEnv.trim()
+    return undefined
+  }
+  const fromProcess = process.env.OMNIMUX_API_KEY || process.env.OMNIMUX_TOKEN
+  if (typeof fromProcess === 'string') {
+    if (isAuthenticOfficialToken(fromProcess)) return fromProcess.trim()
+    return undefined
+  }
+
+  // 单元测试隔离保护：当通过 node:test 或 NODE_ENV=test 运行时，
+  // 必须显式开启 allowDiskFallback 才能穿透读取机器个人凭据文件，避免干扰断言隔离
+  const isTestRuntime = process.env.NODE_ENV === 'test' || Boolean(process.env.NODE_TEST_CONTEXT)
+  if (isTestRuntime && !opts.allowDiskFallback) {
+    return undefined
+  }
+
+  // 动态发现用户当前配置目录（支持生产版及开发版环境目录）
+  const profileDirName = (typeof process.env.DSH_PROFILE_DIR === 'string' && process.env.DSH_PROFILE_DIR.trim())
+    || (typeof process.env.DSH_HOME === 'string' && process.env.DSH_HOME.trim())
+    || ''
+  const searchDirs = [
+    process.env.DSH_HOME,
+    profileDirName,
+    join(homedir(), '.omnimux'),
+    join(homedir(), '.dsh'),
+  ].filter(Boolean)
+
+  for (const dir of searchDirs) {
+    try {
+      const credFile = join(dir, '.credentials.yaml')
+      if (existsSync(credFile)) {
+        const content = readFileSync(credFile, 'utf8')
+        const match = content.match(/OMNIMUX_API_KEY:\s*["']?([^"'\s\r\n]+)["']?/)
+          || content.match(/OMNIMUX_TOKEN:\s*["']?([^"'\s\r\n]+)["']?/)
+        if (match && isAuthenticOfficialToken(match[1])) {
+          return match[1].trim()
+        }
+      }
+    } catch {}
+  }
+
+  try {
+    const secFile = join(homedir(), '.config/omnimux/secrets.json')
+    if (existsSync(secFile)) {
+      const parsed = JSON.parse(readFileSync(secFile, 'utf8'))
+      const tok = parsed?.token || parsed?.access_token || parsed?.slots?.[parsed?.active_slot]?.access_token
+      if (typeof tok === 'string' && isAuthenticOfficialToken(tok)) {
+        return tok.trim()
+      }
+    }
+  } catch {}
+
+  return undefined
+}
+
+/**
+ * The model a submit actually routes on.
+ *
+ * An explicit `model` always wins: the caller is the one who knows what the
+ * user asked for in this turn. Only when the caller passes none does the
+ * session's pin fill in — that pin is the composer picker's choice, which
+ * previously no generation path could see.
+ *
+ * @param {unknown} requested
+ * @param {{ agent?: { session?: { id?: string } } }} [exec]
+ * @returns {unknown}
+ */
+function resolveRequestedModel(requested, exec, sessionModel) {
+  if (typeof requested === 'string') {
+    // A blank string is "the caller sent nothing usable", not a model named "".
+    if (requested.trim()) return requested
+  } else if (requested !== undefined && requested !== null) {
+    // A non-string is not a model id this layer can judge; pass it through so
+    // the routing layer reports it rather than silently substituting a pin.
+    return requested
+  }
+  const pinned = sessionModel?.get?.(exec?.agent?.session?.id)
+  return pinned?.modelId || requested
+}
+
+/**
+ * @param {{
+ *   tools: { register: (tool: object) => unknown },
+ *   provide?: (name: string, value: unknown) => void,
+ *   get?: (name: string) => unknown,
+ * }} ctx
+ * @param {{
+ *   kind: 'video' | 'image' | 'audio',
+ *   execute: (req: object) => Promise<unknown>,
+ *   media: unknown,
+ *   gate?: object,
+ *   hub?: { gate?: object },
+ *   store?: { resolve: () => Promise<string | undefined> },
+ *   sessionModel?: { get: (sessionId?: unknown) => ({ modelId: string } | null) },
+ *   jsonOut: object,
+ * }} opts
+ */
+export function mountMedia(ctx, opts) {
+  const { kind, execute, media, jsonOut, store, sessionModel } = opts
+  const gate = opts.gate ?? opts.hub?.gate ?? ctx.get?.('gate')
+
+  const api = {
+    /** Look up an already accepted intent without submitting or exposing route/credentials. */
+    findAccepted(requestKey) {
+      if (typeof requestKey !== 'string' || !requestKey.trim()) return null
+      const record = findMediaTaskByRequestKey(requestKey)
+      if (!record || record.capability !== kind || !record.upstreamTaskId && !record.artifact?.sourceUrl && !(record.status==='ready'&&record.artifact?.cachePath&&existsSync(record.artifact.cachePath))) return null
+      return { taskRef: record.taskRef, status: record.status }
+    },
+    /**
+     * @param {{ prompt?: string, dest: string, duration?: number, image?: string, taskId?: string, wait?: boolean, signal?: AbortSignal, [key: string]: unknown }} req
+     */
+    execute(req) {
+      assertCapabilityEnabled(gate, kind, 'media')
+      const scenarioSettings = readScenarioSettings(ctx.get?.('settings'))
+      const current = Object.assign({}, scenarioSettings, { referenceStorage: opts.readReferenceStorageConfig?.() ?? scenarioSettings?.referenceStorage })
+      // 放行/渠道判定唯一拥有者：resolveExecutionPlan（见 media/execution-plan.js）。
+      // 本处只做能力门禁 + 调用判定；execute 消费 RouteDecision.finalReq 不再重复判定。
+      const plan = resolveExecutionPlan({ kind, req, current, media })
+      return execute({
+        ...plan.finalReq,
+        media,
+        store: opts.store,
+        credentials: ctx.get?.('credentials'),
+        runtimeSettings: current,
+        requireListed: plan.requireListed,
+      })
+    },
+  }
+
+  if (isMediaEnabled(gate, kind) && typeof ctx.provide === 'function') {
+    ctx.provide(`${kind}Generate`, api)
+  }
+
+  const toolName = `omnimux_${kind}_submit`
+  if (!isToolEnabled(gate, toolName)) {
+    return
+  }
+
+  const destHint = kind === 'video'
+    ? 'Absolute file path for the mp4'
+    : kind === 'audio'
+      ? 'Absolute file path for the audio'
+      : 'Absolute file path for the image'
+
+  ctx.tools.register({
+    name: toolName,
+    description:
+      `Generate one ${kind} to dest. Default waits until the file is on disk (mode live). wait false returns mode submitted plus taskId for asynchronous models; synchronous speech always returns mode live with dest. Pass task_id with dest to poll and download an existing task. Uses OMNIMUX_API_KEY / OMNIMUX_TOKEN.`,
+    parameters: objectParams({
+      prompt: { type: 'string', description: 'Prompt text. Required only when the selected model operation declares it.' },
+      dest: { type: 'string', required: true, description: destHint },
+      model: { type: 'string', description: 'Model ID (e.g. seed-audio-1.0, suno, gpt-4o-mini-tts, nanobanana-2, seedream-5-0-pro, mj-v8-1, gpt-image-2.5)' },
+      operation: {
+        type: 'string',
+        description:
+          'Contract operation id (e.g. text_to_video, first_frame, text_to_image). Required when the model has multiple listed ops or inputs are ambiguous; optional when uniquely inferable.',
+      },
+      duration: { type: 'number' },
+      image: { type: 'string', description: 'Reference image URL or data URI' },
+      image_tail: { type: 'string', description: 'Last-frame image URL or data URI for compatible video operations.' },
+      references: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            type: { type: 'string' },
+            role: { type: 'string' },
+            targetSlot: { type: 'string' },
+            pathOrUrl: { type: 'string' },
+          },
+          required: ['type', 'pathOrUrl'],
+          additionalProperties: false,
+        },
+        description: 'Additional typed media references.',
+      },
+      audioTrack: {
+        type: 'object',
+        properties: {
+          type: { type: 'string' },
+          role: { type: 'string' },
+          pathOrUrl: { type: 'string' },
+        },
+        required: ['type', 'pathOrUrl'],
+        additionalProperties: false,
+        description: 'Typed audio track for compatible video operations.',
+      },
+      aspectRatio: { type: 'string', description: 'Requested aspect ratio for compatible media operations.' },
+      resolution: { type: 'string', description: 'Requested resolution for compatible media operations.' },
+      sound: { type: 'boolean', description: 'Generate synchronized sound when the model supports it.' },
+      seed: { type: 'number', description: 'Generation seed when supported by the model.' },
+      watermark: { type: 'boolean', description: 'Watermark switch when supported by the model.' },
+      outputFormat: { type: 'string', description: 'Output container such as mp4 or mov.' },
+      referenceTaskType: { type: 'string', description: 'Explicit APIMart reference/edit/extend task type.' },
+      generationType: { type: 'string', description: 'Explicit APIMart frame/reference generation type.' },
+      returnLastFrame: { type: 'boolean', description: 'Return the generated final frame when supported.' },
+      webSearch: { type: 'boolean', description: 'Enable the documented web_search tool.' },
+      nsfwCheck: { type: 'boolean', description: 'Enable APIMart request moderation when supported.' },
+      fileUrl: { type: 'string', description: 'Public document URL for document_to_video.' },
+      linkUrl: { type: 'string', description: 'Public login-free page URL for webpage_to_video.' },
+      speech: { type: 'string', description: 'Talking-head / spoken text. Optional.' },
+      audio: { type: 'string', description: 'Reference audio URL. Optional.' },
+      voice: { type: 'string', description: 'Voice ID from the selected model contract; omitted uses its default voice.' },
+      strategy: {
+        type: 'string',
+        enum: ['auto', 'stability_first', 'cost_first'],
+        description: 'Routing strategy: auto (balanced default), stability_first (highest 24h stability SLA), cost_first (lowest points cost).',
+      },
+      group: {
+        type: 'string',
+        description: 'Explicit channel group name (e.g. pro, standard, official, cheap).',
+      },
+      allowed_groups: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Optional list of allowed channel groups to filter the candidate pool.',
+      },
+      ...(kind === 'audio' ? { format: { type: 'string', description: 'Speech audio format: mp3, wav or pcm. Default mp3.' } } : {}),
+      style: { type: 'string', description: 'Music/audio style prompt. Optional.' },
+      instrumental: { type: 'boolean', description: 'Instrumental only music generation. Optional.' },
+      speed: { type: 'number', description: 'Speech speed multiplier. Optional.' },
+      wait: { type: 'boolean', description: 'If false, return after submit. Default true.' },
+      task_id: { type: 'string', description: 'Resume poll and download; skips submit and initial asset guard' },
+      task_ref: { type: 'string', description: 'Opaque task reference issued by the hub on submit; resumes poll and download.' },
+    }),
+    output: jsonOut,
+    async execute(args, exec) {
+      try {
+        assertCapabilityEnabled(gate, toolName, 'tool')
+        return await api.execute({
+          prompt: args.prompt,
+          dest: args.dest,
+          model: resolveRequestedModel(args.model, exec, sessionModel),
+          operation: args.operation,
+          duration: args.duration,
+          image: args.image,
+          image_tail: args.image_tail,
+          references: args.references,
+          audioTrack: args.audioTrack,
+          aspectRatio: args.aspectRatio,
+          resolution: args.resolution,
+          sound: args.sound,
+          seed: args.seed,
+          watermark: args.watermark,
+          outputFormat: args.outputFormat,
+          referenceTaskType: args.referenceTaskType,
+          generationType: args.generationType,
+          returnLastFrame: args.returnLastFrame,
+          webSearch: args.webSearch,
+          nsfwCheck: args.nsfwCheck,
+          fileUrl: args.fileUrl,
+          linkUrl: args.linkUrl,
+          speech: args.speech,
+          audio: args.audio,
+          voice: args.voice,
+          speed: args.speed,
+          strategy: args.strategy,
+          group: args.group,
+          allowedGroups: args.allowed_groups,
+          ...(kind === 'audio' ? { format: args.format } : {}),
+          wait: args.wait,
+          taskId: args.task_id,
+          taskRef: args.task_ref,
+          signal: exec?.signal,
+        })
+      } catch (error) {
+        if (error instanceof OmnimuxError) throw error
+        return rethrow(error)
+      }
+    },
+  })
+}

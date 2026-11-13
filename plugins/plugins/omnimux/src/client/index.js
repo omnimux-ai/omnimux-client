@@ -1,0 +1,341 @@
+import { createElement } from 'react'
+import { mountFormsBridge } from './forms/mount.js'
+/** Registers OmniMux profile in Settings and Apps under 新会话. */
+import { NS } from './locales.js'
+import { ProfileSection } from './ProfileSection.jsx'
+import { DshPluginsSection } from './DshPluginsSection.jsx'
+import { ReferenceStorageSection } from './ReferenceStorageSection.jsx'
+import { ModelsSettingsCard } from './ModelsSettingsCard.jsx'
+import { isSharedModelSettingsDetailSubject } from './model-settings-section.js'
+import { LoginGate } from './LoginGate.jsx'
+import { RuntimeGuideGate } from './RuntimeGuideGate.jsx'
+import { setRuntimeChoiceReader } from './auth-gate.js'
+import { installSettingsValueReader } from './settings-value-reader.js'
+import { QuotaGate } from './QuotaGate.jsx'
+import { installQuotaGlobal } from './quota-gate.js'
+import { SidebarUpdateAction } from './SidebarUpdateAction.jsx'
+import { getStatusCached } from './api.js'
+import { installHubChrome } from './chrome.js'
+import { installWorkbenchGlobal } from './workbench.js'
+import { STYLES_ID, injectHubStyles } from './styles.js'
+import { ensureSidebarGuideScrollChrome, removeSidebarGuideScrollChrome } from './sidebar-guide-scroll.js'
+import { HeroBrandMark } from './HeroBrandMark.jsx'
+import { installHeroBrandSlot } from './hero-brand.js'
+import { installStatsLineShadow } from './stats-line-shadow.js'
+import { AttachmentTray } from './attachments/AttachmentTray.tsx'
+import { getGlobalAttachmentStore } from './attachments/store.ts'
+import { registerMaterialMentionSource } from './attachments/materialMentionSource.ts'
+import { createEventsClient, installHubEventsGlobal } from './events-client.js'
+import { installWebSocketHmr } from '../hmr/client.js'
+import { injectUiContextStyle } from './composer-envelope.js'
+import { installComposerAddCapture } from './composer-add/install.js'
+import { installComposerAddCommands } from './composer-add/commands.js'
+import { createAttachmentAdmission } from './composer-add/attachment-admission.js'
+import { AttachmentSubmitBridge } from './composer-add/AttachmentSubmitBridge.jsx'
+import { installAgentPresetsI18n } from './agent-presets-i18n.js'
+import { installSessionCopyI18n } from './session-copy-i18n.js'
+import { installCommandsI18n } from './composer-commands-i18n.js'
+import { installExploreMoreMenu } from './explore-more-menu.jsx'
+import { ComposerModeTabs } from './composer-mode/ComposerModeTabs.jsx'
+import { ComposerQuickShortcuts, ComposerQuickShortcutControls } from './composer-quick-shortcuts/ComposerQuickShortcuts.jsx'
+import { registerLinkTriggerSource } from './attachments/linkTriggerSource.ts'
+import { installUserMessageLinkEnhancer } from './attachments/userMessageLinkEnhancer.ts'
+import { installUserMessageAttachmentsEnhancer } from './attachments/userMessageAttachmentsEnhancer.ts'
+import { installAssistantMessageMediaEnhancer } from './attachments/assistantMessageMediaEnhancer.ts'
+import { installPromptFenceGenerate } from './attachments/promptFenceGenerate.ts'
+import { getSubmittedCanvasText, subscribeSubmittedCanvasText } from './attachments/useCommentAttachment.ts'
+import { getUiContext } from './workbench/context.js'
+import { currentSessionId } from './workbench/host-adapter.js'
+import { readActiveSkill, subscribeSkillChanged } from './composer-add/skill-event.ts'
+import { findReplicateAttachment, shouldReleaseReplicateAttachments } from './session-guide/trending/replicate-linkage.js'
+import { installGlobalReferenceApi } from './reference/index.ts'
+import * as primitives from '@deepseek-ai/dsh-client-ui-primitives'
+
+export const name = 'omnimux'
+export const inject = ['slots', 'locale']
+// The settings read service is optional: Hosts without ui-settings still mount chrome.
+
+/**
+ * Client seam for vertical plugins: single source of truth for the
+ * first-level product stage and the workbench split. `installStageGlobal()`
+ * installs `window.__omnimuxStage`; `installWorkbenchGlobal()` installs
+ * `window.__omnimuxWorkbench`. Vertical plugins read those globals in
+ * their own `apply()` instead of shipping a copy or depending on
+ * cross-plugin client service ordering. Only the hub installs the chrome
+ * style and the document click listener, so concurrent verticals cannot
+ * double-register global side-effects (the duplicate-copy race that wedged
+ * the page).
+ * @param {{
+ *   locale: { register: Function, bind: Function },
+ *   slots: { inject: Function, register: Function },
+ *   effect?: Function,
+ * }} ctx
+ */
+export function apply(ctx) {
+  const t = installHubChrome(ctx)
+  registerLinkTriggerSource(ctx)
+  registerMaterialMentionSource(ctx)
+  installAgentPresetsI18n(ctx)
+  installSessionCopyI18n(ctx)
+  installCommandsI18n(ctx, primitives)
+  // 官方侧栏「更多」菜单（sidebar.panellist.actions）：同一份 9 项入口。
+  // 老宿主没有该 seat 时靠 ctx.slots.inject 惰性语义 no-op。
+  installExploreMoreMenu(ctx, primitives)
+  installQuotaGlobal(typeof window !== 'undefined' ? window : undefined)
+  installHeroBrandSlot(ctx, HeroBrandMark)
+  installStatsLineShadow(ctx)
+  // Optional session warmup: fill the status cache so the first sidebar
+  // click can take the sync short path. Not a startup gate — fire-and-forget,
+  // never setState, never block apply().
+  void getStatusCached().catch(() => {})
+  ctx.effect?.(() => {
+    injectHubStyles()
+    return () => { document.getElementById(STYLES_ID)?.remove() }
+  }, 'omnimux: hub client styles')
+  // Keep the official right-sidebar 「开始/guide」 entry list scrollable inside its
+  // clipped tab body (see sidebar-guide-scroll.js for the root cause).
+  ctx.effect?.(() => {
+    ensureSidebarGuideScrollChrome()
+    return () => { removeSidebarGuideScrollChrome() }
+  }, 'omnimux: sidebar guide scroll')
+
+  // Apps shelf temporarily taken down (core-first): the 应用 row, app tabs,
+  // and AppsStage overlay stay in the source tree (apps-store.js / app-tabs.js
+  // / AppsStage.jsx / AppsEntry.jsx / catalog.json) and are re-enabled by
+  // restoring the three mounts below. Pinned vertical plugins (账号 / 资产库 /
+  // 专家·技能·连接器 / 工作流) open directly via the product stage and do not
+  // depend on the catalog or the omnimux-app-open event.
+  ctx.slots.inject('settings.section', () => ctx.slots.register({
+    name: 'settings.section',
+    id: 'omnimux-profile',
+    order: 5,
+    label: () => t('profile.nav'),
+    locale: NS,
+    inject: () => ({ t }),
+  }, ProfileSection))
+  ctx.slots.inject('settings.plugins.tab', () => ctx.slots.register({
+    name: 'settings.plugins.tab',
+    id: 'omnimux-dsh-plugins',
+    order: 20,
+    label: () => t('dshPlugins.nav'),
+    locale: NS,
+    inject: () => ({ t }),
+  }, DshPluginsSection))
+  const omnimuxSubject = (subject) => subject?.kind === 'bundle' && subject.pkg?.name === 'omnimux'
+    || subject?.kind === 'row' && subject.pkg?.name === 'omnimux' && subject.row?.rowId === 'omnimux'
+    || subject?.kind === 'item' && subject.id === 'omnimux'
+  ctx.slots.inject('plugins.detail.section', () => ctx.slots.register({
+    name: 'plugins.detail.section',
+    id: 'omnimux-reference-storage',
+    order: 100,
+    locale: NS,
+    inject: () => ({ t }),
+  }, ({ t: translate, subject }) => omnimuxSubject(subject) ? createElement(ReferenceStorageSection, { t: translate }) : null))
+  // Task-model pickers and reference storage both need the `omnimux` config
+  // scope, which only exists inside `ctx.inject(['configForms'], …)` — so both
+  // their plugins.item card and their plugins.detail.section contribution are
+  // registered there, never on the scope-less outer inject.
+  if (typeof ctx.inject === 'function') ctx.inject(['configForms'], (formCtx) => {
+    formCtx.effect(() => formCtx.configForms.whileServed(['omnimux'], () => formCtx.slots.inject('plugins.item', () => formCtx.slots.register({
+      name: 'plugins.item', id: 'omnimux-reference-storage', order: 100,
+      label: () => t('referenceStorage.title'), locale: NS, inject: () => ({ t }),
+    }, ({ t: translate, view }) => view === 'summary' ? translate('referenceStorage.description') : createElement(ReferenceStorageSection, { t: translate })))), 'omnimux: reference storage configuration')
+    formCtx.effect(() => formCtx.configForms.whileServed(['omnimux'], () => formCtx.slots.inject('plugins.item', () => formCtx.slots.register({
+      name: 'plugins.item', id: 'omnimux-model-settings', order: 90,
+      label: () => t('models.settingsTitle'), locale: NS,
+      inject: () => ({ t, scope: formCtx.configForms.get('omnimux') }),
+    }, ({ t: translate, scope, view }) => view === 'summary' ? translate('models.settingsSummary') : createElement(ModelsSettingsCard, { t: translate, scope })))), 'omnimux: model settings')
+    formCtx.effect(() => formCtx.configForms.whileServed(['omnimux'], () => formCtx.slots.inject('plugins.bundle.config', () => formCtx.slots.register({
+      name: 'plugins.bundle.config', key: 'omnimux', id: 'omnimux-model-settings', order: 90, locale: NS,
+      inject: () => ({ t, scope: formCtx.configForms.get('omnimux') }),
+    }, ({ t: translate, scope }) => createElement(ModelsSettingsCard, { t: translate, scope })))), 'omnimux: model settings bundle')
+    // The hub bundle page gets this card from `plugins.bundle.config` above;
+    // this detail section only covers sibling `omnimux-*` bundles. Matching the
+    // hub bundle here mounts the same card twice on one PackageDetail page.
+    formCtx.effect(() => formCtx.configForms.whileServed(['omnimux'], () => formCtx.slots.inject('plugins.detail.section', () => formCtx.slots.register({
+      name: 'plugins.detail.section', id: 'omnimux-model-settings', order: 90, locale: NS,
+      inject: () => ({ t, scope: formCtx.configForms.get('omnimux') }),
+    }, ({ t: translate, scope, subject }) => isSharedModelSettingsDetailSubject(subject) ? createElement(ModelsSettingsCard, { t: translate, scope }) : null))), 'omnimux: model settings detail')
+    // First-run model-route guide: a full-screen chooser for the text
+    // conversation channel (official / local agent / own key) shown only
+    // when nothing has been configured yet. Unlike the settings cards it
+    // must mount unconditionally — whileServed() would keep it off until
+    // someone opens Settings — so it registers on shell.overlay for the
+    // whole session and hides itself once a snapshot is ready. The effect
+    // wrapper keeps the inject disposer owned, matching the three
+    // registrations above, so a fork restart cannot double the portal.
+    formCtx.effect(() => formCtx.slots.inject('shell.overlay', () => formCtx.slots.register({
+      name: 'shell.overlay',
+      id: 'omnimux-runtime-guide',
+      order: 29,
+      locale: NS,
+      inject: () => ({ t, scope: formCtx.configForms.get('omnimux') }),
+    }, RuntimeGuideGate)), 'omnimux: first-run model-route guide')
+  })
+  // Read existing choices for login compatibility without exposing another
+  // model configuration surface. Account/API setup remains on the Host page.
+  // The login gate asks this before prompting: a local agent or custom key does
+  // not need the official account for generation. Without a readable value the
+  // gate keeps its old behaviour and still prompts.
+  const readRuntimeChoice = installSettingsValueReader({ ctx, namespace: 'omnimux' })
+  if (readRuntimeChoice) setRuntimeChoiceReader(readRuntimeChoice)
+  // Unified login gate. It lives on the shell.overlay seat but renders as a
+  // transient modal via createPortal(document.body) with a zIndex above every
+  // other overlay; it returns null while closed so it never claims a product
+  // slot or `data-dsh-product-stage`. Only the hub triggers it (single owner).
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+    name: 'shell.overlay',
+    id: 'omnimux-auth-gate',
+    order: 30,
+    locale: NS,
+    inject: () => ({ t }),
+  }, LoginGate))
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+    name: 'shell.overlay',
+    id: 'omnimux-quota-gate',
+    order: 31,
+    locale: NS,
+    inject: () => ({ t }),
+  }, QuotaGate))
+
+  // 官方侧边栏底部槽位：设置正上方的更新交互栏
+  ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
+    name: 'sidebar.footer.action',
+    id: 'omnimux-desktop-updater',
+    order: 10,
+    locale: NS,
+    inject: () => ({ t }),
+  }, SidebarUpdateAction))
+
+  installWorkbenchGlobal()
+  installGlobalReferenceApi()
+  let guideSessions = null
+  ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
+    name: 'conversation.input.dock',
+    id: 'omnimux-composer-mode-tabs',
+    order: 115,
+    locale: NS,
+    inject: () => ({ workbench: window.__omnimuxWorkbench }),
+  }, ComposerModeTabs))
+  // 输入框**下方**的四条快捷方式：提示语 + 链接胶囊 + 技能一次到位。
+  // 只在新对话（空会话）渲染；技能经 `window.__omnimuxSkillLibrary` 通道解析，
+  // 解析不到的那条不渲染。
+  ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
+    name: 'conversation.input.dock',
+    id: 'omnimux-quick-shortcuts',
+    order: 105,
+    locale: NS,
+    inject: (sessionId) => ({
+      t,
+      mutatePrompt: (text, span) => {
+        const scope = sessionId && guideSessions?.scope(sessionId)
+        if (!scope) return false
+        return text
+          ? scope.bail(scope, 'slash/input-insert-text', { text, span }) === true
+          : scope.bail(scope, 'slash/input-consume-token', { guard: { kind: 'span', span } }) === true
+      },
+    }),
+  }, ComposerQuickShortcuts))
+  ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
+    name: 'conversation.input.left',
+    id: 'omnimux-quick-shortcut-controls',
+    order: 20,
+    locale: NS,
+    inject: () => ({ t }),
+  }, ComposerQuickShortcutControls))
+  // 素材卡槽回到官方输入框内侧。Host 直接把上传回调交给托盘，不再经外侧桥接。
+  const attachmentStore = getGlobalAttachmentStore()
+  mountFormsBridge(ctx, attachmentStore)
+  const attachmentAdmission = createAttachmentAdmission({ getSessions: () => guideSessions, store: attachmentStore })
+  ctx.effect(() => () => { attachmentAdmission.dispose() }, 'omnimux: attachment admission')
+  ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
+    name: 'conversation.input.dock', id: 'omnimux:attachment-submit', order: 120, locale: NS,
+    inject: (sessionId) => ({
+      // 附件提交桥的归属判定走统一读数口（#3806）：直读 list.current 在 rc.3 恒 undefined，
+      // 会让 `getCurrentSessionId() === sessionId` 永远为假、提交桥静默失效。
+      attachmentStore, attachmentAdmission, getCurrentSessionId: () => currentSessionId(guideSessions),
+      insertText: (text, span) => {
+        const scope = sessionId && guideSessions?.scope(sessionId)
+        return scope?.bail(scope, 'slash/input-insert-text', { text, span }) === true
+      },
+    }),
+  }, AttachmentSubmitBridge))
+  ctx.effect?.(() => attachmentStore.installGlobalEvents(), 'omnimux: attachment global events')
+  // 「复刻爆款视频」技能从底部药丸被移除时，复刻对象一并撤离附件栏。
+  // 这里只监听技能通道：附件栏自己不动技能，技能也不动附件，避免形成回环。
+  ctx.effect(() => subscribeSkillChanged((skill) => {
+    if (!shouldReleaseReplicateAttachments(skill, readActiveSkill())) return
+    const sessionId = attachmentStore.getActiveSessionId()
+    const stuck = findReplicateAttachment(attachmentStore.getSnapshot(sessionId))
+    if (stuck) attachmentStore.removeAttachment(sessionId, stuck.id)
+  }), 'omnimux: replicate skill release')
+  ctx.slots.inject('conversation.input.attachments', () => ctx.slots.register({
+    name: 'conversation.input.attachments',
+    id: 'omnimux-attachment-tray',
+    priority: -10,
+    locale: NS,
+    inject: (sessionId) => ({
+      getSessions: () => guideSessions,
+      insertLinkReference: (request) => {
+        const scope = sessionId && guideSessions?.scope(sessionId)
+        return scope?.bail(scope, 'slash/input-insert-reference', request) === true
+      },
+    }),
+  }, AttachmentTray))
+
+  ctx.effect(() => {
+    const eventsClient = createEventsClient()
+    const uninstall = installHubEventsGlobal(eventsClient)
+    const generationBinding = ctx.inject(['sessions'], (inner) => {
+      inner.effect(() => {
+        const feedback = createGenerationFeedback({ sessions: inner.sessions, store: getGlobalMediaViewerStore(), getUiContext, eventsClient, getSubmittedCanvasText, subscribeSubmittedCanvasText })
+        return () => feedback.dispose()
+      }, 'omnimux: canvas generation feedback')
+    })
+    const hmr = ctx.inject(['loader', 'modules'], hmrCtx => {
+      hmrCtx.effect(() => installWebSocketHmr(hmrCtx, eventsClient, document), 'omnimux: HMR client')
+    })
+    eventsClient.connect()
+    return () => {
+      void hmr.dispose()
+      void generationBinding.dispose()
+      eventsClient.disconnect()
+      uninstall()
+    }
+  }, 'omnimux: hub event client')
+  if (typeof document !== 'undefined') {
+    ctx.effect(() => { injectUiContextStyle(document) }, 'omnimux: composer context style')
+    ctx.effect(() => installUserMessageLinkEnhancer(document), 'omnimux: user message link pill enhancer')
+    ctx.effect(() => installUserMessageAttachmentsEnhancer(document), 'omnimux: user message attachments enhancer')
+    ctx.effect(() => installAssistantMessageMediaEnhancer(document), 'omnimux: assistant message media enhancer')
+    ctx.effect(() => installPromptFenceGenerate(document), 'omnimux: prompt fence generate')
+    if (typeof ctx.inject === 'function') {
+      ctx.inject(['betterSidebar', 'sessions', 'uiConversation'], (inner) => {
+        const sidebar = inner.betterSidebar ?? inner.get?.('betterSidebar')
+        if (sidebar && typeof sidebar.registerTab === 'function') {
+        }
+      })
+    }
+    ctx.inject(['commandUi', 'sessions'], (inner) => {
+      guideSessions = inner.sessions
+      inner.effect(() => {
+        const controller = installComposerAddCapture(document, { t, store: attachmentStore, sessions: inner.sessions })
+        const stopCommands = installComposerAddCommands(inner, controller)
+        return () => {
+          stopCommands()
+          guideSessions = null
+          controller.dispose()
+        }
+      }, 'omnimux: composer add commands')
+    })
+  }
+  // ctx.effect(() => mountSidebarEntry(apps, t, ctx.locale, SIDEBAR_GLOBAL().register), 'omnimux: sidebar apps entry')
+  // ctx.effect(() => mountAppTabs(t, ctx.locale, SIDEBAR_GLOBAL().register), 'omnimux: sidebar app tabs')
+  // ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+  //   name: 'shell.overlay',
+  //   id: 'omnimux-apps-stage',
+  //   order: 20,
+  //   locale: NS,
+  //   inject: appsFace,
+  // }, AppsStage))
+}

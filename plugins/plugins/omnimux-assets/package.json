@@ -1,0 +1,64 @@
+{
+  "name": "omnimux-assets",
+  "version": "0.2.0",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "lib/client.js",
+    "cloud-catalog",
+    "scripts/build-client.mjs",
+    "scripts/build-cloud-assets-catalog.mjs",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "node scripts/build-client.mjs",
+    "build:cloud-catalog": "node scripts/build-cloud-assets-catalog.mjs",
+    "prepare": "npm run build",
+    "test": "node --test src/*.test.js src/client/*.test.js tests/e2e/*.spec.js",
+    "prepublishOnly": "node ../../scripts/verify-publish-source.mjs ."
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-primitives"
+      ],
+      "platform": "web"
+    }
+  },
+  "dependencies": {
+    "dsh-ui-kit": "file:../../packages/dsh-ui-kit",
+    "omnimux-products": "file:../omnimux-products"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.1.0-rc.6 || >=0.2.1-rc.3 <0.3.0-0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  },
+  "license": "SEE LICENSE IN LICENSE",
+  "description": "OmniMux creative asset library: named reusable objects (character/scene/style/prop/knowledge/custom) with path-only file refs, plus an artifact store."
+}

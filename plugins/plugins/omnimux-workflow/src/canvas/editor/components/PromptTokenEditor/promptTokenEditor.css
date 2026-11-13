@@ -1,0 +1,278 @@
+/**
+ * PromptTokenEditor Styles — 100% 消费 DSH --dsw-* tokens (Issue #714 / Issue #737).
+ *
+ * 极简深色一体化：完全透明无边框、去灰盒、去内嵌内边距、内嵌元数据状态栏。
+ */
+
+.wf-prompt-editor-container {
+  position: relative;
+  width: 100%;
+}
+
+.wf-prompt-token-editor {
+  width: 100%;
+  min-height: 48px;
+  max-height: 240px;
+  overflow-y: auto;
+  outline: none !important;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-primary, var(--wb-text-primary));
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 0;
+  padding: 2px 0 6px 0 !important;
+  word-break: break-word;
+  white-space: pre-wrap;
+  box-sizing: border-box;
+  transition: min-height 180ms ease;
+}
+
+.wf-prompt-token-editor:focus {
+  border-color: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+.wf-prompt-token-editor--expanded {
+  min-height: 160px;
+  max-height: 360px;
+}
+
+.wf-prompt-token-editor:empty::before {
+  content: attr(data-placeholder);
+  color: var(--dsw-alias-label-tertiary, var(--wb-text-muted));
+  font-size: 14px;
+  line-height: 1.6;
+  pointer-events: none;
+  display: block;
+}
+
+/* Token 胶囊容器与原子化 Span */
+.wf-prompt-token {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  vertical-align: middle;
+  margin: 0 3px;
+  padding: 1px 6px 1px 4px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 18px;
+  color: var(--dsw-alias-label-primary, var(--wb-text-primary));
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--dsw-radius-sm, 4px);
+  user-select: none;
+  cursor: default;
+  transition: all 150ms ease;
+}
+
+.wf-prompt-token:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.24);
+}
+
+.wf-prompt-token__thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.wf-prompt-token__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  color: var(--dsw-alias-label-secondary, var(--wb-text-secondary));
+  flex-shrink: 0;
+}
+
+.wf-prompt-token__label {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.wf-prompt-token__slot-tag {
+  font-size: 9px;
+  color: var(--dsw-alias-label-tertiary, var(--wb-text-muted));
+  background: color-mix(in srgb, var(--dsw-alias-label-primary, var(--wb-text-primary)) 6%, transparent);
+  padding: 0 3px;
+  border-radius: 2px;
+}
+
+.wf-prompt-token__delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary, var(--wb-text-muted));
+  cursor: pointer;
+  padding: 0;
+  margin-left: 2px;
+  flex-shrink: 0;
+  transition: all 120ms ease;
+}
+
+.wf-prompt-token__delete:hover {
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary, var(--wb-danger)) 20%, transparent);
+  color: var(--dsw-alias-state-error-primary, var(--wb-danger));
+}
+
+/* 右下方字数统计与工具状态栏（对齐图 2） */
+.wf-prompt-token-meta-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary, var(--wb-text-muted));
+  user-select: none;
+}
+
+.wf-prompt-token-meta-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  padding: 2px;
+  color: var(--dsw-alias-label-tertiary, var(--wb-text-muted));
+  cursor: pointer;
+  border-radius: 4px;
+  transition: color 150ms ease;
+}
+
+.wf-prompt-token-meta-btn:hover {
+  color: var(--dsw-alias-label-primary, var(--wb-text-primary));
+}
+
+.wf-prompt-token-meta-type {
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary, var(--wb-text-secondary));
+}
+
+.wf-prompt-token-meta-divider {
+  color: var(--dsw-alias-border-l2, rgba(255, 255, 255, 0.15));
+  font-size: 10px;
+}
+
+.wf-prompt-token-meta-count {
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary, var(--wb-text-muted));
+}
+
+/* 超限红色高亮（Issue 746：右下角唯一字符统计） */
+.wf-prompt-token-meta-count--exceeded {
+  color: var(--dsw-alias-state-error-primary, var(--wb-danger));
+  font-weight: 600;
+}
+
+.wf-mention-item__text { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 4px; }
+.wf-mention-item__text small { color: var(--dsw-alias-label-secondary); font-size: 11px; white-space: normal; }
+.wf-mention-item[aria-disabled="true"] { cursor: not-allowed; }
+.wf-mention-popover__divider { border-top: 1px solid var(--dsw-alias-border-l2); margin-top: 4px; padding-top: 8px; }
+.wf-mention-submenu { z-index: 1201; }
+
+/* MentionPopover 联想浮层 */
+.wf-mention-popover {
+  position: fixed;
+  z-index: 1200;
+  box-sizing: border-box;
+  max-width: calc(100vw - 24px);
+  overflow-y: auto;
+  background: var(--dsw-alias-bg-elevated, var(--wb-surface-raised));
+  color: var(--dsw-alias-label-primary);
+  border: 1px solid var(--dsw-alias-border-l2, var(--wb-border));
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  padding: 4px;
+}
+
+.wf-mention-popover__header {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-tertiary, var(--wb-text-muted));
+  padding: 4px 8px 2px;
+  user-select: none;
+}
+
+.wf-mention-popover__empty {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary, var(--wb-text-muted));
+  padding: 8px 12px;
+  text-align: center;
+}
+
+.wf-mention-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  background: transparent;
+  border-radius: var(--dsw-radius-sm, 4px);
+  color: var(--dsw-alias-label-primary, var(--wb-text-primary));
+  cursor: pointer;
+  text-align: left;
+  transition: background 120ms ease;
+  user-select: none;
+  box-sizing: border-box;
+}
+
+.wf-mention-item:hover,
+.wf-mention-item--highlighted {
+  background: var(--dsw-alias-bg-layer-2, var(--wb-surface));
+  color: var(--dsw-alias-brand-primary, var(--wb-accent));
+}
+
+.wf-mention-item__thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 2px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.wf-mention-item__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: var(--dsw-alias-label-secondary, var(--wb-text-secondary));
+  flex-shrink: 0;
+}
+
+.wf-mention-item__name {
+  flex: 1;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-mention-item__badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--dsw-alias-label-tertiary, var(--wb-text-muted));
+  background: color-mix(in srgb, var(--dsw-alias-label-primary, var(--wb-text-primary)) 8%, transparent);
+  flex-shrink: 0;
+}

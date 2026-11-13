@@ -1,0 +1,28 @@
+# Model-level aliases are wire/runtime ID normalization.
+# Operation-level aliases are legacy op-name only and must NOT be used as model IDs.
+schemaVersion: "1.1"
+managementGroup: "text"
+models:
+  - id: "fixture-alias-primary"
+    label: "Fixture Alias Primary"
+    aliases:
+      - "wire-primary-a"
+      - "wire-primary-b"
+    operations:
+      - id: "chat"
+        label: "chat"
+        aliases:
+          - "legacy_chat_mode"
+        output:
+          type: "text"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+        research:
+          status: "draft"
+        execution:
+          status: "none"

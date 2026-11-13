@@ -1,0 +1,15 @@
+{
+  "PreToolUse": [
+    {
+      "matcher": "edit|write|bash",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node scripts/ops/guard-worktree.mjs",
+          "statusMessage": "🛡️ OmniMux 桌面壳主 checkout 隔离守卫（tracked 文件必须走 worktree）",
+          "timeout": 8
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+- insert:
+    - id: omnimux-analytics
+      name: omnimux-analytics
+      # 启用方式：在 profile 层（user cordis.patch.yml）给本行加 config，例如：
+      # config:
+      #   enabled: true
+      #   websiteId: 00000000-0000-0000-0000-000000000000   # analytics.omnimux.ai 后台新建 website 后取得
+      #   umamiUrl: https://analytics.omnimux.ai             # 自托管 Umami，复用 OmniMux 同一实例
+      # 缺 websiteId 时插件自动 soft-disable（不崩 profile），日志会提示。

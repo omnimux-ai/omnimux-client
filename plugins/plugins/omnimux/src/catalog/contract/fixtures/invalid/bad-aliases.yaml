@@ -1,0 +1,24 @@
+schemaVersion: "1.1"
+managementGroup: "text"
+models:
+  - id: "fixture-bad-aliases"
+    label: "Fixture Bad Aliases"
+    family: "fixture"
+    aliases: ["dup", "dup", ""]
+    operations:
+      - id: "chat"
+        label: "文本对话"
+        output:
+          type: "text"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+        aliases: ["x", "x"]
+    research:
+      status: "draft"
+    execution:
+      status: "none"

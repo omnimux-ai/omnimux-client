@@ -1,0 +1,48 @@
+{
+  "name": "omnimux-products",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./ui": "./src/client/ui.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "test": "node --test src/*.test.js src/client-form-subscreen.test.js src/client/*.test.js tests/e2e/*.spec.js",
+    "prepublishOnly": "node ../../scripts/verify-publish-source.mjs ."
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "dsh-ui-kit": "file:../../packages/dsh-ui-kit"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.1.0-rc.6 || >=0.2.1-rc.3 <0.3.0-0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  },
+  "license": "SEE LICENSE IN LICENSE",
+  "description": "OmniMux product library: sellable objects with selling points and path-only media refs."
+}

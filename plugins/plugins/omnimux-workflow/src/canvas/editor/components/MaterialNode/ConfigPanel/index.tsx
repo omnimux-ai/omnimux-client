@@ -1,0 +1,1579 @@
+/**
+ * ConfigPanel — 统一材质创作底栏（Issue 467 / W2；Feed-Slot 阶段二 T03/T04/T05）。
+ *
+ * Contract-driven:
+ *   - model picker = only compatible (acceptsCurrentInputs) rows; Hide, Don't Grey
+ *   - text adapts its operation automatically; other outputs show genuine model modes
+ *   - writes canonical params.operation only
+ *   - zero candidates → empty state + block generate with typed reason
+ *   - Whisper / unlisted ASR never enter the DOM
+ *
+ * Feed-Slot:
+ *   - 媒体卡槽由 deriveSlotLayout 的 preset 驱动（SlotWells），slotBindings 是消费真源；
+ *   - 不再有节点内常驻静态错误条：禁用原因走 GenerateButton title/disabledReason，
+ *     瞬时反馈走画板级通知（canvasNoticeService）。
+ */
+
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Maximize2,
+  Minimize2,
+  Plus,
+  Music,
+  Play,
+  FileText,
+  Image as ImageIcon,
+  X,
+  AlertTriangle,
+  AudioLines,
+} from 'lucide-react';
+import { ModelCascadeMenu } from './ModelCascadeMenu';
+import {
+  directoryChannelGroups,
+  resolveModelChannelGroups,
+  resolveShortModelName,
+  resolveLineConstraints,
+  isByokGroup,
+  isRuntimeByokChannelSettings,
+  type RuntimeByokChannelSettings,
+} from './channelGroups';
+import {
+  buildChannelContract,
+  reconcileParamsWithContract,
+  resolveFallbackRouting,
+  type HealingNote,
+  type ChannelFallbackState,
+} from './channelContractReconciler';
+import type { MaterialNodeData, MaterialType } from '../../../../types/materialNode';
+import { resolveNodeKind } from '../../../../types/materialNode';
+import type { CapabilityCatalog, CapabilityModelItem } from '../../../../../shared/api';
+import { useT } from '../../../../i18n';
+import type { DictKey } from '../../../../i18n';
+import type { UnusedSupply } from '../../../../../shared/graph/feedSlot/types.ts';
+
+/** 未使用素材的原因文案键：保持字面量，供 i18n 键类型收窄。 */
+const UNUSED_REASON_KEYS: Record<UnusedSupply['reasonCode'], DictKey> = {
+  no_matching_slot: 'input.unused.noSlot',
+  slot_capacity: 'input.unused.capacity',
+  not_bound: 'input.unused.notBound',
+  input_unavailable: 'input.unused.unavailable',
+};
+import { CustomSelect, toast } from '../../../../ui';
+import { rememberGenerationModel } from '../../../../store/generationPreferencesStore';
+import { generationReasonText } from '../../../../i18n/generationReason';
+import { resolveGenerationPrompt, selectGenerationTextSources } from '../../../../../shared/graph/generationPrompt';
+import { ModelBrandIcon } from '../../../../ui/ModelBrandIcon';
+import { useCanvasStore } from '../../../../store/canvasStore';
+import { useUpstreamMedia, toUpstreamSnapshots } from '../../../hooks/useUpstreamMedia';
+import { useModelParameterSchema, getCachedCatalog } from '../../../hooks/useModelParameterSchema';
+import { resolveNodeLifecycle } from '../../../utils/nodeMaterialLifecycle';
+import { canvasNoticeService } from '../../../notices/canvasNoticeService.ts';
+import GenerateButton from './GenerateButton';
+import SlotWells from './SlotWells/SlotWells';
+import type { SlotPickRequest } from './SlotWells/types.ts';
+import { VideoTriggerBar } from './videoParams/VideoTriggerBar';
+import { buildVideoParameterSelection, type VideoParameterSelections, type VideoParameterSelectionResult } from './videoParams/videoParameterSelection.ts';
+import { VideoParamPopover } from './videoParams/VideoParamPopover';
+import { feedFromFingerprint, effectiveSlotFingerprint } from '../../../../../shared/graph/feedSlot/effectiveFingerprint.ts';
+import { resolveSlotOperation } from '../../../../../shared/graph/feedSlot/resolveSlotOperation.ts';
+import SlotHoverPreview from './SlotWells/SlotHoverPreview.tsx';
+import { effectiveInputDisplay } from '../../../../../shared/graph/feedSlot/effectiveInputDisplay.ts';
+import { planPickerSelectionMutation, pickerReasonKey } from '../../../utils/resourcePickerPolicy.ts';
+import { validateCanvasInputSelection } from '../../../../../shared/graph/canvasInputMutationGateway.ts';
+import { filterWrite } from './videoParams/paramSchemaFilter.ts';
+import { ImageTriggerBar } from './imageParams/ImageTriggerBar';
+import { ImageParamPopover } from './imageParams/ImageParamPopover';
+import { resolveEffectiveImageParams } from './imageParams/imageParamAdapter';
+import { resolveEffectiveAudioParams, resolveAudioPromptGate, AUDIO_PROMPT_MAX_CHARS } from './audioParams/audioParamAdapter';
+import { resolveVoiceLabel } from './audioParams/voicePickerModel.ts';
+import { VoicePickerDialog } from './audioParams/VoicePickerDialog';
+import {
+  resolveEffectiveVideoParams,
+  validateVideoParamsForUi,
+  buildVideoParamTransition,
+} from './videoParams/videoParamAdapter';
+import {
+  hydrateSlotBindings,
+  deriveSlotLayout,
+  deriveModelSlotLayout,
+  swapNamedSlots,
+  type SlotBindings,
+  type SlotConflict,
+  type SlotLayout,
+  type SlotSpec,
+} from '../../../../../shared/graph/feedSlot/index.ts';
+import {
+  bindableSlots,
+  buildContractView,
+  resolveModelView,
+} from '../../../../../shared/validation/compatKernel.ts';
+import { resolveUnsupportedModelUi } from '../../../../../shared/validation/modelExecutionUi.ts';
+import {
+  buildEffectiveOpsUiState,
+  buildFilteredModelOptions,
+  buildUiUpstreamFingerprint,
+  setParamsOperation,
+  readPreferredOperationId,
+  shouldRenderModeUi,
+} from '../../../../../shared/validation/operationUi.ts';
+import { OperationSegment } from './videoParams/SegmentControls';
+import PromptTokenEditor, { type PromptTokenEditorRef } from '../../PromptTokenEditor';
+import { canvasReferenceCandidates, currentReferenceCandidates, referenceMutation } from '../../PromptTokenEditor/referenceCandidates.ts';
+import { rejectReasonKey } from '../../../utils/connectionValidator.ts';
+import type {
+  NodeSlotEngineState,
+  SlotBindingItem,
+} from '../../../../../shared/graph/slotContractTypes.ts';
+
+export interface ConfigPanelProps {
+  nodeId: string;
+  nodeData: MaterialNodeData;
+  catalog: CapabilityCatalog | null;
+  onUpdateNodeData: (updates: Partial<MaterialNodeData>) => void;
+  onGenerate: () => void;
+  /** 全图/其他节点执行中（禁用执行入口） */
+  execBusy: boolean;
+  /** 可选运行时配置（用于自备渠道 BYOK 与契约自适应） */
+  runtimeSettings?: RuntimeByokChannelSettings | null;
+  /** 唤起 ResourcePicker；带 SlotPickRequest 时进入卡槽装填会话，或传入 mode/targetSlotIndex。 */
+  onOpenResourcePicker?: (requestOrMode?: SlotPickRequest | 'add' | 'replace', targetSlotIndex?: number) => void;
+}
+
+import { getModelVisuals } from './modelVisuals';
+import { ImportConfigPanelImpl, type ImportConfigPanelProps } from './ImportConfigPanel';
+
+const ImportConfigPanel: React.FC<ImportConfigPanelProps> = (props) => <ImportConfigPanelImpl {...props} />;
+
+const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
+  nodeId,
+  nodeData,
+  catalog,
+  onUpdateNodeData,
+  onGenerate,
+  execBusy,
+  runtimeSettings,
+  onOpenResourcePicker,
+}) => {
+  const t = useT();
+  const { materialType, selectedTool, prompt } = nodeData;
+  const params = (nodeData.params && typeof nodeData.params === 'object') ? nodeData.params : {};
+
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [videoPopoverOpen, setVideoPopoverOpen] = useState(false);
+  const videoTriggerRef = useRef<HTMLDivElement | null>(null);
+  const [imagePopoverOpen, setImagePopoverOpen] = useState(false);
+  const imageTriggerRef = useRef<HTMLDivElement | null>(null);
+  // T04：音色选择弹窗（schema 提供音色选项时由底栏 VoiceTrigger 唤起）
+  const [voicePickerOpen, setVoicePickerOpen] = useState(false);
+  /** Issue #3058 FE-02：关闭弹窗后焦点恢复的真实 trigger 元素 */
+  const voiceTriggerRef = useRef<HTMLButtonElement>(null);
+  const promptEditorRef = useRef<PromptTokenEditorRef | null>(null);
+
+  const [envSettings, setEnvSettings] = useState<RuntimeByokChannelSettings | undefined>(() => {
+    if (typeof window !== 'undefined') {
+      const raw = (window as any).__OMNIMUX_RUNTIME_SETTINGS__;
+      return isRuntimeByokChannelSettings(raw) ? raw : undefined;
+    }
+    return undefined;
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const syncEnvSettings = () => {
+      const raw = (window as any).__OMNIMUX_RUNTIME_SETTINGS__;
+      setEnvSettings(isRuntimeByokChannelSettings(raw) ? raw : undefined);
+    };
+
+    syncEnvSettings();
+    window.addEventListener('omnimux:runtime-settings-changed', syncEnvSettings);
+    return () => {
+      window.removeEventListener('omnimux:runtime-settings-changed', syncEnvSettings);
+    };
+  }, []);
+
+  const effectiveRuntimeSettings: RuntimeByokChannelSettings | undefined = useMemo(() => {
+    if (isRuntimeByokChannelSettings(runtimeSettings)) {
+      return runtimeSettings;
+    }
+    return envSettings;
+  }, [runtimeSettings, envSettings]);
+
+  const [healingNotes, setHealingNotes] = useState<HealingNote[]>([]);
+
+  const routing = (params.routing && typeof params.routing === 'object')
+    ? (params.routing as { strategy?: 'auto' | 'stability_first' | 'cost_first'; allowedGroups?: string[]; channelGroupId?: string; sourceType?: 'official' | 'byok' })
+    : undefined;
+
+  const slotState = nodeData.slotState as NodeSlotEngineState | undefined;
+
+  const handleInsertToken = useCallback((slotItem: {
+    sourceNodeId: string;
+    slotIndex: number;
+    label: string;
+    materialType: MaterialType;
+    mediaUrl?: string;
+  }) => {
+    promptEditorRef.current?.insertToken({
+      raw: `@ref[${slotItem.sourceNodeId}:${slotItem.slotIndex}:${slotItem.label}]`,
+      nodeId: slotItem.sourceNodeId,
+      slotIndex: slotItem.slotIndex,
+      label: slotItem.label,
+      materialType: slotItem.materialType,
+      mediaUrl: slotItem.mediaUrl,
+    });
+  }, []);
+
+  const handleOpenReplacePicker = useCallback((slotIndex: number) => {
+    onOpenResourcePicker?.('replace', slotIndex);
+  }, [onOpenResourcePicker]);
+
+  const handleCommitReference = useCallback((token: { nodeId: string }, nextPrompt: string) => {
+    const store = useCanvasStore.getState();
+    if (nodeData.inputBindingVersion === 1) {
+      // Token annotations cannot establish consumption outside the approved picker.
+      onOpenResourcePicker?.('add');
+      return false;
+    }
+    store.pushHistory();
+    const plan = store.applyCanvasInputMutation(referenceMutation(nodeId, token.nodeId, nextPrompt, store.edges));
+    if (plan.status !== 'allowed') {
+      toast.error(t(rejectReasonKey(plan.reasonCode)));
+      return false;
+    }
+    store.pushHistory(true);
+    return true;
+  }, [nodeId, t]);
+
+  const handleHistoryStep = useCallback((redo: boolean) => {
+    const store = useCanvasStore.getState();
+    store.pushHistory();
+    if (redo) store.redo(); else store.undo();
+  }, []);
+
+  const [textPreview, setTextPreview] = useState<{ anchor: HTMLElement; sourceId: string } | null>(null);
+  const closeTextPreview = useCallback(() => setTextPreview(null), []);
+  const upstreams = useUpstreamMedia(nodeId);
+  const upstreamSnapshots = useMemo(() => toUpstreamSnapshots(upstreams), [upstreams]);
+  const activeCatalog = catalog ?? getCachedCatalog();
+
+  const isAsrTool = selectedTool === 'audio-transcription';
+
+  const localPrompt = resolveGenerationPrompt(nodeData);
+
+  // The fingerprint composes source content once, using the same resolver as execution.
+  const fingerprint = useMemo(
+    () => buildUiUpstreamFingerprint({ materialType, prompt: nodeData.prompt, content: nodeData.content, nodeFields: params, upstreams: upstreamSnapshots }),
+    [params, materialType, nodeData.prompt, nodeData.content, upstreamSnapshots],
+  );
+
+  // ASR (speech_to_text) uses outputType 'text' even on a text node with audio upstream.
+  const outputTypeForCompat = isAsrTool ? 'text' : materialType;
+
+  const modelValue = typeof params?.model === 'string' ? params.model.trim() : '';
+
+  // 渠道组 operations 约束（如 comfyui 仅 video_multi_ref）：收窄目录后
+  // 页签、选中态与提交路径天然一致，不再出现不可用的生成模式。
+  const lineConstraints = useMemo(
+    () => resolveLineConstraints(
+      modelValue,
+      params.routing,
+      directoryChannelGroups(activeCatalog, modelValue),
+      effectiveRuntimeSettings,
+    ),
+    [modelValue, activeCatalog, params.routing, effectiveRuntimeSettings],
+  );
+  const opsCatalog = useMemo(() => {
+    if (!activeCatalog || !Array.isArray(lineConstraints?.operations) || lineConstraints.operations.length === 0) {
+      return activeCatalog;
+    }
+    const allowed = new Set(lineConstraints.operations);
+    const models = activeCatalog.models?.map((model) =>
+      model.id === modelValue
+        ? { ...model, operations: (model.operations ?? []).filter((op) => allowed.has(op.id)) }
+        : model,
+    );
+    return models ? { ...activeCatalog, models } : activeCatalog;
+  }, [activeCatalog, modelValue, lineConstraints]);
+
+  const preferredOperationId = readPreferredOperationId(params as Record<string, unknown>);
+  const currentInputs = nodeData.inputBindingVersion === 1;
+  const isTextTask = outputTypeForCompat === 'text';
+  const currentOperationId = currentInputs && preferredOperationId && !isTextTask ? preferredOperationId
+    : resolveSlotOperation(activeCatalog, modelValue, preferredOperationId, outputTypeForCompat, fingerprint);
+  const effectiveSlotLayout = useMemo(() => currentInputs
+    ? deriveSlotLayout(activeCatalog, modelValue, currentOperationId)
+    : deriveModelSlotLayout(activeCatalog, modelValue, currentOperationId), [activeCatalog, modelValue, currentOperationId, currentInputs]);
+
+  const fallbackState = useMemo<ChannelFallbackState>(() => {
+    const family = (activeCatalog?.[materialType] as CapabilityModelItem[] | undefined)?.find((m) => m.id === modelValue)?.family;
+    const displayName = resolveShortModelName(modelValue, family);
+    return resolveFallbackRouting(
+      modelValue,
+      displayName,
+      params.routing as Record<string, unknown> | undefined,
+      directoryChannelGroups(activeCatalog, modelValue),
+      effectiveRuntimeSettings,
+    );
+  }, [modelValue, activeCatalog, materialType, params.routing, effectiveRuntimeSettings]);
+
+  const allChannelGroups = useMemo(
+    () => resolveModelChannelGroups(modelValue, directoryChannelGroups(activeCatalog, modelValue), effectiveRuntimeSettings),
+    [modelValue, activeCatalog, effectiveRuntimeSettings],
+  );
+
+  const isSingleImageChannel = useMemo(() => {
+    const currentRouting = (params.routing && typeof params.routing === 'object')
+      ? (params.routing as { allowedGroups?: string[]; channelGroupId?: string })
+      : undefined;
+    const allowedGroup = currentRouting?.allowedGroups?.[0];
+    const explicitChannelGroup = currentRouting?.channelGroupId;
+    if (allowedGroup && explicitChannelGroup && allowedGroup !== explicitChannelGroup) {
+      // 瞬态路由冲突安全防御：若 allowedGroups[0] 与 channelGroupId 存在冲突，安全默认返回 false，不盲目回退到首个分组
+      return false;
+    }
+    const currentGroupId = allowedGroup || explicitChannelGroup;
+    const usableGroups = allChannelGroups.filter((group) => group.enabled !== false && group.isAvailable !== false);
+    const matchedGroup = (currentGroupId ? usableGroups.find((g) => g.id === currentGroupId) : null) || usableGroups[0];
+    if (!matchedGroup) return false;
+    const contract = buildChannelContract(modelValue, matchedGroup);
+    return matchedGroup.constraints?.inputs?.image?.max === 1 || contract.constraints.maxReferenceImages === 1;
+  }, [allChannelGroups, params.routing, modelValue]);
+
+  const availableOfficialGroups = useMemo(() => {
+    return allChannelGroups.filter((g) => !isByokGroup(g) && g.isAvailable !== false);
+  }, [allChannelGroups]);
+
+  const displayedSlotLayout = useMemo(() => {
+    if (currentInputs || !isSingleImageChannel || !effectiveSlotLayout?.slots || effectiveSlotLayout.slots.length <= 1) {
+      return effectiveSlotLayout;
+    }
+    return {
+      ...effectiveSlotLayout,
+      preset: 'strip' as const,
+      slots: effectiveSlotLayout.slots.slice(0, 1),
+    };
+  }, [effectiveSlotLayout, isSingleImageChannel, currentInputs]);
+  const feedAssets = useMemo(() => feedFromFingerprint(fingerprint, nodeData.inputBindingVersion), [fingerprint, nodeData.inputBindingVersion]);
+  const storedSlotBindings = useMemo(() => {
+    const raw = nodeData.slotBindings as SlotBindings | undefined;
+    if (!raw) return undefined;
+    const standby = (nodeData.slotStandbyEdgeIds ?? []) as string[];
+    // 1. 若已保存的 slotBindings 为空对象且待命池未记录卸载边，视为未装填态，触发 autoFillSlots
+    if (Object.keys(raw).length === 0 && standby.length === 0) {
+      return undefined;
+    }
+    // 2. 若当前 layout 需要槽位，但 raw 里的所有 key 均与当前 layout.slots 无交集（跨模式切换残留），且待命池未排除素材，
+    // 视为新模式槽位未装填，触发 autoFillSlots
+    const hasMatchingSlot = displayedSlotLayout.slots.some((slot) => raw[slot.slot] !== undefined);
+    if (displayedSlotLayout.slots.length > 0 && !hasMatchingSlot && standby.length === 0) {
+      return undefined;
+    }
+    return raw;
+  }, [nodeData.slotBindings, nodeData.slotStandbyEdgeIds, displayedSlotLayout.slots]);
+  const canvasEdges = useCanvasStore((state) => state.edges);
+  const inputDisplay = useMemo(() => effectiveInputDisplay(displayedSlotLayout, feedAssets,
+    storedSlotBindings, (nodeData.slotConflicts ?? []) as SlotConflict[],
+    canvasEdges.filter((edge) => edge.target === nodeId), (nodeData.slotStandbyEdgeIds ?? []) as string[], nodeData.inputBindingVersion),
+  [storedSlotBindings, displayedSlotLayout, feedAssets, canvasEdges, nodeId, nodeData.slotConflicts, nodeData.slotStandbyEdgeIds, nodeData.inputBindingVersion]);
+  const slotBindings = inputDisplay.bindings;
+  const slotConflicts = inputDisplay.conflicts;
+  const consumedFingerprint = useMemo(() => effectiveSlotFingerprint(
+    fingerprint, displayedSlotLayout, slotBindings, slotConflicts, nodeData.inputBindingVersion,
+    (nodeData.slotStandbyEdgeIds ?? []) as string[],
+  ), [fingerprint, displayedSlotLayout, slotBindings, slotConflicts, nodeData.inputBindingVersion, nodeData.slotStandbyEdgeIds]);
+
+  const textSources = useMemo(() => selectGenerationTextSources(currentInputs ? consumedFingerprint.assets : displayedSlotLayout.acceptsText === false ? [] : fingerprint.assets), [currentInputs, consumedFingerprint, displayedSlotLayout, fingerprint]);
+
+  const consumedUpstreams = useMemo(() => consumedFingerprint.assets.map((asset) => ({
+    ...asset, nodeId: asset.sourceNodeId, materialType: asset.type,
+    label: asset.sourceLabel,
+  })), [consumedFingerprint]);
+
+  // ---- Filtered model list (Hide, Don't Grey) ----
+  // The shared kernel applies canvas model policy and input compatibility.
+  const filteredModels = useMemo(
+    () => buildFilteredModelOptions({
+      catalog: activeCatalog,
+      fingerprint: consumedFingerprint,
+      outputType: outputTypeForCompat,
+      // Capability tools (audio transcription) get their seam's contract models; every other
+      // tool keeps the curated generative whitelist.
+      tool: selectedTool,
+    }),
+    [activeCatalog, consumedFingerprint, outputTypeForCompat, selectedTool],
+  );
+
+  // ---- 不可执行型号（Issue #4103 / AC7）----
+  // gateway-only 行（本地无 adapter，如 wan-3.0）仍进目录但置灰；已有节点若保存了这类
+  // 型号，生成必须禁用并给出「一键切换」到同族可执行型号，而不是让用户配完再失败。
+  const executorUi = useMemo(
+    () => resolveUnsupportedModelUi(modelValue, filteredModels.options),
+    [filteredModels.options, modelValue],
+  );
+  const selectedModelUnsupported = executorUi.unsupported;
+  const unsupportedSwitchTarget = executorUi.switchTarget;
+
+  const modelOptions = useMemo(() => {
+    // Only compatible rows enter the DOM. No disabled greys for incompatible /
+    // unlisted / Whisper-when-not-listed models.
+    return filteredModels.options.map((row) => {
+      const visuals = getModelVisuals(row.id, { family: row.family, kind: outputTypeForCompat });
+      const icon = visuals.icon;
+      const badge = row.badge ?? visuals.badge;
+      const subtitle = row.subtitle ?? visuals.subtitle;
+      return {
+        value: row.id,
+        label: row.id,
+        triggerLabel: (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            {icon ? <span style={{ display: 'inline-flex', opacity: 0.8 }}>{icon}</span> : null}
+            <span>{row.id}</span>
+          </span>
+        ),
+        icon,
+        badge,
+        subtitle,
+        // Never mark compatible rows disabled — Hide, Don't Grey.
+        disabled: false,
+      };
+    });
+  }, [filteredModels.options, outputTypeForCompat]);
+
+
+  const {
+    schema,
+    modelItem,
+  } = useModelParameterSchema(materialType, modelValue, catalog);
+
+  const parameterSelections = nodeData.parameterSelections as VideoParameterSelections | undefined;
+  const commitVideoSelection = useCallback((transition: VideoParameterSelectionResult) => {
+    onUpdateNodeData({ params: transition.params, parameterSelections: transition.parameterSelections });
+    for (const message of transition.notices) toast.info(message);
+  }, [onUpdateNodeData]);
+  const videoSelection = useMemo(() => materialType === 'video' ? buildVideoParameterSelection({
+    params, parameterSelections, currentModelItem: modelItem, targetModelItem: modelItem,
+    catalog: activeCatalog, upstreams: upstreamSnapshots, prompt: localPrompt,
+  }) : null, [materialType, params, parameterSelections, modelItem, activeCatalog, upstreamSnapshots, localPrompt]);
+  const migrationCatalogRef = useRef(new Map<string, CapabilityCatalog>());
+  const migrationKey = `${String(nodeData.__workspaceId ?? '')}:${nodeId}`;
+  useEffect(() => {
+    if (!videoSelection?.parameterSelections || !activeCatalog || migrationCatalogRef.current.get(migrationKey) === activeCatalog) return;
+    const liveState = useCanvasStore.getState();
+    // Undo is authoritative, including after this panel unmounts and remounts.
+    if (liveState.future.length > 0) return;
+    const liveNode = liveState.nodes.find(node => node.id === nodeId);
+    if (liveNode && liveNode.data.params !== params) return;
+    migrationCatalogRef.current.set(migrationKey, activeCatalog);
+    if (JSON.stringify(videoSelection.params) === JSON.stringify(params)
+      && JSON.stringify(videoSelection.parameterSelections) === JSON.stringify(parameterSelections)) return;
+    commitVideoSelection(videoSelection);
+  }, [videoSelection, params, parameterSelections, commitVideoSelection, activeCatalog, nodeId, migrationKey]);
+
+  const updateParam = useCallback(
+    (key: string, value: unknown) => {
+      // 用户主动修改对应参数时消除自愈提示条
+      if (key === 'aspectRatio' || key === 'aspect_ratio') {
+        setHealingNotes((prev) => prev.filter((n) => n.field !== 'aspectRatio'));
+      } else if (key === 'duration') {
+        setHealingNotes((prev) => prev.filter((n) => n.field !== 'duration'));
+      } else if (key === 'resolution') {
+        setHealingNotes((prev) => prev.filter((n) => n.field !== 'resolution'));
+      } else if (key === 'sound' || key === 'generateSound') {
+        setHealingNotes((prev) => prev.filter((n) => n.field !== 'sound'));
+      } else if (key === 'referenceImages' || key === 'slotBindings') {
+        setHealingNotes((prev) => prev.filter((n) => n.field !== 'referenceImages'));
+      }
+
+      if (key === 'operation') {
+        const nextOpId = typeof value === 'string' ? value : undefined;
+        if (materialType === 'video' && modelItem) {
+          const transition = buildVideoParameterSelection({
+            params, parameterSelections, currentModelItem: modelItem, targetModelItem: modelItem,
+            catalog: activeCatalog, upstreams: upstreamSnapshots, prompt: localPrompt,
+            nextOperationId: nextOpId,
+          });
+          commitVideoSelection(transition);
+          onUpdateNodeData({ autoOperationId: null });
+          return;
+        }
+        const next = setParamsOperation(
+          params as Record<string, unknown>,
+          nextOpId,
+        );
+        // 用户拍板过的生成方式写 null 标记：此后上游素材不再改写它。
+        onUpdateNodeData({ params: next, autoOperationId: null });
+        return;
+      }
+      // T04：视频参数写入经声明式白名单过滤（hidden / 非白名单键被剥离）。
+      const patch = materialType === 'video'
+        ? filterWrite({ [key]: value }, typeof params.operation === 'string' ? params.operation : undefined)
+        : { [key]: value };
+      if (Object.keys(patch).length === 0) return;
+      if (materialType === 'video') {
+        commitVideoSelection(buildVideoParameterSelection({
+          params: { ...params, ...patch }, parameterSelections, currentModelItem: modelItem, targetModelItem: modelItem,
+          catalog: activeCatalog, upstreams: upstreamSnapshots, prompt: localPrompt, runtimeSettings: effectiveRuntimeSettings,
+        }));
+      } else onUpdateNodeData({ params: { ...params, ...patch } });
+    },
+    [activeCatalog, materialType, modelItem, onUpdateNodeData, params, localPrompt, upstreamSnapshots, parameterSelections, commitVideoSelection, effectiveRuntimeSettings],
+  );
+
+  /**
+   * Issue #3058 FE-02：统一关闭路径。微任务聚焦 trigger——React 提交后
+   * 弹窗已卸载、原生事件已结算，Element.focus 对已断开的节点是 no-op。
+   * Escape 已由弹窗组件在 capture 阶段隔离，宿主节点不再被顺带失选，
+   * trigger 仍挂在 DOM 上可聚焦。
+   */
+  const closeVoicePicker = useCallback(() => {
+    setVoicePickerOpen(false);
+    queueMicrotask(() => {
+      voiceTriggerRef.current?.focus();
+    });
+  }, []);
+
+  const handleSelectVoice = useCallback(
+    (voiceType: string) => {
+      updateParam('voice', voiceType);
+      closeVoicePicker();
+    },
+    [updateParam, closeVoicePicker],
+  );
+
+  // Effective ops for the currently selected model (all modalities).
+  // opsCatalog 已按渠道组 constraints.operations 收窄（如 comfyui 仅 video_multi_ref），
+  // 页签与提交路径天然一致。
+  const opsState = useMemo(
+    () => buildEffectiveOpsUiState({
+      catalog: opsCatalog,
+      modelId: modelValue,
+      fingerprint: consumedFingerprint,
+      ...(currentOperationId ? { preferredOperationId: currentOperationId } : {}),
+      outputType: outputTypeForCompat,
+    }),
+    [opsCatalog, modelValue, consumedFingerprint, currentOperationId, outputTypeForCompat],
+  );
+  const availableOpsState = useMemo(() => buildEffectiveOpsUiState({
+    catalog: opsCatalog, modelId: modelValue, fingerprint,
+    ...(currentOperationId ? { preferredOperationId: currentOperationId } : {}),
+    outputType: outputTypeForCompat,
+  }), [opsCatalog, modelValue, fingerprint, currentOperationId, outputTypeForCompat]);
+  const showModeUi = shouldRenderModeUi(availableOpsState);
+
+  // 视频节点的有效参数（contract-driven operation + schema scrubbing）
+  const videoEffectiveParams = useMemo(
+    () =>
+      materialType === 'video'
+        ? resolveEffectiveVideoParams({
+            params,
+            schema,
+            modelItem,
+            catalog: activeCatalog,
+            upstreams: consumedUpstreams.filter((source) => ['image', 'video', 'audio'].includes(source.materialType)),
+            prompt: consumedFingerprint.prompt,
+          })
+        : null,
+    [materialType, params, schema, modelItem, activeCatalog, consumedUpstreams, consumedFingerprint.prompt],
+  );
+
+  // 图像节点的有效参数（读侧清洗回退，不回写 nodeData）
+  const imageEffectiveParams = useMemo(
+    () =>
+      materialType === 'image'
+        ? resolveEffectiveImageParams({
+            params,
+            schema,
+            modelItem,
+            catalog: activeCatalog,
+            upstreams: upstreamSnapshots,
+            prompt: localPrompt,
+          })
+        : null,
+    [materialType, params, schema, modelItem, activeCatalog, upstreamSnapshots, localPrompt],
+  );
+
+  // 音频（非 ASR）节点的有效参数（读侧清洗回退，不回写 nodeData）
+  const audioEffectiveParams = useMemo(
+    () =>
+      materialType === 'audio' && !isAsrTool
+        ? resolveEffectiveAudioParams({
+            params,
+            schema,
+            modelItem,
+            catalog: activeCatalog,
+            upstreams: upstreamSnapshots,
+            prompt: localPrompt,
+          })
+        : null,
+    [materialType, isAsrTool, params, schema, modelItem, activeCatalog, upstreamSnapshots, localPrompt],
+  );
+
+  // T04：音色目录（schema.voice.options 为真源，含 VoiceOptionMeta）
+  const voiceCatalogOptions = useMemo(
+    () => (materialType === 'audio' && !isAsrTool
+      ? audioEffectiveParams?.schema.voice?.options ?? []
+      : []),
+    [materialType, isAsrTool, audioEffectiveParams],
+  );
+
+  // TTS 双模式状态机：判断是否存在有效上游音频连线
+  const hasUpstreamAudio = useMemo(() => {
+    return upstreams.some((u) => u.materialType === 'audio' && u.hasMedia);
+  }, [upstreams]);
+
+  const isCloneMode = (nodeData.tool === 'voice-clone')
+    || opsState.selectedOperationId === 'voice_clone'
+    || params.operation === 'voice_clone';
+  const cloneMissingAudio = isCloneMode && !hasUpstreamAudio;
+  // Issue #763：时长由文本长度决定，底栏不再有音频参数浮层；
+  // 只要 schema 提供音色选项，底栏即常驻 VoiceTrigger + VoicePickerDialog。
+  const showVoicePicker = voiceCatalogOptions.length > 0;
+  const selectedVoiceOption = useMemo(
+    () => voiceCatalogOptions.find((option) => option.value === audioEffectiveParams?.voice),
+    [voiceCatalogOptions, audioEffectiveParams],
+  );
+
+  // T03：朗读正文字数闸门（Unicode code point 计，10000 上限）
+  const audioPromptGate = useMemo(
+    () => (materialType === 'audio' && !isAsrTool ? resolveAudioPromptGate(prompt) : null),
+    [materialType, isAsrTool, prompt],
+  );
+
+  const patchSlotBindings = useCallback(
+    (next: SlotBindings, options?: { isUserAction?: boolean }) => {
+      // 仅在用户主动操作时才清除附注，避免渠道切换刚产生的“该渠道仅支持单张参考图”提示被自动修剪瞬间抹除
+      if (options?.isUserAction) {
+        setHealingNotes((prev) => prev.filter((n) => n.field !== 'referenceImages'));
+      }
+      useCanvasStore.getState().applyCanvasInputMutation({
+        nodePatches: [{ nodeId, data: { slotBindings: next } }],
+      });
+    },
+    [nodeId],
+  );
+
+  useEffect(() => {
+    if (!currentInputs) return;
+    const currentBindings = (nodeData.slotBindings ?? {}) as SlotBindings;
+    const activeBindings = inputDisplay.bindings;
+    if (!activeBindings || typeof activeBindings !== 'object') return;
+    const missingKeys = Object.keys(activeBindings).filter((k) => (activeBindings[k]?.length ?? 0) > 0 && (currentBindings[k]?.length ?? 0) === 0);
+    if (missingKeys.length > 0) {
+      patchSlotBindings(activeBindings);
+    }
+  }, [currentInputs, inputDisplay.bindings, nodeData.slotBindings, patchSlotBindings]);
+
+  useEffect(() => {
+    if (!isSingleImageChannel) return;
+    if (currentInputs) return;
+    const currentBindings = nodeData.slotBindings as SlotBindings | undefined;
+    if (!currentBindings || typeof currentBindings !== 'object') return;
+    const primarySlotKey = displayedSlotLayout.slots[0]?.slot ?? '0';
+    const keys = Object.keys(currentBindings);
+    const hasExtra = keys.some((k) => k !== primarySlotKey && (currentBindings[k]?.length ?? 0) > 0);
+    const primaryOccupants = currentBindings[primarySlotKey] ?? [];
+    const hasOverflownPrimary = primaryOccupants.length > 1;
+    if (hasExtra || hasOverflownPrimary) {
+      const firstAvailableOccupant = primaryOccupants[0]
+        ?? keys.filter((k) => k !== primarySlotKey).flatMap((k) => currentBindings[k] ?? [])[0];
+      const normalized: SlotBindings = {
+        [primarySlotKey]: firstAvailableOccupant ? [firstAvailableOccupant] : [],
+      };
+      patchSlotBindings(normalized);
+    }
+  }, [isSingleImageChannel, displayedSlotLayout, nodeData.slotBindings, patchSlotBindings]);
+
+  const handleModelChange = useCallback(
+    (newModelId: string, channelSelection?: { strategy: string; allowedGroups?: string[]; channelGroupId?: string; sourceType?: 'official' | 'byok' }) => {
+      if (!filteredModels.options.some((row) => row.id === newModelId)) return;
+      let nextParams: Record<string, unknown>;
+      const scopedSelections = typeof parameterSelections !== 'undefined' ? parameterSelections : undefined;
+      const scopedModelItem = typeof modelItem !== 'undefined' ? modelItem : undefined;
+      let nextSelections = scopedSelections;
+      const modelList = (activeCatalog?.[materialType] ?? []) as CapabilityModelItem[];
+      const newModelItem = modelList.find((m) => m.id === newModelId);
+      let nextOperation: string | undefined;
+      if (channelSelection && newModelId === params.model) {
+        nextParams = { ...params };
+        nextOperation = readPreferredOperationId(nextParams as Record<string, unknown>)
+          || resolveSlotOperation(activeCatalog, newModelId, preferredOperationId, outputTypeForCompat, fingerprint);
+      } else if (materialType === 'video' && newModelItem) {
+        const nextRouting = channelSelection?.allowedGroups?.length
+          ? {
+              strategy: channelSelection.strategy,
+              allowedGroups: channelSelection.allowedGroups,
+              ...(channelSelection.channelGroupId ? { channelGroupId: channelSelection.channelGroupId } : {}),
+              ...(channelSelection.sourceType ? { sourceType: channelSelection.sourceType } : {}),
+            }
+          : (channelSelection ? null : undefined);
+        const transition = typeof buildVideoParameterSelection !== 'undefined'
+          ? buildVideoParameterSelection({
+              params, parameterSelections: scopedSelections, currentModelItem: scopedModelItem, targetModelItem: newModelItem,
+              catalog: activeCatalog, upstreams: upstreamSnapshots, prompt: localPrompt, routing: nextRouting, explicitModelSelection: true,
+              runtimeSettings: effectiveRuntimeSettings,
+            })
+          : (buildVideoParamTransition as any)(params, newModelItem, {
+              catalog: activeCatalog, upstreams: upstreamSnapshots, prompt: localPrompt,
+            });
+        nextParams = transition.params;
+        if (transition.parameterSelections) nextSelections = transition.parameterSelections;
+        if (transition.notices) for (const message of transition.notices) toast.info(message);
+        nextOperation = readPreferredOperationId(nextParams as Record<string, unknown>)
+          || resolveSlotOperation(activeCatalog, newModelId, preferredOperationId, outputTypeForCompat, fingerprint);
+      } else {
+        const nextOps = buildEffectiveOpsUiState({
+          catalog: activeCatalog,
+          modelId: newModelId,
+          fingerprint,
+          outputType: outputTypeForCompat,
+        });
+        const matchedOp = nextOps.effectiveOps.find((op) => op.id === preferredOperationId && op.ready);
+        nextOperation = matchedOp?.id ?? nextOps.selectedOperationId;
+        nextParams = setParamsOperation({ ...params, model: newModelId }, nextOperation);
+      }
+      if (channelSelection) {
+        const { strategy, allowedGroups, channelGroupId, sourceType } = channelSelection;
+        if (allowedGroups?.length) {
+          const isByok = sourceType === 'byok' || isByokGroup(allowedGroups[0]) || isByokGroup(channelGroupId);
+          nextParams.routing = {
+            strategy,
+            allowedGroups,
+            ...(isByok ? { channelGroupId: channelGroupId || allowedGroups[0], sourceType: 'byok' } : {}),
+          };
+        } else {
+          delete nextParams.routing;
+        }
+      }
+
+      // 执行契约协调（try/catch 严格保护，确保抛错时节点状态不僵死、脏提示不残留）
+      let nextSlotBindings: SlotBindings | undefined = undefined;
+      try {
+        const routing = (nextParams.routing && typeof nextParams.routing === 'object')
+          ? (nextParams.routing as { strategy?: 'auto' | 'stability_first' | 'cost_first'; allowedGroups?: string[]; channelGroupId?: string })
+          : undefined;
+        const routingAllowed = routing?.allowedGroups?.[0];
+        const routingChannelGroup = routing?.channelGroupId;
+        const resolvedRoutingGroup = (routingAllowed && routingChannelGroup)
+          ? (routingAllowed === routingChannelGroup ? routingAllowed : undefined)
+          : (routingAllowed || routingChannelGroup);
+
+        const channelSelAllowed = channelSelection?.allowedGroups?.[0];
+        const channelSelGroup = channelSelection?.channelGroupId;
+        const resolvedChannelSelGroup = (channelSelAllowed && channelSelGroup)
+          ? (channelSelAllowed === channelSelGroup ? channelSelAllowed : undefined)
+          : (channelSelAllowed || channelSelGroup);
+
+        const isCrossConflict = Boolean(
+          resolvedChannelSelGroup !== undefined &&
+          resolvedRoutingGroup !== undefined &&
+          resolvedChannelSelGroup !== resolvedRoutingGroup
+        );
+        const targetGroupId = isCrossConflict
+          ? undefined
+          : (resolvedChannelSelGroup !== undefined ? resolvedChannelSelGroup : resolvedRoutingGroup);
+        const availableGroups = resolveModelChannelGroups(
+          newModelId,
+          directoryChannelGroups(activeCatalog, newModelId),
+          effectiveRuntimeSettings,
+        );
+        const isUsableGroup = (group: { enabled?: boolean; isAvailable?: boolean } | undefined) => Boolean(group && group.enabled !== false && group.isAvailable !== false);
+        const fallbackGroup = availableGroups.find(isUsableGroup);
+        const matchedGroup = (targetGroupId
+          ? availableGroups.find((group) => group.id === targetGroupId && isUsableGroup(group))
+          : null) || fallbackGroup;
+        if (matchedGroup) {
+          // 当检测到渠道 ID 冲突并降级到默认渠道组时，同步将 nextParams.routing 归一化为安全降级后的渠道信息，杜绝将冲突脏路由写回节点数据
+          if (nextParams.routing && typeof nextParams.routing === 'object') {
+            const hasConflict = Boolean(
+              isCrossConflict ||
+              (routingAllowed && routingChannelGroup && routingAllowed !== routingChannelGroup) ||
+              (channelSelAllowed && channelSelGroup && channelSelAllowed !== channelSelGroup) ||
+              (targetGroupId && !availableGroups.some((g) => g.id === targetGroupId))
+            );
+            if (hasConflict || targetGroupId !== matchedGroup.id) {
+              const isByok = isByokGroup(matchedGroup);
+              nextParams.routing = {
+                strategy: routing?.strategy || 'auto',
+                allowedGroups: [matchedGroup.id],
+                ...(isByok ? { channelGroupId: matchedGroup.id, sourceType: 'byok' } : {}),
+              };
+            }
+          }
+          const contract = buildChannelContract(newModelId, matchedGroup);
+          const { nextParams: reconciledParams, healingNotes: newNotes } = reconcileParamsWithContract(
+            nextParams,
+            contract,
+          );
+          nextParams = reconciledParams;
+          if (typeof setHealingNotes === 'function') {
+            setHealingNotes(newNotes);
+          }
+          if (
+            matchedGroup.constraints?.inputs?.image?.max === 1 ||
+            contract.constraints.maxReferenceImages === 1
+          ) {
+            if (!currentInputs && nodeData.slotBindings && typeof nodeData.slotBindings === 'object') {
+              const raw = nodeData.slotBindings as SlotBindings;
+              const nextSlotLayout = deriveModelSlotLayout(activeCatalog, newModelId, nextOperation);
+              const primarySlotKey = nextSlotLayout.slots[0]?.slot ?? '0';
+              const keys = Object.keys(raw);
+              const hasExtra = keys.some((k) => k !== primarySlotKey && (raw[k]?.length ?? 0) > 0);
+              const primaryOccupants = raw[primarySlotKey] ?? [];
+              const firstAvailableOccupant = primaryOccupants[0]
+                ?? keys.filter((k) => k !== primarySlotKey).flatMap((k) => raw[k] ?? [])[0];
+              const hasOverflownPrimary = primaryOccupants.length > 1;
+              if (hasExtra || hasOverflownPrimary) {
+                nextSlotBindings = {
+                  [primarySlotKey]: firstAvailableOccupant ? [firstAvailableOccupant] : [],
+                };
+              }
+            }
+          }
+        } else if (typeof setHealingNotes === 'function') {
+          setHealingNotes([]);
+        }
+      } catch (error) {
+        console.error('[ConfigPanel] reconcileParamsWithContract failed:', error);
+        if (typeof setHealingNotes === 'function') {
+          setHealingNotes([]);
+        }
+      }
+
+      onUpdateNodeData({
+        params: nextParams,
+        ...(nextSlotBindings ? { slotBindings: nextSlotBindings } : {}),
+        ...(materialType === 'video' && nextSelections ? { parameterSelections: nextSelections } : {}),
+      });
+      void rememberGenerationModel(materialType, newModelId).catch((error: unknown) => {
+        toast.error(error instanceof Error ? error.message : t('panel.preferenceSaveFailed'));
+      });
+    },
+    [filteredModels.options, activeCatalog, materialType, onUpdateNodeData, params, upstreamSnapshots, localPrompt, fingerprint, outputTypeForCompat, preferredOperationId, t, parameterSelections, modelItem, effectiveRuntimeSettings, nodeData.slotBindings, effectiveSlotLayout, displayedSlotLayout],
+  );
+
+  const isMusicOperation = opsState.selectedOperationId === 'text_to_music';
+
+  const handleSwapSlots = useCallback(
+    (firstSlot: string, lastSlot: string) => {
+      patchSlotBindings(swapNamedSlots(slotBindings, firstSlot, lastSlot), { isUserAction: true });
+    },
+    [patchSlotBindings, slotBindings],
+  );
+
+  const handleSetUse = useCallback((slot: string, edgeId: string, use: 'active' | 'inactive') => {
+    const store = useCanvasStore.getState();
+    const live = store.nodes.find(node => node.id === nodeId);
+    const liveParams = live?.data.params as Record<string, unknown> | undefined;
+    const prepared = planPickerSelectionMutation({ nodes: store.nodes, edges: store.edges }, {
+      targetNodeId: nodeId, chosenOperationId: String(liveParams?.operation ?? ''), setUse: { slot, edgeId, use },
+    }, { catalog: store.catalogRuntime });
+    if (!prepared.mutation || prepared.status !== 'allowed') { toast.error(t(pickerReasonKey(prepared.reasonCode))); return; }
+    store.pushHistory();
+    const result = store.applyCanvasInputMutation(prepared.mutation);
+    if (result.status !== 'allowed') { toast.error(t(pickerReasonKey(result.reasonCode))); return; }
+    store.pushHistory(true);
+  }, [nodeId, t]);
+
+  // Legacy unversioned supply unloading remains separate from explicit current use.
+  // 卸装填：只摘除槽位占用，供给边保留，素材回到 Feed。
+  const handleClearOccupant = useCallback(
+    (slot: string, edgeId: string) => {
+      const standby = Array.isArray(nodeData.slotStandbyEdgeIds) ? nodeData.slotStandbyEdgeIds : [];
+      useCanvasStore.getState().applyCanvasInputMutation({
+        nodePatches: [{ nodeId, data: {
+          slotBindings: { ...slotBindings, [slot]: (slotBindings[slot] ?? []).filter((occupant) => occupant.edgeId !== edgeId) },
+          slotStandbyEdgeIds: [...new Set([...standby, edgeId])],
+          slotConflicts: slotConflicts.filter((conflict) => conflict.occupant.edgeId !== edgeId),
+        } }],
+      });
+    },
+    [nodeId, nodeData.slotStandbyEdgeIds, slotBindings, slotConflicts],
+  );
+
+  const handleClearTextSource = useCallback((sourceNodeId: string) => {
+    const edge = canvasEdges.find((e) => e.source === sourceNodeId && e.target === nodeId);
+    if (edge) {
+      const standby = Array.isArray(nodeData.slotStandbyEdgeIds) ? nodeData.slotStandbyEdgeIds : [];
+      useCanvasStore.getState().applyCanvasInputMutation({
+        nodePatches: [{ nodeId, data: {
+          slotStandbyEdgeIds: [...new Set([...standby, edge.id])],
+        } }],
+      });
+    }
+  }, [canvasEdges, nodeId, nodeData.slotStandbyEdgeIds]);
+
+  // 未使用供给：把该供给边记入待命池（用户主动排除），供给边本身保留。
+  const handleParkUnusedSupply = useCallback((edgeId: string) => {
+    const standby = Array.isArray(nodeData.slotStandbyEdgeIds) ? nodeData.slotStandbyEdgeIds : [];
+    useCanvasStore.getState().applyCanvasInputMutation({
+      nodePatches: [{ nodeId, data: {
+        slotStandbyEdgeIds: [...new Set([...standby, edgeId])],
+      } }],
+    });
+  }, [nodeId, nodeData.slotStandbyEdgeIds]);
+
+  const handlePickSlot = useCallback(
+    (request: SlotPickRequest) => onOpenResourcePicker?.(
+      displayedSlotLayout.displayOnlyFromOperation
+        ? { ...request, displayOnlyFromOperation: displayedSlotLayout.displayOnlyFromOperation }
+        : request,
+    ),
+    [onOpenResourcePicker, displayedSlotLayout],
+  );
+
+
+  // 必需槽位缺口：空卡槽自解释，提交按钮 disabledReason 同步提示。
+  const slotLabelOf = useCallback(
+    (spec: SlotSpec) => {
+      const label = t(spec.labelKey);
+      return label === spec.labelKey ? spec.slot : label;
+    },
+    [t],
+  );
+  // Current input nodes are gated solely by the shared kernel verdict (strictVerdict), which
+  // also counts local text toward composed text slots; this count-only check is legacy-only.
+  // Like execution (assembleEffectiveInputsFromSlots), a composed text slot that accepts local
+  // text is satisfied by a non-empty final prompt rather than by bound upstream occupants.
+  const hasConsumedPrompt = Boolean(consumedFingerprint.prompt?.trim());
+  const missingRequiredSlots = useMemo(
+    () => displayedSlotLayout.slots.filter((spec: SlotSpec) => (
+      !currentInputs && !displayedSlotLayout.displayOnlyFromOperation
+      && (spec.type === 'text' && spec.composition && spec.valueSources?.includes('local_field')
+        ? Number(hasConsumedPrompt) < spec.min
+        : (slotBindings[spec.slot]?.length ?? 0) < spec.min)
+    )),
+    [displayedSlotLayout, slotBindings, currentInputs, hasConsumedPrompt],
+  );
+  const slotShortageReason = missingRequiredSlots.length > 0
+    ? t('panel.slotMissing').replace('{slots}', missingRequiredSlots.map(slotLabelOf).join('、'))
+    : undefined;
+
+  const hasSlots = effectiveSlotLayout.slots.length > 0 || currentInputs && inputDisplay.records.length > 0;
+
+  // T05：切换模式/模型导致已有供给不再被消费 → 画板 Banner（5s 自动淡出）。
+  const boundEdgeIds = useMemo(
+    () => Object.values(slotBindings).flatMap((occupants) => occupants.map((occupant) => occupant.edgeId)).sort(),
+    [slotBindings],
+  );
+  const modeConsumptionRef = useRef<{ key: string; bound: string[] } | null>(null);
+  useEffect(() => {
+    const key = `${modelValue}::${opsState.selectedOperationId || ''}`;
+    const prev = modeConsumptionRef.current;
+    if (!prev || prev.key === key || prev.bound.length === 0) {
+      modeConsumptionRef.current = { key, bound: boundEdgeIds };
+      return;
+    }
+    const lost = prev.bound.filter((edgeId) => !boundEdgeIds.includes(edgeId));
+    if (lost.length > 0) {
+      canvasNoticeService.publish({
+        kind: 'mode_consumption_changed',
+        message: t('notice.modeConsumptionChanged'),
+      });
+    }
+    modeConsumptionRef.current = { key, bound: boundEdgeIds };
+  }, [modelValue, opsState.selectedOperationId, boundEdgeIds, t]);
+
+  // 视频节点业务状态机：素材与模式双向自动流转（从产品经理视角保证零摩擦体验）
+  useEffect(() => {
+    if (materialType !== 'video') return;
+
+    const hasImageUpstream = upstreams.some((u) => u.materialType === 'image' && u.hasMedia);
+    const savedOp = typeof (params as Record<string, unknown>)?.operation === 'string'
+      ? ((params as Record<string, unknown>).operation as string).trim()
+      : undefined;
+    const currentOp = savedOp || opsState.selectedOperationId;
+    const contractView = buildContractView(activeCatalog);
+    const model = resolveModelView(contractView, modelValue);
+    if (!model) return;
+
+    // 场景 1：仅当用户尚未显式保存过模式（!savedOp）时，检测到图片素材连入才进行初始首帧智能推荐
+    if (!savedOp && hasImageUpstream) {
+      const targetOp = model.operations.find((op) => op.listed && op.id === 'first_frame')?.id
+        || model.operations.find((op) => op.listed && (op.id === 'image_to_video' || op.id === 'video_multi_ref'))?.id;
+      if (targetOp && targetOp !== currentOp) {
+        updateParam('operation', targetOp);
+      }
+      return;
+    }
+
+  }, [materialType, upstreams, params, opsState.selectedOperationId, activeCatalog, modelValue, updateParam]);
+
+  const placeholder = useMemo(() => {
+    if (currentInputs) {
+      const composition = displayedSlotLayout.slots.find(spec => spec.composition)?.composition;
+      if (composition?.kind === 'single_body' || composition?.localRole === 'body') return t('input.body');
+      if (composition?.localRole === 'lyrics') return t('input.lyrics');
+      if (composition?.localRole === 'style') return t('input.music');
+      if (composition?.kind === 'separate_roles' && composition.localRole === 'instruction') return t('input.instructions');
+      return t(textSources.length > 0 ? 'input.supplement' : 'input.prompt');
+    }
+    if (isAsrTool) return t('panel.promptPlaceholder');
+    if (materialType !== 'audio' && textSources.some((item) => item.availability === 'ready' && item.textContent?.trim()))
+      return t('panel.supplementOptional');
+    if (materialType === 'image') return t('panel.imagePromptPlaceholder');
+    if (materialType === 'video') return t('panel.videoPromptPlaceholder');
+    switch (materialType) {
+      case 'text':
+        return t('panel.textPromptPlaceholder');
+      case 'audio':
+        return isMusicOperation
+          ? t('panel.musicPromptPlaceholder')
+          : t('panel.audioPromptPlaceholder');
+      default:
+        return t('panel.promptPlaceholder');
+    }
+  }, [materialType, isMusicOperation, isAsrTool, textSources, t, currentInputs, displayedSlotLayout]);
+
+  const videoValidationErrors = useMemo(
+    () => materialType === 'video' && videoEffectiveParams
+      ? [...(videoSelection?.errors ?? []), ...validateVideoParamsForUi({
+          prompt: consumedFingerprint.prompt,
+          rawParams: params as Record<string, unknown>,
+          params: { ...videoEffectiveParams, effectiveOperations: opsState.effectiveOps },
+          upstreams: consumedUpstreams.filter((source) => ['image', 'video', 'audio'].includes(source.materialType)),
+        })]
+      : [],
+    [materialType, consumedFingerprint.prompt, params, consumedUpstreams, videoEffectiveParams, opsState.effectiveOps, videoSelection],
+  );
+
+  // Generate gate: blocked when zero effective ops / zero candidates / configuration_error /
+  // 必需卡槽空缺 / 执行中。
+  const nodeCompat = (nodeData as Record<string, unknown>).compat as
+    | { status?: string; readyToSubmit?: boolean; reasonCodes?: string[]; adaptation?: { toModelLabel: string; inputTypes: string[] } }
+    | undefined;
+  const strictVerdict = currentInputs ? validateCanvasInputSelection({
+    nodes: useCanvasStore.getState().nodes.map((node) => node.id === nodeId ? {
+      ...node,
+      data: {
+        ...node.data,
+        slotBindings: inputDisplay.bindings,
+        params: { ...(params as Record<string, unknown>), operation: currentOperationId },
+      },
+    } : node),
+    edges: canvasEdges,
+  }, {
+    targetNodeId: nodeId, chosenOperationId: currentOperationId ?? '',
+  }, { catalog: activeCatalog }) : undefined;
+  const blockGenerate =
+    Boolean(strictVerdict && !strictVerdict.ready)
+    || opsState.blockGenerate
+    || filteredModels.zeroCandidates
+    || nodeCompat?.status === 'configuration_error'
+    || videoValidationErrors.length > 0
+    || Boolean(audioPromptGate?.exceeded)
+    || missingRequiredSlots.length > 0
+    || cloneMissingAudio
+    || execBusy
+    || Boolean(fallbackState?.isFallback)
+    || selectedModelUnsupported;
+  const reasonCode = opsState.reasonCode || filteredModels.reasonCode
+    || (nodeCompat?.status === 'configuration_error' ? nodeCompat.reasonCodes?.[0] || 'no_compatible_model' : undefined);
+  const blockReason =
+    (strictVerdict && !strictVerdict.ready ? t(pickerReasonKey(strictVerdict.reasonCode)) : undefined)
+    || (fallbackState?.isFallback ? (fallbackState.runBlockedReason || undefined) : undefined)
+    || (cloneMissingAudio ? '参考音频模式需先连接上游音频输入' : undefined)
+    || (audioPromptGate?.exceeded ? `朗读正文不能超过 ${AUDIO_PROMPT_MAX_CHARS} 字符` : undefined)
+    || generationReasonText(t, reasonCode, opsState.reason || filteredModels.reason)
+    || (selectedModelUnsupported ? t('panel.modelUnsupported') : undefined)
+    || videoValidationErrors[0]
+    || slotShortageReason;
+  const adaptation = nodeCompat?.adaptation;
+  const adaptationInputs = adaptation?.inputTypes.map((type) => t(`node.type.${type}`)).join('、');
+  const adaptationMessage = adaptation
+    ? t(adaptationInputs ? 'panel.adaptedModel' : 'panel.adaptedModelGeneric')
+      .replace('{model}', adaptation.toModelLabel)
+      .replace('{inputs}', adaptationInputs ?? '')
+    : undefined;
+
+  const showEmptyModels = filteredModels.zeroCandidates || modelOptions.length === 0;
+
+  // T05：禁用态点击 → 画板 Toast（4s 自动淡出），不再渲染常驻静态错误条。
+  const handleDisabledGenerateClick = useCallback(() => {
+    if (fallbackState?.isFallback) {
+      toast.error(fallbackState.runBlockedReason || '请配置自备 Key 或切换可用渠道');
+      return;
+    }
+    canvasNoticeService.publish({
+      kind: 'submit_blocked_click',
+      message: blockReason || t('notice.submitBlocked'),
+    });
+  }, [fallbackState, blockReason, t]);
+
+  return (
+    <div className="wf-config-panel" data-effective-ops={opsState.count}>
+      {fallbackState?.isFallback ? (
+        <div
+          className="wf-config-panel__fallback-banner"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '8px 12px',
+            background: 'var(--dsw-alias-bg-layer-2)',
+            borderRadius: 8,
+            border: '1px solid var(--dsw-alias-border-l1)',
+            marginBottom: 8,
+            gap: 12,
+          }}
+          role="alert"
+          data-testid="wf-channel-fallback-banner"
+        >
+          <span style={{ fontSize: 12, color: 'var(--dsw-alias-label-secondary)' }}>
+            {fallbackState?.bannerMessage}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              const targetOfficialGroupId = fallbackState?.recommendedOfficialGroupId || availableOfficialGroups[0]?.id;
+              if (!targetOfficialGroupId) {
+                toast.warning('暂无可用官方渠道，请稍后重试');
+                return;
+              }
+              handleModelChange(modelValue, {
+                strategy: 'auto',
+                allowedGroups: [targetOfficialGroupId],
+                channelGroupId: targetOfficialGroupId,
+                sourceType: 'official',
+              });
+            }}
+            style={{
+              fontSize: 12,
+              padding: '4px 10px',
+              borderRadius: 6,
+              background: 'var(--dsw-alias-interactive-bg-hover)',
+              color: 'var(--dsw-alias-text-primary)',
+              border: '1px solid var(--dsw-alias-border-l2)',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+            data-testid="wf-channel-fallback-action"
+          >
+            {fallbackState.actionLabel}
+          </button>
+        </div>
+      ) : null}
+
+      {healingNotes.length > 0 ? (
+        <div
+          className="wf-config-panel__healing-notes"
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6,
+            marginBottom: 8,
+          }}
+          data-testid="wf-channel-healing-notes"
+        >
+          {healingNotes.map((note) => (
+            <div
+              key={`${note.field}-${note.message}`}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 12,
+                lineHeight: 1.4,
+                padding: '6px 10px',
+                borderRadius: 6,
+                background: 'var(--dsw-alias-bg-layer-2)',
+                border: '1px solid var(--dsw-alias-border-l1)',
+                color: 'var(--dsw-alias-label-secondary)',
+              }}
+              role="status"
+              data-testid={`wf-healing-note-${note.field}`}
+            >
+              <span style={{ fontSize: 13, color: 'var(--dsw-alias-label-tertiary)', lineHeight: 1 }}>ⓘ</span>
+              <span>{note.message}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {adaptationMessage ? (
+        <div className="wf-config-panel__input-hint" role="status" data-testid="wf-model-adaptation">
+          {adaptationMessage}
+        </div>
+      ) : null}
+
+      {selectedModelUnsupported ? (
+        <div
+          className="wf-config-panel__input-hint wf-config-panel__input-hint--unsupported"
+          role="status"
+          data-testid="wf-model-unsupported"
+        >
+          <span>{t('panel.modelUnsupported')}</span>
+          {unsupportedSwitchTarget ? (
+            <button
+              type="button"
+              data-testid="wf-model-unsupported-switch"
+              onClick={() => handleModelChange(unsupportedSwitchTarget.id)}
+              style={{
+                marginLeft: 8,
+                padding: '2px 8px',
+                borderRadius: 6,
+                border: '1px solid var(--dsw-alias-border-l1)',
+                background: 'var(--dsw-alias-bg-layer-2)',
+                color: 'var(--dsw-alias-brand-primary)',
+                fontSize: 12,
+                cursor: 'pointer',
+              }}
+            >
+              {t('panel.modelUnsupportedSwitch').replace(
+                '{model}',
+                unsupportedSwitchTarget.label || unsupportedSwitchTarget.id,
+              )}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {videoValidationErrors.length > 0 && !opsState.blockGenerate && !showEmptyModels ? (
+        <div className="wf-config-panel__validation-list" role="alert" data-testid="wf-video-validation-errors">
+          <AlertTriangle size={14} aria-hidden="true" />
+          <span>{videoValidationErrors.join('；')}</span>
+        </div>
+      ) : null}
+
+      {textPreview && <SlotHoverPreview anchor={textPreview.anchor}
+        upstream={upstreams.find((source) => source.nodeId === textPreview.sourceId)} onClose={closeTextPreview} />}
+      {/* 2. Prompt 输入区容器 */}
+      <div className="wf-config-panel__prompt-container">
+        <div className={`wf-config-panel__prompt-header${!hasSlots && !textSources.length ? ' wf-config-panel__prompt-header--empty-slots' : ''}`}>
+          {textSources.length > 0 && (
+            <div className="wf-slot-wells wf-slot-wells--strip" data-testid="wf-text-inputs">
+              {textSources.map((source) => (
+                <div key={source.sourceNodeId} className="wf-effective-text wf-effective-text--slot" data-source-node-id={source.sourceNodeId}
+                  data-input-state={source.availability} title={source.sourceLabel} role="button" tabIndex={0}
+                  onClick={(event) => setTextPreview({ anchor: event.currentTarget, sourceId: source.sourceNodeId })}
+                  onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setTextPreview({ anchor: event.currentTarget, sourceId: source.sourceNodeId }); } }}>
+                  <FileText size={18} aria-hidden="true" />
+                  <span><strong>{source.sourceLabel || source.sourceNodeId}</strong>
+                    <span>{source.availability === 'ready' && source.textContent?.trim()
+                      ? source.textContent : t(source.availability === 'unavailable' ? 'mention.unavailable' : 'mention.waiting')}</span>
+                  </span>
+                  <button
+                    type="button"
+                    className="wf-effective-text__remove nodrag"
+                    title={t('mention.unbind')}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleClearTextSource(source.sourceNodeId);
+                    }}
+                  >
+                    <X size={12} aria-hidden="true" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {(!currentInputs ? [...slotConflicts, ...inputDisplay.unloaded] : []).map((conflict, index) => (
+            <button key={`${conflict.slot}-${conflict.occupant.edgeId}-${index}`} type="button"
+              className="wf-effective-text nodrag" data-testid="wf-input-conflict"
+              onClick={() => handleClearOccupant(conflict.slot, conflict.occupant.edgeId)}
+              title={t('mention.unbind')}>
+              <AlertTriangle size={14} aria-hidden="true" />
+              <span>{upstreams.find((item) => item.nodeId === conflict.occupant.sourceNodeId)?.label || conflict.occupant.sourceNodeId} · {t('mention.unavailable')}</span>
+              <X size={12} aria-hidden="true" />
+            </button>
+          ))}
+          {inputDisplay.unused.map((item, index) => (
+            <button key={`unused-${item.occupant.edgeId}-${index}`} type="button"
+              className="wf-effective-text nodrag" data-testid="wf-input-unused"
+              data-unused-reason={item.reasonCode}
+              onClick={() => handleParkUnusedSupply(item.occupant.edgeId)}
+              title={t('input.unused.park')}>
+              <AlertTriangle size={14} aria-hidden="true" />
+              <span>{upstreams.find((source) => source.nodeId === item.occupant.sourceNodeId)?.label || item.occupant.sourceNodeId} · {t(UNUSED_REASON_KEYS[item.reasonCode])}</span>
+              <X size={12} aria-hidden="true" />
+            </button>
+          ))}
+          {hasSlots && (
+            <SlotWells
+              layout={displayedSlotLayout}
+              bindings={currentInputs ? slotBindings : inputDisplay.visibleBindings}
+               records={currentInputs ? inputDisplay.records : undefined}
+               onSetUse={currentInputs ? handleSetUse : undefined}
+              conflicts={slotConflicts}
+              upstreams={upstreams}
+              onPickSlot={handlePickSlot}
+              onSwapSlots={handleSwapSlots}
+              onClearOccupant={handleClearOccupant}
+              onInsertToken={currentInputs ? undefined : handleInsertToken}
+            />
+          )}
+
+          <div className="wf-config-panel__prompt-header-actions">
+            <button
+              type="button"
+              className="wf-config-panel__expand-btn"
+              onClick={() => setIsExpanded((prev) => !prev)}
+              title={isExpanded ? t('panel.collapse') : t('panel.expand')}
+            >
+              {isExpanded ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+            </button>
+          </div>
+        </div>
+
+        <PromptTokenEditor
+          ref={promptEditorRef}
+          className={`wf-config-panel__prompt-input nowheel nodrag${
+            isExpanded ? ' wf-config-panel__prompt-input--expanded' : ''
+          }`}
+          value={prompt ?? ''}
+          placeholder={placeholder}
+          rows={isExpanded ? 8 : 2}
+          isExpanded={isExpanded}
+          slotState={slotState}
+          currentReferences={currentReferenceCandidates(upstreams, slotBindings)}
+          canvasReferences={canvasReferenceCandidates(nodeId, useCanvasStore.getState().nodes ?? [], useCanvasStore.getState().edges)}
+          onCommitReference={handleCommitReference}
+          onHistoryStep={handleHistoryStep}
+          materialType={materialType}
+          maxLength={audioPromptGate ? AUDIO_PROMPT_MAX_CHARS : undefined}
+          countOverride={audioPromptGate ? audioPromptGate.count : undefined}
+          onChange={(newPrompt) => onUpdateNodeData({ prompt: newPrompt })}
+        >
+          <textarea
+            className="wf-config-panel__prompt-textarea-hidden"
+            style={{ display: 'none' }}
+            rows={isExpanded ? 8 : 2}
+            value={prompt ?? ''}
+            readOnly
+            tabIndex={-1}
+            aria-hidden="true"
+          />
+        </PromptTokenEditor>
+      </div>
+
+      {/* 3. 底部参数与操作底栏 */}
+      <div className="wf-config-panel__bottom-bar">
+        <div className="wf-config-panel__params-group">
+          {/* 模型下拉：仅兼容模型；零候选显示空态 */}
+          {showEmptyModels ? (
+            <div
+              className="wf-param-pill wf-param-pill--empty-models"
+              data-testid="wf-model-empty"
+              role="status"
+              aria-live="polite"
+            >
+              {t(reasonCode === 'catalog_unavailable' ? 'panel.reason.catalog_unavailable' : isAsrTool ? 'panel.noTranscriptionModel' : 'panel.noCompatibleModel')}
+            </div>
+          ) : isAsrTool ? (
+            <CustomSelect
+              className="wf-param-bar__select wf-param-bar__select--model"
+              value={modelValue}
+              options={modelOptions}
+              popupMatchSelectWidth={false}
+              onChange={(value) => handleModelChange(String(value))}
+            />
+          ) : (
+            <ModelCascadeMenu
+              modelValue={modelValue}
+              routing={routing}
+              options={filteredModels.options}
+              execBusy={execBusy}
+              runtimeSettings={effectiveRuntimeSettings}
+              fallbackState={fallbackState}
+              onSelect={({ modelId, strategy, allowedGroups, channelGroupId, sourceType }) => {
+                handleModelChange(modelId, { strategy, allowedGroups, channelGroupId, sourceType });
+              }}
+            />
+          )}
+
+          {/* T04：音色触发入口（模型下拉右侧），唤起 VoicePickerDialog */}
+          {showVoicePicker ? (
+            <button
+              ref={voiceTriggerRef}
+              type="button"
+              className={`wf-voice-trigger ${hasUpstreamAudio ? 'is-locked-by-upstream' : ''}`}
+              data-testid="wf-voice-trigger"
+              disabled={execBusy || hasUpstreamAudio}
+              title={
+                hasUpstreamAudio
+                  ? '已关联上游参考音频（音色复刻模式）；如需挑选内置音色库，请先移除上游输入连线'
+                  : (selectedVoiceOption ? `音色：${resolveVoiceLabel(selectedVoiceOption)}` : '选择音色')
+              }
+              onClick={() => {
+                if (!hasUpstreamAudio) setVoicePickerOpen(true);
+              }}
+            >
+              <AudioLines size={14} strokeWidth={1.75} aria-hidden="true" />
+              <span className="wf-voice-trigger__label">
+                {hasUpstreamAudio
+                  ? '参考音频模式'
+                  : (selectedVoiceOption ? resolveVoiceLabel(selectedVoiceOption) : '选择音色')}
+              </span>
+            </button>
+          ) : null}
+
+          {/* 文本 / ASR 保持内联生成方式入口；图像的生成方式进自身浮层（Issue #763：音频时长由文本长度决定，无参数浮层）。 */}
+          {showModeUi && (materialType === 'text' || isAsrTool) ? (
+            <>
+              <span className="wf-param-pill__divider" aria-hidden="true" />
+              <div data-testid="wf-operation-mode-inline">
+                <OperationSegment
+                  value={opsState.selectedOperationId || ''}
+                  operations={availableOpsState.effectiveOps}
+                  onChange={(operationId) => updateParam('operation', operationId)}
+                />
+              </div>
+            </>
+          ) : null}
+
+          {/* 图像专属参数：单行摘要 TriggerBar + Portal 浮层（废除幽灵 Select 与前置 `|`） */}
+          {materialType === 'image' && imageEffectiveParams && (
+            <div ref={imageTriggerRef} className="wf-cfg-summary-bar__wrap">
+              <ImageTriggerBar
+                params={imageEffectiveParams}
+                isOpen={imagePopoverOpen}
+                disabled={execBusy}
+                onToggle={() => setImagePopoverOpen((p) => !p)}
+              />
+            </div>
+          )}
+
+          {/* 视频专属参数胶囊：四段式摘要 TriggerBar + Portal 浮层 */}
+          {materialType === 'video' && videoEffectiveParams && (
+            <div ref={videoTriggerRef} className="wf-video-trigger-bar__wrap">
+              <VideoTriggerBar
+                params={videoEffectiveParams}
+                isOpen={videoPopoverOpen}
+                disabled={execBusy}
+                onToggle={() => setVideoPopoverOpen((p) => !p)}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* 右侧生成按钮 */}
+        <div className="wf-config-panel__action-group">
+          <GenerateButton
+            onClick={onGenerate}
+            disabled={blockGenerate}
+            disabledReason={blockReason}
+            onDisabledClick={handleDisabledGenerateClick}
+            isGenerating={
+              nodeData.executionStatus === 'running'
+              || resolveNodeLifecycle({ type: nodeData.materialType, data: nodeData as any }) === 'loading'
+            }
+          />
+        </div>
+      </div>
+
+      {/* 视频参数浮层（Portal 挂载，随面板根部渲染） */}
+      {materialType === 'video' && videoEffectiveParams && (
+        <VideoParamPopover
+          triggerRef={videoTriggerRef as React.RefObject<HTMLElement>}
+          params={videoEffectiveParams}
+          schema={videoEffectiveParams.schema}
+          modelItem={modelItem}
+          isOpen={videoPopoverOpen}
+          onClose={() => setVideoPopoverOpen(false)}
+          onParamChange={(key, value) => updateParam(key as string, value)}
+        />
+      )}
+
+      {/* 图像参数浮层（Portal 挂载，随面板根部渲染） */}
+      {materialType === 'image' && imageEffectiveParams && (
+        <ImageParamPopover
+          triggerRef={imageTriggerRef}
+          params={imageEffectiveParams}
+          isOpen={imagePopoverOpen}
+          onClose={() => setImagePopoverOpen(false)}
+          onParamChange={(key, value) => updateParam(key, value)}
+        />
+      )}
+
+      {/* T04：音色选择弹窗（选中即写回 params.voice 并关闭） */}
+      {showVoicePicker ? (
+        <VoicePickerDialog
+          open={voicePickerOpen}
+          options={voiceCatalogOptions}
+          {...(audioEffectiveParams?.voice ? { value: audioEffectiveParams.voice } : {})}
+          onClose={closeVoicePicker}
+          onSelect={handleSelectVoice}
+        />
+      ) : null}
+    </div>
+  );
+};
+
+export interface ConfigPanelErrorBoundaryProps {
+  children: React.ReactNode;
+  nodeId: string;
+}
+
+interface ConfigPanelErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+export class ConfigPanelErrorBoundary extends React.Component<
+  ConfigPanelErrorBoundaryProps,
+  ConfigPanelErrorBoundaryState
+> {
+  constructor(props: ConfigPanelErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): Partial<ConfigPanelErrorBoundaryState> {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
+    console.error(`[ConfigPanel ErrorBoundary] 节点 ${this.props.nodeId} 配置面板渲染异常:`, error, errorInfo);
+  }
+
+  private handleResetError = (): void => {
+    this.setState({ hasError: false, error: null });
+  };
+
+  render(): React.ReactNode {
+    if (this.state.hasError) {
+      return (
+        <div
+          className="wf-config-panel wf-config-panel--error"
+          style={{
+            padding: '12px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontSize: '12px',
+            color: 'var(--dsw-alias-state-danger)',
+          }}
+        >
+          <span>配置面板局部加载异常</span>
+          <button
+            type="button"
+            className="wf-param-pill wf-param-pill--btn"
+            style={{ padding: '2px 8px', height: '24px' }}
+            onClick={this.handleResetError}
+          >
+            重试
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const ConfigPanel: React.FC<ConfigPanelProps> = (props) => {
+  const kind = resolveNodeKind(props.nodeData);
+  return (
+    <ConfigPanelErrorBoundary nodeId={props.nodeId}>
+      {kind === 'import' ? (
+        <ImportConfigPanel
+          nodeData={props.nodeData}
+          execBusy={props.execBusy}
+          onOpenResourcePicker={props.onOpenResourcePicker}
+        />
+      ) : (
+        <GenerationConfigPanel {...props} />
+      )}
+    </ConfigPanelErrorBoundary>
+  );
+};
+
+export default memo(ConfigPanel);

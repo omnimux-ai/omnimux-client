@@ -1,0 +1,1626 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>画布-表格 结构化数据表节点 (高保真全交互原型)</title>
+  <style>
+    :root {
+      --bg-canvas: #f7f8fa;
+      --bg-surface: #ffffff;
+      --bg-subtle: #f5f6f8;
+      --bg-btn: #f2f3f5;
+      --bg-btn-hover: #e5e6eb;
+      --bg-btn-active: #dcdfe6;
+      
+      --text-primary: #1d2129;
+      --text-secondary: #4e5969;
+      --text-muted: #86909c;
+      --text-placeholder: #c9cdd4;
+      
+      --border-color: #e5e6eb;
+      --border-input: #e5e6eb;
+      --border-focus: #165dff;
+      
+      --brand-blue: #165dff;
+      --brand-blue-hover: #0e42d2;
+      --brand-blue-light: #e8f3ff;
+      
+      --danger: #f53f3f;
+      --danger-hover: #cb272d;
+      --danger-light: #ffece8;
+      
+      --radius-sm: 6px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+      --radius-xl: 16px;
+      --radius-2xl: 20px;
+      
+      --shadow-modal: 0 20px 48px -4px rgba(0, 0, 0, 0.12), 0 8px 16px -2px rgba(0, 0, 0, 0.04);
+      --shadow-popover: 0 10px 36px 0 rgba(0, 0, 0, 0.1), 0 2px 10px 0 rgba(0, 0, 0, 0.06);
+      --shadow-dropdown: 0 8px 24px 0 rgba(0, 0, 0, 0.12), 0 2px 6px 0 rgba(0, 0, 0, 0.04);
+      --shadow-node: 0 4px 20px -2px rgba(0, 0, 0, 0.05), 0 0 1px 1px rgba(0,0,0,0.05);
+      
+      --font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", Roboto, sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      font-family: var(--font-family);
+      color: var(--text-primary);
+      background-color: #ffffff;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* 矢量 SVG 图标基类 */
+    .svg-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      flex-shrink: 0;
+      vertical-align: middle;
+    }
+
+    /* ========================================================
+       1. 全屏独立电子表格主界面 (1:1 严格对齐设计稿)
+       ======================================================== */
+    .stage-wrapper {
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background: #ffffff;
+      position: relative;
+    }
+
+    /* 顶部导航与工具条 (1:1 还原截图) */
+    .stage-topbar {
+      height: 52px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      background: #ffffff;
+      flex-shrink: 0;
+      position: relative;
+      z-index: 50;
+    }
+
+    .topbar-left {
+      display: flex;
+      align-items: center;
+    }
+
+    .table-title-editable {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-primary);
+      border: 1px solid transparent;
+      padding: 4px 8px;
+      border-radius: var(--radius-md);
+      background: transparent;
+      outline: none;
+      transition: all 0.15s;
+    }
+    .table-title-editable:hover {
+      background: var(--bg-subtle);
+      border-color: var(--border-color);
+    }
+    .table-title-editable:focus {
+      background: #ffffff;
+      border-color: var(--brand-blue);
+    }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      position: relative;
+    }
+
+    /* 三个核心菜单按钮容器 (相对定位供 Popover 精准对齐) */
+    .btn-menu-wrapper {
+      position: relative;
+    }
+
+    /* 工具栏胶囊按钮 (1:1 还原截图背景灰度、圆角、字号) */
+    .btn-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 32px;
+      padding: 0 12px;
+      border-radius: var(--radius-md);
+      border: none;
+      background: var(--bg-btn);
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-primary);
+      cursor: pointer;
+      position: relative;
+      transition: background 0.15s, color 0.15s;
+    }
+    .btn-pill:hover {
+      background: var(--bg-btn-hover);
+    }
+    .btn-pill.active {
+      background: var(--bg-btn-active);
+    }
+
+    /* 筛选激活蓝色小圆点 (1:1 截图右上角蓝点) */
+    .filter-dot-badge {
+      width: 6px;
+      height: 6px;
+      background: var(--brand-blue);
+      border-radius: 50%;
+      position: absolute;
+      top: 5px;
+      right: 5px;
+    }
+
+    /* 纯图标按钮 (撤销、重做、关闭) */
+    .btn-icon-plain {
+      width: 32px;
+      height: 32px;
+      border-radius: var(--radius-md);
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    .btn-icon-plain:hover {
+      background: var(--bg-btn);
+      color: var(--text-primary);
+    }
+
+    .toolbar-v-divider {
+      width: 1px;
+      height: 16px;
+      background: var(--border-color);
+      margin: 0 4px;
+    }
+
+    /* ========================================================
+       2. 弹层面板 (Popovers) - 锚定在每个按钮下方
+       ======================================================== */
+
+    .popover-card {
+      position: absolute;
+      top: 40px;
+      background: #ffffff;
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow-popover);
+      z-index: 100;
+      display: none;
+      flex-direction: column;
+      animation: popoverFadeIn 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .popover-card.show {
+      display: flex;
+    }
+
+    @keyframes popoverFadeIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .popover-head-title {
+      padding: 14px 18px 12px 18px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    /* ----------------------------------------------------
+       面板 1：【字段配置】 Popover (截图 1)
+       ---------------------------------------------------- */
+    #popover-field-config {
+      left: 0;
+      width: 320px;
+    }
+
+    .field-config-list {
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 360px;
+      overflow-y: auto;
+    }
+
+    .field-config-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      background: #f2f3f5;
+      border-radius: var(--radius-md);
+      transition: background 0.15s;
+    }
+    .field-config-card:hover {
+      background: #e8eaed;
+    }
+
+    .field-card-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .drag-handle-6dots {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: grab;
+      color: #86909c;
+    }
+
+    .field-title-text {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+
+    .field-card-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-subtle-icon {
+      width: 24px;
+      height: 24px;
+      border-radius: var(--radius-sm);
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.12s, color 0.12s;
+    }
+    .btn-subtle-icon:hover {
+      background: rgba(0, 0, 0, 0.08);
+      color: var(--text-primary);
+    }
+
+    .field-config-footer {
+      padding: 10px 16px 12px 16px;
+      border-top: 1px solid var(--border-color);
+    }
+    .btn-add-field-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-primary);
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      padding: 4px 0;
+      width: 100%;
+      text-align: left;
+    }
+    .btn-add-field-row:hover {
+      color: var(--brand-blue);
+    }
+
+    /* 字段操作二级气泡菜单 (编辑 / 删除) */
+    .field-context-bubble {
+      position: fixed;
+      width: 120px;
+      background: #ffffff;
+      border: 1px solid rgba(0, 0, 0, 0.06);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-dropdown);
+      z-index: 300;
+      display: none;
+      flex-direction: column;
+      padding: 4px;
+      animation: popoverFadeIn 0.12s ease-out;
+    }
+    .field-context-bubble.open {
+      display: flex;
+    }
+
+    .ctx-menu-btn {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-primary);
+      border-radius: var(--radius-sm);
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      transition: background 0.12s;
+    }
+    .ctx-menu-btn:hover {
+      background: #f2f3f5;
+    }
+    .ctx-menu-btn.danger {
+      color: var(--text-primary);
+    }
+    .ctx-menu-btn.danger:hover {
+      background: var(--danger-light);
+      color: var(--danger);
+    }
+
+    /* ----------------------------------------------------
+       面板 2：【设置筛选条件】 Popover (截图 2)
+       ---------------------------------------------------- */
+    #popover-filter-builder {
+      left: -80px;
+      width: 480px;
+    }
+
+    .filter-builder-body {
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .filter-condition-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      position: relative;
+    }
+
+    .filter-capsule-select {
+      height: 36px;
+      padding: 0 12px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-input);
+      background: #ffffff;
+      font-size: 13px;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      cursor: pointer;
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .filter-capsule-select:hover {
+      border-color: #c9cdd4;
+    }
+    .filter-capsule-select.active {
+      border-color: var(--brand-blue);
+      box-shadow: 0 0 0 2px rgba(22, 93, 255, 0.12);
+    }
+
+    .select-col-width { width: 110px; }
+    .select-op-width { width: 110px; }
+
+    .filter-capsule-input {
+      flex: 1;
+      height: 36px;
+      padding: 0 12px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-input);
+      background: #ffffff;
+      font-size: 13px;
+      color: var(--text-primary);
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .filter-capsule-input::placeholder {
+      color: var(--text-placeholder);
+    }
+    .filter-capsule-input:focus {
+      border-color: var(--brand-blue);
+      box-shadow: 0 0 0 2px rgba(22, 93, 255, 0.12);
+    }
+
+    .btn-remove-condition {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: color 0.12s, background 0.12s;
+    }
+    .btn-remove-condition:hover {
+      color: var(--text-primary);
+      background: var(--bg-btn);
+    }
+
+    .btn-add-condition-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-primary);
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      padding: 4px 0;
+      margin-top: 4px;
+    }
+    .btn-add-condition-link:hover {
+      color: var(--brand-blue);
+    }
+
+    .filter-dropdown-menu {
+      position: absolute;
+      top: 42px;
+      left: 120px;
+      width: 140px;
+      background: #ffffff;
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-dropdown);
+      z-index: 250;
+      display: none;
+      flex-direction: column;
+      padding: 4px;
+    }
+    .filter-dropdown-menu.open {
+      display: flex;
+    }
+    .filter-dropdown-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      font-size: 13px;
+      color: var(--text-primary);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: background 0.12s;
+    }
+    .filter-dropdown-item:hover {
+      background: #f2f3f5;
+    }
+    .filter-dropdown-item.selected {
+      font-weight: 500;
+    }
+
+    /* ----------------------------------------------------
+       面板 3：【行高】 Popover (截图 3)
+       ---------------------------------------------------- */
+    #popover-row-height {
+      right: 0;
+      width: 180px;
+    }
+
+    .row-height-menu-list {
+      padding: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .row-height-menu-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      font-size: 14px;
+      font-weight: 400;
+      color: var(--text-primary);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: background 0.12s;
+    }
+    .row-height-menu-item:hover {
+      background: #f2f3f5;
+    }
+    .row-height-menu-item.selected {
+      font-weight: 600;
+    }
+    .row-height-menu-item .check-icon {
+      display: none;
+      color: #1d2129;
+    }
+    .row-height-menu-item.selected .check-icon {
+      display: block;
+    }
+
+    /* ========================================================
+       3. 【添加列 / 编辑列】弹窗 (最新截图)
+       ======================================================== */
+    .modal-backdrop {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(2px);
+      z-index: 500;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      animation: modalFadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .modal-backdrop.open {
+      display: flex;
+    }
+
+    @keyframes modalFadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    .modal-dialog-card {
+      width: 440px;
+      background: #ffffff;
+      border-radius: var(--radius-2xl);
+      box-shadow: var(--shadow-modal);
+      display: flex;
+      flex-direction: column;
+      padding: 24px;
+      position: relative;
+      animation: modalPopIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes modalPopIn {
+      from { opacity: 0; transform: scale(0.95); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .modal-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .modal-close-btn {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: none;
+      background: transparent;
+      color: var(--text-primary);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.12s;
+    }
+    .modal-close-btn:hover {
+      background: var(--bg-btn);
+    }
+
+    .form-group {
+      margin-bottom: 18px;
+      position: relative;
+    }
+    .form-label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+    .form-input-text {
+      width: 100%;
+      height: 42px;
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border-input);
+      background: #ffffff;
+      padding: 0 14px;
+      font-size: 14px;
+      color: var(--text-primary);
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .form-input-text::placeholder {
+      color: var(--text-placeholder);
+    }
+    .form-input-text:focus {
+      border-color: var(--brand-blue);
+      box-shadow: 0 0 0 2px rgba(22, 93, 255, 0.12);
+    }
+
+    .form-select-trigger {
+      width: 100%;
+      height: 42px;
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border-input);
+      background: #ffffff;
+      padding: 0 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 14px;
+      color: var(--text-primary);
+      cursor: pointer;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .form-select-trigger:hover {
+      border-color: #c9cdd4;
+    }
+    .form-select-trigger.open {
+      border-color: var(--brand-blue);
+      box-shadow: 0 0 0 2px rgba(22, 93, 255, 0.12);
+    }
+
+    .field-type-dropdown-list {
+      position: absolute;
+      top: 72px;
+      left: 0;
+      width: 100%;
+      background: #ffffff;
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-dropdown);
+      z-index: 550;
+      display: none;
+      flex-direction: column;
+      padding: 6px;
+      animation: popoverFadeIn 0.12s ease-out;
+    }
+    .field-type-dropdown-list.show {
+      display: flex;
+    }
+
+    .field-type-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      font-size: 14px;
+      color: var(--text-primary);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: background 0.12s;
+    }
+    .field-type-item:hover {
+      background: #f2f3f5;
+    }
+    .field-type-item.selected {
+      background: #f2f3f5;
+      font-weight: 500;
+    }
+    .field-type-item .check-mark {
+      display: none;
+      color: #1d2129;
+    }
+    .field-type-item.selected .check-mark {
+      display: block;
+    }
+
+    .modal-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .btn-modal-primary {
+      height: 38px;
+      padding: 0 18px;
+      background: var(--brand-blue);
+      color: #ffffff;
+      font-size: 14px;
+      font-weight: 500;
+      border-radius: var(--radius-md);
+      border: none;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-modal-primary:hover {
+      background: var(--brand-blue-hover);
+    }
+    .btn-modal-cancel {
+      height: 38px;
+      padding: 0 14px;
+      background: #f2f3f5;
+      color: var(--text-primary);
+      font-size: 14px;
+      font-weight: 500;
+      border-radius: var(--radius-md);
+      border: none;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-modal-cancel:hover {
+      background: #e5e6eb;
+    }
+
+    /* ========================================================
+       4. 电子表格数据网格区
+       ======================================================== */
+    .stage-grid-scroll {
+      flex: 1;
+      overflow: auto;
+      background: #ffffff;
+      position: relative;
+    }
+
+    .main-grid-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      font-size: 13px;
+    }
+
+    .main-grid-table thead {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: #f7f8fa;
+    }
+
+    .main-grid-table th {
+      border-bottom: 1px solid var(--border-color);
+      border-right: 1px solid var(--border-color);
+      height: 38px;
+      padding: 0 12px;
+      text-align: left;
+      font-weight: 500;
+      color: var(--text-secondary);
+      background: #f7f8fa;
+      position: relative;
+      user-select: none;
+    }
+
+    .main-grid-table th.th-select-col {
+      width: 44px;
+      text-align: center;
+      padding: 0;
+    }
+    .main-grid-table th.th-plus-col {
+      width: 50px;
+      text-align: center;
+      cursor: pointer;
+    }
+    .main-grid-table th.th-plus-col:hover {
+      background: var(--bg-btn);
+      color: var(--text-primary);
+    }
+
+    .th-cell-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .main-grid-table td {
+      border-bottom: 1px solid var(--border-color);
+      border-right: 1px solid var(--border-color);
+      padding: 6px 12px;
+      color: var(--text-primary);
+      vertical-align: middle;
+      background: #ffffff;
+      transition: background 0.1s;
+    }
+    .main-grid-table tr:hover td {
+      background: #fafbfc;
+    }
+    .main-grid-table td.td-select-col {
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-family: var(--font-mono);
+      background: #fcfdfe;
+    }
+
+    /* 4 档行高 */
+    .row-h-low td { height: 34px; padding: 2px 12px; }
+    .row-h-medium td { height: 48px; padding: 6px 12px; }
+    .row-h-tall td { height: 72px; padding: 10px 12px; }
+    .row-h-extraTall td { height: 120px; padding: 12px; }
+
+    .cell-inline-editor {
+      width: 100%;
+      height: 100%;
+      border: 1px solid transparent;
+      border-radius: var(--radius-sm);
+      padding: 4px 6px;
+      font-size: 13px;
+      font-family: inherit;
+      color: inherit;
+      background: transparent;
+      outline: none;
+    }
+    .cell-inline-editor:hover {
+      border-color: var(--border-color);
+    }
+    .cell-inline-editor:focus {
+      border-color: var(--brand-blue);
+      background: #ffffff;
+      box-shadow: 0 0 0 2px rgba(22, 93, 255, 0.12);
+    }
+
+    .grid-bottom-action-bar {
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .btn-add-row-action {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-primary);
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      padding: 6px 10px;
+      border-radius: var(--radius-sm);
+      transition: background 0.15s;
+    }
+    .btn-add-row-action:hover {
+      background: #f2f3f5;
+    }
+  </style>
+</head>
+<body onclick="handleGlobalClick(event)">
+
+  <!-- ========================================================
+       1. 全屏独立电子表格主界面 (1:1 严格对齐设计稿)
+       ======================================================== -->
+  <div class="stage-wrapper" id="stage-main-view">
+    
+    <!-- 顶部操作条 (1:1 还原截图顶部：左侧仅为标题，无多余标签) -->
+    <header class="stage-topbar" onclick="event.stopPropagation()">
+      
+      <!-- 左侧：表格名称 -->
+      <div class="topbar-left">
+        <input type="text" class="table-title-editable" id="stage-title-input" value="未命名表格" oninput="syncTableName(this.value)" />
+      </div>
+
+      <!-- 右侧：功能按钮群 (三个核心菜单面板均在此锚定) -->
+      <div class="topbar-right">
+        
+        <!-- 1. 【字段配置】按钮 + 锚定面板 -->
+        <div class="btn-menu-wrapper">
+          <button class="btn-pill" id="btn-pill-fields" onclick="toggleMenuPopover('popover-field-config', 'btn-pill-fields', event)">
+            <!-- 齿轮图标 (1:1 还原截图) -->
+            <svg class="svg-icon" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+            <span>字段配置</span>
+          </button>
+
+          <!-- 字段配置 Popover (截图 1) -->
+          <div class="popover-card" id="popover-field-config" onclick="event.stopPropagation()">
+            <div class="popover-head-title">字段配置</div>
+            
+            <div class="field-config-list" id="field-config-card-container">
+              <!-- 动态字段卡片 -->
+            </div>
+
+            <div class="field-config-footer">
+              <button class="btn-add-field-row" onclick="openAddColumnModal()">
+                <svg class="svg-icon" viewBox="0 0 24 24">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                <span>新增字段</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. 【筛选】按钮 + 锚定面板 -->
+        <div class="btn-menu-wrapper">
+          <button class="btn-pill" id="btn-pill-filter" onclick="toggleMenuPopover('popover-filter-builder', 'btn-pill-filter', event)">
+            <!-- 漏斗图标 (1:1 还原截图) -->
+            <svg class="svg-icon" viewBox="0 0 24 24">
+              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+            </svg>
+            <span>筛选</span>
+            <span class="filter-dot-badge" id="filter-badge-dot"></span>
+          </button>
+
+          <!-- 筛选条件 Popover (截图 2) -->
+          <div class="popover-card" id="popover-filter-builder" onclick="event.stopPropagation()">
+            <div class="popover-head-title">设置筛选条件</div>
+            
+            <div class="filter-builder-body">
+              <div id="filter-rows-wrapper" style="display: flex; flex-direction: column; gap: 10px;">
+                <!-- 动态筛选行 -->
+              </div>
+
+              <div>
+                <button class="btn-add-condition-link" onclick="addFilterRow()">
+                  <svg class="svg-icon" viewBox="0 0 24 24">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                  </svg>
+                  <span>添加条件</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. 【行高】按钮 + 锚定面板 -->
+        <div class="btn-menu-wrapper">
+          <button class="btn-pill" id="btn-pill-row-height" onclick="toggleMenuPopover('popover-row-height', 'btn-pill-row-height', event)">
+            <!-- 三↕ 行高图标 (1:1 还原截图) -->
+            <svg class="svg-icon" viewBox="0 0 24 24">
+              <line x1="4" y1="6" x2="14" y2="6"></line>
+              <line x1="4" y1="12" x2="10" y2="12"></line>
+              <line x1="4" y1="18" x2="14" y2="18"></line>
+              <polyline points="18 4 21 7 18 10"></polyline>
+              <line x1="21" y1="7" x2="21" y2="17"></line>
+              <polyline points="18 14 21 17 18 20"></polyline>
+            </svg>
+            <span>行高</span>
+          </button>
+
+          <!-- 行高选择 Popover (截图 3) -->
+          <div class="popover-card" id="popover-row-height" onclick="event.stopPropagation()">
+            <div class="popover-head-title">行高</div>
+            
+            <div class="row-height-menu-list">
+              <div class="row-height-menu-item selected" id="opt-row-low" onclick="selectRowHeight('low')">
+                <span>低</span>
+                <svg class="svg-icon check-icon" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              </div>
+              <div class="row-height-menu-item" id="opt-row-medium" onclick="selectRowHeight('medium')">
+                <span>中等</span>
+                <svg class="svg-icon check-icon" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              </div>
+              <div class="row-height-menu-item" id="opt-row-tall" onclick="selectRowHeight('tall')">
+                <span>高</span>
+                <svg class="svg-icon check-icon" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              </div>
+              <div class="row-height-menu-item" id="opt-row-extraTall" onclick="selectRowHeight('extraTall')">
+                <span>超高</span>
+                <svg class="svg-icon check-icon" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="toolbar-v-divider"></div>
+
+        <!-- 4. 撤销 (Cmd+Z) -->
+        <button class="btn-icon-plain" title="撤销 (Cmd+Z)" onclick="triggerUndo()">
+          <svg class="svg-icon" viewBox="0 0 24 24">
+            <path d="M3 7v6h6"></path>
+            <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"></path>
+          </svg>
+        </button>
+
+        <!-- 5. 重做 (Cmd+Shift+Z) -->
+        <button class="btn-icon-plain" title="重做 (Cmd+Shift+Z)" onclick="triggerRedo()">
+          <svg class="svg-icon" viewBox="0 0 24 24">
+            <path d="M21 7v6h-6"></path>
+            <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7"></path>
+          </svg>
+        </button>
+
+        <div class="toolbar-v-divider"></div>
+
+        <!-- 6. 关闭 -->
+        <button class="btn-icon-plain" title="关闭 (Esc)" onclick="closeAllPopovers()">
+          <svg class="svg-icon" viewBox="0 0 24 24">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+
+      </div>
+    </header>
+
+    <!-- 字段快捷气泡操作菜单 (编辑 / 删除) -->
+    <div class="field-context-bubble" id="field-context-bubble" onclick="event.stopPropagation()">
+      <button class="ctx-menu-btn" onclick="openEditColumnModal()">
+        <svg class="svg-icon" viewBox="0 0 24 24">
+          <path d="M12 20h9"></path>
+          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+        </svg>
+        <span>编辑</span>
+      </button>
+      <button class="ctx-menu-btn danger" onclick="deleteTargetColumn()">
+        <svg class="svg-icon" viewBox="0 0 24 24">
+          <polyline points="3 6 5 6 21 6"></polyline>
+          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+        </svg>
+        <span>删除</span>
+      </button>
+    </div>
+
+    <!-- 筛选操作符下拉气泡 -->
+    <div class="filter-dropdown-menu" id="filter-op-dropdown" onclick="event.stopPropagation()">
+      <div class="filter-dropdown-item selected" onclick="selectFilterOp('equals', '等于')">
+        <span>等于</span>
+        <svg class="svg-icon check-icon" style="width: 14px; height: 14px;" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+      </div>
+      <div class="filter-dropdown-item" onclick="selectFilterOp('notEquals', '不等于')">
+        <span>不等于</span>
+      </div>
+      <div class="filter-dropdown-item" onclick="selectFilterOp('contains', '包含')">
+        <span>包含</span>
+      </div>
+      <div class="filter-dropdown-item" onclick="selectFilterOp('notContains', '不包含')">
+        <span>不包含</span>
+      </div>
+      <div class="filter-dropdown-item" onclick="selectFilterOp('empty', '为空')">
+        <span>为空</span>
+      </div>
+      <div class="filter-dropdown-item" onclick="selectFilterOp('notEmpty', '不为空')">
+        <span>不为空</span>
+      </div>
+    </div>
+
+    <!-- 电子表格数据网格区 -->
+    <div class="stage-grid-scroll" id="stage-grid-scroll">
+      <table class="main-grid-table">
+        <thead>
+          <tr id="grid-header-row">
+            <!-- 勾选列 -->
+            <th class="th-select-col">
+              <input type="checkbox" style="cursor: pointer;" />
+            </th>
+            <!-- 动态字段列插入位置 -->
+            <!-- 快捷增加字段按钮 -->
+            <th class="th-plus-col" title="添加列" onclick="openAddColumnModal()">
+              <svg class="svg-icon" viewBox="0 0 24 24">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+            </th>
+          </tr>
+        </thead>
+        <tbody id="grid-body-rows">
+          <!-- 动态行数据 -->
+        </tbody>
+      </table>
+
+      <!-- 底部添加行 -->
+      <div class="grid-bottom-action-bar">
+        <button class="btn-add-row-action" onclick="addNewTableRow()">
+          <svg class="svg-icon" viewBox="0 0 24 24">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          <span>添加行</span>
+        </button>
+      </div>
+
+    </div>
+
+  </div>
+
+
+  <!-- ========================================================
+       2. 【添加列 / 编辑列】弹窗 (最新截图)
+       ======================================================== -->
+  <div class="modal-backdrop" id="modal-add-column" onclick="handleBackdropClick(event)">
+    <div class="modal-dialog-card" onclick="event.stopPropagation()">
+      
+      <div class="modal-header">
+        <span class="modal-title" id="modal-column-title">添加列</span>
+        <button class="modal-close-btn" onclick="closeAddColumnModal()">
+          <svg class="svg-icon" viewBox="0 0 24 24">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">字段名</label>
+          <input type="text" class="form-input-text" id="input-col-name" placeholder="请输入字段名" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">字段类型</label>
+          
+          <div class="form-select-trigger" id="select-type-trigger" onclick="toggleFieldTypeDropdown(event)">
+            <span id="selected-type-label">文本</span>
+            <svg class="svg-icon" style="width: 14px; height: 14px; color: var(--text-muted);" viewBox="0 0 24 24">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </div>
+
+          <div class="field-type-dropdown-list" id="field-type-dropdown-list">
+            <div class="field-type-item selected" id="type-opt-text" onclick="selectFieldTypeOption('text', '文本')">
+              <span>文本</span>
+              <svg class="svg-icon check-mark" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            </div>
+            <div class="field-type-item" id="type-opt-number" onclick="selectFieldTypeOption('number', '数字')">
+              <span>数字</span>
+              <svg class="svg-icon check-mark" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            </div>
+            <div class="field-type-item" id="type-opt-attachment" onclick="selectFieldTypeOption('attachment', '附件')">
+              <span>附件</span>
+              <svg class="svg-icon check-mark" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn-modal-cancel" onclick="closeAddColumnModal()">取消</button>
+        <button class="btn-modal-primary" onclick="submitColumnModal()">确定</button>
+      </div>
+
+    </div>
+  </div>
+
+
+  <!-- ========================================================
+       3. 交互与状态控制逻辑
+       ======================================================== -->
+  <script>
+    // 内存数据模型 (严格符合 .htable 规范)
+    const state = {
+      version: 1,
+      title: "未命名表格",
+      rowHeight: "low",
+      columns: [
+        { id: "col_text", title: "文本", type: "text", visible: true, width: 280 }
+      ],
+      rows: [],
+      filter: {
+        match: "all",
+        conditions: [
+          { columnIndex: 0, op: "equals", value: "" }
+        ]
+      }
+    };
+
+    let activeColumnIndexForMenu = null;
+    let activeFilterRowIndex = 0;
+    
+    // 弹窗状态
+    let modalMode = 'add';
+    let modalSelectedType = 'text';
+
+    // 字段类型图标
+    function renderFieldTypeSvg(type) {
+      if (type === "text") {
+        return `
+          <svg class="svg-icon" style="color: var(--text-secondary);" viewBox="0 0 24 24">
+            <path d="M4 18l4-12h2l4 12M5.5 14h7"></path>
+            <line x1="16" y1="9" x2="22" y2="9"></line>
+            <line x1="16" y1="13" x2="20" y2="13"></line>
+            <line x1="16" y1="17" x2="22" y2="17"></line>
+          </svg>
+        `;
+      } else if (type === "number") {
+        return `
+          <svg class="svg-icon" style="color: var(--text-secondary);" viewBox="0 0 24 24">
+            <line x1="4" y1="9" x2="20" y2="9"></line>
+            <line x1="4" y1="15" x2="20" y2="15"></line>
+            <line x1="10" y1="3" x2="8" y2="21"></line>
+            <line x1="16" y1="3" x2="14" y2="21"></line>
+          </svg>
+        `;
+      } else if (type === "attachment") {
+        return `
+          <svg class="svg-icon" style="color: var(--text-secondary);" viewBox="0 0 24 24">
+            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+          </svg>
+        `;
+      }
+      return `<svg class="svg-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle></svg>`;
+    }
+
+    // 渲染全量视图
+    function refreshView() {
+      renderTableHeaders();
+      renderTableBody();
+      renderFieldConfigCards();
+      renderFilterBuilderRows();
+      updateRowHeightUi();
+    }
+
+    // 1. 渲染表头
+    function renderTableHeaders() {
+      const headerRow = document.getElementById("grid-header-row");
+      const addTh = headerRow.querySelector(".th-plus-col");
+      
+      headerRow.querySelectorAll(".th-dyn-col").forEach(th => th.remove());
+
+      state.columns.forEach((col, idx) => {
+        if (!col.visible) return;
+
+        const th = document.createElement("th");
+        th.className = "th-dyn-col";
+        th.style.width = (col.width || 240) + "px";
+        th.innerHTML = `
+          <div class="th-cell-wrap">
+            ${renderFieldTypeSvg(col.type)}
+            <span>${col.title}</span>
+          </div>
+        `;
+        headerRow.insertBefore(th, addTh);
+      });
+    }
+
+    // 2. 渲染表体
+    function renderTableBody() {
+      const tbody = document.getElementById("grid-body-rows");
+      tbody.innerHTML = "";
+
+      if (state.rows.length === 0) return;
+
+      state.rows.forEach((row, rowIdx) => {
+        const tr = document.createElement("tr");
+        tr.className = `row-h-${state.rowHeight}`;
+
+        const tdIdx = document.createElement("td");
+        tdIdx.className = "td-select-col";
+        tdIdx.innerText = rowIdx + 1;
+        tr.appendChild(tdIdx);
+
+        state.columns.forEach((col, colIdx) => {
+          if (!col.visible) return;
+
+          const td = document.createElement("td");
+          const cellVal = row.cells[colIdx] || "";
+
+          td.innerHTML = `
+            <input type="text" class="cell-inline-editor" value="${cellVal}" onchange="updateCellContent(${rowIdx}, ${colIdx}, this.value)" />
+          `;
+          tr.appendChild(td);
+        });
+
+        const tdPlaceholder = document.createElement("td");
+        tdPlaceholder.style.background = "#fafbfc";
+        tr.appendChild(tdPlaceholder);
+
+        tbody.appendChild(tr);
+      });
+    }
+
+    // 3. 渲染【字段配置】卡片列表 (截图 1)
+    function renderFieldConfigCards() {
+      const container = document.getElementById("field-config-card-container");
+      container.innerHTML = "";
+
+      state.columns.forEach((col, idx) => {
+        const card = document.createElement("div");
+        card.className = "field-config-card";
+        card.innerHTML = `
+          <div class="field-card-left">
+            <div class="drag-handle-6dots" title="拖拽排序">
+              <svg class="svg-icon" style="width: 14px; height: 14px;" viewBox="0 0 24 24">
+                <circle cx="8" cy="6" r="1.5" fill="currentColor"></circle>
+                <circle cx="8" cy="12" r="1.5" fill="currentColor"></circle>
+                <circle cx="8" cy="18" r="1.5" fill="currentColor"></circle>
+                <circle cx="16" cy="6" r="1.5" fill="currentColor"></circle>
+                <circle cx="16" cy="12" r="1.5" fill="currentColor"></circle>
+                <circle cx="16" cy="18" r="1.5" fill="currentColor"></circle>
+              </svg>
+            </div>
+            ${renderFieldTypeSvg(col.type)}
+            <span class="field-title-text">${col.title}</span>
+          </div>
+
+          <div class="field-card-right">
+            <button class="btn-subtle-icon" title="${col.visible ? '隐藏字段' : '显示字段'}" onclick="toggleColumnVisibility(${idx})">
+              ${col.visible ? `
+                <svg class="svg-icon" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+              ` : `
+                <svg class="svg-icon" style="color: #c9cdd4;" viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+              `}
+            </button>
+            
+            <button class="btn-subtle-icon" onclick="openColumnContextMenu(event, ${idx})">
+              <svg class="svg-icon" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="1.5" fill="currentColor"></circle>
+                <circle cx="19" cy="12" r="1.5" fill="currentColor"></circle>
+                <circle cx="5" cy="12" r="1.5" fill="currentColor"></circle>
+              </svg>
+            </button>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    // 4. 渲染【设置筛选条件】行 (截图 2)
+    function renderFilterBuilderRows() {
+      const wrapper = document.getElementById("filter-rows-wrapper");
+      wrapper.innerHTML = "";
+
+      if (state.filter.conditions.length === 0) {
+        state.filter.conditions.push({ columnIndex: 0, op: "equals", value: "" });
+      }
+
+      state.filter.conditions.forEach((cond, idx) => {
+        const row = document.createElement("div");
+        row.className = "filter-condition-row";
+
+        const targetCol = state.columns[cond.columnIndex] || state.columns[0];
+        const opLabelMap = {
+          equals: "等于",
+          notEquals: "不等于",
+          contains: "包含",
+          notContains: "不包含",
+          empty: "为空",
+          notEmpty: "不为空"
+        };
+
+        row.innerHTML = `
+          <div class="filter-capsule-select select-col-width" onclick="alert('切换字段')">
+            <span>${targetCol ? targetCol.title : '字段'}</span>
+            <svg class="svg-icon" style="width: 12px; height: 12px; color: var(--text-muted);" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </div>
+
+          <div class="filter-capsule-select select-op-width" onclick="openFilterOpMenu(event, ${idx})">
+            <span>${opLabelMap[cond.op] || '等于'}</span>
+            <svg class="svg-icon" style="width: 12px; height: 12px; color: var(--text-muted);" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </div>
+
+          <input type="text" class="filter-capsule-input" placeholder="请输入" value="${cond.value || ''}" oninput="updateFilterConditionVal(${idx}, this.value)" />
+
+          <button class="btn-remove-condition" title="删除条件" onclick="deleteFilterRow(${idx})">
+            <svg class="svg-icon" viewBox="0 0 24 24">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        `;
+        wrapper.appendChild(row);
+      });
+    }
+
+    // ----------------------------------------------------
+    // 三大菜单面板的精准展开/收起控制
+    // ----------------------------------------------------
+    function toggleMenuPopover(popoverId, btnId, e) {
+      if (e) e.stopPropagation();
+
+      const targetPopover = document.getElementById(popoverId);
+      const targetBtn = document.getElementById(btnId);
+      const isAlreadyOpen = targetPopover.classList.contains("show");
+
+      closeAllPopovers();
+
+      if (!isAlreadyOpen) {
+        targetPopover.classList.add("show");
+        if (targetBtn) targetBtn.classList.add("active");
+      }
+    }
+
+    function closeAllPopovers() {
+      document.querySelectorAll(".popover-card").forEach(el => el.classList.remove("show"));
+      document.querySelectorAll(".btn-pill").forEach(el => el.classList.remove("active"));
+      document.getElementById("field-context-bubble").classList.remove("open");
+      document.getElementById("filter-op-dropdown").classList.remove("open");
+      document.getElementById("field-type-dropdown-list").classList.remove("show");
+    }
+
+    function handleGlobalClick(e) {
+      closeAllPopovers();
+    }
+
+    // 字段二级气泡操作 (截图 1)
+    function openColumnContextMenu(e, colIdx) {
+      e.stopPropagation();
+      activeColumnIndexForMenu = colIdx;
+      const bubble = document.getElementById("field-context-bubble");
+      bubble.style.left = (e.clientX + 8) + "px";
+      bubble.style.top = (e.clientY - 10) + "px";
+      bubble.classList.add("open");
+    }
+
+    function deleteTargetColumn() {
+      if (activeColumnIndexForMenu === null) return;
+      const col = state.columns[activeColumnIndexForMenu];
+      if (confirm(`确定删除字段 "${col.title}" 吗？`)) {
+        state.columns.splice(activeColumnIndexForMenu, 1);
+        state.rows.forEach(r => r.cells.splice(activeColumnIndexForMenu, 1));
+        refreshView();
+      }
+      document.getElementById("field-context-bubble").classList.remove("open");
+    }
+
+    function toggleColumnVisibility(idx) {
+      state.columns[idx].visible = !state.columns[idx].visible;
+      refreshView();
+    }
+
+    // 【添加列 / 编辑列】弹窗控制 (最新截图)
+    function openAddColumnModal() {
+      modalMode = 'add';
+      document.getElementById("modal-column-title").innerText = "添加列";
+      document.getElementById("input-col-name").value = "";
+      selectFieldTypeOption('text', '文本');
+      
+      closeAllPopovers();
+      document.getElementById("modal-add-column").classList.add("open");
+      setTimeout(() => document.getElementById("input-col-name").focus(), 50);
+    }
+
+    function openEditColumnModal() {
+      if (activeColumnIndexForMenu === null) return;
+      modalMode = 'edit';
+      const col = state.columns[activeColumnIndexForMenu];
+      
+      document.getElementById("modal-column-title").innerText = "编辑列";
+      document.getElementById("input-col-name").value = col.title;
+      const typeLabelMap = { text: '文本', number: '数字', attachment: '附件' };
+      selectFieldTypeOption(col.type, typeLabelMap[col.type] || '文本');
+
+      closeAllPopovers();
+      document.getElementById("modal-add-column").classList.add("open");
+      setTimeout(() => document.getElementById("input-col-name").focus(), 50);
+    }
+
+    function closeAddColumnModal() {
+      document.getElementById("modal-add-column").classList.remove("open");
+      document.getElementById("field-type-dropdown-list").classList.remove("show");
+    }
+
+    function handleBackdropClick(e) {
+      if (e.target.id === "modal-add-column") {
+        closeAddColumnModal();
+      }
+    }
+
+    function toggleFieldTypeDropdown(e) {
+      e.stopPropagation();
+      const list = document.getElementById("field-type-dropdown-list");
+      list.classList.toggle("show");
+    }
+
+    function selectFieldTypeOption(typeVal, typeLabel) {
+      modalSelectedType = typeVal;
+      document.getElementById("selected-type-label").innerText = typeLabel;
+      
+      document.querySelectorAll(".field-type-item").forEach(item => item.classList.remove("selected"));
+      const activeOpt = document.getElementById(`type-opt-${typeVal}`);
+      if (activeOpt) activeOpt.classList.add("selected");
+
+      document.getElementById("field-type-dropdown-list").classList.remove("show");
+    }
+
+    function submitColumnModal() {
+      const colName = document.getElementById("input-col-name").value.trim();
+      if (!colName) {
+        alert("请输入字段名");
+        return;
+      }
+
+      if (modalMode === 'add') {
+        state.columns.push({
+          id: "col_" + Math.random().toString(36).substring(2, 9),
+          title: colName,
+          type: modalSelectedType,
+          visible: true,
+          width: 240
+        });
+        state.rows.forEach(r => r.cells.push(modalSelectedType === 'attachment' ? [] : ''));
+      } else if (modalMode === 'edit' && activeColumnIndexForMenu !== null) {
+        state.columns[activeColumnIndexForMenu].title = colName;
+        state.columns[activeColumnIndexForMenu].type = modalSelectedType;
+      }
+
+      closeAddColumnModal();
+      refreshView();
+    }
+
+    // 筛选操作符选择
+    function openFilterOpMenu(e, rowIdx) {
+      e.stopPropagation();
+      activeFilterRowIndex = rowIdx;
+      const menu = document.getElementById("filter-op-dropdown");
+      menu.classList.add("open");
+    }
+
+    function selectFilterOp(opVal, opLabel) {
+      state.filter.conditions[activeFilterRowIndex].op = opVal;
+      document.getElementById("filter-op-dropdown").classList.remove("open");
+      renderFilterBuilderRows();
+    }
+
+    function addFilterRow() {
+      state.filter.conditions.push({ columnIndex: 0, op: "equals", value: "" });
+      renderFilterBuilderRows();
+    }
+
+    function deleteFilterRow(idx) {
+      state.filter.conditions.splice(idx, 1);
+      renderFilterBuilderRows();
+    }
+
+    function updateFilterConditionVal(idx, val) {
+      state.filter.conditions[idx].value = val;
+    }
+
+    // 行高设置
+    function selectRowHeight(h) {
+      state.rowHeight = h;
+      document.querySelectorAll(".row-height-menu-item").forEach(item => {
+        item.classList.remove("selected");
+      });
+      const activeEl = document.getElementById(`opt-row-${h}`);
+      if (activeEl) activeEl.classList.add("selected");
+
+      updateRowHeightUi();
+      closeAllPopovers();
+    }
+
+    function updateRowHeightUi() {
+      document.querySelectorAll("#grid-body-rows tr").forEach(tr => {
+        tr.className = `row-h-${state.rowHeight}`;
+      });
+    }
+
+    // 数据编辑
+    function syncTableName(val) {
+      state.title = val;
+    }
+
+    function updateCellContent(rowIdx, colIdx, val) {
+      state.rows[rowIdx].cells[colIdx] = val;
+    }
+
+    function addNewTableRow() {
+      const emptyCells = state.columns.map(c => c.type === 'attachment' ? [] : '');
+      state.rows.push({ cells: emptyCells });
+      refreshView();
+    }
+
+    function triggerUndo() {
+      alert("Undo：已撤销上一笔单元格更改");
+    }
+    function triggerRedo() {
+      alert("Redo：已重做");
+    }
+
+    // 键盘监听
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        if (document.getElementById("modal-add-column").classList.contains("open")) {
+          closeAddColumnModal();
+        } else {
+          closeAllPopovers();
+        }
+      } else if (e.key === "Enter" && document.getElementById("modal-add-column").classList.contains("open")) {
+        submitColumnModal();
+      }
+    });
+
+    // 默认初始渲染
+    refreshView();
+  </script>
+</body>
+</html>

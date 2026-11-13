@@ -1,0 +1,861 @@
+/**
+ * 项目库列表与工程中心页（workbench tab on dsh-better-sidebar）。
+ *
+ * 架构层级：
+ * 1. 顶层：项目文件夹列表（Project Folder Cards），展示每个项目文件夹及内嵌创作页数；
+ * 2. 二级：项目详情工程中心（带面包屑导航）：
+ *    - 创作页 Tab (N)：展示该工作区下的全部创作页卡片，支持直接打开画布、新建创作页、重命名与删除；
+ *    - 项目资产 Tab (M)：工作区文件管理器，展示全部物理素材文件，支持新建文件夹与批量上传。
+ */
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { Button, ConfirmModal, Divider, FilterBar, IconPlusOutline16, ModalDialog, PageHeader, SearchField, Tabs } from 'dsh-ui-kit'
+import { Info } from 'lucide-react'
+import {
+  listProjects,
+  getProject,
+  renameProject,
+  deleteProject,
+  createProjectPage,
+  updateProjectPage,
+  deleteProjectPage,
+  fetchProjectFiles,
+  mkdirProjectFile,
+  uploadProjectFiles,
+} from '../api.js'
+import {
+  getWorkspaceAssets,
+  mkdirWorkspaceAsset,
+  ingestWorkspaceAssets,
+  pickLocalFiles,
+} from '../../canvas/bridge/apiClient.ts'
+import { injectWorkflowStyles } from '../styles.js'
+import { NewLocalProjectDialog } from './NewLocalProjectDialog.jsx'
+import { dismissProductStage, runNewProject } from './newProject.js'
+import { closeAppTab, openAppTab } from './projectCanvas.js'
+import { createProjectNavigation } from './project-navigation.js'
+import { ProjectFolderCard } from './ProjectFolderCard.jsx'
+import { ProjectPagesTab } from './ProjectPagesTab.jsx'
+import { ProjectAssetsTab } from './ProjectAssetsTab.jsx'
+import { AIAppCard } from './AIAppCard.jsx'
+import {
+  APP_REMOVE_ERROR_KEYS,
+  appEntryMatchesQuery,
+  defaultAppStorage,
+  listPublishedApps,
+  removePublishedApp,
+  resolveAppEditTarget,
+  resolveOwningProject,
+} from './appLibrary.js'
+import { fetchBuiltinApps, mergeAppEntries } from './builtinApps.js'
+
+export const WORKFLOW_LIBRARY_TAB_ID = 'omnimux-workflow:library'
+
+function PromptModal({ open, title, placeholder, defaultValue = '', confirmLabel = '确定', cancelLabel = '取消', onClose, onConfirm }) {
+  const [value, setValue] = useState(defaultValue)
+  useEffect(() => {
+    if (open) setValue(defaultValue)
+  }, [open, defaultValue])
+
+  if (!open) return null
+
+  const handleSubmit = (e) => {
+    e?.preventDefault?.()
+    if (!value.trim()) return
+    onConfirm(value.trim())
+  }
+
+  return (
+    <ModalDialog
+      open={open}
+      onClose={onClose}
+      title={title}
+      size="sm"
+      closeLabel={cancelLabel}
+      footer={(
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', width: '100%' }}>
+          <Button variant="ghost" onClick={onClose}>{cancelLabel}</Button>
+          <Button variant="primary" onClick={handleSubmit} disabled={!value.trim()}>{confirmLabel}</Button>
+        </div>
+      )}
+    >
+      <form onSubmit={handleSubmit} style={{ margin: '8px 0' }}>
+        <input
+          autoFocus
+          className="omnimux-prompt-input"
+          style={{
+            width: '100%',
+            height: '32px',
+            boxSizing: 'border-box',
+            padding: '0 10px',
+            borderRadius: '8px',
+            border: '1px solid var(--dsw-alias-border-l2)',
+            background: 'var(--dsw-alias-bg-layer-1)',
+            color: 'var(--dsw-alias-label-primary)',
+            fontSize: '13px',
+            outline: 'none',
+          }}
+          placeholder={placeholder}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              e.preventDefault()
+              onClose()
+            }
+          }}
+        />
+      </form>
+    </ModalDialog>
+  )
+}
+
+function errText(result, t) {
+  const code = String(result?.body?.error ?? '')
+  if (code === 'no-workspace') return t('projects.noWorkspace') || '工作区不可用'
+  return String(result?.body?.message || result?.body?.error || result?.status || t('projects.genericError') || '请求失败')
+}
+
+export function ProjectLibraryPage(props) {
+  const { t, stage, store, visible = true, sessions, workspaces, layout, betterSidebar, getSessionNavigation, getSidebarRight, presence } = props
+  useEffect(() => { injectWorkflowStyles() }, [])
+  const navigation = React.useMemo(
+    () => createProjectNavigation({ sessions, workspaces, layout, betterSidebar, getSessionNavigation, getSidebarRight, t, presence }),
+    [sessions, workspaces, layout, betterSidebar, getSessionNavigation, getSidebarRight, t, presence],
+  )
+
+  useEffect(() => {
+    const api = typeof window !== 'undefined' ? window.__omnimuxWorkbench : undefined
+    if (!api || typeof api.attachStore !== 'function' || !store) return undefined
+    api.attachStore(store)
+    return () => { api.detachStore?.(store) }
+  }, [store])
+
+  const [projects, setProjects] = useState([])
+  const [selectedProject, setSelectedProject] = useState(null)
+  const [projectDetail, setProjectDetail] = useState(null)
+  const [detailTab, setDetailTab] = useState('pages') // pages | assets
+  const [assetsDoc, setAssetsDoc] = useState(null)
+  const [query, setQuery] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  // 「打开创作页」的即时反馈：卡片「打开中」遮罩 + 重复点击拦截。
+  // ref 与 state 双轨：ref 在本次事件里同步生效（连点不会穿透），state 驱动渲染。
+  const [openingPageId, setOpeningPageId] = useState(null)
+  const openingRef = useRef(false)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [pendingRemove, setPendingRemove] = useState(null)
+  const [pendingPurge, setPendingPurge] = useState(null)
+  const [pendingDeletePage, setPendingDeletePage] = useState(null)
+  const [pendingAppDelete, setPendingAppDelete] = useState(null)
+  const [promptModal, setPromptModal] = useState(null)
+  const [libraryTab, setLibraryTab] = useState('local')
+  // 「AI应用」分类的独立数据源：用户已发布清单（localStorage，发布向导写的唯一真实落点）
+  // + 官方内置应用清单（只读 HTTP 缝）。两者合并展示，内置条目不可删。
+  const [publishedApps, setPublishedApps] = useState([])
+  const [builtinApps, setBuiltinApps] = useState([])
+  const [appsError, setAppsError] = useState('')
+  const apps = React.useMemo(
+    () => mergeAppEntries(publishedApps, builtinApps),
+    [publishedApps, builtinApps],
+  )
+
+  // 1. 重新加载顶层项目列表
+  const reload = useCallback(async () => {
+    try {
+      const res = await listProjects()
+      if (res.ok && Array.isArray(res.body?.projects)) {
+        const workspaceItems = workspaces?.list?.getSnapshot?.()?.items ?? []
+        setProjects(res.body.projects.map((project) => ({
+          ...project,
+          workspace: workspaceItems.find((workspace) => workspace?.path === project.path) ?? null,
+        })))
+        setError('')
+      } else if (!res.ok) {
+        setError(errText(res, t))
+      }
+    } catch (e) {
+      setError(String(e?.message || e || t('projects.genericError') || '请求失败'))
+    }
+  }, [t])
+
+  useEffect(() => {
+    if (visible) void reload()
+  }, [visible, reload, workspaces])
+
+  // 1b. 「AI应用」分类的独立列表：用户已发布 manifest 映射 + 官方内置清单。
+  // 存储根本不可用（隐私模式 / 被策略禁用）与清单损坏是两种不同的失败，
+  // 内置清单读不到又是第三种；三者各自给真实错误，且都不吞掉另一路已经拿到的数据。
+  const reloadApps = useCallback(async () => {
+    const errors = []
+    if (!defaultAppStorage()) {
+      setPublishedApps([])
+      errors.push(t('projects.appStorageUnavailable') || '本地存储不可用，无法读取应用清单。')
+    } else {
+      try {
+        setPublishedApps(listPublishedApps())
+      } catch {
+        setPublishedApps([])
+        errors.push(t('projects.appStorageUnreadable') || '应用清单读取失败，请刷新后重试。')
+      }
+    }
+    const builtin = await fetchBuiltinApps()
+    setBuiltinApps(builtin.entries)
+    if (builtin.error) {
+      errors.push(t('projects.appBuiltinUnavailable') || '官方内置应用暂时读取失败，请刷新后重试。')
+    }
+    setAppsError(errors.join(' '))
+  }, [t])
+
+  useEffect(() => {
+    if (!visible || libraryTab !== 'apps') return undefined
+    void reloadApps()
+    if (typeof window === 'undefined') return undefined
+    // 发布向导发布成功后派发（PublishWizardModal），列表就地刷新。
+    const onAppTabsChanged = () => { void reloadApps() }
+    window.addEventListener('omnimux-app-tabs-changed', onAppTabsChanged)
+    return () => window.removeEventListener('omnimux-app-tabs-changed', onAppTabsChanged)
+  }, [visible, libraryTab, reloadApps])
+
+  const handleLibraryTabChange = useCallback((nextId) => {
+    setLibraryTab(nextId)
+    setError('')
+    setAppsError('')
+  }, [])
+
+  // 2. 当进入某个项目时，加载该项目的完整 pages 与资产列表
+  const loadProjectDetail = useCallback(async (project) => {
+    if (!project?.id) return
+    setBusy(true)
+    try {
+      const res = await getProject(project.id)
+      if (res.ok && res.body?.project) {
+        setProjectDetail(res.body.project)
+        setProjects((current) => current.map((item) => item.id === project.id ? { ...item, cover: res.body.project.cover, pages: res.body.project.pages } : item))
+      } else {
+        setProjectDetail(project)
+      }
+
+      // 优先从真实物理工作区目录读取文件列表
+      const filesRes = await fetchProjectFiles(project.id)
+      if (filesRes.ok && Array.isArray(filesRes.body?.items)) {
+        setAssetsDoc({
+          folders: filesRes.body.items.filter((i) => i.isFolder),
+          items: filesRes.body.items.filter((i) => !i.isFolder),
+        })
+      } else {
+        // 加载项目资产 (回退)
+        const assetsWorkspaceId = project.pages?.[0]?.canvasWorkspaceId || project.id
+        const assetsRes = await getWorkspaceAssets(assetsWorkspaceId)
+        if (assetsRes.ok && assetsRes.body?.assets) {
+          setAssetsDoc(assetsRes.body.assets)
+        }
+      }
+    } catch {
+      setProjectDetail(project)
+    } finally {
+      setBusy(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!visible) return
+    if (selectedProject) {
+      void loadProjectDetail(selectedProject)
+    } else {
+      setProjectDetail(null)
+      setAssetsDoc(null)
+    }
+  }, [selectedProject, loadProjectDetail, visible])
+
+  // 3. 点击进入某个项目文件夹：先展开详情；真正的工作区切换在打开创作页时完成
+  const handleSelectFolder = (project) => {
+    setSelectedProject(project)
+    setDetailTab('pages')
+  }
+
+  // 4. 打开某个具体的创作页：统一走项目导航（path → workspace → live session）
+  const handleOpenPage = async (page) => {
+    if (!selectedProject) return
+    if (openingRef.current) return
+    openingRef.current = true
+    setOpeningPageId(page?.id ?? null)
+    try {
+      dismissProductStage()
+      const result = await navigation.openPage(selectedProject, page)
+      if (!result.ok) {
+        setError(result.error === 'session-navigation-unavailable'
+          ? (t('projects.noWorkspace') || '工作区不可用')
+          : (t('projects.openCanvasFailed') || '无法打开创作画布，请重试。'))
+        return
+      }
+      setError('')
+    } catch (e) {
+      console.error('[omnimux-workflow] open page failed', e)
+      setError(t('projects.openCanvasFailed') || '无法打开创作画布，请重试。')
+    } finally {
+      openingRef.current = false
+      setOpeningPageId(null)
+    }
+  }
+
+  // 4b. 点击 AI 应用卡片 → 右侧栏应用标签页。宿主在原生 surface 下通过 meta.appId 传递应用身份。
+  const handleOpenApp = (app) => {
+    const opened = openAppTab(
+      app?.manifest || { appId: app?.appId },
+      { appId: app?.appId, title: app?.name },
+    )
+    if (!opened) setAppsError(t('projects.genericError') || '打开应用失败，请重试。')
+    else setAppsError('')
+  }
+
+  // 4c. 卡片「编辑」→ 打开该应用所属项目的创作画布，并聚焦发布时的工作流组。
+  //     缺项目/缺组归属时不伪造「已定位」，仍打开画布并给出可理解的提示。
+  const handleEditApp = async (app) => {
+    const target = resolveAppEditTarget(app)
+    const project = resolveOwningProject(projects, app)
+    dismissProductStage()
+    if (!project) {
+      setAppsError(t('projects.appEditNoProject') || '找不到该应用所属项目，已为你打开创作画布。')
+      return
+    }
+    const targetPage = (project.pages ?? []).find((page) => page?.canvasWorkspaceId === target.workspaceId)
+      || (project.pages ?? []).find((page) => page?.id === project.activePageId)
+      || (project.pages ?? [])[0]
+    const opened = await navigation.openProject(project, {
+      pageId: targetPage?.id,
+      focusGroupId: target.groupId,
+    })
+    if (!opened.ok) {
+      setAppsError(t('projects.appEditFailed') || '打开项目画布失败，请重试。')
+      return
+    }
+    if (!target.groupId) {
+      setAppsError(t('projects.appEditOpened') || '已打开所属项目画布，未能定位到工作流组。')
+    } else {
+      setAppsError('')
+    }
+  }
+
+  // 4d. 卡片「删除」：先二次确认，再移除记录并关掉对应应用标签页。
+  //     存储写失败 / 记录不存在一律保留卡片并报错，不伪造成功。
+  const confirmDeleteApp = () => {
+    if (!pendingAppDelete) return
+    const target = pendingAppDelete
+    setPendingAppDelete(null)
+    const result = removePublishedApp(target.appId)
+    if (!result.ok) {
+      setAppsError(t(APP_REMOVE_ERROR_KEYS[result.reason] || 'projects.appDeleteFailed')
+        || '删除应用失败，请重试。')
+      return
+    }
+    closeAppTab(target.appId)
+    void reloadApps()
+  }
+
+  // 5. 在项目内新建创作页
+  const handleCreatePageInProject = async () => {
+    if (!selectedProject) return
+    const currentPages = projectDetail?.pages ?? []
+    const newTitle = `创作页 ${currentPages.length + 1}`
+    setBusy(true)
+    try {
+      const res = await createProjectPage(selectedProject.id, newTitle)
+      if (res.ok) {
+        if (res.body?.project) {
+          setProjectDetail(res.body.project)
+          setProjects((current) => current.map((item) => item.id === selectedProject.id ? { ...item, cover: res.body.project.cover, pages: res.body.project.pages } : item))
+        }
+        await loadProjectDetail(selectedProject)
+        void reload()
+      } else {
+        setError(errText(res, t))
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // 6. 重命名创作页（对标规范：深色模态对话框）
+  const handleRenamePage = (page) => {
+    if (!selectedProject) return
+    setPromptModal({
+      title: t('projects.renamePrompt') || '重命名创作页',
+      placeholder: t('projects.namePlaceholder') || '请输入新名称',
+      defaultValue: page.title || '',
+      confirmLabel: t('projects.save') || '保存',
+      onConfirm: async (next) => {
+        if (!next.trim() || next.trim() === page.title) return
+        setBusy(true)
+        try {
+          const res = await updateProjectPage(selectedProject.id, page.id, { title: next.trim() })
+          if (res.ok) void loadProjectDetail(selectedProject)
+          else setError(errText(res, t))
+        } finally {
+          setBusy(false)
+        }
+      },
+    })
+  }
+
+  // 7. 删除创作页（对标规范：ConfirmModal 危险操作确认弹窗）
+  const handleDeletePage = (page) => {
+    if (!selectedProject) return
+    setPendingDeletePage(page)
+  }
+
+  const confirmDeletePage = async () => {
+    if (!selectedProject || !pendingDeletePage) return
+    const pageId = pendingDeletePage.id
+    setPendingDeletePage(null)
+    setBusy(true)
+    try {
+      const res = await deleteProjectPage(selectedProject.id, pageId)
+      if (res.ok) void loadProjectDetail(selectedProject)
+      else setError(errText(res, t))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // 8. 资产管理：新建文件夹 (对标规范：深色模态对话框)
+  const handleCreateFolder = () => {
+    if (!selectedProject) return
+    setPromptModal({
+      title: '新建文件夹',
+      placeholder: '请输入文件夹名称',
+      defaultValue: '新建文件夹',
+      confirmLabel: '创建',
+      onConfirm: async (name) => {
+        if (!name.trim()) return
+        setBusy(true)
+        try {
+          const res = await mkdirProjectFile(selectedProject.id, name.trim())
+          if (res.ok) {
+            void loadProjectDetail(selectedProject)
+          } else {
+            const wsId = selectedProject.pages?.find((page) => page.id === selectedProject.activePageId)?.canvasWorkspaceId || selectedProject.pages?.[0]?.canvasWorkspaceId || selectedProject.id
+            await mkdirWorkspaceAsset(wsId, { name: name.trim() })
+            void loadProjectDetail(selectedProject)
+          }
+        } finally {
+          setBusy(false)
+        }
+      },
+    })
+  }
+
+  // 9. 资产管理：上传文件 (物理工作区目录)
+  const handleUploadFile = async () => {
+    if (!selectedProject) return
+    try {
+      const pickRes = await pickLocalFiles()
+      if (pickRes.ok && Array.isArray(pickRes.body?.paths) && pickRes.body.paths.length > 0) {
+        setBusy(true)
+        const uploadRes = await uploadProjectFiles(selectedProject.id, pickRes.body.paths)
+        if (uploadRes.ok) {
+          void loadProjectDetail(selectedProject)
+        } else {
+          const wsId = selectedProject.pages?.find((page) => page.id === selectedProject.activePageId)?.canvasWorkspaceId || selectedProject.pages?.[0]?.canvasWorkspaceId || selectedProject.id
+          await ingestWorkspaceAssets(wsId, {
+            files: pickRes.body.paths.map((p) => ({ source_path: p })),
+          })
+          void loadProjectDetail(selectedProject)
+        }
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // 新建项目提交
+  const handleDialogSubmit = async (payload) => {
+    setBusy(true)
+    setError('')
+    try {
+      const created = await runNewProject({
+        sessions,
+        workspaces,
+        layout,
+        betterSidebar,
+        stage,
+        t,
+        getSessionNavigation,
+        getSidebarRight,
+      }, payload)
+      if (!created?.ok) {
+        setError(created?.error || t('projects.genericError') || '创建失败')
+        return created
+      }
+      setDialogOpen(false)
+      presence?.markVisible?.(created.project?.path || created.cwd)
+      // reload 成功会清空 error：等列表刷新完再写「画布没开」的可见提示。
+      await reload()
+      if (created.canvasOpened === false) {
+        setError(t('projects.canvasNotOpened') || '项目已创建，但创作画布未能打开，请重试。')
+      }
+      return created
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleRenameProject = (project) => {
+    setPromptModal({
+      title: t('projects.renamePrompt') || '重命名项目',
+      placeholder: t('projects.namePlaceholder') || '请输入项目名称',
+      defaultValue: project.title || '',
+      confirmLabel: t('projects.save') || '保存',
+      onConfirm: async (next) => {
+        if (!next.trim() || next.trim() === project.title) return
+        setBusy(true)
+        try {
+          const res = await renameProject(project.id, next.trim())
+          if (res.ok) void reload()
+          else setError(errText(res, t))
+        } finally {
+          setBusy(false)
+        }
+      },
+    })
+  }
+
+  const finishDelete = async (id, purge) => {
+    setBusy(true)
+    try {
+      const res = await deleteProject(id, purge ? { purge: true } : undefined)
+      if (res.ok) {
+        if (selectedProject?.id === id) setSelectedProject(null)
+        void reload()
+      } else {
+        setError(errText(res, t))
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const confirmRemoveProject = async () => {
+    if (!pendingRemove) return
+    const id = pendingRemove.id
+    setPendingRemove(null)
+    await finishDelete(id, false)
+  }
+
+  const confirmPurgeProject = async () => {
+    if (!pendingPurge) return
+    const id = pendingPurge.id
+    setPendingPurge(null)
+    await finishDelete(id, true)
+  }
+
+  const handleClose = () => {
+    const api = typeof window !== 'undefined' ? window.__omnimuxWorkbench : undefined
+    if (api && typeof api.closeTab === 'function') {
+      api.closeTab(WORKFLOW_LIBRARY_TAB_ID)
+    } else {
+      stage?.set?.(false)
+    }
+  }
+
+  const filtered = projects.filter((p) => {
+    if (!query.trim()) return true
+    const q = query.trim().toLowerCase()
+    return (p.title || '').toLowerCase().includes(q)
+  })
+
+  // 「AI应用」分类同样吃同一搜索框（按应用名/描述过滤），本地项目分支行为不变。
+  const filteredApps = apps.filter((app) => appEntryMatchesQuery(app, query))
+
+  const rawPages = projectDetail?.pages ?? selectedProject?.pages ?? []
+  const currentProjectPages = Array.isArray(rawPages) && rawPages.length > 0
+    ? rawPages
+    : [{
+        id: 'page-default',
+        title: selectedProject?.title || '创作页 1',
+        canvasWorkspaceId: selectedProject?.pages?.find((page) => page.id === selectedProject?.activePageId)?.canvasWorkspaceId || selectedProject?.pages?.[0]?.canvasWorkspaceId || selectedProject?.id,
+        createdAt: selectedProject?.createdAt || new Date().toISOString(),
+      }]
+  const currentAssetsCount = (assetsDoc?.folders?.length ?? 0) + (assetsDoc?.items?.length ?? 0)
+
+  return (
+    <div
+      role="region"
+      aria-label={t('projects.title') || '项目'}
+      aria-hidden={visible ? undefined : 'true'}
+      className="omnimux-workflow-library-page"
+      data-visible={visible ? 'true' : 'false'}
+    >
+      {/* 视图分支 A：项目详情页 (图 2 & 图 3 模式) */}
+      {selectedProject ? (
+        <>
+          {/* 面包屑导航栏 (对齐设计参考：项目库 › {title}，无冗余刷新按钮) */}
+          <div className="omnimux-project-breadcrumb-bar">
+            <div className="omnimux-project-breadcrumbs">
+              <span
+                className="omnimux-project-crumb-link"
+                onClick={() => setSelectedProject(null)}
+                title="返回项目库"
+              >
+                项目库
+              </span>
+              <span className="omnimux-project-crumb-sep">›</span>
+              <span className="omnimux-project-crumb-current">{selectedProject.title}</span>
+            </div>
+          </div>
+
+          {/* 创作页 / 项目资产 选项卡栏 (左侧 Tabs：创作页 + 矢量信息图标 / 项目资产 + 矢量信息图标，右侧规范 Button「新建创作页」，矢量加号由 leadingIcon 提供) */}
+          <div className="omnimux-project-detail-tabs-bar">
+            <Tabs
+              variant="underline"
+              items={[
+                {
+                  id: 'pages',
+                  label: (
+                    <span className="omnimux-tab-label-wrap">
+                      创作页
+                      <Info size={13} className="omnimux-tab-info-icon" aria-label="查看并管理项目的所有创作页" />
+                    </span>
+                  ),
+                },
+                {
+                  id: 'assets',
+                  label: (
+                    <span className="omnimux-tab-label-wrap">
+                      项目资产
+                      <Info size={13} className="omnimux-tab-info-icon" aria-label="查看并管理项目的所有资产文件" />
+                    </span>
+                  ),
+                },
+              ]}
+              activeId={detailTab}
+              onChange={setDetailTab}
+            />
+            {detailTab === 'pages' && (
+              <Button
+                variant="primary"
+                className="omnimux-create-page-btn"
+                leadingIcon={<IconPlusOutline16 />}
+                disabled={busy}
+                onClick={handleCreatePageInProject}
+                title="新建创作页"
+              >
+                新建创作页
+              </Button>
+            )}
+          </div>
+
+          {error ? <div className="omnimux-workflow-library-error">{error}</div> : null}
+
+          {/* 详情子视图 1：创作页网格 (对应图 2) */}
+          {detailTab === 'pages' && (
+            <ProjectPagesTab
+              pages={currentProjectPages}
+              activePageId={projectDetail?.activePageId}
+              openingPageId={openingPageId}
+              onOpenPage={handleOpenPage}
+              onCreatePage={handleCreatePageInProject}
+              onRenamePage={handleRenamePage}
+              onDeletePage={handleDeletePage}
+              loading={busy}
+              t={t}
+            />
+          )}
+
+          {/* 详情子视图 2：项目资产文件浏览器 (对应图 3) */}
+          {detailTab === 'assets' && (
+            <ProjectAssetsTab
+              assetsDoc={assetsDoc}
+              onCreateFolder={handleCreateFolder}
+              onUploadFile={handleUploadFile}
+              onRefresh={() => void loadProjectDetail(selectedProject)}
+              loading={busy}
+              t={t}
+            />
+          )}
+        </>
+      ) : (
+        /* 视图分支 B：顶层项目文件夹列表 (图 1 模式) */
+        <>
+          <PageHeader
+            title={t('workflow.pageTitle') || '项目'}
+            subtitle="管理项目工程、查看创作页面与项目资产"
+          />
+
+          <div className="omnimux-workflow-library-action-row">
+            <Button
+              variant="primary"
+              leadingIcon={<IconPlusOutline16 />}
+              onClick={() => { setDialogOpen(true) }}
+            >
+              {t('workflow.action.new') || '新建项目'}
+            </Button>
+          </div>
+
+          <Divider />
+
+          <FilterBar
+            className="omnimux-workflow-library-filter"
+            filters={
+              <Tabs
+                variant="underline"
+                items={[
+                  { id: 'local', label: t('projects.localTab') || '本地项目' },
+                  {
+                    id: 'featured',
+                    label: t('workflow.tab.featured') || '共创项目（即将上线）',
+                    disabled: true,
+                  },
+                  { id: 'apps', label: t('workflow.tab.aiApps') || 'AI应用' },
+                ]}
+                activeId={libraryTab}
+                onChange={handleLibraryTabChange}
+              />
+            }
+            search={(
+              <SearchField
+                value={query}
+                placeholder={t('projects.searchPlaceholder') || '搜索项目名称'}
+                onValueChange={setQuery}
+                onClear={() => { setQuery('') }}
+              />
+            )}
+          />
+
+          {error ? <div className="omnimux-workflow-library-error">{error}</div> : null}
+          {appsError ? <div className="omnimux-workflow-library-error">{appsError}</div> : null}
+
+          <div className="omnimux-workflow-library-body">
+            {libraryTab === 'apps' ? (
+              /* 视图分支 C：已发布 AI 应用卡片网格（数据源 = 发布向导写的 manifest 映射） */
+              filteredApps.length === 0 ? (
+                <div className="omnimux-workflow-library-empty">
+                  <div className="omnimux-workflow-library-empty-title">{t('projects.appsEmptyTitle') || '还没有 AI 应用'}</div>
+                  <div className="omnimux-workflow-library-empty-sub">{t('projects.appsEmptySubtitle') || '在创作画布中把工作流打组后点「发布应用」，发布的应用会出现在这里。'}</div>
+                </div>
+              ) : (
+                <div className="omnimux-workflow-grid">
+                  {filteredApps.map((app) => (
+                    <AIAppCard
+                      key={app.appId}
+                      app={app}
+                      t={t}
+                      onOpen={handleOpenApp}
+                      onEdit={(target) => { void handleEditApp(target) }}
+                      onDelete={setPendingAppDelete}
+                    />
+                  ))}
+                </div>
+              )
+            ) : filtered.length === 0 ? (
+              <div className="omnimux-workflow-library-empty">
+                <div className="omnimux-workflow-library-empty-title">{t('projects.emptyTitle') || '暂无项目'}</div>
+                <div className="omnimux-workflow-library-empty-sub">{t('projects.emptySubtitle') || '点击下方按钮创建第一个项目工程'}</div>
+                <Button
+                  variant="primary"
+                  leadingIcon={<IconPlusOutline16 />}
+                  onClick={() => { setDialogOpen(true) }}
+                >
+                  {t('projects.newButton') || '新建项目'}
+                </Button>
+              </div>
+            ) : (
+              <div className="omnimux-workflow-grid">
+                {filtered.map((project) => (
+                  <ProjectFolderCard
+                    key={project.id}
+                    project={project}
+                    onOpen={handleSelectFolder}
+                    onRename={handleRenameProject}
+                    onRemove={setPendingRemove}
+                    onPurge={setPendingPurge}
+                    t={t}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {dialogOpen ? (
+        <NewLocalProjectDialog
+          t={t}
+          busy={busy}
+          error={error}
+          initialPath=""
+          initialTitle=""
+          onCancel={() => { if (!busy) setDialogOpen(false) }}
+          onSubmit={handleDialogSubmit}
+        />
+      ) : null}
+
+      {pendingRemove ? (
+        <ConfirmModal
+          open
+          onClose={() => { setPendingRemove(null) }}
+          title={t('projects.removeFromLibrary') || '移出项目库'}
+          message={(t('projects.removeFromLibraryConfirm') || '将把「{title}」移出项目库，画布与资产保留在磁盘，可再次打开。').replace('{title}', pendingRemove.title)}
+          confirmLabel={t('projects.removeFromLibrary') || '移出项目库'}
+          cancelLabel={t('projects.dialog.cancel') || '取消'}
+          onConfirm={() => { void confirmRemoveProject() }}
+        />
+      ) : null}
+
+      {pendingPurge ? (
+        <ConfirmModal
+          open
+          onClose={() => { setPendingPurge(null) }}
+          title={t('projects.purge') || '删除项目'}
+          message={(t('projects.purgeConfirm') || '将删除「{title}」的画布与资产（.omnimux/canvases 与 assets.json）。项目文件夹中的其他文件会保留，此操作不可撤销。').replace('{title}', pendingPurge.title)}
+          confirmLabel={t('projects.purge') || '删除项目'}
+          cancelLabel={t('projects.dialog.cancel') || '取消'}
+          confirmVariant="danger"
+          onConfirm={() => { void confirmPurgeProject() }}
+        />
+      ) : null}
+
+      {pendingAppDelete ? (
+        <ConfirmModal
+          open
+          onClose={() => { setPendingAppDelete(null) }}
+          title={t('projects.appDelete') || '删除应用'}
+          message={(t('projects.appDeleteConfirm') || '将删除应用「{title}」，其侧栏标签页会一并关闭。').replace('{title}', pendingAppDelete.name)}
+          confirmLabel={t('projects.appDelete') || '删除'}
+          cancelLabel={t('projects.dialog.cancel') || '取消'}
+          confirmVariant="danger"
+          onConfirm={confirmDeleteApp}
+        />
+      ) : null}
+
+      {pendingDeletePage ? (
+        <ConfirmModal
+          open
+          onClose={() => { setPendingDeletePage(null) }}
+          title={t('projects.deletePageTitle') || '删除创作页'}
+          message={(t('projects.deletePageConfirm') || '确定要删除创作页「{title}」吗？').replace('{title}', pendingDeletePage.title)}
+          confirmLabel={t('projects.delete') || '删除'}
+          cancelLabel={t('projects.dialog.cancel') || '取消'}
+          confirmVariant="danger"
+          onConfirm={() => { void confirmDeletePage() }}
+        />
+      ) : null}
+
+      {promptModal ? (
+        <PromptModal
+          open
+          title={promptModal.title}
+          placeholder={promptModal.placeholder}
+          defaultValue={promptModal.defaultValue}
+          confirmLabel={promptModal.confirmLabel}
+          cancelLabel={t('projects.dialog.cancel') || '取消'}
+          onClose={() => setPromptModal(null)}
+          onConfirm={(val) => {
+            const fn = promptModal.onConfirm
+            setPromptModal(null)
+            void fn(val)
+          }}
+        />
+      ) : null}
+    </div>
+  )
+}

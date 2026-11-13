@@ -1,0 +1,21 @@
+{
+  "source": "app-icon.icon",
+  "sourceSha256": "7cc734e6e474f0f0715ea53050f43e3fc8ea401565bdb339010624afd226cf5a",
+  "mac": {
+    "input": "app-icon.icon",
+    "legacy": "app-icon.icns",
+    "catalogName": "Icon"
+  },
+  "png": {
+    "platform": "macOS",
+    "rendition": "Default",
+    "designGeneration": 27,
+    "size": 1024
+  },
+  "outputs": {
+    "app-icon.png": "c5bab3933ac4be23a5697e517e6e4f689370c56c06dab49690fec09712901d5a",
+    "app-icon-mac.png": "c0edec2fa53376df9e021dd680e9fa9f77b920f1e1659e01deeebed439a01f38",
+    "app-icon.ico": "8df72f9c2f5c41c1db845f55415700109bd61ab0c67e85927231b4c9a59bcc32",
+    "app-icon.icns": "eeca597c4c13e6b799456d9a61fd1b4583b22446c1e4bbc2d4d1c6e4bec6c09f"
+  }
+}

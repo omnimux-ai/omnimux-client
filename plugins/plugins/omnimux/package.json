@@ -1,0 +1,111 @@
+{
+  "name": "omnimux",
+  "version": "0.1.7",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "apps",
+    "assets",
+    "lib/client.js",
+    "lib/generation-core.js",
+    "lib/video-inspect.js",
+    "lib/mediabunny-LICENSE.txt",
+    "THIRD-PARTY-NOTICES.md",
+    "scripts/build-client.mjs",
+    "scripts/build-media-inspect.mjs",
+    "scripts/catalog-diff.mjs",
+    "scripts/catalog-snapshot.mjs",
+    "scripts/export-voice-previews.mjs",
+    "cordis.patch.yml",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "node scripts/build-media-inspect.mjs && node scripts/build-client.mjs",
+    "prepare": "npm run build",
+    "test": "node scripts/run-tests.mjs",
+    "test:e2e": "node --test tests/e2e/*.e2e.test.js",
+    "prepublishOnly": "node ../../scripts/verify-publish-source.mjs ."
+  },
+  "dependencies": {
+    "@aws-crypto/sha256-js": "5.2.0",
+    "@deepseek-ai/schemastery": "3.18.5",
+    "@jsquash/webp": "1.5.0",
+    "@smithy/signature-v4": "5.7.4",
+    "aigc-provider-runtime-kit": "^0.2.0",
+    "blobatar": "^0.2.0",
+    "dsh-ui-kit": "^0.1.0",
+    "exif-reader": "2.0.3",
+    "image-size": "2.0.4",
+    "ipaddr.js": "2.5.0",
+    "jpeg-js": "0.4.4",
+    "pngjs": "7.0.0",
+    "ws": "^8.21.0",
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-llm": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-session-format-v3-to-v4": "0.2.1-rc.3",
+    "@shikijs/langs": "4.4.3",
+    "anser": "2.3.5",
+    "esbuild": "0.25.12",
+    "jsdom": "^30.0.1",
+    "mdast-util-from-markdown": "2.0.3",
+    "mdast-util-gfm": "3.0.0",
+    "mdast-util-math": "3.0.0",
+    "mediabunny": "1.55.3",
+    "micromark-core-commonmark": "2.0.3",
+    "micromark-extension-gfm": "3.0.0",
+    "micromark-extension-math": "3.0.0",
+    "micromark-util-classify-character": "2.0.1",
+    "micromark-factory-space": "2.0.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "sharp": "0.35.5",
+    "shiki": "4.4.3",
+    "typescript": "5.9.3"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.1.0-rc.6 || >=0.2.1-rc.3 <0.3.0-0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    }
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-input-trigger"
+      ],
+      "platform": "web"
+    }
+  },
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/omnimux-ai/omnimux-client.git",
+    "directory": "plugins/omnimux"
+  },
+  "description": "OmniMux execution hub for DeepSeek Harness: product chrome, identity, model routes, and video jobs."
+}

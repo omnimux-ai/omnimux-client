@@ -1,0 +1,24 @@
+{
+  "id": "omnimux-accounts",
+  "name": "omnimux-accounts",
+  "version": "0.1.1",
+  "tier": "tier-1-app",
+  "entrypoint": "src/index.js",
+  "status": "active",
+  "description": "OmniMux 官方应用：社媒平台绑定、账号矩阵列表、状态刷新与连接断开",
+  "tags": ["accounts", "social-media", "identity", "platforms", "matrix"],
+  "capabilities": {
+    "tools": [],
+    "seamsProvided": [],
+    "seamsConsumed": ["identity"],
+    "slots": [
+      { "target": "sidebar.extra", "componentPath": "src/client/sidebar-entry.js" },
+      { "target": "shell.overlay", "componentPath": "src/client/AccountsStage.jsx" }
+    ],
+    "storageDomains": ["$DSH_HOME/omnimux/accounts/"]
+  },
+  "dependencies": {
+    "requiredPlugins": ["omnimux"],
+    "systemBinaries": []
+  }
+}

@@ -1,0 +1,11 @@
+.DS_Store
+node_modules/
+out/
+*.log
+.env
+.env.*
+!.env.example
+coverage/
+*.tsbuildinfo
+.yarn/cache/
+.yarn/install-state.gz

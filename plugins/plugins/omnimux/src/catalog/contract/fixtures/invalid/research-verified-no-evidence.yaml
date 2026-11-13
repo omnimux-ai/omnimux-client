@@ -1,0 +1,20 @@
+schemaVersion: "1.1"
+models:
+  - id: "bad-research-evidence"
+    label: "Bad Research Evidence"
+    operations:
+      - id: "chat"
+        label: "对话"
+        output:
+          type: "text"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+    research:
+      status: "verified"
+    execution:
+      status: "none"

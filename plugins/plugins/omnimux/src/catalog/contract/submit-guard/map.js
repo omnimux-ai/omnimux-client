@@ -1,0 +1,508 @@
+/** Profile-driven vendor payload mapping from validated logical requests. */
+import { GUARD_CODES } from './codes.js'
+import { collectMappedBindings } from './map-bindings.js'
+import { assertVendorBodyAllowed } from './map-contract.js'
+export { DEFAULT_PROFILE_PAYLOADS, resolveProfilePayloadContract, assertVendorBodyAllowed } from './map-contract.js'
+
+/**
+ * OpenAI DALL-E 3 size mapping matrix.
+ *
+ * Matrix specification:
+ * - 1:1 + 1K ➜ size: "1024x1024"
+ * - 1:1 + 2K ➜ size: "1024x1024", quality: "hd" (若未指定)
+ * - 16:9 + 1K/2K ➜ size: "1792x1024"
+ * - 9:16 + 1K/2K ➜ size: "1024x1792"
+ * - 横屏聚类（4:3、21:9 等）➜ size: "1792x1024"
+ * - 竖屏聚类（3:4、2:3 等）➜ size: "1024x1792"
+ * - auto ➜ size: "1792x1024"
+ *
+ * @param {string} [aspectRatio]
+ * @param {string} [resolution]
+ * @returns {{ size: string, quality?: string }}
+ */
+export function mapOpenAiImageSize(aspectRatio = '16:9', resolution = '2K') {
+  const ratio = typeof aspectRatio === 'string' && aspectRatio.trim() ? aspectRatio.trim() : '16:9'
+  const res = typeof resolution === 'string' && resolution.trim() ? resolution.trim().toUpperCase() : '2K'
+
+  if (res === '4K') {
+    if (ratio === '1:1') {
+      return { size: '2048x2048', quality: 'hd' }
+    }
+    if (ratio === '9:16' || ratio === '3:4' || ratio === '2:3' || ratio === '4:5') {
+      return { size: '2160x3840', quality: 'hd' }
+    }
+    if (ratio === '16:9' || ratio === '4:3' || ratio === '3:2' || ratio === '21:9' || ratio === 'auto') {
+      return { size: '3840x2160', quality: 'hd' }
+    }
+    const parts = ratio.split(':')
+    if (parts.length === 2) {
+      const w = parseFloat(parts[0])
+      const h = parseFloat(parts[1])
+      if (!Number.isNaN(w) && !Number.isNaN(h) && h > 0) {
+        if (w < h) return { size: '2160x3840', quality: 'hd' }
+        if (w > h) return { size: '3840x2160', quality: 'hd' }
+        return { size: '2048x2048', quality: 'hd' }
+      }
+    }
+    return { size: '3840x2160', quality: 'hd' }
+  }
+
+  if (ratio === '1:1') {
+    return {
+      size: '1024x1024',
+      ...(res === '2K' ? { quality: 'hd' } : {}),
+    }
+  }
+
+  // 竖屏聚类：9:16, 3:4, 2:3, etc.
+  if (ratio === '9:16' || ratio === '3:4' || ratio === '2:3' || ratio === '4:5') {
+    return { size: '1024x1792' }
+  }
+
+  // 横屏聚类：16:9, 4:3, 3:2, 21:9, auto, etc.
+  if (ratio === '16:9' || ratio === '4:3' || ratio === '3:2' || ratio === '21:9' || ratio === 'auto') {
+    return { size: '1792x1024' }
+  }
+
+  // 兜底：按比例高宽比判断或默认横屏
+  const parts = ratio.split(':')
+  if (parts.length === 2) {
+    const w = parseFloat(parts[0])
+    const h = parseFloat(parts[1])
+    if (!Number.isNaN(w) && !Number.isNaN(h) && h > 0) {
+      if (w < h) {
+        return { size: '1024x1792' }
+      }
+      if (w > h) {
+        return { size: '1792x1024' }
+      }
+      return {
+        size: '1024x1024',
+        ...(res === '2K' ? { quality: 'hd' } : {}),
+      }
+    }
+  }
+
+  return { size: '1792x1024' }
+}
+
+/**
+ * @param {{
+ *   operation: object,
+ *   profile: object,
+ *   modelId: string,
+ *   group?: string,
+ *   prompt: string,
+ *   bindings: Array<{ slot: string, role?: string, type: string, pathOrUrl: string, asset: object }>,
+ *   bySlot: Map<string, object[]>,
+ *   extras?: Record<string, unknown>,
+ * }} args
+ */
+export function mapValidatedPlanToVendor(args) {
+  const { profile } = args
+  const profileId = profile.id
+  const opId = args.operation.id
+  const speech = profileId === 'audioGenerate' && opId === 'text_to_speech'
+  /** @type {Record<string, unknown>} */
+  let vendor = {}
+  /** @type {Record<string, unknown>} */
+  const logical = {}
+  let targetModelId
+  const prompt = typeof args.prompt === 'string' ? args.prompt : ''
+  // Issue #3063: indextts-2 voice_clone keeps the script in `prompt_text` —
+  // the AutoDL contract has no bare `prompt` field, so skip the generic write.
+  const suppressGenericPrompt = profileId === 'audioGenerate' && opId === 'voice_clone'
+  if (prompt && profileId !== 'speechToText' && !suppressGenericPrompt) {
+    vendor[speech ? 'input' : 'prompt'] = prompt
+    logical.prompt = prompt
+  }
+  const extras = args.extras && typeof args.extras === 'object' ? args.extras : {}
+  const {
+    firstFrames, lastFrames, references, audioTracks, sources,
+    genericImages, genericAudio, genericVideo, sourceVideos,
+    referenceVideos, referenceAudios, documentUrls, webpageUrls,
+  } = collectMappedBindings(args.bindings, args.bySlot)
+
+  if (profileId === 'videoGenerate' || profile.seam === 'videoGenerate' && profileId !== 'videoDigitalHuman') {
+    // Cloud adapters consume the canonical operation, not upstream providers.
+    vendor.operation = opId
+    logical.operation = opId
+    // AutoDL ComfyUI lane (`minimax-h3-video`): the upstream contract collects
+    // every media slot from the top-level `metadata` block via
+    // `ref_image_<N>` / `ref_audio_<N>` / `first_frame` / `last_frame` /
+    // `audio_duration` (see gateway collectSlots + detectShape). The legacy
+    // `image_with_roles` / `image_urls` / `video_urls` / `file_url` / `link_url`
+    // field family is not part of that wire shape and is forbidden here; the
+    // lone `audio_urls` top-level emitted for digital_human only satisfies the
+    // local shape `require` — the gateway marks it RESERVED and the real slot
+    // still travels through `metadata`.
+    if (args.modelId === 'minimax-h3-video') {
+      const metadata = {}
+      firstFrames.forEach((url, i) => { metadata[`ref_image_${i}`] = url })
+      references.forEach((url, i) => { metadata[`ref_image_${firstFrames.length + i}`] = url })
+      audioTracks.forEach((url, i) => { metadata[`ref_audio_${i}`] = url })
+      if (opId === 'first_last_frame') {
+        if (firstFrames[0]) metadata.first_frame = firstFrames[0]
+        if (lastFrames[0]) metadata.last_frame = lastFrames[0]
+      } else if (opId === 'first_frame' || opId === 'end_frame') {
+        if (firstFrames[0]) metadata.first_frame = firstFrames[0]
+        if (lastFrames[0]) metadata.last_frame = lastFrames[0]
+      } else if (opId === 'digital_human' && firstFrames[0]) {
+        metadata.ref_image_0 = firstFrames[0]
+      }
+      // audio_duration only makes sense when a driving audio exists (lip-sync /
+      // digital_human); a plain text_to_video must not leak it.
+      if (opId === 'digital_human' && typeof extras.duration === 'number' && extras.duration > 0) {
+        metadata.audio_duration = extras.duration
+      }
+      if (Object.keys(metadata).length) vendor.metadata = metadata
+      if (opId === 'digital_human' && audioTracks[0]) vendor.audio_urls = [audioTracks[0]]
+    } else if (opId === 'first_frame' || opId === 'first_last_frame' || opId === 'end_frame') {
+      const rows = []
+      if (opId !== 'end_frame' && firstFrames[0]) rows.push({ url: firstFrames[0], role: 'first_frame' })
+      if ((opId === 'end_frame' || opId === 'first_last_frame') && lastFrames[0]) {
+        rows.push({ url: lastFrames[0], role: 'last_frame' })
+      }
+      if (rows.length) vendor.image_with_roles = rows
+    } else if (opId === 'video_multi_ref' || opId === 'video_edit') {
+      const images = references.length ? references : genericImages
+      const videos = opId === 'video_edit' ? [...sourceVideos, ...referenceVideos] : referenceVideos
+      if (images.length) vendor.image_urls = [...images]
+      if (videos.length) vendor.video_urls = [...videos]
+      if (referenceAudios.length) vendor.audio_urls = [...referenceAudios]
+    } else if (opId === 'video_extend') {
+      const images = references.length ? references : genericImages
+      if (images.length) vendor.image_urls = [...images]
+      if (sourceVideos.length) vendor.video_urls = [...sourceVideos]
+      if (referenceAudios.length) vendor.audio_urls = [...referenceAudios]
+    } else if (opId === 'document_to_video') {
+      if (documentUrls[0]) vendor.file_url = documentUrls[0]
+    } else if (opId === 'webpage_to_video') {
+      if (webpageUrls[0]) vendor.link_url = webpageUrls[0]
+    }
+    if ((args.bindings ?? []).length > 0) {
+      logical.references = args.bindings.map((binding) => ({
+        type: binding.type, role: binding.role || binding.asset?.role,
+        slot: binding.slot, pathOrUrl: binding.pathOrUrl,
+      }))
+    }
+  } else if (profileId === 'videoDigitalHuman') {
+    const img = firstFrames[0] || genericImages[0] || references[0]
+    if (img) {
+      vendor.image = img
+      logical.image = img
+    }
+    const audioUrl = audioTracks[0] || genericAudio[0]
+    if (audioUrl) {
+      vendor.audioTrack = { role: 'audio_track', type: 'audio', pathOrUrl: audioUrl }
+      logical.audioTrack = vendor.audioTrack
+    }
+  } else if (profileId === 'imageGenerate') {
+    if (genericImages.length || references.length || firstFrames.length) {
+      const urls = [...firstFrames, ...references, ...genericImages].filter((u, i, a) => a.indexOf(u) === i)
+      if (urls.length) {
+        const family = args.family || args.model?.family
+        const isSeedream = family === 'seedream' || String(args.modelId ?? '').startsWith('seedream')
+        const isOpenAi = family === 'openai' || args.model?.family === 'openai' || String(args.modelId ?? '').startsWith('gpt-image')
+        const isGrok = family === 'grok' || String(args.modelId ?? '').startsWith('grok')
+
+        logical.image = urls[0]
+        if (urls.length > 1) {
+          logical.references = urls.map((pathOrUrl) => ({ type: 'image', role: 'reference', pathOrUrl }))
+        }
+
+        if (isOpenAi) {
+          vendor.image = urls[0]
+          // 上游能力合同公布 reference_images{min:0,max:16}（Issue #3142）。多图必须真的发出去，
+          // 否则会变成「画布可连 16 张、实际只发首图」的虚假声明。images 在 imageGenerate 的
+          // vendorFields 白名单内，与 Grok/通用家族的字段写法一致。
+          if (urls.length > 1) {
+            vendor.images = urls
+          }
+        } else if (isSeedream) {
+          vendor.image = urls[0]
+          vendor.image_urls = urls
+        } else if (isGrok) {
+          vendor.image = urls[0]
+          if (urls.length > 1) {
+            vendor.images = urls
+          }
+        } else {
+          vendor.image = urls[0]
+          if (urls.length > 1) {
+            vendor.images = urls
+            vendor.references = urls.map((pathOrUrl) => ({ type: 'image', role: 'reference', pathOrUrl }))
+          }
+        }
+      }
+    }
+  } else if (profileId === 'speechToText') {
+    const audioUrl = sources[0] || audioTracks[0] || genericAudio[0]
+    if (audioUrl) {
+      logical.audio = audioUrl
+      vendor.file = audioUrl
+      if (args.modelId === 'doubao-asr-bigmodel' || String(args.modelId ?? '').startsWith('doubao-asr')) {
+        vendor.url = audioUrl
+        vendor.audio_url = audioUrl
+      }
+    }
+  } else if (profileId === 'audioGenerate' && opId === 'voice_clone') {
+    // 网关文档（indextts-2，Issue #3063）：克隆走 AutoDL 任务通道
+    // POST /v1/tasks/autodl。朗读文稿进 prompt_text、参考音链接进
+    // prompt_simple，emo_control_method 必填且文档推荐
+    // 「与音色参考音频相同」；emo_* 强度可选，仅在上游显式给值时透传。
+    const sampleUrl = audioTracks[0] || genericAudio[0] || sources[0]
+    if (prompt) {
+      vendor.prompt_text = prompt
+      logical.prompt_text = prompt
+    }
+    if (sampleUrl) {
+      vendor.prompt_simple = sampleUrl
+      logical.prompt_simple = sampleUrl
+      logical.voiceSample = sampleUrl
+    }
+    vendor.emo_control_method = typeof extras.emo_control_method === 'string' && extras.emo_control_method
+      ? extras.emo_control_method
+      : '与音色参考音频相同'
+    for (const key of ['emo_happy', 'emo_sad', 'emo_angry']) {
+      const value = Number(extras[key])
+      if (Number.isFinite(value)) {
+        vendor[key] = value
+        logical[key] = value
+      }
+    }
+    vendor.model = args.modelId
+    logical.model = args.modelId
+  } else if (profileId === 'textComplete') {
+    if (genericImages.length || references.length || firstFrames.length) {
+      logical.image = firstFrames[0] || references[0] || genericImages[0]
+    }
+    if (genericVideo.length) logical.video = genericVideo[0]
+  }
+
+  // Extras have passed the effective model + operation parameter contract.
+  if (profileId === 'imageGenerate') {
+    const isOpneAi = args.family === 'openai'
+      || args.model?.family === 'openai'
+      || String(args.modelId ?? '').startsWith('gpt-image')
+
+    const standardGptImage = args.modelId === 'gpt-image-2.5'
+      && (args.group === 'default' || args.group === 'standard')
+    if (standardGptImage) {
+      vendor.size = extras.aspectRatio || 'auto'
+      if (vendor.size !== 'auto') vendor.resolution = '1K'
+      logical.aspectRatio = vendor.size
+      logical.resolution = '1K'
+    } else if (isOpneAi) {
+      const openAiMapped = mapOpenAiImageSize(extras.aspectRatio, extras.resolution)
+      vendor.size = openAiMapped.size
+
+      if (args.userSpecifiedQuality && typeof extras.quality === 'string' && extras.quality) {
+        vendor.quality = extras.quality
+        logical.quality = extras.quality
+      } else if (openAiMapped.quality) {
+        vendor.quality = openAiMapped.quality
+        logical.quality = openAiMapped.quality
+      } else if (typeof extras.quality === 'string' && extras.quality) {
+        vendor.quality = extras.quality
+        logical.quality = extras.quality
+      }
+
+      if (typeof extras.aspectRatio === 'string' && extras.aspectRatio) {
+        logical.aspectRatio = extras.aspectRatio
+      }
+      if (typeof extras.resolution === 'string' && extras.resolution) {
+        logical.resolution = extras.resolution
+      }
+      // 严禁向 vendor 注入 aspect_ratio
+    } else {
+      const isSeedreamFamily = args.family === 'seedream' || String(args.modelId ?? '').startsWith('seedream')
+      if (typeof extras.aspectRatio === 'string' && extras.aspectRatio) {
+        // doubao-seedream 家族不接受 aspect_ratio，比例以 size 表达（2026-10-05 真机）。
+        if (isSeedreamFamily) vendor.size = extras.aspectRatio
+        else vendor.aspect_ratio = extras.aspectRatio
+        logical.aspectRatio = extras.aspectRatio
+      }
+      if (typeof extras.resolution === 'string' && extras.resolution) {
+        // doubao-seedream 家族不接受 resolution：2026-10-05 真机 400
+        // `unsupported parameter for doubao-seedream-5.0-pro: resolution`，故只留逻辑值不下发。
+        logical.resolution = extras.resolution
+        if (!isSeedreamFamily) vendor.resolution = extras.resolution
+      }
+      if (typeof extras.quality === 'string' && extras.quality) {
+        vendor.quality = extras.quality
+        logical.quality = extras.quality
+      }
+    }
+
+    if (typeof extras.n === 'number' && extras.n > 0) {
+      vendor.n = extras.n
+      logical.n = extras.n
+    }
+  }
+
+  if (typeof extras.duration === 'number' && (extras.duration > 0 || extras.duration === -1)) {
+    vendor.duration = extras.duration
+    logical.duration = extras.duration
+  }
+  if (typeof extras.aspectRatio === 'string' && extras.aspectRatio) {
+    if (profileId === 'videoGenerate' || profileId === 'videoDigitalHuman') {
+      const isKling = args.family === 'kling' || args.model?.family === 'kling' || String(args.modelId ?? '').startsWith('kling')
+      // These families read the ratio as `aspect_ratio`; the generic gateway
+      // field `size` is not their contract.
+      const useAspectRatio = isKling || args.modelId.startsWith('minimax-h3')
+        || args.modelId === 'grok-imagine-video-1-5'
+      vendor[useAspectRatio ? 'aspect_ratio' : 'size'] = extras.aspectRatio
+      if (isKling) {
+        vendor.metadata = { ...(vendor.metadata || {}), aspect_ratio: extras.aspectRatio }
+      }
+    }
+    logical.aspectRatio = extras.aspectRatio
+  }
+  if (typeof extras.resolution === 'string' && extras.resolution) {
+    if (profileId === 'videoGenerate' || profileId === 'videoDigitalHuman') {
+      const isWan = args.modelId === 'wan-3.0' || args.family === 'wan' || args.model?.family === 'wan'
+      vendor.resolution = isWan ? extras.resolution.toUpperCase() : extras.resolution
+    }
+    logical.resolution = extras.resolution
+  }
+  if (profileId === 'videoGenerate') {
+    if (typeof extras.sound === 'boolean') {
+      const isWan = args.modelId === 'wan-3.0' || args.family === 'wan' || args.model?.family === 'wan'
+      vendor[isWan ? 'audio' : 'generate_audio'] = extras.sound
+      logical.sound = extras.sound
+    }
+    if (typeof extras.seed === 'number' && Number.isInteger(extras.seed)) {
+      vendor.seed = extras.seed
+      logical.seed = extras.seed
+    }
+    if (typeof extras.watermark === 'boolean') {
+      vendor.watermark = extras.watermark
+      logical.watermark = extras.watermark
+    }
+    if (typeof extras.outputFormat === 'string' && extras.outputFormat) {
+      vendor.output_format = extras.outputFormat
+      logical.outputFormat = extras.outputFormat
+    }
+    if (typeof extras.referenceTaskType === 'string' && extras.referenceTaskType) {
+      vendor.omni_reference_task_type = extras.referenceTaskType
+      logical.referenceTaskType = extras.referenceTaskType
+    }
+    if (typeof extras.generationType === 'string' && extras.generationType) {
+      vendor.generation_type = extras.generationType
+      logical.generationType = extras.generationType
+    }
+    if (typeof extras.returnLastFrame === 'boolean') {
+      vendor.return_last_frame = extras.returnLastFrame
+      logical.returnLastFrame = extras.returnLastFrame
+    }
+    if (extras.webSearch === true) {
+      vendor.tools = [{ type: 'web_search' }]
+      logical.webSearch = true
+    }
+    if (typeof extras.nsfwCheck === 'boolean') {
+      vendor.nsfw_check = extras.nsfwCheck
+      logical.nsfwCheck = extras.nsfwCheck
+    }
+  }
+  if (speech) {
+    for (const key of ['voice', 'speed', 'format']) {
+      if (extras[key] !== undefined && extras[key] !== null && extras[key] !== '') {
+        vendor[key === 'format' ? 'response_format' : key] = extras[key]
+        logical[key] = extras[key]
+      }
+    }
+    const audioUrl = referenceAudios[0] ?? genericAudio[0] ?? audioTracks[0]?.url
+    if (audioUrl) {
+      vendor.references = [{ audio_url: audioUrl }]
+      logical.references = [{ audio_url: audioUrl }]
+    }
+  } else if ((profileId === 'audioGenerate' && opId !== 'voice_clone') || profileId === 'imageGenerate') {
+    if (args.modelId === 'suno' || opId === 'text_to_music') {
+      for (const key of ['title', 'tags', 'style', 'duration']) {
+        if (extras[key] !== undefined && extras[key] !== null && extras[key] !== '') {
+          vendor[key] = extras[key]
+          logical[key] = extras[key]
+        }
+      }
+      if (typeof extras.instrumental === 'boolean') {
+        vendor.instrumental = extras.instrumental
+        logical.instrumental = extras.instrumental
+      }
+      if (args.modelId) {
+        vendor.model = args.modelId
+        logical.model = args.modelId
+      }
+    }
+    if (typeof extras.format === 'string' && extras.format) {
+      vendor.format = extras.format
+      logical.format = extras.format
+    }
+    if (args.modelId !== 'suno' && opId !== 'text_to_music') {
+      const metadata = {}
+      for (const key of ['speech', 'audio', 'voice', 'style', 'instrumental', 'speed']) {
+        if (extras[key] !== undefined && extras[key] !== null && extras[key] !== '') {
+          metadata[key] = extras[key]
+          logical[key] = extras[key]
+        }
+      }
+      if (genericAudio[0] && metadata.audio === undefined) metadata.audio = genericAudio[0]
+      if (Object.keys(metadata).length) vendor.metadata = metadata
+    }
+  }
+  if (profileId === 'textComplete') {
+    if (typeof extras.system === 'string' && extras.system) {
+      vendor.system = extras.system
+      logical.system = extras.system
+    }
+    if (typeof extras.maxTokens === 'number') {
+      vendor.maxTokens = extras.maxTokens
+      logical.maxTokens = extras.maxTokens
+    }
+  }
+  if (profileId === 'speechToText') {
+    vendor.model = args.modelId
+    logical.model = args.modelId
+    for (const key of ['language', 'response_format']) {
+      if (typeof extras[key] === 'string' && extras[key]) {
+        vendor[key] = extras[key]
+        logical[key] = extras[key]
+      }
+    }
+  }
+  // minimax-h3-video (AutoDL ComfyUI lane): the wire shape carries every media
+  // slot inside `metadata`, so the frame-family `image_with_roles` require on
+  // first_frame / first_last_frame / end_frame must not fire for this model.
+  // Build a per-call profile view that relaxes those shape requires while the
+  // emitted fields still pass the allow list (metadata / audio_urls stay).
+  let effectiveProfile = profile
+  if (args.modelId === 'minimax-h3-video' && profile?.operationVendorShapes) {
+    const shapes = {}
+    for (const [shapeOpId, shape] of Object.entries(profile.operationVendorShapes)) {
+      if (!shape) { shapes[shapeOpId] = shape; continue }
+      const allow = Array.isArray(shape.allow) ? shape.allow.filter((f) => f !== 'image_with_roles') : shape.allow
+      const require = Array.isArray(shape.require) ? shape.require.filter((f) => f !== 'image_with_roles') : shape.require
+      shapes[shapeOpId] = { ...shape, allow, require }
+    }
+    effectiveProfile = { ...profile, operationVendorShapes: shapes }
+  }
+  const checked = assertVendorBodyAllowed(vendor, effectiveProfile, opId)
+  if (!checked.ok) return checked
+  vendor = checked.body
+
+  const hasFrameFamily = Array.isArray(vendor.image_with_roles)
+    && vendor.image_with_roles.some((row) => row?.role === 'first_frame' || row?.role === 'last_frame')
+  const hasReferenceFamily = ['image_urls', 'video_urls', 'audio_urls', 'file_url', 'link_url']
+    .some((field) => vendor[field] !== undefined)
+  if (hasFrameFamily && hasReferenceFamily) {
+    return { ok: false, code: GUARD_CODES.VENDOR_FIELD_FORBIDDEN, message: 'frame inputs and reference inputs must not coexist', profileId }
+  }
+  if (vendor.file_url !== undefined && vendor.link_url !== undefined) {
+    return { ok: false, code: GUARD_CODES.VENDOR_FIELD_FORBIDDEN, message: 'file_url and link_url must not coexist', profileId }
+  }
+  return {
+    ok: true,
+    vendorPayload: vendor,
+    logicalPayload: logical,
+  }
+}

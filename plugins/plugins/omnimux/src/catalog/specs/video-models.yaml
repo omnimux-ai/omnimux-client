@@ -1,0 +1,2531 @@
+# 视频模型能力契约 (Video Models Capability Contract)
+# #530 的七款型号固定走 APIMart；模式、输入和参数上限来自对应官方接口页。
+# 文档支持、实现就绪与历史真实执行分别记录；本轮不发真实生成请求。
+# 其他历史型号保留原状态，不纳入本阶段接入范围。
+schemaVersion: "1.1"
+managementGroup: "video"
+modality: "video"
+
+models:
+  # 本阶段固定 APIMart；产品 id 与渠道 wire model 分离，不自动切换渠道。
+  - id: seedance-2-0-fast
+    label: Seedance 2.0 Fast
+    family: bytedance
+    badge: 快速
+    subtitle: 480p/720p · 4–15s · 有声
+    aliases:
+      - seedance-2.0-fast
+    routing:
+      channel: apimart
+      wireModel: seedance-2.0-fast
+      endpoint: /v1/videos/generations
+      automaticFallback: false
+    operations:
+      - id: text_to_video
+        label: 文生视频
+        research:
+          status: verified
+          docUrl: docs/evidence/2026-10-05-model-seedance-2-0-fast-text_to_video.md
+          verifiedAt: 2026-10-05
+          notes: 本操作以当前映射契约真机最小生成通过（live，终态 success，产物字节 > 0）；一操作一文件，同族 SKU 不互背书
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 1
+            max: 1
+        execution:
+          status: stub
+          profileId: videoGenerate
+          seam: videoGenerate
+          notes: 保留既有历史真实执行证据；本轮未新增真实请求
+      - id: first_frame
+        label: 首帧
+        research:
+          status: verified
+          docUrl: docs/evidence/2026-10-05-model-seedance-2-0-fast-first_frame.md
+          verifiedAt: 2026-10-05
+          notes: 本操作以当前映射契约真机最小生成通过（live，终态 success，产物字节 > 0）；一操作一文件，同族 SKU 不互背书
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 0
+            max: 1
+          - slot: first_frame
+            type: image
+            role: first_frame
+            source: upstream_edge
+            min: 1
+            max: 1
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md
+        execution:
+          status: stub
+          profileId: videoGenerate
+          seam: videoGenerate
+          notes: 保留既有 stub 记录；本轮按官方文档完成字段映射
+      - id: first_last_frame
+        label: 首尾帧
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 0
+            max: 1
+          - slot: first_frame
+            type: image
+            role: first_frame
+            source: upstream_edge
+            min: 1
+            max: 1
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md
+          - slot: last_frame
+            type: image
+            role: last_frame
+            source: upstream_edge
+            min: 1
+            max: 1
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md
+      - id: video_multi_ref
+        label: 全能参考
+        research:
+          status: verified
+          docUrl: docs/evidence/2026-10-05-model-seedance-2-0-fast-video_multi_ref.md
+          verifiedAt: 2026-10-05
+          notes: 本操作以当前映射契约真机最小生成通过（live，终态 success，产物字节 > 0）；一操作一文件，同族 SKU 不互背书
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 0
+            max: 1
+          - slot: reference_images
+            type: image
+            role: reference
+            source: upstream_edge
+            min: 0
+            max: 9
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md
+          - slot: reference_videos
+            type: video
+            role: reference
+            source: upstream_edge
+            min: 0
+            max: 3
+            totalMinDurationSec: 1.8
+            totalMaxDurationSec: 15.2
+            totalMinExclusive: true
+            totalMaxExclusive: true
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md
+          - slot: reference_audios
+            type: audio
+            role: reference
+            source: upstream_edge
+            min: 0
+            max: 3
+            totalMaxDurationSec: 15
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md
+        inputGroups:
+          - slots:
+              - reference_images
+              - reference_videos
+            min: 1
+            hint: Seedance 2.0 参考模式至少需要一张图片或一个视频；音频不能单独输入
+        execution:
+          status: stub
+          profileId: videoGenerate
+          seam: videoGenerate
+          notes: 保留既有历史真实执行证据；本轮未新增真实请求
+    parameters:
+      prompt:
+        maxLength: 4000
+      aspectRatio:
+        options:
+          - value: "16:9"
+            label: "16:9"
+          - value: "9:16"
+            label: "9:16"
+          - value: "1:1"
+            label: "1:1"
+          - value: "4:3"
+            label: "4:3"
+          - value: "3:4"
+            label: "3:4"
+          - value: "21:9"
+            label: "21:9"
+          - value: adaptive
+            label: "自适应"
+        defaultValue: "16:9"
+      duration:
+        range:
+          min: 4
+          max: 15
+          step: 1
+        defaultValue: 5
+        unit: s
+      resolution:
+        options:
+          - value: 480p
+            label: 480p
+          - value: 720p
+            label: 720p
+        defaultValue: 720p
+      sound:
+        supported: true
+        defaultValue: true
+      seed:
+        type: integer
+      returnLastFrame:
+        supported: true
+        defaultValue: false
+      webSearch:
+        supported: true
+        defaultValue: false
+      nsfwCheck:
+        supported: true
+        defaultValue: false
+    research:
+      status: draft
+      docUrl: https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md
+      verifiedAt: 2026-09-05
+      notes: 能力和约束取 APIMart 官方 Seedance 2.0 文档；未知上限不以历史测试补齐
+    implementation:
+      status: ready
+      profileId: videoGenerate
+      seam: videoGenerate
+      verifiedAt: 2026-09-05
+      notes: 按 APIMart 官方文档完成映射与离线合同验证；不代表真实生成历史
+    execution:
+      status: none
+      notes: 本轮未发起真实生成请求
+
+  - id: seedance-2-0-mini
+    label: Seedance 2.0 Mini
+    family: bytedance
+    badge: 成本向
+    subtitle: 480p/720p · 4–15s · 有声
+    aliases:
+      - seedance-2.0-mini
+    routing:
+      channel: apimart
+      wireModel: seedance-2.0-mini
+      endpoint: /v1/videos/generations
+      automaticFallback: false
+    operations:
+      - id: text_to_video
+        label: 文生视频
+        research:
+          status: verified
+          docUrl: docs/evidence/2026-10-05-model-seedance-2-0-mini-text_to_video.md
+          verifiedAt: 2026-10-05
+          notes: 本操作以当前映射契约真机最小生成通过（live，终态 success，产物字节 > 0）；一操作一文件，同族 SKU 不互背书
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 1
+            max: 1
+        execution:
+          status: stub
+          profileId: videoGenerate
+          seam: videoGenerate
+          notes: 保留既有历史真实执行证据；本轮未新增真实请求
+      - id: first_frame
+        label: 首帧
+        research:
+          status: verified
+          docUrl: docs/evidence/2026-10-05-model-seedance-2-0-mini-first_frame.md
+          verifiedAt: 2026-10-05
+          notes: 本操作以当前映射契约真机最小生成通过（live，终态 success，产物字节 > 0）；一操作一文件，同族 SKU 不互背书
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 0
+            max: 1
+          - slot: first_frame
+            type: image
+            role: first_frame
+            source: upstream_edge
+            min: 1
+            max: 1
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md
+        execution:
+          status: stub
+          profileId: videoGenerate
+          seam: videoGenerate
+          notes: 保留既有 stub 记录；本轮按官方文档完成字段映射
+      - id: first_last_frame
+        label: 首尾帧
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 0
+            max: 1
+          - slot: first_frame
+            type: image
+            role: first_frame
+            source: upstream_edge
+            min: 1
+            max: 1
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md
+          - slot: last_frame
+            type: image
+            role: last_frame
+            source: upstream_edge
+            min: 1
+            max: 1
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md
+      - id: video_multi_ref
+        label: 全能参考
+        research:
+          status: verified
+          docUrl: docs/evidence/2026-10-05-model-seedance-2-0-mini-video_multi_ref.md
+          verifiedAt: 2026-10-05
+          notes: 本操作以当前映射契约真机最小生成通过（live，终态 success，产物字节 > 0）；一操作一文件，同族 SKU 不互背书
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 0
+            max: 1
+          - slot: reference_images
+            type: image
+            role: reference
+            source: upstream_edge
+            min: 0
+            max: 9
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md
+          - slot: reference_videos
+            type: video
+            role: reference
+            source: upstream_edge
+            min: 0
+            max: 3
+            totalMinDurationSec: 1.8
+            totalMaxDurationSec: 15.2
+            totalMinExclusive: true
+            totalMaxExclusive: true
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md
+          - slot: reference_audios
+            type: audio
+            role: reference
+            source: upstream_edge
+            min: 0
+            max: 3
+            totalMaxDurationSec: 15
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md
+        inputGroups:
+          - slots:
+              - reference_images
+              - reference_videos
+            min: 1
+            hint: Seedance 2.0 参考模式至少需要一张图片或一个视频；音频不能单独输入
+        execution:
+          status: none
+          notes: 本轮未发起真实生成请求
+    parameters:
+      aspectRatio:
+        options:
+          - value: "16:9"
+            label: "16:9"
+          - value: "9:16"
+            label: "9:16"
+          - value: "1:1"
+            label: "1:1"
+          - value: "4:3"
+            label: "4:3"
+          - value: "3:4"
+            label: "3:4"
+          - value: "21:9"
+            label: "21:9"
+          - value: adaptive
+            label: "自适应"
+        defaultValue: "16:9"
+      duration:
+        range:
+          min: 4
+          max: 15
+          step: 1
+        defaultValue: 5
+        unit: s
+      resolution:
+        options:
+          - value: 480p
+            label: 480p
+          - value: 720p
+            label: 720p
+        defaultValue: 720p
+      sound:
+        supported: true
+        defaultValue: true
+      seed:
+        type: integer
+      returnLastFrame:
+        supported: true
+        defaultValue: false
+      webSearch:
+        supported: true
+        defaultValue: false
+      nsfwCheck:
+        supported: true
+        defaultValue: false
+    research:
+      status: draft
+      docUrl: https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md
+      verifiedAt: 2026-09-05
+      notes: 能力和约束取 APIMart 官方 Seedance 2.0 文档；未知上限不以历史测试补齐
+    implementation:
+      status: ready
+      profileId: videoGenerate
+      seam: videoGenerate
+      verifiedAt: 2026-09-05
+      notes: 按 APIMart 官方文档完成映射与离线合同验证；不代表真实生成历史
+    execution:
+      status: none
+      notes: 本轮未发起真实生成请求
+
+  - id: seedance-2-5
+    label: Seedance 2.5
+    family: bytedance
+    badge: 旗舰
+    subtitle: 480p–1080p · 4–30s/自动 · 有声
+    aliases:
+      - seedance-2.5
+    routing:
+      channel: apimart
+      wireModel: seedance-2.5
+      endpoint: /v1/videos/generations
+      automaticFallback: false
+    operations:
+      - id: text_to_video
+        label: 文生视频
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            valueSources: [local_field, upstream_output]
+            composition: { kind: content_with_instruction, localRole: instruction }
+            min: 1
+            max: 1
+        execution:
+          status: live
+          profileId: videoGenerate
+          seam: videoGenerate
+          notes: 保留既有历史真实执行证据；本轮未新增真实请求
+      - id: first_frame
+        label: 首帧
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 1
+            max: 1
+          - slot: first_frame
+            type: image
+            role: first_frame
+            source: upstream_edge
+            min: 1
+            max: 1
+            allowedMimes: &seedance25_image_mimes
+              - image/jpeg
+              - image/png
+              - image/webp
+              - image/bmp
+              - image/tiff
+              - image/gif
+              - image/heic
+              - image/heif
+            maxSizeMb: 30
+            maxSizeExclusive: true
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/seedance-2-5/generation.md
+        parameters:
+          aspectRatio:
+            options:
+              - value: adaptive
+                label: "自适应"
+            defaultValue: adaptive
+        execution:
+          status: stub
+          profileId: videoGenerate
+          seam: videoGenerate
+          notes: 保留既有 stub 记录；本轮按官方文档完成字段映射
+      - id: first_last_frame
+        label: 首尾帧
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 1
+            max: 1
+          - slot: first_frame
+            type: image
+            role: first_frame
+            source: upstream_edge
+            min: 1
+            max: 1
+            allowedMimes: *seedance25_image_mimes
+            maxSizeMb: 30
+            maxSizeExclusive: true
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/seedance-2-5/generation.md
+          - slot: last_frame
+            type: image
+            role: last_frame
+            source: upstream_edge
+            min: 1
+            max: 1
+            allowedMimes: *seedance25_image_mimes
+            maxSizeMb: 30
+            maxSizeExclusive: true
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/seedance-2-5/generation.md
+        parameters:
+          aspectRatio:
+            options:
+              - value: adaptive
+                label: "自适应"
+            defaultValue: adaptive
+      - id: video_multi_ref
+        label: 全能参考
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 1
+            max: 1
+          - slot: reference_images
+            type: image
+            role: reference
+            source: upstream_edge
+            min: 0
+            max: 30
+            allowedMimes: *seedance25_image_mimes
+            maxSizeMb: 30
+            maxSizeExclusive: true
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/seedance-2-5/generation.md
+          - slot: reference_videos
+            type: video
+            role: reference
+            source: upstream_edge
+            min: 0
+            max: 10
+            allowedMimes:
+              - video/mp4
+              - video/quicktime
+            maxSizeMb: 200
+            minDurationSec: 2
+            maxDurationSec: 30
+            totalMaxDurationSec: 30
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/seedance-2-5/generation.md
+          - slot: reference_audios
+            type: audio
+            role: reference
+            source: upstream_edge
+            min: 0
+            max: 10
+            allowedMimes:
+              - audio/wav
+              - audio/mp3
+              - audio/mpeg
+            maxSizeMb: 15
+            minDurationSec: 2
+            maxDurationSec: 30
+            totalMaxDurationSec: 30
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/seedance-2-5/generation.md
+        inputGroups:
+          - slots:
+              - reference_images
+              - reference_videos
+              - reference_audios
+            min: 1
+            hint: Seedance 2.5 参考模式至少需要一种图片、视频或音频素材
+        parameters:
+          referenceTaskType:
+            options:
+              - value: reference
+                label: reference
+            defaultValue: reference
+        execution:
+          status: live
+          profileId: videoGenerate
+          seam: videoGenerate
+          notes: 保留既有历史真实执行证据；本轮未新增真实请求
+      - id: video_edit
+        label: 视频编辑
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 1
+            max: 1
+          - slot: source_videos
+            type: video
+            role: source
+            source: upstream_edge
+            min: 1
+            max: 10
+            allowedMimes:
+              - video/mp4
+              - video/quicktime
+            maxSizeMb: 200
+            minDurationSec: 4
+            maxDurationSec: 30
+            totalMaxDurationSec: 30
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/seedance-2-5/generation.md
+          - slot: reference_images
+            type: image
+            role: reference
+            source: upstream_edge
+            min: 0
+            max: 30
+            allowedMimes: *seedance25_image_mimes
+            maxSizeMb: 30
+            maxSizeExclusive: true
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/seedance-2-5/generation.md
+          - slot: reference_audios
+            type: audio
+            role: reference
+            source: upstream_edge
+            min: 0
+            max: 10
+            allowedMimes:
+              - audio/wav
+              - audio/mp3
+              - audio/mpeg
+            maxSizeMb: 15
+            minDurationSec: 2
+            maxDurationSec: 30
+            totalMaxDurationSec: 30
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/seedance-2-5/generation.md
+        parameters:
+          aspectRatio:
+            options:
+              - value: adaptive
+                label: "自适应"
+            defaultValue: adaptive
+          duration:
+            options:
+              - value: -1
+                label: 自动（跟随源视频）
+            defaultValue: -1
+            unit: s
+            allowAuto: true
+          outputFormat:
+            options:
+              - value: mp4
+                label: mp4
+              - value: mov
+                label: mov
+            defaultValue: mov
+          referenceTaskType:
+            options:
+              - value: edit
+                label: edit
+            defaultValue: edit
+      - id: video_extend
+        label: 视频延长
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 1
+            max: 1
+          - slot: source_videos
+            type: video
+            role: source
+            source: upstream_edge
+            min: 1
+            max: 10
+            allowedMimes:
+              - video/mp4
+              - video/quicktime
+            maxSizeMb: 200
+            minDurationSec: 2
+            maxDurationSec: 30
+            totalMaxDurationSec: 30
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/seedance-2-5/generation.md
+          - slot: reference_images
+            type: image
+            role: reference
+            source: upstream_edge
+            min: 0
+            max: 30
+            allowedMimes: *seedance25_image_mimes
+            maxSizeMb: 30
+            maxSizeExclusive: true
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/seedance-2-5/generation.md
+          - slot: reference_audios
+            type: audio
+            role: reference
+            source: upstream_edge
+            min: 0
+            max: 10
+            allowedMimes:
+              - audio/wav
+              - audio/mp3
+              - audio/mpeg
+            maxSizeMb: 15
+            minDurationSec: 2
+            maxDurationSec: 30
+            totalMaxDurationSec: 30
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/seedance-2-5/generation.md
+        parameters:
+          aspectRatio:
+            options:
+              - value: adaptive
+                label: "自适应"
+            defaultValue: adaptive
+          outputFormat:
+            options:
+              - value: mp4
+                label: mp4
+              - value: mov
+                label: mov
+            defaultValue: mov
+          referenceTaskType:
+            options:
+              - value: extend
+                label: extend
+            defaultValue: extend
+    parameters:
+      aspectRatio:
+        options:
+          - value: adaptive
+            label: "自适应"
+          - value: "16:9"
+            label: "16:9"
+          - value: "4:3"
+            label: "4:3"
+          - value: "1:1"
+            label: "1:1"
+          - value: "3:4"
+            label: "3:4"
+          - value: "9:16"
+            label: "9:16"
+          - value: "21:9"
+            label: "21:9"
+        defaultValue: adaptive
+      duration:
+        range:
+          min: 4
+          max: 30
+          step: 1
+        defaultValue: 5
+        unit: s
+        allowAuto: true
+        options:
+          - value: -1
+            label: "自适应 (-1)"
+      resolution:
+        options:
+          - value: 480p
+            label: 480p
+          - value: 720p
+            label: 720p
+          - value: 1080p
+            label: 1080p
+        defaultValue: 720p
+      sound:
+        supported: true
+        defaultValue: true
+      watermark:
+        supported: true
+        defaultValue: false
+      seed:
+        type: integer
+      outputFormat:
+        options:
+          - value: mp4
+            label: mp4
+          - value: mov
+            label: mov
+        defaultValue: mp4
+      returnLastFrame:
+        supported: true
+        defaultValue: false
+      webSearch:
+        supported: true
+        defaultValue: false
+      nsfwCheck:
+        supported: true
+        defaultValue: false
+    research:
+      status: verified
+      docUrl: https://docs.apimart.ai/en/api-reference/videos/seedance-2-5/generation.md
+      verifiedAt: 2026-09-05
+      notes: "能力和约束取 APIMart 官方 Seedance 2.5 文档；编辑、延长和首尾帧组合约束写入 operation。reference_images.min 差异登记：上游合同为模型级 min=1，本仓按操作声明 min=0——video_multi_ref 的下限由 inputGroups min=1 承担，video_edit / video_extend 的 reference_images 是源视频之外的可选补充；改为 1 会让「仅源视频」路径被门禁拒收，故保持 0 不改，差异待上游按操作细分或人工裁定。"
+    implementation:
+      status: ready
+      profileId: videoGenerate
+      seam: videoGenerate
+      verifiedAt: 2026-09-05
+      notes: 按 APIMart 官方文档完成映射与离线合同验证；不代表真实生成历史
+    execution:
+      status: none
+      notes: 本轮未发起真实生成请求
+
+  - id: seedance-2-0
+    label: Seedance 2.0
+    family: bytedance
+    subtitle: 480p/720p/1080p/4k · 4–15s · 有声
+    aliases:
+      - seedance-2.0
+    routing:
+      channel: apimart
+      wireModel: seedance-2.0
+      endpoint: /v1/videos/generations
+      automaticFallback: false
+    operations:
+      - id: text_to_video
+        label: 文生视频
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 1
+            max: 1
+        execution:
+          status: live
+          profileId: videoGenerate
+          seam: videoGenerate
+          notes: 保留既有历史真实执行证据；本轮未新增真实请求
+      - id: first_frame
+        label: 首帧
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 0
+            max: 1
+          - slot: first_frame
+            type: image
+            role: first_frame
+            source: upstream_edge
+            min: 1
+            max: 1
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md
+        execution:
+          status: stub
+          profileId: videoGenerate
+          seam: videoGenerate
+          notes: 保留既有 stub 记录；本轮按官方文档完成字段映射
+      - id: first_last_frame
+        label: 首尾帧
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 0
+            max: 1
+          - slot: first_frame
+            type: image
+            role: first_frame
+            source: upstream_edge
+            min: 1
+            max: 1
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md
+          - slot: last_frame
+            type: image
+            role: last_frame
+            source: upstream_edge
+            min: 1
+            max: 1
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md
+      - id: video_multi_ref
+        label: 全能参考
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 0
+            max: 1
+          - slot: reference_images
+            type: image
+            role: reference
+            source: upstream_edge
+            min: 0
+            max: 9
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md
+          - slot: reference_videos
+            type: video
+            role: reference
+            source: upstream_edge
+            min: 0
+            max: 3
+            totalMinDurationSec: 1.8
+            totalMaxDurationSec: 15.2
+            totalMinExclusive: true
+            totalMaxExclusive: true
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md
+          - slot: reference_audios
+            type: audio
+            role: reference
+            source: upstream_edge
+            min: 0
+            max: 3
+            totalMaxDurationSec: 15
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md
+        inputGroups:
+          - slots:
+              - reference_images
+              - reference_videos
+            min: 1
+            hint: Seedance 2.0 参考模式至少需要一张图片或一个视频；音频不能单独输入
+        execution:
+          status: none
+          notes: 本轮未发起真实生成请求
+    parameters:
+      prompt:
+        maxLength: 4000
+      aspectRatio:
+        options:
+          - value: "16:9"
+            label: "16:9"
+          - value: "9:16"
+            label: "9:16"
+          - value: "1:1"
+            label: "1:1"
+          - value: "4:3"
+            label: "4:3"
+          - value: "3:4"
+            label: "3:4"
+          - value: "21:9"
+            label: "21:9"
+          - value: adaptive
+            label: "自适应"
+        defaultValue: "16:9"
+      duration:
+        range:
+          min: 4
+          max: 15
+          step: 1
+        defaultValue: 5
+        unit: s
+      resolution:
+        options:
+          - value: 480p
+            label: 480p
+          - value: 720p
+            label: 720p
+          - value: 1080p
+            label: 1080p
+          - value: 4k
+            label: 4k
+        defaultValue: 720p
+      sound:
+        supported: true
+        defaultValue: true
+      seed:
+        type: integer
+      returnLastFrame:
+        supported: true
+        defaultValue: false
+      webSearch:
+        supported: true
+        defaultValue: false
+      nsfwCheck:
+        supported: true
+        defaultValue: false
+    research:
+      status: verified
+      docUrl: https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md
+      verifiedAt: 2026-09-05
+      notes: 能力和约束取 APIMart 官方 Seedance 2.0 文档；未知上限不以历史测试补齐
+    implementation:
+      status: ready
+      profileId: videoGenerate
+      seam: videoGenerate
+      verifiedAt: 2026-09-05
+      notes: 按 APIMart 官方文档完成映射与离线合同验证；不代表真实生成历史
+    execution:
+      status: none
+      notes: 本轮未发起真实生成请求
+
+  # 快手 Kling 可灵系列：原生支持首尾帧与首帧，不支持自由多图主体参考
+  - id: "kling-v3"
+    label: "Kling V3"
+    family: "kling"
+    badge: "可灵 3.0"
+    subtitle: "1080P-4K · ⏱ 5-10s · 🔊"
+    operations:
+      - id: "text_to_video"
+        label: "文生视频"
+        output:
+          type: "video"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+      - id: "first_frame"
+        label: "首帧"
+        output:
+          type: "video"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+          - slot: "first_frame"
+            type: "image"
+            role: "first_frame"
+            source: "upstream_edge"
+            min: 1
+            max: 1
+            allowedMimes: ["image/png", "image/jpeg", "image/webp"]
+            maxSizeMb: 10
+            limitSource:
+              kind: "official_docs"
+              url: "https://klingai.kuaishou.com/docs"
+      - id: "first_last_frame"
+        label: "首尾帧"
+        output:
+          type: "video"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+          - slot: "first_frame"
+            type: "image"
+            role: "first_frame"
+            source: "upstream_edge"
+            min: 1
+            max: 1
+            allowedMimes: ["image/png", "image/jpeg", "image/webp"]
+            maxSizeMb: 10
+            limitSource:
+              kind: "official_docs"
+              url: "https://klingai.kuaishou.com/docs"
+          - slot: "last_frame"
+            type: "image"
+            role: "last_frame"
+            source: "upstream_edge"
+            min: 1
+            max: 1
+            allowedMimes: ["image/png", "image/jpeg", "image/webp"]
+            maxSizeMb: 10
+            limitSource:
+              kind: "official_docs"
+              url: "https://klingai.kuaishou.com/docs"
+    parameters:
+      aspectRatio:
+        options:
+          - { value: "16:9", label: "16:9" }
+          - { value: "9:16", label: "9:16" }
+          - { value: "1:1", label: "1:1" }
+        defaultValue: "16:9"
+      duration:
+        options:
+          - { value: 5, label: "5s" }
+          - { value: 10, label: "10s" }
+        defaultValue: 5
+        unit: "s"
+      resolution:
+        options:
+          - { value: "1080P", label: "1080P" }
+          - { value: "4K", label: "4K" }
+        defaultValue: "1080P"
+      sound:
+        supported: true
+        defaultValue: true
+    research:
+      status: "draft"
+      docUrl: "https://klingai.kuaishou.com/docs"
+    implementation:
+      status: "none"
+    execution:
+      status: "stub"
+      profileId: "videoGenerate"
+      seam: "videoGenerate"
+
+  - id: "kling-v2-6"
+    label: "Kling V2.6"
+    family: "kling"
+    subtitle: "1080P · ⏱ 5-10s"
+    operations:
+      - id: "text_to_video"
+        label: "文生视频"
+        output:
+          type: "video"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+      - id: "first_frame"
+        label: "首帧"
+        output:
+          type: "video"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+          - slot: "first_frame"
+            type: "image"
+            role: "first_frame"
+            source: "upstream_edge"
+            min: 1
+            max: 1
+            allowedMimes: ["image/png", "image/jpeg", "image/webp"]
+            maxSizeMb: 10
+            limitSource:
+              kind: "official_docs"
+              url: "https://klingai.kuaishou.com/docs"
+      - id: "first_last_frame"
+        label: "首尾帧"
+        output:
+          type: "video"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+          - slot: "first_frame"
+            type: "image"
+            role: "first_frame"
+            source: "upstream_edge"
+            min: 1
+            max: 1
+            allowedMimes: ["image/png", "image/jpeg", "image/webp"]
+            maxSizeMb: 10
+            limitSource:
+              kind: "official_docs"
+              url: "https://klingai.kuaishou.com/docs"
+          - slot: "last_frame"
+            type: "image"
+            role: "last_frame"
+            source: "upstream_edge"
+            min: 1
+            max: 1
+            allowedMimes: ["image/png", "image/jpeg", "image/webp"]
+            maxSizeMb: 10
+            limitSource:
+              kind: "official_docs"
+              url: "https://klingai.kuaishou.com/docs"
+    parameters:
+      aspectRatio:
+        options:
+          - { value: "16:9", label: "16:9" }
+          - { value: "9:16", label: "9:16" }
+          - { value: "1:1", label: "1:1" }
+        defaultValue: "16:9"
+      duration:
+        options:
+          - { value: 5, label: "5s" }
+          - { value: 10, label: "10s" }
+        defaultValue: 5
+        unit: "s"
+      resolution:
+        options:
+          - { value: "1080P", label: "1080P" }
+        defaultValue: "1080P"
+    research:
+      status: "draft"
+      docUrl: "https://klingai.kuaishou.com/docs"
+    implementation:
+      status: "none"
+    execution:
+      status: "stub"
+      profileId: "videoGenerate"
+      seam: "videoGenerate"
+
+  # xAI Grok 官方 1.5：仅文生与有序参考图，官方未公布图片数量上限。
+  - id: grok-imagine-video-1-5
+    label: Grok Imagine Video 1.5
+    family: grok
+    badge: xAI 官方 1.5
+    subtitle: 480p–1080p · 1–15s
+    aliases:
+      - grok-imagine-video-1.5
+    routing:
+      channel: apimart
+      wireModel: grok-imagine-video-1.5
+      endpoint: /v1/videos/generations
+      automaticFallback: false
+    operations:
+      - id: text_to_video
+        label: 文生视频
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 1
+            max: 1
+      - id: video_multi_ref
+        label: 参考图
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 1
+            max: 1
+          - slot: reference_images
+            type: image
+            role: reference
+            source: upstream_edge
+            min: 1
+            max: null
+            hint: 官方未公布固定图片数量上限；保持原顺序，只接受公开 HTTPS URL
+    parameters:
+      prompt:
+        minLength: 1
+        maxLength: 8000
+      aspectRatio:
+        options:
+          - value: auto
+            label: auto
+          - value: "1:1"
+            label: "1:1"
+          - value: "16:9"
+            label: "16:9"
+          - value: "9:16"
+            label: "9:16"
+          - value: "4:3"
+            label: "4:3"
+          - value: "3:4"
+            label: "3:4"
+          - value: "3:2"
+            label: "3:2"
+          - value: "2:3"
+            label: "2:3"
+        defaultValue: auto
+      duration:
+        range:
+          min: 1
+          max: 15
+          step: 1
+        defaultValue: 8
+        unit: s
+      resolution:
+        options:
+          - value: 480p
+            label: 480p
+          - value: 720p
+            label: 720p
+          - value: 1080p
+            label: 1080p
+        defaultValue: 480p
+      nsfwCheck:
+        supported: true
+        defaultValue: false
+    research:
+      status: draft
+      docUrl: https://docs.apimart.ai/en/api-reference/videos/grok-imagine/official.md
+      verifiedAt: 2026-09-05
+      notes: 仅接 APIMart 官方 grok-imagine-video-1.5；不混入 EXT 或基础版视频编辑能力
+    implementation:
+      status: ready
+      profileId: videoGenerate
+      seam: videoGenerate
+      verifiedAt: 2026-09-05
+      notes: 按 APIMart 官方文档完成映射与离线合同验证；不代表真实生成历史
+    execution:
+      status: stub
+      profileId: videoGenerate
+      seam: videoGenerate
+      notes: 仅离线替身/历史 stub，不是渠道真实生成
+
+  # APIMart Wan 3.0：包含帧、全模态、文档和网页参考。
+  - id: wan-3.0
+    label: Wan 3.0
+    family: wan
+    badge: 全模态参考
+    subtitle: 480P–1080P · 2–30s/自动 · 有声
+    aliases:
+      - wan3.0-video
+      - wan-3.0-prime
+      - wan-3.0-ref
+      - wan-3.0-prime-ref
+    routing:
+      channel: apimart
+      wireModel: wan3.0-video
+      endpoint: /v1/videos/generations
+      automaticFallback: false
+    operations:
+      - id: text_to_video
+        label: 文生视频
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 1
+            max: 1
+      - id: first_frame
+        label: 首帧
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 0
+            max: 1
+          - slot: first_frame
+            type: image
+            role: first_frame
+            source: upstream_edge
+            min: 1
+            max: 1
+            allowedMimes:
+              - image/jpeg
+              - image/png
+              - image/bmp
+              - image/webp
+            maxSizeMb: 20
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/wan3.0-video/generation.md
+        parameters:
+          generationType:
+            options:
+              - value: frame
+                label: frame
+            defaultValue: frame
+      - id: first_last_frame
+        label: 首尾帧
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 0
+            max: 1
+          - slot: first_frame
+            type: image
+            role: first_frame
+            source: upstream_edge
+            min: 1
+            max: 1
+            allowedMimes:
+              - image/jpeg
+              - image/png
+              - image/bmp
+              - image/webp
+            maxSizeMb: 20
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/wan3.0-video/generation.md
+          - slot: last_frame
+            type: image
+            role: last_frame
+            source: upstream_edge
+            min: 1
+            max: 1
+            allowedMimes:
+              - image/jpeg
+              - image/png
+              - image/bmp
+              - image/webp
+            maxSizeMb: 20
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/wan3.0-video/generation.md
+        parameters:
+          generationType:
+            options:
+              - value: frame
+                label: frame
+            defaultValue: frame
+      - id: video_multi_ref
+        label: 全能参考
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 0
+            max: 1
+          - slot: reference_images
+            type: image
+            role: reference
+            source: upstream_edge
+            min: 0
+            max: 10
+            allowedMimes:
+              - image/jpeg
+              - image/png
+              - image/bmp
+              - image/webp
+            maxSizeMb: 20
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/wan3.0-video/generation.md
+          - slot: reference_videos
+            type: video
+            role: reference
+            source: upstream_edge
+            min: 0
+            max: 5
+            allowedMimes:
+              - video/mp4
+              - video/quicktime
+            maxSizeMb: 100
+            minDurationSec: 1
+            maxDurationSec: 15
+            totalMaxDurationSec: 15
+            combinedOutputMaxDurationSec: 30
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/wan3.0-video/generation.md
+          - slot: reference_audios
+            type: audio
+            role: reference
+            source: upstream_edge
+            min: 0
+            max: 5
+            allowedMimes:
+              - audio/wav
+              - audio/mp3
+              - audio/mpeg
+            maxSizeMb: 15
+            minDurationSec: 1
+            maxDurationSec: 15
+            totalMaxDurationSec: 15
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/wan3.0-video/generation.md
+        inputGroups:
+          - slots:
+              - reference_images
+              - reference_videos
+              - reference_audios
+            min: 1
+            hint: Wan 3.0 参考模式至少需要一种图片、视频或音频素材
+        parameters:
+          generationType:
+            options:
+              - value: reference
+                label: reference
+            defaultValue: reference
+      - id: document_to_video
+        label: 文档参考
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 0
+            max: 1
+          - slot: file_url
+            type: document
+            role: document
+            source: node_field
+            min: 1
+            max: 1
+            allowedMimes:
+              - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+              - application/msword
+              - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+              - application/vnd.ms-excel
+              - application/vnd.openxmlformats-officedocument.presentationml.presentation
+              - application/vnd.ms-powerpoint
+              - application/pdf
+              - text/plain
+              - application/vnd.apple.keynote
+              - application/vnd.apple.pages
+              - application/vnd.apple.numbers
+              - text/markdown
+            maxSizeMb: 100
+            hint: 文档最多 50 页；页数由 APIMart 在提交时校验
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/wan3.0-video/generation.md
+      - id: webpage_to_video
+        label: 网页参考
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 0
+            max: 1
+          - slot: link_url
+            type: document
+            role: webpage
+            source: node_field
+            min: 1
+            max: 1
+    parameters:
+      prompt:
+        maxLength: 20000
+      aspectRatio:
+        options:
+          - value: adaptive
+            label: "自适应"
+          - value: "16:9"
+            label: "16:9"
+          - value: "4:3"
+            label: "4:3"
+          - value: "1:1"
+            label: "1:1"
+          - value: "3:4"
+            label: "3:4"
+          - value: "9:16"
+            label: "9:16"
+        defaultValue: adaptive
+      duration:
+        range:
+          min: 2
+          max: 30
+          step: 1
+        defaultValue: 5
+        unit: s
+        allowAuto: true
+      resolution:
+        options:
+          - value: 480P
+            label: 480P
+          - value: 720P
+            label: 720P
+          - value: 1080P
+            label: 1080P
+        defaultValue: 1080P
+        caseInsensitive: true
+      sound:
+        supported: true
+        defaultValue: true
+      seed:
+        type: integer
+        range:
+          min: 0
+          max: 2147483647
+          step: 1
+      watermark:
+        supported: true
+        defaultValue: false
+      nsfwCheck:
+        supported: true
+        defaultValue: false
+    research:
+      status: draft
+      docUrl: https://docs.apimart.ai/en/api-reference/videos/wan3.0-video/generation.md
+      verifiedAt: 2026-09-05
+      notes: 文生、首帧、首尾帧、全模态参考、文档和网页模式均取 APIMart Wan 3.0 官方文档
+    implementation:
+      status: ready
+      profileId: videoGenerate
+      seam: videoGenerate
+      verifiedAt: 2026-09-05
+      notes: 按 APIMart 官方文档完成映射与离线合同验证；不代表真实生成历史
+    execution:
+      status: stub
+      profileId: videoGenerate
+      seam: videoGenerate
+      notes: 仅离线替身/历史 stub，不是渠道真实生成
+
+  - id: "kling-o3"
+    label: "Kling O3"
+    family: "kling"
+    subtitle: "4K · ⏱ 3-15s · 🔊"
+    operations:
+      - id: "text_to_video"
+        label: "文生视频"
+        output:
+          type: "video"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+      - id: "first_last_frame"
+        label: "首尾帧"
+        output:
+          type: "video"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+          - slot: "first_frame"
+            type: "image"
+            role: "first_frame"
+            source: "upstream_edge"
+            min: 1
+            max: 1
+            allowedMimes: ["image/png", "image/jpeg", "image/webp"]
+            maxSizeMb: 10
+            limitSource:
+              kind: "policy_conservative"
+              note: "已解封（#1751）后仍无官方限制证据；保守占位，继承 runtime 表行"
+          - slot: "last_frame"
+            type: "image"
+            role: "last_frame"
+            source: "upstream_edge"
+            min: 1
+            max: 1
+            allowedMimes: ["image/png", "image/jpeg", "image/webp"]
+            maxSizeMb: 10
+            limitSource:
+              kind: "policy_conservative"
+              note: "已解封（#1751）后仍无官方限制证据；保守占位，继承 runtime 表行"
+    parameters:
+      aspectRatio:
+        options:
+          - { value: "16:9", label: "16:9" }
+          - { value: "9:16", label: "9:16" }
+          - { value: "1:1", label: "1:1" }
+        defaultValue: "16:9"
+      duration:
+        options:
+          - { value: 5, label: "5s" }
+          - { value: 10, label: "10s" }
+          - { value: 15, label: "15s" }
+        defaultValue: 5
+        unit: "s"
+      resolution:
+        options:
+          - { value: "1080P", label: "1080P" }
+          - { value: "4K", label: "4K" }
+        defaultValue: "1080P"
+      sound:
+        supported: true
+        defaultValue: true
+    research:
+      status: "draft"
+      notes: "已解封（#1751 上游在册）：仍无官方研究证据，保持 draft"
+    implementation:
+      status: "none"
+    execution:
+      status: "none"
+      notes: "已解封（#1751）：无执行证据，不挂 profile"
+
+  - id: "kling-v3-motion-control"
+    label: "Kling V3 运镜控制"
+    family: "kling"
+    badge: "运镜控制"
+    subtitle: "1080P · 运镜轨迹"
+    operations:
+      - id: "text_to_video"
+        label: "文生视频"
+        output:
+          type: "video"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+      - id: "first_last_frame"
+        label: "首尾帧"
+        output:
+          type: "video"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+          - slot: "first_frame"
+            type: "image"
+            role: "first_frame"
+            source: "upstream_edge"
+            min: 1
+            max: 1
+            allowedMimes: ["image/png", "image/jpeg", "image/webp"]
+            maxSizeMb: 10
+            limitSource:
+              kind: "policy_conservative"
+              note: "已解封（#1751）后仍无官方限制证据；保守占位，继承 runtime 表行"
+          - slot: "last_frame"
+            type: "image"
+            role: "last_frame"
+            source: "upstream_edge"
+            min: 1
+            max: 1
+            allowedMimes: ["image/png", "image/jpeg", "image/webp"]
+            maxSizeMb: 10
+            limitSource:
+              kind: "policy_conservative"
+              note: "已解封（#1751）后仍无官方限制证据；保守占位，继承 runtime 表行"
+    parameters:
+      aspectRatio:
+        options:
+          - { value: "16:9", label: "16:9" }
+          - { value: "9:16", label: "9:16" }
+          - { value: "1:1", label: "1:1" }
+        defaultValue: "16:9"
+      duration:
+        options:
+          - { value: 5, label: "5s" }
+          - { value: 10, label: "10s" }
+        defaultValue: 5
+        unit: "s"
+      resolution:
+        options:
+          - { value: "1080P", label: "1080P" }
+        defaultValue: "1080P"
+    research:
+      status: "draft"
+      notes: "已解封（#1751 上游在册）：仍无官方研究证据，保持 draft"
+    implementation:
+      status: "none"
+    execution:
+      status: "none"
+      notes: "已解封（#1751）：无执行证据，不挂 profile"
+
+  # APIMart MiniMax H3：一个产品模型覆盖五种官方模式。
+  # 2026-10-21 网关对账 #3516：上游渠道全部停用，仅登记不开放。
+  # 2026-10-21 网关对账 #3516：上游渠道全部停用，仅登记不开放。
+  - id: minimax-h3
+    label: MiniMax H3
+    family: minimax
+    badge: H3
+    subtitle: 768P/2K · 4–15s
+    aliases:
+      - MiniMax-H3
+      # 2026-09-14 #1751：上游 c8d134c4f 把 minimax/h3-max 移出 models、改列为 minimax-h3 的
+      # model_mapping 目标 —— 这些是上游线路名，仍被接受并路由到 h3 家族，故登记为 h3 的兼容写法。
+      # 注意：已下架的产品 id minimax-h3-max / minimax-h3-max-turbo 不在此列（它们仍是 unavailable）。
+      - minimax/h3-max
+      - h3-max
+      - minimax/h3-max-turbo
+      - h3-max-turbo
+    routing:
+      channel: apimart
+      wireModel: MiniMax-H3
+      endpoint: /v1/videos/generations
+      automaticFallback: false
+    operations:
+      - id: text_to_video
+        label: 文生视频
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 1
+            max: 1
+        parameters:
+          aspectRatio:
+            options:
+              - value: "21:9"
+                label: "21:9"
+              - value: "16:9"
+                label: "16:9"
+              - value: "4:3"
+                label: "4:3"
+              - value: "1:1"
+                label: "1:1"
+              - value: "3:4"
+                label: "3:4"
+              - value: "9:16"
+                label: "9:16"
+            defaultValue: "16:9"
+      - id: first_frame
+        label: 首帧
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 1
+            max: 1
+          - slot: first_frame
+            type: image
+            role: first_frame
+            source: upstream_edge
+            min: 1
+            max: 1
+            allowedMimes:
+              - image/jpeg
+              - image/png
+              - image/webp
+              - image/heic
+              - image/heif
+            maxSizeMb: 30
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/minimax-h3/generation.md
+              note: "限制值取自 APIMart 渠道文档（聚合渠道页），非 omnimux.ai 模型合同；该模型合同只公布 min/max，不含 formats 与 max_bytes_each"
+        parameters:
+          aspectRatio:
+            options:
+              - value: adaptive
+                label: "自适应"
+            defaultValue: adaptive
+      - id: end_frame
+        label: 尾帧
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 1
+            max: 1
+          - slot: last_frame
+            type: image
+            role: last_frame
+            source: upstream_edge
+            min: 1
+            max: 1
+            allowedMimes:
+              - image/jpeg
+              - image/png
+              - image/webp
+              - image/heic
+              - image/heif
+            maxSizeMb: 30
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/minimax-h3/generation.md
+              note: "限制值取自 APIMart 渠道文档（聚合渠道页），非 omnimux.ai 模型合同；该模型合同只公布 min/max，不含 formats 与 max_bytes_each"
+        parameters:
+          aspectRatio:
+            options:
+              - value: adaptive
+                label: "自适应"
+            defaultValue: adaptive
+      - id: first_last_frame
+        label: 首尾帧
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 1
+            max: 1
+          - slot: first_frame
+            type: image
+            role: first_frame
+            source: upstream_edge
+            min: 1
+            max: 1
+            allowedMimes:
+              - image/jpeg
+              - image/png
+              - image/webp
+              - image/heic
+              - image/heif
+            maxSizeMb: 30
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/minimax-h3/generation.md
+              note: "限制值取自 APIMart 渠道文档（聚合渠道页），非 omnimux.ai 模型合同；该模型合同只公布 min/max，不含 formats 与 max_bytes_each"
+          - slot: last_frame
+            type: image
+            role: last_frame
+            source: upstream_edge
+            min: 1
+            max: 1
+            allowedMimes:
+              - image/jpeg
+              - image/png
+              - image/webp
+              - image/heic
+              - image/heif
+            maxSizeMb: 30
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/minimax-h3/generation.md
+              note: "限制值取自 APIMart 渠道文档（聚合渠道页），非 omnimux.ai 模型合同；该模型合同只公布 min/max，不含 formats 与 max_bytes_each"
+        parameters:
+          aspectRatio:
+            options:
+              - value: adaptive
+                label: "自适应"
+            defaultValue: adaptive
+      - id: video_multi_ref
+        label: 全能参考
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 1
+            max: 1
+          - slot: reference_images
+            type: image
+            role: reference
+            source: upstream_edge
+            min: 0
+            max: 9
+            allowedMimes:
+              - image/jpeg
+              - image/png
+              - image/webp
+              - image/heic
+              - image/heif
+            maxSizeMb: 30
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/minimax-h3/generation.md
+              note: "限制值取自 APIMart 渠道文档（聚合渠道页），非 omnimux.ai 模型合同；该模型合同只公布 min/max，不含 formats 与 max_bytes_each"
+          - slot: reference_videos
+            type: video
+            role: reference
+            source: upstream_edge
+            min: 0
+            max: 3
+            allowedMimes:
+              - video/mp4
+              - video/quicktime
+            maxSizeMb: 50
+            minDurationSec: 2
+            maxDurationSec: 15
+            totalMaxDurationSec: 15
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/minimax-h3/generation.md
+              note: "限制值取自 APIMart 渠道文档（聚合渠道页），非 omnimux.ai 模型合同；该模型合同只公布 min/max，不含 formats 与 max_bytes_each"
+          - slot: reference_audios
+            type: audio
+            role: reference
+            source: upstream_edge
+            min: 0
+            max: 3
+            allowedMimes:
+              - audio/wav
+              - audio/mp3
+              - audio/mpeg
+            maxSizeMb: 15
+            minDurationSec: 2
+            maxDurationSec: 15
+            totalMaxDurationSec: 15
+            limitSource:
+              kind: official_docs
+              url: https://docs.apimart.ai/en/api-reference/videos/minimax-h3/generation.md
+              note: "限制值取自 APIMart 渠道文档（聚合渠道页），非 omnimux.ai 模型合同；该模型合同只公布 min/max，不含 formats 与 max_bytes_each"
+        inputGroups:
+          - slots:
+              - reference_images
+              - reference_videos
+            min: 1
+            hint: MiniMax H3 参考模式至少需要一张图片或一个视频；音频不能单独输入
+        parameters:
+          aspectRatio:
+            options:
+              - value: adaptive
+                label: "自适应"
+              - value: "21:9"
+                label: "21:9"
+              - value: "16:9"
+                label: "16:9"
+              - value: "4:3"
+                label: "4:3"
+              - value: "1:1"
+                label: "1:1"
+              - value: "3:4"
+                label: "3:4"
+              - value: "9:16"
+                label: "9:16"
+            defaultValue: adaptive
+      # 口型版分组（lipsync）唯一生成方式：人像图片 + 驱动音频 → 唇形对齐视频。
+      # 上游为网关渠道 44 的独立公开型号 minimax-h3-lip-sync（fal.ai 官方直连，
+      # minimax/h3-max/lip-sync/image-to-video），经渠道分组 wireModel 路由，不改动本模型既有操作的路由。
+      - id: digital_human
+        label: 数字人/对口型
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: character
+            type: image
+            role: first_frame
+            source: upstream_edge
+            min: 1
+            max: 1
+            allowedMimes:
+              - image/jpeg
+              - image/png
+              - image/webp
+            maxSizeMb: 30
+            limitSource:
+              kind: official_docs
+              url: https://fal.ai/models/fal-ai/minimax/h3-max/lip-sync/image-to-video
+              note: "限制值取自 fal.ai 渠道型号页，非 omnimux.ai 模型合同"
+          - slot: driving_audio
+            type: audio
+            role: audio_track
+            source: upstream_edge
+            min: 1
+            max: 1
+            allowedMimes:
+              - audio/wav
+              - audio/mp3
+              - audio/mpeg
+            maxSizeMb: 15
+            maxDurationSec: 15
+            limitSource:
+              kind: official_docs
+              url: https://fal.ai/models/fal-ai/minimax/h3-max/lip-sync/image-to-video
+              note: "限制值取自 fal.ai 渠道型号页，非 omnimux.ai 模型合同"
+        parameters:
+          duration:
+            range:
+              min: 5
+              max: 15
+              step: 1
+            defaultValue: 5
+            unit: s
+          resolution:
+            options:
+              - value: 480P
+                label: 480P
+              - value: 768P
+                label: 768P
+              - value: 1080P
+                label: 1080P
+              - value: 2K
+                label: 2K
+            defaultValue: 768P
+        research:
+          status: verified
+          docUrl: https://fal.ai/models/fal-ai/minimax/h3-max/lip-sync/image-to-video
+          verifiedAt: 2026-09-20
+          notes: 能力与约束取 fal.ai 官方对口型图生视频模型页与网关生产配置基线（渠道 44，image_url + audio_url 必填、无需 prompt）
+        implementation:
+          # 2026-10-21 网关对账 #3516：上游渠道全部停用，仅登记不开放。
+          status: "none"
+          profileId: videoDigitalHuman
+          seam: videoGenerate
+          verifiedAt: 2026-09-20
+          notes: 复用既有 videoDigitalHuman 适配档案（image + audioTrack 必填）；按官方文档离线合同验证
+        execution:
+          status: stub
+          profileId: videoDigitalHuman
+          seam: videoGenerate
+          notes: 网关侧已生产上架（渠道 44 minimax-h3-lip-sync）；本仓未新增真实生成请求
+    parameters:
+      prompt:
+        minLength: 1
+        maxLength: 7000
+      aspectRatio:
+        options:
+          - value: "21:9"
+            label: "21:9"
+          - value: "16:9"
+            label: "16:9"
+          - value: "4:3"
+            label: "4:3"
+          - value: "1:1"
+            label: "1:1"
+          - value: "3:4"
+            label: "3:4"
+          - value: "9:16"
+            label: "9:16"
+        defaultValue: "16:9"
+      duration:
+        range:
+          min: 4
+          max: 15
+          step: 1
+        defaultValue: 5
+        unit: s
+      resolution:
+        options:
+          - value: 2K
+            label: 2K
+          - value: 768P
+            label: 768P
+        defaultValue: 2K
+      watermark:
+        supported: true
+        defaultValue: false
+      nsfwCheck:
+        supported: true
+        defaultValue: false
+    research:
+      status: verified
+      docUrl: https://docs.apimart.ai/en/api-reference/videos/minimax-h3/generation.md
+      verifiedAt: 2026-09-05
+      notes: MiniMax-H3 为单一产品模型，覆盖文生、首帧、尾帧、首尾帧和全模态参考
+    implementation:
+      # 2026-10-21 网关对账 #3516：上游渠道全部停用，仅登记不开放。
+      status: "none"
+      profileId: videoGenerate
+      seam: videoGenerate
+      verifiedAt: 2026-09-05
+      notes: 按 APIMart 官方文档完成映射与离线合同验证；不代表真实生成历史
+    execution:
+      status: stub
+      profileId: videoGenerate
+      seam: videoGenerate
+      notes: 仅离线替身/历史 stub，不是渠道真实生成
+
+  # AutoDL ComfyUI 直发泳道（渠道 70/71/72，上游 minimax_h3_image_audio_to_video）：
+  # 与上方 APIMart `minimax-h3` 是同族两条独立上架线路——APIMart 条目上游全停保持
+  # 登记，本条是网关在架可售泳道。提交 POST /v1/tasks/autodl，全部素材槽经顶层
+  # `metadata.ref_image_N / ref_audio_N / first_frame / last_frame / audio_duration`
+  # 透传，网关 collectSlots 从 metadata 收槽并 detectShape；禁走
+  # image_with_roles / image_urls / video_urls / file_url / link_url 字段族。
+  # prompt 走 prompt 字段——写 prompt_text 会被 detectShape 误判为 text-to-speech。
+  - id: minimax-h3-video
+    label: MiniMax H3 视频（AutoDL）
+    family: minimax
+    badge: H3
+    subtitle: AutoDL · 对口型/首尾帧/多参考 · $0.025/s
+    routing:
+      channel: autodl
+      wireModel: minimax_h3_image_audio_to_video
+      endpoint: /v1/tasks/autodl
+      automaticFallback: false
+    operations:
+      - id: text_to_video
+        label: 文生视频
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 1
+            max: 1
+        research:
+          status: verified
+          docUrl: https://autodl.art/docs/comfyui_api/
+          verifiedAt: 2026-11-02
+          notes: AutoDL ComfyUI 任务合同；prompt 走 prompt（禁 prompt_text，会触发 text-to-speech 形状）
+        implementation:
+          status: "ready"
+          profileId: videoGenerate
+          seam: videoGenerate
+          verifiedAt: 2026-11-02
+          notes: 素材槽全部经 metadata 透传；detectShape 归类 text-to-video
+        execution:
+          status: stub
+          profileId: videoGenerate
+          seam: videoGenerate
+          notes: 离线合同验证；真实执行证据待画布验收
+      - id: first_last_frame
+        label: 首尾帧
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 1
+            max: 1
+          - slot: first_frame
+            type: image
+            role: first_frame
+            source: upstream_edge
+            min: 1
+            max: 1
+            allowedMimes:
+              - image/jpeg
+              - image/png
+              - image/webp
+          - slot: last_frame
+            type: image
+            role: last_frame
+            source: upstream_edge
+            min: 1
+            max: 1
+            allowedMimes:
+              - image/jpeg
+              - image/png
+              - image/webp
+        research:
+          status: verified
+          docUrl: https://autodl.art/docs/comfyui_api/
+          verifiedAt: 2026-11-02
+          notes: 槽经 metadata.first_frame/last_frame；detectShape first-last-frame
+        implementation:
+          status: "ready"
+          profileId: videoGenerate
+          seam: videoGenerate
+          verifiedAt: 2026-11-02
+          notes: 首尾帧槽经 metadata 透传
+        execution:
+          status: stub
+          profileId: videoGenerate
+          seam: videoGenerate
+          notes: 离线合同验证；真实执行证据待画布验收
+      - id: video_multi_ref
+        label: 多参考图
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: prompt
+            type: text
+            role: prompt
+            source: node_field
+            min: 1
+            max: 1
+          - slot: references
+            type: image
+            role: reference
+            source: upstream_edge
+            min: 1
+            max: 9
+            allowedMimes:
+              - image/jpeg
+              - image/png
+              - image/webp
+        research:
+          status: verified
+          docUrl: https://autodl.art/docs/comfyui_api/
+          verifiedAt: 2026-11-02
+          notes: 多图参考经 metadata.ref_image_0..8；detectShape image-reference
+        implementation:
+          status: "ready"
+          profileId: videoGenerate
+          seam: videoGenerate
+          verifiedAt: 2026-11-02
+          notes: 参考图槽经 metadata.ref_image_N 透传
+        execution:
+          status: stub
+          profileId: videoGenerate
+          seam: videoGenerate
+          notes: 离线合同验证；真实执行证据待画布验收
+      - id: digital_human
+        label: 数字人/对口型
+        output:
+          type: video
+          allowedMimes:
+            - video/mp4
+            - video/quicktime
+        inputs:
+          - slot: character
+            type: image
+            role: first_frame
+            source: upstream_edge
+            min: 1
+            max: 1
+            allowedMimes:
+              - image/jpeg
+              - image/png
+              - image/webp
+          - slot: driving_audio
+            type: audio
+            role: audio_track
+            source: upstream_edge
+            min: 1
+            max: 1
+            allowedMimes:
+              - audio/wav
+              - audio/mp3
+              - audio/mpeg
+        parameters:
+          duration:
+            range:
+              min: 1
+              max: 60
+              step: 1
+            defaultValue: 5
+            unit: s
+        research:
+          status: verified
+          docUrl: https://autodl.art/docs/comfyui_api/
+          verifiedAt: 2026-11-02
+          notes: 对口型经 metadata.ref_image_0 + ref_audio_0 + audio_duration；detectShape lip-sync；真实 E2E 已通（任务 8fed5047-9d01-4147-9dcf-bf001e964a55，¥0.04）
+        implementation:
+          status: "ready"
+          profileId: videoGenerate
+          seam: videoGenerate
+          verifiedAt: 2026-11-02
+          notes: 复用 videoGenerate 档案 + digital_human 形状；audio_urls 顶层仅满足合同 require（网关 RESERVED），实际槽在 metadata
+        execution:
+          status: stub
+          profileId: videoGenerate
+          seam: videoGenerate
+          notes: 网关侧已真实跑通对口型任务；本仓画布验收待补
+    parameters:
+      prompt:
+        minLength: 1
+        maxLength: 7000
+      duration:
+        range:
+          min: 1
+          max: 60
+          step: 1
+        defaultValue: 5
+        unit: s
+      resolution:
+        options:
+          - value: 480p
+            label: 480p
+          - value: 736p
+            label: 736p
+          - value: 768p
+            label: 768p
+          - value: 1088p
+            label: 1088p
+          - value: 1440p
+            label: 1440p
+        defaultValue: 768p
+    research:
+      status: verified
+      docUrl: https://autodl.art/docs/comfyui_api/
+      verifiedAt: 2026-11-02
+      notes: AutoDL ComfyUI 任务泳道，按秒计费 $0.025/s；OFFERED_RESOLUTIONS 无 1080p
+    implementation:
+      status: "ready"
+      profileId: videoGenerate
+      seam: videoGenerate
+      verifiedAt: 2026-11-02
+      notes: AutoDL 泳道映射合同完成；素材槽统一经 metadata 透传
+    execution:
+      status: stub
+      profileId: videoGenerate
+      seam: videoGenerate
+      notes: 对口型已真实跑通；其余操作离线合同验证

@@ -1,0 +1,580 @@
+/**
+ * 项目 HTTP 路由（host 侧）。
+ *
+ *   GET    /omnimux-workflow/api/projects/library         默认库路径（host 解析 videos）
+ *   GET    /omnimux-workflow/api/projects                 list（扫描默认库）
+ *   GET    /omnimux-workflow/api/projects/session-binding 会话所属工作区 → 项目（缺失即登记，Issue #2104）
+ *   POST   /omnimux-workflow/api/projects                 seed { title, projectRoot, sessionId? }
+ *   GET    /omnimux-workflow/api/projects/:id             get
+ *   PATCH  /omnimux-workflow/api/projects/:id             rename/bindSession { title?, sessionId? }
+ *   DELETE /omnimux-workflow/api/projects/:id             摘元数据，不 rm 用户文件夹
+ *
+ * 项目库作用域 = 默认库，不再接收 cwd。写操作先过 assertLocalWrite。
+ */
+import { randomUUID } from 'node:crypto';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
+import { isAbsolute, join, relative, resolve } from 'node:path';
+import {
+  MAX_JSON_BODY_BYTES,
+  sendJson,
+  JsonBodyLimitError,
+  readJsonBody,
+  assertLocalWrite,
+  messageOf,
+  jsonBodyProblem,
+} from '../http/helpers';
+import { defaultProjectLibrary, displayHomePath, ensureLibraryRoot, resolveVideosDir } from './library';
+import { ProjectPathError } from './paths';
+import { createProjectStore, ProjectStoreError, validateTitle } from './ProjectStore';
+import { isEnsureProjectError, type EnsureProjectMode } from './ensureProject';
+import { ensureWorkspaceProjectBound } from './workspaceProjectBinding';
+import { sessionToWorkspaceId } from '../shared/sessionWorkspaceId';
+import type { WorkspaceStore } from '../workflow/workspace/WorkspaceStore.ts';
+import { createProjectCoverService } from './ProjectCoverService.ts';
+
+export const PROJECT_ROUTE_PREFIX = '/omnimux-workflow/api/projects';
+export const PROJECT_LIBRARY_PATH = `${PROJECT_ROUTE_PREFIX}/library`;
+
+function inferMediaType(name: string): string {
+  const ext = name.split('.').pop()?.toLowerCase() || '';
+  if (['mp4', 'mov', 'webm', 'mkv'].includes(ext)) return 'video';
+  if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'].includes(ext)) return 'image';
+  if (['mp3', 'wav', 'aac', 'm4a', 'flac'].includes(ext)) return 'audio';
+  if (['txt', 'md', 'json', 'csv', 'htable'].includes(ext)) return 'text';
+  return 'other';
+}
+
+const STATUS_BY_CODE: Record<string, number> = {
+  'invalid-json': 400,
+  'invalid-cwd': 400,
+  'invalid-library-root': 400,
+  'invalid-project-root': 400,
+  'invalid-id': 400,
+  'title-required': 400,
+  'title-too-long': 400,
+  'title-invalid': 400,
+  'directory-create-failed': 500,
+  'session-required': 400,
+  'body-too-large': 413,
+  'project-not-found': 404,
+  'page-not-found': 404,
+  'project-exists': 409,
+  'project-record-invalid': 422,
+  'invalid-workspace-dir': 400,
+  'invalid-mode': 400,
+  'project-lock-timeout': 409,
+  'project-lock-failed': 409,
+  'not-found': 404,
+  'not-local': 403,
+  'path-denied': 403,
+  'internal': 500,
+};
+
+/** Request-body cap for JSON routes（与 canvasRoutes 一致）。 */
+export const MAX_PROJECT_JSON_BODY_BYTES = MAX_JSON_BODY_BYTES;
+
+export { sendJson, JsonBodyLimitError, readJsonBody, assertLocalWrite };
+
+function scopedStore(libraryRootOverride?: string) {
+  const libraryRoot = libraryRootOverride ?? ensureLibraryRoot();
+  return { libraryRoot, store: createProjectStore({ libraryRoot }) };
+}
+
+/** 只读 store：解析默认库路径但**不 mkdir**（预检必须零写盘）。 */
+function scopedReadOnlyStore(libraryRootOverride?: string) {
+  const libraryRoot = libraryRootOverride ?? defaultProjectLibrary();
+  return { libraryRoot, store: createProjectStore({ libraryRoot, ensureLibrary: false }) };
+}
+
+export interface ProjectDispatchRequest {
+  method: string;
+  url: string;
+  origin?: string;
+  referer?: string;
+  secFetchSite?: string;
+  host?: string;
+  secure?: boolean;
+  body?: unknown;
+}
+
+export type ProjectDispatchResult = { status: number; body?: unknown };
+
+export interface ProjectDispatcher {
+  /** 判断某 path 是否属于项目路由（供 workflow dispatcher 委托前判断）。 */
+  owns(path: string): boolean;
+  dispatch(req: ProjectDispatchRequest): Promise<ProjectDispatchResult>;
+}
+
+/** 项目路由无状态：库根由 host 解析，不跟当前会话 cwd。 */
+export function createProjectDispatcher(opts: { libraryRoot?: string; workspaceStore?: WorkspaceStore; mediaRevision?: (url: string) => string; resolveSessionWorkspaceDir?: (sessionId: string) => string | undefined } = {}): ProjectDispatcher {
+  const coverService = opts.workspaceStore ? createProjectCoverService(opts.workspaceStore, opts.mediaRevision) : undefined;
+  const enrich = <T extends { pages?: Array<{ id: string; canvasWorkspaceId?: string }> }>(project: T) => coverService ? coverService(project) : project;
+  const collectionRe = new RegExp(`^${PROJECT_ROUTE_PREFIX}$`);
+  const libraryRe = new RegExp(`^${PROJECT_LIBRARY_PATH}$`);
+  const sessionBindingRe = new RegExp(`^${PROJECT_ROUTE_PREFIX}/session-binding$`);
+  const preflightRe = new RegExp(`^${PROJECT_ROUTE_PREFIX}/preflight$`);
+  const itemRe = new RegExp(`^${PROJECT_ROUTE_PREFIX}/([^/]+)$`);
+  const pagesRe = new RegExp(`^${PROJECT_ROUTE_PREFIX}/([^/]+)/pages$`);
+  const pageItemRe = new RegExp(`^${PROJECT_ROUTE_PREFIX}/([^/]+)/pages/([^/]+)$`);
+  const filesRe = new RegExp(`^${PROJECT_ROUTE_PREFIX}/([^/]+)/files$`);
+  const mkdirRe = new RegExp(`^${PROJECT_ROUTE_PREFIX}/([^/]+)/mkdir$`);
+  const uploadRe = new RegExp(`^${PROJECT_ROUTE_PREFIX}/([^/]+)/upload$`);
+
+  function owns(path: string): boolean {
+    return path === PROJECT_ROUTE_PREFIX || path.startsWith(`${PROJECT_ROUTE_PREFIX}/`);
+  }
+
+  function parseMode(value: unknown): EnsureProjectMode | undefined {
+    if (value === undefined || value === null || value === '') return undefined;
+    if (value === 'independent' || value === 'workspace') return value;
+    throw new ProjectStoreError('invalid-mode', 'mode must be independent or workspace');
+  }
+
+  function readWorkspaceDir(value: unknown): string | undefined {
+    return typeof value === 'string' && value.trim() !== '' ? value : undefined;
+  }
+
+  /**
+   * B2/I3：ensure/adopt 得到项目后，为缺少画布的创作页补一张空画布（写 home canvas，
+   * 绑定首次打开时由 WorkspaceStore 懒拷贝到项目），避免首开撞 `workspace-not-found`。
+   */
+  function ensurePageCanvases(record: { pages?: Array<{ title?: unknown; canvasWorkspaceId?: unknown }> }): void {
+    if (!opts.workspaceStore) return;
+    for (const page of record.pages ?? []) {
+      const id = typeof page.canvasWorkspaceId === 'string' ? page.canvasWorkspaceId.trim() : '';
+      if (id === '') continue;
+      try {
+        const file = opts.workspaceStore.canvasFileOf(id);
+        if (existsSync(file)) continue;
+        opts.workspaceStore.create(typeof page.title === 'string' ? page.title : undefined, id);
+      } catch {
+        // 非法 id / 画布存储不可用：不阻断项目本身写入（打开时仍会给出明确错误）。
+      }
+    }
+  }
+
+  function bindingOf(store: { isInsideLibrary(dir: string): boolean }, project: { path?: string }): { bound: boolean; workspaceDir: string | null } {
+    const dir = typeof project.path === 'string' ? project.path : '';
+    const bound = dir !== '' && !store.isInsideLibrary(dir);
+    return { bound, workspaceDir: bound ? dir : null };
+  }
+
+  async function dispatch(req: ProjectDispatchRequest): Promise<ProjectDispatchResult> {
+    try {
+      const url = new URL(req.url, 'http://127.0.0.1');
+      const method = (req.method || 'GET').toUpperCase();
+      const path = decodeURIComponent(url.pathname);
+
+      if (method === 'POST' || method === 'PATCH' || method === 'DELETE') {
+        try {
+          assertLocalWrite(req);
+        } catch {
+          return { status: 403, body: { error: 'not-local', message: 'cross-origin write refused' } };
+        }
+      }
+
+      if (libraryRe.exec(path)) {
+        if (method !== 'GET') {
+          return { status: 404, body: { error: 'not-found', message: 'unknown route' } };
+        }
+        const libraryRoot = opts.libraryRoot ?? ensureLibraryRoot();
+        return {
+          status: 200,
+          body: {
+            libraryRoot,
+            videosDir: resolveVideosDir(),
+            displayPath: displayHomePath(libraryRoot),
+          },
+        };
+      }
+
+      if (sessionBindingRe.exec(path)) {
+        // Issue #2104：工作区必须有项目。客户端在打开创作画布前先问这里；
+        // 缺失就登记（幂等），让「工作区 → 项目 → 创作页」一步不缺。
+        if (method !== 'GET') {
+          return { status: 404, body: { error: 'not-found', message: 'unknown route' } };
+        }
+        const sessionId = (url.searchParams.get('sessionId') ?? '').trim();
+        const { libraryRoot, store } = scopedStore(opts.libraryRoot);
+        if (sessionId === '') {
+          return { status: 400, body: { error: 'session-required', message: 'sessionId is required' } };
+        }
+        let workspaceDir: string | undefined;
+        try {
+          workspaceDir = opts.resolveSessionWorkspaceDir?.(sessionId);
+        } catch {
+          workspaceDir = undefined;
+        }
+        if (typeof workspaceDir !== 'string' || workspaceDir.trim() === '') {
+          return { status: 200, body: { ok: true, source: 'unknown-session', libraryRoot, project: null } };
+        }
+        const existingByRoot = store.findByRoot(workspaceDir);
+        let record = existingByRoot;
+        const hadExisting = Boolean(existingByRoot);
+        if (!record) {
+          try {
+            record = ensureWorkspaceProjectBound(store, {
+              workspaceDir,
+              sessionId,
+              libraryRoot,
+              // 必须绑到这个会话自己的画布（= 客户端兜底用的散列 id），
+              // 否则项目首个创作页会指向一个并不存在的随机画布，画布页将显示空白。
+              canvasWorkspaceId: sessionToWorkspaceId(sessionId),
+            });
+          } catch {
+            record = null;
+          }
+        }
+        if (!record) {
+          // 库根之外且磁盘上也没有项目档案：不写盘，画布保持自由画布语义。
+          return { status: 200, body: { ok: true, source: 'outside-library', workspaceDir, libraryRoot, project: null } };
+        }
+        const pages = record.pages ?? [];
+        const activePage = pages.find((page) => page.id === record.activePageId) ?? pages[0] ?? null;
+        return {
+          status: 200,
+          body: {
+            ok: true,
+            source: hadExisting ? 'existing' : 'registered',
+            libraryRoot,
+            project: {
+              id: record.id,
+              title: record.title,
+              path: record.path,
+              activePageId: record.activePageId,
+              canvasWorkspaceId: activePage?.canvasWorkspaceId ?? null,
+              pages,
+            },
+          },
+        };
+      }
+
+      if (collectionRe.exec(path)) {
+        if (method === 'GET') {
+          const { store } = scopedStore(opts.libraryRoot);
+          const lookupPath = (url.searchParams.get('path') ?? '').trim();
+          if (lookupPath !== '') {
+            if (!isAbsolute(lookupPath)) {
+              return { status: 400, body: { error: 'invalid-project-root', message: 'path must be absolute' } };
+            }
+            const found = store.findByRoot(lookupPath);
+            return { status: 200, body: { project: found ? { ...enrich(found), ...bindingOf(store, found) } : null } };
+          }
+          return {
+            status: 200,
+            body: {
+              projects: store.list().map((project) => ({
+                ...enrich(project),
+                ...bindingOf(store, project),
+              })),
+            },
+          };
+        }
+        if (method === 'POST') {
+          const problem = jsonBodyProblem(req.body);
+          if (problem) return problem;
+          const body = req.body as {
+            title?: unknown;
+            projectRoot?: unknown;
+            cwd?: unknown;
+            canvasWorkspaceIds?: unknown;
+            mode?: unknown;
+            workspaceDir?: unknown;
+          };
+          if (body.cwd !== undefined) {
+            return { status: 400, body: { error: 'invalid-json', message: 'cwd is no longer a project library scope' } };
+          }
+          const { store } = scopedStore(opts.libraryRoot);
+          const title = typeof body.title === 'string' ? body.title : undefined;
+          const projectRoot = typeof body.projectRoot === 'string' && body.projectRoot.trim() !== ''
+            ? body.projectRoot
+            : undefined;
+          const canvasWorkspaceIds = Array.isArray(body.canvasWorkspaceIds)
+            ? body.canvasWorkspaceIds.filter((id): id is string => typeof id === 'string' && id.trim() !== '')
+            : undefined;
+          const mode = parseMode(body.mode);
+          if (mode) {
+            const workspaceDir = readWorkspaceDir(body.workspaceDir) ?? (mode === 'workspace' ? readWorkspaceDir(body.projectRoot) : undefined);
+            if (mode === 'workspace' && !workspaceDir) {
+              return { status: 400, body: { error: 'invalid-workspace-dir', message: 'workspace mode requires workspaceDir' } };
+            }
+            const result = await store.ensureProject({ mode, workspaceDir, title: title ?? undefined });
+            ensurePageCanvases(result.project);
+            return {
+              status: 200,
+              body: { project: result.project, action: result.action },
+            };
+          }
+          return {
+            status: 200,
+            body: { project: store.create(title ?? '', { projectRoot, canvasWorkspaceIds }) },
+          };
+        }
+        return { status: 404, body: { error: 'not-found', message: 'unknown route' } };
+      }
+
+      // 创作页集合路由 POST /api/projects/:id/pages
+      const pagesMatch = pagesRe.exec(path);
+      if (pagesMatch) {
+        const projectId = pagesMatch[1] ?? '';
+        const { store } = scopedStore(opts.libraryRoot);
+        if (method === 'POST') {
+          const problem = jsonBodyProblem(req.body);
+          if (problem) return problem;
+          const body = req.body as { title?: unknown; canvasWorkspaceId?: unknown; loadMemory?: unknown };
+          const title = validateTitle(body.title);
+          store.get(projectId);
+          let canvasWorkspaceId = typeof body.canvasWorkspaceId === 'string' && body.canvasWorkspaceId.trim() !== ''
+            ? body.canvasWorkspaceId.trim()
+            : undefined;
+
+          let createdNewWorkspace = false;
+          if (!canvasWorkspaceId) {
+            if (opts.workspaceStore) {
+              const newWs = opts.workspaceStore.create(title);
+              canvasWorkspaceId = newWs.id;
+              createdNewWorkspace = true;
+            } else {
+              canvasWorkspaceId = `ws_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
+            }
+          }
+
+          const loadMemory = Boolean(body.loadMemory);
+          let updatedProject;
+          try {
+            updatedProject = store.addPage(projectId, title, { canvasWorkspaceId, loadMemory });
+          } catch (error) {
+            if (createdNewWorkspace && canvasWorkspaceId && opts.workspaceStore) {
+              try {
+                opts.workspaceStore.remove(canvasWorkspaceId);
+              } catch {
+                // 忽略清理异常，向上抛出原始写入异常
+              }
+            }
+            throw error;
+          }
+
+          const newPage = updatedProject.pages?.find((p) => p.id === updatedProject.activePageId)
+            ?? updatedProject.pages?.find((p) => p.canvasWorkspaceId === canvasWorkspaceId);
+
+          return {
+            status: 200,
+            body: {
+              project: updatedProject,
+              page: newPage,
+            },
+          };
+        }
+        return { status: 404, body: { error: 'not-found', message: 'unknown route' } };
+      }
+
+      // 创作页单项路由 PATCH/DELETE /api/projects/:id/pages/:pageId
+      const pageItemMatch = pageItemRe.exec(path);
+      if (pageItemMatch) {
+        const projectId = pageItemMatch[1] ?? '';
+        const pageId = pageItemMatch[2] ?? '';
+        const { store } = scopedStore(opts.libraryRoot);
+        if (method === 'PATCH') {
+          const problem = jsonBodyProblem(req.body);
+          if (problem) return problem;
+          const body = req.body as { title?: unknown; active?: unknown };
+          if (typeof body.title === 'string') {
+            return { status: 200, body: { project: store.renamePage(projectId, pageId, body.title) } };
+          }
+          if (body.active === true) {
+            return { status: 200, body: { project: store.setActivePage(projectId, pageId) } };
+          }
+          return { status: 400, body: { error: 'invalid-json', message: 'title or active is required' } };
+        }
+        if (method === 'DELETE') {
+          return { status: 200, body: { project: store.removePage(projectId, pageId) } };
+        }
+        return { status: 404, body: { error: 'not-found', message: 'unknown route' } };
+      }
+
+      // 物理工作区文件列表 GET /api/projects/:id/files
+      const filesMatch = filesRe.exec(path);
+      if (filesMatch) {
+        if (method !== 'GET') return { status: 404, body: { error: 'not-found', message: 'unknown route' } };
+        const projectId = filesMatch[1] ?? '';
+        const { store } = scopedStore(opts.libraryRoot);
+        const project = store.get(projectId);
+        const subpath = url.searchParams.get('subpath') || '';
+        const targetDir = resolve(project.path, subpath);
+        const rel = relative(project.path, targetDir);
+        if (rel.startsWith('..') || isAbsolute(rel)) {
+          return { status: 403, body: { error: 'path-denied', message: 'access denied outside project directory' } };
+        }
+        if (!existsSync(targetDir)) {
+          return { status: 200, body: { items: [], currentSubpath: subpath } };
+        }
+        const entries = readdirSync(targetDir, { withFileTypes: true });
+        const items = [];
+        for (const entry of entries) {
+          if (entry.name.startsWith('.')) continue;
+          const full = join(targetDir, entry.name);
+          const isFolder = entry.isDirectory();
+          let size = 0;
+          let updatedAt = new Date().toISOString();
+          try {
+            const st = statSync(full);
+            size = isFolder ? 0 : st.size;
+            updatedAt = st.mtime.toISOString();
+          } catch {}
+          items.push({
+            id: `${subpath ? subpath + '/' : ''}${entry.name}`,
+            name: entry.name,
+            isFolder,
+            size,
+            updatedAt,
+            type: inferMediaType(entry.name),
+          });
+        }
+        items.sort((a, b) => {
+          if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1;
+          return a.name.localeCompare(b.name);
+        });
+        return { status: 200, body: { items, currentSubpath: subpath } };
+      }
+
+      // 物理工作区新建文件夹 POST /api/projects/:id/mkdir
+      const mkdirMatch = mkdirRe.exec(path);
+      if (mkdirMatch) {
+        if (method !== 'POST') return { status: 404, body: { error: 'not-found', message: 'unknown route' } };
+        const projectId = mkdirMatch[1] ?? '';
+        const { store } = scopedStore(opts.libraryRoot);
+        const project = store.get(projectId);
+        const problem = jsonBodyProblem(req.body);
+        if (problem) return problem;
+        const body = req.body as { name?: unknown; subpath?: unknown };
+        const name = typeof body.name === 'string' ? body.name.trim() : '';
+        if (!name) return { status: 400, body: { error: 'name-required' } };
+        const subpath = typeof body.subpath === 'string' ? body.subpath.trim() : '';
+        const targetDir = resolve(project.path, subpath, name);
+        const rel = relative(project.path, targetDir);
+        if (rel.startsWith('..') || isAbsolute(rel)) {
+          return { status: 403, body: { error: 'path-denied' } };
+        }
+        mkdirSync(targetDir, { recursive: true });
+        return { status: 200, body: { ok: true, name, path: targetDir } };
+      }
+
+      // 物理工作区上传文件 POST /api/projects/:id/upload
+      const uploadMatch = uploadRe.exec(path);
+      if (uploadMatch) {
+        if (method !== 'POST') return { status: 404, body: { error: 'not-found', message: 'unknown route' } };
+        const projectId = uploadMatch[1] ?? '';
+        const { store } = scopedStore(opts.libraryRoot);
+        const project = store.get(projectId);
+        const problem = jsonBodyProblem(req.body);
+        if (problem) return problem;
+        const body = req.body as { paths?: unknown; subpath?: unknown };
+        const paths = Array.isArray(body.paths) ? body.paths.filter((p): p is string => typeof p === 'string') : [];
+        const subpath = typeof body.subpath === 'string' ? body.subpath.trim() : '';
+        const targetDir = resolve(project.path, subpath);
+        const rel = relative(project.path, targetDir);
+        if (rel.startsWith('..') || isAbsolute(rel)) {
+          return { status: 403, body: { error: 'path-denied' } };
+        }
+        mkdirSync(targetDir, { recursive: true });
+        for (const src of paths) {
+          if (existsSync(src)) {
+            const basename = join(src).split('/').pop() || 'upload';
+            copyFileSync(src, join(targetDir, basename));
+          }
+        }
+        return { status: 200, body: { ok: true } };
+      }
+
+      if (preflightRe.exec(path)) {
+        if (method !== 'POST') {
+          return { status: 404, body: { error: 'not-found', message: 'unknown route' } };
+        }
+        const problem = jsonBodyProblem(req.body);
+        if (problem) return problem;
+        const body = req.body as { mode?: unknown; workspaceDir?: unknown; projectRoot?: unknown; title?: unknown };
+        const { store } = scopedReadOnlyStore(opts.libraryRoot);
+        // 只读：不建库根、不建画布、不写 registry、不动 project.json。
+        const mode = parseMode(body.mode);
+        const result = await store.preflightProject({
+          ...(mode ? { mode } : {}),
+          workspaceDir: readWorkspaceDir(body.workspaceDir),
+          projectRoot: readWorkspaceDir(body.projectRoot),
+          title: typeof body.title === 'string' ? body.title : undefined,
+        });
+        // 只读：不建画布、不写 registry、不动 project.json。
+        return { status: 200, body: result };
+      }
+
+      const itemMatch = itemRe.exec(path);
+      if (itemMatch) {
+        const id = itemMatch[1] ?? '';
+        if (id === 'library') {
+          return { status: 404, body: { error: 'not-found', message: 'unknown route' } };
+        }
+        const { store } = scopedStore(opts.libraryRoot);
+        if (method === 'GET') {
+          return { status: 200, body: { project: enrich(store.get(id)) } };
+        }
+        if (method === 'PATCH') {
+          const problem = jsonBodyProblem(req.body);
+          if (problem) return problem;
+          const body = req.body as { title?: unknown };
+          if (typeof body.title === 'string') {
+            return { status: 200, body: { project: store.rename(id, body.title) } };
+          }
+          return { status: 400, body: { error: 'invalid-json', message: 'title is required' } };
+        }
+        if (method === 'DELETE') {
+          const mode = (url.searchParams.get('mode') ?? '').trim();
+          if (mode !== '' && mode !== 'purge') {
+            return { status: 400, body: { error: 'invalid-mode', message: 'DELETE mode must be purge when provided' } };
+          }
+          const purge = mode === 'purge';
+          // B4 顺序：先只读收集画布 id，再摘项目档案；档案摘除失败时 home canvas
+          // 必须原样保留（不会出现「项目还在、画布已删」的中间态）。
+          const canvasIds: string[] = [];
+          if (purge && opts.workspaceStore) {
+            try {
+              const record = store.get(id);
+              for (const page of record.pages ?? []) {
+                const wsId = typeof page.canvasWorkspaceId === 'string' ? page.canvasWorkspaceId.trim() : '';
+                if (wsId !== '') canvasIds.push(wsId);
+              }
+            } catch {
+              // 档案不可读：交给 store.remove 抛语义化错误。
+            }
+          }
+          store.remove(id, { purge });
+          if (purge && opts.workspaceStore) {
+            // 档案已摘除，再级联清 home canvas 副本；单个失败不阻断整体删除。
+            for (const wsId of canvasIds) {
+              try {
+                opts.workspaceStore.remove(wsId);
+              } catch {
+                // 画布可能已不在或由外部管理：保留孤儿但不回滚已删除的项目档案。
+              }
+            }
+          }
+          return { status: 200, body: { ok: true } };
+        }
+        return { status: 404, body: { error: 'not-found', message: 'unknown route' } };
+      }
+
+      return { status: 404, body: { error: 'not-found', message: 'unknown route' } };
+    } catch (error) {
+      if (error instanceof ProjectPathError) {
+        return { status: STATUS_BY_CODE[error.code] ?? 400, body: { error: error.code, message: error.message } };
+      }
+      if (error instanceof ProjectStoreError) {
+        return { status: STATUS_BY_CODE[error.code] ?? 400, body: { error: error.code, message: error.message } };
+      }
+      if (isEnsureProjectError(error)) {
+        return { status: STATUS_BY_CODE[error.code] ?? 400, body: { error: error.code, message: error.message } };
+      }
+      return { status: 500, body: { error: 'internal', message: messageOf(error) } };
+    }
+  }
+
+  return { owns, dispatch };
+}

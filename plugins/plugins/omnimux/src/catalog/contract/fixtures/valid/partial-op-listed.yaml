@@ -1,0 +1,65 @@
+# Same model: one op listed, another draft — proves operation-level admission
+schemaVersion: "1.1"
+managementGroup: "image"
+models:
+  - id: "fixture-partial-ops"
+    label: "Fixture Partial Ops"
+    family: "fixture"
+    research:
+      status: "draft"
+    execution:
+      status: "none"
+    operations:
+      - id: "text_to_image"
+        label: "文生图"
+        output:
+          type: "image"
+          allowedMimes: ["image/png"]
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+        research:
+          status: "verified"
+          docUrl: "https://example.com/fixture-partial-t2i"
+        implementation:
+          status: "ready"
+          profileId: "imageGenerate"
+          seam: "imageGenerate"
+        execution:
+          status: "live"
+          profileId: "imageGenerate"
+          seam: "imageGenerate"
+      - id: "image_to_image"
+        label: "图生图"
+        output:
+          type: "image"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+          - slot: "source_image"
+            type: "image"
+            role: "source"
+            source: "upstream_edge"
+            min: 1
+            max: 1
+            allowedMimes: ["image/png", "image/jpeg"]
+            maxSizeMb: 10
+            limitSource:
+              kind: "policy_conservative"
+              note: "fixture"
+        research:
+          status: "draft"
+        implementation:
+          status: "none"
+          profileId: "imageGenerate"
+        execution:
+          status: "stub"
+          profileId: "imageGenerate"

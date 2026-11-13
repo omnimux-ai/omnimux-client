@@ -1,0 +1,115 @@
+import { Button, IconButton } from 'dsh-ui-kit'
+import { activateRowKeydown } from './a11y.js'
+import { previewUrl } from './api.js'
+import { CheckIcon, ChatIcon } from './icons.jsx'
+
+/**
+ * @param {{
+ *   t?: (key: string) => string,
+ *   products: any[],
+ *   emptyLabel?: string,
+ *   emptyActionLabel?: string,
+ *   emptyAction?: import('react').ReactNode,
+ *   showEmptyAction?: boolean,
+ *   onEmptyAction?: () => void,
+ *   onOpen?: (product: any) => void,
+ *   onAddToChat?: (product: any) => void,
+ *   selectedIds?: Set<string>,
+ *   onToggleSelect?: (product: any) => void,
+ * }} props
+ */
+export function ProductGrid({ t, products, emptyLabel, emptyActionLabel, emptyAction, showEmptyAction = true, onEmptyAction, onOpen, onAddToChat, selectedIds, onToggleSelect }) {
+  const safeEmptyLabel = emptyLabel || (typeof t === 'function' ? t('empty.all') : '')
+  const safeEmptyActionLabel = emptyActionLabel ?? (typeof t === 'function' ? t('add.button') : '')
+  if (products.length === 0) {
+    // 空状态的创建入口与动作行同源：宿主给一个现成的节点就用它（形态分流菜单），
+    // 没给才退回单按钮的老形态。
+    const action = emptyAction ?? (safeEmptyActionLabel && onEmptyAction ? (
+      <Button variant="primary" size="sm" onClick={onEmptyAction}>
+        {safeEmptyActionLabel}
+      </Button>
+    ) : null)
+    return (
+      <div className="omnimux-products-empty">
+        <p>{safeEmptyLabel}</p>
+        {showEmptyAction ? action : null}
+      </div>
+    )
+  }
+
+  return (
+    <div className="omnimux-products-grid">
+      {products.map((product) => {
+        const glyph = (product.name || '?').trim().slice(0, 1)
+        const cover = product.cover
+        const preview = cover?.kind === 'image' && cover.id
+          ? previewUrl(product.id, cover.id)
+          : ''
+        const selected = selectedIds?.has(product.id)
+        return (
+          <article
+            key={product.id}
+            className="omnimux-products-focusable omnimux-products-card"
+            tabIndex={0}
+            role="button"
+            aria-selected={selected ? 'true' : 'false'}
+            onClick={() => { onOpen?.(product) }}
+            onKeyDown={activateRowKeydown(() => { onOpen?.(product) })}
+          >
+            <div className="omnimux-products-card-thumb">
+              {preview ? (
+                <img
+                  src={preview}
+                  alt=""
+                  className="omnimux-products-card-media"
+                  onError={(event) => { event.currentTarget.dataset.broken = 'true' }}
+                />
+              ) : null}
+              <span className="omnimux-products-glyph">{glyph}</span>
+              {onToggleSelect ? (
+                <IconButton
+                  variant="ghost"
+                  size="xs"
+                  className="omnimux-products-check"
+                  data-selected={selected ? 'true' : 'false'}
+                  aria-label={t('select.toggle')}
+                  aria-pressed={selected ? 'true' : 'false'}
+                  title=""
+                  onClick={(event) => { event.stopPropagation(); onToggleSelect(product) }}
+                >
+                  {selected ? <CheckIcon size={12} /> : <span />}
+                </IconButton>
+              ) : null}
+              {onAddToChat ? (
+                <IconButton
+                  variant="ghost"
+                  size="xs"
+                  className="omnimux-products-chat-btn"
+                  aria-label={typeof t === 'function' ? (t('add.chatButton') || '添加到会话') : '添加到会话'}
+                  title={typeof t === 'function' ? (t('add.chatButton') || '添加到会话') : '添加到会话'}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onAddToChat(product)
+                  }}
+                >
+                  <ChatIcon size={13} />
+                </IconButton>
+              ) : null}
+            </div>
+            <div className="omnimux-products-card-body">
+              <div className="omnimux-products-card-title">{product.name}</div>
+              <div className="omnimux-products-card-desc">
+                {product.kind === 'digital'
+                  ? (product.link
+                    || product.brand_strategy?.brand_basic_info?.product?.name
+                    || product.description
+                    || '—')
+                  : (product.selling_points || product.description || '—')}
+              </div>
+            </div>
+          </article>
+        )
+      })}
+    </div>
+  )
+}

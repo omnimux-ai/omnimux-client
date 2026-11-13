@@ -1,0 +1,28 @@
+{
+  "id": "omnimux-products",
+  "name": "omnimux-products",
+  "version": "0.1.0",
+  "tier": "tier-1-app",
+  "entrypoint": "src/index.js",
+  "status": "active",
+  "description": "OmniMux 电商产品库：结构化标品、卖点提炼、商品详情与媒体资产纳管",
+  "tags": ["products", "ecommerce", "sku", "spu", "selling-points", "library"],
+  "capabilities": {
+    "tools": [
+      { "name": "products_create", "summary": "创建新的商品标品对象", "category": "ecommerce", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "products_list", "summary": "列出产品库中所有商品清单", "category": "ecommerce", "isWriteOperation": false, "requiresAuth": false },
+      { "name": "products_get", "summary": "获取指定商品的完整属性与卖点", "category": "ecommerce", "isWriteOperation": false, "requiresAuth": false },
+      { "name": "products_search", "summary": "按名称或品类检索商品", "category": "ecommerce", "isWriteOperation": false, "requiresAuth": false },
+      { "name": "products_update", "summary": "更新商品卖点、描述或主图引用", "category": "ecommerce", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "products_read_media", "summary": "读取商品关联的多模态素材", "category": "ecommerce", "isWriteOperation": false, "requiresAuth": false }
+    ],
+    "seamsProvided": [],
+    "seamsConsumed": [],
+    "slots": [],
+    "storageDomains": ["$DSH_HOME/omnimux/products/"]
+  },
+  "dependencies": {
+    "requiredPlugins": ["omnimux"],
+    "systemBinaries": []
+  }
+}

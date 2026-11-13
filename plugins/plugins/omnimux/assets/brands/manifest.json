@@ -1,0 +1,136 @@
+{
+  "version": "1.0.0",
+  "updatedAt": "2026-03-31T00:00:00.000Z",
+  "brands": {
+    "openai": {
+      "id": "openai",
+      "company": "OpenAI",
+      "series": { "zh": "Sora / GPT", "en": "Sora / GPT" },
+      "primaryColor": "#10A37F",
+      "models": ["gpt-5.5", "gpt-4o", "gpt-image-2.5", "sora-2", "sora-2-standard", "sora2", "dall-e-3"]
+    },
+    "anthropic": {
+      "id": "anthropic",
+      "company": "Anthropic",
+      "series": { "zh": "Claude", "en": "Claude" },
+      "primaryColor": "#D97706",
+      "models": ["claude-opus-4-6", "claude-3-7-sonnet", "claude-3-5-sonnet", "claude-3-haiku"]
+    },
+    "google": {
+      "id": "google",
+      "company": "Google",
+      "series": { "zh": "Gemini", "en": "Gemini" },
+      "primaryColor": "#4285F4",
+      "models": ["gemini-3.1-pro-preview", "gemini-3.7-flash", "gemini-3-pro", "nano-banana-2", "nano-banana-pro", "nanobanana-2", "nanobanana-pro"]
+    },
+    "veo": {
+      "id": "veo",
+      "company": "Google DeepMind",
+      "series": { "zh": "Veo", "en": "Veo" },
+      "primaryColor": "#1A73E8",
+      "models": ["veo31", "veo3.1", "veo-3", "veo3", "omni-flash"]
+    },
+    "kling": {
+      "id": "kling",
+      "company": "快手",
+      "series": { "zh": "可灵", "en": "Kling" },
+      "primaryColor": "#FF5000",
+      "models": ["kling-o3", "kling-v3-motion-control", "kling-motion-control", "kling-video-o1", "kling-1-5", "kling30"]
+    },
+    "alibaba": {
+      "id": "alibaba",
+      "company": "阿里",
+      "series": { "zh": "万相 / 通义", "en": "Wan / Qwen" },
+      "primaryColor": "#6366F1",
+      "models": ["wan-3.0", "wan3.0", "wan30", "wan-2.7", "wan2.7", "wan-2.6", "wan2.6", "wan26", "wanxiang-v2-6", "happyhorse-1", "happyhorse-1.0", "qwen-max", "qwen-vl"]
+    },
+    "bytedance": {
+      "id": "bytedance",
+      "company": "字节跳动",
+      "series": { "zh": "即梦 / 豆包", "en": "Seedance / Seedream" },
+      "primaryColor": "#3B82F6",
+      "models": ["seedream-5-0-pro", "seedance-2-0-fast", "seedance-2", "doubao-seedance-pro", "seedream"]
+    },
+    "deepseek": {
+      "id": "deepseek",
+      "company": "DeepSeek",
+      "series": { "zh": "深度求索", "en": "DeepSeek" },
+      "primaryColor": "#0284C7",
+      "models": ["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-chat", "deepseek-reasoner"]
+    },
+    "midjourney": {
+      "id": "midjourney",
+      "company": "Midjourney",
+      "series": { "zh": "Midjourney", "en": "Midjourney" },
+      "primaryColor": "#FFFFFF",
+      "models": ["mj-v8-1", "mj-v7", "midjourney-video"]
+    },
+    "minimax": {
+      "id": "minimax",
+      "company": "MiniMax",
+      "series": { "zh": "海螺", "en": "Hailuo" },
+      "primaryColor": "#10B981",
+      "models": ["minimax-h3", "minimax-video", "hailuo-01", "minimax-chat"]
+    },
+    "grok": {
+      "id": "grok",
+      "company": "xAI",
+      "series": { "zh": "Grok", "en": "Grok" },
+      "primaryColor": "#FFFFFF",
+      "models": ["grok-imagine", "grok-imagine-video-1-5", "grok-3", "grok-2"]
+    },
+    "vidu": {
+      "id": "vidu",
+      "company": "生数科技",
+      "series": { "zh": "Vidu", "en": "Vidu" },
+      "primaryColor": "#EC4899",
+      "models": ["viduq2", "vidu-v1", "vidu-video"]
+    },
+    "runway": {
+      "id": "runway",
+      "company": "Runway",
+      "series": { "zh": "Gen", "en": "Gen" },
+      "primaryColor": "#14B8A6",
+      "models": ["gen-3-alpha", "gen-2", "runway-video"]
+    },
+    "elevenlabs": {
+      "id": "elevenlabs",
+      "company": "ElevenLabs",
+      "series": { "zh": "Voice", "en": "Voice" },
+      "primaryColor": "#000000",
+      "models": ["speech-2.8-hd", "eleven-multilingual-v2", "eleven-turbo-v2"]
+    },
+    "stability": {
+      "id": "stability",
+      "company": "Stability AI",
+      "series": { "zh": "SD", "en": "Stable Diffusion" },
+      "primaryColor": "#7C3AED",
+      "models": ["sdxl-turbo", "sd-3.5-large", "stable-video-diffusion"]
+    },
+    "suno": {
+      "id": "suno",
+      "company": "Suno",
+      "series": { "zh": "Suno 音乐", "en": "Suno Music" },
+      "primaryColor": "#FF3366",
+      "models": ["suno", "suno-v3", "suno-v3.5", "suno-v4"]
+    }
+  },
+  "rules": [
+    { "brand": "suno", "pattern": "(^suno|\\bsuno\\b)" },
+    { "brand": "veo", "pattern": "(^veo|\\bveo\\b|omni[- ]?flash)" },
+    { "brand": "google", "pattern": "(^gemini|\\bgemini\\b|google|nano[- ]?banana)" },
+    { "brand": "anthropic", "pattern": "(^claude|\\bclaude\\b|anthropic)" },
+    { "brand": "kling", "pattern": "(^kling|\\bkling\\b|可灵)" },
+    { "brand": "alibaba", "pattern": "(^wan|\\bwan\\b|wanxiang|万相|通义|qwen|happyhorse)" },
+    { "brand": "deepseek", "pattern": "(^deepseek|\\bdeepseek\\b|深度求索)" },
+    { "brand": "bytedance", "pattern": "(^seed|seedance|seedream|doubao|豆包|即梦)" },
+    { "brand": "openai", "pattern": "(^gpt|^o1|^o3|openai|sora|dall[- ]?e|chatgpt)" },
+    { "brand": "midjourney", "pattern": "(^midjourney|\\bmidjourney\\b|\\bmj\\b|niji)" },
+    { "brand": "minimax", "pattern": "(^minimax|\\bminimax\\b|hailuo|海螺)" },
+    { "brand": "grok", "pattern": "(^grok|\\bgrok\\b|xai)" },
+    { "brand": "vidu", "pattern": "(^vidu|\\bvidu\\b|生数)" },
+    { "brand": "runway", "pattern": "(^runway|\\brunway\\b|^gen-[23])" },
+    { "brand": "elevenlabs", "pattern": "(^eleven|elevenlabs|11labs|speech)" },
+    { "brand": "stability", "pattern": "(^sd|stability|stable[- ]?diffusion|sdxl)" }
+  ]
+}

@@ -1,0 +1,1004 @@
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { clamp, fetchSkillCard, parseSlug } from './api.js';
+import { parseCategory } from './categories.js';
+import { assignConfig, dshHome, publicConfig, sanitizePatch, sanitizeSortBy, writeOverlay } from './config-store.js';
+import { configureHttpJsonCache } from './http.js';
+import { BOOT_ID, progress, publicInstallStatus } from './dsh-cli.js';
+import { decorateCatalog, loadCatalog } from './expert/catalog.js';
+import { findItem, installItem, readCatalogSkillMarkdown, removeMcpRow, withConnectorPatchLock } from './expert/install.js';
+import { packageRoot, profileDir } from './expert/paths.js';
+import { summonItem } from './expert/summon.js';
+import { installSuite, uninstallSuite, } from './suite-install.js';
+import { clearSessionTrial, loadSkillBody, writeSessionExpert, writeSessionTrial } from './session-attach.js';
+import { fetchBytes } from './http.js';
+import { installSkill, installedSlugs, listInstalled, peekSkillMarkdown, uninstallSkill } from './install.js';
+import { listMarketplaceConnectors, resolveMarketplaceIconFile } from './marketplace-connectors.js';
+import { installMarketPlugin, isPluginInstallBusy, listPluginCategories, listPlugins, withPluginInstallLock } from './plugin-market.js';
+import { scheduleRestart, servingPort, trustedRestartRequest } from './restart.js';
+import { fetchEvalScore, fetchSkillTab } from './skill-detail.js';
+import { aggregateSkillSearch, catalogItemToCard, findCatalogSkill } from './skill-aggregate.js';
+import { RequestGuard, WORKSHOP_READ_METHODS } from './workshop-request-guard.js';
+import { WorkshopReadError } from './workshop-store.js';
+import { WorkshopQueryError } from './workshop-query.js';
+/** Fixed, GET-only methods: authentication and scope checks precede payload decoding. */
+export async function handleWorkshopApi(req, res, method, host, authorization) {
+    try {
+        await new RequestGuard(authorization).authorizeHeaders(req, method);
+        if (!WORKSHOP_READ_METHODS.includes(method))
+            throw new WorkshopReadError('INVALID_REQUEST', 400);
+        const url = new URL(req.url || '/', 'http://127.0.0.1');
+        if ((req.url?.length || 0) > 8192 ||
+            [...url.searchParams.keys()].some((key) => key !== 'request') ||
+            url.searchParams.getAll('request').length > 1) {
+            throw new WorkshopReadError('INVALID_REQUEST', 400);
+        }
+        const raw = url.searchParams.get('request');
+        let result;
+        if (method === 'workshopCapabilities' || method === 'workshopInventory') {
+            if (raw !== null)
+                throw new WorkshopReadError('INVALID_REQUEST', 400);
+            result = await host[method](req);
+        }
+        else {
+            if (!raw)
+                throw new WorkshopReadError('INVALID_REQUEST', 400);
+            let input;
+            try {
+                input = JSON.parse(raw);
+            }
+            catch {
+                throw new WorkshopReadError('INVALID_REQUEST', 400);
+            }
+            result =
+                method === 'workshopQuery'
+                    ? await host.workshopQuery(req, input)
+                    : await host.workshopDetail(req, input);
+        }
+        res.setHeader('cache-control', 'no-store');
+        return sendJson(res, 200, { ok: true, ...result });
+    }
+    catch (error) {
+        const isWorkshopError = error instanceof WorkshopReadError || error instanceof WorkshopQueryError;
+        const code = isWorkshopError ? error.code : 'CAPABILITY_UNAVAILABLE';
+        let status = 503;
+        if (error instanceof WorkshopReadError) {
+            status = error.status;
+        }
+        else if (code === 'INVALID_REQUEST') {
+            status = 400;
+        }
+        else if (code === 'CURSOR_EXPIRED') {
+            status = 409;
+        }
+        res.setHeader('cache-control', 'no-store');
+        return sendJson(res, status, { ok: false, code, error: code, retryable: status >= 500 });
+    }
+}
+let restarting = false;
+export const MUTATING_METHODS = new Set([
+    'install',
+    'uninstall',
+    'pluginInstall',
+    'pluginUninstall',
+    'pluginRestart',
+    'catalogInstall',
+    'catalogSummon',
+    'catalogUninstall',
+    'suiteInstall',
+    'suiteUninstall',
+    'expertMarketInstall',
+    'expertMarketDisable',
+    'setModelSelection',
+    'tryAttach',
+    'tryDetach',
+]);
+import { DEFAULT_MARKET_EXPERTS, getMarketExpertStatus, installMarketExpertPreset, disableMarketExpertPreset, materializeEnabledMarketExperts, reconcileMarketExperts, } from './expert-market.js';
+import { agentPresetCordis, healAgentPresetCordis, healInstalledAgentPresets, writeAgentPreset, } from './expert-presets.js';
+export { DEFAULT_MARKET_EXPERTS, getMarketExpertStatus, installMarketExpertPreset, disableMarketExpertPreset, materializeEnabledMarketExperts, reconcileMarketExperts, agentPresetCordis, healAgentPresetCordis, healInstalledAgentPresets, writeAgentPreset, };
+/**
+ * 官方 `@deepseek-ai/dsh-client-ui-agent-preset` 的 seat 控制器只在收到
+ * `settings/document-updated`（命名空间 agent-presets）时重读列表，
+ * 市场安装/禁用/启动物化后由 host 注入此钩子广播一次，免重启即时可见。
+ * 同 setModelCatalogResolver 的模块级注入先例。
+ */
+let agentPresetsNotify = null;
+export function setAgentPresetsNotify(fn) {
+    agentPresetsNotify = typeof fn === 'function' ? fn : null;
+}
+function notifyAgentPresetsChanged() {
+    try {
+        agentPresetsNotify?.();
+    }
+    catch { }
+}
+/**
+ * 官方 `@deepseek-ai/dsh-agent-presets` 发现服务注入点。
+ * 专家市场以官方发现的列表为真实全量数据源。
+ */
+let agentPresetsProvider = null;
+export function setAgentPresetsProvider(fn) {
+    agentPresetsProvider = typeof fn === 'function' ? fn : null;
+}
+// --- 独立领域 Handler 路由实现 ---
+async function handleSearch(ctx) {
+    const { body, url, cfg, res } = ctx;
+    const query = String(body.query || url.searchParams.get('query') || '').trim();
+    const category = parseCategory(body.category || url.searchParams.get('category'));
+    const explicit = Number(body.limit);
+    const limit = Number.isFinite(explicit) && explicit > 0 ? clamp(explicit, 1, 80) : cfg.maxResults;
+    const offset = Math.max(0, Math.floor(Number(body.offset) || 0));
+    const installedList = await listInstalled(cfg.skillsDir);
+    const installed = new Set(installedList.map((it) => String(it.slug || '').trim().toLowerCase()).filter(Boolean));
+    const result = await aggregateSkillSearch(query, {
+        cfg,
+        queries: body.queries,
+        category,
+        sortBy: sanitizeSortBy(body.sortBy, query ? cfg.sortBy : 'downloads'),
+        limit,
+        offset,
+        installed,
+        installedSkills: installedList,
+        channels: body.channels,
+    });
+    void attachRatings(result.items, cfg).catch(() => { });
+    return sendJson(res, 200, { ok: true, ...result });
+}
+async function handleRatings(ctx) {
+    const { body, url, cfg, res } = ctx;
+    const rawSlugs = Array.isArray(body.slugs)
+        ? body.slugs
+        : String(body.slugs || url.searchParams.get('slugs') || '').split(',');
+    const slugs = rawSlugs.map((s) => String(s || '').trim()).filter(Boolean).slice(0, 24);
+    const ratings = {};
+    await Promise.all(slugs.map(async (slug) => {
+        try {
+            const score = await fetchEvalScore(slug, cfg);
+            if (score != null)
+                ratings[slug] = score;
+        }
+        catch { }
+    }));
+    return sendJson(res, 200, { ok: true, ratings });
+}
+async function handleSkillInstall(ctx) {
+    const { req, res, body, url, cfg } = ctx;
+    if (!trustedRestartRequest(req))
+        return sendJson(res, 403, { ok: false, error: 'install is limited to same-origin requests' });
+    const slug = String(body.slug || url.searchParams.get('slug') || '').trim();
+    if (!slug)
+        return sendJson(res, 400, { ok: false, error: '缺少 slug' });
+    const version = String(body.version || url.searchParams.get('version') || '').trim();
+    const result = await installSkill(slug, cfg, undefined, undefined, version || undefined, body.catalogId ? String(body.catalogId) : undefined);
+    return sendJson(res, 200, { ok: true, ...result });
+}
+async function handleSkillList(ctx) {
+    const items = await listInstalled(ctx.cfg.skillsDir);
+    return sendJson(ctx.res, 200, { ok: true, skillsDir: ctx.cfg.skillsDir, items });
+}
+async function handleSkillUninstall(ctx) {
+    const { req, res, body, url, cfg } = ctx;
+    if (!trustedRestartRequest(req))
+        return sendJson(res, 403, { ok: false, error: 'uninstall is limited to same-origin requests' });
+    const slug = String(body.slug || url.searchParams.get('slug') || '').trim();
+    if (!slug)
+        return sendJson(res, 400, { ok: false, error: '缺少 slug' });
+    const result = await uninstallSkill(slug, cfg.skillsDir);
+    return sendJson(res, 200, { ok: true, ...result });
+}
+async function handleTryAttach(ctx) {
+    const { req, res, body, url, cfg } = ctx;
+    if (!trustedRestartRequest(req))
+        return sendJson(res, 403, { ok: false, error: 'tryAttach is limited to same-origin requests' });
+    const sessionId = String(body.sessionId || url.searchParams.get('sessionId') || '').trim();
+    const slugRaw = String(body.slug || url.searchParams.get('slug') || '').trim();
+    if (!sessionId)
+        return sendJson(res, 400, { ok: false, error: '缺少 sessionId' });
+    if (!slugRaw)
+        return sendJson(res, 400, { ok: false, error: '缺少 slug' });
+    let slug = slugRaw;
+    try {
+        slug = parseSlug(slugRaw);
+    }
+    catch {
+        slug = slugRaw.toLowerCase();
+    }
+    const catalogId = String(body.catalogId || url.searchParams.get('catalogId') || '').trim();
+    const title = String(body.title || body.name || slug).trim();
+    const roots = expertRoots();
+    let bodyText = loadSkillBody(roots.home, slug);
+    const catalogItem = findCatalogSkill(slug, catalogId || undefined);
+    if (!bodyText && catalogItem) {
+        bodyText = readCatalogSkillMarkdown(catalogItem, roots);
+    }
+    if (!bodyText) {
+        try {
+            bodyText = await peekSkillMarkdown(slug, cfg);
+        }
+        catch {
+            bodyText = '';
+        }
+    }
+    const saved = writeSessionTrial(roots.home, sessionId, {
+        slug,
+        title: title || catalogItem?.title || slug,
+        catalogId: catalogId || String(catalogItem?.id || ''),
+        body: bodyText,
+    });
+    return sendJson(res, 200, {
+        ok: true,
+        attached: true,
+        installed: false,
+        sessionId,
+        slug: saved.slug,
+        title: saved.title,
+        hasBody: Boolean(saved.body),
+    });
+}
+function handleTryDetach(ctx) {
+    const { req, res, body, url } = ctx;
+    if (!trustedRestartRequest(req))
+        return sendJson(res, 403, { ok: false, error: 'tryDetach is limited to same-origin requests' });
+    const sessionId = String(body.sessionId || url.searchParams.get('sessionId') || '').trim();
+    if (!sessionId)
+        return sendJson(res, 400, { ok: false, error: '缺少 sessionId' });
+    const cleared = clearSessionTrial(expertRoots().home, sessionId);
+    return sendJson(res, 200, { ok: true, attached: false, sessionId, cleared });
+}
+async function handleConfigRoute(ctx) {
+    const { req, res, body, cfg } = ctx;
+    if (body.save) {
+        if (!trustedRestartRequest(req)) {
+            return sendJson(res, 403, { ok: false, error: 'config save is limited to same-origin requests' });
+        }
+        assignConfig(cfg, sanitizePatch(body));
+        writeOverlay(cfg);
+        configureHttpJsonCache({ ttlMs: Math.max(15, cfg.plazaCacheTtlSec) * 1000 });
+    }
+    return sendJson(res, 200, { ok: true, ...publicConfig(cfg) });
+}
+function handleUpdateCheck(ctx) {
+    return sendJson(ctx.res, 200, { ok: true, disabled: true, reason: 'fork 已禁用自更新，更新走 omnimux-dsh 仓库' });
+}
+function handleUpdate(ctx) {
+    return sendJson(ctx.res, 200, { ok: true, disabled: true, reason: 'fork 已禁用自更新，更新走 omnimux-dsh 仓库' });
+}
+async function handlePluginCategoriesRoute(ctx) {
+    const items = await listPluginCategories(ctx.cfg);
+    return sendJson(ctx.res, 200, { ok: true, items });
+}
+async function handlePluginsRoute(ctx) {
+    const { body, url, cfg, res } = ctx;
+    try {
+        const q = body.q ?? body.query ?? url.searchParams.get('q');
+        const scope = body.scope ?? url.searchParams.get('scope');
+        const category = body.category ?? url.searchParams.get('category');
+        const sort = body.sort ?? url.searchParams.get('sort');
+        const page = body.page ?? url.searchParams.get('page');
+        const pageSize = body.pageSize ?? body.limit ?? url.searchParams.get('page_size') ?? url.searchParams.get('pageSize');
+        const result = await listPlugins(cfg, { q, scope, category, sort, page, pageSize });
+        return sendJson(res, 200, { ok: true, ...result });
+    }
+    catch (err) {
+        if (cfg.aggregateRemoteSoftFail) {
+            return sendJson(res, 200, {
+                ok: true,
+                items: [],
+                total: 0,
+                page: 1,
+                pageSize: 24,
+                apiBase: cfg.apiBase,
+                webBase: cfg.webBase,
+                warning: err instanceof Error ? err.message : String(err),
+            });
+        }
+        throw err;
+    }
+}
+async function handlePluginInstallRoute(ctx) {
+    const { req, res, body, url, cfg } = ctx;
+    if (!trustedRestartRequest(req))
+        return sendJson(res, 403, { ok: false, error: 'pluginInstall is limited to same-origin requests' });
+    const owner = body.owner ?? url.searchParams.get('owner');
+    const name = body.name ?? url.searchParams.get('name');
+    const fullName = body.fullName ?? url.searchParams.get('fullName');
+    const result = await withPluginInstallLock(() => installMarketPlugin({ owner, name, fullName }, cfg));
+    return sendJson(res, 200, { ok: true, ...result });
+}
+function handlePluginInstallStatusRoute(ctx) {
+    return sendJson(ctx.res, 200, {
+        ok: true,
+        ...publicInstallStatus(),
+        busy: isPluginInstallBusy() || progress.active,
+        restart: true,
+        boot: BOOT_ID,
+    });
+}
+function handlePluginRestartRoute(ctx) {
+    const { req, res } = ctx;
+    if (!trustedRestartRequest(req))
+        return sendJson(res, 403, { ok: false, error: 'restart is limited to same-origin requests' });
+    if (isPluginInstallBusy() || progress.active)
+        return sendJson(res, 409, { ok: false, error: 'cannot restart while a plugin operation is running' });
+    if (restarting)
+        return sendJson(res, 409, { ok: false, error: 'restart already scheduled' });
+    restarting = true;
+    try {
+        const result = scheduleRestart(servingPort(req));
+        return sendJson(res, 202, { ok: true, pid: result.pid, helperPid: result.helperPid, via: result.via });
+    }
+    catch (err) {
+        restarting = false;
+        throw err;
+    }
+}
+async function handleSkillDetail(ctx) {
+    const { body, url, cfg, res } = ctx;
+    const slug = parseSlug(String(body.slug || url.searchParams.get('slug') || ''));
+    const installed = await installedSlugs(cfg.skillsDir);
+    let card = await fetchSkillCard(slug, cfg, installed);
+    // 官方 catalog 条目（含 session-guide）优先合并本地字段，避免远程详情冲掉安装分流标记
+    const catalogId = body.catalogId ? String(body.catalogId) : undefined;
+    const catalogItem = findCatalogSkill(slug, catalogId);
+    if (catalogItem) {
+        const local = catalogItemToCard(catalogItem, 'custom', cfg, installed);
+        card = card ? { ...card, ...local, installed: installed.has(local.slug) || card.installed } : local;
+    }
+    const tab = String(body.tab || url.searchParams.get('tab') || 'readme');
+    const content = await fetchSkillTab(slug, tab, cfg);
+    return sendJson(res, 200, { ok: true, card, tab, content });
+}
+function resolveExploreDirectory(slug, skillsDir) {
+    const candidates = [
+        join(skillsDir, slug),
+        join(process.env.HOME || '', '.dsh/skills', slug),
+        join(packageRoot(), 'catalog/skills', slug),
+        join(packageRoot(), 'catalog/experts', slug),
+    ];
+    for (const c of candidates) {
+        if (existsSync(join(c, 'SKILL.md')))
+            return c;
+    }
+    return '';
+}
+function handleSkillContent(ctx) {
+    const { body, url, cfg, res } = ctx;
+    const slug = parseSlug(String(body.slug || url.searchParams.get('slug') || ''));
+    if (!slug)
+        return sendJson(res, 400, { ok: false, error: '缺少 slug' });
+    const skillDir = resolveExploreDirectory(slug, cfg.skillsDir);
+    if (!skillDir)
+        return sendJson(res, 200, { ok: true, found: false });
+    try {
+        const files = readdirSync(skillDir, { withFileTypes: true });
+        const tree = [];
+        for (const f of files) {
+            if (f.name.startsWith('.'))
+                continue;
+            if (f.isDirectory()) {
+                let children = [];
+                try {
+                    children = readdirSync(join(skillDir, f.name)).filter((c) => !c.startsWith('.'));
+                }
+                catch { }
+                tree.push({ name: f.name, isDir: true, children });
+            }
+            else {
+                tree.push({ name: f.name, isDir: false });
+            }
+        }
+        const skillMd = readFileSync(join(skillDir, 'SKILL.md'), 'utf8');
+        let metaYaml = '';
+        if (existsSync(join(skillDir, 'meta.yaml'))) {
+            metaYaml = readFileSync(join(skillDir, 'meta.yaml'), 'utf8');
+        }
+        return sendJson(res, 200, { ok: true, found: true, tree, skillMd, metaYaml });
+    }
+    catch { }
+    return sendJson(res, 200, { ok: true, found: false });
+}
+async function handleSkillTab(ctx) {
+    const { body, url, cfg, res } = ctx;
+    const slug = parseSlug(String(body.slug || url.searchParams.get('slug') || ''));
+    const tab = String(body.tab || url.searchParams.get('tab') || '').trim();
+    if (!tab)
+        return sendJson(res, 400, { ok: false, error: '缺少 tab' });
+    const result = await fetchSkillTab(slug, tab, cfg);
+    return sendJson(res, 200, { ok: true, slug, ...result });
+}
+let homeOrderPathsForTests = null;
+/**
+ * 测试接缝：覆盖首页自定义排序的 state/catalog 路径；传 null 恢复默认。
+ * 仅测试使用（生产读取 DSH_HOME 与包内 catalog）。
+ */
+export function setHomeOrderPathsForTests(paths) {
+    homeOrderPathsForTests = paths;
+}
+/** 用户可写的自定义排序覆盖文件；catalog 内的 homeRecommendations 是打包默认，永不被运行时改写。 */
+export function homeOrderStatePath() {
+    return homeOrderPathsForTests?.state ?? join(dshHome(), 'omnimux-market-home-order.json');
+}
+function homeOrderCatalogPath() {
+    return homeOrderPathsForTests?.catalog ?? join(packageRoot(), 'catalog', 'skill-recommendations.json');
+}
+function errorText(err) {
+    return err instanceof Error ? err.message : String(err);
+}
+function errorCode(err) {
+    const code = err?.code;
+    return typeof code === 'string' && code ? code : 'unknown';
+}
+/** 读取用户覆盖文件；缺失/损坏一律按「无自定义排序」处理（读侧容错）。 */
+function readHomeOrderState(statePath) {
+    try {
+        const raw = JSON.parse(readFileSync(statePath, 'utf8'));
+        if (!raw || typeof raw !== 'object' || !Array.isArray(raw.order))
+            return null;
+        return raw.order.map(String);
+    }
+    catch {
+        return null;
+    }
+}
+/** 读取打包默认排序；缺失/损坏返回空数组（GET 读侧降级，不升级为 5xx）。 */
+function readCatalogHomeOrder(catalogPath) {
+    try {
+        if (!existsSync(catalogPath))
+            return [];
+        const raw = JSON.parse(readFileSync(catalogPath, 'utf8'));
+        return Array.isArray(raw?.homeRecommendations) ? raw.homeRecommendations.map(String) : [];
+    }
+    catch {
+        return [];
+    }
+}
+/**
+ * 写入用户自定义排序（Issue #3509）：只写 DSH_HOME 覆盖文件，catalog 保持打包默认。
+ * 写盘失败抛错由 handler 映射为 5xx；错误文案只含固定描述与错误码，不回传路径。
+ */
+export function writeHomeOrderState(statePath, order) {
+    const tmpPath = `${statePath}.tmp-${process.pid}-${Date.now()}`;
+    try {
+        // A brand-new DSH_HOME may not exist yet; create only the parent directory.
+        mkdirSync(dirname(statePath), { recursive: true });
+        writeFileSync(tmpPath, `${JSON.stringify({ version: 1, order, updatedAt: new Date().toISOString() }, null, 2)}\n`);
+        renameSync(tmpPath, statePath);
+    }
+    catch (err) {
+        throw new Error(`home order state not writable (${errorCode(err)})`);
+    }
+    finally {
+        if (existsSync(tmpPath)) {
+            try {
+                rmSync(tmpPath, { force: true });
+            }
+            catch (cleanupError) {
+                console.warn(`[omnimux-market] failed to remove stale home order temp file (${errorCode(cleanupError)})`);
+            }
+        }
+    }
+}
+/** 清除用户覆盖 = 恢复打包默认排序（Issue #3509）。 */
+export function clearHomeOrderState(statePath) {
+    try {
+        rmSync(statePath, { force: true });
+    }
+    catch (err) {
+        throw new Error(`home order state not writable (${errorCode(err)})`);
+    }
+}
+function handleHomeCustomOrder(ctx) {
+    const { req, res, body } = ctx;
+    const statePath = homeOrderStatePath();
+    const catalogPath = homeOrderCatalogPath();
+    if (req.method === 'POST') {
+        // Mutating path: same rule as the other mutating methods (Issue #3509).
+        if (!trustedRestartRequest(req)) {
+            return sendJson(res, 403, { ok: false, error: 'home custom order is limited to same-origin requests' });
+        }
+        if (!Array.isArray(body.order)) {
+            return sendJson(res, 400, { ok: false, error: 'order must be an array' });
+        }
+        const order = body.order.map(String);
+        try {
+            // Empty array is the documented reset: drop the override and fall back to the
+            // packaged default catalog instead of overwriting that default with [].
+            if (order.length > 0)
+                writeHomeOrderState(statePath, order);
+            else
+                clearHomeOrderState(statePath);
+        }
+        catch (err) {
+            return sendJson(res, 500, { ok: false, error: `home custom order not saved: ${errorText(err)}` });
+        }
+        return sendJson(res, 200, { ok: true, order });
+    }
+    const customOrder = readHomeOrderState(statePath);
+    const hasCustom = Boolean(customOrder && customOrder.length > 0);
+    const order = hasCustom ? customOrder : readCatalogHomeOrder(catalogPath);
+    return sendJson(res, 200, { ok: true, order, source: hasCustom ? 'custom' : 'default' });
+}
+async function handleExpertMarketList(ctx) {
+    const home = expertRoots().home;
+    let official = [];
+    if (typeof agentPresetsProvider === 'function') {
+        try {
+            const res = await agentPresetsProvider();
+            if (Array.isArray(res))
+                official = res;
+        }
+        catch { }
+    }
+    const items = reconcileMarketExperts(home, official);
+    return sendJson(ctx.res, 200, { ok: true, items });
+}
+function handleExpertMarketInstall(ctx) {
+    const { body, url, res } = ctx;
+    const id = String(body.id || url.searchParams.get('id') || '').trim();
+    if (!id)
+        return sendJson(res, 400, { ok: false, error: '缺少 id' });
+    const home = expertRoots().home;
+    const exp = DEFAULT_MARKET_EXPERTS.find((it) => it.id === id);
+    if (!exp)
+        return sendJson(res, 400, { ok: false, error: `unknown expert ${id}` });
+    installMarketExpertPreset(home, exp);
+    notifyAgentPresetsChanged();
+    return sendJson(res, 200, { ok: true, id, status: 'enabled' });
+}
+function handleExpertMarketDisable(ctx) {
+    const { body, url, res } = ctx;
+    const id = String(body.id || url.searchParams.get('id') || '').trim();
+    if (!id)
+        return sendJson(res, 400, { ok: false, error: '缺少 id' });
+    const home = expertRoots().home;
+    disableMarketExpertPreset(home, id);
+    notifyAgentPresetsChanged();
+    return sendJson(res, 200, { ok: true, id, status: 'disabled' });
+}
+function handleExperts(ctx) {
+    const doc = decorateCatalog(loadCatalog(), expertRoots());
+    const titles = new Map(doc.categories.map((c) => [c.id, c.title]));
+    const items = doc.items
+        .filter((it) => it.tab === 'experts')
+        .map((it) => catalogCard(it, titles.get(String(it.category)) || ''));
+    const categories = doc.categories.filter((c) => c.tab === 'experts');
+    return sendJson(ctx.res, 200, { ok: true, items, categories });
+}
+function handleConnectors(ctx) {
+    const { items, categories } = listMarketplaceConnectors();
+    return sendJson(ctx.res, 200, { ok: true, items, categories, source: 'workbuddy-marketplace' });
+}
+async function handleCatalogInstall(ctx) {
+    const { req, res, body, url } = ctx;
+    if (!trustedRestartRequest(req))
+        return sendJson(res, 403, { ok: false, error: 'catalogInstall is limited to same-origin requests' });
+    const id = String(body.id || url.searchParams.get('id') || '').trim();
+    if (!id)
+        return sendJson(res, 400, { ok: false, error: '缺少 id' });
+    const result = await withConnectorPatchLock(() => Promise.resolve(installItem({ catalog: loadCatalog(), id, ...expertRoots() })));
+    return sendJson(res, 200, { ok: true, ...result });
+}
+function handleCatalogSummon(ctx) {
+    const { req, res, body, url } = ctx;
+    if (!trustedRestartRequest(req))
+        return sendJson(res, 403, { ok: false, error: 'catalogSummon is limited to same-origin requests' });
+    const id = String(body.id || url.searchParams.get('id') || '').trim();
+    if (!id)
+        return sendJson(res, 400, { ok: false, error: '缺少 id' });
+    const sessionState = body.sessionState === 'blank' ? 'blank' : 'locked';
+    const catalog = loadCatalog();
+    const item = findItem(catalog, id);
+    const result = summonItem({ catalog, id, sessionState, ...expertRoots() });
+    const sessionId = String(body.sessionId || url.searchParams.get('sessionId') || '').trim();
+    let attached = false;
+    if (sessionId && result.skill) {
+        writeSessionExpert(expertRoots().home, sessionId, {
+            id: String(result.id || id),
+            skill: String(result.skill),
+            title: String(item?.title || result.id || id),
+            kind: String(item?.kind || 'expert'),
+        });
+        attached = true;
+    }
+    return sendJson(res, 200, { ok: true, ...result, attached, sessionId: attached ? sessionId : '' });
+}
+async function handleCatalogUninstall(ctx) {
+    const { req, res, body, url } = ctx;
+    if (!trustedRestartRequest(req))
+        return sendJson(res, 403, { ok: false, error: 'catalogUninstall is limited to same-origin requests' });
+    const id = String(body.id || url.searchParams.get('id') || '').trim();
+    if (!id)
+        return sendJson(res, 400, { ok: false, error: '缺少 id' });
+    const item = findItem(loadCatalog(), id);
+    if (!item)
+        return sendJson(res, 400, { ok: false, error: `unknown item ${id}` });
+    if (item.kind !== 'connector')
+        return sendJson(res, 400, { ok: false, error: `item ${id} is not a connector` });
+    await withConnectorPatchLock(async () => {
+        removeMcpRow(expertRoots().profileDir, item);
+    });
+    return sendJson(res, 200, { ok: true, id, installed: false, kind: 'connector' });
+}
+/**
+ * 套件一键安装：技能摊平进技能库、规则写进所选 AGENTS.md、Agent 落成 preset。
+ * 单环节失败不抛错——`ok: true` 上带 `partial: true` 与 `failed[]`，客户端按回执
+ * 标注未完成项；只有整包装不下来（找不到套件、包未落盘）才走 500。
+ */
+async function handleSuiteInstall(ctx) {
+    const { req, res, body, url } = ctx;
+    if (!trustedRestartRequest(req))
+        return sendJson(res, 403, { ok: false, error: 'suiteInstall is limited to same-origin requests' });
+    const id = String(body.id || url.searchParams.get('id') || '').trim();
+    if (!id)
+        return sendJson(res, 400, { ok: false, error: '缺少 id' });
+    const catalog = loadCatalog();
+    const item = findItem(catalog, id);
+    if (!item)
+        return sendJson(res, 400, { ok: false, error: `unknown item ${id}` });
+    if (item.kind !== 'suite')
+        return sendJson(res, 400, { ok: false, error: `item ${id} is not a suite` });
+    const ruleTarget = String(body.ruleTarget || url.searchParams.get('ruleTarget') || '').trim() === 'global' ? 'global' : 'project';
+    const projectDir = String(body.projectDir || url.searchParams.get('projectDir') || '').trim();
+    try {
+        const result = await withConnectorPatchLock(() => Promise.resolve(installSuite({
+            catalog: catalog,
+            item,
+            ...expertRoots(),
+            ruleTarget,
+            projectDir: projectDir || undefined,
+        })));
+        return sendJson(res, 200, { ok: true, ...result });
+    }
+    catch (err) {
+        return sendJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
+}
+/** 套件卸载：摘托管段、删 preset、技能按既有卸载语义删除；三者都幂等。 */
+async function handleSuiteUninstall(ctx) {
+    const { req, res, body, url } = ctx;
+    if (!trustedRestartRequest(req))
+        return sendJson(res, 403, { ok: false, error: 'suiteUninstall is limited to same-origin requests' });
+    const id = String(body.id || url.searchParams.get('id') || '').trim();
+    if (!id)
+        return sendJson(res, 400, { ok: false, error: '缺少 id' });
+    const item = findItem(loadCatalog(), id);
+    if (!item)
+        return sendJson(res, 400, { ok: false, error: `unknown item ${id}` });
+    if (item.kind !== 'suite')
+        return sendJson(res, 400, { ok: false, error: `item ${id} is not a suite` });
+    const rawTarget = String(body.ruleTarget || url.searchParams.get('ruleTarget') || '').trim();
+    const ruleTarget = rawTarget === 'global' || rawTarget === 'project' ? rawTarget : undefined;
+    const projectDir = String(body.projectDir || url.searchParams.get('projectDir') || '').trim();
+    try {
+        const result = await withConnectorPatchLock(() => uninstallSuite({
+            item,
+            home: expertRoots().home,
+            ruleTarget,
+            projectDir: projectDir || undefined,
+        }));
+        return sendJson(res, 200, { ok: true, ...result });
+    }
+    catch (err) {
+        return sendJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
+}
+export const sessionModelStore = new Map();
+export function getSessionModel(sessionId) {
+    return sessionModelStore.get(sessionId);
+}
+export function setSessionModel(sessionId, choice) {
+    sessionModelStore.set(sessionId, choice);
+}
+let activeModelCatalogResolver = null;
+export function setModelCatalogResolver(resolver) {
+    activeModelCatalogResolver = resolver;
+}
+async function handleGetModelCatalog(ctx) {
+    const { res } = ctx;
+    try {
+        let catalog = null;
+        if (activeModelCatalogResolver) {
+            catalog = await activeModelCatalogResolver();
+        }
+        return sendJson(res, 200, { ok: true, catalog });
+    }
+    catch (err) {
+        return sendJson(res, 200, { ok: true, catalog: null });
+    }
+}
+async function handleGetModelSelection(ctx) {
+    const { res, url, body } = ctx;
+    const sessionId = String(body.sessionId || url.searchParams.get('sessionId') || '').trim() || 'default';
+    const choice = sessionModelStore.get(sessionId) || { auto: true, selectedModel: null };
+    return sendJson(res, 200, { ok: true, sessionId, ...choice });
+}
+async function handleSetModelSelection(ctx) {
+    const { res, body } = ctx;
+    const sessionId = String(body.sessionId || '').trim() || 'default';
+    const auto = body.auto !== false;
+    const selectedModel = auto ? null : (body.selectedModel || null);
+    sessionModelStore.set(sessionId, { auto, selectedModel });
+    return sendJson(res, 200, { ok: true, sessionId, auto, selectedModel });
+}
+const API_ROUTE_TABLE = {
+    search: handleSearch,
+    ratings: handleRatings,
+    install: handleSkillInstall,
+    list: handleSkillList,
+    uninstall: handleSkillUninstall,
+    config: handleConfigRoute,
+    updateCheck: handleUpdateCheck,
+    update: handleUpdate,
+    pluginCategories: handlePluginCategoriesRoute,
+    plugins: handlePluginsRoute,
+    pluginInstall: handlePluginInstallRoute,
+    pluginInstallStatus: handlePluginInstallStatusRoute,
+    pluginRestart: handlePluginRestartRoute,
+    detail: handleSkillDetail,
+    skillTab: handleSkillTab,
+    skillContent: handleSkillContent,
+    exploreFile: handleSkillContent,
+    homeCustomOrder: handleHomeCustomOrder,
+    expertMarketList: handleExpertMarketList,
+    expertMarketInstall: handleExpertMarketInstall,
+    expertMarketDisable: handleExpertMarketDisable,
+    experts: handleExperts,
+    connectors: handleConnectors,
+    catalogInstall: handleCatalogInstall,
+    catalogSummon: handleCatalogSummon,
+    catalogUninstall: handleCatalogUninstall,
+    suiteInstall: handleSuiteInstall,
+    suiteUninstall: handleSuiteUninstall,
+    getModelCatalog: handleGetModelCatalog,
+    getModelSelection: handleGetModelSelection,
+    setModelSelection: handleSetModelSelection,
+    tryAttach: handleTryAttach,
+    tryDetach: handleTryDetach,
+};
+export async function handleApi(req, res, cfg) {
+    try {
+        const url = new URL(req.url || '/', 'http://127.0.0.1');
+        const body = req.method === 'POST' ? await readBody(req) : {};
+        const method = String(body.method || url.searchParams.get('method') || 'search');
+        const isMutating = MUTATING_METHODS.has(method) || (method === 'config' && Boolean(body.save));
+        if (isMutating) {
+            if (req.method !== 'POST') {
+                return sendJson(res, 405, { ok: false, error: 'Method Not Allowed: mutating operations require POST' });
+            }
+            if (!trustedRestartRequest(req)) {
+                return sendJson(res, 403, { ok: false, error: 'Forbidden: mutating operations are limited to same-origin requests' });
+            }
+        }
+        const handler = API_ROUTE_TABLE[method];
+        if (handler) {
+            return await handler({ req, res, cfg, url, body, method });
+        }
+        return sendJson(res, 400, { ok: false, error: 'unknown method' });
+    }
+    catch (err) {
+        return sendJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
+}
+function detectImageContentType(fileName) {
+    const ext = fileName.slice(fileName.lastIndexOf('.')).toLowerCase();
+    if (ext === '.webp')
+        return 'image/webp';
+    if (ext === '.jpg' || ext === '.jpeg')
+        return 'image/jpeg';
+    if (ext === '.svg')
+        return 'image/svg+xml';
+    if (ext === '.gif')
+        return 'image/gif';
+    return 'image/png';
+}
+/**
+ * Where catalog cover art is served from.
+ *
+ * `catalog/covers` is 130 MB of images, which pushed the package to 142 MB and made
+ * `npm publish` abort with EPIPE. The images live on the distribution CDN instead and
+ * are cached on disk after the first fetch, so a missing local copy is not an error.
+ */
+export const MARKET_ASSET_CDN = 'https://dl.omnimux.ai/market';
+/** Rewrite a bundled catalog asset path to its CDN location. */
+export function catalogAssetUrl(target) {
+    if (!target.startsWith('catalog/'))
+        return undefined;
+    const rel = target.slice('catalog/'.length);
+    // Reject traversal and anything that is not a plain asset path.
+    if (rel.length === 0 || rel.includes('..') || !/^[a-zA-Z0-9._/-]+$/u.test(rel))
+        return undefined;
+    return `${MARKET_ASSET_CDN}/${rel}`;
+}
+function resolveLocalCoverOrAvatar(target) {
+    // 1. 本地 catalog 封面图与专家头像 catalog/covers/<filename>
+    if (target.startsWith('catalog/covers/')) {
+        const fileName = target.slice('catalog/covers/'.length);
+        if (/^(?:home\/|skills\/)?[a-z0-9][a-z0-9-]*\.(png|jpg|jpeg|webp)$/.test(fileName)) {
+            const coverPath = join(packageRoot(), 'catalog', 'covers', fileName);
+            if (existsSync(coverPath)) {
+                return { path: coverPath, contentType: detectImageContentType(fileName) };
+            }
+        }
+    }
+    // 2. 本地 catalog 专家头像 catalog/avatars/<path>
+    if (target.startsWith('catalog/avatars/')) {
+        const rel = target.slice('catalog/avatars/'.length);
+        if (/^[a-zA-Z0-9._/-]+\.(png|jpg|jpeg|webp)$/i.test(rel) && !rel.includes('..')) {
+            const avatarPath = join(packageRoot(), 'catalog', 'avatars', rel);
+            if (existsSync(avatarPath)) {
+                return { path: avatarPath, contentType: detectImageContentType(rel) };
+            }
+        }
+    }
+    // 3. 映射 workbuddyskills 远程 URL 到本地已有专家库真源，零云端请求
+    const wbMatch = target.match(/^https:\/\/raw\.githubusercontent\.com\/infometa\/workbuddyskills\/(?:main|master)\/experts\/([a-zA-Z0-9._-]+)\/avatars\/([a-zA-Z0-9._-]+\.(?:png|jpg|jpeg|webp))$/);
+    if (wbMatch) {
+        const [, expertId, fileName] = wbMatch;
+        const candidates = [
+            join(packageRoot(), 'catalog', 'avatars', expertId, fileName),
+            join(packageRoot(), 'catalog', 'experts', expertId, 'avatars', fileName),
+            join(packageRoot(), 'catalog', 'covers', `${expertId}-${fileName}`),
+            join(packageRoot(), 'catalog', 'covers', fileName),
+        ];
+        for (const c of candidates) {
+            if (existsSync(c)) {
+                return { path: c, contentType: detectImageContentType(fileName) };
+            }
+        }
+        const wbCacheDir = join(homedir(), '.workbuddy', 'plugins', 'cache', 'experts', expertId);
+        if (existsSync(wbCacheDir)) {
+            try {
+                const versions = readdirSync(wbCacheDir);
+                for (const v of versions) {
+                    const candidate = join(wbCacheDir, v, 'avatars', fileName);
+                    if (existsSync(candidate)) {
+                        return { path: candidate, contentType: detectImageContentType(fileName) };
+                    }
+                }
+            }
+            catch { }
+        }
+    }
+    return null;
+}
+function getAvatarCacheDir() {
+    const dir = join(dshHome(), 'cache', 'market-avatars');
+    try {
+        if (!existsSync(dir))
+            mkdirSync(dir, { recursive: true });
+    }
+    catch { }
+    return dir;
+}
+function resolveAvatarDiskCache(targetUrl) {
+    try {
+        const cacheDir = getAvatarCacheDir();
+        const hash = createHash('sha256').update(targetUrl).digest('hex');
+        const filePath = join(cacheDir, `${hash}.bin`);
+        const metaPath = join(cacheDir, `${hash}.meta.json`);
+        if (existsSync(filePath) && existsSync(metaPath)) {
+            const meta = JSON.parse(readFileSync(metaPath, 'utf8'));
+            return { path: filePath, contentType: meta.contentType || 'image/png' };
+        }
+    }
+    catch { }
+    return null;
+}
+function saveAvatarDiskCache(targetUrl, body, contentType) {
+    try {
+        const cacheDir = getAvatarCacheDir();
+        const hash = createHash('sha256').update(targetUrl).digest('hex');
+        const filePath = join(cacheDir, `${hash}.bin`);
+        const metaPath = join(cacheDir, `${hash}.meta.json`);
+        writeFileSync(filePath, body);
+        writeFileSync(metaPath, JSON.stringify({ url: targetUrl, contentType, savedAt: Date.now() }));
+    }
+    catch { }
+}
+export async function handleIcon(req, res, cfg) {
+    try {
+        const url = new URL(req.url || '/', 'http://127.0.0.1');
+        const requested = url.searchParams.get('url') || '';
+        // A catalog asset that is no longer bundled is fetched from the CDN and cached on
+        // disk, exactly like a remote URL. Only the lookup key changes.
+        const target = requested.startsWith('catalog/') ? (catalogAssetUrl(requested) ?? requested) : requested;
+        if (target.startsWith('marketplace-icon:')) {
+            const id = target.slice('marketplace-icon:'.length);
+            const resolved = resolveMarketplaceIconFile(id);
+            if (resolved) {
+                const bytes = readFileSync(resolved.path);
+                res.setHeader('content-type', resolved.contentType);
+                res.setHeader('cache-control', 'public, max-age=86400');
+                res.end(bytes);
+                return;
+            }
+        }
+        // 1. 本地真源（内置 covers、avatars、本地专家库镜像）优先，零网络开销
+        const local = resolveLocalCoverOrAvatar(target);
+        if (local) {
+            const bytes = readFileSync(local.path);
+            res.statusCode = 200;
+            res.setHeader('content-type', local.contentType);
+            res.setHeader('cache-control', 'public, max-age=86400');
+            res.end(bytes);
+            return;
+        }
+        // 2. 本地持久化磁盘缓存命中，直接从本地磁盘加载，不走云端
+        const cached = resolveAvatarDiskCache(target);
+        if (cached) {
+            const bytes = readFileSync(cached.path);
+            res.statusCode = 200;
+            res.setHeader('content-type', cached.contentType);
+            res.setHeader('cache-control', 'public, max-age=86400');
+            res.end(bytes);
+            return;
+        }
+        if (!/^https:\/\//i.test(target)) {
+            res.statusCode = 400;
+            res.end('bad url');
+            return;
+        }
+        const { body, contentType } = await fetchBytes(target, { timeoutMs: Math.min(cfg.timeoutMs, 15000), userAgent: cfg.userAgent });
+        const finalType = contentType.startsWith('image/') ? contentType : 'image/png';
+        // 3. 首次拉取后持久化存入本地磁盘缓存，后续请求均本地加载
+        saveAvatarDiskCache(target, body, finalType);
+        res.statusCode = 200;
+        res.setHeader('content-type', finalType);
+        res.setHeader('cache-control', 'public, max-age=86400');
+        res.end(body);
+    }
+    catch (err) {
+        res.statusCode = 502;
+        res.end(err instanceof Error ? err.message : 'icon failed');
+    }
+}
+async function attachRatings(items, cfg) {
+    await Promise.all(items.slice(0, 24).map(async (it) => {
+        const rating = await fetchEvalScore(it.slug, cfg);
+        if (rating != null)
+            it.rating = rating;
+    }));
+}
+/** Roots the bundled catalog installs against: DSH home, target profile, package root. */
+function expertRoots() {
+    const home = dshHome();
+    return { home, profileDir: profileDir(home), packageRoot: packageRoot() };
+}
+/** Map one bundled-catalog item onto the shared card shape the client renders. */
+function catalogCard(item, categoryTitle) {
+    const subtitle = typeof item.subtitle === 'string' ? item.subtitle : '';
+    const summary = typeof item.summary === 'string' ? item.summary : '';
+    return {
+        id: item.id,
+        slug: item.id,
+        name: item.title,
+        description: subtitle ? `${subtitle} · ${summary}` : summary,
+        iconUrl: item.avatar || '',
+        category: item.category,
+        categoryLabel: categoryTitle,
+        installed: item.installed === true,
+        kind: item.kind,
+        gesture: item.skill ? `/${item.skill}` : '',
+    };
+}
+async function readBody(req) {
+    const chunks = [];
+    for await (const c of req)
+        chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c));
+    const raw = Buffer.concat(chunks).toString('utf8').trim();
+    if (!raw)
+        return {};
+    try {
+        return JSON.parse(raw);
+    }
+    catch {
+        return {};
+    }
+}
+function sendJson(res, code, body) {
+    res.statusCode = code;
+    res.setHeader('content-type', 'application/json; charset=utf-8');
+    res.end(JSON.stringify(body));
+}

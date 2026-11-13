@@ -1,0 +1,271 @@
+{
+  "version": "1",
+  "defaultGroup": "auto",
+  "models": [
+    {
+      "productId": "claude-opus-4-6",
+      "kind": "text",
+      "priority": "P0",
+      "gatewayIds": [
+        "claude-opus-4-6"
+      ],
+      "canvasExcluded": true,
+      "note": "2026-09-15: 网关生产基线已下架收敛，仅登记保留元数据映射，不开放访问。"
+    },
+    {
+      "productId": "claude-sonnet-4-6",
+      "kind": "text",
+      "priority": "P0",
+      "gatewayIds": [
+        "claude-sonnet-4-6"
+      ],
+      "canvasExcluded": true,
+      "note": "2026-10-21 网关对账 #3516：上游渠道全部停用（status=0，无启用 abilities），仅登记不开放。"
+    },
+    {
+      "productId": "gemini-3.8-flash",
+      "kind": "text",
+      "priority": "P0",
+      "gatewayIds": [
+        "gemini-3.8-flash"
+      ]
+    },
+    {
+      "productId": "deepseek-v4-flash",
+      "kind": "text",
+      "priority": "P0",
+      "gatewayIds": [
+        "deepseek-v4-flash",
+        "deepseek-v4-flash-vision-exp"
+      ],
+      "canvasExcluded": true,
+      "note": "2026-09-15: 网关生产基线已下架收敛，仅登记保留元数据映射，不开放访问。"
+    },
+    {
+      "productId": "gpt-5.5",
+      "kind": "text",
+      "priority": "P0",
+      "gatewayIds": [
+        "gpt-5.5"
+      ],
+      "canvasExcluded": true,
+      "note": "2026-09-15: 网关生产基线已下架收敛，仅登记保留元数据映射，不开放访问。"
+    },
+    {
+      "productId": "gpt-image-2.5",
+      "kind": "image",
+      "priority": "P0",
+      "gatewayIds": [
+        "gpt-image-2.5"
+      ]
+    },
+    {
+      "productId": "gpt-image-2.5-flare",
+      "kind": "image",
+      "priority": "P1",
+      "gatewayIds": [
+        "gpt-image-2.5-flare"
+      ],
+      "canvasExcluded": true,
+      "note": "2026-10-21 网关对账 #3516：上游渠道全部停用（status=0，无启用 abilities），仅登记不开放。"
+    },
+    {
+      "productId": "gpt-image-2.5-sunburst",
+      "kind": "image",
+      "priority": "P1",
+      "gatewayIds": [
+        "gpt-image-2.5-sunburst"
+      ],
+      "canvasExcluded": true,
+      "note": "2026-10-21 网关对账 #3516：上游渠道全部停用（status=0，无启用 abilities），仅登记不开放。"
+    },
+    {
+      "productId": "seedream-5-0-pro",
+      "kind": "image",
+      "priority": "P1",
+      "gatewayIds": [
+        "seedream-5-0-pro",
+        "seedream-5.0-pro"
+      ],
+      "note": "2026-10-05 #3148：真机验证通过（文生图 + 2 图垫图），上架为 listed；同时修掉 doubao-seedream 家族不支持 resolution 的载荷缺陷。 2026-10-25 网关快照（#3734）：该型号已无可用线路，画布准入收回（canvasExcluded）。",
+      "canvasExcluded": true
+    },
+    {
+      "productId": "grok-imagine-image-2-0",
+      "kind": "image",
+      "priority": "P1",
+      "gatewayIds": [
+        "grok-imagine-image-2-0",
+        "grok-imagine-image-2",
+        "grok-imagine-image",
+        "grok-imagine-image-2.0"
+      ],
+      "canvasExcluded": true,
+      "note": "2026-09-14 #1751：上游两份独立清单零命中，已由已就绪降为已登记（无 listed 操作），不再是自动调度必需项；登记保留承载历史别名归一。"
+    },
+    {
+      "productId": "seedance-2-0",
+      "kind": "video",
+      "priority": "P0",
+      "gatewayIds": [
+        "seedance-2-0",
+        "seedance-2.0"
+      ],
+      "upstreamWireId": "seedance-2.0"
+    },
+    {
+      "productId": "seedance-2-0-fast",
+      "kind": "video",
+      "priority": "P0",
+      "gatewayIds": [
+        "seedance-2-0-fast",
+        "seedance-2.0-fast"
+      ],
+      "upstreamWireId": "seedance-2.0-fast",
+      "canvasExcluded": true,
+      "note": "2026-10-05: 以当前映射契约真机验证通过（文生视频 / 首帧 / 全能参考），操作升格为 listed 并加入画布准入（#3152）。此前「下架收敛」记录已失效。 2026-10-25 网关快照（#3734）：该型号已无可用线路，画布准入收回（canvasExcluded）。"
+    },
+    {
+      "productId": "seedance-2-0-mini",
+      "kind": "video",
+      "priority": "P0",
+      "gatewayIds": [
+        "seedance-2-0-mini",
+        "seedance-2.0-mini"
+      ],
+      "upstreamWireId": "seedance-2.0-mini",
+      "canvasExcluded": true,
+      "note": "2026-10-05: 以当前映射契约真机验证通过（文生视频 / 首帧 / 全能参考），操作升格为 listed 并加入画布准入（#3152）。此前「下架收敛」记录已失效。 2026-10-25 网关快照（#3734）：该型号已无可用线路，画布准入收回（canvasExcluded）。"
+    },
+    {
+      "productId": "seedance-2-5",
+      "kind": "video",
+      "priority": "P0",
+      "gatewayIds": [
+        "seedance-2-5",
+        "seedance-2.5"
+      ],
+      "upstreamWireId": "seedance-2.5"
+    },
+    {
+      "productId": "wan-3.0",
+      "kind": "video",
+      "priority": "P0",
+      "gatewayIds": [
+        "wan-3.0",
+        "wan3.0-video"
+      ],
+      "upstreamWireId": "wan3.0-video",
+      "canvasExcluded": true,
+      "note": "2026-09-15: 网关生产基线已下架收敛，仅登记保留元数据映射，不开放访问。"
+    },
+    {
+      "productId": "minimax-h3",
+      "kind": "video",
+      "priority": "P0",
+      "gatewayIds": [
+        "minimax-h3",
+        "MiniMax-H3"
+      ],
+      "upstreamWireId": "MiniMax-H3",
+      "canvasExcluded": true,
+      "note": "2026-10-21 网关对账 #3516：上游渠道全部停用（status=0，无启用 abilities），仅登记不开放。"
+    },
+    {
+      "productId": "minimax-h3-video",
+      "kind": "video",
+      "priority": "P0",
+      "gatewayIds": [
+        "minimax-h3-video"
+      ],
+      "upstreamWireId": "minimax_h3_image_audio_to_video",
+      "note": "2026-11-02：AutoDL ComfyUI 任务泳道（渠道 70/71/72）在架可售；与 APIMart minimax-h3 同族独立，对口型/首尾帧/多参考经 metadata 透传。画布可见性由网关公开列表决定，不再使用 canvasExcluded。"
+    },
+    {
+      "productId": "grok-imagine-video-1-5",
+      "kind": "video",
+      "priority": "P0",
+      "gatewayIds": [
+        "grok-imagine-video-1-5",
+        "grok-imagine-video-1.5"
+      ],
+      "upstreamWireId": "grok-imagine-video-1.5",
+      "canvasExcluded": true,
+      "note": "2026-09-15: 网关生产基线已下架收敛，仅登记保留元数据映射，不开放访问。"
+    },
+    {
+      "productId": "seed-audio-1.0",
+      "kind": "audio",
+      "priority": "P0",
+      "gatewayIds": [
+        "seed-audio-1.0",
+        "doubao-seed-audio-1.0",
+        "seed-audio",
+        "tts"
+      ],
+      "canvasExcluded": true,
+      "note": "2026-10-21 网关对账 #3516：上游渠道全部停用（status=0，无启用 abilities），仅登记不开放。"
+    },
+    {
+      "productId": "indextts-2",
+      "kind": "audio",
+      "priority": "P1",
+      "gatewayIds": [
+        "indextts-2"
+      ],
+      "canvasExcluded": true,
+      "note": "2026-11-02：AutoDL ComfyUI 任务泳道（渠道 73）在架可售；voice_clone 走 tasks/autodl 泳道，音频不进画布白名单（canvasExcluded）。2026-10-21 的「渠道全部停用」记录已被 AutoDL 泳道推翻。"
+    },
+    {
+      "productId": "gemini-3.8-flash-tts",
+      "kind": "audio",
+      "priority": "P1",
+      "gatewayIds": [
+        "gemini-3.8-flash-tts"
+      ],
+      "note": "2026-10-21 网关对账 #3516：上游渠道全部停用（status=0，无启用 abilities），仅登记不开放。",
+      "canvasExcluded": true
+    },
+    {
+      "productId": "suno",
+      "kind": "audio",
+      "priority": "P1",
+      "gatewayIds": [
+        "suno"
+      ],
+      "note": "2026-10-21 网关对账 #3516：渠道 32 default 现役；text_to_music 上架"
+    },
+    {
+      "productId": "gpt-4o-mini-tts",
+      "kind": "audio",
+      "priority": "P1",
+      "gatewayIds": [
+        "gpt-4o-mini-tts"
+      ],
+      "canvasExcluded": true,
+      "note": "No listed audio operation; registration is not a serving claim. canvasExcluded: draft+stub 无 listed 操作，不得出现在画布白名单里。"
+    },
+    {
+      "productId": "seedasr-auc",
+      "kind": "audio",
+      "priority": "P1",
+      "gatewayIds": [
+        "seedasr-auc"
+      ],
+      "canvasExcluded": true,
+      "note": "2026-09-14 #1789：独立在售的语音识别型号（官方直连-火山 渠道 43，upstream_id 与公开 ID 相同），以独立 canonical 登记；speech_to_text 产出 text，不属于任何画布产出桶，故 canvasExcluded。登记只声明网关注册名，不改变默认语音识别型号（仍为 doubao-asr-bigmodel，见 catalog-defaults.json）。"
+    },
+    {
+      "productId": "whisper-1",
+      "kind": "text",
+      "priority": "P1",
+      "gatewayIds": [
+        "whisper-1"
+      ],
+      "canvasExcluded": true,
+      "gatewayMembershipExempt": "2026-10-25 #3763：匿名随包快照不发布任何转写型号（whisper-1 走账户专线，渠道 31 default），套用「不在快照即下架」会拒绝已上架的默认转写型号；只放宽网关成员资格这一道闸，操作契约准入不变。复核时间 2026-11-25，或账户视图/刷新后的快照发布 speech_to_text 型号时立即回收。",
+      "note": "2026-10-21 网关对账 #3516：渠道 31 default 现役语音识别能力模型；经 speechToText seam 进入画布，不进入文本生成白名单"
+    }
+  ],
+  "snapshotDropAcknowledged": []
+}

@@ -1,0 +1,34 @@
+{
+  "id": "omnimux-publish",
+  "name": "omnimux-publish",
+  "version": "0.1.0",
+  "tier": "tier-3-personal",
+  "entrypoint": "src/index.js",
+  "status": "active",
+  "description": "社媒内容发布编排层：草稿管理、多账号分发、发布状态追踪与失败重试",
+  "tags": ["publish", "social", "distribution", "drafts", "accounts"],
+  "capabilities": {
+    "tools": [
+      { "name": "publish_create_draft", "summary": "创建新的社媒发布草稿", "category": "draft", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "publish_update_draft", "summary": "更新草稿内容与媒体引用", "category": "draft", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "publish_delete_draft", "summary": "删除指定草稿", "category": "draft", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "publish_list_accounts", "summary": "列出可供发布的目标账号列表", "category": "accounts", "isWriteOperation": false, "requiresAuth": false },
+      { "name": "publish_assign_accounts", "summary": "为指定草稿分配发布目标账号", "category": "distribution", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "publish_submit", "summary": "提交草稿至发布执行通道", "category": "execution", "isWriteOperation": true, "requiresAuth": true },
+      { "name": "publish_list_records", "summary": "查询历史发布任务记录与状态", "category": "records", "isWriteOperation": false, "requiresAuth": false },
+      { "name": "publish_get_record", "summary": "获取单条发布任务详细执行日志", "category": "records", "isWriteOperation": false, "requiresAuth": false },
+      { "name": "publish_retry_task", "summary": "重试失败的发布子任务", "category": "execution", "isWriteOperation": true, "requiresAuth": true }
+    ],
+    "seamsProvided": [],
+    "seamsConsumed": ["identity"],
+    "slots": [
+      { "target": "sidebar.extra", "componentPath": "src/client/sidebar-entry.js" },
+      { "target": "shell.overlay", "componentPath": "src/client/PublishStage.jsx" }
+    ],
+    "storageDomains": ["$DSH_HOME/publish/"]
+  },
+  "dependencies": {
+    "requiredPlugins": ["omnimux"],
+    "systemBinaries": []
+  }
+}

@@ -1,0 +1,611 @@
+/**
+ * 节点顶部胶囊：素材判定、主/次溢出分区、会话 payload。
+ * 无 React，供组件与 node:test 共用。
+ */
+
+import { resolveNodeLifecycle } from './nodeMaterialLifecycle.ts';
+import { localFilePathFromUrl, projectFileMediaUrl } from '../../../shared/localMedia.ts';
+import { isSupportedSocialVideoUrl } from './socialMediaVideoUrl.ts';
+
+export const DEFAULT_PILL_MAX_WIDTH = 380;
+/**
+ * 旧版「胶囊最多与节点同宽再留白」的约束值。当前口径改为按节点宽度 + 两侧
+ * PILL_NODE_OVERHANG 计算，本常量仅为兼容既有导出保留，新代码不要使用。
+ * @deprecated use pillMaxWidthForNode()
+ */
+export const PILL_NODE_GUTTER = 24;
+/** 胶囊浮在节点上方，允许左右各超出节点这么宽，容纳 4 个主胶囊而不被夹断。 */
+export const PILL_NODE_OVERHANG = 24;
+
+export type ToolbarSection = 'primary' | 'secondary';
+
+export interface ToolbarActionSpec {
+  id: string;
+  section: ToolbarSection;
+  width: number;
+}
+
+export interface HasNodeMaterialInput {
+  nodeType: string;
+  materialType?: string;
+  nodeKind?: 'generate' | 'import';
+  content?: string;
+  generatedContent?: string;
+  previewUrl?: string;
+  isOffline?: boolean;
+  tableRowCount?: number;
+  outputVideoUrl?: string;
+  [key: string]: unknown;
+}
+
+export interface PartitionToolbarOptions {
+  maxWidth: number;
+  moreWidth: number;
+  dividerWidth: number;
+  gap: number;
+}
+
+export interface ConversationPayloadInput {
+  nodeType: string;
+  nodeId: string;
+  materialType?: string;
+  label?: string;
+  previewUrl?: string;
+  relativePath?: string;
+  outputVideoUrl?: string;
+  duration?: string;
+  tablePath?: string;
+}
+
+export interface NodeConversationPayload {
+  sourcePlugin: 'omnimux-workflow';
+  kind: 'image' | 'video' | 'audio' | 'table' | 'document' | 'canvas';
+  entityId: string;
+  title: string;
+  extension?: string;
+  relativePath: string;
+  previewUrl?: string;
+  duration?: string;
+}
+
+const MEDIA_TYPES = new Set(['image', 'video', 'audio']);
+const MATERIAL_TYPES = new Set(['text', 'image', 'video', 'audio']);
+
+function sumSectionWidth(items: ToolbarActionSpec[], gap: number): number {
+  if (items.length === 0) return 0;
+  return items.reduce((sum, item) => sum + item.width, 0) + gap * (items.length - 1);
+}
+
+export function hasNodeMaterial(input: HasNodeMaterialInput): boolean {
+  return resolveNodeLifecycle({
+    type: input.nodeType,
+    nodeType: input.nodeType,
+    data: {
+      materialType: input.materialType,
+      nodeKind: input.nodeKind,
+      content: input.content,
+      generatedContent: input.generatedContent,
+      previewUrl: input.previewUrl,
+      isOffline: input.isOffline,
+      rowCount: input.tableRowCount,
+      outputVideoUrl: input.outputVideoUrl,
+    },
+  }) === 'ready';
+}
+
+export const EMPTY_IMAGE_PILL_ACTION_ID = 'import-image';
+export const EMPTY_VIDEO_PILL_ACTION_ID = 'import-video';
+export const EMPTY_AUDIO_PILL_ACTION_ID = 'import-audio';
+
+// ============================================================================
+// 语音识别胶囊操作（Issue 744 T04）
+// ============================================================================
+
+export const SPEECH_TO_TEXT_PILL_ACTION_ID = 'speech-to-text';
+
+export interface SpeechToTextEligibilityInput {
+  materialType?: string;
+  executionStatus?: string | null;
+  isOffline?: boolean;
+  realPath?: string;
+  relativePath?: string;
+  mediaUrl?: string;
+  previewUrl?: string;
+  audioPath?: string;
+  filePath?: string;
+  url?: string;
+  mediaAssetsUrl?: string;
+}
+
+/**
+ * 「语音识别」按钮可见性：音频素材节点、有可解析的音频来源、
+ * 非离线、非执行中（running/pending）。
+ */
+export function canRunSpeechToText(input: SpeechToTextEligibilityInput): boolean {
+  if (input.materialType !== 'audio') return false;
+  if (input.isOffline) return false;
+  if (input.executionStatus === 'running' || input.executionStatus === 'pending') return false;
+  return Boolean(
+    input.realPath || input.relativePath || input.mediaUrl || input.previewUrl
+    || input.audioPath || input.filePath || input.url || input.mediaAssetsUrl,
+  );
+}
+
+function asTrimmedPath(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+/**
+ * 解析音频节点的转写来源路径（后端契约：绝对路径或无凭据 HTTP(S) URL）：
+ * 1. realPath / audioPath / filePath（本机绝对物理路径）；
+ * 2. mediaUrl / previewUrl / url 中可还原的 /api/local-file 或 ?path= 绝对路径；
+ * 3. 完整 HTTP(S) URL（无论位于 mediaUrl, previewUrl 或 url）；
+ * 4. 从 URL 中反解的项目相对路径与 workspaceId；
+ * 5. 内部媒体或站内相对路径（如 /omnimux-workflow/media/...），结合 baseUrl 拼装为绝对 HTTP URL；
+ * 6. relativePath + workspaceId → 项目文件流 URL。
+ *
+ * 对称原则：只要 canRunSpeechToText 为真，本函数绝不返回 null。
+ */
+export function resolveSpeechToTextAudioPath(
+  input: {
+    realPath?: string;
+    relativePath?: string;
+    mediaUrl?: string;
+    previewUrl?: string;
+    workspaceId?: string;
+    audioPath?: string;
+    filePath?: string;
+    url?: string;
+    mediaAssetsUrl?: string;
+  },
+  opts?: { baseUrl?: string },
+): string | null {
+  // 1. 本机物理绝对路径候选
+  for (const candidate of [input.realPath, input.audioPath, input.filePath]) {
+    const p = asTrimmedPath(candidate);
+    if (p && (p.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(p))) {
+      return p;
+    }
+  }
+
+  const urlCandidates = [
+    input.mediaUrl,
+    input.previewUrl,
+    input.url,
+    input.mediaAssetsUrl,
+  ].map(asTrimmedPath).filter(Boolean) as string[];
+
+  // 2. 从 URL 中提取 ?path= 本地绝对路径
+  for (const url of urlCandidates) {
+    const local = localFilePathFromUrl(url);
+    if (local) return local;
+
+    const pathMatch = /[\?&]path=([^&]+)/.exec(url);
+    if (pathMatch?.[1]) {
+      try {
+        const decoded = decodeURIComponent(pathMatch[1]);
+        if (decoded && (decoded.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(decoded))) {
+          return decoded;
+        }
+      } catch {}
+    }
+  }
+
+  // 3. 完整 HTTP(S) URL 优先保留
+  for (const url of urlCandidates) {
+    if (/^https?:\/\//i.test(url)) return url;
+  }
+
+  const effectiveBaseUrl = asTrimmedPath(opts?.baseUrl)
+    || (typeof window !== 'undefined' && window.location?.origin ? window.location.origin : undefined);
+
+  // 4. 从 URL 中反解 ?rel= 项目文件路径并转为完整 HTTP URL
+  const workspaceId = asTrimmedPath(input.workspaceId);
+  for (const url of urlCandidates) {
+    const relMatch = /[\?&]rel=([^&]+)/.exec(url);
+    if (relMatch?.[1]) {
+      try {
+        const rel = decodeURIComponent(relMatch[1]);
+        if (rel) {
+          const ws = /[\?&]workspace=([^&]+)/.exec(url)?.[1] || workspaceId;
+          if (ws && effectiveBaseUrl) {
+            return new URL(projectFileMediaUrl(ws, rel), effectiveBaseUrl).toString();
+          }
+          if (effectiveBaseUrl) {
+            return new URL(url, effectiveBaseUrl).toString();
+          }
+        }
+      } catch {}
+    }
+  }
+
+  // 5. 站内媒体相对路径（/omnimux-workflow/media/... 等），必须使用 effectiveBaseUrl 拼成绝对 HTTP URL
+  for (const url of urlCandidates) {
+    if (url.startsWith('/')) {
+      if (effectiveBaseUrl) {
+        return new URL(url, effectiveBaseUrl).toString();
+      }
+      // 无 baseUrl 时，若是纯系统绝对路径（如 /Users/...），直接返回
+      if (/^\/(?:Users|home|tmp|var|private|[a-zA-Z0-9_\-\.]+)\//.test(url) && !url.startsWith('/omnimux-workflow/') && !url.startsWith('/api/')) {
+        return url;
+      }
+    }
+  }
+
+  // 6. relativePath + workspaceId：需 baseUrl 拼成绝对 URL，缺 baseUrl 不发明路径（契约对齐）
+  const relativePath = asTrimmedPath(input.relativePath);
+  if (relativePath && workspaceId && effectiveBaseUrl) {
+    return new URL(projectFileMediaUrl(workspaceId, relativePath), effectiveBaseUrl).toString();
+  }
+
+  return null;
+}
+
+// ============================================================================
+// 视频节点内容拆解胶囊操作
+// ============================================================================
+
+export const DECONSTRUCT_VIDEO_PILL_ACTION_ID = 'deconstruct-video';
+export const STORYBOARD_VIDEO_PILL_ACTION_ID = 'storyboard-video';
+export const EXTRACT_AUDIO_PILL_ACTION_ID = 'extract-audio';
+
+export interface VideoDeconstructEligibilityInput {
+  materialType?: string;
+  executionStatus?: string | null;
+  isOffline?: boolean;
+  realPath?: string;
+  relativePath?: string;
+  mediaUrl?: string;
+  previewUrl?: string;
+}
+
+/**
+ * 「内容拆解」按钮可见性：视频素材节点、有可解析的视频来源、
+ * 非离线、非执行中（running/pending）。
+ */
+export function canRunVideoDeconstruct(input: VideoDeconstructEligibilityInput): boolean {
+  if (input.materialType !== 'video') return false;
+  if (input.isOffline) return false;
+  if (input.executionStatus === 'running' || input.executionStatus === 'pending') return false;
+  return Boolean(
+    input.realPath || input.relativePath || input.mediaUrl || input.previewUrl,
+  );
+}
+
+/**
+ * 「做分镜表」按钮可见性：与「内容拆解」对称。
+ */
+export const canRunVideoStoryboard = canRunVideoDeconstruct;
+
+/**
+ * 「提取音频」按钮可见性：与「内容拆解」/「分镜表」对称，视频非空且在线且未执行中。
+ */
+export const canExtractAudioFromVideoNode = canRunVideoDeconstruct;
+
+export function buildDeconstructVideoPillActionSpec(width: number = 88): ToolbarActionSpec {
+  return {
+    id: DECONSTRUCT_VIDEO_PILL_ACTION_ID,
+    section: 'primary',
+    width,
+  };
+}
+
+export function buildStoryboardVideoPillActionSpec(width: number = 88): ToolbarActionSpec {
+  return {
+    id: STORYBOARD_VIDEO_PILL_ACTION_ID,
+    section: 'primary',
+    width,
+  };
+}
+
+export function buildExtractAudioPillActionSpec(width: number = 88): ToolbarActionSpec {
+  return {
+    id: EXTRACT_AUDIO_PILL_ACTION_ID,
+    section: 'primary',
+    width,
+  };
+}
+
+/**
+ * 解析分镜表来源视频路径（复用 resolveVideoDeconstructPath）。
+ */
+export const resolveVideoStoryboardPath = resolveVideoDeconstructPath;
+
+/**
+ * 解析音频提取来源视频路径（复用 resolveVideoDeconstructPath）。
+ */
+export const resolveVideoAudioExtractPath = resolveVideoDeconstructPath;
+
+/**
+ * 解析视频节点的拆解来源路径：
+ * 1. realPath（导入节点的本机绝对路径）；
+ * 2. mediaUrl / previewUrl 中可还原的 /api/local-file 绝对路径；
+ * 3. mediaUrl（完整 HTTP(S) 或内部媒体相对 URL 如 /omnimux-workflow/media/...）；
+ * 4. previewUrl（预览视频 URL 或相对路径）；
+ * 5. relativePath（项目相对路径）；
+ * 6. relativePath + workspaceId → 项目文件流 URL。
+ * 
+ * 对称原则：只要 canRunVideoDeconstruct 为真，本函数绝不返回 null。
+ */
+export function resolveVideoDeconstructPath(
+  input: {
+    realPath?: string;
+    relativePath?: string;
+    mediaUrl?: string;
+    previewUrl?: string;
+    workspaceId?: string;
+  },
+  opts?: { baseUrl?: string },
+): string | null {
+  const realPath = asTrimmedPath(input.realPath);
+  if (realPath) return realPath;
+
+  for (const url of [input.mediaUrl, input.previewUrl]) {
+    const local = localFilePathFromUrl(url);
+    if (local) return local;
+  }
+
+  const mediaUrl = asTrimmedPath(input.mediaUrl);
+  if (mediaUrl) return mediaUrl;
+
+  const previewUrl = asTrimmedPath(input.previewUrl);
+  if (previewUrl) return previewUrl;
+
+  const relativePath = asTrimmedPath(input.relativePath);
+  if (relativePath) return relativePath;
+
+  const workspaceId = asTrimmedPath(input.workspaceId);
+  const baseUrl = asTrimmedPath(opts?.baseUrl);
+  if (relativePath && workspaceId && baseUrl) {
+    return new URL(projectFileMediaUrl(workspaceId, relativePath), baseUrl).toString();
+  }
+  return null;
+}
+
+// ============================================================================
+// 文本节点提取视频胶囊操作
+// ============================================================================
+
+export const EXTRACT_VIDEO_PILL_ACTION_ID = 'extract-video';
+
+export interface ExtractVideoEligibilityInput {
+  materialType?: string;
+  content?: string;
+  generatedContent?: string;
+  isOffline?: boolean;
+  executionStatus?: string | null;
+}
+
+/**
+ * 「提取视频」按钮可见性：
+ * 文本节点（或 materialType 为空但在文本环境）、非离线、非执行中、
+ * 且内容中识别出支持的社媒视频链接（TikTok、抖音、快手、小红书、B站、YouTube、X、Instagram等）。
+ */
+export function canExtractVideoFromTextNode(input: ExtractVideoEligibilityInput): boolean {
+  if (input.materialType && input.materialType !== 'text') return false;
+  if (input.isOffline) return false;
+  if (input.executionStatus === 'running' || input.executionStatus === 'pending') return false;
+  const text = (input.content || input.generatedContent || '').trim();
+  return isSupportedSocialVideoUrl(text);
+}
+
+export function buildExtractVideoPillActionSpec(width: number = 88): ToolbarActionSpec {
+  return {
+    id: EXTRACT_VIDEO_PILL_ACTION_ID,
+    section: 'primary',
+    width,
+  };
+}
+
+
+
+export interface EmptyMediaGenerateNodeInput {
+  materialType?: string;
+  nodeKind?: string;
+  previewUrl?: string;
+  mediaUrl?: string;
+  generationStatus?: string | null;
+}
+
+export type EmptyImageGenerateNodeInput = EmptyMediaGenerateNodeInput;
+
+export function isEmptyMediaGenerateNode(input: EmptyMediaGenerateNodeInput): boolean {
+  return (
+    (input.materialType === 'image' || input.materialType === 'video' || input.materialType === 'audio') &&
+    input.nodeKind === 'generate' &&
+    !input.previewUrl &&
+    !input.mediaUrl &&
+    !input.generationStatus
+  );
+}
+
+export function isEmptyImageGenerateNode(input: EmptyImageGenerateNodeInput): boolean {
+  return input.materialType === 'image' && isEmptyMediaGenerateNode(input);
+}
+
+export function buildEmptyMediaPillActionSpec(
+  materialType: 'image' | 'video' | 'audio' | string,
+  width: number = 88,
+): ToolbarActionSpec {
+  const id = materialType === 'video'
+    ? EMPTY_VIDEO_PILL_ACTION_ID
+    : materialType === 'audio'
+      ? EMPTY_AUDIO_PILL_ACTION_ID
+      : EMPTY_IMAGE_PILL_ACTION_ID;
+  return {
+    id,
+    section: 'primary',
+    width,
+  };
+}
+
+export function buildEmptyImagePillActionSpec(width: number = 88): ToolbarActionSpec {
+  return buildEmptyMediaPillActionSpec('image', width);
+}
+
+export function shouldShowNodeToolbar(input: {
+  hasMaterial: boolean;
+  hovered?: boolean;
+  selected?: boolean;
+  isMultiSelected?: boolean;
+  allowEmpty?: boolean;
+}): boolean {
+  if ((!input.hasMaterial && !input.allowEmpty) || input.isMultiSelected) return false;
+  return Boolean(input.hovered || input.selected);
+}
+
+export function pillMaxWidthForNode(nodeWidth: number): number {
+  if (!Number.isFinite(nodeWidth) || nodeWidth <= 0) return DEFAULT_PILL_MAX_WIDTH;
+  // 胶囊允许略宽于节点：只按节点宽度夹取会把第 4 个主胶囊挤出圆角容器。
+  return Math.min(Math.max(0, nodeWidth) + PILL_NODE_OVERHANG * 2, DEFAULT_PILL_MAX_WIDTH);
+}
+
+/**
+ * 先尽量保留主区、再从左到右塞次区；overflow 非空时次区若只剩 1 项，并入更多。
+ * 主区自身也放不下时（窄节点 + 多个主胶囊），按从右到左折叠主区尾部进 overflow，
+ * 正常路径下可见内容不超过预算；预算小到连「一个主胶囊 + 更多」都放不下时只保留
+ * 首个主胶囊（容器由内容决定，不会被裁断）。
+ */
+export function partitionToolbarActions(
+  actions: ToolbarActionSpec[],
+  opts: PartitionToolbarOptions,
+): { visible: ToolbarActionSpec[]; overflow: ToolbarActionSpec[] } {
+  const { maxWidth, moreWidth, dividerWidth, gap } = opts;
+  const primary = actions.filter((action) => action.section === 'primary');
+  const secondary = actions.filter((action) => action.section !== 'primary');
+
+  if (primary.length === 0 && secondary.length === 0) {
+    return { visible: [], overflow: [] };
+  }
+
+  // 无主区（例如只有「对话」一个次区动作）：先按次区自身宽度排布；预算确实放不下时
+  // 才会整体折进更多（此时仍保留「更多」入口与菜单，不丢动作）。
+  if (primary.length === 0) {
+    for (let k = secondary.length; k >= 0; k -= 1) {
+      const visibleSecondary = secondary.slice(0, k);
+      const overflow = secondary.slice(k);
+      if (k === 1 && overflow.length > 0) continue;
+      const secWidth = sumSectionWidth(visibleSecondary, gap);
+      const morePart = overflow.length > 0
+        ? moreWidth + (visibleSecondary.length > 0 ? gap : 0)
+        : 0;
+      if (secWidth + morePart <= maxWidth) {
+        return { visible: visibleSecondary, overflow };
+      }
+    }
+    return { visible: secondary.slice(0, 1), overflow: secondary.slice(1) };
+  }
+
+  const hasDivider = primary.length > 0;
+
+  for (let p = primary.length; p >= 1; p -= 1) {
+    const visiblePrimary = primary.slice(0, p);
+    const primaryOverflow = primary.slice(p);
+    const primaryWidth = sumSectionWidth(visiblePrimary, gap);
+
+    for (let k = secondary.length; k >= 0; k -= 1) {
+      const visibleSecondary = secondary.slice(0, k);
+      const secondaryOverflow = secondary.slice(k);
+      const overflowCount = primaryOverflow.length + secondaryOverflow.length;
+      if (k === 1 && overflowCount > 0) continue;
+
+      const secWidth = sumSectionWidth(visibleSecondary, gap);
+      const needMore = overflowCount > 0;
+      const morePart = needMore
+        ? moreWidth + (visibleSecondary.length > 0 || visiblePrimary.length > 0 ? gap : 0)
+        : 0;
+      // 分割线只在主区与右侧内容（次区或更多）同时存在时渲染。
+      const needDivider = hasDivider && (visibleSecondary.length > 0 || overflowCount > 0);
+      const total = primaryWidth + (needDivider ? dividerWidth : 0) + secWidth + morePart;
+      if (total <= maxWidth) {
+        return {
+          visible: [...visiblePrimary, ...visibleSecondary],
+          overflow: [...primaryOverflow, ...secondaryOverflow],
+        };
+      }
+    }
+  }
+
+  // 连一个主胶囊 + 更多都放不下：保留首个主胶囊，其余全部进更多。
+  return { visible: primary.slice(0, 1), overflow: [...primary.slice(1), ...secondary] };
+}
+
+function mediaFileMeta(materialType: string | undefined): { ext: string; extension: string } {
+  if (materialType === 'video') return { ext: 'mp4', extension: 'VIDEO' };
+  if (materialType === 'image') return { ext: 'png', extension: 'IMAGE' };
+  if (materialType === 'audio') return { ext: 'bin', extension: 'AUDIO' };
+  return { ext: 'bin', extension: (materialType || 'file').toUpperCase() };
+}
+
+export function buildConversationPayloadFromNode(
+  input: ConversationPayloadInput,
+): NodeConversationPayload | null {
+  const nodeId = input.nodeId;
+  if (!nodeId) return null;
+
+  // ComfyUI 工作流节点（Issue #3751）：带进会话的是「这条工作流」，不是素材文件，
+  // 因此走画布/工作流这一类（kind=canvas），名字用卡片上的工作流名（缺省未命名）。
+  if (input.nodeType === 'comfy-page') {
+    const name = input.label && input.label.trim().length > 0 ? input.label.trim() : '未命名工作流';
+    return {
+      sourcePlugin: 'omnimux-workflow',
+      kind: 'canvas',
+      entityId: nodeId,
+      title: name,
+      relativePath: input.relativePath || `workflows/${nodeId}.workflow.json`,
+    };
+  }
+
+  if (input.nodeType === 'table') {
+    const title = `${input.label || '表格'}.htable`;
+    return {
+      sourcePlugin: 'omnimux-workflow',
+      kind: 'table',
+      entityId: nodeId,
+      title,
+      extension: 'HTABLE',
+      relativePath: input.tablePath || input.relativePath || `.hilo/tables/${nodeId}.htable`,
+    };
+  }
+
+  if (input.nodeType === 'video_composition') {
+    const titleBase = input.label || '视频合成';
+    return {
+      sourcePlugin: 'omnimux-workflow',
+      kind: 'video',
+      entityId: nodeId,
+      title: titleBase.endsWith('.mp4') ? titleBase : `${titleBase}.mp4`,
+      extension: 'MP4',
+      relativePath: input.outputVideoUrl || input.relativePath || `assets/videos/${nodeId}.mp4`,
+      previewUrl: input.outputVideoUrl || input.previewUrl,
+      duration: input.duration,
+    };
+  }
+
+  const materialType = input.materialType || 'text';
+  const isText = materialType === 'text';
+  if (isText) {
+    const title = `${input.label || '未命名文本'}.md`;
+    return {
+      sourcePlugin: 'omnimux-workflow',
+      kind: 'document',
+      entityId: nodeId,
+      title,
+      extension: 'MD',
+      relativePath: input.relativePath || input.previewUrl || `assets/texts/${nodeId}.md`,
+      previewUrl: input.previewUrl,
+    };
+  }
+
+  const { ext, extension } = mediaFileMeta(materialType);
+  const kind = (MEDIA_TYPES.has(materialType) ? materialType : 'image') as 'image' | 'video' | 'audio';
+  return {
+    sourcePlugin: 'omnimux-workflow',
+    kind,
+    entityId: nodeId,
+    title: `${input.label || materialType}.${ext}`,
+    extension,
+    relativePath: input.relativePath || input.previewUrl || `assets/${materialType}s/${nodeId}.${ext}`,
+    previewUrl: input.previewUrl,
+  };
+}

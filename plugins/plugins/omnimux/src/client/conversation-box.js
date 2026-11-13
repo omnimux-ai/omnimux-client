@@ -1,0 +1,495 @@
+import { ensureConversationVisible as ensureConversationVisibleShared } from './workbench/ensure-conversation-visible.js'
+import { requestRailActivationSync } from './workbench/sidebar-activation.js'
+
+/**
+ * @param {unknown} node
+ * @returns {{ top: number, left: number, width: number, height: number } | null}
+ */
+function sizableBox(node) {
+  if (!node || typeof node.getBoundingClientRect !== 'function') return null
+  const rect = node.getBoundingClientRect()
+  if (rect.width >= 8 && rect.height >= 8) {
+    return { top: rect.top, left: rect.left, width: rect.width, height: rect.height }
+  }
+  return null
+}
+
+export const PRODUCT_STAGE_EVENT = 'dsh-product-stage'
+export const ACTIVE_STAGE_STORAGE_KEY = 'omnimux_active_product_stage'
+
+/**
+ * Known product-stage ID to root CSS class mapping for host-level defense in depth.
+ */
+export const STAGE_CSS_CLASS_MAP = {
+  'omnimux-accounts': 'omnimux-accounts-stage',
+  'omnimux-device': 'omnimux-device-stage',
+  'omnimux-assets': 'omnimux-assets-stage',
+  'omnimux-analytics': 'omnimux-analytics-stage',
+  'omnimux-products': 'omnimux-products-stage',
+  'omnimux-inspiration': 'omnimux-inspiration-stage',
+  'omnimux-workflow': 'omnimux-workflow-stage',
+  'omnimux-publish': 'omnimux-publish-stage',
+  'omnimux-clip': 'omnimux-clip-stage',
+  'omnimux-apps': 'omnimux-apps-stage',
+  'omnimux-vids': 'omnimux-vids-stage',
+}
+
+const STAGE_MUTUAL_EXCLUSION_RULES = Object.entries(STAGE_CSS_CLASS_MAP).map(([stageId, className]) => {
+  // First-level stage roots are direct children of the overlay seat. Scoping
+  // this rule to those siblings avoids matching the active stage's own
+  // header/body classes, which also contain the `-stage` fragment.
+  return `html[data-dsh-product-stage="${stageId}"] [data-slot="shell.overlay"] > [class*="-stage"]:not(.${className}) { display: none !important; pointer-events: none !important; }`
+}).join('\n')
+
+/**
+ * Open one first-level product page and tell the others to close.
+ * @param {string} id
+ */
+export function claimProductStage(id) {
+  try {
+    if (id) window.localStorage.setItem(ACTIVE_STAGE_STORAGE_KEY, id)
+  } catch {}
+  window.dispatchEvent(new CustomEvent(PRODUCT_STAGE_EVENT, { detail: { id } }))
+  document.documentElement.dataset.dshProductStage = id
+  ensureProductStageChrome()
+}
+
+/**
+ * Clear the product-stage mark when this page closes.
+ * @param {string} id
+ */
+export function releaseProductStage(id) {
+  if (document.documentElement.dataset.dshProductStage === id) {
+    delete document.documentElement.dataset.dshProductStage
+  }
+  try {
+    const current = window.localStorage.getItem(ACTIVE_STAGE_STORAGE_KEY)
+    if (current === id) window.localStorage.removeItem(ACTIVE_STAGE_STORAGE_KEY)
+  } catch {}
+}
+
+// First-level stage roots end in `-stage`. A `*=`-fragment match would also
+// hide BEM internals and the vendored OpenReel studio classes (e.g.
+// `bg-stage-bg`) whenever no product stage is active — the clip editor opened
+// from the workflow canvas tab (#84).
+// Idle hide MUST stay scoped to overlay direct children. Workbench Tab roots
+// (e.g. `.omnimux-assets-stage` inside dsh-better-sidebar) also end in
+// `-stage`; a document-wide idle rule blanks those panels (#344).
+export const PRODUCT_STAGE_CHROME = `
+[data-slot="shell.overlay"]{pointer-events:none!important;}
+[data-slot="shell.overlay"] > *{pointer-events:auto!important;}
+html:not([data-dsh-product-stage]) [data-slot="shell.overlay"] > [class$="-stage"]{display:none!important;pointer-events:none!important;}
+${STAGE_MUTUAL_EXCLUSION_RULES}
+html:not([data-dsh-product-stage]) [class*="toggleCluster"],
+html:not([data-dsh-product-stage]) [class*="toggleCluster"] *{pointer-events:auto!important;z-index:300!important;}
+/* Hide bottom-dock toggles completely so only the right sidebar toggle is shown */
+[data-dsh-bottom-toggle], [class*="bottomDockToggle"], [class*="BottomDockToggle"] { display:none!important; pointer-events:none!important; }
+/* Desktop compatibility/extended used to mark better-sidebar tabBar as drag; that
+   strip sits under toggleCluster and Electron app-region swallows the clicks. */
+body[data-dsh-desktop-mode] [class*="tabBar"],
+body[data-dsh-desktop-mode] [class*="tabBar"] *{-webkit-app-region:no-drag!important;}
+/* Desktop macOS sidebarCol::before drag strip overlays logoRow (Collapse sidebar
+   toggle). Electron app-region hit-tests the overlay; button no-drag alone cannot
+   punch through, so raise logoRow above the strip. */
+body[data-dsh-desktop-platform="darwin"] [class*="sidebarCol"] [class*="logoRow"],
+body[data-dsh-desktop-platform="darwin"] [class*="sidebarCol"] [class*="logoRow"] *{
+  position:relative;z-index:11;-webkit-app-region:no-drag!important;pointer-events:auto!important;
+}
+html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]):not([data-dsh-product-stage="omnimux-vids"]) [data-dsh-better-sidebar],
+html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]):not([data-dsh-product-stage="omnimux-vids"]) [data-dsh-better-sidebar] [class*="_panel"],
+html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]):not([data-dsh-product-stage="omnimux-vids"]) [data-dsh-better-sidebar] [class*="_bottomPanel"],
+html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]):not([data-dsh-product-stage="omnimux-vids"]) [data-dsh-panel-host],
+html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]):not([data-dsh-product-stage="omnimux-vids"]) [class*="toggleCluster"],
+html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]):not([data-dsh-product-stage="omnimux-vids"]) [data-slot="shell.sidebar.auxiliary"]{display:none!important;visibility:hidden!important;pointer-events:none!important;}
+html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]):not([data-dsh-product-stage="omnimux-vids"]){--dsh-sidebar-width:0px!important;--dsh-sidebar-height:0px!important;}
+html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]):not([data-dsh-product-stage="omnimux-vids"]) #root{margin-right:0px!important;}
+html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) #dsh-window-drag{-webkit-app-region:no-drag!important;pointer-events:none!important;}
+html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) header{-webkit-app-region:drag!important;}
+html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) header button,
+html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) header input,
+html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) header a,
+html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) header select,
+html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) header [role="button"],
+html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) header [role="tab"],
+html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) header [class*="controls"],
+html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) header [class*="tabsContainer"]{-webkit-app-region:no-drag!important;}
+html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) [data-slot="conversation.session.header"],
+html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) [data-slot="conversation"] > header {display:none!important;}
+html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) [role="treeitem"][aria-selected="true"]{background:transparent!important;}
+html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) .dshDesktopConversationSurface > *:not([data-slot="shell.overlay"]),
+html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) [data-slot="conversation.content"],
+html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) [data-slot="input.trigger"] {visibility:hidden!important;}
+/* Shared topbar geometry; native window gutters come from the host-aware layout. */
+html[data-omnimux-sidebar-toggle-topbar]{
+  --omnimux-topbar-toggle-left:8px;
+  --omnimux-topbar-toggle-size:32px;
+  --omnimux-topbar-toggle-gap:8px;
+  --omnimux-topbar-toggle-top:4px;
+  --omnimux-topbar-toggle-end:calc(var(--omnimux-topbar-toggle-left) + var(--omnimux-topbar-toggle-size) + var(--omnimux-topbar-toggle-gap));
+  --omnimux-tabbar-pad-left:0px;
+}
+html[data-omnimux-sidebar-toggle-topbar] [data-omnimux-sidebar-toggle-topbar="1"],
+html[data-omnimux-sidebar-toggle-topbar] [data-omnimux-topbar-new-session="1"]{
+  position:fixed!important;
+  top:var(--omnimux-topbar-toggle-top)!important;
+  width:var(--omnimux-topbar-toggle-size)!important;
+  height:var(--omnimux-topbar-toggle-size)!important;
+  z-index:9999!important;
+  -webkit-app-region:no-drag!important;
+  pointer-events:auto!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  background:transparent!important;
+  border:none!important;
+  border-radius:8px!important;
+  color:var(--dsw-alias-label-secondary)!important;
+  cursor:pointer!important;
+  box-sizing:border-box!important;
+}
+html[data-omnimux-sidebar-toggle-topbar] [data-omnimux-sidebar-toggle-topbar="1"]{
+  left:var(--omnimux-topbar-toggle-left)!important;
+}
+/* Collapsed only: new-session sits immediately right of the expand toggle. */
+html[data-omnimux-sidebar-toggle-topbar] [data-omnimux-topbar-new-session="1"]{
+  left:var(--omnimux-topbar-new-session-left,calc(var(--omnimux-topbar-toggle-left) + var(--omnimux-topbar-toggle-size) + var(--omnimux-topbar-toggle-gap)))!important;
+}
+html[data-omnimux-sidebar-toggle-topbar] [data-omnimux-sidebar-toggle-topbar="1"]:hover,
+html[data-omnimux-sidebar-toggle-topbar] [data-omnimux-topbar-new-session="1"]:hover{
+  background:var(--dsw-alias-interactive-bg-hover)!important;
+  color:var(--dsw-alias-label-primary)!important;
+}
+html[data-omnimux-sidebar-toggle-topbar] [data-omnimux-topbar-new-session="1"] svg{
+  display:block;width:16px;height:16px;
+}
+html[data-omnimux-sidebar-toggle-topbar] [data-dsh-better-sidebar] [class*="toggleCluster"]{
+  right:8px;
+  gap:var(--omnimux-topbar-toggle-gap)!important;
+  align-items:center;
+}
+html[data-omnimux-sidebar-toggle-topbar] body:is(:not([data-dsh-title-bar-compat]),[data-dsh-desktop-platform="darwin"]) [data-dsh-better-sidebar] [class*="toggleCluster"]{
+  top:var(--omnimux-topbar-toggle-top)!important;
+}
+html[data-omnimux-sidebar-toggle-topbar] [data-dsh-better-sidebar] [class*="toggleCluster"] > button,
+html[data-omnimux-sidebar-toggle-topbar] [data-dsh-better-sidebar] [data-dsh-panel-host] > [class*="_panel"]:not([class*="bottom"]):not([class*="Hidden"]) [class*="tabBarPlus"]{
+  width:var(--omnimux-topbar-toggle-size)!important;
+  height:var(--omnimux-topbar-toggle-size)!important;
+  padding:0!important;
+  flex-shrink:0;
+  border-radius:8px!important;
+}
+html[data-omnimux-sidebar-toggle-topbar] [data-dsh-better-sidebar] [class*="toggleCluster"] > button svg,
+html[data-omnimux-sidebar-toggle-topbar] [data-dsh-better-sidebar] [data-dsh-panel-host] > [class*="_panel"]:not([class*="bottom"]):not([class*="Hidden"]) [class*="tabBarPlus"] svg{
+  width:16px;height:16px;
+}
+/* Icon swap: collapse glyph while expanded, expand glyph while collapsed. */
+html[data-omnimux-sidebar-toggle-topbar] [data-omnimux-sidebar-toggle-topbar="1"] [data-omnimux-sidebar-toggle-icon]{display:none;}
+html[data-omnimux-sidebar-toggle-topbar] [data-omnimux-sidebar-toggle-topbar="1"] [data-omnimux-sidebar-toggle-icon="collapse"]{display:block;width:16px;height:16px;}
+html[data-omnimux-sidebar-toggle-topbar][data-omnimux-left-collapsed] [data-omnimux-sidebar-toggle-topbar="1"] [data-omnimux-sidebar-toggle-icon="collapse"]{display:none;}
+html[data-omnimux-sidebar-toggle-topbar][data-omnimux-left-collapsed] [data-omnimux-sidebar-toggle-topbar="1"] [data-omnimux-sidebar-toggle-icon="expand"]{display:block;width:16px;height:16px;}
+/* Official AppFrame toggle is now only a programmatic trigger — hide it. */
+html[data-omnimux-sidebar-toggle-topbar] [data-omnimux-original-sidebar-toggle="1"]{display:none!important;}
+/* Visual 0 rail when official left sidebar is collapsed (grid may still be 56).
+   Zero both the sidebar column and the frame's first grid track so centerCol
+   starts at x=0 with symmetric margins instead of leaving a 56px empty void.
+   Key on both html[data-omnimux-left-collapsed] (user intent) and frame
+   [data-sidebar-collapsed] so AppFrame's 1024px narrow auto-uncollapse flip
+   during divider drags cannot momentarily pop the left sidebar open. */
+html[data-omnimux-sidebar-toggle-topbar][data-omnimux-left-collapsed] [class*="sidebarCol"],
+html[data-omnimux-sidebar-toggle-topbar] [data-sidebar-collapsed] [class*="sidebarCol"],
+html[data-omnimux-sidebar-toggle-topbar][data-omnimux-left-collapsed] .dshDesktopSidebarSurface,
+html[data-omnimux-sidebar-toggle-topbar] [data-sidebar-collapsed] .dshDesktopSidebarSurface {
+  width:0!important;
+  min-width:0!important;
+  max-width:0!important;
+  overflow:hidden!important;
+  border:none!important;
+  padding:0!important;
+  display:none!important;
+}
+/* Visual 0 rail when official left sidebar is collapsed (grid may still be 56).
+   When rightbar is collapsed, middle conversation takes full width (0px 1fr 0px).
+   When rightbar is open (three-column split), keep conversation width proportion
+   (--omnimux-conversation-width) shifted left at x=0, and allocate all released
+   sidebar space to rightbar (minmax(0px, 1fr)) without ever collapsing rightbar to 0! */
+html[data-omnimux-sidebar-toggle-topbar][data-omnimux-left-collapsed] [class*="frame"][data-rightbar-collapsed="true"],
+html[data-omnimux-sidebar-toggle-topbar][data-omnimux-left-collapsed] .dshDesktopFrame[data-rightbar-collapsed="true"],
+html[data-omnimux-sidebar-toggle-topbar] [class*="frame"][data-sidebar-collapsed][data-rightbar-collapsed="true"],
+html[data-omnimux-sidebar-toggle-topbar] .dshDesktopFrame[data-sidebar-collapsed][data-rightbar-collapsed="true"],
+html[data-omnimux-sidebar-toggle-topbar][data-omnimux-left-collapsed] [class*="frame"],
+html[data-omnimux-sidebar-toggle-topbar][data-omnimux-left-collapsed] .dshDesktopFrame,
+html[data-omnimux-sidebar-toggle-topbar] [class*="frame"][data-sidebar-collapsed],
+html[data-omnimux-sidebar-toggle-topbar] .dshDesktopFrame[data-sidebar-collapsed]{
+  grid-template-columns: 0px minmax(0px, 1fr) 0px !important;
+}
+html[data-omnimux-sidebar-toggle-topbar][data-omnimux-left-collapsed] [class*="frame"]:not([data-rightbar-collapsed="true"]):not([data-details-collapsed="true"]),
+html[data-omnimux-sidebar-toggle-topbar][data-omnimux-left-collapsed] .dshDesktopFrame:not([data-rightbar-collapsed="true"]):not([data-details-collapsed="true"]),
+html[data-omnimux-sidebar-toggle-topbar] [class*="frame"][data-sidebar-collapsed]:not([data-rightbar-collapsed="true"]):not([data-details-collapsed="true"]),
+html[data-omnimux-sidebar-toggle-topbar] .dshDesktopFrame[data-sidebar-collapsed]:not([data-rightbar-collapsed="true"]):not([data-details-collapsed="true"]){
+  grid-template-columns: 0px var(--omnimux-conversation-width, 380px) minmax(0px, 1fr) !important;
+}
+/* 三分栏同时展开态（左栏 280px，中间会话栏定宽 380px，右侧创作舞台弹性铺满，Issue 2316）：
+   确保大屏下多出的所有空间全部反哺给右侧主舞台，中间保持 380px 紧凑控制台！ */
+html[data-omnimux-rightbar-open="true"]:not([data-omnimux-conversation-collapsed]):not([data-omnimux-left-collapsed]) .dshDesktopFrame:not([data-sidebar-collapsed]):not([data-rightbar-collapsed="true"]):not([data-details-collapsed="true"]),
+html[data-omnimux-rightbar-open="true"]:not([data-omnimux-conversation-collapsed]):not([data-omnimux-left-collapsed]) [class*="frame"]:not([data-sidebar-collapsed]):not([data-rightbar-collapsed="true"]):not([data-details-collapsed="true"]),
+html[data-omnimux-rightbar-open="true"][data-omnimux-sidebar-toggle-topbar]:not([data-omnimux-left-collapsed]) .dshDesktopFrame:not([data-sidebar-collapsed]):not([data-rightbar-collapsed="true"]):not([data-details-collapsed="true"]),
+html[data-omnimux-rightbar-open="true"][data-omnimux-sidebar-toggle-topbar]:not([data-omnimux-left-collapsed]) [class*="frame"]:not([data-sidebar-collapsed]):not([data-rightbar-collapsed="true"]):not([data-details-collapsed="true"]) {
+  grid-template-columns: var(--omnimux-sidebar-width, 280px) var(--omnimux-conversation-width, 380px) minmax(0px, 1fr) !important;
+}
+/* 当中间会话栏收起时（右侧全屏铺满状态）：
+   必须将网格中间列收缩为 0px，让右侧列占满整个右侧区域，绝不留出中间黑色空白占位！
+   右侧栏确证收起时（[data-rightbar-collapsed="true"]）严禁应用此规则（Issue 1749）。 */
+html[data-omnimux-conversation-collapsed] .dshDesktopFrame:not([data-rightbar-collapsed="true"]),
+html[data-omnimux-conversation-collapsed] [class*="frame"]:not([data-rightbar-collapsed="true"]) {
+  grid-template-columns: var(--omnimux-sidebar-width, 280px) 0px minmax(0px, 1fr) !important;
+}
+html[data-omnimux-conversation-collapsed][data-omnimux-left-collapsed] .dshDesktopFrame:not([data-rightbar-collapsed="true"]),
+html[data-omnimux-conversation-collapsed][data-omnimux-left-collapsed] [class*="frame"]:not([data-rightbar-collapsed="true"]),
+html[data-omnimux-conversation-collapsed] .dshDesktopFrame[data-sidebar-collapsed]:not([data-rightbar-collapsed="true"]),
+html[data-omnimux-conversation-collapsed] [class*="frame"][data-sidebar-collapsed]:not([data-rightbar-collapsed="true"]) {
+  grid-template-columns: var(--omnimux-sidebar-width, 0px) 0px minmax(0px, 1fr) !important;
+}
+/* 右侧边栏收起时无论任何情况，会话列必须占满剩余宽度，绝不黑屏死区（Issue 1749） */
+.dshDesktopFrame[data-rightbar-collapsed="true"],
+[class*="frame"][data-rightbar-collapsed="true"] {
+  grid-template-columns: var(--omnimux-sidebar-width, 280px) minmax(0px, 1fr) 0px !important;
+}
+/* 非全屏/分屏状态下，中间会话栏必须自适应填满原生网格轨道，绝不出现黑洞死区（Issue 1877）；
+   同时严禁使用 !important 强制写死分屏列宽或面板宽度，保证底座原生拖拽手柄自由缩放（Issue 1940）。
+   这里曾写死 min-width: 420px，比原生会话列地板（外壳 CENTER_MIN 400px）高 20px ——
+   网格轨道收到 400px 时元素仍是 420px，多出的 20px 压在右侧面板底下露出近黑底色，
+   就是拖到最宽画布时分割线旁那道黑边。地板由外壳 computeDesktopColumns 统一负责，
+   这里只保证不溢出自己的轨道。 */
+html:not([data-omnimux-conversation-collapsed]) .dshDesktopFrame:not([data-rightbar-collapsed="true"]) .dshDesktopConversationSurface,
+html:not([data-omnimux-conversation-collapsed]) [class*="frame"]:not([data-rightbar-collapsed="true"]) .dshDesktopConversationSurface {
+  min-width: 0 !important;
+  flex: 1 1 0% !important;
+  width: auto !important;
+  overflow: hidden;
+}
+html[data-omnimux-left-collapsed] .dshDesktopFrame[data-rightbar-collapsed="true"],
+html[data-omnimux-left-collapsed] [class*="frame"][data-rightbar-collapsed="true"],
+.dshDesktopFrame[data-sidebar-collapsed][data-rightbar-collapsed="true"],
+[class*="frame"][data-sidebar-collapsed][data-rightbar-collapsed="true"] {
+  grid-template-columns: 0px 100vw 0px !important;
+}
+/* Tab labels dock by overlap: pad = max(0, toggleEnd − panel.left), written
+   to --omnimux-tabbar-pad-left. Do NOT key this off left-collapsed: collapsed
+   + split already starts the panel right of the toggle, so pad must stay 0.
+   Selector is the OPEN right-panel tab strip only (never tabBarPlus / bottom).
+   The semantic panel host wraps the panel; tabBar remains a deep descendant
+   (panelBody > workbench > pane > tabBar). */
+html[data-omnimux-sidebar-toggle-topbar] [data-dsh-better-sidebar] [data-dsh-panel-host] > [class*="_panel"]:not([class*="bottom"]):not([class*="Hidden"]) [class*="tabBar"]:not([class*="Plus"]){
+  padding-left:var(--omnimux-tabbar-pad-left,0px)!important;
+  padding-right:var(--omnimux-tabbar-pad-right,0px)!important;
+  height:calc(var(--omnimux-topbar-toggle-size) + 2 * var(--omnimux-topbar-toggle-top) + 1px)!important;
+  box-sizing:border-box;
+}
+/* Collapsed left rail: session title shares the top row with traffic lights +
+   the fixed expand toggle. Official header still pads 20/12, so the crumb
+   starts under the lights and through the toggle. The data-slot host is a
+   wrapper DIV around the real <header> (ConversationSessionHeader), so pad
+   the header descendant — not only the slot host. Match toggle top inset so
+   title + toggle stay one 32px row. */
+html[data-omnimux-sidebar-toggle-topbar][data-omnimux-left-collapsed] [data-slot="conversation.session.header"] header,
+html[data-omnimux-sidebar-toggle-topbar][data-omnimux-left-collapsed] [data-slot="conversation.session.header"] > header,
+html[data-omnimux-sidebar-toggle-topbar][data-omnimux-left-collapsed] [data-slot="conversation"] > header{
+  padding-left:var(--omnimux-topbar-toggle-end)!important;
+  padding-top:var(--omnimux-topbar-toggle-top,4px)!important;
+  box-sizing:border-box;
+}
+/* macOS traffic lights safe inset — product-stage overlays only.
+   A product stage is fixed to the conversation box, so with the left rail collapsed
+   it starts at the window's left edge and its page header sits in the traffic-light
+   band; it needs the gutter.
+   Workbench Tab pages must NOT get it: their panel always renders a 40px tab strip
+   above the page, and that strip already consumes the same gutter through
+   --omnimux-tabbar-pad-left / dockkit-strip. Insetting the page header there only drags
+   the title and subtitle 64px right of the page's own action row, tabs and card grid. */
+html[data-dsh-product-stage][data-omnimux-left-collapsed] body[data-dsh-desktop-platform="darwin"] .dshUk-PageHeader-pageHeader {
+  padding-left: var(--omnimux-topbar-toggle-left, 84px) !important;
+  box-sizing: border-box !important;
+}
+/* Blue dot on the injected toggle while left rail is collapsed. */
+html[data-omnimux-sidebar-toggle-topbar][data-omnimux-left-collapsed] [data-omnimux-sidebar-toggle-topbar="1"]::after{
+  content:"";
+  position:absolute;
+  top:4px;
+  right:4px;
+  width:6px;
+  height:6px;
+  border-radius:50%;
+  background:var(--dsw-alias-state-business-primary,var(--dsw-alias-brand-primary));
+  pointer-events:none;
+}
+/* Settings shell mounts its fixed overlay under the left-rail foot, not as a
+   body portal. Two traps then bury it under the right workbench:
+   1) Desktop frames put transform/isolation on #root, so the overlay's own
+      z-index:1000 only competes inside #root and loses to body-portaled
+      better-sidebar panels (z-index:40) and our toggleCluster override (300).
+   2) better-sidebar gui mode squeezes #root width to the left conversation
+      column with overflow:hidden, so the fixed overlay is clipped to ~280px
+      and looks like the right panel "ate" the settings window.
+   While any true aria-modal dialog is open, expand #root to the viewport and
+   raise it above the cluster (300) but below body-portaled gates (LoginGate /
+   QuotaGate ~1200) and the desktop titlebar (max int). */
+#root:has([role="dialog"][aria-modal="true"]){
+  z-index:1100!important;
+  width:100%!important;
+  left:0!important;
+  right:0!important;
+  overflow:visible!important;
+}
+`
+
+export function ensureProductStageChrome() {
+  const existing = document.getElementById('dsh-product-stage-chrome')
+  if (existing instanceof HTMLStyleElement) {
+    if (existing.textContent !== PRODUCT_STAGE_CHROME) existing.textContent = PRODUCT_STAGE_CHROME
+  } else {
+    const style = document.createElement('style')
+    style.id = 'dsh-product-stage-chrome'
+    style.textContent = PRODUCT_STAGE_CHROME
+    document.head.append(style)
+  }
+  watchSelectedSessionClick()
+}
+
+function leaveProductStage() {
+  if (!document.documentElement.dataset.dshProductStage) return
+  delete document.documentElement.dataset.dshProductStage
+  try {
+    window.localStorage.removeItem(ACTIVE_STAGE_STORAGE_KEY)
+  } catch {}
+  window.dispatchEvent(new CustomEvent(PRODUCT_STAGE_EVENT, { detail: { id: '' } }))
+}
+
+function sessionRowPlainClick(target) {
+  const row = target.closest('[role="treeitem"]')
+  if (!(row instanceof HTMLElement)) return false
+  if (target.closest('button') !== null) return false
+  return true
+}
+
+/** 工作区行加号：`在“x”中新建对话` / `在“x”中新建会话` / New session in x。行内 pin/删是别的按钮。 */
+function workspaceNewSessionButton(target) {
+  const button = target.closest('button')
+  if (!(button instanceof HTMLElement)) return false
+  if (!button.closest('[role="treeitem"]')) return false
+  return /新建会话|新会话|新建对话|新对话|New session/i.test(button.getAttribute('aria-label') || '')
+}
+
+function newSessionMenuPick(target) {
+  const item = target.closest('#omnimux-sidebar-new-menu [role="menuitem"]')
+  if (!(item instanceof HTMLElement)) return false
+  return /新会话|新建会话|新对话|新建对话|new session/i.test(item.textContent || '')
+}
+
+/**
+ * 官方侧栏「新会话」和品牌快捷键。收起轨的加号由协调器拦截出菜单，
+ * 必须等真正的 click 冒泡（用户点了菜单「新建会话」或展开态直点）才关页。
+ */
+function shellNewSessionControl(target) {
+  const button = target.closest('button')
+  if (!(button instanceof HTMLElement)) return false
+  if (button.closest('#omnimux-sidebar-new-menu')) return false
+  if (button.closest('[role="treeitem"]')) return false
+  if (String(button.className).includes('newSession')) return true
+  if (button.hasAttribute('data-omnimux-topbar-new-session')) return true
+  const aria = (button.getAttribute('aria-label') || '').trim()
+  return /^(新建会话|新会话|新建对话|新对话|New session)$/i.test(aria)
+}
+
+function isNewSessionIntent(target) {
+  if (!(target instanceof Element)) return false
+  return workspaceNewSessionButton(target) || newSessionMenuPick(target) || shellNewSessionControl(target)
+}
+
+/**
+ * Session / 新会话 intent means enter the conversation column (Issue #2516).
+ * 新对话 → 会话全屏。旧会话有三栏记忆 → 三栏。否则会话全屏。不得恢复右侧全屏。
+ */
+function ensureConversationVisible(opts = {}) {
+  ensureConversationVisibleShared(
+    typeof document !== 'undefined' ? document : undefined,
+    typeof window !== 'undefined' ? window.__omnimuxWorkbench : undefined,
+    opts,
+  )
+  requestRailActivationSync()
+}
+
+function handleSessionEnterIntent(target) {
+  if (!(target instanceof Element)) return false
+  return sessionRowPlainClick(target) || workspaceNewSessionButton(target) || newSessionMenuPick(target)
+}
+
+function extractSessionIdFromTarget(target) {
+  if (!(target instanceof Element)) return undefined
+  const row = target.closest('[data-session-id], [data-tree-item-session-id], [role="treeitem"]')
+  const idAttr = row?.getAttribute('data-session-id') || row?.getAttribute('data-tree-item-session-id')
+  if (idAttr) return idAttr
+  const rowId = row?.id
+  if (typeof rowId === 'string' && rowId && !rowId.startsWith('session-row')) return rowId
+  return undefined
+}
+
+/**
+ * 任意工作区会话行离开产品页；已选中行官方 no-op 也要关。
+ * 点会话 / 新会话：进聊天意图。新对话会话全屏；旧会话按三栏记忆恢复。
+ */
+function watchSelectedSessionClick() {
+  if (document.documentElement.dataset.dshSessionCloser === '1') return
+  document.documentElement.dataset.dshSessionCloser = '1'
+  document.addEventListener('click', (event) => {
+    const target = event.target
+    if (!handleSessionEnterIntent(target)) return
+    const inProductStage = Boolean(document.documentElement.dataset.dshProductStage)
+    if (inProductStage) leaveProductStage()
+    if (isNewSessionIntent(target)) {
+      ensureConversationVisible({ newSession: true })
+    } else {
+      const sid = extractSessionIdFromTarget(target)
+      ensureConversationVisible({ sessionId: sid, newSession: false })
+    }
+  }, true)
+  document.addEventListener('click', (event) => {
+    const target = event.target
+    if (!(target instanceof Element)) return
+    if (!shellNewSessionControl(target)) return
+    if (document.documentElement.dataset.dshProductStage) leaveProductStage()
+    ensureConversationVisible({ newSession: true })
+  })
+}
+
+/**
+ * Cover the whole conversation column (header + body + composer) and expand
+ * to the full viewport width so right-side auxiliary sidebars cannot squeeze it.
+ * First-level product pages are not session views.
+ * @returns {{ top: number, left: number, width: number, height: number }}
+ */
+export function readConversationBox() {
+  let node = document.querySelector('[data-slot="conversation"]')
+  let found = null
+  while (node) {
+    const box = sizableBox(node)
+    if (box) {
+      found = box
+      break
+    }
+    node = node.parentElement
+  }
+  if (!found) {
+    found = sizableBox(document.querySelector('[data-conversation-scroll]'))
+  }
+  if (found) {
+    const winWidth = typeof window !== 'undefined' && typeof window.innerWidth === 'number' ? window.innerWidth : 0
+    const winHeight = typeof window !== 'undefined' && typeof window.innerHeight === 'number' ? window.innerHeight : 0
+    const width = winWidth > found.left ? Math.max(found.width, winWidth - found.left) : found.width
+    const height = winHeight > found.top ? Math.max(found.height, winHeight - found.top) : found.height
+    return { top: found.top, left: found.left, width, height }
+  }
+  const left = 56
+  const winWidth = typeof window !== 'undefined' && typeof window.innerWidth === 'number' ? window.innerWidth : 1024
+  const winHeight = typeof window !== 'undefined' && typeof window.innerHeight === 'number' ? window.innerHeight : 768
+  return { top: 0, left, width: Math.max(8, winWidth - left), height: Math.max(8, winHeight) }
+}

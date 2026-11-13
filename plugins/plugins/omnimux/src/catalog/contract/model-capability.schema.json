@@ -1,0 +1,309 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "omnimux://catalog/model-capability.schema.json",
+  "title": "OmniMux Model Capability Contract",
+  "description": "Machine contract for plugins/omnimux/src/catalog/specs/*.yaml (Contract v1.1). Canonical root field is schemaVersion (exact \"1.1\"), never root version. JSON Schema is normative; runtime validation is pure JS parity-checked against this file and operation-registry.json. research/implementation/execution are operation-level (model fields are defaults only): official documentation, adapter readiness, and historical execution evidence are separate facts. Legacy root version is handled only by loader pre-normalization, not by this schema.",
+  "type": "object",
+  "required": ["schemaVersion", "models"],
+  "additionalProperties": true,
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.1",
+      "description": "Contract v1.1 canonical schema version. Exact literal \"1.1\" only (not 1.1.0 / v1.1)."
+    },
+    "managementGroup": {
+      "type": "string",
+      "description": "File management grouping only; never used to infer output.type"
+    },
+    "modality": {
+      "type": "string",
+      "description": "Deprecated management alias; loader may retain but must not infer output"
+    },
+    "models": {
+      "type": "array",
+      "minItems": 0,
+      "items": { "$ref": "#/$defs/model" }
+    }
+  },
+  "$defs": {
+    "outputType": {
+      "type": "string",
+      "enum": ["text", "image", "video", "audio"]
+    },
+    "mediaType": {
+      "type": "string",
+      "enum": ["text", "image", "video", "audio", "document"]
+    },
+    "researchStatus": {
+      "type": "string",
+      "enum": ["draft", "verified", "rejected"]
+    },
+    "executionStatus": {
+      "type": "string",
+      "enum": ["none", "stub", "live"]
+    },
+    "implementationStatus": {
+      "type": "string",
+      "enum": ["none", "ready"]
+    },
+    "limitSourceKind": {
+      "type": "string",
+      "enum": ["official_docs", "measured", "policy_conservative"]
+    },
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "nonNegativeNumber": {
+      "type": "number",
+      "minimum": 0
+    },
+    "limitSource": {
+      "type": "object",
+      "required": ["kind"],
+      "additionalProperties": true,
+      "properties": {
+        "kind": { "$ref": "#/$defs/limitSourceKind" },
+        "url": { "type": "string" },
+        "note": { "type": "string" }
+      }
+    },
+    "inputSlot": {
+      "type": "object",
+      "required": ["slot", "type", "role", "min", "max"],
+      "additionalProperties": true,
+      "properties": {
+        "slot": { "$ref": "#/$defs/nonEmptyString" },
+        "type": { "$ref": "#/$defs/mediaType" },
+        "role": { "$ref": "#/$defs/nonEmptyString" },
+        "source": {
+          "type": "string",
+          "enum": ["user", "upstream_edge", "node_field"]
+        },
+        "valueSources": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "enum": ["local_field", "upstream_output"] }
+        },
+        "composition": {
+          "type": "object",
+          "required": ["kind", "localRole"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "type": "string", "enum": ["content_with_instruction", "single_body", "separate_roles"] },
+            "localRole": { "type": "string", "enum": ["body", "instruction", "lyrics", "style"] }
+          }
+        },
+        "min": { "$ref": "#/$defs/nonNegativeNumber" },
+        "max": {
+          "anyOf": [
+            { "$ref": "#/$defs/nonNegativeNumber" },
+            { "type": "null" }
+          ],
+          "description": "Maximum cardinality. null means the official source does not publish an upper bound."
+        },
+        "allowedMimes": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/nonEmptyString" },
+          "uniqueItems": true
+        },
+        "maxSizeMb": { "$ref": "#/$defs/nonNegativeNumber" },
+        "maxSizeExclusive": { "type": "boolean" },
+        "maxDurationSec": { "$ref": "#/$defs/nonNegativeNumber" },
+        "minDurationSec": { "$ref": "#/$defs/nonNegativeNumber" },
+        "totalMinDurationSec": { "$ref": "#/$defs/nonNegativeNumber" },
+        "totalMaxDurationSec": { "$ref": "#/$defs/nonNegativeNumber" },
+        "combinedOutputMaxDurationSec": {
+          "$ref": "#/$defs/nonNegativeNumber",
+          "description": "Maximum of this slot's total input duration plus requested output duration."
+        },
+        "totalMinExclusive": { "type": "boolean" },
+        "totalMaxExclusive": { "type": "boolean" },
+        "limitSource": { "$ref": "#/$defs/limitSource" },
+        "hint": { "type": "string" }
+      },
+      "allOf": [{
+        "if": { "required": ["composition"] },
+        "then": { "properties": { "type": { "const": "text" } } }
+      }]
+    },
+    "inputGroup": {
+      "type": "object",
+      "required": ["slots", "min"],
+      "additionalProperties": true,
+      "properties": {
+        "slots": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/nonEmptyString" },
+          "uniqueItems": true
+        },
+        "min": { "$ref": "#/$defs/nonNegativeNumber" },
+        "hint": { "type": "string" }
+      }
+    },
+    "outputSpec": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "$ref": "#/$defs/outputType" },
+        "allowedMimes": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/nonEmptyString" },
+          "uniqueItems": true
+        },
+        "min": { "$ref": "#/$defs/nonNegativeNumber" },
+        "max": { "$ref": "#/$defs/nonNegativeNumber" }
+      }
+    },
+    "research": {
+      "type": "object",
+      "required": ["status"],
+      "additionalProperties": true,
+      "properties": {
+        "status": { "$ref": "#/$defs/researchStatus" },
+        "docUrl": { "type": "string" },
+        "verifiedAt": { "type": "string" },
+        "notes": { "type": "string" }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "required": ["status"],
+      "additionalProperties": true,
+      "properties": {
+        "status": { "$ref": "#/$defs/executionStatus" },
+        "profileId": { "type": "string" },
+        "seam": { "type": "string" },
+        "notes": { "type": "string" }
+      }
+    },
+    "implementation": {
+      "type": "object",
+      "required": ["status"],
+      "additionalProperties": true,
+      "properties": {
+        "status": { "$ref": "#/$defs/implementationStatus" },
+        "profileId": { "type": "string" },
+        "seam": { "type": "string" },
+        "verifiedAt": { "type": "string" },
+        "notes": { "type": "string" }
+      }
+    },
+    "routing": {
+      "type": "object",
+      "required": ["channel", "wireModel", "endpoint"],
+      "additionalProperties": true,
+      "properties": {
+        "channel": { "$ref": "#/$defs/nonEmptyString" },
+        "wireModel": { "$ref": "#/$defs/nonEmptyString" },
+        "endpoint": { "$ref": "#/$defs/nonEmptyString" },
+        "automaticFallback": { "type": "boolean" }
+      }
+    },
+    "operation": {
+      "type": "object",
+      "required": ["output", "inputs"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "$ref": "#/$defs/nonEmptyString" },
+        "mode": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Legacy alias for id; normalize maps mode → id"
+        },
+        "label": { "type": "string" },
+        "output": { "$ref": "#/$defs/outputSpec" },
+        "inputs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/inputSlot" }
+        },
+        "inputGroups": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/inputGroup" }
+        },
+        "parameters": { "type": "object" },
+        "research": {
+          "$ref": "#/$defs/research",
+          "description": "Operation-level research; inherits model default when omitted"
+        },
+        "execution": {
+          "$ref": "#/$defs/execution",
+          "description": "Operation-level execution; inherits model default when omitted"
+        },
+        "implementation": {
+          "$ref": "#/$defs/implementation",
+          "description": "Operation-level adapter readiness; inherits model default when omitted"
+        },
+        "aliases": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/nonEmptyString" },
+          "uniqueItems": true,
+          "description": "Optional legacy operation-name aliases only; NOT model wire-id mapping"
+        }
+      }
+    },
+    "model": {
+      "type": "object",
+      "required": ["id", "label"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "$ref": "#/$defs/nonEmptyString" },
+        "label": { "$ref": "#/$defs/nonEmptyString" },
+        "family": { "type": "string" },
+        "badge": { "type": "string" },
+        "subtitle": { "type": "string" },
+        "operations": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/operation" }
+        },
+        "modes": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/operation" },
+          "description": "Legacy alias for operations"
+        },
+        "parameters": { "type": "object" },
+        "research": {
+          "$ref": "#/$defs/research",
+          "description": "Model-level default only; normalize materializes onto each operation"
+        },
+        "execution": {
+          "$ref": "#/$defs/execution",
+          "description": "Model-level default only; normalize materializes onto each operation"
+        },
+        "implementation": {
+          "$ref": "#/$defs/implementation",
+          "description": "Model-level adapter-readiness default only; normalize materializes onto each operation"
+        },
+        "routing": { "$ref": "#/$defs/routing" },
+        "aliases": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/nonEmptyString" },
+          "uniqueItems": true,
+          "description": "Model metadata aliases for runtime/wire model ID normalization to model.id"
+        },
+        "governance": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "docUrl": { "type": "string" },
+            "confidence": { "type": "string" }
+          }
+        }
+      },
+      "anyOf": [
+        { "required": ["operations"] },
+        { "required": ["modes"] }
+      ]
+    }
+  }
+}

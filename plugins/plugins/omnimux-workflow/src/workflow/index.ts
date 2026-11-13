@@ -1,0 +1,304 @@
+/**
+ * Workflow host assembly: mounts the WorkspaceStore, the generation gateway
+ * (M4: OmniMux seam client when the execution hub is reachable, mock
+ * otherwise), the M3 execution engine (ExecutionManager + recovery), the
+ * /omnimux-workflow HTTP routes (with the legacy /dsh-workflow alias) onto
+ * the webServer seat, and the M5 agent seats (three ctx.tools tools + the
+ * workflow:ops systemPrompt section).
+ *
+ * M3: executions became first-class — creating / pausing / resuming /
+ * cancelling runs and streaming the 11-event SSE protocol. Live executions
+ * persisted under $DSH_HOME/omnimux/workflow/executions/ are recovered and
+ * resumed automatically at mount (fromPersistedState breakpoint recovery).
+ *
+ * M4: gateway selection happens here — see seam/gatewaySelection.ts and the
+ * README「真实网关」chapter (env override OMNIMUX_WORKFLOW_GATEWAY).
+ *
+ * M5: agent tools (workflow_list / workflow_run / workflow_snapshot) work
+ * directly against this store + executionManager — no HTTP round-trip, no
+ * new seam consumers; see agent/agentTools.ts.
+ */
+
+import { existsSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import type { ServerResponse, IncomingMessage } from 'node:http';
+import type { WorkflowPaths } from './paths';
+import { resolveWorkflowPaths } from './paths';
+import { createComfyBackendService } from './comfyBackend/service.ts';
+import { createWorkspaceStore } from './workspace/WorkspaceStore';
+import { createGenerationPreferencesStore } from './workspace/GenerationPreferencesStore';
+import { createProjectAssetsStore } from './workspace/ProjectAssetsStore';
+import { createProjectStore } from '../projects/ProjectStore';
+import { createWorkspaceProjectBinder } from '../projects/workspaceProjectBinding';
+import { ensureLibraryRoot } from '../projects/library';
+import { TemplateStore } from './templates/TemplateStore.ts';
+import type { GenerationGateway } from './seam/gateway';
+import {
+  assembleGateway,
+  type GatewayMode,
+} from './seam/gatewaySelection';
+import { createExecutionManager } from './execution/ExecutionManager';
+import { createHeadlessExecutionSeam } from './execution/HeadlessExecutionSeam';
+import type { HeadlessExecutionSeam } from './execution/HeadlessExecutionSeam';
+import { persistGeneratedArtifact } from './execution/persistGeneratedArtifact';
+import { createLibraryServiceClient } from './library/libraryService';
+import { createWorkflowDispatcher, registerWorkflowRoutes } from './routes/canvasRoutes';
+import { DEV_FAILURE_FILE_NAME, withDevFailureRecorder } from './devFailureRecorder';
+import { registerWorkflowAgentSeats } from './agent/agentTools';
+import { createDirectorSessionFactory } from './director/directorSession.ts';
+import { createDirectorHost } from './director/directorHost.ts';
+import { createDirectorOperations } from './director/directorOperations.ts';
+import type { AgentSeatContext } from './agent/agentTools';
+
+type WebServer = {
+  register: (route: {
+    kind: string;
+    path: string;
+    handler: (req: IncomingMessage, res: ServerResponse) => Promise<void>;
+  }) => () => void;
+};
+
+type HostContext = AgentSeatContext & {
+  webServer?: WebServer;
+  inject?: (deps: string[], callback: (inner: { webServer?: WebServer }) => void) => void;
+  /** cordis seam lookup — the only legal path to the execution hub. */
+  get?: (name: string) => unknown;
+};
+
+export interface MountWorkflowHostOptions {
+  paths?: WorkflowPaths;
+  /** Override OmniMux/Projects library root (tests). */
+  libraryRoot?: string;
+  /** Override the gateway entirely (tests / embedding code win over assembly). */
+  gateway?: GenerationGateway;
+  /** Gateway selection override (default: env OMNIMUX_WORKFLOW_GATEWAY / auto). */
+  gatewayMode?: GatewayMode;
+  /** Max concurrent in-flight hub seam calls (default 2). */
+  seamConcurrency?: number;
+  /** Env source for gateway knobs (tests); defaults to process.env. */
+  env?: NodeJS.ProcessEnv;
+}
+
+export function mountWorkflowHost(ctx: HostContext, opts: MountWorkflowHostOptions = {}): () => void {
+  const paths = opts.paths ?? resolveWorkflowPaths();
+  const templatesDir = paths.templatesDir || join(paths.root, 'templates');
+  mkdirSync(paths.workspacesDir, { recursive: true });
+  mkdirSync(paths.mediaDir, { recursive: true });
+  mkdirSync(paths.executionsDir, { recursive: true });
+  mkdirSync(templatesDir, { recursive: true });
+
+  const libraryRoot = opts.libraryRoot ?? ensureLibraryRoot();
+  const projectStore = createProjectStore({ libraryRoot });
+  /**
+   * 会话 id → 工作区目录（会话 `header.cwd`）。宿主 `agents` 服务缺失、会话已结束时
+   * 返回 undefined，调用方按「不登记」降级（Issue #2104）；绝不抛错。
+   */
+  const readSessionWorkspaceDir = (sessionId: string): string | undefined => {
+    try {
+      const agents = typeof ctx.get === 'function' ? ctx.get('agents') : undefined;
+      const agent = (agents as
+        | { get?: (id: string) => { session?: { header?: { cwd?: string } } } | undefined }
+        | undefined)?.get?.(sessionId);
+      const cwd = agent?.session?.header?.cwd;
+      return typeof cwd === 'string' && cwd.trim() !== '' ? cwd : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const resolveProjectRoot = (workspaceId: string) => projectStore.findByCanvasWorkspaceId(workspaceId);
+  // 未绑定项目的工作区画布属于用户级公共区：媒体/资产写入回落到
+  // `$DSH_HOME/omnimux/workflow/free/<canvasId>/`，绝不偷偷建默认库项目。
+  const resolveAssetsRoot = (workspaceId: string) => {
+    const project = projectStore.findByCanvasWorkspaceId(workspaceId);
+    if (project) return project;
+    const freeRoot = join(paths.workspacesDir, workspaceId);
+    return existsSync(join(freeRoot, 'canvas.json')) ? { path: freeRoot } : null;
+  };
+  const store = createWorkspaceStore({
+    workspacesDir: paths.workspacesDir,
+    resolveProjectRoot,
+  });
+  const generationPreferences = createGenerationPreferencesStore(join(paths.root, 'generation-preferences.json'));
+  const templates = new TemplateStore({ templatesDir });
+  const gateway =
+    opts.gateway
+    ?? assembleGateway({
+      getSeam: (name: string) => ctx.get?.(name),
+      ...(opts.gatewayMode !== undefined ? { mode: opts.gatewayMode } : {}),
+      ...(opts.seamConcurrency !== undefined ? { seamConcurrency: opts.seamConcurrency } : {}),
+      env: opts.env ?? process.env,
+    }).gateway;
+  const libraryHttp = createLibraryServiceClient(() => ctx.get?.('assetLibrary'));
+  const assetsStore = createProjectAssetsStore({
+    workspacesDir: paths.workspacesDir,
+    resolveProjectRoot: resolveAssetsRoot,
+    fetchLibraryDetail: libraryHttp.fetchLibraryDetail,
+    promoteToLibrary: libraryHttp.promoteToLibrary,
+  });
+  const directorSessionFactory = createDirectorSessionFactory({ stateDir: join(paths.root, 'director-auth') });
+  const directorHost = createDirectorHost({ store });
+  const directorOperations = createDirectorOperations({ host: directorHost, store, assetsStore });
+  const executionManager = createExecutionManager({
+    executionsDir: paths.executionsDir,
+    resolveProjectFile: (workspaceId, relativePath) => assetsStore.resolveProjectFile(workspaceId, relativePath),
+    gateway,
+    mediaDir: paths.mediaDir,
+    persistGenerated: (input) => persistGeneratedArtifact({
+      ...input,
+      resolveProjectRoot: resolveAssetsRoot,
+      registerGenerated: (workspaceId, payload) => assetsStore.registerGenerated(workspaceId, payload),
+    }),
+  });
+  // Issue #3690 M4：宿主退出时关闭 ComfyUI 后端；dispose 只摘钩子，不杀后端。
+  const comfyBackendService = createComfyBackendService({ dataRoot: paths.root });
+  const dispatcher = createWorkflowDispatcher({
+    getSeam: (name) => ctx.get?.(name),
+    getTool: (name) => (ctx as any).tools?.get?.(name) ?? (typeof ctx.get === 'function' ? (ctx.get('tools') as any)?.get?.(name) : undefined),
+    store,
+    directorOperations,
+    directorSessionFactory,
+    generationPreferences,
+    gateway,
+    mediaDir: paths.mediaDir,
+    executionManager,
+    templates,
+    libraryRoot,
+    assetsStore,
+    projectStore,
+    resolveAssetsRoot,
+    // Issue #2104：客户端打开创作画布前按会话问「这个工作区属于哪个项目」，
+    // 缺失即登记，保证工作区始终有项目。
+    resolveSessionWorkspaceDir: readSessionWorkspaceDir,
+    // Issue #3690 M2a：ComfyUI 托管后端（安装/启动/状态）挂在同一 dispatcher 上。
+    comfyBackend: comfyBackendService,
+  });
+
+  // Issue #3237: dev-only failure recorder behind one-command replay. Off
+  // unless OMNIMUX_WORKFLOW_DEV_REPLAY=1 — Dev and Prod load the same build,
+  // so `NODE_ENV` cannot select dev. While off this returns `dispatcher`
+  // itself: no extra branch, no IO, no file.
+  const recordingDispatcher = withDevFailureRecorder(dispatcher, {
+    env: opts.env ?? process.env,
+    file: join(paths.root, DEV_FAILURE_FILE_NAME),
+  });
+
+  // Recovery pass (Gxgen ExecutionRecoveryService port): resume live runs
+  // persisted by a previous mount / process. Fire-and-forget — route mounts
+  // do not wait on it; recovered executions stream to late SSE subscribers.
+  void executionManager.recoverAll();
+
+  // Headless execution seam for omnimux-apps & headless orchestration
+  const headlessSeam = createHeadlessExecutionSeam({
+    executionManager,
+    workspaceStore: store as any,
+    getCatalog: () => Promise.resolve(gateway.capabilities()),
+    mediaDir: paths.mediaDir,
+    resolveProjectFile: (workspaceId, relativePath) => assetsStore.resolveProjectFile(workspaceId, relativePath),
+  });
+
+  if (typeof (ctx as any).provide === 'function') {
+    (ctx as any).provide('omnimux-workflow', headlessSeam);
+  }
+  (ctx as Record<string, unknown>)['omnimux-workflow'] = headlessSeam;
+
+  const disposers: Array<() => void> = [];
+
+  const mountHttp = (httpCtx: { webServer?: WebServer }) => {
+    const webServer = httpCtx.webServer;
+    if (!webServer || typeof webServer.register !== 'function') return;
+    const mount = () => {
+      // 项目库 API（Phase 0）已并入 workflow dispatcher（/omnimux-workflow/api/projects*），
+      // 与画布路由共用同一 prefix 注册，最长前缀不冲突、无二次 register。
+      disposers.push(registerWorkflowRoutes(webServer, recordingDispatcher));
+    };
+    if (typeof ctx.effect === 'function') {
+      ctx.effect(mount, 'omnimux-workflow: http routes');
+    } else {
+      mount();
+    }
+  };
+
+  if (typeof ctx.inject === 'function') {
+    ctx.inject(['webServer'], (inner) => mountHttp(inner));
+  } else {
+    mountHttp(ctx);
+  }
+
+  // ---- M5 agent seats: three tools + workflow:ops systemPrompt section ----
+  // Host-side only (store + executionManager in-process, no HTTP calls).
+  // Mounts when either seat is present; wrapped in ctx.effect for disposal.
+  if (ctx.tools || ctx.systemPrompt) {
+    const mountAgent = () => {
+      // Optional hub seam: last-known UI viewport for default workspace targeting.
+      // Vertical package must not import hub — only ctx.get('workbenchMailbox').
+      const mailbox = typeof ctx.get === 'function' ? ctx.get('workbenchMailbox') : undefined;
+      const getActiveView =
+        mailbox && typeof mailbox === 'object' && typeof (mailbox as { getActiveView?: unknown }).getActiveView === 'function'
+          ? (mailbox as { getActiveView: (sessionId?: string) => unknown }).getActiveView.bind(mailbox)
+          : undefined;
+      // Optional hub seam: Catalog v1.1 DTO for the compat kernel (Issue
+      // #466). Read lazily at mutation time; null → fail closed.
+      const getCatalog = () => {
+        const seam = typeof ctx.get === 'function' ? ctx.get('modelCatalog') : undefined;
+        if (seam && typeof seam === 'object' && typeof (seam as { list?: unknown }).list === 'function') {
+          try {
+            return (seam as { list: () => unknown }).list();
+          } catch {
+            return null;
+          }
+        }
+        return null;
+      };
+      disposers.push(
+        registerWorkflowAgentSeats(ctx, {
+          store,
+          directorHost,
+          directorOperations,
+          projectStore,
+          resolveSessionWorkspaceDir: readSessionWorkspaceDir,
+          resolveProjectFile: (workspaceId, relativePath) => assetsStore.resolveProjectFile(workspaceId, relativePath),
+          executionManager,
+          mediaDir: paths.mediaDir,
+          resolveAssetsRoot,
+          // Issue #2104：会话所属工作区目录里的画布必须能被项目页看到。
+          // 目录从宿主 `agents` 服务反查（会话 header.cwd）；服务不可用时降级为 null。
+          bindWorkspaceProject: createWorkspaceProjectBinder({
+            projectStore,
+            libraryRoot,
+            resolveWorkspaceDir: readSessionWorkspaceDir,
+          }),
+          getCatalog,
+          getExecutionCatalog: () => gateway.capabilities(),
+          getGenerationPreferences: () => generationPreferences.get().lastModelByType,
+          getActiveView: getActiveView as
+            | ((sessionId?: string) => {
+                ok?: boolean;
+                uiContext?: {
+                  view?: { kind?: string; extra?: { workspaceId?: string } } | null;
+                } | null;
+              })
+            | undefined,
+        }),
+      );
+    };
+    if (typeof ctx.effect === 'function') {
+      ctx.effect(mountAgent, 'omnimux-workflow: agent seats');
+    } else {
+      mountAgent();
+    }
+  }
+
+  return () => {
+    for (const dispose of disposers) dispose();
+    disposers.length = 0;
+    // Flush + detach in-memory executions (persisted state stays recoverable).
+    executionManager.disposeAll();
+    // 摘除 ComfyUI 后端的宿主退出钩子；不杀后端，owner 机制管它的生命周期。
+    comfyBackendService.dispose();
+  };
+}
+
+export { resolveWorkflowPaths };
+export * from './execution/fingerprintCache';
+export * from './execution/stepCheckpoint';
+export * from './execution/HeadlessExecutionSeam';

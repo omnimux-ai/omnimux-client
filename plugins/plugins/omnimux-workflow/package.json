@@ -1,0 +1,101 @@
+{
+  "name": "omnimux-workflow",
+  "version": "1.0.0-rc.1",
+  "type": "module",
+  "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/index.js",
+    "lib/client.js",
+    "lib/canvas.js",
+    "lib/director.js",
+    "assets/director",
+    "THIRD-PARTY-NOTICES-director.md",
+    "src/shared",
+    "scripts",
+    "cordis.patch.yml",
+    "README.md",
+    "docs",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "node scripts/build-host.mjs && node scripts/build-client.mjs && node scripts/build-canvas.mjs && node scripts/build-director.mjs",
+    "prepare": "npm run build",
+    "dev": "node scripts/dev.mjs",
+    "harness": "node scripts/canvas-harness.mjs",
+    "typecheck": "node node_modules/typescript/bin/tsc -p tsconfig.canvas.json --noEmit && node node_modules/typescript/bin/tsc -p tsconfig.host.json --noEmit && node node_modules/typescript/bin/tsc -p src/director/tsconfig.json",
+    "test": "node --import ./test-setup.mjs --test \"src/**/*.test.mjs\" \"src/**/*.test.js\" \"tests/*.test.mjs\"",
+    "verify:m5": "node scripts/m5-self-verify.mjs",
+    "perf:baseline": "node scripts/perf-baseline.mjs",
+    "prepublishOnly": "node ../../scripts/verify-publish-source.mjs ."
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-primitives"
+      ],
+      "platform": "web"
+    }
+  },
+  "dependencies": {
+    "@codemirror/commands": "^6.11.0",
+    "@codemirror/lang-markdown": "^6.5.2",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/merge": "^6.12.2",
+    "@codemirror/state": "^6.7.1",
+    "@codemirror/view": "^6.43.9",
+    "@lezer/highlight": "^1.2.3",
+    "@types/marked": "^6.0.0",
+    "@xyflow/react": "12.11.3",
+    "dsh-ui-kit": "file:../../packages/dsh-ui-kit",
+    "lucide-react": "1.33.0",
+    "marked": "^18.0.11",
+    "uuid": "13.0.0",
+    "zustand": "5.0.15"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.1.0-rc.6 || >=0.2.1-rc.3 <0.3.0-0",
+    "react": "^18.2.0 || ^19.2.8",
+    "react-dom": "^18.2.0 || ^19.2.8"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.4",
+    "@types/three": "0.186.0",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@fix-webm-duration/fix": "1.0.1",
+    "@react-three/drei": "10.7.7",
+    "@react-three/fiber": "9.6.1",
+    "esbuild": "^0.28.2",
+    "nanoid": "6.0.0",
+    "postcss": "8.5.6",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "tailwindcss": "3.4.19",
+    "three": "0.185.1",
+    "three-stdlib": "2.36.1",
+    "typescript": "~5.9.3",
+    "zod": "^4.4.3"
+  },
+  "license": "SEE LICENSE IN LICENSE",
+  "description": "omnimux-workflow: workflow infinite canvas plugin for DeepSeek Harness. Node DAG editing, local persistence, execution via OmniMux seams, agent tools for canvas control."
+}

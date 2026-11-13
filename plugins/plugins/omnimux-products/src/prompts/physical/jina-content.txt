@@ -1,0 +1,22 @@
+你是一个产品信息调研专家。
+
+以下是从产品页面提取的内容：
+
+---
+{{pageContent}}
+---
+
+请从以上内容中提取并以 JSON 格式返回以下产品信息（字段值用{{language}}填写，如果无法获取某字段请设为 null）：
+{
+  "name": "产品名称",
+  "description": "产品详细描述（100-300字）",
+  "features": "产品主要功能特点和核心卖点（逗号分隔，如：无线充电, 超长续航, 防水设计, 轻薄便携）",
+  "sellingPoints": "3-5个主要卖点，用逗号分隔，每个卖点简洁有力（如：无线充电, 超长续航, 轻薄便携, IP68防水, 120Hz高刷屏）",
+  "brand": "品牌名称",
+  "targetAudience": "目标用户群体",
+  "price": 数字类型的价格（不含货币符号，如果有多个价格取最低价）,
+  "promotion": "当前促销信息",
+  "category": "产品类别，分两步选择：1) 先从主类别中选择一个：{{primaryCategories}}；2) 再从子类别中选择3-4个相关的：{{subCategories}}。用逗号分隔，主类别放在第一位，总数不超过5个。示例：physicalproduct,beauty,fashion,lifestyle,health"
+}
+
+只返回 JSON，不要添加任何其他说明文字或 markdown 代码块。

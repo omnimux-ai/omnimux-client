@@ -1,0 +1,219 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Button, IconButton } from 'dsh-ui-kit'
+import { activateRowKeydown } from './a11y.js'
+import { cloudPage } from './api.js'
+import { cloudCardKind, normalizeCloudAsset } from './cloud-feed-helpers.js'
+import { fetchCategoryRandomSample, fetchScopesRandomSample, globalShuffleCache } from './category-shuffle-cache.js'
+import { ChevronLeftIcon, ChevronRightIcon } from './icons.jsx'
+import { CloudAssetCard } from './CloudAssetsView.jsx'
+
+/**
+ * 缺省读面：没有控制器注入时两张卡都按「未保存」渲染（只读空集）。
+ * 逐文件声明，不新增跨文件的共享导出。
+ */
+const NO_IDS = new Set()
+
+/**
+ * 抽样范围必须取自具名二级 scope 的分类行。
+ *
+ * 声音「全部」：该行承诺的是可试听的卡点配乐与音效，而 `audio` 全量的 27 页里
+ * 近八成是点不动的音色描述行，随机 1~2 页多半整行都是空框。收窄到 `audio/bgm`
+ * 与 `audio/sfx` 两个二级 scope，行的内容才与副标题一致。音色描述行并没有丢：
+ * 「声音 → 配音」二级标签仍完整可达。行级筛除交给 `cloudCardKind`，
+ * `audio/bgm` 里那张被判为 `media` 的行因此不会混进来。
+ * 未列出的分类一律走原来的全量抽样。
+ */
+const ROW_SAMPLE_SCOPES = { audio: ['audio/bgm', 'audio/sfx'] }
+
+/**
+ * Single horizontal category row in the cross-category "All" view.
+ *
+ * Each category displays a section header (title, description, and "View all ->" CTA)
+ * and a single-row scrollable container of cards with randomized order per refresh
+ * and session-level caching to keep order stable during navigation.
+ *
+ * The row draws the same `CloudAssetCard` the grid does, so it has to pass the
+ * save trio straight through: read-only `savedIds` / `savingIds` and the
+ * `onSave` callback, both owned by the stage's controller.
+ *
+ * @param {{
+ *   category: { id: string, zh?: string, en?: string, total?: number },
+ *   t: (key: string) => string,
+ *   onSelectCategory: (categoryId: string) => void,
+ *   onTogglePlay: (asset: any, explicit?: boolean) => void,
+ *   onPreview?: (asset: any) => void,
+ *   playingId?: string,
+ *   suppressedIds?: Set<string>,
+ *   refreshKey?: number,
+ *   savedIds?: Set<string>,
+ *   savingIds?: Set<string>,
+ *   onSave?: (asset: any) => void,
+ * }} props
+ */
+export function CloudCategoryRow(props) {
+  const { category, t, onSelectCategory, onTogglePlay, onPreview, playingId, suppressedIds = NO_IDS, refreshKey = 0, savedIds = NO_IDS, savingIds = NO_IDS, onSave } = props
+  const [items, setItems] = useState(/** @type {any[]} */ ([]))
+  const [loading, setLoading] = useState(false)
+  const [canScrollLeft, setCanScrollLeft] = useState(false)
+  const [canScrollRight, setCanScrollRight] = useState(false)
+  const scrollRef = useRef(/** @type {HTMLDivElement | null} */ (null))
+
+  // Fetch or retrieve cached shuffled items for this category
+  useEffect(() => {
+    let cancelled = false
+    const catId = category?.id
+    if (!catId) return undefined
+
+    // Check session shuffle cache first
+    const cached = globalShuffleCache.get(catId)
+    if (cached !== undefined && cached.length > 0) {
+      setItems(cached)
+      return undefined
+    }
+
+    setLoading(true)
+    void (async () => {
+      try {
+        const scopes = ROW_SAMPLE_SCOPES[catId]
+        const sampled = scopes
+          ? await fetchScopesRandomSample(
+            scopes,
+            cloudPage,
+            normalizeCloudAsset,
+            24,
+            (row) => cloudCardKind(row) === 'audio',
+          )
+          : await fetchCategoryRandomSample(catId, cloudPage, normalizeCloudAsset, 24)
+        if (cancelled) return
+        if (sampled && sampled.length > 0) {
+          globalShuffleCache.set(catId, sampled)
+          setItems(sampled)
+        }
+      } catch {
+        // Silent fallback: row will simply be empty
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+
+    return () => { cancelled = true }
+  }, [category?.id, refreshKey])
+
+  // Update scroll arrow indicators
+  const updateScrollButtons = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    setCanScrollLeft(el.scrollLeft > 20)
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 20)
+  }, [])
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return undefined
+    updateScrollButtons()
+    // Check after items render and images settle
+    const timer = setTimeout(updateScrollButtons, 300)
+    return () => clearTimeout(timer)
+  }, [items, updateScrollButtons])
+
+  const handleScroll = (delta) => {
+    const el = scrollRef.current
+    if (el) {
+      el.scrollBy({ left: delta, behavior: 'smooth' })
+    }
+  }
+
+  const categoryTitle = t(`cloud.category.${category.id}`) || category.zh || category.id
+  const categoryDesc = t(`cloud.categoryDesc.${category.id}`)
+
+  return (
+    <section className="omnimux-assets-cloud-row-section" data-category={category.id}>
+      <div className="omnimux-assets-cloud-row-header">
+        <div className="omnimux-assets-cloud-row-info">
+          <h2
+            className="omnimux-assets-cloud-row-title"
+            role="button"
+            tabIndex={0}
+            title={categoryTitle}
+            onClick={() => onSelectCategory(category.id)}
+            onKeyDown={activateRowKeydown(() => onSelectCategory(category.id))}
+          >
+            {categoryTitle}
+          </h2>
+          {categoryDesc ? (
+            <p className="omnimux-assets-cloud-row-desc">{categoryDesc}</p>
+          ) : null}
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="omnimux-assets-cloud-row-view-all"
+          onClick={() => onSelectCategory(category.id)}
+          trailingIcon={<ChevronRightIcon size={13} />}
+        >
+          {t('cloud.category.viewAll')}
+        </Button>
+      </div>
+
+      <div className="omnimux-assets-cloud-row-wrapper">
+        {canScrollLeft ? (
+          <IconButton
+            variant="ghost"
+            size="sm"
+            className="omnimux-assets-cloud-row-arrow omnimux-assets-cloud-row-arrow--left"
+            aria-label={t('card.scrollLeft') || '向左滚动'}
+            onClick={() => handleScroll(-500)}
+          >
+            <ChevronLeftIcon size={16} />
+          </IconButton>
+        ) : null}
+
+        <div
+          ref={scrollRef}
+          className="omnimux-assets-cloud-row-cards"
+          onScroll={updateScrollButtons}
+        >
+          {loading && items.length === 0 ? (
+            Array.from({ length: 6 }, (_, index) => (
+              <div
+                key={`skeleton-${index}`}
+                className="omnimux-assets-card omnimux-assets-cloud-card omnimux-assets-cloud-skeleton omnimux-assets-cloud-row-skeleton"
+              >
+                <div className="omnimux-assets-cloud-skeleton-thumb" />
+                <div className="omnimux-assets-cloud-skeleton-line" />
+              </div>
+            ))
+          ) : (
+            items.map((asset) => (
+              <CloudAssetCard
+                key={asset.id}
+                asset={asset}
+                t={t}
+                aspect={category.id === 'style' || category.id === 'audio' ? 'horizontal' : undefined}
+                playing={playingId === asset.id}
+                autoplaySuppressed={suppressedIds.has(asset.id)}
+                onTogglePlay={onTogglePlay}
+                onPreview={onPreview}
+                saved={savedIds.has(asset.id)}
+                saving={savingIds.has(asset.id)}
+                onSave={onSave}
+              />
+            ))
+          )}
+        </div>
+
+        {canScrollRight ? (
+          <IconButton
+            variant="ghost"
+            size="sm"
+            className="omnimux-assets-cloud-row-arrow omnimux-assets-cloud-row-arrow--right"
+            aria-label={t('card.scrollRight') || '向右滚动'}
+            onClick={() => handleScroll(500)}
+          >
+            <ChevronRightIcon size={16} />
+          </IconButton>
+        ) : null}
+      </div>
+    </section>
+  )
+}

@@ -1,0 +1,26 @@
+{
+  "omnimux-accounts": {
+    "stage": "alpha",
+    "toolPrefixes": ["omnimux_accounts_"]
+  },
+  "omnimux-publish": {
+    "stage": "alpha",
+    "toolPrefixes": ["omnimux_publish_"]
+  },
+  "omnimux-analytics": {
+    "stage": "alpha",
+    "toolPrefixes": ["omnimux_analytics_"]
+  },
+  "omnimux-forms": {
+    "stage": "alpha",
+    "toolPrefixes": []
+  },
+  "omnimux-avatar": {
+    "stage": "alpha",
+    "toolPrefixes": ["avatar_"]
+  },
+  "omnimux-studio": {
+    "stage": "alpha",
+    "toolPrefixes": []
+  }
+}

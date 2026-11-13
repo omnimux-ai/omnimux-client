@@ -1,0 +1,26 @@
+{
+  "id": "omnimux-video",
+  "name": "omnimux-video",
+  "version": "0.1.0",
+  "tier": "tier-2-vertical",
+  "entrypoint": "src/index.js",
+  "status": "active",
+  "description": "FFmpeg 本地高性能视频处理与理解插件，提供 11 项本地剪辑/合并/提取能力与反向 Prompt 视频理解",
+  "tags": ["video", "ffmpeg", "transcode", "video-process", "editing", "understanding"],
+  "capabilities": {
+    "tools": [
+      { "name": "video_process", "summary": "执行本地 FFmpeg 视频剪辑/合并/拆分/转码等 11 项原子能力", "category": "video", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "video_analyze", "summary": "解析视频结构并进行分镜内容理解", "category": "video", "isWriteOperation": false, "requiresAuth": true },
+      { "name": "video_reverse_prompt", "summary": "基于视频抽帧反推结构化分镜生成提示词", "category": "video", "isWriteOperation": false, "requiresAuth": true }
+    ],
+    "seamsProvided": [
+      { "name": "videoProcess", "interfaceDoc": "ctx.get('videoProcess').execute(task)" }
+    ],
+    "seamsConsumed": [],
+    "storageDomains": ["temp/video_output/"]
+  },
+  "dependencies": {
+    "requiredPlugins": [],
+    "systemBinaries": ["ffmpeg", "ffprobe"]
+  }
+}

@@ -1,0 +1,24 @@
+schemaVersion: "1.1"
+managementGroup: "image"
+models:
+  - id: "fixture-bad-output-minmax"
+    label: "Fixture Bad Output MinMax"
+    family: "fixture"
+    operations:
+      - id: "text_to_image"
+        label: "文生图"
+        output:
+          type: "image"
+          min: 5
+          max: 1
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+    research:
+      status: "draft"
+    execution:
+      status: "none"

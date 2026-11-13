@@ -1,0 +1,769 @@
+    // 规则真源：SkillShelf（boot.js 注入 skill-picker-logic.js），禁止内联副本。
+    const pickerSearchCache = new Map();
+    const pickerSearchInflight = new Map();
+
+    function showSkillCreationError(text) {
+      if (typeof document === "undefined" || !document.body) return;
+      document.getElementById("sh-skill-create-error")?.remove();
+      const notice = document.createElement("div");
+      notice.id = "sh-skill-create-error";
+      notice.className = "sh-toast";
+      notice.setAttribute("role", "alert");
+      notice.textContent = text;
+      notice.addEventListener("click", () => notice.remove(), { once: true });
+      document.body.appendChild(notice);
+      setTimeout(() => notice.remove(), 8000);
+    }
+
+    function peekPickerCache(payload) {
+      return SkillShelf.peekPickerCache(pickerSearchCache, SkillShelf.pickerCacheKey(payload));
+    }
+
+    function loadPickerSearch(payload) {
+      return SkillShelf.loadPickerSearch(payload, {
+        cache: pickerSearchCache,
+        inflight: pickerSearchInflight,
+        fetchSearch: (p) => api("search", p),
+      });
+    }
+
+    function writePlazaSkillsIntent() {
+      try {
+        window.sessionStorage.setItem("omnimux-market:plaza-intent", JSON.stringify({ tab: "skills" }));
+      } catch { /* private mode */ }
+      try {
+        window.dispatchEvent(new CustomEvent("omnimux-market:plaza-intent", { detail: { tab: "skills" } }));
+      } catch { /* ignore */ }
+    }
+
+    function focusComposerCard() {
+      if (typeof document === "undefined") return;
+      const el = document.querySelector('[data-composer-card] [contenteditable="true"], [data-composer-card] textarea, [data-lexical-editor="true"]');
+      if (el && typeof el.focus === "function") el.focus();
+    }
+
+    function renderBookOpenIcon(size = 16) {
+      const px = typeof size === "number" && Number.isFinite(size) && size > 0 ? size : 16;
+      return h("svg", {
+        width: px,
+        height: px,
+        viewBox: "0 0 24 24",
+        fill: "none",
+        xmlns: "http://www.w3.org/2000/svg",
+        "aria-hidden": "true",
+        preserveAspectRatio: "xMidYMid meet",
+        className: "lucide lucide-book-open",
+        style: {
+          width: px,
+          height: px,
+          minWidth: px,
+          minHeight: px,
+          flex: "none",
+          flexShrink: 0,
+          display: "block",
+        },
+      },
+        h("path", {
+          d: "M12 5v16",
+          stroke: "currentColor",
+          strokeWidth: "2",
+          strokeLinecap: "round",
+          strokeLinejoin: "round",
+        }),
+        h("path", {
+          d: "M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z",
+          stroke: "currentColor",
+          strokeWidth: "2",
+          strokeLinecap: "round",
+          strokeLinejoin: "round",
+        }),
+      );
+    }
+    const renderPuzzleIcon = renderBookOpenIcon;
+
+    function PickerInfoIcon() {
+      return h("svg", {
+        width: 14, height: 14, viewBox: "0 0 16 16", fill: "none", "aria-hidden": "true",
+      },
+        h("circle", { cx: "8", cy: "8", r: "6.25", stroke: "currentColor", strokeWidth: "1.4" }),
+        h("path", { d: "M8 7.2V11.2", stroke: "currentColor", strokeWidth: "1.4", strokeLinecap: "round" }),
+        h("circle", { cx: "8", cy: "5.15", r: "0.85", fill: "currentColor" }),
+      );
+    }
+
+    function PickerChevronIcon() {
+      return h("svg", {
+        width: 14, height: 14, viewBox: "0 0 16 16", fill: "none", "aria-hidden": "true",
+      },
+        h("path", { d: "M6 3.5 11 8l-5 4.5", stroke: "currentColor", strokeWidth: "1.5", strokeLinecap: "round", strokeLinejoin: "round" }),
+      );
+    }
+
+    function PickerDownloadIcon() {
+      return h("svg", {
+        width: 14, height: 14, viewBox: "0 0 16 16", fill: "none", "aria-hidden": "true",
+      },
+        h("path", { d: "M8 2.5v8", stroke: "currentColor", strokeWidth: "1.4", strokeLinecap: "round" }),
+        h("path", { d: "M4.5 8.5 8 12l3.5-3.5", stroke: "currentColor", strokeWidth: "1.4", strokeLinecap: "round", strokeLinejoin: "round" }),
+        h("path", { d: "M3 13.5h10", stroke: "currentColor", strokeWidth: "1.4", strokeLinecap: "round" }),
+      );
+    }
+
+    function SkillPickerPanel({ open, anchorRef, onClose, onPick, onExplore, onCreate, t, presetBinding }) {
+      const tr = typeof t === "function" ? t : lookup;
+      const panelRef = useRef(null);
+      const tabsRef = useRef(null);
+      const [query, setQuery] = useState("");
+      const [debounced, setDebounced] = useState("");
+      const [tabId, setTabId] = useState("all");
+      const [items, setItems] = useState([]);
+      const [status, setStatus] = useState("loading");
+      const [err, setErr] = useState("");
+      const [remoteDown, setRemoteDown] = useState(false);
+      const [hint, setHint] = useState("");
+      const [creating, setCreating] = useState(false);
+      const creatingRef = useRef(false);
+
+      const handleCreate = async () => {
+        if (creatingRef.current) return;
+        creatingRef.current = true;
+        setCreating(true);
+        setHint("");
+        try {
+          const result = await onCreate();
+          if (result?.cancelled) return;
+          if (!result || !result.ok) throw new Error("create-unavailable");
+          onClose();
+        } catch {
+          setHint(tr("picker.createFail"));
+        } finally {
+          creatingRef.current = false;
+          setCreating(false);
+        }
+      };
+      const [activeIndex, setActiveIndex] = useState(0);
+      const [pos, setPos] = useState({ left: 0, top: 0, width: 380 });
+
+      useEffect(() => {
+        if (!open) return undefined;
+        const timer = setTimeout(() => setDebounced(query), SkillShelf.PICKER_DEBOUNCE_MS);
+        return () => clearTimeout(timer);
+      }, [query, open]);
+
+      useEffect(() => {
+        if (!open) return undefined;
+        if (presetBinding && !presetBinding.useDefaultContentCatalog) {
+          const list = SkillShelf.filterPresetSkills(presetBinding.skills, tabId, debounced);
+          setItems(list);
+          setStatus("ready");
+          setErr("");
+          setRemoteDown(false);
+          setActiveIndex(0);
+          if (!debounced.trim()) {
+            return undefined;
+          }
+        }
+        let live = true;
+        const payload = SkillShelf.buildSearchPayload(tabId, debounced);
+        const cached = peekPickerCache(payload);
+        if (cached) {
+          let cachedItems = Array.isArray(cached.items) ? cached.items : [];
+          if (presetBinding && !presetBinding.useDefaultContentCatalog && debounced.trim()) {
+            const presetMatches = SkillShelf.filterPresetSkills(presetBinding.skills, tabId, debounced);
+            const seen = new Set(presetMatches.map((it) => it.slug || it.id || it.skill));
+            const externalMatches = cachedItems.filter((it) => {
+              const k = it.slug || it.id || it.skill;
+              return k && !seen.has(k);
+            });
+            cachedItems = [...presetMatches, ...externalMatches];
+          }
+          setItems(cachedItems);
+          setRemoteDown(Boolean(cached.channelErrors && cached.channelErrors.skillhub));
+          setStatus("ready");
+          setErr("");
+        } else {
+          setStatus((cur) => (cur === "ready" ? cur : "loading"));
+        }
+        loadPickerSearch(payload).then((result) => {
+          if (!live) return;
+          const d = result && result.body;
+          if (!d) return;
+          let searchItems = Array.isArray(d.items) ? d.items : [];
+          if (presetBinding && !presetBinding.useDefaultContentCatalog && debounced.trim()) {
+            const presetMatches = SkillShelf.filterPresetSkills(presetBinding.skills, tabId, debounced);
+            const seen = new Set(presetMatches.map((it) => it.slug || it.id || it.skill));
+            const externalMatches = searchItems.filter((it) => {
+              const k = it.slug || it.id || it.skill;
+              return k && !seen.has(k);
+            });
+            searchItems = [...presetMatches, ...externalMatches];
+          }
+          setItems(searchItems);
+          setRemoteDown(Boolean(d.channelErrors && d.channelErrors.skillhub));
+          setStatus("ready");
+          setErr("");
+          if (!result.fromCache) setActiveIndex(0);
+        }).catch((e) => {
+          if (!live) return;
+          if (cached) return;
+          if (presetBinding && !presetBinding.useDefaultContentCatalog && debounced.trim()) {
+            const presetMatches = SkillShelf.filterPresetSkills(presetBinding.skills, tabId, debounced);
+            if (presetMatches.length) {
+              setItems(presetMatches);
+              setStatus("ready");
+              setErr("");
+              return;
+            }
+          }
+          setItems([]);
+          setStatus("error");
+          setErr(e && e.message ? e.message : String(e || "error"));
+        });
+        return () => { live = false; };
+      }, [open, tabId, debounced, presetBinding]);
+
+      useLayoutEffect(() => {
+        if (!open) return undefined;
+        const place = () => {
+          const anchor = anchorRef && anchorRef.current;
+          const panel = panelRef.current;
+          if (!anchor || typeof anchor.getBoundingClientRect !== "function") return;
+          const r = anchor.getBoundingClientRect();
+          const width = Math.min(400, Math.max(360, Math.min(380, window.innerWidth - 16)));
+          const height = panel ? panel.offsetHeight : 420;
+          let left = r.left;
+          if (left + width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - width - 8);
+          if (left < 8) left = 8;
+          let top = r.top - height - 8;
+          if (top < 8) top = Math.min(r.bottom + 8, window.innerHeight - height - 8);
+          setPos({ left, top: Math.max(8, top), width });
+        };
+        place();
+        window.addEventListener("resize", place);
+        return () => window.removeEventListener("resize", place);
+      }, [open, items, status, tabId, anchorRef]);
+
+      useEffect(() => {
+        if (!open) return undefined;
+        const onDoc = (e) => {
+          const tEl = e.target;
+          if (panelRef.current && panelRef.current.contains(tEl)) return;
+          if (anchorRef && anchorRef.current && anchorRef.current.contains(tEl)) return;
+          onClose();
+        };
+        const onKey = (e) => {
+          if (e.key === "Escape") {
+            e.preventDefault();
+            onClose();
+          }
+        };
+        document.addEventListener("mousedown", onDoc);
+        document.addEventListener("keydown", onKey);
+        return () => {
+          document.removeEventListener("mousedown", onDoc);
+          document.removeEventListener("keydown", onKey);
+        };
+      }, [open, onClose, anchorRef]);
+
+      const visible = presetBinding && !presetBinding.useDefaultContentCatalog
+        ? (!debounced.trim() ? SkillShelf.filterPickerItems(items, tabId, presetBinding) : items)
+        : SkillShelf.filterPickerItems(items, tabId);
+
+      const handlePick = (item) => {
+        const ok = onPick(item);
+        if (!ok) setHint(tr("picker.writeFail"));
+      };
+
+      const onListKey = (e) => {
+        if (!visible.length) return;
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          setActiveIndex((i) => (i + 1) % visible.length);
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          setActiveIndex((i) => (i - 1 + visible.length) % visible.length);
+        } else if (e.key === "Enter") {
+          e.preventDefault();
+          const item = visible[activeIndex];
+          if (item) handlePick(item);
+        }
+      };
+
+      if (!open) return null;
+
+      const emptyMine = tabId === "mine" && status === "ready" && !visible.length && !debounced.trim();
+      const emptySearch = status === "ready" && !visible.length && !emptyMine;
+
+      const pickerTabs = presetBinding && Array.isArray(presetBinding.tabs)
+        ? presetBinding.tabs
+        : SkillShelf.PICKER_TABS;
+
+      const node = h("div", {
+        ref: panelRef,
+        className: "sh-picker",
+        role: "dialog",
+        "aria-label": tr("picker.title"),
+        "aria-modal": "true",
+        style: { left: pos.left + "px", top: pos.top + "px", width: pos.width + "px" },
+        onKeyDown: onListKey,
+      },
+        h("div", { className: "sh-picker-head" },
+          h("div", { className: "sh-picker-title" },
+            h("span", null, tr("picker.title")),
+            h("span", { className: "sh-picker-info", title: tr("picker.hint") }, h(PickerInfoIcon)),
+          ),
+          h("div", { className: "sh-picker-search" },
+            h(SearchField, {
+              value: query,
+              placeholder: tr("picker.searchPlaceholder"),
+              onValueChange: setQuery,
+              onClear: () => setQuery(""),
+              stretch: true,
+            }),
+          ),
+        ),
+        h("div", { className: "sh-picker-cats" },
+          h("div", { className: "sh-picker-tabs", ref: tabsRef, role: "tablist" },
+            pickerTabs.map((tab) => h("button", {
+              key: tab.id,
+              type: "button",
+              role: "tab",
+              className: "sh-picker-tab" + (tabId === tab.id ? " on" : ""),
+              "aria-selected": tabId === tab.id,
+              onClick: () => { setTabId(tab.id); setActiveIndex(0); },
+            }, (tab.labelKey && tr(tab.labelKey)) || tab.name || tab.id)),
+          ),
+          h("button", {
+            type: "button",
+            className: "sh-picker-more",
+            "aria-label": tr("picker.scrollCats"),
+            onClick: () => {
+              const el = tabsRef.current;
+              if (el) el.scrollBy({ left: 120, behavior: "smooth" });
+            },
+          }, h(PickerChevronIcon)),
+        ),
+        remoteDown ? h("p", { className: "sh-picker-banner", role: "status" }, tr("picker.remoteDown")) : null,
+        hint ? h("p", { className: "sh-picker-banner", role: "status" }, hint) : null,
+        h("div", { className: "sh-picker-list", role: "listbox" },
+          status === "loading" && !items.length
+            ? [0, 1, 2].map((i) => h("div", { key: i, className: "sh-picker-skel", "aria-hidden": "true" },
+              h("span", { className: "sh-picker-skel-a" }),
+              h("span", { className: "sh-picker-skel-b" }),
+            ))
+            : null,
+          status === "error" ? h("p", { className: "sh-picker-empty" }, tr("picker.error", { m: err })) : null,
+          emptyMine ? h("p", { className: "sh-picker-empty" }, tr("picker.emptyMine")) : null,
+          emptySearch ? h("p", { className: "sh-picker-empty" }, tr("picker.empty", { q: debounced || "" })) : null,
+          visible.map((item, index) => {
+            const slug = SkillShelf.skillToken(item);
+            const name = typeof SkillShelf.skillTitle === "function"
+              ? SkillShelf.skillTitle(item, tr)
+              : (item.name || item.title || slug);
+            const desc = typeof SkillShelf.skillDesc === "function"
+              ? SkillShelf.skillDesc(item, tr)
+              : (item.description || item.summary || "");
+            const selected = index === activeIndex;
+            return h("button", {
+              key: (item.id || slug) + ":" + index,
+              type: "button",
+              role: "option",
+              "aria-selected": selected,
+              className: "sh-picker-row" + (selected ? " on" : ""),
+              onMouseEnter: () => setActiveIndex(index),
+              onClick: () => handlePick(item),
+            },
+              h("div", { className: "sh-picker-row-main" },
+                h("div", { className: "sh-picker-row-top" },
+                  h("span", { className: "sh-picker-name" }, name),
+                ),
+                h("div", { className: "sh-picker-desc" }, desc),
+              ),
+              item.installed === true ? null : h("span", {
+                className: "sh-picker-dl",
+                title: tr("picker.uninstalled"),
+              }, h(PickerDownloadIcon)),
+            );
+          }),
+        ),
+        h("div", { className: "sh-picker-foot" },
+          h("button", { type: "button", className: "sh-picker-btn", onClick: onExplore }, tr("picker.explore")),
+          h("button", {
+            type: "button", className: "sh-picker-btn primary",
+            disabled: creating, "aria-busy": creating,
+            onKeyDown: (event) => event.stopPropagation(),
+            onClick: handleCreate,
+          }, tr(creating ? "picker.creating" : "picker.create")),
+        ),
+      );
+      if (typeof document === "undefined" || !document.body) return node;
+      return createPortal(node, document.body);
+    }
+
+    function SkillPickerButton(props) {
+      const tr = lookup;
+      const [open, setOpen] = useState(false);
+      const btnRef = useRef(null);
+      const inputActions = props && props.inputActions;
+      const useInputHook = props && typeof props.useInput === "function" ? props.useInput : null;
+      const input = useInputHook ? useInputHook((s) => s) : null;
+      const sessionId = props && props.sessionId;
+      const creationRef = useRef(null);
+      useEffect(() => () => {
+        const attempt = creationRef.current;
+        if (attempt && currentPlazaSessionId() !== attempt.targetSessionId) attempt.cancelled = true;
+      }, []);
+      useLayoutEffect(() => {
+        if (!sessionId || !input) return undefined;
+        const slot = {
+          draft: input.draft || "",
+          protected: Boolean(input.imageIds?.length || (input.phase && input.phase !== "plain")),
+          write: (text) => {
+            try {
+              if (typeof inputActions?.setDraft !== "function") return false;
+              return inputActions.setDraft(text) !== false;
+            } catch { return false; }
+          },
+        };
+        skillCreationInputs.set(sessionId, slot);
+        return () => {
+          if (skillCreationInputs.get(sessionId) === slot) skillCreationInputs.delete(sessionId);
+        };
+      }, [sessionId, input, inputActions]);
+      const [activeSkill, setActiveSkill] = useState(() => {
+        if (typeof window !== "undefined" && window.__omnimuxActiveSkill) {
+          return window.__omnimuxActiveSkill;
+        }
+        return null;
+      });
+
+      const sessions = typeof plazaSessions !== "undefined" ? plazaSessions : null;
+      const [currentPreset, setCurrentPreset] = useState(() => {
+        return SkillShelf.resolveActivePreset({
+          props,
+          sessions,
+        });
+      });
+
+      useEffect(() => {
+        const updatePreset = () => {
+          const s = typeof plazaSessions !== "undefined" ? plazaSessions : null;
+          const next = SkillShelf.resolveActivePreset({
+            props,
+            sessions: s,
+          });
+          setCurrentPreset((prev) => (prev !== next ? next : prev));
+        };
+        updatePreset();
+        const s = typeof plazaSessions !== "undefined" ? plazaSessions : null;
+        if (s && s.list && typeof s.list.subscribe === "function") {
+          return s.list.subscribe(updatePreset);
+        }
+        return undefined;
+      }, [sessionId, props]);
+
+      useEffect(() => { setOpen(false); }, [sessionId]);
+
+      // 技能激活态是全局通道：别的来源（爆款对标卡片的「复刻」）点亮技能时，
+      // 这里必须立刻跟上，否则底部工具栏的技能药丸不会出现。
+      useEffect(() => {
+        if (typeof window === "undefined" || typeof SkillShelf.subscribeActiveSkill !== "function") {
+          return undefined;
+        }
+        return SkillShelf.subscribeActiveSkill((skill) => {
+          setActiveSkill((prev) => (prev === skill ? prev : skill));
+        });
+      }, []);
+
+      useEffect(() => {
+        const payload = SkillShelf.buildSearchPayload("all", "");
+        loadPickerSearch(payload).catch(() => {});
+      }, []);
+
+      useEffect(() => {
+        if (!open) return undefined;
+        const onPage = () => {
+          if (creationRef.current) creationRef.current.cancelled = true;
+          setOpen(false);
+        };
+        window.addEventListener("dsh-product-stage", onPage);
+        return () => window.removeEventListener("dsh-product-stage", onPage);
+      }, [open]);
+
+      // 订阅创作模式：营销模式 (marketing) 下隐藏技能按钮，短剧 (drama) 下接入短剧货架，Agent 下显示原版货架
+      const getComposerMode = () => {
+        if (typeof window !== "undefined") {
+          const htmlAttr = document.documentElement.getAttribute("data-omnimux-composer-mode");
+          if (htmlAttr) return htmlAttr;
+          if (window.__omnimuxComposerModeStore) {
+            return window.__omnimuxComposerModeStore.getMode(sessionId);
+          }
+          return window.__omnimuxComposerMode || "agent";
+        }
+        return "agent";
+      };
+
+      const [composerMode, setComposerMode] = useState(getComposerMode);
+
+      useEffect(() => {
+        if (typeof window === "undefined") return undefined;
+        const updateMode = () => {
+          setComposerMode(getComposerMode());
+        };
+        updateMode();
+        const onModeEvent = (e) => {
+          const m = (e && e.detail && e.detail.mode) || getComposerMode();
+          setComposerMode(m);
+        };
+        window.addEventListener("omnimux:composer-mode:changed", onModeEvent);
+        let unsubGlobal = undefined;
+        let unsubSession = undefined;
+        if (window.__omnimuxComposerModeStore) {
+          if (typeof window.__omnimuxComposerModeStore.subscribeGlobal === "function") {
+            unsubGlobal = window.__omnimuxComposerModeStore.subscribeGlobal(updateMode);
+          }
+          if (typeof window.__omnimuxComposerModeStore.subscribe === "function") {
+            unsubSession = window.__omnimuxComposerModeStore.subscribe(sessionId, updateMode);
+          }
+        }
+        return () => {
+          window.removeEventListener("omnimux:composer-mode:changed", onModeEvent);
+          if (typeof unsubGlobal === "function") unsubGlobal();
+          if (typeof unsubSession === "function") unsubSession();
+        };
+      }, [sessionId]);
+
+      // 核心业务规则：
+      // 1. 短剧模式 (drama) 自动接入短剧制作人专精货架 (drama-agent)
+      // 2. Agent 模式显示原来的技能货架 (优先使用当前绑定的 preset，保底使用 tiktok-agent 全能社媒操盘手)
+      let activePresetId = currentPreset;
+      if (composerMode === "drama") {
+        activePresetId = "drama-agent";
+      } else if (!activePresetId || activePresetId === "standard" || activePresetId === "default") {
+        activePresetId = "tiktok-agent";
+      }
+
+      const presetBinding =
+        SkillShelf.getPresetSkillBinding(activePresetId, composerMode) ||
+        SkillShelf.getPresetSkillBinding("tiktok-agent");
+
+      // 如果当前预设没有绑定 skill 则默认不显示 skill 按钮
+      if (!presetBinding) {
+        return null;
+      }
+
+      const isMarketingMode = composerMode === "marketing";
+
+      const close = useCallback(() => {
+        if (creationRef.current) creationRef.current.cancelled = true;
+        setOpen(false);
+      }, []);
+
+      useEffect(() => {
+        if (typeof window === "undefined") return undefined;
+        const onOverlayOpen = (e) => {
+          if (e?.detail?.id !== "skill-picker") {
+            close();
+          }
+        };
+        const onOverlayDismiss = (e) => {
+          if (!e?.detail?.id || e?.detail?.id === "skill-picker") {
+            close();
+          }
+        };
+        window.addEventListener("omnimux:composer:overlay:open", onOverlayOpen);
+        window.addEventListener("omnimux:composer:overlay:dismiss", onOverlayDismiss);
+        return () => {
+          window.removeEventListener("omnimux:composer:overlay:open", onOverlayOpen);
+          window.removeEventListener("omnimux:composer:overlay:dismiss", onOverlayDismiss);
+        };
+      }, [close]);
+
+      const clearActiveSkill = useCallback(() => {
+        setActiveSkill(null);
+        if (typeof window !== "undefined") {
+          window.__omnimuxActiveSkill = null;
+          try {
+            window.dispatchEvent(new CustomEvent("omnimux:skill:changed", {
+              detail: { skill: null, category: "" },
+            }));
+          } catch {}
+        }
+        // 会话试用的卸下由技能市场统一监听 omnimux:skill:changed，这里不再重复调用。
+      }, []);
+
+      const applyItem = useCallback((item) => {
+        if (creationRef.current) creationRef.current.cancelled = true;
+        focusComposerCard();
+        setActiveSkill(item);
+        if (typeof window !== "undefined") {
+          window.__omnimuxActiveSkill = item;
+          try {
+            window.dispatchEvent(new CustomEvent("omnimux:skill:changed", {
+              detail: {
+                skill: item,
+                category: item.category || (item.categories && item.categories[0]) || "",
+              },
+            }));
+          } catch {}
+        }
+        const payload = SkillShelf.installPayload(item);
+        if (payload) {
+          api("install", payload).catch(() => {});
+        }
+        // 技能说明挂到当前会话，发送时随上下文带上，不写进输入框。
+        try {
+          const sessions = typeof plazaSessions !== "undefined" ? plazaSessions : (typeof window !== "undefined" ? window.__omnimuxSessions : null);
+          const sid = sessions && sessions.list && typeof sessions.list.getSnapshot === "function"
+            ? (sessions.list.getSnapshot() || {}).current
+            : "";
+          const slug = item.slug || item.skill || "";
+          const rawId = String(item.catalogId || item.id || "");
+          const catalogId = rawId.startsWith("sk-") ? rawId : "";
+          if (sid && slug) {
+            api("tryAttach", {
+              sessionId: sid,
+              slug,
+              catalogId,
+              title: item.name || item.title || slug,
+            }).catch(() => {});
+          }
+        } catch {}
+        setOpen(false);
+        return true;
+      }, []);
+
+      const onExplore = useCallback(() => {
+        writePlazaSkillsIntent();
+        close();
+        const wb = typeof window !== "undefined" ? window.__omnimuxWorkbench : undefined;
+        if (wb && typeof wb.open === "function") {
+          // 会话内入口：显式分栏激活右侧边栏，保留中间会话栏（Tab 默认 gui 会顶掉会话）。
+          wb.open(SkillShelf.buildPlazaWorkbenchOpenOptions(tr("plaza.title")));
+        }
+      }, [tr, close]);
+
+      const onCreate = useCallback(async () => {
+        if (creationRef.current) return { ok: false, cancelled: true };
+        const attempt = { cancelled: false };
+        creationRef.current = attempt;
+        try {
+          const result = await createSkillSession({
+            ...SkillShelf.CREATE_SKILL,
+            requireReady: true,
+            isCancelled: () => attempt.cancelled,
+            onTarget: (id) => { attempt.targetSessionId = id; },
+          });
+          if (result?.cancelled || attempt.cancelled) return { ...result, ok: false, cancelled: true };
+          if (!result?.ok || !result.prefilled) throw new Error("create-unavailable");
+          if (currentPlazaSessionId() !== result.sessionId) return { ...result, ok: false, cancelled: true };
+          activateSharedToolSkill(SkillShelf.CREATE_SKILL);
+          return result;
+        } catch (error) {
+          showSkillCreationError(tr("picker.createFail"));
+          throw error;
+        } finally {
+          creationRef.current = null;
+        }
+      }, [tr]);
+
+      return h(I18nProvider, { t: tr },
+        h("div", {
+          className: "sh-picker-wrap" + (isMarketingMode ? " omnimux-hidden-marketing" : ""),
+          style: isMarketingMode ? { display: "none" } : undefined,
+        },
+          h("button", {
+            ref: btnRef,
+            type: "button",
+            className: "sh-picker-trigger" + (open ? " on" : ""),
+            "aria-label": tr("picker.title"),
+            "aria-haspopup": "dialog",
+            "aria-expanded": open ? "true" : "false",
+            "data-omnimux-skill-picker": "",
+            onClick: () => {
+              if (open) {
+                close();
+              } else {
+                if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
+                  try {
+                    window.dispatchEvent(new CustomEvent("omnimux:composer:overlay:open", {
+                      detail: { id: "skill-picker" },
+                    }));
+                  } catch {}
+                }
+                setOpen(true);
+              }
+            },
+          },
+            renderBookOpenIcon(16),
+            h("span", { className: "sh-picker-trigger-label" }, tr("picker.title")),
+          ),
+          activeSkill ? h("div", {
+            className: "sh-active-skill-chip",
+            title: activeSkill.name || activeSkill.title || activeSkill.slug
+              ? `技能：${activeSkill.name || activeSkill.title || activeSkill.slug}${activeSkill.description || activeSkill.summary ? ` · ${activeSkill.description || activeSkill.summary}` : ""}（点击可移除）`
+              : (activeSkill.description || activeSkill.summary || "当前技能（点击可移除）"),
+            onClick: (e) => {
+              const doc = typeof document !== "undefined" ? document.documentElement : null;
+              const density = doc ? doc.getAttribute("data-omnimux-composer-density") : "";
+              if (density === "icon" || density === "short") {
+                e.stopPropagation();
+                clearActiveSkill();
+              }
+            },
+          },
+            h("svg", {
+              className: "sh-chip-icon",
+              width: 12, height: 12, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2,
+              style: { flexShrink: 0 },
+            },
+              h("line", { x1: 3, y1: 6, x2: 21, y2: 6 }),
+              h("line", { x1: 3, y1: 12, x2: 15, y2: 12 }),
+              h("line", { x1: 3, y1: 18, x2: 9, y2: 18 }),
+            ),
+            h("svg", {
+              className: "sh-chip-icon-hover",
+              width: 12, height: 12, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2.5, strokeLinecap: "round",
+              style: { flexShrink: 0 },
+            },
+              h("line", { x1: 18, y1: 6, x2: 6, y2: 18 }),
+              h("line", { x1: 6, y1: 18, x2: 18, y2: 18 }),
+            ),
+            h("span", { className: "sh-chip-label" }, activeSkill.name || activeSkill.title || activeSkill.slug),
+            h("button", {
+              type: "button",
+              className: "sh-chip-close",
+              title: "移除技能",
+              "aria-label": "移除技能",
+              onClick: (e) => {
+                e.stopPropagation();
+                clearActiveSkill();
+              },
+            },
+              h("svg", {
+                width: 10,
+                height: 10,
+                viewBox: "0 0 10 10",
+                fill: "none",
+                stroke: "currentColor",
+                strokeWidth: 1.5,
+                strokeLinecap: "round",
+                style: { display: "block" },
+              },
+                h("path", { d: "M2 2L8 8M8 2L2 8" }),
+              ),
+            ),
+          ) : null,
+          h(SkillPickerPanel, {
+            open,
+            anchorRef: btnRef,
+            onClose: close,
+            onPick: applyItem,
+            onExplore,
+            onCreate,
+            t: tr,
+            presetBinding,
+          }),
+        ),
+      );
+    }

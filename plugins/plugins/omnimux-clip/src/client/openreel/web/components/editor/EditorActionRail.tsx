@@ -1,0 +1,252 @@
+import React, { useCallback } from "react";
+import {
+  ToolcraftDropdownMenu as DropdownMenu,
+  ToolcraftIconButton as IconButton,
+  ToolcraftTooltip as Tooltip,
+} from "@openreel/ui";
+import { Icon } from "@/icons/Icon";
+import {
+  House,
+  Sun,
+  Moon,
+  SunMoon,
+  Settings,
+  Circle,
+  Play,
+  Sparkles,
+  HelpCircle,
+  FileCode,
+  Command,
+} from "@/icons/lucide-compat";
+import { useProjectStore } from "../../stores/project-store";
+import { useUIStore } from "../../stores/ui-store";
+import { useThemeStore } from "../../stores/theme-store";
+import { useSettingsStore } from "../../stores/settings-store";
+import { useRouter } from "../../hooks/use-router";
+import {
+  startTour,
+  ONBOARDING_KEY,
+  startMoGraphTour,
+  MOGRAPH_TOUR_KEY,
+} from "./tour";
+import { useClipT } from "../../../../i18n/index.js";
+import { useHostLocale } from "../../../../useHostLocale.js";
+
+const RailButton: React.FC<{
+  label: string;
+  icon: string;
+  onClick: () => void;
+  active?: boolean;
+}> = ({ label, icon, onClick, active = false }) => (
+  <Tooltip content={label} placement="end">
+    <IconButton
+      label={label}
+      icon={<Icon name={icon} size={16} ariaHidden />}
+      size="sm"
+      variant={active ? "secondary" : "ghost"}
+      onClick={onClick}
+    />
+  </Tooltip>
+);
+
+export const EditorActionRail: React.FC = () => {
+  const { undo, redo, createMotionComposition } = useProjectStore();
+  const {
+    openModal,
+    toggleKeyframeEditor,
+    keyframeEditorOpen,
+    panels,
+    togglePanel,
+    activeModal,
+  } = useUIStore();
+  const { mode: themeMode, toggleTheme } = useThemeStore();
+  const { openSettings } = useSettingsStore();
+  const { navigate } = useRouter();
+  const t = useClipT();
+  const isEn = useHostLocale()?.active === "en";
+
+  const themeLabel =
+    themeMode === "auto"
+      ? t("System")
+      : t(themeMode.charAt(0).toUpperCase() + themeMode.slice(1));
+  const nextThemeLabel =
+    themeMode === "light" ? t("Dark") : themeMode === "dark" ? t("System") : t("Light");
+  const themeIcon =
+    themeMode === "light" ? (
+      <Sun size={16} aria-hidden />
+    ) : themeMode === "dark" ? (
+      <Moon size={16} aria-hidden />
+    ) : (
+      <SunMoon size={16} aria-hidden />
+    );
+  const themeActionLabel = isEn
+    ? `Theme: ${themeLabel}. Switch to ${nextThemeLabel}`
+    : `主题：${themeLabel}，切换到${nextThemeLabel}`;
+
+  const handleCreateMotionScene = useCallback(async () => {
+    const composition = await createMotionComposition(t("Motion Scene"));
+    if (composition) {
+      navigate("motion", { compositionId: composition.id });
+    }
+  }, [createMotionComposition, navigate, t]);
+
+  const isDesktop =
+    typeof window !== "undefined" && window.openreel?.platform === "desktop";
+
+  return (
+    <nav
+      data-tour="toolbar"
+      aria-label={t("Editor tools")}
+      className="flex w-12 shrink-0 flex-col items-center gap-1 border-r border-border bg-bg-1 py-3"
+    >
+      <Tooltip content={t("Back to home")} placement="end">
+        <IconButton
+          label={t("Back to home")}
+          icon={<House size={16} aria-hidden />}
+          size="sm"
+          variant="ghost"
+          onClick={() => navigate("welcome")}
+        />
+      </Tooltip>
+
+      <div className="my-1.5 h-px w-6 bg-border" />
+
+      <RailButton
+        label={t("Search tools, effects, or ask AI")}
+        icon="magnifyingglass"
+        onClick={() => openModal("search")}
+      />
+      <RailButton
+        label={t("Undo")}
+        icon="arrow.uturn.backward"
+        onClick={() => void undo()}
+      />
+      <RailButton
+        label={t("Redo")}
+        icon="arrow.uturn.forward"
+        onClick={() => void redo()}
+      />
+
+      <div className="my-1.5 h-px w-6 bg-border" />
+
+      <RailButton
+        label={t("Create Motion Scene")}
+        icon="cube"
+        onClick={() => void handleCreateMotionScene()}
+      />
+      <RailButton
+        label={t("Action history")}
+        icon="clock"
+        onClick={() => openModal("history")}
+        active={activeModal === "history"}
+      />
+      <RailButton
+        label={t("Keyframe editor")}
+        icon="diamond"
+        onClick={toggleKeyframeEditor}
+        active={keyframeEditorOpen}
+      />
+      <RailButton
+        label={t("Audio mixer")}
+        icon="music.note"
+        onClick={() => togglePanel("audioMixer")}
+        active={Boolean(panels.audioMixer?.visible)}
+      />
+      <RailButton
+        label={t("AI Editor chat")}
+        icon="bubble.left.and.text.bubble.right"
+        onClick={() => togglePanel("agentChat")}
+        active={Boolean(panels.agentChat?.visible)}
+      />
+      {isDesktop && (
+        <RailButton
+          label={t("AI")}
+          icon="sparkles"
+          onClick={() => togglePanel("ai")}
+          active={Boolean(panels.ai?.visible)}
+        />
+      )}
+      <RailButton
+        label={t("Project JSON / Comments")}
+        icon="curlybraces"
+        onClick={() => openModal("scriptView")}
+      />
+
+      <div className="flex-1" />
+
+      <Tooltip content={themeActionLabel} placement="end">
+        <IconButton
+          label={themeActionLabel}
+          icon={themeIcon}
+          size="sm"
+          variant="secondary"
+          onClick={toggleTheme}
+        />
+      </Tooltip>
+
+      <DropdownMenu
+        placement="end"
+        button={{
+          label: t("More editor actions"),
+          icon: <Icon name="star" size={16} ariaHidden />,
+          size: "sm",
+          variant: "ghost",
+          isIconOnly: true,
+        }}
+        hasChevron={false}
+        menuWidth={224}
+        items={[
+          {
+            label: t("Settings & API keys"),
+            icon: <Settings size={14} aria-hidden />,
+            onClick: () => openSettings(),
+          },
+          {
+            label: t("Screen recorder"),
+            icon: (
+              <Circle
+                size={14}
+                className="fill-current text-status-error"
+                aria-hidden
+              />
+            ),
+            onClick: () => openModal("recorder"),
+          },
+          { type: "divider" },
+          {
+            label: t("Editor tour"),
+            icon: <Play size={14} aria-hidden />,
+            onClick: () => {
+              localStorage.removeItem(ONBOARDING_KEY);
+              startTour();
+            },
+          },
+          {
+            label: t("Animation & effects tour"),
+            icon: <Sparkles size={14} className="text-accent" aria-hidden />,
+            onClick: () => {
+              localStorage.removeItem(MOGRAPH_TOUR_KEY);
+              startMoGraphTour();
+            },
+          },
+          { type: "divider" },
+          {
+            label: t("Help & shortcuts (press ?)"),
+            icon: <HelpCircle size={14} aria-hidden />,
+            isDisabled: true,
+          },
+          {
+            label: t("Project JSON"),
+            icon: <FileCode size={14} aria-hidden />,
+            isDisabled: true,
+          },
+          {
+            label: t("Cmd+K to search"),
+            icon: <Command size={14} aria-hidden />,
+            isDisabled: true,
+          },
+        ]}
+      />
+    </nav>
+  );
+};

@@ -1,0 +1,386 @@
+import {
+  formatInspirationDate,
+  formatTimecode,
+  parseDurationSeconds,
+  segmentsFromTimecodeLines,
+} from '../structure-script.js'
+import { parseShotsFromMarkdownTable } from '../analyzer.js'
+
+function text(value) {
+  return typeof value === 'string' ? value : ''
+}
+
+/** Split only unescaped pipes outside matched inline code spans. */
+function tableCells(line) {
+  const cells = []
+  let cell = ''
+  let codeTicks = 0
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i]
+    if (char === '\\' && i + 1 < line.length) {
+      cell += line.slice(i, i + 2)
+      i += 1
+    } else if (char === '`') {
+      const run = line.slice(i).match(/^`+/)[0]
+      if (codeTicks === run.length) codeTicks = 0
+      else if (!codeTicks && new RegExp(`(^|[^\x60])\x60{${run.length}}(?!\x60)`).test(line.slice(i + run.length))) codeTicks = run.length
+      cell += run
+      i += run.length - 1
+    } else if (char === '|' && !codeTicks) {
+      cells.push(cell.trim())
+      cell = ''
+    } else cell += char
+  }
+  if (!cells.length) return null
+  cells.push(cell.trim())
+  if (line.startsWith('|')) cells.shift()
+  if (line.endsWith('|') && cells.at(-1) === '') cells.pop()
+  return cells
+}
+
+/**
+ * Parse markdown analysis text into structured Level-2 items and Level-3 descriptions.
+ * Separates section headers, key-value labels and bullet descriptions.
+ */
+export function parseDocAnalysis(rawValue) {
+  if (!rawValue || typeof rawValue !== 'string') return []
+  const lines = rawValue.split('\n')
+  const groups = []
+  let currentGroup = null
+  const appendEntry = (entry) => {
+    if (!currentGroup) {
+      currentGroup = { title: '', entries: [] }
+      groups.push(currentGroup)
+    }
+    currentGroup.entries.push(entry)
+  }
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const rawLine = lines[i].trim()
+    if (!rawLine) continue
+    const fence = rawLine.match(/^(`{3,}|~{3,})/)
+    if (fence) {
+      const start = i
+      const close = new RegExp(`^${fence[1][0]}{${fence[1].length},}\\s*$`)
+      while (i + 1 < lines.length) {
+        i += 1
+        if (close.test(lines[i].trim())) break
+      }
+      appendEntry({ type: 'desc', text: lines.slice(start, i + 1).join('\n') })
+      continue
+    }
+    const headers = tableCells(rawLine)
+    const separator = tableCells((lines[i + 1] || '').trim())
+    if (headers?.length && separator && headers.length === separator.length && separator.every((cell) => /^:?-{3,}:?$/.test(cell))) {
+      i += 1
+      let rowCount = 0
+      const entries = []
+      while (i + 1 < lines.length) {
+        const row = tableCells(lines[i + 1].trim())
+        if (!row) break
+        i += 1
+        if (row.length > headers.length) {
+          entries.push({ type: 'desc', text: lines[i].trim() })
+        } else {
+          rowCount += 1
+          entries.push({ type: 'record', fields: headers.map((label, index) => ({
+            label: label.replace(/\\\|/g, '|'),
+            desc: (row[index] || '').replace(/\\\|/g, '|'),
+          })) })
+        }
+      }
+      if (!rowCount) appendEntry({ type: 'record', fields: headers.map((label) => ({ label, desc: '' })) })
+      entries.forEach(appendEntry)
+      continue
+    }
+    if (headers || /^[-:]+$/.test(rawLine)) {
+      appendEntry({ type: 'desc', text: rawLine })
+      continue
+    }
+
+    const headerMatch = rawLine.match(/^#{2,4}\s+(.+)$/)
+    if (headerMatch) {
+      currentGroup = { title: headerMatch[1].replace(/[*_]{2}/g, '').trim(), entries: [] }
+      groups.push(currentGroup)
+      continue
+    }
+
+    const bracketMatch = rawLine.match(/^([【\[][^】\]]+[】\]])\s*(.*)$/)
+    if (bracketMatch && !rawLine.startsWith('*') && !rawLine.startsWith('-')) {
+      currentGroup = { title: bracketMatch[1], entries: [] }
+      groups.push(currentGroup)
+      if (bracketMatch[2]) {
+        currentGroup.entries.push({ type: 'desc', text: bracketMatch[2].replace(/[*_]{2}/g, '').trim() })
+      }
+      continue
+    }
+
+    const keyValMatch = rawLine.match(/^[•·*-]?\s*[*_]{2}(.+?)[*_]{2}[:：]\s*(.*)$/)
+    if (keyValMatch) {
+      const label = keyValMatch[1].trim()
+      const desc = keyValMatch[2].replace(/[*_]{2}/g, '').trim()
+      if (!currentGroup) {
+        currentGroup = { title: '', entries: [] }
+        groups.push(currentGroup)
+      }
+      currentGroup.entries.push({ type: 'labeled', label, desc })
+      continue
+    }
+
+    const colonMatch = rawLine.match(/^[•·*-]?\s*([^\s:：]{2,16})[:：]\s*(.*)$/)
+    if (colonMatch && !rawLine.includes('http://') && !rawLine.includes('https://') && !colonMatch[1].toLowerCase().includes('pov') && !colonMatch[1].includes('00:')) {
+      const label = colonMatch[1].trim()
+      const desc = colonMatch[2].replace(/[*_]{2}/g, '').trim()
+      if (!currentGroup) {
+        currentGroup = { title: '', entries: [] }
+        groups.push(currentGroup)
+      }
+      currentGroup.entries.push({ type: 'labeled', label, desc })
+      continue
+    }
+
+    const cleanText = rawLine.replace(/^[•·*-]\s*/, '').replace(/[*_]{2}/g, '').trim()
+    if (!cleanText) continue
+
+    const isHeaderLike = !cleanText.endsWith('。') && !cleanText.endsWith('.') && !cleanText.endsWith(';') &&
+      cleanText.length <= 36 &&
+      (cleanText.includes('(') || cleanText.includes('（') || cleanText.includes('/') || (!cleanText.includes('，') && !cleanText.includes(',')))
+
+    if (isHeaderLike && !rawLine.startsWith('*') && !rawLine.startsWith('-') && !rawLine.startsWith('•')) {
+      currentGroup = { title: cleanText, entries: [] }
+      groups.push(currentGroup)
+      continue
+    }
+
+    if (!currentGroup) {
+      currentGroup = { title: '', entries: [] }
+      groups.push(currentGroup)
+    }
+    currentGroup.entries.push({ type: 'desc', text: cleanText })
+  }
+  return groups
+}
+
+/**
+ * Convert common Markdown list and emphasis markers into readable plain text.
+ * The preview intentionally keeps raw Markdown available behind the raw toggle,
+ * while rendered breakdown content stays free of formatting syntax.
+ */
+export function renderPlainBreakdownText(value) {
+  return text(value)
+    .replace(/(^|\n)[ \t]*(?:#{1,6})[ \t]*/g, '$1')
+    .replace(/(^|\n)[ \t]*(?:[*-]|\d+[.)])[ \t]+/g, '$1· ')
+    .replace(/[*_]{2}/g, '')
+    .replace(/(^|\n)[ \t]*>[ \t]?/g, '$1')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+function analysisOf(item) {
+  if (item.analysis && typeof item.analysis === 'object') return item.analysis
+  if (item.deconstruction && typeof item.deconstruction === 'object') return item.deconstruction
+  return {}
+}
+
+export function collectShots(analysis, item) {
+  const safeAnalysis = analysis && typeof analysis === 'object' ? analysis : {}
+  const safeItem = item && typeof item === 'object' ? item : {}
+  if (Array.isArray(safeAnalysis.shots) && safeAnalysis.shots.length) {
+    return safeAnalysis.shots
+  }
+  if (Array.isArray(safeItem.shots) && safeItem.shots.length) {
+    return safeItem.shots
+  }
+  if (typeof safeAnalysis.raw_markdown === 'string' && safeAnalysis.raw_markdown.includes('|')) {
+    return parseShotsFromMarkdownTable(safeAnalysis.raw_markdown)
+  }
+  if (typeof safeAnalysis.markdown === 'string' && safeAnalysis.markdown.includes('|')) {
+    return parseShotsFromMarkdownTable(safeAnalysis.markdown)
+  }
+  return []
+}
+
+function collectSegments(item, analysis, script) {
+  const raw = Array.isArray(analysis.segments) ? analysis.segments : (Array.isArray(item.segments) ? item.segments : [])
+  const normalized = raw
+    .map((row, index) => {
+      if (!row || typeof row !== 'object') return null
+      const value = text(row.text)
+      if (!value) return null
+      const start = parseDurationSeconds(row.start)
+      const end = parseDurationSeconds(row.end)
+      return {
+        id: text(row.id) || `seg_${index + 1}`,
+        start,
+        end,
+        text: value,
+        section: text(row.section),
+        startLabel: start == null ? '' : formatTimecode(start),
+      }
+    })
+    .filter(Boolean)
+  if (normalized.length) return normalized
+
+  // Try extracting from structured shots if segments are missing
+  const shots = collectShots(analysis, item)
+  if (shots.length) {
+    const fromShots = shots.map((s, index) => {
+      const line = text(s.script) || text(s.description) || text(s.title)
+      if (!line) return null
+      return {
+        id: text(s.id) || `seg_${index + 1}`,
+        start: s.start_seconds ?? null,
+        end: s.end_seconds ?? null,
+        text: line,
+        section: text(s.stage) || 'Body',
+        startLabel: s.time_range || (s.start_seconds != null ? formatTimecode(s.start_seconds) : ''),
+      }
+    }).filter(Boolean)
+    if (fromShots.length) return fromShots
+  }
+
+  return segmentsFromTimecodeLines(script).map((row) => ({
+    ...row,
+    startLabel: row.start == null ? '' : formatTimecode(row.start),
+  }))
+}
+
+function collectSections(analysis) {
+  const raw = Array.isArray(analysis.sections) ? analysis.sections : []
+  return raw
+    .map((row, index) => {
+      if (!row || typeof row !== 'object') return null
+      const title = text(row.title)
+      const analysisText = text(row.analysis)
+      const quote = text(row.quote)
+      if (!title && !analysisText && !quote) return null
+      return {
+        id: text(row.id) || `sec_${index + 1}`,
+        title: title || `Section ${index + 1}`,
+        quote,
+        analysis: analysisText,
+        source_segment_ids: Array.isArray(row.source_segment_ids)
+          ? row.source_segment_ids.filter((id) => typeof id === 'string' && id)
+          : [],
+      }
+    })
+    .filter(Boolean)
+}
+
+export function getInspirationPreviewData(item = {}) {
+  const safeItem = item && typeof item === 'object' ? item : {}
+  const analysis = analysisOf(safeItem)
+  const content = text(safeItem.content)
+  const caption = text(safeItem.caption) || text(safeItem.description)
+  const narrative = text(analysis.narrative_strategy) || text(analysis.narrative)
+  const script = content || narrative || caption
+  const creator = (analysis.creator && typeof analysis.creator === 'object')
+    ? analysis.creator
+    : (safeItem.author && typeof safeItem.author === 'object' ? safeItem.author : {})
+  const stats = safeItem.stats && typeof safeItem.stats === 'object' ? safeItem.stats : {}
+  const durationSeconds = parseDurationSeconds(safeItem.duration)
+    ?? parseDurationSeconds(analysis.duration)
+    ?? parseDurationSeconds(stats.duration)
+    ?? parseDurationSeconds(stats.video_duration)
+  const shots = collectShots(analysis, safeItem)
+  const segments = collectSegments(safeItem, analysis, script)
+  const translation = safeItem.script_translation && typeof safeItem.script_translation === 'object'
+    ? safeItem.script_translation
+    : {}
+  return {
+    safeItem,
+    analysis,
+    title: String(safeItem.title || analysis.video_name || '灵感详情'),
+    script,
+    caption,
+    durationSeconds,
+    durationLabel: durationSeconds == null ? '' : formatTimecode(durationSeconds),
+    platform: text(safeItem.platform) || text(safeItem.source_platform),
+    creator,
+    stats,
+    createdAt: formatInspirationDate(text(safeItem.created_at)),
+    publishedAt: formatInspirationDate(text(safeItem.published_at)),
+    favoritedAt: formatInspirationDate(text(safeItem.favorited_at)),
+    isFavorite: Boolean(safeItem.is_favorite),
+    hook: text(analysis.hook_highlight) || text(analysis.hook) || text(analysis['3s_hook']),
+    targetGoal: text(analysis.target_goal) || text(analysis.goal),
+    narrative,
+    visual: text(analysis.visual_breakdown) || text(analysis.breakdown) || text(analysis.content_breakdown),
+    replication: text(analysis.replication_action) || text(analysis.replication_guide),
+    rawMarkdown: text(analysis.markdown) || text(analysis.raw_markdown) || (typeof safeItem.deconstruction === 'string' ? safeItem.deconstruction : ''),
+    tags: Array.isArray(safeItem.tags) ? safeItem.tags : [],
+    shots,
+    hasShots: Boolean(shots.length),
+    segments,
+    hasTimecodes: segments.some((row) => row.start != null),
+    segmentCount: segments.length,
+    sections: collectSections(analysis),
+    translationText: text(translation.text),
+    translationLang: text(translation.lang),
+    translationSegments: Array.isArray(translation.segments) ? translation.segments : [],
+    analyzedAt: formatInspirationDate(text(analysis.analyzed_at)),
+  }
+}
+
+export function hasDeconstruction(data) {
+  return Boolean(data && (
+    data.hook
+    || data.targetGoal
+    || data.narrative
+    || data.visual
+    || data.replication
+    || data.rawMarkdown
+    || (data.shots && data.shots.length)
+    || (data.sections && data.sections.length)
+  ))
+}
+
+/**
+ * Whether the "analyze now" action can produce a breakdown.
+ *
+ * A breakdown needs a video stream, so a degraded import (`link` / `image`, the
+ * shape produced when no direct video link was resolved) must not offer the
+ * action at all — it would only ever answer 422. Video items keep it: they may
+ * already hold a local file, or `handleAnalyze` re-resolves the stream from
+ * `source_url`, which is how cloud-catalog items are analyzed.
+ *
+ * A row whose import is still running is refused as well. It has no video file
+ * yet, and the server answers 422 while the import holds the row, so offering the
+ * button would promise an action that cannot start. The import completing swaps
+ * the row in place and the action appears with it.
+ * @param {unknown} item raw inspiration row
+ * @returns {boolean}
+ */
+export function canAnalyzeInspiration(item) {
+  const row = item && typeof item === 'object' ? item : {}
+  if (text(row.type) !== 'video') return false
+  if (row.import_status === 'importing') return false
+  return Boolean(text(row.local_paths?.video) || text(row.source_url))
+}
+
+export function scriptCopyText(data, translated) {
+  if (translated && data.translationText) return data.translationText
+  if (data.segments?.length) {
+    return data.segments.map((row) => (row.startLabel ? `${row.startLabel}  ${row.text}` : row.text)).join('\n')
+  }
+  return data.script || ''
+}
+
+export function deconstructionCopyText(data) {
+  if (data.sections?.length) {
+    return data.sections.map((section) => {
+      const quote = section.quote ? `\n> ${section.quote}` : ''
+      return `## ${section.title}${quote}\n${section.analysis}`.trim()
+    }).join('\n\n')
+  }
+  const blocks = [
+    ['Hook', data.hook],
+    ['Goal', data.targetGoal],
+    ['Narrative', data.narrative],
+    ['Visual', data.visual],
+    ['Replication', data.replication],
+  ].filter(([, value]) => value)
+  if (blocks.length) return blocks.map(([title, value]) => `## ${title}\n${value}`).join('\n\n')
+  return data.rawMarkdown || ''
+}

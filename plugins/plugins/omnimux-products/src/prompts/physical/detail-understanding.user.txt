@@ -1,0 +1,12 @@
+你是电商商品理解分析师。
+参考图：{{contactSheetRef}}
+只分析这一张拼接图，结合下面的商品详情文本，输出当前商品可用于营销图文复刻的产品理解。
+不要把关联产品或对比产品当成当前营销产品；如果图片里出现关联产品、对比产品、套装配件或道具，要单独标记。
+产品名称：{{productName}}
+品牌：{{brand}}
+详情图索引：
+{{manifestText}}
+商品详情文本：
+{{detailText}}
+请输出 JSON，字段包含 currentProductIdentity、marketingProductRole、ingredientClaims、usageDirections、audienceSignals、visualEvidence、forbiddenClaims、relatedOrPropProducts。
+ingredientClaims、usageDirections、audienceSignals、visualEvidence、forbiddenClaims 必须是数组；数组项可以是短句，也可以是包含 evidence、sourceImageIndex、reason 等键的对象。

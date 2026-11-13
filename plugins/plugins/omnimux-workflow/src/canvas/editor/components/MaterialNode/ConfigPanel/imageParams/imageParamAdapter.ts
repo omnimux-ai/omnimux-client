@@ -1,0 +1,211 @@
+/**
+ * ImageParamAdapter — 图像参数读侧适配器（2026-09-07 全模态收敛 / T04）。
+ *
+ * 职责：只读清洗与摘要格式化。
+ * - 非法 aspectRatio / resolution 展示回退到 schema default；
+ * - 绝不在 resolve 时回写 nodeData.params（避免无用户动作改提交载荷）；
+ * - 绝不调用 buildVideoParamTransition / pending 调整（视频专属，冻结）；
+ * - operation 语义委托共享内核 buildEffectiveOpsUiState（outputType: 'image'）。
+ */
+
+import type {
+  CapabilityCatalog,
+  CapabilityModelItem,
+  ModelParameterSchema,
+} from '../../../../../../shared/api.ts';
+import { resolveOperationLabel, type OperationLabelLocale } from '../../../../../../shared/validation/operationLabels.ts';
+import { getLocale } from '../../../../../i18n/index.ts';
+import {
+  buildEffectiveOpsUiState,
+  buildUiUpstreamFingerprint,
+  readPreferredOperationId,
+  shouldRenderModeUi,
+  type EffectiveOpsUiState,
+  type UpstreamMediaSnapshot,
+} from '../../../../../../shared/validation/operationUi.ts';
+import { narrowModelByLineConstraints } from '../../../../../../shared/validation/lineConstraints.ts';
+import { directoryChannelGroups, resolveLineConstraints } from '../channelGroups.ts';
+import type {
+  EffectiveImageParams,
+  ImageNodeParams,
+  ImageSummaryFormatResult,
+} from './types.ts';
+
+export const DEFAULT_IMAGE_ASPECT_RATIO = '16:9';
+
+/** 图像浮层允许写入的 key。禁止 generationMode 与未知 key。 */
+export type ImageParamWriteKey =
+  | 'operation'
+  | 'aspectRatio'
+  | 'resolution'
+  | 'quality'
+  | 'seed';
+
+/** 运行期断言：禁止 generationMode 与未知 key 进入写入路径。 */
+export function assertImageParamWriteKey(key: string): asserts key is ImageParamWriteKey {
+  const allowed: readonly string[] = ['operation', 'aspectRatio', 'resolution', 'quality', 'seed'];
+  if (key === 'generationMode') {
+    throw new Error('UI must not write params.generationMode');
+  }
+  if (!allowed.includes(key)) {
+    throw new Error(`UI must not write params.${key}`);
+  }
+}
+
+export interface ResolveEffectiveImageParamsArgs {
+  params: ImageNodeParams | undefined;
+  schema: ModelParameterSchema | undefined;
+  modelItem: CapabilityModelItem | undefined;
+  catalog?: CapabilityCatalog | null;
+  upstreams?: UpstreamMediaSnapshot[];
+  prompt?: string;
+}
+
+function buildOpsState(args: ResolveEffectiveImageParamsArgs): EffectiveOpsUiState {
+  const model = args.modelItem?.id
+    ?? (typeof args.params?.model === 'string' ? args.params.model : '');
+  const preferred = readPreferredOperationId((args.params ?? {}) as Record<string, unknown>);
+  return buildEffectiveOpsUiState({
+    catalog: args.catalog ?? null,
+    modelId: model,
+    fingerprint: buildUiUpstreamFingerprint({
+      prompt: args.prompt,
+      upstreams: args.upstreams,
+    }),
+    ...(preferred ? { preferredOperationId: preferred } : {}),
+    outputType: 'image',
+  });
+}
+
+function resolveOptionValue(
+  raw: unknown,
+  options: ReadonlyArray<{ value: string }>,
+  fallback: string | undefined,
+): string | undefined {
+  const value = typeof raw === 'string' ? raw.trim() : '';
+  if (value && options.some((option) => option.value === value)) {
+    return value;
+  }
+  return fallback ?? options[0]?.value;
+}
+
+/**
+ * 解析节点上保存的图像参数。非法值只做展示回退（schema default），
+ * 不在 mount 时回写 nodeData.params。
+ */
+export function resolveEffectiveImageParams(
+  args: ResolveEffectiveImageParamsArgs,
+): EffectiveImageParams {
+  const params = args.params;
+  const model = args.modelItem?.id
+    ?? (typeof params?.model === 'string' ? params.model : '');
+  const opsState = buildOpsState(args);
+  const preferredOperation = readPreferredOperationId((params ?? {}) as Record<string, unknown>);
+  const selectedId = opsState.selectedOperationId ?? opsState.implicitOperationId;
+  const operationOption = preferredOperation
+    ? opsState.effectiveOps.find((option) => option.id === preferredOperation)
+    : opsState.effectiveOps.find((option) => option.id === selectedId);
+  const operation = preferredOperation ?? operationOption?.id ?? '';
+  const schema: ModelParameterSchema = model === 'gpt-image-2.5'
+    ? narrowModelByLineConstraints({ id: model, parameters: args.schema ?? {} }, model,
+      resolveLineConstraints(model, params?.routing, directoryChannelGroups(args.catalog, model))).parameters
+    : args.schema ?? {};
+
+  const ratioOptions = schema.aspectRatio?.options ?? [];
+  const aspectRatio = resolveOptionValue(
+    params?.aspectRatio,
+    ratioOptions,
+    schema.aspectRatio?.defaultValue ?? DEFAULT_IMAGE_ASPECT_RATIO,
+  ) ?? DEFAULT_IMAGE_ASPECT_RATIO;
+
+  // resolution: 当存在 resolution.options 时解析
+  const resolutionOptions = schema.resolution?.options ?? [];
+  const resolution = resolutionOptions.length > 0
+    ? resolveOptionValue(params?.resolution, resolutionOptions, schema.resolution?.defaultValue)
+    : undefined;
+
+  // quality: 当存在 quality.options 时解析（独立质量槽支持）
+  const qualityOptions = schema.quality?.options ?? [];
+  const quality = qualityOptions.length > 0
+    ? resolveOptionValue(params?.quality, qualityOptions, schema.quality?.defaultValue)
+    : undefined;
+
+  const result: EffectiveImageParams = {
+    model,
+    operation,
+    operationLabel: resolveOperationLabel({ id: operation, label: operationOption?.label }),
+    effectiveOperations: opsState.effectiveOps,
+    showModeUi: shouldRenderModeUi(opsState),
+    schema,
+    aspectRatio,
+  };
+  if (resolution !== undefined) result.resolution = resolution;
+  if (quality !== undefined) result.quality = quality;
+  if (typeof params?.seed === 'number') result.seed = params.seed;
+  return result;
+}
+
+/**
+ * 将生效的 EffectiveImageParams 转换为摘要触发条展示用的结构化摘要。
+ * fullText 为空格拼接（禁止中点 `·`）。
+ */
+/** 浮层生成方式选项（#4113 M1）：纯函数，行为可直接单测。 */
+export function buildImageModeOptions(
+  effectiveOperations: ReadonlyArray<{ id: string; label?: string }> | null | undefined,
+  locale: OperationLabelLocale = 'zh',
+): Array<{ value: string; label: string }> {
+  return (effectiveOperations ?? []).map((op) => ({
+    value: op.id,
+    label: resolveOperationLabel({ id: op.id, label: op.label }, locale),
+  }));
+}
+
+export function formatImageSummary(
+  params: EffectiveImageParams,
+  locale: OperationLabelLocale = getLocale(),
+): ImageSummaryFormatResult {
+  // Issue #4113（F1）：与视频摘要 / SegmentControls 一致按当前 locale 解析模式名，
+  // 否则英文界面图片节点的模式名会停在中文。
+  const modeText = params.showModeUi
+    ? resolveOperationLabel({ id: params.operation, label: params.operationLabel }, locale)
+    : '';
+  const ratioText = params.aspectRatio === 'auto'
+    ? '自适应'
+    : (params.aspectRatio.trim() || DEFAULT_IMAGE_ASPECT_RATIO);
+  const resolutionText = params.resolution ? params.resolution.trim().toUpperCase() : null;
+
+  let qualityText: string | null = null;
+  if (params.quality) {
+    const option = params.schema.quality?.options?.find((opt) => opt.value === params.quality);
+    if (option?.label) {
+      const raw = option.label.trim();
+      if (/高清|hd/i.test(raw)) {
+        qualityText = '高';
+      } else if (/标准|standard/i.test(raw)) {
+        qualityText = '标准';
+      } else {
+        qualityText = raw;
+      }
+    } else if (params.quality === 'hd') {
+      qualityText = '高';
+    } else if (params.quality === 'standard') {
+      qualityText = '标准';
+    } else {
+      qualityText = params.quality;
+    }
+  }
+
+  const segments: string[] = [];
+  if (ratioText) segments.push(ratioText);
+  if (resolutionText) segments.push(resolutionText);
+  if (qualityText) segments.push(qualityText);
+  if (modeText) segments.push(modeText);
+
+  return {
+    modeText,
+    ratioText,
+    resolutionText,
+    qualityText,
+    fullText: segments.join(' '),
+  };
+}

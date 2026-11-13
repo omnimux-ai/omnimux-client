@@ -1,0 +1,27 @@
+schemaVersion: "1.1"
+models:
+  - id: "bad-limit-source"
+    label: "Bad Limit Source"
+    operations:
+      - id: "first_frame"
+        label: "首帧"
+        output:
+          type: "video"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+          - slot: "start_frame"
+            type: "image"
+            role: "first_frame"
+            min: 1
+            max: 1
+            allowedMimes: ["image/png"]
+            maxSizeMb: 20
+    research:
+      status: "draft"
+    execution:
+      status: "none"

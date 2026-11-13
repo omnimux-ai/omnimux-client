@@ -1,0 +1,112 @@
+/**
+ * OpenReel CSS 变量 → DSH `--dsw-*` 映射。
+ * 只作用在 `.openreel-studio-root`，不污染宿主主题。
+ * 官方界面不重排；这里只把 accent / surface 接到宿主 token。
+ */
+
+.openreel-studio-root {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  color-scheme: dark;
+  --tl-height: 40%;
+  /* 让官方 `position: fixed` / 100vw 相对本 Tab 而不是整个 DSH 窗口 */
+  transform: translateZ(0);
+  contain: layout paint;
+  background: var(--dsw-alias-bg-base, var(--bg, #111113));
+  color: var(--dsw-alias-label-primary, var(--fg, #f3f4f6));
+  -webkit-app-region: no-drag;
+}
+
+.openreel-studio-root .h-screen,
+.openreel-studio-root .min-h-screen,
+.openreel-studio-root .h-dvh {
+  height: 100% !important;
+  min-height: 100% !important;
+}
+
+.openreel-studio-root .w-screen {
+  width: 100% !important;
+}
+
+.openreel-studio-root .fixed.inset-0 {
+  position: absolute !important;
+}
+
+.openreel-studio-root,
+.openreel-studio-root[data-theme="dark"],
+.openreel-studio-root.dark {
+  --accent: var(--dsw-alias-brand-primary, oklch(0.7 0.15 162));
+  --accent-strong: var(--dsw-alias-button-primary-hover, oklch(0.63 0.16 162));
+  --accent-fg: var(--dsw-alias-label-primary-foreground, #ffffff);
+  /* Export 按钮内部的分隔线：由 accent 前景色派生，双主题自动跟随。
+     不再写死 border-white/25 —— 浅色主题下白线会消失在浅底上。 */
+  --accent-divider: color-mix(in srgb, var(--accent-fg, #ffffff) 28%, transparent);
+  --bg: var(--dsw-alias-bg-base, oklch(0.12 0.005 240));
+  --bg-1: var(--dsw-alias-bg-elevated, oklch(0.16 0.006 240));
+  --bg-2: var(--dsw-alias-bg-layer-1, oklch(0.2 0.007 240));
+  --bg-3: var(--dsw-alias-bg-layer-2, oklch(0.24 0.008 240));
+  --bg-elev: var(--dsw-alias-bg-elevated, oklch(0.22 0.007 240));
+  --border: var(--dsw-alias-border, oklch(0.26 0.008 240));
+  --border-strong: var(--dsw-alias-border-l3, oklch(0.34 0.01 240));
+  --fg: var(--dsw-alias-label-primary, oklch(0.97 0.003 240));
+  --fg-2: var(--dsw-alias-label-secondary, oklch(0.78 0.008 240));
+  --fg-3: var(--dsw-alias-label-tertiary, oklch(0.6 0.012 240));
+  --fg-muted: var(--dsw-alias-label-dimmed, oklch(0.48 0.012 240));
+  --hover: var(--dsw-alias-interactive-bg-hover, oklch(0.22 0.009 240));
+}
+
+.openreel-studio-hostbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--dsw-alias-border, rgba(255, 255, 255, 0.12));
+  background: var(--dsw-alias-bg-elevated, var(--dsw-alias-bg-base, #161618));
+  color: var(--dsw-alias-label-secondary, inherit);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.openreel-studio-hostbar-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-primary, inherit);
+  font-weight: 500;
+}
+
+.openreel-studio-hostbar-status {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary, inherit);
+}
+
+.openreel-studio-body {
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.openreel-studio-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+  color: var(--dsw-alias-label-secondary, inherit);
+  font-size: 13px;
+}

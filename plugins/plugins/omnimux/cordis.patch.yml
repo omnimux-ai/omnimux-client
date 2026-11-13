@@ -1,0 +1,85 @@
+# The hub reuses the official watcher through its existing WebSocket.
+- id: client-hmr
+  name: '@deepseek-ai/dsh-client-hmr'
+  disabled: true
+
+- insert:
+    - id: omnimux
+      name: omnimux
+
+# OmniMux multi-model route for the harness's pi-ai adapter.
+#
+# The dsh-base bundle already mounts @deepseek-ai/dsh-llm-pi-ai as row
+# `llm-pi-ai`. This layer addresses that row by id (whole-row replace, not
+# insert). Putting it under `insert` throws: duplicate loader entry id.
+#
+# SINGLE SOURCE OF TRUTH for the OmniMux model list in the app. Every model id
+# below was verified live against api.omnimux.ai/v1/models (94 models) on
+# 2026-08-16; contextWindow values come from api.omnimux.ai/api/pricing and are
+# set only where that catalog documents the number. One OmniMux user token
+# (OMNIMUX_API_KEY) serves every model; all eleven speak the OpenAI-compatible
+# `/v1` endpoint. The composer effort pane is driven by per-model
+# `reasoningEfforts` (docs/evidence/omnimux-reasoning-2026-08-20.md plus
+# 2026-08-23 brand-four): only levels the gateway accepted with HTTP 200 are
+# declared, and the route default is `max`. A UI `max` must exist on every
+# row; `gpt-5.5` maps it to wire `xhigh` because literal `max` 400s. A
+# literal `off` 400s on most upstreams; rows that can disable thinking map
+# `off` to wire `none`. Rows that still think when the field is omitted or
+# set to `off` do not offer Off. `developer` is refused by this gateway, so
+# the route sets `supportsDeveloperRole: false` — without it, pi-ai would
+# send that role on every reasoning model. `minimax-m3` is on the live
+# catalog but this key's group 403s it; it stays off the hub list.
+# deepseek-v4-flash is the product default agent model (desktop
+# preset and web profile set agent-default-model to it), so it stays selectable.
+#
+# Input modalities follow the measured gateway matrix
+# (docs/evidence/omnimux-modality-2026-08-18.md): a 64px red image plus a
+# content prompt was sent to every row; rows that answered with the image
+# color declare `input: [text, image]`. deepseek-v4-pro and glm-5.3
+# rejected `image_url` upstream and stay text-only. claude-opus-5 supports
+# images on the Anthropic `/v1/messages` protocol, but the chat-completions
+# group is currently 403 for this key; it will carry `input` once that group
+# is upgraded. claude-opus-4-6, gpt-5.5, and gemini-3.1-pro-preview answered
+# the 64px red prompt on chat-completions. Under-declaring refuses an image
+# before it attaches; declaring
+# image on a model the gateway rejects drops the request mid-turn — the
+# measured matrix, not vendor marketing, is the gate.
+#
+# Layering rule: user-layer cordis.patch.yml files (machine-local, per profile)
+# MUST NOT redefine this `llm-pi-ai` row — an id-matched patch replaces the
+# whole row and silently shadows this list. They set `agent-default-model`
+# only. Re-check after any model change: `pnpm verify:models`.
+- id: llm-pi-ai
+  name: '@deepseek-ai/dsh-llm-pi-ai'
+  config:
+    providers:
+      # Hand-declared route: pi-ai ships nothing under this key.
+      omnimux:
+        displayName: OmniMux
+        apiKeyEnv: OMNIMUX_API_KEY
+        api: openai-completions
+        baseURL: https://api.omnimux.ai/v1
+        retryPolicy:
+          mode: normal
+          maxRetries: 2
+        reasoning: max
+        compat:
+          supportsDeveloperRole: false
+          supportsReasoningEffort: true
+          thinkingFormat: openai
+        models:
+          - id: gemini-3.8-flash
+            name: Gemini 3.8 Flash
+            contextWindow: 1000000
+            maxTokens: 65536
+            input: [text, image]
+            reasoningEfforts:
+              low: low
+              medium: medium
+              high: high
+              max: max
+
+# 隔离机制：物理切断外部 ~/.agents 和 ~/.dsh 扫描，仅保留 OmniMux 自身受管环境与工作区
+- id: skill-filesystem
+  config:
+    includeDefaultRoots: false

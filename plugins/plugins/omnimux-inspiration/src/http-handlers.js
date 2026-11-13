@@ -1,0 +1,2226 @@
+import { spawnSync } from 'node:child_process'
+import { existsSync, statSync, unlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { basename, join } from 'node:path'
+import { alignMediaExtension, downloadMedia, isKnownUnrenderableCover } from './downloader.js'
+import { analyzeInspirationVideo } from './analyzer.js'
+import { handleScopedAnalysis, handleBodyTranslation, prepareAnalysis, recoverInterruptedAnalyses } from './scoped-analysis.js'
+import { analysisMediaItems } from './analysis-input.js'
+import { EXPORT_KIND, exportMediaFile, resolveDownloadsDir } from './media-export.js'
+import {
+  IMPORT_STAGES,
+  IMPORT_STATUS_DEGRADED,
+  IMPORT_STATUS_FAILED,
+  IMPORT_STATUS_IMPORTING,
+  IMPORT_STATUS_READY,
+  IMPORT_STALE_ERROR,
+  findStaleImports,
+  importStatusOf,
+  isImportBlocked,
+  isImporting,
+  staleImportPatch,
+} from './import-status.js'
+import {
+  CLOUD_SHARE_STAGE_ORDER,
+  SHARE_SOURCES,
+  SHARE_STAGES,
+  SHARE_STAGE_ORDER,
+  SHARE_STATUS_RUNNING,
+  shareDonePatch,
+  shareFailedPatch,
+  shareRunningPatch,
+  shareUploadLimitMessage,
+} from './share-status.js'
+import {
+  buildDirectGenerationPrompt,
+  defaultCategoryForMediaType,
+  defaultModelForMediaType,
+} from './prompt-generator.js'
+import { getCanonicalItemKey, normalizeUrl } from './url-normalizer.js'
+import { extractVideoPoster } from './media-export.js'
+import { isDownloadableHttpUrl, isPublicHttpUrl } from './url-policy.js'
+import { localMediaPaths } from './local-store.js'
+import {
+  buildTranslatePrompt,
+  extractScriptStructure,
+  parseDurationSeconds,
+  parsePublishedAt,
+  parseTranslateJson,
+} from './structure-script.js'
+
+/** Module-level singleton — never construct per request. */
+export const importLocks = new Set()
+
+/**
+ * Ids of rows a background import owns right now, in this process.
+ *
+ * The stale sweep consults this set before failing a row whose deadline passed:
+ * a slow but healthy job must not be failed underneath itself. After a Host
+ * restart the set is empty, which is exactly right — the jobs it used to hold
+ * are gone, so the rows they left behind are abandoned and should be failed.
+ *
+ * Exported for the sweep's tests and for shutdown diagnostics.
+ * @type {Set<string>}
+ */
+export const activeJobs = new Set()
+
+const DUPLICATE_ERROR = '该灵感素材已在库中，请勿重复导入'
+const HTTP_URL_RE = /^https?:\/\//i
+const DEGRADE_REASON = '该平台/该内容未提供可下载的视频直链，已按链接类型入库'
+/** Directly playable containers a bare `video_url`-style field may point at. */
+const MEDIA_CONTAINER_RE = /\.(mp4|m4v|webm|mov)$/i
+/** Manifest and page containers that are never a downloadable video file. */
+const NON_MEDIA_CONTAINER_RE = /\.(m3u8|mpd|html?)$/i
+/** Video CDNs whose stream URL carries no media file extension. */
+const VIDEO_CDN_HOST_RE = /(^|\.)(googlevideo\.com|tiktokcdn(-[a-z0-9]+)?\.com|byteoversea\.com|ibytedtos\.com|musical\.ly|snssdk\.com|cdninstagram\.com|fbcdn\.net|twimg\.com)$/i
+
+/** Cloud `capability` pair per platform (`omnimux_social_data` contract). */
+export const CAPABILITY = { x: 'tweet', instagram: 'post', youtube: 'video', tiktok: 'video' }
+
+/**
+ * Resolve the cloud capability pair for a platform (defaults to `video`).
+ * @param {string} platform
+ * @returns {string}
+ */
+export function capabilityOf(platform) {
+  return CAPABILITY[platform] || 'video'
+}
+
+function fail(status, error) {
+  return { status, body: { error } }
+}
+
+function createAbortError(message = 'This operation was aborted', cause) {
+  const err = new Error(message)
+  err.name = 'AbortError'
+  err.code = 'ABORT_ERR'
+  if (cause) err.cause = cause
+  return err
+}
+
+function okExisting(existing) {
+  const body = { data: existing, existing: true, is_duplicate: true }
+  return { status: 200, body }
+}
+
+function conflictExisting(existing) {
+  const body = {
+    error: DUPLICATE_ERROR,
+    data: existing,
+    is_duplicate: true,
+    upgradable: needsVideoUpgrade(existing),
+  }
+  return { status: 409, body }
+}
+
+function duplicateBody(existing, returnExisting) {
+  if (returnExisting) return okExisting(existing)
+  return conflictExisting(existing)
+}
+
+/**
+ * Complete galleries and videos are duplicates. Legacy image/link records
+ * without a saved attachment collection can be re-resolved to obtain media.
+ * @param {Record<string, any> | null | undefined} item
+ * @returns {boolean}
+ */
+function needsVideoUpgrade(item) {
+  if (!item || typeof item !== 'object') return false
+  if (item.media_items?.length > 0 && item.import_status === IMPORT_STATUS_READY) return false
+  return item.type !== 'video'
+}
+
+function firstHttpUrl(values) {
+  for (const value of values) {
+    if (typeof value === 'string' && HTTP_URL_RE.test(value)) return value
+  }
+  return ''
+}
+
+/**
+ * First candidate that is a public http(s) URL.
+ *
+ * The structural extractor reads fields that deliberately carry no file
+ * extension — TikTok `play_addr.url_list`, Instagram `video_versions[]`, X
+ * `variants[]`, YouTube `formats[]` — so the downloadability rule (which needs a
+ * recognizable media path or a known CDN host) must NOT be applied here: it would
+ * drop those real streams. Only the private/protocol refusal applies, which is
+ * what keeps `http://169.254.169.254/x.mp4` out of `video_url` without breaking
+ * the extension-less CDN paths.
+ * @param {unknown[]} values
+ * @returns {string}
+ */
+function firstPublicHttpUrl(values) {
+  for (const value of values) {
+    const url = httpText(value)
+    if (url && isPublicHttpUrl(url)) return url
+  }
+  return ''
+}
+
+/* -------------------------------------------------------------------------- *
+ * Structural social envelope extraction
+ *
+ * Every platform returns a different envelope: X nests the stream in
+ * `media.video[].variants[]`, YouTube in `formats[]`/`adaptive_formats[]`,
+ * Instagram in `video_versions[]`. Each field is therefore resolved through an
+ * ordered candidate list over a bounded set of wrapper layers. A field that
+ * cannot be resolved stays empty; a direct url is never guessed from an
+ * unrelated `*.url` (avatars, covers, tracking pixels).
+ * -------------------------------------------------------------------------- */
+
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function asObject(value) {
+  return isPlainObject(value) ? value : {}
+}
+
+function asArray(value) {
+  return Array.isArray(value) ? value : []
+}
+
+function asText(value) {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function httpText(value) {
+  const text = asText(value)
+  return HTTP_URL_RE.test(text) ? text : ''
+}
+
+function firstText(values) {
+  for (const value of values) {
+    const text = asText(value)
+    if (text) return text
+  }
+  return ''
+}
+
+function firstNumber(values) {
+  for (const value of values) {
+    const num = typeof value === 'string' ? Number(value) : value
+    if (typeof num === 'number' && Number.isFinite(num)) return num
+  }
+  return null
+}
+
+function urlPathname(url) {
+  try {
+    return new URL(url).pathname
+  } catch {
+    return url
+  }
+}
+
+function assignMissing(target, key, value) {
+  const current = target[key]
+  const hasCurrent = current !== undefined && current !== null && current !== ''
+  if (!hasCurrent && value !== undefined && value !== null && value !== '') target[key] = value
+}
+
+/**
+ * A variant is usable when it is a directly playable mp4. A declared content
+ * type wins; otherwise the url suffix decides.
+ */
+function isMp4Variant(url, contentType) {
+  const type = contentType.toLowerCase()
+  if (type) return type.includes('mp4')
+  return /\.mp4$/i.test(urlPathname(url))
+}
+
+/**
+ * Best mp4 among `variants[]` (X tweet video variants, Instagram versions).
+ *
+ * Ranking is by a single scalar read per variant in the order
+ * `bitrate` → `bit_rate` → `height`, first present wins. The ladder therefore
+ * compares bitrates for envelopes that publish bitrates (X) and pixel heights
+ * for envelopes that publish only sizes (Instagram). Variants from the two
+ * families are never compared with each other, because no envelope mixes them.
+ */
+function bestVariantUrl(variants) {
+  let bestUrl = ''
+  let bestBitrate = -1
+  for (const raw of asArray(variants)) {
+    const variant = isPlainObject(raw) ? raw : {}
+    const url = httpText(variant.url) || httpText(variant.src) || httpText(raw)
+    if (!url) continue
+    if (!isMp4Variant(url, firstText([variant.content_type, variant.contentType, typeof variant.type === 'string' ? variant.type : '']))) continue
+    const bitrate = firstNumber([variant.bitrate, variant.bit_rate, variant.height]) ?? videoUrlResolution(url)
+    if (bitrate > bestBitrate) {
+      bestUrl = url
+      bestBitrate = bitrate
+    }
+  }
+  return bestUrl
+}
+
+/** Resolution encoded in X's bitrate-free public video variants. */
+function videoUrlResolution(url) {
+  const dimensions = urlPathname(url).match(/\/(\d+)x(\d+)\//)
+  return dimensions ? Number(dimensions[1]) * Number(dimensions[2]) : 0
+}
+
+/**
+ * mp4 stream inside `media.video[]`, `entities.media[].video_info` or Instagram
+ * `video_versions[]`.
+ *
+ * The chosen url still has to pass the policy: the variant ranking only looks at
+ * the container type, so it would happily return a link-local or loopback URL
+ * that the envelope put in `variants[]`.
+ * @param {unknown} list
+ * @returns {string}
+ */
+function videoFromMediaList(list) {
+  for (const item of asArray(list)) {
+    const media = asObject(item)
+    const url = bestVariantUrl(media.variants)
+      || bestVariantUrl(asObject(media.video_info).variants)
+      || bestVariantUrl([item])
+    if (url) return firstPublicHttpUrl([url])
+  }
+  return ''
+}
+
+/**
+ * Poster image inside `media[].media_url_https` / `display_url`. A cover is
+ * fetched by the cover downloader too, so it gets the same private-target
+ * refusal as a stream.
+ * @param {unknown} list
+ * @returns {string}
+ */
+function coverFromMediaList(list) {
+  for (const item of asArray(list)) {
+    const media = asObject(item)
+    const url = httpText(media.media_url_https)
+      || httpText(media.media_url)
+      || httpText(media.display_url)
+      || httpText(media.url)
+    if (url) return firstPublicHttpUrl([url])
+  }
+  return ''
+}
+
+/**
+ * YouTube `formats[]` / `adaptive_formats[]`: highest quality mp4 that carries a
+ * usable `url`. Entries with `signatureCipher`/`cipher` need a signature this
+ * plugin cannot compute, so they are skipped instead of guessed.
+ */
+function videoFromFormatList(layer) {
+  let bestUrl = ''
+  let bestQuality = -1
+  for (const raw of [...asArray(layer.formats), ...asArray(layer.adaptive_formats)]) {
+    if (!isPlainObject(raw)) continue
+    if (asText(raw.signatureCipher) || asText(raw.cipher)) continue
+    const url = firstPublicHttpUrl([raw.url])
+    if (!url) continue
+    const mime = firstText([raw.mimeType, raw.mime_type]).toLowerCase()
+    if (mime ? !mime.includes('video/mp4') : !/\.mp4$/i.test(urlPathname(url))) continue
+    const quality = firstNumber([raw.height, raw.bitrate]) ?? 0
+    if (quality > bestQuality) {
+      bestUrl = url
+      bestQuality = quality
+    }
+  }
+  return bestUrl
+}
+
+/** Instagram `image_versions2.candidates[].url`. */
+function instagramCandidateUrl(versions) {
+  return firstPublicHttpUrl(asArray(asObject(versions).candidates).map((item) => asObject(item).url))
+}
+
+/** YouTube `thumbnails[]` — the last entry is the largest. */
+function lastThumbnailUrl(thumbnails) {
+  const items = asArray(thumbnails)
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const url = firstPublicHttpUrl([asObject(items[index]).url])
+    if (url) return url
+  }
+  return ''
+}
+
+/**
+ * A bare `url`-style field only counts as the video stream when it points at a
+ * downloadable public media file or a known video CDN — never at a page, an HLS
+ * manifest, a local-network host or the cloud metadata service.
+ * @param {unknown} value
+ * @returns {string} the url when it may be downloaded, otherwise ''
+ */
+function mediaLikeUrl(value) {
+  const url = httpText(value)
+  if (!url) return ''
+  if (!isDownloadableHttpUrl(url)) return ''
+  const pathname = urlPathname(url)
+  if (NON_MEDIA_CONTAINER_RE.test(pathname)) return ''
+  if (MEDIA_CONTAINER_RE.test(pathname)) return url
+  try {
+    const parsed = new URL(url)
+    if (VIDEO_CDN_HOST_RE.test(parsed.hostname)) return url
+    const mime = parsed.searchParams.get('mime_type')
+    if (mime && /^video[/_](mp4|webm|quicktime)/i.test(mime)) return url
+    return ''
+  } catch {
+    return ''
+  }
+}
+
+function edgeCaptionText(layer) {
+  const edges = asArray(asObject(layer.edge_media_to_caption).edges)
+  return firstText([asObject(asObject(edges[0]).node).text])
+}
+
+function videoUrlFromLayer(layer) {
+  return firstHttpUrl([
+    videoFromMediaList(asObject(layer.media).video),
+    videoFromMediaList(asObject(layer.entities).media),
+    videoFromMediaList(asObject(layer.extended_entities).media),
+    // `video_versions[]` is one clip's quality ladder (ascending), not a list of
+    // clips: rank it so the highest quality wins instead of the first entry.
+    firstPublicHttpUrl([bestVariantUrl(layer.video_versions)]),
+    firstPublicHttpUrl(asArray(layer.video_versions).map((item) => asObject(item).url || item)),
+    videoFromFormatList(layer),
+    // Bare direct-link fields are attacker-influenced envelope data, so each one
+    // must pass the media-url policy before it can become the download target.
+    mediaLikeUrl(layer.video_url),
+    mediaLikeUrl(layer.video),
+    mediaLikeUrl(layer.play_url),
+    mediaLikeUrl(layer.play),
+    mediaLikeUrl(layer.download_url),
+    // Nested `url_list` streams carry no file extension on TikTok/Instagram, so
+    // only the private/protocol layer applies here — the download entry point
+    // still enforces the full policy.
+    firstPublicHttpUrl(asArray(asObject(layer.play_addr).url_list)),
+    firstPublicHttpUrl(asArray(asObject(asObject(layer.video).play_addr).url_list)),
+    mediaLikeUrl(layer.url),
+  ])
+}
+
+function coverUrlFromLayer(layer) {
+  return firstHttpUrl([
+    layer.cover_url,
+    layer.cover,
+    layer.thumbnail_url,
+    layer.thumbnail,
+    layer.origin_cover,
+    layer.dynamic_cover,
+    asObject(layer.video).poster,
+    coverFromMediaList(layer.mediaDetails),
+    coverFromMediaList(asObject(layer.media).video),
+    coverFromMediaList(asObject(layer.entities).media),
+    coverFromMediaList(asObject(layer.extended_entities).media),
+    layer.display_url,
+    layer.thumbnail_src,
+    layer.display_src,
+    layer.image_url,
+    instagramCandidateUrl(layer.image_versions2),
+    lastThumbnailUrl(layer.thumbnails),
+    firstHttpUrl(asArray(asObject(layer.cover).url_list)),
+    firstHttpUrl(asArray(asObject(asObject(layer.video).cover).url_list)),
+    firstHttpUrl(asArray(asObject(asObject(layer.video).origin_cover).url_list)),
+  ])
+}
+
+function textFromLayer(layer) {
+  return firstText([
+    layer.text,
+    layer.display_text,
+    layer.full_text,
+    asObject(layer.legacy).full_text,
+    asObject(asObject(asObject(layer.note_tweet).note_tweet_results).result).text,
+    asObject(layer.caption).text,
+    typeof layer.caption === 'string' ? layer.caption : '',
+    edgeCaptionText(layer),
+    layer.desc,
+    layer.description,
+    layer.content,
+  ])
+}
+
+function titleFromLayer(layer) {
+  return firstText([layer.title, layer.desc, layer.description, layer.name]) || textFromLayer(layer)
+}
+
+function authorFromLayer(layer) {
+  const author = isPlainObject(layer.author) ? { ...layer.author } : {}
+  for (const candidate of [layer.author, layer.user, layer.owner, layer.channel, layer.uploader]) {
+    if (typeof candidate === 'string') {
+      assignMissing(author, 'name', asText(candidate))
+      continue
+    }
+    if (!isPlainObject(candidate)) continue
+    assignMissing(author, 'name', firstText([
+      candidate.name,
+      candidate.nickname,
+      candidate.full_name,
+      candidate.screen_name,
+      candidate.username,
+    ]))
+    assignMissing(author, 'handle', firstText([
+      candidate.handle,
+      candidate.screen_name,
+      candidate.unique_id,
+      candidate.username,
+    ]))
+    assignMissing(author, 'avatar', firstHttpUrl([
+      candidate.avatar,
+      candidate.image,
+      candidate.profile_image_url,
+      candidate.profile_pic_url,
+      candidate.avatar_url,
+    ]))
+  }
+  assignMissing(author, 'name', firstText([layer.author_name]))
+  assignMissing(author, 'handle', firstText([layer.author_handle]))
+  return author
+}
+
+function statsFromLayer(layer) {
+  const stats = isPlainObject(layer.stats) ? { ...layer.stats } : {}
+  const engagement = asObject(layer.engagement)
+  assignMissing(stats, 'likes', firstNumber([engagement.likes, layer.favorite_count, layer.like_count, layer.digg_count, layer.likes]))
+  assignMissing(stats, 'comments', firstNumber([engagement.replies, layer.reply_count, layer.comment_count, layer.comments]))
+  assignMissing(stats, 'shares', firstNumber([engagement.retweets, layer.retweet_count, layer.share_count, layer.shares]))
+  assignMissing(stats, 'views', firstNumber([engagement.views, layer.view_count, layer.play_count, layer.views]))
+  assignMissing(stats, 'bookmarks', firstNumber([engagement.bookmarks, layer.bookmark_count]))
+  return stats
+}
+
+function durationFromLayer(layer) {
+  return parseDurationSeconds(layer.duration)
+    ?? parseDurationSeconds(layer.video_duration)
+    ?? parseDurationSeconds(layer.lengthSeconds)
+    ?? parseDurationSeconds(asObject(layer.stats).duration)
+    ?? parseDurationSeconds(asObject(layer.stats).video_duration)
+}
+
+/** `upload_date` style `YYYYMMDD` needs normalizing before Date parsing. */
+function normalizeDateValue(value) {
+  if (typeof value !== 'string') return value
+  const text = value.trim()
+  if (/^\d{8}$/.test(text)) {
+    return `${text.slice(0, 4)}-${text.slice(4, 6)}-${text.slice(6, 8)}T00:00:00.000Z`
+  }
+  return text
+}
+
+function publishedAtFromLayer(layer) {
+  return parsePublishedAt(normalizeDateValue(layer.create_time))
+    || parsePublishedAt(normalizeDateValue(layer.createTime))
+    || parsePublishedAt(normalizeDateValue(layer.published_at))
+    || parsePublishedAt(normalizeDateValue(layer.upload_date))
+    || parsePublishedAt(normalizeDateValue(layer.publishDate))
+    || parsePublishedAt(normalizeDateValue(layer.timestamp))
+    || parsePublishedAt(normalizeDateValue(layer.created_at))
+    || parsePublishedAt(normalizeDateValue(layer.taken_at))
+}
+
+/**
+ * Image urls may arrive as plain strings or as `{ url }` / `{ src }` objects
+ * (`images: [{ url: '…jpg' }]` is the common gateway shape), so both are read
+ * instead of silently dropping the entry and degrading the post to `link`.
+ * @param {Record<string, any>} layer
+ * @returns {string[]}
+ */
+function imagesFromLayer(layer) {
+  return [...asArray(layer.images), ...asArray(layer.image_urls), layer.image_url]
+    .map((value) => httpText(value) || httpText(value?.url) || httpText(value?.src))
+    .filter(Boolean)
+}
+
+/** @typedef {{ type: 'video' | 'image', url: string }} SocialMediaItem */
+/** @typedef {{ type: 'video' | 'image', id: string, poster: string, asset: string }} MediaReference */
+
+/** @param {unknown} raw @param {'video' | 'image'} type @param {string} [url] @returns {MediaReference} */
+function mediaReference(raw, type, url = '') {
+  const media = asObject(raw)
+  const asset = url ? mediaIdentity({ type, url }) : ''
+  const id = firstText([media.id_str, typeof media.id === 'number' ? String(media.id) : media.id])
+    || (type === 'video' ? asset.match(/^video:(?:amplify_video|ext_tw_video|tweet_video):(.+)$/)?.[1] : '') || ''
+  const posterUrl = type === 'video' ? firstPublicHttpUrl([media.media_url_https, media.media_url, media.poster]) : ''
+  return { type, id, asset, poster: posterUrl ? mediaIdentity({ type: 'image', url: posterUrl }) : '' }
+}
+
+/**
+ * Matching ids are strongest; when absent, a shared poster or asset identifies a mirror.
+ * @param {MediaReference} left
+ * @param {MediaReference} right
+ * @returns {boolean}
+ */
+function sameMediaReference(left, right) {
+  if (left.type !== right.type) return false
+  if (left.id && right.id) return left.id === right.id
+  return Boolean((left.asset && left.asset === right.asset) || (left.poster && left.poster === right.poster))
+}
+
+/**
+ * Read post-owned media in the order provided by the richest list. The other
+ * supported fields are mirrors, not another set of attachments.
+ * @param {Record<string, any>} layer
+ * @returns {{ items: SocialMediaItem[], available: MediaReference[], missing: MediaReference[], posters: string[] }}
+ */
+function mediaItemsFromLayer(layer) {
+  /** @type {SocialMediaItem[]} */
+  const items = []
+  const posters = []
+  /** @type {MediaReference[]} */
+  const available = []
+  /** @type {MediaReference[]} */
+  const missing = []
+  const append = (raw, assumedType = '') => {
+    const media = asObject(raw)
+    const video = firstPublicHttpUrl([
+      bestVariantUrl(media.variants),
+      bestVariantUrl(asObject(media.video_info).variants),
+      (assumedType === 'video' || media.type === 'video') ? mediaLikeUrl(media.url || media.src || raw) : '',
+    ])
+    if (video) {
+      items.push({ type: 'video', url: video })
+      available.push(mediaReference(media, 'video', video))
+      const poster = firstPublicHttpUrl([media.media_url_https, media.media_url, media.poster])
+      if (poster) posters.push(poster)
+      return
+    }
+    const type = firstText([media.type, assumedType])
+    if (type === 'video' || type === 'animated_gif') {
+      missing.push(mediaReference(media, 'video'))
+      return
+    }
+    const image = firstPublicHttpUrl([media.media_url_https, media.media_url, media.url, media.src, typeof raw === 'string' ? raw : ''])
+    if (type === 'photo' || type === 'image') {
+      if (image) {
+        items.push({ type: 'image', url: image })
+        available.push(mediaReference(media, 'image', image))
+      } else missing.push(mediaReference(media, 'image'))
+    }
+  }
+  for (const list of [layer.mediaDetails, asObject(layer.extended_entities).media, asObject(layer.entities).media]) {
+    for (const raw of asArray(list)) append(raw)
+  }
+  for (const raw of asArray(asObject(layer.media).video)) append(raw, 'video')
+  for (const raw of [...asArray(asObject(layer.media).photo), ...asArray(asObject(layer.media).photos), ...asArray(layer.photos)]) append(raw, 'image')
+  const singleVideo = videoUrlFromLayer(layer) || firstPublicHttpUrl([bestVariantUrl(asObject(layer.video).variants)])
+  if (singleVideo) {
+    items.push({ type: 'video', url: singleVideo })
+    available.push(mediaReference(layer.video, 'video', singleVideo))
+    const poster = firstPublicHttpUrl([asObject(layer.video).poster])
+    if (poster) posters.push(poster)
+  }
+  for (const url of imagesFromLayer(layer)) {
+    if (isPublicHttpUrl(url)) {
+      items.push({ type: 'image', url })
+      available.push(mediaReference({}, 'image', url))
+    }
+  }
+  return { items, available, missing, posters }
+}
+
+/** Treat quality ladders and image-size aliases as one asset, never its poster. */
+function mediaIdentity(item) {
+  const url = new URL(item.url)
+  if (/(^|\.)twimg\.com$/i.test(url.hostname)) {
+    const video = url.pathname.match(/^\/(amplify_video|ext_tw_video|tweet_video)\/([^/]+)/)
+    if (item.type === 'video' && video) return `${item.type}:${video[1]}:${video[2]}`
+    if (item.type === 'image') {
+      const pathname = url.pathname.replace(/:\w+$/, '').replace(/\.(jpe?g|png|webp|gif)$/i, '')
+      return `${item.type}:${url.hostname}${pathname}`
+    }
+  }
+  return `${item.type}:${item.url}`
+}
+
+/** Rich ordered post lists take precedence over flat wrapper mirrors. */
+function mediaListPriority(layer) {
+  if (asArray(layer.mediaDetails).length) return 3
+  if (asArray(asObject(layer.extended_entities).media).length) return 2
+  if (asArray(asObject(layer.entities).media).length) return 1
+  return 0
+}
+
+/** @param {Array<Record<string, any>>} layers @returns {{ items: SocialMediaItem[], unavailable: boolean }} */
+function collectMediaItems(layers) {
+  /** @type {SocialMediaItem[]} */
+  const items = []
+  const indices = new Map()
+  const posters = new Set()
+  const orderedLayers = [...layers].sort((left, right) => mediaListPriority(right) - mediaListPriority(left))
+  /** @type {MediaReference[]} */
+  const available = []
+  /** @type {MediaReference[]} */
+  const missing = []
+  for (const layer of orderedLayers) {
+    const collection = mediaItemsFromLayer(layer)
+    for (const url of collection.posters) posters.add(mediaIdentity({ type: 'image', url }))
+    available.push(...collection.available)
+    missing.push(...collection.missing)
+    for (const item of collection.items) {
+      const key = mediaIdentity(item)
+      const existing = indices.get(key)
+      if (existing === undefined) {
+        indices.set(key, items.length)
+        items.push(item)
+      } else if (item.type === 'video' && videoUrlResolution(item.url) > videoUrlResolution(items[existing].url)) {
+        items[existing] = item
+      }
+    }
+  }
+  const unavailable = missing.some((reference) => !available.some((resolved) => sameMediaReference(reference, resolved)))
+  return { items: items.filter((item) => item.type !== 'image' || !posters.has(mediaIdentity(item))), unavailable }
+}
+
+function resolvedUrlFromLayer(layer) {
+  return firstHttpUrl([layer.url, layer.canonical_url, layer.permalink])
+}
+
+/** The object held by `container[key]` when that field is a list of layers. */
+function firstLayerItem(container, key) {
+  const first = asArray(asObject(container)[key])[0]
+  return isPlainObject(first) ? first : null
+}
+
+/** `wrapper.data` when the field is itself a wrapper layer. */
+function wrappedData(wrapper) {
+  return isPlainObject(wrapper) && isPlainObject(wrapper.data) ? wrapper.data : null
+}
+
+/**
+ * Bounded one-level unwrap of the common gateway envelopes. Only these known
+ * containers are inspected — never a recursive search — so unrelated urls can
+ * never be mistaken for the video stream.
+ * @param {unknown} data
+ * @returns {Array<Record<string, any>>}
+ */
+export function socialPayloadLayers(data) {
+  const root = asObject(data)
+  const nested = isPlainObject(root.data) ? root.data : null
+  const rootFirstItem = firstLayerItem(root, 'items')
+  const nestedFirstItem = firstLayerItem(nested, 'items')
+  const candidates = [
+    rootFirstItem,
+    wrappedData(rootFirstItem),
+    nested,
+    nestedFirstItem,
+    wrappedData(nestedFirstItem),
+    isPlainObject(root.result) ? root.result : null,
+    wrappedData(root.result),
+    nested ? nested.result : null,
+    firstLayerItem(nested, 'aweme_list'),
+    firstLayerItem(nested, 'contents'),
+    root.aweme_detail,
+    firstLayerItem(root, 'item_list'),
+  ]
+  const layers = [root]
+  for (const candidate of candidates) {
+    if (isPlainObject(candidate) && !layers.includes(candidate)) layers.push(candidate)
+  }
+  return layers
+}
+
+function pickLayerValue(layers, read, isBlank) {
+  for (const layer of layers) {
+    const value = read(layer)
+    if (!isBlank(value)) return value
+  }
+  return read({})
+}
+
+const isBlankText = (value) => !value
+const isBlankNumber = (value) => value === null || value === undefined
+const isBlankObject = (value) => Object.keys(value).length === 0
+
+/** X text fields contain one layer of HTML entities, not HTML markup. */
+function decodeXPostText(text) {
+  const named = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: '\u00a0' }
+  return text.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos|nbsp);/gi, (entity, code) => {
+    if (code[0] !== '#') return named[code.toLowerCase()]
+    const value = /^#x/i.test(code) ? Number.parseInt(code.slice(2), 16) : Number.parseInt(code.slice(1), 10)
+    return value > 0 && value <= 0x10ffff && !(value >= 0xd800 && value <= 0xdfff) ? String.fromCodePoint(value) : entity
+  })
+}
+
+/**
+ * Map any supported platform envelope onto the flat metadata contract used by
+ * the import pipeline.
+ *
+ * Supported shapes: X/Twitter `media.video[].variants[]` + `entities.media[]`,
+ * Instagram `video_versions[]` / `image_versions2` / `caption`,
+ * YouTube `formats[]` / `adaptive_formats[]` / `thumbnails[]`, plus the flat
+ * TikTok shape and a bounded one-level unwrap of `items[0]` / `data.items[0]` /
+ * `data.result` / `result.data` / `data.aweme_list[0]` / `data.contents[0]` /
+ * `aweme_detail` / `item_list[0]`.
+ *
+ * @param {unknown} data raw `data` envelope from the cloud tool or the fallback resolver
+ * @param {{platform?: string}} [options] Source encoding is normalized only for known X text.
+ * @returns {{
+ *   title: string, text: string, cover_url: string, video_url: string,
+ *   images: string[], media_items: SocialMediaItem[], author: Record<string, any>, stats: Record<string, any>,
+ *   duration: number | null, published_at: string, resolvedUrl: string,
+ *   has_metadata: boolean, unavailable_media: boolean,
+ * }}
+ */
+export function parseSocialMeta(data, { platform } = {}) {
+  const layers = socialPayloadLayers(data)
+  const decode = platform === 'x' || platform === 'twitter' ? decodeXPostText : (text) => text
+  const text = decode(pickLayerValue(layers, textFromLayer, isBlankText))
+  const title = decode(pickLayerValue(layers, titleFromLayer, isBlankText))
+  const cover_url = pickLayerValue(layers, coverUrlFromLayer, isBlankText)
+  const { items: media_items, unavailable: unavailable_media } = collectMediaItems(layers)
+  const video_url = media_items.find((item) => item.type === 'video')?.url || ''
+  const images = media_items.filter((item) => item.type === 'image').map((item) => item.url)
+  const author = pickLayerValue(layers, authorFromLayer, isBlankObject)
+  const stats = pickLayerValue(layers, statsFromLayer, isBlankObject)
+  const duration = pickLayerValue(layers, durationFromLayer, isBlankNumber)
+  const published_at = pickLayerValue(layers, publishedAtFromLayer, isBlankText)
+  const resolvedUrl = pickLayerValue(layers, resolvedUrlFromLayer, isBlankText)
+  // Only *substantive* content counts as metadata: a title, body text, cover,
+  // image list or video stream. Author, stats, duration and publication time are
+  // attached metadata — an envelope that carries nothing but
+  // `{ author: { id } }`, `{ stats: { likes: 0 } }`, `{ duration: 0 }` or
+  // `{ create_time: 0 }` has no content, and counting it here would skip the
+  // local fallback resolver and end up persisting an empty `link` row.
+  const has_metadata = Boolean(
+    video_url
+    || cover_url
+    || text
+    || title
+    || images.length > 0,
+  )
+  return {
+    title,
+    text,
+    cover_url,
+    video_url,
+    images,
+    media_items,
+    author,
+    stats,
+    duration,
+    published_at,
+    resolvedUrl,
+    has_metadata,
+    unavailable_media,
+  }
+}
+
+/**
+ * Fail abandoned import rows before a read answers.
+ *
+ * The sweep runs on a list of rows the caller already read, so the common case
+ * costs one array scan over rows that are already in memory and no extra read at
+ * all. Only a library that actually holds an expired `importing` row pays for a
+ * read-modify-write.
+ * @param {{ readAll: () => Array<Record<string, any>>, update: (id: string, patch: Record<string, any>) => unknown }} store
+ * @param {Set<string>} [liveIds] ids a live job still owns
+ * @returns {Map<string, Record<string, any>> | null} the failed rows by id
+ */
+export function sweepStaleImports(store, liveIds = activeJobs) {
+  const all = store.readAll()
+  if (all.length === 0) return null
+  const stale = findStaleImports(all, { activeIds: liveIds })
+  if (stale.length === 0) return null
+  const patch = staleImportPatch()
+  /** @type {Map<string, Record<string, any>>} */
+  const failed = new Map()
+  for (const row of stale) {
+    const id = String(row.id)
+    try {
+      store.update(id, { ...patch })
+    } catch {
+      // The row vanished between the read and the write; nothing to report.
+      continue
+    }
+    failed.set(id, { ...row, ...patch })
+  }
+  return failed.size > 0 ? failed : null
+}
+
+export function maybeEnsureVideoCover(item, store, paths) {
+  if (!item || typeof item !== 'object' || item.type !== 'video') return item
+  const existingCover = item.cover_url
+  const localCover = item.local_paths?.cover
+  if (existingCover && (!localCover || existsSync(localCover))) return item
+  const videoPath = item.local_paths?.video
+  if (!videoPath || !existsSync(videoPath)) return item
+  const coversDir = paths?.coversDir || store?.paths?.coversDir
+  if (!coversDir) return item
+
+  try {
+    const coverName = `cover_${String(item.id).replace(/^insp_/, '')}.jpg`
+    const targetCoverPath = join(coversDir, coverName)
+    if (!existsSync(targetCoverPath)) {
+      spawnSync('ffmpeg', ['-y', '-ss', '00:00:00.500', '-i', videoPath, '-vframes', '1', '-q:v', '2', targetCoverPath], {
+        stdio: 'ignore',
+        timeout: 2500,
+      })
+    }
+    if (existsSync(targetCoverPath)) {
+      const coverUrl = `/omnimux/inspiration/local/media/covers/${coverName}`
+      const patch = {
+        cover_url: coverUrl,
+        local_paths: { ...(item.local_paths || {}), cover: targetCoverPath },
+      }
+      try { store?.update?.(item.id, patch) } catch {}
+      return { ...item, ...patch }
+    }
+  } catch {}
+  return item
+}
+
+export function handleList({ url, store }) {
+  sweepStaleImports(store)
+  const q = url.searchParams.get('q') || undefined
+  const platform = url.searchParams.get('platform') || undefined
+  const type = url.searchParams.get('type') || undefined
+  const tag = url.searchParams.get('tag') || undefined
+  const isFavorite = url.searchParams.get('is_favorite') || undefined
+  const sort = url.searchParams.get('sort') || undefined
+  const page = parseInt(url.searchParams.get('page') || '1', 10)
+  const pageSize = parseInt(url.searchParams.get('page_size') || '20', 10)
+  const country = url.searchParams.get('country') || undefined
+  const category = url.searchParams.get('category') || undefined
+  const duration_min = url.searchParams.get('duration_min') || undefined
+  const duration_max = url.searchParams.get('duration_max') || undefined
+  const views_min = url.searchParams.get('views_min') || undefined
+  const views_max = url.searchParams.get('views_max') || undefined
+  const traffic_type = url.searchParams.get('traffic_type') || undefined
+  const posted_after = url.searchParams.get('posted_after') || undefined
+  const posted_before = url.searchParams.get('posted_before') || undefined
+  const result = store.list({
+    q,
+    platform,
+    type,
+    tag,
+    is_favorite: isFavorite,
+    sort,
+    page,
+    page_size: pageSize,
+    root_only: url.searchParams.get('root_only') === 'true',
+    collection_id: url.searchParams.get('collection_id') || undefined,
+    country,
+    category,
+    duration_min,
+    duration_max,
+    views_min,
+    views_max,
+    traffic_type,
+    posted_after,
+    posted_before,
+  })
+  const platforms = typeof store.platforms === 'function' ? store.platforms() : []
+  const isLean = url.searchParams.get('projection') === 'lean'
+  const resolvedItems = result.items.map((row) => maybeEnsureVideoCover(row, store, store?.paths))
+  const items = isLean
+    ? resolvedItems.map((row) => {
+        if (!row || typeof row !== 'object' || !row.deconstruction) return row
+        const { deconstruction, ...rest } = row
+        return rest
+      })
+    : resolvedItems
+  return { status: 200, body: { data: { ...result, items, platforms } } }
+}
+
+/**
+ * Row ids a publish job owns right now, in this process.
+ *
+ * A second click while the first publish runs must not start a competing job on
+ * the same row: both would write stages into it and the later writer would win.
+ * Exported for the handler's tests.
+ * @type {Set<string>}
+ */
+export const activeShares = new Set()
+
+/**
+ * Publish jobs for entries that are **not** in the local library, keyed by the
+ * cloud id the page asked about.
+ *
+ * A cloud entry has no local row to carry its progress: the local library only
+ * ever holds `insp_…` ids, and writing a placeholder into it would put a card in
+ * the user's own library for something that was never theirs. The job state
+ * therefore lives here, and `handleGetItem` answers a poll for one of these ids
+ * from this table — the page keeps the exact polling contract it already has.
+ *
+ * Process-local on purpose. A cloud publish has no upload leg, so it lives for
+ * seconds; there is nothing worth persisting, and a restart simply means the
+ * next click starts a fresh job instead of resuming a finished one.
+ * @type {Map<string, Record<string, any>>}
+ */
+export const cloudShareJobs = new Map()
+
+/** Cloud display fields a share row carries, so the page keeps rendering the entry it opened. */
+const CLOUD_ROW_KEYS = ['type', 'title', 'caption', 'category', 'coverUrl', 'mediaUrls', 'embedUrl', 'sourceUrl']
+
+/**
+ * Publish an inspiration to the cloud and answer the *job*, not the result.
+ *
+ * A publish is: upload assets → publish → return the server's link. The client
+ * needs to see which of those is happening, and the answer only exists at the
+ * end, so the work runs in-process while the row carries the progress the page
+ * polls (the same shape a background import uses). Nothing here fabricates a
+ * link: a row is published only when the cloud answered with one, and every
+ * failure lands on the row as a readable reason with no link attached.
+ *
+ * The preflight below runs before the job starts, so the four cases the user can
+ * fix — no material, a missing file, an oversized file, an empty title/prompt —
+ * come back as an actionable 400 instead of a job that fails a second later.
+ *
+ * Two sources reach this handler, and they are told apart by where the entry
+ * lives rather than by what the request says about itself: a row the local
+ * library holds takes the upload path, and anything else — a cloud id, or a
+ * request the page marked `source: 'cloud'` — takes the no-upload path. That is
+ * what fixes the cloud card that used to answer `404 not found` here.
+ * @param {Record<string, any>} ctx dispatcher context plus the parsed request
+ * @returns {Promise<{ status: number, body: Record<string, any> }>}
+ */
+export async function handleShare(ctx) {
+  const { id, store } = ctx
+  const item = store.get(id)
+  if (item) return startLocalShare(ctx, item)
+  if (!isCloudShareRequest(ctx)) return fail(404, 'not found')
+  return startCloudShare(ctx)
+}
+
+/**
+ * Whether a request the library has no row for is about a cloud entry.
+ *
+ * Two independent signals, either of which is enough: the page marks the request
+ * (`source: 'cloud'`, read off the row's `is_local === false`), and a cloud id is
+ * the cloud's own numeric key while every local id is `insp_…`. The second one
+ * is what keeps the answer right for a caller that only has the id — an Agent,
+ * or a page that predates the marker — and it can never catch a local row,
+ * because those are all looked up before this runs.
+ * @param {Record<string, any>} ctx
+ * @returns {boolean}
+ */
+function isCloudShareRequest(ctx) {
+  if (ctx.req?.body?.source === 'cloud') return true
+  return /^\d+$/.test(String(ctx.id || ''))
+}
+
+/**
+ * The upload path: unchanged, and the only path that touches the user's files.
+ * @param {Record<string, any>} ctx
+ * @param {Record<string, any>} item
+ */
+async function startLocalShare(ctx, item) {
+  const { id, store } = ctx
+  const capability = resolveShareCapability(ctx)
+  if (!capability) {
+    return fail(503, '中枢未提供分享能力（inspirationShare）：请确认 omnimux 插件已加载并重启后再试')
+  }
+
+  const cover = assetOf(item.local_paths?.cover)
+  const media = assetOf(item.local_paths?.video)
+  if (!cover && !media) {
+    return fail(400, '本地没有可上传的素材（视频或封面），请先补全素材后再分享')
+  }
+  const title = String(item.title || '').trim()
+  if (!title) return fail(400, '标题为空，请先补全标题后再分享')
+  const mediaType = item?.type === 'image' ? 'image' : 'video'
+  const prompt = buildDirectGenerationPrompt(item, mediaType) || sharePromptOf(item)
+  if (!prompt) return fail(400, '提示词为空：请先补全灵感内容或完成 AI 解构后再分享')
+
+  for (const asset of [cover, media]) {
+    if (!asset) continue
+    const problem = inspectShareAsset(asset)
+    if (problem) return fail(400, problem)
+  }
+
+  if (activeShares.has(String(id))) return { status: 202, body: { data: store.get(id) } }
+
+  const claimed = store.update(String(id), shareRunningPatch(SHARE_STAGES.PREPARING))
+  activeShares.add(String(id))
+  void runShareJob({ store, id: String(id), capability, cover, media, meta: shareMetaOf(item, { title, prompt, mediaType }) })
+    .finally(() => activeShares.delete(String(id)))
+
+  return { status: 202, body: { data: claimed } }
+}
+
+/**
+ * The no-upload path: republish a cloud entry from the addresses the cloud
+ * already serves for it.
+ *
+ * The page hands over the cloud row it is showing (its media addresses and its
+ * display fields) because the row it renders and the payload that gets published
+ * must be the same entry. Nothing about *how* those addresses become a share
+ * belongs here — the hub validates them, probes them and publishes them, and
+ * this handler only keeps the job's progress.
+ * @param {Record<string, any>} ctx
+ */
+async function startCloudShare(ctx) {
+  const id = String(ctx.id)
+  const capability = resolveShareCapability(ctx)
+  if (!capability || (typeof capability.publishRemote !== 'function' && typeof capability.publishCloud !== 'function')) {
+    return fail(503, '中枢未提供云端分享能力（inspirationShare）：请确认 omnimux 插件已加载并重启后再试')
+  }
+  const request = cloudShareRequest(ctx)
+  if (typeof capability.publishCloud !== 'function') {
+    if (!request.coverUrl && !request.mediaUrl) {
+      return fail(400, '该云端灵感没有可用的云端素材地址（封面与视频均为空），无法生成分享链接')
+    }
+    if (!request.meta.title) return fail(400, '标题为空，无法生成分享')
+    if (!request.meta.prompt) return fail(400, '文案为空，无法生成分享')
+  }
+
+  const running = cloudShareJobs.get(id)
+  if (running && running.share_status === SHARE_STATUS_RUNNING) {
+    return { status: 202, body: { data: { ...running } } }
+  }
+
+  const claimed = { id, is_local: false, ...request.row, ...shareRunningPatch(SHARE_STAGES.PREPARING, { source: SHARE_SOURCES.CLOUD }) }
+  cloudShareJobs.set(id, claimed)
+  // The job keeps its row when it finishes: the page re-reads it to render the
+  // link, and a second click on the same card therefore re-renders the link it
+  // already has instead of publishing a duplicate of it.
+  void runCloudShareJob({ id, capability, request })
+
+  return { status: 202, body: { data: { ...claimed } } }
+}
+
+/**
+ * The cloud entry a request is about: its own media addresses plus the content
+ * that gets published, read off the row the page is showing.
+ * @param {Record<string, any>} ctx
+ */
+function cloudShareRequest(ctx) {
+  const body = ctx.req?.body && typeof ctx.req.body === 'object' ? ctx.req.body : {}
+  const mediaUrls = Array.isArray(body.mediaUrls) ? body.mediaUrls : []
+  const row = {}
+  for (const key of CLOUD_ROW_KEYS) {
+    if (body[key] !== undefined) row[key] = body[key]
+  }
+  const title = String(body.title || '').trim()
+  const caption = String(body.caption || '').trim()
+  const mediaType = body.type === 'image' ? 'image' : 'video'
+  const defaultCategory = defaultCategoryForMediaType(mediaType)
+  const defaultModel = defaultModelForMediaType(mediaType)
+  const prompt = buildDirectGenerationPrompt(body, mediaType) || caption || title
+  return {
+    row,
+    coverUrl: String(body.coverUrl || '').trim(),
+    mediaUrl: String(mediaUrls.find((url) => typeof url === 'string' && url) || '').trim(),
+    meta: {
+      category: defaultCategory,
+      title,
+      description: caption.slice(0, 200),
+      prompt,
+      model: defaultModel,
+      mediaType,
+    },
+  }
+}
+
+/**
+ * Job body for a cloud publish: walk the real stages, store the cloud's answer,
+ * report failures.
+ * @param {{ id: string, capability: { publishRemote: Function }, request: Record<string, any> }} args
+ */
+async function runCloudShareJob(args) {
+  const { id } = args
+  try {
+    const onStage = (stage) => {
+      if (CLOUD_SHARE_STAGE_ORDER.includes(stage)) patchCloudShareJob(id, { share_stage: stage })
+    }
+    onStage(SHARE_STAGES.GENERATING_PROMPT)
+    await new Promise((r) => setTimeout(r, 60))
+
+    onStage(SHARE_STAGES.PUBLISHING)
+    const result = await args.capability.publishRemote({
+      id,
+      coverUrl: args.request.coverUrl,
+      mediaUrl: args.request.mediaUrl,
+      meta: args.request.meta,
+      onStage,
+    })
+    patchCloudShareJob(id, shareDonePatch(result))
+  } catch (error) {
+    patchCloudShareJob(id, shareFailedPatch(error instanceof Error ? error.message : String(error)))
+  }
+}
+
+/**
+ * @param {string} id
+ * @param {Record<string, any>} patch
+ */
+function patchCloudShareJob(id, patch) {
+  const current = cloudShareJobs.get(id)
+  if (!current) return null
+  const next = { ...current, ...patch }
+  cloudShareJobs.set(id, next)
+  return next
+}
+
+/**
+ * The hub capability, resolved per request so a plugin loaded after this one is
+ * still picked up. Absent means the official surface is unmounted — the handler
+ * says so instead of silently pretending the share worked.
+ * @param {Record<string, any>} ctx
+ */
+function resolveShareCapability(ctx) {
+  const source = ctx.inspirationShare
+  const resolved = typeof source === 'function' ? source() : source
+  return resolved && (typeof resolved.publishLocal === 'function' || typeof resolved.publishCloud === 'function' || typeof resolved.publishRemote === 'function') ? resolved : null
+}
+
+/**
+ * @param {unknown} path
+ * @returns {{ path: string } | null}
+ */
+function assetOf(path) {
+  const value = typeof path === 'string' ? path.trim() : ''
+  return value ? { path: value } : null
+}
+
+/**
+ * Readable problem with a local asset, or `''` when it can be uploaded.
+ * @param {{ path: string }} asset
+ * @returns {string}
+ */
+function inspectShareAsset(asset) {
+  if (!existsSync(asset.path)) {
+    return `素材文件不存在：${asset.path}（可能已被清理），请重新下载素材后再分享`
+  }
+  try {
+    const leaf = asset.path.split('/').pop() || asset.path
+    return shareUploadLimitMessage(leaf, statSync(asset.path).size)
+  } catch {
+    return `素材文件无法读取：${asset.path}，请重新下载素材后再分享`
+  }
+}
+
+/**
+ * The prompt a share carries.
+ *
+ * `content` is what the user typed or what the import stored; when it is empty
+ * the AI breakdown's hook line stands in, because a decomposed item does have a
+ * prompt — it is just stored in the deconstruction. Both empty is a real
+ * "nothing to publish" and the handler says so.
+ * @param {Record<string, any>} item
+ * @returns {string}
+ */
+export function sharePromptOf(item) {
+  const content = String(item?.content || '').trim()
+  if (content) return content
+  const deconstruction = item?.deconstruction
+  if (typeof deconstruction === 'string') return deconstruction.trim()
+  if (deconstruction && typeof deconstruction === 'object') {
+    const row = /** @type {Record<string, any>} */ (deconstruction)
+    for (const key of ['hook', 'prompt', 'replication', 'summary']) {
+      const value = typeof row[key] === 'string' ? row[key].trim() : ''
+      if (value) return value
+    }
+  }
+  return ''
+}
+
+/**
+ * Content of the publish, from the local row.
+ * @param {Record<string, any>} item
+ * @param {{ title: string, prompt: string, me: { path: string } | null }} resolved
+ */
+export function shareMetaOf(item, resolved = {}) {
+  const mediaType = (resolved.mediaType || item?.type) === 'image' ? 'image' : 'video'
+  const defaultCategory = defaultCategoryForMediaType(mediaType)
+  const defaultModel = defaultModelForMediaType(mediaType)
+  const category = String(resolved.category || item?.category || defaultCategory).trim()
+  const title = String(resolved.title || item?.title || '').trim()
+  const prompt = String(resolved.prompt || buildDirectGenerationPrompt(item, mediaType) || sharePromptOf(item)).trim()
+  const model = String(resolved.model || item?.model || defaultModel).trim()
+
+  return {
+    category: category || defaultCategory,
+    title,
+    description: String(item?.content || item?.caption || '').trim().slice(0, 200),
+    prompt,
+    model: model || defaultModel,
+    mediaType,
+  }
+}
+
+/**
+ * Job body: walk the real stages, store the cloud's answer, report failures.
+ *
+ * Every outcome is written to the row — including an unexpected throw — so the
+ * page polling it always settles instead of reading "publishing" forever.
+ * @param {{ store: Record<string, any>, id: string, capability: { publishLocal: Function }, cover: any, media: any, meta: Record<string, any> }} args
+ */
+async function runShareJob(args) {
+  const { store, id } = args
+  try {
+    if (SHARE_STAGE_ORDER.includes(SHARE_STAGES.GENERATING_PROMPT)) {
+      void safeUpdate(store, id, { share_stage: SHARE_STAGES.GENERATING_PROMPT })
+    }
+    await new Promise((r) => setTimeout(r, 60))
+
+    const result = await args.capability.publishLocal({
+      cover: args.cover,
+      media: args.media,
+      meta: args.meta,
+      onStage: (stage) => {
+        if (SHARE_STAGE_ORDER.includes(stage)) void safeUpdate(store, id, { share_stage: stage })
+      },
+    })
+    await safeUpdate(store, id, shareDonePatch(result))
+  } catch (error) {
+    await safeUpdate(store, id, shareFailedPatch(error instanceof Error ? error.message : String(error)))
+  }
+}
+
+export function handleCreate({ req, store }) {
+  const body = req.body || {}
+  if (['analysis_results', 'body_translation', 'creation_draft', 'creation_reference'].some((key) => Object.hasOwn(body, key))) {
+    return fail(400, '分析结果与创作参考只能通过对应功能保存')
+  }
+  if (!body.title) return fail(400, 'title is required')
+  const created = store.add(body)
+  return { status: 201, body: { data: created } }
+}
+
+function parseImportBody(ctx) {
+  const body = ctx.req.body || {}
+  const rawUrl = String(body.url || '').trim()
+  return {
+    rawUrl,
+    platform: body.platform || ctx.detectPlatformFromUrl(rawUrl),
+    autoAnalyze: body.auto_analyze !== false,
+    customTags: Array.isArray(body.tags) ? body.tags : [],
+    force: Boolean(body.force),
+    returnExisting: Boolean(body.return_existing),
+    // Opt-in only. Every existing caller (the Agent `inspiration_create` tool and
+    // the inline import dialog) leaves it unset and therefore keeps the original
+    // synchronous contract, including its 409 / 429 / 422 / 502 statuses.
+    background: body.background === true,
+  }
+}
+
+/**
+ * Row a background import is published as before any work has happened.
+ *
+ * The title is the raw URL rather than a localized "resolving…" string: the row
+ * is persisted, so a translated placeholder would freeze the page's language
+ * into stored data. The stage the UI renders comes from `import_stage`.
+ *
+ * `auto_analyze` is stored rather than carried in the job closure so a retry
+ * replayed from the row alone (or a restart) still knows the user's choice.
+ * @param {{ rawUrl: string, platform?: string, autoAnalyze: boolean, customTags: string[] }} args
+ * @returns {Record<string, any>}
+ */
+function buildImportPlaceholder(args) {
+  return {
+    title: args.rawUrl,
+    type: 'video',
+    source_platform: args.platform,
+    source_url: args.rawUrl,
+    cover_url: '',
+    media_urls: [],
+    local_paths: {},
+    tags: args.customTags,
+    auto_analyze: args.autoAnalyze,
+    import_status: IMPORT_STATUS_IMPORTING,
+    import_stage: IMPORT_STAGES.RESOLVING,
+    import_started_at: new Date().toISOString(),
+  }
+}
+
+/**
+ * Import the URL in the background and answer immediately.
+ *
+ * The placeholder is written before the job starts, so the row the client polls
+ * exists as soon as the 202 does. `runImport` is called in-process — never
+ * through an HTTP self-request — and the job owns the URL's import lock for its
+ * whole duration, which is what makes a second request for the same URL
+ * idempotent instead of a duplicate job.
+ * @param {Record<string, any>} ctx dispatcher context plus parsed import args
+ * @param {Record<string, any>} placeholder
+ * @returns {Promise<{ status: number, body: Record<string, any> }>}
+ */
+async function startBackgroundImport(ctx, placeholder) {
+  const id = String(placeholder.id)
+  const rawUrl = String(placeholder.source_url || '')
+  const canonicalKey = getCanonicalItemKey(rawUrl).key || normalizeUrl(rawUrl) || rawUrl
+
+  activeJobs.add(id)
+  importLocks.add(canonicalKey)
+  // Once accepted, the persisted job outlives the submitting HTTP connection.
+  // handleImportUrl still rejects a caller already cancelled before acceptance.
+  void runBackgroundImport({ ...ctx, signal: undefined }, placeholder).finally(() => {
+    importLocks.delete(canonicalKey)
+    activeJobs.delete(id)
+  })
+  return { status: 202, body: { data: placeholder } }
+}
+
+/**
+ * Background job body.
+ *
+ * Every outcome is written to the row: a degraded completion, a failure with its
+ * reason, and an unexpected throw alike. Nothing is left to a floating rejection,
+ * because a rejected job would leave the row reading "importing" forever.
+ *
+ * A job that completed even though the AI breakdown did not is *not* a failure:
+ * the row keeps its video, its cover and its metadata, and the reason travels on
+ * `import_error` while `import_status` says what was actually stored. Only a job
+ * that produced no item at all fails. The re-stamp below writes the same verdict
+ * back — it exists for the case where the completion could not replace the row
+ * (the user deleted it mid-flight), and it preserves the breakdown reason instead
+ * of clearing it.
+ * @param {Record<string, any>} ctx
+ * @param {Record<string, any>} placeholder
+ */
+async function runBackgroundImport(ctx, placeholder) {
+  const id = String(placeholder.id)
+  const progress = createProgressReporter(ctx.store, id)
+  try {
+    const result = await runImport({ ...ctx, progress })
+    if (result.status >= 400) {
+      await markImportFailed(ctx.store, id, result.body?.error || `HTTP ${result.status}`)
+      return
+    }
+    const row = result.body?.data
+    if (!row || typeof row !== 'object') {
+      await markImportFailed(ctx.store, id, IMPORT_STALE_ERROR)
+      return
+    }
+    const settled = row.import_status
+      || (result.body?.media_degraded ? IMPORT_STATUS_DEGRADED : IMPORT_STATUS_READY)
+    // The `persisting` stage was already published while the completion was being
+    // written (`persistImportedItem` reports it before `persistImportedRecord`),
+    // and the row this lands on already carries the settled status, stage and
+    // reason from `buildImportRecord`. Re-publishing the stage here would land
+    // *after* the record is on disk, which is the one thing a stage must not do:
+    // the card would still read "写入中…" for a write that already finished.
+    await safeUpdate(ctx.store, id, {
+      import_status: settled,
+      import_stage: null,
+      import_error: row.import_error ?? null,
+    })
+  } catch (error) {
+    await markImportFailed(ctx.store, id, describeImportError(ctx, error))
+  }
+}
+
+/**
+ * @param {Record<string, any>} ctx
+ * @param {unknown} error
+ * @returns {string}
+ */
+function describeImportError(ctx, error) {
+  try {
+    return ctx.formatErrorMessage ? ctx.formatErrorMessage(error) : String(error)
+  } catch {
+    return String(error)
+  }
+}
+
+/**
+ * Report the stage a running import has reached.
+ *
+ * A stage write is best effort: the row is being updated up to three times while
+ * the job runs, and a failed progress write must degrade the label the user sees,
+ * never the import itself.
+ * @param {{ update: (id: string, patch: Record<string, any>) => unknown }} store
+ * @param {string} id
+ * @returns {(stage: string) => Promise<void>}
+ */
+function createProgressReporter(store, id) {
+  return async (stage) => {
+    await safeUpdate(store, id, { import_stage: stage })
+  }
+}
+
+/**
+ * @param {{ update: (id: string, patch: Record<string, any>) => unknown }} store
+ * @param {string} id
+ * @param {Record<string, any>} patch
+ * @returns {Promise<Record<string, any> | null>}
+ */
+async function safeUpdate(store, id, patch) {
+  try {
+    await Promise.resolve(store.update(id, patch))
+    return store.get(id)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * @param {{ update: (id: string, patch: Record<string, any>) => unknown }} store
+ * @param {string} id
+ * @param {unknown} reason
+ */
+async function markImportFailed(store, id, reason) {
+  await safeUpdate(store, id, {
+    import_status: IMPORT_STATUS_FAILED,
+    import_stage: null,
+    import_error: String(reason || IMPORT_STALE_ERROR) || IMPORT_STALE_ERROR,
+  })
+}
+
+/**
+ * Export one post out of the page into a file the user can pick up.
+ *
+ * The browser extension's TikTok shortcuts resolve the post through the same
+ * cloud seam the import path uses, then hand the watermark-free direct link to
+ * `exportMediaFile`. Nothing is written to the library: asking to download
+ * something is not asking to shelve it, and the two shortcuts stay separable —
+ * the extension's third shortcut is the one that imports.
+ *
+ * The scratch directory is the system temp folder rather than the library's
+ * media tree: the downloaded container is an intermediate for the audio export
+ * and must never look like library content.
+ * @param {Record<string, any>} ctx dispatcher context plus the parsed request
+ * @returns {Promise<{ status: number, body: Record<string, any> }>}
+ */
+export async function handleFetchMedia(ctx) {
+  const body = ctx.req?.body || {}
+  const rawUrl = String(body.url || '').trim()
+  const kind = String(body.kind || '').trim()
+  if (!rawUrl) return fail(400, 'url is required')
+  if (kind !== EXPORT_KIND.video && kind !== EXPORT_KIND.audio) {
+    return fail(400, `kind must be "${EXPORT_KIND.video}" or "${EXPORT_KIND.audio}", got "${kind}"`)
+  }
+  // The page-supplied address reaches a downloader that follows redirects, so it
+  // is held to a public-address rule before anything touches the network. This is
+  // stricter than the import path, which vets the resolved stream instead of the
+  // address the user pasted.
+  if (!isPublicHttpUrl(rawUrl)) return fail(400, 'url must be a public http(s) address')
+
+  // The platform is derived here, never read from the body: it selects which
+  // cloud capability resolves the post, and a requesting page must not be able to
+  // steer that choice.
+  const platform = ctx.detectPlatformFromUrl(rawUrl)
+  const social = await fetchSocialMeta({ ...ctx, rawUrl, platform })
+  if (social.error) return social.error
+  const videoUrl = social.meta.video_url
+  if (!HTTP_URL_RE.test(videoUrl || '')) {
+    return fail(422, '未从该作品解析到可下载的视频直链（可能是图文作品、地区受限或需要登录 TikTok）')
+  }
+
+  try {
+    const exported = await exportMediaFile({
+      videoUrl,
+      meta: social.meta,
+      kind,
+      downloadsDir: ctx.downloadsDir || resolveDownloadsDir(),
+      workDir: join(tmpdir(), 'omnimux-export'),
+      fetcher: ctx.fetcher,
+      resolver: ctx.resolver,
+      runFfmpeg: ctx.runFfmpeg,
+    })
+    return { status: 200, body: { data: exported } }
+  } catch (error) {
+    return fail(502, `导出失败: ${ctx.formatErrorMessage(error)}`)
+  }
+}
+
+/** Import responses keep their status snapshot and derive current membership at the exit.
+ * @param {Record<string, any>} ctx
+ */
+export async function handleImportUrl(ctx) {
+  const response = await importUrl(ctx)
+  const record = response.body?.data
+  if (!record || typeof record !== 'object' || !record.id) return response
+  const current = ctx.store.get(record.id)
+  if (!current) return fail(404, '该灵感已被移除，请刷新后重试')
+  const { collection_id: _previousMembership, ...data } = record
+  if (current.collection_id) data.collection_id = current.collection_id
+  return { ...response, body: { ...response.body, data } }
+}
+
+/** @param {Record<string, any>} ctx */
+async function importUrl(ctx) {
+  if (ctx.signal?.aborted) throw createAbortError()
+  const parsed = parseImportBody(ctx)
+  if (!parsed.rawUrl) return fail(400, 'url is required')
+  const existing = ctx.store.findByUrl(parsed.rawUrl)
+  if (parsed.background) return beginBackgroundImport({ ...ctx, ...parsed, upgradeId: '' }, existing, parsed)
+  // Only a record that already holds a video is a true duplicate. A degraded
+  // record is re-resolved so a later-available direct link can upgrade it.
+  if (existing && !parsed.force && !needsVideoUpgrade(existing)) {
+    return duplicateBody(existing, parsed.returnExisting)
+  }
+  const upgradeId = existing ? existing.id : ''
+  return withImportLock(parsed.rawUrl, () => runImport({ ...ctx, ...parsed, upgradeId }))
+}
+
+/**
+ * Opt-in background branch of the import route.
+ *
+ * Each outcome of the duplicate question answers 202 with the row the client
+ * should watch, except a row that already holds a video — that one is a real
+ * duplicate and keeps its 409.
+ * @param {Record<string, any>} ctx parsed import args plus the dispatcher context
+ * @param {Record<string, any> | null} existing
+ * @param {Record<string, any>} parsed
+ * @returns {Promise<{ status: number, body: Record<string, any> }>}
+ */
+async function beginBackgroundImport(ctx, existing, parsed) {
+  // A job already owns this row: answer with the same row instead of a 429. The
+  // client's poll is the only thing that needs to make progress, and a second
+  // request that changed nothing would not help it.
+  if (existing && isImporting(existing)) {
+    return { status: 202, body: { data: existing, existing: true, is_duplicate: true } }
+  }
+  // A failed row keeps its id, so retrying the same URL restarts the job in
+  // place and the user does not end up with a second card for one link.
+  if (existing && importStatusOf(existing) === IMPORT_STATUS_FAILED) {
+    const restarted = ctx.store.update(existing.id, {
+      ...buildImportPlaceholder(parsed),
+      import_error: null,
+    })
+    return startBackgroundImport({ ...ctx, upgradeId: existing.id }, restarted)
+  }
+  if (existing && !parsed.force && !needsVideoUpgrade(existing)) {
+    return duplicateBody(existing, parsed.returnExisting)
+  }
+  // A degraded row is upgraded in place: no second card, and the completion
+  // replaces this very row.
+  if (existing) {
+    const upgraded = ctx.store.update(existing.id, {
+      ...buildImportPlaceholder(parsed),
+      import_error: null,
+    })
+    return startBackgroundImport({ ...ctx, upgradeId: existing.id }, upgraded)
+  }
+  // The new placeholder is itself the row this job owns: passing its id as the
+  // upgrade target is what stops the job from resolving its own row as a
+  // duplicate of the link it was asked to import.
+  const placeholder = ctx.store.add(buildImportPlaceholder(parsed))
+  return startBackgroundImport({ ...ctx, upgradeId: String(placeholder.id) }, placeholder)
+}
+
+async function withImportLock(rawUrl, work) {
+  const canonicalKey = getCanonicalItemKey(rawUrl).key || normalizeUrl(rawUrl) || rawUrl
+  if (importLocks.has(canonicalKey)) {
+    return fail(429, '该灵感正在解析导入中，请勿重复提交')
+  }
+  importLocks.add(canonicalKey)
+  try {
+    return await work()
+  } finally {
+    importLocks.delete(canonicalKey)
+  }
+}
+
+async function runImport(args) {
+  if (args.signal?.aborted) throw createAbortError()
+  if (!args.socialFetcher) {
+    return fail(500, '未注入 OmniMux 社媒解析能力 (socialFetcher 未就绪)')
+  }
+  const social = await fetchSocialMeta(args)
+  if (social.error) return social.error
+  if (args.signal?.aborted) throw createAbortError()
+  const dup = checkResolvedDuplicate(args, social.meta)
+  if (dup) return dup
+  return persistImportedItem(args, social.meta)
+}
+
+/**
+ * Publish the stage a background import has reached, if anyone is listening.
+ *
+ * The synchronous import path passes no reporter, so this is a no-op there.
+ * @param {Record<string, any>} args
+ * @param {string} stage
+ */
+async function reportStage(args, stage) {
+  if (typeof args.progress !== 'function') return
+  await args.progress(stage)
+}
+
+/**
+ * Persist a resolved social item.
+ *
+ * Every resolved attachment must be saved before the item becomes ready. Video
+ * posters are optional previews. A metadata-only result remains degraded, and a
+ * completely empty envelope fails.
+ *
+ * An AI breakdown that fails does not fail the import either: the item is stored
+ * whole with the reason on `import_error`, and the caller sees it on the row.
+ */
+async function persistImportedItem(args, meta) {
+  if (args.signal?.aborted) throw createAbortError()
+  if (meta.unavailable_media) return fail(422, '该帖子部分素材未提供可下载地址，无法完整导入，请稍后重试')
+  const videoUrl = HTTP_URL_RE.test(meta.video_url || '') ? meta.video_url : ''
+  if (!videoUrl && !meta.has_metadata) {
+    return fail(422, '未从该链接解析到可入库的内容（标题、文案、封面与视频直链均为空）')
+  }
+  const hasMedia = meta.media_items.length > 0
+  if (hasMedia) await reportStage(args, IMPORT_STAGES.DOWNLOADING)
+  const media = hasMedia
+    ? await downloadImportMedia(args, meta)
+    : await downloadImportCover(args, meta)
+  if (media.error) return media.error
+
+  try {
+    if (args.signal?.aborted) throw createAbortError()
+    const analysis = await maybeAnalyze(args, media, meta)
+    if (args.signal?.aborted) throw createAbortError()
+
+    await reportStage(args, IMPORT_STAGES.PERSISTING)
+    const record = await persistImportedRecord(args, buildImportRecord(args, meta, media, analysis))
+    if (hasMedia) return { status: 200, body: { data: record } }
+    return {
+      status: 200,
+      body: {
+        data: record,
+        media_degraded: true,
+        degrade_reason: DEGRADE_REASON,
+      },
+    }
+  } catch (err) {
+    for (const path of localMediaPaths(media.localPaths)) removeQuietly(path)
+    throw err
+  }
+}
+
+/**
+ * Write the imported record.
+ *
+ * A re-import that resolves an existing degraded row replaces it in place, so
+ * the upgraded row keeps its id while the media it no longer references is
+ * recycled instead of being orphaned on disk.
+ * @param {{ store: any, upgradeId?: string }} args
+ * @param {Record<string, any>} record
+ * @returns {Promise<Record<string, any>>}
+ */
+async function persistImportedRecord(args, record) {
+  if (!args.upgradeId) return args.store.add(record)
+  const replaced = await args.store.replace(args.upgradeId, record)
+  return replaced || args.store.add(record)
+}
+
+/**
+ * AI deconstruction, plus the stage report that describes it.
+ *
+ * The `analyzing` stage is published only once the analysis is genuinely about
+ * to run — the same guard the analysis itself uses. A degraded import that never
+ * reaches the model must not claim the AI is working on it.
+ *
+ * A failure is returned, never thrown: the video, the cover and the metadata are
+ * already on disk by this point, so failing the whole import over the breakdown
+ * would throw away a complete item the user has already waited for and make them
+ * import it again to get it back. The caller decides how to record it — the
+ * background job keeps the row and stores the reason, and the synchronous path
+ * has always imported without a breakdown.
+ * @param {Record<string, any>} args
+ * @param {{ localVideoPath?: string }} media
+ * @param {Record<string, any>} meta
+ * @returns {Promise<{ deconstruction: Record<string, any> | null, error: string }>}
+ */
+async function maybeAnalyze(args, media, meta) {
+  if (args.signal?.aborted) throw createAbortError()
+  if (!args.autoAnalyze || !media.localVideoPath) return { deconstruction: null, error: '' }
+  await reportStage(args, IMPORT_STAGES.ANALYZING)
+  // `args.analyzeInspiration` is undefined in production, so the real analyzer
+  // runs. The dispatcher forwards an injected one for tests, which is the only
+  // seam that reaches the failure branch below: the analyzer degrades to a local
+  // breakdown rather than reporting failure, so no other input can produce a
+  // failed analysis.
+  const analyze = args.analyzeInspiration || analyzeInspirationVideo
+  const analysisResult = await analyze({
+    videoPath: media.localVideoPath,
+    title: meta.title || args.rawUrl,
+    content: meta.text,
+    tags: args.customTags,
+    platform: args.platform,
+    videoAnalyzeTool: args.videoAnalyzeTool,
+    signal: args.signal,
+  })
+  if (args.signal?.aborted) throw createAbortError()
+  if (analysisResult.deconstruction) return { deconstruction: analysisResult.deconstruction, error: '' }
+  return {
+    deconstruction: null,
+    error: analysisResult.error || 'AI 视频拆解失败，请确保大模型视觉分析服务可用',
+  }
+}
+
+/**
+ * A saved video leads the preview; photo collections become images. A result
+ * carrying only a poster and metadata remains a link.
+ * @param {Record<string, any>} meta
+ * @param {{ localVideoPath: string }} media
+ * @returns {'video' | 'image' | 'link'}
+ */
+function resolveImportType(meta, media) {
+  if (media.localVideoPath) return 'video'
+  if (meta.images.length > 0) return 'image'
+  if (!meta.title && !meta.text && meta.cover_url) return 'image'
+  return 'link'
+}
+
+/**
+ * The row an import settles as.
+ *
+ * `import_error` carries a failure the import survived — a breakdown that could
+ * not be produced — and is `null` otherwise. It is deliberately not a synonym
+ * for `import_status: failed`: this row holds a complete item, and the field is
+ * what tells the user which part is missing.
+ *
+ * `auto_analyze` is re-stamped from the request so the stored choice survives the
+ * completion. The placeholder carried it, but this record *replaces* that row
+ * through `buildRow`, so leaving it out would reset the flag to its `true`
+ * default and a retry would run the AI again for a user who asked it not to.
+ * @param {Record<string, any>} args
+ * @param {Record<string, any>} meta
+ * @param {Record<string, any>} media
+ * @param {{ deconstruction?: Record<string, any> | null, error?: string }} [analysis]
+ */
+function buildImportRecord(args, meta, media, analysis = {}) {
+  const coverName = media.localCoverPath ? media.localCoverPath.split('/').pop() : ''
+  // A cover that was downloaded but cannot be rendered (HEIC, say) is not a
+  // cover. Falling back to `meta.cover_url` there would re-publish the same
+  // undecodable bytes as a remote URL, and every consumer would mount an image
+  // that never paints — the card, the modal poster and the replicate attachment
+  // all read this field. Only a *failed* download (`null`) keeps the remote
+  // fallback, which is the pre-existing behaviour for a poster that has no local
+  // copy.
+  const imageCoverUrl = (media.mediaItems || []).find((item) => item.type === 'image' && item.url.endsWith(`/${coverName}`))?.url
+  const cover_url = media.coverRenderable === false
+    ? ''
+    : coverName
+      ? (imageCoverUrl || `/omnimux/inspiration/local/media/covers/${coverName}`)
+      : meta.cover_url
+  const type = resolveImportType(meta, media)
+  const savedImageCount = (media.mediaItems || []).filter((item) => item.type === 'image').length
+  const content_shape = type === 'video' ? 'video'
+    : savedImageCount > 1 ? 'gallery'
+      : type === 'image' ? 'photo' : meta.text ? 'text' : 'link'
+  const record = {
+    title: meta.title || args.rawUrl,
+    content: meta.text,
+    type,
+    source_platform: args.platform,
+    source_url: args.rawUrl,
+    cover_url,
+    media_items: media.mediaItems || [],
+    media_urls: (media.mediaItems || []).filter((item) => item.type === 'video').map((item) => item.url),
+    content_shape,
+    local_paths: media.localPaths,
+    tags: args.customTags,
+    auto_analyze: args.autoAnalyze !== false,
+    author: meta.author,
+    stats: meta.stats,
+    duration: meta.duration,
+    published_at: meta.published_at,
+    deconstruction: analysis.deconstruction ?? null,
+    // This record is the completion of an import, so it settles the placeholder
+    // the background path published: `ready` once every attachment was saved,
+    // `degraded` when only metadata was obtained. A null stage stops a finished
+    // row from rendering a running stage.
+    import_status: media.mediaItems?.length ? IMPORT_STATUS_READY : IMPORT_STATUS_DEGRADED,
+    import_stage: null,
+    import_error: analysis.error || null,
+  }
+  if (args.autoAnalyze && media.localVideoPath) {
+    const media_index = record.media_items.findIndex((item) => item.type === 'video')
+    const selection = { scope: 'media', media_index, directions: ['content', 'expression', 'creative'] }
+    const prepared = prepareAnalysis(record, selection, args.paths)
+    const live = analysis.deconstruction?.source === 'live'
+    const time = new Date().toISOString()
+    record.analysis_results = { [`media:${media_index}`]: {
+      ...selection, input_fingerprint: prepared.input_fingerprint,
+      status: live ? 'done' : 'failed', source: live ? 'live' : 'legacy_unknown',
+      model: analysis.deconstruction?.model || '', result: live ? analysis.deconstruction : null,
+      error: live ? null : (analysis.error || '分析未取得真实模型结果，请重试'),
+      started_at: time, analyzed_at: live ? time : null,
+    } }
+  }
+  return record
+}
+
+/** Keep the fetcher's own actionable reason instead of prefixing it twice. */
+function describeFetchFailure(args, fetchErr) {
+  const detail = args.formatErrorMessage(fetchErr)
+  return /^OmniMux/.test(detail) ? detail : `OmniMux 社媒解析调用失败: ${detail}`
+}
+
+async function fetchSocialMeta(args) {
+  if (args.signal?.aborted) throw createAbortError()
+  try {
+    const fetched = await args.socialFetcher({
+      platform: args.platform,
+      capability: capabilityOf(args.platform),
+      url: args.rawUrl,
+      signal: args.signal,
+    })
+    if (!fetched || !fetched.data) {
+      return { error: fail(502, 'OmniMux 社媒解析接口未返回有效数据，请稍后重试') }
+    }
+    return { meta: parseSocialMeta(fetched.data, { platform: args.platform }) }
+  } catch (fetchErr) {
+    if (args.signal?.aborted) {
+      throw (fetchErr?.name === 'AbortError' || fetchErr?.code === 'ABORT_ERR')
+        ? fetchErr
+        : createAbortError('This operation was aborted', fetchErr)
+    }
+    if (fetchErr?.name === 'AbortError' || fetchErr?.code === 'ABORT_ERR') {
+      throw fetchErr
+    }
+    return { error: fail(502, describeFetchFailure(args, fetchErr)) }
+  }
+}
+
+function checkResolvedDuplicate(args, meta) {
+  const resolvedUrl = meta.resolvedUrl
+  if (!resolvedUrl || resolvedUrl === args.rawUrl || args.force) return null
+  const secondExisting = args.store.findByUrl(resolvedUrl)
+  if (!secondExisting) return null
+  // The row being written is not a duplicate of itself, whether that is the
+  // degraded row an upgrade replaces or the placeholder a background job owns.
+  // Without this, an import whose resolved URL differs from the one the user
+  // pasted (a short link, a `?utm=` variant) resolves to its own placeholder row
+  // and answers 409 to its own job — leaving a row that never gets its media.
+  if (args.upgradeId && secondExisting.id === args.upgradeId) return null
+  return duplicateBody(secondExisting, args.returnExisting)
+}
+
+/** Download all attachments atomically; optional posters do not count as assets. */
+async function downloadImportMedia(args, meta) {
+  if (args.signal?.aborted) throw createAbortError()
+  /** @type {Record<string, string>} */
+  const localPaths = {}
+  /** @type {SocialMediaItem[]} */
+  const mediaItems = []
+  let localVideoPath = ''
+  let firstImagePath = ''
+  let videoCount = 0
+  let imageCount = 0
+  let downloadingType = 'video'
+  try {
+    for (const item of meta.media_items) {
+      if (args.signal?.aborted) throw createAbortError()
+      downloadingType = item.type
+      const isVideo = item.type === 'video'
+      const number = isVideo ? ++videoCount : ++imageCount
+      const key = isVideo ? (number === 1 ? 'video' : `video_${number}`) : `image_${number}`
+      const folder = isVideo ? 'videos' : 'images'
+      let saved = await downloadMedia(item.url, isVideo ? args.paths.videosDir : args.paths.imagesDir, {
+        prefix: isVideo ? 'video_' : 'image_',
+        fetcher: args.fetcher,
+        resolver: args.resolver,
+        signal: args.signal,
+      })
+      localPaths[key] = saved
+      if (!isVideo) {
+        saved = alignMediaExtension(saved)
+        localPaths[key] = saved
+        if (isKnownUnrenderableCover(saved)) throw new Error('该图片格式暂不支持预览')
+        firstImagePath ||= saved
+      } else {
+        localVideoPath ||= saved
+      }
+      mediaItems.push({ type: item.type, url: `/omnimux/inspiration/local/media/${folder}/${saved.split('/').pop()}` })
+    }
+    if (args.signal?.aborted) throw createAbortError()
+    let cover = { path: '', renderable: null }
+    const imageCover = meta.media_items.findIndex((item) => item.type === 'image' && item.url === meta.cover_url)
+    if (imageCover >= 0) {
+      const imageIndex = meta.media_items.slice(0, imageCover + 1).filter((item) => item.type === 'image').length
+      cover = { path: localPaths[`image_${imageIndex}`], renderable: true }
+      localPaths.cover = cover.path
+    } else {
+      cover = await downloadCoverBestEffort(args, meta, localPaths)
+    }
+    if (!cover.path && localVideoPath) {
+      const poster = await extractVideoPosterBestEffort(args, localVideoPath, localPaths)
+      if (poster.path) cover = poster
+    }
+    if (!cover.path && firstImagePath) {
+      cover = { path: firstImagePath, renderable: true }
+      localPaths.cover = firstImagePath
+    }
+    if (args.signal?.aborted) throw createAbortError()
+    return { localPaths, mediaItems, localVideoPath, localCoverPath: cover.path, coverRenderable: cover.renderable }
+  } catch (err) {
+    for (const path of localMediaPaths(localPaths)) removeQuietly(path)
+    if (err?.name === 'AbortError' || err?.code === 'ABORT_ERR' || args.signal?.aborted) {
+      throw (err?.name === 'AbortError' || err?.code === 'ABORT_ERR') ? err : createAbortError('This operation was aborted', err)
+    }
+    const kind = downloadingType === 'image' ? '图片' : '视频'
+    return { error: fail(502, `${kind}素材下载落盘失败: ${args.formatErrorMessage(err)}`) }
+  }
+}
+
+async function extractVideoPosterBestEffort(args, localVideoPath, localPaths) {
+  if (args.signal?.aborted) {
+    if (localVideoPath) removeQuietly(localVideoPath)
+    throw createAbortError()
+  }
+  if (!localVideoPath || !existsSync(localVideoPath)) return { path: '', renderable: null }
+  try {
+    const coversDir = args.paths?.coversDir
+    if (!coversDir) return { path: '', renderable: null }
+    const poster = await extractVideoPoster(localVideoPath, coversDir, {
+      prefix: 'cover_',
+      runFfmpeg: args.runFfmpeg,
+    })
+    if (args.signal?.aborted) {
+      if (localVideoPath) removeQuietly(localVideoPath)
+      if (poster) removeQuietly(poster)
+      throw createAbortError()
+    }
+    if (poster && existsSync(poster)) {
+      localPaths.cover = poster
+      return { path: poster, renderable: true }
+    }
+  } catch (err) {
+    if (args.signal?.aborted || err?.name === 'AbortError' || err?.code === 'ABORT_ERR') {
+      if (localVideoPath) removeQuietly(localVideoPath)
+      throw (err?.name === 'AbortError' || err?.code === 'ABORT_ERR')
+        ? err
+        : createAbortError('This operation was aborted', err)
+    }
+    // Best-effort thumbnail extraction; fallback continues if ffmpeg fails
+  }
+  return { path: '', renderable: null }
+}
+
+/** Drop a file that will never be served; a leftover is not worth failing an import over. */
+function removeQuietly(filePath) {
+  if (!filePath || !existsSync(filePath)) return
+  try {
+    unlinkSync(filePath)
+  } catch {
+    // Best effort: an unremovable temp file must not change the import outcome.
+  }
+}
+
+/**
+ * Cache the poster image of an imported item.
+ *
+ * `renderable` separates the three outcomes a caller has to tell apart, because
+ * two of them leave `path` empty:
+ * - `true`  — a file was saved and it is not known to be unrenderable (a raster
+ *   image, or a format the sniffer does not name).
+ * - `false` — the saved bytes are positively *not* renderable by a browser (a
+ *   HEIC cover is the case this exists for). The file is removed, and the caller
+ *   must not fall back to the remote `cover_url` either: it is the same
+ *   undecodable payload, so the only honest answer is "this item has no cover".
+ * - `null`  — nothing was saved at all (no URL, or the transfer failed). The
+ *   remote URL stays a legitimate fallback here.
+ * @param {Record<string, any>} args
+ * @param {Record<string, any>} meta
+ * @param {Record<string, string>} localPaths
+ * @returns {Promise<{ path: string, renderable: boolean | null }>}
+ */
+async function downloadCoverBestEffort(args, meta, localPaths) {
+  if (args.signal?.aborted) {
+    if (localPaths?.video) removeQuietly(localPaths.video)
+    throw createAbortError()
+  }
+  if (!meta.cover_url || !HTTP_URL_RE.test(meta.cover_url)) return { path: '', renderable: null }
+  try {
+    const saved = await downloadMedia(meta.cover_url, args.paths.coversDir, {
+      prefix: 'cover_',
+      fetcher: args.fetcher,
+      resolver: args.resolver,
+      signal: args.signal,
+    })
+    // The URL is only a hint; the bytes decide the stored name and whether any
+    // browser can use the file at all.
+    const aligned = alignMediaExtension(saved)
+    if (isKnownUnrenderableCover(aligned)) {
+      removeQuietly(aligned)
+      return { path: '', renderable: false }
+    }
+    localPaths.cover = aligned
+    return { path: aligned, renderable: true }
+  } catch (err) {
+    if (err?.name === 'AbortError' || err?.code === 'ABORT_ERR' || args.signal?.aborted) {
+      if (localPaths?.video) removeQuietly(localPaths.video)
+      throw (err?.name === 'AbortError' || err?.code === 'ABORT_ERR')
+        ? err
+        : createAbortError('This operation was aborted', err)
+    }
+    return { path: '', renderable: null }
+  }
+}
+
+/** Degraded import: no video stream, so only the poster image is cached. */
+async function downloadImportCover(args, meta) {
+  if (args.signal?.aborted) throw createAbortError()
+  const localPaths = {}
+  const cover = await downloadCoverBestEffort(args, meta, localPaths)
+  if (args.signal?.aborted) {
+    if (cover.path) removeQuietly(cover.path)
+    throw createAbortError()
+  }
+  return { localPaths, localVideoPath: '', localCoverPath: cover.path, coverRenderable: cover.renderable }
+}
+
+export async function handleAnalyze(ctx) {
+  if (Object.hasOwn(ctx.req.body || {}, 'scope')) return handleScopedAnalysis(ctx)
+  const item = ctx.store.get(ctx.id)
+  if (!item) return fail(404, 'not found')
+  // The UI hides the action while a row is still importing; this refuses the
+  // same call coming from an Agent or a direct HTTP client, where an analysis
+  // started early would race the import that is already writing the row.
+  if (isImportBlocked(item)) {
+    return fail(422, '该灵感正在后台导入中，请等待导入完成后再拆解')
+  }
+  const videoPath = await resolveAnalyzeVideo({ ...ctx, item })
+  if (videoPath.error) return videoPath.error
+  if (!videoPath.path || !existsSync(videoPath.path)) {
+    return fail(422, '该链接未取得可下载的视频文件，暂不支持拆解')
+  }
+  return persistAnalysis(ctx, item, videoPath.path)
+}
+
+async function persistAnalysis(ctx, item, videoPath) {
+  const media = analysisMediaItems(item)
+  const index = Math.max(0, media.findIndex((asset) => asset.type === 'video'))
+  const localUrl = `/omnimux/inspiration/local/media/videos/${basename(videoPath)}`
+  if (item.local_paths?.video !== videoPath || media[index]?.url !== localUrl) {
+    const media_items = media.map((asset, assetIndex) => assetIndex === index ? { type: 'video', url: localUrl } : asset)
+    if (!media_items.length) media_items.push({ type: 'video', url: localUrl })
+    ctx.store.update(ctx.id, { local_paths: { ...(item.local_paths || {}), video: videoPath }, media_items, media_urls: media_items.filter((asset) => asset.type === 'video').map((asset) => asset.url) })
+  }
+  return handleScopedAnalysis({ ...ctx, req: { ...ctx.req, body: { scope: 'media', media_index: index } } }, {
+    mirrorLegacy: true,
+    async execute() {
+      const response = await analyzeInspirationVideo({ videoPath, title: item.title, content: item.content, tags: item.tags, platform: item.source_platform, videoAnalyzeTool: ctx.videoAnalyzeTool, signal: ctx.signal })
+      if (!response.deconstruction) throw new Error(response.error || '视频分析失败')
+      const result = { ...response.deconstruction, analyzed_at: new Date().toISOString() }
+      try {
+        const structure = await extractScriptStructure(ctx.textComplete?.execute ? { execute: (args) => ctx.textComplete.execute(args, { signal: ctx.signal }) } : undefined, { content: item.content || '', markdown: result.markdown || '' })
+        result.segments = structure.segments?.length ? structure.segments : (result.segments || [])
+        result.sections = structure.sections || []
+      } catch (error) {
+        if (ctx.signal?.aborted || error?.name === 'AbortError' || error?.code === 'ABORT_ERR') throw error
+        result.structure_error = ctx.formatErrorMessage(error)
+      }
+      return { mode: 'live', model: response.model, text: result.markdown, result }
+    },
+  })
+}
+
+export async function handleTranslate(ctx) {
+  if (ctx.req.body?.scope === 'body') return handleBodyTranslation(ctx)
+  const item = ctx.store.get(ctx.id)
+  if (!item) return fail(404, 'not found')
+  const lang = String(ctx.req.body?.lang || ctx.req.body?.target || 'zh').trim() || 'zh'
+  const analysis = item.deconstruction && typeof item.deconstruction === 'object' ? item.deconstruction : {}
+  const segments = Array.isArray(analysis.segments) ? analysis.segments : []
+  const source = segments.length
+    ? segments.map((row) => row.text).filter(Boolean).join('\n')
+    : (item.content || '')
+  if (!source.trim()) return fail(422, '暂无脚本文案可翻译')
+  if (!ctx.textComplete || typeof ctx.textComplete.execute !== 'function') {
+    return fail(503, '文本翻译能力未就绪')
+  }
+  try {
+    const result = await ctx.textComplete.execute({
+      reason: 'inspiration-script-translate',
+      prompt: buildTranslatePrompt({
+        lang,
+        source,
+        segmentIds: segments.map((row) => row.id),
+      }),
+      maxTokens: 1800,
+    })
+    const parsed = parseTranslateJson(result?.text || result, source)
+    const updated = ctx.store.update(ctx.id, {
+      script_translation: {
+        lang,
+        text: parsed.text,
+        segments: parsed.segments,
+      },
+    })
+    return { status: 200, body: { data: updated } }
+  } catch (error) {
+    return fail(502, error instanceof Error ? error.message : String(error))
+  }
+}
+
+async function resolveAnalyzeVideo(args) {
+  const existing = args.item.local_paths?.video
+  if (existing) return { path: existing }
+  if (!args.item.source_url || !args.socialFetcher) return { path: existing }
+  return downloadAnalyzeVideo(args)
+}
+
+/** Re-resolve the direct video link with the same structural mapper as the import path. */
+function videoUrlFromFetched(fetched) {
+  return parseSocialMeta(fetched && fetched.data ? fetched.data : {}).video_url
+}
+
+async function downloadAnalyzeVideo(args) {
+  try {
+    const platform = args.item.source_platform || args.detectPlatformFromUrl(args.item.source_url)
+    const fetched = await args.socialFetcher({
+      platform,
+      capability: capabilityOf(platform),
+      url: args.item.source_url,
+      signal: args.signal,
+    })
+    const vUrl = videoUrlFromFetched(fetched)
+    if (!vUrl) return { path: args.item.local_paths?.video }
+    const videoPath = await downloadMedia(vUrl, args.paths.videosDir, {
+      prefix: 'video_',
+      fetcher: args.fetcher,
+      resolver: args.resolver,
+      signal: args.signal,
+    })
+    args.item.local_paths = { ...(args.item.local_paths || {}), video: videoPath }
+    return { path: videoPath }
+  } catch (downErr) {
+    if (args.signal?.aborted || downErr?.name === 'AbortError' || downErr?.code === 'ABORT_ERR') throw downErr
+    const message = downErr instanceof Error ? downErr.message : String(downErr)
+    return { error: fail(502, `重新下载视频失败: ${message}`) }
+  }
+}
+
+export async function handleBatchDelete({ req, store }) {
+  const body = req.body || {}
+  const ids = Array.isArray(body.ids) ? body.ids : []
+  if (ids.length === 0) return fail(400, 'ids array is required')
+  const result = await store.deleteBatch(ids)
+  return { status: 200, body: { data: result } }
+}
+
+export function handleGetItem({ id, store }) {
+  // Single-row reads are what the client polls, so they carry the sweep too:
+  // otherwise a row whose job died would answer `importing` forever to a client
+  // that never lists.
+  //
+  // Both halves of this poll — the sweep and the row lookup — read the same
+  // library file, and a poll fires every 2.5s per running row. The snapshot makes
+  // them share one read: taken before the sweep, kept only when the sweep changed
+  // nothing. A changed row is read again with its authoritative collection view.
+  const snapshot = store.snapshotForRead ? store.snapshotForRead() : null
+  const failed = sweepStaleImports(store)
+  if (snapshot && !failed) store.cacheReadSnapshot?.(snapshot)
+  const rawItem = store.get(id, snapshot ?? undefined)
+  const recovered = rawItem ? recoverInterruptedAnalyses(store, rawItem) : rawItem
+  // A recovery writes a raw row; reread only changed rows for the authoritative view.
+  const current = recovered !== rawItem ? store.get(id) : recovered
+  const item = current ? maybeEnsureVideoCover(current, store, store?.paths) : current
+  if (item) return { status: 200, body: { data: item } }
+  // A cloud publish has no local row to read — its progress lives in the job
+  // table, and the page polls this very endpoint. Answering 404 here would tell
+  // the poller the row is gone and stop the progress on the first tick.
+  const cloudJob = cloudShareJobs.get(String(id))
+  if (cloudJob) return { status: 200, body: { data: { ...cloudJob } } }
+  return fail(404, 'not found')
+}
+
+export function handlePatchItem({ id, req, store }) {
+  const body = req.body || {}
+  const editable = new Set(['title', 'content', 'tags', 'is_favorite', 'category', 'country_code', 'traffic_type', 'posted_at', 'published_at'])
+  if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some((key) => !editable.has(key))) {
+    return fail(400, '此入口仅支持编辑原帖文字、标签、分类与收藏')
+  }
+  if (Object.entries(body).some(([key, value]) => key === 'tags'
+    ? !Array.isArray(value) || value.some((tag) => typeof tag !== 'string')
+    : key === 'is_favorite' ? typeof value !== 'boolean' : typeof value !== 'string')) {
+    return fail(400, '编辑内容格式不正确')
+  }
+  const updated = store.update(id, body)
+  return { status: 200, body: { data: updated } }
+}
+
+export async function handleDeleteItem({ id, store }) {
+  const removed = await store.delete(id)
+  return { status: 200, body: { data: removed } }
+}
+

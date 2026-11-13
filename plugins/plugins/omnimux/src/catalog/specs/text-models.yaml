@@ -1,0 +1,1025 @@
+# 文本模型能力契约 (Text Models Capability Contract)
+# H2: 11 个 runtime CHAT_MODELS 全处置；extra 三 ID（deepseek-v3/deepseek-r1/gpt-4o）
+#     无 runtime/wire 引用，已删除（禁止幽灵上架）。
+# listed 仅 operation 级。#530 PR-A（2026-09-05）：text 19 op 均有独立 dated live 证据，
+# research:verified + execution:live → 进入 listedOperations。媒体 Batch A 三键仍在。
+# vision_chat reference_images max:10 因 11 图上游未拒，limitSource=policy_conservative。
+# gemini-3.7-flash video 槽未在本批独立证实，保持 policy_conservative。
+# 证据纪律：verified 必须 docUrl + verifiedAt（dated、仓内可引用）。
+schemaVersion: "1.1"
+managementGroup: "text"
+modality: "text"
+
+models:
+  - id: "claude-opus-5"
+    label: "Claude Opus 5"
+    family: "anthropic"
+    role: "flagship"
+    operations:
+      - id: "chat"
+        label: "文本对话"
+        output:
+          type: "text"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+        research:
+          status: "draft"
+          docUrl: "docs/evidence/2026-09-05-model-claude-opus-5-chat.md"
+          verifiedAt: "2026-09-05"
+          notes: "2026-09-15 仅登记不开放访问：网关生产基线已下架收敛，本地保留契约元数据登记，避免调用失败"
+        implementation:
+          status: "ready"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "迁移既有已落地适配；与历史 execution 证据分开记录"
+        execution:
+          status: "stub"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "网关未开放访问"
+    research:
+      status: "draft"
+      docUrl: "docs/evidence/2026-09-05-model-claude-opus-5-chat.md"
+      verifiedAt: "2026-09-05"
+      notes: "2026-09-15 仅登记不开放访问"
+    implementation:
+      status: "ready"
+      profileId: "textComplete"
+      seam: "textComplete"
+      notes: "迁移既有已落地适配；与历史 execution 证据分开记录"
+    execution:
+      status: "stub"
+      profileId: "textComplete"
+      seam: "textComplete"
+
+  # 2026-10-21 网关对账 #3516：上游渠道全部停用，仅登记不开放。
+  # 2026-10-21 网关对账 #3516：上游渠道全部停用，仅登记不开放。
+  - id: "claude-sonnet-4-6"
+    label: "Claude Sonnet 4.6"
+    family: "anthropic"
+    role: "classic"
+    operations:
+      - id: "chat"
+        label: "文本对话"
+        output:
+          type: "text"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            valueSources: ["local_field", "upstream_output"]
+            composition: { kind: "content_with_instruction", localRole: "instruction" }
+            min: 1
+            max: 1
+        research:
+          status: "verified"
+          docUrl: "docs/evidence/2026-10-05-model-claude-sonnet-4-6-chat.md"
+          verifiedAt: "2026-10-05"
+          notes: "生产网关实测 200：id chatcmpl-req_vrtx_011CfiPiyWDMENUoDzjrYwaF，usage 15+5=20"
+        implementation:
+          # 2026-10-21 网关对账 #3516：上游渠道全部停用，仅登记不开放。
+          status: "none"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "复用 textComplete 适配与 chat 路线"
+        execution:
+          status: "stub"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "生产网关基线与自建号池在线"
+      - id: "vision_chat"
+        label: "图文对话"
+        output:
+          type: "text"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            valueSources: ["local_field", "upstream_output"]
+            composition: { kind: "content_with_instruction", localRole: "instruction" }
+            min: 1
+            max: 1
+          - slot: "reference_images"
+            type: "image"
+            role: "reference"
+            source: "upstream_edge"
+            min: 0
+            max: 10
+            allowedMimes: ["image/png", "image/jpeg", "image/webp", "image/gif"]
+            maxSizeMb: 20
+            limitSource:
+              kind: "policy_conservative"
+              note: "Claude Sonnet 多模态图文输入保守限额；上游能力合同只公布格式清单，未公布参考图数量上限与单文件体积上限；max 10 与 20MB 为本仓保守值"
+        research:
+          status: "verified"
+          docUrl: "docs/evidence/2026-10-05-model-claude-sonnet-4-6-vision_chat.md"
+          verifiedAt: "2026-10-05"
+          notes: "生产网关实测 200：id chatcmpl-req_vrtx_011CfiPmNi33kpeF5oJ33tB3，图像理解回答非空"
+        implementation:
+          # 2026-10-21 网关对账 #3516：上游渠道全部停用，仅登记不开放。
+          status: "none"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "复用 textComplete 适配与 vision_chat 路线"
+        execution:
+          status: "stub"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "生产网关基线与自建号池在线"
+    research:
+      status: "verified"
+      docUrl: "docs/evidence/2026-09-05-model-claude-opus-4-6-chat.md"
+      verifiedAt: "2026-10-04"
+    implementation:
+      # 2026-10-21 网关对账 #3516：上游渠道全部停用，仅登记不开放。
+      status: "none"
+      profileId: "textComplete"
+      seam: "textComplete"
+      notes: "复用 textComplete 适配与 chat/vision_chat 路线"
+    execution:
+      status: "stub"
+      profileId: "textComplete"
+      seam: "textComplete"
+      notes: "生产网关基线与自建号池在线"
+
+  - id: "claude-opus-4-6"
+    label: "Claude Opus 4.6"
+    family: "anthropic"
+    role: "flagship"
+    operations:
+      - id: "chat"
+        label: "文本对话"
+        output:
+          type: "text"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+        research:
+          status: "draft"
+          docUrl: "docs/evidence/2026-09-05-model-claude-opus-4-6-chat.md"
+          verifiedAt: "2026-09-05"
+          notes: "2026-09-05 #530 PR-A live 四要素齐全"
+        implementation:
+          status: "ready"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "迁移既有已落地适配；与历史 execution 证据分开记录"
+        execution:
+          status: "stub"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "2026-09-05 dated live chat-completions 200"
+      - id: "vision_chat"
+        label: "图文对话"
+        output:
+          type: "text"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+          - slot: "reference_images"
+            type: "image"
+            role: "reference"
+            source: "upstream_edge"
+            min: 0
+            max: 10
+            allowedMimes: ["image/png", "image/jpeg", "image/webp", "image/gif"]
+            maxSizeMb: 20
+            limitSource:
+              kind: "policy_conservative"
+              note: "2026-09-05 live：1/2/10 图 200；11 图仍 200 未拒，不得写 max10 measured；契约 max10 保守；上游能力合同只公布格式清单，未公布参考图数量上限与单文件体积上限；max 10 与 20MB 为本仓保守值"
+        research:
+          status: "draft"
+          docUrl: "docs/evidence/2026-09-05-model-claude-opus-4-6-vision_chat.md"
+          verifiedAt: "2026-09-05"
+          notes: "2026-09-05 #530 PR-A live 四要素齐全"
+        implementation:
+          status: "ready"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "迁移既有已落地适配；与历史 execution 证据分开记录"
+        execution:
+          status: "stub"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "2026-09-05 dated live chat-completions 200"
+    research:
+      status: "draft"
+      docUrl: "docs/evidence/2026-09-05-model-claude-opus-4-6-chat.md"
+      verifiedAt: "2026-09-05"
+    implementation:
+      status: "ready"
+      profileId: "textComplete"
+      seam: "textComplete"
+      notes: "迁移既有已落地适配；与历史 execution 证据分开记录"
+    execution:
+      status: "stub"
+      profileId: "textComplete"
+      seam: "textComplete"
+
+  - id: "gpt-5.6-sol"
+    label: "GPT 5.6 Sol"
+    family: "openai"
+    role: "flagship"
+    operations:
+      - id: "chat"
+        label: "文本对话"
+        output:
+          type: "text"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+        research:
+          status: "draft"
+          docUrl: "docs/evidence/2026-09-05-model-gpt-5.6-sol-chat.md"
+          verifiedAt: "2026-09-05"
+          notes: "2026-09-05 #530 PR-A live 四要素齐全"
+        implementation:
+          status: "ready"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "迁移既有已落地适配；与历史 execution 证据分开记录"
+        execution:
+          status: "stub"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "2026-09-05 dated live chat-completions 200"
+      - id: "vision_chat"
+        label: "图文对话"
+        output:
+          type: "text"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+          - slot: "reference_images"
+            type: "image"
+            role: "reference"
+            source: "upstream_edge"
+            min: 0
+            max: 10
+            allowedMimes: ["image/png", "image/jpeg", "image/webp", "image/gif"]
+            maxSizeMb: 20
+            limitSource:
+              kind: "policy_conservative"
+              note: "2026-09-05 live：1/2/10 图 200；11 图仍 200 未拒，不得写 max10 measured；契约 max10 保守；上游能力合同只公布格式清单，未公布参考图数量上限与单文件体积上限；max 10 与 20MB 为本仓保守值"
+        research:
+          status: "draft"
+          docUrl: "docs/evidence/2026-09-05-model-gpt-5.6-sol-vision_chat.md"
+          verifiedAt: "2026-09-05"
+          notes: "2026-09-05 #530 PR-A live 四要素齐全"
+        implementation:
+          status: "ready"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "迁移既有已落地适配；与历史 execution 证据分开记录"
+        execution:
+          status: "stub"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "2026-09-05 dated live chat-completions 200"
+    research:
+      status: "draft"
+      docUrl: "docs/evidence/2026-09-05-model-gpt-5.6-sol-chat.md"
+      verifiedAt: "2026-09-05"
+    implementation:
+      status: "ready"
+      profileId: "textComplete"
+      seam: "textComplete"
+      notes: "迁移既有已落地适配；与历史 execution 证据分开记录"
+    execution:
+      status: "stub"
+      profileId: "textComplete"
+      seam: "textComplete"
+
+  - id: "gpt-5.5"
+    label: "GPT 5.5"
+    family: "openai"
+    role: "flagship"
+    operations:
+      - id: "chat"
+        label: "文本对话"
+        output:
+          type: "text"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+        research:
+          status: "draft"
+          docUrl: "docs/evidence/2026-09-05-model-gpt-5.5-chat.md"
+          verifiedAt: "2026-09-05"
+          notes: "2026-09-05 live；请求 reasoning_effort=low"
+        implementation:
+          status: "ready"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "迁移既有已落地适配；与历史 execution 证据分开记录"
+        execution:
+          status: "stub"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "2026-09-05 dated live chat-completions 200"
+      - id: "vision_chat"
+        label: "图文对话"
+        output:
+          type: "text"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+          - slot: "reference_images"
+            type: "image"
+            role: "reference"
+            source: "upstream_edge"
+            min: 0
+            max: 10
+            allowedMimes: ["image/png", "image/jpeg", "image/webp", "image/gif"]
+            maxSizeMb: 20
+            limitSource:
+              kind: "policy_conservative"
+              note: "2026-09-05 live：1/2/10 图 200；11 图仍 200 未拒，不得写 max10 measured；契约 max10 保守；上游能力合同只公布格式清单，未公布参考图数量上限与单文件体积上限；max 10 与 20MB 为本仓保守值"
+        research:
+          status: "draft"
+          docUrl: "docs/evidence/2026-09-05-model-gpt-5.5-vision_chat.md"
+          verifiedAt: "2026-09-05"
+          notes: "2026-09-05 #530 PR-A live 四要素齐全"
+        implementation:
+          status: "ready"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "迁移既有已落地适配；与历史 execution 证据分开记录"
+        execution:
+          status: "stub"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "2026-09-05 dated live chat-completions 200"
+    research:
+      status: "draft"
+      docUrl: "docs/evidence/2026-09-05-model-gpt-5.5-chat.md"
+      verifiedAt: "2026-09-05"
+    implementation:
+      status: "ready"
+      profileId: "textComplete"
+      seam: "textComplete"
+      notes: "迁移既有已落地适配；与历史 execution 证据分开记录"
+    execution:
+      status: "stub"
+      profileId: "textComplete"
+      seam: "textComplete"
+
+  - id: "grok-4.6"
+    label: "Grok 4.6"
+    family: "xai"
+    role: "flagship"
+    operations:
+      - id: "chat"
+        label: "文本对话"
+        output:
+          type: "text"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+        research:
+          status: "draft"
+          docUrl: "docs/evidence/2026-09-05-model-grok-4.6-chat.md"
+          verifiedAt: "2026-09-05"
+          notes: "2026-09-05 #530 PR-A live 四要素齐全"
+        implementation:
+          status: "ready"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "迁移既有已落地适配；与历史 execution 证据分开记录"
+        execution:
+          status: "stub"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "2026-09-05 dated live chat-completions 200"
+      - id: "vision_chat"
+        label: "图文对话"
+        output:
+          type: "text"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+          - slot: "reference_images"
+            type: "image"
+            role: "reference"
+            source: "upstream_edge"
+            min: 0
+            max: 10
+            allowedMimes: ["image/png", "image/jpeg"]
+            maxSizeMb: 20
+            limitSource:
+              kind: "policy_conservative"
+              note: "2026-09-05 live：1/2/10 图 200；11 图仍 200 未拒，不得写 max10 measured；契约 max10 保守；上游能力合同只公布格式清单，未公布参考图数量上限与单文件体积上限；max 10 与 20MB 为本仓保守值；原声明的 image/webp 上游未公布（上游 formats 仅 jpeg/png），已按上游公布值移除"
+        research:
+          status: "draft"
+          docUrl: "docs/evidence/2026-09-05-model-grok-4.6-vision_chat.md"
+          verifiedAt: "2026-09-05"
+          notes: "2026-09-05 #530 PR-A live 四要素齐全"
+        implementation:
+          status: "ready"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "迁移既有已落地适配；与历史 execution 证据分开记录"
+        execution:
+          status: "stub"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "2026-09-05 dated live chat-completions 200"
+    research:
+      status: "draft"
+      docUrl: "docs/evidence/2026-09-05-model-grok-4.6-chat.md"
+      verifiedAt: "2026-09-05"
+    implementation:
+      status: "ready"
+      profileId: "textComplete"
+      seam: "textComplete"
+      notes: "迁移既有已落地适配；与历史 execution 证据分开记录"
+    execution:
+      status: "stub"
+      profileId: "textComplete"
+      seam: "textComplete"
+
+  - id: "kimi-k3"
+    label: "Kimi K3"
+    family: "moonshot"
+    role: "flagship"
+    operations:
+      - id: "chat"
+        label: "文本对话"
+        output:
+          type: "text"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+        research:
+          status: "draft"
+          docUrl: "docs/evidence/2026-09-05-model-kimi-k3-chat.md"
+          verifiedAt: "2026-09-05"
+          notes: "2026-09-05 #530 PR-A live 四要素齐全"
+        implementation:
+          status: "ready"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "迁移既有已落地适配；与历史 execution 证据分开记录"
+        execution:
+          status: "stub"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "2026-09-05 dated live chat-completions 200"
+      - id: "vision_chat"
+        label: "图文对话"
+        output:
+          type: "text"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+          - slot: "reference_images"
+            type: "image"
+            role: "reference"
+            source: "upstream_edge"
+            min: 0
+            max: 10
+            allowedMimes: ["image/png", "image/jpeg", "image/webp", "image/gif", "image/bmp", "image/heic", "image/heif"]
+            maxSizeMb: 20
+            limitSource:
+              kind: "policy_conservative"
+              note: "2026-09-05 live：1/2/10 图 200；11 图仍 200 未拒，不得写 max10 measured；契约 max10 保守；上游能力合同只公布格式清单，未公布参考图数量上限与单文件体积上限；max 10 与 20MB 为本仓保守值"
+        research:
+          status: "draft"
+          docUrl: "docs/evidence/2026-09-05-model-kimi-k3-vision_chat.md"
+          verifiedAt: "2026-09-05"
+          notes: "2026-09-05 #530 PR-A live 四要素齐全"
+        implementation:
+          status: "ready"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "迁移既有已落地适配；与历史 execution 证据分开记录"
+        execution:
+          status: "stub"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "2026-09-05 dated live chat-completions 200"
+    research:
+      status: "draft"
+      docUrl: "docs/evidence/2026-09-05-model-kimi-k3-chat.md"
+      verifiedAt: "2026-09-05"
+    implementation:
+      status: "ready"
+      profileId: "textComplete"
+      seam: "textComplete"
+      notes: "迁移既有已落地适配；与历史 execution 证据分开记录"
+    execution:
+      status: "stub"
+      profileId: "textComplete"
+      seam: "textComplete"
+
+  - id: "deepseek-v4-pro"
+    label: "DeepSeek V4 Pro"
+    family: "deepseek"
+    role: "flagship"
+    operations:
+      - id: "chat"
+        label: "文本对话"
+        output:
+          type: "text"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+        research:
+          status: "draft"
+          docUrl: "docs/evidence/2026-09-05-model-deepseek-v4-pro-chat.md"
+          verifiedAt: "2026-09-05"
+          notes: "2026-09-05 #530 PR-A live 四要素齐全"
+        implementation:
+          status: "ready"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "迁移既有已落地适配；与历史 execution 证据分开记录"
+        execution:
+          status: "stub"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "2026-09-05 dated live chat-completions 200"
+    research:
+      status: "draft"
+      docUrl: "docs/evidence/2026-09-05-model-deepseek-v4-pro-chat.md"
+      verifiedAt: "2026-09-05"
+    implementation:
+      status: "ready"
+      profileId: "textComplete"
+      seam: "textComplete"
+      notes: "迁移既有已落地适配；与历史 execution 证据分开记录"
+    execution:
+      status: "stub"
+      profileId: "textComplete"
+      seam: "textComplete"
+
+  - id: "deepseek-v4-flash"
+    aliases: ["deepseek-v4-flash-vision-exp"]
+    label: "DeepSeek V4 Flash"
+    family: "deepseek"
+    role: "classic"
+    operations:
+      - id: "chat"
+        label: "文本对话"
+        output:
+          type: "text"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+        research:
+          status: "draft"
+          docUrl: "docs/evidence/2026-09-05-model-deepseek-v4-flash-vision-exp-chat.md"
+          verifiedAt: "2026-09-05"
+          notes: "2026-09-05 独立 live；小 max_tokens 时 reasoning 占满 content 空，max_tokens≥256 得 pong"
+        implementation:
+          status: "ready"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "迁移既有已落地适配；与历史 execution 证据分开记录"
+        execution:
+          status: "stub"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "2026-09-05 dated live chat-completions 200"
+      - id: "vision_chat"
+        label: "图文对话"
+        output:
+          type: "text"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+          - slot: "reference_images"
+            type: "image"
+            role: "reference"
+            source: "upstream_edge"
+            min: 0
+            max: 10
+            allowedMimes: ["image/png", "image/jpeg", "image/webp", "image/gif"]
+            maxSizeMb: 20
+            limitSource:
+              kind: "policy_conservative"
+              note: "2026-09-05 独立 vision-exp live：PNG/JPEG/WebP + 1/2/10/11 图均 200；11 未拒故 max10 保守，非 measured；上游能力合同只公布格式清单，未公布参考图数量上限与单文件体积上限；max 10 与 20MB 为本仓保守值"
+        research:
+          status: "draft"
+          docUrl: "docs/evidence/2026-09-05-model-deepseek-v4-flash-vision-exp-vision_chat.md"
+          verifiedAt: "2026-09-05"
+          notes: "2026-09-05 独立 vision-exp live（禁止继承 deepseek-v4-flash）；PNG/JPEG/WebP 识别 red"
+        implementation:
+          status: "ready"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "迁移既有已落地适配；与历史 execution 证据分开记录"
+        execution:
+          status: "stub"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "2026-09-05 dated live chat-completions 200"
+    research:
+      status: "draft"
+      docUrl: "docs/evidence/2026-09-05-model-deepseek-v4-flash-vision-exp-chat.md"
+      verifiedAt: "2026-09-05"
+    implementation:
+      status: "ready"
+      profileId: "textComplete"
+      seam: "textComplete"
+      notes: "迁移既有已落地适配；与历史 execution 证据分开记录"
+    execution:
+      status: "stub"
+      profileId: "textComplete"
+      seam: "textComplete"
+
+  - id: "gemini-3.8-flash"
+    label: "Gemini 3.8 Flash"
+    family: "google"
+    role: "flagship"
+    operations:
+      - id: "chat"
+        label: "文本对话"
+        output:
+          type: "text"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            valueSources: ["local_field", "upstream_output"]
+            composition: { kind: "content_with_instruction", localRole: "instruction" }
+            min: 1
+            max: 1
+        research:
+          status: "verified"
+          docUrl: "docs/references/omnimux-gemini-3.8-contract-gap.md"
+          verifiedAt: "2026-09-06"
+          notes: "2026-09-06 用户确认与 Gemini 3.7 相同；复用现有输入合同，非独立官方发布声明"
+        implementation:
+          status: "ready"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "复用 textComplete 的 Gemini 3.7 mapper；离线验证 Gemini 3.8 wire ID"
+        execution:
+          status: "none"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "未发起 Gemini 3.8 真实请求，不继承 3.7 执行证据"
+      - id: "vision_chat"
+        label: "多模态对话"
+        output:
+          type: "text"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+          - slot: "reference_images"
+            type: "image"
+            role: "reference"
+            source: "upstream_edge"
+            min: 0
+            max: 10
+            allowedMimes: ["image/png", "image/jpeg", "image/webp", "image/heic", "image/heif"]
+            maxSizeMb: 20
+            limitSource:
+              kind: "official_docs"
+              note: "上游 5e61dc3ce 与 Google 官方模型文档确认支持 PNG, JPEG, WEBP, HEIC, HEIF；上游未公布参考图数量上限与单文件体积上限，max 10 与 20MB 为本仓保守值"
+          - slot: "reference_videos"
+            type: "video"
+            role: "reference"
+            source: "upstream_edge"
+            min: 0
+            max: 1
+            allowedMimes: ["video/mp4", "video/mov", "video/mpeg", "video/avi", "video/wmv", "video/flv"]
+            maxSizeMb: 50
+            limitSource:
+              kind: "official_docs"
+              note: "上游 5e61dc3ce 与 Google 官方模型文档确认支持 MP4, MOV, MPEG, AVI, WMV, FLV"
+          - slot: "reference_audios"
+            type: "audio"
+            role: "reference"
+            source: "upstream_edge"
+            min: 0
+            max: 1
+            allowedMimes: ["audio/mp3", "audio/wav", "audio/mpeg"]
+            maxSizeMb: 25
+            limitSource:
+              kind: "official_docs"
+              note: "上游 5e61dc3ce 与 Google 官方模型文档声明支持 MP3, WAV, MPEG"
+          - slot: "reference_documents"
+            type: "document"
+            role: "reference"
+            source: "upstream_edge"
+            min: 0
+            max: 1
+            allowedMimes: ["application/pdf"]
+            maxSizeMb: 50
+            limitSource:
+              kind: "official_docs"
+              note: "上游 5e61dc3ce 与 Google 官方模型文档声明支持 PDF 文档"
+        research:
+          status: "verified"
+          docUrl: "docs/references/omnimux-gemini-3.8-contract-gap.md"
+          verifiedAt: "2026-09-16"
+          notes: "2026-09-16 对齐上游 5e61dc3ce 全模态契约格式与 Google 官方多模态规范"
+        implementation:
+          status: "ready"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "textComplete 支持图片、视频、音频与 PDF 数据打包；离线验证 Gemini 3.8 全模态"
+        execution:
+          status: "none"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "未发起 Gemini 3.8 真实请求，不继承 3.7 执行证据"
+    research:
+      status: "verified"
+      docUrl: "docs/references/omnimux-gemini-3.8-contract-gap.md"
+      verifiedAt: "2026-09-06"
+    implementation:
+      status: "ready"
+      profileId: "textComplete"
+      seam: "textComplete"
+      notes: "复用 textComplete 的 Gemini 3.7 mapper；离线验证 Gemini 3.8 wire ID"
+    execution:
+      status: "none"
+      profileId: "textComplete"
+      seam: "textComplete"
+
+  - id: "gemini-3.7-flash"
+    label: "Gemini 3.7 Flash"
+    family: "google"
+    role: "flagship"
+    operations:
+      - id: "chat"
+        label: "文本对话"
+        output:
+          type: "text"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+        research:
+          status: "draft"
+          docUrl: "docs/evidence/2026-09-05-model-gemini-3.7-flash-chat.md"
+          verifiedAt: "2026-09-05"
+          notes: "2026-09-05 #530 PR-A live 四要素齐全"
+        implementation:
+          status: "ready"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "迁移既有已落地适配；与历史 execution 证据分开记录"
+        execution:
+          status: "stub"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "2026-09-05 dated live chat-completions 200"
+      - id: "vision_chat"
+        label: "图文对话"
+        output:
+          type: "text"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+          - slot: "reference_images"
+            type: "image"
+            role: "reference"
+            source: "upstream_edge"
+            min: 0
+            max: 10
+            allowedMimes: ["image/png", "image/jpeg", "image/webp", "image/heic", "image/heif"]
+            maxSizeMb: 20
+            limitSource:
+              kind: "policy_conservative"
+              note: "2026-09-05 live：1/2/10 图 200；11 图仍 200 未拒，不得写 max10 measured；契约 max10 保守；上游能力合同只公布格式清单，未公布参考图数量上限与单文件体积上限；max 10 与 20MB 为本仓保守值"
+          - slot: "reference_videos"
+            type: "video"
+            role: "reference"
+            source: "upstream_edge"
+            min: 0
+            max: 1
+            allowedMimes: ["video/mp4"]
+            maxSizeMb: 50
+            limitSource:
+              kind: "policy_conservative"
+              note: "2026-08-22 video spike（data:video 原生 mp4 理解）；保守 50MB 待官方审计"
+        research:
+          status: "draft"
+          docUrl: "docs/evidence/2026-09-05-model-gemini-3.7-flash-vision_chat.md"
+          verifiedAt: "2026-09-05"
+          notes: "2026-09-05 image live；video 槽未本批证实，保持 policy_conservative"
+        implementation:
+          status: "ready"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "迁移既有已落地适配；与历史 execution 证据分开记录"
+        execution:
+          status: "stub"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "2026-09-05 dated live chat-completions 200"
+    research:
+      status: "draft"
+      docUrl: "docs/evidence/2026-09-05-model-gemini-3.7-flash-chat.md"
+      verifiedAt: "2026-09-05"
+    implementation:
+      status: "ready"
+      profileId: "textComplete"
+      seam: "textComplete"
+      notes: "迁移既有已落地适配；与历史 execution 证据分开记录"
+    execution:
+      status: "stub"
+      profileId: "textComplete"
+      seam: "textComplete"
+
+  - id: "gemini-3.1-pro-preview"
+    label: "Gemini 3.1 Pro Preview"
+    family: "google"
+    role: "flagship"
+    operations:
+      - id: "chat"
+        label: "文本对话"
+        output:
+          type: "text"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+        research:
+          status: "draft"
+          docUrl: "docs/evidence/2026-09-05-model-gemini-3.1-pro-preview-chat.md"
+          verifiedAt: "2026-09-05"
+          notes: "2026-09-05 #530 PR-A live 四要素齐全"
+        implementation:
+          status: "ready"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "迁移既有已落地适配；与历史 execution 证据分开记录"
+        execution:
+          status: "stub"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "2026-09-05 dated live chat-completions 200"
+      - id: "vision_chat"
+        label: "图文对话"
+        output:
+          type: "text"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+          - slot: "reference_images"
+            type: "image"
+            role: "reference"
+            source: "upstream_edge"
+            min: 0
+            max: 10
+            allowedMimes: ["image/png", "image/jpeg", "image/webp", "image/heic", "image/heif"]
+            maxSizeMb: 20
+            limitSource:
+              kind: "policy_conservative"
+              note: "2026-09-05 live：1/2/10 图 200；11 图仍 200 未拒，不得写 max10 measured；契约 max10 保守；上游能力合同只公布格式清单，未公布参考图数量上限与单文件体积上限；max 10 与 20MB 为本仓保守值"
+        research:
+          status: "draft"
+          docUrl: "docs/evidence/2026-09-05-model-gemini-3.1-pro-preview-vision_chat.md"
+          verifiedAt: "2026-09-05"
+          notes: "2026-09-05 #530 PR-A live 四要素齐全"
+        implementation:
+          status: "ready"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "迁移既有已落地适配；与历史 execution 证据分开记录"
+        execution:
+          status: "stub"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "2026-09-05 dated live chat-completions 200"
+    research:
+      status: "draft"
+      docUrl: "docs/evidence/2026-09-05-model-gemini-3.1-pro-preview-chat.md"
+      verifiedAt: "2026-09-05"
+    implementation:
+      status: "ready"
+      profileId: "textComplete"
+      seam: "textComplete"
+      notes: "迁移既有已落地适配；与历史 execution 证据分开记录"
+    execution:
+      status: "stub"
+      profileId: "textComplete"
+      seam: "textComplete"
+
+  - id: "glm-5.3"
+    label: "GLM 5.3"
+    family: "zhipu"
+    role: "flagship"
+    operations:
+      - id: "chat"
+        label: "文本对话"
+        output:
+          type: "text"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+        research:
+          status: "draft"
+          docUrl: "docs/evidence/2026-09-05-model-glm-5.3-chat.md"
+          verifiedAt: "2026-09-05"
+          notes: "2026-09-05 #530 PR-A live 四要素齐全"
+        implementation:
+          status: "ready"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "迁移既有已落地适配；与历史 execution 证据分开记录"
+        execution:
+          status: "stub"
+          profileId: "textComplete"
+          seam: "textComplete"
+          notes: "2026-09-05 dated live chat-completions 200"
+    research:
+      status: "draft"
+      docUrl: "docs/evidence/2026-09-05-model-glm-5.3-chat.md"
+      verifiedAt: "2026-09-05"
+    implementation:
+      status: "ready"
+      profileId: "textComplete"
+      seam: "textComplete"
+      notes: "迁移既有已落地适配；与历史 execution 证据分开记录"
+    execution:
+      status: "stub"
+      profileId: "textComplete"
+      seam: "textComplete"

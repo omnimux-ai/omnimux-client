@@ -1,0 +1,133 @@
+{
+  "version": "1.1.0",
+  "profiles": [
+    {
+      "id": "textComplete",
+      "seam": "textComplete",
+      "status": "live",
+      "operations": ["chat", "vision_chat", "document_analyze"],
+      "outputTypes": ["text"],
+      "logicalFields": ["prompt", "system", "maxTokens", "image", "video", "references"],
+      "vendorFields": ["prompt", "system", "maxTokens", "image", "video", "content"],
+      "unknownFieldPolicy": "reject",
+      "notes": "文本/视觉专家调用；mapper 只发 profile 允许字段"
+    },
+    {
+      "id": "imageGenerate",
+      "seam": "imageGenerate",
+      "status": "live",
+      "operations": ["text_to_image", "image_to_image", "multi_reference", "inpaint_outpaint"],
+      "outputTypes": ["image"],
+      "logicalFields": ["prompt", "image", "images", "references", "duration", "aspectRatio", "resolution", "quality", "n", "watermark"],
+      "vendorFields": ["prompt", "image", "images", "image_urls", "references", "duration", "metadata", "size", "aspect_ratio", "resolution", "quality", "n", "watermark"],
+      "unknownFieldPolicy": "reject",
+      "notes": "图生成"
+    },
+    {
+      "id": "videoGenerate",
+      "seam": "videoGenerate",
+      "status": "live",
+      "operations": ["text_to_video", "first_frame", "first_last_frame", "end_frame", "video_multi_ref", "video_edit", "video_extend", "document_to_video", "webpage_to_video", "digital_human"],
+      "outputTypes": ["video"],
+      "logicalFields": ["prompt", "references", "duration", "aspectRatio", "resolution", "sound", "seed", "watermark", "outputFormat", "referenceTaskType", "generationType", "returnLastFrame", "webSearch", "nsfwCheck", "fileUrl", "linkUrl"],
+      "vendorFields": ["operation", "prompt", "image_with_roles", "image_urls", "video_urls", "audio_urls", "file_url", "link_url", "duration", "size", "aspect_ratio", "resolution", "generate_audio", "audio", "seed", "watermark", "output_format", "omni_reference_task_type", "generation_type", "return_last_frame", "tools", "nsfw_check", "metadata"],
+      "forbiddenVendorFields": ["images", "references", "audioTrack", "speech", "voice", "style", "image", "image_tail", "reference_images"],
+      "unknownFieldPolicy": "reject",
+      "operationVendorShapes": {
+        "text_to_video": {
+          "allow": ["operation", "prompt", "duration", "size", "aspect_ratio", "resolution", "generate_audio", "audio", "seed", "watermark", "output_format", "return_last_frame", "tools", "nsfw_check", "metadata"]
+        },
+        "first_frame": {
+          "allow": ["operation", "prompt", "image_with_roles", "duration", "size", "aspect_ratio", "resolution", "generate_audio", "audio", "seed", "watermark", "output_format", "generation_type", "return_last_frame", "tools", "nsfw_check", "metadata"],
+          "require": ["image_with_roles"]
+        },
+        "first_last_frame": {
+          "allow": ["operation", "prompt", "image_with_roles", "duration", "size", "aspect_ratio", "resolution", "generate_audio", "audio", "seed", "watermark", "output_format", "generation_type", "return_last_frame", "tools", "nsfw_check", "metadata"],
+          "require": ["image_with_roles"]
+        },
+        "end_frame": {
+          "allow": ["operation", "prompt", "image_with_roles", "duration", "size", "aspect_ratio", "resolution", "generate_audio", "audio", "seed", "watermark", "output_format", "generation_type", "return_last_frame", "tools", "nsfw_check", "metadata"],
+          "require": ["image_with_roles"]
+        },
+        "video_multi_ref": {
+          "allow": ["operation", "prompt", "image_urls", "video_urls", "audio_urls", "duration", "size", "aspect_ratio", "resolution", "generate_audio", "audio", "seed", "watermark", "output_format", "omni_reference_task_type", "generation_type", "return_last_frame", "tools", "nsfw_check", "metadata"]
+        },
+        "video_edit": {
+          "allow": ["operation", "prompt", "image_urls", "video_urls", "audio_urls", "duration", "size", "aspect_ratio", "resolution", "generate_audio", "audio", "seed", "watermark", "output_format", "omni_reference_task_type", "generation_type", "return_last_frame", "tools", "nsfw_check"],
+          "require": ["video_urls"]
+        },
+        "video_extend": {
+          "allow": ["operation", "prompt", "image_urls", "video_urls", "audio_urls", "duration", "size", "aspect_ratio", "resolution", "generate_audio", "audio", "seed", "watermark", "output_format", "omni_reference_task_type", "return_last_frame", "tools", "nsfw_check"],
+          "require": ["video_urls"]
+        },
+        "document_to_video": {
+          "allow": ["operation", "prompt", "file_url", "duration", "size", "aspect_ratio", "resolution", "generate_audio", "audio", "seed", "watermark", "generation_type", "nsfw_check"],
+          "require": ["file_url"]
+        },
+        "webpage_to_video": {
+          "allow": ["operation", "prompt", "link_url", "duration", "size", "aspect_ratio", "resolution", "generate_audio", "audio", "seed", "watermark", "generation_type", "nsfw_check"],
+          "require": ["link_url"]
+        },
+        "digital_human": {
+          "allow": ["operation", "prompt", "audio_urls", "metadata", "duration", "size", "aspect_ratio", "resolution", "generate_audio", "audio", "seed", "watermark", "output_format", "tools", "nsfw_check"],
+          "require": ["audio_urls"]
+        }
+      },
+      "notes": "APIMart 文档字段；帧输入使用 image_with_roles，参考输入按 image/video/audio_urls 分组；文档与网页互斥。digital_human 仅供 minimax-h3-video AutoDL 泳道：素材槽统一经 metadata 透传，顶层 audio_urls 仅满足 require（网关 RESERVED）。"
+    },
+    {
+      "id": "audioGenerate",
+      "seam": "audioGenerate",
+      "status": "live",
+      "operations": ["text_to_speech", "voice_clone", "text_to_music"],
+      "outputTypes": ["audio"],
+      "logicalFields": ["prompt", "input", "model", "voice", "style", "instrumental", "speed", "speech", "audio", "references", "audioTrack", "duration", "format", "response_format", "title", "tags", "prompt_text", "prompt_simple", "emo_control_method", "emo_happy", "emo_sad", "emo_angry"],
+      "vendorFields": ["model", "prompt", "input", "voice", "speed", "response_format", "format", "duration", "image", "images", "references", "audioTrack", "metadata", "title", "tags", "style", "instrumental", "prompt_text", "prompt_simple", "emo_control_method", "emo_happy", "emo_sad", "emo_angry"],
+      "unknownFieldPolicy": "reject",
+      "operationVendorShapes": {
+        "text_to_speech": {
+          "allow": ["model", "input", "voice", "speed", "response_format", "format", "references"],
+          "require": ["input"]
+        },
+        "text_to_music": {
+          "allow": ["model", "prompt", "title", "tags", "style", "instrumental", "duration"],
+          "require": ["prompt"]
+        },
+        "voice_clone": {
+          "allow": ["model", "prompt_text", "prompt_simple", "emo_control_method", "emo_happy", "emo_sad", "emo_angry"],
+          "require": ["prompt_text", "prompt_simple", "emo_control_method"]
+        }
+      },
+      "notes": "同步语音使用 input/voice/speed/response_format；音乐保留异步任务载荷；声音克隆（indextts-2）使用 prompt_text/prompt_simple/emo_control_method 走 AutoDL 任务通道 tasks/autodl（Issue #3063）"
+    },
+    {
+      "id": "speechToText",
+      "seam": "speechToText",
+      "status": "live",
+      "operations": ["speech_to_text"],
+      "outputTypes": ["text"],
+      "logicalFields": ["audio", "language", "model", "response_format", "url", "audio_url"],
+      "vendorFields": ["file", "model", "language", "response_format", "url", "audio_url"],
+      "unknownFieldPolicy": "reject",
+      "notes": "#538 已挂载 speechToText seam；whisper-1 未 verified/live/listed 时 SubmitGuard 拒绝初次 submit"
+    },
+    {
+      "id": "videoDigitalHuman",
+      "seam": "videoGenerate",
+      "status": "live",
+      "operations": ["digital_human"],
+      "outputTypes": ["video"],
+      "logicalFields": ["prompt", "image", "audioTrack", "references", "duration", "aspectRatio", "resolution"],
+      "vendorFields": ["prompt", "image", "audioTrack", "duration", "aspect_ratio", "resolution"],
+      "forbiddenVendorFields": ["images", "references", "metadata", "reference_images", "image_tail"],
+      "unknownFieldPolicy": "reject",
+      "operationVendorShapes": {
+        "digital_human": {
+          "allow": ["prompt", "image", "audioTrack", "duration", "aspect_ratio", "resolution"],
+          "require": ["image", "audioTrack"]
+        }
+      },
+      "notes": "Kling Avatar 专用；image + audioTrack；未 listed 时 SubmitGuard 拒绝"
+    }
+  ]
+}

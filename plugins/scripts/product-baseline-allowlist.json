@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "_note": "产品基线门禁的豁免清单。每条必须给出可执行的理由；修好后必须删除条目，否则门禁报「僵尸豁免」。合同：docs/contracts/product-baseline.md",
+  "entries": []
+}

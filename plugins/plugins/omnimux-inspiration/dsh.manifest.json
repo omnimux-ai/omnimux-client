@@ -1,0 +1,61 @@
+{
+  "id": "omnimux-inspiration",
+  "name": "omnimux-inspiration",
+  "version": "0.1.0",
+  "tier": "tier-1-app",
+  "entrypoint": "src/index.js",
+  "status": "active",
+  "description": "OmniMux 官方应用：爆款灵感素材库、热点视频切片与创意提取",
+  "tags": ["inspiration", "trends", "ideas", "creative", "workbench"],
+  "capabilities": {
+    "tools": [
+      {
+        "name": "inspiration_search",
+        "summary": "Search inspiration items in local vault and public repository by keyword, platform, type, tag or favorite."
+      },
+      {
+        "name": "inspiration_get",
+        "summary": "Get full details of a single inspiration item including 5-dimension breakdown, script templates and local file paths."
+      },
+      {
+        "name": "inspiration_create",
+        "summary": "Create and crawl inspiration from social media URLs (TikTok, Instagram, YouTube, X), download media and trigger AI analysis."
+      },
+      {
+        "name": "inspiration_rival_accounts",
+        "summary": "List monitored rival accounts with platform, handle, followers, refresh state and potential post count."
+      },
+      {
+        "name": "inspiration_rival_posts",
+        "summary": "List the cached posts of one rival account, optionally filtered to the potential-flagged ones only."
+      },
+      {
+        "name": "inspiration_rival_post",
+        "summary": "Get one rival post with its account, including media urls, stats and library status."
+      },
+      {
+        "name": "inspiration_rival_posts_add_to_session",
+        "summary": "Build the session attachment payload of one rival post so the workbench can mount it into the active conversation."
+      },
+      {
+        "name": "inspiration_rival_to_inspiration",
+        "summary": "Import one rival post into the local inspiration library through the existing import-url pipeline."
+      },
+      {
+        "name": "inspiration_rival_refresh",
+        "summary": "Queue a refresh of one or all rival accounts, bounded by the per-account cloud call budget."
+      }
+    ],
+    "seamsProvided": [],
+    "seamsConsumed": ["reader"],
+    "slots": [
+      { "target": "sidebar.extra", "componentPath": "src/client/sidebar-entry.js" },
+      { "target": "shell.overlay", "componentPath": "src/client/InspirationStage.jsx" }
+    ],
+    "storageDomains": ["$DSH_HOME/omnimux/inspirations/"]
+  },
+  "dependencies": {
+    "requiredPlugins": ["omnimux"],
+    "systemBinaries": []
+  }
+}

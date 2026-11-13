@@ -1,0 +1,3683 @@
+{
+  "generated_at": "2026-08-20T09:33:50.526Z",
+  "dropped": [
+    {
+      "id": "exp-a-share-analysis",
+      "tab": "experts",
+      "title": "A股全链路研究团队",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-academic-journal-selector",
+      "tab": "experts",
+      "title": "学术选刊顾问团 v3.1",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-accessibility-auditor",
+      "tab": "experts",
+      "title": "无障碍审计师",
+      "rule": "source-category: exp-project-quality"
+    },
+    {
+      "id": "exp-accounts-payable-agent",
+      "tab": "experts",
+      "title": "应付账款代理",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-agent-identity-trust-expert",
+      "tab": "experts",
+      "title": "智能体身份信任专家",
+      "rule": "source-category: exp-security-compliance"
+    },
+    {
+      "id": "exp-agent-orchestrator",
+      "tab": "experts",
+      "title": "智能体编排师",
+      "rule": "source-category: exp-project-quality"
+    },
+    {
+      "id": "exp-ai-data-copilot",
+      "tab": "experts",
+      "title": "智数分析专家团",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-ai-engineer",
+      "tab": "experts",
+      "title": "AI工程师",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-ai-meeting-notes",
+      "tab": "experts",
+      "title": "会议纪要提取专家",
+      "rule": "source-category: exp-project-quality"
+    },
+    {
+      "id": "exp-ai-shifu",
+      "tab": "experts",
+      "title": "AI师傅课程制作专家",
+      "rule": "manual"
+    },
+    {
+      "id": "exp-ai-shifu-expert",
+      "tab": "experts",
+      "title": "AI师傅课程制作专家",
+      "rule": "manual"
+    },
+    {
+      "id": "exp-aihot",
+      "tab": "experts",
+      "title": "资讯速递专家",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-andon-q-expert",
+      "tab": "experts",
+      "title": "腾讯云智能客服",
+      "rule": "source-category: exp-tencent-zone"
+    },
+    {
+      "id": "exp-anti-scam-agent",
+      "tab": "experts",
+      "title": "腾讯云天御反诈专家",
+      "rule": "source-category: exp-tencent-zone"
+    },
+    {
+      "id": "exp-api-testing-expert",
+      "tab": "experts",
+      "title": "API测试专家",
+      "rule": "source-category: exp-project-quality"
+    },
+    {
+      "id": "exp-apm-performance-expert",
+      "tab": "experts",
+      "title": "应用性能专家",
+      "rule": "source-category: exp-engineering"
+    },
+    {
+      "id": "exp-arxiv-watcher",
+      "tab": "experts",
+      "title": "ArXiv论文追踪专家",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-ask-liuxiaopai",
+      "tab": "experts",
+      "title": "产品顾问",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-auto-consultant",
+      "tab": "experts",
+      "title": "汽车营销专家",
+      "rule": "/汽车|布道|公共事务|战略顾问|商务拓展/"
+    },
+    {
+      "id": "exp-autonomous-optimization-architect",
+      "tab": "experts",
+      "title": "自主优化架构师",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-behavioral-nudge-engine",
+      "tab": "experts",
+      "title": "行为助推引擎",
+      "rule": "source-category: exp-product-design"
+    },
+    {
+      "id": "exp-believe-in-light",
+      "tab": "experts",
+      "title": "相信光么",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-bidding-strategist",
+      "tab": "experts",
+      "title": "投标与方案策略师",
+      "rule": "/法务|财税|合规|招标|投标|售前|crm|大客户|外呼|招商|配送|跑腿|外卖/"
+    },
+    {
+      "id": "exp-blockchain-security-auditor",
+      "tab": "experts",
+      "title": "区块链安全审计师",
+      "rule": "source-category: exp-security-compliance"
+    },
+    {
+      "id": "exp-book-co-creator",
+      "tab": "experts",
+      "title": "图书联合创作者",
+      "rule": "/小说|网文|novel|长篇|图书|世界观|出版/"
+    },
+    {
+      "id": "exp-brazil-company-query",
+      "tab": "experts",
+      "title": "巴西商务拓展专家",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-brazil-legal",
+      "tab": "experts",
+      "title": "巴西法务合规专家",
+      "rule": "/法务|财税|合规|招标|投标|售前|crm|大客户|外呼|招商|配送|跑腿|外卖/"
+    },
+    {
+      "id": "exp-brazil-rfb-expert",
+      "tab": "experts",
+      "title": "巴西财税金融专家",
+      "rule": "/法务|财税|合规|招标|投标|售前|crm|大客户|外呼|招商|配送|跑腿|外卖/"
+    },
+    {
+      "id": "exp-capacity-expert",
+      "tab": "experts",
+      "title": "CapacityQ",
+      "rule": "source-category: exp-tencent-zone"
+    },
+    {
+      "id": "exp-career-broker",
+      "tab": "experts",
+      "title": "鹅厂职业经纪人",
+      "rule": "/\\bhr\\b|人力|招聘|职业经纪|绩效|简历|面试/"
+    },
+    {
+      "id": "exp-cat-network-quality-analyst",
+      "tab": "experts",
+      "title": "网络质量分析专家",
+      "rule": "source-category: exp-engineering"
+    },
+    {
+      "id": "exp-chaogeek-kongming",
+      "tab": "experts",
+      "title": "苏格拉底式AI思维搭子",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-chaos-expert",
+      "tab": "experts",
+      "title": "ChaosQ",
+      "rule": "source-category: exp-tencent-zone"
+    },
+    {
+      "id": "exp-charity-doc-finance-expert",
+      "tab": "experts",
+      "title": "公益文书与财务专家",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-chatlaw-team",
+      "tab": "experts",
+      "title": "中文法律咨询团",
+      "rule": "source-category: exp-security-compliance"
+    },
+    {
+      "id": "exp-chuangye-manor",
+      "tab": "experts",
+      "title": "创业伙伴",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-citongshuopro",
+      "tab": "experts",
+      "title": "刺桐说Pro-投资社群嘉宾团",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-cloud-ops-team",
+      "tab": "experts",
+      "title": "腾讯云技术支持",
+      "rule": "source-category: exp-tencent-zone"
+    },
+    {
+      "id": "exp-compliance-auditor",
+      "tab": "experts",
+      "title": "合规审计师",
+      "rule": "source-category: exp-security-compliance"
+    },
+    {
+      "id": "exp-consulting-partners",
+      "tab": "experts",
+      "title": "战略咨询合伙人",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-content-creation-expert-prod",
+      "tab": "experts",
+      "title": "汽车行业内容创作专家团",
+      "rule": "/汽车|布道|公共事务|战略顾问|商务拓展/"
+    },
+    {
+      "id": "exp-contract-expert",
+      "tab": "experts",
+      "title": "合同风控顾问",
+      "rule": "source-category: exp-security-compliance"
+    },
+    {
+      "id": "exp-contract-legal-expert",
+      "tab": "experts",
+      "title": "资深合同法务专家",
+      "rule": "source-category: exp-tencent-zone"
+    },
+    {
+      "id": "exp-cordys-crm",
+      "tab": "experts",
+      "title": "Cordys CRM L2C 管道专家",
+      "rule": "/法务|财税|合规|招标|投标|售前|crm|大客户|外呼|招商|配送|跑腿|外卖/"
+    },
+    {
+      "id": "exp-corp-credit-due-diligence",
+      "tab": "experts",
+      "title": "腾讯云天御对公信贷专家",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-corporate-training-designer",
+      "tab": "experts",
+      "title": "企业培训设计师",
+      "rule": "/企业培训|outbound|私域/"
+    },
+    {
+      "id": "exp-cultural-intelligence-strategist",
+      "tab": "experts",
+      "title": "文化智能策略师",
+      "rule": "manual"
+    },
+    {
+      "id": "exp-customer-support-expert",
+      "tab": "experts",
+      "title": "客户支持专家",
+      "rule": "/销售教练|销售管道|销售作战|销售运营|客户支持|需求发现/"
+    },
+    {
+      "id": "exp-data",
+      "tab": "experts",
+      "title": "数据探索专家",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-data-analysis",
+      "tab": "experts",
+      "title": "数据分析专家",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-data-analytics-reporter",
+      "tab": "experts",
+      "title": "数据分析报告师",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-data-engineer",
+      "tab": "experts",
+      "title": "数据工程师",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-data-integration-agent",
+      "tab": "experts",
+      "title": "数据整合代理",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-database-operations",
+      "tab": "experts",
+      "title": "数据库设计调优专家",
+      "rule": "source-category: exp-engineering"
+    },
+    {
+      "id": "exp-database-optimization-expert",
+      "tab": "experts",
+      "title": "数据库优化专家",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-databrain-agent-v2",
+      "tab": "experts",
+      "title": "DataBrain数据专家2.0",
+      "rule": "source-category: exp-tencent-zone"
+    },
+    {
+      "id": "exp-databrain-opinion-expert",
+      "tab": "experts",
+      "title": "DataBrain舆情分析专家",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-deal-strategist",
+      "tab": "experts",
+      "title": "交易策略师",
+      "rule": "manual"
+    },
+    {
+      "id": "exp-deep-research",
+      "tab": "experts",
+      "title": "深度研究专家",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-delightful-experience-designer",
+      "tab": "experts",
+      "title": "趣味体验设计师",
+      "rule": "source-category: exp-product-design"
+    },
+    {
+      "id": "exp-dev-pipeline-orchestrator",
+      "tab": "experts",
+      "title": "开发流水线编排专家",
+      "rule": "source-category: exp-engineering"
+    },
+    {
+      "id": "exp-developer-evangelist",
+      "tab": "experts",
+      "title": "开发者布道师",
+      "rule": "/汽车|布道|公共事务|战略顾问|商务拓展/"
+    },
+    {
+      "id": "exp-discovery-coach",
+      "tab": "experts",
+      "title": "需求发现教练",
+      "rule": "/销售教练|销售管道|销售作战|销售运营|客户支持|需求发现/"
+    },
+    {
+      "id": "exp-diversity-visual-expert",
+      "tab": "experts",
+      "title": "多元视觉专家",
+      "rule": "source-category: exp-product-design"
+    },
+    {
+      "id": "exp-document-generation-expert",
+      "tab": "experts",
+      "title": "文档生成专家",
+      "rule": "source-category: exp-project-quality"
+    },
+    {
+      "id": "exp-document-skills",
+      "tab": "experts",
+      "title": "文档处理专家",
+      "rule": "source-category: exp-project-quality"
+    },
+    {
+      "id": "exp-earnings-reviewer",
+      "tab": "experts",
+      "title": "财报研究员",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-edgeone-makers-experts",
+      "tab": "experts",
+      "title": "Makers 开发专家团",
+      "rule": "source-category: exp-tencent-zone"
+    },
+    {
+      "id": "exp-egypt-public-affairs",
+      "tab": "experts",
+      "title": "埃及公共事务专家",
+      "rule": "/汽车|布道|公共事务|战略顾问|商务拓展/"
+    },
+    {
+      "id": "exp-egypt-strategic-advisory",
+      "tab": "experts",
+      "title": "埃及战略顾问",
+      "rule": "/汽车|布道|公共事务|战略顾问|商务拓展/"
+    },
+    {
+      "id": "exp-embedded-firmware-engineer",
+      "tab": "experts",
+      "title": "嵌入式固件工程师",
+      "rule": "source-category: exp-engineering"
+    },
+    {
+      "id": "exp-empirical-research-team",
+      "tab": "experts",
+      "title": "科研专家团",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-eno",
+      "tab": "experts",
+      "title": "前端架构分析专家",
+      "rule": "source-category: exp-engineering"
+    },
+    {
+      "id": "exp-enterprise-account-strategist",
+      "tab": "experts",
+      "title": "大客户策略师",
+      "rule": "/法务|财税|合规|招标|投标|售前|crm|大客户|外呼|招商|配送|跑腿|外卖/"
+    },
+    {
+      "id": "exp-enterprise-legal-team",
+      "tab": "experts",
+      "title": "企业法务专家团",
+      "rule": "source-category: exp-security-compliance"
+    },
+    {
+      "id": "exp-equity-research",
+      "tab": "experts",
+      "title": "股票研究专家",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-evidence-collector",
+      "tab": "experts",
+      "title": "证据收集员",
+      "rule": "source-category: exp-project-quality"
+    },
+    {
+      "id": "exp-executive-summary-generator",
+      "tab": "experts",
+      "title": "战略报告顾问",
+      "rule": "source-category: exp-project-quality"
+    },
+    {
+      "id": "exp-experiment-tracking-manager",
+      "tab": "experts",
+      "title": "实验追踪管理者",
+      "rule": "source-category: exp-project-quality"
+    },
+    {
+      "id": "exp-family-education-ma",
+      "tab": "experts",
+      "title": "家庭教育专家",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-fbsir-aigc-compliance-red-team",
+      "tab": "experts",
+      "title": "AIGC 营销合规审查官",
+      "rule": "source-category: exp-security-compliance"
+    },
+    {
+      "id": "exp-fbsir-board-secretary-assistant",
+      "tab": "experts",
+      "title": "董秘助手",
+      "rule": "source-category: exp-security-compliance"
+    },
+    {
+      "id": "exp-fbsir-eight-seat-board",
+      "tab": "experts",
+      "title": "独董会",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-fbsir-industry-scene-researcher",
+      "tab": "experts",
+      "title": "行业场景研究员",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-fbsir-super-partner",
+      "tab": "experts",
+      "title": "超级合伙人",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-feedback-synthesis-analyst",
+      "tab": "experts",
+      "title": "反馈综合分析师",
+      "rule": "source-category: exp-product-design"
+    },
+    {
+      "id": "exp-fin-research-expert",
+      "tab": "experts",
+      "title": "股市投研分析师",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-finance",
+      "tab": "experts",
+      "title": "财务会计专家",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-finance-data",
+      "tab": "experts",
+      "title": "金融数据检索专家",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-financial-analysis",
+      "tab": "experts",
+      "title": "金融建模专家",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-financial-tracker",
+      "tab": "experts",
+      "title": "财务追踪师",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-finops-expert",
+      "tab": "experts",
+      "title": "FinOpsQ",
+      "rule": "source-category: exp-tencent-zone"
+    },
+    {
+      "id": "exp-fortune-consultant",
+      "tab": "experts",
+      "title": "赛博神算子",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-fortune-master",
+      "tab": "experts",
+      "title": "严谨专业的命理咨询师",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-fund-research-analyst",
+      "tab": "experts",
+      "title": "基金投研分析师",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-fundus-disease-analysis",
+      "tab": "experts",
+      "title": "腾讯健康-觅影-眼底彩照疾病分析专家",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-game-audio-engineer",
+      "tab": "experts",
+      "title": "游戏音频工程师",
+      "rule": "source-category: exp-game-spatial"
+    },
+    {
+      "id": "exp-game-designer",
+      "tab": "experts",
+      "title": "游戏系统与机制设计师",
+      "rule": "source-category: exp-game-spatial"
+    },
+    {
+      "id": "exp-game-development-studio",
+      "tab": "experts",
+      "title": "游戏开发工作室",
+      "rule": "source-category: exp-game-spatial"
+    },
+    {
+      "id": "exp-gaokao-advisor",
+      "tab": "experts",
+      "title": "高考我帮你",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-gl-reconciler",
+      "tab": "experts",
+      "title": "总账对账师",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-godot-game-script-engineer",
+      "tab": "experts",
+      "title": "Godot游戏脚本工程师",
+      "rule": "source-category: exp-game-spatial"
+    },
+    {
+      "id": "exp-godot-multiplayer-engineer",
+      "tab": "experts",
+      "title": "Godot多人联机工程师",
+      "rule": "source-category: exp-game-spatial"
+    },
+    {
+      "id": "exp-godot-shader-developer",
+      "tab": "experts",
+      "title": "Godot着色器开发者",
+      "rule": "source-category: exp-game-spatial"
+    },
+    {
+      "id": "exp-government-digital-presales-consultant",
+      "tab": "experts",
+      "title": "政府数字化售前顾问",
+      "rule": "/法务|财税|合规|招标|投标|售前|crm|大客户|外呼|招商|配送|跑腿|外卖/"
+    },
+    {
+      "id": "exp-gpt-researcher-team",
+      "tab": "experts",
+      "title": "多源深度研究报告工坊",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-healthcare-marketing-compliance-expert",
+      "tab": "experts",
+      "title": "医疗营销合规专家",
+      "rule": "source-category: exp-security-compliance"
+    },
+    {
+      "id": "exp-hr-digital-expert",
+      "tab": "experts",
+      "title": "腾讯HR数智专家",
+      "rule": "source-category: exp-tencent-zone"
+    },
+    {
+      "id": "exp-hr-operations-team",
+      "tab": "experts",
+      "title": "人力运营与HR管理",
+      "rule": "/法务|财税|合规|招标|投标|售前|crm|大客户|外呼|招商|配送|跑腿|外卖/"
+    },
+    {
+      "id": "exp-huashu-data-pro",
+      "tab": "experts",
+      "title": "花叔数据分析专家团",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-huashu-doc-reviewer",
+      "tab": "experts",
+      "title": "合同与公文审稿",
+      "rule": "source-category: exp-security-compliance"
+    },
+    {
+      "id": "exp-ihr-ai-interviewer",
+      "tab": "experts",
+      "title": "数字人招聘面试专家",
+      "rule": "/\\bhr\\b|人力|招聘|职业经纪|绩效|简历|面试/"
+    },
+    {
+      "id": "exp-ihr-conference",
+      "tab": "experts",
+      "title": "AI面谈官",
+      "rule": "/\\bhr\\b|人力|招聘|职业经纪|绩效|简历|面试/"
+    },
+    {
+      "id": "exp-incident-response-commander",
+      "tab": "experts",
+      "title": "事故响应指挥官",
+      "rule": "source-category: exp-engineering"
+    },
+    {
+      "id": "exp-indie-founder-coach",
+      "tab": "experts",
+      "title": "独立创业教练",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-indonesia-bd-expert",
+      "tab": "experts",
+      "title": "印尼商务拓展专家",
+      "rule": "/法务|财税|合规|招标|投标|售前|crm|大客户|外呼|招商|配送|跑腿|外卖/"
+    },
+    {
+      "id": "exp-indonesia-digital-law-expert",
+      "tab": "experts",
+      "title": "印尼法务合规专家",
+      "rule": "/法务|财税|合规|招标|投标|售前|crm|大客户|外呼|招商|配送|跑腿|外卖/"
+    },
+    {
+      "id": "exp-indonesia-pa-expert",
+      "tab": "experts",
+      "title": "印尼公共事务专家",
+      "rule": "/法务|财税|合规|招标|投标|售前|crm|大客户|外呼|招商|配送|跑腿|外卖/"
+    },
+    {
+      "id": "exp-industrial-park-investment-attraction-expert",
+      "tab": "experts",
+      "title": "产业园招商专家",
+      "rule": "/法务|财税|合规|招标|投标|售前|crm|大客户|外呼|招商|配送|跑腿|外卖/"
+    },
+    {
+      "id": "exp-industry-sre-team",
+      "tab": "experts",
+      "title": "腾讯云行业SRE",
+      "rule": "source-category: exp-tencent-zone"
+    },
+    {
+      "id": "exp-infrastructure-operations-expert",
+      "tab": "experts",
+      "title": "基础设施运维专家",
+      "rule": "source-category: exp-engineering"
+    },
+    {
+      "id": "exp-innovation-startup-mentor",
+      "tab": "experts",
+      "title": "大学生创新创业导师",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-inspection-expert",
+      "tab": "experts",
+      "title": "InspectQ",
+      "rule": "source-category: exp-tencent-zone"
+    },
+    {
+      "id": "exp-internal-comms",
+      "tab": "experts",
+      "title": "内部沟通专家",
+      "rule": "source-category: exp-project-quality"
+    },
+    {
+      "id": "exp-interview-simulator",
+      "tab": "experts",
+      "title": "面试模拟专家",
+      "rule": "/\\bhr\\b|人力|招聘|职业经纪|绩效|简历|面试/"
+    },
+    {
+      "id": "exp-investment-banking",
+      "tab": "experts",
+      "title": "投资银行专家",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-investment-masters-team",
+      "tab": "experts",
+      "title": "AI对冲基金多大师投资分析专家团",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-invoice-verify-expert",
+      "tab": "experts",
+      "title": "发票查验专家",
+      "rule": "source-category: exp-security-compliance"
+    },
+    {
+      "id": "exp-invoice-verify-workbuddy",
+      "tab": "experts",
+      "title": "智能发票专家团",
+      "rule": "source-category: exp-security-compliance"
+    },
+    {
+      "id": "exp-ip-expert",
+      "tab": "experts",
+      "title": "知识产权专家",
+      "rule": "source-category: exp-security-compliance"
+    },
+    {
+      "id": "exp-jinshuju-expert",
+      "tab": "experts",
+      "title": "金数据表单与数据管理专家",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-jinshuju-form-expert",
+      "tab": "experts",
+      "title": "金数据表单助手",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-jinshuju-table-expert",
+      "tab": "experts",
+      "title": "金数据AI表格助手",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-jira-workflow-admin",
+      "tab": "experts",
+      "title": "Jira工作流管理员",
+      "rule": "source-category: exp-project-quality"
+    },
+    {
+      "id": "exp-job-companion-team",
+      "tab": "experts",
+      "title": "求职陪跑团",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-kdocs-data-table",
+      "tab": "experts",
+      "title": "数据建表专家",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-kdocs-doc-butler",
+      "tab": "experts",
+      "title": "文档管家",
+      "rule": "manual"
+    },
+    {
+      "id": "exp-kdocs-knowledge-collector",
+      "tab": "experts",
+      "title": "知识收藏专家",
+      "rule": "manual"
+    },
+    {
+      "id": "exp-kdocs-pdf-toolbox",
+      "tab": "experts",
+      "title": "PDF 处理专家",
+      "rule": "manual"
+    },
+    {
+      "id": "exp-ket-prep-team",
+      "tab": "experts",
+      "title": "KET备考专家团",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-kyc-screener",
+      "tab": "experts",
+      "title": "客户合规官",
+      "rule": "source-category: exp-security-compliance"
+    },
+    {
+      "id": "exp-law-student-coach",
+      "tab": "experts",
+      "title": "法学学习教练",
+      "rule": "source-category: exp-security-compliance"
+    },
+    {
+      "id": "exp-lazy-travel-planner",
+      "tab": "experts",
+      "title": "懒人出游规划师",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-legal-builder-hub",
+      "tab": "experts",
+      "title": "法律技能治理专家",
+      "rule": "source-category: exp-security-compliance"
+    },
+    {
+      "id": "exp-legal-clinic-supervisor",
+      "tab": "experts",
+      "title": "法律诊所督导顾问",
+      "rule": "source-category: exp-security-compliance"
+    },
+    {
+      "id": "exp-legal-compliance-reviewer",
+      "tab": "experts",
+      "title": "法律合规审查员",
+      "rule": "source-category: exp-security-compliance"
+    },
+    {
+      "id": "exp-legal-search-pro",
+      "tab": "experts",
+      "title": "法律检索专家",
+      "rule": "source-category: exp-security-compliance"
+    },
+    {
+      "id": "exp-level-designer",
+      "tab": "experts",
+      "title": "关卡设计师",
+      "rule": "source-category: exp-game-spatial"
+    },
+    {
+      "id": "exp-litigation-legal",
+      "tab": "experts",
+      "title": "诉讼支持顾问",
+      "rule": "source-category: exp-security-compliance"
+    },
+    {
+      "id": "exp-liuxue-yanxue-expert",
+      "tab": "experts",
+      "title": "留学研学专家",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-llm-wiki",
+      "tab": "experts",
+      "title": "知识管理专家",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-lsp-index-engineer",
+      "tab": "experts",
+      "title": "LSP索引工程师",
+      "rule": "source-category: exp-engineering"
+    },
+    {
+      "id": "exp-mac-os-spatial-metal-engineer",
+      "tab": "experts",
+      "title": "macOS空间Metal工程师",
+      "rule": "source-category: exp-game-spatial"
+    },
+    {
+      "id": "exp-mai-deal-advisor",
+      "tab": "experts",
+      "title": "项目来了，先把路理清",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-malaysia-finance-tax",
+      "tab": "experts",
+      "title": "马来西亚财税金融专家",
+      "rule": "/法务|财税|合规|招标|投标|售前|crm|大客户|外呼|招商|配送|跑腿|外卖/"
+    },
+    {
+      "id": "exp-malaysia-hr-admin",
+      "tab": "experts",
+      "title": "马来西亚人力行政专家",
+      "rule": "/\\bhr\\b|人力|招聘|职业经纪|绩效|简历|面试/"
+    },
+    {
+      "id": "exp-malaysia-legal",
+      "tab": "experts",
+      "title": "马来西亚法务合规专家",
+      "rule": "/法务|财税|合规|招标|投标|售前|crm|大客户|外呼|招商|配送|跑腿|外卖/"
+    },
+    {
+      "id": "exp-market-analysis-cn",
+      "tab": "experts",
+      "title": "市场分析专家",
+      "rule": "manual"
+    },
+    {
+      "id": "exp-market-researcher",
+      "tab": "experts",
+      "title": "行业研究员",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-marketing-reviewer",
+      "tab": "experts",
+      "title": "营销文案审查官",
+      "rule": "source-category: exp-security-compliance"
+    },
+    {
+      "id": "exp-meeting-prep-agent",
+      "tab": "experts",
+      "title": "会前准备助理",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-meituan-living-assistant",
+      "tab": "experts",
+      "title": "美团生活助手",
+      "rule": "/法务|财税|合规|招标|投标|售前|crm|大客户|外呼|招商|配送|跑腿|外卖/"
+    },
+    {
+      "id": "exp-mentougou-business-guide",
+      "tab": "experts",
+      "title": "门头沟区营商政策顾问",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-metamorphosis-practitioner",
+      "tab": "experts",
+      "title": "创业心态陪伴者",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-migraq-team",
+      "tab": "experts",
+      "title": "腾讯云上云迁移专家团",
+      "rule": "source-category: exp-tencent-zone"
+    },
+    {
+      "id": "exp-model-builder",
+      "tab": "experts",
+      "title": "财务建模师",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-model-quality-assurance-expert",
+      "tab": "experts",
+      "title": "模型质量保障专家",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-month-end-closer",
+      "tab": "experts",
+      "title": "月末结账会计",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-multi-cloud-expert",
+      "tab": "experts",
+      "title": "多云AIOps专家",
+      "rule": "source-category: exp-tencent-zone"
+    },
+    {
+      "id": "exp-multi-cloud-management-expert",
+      "tab": "experts",
+      "title": "腾讯云DevOps专家",
+      "rule": "source-category: exp-tencent-zone"
+    },
+    {
+      "id": "exp-narrative-designer",
+      "tab": "experts",
+      "title": "叙事设计师",
+      "rule": "source-category: exp-game-spatial"
+    },
+    {
+      "id": "exp-ncre-expert",
+      "tab": "experts",
+      "title": "计算机等级考试专家团",
+      "rule": "source-category: exp-engineering"
+    },
+    {
+      "id": "exp-new-share-expert",
+      "tab": "experts",
+      "title": "新股专家",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-news-briefing-expert",
+      "tab": "experts",
+      "title": "私人新闻主编",
+      "rule": "/新闻|资讯/"
+    },
+    {
+      "id": "exp-news-buddy",
+      "tab": "experts",
+      "title": "资讯顾问",
+      "rule": "/新闻|资讯/"
+    },
+    {
+      "id": "exp-nges-healthcare-marketing-team",
+      "tab": "experts",
+      "title": "腾讯健康NGES医药营销专家团",
+      "rule": "source-category: exp-tencent-zone"
+    },
+    {
+      "id": "exp-ngo-challenge-advisor",
+      "tab": "experts",
+      "title": "NGO 赛题设计专家",
+      "rule": "source-category: exp-product-design"
+    },
+    {
+      "id": "exp-novel-creator",
+      "tab": "experts",
+      "title": "世界观架构师 / 连续性编辑",
+      "rule": "/小说|网文|novel|长篇|图书|世界观|出版/"
+    },
+    {
+      "id": "exp-novel-generator",
+      "tab": "experts",
+      "title": "爽文小说生成专家",
+      "rule": "/小说|网文|novel|长篇|图书|世界观|出版/"
+    },
+    {
+      "id": "exp-nuwa",
+      "tab": "experts",
+      "title": "思维蒸馏师",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-omics-bioinfo-expert",
+      "tab": "experts",
+      "title": "腾讯组学生信分析专家",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-omics-cdgpt-expert",
+      "tab": "experts",
+      "title": "腾讯CD-GPT生物序列建模专家",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-omics-diagnosis-expert",
+      "tab": "experts",
+      "title": "腾讯组学任务分析智能诊断专家",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-omics-hpc-expert",
+      "tab": "experts",
+      "title": "腾讯组学HPC集群运维与作业管理专家",
+      "rule": "source-category: exp-engineering"
+    },
+    {
+      "id": "exp-omics-iggm-expert",
+      "tab": "experts",
+      "title": "腾讯IgGM抗体药物研发专家",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-omics-ori-expert",
+      "tab": "experts",
+      "title": "腾讯ORI蛋白设计专家",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-omics-scbert-expert",
+      "tab": "experts",
+      "title": "腾讯scBert单细胞预训练专家",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-omics-scprotein-expert",
+      "tab": "experts",
+      "title": "腾讯scPROTEIN单细胞蛋白组建模专家",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-omics-tfold-expert",
+      "tab": "experts",
+      "title": "腾讯tFold抗体结构预测专家",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-opc-team",
+      "tab": "experts",
+      "title": "一人公司专家团",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-openspec-doc-team",
+      "tab": "experts",
+      "title": "企业级长文档生成工坊",
+      "rule": "source-category: exp-project-quality"
+    },
+    {
+      "id": "exp-outbound-strategist",
+      "tab": "experts",
+      "title": "外呼策略师",
+      "rule": "/法务|财税|合规|招标|投标|售前|crm|大客户|外呼|招商|配送|跑腿|外卖/"
+    },
+    {
+      "id": "exp-panshi-customer-visit-agent",
+      "tab": "experts",
+      "title": "跟进拜访助手",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-paper-topic-selection",
+      "tab": "experts",
+      "title": "选题顾问（WANFANG TOPIC）",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-patient-education-content-review-word-assistant",
+      "tab": "experts",
+      "title": "腾讯健康药箱-私域患教内容审核助手",
+      "rule": "source-category: exp-tencent-zone"
+    },
+    {
+      "id": "exp-performance-testing-expert",
+      "tab": "experts",
+      "title": "性能测试专家",
+      "rule": "source-category: exp-project-quality"
+    },
+    {
+      "id": "exp-personal-fitness-coach",
+      "tab": "experts",
+      "title": "私人健身营养教练",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-personal-knowledge-architect",
+      "tab": "experts",
+      "title": "个人知识库架构师",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-pitch-agent",
+      "tab": "experts",
+      "title": "投行交易助理",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-pneumonia-ai-analyst",
+      "tab": "experts",
+      "title": "基于CT序列的肺炎AI辅助诊断分析",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-podcast-strategist",
+      "tab": "experts",
+      "title": "播客策略师",
+      "rule": "manual"
+    },
+    {
+      "id": "exp-presales-technical-consultant",
+      "tab": "experts",
+      "title": "售前技术顾问",
+      "rule": "/法务|财税|合规|招标|投标|售前|crm|大客户|外呼|招商|配送|跑腿|外卖/"
+    },
+    {
+      "id": "exp-private-domain-marketing-expert",
+      "tab": "experts",
+      "title": "私域营销专家",
+      "rule": "manual"
+    },
+    {
+      "id": "exp-private-domain-operations-expert",
+      "tab": "experts",
+      "title": "私域运营专家",
+      "rule": "/企业培训|outbound|私域/"
+    },
+    {
+      "id": "exp-private-equity",
+      "tab": "experts",
+      "title": "私募股权专家",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-project-shepherd",
+      "tab": "experts",
+      "title": "项目牧羊人",
+      "rule": "source-category: exp-project-quality"
+    },
+    {
+      "id": "exp-prompt-engineering-expert",
+      "tab": "experts",
+      "title": "AI提示词工程专家",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-proposal-strategist",
+      "tab": "experts",
+      "title": "方案策划师",
+      "rule": "/法务|财税|合规|招标|投标|售前|crm|大客户|外呼|招商|配送|跑腿|外卖/"
+    },
+    {
+      "id": "exp-qingflow-hr-expert",
+      "tab": "experts",
+      "title": "人力资源数字化专家",
+      "rule": "/\\bhr\\b|人力|招聘|职业经纪|绩效|简历|面试/"
+    },
+    {
+      "id": "exp-reality-checker",
+      "tab": "experts",
+      "title": "现实检查员",
+      "rule": "source-category: exp-project-quality"
+    },
+    {
+      "id": "exp-recruitment-expert",
+      "tab": "experts",
+      "title": "招聘专家",
+      "rule": "/\\bhr\\b|人力|招聘|职业经纪|绩效|简历|面试/"
+    },
+    {
+      "id": "exp-resume-assistant",
+      "tab": "experts",
+      "title": "简历优化专家",
+      "rule": "/\\bhr\\b|人力|招聘|职业经纪|绩效|简历|面试/"
+    },
+    {
+      "id": "exp-roadshow-research-team",
+      "tab": "experts",
+      "title": "资本市场路演研究团",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-roblox-avatar-creator",
+      "tab": "experts",
+      "title": "Roblox虚拟形象创作者",
+      "rule": "source-category: exp-game-spatial"
+    },
+    {
+      "id": "exp-roblox-experience-designer",
+      "tab": "experts",
+      "title": "Roblox体验设计师",
+      "rule": "source-category: exp-game-spatial"
+    },
+    {
+      "id": "exp-roblox-system-script-engineer",
+      "tab": "experts",
+      "title": "Roblox系统脚本工程师",
+      "rule": "source-category: exp-game-spatial"
+    },
+    {
+      "id": "exp-rum-fullstack-team",
+      "tab": "experts",
+      "title": "前端监控全链路工坊",
+      "rule": "source-category: exp-engineering"
+    },
+    {
+      "id": "exp-sa-legal-compliance",
+      "tab": "experts",
+      "title": "南非法务合规专家",
+      "rule": "source-category: exp-security-compliance"
+    },
+    {
+      "id": "exp-sales-battle-team",
+      "tab": "experts",
+      "title": "销售运营与情报",
+      "rule": "/销售教练|销售管道|销售作战|销售运营|客户支持|需求发现/"
+    },
+    {
+      "id": "exp-sales-coach",
+      "tab": "experts",
+      "title": "销售教练",
+      "rule": "/销售教练|销售管道|销售作战|销售运营|客户支持|需求发现/"
+    },
+    {
+      "id": "exp-sales-data-extraction-agent",
+      "tab": "experts",
+      "title": "销售数据提取代理",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-sales-pipeline-analyst",
+      "tab": "experts",
+      "title": "销售管道分析师",
+      "rule": "/销售教练|销售管道|销售作战|销售运营|客户支持|需求发现/"
+    },
+    {
+      "id": "exp-sdk-log-expert",
+      "tab": "experts",
+      "title": "SDK 日志分析专家",
+      "rule": "source-category: exp-tencent-zone"
+    },
+    {
+      "id": "exp-senior-project-manager",
+      "tab": "experts",
+      "title": "高级项目经理",
+      "rule": "source-category: exp-project-quality"
+    },
+    {
+      "id": "exp-sg-biz-dev",
+      "tab": "experts",
+      "title": "新加坡商务拓展专家",
+      "rule": "/法务|财税|合规|招标|投标|售前|crm|大客户|外呼|招商|配送|跑腿|外卖/"
+    },
+    {
+      "id": "exp-sg-finance-tax",
+      "tab": "experts",
+      "title": "新加坡财税金融专家",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-sg-hr-admin-expert",
+      "tab": "experts",
+      "title": "新加坡人力行政专家",
+      "rule": "/\\bhr\\b|人力|招聘|职业经纪|绩效|简历|面试/"
+    },
+    {
+      "id": "exp-site-reliability-engineer",
+      "tab": "experts",
+      "title": "站点可靠性工程师",
+      "rule": "source-category: exp-engineering"
+    },
+    {
+      "id": "exp-skill-smith",
+      "tab": "experts",
+      "title": "Skill 制作顾问",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-skillhub-charity-expert-team",
+      "tab": "experts",
+      "title": "技术公益专家团",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-smart-stock-analyst",
+      "tab": "experts",
+      "title": "多市场智能股票分析师",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-smb-compliance",
+      "tab": "experts",
+      "title": "客户与合规官",
+      "rule": "source-category: exp-security-compliance"
+    },
+    {
+      "id": "exp-smb-finance",
+      "tab": "experts",
+      "title": "财务管家",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-smb-operations",
+      "tab": "experts",
+      "title": "组织运营师",
+      "rule": "/\\bhr\\b|人力|招聘|职业经纪|绩效|简历|面试/"
+    },
+    {
+      "id": "exp-smb-team",
+      "tab": "experts",
+      "title": "经营总管",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-soe",
+      "tab": "experts",
+      "title": "腾讯云安全运营专家",
+      "rule": "source-category: exp-security-compliance"
+    },
+    {
+      "id": "exp-solidity-smart-contract-engineer",
+      "tab": "experts",
+      "title": "Solidity智能合约工程师",
+      "rule": "source-category: exp-engineering"
+    },
+    {
+      "id": "exp-south-africa-hr-admin",
+      "tab": "experts",
+      "title": "南非人力行政专家",
+      "rule": "/法务|财税|合规|招标|投标|售前|crm|大客户|外呼|招商|配送|跑腿|外卖/"
+    },
+    {
+      "id": "exp-south-africa-strategy-advisor",
+      "tab": "experts",
+      "title": "南非战略顾问专家",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-sprint-priority-manager",
+      "tab": "experts",
+      "title": "迭代优先级管理者",
+      "rule": "source-category: exp-product-design"
+    },
+    {
+      "id": "exp-sre-expert",
+      "tab": "experts",
+      "title": "SREQ",
+      "rule": "source-category: exp-tencent-zone"
+    },
+    {
+      "id": "exp-statement-auditor",
+      "tab": "experts",
+      "title": "LP 报表审核师",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-stock-partner-team",
+      "tab": "experts",
+      "title": "腾讯自选股股票投研专家团",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-strategy-backtest-expert",
+      "tab": "experts",
+      "title": "量化策略回测师",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-studio-operations-manager",
+      "tab": "experts",
+      "title": "工作室运营管理者",
+      "rule": "source-category: exp-project-quality"
+    },
+    {
+      "id": "exp-studio-producer",
+      "tab": "experts",
+      "title": "工作室制片人",
+      "rule": "source-category: exp-project-quality"
+    },
+    {
+      "id": "exp-study-abroad-consultant",
+      "tab": "experts",
+      "title": "留学顾问",
+      "rule": "manual"
+    },
+    {
+      "id": "exp-study-planner",
+      "tab": "experts",
+      "title": "学习规划师",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-supply-chain-strategist",
+      "tab": "experts",
+      "title": "供应链策略师",
+      "rule": "manual"
+    },
+    {
+      "id": "exp-tanyuan-cultural-heritage-expert",
+      "tab": "experts",
+      "title": "腾讯探元文博专家",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-tax-compliance-team",
+      "tab": "experts",
+      "title": "财税合规专家团",
+      "rule": "source-category: exp-security-compliance"
+    },
+    {
+      "id": "exp-tc-sec",
+      "tab": "experts",
+      "title": "腾讯云安全专家",
+      "rule": "source-category: exp-security-compliance"
+    },
+    {
+      "id": "exp-tdx-stock-diagnostician",
+      "tab": "experts",
+      "title": "个股深度诊断师",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-tdx-stock-hunter",
+      "tab": "experts",
+      "title": "智能选股猎手",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-tdx-value-assessor",
+      "tab": "experts",
+      "title": "价值评估师",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-technical-artist",
+      "tab": "experts",
+      "title": "技术美术",
+      "rule": "source-category: exp-game-spatial"
+    },
+    {
+      "id": "exp-technical-documentation-engineer",
+      "tab": "experts",
+      "title": "技术文档工程师",
+      "rule": "source-category: exp-project-quality"
+    },
+    {
+      "id": "exp-tencent-charity-expert",
+      "tab": "experts",
+      "title": "腾讯技术公益智能化专家",
+      "rule": "source-category: exp-tencent-zone"
+    },
+    {
+      "id": "exp-tencent-cloud-quote-assistant",
+      "tab": "experts",
+      "title": "腾讯云产品报价顾问",
+      "rule": "source-category: exp-tencent-zone"
+    },
+    {
+      "id": "exp-tencent-rtc-expert",
+      "tab": "experts",
+      "title": "腾讯云实时音视频专家",
+      "rule": "source-category: exp-tencent-zone"
+    },
+    {
+      "id": "exp-tencent-security-expert",
+      "tab": "experts",
+      "title": "腾讯安全专家",
+      "rule": "source-category: exp-tencent-zone"
+    },
+    {
+      "id": "exp-terminal-integration-expert",
+      "tab": "experts",
+      "title": "终端集成专家",
+      "rule": "source-category: exp-engineering"
+    },
+    {
+      "id": "exp-terminal-veteran",
+      "tab": "experts",
+      "title": "终端产业分析师",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-test-results-analyst",
+      "tab": "experts",
+      "title": "测试结果分析师",
+      "rule": "source-category: exp-project-quality"
+    },
+    {
+      "id": "exp-thai-marketing-creative",
+      "tab": "experts",
+      "title": "泰国市场营销专家",
+      "rule": "/法务|财税|合规|招标|投标|售前|crm|大客户|外呼|招商|配送|跑腿|外卖/"
+    },
+    {
+      "id": "exp-thailand-hr-admin",
+      "tab": "experts",
+      "title": "泰国人力行政专家",
+      "rule": "/法务|财税|合规|招标|投标|售前|crm|大客户|外呼|招商|配送|跑腿|外卖/"
+    },
+    {
+      "id": "exp-threat-detection-engineer",
+      "tab": "experts",
+      "title": "威胁检测工程师",
+      "rule": "source-category: exp-engineering"
+    },
+    {
+      "id": "exp-tianyu-account-guardian",
+      "tab": "experts",
+      "title": "腾讯云天御账号保护专家",
+      "rule": "source-category: exp-tencent-zone"
+    },
+    {
+      "id": "exp-tianyu-marketing-guardian",
+      "tab": "experts",
+      "title": "腾讯云天御营销保护专家",
+      "rule": "source-category: exp-tencent-zone"
+    },
+    {
+      "id": "exp-tiderider-sentiment",
+      "tab": "experts",
+      "title": "游戏舆情分析师",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-tool-evaluation-expert",
+      "tab": "experts",
+      "title": "工具评估专家",
+      "rule": "source-category: exp-project-quality"
+    },
+    {
+      "id": "exp-trading-agent",
+      "tab": "experts",
+      "title": "交易分析团队",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-trend-researcher",
+      "tab": "experts",
+      "title": "行业趋势专家",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-tripstar-agent",
+      "tab": "experts",
+      "title": "旅游攻略管家",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-uae-public-affairs",
+      "tab": "experts",
+      "title": "公共事务顾问",
+      "rule": "/汽车|布道|公共事务|战略顾问|商务拓展/"
+    },
+    {
+      "id": "exp-uae-strategic-advisor",
+      "tab": "experts",
+      "title": "阿联酋战略顾问",
+      "rule": "/汽车|布道|公共事务|战略顾问|商务拓展/"
+    },
+    {
+      "id": "exp-unity-architect",
+      "tab": "experts",
+      "title": "Unity架构师",
+      "rule": "source-category: exp-game-spatial"
+    },
+    {
+      "id": "exp-unity-editor-tool-developer",
+      "tab": "experts",
+      "title": "Unity编辑器工具开发者",
+      "rule": "source-category: exp-game-spatial"
+    },
+    {
+      "id": "exp-unity-multiplayer-engineer",
+      "tab": "experts",
+      "title": "Unity多人联机工程师",
+      "rule": "source-category: exp-game-spatial"
+    },
+    {
+      "id": "exp-unity-shader-graph-artist",
+      "tab": "experts",
+      "title": "Unity着色器图表艺术家",
+      "rule": "source-category: exp-game-spatial"
+    },
+    {
+      "id": "exp-unreal-multiplayer-architect",
+      "tab": "experts",
+      "title": "Unreal多人架构师",
+      "rule": "source-category: exp-game-spatial"
+    },
+    {
+      "id": "exp-unreal-system-engineer",
+      "tab": "experts",
+      "title": "Unreal系统工程师",
+      "rule": "source-category: exp-game-spatial"
+    },
+    {
+      "id": "exp-unreal-technical-artist",
+      "tab": "experts",
+      "title": "Unreal技术美术",
+      "rule": "source-category: exp-game-spatial"
+    },
+    {
+      "id": "exp-unreal-world-builder",
+      "tab": "experts",
+      "title": "Unreal世界构建师",
+      "rule": "source-category: exp-game-spatial"
+    },
+    {
+      "id": "exp-uupt-delivery",
+      "tab": "experts",
+      "title": "同城配送助手",
+      "rule": "/法务|财税|合规|招标|投标|售前|crm|大客户|外呼|招商|配送|跑腿|外卖/"
+    },
+    {
+      "id": "exp-valuation-reviewer",
+      "tab": "experts",
+      "title": "组合估值主管",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-vietnam-finance-tax-expert",
+      "tab": "experts",
+      "title": "越南财税金融专家",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-vietnam-public-affairs",
+      "tab": "experts",
+      "title": "越南公共事务专家",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-vision-os-spatial-engineer",
+      "tab": "experts",
+      "title": "visionOS空间工程师",
+      "rule": "source-category: exp-game-spatial"
+    },
+    {
+      "id": "exp-vocab-craft-expert",
+      "tab": "experts",
+      "title": "智能词汇教练",
+      "rule": "source-category: exp-data-ai"
+    },
+    {
+      "id": "exp-wealth-management",
+      "tab": "experts",
+      "title": "财富管理专家",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-webapp-testing",
+      "tab": "experts",
+      "title": "Web应用测试专家",
+      "rule": "source-category: exp-project-quality"
+    },
+    {
+      "id": "exp-wechat-channels-strategist",
+      "tab": "experts",
+      "title": "微信视频号运营策略师",
+      "rule": "/企业培训|outbound|私域/"
+    },
+    {
+      "id": "exp-well-arch-expert",
+      "tab": "experts",
+      "title": "ArchQ",
+      "rule": "source-category: exp-tencent-zone"
+    },
+    {
+      "id": "exp-workflow-optimization-expert",
+      "tab": "experts",
+      "title": "工作流优化专家",
+      "rule": "source-category: exp-project-quality"
+    },
+    {
+      "id": "exp-workspace-builder",
+      "tab": "experts",
+      "title": "工作台搭建师",
+      "rule": "source-category: exp-engineering"
+    },
+    {
+      "id": "exp-worldcup-buddy",
+      "tab": "experts",
+      "title": "世界杯看球搭子",
+      "rule": "source-category: exp-industry-consultant"
+    },
+    {
+      "id": "exp-xiaofa-litigation-assistant",
+      "tab": "experts",
+      "title": "诉讼助手",
+      "rule": "source-category: exp-security-compliance"
+    },
+    {
+      "id": "exp-xr-cockpit-interaction-expert",
+      "tab": "experts",
+      "title": "XR座舱交互专家",
+      "rule": "source-category: exp-game-spatial"
+    },
+    {
+      "id": "exp-xr-immersive-developer",
+      "tab": "experts",
+      "title": "XR沉浸式开发者",
+      "rule": "source-category: exp-game-spatial"
+    },
+    {
+      "id": "exp-xr-interface-architect",
+      "tab": "experts",
+      "title": "XR界面架构师",
+      "rule": "source-category: exp-game-spatial"
+    },
+    {
+      "id": "exp-yahoo-finance-cli",
+      "tab": "experts",
+      "title": "行情洞察与趋势发现专家",
+      "rule": "source-category: exp-finance-investment"
+    },
+    {
+      "id": "exp-yunzhi-qa-assistant",
+      "tab": "experts",
+      "title": "腾讯云知识问答专家",
+      "rule": "source-category: exp-tencent-zone"
+    },
+    {
+      "id": "exp-zero-knowledge-proof-admin",
+      "tab": "experts",
+      "title": "零知识证明管理员",
+      "rule": "source-category: exp-security-compliance"
+    },
+    {
+      "id": "sk-12306",
+      "tab": "skills",
+      "title": "查询 12306 国内列车时刻、余票与站点信息",
+      "rule": "/12306|列车|航班|机票|flights/"
+    },
+    {
+      "id": "sk-12306-train-assistant",
+      "tab": "skills",
+      "title": "12306 全功能辅助：余票/中转/候补/下单/支付，需登录账号",
+      "rule": "/12306|列车|航班|机票|flights/"
+    },
+    {
+      "id": "sk-a-stock-data",
+      "tab": "skills",
+      "title": "A股全栈数据",
+      "rule": "source-category: sk-invest"
+    },
+    {
+      "id": "sk-academic-translation",
+      "tab": "skills",
+      "title": "学术翻译",
+      "rule": "source-category: sk-knowledge"
+    },
+    {
+      "id": "sk-academic-tutor",
+      "tab": "skills",
+      "title": "学业导师",
+      "rule": "source-category: sk-edu"
+    },
+    {
+      "id": "sk-admapix",
+      "tab": "skills",
+      "title": "广告素材搜索、竞品分析、应用排行与市场洞察",
+      "rule": "source-category: sk-data"
+    },
+    {
+      "id": "sk-agent-browser-core",
+      "tab": "skills",
+      "title": "网页自动化",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-agent-mbti",
+      "tab": "skills",
+      "title": "基于 MBTI 框架的 AI Agent 人格诊断与配置系统",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-agent-team-orchestration",
+      "tab": "skills",
+      "title": "多智能体团队编排：角色定义、任务流转、交接协议与质量门禁",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-ai-shifu-course-creator",
+      "tab": "skills",
+      "title": "AI师傅课程创作",
+      "rule": "source-category: sk-edu"
+    },
+    {
+      "id": "sk-aihot",
+      "tab": "skills",
+      "title": "AIHOT",
+      "rule": "source-category: sk-news"
+    },
+    {
+      "id": "sk-airbnb",
+      "tab": "skills",
+      "title": "搜索 Airbnb 房源，含价格、评分和预订链接，无需 API Key",
+      "rule": "source-category: sk-knowledge"
+    },
+    {
+      "id": "sk-airchina-travel-assistant",
+      "tab": "skills",
+      "title": "airchina-travel-assistant",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-andonq",
+      "tab": "skills",
+      "title": "腾讯云智能客服领域虾，支持工单、需求单、云产品问答、资源查询",
+      "rule": "/服务器运维|日志服务|tencentos|智能客服领域虾|辟谣|公益|charity|小加同学|创业|macos|peekaboo/"
+    },
+    {
+      "id": "sk-anti-distill",
+      "tab": "skills",
+      "title": "反蒸馏防御：清洗 Skill 文件，看起来完整但核心知识已脱敏",
+      "rule": "source-category: sk-knowledge"
+    },
+    {
+      "id": "sk-apple-notes",
+      "tab": "skills",
+      "title": "管理 Apple 备忘录（创建、搜索、导出）",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-apple-reminders",
+      "tab": "skills",
+      "title": "管理 Apple 提醒事项（添加、编辑、完成）",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-arxiv-reader",
+      "tab": "skills",
+      "title": "基于 LLM 的 ArXiv 论文分类与深度阅读工具",
+      "rule": "source-category: sk-knowledge"
+    },
+    {
+      "id": "sk-arxiv-watcher",
+      "tab": "skills",
+      "title": "搜索和总结 ArXiv 最新研究论文",
+      "rule": "source-category: sk-dev"
+    },
+    {
+      "id": "sk-aviation-weather",
+      "tab": "skills",
+      "title": "获取 METAR/TAF 航空气象数据，飞行前天气简报，无需 API Key",
+      "rule": "source-category: sk-life"
+    },
+    {
+      "id": "sk-aviationstack-flight-tracker",
+      "tab": "skills",
+      "title": "实时航班追踪：登机口、延误、飞行位置，类 Flighty 体验（需 API K…",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-awesome-design-md",
+      "tab": "skills",
+      "title": "54 个知名网站设计系统模板，一键复用品牌级 UI 风格",
+      "rule": "source-category: sk-deploy"
+    },
+    {
+      "id": "sk-baidu-drive",
+      "tab": "skills",
+      "title": "百度网盘文件管理，支持上传、下载、转存、分享、搜索等操作",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-blogwatcher",
+      "tab": "skills",
+      "title": "监控博客和 RSS 订阅源更新",
+      "rule": "source-category: sk-news"
+    },
+    {
+      "id": "sk-boss-skills",
+      "tab": "skills",
+      "title": "蒸馏老板或生成企业家原型 Skill，模拟管理风格与决策模式",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-browser",
+      "tab": "skills",
+      "title": "Puppeteer 无头浏览器，渲染 JS 页面并提取纯文本",
+      "rule": "source-category: sk-deploy"
+    },
+    {
+      "id": "sk-browser-cash",
+      "tab": "skills",
+      "title": "Browser.cash 云端反封锁浏览器会话（绕过 Cloudflare 等）",
+      "rule": "source-category: sk-deploy"
+    },
+    {
+      "id": "sk-browser-use",
+      "tab": "skills",
+      "title": "浏览器自动化（导航、点击、截图、数据提取、多会话、云浏览器）",
+      "rule": "source-category: sk-data"
+    },
+    {
+      "id": "sk-browserwing",
+      "tab": "skills",
+      "title": "BrowserWing HTTP API 浏览器自动化（导航、交互、数据提取）",
+      "rule": "source-category: sk-data"
+    },
+    {
+      "id": "sk-cangjie-skill",
+      "tab": "skills",
+      "title": "把书蒸馏成可执行的技能（拆书、方法论提取）",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-capability-evolver",
+      "tab": "skills",
+      "title": "AI Agent 自演化引擎，分析运行历史并自动优化能力",
+      "rule": "source-category: sk-data"
+    },
+    {
+      "id": "sk-charity-finance-assistant",
+      "tab": "skills",
+      "title": "公益票据与财务整理助手。适用于基金会、社会组织、社会服务机构等公益机构的财务和…",
+      "rule": "source-category: sk-invest"
+    },
+    {
+      "id": "sk-charity-writing-assistant",
+      "tab": "skills",
+      "title": "Charity Writing Assistant",
+      "rule": "/服务器运维|日志服务|tencentos|智能客服领域虾|辟谣|公益|charity|小加同学|创业|macos|peekaboo/"
+    },
+    {
+      "id": "sk-citation-manager",
+      "tab": "skills",
+      "title": "学术引用管理，为论文添加真实参考文献并规范引用标注",
+      "rule": "source-category: sk-knowledge"
+    },
+    {
+      "id": "sk-clawbrowser",
+      "tab": "skills",
+      "title": "通过 Playwright CLI 驱动浏览器（快照、表单、会话管理）",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-cli-anything-hub",
+      "tab": "skills",
+      "title": "cli-anything-hub",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-cloudbase",
+      "tab": "skills",
+      "title": "帮你从 0 创建，或继续完善网页、小程序和简单工具，支持发布上线、内容保存、用…",
+      "rule": "source-category: sk-deploy"
+    },
+    {
+      "id": "sk-cloudflare",
+      "tab": "skills",
+      "title": "Cloudflare 平台开发与部署指南，覆盖 Workers、Pages、存…",
+      "rule": "source-category: sk-deploy"
+    },
+    {
+      "id": "sk-cloudflare-worker-builder",
+      "tab": "skills",
+      "title": "脚手架并部署 Cloudflare Worker 全栈应用",
+      "rule": "source-category: sk-deploy"
+    },
+    {
+      "id": "sk-cloudq",
+      "tab": "skills",
+      "title": "CloudQ",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-cn-ecommerce-search",
+      "tab": "skills",
+      "title": "cn-ecommerce-search",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-cnb-skill",
+      "tab": "skills",
+      "title": "CNB 平台全功能操作（仓库、Issue、PR、流水线、制品库）",
+      "rule": "source-category: sk-deploy"
+    },
+    {
+      "id": "sk-colleague-skill",
+      "tab": "skills",
+      "title": "把同事蒸馏成 AI Skill，采集飞书/钉钉数据生成人格与工作模型",
+      "rule": "source-category: sk-data"
+    },
+    {
+      "id": "sk-conversion-ops",
+      "tab": "skills",
+      "title": "conversion-ops",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-cos-vectors",
+      "tab": "skills",
+      "title": "腾讯云 COS 向量桶管理（索引、存储、相似度搜索）",
+      "rule": "source-category: sk-data"
+    },
+    {
+      "id": "sk-crash-expert-skill",
+      "tab": "skills",
+      "title": "Linux 内核 vmcore 分析专家，诊断 panic/死锁/OOM 根因",
+      "rule": "source-category: sk-data"
+    },
+    {
+      "id": "sk-ctrip-wendao",
+      "tab": "skills",
+      "title": "携程智能旅行助手，支持酒店机票预订、行程规划与旅游攻略",
+      "rule": "source-category: sk-life"
+    },
+    {
+      "id": "sk-darwin-skill",
+      "tab": "skills",
+      "title": "darwin-skill",
+      "rule": "source-category: sk-knowledge"
+    },
+    {
+      "id": "sk-deep-research",
+      "tab": "skills",
+      "title": "结构化深度调研工作流，支持大纲生成、并行搜索、报告输出",
+      "rule": "source-category: sk-knowledge"
+    },
+    {
+      "id": "sk-diagnose",
+      "tab": "skills",
+      "title": "系统化调试：重现 → 假设 → 验证 → 修复 → 回归测试",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-didi-ride-skill",
+      "tab": "skills",
+      "title": "滴滴打车：叫车、路线规划、订单查询",
+      "rule": "source-category: sk-life"
+    },
+    {
+      "id": "sk-earnings-tracker",
+      "tab": "skills",
+      "title": "AI 驱动的 A 股/美股财报追踪与智能分析推送",
+      "rule": "source-category: sk-data"
+    },
+    {
+      "id": "sk-ecomseer",
+      "tab": "skills",
+      "title": "ecomseer",
+      "rule": "source-category: sk-knowledge"
+    },
+    {
+      "id": "sk-edgeone",
+      "tab": "skills",
+      "title": "将 HTML 内容一键发布到 EdgeOne Pages 公网链接",
+      "rule": "source-category: sk-deploy"
+    },
+    {
+      "id": "sk-edgeone-pages-deploy",
+      "tab": "skills",
+      "title": "将前端或全栈项目部署到腾讯 EdgeOne Pages",
+      "rule": "source-category: sk-deploy"
+    },
+    {
+      "id": "sk-education",
+      "tab": "skills",
+      "title": "学习助手：生成学习计划、测验、抽认卡、复习材料并跟踪进度",
+      "rule": "source-category: sk-edu"
+    },
+    {
+      "id": "sk-english-exam-writing-reviewer",
+      "tab": "skills",
+      "title": "英语作文批改",
+      "rule": "source-category: sk-edu"
+    },
+    {
+      "id": "sk-english-intensive-reader",
+      "tab": "skills",
+      "title": "英语精读笔记",
+      "rule": "source-category: sk-knowledge"
+    },
+    {
+      "id": "sk-excalidraw-diagram",
+      "tab": "skills",
+      "title": "excalidraw-diagram",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-fadada-document-sign",
+      "tab": "skills",
+      "title": "法大大",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-fbs-bookwriter",
+      "tab": "skills",
+      "title": "福帮手出品 | 高质量长文档手稿工具链：书籍、手册、白皮书、行业指南、长篇报道…",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-finance-ops",
+      "tab": "skills",
+      "title": "finance-ops",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-fintech-engineer",
+      "tab": "skills",
+      "title": "fintech-engineer",
+      "rule": "source-category: sk-invest"
+    },
+    {
+      "id": "sk-flight-tracker",
+      "tab": "skills",
+      "title": "实时航班追踪，支持按地区、呼号、机场查询航班动态与时刻",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-flights-search",
+      "tab": "skills",
+      "title": "flights",
+      "rule": "/12306|列车|航班|机票|flights/"
+    },
+    {
+      "id": "sk-flyai",
+      "tab": "skills",
+      "title": "飞猪 AI",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-football-bayes",
+      "tab": "skills",
+      "title": "足球竞彩贝叶斯分析：深度研究、概率更新与剧本预测",
+      "rule": "source-category: sk-data"
+    },
+    {
+      "id": "sk-futuapi",
+      "tab": "skills",
+      "title": "futuapi",
+      "rule": "source-category: sk-invest"
+    },
+    {
+      "id": "sk-gif-sticker-maker",
+      "tab": "skills",
+      "title": "gif-sticker-maker",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-github-pages-auto-deploy",
+      "tab": "skills",
+      "title": "配置 GitHub Pages 自动部署和自定义域名支持",
+      "rule": "source-category: sk-deploy"
+    },
+    {
+      "id": "sk-globepilot-ai-agent-2",
+      "tab": "skills",
+      "title": "出境游全能助手：签证查询、货币换算、机场状态、当地活动、文化贴士，无需 API…",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-goal-tracker",
+      "tab": "skills",
+      "title": "追踪长期目标、里程碑、每日记录与问责系统",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-growth-engine",
+      "tab": "skills",
+      "title": "growth-engine",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-guizang-ppt-skill",
+      "tab": "skills",
+      "title": "歸藏的 PPT Skills，生成高质量网页 PPT、演讲 deck 与多比例…",
+      "rule": "source-category: sk-data"
+    },
+    {
+      "id": "sk-habit-tracker",
+      "tab": "skills",
+      "title": "通过打卡、连续记录和可视化培养良好习惯",
+      "rule": "source-category: sk-data"
+    },
+    {
+      "id": "sk-haina-shopping-assistant",
+      "tab": "skills",
+      "title": "海纳购物管家",
+      "rule": "source-category: sk-dev"
+    },
+    {
+      "id": "sk-handoff",
+      "tab": "skills",
+      "title": "将当前对话压缩为交接文档，供下一个 Agent 无缝接续工作",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-healthcheck",
+      "tab": "skills",
+      "title": "追踪每日饮水和睡眠记录",
+      "rule": "source-category: sk-knowledge"
+    },
+    {
+      "id": "sk-html-deploy",
+      "tab": "skills",
+      "title": "将单文件 HTML 快速发布为可分享公网链接",
+      "rule": "source-category: sk-deploy"
+    },
+    {
+      "id": "sk-idea-validator",
+      "tab": "skills",
+      "title": "创业想法验证，评估问题-方案匹配度与市场机会",
+      "rule": "/服务器运维|日志服务|tencentos|智能客服领域虾|辟谣|公益|charity|小加同学|创业|macos|peekaboo/"
+    },
+    {
+      "id": "sk-impeccable",
+      "tab": "skills",
+      "title": "高品质 UI/UX 设计工具集：帮助生成独特、生产级的前端界面，涵盖视觉风格、…",
+      "rule": "manual"
+    },
+    {
+      "id": "sk-imsg",
+      "tab": "skills",
+      "title": "iMessage/短信收发与历史查看",
+      "rule": "/iMessage|短信/"
+    },
+    {
+      "id": "sk-infographic-maker",
+      "tab": "skills",
+      "title": "infographic-maker",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-install-futu-opend",
+      "tab": "skills",
+      "title": "install-futu-opend",
+      "rule": "source-category: sk-dev"
+    },
+    {
+      "id": "sk-jiaozhen-factcheck",
+      "tab": "skills",
+      "title": "事实查证与谣言识别，判断信息真伪与可靠性",
+      "rule": "source-category: sk-news"
+    },
+    {
+      "id": "sk-jinshuju",
+      "tab": "skills",
+      "title": "金数据",
+      "rule": "source-category: sk-data"
+    },
+    {
+      "id": "sk-khazix-writer",
+      "tab": "skills",
+      "title": "khazix-writer",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-knowledge-framework-builder",
+      "tab": "skills",
+      "title": "知识框架梳理",
+      "rule": "source-category: sk-knowledge"
+    },
+    {
+      "id": "sk-landing-page-generator",
+      "tab": "skills",
+      "title": "生成可直接部署的单页营销落地页",
+      "rule": "source-category: sk-deploy"
+    },
+    {
+      "id": "sk-legal-logic-analysis",
+      "tab": "skills",
+      "title": "legal-logic-analysis",
+      "rule": "/供应链|留学|legal/"
+    },
+    {
+      "id": "sk-lexiang-knowledge-base",
+      "tab": "skills",
+      "title": "支持多源导入、多模态问答、PPT生成的原生Agentic知识库，深度解析图文与…",
+      "rule": "source-category: sk-knowledge"
+    },
+    {
+      "id": "sk-lingxi-financialsearch-skill",
+      "tab": "skills",
+      "title": "国泰海通金融数据查询，自然语言查A股行情、财务、技术指标",
+      "rule": "source-category: sk-invest"
+    },
+    {
+      "id": "sk-llm-wiki",
+      "tab": "skills",
+      "title": "用 LLM 增量构建和维护个人知识库 Wiki",
+      "rule": "source-category: sk-knowledge"
+    },
+    {
+      "id": "sk-macro-monitor",
+      "tab": "skills",
+      "title": "每日自动采集宏观经济数据和政策信息并推送",
+      "rule": "source-category: sk-data"
+    },
+    {
+      "id": "sk-market-researcher",
+      "tab": "skills",
+      "title": "市场调研专家，提供市场分析、消费者洞察与机会评估",
+      "rule": "source-category: sk-data"
+    },
+    {
+      "id": "sk-mcdonald-assistant",
+      "tab": "skills",
+      "title": "麦当劳点餐助手",
+      "rule": "source-category: sk-life"
+    },
+    {
+      "id": "sk-mcporter",
+      "tab": "skills",
+      "title": "管理和调用 MCP 服务器与工具",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-meituan-coupon-workbuddy",
+      "tab": "skills",
+      "title": "meituan-coupon-workbuddy",
+      "rule": "source-category: sk-life"
+    },
+    {
+      "id": "sk-meituan-huisheng-coupon",
+      "tab": "skills",
+      "title": "帮用户自动领取美团优惠券并查询当日优惠活动，覆盖外卖、到店餐饮、休闲娱乐、酒旅…",
+      "rule": "source-category: sk-life"
+    },
+    {
+      "id": "sk-migraq",
+      "tab": "skills",
+      "title": "腾讯云迁移服务专家，支持跨云资源扫描、选型推荐、TCO 分析与迁移方案规划",
+      "rule": "source-category: sk-data"
+    },
+    {
+      "id": "sk-minimax-xlsx",
+      "tab": "skills",
+      "title": "Excel 文件创建与分析",
+      "rule": "source-category: sk-data"
+    },
+    {
+      "id": "sk-model-usage",
+      "tab": "skills",
+      "title": "model-usage",
+      "rule": "/fullstack-dev|shader-dev|ios-application-dev|react-native-dev|gsap|skyline|tdesign|小程序|model-usage/"
+    },
+    {
+      "id": "sk-multi-search-engine",
+      "tab": "skills",
+      "title": "集成 17 个搜索引擎（8 国内 + 9 国际），无需 API",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-my-novel-writer",
+      "tab": "skills",
+      "title": "辅助创作长篇小说，支持人物设定、世界观管理和分章生成",
+      "rule": "/小说|网文|novel|长篇|图书|世界观|出版/"
+    },
+    {
+      "id": "sk-neodata-financial-search",
+      "tab": "skills",
+      "title": "自然语言查询股票、基金、宏观、外汇、大宗商品等金融数据",
+      "rule": "source-category: sk-invest"
+    },
+    {
+      "id": "sk-netlify-deploy",
+      "tab": "skills",
+      "title": "使用 Netlify CLI 部署和管理静态网站",
+      "rule": "source-category: sk-deploy"
+    },
+    {
+      "id": "sk-news-summary",
+      "tab": "skills",
+      "title": "从国际 RSS 源获取新闻并生成摘要和语音播报",
+      "rule": "source-category: sk-news"
+    },
+    {
+      "id": "sk-note-organizer",
+      "tab": "skills",
+      "title": "基于 Joplin 的个人笔记管理与知识库工具",
+      "rule": "source-category: sk-knowledge"
+    },
+    {
+      "id": "sk-notebooklm-studio",
+      "tab": "skills",
+      "title": "NotebookLM 学习工作室：导入多种来源，生成播客、测验、抽认卡、思维导…",
+      "rule": "source-category: sk-edu"
+    },
+    {
+      "id": "sk-notion",
+      "tab": "skills",
+      "title": "notion中文",
+      "rule": "source-category: sk-deploy"
+    },
+    {
+      "id": "sk-novel",
+      "tab": "skills",
+      "title": "在终端管理小说数据(章节、角色、情节)，支持导出和搜索",
+      "rule": "source-category: sk-data"
+    },
+    {
+      "id": "sk-novel-writer",
+      "tab": "skills",
+      "title": "novel-writer",
+      "rule": "/小说|网文|novel|长篇|图书|世界观|出版/"
+    },
+    {
+      "id": "sk-novel-writing",
+      "tab": "skills",
+      "title": "AI网文创作",
+      "rule": "/小说|网文|novel|长篇|图书|世界观|出版/"
+    },
+    {
+      "id": "sk-nuwa-skill",
+      "tab": "skills",
+      "title": "蒸馏人物思维框架，生成可运行的人物 Skill",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-obsidian",
+      "tab": "skills",
+      "title": "Obsidian 知识库管理与自动化",
+      "rule": "source-category: sk-knowledge"
+    },
+    {
+      "id": "sk-open-lesson",
+      "tab": "skills",
+      "title": "苏格拉底式 AI 辅导：生成学习计划、音频对话式教学、诊断推理差距",
+      "rule": "source-category: sk-edu"
+    },
+    {
+      "id": "sk-open-novel-writing",
+      "tab": "skills",
+      "title": "open-novel-writing",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-openai-whisper",
+      "tab": "skills",
+      "title": "本地语音转文字（无需 API 密钥）",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-openai-whisper-api",
+      "tab": "skills",
+      "title": "通过 OpenAI API 转录音频",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-openclaw-assets-to-workbuddy",
+      "tab": "skills",
+      "title": "openclaw-assets-to-workbuddy",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-outbound-engine",
+      "tab": "skills",
+      "title": "outbound-engine",
+      "rule": "/企业培训|outbound|私域/"
+    },
+    {
+      "id": "sk-paper-quick-reader",
+      "tab": "skills",
+      "title": "论文速读",
+      "rule": "source-category: sk-knowledge"
+    },
+    {
+      "id": "sk-pdfkit-py",
+      "tab": "skills",
+      "title": "PDF全能工具箱，覆盖阅读分析、自然语言编辑、格式转换、表单处理、加密签名、O…",
+      "rule": "source-category: sk-data"
+    },
+    {
+      "id": "sk-peekaboo",
+      "tab": "skills",
+      "title": "截取和自动化 macOS 界面操作",
+      "rule": "/服务器运维|日志服务|tencentos|智能客服领域虾|辟谣|公益|charity|小加同学|创业|macos|peekaboo/"
+    },
+    {
+      "id": "sk-perplexity",
+      "tab": "skills",
+      "title": "perplexity",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-plan-tracker",
+      "tab": "skills",
+      "title": "目标拆解与打卡助手",
+      "rule": "source-category: sk-edu"
+    },
+    {
+      "id": "sk-playwright-browser-automation",
+      "tab": "skills",
+      "title": "直接调用 Playwright API 实现浏览器自动化（无需 MCP）",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-playwright-scraper-skill",
+      "tab": "skills",
+      "title": "Playwright 隐身网页抓取，支持反爬绕过与验证码处理",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-podcast-ops",
+      "tab": "skills",
+      "title": "podcast-ops",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-price-history",
+      "tab": "skills",
+      "title": "历史价格查询助手",
+      "rule": "source-category: sk-data"
+    },
+    {
+      "id": "sk-product-showcase-site",
+      "tab": "skills",
+      "title": "为已有应用生成可部署的多页产品展示站",
+      "rule": "source-category: sk-deploy"
+    },
+    {
+      "id": "sk-qcc-company",
+      "tab": "skills",
+      "title": "查询和核实企业工商登记信息，支持股权、财务、高管等全维度企业背调",
+      "rule": "source-category: sk-data"
+    },
+    {
+      "id": "sk-qqmusic",
+      "tab": "skills",
+      "title": "qqmusic",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-resume-assistant",
+      "tab": "skills",
+      "title": "简历助手",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-revenue-intelligence",
+      "tab": "skills",
+      "title": "revenue-intelligence",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-sag",
+      "tab": "skills",
+      "title": "文字转语音（ElevenLabs）",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-sales-pipeline",
+      "tab": "skills",
+      "title": "sales-pipeline",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-sales-playbook",
+      "tab": "skills",
+      "title": "sales-playbook",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-seo-ops",
+      "tab": "skills",
+      "title": "seo-ops",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-shippage",
+      "tab": "skills",
+      "title": "将 HTML 或 Markdown 快速发布为公网网页",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-shopify-admin-api",
+      "tab": "skills",
+      "title": "Shopify Admin API",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-shopping-price-drop-coupon-scout",
+      "tab": "skills",
+      "title": "价格优惠监控助手",
+      "rule": "source-category: sk-life"
+    },
+    {
+      "id": "sk-sino-drug-instructions-search",
+      "tab": "skills",
+      "title": "sino-drug-instructions-search",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-skill-creator",
+      "tab": "skills",
+      "title": "创建和维护自定义技能的指南",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-skill-scanner",
+      "tab": "skills",
+      "title": "朱雀实验室出品，Skill 安全风险扫描",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-skill-vetter",
+      "tab": "skills",
+      "title": "安装前审查技能的安全性",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-skills-security-check",
+      "tab": "skills",
+      "title": "腾讯云鼎出品，Skill 安全审计工具",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-skyline",
+      "tab": "skills",
+      "title": "微信小程序 Skyline 渲染引擎（组件、动画、路由、样式）",
+      "rule": "/fullstack-dev|shader-dev|ios-application-dev|react-native-dev|gsap|skyline|tdesign|小程序|model-usage/"
+    },
+    {
+      "id": "sk-smart-page",
+      "tab": "skills",
+      "title": "腾讯文档智能页面，生成可编辑可分享的在线汇报网页内容",
+      "rule": "source-category: sk-data"
+    },
+    {
+      "id": "sk-smooth-browser",
+      "tab": "skills",
+      "title": "Smooth.sh 云端 AI 浏览器代理，自然语言驱动网页操作",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-songsee",
+      "tab": "skills",
+      "title": "从音频生成频谱图和可视化",
+      "rule": "source-category: sk-data"
+    },
+    {
+      "id": "sk-stagehand-browser-cli",
+      "tab": "skills",
+      "title": "Stagehand CLI 自然语言浏览器自动化（支持本地/云端）",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-static-app",
+      "tab": "skills",
+      "title": "将静态网站或前端构建产物部署到 Static.app",
+      "rule": "source-category: sk-deploy"
+    },
+    {
+      "id": "sk-stealth-browser",
+      "tab": "skills",
+      "title": "四层反检测浏览器自动化，支持隐身登录与验证码绕过",
+      "rule": "source-category: sk-deploy"
+    },
+    {
+      "id": "sk-stock-analysis",
+      "tab": "skills",
+      "title": "Stock Analysis",
+      "rule": "source-category: sk-invest"
+    },
+    {
+      "id": "sk-stock-analyzer",
+      "tab": "skills",
+      "title": "stock-analyzer",
+      "rule": "source-category: sk-invest"
+    },
+    {
+      "id": "sk-study-planner",
+      "tab": "skills",
+      "title": "学习规划师",
+      "rule": "source-category: sk-edu"
+    },
+    {
+      "id": "sk-taobao",
+      "tab": "skills",
+      "title": "maishou",
+      "rule": "manual"
+    },
+    {
+      "id": "sk-tapd-openapi",
+      "tab": "skills",
+      "title": "tapd-openapi",
+      "rule": "source-category: sk-knowledge"
+    },
+    {
+      "id": "sk-task-alignment",
+      "tab": "skills",
+      "title": "task-alignment",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-task-implement",
+      "tab": "skills",
+      "title": "task-implement",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-tavily",
+      "tab": "skills",
+      "title": "tavily",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-tdesign-miniprogram",
+      "tab": "skills",
+      "title": "TDesign 微信小程序组件库（60+ 组件、主题定制、AI 聊天）",
+      "rule": "/fullstack-dev|shader-dev|ios-application-dev|react-native-dev|gsap|skyline|tdesign|小程序|model-usage/"
+    },
+    {
+      "id": "sk-teachany",
+      "tab": "skills",
+      "title": "K12 互动课件开发技能：用于制作或优化学科课件、教学动画、AI 学伴、TTS…",
+      "rule": "source-category: sk-deploy"
+    },
+    {
+      "id": "sk-team-ops",
+      "tab": "skills",
+      "title": "团队绩效审计与会议行动项提取，识别 A/B/C 员工",
+      "rule": "/\\bhr\\b|人力|招聘|职业经纪|绩效|简历|面试/"
+    },
+    {
+      "id": "sk-tencent-campus-recruit",
+      "tab": "skills",
+      "title": "腾讯校园招聘",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-tencent-esign-contract",
+      "tab": "skills",
+      "title": "合同起草、审查、对比、法规检索轻松搞定，AI秒级响应，专业输出，效率翻倍，做你…",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-tencent-music-campus-recruit",
+      "tab": "skills",
+      "title": "腾讯校园招聘",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-tencent-musician-skills",
+      "tab": "skills",
+      "title": "专门为腾讯音乐人打造的音乐智能体，提供智能数据分析、站外宣推建议等一站式服务",
+      "rule": "source-category: sk-data"
+    },
+    {
+      "id": "sk-tencent-news",
+      "tab": "skills",
+      "title": "腾讯新闻",
+      "rule": "source-category: sk-news"
+    },
+    {
+      "id": "sk-tencent-rumor-refuter",
+      "tab": "skills",
+      "title": "腾讯辟谣助手",
+      "rule": "/服务器运维|日志服务|tencentos|智能客服领域虾|辟谣|公益|charity|小加同学|创业|macos|peekaboo/"
+    },
+    {
+      "id": "sk-tencent-ssv-techforgood",
+      "tab": "skills",
+      "title": "公益虾🦞 — 腾讯技术公益智能助手",
+      "rule": "/服务器运维|日志服务|tencentos|智能客服领域虾|辟谣|公益|charity|小加同学|创业|macos|peekaboo/"
+    },
+    {
+      "id": "sk-tencent-survey",
+      "tab": "skills",
+      "title": "腾讯问卷操作（创建、修改、逻辑设置、统计）",
+      "rule": "source-category: sk-data"
+    },
+    {
+      "id": "sk-tencent-weather",
+      "tab": "skills",
+      "title": "中国各地实时天气和天气预报信息查询，覆盖市级和区县级行政区",
+      "rule": "source-category: sk-news"
+    },
+    {
+      "id": "sk-tencent-yuanbao-gaokao-regional-passing-scores",
+      "tab": "skills",
+      "title": "元宝高考通-地区分数线查询",
+      "rule": "source-category: sk-edu"
+    },
+    {
+      "id": "sk-tencent-yuanbao-gaokao-score-to-rank-lookup",
+      "tab": "skills",
+      "title": "元宝高考通-一分一段查询",
+      "rule": "source-category: sk-edu"
+    },
+    {
+      "id": "sk-tencent-yunzhi",
+      "tab": "skills",
+      "title": "腾讯云知",
+      "rule": "source-category: sk-knowledge"
+    },
+    {
+      "id": "sk-tencentcloud-cls",
+      "tab": "skills",
+      "title": "腾讯云日志服务 CLS 助手，提供日志检索、资源管理、指标查询和告警运维能力",
+      "rule": "/服务器运维|日志服务|tencentos|智能客服领域虾|辟谣|公益|charity|小加同学|创业|macos|peekaboo/"
+    },
+    {
+      "id": "sk-tencentcloud-cos",
+      "tab": "skills",
+      "title": "腾讯云 COS 对象存储、数据万象数据智能处理、MetaInsight多模态检…",
+      "rule": "source-category: sk-data"
+    },
+    {
+      "id": "sk-tencentcloud-ocr",
+      "tab": "skills",
+      "title": "腾讯云通用文字识别（高精度版）",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-tencentcloud-ocr-extractdocagent",
+      "tab": "skills",
+      "title": "腾讯云实时文档抽取Agent",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-tencentcloud-ocr-questionmarkagent",
+      "tab": "skills",
+      "title": "腾讯云试题批改Agent",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-tencentmap-lbs-skill",
+      "tab": "skills",
+      "title": "腾讯地图位置服务，支持POI搜索、路径规划、旅游规划、周边搜索，轨迹数据可视化…",
+      "rule": "source-category: sk-life"
+    },
+    {
+      "id": "sk-tencentmap-map-assistant",
+      "tab": "skills",
+      "title": "腾讯位置服务·地图助手",
+      "rule": "source-category: sk-life"
+    },
+    {
+      "id": "sk-tencentos-expert",
+      "tab": "skills",
+      "title": "TencentOS 服务器运维诊断助手，排查磁盘/网络/CPU/内存/安全问题",
+      "rule": "/服务器运维|日志服务|tencentos|智能客服领域虾|辟谣|公益|charity|小加同学|创业|macos|peekaboo/"
+    },
+    {
+      "id": "sk-the-entrepreneurship-handbook",
+      "tab": "skills",
+      "title": "服务创业者和管理者，解答创业/商业/管理问题，引发深度思考",
+      "rule": "/服务器运维|日志服务|tencentos|智能客服领域虾|辟谣|公益|charity|小加同学|创业|macos|peekaboo/"
+    },
+    {
+      "id": "sk-things-mac",
+      "tab": "skills",
+      "title": "管理 Things 3 任务和项目",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-tmux",
+      "tab": "skills",
+      "title": "远程控制 tmux 交互式终端会话",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-travel-cn",
+      "tab": "skills",
+      "title": "聚合去哪儿、携程、飞猪，查机票、酒店、火车票、景点门票",
+      "rule": "source-category: sk-life"
+    },
+    {
+      "id": "sk-travel-planning",
+      "tab": "skills",
+      "title": "行程规划：多城市路线、预算优化、打包清单、签证时间表",
+      "rule": "source-category: sk-life"
+    },
+    {
+      "id": "sk-trello",
+      "tab": "skills",
+      "title": "管理 Trello 看板、列表和卡片",
+      "rule": "source-category: sk-data"
+    },
+    {
+      "id": "sk-trip-planner-generator",
+      "tab": "skills",
+      "title": "旅行行程规划",
+      "rule": "source-category: sk-life"
+    },
+    {
+      "id": "sk-tutor-skills",
+      "tab": "skills",
+      "title": "将文档/代码转为 Obsidian 学习库，自动出题、测验并跟踪掌握度",
+      "rule": "source-category: sk-edu"
+    },
+    {
+      "id": "sk-university-applications",
+      "tab": "skills",
+      "title": "命理大师",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-us-stock-analysis",
+      "tab": "skills",
+      "title": "美股综合分析（基本面、技术面、估值、对比报告）",
+      "rule": "source-category: sk-data"
+    },
+    {
+      "id": "sk-vercel-deploy",
+      "tab": "skills",
+      "title": "部署和管理 Vercel 项目、环境变量与日志",
+      "rule": "source-category: sk-deploy"
+    },
+    {
+      "id": "sk-vip-skill",
+      "tab": "skills",
+      "title": "唯品会购物助手，整合商品搜索、详情查询、促销活动、图片搜索等一站式购物服务",
+      "rule": "source-category: sk-knowledge"
+    },
+    {
+      "id": "sk-weather",
+      "tab": "skills",
+      "title": "查询天气预报，无需 API 密钥",
+      "rule": "source-category: sk-life"
+    },
+    {
+      "id": "sk-weather-open-meteo",
+      "tab": "skills",
+      "title": "天气查询",
+      "rule": "source-category: sk-life"
+    },
+    {
+      "id": "sk-web-access",
+      "tab": "skills",
+      "title": "CDP 直连本地 Chrome，智能调度联网工具，支持登录态、并行批量操作",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-web-deploy",
+      "tab": "skills",
+      "title": "跨 Vercel、Railway、GitHub Pages 的通用 Web 部…",
+      "rule": "source-category: sk-deploy"
+    },
+    {
+      "id": "sk-web-deploy-github",
+      "tab": "skills",
+      "title": "创建并部署单页静态网站到 GitHub Pages",
+      "rule": "source-category: sk-deploy"
+    },
+    {
+      "id": "sk-web-performance-audit",
+      "tab": "skills",
+      "title": "部署后网站性能审计，检查核心指标与加载瓶颈",
+      "rule": "source-category: sk-deploy"
+    },
+    {
+      "id": "sk-web-scraper",
+      "tab": "skills",
+      "title": "多策略五阶段网页抓取管道（HTTP/解析/渲染/清洗/LLM提取）",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-web-search-exa",
+      "tab": "skills",
+      "title": "Exa 网络搜索",
+      "rule": "source-category: sk-knowledge"
+    },
+    {
+      "id": "sk-wechat-article-pro",
+      "tab": "skills",
+      "title": "wechat-article-pro",
+      "rule": "source-category: sk-news"
+    },
+    {
+      "id": "sk-wechat-article-search",
+      "tab": "skills",
+      "title": "搜索微信公众号文章（标题、摘要、发布时间、来源账号、链接）",
+      "rule": "source-category: sk-news"
+    },
+    {
+      "id": "sk-wechat-miniprogram",
+      "tab": "skills",
+      "title": "微信小程序开发框架（模板、组件、API、云开发）",
+      "rule": "source-category: sk-dev"
+    },
+    {
+      "id": "sk-wechat-publisher",
+      "tab": "skills",
+      "title": "wechat-publisher",
+      "rule": "source-category: sk-dev"
+    },
+    {
+      "id": "sk-wechat-viral-topic",
+      "tab": "skills",
+      "title": "10万+爆款选题制造机",
+      "rule": "source-category: sk-news"
+    },
+    {
+      "id": "sk-wechatpay-basic-payment",
+      "tab": "skills",
+      "title": "微信支付基础支付",
+      "rule": "source-category: sk-dev"
+    },
+    {
+      "id": "sk-wechatpay-product-coupon",
+      "tab": "skills",
+      "title": "微信支付商品券",
+      "rule": "source-category: sk-life"
+    },
+    {
+      "id": "sk-wecom-weisheng-scrm",
+      "tab": "skills",
+      "title": "微盛AI·企微管家提供的技能，帮助用户查询和管理企业微信 SCRM 中的客户、…",
+      "rule": "/法务|财税|合规|招标|投标|售前|crm|大客户|外呼|招商|配送|跑腿|外卖/"
+    },
+    {
+      "id": "sk-weiyun",
+      "tab": "skills",
+      "title": "管理腾讯微云网盘文件（列表、上传、下载、删除、分享）",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-weread-skills",
+      "tab": "skills",
+      "title": "搜索微信读书书籍、管理书架、查看笔记划线、浏览书评、阅读统计与好书推荐",
+      "rule": "source-category: sk-data"
+    },
+    {
+      "id": "sk-westock-data",
+      "tab": "skills",
+      "title": "westockdata",
+      "rule": "source-category: sk-data"
+    },
+    {
+      "id": "sk-westockdata",
+      "tab": "skills",
+      "title": "WeStock Data",
+      "rule": "source-category: sk-data"
+    },
+    {
+      "id": "sk-workbuddy-asset-migration",
+      "tab": "skills",
+      "title": "WorkBuddy 国内版/海外版/跨机器之间迁移个人资产",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-x-longform-post",
+      "tab": "skills",
+      "title": "x-longform-post",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "sk-xiaobai-coach",
+      "tab": "skills",
+      "title": "小白理财教练",
+      "rule": "source-category: sk-invest"
+    },
+    {
+      "id": "sk-xiaojia-free-marketing-pack",
+      "tab": "skills",
+      "title": "小加同学",
+      "rule": "/服务器运维|日志服务|tencentos|智能客服领域虾|辟谣|公益|charity|小加同学|创业|macos|peekaboo/"
+    },
+    {
+      "id": "sk-xurl",
+      "tab": "skills",
+      "title": "Twitter 研究与内容情报分析",
+      "rule": "source-category: sk-data"
+    },
+    {
+      "id": "sk-yingmi-skill",
+      "tab": "skills",
+      "title": "基金查询、组合诊断、资产配置与财富规划的金融数据助手",
+      "rule": "source-category: sk-invest"
+    },
+    {
+      "id": "sk-yourself-skill",
+      "tab": "skills",
+      "title": "把自己蒸馏成 AI Skill，解构聊天记录与日记生成数字分身",
+      "rule": "source-category: sk-efficiency"
+    },
+    {
+      "id": "cn-77ircloud",
+      "tab": "connectors",
+      "title": "连接器配置与技能",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-agentkey",
+      "tab": "connectors",
+      "title": "AgentKey 是 AI 助手获取可信工具和实时数据的能力市场。支持网页搜索…",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-ai-hive",
+      "tab": "connectors",
+      "title": "连接器配置与技能",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-archive-hospital-mcp",
+      "tab": "connectors",
+      "title": "面向医护/助理场景，提供当前登录医生名下的患者列表检索、患者详情/画像标签/备…",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-awesun",
+      "tab": "connectors",
+      "title": "向日葵（AweSun）远程控制 CLI 工具。提供设备列表管理、远程会话管理、…",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-baidu-netdisk",
+      "tab": "connectors",
+      "title": "百度网盘文件管理与智能检索。支持浏览、关键词和语义搜索、文件整理、分享链接、容…",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-bazhuayu",
+      "tab": "connectors",
+      "title": "八爪鱼云采集 MCP 技能 - 搜索模板、启动与管理任务、查询进度、导出结构化…",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-beisen-cli",
+      "tab": "connectors",
+      "title": "连接器配置与技能",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-bugly-token",
+      "tab": "connectors",
+      "title": "查看 Bugly 产品质量概览（崩溃率、ANR 率、FOOM/OOM 率、启动…",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-canva",
+      "tab": "connectors",
+      "title": "用途：Use Canva's design capabilities: cre…",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-canva-ai",
+      "tab": "connectors",
+      "title": "用途：Use Canva's design capabilities: cre…",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-chuhaijiang",
+      "tab": "connectors",
+      "title": "连接器配置与技能",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-cisp-mcp",
+      "tab": "connectors",
+      "title": "用途：Query and verify Chinese company dat…",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-cloudbase",
+      "tab": "connectors",
+      "title": "Use this skill when you develop, design…",
+      "rule": "manual"
+    },
+    {
+      "id": "cn-cnb-api",
+      "tab": "connectors",
+      "title": "CNB 平台交互命令，支持代码仓库、Issue、PR、CI、制品库读写等操作。",
+      "rule": "manual"
+    },
+    {
+      "id": "cn-ctrip-wendao",
+      "tab": "connectors",
+      "title": "Trigger when user asks travel-related q…",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-dknowc-mcp",
+      "tab": "connectors",
+      "title": "使用深知可信工作台 MCP 工具进行可信问答和权威材料检索；仅在用户明确要求深…",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-edgeone-pages",
+      "tab": "connectors",
+      "title": "用途：edgeone-pages",
+      "rule": "source-category: cn-dev"
+    },
+    {
+      "id": "cn-emr-query",
+      "tab": "connectors",
+      "title": "腾讯云 EMR 只读查询技能 — 基于官方 tccli 的 48 个只读查询接…",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-ezjoin-meeting",
+      "tab": "connectors",
+      "title": "EzyJoin 智慧会议操作技能 - 预约会议室、创建/取消会议、查询会议日程…",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-fbs-connector",
+      "tab": "connectors",
+      "title": "福帮手人机协同连接器：身份、场景包、乐包、首值记录和超级合伙人交接。",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-finenter",
+      "tab": "connectors",
+      "title": "用途：Use the Finenter Investment Research…",
+      "rule": "source-category: cn-finance"
+    },
+    {
+      "id": "cn-fyopen-lawsearch",
+      "tab": "connectors",
+      "title": "法研·法律法规检索 MCP Skill。涉及「法律法规」「法条」「法规条文」「…",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-gangtise-mcp",
+      "tab": "connectors",
+      "title": "用途：Use Gangtise MCP tools for financial…",
+      "rule": "source-category: cn-finance"
+    },
+    {
+      "id": "cn-gildata",
+      "tab": "connectors",
+      "title": "连接器配置与技能",
+      "rule": "source-category: cn-finance"
+    },
+    {
+      "id": "cn-github",
+      "tab": "connectors",
+      "title": "用途：Use github connector to access githu…",
+      "rule": "source-category: cn-dev"
+    },
+    {
+      "id": "cn-github-remote",
+      "tab": "connectors",
+      "title": "用途：Use github-remote connector to acces…",
+      "rule": "source-category: cn-dev"
+    },
+    {
+      "id": "cn-gongyi-open-mcp",
+      "tab": "connectors",
+      "title": "腾讯公益机构服务平台连接器技能 - 通过 MCP 查询当前机构的用户、机构信息…",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-ima-mcp",
+      "tab": "connectors",
+      "title": "连接器配置与技能",
+      "rule": "manual"
+    },
+    {
+      "id": "cn-infimind-video",
+      "tab": "connectors",
+      "title": "连接器配置与技能",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-jira",
+      "tab": "connectors",
+      "title": "连接器配置与技能",
+      "rule": "manual"
+    },
+    {
+      "id": "cn-jiushuyun",
+      "tab": "connectors",
+      "title": "连接器配置与技能",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-kling-ai",
+      "tab": "connectors",
+      "title": "连接器配置与技能",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-kuaicha-search",
+      "tab": "connectors",
+      "title": ">-",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-lemonclaw",
+      "tab": "connectors",
+      "title": "用于查询或操作柠檬云 Lemon Cloud 业务数据，覆盖认证、账套、进销存…",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-lexiang",
+      "tab": "connectors",
+      "title": "乐享知识库 MCP 全功能 Skill。当用户提到「乐享」「知识库」「lexi…",
+      "rule": "manual"
+    },
+    {
+      "id": "cn-linear-mcp",
+      "tab": "connectors",
+      "title": "连接器配置与技能",
+      "rule": "manual"
+    },
+    {
+      "id": "cn-lingxing-mcp",
+      "tab": "connectors",
+      "title": "连接器配置与技能",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-linkfox-product-selection",
+      "tab": "connectors",
+      "title": "连接器配置与技能",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-lovrabet-cli",
+      "tab": "connectors",
+      "title": "Lovrabet 运行态 CLI — 面向业务场景的 AI 操作套件，通过 l…",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-mastergo-vibe-mcp",
+      "tab": "connectors",
+      "title": "用途：Connect to the MasterGo canvas to al…",
+      "rule": "source-category: cn-dev"
+    },
+    {
+      "id": "cn-miaoda",
+      "tab": "connectors",
+      "title": "秒哒（Miaoda）应用搭建平台交互命令，支持通过自然语言对话创建、生成、修改…",
+      "rule": "source-category: cn-dev"
+    },
+    {
+      "id": "cn-moka",
+      "tab": "connectors",
+      "title": "连接器配置与技能",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-mx-ds-mcp",
+      "tab": "connectors",
+      "title": "基于东方财富数据库，通过自然语言查询A股、基金、债券、指数/板块、美股、港股金…",
+      "rule": "source-category: cn-finance"
+    },
+    {
+      "id": "cn-mzl-trademark",
+      "tab": "connectors",
+      "title": "摩知轮商标查询技能 —— 按条件检索商标（文本）与以图搜图（图形近似），覆盖中…",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-neo-crm",
+      "tab": "connectors",
+      "title": "用自然语言查客户、推商机、盘线索、领公海、写跟进，一句话打通销售工作闭环。",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-opendata",
+      "tab": "connectors",
+      "title": "连接器配置与技能",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-pandadata",
+      "tab": "connectors",
+      "title": "用途：Query and analyze financial data thr…",
+      "rule": "source-category: cn-finance"
+    },
+    {
+      "id": "cn-patsnap-search",
+      "tab": "connectors",
+      "title": "用途：Search Patsnap patent and literature…",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-picset-video-generation",
+      "tab": "connectors",
+      "title": "WorkBuddy 用户需要通过 Picset AI MCP 连接器生成电商短…",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-pkulaw",
+      "tab": "connectors",
+      "title": "北大法宝官方法律检索与核验 MCP Skill。涉及「法律」「法规」「法条」「…",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-qcc-company",
+      "tab": "connectors",
+      "title": "用途：Query and verify corporate registrat…",
+      "rule": "source-category: cn-finance"
+    },
+    {
+      "id": "cn-qcc-legal",
+      "tab": "connectors",
+      "title": "通过企查查·法律数据 Connector 检索、研究与核验中国法律法规和司法案…",
+      "rule": "source-category: cn-finance"
+    },
+    {
+      "id": "cn-qingflow",
+      "tab": "connectors",
+      "title": "轻流无代码平台操作技能 - 创建应用、管理表单数据、处理审批流程、查询和导出数据",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-qixinhuiyan-mcp",
+      "tab": "connectors",
+      "title": "连接器配置与技能",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-salesnail-instructor",
+      "tab": "connectors",
+      "title": "通过 SalesNail Connector 自助开通讲师试用、维护商业 Pr…",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-salestouch",
+      "tab": "connectors",
+      "title": "用途：Connect SalesTouch to configure orga…",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-seeyon-office-marketing-suite",
+      "tab": "connectors",
+      "title": "连接器配置与技能",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-shanglv-mcp-gateway",
+      "tab": "connectors",
+      "title": "企业级 MCP 授权网关技能 - 聚合财务发票查询与银行账户交易数据（客户/账…",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-shanlong-claw",
+      "tab": "connectors",
+      "title": "连接器配置与技能",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-sharecrm",
+      "tab": "connectors",
+      "title": "连接器配置与技能",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-supabase",
+      "tab": "connectors",
+      "title": "连接器配置与技能",
+      "rule": "source-category: cn-dev"
+    },
+    {
+      "id": "cn-tapd",
+      "tab": "connectors",
+      "title": "TAPD 敏捷项目管理技能 - 管理需求、缺陷、任务、迭代、测试用例、Wiki…",
+      "rule": "manual"
+    },
+    {
+      "id": "cn-tc-chengxin",
+      "tab": "connectors",
+      "title": "同程旅行官方旅游查询 Skill。用于机票、火车票、酒店、景区、汽车票、度假产…",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-tdx-connector",
+      "tab": "connectors",
+      "title": "用途：Query global stock data via Tongdaxi…",
+      "rule": "source-category: cn-finance"
+    },
+    {
+      "id": "cn-tec-do",
+      "tab": "connectors",
+      "title": "用途：Guide WorkBuddy on when and how to u…",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-tencent-health-nges",
+      "tab": "connectors",
+      "title": "连接器配置与技能",
+      "rule": "manual"
+    },
+    {
+      "id": "cn-tencent-map",
+      "tab": "connectors",
+      "title": "连接器配置与技能",
+      "rule": "manual"
+    },
+    {
+      "id": "cn-textin-xparse",
+      "tab": "connectors",
+      "title": "连接器配置与技能",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-tongzhou-fin-research",
+      "tab": "connectors",
+      "title": "连接公开行情、研报检索、行业图谱与同舟投研材料，为股市研究提供可复核证据。",
+      "rule": "source-category: cn-finance"
+    },
+    {
+      "id": "cn-tyc-mcp",
+      "tab": "connectors",
+      "title": "天眼查企业数据查询技能 - 聚合式企业数据网关，覆盖企业锚定、基础画像、股权集…",
+      "rule": "source-category: cn-finance"
+    },
+    {
+      "id": "cn-weisheng-scrm",
+      "tab": "connectors",
+      "title": "当用户需要查询或管理微盛企微管家（企业微信） SCRM 中的客户信息、客户标签…",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-westock-mcp",
+      "tab": "connectors",
+      "title": "提供实时行情，支持条件选股、自选管理、股价提醒与模拟交易",
+      "rule": "source-category: cn-finance"
+    },
+    {
+      "id": "cn-wind-finance",
+      "tab": "connectors",
+      "title": "通过自然语言查询股票、基金、指数、债券、公告、财经新闻和宏观经济数据。",
+      "rule": "source-category: cn-finance"
+    },
+    {
+      "id": "cn-wk-workbuddy",
+      "tab": "connectors",
+      "title": "用途：name: wk-mcp",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-woscli",
+      "tab": "connectors",
+      "title": "连接器配置与技能",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-wps-knowledgebase",
+      "tab": "connectors",
+      "title": ">-",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-xiaoe-cloud-cli",
+      "tab": "connectors",
+      "title": "小鹅通：使用当前登录账号和店铺上下文管理课程、内容资产、章节、直播、订单和素材。",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-xingtu-claw-risk",
+      "tab": "connectors",
+      "title": "星图Claw 企业风险分析技能 - 行业识别、企业间关联方关系分析",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-yingmi-mcp",
+      "tab": "connectors",
+      "title": "盈米 MCP 金融工具使用技能，支持基金与市场数据查询、投研分析、组合诊断、财…",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-youshu-bd-mate",
+      "tab": "connectors",
+      "title": "基于企业全维数据的对公营销智能助手，提供访前报告、营销话术、行业透视、关键人画…",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-yuandian-mcp",
+      "tab": "connectors",
+      "title": "连接器配置与技能",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-yzf-invoice-mcp-server",
+      "tab": "connectors",
+      "title": "AI 开票员技能——通过 MCP 工具调用后端开票服务，支持异步轮询实时获取进…",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-zfs-fssc-ai",
+      "tab": "connectors",
+      "title": "用途：AI reimbursement assistant for ZTE F…",
+      "rule": "source-category: cn-other"
+    },
+    {
+      "id": "cn-zsxq",
+      "tab": "connectors",
+      "title": "连接器配置与技能",
+      "rule": "source-category: cn-other"
+    }
+  ]
+}

@@ -1,0 +1,533 @@
+{
+  "version": "1.0.0",
+  "dispositions": [
+    {
+      "id": "seedance-2-0-fast",
+      "disposition": "canonical",
+      "batch": "A",
+      "reason": "APIMart 官方文档确认 Fast 接口和四种模式；适配与离线合同已补齐；历史真实执行独立保留",
+      "evidence": [
+        "docs/evidence/2026-08-14-omnimux-video.md",
+        "docs/evidence/2026-09-05-model-seedance-2-0-fast-video_multi_ref.md",
+        "docs/evidence/2026-09-05-model-seedance-2-0-fast-first_frame.md",
+        "docs/specs/2026-09-05-video-phase-one-scope.md"
+      ],
+      "notes": "产品 id 精确映射 seedance-2.0-fast；参考上限 9 图/3 视频/3 音频；不自动切换渠道"
+    },
+    {
+      "id": "seedance-2-0-mini",
+      "disposition": "canonical",
+      "reason": "APIMart 官方文档确认 Mini 接口和四种模式；适配与离线合同已补齐；历史真实执行独立保留",
+      "evidence": [
+        "docs/evidence/2026-09-05-model-seedance-2-0-mini-text_to_video.md",
+        "docs/evidence/2026-09-05-model-seedance-2-0-mini-first_frame.md",
+        "docs/specs/2026-09-05-video-phase-one-scope.md"
+      ],
+      "notes": "产品 id 精确映射 seedance-2.0-mini；参考上限 9 图/3 视频/3 音频；不自动切换渠道"
+    },
+    {
+      "id": "gpt-image-2.5",
+      "disposition": "canonical",
+      "batch": "B",
+      "reason": "官方统一端点；原生支持 1K/2K/4K；已入库 dated live 证据",
+      "evidence": [
+        "docs/evidence/2026-09-10-omnimux-image-2-5.md"
+      ],
+      "notes": "中枢统一端点，原生支持 1K/2K/4K 聚合调度"
+    },
+    {
+      "id": "gpt-image-2.5-flare",
+      "disposition": "canonical",
+      "batch": "B",
+      "reason": "网关公开价目表独立在售模型；带专属分组 gpt-image-2.5-flare-std / -pro 可达；已入库 dated live 证据",
+      "evidence": [
+        "docs/evidence/2026-09-15-omnimux-image-flare-sunburst.md"
+      ],
+      "notes": "极速生图专线，快速迭代"
+    },
+    {
+      "id": "gpt-image-2.5-sunburst",
+      "disposition": "canonical",
+      "batch": "B",
+      "reason": "网关公开价目表独立在售模型；带专属分组 gpt-image-2.5-sunburst-std / -pro 可达；已入库 dated live 证据",
+      "evidence": [
+        "docs/evidence/2026-09-15-omnimux-image-flare-sunburst.md"
+      ],
+      "notes": "画质生图专线，精细成品"
+    },
+    {
+      "id": "grok-imagine-image-2",
+      "disposition": "alias",
+      "target": "grok-imagine-image-2-0",
+      "reason": "2026-09-14 #1751 改名后的兼容旧名：canonical 换为公开文档页所用 ID grok-imagine-image-2-0"
+    },
+    {
+      "id": "grok-imagine-image",
+      "disposition": "alias",
+      "target": "grok-imagine-image-2-0",
+      "reason": "旧版无版本号 id 归一为 Grok Image 2 产品 id",
+      "notes": "向后兼容旧版无版本号 grok-imagine-image"
+    },
+    {
+      "id": "grok-imagine-image-2-0",
+      "disposition": "canonical",
+      "batch": "A",
+      "reason": "2026-09-14 #1751 改名承接：公开文档页公开 ID 为该写法；同时撤销在售声明降为已登记",
+      "notes": "生产渠道目录(121)与生产配置基线 models(89)两份独立清单零命中、45 条渠道无一绑定 grok 图像；生产配置基线 options.json 仍有活定价行 0.045714，但无渠道绑定故不具可售性。原 dated live 证据 docs/evidence/2026-08-16-omnimux-image.md 早于 08-31/09-12/09-14 三次上游变动，故执行状态降为 stub、撤销全部 listed 操作"
+    },
+    {
+      "id": "grok-imagine-image-2.0",
+      "disposition": "alias",
+      "target": "grok-imagine-image-2-0",
+      "reason": "上游官方端点 wire id 归一为 Grok Image 2 产品 id",
+      "notes": "上游官方端点 wire id 别名"
+    },
+    {
+      "id": "claude-opus-5",
+      "disposition": "canonical",
+      "reason": "runtime + cordis 在列；2026-09-05 dated live 证据覆盖 chat",
+      "evidence": [
+        "docs/evidence/2026-08-18-omnimux-modality.md",
+        "docs/evidence/2026-09-05-model-claude-opus-5-chat.md"
+      ],
+      "notes": "2026-09-05 探测：token45 /v1/chat/completions 200 live，翻 chat listed；vision_chat 仍不声明（text-only 契约）"
+    },
+    {
+      "id": "claude-opus-4-6",
+      "disposition": "canonical",
+      "reason": "runtime + cordis 在列；2026-09-05 dated live 证据覆盖 chat+vision_chat",
+      "evidence": [
+        "docs/evidence/2026-08-23-omnimux-brand-four.md",
+        "docs/evidence/2026-09-05-model-claude-opus-4-6-chat.md",
+        "docs/evidence/2026-09-05-model-claude-opus-4-6-vision_chat.md"
+      ],
+      "notes": "2026-09-05 #530 PR-A：chat, vision_chat 四要素齐全 → research verified + execution live → listed"
+    },
+    {
+      "id": "claude-sonnet-4-6",
+      "disposition": "canonical",
+      "reason": "runtime + cordis 在列；生产网关基线与自建号池覆盖 chat+vision_chat",
+      "evidence": [
+        "docs/evidence/2026-08-23-omnimux-brand-four.md",
+        "docs/evidence/2026-09-05-model-claude-opus-4-6-chat.md",
+        "docs/evidence/2026-09-05-model-claude-opus-4-6-vision_chat.md"
+      ],
+      "notes": "2026-10-04：生产网关与自建号池已上线，chat/vision_chat 具备调用能力"
+    },
+    {
+      "id": "gpt-5.6-sol",
+      "disposition": "canonical",
+      "reason": "runtime + cordis 在列；2026-09-05 dated live 证据覆盖 chat+vision_chat",
+      "evidence": [
+        "docs/evidence/2026-08-18-omnimux-modality.md",
+        "docs/evidence/2026-09-05-model-gpt-5.6-sol-chat.md",
+        "docs/evidence/2026-09-05-model-gpt-5.6-sol-vision_chat.md"
+      ],
+      "notes": "2026-09-05 #530 PR-A：chat, vision_chat 四要素齐全 → research verified + execution live → listed"
+    },
+    {
+      "id": "gpt-5.5",
+      "disposition": "canonical",
+      "reason": "runtime + cordis 在列；2026-09-05 dated live 证据覆盖 chat+vision_chat",
+      "evidence": [
+        "docs/evidence/2026-08-18-omnimux-modality.md",
+        "docs/evidence/2026-08-23-omnimux-brand-four.md",
+        "docs/evidence/2026-09-05-model-gpt-5.5-chat.md",
+        "docs/evidence/2026-09-05-model-gpt-5.5-vision_chat.md"
+      ],
+      "notes": "2026-09-05 #530 PR-A：chat, vision_chat 四要素齐全 → research verified + execution live → listed"
+    },
+    {
+      "id": "grok-4.6",
+      "disposition": "canonical",
+      "reason": "runtime + cordis 在列；2026-09-05 dated live 证据覆盖 chat+vision_chat",
+      "evidence": [
+        "docs/evidence/2026-08-18-omnimux-modality.md",
+        "docs/evidence/2026-09-05-model-grok-4.6-chat.md",
+        "docs/evidence/2026-09-05-model-grok-4.6-vision_chat.md"
+      ],
+      "notes": "2026-09-05 #530 PR-A：chat, vision_chat 四要素齐全 → research verified + execution live → listed"
+    },
+    {
+      "id": "kimi-k3",
+      "disposition": "canonical",
+      "reason": "runtime + cordis 在列；2026-09-05 dated live 证据覆盖 chat+vision_chat",
+      "evidence": [
+        "docs/evidence/2026-08-18-omnimux-modality.md",
+        "docs/evidence/2026-09-05-model-kimi-k3-chat.md",
+        "docs/evidence/2026-09-05-model-kimi-k3-vision_chat.md"
+      ],
+      "notes": "2026-09-05 #530 PR-A：chat, vision_chat 四要素齐全 → research verified + execution live → listed"
+    },
+    {
+      "id": "deepseek-v4-pro",
+      "disposition": "canonical",
+      "reason": "runtime + cordis 在列；2026-09-05 dated live 证据覆盖 chat",
+      "evidence": [
+        "docs/evidence/2026-08-18-omnimux-modality.md",
+        "docs/evidence/2026-08-20-omnimux-reasoning.md",
+        "docs/evidence/2026-09-05-model-deepseek-v4-pro-chat.md"
+      ],
+      "notes": "2026-09-05 #530 PR-A：chat 四要素齐全 → research verified + execution live → listed"
+    },
+    {
+      "id": "deepseek-v4-flash",
+      "disposition": "canonical",
+      "reason": "2026-09-14 #1751 改名：canonical 换为上游在册的 deepseek-v4-flash。**完整口径（含内部张力）**：上游该档案 notes 明写「该 ID 在官方文档中已退役：现网模型名为 deepseek-flash（DeepSeek-V4.1-Flash）」，deepseek-v4-flash 与 deepseek-v4-flash-vision-exp 同为 legacy 兼容名，并按 Flash 计费（两 ID ModelRatio 同为 0.07）；官方措辞为 temporarily routed，未承诺长期保留，档案过渡指引建议迁移至 deepseek-flash。本仓沿用 deepseek-v4-flash 的理由：生产配置基线 models 采用该名，而上游治理档案的口径存在上述张力，本次不引入新名（规格 §4 不新增模型）",
+      "evidence": [
+        "docs/evidence/2026-08-20-omnimux-reasoning.md",
+        "docs/evidence/2026-09-05-model-deepseek-v4-flash-vision-exp-chat.md",
+        "docs/evidence/2026-09-05-model-deepseek-v4-flash-vision-exp-vision_chat.md"
+      ],
+      "notes": "旧 ID deepseek-v4-flash-vision-exp 进 aliases[] 作为兼容旧名"
+    },
+    {
+      "id": "deepseek-v4-flash-vision-exp",
+      "disposition": "alias",
+      "target": "deepseek-v4-flash",
+      "reason": "2026-09-14 #1751：上游官方引述 legacy 名 deepseek-v4-flash-vision-exp 仍被接受，收敛为 deepseek-v4-flash 的别名"
+    },
+    {
+      "id": "gemini-3.8-flash",
+      "disposition": "canonical",
+      "reason": "用户确认与 Gemini 3.7 输入合同相同；textComplete 实现复用并离线验证",
+      "evidence": [
+        "docs/references/omnimux-gemini-3.8-contract-gap.md"
+      ],
+      "notes": "research 记录本任务的兼容性确认；implementation ready；execution none，不继承 3.7 的 live 记录"
+    },
+    {
+      "id": "gemini-3.7-flash",
+      "disposition": "canonical",
+      "reason": "runtime + cordis 在列；2026-09-05 dated live 证据覆盖 chat+vision_chat",
+      "evidence": [
+        "docs/evidence/2026-08-18-omnimux-modality.md",
+        "docs/evidence/2026-09-05-model-gemini-3.7-flash-chat.md",
+        "docs/evidence/2026-09-05-model-gemini-3.7-flash-vision_chat.md"
+      ],
+      "notes": "2026-09-05 探测：chat+vision_chat(image) live listed；video 槽未独立证实，policy_conservative"
+    },
+    {
+      "id": "gemini-3.1-pro-preview",
+      "disposition": "canonical",
+      "reason": "runtime + cordis 在列；2026-09-05 dated live 证据覆盖 chat+vision_chat",
+      "evidence": [
+        "docs/evidence/2026-08-23-omnimux-brand-four.md",
+        "docs/evidence/2026-09-05-model-gemini-3.1-pro-preview-chat.md",
+        "docs/evidence/2026-09-05-model-gemini-3.1-pro-preview-vision_chat.md"
+      ],
+      "notes": "2026-09-05 #530 PR-A：chat, vision_chat 四要素齐全 → research verified + execution live → listed"
+    },
+    {
+      "id": "glm-5.3",
+      "disposition": "canonical",
+      "reason": "runtime + cordis 在列；2026-09-05 dated live 证据覆盖 chat",
+      "evidence": [
+        "docs/evidence/2026-08-18-omnimux-modality.md",
+        "docs/evidence/2026-09-05-model-glm-5.3-chat.md"
+      ],
+      "notes": "2026-09-05 探测：models 在列且 chat live 200，翻 listed；text-only"
+    },
+    {
+      "id": "seedance-2-5",
+      "disposition": "canonical",
+      "reason": "APIMart 官方文档确认 2.5 的生成、参考、编辑与延长模式；适配与离线合同已补齐；历史真实执行独立保留",
+      "notes": "产品 id 精确映射 seedance-2.5；参考上限 30 图/10 视频/10 音频；不自动切换渠道",
+      "evidence": [
+        "docs/evidence/2026-09-05-model-seedance-2-5-text_to_video.md",
+        "docs/evidence/2026-09-05-model-seedance-2-5-video_multi_ref.md",
+        "docs/evidence/2026-09-05-model-seedance-2-5-first_frame.md",
+        "docs/specs/2026-09-05-video-phase-one-scope.md"
+      ]
+    },
+    {
+      "id": "seedance-2-0",
+      "disposition": "canonical",
+      "reason": "APIMart 官方文档确认 2.0 接口和四种模式；适配与离线合同已补齐；历史真实执行独立保留",
+      "evidence": [
+        "docs/evidence/2026-09-05-model-seedance-2-0-text_to_video.md",
+        "docs/evidence/2026-09-05-model-seedance-2-0-first_frame.md",
+        "docs/specs/2026-09-05-video-phase-one-scope.md"
+      ],
+      "notes": "产品 id 精确映射 seedance-2.0；参考上限 9 图/3 视频/3 音频；不自动切换渠道"
+    },
+    {
+      "id": "kling-v3",
+      "disposition": "canonical",
+      "reason": "命中 runtime；H1 已有契约；无独立 dated live 证据保持 draft"
+    },
+    {
+      "id": "kling-v2-6",
+      "disposition": "canonical",
+      "reason": "命中 runtime；H1 已有契约；无独立 dated live 证据保持 draft"
+    },
+    {
+      "id": "grok-imagine-video-1-5",
+      "disposition": "canonical",
+      "reason": "APIMart 官方文档确认 Grok Imagine Video 1.5 文生和有序参考图模式；适配与离线合同已补齐",
+      "notes": "精确映射 grok-imagine-video-1.5；参考图上限官方未公布，保持 unknown；不混入 EXT",
+      "evidence": [
+        "docs/specs/2026-09-05-video-phase-one-scope.md"
+      ]
+    },
+    {
+      "id": "wan-3.0",
+      "disposition": "canonical",
+      "reason": "APIMart 官方文档确认 Wan 3.0 的帧、全模态、文档和网页模式；适配与离线合同已补齐",
+      "notes": "产品 id 精确映射 wan3.0-video；参考图上限 10；不扩成 Prime 派生型号",
+      "evidence": [
+        "docs/specs/2026-09-05-video-phase-one-scope.md"
+      ]
+    },
+    {
+      "id": "wan-3.0-prime",
+      "disposition": "alias",
+      "target": "wan-3.0",
+      "reason": "2026-09-14 上游网关架构收敛（spec 6919f4db9 / 5a88dbe5e）：统合为单一公开 ID wan-3.0，衍生 ID 降级为过渡别名与底层映射"
+    },
+    {
+      "id": "wan-3.0-ref",
+      "disposition": "alias",
+      "target": "wan-3.0",
+      "reason": "2026-09-14 上游网关架构收敛：参考能力收敛至统一 wan-3.0 的 video_multi_ref 模式，本 ID 降级为过渡别名"
+    },
+    {
+      "id": "wan-3.0-prime-ref",
+      "disposition": "alias",
+      "target": "wan-3.0",
+      "reason": "2026-09-14 上游网关架构收敛：Prime 参考能力收敛至统一 wan-3.0 画质档位与模式，本 ID 降级为过渡别名"
+    },
+    {
+      "id": "minimax-h3",
+      "disposition": "canonical",
+      "reason": "APIMart 官方文档确认 MiniMax H3 的首帧、尾帧、首尾帧与全能参考模式；适配与离线合同已补齐",
+      "notes": "单一产品 id 精确映射 MiniMax-H3；不保留 minimax-h3-endframe 伪型号",
+      "evidence": [
+        "docs/specs/2026-09-05-video-phase-one-scope.md"
+      ]
+    },
+    {
+      "id": "minimax-h3-video",
+      "disposition": "canonical",
+      "reason": "2026-11-02：AutoDL ComfyUI 任务泳道（渠道 70/71/72，上游 minimax_h3_image_audio_to_video）在架可售；对口型/首尾帧/多参考槽经 metadata 透传，POST /v1/tasks/autodl 提交",
+      "notes": "与 APIMart minimax-h3 为同族独立泳道；网关侧对口型任务已真实跑通（8fed5047-9d01-4147-9dcf-bf001e964a55，¥0.04）"
+    },
+    {
+      "id": "seed-audio-1.0",
+      "disposition": "canonical",
+      "reason": "火山引擎 HTTP v3 语音合成接口已在网关验证",
+      "evidence": [
+        "docs/evidence/2026-09-07-model-seed-audio-1.0-text_to_speech.md",
+        "docs/evidence/2026-09-18-model-seed-audio-1-0-text_to_speech-live.md"
+      ]
+    },
+    {
+      "id": "gemini-3.8-flash-tts",
+      "disposition": "canonical",
+      "reason": "基于 opencli gemini tts (Google AI Studio) 本地驱动的拟真语音合成模型",
+      "evidence": [
+        "docs/evidence/2026-09-29-model-gemini-3-8-flash-tts-text_to_speech.md"
+      ]
+    },
+    {
+      "id": "doubao-seed-audio-1.0",
+      "disposition": "alias",
+      "target": "seed-audio-1.0",
+      "reason": "Seed Audio 1.0 产品别名，统一使用 canonical 模型标识"
+    },
+    {
+      "id": "seed-audio",
+      "disposition": "alias",
+      "target": "seed-audio-1.0",
+      "reason": "Seed Audio 1.0 产品简称，统一使用 canonical 模型标识"
+    },
+    {
+      "id": "tts",
+      "disposition": "alias",
+      "target": "seed-audio-1.0",
+      "reason": "TTS 通用别名，映射至主力语音合成模型 seed-audio-1.0"
+    },
+    {
+      "id": "suno",
+      "disposition": "canonical",
+      "reason": "2026-10-21 #3516：网关渠道 32 default 现役（/v1/video/generations 任务通道），text_to_music 上架；未发真实生成请求"
+    },
+    {
+      "id": "gpt-4o-mini-tts",
+      "disposition": "canonical",
+      "reason": "命中 runtime；H1 已有契约；无 dated 证据保持 draft"
+    },
+    {
+      "id": "indextts-2",
+      "disposition": "canonical",
+      "reason": "2026-10-04 #3063 更新：上游官方文档 docs/zh/api-reference/audio-series/models/index-tts.mdx 已将 canonical 型号升级为 indextts-2（POST /v1/tasks/autodl + prompt_text/prompt_simple/emo_control_method；旧型号 index-tts 已从上游模型列表下线，保留为 alias）",
+      "notes": "文档证据充分故 listed；execution 保持 stub，未取得真实执行证据前不声明 live"
+    },
+    {
+      "id": "gpt-image-2.5-hd",
+      "disposition": "canonical",
+      "reason": "契约行更名承接：公开文档已公告的更名后高清型号；因无 dated live 证据不上架（op 保持 draft/none）"
+    },
+    {
+      "id": "nano-banana-2",
+      "disposition": "canonical",
+      "reason": "2026-09-14 #1751 改名：canonical 换为上游在册的连字符形 nano-banana-2（生产渠道目录在册、公开文档有 nano-banana-2 页、生产配置基线渠道 46/54/57 绑定）。网关不做下划线归一闪查，方向须以连字符形为准",
+      "notes": "旧下划线写法 nano_banana_2 已登记为 alias；hyphen-less 形 nanobanana-2 同为 alias，禁止双列"
+    },
+    {
+      "id": "nano_banana_2",
+      "disposition": "alias",
+      "target": "nano-banana-2",
+      "reason": "2026-09-14 #1751 改名后的兼容旧名：旧下划线写法归一为上游在册的连字符 canonical"
+    },
+    {
+      "id": "nano-banana-pro",
+      "disposition": "canonical",
+      "reason": "2026-09-14 #1751 改名：canonical 换为上游在册的连字符形 nano-banana-pro（生产渠道目录在册、公开文档有对应页、生产配置基线渠道 33/37/46/54 绑定）",
+      "notes": "旧下划线写法 nano_banana_pro 已登记为 alias；hyphen-less 形 nanobanana-pro 同为 alias，禁止双列"
+    },
+    {
+      "id": "nano_banana_pro",
+      "disposition": "alias",
+      "target": "nano-banana-pro",
+      "reason": "2026-09-14 #1751 改名后的兼容旧名：旧下划线写法归一为上游在册的连字符 canonical"
+    },
+    {
+      "id": "seedream-5-0-pro",
+      "disposition": "canonical",
+      "reason": "2026-10-05 #3148 更新：契约行采用网关命名规则要求的连字符形（别名登记点号形）；上游能力清单（合同版本 4b4e2aff3500ec80）公布 text_to_image 与 image_to_image，2026-10-05 以本仓真实缝隙真机验证两条路径后，文生图与多图垫图均已上架为 listed。原「渠道官方文档 URL 未取证故 op 保持 draft 不上架」的表述已失效。"
+    },
+    {
+      "id": "seedream-5.0-pro",
+      "disposition": "alias",
+      "target": "seedream-5-0-pro",
+      "reason": "点号形为已弃用的历史写法（网关命名检查 naming-lint 报 R08 ALIAS_RETIRED_STILL_PRESENT 与 R03 MEDIA_DOT_VERSION 两条 error，suggest 连字符形）；登记为别名以打通别名归一：此前该行是 draft 而非 alias，别名桥未建立，导致仓内产品面在用的连字符形在不存在的模型上被拒（unknown_model），点号形则只命中当时自己的 draft 行"
+    },
+    {
+      "id": "nanobanana-2",
+      "disposition": "alias",
+      "target": "nano-banana-2",
+      "reason": "hyphen→underscore 归一；禁止双列"
+    },
+    {
+      "id": "nanobanana-pro",
+      "disposition": "alias",
+      "target": "nano-banana-pro",
+      "reason": "hyphen→underscore 归一；禁止双列"
+    },
+    {
+      "id": "seedance-2.0",
+      "disposition": "alias",
+      "target": "seedance-2-0",
+      "reason": "APIMart wire model；产品目录只展示 canonical id"
+    },
+    {
+      "id": "seedance-2.0-fast",
+      "disposition": "alias",
+      "target": "seedance-2-0-fast",
+      "reason": "APIMart wire model；产品目录只展示 canonical id"
+    },
+    {
+      "id": "seedance-2.0-mini",
+      "disposition": "alias",
+      "target": "seedance-2-0-mini",
+      "reason": "APIMart wire model；产品目录只展示 canonical id"
+    },
+    {
+      "id": "seedance-2.5",
+      "disposition": "alias",
+      "target": "seedance-2-5",
+      "reason": "APIMart wire model；产品目录只展示 canonical id"
+    },
+    {
+      "id": "wan3.0-video",
+      "disposition": "alias",
+      "target": "wan-3.0",
+      "reason": "APIMart wire model；产品目录只展示 canonical id"
+    },
+    {
+      "id": "MiniMax-H3",
+      "disposition": "alias",
+      "target": "minimax-h3",
+      "reason": "APIMart wire model 大小写敏感；产品目录只展示 canonical id"
+    },
+    {
+      "id": "minimax/h3-max",
+      "disposition": "alias",
+      "target": "minimax-h3",
+      "reason": "2026-09-14 #1751：上游 c8d134c4f 把 minimax/h3-max（及 turbo）移出 models、改列为 minimax-h3 的 model_mapping 目标 —— 该线路名仍被上游接受并路由到 h3 家族，故登记为 minimax-h3 的兼容写法，避免已保存画布/旧快照引旧名时掉进 unknown_model"
+    },
+    {
+      "id": "h3-max",
+      "disposition": "alias",
+      "target": "minimax-h3",
+      "reason": "2026-09-14 #1751：上游 c8d134c4f 把 minimax/h3-max（及 turbo）移出 models、改列为 minimax-h3 的 model_mapping 目标 —— 该线路名仍被上游接受并路由到 h3 家族，故登记为 minimax-h3 的兼容写法，避免已保存画布/旧快照引旧名时掉进 unknown_model"
+    },
+    {
+      "id": "minimax/h3-max-turbo",
+      "disposition": "alias",
+      "target": "minimax-h3",
+      "reason": "2026-09-14 #1751：上游 c8d134c4f 把 minimax/h3-max（及 turbo）移出 models、改列为 minimax-h3 的 model_mapping 目标 —— 该线路名仍被上游接受并路由到 h3 家族，故登记为 minimax-h3 的兼容写法，避免已保存画布/旧快照引旧名时掉进 unknown_model"
+    },
+    {
+      "id": "h3-max-turbo",
+      "disposition": "alias",
+      "target": "minimax-h3",
+      "reason": "2026-09-14 #1751：上游 c8d134c4f 把 minimax/h3-max（及 turbo）移出 models、改列为 minimax-h3 的 model_mapping 目标 —— 该线路名仍被上游接受并路由到 h3 家族，故登记为 minimax-h3 的兼容写法，避免已保存画布/旧快照引旧名时掉进 unknown_model"
+    },
+    {
+      "id": "grok-imagine-video-1.5",
+      "disposition": "alias",
+      "target": "grok-imagine-video-1-5",
+      "reason": "APIMart wire model；产品目录只展示 canonical id"
+    },
+    {
+      "id": "doubao-asr-bigmodel",
+      "disposition": "canonical",
+      "reason": "Issue #744 指定的豆包 ASR 中枢契约；speech_to_text 使用 speechToText profile",
+      "evidence": [
+        "docs/evidence/2026-09-07-model-doubao-asr-bigmodel-speech_to_text.md"
+      ],
+      "notes": "离线请求与响应契约验证；无独立真实模型调用证据"
+    },
+    {
+      "id": "seedasr-auc",
+      "disposition": "canonical",
+      "reason": "2026-09-14 #1789：上游独立在售型号（models.json 独立在册、model-channel-catalog 独立一行、绑渠道 43「[官方直连-火山] Seed Audio 豆包语音」，upstream_id 与公开 ID 相同）。#1751 把它误作 doubao-asr-bigmodel 别名的归一已撤销，本 ID 以独立 canonical 身份登记",
+      "evidence": [
+        "docs/model-governance/specs/seedasr-auc.json (OmniMux repo)",
+        "scripts/ops/config-baseline/models.json (OmniMux repo)",
+        "scripts/ops/config-baseline/channels.json (OmniMux repo)",
+        "docs/ops/model-channel-catalog.json (OmniMux repo)",
+        "https://docs.byteplus.com/en/docs/byteplusvoice/asraudiofilesubmittask"
+      ],
+      "notes": "与 doubao-asr-bigmodel 双向互不归一：本 ID 不是它的别名，它也不是本 ID 的别名；官方资源 ID volc.seedasr.auc（Seed ASR 2.0 标准模式），单文件 < 512MB、时长 < 5 小时。speech_to_text 产出 text，不进 audio 产出桶"
+    },
+    {
+      "id": "whisper-1",
+      "disposition": "canonical",
+      "reason": "2026-10-21 网关对账 #3516：网关渠道 31（APIMart 语音识别专线）status=1，default 分组可达 whisper-1；中枢 speechToText profile/seam 已挂载，按现役在售上架。",
+      "notes": "2026-10-21 #3516：渠道 31 default 现役；speech_to_text 已上架，未发真实转写请求",
+      "evidence": [
+        "docs/evidence/2026-10-21-model-whisper-1-speech_to_text.md"
+      ]
+    },
+    {
+      "id": "kling-o3",
+      "disposition": "canonical",
+      "reason": "2026-09-14 #1751 解封：上游生产渠道目录在册 + 生产配置基线渠道 34 绑定 + 公开接口文档有 kling-o3 文档页，quarantine 理由（无官方证据）已被上游在册事实推翻",
+      "notes": "解封仅撤销隔离口径；未取得 dated live 探测证据，execution 保持 none，不自动上架"
+    },
+    {
+      "id": "kling-v3-motion-control",
+      "disposition": "canonical",
+      "reason": "2026-09-14 #1751 解封：上游生产渠道目录在册 + 生产配置基线渠道 32/34 双绑定 + 公开接口文档有对应文档页，quarantine 理由（无官方证据）已被上游在册事实推翻",
+      "notes": "解封仅撤销隔离口径；未取得 dated live 探测证据，execution 保持 none，不自动上架"
+    },
+    {
+      "id": "jina-reader-v1",
+      "disposition": "canonical",
+      "reason": "2026-09-14 登记：产品 reader 工具面已在调用（独立端点 /v1/reader），契约层此前零记录；契约行完整（webpage_read），渠道官方文档 URL 未取证故 op 保持 draft 不上架"
+    }
+  ]
+}

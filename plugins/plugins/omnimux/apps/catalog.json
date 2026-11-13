@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "generated_at": "2026-08-17T12:00:00Z",
+  "min_hub": "0.1.0",
+  "apps": [
+    {
+      "id": "accounts",
+      "title": "账号",
+      "summary": "按平台或分组查看并连接已绑定的社媒账号",
+      "kind": "official",
+      "listed": true,
+      "capabilities": ["identity", "official"],
+      "client": true,
+      "spec": {
+        "source": "bundled",
+        "name": "omnimux-accounts"
+      }
+    }
+  ]
+}

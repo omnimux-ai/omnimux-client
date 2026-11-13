@@ -1,0 +1,2739 @@
+{
+  "schemaVersion": 1,
+  "source": "pricing",
+  "generatedAt": "2026-11-10T07:06:00.000Z",
+  "groups": {
+    "ratio": {
+      "cheap": 0.5,
+      "default": 1,
+      "desktop-480p": 0.17,
+      "desktop-720p": 0.24,
+      "gemini-4-argon-multimodal": 1,
+      "gemini-cheap": 1.12,
+      "gemini-omni-1.1-flash-task-pro": 6.042857,
+      "gpt-image-2.5-economy": 0.0049,
+      "minimax-h3-video-fast": 0.9,
+      "minimax-h3-video-pro": 1.15,
+      "nano-banana-2-pro": 1.714286,
+      "nanobanana-economy": 1,
+      "pool": 0.285714,
+      "seedance-2-5-480p": 0.524,
+      "seedance-2-5-720p": 0.7206,
+      "seedance-standard": 1.178,
+      "wan-3.0-1080p": 1.5,
+      "wan-3.0-720p": 0.5
+    },
+    "usable": {
+      "Omni-Beta": "Omni 专属（仅 tokens-flow omni 模型）",
+      "auto": "自动（推荐：一把密钥全模型，按顺序选组计费）",
+      "cheap": "特惠版（三方特惠 / 经济走量）",
+      "claude-max-cc": "Claude Max（仅限CC）",
+      "claude-max-open": "Claude Max（外接版）",
+      "claude-plus": "Claude Plus（精品）",
+      "codex-pro-cli": "Codex Pro（仅限Codex）",
+      "codex-pro-open": "Codex Pro（外接版）",
+      "deepseek-official": "DeepSeek（官方满血）",
+      "default": "标准版（主流高品质专线）",
+      "desktop-480p": "桌面端 480p 档（¥0.92/秒）",
+      "desktop-720p": "桌面端 720p 档（¥1.31/秒）",
+      "gemini-4-argon-multimodal": "Gemini 4 Argon（多模态文本）",
+      "gemini-cheap": "Gemini 特惠版（经济走量）",
+      "gemini-omni-1.1-flash-task-pro": "Gemini Omni 按次 · 优选中转 (1080p 档)",
+      "gpt-image-2.5-economy": "GPT Image 2.5 特惠档（¥0.01/张）",
+      "grok-cheap": "Grok 特惠版（轻量走量）",
+      "grok-enterprise": "Grok 企业版",
+      "grok-standard": "Grok 标准版（主流专线）",
+      "kimi-official": "Kimi（官方满血K3）",
+      "kling-pro": "可灵 Kling 进阶版（企业独享）",
+      "kling-standard": "可灵 Kling 标准版（商业专线）",
+      "minimax-h3-video-fast": "H3 视频·高速档",
+      "minimax-h3-video-pro": "H3 视频·升级画质档",
+      "minimax-official": "MiniMax（官方满血）",
+      "minimax-pro": "海螺 MiniMax 进阶版（企业独享）",
+      "minimax-standard": "海螺 MiniMax 标准版（商业专线）",
+      "nano-banana-2-pro": "Nano Banana 2 高价档",
+      "nanobanana-economy": "Nano Banana 2 Lite 低价版（经济跑量）",
+      "official": "官转版（官方原厂直签 / 极稳高画质）",
+      "pool": "畅享版（自建账号池 / 随心用）",
+      "pro": "进阶版（企业独享 / 私有专线）",
+      "seedance-2-5-480p": "Seedance 2.5 480p 档（¥2.85/秒）",
+      "seedance-2-5-720p": "Seedance 2.5 720p 档（¥3.92/秒）",
+      "seedance-2-5-task-pro": "Seedance 2.5 按次高价档",
+      "seedance-pro": "即梦 Seedance 进阶版",
+      "seedance-standard": "即梦 Seedance 标准版",
+      "standard": "标准版（主流高品质专线）",
+      "wan-3.0-1080p": "Wan 3.0 1080p 档（¥1.80/秒）",
+      "wan-3.0-720p": "Wan 3.0 720p 档（¥0.60/秒）",
+      "zhipu-official": "智谱 Zhipu（官方满血）"
+    },
+    "auto": [
+      "pool",
+      "cheap",
+      "gemini-cheap",
+      "default",
+      "nano-banana-2-pro",
+      "gemini-omni-1.1-flash-task-pro",
+      "gpt-image-2.5-economy",
+      "seedance-2-5-480p",
+      "seedance-2-5-720p",
+      "wan-3.0-720p",
+      "wan-3.0-1080p",
+      "gemini-4-argon-multimodal"
+    ]
+  },
+  "coverage": {
+    "models": 11,
+    "channels": null,
+    "limitations": []
+  },
+  "models": [
+    {
+      "id": "gemini-3.1-flash-lite-image",
+      "displayName": "gemini-3.1-flash-lite-image",
+      "enableGroups": [
+        "default",
+        "nanobanana-economy"
+      ],
+      "supportedEndpointTypes": [
+        "openai"
+      ],
+      "billing": {
+        "mode": null,
+        "modelPrice": 0.0336,
+        "modelRatio": 0,
+        "quotaType": 1,
+        "expr": null
+      },
+      "contract": {
+        "model_id": "gemini-3.1-flash-lite-image",
+        "schemaVersion": "2.0",
+        "contractVersion": "d75a23543af3d01c",
+        "family": "image",
+        "status": "documented",
+        "operation_ids": [
+          "text_to_image",
+          "image_to_image"
+        ],
+        "operations": [
+          {
+            "id": "text_to_image",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              }
+            ],
+            "parameters": [
+              {
+                "name": "seed",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647,
+                "step": 1,
+                "default": 0,
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "平台既有参数表；上游未公布取值范围"
+                }
+              },
+              {
+                "name": "n",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4,
+                "step": 1,
+                "default": 1,
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "平台既有参数表；上游未公布数量上限"
+                }
+              },
+              {
+                "name": "quality",
+                "type": "enum",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "default": "medium",
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "前端既有参数表；上游未公布枚举"
+                }
+              },
+              {
+                "name": "background",
+                "type": "enum",
+                "enum": [
+                  "opaque",
+                  "transparent"
+                ],
+                "default": "opaque",
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "前端既有参数表；上游未公布枚举"
+                }
+              }
+            ],
+            "output": {
+              "type": "image",
+              "sizes": [
+                "1K"
+              ]
+            }
+          },
+          {
+            "id": "image_to_image",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              },
+              {
+                "slot": "reference_image",
+                "type": "image",
+                "role": "reference",
+                "required": false,
+                "min": 0,
+                "max": 14,
+                "allowedMimes": [
+                  "image/png",
+                  "image/jpeg",
+                  "image/webp",
+                  "image/heic",
+                  "image/heif"
+                ],
+                "maxSizeMb": 7
+              }
+            ],
+            "parameters": [
+              {
+                "name": "seed",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647,
+                "step": 1,
+                "default": 0,
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "平台既有参数表；上游未公布取值范围"
+                }
+              },
+              {
+                "name": "n",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4,
+                "step": 1,
+                "default": 1,
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "平台既有参数表；上游未公布数量上限"
+                }
+              },
+              {
+                "name": "quality",
+                "type": "enum",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "default": "medium",
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "前端既有参数表；上游未公布枚举"
+                }
+              },
+              {
+                "name": "background",
+                "type": "enum",
+                "enum": [
+                  "opaque",
+                  "transparent"
+                ],
+                "default": "opaque",
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "前端既有参数表；上游未公布枚举"
+                }
+              }
+            ],
+            "output": {
+              "type": "image",
+              "sizes": [
+                "1K"
+              ]
+            }
+          }
+        ],
+        "unknowns": [
+          "prompt_max_chars",
+          "output_formats"
+        ],
+        "output_sizes": [
+          "1K"
+        ],
+        "reference_images": {
+          "min": 0,
+          "max": 14,
+          "formats": [
+            "image/png",
+            "image/jpeg",
+            "image/webp",
+            "image/heic",
+            "image/heif"
+          ],
+          "max_bytes_each": 7340032
+        }
+      },
+      "contractPresent": true
+    },
+    {
+      "id": "gemini-3.8-flash",
+      "displayName": "gemini-3.8-flash",
+      "enableGroups": [
+        "default"
+      ],
+      "supportedEndpointTypes": [
+        "openai"
+      ],
+      "billing": {
+        "mode": "tiered_expr",
+        "modelPrice": 0,
+        "modelRatio": 0.375,
+        "quotaType": 0,
+        "expr": "tier(\"base\", p * 0.75 + c * 0.75)"
+      },
+      "contract": {
+        "model_id": "gemini-3.8-flash",
+        "schemaVersion": "2.0",
+        "contractVersion": "09b581aa43e2db8a",
+        "family": "llm",
+        "status": "documented",
+        "operation_ids": [
+          "chat"
+        ],
+        "operations": [
+          {
+            "id": "chat",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              },
+              {
+                "slot": "image",
+                "type": "image",
+                "required": false,
+                "allowedMimes": [
+                  "image/png",
+                  "image/jpeg",
+                  "image/webp",
+                  "image/heic",
+                  "image/heif"
+                ]
+              },
+              {
+                "slot": "video",
+                "type": "video",
+                "required": false,
+                "allowedMimes": [
+                  "video/mp4",
+                  "video/mov",
+                  "video/mpeg",
+                  "video/avi",
+                  "video/wmv",
+                  "video/flv"
+                ]
+              },
+              {
+                "slot": "audio",
+                "type": "audio",
+                "required": false,
+                "allowedMimes": [
+                  "audio/mp3",
+                  "audio/wav",
+                  "audio/mpeg"
+                ]
+              },
+              {
+                "slot": "pdf",
+                "type": "pdf",
+                "required": false
+              }
+            ],
+            "parameters": [],
+            "output": {
+              "type": "text"
+            }
+          }
+        ],
+        "unknowns": [
+          "prompt_max_chars"
+        ],
+        "input_modalities": [
+          "text",
+          "image",
+          "video",
+          "audio",
+          "pdf"
+        ],
+        "tool_calling": true,
+        "streaming": true,
+        "prompt_caching": true,
+        "reference_images": {
+          "formats": [
+            "image/png",
+            "image/jpeg",
+            "image/webp",
+            "image/heic",
+            "image/heif"
+          ]
+        },
+        "reference_videos": {
+          "formats": [
+            "video/mp4",
+            "video/mov",
+            "video/mpeg",
+            "video/avi",
+            "video/wmv",
+            "video/flv"
+          ]
+        },
+        "reference_audios": {
+          "formats": [
+            "audio/mp3",
+            "audio/wav",
+            "audio/mpeg"
+          ]
+        },
+        "context_window_tokens": 1048576,
+        "max_output_tokens": 65536,
+        "billing": {
+          "unit": "per_token",
+          "unit_label": {
+            "en": "per 1M tokens",
+            "zh": "每百万词元"
+          },
+          "unit_price_usd": 0.75,
+          "model_ratio": 0.375,
+          "pricing_basis": "reported_tokens",
+          "notes": {
+            "en": "Charged by reported token usage; price is USD per 1M tokens",
+            "zh": "按上游返回的词元用量计费，单价为每百万词元美元价"
+          }
+        },
+        "reasoning_efforts": {
+          "high": "high",
+          "low": "low",
+          "medium": "medium"
+        },
+        "default_reasoning_effort": "medium"
+      },
+      "contractPresent": true
+    },
+    {
+      "id": "gemini-4-argon",
+      "displayName": "gemini-4-argon",
+      "enableGroups": [
+        "gemini-4-argon-multimodal"
+      ],
+      "supportedEndpointTypes": [
+        "anthropic",
+        "gemini",
+        "openai",
+        "openai-alpha-search",
+        "openai-response",
+        "openai-response-compact"
+      ],
+      "billing": {
+        "mode": "tiered_expr",
+        "modelPrice": 0,
+        "modelRatio": 2,
+        "quotaType": 0,
+        "expr": "p * 1.7 + c * 8.5 + cr * 0.086 < 10000.0 / 68 ? tier(\"evolink_minimum\", fixed(0.00014705882352941177)) : tier(\"evolink_token\", p * 1.7 + c * 8.5 + cr * 0.086)"
+      },
+      "contract": {
+        "model_id": "gemini-4-argon",
+        "schemaVersion": "2.0",
+        "contractVersion": "0ecfb573bfdcee3f",
+        "family": "llm",
+        "status": "partial",
+        "basis": "line_restricted",
+        "service_notes": "使用 Gemini 原生内容接口，输出为文字或结构化结果。支持独立系统指令、PNG 单图与多图、MP4 视频、视频与图片联合输入、PDF、结构化结果、流式返回、低思考档和单轮函数调用请求。函数调用结果由调用方执行。短素材示例不代表最大容量；音频准确性、其他格式、长素材、最大上下文和最大输出未建立服务承诺。",
+        "operation_ids": [
+          "chat"
+        ],
+        "operations": [
+          {
+            "id": "chat",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              },
+              {
+                "slot": "image",
+                "type": "image",
+                "required": false,
+                "allowedMimes": [
+                  "image/png"
+                ]
+              },
+              {
+                "slot": "video",
+                "type": "video",
+                "required": false,
+                "allowedMimes": [
+                  "video/mp4"
+                ]
+              },
+              {
+                "slot": "pdf",
+                "type": "pdf",
+                "required": false
+              }
+            ],
+            "parameters": [],
+            "output": {
+              "type": "text"
+            }
+          }
+        ],
+        "unknowns": [
+          "prompt_max_chars",
+          "context_window_tokens",
+          "max_output_tokens"
+        ],
+        "input_modalities": [
+          "text",
+          "image",
+          "video",
+          "pdf"
+        ],
+        "tool_calling": true,
+        "streaming": true,
+        "reference_images": {
+          "formats": [
+            "image/png"
+          ]
+        },
+        "reference_videos": {
+          "formats": [
+            "video/mp4"
+          ]
+        },
+        "billing": {
+          "unit": "per_token",
+          "unit_label": {
+            "en": "per 1M tokens",
+            "zh": "每百万词元"
+          },
+          "model_ratio": 2,
+          "pricing_basis": "reported_tokens",
+          "notes": {
+            "en": "Charges use reported usage: USD 1.7 per 1M input tokens, USD 8.5 per 1M output tokens and USD 0.086 per 1M cached input tokens, with a USD 0.01/68 minimum per request rounded to the gateway billing unit. The official input anchor is USD 4 per 1M tokens; model-specific billing rules determine the effective selling price. Input includes reported tool-use input; output includes reported thinking. Cached tokens are an input subset, counted once.",
+            "zh": "按实际报告用量结算，每百万词元输入 1.7 美元、输出 8.5 美元、缓存读取 0.086 美元；每次最低 0.01/68 美元，按本站最小计费单位取整。官方输入基准为每百万词元 4 美元，实际售价由模型专属计费规则确定。输入包含已报告的工具输入，输出包含已报告的思考；缓存是输入子集，各计一次。"
+          }
+        },
+        "reasoning_efforts": {
+          "high": "high",
+          "low": "low",
+          "medium": "medium"
+        },
+        "default_reasoning_effort": "medium"
+      },
+      "contractPresent": true
+    },
+    {
+      "id": "gpt-image-2.5",
+      "displayName": "gpt-image-2.5",
+      "enableGroups": [
+        "default",
+        "gpt-image-2.5-economy",
+        "nanobanana-economy"
+      ],
+      "supportedEndpointTypes": [
+        "image-generation",
+        "openai"
+      ],
+      "billing": {
+        "mode": "tiered_expr",
+        "modelPrice": 0.3,
+        "modelRatio": 0,
+        "quotaType": 1,
+        "expr": "tier(\"image\", fixed(0.3)) * image_count"
+      },
+      "contract": {
+        "model_id": "gpt-image-2.5",
+        "schemaVersion": "2.0",
+        "contractVersion": "a5cc7f2fbe69646a",
+        "family": "image",
+        "status": "documented",
+        "basis": "line_restricted",
+        "service_notes": "标准服务使用 JSON 提交，每次生成一张中等质量 PNG 图片，数量省略或为 1，质量省略或为 medium。仅支持合同列明的七种精确像素尺寸，3:4 与 4:3 使用 1360 像素边。最多一张 JPEG、PNG 或 WebP 参考图，不超过 5MiB、4000 万像素，任一边不超过 23170 像素。完整提示词（包括角色附加说明）须同时不超过 8192 个 Unicode 字符、16384 个 UTF-8 字节和按本服务 o200k_base 计数的 5000 个提示词 token；超出明确拒绝，不截断、不缩写，部分较长描述也可能被拒绝。角色双视图及多视角功能保留。更高质量、多张输出、多参考、透明背景、遮罩及其他未审规格明确拒绝。",
+        "operation_ids": [
+          "text_to_image",
+          "image_to_image"
+        ],
+        "operations": [
+          {
+            "id": "text_to_image",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              }
+            ],
+            "parameters": [
+              {
+                "name": "seed",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647,
+                "default": 0,
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "前端既有参数表；上游未公布取值范围"
+                }
+              },
+              {
+                "name": "n",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1,
+                "default": 1,
+                "fixed": 1,
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "本服务 service_notes：数量省略或为 1"
+                }
+              },
+              {
+                "name": "quality",
+                "type": "enum",
+                "enum": [
+                  "medium"
+                ],
+                "default": "medium",
+                "fixed": "medium",
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "本服务 service_notes：质量省略或为 medium"
+                }
+              },
+              {
+                "name": "background",
+                "type": "enum",
+                "enum": [
+                  "opaque",
+                  "transparent"
+                ],
+                "default": "opaque",
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "前端既有参数表；上游未公布枚举"
+                }
+              },
+              {
+                "name": "aspect_ratio",
+                "type": "enum",
+                "enum": [
+                  "auto",
+                  "1:1",
+                  "3:2",
+                  "2:3",
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4"
+                ],
+                "default": "1:1",
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "前端既有参数表；上游未公布枚举"
+                }
+              }
+            ],
+            "output": {
+              "type": "image",
+              "formats": [
+                "png"
+              ],
+              "sizes": [
+                "1024x1024",
+                "1024x1536",
+                "1536x1024",
+                "1024x1360",
+                "1360x1024",
+                "1088x1920",
+                "1920x1088"
+              ]
+            }
+          },
+          {
+            "id": "image_to_image",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              },
+              {
+                "slot": "reference_image",
+                "type": "image",
+                "role": "reference",
+                "required": false,
+                "min": 0,
+                "max": 1,
+                "allowedMimes": [
+                  "jpeg",
+                  "png",
+                  "webp"
+                ],
+                "maxSizeMb": 5
+              }
+            ],
+            "parameters": [
+              {
+                "name": "seed",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647,
+                "default": 0,
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "前端既有参数表；上游未公布取值范围"
+                }
+              },
+              {
+                "name": "n",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1,
+                "default": 1,
+                "fixed": 1,
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "本服务 service_notes：数量省略或为 1"
+                }
+              },
+              {
+                "name": "quality",
+                "type": "enum",
+                "enum": [
+                  "medium"
+                ],
+                "default": "medium",
+                "fixed": "medium",
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "本服务 service_notes：质量省略或为 medium"
+                }
+              },
+              {
+                "name": "background",
+                "type": "enum",
+                "enum": [
+                  "opaque",
+                  "transparent"
+                ],
+                "default": "opaque",
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "前端既有参数表；上游未公布枚举"
+                }
+              },
+              {
+                "name": "aspect_ratio",
+                "type": "enum",
+                "enum": [
+                  "auto",
+                  "1:1",
+                  "3:2",
+                  "2:3",
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4"
+                ],
+                "default": "1:1",
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "前端既有参数表；上游未公布枚举"
+                }
+              }
+            ],
+            "output": {
+              "type": "image",
+              "formats": [
+                "png"
+              ],
+              "sizes": [
+                "1024x1024",
+                "1024x1536",
+                "1536x1024",
+                "1024x1360",
+                "1360x1024",
+                "1088x1920",
+                "1920x1088"
+              ]
+            }
+          }
+        ],
+        "output_formats": [
+          "png"
+        ],
+        "output_sizes": [
+          "1024x1024",
+          "1024x1536",
+          "1536x1024",
+          "1024x1360",
+          "1360x1024",
+          "1088x1920",
+          "1920x1088"
+        ],
+        "reference_images": {
+          "min": 0,
+          "max": 1,
+          "formats": [
+            "jpeg",
+            "png",
+            "webp"
+          ],
+          "max_bytes_each": 5242880
+        },
+        "prompt_max_chars": 8192,
+        "prompt_max_utf8_bytes": 16384,
+        "prompt_max_tokens": 5000,
+        "billing": {
+          "unit": "per_image",
+          "unit_label": {
+            "en": "per image",
+            "zh": "每张"
+          },
+          "unit_price_usd": 0.3,
+          "pricing_basis": "image_count",
+          "notes": {
+            "en": "Charged per image. This amount is the per-image service base (3 OmniMux points); the final quote includes the dedicated group and membership multipliers; use the platform quote before submission.",
+            "zh": "按图片张数计费。此金额为每张的服务基准价（对应 3 积分）；实际每张费用受专属分组和会员倍率影响，以平台提交前报价为准。"
+          }
+        }
+      },
+      "contractPresent": true
+    },
+    {
+      "id": "indextts-2",
+      "displayName": "indextts-2",
+      "enableGroups": [
+        "auto",
+        "default"
+      ],
+      "supportedEndpointTypes": [
+        "openai"
+      ],
+      "billing": {
+        "mode": null,
+        "modelPrice": 0.005,
+        "modelRatio": 0,
+        "quotaType": 1,
+        "expr": null
+      },
+      "contract": {
+        "model_id": "indextts-2",
+        "schemaVersion": "2.0",
+        "contractVersion": "ee42f866f94217d7",
+        "family": "audio",
+        "status": "documented",
+        "operation_ids": [
+          "text_to_speech",
+          "voice_clone",
+          "emotion_control"
+        ],
+        "operations": [
+          {
+            "id": "text_to_speech",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              },
+              {
+                "slot": "reference_audio",
+                "type": "audio",
+                "role": "reference",
+                "required": false,
+                "max": 2,
+                "allowedMimes": [
+                  "wav",
+                  "mp3"
+                ]
+              }
+            ],
+            "parameters": [],
+            "output": {
+              "type": "audio",
+              "formats": [
+                "wav"
+              ]
+            }
+          },
+          {
+            "id": "voice_clone",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              },
+              {
+                "slot": "reference_audio",
+                "type": "audio",
+                "role": "reference",
+                "required": false,
+                "max": 2,
+                "allowedMimes": [
+                  "wav",
+                  "mp3"
+                ]
+              }
+            ],
+            "parameters": [],
+            "output": {
+              "type": "audio",
+              "formats": [
+                "wav"
+              ]
+            }
+          },
+          {
+            "id": "emotion_control",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              },
+              {
+                "slot": "reference_audio",
+                "type": "audio",
+                "role": "reference",
+                "required": false,
+                "max": 2,
+                "allowedMimes": [
+                  "wav",
+                  "mp3"
+                ]
+              }
+            ],
+            "parameters": [],
+            "output": {
+              "type": "audio",
+              "formats": [
+                "wav"
+              ]
+            }
+          }
+        ],
+        "unknowns": [
+          "max_input_bytes",
+          "max_input_seconds"
+        ],
+        "audio_kind": "tts",
+        "input_formats": [
+          "wav",
+          "mp3"
+        ],
+        "output_formats": [
+          "wav"
+        ],
+        "reference_audios": {
+          "max": 2,
+          "formats": [
+            "wav",
+            "mp3"
+          ]
+        },
+        "prompt_max_chars": 2048,
+        "billing": {
+          "unit": "per_second",
+          "unit_label": {
+            "en": "per second",
+            "zh": "每秒"
+          },
+          "unit_price_usd": 0.005,
+          "pricing_basis": "duration_seconds",
+          "notes": {
+            "en": "Charged by audio duration, 10s minimum",
+            "zh": "按生成的音频时长计费，最低 10 秒起步"
+          }
+        }
+      },
+      "contractPresent": true
+    },
+    {
+      "id": "minimax-h3-video",
+      "displayName": "minimax-h3-video",
+      "enableGroups": [
+        "auto",
+        "default",
+        "minimax-h3-video-fast",
+        "minimax-h3-video-pro"
+      ],
+      "supportedEndpointTypes": [
+        "openai"
+      ],
+      "billing": {
+        "mode": null,
+        "modelPrice": 0.025,
+        "modelRatio": 0,
+        "quotaType": 1,
+        "expr": null
+      },
+      "contract": {
+        "model_id": "minimax-h3-video",
+        "schemaVersion": "2.0",
+        "contractVersion": "22bdd7f2cb55646b",
+        "family": "video",
+        "status": "documented",
+        "basis": "line_restricted",
+        "operation_ids": [
+          "text_to_video",
+          "first_last_frame",
+          "video_multi_ref",
+          "digital_human"
+        ],
+        "operations": [
+          {
+            "id": "text_to_video",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              }
+            ],
+            "parameters": [
+              {
+                "name": "duration",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 15,
+                "step": 1
+              },
+              {
+                "name": "resolution",
+                "type": "enum",
+                "enum": [
+                  "480p",
+                  "736p",
+                  "768p",
+                  "1088p",
+                  "1440p"
+                ]
+              },
+              {
+                "name": "aspect_ratio",
+                "type": "enum",
+                "enum": [
+                  "16:9",
+                  "9:16",
+                  "1:1"
+                ]
+              }
+            ],
+            "output": {
+              "type": "video"
+            }
+          },
+          {
+            "id": "first_last_frame",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              },
+              {
+                "slot": "first_frame",
+                "type": "image",
+                "role": "first_frame",
+                "required": true,
+                "min": 1,
+                "max": 1
+              },
+              {
+                "slot": "last_frame",
+                "type": "image",
+                "role": "last_frame",
+                "required": true,
+                "min": 1,
+                "max": 1
+              }
+            ],
+            "parameters": [
+              {
+                "name": "duration",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 15,
+                "step": 1
+              },
+              {
+                "name": "resolution",
+                "type": "enum",
+                "enum": [
+                  "480p",
+                  "736p",
+                  "768p",
+                  "1088p",
+                  "1440p"
+                ]
+              },
+              {
+                "name": "aspect_ratio",
+                "type": "enum",
+                "enum": [
+                  "adaptive"
+                ],
+                "default": "adaptive",
+                "fixed": "adaptive"
+              }
+            ],
+            "output": {
+              "type": "video"
+            }
+          },
+          {
+            "id": "video_multi_ref",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              },
+              {
+                "slot": "reference_images",
+                "type": "image",
+                "role": "reference",
+                "required": false,
+                "min": 0,
+                "max": 9
+              },
+              {
+                "slot": "reference_audios",
+                "type": "audio",
+                "role": "reference",
+                "required": false,
+                "min": 0,
+                "max": 3
+              }
+            ],
+            "parameters": [
+              {
+                "name": "duration",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 15,
+                "step": 1
+              },
+              {
+                "name": "resolution",
+                "type": "enum",
+                "enum": [
+                  "480p",
+                  "736p",
+                  "768p",
+                  "1088p",
+                  "1440p"
+                ]
+              },
+              {
+                "name": "aspect_ratio",
+                "type": "enum",
+                "enum": [
+                  "16:9",
+                  "9:16",
+                  "1:1"
+                ]
+              }
+            ],
+            "output": {
+              "type": "video"
+            }
+          },
+          {
+            "id": "digital_human",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "reference_image",
+                "type": "image",
+                "required": true,
+                "min": 1,
+                "max": 1
+              },
+              {
+                "slot": "reference_audio",
+                "type": "audio",
+                "required": true,
+                "min": 1,
+                "max": 1
+              }
+            ],
+            "parameters": [
+              {
+                "name": "duration",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 15,
+                "step": 1
+              },
+              {
+                "name": "resolution",
+                "type": "enum",
+                "enum": [
+                  "480p",
+                  "736p",
+                  "768p",
+                  "1088p",
+                  "1440p"
+                ]
+              },
+              {
+                "name": "aspect_ratio",
+                "type": "enum",
+                "enum": [
+                  "16:9",
+                  "9:16",
+                  "1:1"
+                ]
+              }
+            ],
+            "output": {
+              "type": "video"
+            }
+          }
+        ],
+        "unknowns": [
+          "prompt_max_chars",
+          "reference_images.max_bytes_each",
+          "reference_audios.max_bytes_each"
+        ],
+        "durations_seconds": {
+          "min": 1,
+          "max": 15
+        },
+        "resolutions": [
+          "480p",
+          "736p",
+          "768p",
+          "1088p",
+          "1440p"
+        ],
+        "aspect_ratios": [
+          "16:9",
+          "9:16",
+          "1:1"
+        ],
+        "reference_images": {
+          "min": 0,
+          "max": 9
+        },
+        "reference_audios": {
+          "min": 0,
+          "max": 3
+        },
+        "billing": {
+          "unit": "per_second",
+          "unit_label": {
+            "en": "per second",
+            "zh": "每秒"
+          },
+          "unit_price_usd": 0.025,
+          "pricing_basis": "duration_seconds",
+          "notes": {
+            "en": "Charged by the requested video duration; the per-second rate varies with resolution: $0.025 for 480p/736p/768p, $0.030 for 1088p, $0.035 for 1440p (priced by resolution in the task billing expression; group ratios still apply)",
+            "zh": "按请求的视频时长计费；每秒单价随分辨率变化：480p/736p/768p 为 $0.025，1088p 为 $0.030，1440p 为 $0.035（由任务计费表达式按 resolution 定价，分组倍率仍叠加）"
+          }
+        }
+      },
+      "contractPresent": true
+    },
+    {
+      "id": "seedance-2-0",
+      "displayName": "seedance-2-0",
+      "enableGroups": [
+        "default"
+      ],
+      "supportedEndpointTypes": [
+        "openai"
+      ],
+      "billing": {
+        "mode": null,
+        "modelPrice": 0.0971,
+        "modelRatio": 0,
+        "quotaType": 1,
+        "expr": null
+      },
+      "contract": {
+        "model_id": "seedance-2-0",
+        "schemaVersion": "2.0",
+        "contractVersion": "010c1093caa5370b",
+        "family": "video",
+        "status": "documented",
+        "operation_ids": [
+          "text_to_video",
+          "first_frame",
+          "first_last_frame",
+          "video_multi_ref"
+        ],
+        "operations": [
+          {
+            "id": "text_to_video",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              }
+            ],
+            "parameters": [
+              {
+                "name": "duration",
+                "type": "integer",
+                "minimum": 4,
+                "maximum": 30,
+                "step": 1
+              },
+              {
+                "name": "resolution",
+                "type": "enum",
+                "enum": [
+                  "480p",
+                  "720p",
+                  "1080p",
+                  "4k"
+                ]
+              },
+              {
+                "name": "aspect_ratio",
+                "type": "enum",
+                "enum": [
+                  "21:9",
+                  "16:9",
+                  "4:3",
+                  "1:1",
+                  "3:4",
+                  "9:16"
+                ]
+              },
+              {
+                "name": "generate_audio",
+                "type": "boolean",
+                "default": false
+              }
+            ],
+            "output": {
+              "type": "video"
+            }
+          },
+          {
+            "id": "first_frame",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              },
+              {
+                "slot": "first_frame",
+                "type": "image",
+                "role": "first_frame",
+                "required": true,
+                "min": 1,
+                "max": 1
+              }
+            ],
+            "parameters": [
+              {
+                "name": "duration",
+                "type": "integer",
+                "minimum": 4,
+                "maximum": 30,
+                "step": 1
+              },
+              {
+                "name": "resolution",
+                "type": "enum",
+                "enum": [
+                  "480p",
+                  "720p",
+                  "1080p",
+                  "4k"
+                ]
+              },
+              {
+                "name": "aspect_ratio",
+                "type": "enum",
+                "enum": [
+                  "adaptive"
+                ],
+                "default": "adaptive",
+                "fixed": "adaptive"
+              },
+              {
+                "name": "generate_audio",
+                "type": "boolean",
+                "default": false
+              }
+            ],
+            "output": {
+              "type": "video"
+            }
+          },
+          {
+            "id": "first_last_frame",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              },
+              {
+                "slot": "first_frame",
+                "type": "image",
+                "role": "first_frame",
+                "required": true,
+                "min": 1,
+                "max": 1
+              },
+              {
+                "slot": "last_frame",
+                "type": "image",
+                "role": "last_frame",
+                "required": true,
+                "min": 1,
+                "max": 1
+              }
+            ],
+            "parameters": [
+              {
+                "name": "duration",
+                "type": "integer",
+                "minimum": 4,
+                "maximum": 30,
+                "step": 1
+              },
+              {
+                "name": "resolution",
+                "type": "enum",
+                "enum": [
+                  "480p",
+                  "720p",
+                  "1080p",
+                  "4k"
+                ]
+              },
+              {
+                "name": "aspect_ratio",
+                "type": "enum",
+                "enum": [
+                  "adaptive"
+                ],
+                "default": "adaptive",
+                "fixed": "adaptive"
+              },
+              {
+                "name": "generate_audio",
+                "type": "boolean",
+                "default": false
+              }
+            ],
+            "output": {
+              "type": "video"
+            }
+          },
+          {
+            "id": "video_multi_ref",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              },
+              {
+                "slot": "reference_images",
+                "type": "image",
+                "role": "reference",
+                "required": false,
+                "min": 0,
+                "max": 9
+              },
+              {
+                "slot": "reference_videos",
+                "type": "video",
+                "role": "reference",
+                "required": false,
+                "min": 0,
+                "max": 3
+              },
+              {
+                "slot": "reference_audios",
+                "type": "audio",
+                "role": "reference",
+                "required": false,
+                "min": 0,
+                "max": 3
+              }
+            ],
+            "parameters": [
+              {
+                "name": "duration",
+                "type": "integer",
+                "minimum": 4,
+                "maximum": 30,
+                "step": 1
+              },
+              {
+                "name": "resolution",
+                "type": "enum",
+                "enum": [
+                  "480p",
+                  "720p",
+                  "1080p",
+                  "4k"
+                ]
+              },
+              {
+                "name": "aspect_ratio",
+                "type": "enum",
+                "enum": [
+                  "21:9",
+                  "16:9",
+                  "4:3",
+                  "1:1",
+                  "3:4",
+                  "9:16"
+                ]
+              },
+              {
+                "name": "generate_audio",
+                "type": "boolean",
+                "default": false
+              }
+            ],
+            "output": {
+              "type": "video"
+            }
+          }
+        ],
+        "unknowns": [
+          "prompt_max_chars",
+          "reference_images.max_bytes_each",
+          "reference_videos.max_bytes_each",
+          "reference_audios.max_bytes_each"
+        ],
+        "durations_seconds": {
+          "min": 4,
+          "max": 30
+        },
+        "resolutions": [
+          "480p",
+          "720p",
+          "1080p",
+          "4k"
+        ],
+        "aspect_ratios": [
+          "21:9",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ],
+        "audio_supported": true,
+        "reference_images": {
+          "min": 0,
+          "max": 9
+        },
+        "reference_videos": {
+          "min": 0,
+          "max": 3
+        },
+        "reference_audios": {
+          "min": 0,
+          "max": 3
+        },
+        "billing": {
+          "unit": "per_second",
+          "unit_label": {
+            "en": "per second",
+            "zh": "每秒"
+          },
+          "unit_price_usd": 0.0971,
+          "pricing_basis": "duration_seconds",
+          "notes": {
+            "en": "Charged by the requested video duration",
+            "zh": "按请求的视频时长计费"
+          }
+        }
+      },
+      "contractPresent": true
+    },
+    {
+      "id": "seedance-2-5",
+      "displayName": "seedance-2-5",
+      "enableGroups": [
+        "desktop-480p",
+        "desktop-720p",
+        "seedance-2-5-480p",
+        "seedance-2-5-720p"
+      ],
+      "supportedEndpointTypes": [
+        "openai"
+      ],
+      "billing": {
+        "mode": null,
+        "modelPrice": 0.8,
+        "modelRatio": 0,
+        "quotaType": 1,
+        "expr": null
+      },
+      "contract": {
+        "model_id": "seedance-2-5",
+        "schemaVersion": "2.0",
+        "contractVersion": "cecb4da4fe4d9ddb",
+        "family": "video",
+        "status": "documented",
+        "operation_ids": [
+          "text_to_video",
+          "first_frame",
+          "first_last_frame",
+          "video_multi_ref",
+          "video_edit",
+          "video_extend"
+        ],
+        "operations": [
+          {
+            "id": "text_to_video",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              }
+            ],
+            "parameters": [
+              {
+                "name": "duration",
+                "type": "integer",
+                "minimum": 4,
+                "maximum": 30,
+                "step": 1
+              },
+              {
+                "name": "resolution",
+                "type": "enum",
+                "enum": [
+                  "480p",
+                  "720p",
+                  "1080p"
+                ]
+              },
+              {
+                "name": "aspect_ratio",
+                "type": "enum",
+                "enum": [
+                  "16:9",
+                  "4:3",
+                  "1:1",
+                  "3:4",
+                  "9:16",
+                  "21:9",
+                  "adaptive"
+                ]
+              },
+              {
+                "name": "generate_audio",
+                "type": "boolean",
+                "default": false
+              }
+            ],
+            "output": {
+              "type": "video"
+            }
+          },
+          {
+            "id": "first_frame",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              },
+              {
+                "slot": "first_frame",
+                "type": "image",
+                "role": "first_frame",
+                "required": true,
+                "min": 1,
+                "max": 1,
+                "allowedMimes": [
+                  "image/jpeg",
+                  "image/png",
+                  "image/webp",
+                  "image/bmp",
+                  "image/tiff",
+                  "image/gif",
+                  "image/heic",
+                  "image/heif"
+                ],
+                "maxSizeMb": 30
+              }
+            ],
+            "parameters": [
+              {
+                "name": "duration",
+                "type": "integer",
+                "minimum": 4,
+                "maximum": 30,
+                "step": 1
+              },
+              {
+                "name": "resolution",
+                "type": "enum",
+                "enum": [
+                  "480p",
+                  "720p",
+                  "1080p"
+                ]
+              },
+              {
+                "name": "aspect_ratio",
+                "type": "enum",
+                "enum": [
+                  "adaptive"
+                ],
+                "default": "adaptive",
+                "fixed": "adaptive"
+              },
+              {
+                "name": "generate_audio",
+                "type": "boolean",
+                "default": false
+              }
+            ],
+            "output": {
+              "type": "video"
+            }
+          },
+          {
+            "id": "first_last_frame",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              },
+              {
+                "slot": "first_frame",
+                "type": "image",
+                "role": "first_frame",
+                "required": true,
+                "min": 1,
+                "max": 1,
+                "allowedMimes": [
+                  "image/jpeg",
+                  "image/png",
+                  "image/webp",
+                  "image/bmp",
+                  "image/tiff",
+                  "image/gif",
+                  "image/heic",
+                  "image/heif"
+                ],
+                "maxSizeMb": 30
+              },
+              {
+                "slot": "last_frame",
+                "type": "image",
+                "role": "last_frame",
+                "required": true,
+                "min": 1,
+                "max": 1,
+                "allowedMimes": [
+                  "image/jpeg",
+                  "image/png",
+                  "image/webp",
+                  "image/bmp",
+                  "image/tiff",
+                  "image/gif",
+                  "image/heic",
+                  "image/heif"
+                ],
+                "maxSizeMb": 30
+              }
+            ],
+            "parameters": [
+              {
+                "name": "duration",
+                "type": "integer",
+                "minimum": 4,
+                "maximum": 30,
+                "step": 1
+              },
+              {
+                "name": "resolution",
+                "type": "enum",
+                "enum": [
+                  "480p",
+                  "720p",
+                  "1080p"
+                ]
+              },
+              {
+                "name": "aspect_ratio",
+                "type": "enum",
+                "enum": [
+                  "adaptive"
+                ],
+                "default": "adaptive",
+                "fixed": "adaptive"
+              },
+              {
+                "name": "generate_audio",
+                "type": "boolean",
+                "default": false
+              }
+            ],
+            "output": {
+              "type": "video"
+            }
+          },
+          {
+            "id": "video_multi_ref",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              },
+              {
+                "slot": "reference_images",
+                "type": "image",
+                "role": "reference",
+                "required": false,
+                "min": 1,
+                "max": 30,
+                "allowedMimes": [
+                  "image/jpeg",
+                  "image/png",
+                  "image/webp",
+                  "image/bmp",
+                  "image/tiff",
+                  "image/gif",
+                  "image/heic",
+                  "image/heif"
+                ],
+                "maxSizeMb": 30
+              },
+              {
+                "slot": "reference_videos",
+                "type": "video",
+                "role": "reference",
+                "required": false,
+                "min": 0,
+                "max": 10,
+                "allowedMimes": [
+                  "video/mp4",
+                  "video/quicktime"
+                ],
+                "maxSizeMb": 200
+              },
+              {
+                "slot": "reference_audios",
+                "type": "audio",
+                "role": "reference",
+                "required": false,
+                "min": 0,
+                "max": 10,
+                "allowedMimes": [
+                  "audio/wav",
+                  "audio/mpeg"
+                ],
+                "maxSizeMb": 15
+              }
+            ],
+            "parameters": [
+              {
+                "name": "duration",
+                "type": "integer",
+                "minimum": 4,
+                "maximum": 30,
+                "step": 1
+              },
+              {
+                "name": "resolution",
+                "type": "enum",
+                "enum": [
+                  "480p",
+                  "720p",
+                  "1080p"
+                ]
+              },
+              {
+                "name": "aspect_ratio",
+                "type": "enum",
+                "enum": [
+                  "16:9",
+                  "4:3",
+                  "1:1",
+                  "3:4",
+                  "9:16",
+                  "21:9",
+                  "adaptive"
+                ]
+              },
+              {
+                "name": "generate_audio",
+                "type": "boolean",
+                "default": false
+              }
+            ],
+            "output": {
+              "type": "video"
+            }
+          },
+          {
+            "id": "video_edit",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              },
+              {
+                "slot": "source_videos",
+                "type": "video",
+                "role": "source",
+                "required": true,
+                "min": 1,
+                "max": 1,
+                "allowedMimes": [
+                  "video/mp4",
+                  "video/quicktime"
+                ],
+                "maxSizeMb": 200
+              }
+            ],
+            "parameters": [
+              {
+                "name": "duration",
+                "type": "integer",
+                "minimum": -1,
+                "maximum": -1,
+                "default": -1,
+                "fixed": -1
+              },
+              {
+                "name": "resolution",
+                "type": "enum",
+                "enum": [
+                  "480p",
+                  "720p",
+                  "1080p"
+                ]
+              },
+              {
+                "name": "aspect_ratio",
+                "type": "enum",
+                "enum": [
+                  "adaptive"
+                ],
+                "default": "adaptive",
+                "fixed": "adaptive"
+              },
+              {
+                "name": "generate_audio",
+                "type": "boolean",
+                "default": false
+              }
+            ],
+            "output": {
+              "type": "video"
+            }
+          },
+          {
+            "id": "video_extend",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              },
+              {
+                "slot": "source_videos",
+                "type": "video",
+                "role": "source",
+                "required": true,
+                "min": 1,
+                "max": 1,
+                "allowedMimes": [
+                  "video/mp4",
+                  "video/quicktime"
+                ],
+                "maxSizeMb": 200
+              }
+            ],
+            "parameters": [
+              {
+                "name": "duration",
+                "type": "integer",
+                "minimum": 4,
+                "maximum": 30,
+                "step": 1
+              },
+              {
+                "name": "resolution",
+                "type": "enum",
+                "enum": [
+                  "480p",
+                  "720p",
+                  "1080p"
+                ]
+              },
+              {
+                "name": "aspect_ratio",
+                "type": "enum",
+                "enum": [
+                  "adaptive"
+                ],
+                "default": "adaptive",
+                "fixed": "adaptive"
+              },
+              {
+                "name": "generate_audio",
+                "type": "boolean",
+                "default": false
+              }
+            ],
+            "output": {
+              "type": "video"
+            }
+          }
+        ],
+        "unknowns": [
+          "prompt_max_chars"
+        ],
+        "durations_seconds": {
+          "min": 4,
+          "max": 30
+        },
+        "resolutions": [
+          "480p",
+          "720p",
+          "1080p"
+        ],
+        "aspect_ratios": [
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16",
+          "21:9",
+          "adaptive"
+        ],
+        "audio_supported": true,
+        "reference_images": {
+          "min": 1,
+          "max": 30,
+          "formats": [
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "image/bmp",
+            "image/tiff",
+            "image/gif",
+            "image/heic",
+            "image/heif"
+          ],
+          "max_bytes_each": 31457280
+        },
+        "reference_videos": {
+          "min": 0,
+          "max": 10,
+          "formats": [
+            "video/mp4",
+            "video/quicktime"
+          ],
+          "max_bytes_each": 209715200
+        },
+        "reference_audios": {
+          "min": 0,
+          "max": 10,
+          "formats": [
+            "audio/wav",
+            "audio/mpeg"
+          ],
+          "max_bytes_each": 15728640
+        },
+        "billing": {
+          "unit": "per_second",
+          "unit_label": {
+            "en": "per second",
+            "zh": "每秒"
+          },
+          "unit_price_usd": 0.8,
+          "pricing_basis": "duration_seconds",
+          "notes": {
+            "en": "Charged by the requested video duration. This amount is the per-second service base; the final quote includes group and membership multipliers; use the platform quote before submission.",
+            "zh": "按请求的视频时长计费，此金额为每秒钟的服务基准价；实际每秒费用受分组和会员倍率影响，以平台提交前报价为准。"
+          }
+        }
+      },
+      "contractPresent": true
+    },
+    {
+      "id": "suno",
+      "displayName": "suno",
+      "enableGroups": [
+        "default"
+      ],
+      "supportedEndpointTypes": [
+        "openai"
+      ],
+      "billing": {
+        "mode": null,
+        "modelPrice": 0.075556,
+        "modelRatio": 0,
+        "quotaType": 1,
+        "expr": null
+      },
+      "contract": {
+        "model_id": "suno",
+        "schemaVersion": "2.0",
+        "contractVersion": "9b9651e36a9893f7",
+        "family": "audio",
+        "status": "documented",
+        "operation_ids": [
+          "text_to_music"
+        ],
+        "operations": [
+          {
+            "id": "text_to_music",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              }
+            ],
+            "parameters": [],
+            "output": {
+              "type": "audio",
+              "formats": [
+                "mp3",
+                "wav"
+              ]
+            }
+          }
+        ],
+        "unknowns": [
+          "prompt_max_chars",
+          "max_input_bytes",
+          "max_input_seconds"
+        ],
+        "audio_kind": "music",
+        "input_formats": [
+          "text",
+          "audio"
+        ],
+        "output_formats": [
+          "mp3",
+          "wav"
+        ]
+      },
+      "contractPresent": true
+    },
+    {
+      "id": "suno-sounds",
+      "displayName": "suno-sounds",
+      "enableGroups": [
+        "default"
+      ],
+      "supportedEndpointTypes": [
+        "openai"
+      ],
+      "billing": {
+        "mode": null,
+        "modelPrice": 0.010667,
+        "modelRatio": 0,
+        "quotaType": 1,
+        "expr": null
+      },
+      "contract": {
+        "model_id": "suno-sounds",
+        "schemaVersion": "2.0",
+        "contractVersion": "90650875299f9fc7",
+        "family": "audio",
+        "status": "documented",
+        "operation_ids": [
+          "sound_effect_generation"
+        ],
+        "operations": [
+          {
+            "id": "sound_effect_generation",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              }
+            ],
+            "parameters": [],
+            "output": {
+              "type": "audio",
+              "formats": [
+                "mp3"
+              ]
+            }
+          }
+        ],
+        "unknowns": [
+          "prompt_max_chars",
+          "max_input_bytes",
+          "max_input_seconds"
+        ],
+        "audio_kind": "sound_effect",
+        "input_formats": [
+          "text"
+        ],
+        "output_formats": [
+          "mp3"
+        ]
+      },
+      "contractPresent": true
+    },
+    {
+      "id": "wan-3.0",
+      "displayName": "wan-3.0",
+      "enableGroups": [
+        "wan-3.0-1080p",
+        "wan-3.0-720p"
+      ],
+      "supportedEndpointTypes": [
+        "openai"
+      ],
+      "billing": {
+        "mode": null,
+        "modelPrice": 0.176471,
+        "modelRatio": 0,
+        "quotaType": 1,
+        "expr": null
+      },
+      "contract": {
+        "model_id": "wan-3.0",
+        "schemaVersion": "2.0",
+        "contractVersion": "b1205e4730034634",
+        "family": "video",
+        "status": "documented",
+        "operation_ids": [
+          "text_to_video",
+          "first_frame",
+          "first_last_frame",
+          "video_multi_ref",
+          "document_to_video",
+          "webpage_to_video"
+        ],
+        "operations": [
+          {
+            "id": "text_to_video",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              }
+            ],
+            "parameters": [
+              {
+                "name": "duration",
+                "type": "integer",
+                "minimum": 4,
+                "maximum": 30,
+                "step": 1
+              },
+              {
+                "name": "resolution",
+                "type": "enum",
+                "enum": [
+                  "480P",
+                  "720P",
+                  "1080P"
+                ]
+              },
+              {
+                "name": "aspect_ratio",
+                "type": "enum",
+                "enum": [
+                  "16:9",
+                  "4:3",
+                  "1:1",
+                  "3:4",
+                  "9:16",
+                  "adaptive"
+                ]
+              },
+              {
+                "name": "generate_audio",
+                "type": "boolean",
+                "default": false
+              }
+            ],
+            "output": {
+              "type": "video"
+            }
+          },
+          {
+            "id": "first_frame",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              },
+              {
+                "slot": "first_frame",
+                "type": "image",
+                "role": "first_frame",
+                "required": true,
+                "min": 1,
+                "max": 1,
+                "allowedMimes": [
+                  "image/jpeg",
+                  "image/png",
+                  "image/bmp",
+                  "image/webp"
+                ],
+                "maxSizeMb": 20
+              }
+            ],
+            "parameters": [
+              {
+                "name": "duration",
+                "type": "integer",
+                "minimum": 4,
+                "maximum": 30,
+                "step": 1
+              },
+              {
+                "name": "resolution",
+                "type": "enum",
+                "enum": [
+                  "480P",
+                  "720P",
+                  "1080P"
+                ]
+              },
+              {
+                "name": "aspect_ratio",
+                "type": "enum",
+                "enum": [
+                  "adaptive"
+                ],
+                "default": "adaptive",
+                "fixed": "adaptive"
+              },
+              {
+                "name": "generate_audio",
+                "type": "boolean",
+                "default": false
+              }
+            ],
+            "output": {
+              "type": "video"
+            }
+          },
+          {
+            "id": "first_last_frame",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              },
+              {
+                "slot": "first_frame",
+                "type": "image",
+                "role": "first_frame",
+                "required": true,
+                "min": 1,
+                "max": 1,
+                "allowedMimes": [
+                  "image/jpeg",
+                  "image/png",
+                  "image/bmp",
+                  "image/webp"
+                ],
+                "maxSizeMb": 20
+              },
+              {
+                "slot": "last_frame",
+                "type": "image",
+                "role": "last_frame",
+                "required": true,
+                "min": 1,
+                "max": 1,
+                "allowedMimes": [
+                  "image/jpeg",
+                  "image/png",
+                  "image/bmp",
+                  "image/webp"
+                ],
+                "maxSizeMb": 20
+              }
+            ],
+            "parameters": [
+              {
+                "name": "duration",
+                "type": "integer",
+                "minimum": 4,
+                "maximum": 30,
+                "step": 1
+              },
+              {
+                "name": "resolution",
+                "type": "enum",
+                "enum": [
+                  "480P",
+                  "720P",
+                  "1080P"
+                ]
+              },
+              {
+                "name": "aspect_ratio",
+                "type": "enum",
+                "enum": [
+                  "adaptive"
+                ],
+                "default": "adaptive",
+                "fixed": "adaptive"
+              },
+              {
+                "name": "generate_audio",
+                "type": "boolean",
+                "default": false
+              }
+            ],
+            "output": {
+              "type": "video"
+            }
+          },
+          {
+            "id": "video_multi_ref",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              },
+              {
+                "slot": "reference_images",
+                "type": "image",
+                "role": "reference",
+                "required": false,
+                "min": 0,
+                "max": 10,
+                "allowedMimes": [
+                  "image/jpeg",
+                  "image/png",
+                  "image/bmp",
+                  "image/webp"
+                ],
+                "maxSizeMb": 20
+              },
+              {
+                "slot": "reference_videos",
+                "type": "video",
+                "role": "reference",
+                "required": false,
+                "min": 0,
+                "max": 5,
+                "allowedMimes": [
+                  "video/mp4",
+                  "video/quicktime"
+                ],
+                "maxSizeMb": 100
+              },
+              {
+                "slot": "reference_audios",
+                "type": "audio",
+                "role": "reference",
+                "required": false,
+                "min": 0,
+                "max": 5,
+                "allowedMimes": [
+                  "audio/wav",
+                  "audio/mpeg"
+                ],
+                "maxSizeMb": 15
+              }
+            ],
+            "parameters": [
+              {
+                "name": "duration",
+                "type": "integer",
+                "minimum": 4,
+                "maximum": 30,
+                "step": 1
+              },
+              {
+                "name": "resolution",
+                "type": "enum",
+                "enum": [
+                  "480P",
+                  "720P",
+                  "1080P"
+                ]
+              },
+              {
+                "name": "aspect_ratio",
+                "type": "enum",
+                "enum": [
+                  "16:9",
+                  "4:3",
+                  "1:1",
+                  "3:4",
+                  "9:16",
+                  "adaptive"
+                ]
+              },
+              {
+                "name": "generate_audio",
+                "type": "boolean",
+                "default": false
+              }
+            ],
+            "output": {
+              "type": "video"
+            }
+          },
+          {
+            "id": "document_to_video",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              },
+              {
+                "slot": "file",
+                "type": "file",
+                "required": true
+              }
+            ],
+            "parameters": [
+              {
+                "name": "duration",
+                "type": "integer",
+                "minimum": 4,
+                "maximum": 30,
+                "step": 1
+              },
+              {
+                "name": "resolution",
+                "type": "enum",
+                "enum": [
+                  "480P",
+                  "720P",
+                  "1080P"
+                ]
+              },
+              {
+                "name": "aspect_ratio",
+                "type": "enum",
+                "enum": [
+                  "16:9",
+                  "4:3",
+                  "1:1",
+                  "3:4",
+                  "9:16",
+                  "adaptive"
+                ]
+              },
+              {
+                "name": "generate_audio",
+                "type": "boolean",
+                "default": false
+              }
+            ],
+            "output": {
+              "type": "video"
+            }
+          },
+          {
+            "id": "webpage_to_video",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              },
+              {
+                "slot": "url",
+                "type": "url",
+                "required": true
+              }
+            ],
+            "parameters": [
+              {
+                "name": "duration",
+                "type": "integer",
+                "minimum": 4,
+                "maximum": 30,
+                "step": 1
+              },
+              {
+                "name": "resolution",
+                "type": "enum",
+                "enum": [
+                  "480P",
+                  "720P",
+                  "1080P"
+                ]
+              },
+              {
+                "name": "aspect_ratio",
+                "type": "enum",
+                "enum": [
+                  "16:9",
+                  "4:3",
+                  "1:1",
+                  "3:4",
+                  "9:16",
+                  "adaptive"
+                ]
+              },
+              {
+                "name": "generate_audio",
+                "type": "boolean",
+                "default": false
+              }
+            ],
+            "output": {
+              "type": "video"
+            }
+          }
+        ],
+        "durations_seconds": {
+          "min": 4,
+          "max": 30
+        },
+        "resolutions": [
+          "480P",
+          "720P",
+          "1080P"
+        ],
+        "aspect_ratios": [
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16",
+          "adaptive"
+        ],
+        "audio_supported": true,
+        "reference_images": {
+          "min": 0,
+          "max": 10,
+          "formats": [
+            "image/jpeg",
+            "image/png",
+            "image/bmp",
+            "image/webp"
+          ],
+          "max_bytes_each": 20971520
+        },
+        "reference_videos": {
+          "min": 0,
+          "max": 5,
+          "formats": [
+            "video/mp4",
+            "video/quicktime"
+          ],
+          "max_bytes_each": 104857600
+        },
+        "reference_audios": {
+          "min": 0,
+          "max": 5,
+          "formats": [
+            "audio/wav",
+            "audio/mpeg"
+          ],
+          "max_bytes_each": 15728640
+        },
+        "prompt_max_chars": 20000,
+        "billing": {
+          "unit": "per_second",
+          "unit_label": {
+            "en": "per second",
+            "zh": "每秒"
+          },
+          "unit_price_usd": 0.176471,
+          "pricing_basis": "duration_seconds",
+          "notes": {
+            "en": "Charged by the requested video duration. This amount is the per-second service base: 0.176471 USD/s = official wan3.0-video (standard) 1080P list price ¥1.20/s ÷ 6.8 (canonical FX). The final per-second price includes the group ratio: wan-3.0-720p ×0.5 = 0.0882355 USD/s = ¥0.60/s; wan-3.0-1080p ×1.5 = 0.2647065 USD/s = ¥1.80/s; use the platform quote before submission. Official list prices: standard https://help.aliyun.com/zh/model-studio/wan3-0-video (480P/720P/1080P = 0.3/0.6/1.2 CNY/s) and prime https://help.aliyun.com/zh/model-studio/wan3-0-video-prime (480P/720P/1080P = 0.45/0.9/1.8 CNY/s), cn-beijing list price excluding limited-time discounts.",
+            "zh": "按请求的视频时长计费，此金额为每秒钟的服务基准价：0.176471 USD/秒 = 官方 wan3.0-video（标准版）1080P 原价 ¥1.20/秒 ÷ 6.8（canonical FX）。实际每秒费用受分组倍率影响：wan-3.0-720p 档 ×0.5 = 0.0882355 USD/秒 = ¥0.60/秒；wan-3.0-1080p 档 ×1.5 = 0.2647065 USD/秒 = ¥1.80/秒；以平台提交前报价为准。【官方价格来源】标准版 https://help.aliyun.com/zh/model-studio/wan3-0-video（480P/720P/1080P = 0.3/0.6/1.2 元/秒）、高速版 https://help.aliyun.com/zh/model-studio/wan3-0-video-prime（480P/720P/1080P = 0.45/0.9/1.8 元/秒），均为华北2（北京）官方原价、不含限时优惠。"
+          }
+        }
+      },
+      "contractPresent": true
+    }
+  ],
+  "defaults": {
+    "chat": "gemini-3.8-flash",
+    "text_to_image": "gpt-image-2.5",
+    "text_to_music": "suno",
+    "text_to_video": "seedance-2-5",
+    "vision_chat": "gemini-3.8-flash"
+  }
+}

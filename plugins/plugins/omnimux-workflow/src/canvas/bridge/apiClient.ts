@@ -1,0 +1,420 @@
+/**
+ * Island-side fetch wrapper over the host /omnimux-workflow/api/* routes.
+ *
+ * Plain fetch (same origin — the island is served by the same webServer);
+ * no axios, no custom HTTP client (plugin red line). Route paths come from
+ * src/shared/api.ts — the single source of truth shared with the host.
+ */
+
+import { WORKFLOW_API_ROUTES } from '../../shared/api.ts';
+import type {
+  ApiUpstream,
+  BuildManifest,
+  CapabilityCatalog,
+  CreateExecutionResponse,
+  ExecutionSnapshotDto,
+  ExecutionSummaryDto,
+  SaveWorkspaceTablePayload,
+  StartExecutionPayload,
+  WorkspaceTableResponse,
+} from '../../shared/api.ts';
+import type {
+  CanvasWorkspaceSnapshot,
+  SaveCanvasWorkspacePayload,
+  WorkspaceSummary,
+} from '../../shared/canvasTypes.ts';
+import type {
+  IndexProjectAssetsPayload,
+  MkdirProjectAssetsPayload,
+  ProjectAssetsDocument,
+  SaveProjectAssetsPayload,
+} from '../../shared/projectAssets.ts';
+
+/** Upload already bounded bytes; the Host never receives the source URL. */
+export async function importAudioBytes(workspaceId: string, bytes: Blob, signal: AbortSignal): Promise<import('../../shared/projectAssets.ts').AudioBytesResponse> {
+  const response = await fetch(WORKFLOW_API_ROUTES.workspaceAudioBytes(encodeURIComponent(workspaceId)), {
+    method: 'POST', credentials: 'same-origin', redirect: 'error', signal,
+    headers: { 'Content-Type': 'application/octet-stream' }, body: bytes,
+  });
+  const result = await response.json() as import('../../shared/projectAssets.ts').AudioBytesResponse & { error?: string };
+  if (!response.ok) throw new Error(result.error || 'audio-save-failed');
+  if (!result.item?.id || result.item.type !== 'audio' || !result.item.relative_path?.startsWith('assets/imported/')) {
+    throw new Error('audio-save-failed');
+  }
+  return result;
+}
+
+/** Error-envelope fields the host may attach to any route response. */
+export interface ApiErrorEnvelope {
+  error?: string;
+  message?: string;
+  /** Upstream attribution, present only on failures that carry a real cause. */
+  upstream?: ApiUpstream;
+}
+
+export interface ApiResult<T> {
+  ok: boolean;
+  status: number;
+  /** Success payload intersected with the error envelope fields. */
+  body: T & ApiErrorEnvelope;
+}
+
+export async function request<T>(
+  path: string,
+  opts: { method?: string; body?: unknown; signal?: AbortSignal } = {},
+): Promise<ApiResult<T>> {
+  const response = await fetch(path, {
+    method: opts.method ?? 'GET',
+    headers: opts.body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+    signal: opts.signal,
+  });
+  let json = {} as T & ApiErrorEnvelope;
+  try {
+    json = (await response.json()) as T & ApiErrorEnvelope;
+  } catch {
+    json = { error: `HTTP ${String(response.status)}` } as T & ApiErrorEnvelope;
+  }
+  return { ok: response.ok, status: response.status, body: json };
+}
+
+export function fetchGenerationPreferences(): Promise<ApiResult<import('../../shared/generationPreferences').GenerationPreferencesResponse>> {
+  return request(WORKFLOW_API_ROUTES.generationPreferences);
+}
+
+export function saveGenerationPreference(
+  kind: import('../../shared/generationPreferences').GenerationKind,
+  modelId: string,
+): Promise<ApiResult<import('../../shared/generationPreferences').GenerationPreferencesResponse>> {
+  return request(WORKFLOW_API_ROUTES.generationPreferences, { method: 'PATCH', body: { kind, modelId } });
+}
+
+export function fetchManifest(): Promise<ApiResult<BuildManifest>> {
+  return request<BuildManifest>(WORKFLOW_API_ROUTES.manifest);
+}
+
+export function fetchCapabilities(): Promise<ApiResult<CapabilityCatalog>> {
+  return request<CapabilityCatalog>(WORKFLOW_API_ROUTES.capabilities);
+}
+
+export function listWorkspaces(): Promise<ApiResult<{ workspaces: WorkspaceSummary[] }>> {
+  return request<{ workspaces: WorkspaceSummary[] }>(WORKFLOW_API_ROUTES.workspaces);
+}
+
+export function createWorkspace(name?: string, id?: string): Promise<ApiResult<{ workspace: CanvasWorkspaceSnapshot }>> {
+  return request<{ workspace: CanvasWorkspaceSnapshot }>(WORKFLOW_API_ROUTES.workspaces, {
+    method: 'POST',
+    body: { name, id },
+  });
+}
+
+export function getWorkspace(id: string): Promise<ApiResult<{ workspace: CanvasWorkspaceSnapshot }>> {
+  return request<{ workspace: CanvasWorkspaceSnapshot }>(WORKFLOW_API_ROUTES.workspace(encodeURIComponent(id)));
+}
+
+/** PR3: lightweight version probe for external-edit detection. */
+export function getWorkspaceVersion(id: string): Promise<ApiResult<{ id: string; version: number }>> {
+  return request<{ id: string; version: number }>(WORKFLOW_API_ROUTES.workspaceVersion(encodeURIComponent(id)));
+}
+
+export interface SaveResponse {
+  workspace?: CanvasWorkspaceSnapshot;
+  error?: string;
+  message?: string;
+  current?: number;
+}
+
+export function saveWorkspace(id: string, payload: SaveCanvasWorkspacePayload): Promise<ApiResult<SaveResponse>> {
+  return request<SaveResponse>(WORKFLOW_API_ROUTES.workspace(encodeURIComponent(id)), {
+    method: 'PUT',
+    body: payload,
+  });
+}
+
+export function getWorkspaceTable(
+  workspaceId: string,
+  tableId: string,
+): Promise<ApiResult<WorkspaceTableResponse>> {
+  return request<WorkspaceTableResponse>(
+    WORKFLOW_API_ROUTES.workspaceTable(encodeURIComponent(workspaceId), encodeURIComponent(tableId)),
+  );
+}
+
+export function saveWorkspaceTable(
+  workspaceId: string,
+  tableId: string,
+  payload: SaveWorkspaceTablePayload,
+): Promise<ApiResult<WorkspaceTableResponse>> {
+  return request<WorkspaceTableResponse>(
+    WORKFLOW_API_ROUTES.workspaceTable(encodeURIComponent(workspaceId), encodeURIComponent(tableId)),
+    {
+      method: 'PUT',
+      body: payload,
+    },
+  );
+}
+
+export function deleteWorkspaceTable(
+  workspaceId: string,
+  tableId: string,
+): Promise<ApiResult<{ ok?: boolean }>> {
+  return request<{ ok?: boolean }>(
+    WORKFLOW_API_ROUTES.workspaceTable(encodeURIComponent(workspaceId), encodeURIComponent(tableId)),
+    {
+      method: 'DELETE',
+    },
+  );
+}
+
+// ============================================================================
+// Execution API (M3)
+// ============================================================================
+
+export function createExecution(
+  workspaceId: string,
+  payload: StartExecutionPayload = {},
+): Promise<ApiResult<CreateExecutionResponse>> {
+  return request<CreateExecutionResponse>(WORKFLOW_API_ROUTES.executions(encodeURIComponent(workspaceId)), {
+    method: 'POST',
+    body: payload,
+  });
+}
+
+export function listExecutions(
+  workspaceId: string,
+): Promise<ApiResult<{ executions: ExecutionSummaryDto[] }>> {
+  return request<{ executions: ExecutionSummaryDto[] }>(WORKFLOW_API_ROUTES.executions(encodeURIComponent(workspaceId)));
+}
+
+export function getExecution(
+  workspaceId: string,
+  executionId: string,
+): Promise<ApiResult<{ execution: ExecutionSnapshotDto }>> {
+  return request<{ execution: ExecutionSnapshotDto }>(
+    WORKFLOW_API_ROUTES.execution(encodeURIComponent(workspaceId), encodeURIComponent(executionId)),
+  );
+}
+
+export type ExecutionAction = 'pause' | 'resume' | 'cancel';
+
+export function getWorkspaceAssets(
+  id: string,
+  signal?: AbortSignal,
+): Promise<ApiResult<{ assets: ProjectAssetsDocument }>> {
+  return request<{ assets: ProjectAssetsDocument }>(
+    WORKFLOW_API_ROUTES.workspaceAssets(encodeURIComponent(id)),
+    { signal },
+  );
+}
+
+export function saveWorkspaceAssets(
+  id: string,
+  payload: SaveProjectAssetsPayload,
+): Promise<ApiResult<{ assets: ProjectAssetsDocument; current?: number }>> {
+  return request<{ assets: ProjectAssetsDocument; current?: number }>(
+    WORKFLOW_API_ROUTES.workspaceAssets(encodeURIComponent(id)),
+    { method: 'PUT', body: payload },
+  );
+}
+
+export function mkdirWorkspaceAsset(
+  id: string,
+  payload: MkdirProjectAssetsPayload,
+): Promise<ApiResult<{ assets: ProjectAssetsDocument; current?: number }>> {
+  return request<{ assets: ProjectAssetsDocument; current?: number }>(
+    WORKFLOW_API_ROUTES.workspaceAssetsMkdir(encodeURIComponent(id)),
+    { method: 'POST', body: payload },
+  );
+}
+
+export function ingestWorkspaceAssets(
+  id: string,
+  payload: IndexProjectAssetsPayload,
+): Promise<ApiResult<{ assets: ProjectAssetsDocument; current?: number }>> {
+  return request<{ assets: ProjectAssetsDocument; current?: number }>(
+    WORKFLOW_API_ROUTES.workspaceAssetsIngest(encodeURIComponent(id)),
+    { method: 'POST', body: payload },
+  );
+}
+
+export function indexWorkspaceAssets(
+  id: string,
+  payload: IndexProjectAssetsPayload,
+): Promise<ApiResult<{ assets: ProjectAssetsDocument; current?: number }>> {
+  return ingestWorkspaceAssets(id, payload);
+}
+
+export function instantiateWorkspaceAssets(
+  id: string,
+  payload: { globalSubjectId: string; fileIds?: string[]; parentId?: string | null; expectedRev?: number },
+): Promise<ApiResult<{ assets: ProjectAssetsDocument; current?: number }>> {
+  return request<{ assets: ProjectAssetsDocument; current?: number }>(
+    WORKFLOW_API_ROUTES.workspaceAssetsInstantiate(encodeURIComponent(id)),
+    { method: 'POST', body: payload },
+  );
+}
+
+export function promoteWorkspaceAsset(
+  id: string,
+  payload: { relative_path: string; name: string; type?: string },
+): Promise<ApiResult<{ asset: unknown }>> {
+  return request<{ asset: unknown }>(
+    WORKFLOW_API_ROUTES.workspaceAssetsPromote(encodeURIComponent(id)),
+    { method: 'POST', body: payload },
+  );
+}
+
+export function pickLocalFiles(): Promise<ApiResult<{ path: string | null; paths: string[] }>> {
+  return request<{ path: string | null; paths: string[] }>(WORKFLOW_API_ROUTES.pick, {
+    method: 'POST',
+    body: { kind: 'file' },
+  });
+}
+
+/** 同一个原生选择器，`kind: 'directory'`（宿主 `/api/pick` 支持两种 kind）。 */
+export function pickLocalDirectory(): Promise<ApiResult<{ path: string | null; paths: string[] }>> {
+  return request<{ path: string | null; paths: string[] }>(WORKFLOW_API_ROUTES.pick, {
+    method: 'POST',
+    body: { kind: 'directory' },
+  });
+}
+
+export function probeLocalFiles(
+  paths: string[],
+): Promise<ApiResult<{ items: Array<{ path: string; exists: boolean; size?: number; mime?: string; name?: string }> }>> {
+  return request<{ items: Array<{ path: string; exists: boolean; size?: number; mime?: string; name?: string }> }>(
+    WORKFLOW_API_ROUTES.localFileProbe,
+    { method: 'POST', body: { paths } },
+  );
+}
+
+export function executionAction(
+  workspaceId: string,
+  executionId: string,
+  action: ExecutionAction,
+): Promise<ApiResult<{ ok: boolean }>> {
+  return request<{ ok: boolean }>(
+    WORKFLOW_API_ROUTES.executionAction(
+      encodeURIComponent(workspaceId),
+      encodeURIComponent(executionId),
+      action,
+    ),
+    { method: 'POST', body: {} },
+  );
+}
+
+/** Issue 744 T04: audio node → SRT transcription. */
+export function transcribeAudio(
+  workspaceId: string,
+  payload: import('../../shared/speechToText.ts').SpeechToTextRequest,
+): Promise<ApiResult<import('../../shared/speechToText.ts').SpeechToTextResponse>> {
+  return request<import('../../shared/speechToText.ts').SpeechToTextResponse>(
+    WORKFLOW_API_ROUTES.speechToText(encodeURIComponent(workspaceId)),
+    { method: 'POST', body: payload },
+  );
+}
+
+/** 文本节点：从社媒 URL 提取视频并下载到本地保存为视频节点 */
+export function extractVideoFromUrl(
+  workspaceId: string,
+  payload: { nodeId?: string; url: string },
+): Promise<ApiResult<import('../../workflow/videoExtraction/schema.ts').ExtractVideoResponse>> {
+  return request<import('../../workflow/videoExtraction/schema.ts').ExtractVideoResponse>(
+    WORKFLOW_API_ROUTES.extractVideo(encodeURIComponent(workspaceId)),
+    { method: 'POST', body: payload },
+  );
+}
+
+/** 视频节点：拆解视频为结构化表格节点 (.htable) */
+export function deconstructVideo(
+  workspaceId: string,
+  payload: { nodeId: string; videoPath: string; title?: string; targetNodeId?: string },
+): Promise<ApiResult<import('../../workflow/videoDeconstruct/schema.ts').DeconstructVideoResponse>> {
+  return request<import('../../workflow/videoDeconstruct/schema.ts').DeconstructVideoResponse>(
+    WORKFLOW_API_ROUTES.deconstructVideo(encodeURIComponent(workspaceId)),
+    { method: 'POST', body: payload },
+  );
+}
+
+/** 视频节点：生成视频逐镜头分镜表表格节点 (.htable，含分镜图附件) */
+export function storyboardVideo(
+  workspaceId: string,
+  payload: { nodeId: string; videoPath: string; title?: string; targetNodeId?: string },
+): Promise<ApiResult<import('../../workflow/videoStoryboard/schema.ts').StoryboardVideoResponse>> {
+  return request<import('../../workflow/videoStoryboard/schema.ts').StoryboardVideoResponse>(
+    WORKFLOW_API_ROUTES.storyboardVideo(encodeURIComponent(workspaceId)),
+    { method: 'POST', body: payload },
+  );
+}
+
+/** 视频节点：提取音频并派生下游音频素材节点 */
+export function extractAudioFromVideo(
+  workspaceId: string,
+  payload: { nodeId: string; videoPath: string; outputFormat?: 'mp3' | 'm4a'; title?: string },
+): Promise<ApiResult<import('../../workflow/audioExtract/schema.ts').ExtractAudioResponse>> {
+  return request<import('../../workflow/audioExtract/schema.ts').ExtractAudioResponse>(
+    WORKFLOW_API_ROUTES.extractAudio(encodeURIComponent(workspaceId)),
+    { method: 'POST', body: payload },
+  );
+}
+
+/** 视频节点：转成本地 Depth Anything 黑白深度图视频并派生下游视频节点 */
+export function convertVideoToDepth(
+  workspaceId: string,
+  payload: { nodeId: string; videoPath: string; title?: string },
+): Promise<ApiResult<import('../../workflow/videoDepth/schema.ts').VideoDepthResponse>> {
+  return request<import('../../workflow/videoDepth/schema.ts').VideoDepthResponse>(
+    WORKFLOW_API_ROUTES.videoDepth(encodeURIComponent(workspaceId)),
+    { method: 'POST', body: payload },
+  );
+}
+
+export interface ProjectPageDto {
+  id: string;
+  title: string;
+  canvasWorkspaceId?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface ProjectPagesResponse {
+  projectId: string | null;
+  projectTitle: string | null;
+  activePageId: string;
+  pages: ProjectPageDto[];
+}
+
+export function fetchProjectPages(workspaceId: string): Promise<ApiResult<ProjectPagesResponse>> {
+  return request<ProjectPagesResponse>(WORKFLOW_API_ROUTES.workspaceProjectPages(encodeURIComponent(workspaceId)));
+}
+
+export function createProjectPage(
+  workspaceId: string,
+  title?: string,
+): Promise<ApiResult<{ page: ProjectPageDto; workspace: CanvasWorkspaceSnapshot }>> {
+  return request<{ page: ProjectPageDto; workspace: CanvasWorkspaceSnapshot }>(
+    WORKFLOW_API_ROUTES.workspaceProjectPages(encodeURIComponent(workspaceId)),
+    { method: 'POST', body: { title } },
+  );
+}
+
+export function setActiveProjectPage(
+  workspaceId: string,
+  pageId: string,
+): Promise<ApiResult<{ ok: boolean; activePage?: ProjectPageDto; canvasWorkspaceId: string }>> {
+  return request<{ ok: boolean; activePage?: ProjectPageDto; canvasWorkspaceId: string }>(
+    WORKFLOW_API_ROUTES.workspaceProjectPageItem(encodeURIComponent(workspaceId), encodeURIComponent(pageId)),
+    { method: 'PATCH', body: { active: true } },
+  );
+}
+
+export function renameProjectPage(
+  workspaceId: string,
+  pageId: string,
+  title: string,
+): Promise<ApiResult<{ ok: boolean; activePage?: ProjectPageDto; canvasWorkspaceId: string }>> {
+  return request<{ ok: boolean; activePage?: ProjectPageDto; canvasWorkspaceId: string }>(
+    WORKFLOW_API_ROUTES.workspaceProjectPageItem(encodeURIComponent(workspaceId), encodeURIComponent(pageId)),
+    { method: 'PATCH', body: { title } },
+  );
+}

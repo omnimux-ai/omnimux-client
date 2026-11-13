@@ -1,0 +1,79 @@
+import { randomUUID } from 'node:crypto'
+import { describeModelBilling } from '../catalog/pricing-calculator.js'
+import { SESSION_MODEL_SOURCE_KIND } from '../message-source.js'
+
+/**
+ * Native DSH context UserMessage carrying the session's model pin.
+ * Mirrors `workbench/context-injector.js` so the Chat UI renders it as a
+ * collapsible context block instead of pretending it is user input.
+ *
+ * @param {string} text
+ */
+export function createSessionModelMessage(text) {
+  return {
+    id: randomUUID(),
+    role: 'user',
+    content: [{ type: 'text', text }],
+    source: {
+      // Producer-owned kind（rc.3 起 catch-all 'plugin' 会被 session-format v4 拒绝，#4110）。
+      kind: SESSION_MODEL_SOURCE_KIND,
+      plugin: 'omnimux',
+      form: 'snapshot',
+      sections: [{
+        name: 'session-model',
+        text,
+      }],
+    },
+  }
+}
+
+/**
+ * Tell the agent which model the user pinned for this session.
+ *
+ * The composer's model picker wrote its choice to browser-local state, so the
+ * agent never learned about it and picked a model on its own. Injecting the pin
+ * at the first step of every turn makes the user's choice an explicit
+ * constraint, and the media tools back it up when `model` is omitted.
+ *
+ * @param {object} ctx Cordis context
+ * @param {{ preference: { get: (sessionId?: unknown) => ({ modelId: string, label: string } | null) } }} deps
+ */
+export function mountSessionModelInjector(ctx, deps) {
+  if (!ctx || typeof ctx.on !== 'function') return () => {}
+  const preference = deps?.preference
+  if (!preference || typeof preference.get !== 'function') return () => {}
+
+  return ctx.on('agent/pre-step', async ({ agent, step, signal }, next) => {
+    const decision = await next()
+    if (!decision || decision.kind === 'reject' || signal?.aborted) return decision
+
+    // Only the first step of a turn: re-stating it every step would be noise,
+    // and the choice cannot change inside a turn the user cannot touch.
+    if (step !== 1) return decision
+
+    const choice = preference.get(agent?.session?.id)
+    if (!choice) return decision
+
+    const label = choice.label && choice.label !== choice.modelId
+      ? `${choice.label}（${choice.modelId}）`
+      : choice.modelId
+
+    const billingText = describeModelBilling(choice.modelId)
+    const billingLine = billingText ? `\n计费标准：${billingText}。` : ''
+
+    const messages = [...(decision.messages || [])]
+    messages.push(createSessionModelMessage(
+      `【本会话模型指定与计费】用户已在输入框的模型面板为本会话选定模型：${label}。${billingLine}\n`
+      + '调用生成工具（omnimux_video_submit / omnimux_image_submit / omnimux_audio_submit）时，'
+      + '`model` 参数必须使用该模型，不要自行改用其它模型。\n'
+      + '若用户询问出片费用（例如一条 5 秒视频的消耗）或在方案规划出片前，请依据上述标准直接计算并向用户明确汇报预计费用。\n'
+      + '该指定来自用户界面选择，优先级高于你自己的判断；'
+      + '若用户在本轮消息中另行指定了模型，以用户本轮消息为准。',
+    ))
+
+    return {
+      ...decision,
+      messages,
+    }
+  }, { prepend: true })
+}

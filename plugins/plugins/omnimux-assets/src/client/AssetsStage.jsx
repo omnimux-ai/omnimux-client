@@ -1,0 +1,676 @@
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { Button, ConfirmModal, Divider, EmptyState, FilterBar, IconButton, PageHeader, SearchField, Tabs } from 'dsh-ui-kit'
+import { ChatIcon, GridIcon, ImportIcon, ListIcon, PlusIcon } from './icons.jsx'
+import { AddAssetDialog, ASSET_TYPE_KEYS } from './AddAssetDialog.jsx'
+import { AssetBrowse } from './AssetBrowse.jsx'
+import { AssetGrid } from './AssetGrid.jsx'
+import { AssetDetail } from './AssetDetail.jsx'
+import { AssetPreviewModal } from './AssetPreviewModal.jsx'
+import { CloudAssetsView } from './CloudAssetsView.jsx'
+import { cloudAssetToPreviewItem } from './cloud-preview.js'
+import { useCloudSave } from './use-cloud-save.js'
+import { computeEmptyState } from './feed-helpers.js'
+import { injectAssetsStyles } from './styles.js'
+import { useAssetsFeed } from './use-assets-feed.js'
+import { ProductCategoryNav } from './ProductCategoryNav.jsx'
+import { ProductTab } from './ProductTab.jsx'
+import { ProductFormPage } from 'omnimux-products/ui'
+import { CreateProductMenu } from './CreateProductMenu.jsx'
+import { GenerationsCategoryNav, GenerationsView } from './GenerationsView.jsx'
+
+const TAB_ID = 'omnimux-assets:library'
+
+function AssetsHeader(props) {
+  const { t } = props
+
+  return (
+    <PageHeader
+      title={t('stage.title')}
+      subtitle={t('stage.subtitle')}
+    />
+  )
+}
+
+function AssetsActionRow(props) {
+  const { t, feed, sourceTab, onOpenCreateProduct, onOpenImageGeneration } = props
+  if (sourceTab === 'generations') {
+    return (
+      <div className="omnimux-assets-action-row">
+        <Button variant="primary" leadingIcon={<PlusIcon />} onClick={onOpenImageGeneration}>
+          {t('generations.createButton') || '去生成'}
+        </Button>
+      </div>
+    )
+  }
+  const onAdd = () => {
+    feed.setCreating(feed.filterType || 'character')
+    feed.setFormError('')
+  }
+  const onImport = () => {
+    feed.setError(t('import.notice'))
+    setTimeout(() => feed.setError(''), 3000)
+  }
+
+  return (
+    <div className="omnimux-assets-action-row">
+      {sourceTab === 'product' ? (
+        <>
+          <CreateProductMenu t={t} onSelect={onOpenCreateProduct} label="添加产品" />
+          <Button
+            variant="secondary"
+            leadingIcon={<ChatIcon />}
+            onClick={() => {
+              const api = typeof window !== 'undefined' ? window.__omnimuxWorkbench : undefined
+              if (api) {
+                try { api.setConversationCollapsed?.(false) } catch {}
+                try { api.setFocus?.('split') } catch {}
+              }
+            }}
+          >
+            {t('product.chatButton') || '对话中添加'}
+          </Button>
+        </>
+      ) : (
+        <>
+          <Button variant="primary" leadingIcon={<PlusIcon />} onClick={onAdd}>
+            {t('add.button')}
+          </Button>
+          <Button variant="outline" leadingIcon={<ImportIcon />} onClick={onImport}>
+            {t('import.button')}
+          </Button>
+        </>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Category row for the local library: the same chip treatment and the same
+ * shape as the cloud tab's first level, driven by the local type vocabulary
+ * instead of catalog categories.
+ *
+ * The row always leads with 全部 and then lists every asset type.
+ * An empty library still renders the row: a filter row that appears only
+ * after the first asset would move the grid under the user.
+ * @param {{
+ *   t: (key: string) => string,
+ *   filterType: string,
+ *   onTypeChange: (type: string) => void,
+ * }} props
+ */
+function LocalCategoryNav(props) {
+  const { t, filterType, onTypeChange } = props
+  const rows = useMemo(() => [
+    { key: '', label: t('chip.all') },
+    ...ASSET_TYPE_KEYS.map((key) => ({ key, label: t(`type.${key}`) })),
+  ], [t])
+
+  return (
+    <div className="omnimux-assets-local-nav">
+      <div className="omnimux-assets-local-nav-row" role="group" aria-label={t('local.nav.label')}>
+        {rows.map((row) => (
+          <Button
+            key={row.key || 'all'}
+            variant="ghost"
+            size="sm"
+            className="omnimux-assets-cloud-chip"
+            aria-pressed={row.key === filterType ? 'true' : 'false'}
+            onClick={() => onTypeChange(row.key)}
+          >
+            {row.label}
+          </Button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function AssetsViewToggle(props) {
+  const { t, viewMode, onViewModeChange } = props
+  return (
+    <div className="omnimux-assets-view-toggle">
+      <IconButton
+        variant="ghost"
+        size="sm"
+        aria-label={t('view.grid')}
+        aria-pressed={viewMode === 'grid'}
+        onClick={() => onViewModeChange('grid')}
+      >
+        <GridIcon />
+      </IconButton>
+      <IconButton
+        variant="ghost"
+        size="sm"
+        aria-label={t('view.list')}
+        aria-pressed={viewMode === 'list'}
+        onClick={() => onViewModeChange('list')}
+      >
+        <ListIcon />
+      </IconButton>
+    </div>
+  )
+}
+
+function AssetsFilterBar(props) {
+  const { t, feed, sourceTab, onSourceTabChange } = props
+
+  const searchPlaceholder = sourceTab === 'product'
+    ? (t('product.searchPlaceholder') || '搜索产品名称、卖点、品牌')
+    : sourceTab === 'generations'
+    ? (t('generations.searchPlaceholder') || '搜索生成提示词、模型、标题')
+    : t('search.placeholder')
+
+  return (
+    <FilterBar
+      className="omnimux-assets-stage-toolbar"
+      filters={
+        <Tabs
+          variant="underline"
+          items={[
+            { id: 'local', label: t('source.local') },
+            { id: 'cloud', label: t('source.cloud') },
+            { id: 'product', label: t('source.product') || '产品库' },
+            { id: 'generations', label: t('source.generations') || 'AI生成' },
+          ]}
+          activeId={sourceTab}
+          onChange={onSourceTabChange}
+        />
+      }
+      tools={
+        <div className="omnimux-assets-tools-cluster">
+          <div className="omnimux-assets-search-wrap">
+            <SearchField
+              placeholder={searchPlaceholder}
+              value={feed.query}
+              onValueChange={feed.setQuery}
+              onClear={() => feed.setQuery('')}
+            />
+          </div>
+          {sourceTab === 'product' ? null : (
+            <AssetsViewToggle t={t} viewMode={feed.viewMode} onViewModeChange={feed.setViewMode} />
+          )}
+        </div>
+      }
+    />
+  )
+}
+
+function AssetsSelectionBar(props) {
+  const { t, feed } = props
+  if (!feed.selecting) return null
+
+  return (
+    <div className="omnimux-assets-selection">
+      <span>{t('select.count').replace('{n}', String(feed.selectedCount))}</span>
+      <div className="omnimux-assets-selection-actions">
+        <Button variant="ghost" size="sm" onClick={feed.clearSelection}>
+          {t('select.clear')}
+        </Button>
+        <Button variant="danger" size="sm" disabled={feed.busy} onClick={feed.handleOpenBatchDelete}>
+          {t('select.delete').replace('{n}', String(feed.selectedCount))}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function AssetsMainView(props) {
+  const { t, feed, emptyProps, onOpenAdd, onPreview, onEditDetail } = props
+  const { detail, setDetail, visible, viewMode, copyCite, copiedId, selectedIds, toggleSelect, handleRemoveSingle } = feed
+  const { emptyLabel, emptyActionLabel, searching } = emptyProps
+
+  if (detail) {
+    return (
+      <AssetBrowse
+        key={detail.id}
+        t={t}
+        asset={detail}
+        onBack={() => setDetail(null)}
+        onPreview={onPreview}
+        onEdit={onEditDetail}
+      />
+    )
+  }
+
+  return (
+    <AssetGrid
+      t={t}
+      assets={visible}
+      viewMode={viewMode}
+      emptyLabel={emptyLabel}
+      emptyActionLabel={emptyActionLabel}
+      showEmptyAction={!searching}
+      onEmptyAction={onOpenAdd}
+      onOpen={setDetail}
+      onPreview={onPreview}
+      onCopy={copyCite}
+      onRemove={handleRemoveSingle}
+      copiedId={copiedId}
+      selectedIds={selectedIds}
+      onToggleSelect={toggleSelect}
+      onBrowse={setDetail}
+    />
+  )
+}
+
+function AssetsBody(props) {
+  const { t, productT = t, feed, emptyProps, onPreview, onCloudPreview, cloudSave, sourceTab, visible, productKindTab, productIntent, onProductViewChange, onOpenProductConversation, onEditDetail, generationsSource, generationsType } = props
+  const onOpenAdd = () => {
+    feed.setCreating(feed.filterType || 'character')
+    feed.setFormError('')
+  }
+
+  if (sourceTab === 'generations') {
+    return (
+      <div className="omnimux-assets-body">
+        <div className="omnimux-assets-main">
+          <GenerationsView
+            t={t}
+            open={visible}
+            query={feed.query}
+            filterSource={generationsSource}
+            filterType={generationsType}
+            onPreview={onPreview}
+          />
+        </div>
+      </div>
+    )
+  }
+
+  if (sourceTab === 'cloud') {
+    // Mounted only while the cloud tab is selected: leaving it unmounts the
+    // feed, which is what stops an in-flight audition and releases its audio.
+    // The stage's single save controller reaches the cards through this view as
+    // a narrow interface — the two read-only id sets plus the one callback —
+    // so the cards and the preview modal report the same saved state.
+    return (
+      <div className="omnimux-assets-body">
+        <div className="omnimux-assets-main">
+          <CloudAssetsView
+            t={t}
+            open={visible}
+            onPreview={onCloudPreview}
+            query={feed.query}
+            savedIds={cloudSave.savedIds}
+            savingIds={cloudSave.savingIds}
+            onSave={cloudSave.save}
+          />
+        </div>
+      </div>
+    )
+  }
+
+  if (sourceTab === 'product') {
+    return (
+      <div className="omnimux-assets-body">
+        <div className="omnimux-assets-main">
+          <ProductTab
+            t={productT}
+            visible={visible}
+            query={feed.query}
+            kindTab={productKindTab}
+            intent={productIntent}
+            onViewChange={onProductViewChange}
+            onOpenConversation={onOpenProductConversation}
+          />
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="omnimux-assets-body">
+      <div className="omnimux-assets-main">
+        <AssetsMainView
+          t={t}
+          feed={feed}
+          emptyProps={emptyProps}
+          onOpenAdd={onOpenAdd}
+          onPreview={onPreview}
+          onEditDetail={onEditDetail}
+        />
+      </div>
+    </div>
+  )
+}
+
+function AddAssetDialogItem(props) {
+  const { t, feed } = props
+  const onCancel = () => {
+    feed.setCreating(null)
+    feed.setFormError('')
+  }
+  return (
+    <AddAssetDialog
+      t={t}
+      busy={feed.busy}
+      presetType={feed.creating || 'character'}
+      error={feed.formError}
+      onCancel={onCancel}
+      onPick={feed.handlePick}
+      onSubmit={feed.handleCreate}
+    />
+  )
+}
+
+function ConfirmRemoveDialogItem(props) {
+  const { t, feed } = props
+  const { pendingRemove, setPendingRemove, busy, handleConfirmDelete } = feed
+  const name = String(pendingRemove.names[0] ?? '')
+  const removeTitle = pendingRemove.isBatch
+    ? t('confirm.deleteSelected').replace('{n}', String(pendingRemove.ids.length))
+    : (t('mapping.removeTitle')?.replace('{name}', name) || t('confirm.deleteTitle').replace('{name}', name))
+  const message = name ? `${t('mapping.removeHint')}（关联资产: ${name}）` : t('mapping.removeHint')
+  return (
+    <ConfirmModal
+      open
+      onClose={() => setPendingRemove(null)}
+      title={removeTitle}
+      message={message}
+      confirmLabel={t('mapping.removeConfirm')}
+      cancelLabel={t('mapping.cancel')}
+      confirmVariant="danger"
+      confirmLoading={busy}
+      onConfirm={handleConfirmDelete}
+    />
+  )
+}
+
+function AssetsDialogs(props) {
+  const { t, feed, detailModalOpen, onCloseDetailModal } = props
+  return (
+    <>
+      {feed.creating ? <AddAssetDialogItem t={t} feed={feed} /> : null}
+      {feed.pendingRemove ? <ConfirmRemoveDialogItem t={t} feed={feed} /> : null}
+      {detailModalOpen && feed.detail ? (
+        <AssetDetail
+          t={t}
+          asset={feed.detail}
+          busy={feed.busy}
+          onClose={onCloseDetailModal}
+          onSave={async (patch) => {
+            await feed.handleSaveDetail(patch)
+            onCloseDetailModal?.()
+          }}
+        />
+      ) : null}
+    </>
+  )
+}
+
+/**
+ * Creative asset library workbench tab component mounted in dsh-better-sidebar.
+ * @param {{
+ *   t: (key: string) => string,
+ *   stage?: { getSnapshot: () => boolean, subscribe: Function, set: Function },
+ *   store?: { reduce?: Function, getSnapshot?: Function },
+ *   visible?: boolean,
+ * }} props
+ */
+export function AssetsStage(props) {
+  const { t, productT = t, stage, store, visible = true, tab } = props
+  const [previewTarget, setPreviewTarget] = useState(null)
+  const [detailModalOpen, setDetailModalOpen] = useState(false)
+  // One save controller for the whole stage: the cloud cards and the preview
+  // modal share it, so a row saved from either one is marked in both.
+  const cloudSave = useCloudSave({ t })
+  useEffect(() => { injectAssetsStyles() }, [])
+  const everOpened = true
+
+  useEffect(() => {
+    const api = typeof window !== 'undefined' ? window.__omnimuxWorkbench : undefined
+    if (!api || typeof api.attachStore !== 'function' || !store) return undefined
+    api.attachStore(store)
+    return () => { api.detachStore?.(store) }
+  }, [store])
+
+  const feed = useAssetsFeed({ t, open: visible })
+  const emptyProps = computeEmptyState(feed.filterType, feed.query, t)
+  /**
+   * 初始一级 Tab。外部深链（`products_*` 自动跟随、产品选择器「前往产品库管理」）
+   * 会通过工作台 `view`/`meta` 带 `filterType: 'product'`，必须在这里落地，
+   * 否则请求只是死载荷——Tab 打开了却停在默认「本地」页。
+   */
+  const requestedSourceTab = (() => {
+    const requested = tab?.meta?.filterType ?? tab?.view?.filterType
+    return requested === 'product' ? 'product' : 'local'
+  })()
+  const [sourceTab, setSourceTab] = useState(requestedSourceTab)
+  const [productKindTab, setProductKindTab] = useState('all')
+  /** 交给 ProductTab 就地展开二级页的意图；nonce 用于重复点击同一产品时也能重开。 */
+  const [productIntent, setProductIntent] = useState(null)
+  /**
+   * 产品二级页的当前视图，由 ProductTab 上报。
+   * 二级页挂在 Stage 根上（而不是资产库 main 里），这样它才能像旧产品页一样铺满
+   * 整个区域；挂在 main 里会被 16/20px 内边距缩进，视觉上变成一张卡片。
+   */
+  const [productView, setProductView] = useState(null)
+  const [generationsSource, setGenerationsSource] = useState('all')
+  const [generationsType, setGenerationsType] = useState('all')
+  // 深链可能在该 Tab 已挂载后才到达（例如 Agent 自动跟随复用已有 Tab）。
+  useEffect(() => {
+    const requested = tab?.meta?.filterType ?? tab?.view?.filterType
+    if (requested === 'product') setSourceTab('product')
+  }, [tab?.meta?.filterType, tab?.view?.filterType])
+
+  const stageRootRef = useRef(null)
+  const railRef = useRef(null)
+
+  // 云端分类行吸附在一级工具栏之下：偏移跟随工具栏实测高度（骨架契约 §二·补）
+  useEffect(() => {
+    const rail = railRef.current
+    const stage = stageRootRef.current
+    if (!rail || !stage || typeof ResizeObserver !== 'function') return undefined
+    const apply = () => stage.style.setProperty('--stage-rail-h', `${Math.round(rail.getBoundingClientRect().height)}px`)
+    apply()
+    const observer = new ResizeObserver(apply)
+    observer.observe(rail)
+    return () => observer.disconnect()
+  }, [])
+
+  // 一级/二级分类切换后，整页滚动位置归零（骨架契约 §二·补，Issue 1977）
+  useEffect(() => {
+    const stage = stageRootRef.current
+    if (stage) stage.scrollTop = 0
+  }, [sourceTab, feed.filterType, productKindTab, generationsSource, generationsType])
+
+  // A cloud row has no library record behind it, so opening its preview means
+  // translating the catalog row first — and the translation remembers the row
+  // id, which is what the modal's save needs.
+  const openCloudPreview = useCallback((asset) => {
+    const next = cloudAssetToPreviewItem(asset)
+    if (next) setPreviewTarget(next)
+  }, [])
+
+  // Issue #3058：官方试听用途没有保存语义——前置判定用途而非仅凭 cloud ID。
+  const previewIsOfficialVoice = previewTarget?.preview?.purpose === 'official-voice-preview'
+    || previewTarget?.sourceAsset?.preview?.purpose === 'official-voice-preview'
+
+  const savePreviewItem = useCallback((item) => {
+    if (item?.preview?.purpose === 'official-voice-preview'
+      || item?.sourceAsset?.preview?.purpose === 'official-voice-preview') {
+      return
+    }
+    const id = String(item?.sourceAssetId ?? '')
+    if (id === '') return
+    void cloudSave.save({ id, name: String(item?.title ?? '') })
+  }, [cloudSave])
+
+  const previewCloudId = previewTarget?.cloud === true ? String(previewTarget.sourceAssetId ?? '') : ''
+
+  useEffect(() => {
+    const api = typeof window !== 'undefined' ? window.__omnimuxWorkbench : undefined
+    if (!api || typeof api.registerContextContributor !== 'function') return undefined
+    const unsub = api.registerContextContributor(TAB_ID, () => ({
+      view: {
+        filterType: feed.filterType,
+        query: feed.query,
+        sortKey: feed.sortKey,
+      },
+      selection: Array.from(feed.selectedIds || []).map((id) => {
+        const item = feed.assets?.find((a) => a.id === id)
+        return { id, name: item?.name, type: item?.type }
+      }),
+    }))
+    return () => {
+      if (typeof unsub === 'function') unsub()
+    }
+  }, [feed.filterType, feed.query, feed.sortKey, feed.selectedIds, feed.assets])
+
+  /**
+   * 打开产品二级页：切到产品库 Tab 并把意图交给 ProductTab 就地展开。
+   *
+   * 这里不再跳去 `omnimux-products:library` —— 产品库页面已经并入资产库，跨 Tab
+   * 跳转会让「返回」落到另一个页面里的同名列表，用户看到的就是两个产品库。
+   */
+  const handleOpenCreateProduct = useCallback((kind = 'physical', productId) => {
+    setSourceTab('product')
+    setProductIntent({
+      mode: productId ? 'edit' : 'create',
+      kind: kind === 'digital' ? 'digital' : 'physical',
+      productId: productId || null,
+      // nonce 让「同一个产品连续点两次」也能重新展开二级页。
+      nonce: Date.now(),
+    })
+  }, [])
+
+  // 外部深链（Agent 自动跟随、产品选择器「前往产品库管理」）与旧意图事件统一收口。
+  useEffect(() => {
+    const applyIntent = (intent) => {
+      if (!intent) return
+      if (intent.mode === 'create') handleOpenCreateProduct(intent.kind)
+      else if (intent.mode === 'edit' && intent.productId) handleOpenCreateProduct(intent.kind, intent.productId)
+    }
+    const win = typeof window !== 'undefined' ? window : undefined
+    if (!win) return undefined
+    if (win.__omnimuxProductsIntent) {
+      const intent = win.__omnimuxProductsIntent
+      delete win.__omnimuxProductsIntent
+      applyIntent(intent)
+    }
+    const onIntentEvent = (event) => { applyIntent(event?.detail) }
+    win.addEventListener('omnimux-products:open', onIntentEvent)
+    return () => { win.removeEventListener('omnimux-products:open', onIntentEvent) }
+  }, [handleOpenCreateProduct])
+
+  const handleOpenProductConversation = useCallback(() => {
+    const api = typeof window !== 'undefined' ? window.__omnimuxWorkbench : undefined
+    if (!api) return
+    try { api.setConversationCollapsed?.(false) } catch { /* 宿主未提供该能力时保持原状 */ }
+    try { api.setFocus?.('split') } catch { /* 宿主未提供该能力时保持原状 */ }
+  }, [])
+
+  const handleOpenImageGeneration = useCallback(() => {
+    const api = typeof window !== 'undefined' ? window.__omnimuxWorkbench : undefined
+    if (api) {
+      if (typeof api.open === 'function') {
+        api.open({ tabId: 'omnimux:media-viewer' })
+      } else if (typeof api.openWorkbench === 'function') {
+        api.openWorkbench({ tabId: 'omnimux:media-viewer' })
+      }
+    }
+  }, [])
+
+  return (
+    <div
+      ref={stageRootRef}
+      role="region"
+      aria-label={t('stage.title')}
+      aria-hidden={visible ? undefined : 'true'}
+      className="omnimux-assets-stage omx-stage-scroll"
+      data-visible={visible ? 'true' : 'false'}
+      style={{ display: visible ? 'flex' : 'none', position: 'relative', width: '100%', height: '100%', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden' }} /* exempt-ui02: Stage 根容器布局 */
+    >
+      <AssetsHeader t={t} />
+      <AssetsActionRow
+        t={t}
+        feed={feed}
+        sourceTab={sourceTab}
+        onOpenCreateProduct={handleOpenCreateProduct}
+        onOpenImageGeneration={handleOpenImageGeneration}
+      />
+      <Divider />
+      {/* 吸附栈：一级 Tab + 二级分类行，随整页滚动到顶后固定（骨架契约 §二·补，Issue 1977） */}
+      <div className="omx-stage-sticky" ref={railRef}>
+      <AssetsFilterBar t={t} feed={feed} sourceTab={sourceTab} onSourceTabChange={setSourceTab} />
+      {sourceTab === 'local' ? (
+        // The local tab draws its own category row here, under the toolbar. The
+        // cloud tab draws one from the catalog manifest inside its own view, so
+        // mounting this one there as well would stack two rows of chips.
+        <LocalCategoryNav
+          t={t}
+          filterType={feed.filterType}
+          onTypeChange={feed.setFilterType}
+        />
+      ) : null}
+      {sourceTab === 'product' ? (
+        <ProductCategoryNav
+          t={t}
+          kindTab={productKindTab}
+          onKindTabChange={setProductKindTab}
+        />
+      ) : null}
+      {sourceTab === 'generations' ? (
+        <GenerationsCategoryNav
+          t={t}
+          filterSource={generationsSource}
+          onSourceChange={setGenerationsSource}
+          filterType={generationsType}
+          onTypeChange={setGenerationsType}
+        />
+      ) : null}
+      <AssetsSelectionBar t={t} feed={feed} />
+      {feed.error !== '' ? <p className="omnimux-assets-error">{feed.error}</p> : null}
+      {cloudSave.notice !== '' ? <p className="omnimux-assets-cloud-notice">{cloudSave.notice}</p> : null}
+      </div>
+      <AssetsBody
+        t={t}
+        productT={productT}
+        feed={feed}
+        emptyProps={emptyProps}
+        onPreview={setPreviewTarget}
+        onCloudPreview={openCloudPreview}
+        cloudSave={cloudSave}
+        sourceTab={sourceTab}
+        visible={visible}
+        productKindTab={productKindTab}
+        productIntent={productIntent}
+        onProductViewChange={setProductView}
+        onOpenProductConversation={handleOpenProductConversation}
+        onEditDetail={() => setDetailModalOpen(true)}
+        generationsSource={generationsSource}
+        generationsType={generationsType}
+      />
+      <AssetsDialogs
+        t={t}
+        feed={feed}
+        detailModalOpen={detailModalOpen}
+        onCloseDetailModal={() => setDetailModalOpen(false)}
+      />
+      {previewTarget && (
+        <AssetPreviewModal
+          item={previewTarget}
+          t={t}
+          onClose={() => setPreviewTarget(null)}
+          saved={previewCloudId !== '' && cloudSave.savedIds.has(previewCloudId)}
+          saving={previewCloudId !== '' && cloudSave.savingIds.has(previewCloudId)}
+          onSaveToLocal={previewCloudId !== '' && !previewIsOfficialVoice ? savePreviewItem : undefined}
+        />
+      )}
+      {/* 产品二级页：挂在 Stage 根上铺满整个区域，与旧产品页同一几何。 */}
+      {sourceTab === 'product' && productView && productView.name === 'form' ? (
+        <ProductFormPage
+          t={productT}
+          kind={productView.kind}
+          mode={productView.mode}
+          initial={productView.product}
+          serverError={productView.error}
+          saving={productView.saving}
+          onSubmit={productView.onSubmit}
+          onLeave={productView.onLeave}
+          onPick={productView.onPick}
+        />
+      ) : null}
+    </div>
+  )
+}

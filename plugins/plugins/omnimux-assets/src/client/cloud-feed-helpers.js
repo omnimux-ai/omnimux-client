@@ -1,0 +1,392 @@
+/**
+ * Pure helpers for the cloud assets feed: page-list arithmetic, scope naming,
+ * card-kind classification, the audio card's colour rotation, and row-shape
+ * normalization. Kept free of React and `fetch` so the paging contract can be
+ * tested directly.
+ */
+
+/** Rows per page. Mirrors `PAGE_SIZE` in the catalog build script. */
+export const CLOUD_PAGE_SIZE = 24
+
+/**
+ * Scope of the cross-category "全部" view.
+ *
+ * It is not a manifest category — the builder writes its shards from the whole
+ * row set (`all/page-NNNN.json`) — but it is a real fetchable scope, so the id
+ * lives here rather than being spelled out at each call site.
+ */
+export const CLOUD_ALL_CATEGORY = 'all'
+
+/**
+ * Scope id for a category (+ optional sub-category).
+ * @param {string} category
+ * @param {string} [subCategory]
+ */
+export function cloudScope(category, subCategory = '') {
+  return subCategory === '' ? category : `${category}/${subCategory}`
+}
+
+/**
+ * Rows the catalog holds in total, across every category.
+ * @param {any} manifest
+ */
+export function wholeCatalogTotal(manifest) {
+  return Math.max(0, Number(manifest?.totalAssets) || 0)
+}
+
+/**
+ * How many pages a scope has. A scope with no rows still has page 0, so an empty
+ * category renders an empty state instead of a broken pager.
+ *
+ * 全部 has no manifest entry to read, so its size is derived from the catalog
+ * totals the manifest does carry.
+ * @param {any} manifest
+ * @param {string} category
+ * @param {string} [subCategory]
+ */
+export function pageCountOf(manifest, category, subCategory = '') {
+  if (category === CLOUD_ALL_CATEGORY && subCategory === '') {
+    const size = Math.max(1, Number(manifest?.pageSize) || CLOUD_PAGE_SIZE)
+    return Math.max(1, Math.ceil(wholeCatalogTotal(manifest) / size))
+  }
+  const entry = findCategory(manifest, category)
+  if (!entry) return 1
+  if (subCategory !== '') {
+    const sub = (entry.sub_categories ?? []).find((row) => row?.id === subCategory)
+    return Math.max(1, Number(sub?.pages) || 1)
+  }
+  return Math.max(1, Number(entry.pages) || 1)
+}
+
+/**
+ * Row count a scope advertises, before any page is fetched.
+ * @param {any} manifest
+ * @param {string} category
+ * @param {string} [subCategory]
+ */
+export function totalOf(manifest, category, subCategory = '') {
+  if (category === CLOUD_ALL_CATEGORY && subCategory === '') return wholeCatalogTotal(manifest)
+  const entry = findCategory(manifest, category)
+  if (!entry) return 0
+  if (subCategory !== '') {
+    const sub = (entry.sub_categories ?? []).find((row) => row?.id === subCategory)
+    return Math.max(0, Number(sub?.total) || 0)
+  }
+  return Math.max(0, Number(entry.total) || 0)
+}
+
+/**
+ * @param {any} manifest
+ * @param {string} category
+ */
+export function findCategory(manifest, category) {
+  if (!manifest || !Array.isArray(manifest.categories)) return null
+  return manifest.categories.find((row) => row?.id === category) ?? null
+}
+
+/** No second level, shared so a category without one never allocates it. */
+const NO_SECOND_LEVEL = { items: [], hasSecondLevel: false }
+
+/**
+ * The leading 全部 entry of the category nav.
+ *
+ * It spans every category rather than one manifest entry, so the manifest stays
+ * a plain list of what the library actually holds while the nav still opens on a
+ * tab that shows everything. Counts come from the same helpers the pages are
+ * paged with, so the chip and the pager cannot disagree.
+ * @param {any} manifest
+ * @param {(key: string) => string} t
+ */
+export function allCategoryEntry(manifest, t) {
+  return {
+    id: CLOUD_ALL_CATEGORY,
+    zh: t('cloud.category.all'),
+    en: 'All',
+    total: totalOf(manifest, CLOUD_ALL_CATEGORY),
+    pages: pageCountOf(manifest, CLOUD_ALL_CATEGORY),
+    sub_categories: [],
+  }
+}
+
+/**
+ * Sub-category tabs for a category, always led by the "all" pseudo-entry.
+ *
+ * A category owns a second level exactly when the manifest gives it at least one
+ * populated sub-category — 声音 (配音 / 音效 / 背景音), 素材 (绿幕 / 钩子 /
+ * 表情包 / 萌宠 / 服饰 / 人像), 场景 (场景氛围 / 实景环境), 道具 (实物道具) and
+ * 角色 (女性 / 男性 / 生活居家 / 职场商务) all qualify, and 全部 alone does not.
+ * The rule is read from the data rather than hard-coded per category, so a
+ * category that gains or loses a shelf follows the layout without a code change.
+ *
+ * The first entry is always `''` — 全部 — carrying the category's own total, so
+ * the second level never opens onto an empty selection and no category inherits
+ * another one's wording.
+ * @param {any} manifest
+ * @param {string} category
+ */
+export function subCategoryTabs(manifest, category) {
+  // 全部 has no shelves of its own: it spans every category, so a second level
+  // would have to borrow some other category's wording. It stays single-level.
+  if (category === CLOUD_ALL_CATEGORY) return NO_SECOND_LEVEL
+  const entry = findCategory(manifest, category)
+  const subs = Array.isArray(entry?.sub_categories)
+    ? entry.sub_categories.filter((row) => row && Number(row.total) > 0)
+    : []
+  if (subs.length === 0) return NO_SECOND_LEVEL
+  return {
+    items: [{ id: '', total: Number(entry?.total) || 0 }, ...subs],
+    hasSecondLevel: true,
+  }
+}
+
+/**
+ * A locator that can be handed to an `<img>` without going through the Host.
+ *
+ * Only `https` qualifies. The catalog is cloud-only and its single exit is the
+ * CDN over TLS, so a plaintext `http:` locator is either a legacy artefact or a
+ * mistake — either way it keeps travelling through the Host route instead of
+ * being loaded as a mixed-content downgrade. A legacy `file:` locator names a
+ * path on the machine that built the catalog, so it likewise stays on the Host.
+ * @param {unknown} value
+ * @returns {string}
+ */
+export function directMediaUrl(value) {
+  const url = String(value ?? '')
+  return /^https:\/\//i.test(url) ? url : ''
+}
+
+/**
+ * Normalize one catalog row for rendering.
+ *
+ * The catalog is committed data, so a malformed row is possible after a manual
+ * edit; defaulting every field keeps a bad row from crashing the whole grid.
+ *
+ * `hasCover` / `hasMedia` are what tell a card whether it has a picture before
+ * anything is requested. The builder leaves both locators empty for a text row —
+ * a description-only document — and a card that has to learn that from a failed
+ * image request paints a grey plate with a meaningless icon in the meantime.
+ * @param {any} row
+ */
+export function normalizeCloudAsset(row) {
+  const mediaType = ['image', 'video', 'audio', 'document', 'other'].includes(row?.media_type)
+    ? row.media_type
+    : 'other'
+  const preview = row?.meta?.preview
+  return {
+    id: String(row?.id ?? ''),
+    category: String(row?.category ?? ''),
+    subCategory: String(row?.sub_category ?? ''),
+    name: String(row?.name ?? ''),
+    description: String(row?.description ?? ''),
+    mediaType,
+    tags: Array.isArray(row?.tags) ? row.tags.map((tag) => String(tag)) : [],
+    // `playable` is set by the builder for descriptor-only rows such as the
+    // official voice catalogue, which has no audio to preview.
+    playable: row?.meta?.playable !== false,
+    hasCover: String(row?.cover_url ?? '') !== '',
+    hasMedia: String(row?.media_url ?? '') !== '',
+    // The two locators a card may load itself. `thumbUrl` is the small WebP the
+    // image build published; `coverUrl` is the original. Both stay empty for a
+    // `file:` locator, so those rows keep using the Host route.
+    thumbUrl: directMediaUrl(row?.thumb_url),
+    coverUrl: directMediaUrl(row?.cover_url),
+    // Issue #3058: stable voice identity and the hub preview DTO travel through
+    // paging, search and detail untouched — play eligibility and action gating
+    // read `preview`, never the display name or the row id.
+    voiceType: typeof row?.meta?.voice_type === 'string' ? row.meta.voice_type : '',
+    resourceId: typeof row?.meta?.resource_id === 'string' ? row.meta.resource_id : '',
+    preview: preview && typeof preview === 'object' ? preview : null,
+  }
+}
+
+/** The hub preview DTO's fixed purpose for official voice auditions. */
+export const OFFICIAL_VOICE_PREVIEW_PURPOSE = 'official-voice-preview'
+/** The only preview.state that means a file probe has passed. */
+export const OFFICIAL_VOICE_PREVIEW_VERIFIED = 'verified-file'
+
+/**
+ * Whether a normalized cloud row is an official voice preview row.
+ * Reads `preview.purpose` only — never the display name, the id, or `media_url`.
+ * @param {any} asset normalized cloud row
+ */
+export function isOfficialVoicePreviewAsset(asset) {
+  return asset?.preview?.purpose === OFFICIAL_VOICE_PREVIEW_PURPOSE
+}
+
+/**
+ * Whether an official voice preview row may show a play control.
+ * The row must be verified and carry a non-empty primary URL — never inferred
+ * from `hasMedia`, a `.mp3` suffix or `source=volcengine`.
+ * @param {any} asset normalized cloud row
+ */
+export function isOfficialVoicePreviewPlayable(asset) {
+  const preview = asset?.preview
+  return Boolean(
+    isOfficialVoicePreviewAsset(asset)
+      && preview?.state === OFFICIAL_VOICE_PREVIEW_VERIFIED
+      && typeof preview?.primary_url === 'string'
+      && preview.primary_url !== '',
+  )
+}
+
+/**
+ * Ordered preview candidates from the hub DTO: the primary locator first,
+ * then its fallbacks in hub order, de-duplicated so one URL is never retried.
+ * @param {any} asset normalized cloud row
+ * @returns {string[]}
+ */
+export function voicePreviewCandidateUrls(asset) {
+  const preview = asset?.preview
+  if (!preview || typeof preview !== 'object') return []
+  const seen = new Set()
+  const urls = []
+  const push = (url) => {
+    if (typeof url !== 'string' || url === '' || seen.has(url)) return
+    seen.add(url)
+    urls.push(url)
+  }
+  push(preview.primary_url)
+  for (const candidate of Array.isArray(preview.candidates) ? preview.candidates : []) {
+    push(candidate)
+  }
+  return urls
+}
+
+/**
+ * Which body a cloud card renders.
+ *
+ * - `audio` — a playable voice, sound or score: the thumbnail is the colour
+ *   plate that starts and stops the row.
+ * - `media` — a picture, or a video whose own first frame stands in for a missing
+ *   poster: the thumbnail is the card's face and one line of title sits under it.
+ * - `text` — a row with neither. Such a row is a title plus a description and
+ *   nothing else, so the card has to be that text rather than a 4:3 placeholder.
+ *
+ * A voice row with no audio file (the descriptor-only 音色 catalogue) is text as
+ * well: there is nothing to play, so a play control would be a dead one.
+ *
+ * Issue #3058（OCR #11）：官方音色 preview 行的可播性由 preview DTO
+ * （verified-file + primary_url）裁定，不依赖 `hasMedia`——一行只有
+ * `preview.primary_url` 的 DTO-only 已验证行仍是音频卡；未验证行仍是文本卡。
+ * @param {any} asset normalized cloud row (see `normalizeCloudAsset`)
+ * @returns {'audio' | 'media' | 'text'}
+ */
+/**
+ * The ordered picture ladder a card walks before it gives up.
+ *
+ * Cheapest first: the published WebP thumbnail (69 KB against a 3.3 MB
+ * original), then the original cover when it is a locator the browser can load
+ * itself, and only then the Host route.
+ *
+ * An image row is its own cover, so it walks the same ladder with `which=media`
+ * as its last rung. Letting images skip the ladder — as an earlier revision did
+ * — meant PNG image covers never got a thumbnail, and worse: the step counter
+ * advanced while the rendered src did not, so a single failed request stranded
+ * the tile on a broken URL forever instead of falling back to its type icon.
+ *
+ * Empty rungs are dropped, so a catalog without thumbnails simply starts at the
+ * original. A row with no cover at all yields an empty ladder and the caller
+ * goes straight to its fallback.
+ * @param {any} asset normalized cloud row (see `normalizeCloudAsset`)
+ * @param {(id: string, which: 'media' | 'cover') => string} hostRoute
+ * @returns {string[]}
+ */
+export function coverLadderOf(asset, hostRoute) {
+  const id = String(asset?.id ?? '')
+  const lastRung = asset?.mediaType === 'image'
+    ? hostRoute(id, 'media')
+    : hostRoute(id, 'cover')
+  return [asset?.thumbUrl, asset?.coverUrl, lastRung].filter((url) => typeof url === 'string' && url !== '')
+}
+
+/**
+ * Where one failed load lands the card.
+ *
+ * `step` is the rung that just failed. A step below the last rung advances;
+ * at the last rung the card gives up — a video row with a clip hands the frame
+ * over to the clip, everything else reports broken so the tile paints its type
+ * icon. This is a pure decision so the "never stranded on a broken URL"
+ * property can be asserted without a browser.
+ * @param {{ ladder: string[], step: number, mediaType?: string, hasClip?: boolean }} input
+ * @returns {{ kind: 'advance', step: number } | { kind: 'hand-over-to-clip' } | { kind: 'broken' }}
+ */
+export function nextLadderStep(input) {
+  const ladder = Array.isArray(input?.ladder) ? input.ladder : []
+  const step = Number(input?.step) || 0
+  if (step < ladder.length - 1) return { kind: 'advance', step: step + 1 }
+  if (input?.mediaType !== 'image' && input?.hasClip === true) return { kind: 'hand-over-to-clip' }
+  return { kind: 'broken' }
+}
+
+export function cloudCardKind(asset) {
+  const hasMedia = asset?.hasMedia === true
+  // 立绘优先：数字人 / 拟人角色的素材是语音样本，但卡片门面是那张立绘。
+  // 只有「没有立绘的纯语音行」才走语音色块版式。
+  if (asset?.hasCover === true) return 'media'
+  if (asset?.mediaType === 'audio') {
+    // 官方音色的资格看 preview DTO 而不是 media_url：DTO-only 已验证行
+    // （media_url 为空但 primary_url 有效）照样是音频卡；legacy playable 门
+    // 只作用于普通行，官方行由 preview DTO 单独裁定（ocr-final #3058）。
+    const playable = isOfficialVoicePreviewAsset(asset)
+      ? isOfficialVoicePreviewPlayable(asset)
+      : hasMedia && asset?.playable !== false
+    return playable ? 'audio' : 'text'
+  }
+  if (hasMedia) return 'media'
+  return 'text'
+}
+
+/**
+ * The restrained dark washes an audio card rotates through.
+ *
+ * 深靛青 / 墨绿 / 曜蓝 / 暗紫夜 / 深炭黑 — five surfaces dark enough to carry
+ * white text in either theme and never brighter than the chrome around them.
+ * Declared here as names so the colour itself stays in the stylesheet.
+ */
+export const CLOUD_AUDIO_THEMES = ['indigo', 'jade', 'azure', 'violet', 'charcoal']
+
+/**
+ * Pick one audio theme for a row.
+ *
+ * Deterministic on the row id, so a card keeps its wash across renders, pages and
+ * category switches instead of flickering as the grid reflows.
+ * @param {string} id
+ * @returns {string} one of `CLOUD_AUDIO_THEMES`
+ */
+export function cloudAudioTheme(id) {
+  const seed = String(id ?? '')
+  let hash = 2166136261
+  for (let index = 0; index < seed.length; index += 1) {
+    hash = Math.imul(hash ^ seed.charCodeAt(index), 16777619) >>> 0
+  }
+  return CLOUD_AUDIO_THEMES[hash % CLOUD_AUDIO_THEMES.length]
+}
+
+/**
+ * Append a page to the loaded rows, dropping ids already present.
+ *
+ * Paging can race with a category switch, so a duplicate row must never produce
+ * a duplicate React key or a doubled card.
+ * @param {any[]} existing
+ * @param {any[]} incoming
+ */
+export function appendUniqueAssets(existing, incoming) {
+  const seen = new Set(existing.map((row) => row.id))
+  const out = existing.slice()
+  for (const row of incoming) {
+    if (!row || seen.has(row.id)) continue
+    seen.add(row.id)
+    out.push(row)
+  }
+  return out
+}
+
+/**
+ * Human label for a row's media type, resolved through the locale dictionary.
+ * @param {{ t: (key: string) => string, mediaType: string }} input
+ */
+export function mediaLabelOf({ t, mediaType }) {
+  const key = `cloud.media.${mediaType}`
+  const value = t(key)
+  return value === key ? t('cloud.media.other') : value
+}

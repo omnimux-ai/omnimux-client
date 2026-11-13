@@ -1,0 +1,119 @@
+{
+  "name": "social-content-team",
+  "version": "1.1.0",
+  "description": "Multimodal social media content creation studio covering copy, voiceover, image visuals, video generation, music BGM, and timeline video editing",
+  "author": {
+    "name": "CodeBuddy Teams"
+  },
+  "expertType": "team",
+  "agentName": "social-content-team-lead",
+  "teamInfo": {
+    "leadAgent": "social-content-team-lead",
+    "memberAgents": [
+      "content-copywriter",
+      "speech-agent",
+      "image-agent",
+      "video-agent",
+      "music-agent",
+      "editing-agent"
+    ]
+  },
+  "agents": [
+    "./agents/social-content-team-lead.md",
+    "./agents/content-copywriter.md",
+    "./agents/speech-agent.md",
+    "./agents/image-agent.md",
+    "./agents/video-agent.md",
+    "./agents/music-agent.md",
+    "./agents/editing-agent.md"
+  ],
+  "contracts": [
+    "./contracts/anti-loop.md",
+    "./contracts/character-ref-guard.md",
+    "./contracts/editing-defaults.md",
+    "./contracts/canvas-discipline.md",
+    "./contracts/output-format.md"
+  ],
+  "skills": [],
+  "displayName": {
+    "en": "Multimodal Social Content Studio",
+    "zh": "社媒多模态内容创作工坊"
+  },
+  "profession": {
+    "en": "Multimodal Content Creation Team",
+    "zh": "社媒多模态内容创作工坊"
+  },
+  "displayDescription": {
+    "en": "Full-pipeline multimodal creation team: high-converting copy, voiceover speech, image visuals, video generation, BGM music, and timeline editing & post-production.",
+    "zh": "端到端多模态全链路创作团队：爆款文案、口播配音、视觉立绘、视频分镜生成、BGM卡点配乐与后期剪辑成片"
+  },
+  "avatar": "avatars/team.png",
+  "categoryId": "01-ContentCreation",
+  "defaultInitPrompt": {
+    "en": "Help me produce an end-to-end multimodal social media video from brief to final cut",
+    "zh": "帮我为我的产品制作一条包含文案、配音、分镜生视频与后期剪辑的完整社媒短视频"
+  },
+  "tags": [
+    { "en": "Multimodal Studio", "zh": "多模态工坊" },
+    { "en": "Social Copywriting", "zh": "爆款文案" },
+    { "en": "Voiceover Speech", "zh": "口播配音" },
+    { "en": "Video Generation", "zh": "分镜生视频" },
+    { "en": "Video Editing", "zh": "剪辑后期" }
+  ],
+  "quickPrompts": [
+    { "en": "Produce a 30s product explainer video from script to final edit", "zh": "帮我为产品制作一条 30 秒短视频：从脚本、配音、分镜到剪辑成片" },
+    { "en": "Create a Xiaohongshu seed post with copy and aesthetic visual posters", "zh": "帮我写一篇小红书种草文案并生成对应的商业摄影视觉海报" },
+    { "en": "Generate 3 video shots with voiceover and edit with background music", "zh": "基于文案生成 3 段分镜视频与解说配音，并混合 BGM 剪辑导出" }
+  ],
+  "members": [
+    {
+      "id": "social-content-team-lead",
+      "name": { "en": "Director", "zh": "迪克特" },
+      "profession": { "en": "Creative Director", "zh": "文创总监" },
+      "avatar": "avatars/social-content-team-lead.png",
+      "role": "lead"
+    },
+    {
+      "id": "content-copywriter",
+      "name": { "en": "Copy", "zh": "可可" },
+      "profession": { "en": "Social Copywriter", "zh": "社媒文案专员" },
+      "avatar": "avatars/content-copywriter.png",
+      "role": "member"
+    },
+    {
+      "id": "speech-agent",
+      "name": { "en": "Voice", "zh": "沃伊斯" },
+      "profession": { "en": "Speech & Voice Specialist", "zh": "配音解说专家" },
+      "avatar": "avatars/speech-agent.png",
+      "role": "member"
+    },
+    {
+      "id": "image-agent",
+      "name": { "en": "Image", "zh": "维森" },
+      "profession": { "en": "Image & Visual Specialist", "zh": "视觉生图专家" },
+      "avatar": "avatars/image-agent.png",
+      "role": "member"
+    },
+    {
+      "id": "video-agent",
+      "name": { "en": "Video", "zh": "维迪奥" },
+      "profession": { "en": "Video Generation Specialist", "zh": "分镜生成专家" },
+      "avatar": "avatars/video-agent.png",
+      "role": "member"
+    },
+    {
+      "id": "music-agent",
+      "name": { "en": "Music", "zh": "缪斯" },
+      "profession": { "en": "Music & BGM Specialist", "zh": "配乐音效专家" },
+      "avatar": "avatars/music-agent.png",
+      "role": "member"
+    },
+    {
+      "id": "editing-agent",
+      "name": { "en": "Edit", "zh": "艾迪特" },
+      "profession": { "en": "Video Editor & Post Specialist", "zh": "剪辑合成专家" },
+      "avatar": "avatars/editing-agent.png",
+      "role": "member"
+    }
+  ]
+}

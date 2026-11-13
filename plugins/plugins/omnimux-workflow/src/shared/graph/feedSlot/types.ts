@@ -1,0 +1,94 @@
+import type { TextComposition, ValueSource } from '../../api.ts';
+import type { ReferenceAssetPayload } from '../../../workflow/seam/gateway.ts';
+
+export interface FeedAsset {
+  edgeId: string;
+  sourceNodeId: string;
+  outputId?: string;
+  textContent?: string;
+  type: string;
+  availability: 'ready' | 'waiting' | 'unavailable';
+  mimeType?: string;
+  sizeBytes?: number;
+  durationSec?: number;
+  ordinal: number;
+  /** Resolved by the caller; the kernel never performs I/O. */
+  pathOrUrl?: string;
+  url?: string;
+  /** Legacy or one-shot picker hints, used only during hydration. */
+  targetSlot?: string;
+  role?: string;
+}
+
+export interface SlotOccupant {
+  sourceNodeId: string;
+  edgeId: string;
+  outputId?: string;
+  pinned: boolean;
+  ordinal?: number;
+  use?: 'active' | 'inactive';
+  role?: string;
+}
+
+export type SlotBindings = Record<string, SlotOccupant[]>;
+export type SlotConflictReason = 'type_mismatch' | 'role_illegal' | 'slot_removed';
+export interface SlotConflict {
+  slot: string;
+  occupant: SlotOccupant;
+  reason: SlotConflictReason;
+}
+export type SlotLayoutPreset = 'none' | 'named' | 'pair' | 'strip';
+export interface SlotSpec {
+  slot: string;
+  role: string;
+  type: string;
+  min: number;
+  max: number | null;
+  labelKey: string;
+  valueSources?: ValueSource[];
+  composition?: TextComposition;
+  allowedMimes?: string[];
+  maxSizeMb?: number;
+  maxSizeExclusive?: boolean;
+  minDurationSec?: number;
+  maxDurationSec?: number;
+}
+export interface SlotLayout {
+  /** True only when the selected operation declares a text/prompt input. */
+  acceptsText?: boolean;
+  operationId: string;
+  /**
+   * Set when the layout was borrowed from another listed operation of the same
+   * model (model-level material capability display). Submitting material through
+   * these slots must first switch the node's operation to this id.
+   */
+  displayOnlyFromOperation?: string;
+  preset: SlotLayoutPreset;
+  slots: SlotSpec[];
+  swap: boolean;
+  addButton: boolean;
+  implementationGaps: string[];
+}
+export interface FillResult {
+  bindings: SlotBindings;
+  unusedFeed: FeedAsset[];
+  conflicts: SlotConflict[];
+}
+
+/** Why ready supply stayed out of every slot of the current operation. */
+export type UnusedSupplyReason = 'no_matching_slot' | 'slot_capacity' | 'not_bound' | 'input_unavailable';
+/** Ready inbound media this operation will not consume; the UI must show it instead of hiding it. */
+export interface UnusedSupply {
+  occupant: SlotOccupant;
+  asset: FeedAsset;
+  reasonCode: UnusedSupplyReason;
+}
+export interface EffectiveSubmitInputs {
+  prompt: string;
+  references: ReferenceAssetPayload[];
+  audioTrack?: ReferenceAssetPayload;
+  unusedFeedEdgeIds: string[];
+  emptyRequiredSlots: string[];
+  /** Occupied but not usable, including optional slots: never silently skip them. */
+  blockedInputs: Array<{ slot: string; edgeId: string; sourceNodeId: string; reason: 'input_waiting' | 'input_unavailable' | 'slot_removed' | 'role_conflict' | 'slot_capacity' }>;
+}

@@ -1,0 +1,94 @@
+{
+  "name": "omnimux-market",
+  "version": "0.2.13-omni.0",
+  "description": "OmniMux 插件市场：技能 · 插件 · 专家 · 连接器（基于 @cocofhu/skillhub 二次开发，MIT）",
+  "homepage": "https://github.com/omnimux-ai/omnimux-client#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/omnimux-ai/omnimux-client.git",
+    "directory": "plugins/omnimux-market"
+  },
+  "type": "module",
+  "main": "lib/host.js",
+  "exports": {
+    ".": "./lib/host.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "!lib/tests",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE",
+    "catalog",
+    "!catalog/covers",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "omnimux",
+    "market",
+    "skills"
+  ],
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "packageManager": "pnpm@11.17.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "rm -rf lib && tsc -p tsconfig.json && mkdir -p lib/tests/fixtures lib/expert && node scripts/concat-client.mjs && cp src/tests/fixtures/* lib/tests/fixtures/ && for f in src/expert/*.js; do case \"$f\" in *.test.js) ;; *) cp \"$f\" lib/expert/ ;; esac; done",
+    "prepare": "npm run build",
+    "test": "npm run build && node --test --test-concurrency=1 lib/tests/*.test.js src/expert/*.test.js src/client/*.test.js src/presets/*.test.js tests/e2e/*.spec.js",
+    "test:coverage": "npm run build && node --test --experimental-test-coverage --test-coverage-include=lib/api.js --test-coverage-include=lib/categories.js --test-coverage-include=lib/config-store.js --test-coverage-include=lib/dsh-cli.js --test-coverage-include=lib/http.js --test-coverage-include=lib/install.js --test-coverage-include=lib/ndjson.js --test-coverage-include=lib/plugin-market.js --test-coverage-include=lib/restart.js --test-coverage-include=lib/skill-detail.js --test-coverage-include=lib/self-update.js --test-coverage-include=lib/unzip.js --test-coverage-lines=95 --test-coverage-functions=85 --test-coverage-branches=70 lib/tests/*.test.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepublishOnly": "node ../../scripts/verify-publish-source.mjs ."
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-primitives"
+      ]
+    }
+  },
+  "dependencies": {
+    "@unicode/unicode-15.1.0": "2.0.2",
+    "buffer-crc32": "1.0.0",
+    "dsh-ui-kit": "file:../../packages/dsh-ui-kit",
+    "yaml": "2.9.0",
+    "yauzl": "3.4.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.1.0-rc.6 || >=0.2.1-rc.3 <0.3.0-0",
+    "@deepseek-ai/dsh-tools": ">=0.0.0 <0.2.1-0 || >=0.2.1-rc.3",
+    "@deepseek-ai/schemastery": "*",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.3",
+    "@deepseek-ai/schemastery": "^3.18.5",
+    "@types/node": "^24.3.0",
+    "@types/yauzl": "3.4.0",
+    "esbuild": "^0.25.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.9.2"
+  }
+}

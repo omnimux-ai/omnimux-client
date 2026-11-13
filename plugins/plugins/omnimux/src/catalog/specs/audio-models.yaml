@@ -1,0 +1,449 @@
+# 音频模型能力契约 (Audio Models Capability Contract)
+# Seed Audio 使用同步 speech；suno / gpt-4o-mini-tts 保留 draft+stub。
+# whisper-1 产出 text，不进入 audio 产出桶。
+schemaVersion: "1.1"
+managementGroup: "audio"
+modality: "audio"
+
+models:
+  # 2026-10-21 网关对账 #3516：上游渠道全部停用，仅登记不开放。
+  # 2026-10-21 网关对账 #3516：上游渠道全部停用，仅登记不开放。
+  - id: "doubao-asr-bigmodel"
+    label: "豆包语音识别大模型 (Doubao-ASR)"
+    family: "bytedance"
+    badge: "语音识别"
+    subtitle: "豆包音频转写 · 文本 / SRT / VTT"
+    operations:
+      - id: "speech_to_text"
+        label: "语音转文字"
+        output: { type: "text" }
+        inputs:
+          - { slot: "audio_input", type: "audio", role: "source", source: "upstream_edge", min: 1, max: 1 }
+    parameters:
+      response_format:
+        options: ["json", "text", "verbose_json", "srt", "vtt"]
+        defaultValue: "json"
+    research:
+      status: "verified"
+      docUrl: "docs/evidence/2026-09-07-model-doubao-asr-bigmodel-speech_to_text.md"
+      verifiedAt: "2026-09-07"
+      notes: "Issue #744 提供的中枢接入契约；离线验证范围与未核验项见证据文档"
+    implementation:
+      # 2026-10-21 网关对账 #3516：上游渠道全部停用，仅登记不开放。
+      status: "none"
+      profileId: "speechToText"
+      seam: "speechToText"
+    execution:
+      status: "live"
+      profileId: "speechToText"
+      seam: "speechToText"
+      notes: "按 #744 指定状态登记；本轮仅离线验证，不声明独立真实调用成功"
+
+  # #1789：seedasr-auc 是上游独立在售的语音识别型号（官方直连-火山 渠道 43，upstream_id 与公开 ID 相同），
+  # 与 doubao-asr-bigmodel 不是同一模型，二者互不归一（bigasr-auc 档案 notes 明写「不要与 seedasr-auc 混用」）。
+  # 本 ID 只以 canonical 身份登记，且不得出现在任何模型的 aliases[] 中。
+  # 2026-10-21 网关对账 #3516：上游渠道全部停用，仅登记不开放。
+  - id: "seedasr-auc"
+    label: "Seed ASR 2.0 语音识别"
+    family: "bytedance"
+    badge: "语音识别"
+    subtitle: "火山引擎 Seed ASR 2.0 · 录音文件识别标准模式"
+    operations:
+      - id: "speech_to_text"
+        label: "语音转文字"
+        output: { type: "text" }
+        inputs:
+          - slot: "audio_input"
+            type: "audio"
+            role: "source"
+            source: "upstream_edge"
+            min: 1
+            max: 1
+            limitSource:
+              kind: "official_docs"
+              url: "https://docs.byteplus.com/en/docs/byteplusvoice/asraudiofile"
+              note: "官方限制：文件 < 512MB、时长 < 5 小时（原文 File Size | < 512MB、Audio Duration | < 5 hours，均为严格小于）。本行不写 maxSizeMb/maxDurationSec 上限：URL-first 提交没有本地字节与时长，声明上限会让每次 URL 提交在 METADATA_UNKNOWN 上被拒。本模型上限有官方确定值（上游档案 max_input_bytes=536870912、max_input_seconds=18000、编码 8 项），不声明是主动取舍；doubao-asr-bigmodel 不声明则是上限未知（其档案 max_input_bytes/max_input_seconds 记 null、input_formats 记空数组），两者证据等级不同，不可类比。支持的编码官方列为 OPUS、WAV、MP3、SPX、OGG、AMR、AAC、M4A。"
+    parameters:
+      response_format:
+        options: ["json", "text", "verbose_json", "srt", "vtt"]
+        defaultValue: "json"
+    research:
+      status: "verified"
+      docUrl: "https://docs.byteplus.com/en/docs/byteplusvoice/asraudiofilesubmittask"
+      verifiedAt: "2026-09-14"
+      notes: "官方出处为字节跳动 BytePlus（Seed Speech）文档：X-Api-Resource-Id 取值 volc.seedasr.auc 与本 ID 逐字对应，即 Seed ASR 2.0 录音文件识别标准模式（异步转写，提交后查询结果）。上游档案记 status=documented、vendor_model_id=volc.seedasr.auc，并绑定 [官方直连-火山] Seed Audio 豆包语音 渠道（upstream_id 与公开 ID 相同）。与 doubao-asr-bigmodel 不可互相归一：该档案自认「是否等价于 Seed ASR 资源 ID 未确认」，bigasr-auc 档案 notes 亦明写「不要与 seedasr-auc 混用」。本轮不发起真实模型调用。"
+    implementation:
+      # 2026-10-21 网关对账 #3516：上游渠道全部停用，仅登记不开放。
+      status: "none"
+      profileId: "speechToText"
+      seam: "speechToText"
+    execution:
+      status: "live"
+      profileId: "speechToText"
+      seam: "speechToText"
+      notes: "复用已挂载且 live 的 speechToText profile/seam；运行期本 ID 走 URL-first 直传（src/media/stt.js URL_FIRST_MODELS）。execution=live 表示该 ID 挂在 live 执行通道上；本轮不发起真实模型调用，不声明独立真实执行结论。"
+
+  # 2026-10-21 网关对账 #3516：上游渠道全部停用，仅登记不开放。
+  - id: "seed-audio-1.0"
+    label: "Seed Audio 1.0"
+    family: "bytedance"
+    badge: "语音合成"
+    subtitle: "火山引擎 / 豆包大模型语音合成 · 509+ 精品音色"
+    aliases: ["doubao-seed-audio-1.0", "seed-audio", "tts"]
+    operations:
+      - id: "text_to_speech"
+        label: "文本转语音"
+        output: { type: "audio" }
+        inputs:
+          - { slot: "prompt", type: "text", role: "prompt", source: "node_field", valueSources: ["local_field", "upstream_output"], composition: { kind: "single_body", localRole: "body" }, min: 1, max: 1 }
+          - slot: "reference_audio"
+            type: "audio"
+            role: "reference"
+            source: "upstream_edge"
+            min: 0
+            max: 1
+            allowedMimes: ["audio/wav", "audio/mp3", "audio/mpeg"]
+            maxSizeMb: 10
+            limitSource:
+              kind: "official_docs"
+              note: "上游合同 4b4e2aff3500ec80：reference_audios {max:3, formats:[wav,mp3,pcm,ogg_opus], max_bytes_each:10485760, max_seconds_each:30}。maxSizeMb 取 max_bytes_each（10MB）。max 保持 1：同步语音仅写首条 references[{audio_url}]（submit-guard/map.js speech 分支），多值无落点。max_seconds_each=30 不落 maxDurationSec：画布本地导入不携带 durationSec，声明会让每次提交在 METADATA_UNKNOWN 被拒（seedasr-auc 同类判据）。formats 中 pcm/ogg_opus 本仓无对应 MIME 常量，不声明。上游另有 reference_images{max:1}，属本仓未登记的 voice_clone/reference_*_generation 操作，本仓 text_to_speech 的 vendor 形状白名单不含 image/images，故不新增参考图声明。"
+    parameters:
+      voice:
+        # Resolved by the catalog loader; the DTO and SubmitGuard share one index.
+        optionsFrom: "volcengine-voice-index"
+        defaultValue: "zh_male_guanggaojieshuo_uranus_bigtts"
+      speed:
+        # Require a finite number without inventing undocumented bounds.
+        range: {}
+        defaultValue: 1.0
+      format:
+        options: ["mp3", "wav", "pcm"]
+        defaultValue: "mp3"
+    research:
+      status: "verified"
+      docUrl: "docs/evidence/2026-09-18-model-seed-audio-1-0-text_to_speech-live.md"
+      verifiedAt: "2026-09-18"
+      notes: "火山引擎 HTTP v3 语音合成接口网关真实执行与创作画布端到端验收通过（见 live 证据文档）"
+    implementation:
+      # 2026-10-21 网关对账 #3516：上游渠道全部停用，仅登记不开放。
+      status: "none"
+      profileId: "audioGenerate"
+      seam: "audioGenerate"
+    execution:
+      status: "live"
+      profileId: "audioGenerate"
+      seam: "audioGenerate"
+      notes: "同步 POST /v1/audio/speech 管道（2026-09-18 实测 200 返回 MP3 音频与元数据）"
+
+  # 2026-10-21 网关对账 #3516：上游渠道全部停用，仅登记不开放。
+  - id: "gemini-3.8-flash-tts"
+    label: "Gemini 3.8 Flash TTS"
+    family: "google"
+    badge: "语音合成"
+    subtitle: "Google AI Studio 拟真语音 · 角色 Nika"
+    operations:
+      - id: "text_to_speech"
+        label: "文本转语音"
+        output: { type: "audio" }
+        inputs:
+          - { slot: "prompt", type: "text", role: "prompt", source: "node_field", min: 1, max: 1 }
+    parameters:
+      voice:
+        defaultValue: "Nika"
+        options:
+          - value: "Nika"
+            label: "Nika (知性女声 · 默认)"
+            meta:
+              display_name: "Nika"
+              name: "Nika"
+              voice_type: "Nika"
+              gender: "female"
+              category: "通用场景"
+              language: "中文,英语"
+              accent: "自然亲切"
+              tags: ["默认角色", "官方推荐"]
+              is_hot: true
+              hot_order: 1
+          - value: "Puck"
+            label: "Puck (明朗男声)"
+            meta:
+              display_name: "Puck"
+              name: "Puck"
+              voice_type: "Puck"
+              gender: "male"
+              category: "角色扮演"
+              language: "中文,英语"
+              accent: "明朗活力"
+              tags: ["官方音色"]
+          - value: "Charon"
+            label: "Charon (沉稳男声)"
+            meta:
+              display_name: "Charon"
+              name: "Charon"
+              voice_type: "Charon"
+              gender: "male"
+              category: "旁白解说"
+              language: "中文,英语"
+              accent: "沉稳厚重"
+              tags: ["官方音色"]
+          - value: "Kore"
+            label: "Kore (柔和女声)"
+            meta:
+              display_name: "Kore"
+              name: "Kore"
+              voice_type: "Kore"
+              gender: "female"
+              category: "通用场景"
+              language: "中文,英语"
+              accent: "柔和亲切"
+              tags: ["官方音色"]
+          - value: "Fenrir"
+            label: "Fenrir (威严男声)"
+            meta:
+              display_name: "Fenrir"
+              name: "Fenrir"
+              voice_type: "Fenrir"
+              gender: "male"
+              category: "角色扮演"
+              language: "中文,英语"
+              accent: "深沉威严"
+              tags: ["官方音色"]
+          - value: "Aoede"
+            label: "Aoede (优雅女声)"
+            meta:
+              display_name: "Aoede"
+              name: "Aoede"
+              voice_type: "Aoede"
+              gender: "female"
+              category: "有声阅读"
+              language: "中文,英语"
+              accent: "优雅知性"
+              tags: ["官方音色"]
+          - value: "Leda"
+            label: "Leda (清新女声)"
+            meta:
+              display_name: "Leda"
+              name: "Leda"
+              voice_type: "Leda"
+              gender: "female"
+              category: "通用场景"
+              language: "中文,英语"
+              accent: "清新自然"
+              tags: ["官方音色"]
+          - value: "Orus"
+            label: "Orus (从容男声)"
+            meta:
+              display_name: "Orus"
+              name: "Orus"
+              voice_type: "Orus"
+              gender: "male"
+              category: "通用场景"
+              language: "中文,英语"
+              accent: "从容自信"
+              tags: ["官方音色"]
+          - value: "Zephyr"
+            label: "Zephyr (清爽男声)"
+            meta:
+              display_name: "Zephyr"
+              name: "Zephyr"
+              voice_type: "Zephyr"
+              gender: "male"
+              category: "通用场景"
+              language: "中文,英语"
+              accent: "温和清爽"
+              tags: ["官方音色"]
+          - value: "Despina"
+            label: "Despina (舒缓女声)"
+            meta:
+              display_name: "Despina"
+              name: "Despina"
+              voice_type: "Despina"
+              gender: "female"
+              category: "角色扮演"
+              language: "中文,英语"
+              accent: "平缓舒展"
+              tags: ["官方音色"]
+      format:
+        options: ["wav"]
+        defaultValue: "wav"
+    research:
+      status: "verified"
+      docUrl: "docs/evidence/2026-09-29-model-gemini-3-8-flash-tts-text_to_speech.md"
+      verifiedAt: "2026-09-29"
+      notes: "基于 opencli gemini tts (Google AI Studio) 本地驱动的拟真语音合成模型"
+    implementation:
+      # 2026-10-21 网关对账 #3516：上游渠道全部停用，仅登记不开放。
+      status: "none"
+      profileId: "audioGenerate"
+      seam: "audioGenerate"
+    execution:
+      status: "live"
+      profileId: "audioGenerate"
+      seam: "audioGenerate"
+      notes: "通过本地 opencli gemini tts 驱动（CLI 原生直通）"
+
+  # #3063：Index TTS 声音克隆，上游契约已升级为 indextts-2（AutoDL 任务通道），
+  # 旧型号 index-tts 已从上游模型列表下线，保留为 alias 兼容存量画布与账本记录。
+  # 文档硬约束（zh/api-reference/audio-series/models/index-tts.mdx，2026-10-04 复核）：
+  # POST /v1/tasks/autodl，必填 model=prompt_text（朗读文稿）/prompt_simple（参考音
+  # 公网 URL）/emo_control_method（文档推荐「与音色参考音频相同」）；emo_happy/
+  # emo_sad/emo_angry ∈ [0,1] 可选；轮询 GET /v1/tasks/{task_id}，产物经
+  # GET /v1/tasks/{task_id}/artifacts 收取 WAV 直链。
+  # 2026-10-21 网关对账 #3516：上游渠道全部停用，仅登记不开放。
+  - id: "indextts-2"
+    label: "Index TTS2 声音克隆"
+    family: "indextts"
+    badge: "声音克隆"
+    subtitle: "Index TTS2 · 参考音 + 文稿直出克隆音色"
+    operations:
+      - id: "voice_clone"
+        label: "声音克隆"
+        output: { type: "audio" }
+        inputs:
+          - { slot: "prompt", type: "text", role: "prompt", source: "node_field", min: 1, max: 1 }
+          - slot: "voice_sample"
+            type: "audio"
+            role: "audio_track"
+            source: "upstream_edge"
+            min: 1
+            max: 1
+            allowedMimes: ["audio/wav", "audio/mp3", "audio/mpeg"]
+    parameters: {}
+    research:
+      status: "verified"
+      docUrl: "https://docs.omnimux.ai/zh/api-reference/audio-series/models/index-tts"
+      verifiedAt: "2026-10-04"
+      notes: "渠道官方文档 zh/api-reference/audio-series/models/index-tts.mdx（OmniMux-docs 仓，2026-10-04 离线复核）：canonical 型号 indextts-2；POST /v1/tasks/autodl；必填 prompt_text（文稿）、prompt_simple（参考音 URL，不得 data: URI）、emo_control_method（推荐「与音色参考音频相同」）；可选 emo_happy/emo_sad/emo_angry ∈ [0,1]；轮询 GET /v1/tasks/{id}，产物 GET /v1/tasks/{id}/artifacts 取 WAV。旧型号 index-tts 已下线，保留 alias 兼容存量画布/账本。参考素材限制差异登记：上游合同 4b4e2aff3500ec80 的 reference_audios 为 {max:2, formats:[wav,mp3]}，本仓 voice_sample 声明 max=1 且不声明 maxSizeMb/maxDurationSec——max=1 因 AutoDL 契约只有单值 prompt_simple（参考音公网 URL），多值无落点；上游未公布 max_bytes_each 与 max_seconds_each，故不声明体积与时长上限；formats 转写为 MIME 并双写 audio/mp3 与 audio/mpeg，覆盖画布探测（audio/mpeg）与中枢探针归一（audio/mp3）两条通路。"
+    implementation:
+      # 2026-10-21 网关对账 #3516 曾判「上游渠道全部停用」；2026-11-02 复核渠道 70/71/72
+      # 在架（AutoDL 任务通道），经 indextts-2 真实任务跑通声音克隆，误标已纠。
+      status: "ready"
+      profileId: "audioGenerate"
+      seam: "audioGenerate"
+    execution:
+      status: "stub"
+      profileId: "audioGenerate"
+      seam: "audioGenerate"
+      notes: "离线请求构造与轮询/artifacts 夹具验证完成；上线前按模型接口准据补真实执行证据（画布语音克隆验收）。"
+
+  - id: "suno"
+    label: "Suno Music"
+    family: "suno"
+    badge: "音乐创作"
+    subtitle: "AI 歌曲 / 纯音乐 · ⏱ 30-120s"
+    operations:
+      - id: "text_to_music"
+        label: "AI 音乐生成"
+        output:
+          type: "audio"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+    parameters:
+      duration:
+        options:
+          - { value: 30, label: "30s" }
+          - { value: 60, label: "60s" }
+          - { value: 120, label: "120s" }
+        defaultValue: 60
+        unit: "s"
+      instrumental:
+        supported: true
+        defaultValue: false
+    research:
+      status: "verified"
+      docUrl: "docs/evidence/2026-10-21-model-suno-text_to_music.md"
+      verifiedAt: "2026-10-21"
+      notes: "2026-10-21 #3516：网关渠道 32 default 现役，按渠道文档与 Video 任务端点证据上架；未发真实生成请求，execution 保持 stub"
+    implementation:
+      status: "ready"
+      profileId: "audioGenerate"
+      seam: "audioGenerate"
+    execution:
+      status: "stub"
+      profileId: "audioGenerate"
+      seam: "audioGenerate"
+      notes: "stub only；不得宣称 live"
+
+  - id: "gpt-4o-mini-tts"
+    label: "GPT 4o Mini TTS"
+    family: "openai"
+    badge: "语音合成"
+    subtitle: "OpenAI 高清配音 · 6 种音色"
+    operations:
+      - id: "text_to_speech"
+        label: "文本转语音"
+        output:
+          type: "audio"
+        inputs:
+          - slot: "prompt"
+            type: "text"
+            role: "prompt"
+            source: "node_field"
+            min: 1
+            max: 1
+    parameters:
+      voice:
+        options:
+          - { value: "alloy", label: "Alloy (自然通用)" }
+          - { value: "echo", label: "Echo (沉稳男声)" }
+          - { value: "fable", label: "Fable (英式叙事)" }
+          - { value: "onyx", label: "Onyx (深沉厚重)" }
+          - { value: "nova", label: "Nova (明亮女声)" }
+          - { value: "shimmer", label: "Shimmer (清亮柔和)" }
+        defaultValue: "alloy"
+    research:
+      status: "draft"
+      notes: "runtime AUDIO 目录存在；仓内无 dated live 证据，不上架"
+    implementation:
+      status: "none"
+    execution:
+      status: "stub"
+      profileId: "audioGenerate"
+      seam: "audioGenerate"
+      notes: "stub only；不得宣称 live"
+
+  - id: "whisper-1"
+    label: "Whisper 1"
+    family: "openai"
+    badge: "语音识别"
+    subtitle: "OpenAI 语音转文字 / ASR"
+    operations:
+      - id: "speech_to_text"
+        label: "语音识别"
+        output:
+          type: "text"
+        inputs:
+          - slot: "audio_input"
+            type: "audio"
+            role: "source"
+            source: "upstream_edge"
+            min: 1
+            max: 1
+            allowedMimes: ["audio/mp3", "audio/wav", "audio/m4a", "audio/webm"]
+            limitSource:
+              kind: "policy_conservative"
+              note: "2026-10-21 #3516：原 maxSizeMb 25 为保守策略，但 URL/工具输入在提交前无 sizeBytes，声明会阻断全部 STT 提交；体积上限改由网关在上传/下载后校验（与 doubao-asr-bigmodel 现役契约一致）。"
+    parameters:
+      # 与 doubao-asr-bigmodel 现役 speech_to_text 契约同形：枚举在提交前拦截非法格式（#3516）。
+      response_format:
+        options: ["json", "text", "verbose_json", "srt", "vtt"]
+        defaultValue: "json"
+    research:
+      status: "verified"
+      docUrl: "docs/evidence/2026-10-21-model-whisper-1-speech_to_text.md"
+      verifiedAt: "2026-10-21"
+      notes: "2026-10-21 #3516：网关渠道 31 default 现役，canonical + listed；离线文档证据见 research.docUrl，未发真实转写请求"
+    implementation:
+      status: "ready"
+      profileId: "speechToText"
+      seam: "speechToText"
+    execution:
+      status: "none"
+      profileId: "speechToText"
+      seam: "speechToText"
+      notes: "speechToText profile live（seam 已挂载）；模型级 execution 待 #530 探测证据方可翻 live"

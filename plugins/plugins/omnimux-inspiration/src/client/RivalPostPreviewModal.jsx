@@ -1,0 +1,190 @@
+/**
+ * 「详情」— one monitored work, opened from a card in the 账号监控 grid.
+ *
+ * Its own dialog rather than the library's `InspirationPreviewModal`, which is
+ * about library items: it offers collection, tags, removal and AI breakdown, all
+ * of which are actions a monitored post does not have. Reusing it would present
+ * a work as a library entry and offer buttons that cannot keep their promise.
+ * What this one offers is what the work actually supports: look at it, open the
+ * original, or start replicating it.
+ */
+
+import { Button, ModalDialog } from 'dsh-ui-kit'
+import { hostMediaSrc } from './api.js'
+import { formatCount, formatDuration, formatRelativeTime, rivalLocaleOf, rivalVelocityHasSignal } from './rival-format.js'
+
+/** `HH:mm` of an ISO timestamp for the measured-velocity note; '' when unreadable. */
+function hhmm(iso) {
+  const at = Date.parse(String(iso || ''))
+  if (!Number.isFinite(at)) return ''
+  const d = new Date(at)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+/**
+ * `detail.velocityNote`（规格 §3.6 逐字三句，每卡只显示对应口径那一句）。
+ * `''` means no line renders — the same「no signal, no slot」rule the card
+ * pill follows.
+ * @param {Record<string, any>} row
+ * @param {(key: string) => string} t
+ * @returns {string}
+ */
+function velocityNote(row, t) {
+  const velocity = row?.velocity
+  if (!velocity || typeof velocity !== 'object') return ''
+  // 与卡胶囊同一道门。「无信号不留位」必须在卡与弹窗上是同一条规则：
+  // 谓词判 false 的残留描述（`vph: 0`、`multiplier: 0`、低于 200 地板的
+  // `vph: 199.9`）在缓存里仍带着 `confidence` 字符串，只看它就会在弹窗落
+  // 一行而卡上什么都不显示——同一份信号域各写各的门的第三次（R3-Low-5）。
+  // 复用共享谓词而不是再写一套判断，正是为了让这道门只有一处定义。
+  if (!rivalVelocityHasSignal(velocity)) return ''
+  const confidence = String(velocity.confidence || '')
+  if (confidence === 'measured') {
+    const [t1, t2] = Array.isArray(velocity.samples_at) ? velocity.samples_at : []
+    const [a, b] = [hhmm(t1), hhmm(t2)]
+    // 采样时间任一端不可读时不渲染该行——「基于 -- 与 -- 两次采样」是
+    // 无信息噪音（四轴 M9，同「无信号不留位」的口径）。
+    if (!a || !b) return ''
+    return String(t('rivalFeed.detail.velocityMeasured'))
+      .replace('{t1}', a)
+      .replace('{t2}', b)
+  }
+  if (confidence === 'average') return String(t('rivalFeed.detail.velocityAverage'))
+  if (confidence === 'relative') return String(t('rivalFeed.detail.velocityRelative'))
+  return ''
+}
+import { isSafeExternalUrl, openExternalUrl } from './open-url.js'
+import { RivalPlatformMark } from './RivalPlatformMark.jsx'
+import { rivalEmbedAspectRatio, rivalEmbedIsCard, rivalEmbedUrl } from './rival-embed.js'
+
+const ICON_EXTERNAL = (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+    <path d="M14 4h6v6M20 4 11 13" />
+    <path d="M18 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5" />
+  </svg>
+)
+
+const ICON_REPLICATE = (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+    <rect x="8" y="8" width="12" height="12" rx="2" />
+    <path d="M4 16V6a2 2 0 0 1 2-2h10" />
+  </svg>
+)
+
+/**
+ * @param {{
+ *   row: Record<string, any>,
+ *   t: (key: string) => string,
+ *   busy: boolean,
+ *   onClose: () => void,
+ *   onReplicate: (row: Record<string, any>) => void,
+ * }} props
+ */
+export function RivalPostPreviewModal(props) {
+  const { row, t, busy, onClose, onReplicate } = props
+  if (!row) return null
+
+  const account = row.account || {}
+  // The grid hands this dialog the card descriptor, which carries the cover
+  // under both `cover_src` and `cover_key`; a raw feed row only has cover_src.
+  const cover = hostMediaSrc(row.cover_src || row.cover_key || '')
+  // The grid hands this dialog a card descriptor, whose original-post field is
+  // `source_url`; `url` is what a raw feed row calls it.
+  const originalUrl = String(row.source_url || row.url || '')
+  const locale = rivalLocaleOf(t)
+  const stats = row.stats || {}
+  const duration = formatDuration(row.duration)
+  const author = String(account.nickname || account.handle || '')
+  const handle = String(account.handle || '')
+  const vNote = velocityNote(row, t)
+  const embedUrl = rivalEmbedUrl(row)
+  const playerRatio = rivalEmbedAspectRatio(row)
+  const cardEmbed = rivalEmbedIsCard(row)
+  const platform = String(account.platform || row.source_platform || '')
+  const platformLabel = t(`platform.${platform === 'twitter' ? 'x' : platform}`)
+
+  return (
+    <ModalDialog
+      open
+      size="lg"
+      contentClassName="omnimux-rival-detail-content"
+      onClose={onClose}
+      title={t('rivalFeed.detail.title')}
+      closeLabel={t('rivalFeed.detail.close')}
+      footer={(
+        <>
+          <Button variant="outline" onClick={onClose}>{t('rivalFeed.detail.close')}</Button>
+          {isSafeExternalUrl(originalUrl) ? (
+            <Button
+              variant="outline"
+              leadingIcon={ICON_EXTERNAL}
+              onClick={() => openExternalUrl(originalUrl)}
+            >
+              {t('rivalFeed.detail.original')}
+            </Button>
+          ) : null}
+          <Button
+            variant="primary"
+            leadingIcon={ICON_REPLICATE}
+            loading={busy}
+            disabled={busy}
+            onClick={() => onReplicate(row)}
+          >
+            {t('rivalFeed.detail.replicate')}
+          </Button>
+        </>
+      )}
+    >
+      <div className="omnimux-rival-detail">
+        <div
+          className={`omnimux-rival-detail-cover${embedUrl ? ' is-player' : ''}${embedUrl && cardEmbed ? ' is-card' : ''}`}
+          style={embedUrl && !cardEmbed ? { aspectRatio: String(playerRatio), '--player-ratio': String(playerRatio) } : undefined}
+        >
+          {embedUrl ? (
+            <iframe
+              className="omnimux-rival-detail-player-frame"
+              src={embedUrl}
+              title={`${author || t('rivalFeed.detail.title')} · ${platformLabel}`}
+              loading="lazy"
+              allow="encrypted-media; picture-in-picture; fullscreen"
+              scrolling="auto"
+              allowFullScreen
+              referrerPolicy="strict-origin-when-cross-origin"
+            />
+          ) : cover ? <img src={cover} alt="" loading="lazy" /> : null}
+          {!embedUrl && duration ? <span className="omnimux-rival-detail-duration">{duration}</span> : null}
+        </div>
+        <div className="omnimux-rival-detail-body">
+          <p className="omnimux-rival-detail-title">{row.title || row.url || row.id}</p>
+          <div className="omnimux-rival-detail-author">
+            <RivalPlatformMark platform={account.platform || row.source_platform} />
+            <span>{author}</span>
+            {handle ? <span className="omnimux-rival-detail-handle">{handle}</span> : null}
+          </div>
+          <div className="omnimux-rival-detail-stats">
+            {[
+              ['rivalAccounts.post.views', stats.views],
+              ['rivalAccounts.post.likes', stats.likes],
+              ['rivalAccounts.post.comments', stats.comments],
+              ['rivalAccounts.post.shares', stats.shares],
+            ].map(([labelKey, value]) => (
+              <span key={labelKey} className="omnimux-rival-detail-stat">
+                <span className="omnimux-rival-detail-stat-label">{t(labelKey)}</span>
+                <span className="omnimux-rival-detail-stat-value">{formatCount(value, locale)}</span>
+              </span>
+            ))}
+          </div>
+          {vNote ? (
+            <p className="omnimux-rival-detail-velocity">{vNote}</p>
+          ) : null}
+          {row.posted_at ? (
+            <p className="omnimux-rival-detail-time">
+              {t('rivalFeed.detail.postedAt')}
+              {`: ${formatRelativeTime(row.posted_at, Date.now(), locale)}`}
+            </p>
+          ) : null}
+        </div>
+      </div>
+    </ModalDialog>
+  )
+}

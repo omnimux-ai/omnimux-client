@@ -1,0 +1,453 @@
+import { createReadStream, existsSync, statSync } from 'node:fs'
+import { join } from 'node:path'
+import {
+  handleAnalyze,
+  handleBatchDelete,
+  handleCreate,
+  handleDeleteItem,
+  handleFetchMedia,
+  handleGetItem,
+  handleImportUrl,
+  handleList,
+  handlePatchItem,
+  handleShare,
+  handleTranslate,
+} from './http-handlers.js'
+import { handleCollectionRequest } from './collection-handlers.js'
+import { handleCapture } from './capture-handler.js'
+import {
+  handleCaptureCommit,
+  handleCaptureMediaChunk,
+  handleCaptureMediaSession,
+} from './capture-relay.js'
+import { handleRadarKeywords, handleRadarMatch } from './radar/radar-handlers.js'
+import { handleSaveCreationDraft, handlePrepareCreationReferences, handleMaterializeCreationReferences } from './creation-handlers.js'
+import { detectPlatformFromUrl } from './url-normalizer.js'
+
+export { detectPlatformFromUrl } from './url-normalizer.js'
+
+export const LOCAL_PREFIX = '/omnimux/inspiration/local'
+
+const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1'])
+const EXTENSION_PROTOCOLS = new Set(['chrome-extension:', 'moz-extension:', 'safari-web-extension:'])
+
+const CODE_MESSAGES = {
+  'needs-omnimux': '需要登录 OmniMux 账号，请在 设置 → 个人资料 中登录',
+}
+
+const MEDIA_TYPES = {
+  mp4: 'video/mp4',
+  webm: 'video/webm',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+}
+
+const COLLECTION_ROUTES = { GET: 'list', POST: 'create' }
+const ITEM_ROUTES = { GET: 'get', PATCH: 'patch', DELETE: 'delete' }
+const ROUTE_HANDLERS = {
+  list: handleList,
+  create: handleCreate,
+  'import-url': handleImportUrl,
+  'fetch-media': handleFetchMedia,
+  capture: handleCapture,
+  'capture-media-session': handleCaptureMediaSession,
+  'capture-media-chunk': handleCaptureMediaChunk,
+  'capture-commit': handleCaptureCommit,
+  analyze: handleAnalyze,
+  translate: handleTranslate,
+  'creation-draft': handleSaveCreationDraft,
+  'creation-reference': handlePrepareCreationReferences,
+  'creation-attachments': handleMaterializeCreationReferences,
+  share: handleShare,
+  'batch-delete': handleBatchDelete,
+  'radar-keywords': handleRadarKeywords,
+  'radar-match': handleRadarMatch,
+  get: handleGetItem,
+  patch: handlePatchItem,
+  delete: handleDeleteItem,
+  collections: handleCollectionRequest,
+}
+
+function extractObjectMessage(obj) {
+  const code = typeof obj.code === 'string' ? obj.code : ''
+  let msg = ''
+  if (typeof obj.message === 'string') msg = obj.message
+  else if (typeof obj.error === 'string') msg = obj.error
+  if (CODE_MESSAGES[code]) return CODE_MESSAGES[code]
+  // Configuration errors can describe a pending service, a user provider or
+  // official credentials. Keep the execution hub's cause instead of guessing
+  // that every failure means an absent official API key.
+  if (code.startsWith('official-') || ['omnimux-unconfigured', 'analysis-service-unconfigured'].includes(code)) {
+    return msg || '分析服务尚未配置，请检查所选服务'
+  }
+  if (code && msg) return `[${code}] ${msg}`
+  if (msg) return msg
+  if (code) return `[${code}]`
+  return stringifyUnknown(obj)
+}
+
+function stringifyUnknown(obj) {
+  try {
+    const serialized = JSON.stringify(obj)
+    if (serialized && serialized !== '{}') return serialized
+  } catch {
+    return ''
+  }
+  return ''
+}
+
+/** Format any thrown error / object safely without [object Object]. */
+export function formatErrorMessage(err) {
+  if (!err) return '未知错误'
+  if (typeof err === 'string') return err
+  if (typeof err === 'object') {
+    const extracted = extractObjectMessage(err)
+    if (extracted) return extracted
+  }
+  return String(err)
+}
+
+
+function parseJsonChunk(raw) {
+  if (!raw.trim()) {
+    return {}
+  }
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Read a JSON body, releasing listeners even if its connection ends mid-upload.
+ * @param {import('node:http').IncomingMessage} req
+ * @param {{ signal?: AbortSignal }} [options]
+ */
+export async function readJsonBody(req, { signal } = {}) {
+  return new Promise((resolve, reject) => {
+    let raw = ''
+    const finish = (value, error) => {
+      req.off('data', onData)
+      req.off('end', onEnd)
+      req.off('error', onError)
+      signal?.removeEventListener('abort', onAbort)
+      if (error) reject(error)
+      else resolve(value)
+    }
+    const onAbort = () => finish(undefined, signal.reason)
+    const onEnd = () => finish(parseJsonChunk(raw))
+    const onError = () => finish(null)
+    const onData = (chunk) => {
+      raw += chunk
+      if (raw.length > 2 * 1024 * 1024) finish(null)
+    }
+    if (signal?.aborted) {
+      onAbort()
+      return
+    }
+    req.setEncoding('utf8')
+    req.on('data', onData)
+    req.on('end', onEnd)
+    req.on('error', onError)
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+/** Send JSON HTTP response. Local inspiration data is same-origin only; only the preflight may advertise CORS. */
+export function sendJson(res, status, payload, corsOrigin = '') {
+  const json = JSON.stringify(payload)
+  /** @type {Record<string, string>} */
+  const headers = {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': String(Buffer.byteLength(json)),
+  }
+  if (corsOrigin !== '') {
+    headers['Access-Control-Allow-Origin'] = corsOrigin
+    headers['Access-Control-Allow-Headers'] = '*'
+    headers['Access-Control-Allow-Methods'] = 'GET, POST, PATCH, DELETE, OPTIONS'
+    Object.assign(headers, { 'Access-Control-Allow-Private-Network': 'true' })
+  }
+  res.writeHead(status, headers)
+  res.end(json)
+}
+
+/**
+ * Reject foreign and same-site write requests before they reach the local
+ * library. Missing Origin stays valid for native/curl callers; a browser
+ * request from another localhost port carries `Sec-Fetch-Site: same-site` and
+ * must not inherit the app's local write permission.
+ * @param {{ headers?: Record<string, string | string[] | undefined>, socket?: { encrypted?: boolean } }} req
+ */
+export function assertLocalWrite(req) {
+  const headers = req?.headers ?? {}
+  const site = String(headers['sec-fetch-site'] || '').toLowerCase()
+  if (site === 'cross-site' || site === 'same-site') throw new Error('cross-origin write refused')
+  const rawOrigin = headers.origin || headers.referer
+  if (!rawOrigin) return
+  if (rawOrigin === 'null') throw new Error('cross-origin write refused')
+  let actual
+  try {
+    actual = new URL(rawOrigin)
+  } catch {
+    throw new Error('cross-origin write refused')
+  }
+  if (EXTENSION_PROTOCOLS.has(actual.protocol)) return
+  if (!LOCAL_HOSTS.has(actual.hostname)) throw new Error('cross-origin write refused')
+  const host = headers.host
+  if (host) {
+    const expected = new URL(`${req.socket?.encrypted ? 'https' : 'http'}://${host}`)
+    if (actual.origin !== expected.origin) throw new Error('cross-origin write refused')
+  }
+}
+
+function isCollectionPath(path) {
+  return path === LOCAL_PREFIX || path === `${LOCAL_PREFIX}/`
+}
+
+function parseActionId(path, action) {
+  const suffix = `/${action}`
+  if (!path.startsWith(`${LOCAL_PREFIX}/`) || !path.endsWith(suffix)) return ''
+  return decodeURIComponent(path.slice(`${LOCAL_PREFIX}/`.length, -suffix.length))
+}
+
+function parseItemId(path) {
+  if (!path.startsWith(`${LOCAL_PREFIX}/`) || path === LOCAL_PREFIX) return ''
+  const id = decodeURIComponent(path.slice(`${LOCAL_PREFIX}/`.length))
+  if (!id || id.includes('/')) return ''
+  return id
+}
+
+function notFoundRoute() {
+  return { name: 'not-found' }
+}
+
+function matchCollection(method, path) {
+  if (!isCollectionPath(path)) return null
+  const name = COLLECTION_ROUTES[method]
+  return name ? { name } : notFoundRoute()
+}
+
+const SPECIAL_PATHS = {
+  [`${LOCAL_PREFIX}/import-url`]: { POST: 'import-url' },
+  [`${LOCAL_PREFIX}/fetch-media`]: { POST: 'fetch-media' },
+  [`${LOCAL_PREFIX}/capture`]: { POST: 'capture' },
+  [`${LOCAL_PREFIX}/capture-media-session`]: { POST: 'capture-media-session' },
+  [`${LOCAL_PREFIX}/capture-media-chunk`]: { POST: 'capture-media-chunk' },
+  [`${LOCAL_PREFIX}/capture-commit`]: { POST: 'capture-commit' },
+  [`${LOCAL_PREFIX}/batch-delete`]: { POST: 'batch-delete', DELETE: 'batch-delete' },
+  [`${LOCAL_PREFIX}/radar/keywords`]: { POST: 'radar-keywords' },
+  [`${LOCAL_PREFIX}/radar/match`]: { POST: 'radar-match' },
+}
+
+function matchAnalyze(method, path) {
+  if (method !== 'POST') return null
+  for (const name of ['creation-draft', 'creation-reference', 'creation-attachments']) {
+    const id = parseActionId(path, name)
+    if (id) return { name, id }
+  }
+  const analyzeId = parseActionId(path, 'analyze')
+  if (analyzeId) return { name: 'analyze', id: analyzeId }
+  const translateId = parseActionId(path, 'translate')
+  if (translateId) return { name: 'translate', id: translateId }
+  const shareId = parseActionId(path, 'share')
+  if (shareId) return { name: 'share', id: shareId }
+  return null
+}
+
+function matchSpecial(method, path) {
+  const table = SPECIAL_PATHS[path]
+  if (table) {
+    const name = table[method]
+    return name ? { name } : notFoundRoute()
+  }
+  return matchAnalyze(method, path)
+}
+
+function matchItem(method, path) {
+  const id = parseItemId(path)
+  const name = id ? ITEM_ROUTES[method] : ''
+  if (!name) return notFoundRoute()
+  return { name, id }
+}
+
+function matchRoute(method, path) {
+  const prefix = `${LOCAL_PREFIX}/collections`
+  if (path === prefix || path.startsWith(`${prefix}/`)) return { name: 'collections' }
+  return matchCollection(method, path) || matchSpecial(method, path) || matchItem(method, path)
+}
+
+async function dispatchRequest(ctx, req) {
+  const method = (req.method || 'GET').toUpperCase()
+  const rawPath = req.url || LOCAL_PREFIX
+  const url = new URL(rawPath, 'http://127.0.0.1')
+  // The rival prefix lives *under* `LOCAL_PREFIX`, so it has to be claimed
+  // before the inspiration route table runs: `matchItem` reads the segment
+  // after `/local/` as an item id, so every `/rival-accounts...` path would
+  // resolve to the item route's `not found`.
+  if (typeof ctx.rivalDispatcher?.dispatch === 'function' && ctx.rivalDispatcher.owns?.(url.pathname) === true) {
+    return ctx.rivalDispatcher.dispatch({ method, url, body: req.body })
+  }
+  const route = matchRoute(method, url.pathname)
+  const args = { ...ctx, req, url, id: route.id, signal: req.signal }
+  try {
+    return await runRoute(route.name, args)
+  } catch (error) {
+    if (error?.name === 'AbortError' || error?.code === 'ABORT_ERR') {
+      return { status: 499, body: { error: 'aborted' } }
+    }
+    const status = error.status || 500
+    const message = error.message || String(error)
+    return { status, body: { error: message } }
+  }
+}
+
+function createDispatch(ctx) {
+  return (req) => dispatchRequest(ctx, req)
+}
+
+async function streamLocalMedia(paths, req, res) {
+  const url = new URL(req.url || LOCAL_PREFIX, 'http://127.0.0.1')
+  const prefix = `${LOCAL_PREFIX}/media/`
+  if (!url.pathname.startsWith(prefix)) {
+    sendJson(res, 404, { error: 'not found' })
+    return
+  }
+  const subpath = url.pathname.slice(prefix.length)
+  if (!subpath || subpath.includes('..')) {
+    sendJson(res, 400, { error: 'invalid path' })
+    return
+  }
+  const filePath = join(paths.mediaDir, subpath)
+  if (!existsSync(filePath)) {
+    sendJson(res, 404, { error: 'file not found' })
+    return
+  }
+  pipeMedia(req, res, filePath)
+}
+
+function createStreamer(paths) {
+  return (req, res) => streamLocalMedia(paths, req, res)
+}
+
+async function runRoute(name, args) {
+  const handler = ROUTE_HANDLERS[name]
+  if (!handler) return { status: 404, body: { error: 'not found' } }
+  return handler(args)
+}
+
+function pipeMedia(req, res, filePath) {
+  const stat = statSync(filePath)
+  const fileSize = stat.size
+  const mtimeMs = Math.floor(stat.mtimeMs || (stat.mtime ? stat.mtime.getTime() : 0))
+  const etag = `W/"${fileSize.toString(16)}-${mtimeMs.toString(16)}"`
+  const range = req.headers?.range || req.headers?.Range
+  const ext = filePath.split('.').pop()?.toLowerCase() || ''
+  const contentType = MEDIA_TYPES[ext] || 'application/octet-stream'
+
+  const ifNoneMatch = req.headers?.['if-none-match'] || req.headers?.['If-None-Match']
+  if (ifNoneMatch && ifNoneMatch === etag) {
+    res.writeHead(304, {
+      ETag: etag,
+      'Cache-Control': 'public, max-age=31536000, immutable',
+    })
+    res.end()
+    return
+  }
+
+  if (typeof range === 'string') {
+    pipeRange({ res, filePath, fileSize, range, contentType, etag })
+    return
+  }
+  res.writeHead(200, {
+    'Content-Length': fileSize,
+    'Content-Type': contentType,
+    'Accept-Ranges': 'bytes',
+    ETag: etag,
+    'Cache-Control': 'public, max-age=31536000, immutable',
+  })
+  createReadStream(filePath).pipe(res)
+}
+
+function pipeRange(opts) {
+  const parts = opts.range.replace(/bytes=/, '').split('-')
+  const start = parseInt(parts[0], 10)
+  const end = parts[1] ? parseInt(parts[1], 10) : opts.fileSize - 1
+  const file = createReadStream(opts.filePath, { start, end })
+  const headers = {
+    'Content-Range': `bytes ${start}-${end}/${opts.fileSize}`,
+    'Accept-Ranges': 'bytes',
+    'Content-Length': (end - start) + 1,
+    'Content-Type': opts.contentType,
+    'Cache-Control': 'public, max-age=31536000, immutable',
+  }
+  if (opts.etag) headers.ETag = opts.etag
+  opts.res.writeHead(206, headers)
+  file.pipe(opts.res)
+}
+
+/**
+ * Create dispatcher for inspiration local endpoints.
+ *
+ * `deps.rivalDispatcher` is the module that owns the rival prefix. It is
+ * consulted *first* (see `dispatchRequest`) and needs a `owns(pathname)`
+ * predicate plus a `dispatch({ method, url, body })` method; passing it in
+ * keeps this file free of any import from the rival module while still making
+ * this dispatcher the single router for everything under `LOCAL_PREFIX`.
+ * @param {{
+ *   localStore: any,
+ *   socialFetcher?: Function,
+ *   videoAnalyzeTool?: any,
+ *   textComplete?: any,
+ *   videoProcess?: (() => {execute: Function} | undefined) | {execute: Function},
+ *   composerAttachments?: (() => object | undefined) | object,
+ *   fetcher?: typeof fetch,
+ *   resolver?: Function,
+ *   analyzeInspiration?: Function,
+ *   rivalDispatcher?: { owns: (pathname: string) => boolean, dispatch: Function },
+ *   inspirationShare?: () => { publishLocal: Function } | undefined,
+ * }} deps
+ */
+export function createLocalInspirationDispatcher(deps) {
+  const store = deps.localStore
+  const paths = store.paths
+  const fetcher = deps.fetcher ?? fetch
+  const ctx = {
+    store,
+    paths,
+    socialFetcher: deps.socialFetcher,
+    videoAnalyzeTool: deps.videoAnalyzeTool,
+    textComplete: deps.textComplete,
+    videoProcess: deps.videoProcess,
+    composerAttachments: deps.composerAttachments,
+    fetcher,
+    // Forwarded to the download target check. Left undefined in production so the
+    // real `dns.lookup` is used; tests inject a stub to stay offline.
+    resolver: deps.resolver,
+    // Export destination and the audio extractor, both left undefined in
+    // production: the platform Downloads folder and the real ffmpeg are the
+    // correct defaults, and a test that reached either one would be writing to
+    // the developer's own machine.
+    downloadsDir: deps.downloadsDir,
+    runFfmpeg: deps.runFfmpeg,
+    // Also undefined in production, where `maybeAnalyze` calls the real analyzer.
+    // The analyzer degrades to a local breakdown instead of reporting failure, so
+    // its failure branch is unreachable from a test through any other seam — an
+    // injected one is the only way to hold the "stored item keeps its video and
+    // records the reason" contract.
+    analyzeInspiration: deps.analyzeInspiration,
+    rivalDispatcher: deps.rivalDispatcher,
+    // The hub's publish capability, resolved per request: a plugin loaded after
+    // this one still gets picked up, and a missing one is reported instead of
+    // silently skipping the share.
+    inspirationShare: deps.inspirationShare,
+    detectPlatformFromUrl,
+    formatErrorMessage,
+  }
+  return {
+    dispatch: createDispatch(ctx),
+    streamLocalMedia: createStreamer(paths),
+  }
+}

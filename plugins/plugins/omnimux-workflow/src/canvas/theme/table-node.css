@@ -1,0 +1,1082 @@
+/**
+ * omnimux-workflow - Table Node & Fullscreen Spreadsheet Stage Styles
+ * 严格遵循 --wb-* 设计变量体系，适配浅色与深色主题
+ */
+
+/* ==================== 1. 画布缩略卡片态 (Canvas Preview Node) ==================== */
+
+.wf-table-node {
+  position: relative;
+  user-select: none;
+}
+
+.wf-table-node__header {
+  position: absolute;
+  top: -30px;
+  left: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--wb-fs-title, 14px);
+  font-weight: 600;
+  color: var(--wb-text-primary, #1a1d26);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.wf-table-node__header-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--wb-text-secondary, #5f6472);
+  stroke-width: 2;
+}
+
+.wf-table-node__actions {
+  position: absolute;
+  top: -46px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--wb-surface, #ffffff);
+  border: 1px solid var(--wb-border, rgba(15, 20, 32, 0.08));
+  border-radius: var(--wb-header-radius, 16px);
+  padding: 4px 8px;
+  box-shadow: var(--wb-shadow-card, 0 8px 24px rgba(15, 20, 32, 0.06));
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease;
+  z-index: 20;
+}
+
+.wf-table-node:hover .wf-table-node__actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.wf-table-node__action-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--wb-pill-radius, 8px);
+  border: none;
+  background: transparent;
+  color: var(--wb-text-secondary, #5f6472);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.wf-table-node__action-btn:hover {
+  background: var(--wb-pill-bg, #f2f3f5);
+  color: var(--wb-text-primary, #1a1d26);
+}
+
+.wf-table-node__card {
+  width: 520px;
+  min-height: 270px;
+  background: var(--wb-surface, #ffffff);
+  border: 2px solid var(--wb-text-primary, #1a1d26);
+  border-radius: var(--wb-node-radius, 20px);
+  box-shadow: var(--wb-shadow-card, 0 8px 24px rgba(15, 20, 32, 0.06));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  cursor: default;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.wf-table-node__card--selected {
+  border-color: var(--wb-node-ring, #000000);
+  box-shadow:
+    inset 0 0 0 2px var(--wb-node-ring, #000000),
+    var(--wb-shadow-card-hover);
+}
+
+.wf-table-node__card-head {
+  background: var(--wb-pill-bg, #f2f3f5);
+  border-bottom: 1px solid var(--wb-border, rgba(15, 20, 32, 0.08));
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--wb-fs-body, 13px);
+  font-weight: 500;
+  color: var(--wb-text-primary, #1a1d26);
+}
+
+.wf-table-node__card-body {
+  flex: 1;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 180px;
+}
+
+.wf-table-node__empty-state {
+  text-align: center;
+  color: var(--wb-text-muted, #9aa0ae);
+  font-size: var(--wb-fs-body, 13px);
+}
+
+.wf-table-node__preview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.wf-table-node__preview-item {
+  padding: 8px 12px;
+  background: var(--wb-bg, #f7f8fa);
+  border: 1px solid var(--wb-border, rgba(15, 20, 32, 0.08));
+  border-radius: var(--wb-pill-radius, 8px);
+  font-size: var(--wb-fs-body, 13px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--wb-text-primary, #1a1d26);
+}
+
+.wf-table-node__corner-handle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: var(--wb-surface, #ffffff);
+  border: 1.5px solid var(--wb-node-ring, #000000);
+  pointer-events: none;
+}
+.wf-table-node__corner-handle--nw { top: -4px; left: -4px; }
+.wf-table-node__corner-handle--ne { top: -4px; right: -4px; }
+.wf-table-node__corner-handle--sw { bottom: -4px; left: -4px; }
+.wf-table-node__corner-handle--se { bottom: -4px; right: -4px; }
+
+
+/* ==================== 2. 全屏独立电子表格舞台 (Spreadsheet Stage) ==================== */
+
+.wf-stage-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1000;
+  background: var(--wb-surface, #18181b);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: none;
+  font-family: var(--wb-font-family);
+  animation: wf-stage-fade-in 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes wf-stage-fade-in {
+  from { opacity: 0; transform: scale(0.99); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.wf-stage-topbar {
+  height: 52px;
+  border-bottom: 1px solid var(--wb-border, rgba(255, 255, 255, 0.08));
+  background: var(--wb-surface, #18181b);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 40;
+}
+
+.wf-stage-topbar__left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.wf-stage-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--wb-pill-radius, 8px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: #f4f4f5;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 120ms ease;
+  font-family: inherit;
+  user-select: none;
+}
+
+.wf-stage-back-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: var(--wb-accent, #4176E6);
+}
+
+.wf-stage-back-btn:active {
+  transform: scale(0.98);
+}
+
+.wf-stage-close-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.wf-stage-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wf-stage-title-icon {
+  color: var(--wb-accent, #165dff);
+  flex-shrink: 0;
+}
+
+.wf-stage-title-input {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--wb-text-primary, #1a1d26);
+  border: 1px solid transparent;
+  padding: 4px 8px;
+  border-radius: var(--wb-pill-radius, 8px);
+  background: transparent;
+  outline: none;
+  transition: all 120ms ease;
+  font-family: inherit;
+  min-width: 140px;
+}
+
+.wf-stage-title-input:hover {
+  background: var(--wb-bg, #f7f8fa);
+  border-color: var(--wb-border, rgba(15, 20, 32, 0.08));
+}
+
+.wf-stage-title-input:focus {
+  background: var(--wb-surface, #ffffff);
+  border-color: var(--wb-accent, #165dff);
+  box-shadow: 0 0 0 2px var(--wb-accent-soft, rgba(22, 93, 255, 0.15));
+}
+
+.wf-stage-topbar__right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+}
+
+.wf-stage-btn-wrapper {
+  position: relative;
+}
+
+.wf-stage-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--wb-pill-radius, 8px);
+  border: none;
+  background: var(--wb-pill-bg, #f2f3f5);
+  font-size: var(--wb-fs-body, 13px);
+  font-weight: 500;
+  color: var(--wb-text-primary, #1a1d26);
+  cursor: pointer;
+  position: relative;
+  transition: background 120ms ease, color 120ms ease;
+  font-family: inherit;
+}
+
+.wf-stage-pill-btn:hover {
+  background: var(--wb-pill-hover, #e5e6eb);
+}
+
+.wf-stage-pill-btn--active {
+  background: var(--wb-pill-hover, #dcdfe6);
+}
+
+.wf-stage-dot-badge {
+  width: 6px;
+  height: 6px;
+  background: var(--wb-accent, #165dff);
+  border-radius: 50%;
+  position: absolute;
+  top: 5px;
+  right: 5px;
+}
+
+.wf-stage-icon-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--wb-pill-radius, 8px);
+  border: none;
+  background: transparent;
+  color: var(--wb-text-secondary, #5f6472);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.wf-stage-icon-btn:hover:not(:disabled) {
+  background: var(--wb-pill-bg, #f2f3f5);
+  color: var(--wb-text-primary, #1a1d26);
+}
+
+.wf-stage-icon-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.wf-stage-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--wb-border, rgba(15, 20, 32, 0.08));
+  margin: 0 4px;
+}
+
+
+/* ==================== 3. 弹层面板 (Popovers) ==================== */
+
+.wf-popover-card {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  left: auto;
+  background: rgba(24, 24, 27, 0.96);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--wb-header-radius, 16px);
+  box-shadow: 0 16px 40px -4px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
+  box-sizing: border-box;
+  max-width: calc(100vw - 32px);
+  animation: wf-popover-in 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes wf-popover-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.wf-popover-title {
+  padding: 14px 18px 12px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #f4f4f5;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* 字段配置面板 */
+.wf-popover-field-config {
+  width: 320px;
+}
+
+.wf-field-config-list {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 360px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.wf-field-config-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--wb-pill-radius, 8px);
+  transition: all 120ms ease;
+}
+
+.wf-field-config-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.wf-field-config-subtle-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #a1a1aa;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 120ms ease;
+}
+
+.wf-field-config-subtle-btn:hover,
+.wf-field-config-subtle-btn--active {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.wf-popover-context-bubble {
+  position: fixed;
+  width: 100px;
+  background: rgba(32, 32, 38, 0.98);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.7);
+  z-index: 10010;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  animation: wf-popover-in 100ms ease-out;
+}
+
+.wf-context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #f4f4f5;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: all 120ms ease;
+  font-family: inherit;
+}
+
+.wf-context-menu-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.wf-context-menu-item--danger {
+  color: #ef4444;
+}
+.wf-context-menu-item--danger:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ff6b6b;
+}
+
+/* 筛选面板 */
+.wf-popover-filter {
+  width: 480px;
+}
+
+.wf-filter-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.wf-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+}
+
+.wf-filter-capsule-select.wf-custom-select-trigger,
+.wf-filter-row .wf-custom-select-trigger {
+  height: 34px;
+  width: 100%;
+  max-width: 100%;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 12px;
+  color: #f4f4f5;
+  box-sizing: border-box;
+}
+
+.wf-filter-row .wf-custom-select-trigger:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.wf-filter-capsule-input {
+  flex: 1;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 12px;
+  color: #f4f4f5;
+  outline: none;
+  transition: all 120ms ease;
+  min-width: 0;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+.wf-filter-capsule-input:focus {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--wb-accent, #4176E6);
+  box-shadow: 0 0 0 2px rgba(65, 118, 230, 0.25);
+}
+
+.wf-filter-capsule-input::placeholder {
+  color: #71717a;
+}
+
+/* 行高面板 */
+.wf-popover-row-height {
+  width: 180px;
+}
+
+.wf-row-height-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: #d4d4d8;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: all 120ms ease;
+  font-family: inherit;
+  width: 100%;
+}
+
+.wf-row-height-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffffff;
+}
+
+.wf-row-height-item--selected {
+  font-weight: 600;
+  background: color-mix(in srgb, var(--wb-node-ring) 12%, transparent);
+  color: var(--wb-text-primary);
+}
+
+
+/* ==================== 4. 电子表格网格区 (DataGrid) ==================== */
+
+.wf-grid-container {
+  flex: 1;
+  overflow: auto;
+  background: var(--wb-surface, #18181b);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.wf-grid-scroll-pane {
+  flex: 1;
+  overflow: auto;
+  min-width: 100%;
+  position: relative;
+}
+
+.wf-grid-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: var(--wb-fs-body, 13px);
+  color: var(--wb-text-primary, #f4f4f5);
+}
+
+.wf-grid-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--wb-bg, #141416);
+}
+
+.wf-grid-th {
+  border-bottom: 1px solid var(--wb-border, rgba(255, 255, 255, 0.08));
+  border-right: 1px solid var(--wb-border, rgba(255, 255, 255, 0.08));
+  height: 38px;
+  padding: 0;
+  text-align: left;
+  font-weight: 500;
+  color: var(--wb-text-secondary, #a1a1aa);
+  background: var(--wb-bg, #141416);
+  position: relative;
+  user-select: none;
+  box-sizing: border-box;
+}
+
+.wf-grid-th-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  height: 100%;
+  min-width: 0;
+}
+
+.wf-grid-th-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--wb-text-muted, #71717a);
+  flex-shrink: 0;
+}
+
+.wf-grid-th-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--wb-text-primary, #f4f4f5);
+}
+
+.wf-grid-th--select {
+  width: 48px;
+  text-align: center;
+}
+
+.wf-grid-checkbox {
+  cursor: pointer;
+  accent-color: var(--wb-accent, #4176E6);
+}
+
+.wf-grid-th--plus {
+  width: 44px;
+  text-align: center;
+  cursor: pointer;
+  color: var(--wb-text-muted, #71717a);
+  transition: all 120ms ease;
+}
+
+.wf-grid-th-plus-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+}
+
+.wf-grid-th--plus:hover {
+  background: var(--wb-pill-bg, rgba(255, 255, 255, 0.06));
+  color: var(--wb-text-primary, #ffffff);
+}
+
+.wf-grid-th--filler {
+  border-right: none;
+}
+
+.wf-grid-td {
+  border-bottom: 1px solid var(--wb-border, rgba(255, 255, 255, 0.08));
+  border-right: 1px solid var(--wb-border, rgba(255, 255, 255, 0.08));
+  padding: 0;
+  margin: 0;
+  color: var(--wb-text-primary, #f4f4f5);
+  vertical-align: middle;
+  background: var(--wb-surface, #18181b);
+  position: relative;
+  box-sizing: border-box;
+}
+
+.wf-grid-table tr:hover .wf-grid-td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.wf-grid-td--select {
+  text-align: center;
+  color: var(--wb-text-muted, #71717a);
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  background: var(--wb-surface-raised, #1b1b1e);
+  user-select: none;
+}
+
+.wf-grid-td--plus-col {
+  background: var(--wb-bg, #141416);
+}
+
+.wf-grid-td--filler {
+  border-right: none;
+}
+
+/* 4 档行高高度规范 */
+.wf-grid-row--low .wf-grid-td { height: 36px; }
+.wf-grid-row--medium .wf-grid-td { height: 48px; }
+.wf-grid-row--tall .wf-grid-td { height: 72px; }
+.wf-grid-row--extraTall .wf-grid-td { height: 120px; }
+
+/* 单元格电子表格标准无缝编辑输入框 */
+.wf-grid-cell-input {
+  width: 100%;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  padding: 0 12px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--wb-text-primary, #f4f4f5);
+  box-sizing: border-box;
+  margin: 0;
+  border-radius: 0;
+  transition: box-shadow 100ms ease, background 100ms ease;
+}
+
+.wf-grid-cell-input:hover:not(:focus) {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.wf-grid-cell-input:focus {
+  background: color-mix(in srgb, var(--wb-node-ring) 8%, transparent);
+  box-shadow: inset 0 0 0 2px var(--wb-node-ring);
+}
+
+.wf-grid-cell-input::placeholder {
+  color: var(--wb-text-muted, #71717a);
+  opacity: 0.5;
+}
+
+/* 附件单元格 */
+.wf-grid-cell-attachment {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  height: 100%;
+  overflow-x: auto;
+}
+
+.wf-grid-attachment-thumb-wrapper {
+  position: relative;
+  height: 26px;
+  width: auto;
+  min-width: 22px;
+  max-width: 48px;
+  border-radius: 4px;
+  overflow: visible;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+.wf-grid-attachment-thumb-img {
+  width: auto;
+  height: 100%;
+  max-width: 48px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(0, 0, 0, 0.3);
+  display: block;
+}
+
+.wf-grid-attachment-thumb-fallback {
+  width: 26px;
+  height: 100%;
+  min-width: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--wb-text-secondary, #a1a1aa);
+  font-size: 11px;
+}
+
+.wf-grid-attachment-remove-btn {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgba(24, 24, 27, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  opacity: 0;
+  transition: all 120ms ease;
+  z-index: 2;
+}
+
+.wf-grid-attachment-thumb-wrapper:hover .wf-grid-attachment-remove-btn {
+  opacity: 0.9;
+}
+
+.wf-grid-attachment-remove-btn:hover {
+  opacity: 1;
+  transform: scale(1.15);
+  background: #ef4444;
+  border-color: #ef4444;
+}
+
+.wf-grid-attachment-append-btn {
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--wb-text-secondary, #a1a1aa);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 120ms ease;
+  padding: 0;
+}
+
+.wf-grid-attachment-append-btn:hover {
+  border-color: var(--wb-node-ring);
+  color: var(--wb-text-primary);
+  background: color-mix(in srgb, var(--wb-node-ring) 14%, transparent);
+}
+
+.wf-grid-attachment-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--wb-text-primary, #f4f4f5);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.wf-grid-attachment-empty {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--wb-text-muted, #71717a);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: color 120ms ease;
+}
+
+.wf-grid-attachment-empty:hover {
+  color: var(--wb-accent, #4176E6);
+}
+
+/* 附件放大预览悬浮卡片 (对齐参考图一与图二交互) */
+.wf-attachment-preview-card {
+  position: fixed;
+  z-index: 99999;
+  background: rgba(24, 24, 27, 0.98);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  width: 320px;
+  max-width: 360px;
+  pointer-events: none;
+  animation: wf-attachment-preview-in 120ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes wf-attachment-preview-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.wf-attachment-preview-header {
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #f4f4f5;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.wf-attachment-preview-body {
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  min-height: 120px;
+}
+
+.wf-attachment-preview-body img {
+  max-width: 304px;
+  max-height: 320px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 4px;
+  display: block;
+}
+
+/* 底部添加行按钮条 */
+.wf-grid-add-row-bar {
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--wb-border, rgba(255, 255, 255, 0.08));
+  background: var(--wb-surface, #18181b);
+}
+
+/* 类名避免 'add' 子串：宿主 button[class*="add"] 注入 !important 规则会改写尺寸/边框。 */
+.wf-grid-row-append-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid var(--wb-border, rgba(255, 255, 255, 0.12));
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--wb-text-secondary, #a1a1aa);
+  cursor: pointer;
+  transition: all 120ms ease;
+  font-family: inherit;
+}
+
+.wf-grid-row-append-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: var(--wb-text-primary, #f4f4f5);
+}
+
+.wf-grid-row-append-btn:active {
+  transform: scale(0.98);
+}
+
+
+/* ==================== 5. 【添加/编辑列】模态弹窗 (Modal) ==================== */
+
+.wf-modal-input {
+  width: 100%;
+  height: 38px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0 12px;
+  font-size: 13px;
+  color: #f4f4f5;
+  outline: none;
+  transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+.wf-modal-input:focus {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--wb-accent, #4176E6);
+  box-shadow: 0 0 0 2px rgba(65, 118, 230, 0.25);
+}
+
+.wf-modal-input::placeholder {
+  color: #71717a;
+}
+
+.wf-modal-select-wrapper {
+  width: 100%;
+}
+
+.wf-modal-custom-select.wf-custom-select-trigger,
+.wf-modal-select-wrapper .wf-custom-select-trigger {
+  width: 100%;
+  max-width: 100%;
+  height: 38px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: #f4f4f5;
+  padding: 0 12px;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.wf-modal-select-wrapper .wf-custom-select-trigger:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.wf-modal-select-wrapper .wf-custom-select-trigger--open {
+  border-color: var(--wb-node-ring);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--wb-node-ring) 20%, transparent);
+}
+
+.wf-modal-btn-primary {
+  height: 34px;
+  padding: 0 18px;
+  background: var(--wb-accent, #4176E6);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  transition: all 120ms ease;
+  font-family: inherit;
+}
+
+.wf-modal-btn-primary:hover {
+  background: var(--wb-accent-hover, #679EFE);
+  opacity: 0.95;
+}
+
+.wf-modal-btn-primary:active {
+  transform: scale(0.98);
+}
+
+.wf-modal-btn-cancel {
+  height: 34px;
+  padding: 0 16px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #d4d4d8;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 120ms ease;
+  font-family: inherit;
+}
+
+.wf-modal-btn-cancel:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.wf-modal-btn-cancel:active {
+  transform: scale(0.98);
+}

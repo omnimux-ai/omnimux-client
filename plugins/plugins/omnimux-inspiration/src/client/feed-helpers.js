@@ -1,0 +1,465 @@
+import { OFFICIAL_CATEGORIES } from '../gxgen-category-map.js'
+import {
+  batchDeleteLocalInspirations,
+  getInspirationCache,
+  getInspirationCacheGeneration,
+  loadInspirationsAtomic,
+  pickCoverSrc,
+  setInspirationCache,
+} from './api.js'
+import { zh } from './locales.js'
+
+/**
+ * Construct SWR-style cache key for inspiration query parameters.
+ * Shape: `insp:${tab}:${q}:${type}:${sort}:${favorite}(:${extra})*`
+ */
+export function cacheKeyOf(...args) {
+  const p = typeof args[0] === 'object' && args[0] !== null ? args[0] : {}
+  const tab = p.tab ?? args[0] ?? 'all'
+  const q = p.q ?? args[1] ?? ''
+  const type = p.type ?? args[2] ?? ''
+  const sort = p.sort ?? args[3] ?? 'hot'
+  const favorite = p.favorite ?? args[4] ?? '0'
+  const base = `insp:${tab || 'all'}:${q || ''}:${type || ''}:${sort || 'hot'}:${favorite ?? '0'}`
+
+  const extraParts = []
+  if (p.platform) extraParts.push(`plat=${p.platform}`)
+  if (p.country) extraParts.push(`c=${p.country}`)
+  if (p.category) extraParts.push(`cat=${p.category}`)
+  if (p.duration_min != null && p.duration_min !== '') extraParts.push(`dmin=${p.duration_min}`)
+  if (p.duration_max != null && p.duration_max !== '') extraParts.push(`dmax=${p.duration_max}`)
+  if (p.views_min != null && p.views_min !== '') extraParts.push(`vmin=${p.views_min}`)
+  if (p.views_max != null && p.views_max !== '') extraParts.push(`vmax=${p.views_max}`)
+  if (p.traffic_type) extraParts.push(`tt=${p.traffic_type}`)
+  if (p.posted_after) extraParts.push(`pafter=${p.posted_after}`)
+  if (p.posted_before) extraParts.push(`pbefore=${p.posted_before}`)
+  if (p.collection_id) extraParts.push(`collection=${p.collection_id}`)
+
+  if (extraParts.length > 0) {
+    return `${base}:${extraParts.join('&')}`
+  }
+  return base
+}
+
+/**
+ * Apply cached page payload to React state setters if available.
+ * Returns true if fresh cache was applied (caller can early-return).
+ */
+export function applyCachedPage(cached, setters) {
+  if (!cached || !cached.data) return false
+  const { setItems, setHasMore, setPhase, setLoading } = setters || {}
+  if (setItems) setItems(cached.data.items || [])
+  if (setHasMore) setHasMore(Boolean(cached.data.hasMore))
+  if (setPhase && cached.data.phase) setPhase(cached.data.phase)
+  if (setLoading) setLoading(false)
+  setters.setCollectionData?.(cached.data)
+  return !cached.isStale
+}
+
+function applyNextPageResult(result, targetPage, setters) {
+  const { setItems, setPage, setHasMore } = setters
+  if (setItems) setItems((prev) => [...prev, ...(result.items || [])])
+  if (setPage) setPage(targetPage)
+  if (setHasMore) setHasMore(Boolean(result.hasMore))
+}
+
+function applyFirstPageResult(result, cacheKey, setters, cacheGeneration) {
+  const { setItems, setPage, setHasMore, setPhase, setPlatforms } = setters
+  if (setItems) setItems(result.items || [])
+  if (setPage) setPage(1)
+  if (setHasMore) setHasMore(Boolean(result.hasMore))
+  if (setPhase && result.phase) setPhase(result.phase)
+  if (setPlatforms && Array.isArray(result.platforms)) setPlatforms(result.platforms)
+  if (cacheKey) setInspirationCache(cacheKey, result, cacheGeneration)
+}
+
+/**
+ * Merge newly fetched inspiration items into feed state and cache.
+ */
+export function mergeFetchResult(options) {
+  const { isNextPage, result, targetPage = 1, cacheKey, setters, cacheGeneration } = options || {}
+  if (!result || !setters) return
+  setters.setCollectionData?.(result)
+  if (isNextPage) {
+    applyNextPageResult(result, targetPage, setters)
+  } else {
+    applyFirstPageResult(result, cacheKey, setters, cacheGeneration)
+  }
+  if (setters.setError) setters.setError(null)
+}
+
+export function toggleIdInSet(prevSet, id) {
+  const next = new Set(prevSet)
+  if (next.has(id)) {
+    next.delete(id)
+  } else {
+    next.add(id)
+  }
+  return next
+}
+
+export function removeIdsFromSet(prevSet, idsToRemove) {
+  const next = new Set(prevSet)
+  const set = idsToRemove instanceof Set ? idsToRemove : new Set(idsToRemove)
+  for (const id of set) {
+    next.delete(id)
+  }
+  return next
+}
+
+export function filterOutItemsByIds(items, idsToRemove) {
+  const removedSet = idsToRemove instanceof Set ? idsToRemove : new Set(idsToRemove)
+  return (items || []).filter((it) => !removedSet.has(it.id))
+}
+
+export function extractLocalItemIds(items) {
+  return (items || []).filter((it) => it.is_local).map((it) => it.id)
+}
+
+/** Canonical locale key for a platform slug; `twitter` is an alias of `x`. */
+const PLATFORM_LOCALE_KEYS = {
+  x: 'x',
+  twitter: 'x',
+}
+
+/**
+ * Human-readable platform label.
+ *
+ * The `platform.<slug>` locale table is the only source of these names (the
+ * backend reads the same table), so no second table can drift from it. Anything
+ * self-registered keeps the first-letter-capitalized rule.
+ * @param {unknown} platform
+ * @param {(key: string) => string} [translate]
+ * @returns {string}
+ */
+export function formatPlatformName(platform, translate) {
+  const raw = typeof platform === 'string' ? platform.trim() : ''
+  if (!raw) return ''
+  const localeKey = PLATFORM_LOCALE_KEYS[raw.toLowerCase()] || raw.toLowerCase()
+  if (typeof translate === 'function') {
+    const messageKey = `platform.${localeKey}`
+    const localized = translate(messageKey)
+    if (typeof localized === 'string' && localized && localized !== messageKey) return localized
+  }
+  const fromLocale = zh[`platform.${localeKey}`]
+  if (typeof fromLocale === 'string' && fromLocale) return fromLocale
+  return raw.charAt(0).toUpperCase() + raw.slice(1)
+}
+
+/**
+ * UI gating rule for the platform filter: a dropdown that can only select one
+ * value carries no information, so it is rendered from two platforms upwards.
+ * @param {unknown} availablePlatforms
+ * @returns {boolean}
+ */
+export function shouldShowPlatformFilter(availablePlatforms) {
+  return Array.isArray(availablePlatforms) && availablePlatforms.length > 1
+}
+
+/**
+ * Options for the platform filter dropdown, or null when the gate hides it.
+ * This is the exact list `InspirationSection` renders, so gating can be verified
+ * without reading the component source.
+ * @param {unknown} availablePlatforms
+ * @param {(key: string) => string} translate
+ * @returns {Array<{ value: string, label: string }> | null}
+ */
+export function buildPlatformFilterOptions(availablePlatforms, translate) {
+  if (!shouldShowPlatformFilter(availablePlatforms)) return null
+  return [
+    { value: '', label: translate('platform.all') },
+    ...availablePlatforms.map((plat) => ({
+      value: plat,
+      label: formatPlatformName(plat, translate),
+    })),
+  ]
+}
+
+/**
+ * Category dropdown options (Issue #2507).
+ *
+ * First entry is the fixed 全部 reset; the rest are the 18 official gxgen
+ * industries. The list is local and does not depend on `/categories`.
+ * @param {(key: string) => string} translate
+ * @returns {Array<{ value: string, label: string }>}
+ */
+export function buildCategoryFilterOptions(translate) {
+  return [
+    { value: '', label: translate('category.all') },
+    ...OFFICIAL_CATEGORIES.map((row) => ({
+      value: row.id,
+      label: translate(`category.${row.id}`),
+    })),
+  ]
+}
+
+export function updateItemInList(items, updatedItem) {
+  if (!updatedItem) return items || []
+  return (items || []).map((it) => (it.id === updatedItem.id ? updatedItem : it))
+}
+
+export function createReplicateStatusHandler(flashCtaStatus, setCtaStatus) {
+  return (key) => {
+    if (key === 'card.cta.replicating') {
+      setCtaStatus(key)
+      return
+    }
+    if (key == null) {
+      setCtaStatus(null)
+      return
+    }
+    flashCtaStatus(key)
+  }
+}
+
+export function resetReplicateBusy(ref, busySetter, ticket) {
+  if (ref.current !== ticket) return
+  ref.current = null
+  busySetter(null)
+}
+
+/**
+ * Apply only ids explicitly confirmed by the local store's deletion receipt.
+ * @param {string[]} ids
+ * @param {Record<string, any>} setters
+ * @returns {Promise<{deleted: string[], remaining: string[]}>}
+ */
+export async function executeBatchDelete(ids, setters) {
+  const { selectedItem, setSelectedItem, setItems, setSelectedIds, setPendingRemove } = setters
+  const response = await batchDeleteLocalInspirations(ids)
+  if (!response.ok) throw new Error(response.body?.error || '删除失败，请重试')
+  const data = response.body?.data
+  const requested = new Set(ids)
+  const deleted = data?.deleted
+  if (!Array.isArray(deleted) || !Number.isSafeInteger(data?.count) || data.count !== deleted.length
+    || new Set(deleted).size !== deleted.length || deleted.some(id => typeof id !== 'string' || !requested.has(id))) {
+    throw new Error('未收到有效的删除结果，请重试')
+  }
+  const remaining = [...requested].filter(id => !deleted.includes(id))
+  if (deleted.length > 0) {
+    setItems((prev) => filterOutItemsByIds(prev, deleted))
+    setSelectedIds((prev) => removeIdsFromSet(prev, deleted))
+    if (selectedItem && deleted.includes(selectedItem.id)) setSelectedItem(null)
+  }
+  setPendingRemove(remaining.length > 0
+    ? prev => prev && { ...prev, ids: remaining, count: remaining.length, error: '未完成全部删除，请重试剩余灵感' }
+    : null)
+  return { deleted, remaining }
+}
+
+export function preloadCover(url) {
+  if (!url || typeof Image === 'undefined') return Promise.resolve(true)
+  return new Promise((resolve) => {
+    try {
+      const img = new Image()
+      let settled = false
+      const done = (ok) => {
+        if (settled) return
+        settled = true
+        resolve(ok)
+      }
+      img.onload = () => {
+        if (typeof img.decode === 'function') {
+          img.decode().then(() => done(true)).catch(() => done(true))
+        } else {
+          done(true)
+        }
+      }
+      img.onerror = () => done(false)
+      img.src = url
+      if (img.complete) {
+        if (typeof img.decode === 'function') {
+          img.decode().then(() => done(true)).catch(() => done(true))
+        } else {
+          done(true)
+        }
+      }
+    } catch {
+      resolve(false)
+    }
+  })
+}
+
+export async function preloadBatchCovers(items, timeoutMs = 600) {
+  if (!items || !items.length || typeof Image === 'undefined') return
+  const promises = items.map((item) => {
+    const src = pickCoverSrc(item)
+    return preloadCover(src)
+  })
+  let timer
+  const timeoutPromise = new Promise((resolve) => {
+    timer = setTimeout(resolve, timeoutMs)
+  })
+  await Promise.race([Promise.allSettled(promises), timeoutPromise])
+  if (timer) clearTimeout(timer)
+}
+
+export async function fetchAndMergeInspirations(params, options) {
+  const {
+    tab, q, platform, type, sort, favorite, targetPage,
+    country, category, duration_min, duration_max,
+    views_min, views_max, traffic_type, posted_after, posted_before, collection_id,
+  } = params
+  const { isNextPage, cacheKey, setters, cacheGeneration = getInspirationCacheGeneration() } = options
+  const result = await loadInspirationsAtomic({
+    tab,
+    q,
+    platform,
+    type,
+    sort,
+    favorite,
+    country,
+    category,
+    duration_min,
+    duration_max,
+    views_min,
+    views_max,
+    traffic_type,
+    posted_after,
+    posted_before,
+    collection_id,
+    page: targetPage,
+    pageSize: params.pageSize || 20,
+  })
+  // 立即提交列表数据上屏，彻底消除阻塞卡顿
+  mergeFetchResult({
+    isNextPage,
+    result,
+    targetPage,
+    cacheKey,
+    cacheGeneration,
+    setters,
+  })
+
+  // 后台非阻塞异步预热封面，不挡主流程渲染
+  if (result?.items && result.items.length) {
+    void preloadBatchCovers(result.items, 300)
+  }
+}
+
+export function checkCacheEarlyReturn(cacheKey, setters) {
+  const cached = getInspirationCache(cacheKey)
+  const hitFresh = applyCachedPage(cached, setters)
+  if (hitFresh) return true
+  if (!cached && setters.setLoading) setters.setLoading(true)
+  return false
+}
+
+/** Reload the loaded page range through the normal request/merge path, then paint once. */
+async function refreshLoadedPages(params, cacheKey, live, isStale, cacheGeneration) {
+  const depth = Math.max(1, Math.floor(Number(params.refreshThroughPage) || 1))
+  const result = { items: [], page: 1, hasMore: true, phase: undefined, platforms: undefined }
+  const staged = {
+    setItems(value) { result.items = typeof value === 'function' ? value(result.items) : value },
+    setPage(value) { result.page = value },
+    setHasMore(value) { result.hasMore = value },
+    setPhase(value) { result.phase = value },
+    setPlatforms(value) { result.platforms = value },
+    setCollectionData(value) { result.collectionData = value },
+  }
+  for (let targetPage = 1; targetPage <= depth; targetPage += 1) {
+    if (isStale()) return
+    await fetchAndMergeInspirations(
+      { ...params, targetPage },
+      { isNextPage: targetPage > 1, cacheKey, setters: staged, cacheGeneration },
+    )
+    if (!result.hasMore) break
+  }
+  if (isStale()) return
+  live.setItems(result.items)
+  live.setPage(result.page)
+  live.setHasMore(result.hasMore)
+  if (result.phase) live.setPhase(result.phase)
+  if (result.platforms) live.setPlatforms(result.platforms)
+  if (result.collectionData) live.setCollectionData(result.collectionData)
+  live.setError(null)
+}
+
+/**
+ * Run one feed page load and paint its result.
+ *
+ * `lifecycle.isCurrent()` tells whether this load is still the newest request:
+ * the slower 爆款趋势 cloud call (quota gate + fetch) used to resolve after the
+ * user had already switched to 灵感库, and its result overwrote the local rows
+ * on screen (Issue #2988). Once stale, every state write is dropped — items,
+ * hasMore, phase, error and the loading flags all belong to the newer load.
+ * A superseded response still warms its own cacheKey while its cache generation
+ * remains valid. Responses from before an invalidating write cannot refill it.
+ * @param {object} params
+ * @param {object} setters
+ * @param {{ isCurrent?: () => boolean }} [lifecycle]
+ */
+export async function executeFeedLoad(params, setters, lifecycle = {}) {
+  const {
+    isNextPage, tab, q, platform, type, sort, favorite, page, hasExistingItems,
+    country, category, duration_min, duration_max,
+    views_min, views_max, traffic_type, posted_after, posted_before, collection_id,
+  } = params
+  const { setItems, setPage, setHasMore, setPhase, setError, setLoading, setLoadingMore, setPlatforms } = setters
+  const { isCurrent } = lifecycle
+  const cacheGeneration = getInspirationCacheGeneration()
+  const isStale = () => typeof isCurrent === 'function' && !isCurrent()
+  const live = {
+    setItems: (v) => { if (!isStale()) setItems(v) },
+    setPage: (v) => { if (!isStale()) setPage(v) },
+    setHasMore: (v) => { if (!isStale()) setHasMore(v) },
+    setPhase: (v) => { if (!isStale()) setPhase(v) },
+    setError: (v) => { if (!isStale()) setError(v) },
+    setLoading: (v) => { if (!isStale()) setLoading(v) },
+    setLoadingMore: (v) => { if (!isStale()) setLoadingMore(v) },
+    setPlatforms: (v) => { if (!isStale()) setPlatforms(v) },
+    setCollectionData: (v) => { if (!isStale()) setters.setCollectionData?.(v) },
+  }
+  const targetPage = isNextPage ? page + 1 : 1
+  const cacheKey = cacheKeyOf({
+    tab, q, platform, type, sort, favorite,
+    country, category, duration_min, duration_max,
+    views_min, views_max, traffic_type, posted_after, posted_before, collection_id,
+  })
+
+  if (!isNextPage && !params.refreshThroughPage) {
+    const hitFresh = checkCacheEarlyReturn(cacheKey, {
+      setItems: live.setItems, setHasMore: live.setHasMore, setPhase: live.setPhase, setLoading: live.setLoading,
+      setCollectionData: live.setCollectionData,
+    })
+    if (hitFresh) {
+      // A superseded next-page load drops its own `finally`, so the cache-hit
+      // path is the one that must turn the load-more spinner off.
+      live.setLoadingMore(false)
+      return
+    }
+  } else if (isNextPage) {
+    live.setLoadingMore(true)
+  }
+
+  try {
+    if (params.refreshThroughPage) {
+      await refreshLoadedPages(params, cacheKey, live, isStale, cacheGeneration)
+      return
+    }
+    await fetchAndMergeInspirations(
+      {
+        tab, q, platform, type, sort, favorite, targetPage,
+        country, category, duration_min, duration_max,
+        views_min, views_max, traffic_type, posted_after, posted_before, collection_id,
+      },
+      {
+        isNextPage,
+        cacheKey,
+        cacheGeneration,
+        setters: {
+          setItems: live.setItems, setPage: live.setPage, setHasMore: live.setHasMore,
+          setPhase: live.setPhase, setError: live.setError, setPlatforms: live.setPlatforms,
+          setCollectionData: live.setCollectionData,
+        },
+      },
+    )
+  } catch (err) {
+    live.setError(String(err?.message || err))
+    const shouldResetPhase = !isNextPage && !hasExistingItems
+    if (shouldResetPhase) live.setPhase('ready')
+  } finally {
+    live.setLoading(false)
+    live.setLoadingMore(false)
+  }
+}

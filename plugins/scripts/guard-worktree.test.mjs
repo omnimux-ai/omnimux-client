@@ -1,0 +1,1386 @@
+import { after, describe, it } from 'node:test'
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, writeFileSync, symlinkSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import {
+  decideBashCommand,
+  decideMaterializationCommand,
+  decideMainCheckoutBuildCommand,
+  decideSearchTarget,
+  decideWrite,
+  isDestructiveResetCommand,
+  isEphemeralPath,
+  isGitTracked,
+  isMaterializationCommand,
+  isUnboundedScanRoot,
+  isWorktreePath,
+} from './guard-worktree.mjs'
+
+const here = dirname(fileURLToPath(import.meta.url))
+const fixture = mkdtempSync(join(tmpdir(), 'guard-fixture-'))
+after(() => rmSync(fixture, { recursive: true, force: true }))
+function gitCommand(cwd, ...args) {
+  const result = spawnSync('git', args, { cwd, encoding: 'utf8' })
+  assert.equal(result.status, 0, result.stderr)
+  return result.stdout.trim()
+}
+function createRepo(name) {
+  const root = join(fixture, name)
+  mkdirSync(root)
+  gitCommand(root, 'init', '-b', 'main')
+  const files = ['package.json', 'plugins/omnimux/src/host/apply.js', 'docs/contracts/hub.md', 'docs/contracts/plugin-git-pr.md', 'scripts/dev-doctor.sh']
+  for (const path of files) {
+    mkdirSync(dirname(join(root, path)), { recursive: true })
+    writeFileSync(join(root, path), '{}\n')
+  }
+  writeFileSync(join(root, '.gitignore'), 'ignored/\n')
+  gitCommand(root, 'add', '.')
+  gitCommand(root, '-c', 'user.name=Guard Test', '-c', 'user.email=guard@example.invalid', 'commit', '-m', 'fixture')
+  gitCommand(root, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+  return root
+}
+const mainRepoRoot = createRepo('primary')
+const externalRepoRoot = createRepo('external')
+const worktreeRoot = join(mainRepoRoot, '.worktrees', 'task')
+const externalWorktree = join(externalRepoRoot, '.worktrees', 'external-task')
+gitCommand(mainRepoRoot, 'worktree', 'add', '-b', 'task', worktreeRoot)
+gitCommand(externalRepoRoot, 'worktree', 'add', '-b', 'external-task', externalWorktree)
+const scriptPath = join(here, 'guard-worktree.mjs')
+
+function runHook(payload) {
+  const res = spawnSync('node', [scriptPath], {
+    cwd: mainRepoRoot,
+    encoding: 'utf8',
+    input: JSON.stringify(payload),
+  })
+  assert.equal(res.status, 0, `guard exited ${res.status}: ${res.stderr}`)
+  return JSON.parse(res.stdout)
+}
+
+describe('bash workdir JSON dispatch', () => {
+  it('resolves execution workdir while retaining primary commit rejection', () => {
+    const check = (command, workdir, cwd = mainRepoRoot, ownerRoot = mainRepoRoot) => runHook({ cwd, tool_name: 'bash', tool_input: { command, workdir, ownerRoot } }).hookSpecificOutput.permissionDecision
+    assert.equal(check('git commit -m test', worktreeRoot), 'allow')
+    assert.equal(check('git commit -m test', '.worktrees/task'), 'allow')
+    assert.equal(check('git commit -m test', mainRepoRoot, worktreeRoot), 'deny')
+    assert.equal(check('git commit -m test', undefined), 'deny')
+    assert.equal(check('git -C ../.. commit -m test', worktreeRoot), 'deny')
+    assert.equal(check('git -C .worktrees/task commit -m test', mainRepoRoot), 'allow')
+  })
+})
+
+describe('guard-worktree path classification', () => {
+  it('detects worktree vs ephemeral vs tracked', () => {
+    assert.equal(
+      isWorktreePath(join(worktreeRoot, 'plugins/omnimux/src/index.js')),
+      true,
+    )
+    assert.equal(
+      isWorktreePath('./plugins/omnimux/src/index.js'),
+      false,
+    )
+    assert.equal(isEphemeralPath(`${mainRepoRoot}/plugins/omnimux/node_modules/foo/index.js`), true)
+    assert.equal(isEphemeralPath(`${mainRepoRoot}/plugins/omnimux-workflow/dist-harness/app.js`), true)
+    assert.equal(isEphemeralPath(`${mainRepoRoot}/plugins/omnimux/.tmp/scratch.js`), true)
+    assert.equal(isEphemeralPath(`${mainRepoRoot}/plugins/omnimux/tmp/scratch.js`), false)
+    assert.equal(isEphemeralPath(`${mainRepoRoot}/plugins/omnimux/src/index.js`), false)
+    assert.equal(isEphemeralPath(`${mainRepoRoot}/package.json`), false)
+  })
+})
+
+describe('guard-worktree decideWrite (全量版本文件拦截)', () => {
+  it('denies tracked plugin source on the main checkout', () => {
+    const result = decideWrite({
+      toolName: 'edit',
+      cwd: mainRepoRoot,
+      filePath: 'plugins/omnimux/src/host/apply.js',
+    })
+    assert.equal(result.decision, 'deny')
+    assert.equal(result.reason, 'tracked-file')
+  })
+
+  it('denies tracked root-level files (e.g. package.json)', () => {
+    const result = decideWrite({
+      toolName: 'edit',
+      cwd: mainRepoRoot,
+      filePath: 'package.json',
+    })
+    assert.equal(result.decision, 'deny')
+    assert.equal(result.reason, 'tracked-file')
+  })
+
+  it('denies tracked docs files (e.g. docs/contracts/hub.md)', () => {
+    const result = decideWrite({
+      toolName: 'edit',
+      cwd: mainRepoRoot,
+      filePath: 'docs/contracts/hub.md',
+    })
+    assert.equal(result.decision, 'deny')
+    assert.equal(result.reason, 'tracked-file')
+  })
+
+  it('denies tracked scripts files (e.g. scripts/dev-doctor.sh)', () => {
+    const result = decideWrite({
+      toolName: 'edit',
+      cwd: mainRepoRoot,
+      filePath: 'scripts/dev-doctor.sh',
+    })
+    assert.equal(result.decision, 'deny')
+    assert.equal(result.reason, 'tracked-file')
+  })
+
+  it('allows gitignored plugin paths in main repo', () => {
+    const result = decideWrite({
+      toolName: 'write',
+      cwd: mainRepoRoot,
+      filePath: 'plugins/omnimux/node_modules/not-a-real-pkg/index.js',
+    })
+    assert.equal(result.decision, 'allow')
+    assert.ok(result.reason === 'ephemeral' || result.reason === 'gitignored')
+  })
+
+  it('allows workflow dist / dist-harness (temp build dirs)', () => {
+    const distHarness = decideWrite({
+      toolName: 'write',
+      cwd: mainRepoRoot,
+      filePath: 'plugins/omnimux-workflow/dist-harness/scratch.js',
+    })
+    assert.equal(distHarness.decision, 'allow')
+
+    const dist = decideWrite({
+      toolName: 'write',
+      cwd: mainRepoRoot,
+      filePath: 'plugins/omnimux-workflow/dist/index.js',
+    })
+    assert.equal(dist.decision, 'allow')
+    assert.equal(dist.reason, 'ephemeral')
+  })
+
+  it('allows untracked scratch files in main repo root and .workbuddy', () => {
+    const result = decideWrite({
+      toolName: 'write',
+      cwd: mainRepoRoot,
+      filePath: '__untracked_scratch_987654.txt',
+    })
+    assert.equal(result.decision, 'allow')
+    assert.equal(result.reason, 'untracked-draft')
+
+    const workbuddyResult = decideWrite({
+      toolName: 'write',
+      cwd: mainRepoRoot,
+      filePath: '.workbuddy/scratch_board.md',
+    })
+    assert.equal(workbuddyResult.decision, 'allow')
+    assert.ok(workbuddyResult.reason === 'gitignored' || workbuddyResult.reason === 'untracked-draft')
+  })
+
+  it('denies untracked files in protected scopes (plugins, scripts, docs, .github)', () => {
+    const pluginUntracked = decideWrite({
+      toolName: 'write',
+      cwd: mainRepoRoot,
+      filePath: 'plugins/omnimux-workflow/src/canvas/editor/components/NonExistentUntrackedNode.tsx',
+    })
+    assert.equal(pluginUntracked.decision, 'deny')
+    assert.equal(pluginUntracked.reason, 'untracked-protected-scope')
+
+    const scriptsUntracked = decideWrite({
+      toolName: 'write',
+      cwd: mainRepoRoot,
+      filePath: 'scripts/new-untracked-tool.mjs',
+    })
+    assert.equal(scriptsUntracked.decision, 'deny')
+    assert.equal(scriptsUntracked.reason, 'untracked-protected-scope')
+
+    const docsUntracked = decideWrite({
+      toolName: 'write',
+      cwd: mainRepoRoot,
+      filePath: 'docs/contracts/new-untracked-contract.md',
+    })
+    assert.equal(docsUntracked.decision, 'deny')
+    assert.equal(docsUntracked.reason, 'untracked-protected-scope')
+  })
+
+  it('denies tracked docs on main checkout', () => {
+    const trackedResult = decideWrite({
+      toolName: 'write',
+      cwd: mainRepoRoot,
+      filePath: 'docs/contracts/plugin-git-pr.md',
+    })
+    assert.equal(trackedResult.decision, 'deny')
+    assert.equal(trackedResult.reason, 'tracked-file')
+  })
+
+  it('allows all writes inside a worktree path (including plugins, docs, root)', () => {
+    const wtPlugin = decideWrite({
+      toolName: 'edit',
+      cwd: worktreeRoot,
+      filePath: 'plugins/omnimux/src/index.js',
+    })
+    assert.equal(wtPlugin.decision, 'allow')
+    assert.equal(wtPlugin.reason, 'worktree-isolated')
+
+    const wtRoot = decideWrite({
+      toolName: 'edit',
+      cwd: worktreeRoot,
+      filePath: 'package.json',
+    })
+    assert.equal(wtRoot.decision, 'allow')
+    assert.equal(wtRoot.reason, 'worktree-isolated')
+  })
+})
+
+describe('registered worktree boundaries', () => {
+  const decision = (filePath, cwd = mainRepoRoot) => decideWrite({ filePath, cwd, toolName: 'write' }).decision
+  it('allows same and external registered trees for tracked and new files', () => {
+    for (const root of [worktreeRoot, externalWorktree]) {
+      assert.equal(decision(join(root, 'package.json')), 'allow')
+      assert.equal(decision(join(root, 'scripts/new/deep/file.js')), 'allow')
+    }
+    assert.equal(decision(join(externalRepoRoot, 'package.json')), 'deny')
+    assert.equal(decision(join(externalRepoRoot, 'scripts/new.js')), 'deny')
+  })
+  it('rejects misleading names and copied gitdir pointers', () => {
+    const fake = join(mainRepoRoot, 'omnimux-dsh-wt-fake')
+    mkdirSync(fake)
+    assert.equal(isWorktreePath(join(fake, 'scripts/file.js')), false)
+    assert.equal(decision(join(fake, 'scripts/file.js')), 'deny')
+    const gitDir = gitCommand(worktreeRoot, 'rev-parse', '--absolute-git-dir')
+    writeFileSync(join(fake, '.git'), `gitdir: ${gitDir}\n`)
+    assert.equal(isWorktreePath(join(fake, 'package.json')), false)
+    assert.equal(decision(join(fake, 'package.json')), 'deny')
+  })
+  it('resolves directory and file symlinks escaping into primary checkouts', () => {
+    symlinkSync(mainRepoRoot, join(worktreeRoot, 'escape'), 'dir')
+    symlinkSync(join(externalRepoRoot, 'package.json'), join(worktreeRoot, 'file-link'))
+    assert.equal(decision(join(worktreeRoot, 'escape/package.json')), 'deny')
+    assert.equal(decision(join(worktreeRoot, 'escape/scripts/new/deep.js')), 'deny')
+    assert.equal(decision(join(worktreeRoot, 'file-link')), 'deny')
+    symlinkSync(join(mainRepoRoot, 'missing'), join(worktreeRoot, 'dangling'))
+    assert.equal(decision(join(worktreeRoot, 'dangling/file.js')), 'deny')
+  })
+  it('uses metadata rather than branch identity or legacy names', () => {
+    gitCommand(externalRepoRoot, 'checkout', '-b', 'not-main')
+    assert.equal(decision(join(externalRepoRoot, 'package.json')), 'deny')
+    const detached = join(externalRepoRoot, '.worktrees', 'detached task')
+    gitCommand(externalRepoRoot, 'worktree', 'add', '--detach', detached)
+    assert.equal(decision(join(detached, 'scripts/new.js')), 'allow')
+    const legacy = join(fixture, 'omnimux-dsh-wt-real')
+    gitCommand(externalRepoRoot, 'worktree', 'add', '-b', 'legacy', legacy)
+    assert.equal(decision(join(legacy, 'package.json')), 'allow')
+    symlinkSync(worktreeRoot, join(fixture, 'linked-alias'), 'dir')
+    assert.equal(decision(join(fixture, 'linked-alias/scripts/new.js')), 'allow')
+  })
+  it('rejects a standalone fake .git directory and an unregistered gitfile', () => {
+    const fake = join(fixture, 'fake-metadata')
+    mkdirSync(join(fake, '.git'), { recursive: true })
+    assert.equal(isWorktreePath(join(fake, 'package.json')), false)
+    assert.equal(decision(join(fake, 'package.json')), 'deny')
+    const missing = join(fixture, 'missing-registry')
+    mkdirSync(missing)
+    writeFileSync(join(missing, '.git'), `gitdir: ${join(mainRepoRoot, '.git/worktrees/absent')}\n`)
+    assert.equal(isWorktreePath(join(missing, 'package.json')), false)
+    assert.equal(decision(join(missing, 'package.json')), 'deny')
+  })
+  it('denies nested primary repositories and malformed nested metadata inside a linked tree', () => {
+    const nested = join(worktreeRoot, 'nested-primary')
+    mkdirSync(nested)
+    gitCommand(nested, 'init', '-b', 'main')
+    writeFileSync(join(nested, 'package.json'), '{}\n')
+    gitCommand(nested, 'add', 'package.json')
+    assert.equal(isWorktreePath(join(nested, 'package.json')), false)
+    assert.equal(decision(join(nested, 'package.json')), 'deny')
+    assert.equal(decision(join(nested, 'scripts/new/deep.js')), 'deny')
+    const malformed = join(worktreeRoot, 'malformed-nested')
+    mkdirSync(join(malformed, '.git'), { recursive: true })
+    assert.equal(isWorktreePath(join(malformed, 'scripts/new.js')), false)
+    assert.equal(decision(join(malformed, 'scripts/new.js')), 'deny')
+  })
+  it('does not exempt a detached primary checkout', () => {
+    const primary = createRepo('detached-primary')
+    gitCommand(primary, 'checkout', '--detach')
+    assert.equal(isWorktreePath(join(primary, 'package.json')), false)
+    assert.equal(decision(join(primary, 'package.json')), 'deny')
+    assert.equal(decision(join(primary, 'scripts/new/deep.js')), 'deny')
+  })
+  it('ignores abnormal Git config, index and discovery environment for write classification', () => {
+    const env = {
+      ...process.env,
+      GIT_DIR: '/nonexistent/qa-git-dir',
+      GIT_COMMON_DIR: '/nonexistent/qa-common-dir',
+      GIT_WORK_TREE: mainRepoRoot,
+      GIT_INDEX_FILE: '/nonexistent/qa-index',
+      GIT_CEILING_DIRECTORIES: fixture,
+      GIT_CONFIG_COUNT: 'invalid',
+    }
+    for (const [root, expected] of [[mainRepoRoot, 'deny'], [externalWorktree, 'allow']]) {
+      const result = spawnSync(process.execPath, [scriptPath], {
+        cwd: mainRepoRoot, encoding: 'utf8', env,
+        input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'write', cwd: mainRepoRoot, tool_input: { file_path: join(root, 'package.json') } }),
+      })
+      assert.equal(result.status, 0, result.stderr)
+      assert.equal(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision, expected)
+    }
+  })
+  it('preserves ignored and ephemeral exemptions', () => {
+    assert.equal(decision(join(mainRepoRoot, 'ignored/file.js')), 'allow')
+    assert.equal(decision(join(mainRepoRoot, 'dist/file.js')), 'allow')
+    assert.equal(decision(join(mainRepoRoot, 'trace.log')), 'allow')
+  })
+  it('fails conservatively without Git and with abnormal Git exits', () => {
+    const emptyBin = join(fixture, 'empty-bin')
+    mkdirSync(emptyBin)
+    for (const contents of [null, '#!/bin/sh\nexit 42\n', '#!/bin/sh\nexit 128\n']) {
+      if (contents) writeFileSync(join(emptyBin, 'git'), contents, { mode: 0o755 })
+      const result = spawnSync(process.execPath, [scriptPath], {
+        cwd: mainRepoRoot, encoding: 'utf8', env: { ...process.env, PATH: emptyBin },
+        input: JSON.stringify({ tool_name: 'write', cwd: mainRepoRoot, tool_input: { file_path: join(worktreeRoot, 'package.json') } }),
+      })
+      assert.equal(result.status, 0)
+      assert.equal(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision, 'deny')
+    }
+  })
+  it('ignores ambient Git repository redirection', () => {
+    const result = spawnSync(process.execPath, [scriptPath], {
+      cwd: mainRepoRoot, encoding: 'utf8', env: { ...process.env, GIT_WORK_TREE: worktreeRoot, GIT_DIR: gitCommand(worktreeRoot, 'rev-parse', '--absolute-git-dir') },
+      input: JSON.stringify({ tool_name: 'write', cwd: mainRepoRoot, tool_input: { file_path: join(mainRepoRoot, 'package.json') } }),
+    })
+    assert.equal(result.status, 0)
+    assert.equal(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision, 'deny')
+  })
+  it('preserves unpushed commit bash denial', () => {
+    gitCommand(worktreeRoot, '-c', 'user.name=Guard Test', '-c', 'user.email=guard@example.invalid', 'commit', '--allow-empty', '-m', 'unpushed')
+    assert.equal(decideBashCommand({ command: 'git reset --hard HEAD~1', cwd: worktreeRoot }).decision, 'deny')
+    assert.equal(decideBashCommand({ command: 'git status', cwd: worktreeRoot }).decision, 'allow')
+  })
+})
+
+describe('guard-worktree PreToolUse protocol', () => {
+  it('emits deny JSON for tracked files across plugins, docs, and scripts', () => {
+    const outPlugin = runHook({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'edit',
+      cwd: mainRepoRoot,
+      tool_input: { file_path: join(mainRepoRoot, 'plugins/omnimux/src/host/apply.js') },
+    })
+    assert.equal(outPlugin.hookSpecificOutput.hookEventName, 'PreToolUse')
+    assert.equal(outPlugin.hookSpecificOutput.permissionDecision, 'deny')
+
+    const outDoc = runHook({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'edit',
+      cwd: mainRepoRoot,
+      tool_input: { file_path: join(mainRepoRoot, 'docs/contracts/hub.md') },
+    })
+    assert.equal(outDoc.hookSpecificOutput.permissionDecision, 'deny')
+
+    const outRoot = runHook({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'edit',
+      cwd: mainRepoRoot,
+      tool_input: { file_path: join(mainRepoRoot, 'package.json') },
+    })
+    assert.equal(outRoot.hookSpecificOutput.permissionDecision, 'deny')
+  })
+
+  it('emits allow JSON for untracked / ignored / worktree paths', () => {
+    const ignored = runHook({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'write',
+      cwd: mainRepoRoot,
+      tool_input: { file_path: join(mainRepoRoot, 'plugins/omnimux-workflow/dist-harness/hook-test.js') },
+    })
+    assert.equal(ignored.hookSpecificOutput.permissionDecision, 'allow')
+
+    const untracked = runHook({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'write',
+      cwd: mainRepoRoot,
+      tool_input: { file_path: join(mainRepoRoot, '__guard_untracked_scratch__.tmp') },
+    })
+    assert.equal(untracked.hookSpecificOutput.permissionDecision, 'allow')
+  })
+})
+
+describe('non-Git targets and Git read failures', () => {
+  const nonGit = mkdtempSync(join(tmpdir(), 'guard-non-git-'))
+  after(() => rmSync(nonGit, { recursive: true, force: true }))
+  const target = join(nonGit, '.agents/skills/agent-backup/scripts/backup.py')
+  mkdirSync(dirname(target), { recursive: true })
+  writeFileSync(target, '# isolated fixture\n')
+  const nonGitProbe = spawnSync('git', ['rev-parse', '--show-toplevel'], {
+    cwd: nonGit, encoding: 'utf8', env: { ...process.env, LC_ALL: 'C', LANGUAGE: 'C' },
+  })
+  assert.equal(nonGitProbe.status, 128, 'fixture must be outside every Git repository')
+  assert.match(nonGitProbe.stderr, /not a git repository/)
+
+  function hook(filePath, env = {}, cwd = mainRepoRoot) {
+    const result = spawnSync(process.execPath, [scriptPath], {
+      cwd, encoding: 'utf8', env: { ...process.env, ...env },
+      input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'write', cwd, tool_input: { file_path: filePath } }),
+    })
+    assert.equal(result.status, 0, result.stderr)
+    return JSON.parse(result.stdout).hookSpecificOutput
+  }
+
+  it('does not classify a confirmed non-Git target as tracked', () => {
+    assert.equal(isGitTracked(target, dirname(target)), false)
+    for (const filePath of [target, join(nonGit, 'docs/missing/parent/new.md')]) {
+      const result = decideWrite({ filePath, cwd: mainRepoRoot, toolName: 'write' })
+      assert.equal(result.decision, 'allow')
+      assert.equal(result.reason, 'non-git-target')
+    }
+  })
+
+  it('classifies absolute and relative targets from a non-Git cwd', () => {
+    assert.equal(hook(target, {}, nonGit).permissionDecision, 'allow')
+    assert.equal(hook('.agents/skills/agent-backup/scripts/backup.py', {}, nonGit).permissionDecision, 'allow')
+    assert.equal(hook(join(mainRepoRoot, 'package.json'), {}, nonGit).permissionDecision, 'deny')
+  })
+
+  it('uses deterministic Git diagnostics regardless of caller locale', () => {
+    const bin = join(fixture, 'locale-bin')
+    mkdirSync(bin)
+    writeFileSync(join(bin, 'git'), '#!/bin/sh\nif [ "$LC_ALL" = C ] && [ "$LANGUAGE" = C ]; then\n  echo "fatal: not a git repository (or any of the parent directories): .git" >&2\nelse\n  echo "fatal: kein Git-Repository" >&2\nfi\nexit 128\n', { mode: 0o755 })
+    const out = hook(target, { PATH: bin, LC_ALL: 'de_DE.UTF-8', LANG: 'de_DE.UTF-8', LANGUAGE: 'de' })
+    assert.equal(out.permissionDecision, 'allow')
+    assert.equal(hook(join(mainRepoRoot, 'package.json'), { PATH: bin }).permissionDecision, 'deny')
+  })
+
+  it('does not grant an authorization exception from payload fields', () => {
+    // This hook only classifies isolation; external authorization is a separate gate.
+    const out = runHook({ tool_name: 'write', cwd: nonGit, authorized: true,
+      tool_input: { file_path: join(mainRepoRoot, 'package.json'), authorized: true } })
+    assert.equal(out.hookSpecificOutput.permissionDecision, 'deny')
+  })
+
+  it('denies unavailable Git and all non-discovery failures with accurate attribution', () => {
+    const bin = join(fixture, 'error-bin')
+    mkdirSync(bin)
+    const failures = [null, 'exit 42', 'exit 128',
+      'echo "fatal: unable to read index: Permission denied" >&2; exit 128',
+      'echo "fatal: detected dubious ownership in repository" >&2; exit 128',
+      'echo "fatal: not a git repository: /broken/gitdir" >&2; exit 128',
+      'echo "fatal: not a git repository (or any of the parent directories): .git" >&2; echo "fatal: Permission denied" >&2; exit 128']
+    for (const failure of failures) {
+      if (failure) writeFileSync(join(bin, 'git'), `#!/bin/sh\n${failure}\n`, { mode: 0o755 })
+      for (const filePath of [target, join(mainRepoRoot, 'package.json')]) {
+        const out = hook(filePath, { PATH: bin })
+        assert.equal(out.permissionDecision, 'deny')
+        assert.match(out.permissionDecisionReason, /仓库 Hook.*Git.*读取/)
+        assert.doesNotMatch(out.permissionDecisionReason, /Git Tracked|DSH 核心/)
+      }
+    }
+  })
+
+  it('denies real corrupt-index errors instead of calling them tracked files', () => {
+    const root = createRepo('corrupt-index')
+    writeFileSync(join(root, '.git/index'), 'not an index')
+    const filePath = join(root, 'package.json')
+    assert.equal(isGitTracked(filePath, root), true)
+    assert.equal(decideWrite({ filePath, cwd: root, toolName: 'edit' }).reason, 'git-read-error')
+    assert.match(hook(filePath).permissionDecisionReason, /Git.*读取/)
+  })
+
+  it('keeps invalid cwd, unreadable metadata, and failed ls-files conservative', () => {
+    assert.equal(isGitTracked(target, join(nonGit, 'missing-cwd')), true)
+    const root = createRepo('unreadable-metadata')
+    const metadata = join(root, '.git')
+    chmodSync(metadata, 0)
+    try {
+      assert.equal(hook(join(root, 'package.json')).permissionDecision, 'deny')
+    } finally {
+      chmodSync(metadata, 0o700)
+    }
+    const bin = join(fixture, 'ls-files-error-bin')
+    mkdirSync(bin)
+    writeFileSync(join(bin, 'git'), '#!/bin/sh\ncase "$1" in\nrev-parse) printf "%s\\n" "$PWD"; exit 0 ;;\n*) echo "fatal: not a git repository (or any of the parent directories): .git" >&2; exit 128 ;;\nesac\n', { mode: 0o755 })
+    const out = hook(target, { PATH: bin })
+    assert.equal(out.permissionDecision, 'deny')
+    assert.match(out.permissionDecisionReason, /Git.*读取/)
+  })
+
+  it('denies malformed metadata outside Git and nested primary repositories', () => {
+    const broken = join(nonGit, 'broken')
+    mkdirSync(join(broken, '.git'), { recursive: true })
+    assert.equal(hook(join(broken, 'notes.txt')).permissionDecision, 'deny')
+    const nested = join(nonGit, 'nested')
+    mkdirSync(nested)
+    gitCommand(nested, 'init', '-b', 'main')
+    writeFileSync(join(nested, 'notes.txt'), 'tracked\n')
+    gitCommand(nested, 'add', 'notes.txt')
+    assert.equal(hook(join(nested, 'notes.txt')).permissionDecision, 'deny')
+    assert.equal(hook(join(nested, 'scripts/new/deep.js')).permissionDecision, 'deny')
+    symlinkSync(nested, join(nonGit, 'escape'))
+    assert.equal(hook(join(nonGit, 'escape/notes.txt')).permissionDecision, 'deny')
+  })
+
+  it('fails closed on actual unreadable directories and unresolved symlinks', () => {
+    const locked = join(nonGit, 'locked')
+    mkdirSync(locked)
+    writeFileSync(join(locked, 'notes.txt'), 'private\n')
+    chmodSync(locked, 0)
+    try {
+      const out = hook(join(locked, 'notes.txt'))
+      assert.equal(out.permissionDecision, 'deny')
+      assert.match(out.permissionDecisionReason, /仓库 Hook.*路径/)
+      assert.doesNotMatch(out.permissionDecisionReason, /Git Tracked|DSH 核心/)
+    } finally {
+      chmodSync(locked, 0o700)
+    }
+    symlinkSync(join(nonGit, 'absent'), join(nonGit, 'dangling'))
+    assert.equal(hook(join(nonGit, 'dangling/notes.txt')).permissionDecision, 'deny')
+  })
+})
+
+describe('guard-worktree git reset --hard safety guard', () => {
+  it('correctly classifies destructive git reset commands', () => {
+    assert.equal(isDestructiveResetCommand('git reset --hard HEAD~1'), true)
+    assert.equal(isDestructiveResetCommand('git reset --hard origin/main'), true)
+    assert.equal(isDestructiveResetCommand('git reset --soft HEAD~1'), false)
+    assert.equal(isDestructiveResetCommand('git reset HEAD file.txt'), false)
+    assert.equal(isDestructiveResetCommand('echo "git reset --hard"'), false)
+    assert.equal(isDestructiveResetCommand('gh issue create --body "ran git reset --hard"'), false)
+  })
+
+  it('catches git -C, pipelines, checkout -f, restore --source and clean -f', () => {
+    assert.equal(isDestructiveResetCommand('git -C "$REPO_ROOT" reset --hard origin/main'), true)
+    assert.equal(isDestructiveResetCommand('git -C /tmp/repo reset --hard origin/main'), true)
+    assert.equal(isDestructiveResetCommand('gh pr merge && git reset --hard origin/main'), true)
+    assert.equal(isDestructiveResetCommand('git fetch origin && git checkout -f main'), true)
+    assert.equal(isDestructiveResetCommand('git restore --source=origin/main --worktree --staged .'), true)
+    assert.equal(isDestructiveResetCommand('git clean -fdx'), true)
+    assert.equal(isDestructiveResetCommand('git status && git log -1'), false)
+    assert.equal(isDestructiveResetCommand('git push -u origin agent/infra-guard-destructive-reset'), false)
+  })
+})
+
+describe('guard-worktree bash command write safety guard (防命令行绕过篡改主目录)', () => {
+  it('denies cp / mv / rsync targeting protected paths on the main checkout', () => {
+    assert.equal(
+      decideBashCommand({
+        command: 'cp /tmp/foo.js plugins/omnimux/src/apply.js',
+        cwd: mainRepoRoot,
+      }).decision,
+      'deny',
+    )
+    assert.equal(
+      decideBashCommand({
+        command: `cp -r /tmp/dir ${mainRepoRoot}/plugins/omnimux/src/`,
+        cwd: mainRepoRoot,
+      }).decision,
+      'deny',
+    )
+    assert.equal(
+      decideBashCommand({
+        command: 'mv /tmp/foo.js scripts/dev-doctor.sh',
+        cwd: mainRepoRoot,
+      }).decision,
+      'deny',
+    )
+    assert.equal(
+      decideBashCommand({
+        command: 'rsync -av /tmp/dir/ docs/contracts/hub.md',
+        cwd: mainRepoRoot,
+      }).decision,
+      'deny',
+    )
+  })
+
+  it('denies shell redirections > and >> targeting protected paths on the main checkout', () => {
+    assert.equal(
+      decideBashCommand({
+        command: 'echo "hack" > plugins/omnimux/src/apply.js',
+        cwd: mainRepoRoot,
+      }).decision,
+      'deny',
+    )
+    assert.equal(
+      decideBashCommand({
+        command: 'cat /tmp/patch >> package.json',
+        cwd: mainRepoRoot,
+      }).decision,
+      'deny',
+    )
+    assert.equal(
+      decideBashCommand({
+        command: 'printf "data" > scripts/dev-doctor.sh',
+        cwd: mainRepoRoot,
+      }).decision,
+      'deny',
+    )
+  })
+
+  it('denies tee and sed -i targeting protected files on the main checkout', () => {
+    assert.equal(
+      decideBashCommand({
+        command: 'echo "data" | tee plugins/omnimux/src/apply.js',
+        cwd: mainRepoRoot,
+      }).decision,
+      'deny',
+    )
+    assert.equal(
+      decideBashCommand({
+        command: "sed -i '' 's/a/b/' docs/contracts/hub.md",
+        cwd: mainRepoRoot,
+      }).decision,
+      'deny',
+    )
+  })
+
+  it('allows writes outside the repo even when they match a protected prefix (#3853)', () => {
+    // /Users/example/.agents/skills/x 是仓库外的家目录路径，不能被 /.agents/ 前缀误伤
+    assert.equal(
+      decideBashCommand({
+        command: `ln -sfn /tmp/skill-src /tmp/.agents/skills/x`,
+        cwd: mainRepoRoot,
+      }).decision,
+      'allow',
+    )
+    assert.equal(
+      decideBashCommand({
+        command: `ln -sfn /tmp/skill-src ${join('/private/tmp', 'outside.agents', 'x')}`,
+        cwd: mainRepoRoot,
+      }).decision,
+      'allow',
+    )
+    // 展开 ~ 后仍落在仓库外
+    assert.equal(
+      decideBashCommand({
+        command: `ln -sfn /tmp/skill-src ~/.agents/skills/x`,
+        cwd: mainRepoRoot,
+      }).decision,
+      'allow',
+    )
+    // 仓库内同名受保护前缀依然 deny（通过绝对路径命中主 checkout）
+    assert.equal(
+      decideBashCommand({
+        command: `ln -sfn /tmp/src ${mainRepoRoot}/.agents/skills/x`,
+        cwd: mainRepoRoot,
+      }).decision,
+      'deny',
+    )
+  })
+
+  it('strictly allows legitimate git synchronization commands on the main checkout', () => {
+    const gitSyncCommands = [
+      'git pull origin main',
+      'git pull --rebase origin main',
+      'git merge origin/main',
+      'git fetch origin',
+      'git checkout main',
+      'git checkout -b new-feature-branch',
+      'git stash',
+      'git stash list',
+      'git status -s',
+      'git log -n 5 --oneline',
+      'git diff origin/main',
+      'git branch -a',
+    ]
+    for (const cmd of gitSyncCommands) {
+      assert.equal(
+        decideBashCommand({ command: cmd, cwd: mainRepoRoot }).decision,
+        'allow',
+        `Expected command to be allowed: ${cmd}`,
+      )
+    }
+  })
+
+  it('G3: denies node/python/dd/ln/awk writers targeting protected paths on main checkout', () => {
+    const denyCmds = [
+      `node -e "require('fs').writeFileSync('plugins/omnimux/src/apply.js','x')"`,
+      `node --eval "require('fs').writeFileSync('plugins/omnimux/src/apply.js','x')"`,
+      `python3 -c "open('plugins/omnimux/src/apply.js','w').write('x')"`,
+      `dd if=/dev/zero of=plugins/omnimux/src/apply.js bs=1 count=1`,
+      `ln -s /tmp/payload.js plugins/omnimux/src/apply.js`,
+      `awk '{print}' /tmp/x > plugins/omnimux/src/apply.js`,
+    ]
+    for (const cmd of denyCmds) {
+      assert.equal(
+        decideBashCommand({ command: cmd, cwd: mainRepoRoot }).decision,
+        'deny',
+        `Expected command to be denied: ${cmd}`,
+      )
+    }
+  })
+
+  it('G3: allows node/python one-liners that do not write protected paths', () => {
+    assert.equal(
+      decideBashCommand({
+        command: `node -e "console.log('ok')"`,
+        cwd: mainRepoRoot,
+      }).decision,
+      'allow',
+    )
+    assert.equal(
+      decideBashCommand({
+        command: `python3 -c "print(1)"`,
+        cwd: mainRepoRoot,
+      }).decision,
+      'allow',
+    )
+  })
+
+  it('G4: denies git working-tree mutations on the main checkout', () => {
+    const denyCmds = [
+      'git apply /tmp/patch.diff',
+      'git am /tmp/0001.patch',
+      'git stash pop',
+      'git stash apply',
+      'git checkout -- plugins/omnimux/src/apply.js',
+      'git checkout stash@{0} -- plugins/omnimux/src/apply.js',
+      'git restore --worktree --source=HEAD -- plugins/omnimux/src/apply.js',
+      'git push --force origin main',
+      'git push -f origin HEAD',
+      'git cherry-pick abcdef1',
+      'git rebase origin/main',
+    ]
+    for (const cmd of denyCmds) {
+      assert.equal(
+        decideBashCommand({ command: cmd, cwd: mainRepoRoot }).decision,
+        'deny',
+        `Expected command to be denied: ${cmd}`,
+      )
+    }
+  })
+
+  it('G4: allows the same git mutations inside a registered worktree', () => {
+    assert.equal(
+      decideBashCommand({
+        command: 'git stash pop',
+        cwd: worktreeRoot,
+      }).decision,
+      'allow',
+    )
+    assert.equal(
+      decideBashCommand({
+        command: 'git apply /tmp/patch.diff',
+        cwd: worktreeRoot,
+      }).decision,
+      'allow',
+    )
+  })
+
+  it('allows cp / redirections inside a registered worktree directory', () => {
+    assert.equal(
+      decideBashCommand({
+        command: 'cp /tmp/foo.js plugins/omnimux/src/apply.js',
+        cwd: worktreeRoot,
+      }).decision,
+      'allow',
+    )
+    assert.equal(
+      decideBashCommand({
+        command: 'echo "hello" > plugins/omnimux/src/apply.js',
+        cwd: worktreeRoot,
+      }).decision,
+      'allow',
+    )
+  })
+
+  it('allows ephemeral and gitignored targets on the main checkout', () => {
+    assert.equal(
+      decideBashCommand({
+        command: 'cp /tmp/bundle.js dist/app.js',
+        cwd: mainRepoRoot,
+      }).decision,
+      'allow',
+    )
+    assert.equal(
+      decideBashCommand({
+        command: 'echo "log info" > trace.log',
+        cwd: mainRepoRoot,
+      }).decision,
+      'allow',
+    )
+    assert.equal(
+      decideBashCommand({
+        command: 'cp /tmp/data.txt ignored/item.txt',
+        cwd: mainRepoRoot,
+      }).decision,
+      'allow',
+    )
+  })
+
+  it('denies build and package mutation commands on the main checkout while allowing in worktree', () => {
+    assert.equal(
+      decideBashCommand({ command: 'pnpm build', cwd: mainRepoRoot }).decision,
+      'deny',
+    )
+    assert.equal(
+      decideBashCommand({ command: 'npm run build', cwd: mainRepoRoot }).decision,
+      'deny',
+    )
+    assert.equal(
+      decideBashCommand({ command: 'pnpm run "build"', cwd: mainRepoRoot }).decision,
+      'deny',
+    )
+    assert.equal(
+      decideBashCommand({ command: 'tsc -p tsconfig.json', cwd: mainRepoRoot }).decision,
+      'deny',
+    )
+    assert.equal(
+      decideBashCommand({ command: 'tsc --noEmit false', cwd: mainRepoRoot }).decision,
+      'deny',
+    )
+    assert.equal(
+      decideBashCommand({ command: 'tsc --noEmit', cwd: mainRepoRoot }).decision,
+      'allow',
+    )
+    assert.equal(
+      decideBashCommand({ command: 'pnpm build', cwd: worktreeRoot }).decision,
+      'allow',
+    )
+    assert.equal(
+      decideBashCommand({ command: 'tsc -p tsconfig.json', cwd: worktreeRoot }).decision,
+      'allow',
+    )
+    assert.equal(
+      decideBashCommand({ command: `cd ${worktreeRoot} && pnpm build`, cwd: mainRepoRoot }).decision,
+      'allow',
+    )
+    // 依赖恢复在主检出放行（node_modules 维护），manifest/lock 变更仍拦截。
+    assert.equal(
+      decideBashCommand({ command: 'pnpm install --frozen-lockfile --config.confirmModulesPurge=false', cwd: mainRepoRoot }).decision,
+      'allow',
+    )
+    assert.equal(
+      decideBashCommand({ command: 'npm ci', cwd: mainRepoRoot }).decision,
+      'allow',
+    )
+    assert.equal(
+      decideBashCommand({ command: 'pnpm add left-pad', cwd: mainRepoRoot }).decision,
+      'deny',
+    )
+    assert.equal(
+      decideBashCommand({ command: 'npm install left-pad', cwd: mainRepoRoot }).decision,
+      'deny',
+    )
+    // shell 重定向与带值 flag 不应被误判为包名参数。
+    assert.equal(
+      decideBashCommand({ command: 'pnpm install --frozen-lockfile > /tmp/install.log 2>&1', cwd: mainRepoRoot }).decision,
+      'allow',
+    )
+    // #3821：主检出 install 必须冻结 lockfile。原断言用 `--filter omnimux` 无冻结
+    // flag 却期望 allow——那正是「install 静默改写 pnpm-lock.yaml」的口子。改为：
+    // 带 --filter 且冻结仍放行（重定向与带值 flag 的解析保护不变），
+    // 但不冻结时一律拒绝。
+    assert.equal(
+      decideBashCommand({ command: 'pnpm install --filter omnimux --frozen-lockfile > /tmp/install.log', cwd: mainRepoRoot }).decision,
+      'allow',
+    )
+    assert.equal(
+      decideBashCommand({ command: 'pnpm install --filter omnimux > /tmp/install.log', cwd: mainRepoRoot }).decision,
+      'deny',
+    )
+    assert.equal(
+      decideBashCommand({ command: 'npm install left-pad > /tmp/x.log', cwd: mainRepoRoot }).decision,
+      'deny',
+    )
+    assert.equal(
+      decideBashCommand({ command: 'pnpm build > /tmp/x.log 2>&1', cwd: mainRepoRoot }).decision,
+      'deny',
+    )
+    // 管道下游命令不参与包管理器/构建判定。
+    assert.equal(
+      decideBashCommand({ command: 'pnpm install --frozen-lockfile 2>&1 | tail -3', cwd: mainRepoRoot }).decision,
+      'allow',
+    )
+    assert.equal(
+      decideBashCommand({ command: 'pnpm install --frozen-lockfile | tee /tmp/x.log', cwd: mainRepoRoot }).decision,
+      'allow',
+    )
+    assert.equal(
+      decideBashCommand({ command: 'pnpm build | cat', cwd: mainRepoRoot }).decision,
+      'deny',
+    )
+    assert.equal(
+      decideBashCommand({ command: 'npm install left-pad | cat', cwd: mainRepoRoot }).decision,
+      'deny',
+    )
+    // 包装执行器（npx / pnpm exec / npm exec）按被包装命令判定。
+    assert.equal(
+      decideBashCommand({ command: 'pnpm exec npm ci', cwd: mainRepoRoot }).decision,
+      'allow',
+    )
+    assert.equal(
+      decideBashCommand({ command: 'npx --yes pnpm install --frozen-lockfile', cwd: mainRepoRoot }).decision,
+      'allow',
+    )
+    assert.equal(
+      decideBashCommand({ command: 'npm exec -- pnpm install --frozen-lockfile', cwd: mainRepoRoot }).decision,
+      'allow',
+    )
+    assert.equal(
+      decideBashCommand({ command: 'pnpm exec npm install left-pad', cwd: mainRepoRoot }).decision,
+      'deny',
+    )
+    assert.equal(
+      decideBashCommand({ command: 'pnpm exec tsc -p tsconfig.json', cwd: mainRepoRoot }).decision,
+      'deny',
+    )
+    assert.equal(
+      decideBashCommand({ command: 'npx vite build', cwd: mainRepoRoot }).decision,
+      'deny',
+    )
+    assert.equal(
+      decideBashCommand({ command: 'pnpm exec node scripts/dev-doctor.sh', cwd: mainRepoRoot }).decision,
+      'allow',
+    )
+    assert.equal(
+      decideBashCommand({ command: 'touch -r package.json .tmp/out.txt', cwd: mainRepoRoot }).decision,
+      'allow',
+    )
+    assert.equal(
+      decideBashCommand({ command: 'node scripts/dev-doctor.sh', cwd: mainRepoRoot }).decision,
+      'allow',
+    )
+  })
+})
+
+describe('main checkout build query reuse', () => {
+  function withGitLog(name, check) {
+    const lookup = spawnSync('which', ['git'], { encoding: 'utf8' })
+    assert.equal(lookup.status, 0, lookup.stderr)
+    const realGit = realpathSync(lookup.stdout.trim())
+    const bin = join(fixture, name)
+    mkdirSync(bin)
+    const log = join(bin, 'queries.log')
+    writeFileSync(log, '')
+    const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`
+    writeFileSync(join(bin, 'git'), `#!/bin/sh\nprintf '%s\\t%s\\n' "$PWD" "$*" >> ${quote(log)}\nexec ${quote(realGit)} "$@"\n`, { mode: 0o755 })
+    const previousPath = process.env.PATH
+    process.env.PATH = `${bin}:${previousPath || ''}`
+    try {
+      check(() => readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map((line) => {
+        const [cwd, args] = line.split('\t')
+        return [realpathSync(cwd), args]
+      }))
+    } finally {
+      if (previousPath === undefined) delete process.env.PATH
+      else process.env.PATH = previousPath
+    }
+  }
+
+  it('reuses the first ordered query chain for literal ordinary segments at one cwd', () => {
+    withGitLog('build-reuse-same-cwd-bin', (queries) => {
+      assert.deepEqual(decideMainCheckoutBuildCommand('echo amber-orchard', mainRepoRoot), { decision: 'allow' })
+      const single = queries()
+      assert.deepEqual(single, [
+        [realpathSync(mainRepoRoot), 'rev-parse --show-toplevel'],
+        [realpathSync(mainRepoRoot), 'rev-parse --absolute-git-dir'],
+        [realpathSync(mainRepoRoot), 'rev-parse --path-format=absolute --git-common-dir'],
+        [realpathSync(mainRepoRoot), 'rev-parse --show-toplevel'],
+        [realpathSync(mainRepoRoot), 'rev-parse --show-toplevel'],
+        [realpathSync(mainRepoRoot), 'rev-parse --absolute-git-dir'],
+        [realpathSync(mainRepoRoot), 'rev-parse --path-format=absolute --git-common-dir'],
+      ])
+      assert.deepEqual(decideMainCheckoutBuildCommand('echo amber-orchard && echo violet-meadow', mainRepoRoot), { decision: 'allow' })
+      const multiple = queries().slice(single.length)
+      assert.equal(multiple.length, single.length, `single=${single.length}, multiple=${multiple.length}`)
+      assert.deepEqual(multiple, single)
+    })
+  })
+})
+
+describe('guard-worktree materialization safety guard (多 Agent 物化防覆盖硬拦截)', () => {
+  it('correctly classifies materialization scripts and commands', () => {
+    assert.equal(isMaterializationCommand('./scripts/sync-to-app.sh'), true)
+    assert.equal(isMaterializationCommand('bash scripts/sync-to-app.sh omnimux-assets'), true)
+    assert.equal(isMaterializationCommand('./scripts/sync-stable.sh'), true)
+    assert.equal(isMaterializationCommand('bash scripts/materialize-with-rollback.sh omnimux'), true)
+    assert.equal(isMaterializationCommand('node scripts/omnimux.mjs sync'), true)
+    assert.equal(isMaterializationCommand('omnimux.mjs sync --prod'), true)
+
+    // 豁免自动化测试与构建等非物化执行
+    assert.equal(isMaterializationCommand('node --test scripts/sync-targets.test.mjs'), false)
+    assert.equal(isMaterializationCommand('pnpm test'), false)
+    assert.equal(isMaterializationCommand('echo sync-to-app.sh'), false)
+  })
+
+  it('denies materialization commands executed from inside an isolated worktree', () => {
+    const result = decideBashCommand({
+      command: './scripts/sync-to-app.sh omnimux',
+      cwd: worktreeRoot,
+    })
+
+    assert.equal(result.decision, 'deny')
+    assert.equal(result.reason, 'forbidden-worktree-materialization')
+  })
+
+  it('denies materialization on a non-main branch checkout', () => {
+    const branchRepoRoot = join(fixture, 'feature-branch-repo')
+    mkdirSync(branchRepoRoot, { recursive: true })
+    gitCommand(branchRepoRoot, 'init', '-b', 'agent/feature-branch')
+    writeFileSync(join(branchRepoRoot, 'package.json'), '{"name":"fixture"}')
+    gitCommand(branchRepoRoot, 'add', '.')
+    gitCommand(branchRepoRoot, '-c', 'user.name=Guard Test', '-c', 'user.email=guard@example.invalid', 'commit', '-m', 'feat base')
+
+    const result = decideBashCommand({
+      command: 'bash scripts/sync-to-app.sh',
+      cwd: branchRepoRoot,
+    })
+
+    assert.equal(result.decision, 'deny')
+    assert.equal(result.reason, 'forbidden-worktree-materialization')
+  })
+
+  it('denies materialization when local main is behind origin/main', () => {
+    const localMainRepo = createRepo('local-behind-repo')
+    // 模拟远程已经合入了新成果并拉取了 ref，使得 origin/main 领先本地 HEAD
+    writeFileSync(join(localMainRepo, 'new-file.txt'), 'remote new feature\n')
+    gitCommand(localMainRepo, 'add', '.')
+    gitCommand(localMainRepo, '-c', 'user.name=Guard Test', '-c', 'user.email=guard@example.invalid', 'commit', '-m', 'remote merged feature')
+    gitCommand(localMainRepo, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+    // 本地回退一个提交，形成落后状态
+    gitCommand(localMainRepo, 'reset', '--hard', 'HEAD~1')
+
+    // 此时本地落后 1 个提交，物化必须被硬性阻断
+    const result = decideBashCommand({
+      command: './scripts/sync-to-app.sh',
+      cwd: localMainRepo,
+    })
+
+    assert.equal(result.decision, 'deny')
+    assert.equal(result.reason, 'forbidden-stale-main-materialization')
+    assert.equal(result.behindCount >= 1, true)
+  })
+
+  it('allows materialization on clean, synchronized main checkout', () => {
+    const syncRepo = join(fixture, 'synced-main-repo')
+    mkdirSync(syncRepo, { recursive: true })
+    gitCommand(syncRepo, 'init', '-b', 'main')
+    writeFileSync(join(syncRepo, 'package.json'), '{"name":"fixture"}')
+    gitCommand(syncRepo, 'add', '.')
+    gitCommand(syncRepo, '-c', 'user.name=Guard Test', '-c', 'user.email=guard@example.invalid', 'commit', '-m', 'base commit')
+
+    const result = decideBashCommand({
+      command: './scripts/sync-to-app.sh',
+      cwd: syncRepo,
+    })
+
+    assert.equal(result.decision, 'allow')
+  })
+
+  it('denies materialization when local main is ahead of origin/main (unpushed commits)', () => {
+    const localAheadRepo = createRepo('local-ahead-repo')
+    // 模拟远程已经对齐
+    gitCommand(localAheadRepo, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+    // 本地产生新提交，形成领先状态
+    writeFileSync(join(localAheadRepo, 'unpushed.txt'), 'local unpushed feature\n')
+    gitCommand(localAheadRepo, 'add', '.')
+    gitCommand(localAheadRepo, '-c', 'user.name=Guard Test', '-c', 'user.email=guard@example.invalid', 'commit', '-m', 'unpushed commit')
+
+    const result = decideBashCommand({
+      command: './scripts/sync-to-app.sh',
+      cwd: localAheadRepo,
+    })
+
+    assert.equal(result.decision, 'deny')
+    assert.equal(result.reason, 'forbidden-diverged-main-materialization')
+    assert.equal(result.aheadCount >= 1, true)
+  })
+
+  it('denies git merge and git commit on main branch in primary checkout', () => {
+    const mainRepo = createRepo('main-branch-ops-repo')
+
+    // 1. git merge on main -> deny
+    const mergeResult = decideBashCommand({
+      command: 'git merge feature-branch',
+      cwd: mainRepo,
+      ownerRoot: mainRepo,
+    })
+    assert.equal(mergeResult.decision, 'deny')
+    assert.equal(mergeResult.reason, 'forbidden-main-branch-merge')
+
+    // 2. git commit on main -> deny
+    const commitResult = decideBashCommand({
+      command: 'git commit -m "direct commit"',
+      cwd: mainRepo,
+      ownerRoot: mainRepo,
+    })
+    assert.equal(commitResult.decision, 'deny')
+    assert.equal(commitResult.reason, 'forbidden-main-branch-commit')
+  })
+
+  it('allows git merge and git commit on main branch in a foreign repository', () => {
+    const mainRepo = createRepo('main-branch-owner-repo')
+    const foreignRepo = createRepo('foreign-repo')
+
+    // 外部仓的 main：不属于 guard 所属仓库 → 放行
+    const commitResult = decideBashCommand({
+      command: 'git commit -m "foreign commit"',
+      cwd: foreignRepo,
+      ownerRoot: mainRepo,
+    })
+    assert.equal(commitResult.decision, 'allow')
+
+    const mergeResult = decideBashCommand({
+      command: 'git merge feature-branch',
+      cwd: foreignRepo,
+      ownerRoot: mainRepo,
+    })
+    assert.equal(mergeResult.decision, 'allow')
+
+    // 显式 -C 指向外部仓同样放行
+    const viaC = decideBashCommand({
+      command: `git -C "${foreignRepo}" commit -m "foreign commit via -C"`,
+      cwd: mainRepo,
+      ownerRoot: mainRepo,
+    })
+    assert.equal(viaC.decision, 'allow')
+  })
+
+  it('tracks cd into a foreign repo so commit there is allowed while main stays denied', () => {
+    const mainRepo = createRepo('main-branch-cd-owner')
+    const foreignRepo = createRepo('foreign-repo-cd')
+
+    const foreign = decideBashCommand({
+      command: `cd "${foreignRepo}" && git commit -m "foreign commit"`,
+      cwd: mainRepo,
+      ownerRoot: mainRepo,
+    })
+    assert.equal(foreign.decision, 'allow')
+
+    const owner = decideBashCommand({
+      command: `cd "${mainRepo}" && git commit -m "direct on owner main"`,
+      cwd: '/some/other/dir',
+      ownerRoot: mainRepo,
+    })
+    assert.equal(owner.decision, 'deny')
+    assert.equal(owner.reason, 'forbidden-main-branch-commit')
+  })
+
+  it('denies git worktree add without origin/main', () => {
+    // 1. without origin/main -> deny
+    const badWtResult = decideBashCommand({
+      command: 'git worktree add ../wt-test',
+      cwd: '/some/dir',
+    })
+    assert.equal(badWtResult.decision, 'deny')
+    assert.equal(badWtResult.reason, 'forbidden-non-origin-worktree-add')
+
+    // 2. with origin/main -> allow
+    const goodWtResult = decideBashCommand({
+      command: 'git worktree add -b my-feat ../wt-test origin/main',
+      cwd: '/some/dir',
+    })
+    assert.equal(goodWtResult.decision, 'allow')
+  })
+
+  it('honours explicit `git -C <worktree>` so legitimate commits inside a worktree are not blocked', () => {
+    // hook 收到的 cwd 是会话工作目录（此处为主干），但命令显式指向独立工作树
+    const wrt = join(fixture, 'explicit-c-worktree')
+    gitCommand(mainRepoRoot, 'worktree', 'add', '-b', 'explicit-c-branch', wrt, 'HEAD')
+
+    // 1. 显式 -C 指向工作树 → 允许提交
+    const allowed = decideBashCommand({
+      command: `git -C "${wrt}" commit -m "work inside worktree"`,
+      cwd: mainRepoRoot,
+      ownerRoot: mainRepoRoot,
+    })
+    assert.equal(allowed.decision, 'allow')
+
+    // 2. 无 -C，cwd 为主干 → 拦截
+    const denied = decideBashCommand({
+      command: 'git commit -m "direct on main"',
+      cwd: mainRepoRoot,
+      ownerRoot: mainRepoRoot,
+    })
+    assert.equal(denied.decision, 'deny')
+    assert.equal(denied.reason, 'forbidden-main-branch-commit')
+
+    // 3. 显式 -C 指向主干 → 拦截
+    const deniedExplicit = decideBashCommand({
+      command: `git -C "${mainRepoRoot}" commit -m "direct on main via -C"`,
+      cwd: '/some/other/dir',
+      ownerRoot: mainRepoRoot,
+    })
+    assert.equal(deniedExplicit.decision, 'deny')
+    assert.equal(deniedExplicit.reason, 'forbidden-main-branch-commit')
+  })
+})
+
+describe('guard-worktree unbounded scan guard (全盘扫盘硬拦截)', () => {
+  const home = '/Users/x'
+  const project = '.'
+
+  it('denies the incident command: find over the user home directory', () => {
+    const result = decideBashCommand({
+      command: 'find /Users/x -name "*insp_ad704927*" 2>/dev/null',
+      cwd: project,
+    })
+    assert.equal(result.decision, 'deny')
+    assert.equal(result.reason, 'forbidden-unbounded-scan')
+    assert.equal(result.target, '/Users/x')
+    assert.equal(result.binary, 'find')
+  })
+
+  it('denies traversals rooted at /, /Users, /home, ~ and $HOME', () => {
+    for (const root of ['/', '/Users/', '/home', '/Volumes', '~', '$HOME', '${HOME}', '~/']) {
+      const result = decideBashCommand({ command: `find ${root} -name "*.mp4"`, cwd: home })
+      assert.equal(result.decision, 'deny', `expected deny for root ${root}`)
+      assert.equal(result.reason, 'forbidden-unbounded-scan')
+    }
+  })
+
+  it('denies recursive grep/rg/du/ls -R against a traversal root', () => {
+    const commands = [
+      'grep -r "TODO" /Users',
+      'rg --hidden foo /Users/x',
+      'du -sh /Users/x',
+      'ls -R /Users/x',
+      'find /Users/x -type f -name "*.mov"',
+    ]
+    for (const command of commands) {
+      const result = decideBashCommand({ command, cwd: home })
+      assert.equal(result.decision, 'deny', `expected deny for: ${command}`)
+      assert.equal(result.reason, 'forbidden-unbounded-scan')
+    }
+  })
+
+  it('denies `cd <home> && find .` where the sweep root is armed by the previous segment', () => {
+    const result = decideBashCommand({
+      command: 'cd /Users/x && find . -name "*insp*"',
+      cwd: home,
+    })
+    assert.equal(result.decision, 'deny')
+    assert.equal(result.reason, 'forbidden-unbounded-scan')
+    assert.equal(result.target, '/Users/x')
+  })
+
+  it('allows bounded searches inside the project and scoped find depth', () => {
+    const commands = [
+      'find . -name "*.mjs"',
+      'find plugins -name "*.js"',
+      'find . -name "*.md"',
+      'find /Users/x -maxdepth 2 -name "*.json"',
+      'find /Users/x -maxdepth=3 -type d',
+      'rg "TODO" plugins/scripts',
+      'grep -rn "guard" scripts/',
+      'ls -la plugins',
+      'cd . && find . -name "*.md"',
+      'find ~/Movies -name "*.mov"',
+      'cd /Users/x && ls -la',
+    ]
+    for (const command of commands) {
+      const result = decideBashCommand({ command, cwd: project })
+      assert.equal(result.decision, 'allow', `expected allow for: ${command}`)
+    }
+  })
+
+  it('classifies scan roots without flagging project-internal paths', () => {
+    assert.equal(isUnboundedScanRoot('/Users/x'), true)
+    assert.equal(isUnboundedScanRoot('/'), true)
+    assert.equal(isUnboundedScanRoot('~'), true)
+    assert.equal(isUnboundedScanRoot('.'), false)
+    assert.equal(isUnboundedScanRoot('.'), false)
+  })
+
+  it('guards the glob and grep tools when their path argument names a traversal root', () => {
+    const deniedGlob = decideSearchTarget({
+      toolName: 'glob',
+      toolInput: { pattern: '**/*insp_ad704927*', path: '/Users/x' },
+    })
+    assert.equal(deniedGlob.decision, 'deny')
+    assert.equal(deniedGlob.reason, 'forbidden-unbounded-scan')
+    assert.equal(deniedGlob.target, '/Users/x')
+
+    assert.equal(decideSearchTarget({ toolName: 'grep', toolInput: { pattern: 'TODO', path: '/' } }).decision, 'deny')
+
+    // An omitted path stays inside the session workspace.
+    assert.equal(decideSearchTarget({ toolName: 'glob', toolInput: {} }).decision, 'allow')
+    // A project-scoped path is untouched.
+    assert.equal(decideSearchTarget({ toolName: 'glob', toolInput: { path: project } }).decision, 'allow')
+    // Other tools are never matched by this guard.
+    assert.equal(decideSearchTarget({ toolName: 'read', toolInput: { path: '/' } }).decision, 'allow')
+  })
+
+  it('emits an actionable denial reason through the PreToolUse protocol', () => {
+    const payload = JSON.stringify({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'bash',
+      cwd: home,
+      tool_input: { command: 'find /Users/x -name "*insp*"' },
+    })
+    const result = spawnSync('node', [join(here, 'guard-worktree.mjs')], { input: payload, encoding: 'utf8' })
+    assert.equal(result.status, 0, result.stderr)
+    const parsed = JSON.parse(result.stdout)
+    assert.equal(parsed.hookSpecificOutput.hookEventName, 'PreToolUse')
+    assert.equal(parsed.hookSpecificOutput.permissionDecision, 'deny')
+    assert.match(parsed.hookSpecificOutput.permissionDecisionReason, /无界递归扫描/)
+    assert.match(parsed.hookSpecificOutput.permissionDecisionReason, /video_breakdown_analyze/)
+  })
+
+  it('denies glob tool calls routed through the hook dispatcher', () => {
+    const payload = JSON.stringify({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'default_api:glob',
+      cwd: home,
+      tool_input: { pattern: '**/*insp_ad704927*', path: '/Users/x' },
+    })
+    const result = spawnSync('node', [join(here, 'guard-worktree.mjs')], { input: payload, encoding: 'utf8' })
+    assert.equal(result.status, 0, result.stderr)
+    const parsed = JSON.parse(result.stdout)
+    assert.equal(parsed.hookSpecificOutput.permissionDecision, 'deny')
+  })
+})
+
+// #3821：主检出 install 必须冻结 lockfile。
+//
+// 背景：不带冻结 flag 的 install 会按 manifest 重写 pnpm-lock.yaml，这一步不经过
+// edit/write，因而绕开 tracked-file 保护。实测（pnpm 11）：manifest 加一个依赖后
+// 无 flag 的 install 使 lockfile sha256 从 88818e6e 变为 c10e5b05；带
+// --frozen-lockfile 时命令失败退出且哈希不变。
+describe('main checkout install must freeze the lockfile (#3821)', () => {
+  const mainCwd = mainRepoRoot
+
+  it('denies unfrozen install for every package manager', () => {
+    for (const command of ['pnpm install', 'npm install', 'yarn install', 'pnpm i']) {
+      const result = decideBashCommand({ command, cwd: mainCwd })
+      assert.equal(result.decision, 'deny', `${command} 必须被拒`)
+      assert.equal(result.reason, 'forbidden-main-checkout-unfrozen-install', `${command} 的拒绝原因要能指名`)
+    }
+  })
+
+  it('allows frozen install and npm ci', () => {
+    for (const command of [
+      'pnpm install --frozen-lockfile',
+      'pnpm install --offline --frozen-lockfile',
+      'yarn install --frozen-lockfile',
+      'npm ci',
+    ]) {
+      assert.equal(decideBashCommand({ command, cwd: mainCwd }).decision, 'allow', `${command} 必须放行`)
+    }
+  })
+
+  it('treats an explicit frozen=false as unfrozen', () => {
+    // 写成 =false 等于关掉冻结，不能因为出现该字符串就当成安全。
+    assert.equal(
+      decideBashCommand({ command: 'pnpm install --frozen-lockfile=false', cwd: mainCwd }).decision,
+      'deny',
+    )
+    assert.equal(
+      decideBashCommand({ command: 'pnpm install --frozen-lockfile=0', cwd: mainCwd }).decision,
+      'deny',
+    )
+  })
+
+  it('still denies package-name installs on the main checkout', () => {
+    // 冻结判定不应盖掉原有的「带包名按 add 语义拒绝」保护。
+    const result = decideBashCommand({ command: 'pnpm install left-pad --frozen-lockfile', cwd: mainCwd })
+    assert.equal(result.decision, 'deny')
+    assert.equal(result.reason, 'forbidden-main-checkout-build')
+  })
+
+  it('does not restrict installs inside a real worktree', () => {
+    // 工作树里怎么装都不该管——这是任务隔离区的正常开发行为。
+    // 必须是 git 真实登记的工作树（见文件顶部 `git worktree add` 建的 worktreeRoot）：
+    // 随手 mkdir 一个目录不算，isWorktreePath 会判否。
+    for (const command of ['pnpm install', 'yarn install', 'pnpm install --filter x']) {
+      assert.equal(decideBashCommand({ command, cwd: worktreeRoot }).decision, 'allow', `${command} 在工作树内必须放行`)
+    }
+  })
+})

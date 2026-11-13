@@ -1,0 +1,513 @@
+/**
+ * omnimux-workflow canvas island theme — the --wb-* token layer.
+ *
+ * Skin mechanism (validated by the spike): every canvas color references a
+ * --wb-* variable; --wb-* values in turn reference the host's --dsw-* design
+ * tokens, so the island follows the host theme (including
+ * body[data-ds-dark-theme]) with zero React coupling. Fallbacks pin the dsh
+ * brand blue #4176E6 (--dsw-static-deepseek-500) for standalone runs.
+ */
+
+.wf-canvas-root {
+  /* brand accent — the single skin switch */
+  --wb-accent: var(--dsw-static-deepseek-500, #4176E6);
+  --wb-accent-hover: var(--dsw-static-deepseek-400, #679EFE);
+  --wb-accent-soft: color-mix(in srgb, var(--wb-accent) 12%, transparent);
+  /* 品牌色只做品牌强调，不做状态色（DESIGN 2.0 极光紫替换旧荧光绿） */
+  --wb-brand-indigo: #6757e7; /* OmniMux indigo */
+  /* boot 加载态细弧：与宿主 CanvasBridge 同一视觉契约 */
+  --wb-loader-arc: var(--dsw-alias-brand-purple, #cfc7ff);
+  /* 语义状态色：AA 达标（白底 ≥ 4.5:1） */
+  --wb-success: #2e9e5b;
+  --wb-success-soft: color-mix(in srgb, var(--wb-success) 12%, transparent);
+  --wb-warning: #b8860b;
+  --wb-danger: #ef4444;
+
+  /* surfaces */
+  --wb-bg: var(--dsw-alias-bg-primary, #F7F8FA);
+  --wb-bg-canvas: var(--dsw-alias-bg-secondary, #F3F4F7);
+  --wb-surface: var(--dsw-alias-bg-primary, #ffffff);
+  --wb-surface-raised: var(--dsw-alias-bg-secondary, #fbfbfc);
+  --wb-surface-elevated: #ffffff;
+  --wb-popover-bg: rgba(255, 255, 255, 0.96);
+  --wb-popover-border: var(--dsw-alias-border-l2, rgba(15, 20, 32, 0.1));
+  --dsw-alias-bg-elevated: var(--wb-surface-elevated);
+  --dsw-alias-brand-primary: var(--wb-accent);
+  --wb-border: var(--dsw-alias-border, rgba(15, 20, 32, 0.08));
+  --wb-border-strong: var(--dsw-alias-border-strong, rgba(15, 20, 32, 0.16));
+
+  /* text */
+  --wb-text-primary: var(--dsw-alias-label-primary, #1a1d26);
+  --wb-text-secondary: var(--dsw-alias-label-secondary, #5f6472);
+  --wb-text-muted: var(--dsw-alias-label-tertiary, #9aa0ae);
+
+  /* canvas chrome */
+  --wb-edge: #b1b1b7;
+  --wb-grid-dot: #C9CBD6;
+
+  /* node card tokens (W1 Gxgen alignment) */
+  --wb-node-text-strong: var(--wb-text-secondary);
+  --wb-node-text-muted: var(--wb-text-muted);
+  --wb-node-ring: var(--dsw-alias-label-primary, #000000);
+  --wb-node-radius: 20px;
+  --wb-danger-soft: color-mix(in srgb, var(--wb-danger) 12%, transparent);
+  /* 连线物理流光 token（非蓝，双主题自适应：浅色深紫/电紫，深色香芋紫/电紫） */
+  --wb-beam-start: #5644d6; /* 浅色端点 1：悬浮深紫（对比度 ≥ 4.5:1） */
+  --wb-beam-end: #7961f2;   /* 浅色端点 2：极光电紫 */
+  --wb-beam-glow: rgba(121, 97, 242, 0.35);
+  --wb-beam-glow-secondary: rgba(86, 68, 214, 0.4);
+  --wb-beam-track: rgba(0, 0, 0, 0.08);
+
+  /* 鼠标框选（全选）品牌视觉紫色 token：双主题自适应（参考设计，无描边虚线） */
+  --wb-selection-marquee-border: var(--dsw-alias-brand-purple, #7961f2);
+  --wb-selection-marquee-bg: color-mix(in srgb, var(--wb-selection-marquee-border) 8%, transparent);
+  /* React Flow 节点多选包裹框：DSH 黑白主题色 */
+  --xy-selection-background-color: color-mix(in srgb, var(--wb-node-ring) 4%, transparent);
+  --xy-selection-border: 1px solid var(--wb-node-ring);
+
+  /* Modern Floating Dock & Capsule Header tokens */
+  --wb-dock-bg: rgba(255, 255, 255, 0.88);
+  --wb-dock-blur: blur(16px);
+  --wb-dock-shadow: 0 16px 36px -4px rgba(15, 20, 32, 0.12), 0 0 0 1px rgba(15, 20, 32, 0.06);
+  --wb-dock-radius: 28px;
+  --wb-dock-item-hover: rgba(0, 0, 0, 0.05);
+
+  --wb-header-capsule-bg: rgba(255, 255, 255, 0.92);
+  --wb-header-capsule-shadow: 0 8px 24px -2px rgba(15, 20, 32, 0.08), 0 0 0 1px rgba(15, 20, 32, 0.05);
+  --wb-header-radius: 18px;
+
+  --wb-pill-bg: var(--dsw-alias-bg-secondary, #F4F5F8);
+  --wb-pill-hover: var(--dsw-alias-bg-tertiary, #E8EAEE);
+  --wb-pill-radius: 12px;
+  --wb-pill-text: var(--wb-text-secondary);
+
+  /* config panel shell tokens (W2; 来源 Gxgen ConfigPanelShell.tsx:19-22,45-46) */
+  --wb-panel-outer: var(--dsw-alias-bg-secondary, #f5f5f5);
+  --wb-panel-inner: var(--dsw-alias-bg-primary, #ffffff);
+  --wb-panel-shadow:
+    rgba(0, 0, 0, 0.05) 0 0 0 1px,
+    rgba(0, 0, 0, 0.04) 0 10px 10px -5px,
+    rgba(0, 0, 0, 0.04) 0 20px 25px -5px,
+    rgba(0, 0, 0, 0.04) 0 20px 32px -12px;
+
+  /* elevation tokens — 卡片 / 浮层两档，散写阴影收敛到这里 */
+  --wb-shadow-card: 0 8px 24px rgba(15, 20, 32, 0.06);
+  --wb-shadow-card-hover: 0 12px 32px rgba(15, 20, 32, 0.1);
+  --wb-shadow-pop: 0 12px 32px rgba(15, 20, 32, 0.16);
+
+  /* typography tokens — 4 档字号阶梯 + 单点字体栈 */
+  --wb-fs-caption: 11px;
+  --wb-fs-body: 13px;
+  --wb-fs-title: 14px;
+  --wb-fs-icon: 18px;
+  --wb-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+
+  /* Organic Shimmer Token System (Transitions.dev 流体微光)
+     linear + alternate：匀速往返，消除 ease-out 尾段停顿与循环硬跳 */
+  --wf-shimmer-dur: 4000ms;
+  --wf-shimmer-ease: linear;
+  --wf-shimmer-direction: alternate;
+  --wf-shimmer-band-factor: 26%;
+  --wf-shimmer-band: calc(var(--wf-shimmer-band-factor) * 0.848);
+  --wf-shimmer-bg-opacity: 1;
+  --wf-shimmer-glow-blur: 20px;
+  --wf-shimmer-glow-opacity: 0.75;
+  --wf-shimmer-border-opacity: 1;
+  --wf-shimmer-stage-bg: var(--wb-surface-raised, #fbfbfc);
+  --wf-shimmer-stage-rgb: 245, 245, 248;
+  --wf-shimmer-svg-light: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22600%22%20height%3D%22600%22%20viewBox%3D%220%200%20600%20600%22%20preserveAspectRatio%3D%22none%22%3E%3Cdefs%3E%3ClinearGradient%20id%3D%22wf_shm_g%22%20gradientUnits%3D%22userSpaceOnUse%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%22600%22%20y2%3D%22600%22%3E%3Cstop%20offset%3D%220.0000%22%20stop-color%3D%22%23eeeeee%22%20stop-opacity%3D%221%22%2F%3E%3Cstop%20offset%3D%220.3236%22%20stop-color%3D%22%23eeeeee%22%20stop-opacity%3D%221%22%2F%3E%3Cstop%20offset%3D%220.4008%22%20stop-color%3D%22%23eeeeee%22%20stop-opacity%3D%220.75%22%2F%3E%3Cstop%20offset%3D%220.4603%22%20stop-color%3D%22%23eeeeee%22%20stop-opacity%3D%220.3%22%2F%3E%3Cstop%20offset%3D%220.5000%22%20stop-color%3D%22%23eeeeee%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%220.5397%22%20stop-color%3D%22%23eeeeee%22%20stop-opacity%3D%220.3%22%2F%3E%3Cstop%20offset%3D%220.5992%22%20stop-color%3D%22%23eeeeee%22%20stop-opacity%3D%220.75%22%2F%3E%3Cstop%20offset%3D%220.6764%22%20stop-color%3D%22%23eeeeee%22%20stop-opacity%3D%221%22%2F%3E%3Cstop%20offset%3D%221.0000%22%20stop-color%3D%22%23eeeeee%22%20stop-opacity%3D%221%22%2F%3E%3C%2FlinearGradient%3E%3Cfilter%20id%3D%22wf_shm_w%22%20x%3D%22-10%25%22%20y%3D%22-10%25%22%20width%3D%22120%25%22%20height%3D%22120%25%22%3E%3CfeTurbulence%20type%3D%22fractalNoise%22%20baseFrequency%3D%220.009%200.015%22%20numOctaves%3D%222%22%20seed%3D%227%22%20result%3D%22n%22%2F%3E%3CfeDisplacementMap%20in%3D%22SourceGraphic%22%20in2%3D%22n%22%20scale%3D%2246%22%20xChannelSelector%3D%22R%22%20yChannelSelector%3D%22G%22%2F%3E%3CfeGaussianBlur%20stdDeviation%3D%225%22%2F%3E%3C%2Ffilter%3E%3C%2Fdefs%3E%3Crect%20x%3D%22-70%22%20y%3D%22-70%22%20width%3D%22740%22%20height%3D%22740%22%20fill%3D%22url(%23wf_shm_g)%22%20filter%3D%22url(%23wf_shm_w)%22%2F%3E%3C%2Fsvg%3E");
+  --wf-shimmer-svg-dark: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22600%22%20height%3D%22600%22%20viewBox%3D%220%200%20600%20600%22%20preserveAspectRatio%3D%22none%22%3E%3Cdefs%3E%3ClinearGradient%20id%3D%22wf_shm_g%22%20gradientUnits%3D%22userSpaceOnUse%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%22600%22%20y2%3D%22600%22%3E%3Cstop%20offset%3D%220.0000%22%20stop-color%3D%22%23222226%22%20stop-opacity%3D%221%22%2F%3E%3Cstop%20offset%3D%220.3236%22%20stop-color%3D%22%23222226%22%20stop-opacity%3D%221%22%2F%3E%3Cstop%20offset%3D%220.4008%22%20stop-color%3D%22%23222226%22%20stop-opacity%3D%220.75%22%2F%3E%3Cstop%20offset%3D%220.4603%22%20stop-color%3D%22%23222226%22%20stop-opacity%3D%220.3%22%2F%3E%3Cstop%20offset%3D%220.5000%22%20stop-color%3D%22%23222226%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%220.5397%22%20stop-color%3D%22%23222226%22%20stop-opacity%3D%220.3%22%2F%3E%3Cstop%20offset%3D%220.5992%22%20stop-color%3D%22%23222226%22%20stop-opacity%3D%220.75%22%2F%3E%3Cstop%20offset%3D%220.6764%22%20stop-color%3D%22%23222226%22%20stop-opacity%3D%221%22%2F%3E%3Cstop%20offset%3D%221.0000%22%20stop-color%3D%22%23222226%22%20stop-opacity%3D%221%22%2F%3E%3C%2FlinearGradient%3E%3Cfilter%20id%3D%22wf_shm_w%22%20x%3D%22-10%25%22%20y%3D%22-10%25%22%20width%3D%22120%25%22%20height%3D%22120%25%22%3E%3CfeTurbulence%20type%3D%22fractalNoise%22%20baseFrequency%3D%220.009%200.015%22%20numOctaves%3D%222%22%20seed%3D%227%22%20result%3D%22n%22%2F%3E%3CfeDisplacementMap%20in%3D%22SourceGraphic%22%20in2%3D%22n%22%20scale%3D%2246%22%20xChannelSelector%3D%22R%22%20yChannelSelector%3D%22G%22%2F%3E%3CfeGaussianBlur%20stdDeviation%3D%225%22%2F%3E%3C%2Ffilter%3E%3C%2Fdefs%3E%3Crect%20x%3D%22-70%22%20y%3D%22-70%22%20width%3D%22740%22%20height%3D%22740%22%20fill%3D%22url(%23wf_shm_g)%22%20filter%3D%22url(%23wf_shm_w)%22%2F%3E%3C%2Fsvg%3E");
+  --wf-shimmer-svg-url: var(--wf-shimmer-svg-light);
+
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--wb-bg);
+  color: var(--wb-text-primary);
+  font-family: var(--wb-font-family);
+}
+
+/* boot 加载态：单一细弧 + 一行说明（与宿主 CanvasBridge 同构）。
+   不得加底环、光晕、分步指示或第二段动效。 */
+.wf-canvas-boot-status {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  animation: wf-canvas-boot-fade 280ms ease-out both;
+}
+
+.wf-canvas-boot-spinner {
+  display: block;
+  width: 32px;
+  height: 32px;
+  transform-origin: center;
+  animation: wf-canvas-boot-spin 1.35s linear infinite;
+}
+
+.wf-canvas-boot-spinner__arc {
+  fill: none;
+  stroke: var(--wb-loader-arc, #cfc7ff);
+}
+
+.wf-canvas-boot-status__label {
+  font-size: 12.5px;
+  line-height: 1.4;
+  letter-spacing: .05em;
+  color: var(--wb-text-muted);
+}
+
+@keyframes wf-canvas-boot-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes wf-canvas-boot-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wf-canvas-boot-status {
+    animation: none;
+  }
+  .wf-canvas-boot-spinner {
+    animation: none;
+  }
+}
+
+/* Dark-theme following: --dsw-alias-* tokens already flip with
+   body[data-ds-dark-theme]; these explicit fallback swaps keep the island
+   correct even when host tokens are absent (standalone dev harness). */
+body[data-ds-dark-theme] .wf-canvas-root {
+  --wb-bg: #141416;
+  --wb-bg-canvas: #101012;
+  --wb-surface: #1b1b1e;
+  --wb-surface-raised: #222226;
+  --wb-surface-elevated: #1c1c1f;
+  --wb-popover-bg: rgba(26, 27, 30, 0.96);
+  --wb-popover-border: var(--dsw-alias-border-l2, rgba(255, 255, 255, 0.12));
+  --dsw-alias-bg-elevated: var(--wb-surface-elevated);
+  --dsw-alias-brand-primary: var(--wb-accent-hover, #679EFE);
+  --wb-border: rgba(250, 250, 250, 0.1);
+  --wb-border-strong: rgba(250, 250, 250, 0.2);
+  --wb-text-primary: #f5f5f5;
+  --wb-text-secondary: #a1a1aa;
+  --wb-text-muted: #71717a;
+  --wb-grid-dot: #2e2e33;
+  /* 语义色暗色翻转（对比度 ≥ 4.5:1） */
+  --wb-success: #4cc38a;
+  --wb-warning: #e5c07b;
+  /* 阴影暗色翻转 */
+  --wb-shadow-card: 0 8px 24px rgba(0, 0, 0, 0.3);
+  --wb-shadow-card-hover: 0 12px 32px rgba(0, 0, 0, 0.36);
+  --wb-shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.4);
+
+  /* floating dock & header dark */
+  --wb-dock-bg: rgba(26, 27, 30, 0.88);
+  --wb-dock-shadow: 0 16px 36px -4px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --wb-dock-item-hover: rgba(255, 255, 255, 0.08);
+  --wb-header-capsule-bg: rgba(26, 27, 30, 0.92);
+  --wb-header-capsule-shadow: 0 8px 24px -2px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --wb-pill-bg: #232328;
+  --wb-pill-hover: #2c2c33;
+  /* panel shell dark fallbacks（宿主 --dsw-alias-* 自身翻转是主路径） */
+  --wb-panel-outer: var(--dsw-alias-bg-secondary, #1a1a24);
+  --wb-panel-inner: var(--dsw-alias-bg-primary, #1f1f2b);
+  --wb-panel-shadow:
+    rgba(255, 255, 255, 0.05) 0 0 0 1px,
+    rgba(0, 0, 0, 0.3) 0 10px 10px -5px,
+    rgba(0, 0, 0, 0.3) 0 20px 25px -5px,
+    rgba(0, 0, 0, 0.3) 0 20px 32px -12px;
+  /* 连线物理流光暗色翻转：OmniMux 香芋浅紫 + 极光电紫，无蓝色 */
+  --wb-beam-start: #b8b7ff;
+  --wb-beam-end: #7961f2;
+  --wb-beam-glow: rgba(184, 183, 255, 0.45);
+  --wb-beam-glow-secondary: rgba(121, 97, 242, 0.6);
+  --wb-beam-track: rgba(255, 255, 255, 0.12);
+  /* 节点选中/高亮边框线暗色自适应：白色边框 */
+  --wb-node-ring: var(--dsw-alias-label-primary, #ffffff);
+  /* 鼠标框选（全选）品牌视觉紫色暗色翻转：香芋浅紫/极光紫 (#978fd8) */
+  --wb-selection-marquee-border: var(--dsw-alias-brand-purple, #978fd8);
+  --wb-selection-marquee-bg: color-mix(in srgb, var(--wb-selection-marquee-border) 10%, transparent);
+
+  /* Organic Shimmer dark cascade */
+  --wf-shimmer-stage-bg: var(--wb-surface-raised, #222226);
+  --wf-shimmer-stage-rgb: 34, 34, 38;
+  --wf-shimmer-svg-url: var(--wf-shimmer-svg-dark);
+  /* node tokens (--wb-node-*/--wb-danger-soft/--wb-beam-*) reference the
+     vars above, so they flip automatically — no JS isDark branch. */
+}
+
+/* ==================== island header ==================== */
+
+.wf-canvas-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--wb-border);
+  background: var(--wb-surface);
+  flex-shrink: 0;
+}
+
+.wf-canvas-header__title {
+  font-size: var(--wb-fs-title);
+  font-weight: 600;
+}
+
+.wf-canvas-header__spacer {
+  flex: 1;
+}
+
+.wf-canvas-header__button {
+  font-size: var(--wb-fs-caption);
+  padding: 5px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--wb-accent);
+  color: var(--wb-accent);
+  background: var(--wb-accent-soft);
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.wf-canvas-header__button:hover {
+  background: var(--wb-accent);
+  color: #fff;
+}
+
+.wf-canvas-header__button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.wf-canvas-header__button--ghost {
+  border-color: var(--wb-border-strong);
+  color: var(--wb-text-secondary);
+  background: transparent;
+}
+
+.wf-canvas-header__button--ghost:hover {
+  background: var(--wb-surface-raised);
+  color: var(--wb-text-primary);
+}
+
+.wf-canvas-main {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+/* ==================== React Flow theme overrides ==================== */
+
+.wf-canvas-root .react-flow {
+  background: var(--wb-bg-canvas);
+}
+
+.wf-canvas-root .react-flow__edge-path {
+  stroke: var(--wb-edge);
+}
+
+.wf-canvas-root .react-flow__edge.selected .react-flow__edge-path {
+  stroke: var(--wb-node-ring);
+  stroke-width: 2.5;
+}
+
+.wf-canvas-root .react-flow__handle {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--wb-surface);
+  border: 2px solid var(--wb-node-ring);
+  transition: transform 120ms ease, background 120ms ease;
+}
+
+.wf-canvas-root .react-flow__handle:hover {
+  background: var(--wb-node-ring);
+  transform: scale(1.25);
+}
+
+.wf-canvas-root .react-flow__node {
+  outline: none;
+}
+
+.wf-canvas-root .react-flow__node-group {
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.wf-canvas-root .react-flow__controls {
+  box-shadow: var(--wb-shadow-card-hover);
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--wb-border);
+}
+
+.wf-canvas-root .react-flow__controls-button {
+  background: var(--wb-surface);
+  border-bottom: 1px solid var(--wb-border);
+  color: var(--wb-text-secondary);
+}
+
+.wf-canvas-root .react-flow__controls-button:hover {
+  background: var(--wb-surface-raised);
+}
+
+.wf-canvas-root .react-flow__controls-button svg {
+  fill: var(--wb-text-secondary);
+}
+
+.wf-canvas-root .react-flow__minimap {
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--wb-border);
+  background: var(--wb-surface);
+}
+
+.wf-canvas-root .react-flow__minimap-mask {
+  fill: color-mix(in srgb, var(--wb-bg-canvas) 70%, transparent);
+}
+
+.wf-canvas-root .react-flow__minimap-node {
+  fill: color-mix(in srgb, var(--wb-node-ring) 12%, transparent);
+  stroke: var(--wb-node-ring);
+}
+
+/* 鼠标全选/框选高亮：使用品牌视觉紫色（对齐设计，实线无虚线） */
+.wf-canvas-root .react-flow__selection {
+  background: var(--wb-selection-marquee-bg);
+  border: 1px solid var(--wb-selection-marquee-border);
+  box-sizing: border-box;
+  border-radius: 0;
+}
+
+/* 多节点选中后外层包裹框：遵循 DSH 黑白主题色 */
+.wf-canvas-root .react-flow__nodesselection-rect {
+  background: color-mix(in srgb, var(--wb-node-ring) 4%, transparent);
+  border: 1px solid var(--wb-node-ring);
+  border-radius: 4px;
+  box-sizing: border-box;
+}
+
+.wf-canvas-root .react-flow__nodesselection-rect:focus,
+.wf-canvas-root .react-flow__nodesselection-rect:focus-visible {
+  outline: none;
+}
+
+/* ==================== toolbar / bottom floating dock ==================== */
+
+.wf-canvas-toolbar {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 20;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: var(--wb-dock-bg);
+  backdrop-filter: var(--wb-dock-blur);
+  border: 1px solid var(--wb-border);
+  border-radius: var(--wb-dock-radius);
+  box-shadow: var(--wb-dock-shadow);
+  user-select: none;
+}
+
+.wf-canvas-toolbar__item {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  height: 36px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 18px;
+  background: transparent;
+  cursor: pointer;
+  color: var(--wb-text-secondary);
+  transition: all 150ms ease;
+}
+
+.wf-canvas-toolbar__item:hover {
+  background: var(--wb-dock-item-hover);
+  color: var(--wb-text-primary);
+}
+
+.wf-canvas-toolbar__item--active {
+  background: var(--wb-dock-item-hover);
+  color: var(--wb-text-primary);
+  font-weight: 500;
+}
+
+/* 主「+（添加节点）」按钮：保留深色白底 / 浅色黑底的高对比，
+   形状统一为圆角方形（squircle），与 --wb-pill-radius 同档，不再是纯圆。 */
+.wf-canvas-toolbar__item--primary-add {
+  background: #18191c;
+  color: #ffffff;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: var(--wb-pill-radius, 12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.wf-canvas-toolbar__item--primary-add:hover {
+  background: #2b2d33;
+  color: #ffffff;
+  transform: scale(1.05);
+}
+
+body[data-ds-dark-theme] .wf-canvas-toolbar__item--primary-add {
+  background: #ffffff;
+  color: #18191c;
+}
+
+body[data-ds-dark-theme] .wf-canvas-toolbar__item--primary-add:hover {
+  background: #e4e4e7;
+  color: #18191c;
+}
+
+.wf-canvas-toolbar__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wf-canvas-toolbar__label {
+  font-size: var(--wb-fs-body);
+}
+
+.wf-canvas-toolbar__divider {
+  width: 1px;
+  height: 18px;
+  background: var(--wb-border-strong);
+  margin: 0 1px;
+}
+
+.wf-canvas-toolbar__item--icon-only {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wf-canvas-toolbar__item--icon-only .wf-canvas-toolbar__label {
+  display: none;
+}
+

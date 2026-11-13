@@ -1,0 +1,45 @@
+schemaVersion: "1.1"
+managementGroup: "video"
+models:
+  - id: "fixture-avatar-bad-profile"
+    label: "Fixture Avatar Bad Profile"
+    family: "fixture"
+    operations:
+      - id: "avatar_clone"
+        label: "头像克隆"
+        output:
+          type: "video"
+        inputs:
+          - slot: "avatar_image"
+            type: "image"
+            role: "reference"
+            source: "upstream_edge"
+            min: 1
+            max: 1
+            allowedMimes: ["image/png"]
+            maxSizeMb: 10
+            limitSource:
+              kind: "policy_conservative"
+              note: "fixture"
+          - slot: "audio_track"
+            type: "audio"
+            role: "audio_track"
+            source: "upstream_edge"
+            min: 1
+            max: 1
+            allowedMimes: ["audio/mp3"]
+            maxSizeMb: 10
+            limitSource:
+              kind: "policy_conservative"
+              note: "fixture"
+        research:
+          status: "verified"
+          docUrl: "https://example.com/avatar"
+        implementation:
+          status: "ready"
+          profileId: "videoGenerate"
+          seam: "videoGenerate"
+        execution:
+          status: "live"
+          profileId: "videoGenerate"
+          seam: "videoGenerate"

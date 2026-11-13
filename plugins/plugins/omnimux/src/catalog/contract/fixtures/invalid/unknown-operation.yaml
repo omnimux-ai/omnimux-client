@@ -1,0 +1,14 @@
+schemaVersion: "1.1"
+models:
+  - id: "bad-unknown-op"
+    label: "Bad Unknown Op"
+    operations:
+      - id: "not_a_real_operation"
+        label: "虚构"
+        output:
+          type: "video"
+        inputs: []
+    research:
+      status: "draft"
+    execution:
+      status: "none"

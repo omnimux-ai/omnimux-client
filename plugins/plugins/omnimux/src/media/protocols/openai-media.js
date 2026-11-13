@@ -1,0 +1,411 @@
+import {
+  createOpenAICompatibleAdapter,
+  createOpenAICompatibleClient,
+  createProviderRegistry,
+  createProviderRuntime,
+  withRetry,
+} from 'aigc-provider-runtime-kit/runtime'
+import { OmnimuxError } from '../errors.js'
+import { classifyQuotaFailure } from '../../errors/quota-classifier.js'
+import { getJson, credentialRejectedError } from '../job.js'
+import { appendMediaTaskLog } from '../task-log.js'
+import {
+  describeTaskFailure,
+  isAutodlTaskPath,
+  AUTODL_POLL_PATH,
+  pickMediaUrl,
+  pickTaskFailureReason,
+  pickTaskId,
+  pickTaskStatus,
+  TASK_PATH,
+  taskDetailUrl,
+} from '../vendors/omnimux.js'
+import {
+  DEFAULT_POLL_INTERVAL_MS,
+  DEFAULT_RETRY_BUDGET_MS,
+  POLL_RETRY_POLICY,
+  isRetryablePollError,
+  isUnknownTaskError,
+  remainingMs,
+  resolveDeadlineAt,
+  taskTimeout,
+  unknownTask,
+} from '../task-deadline.js'
+
+/**
+ * Run one poll GET with its retry sequence.
+ *
+ * The retry window is bounded twice over: `attemptBudgetMs` caps the composed
+ * signal so a backoff wait cannot run past it, and `POLL_RETRY_POLICY`
+ * (`maxAttempts` 4) caps the attempt count. Both are far shorter than the task
+ * deadline, so one GET can never consume the whole window.
+ *
+ * @param {object} options Poll options (see `pollOpenAiMediaTask`).
+ * @param {string} url
+ * @param {number} attemptBudgetMs
+ */
+async function pollOnceWithRetry(options, url, attemptBudgetMs) {
+  const budgetTimer = AbortSignal.timeout(Math.max(1, attemptBudgetMs))
+  const signal = options.signal ? AbortSignal.any([options.signal, budgetTimer]) : budgetTimer
+  return withRetry(
+    () => getJson(options.fetcher, url, options.apiKey, options.signal, {
+      requestTimeoutMs: options.requestTimeoutMs,
+    }),
+    {
+      ...POLL_RETRY_POLICY,
+      signal,
+      shouldRetry: (error) => isRetryablePollError(error),
+    },
+  )
+}
+
+/**
+ * Upstream reason for a terminal task failure — best effort, never load-bearing.
+ *
+ * Issue #2092: the poll endpoint is the shallow façade and answered
+ * `data.error: null` for a `minimax-h3` video task whose detail record carried
+ * `error.message` ("reference_image_urls: Failed to download the file…"), so the
+ * user saw a bare "task failed" with no cause. One extra GET closes that gap.
+ *
+ * The reason is read from the poll body first, which costs nothing. The detail
+ * read is **opt-in** (`resolveFailureReason: true`): the default poll contract is
+ * one request per attempt (Issue #831), and only a caller that owns the
+ * user-facing error surface should spend the second one.
+ *
+ * Every failure mode here is swallowed on purpose: enriching a message must
+ * never replace the original failure with an unrelated one.
+ *
+ * @param {object} options Poll options (see `pollOpenAiMediaTask`).
+ * @param {unknown} json Terminal task body.
+ * @returns {Promise<string | undefined>}
+ */
+async function resolveFailureReason(options, json) {
+  const fromBody = pickTaskFailureReason(json)
+  if (fromBody) return fromBody
+  if (options.resolveFailureReason !== true) return undefined
+  const detailUrl = taskDetailUrl(json, {
+    capability: options.capability,
+    baseUrl: options.baseUrl,
+    taskId: options.taskId,
+  })
+  if (!detailUrl) return undefined
+  try {
+    const target = new URL(detailUrl)
+    const base = new URL(options.baseUrl)
+    const officialOrigin = base.origin === 'https://api.omnimux.ai' || base.origin === 'https://omnimux.ai'
+    if (target.origin !== base.origin && !(officialOrigin && (target.origin === 'https://api.omnimux.ai' || target.origin === 'https://omnimux.ai'))) return undefined
+    const detail = await getJson(options.fetcher, detailUrl, options.apiKey, options.signal, {
+      requestTimeoutMs: options.requestTimeoutMs,
+    })
+    return pickTaskFailureReason(detail)
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Poll one openai-media task until it reaches a terminal state, or until the
+ * poll deadline expires.
+ *
+ * Issue #1382: this loop used to be an unbounded `for (;;)` whose only exits
+ * were a terminal status or a caller abort — a task stuck at `processing`, or a
+ * provider that never answered, kept the workflow node "generating" forever.
+ * The deadline is now the single authority: there is deliberately no separate
+ * attempt counter (a second limit would only mask the first).
+ *
+ * A poll that fails with a retryable error (connection jitter, a per-request
+ * timeout, 429/408/409, a retryable 5xx) after its retries are used up does
+ * **not** end the poll: it is one failed attempt, and the loop keeps polling
+ * until the deadline. Ending it there would turn a transient blip into a failed
+ * node — the "used to finish, now times out" regression this change exists to
+ * avoid.
+ *
+ * @param {object} options
+ * @param {typeof fetch} options.fetcher
+ * @param {string} options.baseUrl
+ * @param {string} options.apiKey
+ * @param {string} options.taskId
+ * @param {string} options.capability
+ * @param {AbortSignal} [options.signal]
+ * @param {(ms: number) => Promise<void>} [options.sleep]
+ * @param {number} [options.deadlineMs] Poll window; defaults to DEFAULT_TASK_DEADLINE_MS.
+ * @param {number} [options.submittedAt] Anchor for the deadline (reconcile path).
+ * @param {string} [options.taskPath] Explicit task endpoint, overriding the
+ *   capability default. Audio models served on the shared video task route
+ *   (see `taskPathFor`) pass it so submit and poll address the same path.
+ * @param {number} [options.pollIntervalMs]
+ * @param {number} [options.requestTimeoutMs]
+ * @param {number} [options.retryBudgetMs]
+ * @param {boolean} [options.resolveFailureReason] Set `true` to read a terminal
+ *   failure's reason off the task detail record when the poll body carries none.
+ *   Off by default: the poll contract is one request per attempt (Issue #831),
+ *   so only a caller that renders the error to a user opts in.
+ */
+export async function pollOpenAiMediaTask(options) {
+  const interval = Number.isFinite(options.pollIntervalMs) && /** @type {number} */ (options.pollIntervalMs) > 0
+    ? /** @type {number} */ (options.pollIntervalMs)
+    : DEFAULT_POLL_INTERVAL_MS
+  const sleep = options.sleep
+    ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)))
+  const submitPath = options.taskPath ?? TASK_PATH[options.capability]
+  if (!submitPath) {
+    throw new OmnimuxError('unknown-protocol', `openai-media has no task path for ${options.capability}`)
+  }
+  // The AutoDL lane submits to `tasks/autodl` but polls `tasks/{id}` (Issue
+  // #3063); every other lane polls the same path it submitted to.
+  const path = options.taskPollPath ?? (isAutodlTaskPath(submitPath) ? AUTODL_POLL_PATH : submitPath)
+  const url = `${options.baseUrl}/${path}/${options.taskId}`
+  // Anchored at the persisted submit time when the caller supplied one, so a
+  // restart cannot hand the task a second, fresh window.
+  const deadlineAt = resolveDeadlineAt({ deadlineMs: options.deadlineMs, submittedAt: options.submittedAt })
+  let lastTransientError = null
+  for (;;) {
+    if (options.signal?.aborted) {
+      throw new OmnimuxError('omnimux-aborted', `${options.capability} poll aborted`)
+    }
+    const left = remainingMs(deadlineAt)
+    if (left <= 0) {
+      void appendMediaTaskLog({
+        event: 'poll.timeout',
+        taskRef: options.taskRef,
+        capability: options.capability,
+        message: `${options.capability} task ${options.taskId} exceeded its poll deadline`,
+      })
+      throw taskTimeout(options.capability, options.taskId, options.deadlineMs, lastTransientError ?? undefined)
+    }
+    let json = null
+    try {
+      const budget = Math.min(left, options.retryBudgetMs ?? DEFAULT_RETRY_BUDGET_MS)
+      json = await pollOnceWithRetry(options, url, budget)
+      lastTransientError = null
+    } catch (error) {
+      // A cancel that landed during a backoff wait must keep its own identity.
+      if (options.signal?.aborted) {
+        throw new OmnimuxError('omnimux-aborted', `${options.capability} poll aborted`, { cause: error })
+      }
+      // "No such task" is an answer, not a transport failure: restate it as the
+      // domain error a reconcile reads ("nothing to reconcile, resubmit").
+      if (isUnknownTaskError(error)) {
+        void appendMediaTaskLog({
+          event: 'poll.unknown-task',
+          taskRef: options.taskRef,
+          capability: options.capability,
+          message: error instanceof Error ? error.message : String(error),
+        })
+        throw unknownTask(options.capability, options.taskId, error)
+      }
+      if (!isRetryablePollError(error)) throw error
+      lastTransientError = error
+    }
+    if (json !== null) {
+      const status = pickTaskStatus(json)
+      if (status === 'completed' || status === 'success' || status === 'succeeded') {
+        // The AutoDL lane answers the poll with status only; the produced file
+        // lives behind `tasks/{id}/artifacts` (Issue #3063). Fetch and merge it
+        // so the caller's pickMediaUrl sees one envelope.
+        if (isAutodlTaskPath(submitPath) && !pickMediaUrl(json)) {
+          const artifactsUrl = `${options.baseUrl}/${AUTODL_POLL_PATH}/${options.taskId}/artifacts`
+          for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+              const artifacts = await getJson(
+                options.fetcher,
+                artifactsUrl,
+                options.apiKey,
+                options.signal,
+                { requestTimeoutMs: options.requestTimeoutMs },
+              )
+              if (artifacts && typeof artifacts === 'object') {
+                const merged = { ...json, artifacts: artifacts.artifacts ?? artifacts.data ?? artifacts }
+                if (pickMediaUrl(merged)) return merged
+              }
+            } catch {
+              // Transient poll lag before artifacts propagate.
+            }
+            if (attempt < 2) await sleep(500)
+          }
+        }
+        return json
+      }
+      if (status === 'failed' || status === 'error' || status === 'failure') {
+        void appendMediaTaskLog({
+          event: 'poll.terminal-failure',
+          taskRef: options.taskRef,
+          capability: options.capability,
+          upstreamCode: typeof json?.code === 'string' ? json.code : undefined,
+          message: `upstream reported status=${status} for task ${options.taskId}`,
+        })
+        const classified = classifyQuotaFailure({ body: json })
+        if (classified.kind === 'channel-unavailable') throw new OmnimuxError(classified.code, classified.message)
+        if (classified.kind === 'quota-exceeded') throw new OmnimuxError('quota-exceeded', classified.message, { details: classified })
+        const reason = await resolveFailureReason(options, json)
+        throw new OmnimuxError('omnimux-failed', describeTaskFailure({
+          capability: options.capability,
+          taskId: options.taskId,
+          ...(reason ? { reason } : {}),
+        }))
+      }
+    }
+    // Never sleep past the deadline: the last wait must not overshoot it.
+    await sleep(Math.max(0, Math.min(interval, remainingMs(deadlineAt))))
+  }
+}
+
+/**
+ * @param {{
+ *   fetcher?: typeof fetch,
+ *   apiKey: string,
+ *   baseUrl: string,
+ *   providerId: string,
+ *   modelId: string,
+ *   capability: string,
+ *   group?: string,
+ *   poll?: typeof pollOpenAiMediaTask,
+ *   onSubmitted?: (taskId: string) => void,
+ * }} options
+ */
+export function createOpenAiMediaRuntime(options) {
+  const fetcher = options.fetcher ?? fetch
+  const capability = options.capability
+  const routing = withRoutingGroup(fetcher, options.group)
+  const endpoint = options.taskPath ?? TASK_PATH[capability]
+  if (!endpoint) {
+    throw new OmnimuxError('unknown-protocol', `openai-media has no endpoint for ${capability}`)
+  }
+  const client = createOpenAICompatibleClient({
+    baseUrl: options.baseUrl,
+    apiKey: options.apiKey,
+    // Image submission may return synchronously; runtime-kit's two-minute
+    // default aborts before a valid result. Its supported maximum stays bounded.
+    ...(capability === 'image' ? { requestTimeoutMs: 600_000 } : {}),
+    fetcher: async (...args) => {
+      const response = await routing.fetcher(...args)
+      // runtime-kit keeps only error.message; classify code-only envelopes first.
+      if (!response.ok && typeof response.clone === 'function') {
+        let body
+        try { body = await response.clone().text() } catch { body = undefined }
+        const failure = classifyQuotaFailure({ status: response.status, body })
+        if (failure.kind === 'channel-unavailable') {
+          throw new OmnimuxError(failure.code, failure.message, { status: response.status })
+        }
+        // A credential was sent and rejected — surface the type mismatch, never
+        // the misleading "请先登录" for a signed-in user (Issue #2975).
+        if (failure.kind === 'needs-omnimux' && options.apiKey && String(options.apiKey).trim()) {
+          throw credentialRejectedError(options.apiKey, response.status)
+        }
+      }
+      return response
+    },
+  })
+  const registry = createProviderRegistry({
+    providers: [{
+      id: options.providerId,
+      name: options.providerId,
+      baseUrl: options.baseUrl,
+      protocol: 'openai',
+      enabled: true,
+    }],
+    models: [{
+      id: `${options.providerId}-${capability}`,
+      providerId: options.providerId,
+      modelId: options.modelId,
+      displayName: options.modelId,
+      capability,
+      enabled: true,
+      parameterSchema: {
+        prompt: { type: 'string', required: true },
+        duration: { type: 'number' },
+        image: { type: 'string' },
+      },
+    }],
+  })
+  const poll = options.poll ?? pollOpenAiMediaTask
+  const adapter = createOpenAICompatibleAdapter({
+    client,
+    providerIds: [options.providerId],
+    endpoints: { [capability]: endpoint },
+    async normalize(raw, context) {
+      const wait = context.metadata?.wait !== false
+      const immediate = pickMediaUrl(raw)
+      if (immediate) {
+        return {
+          status: 'completed',
+          providerId: context.provider.id,
+          modelId: context.model.id,
+          capability,
+          taskId: pickTaskId(raw),
+          outputs: [{ type: capability, url: immediate }],
+          raw,
+        }
+      }
+      const taskId = pickTaskId(raw)
+      if (!taskId) {
+        throw new OmnimuxError('omnimux-invalid-response', `${capability} submit returned no task_id or url`)
+      }
+      options.onSubmitted?.(taskId)
+      if (!wait) {
+        return {
+          status: 'completed',
+          providerId: context.provider.id,
+          modelId: context.model.id,
+          capability,
+          taskId,
+          outputs: [],
+          raw,
+        }
+      }
+      const done = await poll({
+        fetcher: routing.fetcher,
+        baseUrl: options.baseUrl,
+        apiKey: options.apiKey,
+        taskId,
+        capability,
+        taskPath: options.taskPath,
+        signal: context.signal,
+        // This runtime's caller is an execute path that renders the failure to a
+        // user, so it opts into the detail read that names the cause.
+        resolveFailureReason: true,
+      })
+      const url = pickMediaUrl(done)
+      if (!url) {
+        throw new OmnimuxError('omnimux-invalid-response', `task ${taskId} completed without a ${capability} url`)
+      }
+      return {
+        status: 'completed',
+        providerId: context.provider.id,
+        modelId: context.model.id,
+        capability,
+        taskId,
+        outputs: [{ type: capability, url }],
+        raw: done,
+      }
+    },
+  })
+  return createProviderRuntime({
+    registry,
+    adapters: [adapter],
+  })
+}
+
+/**
+ * Bind a channel group to every request the runtime makes.
+ *
+ * The gateway resolves its pool from `X-Omnimux-Group`; the request body must
+ * keep the bare upstream model id, so the group never reaches `model`. With no
+ * group the fetcher passes through untouched — a request without routing intent
+ * must not gain a header.
+ *
+ * @param {typeof fetch} fetcher
+ * @param {unknown} group
+ * @returns {{ fetcher: typeof fetch }}
+ */
+export function withRoutingGroup(fetcher, group) {
+  const wireGroup = typeof group === 'string' ? group.trim() : ''
+  if (!wireGroup) return { fetcher }
+  return {
+    fetcher: (input, init) => {
+      const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined))
+      headers.set('X-Omnimux-Group', wireGroup)
+      return fetcher(input, { ...init, headers })
+    },
+  }
+}

@@ -1,0 +1,173 @@
+/**
+ * 输入框下方四条快捷方式的**唯一真源**。
+ *
+ * 一条快捷方式 = 预填提示语 + 默认链接卡槽（+ 可追加链接卡槽）+ 一款已内置技能
+ * + 一个展示图标（lucide 名，渲染处按名取图，不在渲染处硬编码四段分支）。
+ * 技能不在作品里硬编码身份，只记 slug，运行时经全局技能库通道
+ * （`window.__omnimuxSkillLibrary`，由 omnimux-market 发布）按 slug 解析；
+ * 解析不到就**整条不渲染**，绝不弹空选择器。
+ *
+ * 本模块只做纯数据与纯函数：不碰 DOM、不碰 Store、不发起请求，
+ * 便于 node:test 直接消费，也便于跨文件对拍。
+ */
+
+/** 预填提示语原文，逐字写死，任何改写都是产品事故。 */
+export const QUICK_SHORTCUTS = Object.freeze([
+  Object.freeze({
+    id: 'clone',
+    labelKey: 'quickShortcuts.clone',
+    prompt: '请用我的产品复刻这个爆款视频',
+    skillSlug: 'replicate-viral-video',
+    defaultLink: 'video',
+    extraLinks: Object.freeze(['product']),
+    showModelControls: true,
+    icon: 'film',
+  }),
+  Object.freeze({
+    id: 'breakdown',
+    labelKey: 'quickShortcuts.breakdown',
+    prompt: '请帮我分析拆解这个视频。',
+    skillSlug: 'video-hook-analysis',
+    defaultLink: 'video',
+    extraLinks: Object.freeze([]),
+    showModelControls: false,
+    icon: 'text-search',
+  }),
+  Object.freeze({
+    id: 'selling',
+    labelKey: 'quickShortcuts.selling',
+    prompt: '请帮我一键生成一条带货视频。',
+    skillSlug: 'create-selling-video',
+    defaultLink: 'product',
+    extraLinks: Object.freeze(['video']),
+    showModelControls: true,
+    icon: 'workflow',
+  }),
+  Object.freeze({
+    id: 'reverse',
+    labelKey: 'quickShortcuts.reverse',
+    prompt: '请把这个视频反推成 Seedance 可用的 AI 提示词。',
+    skillSlug: 'reverse-video-prompt',
+    defaultLink: 'video',
+    extraLinks: Object.freeze([]),
+    showModelControls: false,
+    icon: 'sparkles',
+  }),
+])
+
+/**
+ * 四条共用的行尾箭头图标名（lucide `move-up-right`）。
+ * 与条目上的 `icon` 同住真源：渲染处只按名字取图标，不写硬编码分支。
+ */
+export const QUICK_SHORTCUT_ARROW_ICON = 'move-up-right'
+
+/** 链接种类 → 卡槽显示名（i18n key）；真源只有视频与商品两种。 */
+export const QUICK_LINK_KINDS = Object.freeze(['video', 'product'])
+
+/** 链接种类的卡槽文案 key。 */
+export function quickLinkLabelKey(kind) {
+  return kind === 'product' ? 'quickShortcuts.link.product' : 'quickShortcuts.link.video'
+}
+
+/** 链接种类的入口展示文案 key。 */
+export function quickLinkEntryLabelKey(kind) {
+  return kind === 'product' ? 'quickShortcuts.link.productEntry' : 'quickShortcuts.link.videoEntry'
+}
+
+/**
+ * 一条快捷方式的**卡槽集**：默认链接在前，可追加链接在后。
+ *
+ * 这是输入框上方那一行卡槽的集合，**不是**点快捷方式时插入的胶囊集：
+ * 卡槽集里 `extraLinks` 那几枚只是「摆在那儿可点」，点了才插进输入框
+ * （见 `quickShortcutDefaultLinks`）。
+ *
+ * @param {{ defaultLink?: string, extraLinks?: readonly string[] } | null | undefined} entry
+ * @returns {readonly string[]} 去重后的链接种类；非法输入返回空数组
+ */
+export function quickShortcutLinks(entry) {
+  if (!entry || typeof entry !== 'object') return []
+  const kinds = []
+  const push = (kind) => {
+    if (typeof kind !== 'string' || !QUICK_LINK_KINDS.includes(kind)) return
+    if (!kinds.includes(kind)) kinds.push(kind)
+  }
+  push(entry.defaultLink)
+  if (Array.isArray(entry.extraLinks)) entry.extraLinks.forEach(push)
+  return kinds
+}
+
+/**
+ * 点一条快捷方式时**实际插入**输入框的胶囊集：只有 `defaultLink`。
+ *
+ * `extraLinks` 是「上方卡槽可点、点了再追加」的可选链接，不得在点快捷方式时
+ * 自动插入——产品口径：复刻默认只预填视频，商品由用户手动加。
+ *
+ * @param {{ defaultLink?: string } | null | undefined} entry
+ * @returns {readonly string[]} 至多一个合法链接种类；非法输入返回空数组
+ */
+export function quickShortcutDefaultLinks(entry) {
+  if (!entry || typeof entry !== 'object') return []
+  const kind = entry.defaultLink
+  if (typeof kind !== 'string' || !QUICK_LINK_KINDS.includes(kind)) return []
+  return [kind]
+}
+
+/**
+ * 按当前技能库解析四条快捷方式：解析不到技能的那条**不进入结果**。
+ *
+ * @param {(slug: string) => object | null | undefined} resolveSkill 技能解析器
+ * @returns {ReadonlyArray<object>} 可渲染的快捷方式（保留真源顺序）
+ */
+export function resolveQuickShortcuts(resolveSkill) {
+  if (typeof resolveSkill !== 'function') return []
+  const resolved = []
+  for (const entry of QUICK_SHORTCUTS) {
+    let skill = null
+    try {
+      skill = resolveSkill(entry.skillSlug)
+    } catch {
+      // 技能库不可用（通道未就绪 / 数据缺失）时视为解析不到，绝不上抛
+      skill = null
+    }
+    if (!skill || typeof skill !== 'object') continue
+    resolved.push(Object.freeze({ ...entry, skill }))
+  }
+  return Object.freeze(resolved)
+}
+
+/**
+ * 切换互斥规则：从一条快捷方式切到另一条，提示语与链接**整组替换**，
+ * 技能只保留一颗（技能身份由当前条目唯一决定，因此天然不叠加）。
+ *
+ * 返回的 `links` 是**卡槽集**（默认链接 + 可追加链接），供输入框上方那行卡槽
+ * 渲染两态；实际插进输入框的胶囊集由 `quickShortcutDefaultLinks` 单独给出。
+ *
+ * @param {string | null} activeId 当前选中的快捷方式 id
+ * @param {string} nextId 被点击的快捷方式 id
+ * @returns {{ activeId: string | null, links: readonly string[] }}
+ *   点同一条即取消（activeId 归 null、链接清空）；点不存在的 id 保持现状
+ */
+export function applyQuickShortcut(activeId, nextId) {
+  const next = QUICK_SHORTCUTS.find((entry) => entry.id === nextId)
+  if (!next) return { activeId: activeId || null, links: activeId ? quickShortcutLinks(byId(activeId)) : [] }
+  if (activeId === nextId) return { activeId: null, links: [] }
+  return { activeId: next.id, links: quickShortcutLinks(next) }
+}
+
+/**
+ * 取消技能只动技能：提示语与链接卡槽必须原样保留。
+ * @param {{ activeId: string | null, links: readonly string[], skill: object | null }} state
+ * @returns {{ activeId: string | null, links: readonly string[], skill: null }}
+ */
+export function clearQuickShortcutSkill(state) {
+  return {
+    activeId: state?.activeId || null,
+    links: Array.isArray(state?.links) ? state.links : [],
+    skill: null,
+  }
+}
+
+/** 内部：按 id 取条目（不对外暴露，避免调用方绕过解析）。 */
+function byId(id) {
+  return QUICK_SHORTCUTS.find((entry) => entry.id === id) || null
+}

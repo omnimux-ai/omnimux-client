@@ -1,0 +1,44 @@
+{
+  "id": "omnimux-market",
+  "name": "omnimux-market",
+  "version": "0.2.13-omni.0",
+  "tier": "tier-1-app",
+  "entrypoint": "lib/host.js",
+  "status": "active",
+  "description": "OmniMux 插件/专家/技能/连接器综合市场 (基于 SkillHub 二次开发)",
+  "tags": ["market", "plaza", "skillhub", "skills", "experts", "connectors"],
+  "capabilities": {
+    "tools": [
+      { "name": "skillhub_search", "summary": "在 SkillHub 市场检索技能卡片", "category": "skills", "isWriteOperation": false, "requiresAuth": false },
+      { "name": "skillhub_install", "summary": "安装指定 SkillHub 技能至本地", "category": "skills", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "skillhub_list", "summary": "列出本地已安装的技能清单", "category": "skills", "isWriteOperation": false, "requiresAuth": false },
+      { "name": "skillhub_uninstall", "summary": "卸载本地已安装的技能", "category": "skills", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "plaza_search", "summary": "在 Plaza 市场检索专家与专家团队", "category": "experts", "isWriteOperation": false, "requiresAuth": false },
+      { "name": "plaza_summon", "summary": "召唤并持久化挂载专家身份至当前会话", "category": "experts", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "plaza_install", "summary": "安装 Plaza 连接器与技能包（兼容路径；Agent 装连接器请用 connector_install）", "category": "connectors", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "plugin_search", "summary": "在 SkillHub 检索可安装的 DSH 插件", "category": "plugins", "isWriteOperation": false, "requiresAuth": false },
+      { "name": "plugin_install", "summary": "按 owner/name 安装已验证的 DSH 插件（不重启 Host）", "category": "plugins", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "plugin_uninstall", "summary": "按 profile 包名卸载 DSH 插件；核心包黑名单拦截", "category": "plugins", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "plugin_list", "summary": "列出 web profile 已装 DSH 插件及 protected 标记", "category": "plugins", "isWriteOperation": false, "requiresAuth": false },
+      { "name": "connector_search", "summary": "检索本地 catalog 连接器；市场源仅展示不可装", "category": "connectors", "isWriteOperation": false, "requiresAuth": false },
+      { "name": "connector_install", "summary": "安装 catalog 连接器（写托管 MCP 行，不重启 Host）", "category": "connectors", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "connector_uninstall", "summary": "卸载 catalog 连接器（删托管 MCP 行，幂等）", "category": "connectors", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "connector_list", "summary": "列出当前已安装的 catalog 连接器", "category": "connectors", "isWriteOperation": false, "requiresAuth": false }
+    ],
+    "seamsProvided": [],
+    "seamsConsumed": ["identity"],
+    "slots": [
+      { "target": "sidebar.extra", "componentPath": "src/client/portal.js" },
+      { "target": "shell.overlay", "componentPath": "src/client/plaza-shell.js" }
+    ],
+    "storageDomains": ["$DSH_HOME/skills/", "$DSH_HOME/omnimux-market/sessions/", "$DSH_HOME/omnimux-market-home-order.json"]
+  },
+  "skills": [
+    "skills/sopilot-social-agents/SKILL.md",
+    "skills/tiktok-growth/SKILL.md"
+  ],
+  "dependencies": {
+    "requiredPlugins": ["omnimux"],
+    "systemBinaries": []
+  }
+}

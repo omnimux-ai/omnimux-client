@@ -1,0 +1,1 @@
+Avatars are not bundled (8MB). Catalog cards use the GitHub raw URL in index.json.

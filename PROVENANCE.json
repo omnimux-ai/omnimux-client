@@ -1,0 +1,26 @@
+{
+  "component": "client",
+  "importedAt": "2026-11-13",
+  "importedBy": "X (Main Bot)",
+  "method": "scripts/ops/source-publish export (allowlist + denylist + gitleaks), then composed into one tree",
+  "sources": {
+    "app": {
+      "commit": "7032436500d850f6d2c02c047081e0c5184df905",
+      "exportedFiles": 1419,
+      "submodules": {
+        "app/deepseek-harness": "1f81c047fc48fa190a683e469daa699857e9afe8"
+      },
+      "sourceNote": "private development fork, archived read-only; the public source tree is this repository"
+    },
+    "plugins": {
+      "repository": "omnimux-ai/omnimux-dsh",
+      "commit": "1ec38f08a24ed7333ba6c479421e4248ae9aafd5",
+      "exportedFiles": 4183
+    }
+  },
+  "notes": [
+    "Both source trees were already public before this import; the exports carried no new exposure.",
+    "Private development history is not carried into this repository; the source repositories are archived read-only.",
+    "Operations material (deployment overlays, pricing ledger, credentials, agent evidence) is kept in a private repository and is not part of this one."
+  ]
+}

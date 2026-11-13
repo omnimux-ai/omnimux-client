@@ -1,0 +1,133 @@
+/**
+ * MediaCardBody — 多模态媒体卡片主体（图片/视频/音频）渲染组件
+ */
+
+import React from 'react';
+import type { MaterialNodeData, MaterialType } from '../../../../types/materialNode';
+import type { ApiUpstream } from '../../../../../shared/api.ts';
+import type { GenerationStatus } from '../../../utils/nodeVisualMath';
+import GenerationStateContainer from '../../GenerationStateContainer';
+import MediaPreview, { type MediaAssetLike } from '../MediaPreview';
+import NodeEmptyState from '../NodeEmptyState';
+import { OfflineCardBody } from './OfflineCardBody';
+import { readNodeExecutionProgress } from '../../intermediateFrame.ts';
+import { useT } from '../../../../i18n';
+
+export interface MediaCardBodyProps {
+  materialType: MaterialType;
+  nodeData: MaterialNodeData;
+  isOffline: boolean;
+  generationStatus: GenerationStatus | null;
+  loadingAspectRatio: 'video' | 'audio' | 'auto' | 'square';
+  executionError?: string;
+  errorMessage?: string;
+  /** 上游归因（独立字段；无上游时 undefined，失败卡片不渲染该行）。 */
+  errorUpstream?: ApiUpstream;
+  previewUrl?: string;
+  mediaAssets?: MediaAssetLike[];
+  mediaUrl?: string;
+  label?: string;
+  status?: string;
+  audioWorkspaceId?: string;
+  isMultiSelected: boolean;
+  isGenerating: boolean;
+  kind: string;
+  onMediaSizeChange: (naturalWidth: number, naturalHeight: number) => void;
+  onDurationChange: (duration: number) => void;
+  onSaveAudio?: () => Promise<void>;
+  onRetry: () => void;
+  onApplyPreset: (presetKey: string) => void;
+  onReplaceAudio?: () => void;
+  onImport?: () => void;
+  onRelink: (materialType: MaterialType) => void;
+}
+
+export const MediaCardBody: React.FC<MediaCardBodyProps> = ({
+  materialType,
+  nodeData,
+  isOffline,
+  generationStatus,
+  loadingAspectRatio,
+  executionError,
+  errorMessage,
+  errorUpstream,
+  previewUrl,
+  mediaAssets,
+  mediaUrl,
+  label,
+  status,
+  audioWorkspaceId,
+  isMultiSelected,
+  isGenerating,
+  kind,
+  onMediaSizeChange,
+  onDurationChange,
+  onSaveAudio,
+  onRetry,
+  onApplyPreset,
+  onReplaceAudio,
+  onImport,
+  onRelink,
+}) => {
+  const t = useT();
+
+  if (isOffline) {
+    return <OfflineCardBody materialType={materialType} onRelink={onRelink} />;
+  }
+
+  const emptyState = (
+    <NodeEmptyState
+      materialType={materialType}
+      nodeKind={nodeData.nodeKind ?? (nodeData.selectedTool === 'import' ? 'import' : 'generate')}
+      onApplyPreset={onApplyPreset}
+      onImport={onImport}
+    />
+  );
+
+  if (!generationStatus) {
+    return <div className="wf-material-node__media">{emptyState}</div>;
+  }
+
+  // Issue #3625 工作流 3：实时进度 / 中间帧地址来自节点数据（SSE node_progress 写入）。
+  // 字段缺失时三项均为 undefined，GSC 只显示微光骨架 —— 不伪造进度、不伪造帧。
+  const liveProgress = readNodeExecutionProgress(nodeData as Record<string, unknown>);
+
+  return (
+    <div className="wf-material-node__media">
+      <GenerationStateContainer
+        status={generationStatus}
+        loadingAspectRatio={loadingAspectRatio}
+        errorMessage={executionError ?? errorMessage}
+        errorUpstream={errorUpstream}
+        taskId={nodeData.taskId}
+        onRetry={materialType === 'audio' ? undefined : onRetry}
+        progress={liveProgress.progress}
+        progressMessage={liveProgress.progressMessage}
+        intermediateFrameUrl={liveProgress.previewUrl}
+      >
+        {previewUrl ? (
+          <MediaPreview
+            materialType={materialType}
+            mediaAssets={mediaAssets}
+            mediaUrl={mediaUrl}
+            workspaceId={typeof nodeData.__workspaceId === 'string' ? nodeData.__workspaceId : undefined}
+            label={label}
+            status={status}
+            isMissing={nodeData.isMissing === true}
+            onMediaSizeChange={onMediaSizeChange}
+            onDurationChange={onDurationChange}
+            onSaveAudio={audioWorkspaceId ? onSaveAudio : undefined}
+            onReplaceAudio={onReplaceAudio}
+            isGenerating={isGenerating}
+            intermediateFrameUrl={liveProgress.previewUrl}
+            progress={liveProgress.progress}
+            progressMessage={liveProgress.progressMessage}
+            loadingLabel={generationStatus === 'pending' ? t('node.preparing') : t('node.generating')}
+          />
+        ) : (
+          emptyState
+        )}
+      </GenerationStateContainer>
+    </div>
+  );
+};

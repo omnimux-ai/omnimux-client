@@ -1,0 +1,46 @@
+name: R2 publish (artifacts from public runner)
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Public-fork run id that holds the built artifacts
+        required: true
+        default: '41200932070'
+      mode:
+        description: list (read-only) or upload
+        type: choice
+        options: [list, upload]
+        default: list
+permissions:
+  contents: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download artifacts from the public fork
+        env:
+          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          mkdir -p release-assets
+          gh run download "${{ inputs.run_id }}" -R laozhong86/dsh-desktop -D release-assets --repo laozhong86/dsh-desktop || true
+          find release-assets -type f -name '*.exe' -not -path '*win-unpacked*' | head
+          find release-assets -type f -name '*.dmg' | head
+      - name: Flatten to the release layout
+        run: |
+          mkdir -p dist
+          find release-assets -type f \( -name '*.exe' -o -name '*.dmg' \) -not -path '*win-unpacked*' -exec cp {} dist/ \;
+          ls -lh dist
+      - name: R2 list
+        if: ${{ inputs.mode == 'list' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/r2-dist-sync.mjs list
+      - name: R2 upload
+        if: ${{ inputs.mode == 'upload' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/r2-dist-sync.mjs upload --dir dist
