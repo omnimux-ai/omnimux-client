@@ -188,7 +188,7 @@ test('CLI derives impact from explicit files or strict git diff and clears failu
 })
 
 test('workflow passes event-specific diff context and always evaluates failures', () => {
-  const workflow = readFileSync(new URL('../.github/workflows/quality-gate.yml', import.meta.url), 'utf8')
+  const workflow = readFileSync(new URL('../../.github/workflows/quality-gate.yml', import.meta.url), 'utf8')
   assert.match(workflow, /QA_BASE:.*pull_request\.base\.sha.*merge_group\.base_sha/)
   assert.match(workflow, /Evaluate CI verdict\n\s+if:.*always\(\)/)
   assert.match(workflow, /--files-from-git --base "\$QA_BASE"/)

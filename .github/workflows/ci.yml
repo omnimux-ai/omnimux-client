@@ -13,6 +13,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Fast plugins build/typecheck. The full plugin quality gates (static gates &
+  # regression, plugin-tests matrix, leak-gate, L0 QA verdict) live in
+  # quality-gate.yml to keep this job quick; the two do not overlap.
   plugins:
     name: Plugins build and typecheck
     runs-on: ubuntu-latest
