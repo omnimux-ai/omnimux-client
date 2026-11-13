@@ -1,0 +1,52 @@
+{
+  "task": "Issue #2101",
+  "spec": "specs/chat-media-gallery-rail-height.spec.md",
+  "timestamp": "2026-11-13T15:45:55.005Z",
+  "status": "PASS",
+  "totalChecks": 7,
+  "checks": [
+    {
+      "name": "AC-4_SINGLE_UNCHANGED_PATH",
+      "status": "PASS",
+      "detail": "单张路径由既有用例覆盖；本用例只跑 8 张画廊"
+    },
+    {
+      "name": "AC-STRUCTURE_EIGHT_THUMBS",
+      "status": "PASS",
+      "detail": "缩略图数量 8"
+    },
+    {
+      "name": "AC-1_GALLERY_HEIGHT_FROM_MAIN",
+      "status": "PASS",
+      "detail": "gallery position=relative overflow=hidden align=flex-start"
+    },
+    {
+      "name": "AC-2_RAIL_PINNED_AND_SCROLLS",
+      "status": "PASS",
+      "detail": "rail position=absolute top=0px bottom=0px overflowY=auto"
+    },
+    {
+      "name": "AC-3_MAIN_NOT_STRETCHED",
+      "status": "PASS",
+      "detail": "main height=auto"
+    },
+    {
+      "name": "AC-3_CLICK_SWITCHES_MAIN",
+      "status": "PASS",
+      "detail": "点击第 4 张缩略图后主图切换为对应素材"
+    },
+    {
+      "name": "AC-5_KEYBOARD_STILL_WORKS",
+      "status": "PASS",
+      "detail": "方向键仍可切换下一张"
+    }
+  ],
+  "liveBrowser": {
+    "mainH": 440,
+    "railH": 440,
+    "heightDelta": 0,
+    "thumbContentH": 600,
+    "followVisible": true,
+    "screenshot": "docs/evidence/gallery-rail-height-verified.png"
+  }
+}

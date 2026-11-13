@@ -39,6 +39,12 @@ jobs:
         with:
           node-version: 24.18.1
 
+      - name: Ensure qa:pass label exists
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh label create "qa:pass" --repo "${{ github.repository }}" --color 0E8A16 --description "QA gate passed" --force || true
+
       - name: Clear stale QA label
         if: ${{ github.event_name == 'pull_request' }}
         env:
@@ -499,6 +505,12 @@ jobs:
         with:
           name: qa-report
           path: .workbuddy/evidence/
+
+      - name: Ensure qa:pass label exists
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh label create "qa:pass" --repo "${{ github.repository }}" --color 0E8A16 --description "QA gate passed" --force || true
 
       - name: Evaluate CI verdict
         if: ${{ always() }}

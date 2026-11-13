@@ -31,7 +31,10 @@ test('baseline repository contracts pass cross-plugin model alignment verificati
   // #1789 / #3516：能力 seam 现在只有 whisper-1 以 listed speech_to_text 进入画布。
   assert.equal(report.alignment.capabilityModelsChecked, 1);
   // #4069: shipped templates are scanned for hardcoded model ids as well.
-  assert.equal(report.alignment.templateModelsChecked, 4);
+  // [client-port] omnimux-client ships 12 packages; the downstream template
+  // package omnimux-apps is not imported, so only the workflow template source
+  // is scanned (2 ids) instead of the legacy 4 across both packages.
+  assert.equal(report.alignment.templateModelsChecked, 2);
 });
 
 test('fails when a capability-seam model is not canonical in hub dispositions', () => {
