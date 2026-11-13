@@ -33,6 +33,7 @@
  */
 
 import { realpathSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { readEvaluationChanges } from './test-change-review.mjs'
@@ -183,7 +184,15 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
   try {
     const [rootArg, base = 'origin/main', ...extra] = process.argv.slice(2)
     if (extra.length) throw new Error('usage: verify-test-standard-declarations.mjs [root] [base]')
-    const root = realpathSync(rootArg || process.cwd())
+    // Accept a path inside the repository (e.g. the plugins/ workspace under
+    // omnimux-client) and resolve to the git top-level, matching guard-anti-cheat
+    // repoRootOf semantics. The legacy single-repo layout passed the git root directly.
+    let root = realpathSync(rootArg || process.cwd())
+    try {
+      const top = spawnSync('git', ['-C', root, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' })
+      const topPath = (top.stdout || '').trim()
+      if (top.status === 0 && topPath) root = realpathSync(topPath)
+    } catch { /* keep root */ }
     const result = verifyTestStandardDeclarations({ root, base })
     process.stdout.write(formatReport(result) + '\n')
     if (result.violations.length) process.exitCode = 1
