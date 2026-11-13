@@ -4,13 +4,22 @@
   "private": true,
   "type": "module",
   "description": "Offline form definitions, validation and deterministic conversation drafts",
-  "engines": { "node": "^22.19.0 || >=24.0.0" },
-  "exports": { ".": "./src/index.ts", "./schema": "./generated/form.schema.json" },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./generated/form.schema.json"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test $(ls test/*.test.mjs | grep -v cli.test.mjs)",
+    "test": "node --test test/*.test.mjs",
     "verify": "node scripts/verify.mjs"
   },
-  "dependencies": { "zod": "4.4.3" },
-  "devDependencies": { "typescript": "5.9.3" }
+  "dependencies": {
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
 }
