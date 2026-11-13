@@ -467,7 +467,7 @@ test('resolveSpeechToTextAudioPath：优先级 realPath > local-file URL > http 
   );
   // local-file 流 URL 还原绝对路径
   assert.equal(
-    resolveSpeechToTextAudioPath({ mediaUrl: '/omnimux-workflow/api/local-file?path=%2FUsers%2Fx%2Fb.wav' }),
+    resolveSpeechToTextAudioPath({ mediaUrl: '/omnimux-workflow/api/local-file?path=%2Fhome%2Fdev%2Fb.wav' }),
     '/home/dev/b.wav',
   );
   // http(s) mediaUrl 直出
@@ -603,7 +603,7 @@ test('resolveVideoDeconstructPath：优先级 realPath > local-file URL > http U
   );
   // local-file 流 URL 还原绝对路径
   assert.equal(
-    resolveVideoDeconstructPath({ mediaUrl: '/omnimux-workflow/api/local-file?path=%2FUsers%2Fx%2Fb.mp4' }),
+    resolveVideoDeconstructPath({ mediaUrl: '/omnimux-workflow/api/local-file?path=%2Fhome%2Fdev%2Fb.mp4' }),
     '/home/dev/b.mp4',
   );
   // http(s) mediaUrl 直出
