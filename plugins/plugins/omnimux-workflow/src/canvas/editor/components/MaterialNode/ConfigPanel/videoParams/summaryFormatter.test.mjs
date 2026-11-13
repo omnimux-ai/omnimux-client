@@ -1,0 +1,180 @@
+/**
+ * Unit tests for summaryFormatter (Issue #467 / W2, Feed-Slot 阶段二 / T04)。
+ *
+ * 严格四段式：[ 生成模式 比例 质量 时长 ]。
+ * 声音开关只属于 Popover，绝不拼入 TriggerBar 胶囊文字。
+ * fullText 以空格拼接（视觉分隔由 CSS 竖线承担），字符串中禁止出现中点。
+ */
+
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+import { formatVideoSummary } from './summaryFormatter.ts';
+
+it('unset controls are labeled unselected, not a fabricated active default', () => {
+  const result = formatVideoSummary(base({aspectRatio:'',duration:''}));
+  assert.equal(result.ratioText,'未设置'); assert.equal(result.durationText,'未设置');
+});
+
+function base(overrides = {}) {
+  return {
+    model: 'm',
+    operation: 'text_to_video',
+    operationLabel: '文生视频',
+    effectiveOperations: [],
+    showModeUi: false,
+    aspectRatio: '16:9',
+    duration: 5,
+    sound: false,
+    hasSoundSupport: false,
+    ...overrides,
+  };
+}
+
+describe('summaryFormatter - 胶囊摘要格式化引擎（严格四段式）', () => {
+  it('单 operation（showModeUi=false）→ 无 mode 文案、无多余分隔符', () => {
+    const result = formatVideoSummary(base({
+      resolution: '2K',
+      duration: 8,
+      sound: true,
+      hasSoundSupport: true,
+    }));
+    assert.equal(result.modeText, '');
+    assert.equal(result.ratioText, '16:9');
+    assert.equal(result.resolutionText, '2K');
+    assert.equal(result.durationText, '8s');
+    assert.equal(result.fullText, '16:9 2K 8s');
+    assert.ok(!result.fullText.includes('·'), 'fullText 不得包含中点 ·');
+    assert.ok(!result.fullText.includes('全能参考'));
+    assert.ok(!result.fullText.includes('有声'));
+  });
+
+  it('声音开关绝不拼入胶囊（sound=true 也不出现"有声"）', () => {
+    const result = formatVideoSummary(base({ sound: true, hasSoundSupport: true }));
+    assert.equal(result.fullText, '16:9 5s');
+    assert.ok(!result.fullText.includes('有声'));
+    assert.equal('soundText' in result, false, '结构化结果不再携带 soundText 字段');
+  });
+
+  it('无分辨率无音效 + 单 op → 仅 比例 时长', () => {
+    const result = formatVideoSummary(base());
+    assert.equal(result.modeText, '');
+    assert.equal(result.fullText, '16:9 5s');
+  });
+
+  it('多 operation（showModeUi=true）→ 使用 Catalog label 作为 mode 文案', () => {
+    const result = formatVideoSummary(base({
+      showModeUi: true,
+      operation: 'first_last_frame',
+      operationLabel: '首尾帧',
+      aspectRatio: '9:16',
+      duration: 5,
+    }));
+    assert.equal(result.modeText, '首尾帧');
+    assert.equal(result.fullText, '首尾帧 9:16 5s');
+  });
+
+  it('fullText 无中点、无连续空白、段数以单个空格连接（含声音开启样本）', () => {
+    const samples = [
+      base({ showModeUi: true, operationLabel: '全能参考', resolution: '1080P', duration: 10, sound: true, hasSoundSupport: true }),
+      base({ showModeUi: false, aspectRatio: '9:16', duration: 8 }),
+      base({ showModeUi: true, operationLabel: '参考', aspectRatio: '1:1', resolution: '4K', duration: 5, sound: true, hasSoundSupport: true }),
+    ];
+    for (const sample of samples) {
+      const result = formatVideoSummary(sample);
+      assert.ok(!result.fullText.includes('·'), `不应存在中点: ${result.fullText}`);
+      assert.ok(!result.fullText.startsWith(' '), `不应以空白开头: ${result.fullText}`);
+      assert.ok(!result.fullText.endsWith(' '), `不应以空白结尾: ${result.fullText}`);
+      assert.ok(!result.fullText.includes('  '), `不应存在连续空白: ${result.fullText}`);
+      const expectedSegments = [
+        result.modeText,
+        result.ratioText,
+        result.resolutionText,
+        result.durationText,
+      ].filter((s) => s !== null && s !== undefined && String(s).trim() !== '');
+      assert.equal(
+        result.fullText,
+        expectedSegments.join(' '),
+        `fullText 应为各段空格拼接: ${result.fullText}`,
+      );
+    }
+  });
+
+  it('分辨率小写自动标准化为大写', () => {
+    const result = formatVideoSummary(base({ resolution: '1080p' }));
+    assert.equal(result.resolutionText, '1080P');
+    assert.ok(result.fullText.includes('1080P'));
+  });
+
+  it('aspectRatio 为 adaptive / auto 时标准化为中文「自适应」', () => {
+    const resultAdaptive = formatVideoSummary(base({ aspectRatio: 'adaptive' }));
+    assert.equal(resultAdaptive.ratioText, '自适应');
+    assert.equal(resultAdaptive.fullText, '自适应 5s');
+
+    const resultAuto = formatVideoSummary(base({ aspectRatio: 'auto' }));
+    assert.equal(resultAuto.ratioText, '自适应');
+    assert.equal(resultAuto.fullText, '自适应 5s');
+  });
+});
+
+
+describe('summaryFormatter - 自动时长', () => {
+  it('duration -1 displays the existing automatic-duration label', () => {
+    const result = formatVideoSummary(base({ duration: -1 }));
+    assert.equal(result.durationText, '自动');
+    assert.equal(result.fullText, '16:9 自动');
+  });
+});
+
+/**
+ * Issue #4103 — 底栏胶囊与生成方式分段共用 resolveOperationLabel。
+ *
+ * 修复前：`operationLabel` 被 gateway 用 operation id 冒充 → 胶囊直出英文 id，
+ * 且 `:86` 那份只覆盖 4 个 id 的内联字典永远走不到（document/webpage 必挂）。
+ */
+describe('summaryFormatter - Issue #4103 生成模式文案不再直出英文 id', () => {
+  const gatewayOnly = (operation, extra = {}) => base({
+    showModeUi: true,
+    operation,
+    operationLabel: operation, // gateway-only 行伪造 label 的原始形态
+    effectiveOperations: [],
+    ...extra,
+  });
+
+  it('wan-3.0 六个模式都显示中文（AC1）', () => {
+    const cases = {
+      text_to_video: '文生视频',
+      first_frame: '首帧驱动',
+      first_last_frame: '首尾帧过渡',
+      video_multi_ref: '全能参考',
+      document_to_video: '文档参考',
+      webpage_to_video: '网页参考',
+    };
+    for (const [operation, expected] of Object.entries(cases)) {
+      const result = formatVideoSummary(gatewayOnly(operation));
+      assert.equal(result.modeText, expected, `${operation} 必须显示中文`);
+      assert.ok(!result.fullText.includes(operation), `${operation} 不得出现在胶囊文字里`);
+    }
+  });
+
+  it('document/webpage 不再因内联字典缺条目而回落 id（AC5）', () => {
+    assert.equal(formatVideoSummary(gatewayOnly('document_to_video')).modeText, '文档参考');
+    assert.equal(formatVideoSummary(gatewayOnly('webpage_to_video')).modeText, '网页参考');
+  });
+
+  it('有 adapter 的型号保持目录给定文案（AC2 回归）', () => {
+    const result = formatVideoSummary(base({ showModeUi: true, operationLabel: '首帧生视频' }));
+    assert.equal(result.modeText, '首帧生视频');
+  });
+
+  it('英文 locale 走目录英文名；目录缺失才回落 id（AC6）', () => {
+    assert.equal(formatVideoSummary(gatewayOnly('text_to_video'), 'en').modeText, 'Text to video');
+    assert.equal(formatVideoSummary(gatewayOnly('brand_new_operation')).modeText, 'brand_new_operation');
+    assert.equal(formatVideoSummary(gatewayOnly('brand_new_operation'), 'en').modeText, 'brand_new_operation');
+  });
+
+  it('showModeUi=false 时 mode 段仍为空（不因解析器改变而多出文案）', () => {
+    const result = formatVideoSummary(base({ showModeUi: false, operationLabel: 'text_to_video' }));
+    assert.equal(result.modeText, '');
+    assert.ok(!result.fullText.includes('文生视频'));
+  });
+});

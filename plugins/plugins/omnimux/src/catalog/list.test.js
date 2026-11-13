@@ -1,0 +1,342 @@
+import assert from 'node:assert/strict'
+import { mkdtempSync, writeFileSync, readFileSync, copyFileSync, readdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { describe, it } from 'node:test'
+import { fileURLToPath } from 'node:url'
+import { parseHubConfig } from '../config.js'
+import { IMAGE_MODEL_SPECS, VIDEO_MODEL_SPECS, AUDIO_MODEL_SPECS } from '../media/catalog.js'
+import { buildModelCatalog, fingerprintOf, resolveDefault } from './list.js'
+import { sortCatalogRows } from './sort.js'
+import { loadAll, resetContractCache, DEFAULT_SPECS_DIR } from './contract/load.js'
+
+const here = dirname(fileURLToPath(import.meta.url))
+
+function hub() {
+  return parseHubConfig({})
+}
+
+describe('sortCatalogRows', () => {
+  it('sorts by label with numeric collation and does not mutate input', () => {
+    const rows = [
+      { id: 'b', label: 'Seedance 2.0' },
+      { id: 'a', label: 'Claude Opus 4.6' },
+      { id: 'c', label: 'Seedance 10' },
+    ]
+    const snapshot = rows.map((row) => row.id)
+    assert.deepEqual(sortCatalogRows(rows).map((row) => row.label), ['Claude Opus 4.6', 'Seedance 2.0', 'Seedance 10'])
+    assert.deepEqual(rows.map((row) => row.id), snapshot)
+    assert.deepEqual(sortCatalogRows([]), [])
+    assert.deepEqual(sortCatalogRows(null), [])
+  })
+})
+
+describe('buildModelCatalog (H2 contract projection)', () => {
+  it('returns Catalog v1.1: models[] authority + listed-only four lists + defaults', () => {
+    const catalog = buildModelCatalog({ text: hub().text, media: hub().media, env: {} })
+    assert.equal(catalog.schemaVersion, '1.1')
+    assert.equal(catalog.source, 'omnimux')
+    assert.equal(typeof catalog.fingerprint, 'string')
+    assert.equal(catalog.fingerprint.length, 16)
+    assert.equal(typeof catalog.contractFingerprint, 'string')
+    assert.equal(catalog.contractFingerprint.length, 16)
+
+    // Authoritative flat list includes contracted models under disposition governance.
+    assert.equal(catalog.models.length, 48) // 本地 45 + gateway-only gemini-4-argon / gemini-3.1-flash-lite-image / suno-sounds / wan-3.0
+    // 2026-10-21 网关对账 #3516：whisper-1 处置 draft → canonical 并上架 speech_to_text。
+    assert.equal(catalog.models.find((m) => m.id === 'whisper-1')?.disposition, 'canonical')
+    assert.equal(catalog.models.find((m) => m.id === 'grok-imagine-image-quality')?.disposition, 'draft')
+    assert.equal(catalog.models.find((m) => m.id === 'kling-o3')?.disposition, 'canonical')
+    assert.equal(catalog.models.find((m) => m.id === 'nano-banana-2')?.aliases?.includes('nanobanana-2'), true)
+    // #1789: seedasr-auc is its own canonical row with no alias relation to doubao-asr-bigmodel.
+    assert.equal(catalog.models.find((m) => m.id === 'seedasr-auc')?.disposition, 'canonical')
+    // Strong form: an omitted field and an undeclared alias list must both read as [].
+    assert.deepEqual(catalog.models.find((m) => m.id === 'seedasr-auc')?.aliases ?? [], [])
+    assert.deepEqual(catalog.models.find((m) => m.id === 'doubao-asr-bigmodel')?.aliases ?? [], [])
+    // #1751: withdrawn (disposition=unavailable) models have no YAML row and therefore
+    // never reach the authoritative models[] at all; #3209 adds the google-vids-omni
+    // tombstone (local Google Vids channel retired).
+    for (const gone of [
+      'gpt-image-2', 'minimax-h3-max', 'minimax-h3-max-turbo', 'midjourney', 'midjourney-niji-7',
+      'seedream-4.5', 'kling-o1', 'seedance2.5-stable-max-720p', 'omni_flash', 'kling-avatar',
+      'veo-3.1', 'veo-3.1-fast', 'google-vids-omni',
+    ]) {
+      assert.equal(catalog.models.some((m) => m.id === gone), false, gone)
+    }
+
+    // four lists derive ONLY from listed ops' output.type, intersected with the gateway
+    // snapshot (P1b): seedream-5-0-pro has a listed op but the gateway does not sell it.
+    assert.deepEqual(catalog.image.map((row) => row.id).sort(), ['gemini-3.1-flash-lite-image', 'gpt-image-2.5'])
+    const imageRow = catalog.image.find((row) => row.id === 'gpt-image-2.5')
+    assert.equal(imageRow.label, 'GPT Image 2.5')
+    assert.equal(imageRow.subtitle, '标准版 1K · 高分档依渠道')
+    // 2026-09-14 评审次要-2：上游明写不支持 `gpt-image-2-5` 拼写，该别名已撤销 —— 默认图片型号
+    // 现在没有任何别名，YAML 里也不再声明 `aliases:`。
+    assert.equal(catalog.models.find((row) => row.id === 'gpt-image-2.5').aliases, undefined)
+    // #1751: grok image keeps its contract row (canonical) but declares no listed op,
+    // so it leaves the image bucket while all four spellings stay aliases of the product ID.
+    assert.deepEqual(catalog.models.find((row) => row.id === 'grok-imagine-image-2-0').aliases, [
+      'grok-imagine-image-2', 'grok-imagine-image', 'grok-imagine-image-2.0',
+    ])
+    assert.equal(catalog.image.some((row) => row.id === 'grok-imagine-image-2-0'), false)
+    // #3516: minimax-h3 上游渠道停用；P1b：seedance-2-0-fast / -mini 契约仍在但网关不售。
+    assert.deepEqual(catalog.video.map((row) => row.id), ['minimax-h3-video', 'seedance-2-0', 'seedance-2-5', 'wan-3.0'])
+    // #3516: 音频桶收敛为在架 suno；TTS 三行转为仅登记不上架。
+    assert.deepEqual(catalog.audio.map((row) => row.id), ['indextts-2', 'suno', 'suno-sounds'])
+    // Text bucket includes implementation-ready models without requiring live history.
+    // #3516: claude-sonnet-4-6 上游渠道停用，文本桶只剩 gemini-3.8-flash。
+    assert.deepEqual(catalog.text.map((row) => row.id), ['gemini-3.8-flash', 'gemini-4-argon'])
+
+    // draft / canonical-without-listed-ops models never appear in any bucket
+    for (const kind of ['text', 'image', 'video', 'audio']) {
+      for (const forbidden of [
+        'grok-imagine-image-quality', 'grok-imagine-image-2-0', 'gpt-4o-mini-tts',
+        'jina-reader-v1', 'kling-o3', 'kling-v2-6', 'kling-v3', 'kling-v3-motion-control',
+        // #3516: 这些型号渠道停用、仅登记不上架，四个产出桶都不得再出现。
+        'claude-sonnet-4-6', 'minimax-h3', 'doubao-asr-bigmodel', 'seedasr-auc',
+        'seed-audio-1.0', 'gemini-3.8-flash-tts',
+      ]) {
+        assert.equal(catalog[kind].some((row) => row.id === forbidden), false, `${kind}:${forbidden}`)
+      }
+    }
+    // nanobanana: hyphen canonical only; the underscore and legacy spellings stay aliases
+    // and never become separate models[] rows
+    const nano = catalog.models.find((row) => row.id === 'nano-banana-2')
+    assert.ok(nano, 'nano-banana-2 stays authoritative')
+    assert.deepEqual(nano.aliases, ['nano_banana_2', 'nanobanana-2'])
+    assert.equal(catalog.models.some((row) => row.id === 'nanobanana-2'), false)
+
+    // Config defaults survive where listed, including synchronous speech.
+    assert.equal(catalog.defaults.text, 'gemini-3.8-flash')
+    assert.equal(catalog.defaultsMeta.text.source, 'gateway-recommended')
+    assert.equal(catalog.defaults.image, 'gpt-image-2.5')
+    assert.equal(catalog.defaults.video, 'seedance-2-5')
+    assert.equal(catalog.defaults.audio, 'suno') // #3516: text_to_speech 键移除，audio 归属迁到 suno
+    assert.equal(catalog.defaultsByOperation.text_to_video, 'seedance-2-5')
+    assert.equal(catalog.defaultsByOperation.text_to_image, 'gpt-image-2.5')
+    assert.equal(catalog.defaultsByOperation.chat, 'gemini-3.8-flash')
+    // #3516: 默认语音识别改为 whisper-1。
+    assert.equal(catalog.defaultsByOperation.speech_to_text, 'whisper-1')
+    assert.equal(catalog.defaultsByOperation.text_to_music, 'suno')
+    assert.equal('text_to_speech' in catalog.defaultsByOperation, false)
+
+    assert.equal(catalog.text.length, 2)
+
+    // P1b: the catalog reports the gateway truth it was built against. Every
+    // on-sale model now has a v2 contract; suno-sounds is the only model with
+    // no local adapter profile, so it is adapterUnsupported rather than missing.
+    assert.equal(catalog.gateway.source, 'bundled')
+    assert.ok(catalog.gateway.models > 0, 'the gateway snapshot must report its own membership')
+    assert.deepEqual(catalog.gateway.missingContract, [])
+    assert.deepEqual(catalog.gateway.adapterUnsupported, ['suno-sounds', 'wan-3.0'])
+    const sold = new Set(
+      Object.assign([], catalog.text, catalog.image, catalog.video, catalog.audio).map((row) => row.id),
+    )
+    for (const id of catalog.gateway.adapterUnsupported) {
+      assert.equal(sold.has(id), true, id + ' must remain visible with an execution status')
+      assert.equal(catalog.models.find((row) => row.id === id)?.executionStatus, 'unsupported')
+    }
+    assert.equal(catalog.models.find((row) => row.id === 'seedance-2-0-fast')?.gatewayListed, false)
+    assert.equal(catalog.models.find((row) => row.id === 'gpt-image-2.5')?.gatewayListed, true)
+  })
+
+  it('keeps gateway-public unsupported rows and merges custom BYOK profiles', () => {
+    const catalog = buildModelCatalog({ text: hub().text, media: hub().media, env: {}, settingsDefaults: {
+      byokProviders: [{ provider: 'custom', endpoint: 'https://fixture.invalid/v1', models: { video: 'my-video-model' }, capabilities: ['video'] }],
+    } })
+    assert.deepEqual(catalog.video.map((row) => row.id), ['minimax-h3-video', 'custom:my-video-model', 'seedance-2-0', 'seedance-2-5', 'wan-3.0'])
+    assert.equal(catalog.video.find((row) => row.id === 'wan-3.0')?.executionStatus, 'unsupported')
+    assert.equal(catalog.video.find((row) => row.id === 'custom:my-video-model')?.source, 'custom')
+    assert.equal(catalog.video.find((row) => row.id === 'custom:my-video-model')?.executionStatus, 'ready')
+  })
+
+  it('keeps a non-empty label for every catalog model row', () => {
+    const catalog = buildModelCatalog({ text: hub().text, media: hub().media, env: {} })
+    for (const kind of ['text', 'image', 'video', 'audio']) {
+      for (const row of catalog[kind]) assert.equal(typeof row.label, 'string', `${kind}/${row.id} missing label`)
+    }
+  })
+
+  it('lets env overlay defaults when the id is listed; ignores unlisted ids', () => {
+    const h = hub()
+    const catalog = buildModelCatalog({
+      text: h.text,
+      media: h.media,
+      env: { OMNIMUX_VIDEO_MODEL: 'kling-o3', OMNIMUX_TEXT_DEFAULT_MODEL: 'gemini-3.8-flash' },
+    })
+    // kling-o3 is canonical but declares no listed op → env overlay refused
+    assert.equal(catalog.defaults.video, 'seedance-2-5')
+    // gemini-3.8-flash#chat is listed → env overlay accepted
+    assert.equal(catalog.defaults.text, 'gemini-3.8-flash')
+    // #1751: a withdrawn id is refused for the same reason
+    const withdrawn = buildModelCatalog({
+      text: h.text,
+      media: h.media,
+      env: { OMNIMUX_VIDEO_MODEL: 'kling-o1' },
+    })
+    assert.equal(withdrawn.defaults.video, 'seedance-2-5')
+  })
+
+  it('ignores env / settings ids that are not in the list', () => {
+    const h = hub()
+    const catalog = buildModelCatalog({
+      text: h.text,
+      media: h.media,
+      env: { OMNIMUX_VIDEO_MODEL: 'not-a-real-model' },
+      settingsDefaults: { defaultTextModel: 'totally-fake' },
+    })
+    assert.equal(catalog.defaults.video, 'seedance-2-5')
+    // fake text id refused → fall back to listed config default
+    assert.equal(catalog.defaults.text, 'gemini-3.8-flash')
+  })
+
+  it('prefers settings overlay over config when env is absent', () => {
+    const h = hub()
+    const catalog = buildModelCatalog({
+      text: h.text,
+      media: h.media,
+      env: {},
+      settingsDefaults: {
+        defaultTextModel: 'gemini-3.8-flash',
+        defaultImageModel: 'grok-imagine-image',
+        defaultAudioModel: 'gpt-4o-mini-tts',
+      },
+    })
+    // settings beats the config text default while env is absent
+    assert.equal(catalog.defaults.text, 'gemini-3.8-flash')
+    // grok-imagine-image normalizes to grok-imagine-image-2-0, which declares no listed
+    // op → the image overlay is refused and the listed config default survives.
+    assert.equal(catalog.defaults.image, 'gpt-image-2.5')
+    // The TTS setting names no listed op either; the listed Suno default survives.
+    assert.equal(catalog.defaults.audio, 'suno')
+  })
+
+  for (const model of ['grok-imagine-image-2', 'grok-imagine-image', 'grok-imagine-image-2-0', 'grok-imagine-image-2.0']) {
+    it(`refuses an image default named by ${model} and keeps the listed default`, () => {
+      for (const source of ['env', 'settings', 'config']) {
+        const h = hub()
+        if (source === 'config') h.media.providers.omnimux.models.image = model
+        const opts = {
+          text: h.text,
+          media: h.media,
+          env: source === 'env' ? { OMNIMUX_IMAGE_MODEL: model } : {},
+          settingsDefaults: source === 'settings' ? { defaultImageModel: model } : {},
+        }
+        // Every spelling normalizes to grok-imagine-image-2-0, which declares no
+        // listed op, so no source may move the image default off gpt-image-2.5.
+        assert.equal(buildModelCatalog(opts).defaults.image, 'gpt-image-2.5', source)
+        assert.equal(buildModelCatalog({ ...opts, gate: { media: { image: false } } }).defaults.image, '', source)
+      }
+    })
+  }
+
+  it('empties a media kind when the gate disables it', () => {
+    const h = parseHubConfig({ gate: { media: { video: false } } })
+    const catalog = buildModelCatalog({ text: h.text, media: h.media, gate: h.gate, env: {} })
+    assert.deepEqual(catalog.video, [])
+    assert.equal(catalog.defaults.video, '')
+    assert.ok(catalog.image.length > 0)
+  })
+
+  it('text bucket lists PR-A verified models; gate cannot invent unlisted ids', () => {
+    const h = parseHubConfig({ gate: { models: { textComplete: { 'gemini-3.8-flash': true } } } })
+    const catalog = buildModelCatalog({ text: h.text, media: h.media, gate: h.gate, env: {} })
+    // #530 PR-A listed text set is contract-driven, not gate-invented
+    assert.ok(catalog.text.some((row) => row.id === 'gemini-3.8-flash'))
+    assert.ok(catalog.text.some((row) => row.id === 'gemini-4-argon'))
+    assert.equal(catalog.text.length, 2)
+    assert.equal(catalog.text.some((row) => row.id === 'whisper-1'), false)
+  })
+
+  it('fingerprint changes when the contract changes (limit/MIME/listed sensitivity)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'omx-fp-'))
+    for (const name of readdirSync(DEFAULT_SPECS_DIR)) {
+      copyFileSync(join(DEFAULT_SPECS_DIR, name), join(dir, name))
+    }
+    resetContractCache()
+    const baseIndex = loadAll(DEFAULT_SPECS_DIR, { useCache: false })
+    const h = hub()
+    const base = buildModelCatalog({ text: h.text, media: h.media, env: {}, contractIndex: baseIndex })
+
+    writeFileSync(
+      join(dir, 'image-models.yaml'),
+      readFileSync(join(dir, 'image-models.yaml'), 'utf8').replace('maxSizeMb: 10', 'maxSizeMb: 12'),
+    )
+    const changedIndex = loadAll(dir, { useCache: false })
+    assert.notEqual(changedIndex.contentFingerprint, baseIndex.contentFingerprint)
+    const changed = buildModelCatalog({ text: h.text, media: h.media, env: {}, contractIndex: changedIndex })
+    assert.notEqual(changed.fingerprint, base.fingerprint)
+    assert.equal(changed.contractFingerprint, changedIndex.contentFingerprint)
+  })
+
+  it('fingerprintOf legacy two-arg overload stays deterministic', () => {
+    const lists = { text: [{ id: 'a' }], image: [], video: [], audio: [] }
+    const defaults = { text: 'a', image: '', video: '', audio: '' }
+    assert.equal(fingerprintOf(lists, defaults), fingerprintOf(lists, defaults))
+    assert.equal(fingerprintOf(lists, defaults).length, 16)
+  })
+
+  it('fail-closed: broken contract index throws instead of serving a silent catalog', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'omx-broken-list-'))
+    writeFileSync(join(dir, 'broken.yaml'), 'schemaVersion: "1.1"\nmodels: [unclosed\n')
+    const broken = loadAll(dir, { useCache: false })
+    const h = hub()
+    assert.throws(
+      () => buildModelCatalog({ text: h.text, media: h.media, env: {}, contractIndex: broken }),
+      /parse failure/,
+    )
+  })
+})
+
+describe('media facade tables (derived from contracts)', () => {
+  it('facade SPECS are the full contracted directory (listed or not)', () => {
+    assert.equal(IMAGE_MODEL_SPECS.length, 11)
+    assert.equal(VIDEO_MODEL_SPECS.length, 12) // #3209 google-vids-omni 下线 → 11
+    // #1789: seedasr-auc joins the audio directory as a contracted model (ASR, text output).
+    // #2256: index-tts joins the audio directory (voice clone).
+    // #2801: gemini-3.8-flash-tts joins the audio directory (TTS).
+    assert.equal(AUDIO_MODEL_SPECS.length, 8)
+  })
+})
+
+describe('gateway default recommendation', () => {
+  it('wins over the offline defaults when its row is ready', () => {
+    const snapshot = JSON.parse(readFileSync(new URL('./cloud/bundled/pricing.json', import.meta.url), 'utf8'))
+    snapshot.defaults = { image: 'gemini-3.1-flash-lite-image', vision_chat: 'gemini-3.8-flash' }
+    const catalog = buildModelCatalog({ env: {}, snapshot, settingsDefaults: {} })
+    assert.equal(catalog.defaults.image, 'gemini-3.1-flash-lite-image')
+    assert.equal(catalog.defaultsMeta.image.source, 'gateway-recommended')
+    assert.equal(catalog.defaults.analysis, 'gemini-3.8-flash')
+    assert.equal(catalog.defaultsMeta.analysis.source, 'gateway-recommended')
+  })
+})
+
+describe('resolveDefault', () => {
+  it('walks env → settings → config → fallback', () => {
+    const ids = new Set(['a', 'b'])
+    assert.equal(resolveDefault({
+      kind: 'text',
+      ids,
+      env: { OMNIMUX_TEXT_DEFAULT_MODEL: 'b' },
+      settingsDefaults: { defaultTextModel: 'a' },
+      configDefault: 'a',
+      fallback: 'a',
+    }), 'b')
+    assert.equal(resolveDefault({
+      kind: 'text',
+      ids,
+      env: {},
+      settingsDefaults: { defaultTextModel: 'b' },
+      configDefault: 'a',
+      fallback: 'a',
+    }), 'b')
+    assert.equal(resolveDefault({
+      kind: 'text',
+      ids,
+      env: { OMNIMUX_TEXT_DEFAULT_MODEL: 'missing' },
+      settingsDefaults: { defaultTextModel: 'missing' },
+      configDefault: 'a',
+      fallback: 'b',
+    }), 'a')
+  })
+})

@@ -1,0 +1,307 @@
+/**
+ * Catalog v1.1 projection tests (H2 T03).
+ */
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, writeFileSync, readFileSync, copyFileSync, readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  projectCatalog,
+  projectKindRows,
+  projectChatRows,
+  projectDirectoryRows,
+  mergeInputCapability,
+  visibleOps,
+  assertContractHealthy,
+  getHealthyContractIndex,
+  resolveModelId,
+} from './project.js';
+import { loadAll, resetContractCache, DEFAULT_SPECS_DIR } from './contract/load.js';
+import { loadDispositions, loadCatalogDefaults } from './contract/dispositions.js';
+
+function freshIndex(specsDir = DEFAULT_SPECS_DIR) {
+  resetContractCache();
+  return loadAll(specsDir, { useCache: false });
+}
+
+function syntheticIndex(models) {
+  const byId = new Map(models.map((m) => [m.id, m]));
+  return {
+    schemaVersion: '1.1',
+    contentFingerprint: 'synthetic0000000',
+    byId,
+    issues: [],
+    parseErrors: [],
+    listedOperations: models.flatMap((m) => m.listedOperations ?? []),
+    all: () => [...byId.values()],
+    get: (id) => byId.get(id),
+  };
+}
+
+const syntheticDispositions = {
+  version: '1.0.0',
+  dispositions: [
+    { id: 'asr-model', disposition: 'canonical', reason: 'test' },
+    { id: 'nano-banana-2', disposition: 'canonical', reason: 'test' },
+    { id: 'quar-model', disposition: 'quarantine', reason: 'test' },
+  ],
+};
+
+test('projection retains origins, composition, groups, implementation and routing without changing qualification', () => {
+  const op = { id: 'chat', listed: false, output: { type: 'text' },
+    inputs: [{ slot: 'prompt', type: 'text', role: 'prompt', source: 'node_field', min: 1, max: 1,
+      valueSources: ['local_field', 'upstream_output'], composition: { kind: 'content_with_instruction', localRole: 'instruction' } }],
+    inputGroups: [{ slots: ['prompt'], min: 1 }],
+    implementation: { status: 'ready', profileId: 'text-live-v1', seam: 'textComplete' },
+    research: { status: 'draft' }, execution: { status: 'stub' } };
+  const model = { id: 'asr-model', label: 'Model', operations: [op], listed: false,
+    listedOperations: [], routing: { channel: 'official', wireModel: 'wire', endpoint: '/v1/chat/completions' } };
+  const dto = projectCatalog(syntheticIndex([model]), syntheticDispositions).models[0];
+  assert.deepEqual(dto.operations[0], { ...op, label: undefined });
+  assert.deepEqual(dto.routing, model.routing);
+  assert.equal(dto.listed, false);
+  dto.operations[0].inputGroups[0].slots.push('other');
+  dto.routing.channel = 'changed';
+  assert.deepEqual(op.inputGroups, [{ slots: ['prompt'], min: 1 }]);
+  assert.equal(model.routing.channel, 'official');
+});
+
+test('speech_to_text outputs text → text bucket, never the audio output bucket', () => {
+  const sttOp = {
+    id: 'speech_to_text',
+    label: 'ASR',
+    output: { type: 'text' },
+    inputs: [{ slot: 'audio_input', type: 'audio', role: 'source', min: 1, max: 1 }],
+    listed: true,
+    research: { status: 'verified' },
+    execution: { status: 'live' },
+  };
+  const model = {
+    id: 'asr-model',
+    label: 'ASR Model',
+    managementGroup: 'audio', // managed under audio, but output is text
+    operations: [sttOp],
+    listed: true,
+    listedOperations: ['asr-model#speech_to_text'],
+  };
+  const dto = projectCatalog(syntheticIndex([model]), syntheticDispositions, {});
+  assert.deepEqual(dto.text.map((r) => r.id), ['asr-model']);
+  assert.deepEqual(dto.audio, []);
+  assert.deepEqual(dto.image, []);
+  assert.deepEqual(dto.video, []);
+});
+
+test('nanobanana: legacy spellings normalize to the hyphen canonical — never double listed', () => {
+  const t2i = {
+    id: 'text_to_image',
+    label: 't2i',
+    output: { type: 'image' },
+    inputs: [{ slot: 'prompt', type: 'text', role: 'prompt', min: 1, max: 1 }],
+    listed: true,
+    research: { status: 'verified' },
+    execution: { status: 'live' },
+  };
+  const model = {
+    id: 'nano-banana-2',
+    label: 'Nano Banana 2',
+    aliases: ['nano_banana_2', 'nanobanana-2'],
+    managementGroup: 'image',
+    operations: [t2i],
+    listed: true,
+    listedOperations: ['nano-banana-2#text_to_image'],
+  };
+  const index = syntheticIndex([model]);
+  const dto = projectCatalog(index, syntheticDispositions, {});
+  assert.deepEqual(dto.image.map((r) => r.id), ['nano-banana-2']);
+  assert.equal(dto.image.some((r) => r.id === 'nano_banana_2'), false);
+  assert.equal(dto.image.some((r) => r.id === 'nanobanana-2'), false);
+  // resolveModelId normalizes every legacy spelling onto the canonical row
+  assert.equal(resolveModelId(index, 'nanobanana-2'), 'nano-banana-2');
+  assert.equal(resolveModelId(index, 'nano_banana_2'), 'nano-banana-2');
+  assert.equal(resolveModelId(index, 'nano-banana-2'), 'nano-banana-2');
+  assert.equal(resolveModelId(index, 'nope'), undefined);
+});
+
+test('withdrawn models leave models[]; unlisted canonical/draft rows stay authoritative but out of the four lists', () => {
+  const index = freshIndex();
+  const dto = projectCatalog(index, loadDispositions(), loadCatalogDefaults());
+  assert.equal(dto.models.length, 45); // #3209 google-vids-omni 下线 + minimax-h3-video → 45
+  // #1751: withdrawn (disposition=unavailable) rows have no YAML block, so they vanish
+  // from the authoritative list and from every derived bucket; #3209 adds the
+  // google-vids-omni tombstone (local Google Vids channel retired).
+  for (const gone of [
+    'gpt-image-2', 'minimax-h3-max', 'minimax-h3-max-turbo', 'midjourney', 'midjourney-niji-7',
+    'seedream-4.5', 'kling-o1', 'seedance2.5-stable-max-720p', 'omni_flash', 'kling-avatar',
+    'veo-3.1', 'veo-3.1-fast', 'google-vids-omni',
+  ]) {
+    assert.equal(dto.models.some((m) => m.id === gone), false, `models[]:${gone}`);
+    for (const kind of ['text', 'image', 'video', 'audio']) {
+      assert.equal(dto[kind].some((r) => r.id === gone), false, `${kind}:${gone}`);
+    }
+  }
+  // canonical-but-unlisted (#1751 un-quarantined) and draft rows keep their disposition
+  assert.equal(dto.models.find((m) => m.id === 'kling-o3')?.disposition, 'canonical');
+  assert.equal(dto.models.find((m) => m.id === 'kling-v3-motion-control')?.disposition, 'canonical');
+  assert.equal(dto.models.find((m) => m.id === 'grok-imagine-image-2-0')?.disposition, 'canonical');
+  // 2026-10-21 网关对账 #3516：whisper-1 处置 draft → canonical 并上架 speech_to_text。
+  assert.equal(dto.models.find((m) => m.id === 'whisper-1')?.disposition, 'canonical');
+  for (const kind of ['text', 'image', 'video', 'audio']) {
+    for (const unlisted of [
+      'gpt-4o-mini-tts', 'jina-reader-v1',
+      'kling-o3', 'kling-v2-6', 'kling-v3', 'kling-v3-motion-control', 'grok-imagine-image-2-0',
+      // #3516: 上游渠道停用 → 仅登记不上架，四个产出桶都不得出现。
+      'claude-sonnet-4-6', 'minimax-h3', 'doubao-asr-bigmodel', 'seedasr-auc',
+      'seed-audio-1.0', 'gemini-3.8-flash-tts',
+    ]) {
+      assert.equal(dto[kind].some((r) => r.id === unlisted), false, `${kind}:${unlisted}`);
+    }
+  }
+});
+
+test('real specs: buckets derive only from output.type of listed ops', () => {
+  const index = freshIndex();
+  const dto = projectCatalog(index, loadDispositions(), loadCatalogDefaults());
+  assert.equal(dto.schemaVersion, '1.1');
+  assert.equal(dto.source, 'omnimux');
+  // #3516: flare / sunburst 上游渠道停用 → 图片桶只剩两个在架型号。
+  assert.deepEqual(dto.image.map((r) => r.id).sort(), [
+    'gpt-image-2.5',
+    'seedream-5-0-pro',
+  ]);
+  // #3516: minimax-h3 上游渠道停用 → 视频桶只剩 seedance 系列。
+  assert.deepEqual(dto.video.map((r) => r.id), [
+    'minimax-h3-video',
+    'seedance-2-0',
+    'seedance-2-0-fast',
+    'seedance-2-0-mini',
+    'seedance-2-5',
+  ]);
+  // #3516: 音频桶收敛为在架 suno；TTS 与声音克隆转为仅登记不上架。
+  assert.deepEqual(dto.audio.map((row) => row.id), ['indextts-2', 'suno']);
+  // Text bucket includes implementation-ready models without requiring live history.
+  // #3516: claude-sonnet-4-6 / seedasr-auc / doubao-asr-bigmodel 渠道停用，
+  // 只剩 gemini-3.8-flash，加上新上架的 whisper-1（speech_to_text 产出 text）。
+  assert.deepEqual(dto.text.map((r) => r.id), [
+    'gemini-3.8-flash',
+    'whisper-1',
+  ]);
+  // #3516: text_to_speech 键移除；语音识别默认改为 whisper-1，音乐生成默认 suno。
+  assert.equal('text_to_speech' in dto.defaultsByOperation, false);
+  assert.equal(dto.defaultsByOperation.speech_to_text, 'whisper-1');
+  assert.equal(dto.defaultsByOperation.text_to_music, 'suno');
+  assert.equal(dto.defaultsByOperation.text_to_video, 'seedance-2-5');
+  assert.equal(dto.defaultsByOperation.chat, 'gemini-3.8-flash');
+});
+
+test('mergeInputCapability: union roles, min floor, max ceiling, mimes union', () => {
+  const cap = mergeInputCapability([
+    {
+      id: 'vision_chat',
+      inputs: [
+        { slot: 'prompt', type: 'text', role: 'prompt', min: 1, max: 1 },
+        {
+          slot: 'reference_images',
+          type: 'image',
+          role: 'reference',
+          min: 0,
+          max: 10,
+          allowedMimes: ['image/png'],
+        },
+      ],
+    },
+    {
+      id: 'other',
+      inputs: [
+        {
+          slot: 'first_frame',
+          type: 'image',
+          role: 'first_frame',
+          min: 1,
+          max: 1,
+          allowedMimes: ['image/jpeg'],
+        },
+      ],
+    },
+  ]);
+  assert.deepEqual(cap.modalities, ['text', 'image']);
+  assert.equal(cap.referenceImages.min, 0);
+  assert.equal(cap.referenceImages.max, 10);
+  assert.deepEqual(cap.referenceImages.allowedMimeTypes, ['image/png', 'image/jpeg']);
+  assert.deepEqual(cap.referenceImages.supportedRoles, ['reference', 'first_frame']);
+});
+
+test('projectChatRows: only listed text models with a text output enter the chat directory', () => {
+  const index = freshIndex();
+  const rows = projectChatRows(index);
+  // 2026-10-21 #3527：12 个非网关现役文本行仅保留契约，不再进入 chat/expert 白名单。
+  assert.equal(rows.length, 1);
+  assert.deepEqual(rows.map((r) => r.id), ['gemini-3.8-flash']);
+  const gemini = rows[0];
+  assert.deepEqual([...gemini.input], ['text', 'image', 'video', 'audio', 'document']);
+  assert.equal(gemini.brand, 'google');
+  assert.equal(gemini.role, 'flagship');
+  for (const gone of [
+    'claude-opus-5', 'claude-opus-4-6', 'claude-sonnet-4-6', 'gpt-5.6-sol', 'gpt-5.5',
+    'grok-4.6', 'kimi-k3', 'deepseek-v4-pro', 'deepseek-v4-flash', 'gemini-3.7-flash',
+    'gemini-3.1-pro-preview', 'glm-5.3',
+  ]) {
+    assert.equal(rows.some((r) => r.id === gone), false, gone);
+  }
+});
+
+test('projectDirectoryRows: media groups project every contracted model (listed or not)', () => {
+  const index = freshIndex();
+  assert.equal(projectDirectoryRows(index, 'image').length, 11);
+  assert.equal(projectDirectoryRows(index, 'video').length, 12); // #3209 google-vids-omni 下线 + minimax-h3-video → 12
+  // #1789: seedasr-auc joins the audio management group as its own contracted model.
+  assert.equal(projectDirectoryRows(index, 'audio').length, 8); // #2804 gemini-3.8-flash-tts + #2256 index-tts → 8
+  // whisper-1 stays in the audio management directory but its output is text
+  const audio = projectDirectoryRows(index, 'audio');
+  assert.ok(audio.some((r) => r.id === 'whisper-1'));
+});
+
+test('fingerprint sensitivity: any slot/MIME/listed change moves the contract fingerprint', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'omx-specs-'));
+  for (const name of readdirSync(DEFAULT_SPECS_DIR)) {
+    copyFileSync(join(DEFAULT_SPECS_DIR, name), join(dir, name));
+  }
+  const base = freshIndex(DEFAULT_SPECS_DIR);
+  const baseFp = base.contentFingerprint;
+
+  // widen one slot max in the copy
+  const imagePath = join(dir, 'image-models.yaml');
+  const yaml = readFileSync(imagePath, 'utf8');
+  assert.ok(yaml.includes('max: 4'));
+  writeFileSync(imagePath, yaml.replace('max: 4', 'max: 5'));
+  const changed = freshIndex(dir);
+  assert.notEqual(changed.contentFingerprint, baseFp);
+
+  // listed set differences must also be fingerprint-visible downstream
+  assert.notDeepEqual(changed.listedOperations, undefined);
+});
+
+test('assertContractHealthy throws on broken specs (fail-closed, no fallback)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'omx-broken-'));
+  writeFileSync(join(dir, 'broken.yaml'), 'schemaVersion: "1.1"\nmodels: [unclosed\n');
+  const index = loadAll(dir, { useCache: false });
+  assert.ok(index.parseErrors.length > 0);
+  assert.throws(() => assertContractHealthy(index), /parse failure/);
+});
+
+test('getHealthyContractIndex returns the healthy on-disk index', () => {
+  resetContractCache();
+  const index = getHealthyContractIndex();
+  assert.equal(index.schemaVersion, '1.1');
+  assert.ok(index.get('seedance-2-0-fast'));
+});
+
+test('visibleOps only surfaces listed ops', () => {
+  const index = freshIndex();
+  const seedance = index.get('seedance-2-0');
+  assert.deepEqual(
+    visibleOps(seedance).map((op) => op.id),
+    ['text_to_video', 'first_frame', 'first_last_frame', 'video_multi_ref'],
+  );
+  assert.equal(projectKindRows(index, 'video').length, 5); // #3516 minimax-h3 停用 + minimax-h3-video → 5
+});

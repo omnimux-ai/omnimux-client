@@ -1,0 +1,444 @@
+import assert from 'node:assert/strict'
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { Readable } from 'node:stream'
+import { describe, it } from 'node:test'
+import { apply } from '../index.js'
+import { createAuthDispatcher, readJsonBody, registerAuthRoutes, sendJson, SECRET_PATTERN } from './http-routes.js'
+import { createPendingStore } from './pending.js'
+import { createTokenStore } from './store.js'
+
+function jsonResponse(status, json) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => json,
+  }
+}
+
+describe('readJsonBody optional byte bound', () => {
+  it('preserves unbounded legacy calls and accepts exactly the UTF8 byte limit', async () => {
+    const text = JSON.stringify({ value: '中文' })
+    const req = async function* () { yield Buffer.from(text) }
+    assert.deepEqual(await readJsonBody(req()), { value: '中文' })
+    assert.deepEqual(await readJsonBody(req(), Buffer.byteLength(text)), { value: '中文' })
+  })
+  it('throws the explicit oversize sentinel immediately without consuming later chunks', async () => {
+    let reads = 0
+    const req = (async function* () { reads++; yield Buffer.from('中文'); reads++; yield Buffer.from('unused') })()
+    await assert.rejects(() => readJsonBody(req, 5), error => error.code === 'request_too_large')
+    assert.equal(reads, 1)
+  })
+})
+
+describe('auth http dispatcher', () => {
+  it('starts a flow without leaking the device code and stores the PAT on success', async () => {
+    const homeDir = mkdtempSync(join(tmpdir(), 'omnimux-http-'))
+    const configDir = mkdtempSync(join(tmpdir(), 'omnimux-http-cfg-'))
+    const store = createTokenStore({ homeDir, configDir })
+    const pending = createPendingStore()
+    /** @type {string[]} */
+    const urls = []
+    const dispatcher = createAuthDispatcher({
+      store,
+      pending,
+      siteBaseUrl: 'https://omnimux.ai',
+      fetcher: async (url, init) => {
+        urls.push(`${init?.method || 'GET'} ${url}`)
+        if (String(url).endsWith('/api/user/device/code')) {
+          return jsonResponse(200, {
+            success: true,
+            data: {
+              device_code: 'SECRET-DEVICE',
+              user_code: 'WXYZ',
+              verification_uri_complete: 'https://omnimux.ai/cli/login?user_code=WXYZ',
+              expires_in: 900,
+              interval: 5,
+            },
+          })
+        }
+        if (String(url).endsWith('/api/user/device/token')) {
+          const body = JSON.parse(String(init?.body || '{}'))
+          assert.equal(body.device_code, 'SECRET-DEVICE')
+          return jsonResponse(200, {
+            success: true,
+            data: { access_token: 'pat-live', user_id: 3, username: 'ada' },
+          })
+        }
+        if (String(url).endsWith('/api/user/self')) {
+          return jsonResponse(200, {
+            success: true,
+            data: { id: 3, username: 'ada', display_name: 'Ada', quota: 500000, used_quota: 0, email: 'hidden@x' },
+          })
+        }
+        throw new Error(`unexpected ${url}`)
+      },
+    })
+    try {
+      const started = await dispatcher.dispatch({ method: 'POST', url: '/omnimux/auth/login' })
+      assert.equal(started.status, 200)
+      const startedText = JSON.stringify(started.body)
+      assert.equal(started.body.user_code, 'WXYZ')
+      assert.match(started.body.flow_id, /^[a-f0-9]{32}$/)
+      assert.equal(/SECRET-DEVICE|pat-live|access_token|sk-/.test(startedText), false)
+
+      const pendingPoll = await dispatcher.dispatch({
+        method: 'POST',
+        url: '/omnimux/auth/poll',
+        body: { flow_id: started.body.flow_id },
+      })
+      assert.equal(pendingPoll.status, 200)
+      assert.equal(pendingPoll.body.logged_in, true)
+      assert.equal(pendingPoll.body.username, 'ada')
+      assert.equal(pendingPoll.body.quota_usd, 1)
+      assert.equal(/pat-live|SECRET-DEVICE|hidden@x|access_token/.test(JSON.stringify(pendingPoll.body)), false)
+      assert.equal(await store.resolve(), 'pat-live')
+      assert.equal(existsSync(join(configDir, 'secrets.json')), true)
+
+      const status = await dispatcher.dispatch({ method: 'GET', url: '/omnimux/auth/status' })
+      assert.equal(status.body.logged_in, true)
+      assert.equal(status.body.username, 'ada')
+      assert.equal(status.body.verified, null)
+
+      const loggedOut = await dispatcher.dispatch({ method: 'POST', url: '/omnimux/auth/logout' })
+      assert.equal(loggedOut.body.logged_in, false)
+      assert.equal(await store.resolve(), undefined)
+    } finally {
+      rmSync(homeDir, { recursive: true, force: true })
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
+  it('logout returns 500 instead of reporting success when credential cleanup rejects', async () => {
+    const homeDir = mkdtempSync(join(tmpdir(), 'omnimux-http-'))
+    const configDir = mkdtempSync(join(tmpdir(), 'omnimux-http-cfg-'))
+    /** @type {string[]} */
+    const warnings = []
+    const store = createTokenStore({
+      homeDir,
+      configDir,
+      logger: { warn(message) { warnings.push(String(message)) } },
+    })
+    const pending = createPendingStore()
+    const dispatcher = createAuthDispatcher({ store, pending, siteBaseUrl: 'https://omnimux.ai' })
+    /** @type {Map<string, Function>} */
+    const handlers = new Map()
+    registerAuthRoutes({
+      register(route) {
+        handlers.set(route.path, route.handler)
+        return () => {}
+      },
+    }, dispatcher, { getConnection: () => ({ requestRejection() { return undefined } }) })
+    try {
+      await store.set('pat-logout-failure')
+      // A directory at the secrets path makes rmSync fail while the token stays on disk.
+      rmSync(store.secretsPath, { force: true })
+      mkdirSync(store.secretsPath)
+
+      const handler = handlers.get('/omnimux/auth/logout')
+      assert.equal(typeof handler, 'function')
+      /** @type {{ status?: number, body: string }} */
+      const seen = { body: '' }
+      const res = {
+        writeHead(status) { seen.status = status },
+        end(chunk) { seen.body = String(chunk ?? '') },
+      }
+      const req = Readable.from([])
+      Object.assign(req, { method: 'POST', headers: { host: '127.0.0.1:53985' }, url: '/omnimux/auth/logout' })
+
+      await handler(req, res)
+
+      assert.equal(seen.status, 500)
+      assert.equal(/pat-logout-failure|access_token/.test(seen.body + warnings.join('\n')), false)
+      assert.ok(warnings.some((message) => /unsetSecrets failed:/.test(message)))
+    } finally {
+      rmSync(homeDir, { recursive: true, force: true })
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
+  it('logout via the HTTP dispatcher stays 200 under an env token whose shadowed seam refuses unset', async () => {
+    const homeDir = mkdtempSync(join(tmpdir(), 'omnimux-http-'))
+    const configDir = mkdtempSync(join(tmpdir(), 'omnimux-http-cfg-'))
+    /** @type {string[]} */
+    const warnings = []
+    const store = createTokenStore({
+      homeDir,
+      configDir,
+      env: { OMNIMUX_ACCESS_TOKEN: 'pat-env-http' },
+      logger: { warn(message) { warnings.push(String(message)) } },
+      credentials: {
+        async unset() {
+          throw new Error('credential is shadowed by the environment')
+        },
+      },
+    })
+    const dispatcher = createAuthDispatcher({
+      store,
+      pending: createPendingStore(),
+      siteBaseUrl: 'https://omnimux.ai',
+    })
+    try {
+      const result = await dispatcher.dispatch({ method: 'POST', url: '/omnimux/auth/logout' })
+      assert.equal(result.status, 200)
+      assert.equal(result.body.logged_in, false)
+      assert.equal(warnings.length, 1)
+      assert.match(warnings[0], /credentials\.unset failed: .*shadowed/)
+      assert.equal(/pat-env-http|access_token/.test(JSON.stringify(result.body) + warnings.join('\n')), false)
+    } finally {
+      rmSync(homeDir, { recursive: true, force: true })
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
+  it('lists hub capabilities without secrets', async () => {
+    const homeDir = mkdtempSync(join(tmpdir(), 'omnimux-cap-'))
+    const configDir = mkdtempSync(join(tmpdir(), 'omnimux-cap-cfg-'))
+    const dispatcher = createAuthDispatcher({
+      store: createTokenStore({ homeDir, configDir }),
+      pending: createPendingStore(),
+      siteBaseUrl: 'https://omnimux.ai',
+      capabilities: { identity: true, videoGenerate: true, imageGenerate: true, textComplete: true, official: true },
+    })
+    try {
+      const result = await dispatcher.dispatch({ method: 'GET', url: '/omnimux/capabilities' })
+      assert.equal(result.status, 200)
+      assert.equal(result.body.identity, true)
+      assert.equal(result.body.official, true)
+      assert.equal(/access_token|sk-/.test(JSON.stringify(result.body)), false)
+    } finally {
+      rmSync(homeDir, { recursive: true, force: true })
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
+  it('lists the model catalog without secrets', async () => {
+    const homeDir = mkdtempSync(join(tmpdir(), 'omnimux-mc-'))
+    const configDir = mkdtempSync(join(tmpdir(), 'omnimux-mc-cfg-'))
+    const paths = []
+    /** @type {Function | null} */
+    let catalogHandler = null
+    apply({
+      tools: { register() {} },
+      provide() {},
+      get() { return undefined },
+      inject(deps, callback) {
+        if (deps.includes('clientModules')) {
+          assert.deepEqual(deps, ['clientModules', 'webServer', 'loader', 'connection'])
+          return // This HTTP-only fixture has no client module service.
+        }
+        if (deps.includes('connection')) {
+          assert.deepEqual(deps, ['webServer', 'connection'])
+          return // This HTTP-only fixture has no connection service.
+        }
+        if (deps[0] === 'webServer') {
+          assert.deepEqual(deps, ['webServer'])
+          callback({
+            webServer: {
+              register(route) {
+                paths.push(route.path)
+                if (route.path === '/omnimux/model-catalog') catalogHandler = route.handler
+                return () => {}
+              },
+            },
+            effect(factory) { factory() },
+          })
+          return
+        }
+        // sessionQuery / settings / commands / configEditor are optional for this scenario:
+        // model the services as absent, but never swallow an unknown dependency.
+        if (deps[0] === 'sessionQuery') {
+          assert.deepEqual(deps, ['sessionQuery'])
+          return
+        }
+        if (deps[0] === 'settings' || deps[0] === 'commands' || deps[0] === 'configEditor') return
+        assert.fail(`unexpected inject deps: ${JSON.stringify(deps)}`)
+      },
+    }, { official: { mount: false } })
+    try {
+      assert.ok(paths.includes('/omnimux/model-catalog'))
+      assert.equal(typeof catalogHandler, 'function')
+      /** @type {{ status?: number, chunks: string[] }} */
+      const seen = { chunks: [] }
+      const res = {
+        writeHead(status) { seen.status = status },
+        end(chunk) { seen.chunks.push(String(chunk)) },
+      }
+      await catalogHandler({ method: 'GET', url: '/omnimux/model-catalog' }, res)
+      assert.equal(seen.status, 200)
+      const body = JSON.parse(seen.chunks.join(''))
+      assert.equal(body.source, 'omnimux')
+      assert.equal(typeof body.fingerprint, 'string')
+      assert.ok(body.defaults)
+      assert.ok(Array.isArray(body.text))
+      assert.ok(Array.isArray(body.image))
+      assert.ok(Array.isArray(body.video))
+      assert.ok(Array.isArray(body.audio))
+      assert.equal(SECRET_PATTERN.test(JSON.stringify(body)), false)
+    } finally {
+      rmSync(homeDir, { recursive: true, force: true })
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
+  it('sendJson refuses a body that contains a token and allows non-secret task names', () => {
+    /** @type {{ status?: number, chunks: string[] }} */
+    const seen = { chunks: [] }
+    const res = {
+      writeHead(status) {
+        seen.status = status
+      },
+      end(chunk) {
+        seen.chunks.push(String(chunk))
+      },
+    }
+    sendJson(res, 200, { access_token: 'pat-nope' })
+    assert.equal(seen.status, 500)
+    assert.equal(/pat-nope/.test(seen.chunks.join('')), false)
+
+    seen.chunks = []
+    seen.status = undefined
+    sendJson(res, 200, { key: 'sk-1234567890abcdef' })
+    assert.equal(seen.status, 500)
+    assert.equal(JSON.parse(seen.chunks.join('')).error, 'refused to emit a secret')
+
+    seen.chunks = []
+    seen.status = undefined
+    sendJson(res, 200, { key: 'sk-proj-1234567890abcdef' })
+    assert.equal(seen.status, 500)
+    assert.equal(JSON.parse(seen.chunks.join('')).error, 'refused to emit a secret')
+
+    seen.chunks = []
+    seen.status = undefined
+    sendJson(res, 200, { model: 'seedance-2-0-task-pro', flag: 'flask-app' })
+    assert.equal(seen.status, 200)
+    assert.deepEqual(JSON.parse(seen.chunks.join('')), { model: 'seedance-2-0-task-pro', flag: 'flask-app' })
+  })
+
+  it('apply mounts auth routes when webServer arrives through inject', async () => {
+    const paths = []
+    const optional = {}
+    /** @type {{ kind: string, path: string, handler: Function }[]} */
+    const routes = []
+    /** @type {string[]} */
+    const observedSessionIds = []
+    // Sentinel with identity: the sessionQuery inject callback must run and
+    // later routes must depend on this exact instance (#522 regression).
+    const sessionQuerySentinel = {
+      async observeSession(id) {
+        observedSessionIds.push(id)
+        return { header: { cwd: tmpdir() } }
+      },
+    }
+    apply({
+      tools: { register() {} },
+      provide() {},
+      get() { return undefined },
+      inject(deps, callback) {
+        if (deps.includes('clientModules')) {
+          assert.deepEqual(deps, ['clientModules', 'webServer', 'loader', 'connection'])
+          return // This HTTP-only fixture has no client module service.
+        }
+        if (deps.includes('connection')) {
+          assert.deepEqual(deps, ['webServer', 'connection'])
+          return // This HTTP-only fixture has no connection service.
+        }
+        if (deps[0] === 'webServer') {
+          assert.deepEqual(deps, ['webServer'])
+          callback({
+            webServer: {
+              register(route) {
+                paths.push(`${route.kind}:${route.path}`)
+                routes.push(route)
+                return () => {}
+              },
+            },
+            effect(factory) { factory() },
+          })
+          return
+        }
+        if (deps[0] === 'sessionQuery') {
+          assert.deepEqual(deps, ['sessionQuery'])
+          callback({ sessionQuery: sessionQuerySentinel })
+          return
+        }
+        if (deps[0] === 'settings' || deps[0] === 'commands' || deps[0] === 'configEditor') return
+        assert.fail(`unexpected inject deps: ${JSON.stringify(deps)}`)
+      },
+    })
+    assert.deepEqual(paths, [
+      'exact:/omnimux/auth/status',
+      'exact:/omnimux/auth/login',
+      'exact:/omnimux/auth/poll',
+      'exact:/omnimux/auth/logout',
+      'exact:/omnimux/auth/model-keys',
+      'exact:/omnimux/auth/model-key',
+      'exact:/omnimux/capabilities',
+      'exact:/omnimux/model-catalog',
+      'exact:/omnimux/model-catalog/refresh',
+      'exact:/omnimux/generation-products',
+      'exact:/omnimux/generation-products/preview',
+      'prefix:/omnimux/plugins',
+      'prefix:/omnimux/apps',
+      'prefix:/omnimux/accounts',
+      'prefix:/omnimux/analytics',
+      'prefix:/omnimux/inspiration',
+      'exact:/omnimux/avatar',
+      'prefix:/omnimux/forms/attachments',
+      'prefix:/omnimux/composer/attachments',
+      'exact:/omnimux/text/complete',
+      'exact:/omnimux/byok/config',
+      'exact:/omnimux/analysis/service',
+      'exact:/omnimux/runtime/mode',
+      'exact:/omnimux/byok/test',
+      'exact:/omnimux/reference-storage/config',
+      'exact:/omnimux/agents',
+      // #3178: sign-in state, account sign-in and version/upgrade routes
+      'exact:/omnimux/agents/updates',
+      'exact:/omnimux/agents/login',
+      'exact:/omnimux/agents/update',
+      'exact:/omnimux/agents/select',
+      'prefix:/omnimux/templates',
+      // #453: workbench routes register via webServer.register in the same inject
+      'exact:/omnimux/workbench/viewport',
+      'exact:/omnimux/workbench/rpc/ack',
+      'exact:/omnimux/session-model',
+      'exact:/omnimux/api/media/generate',
+    ])
+    // #522 regression: drive a composer attachments request and prove the
+    // injected sentinel is the sessionQuery the route dispatcher holds.
+    const composerRoute = routes.find((route) => route.path === '/omnimux/composer/attachments')
+    assert.ok(composerRoute, 'composer attachments route must be registered')
+    /** @type {{ status?: number, chunks: string[] }} */
+    const seen = { chunks: [] }
+    const req = Object.assign((async function* () {
+      yield Buffer.from(JSON.stringify({ sessionId: 'sess-522', assetIds: [] }))
+    })(), {
+      method: 'POST',
+      url: '/omnimux/composer/attachments/instantiate',
+      headers: {},
+    })
+    const res = {
+      writeHead(status) { seen.status = status },
+      end(chunk) { seen.chunks.push(String(chunk)) },
+    }
+    await composerRoute.handler(req, res)
+    assert.equal(seen.status, 200)
+    assert.deepEqual(JSON.parse(seen.chunks.join('')), { results: [] })
+    assert.deepEqual(observedSessionIds, ['sess-522'])
+  })
+
+  it('apply still registers the video tool when webServer is absent', () => {
+    /** @type {string[]} */
+    const names = []
+    apply({
+      tools: { register(tool) { names.push(tool.name) } },
+      provide() {},
+      get() { return undefined },
+    })
+    assert.ok(names.includes('omnimux_video_submit'))
+    assert.ok(names.includes('omnimux_image_submit'))
+    assert.ok(names.includes('omnimux_social_data'))
+  })
+})

@@ -1,0 +1,439 @@
+/**
+ * plugins/omnimux-workflow/src/canvas/editor/components/publish/publishWizard.test.mjs
+ *
+ * Unit tests for Canvas Workflow Publishing Wizard (T03).
+ * Verifies publish button status, topology extraction, manifest assembly,
+ * and event dispatching (omnimux-app-tabs-changed & omnimux-app-open).
+ */
+
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  analyzeWorkflowInputs,
+  generateFormConfig,
+} from './topologyAnalyzer.ts';
+
+/**
+ * Local assertion helper for ApplicationManifest structural validity.
+ * Verifies publish wizard manifest output against Universal Application Manifest v1.0 contract
+ * without private cross-plugin imports from omnimux-apps.
+ */
+function validateApplicationManifestStructure(manifest) {
+  const errors = [];
+
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
+    return { valid: false, errors: ['Manifest must be a non-null object'] };
+  }
+
+  // 1. Top-level identifiers
+  if (typeof manifest.appId !== 'string' || !manifest.appId.trim()) {
+    errors.push('appId must be a non-empty string');
+  } else if (!/^[a-zA-Z0-9_-]+$/.test(manifest.appId)) {
+    errors.push(`appId contains invalid characters: "${manifest.appId}". Allowed: [a-zA-Z0-9_-]`);
+  }
+
+  if (typeof manifest.version !== 'string' || !manifest.version.trim()) {
+    errors.push('version must be a non-empty string');
+  } else if (!/^\d+\.\d+\.\d+([+-][a-zA-Z0-9_.-]+)?$/.test(manifest.version)) {
+    errors.push(`version must follow semantic versioning: "${manifest.version}"`);
+  }
+
+  if (manifest.schemaVersion !== '1.0') {
+    errors.push(`schemaVersion must be strictly "1.0", received "${manifest.schemaVersion}"`);
+  }
+
+  if (typeof manifest.createdAt !== 'string' || isNaN(Date.parse(manifest.createdAt))) {
+    errors.push(`createdAt must be a valid ISO date string: "${manifest.createdAt}"`);
+  }
+
+  // 2. Metadata validation
+  if (!manifest.metadata || typeof manifest.metadata !== 'object') {
+    errors.push('metadata must be an object');
+  } else {
+    if (typeof manifest.metadata.name !== 'string' || !manifest.metadata.name.trim()) {
+      errors.push('metadata.name must be a non-empty string');
+    }
+    const VALID_CATEGORIES = ['video', 'image', 'audio'];
+    if (!VALID_CATEGORIES.includes(manifest.metadata.category)) {
+      errors.push(
+        `metadata.category must be one of [video, image, audio], received "${manifest.metadata.category}". Note: "agent" category is strictly prohibited.`,
+      );
+    }
+    if (typeof manifest.metadata.iconSvg !== 'string' || !manifest.metadata.iconSvg.trim()) {
+      errors.push('metadata.iconSvg must be a non-empty SVG string');
+    } else if (!manifest.metadata.iconSvg.includes('<svg') && !manifest.metadata.iconSvg.includes('<path')) {
+      errors.push('metadata.iconSvg must contain valid SVG markup');
+    }
+  }
+
+  // 3. Workflow binding
+  if (!manifest.workflowBinding || typeof manifest.workflowBinding !== 'object') {
+    errors.push('workflowBinding must be an object');
+  } else {
+    if (!manifest.workflowBinding.workspaceId) errors.push('workflowBinding.workspaceId is required');
+    if (!manifest.workflowBinding.workflowHash) errors.push('workflowBinding.workflowHash is required');
+    if (!manifest.workflowBinding.snapshot || typeof manifest.workflowBinding.snapshot !== 'object') {
+      errors.push('workflowBinding.snapshot must be an object');
+    }
+  }
+
+  // 4. Form schema
+  if (!manifest.formSchema || typeof manifest.formSchema !== 'object') {
+    errors.push('formSchema must be an object');
+  } else {
+    if (manifest.formSchema.type !== 'object') {
+      errors.push('formSchema.type must be strictly "object"');
+    }
+    if (manifest.formSchema.additionalProperties !== false) {
+      errors.push('formSchema.additionalProperties must be false');
+    }
+  }
+
+  // 5. Field mappings
+  if (!manifest.fieldMappings || typeof manifest.fieldMappings !== 'object') {
+    errors.push('fieldMappings must be an object');
+  }
+
+  // 4b. Optional author-fixed summary (absent on manifests published before the field existed)
+  if (manifest.fixedFields !== undefined) {
+    if (!Array.isArray(manifest.fixedFields)) {
+      errors.push('fixedFields must be an array when present');
+    } else {
+      for (const [idx, entry] of manifest.fixedFields.entries()) {
+        if (!entry || typeof entry.label !== 'string' || !entry.label.trim()) {
+          errors.push(`fixedFields[${idx}].label must be a non-empty string`);
+        }
+        if (typeof entry?.value !== 'string' || !entry.value.trim()) {
+          errors.push(`fixedFields[${idx}].value must be a non-empty string`);
+        }
+        if (entry?.key && manifest.formSchema?.properties?.[entry.key]) {
+          errors.push(`fixedFields[${idx}] "${entry.key}" is also an exposed form property`);
+        }
+      }
+    }
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+describe('T03: Canvas Workflow Publishing Wizard & Tab Dispatch', () => {
+  const sampleNodes = [
+    {
+      id: 'text_root',
+      type: 'material',
+      data: {
+        nodeKind: 'import',
+        title: '用户输入脚本',
+        content: '默认短剧旁白内容',
+      },
+    },
+    {
+      id: 'gen_video',
+      type: 'material',
+      data: {
+        nodeKind: 'generate',
+        title: '分镜视频生成',
+        // 显式声明媒体类型：分类推断只依据终端节点的 materialType，
+        // 不再有「未命中就兜底成 video」的行为。
+        materialType: 'video',
+        prompt: '高质量短剧画面',
+        params: {
+          aspectRatio: '9:16',
+          seed: 42,
+        },
+      },
+    },
+  ];
+
+  const sampleEdges = [
+    {
+      id: 'e1',
+      source: 'text_root',
+      target: 'gen_video',
+      targetHandle: 'prompt',
+    },
+  ];
+
+  it('T03.1: Analysis correctly extracts root vs downstream inputs and category suggestion', () => {
+    const analysis = analyzeWorkflowInputs(sampleNodes, sampleEdges);
+
+    assert.equal(analysis.categorySuggestion, 'video');
+    assert.ok(analysis.workflowHash.length === 64);
+    assert.deepEqual(analysis.rootNodeIds, ['text_root']);
+    assert.deepEqual(analysis.terminalNodeIds, ['gen_video']);
+
+    // Root input
+    const rootInp = analysis.inputs.find((i) => i.nodeId === 'text_root');
+    assert.ok(rootInp);
+    assert.equal(rootInp.isRoot, true);
+    assert.equal(rootInp.isExposed, true);
+    assert.equal(rootInp.isRequired, true);
+    assert.equal(rootInp.widget, 'textarea');
+
+    // Downstream input (aspectRatio parameter): user-facing, exposed but optional
+    const ratioInp = analysis.inputs.find((i) => i.key.includes('aspectRatio'));
+    assert.ok(ratioInp);
+    assert.equal(ratioInp.isRoot, false);
+    assert.equal(ratioInp.group, 'config');
+    assert.equal(ratioInp.isRecommended, true);
+    assert.equal(ratioInp.isExposed, true);
+    assert.equal(ratioInp.isRequired, false);
+    assert.equal(ratioInp.widget, 'ratio-cards');
+
+    // Cost parameter stays author-fixed by default
+    const seedInp = analysis.inputs.find((i) => i.key.includes('seed'));
+    assert.ok(seedInp);
+    assert.equal(seedInp.group, 'config');
+    assert.equal(seedInp.isRecommended, false);
+    assert.equal(seedInp.isExposed, false);
+  });
+
+  it('T03.2: Generates strictly valid ApplicationManifest from exposed inputs', () => {
+    const analysis = analyzeWorkflowInputs(sampleNodes, sampleEdges);
+
+    // Expose both inputs
+    const exposedInputs = analysis.inputs.map((inp) => ({
+      ...inp,
+      isExposed: true,
+      fieldTitle: inp.isRoot ? '剧本文案' : '视频比例',
+    }));
+
+    const formConfig = generateFormConfig(exposedInputs);
+
+    const manifest = {
+      appId: 'app_short_drama_v1',
+      version: '1.0.0',
+      schemaVersion: '1.0',
+      createdAt: new Date().toISOString(),
+      metadata: {
+        name: '爆款短剧生成器',
+        category: 'video',
+        description: '一键将剧本转化为 9:16 竖屏短剧',
+        iconSvg: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M0 0h24v24H0z"/></svg>',
+        coverUrl: 'https://cdn.omnimux.com/samples/cover.png',
+      },
+      workflowBinding: {
+        workspaceId: 'ws_sample_01',
+        workflowHash: analysis.workflowHash,
+        snapshot: {
+          nodes: sampleNodes,
+          edges: sampleEdges,
+        },
+      },
+      formSchema: formConfig.formSchema,
+      fieldMappings: formConfig.fieldMappings,
+      showcase: {
+        mode: 'carousel',
+        items: [
+          {
+            id: 'item_1',
+            title: '样片 1',
+            mediaType: 'video',
+            mediaUrl: 'https://cdn.omnimux.com/samples/v1.mp4',
+            posterUrl: 'https://cdn.omnimux.com/samples/p1.png',
+          },
+        ],
+      },
+      demoSnapshot: formConfig.demoSnapshot,
+      fixedFields: formConfig.fixedFields,
+    };
+
+    const valResult = validateApplicationManifestStructure(manifest);
+    assert.equal(valResult.valid, true, `Manifest should be valid: ${valResult.errors.join('; ')}`);
+  });
+
+  it('T03.6: Keeps author-fixed candidates out of the form and inside the fixed summary', () => {
+    const analysis = analyzeWorkflowInputs(sampleNodes, sampleEdges);
+    // Recommended defaults only: the seed param stays author-fixed
+    const formConfig = generateFormConfig(analysis.inputs);
+
+    assert.ok(Object.prototype.hasOwnProperty.call(formConfig.formSchema.properties, 'text_root_content'));
+    assert.ok(!Object.prototype.hasOwnProperty.call(formConfig.formSchema.properties, 'gen_video_param_seed'));
+
+    const seedEntry = formConfig.fixedFields.find((f) => f.key === 'gen_video_param_seed');
+    assert.ok(seedEntry, 'Fixed seed should be summarised for the consumer form');
+    assert.equal(seedEntry.value, '42');
+    assert.equal(seedEntry.group, 'config');
+
+    const valResult = validateApplicationManifestStructure({
+      appId: 'app_short_drama_fixed',
+      version: '1.0.0',
+      schemaVersion: '1.0',
+      createdAt: new Date().toISOString(),
+      metadata: {
+        name: '爆款短剧生成器',
+        category: 'video',
+        iconSvg: '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0h24v24H0z"/></svg>',
+      },
+      workflowBinding: {
+        workspaceId: 'ws_sample_01',
+        workflowHash: analysis.workflowHash,
+        snapshot: { nodes: sampleNodes, edges: sampleEdges },
+      },
+      formSchema: formConfig.formSchema,
+      fieldMappings: formConfig.fieldMappings,
+      showcase: { mode: 'carousel', items: [] },
+      demoSnapshot: formConfig.demoSnapshot,
+      fixedFields: formConfig.fixedFields,
+    });
+    assert.equal(valResult.valid, true, `Manifest should be valid: ${valResult.errors.join('; ')}`);
+
+    // A candidate listed as fixed must not also be an exposed form property
+    const colliding = validateApplicationManifestStructure({
+      appId: 'app_collision',
+      version: '1.0.0',
+      schemaVersion: '1.0',
+      createdAt: new Date().toISOString(),
+      metadata: {
+        name: '冲突应用',
+        category: 'video',
+        iconSvg: '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0h24v24H0z"/></svg>',
+      },
+      workflowBinding: {
+        workspaceId: 'ws_sample_01',
+        workflowHash: analysis.workflowHash,
+        snapshot: { nodes: sampleNodes, edges: sampleEdges },
+      },
+      formSchema: formConfig.formSchema,
+      fieldMappings: formConfig.fieldMappings,
+      showcase: { mode: 'carousel', items: [] },
+      demoSnapshot: formConfig.demoSnapshot,
+      fixedFields: [{ key: 'text_root_content', nodeId: 'text_root', label: '脚本', value: 'x', group: 'text' }],
+    });
+    assert.equal(colliding.valid, false);
+    assert.ok(colliding.errors.some((e) => e.includes('is also an exposed form property')));
+  });
+
+  it('T03.3: Dispatches omnimux-app-tabs-changed and omnimux-app-open events upon publish', () => {
+    let tabsChangedFired = false;
+    let openEventPayload = null;
+
+    const mockWindow = {
+      dispatchEvent(evt) {
+        if (evt.type === 'omnimux-app-tabs-changed') {
+          tabsChangedFired = true;
+        } else if (evt.type === 'omnimux-app-open') {
+          openEventPayload = evt.detail;
+        }
+      },
+    };
+
+    // Simulate publish dispatch sequence
+    mockWindow.dispatchEvent({ type: 'omnimux-app-tabs-changed' });
+    mockWindow.dispatchEvent({
+      type: 'omnimux-app-open',
+      detail: { id: 'app_short_drama_v1', title: '爆款短剧生成器' },
+    });
+
+    assert.equal(tabsChangedFired, true);
+    assert.ok(openEventPayload);
+    assert.equal(openEventPayload.id, 'app_short_drama_v1');
+  });
+
+  it('T03.4: Category is restricted to strictly video | image | audio (no agent)', () => {
+    const analysis = analyzeWorkflowInputs(sampleNodes, sampleEdges);
+    assert.ok(['video', 'image', 'audio'].includes(analysis.categorySuggestion));
+
+    const invalidManifest = {
+      appId: 'app_agent_invalid',
+      version: '1.0.0',
+      schemaVersion: '1.0',
+      createdAt: new Date().toISOString(),
+      metadata: {
+        name: '智能体应用',
+        category: 'agent', // Strictly forbidden!
+        iconSvg: '<svg></svg>',
+      },
+      workflowBinding: {
+        workspaceId: 'ws_1',
+        workflowHash: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+        snapshot: { nodes: [], edges: [] },
+      },
+      formSchema: {
+        type: 'object',
+        properties: {},
+        required: [],
+        additionalProperties: false,
+      },
+      fieldMappings: {},
+      showcase: { mode: 'carousel', items: [] },
+      demoSnapshot: {},
+    };
+
+    const valResult = validateApplicationManifestStructure(invalidManifest);
+    assert.equal(valResult.valid, false);
+    assert.ok(valResult.errors.some((e) => e.includes('"agent" category is strictly prohibited')));
+  });
+
+  it('T03.7: Publish flow feeds every candidate to the form generator so the fixed summary survives', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const fileURLToPath = (await import('node:url')).fileURLToPath;
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+    const wizardSrc = fs.readFileSync(path.join(__dirname, 'PublishWizardModal.tsx'), 'utf-8');
+    assert.match(
+      wizardSrc,
+      /generateFormConfig\(inputs\)/,
+      'Wizard must hand every candidate to the generator',
+    );
+    assert.doesNotMatch(
+      wizardSrc,
+      /generateFormConfig\(exposedInputs\)/,
+      'Filtering to exposed candidates before generation drops the author-fixed summary',
+    );
+    assert.match(wizardSrc, /fixedFields: generatedConfig\.fixedFields/, 'Manifest must carry the fixed-field summary');
+
+    // Behavioural counterpart: the same candidate list yields a summary only when passed whole
+    const analysis = analyzeWorkflowInputs(sampleNodes, sampleEdges);
+    const full = generateFormConfig(analysis.inputs);
+    const exposedOnly = generateFormConfig(analysis.inputs.filter((inp) => inp.isExposed && !inp.isInternal));
+    assert.ok(full.fixedFields.length > 0, 'Full candidate list must produce a fixed summary');
+    assert.equal(exposedOnly.fixedFields.length, 0, 'Exposed-only list cannot produce a fixed summary');
+  });
+
+  it('T03.5: Prevents scroll jitter and canvas pan propagation in modal and Step 2 container', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const fileURLToPath = (await import('node:url')).fileURLToPath;
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+    // 1. Check PublishWizardModal.tsx Step 2 scroll container
+    const publishWizardSrc = fs.readFileSync(path.join(__dirname, 'PublishWizardModal.tsx'), 'utf-8');
+    assert.ok(publishWizardSrc.includes('className="nodrag nopan"'), 'PublishWizardModal Step 2 container should have nodrag nopan');
+    assert.ok(publishWizardSrc.includes("onWheel={(e) => e.stopPropagation()}"), 'PublishWizardModal Step 2 container should stop wheel propagation');
+    assert.ok(publishWizardSrc.includes("overscrollBehavior: 'contain'"), 'PublishWizardModal Step 2 container should have overscrollBehavior contain');
+    assert.ok(publishWizardSrc.includes("scrollbarGutter: 'stable'"), 'PublishWizardModal Step 2 container should have scrollbarGutter stable');
+
+    // 2. Check CustomModal.tsx
+    const customModalSrc = fs.readFileSync(path.resolve(__dirname, '../../../ui/CustomModal.tsx'), 'utf-8');
+    assert.ok(customModalSrc.includes('wf-modal-overlay wf-canvas-root nodrag nopan'), 'CustomModal overlay should have nodrag nopan');
+    assert.ok(customModalSrc.includes("['wf-modal-card nodrag nopan'"), 'CustomModal card should have nodrag nopan');
+    assert.ok(customModalSrc.includes('onWheel={(e) => e.stopPropagation()}'), 'CustomModal should stop wheel propagation');
+    assert.ok(customModalSrc.includes('onMouseDown={(e) => e.stopPropagation()}'), 'CustomModal should stop mouse down propagation');
+    assert.ok(customModalSrc.includes('onPointerDown={(e) => e.stopPropagation()}'), 'CustomModal should stop pointer down propagation');
+
+    // 3. Check components.css
+    const componentsCss = fs.readFileSync(path.resolve(__dirname, '../../../theme/components.css'), 'utf-8');
+    const overlayBlock = componentsCss.match(/\.wf-modal-overlay\s*\{[^}]+\}/)?.[0] || '';
+    assert.ok(overlayBlock.includes('overscroll-behavior: contain;'), '.wf-modal-overlay should have overscroll-behavior: contain');
+    const bodyBlock = componentsCss.match(/\.wf-modal-body\s*\{[^}]+\}/)?.[0] || '';
+    assert.ok(bodyBlock.includes('overscroll-behavior: contain;'), '.wf-modal-body should have overscroll-behavior: contain');
+    assert.ok(bodyBlock.includes('scrollbar-gutter: stable;'), '.wf-modal-body should have scrollbar-gutter: stable');
+  });
+
+  it('T03.6: PublishWizardModal 源码契约支持同名冲突检测、覆盖确认弹窗与 isUserOverridden 标记', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const fileURLToPath = (await import('node:url')).fileURLToPath;
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+    const wizardSrc = fs.readFileSync(path.join(__dirname, 'PublishWizardModal.tsx'), 'utf-8');
+    assert.match(wizardSrc, /checkAppNameConflict/, '必须调用 checkAppNameConflict 进行同名排他性校验');
+    assert.match(wizardSrc, /覆盖已有应用/, '必须包含极简覆盖已有应用确认弹窗标题');
+    assert.match(wizardSrc, /已存在同名应用/, '弹窗说明文案必须准确');
+    assert.match(wizardSrc, /确认覆盖/, '必须包含主要操作按钮「确认覆盖」');
+    assert.match(wizardSrc, /isUserOverridden:\s*true/, '覆盖发布时必须在 manifest 注入 isUserOverridden 标记');
+    assert.match(wizardSrc, /baseAppId:\s*targetAppId/, '覆盖发布时必须记录 baseAppId');
+  });
+});

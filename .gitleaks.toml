@@ -118,3 +118,15 @@ description = "inspiration bundle identifier"
 targetRules = ["generic-api-key"]
 paths = ['''plugins/plugins/omnimux-inspiration/lib/client\.js$''']
 regexes = ['''IMPORT_STAGE_FALLBACK_KEY''']
+
+# Plugin test fixtures that exercise secret-redaction paths with obviously fake
+# keys: the files assert such values are masked/refused, no real credential is
+# written. Exact file + rule, per the reviewed-allowlist contract.
+[[allowlists]]
+description = "plugin secret-redaction test fixtures with fake keys"
+targetRules = ["generic-api-key"]
+paths = [
+  '''plugins/plugins/omnimux/src/auth/http-routes\.test\.js$''',
+  '''plugins/plugins/omnimux/src/settings/schema\.test\.js$''',
+  '''plugins/plugins/omnimux-workflow/src/http/helpers\.test\.mjs$''',
+]

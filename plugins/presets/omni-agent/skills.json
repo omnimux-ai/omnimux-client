@@ -1,0 +1,67 @@
+{
+  "presetId": "omni-agent",
+  "name": "全域社媒操盘手",
+  "description": "全域矩阵分发、跨平台文案改写与社媒运营大盘分析",
+  "categories": [
+    { "id": "矩阵策略", "name": "矩阵策略" },
+    { "id": "文案改写", "name": "文案改写" },
+    { "id": "趋势与大盘", "name": "趋势与大盘" }
+  ],
+  "skills": [
+    {
+      "id": "sk-omni-strategy",
+      "slug": "content-strategy",
+      "skill": "content-strategy",
+      "name": "全域社媒内容策略",
+      "title": "全域社媒内容策略",
+      "category": "矩阵策略",
+      "description": "制定跨平台矩阵运营节奏，按受众心智规划内容排期与转化路径。",
+      "summary": "制定跨平台矩阵运营节奏，按受众心智规划内容排期与转化路径。",
+      "installed": true
+    },
+    {
+      "id": "sk-omni-caption",
+      "slug": "social-caption",
+      "skill": "social-caption",
+      "name": "社媒多平台文案自适应改写",
+      "title": "社媒多平台文案自适应改写",
+      "category": "文案改写",
+      "description": "将同一核心主题一键改写为符合 TikTok、Instagram、推特等各平台特性的文案与标签。",
+      "summary": "将同一核心主题一键改写为符合 TikTok、Instagram、推特等各平台特性的文案与标签。",
+      "installed": true
+    },
+    {
+      "id": "sk-omni-topics",
+      "slug": "viral-topics-and-tags-mining",
+      "skill": "viral-topics-and-tags-mining",
+      "name": "全网爆款选题与话题挖掘",
+      "title": "全网爆款选题与话题挖掘",
+      "category": "趋势与大盘",
+      "description": "抓取全网最新飙升热点、趋势话题与高流量 Hashtags，提供选题建议。",
+      "summary": "抓取全网最新飙升热点、趋势话题与高流量 Hashtags，提供选题建议。",
+      "installed": true
+    },
+    {
+      "id": "sk-omni-overview",
+      "slug": "keyword-niche-overview",
+      "skill": "keyword-niche-overview",
+      "name": "全域关键词与赛道速览",
+      "title": "全域关键词与赛道速览",
+      "category": "趋势与大盘",
+      "description": "输入品类或关键词，一键洞悉全网视频声量、热门商品与头部达人格局。",
+      "summary": "输入品类或关键词，一键洞悉全网视频声量、热门商品与头部达人格局。",
+      "installed": true
+    },
+    {
+      "id": "sk-omni-analyze",
+      "slug": "analyze-account",
+      "skill": "analyze-account",
+      "name": "跨平台多账号诊断",
+      "title": "跨平台多账号诊断",
+      "category": "趋势与大盘",
+      "description": "综合评估多平台矩阵账号粉丝质量、内容受众重合度与发布效果漏斗。",
+      "summary": "综合评估多平台矩阵账号粉丝质量、内容受众重合度与发布效果漏斗。",
+      "installed": true
+    }
+  ]
+}

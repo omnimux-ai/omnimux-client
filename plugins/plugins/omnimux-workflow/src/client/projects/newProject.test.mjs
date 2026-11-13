@@ -1,0 +1,614 @@
+/**
+ * 新建本地项目：弹窗提交契约、重名、(path) 后必须 sessions.create({ workspaceId })、
+ * 禁止 connectWorkspace / create({ cwd })。
+ */
+import assert from 'node:assert/strict'
+import { describe, it } from 'node:test'
+import { join } from 'node:path'
+import {
+  normalizeWorkspacePath,
+  resolveCurrentCwd,
+  resolveWorkspaceForCwd,
+  resolveWorkspaceId,
+} from './cwd.js'
+import {
+  folderNameAttempt,
+  isDirectoryExistsError,
+  sanitizeFolderName,
+  validateProjectTitle,
+} from './folderName.js'
+import { createProjectSession, dismissProductStage, runNewProject, runResetSession } from './newProject.js'
+import { zh } from '../locales.js'
+
+function workspacesWith(items, recentWorkspaceId) {
+  return {
+    list: {
+      getSnapshot: () => ({ items, recentWorkspaceId }),
+    },
+  }
+}
+
+function sessionsWith(current, byId = {}) {
+  return {
+    list: {
+      getSnapshot: () => ({ current, byId }),
+    },
+    create: async () => {
+      throw new Error('sessions.create should not be called')
+    },
+    open() {},
+  }
+}
+
+function directoryExistsError(path = '/tmp/x') {
+  const error = new Error(`directory browse failed: directory-exists: ${path} already exists`)
+  error.name = 'DirectoryBrowseError'
+  error.rpcError = { code: 'directory-exists', message: `${path} already exists`, details: { path } }
+  return error
+}
+
+describe('cwd workspace matching', () => {
+  it('normalizeWorkspacePath drops trailing slashes except root', () => {
+    assert.equal(normalizeWorkspacePath('/tmp/ws'), '/tmp/ws')
+    assert.equal(normalizeWorkspacePath('/tmp/ws/'), '/tmp/ws')
+    assert.equal(normalizeWorkspacePath('/tmp/ws///'), '/tmp/ws')
+    assert.equal(normalizeWorkspacePath('/'), '/')
+  })
+
+  it('resolveWorkspaceForCwd matches items[].path ignoring trailing slash', () => {
+    const workspaces = workspacesWith([
+      { workspaceId: 'ws-1', path: '/home/dev/work/' },
+    ])
+    assert.equal(resolveWorkspaceForCwd('/home/dev/work', workspaces), 'ws-1')
+    assert.equal(resolveWorkspaceForCwd('/home/dev/work/', workspaces), 'ws-1')
+  })
+
+  it('resolveWorkspaceForCwd stringifies path and workspaceId', () => {
+    const workspaces = workspacesWith([
+      { workspaceId: 42, path: '/tmp/n' },
+    ])
+    assert.equal(resolveWorkspaceForCwd('/tmp/n/', workspaces), '42')
+  })
+
+  it('returns undefined when cwd has no workspace ledger entry', () => {
+    const workspaces = workspacesWith([
+      { workspaceId: 'ws-other', path: '/tmp/other' },
+    ])
+    assert.equal(resolveWorkspaceForCwd('/tmp/nopath', workspaces), undefined)
+  })
+
+  it('resolveCurrentCwd is unchanged: session cwd wins over recent workspace path', () => {
+    const sessions = sessionsWith('s1', { s1: { cwd: '/tmp/session-cwd' } })
+    const workspaces = workspacesWith(
+      [{ workspaceId: 'ws-1', path: '/tmp/recent' }],
+      'ws-1',
+    )
+    assert.equal(resolveCurrentCwd(sessions, workspaces), '/tmp/session-cwd')
+  })
+
+  it('resolveWorkspaceId follows current cwd into the ledger', () => {
+    const sessions = sessionsWith('s1', { s1: { cwd: '/tmp/ws/' } })
+    const workspaces = workspacesWith([{ workspaceId: 'ws-9', path: '/tmp/ws' }])
+    assert.equal(resolveWorkspaceId(sessions, workspaces), 'ws-9')
+  })
+})
+
+describe('sanitizeFolderName', () => {
+  it('keeps CJK display names and strips separators', () => {
+    assert.equal(sanitizeFolderName('  宣传片  '), '宣传片')
+    assert.equal(sanitizeFolderName('a/b\\c:d'), 'a_b_c_d')
+    assert.equal(sanitizeFolderName('...'), '')
+    assert.equal(validateProjectTitle('').ok, false)
+    assert.equal(validateProjectTitle('  片  ').folderName, '片')
+    assert.equal(folderNameAttempt('宣传片', 0), '宣传片')
+    assert.equal(folderNameAttempt('宣传片', 1), '宣传片 (2)')
+  })
+
+  it('detects official DirectoryBrowseError shape', () => {
+    assert.equal(isDirectoryExistsError(directoryExistsError('/Movies/OmniMux/Projects/片')), true)
+    assert.equal(isDirectoryExistsError(new Error('EACCES')), false)
+    const named = new Error('directory browse failed: directory-exists: x')
+    named.name = 'DirectoryBrowseError'
+    assert.equal(isDirectoryExistsError(named), true)
+  })
+})
+
+describe('dismissProductStage', () => {
+  it('clears html product-stage mark and sets plugin stage false', () => {
+    const previous = globalThis.document
+    const dataset = { dshProductStage: 'omnimux-workflow' }
+    const events = []
+    globalThis.document = { documentElement: { dataset } }
+    const previousWindow = globalThis.window
+    globalThis.window = {
+      dispatchEvent(event) { events.push(event?.detail) },
+    }
+    const stageCalls = []
+    try {
+      dismissProductStage({ set(open) { stageCalls.push(open) } })
+      assert.equal('dshProductStage' in dataset, false)
+      assert.deepEqual(stageCalls, [false])
+      assert.deepEqual(events, [{ id: '' }])
+    } finally {
+      globalThis.document = previous
+      globalThis.window = previousWindow
+    }
+  })
+})
+
+describe('createProjectSession', () => {
+  it('registers path then create({ workspaceId }) without cwd', async () => {
+    const creates = []
+    const sessions = {
+      async create(opts) {
+        creates.push(opts)
+        return 'sess-new'
+      },
+    }
+    const workspaces = {
+      async create(input) {
+        assert.deepEqual(input, { path: '/lib/片' })
+        return { workspaceId: 'ws-1', path: '/lib/片' }
+      },
+      async connectWorkspace() {
+        throw new Error('connectWorkspace must not be called')
+      },
+    }
+    const result = await createProjectSession(sessions, workspaces, '/lib/片')
+    assert.deepEqual(result, {
+      ok: true,
+      cwd: '/lib/片',
+      workspaceId: 'ws-1',
+      sessionId: 'sess-new',
+    })
+    assert.deepEqual(creates, [{ workspaceId: 'ws-1' }])
+    assert.equal('cwd' in creates[0], false)
+  })
+
+  it('returns no-workspace when path is empty and does not create a session', async () => {
+    let created = 0
+    const result = await createProjectSession(
+      { async create() { created += 1; return 'x' } },
+      { async create() { return { workspaceId: 'ws' } } },
+      '',
+    )
+    assert.deepEqual(result, { ok: false, error: 'no-workspace' })
+    assert.equal(created, 0)
+  })
+})
+
+describe('runNewProject', () => {
+  it('project-record-invalid（422）转成明确文案，不落泛化「操作失败」', async () => {
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = async () => ({
+      ok: false,
+      status: 422,
+      json: async () => ({ error: 'project-record-invalid' }),
+    })
+    try {
+      const result = await runNewProject({
+        sessions: sessionsWith('sess-1'),
+        workspaces: workspacesWith([]),
+        t: (key) => (key === 'projects.recordInvalid' ? zh['projects.recordInvalid'] : ''),
+      }, { title: '损坏档案项目' })
+      assert.equal(result.ok, false)
+      assert.equal(result.error, zh['projects.recordInvalid'])
+      assert.notEqual(result.error, zh['projects.genericError'], '不能退化成泛化「操作失败，请重试。」')
+      assert.match(result.error, /project\.json/, '文案必须点名 project.json 便于用户自行修复')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('POST title only then workspaces.create({ path }) then sessions.create({ workspaceId })', async () => {
+    const originalFetch = globalThis.fetch
+    const fetchBodies = []
+    const directoryCalls = []
+    const workspaceCreates = []
+    const sessionCreates = []
+    const opens = []
+    globalThis.fetch = async (url, opts = {}) => {
+      fetchBodies.push({ url: String(url), method: opts.method || 'GET', body: opts.body })
+      if (String(url).endsWith('/api/projects') && opts.method === 'POST') {
+        const body = JSON.parse(String(opts.body))
+        return {
+          ok: true,
+          json: async () => ({
+            project: { id: 'p1', title: body.title, path: `/lib/${body.title}` },
+          }),
+        }
+      }
+      if (String(url).includes('/api/projects/p1') && opts.method === 'PATCH') {
+        return { ok: true, json: async () => ({ project: { id: 'p1', sessionId: 'sess-9' } }) }
+      }
+      return { ok: true, json: async () => ({}) }
+    }
+    try {
+      const stageCalls = []
+      const result = await runNewProject({
+        sessions: {
+          async create(opts) {
+            sessionCreates.push(opts)
+            return 'sess-9'
+          },
+          open(id) { opens.push(id) },
+        },
+        workspaces: {
+          async createDirectory() {
+            directoryCalls.push('client-mkdir')
+            throw new Error('desktop native picker has no createDirectory')
+          },
+          async create(input) {
+            workspaceCreates.push(input)
+            return { workspaceId: 'ws-ledger', path: input.path }
+          },
+          async connectWorkspace() {
+            throw new Error('connectWorkspace must not be called')
+          },
+        },
+        layout: { closeDetails() {} },
+        betterSidebar: {
+          openTab() {},
+          closeTab() {},
+          getTab() { return { id: 'omnimux-workflow:canvas' } },
+          getSnapshot() { return { sessionId: 'sess-9', state: { splits: {}, width: 700 } } },
+        },
+        t: (key) => key,
+        stage: { set(open) { stageCalls.push(open) } },
+      }, { title: '宣传片' })
+
+      assert.equal(result.ok, true)
+      assert.equal(result.project?.sessionId, 'sess-9')
+      assert.equal(result.project?.path, '/lib/宣传片')
+      assert.deepEqual(directoryCalls, [])
+      assert.deepEqual(workspaceCreates, [{ path: '/lib/宣传片' }])
+      assert.deepEqual(sessionCreates, [{ workspaceId: 'ws-ledger' }])
+      assert.equal('cwd' in sessionCreates[0], false)
+      // 0.1.7 起 sessions.open 已移除：会话已在前台时不再走旧 API。
+      assert.deepEqual(opens, [])
+      assert.deepEqual(stageCalls, [false])
+
+      const libraryGet = fetchBodies.find((row) => row.url.includes('/projects/library'))
+      assert.equal(libraryGet, undefined)
+      const post = fetchBodies.find((row) => row.method === 'POST')
+      assert.ok(post)
+      const posted = JSON.parse(String(post.body))
+      assert.equal(posted.title, '宣传片')
+      assert.equal('projectRoot' in posted, false)
+      assert.equal('cwd' in posted, false)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('does not write when title is empty', async () => {
+    const originalFetch = globalThis.fetch
+    let fetchCalls = 0
+    globalThis.fetch = async () => {
+      fetchCalls += 1
+      return { ok: true, json: async () => ({}) }
+    }
+    try {
+      const result = await runNewProject({
+        sessions: sessionsWith('s1', { s1: { cwd: '/tmp/orphan' } }),
+        workspaces: {
+          ...workspacesWith([]),
+          async createDirectory() { throw new Error('mkdir') },
+          async create() { throw new Error('create') },
+        },
+        t: (key) => key,
+      }, { title: '   ' })
+      assert.equal(result.ok, false)
+      assert.equal(result.error, 'title-required')
+      assert.equal(fetchCalls, 0)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('adopts a project on the current folder without adding a page', async () => {
+    const originalFetch = globalThis.fetch
+    const posts = []
+    let pagePosts = 0
+    globalThis.fetch = async (url, opts = {}) => {
+      const href = String(url)
+      if (href.endsWith('/api/projects') && (opts.method || 'GET') === 'POST') {
+        const body = JSON.parse(String(opts.body))
+        posts.push(body)
+        return {
+          ok: true,
+          json: async () => ({
+            action: 'existing',
+            project: {
+              id: 'p-cur',
+              title: body.title,
+              path: '/tmp/current',
+              pages: [{ id: 'page-1', canvasWorkspaceId: 'ws_cur' }],
+              activePageId: 'page-1',
+            },
+          }),
+        }
+      }
+      if (href.includes('/project-pages')) { pagePosts += 1; return { ok: true, json: async () => ({}) } }
+      if (href.includes('/api/projects/p-cur') && opts.method === 'PATCH') return { ok: true, json: async () => ({}) }
+      return { ok: true, json: async () => ({}) }
+    }
+    try {
+      const result = await runNewProject({
+        sessions: {
+          ...sessionsWith('s-now', { 's-now': { cwd: '/tmp/current' } }),
+          async create() { return 's-new' },
+          open() {},
+        },
+        workspaces: {
+          ...workspacesWith([{ workspaceId: 'ws-cur', path: '/tmp/current' }]),
+          async create() { throw new Error('must not create workspace') },
+        },
+        layout: { closeDetails() {} },
+        betterSidebar: {
+          openTab() {},
+          closeTab() {},
+          getTab() { return { id: 'omnimux-workflow:canvas' } },
+          getSnapshot() { return { sessionId: 's-now', state: { splits: {}, width: 700 } } },
+        },
+        t: (key) => key,
+      }, { title: '视频代做', workspaceDir: '/tmp/current' })
+      assert.equal(result.ok, true)
+      assert.equal(result.action, 'existing')
+      assert.equal(posts.length, 1)
+      assert.equal(posts[0].mode, 'workspace', '选中目录必须走 workspace 对齐')
+      assert.equal(posts[0].workspaceDir, '/tmp/current')
+      assert.equal(pagePosts, 0, '采纳既有项目不得自动加页')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('opens an existing project in another folder without a red-text confirm', async () => {
+    const originalFetch = globalThis.fetch
+    let pagePosts = 0
+    globalThis.fetch = async (url, opts = {}) => {
+      const href = String(url)
+      if (href.endsWith('/api/projects') && (opts.method || 'GET') === 'POST') {
+        const body = JSON.parse(String(opts.body))
+        return {
+          ok: true,
+          json: async () => ({
+            action: 'open',
+            project: {
+              id: 'p-other',
+              title: body.title,
+              path: '/tmp/other',
+              pages: [{ id: 'page-1', canvasWorkspaceId: 'ws_other' }],
+              activePageId: 'page-1',
+            },
+          }),
+        }
+      }
+      if (href.includes('/project-pages')) { pagePosts += 1; return { ok: true, json: async () => ({}) } }
+      if (href.includes('/api/projects/p-other') && opts.method === 'PATCH') return { ok: true, json: async () => ({}) }
+      return { ok: true, json: async () => ({}) }
+    }
+    try {
+      const result = await runNewProject({
+        sessions: {
+          ...sessionsWith('s-now', { 's-now': { cwd: '/tmp/current' } }),
+          async create() { return 's-new' },
+          open() {},
+        },
+        workspaces: {
+          ...workspacesWith([{ workspaceId: 'ws-cur', path: '/tmp/current' }]),
+          async create() { return { workspaceId: 'ws-other' } },
+        },
+        layout: { closeDetails() {} },
+        betterSidebar: {
+          openTab() {},
+          closeTab() {},
+          getTab() { return { id: 'omnimux-workflow:canvas' } },
+          getSnapshot() { return { sessionId: 's-new', state: { splits: {}, width: 700 } } },
+        },
+        t: (key) => key,
+      }, { title: '别的项目', workspaceDir: '/tmp/other' })
+      assert.equal(result.ok, true, '既有项目应直接打开，不再返回红字确认错误')
+      assert.equal(result.action, 'open')
+      assert.equal(result.existing, undefined, '不得再走 existing 确认分支')
+      assert.equal(pagePosts, 0, '打开既有项目不得自动加页')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('un-collapses conversation when the project canvas opens (enter-conversation intent)', async () => {
+    const originalFetch = globalThis.fetch
+    const order = []
+    const previousWindow = globalThis.window
+    globalThis.window = {
+      dispatchEvent() { return true },
+      __omnimuxWorkbench: {
+        setConversationCollapsed(next, opts) {
+          order.push(`collapsed:${next}:${opts?.sessionId || ''}`)
+        },
+        setFocus(mode) {
+          order.push(`focus:${mode}`)
+        },
+      },
+    }
+    globalThis.fetch = async (url, opts = {}) => {
+      if (String(url).endsWith('/api/projects') && opts.method === 'POST') {
+        const body = JSON.parse(String(opts.body))
+        return {
+          ok: true,
+          json: async () => ({
+            project: { id: 'p-enter', title: body.title, path: `/lib/${body.title}` },
+          }),
+        }
+      }
+      if (String(url).includes('/api/projects/p-enter') && opts.method === 'PATCH') {
+        return { ok: true, json: async () => ({ project: { id: 'p-enter', sessionId: 'sess-enter' } }) }
+      }
+      return { ok: true, json: async () => ({}) }
+    }
+    try {
+      const result = await runNewProject({
+        sessions: {
+          async create() { return 'sess-enter' },
+        },
+        workspaces: {
+          async create(input) { return { workspaceId: 'ws-enter', path: input.path } },
+        },
+        layout: { closeDetails() {} },
+        betterSidebar: {
+          openTab() { order.push('openTab') },
+          closeTab() {},
+          getTab() { return { id: 'omnimux-workflow:canvas' } },
+          getSnapshot() {
+            return { sessionId: 'sess-enter', state: { splits: { kind: 'leaf', tabs: [] }, width: 700, panelOpen: true } }
+          },
+        },
+        t: (key) => key,
+        stage: { set() {} },
+      }, { title: '进会话' })
+
+      assert.equal(result.ok, true)
+      assert.ok(order.includes('openTab'), '必须真正打开画布 tab')
+      assert.ok(order.includes('collapsed:false:sess-enter'), '必须解除会话折叠')
+      assert.ok(order.includes('focus:split'), '必须切到 split 焦点')
+    } finally {
+      globalThis.fetch = originalFetch
+      if (previousWindow === undefined) delete globalThis.window
+      else globalThis.window = previousWindow
+    }
+  })
+})
+
+describe('runResetSession', () => {
+  it('un-collapses conversation after opening the fresh session', async () => {
+    const order = []
+    const previousWindow = globalThis.window
+    globalThis.window = {
+      __omnimuxWorkbench: {
+        setConversationCollapsed(next, opts) {
+          order.push(`collapsed:${next}:${opts?.sessionId || ''}`)
+        },
+        setFocus(mode) {
+          order.push(`focus:${mode}`)
+        },
+      },
+    }
+    try {
+      const result = await runResetSession({
+        sessions: {
+          async create(opts) {
+            order.push(`create:${opts.workspaceId}`)
+            return 'sess-reset'
+          },
+        },
+        workspaces: {
+          async create() { return { workspaceId: 'ws-reset' } },
+          list: { getSnapshot: () => ({ items: [{ workspaceId: 'ws-reset', path: '/lib/x' }] }) },
+        },
+        layout: { closeDetails() {} },
+        betterSidebar: {
+          openTab() { order.push('openTab') },
+          closeTab() {},
+          getTab() { return { id: 'omnimux-workflow:canvas' } },
+          getSnapshot() {
+            return {
+              sessionId: 'sess-reset',
+              state: { splits: { kind: 'leaf', tabs: [] }, width: 700, panelOpen: true },
+            }
+          },
+        },
+        t: (key) => key,
+      }, { workspaceId: 'ws-reset', cwd: '/lib/x' })
+
+      assert.equal(result.ok, true)
+      assert.equal(result.sessionId, 'sess-reset')
+      assert.ok(order.includes('openTab'), '必须真正打开画布 tab')
+      assert.ok(order.includes('collapsed:false:sess-reset'), '必须解除会话折叠')
+      assert.ok(order.includes('focus:split'), '必须切到 split 焦点')
+    } finally {
+      if (previousWindow === undefined) delete globalThis.window
+      else globalThis.window = previousWindow
+    }
+  })
+})
+
+describe('Issue #3928：项目打开走现行会话导航接缝', () => {
+  const baseFetch = async (url, opts = {}) => {
+    if (String(url).endsWith('/api/projects') && opts.method === 'POST') {
+      const body = JSON.parse(String(opts.body))
+      return { ok: true, json: async () => ({ project: { id: 'p-nav', title: body.title, path: `/lib/${body.title}` } }) }
+    }
+    if (String(url).includes('/api/projects/p-nav') && opts.method === 'PATCH') {
+      return { ok: true, json: async () => ({ project: { id: 'p-nav', sessionId: 'sess-nav' } }) }
+    }
+    return { ok: true, json: async () => ({}) }
+  }
+
+  function sidebarOn(sessionId) {
+    return {
+      getTab() { return { id: 'omnimux-workflow:canvas' } },
+      closeTab() {},
+      openTab() {},
+      getSnapshot() { return { sessionId, state: { splits: {}, panelSize: 700 } } },
+    }
+  }
+
+  it('runNewProject 先用 uiWorkspace 切到新会话，再把画布 tab 落在该会话', async () => {
+    const originalFetch = globalThis.fetch
+    const previousWindow = globalThis.window
+    const order = []
+    globalThis.fetch = baseFetch
+    globalThis.window = { dispatchEvent() { return true } }
+    try {
+      const result = await runNewProject({
+        sessions: { async create() { return 'sess-nav' } },
+        workspaces: { async create(input) { return { workspaceId: 'ws-nav', path: input.path } } },
+        layout: { closeDetails() {} },
+        betterSidebar: sidebarOn('sess-old'),
+        getSessionNavigation: () => ({ openSession(id) { order.push(`openSession:${id}`) } }),
+        t: (key) => key,
+        stage: { set() {} },
+      }, { title: '导航验收', timeoutMs: 0 })
+
+      assert.equal(result.ok, true)
+      assert.equal(result.canvasOpened, true, '画布必须真的打开')
+      assert.deepEqual(order, ['openSession:sess-nav'], '必须先切到项目会话，且只切一次')
+    } finally {
+      globalThis.fetch = originalFetch
+      if (previousWindow === undefined) delete globalThis.window
+      else globalThis.window = previousWindow
+    }
+  })
+
+  it('runResetSession 拿不到会话导航接缝时明确失败，不假装成功', async () => {
+    const opened = []
+    const result = await runResetSession({
+      sessions: { async create() { return 'sess-reset' } },
+      workspaces: { async create() { return { workspaceId: 'ws-reset' } }, list: { getSnapshot: () => ({ items: [] }) } },
+      betterSidebar: { getTab() { return { id: 'omnimux-workflow:canvas' } }, openTab() { opened.push(1) }, closeTab() {}, getSnapshot() { return { sessionId: 'sess-old', state: { splits: {} } } } },
+    }, { workspaceId: 'ws-reset', timeoutMs: 0 })
+
+    assert.equal(result.ok, false)
+    assert.equal(result.error, 'session-navigation-unavailable')
+    assert.equal(opened.length, 0, '切不了会话就不该把画布排进看不见的会话')
+  })
+
+  it('runResetSession 画布被宿主拒绝时返回 canvas-unavailable', async () => {
+    const result = await runResetSession({
+      sessions: { async create() { return 'sess-reset' } },
+      workspaces: { async create() { return { workspaceId: 'ws-reset' } }, list: { getSnapshot: () => ({ items: [] }) } },
+      sessionNavigation: { openSession() {} },
+      betterSidebar: {
+        getTab() { return { id: 'omnimux-workflow:canvas' } },
+        closeTab() {},
+        getSnapshot() { return { sessionId: 'sess-reset', state: { splits: {} } } },
+        openTab() { throw new Error('sidebarRight: no session surface is mounted') },
+      },
+    }, { workspaceId: 'ws-reset', timeoutMs: 0 })
+
+    assert.equal(result.ok, false)
+    assert.equal(result.error, 'canvas-unavailable')
+  })
+})

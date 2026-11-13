@@ -1,0 +1,745 @@
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { after, test } from 'node:test';
+import { buildSync } from 'esbuild';
+
+const buildDir = mkdtempSync(join(tmpdir(), 'video-deconstruct-route-build-'));
+const bundle = join(buildDir, 'runtime.mjs');
+buildSync({
+  stdin: {
+    contents: `
+      export { createWorkspaceStore } from '../workspace/WorkspaceStore.ts';
+      export { createWorkflowDispatcher } from './canvasRoutes.ts';
+      export { TableStorageService } from '../storage/TableStorageService.ts';
+      export { resolveTableAbsPath } from '../storage/tablePath.ts';
+    `,
+    resolveDir: fileURLToPath(new URL('.', import.meta.url)),
+  },
+  bundle: true,
+  platform: 'node',
+  format: 'esm',
+  outfile: bundle,
+});
+const { createWorkspaceStore, createWorkflowDispatcher, TableStorageService, resolveTableAbsPath } =
+  await import(pathToFileURL(bundle).href);
+after(() => rmSync(buildDir, { recursive: true, force: true }));
+
+function harness(t, opts = {}) {
+  const root = mkdtempSync(join(tmpdir(), 'video-deconstruct-test-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const store = createWorkspaceStore({ workspacesDir: join(root, 'workspaces') });
+  const workspace = store.create('视频拆解测试工作区');
+  store.save(workspace.id, {
+    expectedVersion: workspace.version,
+    nodes: [
+      {
+        id: 'node_video_1',
+        type: 'material',
+        position: { x: 50, y: 50 },
+        data: { materialType: 'video', label: '测试视频节点' },
+      },
+    ],
+    edges: [],
+  });
+
+  const toolCalls = [];
+  const videoAnalyzeTool = {
+    async execute(args) {
+      toolCalls.push(args);
+      if (opts.toolExecute) return opts.toolExecute(args);
+      return {
+        report: `# 《测试视频》逐镜头分解与五维分析报告
+
+## 逐镜头分解表
+| 镜头序号 | 时间段 | 景别 | 画面描述 | 关键动作 | 台词脚本 |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 00:00 - 00:03 | 特写 | 开场反差视觉 | 快速推入 | "痛点前置" |
+| 2 | 00:03 - 00:10 | 中景 | 实操演示过程 | 涂抹吸收 | "效果真实可见" |
+
+## 一句话视频描述
+以真实拆解结果为核心的高转化短视频。
+
+## I. 核心目标
+* 转化目标: 引导点击左下角购买同款
+
+## II. 影响力分析
+明线展示直观功效，暗线击中受众痛点。
+
+## III. 叙事结构
+0-3s 抛痛点 → 3-10s 实测演示 → 结尾明确 CTA
+
+## IV. 画面分析
+近景特写为主，原生自然光影。
+
+## V. 核心复刻策略
+[痛点开场] + [第一人称实测] + [CTA 引导]
+`,
+      };
+    },
+  };
+
+  // The analysis model is resolved from the hub catalog, so every harness needs
+  // a catalog double; the id differs from any literal to prove it is read.
+  const visionCatalog = {
+    list: () => ({
+      text: [
+        {
+          id: 'catalog-vision-pro',
+          label: 'Catalog Vision Pro',
+          executionStatus: 'ready',
+          inputCapability: { modalities: ['text', 'image', 'video'] },
+        },
+      ],
+      defaults: { analysis: 'catalog-vision-pro' },
+    }),
+  };
+
+  const dispatcher = createWorkflowDispatcher({
+    store,
+    mediaDir: join(root, 'media'),
+    libraryRoot: join(root, 'library'),
+    executionManager: {},
+    gateway: { capabilities: async () => ({}) },
+    getTool: (name) => {
+      if (opts.disableTool) return undefined;
+      if (opts.videoProcessTool && name === 'video_process') return opts.videoProcessTool;
+      return name === 'video_analyze' ? videoAnalyzeTool : undefined;
+    },
+    getSeam: (name) => {
+      if (opts.disableTool) return undefined;
+      if (opts.videoProcessTool && (name === 'videoProcess' || name === 'video_process')) return opts.videoProcessTool;
+      if (name === 'modelCatalog') return opts.modelCatalog ?? visionCatalog;
+      return name === 'videoAnalyze' ? videoAnalyzeTool : undefined;
+    },
+  });
+
+  const dummyVideo = join(root, 'test.mp4');
+  writeFileSync(dummyVideo, 'dummy video binary content');
+
+  const url = `/omnimux-workflow/api/workspaces/${workspace.id}/deconstruct-video`;
+  const call = (body, extra = {}) =>
+    dispatcher.dispatch({
+      method: 'POST',
+      url,
+      body,
+      origin: 'http://127.0.0.1:45120',
+      ...extra,
+    });
+  const invoke = (body) =>
+    dispatcher.dispatch({
+      method: 'POST',
+      url,
+      body,
+      origin: 'http://127.0.0.1:45120',
+    });
+
+  return { call, request: call, invoke, toolCalls, store, workspace, url, dummyVideo, root, mediaDir: join(root, 'media') };
+}
+
+test('videoDeconstruct: 成功拆解视频并持久化五维内容拆解表格（分析维度 + 分析内容）', async (t) => {
+  const h = harness(t);
+  const res = await h.call({
+    nodeId: 'node_video_1',
+    videoPath: h.dummyVideo,
+    title: '我的爆款视频拆解',
+  });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.ok, true);
+  assert.equal(res.body.title, '我的爆款视频拆解');
+  assert.ok(res.body.tableId.startsWith('tbl_'));
+  assert.equal(res.body.tablePath, `.omnimux/tables/${res.body.tableId}.htable`);
+  // 标准五维拆解表：2 列（分析维度 + 分析内容），6 行维度
+  assert.equal(res.body.columnCount, 2);
+  assert.equal(res.body.rowCount, 6);
+  assert.ok(res.body.previewRows.length >= 2);
+
+  // 验证磁盘上的 .htable 物理文件是否真实存在且有效
+  const absPath = resolveTableAbsPath(h.store, h.workspace.id, res.body.tableId);
+  const savedDoc = await TableStorageService.loadTable(absPath);
+  assert.equal(savedDoc.title, '我的爆款视频拆解');
+  assert.equal(savedDoc.columns.length, 2);
+  assert.equal(savedDoc.rows.length, 6);
+  assert.equal(savedDoc.rowHeight, 'low');
+  assert.equal(savedDoc.columns[0].title, '分析维度');
+  assert.equal(savedDoc.columns[1].title, '分析内容');
+
+  assert.equal(h.toolCalls.length, 1);
+  assert.equal(h.toolCalls[0].video, h.dummyVideo);
+
+  // 验证返回体携带 workspace 快照，并且服务端已经原子写入 canvas.json
+  assert.ok(res.body.workspace);
+  const latestSnapshot = h.store.get(h.workspace.id);
+  assert.equal(latestSnapshot.version, res.body.workspace.version);
+  const createdTable = latestSnapshot.nodes.find((n) => n.id === res.body.tableId);
+  assert.ok(createdTable, '新建的表格节点应写入 canvas.json');
+  assert.equal(createdTable.type, 'table');
+  assert.equal(createdTable.data.tableId, res.body.tableId);
+  assert.equal(createdTable.data.title, '我的爆款视频拆解');
+  assert.equal(createdTable.data.origin, 'video_deconstruct');
+  const edge = latestSnapshot.edges.find(
+    (e) => e.source === 'node_video_1' && e.target === res.body.tableId,
+  );
+  assert.ok(edge, '视频节点到表格节点的连线应写入 canvas.json');
+});
+
+test('videoDeconstruct: 分析能力不可用时直接报错，不落盘任何保底模板', async (t) => {
+  const h = harness(t, { disableTool: true });
+  const res = await h.call({
+    nodeId: 'node_video_1',
+    videoPath: h.dummyVideo,
+    title: '不可用拆解视频',
+  });
+
+  assert.equal(res.status, 502);
+  assert.equal(res.body.ok, false);
+  assert.equal(res.body.error, 'analyze-unavailable');
+
+  // 失败必须不落盘、不建节点、不留连线
+  const snapshot = h.store.get(h.workspace.id);
+  assert.equal(snapshot.nodes.filter((n) => n.type === 'table').length, 0);
+  assert.equal(snapshot.edges.length, 0);
+});
+
+test('videoDeconstruct: 分析调用抛错时直接报错，不再降级为保底模板', async (t) => {
+  const h = harness(t, {
+    toolExecute: async () => {
+      throw new Error('provider upstream 503');
+    },
+  });
+  const res = await h.call({ nodeId: 'node_video_1', videoPath: h.dummyVideo });
+
+  assert.equal(res.status, 502);
+  assert.equal(res.body.error, 'analyze-failed');
+  assert.equal(h.store.get(h.workspace.id).nodes.filter((n) => n.type === 'table').length, 0);
+});
+
+test('videoDeconstruct: 上游错误码映射为可读中文原因（渠道不支持视频输入）', async (t) => {
+  const h = harness(t, {
+    toolExecute: async () => {
+      throw Object.assign(new Error('model does not accept video input'), {
+        code: 'video-understand-unsupported',
+      });
+    },
+  });
+  const res = await h.call({ nodeId: 'node_video_1', videoPath: h.dummyVideo });
+
+  assert.equal(res.status, 502);
+  assert.equal(res.body.error, 'analyze-unsupported');
+  assert.match(res.body.message, /不支持视频输入/);
+  // 上游原文绝不外发
+  assert.equal(String(res.body.message).includes('does not accept video input'), false);
+});
+
+test('videoDeconstruct: 分析返回空内容时直接报错', async (t) => {
+  const h = harness(t, { toolExecute: async () => ({ report: '   \n  ' }) });
+  const res = await h.call({ nodeId: 'node_video_1', videoPath: h.dummyVideo });
+
+  assert.equal(res.status, 502);
+  assert.equal(res.body.error, 'analyze-empty');
+});
+
+test('videoDeconstruct: 分析结果中解析不出任何维度时直接报错，不填充写死文案', async (t) => {
+  const h = harness(t, {
+    toolExecute: async () => ({ report: '# 视频概述\n\n这段文字没有任何五维章节。' }),
+  });
+  const res = await h.call({ nodeId: 'node_video_1', videoPath: h.dummyVideo });
+
+  assert.equal(res.status, 502);
+  assert.equal(res.body.error, 'analyze-empty');
+  assert.equal(h.store.get(h.workspace.id).nodes.filter((n) => n.type === 'table').length, 0);
+});
+
+test('videoDeconstruct: 无 Markdown 表格时，按五维分析维度构造结构化表格', async (t) => {
+  const h = harness(t, {
+    toolExecute: async () => ({
+      report: `
+## 一句话视频描述
+以沉浸式妆造前后反差为核心钩子的爆款美妆短视频。
+
+## I. 核心目标
+* 转化目标: 引导点击左下角购买同款粉底液
+* 情绪基调: 惊艳、自信
+
+## II. 影响力分析
+明线展现遮瑕力，暗线击碎早八妆容焦虑。
+
+## III. 叙事结构
+0-3s 纯素颜强反差 → 3-10s 上妆半脸对比 → 结尾展示全妆
+
+## IV. 画面分析
+高保真近景特写，原生自然光影。
+
+## V. 核心复刻策略
+[素颜痛点] + [半脸对比] + [全脸惊艳成效] + [CTA直接带货]
+`,
+    }),
+  });
+
+  const res = await h.call({
+    nodeId: 'node_video_text_only',
+    videoPath: h.dummyVideo,
+    title: '五维维度表格',
+  });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.ok, true);
+  // 提取为「分析维度」和「分析内容」2 列
+  assert.equal(res.body.columnCount, 2);
+  // 6 个维度
+  assert.equal(res.body.rowCount, 6);
+  assert.equal(res.body.previewRows[0], '以沉浸式妆造前后反差为核心钩子的爆款美妆短视频。');
+
+  const absPath = resolveTableAbsPath(h.store, h.workspace.id, res.body.tableId);
+  const savedDoc = await TableStorageService.loadTable(absPath);
+  assert.equal(savedDoc.columns[0].title, '分析维度');
+  assert.equal(savedDoc.columns[1].title, '分析内容');
+  assert.equal(savedDoc.rows.length, 6);
+});
+
+test('videoDeconstruct: 请求校验与异常阻断', async (t) => {
+  const h = harness(t);
+
+  // 1. 跨域写入请求被阻断
+  const deniedRes = await h.call({ nodeId: 'node_1', videoPath: '/tmp/test.mp4' }, { origin: 'http://evil.com' });
+  assert.equal(deniedRes.status, 403);
+  assert.equal(deniedRes.body.error, 'not-local');
+
+  // 2. 缺少必需参数
+  const badNode = await h.call({ nodeId: '', videoPath: '/tmp/test.mp4' });
+  assert.equal(badNode.status, 400);
+  assert.equal(badNode.body.error, 'invalid-request');
+
+  const badPath = await h.call({ nodeId: 'node_1', videoPath: '   ' });
+  assert.equal(badPath.status, 400);
+  assert.equal(badPath.body.error, 'invalid-request');
+
+  // 3. 工作区不存在
+  const badWsDispatcher = h.store;
+  const badRes = await h.call({ nodeId: 'node_1', videoPath: '/tmp/test.mp4' }, {
+    url: '/omnimux-workflow/api/workspaces/ws_non_existent/deconstruct-video',
+  });
+  assert.equal(badRes.status, 404);
+});
+
+test('videoDeconstruct: 传入工作流媒体相对路径 /omnimux-workflow/media/videos/xxx.mp4 能成功解析真实物理路径并拆解', async (t) => {
+  const h = harness(t);
+  const mediaVideosDir = join(h.mediaDir, 'videos');
+  mkdirSync(mediaVideosDir, { recursive: true });
+  const targetVideo = join(mediaVideosDir, 'video_92570ba4.mp4');
+  writeFileSync(targetVideo, 'binary content of social media extracted video');
+
+  // 1. 标准工作流媒体相对 URL，带 query 参数
+  const res1 = await h.call({
+    nodeId: 'node_video_extracted_1',
+    videoPath: '/omnimux-workflow/media/videos/video_92570ba4.mp4?t=1725890000',
+    title: '社媒提取视频拆解1',
+  });
+
+  assert.equal(res1.status, 200);
+  assert.equal(res1.body.ok, true);
+  assert.equal(h.toolCalls.length, 1);
+  assert.equal(h.toolCalls[0].video, targetVideo);
+
+  // 2. /dsh-workflow/media/ 前缀兼容
+  const res2 = await h.call({
+    nodeId: 'node_video_extracted_2',
+    videoPath: '/dsh-workflow/media/videos/video_92570ba4.mp4',
+    title: '社媒提取视频拆解2',
+  });
+
+  assert.equal(res2.status, 200);
+  assert.equal(res2.body.ok, true);
+  assert.equal(h.toolCalls.length, 2);
+  assert.equal(h.toolCalls[1].video, targetVideo);
+
+  // 3. 远端 HTTP(S) URL 在本地无文件时保留原 URL 传给拆解工具
+  const res3 = await h.call({
+    nodeId: 'node_video_remote',
+    videoPath: 'https://cdn.example.com/videos/remote_video.mp4?auth=token',
+    title: '远端视频拆解',
+  });
+
+  assert.equal(res3.status, 200);
+  assert.equal(res3.body.ok, true);
+  assert.equal(h.toolCalls.length, 3);
+  assert.equal(h.toolCalls[2].video, 'https://cdn.example.com/videos/remote_video.mp4?auth=token');
+});
+
+test('videoDeconstruct: 服务端原子持久化与单一下游约束（多次拆解就地更新，绝不重复生成第二个节点）', async (t) => {
+  const h = harness(t);
+
+  // 预置工作区，包含一个视频节点
+  const curWs = h.store.get(h.workspace.id);
+  h.store.save(h.workspace.id, {
+    expectedVersion: curWs.version,
+    nodes: [
+      {
+        id: 'node_video_src',
+        type: 'material',
+        position: { x: 100, y: 100 },
+        data: { materialType: 'video', label: '源视频', nodeWidth: 400 },
+      },
+    ],
+    edges: [],
+  });
+
+  // 第一次拆解：应新建下游 table 节点，id 对齐 tableId，横向偏移 400 + 120 = 520
+  const res1 = await h.call({
+    nodeId: 'node_video_src',
+    videoPath: h.dummyVideo,
+    title: '拆解第1版',
+  });
+
+  assert.equal(res1.status, 200);
+  assert.equal(res1.body.ok, true);
+  const firstTableId = res1.body.tableId;
+
+  // 检查磁盘 canvas.json
+  const snap1 = h.store.get(h.workspace.id);
+  assert.equal(snap1.nodes.length, 2, '应包含源视频节点和新建表格节点');
+  const tableNode1 = snap1.nodes.find((n) => n.id === firstTableId);
+  assert.ok(tableNode1);
+  assert.equal(tableNode1.type, 'table');
+  assert.equal(tableNode1.position.x, 100 + 400 + 120);
+  assert.equal(tableNode1.position.y, 100);
+  assert.equal(tableNode1.data.title, '拆解第1版');
+  assert.equal(snap1.edges.length, 1);
+  assert.equal(snap1.edges[0].source, 'node_video_src');
+  assert.equal(snap1.edges[0].target, firstTableId);
+
+  // 第二次对同一个源视频节点调用拆解（模拟用户再次点击拆解）
+  const res2 = await h.call({
+    nodeId: 'node_video_src',
+    videoPath: h.dummyVideo,
+    title: '拆解第2版',
+  });
+
+  assert.equal(res2.status, 200);
+  assert.equal(res2.body.ok, true);
+
+  // 严格断言单一下游约束：节点总数仍然是 2，绝不能产生第三个节点！
+  const snap2 = h.store.get(h.workspace.id);
+  assert.equal(snap2.nodes.length, 2, '单一下游约束：不可产生多余节点，节点总数仍为 2');
+  const updatedTable = snap2.nodes.find((n) => n.id === firstTableId);
+  assert.ok(updatedTable, '原有下游表格节点应被就地保留并更新');
+  assert.equal(updatedTable.data.title, '拆解第2版');
+  assert.equal(updatedTable.data.tableId, firstTableId, '下游已有表格节点时，数据应写回已有节点的 tableId');
+  assert.equal(res2.body.tableId, firstTableId, '下游已有表格节点时，服务返回的 tableId 应严格复用');
+  assert.equal(updatedTable.data.contentRev, 2, '再次拆解更新时，contentRev 必须自增递增');
+  assert.equal(snap2.edges.length, 1, '连线总数仍为 1，不产生多余连线');
+  assert.equal(snap2.edges[0].target, firstTableId);
+});
+
+test('videoDeconstruct: 纯净五维内容分析，不插入分镜画面附件列', async (t) => {
+  const h = harness(t);
+  const res = await h.call({
+    nodeId: 'node_video_pure_deconstruct',
+    videoPath: h.dummyVideo,
+    title: '内容策略拆解',
+  });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.ok, true);
+
+  const absPath = resolveTableAbsPath(h.store, h.workspace.id, res.body.tableId);
+  const savedDoc = await TableStorageService.loadTable(absPath);
+  const colImage = savedDoc.columns.find((c) => c.title === '分镜画面');
+  assert.equal(colImage, undefined, '内容拆解表不应包含分镜画面附件列');
+  assert.equal(savedDoc.columns.length, 2);
+  assert.equal(savedDoc.columns[0].title, '分析维度');
+  assert.equal(savedDoc.columns[1].title, '分析内容');
+  assert.equal(savedDoc.rows.length, 6);
+});
+
+function reseed(h, nodes, edges) {
+  const current = h.store.get(h.workspace.id);
+  h.store.save(h.workspace.id, { expectedVersion: current.version, nodes, edges });
+}
+
+function assertSourceVideoUntouched(h) {
+  const source = h.store.get(h.workspace.id).nodes.find((n) => n.id === 'node_video_1');
+  assert.ok(source, '源视频节点必须仍然存在');
+  assert.equal(source.type, 'material');
+  assert.equal('executionStatus' in source.data, false, '源视频节点不得被写入 executionStatus');
+  assert.equal('executionError' in source.data, false, '源视频节点不得被写入 executionError');
+}
+
+test('videoDeconstruct: 工作区已预建 targetNodeId 节点时就地收敛，不新增第二个表格节点', async (t) => {
+  const h = harness(t);
+  const targetNodeId = 'node_table_client_1700000000000_ab12';
+  const base = h.store.get(h.workspace.id);
+  const nodes = base.nodes.slice();
+  nodes.push({
+    id: targetNodeId,
+    type: 'table',
+    position: { x: 470, y: 50 },
+    data: {
+      label: '生成中…',
+      origin: 'video_deconstruct',
+      sourceVideoNodeId: 'node_video_1',
+      status: 'generating',
+      executionStatus: 'running',
+    },
+  });
+  reseed(h, nodes, [
+    {
+      id: `edge_node_video_1_${targetNodeId}`,
+      source: 'node_video_1',
+      target: targetNodeId,
+      sourceHandle: 'out',
+      targetHandle: 'in',
+    },
+  ]);
+
+  const res = await h.invoke({
+    nodeId: 'node_video_1',
+    videoPath: h.dummyVideo,
+    title: '预建节点拆解',
+    targetNodeId,
+  });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.ok, true);
+  assert.equal(res.body.tableId, targetNodeId, '服务端必须原样采用客户端预建的 targetNodeId');
+  assert.equal(res.body.tablePath, `.omnimux/tables/${targetNodeId}.htable`);
+
+  const snapshot = h.store.get(h.workspace.id);
+  const tableNodes = snapshot.nodes.filter((n) => n.type === 'table');
+  assert.equal(tableNodes.length, 1, '不得为同一操作新增第二个表格节点');
+  assert.equal(tableNodes[0].id, targetNodeId);
+  assert.equal(tableNodes[0].data.tableId, targetNodeId);
+  assert.equal(tableNodes[0].data.title, '预建节点拆解');
+  assert.equal(tableNodes[0].data.status, 'ready');
+  assert.equal(tableNodes[0].data.origin, 'video_deconstruct');
+  assert.equal(tableNodes[0].data.sourceVideoNodeId, 'node_video_1');
+  assertSourceVideoUntouched(h);
+
+  const edge = snapshot.edges.find((e) => e.source === 'node_video_1' && e.target === targetNodeId);
+  assert.ok(edge, '源视频节点到预建表格节点的连线应保留');
+
+  const savedDoc = await TableStorageService.loadTable(
+    resolveTableAbsPath(h.store, h.workspace.id, targetNodeId),
+  );
+  assert.equal(savedDoc.title, '预建节点拆解');
+  assert.equal(savedDoc.columns.length, 2);
+});
+
+test('videoDeconstruct: 未预建节点时以合法 targetNodeId 作为新节点 id 与 tableId', async (t) => {
+  const h = harness(t);
+  const targetNodeId = 'node_table_client_1700000000001';
+
+  const res = await h.invoke({
+    nodeId: 'node_video_1',
+    videoPath: h.dummyVideo,
+    title: '直接预指定节点',
+    targetNodeId,
+  });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.ok, true);
+  assert.equal(res.body.tableId, targetNodeId);
+
+  const snapshot = h.store.get(h.workspace.id);
+  assert.equal(snapshot.nodes.length, 2, '应只有源视频节点与新建表格节点');
+  const tableNode = snapshot.nodes.find((n) => n.id === targetNodeId);
+  assert.ok(tableNode, '新节点 id 必须采用 targetNodeId');
+  assert.equal(tableNode.type, 'table');
+  assert.equal(tableNode.data.tableId, targetNodeId);
+  assert.equal(tableNode.data.title, '直接预指定节点');
+  assert.equal(tableNode.data.origin, 'video_deconstruct');
+  assertSourceVideoUntouched(h);
+
+  const edge = snapshot.edges.find((e) => e.source === 'node_video_1' && e.target === targetNodeId);
+  assert.ok(edge, '源视频节点到新表格节点的连线应写入');
+  assert.ok(existsSync(resolveTableAbsPath(h.store, h.workspace.id, targetNodeId)));
+});
+
+test('videoDeconstruct: 非空但非法的 targetNodeId（路径穿越/空格/超长/非字符串）一律 400 invalid-request', async (t) => {
+  const h = harness(t);
+  const invalidValues = ['../escape', 'node table', 'a'.repeat(129), '-leading-dash', 'a/b', '节点_1', 12345];
+
+  for (const targetNodeId of invalidValues) {
+    const res = await h.invoke({ nodeId: 'node_video_1', videoPath: h.dummyVideo, targetNodeId });
+    assert.equal(res.status, 400, `targetNodeId=${String(targetNodeId)} 必须被拒绝`);
+    assert.equal(res.body.ok, false);
+    assert.equal(res.body.error, 'invalid-request');
+  }
+
+  assert.equal(h.toolCalls.length, 0, '非法 targetNodeId 不得触发视频理解');
+  const snapshot = h.store.get(h.workspace.id);
+  assert.equal(snapshot.nodes.filter((n) => n.type === 'table').length, 0, '非法请求不得创建表格节点');
+  assert.equal(snapshot.edges.length, 0, '非法请求不得创建连线');
+  assertSourceVideoUntouched(h);
+});
+
+test('videoDeconstruct: targetNodeId 被非表格节点占用时返回 400，绝不覆写', async (t) => {
+  const h = harness(t);
+  const base = h.store.get(h.workspace.id);
+  const nodes = base.nodes.slice();
+  nodes.push({
+    id: 'node_material_occupied',
+    type: 'material',
+    position: { x: 900, y: 50 },
+    data: { materialType: 'text', label: '其它素材节点' },
+  });
+  reseed(h, nodes, base.edges);
+
+  const res = await h.invoke({
+    nodeId: 'node_video_1',
+    videoPath: h.dummyVideo,
+    targetNodeId: 'node_material_occupied',
+  });
+
+  assert.equal(res.status, 400);
+  assert.equal(res.body.error, 'invalid-request');
+  assert.match(res.body.message, /非表格节点/);
+  assert.equal(h.toolCalls.length, 0);
+
+  const snapshot = h.store.get(h.workspace.id);
+  const occupied = snapshot.nodes.find((n) => n.id === 'node_material_occupied');
+  assert.ok(occupied, '被占用的非表格节点必须原样保留');
+  assert.equal(occupied.type, 'material');
+  assert.equal(occupied.data.label, '其它素材节点');
+  assert.equal(snapshot.nodes.filter((n) => n.type === 'table').length, 0);
+  assertSourceVideoUntouched(h);
+});
+
+test('videoDeconstruct: targetNodeId 被异类型/其它视频下游节点占用时返回 400，不夺用其它操作节点', async (t) => {
+  const h = harness(t);
+  const base = h.store.get(h.workspace.id);
+  const nodes = base.nodes.slice();
+  nodes.push({
+    id: 'node_storyboard_owned',
+    type: 'table',
+    position: { x: 470, y: 370 },
+    data: {
+      origin: 'video_storyboard',
+      sourceVideoNodeId: 'node_video_1',
+      tableId: 'node_storyboard_owned',
+      title: '已有分镜表',
+    },
+  });
+  nodes.push({
+    id: 'node_other_video_deconstruct',
+    type: 'table',
+    position: { x: 1200, y: 50 },
+    data: {
+      origin: 'video_deconstruct',
+      sourceVideoNodeId: 'node_other_video',
+      tableId: 'node_other_video_deconstruct',
+      title: '其它视频拆解表',
+    },
+  });
+  reseed(h, nodes, base.edges);
+
+  const foreignType = await h.invoke({
+    nodeId: 'node_video_1',
+    videoPath: h.dummyVideo,
+    targetNodeId: 'node_storyboard_owned',
+  });
+  assert.equal(foreignType.status, 400);
+  assert.equal(foreignType.body.error, 'invalid-request');
+  assert.match(foreignType.body.message, /其它来源/);
+
+  const foreignSource = await h.invoke({
+    nodeId: 'node_video_1',
+    videoPath: h.dummyVideo,
+    targetNodeId: 'node_other_video_deconstruct',
+  });
+  assert.equal(foreignSource.status, 400);
+  assert.equal(foreignSource.body.error, 'invalid-request');
+  assert.match(foreignSource.body.message, /其它视频节点/);
+
+  const snapshot = h.store.get(h.workspace.id);
+  const storyboard = snapshot.nodes.find((n) => n.id === 'node_storyboard_owned');
+  assert.equal(storyboard.data.title, '已有分镜表', '绝不能覆写分镜表节点');
+  assert.equal(storyboard.data.tableId, 'node_storyboard_owned');
+  const otherDeconstruct = snapshot.nodes.find((n) => n.id === 'node_other_video_deconstruct');
+  assert.equal(otherDeconstruct.data.title, '其它视频拆解表', '绝不能覆写其它视频的拆解表');
+  assert.equal(otherDeconstruct.data.sourceVideoNodeId, 'node_other_video');
+  assert.equal(snapshot.nodes.filter((n) => n.type === 'table').length, 2, '失败请求不得新增表格节点');
+  assertSourceVideoUntouched(h);
+});
+
+test('videoDeconstruct: 已有同源下游 tableId 优先于 targetNodeId，避免产生第二个节点', async (t) => {
+  const h = harness(t);
+  const first = await h.invoke({ nodeId: 'node_video_1', videoPath: h.dummyVideo, title: '首版拆解' });
+  assert.equal(first.status, 200);
+  const firstTableId = first.body.tableId;
+
+  const second = await h.invoke({
+    nodeId: 'node_video_1',
+    videoPath: h.dummyVideo,
+    title: '二版拆解',
+    targetNodeId: 'node_table_client_priority',
+  });
+
+  assert.equal(second.status, 200);
+  assert.equal(second.body.tableId, firstTableId, '已存在的同源下游 tableId 优先级最高');
+
+  const snapshot = h.store.get(h.workspace.id);
+  assert.equal(snapshot.nodes.filter((n) => n.type === 'table').length, 1, '不得新增第二个表格节点');
+  assert.equal(snapshot.nodes.find((n) => n.id === 'node_table_client_priority'), undefined);
+  assert.equal(snapshot.nodes.find((n) => n.id === firstTableId).data.title, '二版拆解');
+});
+
+test('videoDeconstruct: targetNodeId 为空串/纯空白时视为未提供（不报错也不参与复用）', async (t) => {
+  const h = harness(t);
+
+  for (const targetNodeId of ['', '   ']) {
+    const res = await h.invoke({ nodeId: 'node_video_1', videoPath: h.dummyVideo, targetNodeId });
+    assert.equal(res.status, 200, `targetNodeId=${JSON.stringify(targetNodeId)} 应视为未提供`);
+    assert.equal(res.body.ok, true);
+    assert.ok(res.body.tableId.startsWith('tbl_'), '未提供 targetNodeId 时 tableId 仍由服务端生成');
+  }
+
+  const snapshot = h.store.get(h.workspace.id);
+  assert.equal(snapshot.nodes.filter((n) => n.type === 'table').length, 1, '单一下游约束仍然成立');
+  assertSourceVideoUntouched(h);
+});
+
+test('videoDeconstruct: 分析模型取自中枢目录而不是写死的 ID', async (t) => {
+  const h = harness(t);
+  const res = await h.request({ nodeId: 'node_video_1', videoPath: h.dummyVideo });
+
+  assert.equal(res.status, 200);
+  assert.equal(h.toolCalls.length, 1);
+  assert.equal(h.toolCalls[0].model, 'catalog-vision-pro');
+});
+
+test('videoDeconstruct: 目录里没有支持视频的模型时报 analyze-model-unavailable', async (t) => {
+  const h = harness(t, {
+    modelCatalog: {
+      list: () => ({
+        text: [{ id: 'text-only-model', executionStatus: 'ready', inputCapability: { modalities: ['text'] } }],
+        defaults: {},
+      }),
+    },
+  });
+  const res = await h.request({ nodeId: 'node_video_1', videoPath: h.dummyVideo });
+
+  assert.equal(res.status, 502);
+  assert.equal(res.body.error, 'analyze-model-unavailable');
+  assert.match(res.body.message, /模型目录/);
+  assert.equal(h.toolCalls.length, 0);
+});
+
+test('videoDeconstruct: 模型目录读取失败时报 analyze-model-unavailable 而不是硬编码兜底', async (t) => {
+  const h = harness(t, {
+    modelCatalog: {
+      list: () => {
+        throw new Error('catalog seam unavailable');
+      },
+    },
+  });
+  const res = await h.request({ nodeId: 'node_video_1', videoPath: h.dummyVideo });
+
+  assert.equal(res.status, 502);
+  assert.equal(res.body.error, 'analyze-model-unavailable');
+  assert.match(res.body.message, /模型目录/);
+  assert.equal(h.toolCalls.length, 0);
+});
