@@ -792,8 +792,9 @@ describe('OmniMux Profile Target Selection Matrix', () => {
       encoding: 'utf8',
     })
     assert.equal(res.status, 0)
-    assert.match(res.stdout, /Agent Presets 物化完成/)
-    assert.match(res.stdout, /OmniMux Dev\.app/)
+    // rc.3: presets are carried by the package (preset/agent-presets) and the
+    // shell declarations; sync-agent-presets.sh no longer writes to disk.
+    assert.match(res.stdout, /本脚本不再写盘/)
     assert.doesNotMatch(res.stdout, /OmniMux\.app\/Contents/)
     assert.doesNotMatch(res.stdout, /DSH Desktop\.app/)
     assert.doesNotMatch(res.stdout, /\.agent-presets/)
@@ -819,7 +820,8 @@ describe('OmniMux Profile Target Selection Matrix', () => {
       encoding: 'utf8',
     })
     assert.equal(res.status, 0)
-    assert.match(res.stdout, /skip non-omnimux profile/)
+    // rc.3: no disk materialization; every --dsh/--all path short-circuits here.
+    assert.match(res.stdout, /本脚本不再写盘/)
     assert.doesNotMatch(res.stdout, /==> 物化 Agent Presets → .*DSH Desktop/)
     assert.doesNotMatch(res.stdout, /清理旧用户预设/)
     assert.doesNotMatch(res.stdout, /- retired /)
@@ -847,8 +849,9 @@ describe('OmniMux Profile Target Selection Matrix', () => {
       encoding: 'utf8',
     })
     assert.equal(res.status, 0)
-    assert.match(res.stdout, /OmniMux Dev\.app/)
-    assert.match(res.stdout, /OmniMux\.app\/Contents/)
+    // rc.3: no disk materialization; nothing is written to DSH Desktop or the
+    // user preset root.
+    assert.match(res.stdout, /本脚本不再写盘/)
     assert.doesNotMatch(res.stdout, /==> 物化 Agent Presets → .*DSH Desktop/)
     assert.doesNotMatch(res.stdout, /清理旧用户预设/)
     assert.doesNotMatch(res.stdout, /- retired /)

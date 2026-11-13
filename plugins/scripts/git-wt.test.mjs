@@ -46,7 +46,7 @@ describe('scripts/git-wt.sh worktree helper', () => {
   it('runs list successfully', () => {
     const out = execSync(`"${scriptPath}" list`, { encoding: 'utf8' })
     assert.ok(out.includes('OmniMux 活跃 Worktree 清单'))
-    assert.ok(out.includes('omnimux-dsh'))
+    assert.ok(out.includes('omnimux-client'))
   })
 
   it('fails finish when topic argument is missing', () => {
