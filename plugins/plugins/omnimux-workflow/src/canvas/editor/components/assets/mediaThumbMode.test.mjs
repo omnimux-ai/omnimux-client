@@ -33,7 +33,7 @@ test('extensionOfPath 取末段扩展名', async (t) => {
 
 test('extensionCandidates 穿透查询串里的真实路径', async (t) => {
   await t.test('local-file 地址解码 path 参数', () => {
-    const url = '/omnimux-workflow/api/local-file?path=%2FUsers%2Fx%2FD%2Fa.mp4';
+    const url = '/omnimux-workflow/api/local-file?path=%2Fhome%2Fdev%2FD%2Fa.mp4';
     assert.deepEqual(extensionCandidates(url), ['mp4']);
   });
 
@@ -61,7 +61,7 @@ test('resolveThumbMode 分派', async (t) => {
     assert.equal(
       resolveThumbMode(
         'material',
-        '/omnimux-workflow/api/local-file?path=%2FUsers%2Fx%2FDownloads%2Fmusic-space-stars-slide-1.mp4',
+        '/omnimux-workflow/api/local-file?path=%2Fhome%2Fdev%2FDownloads%2Fmusic-space-stars-slide-1.mp4',
       ),
       'video',
     );
@@ -71,7 +71,7 @@ test('resolveThumbMode 分派', async (t) => {
     assert.equal(
       resolveThumbMode(
         'material',
-        '/omnimux-workflow/api/local-file?path=%2FUsers%2Fx%2FDownloads%2FHTufQo8a4AA6tsR.jpeg',
+        '/omnimux-workflow/api/local-file?path=%2Fhome%2Fdev%2FDownloads%2FHTufQo8a4AA6tsR.jpeg',
       ),
       'image',
     );

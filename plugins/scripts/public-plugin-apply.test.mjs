@@ -247,7 +247,7 @@ test('unregistered task paths and external siblings cannot inherit shared reposi
     const result = handle(JSON.stringify({ cwd: root, tool_name: 'write', tool_input: { file_path: target, content: candidate, verifiedImports: true, approved: true } }))
     assert.equal(result.hookSpecificOutput.permissionDecision, 'deny', target)
   }
-  const mainResult = handle(JSON.stringify({ tool_name: 'write', tool_input: { file_path: resolve(main, 'scripts/public-api-candidate.test.mjs'), content: candidate } }))
+  const mainResult = handle(JSON.stringify({ tool_name: 'write', tool_input: { file_path: resolve(root, 'scripts/public-api-candidate.test.mjs'), content: candidate } }))
   assert.equal(mainResult.hookSpecificOutput.permissionDecision, 'allow')
 })
 
@@ -440,7 +440,7 @@ test('source snapshot rejects host, entry and ancestor replacement at child retu
     let finalCheck = false
     t.mock.method(sourceInspectionIO, 'spawnSync', function (command, args, options) {
       const result = originalSpawn(command, args, options)
-      if (args.includes('plugins/omnimux/src/host/apply.js')) changed = true
+      if (args.includes('plugins/plugins/omnimux/src/host/apply.js')) changed = true
       return result
     })
     t.mock.method(sourceInspectionIO, 'lstatSync', function (requested) {
@@ -459,7 +459,7 @@ test('source snapshot rejects host, entry and ancestor replacement at child retu
 })
 
 test('one HEAD generation is fixed and rechecked after all source AST reads', (t) => {
-  for (const changeAfter of ['plugins/omnimux/src/index.js', 'plugins/omnimux/src/host/apply.js']) {
+  for (const changeAfter of ['plugins/plugins/omnimux/src/index.js', 'plugins/plugins/omnimux/src/host/apply.js']) {
     const originalSpawn = sourceInspectionIO.spawnSync
     let changed = false
     let rechecked = false

@@ -10,7 +10,6 @@
   },
   "files": [
     "src",
-    "docs",
     "lib/client.js",
     "scripts/build-client.mjs",
     "cordis.patch.yml",

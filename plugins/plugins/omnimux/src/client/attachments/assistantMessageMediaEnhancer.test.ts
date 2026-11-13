@@ -23,7 +23,7 @@ import { getGlobalMediaViewerStore } from '../media-viewer/media-viewer-store.js
 test('assistantMessageMediaEnhancer: extractFilename extracts valid media filenames', () => {
   // Query param path
   assert.equal(
-    extractFilename('/plugins/omnimux-viewer/serve?path=%2FUsers%2Fx%2Fimages%2Fimage-2026-09-14T03-25-33-991Z-mtogp3-0.jpg'),
+    extractFilename('/plugins/omnimux-viewer/serve?path=%2Fhome%2Fdev%2Fimages%2Fimage-2026-09-14T03-25-33-991Z-mtogp3-0.jpg'),
     'image-2026-09-14T03-25-33-991Z-mtogp3-0.jpg'
   );
   // Direct file path
@@ -98,7 +98,7 @@ test('assistantMessageMediaEnhancer: deduplicateTurnMedia merges data URL and pe
     },
     // 2. Persistent file URL viewed by display_file
     {
-      url: '/plugins/omnimux-viewer/serve?path=%2FUsers%2Fx%2Fimages%2Fimage-2026-09-14T03-25-33-991Z-mtogp3-0.jpg',
+      url: '/plugins/omnimux-viewer/serve?path=%2Fhome%2Fdev%2Fimages%2Fimage-2026-09-14T03-25-33-991Z-mtogp3-0.jpg',
       type: 'image' as const,
       title: 'image-2026-09-14T03-25-33-991Z-mtogp3-0.jpg',
       filename: 'image-2026-09-14T03-25-33-991Z-mtogp3-0.jpg',
@@ -110,7 +110,7 @@ test('assistantMessageMediaEnhancer: deduplicateTurnMedia merges data URL and pe
 
   const deduped = deduplicateTurnMedia(raw);
   assert.equal(deduped.length, 1, 'Must merge into exactly 1 canonical media item');
-  assert.equal(deduped[0].url, '/plugins/omnimux-viewer/serve?path=%2FUsers%2Fx%2Fimages%2Fimage-2026-09-14T03-25-33-991Z-mtogp3-0.jpg');
+  assert.equal(deduped[0].url, '/plugins/omnimux-viewer/serve?path=%2Fhome%2Fdev%2Fimages%2Fimage-2026-09-14T03-25-33-991Z-mtogp3-0.jpg');
   assert.equal(deduped[0].score, 20, 'Must promote the persistent URL over data URL');
 });
 
@@ -156,7 +156,7 @@ test('assistantMessageMediaEnhancer: createMediaTailElement for single media ite
 test('assistantMessageMediaEnhancer: enhanceTurnMedia deduplicates image_generate + display_file in same turn to 1 tail card', async () => {
   resetAutoOpenedForTests();
   const filename = 'image-2026-09-14T03-25-33-991Z-mtogp3-0.jpg';
-  const persistentUrl = `/plugins/omnimux-viewer/serve?path=%2FUsers%2Fx%2F.omnimux-dev%2Fplugins%2Fsubscriptions%2Fimages%2F${filename}`;
+  const persistentUrl = `/plugins/omnimux-viewer/serve?path=%2Fhome%2Fdev%2F.omnimux-dev%2Fplugins%2Fsubscriptions%2Fimages%2F${filename}`;
 
   const dom = new JSDOM(`
     <!DOCTYPE html>

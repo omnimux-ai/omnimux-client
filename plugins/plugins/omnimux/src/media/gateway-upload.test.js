@@ -23,9 +23,9 @@ describe('gateway-upload: detection and configuration', () => {
     assert.equal(isLocalMediaSource('asset://character/hero.png'), true)
     assert.equal(isLocalMediaSource('asset://artifact/123.mp4'), true)
     assert.equal(isLocalMediaSource('data:image/png;base64,iVBORw0KGgo='), true)
-    assert.equal(isLocalMediaSource('/api/local-file?path=%2FUsers%2Fx.png'), true)
-    assert.equal(isLocalMediaSource('/omnimux-workflow/api/local-file?path=%2FUsers%2Fx.png'), true)
-    assert.equal(isLocalMediaSource('http://127.0.0.1:45120/omnimux-workflow/api/local-file?path=%2FUsers%2Fx.png'), true)
+    assert.equal(isLocalMediaSource('/api/local-file?path=%2Fhome%2Fdev.png'), true)
+    assert.equal(isLocalMediaSource('/omnimux-workflow/api/local-file?path=%2Fhome%2Fdev.png'), true)
+    assert.equal(isLocalMediaSource('http://127.0.0.1:45120/omnimux-workflow/api/local-file?path=%2Fhome%2Fdev.png'), true)
     assert.equal(isLocalMediaSource('http://localhost:45120/media/sample.mp4'), true)
 
     // Public remote URLs are not local

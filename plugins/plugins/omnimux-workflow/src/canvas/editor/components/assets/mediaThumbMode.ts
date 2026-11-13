@@ -49,7 +49,7 @@ export function extensionOfPath(candidate: string): string {
 
 /**
  * 从地址收集全部候选扩展名：路径部分 + 查询串里承载文件路径的参数值。
- * 例：`/api/local-file?path=%2FUsers%2Fx%2Fa.mp4` → `['mp4']`。
+ * 例：`/api/local-file?path=%2Fhome%2Fdev%2Fa.mp4` → `['mp4']`。
  */
 export function extensionCandidates(url: string): string[] {
   const text = typeof url === 'string' ? url.trim() : '';

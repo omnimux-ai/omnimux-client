@@ -221,7 +221,7 @@ test('planClipExportDownstream：realPath 被持久化剥离后仍按 origin 复
       selectedTool: 'import',
       origin: CLIP_EXPORT_ORIGIN,
       sourceCompositionNodeId: compositionNode.id,
-      mediaUrl: '/omnimux-workflow/api/local-file?path=%2FUsers%2Fx%2F.dsh%2Fomnimux%2Fclip%2Fexports%2Fclip_node_1.mp4',
+      mediaUrl: '/omnimux-workflow/api/local-file?path=%2Fhome%2Fdev%2F.dsh%2Fomnimux%2Fclip%2Fexports%2Fclip_node_1.mp4',
       thumbnailUrl: output.thumbnailPath,
       duration: 5,
       size: { width: 1920, height: 1080 },
@@ -254,7 +254,7 @@ test('planClipExportDownstream：realPath 被持久化剥离后仍按 origin 复
   const merged = { ...sanitized.data, ...plan.nodePatches[0].data };
   assert.equal(
     merged.mediaUrl,
-    '/omnimux-workflow/api/local-file?path=%2FUsers%2Fx%2F.dsh%2Fomnimux%2Fclip%2Fexports%2Fclip_node_1.mp4',
+    '/omnimux-workflow/api/local-file?path=%2Fhome%2Fdev%2F.dsh%2Fomnimux%2Fclip%2Fexports%2Fclip_node_1.mp4',
   );
   assert.deepEqual(merged.size, { width: 1080, height: 1920 });
 });

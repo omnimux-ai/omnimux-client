@@ -64,7 +64,7 @@ test('§7.03 已导入 image（realPath + mediaUrl）出现，且 id 等于节�
       label: '不该用的 label',
       selectedTool: 'import',
       realPath: '/home/dev/Pictures/hero.png',
-      mediaUrl: '/omnimux-workflow/api/local-file?path=%2FUsers%2Fx%2FPictures%2Fhero.png',
+      mediaUrl: '/omnimux-workflow/api/local-file?path=%2Fhome%2Fdev%2FPictures%2Fhero.png',
     }),
   ];
   const items = extractCanvasAssets(nodes);
@@ -75,7 +75,7 @@ test('§7.03 已导入 image（realPath + mediaUrl）出现，且 id 等于节�
   assert.equal(items[0].real_path, '/home/dev/Pictures/hero.png');
   assert.equal(
     items[0].previewUrl,
-    '/omnimux-workflow/api/local-file?path=%2FUsers%2Fx%2FPictures%2Fhero.png',
+    '/omnimux-workflow/api/local-file?path=%2Fhome%2Fdev%2FPictures%2Fhero.png',
   );
   assert.equal(items[0].nodeKind, 'import');
   assert.equal(items[0].prompt, undefined);

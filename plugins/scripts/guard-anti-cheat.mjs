@@ -117,7 +117,19 @@ export function decideOldStandardDeclaration({ filePath, inspection, declaration
 }
 
 // Repository identity starts at this guard's checkout, never at tool-supplied cwd.
-const REPO_ROOT = realpathSync(fileURLToPath(new URL('../', import.meta.url)));
+const GUARD_DIR = realpathSync(fileURLToPath(new URL('../', import.meta.url)));
+// The guard script lives at <repo>/plugins/scripts in omnimux-client, while the
+// git repository root is one level up. Resolve the real git top-level so the
+// repository-identity and worktree checks compare against the actual repo root
+// (in the legacy single-repo layout GUARD_DIR *was* the git root). Fall back to
+// GUARD_DIR when git is unavailable so callers still fail closed, not open.
+const REPO_ROOT = (() => {
+  try {
+    const res = spawnSync('git', ['-C', GUARD_DIR, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
+    const top = res.status === 0 ? res.stdout.trim() : '';
+    return top ? realpathSync(top) : GUARD_DIR;
+  } catch { return GUARD_DIR; }
+})();
 
 const GIT_IDENTITY_ENV = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
 
@@ -407,7 +419,9 @@ function resolvePublicPluginImport(filePath, source, inspection) {
     const target = resolve(filePath);
     const entryPath = resolve(dirname(target), source);
     const rel = relative(inspection.treeRoot, entryPath);
-    if (!/^plugins\/[^/]+\/src\/index\.js$/.test(rel)) return null;
+    // Accept both layouts: legacy single repo (`plugins/<name>/src/index.js`) and
+    // omnimux-client's nested plugin tree (`plugins/plugins/<name>/src/index.js`).
+    if (!/^plugins\/(?:plugins\/)?[^/]+\/src\/index\.js$/.test(rel)) return null;
     const entry = readConfirmedSource(entryPath, inspection);
     const statements = entry.ast.body;
     const direct = statements.find(node => node.type === 'ExportNamedDeclaration' && node.declaration?.type === 'FunctionDeclaration' && node.declaration.id?.name === 'apply');
@@ -577,7 +591,7 @@ export function handle(rawInput) {
   if (toolName === 'write' || toolName === 'edit') {
     const cwd = resolve(input.cwd || process.cwd(), toolInput.workdir || '.');
     const target = resolve(cwd, filePath.replace(/\\/g, '/'));
-    if (target === REPO_ROOT) return formatHookOutput({ permissionDecision: 'deny', reason: 'Repository root is not a file target' }, hookEventName);
+    if (target === REPO_ROOT || target === GUARD_DIR) return formatHookOutput({ permissionDecision: 'deny', reason: 'Repository root is not a file target' }, hookEventName);
     const repoPath = repoRelativePath;
     const protectedPath = path => isProtectedTestPath(repoPath(path));
     let actualTarget = target;

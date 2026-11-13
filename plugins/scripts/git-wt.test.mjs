@@ -46,7 +46,11 @@ describe('scripts/git-wt.sh worktree helper', () => {
   it('runs list successfully', () => {
     const out = execSync(`"${scriptPath}" list`, { encoding: 'utf8' })
     assert.ok(out.includes('OmniMux 活跃 Worktree 清单'))
-    assert.ok(out.includes('omnimux-dsh'))
+    // `git worktree list` prints the main working tree's absolute path first;
+    // assert the concrete repository worktree path, independent of checkout dir name.
+    const repoToplevel = execSync('git rev-parse --show-toplevel', { cwd: join(here, '..'), encoding: 'utf8' }).trim()
+    assert.ok(repoToplevel, 'repository toplevel must resolve')
+    assert.ok(out.includes(repoToplevel), `list should include the repository worktree ${repoToplevel}`)
   })
 
   it('fails finish when topic argument is missing', () => {
