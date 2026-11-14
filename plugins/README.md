@@ -36,7 +36,7 @@
 
 **纠正此前不实宣称**：针对固定审计基线 `e416238631cc78ef8caeab7b5313d9571947ef5a` 至目标 `a1ecf7bddc110992d870efd3b4e56511dfe43c9e`，Production Ready、零缺陷、端到端闭环、Apps 持久化、CI 已接入、11 组对抗测试、完整团队 TDD 均不成立。仅有 4 个 Apps 单测与 1 个 mock seam 单测通过、弱静态扫描通过；原区间 `git diff --check` 因行尾空白失败。上述结果不能替代真实宿主、媒体播放与执行验收。
 
-固定目标 SHA 的原型仍为未挂载向导、内存 Registry、硬编码表单、4 秒 mock 成功、无真实播放器/上传选择器；原型代码留在 `omnimux-dsh-wt-contracts`，不代表 main、Dev 或生产已具备这些能力。本次仅将已审计文档融合到 main 基线，不合入原型代码，没有修复代码、接入 CI 或完成运行验收。
+固定目标 SHA 的原型仍为未挂载向导、内存 Registry、硬编码表单、4 秒 mock 成功、无真实播放器/上传选择器；原型代码未合入本仓，不代表 main、Dev 或生产已具备这些能力。本次仅将已审计文档融合到 main 基线，不合入原型代码，没有修复代码、接入 CI 或完成运行验收。
 
 具体目标与需求—验收—实现状态见 AI 应用 UI 规范；目标职责、技术约束与已验证源码缺口见 Canvas / Apps 边界。Canvas 调度，Hub 管凭证、provider HTTP 与模型路由，Apps 管表单、发布规范和域存储；Apps 不重造执行器。计费/退款/算力、评分、第四类 agent、VS SYNC/wipe、冗余回填及工作流源链接不属于本次 AI 应用需求。
 
@@ -71,7 +71,7 @@ OmniMux 自行编写的插件代码采用 **[AGPL-3.0](LICENSE)**，另附 [NOTI
 
 从上游 fork 或引入的代码保留原许可（多为 MIT），见 CONTRIBUTING.md 第 4 节与 [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md)。2026-10-28 之前发布的版本按其发布时的许可证授权。许可不等于生成免费，详见 COMMERCIAL.md。
 
-公开源码（AGPL-3.0）统一发布到聚合快照仓 [omnimux-ai/omnimux-ai](https://github.com/omnimux-ai/omnimux-ai)：`gateway/`、`desktop/`、`plugins/` 三个目录，各带说明发布版本的 `SOURCE.json`。本仓 [omnimux-ai/omnimux-client](https://github.com/omnimux-ai/omnimux-client) 仍是插件源码的公开开发仓；独立公开仓 [omnimux-ai/omnimux-gateway](https://github.com/omnimux-ai/omnimux-gateway)、[omnimux-ai/omnimux-desktop](https://github.com/omnimux-ai/omnimux-desktop) 不再是源码发布目标。
+公开源码（AGPL-3.0）发布在本仓 [omnimux-ai/omnimux-client](https://github.com/omnimux-ai/omnimux-client)（桌面壳 + 产品插件）；服务端网关源码见独立公开仓 [omnimux-ai/omnimux-gateway](https://github.com/omnimux-ai/omnimux-gateway)，仅因 AGPL 义务公开。
 
 ## 🚀 快速启动 (Quickstart)
 
