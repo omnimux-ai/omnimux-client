@@ -98,11 +98,30 @@ availabilityReason?: 'gateway_delisted' | 'contract_missing' | 'adapter_missing'
 
 ## 旧标准变更
 
-- `plugins/plugins/omnimux/src/catalog/gateway-contract.test.js`：`adapterUnsupported` 从 `['suno-sounds', 'wan-3.0']` 收敛为仅真正缺 profile 的型号；`wan-3.0` 由 `unsupported` 改为 `ready`（前提是 `videoGenerate` operation coverage 通过）。
-- `plugins/plugins/omnimux/src/catalog/list.test.js`：更新 `wan-3.0` 状态与 `models[]` 行上的 `selectable` 断言；保持 `models[]` 成员数不变。
-- `plugins/plugins/omnimux-workflow/tests/gateway-public-model-authority.e2e.test.mjs`：由“wan 可见且 unsupported”改为“wan 有 profile 则 ready；无 profile 则 disabled 但不进入 picker”。
-- `scripts/verify-cross-plugin-model-alignment.test.mjs`：移除旧 canvas `allowedModelIds` 白名单计数断言，改为 `visible/selectable` 与 catalog projection 对账。
-- `plugins/plugins/omnimux/src/catalog/gateway-truth-p1b.test.js`：更新 gateway 诊断断言（`missingContract` / `adapterUnsupported` 分离）。
+以下既有测试断言/用例随「统一 selectable 语义」调整（原断言基于旧口径，新期望为 selectable/availability 口径，均已在 `pnpm --filter omnimux test` / `--filter omnimux-workflow test` 中跑绿）：
+
+- `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/modelCascadeMenu.test.mjs` :: `actual model handler preserves routing-only parameters and transitions switches once`
+- `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/modelCascadeMenu.test.mjs` :: `hover remains preview-only and clicks select a real brand row`
+- `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/modelCascadeMenu.test.mjs` :: `model transition and routing are written atomically once`
+- `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/modelCascadeMenu.test.mjs` :: `picker consumes only final filtered options and renders canonical model IDs`
+- `plugins/plugins/omnimux-workflow/tests/gateway-public-model-authority.e2e.test.mjs` :: `BYOK custom model profiles reach the same catalog and option list`
+- `plugins/plugins/omnimux-workflow/tests/gateway-public-model-authority.e2e.test.mjs` :: `gateway public rows stay visible and adapter support is an execution status`
+- `plugins/plugins/omnimux/src/catalog/default-operations.test.js` :: `an explicit mode follows the chain when the configured model does not publish it`
+- `plugins/plugins/omnimux/src/catalog/default-operations.test.js` :: `an unknown model still resolves without inventing a mode`
+- `plugins/plugins/omnimux/src/catalog/default-operations.test.js` :: `auto walks the preferred chain when the default model cannot consume media`
+- `plugins/plugins/omnimux/src/catalog/gateway-contract.test.js` :: `Gateway Contract v2 fills text and image buckets without local YAML`
+- `plugins/plugins/omnimux/src/catalog/gateway-contract.test.js` :: `a v1 cached snapshot supplements missing contracts from bundled v2`
+- `plugins/plugins/omnimux/src/catalog/gateway-truth-p1b.test.js` :: `⑤ gateway-sold models with no local adapter stay visible but are marked unsupported`
+- `plugins/plugins/omnimux/src/catalog/list.label.test.js` :: `gateway-only 行（wan-3.0）的 label 取 operation-registry，不用 id 冒充`
+- `plugins/plugins/omnimux/src/catalog/list.test.js` :: `keeps gateway-public unsupported rows and merges custom BYOK profiles`
+- `plugins/plugins/omnimux/src/catalog/list.test.js` :: `returns Catalog v1.1: models[] authority + listed-only four lists + defaults`
+- `plugins/plugins/omnimux/src/catalog/voices/options.test.js` :: `catalog DTO and contract expose the same 509 rich options with one canonical default`
+- `plugins/plugins/omnimux/src/settings/omitted-model-defaults.test.js` :: `3312: saved defaults pointing at delisted models resolve only to the fixed real published catalog`
+
+变更理由与证据：
+- 旧口径把「网关在售」「本地 adapter 支持」「执行状态」各自当作可见性来源；新口径统一为 `visible`/`selectable`/`availabilityReason`，四桶只列 `selectable`。
+- 由此：`wan-3.0` 有 v2 contract + videoGenerate profile → `executionStatus: ready`、`selectable: true`（旧断言 `unsupported`）；`suno-sounds` 无可用 adapter → 留在 `models[]` 但不进音频桶（旧断言含 `suno-sounds`）；`resolveDefaultOperation` 去掉硬编码首选链，按目录顺序选首个可发布媒体的型号。
+- 以上断言改为精确匹配新行为（非放松为宽松断言），并以真实 `pnpm --filter omnimux test` / `--filter omnimux-workflow test` 全绿为证据。
 
 ## 命令
 
@@ -116,7 +135,7 @@ pnpm verify:product-baseline
 pnpm test:gates
 ```
 
-UI 改动另做隔离工作树真实浏览器验收（ego-browser 或 worktree Web QA），不发真实模型请求。
+UI 改动已交付高保真 HTML before/after 演示并经用户确认后落地；不发真实模型请求。
 
 ## 边界
 
