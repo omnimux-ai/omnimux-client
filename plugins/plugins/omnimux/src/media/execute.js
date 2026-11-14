@@ -658,11 +658,15 @@ export async function executeOmnimuxMedia(capability, input) {
           throw new OmnimuxError('omnimux-invalid-request', '所选备用线路不支持此生成操作')
         }
         // Gateway Contract v2 defaults are applied by the guard and must not be
-        // treated as caller intent when checking a specific line's constraints.
-        // Local contracts keep their historical final-input semantics.
+        // read as caller intent when the caller supplied the field. But when the
+        // caller omitted it, the resolved final value (guard default) is what the
+        // line would actually submit — a fixed/only line must still reject it
+        // instead of silently carrying the head tier default into the fallback.
         const gatewayModel = runtimeContractIndex.index.get(guardPlan.modelId)?.gatewaySource === true
         for (const [key, domain] of Object.entries(constraints?.parameters || {})) {
-          const value = gatewayModel ? guardRequest[key] : (finalInput[key] ?? guardRequest[key])
+          const value = gatewayModel && guardRequest[key] !== undefined
+            ? guardRequest[key]
+            : (finalInput[key] ?? guardRequest[key])
           if (value === undefined) continue
           if ((domain.fixed !== undefined && value !== domain.fixed)
             || (Array.isArray(domain.only) && !domain.only.includes(value))

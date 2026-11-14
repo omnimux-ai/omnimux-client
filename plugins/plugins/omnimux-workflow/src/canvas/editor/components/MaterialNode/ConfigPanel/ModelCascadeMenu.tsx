@@ -391,7 +391,11 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
   /** place() 只在展开时注册一次，用 ref 读锁定高度，避免闭包读到展开那一刻的旧值。 */
   const lockedHeightRef = useRef<number | null>(null);
 
-  const brandList = useMemo(() => groupPickerCandidates(options), [options]);
+  const selectableOptions = useMemo(
+    () => options.filter((item) => item.executable !== false),
+    [options],
+  );
+  const brandList = useMemo(() => groupPickerCandidates(selectableOptions), [selectableOptions]);
   const { modelId: canonicalModel } = parseModelAndGroup(modelValue);
   const currentModelId = isPickerCandidate(options, canonicalModel) ? canonicalModel : '';
   const activeModelId = currentModelId;
@@ -508,6 +512,8 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
 
   const handleSelectModel = useCallback((modelId: string) => {
     if (!isPickerCandidate(options, modelId)) return;
+    const candidate = options.find((item) => item.id === modelId);
+    if (candidate?.executable === false) return;
     const groups = resolveModelChannelGroups(modelId, rowChannelGroups(options, modelId), runtimeSettings);
     const defaultGroup = groups.find((group) => group.enabled !== false && group.isAvailable !== false)?.id;
     const nextGroupIds = defaultGroup ? [defaultGroup] : [];
@@ -517,9 +523,9 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
     emit(modelId, nextGroupIds);
   }, [options, runtimeSettings, emit]);
 
-  /** 点击品牌只选择该分组的真实候选首项。 */
+  /** 点击品牌只选择该分组第一个可执行候选。 */
   const handleBrandClick = useCallback((brandId: string) => {
-    const targetModelId = modelsForBrand(brandId)[0]?.id;
+    const targetModelId = modelsForBrand(brandId).find((item) => item.executable !== false)?.id;
     if (targetModelId) handleSelectModel(targetModelId);
   }, [handleSelectModel, modelsForBrand]);
 

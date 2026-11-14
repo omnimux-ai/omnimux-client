@@ -27,6 +27,39 @@ export { resolveModelId };
 export const CATALOG_BUCKET_KINDS = Object.freeze(['text', 'image', 'video', 'audio']);
 
 /**
+ * Derive the one public availability pair every consumer must share.
+ *
+ * Gateway membership owns `visible`; the local contract index owns
+ * `executionStatus`. `selectable` is the only state the generation picker,
+ * default resolver and auto-adaptation may act on. `models[]` remains the full
+ * contract registry, so a non-public row can be executable but not selectable.
+ *
+ * @param {object} model
+ * @param {object} [snapshot]
+ * @returns {{ visible: boolean, selectable: boolean, executionStatus: string, availabilityReason?: string }}
+ */
+export function resolveCatalogAvailability(model, snapshot) {
+  const source = model?.source === 'custom' ? 'custom' : 'gateway';
+  const executionStatus = model?.executionStatus ?? (model?.listed === true ? 'ready' : 'unsupported');
+  const hasSnapshot = Boolean(snapshot && Array.isArray(snapshot.models) && snapshot.models.length > 0);
+  // Injected contract-only fixtures have no snapshot; keep their historical
+  // listed-operation semantics so offline verification tools still work.
+  const gatewayAvailable = hasSnapshot
+    ? hasUsableGatewayGroups(findSnapshotModel(snapshot, model?.id))
+    : model?.listed === true;
+  const visible = source === 'custom' || gatewayAvailable;
+  const hasExecutableOperation = (model?.operations ?? []).some((operation) => operation?.listed === true);
+  const selectable = visible && executionStatus === 'ready' && hasExecutableOperation;
+  /** @type {string|undefined} */
+  let availabilityReason;
+  if (!visible) availabilityReason = 'gateway_delisted';
+  else if (executionStatus === 'unsupported') availabilityReason = 'adapter_missing';
+  else if (executionStatus === 'unverified') availabilityReason = 'profile_incomplete';
+  else if (!hasExecutableOperation) availabilityReason = 'contract_missing';
+  return { visible, selectable, executionStatus, ...(availabilityReason ? { availabilityReason } : {}) };
+}
+
+/**
  * Fail-closed health gate. Parse errors or any admission-strict issue throw;
  * there is no legacy table to fall back to (it was physically deleted).
  * @param {import('./contract/index.js').ContractIndex} index
@@ -149,12 +182,16 @@ export function mergeInputCapability(ops) {
  * @returns {object}
  */
 export function projectRow(model, ops, snapshot) {
+  const availability = resolveCatalogAvailability(model, snapshot);
   /** @type {Record<string, unknown>} */
   const row = {
     id: model.id,
     label: model.label,
     source: model.source === 'custom' ? 'custom' : 'gateway',
-    executionStatus: model.executionStatus ?? (model.listed === true ? 'ready' : 'unsupported'),
+    executionStatus: availability.executionStatus,
+    visible: availability.visible,
+    selectable: availability.selectable,
+    ...(availability.availabilityReason ? { availabilityReason: availability.availabilityReason } : {}),
     ...(model.providerId ? { providerId: model.providerId } : {}),
     ...(model.sourceLabel ? { sourceLabel: model.sourceLabel } : {}),
   };
@@ -306,11 +343,15 @@ export function projectChannelGroups(modelId, snapshot) {
  */
 export function projectModelDto(model, dispositionsDoc, snapshot) {
   const row = resolveDisposition(dispositionsDoc, model.id);
+  const availability = resolveCatalogAvailability(model, snapshot);
   return {
     id: model.id,
     label: model.label,
     source: model.source === 'custom' ? 'custom' : 'gateway',
-    executionStatus: model.executionStatus ?? (model.listed === true ? 'ready' : 'unsupported'),
+    executionStatus: availability.executionStatus,
+    visible: availability.visible,
+    selectable: availability.selectable,
+    ...(availability.availabilityReason ? { availabilityReason: availability.availabilityReason } : {}),
     ...(model.providerId ? { providerId: model.providerId } : {}),
     ...(model.sourceLabel ? { sourceLabel: model.sourceLabel } : {}),
     ...(typeof model.family === 'string' ? { family: model.family } : {}),

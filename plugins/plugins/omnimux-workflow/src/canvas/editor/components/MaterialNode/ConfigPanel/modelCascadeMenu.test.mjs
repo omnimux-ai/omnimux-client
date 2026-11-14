@@ -74,7 +74,7 @@ test('actual model handler preserves routing-only parameters and transitions swi
   const handlerBody = configSrc.slice(handlerStart, handlerEnd);
 
   // 门禁：必须核验 filteredModels.options
-  assert.match(handlerBody, /if \(!filteredModels\.options\.some\(\(row\) => row\.id === newModelId\)\) return;/);
+  assert.match(handlerBody, /const candidate = filteredModels\.options\.find\(\(row\) => row\.id === newModelId\);\n      if \(!candidate \|\| candidate\.executable === false\) return;/);
 
   // 同模型渠道切换保持原有参数：严禁调用 transition
   assert.match(handlerBody, /if \(channelSelection && newModelId === params\.model\) \{\s*nextParams = \{ \.\.\.params \};/);
@@ -178,7 +178,7 @@ test('empty brand selection has no fabricated default', () => {
 });
 test('picker consumes only final filtered options and renders canonical model IDs', () => {
   assert.match(configSrc, /options=\{filteredModels\.options\}/);
-  assert.match(cascadeSrc, /groupPickerCandidates\(options\)/);
+  assert.match(cascadeSrc, /groupPickerCandidates\(selectableOptions\)/);
   assert.doesNotMatch(cascadeSrc, /catalog\?\.|allowedBrandsFor/);
   assert.match(cascadeSrc, /\{item\.id\}/);
   assert.doesNotMatch(cascadeSrc, /item\.label \|\| item\.id/);
@@ -197,7 +197,7 @@ test('emission and channel lists validate model membership', () => {
 });
 test('model transition and routing are written atomically once', () => {
   const handler = configSrc.slice(configSrc.indexOf('const handleModelChange'), configSrc.indexOf('const isMusicOperation'));
-  assert.match(handler, /if \(!filteredModels\.options\.some/);
+  assert.match(handler, /candidate\.executable === false/);
   assert.match(handler, /nextParams = transition\.params/);
   assert.match(handler, /delete nextParams\.routing/);
   assert.equal((handler.match(/onUpdateNodeData\(/g) ?? []).length, 1);
@@ -206,7 +206,7 @@ test('model transition and routing are written atomically once', () => {
   assert.match(picker, /handleModelChange\(modelId, \{ strategy, allowedGroups, channelGroupId, sourceType \}\)/);
 });
 test('hover remains preview-only and clicks select a real brand row', () => {
-  assert.match(cascadeSrc, /modelsForBrand\(brandId\)\[0\]\?\.id/);
+  assert.match(cascadeSrc, /modelsForBrand\(brandId\)\.find\(\(item\) => item\.executable !== false\)\?\.id/);
   assert.match(cascadeSrc, /onHover=\{\(\) => handleBrandHover\(brand\.id\)\}/);
   assert.match(cascadeSrc, /onHover=\{\(\) => handleModelHover\(item\.id\)\}/);
   assert.match(cascadeSrc, /onSelect=\{\(\) => handleSelectModel\(item\.id\)\}/);
