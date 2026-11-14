@@ -1,4 +1,4 @@
-# omnimux-dsh
+# plugins（omnimux-client）
 
 Out-of-tree OmniMux product plugins for official DeepSeek Harness. This directory is the plugin tree inside the `omnimux-client` repository; run repository commands from the repository root (`..`), not from any parent checkout. Root rules live in [../AGENTS.md](../AGENTS.md); each plugin's own rules live in its nested `AGENTS.md`.
 

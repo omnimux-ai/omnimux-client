@@ -1,4 +1,4 @@
-# OmniMux
+# OmniMux · 产品插件子树（plugins）
 
 <p align="center">
   <strong>属于你的内容电商团队</strong><br>
@@ -7,55 +7,55 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg" alt="License: AGPL-3.0"></a>
-  <a href="COMMERCIAL.md"><img src="https://img.shields.io/badge/Commercial-Dual%20Licensing-success.svg" alt="Commercial dual licensing"></a>
+  <img src="https://img.shields.io/badge/Commercial-Dual%20Licensing-success.svg" alt="Commercial dual licensing">
   <a href="https://nodejs.org"><img src="https://img.shields.io/badge/Node.js-%3E%3D22.19%20%7C%7C%20%3E%3D24-brightgreen.svg" alt="Node Version"></a>
   <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/Ecosystem-DeepSeek%20Harness-purple.svg" alt="DSH Ecosystem"></a>
   <a href="https://discord.gg/omnimux"><img src="https://img.shields.io/badge/Discord-Join%20Community-5865F2.svg?logo=discord&logoColor=white" alt="Discord"></a>
   <a href="https://x.com/omnimux_ai"><img src="https://img.shields.io/badge/X%20(Twitter)-@omnimux__ai-black.svg?logo=x&logoColor=white" alt="Twitter"></a>
   <a href="#-社区交流与开发者群-community"><img src="https://img.shields.io/badge/WeChat-开发者交流群-07C160.svg?logo=wechat&logoColor=white" alt="WeChat"></a>
-  <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-Welcome-orange.svg" alt="PRs Welcome"></a>
+  <img src="https://img.shields.io/badge/PRs-Welcome-orange.svg" alt="PRs Welcome">
 </p>
 
 <p align="center">
-  <img src="docs/assets/omnimux-ui-preview.png" alt="OmniMux 桌面插件历史界面示意" width="100%">
+  <img src="../app/assets/desktop-preview.png" alt="OmniMux 桌面插件历史界面示意" width="100%">
 </p>
 
 ---
 
 ## 简介
 
-**OmniMux 是属于你的内容电商团队——一套面向内容电商与跨境卖家的 AI 内容电商系统，让商品卖点贯穿每一次出片。** 本仓是基于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的桌面端核心插件工程。现行定位与表述边界见[产品定位](docs/contracts/product-positioning.md)。
+**OmniMux 是属于你的内容电商团队——一套面向内容电商与跨境卖家的 AI 内容电商系统，让商品卖点贯穿每一次出片。** 本目录（`plugins/`）是 omnimux-client 单仓中的产品插件子树，基于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 构建。
 
 围绕「对标 → 拆解 → 制作 → 发布 → 复盘」内容电商链路，本仓提供执行中枢（`omnimux`，统一身份、模型路由与多模态生图/生视频/文本理解/语音执行），以及商品库（`omnimux-products`，管理商品卖点、受众与素材）、资产库（`omnimux-assets`，含可复用 AI 角色、多角度设定图、场景、风格与道具）、灵感库（`omnimux-inspiration`，爆款收藏与结构拆解）、无限画布（`omnimux-workflow`，可视化节点编排）、剪辑工坊（`omnimux-clip`，基于 OpenReel 的时间轴剪辑）、账号与发布中心（`omnimux-accounts` / `omnimux-publish`，海外平台排期与发布跟踪）、数据复盘（`omnimux-analytics`）与技能市场（`omnimux-market`）等工作台插件。角色生成与参考视频复刻是其中的核心创作能力主线之一，与商品带货视频生产、画布编排和排期发布协同构成完整工作流。
 
-官网展示的工作台旅程不等于所有功能均已全量完成；实际可用性须核对[能力记录](docs/capabilities.md)、[插件生命周期清单](plugins/omnimux/src/plugin-lifecycle.json)与当前版本证据。不承诺保证爆款、保证销量、防封号、零抽成、永久 100% 角色一致，或尚未实现的国内平台（抖音/小红书/视频号/快手/B站）自动分发、实时趋势抓取、独立封面生成与发布前自动预检。
+官网展示的工作台旅程不等于所有功能均已全量完成；实际可用性须核对能力记录、[插件生命周期清单](plugins/omnimux/src/plugin-lifecycle.json)与当前版本证据。不承诺保证爆款、保证销量、防封号、零抽成、永久 100% 角色一致，或尚未实现的国内平台（抖音/小红书/视频号/快手/B站）自动分发、实时趋势抓取、独立封面生成与发布前自动预检。
 
 ## AI 应用：历史目标与审计边界
 
-以下通用应用是历史方案，不是当前产品扩展任务；现行范围见[产品定位](docs/contracts/product-positioning.md)。历史目标是 schema 驱动的通用应用，而非写死业务页面：唯一宿主入口，视频/图片/音频三类二级栏，选应用后收起且可重开；compact tabs 后单个左右大卡片，左表单、右历史/示例。空历史默认示例但不得伪造历史；发布者自主上传/选择多图、多视频与封面并保存 Demo 输入快照。
+以下通用应用是历史方案，不是当前产品扩展任务；现行范围见产品定位。历史目标是 schema 驱动的通用应用，而非写死业务页面：唯一宿主入口，视频/图片/音频三类二级栏，选应用后收起且可重开；compact tabs 后单个左右大卡片，左表单、右历史/示例。空历史默认示例但不得伪造历史；发布者自主上传/选择多图、多视频与封面并保存 Demo 输入快照。
 
 **纠正此前不实宣称**：针对固定审计基线 `e416238631cc78ef8caeab7b5313d9571947ef5a` 至目标 `a1ecf7bddc110992d870efd3b4e56511dfe43c9e`，Production Ready、零缺陷、端到端闭环、Apps 持久化、CI 已接入、11 组对抗测试、完整团队 TDD 均不成立。仅有 4 个 Apps 单测与 1 个 mock seam 单测通过、弱静态扫描通过；原区间 `git diff --check` 因行尾空白失败。上述结果不能替代真实宿主、媒体播放与执行验收。
 
 固定目标 SHA 的原型仍为未挂载向导、内存 Registry、硬编码表单、4 秒 mock 成功、无真实播放器/上传选择器；原型代码留在 `omnimux-dsh-wt-contracts`，不代表 main、Dev 或生产已具备这些能力。本次仅将已审计文档融合到 main 基线，不合入原型代码，没有修复代码、接入 CI 或完成运行验收。
 
-具体目标与需求—验收—实现状态见 [AI 应用 UI 规范](docs/contracts/ai-app-ui-spec.md)；目标职责、技术约束与已验证源码缺口见 [Canvas / Apps 边界](docs/contracts/workflow-app-boundary.md)。Canvas 调度，Hub 管凭证、provider HTTP 与模型路由，Apps 管表单、发布规范和域存储；Apps 不重造执行器。计费/退款/算力、评分、第四类 agent、VS SYNC/wipe、冗余回填及工作流源链接不属于本次 AI 应用需求。
+具体目标与需求—验收—实现状态见 AI 应用 UI 规范；目标职责、技术约束与已验证源码缺口见 Canvas / Apps 边界。Canvas 调度，Hub 管凭证、provider HTTP 与模型路由，Apps 管表单、发布规范和域存储；Apps 不重造执行器。计费/退款/算力、评分、第四类 agent、VS SYNC/wipe、冗余回填及工作流源链接不属于本次 AI 应用需求。
 
 ## 工程结构与能力状态
 
-执行中枢负责身份、凭证、模型路由与媒体执行；领域插件管理各自的素材、灵感、画布和剪辑职责。结构与术语见 [CONTEXT.md](CONTEXT.md)，调用边界见[中枢合同](docs/contracts/hub.md)。
+执行中枢负责身份、凭证、模型路由与媒体执行；领域插件管理各自的素材、灵感、画布和剪辑职责。结构与术语见 CONTEXT.md，调用边界见中枢合同。
 
-已有账号、发布、运营分析等插件保留其技术职责，但不因存在源码而成为当前对外承诺。安装阶段以[插件生命周期清单](plugins/omnimux/src/plugin-lifecycle.json)为准，真实可用性以[能力记录](docs/capabilities.md)及当前验收为准，不维护第二份正式可用徽章或素材数量表。
+已有账号、发布、运营分析等插件保留其技术职责，但不因存在源码而成为当前对外承诺。安装阶段以[插件生命周期清单](plugins/omnimux/src/plugin-lifecycle.json)为准，真实可用性以能力记录及当前验收为准，不维护第二份正式可用徽章或素材数量表。
 
 ## 文档入口
 
 | 需要了解什么 | 入口 |
 | --- | --- |
-| 当前产品方向与宣传边界 | [产品定位：属于你的内容电商团队](docs/contracts/product-positioning.md) |
-| 角色视频制作的目标与验收 | [角色生成与视频复刻指南](docs/guides/ecommerce-video-replication.md) |
-| 开发文档与适用合同 | [文档导航](docs/README.md)、[智能体约束](AGENTS.md) |
-| 灵感库合集整理与能力状态 | [灵感插件说明](plugins/omnimux-inspiration/README.md#本地灵感合集)、[能力记录](docs/capabilities.md) |
-| 中枢接口目录快照 | [接口面板](docs/tools/hub-interfaces.html)，不是部署状态或上游能力真源 |
-| 软件使用与商业授权 | [许可原文](LICENSE)、[商业授权说明](COMMERCIAL.md)，不等于生成免费 |
+| 当前产品方向与宣传边界 | 产品定位：属于你的内容电商团队 |
+| 角色视频制作的目标与验收 | 角色生成与视频复刻指南 |
+| 开发文档与适用合同 | 文档导航、[智能体约束](AGENTS.md) |
+| 灵感库合集整理与能力状态 | [灵感插件说明](plugins/omnimux-inspiration/README.md#本地灵感合集)、能力记录 |
+| 中枢接口目录快照 | 接口面板，不是部署状态或上游能力真源 |
+| 软件使用与商业授权 | [许可原文](LICENSE)、商业授权说明，不等于生成免费 |
 | 第三方来源与许可 | [致谢与第三方声明](ACKNOWLEDGEMENTS.md) |
 
 ## 💼 许可
@@ -69,7 +69,7 @@ OmniMux 自行编写的插件代码采用 **[AGPL-3.0](LICENSE)**，另附 [NOTI
 | 修改后对外提供服务或分发，但不公开修改 | ❌ | ✅ |
 | 移除 `Powered by OmniMux` 署名，以自有品牌发布 | ❌ | ✅ |
 
-从上游 fork 或引入的代码保留原许可（多为 MIT），见 [CONTRIBUTING.md](CONTRIBUTING.md) 第 4 节与 [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md)。2026-10-28 之前发布的版本按其发布时的许可证授权。许可不等于生成免费，详见 [COMMERCIAL.md](COMMERCIAL.md)。
+从上游 fork 或引入的代码保留原许可（多为 MIT），见 CONTRIBUTING.md 第 4 节与 [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md)。2026-10-28 之前发布的版本按其发布时的许可证授权。许可不等于生成免费，详见 COMMERCIAL.md。
 
 公开源码（AGPL-3.0）统一发布到聚合快照仓 [omnimux-ai/omnimux-ai](https://github.com/omnimux-ai/omnimux-ai)：`gateway/`、`desktop/`、`plugins/` 三个目录，各带说明发布版本的 `SOURCE.json`。本仓 [omnimux-ai/omnimux-client](https://github.com/omnimux-ai/omnimux-client) 仍是插件源码的公开开发仓；独立公开仓 [omnimux-ai/omnimux-gateway](https://github.com/omnimux-ai/omnimux-gateway)、[omnimux-ai/omnimux-desktop](https://github.com/omnimux-ai/omnimux-desktop) 不再是源码发布目标。
 
@@ -82,13 +82,13 @@ OmniMux 自行编写的插件代码采用 **[AGPL-3.0](LICENSE)**，另附 [NOTI
 
 ### 本地开发与交付
 
-从 [AGENTS.md](AGENTS.md) 和[仓库 workflow](.agents/skills/omnimux-repo-workflow/SKILL.md)进入开发流程：
+从 [AGENTS.md](AGENTS.md) 和仓库 workflow 进入开发流程：
 
-1. 在仓内隔离 worktree 实施，运行与变更面相关的自动化测试、静态检查和独立评审；选择依据见[插件 QA](docs/contracts/plugin-qa.md)。例如在当前任务 worktree 执行 `pnpm --filter <package> test`，文档变更执行 `git diff --check` 与 `pnpm doc:lint`。
+1. 在仓内隔离 worktree 实施，运行与变更面相关的自动化测试、静态检查和独立评审；选择依据见插件 QA。例如在当前任务 worktree 执行 `pnpm --filter <package> test`，文档变更执行 `git diff --check` 与 `pnpm doc:lint`。
 2. PR 满足 required CI，经 Merge Queue 合入 `main`。CI `qa:pass` 只证明合入前静态与测试，不证明 Dev 已通过。
-3. 界面变更在任务隔离工作树内取得实际功能路径浏览器证据；合入后仅影响已安装运行时的改动物化 Dev `~/.omnimux-dev`。45120 的开发版验收由人工负责；纯文档无需安装或重启应用。完整规则见[插件 QA](docs/contracts/plugin-qa.md)。
+3. 界面变更在任务隔离工作树内取得实际功能路径浏览器证据；合入后仅影响已安装运行时的改动物化 Dev `~/.omnimux-dev`。45120 的开发版验收由人工负责；纯文档无需安装或重启应用。完整规则见插件 QA。
 
-没有合并前独立 App/Host 测试环境。不得将未合并 worktree link 或物化到 Dev/Prod；生产 `~/.omnimux`、`--prod`、`--all` 与正式发布仍需独立授权。完整边界见[开发环境合同](docs/contracts/dev-pipeline.md)。
+没有合并前独立 App/Host 测试环境。不得将未合并 worktree link 或物化到 Dev/Prod；生产 `~/.omnimux`、`--prod`、`--all` 与正式发布仍需独立授权。完整边界见开发环境合同。
 
 ---
 
@@ -106,7 +106,7 @@ OmniMux 自行编写的插件代码采用 **[AGPL-3.0](LICENSE)**，另附 [NOTI
   <tbody>
     <tr>
       <td align="center" valign="middle">
-        <img src="docs/assets/community-wechat-group.png" alt="OmniMux 微信 / 企业微信开发者交流群" width="220"><br>
+        <img src="../app/assets/community-wechat-group.png" alt="OmniMux 微信 / 企业微信开发者交流群" width="220"><br>
         <sub>扫码加入 <strong>OmniMux 开发者交流群</strong><br>（微信或企业微信均可扫码进入）</sub>
       </td>
       <td align="center" valign="middle">
@@ -130,9 +130,9 @@ OmniMux 自行编写的插件代码采用 **[AGPL-3.0](LICENSE)**，另附 [NOTI
 ## 🤝 贡献与共建 (Contributing)
 
 我们非常欢迎开发者参与共建！无论是修复 Bug、编写文档，还是为 OmniMux 贡献新的 Agent Skills 或插件：
-1. 查阅 [CONTRIBUTING.md](CONTRIBUTING.md) 了解代码规范与 PR 提交流程。
-2. 遵守 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) 行为准则。
-3. 发现安全问题请按照 [SECURITY.md](SECURITY.md) 私密通报。
+1. 查阅 CONTRIBUTING.md 了解代码规范与 PR 提交流程。
+2. 遵守 CODE_OF_CONDUCT.md 行为准则。
+3. 发现安全问题请按照 SECURITY.md 私密通报。
 
 ---
 
@@ -158,7 +158,7 @@ OmniMux 的构建与演进站在了开源巨人的肩膀上，我们对以下直
 ## 📄 许可与商业授权 (License & Commercial)
 
 * **许可**：OmniMux 自行编写的代码采用 **[AGPL-3.0](LICENSE)**，附 [NOTICE](NOTICE) 中的第 7 条署名要求。可以免费使用、修改、自行部署，包括商业用途；修改后对外提供服务或分发时须公开对应源码，并保留署名。
-* **商业授权**：不想公开修改、需要移除 OmniMux 品牌，或公司政策不接受 AGPL 时，请联系 `hello@omnimux.ai` 或查阅 **[COMMERCIAL.md](COMMERCIAL.md)**。
+* **商业授权**：不想公开修改、需要移除 OmniMux 品牌，或公司政策不接受 AGPL 时，请联系 `hello@omnimux.ai` 或查阅 **COMMERCIAL.md**。
 
 ---
 
