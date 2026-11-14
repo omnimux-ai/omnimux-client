@@ -24,6 +24,10 @@ concurrency:
 
 env:
   DSH_TELEMETRY_DISABLED: '1'
+  # Reproducible release: reuse the committed (vendored) Agents-Anywhere artifact
+  # (pinned by app/vendor/agents-anywhere/provenance.json) instead of chasing the
+  # upstream main head, which may target a newer DSH line than this repo ships.
+  DSH_AA_USE_VENDORED: '1'
 
 # Monorepo note: the desktop shell lives in app/ (Yarn workspace `dsh-desktop-next`).
 # Every run step below executes with working-directory `app`, so relative paths
@@ -52,8 +56,9 @@ jobs:
         run: node scripts/verify-version.mjs
       - name: Install dependencies
         run: corepack yarn install --immutable
-      # The AA vendor snapshot must match the latest upstream main commit, so the
-      # runner refreshes it in place instead of failing the build.
+      # Reproducible release: DSH_AA_USE_VENDORED=1 reuses the committed
+      # vendor/agents-anywhere artifact pinned by provenance.json instead of
+      # refreshing to the upstream main head (which may target a newer DSH line).
       - name: Refresh Agents Anywhere vendor
         run: corepack yarn aa:prepare-release
       - name: Refresh dshmarket package versions
@@ -133,8 +138,9 @@ jobs:
         run: node scripts/verify-version.mjs
       - name: Install dependencies
         run: corepack yarn install --immutable
-      # The AA vendor snapshot must match the latest upstream main commit, so the
-      # runner refreshes it in place instead of failing the build.
+      # Reproducible release: DSH_AA_USE_VENDORED=1 reuses the committed
+      # vendor/agents-anywhere artifact pinned by provenance.json instead of
+      # refreshing to the upstream main head (which may target a newer DSH line).
       - name: Refresh Agents Anywhere vendor
         run: corepack yarn aa:prepare-release
       - name: Refresh dshmarket package versions
