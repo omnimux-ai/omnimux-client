@@ -5,7 +5,8 @@
 Download the macOS or Windows installer from the official CDN:
 
 - Windows: [`https://dl.omnimux.ai/releases/latest/OmniMux-Setup.exe`](https://dl.omnimux.ai/releases/latest/OmniMux-Setup.exe)
-- macOS: [`https://dl.omnimux.ai/releases/latest/OmniMux-universal.dmg`](https://dl.omnimux.ai/releases/latest/OmniMux-universal.dmg)
+- macOS (Apple Silicon): [`https://dl.omnimux.ai/releases/latest/OmniMux-arm64.dmg`](https://dl.omnimux.ai/releases/latest/OmniMux-arm64.dmg)
+- macOS (Intel): [`https://dl.omnimux.ai/releases/latest/OmniMux-x64.dmg`](https://dl.omnimux.ai/releases/latest/OmniMux-x64.dmg)
 
 See [`contracts/download-page-spec.md`](contracts/download-page-spec.md) for the public download-page contract. If Windows SmartScreen / Unknown publisher appears, use **More info → Run anyway** (details in [`contracts/windows-website-distribution.md`](contracts/windows-website-distribution.md)). The app includes Electron, Node, and its pinned DSH dependencies, so normal users do not need to install Node.js or pnpm separately.
 

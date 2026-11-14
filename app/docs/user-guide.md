@@ -5,7 +5,8 @@
 从官方 CDN 下载入口获取 macOS 或 Windows 安装包：
 
 - Windows：[`https://dl.omnimux.ai/releases/latest/OmniMux-Setup.exe`](https://dl.omnimux.ai/releases/latest/OmniMux-Setup.exe)
-- macOS：[`https://dl.omnimux.ai/releases/latest/OmniMux-universal.dmg`](https://dl.omnimux.ai/releases/latest/OmniMux-universal.dmg)
+- macOS（Apple Silicon）：[`https://dl.omnimux.ai/releases/latest/OmniMux-arm64.dmg`](https://dl.omnimux.ai/releases/latest/OmniMux-arm64.dmg)
+- macOS（Intel）：[`https://dl.omnimux.ai/releases/latest/OmniMux-x64.dmg`](https://dl.omnimux.ai/releases/latest/OmniMux-x64.dmg)
 
 下载页规范见 [`contracts/download-page-spec.md`](contracts/download-page-spec.md)。若 Windows 出现 SmartScreen / 未知发布者提示，按「更多信息 → 仍要运行」继续（详见 [`contracts/windows-website-distribution.md`](contracts/windows-website-distribution.md)）。安装后的应用自带运行所需的 Electron、Node 和 DSH 依赖，普通用户不需要另行安装 Node.js 或 pnpm。
 

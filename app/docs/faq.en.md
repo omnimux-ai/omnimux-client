@@ -6,7 +6,7 @@ This page answers common questions about installation, supported platforms, the 
 
 ## What is OmniMux Desktop / DSH Desktop?
 
-OmniMux Desktop is a native desktop workbench for content commerce sellers and creators on Windows x64 and macOS Universal, built as **Your Content Commerce Team — One content commerce system that carries your product's selling points through every video. Use the Agents you already know to create ads, shoppable videos, and product reviews—all in one place.**
+OmniMux Desktop is a native desktop workbench for content commerce sellers and creators on Windows x64 and macOS arm64 / x64, built as **Your Content Commerce Team — One content commerce system that carries your product's selling points through every video. Use the Agents you already know to create ads, shoppable videos, and product reviews—all in one place.**
 
 Under the hood, it is built on the open-source [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), [DSH Desktop](https://github.com/anywhere-labs/deepseek-harness-desktop), and the [Cordis](https://github.com/cordiverse/cordis) plugin architecture. It packages the official Harness local Web UI, Host service, and the OmniMux content commerce plugin suite (product and persona asset libraries, viral video breakdown, infinite canvas workflows, timeline video editing, and multi-platform scheduling/publishing) into a native desktop application with a window, system tray, terminal, updates, and profile management.
 
@@ -16,7 +16,7 @@ No. Both OmniMux Desktop and upstream DSH Desktop are independent open-source pr
 
 ## Which operating systems are supported?
 
-Current release installers support Windows x64 and universal macOS (Intel and Apple Silicon). Linux x64 AppImage and deb artifacts are built by CI but have not shipped with any published release yet; until you see Linux artifacts in the release notes, cross-platform compatibility code in the source tree does not imply that an installer has been released for that platform. Linux arm64 artifacts are not offered.
+Current release installers support Windows x64 and macOS arm64 / x64 (Apple Silicon and Intel are packaged separately; no universal merged build is offered). Linux x64 AppImage and deb artifacts are built by CI but have not shipped with any published release yet; until you see Linux artifacts in the release notes, cross-platform compatibility code in the source tree does not imply that an installer has been released for that platform. Linux arm64 artifacts are not offered.
 
 ## Do I need to install Node.js, pnpm, or DSH?
 
@@ -64,6 +64,7 @@ A few rules worth knowing:
 Download from the official CDN:
 
 - Windows: [`OmniMux-Setup.exe`](https://dl.omnimux.ai/releases/latest/OmniMux-Setup.exe)
-- macOS: [`OmniMux-universal.dmg`](https://dl.omnimux.ai/releases/latest/OmniMux-universal.dmg)
+- macOS (Apple Silicon): [`OmniMux-arm64.dmg`](https://dl.omnimux.ai/releases/latest/OmniMux-arm64.dmg)
+- macOS (Intel): [`OmniMux-x64.dmg`](https://dl.omnimux.ai/releases/latest/OmniMux-x64.dmg)
 
 See [`contracts/download-page-spec.md`](contracts/download-page-spec.md) for the download-page contract. GitHub Releases are a secondary mirror only. Check the [troubleshooting section](user-guide.en.md#troubleshooting) first. If the problem remains, open a [GitHub Issue](https://github.com/omnimux-ai/omnimux-desktop/issues/new/choose) with the operating system, app version, reproduction steps, and error details.

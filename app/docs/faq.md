@@ -6,7 +6,7 @@
 
 ## OmniMux Desktop / DSH Desktop 是什么？
 
-OmniMux Desktop 是面向内容电商卖家与创作者的原生桌面工作台（支持 Windows x64 和 macOS Universal），核心定位为**「属于你的内容电商团队 — 一套内容电商系统，让商品卖点贯穿每一次出片。用你熟悉的 Agent，一站式搞定广告、电商与种草视频」**。
+OmniMux Desktop 是面向内容电商卖家与创作者的原生桌面工作台（支持 Windows x64 和 macOS arm64 / x64），核心定位为**「属于你的内容电商团队 — 一套内容电商系统，让商品卖点贯穿每一次出片。用你熟悉的 Agent，一站式搞定广告、电商与种草视频」**。
 
 在架构上，它基于开源的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)、[DSH Desktop](https://github.com/anywhere-labs/deepseek-harness-desktop) 与 [Cordis](https://github.com/cordiverse/cordis) 插件系统构建，把官方 Harness 的本地 Web UI、Host 服务与 OmniMux 内容电商插件套件（商品与资产库、爆款灵感拆解、无限画布工作流、时间轴视频剪辑、多平台排期与发布中心）装进原生桌面应用，并提供窗口、系统托盘、终端、更新和 profile 管理。
 
@@ -16,7 +16,7 @@ OmniMux Desktop 是面向内容电商卖家与创作者的原生桌面工作台�
 
 ## 支持哪些操作系统？
 
-当前正式安装包支持 Windows x64 和 universal macOS（Intel 与 Apple Silicon）。Linux x64 的 AppImage 与 deb 已由 CI 构建，但尚未随任何已发布版本一同发出；在发布说明中看到 Linux 产物之前，不要根据源码中存在跨平台兼容代码推断已经发布了对应安装包。Linux 暂不提供 arm64 产物。
+当前正式安装包支持 Windows x64 和 macOS arm64 / x64（Apple Silicon 与 Intel 分别单独打包，已不再提供 universal 合并包）。Linux x64 的 AppImage 与 deb 已由 CI 构建，但尚未随任何已发布版本一同发出；在发布说明中看到 Linux 产物之前，不要根据源码中存在跨平台兼容代码推断已经发布了对应安装包。Linux 暂不提供 arm64 产物。
 
 ## 需要安装 Node.js、pnpm 或 DSH 吗？
 
@@ -64,6 +64,7 @@ Desktop Host、profile 和 DSH home 位于本机。是否向外部服务发送�
 请从官方 CDN 下载：
 
 - Windows：[`OmniMux-Setup.exe`](https://dl.omnimux.ai/releases/latest/OmniMux-Setup.exe)
-- macOS：[`OmniMux-universal.dmg`](https://dl.omnimux.ai/releases/latest/OmniMux-universal.dmg)
+- macOS（Apple Silicon）：[`OmniMux-arm64.dmg`](https://dl.omnimux.ai/releases/latest/OmniMux-arm64.dmg)
+- macOS（Intel）：[`OmniMux-x64.dmg`](https://dl.omnimux.ai/releases/latest/OmniMux-x64.dmg)
 
 下载页规范见 [`contracts/download-page-spec.md`](contracts/download-page-spec.md)。GitHub Release 仅作次要镜像。遇到问题时先查看[用户指南的排查部分](user-guide.md#排查)，仍无法解决再提交 [GitHub Issue](https://github.com/omnimux-ai/omnimux-desktop/issues/new/choose)，并附上操作系统、应用版本、复现步骤和错误信息。

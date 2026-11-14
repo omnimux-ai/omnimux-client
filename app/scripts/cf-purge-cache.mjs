@@ -70,11 +70,11 @@ async function resolveZoneId(token) {
 /** 发布产物在 CDN 上的全部键：latest 别名 + 版本目录 + 元数据。 */
 function releaseUrls(version) {
   // Only the aliases the current release actually publishes:
-  //   macOS  — single Universal DMG (OmniMux-<ver>-universal.dmg)
+  //   macOS   — two single-architecture DMGs (OmniMux-<ver>-arm64.dmg / -x64.dmg)
   //   Windows — unsigned x64 NSIS (OmniMux-<ver>-x64-Setup.exe)
-  // Legacy single-architecture DMG and old brand aliases are dropped.
   const paths = [
-    'releases/latest/OmniMux-universal.dmg',
+    'releases/latest/OmniMux-arm64.dmg',
+    'releases/latest/OmniMux-x64.dmg',
     'releases/latest/OmniMux-x64-Setup.exe',
     'api/desktop/version-stable.json',
     'api/desktop/version-next.json',
@@ -82,7 +82,8 @@ function releaseUrls(version) {
   ]
   if (version) {
     paths.push(
-      `releases/v${version}/OmniMux-${version}-universal.dmg`,
+      `releases/v${version}/OmniMux-${version}-arm64.dmg`,
+      `releases/v${version}/OmniMux-${version}-x64.dmg`,
       `releases/v${version}/OmniMux-${version}-x64-Setup.exe`,
     )
   }

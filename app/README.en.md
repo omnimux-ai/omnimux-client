@@ -30,7 +30,7 @@
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows-4493F8?style=flat-square" alt="Supported platforms: macOS and Windows">
 </p>
 
-**OmniMux Desktop** is a native desktop workbench for content commerce sellers and creators (supporting macOS Universal and Windows x64), built on the open-source [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), [DSH Desktop](https://github.com/anywhere-labs/deepseek-harness-desktop), and the [Cordis](https://github.com/cordiverse/cordis) plugin architecture. It runs a pinned upstream version unchanged, while OmniMux Desktop provides the window, tray, terminal, updates, and work profiles—composing content commerce workflows with upstream Agent capabilities in a single local runtime.
+**OmniMux Desktop** is a native desktop workbench for content commerce sellers and creators (supporting macOS arm64 / x64 and Windows x64), built on the open-source [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), [DSH Desktop](https://github.com/anywhere-labs/deepseek-harness-desktop), and the [Cordis](https://github.com/cordiverse/cordis) plugin architecture. It runs a pinned upstream version unchanged, while OmniMux Desktop provides the window, tray, terminal, updates, and work profiles—composing content commerce workflows with upstream Agent capabilities in a single local runtime.
 
 ### Core Content Commerce Workflow
 
@@ -55,11 +55,12 @@ Source publication goes through the aggregate snapshot repository; the standalon
 
 ## Download and install
 
-Current release installers support Windows x64 and macOS Universal (Intel and Apple Silicon). Visit the official website at [https://omnimux.ai](https://omnimux.ai) or download directly from the sole official distribution CDN at `https://dl.omnimux.ai` — no Node.js or command-line setup is needed.
+Current release installers support Windows x64 and macOS arm64 / x64 (Apple Silicon and Intel are packaged separately). Visit the official website at [https://omnimux.ai](https://omnimux.ai) or download directly from the sole official distribution CDN at `https://dl.omnimux.ai` — no Node.js or command-line setup is needed.
 
 | Platform | Official Download (`dl.omnimux.ai`) | Installation |
 | --- | --- | --- |
-| macOS Universal | [Download `OmniMux-universal.dmg`](https://dl.omnimux.ai/releases/latest/OmniMux-universal.dmg) | Open the DMG and drag OmniMux into Applications |
+| macOS arm64 (Apple Silicon) | [Download `OmniMux-arm64.dmg`](https://dl.omnimux.ai/releases/latest/OmniMux-arm64.dmg) | Open the DMG and drag OmniMux into Applications |
+| macOS x64 (Intel) | [Download `OmniMux-x64.dmg`](https://dl.omnimux.ai/releases/latest/OmniMux-x64.dmg) | Open the DMG and drag OmniMux into Applications |
 | Windows x64 | [Download `OmniMux-Setup.exe`](https://dl.omnimux.ai/releases/latest/OmniMux-Setup.exe) | Run the NSIS installer and follow its prompts |
 
 See the [user guide](docs/user-guide.en.md) and [FAQ](docs/faq.en.md) for plugin commands, platform details, and troubleshooting.
@@ -151,7 +152,7 @@ The upstream DeepSeek Harness project provides the core agent capabilities, plug
 - Native desktop application packaging and preset OmniMux content commerce workspace composition
 - Starting, stopping, and recovering the local service
 - Desktop window and system tray integration
-- macOS Universal and Windows x64 installer builds and distribution via `dl.omnimux.ai`
+- macOS arm64 / x64 and Windows x64 installer builds and distribution via `dl.omnimux.ai`
 - An interface tailored for desktop and content commerce production workflows
 
 If you prefer to run DeepSeek Harness from the command line or contribute to its core functionality, refer to the upstream repository first.
