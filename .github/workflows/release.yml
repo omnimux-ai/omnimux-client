@@ -28,6 +28,9 @@ env:
   # (pinned by app/vendor/agents-anywhere/provenance.json) instead of chasing the
   # upstream main head, which may target a newer DSH line than this repo ships.
   DSH_AA_USE_VENDORED: '1'
+  # Reproducible release: pin the bundled dshmarket to the committed (patched)
+  # version in the root resolutions instead of following the npm latest tag.
+  DSH_MARKET_USE_VENDORED: '1'
 
 # Monorepo note: the desktop shell lives in app/ (Yarn workspace `dsh-desktop-next`).
 # Every run step below executes with working-directory `app`, so relative paths
