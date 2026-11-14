@@ -30,7 +30,7 @@
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows-4493F8?style=flat-square" alt="Supported platforms: macOS and Windows">
 </p>
 
-**OmniMux Desktop** 是面向内容电商卖家与创作者的原生桌面工作台（支持 macOS Universal 与 Windows x64），基于开源的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)、[DSH Desktop](https://github.com/anywhere-labs/deepseek-harness-desktop) 与 [Cordis](https://github.com/cordiverse/cordis) 插件架构构建。项目固定并原样运行特定上游版本；OmniMux Desktop 提供窗口、托盘、终端、更新和工作配置，并通过 Cordis 插件机制将内容电商工作流与上游 Agent 能力组合进同一个本地运行时。
+**OmniMux Desktop** 是面向内容电商卖家与创作者的原生桌面工作台（支持 macOS arm64 / x64 与 Windows x64），基于开源的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)、[DSH Desktop](https://github.com/anywhere-labs/deepseek-harness-desktop) 与 [Cordis](https://github.com/cordiverse/cordis) 插件架构构建。项目固定并原样运行特定上游版本；OmniMux Desktop 提供窗口、托盘、终端、更新和工作配置，并通过 Cordis 插件机制将内容电商工作流与上游 Agent 能力组合进同一个本地运行时。
 
 ### 核心内容电商链路
 
@@ -55,11 +55,12 @@
 
 ## 下载与安装
 
-当前正式安装包支持 Windows x64 和 macOS Universal（Intel 与 Apple Silicon）。官方网站为 [https://omnimux.ai](https://omnimux.ai)，安装包唯一官方下载源为 `https://dl.omnimux.ai`——无需额外配置 Node.js 或命令行环境，下载安装即可一键启动。
+当前正式安装包支持 Windows x64 和 macOS arm64 / x64（Apple Silicon 与 Intel 分别单独打包）。官方网站为 [https://omnimux.ai](https://omnimux.ai)，安装包唯一官方下载源为 `https://dl.omnimux.ai`——无需额外配置 Node.js 或命令行环境，下载安装即可一键启动。
 
 | 平台 | 官方下载（`dl.omnimux.ai`） | 安装方式 |
 | --- | --- | --- |
-| macOS Universal | [下载 `OmniMux-universal.dmg`](https://dl.omnimux.ai/releases/latest/OmniMux-universal.dmg) | 打开 DMG，将 OmniMux 拖入 Applications |
+| macOS arm64（Apple Silicon） | [下载 `OmniMux-arm64.dmg`](https://dl.omnimux.ai/releases/latest/OmniMux-arm64.dmg) | 打开 DMG，将 OmniMux 拖入 Applications |
+| macOS x64（Intel） | [下载 `OmniMux-x64.dmg`](https://dl.omnimux.ai/releases/latest/OmniMux-x64.dmg) | 打开 DMG，将 OmniMux 拖入 Applications |
 | Windows x64 | [下载 `OmniMux-Setup.exe`](https://dl.omnimux.ai/releases/latest/OmniMux-Setup.exe) | 运行 NSIS 安装程序并按提示完成安装 |
 
 详细步骤、插件命令和故障排查见[用户指南](docs/user-guide.md)与[常见问题](docs/faq.md)。
@@ -151,7 +152,7 @@ OmniMux Desktop 是基于 [DeepSeek Harness](https://github.com/deepseek-ai/deep
 - 原生桌面应用封装与 OmniMux 内容电商预置工作区组装
 - 本地服务的启动、停止与恢复
 - 桌面窗口和系统托盘集成
-- macOS Universal、Windows x64 安装包构建与 `dl.omnimux.ai` 分发
+- macOS arm64 / x64、Windows x64 安装包构建与 `dl.omnimux.ai` 分发
 - 更适合桌面与内容电商创作使用的界面体验
 
 如果你希望通过命令行运行 DeepSeek Harness，或者参与其核心功能开发，请优先查看上游仓库。
