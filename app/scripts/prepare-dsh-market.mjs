@@ -42,9 +42,25 @@ function install(directory) {
   if (result.status !== 0) throw new Error(`Market dependency install failed (${result.status})`)
 }
 
+/**
+ * The dshmarket version already pinned by the committed root resolutions. A
+ * reproducible release builds this committed (patched) version instead of
+ * following the npm latest tag, which may move past the desktop compatibility patch.
+ */
+function pinnedMarketVersion(directory) {
+  const manifest = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8'))
+  const keys = Object.keys(manifest.resolutions ?? {}).filter(key => key === 'dshmarket' || key.startsWith('dshmarket@'))
+  const match = keys.length === 1 ? /^dshmarket@npm:(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/.exec(keys[0]) : null
+  if (!match || manifest.resolutions[keys[0]] !== marketResolution(match[1])) {
+    throw new Error('DSH_MARKET_USE_VENDORED requires exactly one pinned dshmarket@npm:<version> resolution carrying the committed desktop patch')
+  }
+  return match[1]
+}
+
 export async function prepareMarket(directory, { check = false, fetcher = fetch, runInstall = install } = {}) {
   // Resolve the tag before any writes. An offline check must not silently bless an old release.
-  const version = await latestMarket(fetcher)
+  // A reproducible release (DSH_MARKET_USE_VENDORED=1) pins the committed version instead.
+  const version = process.env.DSH_MARKET_USE_VENDORED === '1' ? pinnedMarketVersion(directory) : await latestMarket(fetcher)
   const paths = ['package.json', ...MARKET_WORKSPACES.map(name => `${name}/package.json`), 'yarn.lock']
   const originals = new Map(paths.map(path => [path, readFileSync(join(directory, path))]))
   const manifests = new Map(paths.filter(path => path.endsWith('.json')).map(path =>
