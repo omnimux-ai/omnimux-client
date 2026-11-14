@@ -21,7 +21,6 @@
 - [ ] Windows portable ZIP / Windows 便携版 ZIP
 - [ ] macOS Apple Silicon
 - [ ] macOS Intel
-- [ ] macOS Universal package / macOS 通用安装包
 - [ ] Linux
 - [ ] Not platform-specific / 与平台无关
 

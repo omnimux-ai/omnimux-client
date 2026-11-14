@@ -2,7 +2,7 @@
 
 [中文](faq.md)
 
-This page answers common questions about installation, supported platforms, the bundled runtime, and plugins in the current stable release. The [official download CDN](https://dl.omnimux.ai), [latest GitHub Release](https://github.com/omnimux-ai/omnimux-desktop/releases/latest), and [user guide](user-guide.en.md) define the shipped product scope.
+This page answers common questions about installation, supported platforms, the bundled runtime, and plugins in the current stable release. The [official download CDN](https://dl.omnimux.ai), [latest GitHub Release](https://github.com/omnimux-ai/omnimux-client/releases/latest), and [user guide](user-guide.en.md) define the shipped product scope.
 
 ## What is OmniMux Desktop / DSH Desktop?
 
@@ -67,4 +67,4 @@ Download from the official CDN:
 - macOS (Apple Silicon): [`OmniMux-arm64.dmg`](https://dl.omnimux.ai/releases/latest/OmniMux-arm64.dmg)
 - macOS (Intel): [`OmniMux-x64.dmg`](https://dl.omnimux.ai/releases/latest/OmniMux-x64.dmg)
 
-See [`contracts/download-page-spec.md`](contracts/download-page-spec.md) for the download-page contract. GitHub Releases are a secondary mirror only. Check the [troubleshooting section](user-guide.en.md#troubleshooting) first. If the problem remains, open a [GitHub Issue](https://github.com/omnimux-ai/omnimux-desktop/issues/new/choose) with the operating system, app version, reproduction steps, and error details.
+GitHub Releases are a secondary mirror only. Check the [troubleshooting section](user-guide.en.md#troubleshooting) first. If the problem remains, open a [GitHub Issue](https://github.com/omnimux-ai/omnimux-client/issues/new/choose) with the operating system, app version, reproduction steps, and error details.

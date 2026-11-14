@@ -13,9 +13,10 @@
       "sourceNote": "private development fork, archived read-only; the public source tree is this repository"
     },
     "plugins": {
-      "repository": "omnimux-ai/omnimux-dsh",
-      "commit": "1ec38f08a24ed7333ba6c479421e4248ae9aafd5",
-      "exportedFiles": 4183
+      "repository": "omnimux-ai/omnimux-client",
+      "commit": "91f73454caa7b51524c138c62bf2a098c6c4bdad",
+      "exportedFiles": 4183,
+      "sourceNote": "initial commit of this repository that first carried the plugins tree (originally imported from a now-archived standalone repository); plugins are developed here in plugins/"
     }
   },
   "notes": [

@@ -8,7 +8,7 @@ Download the macOS or Windows installer from the official CDN:
 - macOS (Apple Silicon): [`https://dl.omnimux.ai/releases/latest/OmniMux-arm64.dmg`](https://dl.omnimux.ai/releases/latest/OmniMux-arm64.dmg)
 - macOS (Intel): [`https://dl.omnimux.ai/releases/latest/OmniMux-x64.dmg`](https://dl.omnimux.ai/releases/latest/OmniMux-x64.dmg)
 
-See [`contracts/download-page-spec.md`](contracts/download-page-spec.md) for the public download-page contract. If Windows SmartScreen / Unknown publisher appears, use **More info → Run anyway** (details in [`contracts/windows-website-distribution.md`](contracts/windows-website-distribution.md)). The app includes Electron, Node, and its pinned DSH dependencies, so normal users do not need to install Node.js or pnpm separately.
+If Windows SmartScreen / Unknown publisher appears, use **More info → Run anyway**. The app includes Electron, Node, and its pinned DSH dependencies, so normal users do not need to install Node.js or pnpm separately.
 
 On first launch, the application prepares the default profile and starts the official DSH Web surface locally. Closing the window normally hides it; use **Quit** from the tray when you want to stop the application and Host process.
 

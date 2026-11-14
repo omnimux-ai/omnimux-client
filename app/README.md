@@ -23,8 +23,8 @@
 
 <p align="center">
   <a href="https://omnimux.ai"><img src="https://img.shields.io/badge/website-omnimux.ai-4D6BFE?style=flat" alt="Website"></a>
-  <a href="https://github.com/omnimux-ai/omnimux-desktop/releases/latest"><img src="https://img.shields.io/github/v/release/omnimux-ai/omnimux-desktop?style=flat&amp;label=release&amp;color=4D6BFE" alt="Latest release"></a>
-  <a href="https://github.com/omnimux-ai/omnimux-desktop"><img src="https://img.shields.io/github/stars/omnimux-ai/omnimux-desktop?style=flat&amp;label=%E2%98%85&amp;color=08C" alt="GitHub stars"></a>
+  <a href="https://github.com/omnimux-ai/omnimux-client/releases/latest"><img src="https://img.shields.io/github/v/release/omnimux-ai/omnimux-client?style=flat&amp;label=release&amp;color=4D6BFE" alt="Latest release"></a>
+  <a href="https://github.com/omnimux-ai/omnimux-client"><img src="https://img.shields.io/github/stars/omnimux-ai/omnimux-client?style=flat&amp;label=%E2%98%85&amp;color=08C" alt="GitHub stars"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT%20%2F%20AGPL--3.0-2EA44F?style=flat" alt="MIT / AGPL-3.0 License"></a>
   <a href="https://discord.gg/omnimux"><img src="https://img.shields.io/badge/Discord-5865F2?style=flat&amp;logo=discord&amp;logoColor=white" alt="Join Discord"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows-4493F8?style=flat-square" alt="Supported platforms: macOS and Windows">
@@ -45,11 +45,8 @@
 
 | 仓库 | 定位 |
 | --- | --- |
-| [`omnimux-ai/omnimux-ai`](https://github.com/omnimux-ai/omnimux-ai) | **公开源码聚合快照仓**：`gateway/`、`desktop/`、`plugins/` 三个目录，各带说明发布版本的 `SOURCE.json` |
-| [`omnimux-ai/omnimux-dsh`](https://github.com/omnimux-ai/omnimux-dsh) | **OmniMux DSH 插件集**：插件源码的公开开发仓 |
-| [`omnimux-ai/omnimux-desktop`](https://github.com/omnimux-ai/omnimux-desktop) | **桌面端分发**：安装包与 GitHub Releases（源码以聚合快照仓为准） |
-
-源码发布统一走聚合快照仓；独立公开仓 `omnimux-ai/omnimux-gateway` 不再是源码发布目标。
+| [`omnimux-ai/omnimux-client`](https://github.com/omnimux-ai/omnimux-client) | **桌面端 + 产品插件单一代码仓（本仓）**：`app/` 桌面壳与 `plugins/` 产品插件一起开发、一起发布 |
+| [`omnimux-ai/omnimux-gateway`](https://github.com/omnimux-ai/omnimux-gateway) | **服务端网关**（Go，new-api fork，AGPL-3.0），仅因 AGPL 义务公开 |
 
 <a id="run"></a>
 
@@ -194,7 +191,7 @@ Stable、Beta、Next 的主应用和 Electron Helper 签名直接使用固定上
 
 - 官方网站：[https://omnimux.ai](https://omnimux.ai)
 - 官方下载源：[https://dl.omnimux.ai](https://dl.omnimux.ai)
-- GitHub 仓库：[omnimux-ai/omnimux-desktop](https://github.com/omnimux-ai/omnimux-desktop) · [omnimux-ai/omnimux-dsh](https://github.com/omnimux-ai/omnimux-dsh) · [omnimux-ai/omnimux-ai](https://github.com/omnimux-ai/omnimux-ai)
+- GitHub 仓库：[omnimux-ai/omnimux-client](https://github.com/omnimux-ai/omnimux-client) · [omnimux-ai/omnimux-gateway](https://github.com/omnimux-ai/omnimux-gateway)
 - Discord 社区：[加入 OmniMux Discord](https://discord.gg/omnimux)
 
 ### 友情链接（DeepSeek Harness 生态）

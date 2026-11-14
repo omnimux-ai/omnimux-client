@@ -2,7 +2,7 @@
 
 [English](faq.en.md)
 
-本页回答当前正式版本最常见的安装、平台、运行环境和插件问题。功能范围以[官方下载源](https://dl.omnimux.ai)、[最新 GitHub Release](https://github.com/omnimux-ai/omnimux-desktop/releases/latest)和[用户指南](user-guide.md)为准。
+本页回答当前正式版本最常见的安装、平台、运行环境和插件问题。功能范围以[官方下载源](https://dl.omnimux.ai)、[最新 GitHub Release](https://github.com/omnimux-ai/omnimux-client/releases/latest)和[用户指南](user-guide.md)为准。
 
 ## OmniMux Desktop / DSH Desktop 是什么？
 
@@ -67,4 +67,4 @@ Desktop Host、profile 和 DSH home 位于本机。是否向外部服务发送�
 - macOS（Apple Silicon）：[`OmniMux-arm64.dmg`](https://dl.omnimux.ai/releases/latest/OmniMux-arm64.dmg)
 - macOS（Intel）：[`OmniMux-x64.dmg`](https://dl.omnimux.ai/releases/latest/OmniMux-x64.dmg)
 
-下载页规范见 [`contracts/download-page-spec.md`](contracts/download-page-spec.md)。GitHub Release 仅作次要镜像。遇到问题时先查看[用户指南的排查部分](user-guide.md#排查)，仍无法解决再提交 [GitHub Issue](https://github.com/omnimux-ai/omnimux-desktop/issues/new/choose)，并附上操作系统、应用版本、复现步骤和错误信息。
+GitHub Release 仅作次要镜像。遇到问题时先查看[用户指南的排查部分](user-guide.md#排查)，仍无法解决再提交 [GitHub Issue](https://github.com/omnimux-ai/omnimux-client/issues/new/choose)，并附上操作系统、应用版本、复现步骤和错误信息。
