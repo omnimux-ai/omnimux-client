@@ -15,7 +15,7 @@ test('Gateway Contract v2 fills text and image buckets without local YAML', () =
   assert.deepEqual(catalog.text.map((row) => row.id).sort(), ['gemini-3.8-flash', 'gemini-4-argon'])
   assert.deepEqual(catalog.image.map((row) => row.id).sort(), ['gemini-3.1-flash-lite-image', 'gpt-image-2.5'])
   assert.equal(catalog.gateway.missingContract.length, 0)
-  assert.deepEqual(catalog.gateway.adapterUnsupported, ['suno-sounds', 'wan-3.0'])
+  assert.deepEqual(catalog.gateway.adapterUnsupported, ['suno-sounds'])
 
   const argon = catalog.models.find((row) => row.id === 'gemini-4-argon')
   assert.equal(argon?.gateway?.schemaVersion, '2.0')
@@ -83,5 +83,29 @@ test('a v1 cached snapshot supplements missing contracts from bundled v2', () =>
   assert.deepEqual(catalog.text.map((row) => row.id).sort(), ['gemini-3.8-flash', 'gemini-4-argon'])
   assert.deepEqual(catalog.image.map((row) => row.id).sort(), ['gemini-3.1-flash-lite-image', 'gpt-image-2.5'])
   assert.deepEqual(catalog.gateway.missingContract, [])
-  assert.deepEqual(catalog.gateway.adapterUnsupported, ['suno-sounds', 'wan-3.0'])
+  assert.deepEqual(catalog.gateway.adapterUnsupported, ['suno-sounds'])
+})
+
+test('video/audio gateway contracts overlay without per-model YAML', () => {
+  const catalog = buildModelCatalog({ env: {}, snapshot })
+  const wan = catalog.models.find((row) => row.id === 'wan-3.0')
+  assert.equal(wan?.executionStatus, 'ready')
+  assert.equal(wan?.selectable, true)
+  assert.equal(wan?.operations?.filter((operation) => operation.listed).length, 6)
+  assert.equal(catalog.audio.some((row) => row.id === 'suno-sounds'), false)
+})
+
+test('a sold model with no v2 contract is reported as missingContract, not adapterUnsupported', () => {
+  const withMissing = structuredClone(bundled)
+  withMissing.models.push({
+    id: 'synthetic-no-contract',
+    displayName: 'Synthetic No Contract',
+    enableGroups: ['default'],
+    supportedEndpointTypes: ['openai'],
+    billing: { mode: 'per_task', modelPrice: 1, modelRatio: 0, quotaType: 1, expr: null },
+  })
+  const catalog = buildModelCatalog({ env: {}, snapshot: withMissing })
+  assert.deepEqual(catalog.gateway.missingContract, ['synthetic-no-contract'])
+  assert.equal(catalog.gateway.adapterUnsupported.includes('synthetic-no-contract'), false)
+  assert.equal(catalog.models.some((row) => row.id === 'synthetic-no-contract'), false)
 })

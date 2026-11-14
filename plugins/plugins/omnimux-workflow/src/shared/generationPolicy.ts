@@ -39,16 +39,6 @@ export const CANVAS_GENERATION_POLICY: Readonly<Record<MaterialType, GenerationP
 };
 
 /**
- * Effective membership check for one kind: the model must survive the canvas
- * projection — i.e. be a hub-listed row for that kind, prove a listed output op,
- * and not be in the user's hidden set. Reads the projected `generationPolicy`,
- * so callers pass the canvas catalog (not the raw hub DTO).
- */
-export function isCanvasModelAllowed(catalog: CapabilityCatalog, kind: MaterialType, modelId: string): boolean {
-  return Boolean(catalog?.generationPolicy?.[kind]?.allowedModelIds?.includes(modelId));
-}
-
-/**
  * Canvas tools that consume an input capability instead of generating a material.
  *
  * These are not curation: a model reaches a capability tool only through its own contract.
@@ -124,9 +114,10 @@ export function projectCanvasCatalog(catalog: CapabilityCatalog): CapabilityCata
   const defaults: NonNullable<CapabilityCatalog['defaults']> = {};
   for (const kind of kinds) {
     const rows = lists[kind].filter((row) => !models || modelIds.has(row.id));
+    const selectableRows = rows.filter((row) => row.selectable !== false);
     defaults[kind] = [catalog.defaults?.[kind], policy[kind].defaultModelId]
-      .find((id) => id && rows.some((row) => row.id === id))
-      ?? rows[0]?.id ?? '';
+      .find((id) => id && selectableRows.some((row) => row.id === id))
+      ?? selectableRows[0]?.id ?? '';
   }
   const defaultsByOperation = Object.fromEntries(Object.entries(catalog.defaultsByOperation ?? {})
     .filter(([operation, id]) => models?.some((model) => model.id === id

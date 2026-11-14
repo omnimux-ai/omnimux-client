@@ -74,6 +74,7 @@ function rowId(row: unknown): string {
  */
 function isExecutable(row: unknown): boolean {
   if (!isRecord(row)) return false;
+  if (row.selectable === false) return false;
   const status = text(row.executionStatus) as ModelExecutionStatus | '';
   return status !== 'unverified' && status !== 'unsupported';
 }

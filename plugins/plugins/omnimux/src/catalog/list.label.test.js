@@ -28,7 +28,8 @@ describe('catalog operation label (#4103)', () => {
     const catalog = buildModelCatalog({ text: hub().text, media: hub().media, env: {} })
     const wan = catalog.models.find((row) => row.id === 'wan-3.0')
     assert.ok(wan, 'wan-3.0 must stay visible with an execution status')
-    assert.equal(wan.executionStatus, 'unsupported')
+    // 模型目录 availability：wan-3.0 有 v2 contract + videoGenerate profile 覆盖 → ready（不再 unsupported）。
+    assert.equal(wan.executionStatus, 'ready')
     assert.ok(Array.isArray(wan.operations) && wan.operations.length > 0, 'wan-3.0 operations required')
     for (const op of wan.operations) {
       assert.notEqual(op.label, op.id, `${op.id}: label 不得等于 operation id`)

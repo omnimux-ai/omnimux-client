@@ -342,6 +342,11 @@ export interface CatalogModelDto {
   source?: ModelCatalogSource;
   /** Whether the local plugin can execute this model; never used as visibility filter. */
   executionStatus?: ModelExecutionStatus;
+  /** Gateway-public or custom row; safe to show in directory/settings. */
+  visible?: boolean;
+  /** The only state generation pickers, defaults and auto-adaptation may act on. */
+  selectable?: boolean;
+  availabilityReason?: 'gateway_delisted' | 'contract_missing' | 'adapter_missing' | 'profile_incomplete';
   /** Provider identity for custom rows; absent for gateway rows. */
   providerId?: string;
   /** Display-only provenance label (OmniMux Gateway / provider name). */
@@ -374,6 +379,9 @@ export interface CapabilityModelItem {
   label: string;
   source?: ModelCatalogSource;
   executionStatus?: ModelExecutionStatus;
+  visible?: boolean;
+  selectable?: boolean;
+  availabilityReason?: 'gateway_delisted' | 'contract_missing' | 'adapter_missing' | 'profile_incomplete';
   providerId?: string;
   sourceLabel?: string;
   badge?: string;

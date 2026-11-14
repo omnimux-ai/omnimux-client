@@ -100,6 +100,8 @@ export interface FilteredModelOption {
   item?: CapabilityModelItem | CatalogModelDto;
   /** Gateway/custom row execution capability; never used as a visibility filter. */
   executionStatus?: ModelExecutionStatus;
+  /** Hub-derived selection state; the only field auto-selection may act on. */
+  selectable?: boolean;
   executable?: boolean;
   disabledReason?: 'adapter_unsupported' | 'provider_unverified';
   /** Kernel verdict for this model under the current fingerprint. */
@@ -620,7 +622,9 @@ export function buildFilteredModelOptions(args: {
         : {}),
       ...(auth || bucket ? { item: (auth ?? bucket) as CapabilityModelItem | CatalogModelDto } : {}),
       executionStatus: (auth?.executionStatus ?? bucket?.executionStatus ?? 'ready') as ModelExecutionStatus,
-      executable: (auth?.executionStatus ?? bucket?.executionStatus ?? 'ready') === 'ready',
+      selectable: auth?.selectable ?? bucket?.selectable,
+      executable: (auth?.selectable ?? bucket?.selectable) !== false
+        && (auth?.executionStatus ?? bucket?.executionStatus ?? 'ready') === 'ready',
       ...((auth?.executionStatus ?? bucket?.executionStatus) === 'unsupported'
         ? { disabledReason: 'adapter_unsupported' as const }
         : (auth?.executionStatus ?? bucket?.executionStatus) === 'unverified'

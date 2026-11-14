@@ -7,8 +7,8 @@ import { sortCatalogRows } from './sort.js'
 import {
   assertContractHealthy,
   getHealthyContractIndex,
-  mergeInputCapability,
   projectCatalog,
+  resolveCatalogAvailability,
   resolveModelId,
 } from './project.js'
 import { executionProfileFromContract, isExecutionProfileComplete, mergeExecutionProfiles } from './execution-profile.js'
@@ -23,8 +23,6 @@ import { DEFAULT_OPERATION_AUTO } from '../settings/schema.js'
 import { resolveCurrentSnapshot } from './cloud/current.js'
 import { snapshotContentDigest } from './cloud/snapshot.js'
 import { usableSnapshotModels } from './cloud/view.js'
-import { getModelChannelGroups } from './serving/channel-groups.js'
-import { approvedOperationLabel } from './contract/operation-label.js'
 
 export const CATALOG_KINDS = Object.freeze(['text', 'image', 'video', 'audio'])
 
@@ -56,12 +54,6 @@ export const SETTINGS_DEFAULT_OPERATION_KEYS = Object.freeze({
   video: 'defaultVideoOperation',
 })
 
-/** Ordered models to try when the configured default model cannot publish the preferred mode. */
-const PREFERRED_OPERATION_MODELS = Object.freeze({
-  image: ['gpt-image-2.5', 'gpt-image-2.5-flare', 'gpt-image-2.5-sunburst'],
-  video: ['minimax-h3', 'seedance-2-0', 'seedance-2-5'],
-})
-
 /** The mode a kind starts in: it consumes upstream media, so a new node shows its slots. */
 const PREFERRED_OPERATION = Object.freeze({
   image: 'multi_reference',
@@ -89,14 +81,13 @@ function listedOperationIds(models, modelId, kind) {
 export function resolveDefaultOperation(input) {
   const kind = input.kind
   const preferred = PREFERRED_OPERATION[kind]
-  const chain = PREFERRED_OPERATION_MODELS[kind] ?? []
+  const chain = [...input.ids].filter((id) => id !== input.modelId)
   const configured = typeof input.configured === 'string' ? input.configured.trim() : ''
   if (configured && configured !== DEFAULT_OPERATION_AUTO) {
     if (listedOperationIds(input.models, input.modelId, kind).includes(configured)) {
       return { modelId: input.modelId, operationId: configured, rule: 'configured' }
     }
     for (const candidate of chain) {
-      if (candidate === input.modelId || !input.ids.has(candidate)) continue
       if (listedOperationIds(input.models, candidate, kind).includes(configured)) {
         return { modelId: candidate, operationId: configured, rule: 'configured_chain' }
       }
@@ -106,7 +97,6 @@ export function resolveDefaultOperation(input) {
     return { modelId: input.modelId, operationId: preferred, rule: 'auto' }
   }
   for (const candidate of chain) {
-    if (candidate === input.modelId || !input.ids.has(candidate)) continue
     if (preferred && listedOperationIds(input.models, candidate, kind).includes(preferred)) {
       return { modelId: candidate, operationId: preferred, rule: 'auto_chain' }
     }
@@ -188,18 +178,6 @@ export function buildModelCatalog(opts = {}) {
     adapterUnsupported: runtime.adapterUnsupported,
   }
 
-  // Gateway publication is the display authority. Local adapter support is an
-  // execution status, never a visibility filter; gateway rows without a local
-  // adapter remain visible but are marked unsupported.
-  const enrichGatewayPublic = opts.contractIndex === undefined || opts.snapshot !== undefined
-  const gatewayPublic = enrichGatewayPublic
-    ? projectGatewayPublicModels(snapshot, dto.models, new Set(gateway.adapterUnsupported))
-    : { models: [] }
-  for (const model of gatewayPublic.models) {
-    const index = dto.models.findIndex((row) => row.id === model.id)
-    if (index >= 0) dto.models[index] = model
-    else dto.models.push(model)
-  }
   const customModels = projectCustomModels(settingsDefaults.byokProviders)
   for (const model of customModels) {
     if (!dto.models.some((row) => row.id === model.id)) dto.models.push(model)
@@ -225,11 +203,8 @@ export function buildModelCatalog(opts = {}) {
     video: isMediaEnabled(gate, 'video') ? listed(dto.video) : [],
     audio: isMediaEnabled(gate, 'audio') ? listed(dto.audio) : [],
   }
-  // Add gateway-public rows that the local contract projection dropped (e.g.
-  // no local adapter yet) and user-defined BYOK models. These rows are visible
-  // by definition; executionStatus on the row decides whether they may run.
+  // User-defined BYOK models join the same public projection as gateway rows.
   const kindEnabled = (kind) => kind === 'text' || isMediaEnabled(gate, kind)
-  for (const model of gatewayPublic.models) appendCatalogRowByKinds(lists, model, kindEnabled)
   for (const model of customModels) appendCatalogRowByKinds(lists, model, kindEnabled)
   for (const kind of CATALOG_KINDS) lists[kind] = sortCatalogRows(lists[kind])
 
@@ -253,31 +228,31 @@ export function buildModelCatalog(opts = {}) {
   /** @type {Record<string, { modelId: string, source: string, needsConfirmation?: boolean }>} */
   const defaultsMeta = {}
   for (const kind of CATALOG_KINDS) {
-    const ids = new Set(lists[kind].map((row) => row.id))
+    const selectableRows = lists[kind].filter((row) => row.selectable !== false && row.executionStatus === 'ready')
+    const selectableIds = new Set(selectableRows.map((row) => row.id))
     const settingsKey = SETTINGS_DEFAULT_KEYS[kind]
     const saved = resolveModelId(runtime.index, trimId(settingsDefaults[settingsKey]))
     const byOpDefault = dto.defaultsByOperation[KIND_PRIMARY_OP[kind]]
-    const offlineDefault = typeof byOpDefault === 'string' && ids.has(byOpDefault) ? byOpDefault : ''
-    const readyDocumented = lists[kind].find((row) => row.executionStatus === 'ready' && row.gateway?.status === 'documented')
-    const ready = lists[kind].find((row) => row.executionStatus === 'ready')
-    const fallback = offlineDefault || readyDocumented?.id || ready?.id || lists[kind][0]?.id || ''
+    const offlineDefault = typeof byOpDefault === 'string' && selectableIds.has(byOpDefault) ? byOpDefault : ''
+    const readyDocumented = selectableRows.find((row) => row.gateway?.status === 'documented')
+    const ready = selectableRows[0]
+    const fallback = offlineDefault || readyDocumented?.id || ready?.id || ''
     const gatewayDefaultId = resolveModelId(runtime.index, trimId(gatewayDefaults[kind] ?? gatewayDefaults[KIND_PRIMARY_OP[kind]]))
-    const gatewayDefault = gatewayDefaultId && lists[kind].some((row) => row.id === gatewayDefaultId && row.executionStatus === 'ready')
-      ? gatewayDefaultId : ''
+    const gatewayDefault = gatewayDefaultId && selectableIds.has(gatewayDefaultId) ? gatewayDefaultId : ''
     const resolvedDefault = resolveDefault({
       kind,
-      ids,
+      ids: selectableIds,
       env: { [ENV_DEFAULT_KEYS[kind]]: resolveModelId(runtime.index, trimId(env[ENV_DEFAULT_KEYS[kind]])) },
       settingsDefaults: { [settingsKey]: saved },
-      gatewayDefault: gatewayDefault && ids.has(gatewayDefault) ? gatewayDefault : '',
+      gatewayDefault,
       configDefault: resolveModelId(runtime.index, configDefaults[kind]) ?? '',
       fallback,
     })
     defaults[kind] = resolvedDefault
-    const explicit = saved && ids.has(saved)
+    const explicit = saved && selectableIds.has(saved)
     const source = gatewayDefault && !explicit && resolvedDefault === gatewayDefault ? 'gateway-recommended'
       : offlineDefault && !explicit && resolvedDefault === offlineDefault ? 'offline-floor'
-        : !explicit && resolvedDefault === fallback ? (readyDocumented || ready ? 'first-ready' : 'offline-floor')
+        : !explicit && resolvedDefault === fallback ? (readyDocumented || ready ? 'first-ready' : 'none')
           : explicit ? 'user'
             : resolvedDefault ? 'config' : 'none'
     defaultsMeta[kind] = {
@@ -294,8 +269,8 @@ export function buildModelCatalog(opts = {}) {
       kind,
       configured: settingsDefaults[SETTINGS_DEFAULT_OPERATION_KEYS[kind]],
       modelId: defaults[kind],
-      ids: new Set(lists[kind].map((row) => row.id)),
-      models: dto.models,
+      ids: new Set(lists[kind].filter((row) => row.selectable !== false).map((row) => row.id)),
+      models: dto.models.filter((model) => model.selectable !== false),
     })
   }
 
@@ -307,7 +282,7 @@ export function buildModelCatalog(opts = {}) {
   const modalitiesOf = (row) => row?.inputCapability?.modalities
     ?? row?.input
     ?? []
-  const analysisRows = lists.text.filter((row) => row.executionStatus !== 'unverified'
+  const analysisRows = lists.text.filter((row) => row.selectable !== false && row.executionStatus === 'ready'
     && (modalitiesOf(row) ?? []).some((modality) => modality !== 'text'))
   const gatewayAnalysisId = resolveModelId(runtime.index, trimId(gatewayDefaults.vision_chat))
   const gatewayAnalysis = gatewayAnalysisId
@@ -375,85 +350,6 @@ const CUSTOM_OPERATION_BY_KIND = Object.freeze({
   audio: { id: 'text_to_speech', label: '文本转语音', inputs: [{ slot: 'prompt', type: 'text', role: 'prompt', required: true, min: 1, max: 1 }], output: { type: 'audio' } },
 })
 
-/** Convert one Gateway Contract v2 operation into the catalog DTO operation shape. */
-function gatewayOperationDto(operation, executionStatus) {
-  const parameters = {}
-  for (const parameter of Array.isArray(operation?.parameters) ? operation.parameters : []) {
-    if (parameter && typeof parameter.name === 'string' && parameter.name) parameters[parameter.name] = structuredClone(parameter)
-  }
-  const label = approvedOperationLabel(operation.id)
-  return {
-    id: operation.id,
-    // label 只来自已审校目录（operation-registry）；gateway-only 型号不再用 id 冒充。
-    ...(label ? { label } : {}),
-    output: structuredClone(operation.output ?? {}),
-    inputs: (Array.isArray(operation.inputs) ? operation.inputs : []).map((slot) => ({
-      ...structuredClone(slot),
-      slot: slot.slot || slot.type || 'input',
-      ...(slot.required === true ? { required: true } : {}),
-    })),
-    ...(Object.keys(parameters).length ? { parameters } : {}),
-    listed: true,
-    implementation: { status: executionStatus === 'ready' ? 'ready' : 'missing' },
-    execution: { status: executionStatus === 'ready' ? 'live' : 'none' },
-  }
-}
-
-/**
- * Build visible rows for every gateway-public model, including models whose
- * local adapter is unsupported. The gateway's executable operations are the
- * display contract; adapter support only changes executionStatus.
- */
-function projectGatewayPublicModels(snapshot, localModels, adapterUnsupported) {
-  const models = []
-  const byId = new Map((localModels ?? []).map((model) => [model.id, model]))
-  for (const [id, snapshotModel] of usableSnapshotModels(snapshot)) {
-    const contract = snapshotModel?.contract?.schemaVersion === '2.0' ? snapshotModel.contract : null
-    if (!contract || !Array.isArray(contract.operations)) continue
-    const executable = contract.operations.filter((operation) => operation?.executable === true)
-    if (!executable.length) continue
-    const local = byId.get(id)
-    const executionProfile = mergeExecutionProfiles(local?.executionProfile, executionProfileFromContract(contract))
-    const incompleteProfile = !isExecutionProfileComplete(executionProfile, contract.family)
-    const status = adapterUnsupported.has(id)
-      ? 'unsupported'
-      : incompleteProfile ? 'unverified' : 'ready'
-    const localOperations = local?.operations ?? []
-    const hasLocalListedOperation = localOperations.some((operation) => operation?.listed === true)
-    const operations = hasLocalListedOperation ? localOperations : executable.map((operation) => gatewayOperationDto(operation, status))
-    const inputCapability = local?.inputCapability ?? mergeInputCapability(executable)
-    const gateway = {
-      schemaVersion: contract.schemaVersion,
-      contractVersion: contract.contractVersion,
-      status: contract.status,
-      ...(Array.isArray(contract.unknowns) ? { unknowns: [...contract.unknowns] } : {}),
-    }
-    const row = local ? {
-      ...local,
-      source: 'gateway',
-      executionStatus: status,
-      ...(executionProfile ? { executionProfile } : {}),
-      ...(inputCapability ? { inputCapability } : {}),
-      gateway,
-      operations,
-    } : {
-      id,
-      label: typeof snapshotModel.displayName === 'string' && snapshotModel.displayName.trim() ? snapshotModel.displayName.trim() : id,
-      source: 'gateway',
-      executionStatus: status,
-      sourceLabel: 'OmniMux Gateway',
-      family: typeof contract.family === 'string' ? contract.family : undefined,
-      ...(executionProfile ? { executionProfile } : {}),
-      ...(inputCapability ? { inputCapability } : {}),
-      channelGroups: getModelChannelGroups(id, snapshot),
-      gateway,
-      operations,
-    }
-    models.push(row)
-  }
-  return { models }
-}
-
 /** Build visible rows from legacy BYOK model maps and the new optional profile list. */
 function projectCustomModels(byokProviders) {
   const providers = Array.isArray(byokProviders) ? byokProviders : []
@@ -485,6 +381,8 @@ function projectCustomModels(byokProviders) {
         label: entry.model,
         source: 'custom',
         executionStatus: 'ready',
+        visible: true,
+        selectable: true,
         providerId,
         sourceLabel: providerId,
         family: providerId,
@@ -509,6 +407,9 @@ function appendCatalogRowByKinds(lists, model, kindEnabled = () => true) {
       Object.assign(existing, {
         source: model.source,
         executionStatus: model.executionStatus ?? existing.executionStatus,
+        ...(typeof model.visible === 'boolean' ? { visible: model.visible } : {}),
+        ...(typeof model.selectable === 'boolean' ? { selectable: model.selectable } : {}),
+        ...(model.availabilityReason ? { availabilityReason: model.availabilityReason } : {}),
         operations,
         ...(model.executionProfile ? { executionProfile: structuredClone(model.executionProfile) } : {}),
         ...(model.inputCapability ? { inputCapability: structuredClone(model.inputCapability) } : {}),
@@ -525,6 +426,9 @@ function appendCatalogRowByKinds(lists, model, kindEnabled = () => true) {
       ...(model.family ? { family: model.family } : {}),
       source: model.source,
       executionStatus: model.executionStatus,
+      ...(typeof model.visible === 'boolean' ? { visible: model.visible } : {}),
+      ...(typeof model.selectable === 'boolean' ? { selectable: model.selectable } : {}),
+      ...(model.availabilityReason ? { availabilityReason: model.availabilityReason } : {}),
       ...(model.providerId ? { providerId: model.providerId } : {}),
       ...(model.sourceLabel ? { sourceLabel: model.sourceLabel } : {}),
       ...(model.channelGroups ? { channelGroups: model.channelGroups } : {}),

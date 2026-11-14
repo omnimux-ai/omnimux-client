@@ -14,9 +14,6 @@ import { executionProfileFromContract, isExecutionProfileComplete, mergeExecutio
 
 export const GATEWAY_CONTRACT_SCHEMA_VERSION = '2.0'
 
-/** First-wave gateway families: text and image. Video/audio stay local until their adapters are revalidated. */
-export const GATEWAY_OVERLAY_FAMILIES = Object.freeze(['llm', 'image'])
-
 /** Gateway operation ids that have a local historical name on some models. */
 const GATEWAY_OPERATION_ALIASES = Object.freeze({
   image_to_image: ['multi_reference'],
@@ -417,6 +414,30 @@ function findLocalInputTemplate(localOperation, gatewayInput, localModel) {
 }
 
 /**
+ * Resolve a gateway input to the matching local *audio* adapter slot.
+ *
+ * Audio adapters own their single input slot's name/role (e.g. the voice-clone
+ * slot is `voice_sample`/`audio_track`, not the gateway's generic
+ * `reference_audio`/`reference`). Match by slot, then role+type, then the sole
+ * slot of the same media type, so the local execution contract wins.
+ *
+ * @param {object | null} localOperation
+ * @param {Record<string, unknown>} gatewayInput
+ */
+function findLocalAudioInput(localOperation, gatewayInput) {
+  const inputs = array(localOperation?.inputs)
+  if (inputs.length === 0) return null
+  const slot = text(gatewayInput.slot)
+  const role = text(gatewayInput.role) || (slot === 'prompt' ? 'prompt' : 'reference')
+  const type = normalizeInputType(text(gatewayInput.type))
+  const sameType = inputs.filter((input) => normalizeInputType(input?.type) === type)
+  return inputs.find((input) => input?.slot === slot)
+    ?? inputs.find((input) => input?.role === role && normalizeInputType(input?.type) === type)
+    ?? (sameType.length === 1 ? sameType[0] : null)
+    ?? null
+}
+
+/**
  * Convert one gateway operation into the local operation shape.
  *
  * @param {Record<string, unknown>} gatewayOperation
@@ -437,8 +458,16 @@ function toLocalOperation(gatewayOperation, localModel, profiles, family) {
   const localProfile = localOp?.implementation && typeof localOp.implementation === 'object'
     ? { id: text(localOp.implementation.profileId), seam: text(localOp.implementation.seam) }
     : null
-  const profile = localProfile?.id
-    ? localProfile
+  // A local YAML `profileId` is only a pointer; the profile registry remains
+  // the execution authority. Never let a stale/missing profile claim support.
+  const declaredProfile = localProfile?.id
+    ? array(profiles?.profiles).find((candidate) =>
+      candidate && candidate.id === localProfile.id && candidate.status === 'live'
+      && array(candidate.operations).includes(operationId)
+      && array(candidate.outputTypes).includes(outputType))
+    : undefined
+  const profile = declaredProfile
+    ? { id: text(declaredProfile.id), seam: text(declaredProfile.seam) || text(declaredProfile.id) }
     : findAdapterProfile(profiles, operationId, outputType, family)
   const executable = gatewayOperation.executable === true
   const adapterSupported = Boolean(profile?.id)
@@ -447,8 +476,16 @@ function toLocalOperation(gatewayOperation, localModel, profiles, family) {
       const gatewayInput = object(rawInput)
       const mapped = localInputSlot(gatewayInput)
       if (!mapped) return null
-      const localInput = findLocalInputTemplate(localOp, gatewayInput, localModel)
+      const localInput = family === 'audio' && localOp
+        ? findLocalAudioInput(localOp, gatewayInput)
+        : findLocalInputTemplate(localOp, gatewayInput, localModel)
       if (localInput) {
+        // Audio adapters own their slot contract (slot/role/cardinality): the
+        // gateway's generic reference input is not interchangeable with the
+        // local voice-clone slot, or the submit guard rejects a real request.
+        if (family === 'audio' && localOp) {
+          return { ...structuredClone(localInput), type: mapped.type }
+        }
         // The local adapter may be stricter than the gateway (for example a
         // conservative 20 MB upload cap). Never use it to widen a gateway limit.
         if ((gatewayInput.max === undefined || gatewayInput.max === null) && localInput.max !== undefined) {
@@ -457,6 +494,11 @@ function toLocalOperation(gatewayOperation, localModel, profiles, family) {
         if (mapped.maxSizeMb === undefined && localInput.maxSizeMb !== undefined) {
           mapped.maxSizeMb = localInput.maxSizeMb
         }
+        // Audio adapters historically have a single prompt slot; do not inherit
+        // the gateway's generic local/upstream composition envelope unless the
+        // local audio operation declares it.
+        if (family === 'audio' && !('valueSources' in localInput)) delete mapped.valueSources
+        if (family === 'audio' && !('composition' in localInput)) delete mapped.composition
       }
       return mapped
     })
@@ -466,10 +508,20 @@ function toLocalOperation(gatewayOperation, localModel, profiles, family) {
     const resolution = resolutionFromOutputSizes(output.sizes)
     if (resolution) parameters.resolution = resolution
   }
+  const localModelParameters = localModel?.parameters && typeof localModel.parameters === 'object'
+    ? structuredClone(localModel.parameters)
+    : undefined
+  const effectiveParameters = localModelParameters && (family === 'video' || family === 'audio')
+    ? { ...parameters, ...localModelParameters }
+    : parameters
 
   /** @type {Record<string, unknown>} */
   // label 只来自已审校目录；都不认就省略该字段（Issue #4103）。
-  const approvedLabel = text(localOp?.label) || approvedOperationLabel(operationId) || ''
+  // 视频/音频 overlay 以 operation-registry（审校目录）为准，YAML 的短名只在
+  // registry 未收录时兜底，避免网关行与本地行同名操作出现两套 label。
+  const approvedLabel = family === 'video' || family === 'audio'
+    ? (approvedOperationLabel(operationId) || text(localOp?.label) || '')
+    : (text(localOp?.label) || approvedOperationLabel(operationId) || '')
   const operation = {
     id: operationId,
     ...(approvedLabel ? { label: approvedLabel } : {}),
@@ -479,7 +531,7 @@ function toLocalOperation(gatewayOperation, localModel, profiles, family) {
       ...(output.sizes ? { sizes: stringList(output.sizes) } : {}),
     },
     inputs,
-    ...(Object.keys(parameters).length > 0 ? { parameters } : {}),
+    ...(Object.keys(effectiveParameters).length > 0 ? { parameters: effectiveParameters } : {}),
     // The gateway's executable bit is the admission signal. A missing local
     // adapter profile is a local implementation gap, not a model capability.
     listed: executable && adapterSupported,
@@ -543,6 +595,12 @@ function toRuntimeModel(snapshotModel, localModel, profiles) {
   const localParameters = localModel?.parameters && typeof localModel.parameters === 'object'
     ? structuredClone(localModel.parameters)
     : undefined
+  // Local adapter parameters are stricter/more precise for media execution. Keep
+  // gateway fields, but let the adapter override overlapping controls so the
+  // existing video/audio parameter contracts do not regress when overlay expands.
+  const effectiveParameters = parameters && localParameters && (gatewayFamily === 'video' || gatewayFamily === 'audio')
+    ? { ...parameters, ...localParameters }
+    : parameters ?? localParameters
   const executionProfile = mergeExecutionProfiles(localModel?.executionProfile, executionProfileFromContract(contract))
   const model = {
     id,
@@ -556,10 +614,15 @@ function toRuntimeModel(snapshotModel, localModel, profiles) {
     operations,
     inputCapability: inputCapabilityFor(operations),
     ...(executionProfile ? { executionProfile } : {}),
-    executionStatus: managementGroup === 'text' && !isExecutionProfileComplete(executionProfile, family)
-      ? 'unverified'
-      : 'ready',
-    ...(parameters ? { parameters } : localParameters ? { parameters: localParameters } : {}),
+    executionStatus: !anyAdapterSupported
+      ? 'unsupported'
+      : managementGroup === 'text' && !isExecutionProfileComplete(executionProfile, gatewayFamily)
+        ? 'unverified'
+        : 'ready',
+    ...(localModel?.routing && typeof localModel.routing === 'object'
+      ? { routing: structuredClone(localModel.routing) }
+      : {}),
+    ...(effectiveParameters ? { parameters: effectiveParameters } : {}),
     listed: listedOperations.length > 0,
     listedOperations,
     research: localModel?.research ?? { status: 'draft', notes: 'Gateway Contract v2' },
@@ -602,13 +665,6 @@ export function gatewayContractModels(snapshot, localIndex, profiles = localInde
     const contract = object(snapshotModel.contract)
     const localModel = localModels(id) ?? null
     const localHasListed = (localModel?.operations ?? []).some((operation) => operation?.listed === true)
-    if (!GATEWAY_OVERLAY_FAMILIES.includes(text(contract.family))) {
-      // Do not replace local video/audio behavior until its adapter is
-      // revalidated against Contract v2. Sold models without a callable local
-      // operation are still reported as an adapter gap, never silently dropped.
-      if (!localHasListed) adapterUnsupported.push(id)
-      continue
-    }
     if (Object.keys(contract).length === 0 || text(contract.schemaVersion) !== GATEWAY_CONTRACT_SCHEMA_VERSION) {
       if (!localHasListed) missingContract.push(id)
       continue
