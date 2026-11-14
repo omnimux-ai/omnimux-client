@@ -64,9 +64,9 @@ This fork syncs with upstream weekly. Before any merge from `origin/master`, rea
 
 ## Release & R2 Distribution SOP
 
-Distribution assets (macOS Universal DMG & Windows x64 NSIS) are hosted in Cloudflare R2 bucket `omnimux-dist` via `https://dl.omnimux.ai`. Detailed contract: [docs/contracts/release-sop.md](docs/contracts/release-sop.md).
+Distribution assets (macOS arm64/x64 DMGs & Windows x64 NSIS) are hosted in Cloudflare R2 bucket `omnimux-dist` via `https://dl.omnimux.ai`. Detailed contract: [docs/contracts/release-sop.md](docs/contracts/release-sop.md).
 
-- macOS artifact standard: **Universal DMG** (`OmniMux-<version>-universal.dmg` bundling both `arm64` and `x86_64`). Single universal installer serves all Mac devices.
+- macOS artifact standard: **separate arm64 and x64 DMGs** (`OmniMux-<version>-arm64.dmg` / `OmniMux-<version>-x64.dmg`), each built, signed, notarized, and stapled independently. No universal build is produced.
 - Windows artifact standard: **x64 NSIS Installer** (`OmniMux-<version>-x64-Setup.exe`). Supports silent install `/S` for auto-update and **website / CDN** distribution via `yarn dist:win` (unsigned).
 - **Current Windows policy**: website-first, Microsoft Store paused (zero extra signing budget). Contract: [docs/contracts/windows-website-distribution.md](docs/contracts/windows-website-distribution.md). Paid Authenticode / Store resubmission remains optional and follows [docs/contracts/windows-trusted-signing-sop.md](docs/contracts/windows-trusted-signing-sop.md) only after an explicit paid-signing decision.
 - **Public download page**: primary CTAs MUST point at `https://dl.omnimux.ai/` (not Store, not legacy `dshdesktop.cn`). Spec: [docs/contracts/download-page-spec.md](docs/contracts/download-page-spec.md).
