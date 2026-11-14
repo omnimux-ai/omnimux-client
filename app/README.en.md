@@ -23,8 +23,8 @@
 
 <p align="center">
   <a href="https://omnimux.ai"><img src="https://img.shields.io/badge/website-omnimux.ai-4D6BFE?style=flat" alt="Website"></a>
-  <a href="https://github.com/omnimux-ai/omnimux-desktop/releases/latest"><img src="https://img.shields.io/github/v/release/omnimux-ai/omnimux-desktop?style=flat&amp;label=release&amp;color=4D6BFE" alt="Latest release"></a>
-  <a href="https://github.com/omnimux-ai/omnimux-desktop"><img src="https://img.shields.io/github/stars/omnimux-ai/omnimux-desktop?style=flat&amp;label=%E2%98%85&amp;color=08C" alt="GitHub stars"></a>
+  <a href="https://github.com/omnimux-ai/omnimux-client/releases/latest"><img src="https://img.shields.io/github/v/release/omnimux-ai/omnimux-client?style=flat&amp;label=release&amp;color=4D6BFE" alt="Latest release"></a>
+  <a href="https://github.com/omnimux-ai/omnimux-client"><img src="https://img.shields.io/github/stars/omnimux-ai/omnimux-client?style=flat&amp;label=%E2%98%85&amp;color=08C" alt="GitHub stars"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT%20%2F%20AGPL--3.0-2EA44F?style=flat" alt="MIT / AGPL-3.0 License"></a>
   <a href="https://discord.gg/omnimux"><img src="https://img.shields.io/badge/Discord-5865F2?style=flat&amp;logo=discord&amp;logoColor=white" alt="Join Discord"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows-4493F8?style=flat-square" alt="Supported platforms: macOS and Windows">
@@ -45,11 +45,8 @@ Hand your products and creative direction to desktop Agents and run the full **B
 
 | Repository | Role |
 | --- | --- |
-| [`omnimux-ai/omnimux-ai`](https://github.com/omnimux-ai/omnimux-ai) | **Public source snapshot**: one directory per component — `gateway/`, `desktop/`, `plugins/` — each with a `SOURCE.json` naming the shipped revision |
-| [`omnimux-ai/omnimux-dsh`](https://github.com/omnimux-ai/omnimux-dsh) | **OmniMux DSH plugins**: public development repository for plugin source |
-| [`omnimux-ai/omnimux-desktop`](https://github.com/omnimux-ai/omnimux-desktop) | **Desktop distribution**: installers and GitHub Releases (source snapshot lives in the aggregate repository) |
-
-Source publication goes through the aggregate snapshot repository; the standalone `omnimux-ai/omnimux-gateway` repository is no longer a source publication target.
+| [`omnimux-ai/omnimux-client`](https://github.com/omnimux-ai/omnimux-client) | **Desktop app and product plugins in one repository (this repo)**: `app/` desktop shell and `plugins/` product plugins are developed and released together |
+| [`omnimux-ai/omnimux-gateway`](https://github.com/omnimux-ai/omnimux-gateway) | **Server gateway** (Go, new-api fork, AGPL-3.0), published only to satisfy AGPL obligations |
 
 <a id="run"></a>
 
@@ -194,7 +191,7 @@ Voice input triggers system consent through the upstream recording flow. The voi
 
 - Official Website: [https://omnimux.ai](https://omnimux.ai)
 - Official Download CDN: [https://dl.omnimux.ai](https://dl.omnimux.ai)
-- GitHub Repositories: [omnimux-ai/omnimux-desktop](https://github.com/omnimux-ai/omnimux-desktop) · [omnimux-ai/omnimux-dsh](https://github.com/omnimux-ai/omnimux-dsh) · [omnimux-ai/omnimux-ai](https://github.com/omnimux-ai/omnimux-ai)
+- GitHub Repositories: [omnimux-ai/omnimux-client](https://github.com/omnimux-ai/omnimux-client) · [omnimux-ai/omnimux-gateway](https://github.com/omnimux-ai/omnimux-gateway)
 - Discord Community: [Join the OmniMux Discord](https://discord.gg/omnimux)
 
 ### Related Links (DeepSeek Harness Ecosystem)
