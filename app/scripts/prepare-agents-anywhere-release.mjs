@@ -9,10 +9,19 @@ import { prepareInstalledAaRuntime } from './prepare-agents-anywhere-runtime.mjs
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const sourceRepository = process.env.DSH_AA_SOURCE_REPOSITORY ?? AA_REPOSITORY
-const sourceRef = process.env.DSH_AA_SOURCE_REF ?? 'main'
+let sourceRef = process.env.DSH_AA_SOURCE_REF ?? 'main'
 const vendorRoot = resolve(root, 'vendor/agents-anywhere')
 const provenancePath = join(vendorRoot, 'provenance.json')
 const currentProvenance = existsSync(provenancePath) ? JSON.parse(readFileSync(provenancePath, 'utf8')) : {}
+// Reproducible releases build the committed (vendored) AA artifact instead of
+// chasing the upstream main head. DSH_AA_USE_VENDORED pins the ref to the exact
+// commit recorded in provenance.json so --verify-release and the reuse path agree.
+if (process.env.DSH_AA_USE_VENDORED === '1') {
+  if (!/^[0-9a-f]{40}$/u.test(currentProvenance.commit ?? '')) {
+    throw new Error('DSH_AA_USE_VENDORED requires vendor/agents-anywhere/provenance.json with a 40-hex commit')
+  }
+  sourceRef = currentProvenance.commit
+}
 let desktopVersion
 let artifactName
 const peerPackages = ['@deepseek-ai/dsh-typert-protocol', '@deepseek-ai/dsh-llm', '@deepseek-ai/dsh-session']
@@ -150,8 +159,12 @@ function prepare() {
     throw new Error('DSH_AA_SOURCE_REF=pinned is no longer supported; releases must check the latest AA main commit')
   }
   const verifyRelease = process.argv.includes('--verify-release')
-  if (verifyRelease && (sourceRepository !== AA_REPOSITORY || sourceRef !== 'main')) {
-    throw new Error('Release verification requires the official AA repository and main branch')
+  // Releases normally verify against the upstream main head, but a reproducible
+  // release may pin the committed AA commit (DSH_AA_USE_VENDORED=1). In that case
+  // assertPreparedAaRelease still requires provenance to match that exact commit.
+  const verifyingPinnedCommit = verifyRelease && /^[0-9a-f]{40}$/u.test(sourceRef)
+  if (verifyRelease && (sourceRepository !== AA_REPOSITORY || (sourceRef !== 'main' && !verifyingPinnedCommit))) {
+    throw new Error('Release verification requires the official AA repository and main branch, or a pinned committed AA commit with DSH_AA_USE_VENDORED=1')
   }
   const commit = resolveCommit()
   console.log(`Selected AA ${sourceRef} at ${commit}`)
