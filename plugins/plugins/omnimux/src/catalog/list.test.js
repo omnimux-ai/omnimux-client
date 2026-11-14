@@ -82,7 +82,7 @@ describe('buildModelCatalog (H2 contract projection)', () => {
     // #3516: minimax-h3 上游渠道停用；P1b：seedance-2-0-fast / -mini 契约仍在但网关不售。
     assert.deepEqual(catalog.video.map((row) => row.id), ['minimax-h3-video', 'seedance-2-0', 'seedance-2-5', 'wan-3.0'])
     // #3516: 音频桶收敛为在架 suno；TTS 三行转为仅登记不上架。
-    assert.deepEqual(catalog.audio.map((row) => row.id), ['indextts-2', 'suno', 'suno-sounds'])
+    assert.deepEqual(catalog.audio.map((row) => row.id), ['indextts-2', 'suno'])
     // Text bucket includes implementation-ready models without requiring live history.
     // #3516: claude-sonnet-4-6 上游渠道停用，文本桶只剩 gemini-3.8-flash。
     assert.deepEqual(catalog.text.map((row) => row.id), ['gemini-3.8-flash', 'gemini-4-argon'])
@@ -128,13 +128,12 @@ describe('buildModelCatalog (H2 contract projection)', () => {
     assert.equal(catalog.gateway.source, 'bundled')
     assert.ok(catalog.gateway.models > 0, 'the gateway snapshot must report its own membership')
     assert.deepEqual(catalog.gateway.missingContract, [])
-    assert.deepEqual(catalog.gateway.adapterUnsupported, ['suno-sounds', 'wan-3.0'])
-    const sold = new Set(
-      Object.assign([], catalog.text, catalog.image, catalog.video, catalog.audio).map((row) => row.id),
-    )
+    assert.deepEqual(catalog.gateway.adapterUnsupported, ['suno-sounds'])
     for (const id of catalog.gateway.adapterUnsupported) {
-      assert.equal(sold.has(id), true, id + ' must remain visible with an execution status')
-      assert.equal(catalog.models.find((row) => row.id === id)?.executionStatus, 'unsupported')
+      const row = catalog.models.find((model) => model.id === id)
+      assert.equal(row?.visible, true, id + ' stays in the directory projection')
+      assert.equal(row?.selectable, false, id + ' must not enter the generation picker')
+      assert.equal(row?.executionStatus, 'unsupported')
     }
     assert.equal(catalog.models.find((row) => row.id === 'seedance-2-0-fast')?.gatewayListed, false)
     assert.equal(catalog.models.find((row) => row.id === 'gpt-image-2.5')?.gatewayListed, true)
@@ -145,7 +144,7 @@ describe('buildModelCatalog (H2 contract projection)', () => {
       byokProviders: [{ provider: 'custom', endpoint: 'https://fixture.invalid/v1', models: { video: 'my-video-model' }, capabilities: ['video'] }],
     } })
     assert.deepEqual(catalog.video.map((row) => row.id), ['minimax-h3-video', 'custom:my-video-model', 'seedance-2-0', 'seedance-2-5', 'wan-3.0'])
-    assert.equal(catalog.video.find((row) => row.id === 'wan-3.0')?.executionStatus, 'unsupported')
+    assert.equal(catalog.video.find((row) => row.id === 'wan-3.0')?.executionStatus, 'ready')
     assert.equal(catalog.video.find((row) => row.id === 'custom:my-video-model')?.source, 'custom')
     assert.equal(catalog.video.find((row) => row.id === 'custom:my-video-model')?.executionStatus, 'ready')
   })

@@ -924,6 +924,41 @@ function pickFromVerdict(
   };
 }
 
+/**
+ * True when a catalog row may be selected for a new node.
+ *
+ * The hub derives `selectable`; legacy fixtures without the field fall back to
+ * `executionStatus`. A bucket row is required for a known output type so a
+ * contract-only row that is not in the public picker can never be auto-picked.
+ */
+export function isSelectableCatalogRow(
+  catalog: CapabilityCatalog | null | undefined,
+  modelId: string | undefined,
+  outputType?: string,
+): boolean {
+  if (!modelId) return false;
+  const bucket = outputType
+    ? (catalog as unknown as Record<string, unknown> | null | undefined)?.[outputType]
+    : undefined;
+  const hasBucket = Array.isArray(bucket);
+  const bucketRow = hasBucket
+    ? bucket.find((row) => row && typeof row === 'object' && (row as { id?: unknown }).id === modelId) as
+      { selectable?: boolean; executionStatus?: string; visible?: boolean } | undefined
+    : undefined;
+  const modelRow = catalog?.models?.find((row) => row.id === modelId);
+  // Real catalogs put every public row in its output bucket. Legacy fixtures
+  // sometimes only populate models[]; accept those only when they carry no
+  // availability fields, so a real local-only row with selectable:false stays out.
+  if (hasBucket && !bucketRow && (modelRow?.selectable !== undefined || modelRow?.visible !== undefined)) {
+    return false;
+  }
+  const row = bucketRow ?? modelRow;
+  if (!row) return false;
+  if (row.selectable === false) return false;
+  if (row.selectable === true) return true;
+  return row.executionStatus === undefined || row.executionStatus === 'ready';
+}
+
 /** Keep a compatible current model; otherwise prefer the user's new-node choice,
  * the node-type default, then the curated catalog order. Never rewrites preferences.
  */
@@ -952,7 +987,7 @@ export function planAutoAdaptation(args: {
     return pickFromVerdict(verdict, operation, rule, kept);
   };
   const current = resolveModelView(view, args.currentModelId);
-  if (current) {
+  if (current && isSelectableCatalogRow(args.catalog, current.id, outputType)) {
     const verdict = evaluateModelCompat(current, args.fingerprint, { outputType });
     if (verdict.acceptsCurrentInputs) {
       const result = pick(verdict, 'keep_current', true);
@@ -972,7 +1007,7 @@ export function planAutoAdaptation(args: {
     [!args.catalog?.generationPolicy && currentOperationId ? view.defaultsByOperation[currentOperationId] : undefined, 'operation_default'],
   ];
   for (const [id, rule] of preferredIds) {
-    if (!id) continue;
+    if (!id || !isSelectableCatalogRow(args.catalog, id, outputType)) continue;
     const resolved = resolveModelView(view, id);
     const verdict = evaluation.compatible.find((candidate) => candidate.modelId === resolved?.id);
     if (verdict) {
@@ -981,9 +1016,10 @@ export function planAutoAdaptation(args: {
     }
   }
   const order = args.catalog?.generationPolicy?.[kind]?.allowedModelIds;
-  const candidates = order
+  const candidates = (order
     ? order.flatMap((id) => evaluation.compatible.filter((candidate) => candidate.modelId === id))
-    : evaluation.compatible;
+    : evaluation.compatible)
+    .filter((candidate) => isSelectableCatalogRow(args.catalog, candidate.modelId, outputType));
   for (const verdict of candidates) {
     const result = pick(verdict, 'catalog_order', false);
     if (result) return result;

@@ -688,51 +688,6 @@ export function formatPointsLabel(pointsEstimate?: number | null): string {
     : '当前参数不支持报价';
 }
 
-const SHORT_MODEL_NAMES: ReadonlyArray<readonly [string, string]> = [
-  ['seedance-2-0-fast', '2.0 Fast'],
-  ['seedance-2.0-fast', '2.0 Fast'],
-  ['seedance-2-0-mini', '2.0 Mini'],
-  ['seedance-2.0-mini', '2.0 Mini'],
-  ['seedance-2-5', 'Seedance 2.5'],
-  ['seedance-2.5', 'Seedance 2.5'],
-  ['seedance-2-0', 'Seedance 2.0'],
-  ['seedance-2.0', 'Seedance 2.0'],
-  ['seedance-1-5', '1.5 Pro'],
-  ['seedance-1.5', '1.5 Pro'],
-  ['wan-3.0', 'Wan 3.0'],
-  ['wan3', 'Wan 3.0'],
-  ['minimax-h3', 'Hailuo H3'],
-  ['hailuo', 'Hailuo H3'],
-  ['kling-o3', 'Kling O3'],
-  ['kling', 'Kling'],
-  ['grok-imagine-video', 'Grok Video'],
-  ['gpt-image-2.5', 'Image 2.5'],
-  ['midjourney', 'Midjourney'],
-  ['mj-v8-1', 'Midjourney'],
-  ['mj-v7', 'Midjourney'],
-  ['nanobanana', 'NanoBanana'],
-  ['nano-banana', 'NanoBanana'],
-  ['seedream', 'Seedream'],
-  ['grok-imagine-image', 'Grok Image'],
-  ['claude-opus-5', 'Opus 5'],
-  ['claude-opus-4-6', 'Opus 4.6'],
-  ['opus-4.6', 'Opus 4.6'],
-  ['deepseek-v4-flash', 'Flash Vision'],
-  ['deepseek-v4-pro', 'DeepSeek Pro'],
-  ['gemini-3.8-flash', 'Gemini 3.8'],
-  ['gpt-5.5', 'GPT-5.5'],
-];
-
-/**
- * Family-keyed short names. The contract `family` outlives any canonical rename, so the capsule
- * keeps its compact label when a model id changes shape (e.g. `midjourney-8.1` → `mj-v8-1`).
- */
-const FAMILY_SHORT_NAMES: Readonly<Record<string, string>> = {
-  midjourney: 'Midjourney',
-  nanobanana: 'NanoBanana',
-  seedream: 'Seedream',
-};
-
 /**
  * Compact label for the trigger capsule (the menu itself shows full names).
  * @param modelId Model id (may carry a `@channelGroup` suffix).

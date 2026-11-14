@@ -134,19 +134,19 @@ test('④ submitting a delisted model is rejected with a clear reason', () => {
   assert.notEqual(contractOnly.code, 'not_listed')
 })
 
-test('⑤ gateway-sold models with no local adapter stay visible but are marked unsupported', () => {
+test('⑤ gateway-sold models without a local adapter stay visible and are marked unsupported', () => {
   const catalog = buildModelCatalog({ env: {}, snapshot: bundled.snapshot })
   // The bundled v2 snapshot has a contract for every on-sale model; the only
   // gateway-sold model without a local adapter profile is suno-sounds.
   assert.deepEqual(catalog.gateway.missingContract, [])
-  assert.deepEqual(catalog.gateway.adapterUnsupported, ['suno-sounds', 'wan-3.0'])
+  assert.deepEqual(catalog.gateway.adapterUnsupported, ['suno-sounds'])
   const sold = usableSnapshotModels(bundled.snapshot)
   for (const id of catalog.gateway.adapterUnsupported) {
     assert.equal(sold.has(id), true, `${id} must be sold by the gateway`)
-    assert.equal(listedEverywhere(catalog, id), true, `${id} must remain visible from the gateway public list`)
     const row = catalog.models.find((model) => model.id === id)
+    assert.equal(row?.visible, true, `${id} stays in the directory projection`)
+    assert.equal(row?.selectable, false, `${id} is not selectable`)
     assert.equal(row?.executionStatus, 'unsupported', `${id} must be marked unsupported`)
-    assert.ok(row?.operations?.some((op) => op.listed === true), `${id} exposes gateway operations for display`)
   }
   const drift = diffGatewayAgainstHub({ gateway: bundled.snapshot, hub: catalog })
   assert.equal(drift.summary.unreachable, 0)

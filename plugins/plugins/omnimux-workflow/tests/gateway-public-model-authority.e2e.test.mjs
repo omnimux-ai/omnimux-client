@@ -11,7 +11,7 @@ test('gateway public rows stay visible and adapter support is an execution statu
   const videoIds = catalog.video.map((row) => row.id)
   assert.equal(videoIds.includes('minimax-h3-video'), true)
   assert.equal(videoIds.includes('wan-3.0'), true)
-  assert.equal(catalog.video.find((row) => row.id === 'wan-3.0')?.executionStatus, 'unsupported')
+  assert.equal(catalog.video.find((row) => row.id === 'wan-3.0')?.executionStatus, 'ready')
   assert.equal(catalog.video.find((row) => row.id === 'minimax-h3-video')?.executionStatus, 'ready')
 })
 
@@ -37,6 +37,6 @@ test('BYOK custom model profiles reach the same catalog and option list', () => 
   })
   assert.equal(result.options.some((option) => option.id === 'custom:my-video-model'), true)
   const wan = result.options.find((option) => option.id === 'wan-3.0')
-  assert.equal(wan?.executable, false)
-  assert.equal(wan?.disabledReason, 'adapter_unsupported')
+  assert.equal(wan?.executable, true)
+  assert.equal(wan?.selectable, true)
 })

@@ -55,6 +55,11 @@ function rows(value: unknown): CapabilityModelItem[] {
       ...(row.source === 'gateway' || row.source === 'custom' ? { source: row.source } : {}),
       ...(row.executionStatus === 'ready' || row.executionStatus === 'unsupported' || row.executionStatus === 'unverified'
         ? { executionStatus: row.executionStatus } : {}),
+      ...(typeof row.visible === 'boolean' ? { visible: row.visible } : {}),
+      ...(typeof row.selectable === 'boolean' ? { selectable: row.selectable } : {}),
+      ...(row.availabilityReason === 'gateway_delisted' || row.availabilityReason === 'contract_missing'
+        || row.availabilityReason === 'adapter_missing' || row.availabilityReason === 'profile_incomplete'
+        ? { availabilityReason: row.availabilityReason } : {}),
       ...(typeof row.providerId === 'string' && row.providerId.trim() ? { providerId: row.providerId.trim() } : {}),
       ...(typeof row.sourceLabel === 'string' && row.sourceLabel.trim() ? { sourceLabel: row.sourceLabel.trim() } : {}),
       ...(typeof row.badge === 'string' ? { badge: row.badge } : {}),

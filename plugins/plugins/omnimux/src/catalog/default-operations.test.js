@@ -35,8 +35,9 @@ describe('resolveDefaultOperation (new node generation mode)', () => {
   })
 
   it('auto walks the preferred chain when the default model cannot consume media', () => {
+    // PREFERRED_OPERATION_MODELS 硬编码链已移除：按目录 ids 顺序取首个能发布媒体的型号。
     assert.deepEqual(resolve({ configured: 'auto', modelId: 'plain-video' }),
-      { modelId: 'minimax-h3', operationId: 'video_multi_ref', rule: 'auto_chain' })
+      { modelId: 'seedance-2-5', operationId: 'video_multi_ref', rule: 'auto_chain' })
   })
 
   it('auto falls back to the first listed mode when nothing consumes media', () => {
@@ -54,13 +55,13 @@ describe('resolveDefaultOperation (new node generation mode)', () => {
 
   it('an explicit mode follows the chain when the configured model does not publish it', () => {
     assert.deepEqual(resolve({ configured: 'video_multi_ref', modelId: 'plain-video' }),
-      { modelId: 'minimax-h3', operationId: 'video_multi_ref', rule: 'configured_chain' })
+      { modelId: 'seedance-2-5', operationId: 'video_multi_ref', rule: 'configured_chain' })
   })
 
   it('an unknown model still resolves without inventing a mode', () => {
     const result = resolve({ configured: 'auto', modelId: 'ghost-model' })
     assert.equal(result.operationId, 'video_multi_ref')
-    assert.equal(result.modelId, 'minimax-h3')
+    assert.equal(result.modelId, 'seedance-2-5')
   })
 })
 
