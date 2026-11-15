@@ -407,29 +407,34 @@ describe('add-to-chat - official voice preview guard (Issue #3058)', () => {
   })
 })
 
-describe('buildAssetPayload — 多模态视觉优先', () => {
-  it('an audio asset carrying a real image cover classifies as image', () => {
+describe('buildAssetPayload — 类型判定（视频优先 / 纯音频封面不误判 / 真多模态图像）', () => {
+  it('视频 + 图片封面（poster）判为 video，不被封面拉成 image', () => {
     const payload = buildAssetPayload({
-      id: 'audio-elf-archer', name: 'Elf Archer', category: 'audio', media_type: 'audio',
-      cover_url: 'https://cdn.example.test/elf-cover.jpg',
-    })
-    assert.equal(payload.kind, 'image')
-    assert.equal(payload.extension, 'IMAGE')
-    assert.match(payload.previewUrl, /elf-cover\.jpg/)
-  })
-
-  it('a pure audio asset (no real cover) stays an audio asset, not image', () => {
-    const payload = buildAssetPayload({ id: 'audio-1', name: 'voice', category: 'audio', media_type: 'audio', hasCover: false })
-    assert.equal(payload.kind, 'asset')
-    assert.equal(payload.extension, 'AUDIO')
-  })
-
-  it('a video-mime asset classifies as video', () => {
-    const payload = buildAssetPayload({
-      id: 'media-1', name: 'clip', category: 'video', media_type: 'video',
+      id: 'vid-1', name: 'clip', category: 'video', media_type: 'video',
+      cover_url: 'https://cdn.example.test/poster.jpg',
       media_url: 'https://cdn.example.test/clip.mp4',
     })
     assert.equal(payload.kind, 'video')
     assert.equal(payload.extension, 'VIDEO')
+  })
+
+  it('纯音频 + 真实装饰封面仍是音频（asset/AUDIO），不判 image', () => {
+    const payload = buildAssetPayload({
+      id: 'audio-2', name: 'song', category: 'audio', media_type: 'audio',
+      cover_url: 'https://cdn.example.test/album-cover.png',
+      media_url: 'https://cdn.example.test/song.mp3',
+    })
+    assert.equal(payload.kind, 'asset')
+    assert.equal(payload.extension, 'AUDIO')
+  })
+
+  it('真·图片+音频多模态（并存图片媒体与音频媒体）判为 image', () => {
+    const payload = buildAssetPayload({
+      id: 'mm-1', name: 'Elf Archer', category: 'audio', media_type: 'audio',
+      media_url: 'https://cdn.example.test/voice.mp3',
+      meta: { source_media_url: 'https://cdn.example.test/thumb.png' },
+    })
+    assert.equal(payload.kind, 'image')
+    assert.equal(payload.extension, 'IMAGE')
   })
 })

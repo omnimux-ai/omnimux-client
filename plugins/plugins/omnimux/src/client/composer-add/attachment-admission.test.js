@@ -80,3 +80,29 @@ test('a retired submission without admission is preserved, then clears once admi
   assert.deepEqual(removed, [['S', 'a']], 'clears only after the Host proves admission')
   admission.dispose()
 })
+
+test('arm before the host binding is ready retries and clears once it appears and is admitted', () => {
+  const session = observable({ pendingSubmissions: [], queue: [] })
+  const eventSource = observable({ entries: [] })
+  const removed = []
+  let binding = null
+  const timers = new Map()
+  let nextId = 0
+  let lastTick = null
+  const fakeSetTimeout = (fn) => { const id = ++nextId; timers.set(id, fn); lastTick = fn; return id }
+  const fakeClearTimeout = (id) => { timers.delete(id) }
+  const admission = createAttachmentAdmission({
+    getSessions: () => (binding ? { binding: () => binding } : null),
+    store: { removeAttachment: (...a) => removed.push(a) },
+    setTimeout: fakeSetTimeout, clearTimeout: fakeClearTimeout,
+  })
+  admission.arm('S', 'hi', [{ id: 'a' }]) // binding not ready yet -> queued for retry
+  assert.equal(removed.length, 0)
+  binding = { session, eventSource }      // host sessions binding becomes ready
+  lastTick()                              // retry flushes the detached attempt
+  session.set({ pendingSubmissions: [{ requestId: 'r1', text: 'hi' }], queue: [] })
+  session.set({ pendingSubmissions: [], queue: [{ rpcId: 'r1' }] })
+  assert.deepEqual(removed, [['S', 'a']], 'clears once the binding is ready and the Host admits')
+  admission.dispose()
+  assert.equal(timers.size, 0, 'dispose clears the pending retry timer')
+})

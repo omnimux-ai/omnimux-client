@@ -4,8 +4,13 @@
  * The composer chip is cleared here — not optimistically on click — because a
  * submission the Host rejects (prompt error) or loses must keep its attachments
  * so the user can retry. We only retire an attempt once the Host proves it
- * admitted the same request (`queue[].rpcId` or a `user/message` event whose
+ * admitted the request (`queue[].rpcId` or a `user/message` event whose
  * `source.kind === 'user'`), correlated to the submission that carried it.
+ *
+ * The Host `sessions` handle can arrive after the send (the plugin's sessions
+ * inject is async, and `commandUi` may not be mounted). When `arm()` runs without
+ * a binding we keep the attachments and retry a bounded number of times until the
+ * binding is ready, then reconcile — so a chip is never silently stranded.
  */
 
 /** Best-effort attachment identity across the pending-submission row shape. */
@@ -38,8 +43,17 @@ function correlate(attempt, fresh) {
   return null
 }
 
-export function createAttachmentAdmission({ getSessions, store }) {
+export function createAttachmentAdmission({
+  getSessions,
+  store,
+  setTimeout: setT = (fn, ms) => setTimeout(fn, ms),
+  clearTimeout: clearT = (id) => clearTimeout(id),
+  retryMs = 100,
+  maxRetries = 20,
+}) {
   const watching = new Map()
+  /** Sessions whose attempt arrived before the Host binding was ready. */
+  const detached = new Map()
 
   function bindingFor(sessionId) {
     try {
@@ -51,10 +65,12 @@ export function createAttachmentAdmission({ getSessions, store }) {
   }
 
   function observe(sessionId, watch) {
-    // The Host may swap the session binding (reconnect / session re-key); follow
-    // it instead of staying subscribed to a dead snapshot that never fires.
+    // The Host may swap the underlying session/event sources (reconnect / re-key);
+    // follow it instead of staying subscribed to a dead snapshot. Compare by the
+    // sources, not the binding wrapper identity (which may be a fresh object each
+    // call), so a stable session is never needlessly re-subscribed.
     const current = bindingFor(sessionId)
-    if (current && current !== watch.binding) {
+    if (current && (current.session !== watch.binding.session || current.eventSource !== watch.binding.eventSource)) {
       watch.stops.forEach((stop) => stop())
       watch.binding = current
       watch.stops = [current.session.subscribe(() => observe(sessionId, watch)),
@@ -80,8 +96,6 @@ export function createAttachmentAdmission({ getSessions, store }) {
         const match = correlate(attempt, fresh)
         if (match) {
           attempt.requestId = match.requestId
-          // Adopt the retired-submission id even if the row already left pending:
-          // the requestId is the identity the admission set uses.
           attempt.baseline.add(match.requestId)
         }
       }
@@ -97,7 +111,8 @@ export function createAttachmentAdmission({ getSessions, store }) {
     const binding = bindingFor(sessionId)
     if (!binding) return null
     const existing = watching.get(sessionId)
-    if (existing && existing.binding === binding) return existing
+    if (existing && existing.binding.session === binding.session
+      && existing.binding.eventSource === binding.eventSource) return existing
     if (existing) existing.stops.forEach((stop) => stop())
     const watch = { binding, attempts: [], stops: [] }
     watching.set(sessionId, watch)
@@ -106,30 +121,65 @@ export function createAttachmentAdmission({ getSessions, store }) {
     return watch
   }
 
+  function flushDetached(sessionId) {
+    const queued = detached.get(sessionId)
+    const watch = ensureWatch(sessionId)
+    if (!queued || !watch) return false
+    if (queued.timer) { clearT(queued.timer); queued.timer = null }
+    detached.delete(sessionId)
+    for (const attempt of queued.attempts) watch.attempts.push(attempt)
+    observe(sessionId, watch)
+    return true
+  }
+
+  function scheduleRetry(sessionId) {
+    const queued = detached.get(sessionId)
+    if (!queued || queued.timer) return
+    let timerId = null
+    timerId = setT(() => {
+      if (timerId !== null) clearT(timerId)
+      if (queued.timer === timerId) queued.timer = null
+      if (!detached.has(sessionId)) return
+      if (flushDetached(sessionId)) return
+      queued.tries += 1
+      if (queued.tries >= maxRetries) { detached.delete(sessionId); return }
+      scheduleRetry(sessionId)
+    }, retryMs)
+    queued.timer = timerId
+  }
+
   function arm(sessionId, text, attachments) {
     if (!attachments || attachments.length === 0) return
-    const watch = ensureWatch(sessionId)
-    // No live binding yet: leave the attachments in place (better a stale chip
-    // than a silently dropped attachment). A later send re-arms with a binding.
-    if (!watch) return
-    const snapshot = watch.binding.session.getSnapshot()
     const attempt = {
       text: String(text ?? '').trim(),
       ids: attachments.map((item) => item.id).filter(Boolean),
-      baseline: new Set((snapshot.pendingSubmissions || []).map((row) => row.requestId)),
+      baseline: new Set(),
     }
-    // A new gesture supersedes an unbound gesture; in-flight requests retain identity.
-    watch.attempts = watch.attempts.filter((item) => item.requestId)
-    watch.attempts.push(attempt)
-    // Reconcile immediately in case the admission landed before we subscribed.
-    observe(sessionId, watch)
+    const watch = ensureWatch(sessionId)
+    if (watch) {
+      flushDetached(sessionId)
+      attempt.baseline = new Set((watch.binding.session.getSnapshot().pendingSubmissions || []).map((row) => row.requestId))
+      // A new gesture supersedes an unbound gesture; in-flight requests retain identity.
+      watch.attempts = watch.attempts.filter((item) => item.requestId)
+      watch.attempts.push(attempt)
+      observe(sessionId, watch)
+      return
+    }
+    // No live binding yet: keep the attachments and retry until the Host sessions
+    // handle is ready (bounded), then reconcile. Never drop the attachment.
+    const queued = detached.get(sessionId) || { attempts: [], tries: 0, timer: null }
+    queued.attempts.push(attempt)
+    detached.set(sessionId, queued)
+    scheduleRetry(sessionId)
   }
 
   function disposeSession(id) {
     const watch = watching.get(id)
     watching.delete(id)
     watch?.stops.forEach((stop) => stop())
+    const queued = detached.get(id)
+    if (queued) { if (queued.timer) clearT(queued.timer); detached.delete(id) }
   }
 
-  return { arm, dispose() { for (const id of watching.keys()) disposeSession(id) } }
+  return { arm, dispose() { for (const id of [...new Set([...watching.keys(), ...detached.keys()])]) disposeSession(id) } }
 }
