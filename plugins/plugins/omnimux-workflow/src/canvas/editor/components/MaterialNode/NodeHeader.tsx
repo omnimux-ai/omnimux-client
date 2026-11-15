@@ -13,7 +13,7 @@
 
 import React, { memo, useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { useViewport } from '@xyflow/react';
-import { FileText, ImagePlus, Video, Music, Table, Film, UploadCloud } from 'lucide-react';
+import { FileText, FileJson, ImagePlus, Video, Music, Table, Film, UploadCloud } from 'lucide-react';
 import type { MaterialType } from '../../../types/materialNode';
 import { useT } from '../../../i18n';
 import { inverseScaleForZoom } from '../../utils/nodeVisualMath';
@@ -33,6 +33,7 @@ const MATERIAL_TYPE_ICON_COMPONENTS: Record<
   image: ImagePlus,
   video: Video,
   audio: Music,
+  document: FileJson,
   table: Table,
   video_composition: Film,
   import_asset: UploadCloud,

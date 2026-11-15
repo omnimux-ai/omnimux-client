@@ -22,6 +22,7 @@ import {
   Music,
   Play,
   FileText,
+  FileJson,
   Image as ImageIcon,
   X,
   AlertTriangle,
@@ -62,6 +63,7 @@ import { CustomSelect, toast } from '../../../../ui';
 import { rememberGenerationModel } from '../../../../store/generationPreferencesStore';
 import { generationReasonText } from '../../../../i18n/generationReason';
 import { resolveGenerationPrompt, selectGenerationTextSources } from '../../../../../shared/graph/generationPrompt';
+import { parseJsonDocumentText } from '../../../../../shared/jsonDocument.ts';
 import { ModelBrandIcon } from '../../../../ui/ModelBrandIcon';
 import { useCanvasStore } from '../../../../store/canvasStore';
 import { useUpstreamMedia, toUpstreamSnapshots } from '../../../hooks/useUpstreamMedia';
@@ -383,6 +385,30 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   ), [fingerprint, displayedSlotLayout, slotBindings, slotConflicts, nodeData.inputBindingVersion, nodeData.slotStandbyEdgeIds]);
 
   const textSources = useMemo(() => selectGenerationTextSources(currentInputs ? consumedFingerprint.assets : displayedSlotLayout.acceptsText === false ? [] : fingerprint.assets), [currentInputs, consumedFingerprint, displayedSlotLayout, fingerprint]);
+  const textOnlySources = useMemo(() => textSources.filter((source) => source.type !== 'document'), [textSources]);
+  const documentSources = useMemo(() => {
+    const standby = new Set((nodeData.slotStandbyEdgeIds ?? []) as string[]);
+    return upstreams
+      .filter((source) => source.materialType === 'document'
+        && (!source.edgeId || !standby.has(source.edgeId)))
+      .map((source) => ({ source, parsed: parseJsonDocumentText(source.documentText) }));
+  }, [upstreams, nodeData.slotStandbyEdgeIds]);
+  const documentValidationErrors = useMemo(() => {
+    const errors: string[] = [];
+    for (const { source, parsed } of documentSources) {
+      if (source.availability === 'waiting') {
+        errors.push(source.availabilityMessage ?? `正在读取“${source.label}”的 JSON 文件…`);
+      } else if (source.availability === 'unavailable') {
+        errors.push(source.availabilityMessage ?? parsed.error ?? 'JSON 文件无法读取');
+      } else if (!parsed.ok) {
+        errors.push(parsed.error ?? 'JSON 文件无法读取');
+      }
+    }
+    return [...new Set(errors)];
+  }, [documentSources]);
+  const documentDurationTarget = useMemo(() => documentSources.find(({ source, parsed }) =>
+    source.availability === 'ready' && parsed.ok && parsed.duration !== undefined), [documentSources]);
+  const appliedDocumentDurationRef = useRef('');
 
   const consumedUpstreams = useMemo(() => consumedFingerprint.assets.map((asset) => ({
     ...asset, nodeId: asset.sourceNodeId, materialType: asset.type,
@@ -591,6 +617,27 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
         : null,
     [materialType, params, schema, modelItem, activeCatalog, consumedUpstreams, consumedFingerprint.prompt],
   );
+
+  // Issue #27: a JSON document's duration becomes the effective video duration
+  // when the selected model declares that parameter. The ref prevents a user's
+  // later edit from being overwritten by the same document on every render.
+  useEffect(() => {
+    if (materialType !== 'video' || !documentDurationTarget || !videoEffectiveParams) return;
+    const durationSchema = videoEffectiveParams.schema?.duration;
+    if (!durationSchema) return;
+    const value = documentDurationTarget.parsed.duration;
+    if (value === undefined) return;
+    if (durationSchema.range) {
+      if (value < durationSchema.range.min || value > durationSchema.range.max) return;
+    } else {
+      const options = durationSchema.options?.map((option) => Number(option.value)) ?? [];
+      if (options.length > 0 && !options.includes(value)) return;
+    }
+    const key = `${documentDurationTarget.source.nodeId}:${value}`;
+    if (appliedDocumentDurationRef.current === key) return;
+    appliedDocumentDurationRef.current = key;
+    updateParam('duration', value);
+  }, [materialType, documentDurationTarget, videoEffectiveParams, updateParam]);
 
   // 图像节点的有效参数（读侧清洗回退，不回写 nodeData）
   const imageEffectiveParams = useMemo(
@@ -1042,15 +1089,18 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   }, [materialType, isMusicOperation, isAsrTool, textSources, t, currentInputs, displayedSlotLayout]);
 
   const videoValidationErrors = useMemo(
-    () => materialType === 'video' && videoEffectiveParams
-      ? [...(videoSelection?.errors ?? []), ...validateVideoParamsForUi({
-          prompt: consumedFingerprint.prompt,
-          rawParams: params as Record<string, unknown>,
-          params: { ...videoEffectiveParams, effectiveOperations: opsState.effectiveOps },
-          upstreams: consumedUpstreams.filter((source) => ['image', 'video', 'audio'].includes(source.materialType)),
-        })]
-      : [],
-    [materialType, consumedFingerprint.prompt, params, consumedUpstreams, videoEffectiveParams, opsState.effectiveOps, videoSelection],
+    () => [
+      ...documentValidationErrors,
+      ...(materialType === 'video' && videoEffectiveParams
+        ? [...(videoSelection?.errors ?? []), ...validateVideoParamsForUi({
+            prompt: consumedFingerprint.prompt,
+            rawParams: params as Record<string, unknown>,
+            params: { ...videoEffectiveParams, effectiveOperations: opsState.effectiveOps },
+            upstreams: consumedUpstreams.filter((source) => ['image', 'video', 'audio'].includes(source.materialType)),
+          })]
+        : []),
+    ],
+    [documentValidationErrors, materialType, consumedFingerprint.prompt, params, consumedUpstreams, videoEffectiveParams, opsState.effectiveOps, videoSelection],
   );
 
   // Generate gate: blocked when zero effective ops / zero candidates / configuration_error /
@@ -1256,9 +1306,59 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
       {/* 2. Prompt 输入区容器 */}
       <div className="wf-config-panel__prompt-container">
         <div className={`wf-config-panel__prompt-header${!hasSlots && !textSources.length ? ' wf-config-panel__prompt-header--empty-slots' : ''}`}>
-          {textSources.length > 0 && (
+          {documentSources.length > 0 && (
+            <div className="wf-slot-wells wf-slot-wells--strip" data-testid="wf-document-inputs">
+              {documentSources.map(({ source, parsed }) => {
+                const invalid = source.availability !== 'ready' || !parsed.ok;
+                const status = source.availability === 'waiting'
+                  ? t('panel.documentInput.reading')
+                  : invalid
+                    ? (source.availabilityMessage ?? parsed.error ?? t('panel.documentInput.invalid'))
+                    : t('panel.documentInput.readFields').replace('{fields}', [
+                        parsed.prompt !== undefined ? 'prompt' : '',
+                        parsed.duration !== undefined ? 'duration' : '',
+                      ].filter(Boolean).join('、'));
+                return (
+                  <div
+                    key={source.nodeId}
+                    className={`wf-document-input${invalid ? ' wf-document-input--invalid' : ''}`}
+                    data-testid="wf-document-input"
+                    data-document-node-id={source.nodeId}
+                    data-document-state={invalid ? 'invalid' : 'ready'}
+                    title={source.label}
+                  >
+                    <span className="wf-document-input__icon"><FileJson size={18} aria-hidden="true" /></span>
+                    <span className="wf-document-input__copy">
+                      <strong className="wf-document-input__name">{source.label}</strong>
+                      <span className="wf-document-input__meta">
+                        <span className="wf-document-input__type">{t('panel.documentInput.typeJson')}</span>
+                        <span>{t('panel.documentInput.source').replace('{source}', source.label)}</span>
+                        {parsed.ignoredFields.length > 0 && !invalid ? (
+                          <span className="wf-document-input__ignored">{t('panel.documentInput.ignored').replace('{fields}', parsed.ignoredFields.join('、'))}</span>
+                        ) : null}
+                      </span>
+                      <span className="wf-document-input__status">{status}</span>
+                    </span>
+                    <button
+                      type="button"
+                      className="wf-document-input__remove nodrag"
+                      title={t('panel.documentInput.remove')}
+                      aria-label={t('panel.documentInput.remove')}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleClearTextSource(source.nodeId);
+                      }}
+                    >
+                      <X size={12} aria-hidden="true" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {textOnlySources.length > 0 && (
             <div className="wf-slot-wells wf-slot-wells--strip" data-testid="wf-text-inputs">
-              {textSources.map((source) => (
+              {textOnlySources.map((source) => (
                 <div key={source.sourceNodeId} className="wf-effective-text wf-effective-text--slot" data-source-node-id={source.sourceNodeId}
                   data-input-state={source.availability} title={source.sourceLabel} role="button" tabIndex={0}
                   onClick={(event) => setTextPreview({ anchor: event.currentTarget, sourceId: source.sourceNodeId })}

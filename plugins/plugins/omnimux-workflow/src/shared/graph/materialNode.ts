@@ -26,7 +26,7 @@ import { NodeSpecRegistry } from '../specs/registry.ts';
 
 export type { MaterialType, MaterialTool };
 
-export const MATERIAL_TYPES: MaterialType[] = ['text', 'image', 'video', 'audio'];
+export const MATERIAL_TYPES: MaterialType[] = ['text', 'image', 'video', 'audio', 'document'];
 
 export const MATERIAL_TOOLS: Record<MaterialType, readonly MaterialTool[]> = MATERIAL_TOOLS_BY_TYPE;
 
@@ -110,6 +110,10 @@ export interface MaterialNodeData {
   taskId?: string;
   errorMessage?: string;
   generatedContent?: string;
+  /** Raw UTF-8 text of an imported JSON document (Issue #27). */
+  documentText?: string;
+  /** File-read / parse error for an imported JSON document. */
+  documentError?: string;
 
   // === 生成配置 ===
   selectedTool: MaterialTool;

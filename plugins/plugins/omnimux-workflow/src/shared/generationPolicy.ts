@@ -36,6 +36,11 @@ export const CANVAS_GENERATION_POLICY: Readonly<Record<MaterialType, GenerationP
     defaultModelId: 'suno',
     modeSelection: 'model',
   },
+  document: {
+    allowedModelIds: [],
+    defaultModelId: '',
+    modeSelection: 'automatic',
+  },
 };
 
 /**

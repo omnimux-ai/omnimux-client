@@ -15,7 +15,7 @@
 
 import React, { memo, useCallback, useRef, useState } from 'react';
 import SlotHoverPreview from './SlotHoverPreview.tsx';
-import { ArrowLeftRight, FileText, Image as ImageIcon, Loader2, Music, Play, Plus, X } from 'lucide-react';
+import { ArrowLeftRight, FileJson, FileText, Image as ImageIcon, Loader2, Music, Play, Plus, X } from 'lucide-react';
 import type { MaterialType } from '../../../../../../shared/canvasTypes.ts';
 import type { SlotOccupant, SlotSpec } from '../../../../../../shared/graph/feedSlot/index.ts';
 import { useT } from '../../../../../i18n';
@@ -106,6 +106,13 @@ function WellThumb({ model }: { model: WellModel }) {
     return (
       <span className="wf-slot-well__placeholder wf-slot-well__placeholder--audio">
         <Music size={18} aria-hidden="true" />
+      </span>
+    );
+  }
+  if (upstream.materialType === 'document') {
+    return (
+      <span className="wf-slot-well__placeholder wf-slot-well__placeholder--document" title={upstream.label}>
+        <FileJson size={18} aria-hidden="true" />
       </span>
     );
   }

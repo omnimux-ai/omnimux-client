@@ -556,6 +556,21 @@ test('planStandaloneImportNodes：空选择不建节点', () => {
   assert.equal(plan.addNodes, undefined);
 });
 
+test('planStandaloneImportNodes：JSON document 也能落成导入节点', () => {
+  const plan = planStandaloneImportNodes({
+    origin: { x: 20, y: 40 },
+    files: [{
+      id: 'json-1', name: '分镜脚本.json', mime: 'application/json', size: 42,
+      realPath: '/tmp/分镜脚本.json', materialType: 'document', previewUrl: '/omnimux-workflow/api/local-file?path=x',
+    }],
+  });
+  assert.equal(plan.hasWork, true);
+  assert.equal(plan.rejected.length, 0);
+  assert.equal(plan.addNodes.length, 1);
+  assert.equal(plan.addNodes[0].data.materialType, 'document');
+  assert.equal(plan.addNodes[0].data.mediaAssets[0].type, 'document');
+});
+
 test('planStandaloneImportNodes：按文件类型落导入节点，取消路径不得出现空节点', () => {
   const plan = planStandaloneImportNodes({
     origin: { x: 200, y: 100 },

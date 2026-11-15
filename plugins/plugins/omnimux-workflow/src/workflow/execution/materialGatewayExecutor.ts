@@ -281,7 +281,7 @@ export function createMaterialGatewayExecutor(opts: {
         audio,
         references: references.length > 0 ? references : undefined,
         audioTrack,
-        duration: readDuration(data),
+        duration: upstream.documentDuration ?? readDuration(data),
         operation: upstream.operationId,
         model: upstream.modelId,
         resolution: readString(params, 'resolution'),

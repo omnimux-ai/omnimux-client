@@ -84,7 +84,7 @@ export function assembleEffectiveInputsFromSlots(args: {
     // texts into the generation prompt.
     const boundEdgeIds = new Set(selections.map((item) => item.occupant.edgeId));
     const freeTexts = !textSlot && args.layout.acceptsText !== false
-      ? args.feedAssets.filter((asset) => asset.type === 'text' && asset.availability === 'ready'
+      ? args.feedAssets.filter((asset) => (asset.type === 'text' || asset.type === 'document') && asset.availability === 'ready'
         && asset.textContent?.trim() && !boundEdgeIds.has(asset.edgeId))
       : [];
     result.prompt = args.layout.acceptsText === false ? '' : resolveGenerationPrompt(local,

@@ -6,6 +6,8 @@ export interface FeedAsset {
   sourceNodeId: string;
   outputId?: string;
   textContent?: string;
+  /** Raw JSON document text (Issue #27); only for document inputs. */
+  documentText?: string;
   type: string;
   availability: 'ready' | 'waiting' | 'unavailable';
   mimeType?: string;

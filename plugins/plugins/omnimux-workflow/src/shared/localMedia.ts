@@ -10,6 +10,7 @@ const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'a
 const VIDEO_EXT = new Set(['mp4', 'webm', 'mov', 'mkv', 'avi', 'm4v']);
 const AUDIO_EXT = new Set(['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'opus']);
 const TEXT_EXT = new Set(['txt', 'md']);
+const DOCUMENT_EXT = new Set(['json']);
 
 const MIME_BY_EXT: Record<string, string> = {
   png: 'image/png',
@@ -34,6 +35,7 @@ const MIME_BY_EXT: Record<string, string> = {
   flac: 'audio/flac',
   ogg: 'audio/ogg',
   opus: 'audio/opus',
+  json: 'application/json',
 };
 
 const EXT_BY_MIME: Record<string, string> = {
@@ -167,6 +169,19 @@ function readFileHead(filePath: string, maxBytes = SNIFF_HEAD_BYTES): Uint8Array
   }
 }
 
+/** Read a local text file on Node/Electron hosts; undefined in browser-only contexts. */
+export function readLocalTextFile(filePath: string): string | undefined {
+  try {
+    const proc = (globalThis as {
+      process?: { getBuiltinModule?: (name: string) => unknown };
+    }).process;
+    const fs = proc?.getBuiltinModule?.('node:fs') as { readFileSync?: (path: string, encoding: string) => string } | undefined;
+    return fs?.readFileSync?.(filePath, 'utf8');
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Prefer magic-byte MIME over the filename extension so a historical
  * `artifacts/*.svg` that is actually PNG still serves as `image/png`.
@@ -196,10 +211,12 @@ export function mimeFromFilename(filename: string): string | undefined {
 
 export function materialTypeFromFilename(filename: string, mime = ''): MaterialType | null {
   const normalized = (mime || '').toLowerCase().trim();
+  if (normalized.split(';')[0]?.trim() === 'application/json') return 'document';
   if (normalized.startsWith('image/')) return 'image';
   if (normalized.startsWith('video/')) return 'video';
   if (normalized.startsWith('audio/')) return 'audio';
   const ext = extensionOf(filename);
+  if (DOCUMENT_EXT.has(ext)) return 'document';
   if (IMAGE_EXT.has(ext)) return 'image';
   if (VIDEO_EXT.has(ext)) return 'video';
   if (AUDIO_EXT.has(ext)) return 'audio';

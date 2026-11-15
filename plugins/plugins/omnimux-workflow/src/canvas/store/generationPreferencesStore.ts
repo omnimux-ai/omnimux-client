@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import { fetchGenerationPreferences, saveGenerationPreference } from '../bridge/apiClient';
 import {
+  isGenerationKind,
   parseGenerationPreferences,
-  type GenerationKind,
   type GenerationPreferences,
 } from '../../shared/generationPreferences';
 
@@ -29,7 +29,11 @@ export async function loadGenerationPreferences(): Promise<void> {
   }
 }
 
-export async function rememberGenerationModel(kind: GenerationKind, modelId: string): Promise<void> {
+export async function rememberGenerationModel(kind: string, modelId: string): Promise<void> {
+  // Only generative material kinds carry model preferences; an import-only
+  // document kind never reaches this call, but accepting the wider string
+  // keeps the ConfigPanel call site type-safe without a cast.
+  if (!isGenerationKind(kind)) return;
   const version = ++writeVersion;
   pendingWrites += 1;
   // A node created immediately after a manual choice uses it even while the save is pending.

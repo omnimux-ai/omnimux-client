@@ -3,6 +3,7 @@
  */
 
 import React from 'react';
+import { FileJson } from 'lucide-react';
 import type { MaterialNodeData, MaterialType } from '../../../../types/materialNode';
 import type { ApiUpstream } from '../../../../../shared/api.ts';
 import type { GenerationStatus } from '../../../utils/nodeVisualMath';
@@ -73,6 +74,19 @@ export const MediaCardBody: React.FC<MediaCardBodyProps> = ({
 
   if (isOffline) {
     return <OfflineCardBody materialType={materialType} onRelink={onRelink} />;
+  }
+
+  if (materialType === 'document') {
+    const documentName = nodeData.originalName || nodeData.label || 'JSON 文件';
+    return (
+      <div className="wf-material-node__media">
+        <div className="wf-document-node" data-testid="wf-document-node">
+          <span className="wf-document-node__icon"><FileJson size={26} aria-hidden="true" /></span>
+          <span className="wf-document-node__name" title={documentName}>{documentName}</span>
+          <span className="wf-document-node__meta">{t('node.type.document')}</span>
+        </div>
+      </div>
+    );
   }
 
   const emptyState = (

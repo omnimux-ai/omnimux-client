@@ -45,6 +45,7 @@ const zh = {
   'node.type.image': '图片',
   'node.type.video': '视频',
   'node.type.audio': '音频',
+  'node.type.document': 'JSON 文件',
   'node.type.table': '表格',
   'node.type.video_composition': '视频合成',
   'node.type.director': '3D 导演台',
@@ -903,6 +904,13 @@ const zh = {
   'comfyPage.backend.failure.driverUnsatisfied': '显卡驱动版本不满足这个方案的要求',
   'comfyPage.backend.failure.variantRequired': '还没有选定显卡方案',
   'comfyPage.backend.failure.unsupportedVariant': '这个方案不适用于当前设备，请换一个方案',
+  'panel.documentInput.typeJson': 'JSON',
+  'panel.documentInput.source': '来自 上游节点「{source}」',
+  'panel.documentInput.readFields': '已读取：{fields}',
+  'panel.documentInput.ignored': '已忽略字段：{fields}',
+  'panel.documentInput.reading': '正在读取 JSON 文件…',
+  'panel.documentInput.invalid': 'JSON 文件无法读取',
+  'panel.documentInput.remove': '移除该输入',
 } as const;
 
 export type DictKey = keyof typeof zh;

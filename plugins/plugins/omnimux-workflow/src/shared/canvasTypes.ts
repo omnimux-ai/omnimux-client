@@ -15,7 +15,7 @@ import type { Node, Edge } from '@xyflow/react';
 export type SerializedCanvasNode = Node<Record<string, unknown>>;
 export type SerializedCanvasEdge = Edge<Record<string, unknown>>;
 
-export type MaterialType = 'text' | 'image' | 'video' | 'audio';
+export type MaterialType = 'text' | 'image' | 'video' | 'audio' | 'document';
 
 /** Group node custom data contract for visual grouping and subgraphs. */
 export interface GroupNodeData extends Record<string, unknown> {

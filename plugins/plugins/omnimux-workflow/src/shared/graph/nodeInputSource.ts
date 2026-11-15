@@ -1,11 +1,12 @@
-import { localFileMediaUrl, looksAbsolutePath, projectFileMediaUrl } from '../localMedia.ts';
+import { localFileMediaUrl, looksAbsolutePath, projectFileMediaUrl, readLocalTextFile } from '../localMedia.ts';
 import { normalizeMediaNumber, normalizeMimeType } from '../mediaMetadata.ts';
+import { parseJsonDocumentText, type JsonDocumentParseResult } from '../jsonDocument.ts';
 import { serializeTableNodeToText } from './tableTextSerializer.ts';
 
 export type InputAvailability = 'ready' | 'waiting' | 'unavailable';
 
 export interface InputMediaAsset {
-  type: 'image' | 'video' | 'audio';
+  type: 'image' | 'video' | 'audio' | 'document';
   url: string;
   path?: string;
   relativePath?: string;
@@ -24,7 +25,7 @@ export interface NodeInputSource {
   metadata?: Pick<InputMediaAsset, 'mimeType' | 'sizeBytes' | 'durationSec'>;
   availability: InputAvailability;
   message?: string;
-  output: { text?: string; assetId?: string; mediaAssets?: InputMediaAsset[] };
+  output: { text?: string; assetId?: string; mediaAssets?: InputMediaAsset[]; documentText?: string };
 }
 
 function nonempty(value: unknown): string | undefined {
@@ -103,19 +104,54 @@ export function readNodeInputSource(
   }
 
   let text: string | undefined = undefined;
+  let documentText: string | undefined;
+  let documentParse: JsonDocumentParseResult | undefined;
   if (materialType === 'text') {
     text = readCurrentText(data);
   } else if (materialType === 'table') {
     const raw = serializeTableNodeToText(data, undefined, node.id);
     text = raw.trim() ? raw : undefined;
+  } else if (materialType === 'document') {
+    documentText = typeof data.documentText === 'string' ? data.documentText : undefined;
+    if (documentText === undefined) {
+      const realPath = nonempty(data.realPath);
+      if (realPath && looksAbsolutePath(realPath) && /\.json$/i.test(realPath)) documentText = readLocalTextFile(realPath);
+    }
+    if (documentText === undefined) {
+      const documentError = nonempty(data.documentError);
+      if (documentError) {
+        return { ...base, availability: 'unavailable', message: documentError, output: {} };
+      }
+      // The file may exist while the canvas has not hydrated its text yet.
+      if (!nonempty(data.mediaUrl) && !nonempty(data.realPath) && !nonempty(data.relativePath)) {
+        return {
+          ...base,
+          availability: 'unavailable',
+          message: `“${label}”的 JSON 文件不可用，请重新导入或移除引用`,
+          output: {},
+        };
+      }
+      return { ...base, availability: 'waiting', message: `正在读取“${label}”的 JSON 文件…`, output: {} };
+    }
+    documentParse = parseJsonDocumentText(documentText);
+    if (!documentParse.ok) {
+      return {
+        ...base,
+        availability: 'unavailable',
+        message: documentParse.error ?? 'JSON 文件无法读取',
+        output: { documentText },
+      };
+    }
+    text = documentParse.prompt;
   }
-  const media = materialType === 'image' || materialType === 'video' || materialType === 'audio'
+  const media = materialType === 'image' || materialType === 'video' || materialType === 'audio' || materialType === 'document'
     ? mediaAsset(data, materialType, workspaceId) : undefined;
   const output = {
     ...(text !== undefined ? { text } : {}),
     ...(media ? { mediaAssets: [media] } : {}),
+    ...(documentText !== undefined ? { documentText } : {}),
   };
-  if (text?.trim() || media) {
+  if (text?.trim() || media || (documentParse?.ok && documentText !== undefined)) {
     const outputId = media?.assetId ?? media?.relativePath ?? media?.path ?? media?.url
       ?? (materialType === 'table' ? nonempty(data.tableId) ?? `${node.id}:table` : undefined)
       ?? nonempty(data.taskId) ?? `${node.id}:current`;

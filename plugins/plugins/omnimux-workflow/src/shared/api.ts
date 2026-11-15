@@ -426,13 +426,14 @@ export interface CapabilityCatalog {
     image?: string;
     video?: string;
     audio?: string;
+    document?: string;
   };
   /** Authoritative contract rows (operations/inputs/output/research/execution). */
   models?: CatalogModelDto[];
   /** Per-operation default model id (hub catalog-defaults). */
   defaultsByOperation?: Record<string, string>;
   /** Per-kind generation mode a new node starts in (hub catalog defaultOperations). */
-  defaultOperations?: Partial<Record<'text' | 'image' | 'video' | 'audio', {
+  defaultOperations?: Partial<Record<'text' | 'image' | 'video' | 'audio' | 'document', {
     modelId: string;
     operationId: string;
     rule: string;
@@ -441,6 +442,8 @@ export interface CapabilityCatalog {
   image: Array<CapabilityModelItem>;
   video: Array<CapabilityModelItem>;
   audio: Array<CapabilityModelItem>;
+  /** Imported document materials are not model-generated; kept for uniform bucket access. */
+  document?: Array<CapabilityModelItem>;
 }
 
 // ============================================================================

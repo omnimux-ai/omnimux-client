@@ -99,6 +99,37 @@ test('image panel borrows sibling operation slots as display-only for a prompt-o
   assert.doesNotMatch(solo, /data-testid="wf-slot-wells"/);
 });
 
+test('JSON document upstream renders a file card and invalid JSON blocks generation', () => {
+  const valid = render(
+    node('video', { prompt: '本地提示词', params: { model: 'test-model', operation: 'plain' } }),
+    fixture('video', false),
+    [{
+      nodeId: 'doc-1', edgeId: 'doc-edge', label: '分镜脚本.json', materialType: 'document',
+      documentText: JSON.stringify({ prompt: '来自 JSON 的提示词', duration: 8, shots: ['s1'] }),
+      textContent: '来自 JSON 的提示词', hasMedia: true, availability: 'ready',
+    }],
+  );
+  assert.match(valid, /data-testid="wf-document-inputs"/);
+  assert.match(valid, /分镜脚本\.json/);
+  assert.match(valid, /data-testid="wf-document-input"/);
+  assert.match(valid, /已读取：prompt、duration/);
+  assert.match(valid, /已忽略字段：shots/);
+  assert.doesNotMatch(valid, /aria-disabled="true"/);
+
+  const invalid = render(
+    node('video', { prompt: '本地提示词', params: { model: 'test-model', operation: 'plain' } }),
+    fixture('video', false),
+    [{
+      nodeId: 'doc-2', edgeId: 'doc-edge-2', label: '坏文件.json', materialType: 'document',
+      documentText: '{"prompt":', hasMedia: true, availability: 'unavailable',
+      availabilityMessage: 'JSON 文件解析失败：Unexpected end',
+    }],
+  );
+  assert.match(invalid, /data-testid="wf-document-inputs"/);
+  assert.match(invalid, /JSON 文件解析失败/);
+  assert.match(invalid, /aria-disabled="true"/);
+});
+
 test('automatic model adaptation is a status message, not an error', () => {
   const html = render(node('text',{prompt:'Explain',compat:{status:'ready',adaptation:{toModelLabel:'Gemini 3.8 Flash',inputTypes:['video']}}}),fixture('text'));
   assert.match(html,/role="status" data-testid="wf-model-adaptation"/);

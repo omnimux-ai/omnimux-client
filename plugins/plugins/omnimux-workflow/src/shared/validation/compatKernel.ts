@@ -158,6 +158,8 @@ export interface UpstreamAssetFingerprint {
   outputId?: string;
   url?: string;
   textContent?: string;
+  /** Raw JSON document text (Issue #27); only for document inputs. */
+  documentText?: string;
   /** Edge identity (stable per graph edge). */
   edgeId?: string;
   sourceNodeId: string;
@@ -543,7 +545,11 @@ export function matchOperationInputs(
     return { assigned: false, attempts };
   };
 
-  const upstreamAssets = fingerprint.assets.filter(asset => isMediaInputType(asset.type)
+  const acceptsDocumentSlot = op.inputs.some(slot => slot.type === 'document');
+  const upstreamAssets = fingerprint.assets.filter(asset => (isMediaInputType(asset.type)
+    // A JSON document can act as a prompt source for every video operation; it
+    // only joins the hard media gate when this operation declares a document slot.
+    && (asset.type !== 'document' || acceptsDocumentSlot))
     || (asset.type === 'text' && op.inputs.some(slot => slot.valueSources !== undefined)));
   for (const asset of upstreamAssets) {
     // 1. Explicit target slot wins above everything.

@@ -104,6 +104,15 @@ export function findExecutionReadinessFailure(
       upstreams,
       nodeFields: params,
     });
+    const rawDocumentFailure = rawFingerprint.assets.find((asset) =>
+      asset.type === 'document' && asset.availability !== undefined && asset.availability !== 'ready');
+    if (rawDocumentFailure) {
+      return {
+        nodeId: node.id,
+        reasonCode: rawDocumentFailure.availability === 'waiting' ? 'input_waiting' : 'input_unavailable',
+        message: rawDocumentFailure.availabilityMessage ?? 'JSON 文件不可用，请修复或移除该输入',
+      };
+    }
     const outputType = typeof data.materialType === 'string' ? data.materialType : undefined;
     const chosenId = inputBindingVersion === 1 && readString(params.operation)
       ? readString(params.operation) : resolveSlotOperation(catalog, model.id, params.operation, outputType, rawFingerprint);

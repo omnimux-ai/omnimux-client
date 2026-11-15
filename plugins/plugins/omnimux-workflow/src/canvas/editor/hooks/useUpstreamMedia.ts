@@ -19,6 +19,8 @@ export interface UpstreamMediaItem {
   url?: string;
   hasMedia: boolean;
   textContent?: string;
+  /** Raw UTF-8 text of an upstream JSON document; absent for other materials. */
+  documentText?: string;
   /** Canonical MIME; undefined when unknown (never invent). */
   mimeType?: string;
   /** Canonical byte size; undefined when unknown. */
@@ -47,6 +49,7 @@ export function useUpstreamMedia(nodeId: string): UpstreamMediaItem[] {
       const asset = source.output.mediaAssets?.[0];
       const url = asset?.url;
       const textContent = source.output.text;
+      const documentText = source.output.documentText;
       const hasMedia = source.availability === 'ready';
       const displayName = canvasResourceDisplayName(node, source);
       const { mimeType, sizeBytes, durationSec } = source.metadata ?? {};
@@ -63,12 +66,13 @@ export function useUpstreamMedia(nodeId: string): UpstreamMediaItem[] {
           availability: source.availability,
           availabilityMessage: source.message,
           outputId: source.outputId,
-          label: ['text', 'image', 'video', 'audio'].includes(source.materialType)
+          label: ['text', 'image', 'video', 'audio', 'document'].includes(source.materialType)
             ? (displayName.titleKey ? t(displayName.titleKey) : displayName.title) : data.label || node.id,
           materialType: data.materialType || (node.type === 'table' ? 'table' : 'image'),
           url,
           hasMedia,
           textContent,
+          ...(documentText !== undefined ? { documentText } : {}),
           ...(mimeType ? { mimeType } : {}),
           ...(sizeBytes !== undefined ? { sizeBytes } : {}),
           ...(durationSec !== undefined ? { durationSec } : {}),
@@ -92,6 +96,7 @@ export function toUpstreamSnapshots(items: UpstreamMediaItem[]): UpstreamMediaSn
     url: item.url,
     materialType: item.materialType,
     ...(item.textContent ? { textContent: item.textContent } : {}),
+    ...(item.documentText !== undefined ? { documentText: item.documentText } : {}),
     ...(item.mimeType ? { mimeType: item.mimeType } : {}),
     ...(item.sizeBytes !== undefined ? { sizeBytes: item.sizeBytes } : {}),
     ...(item.durationSec !== undefined ? { durationSec: item.durationSec } : {}),

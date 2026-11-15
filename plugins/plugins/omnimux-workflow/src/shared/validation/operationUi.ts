@@ -135,6 +135,8 @@ export interface UpstreamMediaSnapshot {
   nodeId: string;
   materialType: string;
   textContent?: string;
+  /** Raw JSON document text (Issue #27); only for document inputs. */
+  documentText?: string;
   mimeType?: string | null;
   /** Prefer sizeBytes; fileSize is a legacy alias. Unknown → omit (never invent 0). */
   sizeBytes?: number | null;
@@ -195,6 +197,7 @@ export function assetFromUpstreamSnapshot(snap: UpstreamMediaSnapshot): Upstream
     outputId: snap.outputId,
     url: snap.url,
     textContent: snap.textContent,
+    ...(snap.documentText !== undefined ? { documentText: snap.documentText } : {}),
     type: snap.materialType || 'text',
     ...(edgeId ? { edgeId } : {}),
     ...(mimeType ? { mimeType } : {}),

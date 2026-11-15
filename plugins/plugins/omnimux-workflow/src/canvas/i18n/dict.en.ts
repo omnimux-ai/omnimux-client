@@ -43,6 +43,7 @@ const en: Record<DictKey, string> = {
   'node.type.image': 'Image',
   'node.type.video': 'Video',
   'node.type.audio': 'Audio',
+  'node.type.document': 'JSON file',
   'node.type.table': 'Table',
   'node.type.video_composition': 'Video Composition',
   'node.type.director': '3D Director',
@@ -878,6 +879,13 @@ const en: Record<DictKey, string> = {
   'comfyPage.backend.failure.driverUnsatisfied': 'The graphics driver does not meet this variant\u2019s requirement',
   'comfyPage.backend.failure.variantRequired': 'No graphics variant has been chosen yet',
   'comfyPage.backend.failure.unsupportedVariant': 'This variant does not apply to this device; pick another',
+  'panel.documentInput.typeJson': 'JSON',
+  'panel.documentInput.source': 'From upstream node "{source}"',
+  'panel.documentInput.readFields': 'Read: {fields}',
+  'panel.documentInput.ignored': 'Ignored fields: {fields}',
+  'panel.documentInput.reading': 'Reading JSON file…',
+  'panel.documentInput.invalid': 'JSON file cannot be read',
+  'panel.documentInput.remove': 'Remove this input',
 };
 
 export default en;

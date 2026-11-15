@@ -43,6 +43,22 @@ test('MIME / 扩展名白名单：媒体放行，pdf 拒绝', () => {
   assert.equal(looksAbsolutePath('C:\\clips\\a.mp4'), true);
 });
 
+test('JSON document：.json 识别为 document，可导入且派生 MIME', () => {
+  assert.equal(materialTypeFromFilename('分镜脚本.json'), 'document');
+  assert.equal(materialTypeFromFilename('storyboard.json', 'application/json'), 'document');
+  assert.equal(isAllowedImportedMedia('分镜脚本.json'), true);
+  const data = buildImportedMediaData({
+    realPath: '/Users/me/分镜脚本.json',
+    name: '分镜脚本.json',
+    materialType: 'document',
+    mime: 'application/json',
+    size: 42,
+  });
+  assert.equal(data.materialType ?? data.mediaAssets[0].type, 'document');
+  assert.equal(data.mimeType, 'application/json');
+  assert.equal(data.mediaAssets[0].type, 'document');
+});
+
 test('buildImportedMediaData 写入 realPath 且 mediaUrl 派生', () => {
   const data = buildImportedMediaData({
     realPath: '/Users/me/hero.png',

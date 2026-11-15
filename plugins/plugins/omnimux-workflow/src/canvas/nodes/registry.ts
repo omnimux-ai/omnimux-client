@@ -10,7 +10,7 @@ import { memo, type ComponentType } from 'react';
 import type { NodeProps } from '@xyflow/react';
 
 /** Port material contract carried over from the Gxgen port. */
-export type PortMaterialType = 'text' | 'image' | 'video' | 'audio';
+export type PortMaterialType = 'text' | 'image' | 'video' | 'audio' | 'document';
 
 export interface PortSpec {
   side: 'in' | 'out';

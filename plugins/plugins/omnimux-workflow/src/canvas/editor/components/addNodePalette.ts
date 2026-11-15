@@ -158,6 +158,7 @@ const PALETTE_NODE_TYPE: Record<CanvasAddNodeType, string | null> = {
   image: 'material',
   video: 'material',
   audio: 'material',
+  document: 'material',
   table: 'table',
   video_composition: 'video_composition',
   director: 'director',

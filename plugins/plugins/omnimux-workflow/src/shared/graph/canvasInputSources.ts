@@ -27,6 +27,7 @@ export function buildCanvasUpstreamFingerprint(
     return [{ edgeId: edge.id ?? `feed-${edge.source}-${ordinal}`, sourceNodeId: source.id, sourceLabel: current.label,
       availability: current.availability, availabilityMessage: current.message, outputId: current.outputId,
       url: current.output.mediaAssets?.[0]?.url, textContent: current.output.text,
+      ...(current.output.documentText !== undefined ? { documentText: current.output.documentText } : {}),
       type: current.materialType, ...current.metadata,
       role: typeof data.role === 'string' ? data.role : binding?.role,
       targetSlot: readExplicitTargetSlot(data, edge.targetHandle),

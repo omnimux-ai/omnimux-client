@@ -8,9 +8,9 @@
  * 4. 底部配置底栏（ConfigPanel）：仅生成节点展开 Prompt、模型、参数与生成；导入节点不展开
  */
 
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSaveRemoteAudio } from '../../hooks/useSaveRemoteAudio.ts';
-import { AudioLines, Check, Clapperboard, Copy, FileEdit, FileSpreadsheet, Film, Layers, MessageSquarePlus, Music, RefreshCw, Scan, Upload } from 'lucide-react';
+import { AudioLines, Check, Clapperboard, Copy, FileEdit, FileJson, FileSpreadsheet, Film, Layers, MessageSquarePlus, Music, RefreshCw, Scan, Upload } from 'lucide-react';
 import { type NodeProps, useReactFlow } from '@xyflow/react';
 import type { MaterialNodeData, MaterialType, MaterialTool } from '../../../types/materialNode';
 import { resolveNodeKind } from '../../../types/materialNode';
@@ -92,6 +92,7 @@ const DEFAULT_GEN_TOOLS: Record<MaterialType, MaterialTool> = {
   image: 'text-to-image',
   video: 'video-generation',
   audio: 'text-to-audio',
+  document: 'import',
 };
 
 function selectTargetNode(
@@ -187,6 +188,35 @@ const MaterialNode: React.FC<NodeProps> = ({ id, data, selected }) => {
     },
     [id, setNodes, nodeData.params, applyCanvasInputMutation],
   );
+
+  // Issue #27: JSON documents are imported as file identities first. Load
+  // their text once through the same local/project file route the preview
+  // uses, then persist it so graph validation and execution see the content.
+  const documentText = typeof nodeData.documentText === 'string' ? nodeData.documentText : undefined;
+  const documentSourceUrl = typeof mediaUrl === 'string' ? mediaUrl : '';
+  const documentHydrationRef = useRef('');
+  useEffect(() => {
+    if (materialType !== 'document' || documentText !== undefined || !documentSourceUrl) return;
+    if (documentHydrationRef.current === documentSourceUrl) return;
+    documentHydrationRef.current = documentSourceUrl;
+    let cancelled = false;
+    void fetch(documentSourceUrl, { credentials: 'same-origin' })
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.text();
+      })
+      .then((text) => {
+        if (!cancelled) updateNodeData({ documentText: text, documentError: undefined });
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        const detail = error instanceof Error && error.message ? error.message : '读取失败';
+        updateNodeData({ documentError: `JSON 文件读取失败：${detail}` });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [materialType, documentText, documentSourceUrl, updateNodeData]);
 
   // 媒体素材宽高自适应计算
   const handleMediaSizeChange = useCallback(
@@ -1472,7 +1502,7 @@ const MaterialNode: React.FC<NodeProps> = ({ id, data, selected }) => {
       <NodeHeader
         label={label}
         materialType={kind === 'import' && materialType !== 'text' ? 'import_asset' : materialType}
-        customIcon={materialType === 'audio' ? Music : undefined}
+        customIcon={materialType === 'audio' ? Music : materialType === 'document' ? FileJson : undefined}
         onLabelChange={(newLabel) => updateNodeData({ label: newLabel })}
         isDegraded={isDegraded}
         degradedWarning={degradedWarning}

@@ -30,6 +30,7 @@ export const MATERIAL_TOOLS_BY_TYPE: Record<MaterialType, readonly MaterialTool[
   image: ['import', 'text-to-image', 'image-to-image'],
   video: ['import', 'video-generation', 'motion-mimicry', 'subtitle-render', 'digital-human'],
   audio: ['import', 'text-to-audio', 'text-to-music', 'video-to-audio', 'voice-clone', 'audio-extract'],
+  document: ['import'],
 };
 
 export const DEFAULT_MATERIAL_TOOL_BY_TYPE: Record<MaterialType, MaterialTool> = {
@@ -37,6 +38,7 @@ export const DEFAULT_MATERIAL_TOOL_BY_TYPE: Record<MaterialType, MaterialTool> =
   image: 'text-to-image',
   video: 'video-generation',
   audio: 'text-to-audio',
+  document: 'import',
 };
 
 export const materialTools: Record<string, ToolSpec> = {
@@ -343,8 +345,8 @@ export const materialTools: Record<string, ToolSpec> = {
 export const materialNodeSpec: NodeSpec = {
   type: 'material',
   ports: [
-    { side: 'in', acceptedTypes: ['text', 'image', 'video', 'audio'], multi: true },
-    { side: 'out', acceptedTypes: ['text', 'image', 'video', 'audio'], multi: true },
+    { side: 'in', acceptedTypes: ['text', 'image', 'video', 'audio', 'document'], multi: true },
+    { side: 'out', acceptedTypes: ['text', 'image', 'video', 'audio', 'document'], multi: true },
   ],
   tools: materialTools,
   defaultTool: 'text-editor',

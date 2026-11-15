@@ -4,7 +4,7 @@
  */
 
 import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Check, Music2 } from 'lucide-react';
+import { Check, FileJson, Music2 } from 'lucide-react';
 import type { MaterialType } from '../../../types/materialNode';
 import { resolvePreviewThumbModel } from '../../utils/resourcePickerPreviewTier.ts';
 
@@ -196,6 +196,7 @@ const PreviewThumb: React.FC<PreviewThumbProps> = ({
     media = (
       <span className={`wf-picker-card__fallback wf-picker-card__fallback--${materialType}`}>
         {materialType === 'audio' ? <Music2 size={14} aria-hidden /> : null}
+        {materialType === 'document' ? <FileJson size={14} aria-hidden /> : null}
         {fallbackLabel}
       </span>
     );

@@ -39,12 +39,13 @@ import type {
 import { promoteOverflowAsset } from '../../../shared/graph/slotEngine.ts';
 import { normalizeCanvasEdge } from '../../../shared/graph/canvasConnectionUtils.ts';
 
-export type ResourceTypeFilter = 'all' | 'text' | 'image' | 'video' | 'audio';
+export type ResourceTypeFilter = 'all' | 'text' | 'image' | 'video' | 'audio' | 'document';
 export type ResourcePickerTab = 'canvas' | 'local';
 export type ResourcePickerView = 'grid' | 'list';
 export type ResourcePickerMode = 'add' | 'replace';
 
 const MEDIA_TYPES: readonly MaterialType[] = ['image', 'video', 'audio'];
+const IMPORTABLE_TYPES: readonly MaterialType[] = ['image', 'video', 'audio', 'document'];
 const UPSTREAM_GAP_X = 80;
 const UPSTREAM_STACK_Y = 40;
 const IMPORT_STACK_Y = 40;
@@ -208,7 +209,7 @@ function nodeData(node: CanvasNode): Record<string, unknown> {
 }
 
 function asMaterialType(value: unknown): MaterialType | null {
-  if (value === 'text' || value === 'image' || value === 'video' || value === 'audio') {
+  if (value === 'text' || value === 'image' || value === 'video' || value === 'audio' || value === 'document') {
     return value;
   }
   return null;
@@ -285,6 +286,10 @@ function incomingSourceIds(edges: Edge[], targetNodeId: string): Set<string> {
 }
 
 function hasListableMedia(materialType: MaterialType, data: Record<string, unknown>): boolean {
+  if (materialType === 'document') {
+    return Boolean(data.mediaUrl || data.relativePath || data.realPath)
+      && (data.status === 'ready' || data.status === 'completed' || data.status === undefined);
+  }
   if (!MEDIA_TYPES.includes(materialType)) return false;
   const preview = resolveMediaPreviewUrl(
     materialType,
@@ -858,7 +863,7 @@ function usableMediaFiles(
     const hasPath = 'relativePath' in file
       ? typeof file.workspaceId === 'string' && file.workspaceId.trim() !== '' && !forbiddenRelativePathCode(file.relativePath)
       : looksAbsolutePath(file.realPath);
-    if (!hasPath || !MEDIA_TYPES.includes(file.materialType)) {
+    if (!hasPath || !IMPORTABLE_TYPES.includes(file.materialType)) {
       rejected.push({ id: file.id, reason: 'unsupported' });
       return false;
     }

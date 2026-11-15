@@ -44,6 +44,40 @@ test('displayed current media wins over stale aliases and only that result is re
   assert.equal(result.output.text, undefined);
 });
 
+test('JSON document：有效文件提供 prompt / 原始文本 / document 媒体；空和无效明确不可用', () => {
+  const ready = source({
+    materialType: 'document',
+    originalName: '分镜脚本.json',
+    mediaUrl: '/omnimux-workflow/api/local-file?path=%2Ftmp%2Fstoryboard.json',
+    mimeType: 'application/json',
+    documentText: JSON.stringify({ prompt: '镜头从窗外推入。', duration: 8, shots: ['s1'] }),
+  });
+  assert.equal(ready.availability, 'ready');
+  assert.equal(ready.output.text, '镜头从窗外推入。');
+  assert.equal(ready.output.documentText.includes('"duration"'), true);
+  assert.equal(ready.output.mediaAssets[0].type, 'document');
+
+  const invalid = source({
+    materialType: 'document',
+    mediaUrl: '/omnimux-workflow/api/local-file?path=%2Ftmp%2Fbad.json',
+    documentText: '{"prompt":',
+  });
+  assert.equal(invalid.availability, 'unavailable');
+  assert.match(invalid.message, /解析失败/);
+
+  const empty = source({
+    materialType: 'document',
+    mediaUrl: '/omnimux-workflow/api/local-file?path=%2Ftmp%2Fempty.json',
+    documentText: '',
+  });
+  assert.equal(empty.availability, 'unavailable');
+  assert.match(empty.message, /为空/);
+
+  const loading = source({ materialType: 'document', mediaUrl: '/omnimux-workflow/api/local-file?path=%2Ftmp%2Floading.json' });
+  assert.equal(loading.availability, 'waiting');
+  assert.match(loading.message, /正在读取/);
+});
+
 test('table node with document or previewRows projects ready Markdown text to downstream', () => {
   // 1. 空表等待添加记录
   const emptyTable = readNodeInputSource({ id: 'tbl-1', type: 'table', data: { title: '空分镜表' } });

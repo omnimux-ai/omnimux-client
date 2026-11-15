@@ -3,6 +3,7 @@ import type { ExecutionContext } from '../executors/registry.ts';
 import { buildContractView, buildUpstreamFingerprint, resolveModelView } from '../../shared/validation/compatKernel.ts';
 import { resolveSlotOperation } from '../../shared/graph/feedSlot/resolveSlotOperation.ts';
 import { resolveGenerationPrompt } from '../../shared/graph/generationPrompt.ts';
+import { parseJsonDocumentText } from '../../shared/jsonDocument.ts';
 import { assembleEffectiveInputsFromSlots, deriveSlotLayout, selectSlotOccupants,
   type FeedAsset, type SlotBindings, type SlotConflict } from '../../shared/graph/feedSlot/index.ts';
 import { resolveExecutionMediaSource, type ResolveExecutionProjectFile } from './executionMediaSource.ts';
@@ -57,7 +58,8 @@ export function collectMaterialSlotInputs(data: Record<string, unknown>, ctx: Ex
           ? ctx.upstreamBindings.some(item => item.edgeId === edgeId && item.sourceNodeId === binding.sourceNodeId)
           : ctx.upstreamBindings?.some(item => item.edgeId === edgeId && item.sourceNodeId === binding.sourceNodeId)
             || ctx.upstreamOutputs.has(binding.sourceNodeId)) ? 'waiting' : 'unavailable',
-      ...(type === 'text' ? { textContent: output.text } : {}), role: binding.role, targetSlot: binding.targetSlot,
+      ...(type === 'text' || type === 'document' ? { textContent: output.text } : {}),
+      ...(output.documentText !== undefined ? { documentText: output.documentText } : {}), role: binding.role, targetSlot: binding.targetSlot,
       url: asset?.url, pathOrUrl: asset?.relativePath || asset?.path, mimeType: asset?.mimeType, sizeBytes: asset?.sizeBytes, durationSec: asset?.durationSec });
     mediaByEdge.set(edgeId, output.mediaAssets);
   }
@@ -100,6 +102,26 @@ export function collectMaterialSlotInputs(data: Record<string, unknown>, ctx: Ex
     sourceNodeId: record.occupant.sourceNodeId, edgeId: record.occupant.edgeId, outputId: record.asset?.outputId,
     role: record.slot.role, targetSlot: record.slot.slot, textContent: record.asset?.textContent ?? '',
   }));
+  // JSON document duration is a model-level parameter override, applied only
+  // when the selected model declares a duration parameter (Issue #27).
+  let documentDuration: number | undefined;
+  if (model) {
+    const modelRow = (catalog.models ?? []).find((candidate) =>
+      candidate.id === model.id || (Array.isArray(candidate.aliases) && candidate.aliases.includes(model.id)));
+    const operationRow = model.operations.find((candidate) => candidate.id === operationId);
+    const parameterSchema = (operationRow?.parameters ?? modelRow?.parameters) as Record<string, unknown> | undefined;
+    if (parameterSchema && typeof parameterSchema === 'object' && 'duration' in parameterSchema) {
+      for (const asset of feed) {
+        if (asset.type !== 'document' || !asset.documentText) continue;
+        const parsed = parseJsonDocumentText(asset.documentText);
+        if (parsed.ok && parsed.duration !== undefined) {
+          documentDuration = parsed.duration;
+          break;
+        }
+      }
+    }
+  }
   return { ...effective, ...(currentVersion ? { localText, textInputs } : {}),
+    ...(documentDuration !== undefined ? { documentDuration } : {}),
     texts: layout.acceptsText === false ? [] : texts, operationId, modelId: model?.id ?? modelId };
 }

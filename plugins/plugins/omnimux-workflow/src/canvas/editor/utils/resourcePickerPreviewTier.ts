@@ -31,7 +31,7 @@ export function getPreviewRatioTier(
   materialType?: MaterialType | null,
   options?: { hasVisualPreview?: boolean; mimeOrName?: string },
 ): PreviewRatioTier {
-  if (materialType === 'audio' || materialType === 'text') {
+  if (materialType === 'audio' || materialType === 'text' || materialType === 'document') {
     return 'non-visual';
   }
   if (options?.hasVisualPreview === false) {

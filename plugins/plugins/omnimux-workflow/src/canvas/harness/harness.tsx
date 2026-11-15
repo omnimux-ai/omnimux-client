@@ -253,7 +253,7 @@ const MOCK_CATALOG: CapabilityCatalog = {
   ],
 };
 
-const MOCK_MEDIA: Record<Exclude<MaterialType, 'text'>, string> = {
+const MOCK_MEDIA: Record<Exclude<MaterialType, 'text' | 'document'>, string> = {
   image: 'https://picsum.photos/seed/omnimux-w1/640/360',
   video: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
   audio: 'https://interactive-examples.mdn.mozilla.net/media/cc0-audio/t-rex-roar.mp3',
@@ -274,6 +274,7 @@ function buildMockGraph(): { nodes: Node[]; edges: Edge[] } {
     image: 'mock-img-fast',
     video: 'mock-video-720p',
     audio: 'mock-tts-standard',
+    document: '',
   };
   const nodes = specs.map((spec) => ({
     id: spec.id,
@@ -336,6 +337,12 @@ function simulateNodeRun(nodeId: string, outcome: 'completed' | 'error' = 'compl
         patchNodeData(nodeId, {
           executionStatus: 'completed',
           generatedContent: '（mock）海鸥掠过黄昏的海面，镜头缓慢推近……',
+        });
+      } else if (materialType === 'document') {
+        patchNodeData(nodeId, {
+          executionStatus: 'completed',
+          documentText: '{"prompt":"（mock）海鸥掠过黄昏的海面，镜头缓慢推近……"}',
+          taskId: 'mock-task-9f8e7d6c5b4a',
         });
       } else {
         const url = MOCK_MEDIA[materialType];

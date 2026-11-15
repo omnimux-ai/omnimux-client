@@ -35,6 +35,17 @@ for (const [name, connection, nodes, edges] of [
     assert.ok(zh[rejectReasonKey(name)]); assert.ok(en[rejectReasonKey(name)]);
   });
 }
+test('JSON document can connect to a video generation node', () => {
+  const videoTarget = { id: 'video-target', type: 'material', data: {
+    materialType: 'video', nodeKind: 'generate', selectedTool: 'video-generation',
+    params: { model: 'vid-frames', operation: 'first_last_frame' },
+  } };
+  const documentSource = source('doc', 'document', { mimeType: 'application/json' });
+  const detail = validateConnectionDetailed({ source: 'doc', target: videoTarget.id }, [videoTarget, documentSource], [], catalog);
+  assert.equal(detail.valid, true);
+  assert.equal(detail.blockedBy, undefined);
+});
+
 test('Stage 2 does not gate import targets and prompt-only input', () => {
   assert.equal(validateDynamicModelCapacity({ source: 'source', target: 'target' }, [source('target'), source('source')], [], null).valid, true);
   assert.equal(validateConnectionDetailed({ source: 'source', target: 'target' }, [target, source('source', 'text')], [], null).valid, true);

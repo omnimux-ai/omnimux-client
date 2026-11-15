@@ -60,6 +60,36 @@ for (const kind of ['text', 'image', 'video', 'audio']) {
 // Fingerprint
 // ============================================================================
 
+test('JSON document：prompt 来源不占用媒体硬门槛；只有声明 document 槽的 operation 才吸收它', () => {
+  const promptOnly = {
+    id: 'text_to_video', label: '文生视频', output: { type: 'video' }, inputGroups: [],
+    inputs: [{ slot: 'prompt', type: 'text', role: 'prompt', source: 'node_field', min: 1, max: 1 }],
+  };
+  const withDocumentSlot = {
+    ...promptOnly,
+    id: 'document_to_video',
+    inputs: [...promptOnly.inputs, { slot: 'file_url', type: 'document', role: 'document', source: 'upstream_edge', min: 1, max: 1 }],
+  };
+  const documentAsset = {
+    sourceNodeId: 'doc-1', edgeId: 'e-doc', type: 'document', mimeType: 'application/json',
+    textContent: '来自 JSON 的提示词', availability: 'ready',
+  };
+  const promptFingerprint = buildUpstreamFingerprint({
+    prompt: '来自 JSON 的提示词',
+    assets: [documentAsset],
+  });
+  const promptOnlyMatch = matchOperationInputs(promptOnly, promptFingerprint);
+  assert.equal(promptOnlyMatch.accepts, true, '文档作为 prompt 来源不应触发 operation_incompatible');
+  assert.equal(promptOnlyMatch.ready, true);
+
+  const documentSlotMatch = matchOperationInputs(withDocumentSlot, buildUpstreamFingerprint({
+    prompt: '来自 JSON 的提示词',
+    assets: [{ ...documentAsset, targetSlot: 'file_url' }],
+  }));
+  assert.equal(documentSlotMatch.accepts, true);
+  assert.equal(documentSlotMatch.bindings[0].slot, 'file_url');
+});
+
 test('fingerprint：mediaAssets 只含 image/video/audio；signature 随内容变化', () => {
   const a = fp([img(), { sourceNodeId: 't1', type: 'text' }]);
   assert.equal(a.mediaAssets.length, 1);
