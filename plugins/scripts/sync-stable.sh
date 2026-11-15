@@ -19,26 +19,28 @@ if [ "${OMNIMUX_SYNC_VIA:-}" != "sync-to-app" ] && [ "${OMNIMUX_SYNC_VIA:-}" != 
   echo "  （若你确认已手动 build 且只要物化，可设 OMNIMUX_SYNC_VIA=internal 消掉本提示）" >&2
 fi
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PLUGINS_ROOT="${OMNIMUX_PLUGINS_DIR:-$ROOT/plugins}"
+SCRIPT_ROOT="$(cd "$(dirname "$0")" && pwd)"
+PACKAGE_ROOT="$(cd "$SCRIPT_ROOT/.." && pwd)"
+ROOT="$(git -C "$PACKAGE_ROOT" rev-parse --show-toplevel 2>/dev/null || echo "$PACKAGE_ROOT")"
+PLUGINS_ROOT="${OMNIMUX_PLUGINS_DIR:-$PACKAGE_ROOT/plugins}"
 MANAGED_DSH_UI_KIT_RELATIVE_PATH='.materialize-snapshots/plugins/dsh-ui-kit'
-source "$ROOT/scripts/resolve-omnimux-profile.sh"
-source "$ROOT/scripts/sync-main.sh"
+source "$SCRIPT_ROOT/resolve-omnimux-profile.sh"
+source "$SCRIPT_ROOT/sync-main.sh"
 
 ORIGINAL_ARGS=("$@")
 for arg in "$@"; do
   case "$arg" in
     --managed-tarball*|--expect-*|--recover-managed-tarball*)
-      request="$(node "$ROOT/scripts/managed-tarball.mjs" request "$@")" || { printf '%s\n' "$request"; exit 2; }
+      request="$(node "$SCRIPT_ROOT/managed-tarball.mjs" request "$@")" || { printf '%s\n' "$request"; exit 2; }
       profile="$(printf '%s' "$request" | node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>process.stdout.write(JSON.parse(s).profile))')"
       lock_status=0
-      python3 "$ROOT/scripts/managed-tarball-archive.py" check-locks "$profile" || lock_status=$?
+      python3 "$SCRIPT_ROOT/managed-tarball-archive.py" check-locks "$profile" || lock_status=$?
       if [ "$lock_status" -eq 10 ]; then
-        exec python3 "$ROOT/scripts/managed-tarball-archive.py" lock "$profile" -- bash "$0" "$@"
+        exec python3 "$SCRIPT_ROOT/managed-tarball-archive.py" lock "$profile" -- bash "$0" "$@"
       elif [ "$lock_status" -ne 0 ]; then
         exit 4
       fi
-      node "$ROOT/scripts/managed-tarball.mjs" run "$@"
+      node "$SCRIPT_ROOT/managed-tarball.mjs" run "$@"
       exit $?
       ;;
   esac
@@ -46,7 +48,7 @@ done
 TARGET_SELECTION=()
 PLUGINS=()
 ALPHA_PLUGINS=()
-if ! alpha_plugins_output="$(node "$ROOT/scripts/plugin-lifecycle.mjs" list-alpha-plugins)"; then
+if ! alpha_plugins_output="$(node "$SCRIPT_ROOT/plugin-lifecycle.mjs" list-alpha-plugins)"; then
   echo "✗ 无法读取 Alpha 插件生命周期注册表，拒绝物化。" >&2
   exit 1
 fi
@@ -158,7 +160,7 @@ else
 fi
 
 assert_omnimux_sync_main "$ROOT"
-assert_omnimux_sync_plugins "$ROOT" "$PLUGINS_ROOT"
+assert_omnimux_sync_plugins "$PACKAGE_ROOT" "$PLUGINS_ROOT"
 
 PROFILES=()
 for home_candidate in "${TARGET_HOMES[@]}"; do
@@ -181,13 +183,13 @@ done
 
 if [ "${#PROFILES[@]}" -gt 0 ]; then
   lock_status=0
-  python3 "$ROOT/scripts/managed-tarball-archive.py" check-locks "${PROFILES[@]}" || lock_status=$?
+  python3 "$SCRIPT_ROOT/managed-tarball-archive.py" check-locks "${PROFILES[@]}" || lock_status=$?
   if [ "$lock_status" -eq 10 ]; then
-    exec python3 "$ROOT/scripts/managed-tarball-archive.py" lock "${PROFILES[@]}" -- bash "$0" ${ORIGINAL_ARGS[@]+"${ORIGINAL_ARGS[@]}"}
+    exec python3 "$SCRIPT_ROOT/managed-tarball-archive.py" lock "${PROFILES[@]}" -- bash "$0" ${ORIGINAL_ARGS[@]+"${ORIGINAL_ARGS[@]}"}
   elif [ "$lock_status" -ne 0 ]; then
     exit 4
   fi
-  python3 "$ROOT/scripts/managed-tarball-archive.py" pending "${PROFILES[@]}" || exit 7
+  python3 "$SCRIPT_ROOT/managed-tarball-archive.py" pending "${PROFILES[@]}" || exit 7
 fi
 
 # 产品树垂直（含产品库 / 插件市场 / 剪辑）+ omnimux-video + omnimux-analytics（埋点）+ omnimux-publish（发布中心）
@@ -205,7 +207,7 @@ for PROFILE in "${PROFILES[@]}"; do
   # 快照里的版本安装 node_modules。快照一旦被旧构建覆盖，下面的写入就已经把运行时降级了，
   # 事后再回滚也只是回到旧快照。因此在任何写入之前先按身份声明核对快照与已装版本，
   # 漂移即指名失败，绝不静默降级。
-  if ! node "$ROOT/scripts/verify-profile-dependency-snapshots.mjs" --support-only "$PROFILE"; then
+  if ! node "$SCRIPT_ROOT/verify-profile-dependency-snapshots.mjs" --support-only "$PROFILE"; then
     echo "✗ 支持包身份预检失败：$PROFILE 的 dsh-better-sidebar 受管快照/已装版本与 scripts/sidebar-support-identity.json 不一致；未做任何写入。请先用官方完整 profile rebuild 或壳仓 0.28.1 构建重建受管快照。" >&2
     exit 1
   fi
@@ -797,14 +799,14 @@ EOF
 
   # 物化后依赖快照校验（Issue #3761）：新版宿主启动断言 preset owned 依赖必须指向受管快照；
   # 这里提前指名失败（缺快照 / 悬空插件清单条目），避免只能等 App 启动才发现。
-  if ! node "$ROOT/scripts/verify-profile-dependency-snapshots.mjs" "$PROFILE"; then
+  if ! node "$SCRIPT_ROOT/verify-profile-dependency-snapshots.mjs" "$PROFILE"; then
     restore_refresh_entries
     echo "✗ Profile 依赖快照校验失败（存在未快照化的 owned 依赖或悬空插件清单条目）；已恢复暂存的安装入口，中止物化。" >&2
     exit 1
   fi
 
   # 执行物化后启动演练预检（Materialize Pre-flight / Dry Run）：模拟真实 apply(ctx) 执行与工具契约校验
-  if ! node "$ROOT/scripts/verify-profile-preflight.mjs" "$PROFILE"; then
+  if ! node "$SCRIPT_ROOT/verify-profile-preflight.mjs" "$PROFILE"; then
     restore_refresh_entries
     echo "✗ Profile 启动预检演练失败（apply(ctx) 抛错或工具契约不合规）；已恢复暂存的安装入口，中止物化。" >&2
     exit 1

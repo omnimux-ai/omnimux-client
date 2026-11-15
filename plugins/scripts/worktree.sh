@@ -19,6 +19,7 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 if [ -z "${ROOT}" ]; then
   echo "worktree.sh: not inside a git work tree" >&2
@@ -104,8 +105,8 @@ sag_available() {
     SAG_CMD=("${SAG_WORKTREE_BIN}")
     return 0
   fi
-  if [ -f "${ROOT}/scripts/sag-worktree.mjs" ] && command -v node >/dev/null 2>&1; then
-    SAG_CMD=(node "${ROOT}/scripts/sag-worktree.mjs")
+  if [ -f "${SCRIPT_DIR}/sag-worktree.mjs" ] && command -v node >/dev/null 2>&1; then
+    SAG_CMD=(node "${SCRIPT_DIR}/sag-worktree.mjs")
     return 0
   fi
   command -v sag-worktree >/dev/null 2>&1 || return 1
@@ -566,11 +567,11 @@ auto_materialize_and_reload() {
   # 只有 ship 允许「刷新 shared kit 后重试」；remove 是清理动作，不额外做全量同步与重启。
   local kit_refresh_allowed="${3:-0}"
 
-  if [ ! -f "${ROOT}/scripts/sync-to-app.sh" ]; then
+  if [ ! -f "${SCRIPT_DIR}/sync-to-app.sh" ]; then
     # 本检出没有交付管线（外来/不完整检出）：开发版不会更新，但也没有「本仓管线失败」可言，
     # 因此不套用退出码 3；横幅按 pipeline-absent 如实说明。
     MATERIALIZE_STATUS="pipeline-absent"
-    say "⚠️ 缺少安装脚本，开发版未更新。请在主检出运行: ./scripts/sync-to-app.sh"
+    say "⚠️ 缺少安装脚本，开发版未更新。请在主检出运行: plugins/scripts/sync-to-app.sh"
     return 0
   fi
 
@@ -627,13 +628,13 @@ auto_materialize_and_reload() {
   # 「先刷新 shared kit，再重试本次插件」：只跑无参数完整同步会漏掉不在默认清单里的插件
   # （omnimux-studio / device / intercept 等），那会造出「本次插件没进开发版却报成功」的新假闭环。
   local sync_ok=0 sync_mode="incremental"
-  if (cd "${ROOT}" && bash "${ROOT}/scripts/sync-to-app.sh" "${changed_plugins[@]}"); then
+  if (cd "${ROOT}" && bash "${SCRIPT_DIR}/sync-to-app.sh" "${changed_plugins[@]}"); then
     sync_ok=1
   elif [ "${kit_refresh_allowed}" -eq 1 ] && [ "${OMNIMUX_SHIP_NO_FULL_SYNC:-0}" != "1" ]; then
     say "⚠️ 增量物化失败（常见原因：shared kit 漂移）。先刷新 shared kit，再重试本次插件..."
-    if (cd "${ROOT}" && bash "${ROOT}/scripts/sync-to-app.sh"); then
+    if (cd "${ROOT}" && bash "${SCRIPT_DIR}/sync-to-app.sh"); then
       sync_mode="kit-refresh+retry"
-      if (cd "${ROOT}" && bash "${ROOT}/scripts/sync-to-app.sh" "${changed_plugins[@]}"); then
+      if (cd "${ROOT}" && bash "${SCRIPT_DIR}/sync-to-app.sh" "${changed_plugins[@]}"); then
         sync_ok=1
       else
         say "⚠️ shared kit 已刷新，但本次插件仍安装失败。"
@@ -654,25 +655,25 @@ auto_materialize_and_reload() {
       say "✅ 增量物化成功！"
     fi
     # 自动探测 Dev App：宿主侧变更受控重启，纯 Client 变更刷新页面
-    if [ -f "${ROOT}/scripts/reload-dev-app.mjs" ]; then
+    if [ -f "${SCRIPT_DIR}/reload-dev-app.mjs" ]; then
       if [ "${needs_restart}" -eq 1 ]; then
-        node "${ROOT}/scripts/reload-dev-app.mjs" --restart 2>/dev/null || true
+        node "${SCRIPT_DIR}/reload-dev-app.mjs" --restart 2>/dev/null || true
       else
-        node "${ROOT}/scripts/reload-dev-app.mjs" 2>/dev/null || true
+        node "${SCRIPT_DIR}/reload-dev-app.mjs" 2>/dev/null || true
       fi
     fi
     # 物化后冒烟：验证 Dev 窗口可达 + 版本生效；失败/待重启如实报告，不阻断 ship。
-    if [ -f "${ROOT}/scripts/dev-smoke.mjs" ]; then
+    if [ -f "${SCRIPT_DIR}/dev-smoke.mjs" ]; then
       local plugins_csv
       plugins_csv="$(IFS=,; echo "${changed_plugins[*]}")"
-      if ! node "${ROOT}/scripts/dev-smoke.mjs" --plugins "${plugins_csv}" ${needs_restart:+--expect-restart}; then
+      if ! node "${SCRIPT_DIR}/dev-smoke.mjs" --plugins "${plugins_csv}" ${needs_restart:+--expect-restart}; then
         say "⚠️ dev-smoke 未通过：请查看 ${ROOT}/docs/evidence/dev-smoke-report.json"
       fi
     fi
   else
     MATERIALIZE_STATUS="failed"
     say "⚠️ 自动物化未成功（增量与完整同步都失败）。"
-    say "   补救：在主检出运行 ./scripts/sync-to-app.sh（无插件参数=完整同步，可覆盖 shared kit），完成后自行确认开发版版本。"
+    say "   补救：在主检出运行 plugins/scripts/sync-to-app.sh（无插件参数=完整同步，可覆盖 shared kit），完成后自行确认开发版版本。"
   fi
 }
 
@@ -857,7 +858,7 @@ cmd_remove() {
           auto_materialize_and_reload "${first_parent}" "${remote_head}"
         else
           MATERIALIZE_STATUS="failed"
-          say "⚠️ 无法确定本次合并的起点，开发版未更新。请在主检出运行: ./scripts/sync-to-app.sh"
+          say "⚠️ 无法确定本次合并的起点，开发版未更新。请在主检出运行: plugins/scripts/sync-to-app.sh"
         fi
       fi
     fi

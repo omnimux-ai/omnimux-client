@@ -6,27 +6,35 @@
 # 规范：docs/contracts/dev-pipeline.md
 #
 # 用法：
-#   ./scripts/sync-to-app.sh                     # 默认：构建并同步全部清单插件到 ~/.omnimux-dev
-#   ./scripts/sync-to-app.sh omnimux-assets       # 默认：只同步一个插件到 ~/.omnimux-dev
-#   ./scripts/sync-to-app.sh --prod               # 同步到正式版 ~/.omnimux
-#   ./scripts/sync-to-app.sh --dsh                # 同步到官方底座 ~/.dsh
-#   ./scripts/sync-to-app.sh --all                # 广播同步到全部 Profile (~/.omnimux-dev, ~/.omnimux, ~/.dsh)
-#   ./scripts/sync-to-app.sh --target=dev,prod    # 自定义多目标同步
-#   ./scripts/sync-to-app.sh --skip-build omnimux-assets
+#   plugins/scripts/sync-to-app.sh                     # 默认：构建并同步全部清单插件到 ~/.omnimux-dev
+#   plugins/scripts/sync-to-app.sh omnimux-assets       # 默认：只同步一个插件到 ~/.omnimux-dev
+#   plugins/scripts/sync-to-app.sh --prod               # 同步到正式版 ~/.omnimux
+#   plugins/scripts/sync-to-app.sh --dsh                # 同步到官方底座 ~/.dsh
+#   plugins/scripts/sync-to-app.sh --all                # 广播同步到全部 Profile (~/.omnimux-dev, ~/.omnimux, ~/.dsh)
+#   plugins/scripts/sync-to-app.sh --target=dev,prod    # 自定义多目标同步
+#   plugins/scripts/sync-to-app.sh --skip-build omnimux-assets
 #
-# 主入口（推荐）：在 omnimux-desktop-fork 里跑
-#   yarn omnimux:sync [插件...] [--prod|--dsh|--all]
+# 主入口（推荐）：在仓根运行
+#   cd plugins && pnpm sync [插件...] [--prod|--dsh|--all]
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PLUGINS_ROOT="${OMNIMUX_PLUGINS_DIR:-$ROOT/plugins}"
-source "$ROOT/scripts/resolve-omnimux-profile.sh"
+SCRIPT_ROOT="$(cd "$(dirname "$0")" && pwd)"
+# The directory that owns scripts/ and plugins/: the product root in the old
+# single-product checkout, or the pnpm workspace root (plugins/) in the
+# omnimux-client monorepo.
+PACKAGE_ROOT="$(cd "$SCRIPT_ROOT/.." && pwd)"
+# Git identity always belongs to the whole repository. In the monorepo that is
+# the parent of the plugin workspace, so the clean/main gate must inspect it
+# instead of assuming PACKAGE_ROOT itself is a Git root.
+ROOT="$(git -C "$PACKAGE_ROOT" rev-parse --show-toplevel 2>/dev/null || echo "$PACKAGE_ROOT")"
+PLUGINS_ROOT="${OMNIMUX_PLUGINS_DIR:-$PACKAGE_ROOT/plugins}"
+source "$SCRIPT_ROOT/resolve-omnimux-profile.sh"
 # Managed mode is mutually exclusive and branches before build, kit or preset writes.
 ORIGINAL_ARGS=("$@")
 for arg in "$@"; do
   case "$arg" in
     --managed-tarball*|--expect-*|--recover-managed-tarball*)
-      exec bash "$ROOT/scripts/sync-stable.sh" "$@"
+      exec bash "$SCRIPT_ROOT/sync-stable.sh" "$@"
       ;;
   esac
 done
@@ -36,7 +44,7 @@ TARGET_SELECTION=()
 TARGET_FLAGS=()
 EXPLICIT_PLUGIN_SCOPE=0
 ALPHA_PLUGINS=()
-if ! alpha_plugins_output="$(node "$ROOT/scripts/plugin-lifecycle.mjs" list-alpha-plugins)"; then
+if ! alpha_plugins_output="$(node "$SCRIPT_ROOT/plugin-lifecycle.mjs" list-alpha-plugins)"; then
   echo "❌ 无法读取 Alpha 插件生命周期注册表，拒绝物化。" >&2
   exit 1
 fi
@@ -205,9 +213,9 @@ if [ -n "$unmerged_target" ]; then
   fi
 fi
 
-source "$ROOT/scripts/sync-main.sh"
+source "$SCRIPT_ROOT/sync-main.sh"
 assert_omnimux_sync_main "$ROOT"
-assert_omnimux_sync_plugins "$ROOT" "$PLUGINS_ROOT"
+assert_omnimux_sync_plugins "$PACKAGE_ROOT" "$PLUGINS_ROOT"
 
 for home_dir in "${TARGET_HOMES[@]}"; do
   prof_dir="$(resolve_omnimux_profile_dir "$home_dir")" || exit 1
@@ -229,13 +237,13 @@ done
 
 if [ "${#TARGET_PROFILES[@]}" -gt 0 ]; then
   lock_status=0
-  python3 "$ROOT/scripts/managed-tarball-archive.py" check-locks "${TARGET_PROFILES[@]}" || lock_status=$?
+  python3 "$SCRIPT_ROOT/managed-tarball-archive.py" check-locks "${TARGET_PROFILES[@]}" || lock_status=$?
   if [ "$lock_status" -eq 10 ]; then
-    exec python3 "$ROOT/scripts/managed-tarball-archive.py" lock "${TARGET_PROFILES[@]}" -- bash "$0" ${ORIGINAL_ARGS[@]+"${ORIGINAL_ARGS[@]}"}
+    exec python3 "$SCRIPT_ROOT/managed-tarball-archive.py" lock "${TARGET_PROFILES[@]}" -- bash "$0" ${ORIGINAL_ARGS[@]+"${ORIGINAL_ARGS[@]}"}
   elif [ "$lock_status" -ne 0 ]; then
     exit 4
   fi
-  python3 "$ROOT/scripts/managed-tarball-archive.py" pending "${TARGET_PROFILES[@]}" || exit 7
+  python3 "$SCRIPT_ROOT/managed-tarball-archive.py" pending "${TARGET_PROFILES[@]}" || exit 7
 fi
 
 DEFAULT_PLUGINS=(omnimux omnimux-forms omnimux-accounts omnimux-assets omnimux-products omnimux-workflow omnimux-market omnimux-inspiration omnimux-clip omnimux-video omnimux-video-preview omnimux-analytics omnimux-publish omnimux-browser omnimux-viewer omnimux-apps omnimux-social-harvest omnimux-avatar omnimux-studio)
@@ -284,7 +292,7 @@ MANAGED_DSH_UI_KIT_RELATIVE_PATH='.materialize-snapshots/plugins/dsh-ui-kit'
 # 仓库外 file: 依赖让 CI 与干净检出无法安装）。旧的个人目录路径不再作为候选；
 # 需要临时覆盖时用 OMNIMUX_DSH_UI_KIT_DIR 显式指定。
 if [ -z "${OMNIMUX_DSH_UI_KIT_DIR:-}" ]; then
-  DSH_UI_KIT_DIR="$ROOT/packages/dsh-ui-kit"
+  DSH_UI_KIT_DIR="$PACKAGE_ROOT/packages/dsh-ui-kit"
 else
   DSH_UI_KIT_DIR="$OMNIMUX_DSH_UI_KIT_DIR"
 fi
@@ -543,13 +551,13 @@ if [ "${#TARGET_FLAGS[@]}" -gt 0 ]; then
   SYNC_STABLE_ARGS+=("${TARGET_FLAGS[@]}")
 fi
 SYNC_STABLE_ARGS+=("${SYNC_PLUGINS[@]}")
-OMNIMUX_SYNC_VIA=sync-to-app "$ROOT/scripts/sync-stable.sh" "${SYNC_STABLE_ARGS[@]}"
+OMNIMUX_SYNC_VIA=sync-to-app "$SCRIPT_ROOT/sync-stable.sh" "${SYNC_STABLE_ARGS[@]}"
 
 if [ "$EXPLICIT_PLUGIN_SCOPE" -eq 1 ]; then
   echo "== 3/3 跳过 Agent Presets（命名插件同步不修改预设或应用包）=="
 else
   echo "== 3/3 物化出厂 Agent Presets =="
-  "$ROOT/scripts/sync-agent-presets.sh" ${TARGET_FLAGS[@]+"${TARGET_FLAGS[@]}"}
+  "$SCRIPT_ROOT/sync-agent-presets.sh" ${TARGET_FLAGS[@]+"${TARGET_FLAGS[@]}"}
 fi
 
 cat <<EOF

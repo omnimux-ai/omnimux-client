@@ -9,3 +9,6 @@ coverage/
 *.tsbuildinfo
 .yarn/cache/
 .yarn/install-state.gz
+
+# Git worktrees isolation directory
+.worktrees/
