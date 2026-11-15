@@ -134,15 +134,25 @@ export function buildAssetPayload(asset) {
       pUrl = cloudCover
     }
     const mediaType = asset.mediaType || asset.media_type || (asset.category === 'audio' ? 'audio' : '')
-    if (mediaType === 'audio') {
-      kind = asset.hasCover === false && !cloudCover ? 'audio' : 'asset'
-      if (ext === 'ASSET') ext = 'AUDIO'
-    } else if (mediaType === 'video' || VIDEO_EXT.test(cloudMedia)) {
-      kind = 'video'
-      if (ext === 'ASSET') ext = 'VIDEO'
-    } else if (mediaType === 'image' || IMAGE_EXT.test(cloudCover) || IMAGE_EXT.test(cloudMedia)) {
+    // A *real* cover/media URL (not the generated `which=cover` fallback) proves a
+    // visual exists. Prefer that visual over an audio track so a multimodal
+    // 「图像 + 音频」asset renders as its image; a pure-audio asset with no real
+    // cover keeps the audio pill.
+    const realCover = asset.cover_url?.startsWith('http') ? asset.cover_url : (asset.meta?.source_cover_url || '')
+    const realMedia = asset.media_url?.startsWith('http') ? asset.media_url : (asset.meta?.source_media_url || '')
+    const hasImageVisual = isImageFile(coverFile)
+      || (asset.cover && typeof asset.cover.mime === 'string' && asset.cover.mime.startsWith('image/'))
+      || IMAGE_EXT.test(realCover) || IMAGE_EXT.test(realMedia)
+      || (mediaType === 'audio' && Boolean(realCover))
+    if (mediaType === 'image' || hasImageVisual) {
       kind = 'image'
       if (ext === 'ASSET') ext = 'IMAGE'
+    } else if (mediaType === 'video' || VIDEO_EXT.test(realCover) || VIDEO_EXT.test(realMedia)) {
+      kind = 'video'
+      if (ext === 'ASSET') ext = 'VIDEO'
+    } else if (mediaType === 'audio') {
+      kind = asset.hasCover === false && !cloudCover ? 'audio' : 'asset'
+      if (ext === 'ASSET') ext = 'AUDIO'
     }
 
     return {

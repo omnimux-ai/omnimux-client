@@ -406,3 +406,30 @@ describe('add-to-chat - official voice preview guard (Issue #3058)', () => {
     assert.equal(delivered.length, 1)
   })
 })
+
+describe('buildAssetPayload — 多模态视觉优先', () => {
+  it('an audio asset carrying a real image cover classifies as image', () => {
+    const payload = buildAssetPayload({
+      id: 'audio-elf-archer', name: 'Elf Archer', category: 'audio', media_type: 'audio',
+      cover_url: 'https://cdn.example.test/elf-cover.jpg',
+    })
+    assert.equal(payload.kind, 'image')
+    assert.equal(payload.extension, 'IMAGE')
+    assert.match(payload.previewUrl, /elf-cover\.jpg/)
+  })
+
+  it('a pure audio asset (no real cover) stays an audio asset, not image', () => {
+    const payload = buildAssetPayload({ id: 'audio-1', name: 'voice', category: 'audio', media_type: 'audio', hasCover: false })
+    assert.equal(payload.kind, 'asset')
+    assert.equal(payload.extension, 'AUDIO')
+  })
+
+  it('a video-mime asset classifies as video', () => {
+    const payload = buildAssetPayload({
+      id: 'media-1', name: 'clip', category: 'video', media_type: 'video',
+      media_url: 'https://cdn.example.test/clip.mp4',
+    })
+    assert.equal(payload.kind, 'video')
+    assert.equal(payload.extension, 'VIDEO')
+  })
+})
