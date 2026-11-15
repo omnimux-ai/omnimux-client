@@ -219,3 +219,31 @@ describe('userMessageAttachmentsEnhancer', () => {
     delete (globalThis as any).window;
   });
 });
+
+describe('multimodal asset rendering', () => {
+  it('renders an image thumbnail for an asset row carrying an image preview', () => {
+    const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>');
+    const doc = dom.window.document;
+    const att = {
+      id: 'att-elf', fingerprint: 'fp-elf', sessionId: 'sess-1', sourcePlugin: 'omnimux-assets',
+      kind: 'asset', entityId: 'audio-elf-archer', title: 'Elf Archer', extension: 'AUDIO',
+      relativePath: '', previewUrl: 'https://cdn.example.test/elf-cover.jpg', status: 'ready', createdAt: 1,
+    } as ConversationAttachment;
+    const card = createAttachmentCardElement(att, doc);
+    assert.ok(card.classList.contains('omx-user-att-card--media'));
+    assert.ok(card.querySelector('img'));
+  });
+
+  it('keeps a pure audio asset (no image preview) as an AUDIO pill', () => {
+    const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>');
+    const doc = dom.window.document;
+    const att = {
+      id: 'att-a', fingerprint: 'fp-a', sessionId: 'sess-1', sourcePlugin: 'omnimux-assets',
+      kind: 'asset', entityId: 'audio-1', title: 'voice', extension: 'AUDIO',
+      relativePath: '', previewUrl: '/omnimux/assets/cloud/media?id=audio-1&which=cover', status: 'ready', createdAt: 1,
+    } as ConversationAttachment;
+    const card = createAttachmentCardElement(att, doc);
+    assert.ok(card.classList.contains('omx-user-att-card--file'));
+    assert.equal(card.querySelector('.omx-user-att-ext-badge')?.textContent, 'AUDIO');
+  });
+});

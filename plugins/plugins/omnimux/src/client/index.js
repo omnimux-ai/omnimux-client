@@ -210,6 +210,18 @@ export function apply(ctx) {
   installWorkbenchGlobal()
   installGlobalReferenceApi()
   let guideSessions = null
+  // Reliable Host `sessions` handle for attachment admission + submit-bridge session
+  // identity, decoupled from the command-UI gate (`guideSessions`): the post-send
+  // attachment clear must still arm even when `commandUi` is not mounted.
+  let hostSessions = null
+  if (typeof ctx.inject === 'function') {
+    ctx.inject(['sessions'], (sessionCtx) => {
+      sessionCtx.effect(() => {
+        hostSessions = sessionCtx.sessions
+        return () => { hostSessions = null }
+      }, 'omnimux: host sessions handle')
+    })
+  }
   ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
     name: 'conversation.input.dock',
     id: 'omnimux-composer-mode-tabs',
@@ -246,14 +258,14 @@ export function apply(ctx) {
   // 素材卡槽回到官方输入框内侧。Host 直接把上传回调交给托盘，不再经外侧桥接。
   const attachmentStore = getGlobalAttachmentStore()
   mountFormsBridge(ctx, attachmentStore)
-  const attachmentAdmission = createAttachmentAdmission({ getSessions: () => guideSessions, store: attachmentStore })
+  const attachmentAdmission = createAttachmentAdmission({ getSessions: () => hostSessions || guideSessions, store: attachmentStore })
   ctx.effect(() => () => { attachmentAdmission.dispose() }, 'omnimux: attachment admission')
   ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
     name: 'conversation.input.dock', id: 'omnimux:attachment-submit', order: 120, locale: NS,
     inject: (sessionId) => ({
       // 附件提交桥的归属判定走统一读数口（#3806）：直读 list.current 在 rc.3 恒 undefined，
       // 会让 `getCurrentSessionId() === sessionId` 永远为假、提交桥静默失效。
-      attachmentStore, attachmentAdmission, getCurrentSessionId: () => currentSessionId(guideSessions),
+      attachmentStore, attachmentAdmission, getCurrentSessionId: () => currentSessionId(hostSessions || guideSessions),
       insertText: (text, span) => {
         const scope = sessionId && guideSessions?.scope(sessionId)
         return scope?.bail(scope, 'slash/input-insert-text', { text, span }) === true
@@ -275,7 +287,7 @@ export function apply(ctx) {
     priority: -10,
     locale: NS,
     inject: (sessionId) => ({
-      getSessions: () => guideSessions,
+      getSessions: () => hostSessions || guideSessions,
       insertLinkReference: (request) => {
         const scope = sessionId && guideSessions?.scope(sessionId)
         return scope?.bail(scope, 'slash/input-insert-reference', request) === true

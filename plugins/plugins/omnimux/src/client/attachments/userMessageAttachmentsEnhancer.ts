@@ -217,8 +217,20 @@ function ensureStyles(doc: Document) {
  * 构造单个附件展示卡片 DOM
  */
 export function createAttachmentCardElement(att: ConversationAttachment, doc: Document = document): HTMLElement {
-  const isImage = att.kind === 'image' || (att.extension && /^(PNG|JPG|JPEG|WEBP|GIF)$/i.test(att.extension));
-  const isVideo = att.kind === 'video' || (att.extension && /^(MP4|MOV|WEBM|MKV)$/i.test(att.extension));
+  const extImage = Boolean(att.extension && /^(PNG|JPG|JPEG|WEBP|GIF|SVG|BMP|ICO|AVIF|HEIC|TIFF)$/i.test(att.extension));
+  const extVideo = Boolean(att.extension && /^(MP4|MOV|AVI|MKV|WEBM|M4V|FLV)$/i.test(att.extension));
+  // An `asset`/`audio` row can still carry a real image (multimodal 图像+音频):
+  // when the preview is an image URL/data-URI, render the thumbnail instead of a
+  // file/AUDIO pill. Pure audio (no image preview) keeps the audio pill.
+  const preview = typeof att.previewUrl === 'string' ? att.previewUrl.trim() : '';
+  const previewIsImage = Boolean(preview) && (
+    preview.startsWith('data:image/')
+    || /\.(png|jpe?g|gif|webp|svg|bmp|ico|avif|heic|tiff)(?:[?#]|$)/i.test(preview)
+  );
+  const previewIsVideo = Boolean(preview) && /\.(mp4|mov|avi|mkv|webm|m4v|flv)(?:[?#]|$)/i.test(preview);
+  const assetLike = att.kind === 'asset' || att.kind === 'audio';
+  const isImage = att.kind === 'image' || extImage || (assetLike && previewIsImage && !previewIsVideo);
+  const isVideo = att.kind === 'video' || extVideo || (assetLike && previewIsVideo);
   const isProduct = att.kind === 'product';
 
   // 1. 优先为商品附件渲染专属商品微卡片（缩略图 + 商品名称 + 关联商品角标）

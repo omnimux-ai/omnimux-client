@@ -406,3 +406,35 @@ describe('add-to-chat - official voice preview guard (Issue #3058)', () => {
     assert.equal(delivered.length, 1)
   })
 })
+
+describe('buildAssetPayload — 类型判定（视频优先 / 纯音频封面不误判 / 真多模态图像）', () => {
+  it('视频 + 图片封面（poster）判为 video，不被封面拉成 image', () => {
+    const payload = buildAssetPayload({
+      id: 'vid-1', name: 'clip', category: 'video', media_type: 'video',
+      cover_url: 'https://cdn.example.test/poster.jpg',
+      media_url: 'https://cdn.example.test/clip.mp4',
+    })
+    assert.equal(payload.kind, 'video')
+    assert.equal(payload.extension, 'VIDEO')
+  })
+
+  it('纯音频 + 真实装饰封面仍是音频（asset/AUDIO），不判 image', () => {
+    const payload = buildAssetPayload({
+      id: 'audio-2', name: 'song', category: 'audio', media_type: 'audio',
+      cover_url: 'https://cdn.example.test/album-cover.png',
+      media_url: 'https://cdn.example.test/song.mp3',
+    })
+    assert.equal(payload.kind, 'asset')
+    assert.equal(payload.extension, 'AUDIO')
+  })
+
+  it('真·图片+音频多模态（并存图片媒体与音频媒体）判为 image', () => {
+    const payload = buildAssetPayload({
+      id: 'mm-1', name: 'Elf Archer', category: 'audio', media_type: 'audio',
+      media_url: 'https://cdn.example.test/voice.mp3',
+      meta: { source_media_url: 'https://cdn.example.test/thumb.png' },
+    })
+    assert.equal(payload.kind, 'image')
+    assert.equal(payload.extension, 'IMAGE')
+  })
+})

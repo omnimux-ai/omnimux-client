@@ -134,15 +134,33 @@ export function buildAssetPayload(asset) {
       pUrl = cloudCover
     }
     const mediaType = asset.mediaType || asset.media_type || (asset.category === 'audio' ? 'audio' : '')
-    if (mediaType === 'audio') {
-      kind = asset.hasCover === false && !cloudCover ? 'audio' : 'asset'
-      if (ext === 'ASSET') ext = 'AUDIO'
-    } else if (mediaType === 'video' || VIDEO_EXT.test(cloudMedia)) {
+    // Classify by media, not by the decorative cover: a poster image alone must
+    // never turn a video or a pure-audio asset into an image. Video wins first;
+    // image only when the asset really carries image media (or a local image
+    // file, or a genuine image+audio multimodal), otherwise audio/file.
+    const realCover = asset.cover_url?.startsWith('http') ? asset.cover_url : (asset.meta?.source_cover_url || '')
+    const mediaUrls = [asset.media_url, asset.meta?.source_media_url]
+      .filter((url) => typeof url === 'string' && url.startsWith('http'))
+    const imageFiles = (Array.isArray(asset.files) ? asset.files : []).some(isImageFile) || isImageFile(coverFile)
+    const mediaIsImage = mediaUrls.some((url) => IMAGE_EXT.test(url))
+    const mediaIsVideo = mediaUrls.some((url) => VIDEO_EXT.test(url))
+    const audioMedia = mediaType === 'audio' || asset.category === 'audio'
+      || mediaUrls.some((url) => /\.(mp3|wav|m4a|aac|ogg|flac)(?:[?#]|$)/i.test(url))
+    if (mediaType === 'video' || mediaIsVideo || VIDEO_EXT.test(realCover)) {
       kind = 'video'
       if (ext === 'ASSET') ext = 'VIDEO'
-    } else if (mediaType === 'image' || IMAGE_EXT.test(cloudCover) || IMAGE_EXT.test(cloudMedia)) {
+    } else if (
+      mediaType === 'image'
+      || asset.category === 'image'
+      || mediaIsImage                              // image media alongside audio => multimodal image
+      || (imageFiles && !audioMedia)               // local image asset
+      || (imageFiles && audioMedia)                // real image + audio multimodal
+    ) {
       kind = 'image'
       if (ext === 'ASSET') ext = 'IMAGE'
+    } else if (mediaType === 'audio') {
+      kind = asset.hasCover === false && !cloudCover ? 'audio' : 'asset'
+      if (ext === 'ASSET') ext = 'AUDIO'
     }
 
     return {
