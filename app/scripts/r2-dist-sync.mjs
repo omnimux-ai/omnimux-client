@@ -546,7 +546,12 @@ async function main() {
     console.log(`\n📤 开始同步 ${uploadPlan.length} 个分发节点...`)
     for (const item of uploadPlan) {
       const existingSize = existingMap.get(item.key)
-      if (!isForce && existingSize === item.size) {
+      // JSON metadata (`api/desktop/version-*.json`, `plugins/dsh-index.json`) must never be
+      // size-skipped: a new release usually has the exact same byte length (same JSON shape,
+      // only the version digits and sha256 values change), so a size match would leave the
+      // updater advertising the previous version + hashes while the installers were updated.
+      const isJsonMetadata = item.key.endsWith('.json')
+      if (!isForce && existingSize === item.size && !isJsonMetadata) {
         console.log(`  ⚡ [已存在] ${item.key} 大小一致 (${(item.size / (1024 * 1024)).toFixed(2)} MB)，跳过上传`)
         continue
       }

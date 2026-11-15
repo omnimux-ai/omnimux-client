@@ -1,0 +1,124 @@
+name: Publish release assets to R2 (dl.omnimux.ai)
+
+# Promotes an already-built GitHub Release to the Cloudflare R2 distribution
+# bucket behind https://dl.omnimux.ai, then purges the CDN edge cache and
+# verifies the live endpoints.
+#
+# This is the "re-publish / CDN sync only" path: it never rebuilds the desktop.
+# It downloads the installers attached to an existing `v<version>` GitHub Release
+# (arm64/x64 DMGs and the Windows x64 NSIS installer), regenerates
+# `api/desktop/version-stable.json` from those exact bytes, uploads everything
+# under `releases/v<version>/` plus the `releases/latest/*` aliases, purges the
+# CDN cache for those aliases, and finally verifies the live download URLs.
+#
+# Unlike the historical `r2-publish.yml` that lived under `app/.github/` (which
+# Actions never read, and which pulled artifacts from a private fork), this
+# workflow runs from the repository root and sources artifacts from this
+# repository's own public GitHub Release.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version to publish (e.g. 2.0.23, leading "v" optional)'
+        required: true
+        type: string
+      skip_purge:
+        description: 'Skip the CDN cache purge (NOT recommended: without it users keep downloading the previous build)'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r2-publish-${{ inputs.version }}
+  cancel-in-progress: false
+
+env:
+  DSH_TELEMETRY_DISABLED: '1'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38  # v6
+        with:
+          node-version: 22.23.2
+
+      - name: Resolve and validate version
+        id: version
+        run: |
+          raw="${{ inputs.version }}"
+          version="${raw#v}"
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::version input '$raw' is not a valid x.y.z (or x.y.z-tag) version"
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: ${version}"
+
+      - name: Download installers from the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="v${{ steps.version.outputs.version }}"
+          mkdir -p release-assets
+          gh release download "$tag" --repo "${{ github.repository }}" --dir release-assets --pattern '*.dmg' --clobber
+          gh release download "$tag" --repo "${{ github.repository }}" --dir release-assets --pattern '*.exe' --clobber \
+            || echo "::warning::no .exe asset attached to $tag; the Windows alias will stay on the previous build"
+          echo "Downloaded assets:"
+          ls -lh release-assets
+          if ! ls release-assets/*.dmg >/dev/null 2>&1 && ! ls release-assets/*.exe >/dev/null 2>&1; then
+            echo "::error::no .dmg or .exe asset found on $tag"
+            exit 1
+          fi
+
+      - name: Generate release metadata (api/desktop/version-stable.json)
+        run: |
+          node scripts/build-release-metadata.mjs \
+            --version "${{ steps.version.outputs.version }}" \
+            --dir release-assets
+
+      - name: Upload to R2 (releases/v<version> + latest aliases + metadata)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "${CLOUDFLARE_API_TOKEN}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID}" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID are required to publish."
+            exit 1
+          fi
+          # --skip-verify: the edge cache still serves the previous build until the
+          # purge step below runs, so a post-upload verify here would race the cache.
+          node scripts/r2-dist-sync.mjs upload \
+            --dir release-assets \
+            --version "${{ steps.version.outputs.version }}" \
+            --skip-verify
+
+      - name: Purge the CDN cache for release aliases
+        if: ${{ !inputs.skip_purge }}
+        env:
+          CLOUDFLARE_PURGE_TOKEN: ${{ secrets.CLOUDFLARE_PURGE_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+        run: |
+          if [ -z "${CLOUDFLARE_PURGE_TOKEN}" ] || [ -z "${CLOUDFLARE_ZONE_ID}" ]; then
+            echo "::error::CLOUDFLARE_PURGE_TOKEN / CLOUDFLARE_ZONE_ID are required; without them dl.omnimux.ai/releases/latest/* keeps serving the previous build."
+            exit 1
+          fi
+          node scripts/cf-purge-cache.mjs --version "${{ steps.version.outputs.version }}"
+
+      - name: Verify the published CDN
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          node scripts/r2-dist-sync.mjs verify --version "${{ steps.version.outputs.version }}"
