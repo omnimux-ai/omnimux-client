@@ -274,20 +274,21 @@ async function main() {
   const outIndex = args.indexOf('--out')
   const outPath = outIndex === -1 ? join(ROOT_DIR, 'dist', 'dsh-index.json') : resolve(args[outIndex + 1])
 
-  // Plugin sources live either in the sibling product tree (day-to-day work) or in
-  // the staged preset copy (packaging and CI). Walk up from the repo root so a
-  // worktree under .worktrees/ resolves the same siblings as the main checkout.
-  const ancestors = []
-  for (let dir = ROOT_DIR; dir !== dirname(dir); dir = dirname(dir)) ancestors.push(dir)
+  // Plugin sources live in this repository's `plugins/` workspace. The staged
+  // preset (`dsh-plugin-desktop/preset/plugins`) is the next preference, and the
+  // installed dependency copy (`dsh-desktop-next/node_modules`) is only the last
+  // resort: it can lag behind the source workspace. The repository workspace is
+  // always preferred so a machine that still has the retired sibling tree cannot
+  // silently publish plugins from it.
   const candidates = [
     process.env.OMNIMUX_PLUGINS_DIR,
-    join(ROOT_DIR, 'dsh-desktop-next', 'node_modules'),
-    ...ancestors.map(dir => join(dir, 'dsh-plugin', 'product', 'omnimux-dsh', 'plugins')),
+    join(ROOT_DIR, '..', 'plugins', 'plugins'),
     join(ROOT_DIR, 'dsh-plugin-desktop', 'preset', 'plugins'),
+    join(ROOT_DIR, 'dsh-desktop-next', 'node_modules'),
   ].filter(Boolean)
   const pluginsRoot = candidates.find(dir => existsSync(dir) && marketablePlugins().every(name => existsSync(join(dir, name, 'package.json'))))
     ?? candidates.find(dir => existsSync(dir))
-  if (!pluginsRoot) throw new Error(`cannot locate the plugin sources; tried:\n  ${candidates.join('\n  ')}`)
+  if (!pluginsRoot) throw new Error(`cannot locate the plugin sources (expected <repo>/plugins/plugins first); tried:\n  ${candidates.join('\n  ')}`)
 
   const index = buildIndex(pluginsRoot)
   // An entry naming an unpublished version sends every user who clicks install into a
