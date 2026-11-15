@@ -274,16 +274,17 @@ async function main() {
   const outIndex = args.indexOf('--out')
   const outPath = outIndex === -1 ? join(ROOT_DIR, 'dist', 'dsh-index.json') : resolve(args[outIndex + 1])
 
-  // Plugin sources live in this repository's `plugins/` workspace. Installed and
-  // staged copies are only fallbacks for contexts where the workspace is absent
-  // (dependency-only checkouts / packaged presets). The repository workspace is
+  // Plugin sources live in this repository's `plugins/` workspace. The staged
+  // preset (`dsh-plugin-desktop/preset/plugins`) is the next preference, and the
+  // installed dependency copy (`dsh-desktop-next/node_modules`) is only the last
+  // resort: it can lag behind the source workspace. The repository workspace is
   // always preferred so a machine that still has the retired sibling tree cannot
   // silently publish plugins from it.
   const candidates = [
     process.env.OMNIMUX_PLUGINS_DIR,
     join(ROOT_DIR, '..', 'plugins', 'plugins'),
-    join(ROOT_DIR, 'dsh-desktop-next', 'node_modules'),
     join(ROOT_DIR, 'dsh-plugin-desktop', 'preset', 'plugins'),
+    join(ROOT_DIR, 'dsh-desktop-next', 'node_modules'),
   ].filter(Boolean)
   const pluginsRoot = candidates.find(dir => existsSync(dir) && marketablePlugins().every(name => existsSync(join(dir, name, 'package.json'))))
     ?? candidates.find(dir => existsSync(dir))
