@@ -2,8 +2,8 @@
 /**
  * OmniMux 插件运维主入口（本仓库作日常开发/测试/同步/发布入口）。
  *
- * 真源脚本在 sibling 产品树 dsh-plugin/product/omnimux-dsh/scripts/；
- * 本文件只做路径解析与命令转发，让 Agent / 人类只在 fork 仓库操作。
+ * 产品树默认取本仓 plugins/（与插件同仓；可用 OMNIMUX_PRODUCT_DIR 覆盖）；
+ * 本文件只做路径解析与命令转发，Agent / 人类只需在本仓操作。
  *
  * 用法（yarn 包装见 package.json omnimux:*）：
  *   node scripts/omnimux.mjs sync [插件...]
@@ -18,12 +18,13 @@
  */
 import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, realpathSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const forkRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const defaultProduct = join(homedir(), 'Desktop/Project/dsh-plugin/product/omnimux-dsh')
+// `app/scripts` → two levels up is the repository root; the plugin workspace lives in `<repo>/plugins`.
+const repoRoot = resolve(forkRoot, '..')
+const defaultProduct = join(repoRoot, 'plugins')
 const productRoot = process.env.OMNIMUX_PRODUCT_DIR
   ? resolve(process.env.OMNIMUX_PRODUCT_DIR)
   : defaultProduct
@@ -38,7 +39,7 @@ function die(msg) {
 
 function requireProduct() {
   if (!existsSync(join(productRoot, 'scripts/sync-to-app.sh'))) {
-    die(`产品树缺失或不完整: ${productRoot}\n  设置 OMNIMUX_PRODUCT_DIR 指向 dsh-plugin/product/omnimux-dsh`)
+    die(`产品树缺失或不完整: ${productRoot}\n  设置 OMNIMUX_PRODUCT_DIR 指向本仓 plugins 目录（默认 <repo>/plugins）`)
   }
 }
 
