@@ -336,6 +336,7 @@ export function useComposerDocking({ hostRef, onUndock } = {}) {
     if (jumpingTimerRef.current) clearTimeout(jumpingTimerRef.current)
     if (suppressTimerRef.current) clearTimeout(suppressTimerRef.current)
     suppressRef.current = false
+    const releasedItem = dockedItem
     setDockedItem(null)
     setPlacement('inline')
     pendingApplyRef.current = null
@@ -345,8 +346,8 @@ export function useComposerDocking({ hostRef, onUndock } = {}) {
     isScrollTransitionRef.current = false
     isCollapsedRef.current = true
     isJumpingRef.current = false
-    onUndock?.()
-  }, [onUndock])
+    onUndock?.(releasedItem)
+  }, [dockedItem, onUndock])
 
   const dock = useCallback((item, onDockedOrOptions) => {
     // 唯一入口的载荷守卫：吸底必须由真实卡片实体触发，

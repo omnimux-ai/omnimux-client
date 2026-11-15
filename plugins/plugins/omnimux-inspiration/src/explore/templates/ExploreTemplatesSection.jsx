@@ -53,9 +53,8 @@ function resolveSkillCover(cover, coverIndex) {
  * 并沉淀深度结构化实体上下文，供 Agent 全面感知领域信息。
  * 100% 委托 adaptCardToAttachmentPayload 单一事实源。
  */
-export function attachCardToConversation(cardOrItem, customWin) {
-  const win = customWin || (typeof window !== 'undefined' ? window : null);
-  if (!cardOrItem || !win) return;
+export function buildCardAttachmentPayload(cardOrItem) {
+  if (!cardOrItem) return null;
 
   let payload = adaptCardToAttachmentPayload(cardOrItem);
   if (!payload) {
@@ -91,16 +90,33 @@ export function attachCardToConversation(cardOrItem, customWin) {
       };
     }
   }
+  return payload;
+}
+
+function findCardAttachments(store, sessionId, payload) {
+  if (!store || typeof store.getSnapshot !== 'function' || !payload) return [];
+  const rows = store.getSnapshot(sessionId) || [];
+  return rows.filter((row) => {
+    if (!row || String(row.entityId || '') !== String(payload.entityId || '')) return false;
+    if (payload.sourcePlugin && row.sourcePlugin && payload.sourcePlugin !== row.sourcePlugin) return false;
+    if (payload.kind && row.kind && payload.kind !== row.kind) return false;
+    return true;
+  });
+}
+
+export function attachCardToConversation(cardOrItem, customWin) {
+  const win = customWin || (typeof window !== 'undefined' ? window : null);
+  if (!cardOrItem || !win) return;
+
+  const payload = buildCardAttachmentPayload(cardOrItem);
   if (!payload) return;
 
   const store = win.__omnimuxAttachments;
   const activeSessionId = store?.getActiveSessionId?.() || '';
 
   if (store && typeof store.addAttachment === 'function') {
-    // 业务事件素材独占替换：每次复刻/选择先清空已有附件槽，绝不追加堆叠
-    if (typeof store.clear === 'function') {
-      store.clear(activeSessionId);
-    }
+    // 首页选材与素材工作台共用同一追加语义：store 自带重复判定与容量上限，
+    // 后续选择只追加，绝不先行清空用户已经选好的素材。
     store.addAttachment(activeSessionId, payload);
   } else {
     win.dispatchEvent?.(new CustomEvent('omnimux:add-to-conversation', { detail: payload }));
@@ -111,6 +127,20 @@ export function attachCardToConversation(cardOrItem, customWin) {
       detail: { sessionId: activeSessionId },
     })
   );
+}
+
+export function removeCardFromConversation(cardOrItem, customWin) {
+  const win = customWin || (typeof window !== 'undefined' ? window : null);
+  const store = win?.__omnimuxAttachments;
+  if (!store || typeof store.removeAttachment !== 'function') return 0;
+
+  const payload = buildCardAttachmentPayload(cardOrItem);
+  const activeSessionId = store.getActiveSessionId?.() || '';
+  const matched = findCardAttachments(store, activeSessionId, payload);
+  for (const attachment of matched) {
+    store.removeAttachment(activeSessionId, attachment.id);
+  }
+  return matched.length;
 }
 
 /** 兼容保留旧方法签名 */

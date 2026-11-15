@@ -155,3 +155,14 @@ test('a missing session publishes nothing', () => {
   assert.equal(win.__omnimuxComposerFiles, undefined)
   stop()
 })
+
+test('add forwards one multi-file batch in source order and confirms every file', async () => {
+  const f = setup()
+  const batch = [file('a.png'), file('b.png'), file('c.png')]
+  const result = await f.bridge.add(batch)
+  assert.deepEqual(result, { ok: true })
+  assert.equal(f.calls.length, 1, '一次多选只调用一次 intake')
+  assert.deepEqual(f.calls[0].map(item => item.name), ['a.png', 'b.png', 'c.png'])
+  assert.deepEqual(f.bridge.list(), ['a.png', 'b.png', 'c.png'])
+  f.stop()
+})

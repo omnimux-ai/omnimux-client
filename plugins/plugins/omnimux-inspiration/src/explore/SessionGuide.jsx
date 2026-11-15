@@ -9,7 +9,7 @@ import { RecreateViralAdsModal } from './RecreateViralAdsModal.jsx'
 import { BulkCreateAdsModal } from './BulkCreateAdsModal.jsx'
 import { CreativePresetsModal } from '../../../omnimux/src/client/presets/CreativePresetsModal.jsx'
 import { TrendingReplicateSection } from './trending/TrendingReplicateSection.jsx'
-import { ExploreTemplatesSection, attachCardToConversation } from './templates/ExploreTemplatesSection.jsx'
+import { ExploreTemplatesSection, attachCardToConversation, removeCardFromConversation } from './templates/ExploreTemplatesSection.jsx'
 import { LIBRARY_STAGE_PROMPT_EVENT, mergeLibraryPrompt } from '../../../omnimux/src/client/composer-add/library-stage-model.js'
 import { useComposerDocking, ICON_CHEVRON_DOWN } from './useComposerDocking.js'
 import { getRightSidebarCollapsedSnapshot, getSplitCompactSnapshot, subscribeSplitCompactLayout } from '../../../omnimux/src/client/split-compact-layout.js'
@@ -161,10 +161,10 @@ function BlankSessionGuide({
   live.current = { input, state }
   const isEn = typeof t === 'function' ? (t('locale') === 'en' || t('guide.locale') === 'en') : false
 
-  const handleUndock = useCallback(() => {
-    const store = typeof window !== 'undefined' ? window.__omnimuxAttachments : null
-    store?.clear?.(sessionId)
-  }, [sessionId])
+  const handleUndock = useCallback((item) => {
+    // 收起/反悔只撤下当前卡片对应的附件，不能把用户此前选好的其他素材一起清空。
+    removeCardFromConversation(item)
+  }, [])
 
   const {
     dockedItem,
@@ -380,13 +380,15 @@ function BlankSessionGuide({
       },
     })
 
-    // 4. 反悔处理：再次点击同卡片撤销选用
+    // 4. 反悔处理：再次点击同卡片只撤销当前卡片，保留其他已选素材
     if (!docked) {
       if (type === 'skill') {
         publishActiveSkill(null)
       }
       applyDraftRef.current?.('', { toastKey: null, restoreNotice: true })
-      store?.clear?.(sessionId)
+      if (attachmentItem) {
+        removeCardFromConversation(attachmentItem)
+      }
     }
   }, [sessionId, dock])
 

@@ -208,6 +208,25 @@ describe('Asset Hub (三栏状态右侧素材工作台) 前端架构与规格测
     assert.equal(store.getSnapshot(sessionId).length, 1)
   })
 
+  it('T04: 工作台连续选择不同素材保持追加与选择顺序', () => {
+    const store = createAttachmentStore()
+    const sessionId = 'session_t04_append'
+    const items = [
+      normalizeAssetItem({ id: 'ast_append_1', name: '素材一.png', type: 'image', url: '/x/1.png' }),
+      normalizeProductItem({ id: 'prd_append_1', name: '商品一', price: '10', image: '/x/p.png' }),
+      normalizeAssetItem({ id: 'ast_append_2', name: '素材二.png', type: 'image', url: '/x/2.png' }),
+    ]
+    for (const item of items) {
+      const result = store.addAttachment(sessionId, adaptCardToAttachmentPayload(item))
+      assert.equal(result.ok, true)
+    }
+    assert.deepEqual(
+      store.getSnapshot(sessionId).map((row) => row.entityId),
+      ['ast_append_1', 'prd_append_1', 'ast_append_2'],
+      '工作台连续点击不同素材必须追加且保序，不得覆盖',
+    )
+  })
+
   it('T04: 加号菜单 openLibrary 唤起 split 模式并切换至 assets Tab', () => {
     const store = createAttachmentStore()
     const navStore = createAssetHubNavStore()
