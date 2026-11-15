@@ -351,7 +351,13 @@ function urlIsHttp(value: string): boolean {
   }
 }
 
-const DOCUMENT_MIME_BY_EXTENSION: Record<string, string> = {
+/**
+ * APIMart Wan3.0 `file_url` document formats. Keep this list identical to
+ * `plugins/omnimux/src/text/document.js` and the Catalog `allowedMimes`;
+ * `application/json` is intentionally absent (JSON parameter files use the
+ * upstream document-input route from #27).
+ */
+export const DOCUMENT_MIME_BY_EXTENSION: Readonly<Record<string, string>> = Object.freeze({
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   doc: 'application/msword',
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -364,17 +370,92 @@ const DOCUMENT_MIME_BY_EXTENSION: Record<string, string> = {
   pages: 'application/vnd.apple.pages',
   numbers: 'application/vnd.apple.numbers',
   md: 'text/markdown',
-};
+});
 
-function documentUrlMatchesSlot(value: string, allowedMimes: string[] | undefined): boolean {
-  if (!allowedMimes?.length) return true;
+export const SUPPORTED_DOCUMENT_EXTENSIONS: readonly string[] = Object.freeze(
+  Object.keys(DOCUMENT_MIME_BY_EXTENSION),
+);
+
+export interface DocumentUrlInfo {
+  /** Trimmed URL supplied by the user. */
+  url: string;
+  /** File name derived from the URL path; never from Content-Disposition. */
+  fileName: string;
+  /** Lower-case extension without the dot. */
+  extension: string;
+  /** MIME associated with the extension in the current document table. */
+  mimeType: string;
+  /** URL host (including a non-default port when present). */
+  sourceHost: string;
+}
+
+export interface DocumentUrlInspection {
+  ok: boolean;
+  /** Present when the URL was a valid http(s) URL with a known document extension. */
+  info?: DocumentUrlInfo;
+  /** User-facing inline error for this URL/slot combination. */
+  error?: string;
+}
+
+function documentExtensionFromPath(pathname: string): string {
+  const cleanPath = pathname.replace(/\/+$/, '');
+  const segment = cleanPath.split('/').pop() ?? '';
+  const dot = segment.lastIndexOf('.');
+  if (dot < 0 || dot === segment.length - 1) return '';
+  return segment.slice(dot + 1).toLowerCase();
+}
+
+function documentFileNameFromUrl(parsed: URL): string {
+  const segment = parsed.pathname.split('/').filter(Boolean).pop() || parsed.hostname;
   try {
-    const extension = new URL(value).pathname.split('.').pop()?.toLowerCase() ?? '';
-    const mime = DOCUMENT_MIME_BY_EXTENSION[extension];
-    return Boolean(mime && allowedMimes.includes(mime));
+    return decodeURIComponent(segment);
   } catch {
-    return false;
+    return segment;
   }
+}
+
+/**
+ * Inspect a remote document URL against one `file_url` slot.
+ * All checks are client-side and intentionally duplicate the hub's authoritative
+ * URL/MIME validation; no document body is fetched here.
+ */
+export function inspectDocumentUrl(
+  value: string | undefined,
+  allowedMimes: string[] | undefined,
+): DocumentUrlInspection {
+  const raw = String(value ?? '').trim();
+  if (!raw) return { ok: false, error: '请输入文档地址' };
+
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return { ok: false, error: '请输入有效的文档 URL（仅支持 http/https）' };
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    return { ok: false, error: '请输入有效的文档 URL（仅支持 http/https）' };
+  }
+
+  const extension = documentExtensionFromPath(parsed.pathname);
+  const mimeType = DOCUMENT_MIME_BY_EXTENSION[extension];
+  if (!mimeType) {
+    return {
+      ok: false,
+      error: `不支持该文档格式：支持 ${SUPPORTED_DOCUMENT_EXTENSIONS.join('、')}`,
+    };
+  }
+
+  const info: DocumentUrlInfo = {
+    url: raw,
+    fileName: documentFileNameFromUrl(parsed),
+    extension,
+    mimeType,
+    sourceHost: parsed.host,
+  };
+  if (allowedMimes?.length && !allowedMimes.includes(mimeType)) {
+    return { ok: false, info, error: '当前模型不支持该文档格式' };
+  }
+  return { ok: true, info };
 }
 
 /** Immediate client-side validation; the hub repeats authoritative checks. */
@@ -423,12 +504,8 @@ export function validateVideoParamsForUi(input: {
   }
   const fileSlot = operation?.slots.find((slot) => slot.slot === 'file_url');
   if (fileSlot?.min) {
-    const fileUrl = params.fileUrl?.trim() ?? '';
-    if (!fileUrl || !urlIsHttp(fileUrl)) {
-      errors.push('请输入有效的文档 URL');
-    } else if (!documentUrlMatchesSlot(fileUrl, fileSlot.allowedMimes)) {
-      errors.push('文档格式不在当前模型支持列表');
-    }
+    const documentCheck = inspectDocumentUrl(params.fileUrl, fileSlot.allowedMimes);
+    if (!documentCheck.ok && documentCheck.error) errors.push(documentCheck.error);
   }
   const linkSlot = operation?.slots.find((slot) => slot.slot === 'link_url');
   if (linkSlot?.min && (!params.linkUrl?.trim() || !urlIsHttp(params.linkUrl.trim()))) {

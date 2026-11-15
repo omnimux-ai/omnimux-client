@@ -10,6 +10,7 @@
  * No raw hex, no banned token island, no JS theme branch. light/dark follows host cascade.
  */
 
+import { FileText, X } from 'lucide-react';
 import { useMemo } from 'react';
 import type { ReactElement, RefObject } from 'react';
 import type { CapabilityModelItem, ModelParameterSchema } from '../../../../../../shared/api.ts';
@@ -18,6 +19,7 @@ import { CfgPopoverShell } from '../cfg/CfgPopoverShell.tsx';
 import { CfgSegment } from '../cfg/CfgSegment.tsx';
 import { AspectCardGrid } from './AspectCardGrid.tsx';
 import { DurationGrid } from './DurationGrid.tsx';
+import { inspectDocumentUrl } from './videoParamAdapter.ts';
 import { projectParamControl } from './paramSchemaFilter.ts';
 import {
   BooleanSwitchSegment,
@@ -109,6 +111,13 @@ export function VideoParamPopover({
     && (activeOperation?.slots.some((slot) => slot.slot === 'file_url') ?? false);
   const needsLinkUrl = advancedKeys.has('linkUrl')
     && (activeOperation?.slots.some((slot) => slot.slot === 'link_url') ?? false);
+  const fileUrlSlot = activeOperation?.slots.find((slot) => slot.slot === 'file_url');
+  const fileUrlValue = typeof params.fileUrl === 'string' ? params.fileUrl : '';
+  const fileUrlCheck = needsFileUrl && fileUrlSlot
+    ? inspectDocumentUrl(fileUrlValue, fileUrlSlot.allowedMimes)
+    : undefined;
+  const documentInfo = fileUrlCheck?.ok ? fileUrlCheck.info : undefined;
+  const showFileUrlError = Boolean(needsFileUrl && fileUrlCheck && !fileUrlCheck.ok);
 
   return (
     <CfgPopoverShell
@@ -242,17 +251,64 @@ export function VideoParamPopover({
           </section>
         )}
 
-        {needsFileUrl || needsLinkUrl ? (
-          <section className="wf-video-param-popover__section">
-            <h4 className="wf-video-param-popover__section-title">
-              {needsFileUrl ? '文档地址' : '网页地址'}
-            </h4>
+        {needsFileUrl ? (
+          <section className="wf-video-param-popover__section" data-testid="wf-video-file-url-section">
+            <h4 className="wf-video-param-popover__section-title">文档地址</h4>
             <input
               type="url"
               className="wf-video-param-popover__input"
-              value={(needsFileUrl ? params.fileUrl : params.linkUrl) ?? ''}
-              placeholder={needsFileUrl ? 'https://example.com/document.pdf' : 'https://example.com/page'}
-              onChange={(event) => onParamChange(needsFileUrl ? 'fileUrl' : 'linkUrl', event.target.value)}
+              value={fileUrlValue}
+              placeholder="https://example.com/document.pdf"
+              aria-invalid={showFileUrlError ? 'true' : 'false'}
+              onChange={(event) => onParamChange('fileUrl', event.target.value)}
+            />
+            {showFileUrlError && fileUrlCheck?.error ? (
+              <p className="wf-video-param-popover__error" role="alert" data-testid="wf-file-url-error">
+                {fileUrlCheck.error}
+              </p>
+            ) : null}
+            {documentInfo ? (
+              <div
+                className="wf-document-input wf-video-param-popover__document"
+                data-testid="wf-file-url-document"
+                title={documentInfo.fileName}
+              >
+                <span className="wf-document-input__icon">
+                  <FileText size={18} aria-hidden="true" />
+                </span>
+                <span className="wf-document-input__copy">
+                  <strong className="wf-document-input__name">{documentInfo.fileName}</strong>
+                  <span className="wf-document-input__meta">
+                    <span className="wf-document-input__type">{documentInfo.extension.toUpperCase()}</span>
+                    <span>{documentInfo.sourceHost}</span>
+                  </span>
+                  <span className="wf-document-input__status" title={documentInfo.mimeType}>
+                    {documentInfo.mimeType}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  className="wf-document-input__remove nodrag"
+                  title="移除文档"
+                  aria-label="移除文档"
+                  onClick={() => onParamChange('fileUrl', '')}
+                >
+                  <X size={12} aria-hidden="true" />
+                </button>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+
+        {needsLinkUrl ? (
+          <section className="wf-video-param-popover__section">
+            <h4 className="wf-video-param-popover__section-title">网页地址</h4>
+            <input
+              type="url"
+              className="wf-video-param-popover__input"
+              value={params.linkUrl ?? ''}
+              placeholder="https://example.com/page"
+              onChange={(event) => onParamChange('linkUrl', event.target.value)}
             />
           </section>
         ) : null}

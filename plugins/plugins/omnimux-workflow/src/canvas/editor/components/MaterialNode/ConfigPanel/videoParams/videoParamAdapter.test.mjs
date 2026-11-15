@@ -389,9 +389,15 @@ describe('videoParamAdapter - document URL validation', () => {
     }), []);
   });
 
+  it('reports an empty file URL in the parameter panel message', () => {
+    assert.deepEqual(validateVideoParamsForUi({
+      params: { ...baseParams, fileUrl: '' },
+    }), ['请输入文档地址']);
+  });
+
   it('blocks a document extension outside the contract MIME list', () => {
     assert.deepEqual(validateVideoParamsForUi({
       params: { ...baseParams, fileUrl: 'https://cdn.example.com/archive.zip' },
-    }), ['文档格式不在当前模型支持列表']);
+    }), ['不支持该文档格式：支持 docx、doc、xlsx、xls、pptx、ppt、pdf、txt、key、pages、numbers、md']);
   });
 });

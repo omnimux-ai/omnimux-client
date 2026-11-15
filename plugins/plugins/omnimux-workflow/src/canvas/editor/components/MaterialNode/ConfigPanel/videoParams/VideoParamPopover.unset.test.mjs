@@ -7,10 +7,12 @@ const { outputFiles } = await build({
   entryPoints: [new URL('./VideoParamPopover.tsx', import.meta.url).pathname],
   bundle: true, write: false, format: 'esm', platform: 'node', jsx: 'automatic',
   plugins: [{ name: 'facade-controls', setup(builder) {
-    builder.onResolve({ filter: /^react$|^react\/jsx-runtime$/ }, args => ({ path: args.path, namespace: 'test-react' }));
+    builder.onResolve({ filter: /^react$|^react\/jsx-runtime$|^lucide-react$/ }, args => ({ path: args.path, namespace: 'test-react' }));
     builder.onLoad({ filter: /.*/, namespace: 'test-react' }, args => ({ contents: args.path === 'react'
       ? 'export const useMemo = fn => fn();'
-      : 'export const jsx = (type, props) => ({type, props}); export const jsxs = jsx;' }));
+      : args.path === 'lucide-react'
+        ? 'export const FileText = "FileText"; export const X = "X";'
+        : 'export const jsx = (type, props) => ({type, props}); export const jsxs = jsx;' }));
     builder.onResolve({ filter: /ui\/index\.ts$|CfgPopoverShell\.tsx$|CfgSegment\.tsx$|AspectCardGrid\.tsx$|DurationGrid\.tsx$|SegmentControls\.tsx$/ }, args => ({ path: args.path, namespace: 'test-controls' }));
     builder.onLoad({ filter: /.*/, namespace: 'test-controls' }, () => ({ contents:
       ['CustomSelect', 'CustomSlider', 'CfgPopoverShell', 'CfgSegment', 'AspectCardGrid', 'DurationGrid', 'BooleanSwitchSegment', 'OperationSegment', 'ResolutionSegment', 'SoundSwitchSegment'].map(name => `export const ${name} = '${name}';`).join('\n') }));

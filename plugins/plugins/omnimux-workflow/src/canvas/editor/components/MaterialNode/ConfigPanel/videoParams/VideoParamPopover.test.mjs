@@ -178,6 +178,8 @@ test('components.css 覆盖全部视频参数类名规则', () => {
     '.wf-video-param-popover__section',
     '.wf-video-param-popover__section-title',
     '.wf-video-param-popover__quality-row',
+    '.wf-video-param-popover__error',
+    '.wf-video-param-popover__document',
     '.wf-video-seg',
     '.wf-video-seg__item',
     '.wf-video-seg__item--active',

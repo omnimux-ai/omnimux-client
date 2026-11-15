@@ -8186,6 +8186,20 @@ body[data-ds-dark-theme] .wf-canvas-root .wf-edge-disconnect__button:focus-visib
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* Issue #30 — file_url remote document item inside the video param popover. */
+.wf-video-param-popover__error {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--dsw-alias-state-error-primary, var(--wb-danger));
+}
+
+.wf-video-param-popover__document {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+}
+
 .wf-cfg-popover__field-row .wf-cfg-seg,
 .wf-video-param-popover__field-row .wf-video-seg {
   width: 160px;
