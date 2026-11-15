@@ -87,6 +87,8 @@ export interface NodeOutput {
   text?: string;
   /** Raw JSON document text (Issue #27). */
   documentText?: string;
+  /** Explicit JSON document read/parse error (Issue #27). */
+  documentError?: string;
   realPath?: string;
   relativePath?: string;
   assetId?: string;

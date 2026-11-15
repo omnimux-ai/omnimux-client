@@ -271,6 +271,20 @@ test('buildConversationPayloadFromNode：文本 / 表格 / 合成 fallback 路�
   assert.equal(buildConversationPayloadFromNode({ nodeType: 'material', nodeId: '' }), null);
 });
 
+test('buildConversationPayloadFromNode：JSON 文档保持 document 类型与 .json 文件名', () => {
+  const doc = buildConversationPayloadFromNode({
+    nodeType: 'material',
+    nodeId: 'd1',
+    materialType: 'document',
+    label: '分镜脚本',
+    relativePath: 'assets/imported/storyboard.json',
+  });
+  assert.equal(doc?.kind, 'document');
+  assert.equal(doc?.title, '分镜脚本.json');
+  assert.equal(doc?.extension, 'JSON');
+  assert.equal(doc?.relativePath, 'assets/imported/storyboard.json');
+});
+
 test('isEmptyImageGenerateNode：仅空状态图片生成节点返回 true', () => {
   assert.equal(
     isEmptyImageGenerateNode({

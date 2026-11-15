@@ -334,6 +334,27 @@ test('§7.19 blob: 预览且无 realPath 剔除；有 realPath 则入列且 prev
   assert.equal(items[0].previewUrl, undefined);
 });
 
+test('§7.20b JSON 文档节点进入画布资产抽屉，类型为 document', () => {
+  const nodes = [{
+    id: 'doc-1',
+    type: 'material',
+    data: {
+      materialType: 'document',
+      status: 'ready',
+      selectedTool: 'import',
+      nodeKind: 'import',
+      originalName: '分镜脚本.json',
+      documentText: '{"prompt":"镜头从窗外推入。"}',
+      mediaUrl: '/omnimux-workflow/api/local-file?path=%2Ftmp%2Fstory.json',
+    },
+  }];
+  const items = extractCanvasAssets(nodes);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].id, 'doc-1');
+  assert.equal(items[0].type, 'document');
+  assert.equal(items[0].name, '分镜脚本.json');
+});
+
 test('§7.20 混合批次只保留有效项；仅 selectedTool 剔除；生产源码无 Mock 字符串', () => {
   const nodes = [
     materialNode('keep-img', 'image', {

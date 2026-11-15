@@ -26,6 +26,7 @@
 ## 测试
 - `src/shared/jsonDocument.test.mjs`：字段约定、空/无效/类型错误。
 - `src/shared/jsonDocumentInput.test.mjs`：指纹/模型兼容/执行准入/时长覆盖。
+- `src/workflow/execution/jsonDocumentExecution.test.mjs`：import 执行器 document 透传、dispatch readiness、移除后 prompt/duration 不泄漏。
 - `src/shared/localMedia.test.mjs`、`src/shared/graph/nodeInputSource.test.mjs`：JSON 导入与读取。
 - `src/shared/validation/compatKernel.test.mjs`：document prompt 不进入媒体硬门槛，仅 document 槽吸收。
 - `src/canvas/editor/components/MaterialNode/ConfigPanel/generationUi.render.test.mjs`：文件卡、无效 JSON 阻断。

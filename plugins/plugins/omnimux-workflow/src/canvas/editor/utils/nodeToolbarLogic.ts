@@ -534,6 +534,7 @@ function mediaFileMeta(materialType: string | undefined): { ext: string; extensi
   if (materialType === 'video') return { ext: 'mp4', extension: 'VIDEO' };
   if (materialType === 'image') return { ext: 'png', extension: 'IMAGE' };
   if (materialType === 'audio') return { ext: 'bin', extension: 'AUDIO' };
+  if (materialType === 'document') return { ext: 'json', extension: 'JSON' };
   return { ext: 'bin', extension: (materialType || 'file').toUpperCase() };
 }
 
@@ -593,6 +594,22 @@ export function buildConversationPayloadFromNode(
       title,
       extension: 'MD',
       relativePath: input.relativePath || input.previewUrl || `assets/texts/${nodeId}.md`,
+      previewUrl: input.previewUrl,
+    };
+  }
+
+  if (materialType === 'document') {
+    const label = input.label?.trim();
+    const title = label
+      ? (label.toLowerCase().endsWith('.json') ? label : `${label}.json`)
+      : '未命名文档.json';
+    return {
+      sourcePlugin: 'omnimux-workflow',
+      kind: 'document',
+      entityId: nodeId,
+      title,
+      extension: 'JSON',
+      relativePath: input.relativePath || input.previewUrl || `assets/documents/${nodeId}.json`,
       previewUrl: input.previewUrl,
     };
   }

@@ -19,6 +19,7 @@ export function collectMaterialSlotInputs(data: Record<string, unknown>, ctx: Ex
   let operationId = typeof params.operation === 'string' ? params.operation : undefined;
   let layout = deriveSlotLayout(catalog, model?.id, operationId);
   const currentVersion = data.inputBindingVersion === 1;
+  const standbyEdgeIds = new Set(((data.slotStandbyEdgeIds ?? []) as unknown[]).filter((id): id is string => typeof id === 'string'));
   const boundOccupants = Object.entries((data.slotBindings ?? {}) as SlotBindings).flatMap(([targetSlot, occupants]) => occupants
     .filter(occupant => occupant.use !== 'inactive').map(occupant => ({
       edgeId: occupant.edgeId, sourceNodeId: occupant.sourceNodeId, targetSlot, role: occupant.role,
@@ -26,14 +27,17 @@ export function collectMaterialSlotInputs(data: Record<string, unknown>, ctx: Ex
         ? ctx.upstreamBindings.find(binding => binding.edgeId === occupant.edgeId && binding.sourceNodeId === occupant.sourceNodeId)?.output ?? {}
         : ctx.upstreamOutputs.get(occupant.sourceNodeId) ?? {},
     })))
+  const rawBindings: NonNullable<ExecutionContext['upstreamBindings']> = ctx.upstreamBindings
+    ?? [...ctx.upstreamOutputs].map(([sourceNodeId, output]) => ({ sourceNodeId, output }));
   const ordered: NonNullable<ExecutionContext['upstreamBindings']> = currentVersion
     ? [
       ...boundOccupants,
       // Free-text contract: unbound connected edges (not in slotBindings, not
       // standby) stay in feed so assemble picks them up as freeTextAssets.
-      ...(ctx.upstreamBindings ?? []).filter((binding) => !boundOccupants.some((item) => item.edgeId === binding.edgeId && item.sourceNodeId === binding.sourceNodeId)),
+      ...rawBindings.filter((binding) => !standbyEdgeIds.has(binding.edgeId ?? '')
+        && !boundOccupants.some((item) => item.edgeId === binding.edgeId && item.sourceNodeId === binding.sourceNodeId)),
     ]
-    : ctx.upstreamBindings ?? [...ctx.upstreamOutputs].map(([sourceNodeId, output]) => ({ sourceNodeId, output }));
+    : rawBindings.filter((binding) => !standbyEdgeIds.has(binding.edgeId ?? ''));
   const texts: string[] = [];
   const seenText = new Set<string>();
   const feed: FeedAsset[] = [];
@@ -42,6 +46,8 @@ export function collectMaterialSlotInputs(data: Record<string, unknown>, ctx: Ex
   for (const [ordinal, binding] of ordered.entries()) {
     const output = binding.output;
     const edgeId = binding.edgeId ?? `feed-${binding.sourceNodeId}-${ordinal}`;
+    // Standby is the user's explicit exclusion; never open, parse or submit it.
+    if (standbyEdgeIds.has(edgeId)) continue;
     const savedSlot = layout.slots.find((slot) => saved?.[slot.slot]?.some((item) => item.edgeId === edgeId));
     const type = output.mediaAssets?.[0]?.type ?? (currentVersion && output.text !== undefined ? 'text' : undefined) ?? savedSlot?.type;
     if (!type) {
@@ -90,7 +96,7 @@ export function collectMaterialSlotInputs(data: Record<string, unknown>, ctx: Ex
     if (!asset.pathOrUrl) throw new SeamGatewayError('input_unavailable', `来源 ${occupant.sourceNodeId} 的已选素材无法解析，请替换或移除引用`);
   }
   const effective = assembleEffectiveInputsFromSlots({ layout, bindings, conflicts,
-    nodeData: data, feedAssets: feed, incomingText: texts });
+    nodeData: data, feedAssets: feed, incomingText: texts, standbyEdgeIds: [...standbyEdgeIds] });
   if (effective.blockedInputs.length) {
     const failure = effective.blockedInputs[0]!;
     throw new SeamGatewayError(failure.reason, `来源 ${failure.sourceNodeId} 的已入坑素材尚不可用，请补齐或移除引用`);
@@ -112,7 +118,7 @@ export function collectMaterialSlotInputs(data: Record<string, unknown>, ctx: Ex
     const parameterSchema = (operationRow?.parameters ?? modelRow?.parameters) as Record<string, unknown> | undefined;
     if (parameterSchema && typeof parameterSchema === 'object' && 'duration' in parameterSchema) {
       for (const asset of feed) {
-        if (asset.type !== 'document' || !asset.documentText) continue;
+        if (standbyEdgeIds.has(asset.edgeId) || asset.type !== 'document' || !asset.documentText) continue;
         const parsed = parseJsonDocumentText(asset.documentText);
         if (parsed.ok && parsed.duration !== undefined) {
           documentDuration = parsed.duration;

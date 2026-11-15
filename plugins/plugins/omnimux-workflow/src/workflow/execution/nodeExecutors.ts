@@ -104,14 +104,26 @@ export function createDispatchingNodeExecutor(
     if (executorKey === 'material:generate' && !collecting) {
       const resolvedInputs = new Map([...upstreamOutputs].map(([id, output]) => {
         const media = (output.mediaAssets ?? []).map((asset) => ({
-          nodeId: id, materialType: asset.type, availability: 'ready' as const,
+          nodeId: id, materialType: asset.type,
+          // A document with an explicit read/parse error is unusable, not "ready".
+          availability: (asset.type === 'document' && output.documentError ? 'unavailable' : 'ready') as 'ready' | 'unavailable',
+          ...(asset.type === 'document' && output.documentError ? { availabilityMessage: output.documentError } : {}),
           url: asset.url || asset.relativePath || asset.path, mimeType: asset.mimeType, sizeBytes: asset.sizeBytes, durationSec: asset.durationSec,
+          // Document slots are prompt/parameter sources: keep the parsed text and
+          // raw JSON text on the same snapshot so readiness sees what execution will read.
+          ...(asset.type === 'document' ? {
+            textContent: output.text,
+            ...(output.documentText !== undefined ? { documentText: output.documentText } : {}),
+          } : {}),
         }));
         const declaredType = edges.find((edge) => edge.target === node.id && edge.source === id)?.data?.feedType;
         // A pending media output is not a text source just because it has no asset yet.
         return [id, media.length ? media : [{
-          nodeId: id, materialType: typeof declaredType === 'string' ? declaredType : 'text', textContent: output.text,
-          availability: output.text?.trim() ? 'ready' as const : 'waiting' as const,
+          nodeId: id, materialType: typeof declaredType === 'string' ? declaredType : 'text',
+          textContent: output.text,
+          ...(output.documentText !== undefined ? { documentText: output.documentText } : {}),
+          ...(output.documentError ? { availabilityMessage: output.documentError } : {}),
+          availability: (output.text?.trim() || output.documentText !== undefined) && !output.documentError ? 'ready' as const : 'waiting' as const,
         }]];
       }));
       const failure = findExecutionReadinessFailure([node], catalog, {
@@ -173,6 +185,7 @@ export function resolveUpstreamBindings(
     const kind = (node.data?.materialType ?? 'text') as keyof NonNullable<CapabilityCatalog['defaults']>;
     const layout = deriveSlotLayout(catalog, (params.model ?? catalog.defaults?.[kind]) as string | undefined, params.operation as string | undefined);
     const incoming = edges.filter((edge) => edge.target === node.id);
+    const standby = new Set((node.data?.slotStandbyEdgeIds ?? []) as string[]);
     if (node.data?.inputBindingVersion === 1) {
       const feed = incoming.map((edge, ordinal) => {
         const rawOutput = context.getNodeOutput(edge.source);
@@ -184,11 +197,12 @@ export function resolveUpstreamBindings(
           ?? String(edge.data?.feedType ?? slot?.type ?? 'text');
         return { edgeId: edge.id ?? `feed-${edge.source}-${ordinal}`, sourceNodeId: edge.source, ordinal, type,
           outputId: asset?.assetId ?? asset?.relativePath ?? asset?.path ?? asset?.url ?? output.assetId,
-          ...(type === 'text' ? { textContent: output.text } : {}),
+          ...(type === 'text' || type === 'document' ? { textContent: output.text } : {}),
+          ...(type === 'document' && output.documentText !== undefined ? { documentText: output.documentText } : {}),
           url: asset?.url, pathOrUrl: asset?.relativePath || asset?.path, mimeType: asset?.mimeType,
           sizeBytes: asset?.sizeBytes, durationSec: asset?.durationSec,
           availability: rawOutput === undefined ? 'unavailable' as const
-            : asset || (type === 'text' && output.text?.trim()) ? 'ready' as const : 'waiting' as const };
+            : asset || ((type === 'text' || type === 'document') && output.text?.trim()) ? 'ready' as const : 'waiting' as const };
       });
       const loaded = effectiveInputDisplay(layout, feed, saved, (node.data?.slotConflicts ?? []) as SlotConflict[], [],
         (node.data?.slotStandbyEdgeIds ?? []) as string[], 1);
@@ -200,16 +214,18 @@ export function resolveUpstreamBindings(
           output: structuredClone(normalizeOutput(context.getNodeOutput(edge.source))) });
       }
       // Unbound connected edges still flow: the free-text contract consumes ready
-      // upstream text that occupies no slot (effectiveFingerprint parity).
+      // upstream text that occupies no slot (effectiveFingerprint parity). A
+      // standby edge is the user's explicit exclusion and never flows.
       const bound = new Set(bindings.map((item) => `${item.edgeId}:${item.sourceNodeId}`));
       for (const item of feed) {
-        if (bound.has(`${item.edgeId}:${item.sourceNodeId}`)) continue;
+        if (standby.has(item.edgeId) || bound.has(`${item.edgeId}:${item.sourceNodeId}`)) continue;
         bindings.push({ edgeId: item.edgeId, sourceNodeId: item.sourceNodeId,
           output: structuredClone(normalizeOutput(context.getNodeOutput(item.sourceNodeId))) });
       }
       return bindings;
     }
     for (const edge of incoming) {
+      if (edge.id && standby.has(edge.id)) continue;
       const output = normalizeOutput(context.getNodeOutput(edge.source));
       const isMedia = output.mediaAssets?.length || ['image', 'video', 'audio'].includes(String(edge.data?.feedType))
         || Object.values(saved).flat().some((item) => item.edgeId === edge.id);

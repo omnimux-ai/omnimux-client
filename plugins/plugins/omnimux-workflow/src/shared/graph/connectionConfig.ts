@@ -157,10 +157,13 @@ export function isNodeConnectionValid(
     return true;
   }
 
-  // JSON documents are prompt/parameter inputs for every video-generation
-  // node; their consumed contract is enforced by the model operation slots.
-  if (sourceInfo.materialType === 'document' && targetRequirements.acceptedTypes.includes('video')) {
-    return true;
+  // JSON documents are prompt/parameter inputs for video-generation nodes only;
+  // a text node's tool union also advertises video, so match the target tool
+  // (or its default video tool) instead of the accepted-type union.
+  if (sourceInfo.materialType === 'document') {
+    const targetMaterialType = targetNode.data?.materialType;
+    const targetTool = targetNode.data?.selectedTool;
+    return targetMaterialType === 'video' && (targetTool === undefined || targetTool === 'video-generation');
   }
 
   return targetRequirements.acceptedTypes.includes(sourceInfo.materialType);

@@ -62,6 +62,8 @@ export function assembleEffectiveInputsFromSlots(args: {
   nodeData: { materialType?: string; prompt?: unknown; content?: unknown; inputBindingVersion?: number };
   feedAssets: FeedAsset[];
   incomingText: string[];
+  /** User-explicit standby edges never contribute prompt text or unused supply. */
+  standbyEdgeIds?: readonly string[];
 }): EffectiveSubmitInputs {
   const result: EffectiveSubmitInputs = {
     prompt: args.layout.acceptsText === false ? '' : resolveGenerationPrompt(args.nodeData, args.incomingText), references: [],
@@ -83,9 +85,10 @@ export function assembleEffectiveInputsFromSlots(args: {
     // feed assets (connected but occupying no slot, not on standby) join bound
     // texts into the generation prompt.
     const boundEdgeIds = new Set(selections.map((item) => item.occupant.edgeId));
+    const standbyEdgeIds = new Set(args.standbyEdgeIds ?? []);
     const freeTexts = !textSlot && args.layout.acceptsText !== false
       ? args.feedAssets.filter((asset) => (asset.type === 'text' || asset.type === 'document') && asset.availability === 'ready'
-        && asset.textContent?.trim() && !boundEdgeIds.has(asset.edgeId))
+        && asset.textContent?.trim() && !boundEdgeIds.has(asset.edgeId) && !standbyEdgeIds.has(asset.edgeId))
       : [];
     result.prompt = args.layout.acceptsText === false ? '' : resolveGenerationPrompt(local,
       [...textSelections.map(item => item.asset?.textContent), ...freeTexts.map(asset => asset.textContent)], composition);
@@ -122,7 +125,8 @@ export function assembleEffectiveInputsFromSlots(args: {
     }
   }
   result.emptyRequiredSlots = args.layout.slots.filter((slot) => (counts.get(slot.slot) ?? 0) < slot.min).map((slot) => slot.slot);
-  result.unusedFeedEdgeIds = args.feedAssets.filter((asset) => !used.has(asset.edgeId)).map((asset) => asset.edgeId);
+  const standbyEdgeIds = new Set(args.standbyEdgeIds ?? []);
+  result.unusedFeedEdgeIds = args.feedAssets.filter((asset) => !used.has(asset.edgeId) && !standbyEdgeIds.has(asset.edgeId)).map((asset) => asset.edgeId);
   return result;
 }
 

@@ -7,7 +7,8 @@
  * to trigger model generation or overwrite user media assets.
  */
 
-import { localFileMediaUrl, projectFileMediaUrl } from '../../shared/localMedia.ts';
+import { localFileMediaUrl, projectFileMediaUrl, readLocalTextFile } from '../../shared/localMedia.ts';
+import { parseJsonDocumentText } from '../../shared/jsonDocument.ts';
 import type {
   ExecutionContext,
   NodeExecutor,
@@ -19,10 +20,32 @@ function readString(source: Record<string, unknown> | undefined, key: string): s
   return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
 }
 
-function readMaterialType(nodeData: Record<string, unknown>): 'text' | 'image' | 'video' | 'audio' {
+function readMaterialType(nodeData: Record<string, unknown>): 'text' | 'image' | 'video' | 'audio' | 'document' {
   const value = nodeData.materialType;
-  if (value === 'image' || value === 'video' || value === 'audio') return value;
+  if (value === 'image' || value === 'video' || value === 'audio' || value === 'document') return value;
   return 'text';
+}
+
+function readDocumentText(data: Record<string, unknown>): string | undefined {
+  if (typeof data.documentText === 'string') return data.documentText;
+  const realPath = readString(data, 'realPath');
+  if (realPath && /\.json$/i.test(realPath)) return readLocalTextFile(realPath);
+  return undefined;
+}
+
+/** Document import keeps the raw JSON text plus its parsed prompt; parse errors surface as an explicit input error. */
+function documentFields(data: Record<string, unknown>): Pick<NodeOutput, 'text' | 'documentText' | 'documentError'> {
+  const documentText = readDocumentText(data);
+  if (documentText === undefined) {
+    const documentError = readString(data, 'documentError');
+    return documentError ? { documentError } : {};
+  }
+  const parsed = parseJsonDocumentText(documentText);
+  return {
+    documentText,
+    ...(parsed.ok && parsed.prompt !== undefined ? { text: parsed.prompt } : {}),
+    ...(!parsed.ok ? { documentError: parsed.error ?? 'JSON 文件无法读取' } : {}),
+  };
 }
 
 function collectUpstreamText(ctx: ExecutionContext): string | undefined {
@@ -40,7 +63,10 @@ export function createImportExecutor(): NodeExecutor {
     async execute(node, ctx): Promise<NodeOutput> {
       const data = node.data ?? {};
       const materialType = readMaterialType(data);
-      const type = materialType === 'video' ? 'video' : materialType === 'audio' ? 'audio' : 'image';
+      const type = materialType === 'video' ? 'video' : materialType === 'audio' ? 'audio' : materialType === 'document' ? 'document' : 'image';
+      const document = materialType === 'document' ? documentFields(data) : {};
+      const mimeType = readString(data, 'mimeType') ?? (materialType === 'document' ? 'application/json' : undefined);
+      const mediaFields = mimeType ? { mimeType } : {};
 
       const relativePath = readString(data, 'relativePath');
       const assetId = readString(data, 'assetId');
@@ -49,19 +75,22 @@ export function createImportExecutor(): NodeExecutor {
         return {
           relativePath,
           assetId,
-          mediaAssets: [{ type, url, relativePath, assetId }],
+          ...document,
+          mediaAssets: [{ type, url, relativePath, assetId, ...mediaFields }],
         };
       }
 
       const realPath = readString(data, 'realPath');
       if (realPath) {
-        return { realPath, mediaAssets: [{ type, url: localFileMediaUrl(realPath), path: realPath }] };
+        return { realPath, ...document, mediaAssets: [{ type, url: localFileMediaUrl(realPath), path: realPath, ...mediaFields }] };
       }
 
       const nodeMediaUrl = readString(data, 'mediaUrl');
       if (nodeMediaUrl && !nodeMediaUrl.startsWith('blob:')) {
-        return { mediaAssets: [{ type, url: nodeMediaUrl }] };
+        return { ...document, mediaAssets: [{ type, url: nodeMediaUrl, ...mediaFields }] };
       }
+
+      if (materialType === 'document') return document;
 
       const text = readString(data, 'content') ?? collectUpstreamText(ctx);
       return { text };

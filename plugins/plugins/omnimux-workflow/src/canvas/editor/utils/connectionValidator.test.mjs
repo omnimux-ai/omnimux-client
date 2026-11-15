@@ -46,6 +46,17 @@ test('JSON document can connect to a video generation node', () => {
   assert.equal(detail.blockedBy, undefined);
 });
 
+test('JSON document cannot connect to a text-to-text node', () => {
+  const textTarget = { id: 'text-target', type: 'material', data: {
+    materialType: 'text', nodeKind: 'generate', selectedTool: 'text-to-text',
+    params: { model: 'text-model', operation: 'text_generate' },
+  } };
+  const documentSource = source('doc', 'document', { mimeType: 'application/json' });
+  const detail = validateConnectionDetailed({ source: 'doc', target: textTarget.id }, [textTarget, documentSource], [], catalog);
+  assert.equal(detail.valid, false);
+  assert.equal(detail.reasonCode, 'type_contract');
+});
+
 test('Stage 2 does not gate import targets and prompt-only input', () => {
   assert.equal(validateDynamicModelCapacity({ source: 'source', target: 'target' }, [source('target'), source('source')], [], null).valid, true);
   assert.equal(validateConnectionDetailed({ source: 'source', target: 'target' }, [target, source('source', 'text')], [], null).valid, true);

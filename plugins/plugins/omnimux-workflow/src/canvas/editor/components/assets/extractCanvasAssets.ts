@@ -64,7 +64,8 @@ function resolveKind(node: FlowNodeLike, data: Record<string, unknown>): string 
     materialType === 'image' ||
     materialType === 'video' ||
     materialType === 'audio' ||
-    materialType === 'text'
+    materialType === 'text' ||
+    materialType === 'document'
   ) {
     return materialType;
   }
@@ -133,6 +134,10 @@ function isAdmitted(kind: string, data: Record<string, unknown>, previewUrl?: st
 
   if (kind === 'text') {
     return Boolean(asTrimmed(data.content) || asTrimmed(data.generatedContent));
+  }
+
+  if (kind === 'document') {
+    return Boolean(asTrimmed(data.documentText) || realPath || previewUrl);
   }
 
   if (kind === 'table') {
