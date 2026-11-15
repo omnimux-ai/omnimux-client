@@ -248,6 +248,7 @@
     "mock-sidecar.test.mjs",
     "model-test-sample.mjs",
     "omnimux-env.sh",
+    "omnimux-paths.test.mjs",
     "patch-asar-agent-presets.mjs",
     "patch-asar-agent-presets.test.mjs",
     "plugin-lifecycle.mjs",
