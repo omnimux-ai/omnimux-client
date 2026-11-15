@@ -14,13 +14,5 @@
   "omnimux-forms": {
     "stage": "alpha",
     "toolPrefixes": []
-  },
-  "omnimux-avatar": {
-    "stage": "alpha",
-    "toolPrefixes": ["avatar_"]
-  },
-  "omnimux-studio": {
-    "stage": "alpha",
-    "toolPrefixes": []
   }
 }

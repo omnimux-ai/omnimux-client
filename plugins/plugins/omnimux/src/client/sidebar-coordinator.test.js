@@ -414,7 +414,7 @@ test('侧栏全局 seam 暴露 Alpha 判定与统一说明，供插件自注册�
   installSidebarGlobal()
   const api = SIDEBAR_GLOBAL()
   assert.equal(typeof api.isAlphaEntry, 'function', '必须暴露 isAlphaEntry')
-  assert.equal(api.isAlphaEntry('omnimux-avatar-entry'), true, 'avatar 已在 lifecycle 列为 Alpha')
+  assert.equal(api.isAlphaEntry('omnimux-accounts-entry'), true, 'accounts 已在 lifecycle 列为 Alpha')
   assert.equal(api.isAlphaEntry('omnimux-workflow-entry'), false, '非 Alpha 项必须返回 false')
   assert.equal(api.alphaDescription, ALPHA_DESCRIPTION, '内测说明与中枢常量逐字一致')
 })
