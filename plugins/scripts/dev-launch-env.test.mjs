@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -81,4 +82,13 @@ test('所有 Dev/Prod 拉起入口都经共享 helper，且 open 调用必须携
   assert.match(omnimux, /\.\/app-restart\.mjs/, 'omnimux.mjs restart 必须经 app-restart');
   assertNoBareOpen('scripts/omnimux.mjs', omnimux);
   assert.doesNotMatch(omnimux, /\bpkill\b/, 'omnimux.mjs 不得强杀桌面应用');
+});
+
+test('omnimux.mjs path 输出 monorepo 的 plugins 产品树与 app 目录', () => {
+  const repoRoot = resolve(root, '..');
+  const result = spawnSync(process.execPath, [join(root, 'scripts/omnimux.mjs'), 'path'], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(result.stdout.includes(`product: ${root}\n`), result.stdout);
+  assert.ok(result.stdout.includes(`plugins: ${join(root, 'plugins')}\n`), result.stdout);
+  assert.ok(result.stdout.includes(`fork: ${join(repoRoot, 'app')}\n`), result.stdout);
 });

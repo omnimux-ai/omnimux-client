@@ -38,7 +38,7 @@ dsh plugin --profile omnimux add omnimux-market
 或随 OmniMux 仓库物化分发（维护者从 fork 主入口执行）：
 
 ```sh
-cd ~/Desktop/Project/omnimux-desktop-fork
+cd <omnimux-client 检出目录>/app
 yarn omnimux:sync omnimux-market
 yarn omnimux:restart
 ```
@@ -53,7 +53,7 @@ yarn omnimux:restart
 
 **设置 → 插件 → 插件配置 → 插件市场**：API 地址、安装目录（默认 `$DSH_HOME/skills`）、搜索结果上限。保存即时生效，写入用户目录的 `omnimux-market.json`，不进 git。
 
-自更新已禁用（fork 已分叉，上游 release 会覆盖改名）：版本随 omnimux-dsh 仓库发布，不走 GitHub release 更新。
+自更新已禁用（fork 已分叉，上游 release 会覆盖改名）：版本随 omnimux-client 仓库发布，不走 GitHub release 更新。
 
 ## 开发
 

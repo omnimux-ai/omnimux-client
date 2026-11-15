@@ -260,10 +260,10 @@ async function handleConfigRoute(ctx) {
     return sendJson(res, 200, { ok: true, ...publicConfig(cfg) });
 }
 function handleUpdateCheck(ctx) {
-    return sendJson(ctx.res, 200, { ok: true, disabled: true, reason: 'fork 已禁用自更新，更新走 omnimux-dsh 仓库' });
+    return sendJson(ctx.res, 200, { ok: true, disabled: true, reason: 'fork 已禁用自更新，更新走 omnimux-client 仓库' });
 }
 function handleUpdate(ctx) {
-    return sendJson(ctx.res, 200, { ok: true, disabled: true, reason: 'fork 已禁用自更新，更新走 omnimux-dsh 仓库' });
+    return sendJson(ctx.res, 200, { ok: true, disabled: true, reason: 'fork 已禁用自更新，更新走 omnimux-client 仓库' });
 }
 async function handlePluginCategoriesRoute(ctx) {
     const items = await listPluginCategories(ctx.cfg);

@@ -28,7 +28,7 @@
 | # | 检查项 | 怎么查 |
 | :--- | :--- | :--- |
 | 1 | `workflow` 工具可用 | 直接问「你有哪些编排工具」，应能看到 `workflow` / `subagent` / `ralph` |
-| 2 | 工作目录正确 | 应为 `product/omnimux-dsh`（脚本与池子都在 `scripts/workflows/` 下） |
+| 2 | 工作目录正确 | 应为 `<omnimux-client 检出目录>/plugins/scripts/workflows`（脚本与池子都在 `scripts/workflows/` 下） |
 | 3 | 池子文件就位 | `scripts/workflows/pools/` 下应有 method / persona / hook / format 四个 json |
 
 ---

@@ -36,15 +36,17 @@ import {
 } from './lib/asar-integrity-engine.mjs'
 
 const require = createRequire(import.meta.url)
+const scriptDir = dirname(fileURLToPath(import.meta.url))
+const appRoot = join(scriptDir, '..', '..', 'app')
 
 export function loadAsar() {
   const candidateDisks = [
     join(process.env.HOME || '', '.npm/_npx/8b3f11f22d4db0c9/node_modules/asar/lib/disk.js'),
-    '/Users/example/Desktop/Project/omnimux-desktop-fork/dsh-plugin-desktop/node_modules/@electron/asar/lib/disk.js',
+    join(appRoot, 'dsh-plugin-desktop/node_modules/@electron/asar/lib/disk.js'),
   ]
   const candidatePickles = [
     join(process.env.HOME || '', '.npm/_npx/8b3f11f22d4db0c9/node_modules/chromium-pickle-js'),
-    '/Users/example/Desktop/Project/omnimux-desktop-fork/dsh-plugin-desktop/node_modules/chromium-pickle-js',
+    join(appRoot, 'dsh-plugin-desktop/node_modules/chromium-pickle-js'),
   ]
   for (let i = 0; i < candidateDisks.length; i++) {
     if (existsSync(candidateDisks[i]) && existsSync(candidatePickles[i])) {

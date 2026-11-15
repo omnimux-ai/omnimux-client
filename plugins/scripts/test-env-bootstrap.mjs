@@ -81,7 +81,7 @@ function canonical(io, path, directory) {
 /** 位置不合规时的可读说明：只说下一步该做什么，不含凭据或敏感信息。 */
 const ROOT_HINTS = {
   'not-absolute-or-unnormalized': '请传入已规范化的绝对路径：不要带尾部斜杠、不要包含 . 或 .. 段。',
-  'outside-worktrees': '任务工作树必须是 <仓库根>/.worktrees/<任务名> 的直接子级。仓库外的兄弟目录（如 product/omnimux-dsh-wt-*）不受支持：请用 `bash scripts/worktree.sh new <任务名> origin/main` 在本仓 .worktrees/ 下建树；已有树可用 `git worktree move <当前路径> <仓库根>/.worktrees/<任务名>` 迁入。',
+  'outside-worktrees': '任务工作树必须是 <仓库根>/.worktrees/<任务名> 的直接子级。仓库外的兄弟目录（如 <repo>-wt-*）不受支持：请用 `bash scripts/worktree.sh new <任务名> origin/main` 在本仓 .worktrees/ 下建树；已有树可用 `git worktree move <当前路径> <仓库根>/.worktrees/<任务名>` 迁入。',
   'path-missing': '该路径不存在或不可访问。请确认工作树已创建，并核对路径拼写。',
   'path-through-symlink': '该路径本身或其上级目录是符号链接。请传入真实路径（realpath 结果），不要经快捷方式。',
   'not-a-git-worktree': '该目录不是 Git 工作树（缺少 .git 文件）。残留空壳目录不满足条件：请用 `bash scripts/worktree.sh new <任务名> origin/main` 重新创建。',

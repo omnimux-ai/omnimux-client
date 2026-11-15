@@ -1,5 +1,5 @@
 #!/bin/bash
-# omnimux-env.sh — omnimux-dsh 统一 Node / pnpm 解析器（可 source 或独立跑）
+# omnimux-env.sh — omnimux-client/plugins 统一 Node / pnpm 解析器（可 source 或独立跑）
 #
 # 背景：在 DSH Desktop 会话里跑 `pnpm`/`npm`/`node` 时，PATH 第一位常被 DSH
 # Desktop 注入为其 `runtime-commands/bin`（一个 `ELECTRON_RUN_AS_NODE` 垫片），
@@ -12,7 +12,7 @@
 #   OMNIMUX_NODE   —— 真实 node
 #   OMNIMUX_PNPM   —— 经 corepack 解析的 pnpm（遵循 packageManager: pnpm@11.x）
 # 这样 package.json 里的 `pnpm` 调用始终走到本工作区自身的 Node/pnpm，而不是
-# DSH 的 GUI 化垫片 —— 不再闪烁，且在 dsh-desktop 与 omnimux-desktop-fork 通用。
+# DSH 的 GUI 化垫片 —— 不再闪烁，且在 dsh-desktop 与 omnimux-client 通用。
 #
 # 用法：
 #   source scripts/omnimux-env.sh            # 在当前 shell 设置 PATH 与变量

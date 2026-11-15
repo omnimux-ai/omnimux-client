@@ -32,7 +32,7 @@ OmniMux **创作资产库**（v0.2）：一条资产是有名字、类型、描�
 日常进 App：
 
 ```sh
-cd <omnimux-desktop-fork 检出目录>
+cd <omnimux-client 检出目录>/app
 corepack yarn omnimux:sync omnimux-assets
 corepack yarn omnimux:restart
 ```

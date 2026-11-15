@@ -2,7 +2,7 @@
 # sync-stable.sh — 【内部实现】把已构建好的插件目录物化进目标 profile。
 #
 # ⚠ 日常请勿直调本脚本。统一入口：
-#   cd ~/Desktop/Project/omnimux-desktop-fork
+#   cd <omnimux-client 检出目录>/app
 #   yarn omnimux:sync [插件...] [--prod|--dsh|--all]   # 会先 build 再调本脚本
 #   yarn omnimux:restart dev                          # 需要时再重启 App
 #

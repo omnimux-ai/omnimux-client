@@ -10,20 +10,23 @@
  *   node scripts/omnimux.mjs build:all                     - 全量并发构建插件
  *   node scripts/omnimux.mjs lint:i18n                     - 文案/禁词质量门禁
  *   node scripts/omnimux.mjs registry [build|verify]       - 插件注册表与 Schema 校验
- *   node scripts/omnimux.mjs stage                         - 物化进 desktop-fork preset
+ *   node scripts/omnimux.mjs stage                         - 物化进 app preset
  *   node scripts/omnimux.mjs package:dev                   - 打包并安装 OmniMux Dev 开发版 App
+ *   node scripts/omnimux.mjs path                          - 打印 product / plugins / app 路径
  */
 
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { restartDesktopApp } from './app-restart.mjs'
 import { fileURLToPath } from 'node:url'
 
-const productRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const scriptsRoot = dirname(fileURLToPath(import.meta.url))
+const productRoot = resolve(scriptsRoot, '..')
 const pluginsRoot = join(productRoot, 'plugins')
-const forkRoot = join(homedir(), 'Desktop/Project/omnimux-desktop-fork')
+// OmniMux client monorepo: the desktop app lives in <repo>/app, while this
+// plugin workspace is <repo>/plugins (the "product" root for plugin scripts).
+const forkRoot = resolve(productRoot, '..', 'app')
 
 function die(msg) {
   process.stderr.write(`✗ ${msg}\n`)
@@ -62,7 +65,7 @@ function runNodeScript(scriptRel, args = []) {
 
 function runForkCommand(yarnScript, args = [], extraEnv = {}) {
   if (!existsSync(forkRoot)) {
-    die(`桌面仓库不存在: ${forkRoot}`)
+    die(`app 仓库不存在: ${forkRoot}`)
   }
   const env = {
     ...process.env,
@@ -97,7 +100,7 @@ Host 重启须按 docs/contracts/plugin-git-pr.md 核实目标进程、可恢复
 }
 
 function printHelp() {
-  process.stdout.write(`OmniMux 插件开发运维工具 (omnimux-dsh)
+  process.stdout.write(`OmniMux 插件开发运维工具 (omnimux-client/plugins)
 
 工作目录: ${productRoot}
 插件目录: ${pluginsRoot}
@@ -114,8 +117,9 @@ function printHelp() {
   doctor                          多层开发环境自检
   restart dev                     【人类专用】手动重启开发版应用 (/Applications/OmniMux Dev.app)
   restart prod                    【人类专用】手动重启正式版应用 (/Applications/OmniMux.app)
-  stage                           物化全量预设插件到 desktop 仓库
+  stage                           物化全量预设插件到 app 仓库
   package:dev                     编译打包并安装 OmniMux Dev 开发版 App
+  path                            打印 product / plugins / app 路径
   qa:gate                         严过关五维自动化质检门禁
   auto:run <issue_id>             全流程无人值守自动化闭环执行
   help                            显示本帮助
@@ -164,7 +168,10 @@ switch (cmd) {
     runForkCommand('omnimux:stage', rest)
     break
   case 'package:dev':
-    runForkCommand('package:dir:dev', [], { OMNIMUX_CHANNEL: 'dev' })
+    runForkCommand('package:dev', [], { OMNIMUX_CHANNEL: 'dev' })
+    break
+  case 'path':
+    process.stdout.write(`product: ${productRoot}\nplugins: ${pluginsRoot}\nfork: ${forkRoot}\n`)
     break
   case 'qa:gate':
     runNodeScript('scripts/auto-qa-gate.mjs', rest)
