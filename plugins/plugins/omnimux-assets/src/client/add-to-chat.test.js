@@ -10,6 +10,7 @@ import {
   addAssetToConversation,
   addMediaToConversation,
 } from './add-to-chat.js'
+import { normalizeCloudAsset } from './cloud-feed-helpers.js'
 
 describe('add-to-chat helpers', () => {
   describe('isImageFile', () => {
@@ -436,5 +437,76 @@ describe('buildAssetPayload — 类型判定（视频优先 / 纯音频封面不
     })
     assert.equal(payload.kind, 'image')
     assert.equal(payload.extension, 'IMAGE')
+  })
+
+  // AC5 真机回归：CloudAssetCard 传给 addAssetToConversation 的是
+  // normalizeCloudAsset() 的 camelCase 结果，不是目录 raw 行。这条用例必须
+  // 覆盖真实入参形状（thumbUrl/coverUrl/hasCover/mediaType），否则单测全绿
+  // 但真机仍落回 ASSET/AUDIO pill（PR #18 的漏点）。
+  it('云端真实 Elf Archer 行经 normalizeCloudAsset 后判为 image/IMAGE', () => {
+    const elfArcherRow = {
+      id: 'character-fantasy-genrex-999c40067350',
+      category: 'character',
+      sub_category: 'fantasy-genrex',
+      name: 'Elf Archer',
+      media_type: 'audio',
+      cover_url: 'https://assets.omnimux.ai/avatars/free-ai-avatars/Fantasy_GenreX/Elf%20Archer/Elf%20Archer.png',
+      media_url: 'https://assets.omnimux.ai/avatars/free-ai-avatars/Fantasy_GenreX/Elf%20Archer/087-elf-archer.wav',
+      thumb_url: 'https://assets.omnimux.ai/thumbs/character-fantasy-genrex-999c40067350.webp',
+      tags: ['AI数字人', 'Fantasy_GenreX', 'Elf Archer'],
+      meta: { source: 'free-ai-avatars', duration: 9.76 },
+    }
+    const normalized = normalizeCloudAsset(elfArcherRow)
+    const payload = buildAssetPayload(normalized)
+    assert.equal(normalized.mediaType, 'audio')
+    assert.equal(normalized.hasCover, true)
+    assert.equal(payload.kind, 'image')
+    assert.equal(payload.extension, 'IMAGE')
+    assert.match(payload.previewUrl, /thumbs\/character-fantasy-genrex-999c40067350\.webp$/)
+  })
+
+  it('云端纯 audio 类目（带封面）经 normalizeCloudAsset 后仍是 asset/AUDIO', () => {
+    const normalized = normalizeCloudAsset({
+      id: 'audio-voice-1',
+      category: 'audio',
+      name: '旁白音色',
+      media_type: 'audio',
+      cover_url: 'https://cdn.example.test/album-cover.png',
+      media_url: 'https://cdn.example.test/voice.mp3',
+      thumb_url: 'https://cdn.example.test/album-cover-thumb.webp',
+    })
+    const payload = buildAssetPayload(normalized)
+    assert.equal(payload.kind, 'asset')
+    assert.equal(payload.extension, 'AUDIO')
+  })
+
+  it('云端视频行经 normalizeCloudAsset 后仍是 video/VIDEO', () => {
+    const normalized = normalizeCloudAsset({
+      id: 'video-1',
+      category: 'video',
+      name: '片段',
+      media_type: 'video',
+      cover_url: 'https://cdn.example.test/poster.jpg',
+      media_url: 'https://cdn.example.test/clip.mp4',
+      thumb_url: 'https://cdn.example.test/poster-thumb.webp',
+    })
+    const payload = buildAssetPayload(normalized)
+    assert.equal(payload.kind, 'video')
+    assert.equal(payload.extension, 'VIDEO')
+  })
+
+  it('云端文件/表格行经 normalizeCloudAsset 后不因封面误出图像缩略', () => {
+    const normalized = normalizeCloudAsset({
+      id: 'doc-1',
+      category: 'document',
+      name: '合同.pdf',
+      media_type: 'other',
+      cover_url: 'https://cdn.example.test/doc-cover.png',
+      thumb_url: 'https://cdn.example.test/doc-cover-thumb.webp',
+    })
+    const payload = buildAssetPayload(normalized)
+    assert.equal(payload.kind, 'asset')
+    assert.notEqual(payload.extension, 'IMAGE')
+    assert.doesNotMatch(payload.previewUrl, /\.(png|webp)(?:[?#]|$)/i)
   })
 })

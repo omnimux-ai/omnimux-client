@@ -123,27 +123,41 @@ export function buildAssetPayload(asset) {
 
   // 云端公共资产特殊补齐：透传云端直链与分类元数据
   if (isCloud && files.length === 0) {
-    const cloudCover = asset.cover_url?.startsWith('http')
+    // CloudAssetCard passes normalizeCloudAsset(row) here: its locators are
+    // camelCase (`thumbUrl` / `coverUrl` / `mediaType` / `hasCover`) and the raw
+    // snake_case fields are gone. Accept both shapes, otherwise a real cloud
+    // character row (cover .png + voice .wav) falls through as ASSET/AUDIO.
+    const rawCover = asset.cover_url?.startsWith('http')
       ? asset.cover_url
-      : (asset.meta?.source_cover_url || (asset.id ? `/omnimux/assets/cloud/media?id=${encodeURIComponent(asset.id)}&which=cover` : ''))
+      : (asset.meta?.source_cover_url || '')
+    const normalizedCover = [asset.thumbUrl, asset.coverUrl]
+      .find((url) => typeof url === 'string' && url.startsWith('http')) || ''
+    const coverRoute = asset.id
+      ? `/omnimux/assets/cloud/media?id=${encodeURIComponent(asset.id)}&which=cover`
+      : ''
+    const cloudCover = rawCover || normalizedCover || coverRoute
+    const normalizedMedia = typeof asset.mediaUrl === 'string' && asset.mediaUrl.startsWith('http')
+      ? asset.mediaUrl
+      : ''
     const cloudMedia = asset.media_url?.startsWith('http')
       ? asset.media_url
-      : (asset.meta?.source_media_url || (asset.id ? `/omnimux/assets/cloud/media?id=${encodeURIComponent(asset.id)}&which=media` : ''))
+      : (asset.meta?.source_media_url || normalizedMedia || (asset.id ? `/omnimux/assets/cloud/media?id=${encodeURIComponent(asset.id)}&which=media` : ''))
 
-    if (!pUrl && cloudCover) {
-      pUrl = cloudCover
-    }
     const mediaType = asset.mediaType || asset.media_type || (asset.category === 'audio' ? 'audio' : '')
     // Classify by media, not by the decorative cover: a poster image alone must
     // never turn a video or a pure-audio asset into an image. Video wins first;
     // image only when the asset really carries image media (or a local image
     // file, or a genuine image+audio multimodal), otherwise audio/file.
-    const realCover = asset.cover_url?.startsWith('http') ? asset.cover_url : (asset.meta?.source_cover_url || '')
-    const mediaUrls = [asset.media_url, asset.meta?.source_media_url]
+    const realCover = rawCover
+    const mediaUrls = [asset.media_url, asset.meta?.source_media_url, normalizedMedia]
       .filter((url) => typeof url === 'string' && url.startsWith('http'))
     const imageFiles = (Array.isArray(asset.files) ? asset.files : []).some(isImageFile) || isImageFile(coverFile)
     const mediaIsImage = mediaUrls.some((url) => IMAGE_EXT.test(url))
     const mediaIsVideo = mediaUrls.some((url) => VIDEO_EXT.test(url))
+    const hasVisualCover = Boolean(rawCover || normalizedCover || asset.hasCover === true)
+    const nonAudioCategory = typeof asset.category === 'string'
+      && asset.category !== ''
+      && asset.category !== 'audio'
     const audioMedia = mediaType === 'audio' || asset.category === 'audio'
       || mediaUrls.some((url) => /\.(mp3|wav|m4a|aac|ogg|flac)(?:[?#]|$)/i.test(url))
     if (mediaType === 'video' || mediaIsVideo || VIDEO_EXT.test(realCover)) {
@@ -155,12 +169,20 @@ export function buildAssetPayload(asset) {
       || mediaIsImage                              // image media alongside audio => multimodal image
       || (imageFiles && !audioMedia)               // local image asset
       || (imageFiles && audioMedia)                // real image + audio multimodal
+      || (mediaType === 'audio' && nonAudioCategory && hasVisualCover) // cloud character portrait + voice
     ) {
       kind = 'image'
       if (ext === 'ASSET') ext = 'IMAGE'
     } else if (mediaType === 'audio') {
       kind = asset.hasCover === false && !cloudCover ? 'audio' : 'asset'
       if (ext === 'ASSET') ext = 'AUDIO'
+    }
+
+    if (!pUrl) {
+      // Only image/video attachments get a real image preview URL; pure audio,
+      // documents and other files keep the extensionless cloud route so their
+      // pill renderer is not turned into a thumbnail.
+      pUrl = kind === 'image' || kind === 'video' ? cloudCover : coverRoute
     }
 
     return {
@@ -177,8 +199,8 @@ export function buildAssetPayload(asset) {
         is_cloud: true,
         category: asset.category || '',
         sub_category: asset.sub_category || '',
-        cover_url: asset.cover_url || '',
-        media_url: asset.media_url || '',
+        cover_url: asset.cover_url || asset.coverUrl || asset.thumbUrl || '',
+        media_url: asset.media_url || normalizedMedia || '',
         source_cover_url: asset.meta?.source_cover_url || '',
         source_media_url: asset.meta?.source_media_url || '',
         media_type: mediaType,
