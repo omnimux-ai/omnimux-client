@@ -33,8 +33,14 @@ export function analysisMediaItems(item) {
     || ['photo', 'gallery'].includes(String(item?.content_shape || '')) || item?.media_kind === 'image')
   if (isImage) {
     const photos = urls.map(legacyImageUrl).filter(Boolean)
+    if (photos.length) return [...new Set(photos)].map((url) => ({ type: 'image', url }))
+    // Cloud catalogue rows carry their gallery under `media_keys` (an ordered
+    // slide list) with no media_items/media_urls; dropping it left carousel
+    // posts showing only the cover. Source order is the carousel order.
+    const keys = Array.isArray(item?.media_keys) ? item.media_keys.map(legacyImageUrl).filter(Boolean) : []
+    if (keys.length) return [...new Set(keys)].map((url) => ({ type: 'image', url }))
     const cover = legacyImageUrl(item.cover_key ?? item.cover_url)
-    return [...new Set(photos.length ? photos : [cover].filter(Boolean))].map((url) => ({ type: 'image', url }))
+    return [...new Set([cover].filter(Boolean))].map((url) => ({ type: 'image', url }))
   }
   if (['text', 'link'].includes(String(item?.type || '')) || item?.content_shape === 'text') return []
   const videos = urls.filter((url) => typeof url === 'string' && (/^https?:\/\//i.test(url)

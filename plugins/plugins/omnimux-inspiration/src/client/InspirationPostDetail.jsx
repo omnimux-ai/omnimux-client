@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Badge, Button, CopyButton, Drawer, IconButton, InputField, Tabs } from 'dsh-ui-kit'
-import { ArrowRight, Check, ExternalLink, FileText, Film, Minus, Plus, RotateCcw, Sparkles, X, ZoomIn } from 'lucide-react'
+import { ArrowRight, Check, ChevronLeft, ChevronRight, ExternalLink, FileText, Film, Minus, Plus, RotateCcw, Sparkles, X, ZoomIn } from 'lucide-react'
 import { getPostBody, getPostMedia, analysisTargetKey, getTargetAnalysis, getBodyTranslation, analysisDirections, hasRunningAnalysis, decideAnalysisPollOutcome } from './post-detail.js'
 import { getInspirationPreviewData, parseDocAnalysis, renderPlainBreakdownText, scriptCopyText, deconstructionCopyText } from './inspiration-preview-data.js'
 import { triggerAnalyzeInspiration, getAnalysisService, confirmOfficialAnalysisService, translateInspiration, saveCreationDraft, prepareCreationReferences, ensureLocalInspiration, getLocalInspiration, pickCoverSrc, resolveTikTokEmbedUrl } from './api.js'
 import { createImportPoller } from './import-poller.js'
+import { PostMediaCarousel } from './PostMediaCarousel.jsx'
 import { formatPlatformName } from './feed-helpers.js'
 import { parseShotTimeWindow } from '../structure-script.js'
 import { createEmptyCreationDraft, creationBasis, reconcileCreationDraft, validateCreationDraft, confirmCreationDraftBasis } from '../creation-draft.js'
@@ -61,6 +62,8 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
   const requestIdentity = useRef(String(item.source_url || item.id))
   const body = getPostBody(item)
   const media = useMemo(() => getPostMedia(item), [item])
+  const imageMedia = useMemo(() => media.filter(asset => asset.type === 'image'), [media])
+  const isImageCarousel = media.length > 1 && imageMedia.length === media.length
   const [expanded, setExpanded] = useState(false)
   const [translated, setTranslated] = useState(false)
   const [translating, setTranslating] = useState(false)
@@ -115,6 +118,14 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
   const basis = creationBasis(item, draft)
   const manualStale = Boolean(draft.manual && draft.stale)
   const copy = (name) => t(`post.${name}`)
+  const imageLightboxPosition = image ? imageMedia.findIndex(asset => asset.id === image.id) : -1
+  const stepImage = (delta) => {
+    if (!image) return
+    const next = imageMedia[imageLightboxPosition + delta]
+    if (!next) return
+    setImage(next)
+    setZoom(1)
+  }
   const refKey = (ref) => ref.kind === 'media' ? `media:${ref.media_index}` : ref.kind === 'analysis' ? `analysis:${analysisTargetKey(ref)}` : 'body'
   const hasReference = (ref) => selected.some((entry) => refKey(entry) === refKey(ref))
   const labelFor = (ref) => ref.kind === 'body' ? copy('body') : ref.kind === 'analysis' ? `${copy('analysis')} · ${targetLabel(ref)}` : media.find(value => value.index === ref.media_index)?.label || copy('media')
@@ -184,6 +195,13 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
   useEffect(() => {
     if (!image && !drawer) return
     const cancel = (event) => {
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        if (!image) return
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        stepImage(event.key === 'ArrowLeft' ? -1 : 1)
+        return
+      }
       if (event.key !== 'Escape') return
       event.preventDefault()
       event.stopImmediatePropagation()
@@ -350,7 +368,19 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
         </article>}
         {notice}
         {localizing && <p role="status" className="omnimux-post-help">{copy('savingPost')}</p>}
-        {media.map(asset => <article key={asset.id} ref={node => node ? mediaNodes.current.set(asset.index, node) : mediaNodes.current.delete(asset.index)} className="omnimux-post-media" data-media-id={asset.id}>
+        {isImageCarousel ? <PostMediaCarousel
+          assets={media}
+          dimensions={dimensions}
+          failedImages={failedImages}
+          t={t}
+          saving={saving}
+          onOpen={asset => { setImage(asset); setZoom(1) }}
+          onDimension={(asset, size) => setDimensions(value => ({ ...value, [asset.index]: size }))}
+          onImageError={asset => setFailedImages(value => ({ ...value, [asset.id]: true }))}
+          onAnalyze={asset => chooseTarget({ scope: 'media', media_index: asset.index })}
+          onToggleReference={asset => toggleReference({ kind: 'media', media_index: asset.index })}
+          hasReference={asset => hasReference({ kind: 'media', media_index: asset.index })}
+        /> : media.map(asset => <article key={asset.id} ref={node => node ? mediaNodes.current.set(asset.index, node) : mediaNodes.current.delete(asset.index)} className="omnimux-post-media" data-media-id={asset.id}>
           <div className="omnimux-inspiration-modal-player-box omnimux-post-media-viewer">
             {asset.type === 'video' ? <video ref={node => node ? videos.current.set(asset.index, node) : videos.current.delete(asset.index)} src={asset.url} poster={asset.poster || pickCoverSrc(item) || undefined} hidden={Boolean(failedMedia[asset.id])} controls playsInline preload="metadata" className="omnimux-inspiration-player-frame" aria-label={asset.label} onError={() => setFailedMedia(value => ({ ...value, [asset.id]: true }))} onLoadedMetadata={event => { const node = event.currentTarget; setDimensions(value => ({ ...value, [asset.index]: { width: node.videoWidth, height: node.videoHeight, duration: node.duration } })) }} />
               : <Button className="omnimux-post-image-open" variant="ghost" aria-label={`${copy('openImage')} ${asset.label}`} onClick={() => { setImage(asset); setZoom(1) }}><img src={asset.url} alt={asset.title || asset.label} className="omnimux-inspiration-modal-cover-bg" onError={() => setFailedImages(value => ({ ...value, [asset.id]: true }))} onLoad={event => { const node = event.currentTarget; setDimensions(value => ({ ...value, [asset.index]: { width: node.naturalWidth, height: node.naturalHeight } })) }} /><span className="omnimux-post-image-caption"><ZoomIn size={14} />{copy('openImage')}</span></Button>}
@@ -399,7 +429,7 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
     </main>
     <footer className="omnimux-inspiration-modal-footer omnimux-post-reference-bar"><div><strong>{selected.length ? `${copy('selectedReferences')} ${selected.length}` : copy('chooseHint')}</strong><div className="omnimux-post-reference-chips">{selected.map(ref => <span key={refKey(ref)}>{labelFor(ref)}</span>)}</div></div><Button className="omnimux-inspiration-modal-replicate" variant="primary" leadingIcon={<ArrowRight size={15} />} disabled={!selected.length} onClick={() => setDrawer(true)}>{copy('create')}</Button></footer>
     <Drawer open={Boolean(image)} onClose={() => setImage(null)} title={<div className="omnimux-post-drawer-heading"><span>{image?.label || copy('image')}</span><IconButton variant="ghost" aria-label={t('close')} onClick={() => setImage(null)}><X size={16} /></IconButton></div>} closable={false} className="omnimux-post-lightbox" width="100%" container={container} closeOnEsc={false} footer={image && <ReferenceButton disabled={saving} selected={hasReference({ kind: 'media', media_index: image.index })} onClick={() => toggleReference({ kind: 'media', media_index: image.index })} t={t} />}>
-      {image && <><div className="omnimux-post-lightbox-tools"><IconButton variant="ghost" aria-label={copy('zoomOut')} onClick={() => setZoom(value => Math.max(1, value - .5))}><Minus size={16} /></IconButton><Button size="sm" variant="ghost" leadingIcon={<RotateCcw size={14} />} onClick={() => setZoom(1)}>{zoom === 1 ? copy('fit') : `${Math.round(zoom * 100)}%`}</Button><IconButton variant="ghost" aria-label={copy('zoomIn')} onClick={() => setZoom(value => Math.min(4, value + .5))}><Plus size={16} /></IconButton><a href={image.url} target="_blank" rel="noopener noreferrer">{copy('openOriginal')}</a></div><div className={`omnimux-post-lightbox-canvas ${zoom > 1 ? 'is-zoomed' : ''}`}><img src={image.url} alt={image.title || image.label} style={zoom > 1 ? { width: `${(dimensions[image.index]?.width || 600) * zoom}px`, maxWidth: 'none', maxHeight: 'none' } : undefined} /></div></>}
+      {image && <><div className="omnimux-post-lightbox-tools"><IconButton variant="ghost" aria-label={copy('previousImage')} disabled={imageLightboxPosition <= 0} onClick={() => stepImage(-1)}><ChevronLeft size={16} /></IconButton><span className="omnimux-post-lightbox-counter">{imageLightboxPosition + 1} / {imageMedia.length}</span><IconButton variant="ghost" aria-label={copy('nextImage')} disabled={imageLightboxPosition < 0 || imageLightboxPosition >= imageMedia.length - 1} onClick={() => stepImage(1)}><ChevronRight size={16} /></IconButton><IconButton variant="ghost" aria-label={copy('zoomOut')} onClick={() => setZoom(value => Math.max(1, value - .5))}><Minus size={16} /></IconButton><Button size="sm" variant="ghost" leadingIcon={<RotateCcw size={14} />} onClick={() => setZoom(1)}>{zoom === 1 ? copy('fit') : `${Math.round(zoom * 100)}%`}</Button><IconButton variant="ghost" aria-label={copy('zoomIn')} onClick={() => setZoom(value => Math.min(4, value + .5))}><Plus size={16} /></IconButton><a href={image.url} target="_blank" rel="noopener noreferrer">{copy('openOriginal')}</a></div><div className={`omnimux-post-lightbox-canvas ${zoom > 1 ? 'is-zoomed' : ''}`}><img src={image.url} alt={image.title || image.label} style={zoom > 1 ? { width: `${(dimensions[image.index]?.width || 600) * zoom}px`, maxWidth: 'none', maxHeight: 'none' } : undefined} /></div></>}
     </Drawer>
     <Drawer open={drawer} onClose={() => setDrawer(false)} title={<div className="omnimux-post-drawer-heading"><span>{copy('creationTitle')}</span><IconButton variant="ghost" aria-label={t('close')} onClick={() => setDrawer(false)}><X size={16} /></IconButton></div>} closable={false} description={copy('creationHint')} width={460} container={container} closeOnEsc={false} className="omnimux-post-creation-drawer" footer={<div className="omnimux-post-draft-actions"><Button variant="secondary" loading={saving} disabled={!selected.length} onClick={() => save(false)}>{copy('saveDraft')}</Button><Button variant="primary" loading={saving || replicateBusy} disabled={!selected.length || !onReplicate || manualStale || clipError} onClick={() => save(true)}>{copy('useInChat')}</Button></div>}>
       <div className="omnimux-post-draft-content">

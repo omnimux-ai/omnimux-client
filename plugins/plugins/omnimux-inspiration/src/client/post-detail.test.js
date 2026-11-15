@@ -17,6 +17,21 @@ test('visible typed media retain persisted indexes and per-type labels', () => {
   assert.deepEqual(getPostMedia({ type: 'image', media_urls: ['https://a.example/1.jpg', 'https://a.example/2.jpg'] }).map(media => media.type), ['image', 'image'])
 })
 
+test('cloud carousel media_keys keep source order and never turn a video into photos', () => {
+  const keys = [
+    '/omnimux/inspiration/media/r2/slides/slide-1.jpg',
+    'https://cdn.example/slide-2.jpg',
+    '/omnimux/inspiration/media/r2/slides/slide-1.jpg',
+    'javascript:alert(1)',
+  ]
+  const media = getPostMedia({ type: 'image', content_shape: 'gallery', media_keys: keys })
+  assert.deepEqual(media.map(({ index, label, url }) => ({ index, label, url })), [
+    { index: 0, label: '图片 1', url: '/omnimux/inspiration/media/r2/slides/slide-1.jpg' },
+    { index: 1, label: '图片 2', url: 'https://cdn.example/slide-2.jpg' },
+  ])
+  assert.deepEqual(getPostMedia({ type: 'video', media_keys: ['/omnimux/inspiration/media/a.jpg'] }), [])
+})
+
 test('analysis identity isolates scopes, rejects changed content and labels old video results', () => {
   const item = { content: '正文', media_items: [{ type: 'video', url: 'https://a.example/1.mp4' }], deconstruction: { markdown: '历史分析' } }
   assert.equal(getTargetAnalysis(item, { scope: 'post' }), null)

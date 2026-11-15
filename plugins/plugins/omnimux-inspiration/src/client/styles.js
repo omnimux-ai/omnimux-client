@@ -1595,6 +1595,27 @@ export const INSPIRATION_CSS = `
 .omnimux-post-media-viewer .omnimux-post-image-open { width: 100%; height: 100%; padding: 0; border: 0; border-radius: 0; }
 .omnimux-post-image-open > span { display: contents; }
 .omnimux-post-image-caption { position: absolute; right: 12px; bottom: 12px; display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font-size: 12px; }
+.omnimux-post-carousel-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.omnimux-post-carousel-chip { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-secondary); font-size: 11px; }
+.omnimux-post-carousel-hint { margin-left: auto; color: var(--dsw-alias-label-secondary); font-size: 11px; }
+.omnimux-post-carousel-viewport { position: relative; width: 100%; height: min(400px, 48vh); min-height: 220px; border-radius: 12px; overflow: hidden; background: var(--dsw-alias-bg-base); outline: none; touch-action: pan-y; cursor: grab; }
+.omnimux-post-carousel-viewport:active { cursor: grabbing; }
+.omnimux-post-carousel-viewport:focus-visible { box-shadow: 0 0 0 2px var(--dsw-alias-brand-primary); }
+.omnimux-post-carousel-track { display: flex; height: 100%; transition: transform .36s cubic-bezier(.22,.61,.36,1); will-change: transform; }
+.omnimux-post-carousel-track.is-dragging { transition: none; }
+.omnimux-post-carousel-slide { flex: 0 0 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+.omnimux-post-carousel-slide .omnimux-post-image-open { width: 100%; height: 100%; padding: 0; border: 0; border-radius: 0; }
+.omnimux-post-carousel-slide img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.omnimux-post-carousel-nav { position: absolute; top: 50%; z-index: 3; width: 34px; height: 34px; padding: 0; border-radius: 50%; transform: translateY(-50%); background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-primary); opacity: .88; }
+.omnimux-post-carousel-nav:hover { opacity: 1; }
+.omnimux-post-carousel-nav:disabled { opacity: .3; }
+.omnimux-post-carousel-nav.is-prev { left: 10px; }
+.omnimux-post-carousel-nav.is-next { right: 10px; }
+.omnimux-post-carousel-counter { position: absolute; top: 12px; right: 12px; z-index: 3; padding: 4px 9px; border-radius: 999px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font-size: 11px; }
+.omnimux-post-carousel-dots { position: absolute; left: 50%; bottom: 12px; z-index: 3; display: flex; align-items: center; gap: 6px; padding: 5px 9px; border-radius: 999px; background: var(--dsw-alias-bg-layer-1); transform: translateX(-50%); }
+.omnimux-post-carousel-dot { width: 6px; height: 6px; padding: 0; border-radius: 50%; background: var(--dsw-alias-label-secondary); opacity: .6; }
+.omnimux-post-carousel-dot.is-active { width: 16px; border-radius: 3px; background: var(--dsw-alias-label-primary); opacity: 1; }
+.omnimux-post-lightbox-counter { min-width: 34px; text-align: center; color: var(--dsw-alias-label-secondary); font-size: 11px; }
 .omnimux-post-asset-footer { display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 14px 0 4px; font-size: 13px; }
 .omnimux-post-asset-footer p { margin: 4px 0 0; font-size: 11px; color: var(--dsw-alias-label-secondary); }
 .omnimux-post-analysis-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 22px 26px 14px; }
