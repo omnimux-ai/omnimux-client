@@ -385,7 +385,14 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   ), [fingerprint, displayedSlotLayout, slotBindings, slotConflicts, nodeData.inputBindingVersion, nodeData.slotStandbyEdgeIds]);
 
   const textSources = useMemo(() => selectGenerationTextSources(currentInputs ? consumedFingerprint.assets : displayedSlotLayout.acceptsText === false ? [] : fingerprint.assets), [currentInputs, consumedFingerprint, displayedSlotLayout, fingerprint]);
-  const textOnlySources = useMemo(() => textSources.filter((source) => source.type !== 'document'), [textSources]);
+  // V1 slot records already render text occupants inside SlotWells; rendering
+  // the same source in the prompt header again produces two identical chips.
+  // Text sources not represented by a slot record stay in the header.
+  const textSlotEdgeIds = useMemo(() => new Set(inputDisplay.records
+    .filter((record) => record.slot.type === 'text')
+    .map((record) => record.occupant.edgeId)), [inputDisplay.records]);
+  const textOnlySources = useMemo(() => textSources.filter((source) => source.type !== 'document'
+    && !(source.edgeId && textSlotEdgeIds.has(source.edgeId))), [textSources, textSlotEdgeIds]);
   const documentSources = useMemo(() => {
     const standby = new Set((nodeData.slotStandbyEdgeIds ?? []) as string[]);
     return upstreams

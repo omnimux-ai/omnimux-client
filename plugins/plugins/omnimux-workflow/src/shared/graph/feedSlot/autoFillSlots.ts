@@ -29,6 +29,10 @@ export function autoFillSlots(feedAssets: FeedAsset[], layout: SlotLayout, expli
   const usedInputs = new Set<string>();
   const usedRoles = new Set<string>();
   const identity = (asset: FeedAsset) => JSON.stringify([asset.sourceNodeId, asset.outputId ?? '']);
+  // A composed text slot consumes multiple ordered text sources even when the
+  // contract's physical max is 1: composition is the body, not a media slot.
+  const isComposedTextSlot = (slot: SlotSpec | undefined): boolean =>
+    slot?.type === 'text' && Boolean(slot.composition);
   const roleIdentity = (asset: FeedAsset, slot: SlotSpec) => JSON.stringify([identity(asset), slot.role]);
   // Two passes give pinned choices precedence even when they occur later in a strip.
   for (const pinned of [true, false]) {
@@ -47,7 +51,7 @@ export function autoFillSlots(feedAssets: FeedAsset[], layout: SlotLayout, expli
         const reason = !slot ? 'slot_removed' : slot.type !== asset.type ? 'type_mismatch'
           : !acceptsFeedAsset(slot, asset) ? 'role_illegal' : undefined;
         if (!reason && slot && (usedRoles.has(roleIdentity(asset, slot)) || (!pinned && used.has(asset.edgeId)))) continue;
-        const full = slot && bindings[name]!.length >= (slot.max ?? Infinity);
+        const full = slot && !isComposedTextSlot(slot) && bindings[name]!.length >= (slot.max ?? Infinity);
         if (reason || full) {
           if (pinned) {
             conflicts.push({ slot: name, occupant: next, reason: reason ?? 'role_illegal' });
@@ -66,7 +70,7 @@ export function autoFillSlots(feedAssets: FeedAsset[], layout: SlotLayout, expli
     if (conflicts.some((conflict) => conflict.slot === slot.slot)
       || bindings[slot.slot]!.some((occupant) => occupant.pinned && !isReadyFeedAsset(byEdge.get(occupant.edgeId)))) continue;
     for (const asset of feed) {
-      if (bindings[slot.slot]!.length >= (slot.max ?? Infinity)) break;
+      if (!isComposedTextSlot(slot) && bindings[slot.slot]!.length >= (slot.max ?? Infinity)) break;
       if (!isReadyFeedAsset(asset) || used.has(asset.edgeId) || usedInputs.has(identity(asset)) || reserved.has(asset.edgeId) || !acceptsFeedAsset(slot, asset)) continue;
       // Role-specific assets must be chosen explicitly, not inferred as masks/control signals.
       if (slot.role === 'mask' || slot.role === 'controlnet') continue;

@@ -14,7 +14,7 @@ const output = resolve(tmp, 'render.cjs');
 const stubs = {
   'useUpstreamMedia': `export const useUpstreamMedia = () => globalThis.__generationTestUpstreams ?? []; export const toUpstreamSnapshots = items => items;`,
   'useModelParameterSchema': `export const getCachedCatalog = () => null; export const useModelParameterSchema = (kind, id, catalog) => ({ schema: {}, modelItem: catalog?.[kind]?.find(m => m.id === id), aspectRatioOptions: [], defaultAspectRatio: '16:9', isAspectRatioValid: () => true, defaultDuration: 5, isDurationValid: () => true });`,
-  'canvasStore': `const state = () => ({edges: (globalThis.__generationTestUpstreams ?? []).filter(item => item.edgeId).map(item => ({id:item.edgeId,source:item.nodeId,target:'target',targetHandle:'in'}))}); export const useCanvasStore = Object.assign(selector => selector(state()), { getState: state, subscribe: () => () => {} });`,
+  'canvasStore': `const state = () => ({ nodes: [], edges: (globalThis.__generationTestUpstreams ?? []).filter(item => item.edgeId).map(item => ({id:item.edgeId,source:item.nodeId,target:'target',targetHandle:'in'}))}); export const useCanvasStore = Object.assign(selector => selector(state()), { getState: state, subscribe: () => () => {} });`,
   'generationPreferencesStore': `export const rememberGenerationModel = async () => {};`,
   'i18n': `import zh from ${JSON.stringify(resolve(root, 'src/canvas/i18n/dict.zh.ts'))}; export const useT = () => key => zh[key] ?? key;`,
   'ui': `import React from 'react'; export const CustomSelect = ({options=[]}) => React.createElement('div', {'data-model-options': options.length}, options.map(o => React.createElement('span', {key:o.value}, o.label))); export const CustomSlider = () => null; export const toast = {error: () => {}};`,
@@ -97,6 +97,67 @@ test('image panel borrows sibling operation slots as display-only for a prompt-o
   // 单操作纯 prompt 模型不合成卡槽。
   const solo = render(node('image', {prompt:'Draw'}), fixture('image', false));
   assert.doesNotMatch(solo, /data-testid="wf-slot-wells"/);
+});
+
+function bindableImageFixture(withReference = false) {
+  const prompt = { slot: 'prompt', type: 'text', role: 'prompt', source: 'node_field', min: 1, max: 1,
+    valueSources: ['local_field', 'upstream_output'], composition: { kind: 'content_with_instruction', localRole: 'instruction' } };
+  const inputs = [prompt];
+  if (withReference) inputs.push({ slot: 'references', type: 'image', role: 'reference', source: 'upstream_edge', min: 0, max: 1 });
+  const operation = { id: 'text_to_image', label: '文生图', listed: true, output: { type: 'image' }, inputs };
+  const model = { id: 'image-model', label: 'Image model', listed: true, operations: [operation] };
+  return { source: 'omnimux', text: [], image: [model], video: [], audio: [], models: [model] };
+}
+const bindableImageNode = (extra = {}) => ({
+  materialType: 'image', kind: 'generate', nodeKind: 'generate', selectedTool: 'text-to-image',
+  params: { model: 'image-model', operation: 'text_to_image' }, prompt: '', inputBindingVersion: 1, ...extra,
+});
+const textUpstream = (id, content) => ({
+  nodeId: id, edgeId: `e-${id}`, label: content, materialType: 'text', textContent: content,
+  hasMedia: true, availability: 'ready',
+});
+function textChipCounts(html) {
+  return {
+    effective: (html.match(/class="wf-effective-text wf-effective-text--slot"/g) || []).length,
+    slotWells: (html.match(/class="wf-slot-well__text"/g) || []).length,
+  };
+}
+
+test('image node with one text upstream renders exactly one text chip', () => {
+  const html = render(bindableImageNode(), bindableImageFixture(), [textUpstream('text-1', '11111')]);
+  const counts = textChipCounts(html);
+  assert.equal(counts.effective + counts.slotWells, 1, JSON.stringify(counts));
+});
+
+test('image node with multiple text upstreams renders each once in stable order', () => {
+  const html = render(bindableImageNode(), bindableImageFixture(), [
+    textUpstream('text-1', '11111'), textUpstream('text-2', '22222'),
+  ]);
+  const counts = textChipCounts(html);
+  assert.equal(counts.effective + counts.slotWells, 2, JSON.stringify(counts));
+  assert.ok(html.indexOf('11111') < html.indexOf('22222'), 'text chip order must follow edge order');
+});
+
+test('image node text chips stay deduplicated across repeated renders and disappear after upstream removal', () => {
+  const catalog = bindableImageFixture();
+  const first = render(bindableImageNode(), catalog, [textUpstream('text-1', '11111')]);
+  const second = render(bindableImageNode(), catalog, [textUpstream('text-1', '11111')]);
+  assert.deepEqual(textChipCounts(first), textChipCounts(second));
+  assert.equal(textChipCounts(second).effective + textChipCounts(second).slotWells, 1);
+  const without = render(bindableImageNode(), catalog, []);
+  assert.equal(textChipCounts(without).effective + textChipCounts(without).slotWells, 0);
+});
+
+test('image node keeps image and file inputs while deduplicating text chips', () => {
+  const catalog = bindableImageFixture(true);
+  const html = render(bindableImageNode(), catalog, [
+    textUpstream('text-1', '11111'),
+    { nodeId: 'img-1', edgeId: 'e-img-1', label: '参考图.png', materialType: 'image',
+      url: 'https://fixture.test/ref.png', hasMedia: true, availability: 'ready' },
+  ]);
+  const counts = textChipCounts(html);
+  assert.equal(counts.effective + counts.slotWells, 1, JSON.stringify(counts));
+  assert.match(html, /data-slot="references"/);
 });
 
 test('JSON document upstream renders a file card and invalid JSON blocks generation', () => {

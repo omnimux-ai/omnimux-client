@@ -97,15 +97,31 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
       if (!occupants.some((item) => item.edgeId === conflict.occupant.edgeId)) occupants.push({ ...conflict.occupant });
     }
     // Only new edges may carry a picker hint. Stale edge mirrors never override node slots.
-    const newEdges = currentVersion ? [] : graph.edges.filter((edge) => edge.target === node.id && newEdgeIds.has(edge.id));
+    const newEdges = graph.edges.filter((edge) => edge.target === node.id && newEdgeIds.has(edge.id));
     for (const edge of newEdges) {
       const asset = feed.find((item) => item.edgeId === edge.id);
-      if (!asset?.targetSlot && !asset?.role) continue;
+      if (!asset) continue;
+      if (currentVersion) {
+        // V1 plain connects carry no picker hint. A composed text slot is the
+        // one slot that consumes every new text source as ordered body text;
+        // append it instead of letting max=1 replace the earlier source.
+        const textSlot = layout.slots.find((slot) => slot.type === 'text' && slot.composition);
+        if (asset.type !== 'text' || !textSlot || !explicit || Object.keys(explicit).length === 0) continue;
+        const values = explicit[textSlot.slot] ?? [];
+        if (values.some((occupant) => occupant.edgeId === edge.id && occupant.sourceNodeId === asset.sourceNodeId)) continue;
+        const ordinal = values.reduce((max, item) => Math.max(max, item.ordinal ?? -1), -1) + 1;
+        explicit[textSlot.slot] = [...values, { sourceNodeId: asset.sourceNodeId, edgeId: edge.id,
+          outputId: asset.outputId, ordinal, role: textSlot.role, pinned: true }];
+        continue;
+      }
+      if (!asset.targetSlot && !asset.role) continue;
       const slot = asset.targetSlot ? layout.slots.find((item) => item.slot === asset.targetSlot)
         : layout.slots.find((item) => item.role === asset.role && item.type === asset.type);
       const hint = slot?.slot ?? asset.targetSlot ?? `role:${asset.role}`;
       const occupant = { sourceNodeId: asset.sourceNodeId, edgeId: asset.edgeId, outputId: asset.outputId, pinned: true };
-      explicit[hint] = slot?.max === 1 ? [occupant] : [...(explicit[hint] ?? []), occupant];
+      explicit[hint] = slot?.type === 'text' && slot.composition
+        ? [...(explicit[hint] ?? []), occupant]
+        : slot?.max === 1 ? [occupant] : [...(explicit[hint] ?? []), occupant];
     }
   }
   const standbyIds = Array.isArray(node.data.slotStandbyEdgeIds) ? node.data.slotStandbyEdgeIds.filter((id): id is string => typeof id === 'string') : [];
