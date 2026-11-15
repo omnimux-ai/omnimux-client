@@ -50,6 +50,8 @@ export interface ToolSpec {
   outputType: MaterialType;
   acceptedInputTypes: MaterialType[];
   modelCategory?: 'text' | 'image' | 'video' | 'audio';
+  /** Host executor key for non-generative capability tools (e.g. capability:video-extraction). */
+  executorKey?: string;
   slots: ToolInputSlotSpec[];
 }
 

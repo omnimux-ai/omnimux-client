@@ -6,6 +6,7 @@
 
 import type { MaterialStatus } from '../../types/materialNode';
 import type { NodeExecutionApiStatus } from '../../../shared/api';
+import { materialTools } from '../../../shared/specs/nodes/materialNodeSpec.ts';
 
 /** GenerationStateContainer 状态机（对齐 Gxgen GenerationStatus，扩展 paused 支持受阻恢复）。 */
 export type GenerationStatus = 'pending' | 'generating' | 'completed' | 'failed' | 'paused';
@@ -35,8 +36,10 @@ export function isConfigPanelVisible(
   isMultiSelected?: boolean,
   contentFormat?: string,
   localStatus?: MaterialStatus,
+  outputCapabilityId?: string,
 ): boolean {
   if (isMultiSelected || nodeKind === 'import' || contentFormat === 'srt') return false;
+  if (outputCapabilityId && materialTools[outputCapabilityId]?.executorKey) return false;
   if (localStatus === 'generating') return false;
   return Boolean(selected) && executionStatus !== 'running';
 }

@@ -64,6 +64,7 @@ import { resolvePluginRoot } from './pluginRoot';
 import { createStaticRoutes } from './staticRoutes';
 import { createWorkspaceRoutes } from './workspaceRoutes';
 import { createExecutionRoutes } from './executionRoutes';
+import { createAppExecutionRoutes } from './appRoutes.ts';
 import { createMediaRoutes } from './mediaRoutes';
 import { createLocalFileRoutes } from './localFileRoutes';
 import { createProjectAssetsRoutes } from './projectAssetsRoutes';
@@ -164,6 +165,7 @@ export function createWorkflowDispatcher(deps: WorkflowDispatcherDeps) {
   });
   const directorAssistant = createDirectorAssistantRoutes({ store, assetsStore, getSeam: deps.getSeam });
   const directorOperationRoutes = createDirectorOperationRoutes(deps.directorOperations);
+  const appExecutionRoutes = createAppExecutionRoutes({ headlessSeam: deps.headlessSeam });
   const executionRoutes = createExecutionRoutes({
     store,
     mediaDir,
@@ -269,6 +271,9 @@ export function createWorkflowDispatcher(deps: WorkflowDispatcherDeps) {
       if (projectDispatcher.owns(path)) {
         return projectDispatcher.dispatch(req);
       }
+
+      const fromAppExecution = await appExecutionRoutes.tryHandle(method, path, req);
+      if (fromAppExecution) return fromAppExecution;
 
       const fromSpeechToText = await speechToTextRoutes.tryHandle(method, path, req);
       if (fromSpeechToText) return fromSpeechToText;

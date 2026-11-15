@@ -1,4 +1,5 @@
 import { localFileMediaUrl, looksAbsolutePath, projectFileMediaUrl, readLocalTextFile } from '../localMedia.ts';
+import { resolveNodeOutputType } from './materialNode.ts';
 import { normalizeMediaNumber, normalizeMimeType } from '../mediaMetadata.ts';
 import { parseJsonDocumentText, type JsonDocumentParseResult } from '../jsonDocument.ts';
 import { serializeTableNodeToText } from './tableTextSerializer.ts';
@@ -84,7 +85,9 @@ export function readNodeInputSource(
   workspaceId?: string,
 ): NodeInputSource {
   const data = node.data ?? {};
-  const materialType = nonempty(data.materialType) ?? node.type ?? 'text';
+  const materialType = node.type === 'material'
+    ? resolveNodeOutputType(data)
+    : (nonempty(data.materialType) ?? node.type ?? 'text');
   const label = nonempty(data.label) ?? nonempty(data.title) ?? node.id;
   const selected = Array.isArray(data.mediaAssets)
     ? data.mediaAssets.find((asset) => asset && typeof asset === 'object' && asset.type === materialType) as Record<string, unknown> | undefined

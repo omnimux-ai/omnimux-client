@@ -7,6 +7,7 @@ import { readNodeInputSource } from '../graph/nodeInputSource.ts';
 import type { UpstreamMediaSnapshot } from './operationUi.ts';
 import { readExplicitTargetSlot } from './compatKernel.ts';
 import { resolveNodeKind } from '../graph/materialNode.ts';
+import { materialTools } from '../specs/nodes/materialNodeSpec.ts';
 import { deriveSlotLayout, type SlotBindings, type SlotConflict } from '../graph/feedSlot/index.ts';
 import { effectiveSlotFingerprint, feedFromFingerprint } from '../graph/feedSlot/effectiveFingerprint.ts';
 import { resolveSlotOperation } from '../graph/feedSlot/resolveSlotOperation.ts';
@@ -73,6 +74,8 @@ export function findExecutionReadinessFailure(
 
   for (const node of nodes) {
     if (node.type !== 'material' || resolveNodeKind(node.data ?? {}) !== 'generate') continue;
+    const outputCapabilityId = typeof node.data?.outputCapabilityId === 'string' ? node.data.outputCapabilityId : '';
+    if (outputCapabilityId && materialTools[outputCapabilityId]?.executorKey) continue;
     let upstreams = upstreamSnapshots(node.id, graph);
     const deferred = new Set(upstreams.filter((input) => {
       const source = graph?.nodes.find((candidate) => candidate.id === input.nodeId);

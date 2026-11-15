@@ -18,6 +18,20 @@ export type SerializedCanvasEdge = Edge<Record<string, unknown>>;
 export type MaterialType = 'text' | 'image' | 'video' | 'audio' | 'document';
 
 /** Group node custom data contract for visual grouping and subgraphs. */
+export interface GroupPublishVerification {
+  executionId: string;
+  graphHash: string;
+  completedAt: string;
+  nodeStatuses: Record<string, 'completed'>;
+  outputs: Array<{
+    nodeId: string;
+    type: string;
+    url?: string;
+    text?: string;
+  }>;
+  simulated: false;
+}
+
 export interface GroupNodeData extends Record<string, unknown> {
   title: string;
   color: string;
@@ -30,6 +44,8 @@ export interface GroupNodeData extends Record<string, unknown> {
   minHeight?: number;
   padding?: number;
   nodeIds?: string[];
+  /** Last successful whole-group execution; used by the publish gate. */
+  publishVerification?: GroupPublishVerification;
 }
 
 export type SerializedGroupNode = Node<GroupNodeData>;

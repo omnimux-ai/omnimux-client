@@ -47,6 +47,8 @@ export interface PlanVideoExtractionDownstreamInput {
   videoResult: ExtractedVideoOutputData;
   /** 新节点标题（调用方传 i18n 文案），缺省「提取视频」或视频标题。 */
   label?: string;
+  /** 源文本节点所在的分组；新节点必须继承，否则按组执行/发布识别不到。 */
+  parentGroupId?: string;
   currentNodes: VideoExtractionGraphNode[];
   currentEdges: VideoExtractionGraphEdge[];
   createNodeId?: () => string;
@@ -62,6 +64,8 @@ export interface VideoExtractionCreatedNode {
   type: 'material';
   position: { x: number; y: number };
   selected: boolean;
+  parentId?: string;
+  extent?: 'parent';
   data: Record<string, unknown>;
 }
 
@@ -147,13 +151,13 @@ export function planVideoExtractionDownstream(
           nodeId: existing.id,
           data: {
             materialType: 'video',
-            selectedTool: 'import',
-            nodeKind: 'import',
+            selectedTool: 'video-extraction',
+            outputCapabilityId: 'video-extraction',
+            nodeKind: 'generate',
             origin: VIDEO_EXTRACTION_ORIGIN,
             sourceTextNodeId: input.textNodeId,
             label: nodeLabel,
             status: 'ready',
-            realPath: videoResult.videoPath,
             mediaUrl: videoResult.mediaUrl,
             previewUrl: videoResult.previewUrl,
             duration: videoResult.duration,
@@ -180,15 +184,16 @@ export function planVideoExtractionDownstream(
       y: input.textPosition.y,
     },
     selected: true,
+    ...(input.parentGroupId ? { parentId: input.parentGroupId, extent: 'parent' as const } : {}),
     data: {
       materialType: 'video',
-      selectedTool: 'import',
-      nodeKind: 'import',
+      selectedTool: 'video-extraction',
+      outputCapabilityId: 'video-extraction',
+      nodeKind: 'generate',
       origin: VIDEO_EXTRACTION_ORIGIN,
       sourceTextNodeId: input.textNodeId,
       label: nodeLabel,
       status: 'ready',
-      realPath: videoResult.videoPath,
       mediaUrl: videoResult.mediaUrl,
       previewUrl: videoResult.previewUrl,
       duration: videoResult.duration,

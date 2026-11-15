@@ -47,12 +47,12 @@ test('planVideoExtractionDownstream: 首次提取创建下游视频节点与连�
   assert.equal(newNode.position.x, textPosition.x + textWidth + VIDEO_EXTRACTION_DOWNSTREAM_GAP);
   assert.equal(newNode.position.y, textPosition.y);
   assert.equal(newNode.data.materialType, 'video');
-  assert.equal(newNode.data.nodeKind, 'import');
-  assert.equal(newNode.data.selectedTool, 'import');
+  assert.equal(newNode.data.nodeKind, 'generate');
+  assert.equal(newNode.data.selectedTool, 'video-extraction');
+  assert.equal(newNode.data.outputCapabilityId, 'video-extraction');
   assert.equal(newNode.data.origin, VIDEO_EXTRACTION_ORIGIN);
   assert.equal(newNode.data.sourceTextNodeId, 'node_text_1');
   assert.equal(newNode.data.label, '测试提取视频');
-  assert.equal(newNode.data.realPath, videoResult.videoPath);
   assert.equal(newNode.data.mediaUrl, videoResult.mediaUrl);
   assert.equal(newNode.data.previewUrl, videoResult.previewUrl);
   assert.equal(newNode.data.duration, 15);
@@ -115,8 +115,8 @@ test('planVideoExtractionDownstream: 再次提取时就地更新已有关联视�
   const patch = plan.nodePatches[0];
   assert.equal(patch.nodeId, 'node_video_target_1');
   assert.equal(patch.data.label, '最新提取视频');
-  assert.equal(patch.data.realPath, updatedVideoResult.videoPath);
   assert.equal(patch.data.mediaUrl, updatedVideoResult.mediaUrl);
+  assert.equal(patch.data.outputCapabilityId, 'video-extraction');
 });
 
 test('planVideoExtractionDownstream: 缺少 textNodeId 或 videoResult 时返回 null', () => {

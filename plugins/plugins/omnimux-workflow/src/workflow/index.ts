@@ -142,6 +142,9 @@ export function mountWorkflowHost(ctx: HostContext, opts: MountWorkflowHostOptio
     executionsDir: paths.executionsDir,
     resolveProjectFile: (workspaceId, relativePath) => assetsStore.resolveProjectFile(workspaceId, relativePath),
     gateway,
+    workspaceStore: store,
+    getSeam: (name) => ctx.get?.(name),
+    getTool: (name) => (ctx as any).tools?.get?.(name) ?? (typeof ctx.get === 'function' ? (ctx.get('tools') as any)?.get?.(name) : undefined),
     mediaDir: paths.mediaDir,
     persistGenerated: (input) => persistGeneratedArtifact({
       ...input,
@@ -151,6 +154,15 @@ export function mountWorkflowHost(ctx: HostContext, opts: MountWorkflowHostOptio
   });
   // Issue #3690 M4：宿主退出时关闭 ComfyUI 后端；dispose 只摘钩子，不杀后端。
   const comfyBackendService = createComfyBackendService({ dataRoot: paths.root });
+  // Headless execution seam for omnimux-apps & headless orchestration
+  const headlessSeam = createHeadlessExecutionSeam({
+    executionManager,
+    workspaceStore: store as any,
+    getCatalog: () => Promise.resolve(gateway.capabilities()),
+    mediaDir: paths.mediaDir,
+    resolveProjectFile: (workspaceId, relativePath) => assetsStore.resolveProjectFile(workspaceId, relativePath),
+  });
+
   const dispatcher = createWorkflowDispatcher({
     getSeam: (name) => ctx.get?.(name),
     getTool: (name) => (ctx as any).tools?.get?.(name) ?? (typeof ctx.get === 'function' ? (ctx.get('tools') as any)?.get?.(name) : undefined),
@@ -161,6 +173,7 @@ export function mountWorkflowHost(ctx: HostContext, opts: MountWorkflowHostOptio
     gateway,
     mediaDir: paths.mediaDir,
     executionManager,
+    headlessSeam,
     templates,
     libraryRoot,
     assetsStore,
@@ -186,15 +199,6 @@ export function mountWorkflowHost(ctx: HostContext, opts: MountWorkflowHostOptio
   // persisted by a previous mount / process. Fire-and-forget — route mounts
   // do not wait on it; recovered executions stream to late SSE subscribers.
   void executionManager.recoverAll();
-
-  // Headless execution seam for omnimux-apps & headless orchestration
-  const headlessSeam = createHeadlessExecutionSeam({
-    executionManager,
-    workspaceStore: store as any,
-    getCatalog: () => Promise.resolve(gateway.capabilities()),
-    mediaDir: paths.mediaDir,
-    resolveProjectFile: (workspaceId, relativePath) => assetsStore.resolveProjectFile(workspaceId, relativePath),
-  });
 
   if (typeof (ctx as any).provide === 'function') {
     (ctx as any).provide('omnimux-workflow', headlessSeam);

@@ -652,7 +652,7 @@ function inferCategory(terminalIds: string[], nodes: FlowNodeLike[]): Applicatio
  * Pure JS SHA-256 standard implementation.
  * Zero external or node:crypto dependencies — runs in browser, web workers, and node.
  */
-function computeWorkflowHash(nodes: FlowNodeLike[], edges: FlowEdgeLike[]): string {
+export function computeWorkflowHash(nodes: FlowNodeLike[], edges: FlowEdgeLike[]): string {
   const normalizedNodes = [...nodes]
     .sort((a, b) => a.id.localeCompare(b.id))
     .map((n) => ({
@@ -660,7 +660,9 @@ function computeWorkflowHash(nodes: FlowNodeLike[], edges: FlowEdgeLike[]): stri
       type: n.type || 'material',
       materialType: n.data?.materialType,
       tool: n.data?.selectedTool,
+      outputCapabilityId: n.data?.outputCapabilityId,
       nodeKind: n.data?.nodeKind,
+      params: n.data?.params,
     }));
 
   const normalizedEdges = [...edges]

@@ -10,6 +10,7 @@
 import {
   MATERIAL_TOOLS,
   MATERIAL_TOOL_INPUT_TYPES,
+  resolveNodeOutputType,
   type MaterialType,
   type MaterialTool,
 // 显式 .ts 扩展名：node --test 的 type-stripping 不做 TS 扩展名解析
@@ -81,22 +82,22 @@ export function getNodeOutputInfo(node: { type?: string; data?: Record<string, u
   const data = node.data ?? {};
 
   if (nodeType === 'material') {
-    const materialType = data.materialType as MaterialType | undefined;
+    const outputType = resolveNodeOutputType(data);
     const status = data.status as string | undefined;
     const mediaUrl = data.mediaUrl as string | undefined;
     const content = data.content as string | undefined;
     const generatedContent = data.generatedContent as string | undefined;
 
     let hasOutput = false;
-    if (materialType === 'text') {
+    if (outputType === 'text') {
       hasOutput = !!(content?.trim() || generatedContent);
-    } else if (materialType === 'image') {
+    } else if (outputType === 'image') {
       hasOutput = !!mediaUrl; // 窄化：原实现还查 mediaSource/mediaFiles
     } else {
       hasOutput = !!mediaUrl || status === 'completed' || status === 'ready';
     }
 
-    return { nodeType, materialType, hasOutput };
+    return { nodeType, materialType: outputType, hasOutput };
   }
 
   if (nodeType === 'video_composition') {

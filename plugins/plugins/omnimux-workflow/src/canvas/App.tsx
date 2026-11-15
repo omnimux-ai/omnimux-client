@@ -14,6 +14,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import CanvasEditor from './editor/CanvasEditor';
 import { CanvasErrorBoundary } from './ui/CanvasErrorBoundary';
 import { useExecutionController } from './hooks/useExecutionController';
+import { useCanvasStore } from './store/canvasStore';
+import { childIdsOfGroup } from './editor/utils/nodeVisualMath';
+import { resolveNodeOutputType } from '../shared/graph/materialNode';
 import { useCanvasBoot } from './hooks/useCanvasBoot';
 import { setLocale, useT, type Locale } from './i18n';
 import { useWorkspacePersistence } from './bridge/useWorkspacePersistence';
@@ -98,6 +101,63 @@ const App: React.FC<CanvasAppProps> = ({ locale, workspaceId: propWorkspaceId, f
       await tablePersistence.saveNow();
       return persistence.saveNow();
     },
+    onRunTerminal: async ({ executionId, groupId, graphHash, status }) => {
+      if (!groupId) return;
+      const activeWorkspaceId = workspace?.id;
+      if (!activeWorkspaceId) return;
+      const response = await fetch(`/omnimux-workflow/api/workspaces/${encodeURIComponent(activeWorkspaceId)}/executions/${encodeURIComponent(executionId)}`).catch(() => null);
+      if (!response || !response.ok) return;
+      const payload = await response.json().catch(() => null);
+      const executionSnapshot = payload?.execution ?? payload;
+      if (!executionSnapshot) return;
+      const canvas = useCanvasStore.getState();
+      const groupNode = canvas.nodes.find((node) => node.id === groupId && node.type === 'group');
+      if (!groupNode) return;
+      const childIds = childIdsOfGroup(canvas.nodes, groupId);
+      const childIdSet = new Set(childIds);
+      const terminalIds = childIds.filter((nodeId) => !canvas.edges.some(
+        (edge) => edge.source === nodeId && childIdSet.has(edge.target),
+      ));
+      const allCompleted = childIds.length > 0 && childIds.every(
+        (nodeId) => executionSnapshot.nodeStates?.[nodeId]?.status === 'completed',
+      );
+      const outputs = terminalIds.flatMap((nodeId) => {
+        const node = canvas.nodes.find((candidate) => candidate.id === nodeId);
+        const output = executionSnapshot.nodeOutputs?.[nodeId] as Record<string, unknown> | undefined;
+        if (!node || !output) return [];
+        const firstAsset = Array.isArray(output.mediaAssets)
+          ? output.mediaAssets[0] as Record<string, unknown> | undefined
+          : undefined;
+        const text = typeof output.text === 'string' ? output.text : undefined;
+        const url = typeof firstAsset?.url === 'string' ? firstAsset.url : undefined;
+        if (!text && !url) return [];
+        return [{
+          nodeId,
+          type: node.type === 'table' ? 'table' : resolveNodeOutputType(node.data),
+          ...(url ? { url } : {}),
+          ...(text ? { text } : {}),
+        }];
+      });
+      const simulated = outputs.some((output) => {
+        const raw = executionSnapshot.nodeOutputs?.[output.nodeId] as Record<string, unknown> | undefined;
+        return raw?.simulated === true;
+      });
+      const verification = status === 'completed' && allCompleted && outputs.length > 0 && !simulated
+        ? {
+            executionId,
+            graphHash: graphHash ?? '',
+            completedAt: new Date().toISOString(),
+            nodeStatuses: Object.fromEntries(childIds.map((nodeId) => [nodeId, 'completed' as const])),
+            outputs,
+            simulated: false as const,
+          }
+        : undefined;
+      canvas.setNodes((nodes) => nodes.map((node) => (
+        node.id === groupId
+          ? { ...node, data: { ...(node.data ?? {}), publishVerification: verification } }
+          : node
+      )));
+    },
   });
 
   if (boot.phase === 'loading') {
@@ -169,9 +229,14 @@ const App: React.FC<CanvasAppProps> = ({ locale, workspaceId: propWorkspaceId, f
             catalog={catalog}
             workspaceId={workspace?.id ?? null}
             focusGroupId={focusGroupId}
-            onExecuteNodeIds={(nodeIds) => {
+            onExecuteNodeIds={(nodeIds, meta) => {
               // M4 组/子集执行入口（右键菜单）：subset 模式自动补传递上游闭包。
-              void execution.startExecution({ mode: 'subset', nodeIds });
+              void execution.startExecution({
+                mode: 'subset',
+                nodeIds,
+                ...(meta?.groupId ? { groupId: meta.groupId } : {}),
+                ...(meta?.graphHash ? { graphHash: meta.graphHash } : {}),
+              });
             }}
             onPauseExecution={() => void execution.pause()}
             onResumeExecution={() => void execution.resume()}

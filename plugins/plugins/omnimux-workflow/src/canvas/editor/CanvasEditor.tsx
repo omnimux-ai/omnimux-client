@@ -40,7 +40,9 @@ import ExecutionQueuePanel from './components/ExecutionQueuePanel';
 import { CanvasPageHeader } from './components/CanvasPageHeader';
 import AssetsDrawer, { type AssetRecord } from './components/AssetsDrawer';
 import ShortcutsModal from './components/ShortcutsModal';
-import PublishWizardModal from './components/publish/PublishWizardModal.tsx';
+import PublishWizardModalV2 from './components/publish/PublishWizardModalV2.tsx';
+import { computeWorkflowHash } from './components/publish/topologyAnalyzer.ts';
+import type { GroupPublishVerification } from '../../shared/canvasTypes';
 import CanvasNodeActionMenu from './components/CanvasNodeActionMenu';
 import ContextMenu from './components/ContextMenu';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
@@ -165,7 +167,7 @@ interface CanvasEditorProps {
    * M4 组/子集执行入口：右键「执行选中节点 / 执行此节点」回调
    * （subset 模式：nodeIds + 传递上游闭包，由 host 解析）。
    */
-  onExecuteNodeIds?: (nodeIds: string[]) => void;
+  onExecuteNodeIds?: (nodeIds: string[], meta?: { groupId?: string; graphHash?: string }) => void;
   onPauseExecution?: () => void;
   onResumeExecution?: () => void;
   onCancelExecution?: () => void;
@@ -217,6 +219,7 @@ const CanvasEditorContent: React.FC<CanvasEditorProps> = ({
     title: string;
     nodes: Node[];
     edges: Edge[];
+    verification?: GroupPublishVerification;
   } | null>(null);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
@@ -486,7 +489,13 @@ const CanvasEditorContent: React.FC<CanvasEditorProps> = ({
         : [];
       const nodeIds = liveIds.length > 0 ? liveIds : (customEvt.detail?.nodeIds || []);
       if (nodeIds.length > 0 && onExecuteNodeIds) {
-        onExecuteNodeIds(nodeIds);
+        const nodeIdSet = new Set(nodeIds);
+        const childNodes = nodes.filter((node) => nodeIdSet.has(node.id));
+        const childEdges = edges.filter((edge) => nodeIdSet.has(edge.source) && nodeIdSet.has(edge.target));
+        onExecuteNodeIds(nodeIds, {
+          ...(customEvt.detail?.groupId ? { groupId: customEvt.detail.groupId } : {}),
+          graphHash: computeWorkflowHash(childNodes, childEdges),
+        });
         toast.success(t('group.toast.execute'));
       }
     };
@@ -542,11 +551,13 @@ const CanvasEditorContent: React.FC<CanvasEditorProps> = ({
         toast.warning(t('group.toast.emptyWarn'));
         return;
       }
+      const groupNode = nodes.find((node) => node.id === groupId && node.type === 'group');
       setTargetGroupForPublish({
         id: groupId,
         title: groupTitle || t('template.modal.defaultName'),
         nodes: childNodes,
         edges: childEdges,
+        verification: groupNode?.data?.publishVerification as GroupPublishVerification | undefined,
       });
       setIsPublishModalOpen(true);
     };
@@ -1014,7 +1025,7 @@ const CanvasEditorContent: React.FC<CanvasEditorProps> = ({
       />
 
       {/* 发布为 AI 应用向导弹窗 (精准收敛至模板打组) */}
-      <PublishWizardModal
+      <PublishWizardModalV2
         isOpen={isPublishModalOpen}
         onClose={() => {
           setIsPublishModalOpen(false);
@@ -1024,6 +1035,16 @@ const CanvasEditorContent: React.FC<CanvasEditorProps> = ({
         edges={targetGroupForPublish ? targetGroupForPublish.edges : edges}
         workflowName={targetGroupForPublish?.title}
         groupId={targetGroupForPublish?.id}
+        groupVerification={targetGroupForPublish?.verification}
+        onRequestGroupRun={() => {
+          const groupId = targetGroupForPublish?.id;
+          setIsPublishModalOpen(false);
+          if (groupId) {
+            window.dispatchEvent(new CustomEvent('omnimux:workflow:execute-group', {
+              detail: { groupId },
+            }));
+          }
+        }}
         catalog={catalog}
         workspaceId={workspaceId}
       />

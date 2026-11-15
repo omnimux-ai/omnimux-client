@@ -17,6 +17,7 @@ import {
   type MaterialTool,
   MATERIAL_TOOLS_BY_TYPE,
   DEFAULT_MATERIAL_TOOL_BY_TYPE,
+  materialTools,
 } from '../specs/nodes/materialNodeSpec.ts';
 import { NodeSpecRegistry } from '../specs/registry.ts';
 
@@ -117,6 +118,13 @@ export interface MaterialNodeData {
 
   // === 生成配置 ===
   selectedTool: MaterialTool;
+  /**
+   * 节点主输出能力。未设置时回退 selectedTool / materialType。
+   * 例如文本节点可声明 video-extraction，输出端口变为 video。
+   */
+  outputCapabilityId?: string;
+  /** 能力型工具自己的输入值（如视频提取的 url）。 */
+  capabilityInputs?: Record<string, unknown>;
   prompt?: string;
   params: Record<string, unknown>;
   failStrategy?: NodeFailStrategy;
@@ -207,6 +215,40 @@ export function resolveNodeKind(data: {
     return 'import';
   }
   return 'generate';
+}
+
+/**
+ * 节点输出类型真源：优先读取节点显式声明的输出能力，其次读取工具声明，
+ * 最后才回退到 materialType（兼容旧数据）。
+ */
+export function resolveNodeOutputType(data: {
+  materialType?: unknown;
+  selectedTool?: unknown;
+  outputCapabilityId?: unknown;
+}): MaterialType {
+  const capabilityId = typeof data.outputCapabilityId === 'string'
+    ? data.outputCapabilityId.trim()
+    : '';
+  if (capabilityId && materialTools[capabilityId]) {
+    return materialTools[capabilityId]!.outputType;
+  }
+  const selectedTool = typeof data.selectedTool === 'string' ? data.selectedTool : '';
+  const materialType = data.materialType;
+  // `import` is the shared static-asset tool; its output type follows the node's
+  // own media type rather than the tool-table default (image).
+  if (selectedTool === 'import') {
+    return materialType === 'text' || materialType === 'image' || materialType === 'video'
+      || materialType === 'audio' || materialType === 'document'
+      ? materialType
+      : 'image';
+  }
+  if (selectedTool && materialTools[selectedTool]) {
+    return materialTools[selectedTool]!.outputType;
+  }
+  return materialType === 'text' || materialType === 'image' || materialType === 'video'
+    || materialType === 'audio' || materialType === 'document'
+    ? materialType
+    : 'text';
 }
 
 /**

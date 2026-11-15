@@ -3,7 +3,7 @@
  *
  * Verifies:
  * 1. NodeSpecRegistry contains all built-in node types (material, table, video_composition, group, director).
- * 2. MATERIAL_TOOL_INPUT_TYPES is 100% equivalent to legacy behavior across all 16 tools.
+ * 2. MATERIAL_TOOL_INPUT_TYPES is 100% equivalent to legacy behavior across all 17 tools.
  * 3. getNodeInputRequirements returns exact inputs for specified tools and union inputs for material types.
  * 4. Safe fallback for unknown/invalid node types and tool identifiers.
  */
@@ -34,7 +34,7 @@ test('Test 1: NodeSpecRegistry contains all built-in node specifications', () =>
   assert.equal(materialSpec.ports.length, 2);
   assert.equal(materialSpec.ports[0].side, 'in');
   assert.equal(materialSpec.ports[1].side, 'out');
-  assert.equal(Object.keys(materialSpec.tools).length, 16, 'Material spec should declare all 16 tools');
+  assert.equal(Object.keys(materialSpec.tools).length, 17, 'Material spec should declare all 17 tools');
 
   // Check table spec
   const tableSpec = NodeSpecRegistry.get('table');
@@ -79,7 +79,7 @@ test('Test 1: NodeSpecRegistry contains all built-in node specifications', () =>
   });
 });
 
-test('Test 2: MATERIAL_TOOL_INPUT_TYPES is 100% equivalent to legacy behavior across all 16 tools', () => {
+test('Test 2: MATERIAL_TOOL_INPUT_TYPES is 100% equivalent to legacy behavior across all 17 tools', () => {
   const expectedToolInputs = {
     'text-editor': [],
     'text-to-text': ['text', 'image', 'video', 'audio'],
@@ -89,6 +89,7 @@ test('Test 2: MATERIAL_TOOL_INPUT_TYPES is 100% equivalent to legacy behavior ac
     'text-to-image': ['text'],
     'image-to-image': ['text', 'image'],
     'video-generation': ['text', 'image', 'video', 'audio'],
+    'video-extraction': ['text'],
     'digital-human': ['text', 'image', 'video', 'audio'],
     'motion-mimicry': ['text', 'image', 'video'],
     'subtitle-render': ['text', 'video'],
@@ -101,8 +102,8 @@ test('Test 2: MATERIAL_TOOL_INPUT_TYPES is 100% equivalent to legacy behavior ac
 
   assert.equal(
     Object.keys(expectedToolInputs).length,
-    16,
-    'Expected tool input matrix must cover 16 tools',
+    17,
+    'Expected tool input matrix must cover 17 tools',
   );
 
   for (const [tool, expectedInputs] of Object.entries(expectedToolInputs)) {
@@ -134,6 +135,7 @@ test('Test 2: MATERIAL_TOOL_INPUT_TYPES is 100% equivalent to legacy behavior ac
   assert.deepEqual(MATERIAL_TOOLS.video, [
     'import',
     'video-generation',
+    'video-extraction',
     'motion-mimicry',
     'subtitle-render',
     'digital-human',

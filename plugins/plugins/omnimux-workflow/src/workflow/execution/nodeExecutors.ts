@@ -27,6 +27,7 @@ import {
 import { createWorkflowLogger } from './logger.ts';
 import { WORKFLOW_ROUTE_PREFIX } from '../../shared/api.ts';
 import { resolveNodeKind } from '../../shared/graph/materialNode.ts';
+import { materialTools } from '../../shared/specs/nodes/materialNodeSpec.ts';
 import { findExecutionReadinessFailure } from '../../shared/validation/executionReadiness.ts';
 import { readExplicitTargetSlot } from '../../shared/validation/compatKernel.ts';
 import { deriveSlotLayout, type SlotBindings, type SlotConflict } from '../../shared/graph/feedSlot/index.ts';
@@ -39,6 +40,11 @@ const logger = createWorkflowLogger(LOG_TAG);
 
 export function resolveExecutorKey(node: { type: string; data?: Record<string, unknown> }): string {
   if (node.type !== 'material') return node.type;
+  const outputCapabilityId = typeof node.data?.outputCapabilityId === 'string'
+    ? node.data.outputCapabilityId.trim()
+    : '';
+  const capability = outputCapabilityId ? materialTools[outputCapabilityId] : undefined;
+  if (capability?.executorKey) return capability.executorKey;
   try {
     const kind = resolveNodeKind(node.data ?? {});
     return kind === 'import' ? 'material:import' : 'material:generate';

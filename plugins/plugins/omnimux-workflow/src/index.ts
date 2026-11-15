@@ -192,6 +192,7 @@ export {
   subgraphContainsMediaGenerate,
 } from './workflow/execution/subgraph';
 export { createExecutionManager } from './workflow/execution/ExecutionManager';
+export { createHeadlessExecutionSeam } from './workflow/execution/HeadlessExecutionSeam';
 export type {
   ExecutionManager,
   ExecutionSnapshot,

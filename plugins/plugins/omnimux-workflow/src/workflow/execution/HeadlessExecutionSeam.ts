@@ -32,8 +32,39 @@ import { buildInitialOutputs } from './executionInputs.ts';
 import type { ResolveExecutionProjectFile } from './executionMediaSource.ts';
 import type { CapabilityCatalog } from '../../shared/api.ts';
 import { createWorkflowLogger } from './logger.ts';
+import type { PublishPlan } from '../../canvas/editor/components/publish/publishTypes.ts';
 
 const logger = createWorkflowLogger('HeadlessExecutionSeam');
+
+
+function applyPublishPlanInputs(
+  nodes: Array<{ id: string; type?: string; data?: Record<string, unknown>; [key: string]: unknown }>,
+  plan: PublishPlan | undefined,
+  inputs: Record<string, unknown> | undefined,
+): void {
+  if (!plan || !inputs) return;
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  for (const input of plan.inputs) {
+    const value = inputs[input.key];
+    if (value === undefined || value === null) continue;
+    const node = byId.get(input.nodeId);
+    if (!node) continue;
+    const data = (node.data ??= {});
+    if (input.slotId === 'content') {
+      data.content = String(value);
+    } else if (input.slotId === 'mediaUrl') {
+      data.mediaUrl = String(value);
+    } else {
+      const capabilityInputs = (data.capabilityInputs && typeof data.capabilityInputs === 'object')
+        ? data.capabilityInputs as Record<string, unknown>
+        : {};
+      data.capabilityInputs = { ...capabilityInputs, [input.slotId]: value };
+    }
+    if (!data.outputCapabilityId && input.capabilityId) {
+      data.outputCapabilityId = input.capabilityId;
+    }
+  }
+}
 
 export class HeadlessExecutionError extends Error {
   public readonly code: string;
@@ -136,6 +167,8 @@ export interface WorkflowExecutionParams {
     settings?: { maxParallel?: number; [key: string]: unknown };
   };
   inputs?: Record<string, unknown>;
+  /** Auto-derived publish contract used by app executions. */
+  publishPlan?: PublishPlan;
   nodeIds?: string[];
   mode?: ExecutionMode;
   caller?: {
@@ -280,16 +313,22 @@ export function createHeadlessExecutionSeam(deps: HeadlessExecutionSeamDeps): He
       // 2. Fetch capability catalog
       const catalog = deps.getCatalog ? await deps.getCatalog() : null;
 
+      // 2b. App execution: apply form inputs to the snapshot before slot preparation.
+      applyPublishPlanInputs(rawNodes, params.publishPlan, params.inputs);
+
       // 3. Prepare slot bindings and freeze hydration (reusing shared Canvas preparation logic)
       const slotGraph = prepareExecutionSlotGraph(rawNodes, rawEdges, catalog);
 
       // 4. Resolve execution mode and subgraph
-      const mode = toExecutionMode(params.mode);
+      const planNodeIds = params.publishPlan
+        ? params.publishPlan.workflows.flatMap((workflow) => workflow.nodeIds)
+        : undefined;
+      const mode = params.publishPlan ? 'subset' : toExecutionMode(params.mode);
       const subgraph = resolveExecutionSubgraph({
         nodes: slotGraph.nodes,
         edges: slotGraph.edges,
         executionMode: mode,
-        nodeIds: normalizeNodeIds(params.nodeIds),
+        nodeIds: normalizeNodeIds(planNodeIds ?? params.nodeIds),
       });
 
       if (!subgraph.nodes || subgraph.nodes.length === 0) {

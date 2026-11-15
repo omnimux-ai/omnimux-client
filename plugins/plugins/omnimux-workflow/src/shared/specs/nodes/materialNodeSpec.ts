@@ -16,6 +16,7 @@ export type MaterialTool =
   | 'text-to-image'
   | 'image-to-image'
   | 'video-generation'
+  | 'video-extraction'
   | 'motion-mimicry'
   | 'subtitle-render'
   | 'digital-human'
@@ -28,7 +29,7 @@ export type MaterialTool =
 export const MATERIAL_TOOLS_BY_TYPE: Record<MaterialType, readonly MaterialTool[]> = {
   text: ['text-editor', 'text-to-text', 'link-extract', 'audio-transcription'],
   image: ['import', 'text-to-image', 'image-to-image'],
-  video: ['import', 'video-generation', 'motion-mimicry', 'subtitle-render', 'digital-human'],
+  video: ['import', 'video-generation', 'video-extraction', 'motion-mimicry', 'subtitle-render', 'digital-human'],
   audio: ['import', 'text-to-audio', 'text-to-music', 'video-to-audio', 'voice-clone', 'audio-extract'],
   document: ['import'],
 };
@@ -177,6 +178,22 @@ export const materialTools: Record<string, ToolSpec> = {
         materialType: 'audio',
         role: 'audio_track',
         required: false,
+      },
+    ],
+  },
+  'video-extraction': {
+    id: 'video-extraction',
+    labelKey: 'tool.video-extraction',
+    materialType: 'video',
+    outputType: 'video',
+    acceptedInputTypes: ['text'],
+    executorKey: 'capability:video-extraction',
+    slots: [
+      {
+        slotId: 'url',
+        materialType: 'text',
+        role: 'prompt',
+        required: true,
       },
     ],
   },

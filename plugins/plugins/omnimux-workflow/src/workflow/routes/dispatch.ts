@@ -3,6 +3,7 @@
  * Handlers return null when they do not own the request.
  */
 import type { ExecutionManager, ExecutionEventLogEntry } from '../execution/ExecutionManager';
+import type { HeadlessExecutionSeam } from '../execution/HeadlessExecutionSeam';
 import type { ExecutionContext } from '../execution/ExecutionContext';
 import type { GenerationGateway } from '../seam/gateway';
 import type { WorkspaceStore } from '../workspace/WorkspaceStore';
@@ -26,6 +27,8 @@ export interface WorkflowDispatcherDeps {
   gateway: GenerationGateway;
   mediaDir: string;
   executionManager: ExecutionManager;
+  /** Workflow-host app execution fallback when the omnimux-apps bridge is absent. */
+  headlessSeam?: HeadlessExecutionSeam;
   /** Override the default videos library (tests). */
   libraryRoot?: string;
   /** Injected native picker (tests). Production: hub `nativeFilePicker` seam via `getSeam`. */

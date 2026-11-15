@@ -570,4 +570,34 @@ describe('#1390: 超时终态端到端（真实生产者）', () => {
       rmSync(executionsDir, { recursive: true, force: true });
     }
   });
+
+  it('T05.app: applies publishPlan form inputs before creating the execution', async () => {
+    const mockExecutionManager = createMockExecutionManager();
+    const seam = createHeadlessExecutionSeam({ executionManager: mockExecutionManager });
+    const textNode = {
+      id: 'node-a',
+      type: 'material',
+      data: { label: '链接', materialType: 'text', nodeKind: 'import', selectedTool: 'text-editor', status: 'completed', content: 'https://www.tiktok.com/@old/video/1', params: {} },
+    };
+    const videoNode = {
+      id: 'node-b',
+      type: 'material',
+      data: { label: '视频', materialType: 'video', nodeKind: 'generate', selectedTool: 'video-extraction', outputCapabilityId: 'video-extraction', status: 'empty', params: {} },
+    };
+    await seam.executeHeadless({
+      workspaceId: 'ws_app_plan',
+      snapshot: { nodes: [textNode, videoNode], edges: [{ id: 'e1', source: 'node-a', target: 'node-b' }] },
+      inputs: { 'node-a_content': 'https://www.tiktok.com/@new/video/1' },
+      publishPlan: {
+        groupId: 'g1',
+        workflows: [{ workflowId: 'wf_1', nodeIds: ['node-a', 'node-b'], entryNodeIds: ['node-a'], outputNodeIds: ['node-b'] }],
+        inputs: [{ key: 'node-a_content', workflowId: 'wf_1', nodeId: 'node-a', capabilityId: 'text-editor', slotId: 'content', widget: 'textarea', required: true, label: '视频链接' }],
+        outputs: [{ workflowId: 'wf_1', nodeId: 'node-b', capabilityId: 'video-extraction', outputType: 'video' }],
+        graphHash: 'hash',
+      },
+    });
+    const execution = [...mockExecutionManager.executions.values()][0];
+    const applied = execution.nodes.find((node) => node.id === 'node-a');
+    assert.equal(applied.data.content, 'https://www.tiktok.com/@new/video/1');
+  });
 });

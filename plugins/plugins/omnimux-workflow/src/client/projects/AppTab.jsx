@@ -1123,6 +1123,7 @@ export function AppTab(props) {
       let executionId = ''
       let artifacts = []
       let mediaUrl = ''
+      let executionWorkspaceId = String(manifest?.workflowBinding?.workspaceId || '')
 
       const win = typeof window !== 'undefined' ? window : null
       if (win && typeof win.__OMNIMUX_APPS_EXECUTE__ === 'function') {
@@ -1131,8 +1132,8 @@ export function AppTab(props) {
         if (res.artifacts) artifacts = res.artifacts
         if (res.mediaUrl) mediaUrl = res.mediaUrl
       } else {
-        // HTTP endpoint
-        const response = await fetch(`/omnimux-apps/api/apps/${encodeURIComponent(manifest.appId)}/executions`, {
+        // Workflow host app-execution fallback (omnimux-apps bridge absent).
+        const response = await fetch('/omnimux-workflow/api/apps/executions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1149,6 +1150,7 @@ export function AppTab(props) {
 
         const data = await response.json().catch(() => ({}))
         executionId = data.executionId || data.jobId || ''
+        if (data.workspaceId) executionWorkspaceId = data.workspaceId
         if (data.artifacts) artifacts = data.artifacts
         if (data.mediaUrl) mediaUrl = data.mediaUrl
       }
@@ -1182,10 +1184,11 @@ export function AppTab(props) {
               statusResult = await win.__OMNIMUX_APPS_POLL__(executionId)
             } else {
               const res = await fetch(
-                `/omnimux-apps/api/apps/${encodeURIComponent(manifest.appId)}/executions/${encodeURIComponent(executionId)}`,
+                `/omnimux-workflow/api/workspaces/${encodeURIComponent(executionWorkspaceId)}/executions/${encodeURIComponent(executionId)}`,
               ).catch(() => null)
               if (res && res.ok) {
                 statusResult = await res.json().catch(() => null)
+                if (statusResult?.execution) statusResult = statusResult.execution
               }
             }
 
@@ -1200,7 +1203,11 @@ export function AppTab(props) {
 
             const currentStatus = String(statusResult.status || '').toUpperCase()
             if (currentStatus === 'COMPLETED') {
+              const declaredOutput = manifest?.publishPlan?.outputs?.[0]
+              const nodeOutput = declaredOutput ? statusResult.nodeOutputs?.[declaredOutput.nodeId] : null
+              const nodeAsset = Array.isArray(nodeOutput?.mediaAssets) ? nodeOutput.mediaAssets[0] : null
               const finalMediaUrl =
+                nodeAsset?.url ||
                 statusResult.mediaUrl ||
                 statusResult.artifacts?.[0]?.url ||
                 statusResult.outputs?.mediaUrl ||

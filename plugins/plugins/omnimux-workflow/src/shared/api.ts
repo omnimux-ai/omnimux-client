@@ -474,6 +474,14 @@ export interface ApiUpstream {
   detail: string;
 }
 
+/** Execution request metadata captured for group verification. */
+export interface ExecutionRequestMeta {
+  mode: 'full' | 'subset' | 'single';
+  nodeIds?: string[];
+  groupId?: string;
+  graphHash?: string;
+}
+
 /** POST /executions request body. */
 export interface StartExecutionPayload {
   /** Last successfully saved input version; mismatch returns 409 version_conflict. */
@@ -482,6 +490,10 @@ export interface StartExecutionPayload {
   mode?: 'full' | 'subset' | 'single';
   /** Required for subset and single modes. */
   nodeIds?: string[];
+  /** Template group that owns this run; used by the publish gate. */
+  groupId?: string;
+  /** Stable hash of the group's publish-relevant graph at submit time. */
+  graphHash?: string;
 }
 
 /** POST /executions response. */
@@ -502,6 +514,7 @@ export interface ExecutionSummaryDto {
   status: ExecutionApiStatus;
   createdAt: string;
   progress: { total: number; completed: number; percentage: number };
+  request?: ExecutionRequestMeta;
 }
 
 /** GET /executions/:id response (status snapshot; SSE missed-event backfill). */
@@ -529,6 +542,7 @@ export interface ExecutionSnapshotDto {
   nodeOutputs: Record<string, unknown>;
   mediaAssets: Record<string, Array<Record<string, unknown>>>;
   breakpoints: string[];
+  request?: ExecutionRequestMeta;
 }
 
 // ============================================================================

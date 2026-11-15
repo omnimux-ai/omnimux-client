@@ -2,6 +2,7 @@ import type { CapabilityCatalog } from '../../api.ts';
 import { buildContractView, resolveModelView } from '../../validation/compatKernel.ts';
 import { readNodeInputSource } from '../nodeInputSource.ts';
 import { resolveNodeKind } from '../materialNode.ts';
+import { materialTools } from '../../specs/nodes/materialNodeSpec.ts';
 import { deriveSlotLayout } from './deriveSlotLayout.ts';
 import { effectiveInputDisplay } from './effectiveInputDisplay.ts';
 import type { LegacySlotEdge } from './hydrateSlotBindings.ts';
@@ -27,6 +28,10 @@ export function prepareExecutionSlotGraph<
   }) as E[];
   const nextNodes = nodes.map((node) => {
     if (node.type !== 'material' || resolveNodeKind(node.data ?? {}) !== 'generate') return structuredClone(node);
+    const capabilityId = typeof node.data?.outputCapabilityId === 'string'
+      ? node.data.outputCapabilityId.trim()
+      : '';
+    if (capabilityId && materialTools[capabilityId]?.executorKey) return structuredClone(node);
     const data = structuredClone(node.data ?? {});
     const params = (data.params ?? {}) as Record<string, unknown>;
     const kind = (data.materialType ?? 'text') as keyof NonNullable<CapabilityCatalog['defaults']>;

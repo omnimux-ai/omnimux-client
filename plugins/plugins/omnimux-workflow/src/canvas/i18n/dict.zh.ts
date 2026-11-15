@@ -41,6 +41,7 @@ const zh = {
   'audio.openHint': '用系统应用打开项目内音频副本，不打开原始导入文件',
   'audio.revealHint': '在 Finder 中显示当前播放的项目副本',
   // 节点类型名（NodeHeader fallback label）
+  'node.output': '输出',
   'node.type.text': '文本',
   'node.type.image': '图片',
   'node.type.video': '视频',
@@ -360,6 +361,7 @@ const zh = {
   'tool.text-to-image': '文生图',
   'tool.image-to-image': '图生图',
   'tool.video-generation': '视频生成',
+  'tool.video-extraction': '视频提取',
   'tool.motion-mimicry': '动作模仿',
   'tool.subtitle-render': '字幕渲染',
   'tool.digital-human': '数字人',

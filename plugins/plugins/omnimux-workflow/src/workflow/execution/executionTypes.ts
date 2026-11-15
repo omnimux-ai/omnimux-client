@@ -95,6 +95,12 @@ export interface ExecutionManagerDeps {
   resolveProjectFile?: (workspaceId: string, relativePath: string) => string;
   executionsDir: string;
   gateway: GenerationGateway;
+  /** Workspace lookup used by capability executors that validate workspace existence. */
+  workspaceStore?: Pick<import('../workspace/WorkspaceStore').WorkspaceStore, 'get'>;
+  /** Neutral host seams for capability executors (video extraction, speech, ...). */
+  getSeam?: (name: string) => unknown;
+  getTool?: (name: string) => unknown;
+  fetcher?: typeof fetch;
   /** Plugin media root (absolute). */
   mediaDir: string;
   persistGenerated?: (input: {
@@ -115,10 +121,19 @@ export interface ExecutionManagerDeps {
     }>;
 }
 
+export interface ExecutionRequestMeta {
+  mode: 'full' | 'subset' | 'single';
+  nodeIds?: string[];
+  groupId?: string;
+  graphHash?: string;
+}
+
 export interface CreateExecutionOptions {
   workspaceId: string;
   nodes: ExecutableNode[];
   edges: ExecutableEdge[];
+  /** Request metadata persisted with the record and exposed to the publish gate. */
+  request?: ExecutionRequestMeta;
   maxParallel?: number;
   breakpoints?: string[];
   /** Pre-seeded upstream outputs (e.g. for single-node execution). */
@@ -136,6 +151,7 @@ export interface ExecutionSummary {
   status: string;
   createdAt: string;
   progress: { total: number; completed: number; percentage: number };
+  request?: ExecutionRequestMeta;
 }
 
 export interface ExecutionSnapshot {
@@ -153,6 +169,7 @@ export interface ExecutionSnapshot {
   nodeOutputs: Record<string, unknown>;
   mediaAssets: Record<string, unknown>;
   breakpoints: string[];
+  request?: ExecutionRequestMeta;
 }
 
 export interface ControlResult {

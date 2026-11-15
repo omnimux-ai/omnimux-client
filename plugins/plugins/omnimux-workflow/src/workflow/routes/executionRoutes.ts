@@ -102,7 +102,7 @@ export function createExecutionRoutes(opts: {
       if (method === 'POST') {
         const problem = jsonBodyProblem(req.body);
         if (problem) return problem;
-        const body = req.body as { mode?: unknown; nodeIds?: unknown; expectedVersion?: unknown };
+        const body = req.body as { mode?: unknown; nodeIds?: unknown; expectedVersion?: unknown; groupId?: unknown; graphHash?: unknown };
         if (body.expectedVersion !== undefined && (!Number.isSafeInteger(body.expectedVersion) || (body.expectedVersion as number) < 0)) {
           return { status: 400, body: { error: 'invalid-version', message: 'expectedVersion 必须是非负整数' } };
         }
@@ -112,6 +112,8 @@ export function createExecutionRoutes(opts: {
         } catch (error) {
           return { status: 400, body: { error: 'invalid-mode', message: messageOf(error) } };
         }
+        const groupId = typeof body.groupId === 'string' && body.groupId.trim() ? body.groupId.trim() : undefined;
+        const graphHash = typeof body.graphHash === 'string' && body.graphHash.trim() ? body.graphHash.trim() : undefined;
         let snapshot: ReturnType<WorkspaceStore['get']>;
         try {
           snapshot = store.get(workspaceId);
@@ -189,6 +191,9 @@ export function createExecutionRoutes(opts: {
             workspaceId: snapshot.id,
             nodes: subgraph.nodes as unknown as Array<{ id: string; type: string; data?: Record<string, unknown> }>,
             edges: subgraph.edges as unknown as Array<{ source: string; target: string }>,
+            ...(groupId || graphHash
+              ? { request: { mode, nodeIds: normalizeNodeIds(body.nodeIds), ...(groupId ? { groupId } : {}), ...(graphHash ? { graphHash } : {}) } }
+              : {}),
             maxParallel: snapshot.settings.maxParallel,
             initialOutputs,
             ...(typeof findRecoverableTasks === 'function' ? { inputSignatures, sourceIdentities, recoveryTasks: recovering } : {}),

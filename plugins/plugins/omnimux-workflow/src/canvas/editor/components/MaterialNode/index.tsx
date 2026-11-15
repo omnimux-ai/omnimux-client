@@ -14,6 +14,7 @@ import { AudioLines, Check, Clapperboard, Copy, FileEdit, FileJson, FileSpreadsh
 import { type NodeProps, useReactFlow } from '@xyflow/react';
 import type { MaterialNodeData, MaterialType, MaterialTool } from '../../../types/materialNode';
 import { resolveNodeKind } from '../../../types/materialNode';
+import { materialTools } from '../../../../shared/specs/nodes/materialNodeSpec.ts';
 import { readCurrentText } from '../../../../shared/graph/nodeInputSource';
 import GenerationStateContainer from '../GenerationStateContainer';
 import NodeHeader from './NodeHeader';
@@ -32,7 +33,7 @@ import {
   getNodeSizeCategory,
   calculateNodeHeight,
 } from '../../utils/nodeSizeConfig';
-import { isConfigPanelVisible, mapNodeToGenerationStatus } from '../../utils/nodeVisualMath';
+import { calculateGroupBounds, isConfigPanelVisible, mapNodeToGenerationStatus } from '../../utils/nodeVisualMath';
 import {
   buildConversationPayloadFromNode,
   canExtractVideoFromTextNode,
@@ -472,6 +473,7 @@ const MaterialNode: React.FC<NodeProps> = ({ id, data, selected }) => {
     isMultiSelected,
     contentFormat,
     status,
+    typeof nodeData.outputCapabilityId === 'string' ? nodeData.outputCapabilityId : undefined,
   );
 
   const loadingAspectRatio =
@@ -545,6 +547,7 @@ const MaterialNode: React.FC<NodeProps> = ({ id, data, selected }) => {
         textNodeId: id,
         textPosition: textNode?.position ?? { x: 0, y: 0 },
         textNodeWidth: nodeWidth,
+        parentGroupId: textNode?.parentId,
         videoResult: {
           videoPath: extracted.videoPath,
           mediaUrl: extracted.mediaUrl,
@@ -562,10 +565,44 @@ const MaterialNode: React.FC<NodeProps> = ({ id, data, selected }) => {
         toast.error(t('extractVideo.toast.failed'));
         return;
       }
+      const nodePatches: any[] = [...plan.nodePatches];
+      if (textNode?.parentId) {
+        const groupNode = store.nodes.find((node) => node.id === textNode.parentId && node.type === 'group');
+        if (groupNode) {
+          const nextChildIds = Array.from(new Set([
+            ...((groupNode.data?.nodeIds as string[] | undefined) ?? []),
+            plan.targetNodeId,
+          ]));
+          const childNodes = store.nodes.filter((node) => (
+            node.parentId === textNode.parentId && node.type !== 'group'
+          ));
+          const newChild = plan.addNodes[0];
+          const bounds = calculateGroupBounds([
+            ...childNodes,
+            ...(newChild ? [{ id: newChild.id, position: newChild.position, data: newChild.data }] : []),
+          ] as any, 32, { includeHeaderOffset: false });
+          const nextWidth = Math.max(Number(groupNode.width) || 0, bounds.width);
+          const nextHeight = Math.max(Number(groupNode.height) || 0, bounds.height);
+          nodePatches.push({
+            nodeId: groupNode.id,
+            data: {
+              nodeIds: nextChildIds,
+              minWidth: nextWidth,
+              minHeight: nextHeight,
+              expandedBounds: { width: nextWidth, height: nextHeight },
+            },
+            node: {
+              width: nextWidth,
+              height: nextHeight,
+              style: { ...(groupNode.style || {}), width: nextWidth, height: nextHeight },
+            },
+          });
+        }
+      }
       applyCanvasInputMutation({
         addNodes: plan.addNodes,
         addEdges: plan.addEdges,
-        nodePatches: plan.nodePatches,
+        nodePatches,
       });
       setNodes((nodes) => nodes.map((n) => ({ ...n, selected: n.id === plan.targetNodeId })));
       useCanvasStore.getState().setSelectedElement('node', plan.targetNodeId);
@@ -1476,6 +1513,8 @@ const MaterialNode: React.FC<NodeProps> = ({ id, data, selected }) => {
     [kind, resourcePicker],
   );
 
+  const outputCapabilityOptions = Object.values(materialTools).filter((tool) => tool.materialType === materialType);
+
   return (
     <div
       className={`wf-material-node ${materialType === 'audio' ? 'wf-material-node--audio' : ''} ${selected ? 'wf-material-node--selected' : ''}`}
@@ -1616,6 +1655,25 @@ const MaterialNode: React.FC<NodeProps> = ({ id, data, selected }) => {
           <div className="wf-material-node__error">{executionError ?? errorMessage}</div>
         )}
       </div>
+
+      {selected && !isMultiSelected && (materialType === 'text' || materialType === 'video') && (
+        <div
+          className="wf-material-node__capability nodrag nopan"
+          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 2px 0', fontSize: 10, color: 'var(--dsw-alias-label-tertiary, #71717a)' }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <span>{t('node.output')}</span>
+          <select
+            value={typeof nodeData.outputCapabilityId === 'string' ? nodeData.outputCapabilityId : nodeData.selectedTool}
+            onChange={(event) => updateNodeData({ outputCapabilityId: event.target.value })}
+            style={{ background: 'transparent', border: '1px solid var(--dsw-alias-border-l2, rgba(255,255,255,.12))', borderRadius: 5, color: 'var(--dsw-alias-label-secondary, #a1a1aa)', fontSize: 10, padding: '2px 4px' }}
+          >
+            {outputCapabilityOptions.map((tool) => (
+              <option key={tool.id} value={tool.id}>{t(tool.labelKey)}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* 配置面板（SRT 字幕节点防御性不渲染，闸门见 isConfigPanelVisible） */}
       {panelVisible && !isSrtSubtitle && (

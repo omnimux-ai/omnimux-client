@@ -8,6 +8,7 @@
  */
 
 import { resolveNodeKind } from '../../shared/graph/materialNode.ts';
+import { materialTools } from '../../shared/specs/nodes/materialNodeSpec.ts';
 
 export type ExecutionMode = 'full' | 'subset' | 'single';
 
@@ -22,6 +23,8 @@ export function subgraphContainsMediaGenerate(
     const data = node.data ?? {};
     const materialType = data.materialType;
     if (typeof materialType !== 'string' || !MEDIA_TYPES.has(materialType)) continue;
+    const capabilityId = typeof data.outputCapabilityId === 'string' ? data.outputCapabilityId : '';
+    if (capabilityId && materialTools[capabilityId]?.executorKey) continue;
     try {
       if (resolveNodeKind(data) === 'generate') return true;
     } catch {

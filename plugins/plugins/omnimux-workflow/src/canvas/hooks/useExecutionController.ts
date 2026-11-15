@@ -490,13 +490,27 @@ export function dispatchExecutionEvent(
   }
 }
 
+export interface ExecutionRunTerminalInfo {
+  executionId: string;
+  groupId?: string;
+  graphHash?: string;
+  status: ExecutionUiStatus;
+}
+
 export interface ExecutionControllerOptions {
   /** Optional pre-flight hook (e.g. flush canvas persistence before creating run). */
   onBeforeStart?: () => Promise<number | void> | number | void;
+  /** Called once when a group run reaches a terminal state. */
+  onRunTerminal?: (info: ExecutionRunTerminalInfo) => void;
 }
 
 export interface ExecutionController {
-  startExecution: (opts?: { mode?: 'full' | 'subset' | 'single'; nodeIds?: string[] }) => Promise<void>;
+  startExecution: (opts?: {
+    mode?: 'full' | 'subset' | 'single';
+    nodeIds?: string[];
+    groupId?: string;
+    graphHash?: string;
+  }) => Promise<void>;
   pause: () => Promise<void>;
   resume: () => Promise<void>;
   cancel: () => Promise<void>;
@@ -539,6 +553,10 @@ export function useExecutionController(
   workspaceIdRef.current = workspaceId;
   const onBeforeStartRef = useRef(opts?.onBeforeStart);
   onBeforeStartRef.current = opts?.onBeforeStart;
+  const onRunTerminalRef = useRef(opts?.onRunTerminal);
+  onRunTerminalRef.current = opts?.onRunTerminal;
+  /** executionId -> group metadata needed by the publish gate. */
+  const runMetaRef = useRef(new Map<string, { groupId?: string; graphHash?: string }>());
 
   /** Close one run's stream, or every stream when no id is given. */
   const closeStream = useCallback((executionId?: string) => {
@@ -557,6 +575,19 @@ export function useExecutionController(
 
   const handleEvent = useCallback((executionId: string, eventType: string, raw: string) => {
     dispatchExecutionEvent(eventType, raw, () => closeStream(executionId));
+    if (eventType === 'execution_complete' || eventType === 'execution_error' || eventType === 'execution_cancelled') {
+      const meta = runMetaRef.current.get(executionId);
+      if (meta?.groupId) {
+        const run = useExecutionStore.getState().runs.find((candidate) => candidate.executionId === executionId);
+        onRunTerminalRef.current?.({
+          executionId,
+          groupId: meta.groupId,
+          graphHash: meta.graphHash,
+          status: run?.status ?? (eventType === 'execution_complete' ? 'completed' : 'error'),
+        });
+        runMetaRef.current.delete(executionId);
+      }
+    }
   }, [closeStream]);
 
   const subscribe = useCallback((executionId: string) => {
@@ -641,7 +672,7 @@ export function useExecutionController(
   }, []);
 
   const startExecution = useCallback(
-    async (opts: { mode?: 'full' | 'subset' | 'single'; nodeIds?: string[] } = {}) => {
+    async (opts: { mode?: 'full' | 'subset' | 'single'; nodeIds?: string[]; groupId?: string; graphHash?: string } = {}) => {
       const workspace = workspaceIdRef.current;
       if (!workspace) return;
       if (opts.mode === 'full') {
@@ -668,6 +699,8 @@ export function useExecutionController(
         const result = await createExecution(workspace, {
           mode: opts.mode ?? 'full',
           nodeIds: opts.nodeIds,
+          ...(opts.groupId ? { groupId: opts.groupId } : {}),
+          ...(opts.graphHash ? { graphHash: opts.graphHash } : {}),
           ...(typeof expectedVersion === 'number' ? { expectedVersion } : {}),
         });
         if (!mountedRef.current || workspaceIdRef.current !== workspace) return;
@@ -679,6 +712,10 @@ export function useExecutionController(
         }
         const exec = useExecutionStore.getState();
         exec.ensureRun(result.body.execution.id);
+        runMetaRef.current.set(result.body.execution.id, {
+          ...(opts.groupId ? { groupId: opts.groupId } : {}),
+          ...(opts.graphHash ? { graphHash: opts.graphHash } : {}),
+        });
         if (opts.mode === 'single' && opts.nodeIds?.[0]) {
           exec.setRunNodeStatus(result.body.execution.id, opts.nodeIds[0], 'pending');
           writeNodeData(opts.nodeIds[0], {

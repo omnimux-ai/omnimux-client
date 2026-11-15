@@ -144,7 +144,8 @@ export interface WorkflowBinding {
 export interface ApplicationManifest {
   appId: string;
   version: string;
-  schemaVersion: '1.0';
+  /** v1.0 remains readable; new publishes write v1.1 with publishPlan/verification. */
+  schemaVersion: '1.0' | '1.1';
   createdAt: string;
   metadata: ApplicationMetadata;
   workflowBinding: WorkflowBinding;
@@ -154,6 +155,62 @@ export interface ApplicationManifest {
   demoSnapshot: Record<string, unknown>;
   /** Optional author-fixed field summary; absent on manifests published before this field existed */
   fixedFields?: FixedFieldSummaryEntry[];
+  /** v1.1: auto-derived publish contract. */
+  publishPlan?: PublishPlan;
+  /** v1.1: last successful group execution used to publish. */
+  verification?: PublishVerification;
+}
+
+/** Output type declared by a node capability. */
+export type PublishOutputType = 'text' | 'image' | 'video' | 'audio' | 'table';
+
+export interface PublishWorkflow {
+  workflowId: string;
+  nodeIds: string[];
+  entryNodeIds: string[];
+  outputNodeIds: string[];
+}
+
+export interface PublishInput {
+  key: string;
+  workflowId: string;
+  nodeId: string;
+  capabilityId: string;
+  slotId: string;
+  widget: FormWidgetType;
+  required: boolean;
+  label: string;
+  sampleValue?: unknown;
+}
+
+export interface PublishOutput {
+  workflowId: string;
+  nodeId: string;
+  capabilityId: string;
+  outputType: PublishOutputType;
+  artifact?: {
+    url?: string;
+    text?: string;
+    mimeType?: string;
+    durationSec?: number;
+  };
+}
+
+export interface PublishPlan {
+  groupId: string;
+  workflows: PublishWorkflow[];
+  inputs: PublishInput[];
+  outputs: PublishOutput[];
+  graphHash: string;
+}
+
+export interface PublishVerification {
+  executionId: string;
+  graphHash: string;
+  completedAt: string;
+  nodeStatuses: Record<string, 'completed'>;
+  outputs: PublishOutput[];
+  simulated: false;
 }
 
 /** An individual workflow input analyzed from the canvas DAG */

@@ -20,6 +20,7 @@ import { createDispatchingNodeExecutor } from './nodeExecutors';
 import { createMaterialGatewayExecutor } from './materialGatewayExecutor';
 import { createImportExecutor } from './importExecutor';
 import { createVideoCompositionExecutor } from './videoCompositionExecutor';
+import { createVideoExtractionExecutor } from './videoExtractionExecutor';
 import { registerExecutor } from '../executors/registry';
 import { createWorkflowLogger } from './logger';
 import {
@@ -109,6 +110,7 @@ function snapshotOfEntry(entry: ExecutionEntry): ExecutionSnapshot {
     nodeOutputs: json.nodeOutputs,
     mediaAssets: json.mediaAssets,
     breakpoints: json.breakpoints,
+    ...(json.variables?.executionRequest ? { request: json.variables.executionRequest as any } : {}),
   };
 }
 
@@ -135,6 +137,7 @@ function snapshotOfRecord(record: PersistedExecutionRecord): ExecutionSnapshot {
     nodeOutputs: record.nodeOutputs,
     mediaAssets: record.mediaAssets,
     breakpoints: record.breakpoints,
+    ...(record.variables?.executionRequest ? { request: record.variables.executionRequest as any } : {}),
   };
 }
 
@@ -238,6 +241,7 @@ function createExecutionInstance(
     breakpoints,
     initialOutputs: opts.initialOutputs,
   });
+  if (opts.request) context.set('executionRequest', opts.request);
   context.set('executionInputSignatures', opts.inputSignatures ?? executionInputSignatures(opts));
   context.set('executionInputsChanged', recovery.inputsChanged);
   context.set('executionSourceIdentities', opts.sourceIdentities ?? executionSourceIdentities(opts));
@@ -348,6 +352,14 @@ export function createExecutionManager(deps: ExecutionManagerDeps) {
   registerExecutor(createMaterialGatewayExecutor({ gateway, resolveProjectFile: deps.resolveProjectFile }));
   registerExecutor(createImportExecutor());
   registerExecutor(createVideoCompositionExecutor());
+  if (deps.workspaceStore) {
+    registerExecutor(createVideoExtractionExecutor({
+      store: deps.workspaceStore,
+      getSeam: deps.getSeam,
+      getTool: deps.getTool,
+      fetcher: deps.fetcher,
+    }));
+  }
 
   const handleEntrySetup = (entry: ExecutionEntry): void => {
     setupExecutionListeners(executionsDir, entry, () => retireEntry(entries, entry));
