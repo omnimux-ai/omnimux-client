@@ -7,26 +7,28 @@ name: Publish npm package (Trusted Publishing)
 #   Workflow filename=publish.yml / Environment 留空
 # 注意：本仓 plugins/ 是插件工作区根，workflow 的 run 步骤默认在该目录下执行。
 # 版本 bump 仍走现有 PR + Merge Queue，合入后由维护者手动触发本 workflow。
+#
+# packages=all（默认）会展开 12 个活跃包；dry_run 默认 true。dry-run 下：
+#   - 未发布版本走 npm publish --dry-run；
+#   - 已发布版本（当前为 omnimux@0.1.8）走 npm pack --dry-run；
+# 真实发布下：all 跳过已发布版本并给出 warning；显式点名已发布包会在 preflight 失败。
 on:
   workflow_dispatch:
     inputs:
-      package:
-        description: "要发布的包目录名（plugins/<name>，默认 omnimux）"
+      packages:
+        description: "要发布的包（包名或 plugins/<name>，逗号分隔；all = 全部活跃包）"
         required: true
-        default: omnimux
+        default: all
         type: string
       dry_run:
-        description: "只打包与校验，不真正发布"
+        description: "只打包与校验，不真正发布（默认 true；真实发布需显式关闭）"
         required: false
-        default: false
+        default: true
         type: boolean
 
-# 同一包的发布不能并发：避免两次 publish 抢同一个版本。
-concurrency:
-  group: publish-${{ inputs.package }}
-  cancel-in-progress: false
-
 # id-token: write 是 OIDC 必需权限；本 workflow 不引用任何 npm token secret。
+# 这里只保留 contents: read + id-token: write，不引入 environment、packages: write
+# 或任何 npm token；Trusted Publisher 四元组保持不变。
 permissions:
   contents: read
   id-token: write
@@ -34,14 +36,64 @@ permissions:
 env:
   COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
 
+# 插件工作区根；各 job 的命令都从这里执行，包目录用仓库相对路径。
+defaults:
+  run:
+    working-directory: plugins
+
 jobs:
-  publish:
-    name: Publish ${{ inputs.package }}
+  # 解析包选择 + npm 上是否已发布，生成 matrix。所有选择（单包/多包/all）都经过这里。
+  plan:
+    name: Plan release matrix
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    defaults:
-      run:
-        working-directory: plugins
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Resolve release matrix
+        id: matrix
+        env:
+          INPUT_PACKAGES: ${{ inputs.packages }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          plan="$(node scripts/publish-matrix.mjs --packages "$INPUT_PACKAGES" --dry-run "$INPUT_DRY_RUN")"
+          matrix="$(PLAN="$plan" node -e 'const p=JSON.parse(process.env.PLAN); process.stdout.write(JSON.stringify(p.include))')"
+          warnings="$(PLAN="$plan" node -e 'const p=JSON.parse(process.env.PLAN); for (const w of p.warnings) process.stdout.write(`::warning::${w}\n`)')"
+          if [ -n "$warnings" ]; then printf '%s' "$warnings"; fi
+          test "$matrix" != "[]" || {
+            echo "::error::没有可发布的包（选中版本都已在 npm 发布，或选择为空）"
+            exit 1
+          }
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "release matrix: $matrix"
+
+  # 每包独立 job；job 级 concurrency 保证同包发布不会互相抢版本。
+  # dry-run 允许并行；真实发布固定 max-parallel=1，并按依赖拓扑顺序执行，
+  # 保证 omnimux-products 先于 omnimux-assets 发布。
+  publish:
+    name: ${{ matrix.action }} ${{ matrix.package }}
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    concurrency:
+      group: publish-${{ matrix.package }}
+      cancel-in-progress: false
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ inputs.dry_run && 4 || 1 }}
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -72,56 +124,49 @@ jobs:
           }
           JS
 
-      - name: Preflight publish source
+      - name: Release preflight (manifest + verify-publish-source + npm state)
         env:
-          INPUT_PACKAGE: ${{ inputs.package }}
+          PACKAGE_DIR: ${{ matrix.dir }}
+          ACTION: ${{ matrix.action }}
         run: |
           set -euo pipefail
-          case "$INPUT_PACKAGE" in
-            *[!a-z0-9-]*|"")
-              echo "::error::invalid package input: '$INPUT_PACKAGE'"
-              exit 1
-              ;;
+          case "$ACTION" in
+            pack-dry-run) node scripts/release-check.mjs "$PACKAGE_DIR" --allow-published ;;
+            *) node scripts/release-check.mjs "$PACKAGE_DIR" ;;
           esac
-          test -f "plugins/$INPUT_PACKAGE/package.json" || {
-            echo "::error::missing plugins/$INPUT_PACKAGE/package.json"
-            exit 1
-          }
-          if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
-            echo "::error::working tree is not clean; the published bytes must come from a commit"
-            git status --short
-            exit 1
-          fi
-          node scripts/verify-publish-source.mjs "plugins/$INPUT_PACKAGE"
 
       - name: Install workspace dependencies
-        run: pnpm install --frozen-lockfile
+        run: corepack pnpm install --frozen-lockfile
 
-      - name: Publish
+      - name: Publish or pack without publishing
         env:
-          INPUT_PACKAGE: ${{ inputs.package }}
-          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          PACKAGE_DIR: ${{ matrix.dir }}
+          ACTION: ${{ matrix.action }}
         run: |
           set -euo pipefail
-          cd "plugins/$INPUT_PACKAGE"
-          if [ "$INPUT_DRY_RUN" = "true" ]; then
-            npm publish --access public --dry-run
-          else
-            npm publish --access public
-          fi
+          cd "$GITHUB_WORKSPACE/$PACKAGE_DIR"
+          case "$ACTION" in
+            publish) npm publish --access public ;;
+            publish-dry-run) npm publish --access public --dry-run ;;
+            pack-dry-run) npm pack --dry-run ;;
+            *) echo "::error::unknown release action: $ACTION"; exit 1 ;;
+          esac
 
+      # 只对真实发布做 registry 回查；dry-run / pack 不访问已发布版本。
       - name: Verify published package
-        if: ${{ inputs.dry_run != true }}
+        if: ${{ matrix.action == 'publish' }}
         env:
-          INPUT_PACKAGE: ${{ inputs.package }}
+          PACKAGE: ${{ matrix.package }}
+          VERSION: ${{ matrix.version }}
+          PACKAGE_DIR: ${{ matrix.dir }}
         run: |
           node --input-type=module - <<'JS'
           import { execFileSync } from 'node:child_process'
-          import { readFileSync } from 'node:fs'
           import { join } from 'node:path'
 
-          const dir = join('plugins', process.env.INPUT_PACKAGE)
-          const { name, version } = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+          const name = process.env.PACKAGE
+          const version = process.env.VERSION
+          const dir = join(process.env.GITHUB_WORKSPACE, process.env.PACKAGE_DIR)
           const expectedGitHead = process.env.GITHUB_SHA
           const viewOnce = () => {
             try {
@@ -135,13 +180,10 @@ jobs:
             }
           }
 
-          // npm 发布后 registry 传播实测约 2 分钟（发布时会提示 "may take a few
-          // minutes to become available"），但 CDN 边缘偶发更慢（0.1.8 实发时超过
-          // 5 分钟才可见）。给 15 分钟窗口，避免成功发布会因传播延迟假红。
-          // 窗口内的每次失败都重试；窗口用尽仍未可见时，因为上一步 `npm publish`
-          // 已 exit 0（包确实已发布），可见性只是最终一致的滞后，故降级为 warning，
-          // 不让一次成功的发布被判成 failure。name@version 与 gitHead 的一致性
-          // 校验在拿到 registry 数据后照常执行（不一致仍 hard fail）。
+          // npm 发布后 registry 传播实测约 2 分钟，CDN 边缘偶发更慢。给 15 分钟窗口，
+          // 窗口用尽仍未可见时，因为上一步 npm publish 已 exit 0，可见性只是最终一致
+          // 的滞后，故降级为 warning，不让一次成功的发布被判成 failure。name@version
+          // 与 gitHead 的一致性校验在拿到 registry 数据后照常执行（不一致仍 hard fail）。
           const MAX_ATTEMPTS = 60
           const RETRY_DELAY_SECONDS = 15
           let output = ''
