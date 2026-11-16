@@ -21,7 +21,9 @@ export const DESKTOP_DEFAULT_WEB_PORT = DESKTOP_PROD_WEB_PORT
 export const DESKTOP_WEB_PORT_RETRY_LIMIT = 32
 
 /** Select the default loopback Web port based on runtime Dev/Prod channel identity. */
-export function defaultDesktopWebPort(env: NodeJS.ProcessEnv = process.env): number {
+export function defaultDesktopWebPort(
+  env: NodeJS.ProcessEnv = typeof process === 'undefined' ? {} : process.env,
+): number {
   const channel = (env.OMNIMUX_CHANNEL ?? '').trim().toLowerCase()
   if (
     channel === 'dev'

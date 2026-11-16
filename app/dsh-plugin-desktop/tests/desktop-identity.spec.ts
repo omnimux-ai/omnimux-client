@@ -67,6 +67,7 @@ describe('desktop-identity & port policy (Issue #350)', () => {
     expect(defaultDesktopWebPort({ OMNIMUX_CHANNEL: 'dev' })).toBe(DESKTOP_DEV_WEB_PORT)
     expect(defaultDesktopWebPort({ OMNIMUX_DEV: '1' })).toBe(DESKTOP_DEV_WEB_PORT)
     expect(defaultDesktopWebPort({ NODE_ENV: 'development' })).toBe(DESKTOP_DEV_WEB_PORT)
+    expect(defaultDesktopWebPort({ DSH_DESKTOP_DEV: '1' })).toBe(DESKTOP_DEV_WEB_PORT)
     expect(defaultDesktopWebPort({ OMNIMUX_CHANNEL: 'prod' })).toBe(DESKTOP_PROD_WEB_PORT)
     expect(defaultDesktopWebPort({})).toBe(DESKTOP_PROD_WEB_PORT)
   })

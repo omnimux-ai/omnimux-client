@@ -11,7 +11,7 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   composeEntries,
   initProfile,
@@ -99,6 +99,7 @@ function writeDesktopShellPreferences(home: string, preferences: readonly string
 }
 
 afterEach(() => {
+  vi.unstubAllEnvs()
   for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true })
 })
 
@@ -1269,6 +1270,23 @@ virtualStoreDirMaxLength: 60
       networkExposure: 'loopback',
     })
     expect(desktopShellModeFromSettings({ unrelated: { enabled: true } })).toBe('compatibility')
+  })
+
+  it('uses the launch channel default port when the settings port is absent', () => {
+    vi.stubEnv('OMNIMUX_CHANNEL', 'dev')
+    vi.stubEnv('OMNIMUX_DEV', '')
+    vi.stubEnv('NODE_ENV', 'test')
+    vi.stubEnv('DSH_DESKTOP_DEV', '')
+    expect(desktopStartupSettingsFromSettings({}).port).toBe(45_120)
+    expect(desktopStartupSettingsFromSettings({ 'dsh-desktop': { mode: 'advanced' } }).port).toBe(45_120)
+
+    vi.stubEnv('OMNIMUX_CHANNEL', 'prod')
+    expect(desktopStartupSettingsFromSettings({}).port).toBe(44_120)
+    expect(desktopStartupSettingsFromSettings({ 'dsh-desktop': { mode: 'advanced' } }).port).toBe(44_120)
+
+    // Explicit values, including OS-random 0, still win over the channel default.
+    expect(desktopStartupSettingsFromSettings({ 'dsh-desktop': { port: 0 } }).port).toBe(0)
+    expect(desktopStartupSettingsFromSettings({ 'dsh-desktop': { port: 43_210 } }).port).toBe(43_210)
   })
 
   it('treats legacy LAN exposure as browser access only in compatibility mode', () => {

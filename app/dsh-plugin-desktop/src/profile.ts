@@ -35,7 +35,7 @@ import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { isMap, isPair, isScalar, isSeq, parseAllDocuments, parseDocument, type Pair, type YAMLMap } from 'yaml'
 import { findOverlayPackage, resolveOverlayPackage } from './package-overlay.ts'
 import { removeLinkProjectionsSafely } from './link-projections.ts'
-import { DESKTOP_DEFAULT_WEB_PORT } from './desktop-port.ts'
+import { defaultDesktopWebPort } from './desktop-port.ts'
 import { RETIRED_SCHEDULE_BUNDLE, retiredSchedulePatch, SCHEDULE_RETIREMENT_MARKER } from './profile-schedule.ts'
 import {
   NATIVE_PICKER_BACKEND,
@@ -116,7 +116,6 @@ const DESKTOP_WINDOWS_ACL_SANDBOX_PACKAGE = `${DESKTOP_PACKAGE_NAME}/windows-acl
 /** Upstream Web rows that exist only to send Desktop product analytics to DeepSeek. */
 export const UPSTREAM_PRODUCT_ANALYTICS_ROW_IDS = ['desktop-product-telemetry', 'product-analytics'] as const
 const DEFAULT_DESKTOP_SHELL_MODE: DesktopShellMode = 'compatibility'
-const DEFAULT_DESKTOP_PORT = DESKTOP_DEFAULT_WEB_PORT
 const DESKTOP_WEB_SERVER_ROW_ID = 'desktop-webserver'
 const DESKTOP_WEB_SERVER_PACKAGE = `${DESKTOP_PACKAGE_NAME}/webserver`
 // dsh 0.1.7-alpha.1 deleted `@deepseek-ai/dsh-settings-file` (upstream 601d6761e4) and
@@ -163,7 +162,7 @@ export function parseDesktopShellMode(value: unknown): DesktopShellMode {
 
 /** Parse the requested loopback Web port and reject values Node cannot listen on. */
 export function parseDesktopPort(value: unknown): number {
-  if (value === undefined) return DEFAULT_DESKTOP_PORT
+  if (value === undefined) return defaultDesktopWebPort()
   if (typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 65_535) return value
   throw new Error(`${BIN_NAME}: ${DESKTOP_SETTINGS_NAMESPACE}.port must be an integer from 0 through 65535`)
 }
@@ -180,15 +179,23 @@ export interface DesktopStartupSettings {
   networkExposure: DesktopNetworkExposure
 }
 
-const DEFAULT_DESKTOP_STARTUP_SETTINGS: DesktopStartupSettings = Object.freeze({
-  mode: DEFAULT_DESKTOP_SHELL_MODE,
-  port: DEFAULT_DESKTOP_PORT,
-  macosMaterial: DEFAULT_MACOS_WINDOW_MATERIAL,
-  windowsMaterial: DEFAULT_WINDOWS_WINDOW_MATERIAL,
-  linuxMaterial: DEFAULT_LINUX_WINDOW_MATERIAL,
-  openBrowser: false,
-  networkExposure: 'loopback',
-})
+/**
+ * Default startup settings for the current launch channel.
+ *
+ * Evaluated per call so a launcher that sets `OMNIMUX_CHANNEL` after importing
+ * this module still gets the Dev port instead of the module-load-time value.
+ */
+function defaultDesktopStartupSettings(): DesktopStartupSettings {
+  return {
+    mode: DEFAULT_DESKTOP_SHELL_MODE,
+    port: defaultDesktopWebPort(),
+    macosMaterial: DEFAULT_MACOS_WINDOW_MATERIAL,
+    windowsMaterial: DEFAULT_WINDOWS_WINDOW_MATERIAL,
+    linuxMaterial: DEFAULT_LINUX_WINDOW_MATERIAL,
+    openBrowser: false,
+    networkExposure: 'loopback',
+  }
+}
 
 /**
  * Read Desktop startup settings from one parsed settings document.
@@ -201,7 +208,7 @@ export function desktopStartupSettingsFromSettings(document: unknown): DesktopSt
   }
   const section = (document as Record<string, unknown>)[DESKTOP_SETTINGS_NAMESPACE]
   if (section === undefined) {
-    return { ...DEFAULT_DESKTOP_STARTUP_SETTINGS }
+    return defaultDesktopStartupSettings()
   }
   if (typeof section !== 'object' || section === null || Array.isArray(section)) {
     throw new Error(`${BIN_NAME}: ${DESKTOP_SETTINGS_NAMESPACE} settings must be a map`)
@@ -410,7 +417,7 @@ export function readDesktopStartupSettings(config: DesktopSettingsDocumentConfig
     text = readFileSync(spec.filename, 'utf8')
   } catch (cause) {
     if ((cause as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { ...DEFAULT_DESKTOP_STARTUP_SETTINGS }
+      return defaultDesktopStartupSettings()
     }
     throw cause
   }
@@ -2068,7 +2075,7 @@ export function prepareDesktopProfile(
   // Nothing is lost by dropping the config. The startup values above are read
   // back out of this same composed row, and `DesktopShellConfig` declares the
   // identical defaults (`parseDesktopShellMode` <-> `.default('compatibility')`,
-  // `DEFAULT_DESKTOP_PORT` <-> `.default(DESKTOP_DEFAULT_WEB_PORT)`, and one
+  // `defaultDesktopStartupSettings()` <-> `.default(defaultDesktopWebPort())`, and one
   // `DEFAULT_*_WINDOW_MATERIAL` per platform), so the plugin resolves the same
   // values from the raw row. The one field that was *derived* rather than
   // parsed -- `networkExposure`, withdrawn to loopback when browser access is

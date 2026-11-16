@@ -27,7 +27,7 @@ import {
   THEME_SETTINGS_NAMESPACE,
   type ThemeSettings,
 } from '@deepseek-ai/dsh-client-ui-theme'
-import { DESKTOP_DEFAULT_WEB_PORT } from './desktop-port.ts'
+import { defaultDesktopWebPort } from './desktop-port.ts'
 import {
   desktopBrowserAccessEnabled,
   desktopNetworkExposureForBrowserAccess,
@@ -101,7 +101,7 @@ export const DesktopSettingsSchema: z<DesktopSettings> = z.object({
   // stay schema-valid so older settings still boot; they resolve to 'off'.
   windowsMaterial: z.union(['off', 'acrylic', 'mica'] as const).default(DEFAULT_WINDOWS_WINDOW_MATERIAL),
   linuxMaterial: z.union(['off', 'transparent'] as const).default(DEFAULT_LINUX_WINDOW_MATERIAL),
-  port: z.number().step(1).min(0).max(65_535).default(DESKTOP_DEFAULT_WEB_PORT),
+  port: z.number().step(1).min(0).max(65_535).default(defaultDesktopWebPort()),
   openBrowser: z.boolean().default(false),
   networkExposure: z.union(['loopback', 'lan'] as const).default('loopback'),
   logLevel: z.union(['debug', 'info', 'warn', 'error'] as const).default('info'),
@@ -149,7 +149,7 @@ export const DesktopShellConfig = z.object({
   // Legacy Acrylic and Mica rows stay readable and resolve to 'off'.
   windowsMaterial: z.union(['off', 'acrylic', 'mica'] as const).default(DEFAULT_WINDOWS_WINDOW_MATERIAL).volatile(),
   linuxMaterial: z.union(['off', 'transparent'] as const).default(DEFAULT_LINUX_WINDOW_MATERIAL).volatile(),
-  port: z.number().step(1).min(0).max(65_535).default(DESKTOP_DEFAULT_WEB_PORT).volatile(),
+  port: z.number().step(1).min(0).max(65_535).default(defaultDesktopWebPort()).volatile(),
   openBrowser: z.boolean().default(false).volatile(),
   networkExposure: z.union(['loopback', 'lan'] as const).default('loopback').volatile(),
   logLevel: z.union(['debug', 'info', 'warn', 'error'] as const).default('info').volatile(),

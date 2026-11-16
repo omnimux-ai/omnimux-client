@@ -2,6 +2,7 @@
 import type { Features, OnboardingChoices } from './profiles.ts'
 import type { DesktopLanHttpsRuntimeSnapshot } from './lan-https-runtime.ts'
 import type { DesktopPermissions } from './permissions.ts'
+import { defaultDesktopWebPort } from '../../dsh-plugin-desktop/src/desktop-port.ts'
 
 export const NATIVE_ACCESS_HEADER = 'x-dsh-desktop-renderer'
 export const DEFAULT_PROFILE = 'desktop'
@@ -39,7 +40,7 @@ export interface DesktopPreferences {
 
 export const DEFAULT_PREFERENCES: Readonly<DesktopPreferences> = Object.freeze({
   closeToTray: true, macosMaterial: 'transparent', windowsMaterial: 'off', linuxMaterial: 'off',
-  browserAccess: false, networkExposure: 'loopback', port: 0, lanPort: 0, logLevel: 'info', developerLogging: false,
+  browserAccess: false, networkExposure: 'loopback', port: defaultDesktopWebPort(), lanPort: 0, logLevel: 'info', developerLogging: false,
   sidebarFooterCompat: true, sidebarFooterBalanced: true, notifications: true, turnCompleted: true, turnFailed: true, jobCompleted: false, jobFailed: false,
   scheduleCompleted: true, scheduleFailed: true,
 })
