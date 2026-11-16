@@ -13,29 +13,25 @@
 - 基线：`origin/main` = `2f7b2bb9ba2dc4b47b0a24693cce6da796af5f31`（只比
   `839ff5e` 多 #35 docs spec）。
 - 本 PR 不改 `app/**`、不动根工作区文件；S1 会把 workspace 根上提并把 app 依赖
-  改成本仓包，`bundle.lock.json` 由 S1 生成后再回写。本 PR 最终 diff 不包含
-  `plugins/pnpm-lock.yaml` 的修改；依赖说明符改动与当前 lock 的冲突见「已知阻塞」。
+  改成本仓包，`bundle.lock.json` 由 S1 生成后再回写。按维护者授权，本 PR 只同步
+  `plugins/pnpm-lock.yaml` 里被本次依赖说明符改动触及的 11 条 importer specifier，
+  不做版本、包解析或全文件重排。
 - 不改 Trusted Publisher 四元组：Owner `omnimux-ai` / Repository
   `omnimux-client` / Workflow filename `publish.yml` / Environment 空。
 - 不执行任何真实 npm 发布；真实发布必须等绑定确认 + 用户批准。
 
-## 已知阻塞（待 S1 / 维护者决策）
+## lockfile 同步（按维护者授权）
 
-`package.json` 已把 `dsh-ui-kit` 从 `file:` 改为 `^0.1.0`，`omnimux-assets` 的
-`omnimux-products` 改为 `^0.1.2`；按本单约束，`plugins/pnpm-lock.yaml` 不提交修改。
-在干净 checkout 上执行 `pnpm install --frozen-lockfile` 会报
-`ERR_PNPM_OUTDATED_LOCKFILE`：
+`package.json` 已把 10 个包的 `dsh-ui-kit` 从 `file:../../packages/dsh-ui-kit` 改为
+`^0.1.0`，`omnimux-assets` 的 `omnimux-products` 从 `file:../omnimux-products` 改为
+`^0.1.2`。`plugins/pnpm-lock.yaml` 只更新对应的 11 条 importer specifier：
 
-```text
-specifiers in the lockfile don't match specifiers in package.json:
-* 1 dependencies are mismatched:
-  - dsh-ui-kit (lockfile: file:../../packages/dsh-ui-kit, manifest: ^0.1.0)
-```
+- 10 条 `dsh-ui-kit`：accounts/analytics/assets/clip/forms/inspiration/market/
+  products/publish/workflow；
+- 1 条 `omnimux-assets` 的 `omnimux-products`。
 
-因此当前 head 的 `Plugins build and typecheck` 是红灯；本地已有 `node_modules` 时
-`pnpm install --frozen-lockfile` 会显示 `Already up to date`，不能当作干净安装证据。
-处理选项：等 S1 根 workspace/根 lock 合入后 rebase 并重跑，或由维护者明确允许本 PR
-同步该 lockfile 说明符；在决策前不回写 lock。
+没有改 pnpm 版本、resolved 版本、snapshot 或全文件格式。干净 checkout 上
+`pnpm install --frozen-lockfile` 已通过；`plugins/pnpm-workspace.yaml` 未动。
 
 ## 版本矩阵（基线：2026-11-16 `npm view <pkg> version`）
 
@@ -80,8 +76,10 @@ specifiers in the lockfile don't match specifiers in package.json:
 - `plan` job 调 `scripts/publish-matrix.mjs`：展开 12 个活跃包，用
   `npm view <name>@<version> version` 判重，输出 `matrix.include` 和 warnings。
 - `publish` job 是每包独立 job，`concurrency: publish-${{ matrix.package }}`；
-  dry-run 最多并行 4 个，真实发布固定 `max-parallel: 1`，并按依赖拓扑排序，
-  保证 `omnimux-products` 先于 `omnimux-assets`。
+  dry-run 最多并行 4 个，真实发布固定 `max-parallel: 1`，并按依赖拓扑排序。
+  矩阵顺序不作为依赖保证：真实发布 `omnimux-assets` 前还有一步显式
+  `npm view omnimux-products@^0.1.2` 等待（60 次 × 15s，超时明确失败），
+  避免 GitHub 不保证 matrix 顺序时把 assets 先发出去。
 - dry-run：未发布版本跑 `npm publish --tag latest --dry-run`，已发布版本跑
   `npm pack --dry-run`；真实发布：跑 `npm publish --access public --tag latest`。
   market/workflow 是 prerelease（`omni.N` / `rc.N`），npm 会拒绝不带 `--tag` 的
@@ -124,8 +122,11 @@ runtime 读到的版本会和 npm tarball 不一致；发布前的 `npm view` �
   entry、`omnimux` 为 `pack-dry-run`、其余 11 个为 `publish-dry-run`；用
   `--dry-run false` 检查 `omnimux` 被跳过且 `omnimux-products` 排在
   `omnimux-assets` 前。
-- 对 12 个包各跑 `npm publish --dry-run`（已发布的 `omnimux` 另用
-  `npm pack --dry-run`），任何版本重复、`file:` 依赖或打包失败都应暴露。
+- 对 12 个包各跑 `npm publish --tag latest --dry-run`（已发布的 `omnimux`
+  另用 `npm pack --dry-run`），任何版本重复、`file:` 依赖或打包失败都应暴露。
+- 对 12 个包运行 `npm pack` 并解包检查 tarball 内 `package.json`，
+  `dependencies`/`optionalDependencies`/`peerDependencies` 不得出现
+  `file:`/`workspace:`/`link:`/`portal:`；`devDependencies` 允许本机说明符。
 - 连续跑两次 `registry:build` 并 `cmp`，应字节一致；registry 应为 12 条而不是 18 条。
 - 静态测试应锁住 workflow 文件名、matrix、`id-token: write`、无 `environment`、
   `dry_run` 默认 true；如果这些被改坏，`publish-workflow.test.mjs` 会失败。
@@ -134,7 +135,7 @@ runtime 读到的版本会和 npm tarball 不一致；发布前的 `npm view` �
 
 ```bash
 cd plugins
-corepack pnpm install --frozen-lockfile
+corepack pnpm install --frozen-lockfile   # 在干净 checkout 上执行
 node --test scripts/release-check.test.mjs
 node --test scripts/publish-matrix.test.mjs scripts/publish-workflow.test.mjs
 node scripts/publish-matrix.mjs --packages all --dry-run true
