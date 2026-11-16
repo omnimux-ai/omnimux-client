@@ -231,23 +231,25 @@ function normalizeAspectRatio(
   }
   const raw = typeof next.aspectRatio === 'string' && next.aspectRatio.trim() ? next.aspectRatio.trim() : undefined;
   if (raw !== undefined && options.includes(raw)) return;
-  const defaultValue = typeof definition.defaultValue === 'string' && options.includes(definition.defaultValue)
+  const configuredDefault = typeof definition.defaultValue === 'string' && options.includes(definition.defaultValue)
     ? definition.defaultValue
-    : options[0];
-  if (!defaultValue) {
+    : undefined;
+  // A required field without a declared default must block: picking options[0]
+  // would silently choose a value the contract never authorized as default.
+  const fallback = configuredDefault ?? (isRequired(definition) ? undefined : options[0]);
+  if (!fallback) {
+    delete next.aspectRatio;
     if (isRequired(definition)) {
       blocked.push({ field: 'aspectRatio', message: '请设置画幅：当前契约没有合法默认值', required: true });
-    } else {
-      delete next.aspectRatio;
     }
     return;
   }
-  next.aspectRatio = defaultValue;
+  next.aspectRatio = fallback;
   if (raw === undefined) return;
   if (options.length === 1 && (options[0] === 'adaptive' || options[0] === 'auto')) {
-    pushUnique(notices, `当前生成方式画幅已自适应为 ${defaultValue === 'adaptive' ? '自适应' : defaultValue}`);
+    pushUnique(notices, `当前生成方式画幅已自适应为 ${fallback === 'adaptive' ? '自适应' : fallback}`);
   } else {
-    pushUnique(notices, `画幅已调整为 ${defaultValue}`);
+    pushUnique(notices, `画幅已调整为 ${fallback}`);
   }
 }
 
@@ -292,19 +294,22 @@ function normalizeDuration(
     pushUnique(notices, `时长已调整为 ${clamped}s`);
     return;
   }
-  const defaultValue = typeof definition.defaultValue === 'number' && durationIsValid(definition.defaultValue, definition)
+  const configuredDefault = typeof definition.defaultValue === 'number' && durationIsValid(definition.defaultValue, definition)
     ? definition.defaultValue
-    : options.map((option) => option.value).find((value) => durationIsValid(value, definition));
-  if (defaultValue !== undefined) {
-    next.duration = defaultValue;
-    pushUnique(notices, `时长已调整为 ${defaultValue}s`);
+    : undefined;
+  const optionalFallback = !isRequired(definition)
+    ? options.map((option) => option.value).find((value) => durationIsValid(value, definition))
+    : undefined;
+  const fallback = configuredDefault ?? optionalFallback;
+  if (fallback !== undefined) {
+    next.duration = fallback;
+    pushUnique(notices, `时长已调整为 ${fallback}s`);
     return;
   }
+  delete next.duration;
   if (isRequired(definition)) {
-    delete next.duration;
     blocked.push({ field: 'duration', message: '请设置时长：当前契约没有合法默认值', required: true });
   } else {
-    delete next.duration;
     pushUnique(notices, `时长 ${String(raw)} 已失效，已移除`);
   }
 }
@@ -347,19 +352,19 @@ function normalizeResolution(
       return;
     }
   }
-  const defaultValue = typeof definition.defaultValue === 'string' && options.includes(definition.defaultValue)
+  const configuredDefault = typeof definition.defaultValue === 'string' && options.includes(definition.defaultValue)
     ? definition.defaultValue
-    : options[0];
-  if (!defaultValue) {
+    : undefined;
+  const fallback = configuredDefault ?? (isRequired(definition) ? undefined : options[0]);
+  if (!fallback) {
+    delete next.resolution;
     if (isRequired(definition)) {
       blocked.push({ field: 'resolution', message: '请设置清晰度：当前契约没有合法默认值', required: true });
-    } else {
-      delete next.resolution;
     }
     return;
   }
-  next.resolution = defaultValue;
-  if (raw !== undefined) pushUnique(notices, `清晰度已调整为 ${defaultValue}（原 ${raw}）`);
+  next.resolution = fallback;
+  if (raw !== undefined) pushUnique(notices, `清晰度已调整为 ${fallback}（原 ${raw}）`);
 }
 
 function normalizeBooleanField(
@@ -401,19 +406,19 @@ function normalizeEnumField(
   }
   const raw = typeof next[field] === 'string' && next[field].trim() ? next[field].trim() : undefined;
   if (raw !== undefined && options.includes(raw)) return;
-  const defaultValue = typeof definition.defaultValue === 'string' && options.includes(definition.defaultValue)
+  const configuredDefault = typeof definition.defaultValue === 'string' && options.includes(definition.defaultValue)
     ? definition.defaultValue
-    : options[0];
-  if (!defaultValue) {
+    : undefined;
+  const fallback = configuredDefault ?? (isRequired(definition) ? undefined : options[0]);
+  if (!fallback) {
+    delete next[field];
     if (isRequired(definition)) {
       blocked.push({ field, message: `请设置${label}：当前契约没有合法默认值`, required: true });
-    } else {
-      delete next[field];
     }
     return;
   }
-  next[field] = defaultValue;
-  if (raw !== undefined) pushUnique(notices, `${label}已调整为 ${defaultValue}`);
+  next[field] = fallback;
+  if (raw !== undefined) pushUnique(notices, `${label}已调整为 ${fallback}`);
 }
 
 function normalizeSeed(

@@ -159,6 +159,85 @@ describe('normalizeVideoParamsForSchema', () => {
     assert.ok(result.blocked.some((item) => item.field === 'aspectRatio' && item.required === true));
   });
 
+  it('blocks required fields with non-empty options and no defaultValue instead of selecting the first option', () => {
+    const requiredCatalog = structuredClone(catalog);
+    const requiredSchema = {
+      aspectRatio: { options: options('4k'), required: true },
+      duration: { options: options(8), required: true },
+      resolution: { options: options('8k'), required: true },
+      quality: { options: options('best'), required: true },
+    };
+    requiredCatalog.models[0].parameters = requiredSchema;
+    requiredCatalog.models[0].operations[0].parameters = requiredSchema;
+    const result = normalizeVideoParamsForSchema({
+      params: { model: 'seedance-2-0', operation: 'text_to_video' },
+      modelItem: seedanceItem,
+      operationId: 'text_to_video',
+      catalog: requiredCatalog,
+    });
+    assert.equal(result.params.aspectRatio, undefined);
+    assert.equal(result.params.duration, undefined);
+    assert.equal(result.params.resolution, undefined);
+    assert.equal(result.params.quality, undefined);
+    assert.deepEqual(
+      result.blocked.map((item) => item.field).sort(),
+      ['aspectRatio', 'duration', 'quality', 'resolution'],
+    );
+    assert.ok(result.blocked.every((item) => item.required === true));
+  });
+
+  it('keeps a legal supplied value for a required field with no defaultValue', () => {
+    const requiredCatalog = structuredClone(catalog);
+    const requiredSchema = {
+      aspectRatio: { options: options('4k'), required: true },
+      duration: { options: options(8), required: true },
+      resolution: { options: options('8k'), required: true },
+      quality: { options: options('best'), required: true },
+    };
+    requiredCatalog.models[0].parameters = requiredSchema;
+    requiredCatalog.models[0].operations[0].parameters = requiredSchema;
+    const result = normalizeVideoParamsForSchema({
+      params: {
+        model: 'seedance-2-0', operation: 'text_to_video',
+        aspectRatio: '4k', duration: 8, resolution: '8k', quality: 'best',
+      },
+      modelItem: seedanceItem,
+      operationId: 'text_to_video',
+      catalog: requiredCatalog,
+    });
+    assert.equal(result.params.aspectRatio, '4k');
+    assert.equal(result.params.duration, 8);
+    assert.equal(result.params.resolution, '8k');
+    assert.equal(result.params.quality, 'best');
+    assert.deepEqual(result.blocked, []);
+  });
+
+  it('falls back to the first option only for non-required fields without defaultValue', () => {
+    const optionalCatalog = structuredClone(catalog);
+    const optionalSchema = {
+      aspectRatio: { options: options('4k') },
+      duration: { options: options(8) },
+      resolution: { options: options('8k') },
+      quality: { options: options('best') },
+    };
+    optionalCatalog.models[0].parameters = optionalSchema;
+    optionalCatalog.models[0].operations[0].parameters = optionalSchema;
+    const result = normalizeVideoParamsForSchema({
+      params: {
+        model: 'seedance-2-0', operation: 'text_to_video',
+        aspectRatio: 'legacy', duration: 99, resolution: 'legacy', quality: 'legacy',
+      },
+      modelItem: seedanceItem,
+      operationId: 'text_to_video',
+      catalog: optionalCatalog,
+    });
+    assert.equal(result.params.aspectRatio, '4k');
+    assert.equal(result.params.duration, 8);
+    assert.equal(result.params.resolution, '8k');
+    assert.equal(result.params.quality, 'best');
+    assert.deepEqual(result.blocked, []);
+  });
+
   it('does not fabricate defaults or overwrite params when the catalog is unavailable', () => {
     const params = { model: 'minimax-h3-video', operation: 'first_last_frame', aspectRatio: '9:16', duration: 5 };
     const result = normalizeVideoParamsForSchema({ params, catalog: null, modelItem: minimaxItem });
@@ -327,5 +406,57 @@ describe('read-side / execution-side consistency', () => {
     assert.equal(prepared.nodes[0].data.params.aspectRatio, 'adaptive');
     assert.equal(prepared.nodes[0].data.params.duration, 5);
     assert.equal(prepared.nodes[0].data.params.resolution, '768p');
+  });
+
+  it('prepareExecutionSlotGraph normalizes an operation-level-only invalid ratio for a gateway catalog', () => {
+    const firstFrameOperation = operation('first_frame', '首帧生视频', [promptSlot, firstFrameSlot], {
+      aspectRatio: { options: options('adaptive'), defaultValue: 'adaptive' },
+    });
+    const gatewayCatalog = {
+      source: 'omnimux', schemaVersion: '1.1', defaults: { video: 'frames' },
+      text: [], image: [], video: [{ id: 'frames', label: 'frames' }], audio: [],
+      models: [{
+        id: 'frames', label: 'frames', listed: true,
+        operations: [firstFrameOperation],
+      }],
+    };
+    const target = {
+      id: 'target', type: 'material',
+      data: {
+        materialType: 'video', prompt: '首帧生成',
+        params: { model: 'frames', operation: 'first_frame', aspectRatio: '9:16' },
+      },
+    };
+    const prepared = prepareExecutionSlotGraph([target], [], gatewayCatalog);
+    assert.equal(prepared.nodes[0].data.params.aspectRatio, 'adaptive');
+    assert.equal(target.data.params.aspectRatio, '9:16');
+  });
+
+  it('prepareExecutionSlotGraph uses operation-level parameters when the model row has none', () => {
+    const textToVideoOperation = operation('text_to_video', '文生视频', [], {
+      aspectRatio: { options: options('adaptive'), defaultValue: 'adaptive' },
+      duration: { options: options(10), defaultValue: 10 },
+      resolution: { options: options('1080p'), defaultValue: '1080p' },
+    });
+    const gatewayCatalog = {
+      source: 'omnimux', schemaVersion: '1.1', defaults: { video: 'frames' },
+      text: [], image: [], video: [{ id: 'frames', label: 'frames' }], audio: [],
+      models: [{
+        id: 'frames', label: 'frames', listed: true,
+        operations: [textToVideoOperation],
+      }],
+    };
+    const target = {
+      id: 'target', type: 'material',
+      data: {
+        materialType: 'video', prompt: '文生视频',
+        params: { model: 'frames', operation: 'text_to_video', aspectRatio: '9:16', duration: 5, resolution: '4k' },
+      },
+    };
+    const prepared = prepareExecutionSlotGraph([target], [], gatewayCatalog);
+    assert.equal(prepared.nodes[0].data.params.aspectRatio, 'adaptive');
+    assert.equal(prepared.nodes[0].data.params.duration, 10);
+    assert.equal(prepared.nodes[0].data.params.resolution, '1080p');
+    assert.equal(target.data.params.aspectRatio, '9:16');
   });
 });

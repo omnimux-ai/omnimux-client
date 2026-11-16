@@ -281,7 +281,7 @@ test('none layout ignores ten waiting audio supplies in readiness and dispatch',
   });
   assert.equal(gw.requests[0].references, undefined); assert.equal(gw.requests[0].audioTrack, undefined);
 });
-test('prepareExecutionSlotGraph preserves invalid fixed ratio for adaptive-only mode until UI corrects it (#1785)', async () => {
+test('prepareExecutionSlotGraph normalizes an operation-level-only invalid ratio before execution', async () => {
   const ffOp = {
     ...operation('first_frame', 'video', [slot('image', 'first_frame', 1, 1, 'first_frame')]),
     parameters: {
@@ -291,7 +291,7 @@ test('prepareExecutionSlotGraph preserves invalid fixed ratio for adaptive-only 
       },
     },
   };
-  const customCatalog = catalogFor('video', 'frames', [ffOp, op, operation('text_to_video', 'video', [])]);
+  const customCatalog = { ...catalogFor('video', 'frames', [ffOp, op, operation('text_to_video', 'video', [])]), source: 'omnimux' };
   const target = {
     id: 'target',
     type: 'material',
@@ -305,15 +305,42 @@ test('prepareExecutionSlotGraph preserves invalid fixed ratio for adaptive-only 
   const edges = [edge('img-1')];
   const prepared = prepareExecutionSlotGraph(nodes, edges, customCatalog);
   const preparedTarget = prepared.nodes.find((item) => item.id === 'target');
-  assert.equal(preparedTarget.data.params.aspectRatio, '9:16');
+  assert.equal(preparedTarget.data.params.aspectRatio, 'adaptive');
   assert.equal(target.data.params.aspectRatio, '9:16');
-  assert.equal(findExecutionReadinessFailure([preparedTarget], customCatalog, prepared).reasonCode, 'parameter_unsupported');
+  assert.equal(findExecutionReadinessFailure([preparedTarget], customCatalog, prepared), null);
   const gw = gateway(customCatalog);
   registerExecutor(createMaterialGatewayExecutor({ gateway: gw }));
-  await assert.rejects(createDispatchingNodeExecutor({ gateway: gw, edges: prepared.edges, mediaRoot: '/tmp', executionId: 'invalid-adaptive', abortController: new AbortController() }).executor(preparedTarget, {
+  await createDispatchingNodeExecutor({ gateway: gw, edges: prepared.edges, mediaRoot: '/tmp', executionId: 'invalid-adaptive', abortController: new AbortController() }).executor(preparedTarget, {
     getNodeOutput: () => media('img-1'), reportProgress() {}, addMediaAsset() {},
-  }), { message: '参数“aspectRatio”不支持值 "9:16"' });
-  assert.equal(gw.requests.length, 0);
+  });
+  assert.equal(gw.requests.length, 1);
+  assert.equal(gw.requests[0].aspectRatio, 'adaptive');
+});
+
+test('prepareExecutionSlotGraph uses operation-level parameters when the model row has none', async () => {
+  const customCatalog = { ...catalogFor('video', 'frames', [{
+    ...operation('text_to_video', 'video', []),
+    parameters: {
+      aspectRatio: { options: [{ value: 'adaptive', label: '自适应' }], defaultValue: 'adaptive' },
+      duration: { options: [{ value: 10, label: '10s' }], defaultValue: 10 },
+      resolution: { options: [{ value: '1080p', label: '1080p' }], defaultValue: '1080p' },
+    },
+  }]), source: 'omnimux' };
+  const target = node({}, 'text_to_video');
+  target.data.params = { model: 'frames', operation: 'text_to_video', aspectRatio: '9:16', duration: 5, resolution: '4k' };
+  const prepared = prepareExecutionSlotGraph([target], [], customCatalog);
+  const preparedTarget = prepared.nodes[0];
+  assert.equal(preparedTarget.data.params.aspectRatio, 'adaptive');
+  assert.equal(preparedTarget.data.params.duration, 10);
+  assert.equal(preparedTarget.data.params.resolution, '1080p');
+  assert.equal(findExecutionReadinessFailure([preparedTarget], customCatalog, prepared), null);
+  const gw = gateway(customCatalog);
+  registerExecutor(createMaterialGatewayExecutor({ gateway: gw }));
+  await createDispatchingNodeExecutor({ gateway: gw, edges: prepared.edges, mediaRoot: '/tmp', executionId: 'operation-only', abortController: new AbortController() }).executor(preparedTarget, {
+    getNodeOutput() {}, reportProgress() {}, addMediaAsset() {},
+  });
+  assert.equal(gw.requests.length, 1);
+  assert.equal(gw.requests[0].aspectRatio, 'adaptive');
 });
 
 for (const defaultValue of ['16:9', undefined]) {

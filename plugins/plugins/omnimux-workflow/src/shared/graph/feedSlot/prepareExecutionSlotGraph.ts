@@ -37,27 +37,20 @@ export function prepareExecutionSlotGraph<
     let params = (data.params ?? {}) as Record<string, unknown>;
     const kind = (data.materialType ?? 'text') as keyof NonNullable<CapabilityCatalog['defaults']>;
     const model = resolveModelView(view, (params.model ?? catalog?.defaults?.[kind]) as string | undefined);
-    const hadExplicitOperation = typeof params.operation === 'string' && params.operation.trim().length > 0;
     params.model ??= model?.id;
     params.operation ??= resolveSlotOperation(catalog, model?.id, params.operation, kind,
       buildCanvasUpstreamFingerprint(node.id, nodes as unknown as CanvasNode[], nextEdges as unknown as Edge[]));
-    if (kind === 'video') {
-      const modelRow = catalog?.models?.find((row) => row.id === params.model
-        || (Array.isArray(row.aliases) && row.aliases.includes(String(params.model ?? ''))));
-      const modelHasParameters = Boolean(modelRow?.parameters
-        && typeof modelRow.parameters === 'object'
-        && Object.keys(modelRow.parameters).length > 0);
-      const requestedOperation = typeof params.operation === 'string' ? params.operation : '';
-      const operationListed = Array.isArray(modelRow?.operations)
-        && modelRow.operations.some((operation) => operation.id === requestedOperation && operation.listed !== false);
-      if (modelHasParameters || !operationListed || !hadExplicitOperation) {
-        const normalized = normalizeVideoParamsForSchema({
-          params,
-          operationId: typeof params.operation === 'string' ? params.operation : undefined,
-          catalog,
-        });
-        params = normalized.params;
-      }
+    if (kind === 'video' && catalog?.source === 'omnimux') {
+      // The gateway catalog is the execution contract. A model row without
+      // model-level parameters can still carry operation-level constraints;
+      // skipping normalization here would dispatch a value the read side
+      // already normalized. Offline static stubs keep their historical shape.
+      const normalized = normalizeVideoParamsForSchema({
+        params,
+        operationId: typeof params.operation === 'string' ? params.operation : undefined,
+        catalog,
+      });
+      params = normalized.params;
     }
     data.params = params;
     // Current bindings are explicit intent; preparation is not a migration or picker.

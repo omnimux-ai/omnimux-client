@@ -95,3 +95,7 @@ idle → switching（模型/operation/渠道线变化或旧项目加载）
   - 原断言：多 operation 未指定 mode 返回 400。
   - 必须改的理由：#50 缺失 operation 走 `text_to_video`/首个 operation 回退。
   - 新期望证据：`execution API falls back to text_to_video when multiple modes are effective without an explicit mode` 断言 200、请求 operation `text_to_video`。
+- `plugins/plugins/omnimux-workflow/src/workflow/execution/feedSlotSubmission.test.mjs` :: `prepareExecutionSlotGraph preserves invalid fixed ratio for adaptive-only mode until UI corrects it (#1785)`
+  - 原断言：model-level 无参数、operation-level 仅 `aspectRatio: adaptive` 时执行准备保留 `9:16`，并断言 readiness/提交报 `parameter_unsupported`。
+  - 必须改的理由：AC-5 要求执行准备对真实 gateway catalog 始终按有效 operation schema（model + operation + 渠道线）归一化；model-level 为空不能跳过 operation-level 约束。
+  - 新期望证据：`prepareExecutionSlotGraph normalizes an operation-level-only invalid ratio before execution` 断言执行准备与真实提交请求均为 `adaptive`、readiness 通过；另新增 model-level 空 + operation-level-only 的 duration/resolution 用例。
