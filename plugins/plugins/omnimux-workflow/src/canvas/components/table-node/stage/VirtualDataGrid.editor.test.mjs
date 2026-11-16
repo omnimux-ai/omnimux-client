@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test, after } from 'node:test';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
@@ -256,6 +257,96 @@ test('列宽拖拽：2x 缩放下视觉位移按 1/2 换算，拖拽中只改本
   await dispatch(win.document, new win.MouseEvent('pointerup', { bubbles: true, cancelable: true, clientX: 300 }));
   assert.equal(useTableStore.getState().document.columns[0].width, 340, 'pointerup 应一次写入列宽');
   assert.equal(useTableStore.getState().undoStack.length, 1, '一次拖拽只产生一次 undo');
+});
+
+test('选中态再次单击或 Enter 进入 editing', async () => {
+  await mountGrid(baseDocument());
+
+  await clickCell(0, 'c_text');
+  assert.equal(query('.wf-grid-cell-editor'), null, '首次单击只进入 selected');
+  await clickCell(0, 'c_text');
+  assert.ok(query('.wf-grid-cell-editor'), '已选中单元格再次单击应进入 editing');
+  assert.equal(query('.wf-grid-cell-editor').value, '第一行');
+  await keyTextarea('Escape');
+  assert.equal(query('.wf-grid-cell-editor'), null);
+
+  await clickCell(1, 'c_text');
+  await dispatch(win.document.body, new win.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  assert.ok(query('.wf-grid-cell-editor'), '选中态按 Enter 应进入 editing');
+  assert.equal(query('.wf-grid-cell-editor').value, '第二行');
+  await keyTextarea('Escape');
+});
+
+test('pointercancel 回滚列宽本地预览，不写 store、不产生 undo', async () => {
+  await mountGrid(baseDocument());
+  const pane = query('.wf-grid-scroll-pane');
+  Object.defineProperty(pane, 'offsetWidth', { configurable: true, value: 100 });
+  pane.getBoundingClientRect = () => ({ width: 200, height: 400, left: 0, top: 0, right: 200, bottom: 400 });
+  const resizer = query('.wf-grid-col-resizer');
+  await dispatch(resizer, new win.MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, clientX: 100 }));
+  await dispatch(win.document, new win.MouseEvent('pointermove', { bubbles: true, cancelable: true, clientX: 300 }));
+  assert.equal(query('colgroup col:nth-child(2)').style.width, '340px');
+  await dispatch(win.document, new win.MouseEvent('pointercancel', { bubbles: true, cancelable: true, clientX: 300 }));
+  assert.equal(query('colgroup col:nth-child(2)').style.width, '240px', 'pointercancel 应恢复拖拽前预览宽度');
+  assert.equal(useTableStore.getState().document.columns[0].width, 240, 'pointercancel 不得写 store');
+  assert.equal(useTableStore.getState().undoStack.length, 0, 'pointercancel 不得产生 undo');
+});
+
+test('编辑浮层在缩放/滚动后保持与单元格对齐', async () => {
+  await mountGrid(baseDocument());
+  const pane = query('.wf-grid-scroll-pane');
+  const td = query('td[data-grid-cell-key="0:c_text"]');
+  Object.defineProperty(pane, 'offsetWidth', { configurable: true, value: 100 });
+  let paneRect = { width: 200, height: 400, left: 0, top: 0, right: 200, bottom: 400 };
+  let cellRect = { width: 80, height: 30, left: 10, top: 20, right: 90, bottom: 50 };
+  pane.getBoundingClientRect = () => paneRect;
+  td.getBoundingClientRect = () => cellRect;
+
+  await dblClickCell(0, 'c_text');
+  let overlay = query('.wf-grid-cell-editor-overlay');
+  assert.equal(overlay.style.left, '5px');
+  assert.equal(overlay.style.top, '10px');
+  assert.equal(overlay.style.width, '80px');
+
+  // 2x → 4x 缩放（模拟画布放大），浮层按新的渲染比例重新定位
+  paneRect = { width: 400, height: 800, left: 0, top: 0, right: 400, bottom: 800 };
+  cellRect = { width: 160, height: 60, left: 40, top: 80, right: 200, bottom: 140 };
+  await dispatch(win, new win.Event('resize'));
+  overlay = query('.wf-grid-cell-editor-overlay');
+  assert.equal(overlay.style.left, '10px');
+  assert.equal(overlay.style.top, '20px');
+  assert.equal(overlay.style.width, '80px');
+
+  // 滚动：内容坐标不变，浮层不应漂移
+  pane.scrollLeft = 50;
+  pane.scrollTop = 30;
+  paneRect = { width: 400, height: 800, left: 0, top: 0, right: 400, bottom: 800 };
+  cellRect = { width: 160, height: 60, left: 40 - 50 * 4, top: 80 - 30 * 4, right: 200, bottom: 140 };
+  await dispatch(pane, new win.Event('scroll', { bubbles: true }));
+  overlay = query('.wf-grid-cell-editor-overlay');
+  assert.equal(overlay.style.left, '10px');
+  assert.equal(overlay.style.top, '20px');
+  await keyTextarea('Escape');
+});
+
+test('选中态背景高亮规则必须压过普通行与 hover 行', () => {
+  const css = readFileSync(resolve(here, '../../../theme/table-node.css'), 'utf8');
+  const selector = '.wf-grid-table tbody tr .wf-grid-td--cell-selected';
+  const selectorIndex = css.indexOf(selector);
+  assert.ok(selectorIndex >= 0, '选中态规则必须存在');
+  const openBrace = css.indexOf('{', selectorIndex);
+  const closeBrace = css.indexOf('}', openBrace);
+  const block = css.slice(openBrace + 1, closeBrace);
+  assert.match(block, /background:\s*color-mix\(in srgb, var\(--wb-accent[^;]*;/);
+  assert.ok(
+    css.includes('.wf-grid-table tbody tr:hover .wf-grid-td--cell-selected'),
+    '必须同时覆盖 hover 行选中态',
+  );
+  assert.ok(selectorIndex > css.indexOf('.wf-grid-td {'), '选中态规则必须在 .wf-grid-td 之后声明');
+  assert.ok(
+    selectorIndex > css.indexOf('.wf-grid-table tr:hover .wf-grid-td {'),
+    '选中态规则必须在行 hover 规则之后声明',
+  );
 });
 
 test('行选择 checkbox 与单元格选中互相独立', async () => {

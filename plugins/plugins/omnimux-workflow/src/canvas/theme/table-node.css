@@ -718,12 +718,6 @@ body.wf-grid-resizing * {
   user-select: none !important;
 }
 
-/* 单元格选中态：2px accent 内描边 + 轻微背景高亮（与行选择 checkbox 独立） */
-.wf-grid-td--cell-selected {
-  background: color-mix(in srgb, var(--wb-accent, #4176E6) 10%, transparent);
-  box-shadow: inset 0 0 0 2px var(--wb-accent, #4176E6);
-}
-
 /* 单元格预览态：单行截断，hover 由 title 提供全文 */
 .wf-grid-cell-preview {
   display: flex;
@@ -791,6 +785,14 @@ body.wf-grid-resizing * {
 
 .wf-grid-table tr:hover .wf-grid-td {
   background: rgba(255, 255, 255, 0.02);
+}
+
+/* 单元格选中态：2px accent 内描边 + 轻微背景高亮（与行选择 checkbox 独立）。
+ * 选择器必须压过 `.wf-grid-td` 与 `tr:hover .wf-grid-td`，否则普通行/hover 行背景会被覆盖。 */
+.wf-grid-table tbody tr .wf-grid-td--cell-selected,
+.wf-grid-table tbody tr:hover .wf-grid-td--cell-selected {
+  background: color-mix(in srgb, var(--wb-accent, #4176E6) 10%, transparent);
+  box-shadow: inset 0 0 0 2px var(--wb-accent, #4176E6);
 }
 
 .wf-grid-td--select {

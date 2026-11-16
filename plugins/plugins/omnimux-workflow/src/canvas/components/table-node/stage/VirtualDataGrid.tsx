@@ -647,6 +647,7 @@ export const VirtualDataGrid: React.FC = () => {
         className="wf-grid-scroll-pane"
         onScroll={() => {
           if (hoveredAttachment) setHoveredAttachment(null);
+          if (editingRef.current) positionEditorOverlay(editingRef.current);
         }}
       >
         <table className="wf-grid-table">
@@ -862,7 +863,7 @@ export const VirtualDataGrid: React.FC = () => {
                                     className="wf-grid-attachment-thumb-fallback"
                                     style={{ display: hasPreview ? 'none' : 'flex' }}
                                   >
-                                    {att.kind === 'video' ? '视' : att.kind === 'audio' ? '音' : '附'}
+                                    {att.kind === 'video' ? '视' : att.kind === 'audio' ? '音' : '📎'}
                                   </div>
 
                                   {/* 删除按钮 (对齐图二右上角 x) */}
