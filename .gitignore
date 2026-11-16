@@ -12,3 +12,6 @@ coverage/
 
 # Git worktrees isolation directory
 .worktrees/
+
+# Local daily review notes: intentionally never committed (kept only in the working copy)
+LESSONS.md
