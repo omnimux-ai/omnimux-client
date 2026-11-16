@@ -53,6 +53,19 @@ export function collectManifests() {
   return manifests;
 }
 
+function readPreviousRegistry() {
+  try {
+    return JSON.parse(fs.readFileSync(REGISTRY_FILE, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function withoutUpdatedAt(registry) {
+  const { updatedAt, ...rest } = registry;
+  return rest;
+}
+
 /**
  * 编译并生成全局 plugins.registry.json
  */
@@ -83,9 +96,8 @@ export function buildRegistry() {
     return a.id.localeCompare(b.id);
   });
 
-  const registry = {
+  const content = {
     schemaVersion: '1.0.0',
-    updatedAt: new Date().toISOString(),
     topology: {
       tiers: [
         {
@@ -114,6 +126,20 @@ export function buildRegistry() {
       }
     },
     plugins: manifests
+  };
+
+  // 生成物要可重复：内容没变时保留原 updatedAt，只让真实内容变化推进时间。
+  // 需要固定时间戳的构建可以显式传 OMNIMUX_REGISTRY_UPDATED_AT。
+  const previous = readPreviousRegistry();
+  const unchanged = previous && JSON.stringify(withoutUpdatedAt(previous)) === JSON.stringify(content);
+  const updatedAt = unchanged && typeof previous.updatedAt === 'string'
+    ? previous.updatedAt
+    : (process.env.OMNIMUX_REGISTRY_UPDATED_AT || new Date().toISOString());
+  const registry = {
+    schemaVersion: content.schemaVersion,
+    updatedAt,
+    topology: content.topology,
+    plugins: content.plugins
   };
 
   fs.writeFileSync(REGISTRY_FILE, JSON.stringify(registry, null, 2), 'utf8');

@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedAt": "2026-10-06T15:19:09.797Z",
+  "updatedAt": "2026-11-16T02:29:50.581Z",
   "topology": {
     "tiers": [
       {
@@ -23,16 +23,16 @@
       }
     ],
     "summary": {
-      "totalPlugins": 19,
-      "totalTools": 100,
-      "totalSeams": 8
+      "totalPlugins": 12,
+      "totalTools": 70,
+      "totalSeams": 6
     }
   },
   "plugins": [
     {
       "id": "omnimux",
       "name": "omnimux",
-      "version": "0.1.2",
+      "version": "0.1.8",
       "tier": "tier-0-hub",
       "entrypoint": "src/index.js",
       "status": "active",
@@ -73,7 +73,7 @@
         "seamsProvided": [
           {
             "name": "identity",
-            "interfaceDoc": "ctx.get('identity').status / .require()"
+            "interfaceDoc": "ctx.get('identity').status / .require() / .getSnapshot()"
           },
           {
             "name": "textComplete",
@@ -107,6 +107,10 @@
           "$DSH_HOME/omnimux/"
         ]
       },
+      "skills": [
+        "skills/cordis-plugin-development/SKILL.md",
+        "skills/editing-cordis-compositions/SKILL.md"
+      ],
       "dependencies": {
         "requiredPlugins": [],
         "systemBinaries": []
@@ -116,7 +120,7 @@
     {
       "id": "omnimux-analytics",
       "name": "omnimux-analytics",
-      "version": "0.2.0",
+      "version": "0.2.2",
       "tier": "tier-0-hub",
       "entrypoint": "src/index.js",
       "status": "active",
@@ -159,7 +163,7 @@
     {
       "id": "omnimux-accounts",
       "name": "omnimux-accounts",
-      "version": "0.1.1",
+      "version": "0.1.3",
       "tier": "tier-1-app",
       "entrypoint": "src/index.js",
       "status": "active",
@@ -202,7 +206,7 @@
     {
       "id": "omnimux-assets",
       "name": "omnimux-assets",
-      "version": "0.2.0",
+      "version": "0.2.2",
       "tier": "tier-1-app",
       "entrypoint": "src/index.js",
       "status": "active",
@@ -281,110 +285,9 @@
       "path": "plugins/omnimux-assets"
     },
     {
-      "id": "omnimux-avatar",
-      "name": "omnimux-avatar",
-      "version": "0.1.0",
-      "tier": "tier-1-app",
-      "entrypoint": "src/index.js",
-      "status": "active",
-      "description": "数字人管理：结构化角色设定、生成与多视角派生、任务管理，生成结果自动归档到资产库「角色」分类",
-      "tags": [
-        "avatar",
-        "character",
-        "influencer",
-        "image-generation",
-        "library"
-      ],
-      "capabilities": {
-        "tools": [
-          {
-            "name": "avatar_create",
-            "summary": "新建一个数字人（名称 + 设定）",
-            "category": "avatar",
-            "isWriteOperation": true,
-            "requiresAuth": false
-          },
-          {
-            "name": "avatar_list",
-            "summary": "列出全部数字人及其最新任务状态",
-            "category": "avatar",
-            "isWriteOperation": false,
-            "requiresAuth": false
-          },
-          {
-            "name": "avatar_get",
-            "summary": "读取单个数字人的完整设定与任务历史",
-            "category": "avatar",
-            "isWriteOperation": false,
-            "requiresAuth": false
-          },
-          {
-            "name": "avatar_update",
-            "summary": "更新数字人的名称或设定参数",
-            "category": "avatar",
-            "isWriteOperation": true,
-            "requiresAuth": false
-          },
-          {
-            "name": "avatar_delete",
-            "summary": "删除数字人（含其托管文件），需 confirm",
-            "category": "avatar",
-            "isWriteOperation": true,
-            "requiresAuth": false
-          },
-          {
-            "name": "avatar_generate",
-            "summary": "按形象设定提交一次角色设定图生成",
-            "category": "avatar",
-            "isWriteOperation": true,
-            "requiresAuth": false
-          },
-          {
-            "name": "avatar_multiview",
-            "summary": "由形象主图派生多视角设定板",
-            "category": "avatar",
-            "isWriteOperation": true,
-            "requiresAuth": false
-          },
-          {
-            "name": "avatar_tasks",
-            "summary": "查询形象的任务列表或单条任务状态",
-            "category": "avatar",
-            "isWriteOperation": false,
-            "requiresAuth": false
-          },
-          {
-            "name": "avatar_library_sync",
-            "summary": "把形象的主图与多视角同步到资产库「角色」分类",
-            "category": "avatar",
-            "isWriteOperation": true,
-            "requiresAuth": false
-          }
-        ],
-        "seamsProvided": [],
-        "seamsConsumed": [
-          "imageGenerate",
-          "assetLibrary",
-          "modelCatalog",
-          "hubEvents"
-        ],
-        "slots": [],
-        "storageDomains": [
-          "$DSH_HOME/omnimux/avatar/"
-        ]
-      },
-      "dependencies": {
-        "requiredPlugins": [
-          "omnimux"
-        ],
-        "systemBinaries": []
-      },
-      "path": "plugins/omnimux-avatar"
-    },
-    {
       "id": "omnimux-clip",
       "name": "omnimux-clip",
-      "version": "0.1.0",
+      "version": "0.1.2",
       "tier": "tier-1-app",
       "entrypoint": "src/index.js",
       "status": "active",
@@ -495,79 +398,9 @@
       "path": "plugins/omnimux-clip"
     },
     {
-      "id": "omnimux-device",
-      "name": "omnimux-device",
-      "version": "0.1.0",
-      "tier": "tier-1-app",
-      "entrypoint": "src/index.js",
-      "status": "active",
-      "description": "OmniMux 移动真机矩阵与设备智能体中枢：支持 iOS 真机集群池化管理、无障碍语义树感知、本地 Vision OCR 与 TypeSafe 毫秒级快决策操作",
-      "tags": [
-        "device",
-        "ios",
-        "automation",
-        "phone-farm",
-        "typesafe",
-        "wda",
-        "mobile-agent"
-      ],
-      "capabilities": {
-        "tools": [
-          {
-            "name": "device_list",
-            "summary": "列出当前连接的所有物理 iPhone 及其在线状态与电量",
-            "category": "device"
-          },
-          {
-            "name": "device_get_screen",
-            "summary": "获取指定手机当前的界面语义树（AXe）与 OCR 文本列表",
-            "category": "device"
-          },
-          {
-            "name": "device_execute_action",
-            "summary": "在指定手机上执行原子操作（点击元素/找字点击/划动/输入文案）",
-            "category": "device"
-          },
-          {
-            "name": "device_publish_flow",
-            "summary": "调用 TypeSafe 快决策引擎自动完成短视频导入、选择与发布全流程",
-            "category": "device"
-          }
-        ],
-        "seamsProvided": [
-          "device"
-        ],
-        "seamsConsumed": [
-          "decisions",
-          "identity",
-          "publish"
-        ],
-        "slots": [
-          {
-            "target": "sidebar.extra",
-            "componentPath": "src/client/sidebar-entry.js"
-          },
-          {
-            "target": "shell.overlay",
-            "componentPath": "src/client/DeviceStage.jsx"
-          }
-        ],
-        "storageDomains": [
-          "$DSH_HOME/omnimux/devices/"
-        ]
-      },
-      "dependencies": {
-        "requiredPlugins": [
-          "omnimux"
-        ],
-        "systemBinaries": []
-      },
-      "path": "plugins/omnimux-device"
-    },
-    {
       "id": "omnimux-forms",
       "name": "omnimux-forms",
-      "version": "0.1.0",
+      "version": "0.1.2",
       "tier": "tier-1-app",
       "entrypoint": "src/index.js",
       "status": "active",
@@ -594,7 +427,7 @@
     {
       "id": "omnimux-inspiration",
       "name": "omnimux-inspiration",
-      "version": "0.1.0",
+      "version": "0.1.2",
       "tier": "tier-1-app",
       "entrypoint": "src/index.js",
       "status": "active",
@@ -674,7 +507,7 @@
     {
       "id": "omnimux-market",
       "name": "omnimux-market",
-      "version": "0.2.13-omni.0",
+      "version": "0.2.13-omni.2",
       "tier": "tier-1-app",
       "entrypoint": "lib/host.js",
       "status": "active",
@@ -811,9 +644,14 @@
         ],
         "storageDomains": [
           "$DSH_HOME/skills/",
-          "$DSH_HOME/omnimux-market/sessions/"
+          "$DSH_HOME/omnimux-market/sessions/",
+          "$DSH_HOME/omnimux-market-home-order.json"
         ]
       },
+      "skills": [
+        "skills/sopilot-social-agents/SKILL.md",
+        "skills/tiktok-growth/SKILL.md"
+      ],
       "dependencies": {
         "requiredPlugins": [
           "omnimux"
@@ -825,7 +663,7 @@
     {
       "id": "omnimux-products",
       "name": "omnimux-products",
-      "version": "0.1.0",
+      "version": "0.1.2",
       "tier": "tier-1-app",
       "entrypoint": "src/index.js",
       "status": "active",
@@ -899,93 +737,9 @@
       "path": "plugins/omnimux-products"
     },
     {
-      "id": "omnimux-social-harvest",
-      "name": "omnimux-social-harvest",
-      "version": "0.1.0",
-      "tier": "tier-1-app",
-      "entrypoint": "src/index.js",
-      "status": "active",
-      "description": "OmniMux 社媒采集：封装本机 OpenCLI 官方内置社媒适配器（TikTok/Instagram/Facebook/Pinterest/X/YouTube/小红书/抖音/LinkedIn，只读），服务爆款视频复刻的发现与解构环节。复用浏览器登录态，产品不接触账号密码。",
-      "tags": [
-        "social-media",
-        "harvest",
-        "opencli",
-        "discovery",
-        "deconstruction"
-      ],
-      "capabilities": {
-        "tools": [
-          {
-            "name": "harvest_tiktok_search",
-            "summary": "按关键词搜索 TikTok 视频（爆款发现）",
-            "category": "harvest"
-          },
-          {
-            "name": "harvest_tiktok_user",
-            "summary": "获取 TikTok 创作者近期视频列表",
-            "category": "harvest"
-          },
-          {
-            "name": "harvest_pinterest_pins",
-            "summary": "搜索 Pinterest 图钉（免登录可用）",
-            "category": "harvest"
-          },
-          {
-            "name": "harvest_pinterest_download",
-            "summary": "下载 Pinterest 图钉原图到本地",
-            "category": "harvest"
-          },
-          {
-            "name": "harvest_sites_status",
-            "summary": "查询各社媒平台登录态（whoami 自检）",
-            "category": "harvest"
-          },
-          {
-            "name": "harvest_site_login",
-            "summary": "打开指定平台的浏览器登录页并等待人工完成登录",
-            "category": "harvest"
-          },
-          {
-            "name": "flow_image_generate",
-            "summary": "调用 Google Flow (flow.google.com) AI 文生图",
-            "category": "create"
-          },
-          {
-            "name": "flow_video_generate",
-            "summary": "调用 Google Flow (flow.google.com) 生成 Veo AI 视频",
-            "category": "create"
-          }
-        ],
-        "seamsProvided": [],
-        "seamsConsumed": [],
-        "slots": [
-          {
-            "target": "sidebar.extra",
-            "componentPath": "src/client/sidebar-entry.js"
-          },
-          {
-            "target": "shell.overlay",
-            "componentPath": "src/client/HarvestStage.jsx"
-          }
-        ],
-        "storageDomains": [
-          "$DSH_HOME/omnimux-social-harvest/"
-        ]
-      },
-      "dependencies": {
-        "requiredPlugins": [
-          "omnimux"
-        ],
-        "systemBinaries": [
-          "opencli"
-        ]
-      },
-      "path": "plugins/omnimux-social-harvest"
-    },
-    {
       "id": "omnimux-workflow",
       "name": "omnimux-workflow",
-      "version": "1.0.0-rc.1",
+      "version": "1.0.0-rc.3",
       "tier": "tier-1-app",
       "entrypoint": "dist/index.js",
       "status": "active",
@@ -1069,6 +823,13 @@
             "category": "execution",
             "isWriteOperation": true,
             "requiresAuth": false
+          },
+          {
+            "name": "workflow_director",
+            "summary": "创建/读取/保存 3D 导演场景，打开导演台并显式导出构图图或白膜视频；场景以项目主机为唯一权威",
+            "category": "canvas",
+            "isWriteOperation": true,
+            "requiresAuth": false
           }
         ],
         "seamsProvided": [],
@@ -1101,7 +862,7 @@
     {
       "id": "omnimux-video",
       "name": "omnimux-video",
-      "version": "0.1.0",
+      "version": "0.1.2",
       "tier": "tier-2-vertical",
       "entrypoint": "src/index.js",
       "status": "active",
@@ -1159,43 +920,9 @@
       "path": "plugins/omnimux-video"
     },
     {
-      "id": "omnimux-intercept",
-      "name": "omnimux-intercept",
-      "version": "0.1.0",
-      "tier": "tier-3-personal",
-      "entrypoint": "src/index.js",
-      "status": "active",
-      "description": "推特推文爆速检测与智能截流：按存活小时数计算时速与三档爆速分级，预估抢评曝光，并生成高赞评论/引用转发草稿（只出草稿，不自动发帖）",
-      "tags": [
-        "twitter",
-        "x",
-        "intercept",
-        "viral",
-        "pace",
-        "comment",
-        "drafts"
-      ],
-      "capabilities": {
-        "tools": [],
-        "seamsProvided": [],
-        "seamsConsumed": [],
-        "slots": [],
-        "storageDomains": [
-          "$DSH_HOME/omnimux-intercept/"
-        ]
-      },
-      "dependencies": {
-        "requiredPlugins": [],
-        "systemBinaries": [
-          "opencli"
-        ]
-      },
-      "path": "plugins/omnimux-intercept"
-    },
-    {
       "id": "omnimux-publish",
       "name": "omnimux-publish",
-      "version": "0.1.0",
+      "version": "0.1.2",
       "tier": "tier-3-personal",
       "entrypoint": "src/index.js",
       "status": "active",
@@ -1298,109 +1025,6 @@
         "systemBinaries": []
       },
       "path": "plugins/omnimux-publish"
-    },
-    {
-      "id": "omnimux-video-preview",
-      "name": "omnimux-video-preview",
-      "version": "0.1.0",
-      "tier": "tier-3-extension",
-      "entrypoint": "src/index.js",
-      "status": "active",
-      "description": "DSH 视频内联预览插件：为 better-sidebar 提供高性能视频预览，支持 HTTP Range (206) 流式拖动、沙箱安全校验与元数据探查。",
-      "tags": [
-        "video",
-        "preview",
-        "player",
-        "stream",
-        "range-206",
-        "better-sidebar"
-      ],
-      "capabilities": {
-        "tools": [
-          {
-            "name": "video_preview_info",
-            "summary": "探查指定视频文件的元数据信息并获取本地 Range 206 流式播放地址",
-            "category": "media",
-            "isWriteOperation": false,
-            "requiresAuth": false
-          },
-          {
-            "name": "video_breakdown_analyze",
-            "summary": "分析视频并提取结构化分镜列表与阶段拆解，真实分析成功后在右侧侧边栏打开预览",
-            "category": "media",
-            "isWriteOperation": true,
-            "requiresAuth": false
-          },
-          {
-            "name": "video_breakdown_translate",
-            "summary": "调用大模型统一通道将视频分镜台词/口播翻译为多语言并持久化缓存",
-            "category": "media",
-            "isWriteOperation": true,
-            "requiresAuth": false
-          }
-        ],
-        "seamsProvided": [
-          {
-            "name": "videoPreview",
-            "interfaceDoc": "ctx.get('videoPreview').getStreamUrl(filePath)"
-          }
-        ],
-        "seamsConsumed": [
-          "webServer",
-          "betterSidebar",
-          "textComplete"
-        ],
-        "slots": [
-          {
-            "target": "betterSidebar.fileViewer",
-            "componentPath": "src/client/index.js"
-          }
-        ],
-        "storageDomains": []
-      },
-      "dependencies": {
-        "requiredPlugins": [],
-        "systemBinaries": []
-      },
-      "path": "plugins/omnimux-video-preview"
-    },
-    {
-      "id": "omnimux-viewer",
-      "name": "omnimux-viewer",
-      "version": "0.1.0",
-      "tier": "tier-3-extension",
-      "entrypoint": "lib/index.js",
-      "status": "active",
-      "description": "OmniMux 内联文件预览：把图片、视频、音频、PDF、Office 与 HTML 渲染进对话流（上游 @crosery/dsh-viewer 的 OmniMux fork，见 VENDOR.md）。",
-      "tags": [
-        "viewer",
-        "preview",
-        "display-file",
-        "media",
-        "fork"
-      ],
-      "capabilities": {
-        "tools": [
-          {
-            "name": "display_file",
-            "summary": "在 Web 界面里就地渲染一个文件（图片/视频/音频/PDF/Office/HTML），供用户直接看到或听到",
-            "category": "media",
-            "isWriteOperation": false,
-            "requiresAuth": false
-          }
-        ],
-        "seamsProvided": [],
-        "seamsConsumed": [],
-        "slots": [
-          "tool.call.toolview"
-        ],
-        "storageDomains": []
-      },
-      "dependencies": {
-        "harness": [],
-        "plugins": []
-      },
-      "path": "plugins/omnimux-viewer"
     }
   ]
 }
