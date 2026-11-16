@@ -12,8 +12,9 @@
 
 - 基线：`origin/main` = `2f7b2bb9ba2dc4b47b0a24693cce6da796af5f31`（只比
   `839ff5e` 多 #35 docs spec）。
-- 本 PR 不改 `app/**`、不生成/修改任何 lockfile；S1 会把 workspace 根上提并把
-  app 依赖改成 `portal:` 本仓包，`bundle.lock.json` 由 S1 生成后再回写。
+- 本 PR 不改 `app/**`、不动根工作区文件；S1 会把 workspace 根上提并把 app 依赖
+  改成本仓包，`bundle.lock.json` 由 S1 生成后再回写。本 PR 只同步
+  `plugins/pnpm-lock.yaml` 里被改写的依赖说明符；workspace 根上移后由 S1 重新生成根 lock。
 - 不改 Trusted Publisher 四元组：Owner `omnimux-ai` / Repository
   `omnimux-client` / Workflow filename `publish.yml` / Environment 空。
 - 不执行任何真实 npm 发布；真实发布必须等绑定确认 + 用户批准。
