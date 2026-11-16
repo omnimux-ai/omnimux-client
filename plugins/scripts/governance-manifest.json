@@ -1,8 +1,11 @@
 {
   "version": 2,
-  "updated": "2026-11-13",
+  "updated": "2026-11-16",
   "description": "scripts/ 全量源码库存（含 tests/helpers/fixtures/Python）。ciRequired=支持语法下工作流执行根静态可能可达；localRequired=仅根包执行或语法引用可证；manual=未证明自动可达（不承诺无未知调用）；deprecated=现存退役且禁自动引用。静态可能可达不等于真实CI运行、函数执行或覆盖率。",
-  "ciRequired": [],
+  "ciRequired": [
+    "verify-app-local-plugins.mjs",
+    "workspace-check.mjs"
+  ],
   "localRequired": [
     "accept-apps-install.sh",
     "agent-live-qa.mjs",
@@ -173,6 +176,7 @@
     "batch-generate-home-covers.mjs",
     "build-all.mjs",
     "builtin-apps-browser-qa.mjs",
+    "bundle-lock.mjs",
     "capture-media-preview-evidence.mjs",
     "check-plugin-files.mjs",
     "check-plugin-files.test.mjs",
@@ -189,6 +193,7 @@
     "doc-index-gen.mjs",
     "doc-lint.mjs",
     "docked-slot-position-qa.mjs",
+    "dsh-version.mjs",
     "e2e/native-link-popover.mjs",
     "evidence-contract.test.mjs",
     "evidence-home-order-feedback-3528.mjs",
@@ -252,6 +257,7 @@
     "patch-asar-agent-presets.mjs",
     "patch-asar-agent-presets.test.mjs",
     "plugin-lifecycle.mjs",
+    "prepare-local-plugins.mjs",
     "public-plugin-apply.test.mjs",
     "publish-card-qa-entry.mjs",
     "qa-conversation-ratio-e2e.mjs",
@@ -389,8 +395,10 @@
     "verify-no-external-builtin-assets.test.mjs",
     "verify-omnimux-live.mjs",
     "verify-package-files.test.mjs",
+    "verify-packaged-plugins.mjs",
     "verify-page-action-card.mjs",
     "verify-pills-spacing.mjs",
+    "verify-plugin-builds.mjs",
     "verify-product-baseline.test.mjs",
     "verify-product-secondary-page.mjs",
     "verify-profile-dependency-snapshots.mjs",

@@ -99,11 +99,19 @@ function resolvePluginBuildTask(pluginName, dir) {
     }
     // 2. package.json 声明了 scripts.build
     if (pkg.scripts?.build) {
+      // Reuse the pnpm CLI that launched this build. Spawning a bare `pnpm`
+      // resolves through the caller's PATH and can pick another pnpm (for
+      // example the app workspace's bundled 11.x), which then refuses the
+      // root workspace's packageManager pin.
+      const npmExecPath = process.env.npm_execpath
+      const pnpm = npmExecPath && /pnpm(?:\.[cm]?js)?$/u.test(npmExecPath)
+        ? { command: process.execPath, args: [npmExecPath] }
+        : { command: 'corepack', args: ['pnpm'] }
       return {
         name: pluginName,
         dir,
-        command: 'pnpm',
-        args: ['--silent', 'run', 'build'],
+        ...pnpm,
+        args: [...pnpm.args, '--silent', 'run', 'build'],
       }
     }
   } catch (e) {

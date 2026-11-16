@@ -112,6 +112,17 @@ jobs:
       - name: Install
         run: yarn install --immutable
 
+      # The 12 product bundles are `link:` dependencies now: the runtime checks below boot
+      # them from plugins/plugins/*, so their workspace dependencies and build outputs must
+      # exist before `yarn check` imports anything.
+      - name: Install plugin workspace
+        working-directory: .
+        run: pnpm install --frozen-lockfile
+
+      - name: Build local plugin bundles
+        working-directory: .
+        run: pnpm --dir plugins run build:all
+
       - name: Verify local plugin resolution
         working-directory: .
         run: node scripts/verify-app-local-plugins.mjs

@@ -6,6 +6,11 @@ import { fileURLToPath } from 'node:url'
 import { inspectGovernance } from './lib/governance-registry.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
+// The monorepo keeps repository-level orchestration scripts at <repo>/scripts while the
+// plugin governance inventory lives at <repo>/plugins/scripts. Both are source roots the
+// workflow roots may reference; present the repository-level ones with the same
+// root-relative `scripts/...` keys so `node scripts/<name>.mjs` resolves in either tree.
+const repoRoot = resolve(root, '..')
 const sources = new Map()
 const workflows = new Map()
 function collect(directory, output, pattern) {
@@ -18,6 +23,13 @@ function collect(directory, output, pattern) {
   }
 }
 collect(join(root, 'scripts'), sources, /\.(?:mjs|js|sh|py)$/)
+for (const item of readdirSync(join(repoRoot, 'scripts'), { withFileTypes: true })) {
+  if (!item.isFile() || !/\.(?:mjs|js|sh|py)$/.test(item.name)) continue
+  const path = join(repoRoot, 'scripts', item.name)
+  const key = `scripts/${item.name}`
+  if (sources.has(key)) throw new Error(`Governance source key collision at ${key}`)
+  sources.set(key, readFileSync(path, 'utf8'))
+}
 collect(join(root, '..', '.github', 'workflows'), workflows, /\.ya?ml$/)
 // omnimux-client keeps workflows at the repository root, one level above the
 // plugin workspace; present them with root-relative keys (no '..') so the
