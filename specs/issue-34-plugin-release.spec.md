@@ -131,6 +131,29 @@ runtime 读到的版本会和 npm tarball 不一致；发布前的 `npm view` �
 - 静态测试应锁住 workflow 文件名、matrix、`id-token: write`、无 `environment`、
   `dry_run` 默认 true；如果这些被改坏，`publish-workflow.test.mjs` 会失败。
 
+## 旧标准变更
+
+- `plugins/scripts/release-check.test.mjs` :: `parseArguments defaults to plugins/omnimux and accepts a package name or a path`
+  - 原断言：默认包路径是 `plugins/omnimux`，包名默认补 `plugins/`。
+  - 必须改：迁仓后插件目录是 `plugins/plugins/<name>`，旧路径实际读不到 package.json。
+  - 新期望：默认/包名/路径都归一化为 `plugins/plugins/<name>`，并继续拒绝越界路径。
+- `plugins/scripts/release-check.test.mjs` :: `parseArguments rejects unknown flags, extra positional arguments and out-of-repo paths`
+  - 原断言：`plugins/omnimux` 被视为合法相对路径。
+  - 必须改：`plugins/<name>` 在现布局下不是包目录，必须报错。
+  - 新期望：只接受 `plugins/plugins/<name>`，未知参数/额外位置参数/绝对路径仍拒绝。
+- `plugins/scripts/release-check.test.mjs` :: `checkManifest accepts the shipped manifest shape`
+  - 原断言：repository.directory 为 `plugins/omnimux`。
+  - 必须改：manifest 的 directory 必须指向仓库内真实包目录。
+  - 新期望：`plugins/plugins/omnimux` 通过。
+- `plugins/scripts/release-check.test.mjs` :: `checkManifest requires repository, git type, matching origin and monorepo directory`
+  - 原断言：错误 directory 用 `plugins/other` 对照。
+  - 必须改：新布局的错误目录也应指向 `plugins/plugins/other`，才能验证真实目录比较。
+  - 新期望：错误/空 directory 仍失败，正确目录通过。
+- `plugins/scripts/release-check.test.mjs` :: `a missing manifest file is reported as a failure`
+  - 原断言：错误消息里的路径是 `plugins/omnimux/package.json`。
+  - 必须改：读取路径跟随迁仓后的 `plugins/plugins/<name>`。
+  - 新期望：错误明确点名 `plugins/plugins/omnimux/package.json`。
+
 ## 验证
 
 ```bash
