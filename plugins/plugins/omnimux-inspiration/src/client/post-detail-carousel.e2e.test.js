@@ -50,7 +50,7 @@ async function bundleDetail() {
 
 const KEYS = [1, 2, 3].map(number => `/omnimux/inspiration/media/r2/slides/slide-${number}.jpg`)
 
-async function mountDetail() {
+async function mountDetail(itemOverrides = {}) {
   const module = await import(`${await bundleDetail()}?mount=${bundleCounter}`)
   const dom = new JSDOM('<!DOCTYPE html><html><body><div id="host"></div></body></html>', { url: 'http://localhost:3000' })
   const previousWindow = globalThis.window
@@ -72,6 +72,7 @@ async function mountDetail() {
         content: '#beauty #beautytips',
         media_keys: KEYS,
         is_local: false,
+        ...itemOverrides,
       },
       t,
       onClose: () => {},
@@ -103,6 +104,28 @@ after(() => {
 })
 
 describe('InspirationPostDetail carousel integration', () => {
+  it('falls back to the cover when every slide fails', async () => {
+    const mounted = await mountDetail({ cover_key: '/omnimux/inspiration/media/inspiration-covers/907' })
+    try {
+      assert.equal(mounted.container.querySelectorAll('.omnimux-post-carousel-slide').length, 3)
+      const images = mounted.container.querySelectorAll('.omnimux-post-carousel-slide img')
+      for (const image of images) {
+        await act(async () => { image.dispatchEvent(new mounted.container.ownerDocument.defaultView.Event('error', { bubbles: false })) })
+      }
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        if (mounted.container.querySelector('.omnimux-post-carousel.is-fallback')) break
+        await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)) })
+      }
+      assert.ok(mounted.container.querySelector('.omnimux-post-carousel.is-fallback'))
+      assert.equal(mounted.container.querySelectorAll('.omnimux-post-carousel-slide').length, 0)
+      assert.equal(mounted.container.querySelectorAll('.omnimux-post-carousel-viewport').length, 0)
+      assert.match(mounted.container.querySelector('.omnimux-post-asset-footer')?.textContent || '', /原帖轮播素材不可用/)
+    } finally {
+      await mounted.unmount()
+      mounted.close()
+    }
+  })
+
   it('renders media_keys as a carousel and lets the lightbox step between images', async () => {
     const mounted = await mountDetail()
     try {
