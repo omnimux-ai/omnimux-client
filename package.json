@@ -1,0 +1,19 @@
+{
+  "name": "omnimux-client",
+  "private": true,
+  "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "scripts": {
+    "workspace:check": "node scripts/workspace-check.mjs --check",
+    "workspace:write": "node scripts/workspace-check.mjs",
+    "bundle:lock": "node scripts/bundle-lock.mjs",
+    "bundle:lock:check": "node scripts/bundle-lock.mjs --check",
+    "dsh-version": "node scripts/dsh-version.mjs",
+    "dsh-version:check": "node scripts/dsh-version.mjs --check",
+    "plugins:build": "pnpm --dir plugins run build:all",
+    "plugins:verify": "node scripts/verify-plugin-builds.mjs",
+    "plugins:prepare": "node scripts/prepare-local-plugins.mjs"
+  }
+}

@@ -9,7 +9,9 @@ overrides:
 
 importers:
 
-  .:
+  .: {}
+
+  plugins:
     devDependencies:
       '@deepseek-ai/dsh-client-store':
         specifier: 0.2.1-rc.3
@@ -99,7 +101,7 @@ importers:
         specifier: 2.9.0
         version: 2.9.0
 
-  packages/dsh-ui-kit:
+  plugins/packages/dsh-ui-kit:
     devDependencies:
       '@deepseek-ai/dsh-client-ui-primitives':
         specifier: 0.2.1-rc.3
@@ -123,7 +125,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  packages/form-contract:
+  plugins/packages/form-contract:
     dependencies:
       zod:
         specifier: 4.4.3
@@ -133,9 +135,9 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  packages/generation-capabilities: {}
+  plugins/packages/generation-capabilities: {}
 
-  plugins/omnimux:
+  plugins/plugins/omnimux:
     dependencies:
       '@aws-crypto/sha256-js':
         specifier: 5.2.0
@@ -244,7 +246,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/omnimux-accounts:
+  plugins/plugins/omnimux-accounts:
     dependencies:
       '@deepseek-ai/dsh-client-ui-primitives':
         specifier: '>=0.1.0-rc.6 || >=0.2.1-rc.3 <0.3.0-0'
@@ -263,7 +265,7 @@ importers:
         specifier: ^0.25.0
         version: 0.25.12
 
-  plugins/omnimux-analytics:
+  plugins/plugins/omnimux-analytics:
     dependencies:
       '@deepseek-ai/dsh-client-ui-primitives':
         specifier: '>=0.1.0-rc.6 || >=0.2.1-rc.3 <0.3.0-0'
@@ -282,7 +284,7 @@ importers:
         specifier: ^0.25.0
         version: 0.25.12
 
-  plugins/omnimux-assets:
+  plugins/plugins/omnimux-assets:
     dependencies:
       '@deepseek-ai/dsh-client-ui-primitives':
         specifier: '>=0.1.0-rc.6 || >=0.2.1-rc.3 <0.3.0-0'
@@ -304,7 +306,7 @@ importers:
         specifier: ^0.25.0
         version: 0.25.12
 
-  plugins/omnimux-clip:
+  plugins/plugins/omnimux-clip:
     dependencies:
       '@deepseek-ai/dsh-client-ui-primitives':
         specifier: '>=0.1.0-rc.6 || >=0.2.1-rc.3 <0.3.0-0'
@@ -440,7 +442,7 @@ importers:
         specifier: ^1.0.7
         version: 1.0.7(tailwindcss@3.4.19(yaml@2.9.1))
 
-  plugins/omnimux-forms:
+  plugins/plugins/omnimux-forms:
     devDependencies:
       '@chakra-ui/react':
         specifier: 3.37.0
@@ -467,7 +469,7 @@ importers:
         specifier: ^18.2.0
         version: 18.3.1(react@18.3.1)
 
-  plugins/omnimux-inspiration:
+  plugins/plugins/omnimux-inspiration:
     dependencies:
       '@deepseek-ai/dsh-client-ui-primitives':
         specifier: '>=0.1.0-rc.6 || >=0.2.1-rc.3 <0.3.0-0'
@@ -492,7 +494,7 @@ importers:
         specifier: ^30.0.1
         version: 30.0.1
 
-  plugins/omnimux-market:
+  plugins/plugins/omnimux-market:
     dependencies:
       '@unicode/unicode-15.1.0':
         specifier: 2.0.2
@@ -541,7 +543,7 @@ importers:
         specifier: ^5.9.2
         version: 5.9.3
 
-  plugins/omnimux-products:
+  plugins/plugins/omnimux-products:
     dependencies:
       '@deepseek-ai/dsh-client-ui-primitives':
         specifier: '>=0.1.0-rc.6 || >=0.2.1-rc.3 <0.3.0-0'
@@ -560,7 +562,7 @@ importers:
         specifier: ^0.25.0
         version: 0.25.12
 
-  plugins/omnimux-publish:
+  plugins/plugins/omnimux-publish:
     dependencies:
       dsh-ui-kit:
         specifier: file:../../packages/dsh-ui-kit
@@ -588,9 +590,9 @@ importers:
         specifier: ~5.9.3
         version: 5.9.3
 
-  plugins/omnimux-video: {}
+  plugins/plugins/omnimux-video: {}
 
-  plugins/omnimux-workflow:
+  plugins/plugins/omnimux-workflow:
     dependencies:
       '@codemirror/commands':
         specifier: ^6.11.0
@@ -624,7 +626,7 @@ importers:
         version: 12.11.3(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(immer@11.2.9)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       dsh-ui-kit:
         specifier: file:../../packages/dsh-ui-kit
-        version: file:packages/dsh-ui-kit(@deepseek-ai/dsh-client-ui-primitives@0.2.1-rc.3(@deepseek-ai/cordis@4.0.2))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+        version: link:../../packages/dsh-ui-kit
       lucide-react:
         specifier: 1.33.0
         version: 1.33.0(react@19.2.8)
