@@ -1,7 +1,7 @@
 {
   "id": "omnimux-inspiration",
   "name": "omnimux-inspiration",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "tier": "tier-1-app",
   "entrypoint": "src/index.js",
   "status": "active",

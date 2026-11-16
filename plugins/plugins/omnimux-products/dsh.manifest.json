@@ -1,7 +1,7 @@
 {
   "id": "omnimux-products",
   "name": "omnimux-products",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "tier": "tier-1-app",
   "entrypoint": "src/index.js",
   "status": "active",

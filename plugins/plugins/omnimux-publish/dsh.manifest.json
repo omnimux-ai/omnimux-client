@@ -1,7 +1,7 @@
 {
   "id": "omnimux-publish",
   "name": "omnimux-publish",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "tier": "tier-3-personal",
   "entrypoint": "src/index.js",
   "status": "active",

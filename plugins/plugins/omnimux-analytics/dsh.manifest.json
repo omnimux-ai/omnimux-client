@@ -1,7 +1,7 @@
 {
   "id": "omnimux-analytics",
   "name": "omnimux-analytics",
-  "version": "0.2.0",
+  "version": "0.2.2",
   "tier": "tier-0-hub",
   "entrypoint": "src/index.js",
   "status": "active",

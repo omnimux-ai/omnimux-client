@@ -1,7 +1,7 @@
 {
   "id": "omnimux-workflow",
   "name": "omnimux-workflow",
-  "version": "1.0.0-rc.1",
+  "version": "1.0.0-rc.3",
   "tier": "tier-1-app",
   "entrypoint": "dist/index.js",
   "status": "active",

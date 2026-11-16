@@ -1,6 +1,11 @@
 {
   "name": "omnimux-workflow",
-  "version": "1.0.0-rc.1",
+  "version": "1.0.0-rc.3",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/omnimux-ai/omnimux-client.git",
+    "directory": "plugins/plugins/omnimux-workflow"
+  },
   "type": "module",
   "main": "dist/index.js",
   "exports": {
@@ -57,7 +62,7 @@
     "@lezer/highlight": "^1.2.3",
     "@types/marked": "^6.0.0",
     "@xyflow/react": "12.11.3",
-    "dsh-ui-kit": "file:../../packages/dsh-ui-kit",
+    "dsh-ui-kit": "^0.1.0",
     "lucide-react": "1.33.0",
     "marked": "^18.0.11",
     "uuid": "13.0.0",

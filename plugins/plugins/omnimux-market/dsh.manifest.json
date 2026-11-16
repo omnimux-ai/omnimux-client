@@ -1,7 +1,7 @@
 {
   "id": "omnimux-market",
   "name": "omnimux-market",
-  "version": "0.2.13-omni.0",
+  "version": "0.2.13-omni.2",
   "tier": "tier-1-app",
   "entrypoint": "lib/host.js",
   "status": "active",

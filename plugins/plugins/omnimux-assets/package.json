@@ -1,6 +1,11 @@
 {
   "name": "omnimux-assets",
-  "version": "0.2.0",
+  "version": "0.2.2",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/omnimux-ai/omnimux-client.git",
+    "directory": "plugins/plugins/omnimux-assets"
+  },
   "type": "module",
   "main": "src/index.js",
   "exports": {
@@ -40,8 +45,8 @@
     }
   },
   "dependencies": {
-    "dsh-ui-kit": "file:../../packages/dsh-ui-kit",
-    "omnimux-products": "file:../omnimux-products"
+    "dsh-ui-kit": "^0.1.0",
+    "omnimux-products": "^0.1.2"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-client-ui-primitives": ">=0.1.0-rc.6 || >=0.2.1-rc.3 <0.3.0-0",

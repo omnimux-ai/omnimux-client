@@ -1,6 +1,11 @@
 {
   "name": "omnimux-forms",
-  "version": "0.1.0",
+  "version": "0.1.2",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/omnimux-ai/omnimux-client.git",
+    "directory": "plugins/plugins/omnimux-forms"
+  },
   "type": "module",
   "main": "src/index.js",
   "exports": {
@@ -30,7 +35,7 @@
     "react-dom": "^18.2.0",
     "@chakra-ui/react": "3.37.0",
     "@emotion/react": "11.14.0",
-    "dsh-ui-kit": "file:../../packages/dsh-ui-kit",
+    "dsh-ui-kit": "^0.1.0",
     "@omnimux/form-contract": "file:../../packages/form-contract"
   },
   "dsh": {

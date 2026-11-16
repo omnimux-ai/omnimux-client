@@ -8,16 +8,21 @@
  *
  * 检查项（全部只读，不发布、不改文件）：
  *  1. git 跟踪文件干净（包目录内的未跟踪文件由 verify-publish-source 拦截）；
- *  2. package.json 的 name/version/repository（type / url / directory）；
+ *  2. package.json 的 name/version/repository（type / url / directory），
+ *     dependencies/optionalDependencies/peerDependencies 不得使用 file:/link:/
+ *     workspace:/相对路径说明符（npm publish 会原样写进 tarball）；
  *  3. verify-publish-source（已提交版本 = 工作区版本、包内无未提交改动）；
  *  4. npm 上该 version 尚未发布（404 = 可发；已存在 = 失败，除非 --allow-published）；
  *  5. actionlint 可用时顺带校验 publish.yml，缺失时明确提示跳过。
  *
- * 用法：node scripts/release-check.mjs [omnimux|plugins/omnimux] [--allow-published]
+ * 用法：
+ *   node scripts/release-check.mjs [omnimux|plugins/omnimux] [--allow-published]
+ *   node scripts/release-check.mjs --all [--allow-published]   逐包校验全部可发布包
+ *   node scripts/release-check.mjs --list [--json]             只列可发布包目录
  * 退出码：0 = 全部通过（--allow-published 下已发布仅为提示）；1 = 存在失败项；2 = 参数错误。
  */
 import { spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import { verifyPublishSource } from './verify-publish-source.mjs'
@@ -25,6 +30,13 @@ import { verifyPublishSource } from './verify-publish-source.mjs'
 const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/
 const DEFAULT_PACKAGE = 'omnimux'
 const WORKFLOW_PATH = '.github/workflows/publish.yml'
+
+/** npm publish 不会重写这些说明符，它们会原样出现在 tarball 里。 */
+const LOCAL_SPECIFIER = /^(?:file|link|portal|workspace):|^\.{1,2}\//
+/** 只有会写进发布元数据的依赖段才检查；devDependencies 不随安装生效。 */
+const PUBLISHED_DEPENDENCY_SECTIONS = ['dependencies', 'optionalDependencies', 'peerDependencies']
+/** 本仓对外发布的包统一以 omnimux 开头。 */
+const PUBLISHABLE_NAME_PREFIX = 'omnimux'
 
 /** 把 repository.url / origin remote 归一化成可比较的 https 地址。 */
 export function normalizeRepositoryUrl(raw) {
@@ -51,26 +63,77 @@ function normalizeDirectory(raw) {
 
 /**
  * @param {string[]} argv
- * @returns {{ packageDir: string, allowPublished: boolean }}
+ * @returns {{ mode: 'single', packageDir: string, allowPublished: boolean, json: false }
+ *   | { mode: 'all', packageDir: null, allowPublished: boolean, json: false }
+ *   | { mode: 'list', packageDir: null, allowPublished: boolean, json: boolean }}
  */
 export function parseArguments(argv) {
   let packageArg = null
   let allowPublished = false
+  let all = false
+  let list = false
+  let json = false
   for (const arg of argv) {
     if (arg === '--allow-published') {
       allowPublished = true
+      continue
+    }
+    if (arg === '--all') {
+      all = true
+      continue
+    }
+    if (arg === '--list') {
+      list = true
+      continue
+    }
+    if (arg === '--json') {
+      json = true
       continue
     }
     if (arg.startsWith('-')) throw new Error(`未知参数：${arg}`)
     if (packageArg !== null) throw new Error(`只接受一个包参数：${packageArg} / ${arg}`)
     packageArg = arg
   }
+  if (all && list) throw new Error('--all 与 --list 不能同时使用')
+  if ((all || list) && packageArg !== null) throw new Error('--all/--list 不接受包参数')
+  if (json && !list) throw new Error('--json 只能与 --list 一起使用')
+  if (list) return { mode: 'list', packageDir: null, allowPublished, json }
+  if (all) return { mode: 'all', packageDir: null, allowPublished, json: false }
   const target = packageArg ?? DEFAULT_PACKAGE
-  const packageDir = normalizeDirectory(target.includes('/') ? target : `plugins/${target}`)
-  if (!packageDir || packageDir.startsWith('..') || packageDir.startsWith('/')) {
-    throw new Error(`包路径必须是仓库内相对路径：${target}`)
+  const packageDir = normalizeDirectory(target.includes('/') ? target : `plugins/plugins/${target}`)
+  if (!packageDir.startsWith('plugins/plugins/')) {
+    throw new Error(`包路径必须是 plugins/plugins/<name>：${target}`)
   }
-  return { packageDir, allowPublished }
+  return { mode: 'single', packageDir, allowPublished, json: false }
+}
+
+/**
+ * 列出本仓可发布的插件包（`plugins/plugins/*` 下 name 以 omnimux 开头且非 private）。
+ * 返回仓库相对路径，按名字排序，供 --all/--list 与发布 workflow 矩阵共用。
+ * @param {string} repoRoot
+ * @returns {string[]}
+ */
+export function listPublishablePackages(repoRoot) {
+  const pluginsRoot = join(repoRoot, 'plugins', 'plugins')
+  let entries
+  try {
+    entries = readdirSync(pluginsRoot, { withFileTypes: true })
+  } catch {
+    return []
+  }
+  return entries
+    .filter(entry => entry.isDirectory())
+    .map(entry => entry.name)
+    .filter(name => {
+      try {
+        const manifest = JSON.parse(readFileSync(join(pluginsRoot, name, 'package.json'), 'utf8'))
+        return manifest.private !== true && typeof manifest.name === 'string' && manifest.name.startsWith(PUBLISHABLE_NAME_PREFIX)
+      } catch {
+        return false
+      }
+    })
+    .sort()
+    .map(name => `plugins/plugins/${name}`)
 }
 
 /**
@@ -108,6 +171,15 @@ export function checkManifest({ manifest, packageDir, remoteUrl }) {
     problems.push('repository.directory 为空（monorepo 包必须指向包目录）')
   } else if (normalizeDirectory(repository.directory) !== normalizeDirectory(packageDir)) {
     problems.push(`repository.directory 与包目录不一致：${repository.directory} ≠ ${packageDir}`)
+  }
+  for (const section of PUBLISHED_DEPENDENCY_SECTIONS) {
+    const dependencies = manifest[section]
+    if (!dependencies || typeof dependencies !== 'object' || Array.isArray(dependencies)) continue
+    for (const [dependency, specifier] of Object.entries(dependencies)) {
+      if (typeof specifier === 'string' && LOCAL_SPECIFIER.test(specifier)) {
+        problems.push(`${section}.${dependency} 使用本机说明符 ${JSON.stringify(specifier)}；npm publish 会把它原样写进 tarball，请改用可解析的 semver 范围`)
+      }
+    }
   }
   return problems
 }
@@ -188,6 +260,19 @@ export function runReleaseCheck({ packageDir, repoRoot, allowPublished = false, 
   return { ok: results.every(result => result.status !== 'fail'), results }
 }
 
+/**
+ * 对一组包逐个跑同一套检查，任一包失败则整体失败。
+ * @param {{ packageDirs: string[], repoRoot: string, allowPublished?: boolean, deps: object }} input
+ * @returns {{ ok: boolean, packages: Array<{ packageDir: string, ok: boolean, results: Array<object> }> }}
+ */
+export function runReleaseCheckAll({ packageDirs, repoRoot, allowPublished = false, deps }) {
+  const packages = packageDirs.map(packageDir => ({
+    packageDir,
+    ...runReleaseCheck({ packageDir, repoRoot, allowPublished, deps }),
+  }))
+  return { ok: packages.every(item => item.ok), packages }
+}
+
 const SYMBOLS = { pass: '✓', fail: '✗', skip: '-', info: 'ℹ' }
 
 /** @param {Array<{ status: string, message: string }>} results */
@@ -210,7 +295,7 @@ function runCommand(command, args) {
   }
 }
 
-function defaultDeps() {
+function defaultDeps(repoRoot) {
   return {
     readFile: path => readFileSync(path, 'utf8'),
     gitBranch: () => runCommand('git', ['rev-parse', '--abbrev-ref', 'HEAD']).stdout.trim() || null,
@@ -219,10 +304,10 @@ function defaultDeps() {
       const result = runCommand('git', ['remote', 'get-url', 'origin'])
       return result.status === 0 ? result.stdout.trim() : ''
     },
-    verifySource: packageDir => verifyPublishSource(packageDir),
+    verifySource: packageDir => verifyPublishSource(resolve(repoRoot, packageDir)),
     npmView: ({ name, version }) => runCommand('npm', ['view', `${name}@${version}`, 'version']),
     actionlint: () => {
-      const result = runCommand('actionlint', ['-no-color', WORKFLOW_PATH])
+      const result = runCommand('actionlint', ['-no-color', join(repoRoot, WORKFLOW_PATH)])
       if (result.errorCode === 'ENOENT') return { status: 'skip' }
       return { status: result.status === 0 ? 'pass' : 'fail', output: `${result.stdout ?? ''}${result.stderr ?? ''}` }
     },
@@ -251,11 +336,42 @@ export function main(argv = process.argv.slice(2), options = {}) {
     }
     repoRoot = result.stdout.trim()
   }
+  const deps = options.deps ?? defaultDeps(repoRoot)
+  const listPackages = options.listPackages ?? listPublishablePackages
+
+  if (parsed.mode === 'list') {
+    const packageDirs = listPackages(repoRoot)
+    if (parsed.json) console.log(JSON.stringify(packageDirs))
+    else for (const packageDir of packageDirs) console.log(packageDir)
+    return packageDirs.length > 0 ? 0 : 1
+  }
+
+  if (parsed.mode === 'all') {
+    const packageDirs = listPackages(repoRoot)
+    if (packageDirs.length === 0) {
+      console.error('release-check: 没有找到任何可发布包（plugins/plugins/*）')
+      return 1
+    }
+    const { ok, packages } = runReleaseCheckAll({
+      packageDirs,
+      repoRoot,
+      allowPublished: parsed.allowPublished,
+      deps,
+    })
+    for (const item of packages) {
+      console.log(`release-check: ${item.packageDir}`)
+      console.log(formatResults(item.results))
+    }
+    const failed = packages.filter(item => !item.ok).map(item => item.packageDir)
+    console.log(ok ? `release-check passed（${packages.length} 个包）` : `release-check failed（${failed.length}/${packages.length} 个包：${failed.join(', ')}）`)
+    return ok ? 0 : 1
+  }
+
   const { ok, results } = runReleaseCheck({
     packageDir: parsed.packageDir,
     repoRoot,
     allowPublished: parsed.allowPublished,
-    deps: options.deps ?? defaultDeps(),
+    deps,
   })
   console.log(`release-check: ${parsed.packageDir}`)
   console.log(formatResults(results))

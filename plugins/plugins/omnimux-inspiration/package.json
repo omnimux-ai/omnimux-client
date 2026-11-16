@@ -1,6 +1,11 @@
 {
   "name": "omnimux-inspiration",
-  "version": "0.1.0",
+  "version": "0.1.2",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/omnimux-ai/omnimux-client.git",
+    "directory": "plugins/plugins/omnimux-inspiration"
+  },
   "type": "module",
   "main": "src/index.js",
   "exports": {
@@ -37,7 +42,7 @@
     }
   },
   "dependencies": {
-    "dsh-ui-kit": "file:../../packages/dsh-ui-kit",
+    "dsh-ui-kit": "^0.1.0",
     "lucide-react": "^1.33.0"
   },
   "peerDependencies": {

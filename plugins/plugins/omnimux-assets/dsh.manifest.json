@@ -1,7 +1,7 @@
 {
   "id": "omnimux-assets",
   "name": "omnimux-assets",
-  "version": "0.2.0",
+  "version": "0.2.2",
   "tier": "tier-1-app",
   "entrypoint": "src/index.js",
   "status": "active",

@@ -1,7 +1,7 @@
 {
   "id": "omnimux",
   "name": "omnimux",
-  "version": "0.1.2",
+  "version": "0.1.8",
   "tier": "tier-0-hub",
   "entrypoint": "src/index.js",
   "status": "active",

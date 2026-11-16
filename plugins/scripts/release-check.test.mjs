@@ -1,14 +1,22 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import {
   checkManifest,
   classifyPublishState,
   formatResults,
+  listPublishablePackages,
   normalizeRepositoryUrl,
   parseArguments,
   runReleaseCheck,
+  runReleaseCheckAll,
 } from './release-check.mjs'
+
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 
 const MANIFEST = {
   name: 'omnimux',
@@ -16,7 +24,7 @@ const MANIFEST = {
   repository: {
     type: 'git',
     url: 'git+https://github.com/omnimux-ai/omnimux-client.git',
-    directory: 'plugins/omnimux',
+    directory: 'plugins/plugins/omnimux',
   },
 }
 
@@ -38,7 +46,7 @@ function makeDeps(overrides = {}) {
 
 function runCheck(overrides = {}) {
   return runReleaseCheck({
-    packageDir: 'plugins/omnimux',
+    packageDir: 'plugins/plugins/omnimux',
     repoRoot: '/repo',
     allowPublished: overrides.allowPublished ?? false,
     deps: makeDeps(overrides),
@@ -47,19 +55,30 @@ function runCheck(overrides = {}) {
 
 const failedIds = result => result.results.filter(item => item.status === 'fail').map(item => item.id)
 
-test('parseArguments defaults to plugins/omnimux and accepts a package name or a path', () => {
-  assert.deepEqual(parseArguments([]), { packageDir: 'plugins/omnimux', allowPublished: false })
-  assert.deepEqual(parseArguments(['omnimux']), { packageDir: 'plugins/omnimux', allowPublished: false })
-  assert.deepEqual(parseArguments(['plugins/omnimux']), { packageDir: 'plugins/omnimux', allowPublished: false })
-  assert.deepEqual(parseArguments(['./plugins/omnimux/']), { packageDir: 'plugins/omnimux', allowPublished: false })
-  assert.deepEqual(parseArguments(['omnimux', '--allow-published']), { packageDir: 'plugins/omnimux', allowPublished: true })
+test('parseArguments defaults to plugins/plugins/omnimux and accepts a package name or a path', () => {
+  assert.deepEqual(parseArguments([]), { mode: 'single', packageDir: 'plugins/plugins/omnimux', allowPublished: false, json: false })
+  assert.deepEqual(parseArguments(['omnimux']), { mode: 'single', packageDir: 'plugins/plugins/omnimux', allowPublished: false, json: false })
+  assert.deepEqual(parseArguments(['plugins/plugins/omnimux']), { mode: 'single', packageDir: 'plugins/plugins/omnimux', allowPublished: false, json: false })
+  assert.deepEqual(parseArguments(['./plugins/plugins/omnimux/']), { mode: 'single', packageDir: 'plugins/plugins/omnimux', allowPublished: false, json: false })
+  assert.deepEqual(parseArguments(['omnimux', '--allow-published']), { mode: 'single', packageDir: 'plugins/plugins/omnimux', allowPublished: true, json: false })
+})
+
+test('parseArguments supports --all and --list for the whole release set', () => {
+  assert.deepEqual(parseArguments(['--all']), { mode: 'all', packageDir: null, allowPublished: false, json: false })
+  assert.deepEqual(parseArguments(['--all', '--allow-published']), { mode: 'all', packageDir: null, allowPublished: true, json: false })
+  assert.deepEqual(parseArguments(['--list']), { mode: 'list', packageDir: null, allowPublished: false, json: false })
+  assert.deepEqual(parseArguments(['--list', '--json']), { mode: 'list', packageDir: null, allowPublished: false, json: true })
+  assert.throws(() => parseArguments(['--all', '--list']), /不能同时使用/)
+  assert.throws(() => parseArguments(['--all', 'omnimux']), /不接受包参数/)
+  assert.throws(() => parseArguments(['--json']), /只能与 --list/)
 })
 
 test('parseArguments rejects unknown flags, extra positional arguments and out-of-repo paths', () => {
   assert.throws(() => parseArguments(['--nope']), /未知参数/)
   assert.throws(() => parseArguments(['omnimux', 'other']), /只接受一个包参数/)
-  assert.throws(() => parseArguments(['../outside']), /仓库内相对路径/)
-  assert.throws(() => parseArguments(['/abs/path']), /仓库内相对路径/)
+  assert.throws(() => parseArguments(['../outside']), /包路径必须是 plugins\/plugins\/<name>/)
+  assert.throws(() => parseArguments(['/abs/path']), /包路径必须是 plugins\/plugins\/<name>/)
+  assert.throws(() => parseArguments(['plugins/omnimux']), /包路径必须是 plugins\/plugins\/<name>/)
 })
 
 test('normalizeRepositoryUrl folds the forms npm writes into one https url', () => {
@@ -80,36 +99,101 @@ test('normalizeRepositoryUrl folds the forms npm writes into one https url', () 
 
 test('checkManifest accepts the shipped manifest shape', () => {
   assert.deepEqual(
-    checkManifest({ manifest: MANIFEST, packageDir: 'plugins/omnimux', remoteUrl: 'https://github.com/omnimux-ai/omnimux-client.git' }),
+    checkManifest({ manifest: MANIFEST, packageDir: 'plugins/plugins/omnimux', remoteUrl: 'https://github.com/omnimux-ai/omnimux-client.git' }),
     [],
   )
 })
 
 test('checkManifest requires repository, git type, matching origin and monorepo directory', () => {
   const withoutRepository = { name: 'omnimux', version: '0.1.8' }
-  assert.match(checkManifest({ manifest: withoutRepository, packageDir: 'plugins/omnimux', remoteUrl: 'https://github.com/omnimux-ai/omnimux-client.git' })[0], /缺少 repository/)
+  assert.match(checkManifest({ manifest: withoutRepository, packageDir: 'plugins/plugins/omnimux', remoteUrl: 'https://github.com/omnimux-ai/omnimux-client.git' })[0], /缺少 repository/)
 
   const wrongType = { ...MANIFEST, repository: { ...MANIFEST.repository, type: 'svn' } }
-  assert.match(checkManifest({ manifest: wrongType, packageDir: 'plugins/omnimux', remoteUrl: 'https://github.com/omnimux-ai/omnimux-client.git' })[0], /repository\.type/)
+  assert.match(checkManifest({ manifest: wrongType, packageDir: 'plugins/plugins/omnimux', remoteUrl: 'https://github.com/omnimux-ai/omnimux-client.git' })[0], /repository\.type/)
 
   const wrongUrl = { ...MANIFEST, repository: { ...MANIFEST.repository, url: 'git+https://github.com/other/repo.git' } }
-  assert.match(checkManifest({ manifest: wrongUrl, packageDir: 'plugins/omnimux', remoteUrl: 'https://github.com/omnimux-ai/omnimux-client.git' })[0], /与 origin 不一致/)
+  assert.match(checkManifest({ manifest: wrongUrl, packageDir: 'plugins/plugins/omnimux', remoteUrl: 'https://github.com/omnimux-ai/omnimux-client.git' })[0], /与 origin 不一致/)
 
   const wrongDirectory = { ...MANIFEST, repository: { ...MANIFEST.repository, directory: 'plugins/other' } }
-  assert.match(checkManifest({ manifest: wrongDirectory, packageDir: 'plugins/omnimux', remoteUrl: 'https://github.com/omnimux-ai/omnimux-client.git' })[0], /repository\.directory 与包目录不一致/)
+  assert.match(checkManifest({ manifest: wrongDirectory, packageDir: 'plugins/plugins/omnimux', remoteUrl: 'https://github.com/omnimux-ai/omnimux-client.git' })[0], /repository\.directory 与包目录不一致/)
 
   const emptyDirectory = { ...MANIFEST, repository: { type: 'git', url: MANIFEST.repository.url } }
-  assert.match(checkManifest({ manifest: emptyDirectory, packageDir: 'plugins/omnimux', remoteUrl: 'https://github.com/omnimux-ai/omnimux-client.git' })[0], /repository\.directory 为空/)
+  assert.match(checkManifest({ manifest: emptyDirectory, packageDir: 'plugins/plugins/omnimux', remoteUrl: 'https://github.com/omnimux-ai/omnimux-client.git' })[0], /repository\.directory 为空/)
 })
 
 test('checkManifest rejects a missing name or a non-semver version', () => {
   const problems = checkManifest({
     manifest: { version: 'latest', repository: MANIFEST.repository },
-    packageDir: 'plugins/omnimux',
+    packageDir: 'plugins/plugins/omnimux',
     remoteUrl: 'https://github.com/omnimux-ai/omnimux-client.git',
   })
   assert.ok(problems.some(problem => /缺少 name/.test(problem)))
   assert.ok(problems.some(problem => /不是合法 semver/.test(problem)))
+})
+
+test('checkManifest rejects machine-local specifiers that npm would ship verbatim', () => {
+  const remoteUrl = 'https://github.com/omnimux-ai/omnimux-client.git'
+  const manifest = {
+    ...MANIFEST,
+    dependencies: { 'dsh-ui-kit': 'file:../../packages/dsh-ui-kit' },
+    optionalDependencies: { 'omnimux-products': 'workspace:^0.1.0' },
+    peerDependencies: { 'omnimux-video': 'link:../omnimux-video' },
+    devDependencies: { '@omnimux/form-contract': 'file:../../packages/form-contract' },
+  }
+  const problems = checkManifest({ manifest, packageDir: 'plugins/plugins/omnimux', remoteUrl })
+  assert.equal(problems.length, 3)
+  assert.ok(problems.some(problem => /dependencies\.dsh-ui-kit/.test(problem)))
+  assert.ok(problems.some(problem => /optionalDependencies\.omnimux-products/.test(problem)))
+  assert.ok(problems.some(problem => /peerDependencies\.omnimux-video/.test(problem)))
+  assert.ok(!problems.some(problem => /devDependencies/.test(problem)))
+})
+
+test('checkManifest accepts published semver ranges for workspace packages', () => {
+  const manifest = {
+    ...MANIFEST,
+    dependencies: { 'dsh-ui-kit': '^0.1.0', 'omnimux-products': '^0.1.2' },
+    devDependencies: { '@omnimux/form-contract': 'file:../../packages/form-contract' },
+  }
+  assert.deepEqual(
+    checkManifest({ manifest, packageDir: 'plugins/plugins/omnimux', remoteUrl: 'https://github.com/omnimux-ai/omnimux-client.git' }),
+    [],
+  )
+})
+
+test('listPublishablePackages lists only non-private omnimux packages, sorted by directory', () => {
+  const root = mkdtempSync(join(tmpdir(), 'release-check-'))
+  try {
+    const plugins = join(root, 'plugins', 'plugins')
+    const writeManifest = (dir, manifest) => {
+      mkdirSync(join(plugins, dir), { recursive: true })
+      writeFileSync(join(plugins, dir, 'package.json'), JSON.stringify(manifest))
+    }
+    writeManifest('omnimux-workflow', { name: 'omnimux-workflow', version: '1.0.0-rc.3' })
+    writeManifest('omnimux-accounts', { name: 'omnimux-accounts', version: '0.1.3' })
+    writeManifest('private-tool', { name: 'omnimux-private', version: '1.0.0', private: true })
+    writeManifest('other', { name: 'other-tool', version: '1.0.0' })
+    mkdirSync(join(plugins, 'no-manifest'), { recursive: true })
+    assert.deepEqual(listPublishablePackages(root), ['plugins/plugins/omnimux-accounts', 'plugins/plugins/omnimux-workflow'])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('listPublishablePackages returns an empty list when the plugin tree is absent', () => {
+  assert.deepEqual(listPublishablePackages(join(tmpdir(), 'release-check-missing-root')), [])
+})
+
+test('every publishable package in this repository carries publishable metadata and semver-only runtime deps', () => {
+  const packageDirs = listPublishablePackages(REPO_ROOT)
+  assert.ok(packageDirs.length >= 12, `expected at least 12 publishable packages, got ${packageDirs.length}`)
+  for (const packageDir of packageDirs) {
+    const manifest = JSON.parse(readFileSync(join(REPO_ROOT, packageDir, 'package.json'), 'utf8'))
+    assert.deepEqual(
+      checkManifest({ manifest, packageDir, remoteUrl: 'git+https://github.com/omnimux-ai/omnimux-client.git' }),
+      [],
+      packageDir,
+    )
+  }
 })
 
 test('classifyPublishState separates published, missing and unknown registry answers', () => {
@@ -128,7 +212,7 @@ test('runReleaseCheck passes when the tree is clean, metadata matches and the ve
 })
 
 test('runReleaseCheck fails on uncommitted tracked files', () => {
-  const result = runCheck({ deps: { gitStatus: () => ' M plugins/omnimux/package.json\n' } })
+  const result = runCheck({ deps: { gitStatus: () => ' M plugins/plugins/omnimux/package.json\n' } })
   assert.equal(result.ok, false)
   assert.deepEqual(failedIds(result), ['tree'])
   assert.match(result.results.find(item => item.id === 'tree').message, /未提交改动/)
@@ -169,7 +253,46 @@ test('a missing manifest file is reported as a failure', () => {
   })
   assert.equal(result.ok, false)
   assert.ok(failedIds(result).includes('manifest'))
-  assert.match(result.results.find(item => item.id === 'manifest').message, /无法读取 plugins\/omnimux\/package\.json/)
+  assert.match(result.results.find(item => item.id === 'manifest').message, /无法读取 plugins\/plugins\/omnimux\/package\.json/)
+})
+
+test('runReleaseCheckAll fails when any package fails and keeps per-package results', () => {
+  const deps = {
+    ...makeDeps(),
+    npmView: ({ name }) => (name === 'omnimux-accounts' ? PUBLISHED : NOT_PUBLISHED),
+    readFile: path => JSON.stringify(path.endsWith('omnimux-accounts/package.json')
+      ? { ...MANIFEST, name: 'omnimux-accounts', version: '0.1.3', repository: { ...MANIFEST.repository, directory: 'plugins/plugins/omnimux-accounts' } }
+      : MANIFEST),
+  }
+  const result = runReleaseCheckAll({
+    packageDirs: ['plugins/plugins/omnimux', 'plugins/plugins/omnimux-accounts'],
+    repoRoot: '/repo',
+    deps,
+  })
+  assert.equal(result.ok, false)
+  assert.deepEqual(result.packages.map(item => item.packageDir), ['plugins/plugins/omnimux', 'plugins/plugins/omnimux-accounts'])
+  assert.equal(result.packages[0].ok, true)
+  assert.equal(result.packages[1].ok, false)
+  assert.deepEqual(failedIds(result.packages[1]), ['npm'])
+})
+
+test('runReleaseCheckAll passes when every package is publishable', () => {
+  const accountsManifest = {
+    ...MANIFEST,
+    name: 'omnimux-accounts',
+    version: '0.1.3',
+    repository: { ...MANIFEST.repository, directory: 'plugins/plugins/omnimux-accounts' },
+  }
+  const result = runReleaseCheckAll({
+    packageDirs: ['plugins/plugins/omnimux', 'plugins/plugins/omnimux-accounts'],
+    repoRoot: '/repo',
+    deps: {
+      ...makeDeps(),
+      readFile: path => JSON.stringify(path.endsWith('omnimux-accounts/package.json') ? accountsManifest : MANIFEST),
+    },
+  })
+  assert.equal(result.ok, true)
+  assert.equal(result.packages.length, 2)
 })
 
 test('actionlint is reported as skipped when unavailable and as a failure when it reports errors', () => {
