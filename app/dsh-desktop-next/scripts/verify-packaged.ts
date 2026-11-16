@@ -105,8 +105,11 @@ function walkExecutables(dir: string): string[] {
 
 /** Check whether a file is a universal Mach-O binary (contains both x86_64 and arm64). */
 function isUniversalMachO(file: string): boolean {
+  // `lipo -info` echoes the full path, so a `dist/mac-arm64` parent makes
+  // substring matching report thin binaries as universal. `file -b` names the
+  // container itself, which is what the release SOP filters on before `-thin`.
   try {
-    const out = execFileSync('lipo', ['-info', file], { encoding: 'utf8' })
-    return out.includes('x86_64') && out.includes('arm64')
+    const out = execFileSync('file', ['-b', file], { encoding: 'utf8' })
+    return out.includes('Mach-O universal binary') || out.includes('universal binary')
   } catch { return false }
 }
