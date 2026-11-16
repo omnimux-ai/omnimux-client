@@ -96,7 +96,11 @@ describe('PRODUCT_STAGE_CHROME', () => {
     assert.match(PRODUCT_STAGE_CHROME, /padding-left:var\(--omnimux-topbar-toggle-end/)
     assert.match(
       PRODUCT_STAGE_CHROME,
-      /data-omnimux-left-collapsed\] \[data-slot="conversation\.session\.header"\] header/,
+      /data-omnimux-left-collapsed\] \[data-slot="conversation\.header"\] > header/,
+    )
+    assert.match(
+      PRODUCT_STAGE_CHROME,
+      /data-omnimux-left-collapsed\] \[data-slot="conversation\.header"\] header/,
     )
     assert.match(PRODUCT_STAGE_CHROME, /data-omnimux-topbar-new-session/)
     assert.match(PRODUCT_STAGE_CHROME, /--omnimux-topbar-new-session-left/)

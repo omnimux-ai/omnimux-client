@@ -285,17 +285,25 @@ html[data-omnimux-sidebar-toggle-topbar] [data-dsh-better-sidebar] [data-dsh-pan
   height:calc(var(--omnimux-topbar-toggle-size) + 2 * var(--omnimux-topbar-toggle-top) + 1px)!important;
   box-sizing:border-box;
 }
-/* Collapsed left rail: session title shares the top row with traffic lights +
+/* desktop-patch:DP-003 — collapsed-rail conversation header padding.
+   See docs/desktop-patches.md for ownership and removal conditions.
+
+   Collapsed left rail: session title shares the top row with traffic lights +
    the fixed expand toggle. Official header still pads 20/12, so the crumb
-   starts under the lights and through the toggle. The data-slot host is a
-   wrapper DIV around the real <header> (ConversationSessionHeader), so pad
-   the header descendant — not only the slot host. Match toggle top inset so
-   title + toggle stay one 32px row. */
-html[data-omnimux-sidebar-toggle-topbar][data-omnimux-left-collapsed] [data-slot="conversation.session.header"] header,
-html[data-omnimux-sidebar-toggle-topbar][data-omnimux-left-collapsed] [data-slot="conversation.session.header"] > header,
-html[data-omnimux-sidebar-toggle-topbar][data-omnimux-left-collapsed] [data-slot="conversation"] > header{
-  padding-left:var(--omnimux-topbar-toggle-end)!important;
-  padding-top:var(--omnimux-topbar-toggle-top,4px)!important;
+   starts under the lights and through the toggle. The real advanced-shell DOM
+   is:
+
+     [data-slot="conversation.header"]           (display: contents wrapper)
+       > header.uPhUma_header
+           > [data-slot="conversation.session.header"]   (inner anchor)
+
+   Pad the real <header>, never the inner slot anchor. "conversation.session.header"
+   is a descendant of <header>, not its ancestor, so the old selectors were dead.
+   Match the toggle top inset so title + toggle stay one 32px row. */
+html[data-omnimux-sidebar-toggle-topbar][data-omnimux-left-collapsed] [data-slot="conversation.header"] > header,
+html[data-omnimux-sidebar-toggle-topbar][data-omnimux-left-collapsed] [data-slot="conversation.header"] header{
+  padding-left:var(--omnimux-topbar-toggle-end, 164px)!important;
+  padding-top:var(--omnimux-topbar-toggle-top, 4px)!important;
   box-sizing:border-box;
 }
 /* macOS traffic lights safe inset — product-stage overlays only.

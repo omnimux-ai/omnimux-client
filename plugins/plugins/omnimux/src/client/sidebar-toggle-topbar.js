@@ -18,6 +18,9 @@
  * to "split" away from the icon).
  */
 
+// desktop-patch:DP-004 — topbar toggle / new-session fixed geometry and safe inset.
+// See docs/desktop-patches.md for ownership and removal conditions.
+
 import { openCollapsedNewMenuAt } from './sidebar-coordinator.js'
 import {
   CONVERSATION_MIN_CHAT_PX,

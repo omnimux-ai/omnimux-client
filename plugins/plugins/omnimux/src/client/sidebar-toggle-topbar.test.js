@@ -727,13 +727,22 @@ describe('chrome CSS contracts (conversation-box PRODUCT_STAGE_CHROME)', () => {
       /data-omnimux-left-collapsed\] \[class\*="tabBar"\]/,
     )
     // Collapsed: session title shares the top row with traffic lights + toggle.
-    // Pad the real <header> under the slot host (wrapper DIV), not only the host.
+    // Real advanced-shell DOM: [data-slot="conversation.header"] > header >
+    // [data-slot="conversation.session.header"] (inner anchor, not an ancestor).
     assert.match(
+      PRODUCT_STAGE_CHROME,
+      /data-omnimux-left-collapsed\] \[data-slot="conversation\.header"\] > header/,
+    )
+    assert.match(
+      PRODUCT_STAGE_CHROME,
+      /data-omnimux-left-collapsed\] \[data-slot="conversation\.header"\] header/,
+    )
+    assert.doesNotMatch(
       PRODUCT_STAGE_CHROME,
       /data-omnimux-left-collapsed\] \[data-slot="conversation\.session\.header"\] header/,
     )
-    assert.match(PRODUCT_STAGE_CHROME, /padding-left:\s*var\(--omnimux-topbar-toggle-end\)/)
-    assert.match(PRODUCT_STAGE_CHROME, /padding-top:\s*var\(--omnimux-topbar-toggle-top/)
+    assert.match(PRODUCT_STAGE_CHROME, /padding-left:\s*var\(--omnimux-topbar-toggle-end,\s*164px\)/)
+    assert.match(PRODUCT_STAGE_CHROME, /padding-top:\s*var\(--omnimux-topbar-toggle-top,\s*4px\)/)
     assert.match(PRODUCT_STAGE_CHROME, /data-omnimux-topbar-new-session/)
     assert.match(PRODUCT_STAGE_CHROME, /--omnimux-topbar-new-session-left/)
     assert.match(PRODUCT_STAGE_CHROME, /::after/)
