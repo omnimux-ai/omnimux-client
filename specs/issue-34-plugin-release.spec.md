@@ -10,12 +10,15 @@
 
 ## 决策与边界
 
-- 基线：`origin/main` = `2f7b2bb9ba2dc4b47b0a24693cce6da796af5f31`（只比
+- 原始基线：`origin/main` = `2f7b2bb9ba2dc4b47b0a24693cce6da796af5f31`（只比
   `839ff5e` 多 #35 docs spec）。
-- 本 PR 不改 `app/**`、不动根工作区文件；S1 会把 workspace 根上提并把 app 依赖
-  改成本仓包，`bundle.lock.json` 由 S1 生成后再回写。按维护者授权，本 PR 只同步
-  `plugins/pnpm-lock.yaml` 里被本次依赖说明符改动触及的 11 条 importer specifier，
-  不做版本、包解析或全文件重排。
+- S1/F3（#37/#38）合入后，本 PR 已 rebase 到实际 base
+  `32942bb8271b68e01827d23eb0f6b152f538b2ed`；根 workspace、根 lock 与
+  `bundle.lock.json` 的布局以该 base 为准。
+- 本 PR 不改 `app/**`；已 rebase 到 S1/F3 后的 main，因此实际更新根
+  `pnpm-lock.yaml` 的 11 条 importer specifier 和根 `bundle.lock.json` 的 12 条
+  version/contentHash。S1 已删除 `plugins/pnpm-lock.yaml` /
+  `plugins/pnpm-workspace.yaml`，本 PR 不恢复。
 - 不改 Trusted Publisher 四元组：Owner `omnimux-ai` / Repository
   `omnimux-client` / Workflow filename `publish.yml` / Environment 空。
 - 不执行任何真实 npm 发布；真实发布必须等绑定确认 + 用户批准。
@@ -24,14 +27,17 @@
 
 `package.json` 已把 10 个包的 `dsh-ui-kit` 从 `file:../../packages/dsh-ui-kit` 改为
 `^0.1.0`，`omnimux-assets` 的 `omnimux-products` 从 `file:../omnimux-products` 改为
-`^0.1.2`。`plugins/pnpm-lock.yaml` 只更新对应的 11 条 importer specifier：
+`^0.1.2`。S1 已删除 `plugins/pnpm-lock.yaml`，本 PR 只更新根 `pnpm-lock.yaml`
+中对应的 11 条 importer specifier：
 
 - 10 条 `dsh-ui-kit`：accounts/analytics/assets/clip/forms/inspiration/market/
   products/publish/workflow；
 - 1 条 `omnimux-assets` 的 `omnimux-products`。
 
-没有改 pnpm 版本、resolved 版本、snapshot 或全文件格式。干净 checkout 上
-`pnpm install --frozen-lockfile` 已通过；`plugins/pnpm-workspace.yaml` 未动。
+没有改 pnpm 版本、resolved 版本、snapshot 或全文件格式。干净 checkout 上根目录
+`pnpm install --frozen-lockfile` 已通过；`plugins/pnpm-workspace.yaml` 已由 S1
+删除，本 PR 不恢复。`bundle.lock.json` 由 `build:all` + 根
+`scripts/bundle-lock.mjs` 回写 12 条 version/contentHash，`--check` 通过。
 
 ## 版本矩阵（基线：2026-11-16 `npm view <pkg> version`）
 
@@ -116,8 +122,9 @@ runtime 读到的版本会和 npm tarball 不一致；发布前的 `npm view` �
 
 ## 证伪方式
 
-- 在 base `2f7b2bb` 上跑 `node scripts/release-check.mjs plugins/plugins/omnimux-accounts`，
-  应因缺 `repository` + 已发布而失败；本分支应通过。
+- 在原始基线 `2f7b2bb` 上跑
+  `node plugins/scripts/release-check.mjs plugins/plugins/omnimux-accounts`，
+  应因缺 `repository` + 已发布而失败；rebase 后实际 base `32942bb` 上本分支应通过。
 - 用 `node scripts/publish-matrix.mjs --packages all --dry-run true` 检查 12 个
   entry、`omnimux` 为 `pack-dry-run`、其余 11 个为 `publish-dry-run`；用
   `--dry-run false` 检查 `omnimux` 被跳过且 `omnimux-products` 排在
@@ -157,18 +164,20 @@ runtime 读到的版本会和 npm tarball 不一致；发布前的 `npm view` �
 ## 验证
 
 ```bash
-cd plugins
-corepack pnpm install --frozen-lockfile   # 在干净 checkout 上执行
-node --test scripts/release-check.test.mjs
-node --test scripts/publish-matrix.test.mjs scripts/publish-workflow.test.mjs
-node scripts/publish-matrix.mjs --packages all --dry-run true
-node scripts/publish-matrix.mjs --packages all --dry-run false
-node scripts/release-check.mjs --all --allow-published
-corepack pnpm registry:build
-corepack pnpm registry:verify
-node scripts/verify-governance-registry.test.mjs
-node scripts/verify-plugin-boundaries.mjs
-corepack pnpm -r build
+# 干净 checkout，仓库根
+corepack pnpm install --frozen-lockfile
+cd plugins && corepack pnpm install --frozen-lockfile && cd ..
+node --test plugins/scripts/release-check.test.mjs
+node --test plugins/scripts/publish-matrix.test.mjs plugins/scripts/publish-workflow.test.mjs
+node plugins/scripts/publish-matrix.mjs --packages all --dry-run true
+node plugins/scripts/publish-matrix.mjs --packages all --dry-run false
+node plugins/scripts/release-check.mjs --all --allow-published
+corepack pnpm --dir plugins run registry:build
+corepack pnpm --dir plugins run registry:verify
+node --test plugins/scripts/verify-governance-registry.test.mjs
+node plugins/scripts/verify-plugin-boundaries.mjs
+corepack pnpm --dir plugins run build:all
+node scripts/bundle-lock.mjs --check
 ```
 
 ## 回滚
