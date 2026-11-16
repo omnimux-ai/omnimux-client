@@ -16,6 +16,7 @@ import { Check, ChevronLeft, ChevronRight, Plus, Sparkles, ZoomIn } from 'lucide
  *   assets: Array<{ id: string, index: number, label: string, title?: string, url: string }>,
  *   dimensions?: Record<number, { width?: number, height?: number }>,
  *   failedImages?: Record<string, boolean>,
+ *   fallbackUrl?: string,
  *   onOpen: (asset: any) => void,
  *   onDimension?: (asset: any, size: { width: number, height: number }) => void,
  *   onImageError?: (asset: any) => void,
@@ -30,6 +31,7 @@ export function PostMediaCarousel({
   assets,
   dimensions = {},
   failedImages = {},
+  fallbackUrl = '',
   onOpen,
   onDimension,
   onImageError,
@@ -91,10 +93,25 @@ export function PostMediaCarousel({
     go(index + (event.key === 'ArrowRight' ? 1 : -1))
   }
 
+  const failedCount = assets.filter(asset => failedImages[asset.id]).length
+  const allFailed = assets.length > 0 && failedCount === assets.length
+  const someFailed = failedCount > 0 && !allFailed
+
+  if (allFailed && fallbackUrl) return <article className="omnimux-post-media omnimux-post-carousel is-fallback" data-media-count={assets.length}>
+    <div className="omnimux-post-media-viewer">
+      <img src={fallbackUrl} alt={copy('cover')} className="omnimux-inspiration-modal-cover-bg" />
+    </div>
+    <div className="omnimux-post-asset-footer">
+      <div><strong>{copy('cover')}</strong><p role="status">{copy('carouselFallback')}</p></div>
+    </div>
+  </article>
+
   return <article className="omnimux-post-media omnimux-post-carousel" data-media-count={assets.length}>
     <div className="omnimux-post-carousel-head">
       <span className="omnimux-post-carousel-chip">{copy('carousel')} · {assets.length}</span>
-      <span className="omnimux-post-carousel-hint">{copy('carouselHint')}</span>
+      {someFailed
+        ? <span className="omnimux-post-carousel-warning">{copy('carouselPartial')} · {failedCount}</span>
+        : <span className="omnimux-post-carousel-hint">{copy('carouselHint')}</span>}
     </div>
     <div
       className="omnimux-post-carousel-viewport"
@@ -166,7 +183,7 @@ export function PostMediaCarousel({
         <strong>{current?.label}</strong>
         <p>{dimensions[current?.index]?.width > 0 && `${dimensions[current.index].width} × ${dimensions[current.index].height}`}</p>
       </div>
-      <div className="omnimux-post-actions">
+      {!failedImages[current?.id] && <div className="omnimux-post-actions">
         <Button variant="ghost" size="sm" leadingIcon={<Sparkles size={14} />} onClick={() => onAnalyze?.(current)}>{copy('analyzeImage')}</Button>
         <Button
           size="sm"
@@ -176,7 +193,7 @@ export function PostMediaCarousel({
           leadingIcon={hasReference?.(current) ? <Check size={14} /> : <Plus size={14} />}
           onClick={() => onToggleReference?.(current)}
         >{t(hasReference?.(current) ? 'post.selected' : 'post.selectReference')}</Button>
-      </div>
+      </div>}
     </div>
   </article>
 }

@@ -1598,6 +1598,8 @@ export const INSPIRATION_CSS = `
 .omnimux-post-carousel-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .omnimux-post-carousel-chip { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-secondary); font-size: 11px; }
 .omnimux-post-carousel-hint { margin-left: auto; color: var(--dsw-alias-label-secondary); font-size: 11px; }
+.omnimux-post-carousel-warning { margin-left: auto; color: var(--dsw-alias-state-warn-primary); font-size: 11px; }
+.omnimux-post-carousel.is-fallback .omnimux-post-asset-footer p { color: var(--dsw-alias-label-secondary); }
 .omnimux-post-carousel-viewport { position: relative; width: 100%; height: min(400px, 48vh); min-height: 220px; border-radius: 12px; overflow: hidden; background: var(--dsw-alias-bg-base); outline: none; touch-action: pan-y; cursor: grab; }
 .omnimux-post-carousel-viewport:active { cursor: grabbing; }
 .omnimux-post-carousel-viewport:focus-visible { box-shadow: 0 0 0 2px var(--dsw-alias-brand-primary); }

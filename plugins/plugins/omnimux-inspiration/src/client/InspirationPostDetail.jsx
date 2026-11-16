@@ -372,6 +372,7 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
           assets={media}
           dimensions={dimensions}
           failedImages={failedImages}
+          fallbackUrl={pickCoverSrc(item)}
           t={t}
           saving={saving}
           onOpen={asset => { setImage(asset); setZoom(1) }}

@@ -145,6 +145,37 @@ describe('PostMediaCarousel render gate — swipeable gallery', () => {
     }
   })
 
+  it('falls back to the cover when every slide fails', async () => {
+    const mounted = await mountCarousel({
+      failedImages: { 'media:0': true, 'media:1': true, 'media:2': true },
+      fallbackUrl: '/omnimux/inspiration/media/inspiration-covers/2789',
+    })
+    try {
+      assert.ok(mounted.container.querySelector('.omnimux-post-carousel.is-fallback'))
+      assert.equal(mounted.container.querySelectorAll('.omnimux-post-carousel-slide').length, 0)
+      assert.equal(mounted.container.querySelector('.omnimux-post-carousel-viewport'), null)
+      assert.equal(mounted.container.querySelectorAll('img').length, 1)
+      assert.match(mounted.container.querySelector('.omnimux-post-asset-footer')?.textContent || '', /封面/)
+      assert.match(mounted.container.querySelector('.omnimux-post-asset-footer')?.textContent || '', /原帖轮播素材不可用/)
+    } finally {
+      await mounted.unmount()
+      mounted.close()
+    }
+  })
+
+  it('keeps the carousel and warns when only some slides fail', async () => {
+    const mounted = await mountCarousel({ failedImages: { 'media:0': true } })
+    try {
+      assert.equal(mounted.container.querySelectorAll('.omnimux-post-carousel-slide').length, 3)
+      assert.match(mounted.container.querySelector('.omnimux-post-carousel-warning')?.textContent || '', /部分素材不可用/)
+      assert.match(mounted.container.querySelector('.omnimux-post-carousel-slide')?.textContent || '', /图片暂时无法打开/)
+      assert.equal(mounted.container.querySelector('.omnimux-post-actions'), null)
+    } finally {
+      await mounted.unmount()
+      mounted.close()
+    }
+  })
+
   it('changes slides with the left and right arrow keys', async () => {
     const mounted = await mountCarousel()
     try {
