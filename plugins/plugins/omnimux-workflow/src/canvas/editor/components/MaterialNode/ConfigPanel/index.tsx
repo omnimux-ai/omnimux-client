@@ -135,6 +135,8 @@ export interface ConfigPanelProps {
   onGenerate: () => void;
   /** 全图/其他节点执行中（禁用执行入口） */
   execBusy: boolean;
+  /** 本地点击提交 guard：只覆盖 create RPC，不渲染 spinner */
+  isSubmitting?: boolean;
   /** 可选运行时配置（用于自备渠道 BYOK 与契约自适应） */
   runtimeSettings?: RuntimeByokChannelSettings | null;
   /** 唤起 ResourcePicker；带 SlotPickRequest 时进入卡槽装填会话，或传入 mode/targetSlotIndex。 */
@@ -153,6 +155,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   onUpdateNodeData,
   onGenerate,
   execBusy,
+  isSubmitting,
   runtimeSettings,
   onOpenResourcePicker,
 }) => {
@@ -1576,8 +1579,10 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
             disabled={blockGenerate}
             disabledReason={blockReason}
             onDisabledClick={handleDisabledGenerateClick}
+            isSubmitting={isSubmitting}
             isGenerating={
               nodeData.executionStatus === 'running'
+              || nodeData.executionStatus === 'pending'
               || resolveNodeLifecycle({ type: nodeData.materialType, data: nodeData as any }) === 'loading'
             }
           />

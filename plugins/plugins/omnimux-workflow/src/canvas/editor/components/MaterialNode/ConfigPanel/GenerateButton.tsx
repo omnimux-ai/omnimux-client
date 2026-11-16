@@ -8,7 +8,7 @@
  */
 
 import React, { memo } from 'react';
-import { ArrowUp, Loader2 } from 'lucide-react';
+import { ArrowUp } from 'lucide-react';
 import { useT } from '../../../../i18n';
 
 export interface GenerateButtonProps {
@@ -18,8 +18,10 @@ export interface GenerateButtonProps {
   disabledReason?: string;
   /** 禁用态被点击（发布画板通知）；不传则禁用点击静默 */
   onDisabledClick?: () => void;
-  /** 本节点生成中 → Loader2 spin */
+  /** 本节点生成/排队中 → 静止 ArrowUp（禁用态），绝不旋转 */
   isGenerating?: boolean;
+  /** 点击提交后的极短 create RPC 窗口 → 静态 …，不是 spinner */
+  isSubmitting?: boolean;
   /** 兼容可选属性，不再渲染 */
   creditCost?: number;
 }
@@ -30,27 +32,31 @@ const GenerateButton: React.FC<GenerateButtonProps> = ({
   disabledReason,
   onDisabledClick,
   isGenerating,
+  isSubmitting,
 }) => {
   const t = useT();
+  const unavailable = Boolean(disabled || isGenerating || isSubmitting);
+  const submissionState = isSubmitting ? 'creating' : isGenerating ? 'running' : 'idle';
 
   const handleAction = () => {
     if (disabled) {
       onDisabledClick?.();
       return;
     }
-    if (!isGenerating) {
+    if (!isGenerating && !isSubmitting) {
       onClick();
     }
   };
 
   return (
     <div
-      className={`wf-generate-btn ${disabled ? 'wf-generate-btn--disabled' : ''}`}
+      className={`wf-generate-btn ${unavailable ? 'wf-generate-btn--disabled' : ''}`}
+      data-submission-state={submissionState}
       onClick={handleAction}
-      style={{ cursor: disabled || isGenerating ? 'default' : 'pointer' }}
+      style={{ cursor: unavailable ? 'default' : 'pointer' }}
       role="button"
       tabIndex={0}
-      aria-disabled={disabled || isGenerating}
+      aria-disabled={unavailable}
       title={disabled ? disabledReason : undefined}
       onKeyDown={(event) => {
         if (event.target !== event.currentTarget) return;
@@ -66,13 +72,13 @@ const GenerateButton: React.FC<GenerateButtonProps> = ({
           e.stopPropagation();
           handleAction();
         }}
-        aria-disabled={disabled || isGenerating}
+        aria-disabled={unavailable}
         className="wf-generate-btn__send"
         aria-label={t('panel.generate')}
         title={disabled && disabledReason ? disabledReason : t('panel.generate')}
       >
-        {isGenerating ? (
-          <Loader2 size={16} className="wf-generate-btn__spin" />
+        {isSubmitting ? (
+          <span className="wf-generate-btn__ellipsis" aria-hidden="true">…</span>
         ) : (
           <ArrowUp size={16} strokeWidth={2.5} aria-hidden="true" />
         )}

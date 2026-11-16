@@ -401,7 +401,10 @@ const Harness: React.FC = () => {
     const { nodes, edges } = buildMockGraph();
     useCanvasStore.getState().hydrateGraph(nodes, edges);
     (window as any).__canvasStore = useCanvasStore;
-    useExecutionStore.getState().setStartNodeExecution((nodeId) => simulateNodeRun(nodeId));
+    useExecutionStore.getState().setStartNodeExecution((nodeId) => {
+      simulateNodeRun(nodeId);
+      return { ok: true };
+    });
     return () => {
       useExecutionStore.getState().setStartNodeExecution(null);
       useCanvasStore.getState().resetStore();

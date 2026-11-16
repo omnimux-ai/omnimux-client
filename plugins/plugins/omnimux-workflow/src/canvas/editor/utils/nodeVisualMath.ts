@@ -59,6 +59,8 @@ export function mapNodeToGenerationStatus(
   hasMedia: boolean,
 ): GenerationStatus | null {
   switch (executionStatus) {
+    case 'pending':
+      return 'pending';
     case 'running':
       return 'generating';
     case 'paused':

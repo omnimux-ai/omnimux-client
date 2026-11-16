@@ -16,6 +16,12 @@
 import { create } from 'zustand';
 import type { NodeExecutionApiStatus } from '../../shared/api';
 
+/** Result returned by a single-node submit; the click site must be able to recover on failure. */
+export interface NodeSubmissionResult {
+  ok: boolean;
+  error?: string;
+}
+
 export type ExecutionUiStatus =
   | 'idle'
   | 'pending'
@@ -309,9 +315,9 @@ export interface ExecutionState extends ExecutionProjection {
   focusExecutionId: string | null;
 
   /** Bridge set by the controller hook: single-node (subset) execution. */
-  startNodeExecution: ((nodeId: string) => void) | null;
+  startNodeExecution: ((nodeId: string) => NodeSubmissionResult | Promise<NodeSubmissionResult>) | null;
 
-  setStartNodeExecution: (fn: ((nodeId: string) => void) | null) => void;
+  setStartNodeExecution: (fn: ((nodeId: string) => NodeSubmissionResult | Promise<NodeSubmissionResult>) | null) => void;
 
   /** Create the run if absent and focus it. */
   ensureRun: (executionId: string) => void;

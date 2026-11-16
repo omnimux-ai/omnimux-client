@@ -239,7 +239,9 @@ test('legacy caller without save hook omits expectedVersion', async () => {
 test('creation failure leaves no fake pending node', async () => {
   const h = setup();
   h.env.create = async () => ({ ok: false, body: { message: 'version conflict' } });
-  await h.controller.startExecution({ mode: 'single', nodeIds: ['n1'] });
+  const result = await h.controller.startExecution({ mode: 'single', nodeIds: ['n1'] });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'version conflict');
   assert.equal(h.exec.error, 'version conflict');
   assert.equal(h.exec.nodeStatuses.n1, undefined);
   assert.equal(h.canvas.nodes[0].data.executionStatus, undefined);
@@ -353,4 +355,38 @@ test('leaving A queues its final capture behind A PUT and ignores its late respo
   assert.equal(writes[1].payload.nodes[0].data.prompt, 'A final');
   assert.equal(writes[1].payload.expectedVersion, 8);
   assert.equal(h.canvas.nodes[0].data.prompt, 'B unchanged');
+});
+
+
+test('#48 immediate single submit fires create before a slow save barrier resolves', async () => {
+  const h = setup(); h.edit('1dog');
+  const pending = deferred();
+  h.env.save = () => pending.promise;
+  const start = h.controller.startExecution({ mode: 'single', nodeIds: ['n1'], immediate: true });
+  await settle();
+  assert.equal(h.env.creates.length, 1, 'create must not wait for saveNow');
+  pending.resolve({ ok: true, body: { workspace: { ...h.env.remote, version: 8 } } });
+  const result = await start;
+  assert.equal(result.ok, true);
+});
+
+test('#48 rapid five immediate clicks only create one task', async () => {
+  const h = setup();
+  const starts = Array.from({ length: 5 }, () => h.controller.startExecution({
+    mode: 'single', nodeIds: ['n1'], immediate: true,
+  }));
+  const results = await Promise.all(starts);
+  assert.equal(h.env.creates.length, 1, '入口 guard + startingRef 必须只允许一次 create');
+  assert.equal(results.filter((result) => result.ok).length, 1);
+  assert.equal(results.filter((result) => result.ok === false).length, 4);
+});
+
+test('#48 immediate create failure returns a retryable error result', async () => {
+  const h = setup();
+  h.env.create = async () => ({ ok: false, body: { message: 'network down' } });
+  const result = await h.controller.startExecution({ mode: 'single', nodeIds: ['n1'], immediate: true });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'network down');
+  assert.equal(h.exec.nodeStatuses.n1, undefined);
+  assert.equal(h.canvas.nodes[0].data.executionStatus, undefined);
 });

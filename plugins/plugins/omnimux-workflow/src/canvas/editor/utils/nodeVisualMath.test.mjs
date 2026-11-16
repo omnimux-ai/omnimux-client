@@ -51,8 +51,8 @@ test('GSC 映射：无执行态有媒体 → completed；空态 → null', () =>
   assert.equal(mapNodeToGenerationStatus(undefined, undefined, false), null);
 });
 
-test('GSC 映射：pending/skipped 不算生成中，按媒体与本地态落', () => {
-  assert.equal(mapNodeToGenerationStatus('pending', 'empty', false), null);
+test('GSC 映射：pending 进入排队态，skipped 按媒体与本地态落', () => {
+  assert.equal(mapNodeToGenerationStatus('pending', 'empty', false), 'pending');
   assert.equal(mapNodeToGenerationStatus('skipped', 'ready', true), 'completed');
 });
 

@@ -2250,14 +2250,11 @@ button.wf-slot-well.wf-slot-well--append:hover {
   cursor: not-allowed;
 }
 
-.wf-generate-btn__spin {
-  animation: wf-generate-btn-spin 1s linear infinite;
-}
-
-@keyframes wf-generate-btn-spin {
-  to {
-    transform: rotate(360deg);
-  }
+.wf-generate-btn__ellipsis {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 1px;
 }
 
 /* antd primary color follows the theme variable (the formal approach is
