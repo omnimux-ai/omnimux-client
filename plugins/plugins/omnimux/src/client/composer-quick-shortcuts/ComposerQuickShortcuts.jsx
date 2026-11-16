@@ -4,6 +4,7 @@ import {
   clearQuickShortcutSkill,
   quickShortcutLinks,
   resolveQuickShortcuts,
+  sameSkillIdentity,
 } from './catalog.js';
 import { getGlobalQuickShortcutStore } from './store.js';
 import { useOwnedPrompt } from './useOwnedPrompt.ts';
@@ -29,12 +30,6 @@ export function useIsTikTokAgentPreset(session, props) {
 }
 
 export { isTikTokAgentPreset, TIKTOK_AGENT_PRESET_WHITELIST };
-
-/** 判断两个技能身份是否指向同一技能（slug 优先，兼容快捷方式解析对象）。 */
-function sameSkillIdentity(a, b) {
-  const key = (skill) => String((skill && (skill.slug || skill.skill || skill.id || skill.name)) || '');
-  return key(a) !== '' && key(a) === key(b);
-}
 
 /** 技能库通道就绪前的重试节奏：插件装载顺序不保证，指数退避 200ms → 3200ms，8 次合计约 16 秒。 */
 const SKILL_LIBRARY_RETRY_BASE_MS = 200;

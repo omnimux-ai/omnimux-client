@@ -167,6 +167,18 @@ export function clearQuickShortcutSkill(state) {
   }
 }
 
+/**
+ * 判断两个技能身份是否指向同一技能。
+ *
+ * slug 优先、兼容快捷方式解析对象；origin 也必须一致，避免同 slug 的
+ * shortcut/custom 与原生 slash 跨通道时被误判为同一状态而留下双胶囊。
+ */
+export function sameSkillIdentity(a, b) {
+  const key = (skill) => String((skill && (skill.slug || skill.skill || skill.id || skill.name)) || '');
+  const origin = (skill) => String((skill && skill.origin) || '');
+  return key(a) !== '' && key(a) === key(b) && origin(a) === origin(b);
+}
+
 /** 内部：按 id 取条目（不对外暴露，避免调用方绕过解析）。 */
 function byId(id) {
   return QUICK_SHORTCUTS.find((entry) => entry.id === id) || null

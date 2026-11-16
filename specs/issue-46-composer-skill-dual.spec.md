@@ -54,7 +54,11 @@
   - 新期望证据：`pickOutcome.text === '/ip-character-consistency-studio '`；`__omnimuxActiveSkill.origin === 'slash'`；事件中无 `omnimux:skill:attach-request`。
 - `plugins/plugins/omnimux/tests/e2e/composer-skill-i18n.spec.js` :: `e2e: composer slash-skill bilingual adaptive search, selection, and plain-text fill`
   - 原断言：`outcome.text === ''`（斜杠选择清空输入框）。
-  - 必须改的理由：同一旧行为断言，必须与实现同步为保留官方 token。
+  - 必须改的理由：同一旧行为断言，必须与实现同步为保留官方 token；同时该文件重命名为 `composer-skill-i18n.e2e.test.js` 以纳入 `test:e2e` 的 `*.e2e.test.js` 收集范围。
+  - 新期望证据：`outcome.text === '/ip-character-consistency-studio '`；`__omnimuxActiveSkill.origin === 'slash'`。
+- `plugins/plugins/omnimux/tests/e2e/composer-skill-i18n.e2e.test.js` :: `e2e: composer slash-skill bilingual adaptive search, selection, and plain-text fill`
+  - 原断言：`outcome.text === ''`（斜杠选择清空输入框）。
+  - 必须改的理由：同一旧行为断言，必须与实现同步为保留官方 token；重命名后的路径纳入 e2e 脚本收集。
   - 新期望证据：`outcome.text === '/ip-character-consistency-studio '`；`__omnimuxActiveSkill.origin === 'slash'`。
 
 ## 测试计划

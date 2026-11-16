@@ -8,6 +8,7 @@ import {
   quickShortcutDefaultLinks,
   quickShortcutLinks,
   resolveQuickShortcuts,
+  sameSkillIdentity,
 } from './catalog.js'
 
 /** 技能库全量可用时的解析器：按 slug 原样回一份技能身份。 */
@@ -169,5 +170,15 @@ describe('点快捷方式只插默认链接，可追加链接留给上方卡槽'
     assert.deepEqual(quickShortcutDefaultLinks({}), [])
     assert.deepEqual(quickShortcutDefaultLinks({ defaultLink: 'not-a-kind' }), [])
     assert.deepEqual(quickShortcutDefaultLinks({ defaultLink: 42 }), [])
+  })
+})
+
+describe('sameSkillIdentity：跨通道同 slug 也必须区分 origin', () => {
+  it('同来源同 slug 才视为同一技能', () => {
+    assert.equal(sameSkillIdentity({ slug: 'video-deconstruct', origin: 'shortcut' }, { slug: 'video-deconstruct', origin: 'shortcut' }), true)
+    assert.equal(sameSkillIdentity({ slug: 'video-deconstruct', origin: 'slash' }, { slug: 'video-deconstruct', origin: 'slash' }), true)
+    assert.equal(sameSkillIdentity({ slug: 'video-deconstruct', origin: 'shortcut' }, { slug: 'video-deconstruct', origin: 'slash' }), false)
+    assert.equal(sameSkillIdentity({ slug: 'video-deconstruct', origin: 'shortcut' }, { slug: 'video-deconstruct', origin: 'custom' }), false)
+    assert.equal(sameSkillIdentity({ slug: 'video-deconstruct', origin: 'shortcut' }, { slug: 'other-skill', origin: 'shortcut' }), false)
   })
 })

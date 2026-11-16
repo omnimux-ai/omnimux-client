@@ -42,6 +42,33 @@
       if (el && typeof el.focus === "function") el.focus();
     }
 
+    /**
+     * 清理输入框中的原生 slash token。
+     *
+     * 必须走 revision 守卫的编辑动作：`setDraft` 的官方契约是整段替换纯文本并
+     * 移除 inline reference chips，会误伤链接/引用。优先复用
+     * AttachmentSubmitBridge 的 `removeSkillToken`（内部 insertText），没有桥接
+     * 动作时才退回官方 `InputActions.insertText('', span)`。
+     */
+    function removeNativeSkillToken(input, slug, inputActions) {
+      const draft = input && typeof input.draft === "string" ? input.draft : "";
+      if (!slug || !draft) return false;
+      try {
+        const actions = typeof window !== "undefined" ? window.__omnimuxComposerActions : null;
+        if (actions && typeof actions.removeSkillToken === "function") {
+          return actions.removeSkillToken(slug) !== false;
+        }
+        if (!inputActions || typeof inputActions.insertText !== "function" || !Number.isSafeInteger(input.draftRev)) {
+          return false;
+        }
+        const range = SkillShelf.findSkillTokenRange(draft, slug);
+        if (!range) return false;
+        return inputActions.insertText("", { start: range.start, end: range.end, draftRev: input.draftRev }) !== false;
+      } catch {
+        return false;
+      }
+    }
+
     function renderBookOpenIcon(size = 16) {
       const px = typeof size === "number" && Number.isFinite(size) && size > 0 ? size : 16;
       return h("svg", {
@@ -582,13 +609,7 @@
       const clearActiveSkill = useCallback(() => {
         const current = (typeof window !== "undefined" ? window.__omnimuxActiveSkill : null) || activeSkill;
         const slug = current && current.origin === "slash" ? String(current.slug || current.skill || "") : "";
-        const draft = input && typeof input.draft === "string" ? input.draft : "";
-        if (slug && draft && typeof inputActions?.setDraft === "function") {
-          try {
-            const next = SkillShelf.removeSkillTokenFromDraft(draft, slug);
-            if (next !== draft) inputActions.setDraft(next);
-          } catch {}
-        }
+        if (slug && input) removeNativeSkillToken(input, slug, inputActions);
         setActiveSkill(null);
         if (typeof window !== "undefined") {
           window.__omnimuxActiveSkill = null;
@@ -606,13 +627,7 @@
         focusComposerCard();
         const current = (typeof window !== "undefined" ? window.__omnimuxActiveSkill : null) || activeSkill;
         const oldSlug = current && current.origin === "slash" ? String(current.slug || current.skill || "") : "";
-        const draft = input && typeof input.draft === "string" ? input.draft : "";
-        if (oldSlug && draft && typeof inputActions?.setDraft === "function") {
-          try {
-            const next = SkillShelf.removeSkillTokenFromDraft(draft, oldSlug);
-            if (next !== draft) inputActions.setDraft(next);
-          } catch {}
-        }
+        if (oldSlug && input) removeNativeSkillToken(input, oldSlug, inputActions);
         const identity = { ...item, origin: "custom" };
         setActiveSkill(identity);
         if (typeof window !== "undefined") {

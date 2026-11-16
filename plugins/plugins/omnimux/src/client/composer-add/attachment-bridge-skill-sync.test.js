@@ -18,8 +18,9 @@ const module = { exports: {} }
 new Function('require', 'module', 'exports', output.outputFiles[0].text)(createRequire(import.meta.url), module, module.exports)
 const { AttachmentSubmitBridge } = module.exports
 
-async function mount({ draft: initialDraft, activeSkill = null, attachments = [] } = {}) {
-  const dom = new JSDOM('<div data-phase="hero"><div data-composer-card><div id="bridge"></div><div data-composer-input="true"></div><button data-send-button type="button">发送</button></div></div>')
+async function mount({ draft: initialDraft, activeSkill = null, attachments = [], occurrences = [], linkChip = false } = {}) {
+  const chip = linkChip ? '<div class="omx-link-chip-row"><div data-omx-video-token="true"><input value="https://example.com/video" /></div></div>' : ''
+  const dom = new JSDOM(`<div data-phase="hero"><div data-composer-card><div id="bridge"></div><div data-composer-input="true"></div>${chip}<button data-send-button type="button">发送</button></div></div>`)
   const previous = { window: globalThis.window, document: globalThis.document, CustomEvent: globalThis.CustomEvent, act: globalThis.IS_REACT_ACT_ENVIRONMENT }
   globalThis.window = dom.window
   globalThis.document = dom.window.document
@@ -27,11 +28,12 @@ async function mount({ draft: initialDraft, activeSkill = null, attachments = []
   globalThis.IS_REACT_ACT_ENVIRONMENT = true
   let draft = initialDraft
   const writes = []
+  const setDraftCalls = []
   const props = {
     sessionId: 'A',
-    useInput: selector => selector({ draft, phase: 'plain', draftRev: 1, occurrences: [] }),
+    useInput: selector => selector({ draft, phase: 'plain', draftRev: 1, occurrences }),
     inputActions: {
-      setDraft(value) { draft = value; writes.push(value) },
+      setDraft(value) { setDraftCalls.push(value); draft = value; writes.push(value) },
       insertText(text, span) {
         draft = draft.slice(0, span.start) + text + draft.slice(span.end)
         writes.push(draft)
@@ -51,7 +53,7 @@ async function mount({ draft: initialDraft, activeSkill = null, attachments = []
   await render()
   return {
     get draft() { return draft },
-    writes,
+    writes, setDraftCalls, occurrences,
     async publish(next) {
       draft = next
       await render()
@@ -162,5 +164,26 @@ test('场景6 发送预览：native token 原样保留，custom 不写假 slash'
     assert.ok(!custom.draft.includes('/custom-skill'))
   } finally {
     await custom.dispose()
+  }
+})
+
+test('B1 回归：token + link chip 下 removeSkillToken 只删 token，不碰 inline chip', async () => {
+  const occurrences = [{ source: 'link', label: '参考视频', clipboardText: 'https://example.com/video' }]
+  const env = await mount({
+    draft: '/video-hook-analysis 参考 ',
+    activeSkill: { slug: 'video-hook-analysis', name: '视频拆解', origin: 'slash' },
+    occurrences,
+    linkChip: true,
+  })
+  try {
+    assert.ok(document.querySelector('[data-omx-video-token="true"]'), 'link chip 必须已挂载')
+    const removed = window.__omnimuxComposerActions.removeSkillToken('video-hook-analysis')
+    assert.equal(removed, true)
+    assert.equal(env.draft, '参考 ')
+    assert.ok(document.querySelector('[data-omx-video-token="true"]'), 'link chip DOM 必须保留')
+    assert.equal(env.setDraftCalls.length, 0, 'bridge removeSkillToken 不得调用 setDraft 整段替换')
+    assert.deepEqual(env.occurrences, occurrences, 'occurrences 必须原样保留')
+  } finally {
+    await env.dispose()
   }
 })
