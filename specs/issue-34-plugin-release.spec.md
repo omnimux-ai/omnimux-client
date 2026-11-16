@@ -147,8 +147,8 @@ runtime 读到的版本会和 npm tarball 不一致；发布前的 `npm view` �
   - 新期望：`plugins/plugins/omnimux` 通过。
 - `plugins/scripts/release-check.test.mjs` :: `checkManifest requires repository, git type, matching origin and monorepo directory`
   - 原断言：错误 directory 用 `plugins/other` 对照。
-  - 必须改：新布局的错误目录也应指向 `plugins/plugins/other`，才能验证真实目录比较。
-  - 新期望：错误/空 directory 仍失败，正确目录通过。
+  - 必须改：`packageDir` 迁到 `plugins/plugins/omnimux` 后，`plugins/other` 仍与包目录不一致，足以验证守卫；无需改测试夹具。
+  - 新期望：任意不一致 directory 仍失败，正确目录通过。
 - `plugins/scripts/release-check.test.mjs` :: `a missing manifest file is reported as a failure`
   - 原断言：错误消息里的路径是 `plugins/omnimux/package.json`。
   - 必须改：读取路径跟随迁仓后的 `plugins/plugins/<name>`。
