@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url'
 import { findViolations, collectRcVersions } from './verify-dsh-lockfile-uniform.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const repoRoot = resolve(here, '..')
+const pluginsRoot = resolve(here, '..')
+const repoRoot = resolve(pluginsRoot, '..')
 
 describe('verify-dsh-lockfile-uniform', () => {
   it('仓库当前锁文件：dsh-* 各 minor 线收敛单一 rc', () => {

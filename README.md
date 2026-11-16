@@ -12,15 +12,19 @@ app/        Electron 桌面壳（deepseek-harness 之上），含 dsh-desktop-ne
 plugins/    产品插件（omnimux 及 20 个能力插件、3 个共享包），随桌面版一起发布
 ```
 
-两个子项目在**阶段一各自独立**：`app/` 用 Yarn 4，`plugins/` 用 pnpm。统一成单一 pnpm workspace 是下一步，届时才有一个根 lockfile。
+仓库根是**插件工作区的唯一 pnpm workspace 根**（单一 `pnpm-lock.yaml`），`app/` 仍是独立的 Yarn 4 工作区；桌面依赖通过 `link:` 指向本仓 `plugins/plugins/*`，因此同一个 PR 可以同时改壳和插件并在打包时消费本仓源码。
 
 ## 构建
 
 ```bash
-# 插件
-cd plugins && corepack pnpm install --frozen-lockfile && corepack pnpm -r build
+# 插件工作区（仓库根；先装依赖，再构建插件产物）
+corepack pnpm install --frozen-lockfile
+corepack pnpm --dir plugins run build:all
 
-# 桌面壳
+# 工作区元数据校验（dsh-version.json / bundle.lock.json）
+node scripts/workspace-check.mjs --check
+
+# 桌面壳（打包前置会自动再跑一次插件构建与新鲜度校验）
 cd app && corepack enable && corepack yarn install --immutable && corepack yarn workspace dsh-desktop-next dist:mac
 ```
 

@@ -14,10 +14,10 @@
 
 ```text
 app/        Electron 桌面壳；Yarn 4；deepseek-harness 为 submodule（pin 见 PROVENANCE.json）
-plugins/    产品插件；pnpm；含 3 个共享包
+plugins/    产品插件；仓库根单一 pnpm workspace；含 3 个共享包
 ```
 
-阶段一两套包管理器并存，各自独立安装与构建。统一为单一 pnpm workspace 是后续任务，**不要在没有迁移任务的情况下擅自改根目录的包管理结构**。
+仓库根是插件工作区的唯一 pnpm workspace 根（单一 `pnpm-lock.yaml`）；`app/` 保持独立的 Yarn 4 工作区。桌面依赖通过 `link:` 指向本仓 `plugins/plugins/*`，插件构建产物是打包输入，因此 CI 与打包前置必须先安装/构建插件。不要再添加嵌套的 `plugins/pnpm-workspace.yaml` 或 `plugins/pnpm-lock.yaml`。
 
 ## 硬约束
 
@@ -32,7 +32,8 @@ plugins/    产品插件；pnpm；含 3 个共享包
 
 | 触及 | 命令 |
 |---|---|
-| `plugins/` | `cd plugins && corepack pnpm install --frozen-lockfile && corepack pnpm -r build` |
+| `plugins/` | 根目录 `corepack pnpm install --frozen-lockfile && corepack pnpm --dir plugins run build:all` |
+| 工作区元数据 | `node scripts/workspace-check.mjs --check`（校验 `dsh-version.json` / `bundle.lock.json`） |
 | `app/` 类型 | `cd app && corepack yarn typecheck` |
 | `app/` 打包 | `cd app && corepack yarn workspace dsh-desktop-next dist:mac` |
 | 文档 / 指令 | 只核 diff、链接与命令一致性 |

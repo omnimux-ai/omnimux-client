@@ -20,7 +20,8 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const repoRoot = resolve(here, '..')
+const pluginsRoot = resolve(here, '..')
+const repoRoot = resolve(pluginsRoot, '..')
 
 const KEY_RE = /^'(@deepseek-ai\/dsh-[a-z0-9-]+)@(\d+\.\d+\.\d+-rc\.\d+)/
 
