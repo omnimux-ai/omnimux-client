@@ -19,6 +19,7 @@ import { childIdsOfGroup } from './editor/utils/nodeVisualMath';
 import { resolveNodeOutputType } from '../shared/graph/materialNode';
 import { useCanvasBoot } from './hooks/useCanvasBoot';
 import { setLocale, useT, type Locale } from './i18n';
+import { toast } from './ui';
 import { useWorkspacePersistence } from './bridge/useWorkspacePersistence';
 import { useComfyFrameSlots } from './store/comfyFrameSlots';
 import { useTablePersistence } from './bridge/useTablePersistence';
@@ -101,6 +102,7 @@ const App: React.FC<CanvasAppProps> = ({ locale, workspaceId: propWorkspaceId, f
       await tablePersistence.saveNow();
       return persistence.saveNow();
     },
+    onPreflightError: (message) => toast.error(message),
     onRunTerminal: async ({ executionId, groupId, graphHash, status }) => {
       if (!groupId) return;
       const activeWorkspaceId = workspace?.id;

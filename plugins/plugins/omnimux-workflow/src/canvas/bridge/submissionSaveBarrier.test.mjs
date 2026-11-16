@@ -44,7 +44,7 @@ function deferred() {
   return { promise, resolve };
 }
 
-function setup({ legacy = false } = {}) {
+function setup({ legacy = false, onPreflightError } = {}) {
   const node = prompt => ({ id: 'n1', type: 'text', position: { x: 0, y: 0 }, data: { prompt } });
   const remote = { id: 'ws', name: 'Canvas', version: 7, nodes: [node('initial')], edges: [] };
   const listeners = new Set();
@@ -103,7 +103,10 @@ function setup({ legacy = false } = {}) {
   });
   vm.runInContext(bundle.outputFiles[0].text, context);
   const persistence = context.hooks.useWorkspacePersistence(remote);
-  const controller = context.hooks.useExecutionController('ws', legacy ? undefined : { onBeforeStart: persistence.saveNow });
+  const controller = context.hooks.useExecutionController('ws', legacy ? undefined : {
+    onBeforeStart: persistence.saveNow,
+    ...(onPreflightError ? { onPreflightError } : {}),
+  });
   return { env, canvas, exec, persistence, controller,
     edit(prompt) { canvas.setNodes(() => [node(prompt)]); },
     autosave() { for (const [id, timer] of timers) if (timer.delay === 1000) { timers.delete(id); timer.fn(); } },
@@ -394,4 +397,18 @@ test('#48 immediate create failure returns a retryable error result', async () =
   assert.equal(result.error, 'network down');
   assert.equal(h.exec.nodeStatuses.n1, undefined);
   assert.equal(h.canvas.nodes[0].data.executionStatus, undefined);
+});
+
+
+test('#48 immediate preflight failure is surfaced while create still uses the graph snapshot', async () => {
+  const errors = [];
+  const h = setup({ onPreflightError: (message) => errors.push(message) });
+  h.edit('1dog');
+  h.env.save = async () => ({ ok: false, status: 500, body: { message: 'disk full' } });
+  const result = await h.controller.startExecution({ mode: 'single', nodeIds: ['n1'], immediate: true });
+  await settle();
+  assert.equal(result.ok, true);
+  assert.deepEqual(errors, ['disk full']);
+  assert.equal(h.env.creates.length, 1);
+  assert.equal(h.env.creates[0].payload.graph.nodes[0].data.prompt, '1dog');
 });

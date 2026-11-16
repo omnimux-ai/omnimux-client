@@ -504,6 +504,8 @@ export interface ExecutionControllerOptions {
   onBeforeStart?: () => Promise<number | void> | number | void;
   /** Called once when a group run reaches a terminal state. */
   onRunTerminal?: (info: ExecutionRunTerminalInfo) => void;
+  /** Background save-barrier failure during an immediate single-node submit. */
+  onPreflightError?: (message: string) => void;
 }
 
 export interface ExecutionController {
@@ -557,6 +559,8 @@ export function useExecutionController(
   workspaceIdRef.current = workspaceId;
   const onBeforeStartRef = useRef(opts?.onBeforeStart);
   onBeforeStartRef.current = opts?.onBeforeStart;
+  const onPreflightErrorRef = useRef(opts?.onPreflightError);
+  onPreflightErrorRef.current = opts?.onPreflightError;
   const onRunTerminalRef = useRef(opts?.onRunTerminal);
   onRunTerminalRef.current = opts?.onRunTerminal;
   /** executionId -> group metadata needed by the publish gate. */
@@ -704,9 +708,16 @@ export function useExecutionController(
           }
         : undefined;
       try {
+        const preflight = onBeforeStartRef.current?.();
         let expectedVersion: number | void = undefined;
-        if (!opts.immediate) {
-          expectedVersion = await onBeforeStartRef.current?.();
+        if (opts.immediate) {
+          // The graph snapshot is the execution source, but the background save
+          // still runs; a save failure must be visible rather than swallowed.
+          void Promise.resolve(preflight).catch((error) => {
+            onPreflightErrorRef.current?.(error instanceof Error ? error.message : t('error.createExecutionFailed'));
+          });
+        } else {
+          expectedVersion = await preflight;
         }
         if (!mountedRef.current || workspaceIdRef.current !== workspace) return submitError('');
         const current = useCanvasStore.getState();

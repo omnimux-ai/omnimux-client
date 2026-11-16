@@ -39,6 +39,7 @@ idle
 - `startNodeExecution` 返回 `Promise<{ ok, error? }>`；`useExecutionController.startExecution` 的 single-node 立即路径不等待 save barrier，把点击时 graph snapshot 放进 create 请求，host 路由按该 snapshot 执行；group/subset 保留既有保存屏障与 `expectedVersion`。
 - `GenerateButton` 增加 `isSubmitting`：creating 只渲染静态 `…`；running 只渲染静止 ArrowUp；不出现 `Loader2` 或旋转 animation。
 - quota 预检与 create 并行，不阻塞点击；额度拒绝由 hub quota seam 提示，quota transport 失败由点击入口 toast。
+- immediate single-node 的 save barrier 在后台并行；若保存失败，通过 `onPreflightError` 回调显示 toast，不静默吞掉。
 - 创建失败由点击入口 `toast.error`，节点不残留 loading；`finally` 清理本地 submitting guard。
 - `mapNodeToGenerationStatus('pending')` 映射为 `pending`，创建成功后节点卡立即显示排队/运行态。
 - 图片/视频均使用同一 `MaterialNode → ConfigPanel → GenerateButton` 组件链，无节点类型分支。
