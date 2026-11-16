@@ -87,3 +87,16 @@ test('no step can accidentally publish during a dry-run or pack action', () => {
   assert.match(runText, /pack-dry-run\) npm pack --dry-run ;;/)
   assert.match(runText, /unknown release action/)
 })
+
+test('assets explicitly waits for products@0.1.2 before real publish', () => {
+  const publish = WORKFLOW.jobs.publish
+  const wait = publish.steps.find(step => step.name === 'Wait for internal package dependency')
+  assert.ok(wait)
+  assert.equal(wait.if, "${{ matrix.action == 'publish' && matrix.package == 'omnimux-assets' }}")
+  assert.match(wait.env.DEPENDENCY, /^omnimux-products@\^0\.1\.2$/)
+  assert.match(wait.run, /npm view "\$DEPENDENCY" version/)
+  assert.match(wait.run, /MAX_ATTEMPTS=60/)
+  assert.match(wait.run, /RETRY_DELAY_SECONDS=15/)
+  assert.match(wait.run, /::error::/)
+  assert.match(wait.run, /refusing to publish omnimux-assets/)
+})

@@ -135,6 +135,29 @@ jobs:
             *) node scripts/release-check.mjs "$PACKAGE_DIR" ;;
           esac
 
+      # GitHub 不保证 matrix 的执行顺序；assets 依赖本次才发布的 products@0.1.2。
+      # 真实发布 assets 前显式等待 registry 可解析，避免只靠 max-parallel=1 的调度假设。
+      - name: Wait for internal package dependency
+        if: ${{ matrix.action == 'publish' && matrix.package == 'omnimux-assets' }}
+        env:
+          DEPENDENCY: "omnimux-products@^0.1.2"
+        run: |
+          set -euo pipefail
+          MAX_ATTEMPTS=60
+          RETRY_DELAY_SECONDS=15
+          for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+            if output="$(npm view "$DEPENDENCY" version --json 2>/dev/null)"; then
+              echo "$DEPENDENCY is available: $output"
+              exit 0
+            fi
+            echo "waiting for $DEPENDENCY ($attempt/$MAX_ATTEMPTS)"
+            if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
+              sleep "$RETRY_DELAY_SECONDS"
+            fi
+          done
+          echo "::error::$DEPENDENCY is still not published after $((MAX_ATTEMPTS * RETRY_DELAY_SECONDS / 60)) minutes; refusing to publish omnimux-assets"
+          exit 1
+
       - name: Install workspace dependencies
         run: corepack pnpm install --frozen-lockfile
 
