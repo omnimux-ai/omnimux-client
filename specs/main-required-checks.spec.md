@@ -5,7 +5,7 @@
 
 ## 结论
 
-`required_status_checks.strict = true`，必需检查共 4 条（app_id 一律 15368 / GitHub Actions）：
+`required_status_checks.strict = true`，必需检查共 5 条（app_id 一律 15368 / GitHub Actions）：
 
 | # | workflow | 检查名（context） | 覆盖范围 | 状态 |
 |---|---|---|---|---|
@@ -13,8 +13,9 @@
 | 2 | CI | `Desktop app check` | `app/` 安装 + 版本文件 + `yarn check`（layout/architecture/workspace） | 既有 |
 | 3 | CI | `Privacy scan` | gitleaks 扫提交内容，禁凭据/内部端点 | 既有 |
 | 4 | Quality Gate & Auto QA | `Static L0 QA & Tests` | 聚合：静态门禁与回归、插件测试分片矩阵、泄漏门禁、（merge queue 上的）全仓扫描 | 本次新增 |
+| 5 | CI | `Workspace metadata and local plugins` | 根 workspace 元数据（`workspace-check --check`，含 `dsh-version.json` / `bundle.lock.json`）+ 插件全量构建 + app 本地插件解析（`verify-app-local-plugins`） | S1 新增（F3 闭环） |
 
-前 3 条是本次收尾前 `main` 的既有必需检查；第 4 条是 `quality-gate.yml` 里唯一的聚合作业。
+前 3 条是本次收尾前 `main` 的既有必需检查；第 4 条是 `quality-gate.yml` 里唯一的聚合作业；第 5 条在 S1（根 workspace + app `link:` 本地插件）落地后新增——该作业若不跑或失真，app 侧可能悄悄退回 registry 上的旧包版本，而同 PR 出包的验收会假绿。
 
 ## 为什么不把子作业逐条列为必需
 
@@ -48,7 +49,8 @@
        {"context": "Plugins build and typecheck", "app_id": 15368},
        {"context": "Desktop app check", "app_id": 15368},
        {"context": "Privacy scan", "app_id": 15368},
-       {"context": "Static L0 QA & Tests", "app_id": 15368}
+       {"context": "Static L0 QA & Tests", "app_id": 15368},
+       {"context": "Workspace metadata and local plugins", "app_id": 15368}
      ]
    }
    JSON
@@ -60,9 +62,9 @@
    gh api repos/omnimux-ai/omnimux-client/branches/main/protection/required_status_checks
    ```
 
-3. 在一个真实 PR 上确认这 4 条出现在必需检查里、且全部转绿后才允许合入；任一上游失败时 `Static L0 QA & Tests` 必须跟着红。
+3. 在一个真实 PR 上确认这 5 条出现在必需检查里、且全部转绿后才允许合入；任一上游失败时 `Static L0 QA & Tests` 必须跟着红。
 
-4. 回滚：把上面的 `checks` 还原为前 3 条，其余保护项（`enforce_admins`、`required_linear_history`、`allow_force_pushes` 等）本次不动。
+4. 回滚：把上面的 `checks` 还原为 4 条（去掉 `Workspace metadata and local plugins`）；如再退一步回到本次收尾前的基线，则还原为前 3 条。其余保护项（`enforce_admins`、`required_linear_history`、`allow_force_pushes` 等）本次不动。
 
 ## 相关：publish.yml 验证窗口
 
