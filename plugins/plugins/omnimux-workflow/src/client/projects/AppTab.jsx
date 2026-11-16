@@ -1218,7 +1218,12 @@ export function AppTab(props) {
                   artifacts: statusResult.artifacts || [],
                 },
               })
-            } else if (currentStatus === 'FAILED' || currentStatus === 'CANCELED') {
+            } else if (
+              currentStatus === 'FAILED' ||
+              currentStatus === 'ERROR' ||
+              currentStatus === 'CANCELED' ||
+              currentStatus === 'CANCELLED'
+            ) {
               markTaskTerminal(taskId, 'failed', {
                 error: statusResult.error || '任务执行中断或失败',
               })

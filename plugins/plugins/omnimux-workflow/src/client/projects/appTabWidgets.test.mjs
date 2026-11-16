@@ -951,6 +951,27 @@ describe('AppTab Form Widgets Engine (Issue #2607)', () => {
       assert.equal(shouldShowModelSelector(withNodes([])), true)
     })
 
+    it('hides the selector for capability nodes even when params.model was persisted', () => {
+      assert.equal(
+        shouldShowModelSelector(
+          withNodes([
+            {
+              id: 'v1',
+              type: 'material',
+              data: {
+                nodeKind: 'generate',
+                materialType: 'video',
+                selectedTool: 'video-extraction',
+                outputCapabilityId: 'video-extraction',
+                params: { model: 'minimax-h3-video', operation: 'text_to_video' },
+              },
+            },
+          ]),
+        ),
+        false,
+      )
+    })
+
     it('hides the selector when the snapshot proves there is no generation node', () => {
       assert.equal(
         shouldShowModelSelector(

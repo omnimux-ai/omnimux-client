@@ -31,6 +31,7 @@ describe('AppTab and AI App Workflow integration', () => {
     // 调用执行接口与异步轮询
     assert.match(src, /__OMNIMUX_APPS_EXECUTE__|\/executions/)
     assert.match(src, /pollStatus|__OMNIMUX_APPS_POLL__/, '必须包含真实任务轮询机制')
+    assert.match(src, /currentStatus === 'ERROR'/, 'workflow-host app execution error 必须收敛为失败任务')
     // 标题描述位于左侧容器（紧跟标题、分类徽标与版本）
     assert.match(src, /omx-apptab-header-left[\s\S]*?omx-apptab-title[\s\S]*?omx-apptab-badge[\s\S]*?omx-apptab-version[\s\S]*?omx-apptab-desc/)
     // 右上角新增「编辑应用」按钮与处理状态反馈

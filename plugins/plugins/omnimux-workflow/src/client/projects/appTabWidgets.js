@@ -733,6 +733,12 @@ function isGenerationModelNode(node) {
   const d = node.data || {}
   if (resolveNodeKind(d) !== 'generate') return false
 
+  // Capability nodes execute a deterministic tool (e.g. video extraction), not a
+  // generation model. Their slot reconciliation may persist params.model; that
+  // must not resurrect the model selector in the published app.
+  const capabilityId = typeof d.outputCapabilityId === 'string' ? d.outputCapabilityId.trim() : ''
+  if (capabilityId && materialTools[capabilityId]?.executorKey) return false
+
   const toolId = typeof d.selectedTool === 'string' ? d.selectedTool : ''
   if (toolId && materialTools[toolId]?.modelCategory) return true
 
