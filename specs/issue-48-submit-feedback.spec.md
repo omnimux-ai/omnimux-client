@@ -28,6 +28,7 @@ idle
 - `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/index.tsx`
 - `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/GenerateButton.tsx`
 - `plugins/plugins/omnimux-workflow/src/canvas/hooks/useExecutionController.ts`
+- `plugins/plugins/omnimux-workflow/src/shared/api.ts`、`src/workflow/routes/executionRoutes.ts`、`src/workflow/workspace/snapshotSchema.ts`（请求携带 graph snapshot，由 host 直接执行）
 - `plugins/plugins/omnimux-workflow/src/canvas/store/executionStore.ts`
 - `plugins/plugins/omnimux-workflow/src/canvas/editor/utils/nodeVisualMath.ts`
 - 相关测试与 spec
@@ -35,8 +36,9 @@ idle
 ## 交互与执行
 
 - `MaterialNode.handleGenerate` 第一行检查 `submitPendingRef.current`；未提交时同步置位并 `setSubmitPending(true)`，随后立即 `startNodeExecution(id)`；不先 await quota。
-- `startNodeExecution` 返回 `Promise<{ ok, error? }>`；`useExecutionController.startExecution` 的 single-node 立即路径不等待 save barrier，group/subset 保留既有保存屏障。
+- `startNodeExecution` 返回 `Promise<{ ok, error? }>`；`useExecutionController.startExecution` 的 single-node 立即路径不等待 save barrier，把点击时 graph snapshot 放进 create 请求，host 路由按该 snapshot 执行；group/subset 保留既有保存屏障与 `expectedVersion`。
 - `GenerateButton` 增加 `isSubmitting`：creating 只渲染静态 `…`；running 只渲染静止 ArrowUp；不出现 `Loader2` 或旋转 animation。
+- quota 预检与 create 并行，不阻塞点击；额度拒绝由 hub quota seam 提示，quota transport 失败由点击入口 toast。
 - 创建失败由点击入口 `toast.error`，节点不残留 loading；`finally` 清理本地 submitting guard。
 - `mapNodeToGenerationStatus('pending')` 映射为 `pending`，创建成功后节点卡立即显示排队/运行态。
 - 图片/视频均使用同一 `MaterialNode → ConfigPanel → GenerateButton` 组件链，无节点类型分支。

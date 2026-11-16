@@ -40,7 +40,8 @@ import {
   type NodeSubmissionResult,
 } from '../store/executionStore';
 import { t } from '../i18n';
-import { signatureOf } from '../bridge/persistSanitize';
+import { sanitizeEdges, sanitizeNodes, signatureOf } from '../bridge/persistSanitize';
+import type { SerializedCanvasEdge, SerializedCanvasNode } from '../../shared/canvasTypes';
 import {
   buildNodeProgressPatch,
   progressClearPatch,
@@ -693,18 +694,19 @@ export function useExecutionController(
       const generation = generationRef.current;
       const graph = useCanvasStore.getState();
       const signature = signatureOf(graph.nodes, graph.edges, { workspaceId: workspace });
+      // Single-node submit carries the current graph in the create request, so
+      // it does not depend on the save barrier or its version. Group / subset
+      // runs keep the old preflight and expectedVersion contract.
+      const graphSnapshot = opts.immediate
+        ? {
+            nodes: sanitizeNodes(graph.nodes as unknown as SerializedCanvasNode[], { workspaceId: workspace }),
+            edges: sanitizeEdges(graph.edges as unknown as SerializedCanvasEdge[]),
+          }
+        : undefined;
       try {
-        // The click site shows its own static creating state, so the single-node
-        // path must not wait for the save barrier before creating the run. Kick
-        // the save off in parallel and let the create RPC be the state owner.
-        // Group / subset runs keep the old save barrier: their graph snapshot is
-        // broader and the canvas persistence contract still requires it.
-        const preflight = onBeforeStartRef.current?.();
         let expectedVersion: number | void = undefined;
-        if (opts.immediate) {
-          void Promise.resolve(preflight).catch(() => {});
-        } else {
-          expectedVersion = await preflight;
+        if (!opts.immediate) {
+          expectedVersion = await onBeforeStartRef.current?.();
         }
         if (!mountedRef.current || workspaceIdRef.current !== workspace) return submitError('');
         const current = useCanvasStore.getState();
@@ -716,6 +718,7 @@ export function useExecutionController(
           nodeIds: opts.nodeIds,
           ...(opts.groupId ? { groupId: opts.groupId } : {}),
           ...(opts.graphHash ? { graphHash: opts.graphHash } : {}),
+          ...(graphSnapshot ? { graph: graphSnapshot } : {}),
           ...(typeof expectedVersion === 'number' ? { expectedVersion } : {}),
         });
         if (!mountedRef.current || workspaceIdRef.current !== workspace) return submitError('');

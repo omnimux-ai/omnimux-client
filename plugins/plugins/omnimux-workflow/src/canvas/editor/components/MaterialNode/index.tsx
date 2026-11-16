@@ -80,6 +80,7 @@ import { planImportNodeFill } from '../../utils/resourcePickerPolicy.ts';
 import { resolveModelInputCapability } from '../../../../shared/validation/modelCompatibilityEvaluator.ts';
 import type { NodeSlotEngineState } from '../../../../shared/graph/slotContractTypes.ts';
 import type { SlotPickRequest } from './ConfigPanel/SlotWells/types.ts';
+import { submitNodeImmediate } from './submitNode.ts';
 import { MediaCardBody } from './CardBody/MediaCardBody';
 import { NodeCornerMarkers } from './StatusMask/NodeCornerMarkers';
 import { MaterialNodeHandles } from './NodeHandles/MaterialNodeHandles';
@@ -253,8 +254,6 @@ const MaterialNode: React.FC<NodeProps> = ({ id, data, selected }) => {
       return;
     }
 
-    // 同步 guard：在调用任何异步链路前置位，连点不会穿透到 startExecution。
-    submitPendingRef.current = true;
     setSubmitPending(true);
     const nodeKind = resolveNodeKind(nodeData);
     const needDefaultTool = nodeKind === 'generate' && (!nodeData.selectedTool || nodeData.selectedTool === 'text-editor');
@@ -262,19 +261,20 @@ const MaterialNode: React.FC<NodeProps> = ({ id, data, selected }) => {
       updateNodeData({ selectedTool: DEFAULT_GEN_TOOLS[materialType] });
     }
 
-    // 创建请求由 execution bridge 立即发出；quota/save 等预处理不再挡在点击入口。
-    void Promise.resolve()
-      .then(() => start(id))
-      .then((result) => {
-        if (result && result.ok === false) toast.error(result.error || t('error.createExecutionFailed'));
-      })
-      .catch((error: unknown) => {
-        toast.error(error instanceof Error && error.message ? error.message : t('error.createExecutionFailed'));
-      })
-      .finally(() => {
-        submitPendingRef.current = false;
-        setSubmitPending(false);
-      });
+    const quota = typeof window !== 'undefined' ? window.__omnimuxQuota : undefined;
+    // 创建请求由 execution bridge 立即发出；quota 并行检查，不挡在点击入口。
+    void submitNodeImmediate({
+      nodeId: id,
+      isPendingRef: submitPendingRef,
+      start: (nodeId) => start(nodeId),
+      ensureQuota: quota && typeof quota.ensureQuota === 'function'
+        ? (context) => quota.ensureQuota?.(context)
+        : undefined,
+      onSettled: () => setSubmitPending(false),
+      onQuotaFailure: () => toast.error(t('error.quotaCheckFailed')),
+    }).then((result) => {
+      if (result.ok === false && result.error) toast.error(result.error || t('error.createExecutionFailed'));
+    });
   }, [id, materialType, nodeData, t, updateNodeData]);
   const resourcePicker = useResourcePicker(id, typeof nodeData.__workspaceId === 'string' ? nodeData.__workspaceId : null);
   const kind = resolveNodeKind(nodeData);

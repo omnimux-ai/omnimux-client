@@ -1,3 +1,5 @@
+import type { SerializedCanvasEdge, SerializedCanvasNode } from './canvasTypes';
+
 /**
  * omnimux-workflow HTTP API contract (route paths + DTO shapes).
  *
@@ -486,6 +488,11 @@ export interface ExecutionRequestMeta {
 export interface StartExecutionPayload {
   /** Last successfully saved input version; mismatch returns 409 version_conflict. */
   expectedVersion?: number;
+  /** Current client graph snapshot for a submit that must not wait for saveNow. */
+  graph?: {
+    nodes: SerializedCanvasNode[];
+    edges: SerializedCanvasEdge[];
+  };
   /** full = whole graph; subset = nodeIds + transitive upstream closure; single = target nodeIds only (inheriting existing upstream outputs). */
   mode?: 'full' | 'subset' | 'single';
   /** Required for subset and single modes. */

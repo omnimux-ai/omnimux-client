@@ -115,7 +115,9 @@ const settle = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(
 test('save failure prevents execution and does not leave the node pending', async () => {
   const h = setup(); h.edit('1dog');
   h.env.save = async () => ({ ok: false, status: 500, body: { message: 'disk full' } });
-  await h.controller.startExecution({ mode: 'single', nodeIds: ['n1'] });
+  const result = await h.controller.startExecution({ mode: 'single', nodeIds: ['n1'] });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'disk full');
   assert.equal(h.env.creates.length, 0);
   assert.equal(h.exec.error, 'disk full');
   assert.equal(h.exec.nodeStatuses.n1, undefined);
@@ -365,6 +367,9 @@ test('#48 immediate single submit fires create before a slow save barrier resolv
   const start = h.controller.startExecution({ mode: 'single', nodeIds: ['n1'], immediate: true });
   await settle();
   assert.equal(h.env.creates.length, 1, 'create must not wait for saveNow');
+  assert.equal(h.env.saves.length, 0, 'immediate create must not invoke the save barrier');
+  assert.equal('expectedVersion' in h.env.creates[0].payload, false);
+  assert.equal(h.env.creates[0].payload.graph.nodes[0].data.prompt, '1dog', 'create must carry the click-time graph');
   pending.resolve({ ok: true, body: { workspace: { ...h.env.remote, version: 8 } } });
   const result = await start;
   assert.equal(result.ok, true);

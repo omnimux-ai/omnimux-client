@@ -895,3 +895,34 @@ test('execution API requires an explicit video mode when multiple modes are effe
     rmSync(h.dir, { recursive: true, force: true });
   }
 });
+
+test('#48 immediate single submit uses the graph snapshot carried by the create request', async () => {
+  const h = makeHarness();
+  try {
+    const workspaceId = await h.createLinearWorkspace(1);
+    const result = await h.startExecution(workspaceId, {
+      mode: 'single',
+      nodeIds: ['live-only-node'],
+      graph: {
+        nodes: [{
+          id: 'live-only-node',
+          type: 'material',
+          position: { x: 0, y: 0 },
+          data: {
+            label: 'live only node',
+            materialType: 'text',
+            selectedTool: 'text-to-text',
+            prompt: 'live prompt',
+            status: 'ready',
+          },
+        }],
+        edges: [],
+      },
+    });
+    assert.equal(result.status, 200, JSON.stringify(result.body));
+    assert.equal(result.body.execution.totalNodes, 1);
+  } finally {
+    h.dispose();
+    rmSync(h.dir, { recursive: true, force: true });
+  }
+});

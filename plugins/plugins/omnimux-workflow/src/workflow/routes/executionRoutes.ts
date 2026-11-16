@@ -7,6 +7,7 @@ import { buildInitialOutputs } from '../execution/executionInputs.ts';
 import { prepareExecutionSlotGraph } from '../../shared/graph/feedSlot/prepareExecutionSlotGraph.ts';
 import { jsonBodyProblem, messageOf } from '../../http/helpers';
 import { WorkflowStoreError } from '../workspace/WorkspaceStore';
+import { executionGraphSchema } from '../workspace/snapshotSchema.ts';
 import type { WorkspaceStore } from '../workspace/WorkspaceStore';
 import type { ExecutionManager } from '../execution/ExecutionManager';
 import {
@@ -102,9 +103,13 @@ export function createExecutionRoutes(opts: {
       if (method === 'POST') {
         const problem = jsonBodyProblem(req.body);
         if (problem) return problem;
-        const body = req.body as { mode?: unknown; nodeIds?: unknown; expectedVersion?: unknown; groupId?: unknown; graphHash?: unknown };
+        const body = req.body as { mode?: unknown; nodeIds?: unknown; expectedVersion?: unknown; groupId?: unknown; graphHash?: unknown; graph?: unknown };
         if (body.expectedVersion !== undefined && (!Number.isSafeInteger(body.expectedVersion) || (body.expectedVersion as number) < 0)) {
           return { status: 400, body: { error: 'invalid-version', message: 'expectedVersion 必须是非负整数' } };
+        }
+        const parsedGraph = body.graph === undefined ? null : executionGraphSchema.safeParse(body.graph);
+        if (parsedGraph && !parsedGraph.success) {
+          return { status: 400, body: { error: 'invalid-graph', message: 'graph snapshot 不合法' } };
         }
         let mode: ExecutionMode;
         try {
@@ -119,6 +124,16 @@ export function createExecutionRoutes(opts: {
           snapshot = store.get(workspaceId);
           if (body.expectedVersion !== undefined && body.expectedVersion !== snapshot.version) {
             return { status: 409, body: { error: 'version_conflict', message: '输入已更新，请确认当前内容后重新生成' } };
+          }
+          // A single-node submit may carry the graph captured at click time. It
+          // must not wait for saveNow; execute the request snapshot while the
+          // regular autosave continues in the background.
+          if (parsedGraph?.success) {
+            snapshot = {
+              ...snapshot,
+              nodes: parsedGraph.data.nodes as typeof snapshot.nodes,
+              edges: parsedGraph.data.edges as typeof snapshot.edges,
+            };
           }
         } catch (error) {
           if (error instanceof WorkflowStoreError) {
@@ -182,7 +197,9 @@ export function createExecutionRoutes(opts: {
           }
 
           // Async catalog/project preparation must not hide a concurrent graph edit.
-          if (store.get(workspaceId).version !== snapshot.version) {
+          // A client-supplied graph is the optimistic snapshot for this request;
+          // the background save may advance the workspace version independently.
+          if (!parsedGraph?.success && store.get(workspaceId).version !== snapshot.version) {
             return { status: 409, body: { error: 'version_conflict', message: '输入已更新，请确认当前内容后重新生成' } };
           }
           const initialOutputs = buildInitialOutputs({ ...snapshot, edges: snapshot.edges.filter(edge => !recovering[edge.target]) }, subgraph.nodeIdSet, { mediaDir: opts.mediaDir ?? '', resolveProjectFile: opts.resolveProjectFile });

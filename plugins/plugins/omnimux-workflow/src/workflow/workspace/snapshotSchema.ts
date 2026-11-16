@@ -69,3 +69,10 @@ export const workspaceSnapshotSchema = z.object({
 });
 
 export type ParsedWorkspaceSnapshot = z.infer<typeof workspaceSnapshotSchema>;
+
+
+/** Client-supplied execution graph snapshot (create request without save barrier). */
+export const executionGraphSchema = z.object({
+  nodes: z.array(canvasNodeSchema),
+  edges: z.array(canvasEdgeSchema),
+});

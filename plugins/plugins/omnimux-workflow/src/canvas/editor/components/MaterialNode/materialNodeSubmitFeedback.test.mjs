@@ -19,9 +19,9 @@ test('#48 MaterialNode：点击入口同步 guard，且立即调用 startNodeExe
   assert.match(materialNodeSrc, /const \[submitPending, setSubmitPending\] = useState\(false\)/)
   assert.match(materialNodeSrc, /const submitPendingRef = useRef\(false\)/)
   assert.match(materialNodeSrc, /if \(submitPendingRef\.current\) return;/)
-  assert.match(materialNodeSrc, /submitPendingRef\.current = true;[\s\S]*?Promise\.resolve\(\)[\s\S]*?\.then\(\(\) => start\(id\)\)/)
+  assert.match(materialNodeSrc, /submitNodeImmediate\(/)
   assert.match(materialNodeSrc, /isSubmitting=\{submitPending\}/)
-  assert.doesNotMatch(materialNodeSrc, /quota\.ensureQuota/)
+  assert.match(materialNodeSrc, /quota\.ensureQuota/)
 })
 
 test('#48 图片/视频共用同一个 ConfigPanel → GenerateButton 通道', () => {
