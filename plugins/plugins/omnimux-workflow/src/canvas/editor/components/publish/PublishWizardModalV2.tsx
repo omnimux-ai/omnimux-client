@@ -10,7 +10,21 @@
  * This component intentionally keeps only the labels/actions needed to publish.
  */
 
-import React, { memo, useMemo, useState } from 'react';
+import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  AlertCircle,
+  Check,
+  FileText,
+  Image as ImageIcon,
+  Link2,
+  Music,
+  Play,
+  RefreshCw,
+  Sparkles,
+  Table2,
+  Video,
+  X,
+} from 'lucide-react';
 import { CustomModal, toast } from '../../../ui';
 import { analyzeGroupPublishPlan, buildPublishPlan } from './publishPlanAnalyzer.ts';
 import type {
@@ -39,23 +53,60 @@ export interface PublishWizardModalV2Props {
   onPublished?: (manifest: ApplicationManifest) => void;
 }
 
-const FIELD_STYLE: React.CSSProperties = {
-  width: '100%',
-  height: 36,
-  borderRadius: 7,
-  border: '1px solid var(--dsw-alias-border-l2, rgba(255,255,255,.14))',
-  background: 'var(--dsw-alias-bg-l2, rgba(255,255,255,.04))',
-  color: 'inherit',
-  padding: '0 10px',
-  fontSize: 12,
-  boxSizing: 'border-box',
+interface CategoryOption {
+  value: ApplicationCategory;
+  label: string;
+  icon: React.ReactNode;
+}
+
+const CATEGORY_OPTIONS: CategoryOption[] = [
+  { value: 'video', label: '视频', icon: <Video size={15} /> },
+  { value: 'image', label: '图片', icon: <ImageIcon size={15} /> },
+  { value: 'audio', label: '音频', icon: <Music size={15} /> },
+];
+
+const WIDGET_LABELS: Record<string, string> = {
+  'media-extractor': '链接输入',
+  text: '文本',
+  textarea: '多行文本',
+  image: '图片',
+  video: '视频',
+  audio: '音频',
+  file: '文件',
+  document: '文档',
 };
 
-const CATEGORY_OPTIONS: Array<{ value: ApplicationCategory; label: string }> = [
-  { value: 'video', label: '视频' },
-  { value: 'image', label: '图片' },
-  { value: 'audio', label: '音频' },
-];
+const OUTPUT_TYPE_LABELS: Record<string, string> = {
+  video: '视频',
+  image: '图片',
+  audio: '音频',
+  text: '文本',
+  table: '表格',
+};
+
+function formatWidgetLabel(widget: string): string {
+  return WIDGET_LABELS[widget] ?? widget;
+}
+
+function formatOutputTypeLabel(outputType: string): string {
+  return OUTPUT_TYPE_LABELS[outputType] ?? outputType;
+}
+
+function renderInputIcon(widget: string): React.ReactNode {
+  if (widget === 'media-extractor') return <Link2 size={13} />;
+  if (widget === 'image') return <ImageIcon size={13} />;
+  if (widget === 'video') return <Video size={13} />;
+  if (widget === 'audio') return <Music size={13} />;
+  return <FileText size={13} />;
+}
+
+function renderOutputIcon(outputType: string): React.ReactNode {
+  if (outputType === 'video') return <Video size={13} />;
+  if (outputType === 'image') return <ImageIcon size={13} />;
+  if (outputType === 'audio') return <Music size={13} />;
+  if (outputType === 'table') return <Table2 size={13} />;
+  return <FileText size={13} />;
+}
 
 function defaultCategory(outputs: PublishOutput[]): ApplicationCategory {
   const first = outputs[0]?.outputType;
@@ -131,7 +182,19 @@ export const PublishWizardModalV2: React.FC<PublishWizardModalV2Props> = memo(({
   const [appName, setAppName] = useState(workflowName);
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<ApplicationCategory | null>(null);
+  const [nameTouched, setNameTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setStep(1);
+    setAppName(workflowName);
+    setDescription('');
+    setCategory(null);
+    setNameTouched(false);
+    setSubmitting(false);
+  }, [isOpen, workflowName]);
 
   const analysis = useMemo(
     () => analyzeGroupPublishPlan(nodes, edges, groupId || ''),
@@ -143,6 +206,7 @@ export const PublishWizardModalV2: React.FC<PublishWizardModalV2Props> = memo(({
 
   const close = () => {
     setStep(1);
+    setNameTouched(false);
     setSubmitting(false);
     onClose();
   };
@@ -152,8 +216,20 @@ export const PublishWizardModalV2: React.FC<PublishWizardModalV2Props> = memo(({
     close();
   };
 
+  const goToStep = (target: 1 | 2) => {
+    if (submitting) return;
+    if (target === 2 && !appName.trim()) {
+      setNameTouched(true);
+      nameInputRef.current?.focus();
+      return;
+    }
+    setStep(target);
+  };
+
   const publish = async () => {
     if (!appName.trim()) {
+      setNameTouched(true);
+      setStep(1);
       toast.warning('请输入应用名称');
       return;
     }
@@ -259,51 +335,133 @@ export const PublishWizardModalV2: React.FC<PublishWizardModalV2Props> = memo(({
   if (!isOpen) return null;
 
   if (blockReason) {
+    const isStale = blockReason.includes('过期');
+    const canRunGroup = Boolean(onRequestGroupRun) && analysis.errors.length === 0;
     return (
       <CustomModal
         open={isOpen}
         onCancel={close}
-        title="发布为 AI 应用"
-        width={460}
+        className="wf-publish-modal wf-publish-modal--blocked"
+        width={440}
+        title={(
+          <div className="wf-publish-modal__title-wrap">
+            <span className="wf-publish-modal__title-icon" aria-hidden="true">
+              <Sparkles size={15} />
+            </span>
+            <span className="wf-publish-modal__title-text">发布为 AI 应用</span>
+          </div>
+        )}
         footer={(
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-            <button type="button" className="wf-btn" onClick={close}>取消</button>
-            {onRequestGroupRun && (
-              <button type="button" className="wf-btn" onClick={runFirst}
-                style={{ background: 'var(--dsw-alias-state-business-primary, #4c8dff)', color: '#fff', border: 'none' }}>
-                去整组执行
+          <div className="wf-publish-modal__footer wf-publish-modal__footer--end">
+            <div className="wf-publish-modal__actions">
+              <button type="button" className="wf-publish-modal__btn wf-publish-modal__btn--secondary" onClick={close}>
+                取消
               </button>
-            )}
+              {canRunGroup && (
+                <button type="button" className="wf-publish-modal__btn wf-publish-modal__btn--primary" onClick={runFirst}>
+                  <Play size={13} fill="currentColor" />
+                  <span>去整组执行</span>
+                </button>
+              )}
+            </div>
           </div>
         )}
       >
-        <div style={{ fontSize: 13, lineHeight: 1.7 }}>{blockReason}</div>
+        <div className="wf-publish-modal__blocked-box">
+          <div className="wf-publish-modal__blocked-icon" aria-hidden="true">
+            {isStale ? <RefreshCw size={18} /> : <AlertCircle size={18} />}
+          </div>
+          <div className="wf-publish-modal__blocked-text">{blockReason}</div>
+        </div>
       </CustomModal>
     );
   }
+
+  const trimmedName = appName.trim();
+  const showNameError = nameTouched && !trimmedName;
+  const activeCategoryMeta = CATEGORY_OPTIONS.find((opt) => opt.value === effectiveCategory) ?? CATEGORY_OPTIONS[0]!;
 
   return (
     <CustomModal
       open={isOpen}
       onCancel={close}
-      title="发布为 AI 应用"
-      width={560}
+      className="wf-publish-modal"
+      width={500}
+      title={(
+        <div className="wf-publish-modal__header-content">
+          <div className="wf-publish-modal__title-wrap">
+            <span className="wf-publish-modal__title-icon" aria-hidden="true">
+              <Sparkles size={15} />
+            </span>
+            <span className="wf-publish-modal__title-text">发布为 AI 应用</span>
+          </div>
+          <div className="wf-publish-modal__steps" role="tablist" aria-label="发布步骤">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={step === 1}
+              className={`wf-publish-modal__step-pill ${step === 1 ? 'wf-publish-modal__step-pill--active' : 'wf-publish-modal__step-pill--done'}`}
+              onClick={() => goToStep(1)}
+            >
+              <span className="wf-publish-modal__step-num">
+                {step > 1 ? <Check size={10} strokeWidth={2.75} /> : '1'}
+              </span>
+              <span>基础信息</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={step === 2}
+              className={`wf-publish-modal__step-pill ${step === 2 ? 'wf-publish-modal__step-pill--active' : ''}`}
+              onClick={() => goToStep(2)}
+            >
+              <span className="wf-publish-modal__step-num">2</span>
+              <span>确认发布</span>
+            </button>
+          </div>
+        </div>
+      )}
       footer={(
-        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
-          <div style={{ fontSize: 11, color: 'var(--dsw-alias-label-secondary, #a1a1aa)' }}>{step} / 2</div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button type="button" className="wf-btn" onClick={close}>取消</button>
+        <div className="wf-publish-modal__footer">
+          <div className="wf-publish-modal__status-dot">
+            <i aria-hidden="true" />
+            <span>整组已验证</span>
+          </div>
+          <div className="wf-publish-modal__actions">
+            <button
+              type="button"
+              className="wf-publish-modal__btn wf-publish-modal__btn--ghost"
+              disabled={submitting}
+              onClick={close}
+            >
+              取消
+            </button>
             {step === 1 ? (
-              <button type="button" className="wf-btn" onClick={() => setStep(2)}
-                style={{ background: 'var(--dsw-alias-state-business-primary, #4c8dff)', color: '#fff', border: 'none' }}>
+              <button
+                type="button"
+                className="wf-publish-modal__btn wf-publish-modal__btn--primary"
+                onClick={() => goToStep(2)}
+              >
                 下一步
               </button>
             ) : (
               <>
-                <button type="button" className="wf-btn" onClick={() => setStep(1)}>上一步</button>
-                <button type="button" className="wf-btn" disabled={submitting} onClick={() => void publish()}
-                  style={{ background: 'var(--dsw-alias-state-business-primary, #4c8dff)', color: '#fff', border: 'none', opacity: submitting ? 0.6 : 1 }}>
-                  {submitting ? '发布中...' : '发布'}
+                <button
+                  type="button"
+                  className="wf-publish-modal__btn wf-publish-modal__btn--secondary"
+                  disabled={submitting}
+                  onClick={() => goToStep(1)}
+                >
+                  上一步
+                </button>
+                <button
+                  type="button"
+                  className="wf-publish-modal__btn wf-publish-modal__btn--primary"
+                  disabled={submitting}
+                  onClick={() => void publish()}
+                >
+                  {submitting && <span className="wf-publish-modal__spinner" aria-hidden="true" />}
+                  <span>{submitting ? '发布中...' : '发布'}</span>
                 </button>
               </>
             )}
@@ -312,58 +470,153 @@ export const PublishWizardModalV2: React.FC<PublishWizardModalV2Props> = memo(({
       )}
     >
       {step === 1 && (
-        <div style={{ display: 'grid', gap: 14 }}>
-          <label style={{ display: 'grid', gap: 6, fontSize: 12 }}>
-            应用名称
-            <input style={FIELD_STYLE} value={appName} onChange={(event) => setAppName(event.target.value)} autoFocus />
-          </label>
-          <label style={{ display: 'grid', gap: 6, fontSize: 12 }}>
-            应用分类
-            <select style={FIELD_STYLE} value={effectiveCategory}
-              onChange={(event) => setCategory(event.target.value as ApplicationCategory)}>
-              {CATEGORY_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </label>
-          <label style={{ display: 'grid', gap: 6, fontSize: 12 }}>
-            描述
-            <input style={FIELD_STYLE} value={description} onChange={(event) => setDescription(event.target.value)} />
-          </label>
-        </div>
+        <>
+          <div className="wf-publish-modal__field">
+            <div className="wf-publish-modal__label-row">
+              <label htmlFor="wf-publish-app-name">
+                应用名称<span className="wf-publish-modal__req">*</span>
+              </label>
+              {showNameError && <span className="wf-publish-modal__error">请输入应用名称</span>}
+            </div>
+            <div className="wf-publish-modal__input-wrap">
+              <input
+                id="wf-publish-app-name"
+                ref={nameInputRef}
+                className={`wf-publish-modal__input ${showNameError ? 'wf-publish-modal__input--invalid' : ''}`}
+                value={appName}
+                placeholder="例如：视频提取"
+                maxLength={60}
+                autoFocus
+                onChange={(event) => {
+                  setAppName(event.target.value);
+                  if (nameTouched && event.target.value.trim()) setNameTouched(false);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+                    event.preventDefault();
+                    goToStep(2);
+                  }
+                }}
+              />
+              {appName && (
+                <button
+                  type="button"
+                  className="wf-publish-modal__clear"
+                  aria-label="清空应用名称"
+                  onClick={() => {
+                    setAppName('');
+                    setNameTouched(true);
+                    nameInputRef.current?.focus();
+                  }}
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="wf-publish-modal__field">
+            <div className="wf-publish-modal__label-row">
+              <span>应用分类</span>
+            </div>
+            <div className="wf-publish-modal__cat-grid" role="radiogroup" aria-label="应用分类">
+              {CATEGORY_OPTIONS.map((option) => {
+                const active = effectiveCategory === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    className={`wf-publish-modal__cat-btn ${active ? 'wf-publish-modal__cat-btn--active' : ''}`}
+                    onClick={() => setCategory(option.value)}
+                  >
+                    {option.icon}
+                    <span>{option.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="wf-publish-modal__field">
+            <div className="wf-publish-modal__label-row">
+              <label htmlFor="wf-publish-app-desc">描述</label>
+              <span className="wf-publish-modal__hint">选填</span>
+            </div>
+            <textarea
+              id="wf-publish-app-desc"
+              className="wf-publish-modal__textarea"
+              value={description}
+              placeholder="简短说明应用用途"
+              maxLength={160}
+              onChange={(event) => setDescription(event.target.value)}
+            />
+          </div>
+        </>
       )}
 
       {step === 2 && (
-        <div style={{ display: 'grid', gap: 16 }}>
-          <div>
-            <div style={{ fontSize: 12, color: 'var(--dsw-alias-label-secondary, #a1a1aa)', marginBottom: 8 }}>输入</div>
-            <div style={{ display: 'grid', gap: 6 }}>
+        <>
+          <div className="wf-publish-modal__summary-banner">
+            <div className="wf-publish-modal__summary-name">{trimmedName || '未命名应用'}</div>
+            <div className="wf-publish-modal__cat-tag">
+              {activeCategoryMeta.icon}
+              <span>{activeCategoryMeta.label}</span>
+            </div>
+          </div>
+
+          <div className="wf-publish-modal__section">
+            <div className="wf-publish-modal__section-head">
+              <span>应用输入</span>
+              <span className="wf-publish-modal__section-count">{analysis.inputs.length} 项</span>
+            </div>
+            <div className="wf-publish-modal__io-list">
               {analysis.inputs.map((input) => (
-                <div key={input.key} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12 }}>
-                  <span>{input.label}{input.required ? ' *' : ''}</span>
-                  <span style={{ color: 'var(--dsw-alias-label-tertiary, #71717a)' }}>{input.widget}</span>
+                <div key={input.key} className="wf-publish-modal__io-row">
+                  <div className="wf-publish-modal__io-left">
+                    <span className="wf-publish-modal__io-icon" aria-hidden="true">
+                      {renderInputIcon(input.widget)}
+                    </span>
+                    <span className="wf-publish-modal__io-title">{input.label}</span>
+                  </div>
+                  <div className="wf-publish-modal__io-badges">
+                    {input.required && <span className="wf-publish-modal__badge wf-publish-modal__badge--req">必填</span>}
+                    <span className="wf-publish-modal__badge">{formatWidgetLabel(input.widget)}</span>
+                  </div>
                 </div>
               ))}
             </div>
           </div>
-          <div>
-            <div style={{ fontSize: 12, color: 'var(--dsw-alias-label-secondary, #a1a1aa)', marginBottom: 8 }}>输出</div>
-            <div style={{ display: 'grid', gap: 6 }}>
+
+          <div className="wf-publish-modal__section">
+            <div className="wf-publish-modal__section-head">
+              <span>预期输出</span>
+              <span className="wf-publish-modal__section-count">{analysis.outputs.length} 项</span>
+            </div>
+            <div className="wf-publish-modal__io-list">
               {analysis.outputs.map((output) => {
                 const node = nodes.find((candidate) => candidate.id === output.nodeId);
                 const nodeLabel = typeof node?.data?.label === 'string' && node.data.label.trim()
                   ? node.data.label.trim()
-                  : output.outputType;
+                  : formatOutputTypeLabel(output.outputType);
                 return (
-                  <div key={`${output.workflowId}_${output.nodeId}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12 }}>
-                    <span>{nodeLabel}</span>
-                    <span style={{ color: 'var(--dsw-alias-label-tertiary, #71717a)' }}>{output.outputType}</span>
+                  <div key={`${output.workflowId}_${output.nodeId}`} className="wf-publish-modal__io-row">
+                    <div className="wf-publish-modal__io-left">
+                      <span className="wf-publish-modal__io-icon" aria-hidden="true">
+                        {renderOutputIcon(output.outputType)}
+                      </span>
+                      <span className="wf-publish-modal__io-title">{nodeLabel}</span>
+                    </div>
+                    <div className="wf-publish-modal__io-badges">
+                      <span className="wf-publish-modal__badge">{formatOutputTypeLabel(output.outputType)}</span>
+                    </div>
                   </div>
                 );
               })}
             </div>
           </div>
-        </div>
+        </>
       )}
     </CustomModal>
   );
