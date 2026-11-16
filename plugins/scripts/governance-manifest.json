@@ -183,6 +183,7 @@
     "composer-inline-bootstrap.mjs",
     "composer-inline-bootstrap.test.mjs",
     "composer-inline-e2e.mjs",
+    "desktop-patch-audit.mjs",
     "dev-app-unlock.test.mjs",
     "dev-launch-env.test.mjs",
     "dev-replay.mjs",
