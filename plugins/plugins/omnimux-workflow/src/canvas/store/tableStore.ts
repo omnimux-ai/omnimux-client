@@ -11,6 +11,7 @@ import {
   newColumnId,
   newRowId,
   defaultColumnWidth,
+  clampTableColumnWidth,
   createDefaultTextColumn,
   migrateLegacyTableDocument,
 } from '../../shared/types/htable.ts';
@@ -121,6 +122,7 @@ export interface TableStoreState {
   addColumn: (title: string, type: HTableFieldType, width?: number) => void;
   updateColumn: (colIdx: number, title: string, type: HTableFieldType) => void;
   renameColumn: (colIdx: number, newTitle: string) => void;
+  resizeColumn: (colId: string, width: number) => void;
   deleteColumn: (colIdx: number) => void;
   toggleColumnVisibility: (colIdx: number) => void;
   reorderColumns: (sourceIdx: number, targetIdx: number) => void;
@@ -470,7 +472,7 @@ export const useTableStore = create<TableStoreState>((set, get) => {
           title: title.trim() || 'Untitled',
           type,
           visible: true,
-          width: width ?? defaultColumnWidth(type),
+          width: clampTableColumnWidth(width ?? defaultColumnWidth(type), type),
         };
         return { ...doc, columns: [...doc.columns, newCol] };
       });
@@ -498,6 +500,24 @@ export const useTableStore = create<TableStoreState>((set, get) => {
         if (!targetCol || targetCol.title === trimmed) return doc;
         const newCols = [...doc.columns];
         newCols[colIdx] = { ...targetCol, title: trimmed };
+        return { ...doc, columns: newCols };
+      });
+    },
+
+    resizeColumn: (colId, width) => {
+      if (typeof width !== 'number' || !Number.isFinite(width)) return;
+      const { document } = get();
+      const current = document.columns.find((col) => col.id === colId);
+      if (!current) return;
+      const nextWidth = clampTableColumnWidth(width, current.type);
+      if (current.width === nextWidth) return;
+      applyDocMutation((doc) => {
+        const colIdx = doc.columns.findIndex((col) => col.id === colId);
+        if (colIdx < 0) return doc;
+        const target = doc.columns[colIdx]!;
+        if (target.width === nextWidth) return doc;
+        const newCols = [...doc.columns];
+        newCols[colIdx] = { ...target, width: nextWidth };
         return { ...doc, columns: newCols };
       });
     },

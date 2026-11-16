@@ -682,6 +682,101 @@
   border-right: none;
 }
 
+/* 列宽拖拽手柄：表头右边界 6px 命中区，hover/拖拽时显示 2px accent 高亮线 */
+.wf-grid-col-resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 26;
+  touch-action: none;
+}
+
+.wf-grid-col-resizer::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 2px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--wb-accent, #4176E6);
+  opacity: 0;
+  transition: opacity 100ms ease;
+}
+
+.wf-grid-col-resizer:hover::after,
+.wf-grid-col-resizer--active::after {
+  opacity: 1;
+}
+
+body.wf-grid-resizing,
+body.wf-grid-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+/* 单元格选中态：2px accent 内描边 + 轻微背景高亮（与行选择 checkbox 独立） */
+.wf-grid-td--cell-selected {
+  background: color-mix(in srgb, var(--wb-accent, #4176E6) 10%, transparent);
+  box-shadow: inset 0 0 0 2px var(--wb-accent, #4176E6);
+}
+
+/* 单元格预览态：单行截断，hover 由 title 提供全文 */
+.wf-grid-cell-preview {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 12px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
+  font-size: 13px;
+  color: var(--wb-text-primary, #f4f4f5);
+  cursor: default;
+}
+
+.wf-grid-cell-preview--editing {
+  color: transparent;
+}
+
+.wf-grid-cell-placeholder {
+  color: var(--wb-text-muted, #71717a);
+  opacity: 0.5;
+}
+
+/* 单元格编辑浮层：absolute 覆盖在单元格上方，不参与表格布局 */
+.wf-grid-cell-editor-overlay {
+  position: absolute;
+  z-index: 30;
+  box-sizing: border-box;
+  pointer-events: auto;
+}
+
+.wf-grid-cell-editor {
+  display: block;
+  width: 100%;
+  min-height: 34px;
+  box-sizing: border-box;
+  resize: none;
+  border: 2px solid var(--wb-accent, #4176E6);
+  border-radius: 3px;
+  background: var(--wb-surface, #18181b);
+  color: var(--wb-text-primary, #f4f4f5);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  padding: 5px 10px;
+  outline: none;
+  overflow-y: hidden;
+  box-shadow: var(--wb-shadow-pop);
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 .wf-grid-td {
   border-bottom: 1px solid var(--wb-border, rgba(255, 255, 255, 0.08));
   border-right: 1px solid var(--wb-border, rgba(255, 255, 255, 0.08));

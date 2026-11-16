@@ -123,6 +123,20 @@ export function defaultColumnWidth(type: HTableFieldType): number {
   return 240;
 }
 
+/** 表格列宽 UI/存储统一边界：最小 80px，最大 2000px（schema 上限） */
+export const MIN_TABLE_COLUMN_WIDTH = 80;
+export const MAX_TABLE_COLUMN_WIDTH = 2000;
+
+/**
+ * 归一化表格列宽：非有限数/缺失回落到该类型的默认宽度；有限数夹到 80–2000。
+ * 旧数据（无 width 或 width < 80）打开时也走这里，保证 UI 最小列宽一致。
+ */
+export function clampTableColumnWidth(width: unknown, type: HTableFieldType = 'text'): number {
+  const fallback = defaultColumnWidth(type);
+  if (typeof width !== 'number' || !Number.isFinite(width)) return fallback;
+  return Math.min(MAX_TABLE_COLUMN_WIDTH, Math.max(MIN_TABLE_COLUMN_WIDTH, Math.round(width)));
+}
+
 /** 默认首列：新建节点/空文档兜底使用，保证任何表格文档至少有一列 */
 export function createDefaultTextColumn(): HTableColumn {
   return {
@@ -167,13 +181,16 @@ export function migrateLegacyTableDocument(raw: unknown): HTableDocument {
 
   // 1. 规范化 columns
   const rawColumns: any[] = Array.isArray(doc.columns) ? doc.columns : [];
-  const columns: HTableColumn[] = rawColumns.map((c, idx) => ({
-    id: c.id ? String(c.id) : `col_${idx}_${shortId()}`,
-    title: (c.title && String(c.title).trim()) || `列 ${idx + 1}`,
-    type: (c.type === 'number' || c.type === 'attachment' ? c.type : 'text') as HTableFieldType,
-    visible: c.visible !== false,
-    width: typeof c.width === 'number' && Number.isFinite(c.width) ? c.width : defaultColumnWidth(c.type || 'text'),
-  }));
+  const columns: HTableColumn[] = rawColumns.map((c, idx) => {
+    const type = (c.type === 'number' || c.type === 'attachment' ? c.type : 'text') as HTableFieldType;
+    return {
+      id: c.id ? String(c.id) : `col_${idx}_${shortId()}`,
+      title: (c.title && String(c.title).trim()) || `列 ${idx + 1}`,
+      type,
+      visible: c.visible !== false,
+      width: clampTableColumnWidth(c.width, type),
+    };
+  });
 
   // 兜底：新建节点/空文档（columns 缺失）或空表（columns 与 rows 均为空）时，
   // 自动补一列默认「文本」列，保证迁移结果永远不会是 0 列
@@ -374,12 +391,13 @@ export function buildTableDocument(
   }
 
   const columns: HTableColumn[] = (llmColumns.length > 0 ? llmColumns : defaultDoc?.columns ?? []).map((col: any) => {
+    const type = (col.type === 'number' || col.type === 'attachment' ? col.type : 'text') as HTableFieldType;
     const out: HTableColumn = {
       id: col.id || newColumnId(),
       title: (col.title && String(col.title).trim()) || 'Untitled',
-      type: (col.type === 'number' || col.type === 'attachment' ? col.type : 'text') as HTableFieldType,
+      type,
       visible: col.visible !== false,
-      width: col.width ?? defaultColumnWidth(col.type || 'text'),
+      width: clampTableColumnWidth(col.width, type),
     };
     return out;
   });

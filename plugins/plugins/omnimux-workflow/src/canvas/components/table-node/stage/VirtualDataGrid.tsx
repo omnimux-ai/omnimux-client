@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, GripVertical, X } from 'lucide-react';
 import { useTableStore } from '../../../store/tableStore.ts';
@@ -6,19 +6,80 @@ import { useCanvasStore } from '../../../store/canvasStore.ts';
 import { renderFieldTypeIcon } from './popovers/PopoverFieldConfig.tsx';
 import ResourcePickerModal from '../../../editor/components/ResourcePickerModal/ResourcePickerModal.tsx';
 import type { LocalFileDraft } from '../../../editor/utils/resourcePickerPolicy.ts';
-import type { HTableCellValue, HTableAttachment } from '../../../../shared/types/htable.ts';
+import type {
+  HTableCellValue,
+  HTableAttachment,
+  HTableColumn,
+} from '../../../../shared/types/htable.ts';
+import { defaultColumnWidth, MIN_TABLE_COLUMN_WIDTH } from '../../../../shared/types/htable.ts';
+import {
+  columnWidthForDisplay,
+  computeAutoFitWidth,
+  computeEditorHeightMetrics,
+  computeGridScale,
+  computeResizeWidth,
+} from './tableGridMetrics.ts';
+
+interface GridCellRef {
+  rowIdx: number;
+  colId: string;
+}
+
+interface ResizeSession {
+  colId: string;
+  startClientX: number;
+  startWidth: number;
+  scale: number;
+  currentWidth: number;
+}
+
+function cellKey(cell: GridCellRef): string {
+  return `${cell.rowIdx}:${cell.colId}`;
+}
+
+function sameCell(a: GridCellRef | null, b: GridCellRef | null): boolean {
+  return Boolean(a && b && a.rowIdx === b.rowIdx && a.colId === b.colId);
+}
+
+function cellValueToDraft(value: HTableCellValue | undefined): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return String(value);
+  return '';
+}
+
+/** 编辑 textarea 高度：先 auto 量 scrollHeight，再按 1–8 行三态封顶。 */
+function resizeEditorToContent(el: HTMLTextAreaElement): void {
+  const cs = getComputedStyle(el);
+  const lineHeight = parseFloat(cs.lineHeight) || 20;
+  const paddingTop = parseFloat(cs.paddingTop) || 0;
+  const paddingBottom = parseFloat(cs.paddingBottom) || 0;
+  const borderTop = parseFloat(cs.borderTopWidth) || 0;
+  const borderBottom = parseFloat(cs.borderBottomWidth) || 0;
+  el.style.height = 'auto';
+  el.style.overflowY = 'hidden';
+  const metrics = computeEditorHeightMetrics({
+    contentHeight: el.scrollHeight,
+    lineHeight,
+    paddingTop,
+    paddingBottom,
+  });
+  el.style.height = `${metrics.height + borderTop + borderBottom}px`;
+  el.style.overflowY = metrics.overflowY;
+}
 
 export const VirtualDataGrid: React.FC = () => {
   const {
     document: tableDoc,
     selectedRowIndices,
     activeTableId,
+    isStageOpen,
     toggleRowSelection,
     selectAllRows,
     clearRowSelection,
     reorderRows,
     renameColumn,
     updateCell,
+    resizeColumn,
     addRow,
     openColumnModal,
   } = useTableStore();
@@ -124,6 +185,323 @@ export const VirtualDataGrid: React.FC = () => {
 
     handleDragEnd();
   };
+
+  // 列宽拖拽 / 单元格状态机
+  const gridPaneRef = useRef<HTMLDivElement>(null);
+  const colElRefs = useRef<Map<string, HTMLTableColElement>>(new Map());
+  const cellElRefs = useRef<Map<string, HTMLTableCellElement>>(new Map());
+  const resizeSessionRef = useRef<ResizeSession | null>(null);
+  const resizeCleanupRef = useRef<(() => void) | null>(null);
+  const [resizingColId, setResizingColId] = useState<string | null>(null);
+
+  const [selectedCell, setSelectedCell] = useState<GridCellRef | null>(null);
+  const selectedCellRef = useRef<GridCellRef | null>(null);
+  const [editingCell, setEditingCell] = useState<GridCellRef | null>(null);
+  const editingRef = useRef<GridCellRef | null>(null);
+  const [draft, setDraft] = useState('');
+  const draftRef = useRef('');
+  const composingRef = useRef(false);
+
+  const editorOverlayRef = useRef<HTMLDivElement>(null);
+  const editorTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const [editorBox, setEditorBox] = useState({ left: 0, top: 0, width: 200 });
+
+  const setSelectedCellSafe = useCallback((cell: GridCellRef | null) => {
+    selectedCellRef.current = cell;
+    setSelectedCell(cell);
+  }, []);
+
+  const positionEditorOverlay = useCallback((cell: GridCellRef) => {
+    const pane = gridPaneRef.current;
+    const cellEl = cellElRefs.current.get(cellKey(cell));
+    if (!pane || !cellEl) return;
+    const paneRect = pane.getBoundingClientRect();
+    const cellRect = cellEl.getBoundingClientRect();
+    const scale = computeGridScale(paneRect.width, pane.offsetWidth);
+    setEditorBox({
+      left: (cellRect.left - paneRect.left) / scale + pane.scrollLeft,
+      top: (cellRect.top - paneRect.top) / scale + pane.scrollTop,
+      width: Math.max(MIN_TABLE_COLUMN_WIDTH, cellRect.width / scale),
+    });
+  }, []);
+
+  const beginEdit = useCallback(
+    (rowIdx: number, colId: string) => {
+      const col = tableDoc.columns.find((c) => c.id === colId);
+      if (!col || col.type === 'attachment') return;
+      const row = tableDoc.rows[rowIdx];
+      const initial = cellValueToDraft(row?.cells?.[colId]);
+      const cell = { rowIdx, colId };
+      editingRef.current = cell;
+      draftRef.current = initial;
+      setEditingCell(cell);
+      setSelectedCellSafe(cell);
+      setDraft(initial);
+    },
+    [tableDoc, setSelectedCellSafe],
+  );
+
+  const commitEditing = useCallback(() => {
+    const current = editingRef.current;
+    if (!current) return;
+    editingRef.current = null;
+    const nextValue = draftRef.current;
+    const state = useTableStore.getState();
+    const previous = cellValueToDraft(state.document.rows[current.rowIdx]?.cells?.[current.colId]);
+    if (nextValue !== previous) {
+      state.updateCell(current.rowIdx, current.colId, nextValue);
+    }
+    draftRef.current = '';
+    setEditingCell(null);
+    setDraft('');
+  }, []);
+
+  const cancelEditing = useCallback(() => {
+    if (!editingRef.current) return;
+    editingRef.current = null;
+    draftRef.current = '';
+    setEditingCell(null);
+    setDraft('');
+  }, []);
+
+  const handleCellClick = useCallback(
+    (rowIdx: number, colId: string, colType: HTableColumn['type']) => {
+      if (editingRef.current) {
+        if (!sameCell(editingRef.current, { rowIdx, colId })) {
+          commitEditing();
+        } else {
+          return;
+        }
+      }
+      if (colType !== 'attachment' && sameCell(selectedCellRef.current, { rowIdx, colId })) {
+        beginEdit(rowIdx, colId);
+        return;
+      }
+      setSelectedCellSafe({ rowIdx, colId });
+    },
+    [beginEdit, commitEditing, setSelectedCellSafe],
+  );
+
+  const handleCellDoubleClick = useCallback(
+    (rowIdx: number, colId: string, colType: HTableColumn['type']) => {
+      if (colType === 'attachment') return;
+      beginEdit(rowIdx, colId);
+    },
+    [beginEdit],
+  );
+
+  const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const composing = composingRef.current || (e.nativeEvent as KeyboardEvent).isComposing;
+    if (composing) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      cancelEditing();
+      return;
+    }
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      e.stopPropagation();
+      commitEditing();
+      return;
+    }
+    if (e.key === 'Enter') {
+      // textarea 内换行；阻止冒泡避免宿主画布快捷键拦截。
+      e.stopPropagation();
+    }
+  };
+
+  // 编辑态：定位浮层 + 聚焦全选
+  useLayoutEffect(() => {
+    if (!editingCell) return;
+    positionEditorOverlay(editingCell);
+    if (editorTextareaRef.current) resizeEditorToContent(editorTextareaRef.current);
+  }, [editingCell, positionEditorOverlay]);
+
+  useEffect(() => {
+    if (!editingCell) return;
+    const frame = requestAnimationFrame(() => {
+      const el = editorTextareaRef.current;
+      if (!el) return;
+      el.focus();
+      el.select();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [editingCell]);
+
+  // 编辑态：高度按内容行数自适应（1 / 3–4 / 8+ 行）
+  useEffect(() => {
+    if (!editingCell) return;
+    if (editorTextareaRef.current) resizeEditorToContent(editorTextareaRef.current);
+  }, [editingCell, draft]);
+
+  useEffect(() => {
+    const handleWindowResize = () => {
+      if (editingRef.current) positionEditorOverlay(editingRef.current);
+    };
+    window.addEventListener('resize', handleWindowResize);
+    return () => window.removeEventListener('resize', handleWindowResize);
+  }, [positionEditorOverlay]);
+
+  // 舞台关闭：清理编辑/选中态，防止 body 外残留浮层
+  useEffect(() => {
+    if (isStageOpen) return;
+    editingRef.current = null;
+    draftRef.current = '';
+    setEditingCell(null);
+    setDraft('');
+    setSelectedCellSafe(null);
+  }, [isStageOpen, setSelectedCellSafe]);
+
+  // 选中态键盘：Enter/F2 进入编辑，Esc 清除选中
+  useEffect(() => {
+    if (!isStageOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (editingRef.current) return;
+      const target = e.target as HTMLElement | null;
+      if (target?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
+      const selected = selectedCellRef.current;
+      if (!selected) return;
+      if (e.key === 'Enter' || e.key === 'F2') {
+        e.preventDefault();
+        e.stopPropagation();
+        beginEdit(selected.rowIdx, selected.colId);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        setSelectedCellSafe(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [beginEdit, isStageOpen, setSelectedCellSafe]);
+
+  // 点击表格外：先保存编辑，再清除选中
+  useEffect(() => {
+    if (!isStageOpen) return;
+    const handlePointerDown = (event: Event) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      if (editorOverlayRef.current?.contains(target)) return;
+      if (target.closest?.('[data-grid-cell-key]')) return;
+      if (editingRef.current) commitEditing();
+      if (selectedCellRef.current) setSelectedCellSafe(null);
+    };
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    return () => document.removeEventListener('pointerdown', handlePointerDown, true);
+  }, [commitEditing, isStageOpen, setSelectedCellSafe]);
+
+  // 列宽拖拽：只更新 <col> 本地预览，pointerup 一次写 store
+  const startColumnResize = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>, col: HTableColumn) => {
+      if (e.button !== 0 || resizeSessionRef.current) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const pane = gridPaneRef.current;
+      const rect = pane?.getBoundingClientRect();
+      const scale = computeGridScale(rect?.width ?? 0, pane?.offsetWidth ?? 0);
+      const startWidth = columnWidthForDisplay(col.width, col.type);
+      const session: ResizeSession = {
+        colId: col.id,
+        startClientX: e.clientX,
+        startWidth,
+        scale,
+        currentWidth: startWidth,
+      };
+      resizeSessionRef.current = session;
+      setResizingColId(col.id);
+      document.body.classList.add('wf-grid-resizing');
+      try {
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+      } catch {
+        /* jsdom / 老浏览器不支持 pointer capture */
+      }
+
+      const restorePreview = () => {
+        const colEl = colElRefs.current.get(session.colId);
+        if (colEl) colEl.style.width = `${session.startWidth}px`;
+      };
+
+      const cleanup = () => {
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', onUp);
+        document.removeEventListener('pointercancel', onCancel);
+        resizeCleanupRef.current = null;
+        document.body.classList.remove('wf-grid-resizing');
+      };
+
+      const onMove = (ev: Event) => {
+        const pointer = ev as PointerEvent;
+        const current = resizeSessionRef.current;
+        if (!current) return;
+        const nextWidth = computeResizeWidth({
+          startWidth: current.startWidth,
+          startClientX: current.startClientX,
+          clientX: pointer.clientX,
+          scale: current.scale,
+        });
+        current.currentWidth = nextWidth;
+        const colEl = colElRefs.current.get(current.colId);
+        if (colEl) colEl.style.width = `${nextWidth}px`;
+      };
+
+      const onUp = () => {
+        const current = resizeSessionRef.current;
+        cleanup();
+        if (!current) return;
+        resizeSessionRef.current = null;
+        setResizingColId(null);
+        if (current.currentWidth !== current.startWidth) {
+          resizeColumn(current.colId, current.currentWidth);
+        }
+      };
+
+      const onCancel = () => {
+        const current = resizeSessionRef.current;
+        cleanup();
+        if (!current) return;
+        resizeSessionRef.current = null;
+        setResizingColId(null);
+        restorePreview();
+      };
+
+      resizeCleanupRef.current = () => {
+        cleanup();
+        resizeSessionRef.current = null;
+        setResizingColId(null);
+      };
+
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', onUp);
+      document.addEventListener('pointercancel', onCancel);
+    },
+    [resizeColumn],
+  );
+
+  useEffect(() => () => resizeCleanupRef.current?.(), []);
+
+  const autoFitColumn = useCallback(
+    (col: HTableColumn) => {
+      let measured: number[] = [];
+      try {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.font = '13px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';
+          measured = tableDoc.rows.map((row) => {
+            const value = row.cells[col.id];
+            const text = typeof value === 'string' || typeof value === 'number' ? String(value) : '';
+            return ctx.measureText(text).width;
+          });
+        }
+      } catch {
+        measured = [];
+      }
+      resizeColumn(col.id, computeAutoFitWidth(measured, defaultColumnWidth(col.type)));
+    },
+    [resizeColumn, tableDoc.rows],
+  );
 
   // 附件“添加资源”窗口目标行与列
   const [pickerTarget, setPickerTarget] = useState<{ rowIdx: number; colId: string } | null>(null);
@@ -265,6 +643,7 @@ export const VirtualDataGrid: React.FC = () => {
   return (
     <div className="wf-grid-container">
       <div
+        ref={gridPaneRef}
         className="wf-grid-scroll-pane"
         onScroll={() => {
           if (hoveredAttachment) setHoveredAttachment(null);
@@ -279,7 +658,15 @@ export const VirtualDataGrid: React.FC = () => {
             {visibleColumns.map((col) => (
               <col
                 key={col.id}
-                style={{ width: col.width || 220, minWidth: 120 }}
+                ref={(el) => {
+                  if (el) colElRefs.current.set(col.id, el);
+                  else colElRefs.current.delete(col.id);
+                }}
+                style={{
+                  width: columnWidthForDisplay(col.width, col.type),
+                  minWidth: MIN_TABLE_COLUMN_WIDTH,
+                  maxWidth: 2000,
+                }}
               />
             ))}
 
@@ -349,6 +736,20 @@ export const VirtualDataGrid: React.FC = () => {
                         </span>
                       )}
                     </div>
+                    <div
+                      role="separator"
+                      aria-orientation="vertical"
+                      aria-label={`调整「${col.title}」列宽`}
+                      className={`wf-grid-col-resizer${resizingColId === col.id ? ' wf-grid-col-resizer--active' : ''}`}
+                      title="拖拽调整列宽，双击按内容自适应"
+                      onPointerDown={(e) => startColumnResize(e, col)}
+                      onDoubleClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        autoFitColumn(col);
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    />
                   </th>
                 );
               })}
@@ -371,13 +772,13 @@ export const VirtualDataGrid: React.FC = () => {
 
           <tbody>
             {tableDoc.rows.map((row, rowIdx) => {
-              const isSelected = selectedRowIndices.includes(rowIdx);
+              const isSelectedRow = selectedRowIndices.includes(rowIdx);
               const isDragging = draggedRowIdx === rowIdx;
               const isDropTarget = dropTargetIdx === rowIdx && draggedRowIdx !== rowIdx;
               const dropClass = isDropTarget && dropPosition ? `wf-grid-row--drop-${dropPosition}` : '';
               const rowClass = [
                 rowHeightClass,
-                isSelected ? 'wf-grid-row--selected' : '',
+                isSelectedRow ? 'wf-grid-row--selected' : '',
                 isDragging ? 'wf-grid-row--dragging' : '',
                 dropClass,
               ].filter(Boolean).join(' ');
@@ -406,7 +807,7 @@ export const VirtualDataGrid: React.FC = () => {
                         <input
                           type="checkbox"
                           className="wf-grid-checkbox"
-                          checked={isSelected}
+                          checked={isSelectedRow}
                           onChange={() => toggleRowSelection(rowIdx)}
                           onClick={(e) => e.stopPropagation()}
                         />
@@ -417,6 +818,10 @@ export const VirtualDataGrid: React.FC = () => {
                   {/* 各字段单元格：通过 col.id 从 row.cells 字典读取与更新 */}
                   {visibleColumns.map((col) => {
                     const cellVal = row.cells[col.id];
+                    const cell = { rowIdx, colId: col.id };
+                    const isSelectedCell = sameCell(selectedCell, cell);
+                    const isEditingCell = sameCell(editingCell, cell);
+                    const cellRefKey = cellKey(cell);
 
                     const renderCellContent = () => {
                       if (col.type === 'attachment') {
@@ -457,7 +862,7 @@ export const VirtualDataGrid: React.FC = () => {
                                     className="wf-grid-attachment-thumb-fallback"
                                     style={{ display: hasPreview ? 'none' : 'flex' }}
                                   >
-                                    {att.kind === 'video' ? '视' : att.kind === 'audio' ? '音' : '📎'}
+                                    {att.kind === 'video' ? '视' : att.kind === 'audio' ? '音' : '附'}
                                   </div>
 
                                   {/* 删除按钮 (对齐图二右上角 x) */}
@@ -494,18 +899,31 @@ export const VirtualDataGrid: React.FC = () => {
 
                       const strVal = typeof cellVal === 'string' || typeof cellVal === 'number' ? String(cellVal) : '';
                       return (
-                        <input
-                          type="text"
-                          className="wf-grid-cell-input"
-                          value={strVal}
-                          placeholder="点击输入..."
-                          onChange={(e) => updateCell(rowIdx, col.id, e.target.value as HTableCellValue)}
-                        />
+                        <div
+                          className={[
+                            'wf-grid-cell-preview',
+                            isSelectedCell ? 'wf-grid-cell-preview--selected' : '',
+                            isEditingCell ? 'wf-grid-cell-preview--editing' : '',
+                          ].filter(Boolean).join(' ')}
+                          title={strVal}
+                        >
+                          {strVal || <span className="wf-grid-cell-placeholder">点击输入...</span>}
+                        </div>
                       );
                     };
 
                     return (
-                      <td key={col.id} className="wf-grid-td">
+                      <td
+                        key={col.id}
+                        ref={(el) => {
+                          if (el) cellElRefs.current.set(cellRefKey, el);
+                          else cellElRefs.current.delete(cellRefKey);
+                        }}
+                        data-grid-cell-key={cellRefKey}
+                        className={`wf-grid-td${isSelectedCell ? ' wf-grid-td--cell-selected' : ''}`}
+                        onClick={() => handleCellClick(rowIdx, col.id, col.type)}
+                        onDoubleClick={() => handleCellDoubleClick(rowIdx, col.id, col.type)}
+                      >
                         {renderCellContent()}
                       </td>
                     );
@@ -519,6 +937,48 @@ export const VirtualDataGrid: React.FC = () => {
             })}
           </tbody>
         </table>
+
+        {/* 单元格编辑浮层：absolute 覆盖，不参与表格布局 */}
+        {editingCell && (
+          <div
+            ref={editorOverlayRef}
+            className="wf-grid-cell-editor-overlay"
+            style={{ left: editorBox.left, top: editorBox.top, width: editorBox.width }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <textarea
+              ref={editorTextareaRef}
+              className="wf-grid-cell-editor"
+              aria-label="编辑单元格"
+              rows={1}
+              value={draft}
+              spellCheck={false}
+              onInput={(e) => {
+                const el = e.currentTarget;
+                draftRef.current = el.value;
+                setDraft(el.value);
+                resizeEditorToContent(el);
+                // paste/输入法插入文本后布局可能晚一帧，再量一次。
+                window.setTimeout(() => {
+                  if (el.isConnected) resizeEditorToContent(el);
+                }, 0);
+              }}
+              onChange={(e) => {
+                draftRef.current = e.target.value;
+                setDraft(e.target.value);
+                resizeEditorToContent(e.currentTarget);
+              }}
+              onBlur={commitEditing}
+              onKeyDown={handleEditorKeyDown}
+              onCompositionStart={() => {
+                composingRef.current = true;
+              }}
+              onCompositionEnd={() => {
+                composingRef.current = false;
+              }}
+            />
+          </div>
+        )}
 
         {/* 底部添加行操作条 */}
         <div className="wf-grid-add-row-bar">
