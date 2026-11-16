@@ -47,6 +47,7 @@ import {
   isSlotOrImportNode,
   shouldShowModelSelector,
 } from './appTabWidgets.js'
+import { compactManifestForExecution } from '../../shared/publish/publishSnapshot.ts'
 
 export {
   resolveOptions,
@@ -1139,7 +1140,7 @@ export function AppTab(props) {
           body: JSON.stringify({
             version: manifest.version,
             inputs: effectiveFormValues,
-            manifest,
+            manifest: compactManifestForExecution(manifest),
           }),
         }).catch(() => null)
 

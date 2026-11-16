@@ -23,6 +23,7 @@ import type {
 import type { FlowEdgeLike, FlowNodeLike } from './topologyAnalyzer.ts';
 import type { GroupPublishVerification } from '../../../../shared/canvasTypes.ts';
 import { resolveProjectIdForWorkspace } from './publishProjectBinding.ts';
+import { compactPublishSnapshotEdges, compactPublishSnapshotNodes } from '../../../../shared/publish/publishSnapshot.ts';
 
 export interface PublishWizardModalV2Props {
   isOpen: boolean;
@@ -203,7 +204,10 @@ export const PublishWizardModalV2: React.FC<PublishWizardModalV2Props> = memo(({
         workflowBinding: {
           workspaceId: workspaceId || 'workspace_main',
           workflowHash: analysis.graphHash,
-          snapshot: { nodes, edges },
+          snapshot: {
+            nodes: compactPublishSnapshotNodes(nodes),
+            edges: compactPublishSnapshotEdges(edges),
+          },
           ...(groupId ? { sourceGroupId: groupId } : {}),
           ...(projectId ? { projectId } : {}),
         },
