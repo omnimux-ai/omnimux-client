@@ -93,8 +93,11 @@ for (const [owner, manifest] of [
   for (const field of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies', 'resolutions']) {
     for (const [name, range] of Object.entries(manifest[field] ?? {})) {
       if (typeof range !== 'string') continue
-      if (/^(?:workspace|portal|link):/u.test(range)
-        || (range.startsWith('file:') && range.includes('deepseek-harness'))) {
+      const localPluginLink = owner === 'next desktop' && field === 'dependencies'
+        && /^omnimux(?:-[a-z0-9-]+)?$/u.test(name)
+        && range === `link:../../plugins/plugins/${name}`
+      if (!localPluginLink && (/^(?:workspace|portal|link):/u.test(range)
+        || (range.startsWith('file:') && range.includes('deepseek-harness')))) {
         fail(`${owner} ${field}.${name} bypasses the published DSH package boundary`)
       }
     }
