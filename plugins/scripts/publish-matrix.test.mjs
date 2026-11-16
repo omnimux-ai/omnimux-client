@@ -144,3 +144,11 @@ test('an empty selection fails rather than returning an empty matrix', () => {
     npmView: () => { throw new Error('must not query') },
   }), /没有可发布的包/)
 })
+
+test('dependency order is independent of the selected packageDirs order', () => {
+  const result = plan({
+    dryRun: false,
+    packageDirs: [DIRS.omnimux, DIRS.assets, DIRS.products],
+  })
+  assert.deepEqual(result.include.map(item => item.package), ['omnimux-products', 'omnimux-assets'])
+})
