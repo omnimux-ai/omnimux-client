@@ -9,9 +9,7 @@ overrides:
 
 importers:
 
-  .: {}
-
-  plugins:
+  .:
     devDependencies:
       '@deepseek-ai/dsh-client-store':
         specifier: 0.2.1-rc.3
@@ -101,7 +99,7 @@ importers:
         specifier: 2.9.0
         version: 2.9.0
 
-  plugins/packages/dsh-ui-kit:
+  packages/dsh-ui-kit:
     devDependencies:
       '@deepseek-ai/dsh-client-ui-primitives':
         specifier: 0.2.1-rc.3
@@ -125,7 +123,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  plugins/packages/form-contract:
+  packages/form-contract:
     dependencies:
       zod:
         specifier: 4.4.3
@@ -135,9 +133,9 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/packages/generation-capabilities: {}
+  packages/generation-capabilities: {}
 
-  plugins/plugins/omnimux:
+  plugins/omnimux:
     dependencies:
       '@aws-crypto/sha256-js':
         specifier: 5.2.0
@@ -246,13 +244,13 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/plugins/omnimux-accounts:
+  plugins/omnimux-accounts:
     dependencies:
       '@deepseek-ai/dsh-client-ui-primitives':
         specifier: '>=0.1.0-rc.6 || >=0.2.1-rc.3 <0.3.0-0'
         version: 0.2.1-rc.3(@deepseek-ai/cordis@4.0.2)
       dsh-ui-kit:
-        specifier: file:../../packages/dsh-ui-kit
+        specifier: ^0.1.0
         version: link:../../packages/dsh-ui-kit
       react:
         specifier: ^18.2.0
@@ -265,13 +263,13 @@ importers:
         specifier: ^0.25.0
         version: 0.25.12
 
-  plugins/plugins/omnimux-analytics:
+  plugins/omnimux-analytics:
     dependencies:
       '@deepseek-ai/dsh-client-ui-primitives':
         specifier: '>=0.1.0-rc.6 || >=0.2.1-rc.3 <0.3.0-0'
         version: 0.2.1-rc.3(@deepseek-ai/cordis@4.0.2)
       dsh-ui-kit:
-        specifier: file:../../packages/dsh-ui-kit
+        specifier: ^0.1.0
         version: link:../../packages/dsh-ui-kit
       react:
         specifier: ^18.2.0
@@ -284,16 +282,16 @@ importers:
         specifier: ^0.25.0
         version: 0.25.12
 
-  plugins/plugins/omnimux-assets:
+  plugins/omnimux-assets:
     dependencies:
       '@deepseek-ai/dsh-client-ui-primitives':
         specifier: '>=0.1.0-rc.6 || >=0.2.1-rc.3 <0.3.0-0'
         version: 0.2.1-rc.3(@deepseek-ai/cordis@4.0.2)
       dsh-ui-kit:
-        specifier: file:../../packages/dsh-ui-kit
+        specifier: ^0.1.0
         version: link:../../packages/dsh-ui-kit
       omnimux-products:
-        specifier: file:../omnimux-products
+        specifier: ^0.1.2
         version: link:../omnimux-products
       react:
         specifier: ^18.2.0
@@ -306,7 +304,7 @@ importers:
         specifier: ^0.25.0
         version: 0.25.12
 
-  plugins/plugins/omnimux-clip:
+  plugins/omnimux-clip:
     dependencies:
       '@deepseek-ai/dsh-client-ui-primitives':
         specifier: '>=0.1.0-rc.6 || >=0.2.1-rc.3 <0.3.0-0'
@@ -378,7 +376,7 @@ importers:
         specifier: ^2.1.1
         version: 2.1.1
       dsh-ui-kit:
-        specifier: file:../../packages/dsh-ui-kit
+        specifier: ^0.1.0
         version: link:../../packages/dsh-ui-kit
       framer-motion:
         specifier: ^12.0.0
@@ -442,7 +440,7 @@ importers:
         specifier: ^1.0.7
         version: 1.0.7(tailwindcss@3.4.19(yaml@2.9.1))
 
-  plugins/plugins/omnimux-forms:
+  plugins/omnimux-forms:
     devDependencies:
       '@chakra-ui/react':
         specifier: 3.37.0
@@ -454,7 +452,7 @@ importers:
         specifier: file:../../packages/form-contract
         version: link:../../packages/form-contract
       dsh-ui-kit:
-        specifier: file:../../packages/dsh-ui-kit
+        specifier: ^0.1.0
         version: link:../../packages/dsh-ui-kit
       esbuild:
         specifier: ^0.25.0
@@ -469,13 +467,13 @@ importers:
         specifier: ^18.2.0
         version: 18.3.1(react@18.3.1)
 
-  plugins/plugins/omnimux-inspiration:
+  plugins/omnimux-inspiration:
     dependencies:
       '@deepseek-ai/dsh-client-ui-primitives':
         specifier: '>=0.1.0-rc.6 || >=0.2.1-rc.3 <0.3.0-0'
         version: 0.2.1-rc.3(@deepseek-ai/cordis@4.0.2)
       dsh-ui-kit:
-        specifier: file:../../packages/dsh-ui-kit
+        specifier: ^0.1.0
         version: link:../../packages/dsh-ui-kit
       lucide-react:
         specifier: ^1.33.0
@@ -494,7 +492,7 @@ importers:
         specifier: ^30.0.1
         version: 30.0.1
 
-  plugins/plugins/omnimux-market:
+  plugins/omnimux-market:
     dependencies:
       '@unicode/unicode-15.1.0':
         specifier: 2.0.2
@@ -503,7 +501,7 @@ importers:
         specifier: 1.0.0
         version: 1.0.0
       dsh-ui-kit:
-        specifier: file:../../packages/dsh-ui-kit
+        specifier: ^0.1.0
         version: link:../../packages/dsh-ui-kit
       yaml:
         specifier: 2.9.0
@@ -543,13 +541,13 @@ importers:
         specifier: ^5.9.2
         version: 5.9.3
 
-  plugins/plugins/omnimux-products:
+  plugins/omnimux-products:
     dependencies:
       '@deepseek-ai/dsh-client-ui-primitives':
         specifier: '>=0.1.0-rc.6 || >=0.2.1-rc.3 <0.3.0-0'
         version: 0.2.1-rc.3(@deepseek-ai/cordis@4.0.2)
       dsh-ui-kit:
-        specifier: file:../../packages/dsh-ui-kit
+        specifier: ^0.1.0
         version: link:../../packages/dsh-ui-kit
       react:
         specifier: ^18.2.0
@@ -562,10 +560,10 @@ importers:
         specifier: ^0.25.0
         version: 0.25.12
 
-  plugins/plugins/omnimux-publish:
+  plugins/omnimux-publish:
     dependencies:
       dsh-ui-kit:
-        specifier: file:../../packages/dsh-ui-kit
+        specifier: ^0.1.0
         version: link:../../packages/dsh-ui-kit
     devDependencies:
       '@deepseek-ai/dsh-client-ui-primitives':
@@ -590,9 +588,9 @@ importers:
         specifier: ~5.9.3
         version: 5.9.3
 
-  plugins/plugins/omnimux-video: {}
+  plugins/omnimux-video: {}
 
-  plugins/plugins/omnimux-workflow:
+  plugins/omnimux-workflow:
     dependencies:
       '@codemirror/commands':
         specifier: ^6.11.0
@@ -625,7 +623,7 @@ importers:
         specifier: 12.11.3
         version: 12.11.3(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(immer@11.2.9)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       dsh-ui-kit:
-        specifier: file:../../packages/dsh-ui-kit
+        specifier: ^0.1.0
         version: link:../../packages/dsh-ui-kit
       lucide-react:
         specifier: 1.33.0
@@ -3216,14 +3214,6 @@ packages:
 
   draco3d@1.5.9:
     resolution: {integrity: sha512-MqC0eAfW5gPATGY3GABIyFWpHwdDGAyewTdek5R/e+mhI9ZDUMKb2mTDkTMUW0+Vm7an+ThEMUop3+svS72Uug==}
-
-  dsh-ui-kit@file:packages/dsh-ui-kit:
-    resolution: {directory: packages/dsh-ui-kit, type: directory}
-    engines: {node: '>=22.19.0'}
-    peerDependencies:
-      '@deepseek-ai/dsh-client-ui-primitives': '>=0.1.0-rc.6 || >=0.2.1-rc.3 <0.3.0-0'
-      react: '>=18.2.0'
-      react-dom: '>=18.2.0'
 
   dts-resolver@3.0.0:
     resolution: {integrity: sha512-1T1f+z+4tl9XD+m+0HBgWoL/nm0bOIffyWaUuUSBlFg/86IWvfx+wjNaO/ybU0AJzG9/Mi5hBUgGV6zCmWEN7Q==}
@@ -7255,12 +7245,6 @@ snapshots:
   dlv@1.1.3: {}
 
   draco3d@1.5.9: {}
-
-  dsh-ui-kit@file:packages/dsh-ui-kit(@deepseek-ai/dsh-client-ui-primitives@0.2.1-rc.3(@deepseek-ai/cordis@4.0.2))(react-dom@19.2.8(react@19.2.8))(react@19.2.8):
-    dependencies:
-      '@deepseek-ai/dsh-client-ui-primitives': 0.2.1-rc.3(@deepseek-ai/cordis@4.0.2)
-      react: 19.2.8
-      react-dom: 19.2.8(react@19.2.8)
 
   dts-resolver@3.0.0: {}
 
