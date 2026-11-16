@@ -962,7 +962,7 @@ test('wrapSkillInputTriggerSource wraps candidates and transparently resolves on
   assert.equal(candidates[0].name, '角色一致性形象包')
   assert.equal(candidates[0].rawName, 'ip-character-consistency-studio')
 
-  // 2. 选中后输入框清空斜杠，技能名称交给技能按钮旁的标签
+  // 2. 选中后保留官方 onPick 的 /slug 文本，交给 ui-conversation 装饰成蓝色 token
   const events = []
   globalThis.window = {
     __omnimuxActiveSkill: null,
@@ -977,10 +977,11 @@ test('wrapSkillInputTriggerSource wraps candidates and transparently resolves on
     action: 'pick',
     span: { start: 0, end: 3 },
   })
-  assert.equal(pickOutcome.text, '')
+  assert.equal(pickOutcome.text, '/ip-character-consistency-studio ')
   assert.equal(globalThis.window.__omnimuxActiveSkill.slug, 'ip-character-consistency-studio')
   assert.equal(globalThis.window.__omnimuxActiveSkill.name, '角色一致性形象包')
-  assert.ok(events.some((event) => event.type === 'omnimux:skill:attach-request'))
+  assert.equal(globalThis.window.__omnimuxActiveSkill.origin, 'slash')
+  assert.ok(!events.some((event) => event.type === 'omnimux:skill:attach-request'), '原生斜杠不得请求会话试用挂载')
   delete globalThis.window
 })
 

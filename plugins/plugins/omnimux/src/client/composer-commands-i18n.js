@@ -1,5 +1,6 @@
 import { createElement } from 'react'
-import { requestSkillAttach } from './composer-add/skill-event.ts'
+import { publishActiveSkill, readActiveSkill } from './composer-add/skill-event.ts'
+import { draftHasSkillToken, removeSkillTokenFromDraft } from './composer-add/skill-token.ts'
 
 /**
  * Injects and maintains adaptive localized copy, icons, and smart search for slash commands.
@@ -1803,13 +1804,63 @@ export function wrapSkillInputTriggerSource(source, locale) {
     if (!pick || !pick.candidate) {
       return typeof originalOnPick === 'function' ? originalOnPick.call(this, pick) : { text: '' }
     }
-    // 选中后名称只出现在技能按钮旁的标签上，输入框里的斜杠和技能名一并清掉。
+
     const rawName = pick.candidate.rawName || pick.candidate.name
     const displayName = pick.candidate.name && pick.candidate.name !== rawName ? pick.candidate.name : rawName
-    if (rawName) {
-      requestSkillAttach({ id: '', slug: rawName, skill: rawName, name: displayName, title: displayName })
+    // 官方 onPick 用 candidate.name 拼 `/name `；本地化 candidate 的 name 是中文
+    // 展示名，必须把原始 slug 交回官方模板，才能生成 /raw-slug token。
+    const originalPick = rawName && pick.candidate.name !== rawName
+      ? { ...pick, candidate: { ...pick.candidate, name: rawName } }
+      : pick
+    // 保留官方 onPick 的返回值（`{ text: '/<name> ' }`），让 ui-conversation
+    // 的 plain-text reference 正常把技能渲染成输入框里的蓝色 token。
+    const outcome = typeof originalOnPick === 'function' ? originalOnPick.call(this, originalPick) : { text: '' }
+    if (!rawName) return outcome
+
+    const previous = readActiveSkill()
+    const previousSlug = previous && previous.origin === 'slash'
+      ? String(previous.slug || previous.skill || '')
+      : ''
+    const currentDraft = (() => {
+      try {
+        const actions = typeof window !== 'undefined' ? window.__omnimuxComposerActions : null
+        return actions && typeof actions.getDraft === 'function' ? String(actions.getDraft() || '') : ''
+      } catch {
+        return ''
+      }
+    })()
+
+    // 原生斜杠来源只走全局激活通道，不再调用 requestSkillAttach/tryAttach；
+    // 技能由 Host 的 dsh-tool-skill 按输入框 token 加载。
+    publishActiveSkill({
+      id: '',
+      slug: rawName,
+      skill: rawName,
+      name: displayName,
+      title: displayName,
+      origin: 'slash',
+    })
+
+    // 已有另一个（或同一个）原生活跃 token 时，等官方本次插入完成后再移除旧 token，
+    // 避免两个 /skill 并存；getDraft 里没有旧 token 时不碰新插入的 token。
+    if (previousSlug && draftHasSkillToken(currentDraft, previousSlug)) {
+      setTimeout(() => {
+        try {
+          const actions = typeof window !== 'undefined' ? window.__omnimuxComposerActions : null
+          if (actions && typeof actions.removeSkillToken === 'function') {
+            actions.removeSkillToken(previousSlug)
+          } else if (actions && typeof actions.getDraft === 'function' && typeof actions.setDraft === 'function') {
+            const draft = String(actions.getDraft() || '')
+            const next = removeSkillTokenFromDraft(draft, previousSlug)
+            if (next !== draft) actions.setDraft(next)
+          }
+        } catch {
+          // 输入框不可写时保留现状，不阻断官方 token 插入
+        }
+      }, 0)
     }
-    return { text: '' }
+
+    return outcome
   }
 
   source.candidates = wrappedCandidates
@@ -1856,45 +1907,9 @@ export function wrapInputTriggersSkills(inputTriggers, locale) {
     }
   }
 
-  // 3. Direct typing hook: auto-attach skill pill when typing `/slug` and hitting Enter/Space
-  const onDocKeyDown = (e) => {
-    if (e.key !== 'Enter' && e.key !== ' ') return
-    if (e.isComposing || e.keyCode === 229) return
-    const target = e.target
-    if (!target || typeof target.closest !== 'function') return
-    if (!target.closest('[data-composer-card]')) return
-    const text = (target.textContent || target.value || '').trim()
-    const match = text.match(/^\/([a-zA-Z0-9_-]{2,64})$/)
-    if (match) {
-      const slug = match[1].toLowerCase()
-      const candidate = activeSkillRegistry.get(slug)
-      if (candidate) {
-        e.preventDefault?.()
-        e.stopPropagation?.()
-        const rawName = candidate.rawName || candidate.name
-        const displayName = candidate.name && candidate.name !== rawName ? candidate.name : rawName
-        requestSkillAttach({ id: '', slug: rawName, skill: rawName, name: displayName, title: displayName })
-        if (target.isContentEditable) {
-          target.textContent = ''
-          try { target.dispatchEvent(new Event('input', { bubbles: true })) } catch {}
-        } else if ('value' in target) {
-          target.value = ''
-          try { target.dispatchEvent(new Event('input', { bubbles: true })) } catch {}
-        }
-      }
-    }
-  }
-
-  if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
-    document.addEventListener('keydown', onDocKeyDown, true)
-  }
-
   return () => {
     if (originalRegisterSource) {
       inputTriggers.registerSource = originalRegisterSource
-    }
-    if (typeof document !== 'undefined' && typeof document.removeEventListener === 'function') {
-      document.removeEventListener('keydown', onDocKeyDown, true)
     }
   }
 }

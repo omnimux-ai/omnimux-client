@@ -86,10 +86,11 @@ test('e2e: composer slash-skill bilingual adaptive search, selection, and plain-
     span: { start: 0, end: 3 },
   })
 
-  // 选中后输入框清空斜杠，技能名称交给技能按钮旁的标签
-  assert.equal(outcome.text, '')
+  // 选中后保留官方 /slug 文本，交给 ui-conversation 装饰成蓝色 token
+  assert.equal(outcome.text, '/ip-character-consistency-studio ')
   assert.equal(globalThis.window.__omnimuxActiveSkill?.slug, 'ip-character-consistency-studio')
   assert.equal(globalThis.window.__omnimuxActiveSkill?.name, '角色一致性形象包')
+  assert.equal(globalThis.window.__omnimuxActiveSkill?.origin, 'slash')
 
   // 6. User Journey D: User types pinyin "/jiaose" without switching IME
   const pinyinCandidates = await enhancedSource.candidates(

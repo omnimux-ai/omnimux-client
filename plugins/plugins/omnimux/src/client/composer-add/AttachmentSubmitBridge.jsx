@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { focusEditorElement } from '../attachments/focusEditorElement.ts'
 import { detectOffset } from '../attachments/linkReference.ts'
 import { getCreativePresetsStore } from '../presets/presets-store.js'
@@ -12,6 +12,8 @@ import {
   quickLinkChipSelectorFor,
 } from '../composer-quick-shortcuts/linkChip.js'
 import { notifyQuickLinkChipChange, resolveComposerCard } from '../composer-quick-shortcuts/dom.js'
+import { publishActiveSkill, readActiveSkill, subscribeSkillChanged } from './skill-event.ts'
+import { draftHasSkillToken, findSkillTokenRange, removeSkillTokenFromDraft } from './skill-token.ts'
 
 /**
  * 立即把本会话的 viewport 信封推给宿主，不等 2s 心跳。
@@ -35,6 +37,33 @@ export function AttachmentSubmitBridge({ sessionId, useInput, inputActions, inse
   const pending = useRef(null)
   const [notice, setNotice] = useState(null)
   live.current = { input, inputActions, insertText }
+
+  // 斜杠 token 与全局 active skill 的只读同步：origin=slash 的 active skill
+  // 一旦从 draft 中消失，就清除全局激活态/胶囊；不向正文补任何文本。
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const syncDraftTokenState = () => {
+      const active = readActiveSkill()
+      if (!active || active.origin !== 'slash') return
+      const slug = String(active.slug || active.skill || '')
+      if (!slug) return
+      const draft = live.current?.input?.draft || ''
+      if (!draftHasSkillToken(draft, slug)) publishActiveSkill(null)
+    }
+    syncDraftTokenState()
+    // 事件用于外部清除/切换时同步；draft 真正更新后再判断，避免 onPick 发布
+    // active skill 与官方插入 token 之间的瞬时空窗误清。
+    const unsubscribe = subscribeSkillChanged((skill) => {
+      if (skill === null || skill?.origin === 'slash') {
+        setTimeout(() => {
+          try { syncDraftTokenState() } catch {}
+        }, 0)
+      }
+    }, window)
+    return () => {
+      try { unsubscribe() } catch {}
+    }
+  }, [input.draft, sessionId])
 
   useLayoutEffect(() => () => {
     clearTimeout(pending.current?.timer)
@@ -88,6 +117,30 @@ export function AttachmentSubmitBridge({ sessionId, useInput, inputActions, inse
         }
       },
       getDraft: () => live.current?.input?.draft || '',
+      // 删除输入框内的一个原生 /slug token；优先用 revision 守卫的 insertText，
+      // 保留正文中的附件/链接 chip；没有 insertText 时才回退 setDraft。
+      removeSkillToken: (slug) => {
+        try {
+          const current = live.current?.input
+          const actions = live.current?.inputActions
+          if (!current || typeof current.draft !== 'string' || !actions) return false
+          const range = findSkillTokenRange(current.draft, slug)
+          if (!range) return false
+          if (Number.isSafeInteger(current.draftRev) && typeof actions.insertText === 'function') {
+            return actions.insertText('', { start: range.start, end: range.end, draftRev: current.draftRev }) !== false
+          }
+          if (typeof actions.setDraft === 'function') {
+            const next = removeSkillTokenFromDraft(current.draft, slug)
+            if (next === current.draft) return false
+            actions.setDraft(next)
+            return true
+          }
+          return false
+        } catch (err) {
+          console.warn('[AttachmentSubmitBridge] removeSkillToken failed:', err)
+          return false
+        }
+      },
       // 把用户视线带到附件区：附件导轨监听后滚动到可见、高亮最新卡片，这里补上输入框焦点。
       // 事件名与 AttachmentTray 的 REVEAL_ATTACHMENTS_EVENT 一致；按既有跨插件惯例写字面量，避免引入组件模块。
       revealAttachments: () => {
@@ -128,8 +181,8 @@ export function AttachmentSubmitBridge({ sessionId, useInput, inputActions, inse
       const attachments = attachmentStore.getSnapshot(sessionId)
       let draft = value.draft
 
-      // 选中的技能只显示在技能按钮旁的名称标签上。发送时由会话试用通道
-      // 把技能说明带进上下文，草稿正文保持用户写下的原话，不再补斜杠指令。
+      // 双通道发送语义：原生斜杠 token 原样保留在 draft 中，由 Host 的
+      // dsh-tool-skill 按 token 加载；自定义技能只显示胶囊/名称，不向正文补斜杠。
 
       if (pending.current) {
         const operation = pending.current

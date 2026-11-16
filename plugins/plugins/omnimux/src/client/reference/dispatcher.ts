@@ -22,6 +22,7 @@ export interface HostWindowContext {
   __omnimuxComposerActions?: {
     setDraft?: (text: string) => void;
     getDraft?: () => string;
+    removeSkillToken?: (slug: string) => boolean;
     revealAttachments?: () => void;
   };
   dispatchEvent?: (event: Event) => boolean;

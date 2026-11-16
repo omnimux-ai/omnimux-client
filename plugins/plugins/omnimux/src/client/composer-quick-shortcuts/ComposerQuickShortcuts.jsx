@@ -30,6 +30,12 @@ export function useIsTikTokAgentPreset(session, props) {
 
 export { isTikTokAgentPreset, TIKTOK_AGENT_PRESET_WHITELIST };
 
+/** 判断两个技能身份是否指向同一技能（slug 优先，兼容快捷方式解析对象）。 */
+function sameSkillIdentity(a, b) {
+  const key = (skill) => String((skill && (skill.slug || skill.skill || skill.id || skill.name)) || '');
+  return key(a) !== '' && key(a) === key(b);
+}
+
 /** 技能库通道就绪前的重试节奏：插件装载顺序不保证，指数退避 200ms → 3200ms，8 次合计约 16 秒。 */
 const SKILL_LIBRARY_RETRY_BASE_MS = 200;
 const SKILL_LIBRARY_RETRY_MAX_MS = 3200;
@@ -196,7 +202,9 @@ export function ComposerQuickShortcuts(props) {
   useEffect(() => subscribeSkillChanged((skill) => {
     const current = store.getSnapshot(sessionId);
     if (!current.skill) return;
-    if (skill) return;
+    // 同一技能（快捷方式自己发布）保持胶囊；其他来源或 null 都清掉快捷方式胶囊，
+    // 保证任意时刻只有一个可见 active skill。
+    if (skill && sameSkillIdentity(current.skill, skill)) return;
     store.set(sessionId, clearQuickShortcutSkill(current));
   }), [store, sessionId]);
 
@@ -226,8 +234,9 @@ export function ComposerQuickShortcuts(props) {
       return;
     }
     dismissNotice();
-    store.set(sessionId, { activeId: entry.id, links, skill: entry.skill });
-    publishActiveSkill(entry.skill);
+    const activeSkill = { ...entry.skill, origin: 'shortcut' };
+    store.set(sessionId, { activeId: entry.id, links, skill: activeSkill });
+    publishActiveSkill(activeSkill);
   }, [store, sessionId, writePrompt, notifyWriteFailed, dismissNotice]);
 
   // 只在新对话（空会话）且为 TikTok Agent 角色时出现；

@@ -113,3 +113,19 @@ test('dispatchSkillChanged：广播失败不影响已写入的激活态', () => 
   assert.doesNotThrow(() => publishActiveSkill(SKILL, win))
   assert.equal(readActiveSkill(win), SKILL)
 })
+test('publishActiveSkill：origin 透传到 detail 与持久值', () => {
+  const win = fakeWindow()
+  const slashSkill = { ...SKILL, origin: 'slash' }
+  publishActiveSkill(slashSkill, win)
+  assert.equal(readActiveSkill(win)?.origin, 'slash')
+  assert.equal(win.dispatched[0].detail.skill.origin, 'slash')
+  assert.equal(win.dispatched[0].detail.origin, 'slash')
+})
+
+test('ActiveSkillIdentity：custom/shortcut origin 原样保留', () => {
+  const win = fakeWindow()
+  publishActiveSkill({ ...SKILL, origin: 'custom' }, win)
+  assert.equal(win.dispatched.at(-1).detail.origin, 'custom')
+  publishActiveSkill({ ...SKILL, origin: 'shortcut' }, win)
+  assert.equal(win.dispatched.at(-1).detail.origin, 'shortcut')
+})

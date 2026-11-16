@@ -9,6 +9,9 @@
 
 export const SKILL_CHANGED_EVENT = 'omnimux:skill:changed';
 
+/** 技能激活来源：原生斜杠 / 自定义技能按钮 / 底部快捷方式。 */
+export type ActiveSkillOrigin = 'slash' | 'custom' | 'shortcut';
+
 /** 一个可激活技能的稳定身份。 */
 export interface ActiveSkillIdentity {
   id?: string;
@@ -19,6 +22,7 @@ export interface ActiveSkillIdentity {
   summary?: string;
   category?: string;
   categories?: readonly string[];
+  origin?: ActiveSkillOrigin;
   [key: string]: unknown;
 }
 
@@ -73,6 +77,7 @@ export function dispatchSkillChanged(
       detail: {
         skill,
         category: skill ? String((skill as ActiveSkillIdentity).category || (Array.isArray((skill as ActiveSkillIdentity).categories) ? ((skill as ActiveSkillIdentity).categories as readonly string[])[0] : '') || '') : '',
+        origin: skill ? (skill as ActiveSkillIdentity).origin || '' : '',
       },
     }));
   } catch {

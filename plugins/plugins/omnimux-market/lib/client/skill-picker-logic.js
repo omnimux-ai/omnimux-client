@@ -480,6 +480,34 @@ export function appendSkillGesture(draft, gesture) {
     const prefix = base && !/\s$/.test(base) ? `${base} ` : base;
     return `${prefix}${withSpace}`;
 }
+function escapeSkillSlug(value) {
+    return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+/** 查找 draft 中某个技能 slug 的 `/slug` token 范围（含尾随空格）。 */
+export function findSkillTokenRange(draft, slug) {
+    const text = String(draft || '');
+    const name = String(slug || '').replace(/^\//, '').trim();
+    if (!text || !name)
+        return null;
+    const pattern = new RegExp(`(^|\\s)/${escapeSkillSlug(name)}(?=\\s|$)[ \\t]?`);
+    const match = pattern.exec(text);
+    if (!match)
+        return null;
+    const prefixLength = match[1] ? match[1].length : 0;
+    return { start: match.index + prefixLength, end: match.index + match[0].length };
+}
+/** draft 是否仍包含指定技能的 `/slug` token。 */
+export function draftHasSkillToken(draft, slug) {
+    return findSkillTokenRange(draft, slug) !== null;
+}
+/** 删除指定技能的 `/slug` token（连同尾随空格），保留其余正文。 */
+export function removeSkillTokenFromDraft(draft, slug) {
+    const text = String(draft || '');
+    const range = findSkillTokenRange(text, slug);
+    if (!range)
+        return text;
+    return text.slice(0, range.start) + text.slice(range.end);
+}
 export function buildSearchPayload(tabId, query) {
     const q = String(query || '').trim();
     const tab = PICKER_TABS.find((row) => row.id === tabId) || PICKER_TABS[0];

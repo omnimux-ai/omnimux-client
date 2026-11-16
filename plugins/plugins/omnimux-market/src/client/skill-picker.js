@@ -580,29 +580,49 @@
       }, [close]);
 
       const clearActiveSkill = useCallback(() => {
+        const current = (typeof window !== "undefined" ? window.__omnimuxActiveSkill : null) || activeSkill;
+        const slug = current && current.origin === "slash" ? String(current.slug || current.skill || "") : "";
+        const draft = input && typeof input.draft === "string" ? input.draft : "";
+        if (slug && draft && typeof inputActions?.setDraft === "function") {
+          try {
+            const next = SkillShelf.removeSkillTokenFromDraft(draft, slug);
+            if (next !== draft) inputActions.setDraft(next);
+          } catch {}
+        }
         setActiveSkill(null);
         if (typeof window !== "undefined") {
           window.__omnimuxActiveSkill = null;
           try {
             window.dispatchEvent(new CustomEvent("omnimux:skill:changed", {
-              detail: { skill: null, category: "" },
+              detail: { skill: null, category: "", origin: "" },
             }));
           } catch {}
         }
         // 会话试用的卸下由技能市场统一监听 omnimux:skill:changed，这里不再重复调用。
-      }, []);
+      }, [activeSkill, input, inputActions]);
 
       const applyItem = useCallback((item) => {
         if (creationRef.current) creationRef.current.cancelled = true;
         focusComposerCard();
-        setActiveSkill(item);
+        const current = (typeof window !== "undefined" ? window.__omnimuxActiveSkill : null) || activeSkill;
+        const oldSlug = current && current.origin === "slash" ? String(current.slug || current.skill || "") : "";
+        const draft = input && typeof input.draft === "string" ? input.draft : "";
+        if (oldSlug && draft && typeof inputActions?.setDraft === "function") {
+          try {
+            const next = SkillShelf.removeSkillTokenFromDraft(draft, oldSlug);
+            if (next !== draft) inputActions.setDraft(next);
+          } catch {}
+        }
+        const identity = { ...item, origin: "custom" };
+        setActiveSkill(identity);
         if (typeof window !== "undefined") {
-          window.__omnimuxActiveSkill = item;
+          window.__omnimuxActiveSkill = identity;
           try {
             window.dispatchEvent(new CustomEvent("omnimux:skill:changed", {
               detail: {
-                skill: item,
-                category: item.category || (item.categories && item.categories[0]) || "",
+                skill: identity,
+                category: identity.category || (identity.categories && identity.categories[0]) || "",
+                origin: identity.origin,
               },
             }));
           } catch {}
@@ -631,7 +651,7 @@
         } catch {}
         setOpen(false);
         return true;
-      }, []);
+      }, [activeSkill, input, inputActions]);
 
       const onExplore = useCallback(() => {
         writePlazaSkillsIntent();

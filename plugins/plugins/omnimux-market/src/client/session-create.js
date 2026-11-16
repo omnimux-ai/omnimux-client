@@ -612,6 +612,7 @@
         summary: skill.summary || skill.description || "",
         category: skill.category || "",
         installFlow: skill.installFlow,
+        origin: skill.origin === "slash" || skill.origin === "shortcut" ? skill.origin : "custom",
       };
       window.__omnimuxActiveSkill = identity;
       try {
@@ -619,6 +620,7 @@
           detail: {
             skill: identity,
             category: identity.category || "",
+            origin: identity.origin,
           },
         }));
       } catch {}
@@ -651,6 +653,8 @@
       if (!skill) return { ok: false };
       const slug = skill.token || skill.slug || skill.skillKey || skill.skill || "";
       if (!slug) return { ok: false };
+      // 原生斜杠 token 已由 host 的 dsh-tool-skill 负责加载，不能再走会话试用挂载。
+      if (skill.origin === "slash") return { ok: true, attached: false, skipped: "slash" };
 
       // 技能市场把普通技能也标成「先安装」。已有对话时，
       // 「去对话试试」只更新当前对话的技能名称，不再新开对话。
@@ -706,6 +710,7 @@
     if (typeof window !== "undefined") {
       window.addEventListener("omnimux:skill:attach-request", (event) => {
         const skill = event?.detail?.skill;
+        if (skill?.origin === "slash") return;
         const slug = skill && (skill.slug || skill.skill);
         const sessionId = currentPlazaSessionId();
         if (!slug || !sessionId) return;
