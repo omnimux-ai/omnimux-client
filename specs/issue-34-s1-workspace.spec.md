@@ -26,7 +26,7 @@
 - `pnpm-workspace.yaml`（`plugins`、`plugins/plugins/*`、`plugins/packages/*`；overrides/allowBuilds/minimumReleaseAge 原样上移）
 - `pnpm-lock.yaml`（由 `plugins/pnpm-lock.yaml` 上移：只改 importer 路径，解析版本不漂）
 - `dsh-version.json`、`bundle.lock.json`
-- `scripts/{dsh-version,bundle-lock,workspace-check,verify-plugin-builds,prepare-local-plugins,verify-app-local-plugins}.mjs`
+- `scripts/{dsh-version,bundle-lock,workspace-check,verify-plugin-builds,prepare-local-plugins,verify-app-local-plugins,verify-packaged-plugins}.mjs`
 - 本 spec
 
 修改：
@@ -73,6 +73,25 @@ node scripts/bundle-lock.mjs --check          # 0
 # 临时改 bundle.lock.json 一项后
 node scripts/bundle-lock.mjs --check          # 非 0
 ```
+
+## S2 出包验证（本次已在同 worktree 跑通）
+
+```bash
+node scripts/prepare-local-plugins.mjs
+cd app/dsh-desktop-next && node scripts/prepare-payload.ts --platform darwin
+cd ../.. && node scripts/verify-packaged-plugins.mjs
+```
+
+真实输出（`prepare-payload` 是 electron-builder 归档的唯一 node_modules 来源）：
+
+- `verify-plugin-builds: OK — 12 plugins have fresh build outputs`
+- `Materialized 1009 packages for darwin arm64/x64`
+- `Sealed the prepared payload: 51007 files; OmniMux 2.0.23, dsh 0.2.1-rc.3, Electron 44.7.0, pnpm 11.28.5`
+- `verify-packaged-plugins: OK — 12 plugins packaged from this repository`
+  - payload 与 checkout 的版本 + `main` 文件 sha256 全部一致（omnimux 0.1.8、accounts 0.1.1、market 0.2.13-omni.0、workflow 1.0.0-rc.1 …）
+  - 同一时刻 npm 最新版是 accounts 0.1.2 / market 0.2.13-omni.1 / workflow 1.0.0-rc.2 / omnimux 0.1.6，可排除“打包读的是 npm 缓存”
+  - 12 个目录均非符号链接；market 的 `!lib/tests`、`!catalog/covers` 排除生效（payload 无 `lib/tests`，仓内存在）
+- `prepare-payload` 新增 npm `files` 否定项支持（`!path`）：此前遇到 market 的 `!lib/tests` 会直接抛 `unsupported files pattern`，打包无法完成。
 
 ## 回滚
 

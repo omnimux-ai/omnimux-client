@@ -7,6 +7,7 @@
   },
   "scripts": {
     "workspace:check": "node scripts/workspace-check.mjs --check",
+    "verify:packaged-plugins": "node scripts/verify-packaged-plugins.mjs",
     "workspace:write": "node scripts/workspace-check.mjs",
     "bundle:lock": "node scripts/bundle-lock.mjs",
     "bundle:lock:check": "node scripts/bundle-lock.mjs --check",
