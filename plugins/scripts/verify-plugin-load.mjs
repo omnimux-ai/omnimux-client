@@ -399,8 +399,12 @@ function resolveCordis(fromDir) {
   try {
     return require.resolve('@deepseek-ai/cordis', { paths: [repoRoot] })
   } catch { /* fall through */ }
-  const store = join(repoRoot, 'node_modules', '.pnpm')
-  if (existsSync(store)) {
+  // The plugin workspace can sit below the repository's pnpm workspace root;
+  // the virtual store then lives at <repo>/node_modules/.pnpm instead of
+  // <plugins>/node_modules/.pnpm. Check both before giving up.
+  for (const storeRoot of [repoRoot, resolve(repoRoot, '..')]) {
+    const store = join(storeRoot, 'node_modules', '.pnpm')
+    if (!existsSync(store)) continue
     const versions = readdirSync(store)
       .filter((d) => d.startsWith('@deepseek-ai+cordis@'))
       .sort()
