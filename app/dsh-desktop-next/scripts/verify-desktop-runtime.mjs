@@ -30,6 +30,9 @@ async function upgrade(origin, headers = {}, keep = false) {
 }
 try {
   runtime.initialize()
+  // The verification suite runs concurrently with verify:host; a fixed
+  // production default port would collide. Use an ephemeral port for this test.
+  runtime.preferences = { ...runtime.preferences, port: 0 }
   runtime.safeMode = true
   assert.throws(() => runtime.terminalTarget(), /not ready/, 'A pending safe runtime must never fall back to the original Profile')
   runtime.safeMode = false

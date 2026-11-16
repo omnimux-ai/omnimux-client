@@ -25,7 +25,7 @@ const pnpmInvocation = { command: executable, args: ['--expose-internals', bundl
 } }
 async function boot(name) {
   host = new DesktopHostProcess(executable, root, manager.directory(name), undefined,
-    { ...process.env, DSH_HOME: home, DSH_TELEMETRY_DISABLED: '1' }, undefined, undefined, undefined,
+    { ...process.env, DSH_HOME: home, DSH_TELEMETRY_DISABLED: '1', DSH_NEXT_PREFERENCES: JSON.stringify({ port: 0 }) }, undefined, undefined, undefined,
     join(root, 'scripts', 'fixtures', 'isolated-user-host.mjs'), () => {})
   let timer
   const ready = await Promise.race([
