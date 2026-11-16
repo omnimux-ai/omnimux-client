@@ -148,6 +148,15 @@ import { ImportConfigPanelImpl, type ImportConfigPanelProps } from './ImportConf
 
 const ImportConfigPanel: React.FC<ImportConfigPanelProps> = (props) => <ImportConfigPanelImpl {...props} />;
 
+function healingFieldForNotice(message: string): HealingNote['field'] {
+  if (message.includes('画幅') || message.includes('比例')) return 'aspectRatio';
+  if (message.includes('时长')) return 'duration';
+  if (message.includes('清晰度')) return 'resolution';
+  if (message.includes('声音')) return 'sound';
+  if (message.includes('参考图')) return 'referenceImages';
+  return 'aspectRatio';
+}
+
 const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   nodeId,
   nodeData,
@@ -501,6 +510,12 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   const commitVideoSelection = useCallback((transition: VideoParameterSelectionResult) => {
     onUpdateNodeData({ params: transition.params, parameterSelections: transition.parameterSelections });
     for (const message of transition.notices) toast.info(message);
+    if (typeof setHealingNotes === 'function') {
+      setHealingNotes(transition.notices.map((message: string) => ({
+        field: healingFieldForNotice(message),
+        message,
+      })));
+    }
   }, [onUpdateNodeData]);
   const videoSelection = useMemo(() => materialType === 'video' ? buildVideoParameterSelection({
     params, parameterSelections, currentModelItem: modelItem, targetModelItem: modelItem,
@@ -520,6 +535,18 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
       && JSON.stringify(videoSelection.parameterSelections) === JSON.stringify(parameterSelections)) return;
     commitVideoSelection(videoSelection);
   }, [videoSelection, params, parameterSelections, commitVideoSelection, activeCatalog, nodeId, migrationKey]);
+
+  useEffect(() => {
+    const notices = videoSelection?.notices ?? [];
+    if (notices.length === 0 || typeof setHealingNotes !== 'function') return;
+    setHealingNotes((prev) => {
+      const seen = new Set(prev.map((note) => note.message));
+      const additions = notices
+        .filter((message) => !seen.has(message))
+        .map((message) => ({ field: healingFieldForNotice(message), message }));
+      return additions.length > 0 ? [...prev, ...additions] : prev;
+    });
+  }, [videoSelection]);
 
   const updateParam = useCallback(
     (key: string, value: unknown) => {
@@ -621,11 +648,12 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
             schema,
             modelItem,
             catalog: activeCatalog,
+            lineConstraints,
             upstreams: consumedUpstreams.filter((source) => ['image', 'video', 'audio'].includes(source.materialType)),
             prompt: consumedFingerprint.prompt,
           })
         : null,
-    [materialType, params, schema, modelItem, activeCatalog, consumedUpstreams, consumedFingerprint.prompt],
+    [materialType, params, schema, modelItem, activeCatalog, lineConstraints, consumedUpstreams, consumedFingerprint.prompt],
   );
 
   // Issue #27: a JSON document's duration becomes the effective video duration
@@ -767,19 +795,15 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
       const modelList = (activeCatalog?.[materialType] ?? []) as CapabilityModelItem[];
       const newModelItem = modelList.find((m) => m.id === newModelId);
       let nextOperation: string | undefined;
-      if (channelSelection && newModelId === params.model) {
-        nextParams = { ...params };
-        nextOperation = readPreferredOperationId(nextParams as Record<string, unknown>)
-          || resolveSlotOperation(activeCatalog, newModelId, preferredOperationId, outputTypeForCompat, fingerprint);
-      } else if (materialType === 'video' && newModelItem) {
-        const nextRouting = channelSelection?.allowedGroups?.length
-          ? {
-              strategy: channelSelection.strategy,
-              allowedGroups: channelSelection.allowedGroups,
-              ...(channelSelection.channelGroupId ? { channelGroupId: channelSelection.channelGroupId } : {}),
-              ...(channelSelection.sourceType ? { sourceType: channelSelection.sourceType } : {}),
-            }
-          : (channelSelection ? null : undefined);
+      const nextRouting = channelSelection?.allowedGroups?.length
+        ? {
+            strategy: channelSelection.strategy,
+            allowedGroups: channelSelection.allowedGroups,
+            ...(channelSelection.channelGroupId ? { channelGroupId: channelSelection.channelGroupId } : {}),
+            ...(channelSelection.sourceType ? { sourceType: channelSelection.sourceType } : {}),
+          }
+        : (channelSelection ? null : undefined);
+      if (materialType === 'video' && newModelItem) {
         const transition = typeof buildVideoParameterSelection !== 'undefined'
           ? buildVideoParameterSelection({
               params, parameterSelections: scopedSelections, currentModelItem: scopedModelItem, targetModelItem: newModelItem,
@@ -791,7 +815,19 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
             });
         nextParams = transition.params;
         if (transition.parameterSelections) nextSelections = transition.parameterSelections;
-        if (transition.notices) for (const message of transition.notices) toast.info(message);
+        if (transition.notices) {
+          for (const message of transition.notices) toast.info(message);
+          if (typeof setHealingNotes === 'function') {
+            setHealingNotes(transition.notices.map((message: string) => ({
+              field: healingFieldForNotice(message),
+              message,
+            })));
+          }
+        }
+        nextOperation = readPreferredOperationId(nextParams as Record<string, unknown>)
+          || resolveSlotOperation(activeCatalog, newModelId, preferredOperationId, outputTypeForCompat, fingerprint);
+      } else if (channelSelection && newModelId === params.model) {
+        nextParams = { ...params };
         nextOperation = readPreferredOperationId(nextParams as Record<string, unknown>)
           || resolveSlotOperation(activeCatalog, newModelId, preferredOperationId, outputTypeForCompat, fingerprint);
       } else {
@@ -874,13 +910,15 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
             }
           }
           const contract = buildChannelContract(newModelId, matchedGroup);
-          const { nextParams: reconciledParams, healingNotes: newNotes } = reconcileParamsWithContract(
-            nextParams,
-            contract,
-          );
-          nextParams = reconciledParams;
-          if (typeof setHealingNotes === 'function') {
-            setHealingNotes(newNotes);
+          if (materialType !== 'video') {
+            const { nextParams: reconciledParams, healingNotes: newNotes } = reconcileParamsWithContract(
+              nextParams,
+              contract,
+            );
+            nextParams = reconciledParams;
+            if (typeof setHealingNotes === 'function') {
+              setHealingNotes(newNotes);
+            }
           }
           if (
             matchedGroup.constraints?.inputs?.image?.max === 1 ||
@@ -903,7 +941,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
               }
             }
           }
-        } else if (typeof setHealingNotes === 'function') {
+        } else if (materialType !== 'video' && typeof setHealingNotes === 'function') {
           setHealingNotes([]);
         }
       } catch (error) {

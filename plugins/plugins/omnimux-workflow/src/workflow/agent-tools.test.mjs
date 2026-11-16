@@ -21,6 +21,8 @@ import { join } from 'node:path';
 import { Writable } from 'node:stream';
 
 const host = await import('../../dist/index.js');
+import { prepareExecutionSlotGraph } from '../shared/graph/feedSlot/prepareExecutionSlotGraph.ts';
+import { findExecutionReadinessFailure } from '../shared/validation/executionReadiness.ts';
 
 class FakeRes extends Writable {
   constructor() {
@@ -606,7 +608,7 @@ test('pinned schemas: workflow_* tool names and parameter contracts remain equal
   }
 });
 
-test('workflow_run blocks invalid model parameters even when operation is implicit', async () => {
+test('execution preparation normalizes invalid model parameters before readiness', () => {
   const catalog = {
     source: 'omnimux', text: [], image: [], audio: [], video: [],
     models: [{
@@ -618,34 +620,15 @@ test('workflow_run blocks invalid model parameters even when operation is implic
       operations: [{ id: 'video_edit', label: '编辑', listed: true, output: { type: 'video' }, inputs: [] }],
     }],
   };
-  const h = makeHarness({ catalog });
-  try {
-    const created = await h.call({ method: 'POST', url: `${PREFIX}/api/workspaces`, body: { name: '非法保留参数' } });
-    const workspaceId = created.body.workspace.id;
-    await h.call({
-      method: 'PUT', url: `${PREFIX}/api/workspaces/${workspaceId}`,
-      body: {
-        expectedVersion: 0,
-        nodes: [{
-          id: 'video-invalid', type: 'material', position: { x: 0, y: 0 },
-          data: {
-            label: '非法视频', materialType: 'video', selectedTool: 'video-generation', status: 'ready',
-            params: { model: 'minimax-h3', aspectRatio: 'auto', resolution: '480p' },
-          },
-        }],
-        edges: [],
-      },
-    });
-    const result = await h.tool('workflow_run').execute({ workspace_id: workspaceId });
-    assert.equal(result.error, 'configuration_error');
-    assert.equal(result.reasonCode, 'parameter_unsupported');
-    assert.equal(result.nodeId, 'video-invalid');
-  } finally {
-    h.dispose();
-    rmSync(h.dir, { recursive: true, force: true });
-  }
+  const node = { id: 'video-invalid', type: 'material', data: {
+    label: '非法视频', materialType: 'video', selectedTool: 'video-generation', status: 'ready',
+    params: { model: 'minimax-h3', aspectRatio: 'auto', resolution: '480p' },
+  } };
+  const prepared = prepareExecutionSlotGraph([node], [], catalog);
+  assert.equal(prepared.nodes[0].data.params.aspectRatio, '16:9');
+  assert.equal(prepared.nodes[0].data.params.resolution, '720p');
+  assert.equal(findExecutionReadinessFailure(prepared.nodes, catalog, prepared), null);
 });
-
 
 const operationOverrideCatalog = {
   source: 'omnimux', text: [], image: [], audio: [], video: [],
@@ -658,62 +641,24 @@ const operationOverrideCatalog = {
   }],
 };
 
-test('workflow_run blocks stale explicit and invalid implicit operation contracts before mock submission', async () => {
-  const baseGateway = host.createMockGateway({ minLatencyMs: 10, maxLatencyMs: 10 });
-  const submitted = [];
-  const h = makeHarness({
-    catalog: operationOverrideCatalog,
-    gateway: {
-      ...baseGateway,
-      async submit(request) {
-        submitted.push(request);
-        return baseGateway.submit(request);
-      },
-    },
-  });
-  try {
-    const created = await h.call({ method: 'POST', url: `${PREFIX}/api/workspaces`, body: { name: 'operation admission' } });
-    const workspaceId = created.body.workspace.id;
-    await h.call({
-      method: 'PUT', url: `${PREFIX}/api/workspaces/${workspaceId}`,
-      body: {
-        expectedVersion: 0,
-        nodes: [{
-          id: 'stale-operation', type: 'material', position: { x: 0, y: 0 },
-          data: {
-            label: 'stale', materialType: 'video', selectedTool: 'video-generation', status: 'ready',
-            params: { model: 'operation-model', operation: 'old_op' },
-          },
-        }], edges: [],
-      },
-    });
-    const stale = await h.tool('workflow_run').execute({ workspace_id: workspaceId });
-    assert.equal(stale.error, 'configuration_error');
-    assert.equal(stale.reasonCode, 'operation_incompatible');
+test('execution preparation normalizes stale explicit and invalid implicit operations', () => {
+  const catalog = operationOverrideCatalog;
+  const stale = { id: 'stale-operation', type: 'material', data: {
+    label: 'stale', materialType: 'video', selectedTool: 'video-generation', status: 'ready',
+    params: { model: 'operation-model', operation: 'old_op' },
+  } };
+  const preparedStale = prepareExecutionSlotGraph([stale], [], catalog);
+  assert.equal(preparedStale.nodes[0].data.params.operation, 'video_edit');
+  assert.equal(findExecutionReadinessFailure(preparedStale.nodes, catalog, preparedStale), null);
 
-    const implicitCreated = await h.call({ method: 'POST', url: `${PREFIX}/api/workspaces`, body: { name: 'implicit operation' } });
-    const implicitWorkspaceId = implicitCreated.body.workspace.id;
-    await h.call({
-      method: 'PUT', url: `${PREFIX}/api/workspaces/${implicitWorkspaceId}`,
-      body: {
-        expectedVersion: 0,
-        nodes: [{
-          id: 'implicit-operation', type: 'material', position: { x: 0, y: 0 },
-          data: {
-            label: 'implicit', materialType: 'video', selectedTool: 'video-generation', status: 'ready',
-            params: { model: 'operation-model', duration: 5 },
-          },
-        }], edges: [],
-      },
-    });
-    const implicit = await h.tool('workflow_run').execute({ workspace_id: implicitWorkspaceId });
-    assert.equal(implicit.error, 'configuration_error');
-    assert.equal(implicit.reasonCode, 'parameter_unsupported');
-    assert.equal(submitted.length, 0, 'invalid operation contracts must never hit mock submit');
-  } finally {
-    h.dispose();
-    rmSync(h.dir, { recursive: true, force: true });
-  }
+  const implicit = { id: 'implicit-operation', type: 'material', data: {
+    label: 'implicit', materialType: 'video', selectedTool: 'video-generation', status: 'ready',
+    params: { model: 'operation-model', duration: 5 },
+  } };
+  const preparedImplicit = prepareExecutionSlotGraph([implicit], [], catalog);
+  assert.equal(preparedImplicit.nodes[0].data.params.operation, 'video_edit');
+  assert.equal(preparedImplicit.nodes[0].data.params.duration, -1);
+  assert.equal(findExecutionReadinessFailure(preparedImplicit.nodes, catalog, preparedImplicit), null);
 });
 
 const multiOperationCatalog = {
@@ -727,42 +672,13 @@ const multiOperationCatalog = {
   }],
 };
 
-test('workflow_run requires an explicit video mode when multiple modes are effective', async () => {
-  const baseGateway = host.createMockGateway({ minLatencyMs: 10, maxLatencyMs: 10 });
-  const submitted = [];
-  const h = makeHarness({
-    catalog: multiOperationCatalog,
-    gateway: {
-      ...baseGateway,
-      async submit(request) {
-        submitted.push(request);
-        return baseGateway.submit(request);
-      },
-    },
-  });
-  try {
-    const created = await h.call({ method: 'POST', url: `${PREFIX}/api/workspaces`, body: { name: 'multi operation' } });
-    const workspaceId = created.body.workspace.id;
-    await h.call({
-      method: 'PUT', url: `${PREFIX}/api/workspaces/${workspaceId}`,
-      body: {
-        expectedVersion: 0,
-        nodes: [{
-          id: 'multi-operation', type: 'material', position: { x: 0, y: 0 },
-          data: {
-            label: 'multi operation', materialType: 'video', selectedTool: 'video-generation', status: 'ready',
-            params: { model: 'multi-video' },
-          },
-        }], edges: [],
-      },
-    });
-    const blocked = await h.tool('workflow_run').execute({ workspace_id: workspaceId });
-    assert.equal(blocked.error, 'configuration_error');
-    assert.equal(blocked.reasonCode, 'operation_incompatible');
-    assert.equal(blocked.message, '请选择生成方式');
-    assert.equal(submitted.length, 0);
-  } finally {
-    h.dispose();
-    rmSync(h.dir, { recursive: true, force: true });
-  }
+test('execution preparation falls back to text_to_video for an unset multi-operation mode', () => {
+  const catalog = multiOperationCatalog;
+  const node = { id: 'multi-operation', type: 'material', data: {
+    label: 'multi operation', materialType: 'video', selectedTool: 'video-generation', status: 'ready',
+    params: { model: 'multi-video' },
+  } };
+  const prepared = prepareExecutionSlotGraph([node], [], catalog);
+  assert.equal(prepared.nodes[0].data.params.operation, 'text_to_video');
+  assert.equal(findExecutionReadinessFailure(prepared.nodes, catalog, prepared), null);
 });

@@ -76,11 +76,12 @@ test('actual model handler preserves routing-only parameters and transitions swi
   // 门禁：必须核验 filteredModels.options
   assert.match(handlerBody, /const candidate = filteredModels\.options\.find\(\(row\) => row\.id === newModelId\);\n      if \(!candidate \|\| candidate\.executable === false\) return;/);
 
-  // 同模型渠道切换保持原有参数：严禁调用 transition
-  assert.match(handlerBody, /if \(channelSelection && newModelId === params\.model\) \{\s*nextParams = \{ \.\.\.params \};/);
+  // 视频同模型渠道切换也必须经过统一参数归一化（AC-4）
+  assert.match(handlerBody, /if \(materialType === 'video' && newModelItem\) \{[\s\S]*?buildVideoParameterSelection/);
+  // 非视频同模型路由更新仍保持原参数
+  assert.match(handlerBody, /else if \(channelSelection && newModelId === params\.model\) \{\s*nextParams = \{ \.\.\.params \};/);
 
   // 跨模型切换：触发 transition
-  assert.match(handlerBody, /else if \(materialType === 'video' && newModelItem\)/);
   assert.match(handlerBody, /buildVideoParameterSelection|buildVideoParamTransition/);
 
   // 渠道选择更新：原子注入 nextParams.routing

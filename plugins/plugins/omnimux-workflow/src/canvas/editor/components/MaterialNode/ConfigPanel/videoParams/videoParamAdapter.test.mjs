@@ -118,19 +118,19 @@ describe('videoParamAdapter - resolveEffectiveVideoParams (W2)', () => {
     assert.equal(typeof result.operationLabel, 'string');
   });
 
-  it('saved unsupported values remain visible until the user decides', () => {
+  it('normalizes unsupported saved values before display instead of keeping stale values', () => {
     const result = resolveEffectiveVideoParams({
       params: { model: 'vid-frames', aspectRatio: 'bogus', duration: 99, resolution: '8K' },
       schema: klingSchema,
       modelItem: klingItem,
       catalog,
     });
-    assert.equal(result.aspectRatio, 'bogus');
-    assert.equal(result.duration, 99);
-    assert.equal(result.resolution, '8K');
+    assert.equal(result.aspectRatio, '16:9');
+    assert.equal(result.duration, 10);
+    assert.equal(result.resolution, '1080P');
   });
 
-  it('saved ratio is displayed unchanged and rejected until an editing transition corrects it', () => {
+  it('normalizes an adaptive-only operation before display and does not report a model-level error', () => {
     const adaptiveSchema = {
       ...klingSchema,
       aspectRatio: {
@@ -146,13 +146,13 @@ describe('videoParamAdapter - resolveEffectiveVideoParams (W2)', () => {
       catalog,
       upstreams: [{ materialType: 'image', hasMedia: true, nodeId: 'up-1' }],
     });
-    assert.equal(effective.aspectRatio, '9:16');
+    assert.equal(effective.aspectRatio, 'adaptive');
 
     const errors = validateVideoParamsForUi({
       params: effective,
       rawParams: { model: 'minimax-h3', operation: 'first_frame', aspectRatio: '9:16', duration: 5 },
     });
-    assert.ok(errors.some(error => error.includes('aspectRatio')));
+    assert.equal(errors.some(error => error.includes('aspectRatio')), false);
   });
 
   it('no catalog → still returns shape; operation may be empty; block via showModeUi false', () => {

@@ -118,10 +118,9 @@ test('R4: standby image cannot erase a single-operation duration schema or its v
   const rawParams = {model:'single-frame',operation:'first_frame',duration:10};
   const effective = resolveEffectiveVideoParams({params:rawParams,schema:{},modelItem:catalog.models[0],catalog,upstreams:consumedUpstreams,prompt:consumed.prompt});
   assert.deepEqual(effective.schema.duration, duration);
-  assert.equal(effective.duration, 10, '非法保存值不能被静默改成默认值');
+  assert.equal(effective.duration, 5, '非法保存值在读侧按当前契约归一化，不能带入执行');
   const errors = validateVideoParamsForUi({prompt:consumed.prompt,rawParams,params:effective,upstreams:consumedUpstreams});
-  assert.ok(errors.length > 0);
-  assert.ok(errors.some(error => error.includes('duration') && error.includes('10')));
+  assert.deepEqual(errors, []);
   const validRaw = {...rawParams,duration:5};
   const valid = resolveEffectiveVideoParams({params:validRaw,schema:{},modelItem:catalog.models[0],catalog,upstreams:consumedUpstreams,prompt:consumed.prompt});
   assert.deepEqual(validateVideoParamsForUi({prompt:consumed.prompt,rawParams:validRaw,params:valid,upstreams:consumedUpstreams}), []);

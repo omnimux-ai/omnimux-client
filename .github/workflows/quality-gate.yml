@@ -193,6 +193,7 @@ jobs:
 
       - name: Run regression tests
         run: |
+          node --test scripts/video-param-normalization.test.mjs
           node --test scripts/git-wt.test.mjs scripts/test-dx-pipeline.mjs scripts/worktree-delivery.test.mjs scripts/dev-launch-env.test.mjs scripts/omnimux-paths.test.mjs scripts/dev-app-unlock.test.mjs scripts/app-restart.test.mjs scripts/run-workspace-tests.test.mjs scripts/style-dom-probe.test.mjs
           node --test scripts/auto-qa-scan.test.mjs
           node --test scripts/test-authoring-inspection.test.mjs scripts/test-change-review.test.mjs scripts/review-packet.test.mjs

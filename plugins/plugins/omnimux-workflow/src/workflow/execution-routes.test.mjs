@@ -747,7 +747,7 @@ test('execution API: legacy /dsh-workflow prefix serves executions too', async (
   }
 });
 
-test('execution API keeps an invalid user parameter but rejects it before mock submission', async () => {
+test('execution API normalizes an invalid user parameter before mock submission', async () => {
   const baseGateway = host.createMockGateway({ minLatencyMs: 10, maxLatencyMs: 10 });
   const submitted = [];
   const gateway = {
@@ -765,13 +765,11 @@ test('execution API keeps an invalid user parameter but rejects it before mock s
     const workspaceId = await createUrlWorkspace(h, 'kept-invalid', 'document_to_video', {
       fileUrl: 'https://cdn.example.com/deck.pdf', aspectRatio: 'auto', resolution: '480p',
     });
-    const blocked = await h.startExecution(workspaceId, { mode: 'single', nodeIds: ['kept-invalid'] });
-    assert.equal(blocked.status, 400);
-    assert.equal(blocked.body.error, 'configuration_error');
-    assert.equal(blocked.body.reasonCode, 'parameter_unsupported');
-    assert.equal(blocked.body.nodeId, 'kept-invalid');
-    assert.match(blocked.body.message, /aspectRatio/);
-    assert.equal(submitted.length, 0);
+    const started = await h.startExecution(workspaceId, { mode: 'single', nodeIds: ['kept-invalid'] });
+    assert.equal(started.status, 200);
+    await waitUntil(() => submitted.length === 1);
+    assert.equal(submitted[0].aspectRatio, '16:9');
+    assert.equal(submitted[0].resolution, '720p');
   } finally {
     h.dispose();
     rmSync(h.dir, { recursive: true, force: true });
@@ -792,7 +790,7 @@ function operationOverrideCatalog() {
   };
 }
 
-test('execution API blocks stale explicit and invalid implicit operations before mock submission', async () => {
+test('execution API normalizes stale explicit and invalid implicit operations before mock submission', async () => {
   const baseGateway = host.createMockGateway({ minLatencyMs: 10, maxLatencyMs: 10 });
   const submitted = [];
   const gateway = {
@@ -809,9 +807,9 @@ test('execution API blocks stale explicit and invalid implicit operations before
   try {
     const staleWorkspace = await createUrlWorkspace(h, 'stale-operation', 'old_op');
     const stale = await h.startExecution(staleWorkspace, { mode: 'single', nodeIds: ['stale-operation'] });
-    assert.equal(stale.status, 400);
-    assert.equal(stale.body.error, 'configuration_error');
-    assert.equal(stale.body.reasonCode, 'operation_incompatible');
+    assert.equal(stale.status, 200);
+    await waitUntil(() => submitted.length === 1);
+    assert.equal(submitted[0].operation, 'video_edit');
 
     const created = await h.call({
       method: 'POST', url: '/omnimux-workflow/api/workspaces', body: { name: 'implicit override' }, headers: h.localHeaders,
@@ -831,10 +829,10 @@ test('execution API blocks stale explicit and invalid implicit operations before
       }, headers: h.localHeaders,
     });
     const implicit = await h.startExecution(implicitWorkspace, { mode: 'single', nodeIds: ['implicit-operation'] });
-    assert.equal(implicit.status, 400);
-    assert.equal(implicit.body.error, 'configuration_error');
-    assert.equal(implicit.body.reasonCode, 'parameter_unsupported');
-    assert.equal(submitted.length, 0, 'invalid operation contracts must never hit mock submit');
+    assert.equal(implicit.status, 200);
+    await waitUntil(() => submitted.length === 2);
+    assert.equal(submitted[1].operation, 'video_edit');
+    assert.equal(submitted[1].duration, -1);
   } finally {
     h.dispose();
     rmSync(h.dir, { recursive: true, force: true });
@@ -854,7 +852,7 @@ function multiOperationCatalog() {
   };
 }
 
-test('execution API requires an explicit video mode when multiple modes are effective', async () => {
+test('execution API falls back to text_to_video when multiple modes are effective without an explicit mode', async () => {
   const baseGateway = host.createMockGateway({ minLatencyMs: 10, maxLatencyMs: 10 });
   const submitted = [];
   const gateway = {
@@ -884,12 +882,10 @@ test('execution API requires an explicit video mode when multiple modes are effe
         }], edges: [],
       }, headers: h.localHeaders,
     });
-    const blocked = await h.startExecution(workspaceId, { mode: 'single', nodeIds: ['multi-operation'] });
-    assert.equal(blocked.status, 400);
-    assert.equal(blocked.body.error, 'configuration_error');
-    assert.equal(blocked.body.reasonCode, 'operation_incompatible');
-    assert.equal(blocked.body.message, '请选择生成方式');
-    assert.equal(submitted.length, 0);
+    const started = await h.startExecution(workspaceId, { mode: 'single', nodeIds: ['multi-operation'] });
+    assert.equal(started.status, 200);
+    await waitUntil(() => submitted.length === 1);
+    assert.equal(submitted[0].operation, 'text_to_video');
   } finally {
     h.dispose();
     rmSync(h.dir, { recursive: true, force: true });

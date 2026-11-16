@@ -11,6 +11,7 @@ import type {
   CapabilityModelItem,
   ModelParameterSchema,
 } from '../../../../../../shared/api.ts';
+import type { LineConstraints } from '../../../../../../shared/validation/lineConstraints.ts';
 import { resolveOperationLabel } from '../../../../../../shared/validation/operationLabels.ts';
 import {
   buildEffectiveOpsUiState,
@@ -24,6 +25,8 @@ import {
 } from '../../../../../../shared/validation/operationUi.ts';
 import { findDeclaredParameterFailure } from '../../../../../../shared/validation/declaredParameterValidation.ts';
 import { resolveGenerationPrompt } from '../../../../../../shared/graph/generationPrompt.ts';
+import { mergeVideoParameterSchema, normalizeVideoParamsForSchema } from './videoParamNormalization.ts';
+export { mergeVideoParameterSchema };
 import type { EffectiveVideoParams, VideoNodeParams } from './types.ts';
 
 export const DEFAULT_ASPECT_RATIO = '16:9';
@@ -48,6 +51,7 @@ export interface ResolveEffectiveVideoParamsArgs {
   schema: ModelParameterSchema | undefined;
   modelItem: CapabilityModelItem | undefined;
   catalog?: CapabilityCatalog | null;
+  lineConstraints?: LineConstraints | null;
   upstreams?: UpstreamMediaSnapshot[];
   prompt?: string;
 }
@@ -70,17 +74,6 @@ export interface VideoParamTransition {
 }
 
 const PENDING_ADJUSTMENT_KEY = 'pendingVideoParamAdjustment';
-
-/** Operation fields replace the corresponding model-level declaration. */
-export function mergeVideoParameterSchema(
-  base: ModelParameterSchema | undefined,
-  override: Record<string, unknown> | undefined,
-): ModelParameterSchema {
-  return {
-    ...(base ?? {}),
-    ...((override ?? {}) as ModelParameterSchema),
-  };
-}
 
 function selectedOperation(state: EffectiveOpsUiState): OperationUiOption | undefined {
   const id = state.selectedOperationId ?? state.implicitOperationId;
@@ -156,33 +149,32 @@ export function resolveEffectiveVideoParams(
   const defaultFallbackOp = opsState.effectiveOps.find((op) => op.id === 'text_to_video')
     ?? opsState.effectiveOps.find((op) => op.ready)
     ?? opsState.effectiveOps[0];
-  const operationOption = preferredOperation
+  const baseOperationOption = preferredOperation
     ? opsState.effectiveOps.find((option) => option.id === preferredOperation)
     : (selectedOperation(opsState) ?? defaultFallbackOp);
-  const operation = preferredOperation ?? operationOption?.id ?? '';
+  const requestedOperation = baseOperationOption?.id ?? preferredOperation ?? '';
+  const normalized = normalizeVideoParamsForSchema({
+    params: (params ?? {}) as Record<string, unknown>,
+    modelItem: args.modelItem,
+    operationId: requestedOperation || undefined,
+    catalog: args.catalog ?? null,
+    lineConstraints: args.lineConstraints,
+  });
+  const normalizedParams = normalized.params;
+  const operation = typeof normalizedParams.operation === 'string' && normalizedParams.operation.trim()
+    ? normalizedParams.operation.trim()
+    : requestedOperation;
+  const operationOption = opsState.effectiveOps.find((option) => option.id === operation) ?? baseOperationOption;
   const schema = mergeVideoParameterSchema(args.schema, operationOption?.parameters);
-
-  const ratioOptions = schema.aspectRatio?.options ?? [];
-  const rawRatio = typeof params?.aspectRatio === 'string' && params.aspectRatio.trim()
-    ? params.aspectRatio
-    : undefined;
-  const aspectRatio = rawRatio ?? schema.aspectRatio?.defaultValue ?? '';
-
-  const resolutionOptions = schema.resolution?.options ?? [];
-  const resolution = typeof params?.resolution === 'string' && params.resolution.trim()
-    ? params.resolution
-    : schema.resolution?.defaultValue;
-
-  const duration = params?.duration !== undefined
-    ? params.duration
-    : schema.duration?.defaultValue ?? '';
-
-  const sound = typeof params?.sound === 'boolean'
-    ? params.sound
-    : (schema.sound?.supported ? schema.sound.defaultValue : false);
+  const aspectRatio = typeof normalizedParams.aspectRatio === 'string' ? normalizedParams.aspectRatio : '';
+  const resolution = typeof normalizedParams.resolution === 'string' ? normalizedParams.resolution : undefined;
+  const duration = normalizedParams.duration !== undefined && normalizedParams.duration !== null
+    ? normalizedParams.duration as number | string
+    : '';
+  const sound = typeof normalizedParams.sound === 'boolean' ? normalizedParams.sound : false;
 
   const result: EffectiveVideoParams = {
-    model,
+    model: typeof normalizedParams.model === 'string' ? normalizedParams.model : model,
     operation,
     operationLabel: resolveOperationLabel({ id: operation, label: operationOption?.label }),
     effectiveOperations: opsState.effectiveOps,
@@ -195,32 +187,31 @@ export function resolveEffectiveVideoParams(
   };
 
   if (resolution !== undefined) result.resolution = resolution;
-  if (typeof params?.seed === 'number') result.seed = params.seed;
+  if (typeof normalizedParams.seed === 'number') result.seed = normalizedParams.seed;
   for (const [field] of BOOLEAN_FIELDS) {
     if (field === 'sound') continue;
     const definition = schema[field];
     if (definition?.supported) {
-      result[field] = typeof params?.[field] === 'boolean'
-        ? params[field] as boolean
+      result[field] = typeof normalizedParams[field] === 'boolean'
+        ? normalizedParams[field] as boolean
         : false;
     }
   }
   for (const [field] of ENUM_FIELDS) {
     const definition = schema[field];
     if (definition?.options?.length) {
-      const value = params?.[field];
+      const value = normalizedParams[field];
       result[field] = typeof value === 'string' && value.trim()
         ? value
         : definition.defaultValue;
     }
   }
-  if (typeof params?.fileUrl === 'string') result.fileUrl = params.fileUrl;
-  if (typeof params?.linkUrl === 'string') result.linkUrl = params.linkUrl;
-  if (typeof params?.firstFrameUrl === 'string') result.firstFrameUrl = params.firstFrameUrl;
-  if (typeof params?.lastFrameUrl === 'string') result.lastFrameUrl = params.lastFrameUrl;
+  for (const field of ['fileUrl', 'linkUrl', 'firstFrameUrl', 'lastFrameUrl'] as const) {
+    const value = normalizedParams[field];
+    if (typeof value === 'string') result[field] = value;
+  }
   return result;
 }
-
 function pushUnique(items: string[], value: string): void {
   if (!items.includes(value)) items.push(value);
 }
@@ -468,10 +459,21 @@ export function validateVideoParamsForUi(input: {
 }): string[] {
   const { params } = input;
   const errors: string[] = [];
-  const effectiveValues = {
-    ...((input.rawParams ?? params) as Record<string, unknown>),
-    aspectRatio: params.aspectRatio,
+  // Only normalized effective values may be validated. Never read raw
+  // params.aspectRatio here: an operation-level restriction would otherwise be
+  // reported as a model-level contract error.
+  const effectiveValues: Record<string, unknown> = {
+    model: params.model,
+    operation: params.operation,
   };
+  for (const field of [
+    'aspectRatio', 'resolution', 'duration', 'sound', 'seed', 'watermark',
+    'outputFormat', 'referenceTaskType', 'generationType', 'returnLastFrame',
+    'webSearch', 'nsfwCheck', 'fileUrl', 'linkUrl', 'firstFrameUrl', 'lastFrameUrl',
+  ] as const) {
+    const value = (params as unknown as Record<string, unknown>)[field];
+    if (value !== undefined && value !== '') effectiveValues[field] = value;
+  }
   const declaredFailure = findDeclaredParameterFailure(
     effectiveValues,
     params.schema as Record<string, unknown>,
