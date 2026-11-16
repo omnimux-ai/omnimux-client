@@ -109,12 +109,9 @@ jobs:
       - name: Enable package managers
         run: corepack enable
 
-      - name: Install
-        run: yarn install --immutable
-
-      # The 12 product bundles are `link:` dependencies now: the runtime checks below boot
-      # them from plugins/plugins/*, so their workspace dependencies and build outputs must
-      # exist before `yarn check` imports anything.
+      # The 12 product bundles are `link:` dependencies: install/build the plugin
+      # workspace first so later runtime checks can boot them from plugins/plugins/*
+      # and packaging never consumes a missing/stale lib/.
       - name: Install plugin workspace
         working-directory: .
         run: pnpm install --frozen-lockfile
@@ -122,6 +119,9 @@ jobs:
       - name: Build local plugin bundles
         working-directory: .
         run: pnpm --dir plugins run build:all
+
+      - name: Install
+        run: yarn install --immutable
 
       - name: Verify local plugin resolution
         working-directory: .
