@@ -217,27 +217,60 @@ function copyTree(source: string, destination: string, keep: Keep): void {
   })
 }
 
+/** The entries a workspace package publishes, plus the negated paths it withholds. */
+export interface PublishedTree {
+  /** Slash-separated entries relative to the package, topmost first, sorted. */
+  readonly entries: readonly string[]
+  /** Slash-separated `files` exclusions (`!path`) that apply below the entries. */
+  readonly excluded: readonly string[]
+}
+
 /**
- * The entries a workspace package publishes: the manifest, its readme and license files, the
- * main entry and the `files` list, as an installer would receive them. Only literal names and
- * `directory/**` forms are supported; other globs stop the build rather than guess.
+ * The tree a workspace package publishes: the manifest, its readme and license files, the main
+ * entry and the `files` list, as an installer would receive them. Literal names, `directory/**`
+ * forms and npm's `!path` exclusions are supported; other globs stop the build rather than guess.
+ * @param packageDir - Workspace package directory.
+ * @returns Published entries and the exclusions that apply beneath them.
+ */
+export function publishedTree(packageDir: string): PublishedTree {
+  const manifest = readManifest(packageDir)
+  const entries = new Set(['package.json'])
+  const excluded = new Set<string>()
+  for (const name of readdirSync(packageDir)) if (/^(?:readme|licen[cs]e)(?:\..*)?$/iu.test(name)) entries.add(name)
+  if (manifest.main !== undefined && existsSync(join(packageDir, manifest.main))) entries.add(manifest.main.replace(/^\.\//u, ''))
+  for (const pattern of manifest.files ?? []) {
+    const negated = pattern.startsWith('!')
+    const entry = (negated ? pattern.slice(1) : pattern).replace(/^\.\//u, '').replace(/\/(?:\*\*(?:\/\*)?)?$/u, '')
+    if (entry === '' || /[*?[\]{}!]/u.test(entry) || entry.split('/').some(part => part === '.' || part === '..')) {
+      throw new Error(`Next payload: unsupported files pattern ${JSON.stringify(pattern)} in ${manifest.name ?? packageDir}`)
+    }
+    if (negated) excluded.add(entry)
+    else if (existsSync(join(packageDir, entry))) entries.add(entry)
+  }
+  const sorted = [...entries].sort()
+  return {
+    entries: sorted.filter(entry => !sorted.some(other => other !== entry && entry.startsWith(`${other}/`))),
+    excluded: [...excluded].sort(),
+  }
+}
+
+/**
+ * The entries a workspace package publishes, as an installer would receive them.
  * @param packageDir - Workspace package directory.
  * @returns Slash-separated entries relative to the package.
  */
 export function publishedEntries(packageDir: string): string[] {
-  const manifest = readManifest(packageDir)
-  const entries = new Set(['package.json'])
-  for (const name of readdirSync(packageDir)) if (/^(?:readme|licen[cs]e)(?:\..*)?$/iu.test(name)) entries.add(name)
-  if (manifest.main !== undefined && existsSync(join(packageDir, manifest.main))) entries.add(manifest.main.replace(/^\.\//u, ''))
-  for (const pattern of manifest.files ?? []) {
-    const entry = pattern.replace(/^\.\//u, '').replace(/\/(?:\*\*(?:\/\*)?)?$/u, '')
-    if (entry === '' || /[*?[\]{}!]/u.test(entry) || entry.split('/').some(part => part === '.' || part === '..')) {
-      throw new Error(`Next payload: unsupported files pattern ${JSON.stringify(pattern)} in ${manifest.name ?? packageDir}`)
-    }
-    if (existsSync(join(packageDir, entry))) entries.add(entry)
-  }
-  const sorted = [...entries].sort()
-  return sorted.filter(entry => !sorted.some(other => other !== entry && entry.startsWith(`${other}/`)))
+  return [...publishedTree(packageDir).entries]
+}
+
+/**
+ * Whether a published path stays inside a negated `files` entry.
+ * @param excluded - Exclusions returned by {@link publishedTree}.
+ * @param path - Slash-separated path relative to the package.
+ * @returns True when the path or one of its parents is excluded.
+ */
+function isExcluded(excluded: readonly string[], path: string): boolean {
+  return excluded.some(entry => path === entry || path.startsWith(`${entry}/`))
 }
 
 /**
@@ -251,9 +284,11 @@ function copyPackage(pkg: ClosurePackage, modules: string, target: NextPackaging
   const keep: Keep = (path, name) => path.split('/')[0] !== 'node_modules' && !IGNORED_NAMES.has(name)
     && nextRuntimeFileExclusion(`${pkg.destination}/${path}`, target) === undefined
   if (!pkg.workspace) { copyTree(pkg.source, destination, keep); return }
-  for (const entry of publishedEntries(pkg.source)) {
+  const { entries, excluded } = publishedTree(pkg.source)
+  for (const entry of entries) {
     if (!keep(entry, basename(entry))) continue
-    copyTree(join(pkg.source, entry), join(destination, entry), (path, name) => keep(`${entry}/${path}`, name))
+    copyTree(join(pkg.source, entry), join(destination, entry),
+      (path, name) => keep(`${entry}/${path}`, name) && !isExcluded(excluded, `${entry}/${path}`))
   }
 }
 

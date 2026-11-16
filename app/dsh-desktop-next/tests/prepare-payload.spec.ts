@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import beforeBuild from '../scripts/before-build.ts'
 import { nextPackagingTarget, PAYLOAD_DIR, verifyNextPayload } from '../scripts/packaged-payload.ts'
-import { collectProductionClosure, collectProductionClosureReport, preparePayload, publishedEntries, SKIPPED_FEATURES_FILE } from '../scripts/prepare-payload.ts'
+import { collectProductionClosure, collectProductionClosureReport, preparePayload, publishedEntries, publishedTree, SKIPPED_FEATURES_FILE } from '../scripts/prepare-payload.ts'
 import { DESKTOP_RUNTIME_FILE, physicalPayload, readDesktopRuntime, verifyPayload } from '../src/runtime-tree.ts'
 import { completeApplication, FIXTURE_RELEASE, writeApplication, writePackage } from './runtime-fixture.ts'
 
@@ -48,10 +48,12 @@ function workspace(): { root: string; desktop: string; market: string } {
   const market = join(root, 'dsh-community-market')
   for (const directory of ['lib', 'src', 'tests']) mkdirSync(join(market, directory), { recursive: true })
   writeFileSync(join(market, 'package.json'), JSON.stringify({ name: 'dsh-community-market', version: '0.3.0', type: 'module', main: 'lib/index.js',
-    files: ['lib/**', 'cordis.patch.yml', 'docs/**'], dependencies: { '@deepseek-ai/dsh-base': '*', 'only-here': '*', conflict: '2.0.0' },
+    files: ['lib/**', '!lib/tests', 'cordis.patch.yml', 'docs/**'], dependencies: { '@deepseek-ai/dsh-base': '*', 'only-here': '*', conflict: '2.0.0' },
     devDependencies: { vitest: '*' } }) + '\n')
   writeFileSync(join(market, 'lib', 'index.js'), 'export {}\n')
   writeFileSync(join(market, 'lib', 'index.d.ts'), 'export {}\n')
+  mkdirSync(join(market, 'lib', 'tests'), { recursive: true })
+  writeFileSync(join(market, 'lib', 'tests', 'index.spec.ts'), 'export {}\n')
   writeFileSync(join(market, 'src', 'index.ts'), 'export {}\n')
   writeFileSync(join(market, 'tests', 'index.spec.ts'), 'export {}\n')
   writeFileSync(join(market, 'README.md'), '# market\n')
@@ -97,7 +99,7 @@ it('materializes, cleans and seals the payload the archive is later checked agai
     'node_modules/dev-only', 'node_modules/.yarn-state.yml', 'node_modules/conflict/.DS_Store',
     'node_modules/@deepseek-ai/dsh/index.js.map', 'node_modules/@deepseek-ai/dsh/index.d.ts',
     'node_modules/dsh-community-market/src', 'node_modules/dsh-community-market/tests', 'node_modules/dsh-community-market/tsconfig.json',
-    'node_modules/dsh-community-market/lib/index.d.ts', 'node_modules/dsh-community-market/node_modules/@deepseek-ai',
+    'node_modules/dsh-community-market/lib/index.d.ts', 'node_modules/dsh-community-market/lib/tests', 'node_modules/dsh-community-market/node_modules/@deepseek-ai',
     'node_modules/dsh-community-market/node_modules/only-here']) {
     expect(existsSync(join(output, ...absent.split('/'))), absent).toBe(false)
   }
@@ -140,6 +142,8 @@ it('materializes, cleans and seals the payload the archive is later checked agai
 it('stops on a missing required dependency and on publish patterns it cannot honour', () => {
   const { desktop, market } = workspace()
   expect(publishedEntries(market)).toEqual(['LICENSE', 'README.md', 'cordis.patch.yml', 'lib', 'package.json'])
+  // A negated `files` entry withholds a subtree while the published top entry stays whole.
+  expect(publishedTree(market).excluded).toEqual(['lib/tests'])
   writeFileSync(join(market, 'package.json'), JSON.stringify({ name: 'dsh-community-market', version: '0.3.0', files: ['lib/*.js'] }))
   expect(() => publishedEntries(market)).toThrow(/unsupported files pattern "lib\/\*\.js" in dsh-community-market/u)
   rmSync(join(desktop, 'node_modules', 'peer-user'), { recursive: true })
