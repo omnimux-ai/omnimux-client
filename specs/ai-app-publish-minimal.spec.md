@@ -89,3 +89,22 @@ MVP 场景：
 - 应用分类是独立筛选元数据，不影响输出。
 - 当前仓库无 `omnimux-apps` 插件源码；MVP 使用 workflow 内的 app execution fallback route，生产已有宿主时保留 `__OMNIMUX_APPS_EXECUTE__` 优先。
 - 前端产品代码修改前先交付精简版 HTML 演示并取得确认。
+
+## 旧标准变更
+
+- `plugins/plugins/omnimux-workflow/src/canvas/editor/utils/planVideoExtractionDownstream.test.mjs` :: `planVideoExtractionDownstream: 首次提取创建下游视频节点与连线`
+  - 原断言：`nodeKind === 'import'`、`selectedTool === 'import'`、`realPath === videoResult.videoPath`。
+  - 必须改的理由：视频提取下游节点由静态 `import` 占位升级为动态 `video-extraction` capability 节点，支持工作流重跑与 AI 应用发布，且不再持久化本地 `realPath`。
+  - 新期望证据：`nodeKind === 'generate'`、`selectedTool === 'video-extraction'`、`outputCapabilityId === 'video-extraction'`、`mediaUrl === videoResult.mediaUrl`、`previewUrl === videoResult.previewUrl`。
+- `plugins/plugins/omnimux-workflow/src/canvas/editor/utils/planVideoExtractionDownstream.test.mjs` :: `planVideoExtractionDownstream: 再次提取时就地更新已有关联视频节点，不创建冗余节点`
+  - 原断言：校验 `patch.data.realPath === updatedVideoResult.videoPath`。
+  - 必须改的理由：同上，再次提取更新 `mediaUrl` 与 `outputCapabilityId: 'video-extraction'`，不再写入 `realPath`。
+  - 新期望证据：校验 `patch.data.mediaUrl === updatedVideoResult.mediaUrl` 与 `patch.data.outputCapabilityId === 'video-extraction'`。
+- `plugins/plugins/omnimux-workflow/src/shared/specs/nodeSpecRegistry.test.mjs` :: `Test 1: NodeSpecRegistry contains all built-in node specifications`
+  - 原断言：`Object.keys(materialSpec.tools).length === 16`。
+  - 必须改的理由：新增内置 `video-extraction` 能力工具，内置工具总数由 16 增至 17。
+  - 新期望证据：`Object.keys(materialSpec.tools).length === 17`。
+- `plugins/plugins/omnimux-workflow/src/shared/specs/nodeSpecRegistry.test.mjs` :: `Test 2: MATERIAL_TOOL_INPUT_TYPES is 100% equivalent to legacy behavior across all 16 tools`
+  - 原断言：用例标题及 `expectedToolInputs` 覆盖 16 个工具。
+  - 必须改的理由：内置工具新增 `video-extraction`（`acceptedInputTypes: ['text']`），矩阵校验同步覆盖全部 17 个工具及 `MATERIAL_TOOLS.video`。
+  - 新期望证据：17 个工具全部通过映射与 `MATERIAL_TOOLS.video` 断言。
