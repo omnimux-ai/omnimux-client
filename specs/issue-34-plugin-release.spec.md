@@ -13,11 +13,29 @@
 - 基线：`origin/main` = `2f7b2bb9ba2dc4b47b0a24693cce6da796af5f31`（只比
   `839ff5e` 多 #35 docs spec）。
 - 本 PR 不改 `app/**`、不动根工作区文件；S1 会把 workspace 根上提并把 app 依赖
-  改成本仓包，`bundle.lock.json` 由 S1 生成后再回写。本 PR 只同步
-  `plugins/pnpm-lock.yaml` 里被改写的依赖说明符；workspace 根上移后由 S1 重新生成根 lock。
+  改成本仓包，`bundle.lock.json` 由 S1 生成后再回写。本 PR 最终 diff 不包含
+  `plugins/pnpm-lock.yaml` 的修改；依赖说明符改动与当前 lock 的冲突见「已知阻塞」。
 - 不改 Trusted Publisher 四元组：Owner `omnimux-ai` / Repository
   `omnimux-client` / Workflow filename `publish.yml` / Environment 空。
 - 不执行任何真实 npm 发布；真实发布必须等绑定确认 + 用户批准。
+
+## 已知阻塞（待 S1 / 维护者决策）
+
+`package.json` 已把 `dsh-ui-kit` 从 `file:` 改为 `^0.1.0`，`omnimux-assets` 的
+`omnimux-products` 改为 `^0.1.2`；按本单约束，`plugins/pnpm-lock.yaml` 不提交修改。
+在干净 checkout 上执行 `pnpm install --frozen-lockfile` 会报
+`ERR_PNPM_OUTDATED_LOCKFILE`：
+
+```text
+specifiers in the lockfile don't match specifiers in package.json:
+* 1 dependencies are mismatched:
+  - dsh-ui-kit (lockfile: file:../../packages/dsh-ui-kit, manifest: ^0.1.0)
+```
+
+因此当前 head 的 `Plugins build and typecheck` 是红灯；本地已有 `node_modules` 时
+`pnpm install --frozen-lockfile` 会显示 `Already up to date`，不能当作干净安装证据。
+处理选项：等 S1 根 workspace/根 lock 合入后 rebase 并重跑，或由维护者明确允许本 PR
+同步该 lockfile 说明符；在决策前不回写 lock。
 
 ## 版本矩阵（基线：2026-11-16 `npm view <pkg> version`）
 
