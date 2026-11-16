@@ -145,9 +145,11 @@ jobs:
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE/$PACKAGE_DIR"
+          # npm 拒绝不带 tag 的 prerelease（market 的 omni.N、workflow 的 rc.N）。
+          # 显式 latest 保持安装链路的默认解析；legacy 的 omni dist-tag 不在本 PR 改动。
           case "$ACTION" in
-            publish) npm publish --access public ;;
-            publish-dry-run) npm publish --access public --dry-run ;;
+            publish) npm publish --access public --tag latest ;;
+            publish-dry-run) npm publish --access public --tag latest --dry-run ;;
             pack-dry-run) npm pack --dry-run ;;
             *) echo "::error::unknown release action: $ACTION"; exit 1 ;;
           esac

@@ -63,8 +63,10 @@
 - `publish` job 是每包独立 job，`concurrency: publish-${{ matrix.package }}`；
   dry-run 最多并行 4 个，真实发布固定 `max-parallel: 1`，并按依赖拓扑排序，
   保证 `omnimux-products` 先于 `omnimux-assets`。
-- dry-run：未发布版本跑 `npm publish --dry-run`，已发布版本跑
-  `npm pack --dry-run`；真实发布：跑 `npm publish --access public`。
+- dry-run：未发布版本跑 `npm publish --tag latest --dry-run`，已发布版本跑
+  `npm pack --dry-run`；真实发布：跑 `npm publish --access public --tag latest`。
+  market/workflow 是 prerelease（`omni.N` / `rc.N`），npm 会拒绝不带 `--tag` 的
+  prerelease；显式 `latest` 保持安装链路的默认解析，`omni` dist-tag 不在本 PR 改动。
 - `all` 真实发布时已发布版本（当前为 `omnimux@0.1.8`）跳过并打 `::warning::`；
   显式点名已发布包则 preflight 失败。
 - 保留 `persist-credentials: false`、`verify-publish-source`、npm >= 11.5.1 检查、
