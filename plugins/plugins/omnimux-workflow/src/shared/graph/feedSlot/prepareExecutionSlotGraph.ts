@@ -1,5 +1,6 @@
 import type { CapabilityCatalog } from '../../api.ts';
 import { buildContractView, resolveModelView } from '../../validation/compatKernel.ts';
+import { buildInputCapability } from '../../validation/inputCapability.ts';
 import { readNodeInputSource } from '../nodeInputSource.ts';
 import { resolveNodeKind } from '../materialNode.ts';
 import { materialTools } from '../../specs/nodes/materialNodeSpec.ts';
@@ -38,8 +39,26 @@ export function prepareExecutionSlotGraph<
     const kind = (data.materialType ?? 'text') as keyof NonNullable<CapabilityCatalog['defaults']>;
     const model = resolveModelView(view, (params.model ?? catalog?.defaults?.[kind]) as string | undefined);
     params.model ??= model?.id;
-    params.operation ??= resolveSlotOperation(catalog, model?.id, params.operation, kind,
-      buildCanvasUpstreamFingerprint(node.id, nodes as unknown as CanvasNode[], nextEdges as unknown as Edge[]));
+    const fingerprint = buildCanvasUpstreamFingerprint(node.id, nodes as unknown as CanvasNode[], nextEdges as unknown as Edge[]);
+    if (kind === 'video') {
+      // R9: inputCapability decides the operation from the connected media;
+      // #55 below only normalizes the values against that operation schema.
+      const capability = buildInputCapability({
+        catalog,
+        modelId: model?.id,
+        outputType: 'video',
+        fingerprint,
+        ...(typeof params.operation === 'string' && params.operation.trim()
+          ? { preferredOperationId: params.operation.trim() }
+          : {}),
+        params,
+        ignoredEdgeIds: (data.slotStandbyEdgeIds ?? []) as string[],
+      });
+      if (capability.selectedOperationId) params.operation = capability.selectedOperationId;
+      if (capability.paramsProjection) params = capability.paramsProjection.params;
+    } else {
+      params.operation ??= resolveSlotOperation(catalog, model?.id, params.operation, kind, fingerprint);
+    }
     if (kind === 'video' && catalog?.source === 'omnimux') {
       // The gateway catalog is the execution contract. A model row without
       // model-level parameters can still carry operation-level constraints;

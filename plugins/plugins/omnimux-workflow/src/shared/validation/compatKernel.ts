@@ -236,6 +236,8 @@ export interface ContractModelView {
   family?: string;
   aliases: string[];
   operations: ContractOperationView[];
+  /** Model-level parameter declarations; operation-level declarations override per key. */
+  parameters?: Record<string, unknown>;
   /** Stable catalog order — the final auto-pick tiebreaker. */
   order: number;
   /** True when synthesized from legacy inputCapability rows (pre-v1.1 DTO). */
@@ -316,6 +318,9 @@ function toModelView(model: CatalogModelDto, order: number): ContractModelView |
     operations: (Array.isArray(model.operations) ? model.operations : [])
       .map(normalizeOperation)
       .filter((op): op is ContractOperationView => op !== null),
+    ...(model.parameters && typeof model.parameters === 'object'
+      ? { parameters: model.parameters as Record<string, unknown> }
+      : {}),
     order,
     synthesized: false,
   };

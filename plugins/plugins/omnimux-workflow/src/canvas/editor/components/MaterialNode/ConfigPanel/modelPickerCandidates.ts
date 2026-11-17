@@ -9,6 +9,8 @@ export interface PickerCandidate {
   executionStatus?: 'ready' | 'unsupported' | 'unverified';
   executable?: boolean;
   disabledReason?: 'adapter_unsupported' | 'provider_unverified';
+  /** Epic #63 R10: cannot consume the connected media; grey only, no copy. */
+  inputIncompatible?: boolean;
   /**
    * Gateway lines of this model, straight from the hub catalog row. The channel
    * column renders these and nothing else.

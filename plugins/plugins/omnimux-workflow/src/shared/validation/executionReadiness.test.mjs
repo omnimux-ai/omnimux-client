@@ -71,18 +71,14 @@ const operationOverrideCatalog = {
   }],
 };
 
-test('stale explicit operation blocks readiness instead of falling through to the gateway', () => {
+test('stale explicit operation is replaced by the only usable operation (Epic #63 R3)', () => {
   const failure = findExecutionReadinessFailure([{
     id: 'video-stale', type: 'material', data: {
       materialType: 'video', selectedTool: 'video-generation',
       params: { model: 'operation-model', operation: 'old_op' },
     },
   }], operationOverrideCatalog);
-  assert.deepEqual(failure, {
-    nodeId: 'video-stale',
-    reasonCode: 'operation_incompatible',
-    message: '当前模型不支持已保存的生成方式 old_op',
-  });
+  assert.equal(failure, null);
 });
 
 test('implicit sole operation validates its override parameters', () => {
@@ -123,7 +119,7 @@ test('implicit sole operation validates its required node fields', () => {
   });
 });
 
-test('multiple effective video operations require a persisted selection', () => {
+test('multiple video operations without media default to text_to_video (Epic #63 R6)', () => {
   const catalog = {
     source: 'omnimux', text: [], image: [], audio: [], video: [],
     models: [{
@@ -140,11 +136,7 @@ test('multiple effective video operations require a persisted selection', () => 
       params: { model: 'multi-video' },
     },
   }], catalog);
-  assert.deepEqual(failure, {
-    nodeId: 'video-multi',
-    reasonCode: 'operation_incompatible',
-    message: '请选择生成方式',
-  });
+  assert.equal(failure, null);
 });
 
 
@@ -287,9 +279,9 @@ test('Seedance 2.0: video_multi_ref with reference image upstream passes executi
       },
     }],
   };
+  // Epic #63 R3：first_frame 不能消费该边，但模型有 video_multi_ref 可消费，自动切换而不阻断。
   const singleModeFailure = findExecutionReadinessFailure([singleModeNode], realHubCatalog, singleModeGraph);
-  assert.ok(singleModeFailure !== null);
-  assert.equal(singleModeFailure.reasonCode, 'min_unsatisfied');
+  assert.equal(singleModeFailure, null);
 });
 
 test('Seedance 2.0: invalid parameters strictly intercepted with parameter_unsupported', () => {

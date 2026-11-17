@@ -74,7 +74,7 @@ test('actual model handler preserves routing-only parameters and transitions swi
   const handlerBody = configSrc.slice(handlerStart, handlerEnd);
 
   // 门禁：必须核验 filteredModels.options
-  assert.match(handlerBody, /const candidate = filteredModels\.options\.find\(\(row\) => row\.id === newModelId\);\n      if \(!candidate \|\| candidate\.executable === false\) return;/);
+  assert.match(handlerBody, /const candidate = filteredModels\.options\.find\(\(row\) => row\.id === newModelId\);\n      if \(!candidate \|\| candidate\.executable === false \|\| candidate\.inputIncompatible === true\) return;/);
 
   // 视频同模型渠道切换也必须经过统一参数归一化（AC-4）
   assert.match(handlerBody, /if \(materialType === 'video' && newModelItem\) \{[\s\S]*?buildVideoParameterSelection/);

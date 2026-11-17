@@ -57,10 +57,11 @@ test('first visit uses target defaults; returning restores current branch, not a
   assert.equal(next.parameterSelections.byModel.b.byOperation.text_to_video.resolution,'1080p');
 });
 test('modes remember their own controls and last explicit mode across model roundtrip', () => {
-  const first = transition({model:'a',operation:'text_to_video',resolution:'1080p'},a,{nextOperationId:'first_frame'});
+  const image = { nodeId: 'img-1', materialType: 'image', hasMedia: true, availability: 'ready', url: 'https://example.test/1.png' };
+  const first = transition({model:'a',operation:'text_to_video',resolution:'1080p'},a,{nextOperationId:'first_frame',upstreams:[image]});
   assert.equal(first.params.resolution,'720p');
-  const other = transition({...first.params,resolution:'480p'},b,{parameterSelections:first.parameterSelections});
-  const back = transition(other.params,a,{parameterSelections:other.parameterSelections});
+  const other = transition({...first.params,resolution:'480p'},b,{parameterSelections:first.parameterSelections,upstreams:[image]});
+  const back = transition(other.params,a,{parameterSelections:other.parameterSelections,upstreams:[image]});
   assert.equal(back.params.operation,'first_frame'); assert.equal(back.params.resolution,'480p');
   const text = transition(back.params,a,{parameterSelections:back.parameterSelections,nextOperationId:'text_to_video'});
   assert.equal(text.params.resolution,'1080p');
@@ -84,9 +85,9 @@ test('unknown model or unavailable catalog cannot write guessed defaults/history
   const result = buildVideoParameterSelection({params,catalog:null});
   assert.deepEqual(result.params,params); assert.equal(result.parameterSelections,undefined); assert.ok(result.errors.length);
 });
-test('unknown explicit mode remains invalid rather than fabricating support', () => {
+test('unknown explicit mode falls back to the default operation (Epic #63 R3)', () => {
   const result = transition({model:'a',operation:'unknown',resolution:'480p'},a);
-  assert.equal(result.params.operation,'unknown'); assert.equal(result.parameterSelections,undefined); assert.ok(result.errors.length);
+  assert.equal(result.params.operation,'text_to_video');
 });
 test('schema controls do not capture prompt/media/routing and non-scalar runtime values', () => {
   const result = transition({model:'a',operation:'text_to_video',resolution:'480p',prompt:'keep',routing:{allowedGroups:['a']},firstFrameUrl:'https://example.test/a'},b);

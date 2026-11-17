@@ -11,7 +11,7 @@ import { type ReactElement } from 'react';
 /** CfgChoiceTile 属性 */
 export interface CfgChoiceTileProps<T extends string | number> {
   /** 选项列表（仅传入有效项；不支持项不得进 DOM） */
-  options: Array<{ value: T; label: string }>;
+  options: Array<{ value: T; label: string; disabled?: boolean }>;
   /** 当前选中值 */
   value: T | undefined;
   /** 选择回调 */
@@ -37,18 +37,25 @@ export function CfgChoiceTile<T extends string | number>({
     >
       {options.map((opt) => {
         const isActive = opt.value === value;
-        const cls = isActive
-          ? 'wf-cfg-choice-tile wf-cfg-choice-tile--active'
-          : 'wf-cfg-choice-tile';
+        const isDisabled = opt.disabled === true;
+        const cls = [
+          'wf-cfg-choice-tile',
+          isActive ? 'wf-cfg-choice-tile--active' : '',
+          isDisabled ? 'wf-cfg-choice-tile--disabled' : '',
+        ].filter(Boolean).join(' ');
         return (
           <button
             key={String(opt.value)}
             type="button"
             role="radio"
             aria-checked={isActive}
+            aria-disabled={isDisabled}
+            disabled={isDisabled}
             className={cls}
             data-operation-id={typeof opt.value === 'string' ? opt.value : undefined}
-            onClick={() => onChange(opt.value)}
+            onClick={() => {
+              if (!isDisabled) onChange(opt.value);
+            }}
           >
             <span className="wf-cfg-choice-tile__label">{opt.label}</span>
           </button>

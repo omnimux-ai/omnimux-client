@@ -3,6 +3,7 @@ import type { CanvasInputMutationState, CanvasMutationRuntimeContext, CanvasNode
 import type { MaterialType } from '../canvasTypes.ts';
 import { buildCanvasUpstreamFingerprint, readCanvasParams } from './canvasInputSources.ts';
 import { buildContractView, buildUpstreamFingerprint, isMediaInputType, matchOperationInputs, planAutoAdaptation, resolveModelView } from '../validation/compatKernel.ts';
+import { buildInputCapability } from '../validation/inputCapability.ts';
 import { autoFillSlots, deriveSlotLayout, hydrateSlotBindings, type SlotBindings, type SlotConflict, type SlotOccupant } from './feedSlot/index.ts';
 import { effectiveSlotFingerprint, feedFromFingerprint } from './feedSlot/effectiveFingerprint.ts';
 import { resolveSlotOperation } from './feedSlot/resolveSlotOperation.ts';
@@ -51,7 +52,26 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
   const strandedBySupply = Boolean(savedOp && !matchOperationInputs(savedOp, raw).accepts
     && raw.assets.some((asset) => isMediaInputType(asset.type) && asset.availability === 'ready'));
   let autoDerived: string | undefined;
-  if ((!savedOperation || legacyChat || (systemChosen && strandedBySupply)) && model) {
+  if (outputType === 'video' && model) {
+    // Epic #63: video operation follows the connected media. The capability
+    // layer keeps the saved operation only while it is usable (R3), switches
+    // to the deterministic best candidate otherwise, and falls back to the
+    // family default after every media edge is removed (R6).
+    const capability = buildInputCapability({
+      catalog,
+      modelId: model.id,
+      outputType: 'video',
+      fingerprint: raw,
+      ...(savedOperation ? { preferredOperationId: savedOperation } : {}),
+      ignoredEdgeIds: Array.isArray(node.data.slotStandbyEdgeIds)
+        ? (node.data.slotStandbyEdgeIds as string[])
+        : [],
+    });
+    if (capability.selectedOperationId && capability.selectedOperationId !== savedOperation) {
+      params.operation = capability.selectedOperationId;
+      autoDerived = capability.selectedOperationId;
+    }
+  } else if ((!savedOperation || legacyChat || (systemChosen && strandedBySupply)) && model) {
     // A node without a saved mode starts in the catalog's recommended one — the mode that
     // consumes upstream media, so its slots exist from the first render. A saved mode, an
     // explicit connection or a user pick is never replaced here.

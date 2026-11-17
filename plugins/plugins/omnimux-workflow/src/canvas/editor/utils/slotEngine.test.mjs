@@ -207,10 +207,10 @@ test('demoteSlotAsset: 解绑槽位素材退入溢出池，溢出池首项自动
 });
 
 // ============================================================================
-// 4. 连线拖拽图片连图片不再被 connectionValidator 拒绝
+// 4. 连线：容量问题保持 advisory；模型没有任何图片槽位时按 R5 拒绝
 // ============================================================================
 
-test('连线校验解耦：从图片节点拉线到图片节点（即使槽位已满或纯文生图），连线永远 valid: true', () => {
+test('连线校验：槽位满仍允许供给；纯文生图模型无图片槽位时拒绝（Epic #63 R5）', () => {
   const catalog = createCompatTestCatalog();
 
   // 场景 A：下游节点为容量为 1 的模型，已经连了 1 张图（槽位满）
@@ -236,6 +236,7 @@ test('连线校验解耦：从图片节点拉线到图片节点（即使槽位�
   const connectionB = { source: 'img3', target: 'target_text' };
   const detailB = validateConnectionDetailed(connectionB, nodesB, [], catalog);
 
-  assert.equal(detailB.valid, true, '纯文生图节点接收图片输入不应被物理阻断，返回 valid: true');
-  assert.equal(validateConnection(connectionB, nodesB, [], catalog), true);
+  assert.equal(detailB.valid, false, '纯文生图模型没有任何图片槽位，必须拒绝连线');
+  assert.equal(detailB.reasonCode, 'model_incompatible');
+  assert.equal(validateConnection(connectionB, nodesB, [], catalog), false);
 });

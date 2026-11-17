@@ -46,17 +46,16 @@ function videoNode(params = {}) {
 }
 
 describe('new node starts in the catalog default generation mode', () => {
-  it('a fresh video node receives the media-consuming mode and renders slots', () => {
+  it('a fresh video node starts in text_to_video until media arrives (Epic #63 R6)', () => {
     const catalog = videoCatalog();
     const node = videoNode();
     const result = recomputeCanvasSlots(node, { nodes: [node], edges: [] }, { catalog });
-    assert.equal(result.data.params.operation, 'video_multi_ref');
+    assert.equal(result.data.params.operation, 'text_to_video');
     assert.equal(result.data.params.model, 'seedance-2-5');
 
-    const layout = deriveSlotLayout(catalog, 'seedance-2-5', 'video_multi_ref');
-    assert.notEqual(layout.preset, 'none');
-    assert.ok(layout.slots.length > 0, 'the default mode must expose slots');
-    assert.deepEqual(layout.slots.map((slot) => slot.slot), ['reference_images']);
+    const layout = deriveSlotLayout(catalog, 'seedance-2-5', 'text_to_video');
+    assert.equal(layout.preset, 'none');
+    assert.deepEqual(layout.slots, []);
   })
 
   it('a saved mode is never replaced by the default', () => {

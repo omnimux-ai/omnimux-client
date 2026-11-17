@@ -137,6 +137,7 @@ test('version1 preparation never autofills supply or restores inactive intent; l
 
 test('only occupied frames pass through dispatch, standby missing and bad URLs are never submitted', async () => {
   const target = node({ first_frame: [occupant('a')], last_frame: [occupant('b')] });
+  target.data.slotStandbyEdgeIds = ['e-bad', 'e-waiting'];
   const outputs = { a: media('a'), b: media('b'), bad: { mediaAssets: [{ type: 'image', url: 'blob:invalid' }] } };
   const edges = ['a', 'bad', 'waiting', 'b'].map((id) => edge(id));
   const gw = gateway(); let catalogReads = 0; gw.capabilities = async () => { catalogReads++; return catalog; };
@@ -195,7 +196,9 @@ test('one supply edge can fill two named roles and swapped node roles override e
   assert.deepEqual(gw.requests[0].references.map((ref) => ref.role), ['first_frame', 'last_frame']);
 });
 test('removed saved slots are omitted without blocking a satisfied operation', async () => {
-  const target = node({ removed_slot: [occupant('a')] }, 'text_to_video'); const gw = gateway();
+  const target = node({ removed_slot: [occupant('a')] }, 'text_to_video');
+  target.data.slotStandbyEdgeIds = ['e-a'];
+  const gw = gateway();
   assert.equal(findExecutionReadinessFailure([target], catalog, { nodes: [target, graphNode('a')], edges: [edge('a')] }), null);
   await createMaterialGatewayExecutor({ gateway: gw }).execute(target, context({}, { upstreamBindings: [{ edgeId: 'e-a', sourceNodeId: 'a', output: media('a') }] }));
   assert.equal(gw.requests.length, 1);
@@ -259,6 +262,7 @@ test('dispatch detaches topology and scheduler outputs before awaiting catalog',
 });
 test('legacy hydration, single-node readiness and initial output seeding share occupied population', () => {
   const target = node(undefined); delete target.data.slotBindings;
+  target.data.slotStandbyEdgeIds = ['e-bad'];
   const nodes = [graphNode('a'), graphNode('b'), graphNode('bad', 'image', { relativePath: 'assets/missing.png' }), target];
   const prepared = prepareExecutionSlotGraph(nodes, ['a', 'b', 'bad'].map((id) => edge(id)), catalog);
   const preparedTarget = prepared.nodes.find((item) => item.id === 'target');
