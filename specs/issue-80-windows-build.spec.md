@@ -11,7 +11,7 @@
 
 1. `omnimux-market`：`build` 不再使用 POSIX `rm -rf` / `mkdir -p` / `cp` / `for ... case`，迁到 `scripts/build.mjs`，用 Node `fs` 保持原产物结构与 `*.test.js` 排除规则。
 2. `omnimux-clip`：`build-client.mjs` 的 Tailwind 配置动态 import 使用 `pathToFileURL(...).href`，避免 Windows 盘符被 ESM 当作 URL scheme。
-3. 扫描全部插件 `prepare/build`（含嵌套 extension package），修复发现的其他 Windows 路径/PATH 分隔符问题（`omnimux-browser/extension/scripts/build.mjs`）。
+3. 扫描全部插件 `prepare/build`（含嵌套 extension package），修复发现的其他 Windows 路径/PATH 分隔符问题（`omnimux-browser/extension/scripts/build.mjs`）；`build-all.mjs` 不再直接 spawn Windows 不可解析的裸 `npm` shim，统一复用 pnpm JS 入口。
 
 ## 非目标
 

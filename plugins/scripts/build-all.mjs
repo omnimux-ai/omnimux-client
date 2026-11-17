@@ -83,10 +83,18 @@ function resolvePluginBuildTask(pluginName, dir) {
   const pkgPath = join(dir, 'package.json')
   if (!existsSync(pkgPath)) return null
 
+  // Reuse the pnpm CLI that launched this build. Spawning a bare `npm`/`pnpm`
+  // resolves through the caller's PATH and fails under Windows cmd.exe when the
+  // launcher is a .cmd shim; `npm_execpath` points at the real JS entry.
+  const npmExecPath = process.env.npm_execpath
+  const pnpm = npmExecPath && /pnpm(?:\.[cm]?js)?$/u.test(npmExecPath)
+    ? { command: process.execPath, args: [npmExecPath] }
+    : { command: 'corepack', args: ['pnpm'] }
+
   try {
     const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
     if(['omnimux','omnimux-avatar'].includes(pluginName)&&pkg.scripts?.build){
-      return {name:pluginName,dir,command:'npm',args:['run','build','--silent']}
+      return {name:pluginName,dir, ...pnpm, args:[...pnpm.args,'--silent','run','build']}
     }
     // 1. 特殊脚本：build-client.mjs
     if (existsSync(join(dir, 'scripts/build-client.mjs'))) {
@@ -99,14 +107,6 @@ function resolvePluginBuildTask(pluginName, dir) {
     }
     // 2. package.json 声明了 scripts.build
     if (pkg.scripts?.build) {
-      // Reuse the pnpm CLI that launched this build. Spawning a bare `pnpm`
-      // resolves through the caller's PATH and can pick another pnpm (for
-      // example the app workspace's bundled 11.x), which then refuses the
-      // root workspace's packageManager pin.
-      const npmExecPath = process.env.npm_execpath
-      const pnpm = npmExecPath && /pnpm(?:\.[cm]?js)?$/u.test(npmExecPath)
-        ? { command: process.execPath, args: [npmExecPath] }
-        : { command: 'corepack', args: ['pnpm'] }
       return {
         name: pluginName,
         dir,

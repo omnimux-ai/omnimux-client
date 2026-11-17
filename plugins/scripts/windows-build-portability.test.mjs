@@ -85,6 +85,12 @@ describe('Windows cloud build portability', () => {
     assert.doesNotMatch(source, /PATH: `\$\{binDir\}:/)
   })
 
+  it('does not spawn a bare npm shim from the build orchestrator', () => {
+    const source = readFileSync(join(repoRoot, 'plugins', 'scripts', 'build-all.mjs'), 'utf8')
+    assert.doesNotMatch(source, /command:\s*'npm'/)
+    assert.match(source, /npm_execpath/)
+  })
+
   it('does not use bare joined paths in any plugin build script dynamic import', () => {
     const violations = []
     for (const packageDir of collectPackageDirs()) {
