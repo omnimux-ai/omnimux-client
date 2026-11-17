@@ -39,6 +39,7 @@
 ## 测试计划
 
 - `NativeRuntimeSetup.test.js`：slot 注册、老用户判定、官方登录文案/`ensureLogin`、Agent/TextKeyPanel 复用、skip 不写 `runtimeMode`、保存成功返回 null。
+- `NativeRuntimeSetup.behavior.test.mjs`：真实 jsdom + React 渲染，覆盖老用户跳过、官方未登录/已登录、Agent 扫描/选择/测试/空态、Key 校验/保存、失败停留、skip 不写 `runtimeMode`、保存成功返回 null。
 - `runtime-guide-view.test.js`：`hasAnyChannelChoice` / `describeRuntimeGuide`。
 - `settings-placement.test.js`：旧 shell.overlay 注册不存在，新 child slot 注册存在。
 - `text-key-panel.test.js`：key 面板仍只配置 text，且由 NativeRuntimeSetup 挂载。
