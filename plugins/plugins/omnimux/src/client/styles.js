@@ -2094,6 +2094,110 @@ ${AGENT_PRESET_AVATAR_CSS}
   justify-content: flex-end;
   padding-top: 4px;
 }
+/* ── Native first-run runtime chooser (#77) ── */
+.omnimux-native-runtime-page {
+  width: min(1080px, calc(100vw - 96px));
+  min-height: 100%;
+  margin: 0 auto;
+  padding: 72px 0 40px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  color: var(--dsw-alias-label-primary);
+}
+.omnimux-native-runtime-header h1 {
+  margin: 0;
+  font-size: 32px;
+  font-weight: 300;
+  line-height: 48px;
+}
+.omnimux-native-runtime-header p {
+  margin: 12px 0 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 16px;
+  line-height: 24px;
+}
+.omnimux-native-runtime-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 40px;
+}
+.omnimux-native-runtime-card {
+  min-height: 148px;
+  padding: 24px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 32px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 8px;
+  text-align: left;
+  white-space: normal;
+}
+.omnimux-native-runtime-card:hover {
+  background: var(--dsw-alias-bg-layer-3);
+}
+.omnimux-native-runtime-card.is-selected {
+  border-color: var(--dsw-alias-brand-primary);
+  background: var(--dsw-alias-bg-layer-3);
+}
+.omnimux-native-runtime-card-title {
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 28px;
+}
+.omnimux-native-runtime-card-hint {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 14px;
+  font-weight: 300;
+  line-height: 21px;
+}
+.omnimux-native-runtime-detail {
+  margin-top: 24px;
+  padding: 24px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 24px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+.omnimux-native-runtime-error {
+  margin: 16px 0 0;
+  color: var(--dsw-alias-state-error-primary, var(--dsw-alias-label-primary));
+  font-size: 14px;
+  line-height: 22px;
+}
+.omnimux-native-runtime-footer {
+  margin-top: auto;
+  padding-top: 32px;
+}
+.omnimux-native-runtime-skip {
+  justify-content: flex-start;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+}
+.omnimux-native-runtime-skip:hover {
+  color: var(--dsw-alias-label-primary);
+  text-decoration: underline;
+}
+.omx-agent-empty {
+  margin: 8px 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 14px;
+  line-height: 22px;
+}
+@media (max-width: 760px) {
+  .omnimux-native-runtime-page {
+    width: min(100% - 40px, 1080px);
+    padding-top: 40px;
+  }
+  .omnimux-native-runtime-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 `
 
 export function injectHubStyles() {

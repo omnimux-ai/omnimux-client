@@ -82,11 +82,11 @@ describe('settings placement', () => {
     assert.ok(hook.includes('sessionCache'), 'list hook rehydrates from a session cache')
   })
 
-  it('mounts the first-run runtime guide on the session overlay', () => {
+  it('registers the native runtime setup on the onboarding child slot', () => {
     const hub = readFileSync(join(here, 'index.js'), 'utf8')
-    assert.match(hub, /id:\s*'omnimux-runtime-guide'/, 'guide registration must be present')
-    assert.match(hub, /shell\.overlay[\s\S]{0,400}omnimux-runtime-guide/, 'guide mounts on shell.overlay')
-    assert.match(hub, /order:\s*29/, 'renders below the login gate (order 30)')
-    assert.doesNotMatch(hub, /whileServed\(\['omnimux'\][\s\S]{0,200}omnimux-runtime-guide/, 'guide must not wait for Settings to open')
+    assert.match(hub, /onboarding\.desktop\.runtime/, 'native runtime child slot must be registered')
+    assert.match(hub, /id:\s*'omnimux-native-runtime'/, 'runtime setup registration must be present')
+    assert.match(hub, /NativeRuntimeSetup/, 'native runtime component must be wired')
+    assert.doesNotMatch(hub, /omnimux-runtime-guide|RuntimeGuideGate/, 'old full-screen guide must not be registered')
   })
 })

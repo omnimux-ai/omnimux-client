@@ -10,7 +10,7 @@ const nonEmpty = (value) => typeof value === 'string' && value.trim().length > 0
  * cannot distinguish "chosen" from "fresh" and is not part of `seen`.
  * @param {unknown} settings
  */
-function hasAnyChannelChoice(settings) {
+export function hasAnyChannelChoice(settings) {
   const input = settings && typeof settings === 'object' && !Array.isArray(settings) ? settings : {}
   if (nonEmpty(input.runtimeMode)) return true
   if (nonEmpty(input.runtimeAgentId)) return true
