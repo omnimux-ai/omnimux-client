@@ -13,7 +13,7 @@
 
 ## 非目标
 
-- 不改 `app/patches/dsh-client-ui-settings-account@0.2.1-rc.3.patch`、`app/yarn.lock`、`bundle.lock.json`、`RuntimeGuideGate.jsx`、`runtime-guide-skip.test.js`。
+- 不改 `app/patches/dsh-client-ui-settings-account@0.2.1-rc.3.patch`、`app/yarn.lock`、`RuntimeGuideGate.jsx`、`runtime-guide-skip.test.js`；`bundle.lock.json` 仅因 topbar 源码内容变化同步 `omnimux` 包的一行内容哈希，不改变其他包或依赖解析。
 - 不处理原生 onboarding 用途步、两套引导叠加；由 #77（运行方式单页）承接。
 - 不改欢迎文案、额度显示条件、`dsh-desktop-next` Next 壳、官方 DSH 子模块。
 
@@ -23,10 +23,11 @@
 - [ ] AC-2：`findTopbarAnchor()` 无 workbench tabBar 时返回 null，绝不注入 body。
 - [ ] AC-3：回归 #47 会话标题、多模态输入、工作区布局不受影响。
 - [ ] AC-4：真实 Dev 首启验收：独立 userData / appId，1280×840@2x 截图 + DOM rect/状态/pid/port/window bounds；不重启用户实例、不创建付费任务、不碰 Prod。
+  证据口径：现有 `.tmp/first-run-chain/evidence.json` 的 `buildInfo.commit=2007108` 早于本 PR final head，不能作为本 PR 证据；本 PR 只交付插件层，真实 Dev 首启验收由桌面端在 final head 的独立实例补跑，当前不宣称完成、不以旧证据冒充。
 
 ## 测试
 
-- `sidebar-toggle-topbar.test.js`：新增无 tabBar fallback、引导态隐藏/恢复、upstream surface + inert root 用例。
+- `sidebar-toggle-topbar.test.js`：新增无 tabBar fallback、引导态隐藏/恢复、upstream surface + inert root 用例；并通过 `installSidebarToggleTopbar()` 生产入口覆盖 guide 追加即隐藏、guide 移除即恢复、初始 guide 移除即恢复的异步生命周期。
 - 触及 plugins 后按仓规跑 `corepack pnpm --dir plugins run build:all` 及相关门禁。
 
 ## 旧标准变更

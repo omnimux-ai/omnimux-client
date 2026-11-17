@@ -1526,4 +1526,80 @@ describe('first-run onboarding gating (#67)', () => {
     assert.equal(ensureSidebarToggleTopbar(doc), null)
     assert.equal(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`), null)
   })
+
+  it('observes a guide appended after install and restores when it disappears', async () => {
+    const doc = setup()
+    const stop = installSidebarToggleTopbar(doc)
+    const hasControls = () => Boolean(
+      doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`)
+      && doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`),
+    )
+    try {
+      assert.equal(hasControls(), true)
+      const guide = doc.createElement('div')
+      guide.setAttribute('data-omnimux-runtime-guide', '')
+      doc.body.appendChild(guide)
+      await waitFor(() => hasControls() === false)
+      guide.remove()
+      await waitFor(() => hasControls() === true)
+    } finally {
+      stop()
+    }
+  })
+
+  it('observes an initially-mounted guide through the production install entry', async () => {
+    const doc = setup()
+    const guide = doc.createElement('div')
+    guide.setAttribute('data-omnimux-runtime-guide', '')
+    doc.body.appendChild(guide)
+    const stop = installSidebarToggleTopbar(doc)
+    const hasControls = () => Boolean(
+      doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`)
+      && doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`),
+    )
+    try {
+      assert.equal(hasControls(), false)
+      guide.remove()
+      await waitFor(() => hasControls() === true)
+    } finally {
+      stop()
+    }
+  })
+
+  it('observes the native onboarding surface and inert root through the production install entry', async () => {
+    const doc = setup()
+    const root = doc.createElement('div')
+    root.id = 'root'
+    doc.body.appendChild(root)
+    const stop = installSidebarToggleTopbar(doc)
+    const hasControls = () => Boolean(
+      doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`)
+      && doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`),
+    )
+    try {
+      assert.equal(hasControls(), true)
+      const surface = doc.createElement('div')
+      surface.setAttribute('data-desktop-onboarding-surface', '')
+      doc.body.appendChild(surface)
+      await waitFor(() => hasControls() === false)
+      surface.remove()
+      await waitFor(() => hasControls() === true)
+
+      root.setAttribute('inert', '')
+      await waitFor(() => hasControls() === false)
+      root.removeAttribute('inert')
+      await waitFor(() => hasControls() === true)
+    } finally {
+      stop()
+    }
+  })
 })
+
+async function waitFor(predicate, timeoutMs = 500) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (predicate()) return
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+  assert.fail('condition was not met before timeout')
+}

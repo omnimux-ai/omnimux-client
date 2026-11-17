@@ -140,16 +140,20 @@ describe('injected topbar chrome survives throwing DOM operations (jsdom E2E)', 
 
   it('keeps new-session injection working when the stale button cannot be removed', () => {
     const doc = setup()
-    installSidebarToggleTopbar(doc)
-    const staleNewSession = doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`)
-    assert.notEqual(staleNewSession, null)
-    staleNewSession.remove = () => { throw new Error('remove is blocked by host') }
+    const cleanup = installSidebarToggleTopbar(doc)
+    try {
+      const staleNewSession = doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`)
+      assert.notEqual(staleNewSession, null)
+      staleNewSession.remove = () => { throw new Error('remove is blocked by host') }
 
-    let returned
-    assert.doesNotThrow(() => {
-      returned = injectTopbarNewSessionButton(doc, false)
-    }, '移除失败不得让折叠态切换抛错')
-    assert.equal(returned, null, '展开态不保留新会话按钮，返回 null 的契约不变')
+      let returned
+      assert.doesNotThrow(() => {
+        returned = injectTopbarNewSessionButton(doc, false)
+      }, '移除失败不得让折叠态切换抛错')
+      assert.equal(returned, null, '展开态不保留新会话按钮，返回 null 的契约不变')
+    } finally {
+      cleanup()
+    }
   })
 
   it('triggerClick falls back to dispatchEvent when the React props handler throws', () => {

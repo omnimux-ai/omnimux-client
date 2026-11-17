@@ -1430,6 +1430,8 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
   let desktopObserver = null
   /** @type {MutationObserver | null} */
   let frameObserver = null
+  /** @type {MutationObserver | null} */
+  let guideObserver = null
   /** @type {ResizeObserver | null} */
   let widthObserver = null
   /** @type {((this: Window, ev: UIEvent) => void) | null} */
@@ -1472,6 +1474,10 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
   }
 
   const scheduleSync = () => {
+    // A host can close its document while a hostile observer refuses to
+    // disconnect (covered by the E2E cleanup contract). Never schedule work
+    // against a closed window: its globals/constructors are gone with it.
+    if (doc.defaultView?.closed === true) return
     if (pendingSchedule !== null) return
     let isCancelled = false
     const runner = () => {
@@ -1483,6 +1489,9 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
         ensureSidebarToggleTopbar(doc)
         ensureObserveTargets()
         rebindHostObservers()
+      } catch {
+        // Best-effort chrome sync: a host may tear down its document while a
+        // hostile observer is still queued (covered by the E2E cleanup test).
       } finally {
         isEnsuring = false
       }
@@ -1578,6 +1587,41 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
     }
   }
 
+  let observedGuideBody = null
+  let observedGuideRoot = null
+  /**
+   * First-run guides are portaled to `body` (or mounted inside `#root`) and
+   * `#root[inert]` toggles with the same lifecycle. Observe only the two
+   * concrete hosts and the root inert attribute: a full document subtree
+   * observer would also see our own tabBar injections and re-arm itself.
+   */
+  const bindGuideObserver = () => {
+    if (!ObserverClass) return
+    const body = doc.body
+    const root = doc.getElementById('root')
+    if (guideObserver && observedGuideBody === body && observedGuideRoot === root) return
+    if (guideObserver) {
+      safeDom(() => guideObserver.disconnect())
+      guideObserver = null
+    }
+    observedGuideBody = body
+    observedGuideRoot = root
+    guideObserver = new ObserverClass(() => {
+      scheduleSync()
+    })
+    if (body) {
+      guideObserver.observe(body, { childList: true, subtree: false })
+    }
+    if (root) {
+      guideObserver.observe(root, {
+        attributes: true,
+        attributeFilter: ['inert'],
+        childList: true,
+        subtree: false,
+      })
+    }
+  }
+
   let observedFrame = null
   /**
    * The shell rewrites its authored grid on every splitter frame. Without this
@@ -1608,6 +1652,7 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
     bindCollapsedObserver()
     bindAnchorObserver()
     bindDesktopObserver()
+    bindGuideObserver()
     bindFrameObserver()
   }
 
@@ -1642,9 +1687,15 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
       safeDom(() => frameObserver.disconnect())
       frameObserver = null
     }
+    if (guideObserver) {
+      safeDom(() => guideObserver.disconnect())
+      guideObserver = null
+    }
     observedCollapsedHost = null
     observedAnchor = null
     observedFrame = null
+    observedGuideBody = null
+    observedGuideRoot = null
     if (widthObserver) {
       safeDom(() => widthObserver.disconnect())
       widthObserver = null
