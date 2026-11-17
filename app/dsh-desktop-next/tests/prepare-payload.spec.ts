@@ -200,6 +200,19 @@ it('skips a workspace package node_modules self-reference instead of following i
   expect(() => verifyNextPayload(physicalPayload(output))).not.toThrow()
 })
 
+it('keeps a nested node_modules directory of an installed package', async () => {
+  const { root, desktop } = workspace()
+  // pnpm ships its private native build tools below dist/node_modules; that directory is part of the package.
+  const pnpm = join(desktop, 'node_modules', 'pnpm')
+  mkdirSync(join(pnpm, 'dist', 'node_modules', 'node-gyp-bin'), { recursive: true })
+  writeFileSync(join(pnpm, 'dist', 'node_modules', 'node-gyp-bin', 'node-gyp'), '#!/usr/bin/env node\n')
+
+  const output = join(root, 'payload')
+  await preparePayload({ desktopRoot: desktop, output, target, electronVersion: '44.0.0' })
+  expect(existsSync(join(output, 'node_modules', 'pnpm', 'dist', 'node_modules', 'node-gyp-bin', 'node-gyp'))).toBe(true)
+  expect(() => verifyNextPayload(physicalPayload(output))).not.toThrow()
+})
+
 it('prunes only incompatible optional packages and their exclusive dependencies before copying and sealing', async () => {
   const { root, desktop } = workspace()
   const modules = join(desktop, 'node_modules')
