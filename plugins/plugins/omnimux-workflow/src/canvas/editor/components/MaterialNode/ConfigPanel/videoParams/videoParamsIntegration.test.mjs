@@ -125,7 +125,7 @@ test('R4: standby image cannot erase a single-operation duration schema or its v
   const valid = resolveEffectiveVideoParams({params:validRaw,schema:{},modelItem:catalog.models[0],catalog,upstreams:consumedUpstreams,prompt:consumed.prompt});
   assert.deepEqual(validateVideoParamsForUi({prompt:consumed.prompt,rawParams:validRaw,params:valid,upstreams:consumedUpstreams}), []);
   const panelResolution = source.slice(source.indexOf('const videoEffectiveParams ='), source.indexOf('const videoEffectiveParams =') + 1000);
-  assert.match(panelResolution, /upstreams: consumedUpstreams\.filter\(\(source\) => \['image', 'video', 'audio'\]\.includes\(source\.materialType\)\)/);
+  assert.match(panelResolution, /upstreams: videoDisplayUpstreams\.filter\(\(source\) => \['image', 'video', 'audio'\]\.includes\(source\.materialType\)\)/);
   assert.match(panelResolution, /prompt: consumedFingerprint\.prompt/);
 });
 

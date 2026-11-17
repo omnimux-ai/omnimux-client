@@ -58,7 +58,7 @@ import { resolveGenerationPrompt, selectGenerationTextSources } from '../../../.
 import { parseJsonDocumentText } from '../../../../../shared/jsonDocument.ts';
 import { ModelBrandIcon } from '../../../../ui/ModelBrandIcon';
 import { useCanvasStore } from '../../../../store/canvasStore';
-import { useUpstreamMedia, toUpstreamSnapshots } from '../../../hooks/useUpstreamMedia';
+import { useUpstreamMedia, toUpstreamSnapshots, type UpstreamMediaItem } from '../../../hooks/useUpstreamMedia';
 import { useModelParameterSchema, getCachedCatalog } from '../../../hooks/useModelParameterSchema';
 import { resolveNodeLifecycle } from '../../../utils/nodeMaterialLifecycle';
 import { canvasNoticeService } from '../../../notices/canvasNoticeService.ts';
@@ -438,6 +438,21 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
     ...asset, nodeId: asset.sourceNodeId, materialType: asset.type,
     label: asset.sourceLabel,
   })), [consumedFingerprint]);
+  // R2/R4: media edges that no current-operation slot consumes (e.g. a legacy
+  // edge saved before bindings existed) still make every incompatible
+  // operation unusable. Add the display kernel's unused ready media back to the
+  // capability input; user-parked edges stay excluded by the kernel itself.
+  const videoDisplayUpstreams = useMemo(() => {
+    const seen = new Set(consumedUpstreams.map((source) => source.edgeId ?? source.nodeId));
+    const unused = inputDisplay.unused
+      .map((item) => upstreams.find((source) => source.edgeId === item.occupant.edgeId))
+      .filter((source): source is UpstreamMediaItem => {
+        if (!source) return false;
+        if (!['image', 'video', 'audio'].includes(source.materialType)) return false;
+        return !seen.has(source.edgeId ?? source.nodeId);
+      });
+    return [...consumedUpstreams, ...unused];
+  }, [consumedUpstreams, inputDisplay.unused, upstreams]);
 
   // ---- Filtered model list (Hide, Don't Grey) ----
   // The shared kernel applies canvas model policy and input compatibility.
@@ -661,11 +676,11 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
             modelItem,
             catalog: activeCatalog,
             lineConstraints,
-            upstreams: consumedUpstreams.filter((source) => ['image', 'video', 'audio'].includes(source.materialType)),
+            upstreams: videoDisplayUpstreams.filter((source) => ['image', 'video', 'audio'].includes(source.materialType)),
             prompt: consumedFingerprint.prompt,
           })
         : null,
-    [materialType, params, schema, modelItem, activeCatalog, lineConstraints, consumedUpstreams, consumedFingerprint.prompt],
+    [materialType, params, schema, modelItem, activeCatalog, lineConstraints, videoDisplayUpstreams, consumedFingerprint.prompt],
   );
 
   // Issue #27: a JSON document's duration becomes the effective video duration
