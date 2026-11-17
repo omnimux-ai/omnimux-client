@@ -1070,9 +1070,30 @@ function runTopbarGeometryHook(doc) {
  */
 export function findTopbarAnchor(doc) {
   if (!doc || typeof doc.querySelector !== 'function') return null
-  const anchor = doc.querySelector('[data-dsh-better-sidebar] [class*="tabBar"], [class*="tabBar"], [data-dsh-better-sidebar]')
-  if (anchor) return anchor
-  return doc.body || doc.documentElement || null
+  return doc.querySelector('[data-dsh-better-sidebar] [class*="tabBar"], [class*="tabBar"], [data-dsh-better-sidebar]') || null
+}
+
+/** True while any first-run guide layer is on screen (#67). */
+function isOnboardingGuideActive(doc) {
+  if (!doc) return false
+  try {
+    if (typeof doc.querySelector === 'function'
+      && doc.querySelector('[data-omnimux-runtime-guide], [data-desktop-onboarding-surface], #root[inert]')) {
+      return true
+    }
+    const root = typeof doc.getElementById === 'function' ? doc.getElementById('root') : null
+    return Boolean(root && (root.inert === true || (typeof root.hasAttribute === 'function' && root.hasAttribute('inert'))))
+  } catch {
+    return false
+  }
+}
+
+function removeInjectedTopbarControls(doc) {
+  if (!doc || typeof doc.querySelector !== 'function') return
+  for (const selector of [`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`, `[${TOPBAR_NEW_SESSION_ATTR}="1"]`]) {
+    const el = doc.querySelector(selector)
+    if (el && typeof el.remove === 'function') safeDom(() => el.remove())
+  }
 }
 
 /**
@@ -1082,6 +1103,10 @@ export function findTopbarAnchor(doc) {
  * @returns {HTMLElement | null}
  */
 export function injectTopbarToggleButton(doc) {
+  if (isOnboardingGuideActive(doc)) {
+    removeInjectedTopbarControls(doc)
+    return null
+  }
   const anchor = findTopbarAnchor(doc)
   if (!anchor) return null
   let btn = doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`)
@@ -1113,6 +1138,10 @@ export function injectTopbarToggleButton(doc) {
  */
 export function injectTopbarNewSessionButton(doc, collapsed) {
   if (!doc) return null
+  if (isOnboardingGuideActive(doc)) {
+    removeInjectedTopbarControls(doc)
+    return null
+  }
   let btn = doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`)
   if (!collapsed) {
     if (btn instanceof HTMLElement) {
@@ -1361,6 +1390,10 @@ export function injectTopbarRightExpandButton(doc) {
  */
 export function ensureSidebarToggleTopbar(doc) {
   if (!doc?.documentElement) return null
+  if (isOnboardingGuideActive(doc)) {
+    removeInjectedTopbarControls(doc)
+    return null
+  }
   const root = doc.documentElement
   root.setAttribute(SIDEBAR_TOGGLE_TOPBAR_HTML_ATTR, '')
   applyTopbarToggleCssVars(doc)

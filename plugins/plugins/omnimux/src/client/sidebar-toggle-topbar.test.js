@@ -22,6 +22,7 @@ import {
   computeToggleLeftPx,
   deriveConversationWidthPx,
   ensureSidebarToggleTopbar,
+  findTopbarAnchor,
   findVisibleWorkbenchPanel,
   findOfficialNewSessionButton,
   findOfficialSidebarToggle,
@@ -1481,3 +1482,48 @@ describe('老用户迁移门槛（H-1：插件自己写出的几何不得被当�
 })
 })
 
+describe('first-run onboarding gating (#67)', () => {
+  it('does not fall back to body when the workbench tabBar is absent', () => {
+    const doc = setup('<!doctype html><html><body><div id="root"></div></body></html>')
+    assert.equal(findTopbarAnchor(doc), null)
+    assert.equal(ensureSidebarToggleTopbar(doc), null)
+    assert.equal(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`), null)
+    assert.equal(doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`), null)
+  })
+
+  it('removes injected toggle and new-session while any guide layer is mounted, then restores them', () => {
+    const doc = setup()
+    assert.ok(ensureSidebarToggleTopbar(doc))
+    assert.ok(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`))
+    assert.ok(doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`))
+
+    const guide = doc.createElement('div')
+    guide.setAttribute('data-omnimux-runtime-guide', '')
+    doc.body.appendChild(guide)
+    assert.equal(ensureSidebarToggleTopbar(doc), null)
+    assert.equal(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`), null)
+    assert.equal(doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`), null)
+
+    guide.remove()
+    assert.ok(ensureSidebarToggleTopbar(doc))
+    assert.ok(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`))
+    assert.ok(doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`))
+  })
+
+  it('treats the upstream onboarding surface and inert root as guide state too', () => {
+    const doc = setup()
+    assert.ok(ensureSidebarToggleTopbar(doc))
+    const surface = doc.createElement('div')
+    surface.setAttribute('data-desktop-onboarding-surface', '')
+    doc.body.appendChild(surface)
+    assert.equal(ensureSidebarToggleTopbar(doc), null)
+    assert.equal(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`), null)
+    surface.remove()
+
+    const root = doc.getElementById('root') || doc.createElement('div')
+    if (!root.id) { root.id = 'root'; doc.body.appendChild(root) }
+    root.setAttribute('inert', '')
+    assert.equal(ensureSidebarToggleTopbar(doc), null)
+    assert.equal(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`), null)
+  })
+})
