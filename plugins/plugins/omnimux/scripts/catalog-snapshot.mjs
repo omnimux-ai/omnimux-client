@@ -146,10 +146,6 @@ export function applyPreserveExisting(snapshot, baseline) {
       .filter((model) => model && typeof model.id === 'string')
       .map((model) => [model.id, model]),
   )
-  const models = (Array.isArray(snapshot?.models) ? snapshot.models : []).map((model) => {
-    const previous = previousModels.get(model.id)
-    return previous ? structuredClone(previous) : model
-  })
   const groups = {
     ...(snapshot?.groups ?? {}),
     ratio: { ...(snapshot?.groups?.ratio ?? {}) },
@@ -157,12 +153,19 @@ export function applyPreserveExisting(snapshot, baseline) {
   }
   const baselineRatio = baseline?.groups?.ratio ?? {}
   const baselineUsable = baseline?.groups?.usable ?? {}
-  for (const model of models) {
-    for (const group of Array.isArray(model.enableGroups) ? model.enableGroups : []) {
+  const models = (Array.isArray(snapshot?.models) ? snapshot.models : []).map((model) => {
+    const previous = previousModels.get(model.id)
+    // Only rows that are actually carried over may put their baseline group
+    // data back: a live-only row must keep the live ratio/label even when it
+    // happens to name a group the baseline also knows under another value.
+    if (!previous) return model
+    const carried = structuredClone(previous)
+    for (const group of Array.isArray(carried.enableGroups) ? carried.enableGroups : []) {
       if (Object.hasOwn(baselineRatio, group)) groups.ratio[group] = baselineRatio[group]
       if (Object.hasOwn(baselineUsable, group)) groups.usable[group] = baselineUsable[group]
     }
-  }
+    return carried
+  })
   return { ...snapshot, models, groups }
 }
 
@@ -294,12 +297,17 @@ async function main() {
       return
     }
     finalSnapshot = applyPreserveExisting(snapshot, baseline.snapshot)
-    const missingRatios = missingGroupRatios(finalSnapshot)
-    if (missingRatios.length > 0) {
-      console.error(`❌ refusing to write: enableGroups without a group ratio after carry-over: ${missingRatios.join(', ')}`)
-      process.exitCode = 1
-      return
-    }
+  }
+
+  // Whatever path produced the final snapshot (bare live or carry-over), a row
+  // whose enableGroups cannot be priced must never reach disk or stdout.
+  // `--check` enforces the same invariant for the committed file.
+  const missingRatios = missingGroupRatios(finalSnapshot)
+  if (missingRatios.length > 0) {
+    const stage = options.preserveExisting ? ' after carry-over' : ''
+    console.error(`❌ refusing to write: enableGroups without a group ratio${stage}: ${missingRatios.join(', ')}`)
+    process.exitCode = 1
+    return
   }
 
   const body = `${JSON.stringify(finalSnapshot, undefined, 2)}\n`

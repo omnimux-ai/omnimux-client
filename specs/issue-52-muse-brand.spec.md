@@ -48,14 +48,14 @@
 - [ ] AC-5 bundled 快照 16 行，含两个 Muse 模型，不含 `gemini-3.1-flash-lite-image`，`source=pricing`、`generatedAt` 可解析。
 - [ ] AC-5b 交集 10 行与 base 快照逐行相等；新增 6 行等于 live 行；`groups.ratio` 为 live ∪ 被 carry-over 行引用的 base 档位（26 条）。
 - [ ] AC-6 目录四桶与快照一致：image 5 行、video 5 行、text 3 行、audio 2 行；`models.length = 53`。
-- [ ] AC-6b 快照中每个模型的每个 `enableGroups` 都能在 `groups.ratio` 找到（`auto` 是网关路由元组，走自动顺序，不计入 ratio），生成与 `--check` 均校验。
+- [ ] AC-6b 快照中每个模型的每个 `enableGroups` 都能在 `groups.ratio` 找到（`auto` 是网关路由元组，走自动顺序，不计入 ratio）；生成侧对最终快照无条件校验一次（裸跑 / carry-over / `--stdout` 都校验，且在写入前），`--check` 同样校验。
 - [ ] AC-7 `catalog-snapshot.mjs --check` 通过，脚本生成、无手改；`verify:model-contracts` 通过（旧模型移除已在 `snapshotDropAcknowledged` 显式登记）。
 - [ ] AC-8 双向证伪：回退品牌映射 → 相关用例变红；回退快照到 base → 快照集合用例变红；换回纯 live（回退 carry-over）→ 线路/定价既有用例变红；恢复后全绿。
 - [ ] AC-9 相关 `test` / `typecheck` / `build` / `build:all` / `check:boundaries` / `verify:stages` / `verify:model-contracts` / `workspace-check` / `bundle-lock` 全绿。
 
 ## 测试计划
 
-- 快照脚本：`plugins/scripts/catalog-snapshot-preserve.test.mjs` 校验 `--preserve-existing` 默认关闭、缺 ref 报错、`--check` 下拒绝、carry-over 只换交集行数据（新增行用 live、移除行不复活）、base 档位 ratio/usable 回填、`auto` 不计入缺失 ratio。
+- 快照脚本：`plugins/scripts/catalog-snapshot-preserve.test.mjs` 校验 `--preserve-existing` 默认关闭、缺 ref 报错、`--check` 下拒绝、carry-over 只换交集行数据（新增行用 live、移除行不复活）、base 档位 ratio/usable 回填、`auto` 不计入缺失 ratio；裸跑缺 ratio 在写入/打印前拒绝且不落盘；live-only 行同名 group 不被 base 值污染；`--check --baseline <base>` 能读到旧快照并报出 `gemini-3.1-flash-lite-image` 消失；`--baseline` 非 `--check` 误用 exit 2。
 - 单元：`gateway-contract.test.js` 校验 Muse family/label/selectable、16 行快照集合与旧模型排除；`list.test.js` 校验四桶与 53 行；`media/catalog.test.js` 与 `omitted-model-defaults.test.js` 校验 image/video/text 桶；`model-brands.test.js` 校验品牌解析与 `getAllBrands()`。
 - 运行时：`ModelBrandIcon.runtime.test.mjs` 用 esbuild 打包 `ModelBrandIcon.tsx` 后实际调用 `resolveModelBrand`，断言 `muse` 与 `#8B5CF6` / `M`；`modelPickerCandidates.test.mjs` 用真实分组函数断言 Muse 分组。
 - 双向证伪：逐个回退 `familyFor` 的 muse 分支、`BRANDS` 条目、`ModelBrandIcon` 的 `RULES` 规则与 SVG，对应用例必须变红；`bundled/pricing.json` 换回 base 版，快照集合用例必须变红；恢复后全绿。
@@ -64,7 +64,7 @@
 
 - 裸跑 `catalog-snapshot.mjs` 仍是纯 live 快照，行为与之前一致。
 - `--preserve-existing <ref>`：以 live 响应的模型集合为准，只把「live 与 `<ref>` 都在售」的模型行替换为 `<ref>` 的行数据；live 独有行用 live，base 独有行不复活。
-- 被替换行引用的 `groups.ratio` / `groups.usable` 从 `<ref>` 回填（live ∪ 被引用 base 档位）；被 carry-over 行引用的同名档位以 base 值优先，保证这些行的线路价格与改动前一致。
+- 只有被 carry-over 的行引用的 `groups.ratio` / `groups.usable` 才从 `<ref>` 回填（live ∪ 被引用 base 档位），同名档位以 base 值优先，保证这些行的线路价格与改动前一致；live-only 新行不触发回填，始终使用 live 值。
 - 会员判定、空快照判定与 disappearance guard 仍只看 live 响应，carry-over 发生在 guard 之后。
 - 本单只做成员关系，线路与定价的全量 live 刷新在 #58。
 
