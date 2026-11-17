@@ -209,6 +209,33 @@ const OFFICE_REQUIRED_UNPACKED = [/^node_modules\/@deepseek-ai\/libreoffice-kit\
 const ALLOWED_ROOT_ENTRIES = new Set(['assets', 'build', 'cordis.patch.yml', DESKTOP_RUNTIME_FILE, 'host.cordis.patch.yml', 'lib', 'node_modules', 'package.json', 'scripts'])
 
 /**
+ * Whether a package's own `files` list explicitly publishes this type declaration.
+ * @param source - Assembled payload.
+ * @param path - `node_modules/...` path being audited.
+ * @returns True when a nested extension glob in the package manifest declares it.
+ */
+function declaredTypeDeclaration(source: PayloadSource, path: string): boolean {
+  const parts = path.split('/')
+  const index = parts.lastIndexOf('node_modules')
+  if (index === -1) return false
+  const nameParts = parts[index + 1]?.startsWith('@') ? 2 : 1
+  const packageName = parts.slice(index + 1, index + 1 + nameParts).join('/')
+  const manifestEntry = source.entry(`node_modules/${packageName}/package.json`)
+  if (manifestEntry === undefined) return false
+  let manifest: { files?: readonly string[] }
+  try { manifest = JSON.parse(manifestEntry.read().toString('utf8')) as typeof manifest }
+  catch { return false }
+  const relativePath = parts.slice(index + 1 + nameParts).join('/')
+  return (manifest.files ?? []).some(pattern => {
+    const match = /^(.+)\/\*\*\/\*\.[^/]+$/u.exec(pattern)
+    if (match === null) return false
+    const directory = match[1]!
+    const extension = pattern.slice(directory.length + '/**/*'.length)
+    return (relativePath === directory || relativePath.startsWith(`${directory}/`)) && relativePath.endsWith(extension)
+  })
+}
+
+/**
  * Audit an assembled payload: only the declared root entries may exist, nothing the Desktop file
  * policy omits may be present, and native code and shell-executed files must be unpacked, because
  * Electron's archive view serves only its own `fs` and `dlopen`, not child processes.
@@ -225,7 +252,9 @@ export function auditNextPayload(source: PayloadSource, target: NextPackagingTar
     const root = entry.path.split('/')[0] ?? ''
     if (!ALLOWED_ROOT_ENTRIES.has(root)) { strayRoots.add(root); continue }
     if (entry.path.startsWith('node_modules/')) {
-      const reason = nextRuntimeFileExclusion(entry.path.slice('node_modules/'.length), target)
+      const baseReason = nextRuntimeFileExclusion(entry.path.slice('node_modules/'.length), target)
+      const reason = baseReason === 'TypeScript declaration' && declaredTypeDeclaration(source, entry.path)
+        ? undefined : baseReason
       if (reason !== undefined) problems.push(`${entry.path}: ${reason} must not be packaged`)
       if (entry.path.endsWith('/package.json')) {
         const parts = entry.path.split('/')

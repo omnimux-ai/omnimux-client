@@ -1,5 +1,5 @@
 /** Materialize the Next payload independently of Electron Builder, then seal it. */
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -204,7 +204,7 @@ type Keep = (path: string, name: string) => boolean
  * @param destination - Where it lands.
  * @param keep - Decides each entry below `source` by its relative path and base name.
  */
-function copyTree(source: string, destination: string, keep: Keep): void {
+function copyTree(source: string, destination: string, keep: Keep, extensionFilters: readonly ExtensionFilter[] = [], packagePrefix = ''): void {
   mkdirSync(dirname(destination), { recursive: true })
   cpSync(source, destination, {
     recursive: true, dereference: true,
@@ -212,9 +212,22 @@ function copyTree(source: string, destination: string, keep: Keep): void {
       const rel = relative(source, path)
       if (rel === '') return true
       const parts = rel.split(sep)
-      return keep(parts.join('/'), parts.at(-1)!)
+      const name = parts.at(-1)!
+      if (!keep(parts.join('/'), name)) return false
+      const packagePath = packagePrefix === '' ? rel.split(sep).join('/') : `${packagePrefix}/${rel.split(sep).join('/')}`
+      const filters = extensionFilters.filter(filter => packagePath === filter.directory || packagePath.startsWith(`${filter.directory}/`))
+      if (filters.length === 0 || statSync(path).isDirectory()) return true
+      return filters.some(filter => filter.extensions.some(extension => name.endsWith(extension)))
     },
   })
+}
+
+/** One extension restriction inside a published directory. */
+export interface ExtensionFilter {
+  /** Slash-separated package-relative directory the restriction applies below. */
+  readonly directory: string
+  /** Extensions kept below that directory, in declaration order. */
+  readonly extensions: readonly string[]
 }
 
 /** The entries a workspace package publishes, plus the negated paths it withholds. */
@@ -223,6 +236,8 @@ export interface PublishedTree {
   readonly entries: readonly string[]
   /** Slash-separated `files` exclusions (`!path`) that apply below the entries. */
   readonly excluded: readonly string[]
+  /** Extension restrictions from nested extension-glob file patterns. */
+  readonly extensionFilters: readonly ExtensionFilter[]
 }
 
 /**
@@ -236,11 +251,28 @@ export function publishedTree(packageDir: string): PublishedTree {
   const manifest = readManifest(packageDir)
   const entries = new Set(['package.json'])
   const excluded = new Set<string>()
+  const extensionFilters: ExtensionFilter[] = []
   for (const name of readdirSync(packageDir)) if (/^(?:readme|licen[cs]e)(?:\..*)?$/iu.test(name)) entries.add(name)
   if (manifest.main !== undefined && existsSync(join(packageDir, manifest.main))) entries.add(manifest.main.replace(/^\.\//u, ''))
   for (const pattern of manifest.files ?? []) {
     const negated = pattern.startsWith('!')
-    const entry = (negated ? pattern.slice(1) : pattern).replace(/^\.\//u, '').replace(/\/(?:\*\*(?:\/\*)?)?$/u, '')
+    const rawEntry = (negated ? pattern.slice(1) : pattern).replace(/^\.\//u, '')
+    // npm treats `dir/**/*.ext` as every matching file below dir, not a literal name.
+    // Only this nested extension form is special; every other unknown glob still fails.
+    const nestedExtension = /^(.+)\/\*\*\/\*\.[^/]+$/u.exec(rawEntry)
+    if (!negated && nestedExtension !== null) {
+      const directory = nestedExtension[1]!
+      const extension = rawEntry.slice(directory.length + '/**/*'.length)
+      if (directory === '' || !/^\.[0-9A-Za-z.]+$/u.test(extension) || directory.split('/').some(part => part === '.' || part === '..')) {
+        throw new Error(`Next payload: unsupported files pattern ${JSON.stringify(pattern)} in ${manifest.name ?? packageDir}`)
+      }
+      if (existsSync(join(packageDir, directory))) {
+        entries.add(directory)
+        extensionFilters.push({ directory, extensions: [extension] })
+      }
+      continue
+    }
+    const entry = rawEntry.replace(/\/(?:\*\*(?:\/\*)?)?$/u, '')
     if (entry === '' || /[*?[\]{}!]/u.test(entry) || entry.split('/').some(part => part === '.' || part === '..')) {
       throw new Error(`Next payload: unsupported files pattern ${JSON.stringify(pattern)} in ${manifest.name ?? packageDir}`)
     }
@@ -251,6 +283,7 @@ export function publishedTree(packageDir: string): PublishedTree {
   return {
     entries: sorted.filter(entry => !sorted.some(other => other !== entry && entry.startsWith(`${other}/`))),
     excluded: [...excluded].sort(),
+    extensionFilters,
   }
 }
 
@@ -279,16 +312,28 @@ function isExcluded(excluded: readonly string[], path: string): boolean {
  * @param modules - The payload's `node_modules` directory.
  * @param target - Platform and architectures of the package.
  */
+function matchesExtensionFilter(filters: readonly ExtensionFilter[], packagePath: string, name: string): boolean {
+  return filters.some(filter => (packagePath === filter.directory || packagePath.startsWith(`${filter.directory}/`))
+    && filter.extensions.some(extension => name.endsWith(extension)))
+}
+
 function copyPackage(pkg: ClosurePackage, modules: string, target: NextPackagingTarget): void {
   const destination = join(modules, ...pkg.destination.split('/'))
-  const keep: Keep = (path, name) => path.split('/')[0] !== 'node_modules' && !IGNORED_NAMES.has(name)
+  const baseKeep: Keep = (path, name) => path.split('/')[0] !== 'node_modules' && !IGNORED_NAMES.has(name)
+  const keep: Keep = (path, name) => baseKeep(path, name)
     && nextRuntimeFileExclusion(`${pkg.destination}/${path}`, target) === undefined
   if (!pkg.workspace) { copyTree(pkg.source, destination, keep); return }
-  const { entries, excluded } = publishedTree(pkg.source)
+  const { entries, excluded, extensionFilters } = publishedTree(pkg.source)
   for (const entry of entries) {
-    if (!keep(entry, basename(entry))) continue
+    if (!baseKeep(entry, basename(entry))) continue
     copyTree(join(pkg.source, entry), join(destination, entry),
-      (path, name) => keep(`${entry}/${path}`, name) && !isExcluded(excluded, `${entry}/${path}`))
+      (path, name) => {
+        const packagePath = `${entry}/${path}`
+        return baseKeep(packagePath, name) && !isExcluded(excluded, packagePath)
+          && nextRuntimeFileExclusion(`${pkg.destination}/${packagePath}`, target,
+            { allowTypeDeclarations: matchesExtensionFilter(extensionFilters, packagePath, name) }) === undefined
+      },
+      extensionFilters, entry)
   }
 }
 

@@ -39,14 +39,14 @@ export function nextRuntimePackageExclusion(manifest: RuntimePackageConstraints,
  * @param target - Platform and CPU architectures of the packaged Electron Node runtime.
  * @returns Omission reason, or undefined when the entry must be kept.
  */
-export function nextRuntimeFileExclusion(path: string, target: NextPackagingTarget): string | undefined {
+export function nextRuntimeFileExclusion(path: string, target: NextPackagingTarget, options: { readonly allowTypeDeclarations?: boolean } = {}): string | undefined {
   const parts = path.split(/[\\/]/u)
   if (parts.some(part => ['.bin', '.pnpm', '.modules.yaml', '.pnpm-workspace-state-v1.json', '.yarn-state.yml'].includes(part))) {
     return 'package-manager metadata'
   }
   const file = parts.at(-1) ?? ''
   if (/\.(?:[cm]?[jt]s|css)\.map$/u.test(file)) return 'source map'
-  if (/\.d\.[cm]?ts$/u.test(file)) return 'TypeScript declaration'
+  if (!options.allowTypeDeclarations && /\.d\.[cm]?ts$/u.test(file)) return 'TypeScript declaration'
   if (/\.tsbuildinfo$/u.test(file)) return 'TypeScript build cache'
   const packageParts = parts.slice(parts.lastIndexOf('node_modules') + 1)
   const nameParts = packageParts[0]?.startsWith('@') ? 2 : 1

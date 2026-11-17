@@ -150,6 +150,37 @@ it('stops on a missing required dependency and on publish patterns it cannot hon
   expect(() => collectProductionClosure(desktop)).toThrow(/dependency peer-user required by dsh-desktop-next is not installed/u)
 })
 
+it('copies only the declared extension from a nested files glob', async () => {
+  const { root, desktop } = workspace()
+  const globbed = join(root, 'globbed')
+  for (const path of ['lib/types/nested']) mkdirSync(join(globbed, path), { recursive: true })
+  writeFileSync(join(globbed, 'package.json'), JSON.stringify({
+    name: 'globbed', version: '1.0.0', type: 'module', main: 'lib/index.js',
+    files: ['lib/index.js', 'lib/types/**/*.d.ts'],
+  }) + '\n')
+  for (const file of ['lib/index.js', 'lib/types/a.d.ts', 'lib/types/a.js', 'lib/types/a.d.ts.map',
+    'lib/types/nested/b.d.ts', 'lib/types/nested/b.js']) {
+    writeFileSync(join(globbed, ...file.split('/')), `source:${file}\n`)
+  }
+  const manifest = JSON.parse(readFileSync(join(desktop, 'package.json'), 'utf8')) as { dependencies: Record<string, string> }
+  manifest.dependencies.globbed = '*'
+  writeFileSync(join(desktop, 'package.json'), JSON.stringify(manifest) + '\n')
+  symlinkSync(globbed, join(desktop, 'node_modules', 'globbed'), 'junction')
+
+  expect(publishedTree(globbed).extensionFilters).toEqual([{ directory: 'lib/types', extensions: ['.d.ts'] }])
+  expect(publishedEntries(globbed)).toEqual(['lib/index.js', 'lib/types', 'package.json'])
+
+  const output = join(root, 'payload')
+  await preparePayload({ desktopRoot: desktop, output, target, electronVersion: '44.0.0' })
+  expect(existsSync(join(output, 'node_modules', 'globbed', 'lib', 'index.js'))).toBe(true)
+  expect(existsSync(join(output, 'node_modules', 'globbed', 'lib', 'types', 'a.d.ts'))).toBe(true)
+  expect(existsSync(join(output, 'node_modules', 'globbed', 'lib', 'types', 'a.js'))).toBe(false)
+  expect(existsSync(join(output, 'node_modules', 'globbed', 'lib', 'types', 'a.d.ts.map'))).toBe(false)
+  expect(existsSync(join(output, 'node_modules', 'globbed', 'lib', 'types', 'nested', 'b.d.ts'))).toBe(true)
+  expect(existsSync(join(output, 'node_modules', 'globbed', 'lib', 'types', 'nested', 'b.js'))).toBe(false)
+  expect(() => verifyNextPayload(physicalPayload(output))).not.toThrow()
+})
+
 it('prunes only incompatible optional packages and their exclusive dependencies before copying and sealing', async () => {
   const { root, desktop } = workspace()
   const modules = join(desktop, 'node_modules')

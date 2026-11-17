@@ -10,6 +10,11 @@ const windows = { platform: 'win32' as const, archs: ['x64'] }
 const universal = { platform: 'darwin' as const, archs: ['arm64', 'x64'] }
 const linuxX64 = { platform: 'linux' as const, archs: ['x64'] }
 
+it('keeps the generic declaration policy unless a published files glob explicitly allows declarations', () => {
+  expect(nextRuntimeFileExclusion('example/index.d.ts', windows)).toBe('TypeScript declaration')
+  expect(nextRuntimeFileExclusion('example/index.d.ts', windows, { allowTypeDeclarations: true })).toBeUndefined()
+})
+
 it('omits development artifacts while preserving executable modules, assets and license files', () => {
   const root = mkdtempSync(join(tmpdir(), 'desktop-file-policy-'))
   const source = join(root, 'source')
