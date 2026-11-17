@@ -46,11 +46,15 @@
 
 ## 旧标准变更
 
-- `plugins/plugins/omnimux/src/client/runtime-guide-login-state.test.js` :: `first-run guide login state`、`reads the auth gate and continues without re-opening login`、`ships the signed-in continue label in both languages`
+- `plugins/plugins/omnimux/src/client/runtime-guide-login-state.test.js` :: `first-run guide login state`
+- `plugins/plugins/omnimux/src/client/runtime-guide-login-state.test.js` :: `reads the auth gate and continues without re-opening login`
+- `plugins/plugins/omnimux/src/client/runtime-guide-login-state.test.js` :: `ships the signed-in continue label in both languages`
   - 原断言：读取已删除的 `RuntimeGuideGate.jsx`，校验旧登录态路径。
   - 必须改的理由：#77 删除 `RuntimeGuideGate`，改由原生 `NativeRuntimeSetup` 承担登录态。
   - 新期望证据：`NativeRuntimeSetup.test.js` 的「provides official signed-out and signed-in actions through the auth gate」覆盖同一标签与 `ensureLogin` 路径。
-- `plugins/plugins/omnimux/src/client/runtime-guide-skip.test.js` :: `first-run skip button`、`hides the guide as soon as the official write is confirmed`、`makes the whole skip row clickable`
+- `plugins/plugins/omnimux/src/client/runtime-guide-skip.test.js` :: `first-run skip button`
+- `plugins/plugins/omnimux/src/client/runtime-guide-skip.test.js` :: `hides the guide as soon as the official write is confirmed`
+- `plugins/plugins/omnimux/src/client/runtime-guide-skip.test.js` :: `makes the whole skip row clickable`
   - 原断言：旧 `RuntimeGuideGate` 的 skip 按钮源码与样式。
   - 必须改的理由：#77 删除旧全屏 guide，skip 改为 `NativeRuntimeSetup` 的本地 dismissed。
   - 新期望证据：`NativeRuntimeSetup.test.js` 的「skip is local only and never writes runtimeMode」。
@@ -58,7 +62,10 @@
   - 原断言：`index.js` 注册 `omnimux-runtime-guide` 到 `shell.overlay`。
   - 必须改的理由：#77 改为注册 `onboarding.desktop.runtime`，旧 `shell.overlay` 注册必须消失。
   - 新期望证据：同文件新用例「registers the native runtime setup on the onboarding child slot」，断言新 slot/id 且不再有旧 guide。
-- `plugins/plugins/omnimux/tests/e2e/runtime-guide-choice.e2e.test.mjs` :: `已有选择的安装永远不再出现`、`未选过运行方式时出现三选一`、`选「自己的密钥」出表单，测试通过后写入运行方式并关闭`、`首次运行引导（Issue #2557）`
+- `plugins/plugins/omnimux/tests/e2e/runtime-guide-choice.e2e.test.mjs` :: `已有选择的安装永远不再出现`
+- `plugins/plugins/omnimux/tests/e2e/runtime-guide-choice.e2e.test.mjs` :: `未选过运行方式时出现三选一`
+- `plugins/plugins/omnimux/tests/e2e/runtime-guide-choice.e2e.test.mjs` :: `选「自己的密钥」出表单，测试通过后写入运行方式并关闭`
+- `plugins/plugins/omnimux/tests/e2e/runtime-guide-choice.e2e.test.mjs` :: `首次运行引导（Issue #2557）`
   - 原断言：旧 `RuntimeGuideGate` 的渲染与 key 流程。
   - 必须改的理由：组件已删除；旧 e2e 的 DOM/交互契约不再适用。
   - 新期望证据：`NativeRuntimeSetup.test.js` 覆盖 slot、老用户跳过、官方/Agent/Key 复用与 skip；真实 Dev 验收由独立实例执行。
