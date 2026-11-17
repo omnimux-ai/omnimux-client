@@ -319,7 +319,7 @@ function matchesExtensionFilter(filters: readonly ExtensionFilter[], packagePath
 
 function copyPackage(pkg: ClosurePackage, modules: string, target: NextPackagingTarget): void {
   const destination = join(modules, ...pkg.destination.split('/'))
-  const baseKeep: Keep = (path, name) => path.split('/')[0] !== 'node_modules' && !IGNORED_NAMES.has(name)
+  const baseKeep: Keep = (path, name) => !path.split('/').includes('node_modules') && !IGNORED_NAMES.has(name)
   const keep: Keep = (path, name) => baseKeep(path, name)
     && nextRuntimeFileExclusion(`${pkg.destination}/${path}`, target) === undefined
   if (!pkg.workspace) { copyTree(pkg.source, destination, keep); return }
