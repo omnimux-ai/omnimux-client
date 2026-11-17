@@ -231,7 +231,7 @@ export type ModelSelectorStorageScope = 'chat' | 'text'
 
 export const ModelSelector = memo(function ModelSelector({
   locale = 'zh',
-  activePort = 43128,
+  activePort = 45120,
   hostDefaultModel,
   hostDefaultEffort,
   dynamicModels = [],

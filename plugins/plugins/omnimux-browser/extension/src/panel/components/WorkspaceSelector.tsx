@@ -70,7 +70,7 @@ function dotClass(status: InstanceStatus | undefined, bridgeConnected: boolean):
 export const WorkspaceSelector = memo(function WorkspaceSelector({
   bridgeConnected,
   locale = 'zh',
-  targetPort = 43128,
+  targetPort = 45120,
   onSelectWorkspace,
 }: {
   bridgeConnected: boolean
@@ -82,7 +82,7 @@ export const WorkspaceSelector = memo(function WorkspaceSelector({
   const [selectedPort, setSelectedPort] = useState<number>(() => {
     const saved = localStorage.getItem('omnimux_target_port')
     const p = saved ? parseInt(saved, 10) : targetPort
-    return !isNaN(p) && p > 0 ? p : 43128
+    return !isNaN(p) && p > 0 ? p : 45120
   })
   const [instances, setInstances] = useState<DiscoveredInstance[]>([])
   const [isOpen, setIsOpen] = useState(false)

@@ -199,7 +199,7 @@ describe('设置面板的文本生成模型行（#3629 A1）', () => {
   it('重新打开设置面板时两行各自保持已保存的值（A1）', async () => {
     // 对话选择器按实例端口读键（默认实例 43128），文本行读 dshSettings：
     // 两行各自从自己的来源恢复，互不覆盖。
-    globalThis.localStorage.setItem('omnimux_default_model_43128', 'gpt-5.5')
+    globalThis.localStorage.setItem('omnimux_default_model_45120', 'gpt-5.5')
     globalThis.localStorage.setItem('omnimux_default_model', 'gpt-5.5')
     stubChrome({ textModel: 'claude-opus-4-6', textEffort: 'high', textProvider: 'anthropic' })
     await openSettings()

@@ -861,8 +861,8 @@ export function App(): React.JSX.Element {
   const copy = PANEL_COPY[locale]
   const [targetPort, setTargetPort] = useState<number>(() => {
     const saved = safeGetStorage('omnimux_target_port')
-    const num = saved ? parseInt(saved, 10) : 43128
-    return !isNaN(num) && num > 0 ? num : 43128
+    const num = saved ? parseInt(saved, 10) : 45120
+    return !isNaN(num) && num > 0 ? num : 45120
   })
 
   const [hostDefaultModel, setHostDefaultModel] = useState<string>('')
@@ -1701,7 +1701,7 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     const probe = async () => {
       if (manualLocale !== 'auto') return
-      for (const port of [43120, 45120, 43128]) {
+      for (const port of [43120, 45120, 44120]) {
         try {
           const res = await loopbackFetch(`http://127.0.0.1:${port}/ext/bridge-config`, {
             signal: AbortSignal.timeout(1000),

@@ -20,7 +20,7 @@ export interface DshInstance {
 export const DshInstanceSelector = memo(function DshInstanceSelector({
   bridgeConnected = false,
   locale = 'zh',
-  activePort = 43128,
+  activePort = 45120,
   onSelectInstance,
 }: {
   bridgeConnected?: boolean
