@@ -91,6 +91,18 @@ describe('Windows cloud build portability', () => {
     assert.match(source, /npm_execpath/)
   })
 
+  it('enables shell resolution for corepack/pnpm in the packaging preflight on Windows', () => {
+    const source = readFileSync(join(repoRoot, 'scripts', 'prepare-local-plugins.mjs'), 'utf8')
+    assert.match(source, /const windowsShell = process\.platform === 'win32'/)
+    assert.match(source, /spawnSync\('corepack', \['--version'\], \{ cwd: repoRoot, encoding: 'utf8', shell: windowsShell \}\)/)
+    assert.match(source, /spawnSync\(command, args, \{ cwd: repoRoot, stdio: 'inherit', shell: windowsShell \}\)/)
+  })
+
+  it('does not treat the clip Tailwind config input as a generated output', () => {
+    const source = readFileSync(join(repoRoot, 'scripts', 'verify-plugin-builds.mjs'), 'utf8')
+    assert.match(source, /entry === 'tailwind\.openreel\.config\.js'/)
+  })
+
   it('does not use bare joined paths in any plugin build script dynamic import', () => {
     const violations = []
     for (const packageDir of collectPackageDirs()) {

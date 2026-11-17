@@ -24,11 +24,14 @@ if (!existsSync(resolve(pluginsDir, 'node_modules'))) {
   fail('plugins/node_modules is missing; run pnpm install --frozen-lockfile first')
 }
 
-const corepack = spawnSync('corepack', ['--version'], { cwd: repoRoot, encoding: 'utf8' })
+// Windows resolves corepack/pnpm through .cmd shims; spawning those bare
+// names with shell:false raises ENOENT from Node's child_process.
+const windowsShell = process.platform === 'win32'
+const corepack = spawnSync('corepack', ['--version'], { cwd: repoRoot, encoding: 'utf8', shell: windowsShell })
 const command = corepack.status === 0 ? 'corepack' : 'pnpm'
 const args = command === 'corepack' ? ['pnpm', '--dir', 'plugins', 'run', 'build:all'] : ['--dir', 'plugins', 'run', 'build:all']
 console.log(`prepare-local-plugins: ${command} ${args.join(' ')}`)
-const build = spawnSync(command, args, { cwd: repoRoot, stdio: 'inherit' })
+const build = spawnSync(command, args, { cwd: repoRoot, stdio: 'inherit', shell: windowsShell })
 if (build.error || build.status !== 0) fail(`plugin build failed (${build.status ?? build.error})`)
 
 const verify = spawnSync(process.execPath, [resolve(repoRoot, 'scripts', 'verify-plugin-builds.mjs')], { cwd: repoRoot, stdio: 'inherit' })

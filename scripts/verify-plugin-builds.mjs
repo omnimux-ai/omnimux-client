@@ -49,6 +49,10 @@ function outputRequirements(manifest) {
   for (const pattern of manifest.files ?? []) {
     const entry = pattern.replace(/^\.\//u, '')
     if (entry.startsWith('src/') || entry.startsWith('scripts/') || entry.endsWith('/') || !/\.(?:c|m)?js$/u.test(entry)) continue
+    // Root build-time configs are inputs, not generated outputs; comparing
+    // their checkout mtime against src/ falsely marks a clean build stale on
+    // platforms where checkout timestamps differ (notably Windows).
+    if (entry === 'tailwind.openreel.config.js') continue
     outputs.add(entry)
   }
   return [...outputs].sort()
