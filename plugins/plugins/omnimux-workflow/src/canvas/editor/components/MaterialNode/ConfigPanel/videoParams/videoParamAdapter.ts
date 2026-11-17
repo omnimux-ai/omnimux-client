@@ -54,6 +54,8 @@ export interface ResolveEffectiveVideoParamsArgs {
   lineConstraints?: LineConstraints | null;
   upstreams?: UpstreamMediaSnapshot[];
   prompt?: string;
+  /** Node-level provenance for a system-derived operation. */
+  autoOperationId?: string | null;
 }
 
 export interface PendingVideoParamAdjustment {
@@ -120,7 +122,7 @@ function integerIsValid(value: unknown, schema: ModelParameterSchema['seed']): v
 function buildOpsState(args: ResolveEffectiveVideoParamsArgs): EffectiveOpsUiState {
   const model = args.modelItem?.id
     ?? (typeof args.params?.model === 'string' ? args.params.model : '');
-  const preferred = readPreferredOperationId((args.params ?? {}) as Record<string, unknown>);
+  const preferred = readPreferredOperationId((args.params ?? {}) as Record<string, unknown>, args.autoOperationId);
   return buildEffectiveOpsUiState({
     catalog: args.catalog ?? null,
     modelId: model,
@@ -145,7 +147,7 @@ export function resolveEffectiveVideoParams(
   const model = args.modelItem?.id
     ?? (typeof params?.model === 'string' ? params.model : '');
   const opsState = buildOpsState(args);
-  const preferredOperation = readPreferredOperationId((params ?? {}) as Record<string, unknown>);
+  const preferredOperation = readPreferredOperationId((params ?? {}) as Record<string, unknown>, args.autoOperationId);
   const fingerprint = buildUiUpstreamFingerprint({
     prompt: args.prompt,
     upstreams: args.upstreams,
@@ -156,6 +158,7 @@ export function resolveEffectiveVideoParams(
     outputType: 'video',
     fingerprint,
     ...(preferredOperation ? { preferredOperationId: preferredOperation } : {}),
+    autoOperationId: args.autoOperationId,
     params: (params ?? {}) as Record<string, unknown>,
   });
   const selectedOperationId = capability.selectedOperationId ?? preferredOperation ?? '';

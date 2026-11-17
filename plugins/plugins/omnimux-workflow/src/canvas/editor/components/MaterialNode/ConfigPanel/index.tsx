@@ -298,7 +298,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
     return models ? { ...activeCatalog, models } : activeCatalog;
   }, [activeCatalog, modelValue, lineConstraints]);
 
-  const preferredOperationId = readPreferredOperationId(params as Record<string, unknown>);
+  const preferredOperationId = readPreferredOperationId(params as Record<string, unknown>, nodeData.autoOperationId);
   const currentInputs = nodeData.inputBindingVersion === 1;
   const isTextTask = outputTypeForCompat === 'text';
   const videoCapability = useMemo(
@@ -309,6 +309,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
           outputType: 'video',
           fingerprint,
           ...(preferredOperationId ? { preferredOperationId } : {}),
+          autoOperationId: nodeData.autoOperationId,
           params: params as Record<string, unknown>,
           ignoredEdgeIds: (nodeData.slotStandbyEdgeIds ?? []) as string[],
         })
@@ -544,8 +545,9 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   const videoSelection = useMemo(() => materialType === 'video' ? buildVideoParameterSelection({
     params, parameterSelections, currentModelItem: modelItem, targetModelItem: modelItem,
     catalog: activeCatalog, upstreams: upstreamSnapshots, prompt: localPrompt,
+    autoOperationId: nodeData.autoOperationId,
     ignoredEdgeIds: (nodeData.slotStandbyEdgeIds ?? []) as string[],
-  }) : null, [materialType, params, parameterSelections, modelItem, activeCatalog, upstreamSnapshots, localPrompt, nodeData.slotStandbyEdgeIds]);
+  }) : null, [materialType, params, parameterSelections, modelItem, activeCatalog, upstreamSnapshots, localPrompt, nodeData.slotStandbyEdgeIds, nodeData.autoOperationId]);
   const migrationCatalogRef = useRef(new Map<string, CapabilityCatalog>());
   const migrationKey = `${String(nodeData.__workspaceId ?? '')}:${nodeId}`;
   useEffect(() => {
@@ -595,6 +597,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
             params, parameterSelections, currentModelItem: modelItem, targetModelItem: modelItem,
             catalog: activeCatalog, upstreams: upstreamSnapshots, prompt: localPrompt,
             nextOperationId: nextOpId,
+            autoOperationId: nodeData.autoOperationId,
             ignoredEdgeIds: (nodeData.slotStandbyEdgeIds ?? []) as string[],
           });
           commitVideoSelection(transition);
@@ -618,6 +621,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
         commitVideoSelection(buildVideoParameterSelection({
           params: { ...params, ...patch }, parameterSelections, currentModelItem: modelItem, targetModelItem: modelItem,
           catalog: activeCatalog, upstreams: upstreamSnapshots, prompt: localPrompt, runtimeSettings: effectiveRuntimeSettings,
+          autoOperationId: nodeData.autoOperationId,
           ignoredEdgeIds: (nodeData.slotStandbyEdgeIds ?? []) as string[],
         }));
       } else onUpdateNodeData({ params: { ...params, ...patch } });
@@ -678,9 +682,10 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
             lineConstraints,
             upstreams: videoDisplayUpstreams.filter((source) => ['image', 'video', 'audio'].includes(source.materialType)),
             prompt: consumedFingerprint.prompt,
+            autoOperationId: nodeData.autoOperationId,
           })
         : null,
-    [materialType, params, schema, modelItem, activeCatalog, lineConstraints, videoDisplayUpstreams, consumedFingerprint.prompt],
+    [materialType, params, schema, modelItem, activeCatalog, lineConstraints, videoDisplayUpstreams, consumedFingerprint.prompt, nodeData.autoOperationId],
   );
 
   // Issue #27: a JSON document's duration becomes the effective video duration
@@ -836,6 +841,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
               params, parameterSelections: scopedSelections, currentModelItem: scopedModelItem, targetModelItem: newModelItem,
               catalog: activeCatalog, upstreams: upstreamSnapshots, prompt: localPrompt, routing: nextRouting, explicitModelSelection: true,
               runtimeSettings: effectiveRuntimeSettings,
+              autoOperationId: nodeData.autoOperationId,
               ignoredEdgeIds: (nodeData.slotStandbyEdgeIds ?? []) as string[],
             })
           : (buildVideoParamTransition as any)(params, newModelItem, {
@@ -1118,6 +1124,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
       upstreams: upstreamSnapshots,
       prompt: localPrompt,
       nextOperationId: videoCapability.selectedOperationId,
+      autoOperationId: nodeData.autoOperationId,
       ignoredEdgeIds: (nodeData.slotStandbyEdgeIds ?? []) as string[],
     });
     if (JSON.stringify(transition.params) !== JSON.stringify(params)

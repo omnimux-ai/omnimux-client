@@ -5,6 +5,7 @@ import { readNodeInputSource } from '../nodeInputSource.ts';
 import { resolveNodeKind } from '../materialNode.ts';
 import { materialTools } from '../../specs/nodes/materialNodeSpec.ts';
 import { deriveSlotLayout } from './deriveSlotLayout.ts';
+import { readPreferredOperationId } from '../../validation/operationUi.ts';
 import { effectiveInputDisplay } from './effectiveInputDisplay.ts';
 import type { LegacySlotEdge } from './hydrateSlotBindings.ts';
 import type { FeedAsset, SlotBindings, SlotConflict } from './types.ts';
@@ -37,20 +38,23 @@ export function prepareExecutionSlotGraph<
     const data = structuredClone(node.data ?? {});
     let params = (data.params ?? {}) as Record<string, unknown>;
     const kind = (data.materialType ?? 'text') as keyof NonNullable<CapabilityCatalog['defaults']>;
+    const autoOperationId = typeof data.autoOperationId === 'string' || data.autoOperationId === null
+      ? data.autoOperationId as string | null
+      : undefined;
     const model = resolveModelView(view, (params.model ?? catalog?.defaults?.[kind]) as string | undefined);
     params.model ??= model?.id;
     const fingerprint = buildCanvasUpstreamFingerprint(node.id, nodes as unknown as CanvasNode[], nextEdges as unknown as Edge[]);
     if (kind === 'video') {
       // R9: inputCapability decides the operation from the connected media;
       // #55 below only normalizes the values against that operation schema.
+      const preferredOperationId = readPreferredOperationId(params, autoOperationId);
       const capability = buildInputCapability({
         catalog,
         modelId: model?.id,
         outputType: 'video',
         fingerprint,
-        ...(typeof params.operation === 'string' && params.operation.trim()
-          ? { preferredOperationId: params.operation.trim() }
-          : {}),
+        ...(preferredOperationId ? { preferredOperationId } : {}),
+        autoOperationId,
         params,
         ignoredEdgeIds: (data.slotStandbyEdgeIds ?? []) as string[],
       });

@@ -166,3 +166,23 @@ test('a line narrows the operation list and keeps hidden parameters from resurfa
   }
 });
 
+
+
+test('legacy controls without an operation are preserved instead of reset to defaults', () => {
+  const legacyModel = {
+    id: 'legacy-video', label: 'Legacy video',
+    parameters: {
+      aspectRatio: { options: [{ value: '16:9' }, { value: '9:16' }], defaultValue: '16:9' },
+      duration: { options: [{ value: 5 }, { value: 8 }], defaultValue: 5 },
+    },
+    operations: [{ id: 'text_to_video', listed: true, output: { type: 'video' }, inputs: [] }],
+  };
+  const legacyCatalog = { video: [legacyModel], models: [legacyModel] };
+  const result = buildVideoParameterSelection({
+    params: { model: 'legacy-video', aspectRatio: '9:16', duration: 8 },
+    currentModelItem: legacyModel, targetModelItem: legacyModel, catalog: legacyCatalog,
+  });
+  assert.equal(result.params.operation, 'text_to_video');
+  assert.equal(result.params.aspectRatio, '9:16');
+  assert.equal(result.params.duration, 8);
+});

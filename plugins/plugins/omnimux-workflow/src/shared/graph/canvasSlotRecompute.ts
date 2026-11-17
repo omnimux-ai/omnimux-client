@@ -44,7 +44,9 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
     : undefined;
   // 系统写入的生成方式不是用户的创作选择：节点数据 autoOperationId 记录来源（string = 系统推导，
   // null = 用户拍板，undefined = 历史节点来源未知，仅当模式恰好等于该产出类型的目录推荐值时才按系统写入对待）。
-  const autoOperationId = node.data.autoOperationId;
+  const autoOperationId = typeof node.data.autoOperationId === 'string' || node.data.autoOperationId === null
+    ? node.data.autoOperationId as string | null
+    : undefined;
   const systemChosen = autoOperationId === undefined
     ? Boolean(savedOperation && savedOperation === recommendedId)
     : autoOperationId === savedOperation;
@@ -52,6 +54,7 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
   const strandedBySupply = Boolean(savedOp && !matchOperationInputs(savedOp, raw).accepts
     && raw.assets.some((asset) => isMediaInputType(asset.type) && asset.availability === 'ready'));
   let autoDerived: string | undefined;
+  const preferredOperationId = systemChosen ? undefined : savedOperation;
   if (outputType === 'video' && model) {
     // Epic #63: video operation follows the connected media. The capability
     // layer keeps the saved operation only while it is usable (R3), switches
@@ -62,7 +65,8 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
       modelId: model.id,
       outputType: 'video',
       fingerprint: raw,
-      ...(savedOperation ? { preferredOperationId: savedOperation } : {}),
+      ...(preferredOperationId ? { preferredOperationId } : {}),
+      autoOperationId,
       ignoredEdgeIds: Array.isArray(node.data.slotStandbyEdgeIds)
         ? (node.data.slotStandbyEdgeIds as string[])
         : [],

@@ -57,7 +57,7 @@ const imageUpstream = (id, extra = {}) => ({
   ...extra,
 });
 
-function effective(modelId, params, upstreams = []) {
+function effective(modelId, params, upstreams = [], autoOperationId) {
   return resolveEffectiveVideoParams({
     params: { model: modelId, ...params },
     schema: modelItem(modelId)?.parameters,
@@ -65,6 +65,7 @@ function effective(modelId, params, upstreams = []) {
     catalog,
     upstreams,
     prompt: 'make a clip',
+    autoOperationId,
   });
 }
 
@@ -88,6 +89,14 @@ test('disconnecting every image returns to text_to_video with its defaults', () 
   const state = (id) => result.effectiveOperations.find((operation) => operation.id === id);
   assert.equal(state('first_frame')?.disabled, true);
   assert.equal(state('text_to_video')?.disabled, false);
+});
+
+test('system-derived video_multi_ref yields to first_last_frame after video removal; explicit choice survives', () => {
+  const upstreams = [imageUpstream('a'), imageUpstream('b')];
+  const auto = effective('seedance-2-5', { operation: 'video_multi_ref' }, upstreams, 'video_multi_ref');
+  assert.equal(auto.operation, 'first_last_frame');
+  const explicit = effective('seedance-2-5', { operation: 'video_multi_ref' }, upstreams, null);
+  assert.equal(explicit.operation, 'video_multi_ref');
 });
 
 test('two connected images select first_last_frame; video edit follows a video input', () => {

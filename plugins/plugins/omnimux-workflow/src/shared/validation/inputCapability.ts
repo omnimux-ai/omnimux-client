@@ -92,6 +92,12 @@ export interface InputCapabilityArgs {
    * it is usable; it is never replaced by another usable candidate otherwise.
    */
   preferredOperationId?: string;
+  /**
+   * Operation id last written by automatic adaptation. When it equals
+   * `preferredOperationId`, that id is system-derived rather than a user
+   * choice and must not outrank the current media fingerprint (R3/R6).
+   */
+  autoOperationId?: string | null;
   /** Raw persisted params; when present a projection is returned (R7). */
   params?: Record<string, unknown> | null;
   /** User-parked supply edges: connected but explicitly not consumed by generation. */
@@ -316,8 +322,15 @@ export function buildInputCapability(args: InputCapabilityArgs): InputCapability
   const preferredRaw = typeof args.preferredOperationId === 'string' && args.preferredOperationId.trim()
     ? mapLegacyOperation(args.preferredOperationId.trim())
     : '';
+  const autoRaw = typeof args.autoOperationId === 'string' && args.autoOperationId.trim()
+    ? mapLegacyOperation(args.autoOperationId.trim())
+    : '';
   let selected: InputCapabilityOperationState | undefined;
-  const preferred = preferredRaw ? operationStates.find((state) => state.id === preferredRaw) : undefined;
+  // An automatically derived operation is not a creative preference: only an
+  // explicit user choice may keep a usable operation against the fingerprint.
+  const preferred = preferredRaw && preferredRaw !== autoRaw
+    ? operationStates.find((state) => state.id === preferredRaw)
+    : undefined;
   if (preferred?.usable) {
     selected = preferred;
   } else if (candidates.length > 0) {

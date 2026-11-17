@@ -261,11 +261,16 @@ function matchToOption(
  */
 export function readPreferredOperationId(
   params: Record<string, unknown> | null | undefined,
+  autoOperationId?: string | null,
 ): string | undefined {
   if (!params || typeof params !== 'object') return undefined;
-  return typeof params.operation === 'string' && params.operation.trim()
+  const operation = typeof params.operation === 'string' && params.operation.trim()
     ? params.operation.trim()
     : undefined;
+  if (!operation) return undefined;
+  // A system-written operation (recorded by node data) is not a user choice.
+  if (typeof autoOperationId === 'string' && autoOperationId.trim() && operation === autoOperationId.trim()) return undefined;
+  return operation;
 }
 
 /**

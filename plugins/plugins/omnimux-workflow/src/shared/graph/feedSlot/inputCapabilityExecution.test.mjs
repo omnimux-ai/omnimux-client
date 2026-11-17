@@ -12,6 +12,7 @@ import { test } from 'node:test';
 import { buildModelCatalog } from '../../../../../omnimux/src/catalog/list.js';
 import { projectCanvasCatalog } from '../../generationPolicy.ts';
 import { prepareExecutionSlotGraph } from './prepareExecutionSlotGraph.ts';
+import { recomputeCanvasSlots } from '../canvasSlotRecompute.ts';
 import { planCanvasInputMutation } from '../canvasInputMutationGateway.ts';
 import { createMaterialGatewayExecutor } from '../../../workflow/execution/materialGatewayExecutor.ts';
 import { registerExecutor } from '../../../workflow/executors/registry.ts';
@@ -155,4 +156,48 @@ test('a second image connected after first_frame is bound to last_frame and swit
   assert.equal(secondTarget.data.params.operation, 'first_last_frame');
   assert.equal(secondTarget.data.slotBindings.first_frame?.[0]?.sourceNodeId, 'img-1');
   assert.equal(secondTarget.data.slotBindings.last_frame?.[0]?.sourceNodeId, 'img-2');
+});
+
+
+test('seedance-2-5: two images -> first_last_frame; add video -> video_multi_ref; remove video -> first_last_frame', () => {
+  const target = targetNode({ model: 'seedance-2-5', operation: 'text_to_video' });
+  target.data.inputBindingVersion = 1;
+  target.data.slotBindings = {};
+  const img1 = importNode('img-1', 'image');
+  const img2 = importNode('img-2', 'image');
+  let nodes = [img1, img2, target];
+  let edges = [edge('img-1'), edge('img-2')];
+  const first = recomputeCanvasSlots(target, { nodes, edges }, { catalog });
+  assert.equal(first.data.params.operation, 'first_last_frame');
+  assert.equal(first.data.autoOperationId, 'first_last_frame');
+
+  const video = importNode('video-1', 'video');
+  nodes = [...nodes, video];
+  edges = [...edges, { id: 'edge-video-1', source: 'video-1', target: 'target', data: { feedType: 'video' } }];
+  const withVideo = recomputeCanvasSlots(
+    { ...first, data: { ...first.data, params: { ...first.data.params } } },
+    { nodes, edges }, { catalog }, first, new Set(['edge-video-1']),
+  );
+  assert.equal(withVideo.data.params.operation, 'video_multi_ref');
+  assert.equal(withVideo.data.autoOperationId, 'video_multi_ref');
+
+  nodes = [img1, img2, { ...withVideo, data: { ...withVideo.data, params: { ...withVideo.data.params } } }];
+  edges = [edge('img-1'), edge('img-2')];
+  const withoutVideo = recomputeCanvasSlots(
+    nodes[2], { nodes, edges }, { catalog }, withVideo,
+  );
+  assert.equal(withoutVideo.data.params.operation, 'first_last_frame');
+  assert.equal(withoutVideo.data.autoOperationId, 'first_last_frame');
+});
+
+test('explicit video_multi_ref choice with two images survives video removal', () => {
+  const target = targetNode({ model: 'seedance-2-5', operation: 'video_multi_ref' });
+  target.data.inputBindingVersion = 1;
+  target.data.autoOperationId = null;
+  target.data.slotBindings = {};
+  const nodes = [importNode('img-1', 'image'), importNode('img-2', 'image'), target];
+  const edges = [edge('img-1'), edge('img-2')];
+  const result = recomputeCanvasSlots(target, { nodes, edges }, { catalog });
+  assert.equal(result.data.params.operation, 'video_multi_ref');
+  assert.equal(result.data.autoOperationId, null);
 });

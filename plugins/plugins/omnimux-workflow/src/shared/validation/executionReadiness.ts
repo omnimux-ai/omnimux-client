@@ -2,7 +2,7 @@
 
 import type { CapabilityCatalog, CatalogModelDto } from '../api.ts';
 import { findDeclaredParameterFailure } from './declaredParameterValidation.ts';
-import { buildEffectiveOpsUiState, buildUiUpstreamFingerprint } from './operationUi.ts';
+import { buildEffectiveOpsUiState, buildUiUpstreamFingerprint, readPreferredOperationId } from './operationUi.ts';
 import { readNodeInputSource } from '../graph/nodeInputSource.ts';
 import type { UpstreamMediaSnapshot } from './operationUi.ts';
 import { readExplicitTargetSlot } from './compatKernel.ts';
@@ -118,13 +118,18 @@ export function findExecutionReadinessFailure(
       };
     }
     const outputType = typeof data.materialType === 'string' ? data.materialType : undefined;
+    const autoOperationId = typeof data.autoOperationId === 'string' || data.autoOperationId === null
+      ? data.autoOperationId as string | null
+      : undefined;
+    const preferredOperationId = readPreferredOperationId(params, autoOperationId);
     const videoCapability = outputType === 'video'
       ? buildInputCapability({
           catalog,
           modelId: model.id,
           outputType: 'video',
           fingerprint: rawFingerprint,
-          ...(readString(params.operation) ? { preferredOperationId: readString(params.operation) } : {}),
+          ...(preferredOperationId ? { preferredOperationId } : {}),
+          autoOperationId,
           params,
           ignoredEdgeIds: Array.isArray(data.slotStandbyEdgeIds) ? (data.slotStandbyEdgeIds as string[]) : [],
         })

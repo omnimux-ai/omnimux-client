@@ -102,6 +102,21 @@ describe('R1/R2/R2b/R3 video matrix (real catalog)', () => {
     assert.equal(result.selectedOperationId, 'video_multi_ref');
   });
 
+  it('R3 ignores a system-derived operation but keeps an explicit user choice', () => {
+    const auto = buildInputCapability({
+      catalog, modelId: 'seedance-2-5', outputType: 'video',
+      fingerprint: fingerprint(['image', 'image']),
+      preferredOperationId: 'video_multi_ref', autoOperationId: 'video_multi_ref',
+    });
+    assert.equal(auto.selectedOperationId, 'first_last_frame');
+    const explicit = buildInputCapability({
+      catalog, modelId: 'seedance-2-5', outputType: 'video',
+      fingerprint: fingerprint(['image', 'image']),
+      preferredOperationId: 'video_multi_ref', autoOperationId: null,
+    });
+    assert.equal(explicit.selectedOperationId, 'video_multi_ref');
+  });
+
   it('R6 no media falls back to the family default operation', () => {
     const result = selected('seedance-2-5', [], 'video', 'first_frame');
     assert.equal(result.selectedOperationId, 'text_to_video');
