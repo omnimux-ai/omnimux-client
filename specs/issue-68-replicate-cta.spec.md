@@ -49,8 +49,9 @@ rc.3 的官方 `SessionListState` 契约是 `{ ids, byId, phase, projectionsBySe
 
 ## 旧标准变更
 
-- `plugins/plugins/omnimux-inspiration/src/client/new-session-click.test.js` :: `makeSessions` 原本以 `{ current: 'old', byId }` 模拟官方 store；rc.3 真实契约没有 `current`，这些 mock 让生产必挂的单测全绿。
-  - 必须改：`makeSessions` 改为 `{ ids, byId, phase, projectionsBySession }`，当前会话由 `window.__omnimuxWorkbench.getSnapshot().sessionId` / `__omnimuxAttachments.getActiveSessionId()` 模拟；所有旧 `current` 断言改为合法读口。
-  - 新期望证据：rc.3 形状下 `new-session-click.test.js` 全绿；把 `resolveCurrentSessionId` 回退为 `snapshot.current` 时用例红。
+- `plugins/plugins/omnimux-inspiration/src/client/new-session-click.test.js` :: `clickOfficialNewSession official lifecycle resolution`
+  原断言：`makeSessions` 以 `{ current: 'old', byId }` 模拟官方 store，并用 describe 名 `clickOfficialNewSession official lifecycle resolution` 汇总旧 `current` 语义；rc.3 真实契约没有 `current`，这些 mock 让生产必挂的单测全绿。
+  必须改：`makeSessions` 改为 `{ ids, byId, phase, projectionsBySession }`，当前会话由 `window.__omnimuxWorkbench.getSnapshot().sessionId` / `__omnimuxAttachments.getActiveSessionId()` 模拟；describe 改为 `clickOfficialNewSession official lifecycle resolution (rc.3 shape)`，所有旧 `current` 断言改为合法读口。
+  新期望证据：rc.3 形状下 `new-session-click.test.js` 全绿；把 `resolveCurrentSessionId` 回退为 `snapshot.current` 时用例红（F1 实测 `20 tests / 13 pass / 7 fail`）。
 - `plugins/plugins/omnimux-inspiration/src/client/replicate-to-chat.test.js` :: `makeIo` 原本没有当前会话读口，正常路径只测新会话；新增 helper 后正常路径需覆盖「无 current 的 rc.3 store + workbench 当前会话」。
   - 新期望证据：该套件全绿；回退 helper 读口为 `sessions.list.current` 时「无 current 场景仍成功 attach」用例红。
