@@ -22,6 +22,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
+import { assertRemoteVersionAdvances } from './verify-version-advance.mjs'
 
 const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID
@@ -438,6 +439,9 @@ async function main() {
   if (command === 'upload') {
     const isForce = args.includes('--force')
     console.log(`🚀 开始执行 OmniMux v${version} 产物全链路同步到 R2 (dl.omnimux.ai)...`)
+    // Hard release gate: the CDN manifest only moves forward. This runs before
+    // any upload so a stale/older build can never overwrite the live channel.
+    await assertRemoteVersionAdvances({ version, baseUrl: CDN_BASE_URL })
 
     // 获取当前桶内已有对象字典，实现智能跳过
     const existingObjects = await listBucketObjects(token)

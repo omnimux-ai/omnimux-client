@@ -11,6 +11,11 @@ name: Publish release assets to R2 (dl.omnimux.ai)
 # under `releases/v<version>/` plus the `releases/latest/*` aliases, purges the
 # CDN cache for those aliases, and finally verifies the live download URLs.
 #
+# The CDN channel only moves forward: `verify-version-advance.mjs` runs before
+# any download/upload and rejects a version that is equal to or older than the
+# live `version-<channel>.json`. A rollback therefore means a forward-fix with a
+# higher version, never re-pointing latest at an older build.
+#
 # Unlike the historical `r2-publish.yml` that lived under `app/.github/` (which
 # Actions never read, and which pulled artifacts from a private fork), this
 # workflow runs from the repository root and sources artifacts from this
@@ -70,6 +75,13 @@ jobs:
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "Resolved version: ${version}"
+
+      # Hard production guard: the CDN channel manifest only moves forward. This
+      # fails before downloading or uploading anything when the requested version
+      # is equal to or older than the live one, so a stale release can never
+      # surface as a production downgrade.
+      - name: Reject CDN version downgrade
+        run: node scripts/verify-version-advance.mjs --version "${{ steps.version.outputs.version }}"
 
       - name: Download installers from the GitHub Release
         env:
