@@ -103,6 +103,7 @@ function familyFor(id, contract) {
   if (prefix.startsWith('seedream')) return 'seedream'
   if (prefix.startsWith('wan')) return 'wan'
   if (prefix.startsWith('minimax') || prefix.startsWith('hailuo')) return 'minimax'
+  if (prefix.startsWith('muse')) return 'muse'
   if (prefix.startsWith('indextts') || prefix.startsWith('index-tts')) return 'indextts'
   return text(contract.family) || 'unknown'
 }

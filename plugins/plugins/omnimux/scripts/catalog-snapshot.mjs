@@ -31,11 +31,19 @@ import { usableSnapshotModels } from '../src/catalog/cloud/view.js'
 
 const DEFAULT_URL = 'https://api.omnimux.ai/api/pricing'
 const TIMEOUT_MS = 20000
-const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
+// plugins/plugins/omnimux/scripts -> repository root (the git top-level)
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..')
 
 /** @param {string[]} argv */
 function parseArgs(argv) {
-  const options = { check: false, stdout: false, url: DEFAULT_URL, dir: defaultBundledDir(), baseline: '' }
+  const options = {
+    check: false,
+    stdout: false,
+    url: DEFAULT_URL,
+    dir: defaultBundledDir(),
+    baseline: '',
+    preserveExisting: null,
+  }
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
     if (arg === '--check') options.check = true
@@ -43,6 +51,11 @@ function parseArgs(argv) {
     else if (arg === '--url') options.url = String(argv[++index] ?? '')
     else if (arg === '--dir') options.dir = String(argv[++index] ?? '')
     else if (arg === '--baseline') options.baseline = String(argv[++index] ?? '')
+    else if (arg === '--preserve-existing') {
+      const value = String(argv[++index] ?? '').trim()
+      if (!value || value.startsWith('--')) throw new Error('--preserve-existing requires a git ref')
+      options.preserveExisting = value
+    }
     else if (arg === '--help' || arg === '-h') options.help = true
     else throw new Error(`unknown argument: ${arg}`)
   }
@@ -51,14 +64,18 @@ function parseArgs(argv) {
 
 function usage() {
   return [
-    'Usage: catalog-snapshot.mjs [--check] [--baseline <ref>] [--stdout] [--url <https url>] [--dir <path>]',
+    'Usage: catalog-snapshot.mjs [--check] [--baseline <ref>]',
+    '         [--preserve-existing <ref>] [--stdout] [--url <https url>] [--dir <path>]',
     '',
-    '  --check      validate the committed bundled snapshot and exit (no network)',
-    '  --baseline   with --check: also read the repository snapshot at <ref> from git and',
-    '               refuse when an on-sale model it sold is missing from the checked file (#3763)',
-    '  --stdout     print the normalized snapshot instead of writing it',
-    '  --url        pricing endpoint (default ' + DEFAULT_URL + ')',
-    '  --dir        directory holding ' + BUNDLED_SNAPSHOT_FILENAME,
+    '  --check             validate the committed bundled snapshot and exit (no network)',
+    '  --baseline          with --check: also read the repository snapshot at <ref> from git and',
+    '                      refuse when an on-sale model it sold is missing from the checked file (#3763)',
+    '  --preserve-existing generate only: keep the row data (billing/contract/enableGroups) of every',
+    '                      model that also exists at <ref>; membership still comes from the live',
+    '                      response (#52 carry-over). Off by default: a bare run is pure live.',
+    '  --stdout            print the normalized snapshot instead of writing it',
+    '  --url               pricing endpoint (default ' + DEFAULT_URL + ')',
+    '  --dir               directory holding ' + BUNDLED_SNAPSHOT_FILENAME,
   ].join('\n')
 }
 
@@ -106,6 +123,71 @@ function readBaselineSnapshot(ref) {
   }
 }
 
+/**
+ * Carry over row data from an earlier snapshot for every model the live response
+ * still sells. Membership is always the live response's: rows only present in
+ * the baseline disappear, rows only present live are taken verbatim. For a
+ * carried-over row the baseline payload wins (billing, contract, enableGroups),
+ * because the caller asked to keep those lines and prices unchanged even when
+ * the gateway has since renamed or re-priced them.
+ *
+ * A carried-over row can name a channel group the live response no longer
+ * publishes; those group ratios and labels are restored from the baseline so
+ * every model can still be priced. Live entries for groups the old rows do not
+ * name are kept untouched.
+ *
+ * @param {object} snapshot live-normalized snapshot
+ * @param {object} baseline earlier snapshot read from git
+ * @returns {object}
+ */
+export function applyPreserveExisting(snapshot, baseline) {
+  const previousModels = new Map(
+    (Array.isArray(baseline?.models) ? baseline.models : [])
+      .filter((model) => model && typeof model.id === 'string')
+      .map((model) => [model.id, model]),
+  )
+  const models = (Array.isArray(snapshot?.models) ? snapshot.models : []).map((model) => {
+    const previous = previousModels.get(model.id)
+    return previous ? structuredClone(previous) : model
+  })
+  const groups = {
+    ...(snapshot?.groups ?? {}),
+    ratio: { ...(snapshot?.groups?.ratio ?? {}) },
+    usable: { ...(snapshot?.groups?.usable ?? {}) },
+  }
+  const baselineRatio = baseline?.groups?.ratio ?? {}
+  const baselineUsable = baseline?.groups?.usable ?? {}
+  for (const model of models) {
+    for (const group of Array.isArray(model.enableGroups) ? model.enableGroups : []) {
+      if (Object.hasOwn(baselineRatio, group)) groups.ratio[group] = baselineRatio[group]
+      if (Object.hasOwn(baselineUsable, group)) groups.usable[group] = baselineUsable[group]
+    }
+  }
+  return { ...snapshot, models, groups }
+}
+
+/**
+ * Channel groups named by some model but absent from `groups.ratio`. A snapshot
+ * with one of these cannot be priced in the picker, so generation and --check
+ * both refuse it.
+ *
+ * @param {object} snapshot
+ * @returns {string[]}
+ */
+export function missingGroupRatios(snapshot) {
+  const ratio = snapshot?.groups?.ratio ?? {}
+  const missing = []
+  for (const model of Array.isArray(snapshot?.models) ? snapshot.models : []) {
+    for (const group of Array.isArray(model.enableGroups) ? model.enableGroups : []) {
+      // `auto` is the gateway's routing meta-group, not a priced line: it is
+      // resolved through the automatic order, so it has no ratio of its own.
+      if (group === 'auto') continue
+      if (!Object.hasOwn(ratio, group) && !missing.includes(group)) missing.push(group)
+    }
+  }
+  return missing
+}
+
 /** @param {{ dir: string }} options */
 function check(options) {
   const read = readBundledSnapshot(options.dir)
@@ -117,6 +199,12 @@ function check(options) {
   const snapshot = read.snapshot
   if (isSnapshotEmpty(snapshot)) {
     console.error('❌ bundled snapshot carries no membership information')
+    process.exitCode = 1
+    return
+  }
+  const missingRatios = missingGroupRatios(snapshot)
+  if (missingRatios.length > 0) {
+    console.error(`❌ bundled snapshot names enableGroups without a groups.ratio entry: ${missingRatios.join(', ')}`)
     process.exitCode = 1
     return
   }
@@ -161,7 +249,13 @@ async function main() {
   }
   if (options.baseline && !options.check) {
     console.error('catalog-snapshot: --baseline only applies with --check; refusing to fetch and write')
-    return 2
+    process.exitCode = 2
+    return
+  }
+  if (options.preserveExisting && options.check) {
+    console.error('catalog-snapshot: --preserve-existing only applies when generating; refusing to check')
+    process.exitCode = 2
+    return
   }
   if (options.check) {
     check(options)
@@ -188,7 +282,27 @@ async function main() {
     }
   }
 
-  const body = `${JSON.stringify(snapshot, undefined, 2)}\n`
+  // Membership and the disappearance guard above are decided by the live
+  // response alone. The carry-over below only swaps row payloads for models
+  // that are still on sale.
+  let finalSnapshot = snapshot
+  if (options.preserveExisting) {
+    const baseline = readBaselineSnapshot(options.preserveExisting)
+    if (!baseline.snapshot) {
+      console.error(`❌ refusing to write: --preserve-existing baseline is not readable (${baseline.issue})`)
+      process.exitCode = 1
+      return
+    }
+    finalSnapshot = applyPreserveExisting(snapshot, baseline.snapshot)
+    const missingRatios = missingGroupRatios(finalSnapshot)
+    if (missingRatios.length > 0) {
+      console.error(`❌ refusing to write: enableGroups without a group ratio after carry-over: ${missingRatios.join(', ')}`)
+      process.exitCode = 1
+      return
+    }
+  }
+
+  const body = `${JSON.stringify(finalSnapshot, undefined, 2)}\n`
   if (options.stdout) {
     process.stdout.write(body)
     return
@@ -199,10 +313,11 @@ async function main() {
   writeFileSync(temporary, body)
   renameSync(temporary, target)
   console.log(
-    `✅ wrote ${target}: ${snapshot.models.length} models, ` +
-      `${Object.keys(snapshot.groups?.ratio ?? {}).length} group ratios, digest=${snapshotDigest(snapshot).slice(0, 12)}`,
+    `✅ wrote ${target}: ${finalSnapshot.models.length} models, ` +
+      `${Object.keys(finalSnapshot.groups?.ratio ?? {}).length} group ratios, digest=${snapshotDigest(finalSnapshot).slice(0, 12)}` +
+      `${options.preserveExisting ? `, preserved rows from ${options.preserveExisting}` : ''}`,
   )
-  const limitations = Array.isArray(snapshot.coverage?.limitations) ? snapshot.coverage.limitations : []
+  const limitations = Array.isArray(finalSnapshot.coverage?.limitations) ? finalSnapshot.coverage.limitations : []
   if (limitations.length > 0) console.log(`   limitations: ${limitations.join(', ')}`)
 }
 

@@ -248,5 +248,11 @@
       "note": "2026-10-21 网关对账 #3516：渠道 31 default 现役语音识别能力模型；经 speechToText seam 进入画布，不进入文本生成白名单"
     }
   ],
-  "snapshotDropAcknowledged": []
+  "snapshotDropAcknowledged": [
+    {
+      "id": "gemini-3.1-flash-lite-image",
+      "reason": "2026-11-17 #52：网关 /api/pricing 已不再出售该型号（16 行无此项），/api/model_contract 返回 404；按在售真源移除，旧目录可由 git 历史回溯。",
+      "reviewedAt": "2026-11-17"
+    }
+  ]
 }

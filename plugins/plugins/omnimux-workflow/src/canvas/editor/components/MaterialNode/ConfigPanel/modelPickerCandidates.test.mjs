@@ -36,3 +36,22 @@ test('maps gxgenai and index-tts families to Index TTS2 brand', () => {
   assert.deepEqual(groups.map(g => g.name), ['Index TTS2', 'Seedance']);
   assert.equal(groups[0].id, 'indextts');
 });
+
+test('Muse family and model ids group under the Muse brand', () => {
+  const rows = [
+    { id: 'muse-video', label: 'Muse Video', family: 'muse' },
+    { id: 'muse-image', label: 'Muse Image', family: 'muse' },
+    { id: 'minimax-h3-video', label: 'MiniMax H3 Video', family: 'minimax' },
+  ];
+  const groups = groupPickerCandidates(rows);
+  const muse = groups.find((group) => group.id === 'muse');
+  assert.ok(muse);
+  assert.equal(muse.name, 'Muse');
+  assert.equal(muse.iconModelId, 'muse-video');
+  assert.deepEqual(muse.rows.map((row) => row.id), ['muse-video', 'muse-image']);
+  assert.equal(groups.some((group) => group.name === 'video' || group.name === 'image'), false);
+
+  const byId = groupPickerCandidates([{ id: 'muse-video', label: 'Muse Video' }]);
+  assert.equal(byId[0].name, 'Muse');
+  assert.equal(byId[0].id, 'muse');
+});

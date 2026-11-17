@@ -42,7 +42,7 @@ describe('buildModelCatalog (H2 contract projection)', () => {
     assert.equal(catalog.contractFingerprint.length, 16)
 
     // Authoritative flat list includes contracted models under disposition governance.
-    assert.equal(catalog.models.length, 48) // 本地 45 + gateway-only gemini-4-argon / gemini-3.1-flash-lite-image / suno-sounds / wan-3.0
+    assert.equal(catalog.models.length, 53) // 本地 45 + gateway-only 8 行（2026-11-17 live snapshot）
     // 2026-10-21 网关对账 #3516：whisper-1 处置 draft → canonical 并上架 speech_to_text。
     assert.equal(catalog.models.find((m) => m.id === 'whisper-1')?.disposition, 'canonical')
     assert.equal(catalog.models.find((m) => m.id === 'grok-imagine-image-quality')?.disposition, 'draft')
@@ -66,7 +66,7 @@ describe('buildModelCatalog (H2 contract projection)', () => {
 
     // four lists derive ONLY from listed ops' output.type, intersected with the gateway
     // snapshot (P1b): seedream-5-0-pro has a listed op but the gateway does not sell it.
-    assert.deepEqual(catalog.image.map((row) => row.id).sort(), ['gemini-3.1-flash-lite-image', 'gpt-image-2.5'])
+    assert.deepEqual(catalog.image.map((row) => row.id).sort(), ['gpt-image-2.5', 'muse-image', 'nano-banana-2-1', 'nano-banana-2-lite', 'seedream-5-5'])
     const imageRow = catalog.image.find((row) => row.id === 'gpt-image-2.5')
     assert.equal(imageRow.label, 'GPT Image 2.5')
     assert.equal(imageRow.subtitle, '标准版 1K · 高分档依渠道')
@@ -80,12 +80,12 @@ describe('buildModelCatalog (H2 contract projection)', () => {
     ])
     assert.equal(catalog.image.some((row) => row.id === 'grok-imagine-image-2-0'), false)
     // #3516: minimax-h3 上游渠道停用；P1b：seedance-2-0-fast / -mini 契约仍在但网关不售。
-    assert.deepEqual(catalog.video.map((row) => row.id), ['minimax-h3-video', 'seedance-2-0', 'seedance-2-5', 'wan-3.0'])
+    assert.deepEqual(catalog.video.map((row) => row.id), ['minimax-h3-video', 'muse-video', 'seedance-2-0', 'seedance-2-5', 'wan-3.0'])
     // #3516: 音频桶收敛为在架 suno；TTS 三行转为仅登记不上架。
     assert.deepEqual(catalog.audio.map((row) => row.id), ['indextts-2', 'suno'])
     // Text bucket includes implementation-ready models without requiring live history.
     // #3516: claude-sonnet-4-6 上游渠道停用，文本桶只剩 gemini-3.8-flash。
-    assert.deepEqual(catalog.text.map((row) => row.id), ['gemini-3.8-flash', 'gemini-4-argon'])
+    assert.deepEqual(catalog.text.map((row) => row.id), ['gemini-3.8-flash', 'gemini-4-argon', 'seed-evolving'])
 
     // draft / canonical-without-listed-ops models never appear in any bucket
     for (const kind of ['text', 'image', 'video', 'audio']) {
@@ -120,7 +120,7 @@ describe('buildModelCatalog (H2 contract projection)', () => {
     assert.equal(catalog.defaultsByOperation.text_to_music, 'suno')
     assert.equal('text_to_speech' in catalog.defaultsByOperation, false)
 
-    assert.equal(catalog.text.length, 2)
+    assert.equal(catalog.text.length, 3)
 
     // P1b: the catalog reports the gateway truth it was built against. Every
     // on-sale model now has a v2 contract; suno-sounds is the only model with
@@ -143,7 +143,7 @@ describe('buildModelCatalog (H2 contract projection)', () => {
     const catalog = buildModelCatalog({ text: hub().text, media: hub().media, env: {}, settingsDefaults: {
       byokProviders: [{ provider: 'custom', endpoint: 'https://fixture.invalid/v1', models: { video: 'my-video-model' }, capabilities: ['video'] }],
     } })
-    assert.deepEqual(catalog.video.map((row) => row.id), ['minimax-h3-video', 'custom:my-video-model', 'seedance-2-0', 'seedance-2-5', 'wan-3.0'])
+    assert.deepEqual(catalog.video.map((row) => row.id), ['minimax-h3-video', 'muse-video', 'custom:my-video-model', 'seedance-2-0', 'seedance-2-5', 'wan-3.0'])
     assert.equal(catalog.video.find((row) => row.id === 'wan-3.0')?.executionStatus, 'ready')
     assert.equal(catalog.video.find((row) => row.id === 'custom:my-video-model')?.source, 'custom')
     assert.equal(catalog.video.find((row) => row.id === 'custom:my-video-model')?.executionStatus, 'ready')
@@ -243,7 +243,7 @@ describe('buildModelCatalog (H2 contract projection)', () => {
     // #530 PR-A listed text set is contract-driven, not gate-invented
     assert.ok(catalog.text.some((row) => row.id === 'gemini-3.8-flash'))
     assert.ok(catalog.text.some((row) => row.id === 'gemini-4-argon'))
-    assert.equal(catalog.text.length, 2)
+    assert.equal(catalog.text.length, 3)
     assert.equal(catalog.text.some((row) => row.id === 'whisper-1'), false)
   })
 
@@ -301,9 +301,9 @@ describe('media facade tables (derived from contracts)', () => {
 describe('gateway default recommendation', () => {
   it('wins over the offline defaults when its row is ready', () => {
     const snapshot = JSON.parse(readFileSync(new URL('./cloud/bundled/pricing.json', import.meta.url), 'utf8'))
-    snapshot.defaults = { image: 'gemini-3.1-flash-lite-image', vision_chat: 'gemini-3.8-flash' }
+    snapshot.defaults = { image: 'muse-image', vision_chat: 'gemini-3.8-flash' }
     const catalog = buildModelCatalog({ env: {}, snapshot, settingsDefaults: {} })
-    assert.equal(catalog.defaults.image, 'gemini-3.1-flash-lite-image')
+    assert.equal(catalog.defaults.image, 'muse-image')
     assert.equal(catalog.defaultsMeta.image.source, 'gateway-recommended')
     assert.equal(catalog.defaults.analysis, 'gemini-3.8-flash')
     assert.equal(catalog.defaultsMeta.analysis.source, 'gateway-recommended')

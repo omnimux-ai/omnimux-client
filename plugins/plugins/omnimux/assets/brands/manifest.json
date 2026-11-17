@@ -72,6 +72,13 @@
       "primaryColor": "#10B981",
       "models": ["minimax-h3", "minimax-video", "hailuo-01", "minimax-chat"]
     },
+    "muse": {
+      "id": "muse",
+      "company": "Muse",
+      "series": { "zh": "Muse Video / Muse Image", "en": "Muse Video / Muse Image" },
+      "primaryColor": "#8B5CF6",
+      "models": ["muse-video", "muse-image"]
+    },
     "grok": {
       "id": "grok",
       "company": "xAI",
@@ -127,6 +134,7 @@
     { "brand": "openai", "pattern": "(^gpt|^o1|^o3|openai|sora|dall[- ]?e|chatgpt)" },
     { "brand": "midjourney", "pattern": "(^midjourney|\\bmidjourney\\b|\\bmj\\b|niji)" },
     { "brand": "minimax", "pattern": "(^minimax|\\bminimax\\b|hailuo|海螺)" },
+    { "brand": "muse", "pattern": "(^muse|\\bmuse\\b)" },
     { "brand": "grok", "pattern": "(^grok|\\bgrok\\b|xai)" },
     { "brand": "vidu", "pattern": "(^vidu|\\bvidu\\b|生数)" },
     { "brand": "runway", "pattern": "(^runway|\\brunway\\b|^gen-[23])" },

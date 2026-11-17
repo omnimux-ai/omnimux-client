@@ -77,7 +77,7 @@ describe('hub apply composition', () => {
     assert.equal(catalog.source, 'omnimux')
     assert.ok(Array.isArray(catalog.text))
     // #3516: claude-sonnet-4-6 上游渠道停用（仅登记不上架），文本桶只剩 Gemini 3.8。
-    assert.equal(catalog.text.length, 2)
+    assert.equal(catalog.text.length, 3)
     assert.equal(catalog.defaults.text, 'gemini-3.8-flash')
   })
 
@@ -174,7 +174,7 @@ describe('hub apply composition', () => {
 
     // The local model is hidden; the gateway-only text model remains offered.
     const textEnum = tools.omnimux_text_complete.parameters.properties.model.enum
-    assert.deepEqual(textEnum, ['gemini-4-argon'])
+    assert.deepEqual(textEnum, ['gemini-4-argon', 'seed-evolving'])
   })
 })
 

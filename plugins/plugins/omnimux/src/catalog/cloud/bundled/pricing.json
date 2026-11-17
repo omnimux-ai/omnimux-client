@@ -1,27 +1,35 @@
 {
   "schemaVersion": 1,
   "source": "pricing",
-  "generatedAt": "2026-11-10T07:06:00.000Z",
+  "generatedAt": "2026-11-17T06:55:17.941Z",
   "groups": {
     "ratio": {
       "cheap": 0.5,
       "default": 1,
-      "desktop-480p": 0.17,
-      "desktop-720p": 0.24,
       "gemini-4-argon-multimodal": 1,
       "gemini-cheap": 1.12,
-      "gemini-omni-1.1-flash-task-pro": 6.042857,
       "gpt-image-2.5-economy": 0.0049,
+      "minimax-h3-video-creative": 1,
+      "minimax-h3-video-digital-human": 1,
       "minimax-h3-video-fast": 0.9,
+      "minimax-h3-video-first-last-frame": 1,
       "minimax-h3-video-pro": 1.15,
+      "minimax-h3-video-short-drama": 1,
+      "minimax-h3-video-short-drama-av": 1,
       "nano-banana-2-pro": 1.714286,
-      "nanobanana-economy": 1,
       "pool": 0.285714,
       "seedance-2-5-480p": 0.524,
+      "seedance-2-5-480p-pro": 0.28125,
       "seedance-2-5-720p": 0.7206,
+      "seedance-2-5-720p-pro": 0.28166,
       "seedance-standard": 1.178,
       "wan-3.0-1080p": 1.5,
-      "wan-3.0-720p": 0.5
+      "wan-3.0-720p": 0.5,
+      "wan-3.0-prime": 1.5,
+      "wan-3.0-standard": 1,
+      "nanobanana-economy": 1,
+      "desktop-480p": 0.17,
+      "desktop-720p": 0.24
     },
     "usable": {
       "Omni-Beta": "Omni 专属（仅 tokens-flow omni 模型）",
@@ -34,11 +42,8 @@
       "codex-pro-open": "Codex Pro（外接版）",
       "deepseek-official": "DeepSeek（官方满血）",
       "default": "标准版（主流高品质专线）",
-      "desktop-480p": "桌面端 480p 档（¥0.92/秒）",
-      "desktop-720p": "桌面端 720p 档（¥1.31/秒）",
       "gemini-4-argon-multimodal": "Gemini 4 Argon（多模态文本）",
       "gemini-cheap": "Gemini 特惠版（经济走量）",
-      "gemini-omni-1.1-flash-task-pro": "Gemini Omni 按次 · 优选中转 (1080p 档)",
       "gpt-image-2.5-economy": "GPT Image 2.5 特惠档（¥0.01/张）",
       "grok-cheap": "Grok 特惠版（轻量走量）",
       "grok-enterprise": "Grok 企业版",
@@ -46,25 +51,35 @@
       "kimi-official": "Kimi（官方满血K3）",
       "kling-pro": "可灵 Kling 进阶版（企业独享）",
       "kling-standard": "可灵 Kling 标准版（商业专线）",
+      "minimax-h3-video-creative": "H3 文生创意（纯文字描述生成视频；480p/768p，最长 15 秒）",
+      "minimax-h3-video-digital-human": "H3 数字人口播（人像图 + 口播音频，自动对口型；480p/768p，最长 15 秒）",
       "minimax-h3-video-fast": "H3 视频·高速档",
+      "minimax-h3-video-first-last-frame": "H3 首尾帧（指定首帧与尾帧生成过渡视频；480p/768p，最长 15 秒）",
       "minimax-h3-video-pro": "H3 视频·升级画质档",
+      "minimax-h3-video-short-drama": "H3 短剧分镜（多张参考图生成连续画面；480p/768p，10–15 秒）",
+      "minimax-h3-video-short-drama-av": "H3 短剧音画（多图 + 多段音频，音画融合；480p/768p，10–15 秒）",
       "minimax-official": "MiniMax（官方满血）",
       "minimax-pro": "海螺 MiniMax 进阶版（企业独享）",
       "minimax-standard": "海螺 MiniMax 标准版（商业专线）",
       "nano-banana-2-pro": "Nano Banana 2 高价档",
-      "nanobanana-economy": "Nano Banana 2 Lite 低价版（经济跑量）",
       "official": "官转版（官方原厂直签 / 极稳高画质）",
       "pool": "畅享版（自建账号池 / 随心用）",
       "pro": "进阶版（企业独享 / 私有专线）",
       "seedance-2-5-480p": "Seedance 2.5 480p 档（¥2.85/秒）",
+      "seedance-2-5-480p-pro": "Seedance 2.5 480p 旗舰档（¥1.53/秒）",
       "seedance-2-5-720p": "Seedance 2.5 720p 档（¥3.92/秒）",
-      "seedance-2-5-task-pro": "Seedance 2.5 按次高价档",
+      "seedance-2-5-720p-pro": "Seedance 2.5 720p 旗舰档（¥1.97/秒）",
       "seedance-pro": "即梦 Seedance 进阶版",
       "seedance-standard": "即梦 Seedance 标准版",
       "standard": "标准版（主流高品质专线）",
       "wan-3.0-1080p": "Wan 3.0 1080p 档（¥1.80/秒）",
       "wan-3.0-720p": "Wan 3.0 720p 档（¥0.60/秒）",
-      "zhipu-official": "智谱 Zhipu（官方满血）"
+      "wan-3.0-prime": "Wan 3.0 Prime 优速档（480P/720P/1080P 按档计价）",
+      "wan-3.0-standard": "Wan 3.0 标准档（480P/720P/1080P 按档计价）",
+      "zhipu-official": "智谱 Zhipu（官方满血）",
+      "nanobanana-economy": "Nano Banana 2 Lite 低价版（经济跑量）",
+      "desktop-480p": "桌面端 480p 档（¥0.92/秒）",
+      "desktop-720p": "桌面端 720p 档（¥1.31/秒）"
     },
     "auto": [
       "pool",
@@ -72,228 +87,29 @@
       "gemini-cheap",
       "default",
       "nano-banana-2-pro",
-      "gemini-omni-1.1-flash-task-pro",
       "gpt-image-2.5-economy",
       "seedance-2-5-480p",
       "seedance-2-5-720p",
       "wan-3.0-720p",
       "wan-3.0-1080p",
-      "gemini-4-argon-multimodal"
+      "gemini-4-argon-multimodal",
+      "seedance-2-5-480p-pro",
+      "seedance-2-5-720p-pro"
     ]
   },
+  "defaults": {
+    "chat": "gemini-3.8-flash",
+    "text_to_image": "gpt-image-2.5",
+    "text_to_music": "suno",
+    "text_to_video": "seedance-2-5",
+    "vision_chat": "gemini-3.8-flash"
+  },
   "coverage": {
-    "models": 11,
+    "models": 16,
     "channels": null,
     "limitations": []
   },
   "models": [
-    {
-      "id": "gemini-3.1-flash-lite-image",
-      "displayName": "gemini-3.1-flash-lite-image",
-      "enableGroups": [
-        "default",
-        "nanobanana-economy"
-      ],
-      "supportedEndpointTypes": [
-        "openai"
-      ],
-      "billing": {
-        "mode": null,
-        "modelPrice": 0.0336,
-        "modelRatio": 0,
-        "quotaType": 1,
-        "expr": null
-      },
-      "contract": {
-        "model_id": "gemini-3.1-flash-lite-image",
-        "schemaVersion": "2.0",
-        "contractVersion": "d75a23543af3d01c",
-        "family": "image",
-        "status": "documented",
-        "operation_ids": [
-          "text_to_image",
-          "image_to_image"
-        ],
-        "operations": [
-          {
-            "id": "text_to_image",
-            "executable": true,
-            "inputs": [
-              {
-                "slot": "prompt",
-                "type": "text",
-                "required": true
-              }
-            ],
-            "parameters": [
-              {
-                "name": "seed",
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 2147483647,
-                "step": 1,
-                "default": 0,
-                "limitSource": {
-                  "kind": "policy_conservative",
-                  "note": "平台既有参数表；上游未公布取值范围"
-                }
-              },
-              {
-                "name": "n",
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 4,
-                "step": 1,
-                "default": 1,
-                "limitSource": {
-                  "kind": "policy_conservative",
-                  "note": "平台既有参数表；上游未公布数量上限"
-                }
-              },
-              {
-                "name": "quality",
-                "type": "enum",
-                "enum": [
-                  "low",
-                  "medium",
-                  "high"
-                ],
-                "default": "medium",
-                "limitSource": {
-                  "kind": "policy_conservative",
-                  "note": "前端既有参数表；上游未公布枚举"
-                }
-              },
-              {
-                "name": "background",
-                "type": "enum",
-                "enum": [
-                  "opaque",
-                  "transparent"
-                ],
-                "default": "opaque",
-                "limitSource": {
-                  "kind": "policy_conservative",
-                  "note": "前端既有参数表；上游未公布枚举"
-                }
-              }
-            ],
-            "output": {
-              "type": "image",
-              "sizes": [
-                "1K"
-              ]
-            }
-          },
-          {
-            "id": "image_to_image",
-            "executable": true,
-            "inputs": [
-              {
-                "slot": "prompt",
-                "type": "text",
-                "required": true
-              },
-              {
-                "slot": "reference_image",
-                "type": "image",
-                "role": "reference",
-                "required": false,
-                "min": 0,
-                "max": 14,
-                "allowedMimes": [
-                  "image/png",
-                  "image/jpeg",
-                  "image/webp",
-                  "image/heic",
-                  "image/heif"
-                ],
-                "maxSizeMb": 7
-              }
-            ],
-            "parameters": [
-              {
-                "name": "seed",
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 2147483647,
-                "step": 1,
-                "default": 0,
-                "limitSource": {
-                  "kind": "policy_conservative",
-                  "note": "平台既有参数表；上游未公布取值范围"
-                }
-              },
-              {
-                "name": "n",
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 4,
-                "step": 1,
-                "default": 1,
-                "limitSource": {
-                  "kind": "policy_conservative",
-                  "note": "平台既有参数表；上游未公布数量上限"
-                }
-              },
-              {
-                "name": "quality",
-                "type": "enum",
-                "enum": [
-                  "low",
-                  "medium",
-                  "high"
-                ],
-                "default": "medium",
-                "limitSource": {
-                  "kind": "policy_conservative",
-                  "note": "前端既有参数表；上游未公布枚举"
-                }
-              },
-              {
-                "name": "background",
-                "type": "enum",
-                "enum": [
-                  "opaque",
-                  "transparent"
-                ],
-                "default": "opaque",
-                "limitSource": {
-                  "kind": "policy_conservative",
-                  "note": "前端既有参数表；上游未公布枚举"
-                }
-              }
-            ],
-            "output": {
-              "type": "image",
-              "sizes": [
-                "1K"
-              ]
-            }
-          }
-        ],
-        "unknowns": [
-          "prompt_max_chars",
-          "output_formats"
-        ],
-        "output_sizes": [
-          "1K"
-        ],
-        "reference_images": {
-          "min": 0,
-          "max": 14,
-          "formats": [
-            "image/png",
-            "image/jpeg",
-            "image/webp",
-            "image/heic",
-            "image/heif"
-          ],
-          "max_bytes_each": 7340032
-        }
-      },
-      "contractPresent": true
-    },
     {
       "id": "gemini-3.8-flash",
       "displayName": "gemini-3.8-flash",
@@ -1281,6 +1097,741 @@
       "contractPresent": true
     },
     {
+      "id": "muse-image",
+      "displayName": "muse-image",
+      "enableGroups": [
+        "pool"
+      ],
+      "supportedEndpointTypes": [
+        "openai"
+      ],
+      "billing": {
+        "mode": null,
+        "modelPrice": 0.005147,
+        "modelRatio": 0,
+        "quotaType": 1,
+        "expr": null
+      },
+      "contract": {
+        "model_id": "muse-image",
+        "schemaVersion": "2.0",
+        "contractVersion": "afba2016ce7608bc",
+        "execution_status": "live",
+        "family": "image",
+        "status": "partial",
+        "basis": "line_restricted",
+        "operation_ids": [
+          "text_to_image"
+        ],
+        "operations": [
+          {
+            "id": "text_to_image",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              }
+            ],
+            "parameters": [
+              {
+                "name": "seed",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647,
+                "step": 1,
+                "default": 0,
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "平台既有参数表；上游未公布取值范围"
+                }
+              },
+              {
+                "name": "n",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4,
+                "default": 1,
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "本服务 muse2api 的 ImageGenerationRequest 限制 n 为 1–4"
+                }
+              },
+              {
+                "name": "quality",
+                "type": "enum",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "default": "medium",
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "前端既有参数表；上游未公布枚举"
+                }
+              },
+              {
+                "name": "background",
+                "type": "enum",
+                "enum": [
+                  "opaque",
+                  "transparent"
+                ],
+                "default": "opaque",
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "前端既有参数表；上游未公布枚举"
+                }
+              },
+              {
+                "name": "aspect_ratio",
+                "type": "enum",
+                "enum": [
+                  "auto",
+                  "1:1",
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4"
+                ],
+                "default": "1:1",
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "本服务以 size 字段接收画幅比例；上游未公布完整枚举，采用前端既有画幅集合"
+                }
+              }
+            ],
+            "output": {
+              "type": "image"
+            }
+          }
+        ],
+        "unknowns": [
+          "prompt_max_chars",
+          "reference_images",
+          "reference_images.max",
+          "reference_images.max_bytes_each",
+          "output_sizes",
+          "output_formats"
+        ],
+        "billing": {
+          "unit": "per_image",
+          "unit_label": {
+            "en": "per image",
+            "zh": "每张"
+          },
+          "unit_price_usd": 0.005147,
+          "pricing_basis": "image_count",
+          "notes": {
+            "en": "Charged per generated image; the final quote includes group and membership multipliers; use the platform quote before submission.",
+            "zh": "按生成图片张数计费；实际费用受分组和会员倍率影响，以平台提交前报价为准。"
+          }
+        }
+      },
+      "contractPresent": true
+    },
+    {
+      "id": "muse-video",
+      "displayName": "muse-video",
+      "enableGroups": [
+        "pool"
+      ],
+      "supportedEndpointTypes": [
+        "openai"
+      ],
+      "billing": {
+        "mode": null,
+        "modelPrice": 0.030882,
+        "modelRatio": 0,
+        "quotaType": 1,
+        "expr": null
+      },
+      "contract": {
+        "model_id": "muse-video",
+        "schemaVersion": "2.0",
+        "contractVersion": "7ff97159dc3b0992",
+        "execution_status": "live",
+        "family": "video",
+        "status": "partial",
+        "basis": "line_restricted",
+        "operation_ids": [
+          "text_to_video",
+          "first_frame"
+        ],
+        "operations": [
+          {
+            "id": "text_to_video",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              }
+            ],
+            "parameters": [
+              {
+                "name": "duration",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 60,
+                "step": 1,
+                "default": 5
+              },
+              {
+                "name": "aspect_ratio",
+                "type": "enum",
+                "enum": [
+                  "16:9",
+                  "9:16",
+                  "1:1"
+                ]
+              },
+              {
+                "name": "output_format",
+                "type": "enum",
+                "enum": [
+                  "mp4"
+                ]
+              }
+            ],
+            "output": {
+              "type": "video",
+              "formats": [
+                "mp4"
+              ]
+            }
+          },
+          {
+            "id": "first_frame",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              },
+              {
+                "slot": "first_frame",
+                "type": "image",
+                "role": "first_frame",
+                "required": true,
+                "min": 1,
+                "max": 1
+              }
+            ],
+            "parameters": [
+              {
+                "name": "duration",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 60,
+                "step": 1,
+                "default": 5
+              },
+              {
+                "name": "aspect_ratio",
+                "type": "enum",
+                "enum": [
+                  "adaptive"
+                ],
+                "default": "adaptive",
+                "fixed": "adaptive"
+              },
+              {
+                "name": "output_format",
+                "type": "enum",
+                "enum": [
+                  "mp4"
+                ]
+              }
+            ],
+            "output": {
+              "type": "video",
+              "formats": [
+                "mp4"
+              ]
+            }
+          }
+        ],
+        "unknowns": [
+          "prompt_max_chars",
+          "resolutions",
+          "operations.text_to_video.parameters.resolution",
+          "operations.first_frame.parameters.resolution"
+        ],
+        "durations_seconds": {
+          "min": 1,
+          "max": 60,
+          "default": 5
+        },
+        "aspect_ratios": [
+          "16:9",
+          "9:16",
+          "1:1"
+        ],
+        "output_formats": [
+          "mp4"
+        ],
+        "billing": {
+          "unit": "per_video",
+          "unit_label": {
+            "en": "per video",
+            "zh": "每条"
+          },
+          "unit_price_usd": 0.030882,
+          "pricing_basis": "request",
+          "notes": {
+            "en": "Charged per requested video; the final quote includes group and membership multipliers; use the platform quote before submission.",
+            "zh": "按请求的视频条数计费；实际费用受分组和会员倍率影响，以平台提交前报价为准。"
+          }
+        }
+      },
+      "contractPresent": true
+    },
+    {
+      "id": "nano-banana-2-1",
+      "displayName": "nano-banana-2-1",
+      "enableGroups": [
+        "default"
+      ],
+      "supportedEndpointTypes": [
+        "openai"
+      ],
+      "billing": {
+        "mode": null,
+        "modelPrice": 0.034,
+        "modelRatio": 0,
+        "quotaType": 1,
+        "expr": null
+      },
+      "contract": {
+        "model_id": "nano-banana-2-1",
+        "schemaVersion": "2.0",
+        "contractVersion": "91f5731ae6dc97de",
+        "execution_status": "live",
+        "family": "image",
+        "status": "documented",
+        "operation_ids": [
+          "text_to_image"
+        ],
+        "operations": [
+          {
+            "id": "text_to_image",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              }
+            ],
+            "parameters": [
+              {
+                "name": "seed",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647,
+                "step": 1,
+                "default": 0,
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "平台既有参数表；上游未公布取值范围"
+                }
+              },
+              {
+                "name": "n",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1,
+                "default": 1,
+                "fixed": 1,
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "运行时 validateTextToImageMVPSurface 强制 n=1"
+                }
+              },
+              {
+                "name": "quality",
+                "type": "enum",
+                "enum": [
+                  "1K",
+                  "2K",
+                  "4K"
+                ],
+                "default": "2K",
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "内部传输别名：上游以 quality 承载分辨率；客户端请使用 resolution（已知限制）"
+                }
+              },
+              {
+                "name": "background",
+                "type": "enum",
+                "enum": [
+                  "opaque"
+                ],
+                "default": "opaque",
+                "fixed": "opaque",
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "模板默认项；运行时未校验 background（已知限制）"
+                }
+              },
+              {
+                "name": "resolution",
+                "type": "enum",
+                "enum": [
+                  "1K",
+                  "2K",
+                  "4K"
+                ],
+                "default": "2K",
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "网关仅接受 1K/2K/4K；未传默认 2K（统一跨渠道）"
+                }
+              },
+              {
+                "name": "aspect_ratio",
+                "type": "enum",
+                "enum": [
+                  "auto",
+                  "1:1",
+                  "2:3",
+                  "3:2",
+                  "3:4",
+                  "4:3",
+                  "4:5",
+                  "5:4",
+                  "9:16",
+                  "16:9",
+                  "21:9",
+                  "1:4",
+                  "4:1",
+                  "1:8",
+                  "8:1"
+                ],
+                "default": "auto",
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "网关允许 auto 或 14 宽高比"
+                }
+              }
+            ],
+            "output": {
+              "type": "image",
+              "formats": [
+                "png",
+                "jpeg"
+              ],
+              "sizes": [
+                "1K",
+                "2K",
+                "4K"
+              ]
+            }
+          }
+        ],
+        "unknowns": [
+          "prompt_max_chars",
+          "reference_images.max_bytes_each"
+        ],
+        "output_formats": [
+          "png",
+          "jpeg"
+        ],
+        "output_sizes": [
+          "1K",
+          "2K",
+          "4K"
+        ],
+        "reference_images": {
+          "min": 0,
+          "max": 0
+        }
+      },
+      "contractPresent": true
+    },
+    {
+      "id": "nano-banana-2-lite",
+      "displayName": "nano-banana-2-lite",
+      "enableGroups": [
+        "default"
+      ],
+      "supportedEndpointTypes": [
+        "openai"
+      ],
+      "billing": {
+        "mode": null,
+        "modelPrice": 0.0336,
+        "modelRatio": 0,
+        "quotaType": 1,
+        "expr": null
+      },
+      "contract": {
+        "model_id": "nano-banana-2-lite",
+        "schemaVersion": "2.0",
+        "contractVersion": "7fb0db18c27374d0",
+        "execution_status": "live",
+        "family": "image",
+        "status": "documented",
+        "operation_ids": [
+          "text_to_image",
+          "image_to_image"
+        ],
+        "operations": [
+          {
+            "id": "text_to_image",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              }
+            ],
+            "parameters": [
+              {
+                "name": "seed",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647,
+                "step": 1,
+                "default": 0,
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "平台既有参数表；上游未公布取值范围"
+                }
+              },
+              {
+                "name": "n",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4,
+                "step": 1,
+                "default": 1,
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "平台既有参数表；上游未公布数量上限"
+                }
+              },
+              {
+                "name": "quality",
+                "type": "enum",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "default": "medium",
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "前端既有参数表；上游未公布枚举"
+                }
+              },
+              {
+                "name": "background",
+                "type": "enum",
+                "enum": [
+                  "opaque",
+                  "transparent"
+                ],
+                "default": "opaque",
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "前端既有参数表；上游未公布枚举"
+                }
+              }
+            ],
+            "output": {
+              "type": "image",
+              "sizes": [
+                "1K"
+              ]
+            }
+          },
+          {
+            "id": "image_to_image",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              },
+              {
+                "slot": "reference_image",
+                "type": "image",
+                "role": "reference",
+                "required": false,
+                "min": 0,
+                "max": 14,
+                "allowedMimes": [
+                  "image/png",
+                  "image/jpeg",
+                  "image/webp",
+                  "image/heic",
+                  "image/heif"
+                ],
+                "maxSizeMb": 7
+              }
+            ],
+            "parameters": [
+              {
+                "name": "seed",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647,
+                "step": 1,
+                "default": 0,
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "平台既有参数表；上游未公布取值范围"
+                }
+              },
+              {
+                "name": "n",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4,
+                "step": 1,
+                "default": 1,
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "平台既有参数表；上游未公布数量上限"
+                }
+              },
+              {
+                "name": "quality",
+                "type": "enum",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "default": "medium",
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "前端既有参数表；上游未公布枚举"
+                }
+              },
+              {
+                "name": "background",
+                "type": "enum",
+                "enum": [
+                  "opaque",
+                  "transparent"
+                ],
+                "default": "opaque",
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "前端既有参数表；上游未公布枚举"
+                }
+              }
+            ],
+            "output": {
+              "type": "image",
+              "sizes": [
+                "1K"
+              ]
+            }
+          }
+        ],
+        "unknowns": [
+          "prompt_max_chars",
+          "output_formats"
+        ],
+        "output_sizes": [
+          "1K"
+        ],
+        "reference_images": {
+          "min": 0,
+          "max": 14,
+          "formats": [
+            "image/png",
+            "image/jpeg",
+            "image/webp",
+            "image/heic",
+            "image/heif"
+          ],
+          "max_bytes_each": 7340032
+        }
+      },
+      "contractPresent": true
+    },
+    {
+      "id": "seed-evolving",
+      "displayName": "seed-evolving",
+      "enableGroups": [
+        "default"
+      ],
+      "supportedEndpointTypes": [
+        "openai"
+      ],
+      "billing": {
+        "mode": "tiered_expr",
+        "modelPrice": 0,
+        "modelRatio": 37.5,
+        "quotaType": 0,
+        "expr": "tier(\"base\", p * 0.8823529411764706 + c * 4.411764705882353 + cr * 0.17647058823529413)"
+      },
+      "contract": {
+        "model_id": "seed-evolving",
+        "schemaVersion": "2.0",
+        "contractVersion": "07a1e8893f7a73a3",
+        "execution_status": "live",
+        "family": "llm",
+        "status": "documented",
+        "operation_ids": [
+          "chat"
+        ],
+        "operations": [
+          {
+            "id": "chat",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              },
+              {
+                "slot": "image",
+                "type": "image",
+                "required": false
+              },
+              {
+                "slot": "video",
+                "type": "video",
+                "required": false
+              }
+            ],
+            "parameters": [],
+            "output": {
+              "type": "text"
+            }
+          }
+        ],
+        "unknowns": [
+          "prompt_max_chars"
+        ],
+        "input_modalities": [
+          "text",
+          "image",
+          "video"
+        ],
+        "tool_calling": true,
+        "streaming": true,
+        "prompt_caching": true,
+        "context_window_tokens": 1048576,
+        "max_output_tokens": 262144
+      },
+      "contractPresent": true
+    },
+    {
       "id": "seedance-2-0",
       "displayName": "seedance-2-0",
       "enableGroups": [
@@ -2125,6 +2676,143 @@
       "contractPresent": true
     },
     {
+      "id": "seedream-5-5",
+      "displayName": "seedream-5-5",
+      "enableGroups": [
+        "default"
+      ],
+      "supportedEndpointTypes": [
+        "openai"
+      ],
+      "billing": {
+        "mode": null,
+        "modelPrice": 0.02,
+        "modelRatio": 0,
+        "quotaType": 1,
+        "expr": null
+      },
+      "contract": {
+        "model_id": "seedream-5-5",
+        "schemaVersion": "2.0",
+        "contractVersion": "f924342c00710751",
+        "execution_status": "live",
+        "family": "image",
+        "status": "documented",
+        "operation_ids": [
+          "text_to_image"
+        ],
+        "operations": [
+          {
+            "id": "text_to_image",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              }
+            ],
+            "parameters": [
+              {
+                "name": "seed",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647,
+                "step": 1,
+                "default": 0,
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "平台既有参数表；上游未公布取值范围"
+                }
+              },
+              {
+                "name": "n",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1,
+                "default": 1,
+                "fixed": 1,
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "运行时 validateTextToImageMVPSurface 强制 n=1"
+                }
+              },
+              {
+                "name": "quality",
+                "type": "enum",
+                "enum": [
+                  "medium"
+                ],
+                "default": "medium",
+                "fixed": "medium",
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "模板默认项；运行时未校验 quality（已知限制）"
+                }
+              },
+              {
+                "name": "background",
+                "type": "enum",
+                "enum": [
+                  "opaque",
+                  "transparent"
+                ],
+                "default": "opaque",
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "前端既有参数表；上游未公布枚举"
+                }
+              },
+              {
+                "name": "size",
+                "type": "enum",
+                "enum": [
+                  "1K",
+                  "1.5K",
+                  "2K"
+                ],
+                "default": "2K",
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "网关允许 1K/1.5K/2K；未传默认 2K"
+                }
+              }
+            ],
+            "output": {
+              "type": "image",
+              "formats": [
+                "png",
+                "jpeg"
+              ],
+              "sizes": [
+                "1K",
+                "1.5K",
+                "2K"
+              ]
+            }
+          }
+        ],
+        "unknowns": [
+          "prompt_max_chars",
+          "reference_images.max_bytes_each"
+        ],
+        "output_formats": [
+          "png",
+          "jpeg"
+        ],
+        "output_sizes": [
+          "1K",
+          "1.5K",
+          "2K"
+        ],
+        "reference_images": {
+          "min": 0,
+          "max": 0
+        }
+      },
+      "contractPresent": true
+    },
+    {
       "id": "suno",
       "displayName": "suno",
       "enableGroups": [
@@ -2728,12 +3416,5 @@
       },
       "contractPresent": true
     }
-  ],
-  "defaults": {
-    "chat": "gemini-3.8-flash",
-    "text_to_image": "gpt-image-2.5",
-    "text_to_music": "suno",
-    "text_to_video": "seedance-2-5",
-    "vision_chat": "gemini-3.8-flash"
-  }
+  ]
 }

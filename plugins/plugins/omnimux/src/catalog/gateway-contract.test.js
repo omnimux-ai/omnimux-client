@@ -12,8 +12,8 @@ const snapshot = bundled
 
 test('Gateway Contract v2 fills text and image buckets without local YAML', () => {
   const catalog = buildModelCatalog({ env: {}, snapshot })
-  assert.deepEqual(catalog.text.map((row) => row.id).sort(), ['gemini-3.8-flash', 'gemini-4-argon'])
-  assert.deepEqual(catalog.image.map((row) => row.id).sort(), ['gemini-3.1-flash-lite-image', 'gpt-image-2.5'])
+  assert.deepEqual(catalog.text.map((row) => row.id).sort(), ['gemini-3.8-flash', 'gemini-4-argon', 'seed-evolving'])
+  assert.deepEqual(catalog.image.map((row) => row.id).sort(), ['gpt-image-2.5', 'muse-image', 'nano-banana-2-1', 'nano-banana-2-lite', 'seedream-5-5'])
   assert.equal(catalog.gateway.missingContract.length, 0)
   assert.deepEqual(catalog.gateway.adapterUnsupported, ['suno-sounds'])
 
@@ -43,15 +43,26 @@ test('Gateway Contract v2 fills text and image buckets without local YAML', () =
   assert.deepEqual(gpt?.parameters?.quality?.options, [{ value: 'medium' }])
   assert.deepEqual(gpt?.parameters?.resolution?.options, [{ value: '1K' }])
 
-  const geminiImage = catalog.models.find((row) => row.id === 'gemini-3.1-flash-lite-image')
-  const geminiRef = geminiImage?.operations.find((operation) => operation.id === 'image_to_image')?.inputs.find((input) => input.type === 'image')
-  assert.equal(geminiRef?.max, 14)
+  const museVideo = catalog.models.find((row) => row.id === 'muse-video')
+  assert.equal(museVideo?.family, 'muse')
+  assert.equal(museVideo?.label, 'Muse Video')
+  assert.equal(museVideo?.executionStatus, 'ready')
+  assert.equal(museVideo?.selectable, true)
+  const museImage = catalog.models.find((row) => row.id === 'muse-image')
+  assert.equal(museImage?.family, 'muse')
+  assert.equal(museImage?.label, 'Muse Image')
+  assert.equal(museImage?.executionStatus, 'ready')
+  assert.equal(museImage?.selectable, true)
+
+  const nanoLite = catalog.models.find((row) => row.id === 'nano-banana-2-lite')
+  const nanoRef = nanoLite?.operations.find((operation) => operation.id === 'image_to_image')?.inputs.find((input) => input.type === 'image')
+  assert.equal(nanoRef?.max, 14)
 })
 
 test('Gateway text rows and SubmitGuard admit gateway-only models', () => {
   const runtime = getRuntimeContractIndex({ snapshot })
   const rows = getGatewayTextRows({ snapshot })
-  assert.deepEqual(rows.map((row) => row.id), ['gemini-3.8-flash', 'gemini-4-argon'])
+  assert.deepEqual(rows.map((row) => row.id), ['gemini-3.8-flash', 'gemini-4-argon', 'seed-evolving'])
 
   const text = parseTextConfig({})
   const route = resolveTextRoute({
@@ -63,7 +74,7 @@ test('Gateway text rows and SubmitGuard admit gateway-only models', () => {
 
   for (const [model, operation, capability] of [
     ['gemini-4-argon', 'chat', 'text'],
-    ['gemini-3.1-flash-lite-image', 'text_to_image', 'image'],
+    ['nano-banana-2-lite', 'text_to_image', 'image'],
   ]) {
     const result = guardSubmit(
       { prompt: 'fixture', model, operation, assets: [] },
@@ -80,8 +91,8 @@ test('a v1 cached snapshot supplements missing contracts from bundled v2', () =>
   }
   legacy.generatedAt = '2026-11-03T07:06:42.228Z'
   const catalog = buildModelCatalog({ env: {}, snapshot: legacy })
-  assert.deepEqual(catalog.text.map((row) => row.id).sort(), ['gemini-3.8-flash', 'gemini-4-argon'])
-  assert.deepEqual(catalog.image.map((row) => row.id).sort(), ['gemini-3.1-flash-lite-image', 'gpt-image-2.5'])
+  assert.deepEqual(catalog.text.map((row) => row.id).sort(), ['gemini-3.8-flash', 'gemini-4-argon', 'seed-evolving'])
+  assert.deepEqual(catalog.image.map((row) => row.id).sort(), ['gpt-image-2.5', 'muse-image', 'nano-banana-2-1', 'nano-banana-2-lite', 'seedream-5-5'])
   assert.deepEqual(catalog.gateway.missingContract, [])
   assert.deepEqual(catalog.gateway.adapterUnsupported, ['suno-sounds'])
 })
@@ -93,6 +104,16 @@ test('video/audio gateway contracts overlay without per-model YAML', () => {
   assert.equal(wan?.selectable, true)
   assert.equal(wan?.operations?.filter((operation) => operation.listed).length, 6)
   assert.equal(catalog.audio.some((row) => row.id === 'suno-sounds'), false)
+})
+
+test('the bundled snapshot carries the live 16-model membership, including Muse and excluding delisted rows', () => {
+  const ids = snapshot.models.map((row) => row.id).sort()
+  assert.equal(ids.length, 16)
+  assert.ok(ids.includes('muse-video'))
+  assert.ok(ids.includes('muse-image'))
+  assert.ok(!ids.includes('gemini-3.1-flash-lite-image'))
+  assert.equal(snapshot.source, 'pricing')
+  assert.ok(Number.isFinite(Date.parse(snapshot.generatedAt)))
 })
 
 test('a sold model with no v2 contract is reported as missingContract, not adapterUnsupported', () => {

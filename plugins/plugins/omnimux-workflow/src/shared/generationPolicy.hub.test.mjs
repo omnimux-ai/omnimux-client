@@ -95,7 +95,7 @@ test('readCanvasCatalog tolerates catalogs without preview_fingerprint (old hub 
 test('real Hub catalog exposes the listed text models and selects Gemini 3.8 for video', () => {
   const catalog = projectCanvasCatalog(buildModelCatalog({ env: {} }));
   // 默认全开下 text 桶 = 全部已上架 text 模型；真实 hub 里在售 text 模型只有 Gemini 3.8 Flash。
-  assert.deepEqual(catalog.text.map((row) => row.id), ['gemini-3.8-flash', 'gemini-4-argon']);
+  assert.deepEqual(catalog.text.map((row) => row.id), ['gemini-3.8-flash', 'gemini-4-argon', 'seed-evolving']);
   assert.equal(catalog.defaults.text, 'gemini-3.8-flash');
   const select = (assets = [], currentModelId) => planAutoAdaptation({ catalog, outputType: 'text', currentModelId,
     fingerprint: buildUpstreamFingerprint({ prompt: 'analyze', assets }) });
@@ -121,7 +121,7 @@ test('real Hub catalog: the listed whisper-1 ASR contract is selectable in the a
   // ...and never through a generative bucket: whisper-1's only op binds the
   // speechToText capability seam, so it never lands in the chat list even though
   // it outputs text. The chat bucket stays generative-only.
-  assert.deepEqual(catalog.text.map((row) => row.id), ['gemini-3.8-flash', 'gemini-4-argon']);
+  assert.deepEqual(catalog.text.map((row) => row.id), ['gemini-3.8-flash', 'gemini-4-argon', 'seed-evolving']);
 
   const withAudio = buildUpstreamFingerprint({
     prompt: '',
@@ -135,7 +135,7 @@ test('real Hub catalog: the listed whisper-1 ASR contract is selectable in the a
   assert.equal(isZeroCandidateEmptyState(transcription), false);
 
   // Every other tool keeps the curated whitelist: a chat node never offers an ASR model.
-  const CHAT = ['gemini-3.8-flash', 'gemini-4-argon'];
+  const CHAT = ['gemini-3.8-flash', 'gemini-4-argon', 'seed-evolving'];
   const chat = buildFilteredModelOptions({ catalog, fingerprint: buildUpstreamFingerprint({ prompt: '请润色这段文字' }), outputType: 'text', tool: 'text-to-text' });
   assert.deepEqual(chat.options.map((row) => row.id).sort(), CHAT.slice().sort());
   // Callers that pass no tool keep the pre-#1789 behaviour (whitelist only).

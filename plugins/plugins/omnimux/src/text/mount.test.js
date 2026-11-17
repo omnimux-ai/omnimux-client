@@ -23,7 +23,7 @@ describe('mountTextComplete capability gate', () => {
     assert.equal(tools[0].name, 'omnimux_text_complete')
     assert.ok(provided.textComplete)
     // 2026-10-21 #3527：路由声明只剩网关现役文本型号。
-    assert.deepEqual(tools[0].parameters.properties.model.enum, ['gemini-3.8-flash', 'gemini-4-argon'])
+    assert.deepEqual(tools[0].parameters.properties.model.enum, ['gemini-3.8-flash', 'gemini-4-argon', 'seed-evolving'])
     assert.equal(tools[0].parameters.properties.metadata, undefined)
     assert.ok(tools[0].parameters.properties.strategy)
     assert.ok(tools[0].parameters.properties.group)
@@ -67,7 +67,7 @@ describe('mountTextComplete capability gate', () => {
     mountTextComplete(ctx, hub, {}, () => {})
     assert.equal(tools.length, 1)
     // The local model is hidden; the gateway-only text model remains offered.
-    assert.deepEqual(tools[0].parameters.properties.model.enum, ['gemini-4-argon'])
+    assert.deepEqual(tools[0].parameters.properties.model.enum, ['gemini-4-argon', 'seed-evolving'])
     assert.equal(tools[0].parameters.properties.model.enum.includes('gemini-3.8-flash'), false)
   })
 

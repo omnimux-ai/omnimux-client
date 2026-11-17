@@ -28,6 +28,7 @@ const BRANDS: readonly [string, string, readonly string[]][] = [
   ['openai', 'OpenAI', ['openai', 'gpt', 'o1', 'o3', 'o4']],
   ['bytedance', 'Seedance', ['bytedance', 'seed']],
   ['minimax', 'MiniMax', ['minimax', 'hailuo']],
+  ['muse', 'Muse', ['muse']],
   ['kling', 'Kling', ['kling']],
   ['alibaba', 'Wan', ['alibaba', 'wan']],
   ['happyhorse', 'HappyHorse', ['happyhorse', 'horse']],

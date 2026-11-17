@@ -19,6 +19,8 @@ test('resolveModelBrand: resolves all mainstream models accurately', () => {
   assert.equal(resolveModelBrand('deepseek-v4-flash'), 'deepseek');
   assert.equal(resolveModelBrand('midjourney-8.1'), 'midjourney');
   assert.equal(resolveModelBrand('minimax-h3'), 'minimax');
+  assert.equal(resolveModelBrand('muse-video'), 'muse');
+  assert.equal(resolveModelBrand('muse-image'), 'muse');
   assert.equal(resolveModelBrand('grok-imagine'), 'grok');
   assert.equal(resolveModelBrand('grok-imagine-video-1-5'), 'grok');
   assert.equal(resolveModelBrand('viduq2'), 'vidu');
@@ -27,7 +29,14 @@ test('resolveModelBrand: resolves all mainstream models accurately', () => {
 
 test('getBrandInfo: returns valid metadata and SVG for all brands', () => {
   const all = getAllBrands();
-  assert.ok(all.length >= 15);
+  const muse = all.find((brand) => brand.id === 'muse');
+  assert.ok(muse);
+  assert.equal(muse.company, 'Muse');
+  assert.equal(muse.series.en, 'Muse Video / Muse Image');
+  assert.equal(muse.primaryColor, '#8B5CF6');
+  assert.deepEqual(muse.models, ['muse-video', 'muse-image']);
+  assert.ok(muse.svg.includes('#8B5CF6'));
+  assert.ok(all.length >= 16);
   for (const b of all) {
     assert.ok(b.id);
     assert.ok(b.company);

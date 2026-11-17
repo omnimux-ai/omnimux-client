@@ -123,10 +123,10 @@ test('3312: saved defaults pointing at delisted models resolve only to the fixed
   const catalog = buildModelCatalog({ env: {}, settingsDefaults: officialSettings() })
   // 2026-10-21 网关对账 #3516：四个保存默认分别指向 Claude / Flare / H3 / Gemini-TTS，
   // 其上游渠道全部停用 → 目录桶中不再出现，默认回落到合法在架型号。
-  assert.deepEqual(catalog.text.map(row => row.id), ['gemini-3.8-flash', 'gemini-4-argon'])
+  assert.deepEqual(catalog.text.map(row => row.id), ['gemini-3.8-flash', 'gemini-4-argon', 'seed-evolving'])
   // P1b：成员资格改为与网关快照求交，seedream-5-0-pro / seedance-2-0-fast / -mini 已不在在售集合。
-  assert.deepEqual(catalog.image.map(row => row.id), ['gemini-3.1-flash-lite-image', 'gpt-image-2.5'])
-  assert.deepEqual(catalog.video.map(row => row.id), ['minimax-h3-video', 'seedance-2-0', 'seedance-2-5', 'wan-3.0'])
+  assert.deepEqual(catalog.image.map(row => row.id), ['gpt-image-2.5', 'muse-image', 'nano-banana-2-1', 'nano-banana-2-lite', 'seedream-5-5'])
+  assert.deepEqual(catalog.video.map(row => row.id), ['minimax-h3-video', 'muse-video', 'seedance-2-0', 'seedance-2-5', 'wan-3.0'])
   assert.deepEqual(catalog.audio.map(row => row.id), ['indextts-2', 'suno'])
   assert.deepEqual(catalog.defaults, { text: 'gemini-3.8-flash', analysis: 'gemini-3.8-flash', image: 'gpt-image-2.5', video: 'seedance-2-5', audio: 'suno' })
 }))
