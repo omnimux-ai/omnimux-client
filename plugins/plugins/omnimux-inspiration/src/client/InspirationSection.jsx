@@ -208,6 +208,15 @@ export function InspirationSection({ t, active }) {
     setToast({ id: toastSeq.current, text: message, ...options })
   }, [])
 
+  // 「立即复刻」的失败状态原本只写页面底部 #omnimux-inspiration-cta-status，
+  // 实测在视口外（top 2089 / 视口 994）。同一份状态再走一次既有顶部气泡，
+  // 保证用户点击后在视口内看到失败原因；读屏仍由 role=status 的 cta-status 承担。
+  useEffect(() => {
+    const status = feed.ctaStatus
+    if (!status || status === 'card.cta.replicating') return
+    showToast(t(status))
+  }, [feed.ctaStatus, showToast, t])
+
   useEffect(() => {
     if (!toast) return undefined
     const timer = setTimeout(() => setToastLeaving(true), toast.duration || TOAST_VISIBLE_MS)

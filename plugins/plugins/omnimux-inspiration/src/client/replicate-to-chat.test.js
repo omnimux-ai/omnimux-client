@@ -11,6 +11,7 @@ import {
   revealConversationForReplicate,
   runExclusive,
 } from './replicate-to-chat.js'
+import { bindOfficialSessions } from './new-session-click.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const source = readFileSync(join(here, 'replicate-to-chat.js'), 'utf8')
@@ -246,6 +247,83 @@ describe('oneClickReplicate', () => {
     assert.equal(io.attaches[0].payload.metadata.inspiration_id, 'insp-1')
     assert.equal(io.attaches[0].payload.entityId, 'insp-1')
     assert.equal(io.status.at(-1), null)
+  })
+
+  it('attaches successfully with the rc.3 SessionListState shape (no current) and a newly created blank', async () => {
+    let activeId = 'sess-current'
+    let snapshot = {
+      ids: ['sess-current'],
+      byId: { 'sess-current': { blank: true } },
+      phase: 'ready',
+      projectionsBySession: {},
+    }
+    const listeners = new Set()
+    const notify = () => { for (const listener of listeners) listener() }
+    const sessions = {
+      list: {
+        getSnapshot: () => snapshot,
+        subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener) },
+      },
+      createBlank(id) {
+        const byId = Object.fromEntries([...Object.entries(snapshot.byId), [id, { blank: true }]])
+        snapshot = { ...snapshot, ids: [...snapshot.ids, id], byId }
+        activeId = id
+        notify()
+      },
+    }
+    const button = {
+      className: 'newSession',
+      clicks: 0,
+      getAttribute() { return null },
+      hasAttribute() { return false },
+      closest() { return null },
+      getClientRects() { return [{}] },
+      click() { this.clicks += 1; sessions.createBlank('sess-new') },
+    }
+    const doc = {
+      querySelector() { return null },
+      querySelectorAll(selector) { return selector === 'button' ? [button] : [] },
+    }
+    const attachments = []
+    const win = {
+      __omnimuxWorkbench: {
+        getSnapshot: () => ({ sessionId: activeId }),
+        getCurrentSessionId: () => activeId,
+        setConversationCollapsed() {},
+        setFocus() {},
+      },
+      __omnimuxAttachments: {
+        getActiveSessionId: () => activeId,
+        addAttachment(sessionId, payload) {
+          attachments.push({ sessionId, payload })
+          return { ok: true, attachment: { id: `att-${attachments.length}` } }
+        },
+      },
+    }
+    bindOfficialSessions(sessions)
+    try {
+      const io = makeIo({
+        window: win,
+        document: doc,
+        async prefillPrompt(request) {
+          const attachment = request.attach()
+          if (attachment?.ok === true) return { ok: true, via: 'prefill' }
+          return { ok: false, error: 'attach-failed' }
+        },
+      })
+      delete io.clickNewSession
+      delete io.addAttachment
+      const result = await oneClickReplicate(ROW, io)
+      assert.equal(result.ok, true)
+      assert.equal(result.clickedNewSession, true)
+      assert.equal(result.attached, true)
+      assert.equal(button.clicks, 1)
+      assert.equal(attachments.length, 1)
+      assert.equal(attachments[0].sessionId, 'sess-new')
+      assert.equal(attachments[0].payload.entityId, 'insp-1')
+    } finally {
+      bindOfficialSessions(null)
+    }
   })
 
   it('non-blank session also clicks official new session then attaches, reveals, and prefills', async () => {
