@@ -91,6 +91,7 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
   }
   const priorParams = previous ? readCanvasParams(previous) : {};
   const modeChanged = previous && (priorParams.operation !== params.operation || priorParams.model !== params.model);
+  const standbyIds = Array.isArray(node.data.slotStandbyEdgeIds) ? node.data.slotStandbyEdgeIds.filter((id): id is string => typeof id === 'string') : [];
   // A V1 occupant is authoritative only while its source node and edge still exist on the
   // canvas. Unpinned (auto-filled) occupants whose supply vanished are junk that must be
   // pruned here, otherwise the stale binding keeps re-persisting and the node stays blocked
@@ -126,12 +127,29 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
         // one slot that consumes every new text source as ordered body text;
         // append it instead of letting max=1 replace the earlier source.
         const textSlot = layout.slots.find((slot) => slot.type === 'text' && slot.composition);
-        if (asset.type !== 'text' || !textSlot || !explicit || Object.keys(explicit).length === 0) continue;
-        const values = explicit[textSlot.slot] ?? [];
-        if (values.some((occupant) => occupant.edgeId === edge.id && occupant.sourceNodeId === asset.sourceNodeId)) continue;
-        const ordinal = values.reduce((max, item) => Math.max(max, item.ordinal ?? -1), -1) + 1;
-        explicit[textSlot.slot] = [...values, { sourceNodeId: asset.sourceNodeId, edgeId: edge.id,
-          outputId: asset.outputId, ordinal, role: textSlot.role, pinned: true }];
+        if (asset.type === 'text') {
+          if (!textSlot || !explicit || Object.keys(explicit).length === 0) continue;
+          const values = explicit[textSlot.slot] ?? [];
+          if (values.some((occupant) => occupant.edgeId === edge.id && occupant.sourceNodeId === asset.sourceNodeId)) continue;
+          const ordinal = values.reduce((max, item) => Math.max(max, item.ordinal ?? -1), -1) + 1;
+          explicit[textSlot.slot] = [...values, { sourceNodeId: asset.sourceNodeId, edgeId: edge.id,
+            outputId: asset.outputId, ordinal, role: textSlot.role, pinned: true }];
+          continue;
+        }
+        // Media: a newly connected supply edge is a new user action and must
+        // land in a free accepting slot. Existing explicit choices stay put;
+        // only the new edge is copied from the auto-fill plan (a cleared slot
+        // must not be silently refilled from older supply).
+        if (!explicit) continue;
+        const planned = autoFillSlots(feed, layout, explicit, standbyIds);
+        for (const [slotName, occupants] of Object.entries(planned.bindings)) {
+          for (const occupant of occupants) {
+            if (occupant.edgeId !== edge.id) continue;
+            const current = explicit[slotName] ?? [];
+            if (current.some((item) => item.edgeId === occupant.edgeId && item.sourceNodeId === occupant.sourceNodeId)) continue;
+            explicit[slotName] = [...current, occupant];
+          }
+        }
         continue;
       }
       if (!asset.targetSlot && !asset.role) continue;
@@ -144,7 +162,6 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
         : slot?.max === 1 ? [occupant] : [...(explicit[hint] ?? []), occupant];
     }
   }
-  const standbyIds = Array.isArray(node.data.slotStandbyEdgeIds) ? node.data.slotStandbyEdgeIds.filter((id): id is string => typeof id === 'string') : [];
   // A missing V1 `slotBindings` means "not initialized yet", not "the user cleared every slot": the display
   // side self-heals such a node by auto-filling, so the store must persist that same fill. Leaving `{}` behind
   // splits the two readers — the panel shows a filled slot while submission skips the fill and drops the asset

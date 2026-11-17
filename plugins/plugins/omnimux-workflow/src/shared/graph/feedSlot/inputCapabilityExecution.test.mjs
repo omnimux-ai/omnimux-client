@@ -12,6 +12,7 @@ import { test } from 'node:test';
 import { buildModelCatalog } from '../../../../../omnimux/src/catalog/list.js';
 import { projectCanvasCatalog } from '../../generationPolicy.ts';
 import { prepareExecutionSlotGraph } from './prepareExecutionSlotGraph.ts';
+import { planCanvasInputMutation } from '../canvasInputMutationGateway.ts';
 import { createMaterialGatewayExecutor } from '../../../workflow/execution/materialGatewayExecutor.ts';
 import { registerExecutor } from '../../../workflow/executors/registry.ts';
 
@@ -128,4 +129,30 @@ test('standby media never enters the dispatched request', async () => {
   assert.equal(gw.requests[0].operation, 'first_frame');
   assert.deepEqual(gw.requests[0].references?.map((reference) => reference.sourceNodeId), ['img-1']);
   assert.equal(gw.requests[0].audioTrack, undefined);
+});
+
+test('a second image connected after first_frame is bound to last_frame and switches to first_last_frame', () => {
+  const target = targetNode({ model: 'seedance-2-5', operation: 'text_to_video' });
+  target.data.inputBindingVersion = 1;
+  target.data.slotBindings = {};
+  const first = planCanvasInputMutation(
+    { nodes: [importNode('img-1', 'image'), target], edges: [] },
+    { addEdges: [{ source: 'img-1', target: 'target', sourceHandle: 'out', targetHandle: 'in' }] },
+    { catalog },
+  );
+  assert.equal(first.status, 'allowed');
+  const firstTarget = first.nodes.find((node) => node.id === 'target');
+  assert.equal(firstTarget.data.params.operation, 'first_frame');
+  assert.equal(firstTarget.data.slotBindings.first_frame?.[0]?.sourceNodeId, 'img-1');
+
+  const second = planCanvasInputMutation(
+    { nodes: [...first.nodes, importNode('img-2', 'image')], edges: first.edges },
+    { addEdges: [{ source: 'img-2', target: 'target', sourceHandle: 'out', targetHandle: 'in' }] },
+    { catalog },
+  );
+  assert.equal(second.status, 'allowed');
+  const secondTarget = second.nodes.find((node) => node.id === 'target');
+  assert.equal(secondTarget.data.params.operation, 'first_last_frame');
+  assert.equal(secondTarget.data.slotBindings.first_frame?.[0]?.sourceNodeId, 'img-1');
+  assert.equal(secondTarget.data.slotBindings.last_frame?.[0]?.sourceNodeId, 'img-2');
 });
