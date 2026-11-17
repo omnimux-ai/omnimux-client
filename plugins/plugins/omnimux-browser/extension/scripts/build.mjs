@@ -6,6 +6,7 @@
  */
 
 import { spawn, spawnSync } from 'node:child_process'
+import { delimiter } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
@@ -24,10 +25,10 @@ const configs = [
   'vite.panel.config.ts',
 ]
 
-const binDir = new URL('../node_modules/.bin', import.meta.url).pathname
+const binDir = fileURLToPath(new URL('../node_modules/.bin', import.meta.url))
 const env = {
   ...process.env,
-  PATH: `${binDir}:${process.env.PATH || ''}`,
+  PATH: [binDir, process.env.PATH].filter(Boolean).join(delimiter),
 }
 
 if (watch) {

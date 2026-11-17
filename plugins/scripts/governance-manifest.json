@@ -434,6 +434,7 @@
     "verify-video-thumbnail.mjs",
     "verify-workflow-apptab-browser.mjs",
     "video-param-normalization.test.mjs",
+    "windows-build-portability.test.mjs",
     "viewer-card-qa-entry.mjs",
     "watch-plugin.mjs",
     "workflows/evaluation/build-scorecard.mjs",
