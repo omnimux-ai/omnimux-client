@@ -2,7 +2,7 @@
 
 - 任务：`issue-62-input-capability`
 - 日期：2026-11-17
-- 基线：`2007108c4e6dc3a70bf3bd05ec728b49bd40b316`（origin/main）
+- 基线：`c81e70e3d5b5f9467cf9b47020008fb7bd6c6e98`（origin/main）
 - 风险：R2（视频节点 UI / 连线校验 / 执行准备；只动 `plugins/plugins/omnimux-workflow`）
 - 上游真源：Epic #63；PRD `.tmp/epic-input-capability/PRD.md`（§0.1 文案审计、R1–R10、四类矩阵）
 
@@ -63,6 +63,7 @@
 - 纯函数：`src/shared/validation/inputCapability.test.mjs` — 真实 16 模型 catalog（`buildModelCatalog` + `projectCanvasCatalog`）的视频/图片/音频/文本矩阵、R2b、R3 排序与 explicit preference、R6、R7 投影、fail-closed。
 - 视频集成：`src/canvas/editor/components/MaterialNode/ConfigPanel/inputCapabilityVideo.integration.test.mjs` — `resolveEffectiveVideoParams` 的自动选中/灰态/参数投影，`OperationSegment` 灰态 DOM（无 title、保留 aria-label）。
 - 执行 payload：`src/shared/graph/feedSlot/inputCapabilityExecution.test.mjs` — `prepareExecutionSlotGraph` + `materialGatewayExecutor` 实际请求体：1 图 `first_frame`、2 图 `first_last_frame`、断开回 `text_to_video`、待命媒体不进 payload。
+- 回归修复：`inputCapability.test.mjs` / `inputCapabilityExecution.test.mjs` 覆盖 `autoOperationId` 与显式选择的区分；`videoParameterSelection.test.mjs` 覆盖无 operation legacy 参数保留。
 - 仓库级 runner：`plugins/scripts/input-capability.test.mjs`（governance `manual` + quality-gate `node --test`）。
 
 ## 双向证伪
