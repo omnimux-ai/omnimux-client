@@ -22,6 +22,7 @@ import {
   MACOS_UNIVERSAL_NATIVE_ENTRIES,
 } from './mac-universal.ts'
 import { expectedDesktopVersion, verifyDesktopRuntimeTree } from './prepare-runtime.ts'
+import { writeAppBuildInfo } from './build-info.mjs'
 
 /** Resolve a package root even when its exports hide `package.json`. */
 export function resolveRuntimePackageRoot(
@@ -911,6 +912,15 @@ export async function afterPack(
   verifyAa: typeof verifyPackagedAgentsAnywhere = verifyPackagedAgentsAnywhere,
   verifyRuntime: typeof verifyPackagedPrimaryRuntime = verifyPackagedPrimaryRuntime,
 ): Promise<void> {
+  if (context.electronPlatformName === 'darwin') {
+    const appPath = join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`)
+    const info = writeAppBuildInfo(appPath, process.env.DSH_BUILD_CHANNEL ?? 'package-dir', {
+      packageDir: 'dsh-plugin-desktop',
+    })
+    if (process.env.DSH_RELEASE_BUILD === '1' && info.repo.dirty) {
+      throw new Error('release build must come from a clean git worktree')
+    }
+  }
   const summary = verify(context)
   verifyAa(context)
   verifyRuntime(context)

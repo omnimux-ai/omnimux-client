@@ -798,6 +798,8 @@
     "dist:mac:next": "yarn aa:prepare-release && yarn workspace dsh-community-market build && yarn workspace dsh-desktop-next dist:mac",
     "dist:mac-arm64:next": "yarn aa:prepare-release && yarn workspace dsh-community-market build && DSH_MAC_RELEASE_ARCH=arm64 yarn workspace dsh-desktop-next dist:mac",
     "dist:mac-x64:next": "yarn aa:prepare-release && yarn workspace dsh-community-market build && DSH_MAC_RELEASE_ARCH=x64 yarn workspace dsh-desktop-next dist:mac",
+    "release:mac:arm64": "DSH_AA_USE_VENDORED=1 DSH_MARKET_USE_VENDORED=1 yarn aa:prepare-release && yarn workspace dsh-community-market build && DSH_MAC_RELEASE_ARCH=arm64 DSH_MAC_RELEASE_OUTPUT=dist/release-assets/arm64 yarn workspace dsh-desktop-next dist:mac",
+    "release:mac:x64": "DSH_AA_USE_VENDORED=1 DSH_MARKET_USE_VENDORED=1 yarn aa:prepare-release && yarn workspace dsh-community-market build && DSH_MAC_RELEASE_ARCH=x64 DSH_MAC_RELEASE_OUTPUT=dist/release-assets/x64 yarn workspace dsh-desktop-next dist:mac",
     "dist:mac-smoke:next": "yarn aa:prepare-release && yarn workspace dsh-community-market build && yarn workspace dsh-desktop-next dist:mac-smoke",
     "dist:win:next": "yarn aa:prepare-release && yarn workspace dsh-community-market build && yarn workspace dsh-desktop-next dist:win",
     "dist:win-portable:next": "yarn aa:prepare-release && yarn workspace dsh-community-market build && yarn workspace dsh-desktop-next dist:win-portable",

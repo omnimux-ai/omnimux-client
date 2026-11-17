@@ -20,6 +20,7 @@ import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
+import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 
 const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -224,6 +225,34 @@ async function verifyEndpoint(key, expectedSize) {
   }
 }
 
+/** Platform token → metadata key and latest alias used by the desktop updater. */
+const VERIFY_PLATFORMS = {
+  'mac-arm64': { metadataKey: 'macArm64', latestKey: 'releases/latest/OmniMux-arm64.dmg' },
+  'mac-x64': { metadataKey: 'macX64', latestKey: 'releases/latest/OmniMux-x64.dmg' },
+  windows: { metadataKey: 'windows', latestKey: 'releases/latest/OmniMux-x64-Setup.exe' },
+}
+
+/** Fetch JSON without relying on a stale CDN edge entry. */
+async function fetchJson(url) {
+  const res = await fetch(`${url}${url.includes('?') ? '&' : '?'}verify=${String(Date.now())}`, {
+    headers: { 'cache-control': 'no-cache', pragma: 'no-cache' },
+  })
+  if (!res.ok) throw new Error(`GET ${url} failed: HTTP ${res.status} ${res.statusText}`)
+  return res.json()
+}
+
+/** Download one artifact and return its sha256 without buffering the whole file. */
+async function downloadSha256(url) {
+  const res = await fetch(`${url}${url.includes('?') ? '&' : '?'}verify=${String(Date.now())}`, {
+    headers: { 'cache-control': 'no-cache', pragma: 'no-cache' },
+  })
+  if (!res.ok) throw new Error(`GET ${url} failed: HTTP ${res.status} ${res.statusText}`)
+  if (res.body === null) throw new Error(`GET ${url} returned an empty body`)
+  const hash = createHash('sha256')
+  for await (const chunk of Readable.fromWeb(res.body)) hash.update(chunk)
+  return hash.digest('hex')
+}
+
 /**
  * 打印使用帮助
  */
@@ -243,6 +272,8 @@ OmniMux R2 产物同步与分发工具
   --mac-dmg <path>                  直接指定 macOS Universal .dmg 镜像包路径
   --force                           强制重新上传已存在的同大小文件
   --skip-verify                     上传后跳过 CDN 巡检
+  --verify-hashes                   verify 时下载 latest 产物并核对 version-*.json 的 sha256
+  --required-platforms <list>       verify 时要求 metadata 必须包含的平台（mac-arm64,mac-x64,windows）
 `)
 }
 
@@ -255,7 +286,7 @@ async function main() {
     return
   }
 
-  const token = resolveCloudflareToken()
+  const token = command === 'list' || command === 'upload' ? resolveCloudflareToken() : null
 
   if (command === 'list') {
     console.log(`📦 查询 Cloudflare R2 存储桶 '${BUCKET_NAME}' 产物清单...`)
@@ -356,6 +387,45 @@ async function main() {
         allOk = false
         console.log(`  ❌ [ARCHIVE ${platform}] no reachable artifact under releases/v${version}/`)
         console.log(`       Rollback to v${version} is impossible; tried: ${keys.join(', ')}`)
+      }
+    }
+
+    const requiredIdx = args.indexOf('--required-platforms')
+    const requiredPlatforms = requiredIdx === -1 ? [] : (args[requiredIdx + 1] ?? '').split(',').map(token => token.trim()).filter(Boolean)
+    const verifyHashes = args.includes('--verify-hashes')
+    if (requiredPlatforms.length > 0 || verifyHashes) {
+      const tag = /-([0-9A-Za-z.-]+)$/u.exec(version)?.[1]
+      const channel = tag === 'beta' ? 'beta' : tag === 'next' ? 'next' : 'stable'
+      try {
+        const metadata = await fetchJson(`${CDN_BASE_URL}/api/desktop/version-${channel}.json`)
+        if (metadata?.version !== version) {
+          throw new Error(`metadata version ${String(metadata?.version)} does not match ${version}`)
+        }
+        if (metadata?.channel !== channel) {
+          throw new Error(`metadata channel ${String(metadata?.channel)} does not match ${channel}`)
+        }
+        for (const token of requiredPlatforms) {
+          const platform = VERIFY_PLATFORMS[token]
+          if (platform === undefined) throw new Error(`unknown required platform ${JSON.stringify(token)}`)
+          if (metadata.sha256?.[platform.metadataKey] === undefined) {
+            throw new Error(`metadata is missing required platform ${token}`)
+          }
+        }
+        if (verifyHashes) {
+          for (const [token, platform] of Object.entries(VERIFY_PLATFORMS)) {
+            const expected = metadata.sha256?.[platform.metadataKey]
+            if (expected === undefined) continue
+            console.log(`  ⬇️  sha256 ${token} ${platform.latestKey}`)
+            const actual = await downloadSha256(`${CDN_BASE_URL}/${platform.latestKey}`)
+            if (actual !== expected) {
+              throw new Error(`${token} sha256 mismatch: metadata=${expected}, downloaded=${actual}`)
+            }
+            console.log(`  ✅ [SHA256] ${token} ${actual}`)
+          }
+        }
+      } catch (err) {
+        allOk = false
+        console.log(`  ❌ [METADATA] ${err.message}`)
       }
     }
 

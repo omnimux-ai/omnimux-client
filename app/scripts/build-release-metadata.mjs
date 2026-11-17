@@ -7,10 +7,11 @@
  * release means writing them in the same upload.
  *
  * Response shape (consumed by `dsh-plugin-desktop/src/update-checker.ts`):
- *   { "version": "2.0.18", "channel": "stable", "sha256": { "mac": "…", "windows": "…" } }
+ *   { "version": "2.0.18", "channel": "stable", "sha256": { "macArm64": "…", "macX64": "…", "windows": "…" } }
  *
  * Usage:
  *   node scripts/build-release-metadata.mjs --version 2.0.18 --dir ./release-assets
+ *   node scripts/build-release-metadata.mjs --version 2.0.18 --dir ./release-assets --require-platforms mac-arm64,mac-x64,windows
  *   node scripts/build-release-metadata.mjs --check --dir ./release-assets
  */
 
@@ -32,12 +33,24 @@ const CHANNELS = ['stable', 'beta', 'next']
  */
 const CHANNEL_TAG = { stable: undefined, beta: 'beta', next: 'next' }
 
+/** Platform token accepted by --require-platforms and the metadata key it must populate. */
+const PLATFORM_KEYS = {
+  'mac-arm64': 'macArm64',
+  'mac-x64': 'macX64',
+  windows: 'windows',
+}
+
 function parseArgs(argv) {
   const value = flag => {
     const index = argv.indexOf(flag)
     return index === -1 ? undefined : argv[index + 1]
   }
-  return { version: value('--version'), dir: value('--dir'), check: argv.includes('--check') }
+  return {
+    version: value('--version'),
+    dir: value('--dir'),
+    requirePlatforms: value('--require-platforms'),
+    check: argv.includes('--check'),
+  }
 }
 
 function assertChannelVersion(version, channel) {
@@ -75,17 +88,34 @@ function digestFor(dir, patterns) {
   return undefined
 }
 
-function buildMetadata(dir, version, channel) {
+function assertArtifactVersion(label, artifact, version) {
+  if (artifact !== undefined && !artifact.name.includes(`-${version}-`)) {
+    throw new Error(`${label} artifact ${artifact.name} does not match release version ${version}`)
+  }
+}
+
+function buildMetadata(dir, version, channel, requiredPlatforms = []) {
   assertChannelVersion(version, channel)
   const macArm64 = digestFor(dir, [/-arm64\.dmg$/u])
   const macX64 = digestFor(dir, [/-x64\.dmg$/u])
   const windows = digestFor(dir, [/-Setup\.exe$/u, /\.exe$/u])
+  assertArtifactVersion('mac-arm64', macArm64, version)
+  assertArtifactVersion('mac-x64', macX64, version)
+  assertArtifactVersion('windows', windows, version)
   const sha256 = {}
   if (macArm64) sha256.macArm64 = macArm64.sha256
   if (macX64) sha256.macX64 = macX64.sha256
   if (windows) sha256.windows = windows.sha256
   const metadata = { version, channel }
   if (Object.keys(sha256).length > 0) metadata.sha256 = sha256
+
+  for (const token of requiredPlatforms) {
+    const key = PLATFORM_KEYS[token]
+    if (key === undefined) throw new Error(`unknown required platform ${JSON.stringify(token)}; use mac-arm64, mac-x64, or windows`)
+    if (metadata.sha256?.[key] === undefined) {
+      throw new Error(`missing required release artifact: ${token}`)
+    }
+  }
   return { metadata, macArm64, macX64, windows }
 }
 
@@ -100,7 +130,11 @@ function main() {
   const channel = CHANNELS.find(candidate => CHANNEL_TAG[candidate] === tag)
   if (channel === undefined) throw new Error(`${args.version} does not match any known release channel`)
 
-  const built = buildMetadata(dir, args.version, channel)
+  const requiredPlatforms = (args.requirePlatforms ?? '')
+    .split(',')
+    .map(token => token.trim())
+    .filter(Boolean)
+  const built = buildMetadata(dir, args.version, channel, requiredPlatforms)
   const outDir = join(dir, 'api', 'desktop')
   const path = join(outDir, `version-${channel}.json`)
   const serialized = `${JSON.stringify(built.metadata, null, 2)}\n`
@@ -114,8 +148,11 @@ function main() {
 
   mkdirSync(outDir, { recursive: true })
   writeFileSync(path, serialized)
-  const parts = [built.macArm64 && `mac-arm64 ${String(built.macArm64.bytes)}B`, built.macX64 && `mac-x64 ${String(built.macX64.bytes)}B`, built.windows && `windows ${String(built.windows.bytes)}B`]
-    .filter(Boolean).join(', ')
+  const parts = [
+    built.macArm64 && `mac-arm64 ${String(built.macArm64.bytes)}B sha256=${built.macArm64.sha256}`,
+    built.macX64 && `mac-x64 ${String(built.macX64.bytes)}B sha256=${built.macX64.sha256}`,
+    built.windows && `windows ${String(built.windows.bytes)}B sha256=${built.windows.sha256}`,
+  ].filter(Boolean).join(', ')
   console.log(`wrote ${path}${parts ? ` (${parts})` : ''}`)
 }
 

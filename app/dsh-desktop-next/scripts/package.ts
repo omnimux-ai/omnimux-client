@@ -114,7 +114,9 @@ const prepareRuntime = (platform: NodeJS.Platform = process.platform): void => {
   preparePayload(platform)
 }
 const mode = process.argv[2]
-const outputDir = join(desktopRoot, 'dist', mode === 'mac' ? 'mac-release' : 'mac-smoke')
+const outputDir = process.env.DSH_MAC_RELEASE_OUTPUT === undefined
+  ? join(desktopRoot, 'dist', mode === 'mac' ? 'mac-release' : 'mac-smoke')
+  : resolve(desktopRoot, process.env.DSH_MAC_RELEASE_OUTPUT)
 const shared = { env: process.env, platform: process.platform, desktopRoot, outputDir,
   releaseArch: macReleaseArchitecture(process.env),
   resetOutput: () => rmSync(outputDir, { force: true, recursive: true }), run, log: console.log, prepareRuntime }

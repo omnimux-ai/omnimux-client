@@ -105,6 +105,17 @@ describe('macOS release artifact verification', () => {
     expect(harness.calls.some(call => call.command === 'spctl')).toBe(true)
   })
 
+  it('checks release build-info and runs the isolated GUI smoke before Gatekeeper', () => {
+    const order: string[] = []
+    const harness = options({
+      verifyBuildInfo: () => { order.push('build-info') },
+      smokeApp: () => { order.push('gui-smoke') },
+    })
+    verifyMacRelease(harness.value)
+    expect(order).toEqual(['build-info', 'gui-smoke'])
+    expect(harness.calls.some(call => call.command === 'spctl')).toBe(true)
+  })
+
   it('rejects absent or ambiguous release images before mounting', () => {
     for (const dmgs of [[], ['/one.dmg', '/two.dmg']]) {
       const harness = options({ listDmgs: () => dmgs })

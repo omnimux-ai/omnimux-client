@@ -7,6 +7,7 @@ import { expectedNextVersion, verifyNextRuntimeTree } from './prepare-runtime.ts
 import { DESKTOP_RUNTIME_FILE } from '../src/runtime-tree.ts'
 import { packagingStepSync } from './packaging-step.ts'
 import { verifyWindowsCodeUnpacked } from './windows-asar-unpack.ts'
+import { writeAppBuildInfo } from '../../dsh-plugin-desktop/scripts/build-info.mjs'
 
 /** Resources directories already cross-checked by afterPack in the current packaging process. */
 export const verifiedPackagedResources = new Set<string>()
@@ -14,7 +15,7 @@ export const verifiedPackagedResources = new Set<string>()
 interface PackContext {
   appOutDir: string
   electronPlatformName: string
-  packager: { projectDir: string; appInfo: { version: string } }
+  packager: { projectDir: string; appInfo: { version: string; productFilename?: string } }
 }
 
 /**
@@ -38,6 +39,15 @@ export default async function afterPack(context: PackContext): Promise<void> {
     return
   }
   const platform = context.electronPlatformName as NodeJS.Platform
+  if (platform === 'darwin') {
+    const appPath = join(context.appOutDir, `${context.packager.appInfo.productFilename ?? 'OmniMux'}.app`)
+    const info = writeAppBuildInfo(appPath, process.env.DSH_BUILD_CHANNEL ?? 'package-dir', {
+      packageDir: 'dsh-desktop-next',
+    })
+    if (process.env.DSH_RELEASE_BUILD === '1' && info.repo.dirty) {
+      throw new Error('release build must come from a clean git worktree')
+    }
+  }
   const source = packagingStepSync('archive:open', () => archivedPayload(resources))
   try {
     packagingStepSync('archive:verify-updater-shim', () => verifyUpdaterManifestShim(resources, source, platform, context.packager.appInfo.version))

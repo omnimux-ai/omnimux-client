@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { macSmokeArchitecture, macSmokeExecutableSlices, type MacUniversalArch } from '../../dsh-plugin-desktop/scripts/mac-universal.ts'
 import { macReleaseArchitecture } from '../../dsh-plugin-desktop/scripts/release-mac.ts'
+import { smokeMacApp } from '../../dsh-plugin-desktop/scripts/smoke-mac-app.ts'
+import { verifyAppBuildInfo } from '../../dsh-plugin-desktop/scripts/verify-build-info.ts'
 import { verifyMacRelease } from '../../dsh-plugin-desktop/scripts/verify-mac-release.ts'
 import { NEXT_MAC_NATIVE_ENTRIES } from './mac-runtime.ts'
 import { verifyNextMacEntitlements } from './verify-mac-entitlements.ts'
@@ -25,6 +27,10 @@ export function verifyNextMac(signed: boolean): void {
     makeMountPoint: () => mkdtempSync(join(tmpdir(), 'dsh-next-release-')), removeMountPoint: path => rmdirSync(path),
     // The interpreter payloads beside the archive: both CPUs present, the host's CPU executed, release signatures checked.
     verifyRuntime: appPath => verifyNextMacRuntime(appPath, signed),
+    ...(signed ? {
+      verifyBuildInfo: appPath => verifyAppBuildInfo(appPath, { packageDir: 'dsh-desktop-next' }),
+      smokeApp: appPath => smokeMacApp(appPath),
+    } : {}),
     run: (command, args) => {
       if (!signed && ['codesign', 'spctl', 'xcrun'].includes(command)) return
       if (smokeSlices !== undefined && command === 'lipo' && args[1] === '-verify_arch' && args[0]?.includes('/Contents/MacOS/') && !smokeSlices.includes(args[2] as MacUniversalArch)) return

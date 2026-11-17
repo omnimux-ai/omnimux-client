@@ -13,35 +13,49 @@ function git(cwd, ...args) {
   return out.length > 0 ? out : null
 }
 
-/** This fork repository root (the superproject above dsh-plugin-desktop/). */
+/** Tracked-file working tree status; null when git cannot report it. */
+function gitStatus(cwd) {
+  const result = spawnSync('git', ['status', '--porcelain', '--untracked-files=no'], { cwd, encoding: 'utf8' })
+  if (result.status !== 0 || result.error) return null
+  return result.stdout.trim()
+}
+
+/** This fork repository root (the app directory above dsh-plugin-desktop/). */
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
 /**
  * Snapshot the current source identity of this build.
- * @param channel - Build channel label, e.g. `package-dir` or `dist:mac`.
+ * @param channel - Build channel label, e.g. `package-dir`, `dist:mac`, or `release`.
+ * @param {{ packageDir?: string, repoRoot?: string }} [options] - Optional package directory and repository root overrides.
  */
-export function currentBuildInfo(channel) {
+export function currentBuildInfo(channel, options = {}) {
+  const root = options.repoRoot ?? repoRoot
+  const packageDir = options.packageDir ?? 'dsh-plugin-desktop'
   const desktopPackage = JSON.parse(
-    readFileSync(join(repoRoot, 'dsh-plugin-desktop', 'package.json'), 'utf8'),
+    readFileSync(join(root, packageDir, 'package.json'), 'utf8'),
   )
   const dshSpec = desktopPackage.dependencies?.['@deepseek-ai/dsh'] ?? null
+  const status = gitStatus(root)
   return {
     product: desktopPackage.build?.productName ?? 'OmniMux',
     version: desktopPackage.version,
     channel,
     builtAt: new Date().toISOString(),
     repo: {
-      branch: git(repoRoot, 'branch', '--show-current'),
-      commit: git(repoRoot, 'rev-parse', '--short', 'HEAD'),
-      origin: git(repoRoot, 'remote', 'get-url', 'origin'),
-      fork: git(repoRoot, 'remote', 'get-url', 'fork'),
+      branch: git(root, 'branch', '--show-current'),
+      commit: git(root, 'rev-parse', 'HEAD'),
+      commitShort: git(root, 'rev-parse', '--short', 'HEAD'),
+      dirty: status !== null && status.length > 0,
+      origin: git(root, 'remote', 'get-url', 'origin'),
+      fork: git(root, 'remote', 'get-url', 'fork'),
     },
     upstream: {
-      master: git(repoRoot, 'rev-parse', '--short', 'origin/master'),
+      main: git(root, 'rev-parse', '--short', 'origin/main'),
+      master: git(root, 'rev-parse', '--short', 'origin/master'),
     },
     dsh: {
       packageSpec: dshSpec,
-      submodule: git(join(repoRoot, 'deepseek-harness'), 'rev-parse', '--short', 'HEAD'),
+      submodule: git(join(root, 'deepseek-harness'), 'rev-parse', '--short', 'HEAD'),
     },
   }
 }
@@ -50,21 +64,24 @@ export function currentBuildInfo(channel) {
  * Write `build-info.json` into an app bundle's Resources.
  * @param appPath - Path to the `.app` bundle.
  * @param channel - Build channel label.
+ * @param {{ packageDir?: string, repoRoot?: string }} [options] - Optional package directory and repository root overrides.
  * @returns The recorded snapshot.
  */
-export function writeAppBuildInfo(appPath, channel = 'local') {
-  const info = currentBuildInfo(channel)
+export function writeAppBuildInfo(appPath, channel = 'local', options = {}) {
+  const info = currentBuildInfo(channel, options)
   const resources = join(appPath, 'Contents', 'Resources')
   writeFileSync(join(resources, 'build-info.json'), `${JSON.stringify(info, null, 2)}\n`)
   return info
 }
 
-// CLI mode: `node scripts/build-info.mjs <appPath> [channel]`
+// CLI mode: `node scripts/build-info.mjs <appPath> [channel] [packageDir]`
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const appPath = process.argv[2]
   if (appPath === undefined) {
-    console.error('usage: build-info.mjs <appPath> [channel]')
+    console.error('usage: build-info.mjs <appPath> [channel] [packageDir]')
     process.exit(1)
   }
-  console.log(JSON.stringify(writeAppBuildInfo(appPath, process.argv[3] ?? 'cli'), null, 2))
+  console.log(JSON.stringify(writeAppBuildInfo(appPath, process.argv[3] ?? 'cli', {
+    packageDir: process.argv[4] ?? 'dsh-plugin-desktop',
+  }), null, 2))
 }

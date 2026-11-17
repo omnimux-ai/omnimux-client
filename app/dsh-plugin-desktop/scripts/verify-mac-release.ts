@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { MACOS_UNIVERSAL_NATIVE_ENTRIES } from './mac-universal.ts'
+import { smokeMacApp } from './smoke-mac-app.ts'
+import { verifyAppBuildInfo } from './verify-build-info.ts'
 import { verifyMacEntitlements } from './verify-mac-entitlements.ts'
 import { verifyDesktopMacRuntime } from './verify-mac-runtime.ts'
 
@@ -31,6 +33,10 @@ export interface MacReleaseVerificationOptions {
   readonly verifyEntitlements?: (appPath: string, productName: string) => void
   /** Check resources beside the archive, such as bundled interpreter payloads, inside the mounted application. */
   readonly verifyRuntime?: (appPath: string) => void
+  /** Check the packaged build-info against the release source tree. */
+  readonly verifyBuildInfo?: (appPath: string) => void
+  /** Launch the packaged application with isolated userData and DSH_HOME. */
+  readonly smokeApp?: (appPath: string) => void
   /** Remove the detached empty mount point. */
   readonly removeMountPoint: (mountPoint: string) => void
 }
@@ -71,6 +77,8 @@ function defaultOptions(): MacReleaseVerificationOptions {
     verifyEntitlements: verifyMacEntitlements,
     // The interpreter payloads beside the application: both CPUs present, the host CPU executed, release signatures checked.
     verifyRuntime: appPath => verifyDesktopMacRuntime(appPath, true),
+    verifyBuildInfo: appPath => verifyAppBuildInfo(appPath, { packageDir: 'dsh-plugin-desktop' }),
+    smokeApp: appPath => smokeMacApp(appPath),
     removeMountPoint: mountPoint => rmdirSync(mountPoint),
   }
 }
@@ -122,6 +130,10 @@ export function verifyMacRelease(
     options.verifyEntitlements?.(appPath, options.productName)
     console.log(`[verify-mac] runtime payload`)
     options.verifyRuntime?.(appPath)
+    console.log(`[verify-mac] build-info`)
+    options.verifyBuildInfo?.(appPath)
+    console.log(`[verify-mac] gui smoke`)
+    options.smokeApp?.(appPath)
     console.log(`[verify-mac] spctl assess`)
     options.run('spctl', ['--assess', '--type', 'execute', '--verbose=4', appPath])
     console.log(`[verify-mac] stapler validate`)

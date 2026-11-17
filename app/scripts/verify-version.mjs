@@ -3,8 +3,8 @@
  * verify-version.mjs — 版本一致性门禁。
  *
  * 校验：
- *   1. 根 package.json#version === dsh-plugin-desktop/package.json#version（任何提交都必须成立）
- *   2. 可选 --tag <vX.Y.Z>：发布 tag 去掉前缀 v 后必须等于 version（供 release 自动化使用）
+ *   1. 根 package.json#version === dsh-plugin-desktop/package.json#version === dsh-desktop-next/package.json#version
+ *   2. 可选 --tag <vX.Y.Z>：发布 tag 去掉前缀 v 后必须等于实际发布包 dsh-desktop-next 的版本
  *
  * 用法：
  *   node scripts/verify-version.mjs
@@ -22,12 +22,23 @@ function readVersion(rel) {
 
 const rootVersion = readVersion('package.json')
 const desktopVersion = readVersion('dsh-plugin-desktop/package.json')
+const nextVersion = readVersion('dsh-desktop-next/package.json')
 
 const errors = []
 
 if (rootVersion !== desktopVersion) {
   errors.push(
     `版本不一致: 根 package.json=${rootVersion} ≠ dsh-plugin-desktop/package.json=${desktopVersion}`,
+  )
+}
+if (rootVersion !== nextVersion) {
+  errors.push(
+    `版本不一致: 根 package.json=${rootVersion} ≠ dsh-desktop-next/package.json=${nextVersion}`,
+  )
+}
+if (desktopVersion !== nextVersion) {
+  errors.push(
+    `版本不一致: dsh-plugin-desktop/package.json=${desktopVersion} ≠ dsh-desktop-next/package.json=${nextVersion}`,
   )
 }
 
@@ -38,8 +49,8 @@ if (tagIdx !== -1) {
     errors.push('--tag 需要提供一个 tag 值')
   } else {
     const clean = tag.replace(/^v/, '')
-    if (clean !== rootVersion) {
-      errors.push(`发布 tag 与版本不一致: tag=${tag} ≠ version=${rootVersion}`)
+    if (clean !== nextVersion) {
+      errors.push(`发布 tag 与版本不一致: tag=${tag} ≠ dsh-desktop-next version=${nextVersion}`)
     }
   }
 }
@@ -49,4 +60,4 @@ if (errors.length > 0) {
   process.exit(1)
 }
 
-process.stdout.write(`✓ 版本一致: ${rootVersion}\n`)
+process.stdout.write(`✓ 版本一致: ${nextVersion}\n`)

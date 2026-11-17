@@ -36,6 +36,7 @@ function baseOptions(
     },
     log: message => logs.push(message),
     prepareRuntime: () => undefined,
+    verifySource: () => undefined,
   }
 }
 
@@ -97,6 +98,8 @@ describe('macOS release command boundary', () => {
         APPLE_ID: 'developer@example.test',
         APPLE_APP_SPECIFIC_PASSWORD: appPassword,
         APPLE_TEAM_ID: 'TEAM123456',
+        DSH_BUILD_CHANNEL: 'release',
+        DSH_RELEASE_BUILD: '1',
         DSH_ELECTRON_BUILDER_TRAVERSAL_ONLY: '1',
       },
     })
@@ -142,6 +145,8 @@ describe('macOS release command boundary', () => {
     expect(calls[3]?.env.CSC_LINK).toBe(`data:application/x-pkcs12;base64,${p12}`)
     expect(calls[3]?.env.CSC_NAME).toBe('Mengxin Yang (TEAM123456)')
     expect(calls[3]?.env.CSC_KEY_PASSWORD).toBe(p12Password)
+    expect(calls[3]?.env.DSH_BUILD_CHANNEL).toBe('release')
+    expect(calls[3]?.env.DSH_RELEASE_BUILD).toBe('1')
     expect(calls[3]?.env.MAC_CERT_P12_BASE64).toBeUndefined()
     expect(calls[3]?.env.MACOS_SIGN_IDENTITY).toBeUndefined()
     expect(calls[3]?.env.DSH_ELECTRON_BUILDER_TRAVERSAL_ONLY).toBe('1')

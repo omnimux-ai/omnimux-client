@@ -62,6 +62,8 @@ export interface MacReleaseOptions {
   readonly releaseArch: 'universal' | 'arm64' | 'x64'
   /** Validate and prepare the architecture-specific runtime trees matching releaseArch. */
   readonly prepareRuntime: () => void
+  /** Assert the build checkout is exactly origin/main with no tracked changes. */
+  readonly verifySource?: () => void
 }
 
 function listCodeSigningIdentities(env: NodeJS.ProcessEnv): string {
@@ -82,6 +84,39 @@ function run(command: string, args: readonly string[], cwd: string, env: NodeJS.
   if (result.status !== 0) {
     throw new Error(`${command} ${args.join(' ')} exited with ${String(result.status)}`)
   }
+}
+
+/** Quiet git invocation; returns trimmed stdout or null on failure. */
+function git(cwd: string, ...args: string[]): string | null {
+  const result = spawnSync('git', args, { cwd, encoding: 'utf8' })
+  if (result.status !== 0 || result.error) return null
+  const out = result.stdout.trim()
+  return out.length > 0 ? out : null
+}
+
+/**
+ * Fail when a release would be built from anything other than a clean origin/main checkout.
+ * @param repoRoot - Repository root above the desktop package.
+ */
+function assertReleaseSource(repoRoot: string): void {
+  const fetched = spawnSync('git', ['fetch', 'origin', 'main', '--quiet'], { cwd: repoRoot, encoding: 'utf8' })
+  if (fetched.error !== undefined || fetched.status !== 0) {
+    throw new Error('macOS release source check: cannot refresh origin/main; release builds require network access')
+  }
+  const head = git(repoRoot, 'rev-parse', 'HEAD')
+  const originMain = git(repoRoot, 'rev-parse', 'origin/main')
+  const status = git(repoRoot, 'status', '--porcelain', '--untracked-files=no')
+  if (head === null || originMain === null) {
+    throw new Error('macOS release source check: cannot resolve HEAD or origin/main')
+  }
+  if (head !== originMain) {
+    throw new Error(`macOS release source check: HEAD ${head} is not origin/main ${originMain}`)
+  }
+  if (status === null) throw new Error('macOS release source check: cannot inspect git status')
+  if (status.length > 0) {
+    throw new Error(`macOS release source check: tracked worktree is dirty:\n${status}`)
+  }
+  console.log(`Verified macOS release source: ${head}`)
 }
 
 function defaultReleaseOptions(): MacReleaseOptions {
@@ -119,6 +154,12 @@ function defaultReleaseOptions(): MacReleaseOptions {
 export function releaseMac(options: MacReleaseOptions = defaultReleaseOptions()): void {
   const releaseEnvironment = adaptMacReleaseEnvironment(options.env)
   const buildEnvironment = withoutMacReleaseSecrets(releaseEnvironment)
+  const releaseBuildEnvironment = {
+    ...releaseEnvironment,
+    DSH_BUILD_CHANNEL: 'release',
+    DSH_RELEASE_BUILD: '1',
+  }
+  ;(options.verifySource ?? (() => assertReleaseSource(resolve(options.desktopRoot, '..'))))()
   const result = assertMacReleaseReady({
     env: releaseEnvironment,
     platform: options.platform,
@@ -152,7 +193,7 @@ export function releaseMac(options: MacReleaseOptions = defaultReleaseOptions())
     '--config.forceCodeSigning=true', '--config.mac.notarize=true',
     '--config.npmRebuild=false', '--publish', 'never',
     `--config.directories.output=${options.outputDir}`,
-  ], options.desktopRoot, electronBuilderEnvironment(releaseEnvironment))
+  ], options.desktopRoot, electronBuilderEnvironment(releaseBuildEnvironment))
   options.run(
     process.execPath,
     ['scripts/verify-mac-release.ts', options.outputDir],

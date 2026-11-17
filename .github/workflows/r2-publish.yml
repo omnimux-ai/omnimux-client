@@ -22,6 +22,11 @@ on:
         description: 'Release version to publish (e.g. 2.0.23, leading "v" optional)'
         required: true
         type: string
+      required_platforms:
+        description: 'Comma-separated platforms that must exist in the GitHub Release before latest is updated: mac-arm64,mac-x64,windows'
+        required: false
+        type: string
+        default: 'mac-arm64,mac-x64,windows'
       skip_purge:
         description: 'Skip the CDN cache purge (NOT recommended: without it users keep downloading the previous build)'
         required: false
@@ -40,6 +45,7 @@ env:
 
 jobs:
   publish:
+    if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
     defaults:
@@ -71,22 +77,36 @@ jobs:
         run: |
           set -euo pipefail
           tag="v${{ steps.version.outputs.version }}"
+          rm -rf release-assets
           mkdir -p release-assets
           gh release download "$tag" --repo "${{ github.repository }}" --dir release-assets --pattern '*.dmg' --clobber
-          gh release download "$tag" --repo "${{ github.repository }}" --dir release-assets --pattern '*.exe' --clobber \
-            || echo "::warning::no .exe asset attached to $tag; the Windows alias will stay on the previous build"
+          gh release download "$tag" --repo "${{ github.repository }}" --dir release-assets --pattern '*.exe' --clobber
           echo "Downloaded assets:"
           ls -lh release-assets
-          if ! ls release-assets/*.dmg >/dev/null 2>&1 && ! ls release-assets/*.exe >/dev/null 2>&1; then
-            echo "::error::no .dmg or .exe asset found on $tag"
-            exit 1
-          fi
+          test -n "$(find release-assets -maxdepth 1 -name '*.dmg' -print -quit)" || { echo "::error::no .dmg asset attached to $tag"; exit 1; }
+          test -n "$(find release-assets -maxdepth 1 -name '*.exe' -print -quit)" || { echo "::error::no .exe asset attached to $tag"; exit 1; }
 
       - name: Generate release metadata (api/desktop/version-stable.json)
         run: |
           node scripts/build-release-metadata.mjs \
             --version "${{ steps.version.outputs.version }}" \
-            --dir release-assets
+            --dir release-assets \
+            --require-platforms "${{ inputs.required_platforms }}"
+
+      - name: Generate plugin index
+        run: node scripts/build-plugin-index.mjs
+
+      - name: Sync market catalog assets to R2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          catalog_dir="../plugins/plugins/omnimux-market/catalog"
+          if [ ! -d "$catalog_dir" ]; then
+            echo "::error::$catalog_dir not present in the monorepo; market cover sync cannot run."
+            exit 1
+          fi
+          node scripts/upload-market-assets.mjs --dir "$catalog_dir"
 
       - name: Upload to R2 (releases/v<version> + latest aliases + metadata)
         env:
@@ -121,4 +141,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          node scripts/r2-dist-sync.mjs verify --version "${{ steps.version.outputs.version }}"
+          node scripts/r2-dist-sync.mjs verify \
+            --version "${{ steps.version.outputs.version }}" \
+            --required-platforms "${{ inputs.required_platforms }}" \
+            --verify-hashes
