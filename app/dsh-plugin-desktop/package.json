@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-desktop",
-  "version": "2.0.23",
+  "version": "2.0.24",
   "description": "OmniMux: an Electron shell composed as a DeepSeek Harness Cordis plugin",
   "desktopName": "omnimux.desktop",
   "license": "MIT",
@@ -469,7 +469,7 @@
       "asar": false
     },
     "dmg": {
-      "format": "ULMO"
+      "icon": "build/app-icon.icns"
     },
     "win": {
       "asar": false,
@@ -542,9 +542,6 @@
       "packageCategory": "devel",
       "priority": "optional"
     },
-    "npmRebuild": false,
-    "dmg": {
-      "icon": "build/app-icon.icns"
-    }
+    "npmRebuild": false
   }
 }

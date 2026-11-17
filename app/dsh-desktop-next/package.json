@@ -1,6 +1,6 @@
 {
   "name": "dsh-desktop-next",
-  "version": "2.0.23",
+  "version": "2.0.24",
   "private": true,
   "description": "Experimental upstream-inspired DSH Desktop with Profiles, recovery, remote control and Community Market",
   "desktopName": "dsh-desktop-next.desktop",
@@ -414,7 +414,7 @@
       ]
     },
     "dmg": {
-      "format": "ULMO"
+      "icon": "build/app-icon.icns"
     },
     "win": {
       "compression": "normal",
@@ -472,9 +472,6 @@
       "packageName": "dsh-desktop-next",
       "packageCategory": "devel",
       "priority": "optional"
-    },
-    "dmg": {
-      "icon": "build/app-icon.icns"
     },
     "asarUnpack": [
       "**/*.{node,dylib,dll,so,exe}",

@@ -804,5 +804,5 @@
     "check:next": "yarn workspace dsh-desktop-next check",
     "market:prepare": "node scripts/prepare-dsh-market.mjs"
   },
-  "version": "2.0.23"
+  "version": "2.0.24"
 }
