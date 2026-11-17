@@ -1,6 +1,7 @@
 packages:
   - plugins
   - plugins/plugins/*
+  - plugins/plugins/omnimux-browser/extension
   - plugins/packages/*
 
 # The hub plugin declares the shared UI kit by published semver range so

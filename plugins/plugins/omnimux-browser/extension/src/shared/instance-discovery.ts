@@ -2,11 +2,10 @@
  * Instance dynamic discovery — single source of truth for the panel-side
  * instance selector (spec: specs/instance-dynamic-discovery.md).
  *
- * - DISCOVERY_PORTS mirrors src/background/index.ts:131 exactly; keep the order
- *   in sync when the background list changes (this file is the panel copy —
- *   the background module owns the actual bridge discovery loop).
- * - KNOWN_INSTANCE_NAMES gives the mapped label for the known ports; the
- *   recommended badge attaches to OmniMux Dev only.
+ * - DISCOVERY_PORTS, KNOWN_INSTANCE_NAMES and KNOWN_PORT_PRIORITY live in
+ *   ./discovery-ports.ts and are shared with src/background/index.ts; neither
+ *   side keeps a second copy.
+ * - The recommended badge attaches to the Dev default (45120) only.
  * - probeInstance / discoverInstances implement the three-way verdict:
  *     online      — 200 + JSON whose `wsUrl` starts with `ws://`
  *     unavailable — an HTTP response arrived but carried no usable `wsUrl`
@@ -14,6 +13,16 @@
  */
 
 import { loopbackFetch } from './loopback-fetch.ts'
+import {
+  DISCOVERY_PORTS,
+  KNOWN_INSTANCE_NAMES,
+  KNOWN_PORT_PRIORITY,
+  identityNameFromBridgeConfig,
+  isDiscoveryPort,
+  type BridgeConfigIdentity,
+} from './discovery-ports.ts'
+
+export { DISCOVERY_PORTS, KNOWN_INSTANCE_NAMES, KNOWN_PORT_PRIORITY } from './discovery-ports.ts'
 
 export type InstanceStatus = 'online' | 'unavailable' | 'offline'
 
@@ -25,39 +34,19 @@ export interface DiscoveredInstance {
   status: InstanceStatus
   latencyMs?: number
   isRecommended: boolean
-  /** True when the port came from the caller's extras rather than the known list. */
+  /** True when the port came from the caller's extras rather than the discovery list. */
   isCustom: boolean
 }
-
-/**
- * 与 src/background/index.ts 的 DISCOVERY_PORTS 同序（唯一约束：保持一致）。
- */
-export const DISCOVERY_PORTS: readonly number[] = [45120, 45128, 43120, 43128, 3080, 3081, 3090, 14389, 43189]
-
-interface KnownInstanceMeta {
-  id: string
-  nameZh: string
-  nameEn: string
-  isRecommended?: boolean
-}
-
-export const KNOWN_INSTANCE_NAMES: Record<number, KnownInstanceMeta> = {
-  45120: { id: 'omnimux_dev', nameZh: 'OmniMux Dev', nameEn: 'OmniMux Dev', isRecommended: true },
-  43128: { id: 'omnimux_prd', nameZh: 'OmniMux PRD', nameEn: 'OmniMux PRD' },
-  43120: { id: 'dsh_desktop', nameZh: 'DSH Desktop', nameEn: 'DSH Desktop' },
-}
-
-/**
- * spec §5.1：命名表内端口的组内排序优先级。
- * 命名表外但仍在 DISCOVERY_PORTS 的端口（如 45128）排在此三者之后。
- */
-export const KNOWN_PORT_PRIORITY: readonly number[] = [45120, 43128, 43120]
 
 const PROBE_TIMEOUT_MS = 1200
 
 /**
  * Probe a single port's /ext/bridge-config. Any HTTP response at all means a
  * service listens there; only a `ws://` wsUrl marks it bridge-ready.
+ *
+ * The instance's own identity (`name` / `channel` in the response) wins over the
+ * static port name: 44120 may be either OmniMux Prod or a legacy Dev instance,
+ * so the port alone cannot decide the label.
  */
 export async function probeInstance(port: number): Promise<DiscoveredInstance> {
   const known = KNOWN_INSTANCE_NAMES[port]
@@ -67,8 +56,7 @@ export async function probeInstance(port: number): Promise<DiscoveredInstance> {
     nameZh: known?.nameZh ?? '本地实例',
     nameEn: known?.nameEn ?? 'Local',
     isRecommended: known?.isRecommended ?? false,
-    // 「已知端口」以 DISCOVERY_PORTS 判定：命名表只管显示名。
-    isCustom: !DISCOVERY_PORTS.includes(port),
+    isCustom: !isDiscoveryPort(port),
   }
   const start = Date.now()
   try {
@@ -78,9 +66,16 @@ export async function probeInstance(port: number): Promise<DiscoveredInstance> {
     })
     const latencyMs = Date.now() - start
     if (response.ok) {
-      const body = (await response.json().catch(() => ({}))) as { wsUrl?: unknown }
+      const body = (await response.json().catch(() => ({}))) as BridgeConfigIdentity
       if (typeof body.wsUrl === 'string' && body.wsUrl.startsWith('ws://')) {
-        return { ...base, status: 'online', latencyMs }
+        const identityName = identityNameFromBridgeConfig(body)
+        return {
+          ...base,
+          nameZh: identityName !== '' ? identityName : base.nameZh,
+          nameEn: identityName !== '' ? identityName : base.nameEn,
+          status: 'online',
+          latencyMs,
+        }
       }
     }
     // 有响应但没有可用的 wsUrl（含 403 forbidden）：实例在跑但未开放 bridge。

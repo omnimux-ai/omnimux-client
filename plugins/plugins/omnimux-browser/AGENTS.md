@@ -25,7 +25,7 @@ Browser capability plugin: background bridge, page-level overlay/capsule, and si
 
 | Scope | Command |
 | --- | --- |
-| Extension unit tests | `cd plugins/omnimux-browser/extension && pnpm test` |
-| Extension bundle build | `cd plugins/omnimux-browser/extension && node scripts/build.mjs` |
-| Extension typecheck | `cd plugins/omnimux-browser/extension && pnpm typecheck` |
+| Extension unit tests | `cd plugins/plugins/omnimux-browser/extension && pnpm test` |
+| Extension bundle build | `cd plugins/plugins/omnimux-browser/extension && node scripts/build.mjs` |
+| Extension typecheck | `cd plugins/plugins/omnimux-browser/extension && pnpm typecheck` |
 | Server plugin build | `pnpm --filter omnimux-browser build:server` |

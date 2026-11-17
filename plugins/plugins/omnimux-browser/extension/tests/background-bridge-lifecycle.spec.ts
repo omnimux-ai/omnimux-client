@@ -158,6 +158,24 @@ describe('background bridge lifecycle', () => {
     expect(FakeWebSocket.instances).toHaveLength(0)
   })
 
+  it('probes the saved custom port before the shared default list', async () => {
+    const chromeMock = mockChrome({ localGet: async () => ({ omnimux_target_port: '62001' }) })
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      wsUrl: 'ws://127.0.0.1:62001/ext/bridge',
+    }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    await import('../src/background/index.ts')
+
+    const panel = panelPort()
+    chromeMock.onConnect.emit(panel.port)
+    await vi.waitFor(() => { expect(FakeWebSocket.instances).toHaveLength(1) })
+
+    // 保存的自定义端口优先于 45120/44120 等默认候选；面板与后台读同一份存储。
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain(':62001')
+    expect(FakeWebSocket.instances[0]?.url).toBe('ws://127.0.0.1:62001/ext/bridge')
+  })
+
   it('keeps the bridge claim and keepalive when the last panel closes mid-discovery', async () => {
     const chromeMock = mockChrome()
     let finishDiscovery!: (response: Response) => void
@@ -171,7 +189,8 @@ describe('background bridge lifecycle', () => {
 
     const panel = panelPort()
     chromeMock.onConnect.emit(panel.port)
-    await vi.waitFor(() => { expect(fetchMock).toHaveBeenCalledOnce() })
+    // 有界回退窗口让所有候选端口同时开探，不能再用"只调用一次"证明发现已启动。
+    await vi.waitFor(() => { expect(fetchMock).toHaveBeenCalled() })
     expect(chromeMock.alarms.create).toHaveBeenCalledWith('bridge-keepalive', { periodInMinutes: 0.5 })
 
     panel.onDisconnect.emit()
@@ -213,7 +232,6 @@ describe('background bridge lifecycle', () => {
     await new Promise((resolve) => { setTimeout(resolve, 0) })
 
     expect(FakeWebSocket.instances).toHaveLength(1)
-    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
   it('invalidates stale connection settings when their save outlives the panel', async () => {

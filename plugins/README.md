@@ -26,7 +26,7 @@
 
 **OmniMux 是属于你的内容电商团队——一套面向内容电商与跨境卖家的 AI 内容电商系统，让商品卖点贯穿每一次出片。** 本目录（`plugins/`）是 omnimux-client 单仓中的产品插件子树，基于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 构建。
 
-围绕「对标 → 拆解 → 制作 → 发布 → 复盘」内容电商链路，本仓提供执行中枢（`omnimux`，统一身份、模型路由与多模态生图/生视频/文本理解/语音执行），以及商品库（`omnimux-products`，管理商品卖点、受众与素材）、资产库（`omnimux-assets`，含可复用 AI 角色、多角度设定图、场景、风格与道具）、灵感库（`omnimux-inspiration`，爆款收藏与结构拆解）、无限画布（`omnimux-workflow`，可视化节点编排）、剪辑工坊（`omnimux-clip`，基于 OpenReel 的时间轴剪辑）、账号与发布中心（`omnimux-accounts` / `omnimux-publish`，海外平台排期与发布跟踪）、数据复盘（`omnimux-analytics`）与技能市场（`omnimux-market`）等工作台插件。角色生成与参考视频复刻是其中的核心创作能力主线之一，与商品带货视频生产、画布编排和排期发布协同构成完整工作流。
+围绕「对标 → 拆解 → 制作 → 发布 → 复盘」内容电商链路，本仓提供执行中枢（`omnimux`，统一身份、模型路由与多模态生图/生视频/文本理解/语音执行），以及商品库（`omnimux-products`，管理商品卖点、受众与素材）、资产库（`omnimux-assets`，含可复用 AI 角色、多角度设定图、场景、风格与道具）、灵感库（`omnimux-inspiration`，爆款收藏与结构拆解）、无限画布（`omnimux-workflow`，可视化节点编排）、剪辑工坊（`omnimux-clip`，基于 OpenReel 的时间轴剪辑）、账号与发布中心（`omnimux-accounts` / `omnimux-publish`，海外平台排期与发布跟踪）、数据复盘（`omnimux-analytics`）、技能市场（`omnimux-market`）与浏览器伴侣（`omnimux-browser`，Chrome 扩展与本机 WebSocket 桥）等工作台插件。角色生成与参考视频复刻是其中的核心创作能力主线之一，与商品带货视频生产、画布编排和排期发布协同构成完整工作流。
 
 官网展示的工作台旅程不等于所有功能均已全量完成；实际可用性须核对能力记录、[插件生命周期清单](plugins/omnimux/src/plugin-lifecycle.json)与当前版本证据。不承诺保证爆款、保证销量、防封号、零抽成、永久 100% 角色一致，或尚未实现的国内平台（抖音/小红书/视频号/快手/B站）自动分发、实时趋势抓取、独立封面生成与发布前自动预检。
 
@@ -143,7 +143,7 @@ OmniMux 的构建与演进站在了开源巨人的肩膀上，我们对以下直
 * **[@cocofhu/skillhub](https://github.com/cocofhu/skillhub)** (MIT License, by [@cocofhu](https://github.com/cocofhu))：`omnimux-market` 插件市场（技能/插件/专家/连接器四 Tab 架构）的 Fork 二开真源。
 * **[Augani/openreel-video](https://github.com/Augani/openreel-video)** (MIT License, by Augani)：`omnimux-clip` 剪辑工坊全套 WebCodecs/WebGPU 时间轴与微应用 Vendorize 真源。
 * **[Crosery/dsh-viewer](https://github.com/Crosery/dsh-viewer)** (MIT License, by Crosery)：历史归属说明：`omnimux-viewer` 曾作为全能媒体渲染器插件来源，当前不在本仓 `plugins/` 内构建或内置。
-* **[omdsh-dev/dsh-browser](https://github.com/omdsh-dev/dsh-browser)** (MIT License, by Yuxiang Lin)：历史归属说明：`omnimux-browser` 浏览器伴侣插件与 Chrome 扩展曾作为浏览器能力来源，当前不在本仓 `plugins/` 内构建或内置。
+* **[omdsh-dev/dsh-browser](https://github.com/omdsh-dev/dsh-browser)** (MIT License, by Yuxiang Lin)：`omnimux-browser` 浏览器伴侣插件与 Chrome 扩展的来源；源码已迁入本仓 `plugins/plugins/omnimux-browser/`，随产品一起构建与发布。
 * **[deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)** (MIT License, by DeepSeek AI)：官方核心 Agent 运行底座与 Harness 插件规范。
 * **[anywhere-labs/deepseek-harness-desktop](https://github.com/anywhere-labs/deepseek-harness-desktop)** (MIT License, by Anywhere Labs)：OmniMux 桌面端 Electron Shell 的 Fork 底座。
 * **[@xyflow/react (React Flow)](https://github.com/xyflow/xyflow)** (MIT License, by xyflow)：`omnimux-workflow` 无限画布 DAG 节点连接与编排引擎。

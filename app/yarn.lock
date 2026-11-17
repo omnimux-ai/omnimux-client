@@ -12421,6 +12421,7 @@ __metadata:
     omnimux-accounts: "link:../../plugins/plugins/omnimux-accounts"
     omnimux-analytics: "link:../../plugins/plugins/omnimux-analytics"
     omnimux-assets: "link:../../plugins/plugins/omnimux-assets"
+    omnimux-browser: "link:../../plugins/plugins/omnimux-browser"
     omnimux-clip: "link:../../plugins/plugins/omnimux-clip"
     omnimux-forms: "link:../../plugins/plugins/omnimux-forms"
     omnimux-inspiration: "link:../../plugins/plugins/omnimux-inspiration"
@@ -16509,6 +16510,12 @@ __metadata:
 "omnimux-assets@link:../../plugins/plugins/omnimux-assets::locator=dsh-desktop-next%40workspace%3Adsh-desktop-next":
   version: 0.0.0-use.local
   resolution: "omnimux-assets@link:../../plugins/plugins/omnimux-assets::locator=dsh-desktop-next%40workspace%3Adsh-desktop-next"
+  languageName: node
+  linkType: soft
+
+"omnimux-browser@link:../../plugins/plugins/omnimux-browser::locator=dsh-desktop-next%40workspace%3Adsh-desktop-next":
+  version: 0.0.0-use.local
+  resolution: "omnimux-browser@link:../../plugins/plugins/omnimux-browser::locator=dsh-desktop-next%40workspace%3Adsh-desktop-next"
   languageName: node
   linkType: soft
 

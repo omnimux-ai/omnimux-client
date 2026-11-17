@@ -9,7 +9,7 @@
  * Skipped (never failed) when playwright-core or a Chromium build is absent.
  */
 
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import { createRequire } from 'node:module'
 import type { AddressInfo } from 'node:net'
@@ -24,7 +24,7 @@ const TOKEN = 'e2e-ui-token-0123456789abcdef'
 function chromiumExecutable(): string | undefined {
   const cacheRoot = join(homedir(), 'Library', 'Caches', 'ms-playwright')
   if (!existsSync(cacheRoot)) return undefined
-  for (const dir of ['chromium-1217', 'chromium-1226', 'chromium-1181']) {
+  for (const dir of readdirSync(cacheRoot).filter((entry) => entry.startsWith('chromium-')).sort().reverse()) {
     const candidate = join(cacheRoot, dir, 'chrome-mac-arm64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing')
     if (existsSync(candidate)) return candidate
   }

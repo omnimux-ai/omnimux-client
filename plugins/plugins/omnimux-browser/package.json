@@ -47,11 +47,12 @@
   },
   "scripts": {
     "build:server": "tsc -b --pretty false && tsdown && node -e \"require('node:fs').copyFileSync('src/client.js', 'lib/client.js')\"",
-    "build:extension": "cd extension && npm run build",
+    "build:extension": "corepack pnpm --dir extension run build",
     "build": "npm run build:server && npm run build:extension",
     "prepare": "npm run build:server",
-    "test": "vitest run && node --experimental-transform-types --test tests/*.test.ts",
-    "test:e2e": "vitest run --config vitest.e2e.config.ts"
+    "test": "vitest run && node --experimental-transform-types --test tests/*.test.ts && corepack pnpm --dir extension test",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "test:extension": "corepack pnpm --dir extension test"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.5",

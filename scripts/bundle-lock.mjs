@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Generate or verify `bundle.lock.json`: the 12 active OmniMux plugins the
+ * Generate or verify `bundle.lock.json`: the 13 active OmniMux plugins the
  * desktop shell consumes, resolved from this repository (never from npm).
  *
  * Usage:
@@ -33,7 +33,7 @@ function readJson(path) {
 function pluginSpecs() {
   const manifest = readJson(manifestPath)
   const specs = Object.entries(manifest.dependencies ?? {}).filter(([name]) => name.startsWith('omnimux'))
-  if (specs.length !== 12) fail(`expected 12 omnimux dependencies in ${relative(repoRoot, manifestPath)}, found ${specs.length}`)
+  if (specs.length !== 13) fail(`expected 13 omnimux dependencies in ${relative(repoRoot, manifestPath)}, found ${specs.length}`)
   return specs.sort(([a], [b]) => a.localeCompare(b))
 }
 

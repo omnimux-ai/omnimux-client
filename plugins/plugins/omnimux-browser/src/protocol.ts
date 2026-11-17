@@ -19,6 +19,23 @@ export const BRIDGE_PATH = '/ext/bridge'
 export const BRIDGE_CONFIG_PATH = '/ext/bridge-config'
 
 /**
+ * Body of the zero-config discovery endpoint.
+ *
+ * `channel` / `name` let the extension label an instance by its own identity
+ * instead of by port: 44120 is both the Prod default and a historical Dev
+ * default, so the port alone cannot tell the two apart. They are optional so
+ * an older host that only publishes `wsUrl` keeps working (the extension then
+ * falls back to the port name).
+ */
+export interface BridgeConfig {
+  wsUrl: string
+  locale?: string
+  modelGroups?: unknown
+  channel?: 'dev' | 'prod'
+  name?: string
+}
+
+/**
  * Pairing page: the host's own surface, where the user clicks 「确认授权」.
  * Loopback-only and closed to page Origins.
  */

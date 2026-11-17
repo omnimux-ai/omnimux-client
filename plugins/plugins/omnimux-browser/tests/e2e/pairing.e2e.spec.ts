@@ -8,7 +8,7 @@
  * extension bundle has not been built.
  */
 
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import { createRequire } from 'node:module'
 import type { AddressInfo } from 'node:net'
@@ -35,7 +35,7 @@ interface ChromiumLike {
 function chromiumExecutable(): string | undefined {
   const cacheRoot = join(homedir(), 'Library', 'Caches', 'ms-playwright')
   if (!existsSync(cacheRoot)) return undefined
-  for (const dir of ['chromium-1217', 'chromium-1226', 'chromium-1181']) {
+  for (const dir of readdirSync(cacheRoot).filter((entry) => entry.startsWith('chromium-')).sort().reverse()) {
     const candidate = join(cacheRoot, dir, 'chrome-mac-arm64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing')
     if (existsSync(candidate)) return candidate
   }

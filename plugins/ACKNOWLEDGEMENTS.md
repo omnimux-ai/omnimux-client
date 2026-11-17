@@ -54,7 +54,7 @@ OmniMux 的诞生与演进离不开全球开源社区与先锋项目的杰出贡
 ---
 
 ### 5. `omnimux-browser` (浏览器协同与媒体采集插件)
-* **上游原始项目**：[omdsh-dev/dsh-browser](https://github.com/omdsh-dev/dsh-browser)（原 `Lum1104/dsh-browser`，已迁移）
+* **上游原始项目**：[omdsh-dev/dsh-browser](https://github.com/omdsh-dev/dsh-browser)（原 `Lum1104/dsh-browser`）；源码已迁入本仓 `plugins/plugins/omnimux-browser/`
 * **原始作者 / 维护团队**：Yuxiang Lin
 * **开源许可证**：[MIT License](https://opensource.org/licenses/MIT)
 * **在 OmniMux 中的定位与改造**：

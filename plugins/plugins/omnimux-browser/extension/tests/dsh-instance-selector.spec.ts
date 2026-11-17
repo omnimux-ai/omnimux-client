@@ -94,14 +94,15 @@ describe('WorkspaceSelector (Dynamic Instance Discovery) Suite', () => {
     expect(dropdown).not.toBeNull()
 
     const items = container.querySelectorAll('.instance-item-row')
-    // 仅 45120 在线 + 映射表内离线端口（43128/43120）；映射表外端口离线不渲染
+    // 仅 45120 在线 + 映射表内离线端口（44120/43120）；映射表外端口离线不渲染
     expect(items.length).toBe(1 + Object.keys(KNOWN_INSTANCE_NAMES).length - 1)
     expect(items[0].textContent).toContain('OmniMux Dev')
     expect(items[0].textContent).toContain('推荐')
     expect(items[0].textContent).toMatch(/在线 · \d+ms/)
 
     // 离线行禁用且点击不触发选择
-    const offlineRow = Array.from(items).find((el) => el.textContent?.includes('43128'))!
+    const offlineRow = Array.from(items).find((el) => el.textContent?.includes('44120'))!
+    expect(offlineRow.textContent).toContain('OmniMux Prod')
     expect(offlineRow.classList.contains('disabled')).toBe(true)
     await act(async () => {
       offlineRow.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -126,7 +127,7 @@ describe('WorkspaceSelector (Dynamic Instance Discovery) Suite', () => {
         createElement(WorkspaceSelector, {
           bridgeConnected: false,
           locale: 'zh',
-          targetPort: 43128,
+          targetPort: 44120,
         })
       )
     })

@@ -38,6 +38,7 @@ import {
   BRIDGE_PATH,
   DEFAULT_SNAPSHOT_MAX_CHARS,
   MIN_SNAPSHOT_MAX_CHARS,
+  type BridgeConfig,
   type TextGenerationRequest,
 } from './protocol.ts'
 import { createPairingRoutes } from './pairing-routes.ts'
@@ -82,6 +83,21 @@ const SESSIONS_ROOT = dshHomePath('sessions')
 
 /** Default: sessions materialize only on the first message (open-and-close leaves no trace). */
 const DEFAULT_DEFER_SESSION_CREATE = true
+
+/**
+ * Release-channel identity published on the zero-config discovery endpoint.
+ *
+ * The desktop launcher sets `OMNIMUX_CHANNEL` / `OMNIMUX_DEV` before the Host
+ * boots; a plain `dsh web` keeps the Prod identity. The extension prefers these
+ * fields over its port table because 44120 may be either channel.
+ */
+export function bridgeInstanceIdentity(env: NodeJS.ProcessEnv = process.env): Pick<BridgeConfig, 'channel' | 'name'> {
+  const channel = (env.OMNIMUX_CHANNEL ?? '').trim().toLowerCase()
+  const dev = channel === 'dev' || env.OMNIMUX_DEV === '1'
+  return dev
+    ? { channel: 'dev', name: 'OmniMux Dev' }
+    : { channel: 'prod', name: 'OmniMux Prod' }
+}
 
 /** Plugin config: deployment-varying tunables only; the wire contract stays fixed. */
 export interface Config {
@@ -480,10 +496,11 @@ function mountBridge(
         return
       }
       res.end(JSON.stringify({
+        ...bridgeInstanceIdentity(),
         wsUrl: `ws://127.0.0.1:${ctx.webServer.port}${BRIDGE_PATH}`,
         locale: hostLocale,
         modelGroups: loadSubscriptionModelGroups(),
-      }))
+      } satisfies BridgeConfig))
     },
   }
   ctx.effect(() => ctx.webServer.register(configRoute), 'bridge-browser: /ext/bridge-config route')

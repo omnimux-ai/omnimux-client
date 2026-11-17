@@ -8,6 +8,7 @@
     "preview": [
       "omnimux",
       "omnimux-assets",
+      "omnimux-browser",
       "omnimux-clip",
       "omnimux-forms",
       "omnimux-inspiration",

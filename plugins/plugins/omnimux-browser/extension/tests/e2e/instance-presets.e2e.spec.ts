@@ -77,7 +77,7 @@ describe('E2E: 实例选择器动态发现', () => {
     expect(localStorage.getItem('omnimux_target_port')).toBe('45120')
   })
 
-  it('OmniMux PRD 无进程时条目存在、状态离线、不可点选', async () => {
+  it('Prod 44120 无进程时显示 OmniMux Prod 离线且不可点选，43128 不再冒充 PRD', async () => {
     mockFetchByPort({})
     const onSelect = vi.fn()
     const root = createRoot(container)
@@ -85,7 +85,7 @@ describe('E2E: 实例选择器动态发现', () => {
       root.render(createElement(WorkspaceSelector, {
         bridgeConnected: false,
         locale: 'zh',
-        targetPort: 43128,
+        targetPort: 44120,
         onSelectWorkspace: onSelect,
       }))
     })
@@ -98,13 +98,15 @@ describe('E2E: 实例选择器动态发现', () => {
     await act(async () => {})
 
     const rows = Array.from(container.querySelectorAll('.instance-item-row'))
-    const prd = rows.find((r) => r.textContent?.includes('43128'))!
-    expect(prd.textContent).toContain('OmniMux PRD')
-    expect(prd.textContent).toContain('离线')
-    expect(prd.classList.contains('disabled')).toBe(true)
+    const prod = rows.find((r) => r.textContent?.includes('44120'))!
+    expect(prod.textContent).toContain('OmniMux Prod')
+    expect(prod.textContent).toContain('离线')
+    expect(prod.classList.contains('disabled')).toBe(true)
+    expect(rows.some((r) => r.textContent?.includes('43128'))).toBe(false)
+    expect(container.textContent).not.toContain('OmniMux PRD')
 
     await act(async () => {
-      prd.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      prod.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     expect(onSelect).not.toHaveBeenCalled()
   })
@@ -146,7 +148,7 @@ describe('E2E: 实例选择器动态发现', () => {
     mockFetchByPort({ 45120: 'online' })
     const root = createRoot(container)
     await act(async () => {
-      root.render(createElement(DshInstanceSelector, { locale: 'zh', activePort: 43128 }))
+      root.render(createElement(DshInstanceSelector, { locale: 'zh', activePort: 44120 }))
     })
     await act(async () => {})
 
@@ -159,7 +161,9 @@ describe('E2E: 实例选择器动态发现', () => {
     const text = readMainText(container)
     expect(text).toContain('OmniMux Dev')
     expect(text).toContain('推荐')
-    expect(text).toContain('43128')
+    expect(text).toContain('44120')
+    expect(text).toContain('OmniMux Prod')
+    expect(text).not.toContain('OmniMux PRD')
     const rows = container.querySelectorAll('.instance-item-row')
     expect(rows.length).toBe(Object.keys(KNOWN_INSTANCE_NAMES).length)
     expect(text).not.toContain('Desktop/Project')

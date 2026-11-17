@@ -10,7 +10,7 @@
  * the built extension is missing, so unit runs stay green.
  */
 
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -22,7 +22,7 @@ const DIST = join(PANEL, 'extension/dist')
 function chromiumExecutable(): string | undefined {
   const cacheRoot = join(homedir(), 'Library', 'Caches', 'ms-playwright')
   if (!existsSync(cacheRoot)) return undefined
-  for (const dir of ['chromium-1217', 'chromium-1226', 'chromium-1181']) {
+  for (const dir of readdirSync(cacheRoot).filter((entry) => entry.startsWith('chromium-')).sort().reverse()) {
     const candidate = join(cacheRoot, dir, 'chrome-mac-arm64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing')
     if (existsSync(candidate)) return candidate
   }

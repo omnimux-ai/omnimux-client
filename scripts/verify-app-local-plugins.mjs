@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Verify the desktop shell resolves the 12 OmniMux plugins from this repository
+ * Verify the desktop shell resolves the 13 OmniMux plugins from this repository
  * through `link:` entries, never from an npm tarball.
  *
  * Usage:
@@ -23,7 +23,7 @@ const manifest = JSON.parse(readFileSync(join(desktopDir, 'package.json'), 'utf8
 const specs = Object.entries(manifest.dependencies ?? {})
   .filter(([name]) => name.startsWith('omnimux'))
   .sort(([a], [b]) => a.localeCompare(b))
-if (specs.length !== 12) fail(`expected 12 omnimux dependencies, found ${specs.length}`)
+if (specs.length !== 13) fail(`expected 13 omnimux dependencies, found ${specs.length}`)
 
 let failed = 0
 for (const [name, spec] of specs) {

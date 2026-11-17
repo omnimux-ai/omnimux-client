@@ -2,7 +2,7 @@
 /**
  * Verify a prepared desktop payload carries this repository's product plugins.
  *
- * The Next shell copies the 12 `omnimux*` bundles from `plugins/plugins/*` (through the
+ * The Next shell copies the 13 `omnimux*` bundles from `plugins/plugins/*` (through the
  * `link:` specs in `app/dsh-desktop-next/package.json`) when it materializes
  * `app/dsh-desktop-next/.desktop-build/payload`. This check reads that payload and
  * proves each package is the local one: the version and main-entry bytes match the
@@ -46,7 +46,7 @@ if (!existsSync(payloadRoot)) fail(`no prepared payload at ${payloadRoot}; run t
 if (!existsSync(lockPath)) fail(`no bundle lock at ${lockPath}; run node scripts/bundle-lock.mjs`)
 const lock = readJson(lockPath)
 const plugins = lock.plugins
-if (!Array.isArray(plugins) || plugins.length !== 12) fail(`bundle lock must list 12 plugins, found ${plugins?.length ?? 0}`)
+if (!Array.isArray(plugins) || plugins.length !== 13) fail(`bundle lock must list 13 plugins, found ${plugins?.length ?? 0}`)
 
 const modules = join(payloadRoot, 'node_modules')
 if (!existsSync(modules)) fail(`payload has no node_modules: ${modules}`)

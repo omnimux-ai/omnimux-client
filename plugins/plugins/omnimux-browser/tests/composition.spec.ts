@@ -311,9 +311,12 @@ describe('real Loader composition', () => {
     // Zero-config discovery endpoint answers with the bridge WebSocket URL.
     const configResponse = await fetch(`http://127.0.0.1:${port}/ext/bridge-config`)
     expect(configResponse.status).toBe(200)
-    const config = await configResponse.json() as { wsUrl?: unknown }
+    const config = await configResponse.json() as { wsUrl?: unknown; channel?: unknown; name?: unknown }
     expect(typeof config.wsUrl).toBe('string')
     expect(config.wsUrl).toBe(`ws://127.0.0.1:${port}/ext/bridge`)
+    // The extension prefers an instance's own identity over its port table.
+    expect(['dev', 'prod']).toContain(config.channel)
+    expect(typeof config.name).toBe('string')
     expect(tools.get('browser_click')).toBeDefined()
     expect(tools.get('browser_navigate')).toBeDefined()
 
@@ -354,5 +357,27 @@ describe('real Loader composition', () => {
     // Self-disposing an include-tree entry persists `disabled: true`; await
     // that debounced write so it cannot race the temp-dir removal.
     await expect.poll(async () => (await readFile(configPath, 'utf8')).includes('disabled: true')).toBe(true)
+  })
+})
+
+
+describe('bridge instance identity', () => {
+  it('publishes the Dev name for OMNIMUX_CHANNEL=dev or OMNIMUX_DEV=1', () => {
+    expect(BridgeBrowser.bridgeInstanceIdentity({ OMNIMUX_CHANNEL: 'dev' })).toEqual({
+      channel: 'dev',
+      name: 'OmniMux Dev',
+    })
+    expect(BridgeBrowser.bridgeInstanceIdentity({ OMNIMUX_DEV: '1' })).toEqual({
+      channel: 'dev',
+      name: 'OmniMux Dev',
+    })
+  })
+
+  it('defaults to the Prod identity otherwise', () => {
+    expect(BridgeBrowser.bridgeInstanceIdentity({})).toEqual({ channel: 'prod', name: 'OmniMux Prod' })
+    expect(BridgeBrowser.bridgeInstanceIdentity({ OMNIMUX_CHANNEL: 'prod' })).toEqual({
+      channel: 'prod',
+      name: 'OmniMux Prod',
+    })
   })
 })

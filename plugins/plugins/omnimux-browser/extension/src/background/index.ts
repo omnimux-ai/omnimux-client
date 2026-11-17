@@ -54,6 +54,7 @@ import { BridgeClient, type BridgeState } from './bridge.ts'
 import { createRpc } from './rpc.ts'
 import { SessionTextCollector } from './session-completion.ts'
 import { providerForModelId } from '../shared/model-catalog.ts'
+import { DISCOVERY_PORTS } from '../shared/discovery-ports.ts'
 import {
   dispatchOpenTab,
   dispatchToolCall,
@@ -182,14 +183,6 @@ const SETTINGS_DEFAULTS: Settings = {
   textEffort: '',
 }
 
-/**
- * 自动探测的候选端口：
- * - OmniMux Dev 默认 45120 / 45128；
- * - DSH Desktop 默认 43120 / 43128 / 43189；
- * - dsh web（CLI）默认 3080，端口被占时依次回退 3081 / 3090；
- * - 14389 为历史桌面应用端口，保留兼容旧版。
- */
-const DISCOVERY_PORTS = [45120, 45128, 43120, 43128, 3080, 3081, 3090, 14389, 43189]
 const LEGACY_LOCAL_URL = 'ws://127.0.0.1:3080'
 
 /** 探测本机 dsh 的桥地址：fetch /ext/bridge-config 直到成功。优先匹配 OmniMux Dev (45120) 及用户指定端口。 */
@@ -205,7 +198,10 @@ async function discoverBridge(shouldContinue: () => boolean = () => true): Promi
     // Ignore storage failure
   }
 
-  for (const port of prioritizedPorts) {
+  // Start every probe at once but read the answers in priority order, so a
+  // 30-port bounded sweep still costs one timeout instead of 30. Later probes
+  // may resolve after the winner; their rejections are all handled below.
+  const probes = prioritizedPorts.map(async (port): Promise<string | undefined> => {
     if (!shouldContinue()) return undefined
     try {
       const response = await loopbackFetch(`http://127.0.0.1:${port}/ext/bridge-config`, {
@@ -219,21 +215,31 @@ async function discoverBridge(shouldContinue: () => boolean = () => true): Promi
     } catch {
       // 该端口没有 dsh 或未挂桥：试下一个。
     }
+    return undefined
+  })
+  for (const probe of probes) {
+    const url = await probe
+    if (url !== undefined) return url
+    if (!shouldContinue()) return undefined
   }
 
   // 兜底：如果所有端口都没返回 /ext/bridge-config，寻找第一个活跃的 DSH / OmniMux 实例端口
-  for (const port of prioritizedPorts) {
+  const rootProbes = prioritizedPorts.map(async (port): Promise<string | undefined> => {
     if (!shouldContinue()) return undefined
     try {
       const response = await loopbackFetch(`http://127.0.0.1:${port}/`, {
         signal: AbortSignal.timeout(600),
       })
-      if (response.status > 0) {
-        return `ws://127.0.0.1:${port}/ext/bridge`
-      }
+      if (response.status > 0) return `ws://127.0.0.1:${port}/ext/bridge`
     } catch {
       // 端口未运行
     }
+    return undefined
+  })
+  for (const probe of rootProbes) {
+    const url = await probe
+    if (url !== undefined) return url
+    if (!shouldContinue()) return undefined
   }
   return undefined
 }
@@ -1624,7 +1630,11 @@ async function startBridge(): Promise<void> {
     rpc = createRpc(client)
   }
   bridgeClaimedOnce = true
-  void Promise.resolve(chrome.storage.session.set({ omnimux_bridge_claimed: true })).catch(() => {})
+  // Best-effort claim marker: a late discovery can outlive a torn-down test
+  // (or a non-extension harness) where the global `chrome` is already gone.
+  if (typeof chrome !== 'undefined') {
+    void Promise.resolve(chrome.storage?.session?.set?.({ omnimux_bridge_claimed: true })).catch(() => {})
+  }
   bridge.start(url, settings.token)
 }
 
@@ -2079,7 +2089,7 @@ async function resolveHostCandidatePorts(targetPort?: number): Promise<number[]>
   } catch {
     // storage 不可用：只靠默认端口
   }
-  for (const port of [45120, 45128, 43120, 43128, 3080]) {
+  for (const port of DISCOVERY_PORTS) {
     if (!candidatePorts.includes(port)) candidatePorts.push(port)
   }
   return candidatePorts
@@ -2515,7 +2525,7 @@ function takePendingMedia(windowId?: number, mediaId?: string): HoveredMedia | n
 }
 
 async function saveMediaToHostInspiration(payload: HoveredMedia): Promise<boolean> {
-  const candidatePorts = [45120, 45128, 43120, 43128, 3080]
+  const candidatePorts = [...DISCOVERY_PORTS]
   try {
     const saved = (await chrome.storage.local.get('omnimux_target_port'))?.omnimux_target_port
     const p = saved ? parseInt(saved, 10) : undefined

@@ -1,0 +1,39 @@
+{
+  "id": "omnimux-browser",
+  "name": "omnimux-browser",
+  "version": "0.1.0",
+  "tier": "tier-1-app",
+  "entrypoint": "lib/index.js",
+  "status": "active",
+  "description": "OmniMux 浏览器伴侣插件与 Chrome 扩展：通过本机 WebSocket 桥接，在用户明确接管的标签页里做可感知的页面读取与操作，并提供侧边栏对话",
+  "tags": ["browser", "chrome", "extension", "bridge", "automation", "side-panel"],
+  "capabilities": {
+    "tools": [
+      { "name": "browser_snapshot", "summary": "把页面与可访问 iframe 读成带编号目标的结构化文本", "category": "reader", "isWriteOperation": false, "requiresAuth": false },
+      { "name": "browser_get_text", "summary": "读取页面或指定选择器的纯文本", "category": "reader", "isWriteOperation": false, "requiresAuth": false },
+      { "name": "browser_list_tabs", "summary": "列出标签页与受控状态，供后续定位 tabId", "category": "tabs", "isWriteOperation": false, "requiresAuth": false },
+      { "name": "browser_wait", "summary": "等待页面加载与 DOM 变化稳定", "category": "reader", "isWriteOperation": false, "requiresAuth": false },
+      { "name": "browser_click", "summary": "按快照编号点击页面元素", "category": "action", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "browser_type", "summary": "向页面表单字段输入或替换文本", "category": "action", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "browser_press", "summary": "发送一次键盘按键", "category": "action", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "browser_scroll", "summary": "按方向滚动受控页面", "category": "action", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "browser_navigate", "summary": "在当前受控标签页打开 HTTP(S) 地址", "category": "navigation", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "browser_open_tab", "summary": "在新标签页打开地址并接管为受控目标", "category": "navigation", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "browser_follow_tab", "summary": "把已有标签页接管为受控目标", "category": "tabs", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "browser_close_tab", "summary": "关闭指定标签页", "category": "tabs", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "browser_back", "summary": "受控标签页后退", "category": "navigation", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "browser_forward", "summary": "受控标签页前进", "category": "navigation", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "browser_reload", "summary": "重新加载受控标签页", "category": "navigation", "isWriteOperation": true, "requiresAuth": false }
+    ],
+    "seamsProvided": [],
+    "seamsConsumed": [],
+    "slots": [
+      { "target": "settings.general.item", "componentPath": "src/client.js" }
+    ],
+    "storageDomains": ["$DSH_HOME/browser-sessions/"]
+  },
+  "dependencies": {
+    "requiredPlugins": [],
+    "systemBinaries": []
+  }
+}
