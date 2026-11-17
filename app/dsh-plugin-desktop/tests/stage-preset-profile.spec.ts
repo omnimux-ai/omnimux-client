@@ -61,6 +61,7 @@ const PRODUCT_PLUGINS = [
   'omnimux-analytics',
   'omnimux-publish',
   'omnimux-forms',
+  'omnimux-browser',
 ] as const
 const ALPHA_PLUGINS = [
   'omnimux-accounts',
@@ -165,7 +166,7 @@ describe('stagePresetProfile', () => {
       )
 
       sidebarFixture.path = sidebar
-      expect(stagePresetProfile({ pluginsRoot, presetDir, releaseChannel: 'development' })).toBe(16)
+      expect(stagePresetProfile({ pluginsRoot, presetDir, releaseChannel: 'development' })).toBe(17)
       const stagedPresets = join(presetDir, 'agent-presets')
       expect(readdirSync(stagedPresets).sort()).toEqual(['cordis', 'daily-work', 'standard', 'tiktok-agent'])
       expect(readFileSync(join(stagedPresets, 'cordis', 'preset.yml'), 'utf8')).toBe('name: cordis\n')
@@ -316,7 +317,7 @@ describe('stagePresetProfile', () => {
       })
 
       sidebarFixture.path = sidebar
-      expect(stagePresetProfile({ pluginsRoot, presetDir, releaseChannel: 'development' })).toBe(13)
+      expect(stagePresetProfile({ pluginsRoot, presetDir, releaseChannel: 'development' })).toBe(14)
       expect(listPackageNames(join(presetDir, 'plugins'))).not.toContain('@fixture/excluded')
       expect(readJson(join(presetDir, 'owned-packages.json'))).not.toContain('@fixture/excluded')
     } finally {
@@ -383,7 +384,7 @@ describe('stagePresetProfile', () => {
       createProductPlugins(pluginsRoot)
       createPresetSkeleton(presetDir)
 
-      expect(stagePresetProfile({ pluginsRoot, presetDir })).toBe(9)
+      expect(stagePresetProfile({ pluginsRoot, presetDir })).toBe(10)
 
       const output = join(presetDir, 'plugins')
       const owned = readJson(join(presetDir, 'owned-packages.json')) as unknown as string[]
@@ -417,7 +418,7 @@ describe('stagePresetProfile', () => {
       createProductPlugins(pluginsRoot)
       createPresetSkeleton(presetDir)
 
-      expect(stagePresetProfile({ pluginsRoot, presetDir, releaseChannel: 'development' })).toBe(13)
+      expect(stagePresetProfile({ pluginsRoot, presetDir, releaseChannel: 'development' })).toBe(14)
 
       const output = join(presetDir, 'plugins')
       const owned = readJson(join(presetDir, 'owned-packages.json')) as unknown as string[]

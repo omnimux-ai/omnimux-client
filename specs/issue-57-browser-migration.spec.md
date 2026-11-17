@@ -78,7 +78,26 @@
 
 ## 旧标准变更
 
-无。所有被改测试都位于本单新迁入的 `plugins/plugins/omnimux-browser/**`，base 上不存在这些文件，不构成对既有测试标准的削弱。
+- `plugins/scripts/auto-qa-scan.test.mjs` :: `0 误报：仓库现有插件源码 + 全部扩展清单通过安全维度`
+  - 原断言：`manifests.length === 0`，注释写明「client ships no extension manifests（omnimux-browser is not one of the 12）」。
+  - 必须改的理由：#57 把 `omnimux-browser` 迁入本仓，仓库现有两个真实扩展清单（`manifest.json` + `manifest.firefox.json`），必须进入安全扫描；继续断言 0 等于把迁移后的扩展排除在门禁之外。
+  - 新期望证据：`manifests.length === 2`，`securityFindings(files, root)` 仍为空；扫描器路径继续由反证用例覆盖。
+- `app/dsh-plugin-desktop/tests/stage-preset-profile.spec.ts` :: `materializes a local file dependency closure from paths containing spaces`
+  - 原断言：development stage 返回 `16` 个包。
+  - 必须改的理由：`omnimux-browser` 进入 preview tier 后，fixture 的产品插件从 12 增至 13，stage 结果多 1。
+  - 新期望证据：返回 `17`，其余依赖闭包断言不变。
+- `app/dsh-plugin-desktop/tests/stage-preset-profile.spec.ts` :: `keeps an incompatible optional-only local package out of the staged output`
+  - 原断言：development stage 返回 `13` 个包。
+  - 必须改的理由：同上，产品插件新增 1 个。
+  - 新期望证据：返回 `14`，被排除的 optional-only 包断言不变。
+- `app/dsh-plugin-desktop/tests/stage-preset-profile.spec.ts` :: `defaults to a production preset that excludes every lifecycle Alpha plugin`
+  - 原断言：production stage 返回 `9` 个包。
+  - 必须改的理由：`omnimux-browser` 是 preview（非 Alpha），production 预设也包含它，数量 +1。
+  - 新期望证据：返回 `10`，Alpha 插件仍全部被排除。
+- `app/dsh-plugin-desktop/tests/stage-preset-profile.spec.ts` :: `keeps every lifecycle Alpha plugin only for an explicit development stage`
+  - 原断言：development stage 返回 `13` 个包。
+  - 必须改的理由：同上，产品插件新增 1 个。
+  - 新期望证据：返回 `14`，Alpha 插件的包含/排除断言不变。
 
 ## 回滚
 
