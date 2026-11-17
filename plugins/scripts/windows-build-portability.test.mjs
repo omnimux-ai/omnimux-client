@@ -103,6 +103,11 @@ describe('Windows cloud build portability', () => {
     assert.match(source, /entry === 'tailwind\.openreel\.config\.js'/)
   })
 
+  it('refreshes the copied browser client mtime for the build freshness check', () => {
+    const scripts = JSON.parse(readFileSync(join(repoRoot, 'plugins', 'plugins', 'omnimux-browser', 'package.json'), 'utf8')).scripts
+    assert.match(scripts['build:server'], /utimesSync\('lib\/client\.js', now, now\)/)
+  })
+
   it('does not use bare joined paths in any plugin build script dynamic import', () => {
     const violations = []
     for (const packageDir of collectPackageDirs()) {

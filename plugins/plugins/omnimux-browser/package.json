@@ -46,7 +46,7 @@
     }
   },
   "scripts": {
-    "build:server": "tsc -b --pretty false && tsdown && node -e \"require('node:fs').copyFileSync('src/client.js', 'lib/client.js')\"",
+    "build:server": "tsc -b --pretty false && tsdown && node -e \"const fs=require('node:fs'); fs.copyFileSync('src/client.js', 'lib/client.js'); const now=new Date(); fs.utimesSync('lib/client.js', now, now)\"",
     "build:extension": "corepack pnpm --dir extension run build",
     "build": "npm run build:server && npm run build:extension",
     "prepare": "npm run build:server",
