@@ -7,6 +7,7 @@ import { autoFillSlots, deriveSlotLayout, type SlotBindings } from '../../../sha
 import { feedFromFingerprint } from '../../../shared/graph/feedSlot/effectiveFingerprint.ts';
 import { resolveSlotOperation } from '../../../shared/graph/feedSlot/resolveSlotOperation.ts';
 import { buildContractView, resolveModelView, type CompatReasonCode } from '../../../shared/validation/compatKernel.ts';
+import { readPreferredOperationId } from '../../../shared/validation/operationUi.ts';
 import { modelCanConsumeMediaType } from '../../../shared/validation/inputCapability.ts';
 import { readNodeInputSource } from '../../../shared/graph/nodeInputSource.ts';
 import type { CapabilityCatalog } from '../../../shared/api.ts';
@@ -60,7 +61,10 @@ export function validateDynamicModelCapacity(
     })) {
     return { valid: false, blockedBy: 'type-contract', reasonCode: 'model_incompatible' };
   }
-  const op = resolveSlotOperation(catalog, model?.id, params.operation, target.data.materialType as string | undefined, fingerprint);
+  const autoOperationId = typeof target.data.autoOperationId === 'string' || target.data.autoOperationId === null
+    ? target.data.autoOperationId as string | null : undefined;
+  const preferredOperationId = readPreferredOperationId(params, autoOperationId);
+  const op = resolveSlotOperation(catalog, model?.id, preferredOperationId, target.data.materialType as string | undefined, fingerprint);
   const layout = deriveSlotLayout(catalog, model?.id, op);
   const standby = Array.isArray(target.data.slotStandbyEdgeIds)
     ? target.data.slotStandbyEdgeIds.filter((id): id is string => typeof id === 'string') : [];
