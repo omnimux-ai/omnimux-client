@@ -19,11 +19,11 @@ function setup({ install, create, attach, draft = '', protectedInput = false, re
   ])
   const move = id => { current = id; for (const fn of listeners) fn() }
   const sessions = {
-    list: { getSnapshot: () => ({ current, byId: { a: { workspaceId: 'w' } } }), subscribe: fn => { listeners.add(fn); return () => listeners.delete(fn) } },
+    list: { getSnapshot: () => ({ ids: ['a', 'b', 'c'], byId: { a: { workspaceId: 'w' } }, phase: 'ready', projectionsBySession: {} }), subscribe: fn => { listeners.add(fn); return () => listeners.delete(fn) } },
     create: async options => { calls.push(['create', options.workspaceId]); return create ? create() : 'b' },
     open: id => { calls.push(['open', id]); move(id) },
   }
-  const context = { plazaSessions: sessions, setTimeout, console, api: async (method, body) => {
+  const context = { plazaSessions: sessions, setTimeout, console, window: { __omnimuxWorkbench: { getSnapshot: () => ({ sessionId: current }) }, addEventListener: () => {} }, api: async (method, body) => {
     calls.push([method, body.sessionId || body.slug])
     if (method === 'install') return install ? install() : { ok: true }
     if (method === 'tryAttach') return attach ? attach(body) : { attached: true, hasBody: true, sessionId: body.sessionId, slug: body.slug }

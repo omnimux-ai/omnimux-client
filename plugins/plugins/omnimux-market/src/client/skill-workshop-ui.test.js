@@ -61,21 +61,24 @@ describe('Skill Workshop UI & Session Contract (Issue #773 / #776)', () => {
     // 运行行为测试：当 DOM 中存在官方新对话按钮时，模拟点击并正确捕获会话
     let clicked = false
     const listeners = []
+    let sessionIds = ['session-a']
+    let sessionsById = {
+      'session-a': { id: 'session-a', workspaceId: 'ws-1', blank: false },
+    }
     const mockSessions = {
       list: {
         getSnapshot: () => ({
-          current: clicked ? 'session-b' : 'session-a',
-          byId: {
-            'session-a': { id: 'session-a', workspaceId: 'ws-1', blank: false },
-            'session-b': { id: 'session-b', workspaceId: 'ws-1', blank: true },
-          },
+          ids: sessionIds,
+          byId: sessionsById,
+          phase: 'ready',
+          projectionsBySession: {},
         }),
         subscribe: (fn) => {
           listeners.push(fn)
           return () => {}
         },
       },
-      open: (id) => { mockSessions.current = id },
+      open: () => {},
     }
     const mockButton = {
       className: 'official-btn newSession',
@@ -85,6 +88,8 @@ describe('Skill Workshop UI & Session Contract (Issue #773 / #776)', () => {
       getClientRects: () => [{ width: 20, height: 20 }],
       click: () => {
         clicked = true
+        sessionIds = [...sessionIds, 'session-b']
+        sessionsById = { ...sessionsById, 'session-b': { id: 'session-b', workspaceId: 'ws-1', blank: true } }
         listeners.forEach((l) => l())
       },
     }
@@ -95,7 +100,7 @@ describe('Skill Workshop UI & Session Contract (Issue #773 / #776)', () => {
 
     const { clickOfficialNewSession } = runInNewContext(
       `${sessionCreateSrc}\n({ clickOfficialNewSession })`,
-      { setTimeout, clearTimeout, Date },
+      { setTimeout, clearTimeout, Date, window: { __omnimuxWorkbench: { getSnapshot: () => ({ sessionId: 'session-a' }) }, addEventListener: () => {} } },
     )
     const res = await clickOfficialNewSession({ document: mockDoc, sessions: mockSessions, timeoutMs: 200 })
     assert.equal(clicked, true)
@@ -115,18 +120,16 @@ describe('Skill Workshop UI & Session Contract (Issue #773 / #776)', () => {
     const s1 = {
       list: {
         getSnapshot: () => ({
-          current: 's1',
           byId: { s1: { id: 's1', workspaceId: 'ws-from-current' } },
         }),
       },
     }
-    assert.equal(resolveFallbackWorkspaceId(s1, null), 'ws-from-current')
+    assert.equal(resolveFallbackWorkspaceId(s1, null, 's1'), 'ws-from-current')
 
     // 2. 当前会话无 workspaceId，但 workspaces.items 包含当前会话
     const s2 = {
       list: {
         getSnapshot: () => ({
-          current: 's2',
           byId: { s2: { id: 's2' } },
         }),
       },
@@ -138,12 +141,12 @@ describe('Skill Workshop UI & Session Contract (Issue #773 / #776)', () => {
         }),
       },
     }
-    assert.equal(resolveFallbackWorkspaceId(s2, ws2), 'ws-from-items')
+    assert.equal(resolveFallbackWorkspaceId(s2, ws2, 's2'), 'ws-from-items')
 
     // 3. workspaces 包含 recentWorkspaceId
     const s3 = {
       list: {
-        getSnapshot: () => ({ current: 's3', byId: {} }),
+        getSnapshot: () => ({ ids: [], byId: {}, phase: 'ready', projectionsBySession: {} }),
       },
     }
     const ws3 = {
@@ -154,13 +157,12 @@ describe('Skill Workshop UI & Session Contract (Issue #773 / #776)', () => {
         }),
       },
     }
-    assert.equal(resolveFallbackWorkspaceId(s3, ws3), 'ws-recent')
+    assert.equal(resolveFallbackWorkspaceId(s3, ws3, 's3'), 'ws-recent')
 
     // 4. 从 sessions 历史列表中获取最近的 workspaceId
     const s4 = {
       list: {
         getSnapshot: () => ({
-          current: 's4',
           byId: {
             s4: { id: 's4' },
             s_old: { id: 's_old', workspaceId: 'ws-from-history', updatedAt: 1000 },
@@ -168,7 +170,7 @@ describe('Skill Workshop UI & Session Contract (Issue #773 / #776)', () => {
         }),
       },
     }
-    assert.equal(resolveFallbackWorkspaceId(s4, null), 'ws-from-history')
+    assert.equal(resolveFallbackWorkspaceId(s4, null, 's4'), 'ws-from-history')
   })
 
   it('session create keeps right workbench sidebar open with omnimux-market:plaza and sets split layout', async () => {
@@ -180,6 +182,8 @@ describe('Skill Workshop UI & Session Contract (Issue #773 / #776)', () => {
     let focusMode = null
     let collapsedArg = null
     const fakeWorkbench = {
+      getSnapshot: () => ({ sessionId: currentSession }),
+      getCurrentSessionId: () => currentSession,
       open: (opts) => { openedTab = opts },
       setFocus: (f) => { focusMode = f },
       setConversationCollapsed: (c, opts) => { collapsedArg = { collapsed: c, ...opts } },
@@ -196,11 +200,13 @@ describe('Skill Workshop UI & Session Contract (Issue #773 / #776)', () => {
       open: (id) => { currentSession = id },
       list: {
         getSnapshot: () => ({
-          current: currentSession,
+          ids: ['session-a', 'session-new-773'],
           byId: {
             'session-a': { id: 'session-a', workspaceId: 'ws-inherited' },
             'session-new-773': { id: 'session-new-773', workspaceId: 'ws-inherited' },
           },
+          phase: 'ready',
+          projectionsBySession: {},
         }),
       },
     }

@@ -5,11 +5,11 @@
 
     // Only mounted official input slots may write a session's creation guide.
     async function createReadySkillSession(sessions, opts) {
-      const origin = sessions.list?.getSnapshot?.()?.current || "";
+      const origin = marketCurrentSessionId();
       let expected = origin;
       let cancelled = false;
       const check = () => {
-        if ((sessions.list?.getSnapshot?.()?.current || "") !== expected) cancelled = true;
+        if (marketCurrentSessionId() !== expected) cancelled = true;
         return !cancelled && !opts.isCancelled?.();
       };
       const unsubscribe = sessions.list?.subscribe?.(check);
@@ -61,6 +61,28 @@
     function resolveDoc(doc) {
       if (doc) return doc;
       return typeof document !== "undefined" ? document : null;
+    }
+
+    // rc.3 SessionListState has no `current`; read the host-owned session seams
+    // instead. Keep this local to the market client fragment (same contract as
+    // inspiration's current-session.js; fragments cannot import across plugins).
+    var UNBOUND_SESSION_IDS = new Set(["default", "__none__", "undefined", "null"]);
+    function normalizeSessionId(value) {
+      var id = typeof value === "string" ? value.trim() : (typeof value === "number" && Number.isFinite(value) ? String(value) : "");
+      return UNBOUND_SESSION_IDS.has(id) ? "" : id;
+    }
+    function readHostSession(fn) {
+      try { return typeof fn === "function" ? fn() : undefined; } catch { return undefined; }
+    }
+    function marketCurrentSessionId() {
+      if (typeof window === "undefined") return "";
+      var workbench = window.__omnimuxWorkbench;
+      var snapshot = readHostSession(workbench && workbench.getSnapshot);
+      var fromSnapshot = normalizeSessionId(snapshot && snapshot.sessionId);
+      if (fromSnapshot) return fromSnapshot;
+      var fromWorkbench = normalizeSessionId(readHostSession(workbench && workbench.getCurrentSessionId));
+      if (fromWorkbench) return fromWorkbench;
+      return normalizeSessionId(readHostSession(window.__omnimuxAttachments && window.__omnimuxAttachments.getActiveSessionId));
     }
 
     function isElementVisible(el) {
@@ -177,18 +199,32 @@
       }
     }
 
-    function resolvedOfficialTarget(sessions, beforeId) {
+    function officialTargetBaseline(sessions) {
       const snapshot = sessionSnapshot(sessions);
-      const sessionId = snapshot?.current;
-      if (!sessionId || typeof sessionId !== "string") return null;
-      if (sessionId !== beforeId) {
-        return { ok: true, sessionId };
+      const ids = Array.isArray(snapshot?.ids)
+        ? snapshot.ids.slice()
+        : Object.keys(snapshot?.byId && typeof snapshot.byId === "object" ? snapshot.byId : {});
+      return { ids, currentId: marketCurrentSessionId() };
+    }
+
+    function resolvedOfficialTarget(sessions, baseline) {
+      const snapshot = sessionSnapshot(sessions);
+      if (!snapshot) return null;
+      const byId = snapshot.byId && typeof snapshot.byId === "object" ? snapshot.byId : {};
+      const ids = Array.isArray(snapshot.ids) ? snapshot.ids : Object.keys(byId);
+      // A blank id added by this gesture proves a new-session result even when
+      // the workbench projection has not caught up yet.
+      const addedBlank = ids.filter((id) => !baseline.ids.includes(id) && byId[id]?.blank === true);
+      if (addedBlank.length > 0) {
+        return { ok: true, sessionId: addedBlank[addedBlank.length - 1] };
       }
-      const summary = snapshot.byId?.[sessionId];
-      if (summary && summary.blank === true) {
-        return { ok: true, sessionId, reusedBlank: true };
-      }
-      return null;
+      const sessionId = marketCurrentSessionId();
+      if (!sessionId || byId[sessionId]?.blank !== true) return null;
+      return {
+        ok: true,
+        sessionId,
+        ...(sessionId === baseline.currentId ? { reusedBlank: true } : {}),
+      };
     }
 
     /**
@@ -203,8 +239,8 @@
         return { ok: false, error: "no-sessions" };
       }
 
-      const beforeId = sessionSnapshot(sessions)?.current || "";
-      const hasOfficialCurrent = Boolean(beforeId);
+      const baseline = officialTargetBaseline(sessions);
+      const hasOfficialCurrent = Boolean(baseline.currentId);
       let directActionPending = false;
       let menuActionDispatched = false;
       let observedTarget = null;
@@ -212,7 +248,7 @@
       const unsubscribe = typeof list.subscribe === "function"
         ? list.subscribe(() => {
             if (!directActionPending && !menuActionDispatched) return;
-            const target = resolvedOfficialTarget(sessions, beforeId);
+            const target = resolvedOfficialTarget(sessions, baseline);
             if (target) observedTarget = target;
           })
         : () => {};
@@ -253,7 +289,7 @@
             }
           }
           if (observedTarget) return observedTarget;
-          const target = resolvedOfficialTarget(sessions, beforeId);
+          const target = resolvedOfficialTarget(sessions, baseline);
           if (target && (directActionPending || menuActionDispatched)) {
             return target;
           }
@@ -298,10 +334,10 @@
     /**
      * 兜底解析合法工作区 ID：从当前会话、workspaces 服务或 sessions 历史中获取。
      */
-    function resolveFallbackWorkspaceId(sessions, workspaces) {
+    function resolveFallbackWorkspaceId(sessions, workspaces, explicitCurrentId) {
       try {
         const sessionSnapshot = sessions?.list?.getSnapshot?.();
-        const currentId = sessionSnapshot?.current;
+        const currentId = explicitCurrentId !== undefined ? explicitCurrentId : marketCurrentSessionId();
         const currentSession = currentId && sessionSnapshot?.byId ? sessionSnapshot.byId[currentId] : null;
 
         // 1. 当前会话如果有 workspaceId，直接继承
@@ -440,8 +476,7 @@
           if (opts.requireReady) return await createReadySkillSession(sessions, opts);
 
           // 1. 捕获当前会话 A 状态（只读，防污染，绝不改写其草稿与附件）
-          const snapshot = typeof sessions.list?.getSnapshot === "function" ? sessions.list.getSnapshot() : null;
-          const sessionAId = snapshot?.current;
+          const sessionAId = marketCurrentSessionId();
 
           // 2. 准备 skill-creator 目标（试用挂载跳过安装）
           if (!opts.preset && !opts.skipInstall) {
@@ -521,7 +556,7 @@
 
             while (Date.now() - start < maxWait) {
               // 检查当前会话是否已被用户切换到 C
-              const currentActive = sessions.list?.getSnapshot?.()?.current;
+              const currentActive = marketCurrentSessionId();
               if (currentActive && currentActive !== sessionBId) {
                 break;
               }
@@ -634,15 +669,7 @@
     }
 
     function currentPlazaSessionId() {
-      const sessions = plazaSessions || (typeof window !== "undefined" ? window.__omnimuxSessions : undefined);
-      try {
-        const snap = sessions && sessions.list && typeof sessions.list.getSnapshot === "function"
-          ? sessions.list.getSnapshot()
-          : null;
-        return (snap && snap.current) || "";
-      } catch {
-        return "";
-      }
+      return marketCurrentSessionId();
     }
 
     /**
