@@ -1,0 +1,3465 @@
+import { createMediaGrants, isOwnFloatingPanel } from './media-grants.ts'
+/**
+ * Background service worker entry: owns the bridge connection, the gateway
+ * RPC client, controlled-tab tool dispatch, and the panel port service.
+ *
+ * MV3 survival: after the user opens the panel, its port plus a half-minute
+ * `alarms` keepalive re-arm the reconnect loop. Merely loading the extension
+ * never probes or claims the single-connection bridge.
+ *
+ * Panel port protocol (chrome.runtime.connect, name "dsh-panel"):
+ *   panel → bg: { type: 'rpc', id, method, payload }
+ *   panel → bg: { type: 'respond', id, rpcId, result }
+ *   panel → bg: { type: 'settings', id, settings: Partial<Settings> }
+ *   panel → bg: { type: 'session.active', sessionId }
+ *   panel → bg: { type: 'approval.response', id, decision }
+ *   panel → bg: { type: 'tab-affinity.response', revision, decision, sessionId }
+ *   panel → bg: { type: 'tab-affinity.rebind', id }
+ *   panel → bg: { type: 'panel.window', windowId }
+ *   panel → bg: { type: 'selection.clear', selection? }
+ *   content → bg: { type: 'DSH_CHECK_SIDE_PANEL_OPEN' }
+ *   panel → bg: { type: 'request-status' }
+ *   bg → panel: { type: 'rpc.result', id, ok, result? | error? }
+ *   bg → panel: { type: 'respond.result', id, ok, result? | error? }
+ *   bg → panel: { type: 'settings.result', id, ok, error? }
+ *   bg → panel: { type: 'status', state: BridgeState, caps? }
+ *   bg → panel: { type: 'event', frame: ServerFrame }
+ *   bg → panel: { type: 'approval.request', request }
+ *   bg → panel: { type: 'approval.resolved', id }
+ *   bg → panel: { type: 'session.resume-hint', sessionId }
+ *   bg → panel: { type: 'selection', selection }
+ *   bg → panel: { type: 'media.attach', media }
+ *   bg → panel: { type: 'tab-affinity', state }
+ *   bg → panel: { type: 'tab-affinity.rebind.result', id, ok, error? }
+ *
+ * @module
+ */
+
+import {
+  BRIDGE_INJECT_BROWSER_SNAPSHOT_METHOD,
+  isRespondResult,
+  type BridgeCaps,
+  type RespondResult,
+} from 'omnimux-browser/src/protocol.ts'
+import type { ServerFrame } from 'omnimux-browser/src/protocol.ts'
+import {
+  BRIDGE_CONFIG_PATH,
+  BRIDGE_PATH,
+  BRIDGE_COMPLETE_TEXT_METHOD,
+  BRIDGE_EVALUATE_DECISION_METHOD,
+  BRIDGE_APPEND_COPILOT_LOG_METHOD,
+  BRIDGE_TEXT_GENERATION_METHOD,
+} from 'omnimux-browser/src/protocol.ts'
+import { BridgeClient, type BridgeState } from './bridge.ts'
+import { createRpc } from './rpc.ts'
+import { SessionTextCollector } from './session-completion.ts'
+import { providerForModelId } from '../shared/model-catalog.ts'
+import {
+  dispatchOpenTab,
+  dispatchToolCall,
+  isNavigationCandidateTool,
+  isTabManagementTool,
+  resetTabSnapshot,
+  type ToolAnswer,
+  type ToolCall,
+} from './tools.ts'
+import {
+  isApprovalDecision,
+  type ApprovalAuthorization,
+  type ApprovalPrompt,
+  type ApprovalRequest,
+} from '../security/approval.ts'
+import { getUiLocale } from '../i18n.ts'
+import { InteractionResponseRouter } from './responses.ts'
+import {
+  actionCoveredByTrustedOrigins,
+  normalizeTrustedOrigin,
+} from '../security/trusted-origins.ts'
+import { TransientEventCache } from './transient-events.ts'
+import {
+  TabAffinityController,
+  isTabAffinityDecision,
+  type AffinityTab,
+  type TabAffinityDecision,
+} from './tab-affinity.ts'
+import { FocusedWindowTracker } from './focused-window.ts'
+import { SelectionTracker, type SelectionSource } from './selection.ts'
+import { parsePageSelection, parseSelectionCapture } from '../selection.ts'
+import { ApprovalCoordinator, type ApprovalRequestResult } from './approval-coordinator.ts'
+import {
+  LEGACY_RECENT_SESSION_STORAGE_KEY,
+  PAGE_SESSION_CONTEXT_STORAGE_KEY,
+  PageSessionContextTracker,
+} from './session-continuity.ts'
+import { appendMediaInspiration } from './media-library.ts'
+import {
+  readAccountImportOutcome,
+  readSaveTargetClassification,
+  saveTargetFromClassification,
+  type SaveTargetClassification,
+} from './save-target.ts'
+import { loopbackFetch } from '../shared/loopback-fetch.ts'
+import {
+  claimAccountRefresh,
+  closeRefreshedTab,
+  completeAccountRefresh,
+} from './account-refresh.ts'
+import {
+  activeHttpTabId,
+  forwardMediaChunk,
+  relayCapturedMedia,
+  shouldRelayPost,
+} from './media-relay.ts'
+import {
+  INSPIRATION_CAPTURE_PATH,
+  buildCaptureRequestBody,
+  readCaptureSaveOutcome,
+  readCapturedPost,
+} from './capture-save.ts'
+import { PanelPresence } from './panel-presence.ts'
+import { normalizeSaveRequestId, saveImageAssetRpc } from './save-image-assets.ts'
+import type { HoveredMedia } from '../content/media-hover/types.ts'
+import { TIKTOK_RUNTIME_MESSAGE } from '../content/tiktok-scene/messages.ts'
+import {
+  discoverHostBase,
+  httpBaseFromBridgeUrl,
+  requestInspirationSave,
+  requestMediaExport,
+  type ExportKind,
+  type ExportOutcome,
+} from './media-export.ts'
+import { startMediaDownload } from './media-download.ts'
+import { createXVariantLookup } from './x-video-variants.ts'
+
+/**
+ * Cached reader for one X post's public video variants.
+ *
+ * One worker instance shares the cache across presses; the endpoint is public,
+ * so no credential or page cookie is involved.
+ */
+const lookupXVariant = createXVariantLookup({ fetch: (input, init) => fetch(input, init) })
+
+/** User settings persisted in chrome.storage.local. */
+export interface Settings {
+  bridgeUrl: string
+  token: string
+  sharePageContent: 'ask' | 'auto' | 'off'
+  /** Allow every browser operation without an approval prompt. */
+  unrestrictedBrowserAccess: boolean
+  /** Origins whose state-changing actions may run without another prompt. */
+  trustedActionOrigins: string[]
+  /** Show an OS notification when no side panel can display an approval. */
+  approvalNotifications: boolean
+  /** Restore the current tab and page path's conversation when the panel reopens. */
+  autoResumeSession: boolean
+  /**
+   * Model the one-shot text generation (page Copilot bodies) is pinned to.
+   *
+   * An empty string is the documented "follow the chat model" choice: the
+   * temporary session then inherits the host default exactly as it did before
+   * this setting existed. It is never inferred from the chat model here —
+   * the two consumption scenarios stay independently configurable (#3629).
+   */
+  textModel: string
+  /** Provider that owns {@link textModel}; empty when the model id is enough. */
+  textProvider: string
+  /** Reasoning effort for {@link textModel}; empty when it has no reasoning. */
+  textEffort: string
+}
+
+const SETTINGS_DEFAULTS: Settings = {
+  // 空地址 = 自动探测本机 dsh（零配置）；手动填地址时优先手动。
+  bridgeUrl: '',
+  token: '',
+  sharePageContent: 'auto',
+  unrestrictedBrowserAccess: false,
+  trustedActionOrigins: [],
+  approvalNotifications: true,
+  autoResumeSession: true,
+  // 空串 = 跟随对话模型 / 宿主默认；文本生成用途独立于对话模型配置。
+  textModel: '',
+  textProvider: '',
+  textEffort: '',
+}
+
+/**
+ * 自动探测的候选端口：
+ * - OmniMux Dev 默认 45120 / 45128；
+ * - DSH Desktop 默认 43120 / 43128 / 43189；
+ * - dsh web（CLI）默认 3080，端口被占时依次回退 3081 / 3090；
+ * - 14389 为历史桌面应用端口，保留兼容旧版。
+ */
+const DISCOVERY_PORTS = [45120, 45128, 43120, 43128, 3080, 3081, 3090, 14389, 43189]
+const LEGACY_LOCAL_URL = 'ws://127.0.0.1:3080'
+
+/** 探测本机 dsh 的桥地址：fetch /ext/bridge-config 直到成功。优先匹配 OmniMux Dev (45120) 及用户指定端口。 */
+async function discoverBridge(shouldContinue: () => boolean = () => true): Promise<string | undefined> {
+  let prioritizedPorts = [...DISCOVERY_PORTS]
+  try {
+    const saved = (await chrome.storage.local.get('omnimux_target_port'))?.omnimux_target_port
+    const p = saved ? parseInt(saved, 10) : undefined
+    if (p && !isNaN(p)) {
+      prioritizedPorts = [p, ...DISCOVERY_PORTS.filter((x) => x !== p)]
+    }
+  } catch {
+    // Ignore storage failure
+  }
+
+  for (const port of prioritizedPorts) {
+    if (!shouldContinue()) return undefined
+    try {
+      const response = await loopbackFetch(`http://127.0.0.1:${port}/ext/bridge-config`, {
+        signal: AbortSignal.timeout(1_000),
+      })
+      if (!shouldContinue()) return undefined
+      if (response.ok) {
+        const body = await response.json().catch(() => ({})) as { wsUrl?: unknown }
+        if (typeof body.wsUrl === 'string' && body.wsUrl.startsWith('ws://')) return body.wsUrl
+      }
+    } catch {
+      // 该端口没有 dsh 或未挂桥：试下一个。
+    }
+  }
+
+  // 兜底：如果所有端口都没返回 /ext/bridge-config，寻找第一个活跃的 DSH / OmniMux 实例端口
+  for (const port of prioritizedPorts) {
+    if (!shouldContinue()) return undefined
+    try {
+      const response = await loopbackFetch(`http://127.0.0.1:${port}/`, {
+        signal: AbortSignal.timeout(600),
+      })
+      if (response.status > 0) {
+        return `ws://127.0.0.1:${port}/ext/bridge`
+      }
+    } catch {
+      // 端口未运行
+    }
+  }
+  return undefined
+}
+
+/** Avoid opening a noisy loopback WebSocket until the local bridge responds. */
+async function probeBridge(url: string): Promise<boolean> {
+  try {
+    const target = new URL(url)
+    if (target.hostname !== '127.0.0.1') return true
+    target.protocol = target.protocol === 'wss:' ? 'https:' : 'http:'
+    target.pathname = BRIDGE_CONFIG_PATH
+    target.search = ''
+    target.hash = ''
+    const response = await loopbackFetch(target, { signal: AbortSignal.timeout(1_200) }).catch(() => null)
+    if (response !== null) {
+      if (response.ok) {
+        const body = await response.json().catch(() => ({})) as { wsUrl?: unknown }
+        if (typeof body.wsUrl === 'string' && body.wsUrl.startsWith('ws://')) return true
+      }
+      // 只要端口上有 HTTP 服务应答（哪怕 404/403/401），说明实例存活，放行 WebSocket 握手
+      return true
+    }
+    // 兜底探测端口根路径
+    target.pathname = '/'
+    const rootRes = await loopbackFetch(target, { signal: AbortSignal.timeout(800) }).catch(() => null)
+    return rootRes !== null
+  } catch {
+    return true
+  }
+}
+
+/**
+ * The bridge address automatic discovery last found.
+ *
+ * Kept so the TikTok shortcuts can reach the same origin without re-probing:
+ * the bridge and the HTTP surface are one process on one port, and running a
+ * nine-port sweep in front of every menu press would cost the user a second of
+ * waiting for an address that has not moved.
+ */
+let discoveredBridgeUrl = ''
+
+/**
+ * The HTTP base a parallel port probe found, once one has answered.
+ *
+ * Cached separately from the bridge address: the two are discovered from the
+ * same reply, but a failed probe must not be mistaken for a reachable bridge.
+ */
+let discoveredHostBase = ''
+
+const STORAGE_KEY = 'dshSettings'
+const TAB_AFFINITY_STORAGE_KEY = 'dshTabAffinity'
+
+type StoredTabAffinity =
+  | { controlledTabId: number; keptActiveTabId?: number; pinned?: true; sessionTabs?: Record<string, AffinityTab>; focusedSessionId?: string }
+  | { lost: true; sessionTabs?: Record<string, AffinityTab>; focusedSessionId?: string }
+
+let settings: Settings = { ...SETTINGS_DEFAULTS }
+let unrestrictedAccessActive = SETTINGS_DEFAULTS.unrestrictedBrowserAccess
+let unrestrictedAccessRevision = 0
+let unrestrictedRevocation: Promise<void> | undefined
+let settingsPersistence = Promise.resolve()
+let caps: BridgeCaps | null = null
+let bridge: BridgeClient | null = null
+let rpc: ReturnType<typeof createRpc> | null = null
+interface PendingSessionCompletion {
+  collector: SessionTextCollector
+  resolve: (text: string) => void
+  reject: (error: Error) => void
+  timer: ReturnType<typeof setTimeout>
+}
+/** Poster opinions waiting on a temporary session turn, keyed by session id. */
+const pendingSessionCompletions = new Map<string, PendingSessionCompletion>()
+const panelPorts = new Set<chrome.runtime.Port>()
+const BRIDGE_KEEPALIVE_ALARM = 'bridge-keepalive'
+/** Invalidates an asynchronous discovery attempt when its panel lease ends. */
+let bridgeStartRevision = 0
+/** Whether any lease ever started the bridge: the keepalive only restarts claimed connections. */
+let bridgeClaimedOnce = false
+/**
+ * Service-worker restarts wipe module state. Persist the claim so a worker
+ * recycled while queued submissions still run on the host can rejoin the
+ * bridge without waiting for a panel.
+ */
+const bridgeClaimReady = Promise.resolve(chrome.storage.session.get('omnimux_bridge_claimed'))
+  .then((stored) => {
+    if ((stored as { omnimux_bridge_claimed?: unknown }).omnimux_bridge_claimed === true) bridgeClaimedOnce = true
+  })
+  .catch(() => {})
+const interactionResponses = new InteractionResponseRouter()
+const transientEvents = new TransientEventCache()
+const tabAffinity = new TabAffinityController()
+const focusedWindow = new FocusedWindowTracker()
+const selections = new SelectionTracker()
+const pageSessionContexts = new PageSessionContextTracker({
+  read: async () => (await chrome.storage.session.get(PAGE_SESSION_CONTEXT_STORAGE_KEY))[PAGE_SESSION_CONTEXT_STORAGE_KEY],
+  write: async (value) => {
+    await chrome.storage.session.set({ [PAGE_SESSION_CONTEXT_STORAGE_KEY]: value })
+  },
+})
+void chrome.storage.session.remove(LEGACY_RECENT_SESSION_STORAGE_KEY).catch(() => {})
+/** Ephemeral allowlist: cleared when the last side panel closes or this worker restarts. */
+const sessionTrustedActionOrigins = new Set<string>()
+/** Tool calls that are either withdrawable or completing an already-dispatched action. */
+interface ActiveToolCall {
+  controller: AbortController
+  unrestrictedAccess: boolean
+  committed: boolean
+  revocationRequested: boolean
+  settled: Promise<void>
+  settle: () => void
+}
+
+const activeToolCalls = new Map<string, ActiveToolCall>()
+/** Disconnection drops result ownership, but dispatched operations must still settle before revocation. */
+const unsettledToolCalls = new Set<ActiveToolCall>()
+let lastPersistedAffinity: string | undefined
+let affinityPersistence = Promise.resolve()
+/** Per-session snapshot refreshes preserve prompt ordering without cross-session cancellation. */
+const sessionSnapshotRefreshes = new Map<string, Promise<void>>()
+interface ActiveFollowRefresh {
+  controller: AbortController
+  unrestrictedAccess: boolean
+  settled: Promise<void>
+  settle: () => void
+}
+
+const activeFollowRefreshes = new Map<string, ActiveFollowRefresh>()
+const TAB_AFFINITY_REBIND_TIMEOUT_MS = 10_000
+
+class TabAffinityRebindError extends Error {
+  constructor(readonly code: 'no-active-tab' | 'timeout' | 'cancelled', message: string) {
+    super(message)
+    this.name = 'TabAffinityRebindError'
+  }
+}
+
+function rebindAbortReason(signal: AbortSignal): Error {
+  return signal.reason instanceof Error
+    ? signal.reason
+    : new TabAffinityRebindError('cancelled', getUiLocale() === 'zh' ? '标签页绑定已取消' : 'Tab binding was cancelled')
+}
+
+function throwIfRebindAborted(signal: AbortSignal): void {
+  if (signal.aborted) throw rebindAbortReason(signal)
+}
+
+/** Reject promptly on cancellation while safely consuming a late Chrome promise. */
+function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(rebindAbortReason(signal))
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => { reject(rebindAbortReason(signal)) }
+    signal.addEventListener('abort', onAbort, { once: true })
+    void promise.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort)
+        if (signal.aborted) reject(rebindAbortReason(signal))
+        else resolve(value)
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', onAbort)
+        reject(error)
+      },
+    )
+  })
+}
+
+async function loadSettings(): Promise<Settings> {
+  const stored = await chrome.storage.local.get(STORAGE_KEY)
+  const loaded = normalizeSettings({ ...SETTINGS_DEFAULTS, ...(stored[STORAGE_KEY] as Partial<Settings> | undefined) })
+  if (loaded.bridgeUrl === LEGACY_LOCAL_URL || loaded.bridgeUrl === `${LEGACY_LOCAL_URL}/`) {
+    loaded.bridgeUrl = ''
+    await chrome.storage.local.set({ [STORAGE_KEY]: loaded })
+  }
+  return loaded
+}
+
+async function persistSettings(next: Partial<Settings>): Promise<void> {
+  // Merge on top of the loaded settings, never on top of the defaults: a cold
+  // boot where loadSettings() is still in flight must not let this write be
+  // overwritten by the default-shaped base — the pairing approval's address
+  // and token would revert to empty if the load landed afterwards.
+  await settingsReady
+  const changesUnrestrictedAccess = typeof next.unrestrictedBrowserAccess === 'boolean'
+  const accessRevision = changesUnrestrictedAccess ? ++unrestrictedAccessRevision : unrestrictedAccessRevision
+  const updated = normalizeSettings({ ...settings, ...next })
+  const revokesUnrestrictedAccess = settings.unrestrictedBrowserAccess && !updated.unrestrictedBrowserAccess
+  settings = updated
+  if (!updated.unrestrictedBrowserAccess) unrestrictedAccessActive = false
+  syncSelectionWatch()
+  let accessTransition: Promise<void> | undefined
+  if (revokesUnrestrictedAccess) {
+    let trackedRevocation!: Promise<void>
+    trackedRevocation = revokeUnrestrictedAccess().finally(() => {
+      if (unrestrictedRevocation !== trackedRevocation) return
+      unrestrictedRevocation = undefined
+      syncSelectionWatch()
+    })
+    unrestrictedRevocation = trackedRevocation
+    accessTransition = trackedRevocation
+  } else if (unrestrictedRevocation !== undefined) {
+    accessTransition = unrestrictedRevocation
+  }
+  const persisted = updated
+  const write = settingsPersistence.then(async () => {
+    await accessTransition
+    await chrome.storage.local.set({ [STORAGE_KEY]: persisted })
+  })
+  settingsPersistence = write.catch(() => {})
+  await write
+  if (changesUnrestrictedAccess
+    && accessRevision === unrestrictedAccessRevision
+    && settings.unrestrictedBrowserAccess
+    && persisted.unrestrictedBrowserAccess
+    && unrestrictedRevocation === undefined) {
+    unrestrictedAccessActive = true
+    syncSelectionWatch()
+  }
+}
+
+function normalizeSettings(candidate: Settings): Settings {
+  const trusted = Array.isArray(candidate.trustedActionOrigins)
+    ? [...new Set(candidate.trustedActionOrigins.map(normalizeTrustedOrigin).filter((entry): entry is string => entry !== undefined))].sort()
+    : []
+  const sharePageContent = candidate.sharePageContent === 'auto' || candidate.sharePageContent === 'off'
+    ? candidate.sharePageContent
+    : candidate.sharePageContent === 'ask' ? 'ask' : 'auto'
+  // The text-generation trio is part of the persisted settings object: a
+  // normalizer that dropped them would silently reset the user's choice on
+  // every worker restart, so a non-string (corrupt store) becomes the
+  // documented "follow the chat model" empty value instead.
+  const textString = (value: unknown): string => (typeof value === 'string' ? value : '')
+  return {
+    ...candidate,
+    sharePageContent,
+    unrestrictedBrowserAccess: candidate.unrestrictedBrowserAccess === true,
+    trustedActionOrigins: trusted,
+    approvalNotifications: candidate.approvalNotifications !== false,
+    autoResumeSession: candidate.autoResumeSession !== false,
+    textModel: textString(candidate.textModel),
+    textProvider: textString(candidate.textProvider),
+    textEffort: textString(candidate.textEffort),
+  }
+}
+
+/** Settings load is shared by every lazy connection trigger. */
+let settingsLoaded = false
+const settingsReady = loadSettings().then((loaded) => {
+  settings = loaded
+  unrestrictedAccessActive = loaded.unrestrictedBrowserAccess
+  settingsLoaded = true
+})
+
+function armBridgeKeepalive(): void {
+  chrome.alarms.create(BRIDGE_KEEPALIVE_ALARM, { periodInMinutes: 0.5 })
+}
+
+function disarmBridgeKeepalive(): void {
+  void Promise.resolve(chrome.alarms.clear(BRIDGE_KEEPALIVE_ALARM)).catch(() => {})
+}
+
+/**
+ * Tell every open panel the connection state, and optionally the settings a
+ * pairing just bound.
+ *
+ * A panel reads its form from storage once when it mounts, so one that was
+ * already open when the approval landed would keep showing an empty address
+ * and token. Pairing passes the bound pair here instead of waiting for a
+ * reopen.
+ */
+function broadcastStatus(boundSettings?: { bridgeUrl: string; token: string }): void {
+  const payload = {
+    type: 'status',
+    state: bridge?.state ?? ('stopped' as BridgeState),
+    caps,
+    ...(boundSettings === undefined ? {} : { settings: boundSettings }),
+  }
+  for (const port of panelPorts) {
+    try { port.postMessage(payload) } catch { /* port already closed */ }
+  }
+}
+
+function broadcastTabAffinity(): void {
+  const payload = { type: 'tab-affinity', state: tabAffinity.snapshot() }
+  for (const port of panelPorts) {
+    try { port.postMessage(payload) } catch { /* port already closed */ }
+  }
+}
+
+/** Which window each panel port belongs to, so a quote stays in its window. */
+const panelPresence = new PanelPresence()
+/** The conversation each live panel is displaying, used for close checkpoints. */
+const panelActiveSessions = new WeakMap<chrome.runtime.Port, string>()
+
+/**
+ * Send one window's selection to that window's panels only.
+ *
+ * A panel must never be offered a quote from a page its own window is not
+ * looking at, which also keeps an incognito window's highlight out of a
+ * normal window's composer.
+ */
+function broadcastSelection(windowId: number): void {
+  const payload = { type: 'selection', selection: selections.current(windowId) }
+  for (const port of panelPorts) {
+    if (panelPresence.windowOf(port) !== windowId) continue
+    try { port.postMessage(payload) } catch { /* port already closed */ }
+  }
+}
+
+function broadcastSelections(windowIds: readonly number[]): void {
+  for (const windowId of windowIds) broadcastSelection(windowId)
+}
+
+/** Whether a window currently has a panel that can display its selection. */
+function hasPanelInWindow(windowId: number): boolean {
+  return panelPresence.hasPanelInWindow(panelPorts, windowId)
+}
+
+/**
+ * Hand one page media element to the panels of a single window.
+ *
+ * A capture in one window is never offered to another window's panel, for the
+ * same reason its quote is not: the conversation on screen belongs to the page
+ * that window is looking at.
+ *
+ * @returns Whether at least one live panel accepted the message.
+ */
+function deliverMediaToPanels(windowId: number, media: HoveredMedia): boolean {
+  let delivered = false
+  for (const port of panelPresence.portsFor(panelPorts, windowId)) {
+    try {
+      port.postMessage({ type: 'media.attach', media })
+      delivered = true
+    } catch { /* port already closed */ }
+  }
+  return delivered
+}
+
+/**
+ * Tell a frame its quote is gone so re-selecting the same passage reports it
+ * again; the content script deduplicates against the last text it sent.
+ */
+function resetSelectionDedupe(sources: readonly SelectionSource[]): void {
+  for (const { tabId, frameId } of sources) {
+    void Promise.resolve(chrome.tabs.sendMessage(
+      tabId,
+      { type: 'DSH_SELECTION_RESET' },
+      { frameId },
+    ))
+      .catch(() => { /* no content script in this tab */ })
+  }
+}
+
+/** Whether saved privacy settings currently allow page-selection capture. */
+function selectionSharingEnabled(): boolean {
+  // Until storage answers, `settings` still holds the defaults. Reporting the
+  // default here would arm watchers for a user whose saved choice is `off`.
+  return settingsLoaded && (unrestrictedAccessEnabled() || settings.sharePageContent !== 'off')
+}
+
+/** Whether unrestricted access is enabled and no earlier grant is still being revoked. */
+function unrestrictedAccessEnabled(): boolean {
+  return unrestrictedAccessActive && unrestrictedRevocation === undefined
+}
+
+/** Page selections are captured only in a window with an open panel. */
+function selectionWatchEnabled(windowId: number): boolean {
+  return selectionSharingEnabled() && hasPanelInWindow(windowId)
+}
+
+let selectionWatchArmed = false
+/** Distinguishes revisions issued by different MV3 worker lifetimes. */
+const selectionWatchEpoch = crypto.randomUUID()
+/** Orders arm/disarm commands so a slow delivery cannot undo a newer one. */
+let selectionWatchRevision = 0
+
+/**
+ * Arm or disarm every content script. `selectionchange` fires on each drag in
+ * each tab, so the watcher stays off until a panel can actually show a quote.
+ *
+ * Delivery is asynchronous, so each command carries a revision: a panel that
+ * closes and reopens quickly must not leave watchers in the state of whichever
+ * `tabs.query` happened to resolve last.
+ */
+function syncSelectionWatch(): void {
+  const anyEnabled = selectionSharingEnabled()
+    && panelPresence.anyPanel(panelPorts)
+  const wasArmed = selectionWatchArmed
+  selectionWatchArmed = anyEnabled
+  const revision = ++selectionWatchRevision
+  if (wasArmed && !anyEnabled) {
+    resetSelectionDedupe(selections.sourcesWithSelection())
+    broadcastSelections(selections.clearAll())
+  }
+  void Promise.resolve(chrome.tabs.query({})).then((tabs) => {
+    if (revision !== selectionWatchRevision) return
+    for (const tab of tabs) {
+      if (tab.id === undefined) continue
+      const enabled = selectionWatchEnabled(tab.windowId)
+      void Promise.resolve(chrome.tabs.sendMessage(tab.id, {
+        type: 'DSH_SELECTION_WATCH',
+        enabled,
+        epoch: selectionWatchEpoch,
+        revision,
+      }))
+        .catch(() => { /* no content script in this tab */ })
+    }
+  }).catch(() => {})
+}
+
+/**
+ * Accept a capture from the page the user is actually looking at.
+ *
+ * `sender.tab` already carries the tab's window, active state, and incognito
+ * flag, so admission needs no `chrome.tabs` call: a background page cannot
+ * make the worker query Chrome by moving its own selection in a loop.
+ */
+function recordSelection(tab: chrome.tabs.Tab, frameId: number, value: unknown): void {
+  if (!selectionWatchEnabled(tab.windowId)) return
+  // Only the tab the user is looking at, in its own window, may set a quote.
+  if (tab.id === undefined || tab.active !== true) return
+  const capture = parseSelectionCapture(value)
+  if (capture === null) return
+  if (selections.capture({ windowId: tab.windowId, tabId: tab.id, frameId }, capture)) {
+    broadcastSelection(tab.windowId)
+  }
+}
+
+function broadcastEvent(frame: ServerFrame): void {
+  for (const port of panelPorts) {
+    try { port.postMessage({ type: 'event', frame }) } catch { /* port already closed */ }
+  }
+}
+
+// ---- Task completion notifications (F3) ----
+
+const TASK_NOTIFICATION_PREFIX = 'dsh-browser-task:'
+/** sessionId → last user prompt + current turn; bounded so stale entries die. */
+const taskPrompts = new Map<string, { prompt: string; turn: number }>()
+/** Session + turn waiting for a panel to consume after a notification click. */
+let pendingTaskLocate: { sessionId: string; turn: number } | null = null
+
+function taskNotificationId(sessionId: string, turn: number): string {
+  return `${TASK_NOTIFICATION_PREFIX}${sessionId}:${turn}`
+}
+
+function eventMessageText(event: { data?: unknown }): string {
+  const data = event.data
+  if (typeof data !== 'object' || data === null) return ''
+  const message = (data as { message?: unknown }).message ?? data
+  if (typeof message !== 'object' || message === null) return ''
+  const source = (message as { source?: { kind?: unknown } }).source
+  if (source?.kind !== 'user') return ''
+  const content = (message as { content?: unknown }).content
+  if (!Array.isArray(content)) return ''
+  return content
+    .filter((block): block is { type: string; text: string } =>
+      typeof block === 'object' && block !== null
+      && (block as { type?: unknown }).type === 'text'
+      && typeof (block as { text?: unknown }).text === 'string')
+    .map((block) => block.text)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function clipText(text: string, limit: number): string {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  return normalized.length <= limit ? normalized : `${normalized.slice(0, limit - 1).trimEnd()}…`
+}
+
+/**
+ * Resolve a temporary poster-opinion session from its event stream.
+ * Returns after the first matching collector reaches a final outcome.
+ */
+function observeSessionCompletion(frame: ServerFrame): void {
+  for (const [sessionId, entry] of pendingSessionCompletions) {
+    if (!entry.collector.push(frame)) continue
+    if (entry.collector.outcome === null) return
+    clearTimeout(entry.timer)
+    pendingSessionCompletions.delete(sessionId)
+    const outcome = entry.collector.outcome
+    if (!outcome.ok) {
+      entry.reject(new Error(outcome.error || '会话没有完成'))
+      return
+    }
+    if (entry.collector.text.trim() === '') {
+      entry.reject(new Error('会话没有返回正文'))
+      return
+    }
+    entry.resolve(entry.collector.text)
+    return
+  }
+}
+
+/**
+ * Watch session events for task lifecycle facts the panel cannot see with no
+ * window open: user prompts seed the notification copy, turn/end fires it.
+ */
+function observeSessionEvent(frame: ServerFrame): void {
+  const payload = (frame as { frame?: { method?: string; payload?: unknown } }).frame
+  if (payload?.method !== 'session/event' || typeof payload.payload !== 'object' || payload.payload === null) return
+  const record = payload.payload as { sessionId?: unknown; event?: { type?: string; seq?: number; data?: unknown } }
+  const sessionId = record.sessionId
+  const event = record.event
+  if (typeof sessionId !== 'string' || event === undefined || event.type === undefined) return
+  if (event.type === 'user/message') {
+    const text = eventMessageText(event)
+    if (text !== '') taskPrompts.set(sessionId, { prompt: text, turn: taskPrompts.get(sessionId)?.turn ?? 0 })
+    // Bound unbounded session churn: keep the newest 64 prompt records.
+    if (taskPrompts.size > 64) {
+      const oldest = taskPrompts.keys().next().value
+      if (oldest !== undefined) taskPrompts.delete(oldest)
+    }
+    return
+  }
+  if (event.type === 'turn/start') {
+    const turn = (event.data as { turn?: unknown } | undefined)?.turn
+    const current = taskPrompts.get(sessionId)
+    taskPrompts.set(sessionId, {
+      prompt: current?.prompt ?? '',
+      turn: typeof turn === 'number' ? turn : (current?.turn ?? 0) + 1,
+    })
+    return
+  }
+  if (event.type === 'turn/end') {
+    // A panel showing the conversation already sees the row land; the system
+    // notification exists only for the no-panel case.
+    if (panelPorts.size > 0) return
+    const info = taskPrompts.get(sessionId)
+    const turn = info?.turn ?? 0
+    const reason = (event.data as { reason?: { kind?: unknown } } | undefined)?.reason
+    const failed = reason?.kind === 'error' || reason?.kind === 'canceled'
+    const zh = getUiLocale() === 'zh'
+    const title = failed
+      ? (zh ? '任务未完成' : 'Task failed')
+      : (zh ? '任务完成' : 'Task completed')
+    const preview = info !== undefined && info.prompt !== ''
+      ? clipText(info.prompt, 60)
+      : (zh ? `第 ${turn} 个任务` : `Task ${turn}`)
+    pendingTaskLocate = { sessionId, turn }
+    void Promise.resolve(chrome.notifications.create(taskNotificationId(sessionId, turn), {
+      type: 'basic',
+      iconUrl: chrome.runtime.getURL('assets/icons/icon128.png'),
+      title,
+      message: preview,
+      requireInteraction: true,
+    })).catch(() => {})
+  }
+}
+
+function broadcastApprovalResolved(id: string): void {
+  for (const port of panelPorts) {
+    try { port.postMessage({ type: 'approval.resolved', id }) } catch { /* port already closed */ }
+  }
+}
+
+const APPROVAL_NOTIFICATION_PREFIX = 'dsh-browser-approval:'
+
+function approvalNotificationId(id: string): string {
+  return `${APPROVAL_NOTIFICATION_PREFIX}${id}`
+}
+
+function deliverApproval(request: ApprovalRequest): boolean {
+  let delivered = false
+  for (const port of panelPorts) {
+    try {
+      port.postMessage({ type: 'approval.request', request })
+      delivered = true
+    } catch { /* port already closed */ }
+  }
+  return delivered
+}
+
+function notifyApproval(request: ApprovalRequest, _windowId: number): void {
+  if (!settings.approvalNotifications) return
+  const copy = getUiLocale() === 'zh'
+    ? {
+        title: '浏览器操作等待确认',
+        message: '点击通知打开 dsh 浏览器助手，并在 60 秒内确认或拒绝。',
+      }
+    : {
+        title: 'Browser action awaiting approval',
+        message: 'Click to open dsh Browser Assistant, then allow or deny within 60 seconds.',
+      }
+  void Promise.resolve(chrome.notifications.create(approvalNotificationId(request.id), {
+    type: 'basic',
+    iconUrl: chrome.runtime.getURL('assets/icons/icon128.png'),
+    title: copy.title,
+    message: copy.message,
+    requireInteraction: true,
+  })).catch(() => {})
+}
+
+function clearApprovalNotification(id: string): void {
+  void Promise.resolve(chrome.notifications.clear(approvalNotificationId(id))).catch(() => {})
+}
+
+const approvals = new ApprovalCoordinator({
+  deliver: deliverApproval,
+  notify: notifyApproval,
+  clearNotification: clearApprovalNotification,
+  resolved: broadcastApprovalResolved,
+})
+
+function responseMessages(): { unavailable: string; timeout: string; duplicate: string; disconnected: string } {
+  return getUiLocale() === 'zh'
+    ? {
+        unavailable: '未连接 dsh，无法提交回答',
+        timeout: '提交回答超时，请重试',
+        duplicate: '回答请求编号重复，请重试',
+        disconnected: 'dsh 连接已断开，请重新连接后再试',
+      }
+    : {
+        unavailable: 'dsh is not connected, so the answer could not be sent',
+        timeout: 'Sending the answer timed out. Try again.',
+        duplicate: 'The answer request ID was duplicated. Try again.',
+        disconnected: 'The dsh connection was lost. Reconnect and try again.',
+      }
+}
+
+function cancelPendingApprovals(sessionId?: string): void {
+  approvals.cancelAll(sessionId)
+}
+
+function summarizeTab(tab: chrome.tabs.Tab): AffinityTab | null {
+  if (tab.id === undefined) return null
+  return {
+    tabId: tab.id,
+    windowId: tab.windowId,
+    title: tab.title ?? '',
+    url: tab.url ?? '',
+  }
+}
+
+function storedAffinity(): StoredTabAffinity | null {
+  const state = tabAffinity.snapshot()
+  const sessionTabs = tabAffinity.sessionMap()
+  const hasSessionTabs = Object.keys(sessionTabs).length > 0
+  const focusedSessionId = tabAffinity.focusedSession()
+  const focus = focusedSessionId === null ? {} : { focusedSessionId }
+  if (state.controlled !== null) {
+    return {
+      controlledTabId: state.controlled.tabId,
+      ...(state.status === 'background' && state.active !== null
+        ? { keptActiveTabId: state.active.tabId }
+        : {}),
+      ...(state.pinned ? { pinned: true as const } : {}),
+      ...(hasSessionTabs ? { sessionTabs } : {}),
+      ...focus,
+    }
+  }
+  return state.status === 'lost'
+    ? { lost: true, ...(hasSessionTabs ? { sessionTabs } : {}), ...focus }
+    : (hasSessionTabs ? { lost: true, sessionTabs, ...focus } : null)
+}
+
+function persistTabAffinity(): void {
+  const record = storedAffinity()
+  const serialized = JSON.stringify(record)
+  if (serialized === lastPersistedAffinity) return
+  lastPersistedAffinity = serialized
+  affinityPersistence = affinityPersistence.catch(() => {}).then(async () => {
+    if (record === null) await chrome.storage.session.remove(TAB_AFFINITY_STORAGE_KEY)
+    else await chrome.storage.session.set({ [TAB_AFFINITY_STORAGE_KEY]: record })
+  }).catch(() => {
+    if (lastPersistedAffinity === serialized) lastPersistedAffinity = undefined
+  })
+}
+
+function observeActiveSummary(summary: AffinityTab): void {
+  const previousStatus = tabAffinity.snapshot().status
+  if (!tabAffinity.observeActive(summary)) return
+  if (previousStatus !== 'handoff' && tabAffinity.snapshot().status === 'handoff') {
+    const focused = tabAffinity.focusedSession()
+    if (focused !== null) {
+      activeFollowRefreshes.get(focused)?.controller.abort()
+      cancelPendingApprovals(focused)
+    } else {
+      cancelPendingApprovals()
+    }
+  }
+  persistTabAffinity()
+  broadcastTabAffinity()
+}
+
+function observeActiveTab(tab: chrome.tabs.Tab): void {
+  const summary = summarizeTab(tab)
+  if (summary !== null) observeActiveSummary(summary)
+}
+
+async function syncActiveTab(windowId?: number, signal?: AbortSignal): Promise<chrome.tabs.Tab | undefined> {
+  const queryRevision = focusedWindow.beginQuery()
+  const query = windowId === undefined
+    ? { active: true, lastFocusedWindow: true }
+    : { active: true, windowId }
+  try {
+    const tabs = chrome.tabs.query(query)
+    const [tab] = signal === undefined ? await tabs : await abortable(tabs, signal)
+    if (signal !== undefined) throwIfRebindAborted(signal)
+    if (tab === undefined) return undefined
+    if (!focusedWindow.commitQuery(tab.windowId, queryRevision)) return undefined
+    if (signal !== undefined) throwIfRebindAborted(signal)
+    observeActiveTab(tab)
+    return tab
+  } catch {
+    if (signal !== undefined && signal.aborted) throw rebindAbortReason(signal)
+    return undefined
+  }
+}
+
+async function restoreTabAffinity(): Promise<void> {
+  let record: StoredTabAffinity | null = null
+  try {
+    const stored = await chrome.storage.session.get(TAB_AFFINITY_STORAGE_KEY)
+    const candidate = stored[TAB_AFFINITY_STORAGE_KEY] as Partial<StoredTabAffinity> | undefined
+    const controlledTabId = (candidate as { controlledTabId?: unknown } | undefined)?.controlledTabId
+    const focusedSessionId = (candidate as { focusedSessionId?: unknown } | undefined)?.focusedSessionId
+    const focus = typeof focusedSessionId === 'string' && focusedSessionId.trim() !== '' ? { focusedSessionId } : {}
+    if (typeof controlledTabId === 'number' && Number.isInteger(controlledTabId) && controlledTabId >= 0) {
+      const keptActiveTabId = (candidate as { keptActiveTabId?: unknown }).keptActiveTabId
+      const sessionTabs = (candidate as { sessionTabs?: Record<string, AffinityTab> }).sessionTabs
+      record = {
+        controlledTabId,
+        ...(typeof keptActiveTabId === 'number' && Number.isInteger(keptActiveTabId) && keptActiveTabId >= 0
+          ? { keptActiveTabId }
+          : {}),
+        ...((candidate as { pinned?: unknown }).pinned === true ? { pinned: true as const } : {}),
+        ...(typeof sessionTabs === 'object' && sessionTabs !== null ? { sessionTabs } : {}),
+        ...focus,
+      }
+    } else if ((candidate as { lost?: unknown } | undefined)?.lost === true) {
+      const sessionTabs = (candidate as { sessionTabs?: Record<string, AffinityTab> }).sessionTabs
+      record = {
+        lost: true,
+        ...(typeof sessionTabs === 'object' && sessionTabs !== null ? { sessionTabs } : {}),
+        ...focus,
+      }
+    }
+    lastPersistedAffinity = candidate === undefined || record !== null
+      ? JSON.stringify(record)
+      : undefined
+  } catch {
+    // Session storage is a survival aid, not a reason to disable the bridge.
+  }
+
+  if (record?.sessionTabs !== undefined) {
+    const restoredSessions: Record<string, AffinityTab> = {}
+    for (const [sid, storedTab] of Object.entries(record.sessionTabs)) {
+      if (typeof storedTab?.tabId !== 'number' || !Number.isInteger(storedTab.tabId) || storedTab.tabId < 0) continue
+      try {
+        const live = summarizeTab(await chrome.tabs.get(storedTab.tabId))
+        if (live !== null) restoredSessions[sid] = live
+      } catch {
+        // Closed tabs are deliberately pruned so the session fails closed.
+      }
+    }
+    tabAffinity.restoreSessionTabs(restoredSessions)
+  }
+  tabAffinity.restoreFocusedSession(record?.focusedSessionId ?? null)
+
+  if (record !== null && 'controlledTabId' in record) {
+    try {
+      const controlled = summarizeTab(await chrome.tabs.get(record.controlledTabId))
+      if (controlled === null) tabAffinity.restoreLost()
+      else tabAffinity.restoreControlled(controlled)
+    } catch {
+      tabAffinity.restoreLost()
+    }
+  } else if (record?.lost === true) {
+    tabAffinity.restoreLost()
+  }
+
+  // Restore the pin before syncing the active tab: otherwise the sync would
+  // surface a handoff prompt for a switch the user already said not to ask about.
+  if (record !== null && 'pinned' in record && record.pinned === true) tabAffinity.restorePinned()
+  await syncActiveTab()
+  if (record !== null && 'keptActiveTabId' in record) {
+    const state = tabAffinity.snapshot()
+    if (state.status === 'handoff' && state.active?.tabId === record.keptActiveTabId) {
+      tabAffinity.decide('keep', state.revision)
+    }
+  }
+  persistTabAffinity()
+  broadcastTabAffinity()
+}
+
+const affinityReady = restoreTabAffinity()
+
+function validSessionId(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() !== '' ? value : undefined
+}
+
+/** Refresh one session's recovery checkpoint from its actual controlled tab. */
+async function checkpointSessionPage(sessionValue: unknown): Promise<void> {
+  const sessionId = validSessionId(sessionValue)
+  if (sessionId === undefined) return
+  await Promise.all([affinityReady, pageSessionContexts.ready])
+  const bound = tabAffinity.getSessionTab(sessionId)
+  if (bound === undefined) return
+  try {
+    const tab = await chrome.tabs.get(bound.tabId)
+    if (tabAffinity.getSessionTab(sessionId)?.tabId !== bound.tabId) return
+    pageSessionContexts.bind(sessionId, tab)
+  } catch {
+    // A concurrently closed tab is cleaned by tabs.onRemoved.
+  }
+}
+
+/** Resolve the contextual hint only after the panel has identified its window. */
+async function postResumeHint(port: chrome.runtime.Port, windowId: number): Promise<void> {
+  await pageSessionContexts.ready
+  let sessionId: string | null = null
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, windowId })
+    if (tab !== undefined) sessionId = pageSessionContexts.candidate(tab)
+  } catch {
+    // Without an exact live page the panel must start a new conversation.
+  }
+  // 同窗口其它面板（例如刚 dock 过来前的悬浮窗）已激活的会话优先：
+  // 页面上下文可能尚未写完绑定时，新开的原生边栏仍能续上同一会话。
+  if (sessionId === null) {
+    for (const other of panelPresence.portsFor(panelPorts, windowId)) {
+      if (other === port) continue
+      const active = panelActiveSessions.get(other)
+      if (typeof active === 'string' && active.trim() !== '') {
+        sessionId = active
+        break
+      }
+    }
+  }
+  if (!panelPorts.has(port) || panelPresence.windowOf(port) !== windowId) return
+  try { port.postMessage({ type: 'session.resume-hint', sessionId }) } catch { /* port closed */ }
+}
+
+/** Re-checkpoint each open panel before issuing a bridge-epoch resume hint. */
+function refreshPanelResumeHints(): void {
+  for (const port of panelPorts) {
+    const windowId = panelPresence.windowOf(port)
+    if (windowId === undefined) continue
+    const sessionId = panelActiveSessions.get(port)
+    const checkpoint = sessionId === undefined
+      ? Promise.resolve()
+      : checkpointSessionPage(sessionId)
+    void checkpoint.then(() => postResumeHint(port, windowId), () => postResumeHint(port, windowId))
+  }
+}
+
+/** Bind at prompt submission so a switch while the model is thinking is visible. */
+async function ensureInitialTabBinding(sessionId?: string): Promise<boolean> {
+  await affinityReady
+  if (tabAffinity.resolveTarget(sessionId).kind !== 'initial') return true
+  try {
+    const tab = await syncActiveTab()
+    const summary = tab === undefined ? null : summarizeTab(tab)
+    if (summary === null) return false
+    if (tabAffinity.bindInitial(summary, sessionId)) {
+      persistTabAffinity()
+      broadcastTabAffinity()
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
+function affinityFailure(kind: 'handoff' | 'lost' | 'missing'): ToolAnswer {
+  if (kind === 'handoff') {
+    return {
+      ok: false,
+      error: { code: 'action-failed', message: 'The user switched tabs, so browser operations are paused. In the side panel, choose whether to keep the previous page or follow the current page.' },
+    }
+  }
+  if (kind === 'lost') {
+    return {
+      ok: false,
+      error: { code: 'content-unavailable', message: 'The controlled tab was closed. Select the current page in the side panel before retrying.' },
+    }
+  }
+  return { ok: false, error: { code: 'no-active-tab', message: 'No active tab is available for browser operations.' } }
+}
+
+/** Resolve one stable tab target without allowing a manual switch to drift it. */
+async function resolveToolTab(sessionId?: string): Promise<Pick<chrome.tabs.Tab, 'id' | 'url' | 'title' | 'windowId'> | ToolAnswer> {
+  await affinityReady
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const resolution = tabAffinity.resolveTarget(sessionId)
+    if (resolution.kind === 'handoff') return affinityFailure('handoff')
+    if (resolution.kind === 'lost') return affinityFailure('lost')
+    if (resolution.kind === 'initial') {
+      if (!await ensureInitialTabBinding(sessionId)) return affinityFailure('missing')
+      continue
+    }
+    try {
+      const tab = await chrome.tabs.get(resolution.tab.tabId)
+      const summary = summarizeTab(tab)
+      if (summary === null) return affinityFailure('missing')
+      if (tabAffinity.observeTab(summary)) broadcastTabAffinity()
+      const current = tabAffinity.resolveTarget(sessionId)
+      if (current.kind === 'handoff') return affinityFailure('handoff')
+      if (current.kind === 'lost') return affinityFailure('lost')
+      if (current.kind === 'target' && current.tab.tabId === summary.tabId) return tab
+    } catch {
+      const affectedSessions = tabAffinity.sessionIdsForTab(resolution.tab.tabId)
+      if (tabAffinity.removeTab(resolution.tab.tabId)) {
+        for (const sid of affectedSessions) {
+          activeFollowRefreshes.get(sid)?.controller.abort()
+          cancelPendingApprovals(sid)
+        }
+        persistTabAffinity()
+        broadcastTabAffinity()
+      }
+      return affinityFailure('lost')
+    }
+  }
+  return affinityFailure('handoff')
+}
+
+/**
+ * Pick a window for browser_open_tab without requiring an already-controlled page.
+ * Handoff still blocks: the user must finish the keep/follow choice first.
+ */
+async function resolveOpenTabWindow(sessionId?: string): Promise<{ windowId: number } | ToolAnswer> {
+  await affinityReady
+  const resolution = tabAffinity.resolveTarget(sessionId)
+  if (resolution.kind === 'handoff') return affinityFailure('handoff')
+  if (resolution.kind === 'target') {
+    try {
+      const tab = await chrome.tabs.get(resolution.tab.tabId)
+      return { windowId: tab.windowId }
+    } catch {
+      // Fall through to the focused window when the prior controlled tab is gone.
+    }
+  }
+  try {
+    const focused = await chrome.windows.getLastFocused()
+    if (focused.id !== undefined) return { windowId: focused.id }
+  } catch { /* no focused window */ }
+  const [fallback] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
+  if (fallback?.windowId !== undefined) return { windowId: fallback.windowId }
+  return affinityFailure('missing')
+}
+
+function bindOpenedTab(tab: chrome.tabs.Tab, sessionId?: string): boolean {
+  const summary = summarizeTab(tab)
+  if (summary === null) return false
+  const sid = sessionId?.trim()
+  if (sid !== undefined && sid !== '') tabAffinity.rebindActive(summary, sid)
+  else tabAffinity.rebindActive(summary)
+  if (sid !== undefined && sid !== '') {
+    void pageSessionContexts.ready.then(() => {
+      pageSessionContexts.bind(sid, { id: summary.tabId, ...summary })
+    })
+  }
+  persistTabAffinity()
+  broadcastTabAffinity()
+  return true
+}
+
+async function authorizeToolCall(
+  prompt: ApprovalPrompt,
+  signal: AbortSignal,
+  windowId: number,
+  sessionId?: string,
+  unrestrictedAccess: boolean = unrestrictedAccessEnabled(),
+): Promise<ApprovalAuthorization> {
+  if (signal.aborted) return 'cancelled'
+  if (unrestrictedAccess) return 'approved'
+  if (actionCoveredByTrustedOrigins(
+    prompt,
+    sessionTrustedActionOrigins,
+    settings.trustedActionOrigins,
+  )) {
+    return 'approved'
+  }
+  const result: ApprovalRequestResult = await approvals.request(prompt, signal, windowId, sessionId)
+  if (signal.aborted) return 'cancelled'
+  if (result.status !== 'decision') return result.status
+  const { decision } = result
+  if (decision === 'always-allow-reads' && prompt.kind === 'read') {
+    await persistSettings({ sharePageContent: 'auto' })
+    return 'approved'
+  }
+  if (decision === 'trust-session' && prompt.kind === 'action' && prompt.canTrust && prompt.origins.length === 1) {
+    sessionTrustedActionOrigins.add(prompt.origins[0]!)
+    return 'approved'
+  }
+  // Retain wire compatibility with panels from the previous build. The new UI
+  // manages permanent trust explicitly in Settings instead of offering it in
+  // the action dialog.
+  if (decision === 'trust-origin' && prompt.kind === 'action' && prompt.canTrust && prompt.origins.length === 1) {
+    await persistSettings({ trustedActionOrigins: [...settings.trustedActionOrigins, prompt.origins[0]!] })
+    return 'approved'
+  }
+  return decision === 'allow-once' ? 'approved' : 'denied'
+}
+
+/** Capture the newly controlled tab and seed it into this session's next Agent step. */
+async function refreshFollowedPage(sessionId: string, tabId: number): Promise<void> {
+  activeFollowRefreshes.get(sessionId)?.controller.abort()
+  const controller = new AbortController()
+  const unrestrictedAccess = unrestrictedAccessEnabled()
+  let settle!: () => void
+  const activeRefresh: ActiveFollowRefresh = {
+    controller,
+    unrestrictedAccess,
+    settled: new Promise<void>((resolve) => { settle = resolve }),
+    settle: () => { settle() },
+  }
+  activeFollowRefreshes.set(sessionId, activeRefresh)
+  try {
+    const target = await resolveToolTab(sessionId)
+    if ('ok' in target || target.id !== tabId || controller.signal.aborted) return
+    const budget = caps === null
+      ? undefined
+      : { maxItems: caps.maxInteractiveItems, maxChars: caps.snapshotMaxChars }
+    const answer = await dispatchToolCall(
+      { id: crypto.randomUUID(), name: 'browser_snapshot', args: {} },
+      unrestrictedAccess ? 'auto' : settings.sharePageContent,
+      budget,
+      (prompt) => authorizeToolCall(prompt, controller.signal, target.windowId, sessionId, unrestrictedAccess),
+      controller.signal,
+      target,
+      () => target.id !== undefined && tabAffinity.allowsTarget(target.id, sessionId),
+      { unrestrictedAccess },
+    )
+    if (!answer.ok || controller.signal.aborted || !tabAffinity.allowsTarget(tabId, sessionId)) return
+    if (typeof answer.result !== 'object' || answer.result === null) return
+    const snapshot = (answer.result as { text?: unknown }).text
+    if (typeof snapshot !== 'string' || snapshot.trim() === '') return
+    await gatewayRpc(BRIDGE_INJECT_BROWSER_SNAPSHOT_METHOD, { sessionId, snapshot })
+  } finally {
+    activeRefresh.settle()
+    if (activeFollowRefreshes.get(sessionId) === activeRefresh) activeFollowRefreshes.delete(sessionId)
+  }
+}
+
+async function refreshSessionSnapshot(sessionId: string): Promise<void> {
+  await affinityReady
+  const target = await resolveToolTab(sessionId)
+  if (!('ok' in target) && target.id !== undefined) {
+    await refreshFollowedPage(sessionId, target.id)
+  }
+}
+
+async function resolveTabAffinityResponse(response: {
+  revision: number
+  decision: TabAffinityDecision
+  sessionId: unknown
+}): Promise<void> {
+  await affinityReady
+  await syncActiveTab()
+  const sid = typeof response.sessionId === 'string' ? response.sessionId : undefined
+  const accepted = tabAffinity.decide(response.decision, response.revision, sid)
+  const controlled = accepted && response.decision === 'follow'
+    ? tabAffinity.snapshot().controlled
+    : null
+  if (controlled !== null) resetTabSnapshot(controlled.tabId)
+  if (accepted) {
+    persistTabAffinity()
+    if (controlled !== null && sid !== undefined) {
+      await pageSessionContexts.ready
+      pageSessionContexts.bind(sid, { id: controlled.tabId, ...controlled })
+    }
+  }
+  broadcastTabAffinity()
+  if (controlled !== null && typeof response.sessionId === 'string' && response.sessionId.trim() !== '') {
+    await refreshFollowedPage(response.sessionId, controlled.tabId)
+  }
+}
+
+/** Move browser control to the current tab only after a fresh, valid query. */
+async function rebindTabAffinityToActive(signal: AbortSignal, sessionId?: string): Promise<void> {
+  await abortable(Promise.all([affinityReady, pageSessionContexts.ready]).then(() => undefined), signal)
+  const tab = await syncActiveTab(undefined, signal)
+  throwIfRebindAborted(signal)
+  const summary = tab === undefined ? null : summarizeTab(tab)
+  if (summary === null) {
+    throw new TabAffinityRebindError('no-active-tab', getUiLocale() === 'zh'
+      ? '无法确定当前标签页，原会话和标签页绑定保持不变'
+      : 'The current tab could not be determined; the existing session and tab binding were left unchanged')
+  }
+
+  commitTabAffinityRebind(summary, sessionId)
+}
+
+/** Commit one explicit tab handoff and clear stale element references. */
+function commitTabAffinityRebind(
+  summary: AffinityTab,
+  sessionId?: string,
+  mode: 'active' | 'background' = 'active',
+): void {
+  const previousControlledTabId = tabAffinity.snapshot().controlled?.tabId
+  if (sessionId !== undefined) {
+    activeFollowRefreshes.get(sessionId)?.controller.abort()
+    cancelPendingApprovals(sessionId)
+  }
+  if (mode === 'active') tabAffinity.rebindActive(summary, sessionId)
+  else tabAffinity.rebindControlled(summary, sessionId)
+  if (sessionId !== undefined) {
+    pageSessionContexts.bind(sessionId, { id: summary.tabId, ...summary })
+  }
+  if (previousControlledTabId !== undefined && previousControlledTabId !== summary.tabId) {
+    resetTabSnapshot(previousControlledTabId)
+  }
+  resetTabSnapshot(summary.tabId)
+  persistTabAffinity()
+  broadcastTabAffinity()
+}
+
+async function followModelSelectedTab(tab: chrome.tabs.Tab, sessionId?: string): Promise<void> {
+  const summary = summarizeTab(tab)
+  if (summary === null) throw new Error('the selected tab has no usable identifier')
+  await pageSessionContexts.ready
+  commitTabAffinityRebind(summary, sessionId, 'background')
+}
+
+/** 把协商的快照预算下发到受控页（尚未绑定时使用活动页）。 */
+async function pushBudgetToControlledTab(negotiated: BridgeCaps): Promise<void> {
+  await affinityReady
+  const resolution = tabAffinity.resolveTarget()
+  const tabId = resolution.kind === 'target'
+    ? resolution.tab.tabId
+    : resolution.kind === 'initial'
+      ? (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0]?.id
+      : undefined
+  if (tabId === undefined) return
+  try {
+    await chrome.tabs.sendMessage(tabId, {
+      type: 'DSH_BUDGET',
+      budget: { maxItems: negotiated.maxInteractiveItems, maxChars: negotiated.snapshotMaxChars },
+    })
+  } catch {
+    // 页面尚未注入 content script：下一次快照仍用默认预算，可接受。
+  }
+}
+
+/** Route one tool.call frame to the user-approved controlled tab. */
+function routeToolCall(call: ToolCall): void {
+  if (bridge === null) return
+  activeToolCalls.get(call.id)?.controller.abort()
+  const controller = new AbortController()
+  const unrestrictedAccess = unrestrictedAccessEnabled()
+  let settle!: () => void
+  const activeCall: ActiveToolCall = {
+    controller,
+    unrestrictedAccess,
+    committed: false,
+    revocationRequested: false,
+    settled: new Promise<void>((resolve) => { settle = resolve }),
+    settle: () => { settle() },
+  }
+  activeToolCalls.set(call.id, activeCall)
+  unsettledToolCalls.add(activeCall)
+  const commitAction = (): void => { activeCall.committed = true }
+  const rollbackActionCommit = (): void => {
+    activeCall.committed = false
+    if (activeCall.revocationRequested) controller.abort()
+  }
+  const expiryTimer = call.expiresAt === undefined
+    ? undefined
+    : setTimeout(() => {
+        if (!activeCall.committed) controller.abort()
+      }, Math.max(0, call.expiresAt - Date.now()))
+  const budget = caps === null
+    ? undefined
+    : { maxItems: caps.maxInteractiveItems, maxChars: caps.snapshotMaxChars }
+  const sharePageContent = unrestrictedAccess ? 'auto' : settings.sharePageContent
+  const managementDispatch = async (): Promise<ToolAnswer> => {
+    await affinityReady
+    const affinity = tabAffinity.snapshot()
+    let windowId = affinity.active?.windowId ?? affinity.controlled?.windowId
+    if (windowId === undefined) {
+      try {
+        windowId = (await chrome.windows.getLastFocused()).id
+      } catch { /* approvals can still report unavailable without a focused window */ }
+    }
+    const controlledTabId = call.sessionId === undefined
+      ? affinity.controlled?.tabId
+      : tabAffinity.getSessionTab(call.sessionId)?.tabId
+    return dispatchToolCall(
+      call,
+      sharePageContent,
+      budget,
+      (prompt) => authorizeToolCall(prompt, controller.signal, windowId ?? 0, call.sessionId, unrestrictedAccess),
+      controller.signal,
+      undefined,
+      undefined,
+      {
+        unrestrictedAccess,
+        ...(controlledTabId === undefined ? {} : { controlledTabId }),
+        followTab: (tab) => followModelSelectedTab(tab, call.sessionId),
+        commitAction,
+        rollbackActionCommit,
+      },
+    )
+  }
+  void (isTabManagementTool(call.name)
+    ? managementDispatch()
+    : call.name === 'browser_open_tab'
+    ? resolveOpenTabWindow(call.sessionId).then((target) => 'ok' in target
+      ? target
+      : dispatchOpenTab(
+          call,
+          target.windowId,
+          sharePageContent,
+          budget,
+          (prompt) => authorizeToolCall(prompt, controller.signal, target.windowId, call.sessionId, unrestrictedAccess),
+          controller.signal,
+          (tab) => bindOpenedTab(tab, call.sessionId),
+          (tabId) => tabAffinity.allowsTarget(tabId, call.sessionId),
+          commitAction,
+        ))
+    : resolveToolTab(call.sessionId).then((target) => 'ok' in target
+      ? target
+      : dispatchToolCall(
+          call,
+          sharePageContent,
+          budget,
+          (prompt) => authorizeToolCall(prompt, controller.signal, target.windowId, call.sessionId, unrestrictedAccess),
+          controller.signal,
+          target,
+          () => target.id !== undefined && tabAffinity.allowsTarget(target.id, call.sessionId),
+          { unrestrictedAccess, commitAction, rollbackActionCommit },
+        ))
+  ).then(
+    async (answer) => {
+      if (activeToolCalls.get(call.id) !== activeCall) return
+      // A committed browser_open_tab already rebound affinity; prefer that
+      // factual success over a generic cancel that would leave the model wrong.
+      if (controller.signal.aborted && !(call.name === 'browser_open_tab' && answer.ok)) {
+        if (activeToolCalls.get(call.id) === activeCall) {
+          bridge?.send({
+            t: 'tool.result',
+            id: call.id,
+            ok: false,
+            error: { code: 'action-failed', message: 'Tool call was cancelled' },
+          })
+        }
+        return
+      }
+      if (answer.ok) {
+        if (isNavigationCandidateTool(call.name)) await checkpointSessionPage(call.sessionId)
+        if (activeToolCalls.get(call.id) !== activeCall) return
+        const socket = bridge
+        if (socket === null) return
+        socket.send({ t: 'tool.result', id: call.id, ok: true, result: answer.result })
+      } else {
+        const socket = bridge
+        if (socket === null) return
+        socket.send({ t: 'tool.result', id: call.id, ok: false, error: answer.error! })
+      }
+    },
+    (error: unknown) => {
+      if (activeToolCalls.get(call.id) !== activeCall) return
+      if (controller.signal.aborted) {
+        if (activeToolCalls.get(call.id) === activeCall) {
+          bridge?.send({
+            t: 'tool.result',
+            id: call.id,
+            ok: false,
+            error: { code: 'action-failed', message: 'Tool call was cancelled' },
+          })
+        }
+        return
+      }
+      bridge?.send({
+        t: 'tool.result',
+        id: call.id,
+        ok: false,
+        error: { code: 'internal', message: error instanceof Error ? error.message : String(error) },
+      })
+    },
+  ).finally(() => {
+    if (expiryTimer !== undefined) clearTimeout(expiryTimer)
+    unsettledToolCalls.delete(activeCall)
+    activeCall.settle()
+    if (activeToolCalls.get(call.id) === activeCall) activeToolCalls.delete(call.id)
+  })
+}
+
+function cancelToolCall(id: string): void {
+  const call = activeToolCalls.get(id)
+  if (call !== undefined && !call.committed) call.controller.abort()
+}
+
+async function revokeUnrestrictedAccess(): Promise<void> {
+  const calls = [...unsettledToolCalls].filter((call) => call.unrestrictedAccess)
+  const refreshes = [...activeFollowRefreshes.values()].filter((refresh) => refresh.unrestrictedAccess)
+  for (const call of calls) {
+    call.revocationRequested = true
+    if (!call.committed) call.controller.abort()
+  }
+  for (const refresh of refreshes) refresh.controller.abort()
+  await Promise.allSettled([
+    ...calls.map(async (call) => { await call.settled }),
+    ...refreshes.map(async (refresh) => { await refresh.settled }),
+  ])
+}
+
+function cancelAllToolCalls(): void {
+  for (const call of activeToolCalls.values()) {
+    if (!call.committed) call.controller.abort()
+  }
+  activeToolCalls.clear()
+}
+
+/**
+ * Drop a bridge this client lost to another browser (close 4000).
+ *
+ * `startBridge()` refuses to run while the client is evicted; only an explicit
+ * user re-bind (pairing, settings save, instance switch) may clear that flag,
+ * and every such path must clear it before starting or the attempt is a no-op.
+ */
+function resetEvictedBridge(): void {
+  if (bridge === null || bridge.evicted !== true) return
+  bridge.stop()
+  bridge = null
+  rpc = null
+}
+
+/** (Re)start the bridge with the current settings. 零配置：地址留空时自动探测；回环连接无需 token。 */
+async function startBridge(): Promise<void> {
+  const revision = ++bridgeStartRevision
+  // Another browser owns the single bridge slot (close 4000) until the user
+  // reconnects by saving settings or switching the dsh instance; an evicted
+  // client must never auto-reclaim it.
+  if (bridge?.evicted === true) return
+  let url = settings.bridgeUrl
+  if (url === '') {
+    url = await discoverBridge(() => revision === bridgeStartRevision) ?? ''
+  }
+  // Discovery is asynchronous; a newer settings update may have started while
+  // its fetches were in flight.
+  if (revision !== bridgeStartRevision) return
+  if (url === '') {
+    bridge?.stop()
+    bridge = null
+    rpc = null
+    broadcastStatus()
+    return
+  }
+  // 手动填的地址常只有主机部分（如 ws://127.0.0.1:3080）；桥路径是协议
+  // 常量，缺省时自动补全，避免连到根路径失败。
+  try {
+    const parsed = new URL(url)
+    if (parsed.pathname === '' || parsed.pathname === '/') parsed.pathname = BRIDGE_PATH
+    url = parsed.toString()
+  } catch {
+    // 非法 URL 原样交给 WebSocket 构造函数报错。
+  }
+  if (bridge === null) {
+    const client = new BridgeClient({
+      onStateChange: (state) => {
+        if (state !== 'connected') {
+          cancelAllToolCalls()
+          failPendingImageAssetSaves()
+          interactionResponses.failAll(responseMessages().disconnected)
+          transientEvents.clear()
+          // The caps record belongs to the socket that negotiated it: a new
+          // connection (or a re-targeted one) proves nothing until its own
+          // hello.ok lands, so no write may ride stale capabilities.
+          caps = null
+        }
+        broadcastStatus()
+        if (state === 'stopped') refreshPanelResumeHints()
+      },
+      onFrame: (frame) => {
+        if (frame.t === 'event') {
+          transientEvents.ingest(frame)
+          broadcastEvent(frame)
+          observeSessionEvent(frame)
+          observeSessionCompletion(frame)
+        }
+        else if (frame.t === 'tool.call') routeToolCall(frame)
+        else if (frame.t === 'tool.cancel') cancelToolCall(frame.id)
+        else if (frame.t === 'respond.result') interactionResponses.route(frame)
+        // rpc.result is settled by the rpc facade (wrapped below).
+      },
+      onHelloOk: (negotiated) => {
+        caps = negotiated
+        broadcastStatus()
+        void pushBudgetToControlledTab(negotiated)
+      },
+      // The connection serves queued task submissions and completion
+      // notifications, not just open panels: keep reconnecting with no panel.
+    }, probeBridge, () => true)
+    bridge = client
+    rpc = createRpc(client)
+  }
+  bridgeClaimedOnce = true
+  void Promise.resolve(chrome.storage.session.set({ omnimux_bridge_claimed: true })).catch(() => {})
+  bridge.start(url, settings.token)
+}
+
+/** Twitter-copilot generation log ring buffer (Issue #3100). */
+const TWITTER_COPILOT_LOG_KEY = 'omnimux_twitter_copilot_log'
+const TWITTER_COPILOT_LOG_LIMIT = 100
+
+/** Gateway RPC with a helpful error when the bridge is down. */
+function unwrapHostValue(raw: unknown): unknown {
+  const response = (raw as { result?: { ok?: boolean; value?: unknown; error?: { message?: string } } } | null)?.result
+  if (response === undefined) return raw
+  if (response.ok === false) {
+    throw new Error(response.error?.message || 'host rpc failed')
+  }
+  return response.value
+}
+
+/**
+ * A failed pin is the user's explicit text model being unusable.
+ *
+ * It is a distinct error type because the caller must NOT paper over it with
+ * the `bridge.completeText` fallback: that would silently generate the body
+ * with a different model than the user chose.
+ */
+export class TextGenerationPinError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'TextGenerationPinError'
+  }
+}
+
+/**
+ * Resolve the provider the pin frame must carry (#3629).
+ *
+ * The host's `session/selectModel` strict codec lists `provider` as required, so
+ * a pin without one is rejected before any model selection happens. The saved
+ * value wins; an empty one is looked up in the live catalog by model id — the
+ * same group/provider/id/name rules the settings panel uses. An unresolvable
+ * provider is a user-visible failure, never a pin frame with an empty provider.
+ */
+async function resolveTextProvider(modelId: string): Promise<string> {
+  if (settings.textProvider !== '') return settings.textProvider
+  let catalog: unknown
+  try {
+    catalog = unwrapHostValue(await gatewayRpc('session.modelCatalog', {}))
+  } catch {
+    // An unreachable catalog cannot prove the model has a provider: fall through
+    // to the explicit failure below instead of pinning with an empty provider.
+    catalog = undefined
+  }
+  const provider = providerForModelId(catalog, modelId)
+  if (provider !== undefined && provider !== '') return provider
+  const zh = getUiLocale() === 'zh'
+  throw new TextGenerationPinError(zh
+    ? `无法解析模型「${modelId}」的提供方：请在设置 → 文本生成模型与推理等级中选择模型目录里的模型`
+    : `Cannot resolve a provider for model "${modelId}": pick a model from the catalog in Settings → Text Generation Model & Reasoning`)
+}
+
+/** Pin the temporary generation session to the configured text model. */
+async function pinTextGeneration(sessionId: string, provider: string): Promise<void> {
+  const payload: Record<string, unknown> = { sessionId, model: settings.textModel, provider }
+  if (settings.textEffort !== '') payload.reasoningEffort = settings.textEffort
+  try {
+    await gatewayRpc(BRIDGE_TEXT_GENERATION_METHOD, payload)
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    const zh = getUiLocale() === 'zh'
+    throw new TextGenerationPinError(zh
+      ? `文本生成模型不可用（${settings.textModel}）：${reason}`
+      : `Text generation model unavailable (${settings.textModel}): ${reason}`)
+  }
+}
+
+/**
+ * Fallback completion RPC (#3629).
+ *
+ * A configured text model rides along, so the fallback cannot quietly answer
+ * with the host default or the chat model. With no text model configured the
+ * payload is byte-for-byte the historical one — the "unset means today's
+ * behavior" half of the contract, kept as its own call site on purpose.
+ */
+function completeTextFallbackRpc(systemPrompt: string, userMessage: string): Promise<unknown> {
+  if (settings.textModel === '') {
+    return gatewayRpc(BRIDGE_COMPLETE_TEXT_METHOD, { prompt: userMessage, system: systemPrompt })
+  }
+  return gatewayRpc(BRIDGE_COMPLETE_TEXT_METHOD, {
+    prompt: userMessage,
+    system: systemPrompt,
+    model: settings.textModel,
+  })
+}
+
+/**
+ * Generate one opinion through a temporary chat session.
+ *
+ * The host creates the session lazily on the first prompt; the turn is then
+ * read from assistant/message and turn/end events. Purge runs in `finally` so
+ * a failed turn never leaves the temporary session behind.
+ *
+ * When a text model is configured the session is pinned to it before the
+ * prompt is forwarded (#3629): the provider is resolved first (the host rejects
+ * a pin without one), then the pin is awaited on purpose — the host applies
+ * frames in order, and a body generated by an unpinned session would be the
+ * exact silent fallback this setting exists to prevent.
+ */
+async function completeTextWithSession(system: string, user: string): Promise<string> {
+  const created = unwrapHostValue(await gatewayRpc('session.create', {})) as { sessionId?: unknown } | undefined
+  const sessionId = typeof created?.sessionId === 'string' ? created.sessionId : ''
+  if (sessionId === '') throw new Error('会话创建失败')
+
+  try {
+    if (settings.textModel !== '') {
+      // provider 必须先解析出来：宿主的 strict codec 拒绝缺 provider 的 selectModel，
+      // 解析不到就直接报错，绝不发一帧注定被拒的钉定。
+      const provider = await resolveTextProvider(settings.textModel)
+      await pinTextGeneration(sessionId, provider)
+    }
+
+    const prompt = [system.trim(), user.trim()].filter((part) => part !== '').join('\n\n')
+    const collector = new SessionTextCollector(sessionId)
+    const textPromise = new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pendingSessionCompletions.delete(sessionId)
+        reject(new Error('会话生成超时'))
+      }, 90_000)
+      pendingSessionCompletions.set(sessionId, { collector, resolve, reject, timer })
+    })
+    await gatewayRpc('session.prompt', {
+      sessionId,
+      mode: 'queue',
+      content: [{ type: 'text', text: prompt }],
+    })
+    return await textPromise
+  } finally {
+    // A session created for generation is purged whatever happened — including
+    // a pin that failed before any prompt was sent.
+    const pending = pendingSessionCompletions.get(sessionId)
+    if (pending !== undefined) {
+      clearTimeout(pending.timer)
+      pendingSessionCompletions.delete(sessionId)
+    }
+    void gatewayRpc('bridge.session.purge', { sessionId }).catch(() => {})
+  }
+}
+
+/** Wait for settings + an already configured bridge, starting it on demand. */
+async function ensureBridgeForGeneration(timeoutMs = 5000): Promise<void> {
+  await Promise.all([settingsReady, bridgeClaimReady])
+  if (rpc !== null && bridge !== null && bridge.connected) return
+  if (settings.token.trim() === '') {
+    const zh = getUiLocale() === 'zh'
+    throw new Error(zh
+      ? '未连接 dsh：还没有配对令牌，请在插件设置里粘贴本机应用的配对令牌'
+      : 'dsh is not connected: no pairing token yet — paste it in the extension settings')
+  }
+  resetEvictedBridge()
+  if (bridge === null || bridge.state === 'stopped' || bridge.state === 'reconnecting') {
+    armBridgeKeepalive()
+    await startBridge()
+  }
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (rpc !== null && bridge !== null && bridge.connected) return
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  const zh = getUiLocale() === 'zh'
+  throw new Error(zh
+    ? '连接 dsh 超时，请确认 OmniMux 已启动后重试'
+    : 'Timed out connecting to dsh — make sure OmniMux is running and retry')
+}
+
+async function gatewayRpc(method: string, payload: unknown): Promise<unknown> {
+  if (rpc === null || bridge === null || !bridge.connected) {
+    const zh = getUiLocale() === 'zh'
+    // An unfilled pairing token is the dominant cause of a refused connection:
+    // every instance — loopback included — demands the token, so name that
+    // missing half instead of leaving the user to guess between two fields.
+    if (settings.token.trim() === '') {
+      throw new Error(zh
+        ? '未连接 dsh：还没有配对令牌，请在插件设置里粘贴本机应用的配对令牌'
+        : 'dsh is not connected: no pairing token yet — paste it in the extension settings')
+    }
+    throw new Error(zh
+      ? '未连接 dsh（请检查设置中的地址与 token）'
+      : 'dsh is not connected (check the bridge address and token in Settings)')
+  }
+  return rpc.request(method, payload)
+}
+
+// ---- DSH instance / port switch listener ----
+
+/**
+ * The loopback port this extension is pointed at right now.
+ *
+ * Pairing must hit the instance the bridge would use: the configured address
+ * wins, then the last discovered one, then the OmniMux Dev default.
+ */
+function currentHostPort(): number {
+  for (const candidate of [settings.bridgeUrl, discoveredBridgeUrl]) {
+    const match = /^wss?:\/\/(?:127\.0\.0\.1|localhost|\[::1\]):(\d+)/u.exec(candidate)
+    if (match !== null) return Number.parseInt(match[1], 10)
+  }
+  return 45120
+}
+
+/** In-flight one-click pairing: the host's approval page and its poll. */
+let pairingAttempt: { requestId: string; tabId: number | null; timer: ReturnType<typeof setInterval> } | null = null
+
+/** Stop waiting for an approval that is no longer live. */
+function stopPairing(): void {
+  if (pairingAttempt !== null) clearInterval(pairingAttempt.timer)
+  pairingAttempt = null
+}
+
+/**
+ * Open the host's approval page and pick the token up once it is approved.
+ *
+ * The user clicks exactly one button — on the host's own page, which is the
+ * only surface allowed to approve — and this side closes that tab again the
+ * moment the token arrives.
+ *
+ * @returns the opened approval URL, or the user-facing reason it failed.
+ */
+async function startPairing(): Promise<{ ok: true; approveUrl: string; code: string } | { ok: false; message: string }> {
+  const zh = getUiLocale() === 'zh'
+  const port = currentHostPort()
+  stopPairing()
+
+  let requestId = ''
+  let approveUrl = ''
+  let code = ''
+  try {
+    const response = await loopbackFetch(`http://127.0.0.1:${port}/ext/pair/request`, { method: 'POST' })
+    if (!response.ok) throw new Error(String(response.status))
+    const body = await response.json() as { requestId?: unknown; approveUrl?: unknown; code?: unknown }
+    requestId = typeof body.requestId === 'string' ? body.requestId : ''
+    approveUrl = typeof body.approveUrl === 'string' ? body.approveUrl : ''
+    code = typeof body.code === 'string' ? body.code : ''
+  } catch {
+    return {
+      ok: false,
+      message: zh
+        ? `连不上本机实例（端口 ${port}），请确认应用正在运行`
+        : `Cannot reach the local instance on port ${port} — is the app running?`,
+    }
+  }
+  if (requestId === '' || approveUrl === '') {
+    return { ok: false, message: zh ? '本机没有返回授权地址' : 'The host returned no approval page' }
+  }
+
+  // The approval page is a detour: remember where the user was so the pairing
+  // ends by putting them back there instead of on a neighbouring tab.
+  let originTabId: number | null = null
+  try {
+    const [active] = await chrome.tabs.query({ active: true, currentWindow: true })
+    originTabId = typeof active?.id === 'number' ? active.id : null
+  } catch {
+    originTabId = null
+  }
+
+  let tabId: number | null = null
+  try {
+    const tab = await chrome.tabs.create({ url: approveUrl })
+    tabId = typeof tab?.id === 'number' ? tab.id : null
+  } catch {
+    return { ok: false, message: zh ? '无法打开授权页' : 'The approval page could not be opened' }
+  }
+
+  const deadline = Date.now() + 120_000
+  pairingAttempt = {
+    requestId,
+    tabId,
+    timer: setInterval(() => {
+      void (async () => {
+        const attempt = pairingAttempt
+        if (attempt === null) return
+        if (Date.now() > deadline) {
+          stopPairing()
+          return
+        }
+        try {
+          const status = await loopbackFetch(
+            `http://127.0.0.1:${port}/ext/pair/status?request=${encodeURIComponent(attempt.requestId)}`,
+          )
+          const body = await status.json() as { state?: unknown; token?: unknown }
+          if (body.state === 'cancelled') {
+            stopPairing()
+            return
+          }
+          if (body.state !== 'approved') {
+            // Nothing to wait for once the request is gone.
+            if (body.state === 'unknown' || body.state === 'expired') stopPairing()
+            return
+          }
+          const token = typeof body.token === 'string' ? body.token.trim() : ''
+          if (token === '') {
+            stopPairing()
+            return
+          }
+          // Pairing binds the extension to the instance the user approved:
+          // the persisted pair is the approved address AND its token, not a
+          // token that later reconnects may drift to another discovered host.
+          const approvedBridgeUrl = `ws://127.0.0.1:${port}/ext/bridge`
+          await persistSettings({ bridgeUrl: approvedBridgeUrl, token }).catch(() => {})
+          // Approving the page is the user re-binding this browser on purpose:
+          // a client another browser evicted earlier (close 4000) must have
+          // that flag cleared, or startBridge() returns without connecting and
+          // the panel stays on "not connected" forever.
+          resetEvictedBridge()
+          await startBridge()
+          broadcastStatus({ bridgeUrl: approvedBridgeUrl, token })
+          // Go back first, then close the detour.
+          if (originTabId !== null) await chrome.tabs.update(originTabId, { active: true }).catch(() => {})
+          if (attempt.tabId !== null) await chrome.tabs.remove(attempt.tabId).catch(() => {})
+          stopPairing()
+        } catch {
+          // Keep waiting: the host may still be starting up.
+        }
+      })()
+    }, 1_000),
+  }
+  return { ok: true, approveUrl, code }
+}
+
+chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
+  if (typeof message !== 'object' || message === null) return
+  const msg = message as { type?: unknown }
+  if (msg.type !== 'PAIR_START') return
+  void startPairing().then(sendResponse, () => sendResponse({ ok: false, message: 'pairing failed' }))
+  return true
+})
+
+chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
+  if (typeof message !== 'object' || message === null) return
+  const msg = message as { type?: unknown; payload?: { port?: number } }
+  if (msg.type === 'SWITCH_DSH_PORT' && msg.payload?.port) {
+    const port = msg.payload.port
+    void chrome.storage.local.set({ omnimux_target_port: String(port) }).catch(() => {})
+    settings.bridgeUrl = `ws://127.0.0.1:${port}/ext/bridge`
+    void persistSettings({ bridgeUrl: settings.bridgeUrl }).catch(() => {})
+    startBridge()
+    sendResponse({ ok: true })
+    return true
+  }
+})
+
+const floatingMediaGrants = createMediaGrants(chrome.runtime.id, chrome.runtime.getURL('panel/index.html'))
+chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+  if (!message || typeof message !== 'object') return
+  const msg = message as { type?: unknown; payload?: unknown; grant?: unknown }
+  if (msg.type === 'FILL_FLOAT_STRUCTURED_DRAFT') {
+    if (!isOwnFloatingPanel(sender, chrome.runtime.id, chrome.runtime.getURL('panel/index.html'))) {
+      sendResponse({ ok: false, message: '填写来源无效' })
+      return
+    }
+    void chrome.tabs.sendMessage(sender.tab!.id!, {
+      action: 'FILL_STRUCTURED_DRAFT', payload: msg.payload,
+    }, { frameId: 0 }).then(sendResponse, () => sendResponse({ ok: false, message: '页面暂时无法填写' }))
+    return true
+  }
+  if (msg.type === 'ISSUE_FLOAT_MEDIA_GRANT') {
+    sendResponse({ grant: floatingMediaGrants.issue(sender, msg.payload) })
+  } else if (msg.type === 'TAKE_FLOAT_MEDIA_GRANT') {
+    sendResponse({ media: floatingMediaGrants.take(sender, msg.grant) })
+  }
+})
+
+// ---- Content script messages ----
+
+/**
+ * The post and export kind a TikTok shortcut asked for.
+ *
+ * A malformed payload answers `null` rather than a defaulted request: acting on a
+ * guessed post would download the wrong video, which is worse than refusing.
+ */
+function readTiktokShortcut(message: unknown): { url: string; kind: ExportKind } | null {
+  const payload = (message as { payload?: unknown }).payload
+  if (typeof payload !== 'object' || payload === null) return null
+  const url = (payload as { url?: unknown }).url
+  if (typeof url !== 'string' || url.trim() === '') return null
+  const kind = (payload as { kind?: unknown }).kind
+  if (kind !== undefined && kind !== 'video' && kind !== 'audio') return null
+  return { url, kind: kind === 'audio' ? 'audio' : 'video' }
+}
+
+/**
+ * The OmniMux HTTP base to call, discovering the local host when it is not known.
+ *
+ * `null` means no DSH process answered on any candidate port, which the menu
+ * renders as "OmniMux is not running" instead of a content error.
+ */
+async function hostHttpBase(): Promise<string | null> {
+  const known = settings.bridgeUrl !== '' ? settings.bridgeUrl : discoveredBridgeUrl
+  if (known !== '') {
+    const base = httpBaseFromBridgeUrl(known)
+    if (base !== null) return base
+  }
+  // Nothing known yet. Unlike the bridge sweep, this one asks every candidate
+  // port at once: the user is watching a menu row that says it is working, and
+  // nine serial timeouts is not an acceptable wait for one download.
+  if (discoveredHostBase !== '') return discoveredHostBase
+  const found = await discoverHostBase(DISCOVERY_PORTS)
+  if (found !== null) discoveredHostBase = found
+  return found
+}
+
+/**
+ * Run one TikTok shortcut against the host.
+ *
+ * Network failures are folded into the `unreachable` outcome here so the message
+ * handler never rejects: the menu has to render something for every press.
+ */
+async function runTiktokShortcut(
+  type: string,
+  request: { url: string; kind: ExportKind },
+): Promise<ExportOutcome> {
+  const base = await hostHttpBase()
+  if (base === null) return { ok: false, code: 'unreachable' }
+  try {
+    if (type === TIKTOK_RUNTIME_MESSAGE.saveToInspiration) {
+      return await requestInspirationSave({ base, url: request.url })
+    }
+    return await requestMediaExport({ base, url: request.url, kind: request.kind })
+  } catch {
+    return { ok: false, code: 'unreachable' }
+  }
+}
+
+// ---- 保存目标分流（账号监控 / 灵感库） ----
+//
+// 分类是 host 的能力（`…/rival-accounts/classify`），service worker 只是唯一决策点：
+// 保存消息先用同一份候选端口向 host 分类，account 走账号导入，其余（含分类失败）
+// 走原有灵感库保存。分类失败不得阻断保存。
+
+/** host 的 URL 分类路由（已存在，扩展只消费）。 */
+const RIVAL_CLASSIFY_PATH = '/omnimux/inspiration/local/rival-accounts/classify'
+/** host 的账号导入路由（已存在，扩展只消费）。 */
+const RIVAL_ACCOUNTS_PATH = '/omnimux/inspiration/local/rival-accounts'
+
+/**
+ * 本机候选端口：面板指定端口 → 用户保存的端口 → 产品默认端口。
+ *
+ * 分类与保存共用这一份顺序，两个请求才不会落在不同实例上；顺序与既有保存路径一致。
+ */
+async function resolveHostCandidatePorts(targetPort?: number): Promise<number[]> {
+  const candidatePorts: number[] = []
+  if (typeof targetPort === 'number' && !isNaN(targetPort)) candidatePorts.push(targetPort)
+  try {
+    const saved = (await chrome.storage.local.get('omnimux_target_port'))?.omnimux_target_port
+    const port = saved ? parseInt(String(saved), 10) : undefined
+    if (port && !isNaN(port) && !candidatePorts.includes(port)) candidatePorts.push(port)
+  } catch {
+    // storage 不可用：只靠默认端口
+  }
+  for (const port of [45120, 45128, 43120, 43128, 3080]) {
+    if (!candidatePorts.includes(port)) candidatePorts.push(port)
+  }
+  return candidatePorts
+}
+
+/**
+ * 询问 host 这个 URL 该保存到哪里。
+ *
+ * 2xx 且响应结构合法时返回 host 的分类；host 不可达、非 2xx 或响应不可解析都返回
+ * `{ ok: false }`，调用方按灵感库处理（spec J4/J6）。
+ */
+async function classifySaveTargetOnHost(
+  url: string,
+  candidatePorts: number[],
+): Promise<{ ok: true; classification: SaveTargetClassification } | { ok: false }> {
+  for (const port of candidatePorts) {
+    try {
+      const res = await loopbackFetch(`http://127.0.0.1:${port}${RIVAL_CLASSIFY_PATH}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+        // 分类只决定按钮文案与保存去路，host 慢时必须尽快回退，不能拖住保存本身。
+        signal: AbortSignal.timeout(1_500),
+      })
+      if (!res.ok) continue
+      const classification = readSaveTargetClassification(await res.json().catch(() => null))
+      if (classification !== null) return { ok: true, classification }
+    } catch {
+      // 该端口没有本机 host：试下一个
+    }
+  }
+  return { ok: false }
+}
+
+/**
+ * 把账号主页导入「账号监控」。
+ *
+ * 只有 2xx 才是成功证据；失败时调用方回退灵感库保存，并如实返回最终落库位置。
+ */
+async function importRivalAccountOnHost(
+  url: string,
+  candidatePorts: number[],
+): Promise<{ ok: true; handle?: string; existing: boolean } | { ok: false }> {
+  for (const port of candidatePorts) {
+    try {
+      const res = await loopbackFetch(`http://127.0.0.1:${port}${RIVAL_ACCOUNTS_PATH}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // background: true 让 host 把首次采集排队而不是阻塞这次保存请求。
+        body: JSON.stringify({ url, background: true }),
+        signal: AbortSignal.timeout(3_500),
+      })
+      if (!res.ok) continue
+      return { ok: true, ...readAccountImportOutcome(await res.json().catch(() => null)) }
+    } catch {
+      // 该端口没有本机 host：试下一个
+    }
+  }
+  return { ok: false }
+}
+
+/** 分类消息的 URL 既接受顶层 `url`（spec 契约），也接受 `payload.url`。 */
+function readSaveTargetProbeUrl(message: { url?: unknown; payload?: Record<string, unknown> }): string {
+  if (typeof message.url === 'string' && message.url.trim() !== '') return message.url.trim()
+  const payloadUrl = message.payload?.url
+  return typeof payloadUrl === 'string' ? payloadUrl.trim() : ''
+}
+
+// ---- 页面内作品直传（不走云端采集） ----
+//
+// 保存作品时先在当前标签页里提取，成功即把作品与媒体直链交给 host 落盘；
+// 提取不到（或 host 拒绝）就回退旧的 import-url 链路，绝不假成功。
+
+/** 捕获尝试的等待预算：内容脚本在页面加载后才注入，刚打开页面时可能还不在。 */
+export const CAPTURE_ATTEMPT_COUNT = 3
+export const CAPTURE_RETRY_DELAY_MS = 400
+
+/**
+ * 一次页面捕获的结果。
+ *
+ * 失败原因需要区分，才能告诉用户为什么回退到云端解析：
+ * - `no-tab`：当前没有可保存的 http(s) 标签页；
+ * - `capture-unavailable`：内容脚本始终没有应答（未注入/已卸载）；
+ * - `capture-empty`：内容脚本应答了，但页面上没有可提取的作品。
+ */
+export type CaptureAttempt =
+  | { kind: 'captured', post: NonNullable<ReturnType<typeof readCapturedPost>> }
+  | { kind: 'no-tab' }
+  | { kind: 'capture-unavailable' }
+  | { kind: 'capture-empty' }
+
+/** One `CAPTURE_POST` round trip; `null` when the tab has no answering content script. */
+function sendCaptureRequest(tabId: number): Promise<{ ok?: boolean, post?: unknown } | null> {
+  return new Promise((resolve) => {
+    try {
+      // 只问顶层 frame：页面里的 iframe 也有内容脚本，会抢先回答 ok:false，把
+      // 一个本来能采集的页面变成「无作品」并回退云端（真实浏览器验收发现）。
+      chrome.tabs.sendMessage(tabId, { action: 'CAPTURE_POST' }, { frameId: 0 }, (reply) => {
+        if (chrome.runtime?.lastError || !reply) resolve(null)
+        else resolve(reply as { ok?: boolean, post?: unknown })
+      })
+    } catch {
+      resolve(null)
+    }
+  })
+}
+
+/**
+ * 向当前活动标签页索取作品提取结果，带短暂重试。
+ *
+ * 大页面刚打开时内容脚本可能尚未注入；一次失败就回退云端会让不支持的站点直接
+ * 失败（真实浏览器验收发现）。这里最多等 ~1.2s，仍失败才把原因交给调用方。
+ */
+export async function capturePostFromActiveTab(): Promise<CaptureAttempt> {
+  let lastReply: { ok?: boolean, post?: unknown } | null = null
+  for (let attempt = 0; attempt < CAPTURE_ATTEMPT_COUNT; attempt += 1) {
+    let tabs: chrome.tabs.Tab[] | undefined
+    try {
+      tabs = await chrome.tabs?.query?.({ active: true, currentWindow: true })
+    } catch {
+      return { kind: 'no-tab' }
+    }
+    const tab = tabs?.[0]
+    if (tab?.id === undefined || typeof tab.url !== 'string' || !/^https?:/i.test(tab.url)) {
+      return { kind: 'no-tab' }
+    }
+    const reply = await sendCaptureRequest(tab.id)
+    lastReply = reply
+    if (reply?.ok === true) {
+      const post = readCapturedPost(reply.post)
+      if (post !== null) return { kind: 'captured', post }
+    }
+    if (attempt < CAPTURE_ATTEMPT_COUNT - 1) {
+      await new Promise((resolve) => setTimeout(resolve, CAPTURE_RETRY_DELAY_MS))
+    }
+  }
+  return { kind: lastReply === null ? 'capture-unavailable' : 'capture-empty' }
+}
+
+/** Cache one captured post for the panel's media strip; a cache miss never fails a save. */
+async function cacheCapturedPost(post: NonNullable<ReturnType<typeof readCapturedPost>>): Promise<void> {
+  const firstMedia = post.media[0]
+  try {
+    await appendMediaInspiration({
+      id: `insp_${Date.now().toString(36)}`,
+      src: post.cover_url || firstMedia?.url || post.source_url,
+      type: (post.content_shape === 'video' || firstMedia?.type === 'video') ? 'video' : 'image',
+      pageUrl: post.source_url,
+      pageTitle: post.title,
+      alt: post.content,
+      previewSrc: post.cover_url || firstMedia?.url || '',
+      width: 0,
+      height: 0,
+      naturalWidth: 0,
+      naturalHeight: 0,
+      capturedAt: Date.now(),
+    })
+  } catch {
+    // 缓存失败不影响已入库的作品
+  }
+}
+
+/**
+ * 把页面提取到的作品直传 host 下载入库。
+ *
+ * 直传请求会等 host 完成媒体下载，所以超时比纯元数据请求宽；下载失败时 host
+ * 会返回 4xx，调用方回退旧的导入链路。
+ */
+async function saveCapturedPostOnHost(
+  post: ReturnType<typeof readCapturedPost>,
+  candidatePorts: number[],
+): Promise<{ ok: true; existing: boolean } | { ok: false }> {
+  const body = buildCaptureRequestBody(post, '', navigator.userAgent)
+  if (body === null) return { ok: false }
+  for (const port of candidatePorts) {
+    try {
+      const res = await loopbackFetch(`http://127.0.0.1:${port}${INSPIRATION_CAPTURE_PATH}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(30_000),
+      })
+      if (!res.ok) continue
+      return { ok: true, ...readCaptureSaveOutcome(await res.json().catch(() => null)) }
+    } catch {
+      // 该端口没有本机 host：试下一个
+    }
+  }
+  return { ok: false }
+}
+
+chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+  if (typeof message !== 'object' || message === null) return
+  if (sender.id !== chrome.runtime.id) return
+  if (sender.tab?.id === undefined) return
+  const type = (message as { type?: unknown }).type
+  if (type === 'DSH_CONTENT_READY') {
+    // navigation.ts also listens for this frame-ready announcement; only this
+    // listener answers it, telling a fresh document whether to watch
+    // selections. The revision lets a slow reply lose to a newer broadcast.
+    sendResponse({
+      selectionWatch: selectionWatchEnabled(sender.tab.windowId),
+      selectionWatchEpoch: selectionWatchEpoch,
+      selectionWatchRevision: selectionWatchRevision,
+    })
+    return
+  }
+
+  // ---- TikTok scene shortcuts ----
+  if (type === TIKTOK_RUNTIME_MESSAGE.fetchMedia || type === TIKTOK_RUNTIME_MESSAGE.saveToInspiration) {
+    const request = readTiktokShortcut(message)
+    if (request === null) {
+      sendResponse({ ok: false, error: { code: 'invalid-request', message: 'shortcut payload is malformed' } })
+      return
+    }
+    void runTiktokShortcut(type, request).then(
+      (result) => { sendResponse({ ok: true, result }) },
+      () => { sendResponse({ ok: false, error: { code: 'shortcut-failed', message: 'shortcut failed' } }) },
+    )
+    return true // async response
+  }
+
+  // ---- Page-media hover capsule ----
+  //
+  // These messages are the only traffic the hover assistant produces, and only
+  // after the user presses a capsule icon: hovering itself never wakes this
+  // worker.
+
+  if (type === 'DSH_CHECK_SIDE_PANEL_OPEN') {
+    // Asked before anything opens: one window must never end up with both the
+    // native side panel and the floating workstation showing one conversation.
+    // A window nobody has proved a panel in answers `active: false`, so the
+    // capsule keeps the floating workstation as its channel.
+    const windowId = sender.tab.windowId
+    sendResponse({ ok: true, active: panelPresence.hasPanelInWindow(panelPorts, windowId) })
+    return
+  }
+
+  if (type === 'DSH_MEDIA_TO_INSPIRATION') {
+    const payload = readHoveredMedia(message)
+    if (payload === null) {
+      sendResponse({ ok: false, error: { code: 'invalid-media', message: 'media payload is malformed' } })
+      return
+    }
+    void Promise.allSettled([
+      saveMediaToHostInspiration(payload),
+      appendMediaInspiration(payload),
+    ]).then(
+      ([hostRes, localRes]) => {
+        const localResult = localRes.status === 'fulfilled' ? localRes.value : null
+        const hostSaved = hostRes.status === 'fulfilled' && hostRes.value
+        if (hostSaved || (localResult && localResult.ok)) {
+          sendResponse({
+            ok: true,
+            result: localResult ?? { ok: true, total: 1, duplicate: false, evicted: 0, savedAt: Date.now() },
+            hostSaved,
+          })
+          return
+        }
+        sendResponse({ ok: false, error: { code: 'storage-failed', message: 'inspiration store rejected the write' } })
+      },
+      () => { sendResponse({ ok: false, error: { code: 'storage-failed', message: 'inspiration store rejected the write' } }) },
+    )
+    return true
+  }
+
+  if (type === 'DSH_MEDIA_TO_ASSETS') {
+    const payload = readHoveredMedia(message)
+    if (payload === null || payload.type !== 'image' || !/^https?:/i.test(payload.src)) {
+      sendResponse({ ok: false, error: { code: 'invalid-media' } })
+      return
+    }
+    const requestId = normalizeSaveRequestId((message as { requestId?: unknown }).requestId)
+    pendingImageAssetSaves.set(requestId, sendResponse)
+    const localTarget = bridge?.localTarget ?? null
+    void saveImageAssetRpc(
+      {
+        rpc,
+        localTarget: localTarget === null
+          ? null
+          : { generation: localTarget.generation, url: localTarget.url, caps: caps === null ? null : (caps as unknown as Record<string, unknown>) },
+        currentHelloGeneration: () => bridge?.helloGeneration ?? 0,
+        locale: getUiLocale() === 'en' ? 'en' : 'zh',
+      },
+      payload,
+      requestId,
+    ).then(
+      (answer) => {
+        const respond = pendingImageAssetSaves.get(requestId)
+        if (respond === undefined) return
+        pendingImageAssetSaves.delete(requestId)
+        respond(answer)
+      },
+      () => {
+        const respond = pendingImageAssetSaves.get(requestId)
+        if (respond === undefined) return
+        pendingImageAssetSaves.delete(requestId)
+        respond({ ok: false, error: { code: 'save-unconfirmed' } })
+      },
+    )
+    return true
+  }
+
+  if (type === 'DSH_X_VIDEO_VARIANTS') {
+    // An X video's real mp4 addresses only exist in the public syndication
+    // payload; the page plays HLS through a `blob:` handle. The endpoint refuses
+    // page origins by CORS, so only the worker can read it.
+    void lookupXVariant((message as { tweetId?: unknown }).tweetId).then(
+      (answer) => { sendResponse(answer) },
+      () => { sendResponse({ ok: false, error: { code: 'fetch-failed' } }) },
+    )
+    return true
+  }
+
+  if (type === 'DSH_MEDIA_DOWNLOAD') {
+    // The address was already resolved by the content script; this worker only
+    // turns it into a real file. `chrome.downloads` uses the browser's own
+    // network stack, so a CDN that wants no page credentials still downloads.
+    void startMediaDownload(
+      (message as { request?: unknown }).request,
+      {
+        download: (options) => new Promise<number>((resolve, reject) => {
+          chrome.downloads.download(options, (downloadId) => {
+            const failure = chrome.runtime.lastError
+            if (failure !== undefined) {
+              reject(new Error(failure.message ?? 'download failed'))
+              return
+            }
+            resolve(downloadId)
+          })
+        }),
+      },
+    ).then(
+      (answer) => { sendResponse(answer) },
+      () => { sendResponse({ ok: false, code: 'download-failed' }) },
+    )
+    return true
+  }
+
+  if (type === 'DSH_OPEN_ASSISTANT_WITH_MEDIA') {
+    const payload = readHoveredMedia(message)
+    if (payload === null) {
+      sendResponse({ ok: false, error: { code: 'invalid-media', message: 'media payload is malformed' } })
+      return
+    }
+    // `chrome.sidePanel.open()` needs the click's user gesture, so the panel is
+    // opened from inside this handler and the payload is stashed for the panel to
+    // collect once its port connects.
+    const windowId = sender.tab.windowId
+    // A panel that is already open owns the conversation on screen: it takes the
+    // media over its port, and nothing has to open or be stashed for a later
+    // collector that will never run.
+    if (deliverMediaToPanels(windowId, payload)) {
+      sendResponse({ ok: true, result: { channel: 'side-panel', tabId: sender.tab.id, active: true } })
+      return
+    }
+    stashPendingMedia(windowId, payload)
+    openAssistantPanel(windowId)
+    sendResponse({ ok: true, result: { channel: 'side-panel', tabId: sender.tab.id, active: false } })
+    return
+  }
+
+  if (type === 'DSH_MEDIA_ATTACH_REQUEST') {
+    // A freshly opened side panel asks for the media that sent it here.
+    const msgObj = message as { payload?: unknown; windowId?: unknown }
+    const wanted = msgObj?.payload
+    const requestedId = typeof wanted === 'object' && wanted !== null
+      ? (wanted as { id?: unknown }).id
+      : undefined
+    const winId = typeof msgObj?.windowId === 'number' ? msgObj.windowId : sender.tab?.windowId
+    const payload = takePendingMedia(winId, typeof requestedId === 'string' ? requestedId : undefined)
+    sendResponse({ ok: true, result: payload === null ? { pending: false } : { pending: true, media: payload } })
+    return
+  }
+
+  if (type !== 'DSH_SELECTION' || sender.tab === undefined) return
+  recordSelection(sender.tab, sender.frameId ?? 0, (message as { selection?: unknown }).selection)
+})
+
+/**
+ * Image saves waiting for their host receipt, keyed by requestId.
+ *
+ * A save whose carrying socket dies before the receipt answers promptly with
+ * `save-unconfirmed`: the request may or may not have committed on the host,
+ * so the honest verdict is "unknown" rather than "sent to another host" —
+ * the reconnect generation must never re-target the write.
+ */
+const pendingImageAssetSaves = new Map<string, (response: unknown) => void>()
+
+function failPendingImageAssetSaves(): void {
+  for (const respond of pendingImageAssetSaves.values()) {
+    respond({ ok: false, error: { code: 'save-unconfirmed' } })
+  }
+  pendingImageAssetSaves.clear()
+}
+
+/** Pending page media per window, waiting for a side panel to collect it. */
+const pendingMediaByWindow = new Map<number, HoveredMedia>()
+let latestPendingMedia: HoveredMedia | null = null
+
+function readHoveredMedia(message: unknown): HoveredMedia | null {
+  const payload = (message as { payload?: unknown }).payload
+  if (typeof payload !== 'object' || payload === null) return null
+  const media = payload as Partial<HoveredMedia>
+  if (typeof media.id !== 'string' || typeof media.src !== 'string') return null
+  if (media.type !== 'image' && media.type !== 'video') return null
+  return media as HoveredMedia
+}
+
+function stashPendingMedia(windowId: number | undefined, payload: HoveredMedia): void {
+  latestPendingMedia = payload
+  if (typeof windowId === 'number') {
+    pendingMediaByWindow.set(windowId, payload)
+  }
+}
+
+/** Takes the stashed payload, optionally filtered by media id. */
+function takePendingMedia(windowId?: number, mediaId?: string): HoveredMedia | null {
+  if (typeof windowId === 'number' && pendingMediaByWindow.has(windowId)) {
+    const pending = pendingMediaByWindow.get(windowId)!
+    if (mediaId === undefined || pending.id === mediaId) {
+      pendingMediaByWindow.delete(windowId)
+      if (latestPendingMedia?.id === pending.id) latestPendingMedia = null
+      return pending
+    }
+  }
+  if (latestPendingMedia !== null && (mediaId === undefined || latestPendingMedia.id === mediaId)) {
+    const pending = latestPendingMedia
+    latestPendingMedia = null
+    return pending
+  }
+  return null
+}
+
+async function saveMediaToHostInspiration(payload: HoveredMedia): Promise<boolean> {
+  const candidatePorts = [45120, 45128, 43120, 43128, 3080]
+  try {
+    const saved = (await chrome.storage.local.get('omnimux_target_port'))?.omnimux_target_port
+    const p = saved ? parseInt(saved, 10) : undefined
+    if (p && !isNaN(p) && !candidatePorts.includes(p)) {
+      candidatePorts.unshift(p)
+    }
+  } catch {
+    // Ignore storage failure
+  }
+
+  const title = (payload.alt || payload.pageTitle || '网页灵感素材').trim().slice(0, 120)
+  const itemBody = {
+    title: title || '未命名素材',
+    type: payload.type === 'video' ? 'video' : 'image',
+    source_platform: payload.pageUrl.includes('x.com') || payload.pageUrl.includes('twitter.com')
+      ? 'twitter'
+      : (payload.pageUrl.includes('tiktok.com') ? 'tiktok' : 'web'),
+    source_url: payload.pageUrl,
+    cover_url: payload.previewSrc || payload.src,
+    media_urls: [payload.src],
+    content: (payload.alt || payload.pageTitle || '').trim().slice(0, 2000),
+    // Saving is not analysing; the host would otherwise run its breakdown.
+    auto_analyze: false,
+    tags: ['网页采集', payload.type === 'video' ? '视频' : '图片'],
+  }
+
+  for (const port of candidatePorts) {
+    try {
+      const res = await loopbackFetch(`http://127.0.0.1:${port}/omnimux/inspiration/local`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(itemBody),
+        signal: AbortSignal.timeout(2000),
+      })
+      if (res.ok || res.status === 201 || res.status === 200) {
+        return true
+      }
+    } catch {
+      // try next port
+    }
+  }
+  return false
+}
+
+/**
+ * Make sure one session has a live tab binding, binding it to the active tab
+ * when it has none.
+ *
+ * A session created before the extension was paired (or while the bridge was
+ * down) never passed through the `session.active` / `isNew` path, so it holds
+ * no binding — and `session.prompt` used to refuse it forever, which is how a
+ * user who had just paired successfully still could not send. Binding on
+ * demand keeps the guard's intent (a live tab) without the dead end.
+ *
+ * @param sessionId - the session about to be prompted.
+ * @returns true when the session is bound (or was just bound); false when no
+ *   active tab could be resolved, in which case no binding is left behind.
+ */
+async function ensureSessionTabBinding(sessionId: string): Promise<boolean> {
+  if (tabAffinity.getSessionTab(sessionId) !== undefined) return true
+  await Promise.all([affinityReady, pageSessionContexts.ready])
+  const tab = await syncActiveTab()
+  const summary = tab === undefined ? null : summarizeTab(tab)
+  if (summary === null) return false
+  tabAffinity.bindNewSession(sessionId, summary)
+  pageSessionContexts.bind(sessionId, { id: summary.tabId, ...summary })
+  resetTabSnapshot(summary.tabId)
+  persistTabAffinity()
+  broadcastTabAffinity()
+  await refreshSessionSnapshot(sessionId).catch(() => {})
+  return tabAffinity.getSessionTab(sessionId) !== undefined
+}
+
+// ---- Panel ports ----
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== 'dsh-panel') return
+  const wasIdle = panelPorts.size === 0
+  const tabAffinityRebinds = new Map<string, {
+    controller: AbortController
+    timer: ReturnType<typeof setTimeout>
+  }>()
+  panelPorts.add(port)
+  if (wasIdle) armBridgeKeepalive()
+  // A reconnecting or stopped bridge leaves a queued task blind: the panel's
+  // own lease already triggered startBridge, and the keepalive keeps retrying.
+  void settingsReady.then(syncSelectionWatch)
+  void settingsReady.then(() => {
+    if (!panelPorts.has(port)) return
+    if (bridge === null || bridge.state === 'stopped') return startBridge()
+  })
+  // Deliver a locate queued while no panel was open (notification click path).
+  if (pendingTaskLocate !== null) {
+    try { port.postMessage({ type: 'task.locate', ...pendingTaskLocate }) } catch { /* port closed */ }
+  }
+  try { port.postMessage({ type: 'status', state: bridge?.state ?? ('stopped' as BridgeState), caps }) } catch { /* port closed */ }
+  void affinityReady.then(async () => {
+    await syncActiveTab()
+    try { port.postMessage({ type: 'tab-affinity', state: tabAffinity.snapshot() }) } catch { /* port closed */ }
+  })
+  port.onMessage.addListener((message: unknown) => {
+    if (typeof message !== 'object' || message === null) return
+    const msg = message as { type?: string }
+    switch (msg.type) {
+      case 'rpc': {
+        const rpcMsg = message as { id: string; method: string; payload?: unknown }
+        const rpcSessionId = typeof rpcMsg.payload === 'object' && rpcMsg.payload !== null
+          ? (rpcMsg.payload as { sessionId?: string }).sessionId
+          : undefined
+        const refresh = rpcSessionId === undefined
+          ? Promise.resolve()
+          : sessionSnapshotRefreshes.get(rpcSessionId) ?? Promise.resolve()
+        const prepare = rpcMsg.method === 'session.prompt'
+          ? Promise.resolve().then(async () => {
+              await refresh
+              if (rpcSessionId === undefined) return true
+              return ensureSessionTabBinding(rpcSessionId)
+            })
+          : Promise.resolve(true)
+        void prepare.then((ready) => {
+          if (!ready) {
+            const zh = getUiLocale() === 'zh'
+            // A refusal must leave the user something to do: the previous
+            // English-only throw stranded anyone whose session predated pairing.
+            throw new Error(zh
+              ? '当前没有可绑定的网页标签页：请先切到要操作的网页，再发送'
+              : 'No live browser tab is available: open the page you want to act on, then send again')
+          }
+          return gatewayRpc(rpcMsg.method, rpcMsg.payload)
+        }).then(
+          (result) => {
+            try { port.postMessage({ type: 'rpc.result', id: rpcMsg.id, ok: true, result }) } catch { /* port closed */ }
+          },
+          (error: unknown) => {
+            try {
+              port.postMessage({
+                type: 'rpc.result',
+                id: rpcMsg.id,
+                ok: false,
+                error: { code: 'bridge-unavailable', message: error instanceof Error ? error.message : String(error) },
+              })
+            } catch { /* port closed */ }
+          },
+        )
+        break
+      }
+      case 'respond': {
+        const response = message as { id?: unknown; rpcId?: unknown; result?: unknown }
+        if (typeof response.id !== 'string' || typeof response.rpcId !== 'string' || !isRespondResult(response.result)) break
+        const messages = responseMessages()
+        interactionResponses.begin(
+          port,
+          response.id,
+          () => bridge?.send({
+            t: 'respond',
+            id: response.id as string,
+            rpcId: response.rpcId as string,
+            result: response.result as RespondResult,
+          }) === true,
+          messages,
+        )
+        break
+      }
+      case 'settings': {
+        const settingsMsg = message as { id?: unknown; settings: Partial<Settings> }
+        const requestId = typeof settingsMsg.id === 'string' ? settingsMsg.id : undefined
+        void settingsReady.then(async () => {
+          try {
+            const previousConnection = { bridgeUrl: settings.bridgeUrl, token: settings.token }
+            await persistSettings(settingsMsg.settings)
+            const connectionChanged = settings.bridgeUrl !== previousConnection.bridgeUrl
+              || settings.token !== previousConnection.token
+            // Connection settings are live for the background bridge, not just
+            // open panels: restart now so queued submissions and notifications
+            // move to the new endpoint without waiting for a panel reopen.
+            if (connectionChanged) await startBridge()
+            broadcastStatus()
+            if (requestId !== undefined) {
+              try { port.postMessage({ type: 'settings.result', id: requestId, ok: true }) } catch { /* port closed */ }
+            }
+          } catch (error: unknown) {
+            if (requestId === undefined) return
+            try {
+              port.postMessage({
+                type: 'settings.result',
+                id: requestId,
+                ok: false,
+                error: { message: error instanceof Error ? error.message : String(error) },
+              })
+            } catch { /* port closed */ }
+          }
+        })
+        break
+      }
+      case 'panel.window': {
+        // The panel reports its own window; a side panel has no sender.tab.
+        const registration = message as { windowId?: unknown }
+        if (typeof registration.windowId !== 'number'
+          || !Number.isInteger(registration.windowId)
+          || registration.windowId < 0) break
+        panelPresence.register(port, registration.windowId)
+        syncSelectionWatch()
+        try {
+          port.postMessage({ type: 'selection', selection: selections.current(registration.windowId) })
+        } catch { /* port closed */ }
+        void postResumeHint(port, registration.windowId)
+        break
+      }
+      case 'selection.clear': {
+        // The user sent, dismissed, or explicitly abandoned this window's
+        // quote. A send/dismiss names the value it acted on so a newer capture
+        // that arrived while work was in flight cannot be cleared by mistake.
+        const windowId = panelPresence.windowOf(port)
+        if (windowId === undefined) break
+        const request = message as { selection?: unknown }
+        const expected = request.selection === undefined ? undefined : parsePageSelection(request.selection)
+        if (expected === null) break
+        const source = selections.source(windowId)
+        const cleared = expected === undefined
+          ? selections.clear(windowId)
+          : selections.clearIfCurrent(windowId, expected)
+        if (cleared && source !== null) resetSelectionDedupe([source])
+        // Also repairs a panel that acted on a stale attachment.
+        broadcastSelection(windowId)
+        break
+      }
+      case 'session.active': {
+        const session = message as { sessionId?: unknown; isNew?: boolean }
+        const sid = validSessionId(session.sessionId)
+        if (sid === undefined) {
+          panelActiveSessions.delete(port)
+        } else {
+          panelActiveSessions.set(port, sid)
+          if (session.isNew === true) {
+            const bind = Promise.all([affinityReady, pageSessionContexts.ready]).then(async () => {
+              const tab = await syncActiveTab()
+              const summary = tab === undefined ? null : summarizeTab(tab)
+              if (summary === null) throw new Error('No active tab is available to bind this session')
+              if (tabAffinity.getSessionTab(sid) === undefined) tabAffinity.bindNewSession(sid, summary)
+              pageSessionContexts.bind(sid, { id: summary.tabId, ...summary })
+              resetTabSnapshot(summary.tabId)
+              persistTabAffinity()
+              broadcastTabAffinity()
+              await refreshSessionSnapshot(sid)
+              // 悬浮窗切到原生边栏后，新开的边栏靠 resume-hint 接管同一会话。
+              refreshPanelResumeHints()
+            }).catch(() => {})
+            sessionSnapshotRefreshes.set(sid, bind)
+            void bind.finally(() => {
+              if (sessionSnapshotRefreshes.get(sid) === bind) sessionSnapshotRefreshes.delete(sid)
+            })
+          } else if (tabAffinity.focusSession(sid)) {
+            persistTabAffinity()
+            broadcastTabAffinity()
+            // 既有会话重新激活时同样刷新，供同窗口新开的原生边栏续接。
+            refreshPanelResumeHints()
+          } else {
+            refreshPanelResumeHints()
+          }
+        }
+        break
+      }
+      case 'approval.response': {
+        const approval = message as { id?: unknown; decision?: unknown }
+        if (typeof approval.id === 'string' && isApprovalDecision(approval.decision)) {
+          approvals.respond(approval.id, approval.decision)
+        }
+        break
+      }
+      case 'tab-affinity.response': {
+        const response = message as { revision?: unknown; decision?: unknown; sessionId?: unknown }
+        if (typeof response.revision !== 'number' || !isTabAffinityDecision(response.decision)) break
+        const sid = typeof response.sessionId === 'string' ? response.sessionId : undefined
+        const decision = resolveTabAffinityResponse({
+          revision: response.revision,
+          decision: response.decision,
+          sessionId: response.sessionId,
+        }).catch(() => {})
+        if (response.decision === 'follow' && sid !== undefined) {
+          sessionSnapshotRefreshes.set(sid, decision)
+          void decision.finally(() => {
+            if (sessionSnapshotRefreshes.get(sid) === decision) sessionSnapshotRefreshes.delete(sid)
+          })
+        } else {
+          void decision
+        }
+        break
+      }
+      case 'tab-affinity.rebind': {
+        const request = message as { id?: unknown; sessionId?: unknown }
+        if (typeof request.id !== 'string') break
+        const requestId = request.id
+        const rebindSessionId = validSessionId(request.sessionId) ?? panelActiveSessions.get(port)
+        if (tabAffinityRebinds.has(requestId)) break
+        const controller = new AbortController()
+        const timer = setTimeout(() => {
+          controller.abort(new TabAffinityRebindError('timeout', getUiLocale() === 'zh'
+            ? '绑定当前标签页超时，请重试'
+            : 'Binding the current tab timed out. Try again.'))
+        }, TAB_AFFINITY_REBIND_TIMEOUT_MS)
+        tabAffinityRebinds.set(requestId, { controller, timer })
+        void rebindTabAffinityToActive(controller.signal, rebindSessionId).then(
+          () => {
+            try { port.postMessage({ type: 'tab-affinity.rebind.result', id: requestId, ok: true }) } catch { /* port closed */ }
+          },
+          (error: unknown) => {
+            try {
+              port.postMessage({
+                type: 'tab-affinity.rebind.result',
+                id: requestId,
+                ok: false,
+                error: {
+                  code: error instanceof TabAffinityRebindError ? error.code : 'no-active-tab',
+                  message: error instanceof Error ? error.message : String(error),
+                },
+              })
+            } catch { /* port closed */ }
+          },
+        ).finally(() => {
+          const current = tabAffinityRebinds.get(requestId)
+          if (current?.controller !== controller) return
+          clearTimeout(current.timer)
+          tabAffinityRebinds.delete(requestId)
+        })
+        break
+      }
+      case 'request-status':
+        try {
+          port.postMessage({ type: 'status', state: bridge?.state ?? ('stopped' as BridgeState), caps })
+          port.postMessage({ type: 'tab-affinity', state: tabAffinity.snapshot() })
+          const statusWindowId = panelPresence.windowOf(port)
+          if (statusWindowId !== undefined) {
+            port.postMessage({ type: 'selection', selection: selections.current(statusWindowId) })
+          }
+          for (const frame of transientEvents.replay()) port.postMessage({ type: 'event', frame })
+          approvals.replay((request) => {
+            port.postMessage({ type: 'approval.request', request })
+            return true
+          })
+          const resumeWindowId = panelPresence.windowOf(port)
+          if (resumeWindowId !== undefined) void postResumeHint(port, resumeWindowId)
+          // A task-completion notification click while no panel was open
+          // queues a locate: deliver it once this panel asks for its state.
+          if (pendingTaskLocate !== null) {
+            try { port.postMessage({ type: 'task.locate', ...pendingTaskLocate }) } catch { /* port closed */ }
+          }
+        } catch { /* port closed */ }
+        break
+    }
+  })
+  port.onDisconnect.addListener(() => {
+    for (const operation of tabAffinityRebinds.values()) {
+      clearTimeout(operation.timer)
+      operation.controller.abort(new TabAffinityRebindError('cancelled', getUiLocale() === 'zh'
+        ? '后台连接已断开，标签页绑定已取消'
+        : 'The background connection was lost, so tab binding was cancelled'))
+    }
+    tabAffinityRebinds.clear()
+    const panelWindowId = panelPresence.windowOf(port)
+    const panelSessionId = panelActiveSessions.get(port)
+    panelActiveSessions.delete(port)
+    panelPorts.delete(port)
+    if (panelSessionId !== undefined) void checkpointSessionPage(panelSessionId)
+    interactionResponses.removePort(port)
+    if (panelWindowId !== undefined && !hasPanelInWindow(panelWindowId)) {
+      const source = selections.source(panelWindowId)
+      if (selections.clear(panelWindowId) && source !== null) resetSelectionDedupe([source])
+    }
+    syncSelectionWatch()
+    if (panelPorts.size === 0) {
+      sessionTrustedActionOrigins.clear()
+      approvals.notifyPending()
+      // The bridge stays up for queued submissions and turn/end notifications;
+      // the keepalive keeps the service worker's reconnect path reachable.
+      armBridgeKeepalive()
+    }
+  })
+})
+
+chrome.notifications.onClicked.addListener((notificationId) => {
+  if (notificationId.startsWith(TASK_NOTIFICATION_PREFIX)) {
+    const rest = notificationId.slice(TASK_NOTIFICATION_PREFIX.length)
+    const splitAt = rest.lastIndexOf(':')
+    const sessionId = splitAt === -1 ? rest : rest.slice(0, splitAt)
+    const turn = splitAt === -1 ? (pendingTaskLocate?.turn ?? 0) : (Number(rest.slice(splitAt + 1)) || 0)
+    void Promise.resolve(chrome.notifications.clear(notificationId)).catch(() => {})
+    // Notification clicks are extension user gestures; the panel APIs require
+    // the call to remain inside this handler. The panel consumes
+    // pendingTaskLocate on connect (or immediately if one is already open).
+    pendingTaskLocate = { sessionId, turn }
+    void Promise.resolve(chrome.windows.getLastFocused()).then((win) => {
+      openAssistantPanel(win?.id)
+      for (const port of panelPorts) {
+        try {
+          port.postMessage({ type: 'task.locate', sessionId, turn })
+        } catch { /* port already closed */ }
+      }
+      if (panelPorts.size > 0) pendingTaskLocate = null
+    }).catch(() => {})
+    return
+  }
+  if (!notificationId.startsWith(APPROVAL_NOTIFICATION_PREFIX)) return
+  const id = notificationId.slice(APPROVAL_NOTIFICATION_PREFIX.length)
+  const windowId = approvals.windowId(id)
+  if (windowId === undefined) return
+  clearApprovalNotification(id)
+  // Notification clicks are extension user gestures; both panel APIs require
+  // the call to remain inside this handler.
+  openAssistantPanel(windowId)
+})
+
+// ---- Tab affinity ----
+
+chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
+  void affinityReady.then(() => {
+    const activationRevision = focusedWindow.acceptActivation(windowId)
+    if (activationRevision === null) return
+    // Mark the switch before awaiting metadata so an already-running trusted
+    // action cannot slip through the handoff boundary.
+    observeActiveSummary({ tabId, windowId, title: '', url: '' })
+    return chrome.tabs.get(tabId).then((tab) => {
+      if (focusedWindow.isCurrent(activationRevision)) observeActiveTab(tab)
+    }).catch(() => {})
+  })
+})
+
+chrome.tabs.onUpdated.addListener((tabId, _changeInfo, tab) => {
+  void affinityReady.then(() => {
+    if (!tabAffinity.tracks(tabId)) return
+    const summary = summarizeTab(tab)
+    if (summary !== null && tabAffinity.observeTab(summary)) broadcastTabAffinity()
+  })
+})
+
+chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
+  // The old document is gone even though Chrome transfers the tab identity.
+  broadcastSelections(selections.clearTab(removedTabId))
+  void pageSessionContexts.ready.then(() => {
+    pageSessionContexts.replaceTab(removedTabId, addedTabId)
+  })
+  void affinityReady.then(() => {
+    // onReplaced is an identity swap (for example prerender activation), not
+    // a close or user-visible switch. Transfer IDs synchronously before any
+    // metadata lookup so tool resolution never observes the removed target.
+    const affectedSessions = tabAffinity.sessionIdsForTab(removedTabId)
+    if (!tabAffinity.replaceTab(removedTabId, addedTabId)) return
+    for (const sid of affectedSessions) {
+      activeFollowRefreshes.get(sid)?.controller.abort()
+      cancelPendingApprovals(sid)
+    }
+    resetTabSnapshot(removedTabId)
+    resetTabSnapshot(addedTabId)
+    persistTabAffinity()
+    broadcastTabAffinity()
+    return chrome.tabs.get(addedTabId).then((tab) => {
+      const summary = summarizeTab(tab)
+      if (summary !== null && tabAffinity.observeTab(summary)) broadcastTabAffinity()
+    }).catch(() => {})
+  })
+})
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  broadcastSelections(selections.clearTab(tabId))
+  void pageSessionContexts.ready.then(() => {
+    pageSessionContexts.removeTab(tabId)
+  })
+  void affinityReady.then(() => {
+    const affectedSessions = tabAffinity.sessionIdsForTab(tabId)
+    if (!tabAffinity.removeTab(tabId)) return
+    for (const sid of affectedSessions) {
+      activeFollowRefreshes.get(sid)?.controller.abort()
+      cancelPendingApprovals(sid)
+    }
+    persistTabAffinity()
+    broadcastTabAffinity()
+  })
+})
+
+// A committed navigation replaces a document; a same-document history or
+// fragment update does not, and must not drop a quote still on the screen.
+// Matching the exact frame keeps an iframe's navigation from invalidating a
+// quote taken from its parent page, and vice versa.
+chrome.webNavigation.onCommitted.addListener(({ tabId, frameId }) => {
+  broadcastSelections(selections.clearTab(tabId, frameId))
+})
+
+// Ports are cleaned up by their own disconnect; only the window's quote is
+// left behind when the whole window goes away.
+chrome.windows.onRemoved.addListener((windowId) => {
+  selections.clear(windowId)
+})
+
+chrome.windows.onFocusChanged.addListener((windowId) => {
+  if (windowId === chrome.windows.WINDOW_ID_NONE) return
+  focusedWindow.markFocused(windowId)
+  void affinityReady.then(() => syncActiveTab(windowId))
+})
+
+// ---- Keepalive ----
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name !== BRIDGE_KEEPALIVE_ALARM) return
+  // An evicted client (close 4000) lost the single bridge slot to another
+  // browser; the keepalive must not reclaim it — disarm until a settings save
+  // or panel action starts the bridge again.
+  if (bridge?.evicted === true) {
+    disarmBridgeKeepalive()
+    return
+  }
+  // Panels may all be closed while queued submissions still run on the host:
+  // restart a lost connection so turn/end notifications and the next panel
+  // session see live state instead of a dead bridge. The keepalive never
+  // creates a first claim — only a panel open or settings save does that.
+  if (bridge === null || bridge.state === 'reconnecting' || bridge.state === 'stopped') {
+    void Promise.all([settingsReady, bridgeClaimReady]).then(() => {
+      if (bridgeClaimedOnce) void startBridge()
+    })
+  }
+})
+
+// ---- Boot ----
+
+interface FirefoxSidebarAction {
+  open(): Promise<void> | void
+}
+
+function openAssistantPanel(windowId?: number): void {
+  if (import.meta.env.EXT_TARGET === 'firefox') {
+    const sidebar = (chrome as unknown as { sidebarAction?: FirefoxSidebarAction }).sidebarAction
+    if (sidebar === undefined) return
+    void Promise.resolve(sidebar.open()).catch(() => {})
+    return
+  }
+  if (windowId !== undefined) void chrome.sidePanel.open({ windowId }).catch(() => {})
+}
+
+// Open the side panel when the toolbar icon is clicked.
+// Chrome 116+ uses chrome.sidePanel; Firefox has no sidePanel API, so the
+// action click opens the sidebar via sidebarAction.open() (user gesture).
+if (import.meta.env.EXT_TARGET === 'firefox') {
+  chrome.action.onClicked.addListener(() => { openAssistantPanel() })
+} else {
+  void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {})
+}
+
+// Open welcome onboarding page on install and ensure unrestrictedBrowserAccess defaults to true
+chrome.runtime.onInstalled?.addListener((details) => {
+  if (details.reason === 'install') {
+    void chrome.storage.local.get('dshSettings').then((stored) => {
+      const existing = (stored.dshSettings as Partial<Settings> | undefined) ?? {}
+      if (existing.unrestrictedBrowserAccess === undefined) {
+        void chrome.storage.local.set({
+          dshSettings: {
+            ...existing,
+            unrestrictedBrowserAccess: true,
+          },
+        }).catch(() => {})
+      }
+    }).catch(() => {})
+    void chrome.tabs.create({ url: chrome.runtime.getURL('welcome/index.html') }).catch(() => {})
+  }
+})
+
+// Arm the keepalive on every worker start: panel connections, settings saves
+// and this line all share the same alarm, so a worker restarted while tasks
+// still run on the host finds its way back to the bridge without a panel.
+armBridgeKeepalive()
+
+// 监听来自前台面板的实例切换与设置更新消息，彻底打通连接业务逻辑
+chrome.runtime.onMessage.addListener((msg: unknown, sender, sendResponse) => {
+  const m = msg as { type?: string; payload?: Record<string, unknown> } | null
+  if (m?.type === 'CAPTURE_MEDIA_CHUNK') {
+    // 内容脚本每读完 1MB 就把 base64 块交过来；host 接受后才回 ack，保证顺序。
+    void forwardMediaChunk(m as unknown as Record<string, unknown>).then(
+      (result) => sendResponse(result),
+      (error) => sendResponse({ ok: false, error: String(error instanceof Error ? error.message : error) }),
+    )
+    return true
+  }
+  if (m?.type === 'ACCOUNT_REFRESH_CLAIM' || m?.type === 'ACCOUNT_REFRESH_COMPLETE') {
+    // 账号主页的手动更新：内容脚本采集前/后各一次，只走本机 host。
+    void (async () => {
+      const ports = await resolveHostCandidatePorts()
+      if (m.type === 'ACCOUNT_REFRESH_CLAIM') {
+        const token = typeof m.payload?.token === 'string' ? m.payload.token : ''
+        const pageUrl = typeof m.payload?.pageUrl === 'string' ? m.payload.pageUrl : ''
+        const handle = typeof m.payload?.handle === 'string' ? m.payload.handle : ''
+        const result = await claimAccountRefresh(ports, { token, pageUrl, handle })
+        sendResponse(result)
+        return
+      }
+      const token = typeof m.payload?.token === 'string' ? m.payload.token : ''
+      const account = m.payload?.account && typeof m.payload.account === 'object'
+        ? m.payload.account as Record<string, unknown>
+        : {}
+      const result = await completeAccountRefresh(ports, { token, account })
+      sendResponse(result)
+    })().then(() => undefined, (error) => sendResponse({ ok: false, error: String(error instanceof Error ? error.message : error) }))
+    return true
+  }
+  if (m?.type === 'ACCOUNT_REFRESH_CLOSE_TAB') {
+    const tabId = sender.tab?.id
+    if (tabId !== undefined) void closeRefreshedTab(tabId)
+    sendResponse({ ok: tabId !== undefined })
+    return true
+  }
+  if (m?.type === 'SWITCH_DSH_PORT') {
+    const port = m.payload?.port
+    const bridgeUrl = (typeof m.payload?.bridgeUrl === 'string' && m.payload.bridgeUrl)
+      || (typeof port === 'number' ? `ws://127.0.0.1:${port}/ext/bridge` : undefined)
+    const token = typeof m.payload?.token === 'string' ? m.payload.token : undefined
+    if (bridgeUrl) {
+      const patch: Partial<Settings> = { bridgeUrl }
+      if (token !== undefined) patch.token = token
+      void persistSettings(patch).then(async () => {
+        bridgeStartRevision += 1
+        armBridgeKeepalive()
+        await startBridge()
+        broadcastStatus()
+        sendResponse({ ok: true })
+      })
+      return true
+    }
+  } else if (m?.type === 'SETTINGS_UPDATED') {
+    const nextSettings = (m.payload ?? {}) as Partial<Settings>
+    void persistSettings(nextSettings).then(async () => {
+      bridgeStartRevision += 1
+      armBridgeKeepalive()
+      await startBridge()
+      broadcastStatus()
+      sendResponse({ ok: true })
+    })
+    return true
+  } else if (m?.type === 'DSH_FETCH_IMAGE_DATA_URL') {
+    // Poster avatars are drawn into a canvas, and a page-origin content script
+    // cannot read a pbs.twimg.com image back out of it (CORS taints the canvas,
+    // so `toDataURL` throws). The worker has the host permission, so it fetches
+    // the bytes and returns a data URL the page can draw and export.
+    const url = String((m as { url?: unknown }).url || '')
+    void (async () => {
+      try {
+        const parsed = new URL(url)
+        if (parsed.protocol !== 'https:' || parsed.hostname !== 'pbs.twimg.com') {
+          throw new Error('不支持的图片地址')
+        }
+        const response = await fetch(parsed.href, { credentials: 'omit', signal: AbortSignal.timeout(8000) })
+        if (!response.ok) throw new Error(`图片读取失败（${response.status}）`)
+        const bytes = new Uint8Array(await response.arrayBuffer())
+        if (bytes.byteLength > 6 * 1024 * 1024) throw new Error('图片过大')
+        const contentType = response.headers.get('content-type') || 'image/jpeg'
+        let binary = ''
+        for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+          binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000))
+        }
+        sendResponse({ ok: true, dataUrl: `data:${contentType};base64,${btoa(binary)}` })
+      } catch (error) {
+        sendResponse({ ok: false, message: error instanceof Error ? error.message : String(error) })
+      }
+    })()
+    return true
+  } else if (m?.type === 'DSH_TWITTER_COPILOT_GENERATE') {
+    // Twitter In-Page Copilot Live LLM generation via local DSH/OmniMux host
+    const payload = m as { systemPrompt?: string; userMessage?: string }
+    const systemPrompt = payload.systemPrompt || ''
+    const userMessage = payload.userMessage || ''
+
+    void (async () => {
+      try {
+        await ensureBridgeForGeneration()
+      } catch (error) {
+        sendResponse({ ok: false, message: error instanceof Error ? error.message : String(error) })
+        return
+      }
+      let sessionError: unknown = null
+      try {
+        const text = await completeTextWithSession(systemPrompt, userMessage)
+        sendResponse({ ok: true, text: text.trim() })
+        return
+      } catch (error) {
+        sessionError = error
+      }
+      // The user's explicit text model could not be pinned: report it instead
+      // of falling back, which would produce a body from another model while
+      // the failure stayed invisible (#3629).
+      if (sessionError instanceof TextGenerationPinError) {
+        sendResponse({ ok: false, message: sessionError.message })
+        return
+      }
+      try {
+        const result = await completeTextFallbackRpc(systemPrompt, userMessage) as { text?: unknown }
+        if (typeof result?.text !== 'string' || !result.text.trim()) throw new Error('模型没有返回正文')
+        sendResponse({ ok: true, text: result.text.trim() })
+      } catch (fallbackError) {
+        const first = sessionError instanceof Error ? sessionError.message : String(sessionError)
+        const second = fallbackError instanceof Error ? fallbackError.message : String(fallbackError)
+        sendResponse({ ok: false, message: first === second ? first : `${first}；回退失败：${second}` })
+      }
+    })()
+    return true
+  } else if (m?.type === 'DSH_TWITTER_COPILOT_DECIDE') {
+    // Perspective decision via the hub Jev seam; the content script falls back to rules on any failure.
+    void (async () => {
+      try {
+        const result = await gatewayRpc(BRIDGE_EVALUATE_DECISION_METHOD, (m as { args?: unknown }).args) as {
+          decision?: unknown
+          confidence?: unknown
+        }
+        sendResponse({ ok: true, decision: result?.decision, confidence: result?.confidence })
+      } catch (error) {
+        sendResponse({ ok: false, message: error instanceof Error ? error.message : String(error) })
+      }
+    })()
+    return true
+  } else if (m?.type === 'DSH_TWITTER_COPILOT_LOG') {
+    const entry = (m as { entry?: unknown }).entry
+    void (async () => {
+      try {
+        const got = await chrome.storage.local.get(TWITTER_COPILOT_LOG_KEY)
+        const list = Array.isArray(got?.[TWITTER_COPILOT_LOG_KEY]) ? got[TWITTER_COPILOT_LOG_KEY] : []
+        let persisted = false
+        try {
+          await gatewayRpc(BRIDGE_APPEND_COPILOT_LOG_METHOD, entry)
+          persisted = true
+        } catch (error) {
+          console.warn('[twitter-copilot] log not persisted to host:', error)
+        }
+        const next = [...list, { ...(entry as Record<string, unknown>), persisted }].slice(-TWITTER_COPILOT_LOG_LIMIT)
+        await chrome.storage.local.set({ [TWITTER_COPILOT_LOG_KEY]: next })
+        sendResponse({ ok: true, persisted })
+      } catch (error) {
+        sendResponse({ ok: false, message: error instanceof Error ? error.message : String(error) })
+      }
+    })()
+    return true
+  } else if (m?.type === 'DSH_CLASSIFY_SAVE_TARGET') {
+    // 面板在页面 URL 变化时询问保存去向，只用来切换按钮文案；真正的分流仍在
+    // DSH_SAVE_INSPIRATION_PANEL 里重新分类决定，面板状态无权决定数据落点。
+    const url = readSaveTargetProbeUrl(m as { url?: unknown; payload?: Record<string, unknown> })
+    if (url === '') {
+      sendResponse({ ok: false })
+      return true
+    }
+    void (async () => {
+      const candidatePorts = await resolveHostCandidatePorts()
+      const classified = await classifySaveTargetOnHost(url, candidatePorts)
+      sendResponse(classified.ok
+        ? {
+            ok: true,
+            kind: classified.classification.kind,
+            platform: classified.classification.platform,
+            ...(classified.classification.handle ? { handle: classified.classification.handle } : {}),
+          }
+        : { ok: false })
+    })()
+    return true
+  } else if (m?.type === 'DSH_SAVE_INSPIRATION_PANEL') {
+    const payload = m.payload as {
+      targetUrl?: string
+      title?: string
+      type?: 'video' | 'image'
+      source_platform?: string
+      sourcePlatform?: string
+      cover_url?: string
+      coverUrl?: string
+      media_urls?: string[]
+      mediaUrls?: string[]
+      content?: string
+      // Captured-post fields. This list is explicit: a key missing here never
+      // reaches `itemBody`, and the host would store the row without it.
+      content_shape?: string
+      author?: Record<string, unknown>
+      stats?: Record<string, unknown>
+      posted_at?: string | null
+      quoted?: Record<string, unknown>
+      poll?: Record<string, unknown>
+      thread_items?: string[]
+      auto_analyze?: boolean
+      tags?: string[]
+      targetPort?: number
+      /** 整页保存（未指定具体媒体）时允许页面内提取作品后直传。 */
+      capturePage?: boolean
+    } | undefined
+
+    const targetUrl = payload?.targetUrl || ''
+    if (!targetUrl) {
+      sendResponse({ ok: false, message: 'url is required' })
+      return true
+    }
+
+    void (async () => {
+      const candidatePorts = await resolveHostCandidatePorts(payload?.targetPort)
+
+      // 1. host 分类先行：账号主页写账号监控，其余（content/unknown/分类失败）走灵感库。
+      //    分类失败不是保存失败——它只是把这次保存留在原来的灵感库路径上。
+      const classified = await classifySaveTargetOnHost(targetUrl, candidatePorts)
+      const saveTarget = saveTargetFromClassification(classified.ok ? classified.classification : null)
+      if (saveTarget === 'account') {
+        const accountResult = await importRivalAccountOnHost(targetUrl, candidatePorts)
+        if (accountResult.ok) {
+          // 账号导入不写媒体缓存：那份缓存只服务灵感库卡片。
+          sendResponse({
+            ok: true,
+            target: 'account',
+            ...(accountResult.handle ? { handle: accountResult.handle } : {}),
+            existing: accountResult.existing,
+          })
+          return
+        }
+        // 账号导入失败：回退到灵感库保存，并如实返回最终落库位置（spec §10）。
+      }
+
+      // 2. 作品页：先在页面内提取（内容脚本可能尚未注入，带短暂重试），成功即由
+      //    host 下载落盘；确实失败才继续走 import-url，并把失败原因带回面板。
+      // 2. 作品页：先在页面内提取（内容脚本可能尚未注入，带短暂重试）。TikTok/抖音
+      //    的 CDN 拒绝 host 下载，改由页面内取字节分块回传；其它平台照旧由 host 下载。
+      //    两条路都失败才继续走 import-url，并把真实原因带回面板。
+      let captureFallback: string | undefined
+      if (payload?.capturePage === true) {
+        const attempt = await capturePostFromActiveTab()
+        if (attempt.kind === 'captured') {
+          if (attempt.post.media.length === 0) {
+            // 页面只有标题、没有可下载素材：直传不会写入任何东西，按「无作品」回退。
+            captureFallback = 'capture-empty'
+          } else {
+            if (shouldRelayPost(attempt.post)) {
+              const tabId = await activeHttpTabId()
+              const relayed = tabId === null
+                ? { ok: false as const, reason: 'capture-media-unavailable' }
+                : await relayCapturedMedia(attempt.post, tabId, candidatePorts)
+              if (relayed.ok) {
+                await cacheCapturedPost(attempt.post)
+                sendResponse({ ok: true, target: 'inspiration', via: 'relay' })
+                return
+              }
+              captureFallback = relayed.reason
+            }
+            const captureResult = await saveCapturedPostOnHost(attempt.post, candidatePorts)
+            if (captureResult.ok) {
+              await cacheCapturedPost(attempt.post)
+              sendResponse({
+                ok: true,
+                target: 'inspiration',
+                via: 'capture',
+                existing: captureResult.existing,
+              })
+              return
+            }
+            if (captureFallback === undefined) captureFallback = 'capture-rejected'
+          }
+        } else {
+          captureFallback = attempt.kind
+        }
+      }
+
+      let saved = false
+      // The host answers 431 before routing when the request's header block is
+      // over its 16 KiB budget. Carrying no cookies makes that pathological
+      // rather than ordinary, but the panel still needs the real reason instead
+      // of "is OmniMux running?" when another client triggers it.
+      let headerOverflow = false
+      const itemBody = {
+        title: (payload?.title || targetUrl).slice(0, 120),
+        type: payload?.type || 'image',
+        source_platform: payload?.source_platform || payload?.sourcePlatform || 'web',
+        source_url: targetUrl,
+        cover_url: payload?.cover_url || payload?.coverUrl || '',
+        media_urls: payload?.media_urls || payload?.mediaUrls || (payload?.cover_url || payload?.coverUrl ? [payload.cover_url || payload.coverUrl || ''] : []),
+        // 2000 rather than 500: a post's body is the thing being saved, and the
+        // old cap cut most of a long one.
+        content: (payload?.content || '').slice(0, 2000),
+        content_shape: payload?.content_shape,
+        author: payload?.author,
+        stats: payload?.stats,
+        posted_at: payload?.posted_at ?? null,
+        quoted: payload?.quoted,
+        poll: payload?.poll,
+        thread_items: payload?.thread_items,
+        // `undefined` drops the key and leaves the host on its own default; the
+        // panel states `false` explicitly, and nothing else needs to.
+        auto_analyze: payload?.auto_analyze === false ? false : undefined,
+        tags: payload?.tags || ['网页采集', '灵感采集'],
+      }
+
+      for (const port of candidatePorts) {
+        const targetBase = `http://127.0.0.1:${port}`
+        try {
+          // 1. 尝试 import-url 全量抓取
+          let res = await loopbackFetch(`${targetBase}/omnimux/inspiration/local/import-url`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            // Saving is not analysing; the host would otherwise run its breakdown.
+            body: JSON.stringify({ url: targetUrl, background: true, auto_analyze: false }),
+            signal: AbortSignal.timeout(3500),
+          }).catch(() => null)
+
+          // 2. 如果 import-url 失败或异常（如反爬中断 499），采用前台已嗅探图文直存
+          if (!res || (!res.ok && res.status !== 200 && res.status !== 201 && res.status !== 202)) {
+            res = await loopbackFetch(`${targetBase}/omnimux/inspiration/local`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(itemBody),
+              signal: AbortSignal.timeout(3000),
+            }).catch(() => null)
+          }
+
+          if (res?.status === 431) headerOverflow = true
+
+          if (res && (res.ok || res.status === 200 || res.status === 201 || res.status === 202)) {
+            saved = true
+            break
+          }
+        } catch {
+          // try next port
+        }
+      }
+
+      if (saved) {
+        try {
+          await appendMediaInspiration({
+            id: `insp_${Date.now().toString(36)}`,
+            src: itemBody.cover_url || targetUrl,
+            type: itemBody.type,
+            pageUrl: targetUrl,
+            pageTitle: itemBody.title,
+            alt: itemBody.content,
+            previewSrc: itemBody.cover_url,
+            width: 0,
+            height: 0,
+            naturalWidth: 0,
+            naturalHeight: 0,
+            capturedAt: Date.now(),
+          })
+        } catch {
+          // ignore cache error
+        }
+      }
+
+      sendResponse(saved
+        ? { ok: true, target: 'inspiration', ...(captureFallback ? { fallback: captureFallback } : {}) }
+        : { ok: false, code: headerOverflow ? 'local-header-overflow' : 'save-failed', ...(captureFallback ? { fallback: captureFallback } : {}) })
+    })()
+    return true
+  }
+})
+
+// `settingsReady` intentionally has no bridge-start continuation: opening a
+// side panel is the first action allowed to claim the bridge connection.

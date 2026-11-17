@@ -1,0 +1,11 @@
+{
+  "extensionName": {
+    "message": "OmniMux Elf Assistant"
+  },
+  "extensionDescription": {
+    "message": "OmniMux Elf Assistant - Immersive browser companion for context-aware social content creation and local DSH engine integration."
+  },
+  "actionTitle": {
+    "message": "Open OmniMux Elf Assistant"
+  }
+}

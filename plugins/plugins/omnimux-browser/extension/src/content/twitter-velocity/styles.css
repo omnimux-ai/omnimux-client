@@ -1,0 +1,201 @@
+.omnimux-velocity-host {
+  display: inline-flex;
+  align-items: center;
+  position: absolute;
+  top: 8px;
+  right: 78px;
+  z-index: 50;
+  user-select: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+.omnimux-velocity-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 20px;
+  padding: 0 7px;
+  box-sizing: border-box;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  text-decoration: none;
+  border: 1px solid transparent;
+  background-color: transparent;
+  /* 半透明 + 毛玻璃：卡片底色透出，角标不抢正文注意力 */
+  backdrop-filter: blur(10px) saturate(115%);
+  -webkit-backdrop-filter: blur(10px) saturate(115%);
+  opacity: 1;
+}
+
+.omnimux-velocity-badge:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.14);
+}
+
+/* 三档热度用「暖 → 冷」的深浅分层区分：橙红（最热）→ 琥珀（升温）→ 冷灰（常态）。
+   底色一律半透明压暗，描边与发光克制，紫色禁用（tests/no-purple-theme.spec.ts 守护）。 */
+.omnimux-velocity-badge--viral {
+  background-image: linear-gradient(180deg, rgba(92, 28, 16, 0.6), rgba(46, 14, 9, 0.52));
+  border-color: rgba(255, 122, 74, 0.34);
+  color: rgba(255, 197, 173, 0.95);
+  box-shadow: 0 0 14px rgba(255, 88, 42, 0.16), inset 0 1px 0 rgba(255, 190, 160, 0.1);
+}
+
+.omnimux-velocity-badge--surging {
+  background-image: linear-gradient(180deg, rgba(72, 46, 8, 0.54), rgba(38, 24, 5, 0.48));
+  border-color: rgba(240, 172, 74, 0.29);
+  color: rgba(249, 220, 170, 0.9);
+  box-shadow: 0 0 12px rgba(228, 150, 44, 0.11), inset 0 1px 0 rgba(255, 226, 180, 0.08);
+}
+
+.omnimux-velocity-badge--normal {
+  background-color: rgba(22, 28, 38, 0.46);
+  border-color: rgba(150, 166, 186, 0.22);
+  color: rgba(198, 210, 225, 0.76);
+  box-shadow: none;
+}
+
+/* Panel Popover */
+.omnimux-velocity-panel {
+  position: fixed;
+  width: 270px;
+  background: rgba(16, 17, 22, 0.96);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.75);
+  padding: 14px;
+  z-index: 2147483640;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  color: #f1f5f9;
+  font-size: 13px;
+  animation: omnimux-panel-in 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes omnimux-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.omnimux-velocity-panel[hidden] {
+  display: none !important;
+}
+
+.omnimux-velocity-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 8px;
+}
+
+.omnimux-velocity-panel__title {
+  font-weight: 600;
+  font-size: 13px;
+  color: #e2e8f0;
+}
+
+.omnimux-velocity-panel__tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 6px;
+}
+
+.omnimux-velocity-panel__metric {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.omnimux-velocity-panel__pace {
+  font-size: 20px;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.02em;
+}
+
+.omnimux-velocity-panel__meta {
+  font-size: 11px;
+  color: #94a3b8;
+  line-height: 1.4;
+}
+
+.omnimux-velocity-panel__exposure-box {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.omnimux-velocity-panel__exposure-label {
+  font-size: 11px;
+  color: #cbd5e1;
+}
+
+.omnimux-velocity-panel__exposure-val {
+  font-size: 14px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.omnimux-velocity-panel__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.omnimux-velocity-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 30px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.16s ease;
+  border: none;
+  outline: none;
+}
+
+.omnimux-velocity-btn--primary {
+  background: #ffffff;
+  color: #0f172a;
+}
+
+.omnimux-velocity-btn--primary:hover {
+  background: #f1f5f9;
+  transform: translateY(-1px);
+}
+
+.omnimux-velocity-btn--secondary {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.omnimux-velocity-btn--secondary:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+}

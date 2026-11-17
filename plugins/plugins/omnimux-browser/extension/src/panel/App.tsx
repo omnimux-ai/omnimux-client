@@ -1,0 +1,4180 @@
+/**
+ * Side panel application: chat with the local dsh agent, plus a settings
+ * view. Renders conversation from session history and live session events;
+ * browser actions are driven by the model through the bridge tools (the panel
+ * only shows tool activity cards).
+ *
+ * @module
+ */
+
+import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
+import { BRIDGE_FETCH_MEDIA_METHOD, DEFAULT_SNAPSHOT_MAX_CHARS } from 'omnimux-browser/src/protocol.ts'
+import type { BridgeCaps } from 'omnimux-browser/src/protocol.ts'
+import type { ServerFrame } from 'omnimux-browser/src/protocol.ts'
+import type { BridgeState } from '../background/bridge.ts'
+import type { AffinityTab, TabAffinityDecision, TabAffinityState } from '../background/tab-affinity.ts'
+import { connectPanel, PanelRpcError, type PanelApi, type PanelSettings } from './api.ts'
+import { renderMarkdown } from './markdown.ts'
+import omnimuxUrl from '../../assets/icons/omnimux-256.png'
+import type { PageSceneInfo } from './components/SceneBadge.tsx'
+import { MediaSnifferBar, type SniffedMediaItem } from './components/MediaSnifferBar.tsx'
+import { PresetChips } from './components/PresetChips.tsx'
+import { FormDraftCard } from './components/FormDraftCard.tsx'
+import { parseDraftMessage } from '../shared/draft.ts'
+import { loopbackFetch } from '../shared/loopback-fetch.ts'
+import type { DraftField } from '../shared/draft.ts'
+import { WorkspaceSelector } from './components/WorkspaceSelector.tsx'
+import { SessionWorkspaceSelector, type SessionWorkspaceItem } from './components/SessionWorkspaceSelector.tsx'
+import { ModelSelector } from './components/ModelSelector.tsx'
+import { AutoModelPicker } from './components/AutoModelPicker.tsx'
+import { CloseIcon, SearchIcon, MenuIcon, ArrowUpIcon, SquareIcon, MessageSquareIcon, PlusIcon as PlusSvgIcon, PaperclipIcon, SidebarPanelIcon, TwitterXIcon, PlatformMarkIcon, SaveIcon, BinocularsIcon, MoreHorizontalIcon } from './components/icons.tsx'
+import type { ApprovalDecision, ApprovalRequest } from '../security/approval.ts'
+import { getUiLocale, safeGetStorage, safeSetStorage, safeRemoveStorage } from '../i18n.ts'
+import type { UiLocale } from '../i18n.ts'
+import {
+  FEATURE_FLAG,
+  featureFlagMessage,
+  readFlag,
+  readFlagSync,
+  subscribeFlag,
+  writeFlag,
+  type FeatureFlagKey,
+} from '../feature-flags.ts'
+import { PANEL_COPY, type PanelCopy } from './strings.ts'
+import {
+  COPILOT_KEYWORDS_STORAGE_KEY as COPILOT_KEYWORDS_KEY,
+  MAX_KEYWORD_TAGS,
+  addKeywordTags,
+  parseKeywordTags,
+  serializeKeywordTags,
+} from '../content/twitter-copilot/settings.ts'
+import {
+  applyUiScale,
+  DEFAULT_UI_SCALE,
+  loadUiScale,
+  saveUiScale,
+  stepUiScale,
+} from './ui-scale.ts'
+import { QuestionCard } from './QuestionCard.tsx'
+import { MessageImages } from './MessageImages.tsx'
+import type { QuestionAnswer } from './questions.ts'
+import {
+  hasPendingQuestion,
+  questionReceiptDisposition,
+  removePendingQuestion,
+  upsertPendingQuestion,
+} from './pending-questions.ts'
+import { normalizeTrustedOrigin } from '../security/trusted-origins.ts'
+import type { PageSelection } from '../selection.ts'
+import {
+  selectionPromptText,
+  splitSelectionMessage,
+} from './selection.ts'
+import { approvalReadyForSession, approvalSessionToFocus } from './approvals.ts'
+import {
+  attachFailureLine,
+  browserTimeZone,
+  downloadPageMedia,
+  draftImageDataUrl,
+  ImageInputError,
+  MediaDownloadError,
+  parseImageAttachmentLimits,
+  prepareImageFiles,
+  promptContent,
+  type DraftImage,
+  type ImageAttachmentLimits,
+} from './attachments.ts'
+import { imageErrorMessage } from './image-errors.ts'
+import {
+  saveButtonLabel,
+  saveFailureToast,
+  saveFallbackToast,
+  saveSuccessToast,
+  type SaveTarget,
+} from './save-target-copy.ts'
+import { dockFloatToNativeSidePanel } from './float-dock.ts'
+import { AssistantStreamView } from './assistant-stream.ts'
+import {
+  canAcceptImageSelection,
+  emptyComposerDraft,
+  restoreSubmittedDraft,
+  type ComposerDraft,
+} from './composer.ts'
+import {
+  latestSessionTitle,
+  projectedSessionTitle,
+  resumableSessions,
+  sessionAcceptsPrompts,
+  sessionDisplayTitle,
+  sessionTitleFromEvent,
+  SessionRuntimeCache,
+  type SessionPickerEntry,
+} from './sessions.ts'
+
+/** One rendered conversation row. */
+import {
+  appendLiveRow,
+  applyInboxSplice,
+  collectToolCallNames,
+  completeLastTool,
+  errorFromTurnEnd,
+  inboxQueuedMessages,
+  inboxSpliceFromEvent,
+  isRecord,
+  mergeHistoryRows,
+  pendingQuestionFromFrame,
+  resolvedQuestionFromFrame,
+  rowFromEvent,
+  toolSummary,
+  turnNumberOf,
+  turnOutlineEntries,
+  type QueuedMessage,
+  type Row,
+  type PendingQuestion,
+  type ResolvedQuestion,
+  type SessionEventView,
+  type TurnOutlineEntry,
+} from './events.ts'
+import { producedMediaFromToolResult, toolResultCallId } from './produced-media.ts'
+import { nextQueueSteer } from './queue-gesture.ts'
+
+import { TurnRail, buildRailItems } from './TurnRail.tsx'
+import { QueueDock } from './QueueDock.tsx'
+
+function normalizeWebOrigin(value: string): string | null {
+  return normalizeTrustedOrigin(value) ?? null
+}
+
+/** One editable API-relay profile in the settings view. */
+interface RelayProfileDraft {
+  /** Stable llm-pi-ai provider-route key; empty until first save mints it. */
+  key: string
+  name: string
+  protocol: 'anthropic-messages' | 'openai-completions' | 'openai-codex-responses'
+  baseUrl: string
+  /** Typed token; empty means keep whatever is already stored. */
+  token: string
+  tokenConfigured: boolean
+  modelsText: string
+  setDefault: boolean
+}
+
+/** Route keys managed by the relay editor; core-owned routes are never touched. */
+const RELAY_ROUTE_PREFIX = 'relay-'
+
+/**
+ * How long the pairing card waits for an approval before it re-enables.
+ *
+ * Slightly longer than the background's own 120s poll so that expiry stays the
+ * authority; this timer only covers a poll that never reports back, such as one
+ * dropped by a restarted service worker.
+ */
+const PAIR_APPROVAL_TIMEOUT_MS = 130_000
+
+/**
+ * Display names are free-form (CJK included); the route key needs the
+ * ASCII shape the wire and credential refs expect, so CJK-heavy names
+ * collapse to a stable name hash instead of being rejected.
+ */
+function relayRouteKey(name: string): string {
+  const slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  if (slug !== '') return `${RELAY_ROUTE_PREFIX}${slug}`
+  let hash = 5381
+  for (let index = 0; index < name.length; index += 1) {
+    hash = ((hash << 5) + hash + name.charCodeAt(index)) | 0
+  }
+  return `${RELAY_ROUTE_PREFIX}n${(hash >>> 0).toString(36)}`
+}
+
+function relayTokenRef(routeKey: string): string {
+  const suffix = routeKey.slice(RELAY_ROUTE_PREFIX.length).replace(/[^a-zA-Z0-9]/g, '_').toUpperCase()
+  return `DSH_RELAY_${suffix}_TOKEN`
+}
+
+function parseRelayModels(text: string): Array<{ id: string; contextWindow?: number }> {
+  return text.split('\n').map((line) => line.trim()).filter((line) => line !== '').map((line) => {
+    const [id, contextWindow] = line.split(',').map((part) => part.trim())
+    const parsed = contextWindow === undefined || contextWindow === '' ? undefined : Number(contextWindow)
+    return {
+      id,
+      ...(parsed !== undefined && Number.isFinite(parsed) && parsed > 0 ? { contextWindow: parsed } : {}),
+    }
+  }).filter((model) => model.id !== '')
+}
+
+/** Gateways report failures with the endpoint named; surface everything we got. */
+function relayErrorText(cause: unknown): string {
+  if (cause instanceof PanelRpcError) {
+    const detailKeys = Object.keys(cause.details ?? {})
+    const details = detailKeys.length > 0 ? ` ${JSON.stringify(cause.details).slice(0, 220)}` : ''
+    return `${cause.message}${details}`
+  }
+  return cause instanceof Error ? cause.message : String(cause)
+}
+
+type DiscoveredModel = { id: string; contextWindow?: number }
+
+/**
+ * Anthropic-protocol routes have no native listing; the gateway still fails
+ * them with a "no model listing" message whose wording varies, so match the
+ * known phrasings instead of one brittle code.
+ */
+function isManualOnlyDiscovery(cause: unknown): boolean {
+  if (!(cause instanceof PanelRpcError)) return false
+  return cause.code.includes('unsupported')
+    || /no model listing|models by hand/i.test(cause.message)
+}
+
+function isAuthFailure(cause: unknown): boolean {
+  return cause instanceof PanelRpcError
+    && (cause.code.includes('credential') || /\b401\b|\b403\b|invalid[ _-]?key/i.test(cause.message))
+}
+
+async function discoverOnce(
+  api: PanelApi,
+  profile: RelayProfileDraft,
+  attempt: { api: string; baseURL: string },
+): Promise<DiscoveredModel[]> {
+  const result = await api.rpc<{ models?: DiscoveredModel[] }>('llm.discoverModels', {
+    settingsNs: 'llm-pi-ai',
+    provider: profile.key !== '' ? profile.key : relayRouteKey(profile.name),
+    api: attempt.api,
+    baseURL: attempt.baseURL,
+    ...(profile.token.trim() === '' ? {} : { apiKey: profile.token.trim() }),
+  })
+  return result.models ?? []
+}
+
+/**
+ * Build the ordered discovery attempts for one draft. Anthropic-protocol
+ * profiles have no native listing, so fall back to the relay's own
+ * OpenAI-compatible listing endpoint (`<base>/v1/models`) — New API / One API
+ * style stations serve it with the same token, and the returned ids are the
+ * ones the Anthropic route accepts.
+ */
+async function discoverWithFallback(
+  api: PanelApi,
+  profile: RelayProfileDraft,
+): Promise<{ models: DiscoveredModel[]; viaOpenaiListing: boolean }> {
+  const base = profile.baseUrl.trim().replace(/\/+$/, '')
+  const attempts: Array<{ api: string; baseURL: string; viaOpenaiListing: boolean }> = []
+  if (profile.protocol === 'anthropic-messages') {
+    attempts.push({ api: 'openai-completions', baseURL: `${base}/v1`, viaOpenaiListing: true })
+    attempts.push({ api: 'openai-completions', baseURL: base, viaOpenaiListing: true })
+  } else {
+    attempts.push({ api: profile.protocol, baseURL: base, viaOpenaiListing: false })
+    if (!base.includes('/v1')) {
+      attempts.push({ api: profile.protocol, baseURL: `${base}/v1`, viaOpenaiListing: false })
+    }
+  }
+
+  let lastCause: unknown
+  for (const attempt of attempts) {
+    try {
+      const models = await discoverOnce(api, profile, attempt)
+      if (models.length > 0) {
+        return { models, viaOpenaiListing: attempt.viaOpenaiListing }
+      }
+      lastCause = new PanelRpcError('model-discovery-failed', 'the endpoint listed no models', {
+        baseURL: attempt.baseURL,
+      })
+    } catch (cause) {
+      lastCause = cause
+      if (isAuthFailure(cause)) break
+    }
+  }
+  throw lastCause ?? new PanelRpcError('model-discovery-failed', 'model discovery failed', {})
+}
+
+function SettingsIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M10 7.35A2.65 2.65 0 1 0 10 12.65 2.65 2.65 0 0 0 10 7.35Z" />
+      <path d="M16.15 11.2a6.4 6.4 0 0 0 0-2.4l1.18-.91-1.5-2.6-1.4.57a6.3 6.3 0 0 0-2.08-1.2L12.15 3h-3l-.2 1.66a6.3 6.3 0 0 0-2.08 1.2l-1.4-.57-1.5 2.6 1.18.91a6.4 6.4 0 0 0 0 2.4l-1.18.91 1.5 2.6 1.4-.57a6.3 6.3 0 0 0 2.08 1.2l.2 1.66h3l.2-1.66a6.3 6.3 0 0 0 2.08-1.2l1.4.57 1.5-2.6-1.18-.91Z" />
+    </svg>
+  )
+}
+
+function ChevronDownIcon({ size = 13 }: { size?: number } = {}): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 20 20" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="6 8 10 12 14 8" />
+    </svg>
+  )
+}
+
+function QuoteIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M8.4 5.5 6.9 8.2h1.9v4.8H4.5V8.5l2-3h1.9Zm7 0L13.9 8.2h1.9v4.8h-4.3V8.5l2-3h1.9Z" />
+    </svg>
+  )
+}
+
+function ToolIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M12.1 3.35a4 4 0 0 0-4.75 5.27l-4.1 4.1a1.85 1.85 0 1 0 2.62 2.62l4.1-4.1a4 4 0 0 0 5.25-4.78l-2.45 2.45-1.9-.5-.5-1.9 2.45-2.45a4 4 0 0 0-.72-.71Z" />
+    </svg>
+  )
+}
+
+function BackIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="m12.5 4.5-5.5 5.5 5.5 5.5" />
+    </svg>
+  )
+}
+
+function ShieldIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M10 2.5 16 5v4.2c0 3.8-2.45 6.45-6 8.3-3.55-1.85-6-4.5-6-8.3V5l6-2.5Z" />
+      <path d="M10 6.5v4M10 13.5h.01" />
+    </svg>
+  )
+}
+
+export function tabLabel(tab: AffinityTab | null, unknownTab: string): string {
+  const title = tab?.title.trim()
+  if (title !== undefined && title !== '') return title
+  try {
+    const hostname = new URL(tab?.url ?? '').hostname
+    return hostname === '' ? unknownTab : hostname
+  } catch {
+    return unknownTab
+  }
+}
+
+function TabAffinityBanner({
+  state,
+  onDecision,
+}: {
+  state: TabAffinityState | null
+  copy: PanelCopy
+  onDecision: (decision: TabAffinityDecision) => void
+}): React.JSX.Element | null {
+  useEffect(() => {
+    if (state && (state.status === 'lost' || state.status === 'handoff' || state.status === 'background')) {
+      if (state.active !== null) {
+        onDecision('follow')
+      }
+    }
+  }, [state, onDecision])
+  return null
+}
+
+function ApprovalDialog({
+  request,
+  onDecision,
+  copy,
+}: {
+  request: ApprovalRequest
+  onDecision: (decision: ApprovalDecision) => void
+  copy: PanelCopy
+}): React.JSX.Element {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') onDecision('deny')
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => { window.removeEventListener('keydown', onKeyDown) }
+  }, [request.id, onDecision])
+
+  return (
+    <div className="approval-backdrop">
+      <section className="approval-dialog" role="alertdialog" aria-modal="true" aria-labelledby="approval-title">
+        <div className="approval-rail" aria-hidden="true" />
+        <div className="approval-heading">
+          <span className="approval-shield"><ShieldIcon /></span>
+          <div>
+            <span className="eyebrow">{copy.approval.eyebrow}</span>
+            <h2 id="approval-title">{request.kind === 'read' ? copy.approval.readTitle : copy.approval.actionTitle}</h2>
+          </div>
+        </div>
+        <div className="approval-detail">
+          <span>{copy.approval.request}</span>
+          <strong>{request.summary}</strong>
+        </div>
+        <div className="approval-origins">
+          <span>{copy.approval.origins}</span>
+          {request.origins.length === 0
+            ? <code className="unknown">{copy.approval.unknownOrigin}</code>
+            : request.origins.map((origin) => <code key={origin}>{origin}</code>)}
+        </div>
+        <div className="approval-actions">
+          <button className="deny" autoFocus onClick={() => onDecision('deny')}>{copy.approval.deny}</button>
+          <button className="allow" onClick={() => onDecision('allow-once')}>{copy.approval.allowOnce}</button>
+          {request.kind === 'read' && (
+            <button className="read-always" onClick={() => onDecision('always-allow-reads')}>{copy.approval.alwaysAllowReads}</button>
+          )}
+          {request.kind === 'action' && request.canTrust && request.origins.length === 1 && (
+            <button className="session-trust" onClick={() => onDecision('trust-session')}>{copy.approval.trustSession}</button>
+          )}
+        </div>
+        <small className="approval-footnote">
+          {request.kind === 'read'
+            ? copy.approval.readFootnote
+            : copy.approval.actionFootnote}
+        </small>
+      </section>
+    </div>
+  )
+}
+
+/**
+ * A page quote: the highlighted text plus where it came from. The quote is
+ * page-authored, so it renders as plain text and never as markdown.
+ */
+function SelectionQuote({
+  selection,
+  copy,
+  label,
+  onRemove,
+}: {
+  selection: { title: string; url: string; quote: string; truncated: boolean }
+  copy: PanelCopy
+  label: string
+  onRemove?: () => void
+}): React.JSX.Element {
+  return (
+    <div className="page-selection">
+      <div className="page-selection-meta">
+        <span className="page-selection-chip">
+          <QuoteIcon />
+          <span>{label}</span>
+          {onRemove !== undefined && (
+            <button
+              type="button"
+              aria-label={copy.app.removeSelection}
+              title={copy.app.removeSelection}
+              onClick={onRemove}
+            >×</button>
+          )}
+        </span>
+      </div>
+      <blockquote className="page-selection-quote" title={selection.quote}>
+        {selection.quote}
+        {selection.truncated && <span className="page-selection-truncated"> {copy.app.selectionTruncated}</span>}
+      </blockquote>
+    </div>
+  )
+}
+
+function isFillableContent(text: string): boolean {
+  if (!text || text.trim() === '') return false
+  const trimmed = text.trim()
+
+  // 1. 过滤开场白、问候语与自我介绍
+  if (
+    /(你好|您好)[!！\s].*我是/i.test(trimmed) ||
+    /欢迎使用/i.test(trimmed) ||
+    /我们可以一起进行[:：]/i.test(trimmed) ||
+    /随时把你的需求.*发给我/i.test(trimmed) ||
+    /今天有什么想推进的/i.test(trimmed)
+  ) {
+    return false
+  }
+
+  // 2. 过滤极短的纯疑问/追问
+  if (trimmed.length < 50 && /[?？]$/.test(trimmed)) {
+    return false
+  }
+
+  // 3. 过滤纯报错与系统提示
+  if (/^\[?(error|warning|系统提示|异常)/i.test(trimmed)) {
+    return false
+  }
+
+  return true
+}
+
+export interface ParsedDraftResult {
+  hasDraft: boolean
+  draftHtml: string
+  draftText: string
+  noteHtml: string
+}
+
+export function parseDraftSections(rawText: string): ParsedDraftResult {
+  if (!rawText || rawText.trim() === '') {
+    return { hasDraft: false, draftHtml: '', draftText: '', noteHtml: '' }
+  }
+  const trimmed = rawText.trim()
+
+  // 1. 过滤开场白、问候语与自我介绍
+  if (
+    /(你好|您好)[!！\s].*我是/i.test(trimmed) ||
+    /欢迎使用/i.test(trimmed) ||
+    /我们可以一起进行[:：]/i.test(trimmed) ||
+    /随时把你的需求.*发给我/i.test(trimmed) ||
+    /今天有什么想推进的/i.test(trimmed)
+  ) {
+    return { hasDraft: false, draftHtml: '', draftText: '', noteHtml: '' }
+  }
+
+  // 2. 检查是否有复盘笔记/思考说明（例如：💡 操盘手复盘笔记）
+  const splitRegex = /(?:\n+|^)(?:💡\s*(?:操盘手)?复盘(?:笔记)?|【复盘笔记】|##?\s*(?:操盘手)?复盘)/i
+  const match = splitRegex.exec(trimmed)
+
+  if (match) {
+    const draftPart = trimmed.substring(0, match.index).trim()
+    const notePart = trimmed.substring(match.index).trim()
+
+    const cleanDraftText = draftPart
+      .split('\n')
+      .map(line => line.replace(/^>\s?/, ''))
+      .join('\n')
+      .trim()
+
+    return {
+      hasDraft: cleanDraftText.length > 0,
+      draftHtml: renderMarkdown(draftPart),
+      draftText: cleanDraftText,
+      noteHtml: renderMarkdown(notePart),
+    }
+  }
+
+  // 3. 检查是否有独立的 blockquote 块作为文案交付物
+  const quoteMatch = /(?:^|\n)(>[\s\S]+?)(?=\n\s*[^>]|$)/.exec(trimmed)
+  if (quoteMatch) {
+    const rawQuote = quoteMatch[1].trim()
+    const cleanQuote = rawQuote
+      .split('\n')
+      .map(line => line.replace(/^>\s?/, ''))
+      .join('\n')
+      .trim()
+    if (cleanQuote.length >= 20) {
+      const rest = trimmed.replace(rawQuote, '').trim()
+      return {
+        hasDraft: true,
+        draftHtml: renderMarkdown(rawQuote),
+        draftText: cleanQuote,
+        noteHtml: renderMarkdown(rest),
+      }
+    }
+  }
+
+  // 4. 普通文案：整条都属于文案
+  if (isFillableContent(trimmed)) {
+    return {
+      hasDraft: true,
+      draftHtml: renderMarkdown(trimmed),
+      draftText: trimmed,
+      noteHtml: '',
+    }
+  }
+
+  return { hasDraft: false, draftHtml: '', draftText: '', noteHtml: '' }
+}
+
+/**
+ * One conversation row body. Memoized: rows are immutable (append/merge copy
+ * the array but reuse row objects), so markdown is re-parsed only when a
+ * row's text actually changes — typing must not re-render every message.
+ */
+const MessageBody = memo(function MessageBody({
+  row,
+  sessionId,
+  api,
+  copy,
+  locale = 'zh',
+  onFillDraft,
+}: {
+  row: Row
+  sessionId: string
+  api: PanelApi
+  copy: PanelCopy
+  locale?: UiLocale
+  onFillDraft?: (fields: DraftField[]) => Promise<{ ok: boolean; message?: string }>
+}): React.JSX.Element {
+  if (row.kind === 'user' || row.kind === 'assistant') {
+    // A user message may carry a page quote; show the quote, not its fence.
+    const attached = row.kind === 'user' ? splitSelectionMessage(row.text) : null
+    const text = attached === null ? row.text : attached.message
+    return (
+      <div className="body message-body md">
+        <MessageImages
+          images={row.images ?? []}
+          sessionId={sessionId}
+          api={api}
+          align={row.kind === 'user' ? 'end' : 'start'}
+          copy={copy}
+        />
+        {attached !== null && (
+          <SelectionQuote
+            selection={attached.selection}
+            copy={copy}
+            label={copy.app.selectionAttached}
+          />
+        )}
+        {(() => {
+          const parsed = row.kind === 'assistant' && row.status !== 'running' ? parseDraftMessage(text) : null
+          if (parsed && parsed.draft) {
+            return (
+              <>
+                {parsed.before.trim() !== '' && (
+                  <div className="md" dangerouslySetInnerHTML={{ __html: renderMarkdown(parsed.before) }} />
+                )}
+                <FormDraftCard
+                  draft={parsed.draft}
+                  onFill={onFillDraft || (async () => ({ ok: false, message: '未配置填写通道' }))}
+                  locale={locale}
+                />
+                {parsed.after.trim() !== '' && (
+                  <div className="md" dangerouslySetInnerHTML={{ __html: renderMarkdown(parsed.after) }} />
+                )}
+              </>
+            )
+          }
+          return text.trim() !== '' ? <div className="md" dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }} /> : null
+        })()}
+      </div>
+    )
+  }
+  return <pre>{row.text}</pre>
+})
+
+interface HistoryPage {
+  events: { event: SessionEventView }[]
+  assistantStream?: unknown
+  snapshotId?: string
+  projections?: {
+    asOfSeq: number
+    values: Record<string, unknown>
+  }
+}
+
+/**
+ * 每行容纳的步骤数。
+ *
+ * 进展窗口固定两行，每行两个步骤：步骤链增长时行数随之增加，但窗口只露出最后两行，
+ * 新的一行从下方推进来、旧的一行向上滑出。行宽因此只在一格与两格之间变化，
+ * 而卡片几何完全不变——否则每来一个进展就换行增高，用户看到的就是抖动。
+ */
+const TOOL_STEPS_PER_LINE = 2
+
+/** 单格内的最大字符数：超长的单步名称在格内截断，完整链条留在无障碍名称里。 */
+const TOOL_STEP_MAX_CHARS = 64
+
+/** 在词边界上截断超长步骤名，避免把参数名从中间劈开。 */
+function clipStep(step: string): string {
+  if (step.length <= TOOL_STEP_MAX_CHARS) return step
+  const head = step.slice(0, TOOL_STEP_MAX_CHARS)
+  const boundary = head.lastIndexOf(' ')
+  return `${boundary > TOOL_STEP_MAX_CHARS / 2 ? head.slice(0, boundary) : head}…`
+}
+
+/** 把步骤链切成显示用的行。 */
+export function toolStepLines(steps: string[]): string[][] {
+  const trimmed = steps.map(clipStep)
+  const lines: string[][] = []
+  for (let i = 0; i < trimmed.length; i += TOOL_STEPS_PER_LINE) {
+    lines.push(trimmed.slice(i, i + TOOL_STEPS_PER_LINE))
+  }
+  return lines
+}
+
+export const ToolActivity = memo(function ToolActivity({ row, copy }: { row: Row; copy: PanelCopy }): React.JSX.Element {
+  const running = row.status === 'running'
+  const steps = row.text.split(/\s*(?:→|->)\s*/).filter(Boolean)
+    .map((step) => copy.tool?.labels && Object.hasOwn(copy.tool.labels, step) ? copy.tool.labels[step] : step)
+  const lines = steps.length > 0 ? toolStepLines(steps) : [[row.text]]
+
+  return (
+    <div
+      className={`tool-activity ${running ? 'running' : 'complete'}`}
+      role="status"
+      aria-label={`${running ? copy.tool.running : copy.tool.complete}：${steps.join(' → ')}`}
+    >
+      <span className="tool-icon"><ToolIcon /></span>
+      <span className="tool-copy">
+        <span className="tool-label">{running ? copy.tool.running : copy.tool.complete}</span>
+        {/* 两行窗口：只露出最后两行，靠内容整体上移带动画式的流动。 */}
+        <span className="tool-window" data-lines="2">
+          <span className="tool-lines">
+            {lines.map((line, lineIdx) => (
+              <span className="tool-line" key={lineIdx}>
+                {line.map((step, colIdx) => (
+                  <Fragment key={colIdx}>
+                    {colIdx > 0 && <span className="tool-step-arrow" aria-hidden="true">→</span>}
+                    <span className="tool-step-tag">{step}</span>
+                  </Fragment>
+                ))}
+              </span>
+            ))}
+          </span>
+        </span>
+      </span>
+      <span
+        className="tool-state"
+        data-width="fixed"
+        aria-label={running ? copy.tool.inProgress : copy.tool.completed}
+      >
+        {running ? (
+          <span className="spinner" />
+        ) : (
+          <span className="tool-done-badge">
+            <span className="badge-dot" aria-hidden="true" />
+            <span>{copy.tool.done}</span>
+          </span>
+        )}
+      </span>
+    </div>
+  )
+})
+
+/**
+ * Normalised page-media payload, as produced by the content script's hover
+ * detector. Declared locally rather than imported: the panel and the content
+ * script are separate bundles, and the receiving side must validate anyway.
+ */
+interface HoveredMedia {
+  id: string
+  type: 'image' | 'video'
+  src: string
+  previewSrc: string
+  pageUrl: string
+  pageTitle: string
+  width: number
+  height: number
+  naturalWidth: number
+  naturalHeight: number
+  alt: string
+  capturedAt: number
+}
+
+/**
+ * Validates a page-media payload that arrived by message.
+ *
+ * The content script is the only producer, but a panel can be framed by any
+ * page, so an untrusted `postMessage` must not be able to mount an arbitrary
+ * draft attachment with a malformed shape.
+ */
+function readHoveredMedia(raw: unknown): HoveredMedia | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const media = raw as Partial<HoveredMedia>
+  if (typeof media.id !== 'string' || typeof media.src !== 'string') return null
+  if (media.type !== 'image' && media.type !== 'video') return null
+  return {
+    id: media.id,
+    type: media.type,
+    src: media.src,
+    previewSrc: typeof media.previewSrc === 'string' ? media.previewSrc : media.src,
+    pageUrl: typeof media.pageUrl === 'string' ? media.pageUrl : '',
+    pageTitle: typeof media.pageTitle === 'string' ? media.pageTitle : '',
+    width: typeof media.width === 'number' ? media.width : 0,
+    height: typeof media.height === 'number' ? media.height : 0,
+    naturalWidth: typeof media.naturalWidth === 'number' ? media.naturalWidth : 0,
+    naturalHeight: typeof media.naturalHeight === 'number' ? media.naturalHeight : 0,
+    alt: typeof media.alt === 'string' ? media.alt : '',
+    capturedAt: typeof media.capturedAt === 'number' ? media.capturedAt : Date.now(),
+  }
+}
+
+/** What the settings view is currently telling the user about their last save. */
+type SettingsSaveState =
+  | { kind: 'idle' }
+  | { kind: 'saving' }
+  | { kind: 'saved' }
+  | { kind: 'error'; message: string }
+
+/** How long the success note stays up before the settings view closes itself. */
+const SETTINGS_SAVED_CLOSE_MS = 700
+
+/**
+ * Editable form state for the settings view, seeded from the active instance.
+ *
+ * The form owns these values from the first render: a storage read that fails or
+ * never answers must leave a usable form behind, not one whose inputs and save
+ * button silently ignore every interaction.
+ */
+function defaultPanelSettings(targetPort: number): PanelSettings {
+  return {
+    bridgeUrl: `ws://127.0.0.1:${targetPort}/ext/bridge`,
+    token: '',
+    sharePageContent: 'auto',
+    unrestrictedBrowserAccess: true,
+    trustedActionOrigins: [],
+    approvalNotifications: true,
+    autoResumeSession: true,
+    // 文本生成模型独立于对话模型：空串 = 跟随对话模型（宿主默认）。
+    textModel: '',
+    textProvider: '',
+    textEffort: '',
+  }
+}
+
+export function App(): React.JSX.Element {
+  const [themeSetting, setThemeSetting] = useState<'auto' | 'light' | 'dark'>(() => {
+    const saved = safeGetStorage('omnimux_theme_mode')
+    if (saved === 'dark' || saved === 'light' || saved === 'auto') return saved
+    return 'auto'
+  })
+
+  useEffect(() => {
+    if (themeSetting === 'dark') {
+      document.documentElement.setAttribute('data-theme', 'dark')
+    } else if (themeSetting === 'light') {
+      document.documentElement.setAttribute('data-theme', 'light')
+    } else {
+      document.documentElement.removeAttribute('data-theme')
+    }
+  }, [themeSetting])
+
+  const [saveInspirationStatus, setSaveInspirationStatus] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle')
+  /** host 对当前页面 URL 的分类结果，只决定按钮文案；默认按灵感库展示。 */
+  const [classifiedSaveTarget, setClassifiedSaveTarget] = useState<SaveTarget>('inspiration')
+  /** 分类出的平台：抖音/小红书只有不透明 uid，toast 不能拼成 `@uid`。 */
+  const [classifiedSavePlatform, setClassifiedSavePlatform] = useState('')
+  /** 最近一次实际落库的目标：账号导入失败会回退灵感库，成功态必须显示真实去向。 */
+  const [savedSaveTarget, setSavedSaveTarget] = useState<SaveTarget>('inspiration')
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
+
+  const [manualLocale, setManualLocale] = useState<string>(() => safeGetStorage('omnimux_manual_locale') || 'auto')
+  const [fabEnabled, setFabEnabled] = useState<boolean>(() => readFlagSync(FEATURE_FLAG.fab))
+  const [mediaHoverEnabled, setMediaHoverEnabled] = useState<boolean>(() => readFlagSync(FEATURE_FLAG.mediaHover))
+  const [velocityEnabled, setVelocityEnabled] = useState<boolean>(() => readFlagSync(FEATURE_FLAG.velocity))
+  const [posterEnabled, setPosterEnabled] = useState<boolean>(() => readFlagSync(FEATURE_FLAG.poster))
+  const [keywordTags, setKeywordTags] = useState<string[]>([])
+  const [keywordDraft, setKeywordDraft] = useState('')
+  useEffect(() => {
+    void Promise.resolve(chrome.storage?.local?.get?.(COPILOT_KEYWORDS_KEY))
+      .then((got) => {
+        const v = (got as Record<string, unknown> | undefined)?.[COPILOT_KEYWORDS_KEY]
+        if (typeof v === 'string') setKeywordTags(parseKeywordTags(v))
+      })
+      .catch((error: unknown) => { console.warn('[panel] copilot keywords unavailable:', error) })
+  }, [])
+  const saveKeywordTags = (tags: string[]) => {
+    setKeywordTags(tags)
+    void Promise.resolve(chrome.storage?.local?.set?.({ [COPILOT_KEYWORDS_KEY]: serializeKeywordTags(tags) }))
+      .catch((error: unknown) => { console.warn('[panel] copilot keywords not saved:', error) })
+  }
+  const commitKeywordDraft = () => {
+    if (!keywordDraft.trim()) return
+    saveKeywordTags(addKeywordTags(keywordTags, keywordDraft))
+    setKeywordDraft('')
+  }
+  const [locale, setLocale] = useState<UiLocale>(() => getUiLocale())
+  const copy = PANEL_COPY[locale]
+  const [targetPort, setTargetPort] = useState<number>(() => {
+    const saved = safeGetStorage('omnimux_target_port')
+    const num = saved ? parseInt(saved, 10) : 43128
+    return !isNaN(num) && num > 0 ? num : 43128
+  })
+
+  const [hostDefaultModel, setHostDefaultModel] = useState<string>('')
+  const [hostDefaultEffort, setHostDefaultEffort] = useState<string>('')
+  const [dynamicModels, setDynamicModels] = useState<Array<{ id: string; name?: string }>>([])
+  const [selectedDefaultModel, setSelectedDefaultModel] = useState<string>(() => {
+    const saved = safeGetStorage(`omnimux_default_model_${targetPort}`) || safeGetStorage('omnimux_default_model')
+    if (saved === 'gpt-6-astra') return ''
+    return saved || ''
+  })
+  const [selectedReasoningEffort, setSelectedReasoningEffort] = useState<string>(() => {
+    return safeGetStorage(`omnimux_default_effort_${targetPort}`) || safeGetStorage('omnimux_default_effort') || 'medium'
+  })
+  const [selectedDefaultProvider, setSelectedDefaultProvider] = useState<string>(() => {
+    return safeGetStorage('omnimux_default_provider') || ''
+  })
+
+  const handleSelectModel = (modelId: string, effort?: string, provider?: string) => {
+    setSelectedDefaultModel(modelId)
+    safeSetStorage(`omnimux_default_model_${targetPort}`, modelId)
+    safeSetStorage('omnimux_default_model', modelId)
+    if (provider) {
+      setSelectedDefaultProvider(provider)
+      safeSetStorage('omnimux_default_provider', provider)
+    }
+
+    // effort === '' 表示该模型没有 reasoning 元数据：必须清除，不能继承 max。
+    // 未显式给 effort 的模型选择（如 AutoModelPicker）按「无 reasoning」处理，
+    // 不能沿用上一模型的 max。
+    const eff = effort !== undefined ? effort : ''
+    const hasEffort = eff !== '' && eff !== 'none'
+    if (hasEffort) {
+      setSelectedReasoningEffort(eff)
+      safeSetStorage(`omnimux_default_effort_${targetPort}`, eff)
+      safeSetStorage('omnimux_default_effort', eff)
+    } else {
+      setSelectedReasoningEffort('')
+      safeRemoveStorage(`omnimux_default_effort_${targetPort}`)
+      safeRemoveStorage('omnimux_default_effort')
+    }
+
+    // 同步到当前 Host 实例的 agent-default-model
+    const ops: Array<{ op: string; path: string[]; value?: unknown }> = [
+      { op: 'set', path: ['model'], value: modelId },
+    ]
+    if (provider) {
+      ops.push({ op: 'set', path: ['provider'], value: provider })
+    }
+    if (hasEffort) {
+      ops.push({ op: 'set', path: ['reasoningEffort'], value: eff })
+    } else {
+      ops.push({ op: 'unset', path: ['reasoningEffort'] })
+    }
+
+    void api.rpc('settings.mutate', {
+      ns: 'agent-default-model',
+      ops,
+    }).catch(() => {})
+
+    // 如果当前会话处于活跃状态，即时应用
+    if (sessionRef.current) {
+      void api.rpc('session.selectModel', {
+        sessionId: sessionRef.current,
+        model: modelId,
+        ...(provider ? { provider } : {}),
+        ...(hasEffort ? { reasoningEffort: eff } : {}),
+      }).catch(() => {})
+    }
+  }
+
+  const handleSelectEffort = (effort: string) => {
+    setSelectedReasoningEffort(effort)
+    safeSetStorage(`omnimux_default_effort_${targetPort}`, effort)
+    safeSetStorage('omnimux_default_effort', effort)
+
+    void api.rpc('settings.mutate', {
+      ns: 'agent-default-model',
+      ops: [
+        { op: 'set', path: ['reasoningEffort'], value: effort },
+      ],
+    }).catch(() => {})
+
+    if (sessionRef.current && selectedDefaultModel) {
+      void api.rpc('session.selectModel', {
+        sessionId: sessionRef.current,
+        model: selectedDefaultModel,
+        reasoningEffort: effort,
+      }).catch(() => {})
+    }
+  }
+
+  /**
+   * 文本生成模型行的持久化（#3629）。
+   *
+   * 只写 textModel / textProvider / textEffort，绝不触碰对话键；立即写回
+   * dshSettings，因为文本模型是生成时读取的运行时配置，用户改完不一定再点
+   * 「保存并连接」。写失败必须可见：静默失败会让生成悄悄回到宿主默认。
+   */
+  const persistTextModel = (patch: { textModel: string; textProvider: string; textEffort: string }): void => {
+    setSettings((prev) => ({ ...prev, ...patch }))
+    void api.updateSettings(patch).catch((cause: unknown) => {
+      setSettingsSave({ kind: 'error', message: cause instanceof Error ? cause.message : String(cause) })
+    })
+  }
+
+  /**
+   * 文本生成行选择回调。
+   *
+   * 同一模型内改推理等级时（onSelectModel(selectedModel, effort)）不会带
+   * provider；只有真正切换模型才允许改写 provider，避免改等级时丢掉它。
+   */
+  const handleSelectTextModel = (modelId: string, effort?: string, provider?: string) => {
+    const modelChanged = settings.textModel !== modelId
+    const textEffort = modelId === ''
+      ? ''
+      : modelChanged ? (effort ?? '') : (effort ?? settings.textEffort)
+    const textProvider = modelId === ''
+      ? ''
+      : modelChanged ? (provider ?? '') : settings.textProvider
+    persistTextModel({ textModel: modelId, textProvider, textEffort })
+  }
+
+  const [selectedWorkspace, setSelectedWorkspace] = useState<SessionWorkspaceItem | null>(() => {
+    const id = safeGetStorage('omnimux_default_workspace_id') || 'default'
+    const name = safeGetStorage('omnimux_default_workspace_name') || ''
+    const path = safeGetStorage('omnimux_default_workspace_path') || ''
+    return { id, name: name || '默认工作区', path }
+  })
+
+  const handleSwitchDshInstance = (inst: { id: string; port: number; name: string }) => {
+    setTargetPort(inst.port)
+    safeSetStorage('omnimux_target_port', String(inst.port))
+    const nextUrl = `ws://127.0.0.1:${inst.port}/ext/bridge`
+    const nextToken = settings.token
+    setSettings((current) => ({ ...current, bridgeUrl: nextUrl, token: nextToken }))
+    try {
+      chrome.runtime?.sendMessage?.({
+        type: 'SWITCH_DSH_PORT',
+        payload: { port: inst.port, bridgeUrl: nextUrl, token: nextToken }
+      })
+    } catch {
+      // Ignore
+    }
+    void api.updateSettings({
+      bridgeUrl: nextUrl,
+      token: nextToken,
+    }).catch(() => {})
+  }
+  const [api] = useState<PanelApi>(() => connectPanel())
+  const [state, setState] = useState<BridgeState>('stopped')
+  const [caps, setCaps] = useState<BridgeCaps | null>(null)
+  const [settings, setSettings] = useState<PanelSettings>(() => defaultPanelSettings(targetPort))
+  const [settingsSave, setSettingsSave] = useState<SettingsSaveState>({ kind: 'idle' })
+  const [rows, setRows] = useState<Row[]>([])
+  const [streamRow, setStreamRow] = useState<Row | null>(null)
+  const [draft, setDraft] = useState<ComposerDraft<DraftImage>>(() => emptyComposerDraft())
+  const input = draft.text
+  const draftImages = draft.images
+  /**
+   * The draft as a ref, and the only way it is written.
+   *
+   * `intakeImageFiles` is asynchronous — a download, then a decode — so two lit
+   * media can be in flight at once. The host's aggregate limits
+   * (`maxImagesPerMessage`, `maxMessageImageBytes`) are checked against what is
+   * ALREADY in the draft, and a render closure would hand that check a snapshot
+   * from before the other download landed: two concurrent lights would each pass
+   * a check the pair fails, and the draft would silently exceed the limit. Every
+   * write goes through here so the count a check reads is the count that will be
+   * there, and {@link intakeChainRef} keeps check-and-add atomic.
+   */
+  const draftRef = useRef<ComposerDraft<DraftImage>>(draft)
+  const intakeChainRef = useRef<Promise<unknown>>(Promise.resolve())
+  function updateDraft(update: (current: ComposerDraft<DraftImage>) => ComposerDraft<DraftImage>): void {
+    const next = update(draftRef.current)
+    draftRef.current = next
+    setDraft(next)
+  }
+  const [selection, setSelection] = useState<PageSelection | null>(null)
+  const [imageLimits, setImageLimits] = useState<ImageAttachmentLimits | null>(null)
+  const [addingImages, setAddingImages] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [working, setWorking] = useState(false)
+  const [stopping, setStopping] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
+  const [uiScale, setUiScale] = useState(DEFAULT_UI_SCALE)
+  const uiScaleRef = useRef(DEFAULT_UI_SCALE)
+  const uiScaleChosenRef = useRef(false)
+  const [approvalQueue, setApprovalQueue] = useState<ApprovalRequest[]>([])
+  const [tabAffinity, setTabAffinity] = useState<TabAffinityState | null>(null)
+  const [trustedOriginInput, setTrustedOriginInput] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [showSessionPicker, setShowSessionPicker] = useState(false)
+  const [sessionSearchQuery, setSessionSearchQuery] = useState('')
+  const [loadingSessions, setLoadingSessions] = useState(false)
+  const [sessionChanging, setSessionChanging] = useState(false)
+
+  // 防止会话切换状态异常滞留导致界面永久冻结
+  useEffect(() => {
+    if (sessionChanging) {
+      const timer = setTimeout(() => {
+        sessionChangingRef.current = false
+        setSessionChanging(false)
+      }, 2500)
+      return () => clearTimeout(timer)
+    }
+  }, [sessionChanging])
+
+  // 点击空白处自动收起历史会话菜单
+  useEffect(() => {
+    if (!showSessionPicker) return
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      if (!target.closest('.session-picker') && !target.closest('.session-menu-trigger')) {
+        setShowSessionPicker(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showSessionPicker])
+  const [sessionList, setSessionList] = useState<SessionPickerEntry[]>([])
+  const [relayProfiles, setRelayProfiles] = useState<RelayProfileDraft[]>([])
+  const [relayLoaded, setRelayLoaded] = useState(false)
+  const [relayNotice, setRelayNotice] = useState<string | null>(null)
+  const [relayBusy, setRelayBusy] = useState(false)
+  const [sessionTitle, setSessionTitle] = useState<string | null>(null)
+  const [resumeHint, setResumeHint] = useState<{ ready: boolean; sessionId: string | null }>({ ready: false, sessionId: null })
+  const [questions, setQuestions] = useState<PendingQuestion[]>([])
+  const [questionSubmissions, setQuestionSubmissions] = useState<ResolvedQuestion[]>([])
+  // 任务刻度轨：宿主持久化 inbox 的 next-turn 排队消息、turnOutline 摘要、
+  // 当前轮次与失败轮次；点击刻度定位的行序号。
+  const [queuedItems, setQueuedItems] = useState<QueuedMessage[]>([])
+  const [turnOutline, setTurnOutline] = useState<TurnOutlineEntry[]>([])
+  const [liveTurn, setLiveTurn] = useState(0)
+  const [failedTurn, setFailedTurn] = useState<number | null>(null)
+  const [landedSeq, setLandedSeq] = useState<number | null>(null)
+  const inboxRawRef = useRef<unknown[]>([])
+  const liveTurnRef = useRef(0)
+  const approvalQueueRef = useRef<ApprovalRequest[]>([])
+  const questionsRef = useRef<PendingQuestion[]>([])
+  const questionSubmissionsRef = useRef<ResolvedQuestion[]>([])
+  const stoppingRef = useRef(false)
+  const settingsCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const addingImagesRef = useRef(false)
+  const sendingRef = useRef(false)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const imageProjectionRef = useRef<{
+    sessionId: string | null
+    seq: number
+    limits: ImageAttachmentLimits | null
+  }>({ sessionId: null, seq: Number.NEGATIVE_INFINITY, limits: null })
+  const sessionChangingRef = useRef(false)
+  const sessionTransitionRef = useRef(0)
+  const sessionInitializationRef = useRef(false)
+  const sessionRuntimeRef = useRef(new SessionRuntimeCache())
+  const assistantStreamsRef = useRef(new Map<string, AssistantStreamView>())
+  const followSnapshotsRef = useRef(new Map<string, {
+    id: string
+    suffix: SessionEventView[]
+    applied?: true
+    overflow?: true
+  }>())
+  const pendingHistoriesRef = useRef(new Map<string, { sessionId: string; history: HistoryPage }>())
+  // tool/result 不携带工具名——用它引用的 callId 配回 tool/call 的名字，
+  // 否则 omnimux_*_submit 的 JSON 结果无法被提取层识别。
+  const toolCallNamesRef = useRef(new Map<string, string>())
+  const streamRefreshRef = useRef(new Set<string>())
+  const seqRef = useRef(0)
+  const sessionRef = useRef<string | null>(null)
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+
+  const [pageScene, setPageScene] = useState<PageSceneInfo | null>(null)
+  const [detectedMedia, setDetectedMedia] = useState<SniffedMediaItem[]>([])
+  /** Pairing card state: the in-flight approval and its last outcome. */
+  const [pairBusy, setPairBusy] = useState(false)
+  const [pairMessage, setPairMessage] = useState<string | null>(null)
+  const pairTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  /**
+   * Bring the pairing card back to a usable state with its outcome, or with
+   * `null` once the bridge is connected. The first outcome wins: a late
+   * approval must not overwrite a card that already reported a timeout.
+   */
+  function settlePairing(message: string | null): void {
+    if (pairTimeoutRef.current !== null) {
+      clearTimeout(pairTimeoutRef.current)
+      pairTimeoutRef.current = null
+    }
+    setPairBusy(false)
+    setPairMessage(message)
+  }
+  const [attachedMediaIds, setAttachedMediaIds] = useState<Set<string>>(() => new Set())
+  /** Draft images delivered by the page-media hover capsule, by media id. */
+  const [litMediaIds, setLitMediaIds] = useState<Set<string>>(() => new Set())
+  /**
+   * Live mirror of the host's image projection.
+   *
+   * The listener that mounts hovered page media is installed once per mode, so
+   * it would otherwise keep reading the limits from the render that subscribed —
+   * the state is `null` there, because the projection only arrives with the
+   * session history. Reading the ref keeps that long-lived closure honest: the
+   * draft intake either runs against the real limits or reports a failure.
+   */
+  const imageLimitsRef = useRef<ImageAttachmentLimits | null>(null)
+  const composerRef = useRef<HTMLTextAreaElement | null>(null)
+  const isFloatMode = useMemo(() => typeof window !== 'undefined' && window.location.search.includes('mode=float'), [])
+
+  /** Focus the composer so the user can type the moment media lands in the draft. */
+  function focusComposer(): void {
+    const node = composerRef.current
+    if (node === null) return
+    try {
+      node.focus({ preventScroll: true })
+    } catch {
+      node.focus()
+    }
+  }
+
+  /** Converts a hovered page element into the panel's media item shape. */
+  function mediaItemFromHover(payload: HoveredMedia): SniffedMediaItem {
+    return {
+      id: payload.id,
+      type: payload.type,
+      src: payload.src,
+      previewSrc: payload.previewSrc || payload.src,
+      alt: payload.alt,
+    }
+  }
+
+  /** Reports the attach outcome back to the content script's capsule. */
+  function reportMediaAttachResult(payload: HoveredMedia, ok: boolean, reason?: string): void {
+    const message = {
+      type: 'MEDIA_ATTACH_RESULT',
+      payload: reason === undefined ? { id: payload.id, ok } : { id: payload.id, ok, reason },
+    }
+    if (isFloatMode) {
+      try {
+        window.parent?.postMessage({ source: 'omnimux-content-script', ...message }, '*')
+      } catch {
+        // The parent frame may already be gone.
+      }
+      return
+    }
+    if (chrome.tabs?.query === undefined || chrome.tabs.sendMessage === undefined) return
+    void chrome.tabs.query({ active: true, currentWindow: true }).then((tabs) => {
+      const tabId = tabs?.[0]?.id
+      if (tabId === undefined) return
+      void chrome.tabs.sendMessage(tabId, message).catch(() => {})
+    }).catch(() => {})
+  }
+
+  /**
+   * Makes sure there is a session for page media to land in.
+   *
+   * `initializeSession` owns session creation because it is also what loads the
+   * history carrying `imageLimits`. Creating one here instead would leave the
+   * intake without a projection, and the media would be refused with the "host
+   * does not advertise image input" message on a host that does.
+   */
+  async function ensureDraftSession(): Promise<void> {
+    if (sessionRef.current !== null || state !== 'connected' || sessionChanging) return
+    await initializeSession()
+  }
+
+  /**
+   * Mounts a page element the user sent from the hover capsule.
+   *
+   * The media becomes a normal draft attachment: it appears above the input as a
+   * thumbnail and the composer takes focus, so the next keystroke joins the prompt.
+   */
+  async function attachHoveredMedia(payload: HoveredMedia): Promise<void> {
+    const item = mediaItemFromHover(payload)
+    await ensureDraftSession()
+    const landed = await attachMediaItems([item])
+    if (!landed) {
+      // A cross-origin media URL is the expected failure: the page can display the
+      // image while the extension cannot download it. Report it instead of showing
+      // the capsule a success it did not get, and leave the draft — and its light
+      // and check marks — untouched.
+      reportMediaAttachResult(payload, false)
+      return
+    }
+    setAttachedMediaIds((current) => new Set(current).add(item.id))
+    // The draft image keeps the payload id inside its file name, which is how the
+    // "lit" highlight finds the thumbnail it belongs to.
+    setLitMediaIds((current) => new Set(current).add(item.id))
+    // Media that just landed is lit, not merely stored: the chip has to show the
+    // active highlight on its own, and the send path reads the lit set, so the
+    // model carries the media without a second click. Both bars are fed from
+    // these lists, and each one de-duplicates, because the page may already have
+    // reported the same element.
+    setActiveMediaItems((current) => {
+      const exists = current.some((it) => it.src === item.src || it.id === item.id)
+      return exists ? current : [item, ...current]
+    })
+    setDetectedMedia((current) => {
+      const exists = current.some((it) => it.src === item.src || it.id === item.id)
+      return exists ? current : [item, ...current]
+    })
+    reportMediaAttachResult(payload, true)
+    focusComposer()
+  }
+
+  /**
+   * Latest draft-intake helper, so the port listener below never calls a stale
+   * closure. That effect subscribes once, while this function is re-created per
+   * render with the current draft limits and composer state.
+   */
+  const attachHoveredMediaRef = useRef(attachHoveredMedia)
+  attachHoveredMediaRef.current = attachHoveredMedia
+
+  // Media the capsule sent into THIS panel. An open side panel takes page media
+  // over its port, so the floating workstation is never expanded on top of it.
+  // The payload is re-validated here like every other arriving page message.
+  useEffect(() => api.onMediaAttach((media) => {
+    const payload = readHoveredMedia(media)
+    if (payload !== null) void attachHoveredMediaRef.current(payload)
+  }), [api])
+
+  useEffect(() => {
+    if (isFloatMode) {
+      const handleMessage = (e: MessageEvent) => {
+        if (!e.data || typeof e.data !== 'object') return
+        if (e.data.type === 'PAGE_CONTEXT_UPDATE') {
+          setPageScene(e.data.payload)
+          if (e.data.payload?.media) {
+            setDetectedMedia(e.data.payload.media)
+          }
+        } else if (e.data.type === 'MEDIA_SNIFFED_RESULT') {
+          setDetectedMedia(e.data.payload || [])
+        } else if (e.data.type === 'MEDIA_ATTACH_REQUEST') {
+          // The runtime owns the user-selected URL; page messages carry no payload authority.
+          if (typeof e.data.grant !== 'string') return
+          void chrome.runtime.sendMessage({ type: 'TAKE_FLOAT_MEDIA_GRANT', grant: e.data.grant }).then((result) => {
+            const payload = readHoveredMedia(result?.media)
+            if (payload !== null) void attachHoveredMediaRef.current(payload)
+          }).catch(() => {})
+        }
+      }
+      window.addEventListener('message', handleMessage)
+      try {
+        window.parent?.postMessage({ type: 'GET_PAGE_CONTEXT' }, '*')
+      } catch {
+        // Ignore
+      }
+
+      // 浮动模式初态重试：应对单页应用(SPA)异步渲染推文与媒体，初次挂载后前 6 秒内轻量重查
+      const floatPollTimer = setInterval(() => {
+        try {
+          window.parent?.postMessage({ type: 'GET_PAGE_CONTEXT' }, '*')
+        } catch {
+          // Ignore
+        }
+      }, 1500)
+      const stopFloatTimer = setTimeout(() => {
+        clearInterval(floatPollTimer)
+      }, 6000)
+
+      return () => {
+        window.removeEventListener('message', handleMessage)
+        clearInterval(floatPollTimer)
+        clearTimeout(stopFloatTimer)
+      }
+    } else {
+      const updateContextFromTab = () => {
+        chrome.tabs?.query({ active: true, currentWindow: true }).then(([tab]) => {
+          if (tab?.id) {
+            chrome.tabs.sendMessage(tab.id, { action: 'GET_PAGE_CONTEXT' }).then((ctx) => {
+              if (ctx) {
+                setPageScene(ctx)
+                if (ctx.media) setDetectedMedia(ctx.media)
+              }
+            }).catch(() => {})
+          }
+        }).catch(() => {})
+      }
+      // A capsule press opens this side panel only after the floating workstation
+      // proved unavailable; its media waits in the worker until this request.
+      const collectPendingMedia = async () => {
+        let mediaPayload: HoveredMedia | null = null
+        // 优先向 background 取回暂存的媒体（悬浮条「加入对话」在后台暂存的）
+        try {
+          const bgRes = await chrome.runtime?.sendMessage?.({ type: 'DSH_MEDIA_ATTACH_REQUEST' }).catch(() => null) as {
+            ok?: boolean
+            result?: { pending?: boolean; media?: unknown }
+          } | null
+          if (bgRes?.result?.pending && bgRes.result.media) {
+            mediaPayload = readHoveredMedia(bgRes.result.media)
+          }
+        } catch {
+          // ignore
+        }
+
+        // 兜底向 active tab 查询
+        if (!mediaPayload && chrome.tabs?.query && chrome.tabs.sendMessage) {
+          const tabs = await chrome.tabs.query({ active: true, currentWindow: true }).catch(() => [])
+          const tabId = tabs?.[0]?.id
+          if (tabId !== undefined) {
+            const response = await chrome.tabs
+              .sendMessage(tabId, { type: 'DSH_MEDIA_ATTACH_REQUEST' })
+              .catch(() => null) as { ok?: boolean; result?: { pending?: boolean; media?: unknown } } | null
+            if (response?.result?.pending && response.result.media) {
+              mediaPayload = readHoveredMedia(response.result.media)
+            }
+          }
+        }
+
+        if (mediaPayload !== null) {
+          void attachHoveredMedia(mediaPayload)
+        }
+      }
+      updateContextFromTab()
+      void collectPendingMedia().catch(() => {})
+
+      // 1. 监听标签页切换
+      const tabListener = () => updateContextFromTab()
+      chrome.tabs?.onActivated?.addListener(tabListener)
+
+      // 2. 监听活跃标签页 URL 变动与页面导航 (SPA/MPA)
+      const tabUpdateListener = (tabId: number, changeInfo: chrome.tabs.TabChangeInfo) => {
+        if (changeInfo.status === 'complete' || changeInfo.url || changeInfo.title) {
+          chrome.tabs?.query({ active: true, currentWindow: true }).then(([activeTab]) => {
+            if (activeTab?.id === tabId) {
+              updateContextFromTab()
+            }
+          }).catch(() => {})
+        }
+      }
+      chrome.tabs?.onUpdated?.addListener(tabUpdateListener)
+
+      // 3. 监听来自 content script 的主动广播
+      const runtimeMessageListener = (msg: any) => {
+        if (msg?.action === 'PAGE_CONTEXT_UPDATE' && msg.payload) {
+          setPageScene(msg.payload)
+          if (msg.payload.media) {
+            setDetectedMedia(msg.payload.media)
+          }
+        }
+      }
+      chrome.runtime?.onMessage?.addListener(runtimeMessageListener)
+
+      // 4. 定时轻量同步探针 (1.2s 自动比对当前活动标签页，保障零滞后)
+      const pollTimer = setInterval(updateContextFromTab, 1200)
+
+      return () => {
+        chrome.tabs?.onActivated?.removeListener(tabListener)
+        chrome.tabs?.onUpdated?.removeListener(tabUpdateListener)
+        chrome.runtime?.onMessage?.removeListener(runtimeMessageListener)
+        clearInterval(pollTimer)
+      }
+    }
+    // Attach helpers are re-created per render on purpose: this effect must run
+    // once per mode and must not re-subscribe on every draft keystroke.
+  }, [isFloatMode])
+
+  // 页面类型分流：URL 变化后去抖向后台要 host 分类，只影响按钮文案。
+  // 真正的落点由后台在保存时重新分类决定，所以这里失败也不阻塞保存。
+  const pageUrlForSaveTarget = pageScene?.url || ''
+  useEffect(() => {
+    if (pageUrlForSaveTarget === '') {
+      setClassifiedSaveTarget('inspiration')
+      setClassifiedSavePlatform('')
+      return
+    }
+    if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) return
+    let cancelled = false
+    // 300ms 去抖：SPA 切换页面时 URL 会连续变化，最后一次才是用户眼前的页面。
+    const timer = setTimeout(() => {
+      const classify = new Promise<{ ok?: boolean; kind?: string; platform?: string }>((resolve) => {
+        try {
+          chrome.runtime.sendMessage(
+            { type: 'DSH_CLASSIFY_SAVE_TARGET', url: pageUrlForSaveTarget },
+            (response) => {
+              if (chrome.runtime?.lastError || !response) resolve({ ok: false })
+              else resolve(response as { ok?: boolean; kind?: string; platform?: string })
+            },
+          )
+        } catch {
+          resolve({ ok: false })
+        }
+      })
+      void classify.then((result) => {
+        if (cancelled) return
+        setClassifiedSaveTarget(result.ok === true && result.kind === 'account' ? 'account' : 'inspiration')
+        setClassifiedSavePlatform(result.ok === true && typeof result.platform === 'string' ? result.platform : '')
+      })
+    }, 300)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [pageUrlForSaveTarget])
+
+  const [stickyTopBarVisible, setStickyTopBarVisible] = useState(false)
+  const [activeMediaItems, setActiveMediaItems] = useState<SniffedMediaItem[]>([])
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const onScroll = () => {
+      setStickyTopBarVisible(el.scrollTop > 180)
+    }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [])
+
+  const handleSaveToInspiration = async (mediaItem?: SniffedMediaItem) => {
+    const targetUrl = mediaItem?.src || pageScene?.url || ''
+    if (!targetUrl || saveInspirationStatus === 'saving') return
+    setSaveInspirationStatus('saving')
+    const mediaSrc = mediaItem?.src || detectedMedia[0]?.src || pageScene?.heroImage || ''
+    // A captured post carries its own media, author and counters; the media the
+    // page happened to have sniffed is only the fallback for everything else.
+    const tweet = pageScene?.tweet
+    const tweetMedia = tweet?.mediaUrls ?? []
+    const directItem = {
+      title: (pageScene?.title || (pageScene?.author ? `@${pageScene.author}` : targetUrl)).slice(0, 120),
+      type: (mediaItem?.type === 'video' || detectedMedia[0]?.type === 'video') ? 'video' as const : 'image' as const,
+      source_platform: pageScene?.platform || 'twitter',
+      source_url: tweet?.url || targetUrl,
+      cover_url: tweet?.coverUrl || mediaSrc,
+      media_urls: tweetMedia.length > 0 ? tweetMedia : (mediaSrc ? [mediaSrc] : []),
+      content: tweet?.text || pageScene?.postText || pageScene?.title || '',
+      tags: [pageScene?.platform ? `${pageScene.platform}` : '社交媒体', '灵感采集'],
+      // Saving is not analysing. The host turns its breakdown on unless told
+      // otherwise, so the choice is stated here rather than inherited.
+      auto_analyze: false,
+      ...(tweet === undefined ? {} : {
+        content_shape: tweet.shape,
+        author: tweet.author,
+        stats: tweet.stats,
+        posted_at: tweet.postedAt,
+        ...(tweet.quoted === undefined ? {} : { quoted: tweet.quoted }),
+        ...(tweet.poll === undefined ? {} : { poll: tweet.poll }),
+        ...(tweet.threadItems === undefined ? {} : { thread_items: tweet.threadItems }),
+      }),
+    }
+
+    let saved = false
+    // 后台是保存去向的唯一决策点：account 表示写进了账号监控，其余是灵感库。
+    let savedTarget: SaveTarget = 'inspiration'
+    let savedHandle: string | undefined
+    let savedExisting = false
+    // 页面内采集失败时的回退原因；有值时成功 toast 必须把「已转云端解析」说出来。
+    let savedFallback: string | undefined
+    // 431 means the request header block exceeded the host's 16 KiB budget, not
+    // that the host is absent. The real reason must reach the user, or they will
+    // keep checking a process that is already running.
+    let headerOverflow = false
+
+    // 1. 优先通过 chrome.runtime.sendMessage 委托后台 service worker 保存（彻底免疫 Edge 私有网络 PNA 拦截）
+    if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+      try {
+        const bgRes = await new Promise<{
+          ok?: boolean
+          code?: string
+          target?: string
+          handle?: string
+          existing?: boolean
+          fallback?: string
+        }>((resolve) => {
+          chrome.runtime.sendMessage(
+            {
+              type: 'DSH_SAVE_INSPIRATION_PANEL',
+              payload: {
+                targetUrl,
+                ...directItem,
+                targetPort,
+                // 整页保存才允许页面内提取作品直传；用户点的是某个具体媒体时
+                // 保持「保存这一条媒体」的旧语义。
+                capturePage: mediaItem === undefined,
+              },
+            },
+            (response) => {
+              if (chrome.runtime?.lastError || !response) {
+                resolve({ ok: false })
+              } else {
+                resolve(response as {
+                  ok?: boolean
+                  code?: string
+                  target?: string
+                  handle?: string
+                  existing?: boolean
+                  fallback?: string
+                })
+              }
+            },
+          )
+        })
+        if (bgRes?.ok) {
+          saved = true
+          if (bgRes.target === 'account') savedTarget = 'account'
+          if (typeof bgRes.handle === 'string' && bgRes.handle.trim() !== '') savedHandle = bgRes.handle
+          savedExisting = bgRes.existing === true
+          if (savedTarget === 'inspiration' && typeof bgRes.fallback === 'string') savedFallback = bgRes.fallback
+        } else if (bgRes?.code === 'local-header-overflow') {
+          headerOverflow = true
+        }
+      } catch {
+        // Fall back to direct fetch if message fails
+      }
+    }
+
+    // 2. 备选：直连本地候选端口（全量 import-url 及 local 直存保底）
+    if (!saved) {
+      const candidatePorts = [targetPort, 45120, 43120, 3080].filter((p, i, arr) => arr.indexOf(p) === i)
+      for (const port of candidatePorts) {
+        const targetBase = `http://127.0.0.1:${port}`
+        try {
+          // 优先尝试 import-url 全量社媒抓取
+          let res = await loopbackFetch(`${targetBase}/omnimux/inspiration/local/import-url`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            // Saving is not analysing; the host would otherwise run its breakdown.
+            body: JSON.stringify({ url: targetUrl, background: true, auto_analyze: false }),
+            signal: AbortSignal.timeout(3500),
+          }).catch(() => null)
+
+          // 如果 import-url 异常（如反爬、502、解析空），采用前台已嗅探的多模态图文数据直存灵感库
+          if (!res || (!res.ok && res.status !== 200 && res.status !== 201 && res.status !== 202)) {
+            res = await loopbackFetch(`${targetBase}/omnimux/inspiration/local`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(directItem),
+              signal: AbortSignal.timeout(3000),
+            }).catch(() => null)
+          }
+
+          if (res?.status === 431) headerOverflow = true
+
+          if (res && (res.ok || res.status === 200 || res.status === 201 || res.status === 202)) {
+            saved = true
+            break
+          }
+        } catch {
+          // try next port
+        }
+      }
+    }
+
+    if (saved) {
+      setSavedSaveTarget(savedTarget)
+      setSaveInspirationStatus('saved')
+      // 回退到云端解析时说清原因；否则「已保存」会掩盖页面内采集失败。
+      setToastMessage(savedFallback !== undefined && savedTarget === 'inspiration'
+        ? saveFallbackToast(savedFallback, locale)
+        : saveSuccessToast(
+          {
+            target: savedTarget,
+            handle: savedHandle,
+            existing: savedExisting,
+            platform: classifiedSavePlatform,
+          },
+          locale,
+        ))
+      setTimeout(() => {
+        setSaveInspirationStatus('idle')
+        setToastMessage(null)
+      }, 3000)
+    } else {
+      setSaveInspirationStatus('failed')
+      setToastMessage(saveFailureToast(headerOverflow ? 'local-header-overflow' : 'save-failed', locale))
+      setTimeout(() => {
+        setSaveInspirationStatus('idle')
+        setToastMessage(null)
+      }, 3000)
+    }
+  }
+
+  const updateThemeSetting = (mode: 'auto' | 'light' | 'dark') => {
+    setThemeSetting(mode)
+    safeSetStorage('omnimux_theme_mode', mode)
+  }
+
+  /**
+   * Persists one page-surface switch and notifies the page in front of the user.
+   *
+   * The value is stored where the content scripts can read it — their own
+   * `localStorage` belongs to the page, not to the extension — so the write
+   * reaches every open tab, and the direct message reaches this one without
+   * waiting for the storage event.
+   */
+  function updateFeatureFlag(key: FeatureFlagKey, enabled: boolean): void {
+    if (key === FEATURE_FLAG.fab) setFabEnabled(enabled)
+    else if (key === FEATURE_FLAG.mediaHover) setMediaHoverEnabled(enabled)
+    else if (key === FEATURE_FLAG.velocity) setVelocityEnabled(enabled)
+    else setPosterEnabled(enabled)
+    void writeFlag(key, enabled)
+    void notifyFeatureFlag(key, enabled)
+  }
+
+  /** Sends one switch change to the active tab; storage is the channel that always lands. */
+  async function notifyFeatureFlag(key: FeatureFlagKey, enabled: boolean): Promise<void> {
+    // The floating workstation already runs inside the page, which receives the
+    // storage write first-hand, so there is no tab to look up.
+    if (isFloatMode) return
+    if (chrome.tabs?.query === undefined || chrome.tabs.sendMessage === undefined) return
+    try {
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true })
+      const tabId = tabs?.[0]?.id
+      if (tabId === undefined) return
+      await chrome.tabs.sendMessage(tabId, featureFlagMessage(key, enabled))
+    } catch {
+      // No receiving content script is a normal outcome, not a failed save.
+    }
+  }
+
+  // Switches read back from the authoritative store on mount, then follow
+  // changes: the side panel and the floating workstation can be open at once.
+  useEffect(() => {
+    let live = true
+    const unsubscribes = [
+      subscribeFlag(FEATURE_FLAG.fab, setFabEnabled),
+      subscribeFlag(FEATURE_FLAG.mediaHover, setMediaHoverEnabled),
+      subscribeFlag(FEATURE_FLAG.velocity, setVelocityEnabled),
+      subscribeFlag(FEATURE_FLAG.poster, setPosterEnabled),
+    ]
+    void readFlag(FEATURE_FLAG.fab).then((enabled) => { if (live) setFabEnabled(enabled) })
+    void readFlag(FEATURE_FLAG.mediaHover).then((enabled) => { if (live) setMediaHoverEnabled(enabled) })
+    void readFlag(FEATURE_FLAG.velocity).then((enabled) => { if (live) setVelocityEnabled(enabled) })
+    void readFlag(FEATURE_FLAG.poster).then((enabled) => { if (live) setPosterEnabled(enabled) })
+    return () => {
+      live = false
+      for (const unsubscribe of unsubscribes) unsubscribe()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (caps?.locale && (caps.locale === 'zh' || caps.locale === 'en')) {
+      safeSetStorage('dsh_configured_locale', caps.locale)
+      if (manualLocale === 'auto') {
+        setLocale(caps.locale)
+      }
+    }
+  }, [caps, manualLocale])
+
+  useEffect(() => {
+    const probe = async () => {
+      if (manualLocale !== 'auto') return
+      for (const port of [43120, 45120, 43128]) {
+        try {
+          const res = await loopbackFetch(`http://127.0.0.1:${port}/ext/bridge-config`, {
+            signal: AbortSignal.timeout(1000),
+          })
+          if (res.ok) {
+            const data = await res.json()
+            if (data?.locale && (data.locale === 'zh' || data.locale === 'en')) {
+              safeSetStorage('dsh_configured_locale', data.locale)
+              setLocale(data.locale)
+              break
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+    void probe()
+  }, [manualLocale])
+
+  /**
+   * Waits out the gap between "this panel has a session" and "the host's image
+   * projection has arrived".
+   *
+   * History carries `imageLimits` and the intake admits nothing without it, so a
+   * chip lit in that window would be refused with the "this dsh host does not
+   * advertise image input" message — both wrong and unrecoverable from the user's
+   * side. The wait ends the moment the projection for the live session lands, so a
+   * host that really does not advertise image input is answered without delay.
+   */
+  async function waitForImageLimits(deadlineMs = 3000): Promise<ImageAttachmentLimits | null> {
+    const until = Date.now() + deadlineMs
+    while (Date.now() < until) {
+      if (imageLimitsRef.current !== null) return imageLimitsRef.current
+      const sessionId = sessionRef.current
+      // The projection for this session has already arrived without image input:
+      // waiting longer cannot change the answer.
+      if (sessionId !== null && imageProjectionRef.current.sessionId === sessionId) return null
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+    return imageLimitsRef.current
+  }
+
+  /**
+   * Downloads lit page media into the draft, one item at a time.
+   *
+   * The attachment channel is images only, so a video item is skipped here: it
+   * rides the message body as a URL through the lit-media context instead.
+   * Anything else is fetched and then admitted by the same
+   * `prepareImageFiles` the picker and the drop path use, so a page image is
+   * measured by exactly the same limits and reports the same error codes.
+   *
+   * Items are independent: one failing download or refusal never cancels the rest,
+   * and the batch writes a single error line at the end rather than one per item.
+   *
+   * @returns Whether every item that needs the attachment channel reached the draft.
+   */
+  async function attachMediaItems(items: readonly SniffedMediaItem[]): Promise<boolean> {
+    const failures: string[] = []
+    if (items.some((item) => item.type === 'image')) await waitForImageLimits()
+    for (const item of items) {
+      if (item.type !== 'image') continue
+      const name = item.alt || item.src
+      let file: File
+      try {
+        file = await downloadPageMedia(item.src, item.id, (url) => api.rpc(BRIDGE_FETCH_MEDIA_METHOD, { url }))
+      } catch (cause) {
+        failures.push(cause instanceof MediaDownloadError && cause.reason === 'timeout'
+          ? copy.app.attachMediaTimeout(name, Math.round((cause.timeoutMs ?? 0) / 1000))
+          : copy.app.attachMediaDownloadFailed(name))
+        continue
+      }
+      const { landed, message, refusal } = await intakeImageFiles([file])
+      // A silent refusal (session moved, composer busy) is the same silence the
+      // paste path keeps: there is no honest sentence to show for it.
+      if (!landed && message !== null) {
+        // The intake names files by their internal `page-media-<地址>` name, which
+        // a refusal would then quote back to the user. Re-mapping the same error
+        // through the name the user sees keeps the copy identical — same codes,
+        // same limits — without printing a URL at them.
+        failures.push(refusal === null
+          ? message
+          : imageErrorMessage(
+            new ImageInputError(refusal.code, name, refusal.limit),
+            copy,
+            imageLimitsRef.current ?? undefined,
+          ))
+      }
+    }
+    setError(attachFailureLine(failures, items.length, copy.app.attachMediaSummary))
+    return failures.length === 0
+  }
+
+  /**
+   * Attaches a chip the user just lit, then paints its confirmed state.
+   *
+   * The check mark is earned by the intake, not by the click: media that did not
+   * land has to stay unmarked. A video never reaches the draft, so it is carried
+   * through the lit-media line in the message body instead.
+   */
+  function attachLitMedia(item: SniffedMediaItem): void {
+    void ensureDraftSession()
+      .then(() => attachMediaItems([item]))
+      .then((landed) => {
+        if (!landed) return
+        setAttachedMediaIds((current) => new Set(current).add(item.id))
+        if (item.type !== 'image') {
+          setActiveMediaItems((current) => current.some((it) => it.id === item.id) ? current : [item, ...current])
+        }
+        focusComposer()
+      })
+  }
+
+  const nextSeq = (): number => { seqRef.current += 1; return seqRef.current }
+  const question = questions[0] ?? null
+  const questionSubmitting = question !== null && hasPendingQuestion(questionSubmissions, question)
+  const sessionSwitchBlocked = sessionChanging || busy || addingImages || stopping
+    || questions.length > 0 || approvalQueue.length > 0
+  const sessionReady = sessionAcceptsPrompts(
+    state === 'connected',
+    sessionChanging,
+    sessionRef.current,
+  )
+
+  function replaceQuestions(next: PendingQuestion[]): void {
+    questionsRef.current = next
+    setQuestions(next)
+  }
+
+  function updateApprovalQueue(update: (current: ApprovalRequest[]) => ApprovalRequest[]): void {
+    setApprovalQueue((current) => {
+      const next = update(current)
+      approvalQueueRef.current = next
+      return next
+    })
+  }
+
+  function removeQuestion(target: ResolvedQuestion): void {
+    sessionRuntimeRef.current.resolveQuestion(target)
+    replaceQuestions(removePendingQuestion(questionsRef.current, target))
+    setQuestionBusy(target, false)
+  }
+
+  function clearQuestions(): void {
+    replaceQuestions([])
+    questionSubmissionsRef.current = []
+    setQuestionSubmissions([])
+  }
+
+  function setQuestionBusy(target: PendingQuestion | ResolvedQuestion, next: boolean): void {
+    const current = questionSubmissionsRef.current
+    const updated = next
+      ? hasPendingQuestion(current, target)
+        ? current
+        : [...current, { sessionId: target.sessionId, rpcId: target.rpcId }]
+      : removePendingQuestion(current, target)
+    questionSubmissionsRef.current = updated
+    setQuestionSubmissions(updated)
+  }
+
+  // Text size: the stylesheet reads --ui-scale, so seed the document from
+  // storage before the first paint the user notices, then keep the two in step.
+  // A choice made while the read is still in flight has already been persisted,
+  // so the late seed must not overwrite it and revert what the user sees.
+  useEffect(() => {
+    void loadUiScale().then((stored) => {
+      if (uiScaleChosenRef.current) return
+      uiScaleRef.current = stored
+      setUiScale(stored)
+      applyUiScale(stored)
+    })
+  }, [])
+
+  // The stepper emits a direction, not a value: resolving the next step against
+  // the ref keeps a fast double-click from computing both steps off the same
+  // stale render and silently collapsing them into one.
+  function changeUiScale(next: number): void {
+    uiScaleChosenRef.current = true
+    uiScaleRef.current = next
+    setUiScale(next)
+    applyUiScale(next)
+    saveUiScale(next)
+  }
+
+  // Settings: storage refines the form the user already has. A read that fails
+  // or never answers leaves the defaults in place, so the form stays editable
+  // instead of turning into an inert copy of itself.
+  useEffect(() => {
+    let cancelled = false
+    void Promise.resolve()
+      .then(() => chrome.storage.local.get('dshSettings'))
+      .then((stored) => {
+        if (cancelled) return
+        const raw = stored.dshSettings as Partial<PanelSettings> | undefined
+        const savedPort = safeGetStorage('omnimux_target_port')
+        const p = savedPort ? parseInt(savedPort, 10) : targetPort
+        setSettings({
+          bridgeUrl: raw?.bridgeUrl || `ws://127.0.0.1:${p}/ext/bridge`,
+          token: raw?.token ?? '',
+          sharePageContent: raw?.sharePageContent ?? 'auto',
+          unrestrictedBrowserAccess: raw?.unrestrictedBrowserAccess ?? true,
+          trustedActionOrigins: raw?.trustedActionOrigins ?? [],
+          approvalNotifications: raw?.approvalNotifications ?? true,
+          autoResumeSession: raw?.autoResumeSession ?? true,
+          textModel: raw?.textModel ?? '',
+          textProvider: raw?.textProvider ?? '',
+          textEffort: raw?.textEffort ?? '',
+        })
+      })
+      .catch(() => { /* defaults already loaded; the form stays usable */ })
+    return () => { cancelled = true }
+  }, [])
+
+  // A success note that outlived the panel must not close a view the user has
+  // since reopened.
+  useEffect(() => () => { cancelSettingsClose() }, [])
+
+  // 每次连接重启（连接配置变更/断线重连）都新建会话。状态消息逐条监听：
+  // React 会把 stopped/connecting 等瞬时状态合并进同一帧渲染，依赖渲染
+  // 状态无法可靠观察到"连接已重置"，因此在这里按消息粒度判定。
+  const [sessionEpoch, setSessionEpoch] = useState(0)
+  const lastStateRef = useRef<BridgeState | null>(null)
+  useEffect(() => {
+    const offStatus = api.onStatus((next, nextCaps, boundSettings) => {
+      setState(next)
+      setCaps(nextCaps)
+      // A completed pairing travels with the status that switches the view:
+      // fill the form with the approved pair and end the card's busy state.
+      if (boundSettings !== undefined) {
+        setSettings((current) => ({ ...current, bridgeUrl: boundSettings.bridgeUrl, token: boundSettings.token }))
+      }
+      if (next === 'connected') settlePairing(null)
+      const previous = lastStateRef.current
+      lastStateRef.current = next
+      if (next === 'connected') {
+        void api.rpc<{
+          namespaces?: Array<{ ns: string; value?: Record<string, unknown> }>
+        }>('settings.describe', {}).then((described) => {
+          const defaults = (described.namespaces?.find((c) => c.ns === 'agent-default-model')
+            ?.value ?? {}) as { provider?: unknown; model?: unknown; reasoningEffort?: unknown }
+          if (typeof defaults.model === 'string' && defaults.model.trim() !== '') {
+            const m = defaults.model.trim()
+            setHostDefaultModel(m)
+            setSelectedDefaultModel((current) => {
+              if (!current || current === 'gpt-6-astra') {
+                safeSetStorage(`omnimux_default_model_${targetPort}`, m)
+                return m
+              }
+              return current
+            })
+          }
+          if (typeof defaults.reasoningEffort === 'string' && defaults.reasoningEffort.trim() !== '') {
+            setHostDefaultEffort(defaults.reasoningEffort.trim())
+          }
+          if (typeof defaults.provider === 'string' && defaults.provider.trim() !== '') {
+            setSelectedDefaultProvider((current) => current || String(defaults.provider).trim())
+          }
+        }).catch(() => {})
+      }
+      if (previous !== null && next !== previous && next === 'stopped') {
+        sessionTransitionRef.current += 1
+        sessionInitializationRef.current = false
+        sessionChangingRef.current = false
+        sessionRef.current = null
+        setResumeHint({ ready: false, sessionId: null })
+        sessionRuntimeRef.current.clear()
+        toolCallNamesRef.current.clear()
+        assistantStreamsRef.current.clear()
+        followSnapshotsRef.current.clear()
+        pendingHistoriesRef.current.clear()
+        streamRefreshRef.current.clear()
+        setStreamRow(null)
+        setRows([])
+        updateDraft((current) => ({ ...current, images: [] }))
+        setImageLimits(null)
+        imageLimitsRef.current = null
+        imageProjectionRef.current = { sessionId: null, seq: Number.NEGATIVE_INFINITY, limits: null }
+        setSessionTitle(null)
+        setWorking(false)
+        setStopping(false)
+        setSessionChanging(false)
+        setShowSessionPicker(false)
+        stoppingRef.current = false
+        clearQuestions()
+        setSessionEpoch((epoch) => epoch + 1)
+      }
+    })
+    const offEvent = api.onEvent((frame) => { void onFrame(frame) })
+    const offApproval = api.onApprovalRequest((request) => {
+      updateApprovalQueue((current) => current.some((entry) => entry.id === request.id) ? current : [...current, request])
+    })
+    const offApprovalResolved = api.onApprovalResolved((id) => {
+      updateApprovalQueue((current) => current.filter((request) => request.id !== id))
+    })
+    const offTabAffinity = api.onTabAffinity(setTabAffinity)
+    const offSelection = api.onSelection(setSelection)
+    // A side panel has no sender.tab, so it reports its own window; the
+    // background answers with whatever that window already had selected.
+    try {
+      if (typeof chrome !== 'undefined' && chrome.windows?.getCurrent) {
+        void Promise.resolve(chrome.windows.getCurrent())
+          .then((win) => { if (win?.id !== undefined) return api.registerWindow(win.id) })
+          .catch(() => {})
+      }
+    } catch {}
+    const offResumeHint = api.onSessionResumeHint((sessionId) => {
+      setResumeHint({ ready: true, sessionId })
+    })
+    void api.requestStatus().catch((cause: unknown) => {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    })
+    return () => {
+      offStatus(); offEvent(); offApproval(); offApprovalResolved()
+      offTabAffinity(); offSelection(); offResumeHint()
+      if (pairTimeoutRef.current !== null) {
+        clearTimeout(pairTimeoutRef.current)
+        pairTimeoutRef.current = null
+      }
+    }
+  }, [api])
+
+  useEffect(() => {
+    if (state === 'connected' && resumeHint.ready && sessionRef.current === null) {
+      void initializeSession()
+    }
+  }, [state, sessionEpoch, settings, resumeHint])
+
+  const queuedApproval = approvalQueue[0]
+  useEffect(() => {
+    const sessionId = approvalSessionToFocus(
+      queuedApproval,
+      sessionRef.current,
+      sessionChangingRef.current,
+      state === 'connected',
+    )
+    if (sessionId !== undefined && queuedApproval !== undefined) void focusApprovalSession(queuedApproval)
+  }, [queuedApproval?.id, queuedApproval?.sessionId, sessionChanging, state])
+
+  // Auto-scroll to the newest row.
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
+  }, [rows, streamRow, working])
+
+  // ===== 任务刻度轨 =====
+
+  const [activeRailTurn, setActiveRailTurn] = useState<number | undefined>(undefined)
+  const [pendingLocate, setPendingLocate] = useState<{ sessionId: string; turn: number } | null>(null)
+
+  const railItems = useMemo(
+    () => buildRailItems(
+      rows,
+      turnOutline,
+      queuedItems,
+      working && liveTurn > 0 ? liveTurn : null,
+      failedTurn,
+    ),
+    [rows, turnOutline, queuedItems, working, liveTurn, failedTurn],
+  )
+  const railCopy = useMemo(() => ({
+    queued: copy.app.railQueued,
+    running: copy.app.railRunning,
+    done: copy.app.railDone,
+    failed: copy.app.railFailed,
+    taskN: copy.app.railTaskN,
+    jumpTo: copy.app.railJumpTo,
+  }), [copy])
+  const queueDockCopy = useMemo(() => ({
+    count: copy.app.queueDockBadge,
+    steer: copy.app.queueSteer,
+    steerUnavailable: copy.app.queueSteerUnavailable,
+    steerFailed: copy.app.queueSteerFailed,
+    sending: copy.app.queueSending,
+    edit: copy.app.queueEdit,
+    remove: copy.app.queueRemove,
+    save: copy.app.queueSave,
+    cancelEdit: copy.app.queueCancelEdit,
+    editFailed: copy.app.queueEditFailed,
+    removeFailed: copy.app.queueRemoveFailed,
+    taskN: copy.app.railTaskN,
+  }), [copy])
+
+  /** 消息区滚动时推算视口内最近轮次，驱动刻度「当前轮」高亮。 */
+  function handleMessagesScroll(): void {
+    const scroller = scrollRef.current
+    if (scroller === null) return
+    const marks = scroller.querySelectorAll<HTMLElement>('[data-turn]')
+    let active: number | undefined
+    marks.forEach((el) => {
+      if (el.offsetTop <= scroller.scrollTop + scroller.clientHeight * 0.4) {
+        const turn = Number(el.dataset.turn)
+        if (Number.isSafeInteger(turn)) active = turn
+      }
+    })
+    setActiveRailTurn((prev) => (prev === active ? prev : active))
+  }
+
+  /** 点击刻度：滚动定位到该轮首个 assistant 行并短暂高亮。 */
+  function locateTurn(turn: number): void {
+    const target = rows.find((row) => row.turn === turn && row.kind === 'assistant')
+      ?? [...rows].reverse().find((row) => row.turn === turn)
+    if (target === undefined) return
+    const scroller = scrollRef.current
+    const el = scroller?.querySelector<HTMLElement>(`[data-turn="${turn}"]`)
+    if (el !== null && el !== undefined) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    setLandedSeq(target.seq)
+    setActiveRailTurn(turn)
+    window.setTimeout(() => {
+      setLandedSeq((current) => (current === target.seq ? null : current))
+    }, 1800)
+  }
+
+  /** 后台通知点击 → 打开面板并定位到完成任务的轮次结果。 */
+  useEffect(() => {
+    return api.onTaskLocate(({ sessionId, turn }) => {
+      setPendingLocate({ sessionId, turn })
+      if (sessionId === sessionRef.current) return
+      // 目标会话未打开：切过去，pendingLocate 效果在历史落地后定位。
+      const transition = beginSessionTransition()
+      void (async () => {
+        try {
+          await api.setActiveSession(sessionId)
+          if (sessionTransitionRef.current !== transition) return
+          const runtime = sessionRuntimeRef.current.snapshot(sessionId)
+          prepareSessionSwitch(runtime.running, runtime.questions)
+          sessionRef.current = sessionId
+          setSessionTitle(sessionId)
+          await refreshHistory(sessionId)
+        } catch (cause) {
+          if (sessionTransitionRef.current === transition) {
+            setError(cause instanceof Error ? cause.message : String(cause))
+            setPendingLocate(null)
+          }
+        } finally {
+          finishSessionTransition(transition)
+        }
+      })()
+    })
+    // resumeSession/beginSessionTransition 均为函数声明提升；仅需注册一次。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // pendingLocate 落定：目标会话的行加载完成后滚动定位该轮结果。
+  useEffect(() => {
+    if (pendingLocate === null) return
+    if (sessionRef.current !== pendingLocate.sessionId) return
+    locateTurn(pendingLocate.turn)
+    setPendingLocate(null)
+    // rows 变化触发一次即可；locateTurn 自身读取最新 rows。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingLocate, rows])
+
+  function applyImageProjection(sessionId: string, seq: number, value: unknown): void {
+    if (sessionRef.current !== sessionId || !Number.isSafeInteger(seq)) return
+    const previous = imageProjectionRef.current
+    if (previous.sessionId === sessionId && seq <= previous.seq) return
+    const limits = parseImageAttachmentLimits(value)
+    imageProjectionRef.current = { sessionId, seq, limits }
+    imageLimitsRef.current = limits
+    setImageLimits(limits)
+  }
+
+  function applyHistoryImageProjection(sessionId: string, projections: HistoryPage['projections']): void {
+    if (projections === undefined) {
+      applyImageProjection(sessionId, -1, undefined)
+      return
+    }
+    const values = projections.values
+    applyImageProjection(
+      sessionId,
+      projections.asOfSeq,
+      typeof values === 'object' && values !== null ? values.imageLimits : undefined,
+    )
+  }
+
+  /** Live frame handling: session events append rows; turn/end reconciles with history. */
+  async function onFrame(frame: ServerFrame): Promise<void> {
+    if (frame.t !== 'event') return
+    if (frame.frame.method === 'session/assistant-stream') {
+      const payload = frame.frame.payload as { sessionId?: unknown; snapshotId?: unknown; frame?: unknown } | undefined
+      if (typeof payload?.sessionId !== 'string' || typeof payload.frame !== 'object' || payload.frame === null) return
+      const sessionId = payload.sessionId
+      const stream = assistantStreamsRef.current.get(sessionId) ?? new AssistantStreamView()
+      assistantStreamsRef.current.set(sessionId, stream)
+      const value = payload.frame as { type?: unknown; baseline?: unknown }
+      if (value.type === 'snapshot' && typeof payload.snapshotId === 'string') {
+        followSnapshotsRef.current.set(sessionId, { id: payload.snapshotId, suffix: [] })
+      }
+      const update = value.type === 'snapshot' ? stream.replace(value.baseline) : stream.accept(value)
+      if (sessionId !== sessionRef.current) return
+      if (value.type === 'snapshot' && typeof payload.snapshotId === 'string') {
+        const pending = pendingHistoriesRef.current.get(payload.snapshotId)
+        // Only a matching pushed baseline may release a history response that
+        // beat it through the RPC channel. Other pending cuts may belong to a
+        // newer follower whose baseline is still queued behind this one.
+        pendingHistoriesRef.current.delete(payload.snapshotId)
+        if (pending !== undefined) applyHistory(sessionId, pending.history)
+      }
+      setStreamRow(stream.row())
+      if (update === 'rebaseline') await rebaselineStream(sessionId)
+      return
+    }
+    const pendingQuestion = pendingQuestionFromFrame(frame.frame)
+    if (pendingQuestion !== null) {
+      sessionRuntimeRef.current.rememberQuestion(pendingQuestion)
+      if (pendingQuestion.sessionId === sessionRef.current) {
+        const wasEmpty = questionsRef.current.length === 0
+        replaceQuestions(upsertPendingQuestion(questionsRef.current, pendingQuestion))
+        if (wasEmpty) setError(null)
+      }
+      return
+    }
+    const resolvedQuestion = resolvedQuestionFromFrame(frame.frame)
+    if (resolvedQuestion !== null) {
+      removeQuestion(resolvedQuestion)
+      return
+    }
+    if (frame.frame.method === 'session/projection'
+      && typeof frame.frame.payload === 'object'
+      && frame.frame.payload !== null) {
+      const projection = frame.frame.payload as {
+        sessionId?: unknown
+        key?: unknown
+        value?: unknown
+        seq?: unknown
+      }
+      if (typeof projection.sessionId === 'string'
+        && projection.key === 'imageLimits'
+        && typeof projection.seq === 'number') {
+        applyImageProjection(projection.sessionId, projection.seq, projection.value)
+      }
+      return
+    }
+    const payload = frame.frame.payload as { sessionId?: string; event?: SessionEventView } | undefined
+    if (payload?.sessionId === undefined || payload.event === undefined) return
+    const followed = followSnapshotsRef.current.get(payload.sessionId)
+    if (followed !== undefined && !followed.applied && !followed.overflow) {
+      if (followed.suffix.length < 2048) followed.suffix.push(payload.event)
+      else {
+        followed.overflow = true
+        followed.suffix = []
+        void rebaselineStream(payload.sessionId)
+      }
+    }
+    const stream = assistantStreamsRef.current.get(payload.sessionId)
+    if (stream?.settle(payload.event) && payload.sessionId === sessionRef.current) setStreamRow(stream.row())
+    const nextTitle = sessionTitleFromEvent(payload.event)
+    if (nextTitle !== undefined && payload.sessionId === sessionRef.current) {
+      setSessionTitle(nextTitle)
+      return
+    }
+    if (payload.event.type === 'turn/start') {
+      sessionRuntimeRef.current.startTurn(payload.sessionId)
+      if (payload.sessionId !== sessionRef.current) return
+      const declared = turnNumberOf(payload.event)
+      liveTurnRef.current = declared ?? liveTurnRef.current + 1
+      setLiveTurn(liveTurnRef.current)
+      setFailedTurn(null)
+      stoppingRef.current = false
+      setStopping(false)
+      setWorking(true)
+      return
+    }
+    if (payload.event.type === 'turn/end') {
+      sessionRuntimeRef.current.finishTurn(payload.sessionId)
+      if (payload.sessionId !== sessionRef.current) return
+      stoppingRef.current = false
+      setStopping(false)
+      setWorking(false)
+      clearQuestions()
+      const turnError = errorFromTurnEnd(payload.event, locale)
+      if (turnError) {
+        setError(turnError)
+        setFailedTurn(liveTurnRef.current === 0 ? null : liveTurnRef.current)
+      }
+      await refreshHistory(payload.sessionId)
+      return
+    }
+    // 宿主持久化队列的增删改：排队坞与刻度的唯一事实源。
+    const splice = inboxSpliceFromEvent(payload.event)
+    if (splice !== null) {
+      if (payload.sessionId === sessionRef.current) {
+        inboxRawRef.current = applyInboxSplice(inboxRawRef.current, splice)
+        setQueuedItems(inboxQueuedMessages({ 'next-turn': inboxRawRef.current }))
+      }
+      return
+    }
+    if (payload.sessionId !== sessionRef.current) return
+    const row = rowFromEvent(payload.event)
+    if (row !== null) {
+      setRows((prev) => appendLiveRow(prev, row.kind, row.text, nextSeq(), row.images, undefined, liveTurnRef.current || undefined))
+      return
+    }
+    if (payload.event.type === 'tool/call') {
+      setWorking(true)
+      const callId = payload.event.data?.callId
+      const toolName = payload.event.data?.name
+      if (typeof callId === 'string' && typeof toolName === 'string') {
+        toolCallNamesRef.current.set(callId, toolName)
+      }
+      const summary = toolSummary(payload.event.data?.name ?? 'tool', payload.event.data?.arguments, locale)
+      setRows((prev) => appendLiveRow(prev, 'tool', summary, nextSeq(), undefined, undefined, liveTurnRef.current || undefined))
+      return
+    }
+    if (payload.event.type === 'tool/result') {
+      // 并入最后一行工具行：调用已完成（不新增行）。
+      setRows((prev) => completeLastTool(prev, nextSeq()))
+      // 工具结果里产出的媒体（display_file / read_image / omnimux_*_submit）
+      // 落成一条独立的助手画廊行；无产物的结果维持原有的只合并不新增。
+      const callId = toolResultCallId(payload.event)
+      const toolName = callId === null ? undefined : toolCallNamesRef.current.get(callId)
+      const produced = producedMediaFromToolResult(payload.event, toolName)
+      if (produced.length > 0) {
+        setRows((prev) => appendLiveRow(prev, 'assistant', '', nextSeq(), produced, undefined, liveTurnRef.current || undefined))
+      }
+      return
+    }
+  }
+
+  async function answerQuestion(target: PendingQuestion, answers: QuestionAnswer[]): Promise<void> {
+    if (hasPendingQuestion(questionSubmissionsRef.current, target)
+      || !hasPendingQuestion(questionsRef.current, target)) return
+    setQuestionBusy(target, true)
+    setError(null)
+    try {
+      const receipt = await api.respond(target.rpcId, {
+        ok: true,
+        value: { sessionId: target.sessionId, answer: { answers } },
+      })
+      settleQuestionReceipt(target, receipt)
+    } catch (cause) {
+      if (hasPendingQuestion(questionsRef.current, target)) {
+        setError(cause instanceof Error ? cause.message : String(cause))
+      }
+      setQuestionBusy(target, false)
+    }
+  }
+
+  async function dismissQuestion(target: PendingQuestion): Promise<void> {
+    if (hasPendingQuestion(questionSubmissionsRef.current, target)
+      || !hasPendingQuestion(questionsRef.current, target)) return
+    setQuestionBusy(target, true)
+    setError(null)
+    try {
+      const receipt = await api.respond(target.rpcId, {
+        ok: false,
+        error: { code: 'cancelled', message: 'the user dismissed this question request', details: {} },
+      })
+      settleQuestionReceipt(target, receipt)
+    } catch (cause) {
+      if (hasPendingQuestion(questionsRef.current, target)) {
+        setError(cause instanceof Error ? cause.message : String(cause))
+      }
+      setQuestionBusy(target, false)
+    }
+  }
+
+  function settleQuestionReceipt(target: PendingQuestion, receipt: unknown): void {
+    const disposition = questionReceiptDisposition(receipt)
+    if (disposition === 'accepted') {
+      removeQuestion(target)
+      return
+    }
+    if (disposition === 'not-pending') {
+      setError(copy.question.alreadyAnswered)
+      removeQuestion(target)
+      return
+    }
+    setError(copy.question.answerRejected)
+    setQuestionBusy(target, false)
+  }
+
+  async function readHistory(id: string): Promise<HistoryPage> {
+    return api.rpc<HistoryPage>('session.history', { sessionId: id })
+  }
+
+  async function rebaselineStream(sessionId: string): Promise<void> {
+    if (sessionRef.current !== sessionId || streamRefreshRef.current.has(sessionId)) return
+    streamRefreshRef.current.add(sessionId)
+    try { await refreshHistory(sessionId) } finally { streamRefreshRef.current.delete(sessionId) }
+  }
+
+  function applyHistory(id: string, history: HistoryPage): void {
+    if (sessionRef.current !== id) return
+    const followed = followSnapshotsRef.current.get(id)
+    // A newer history request may have replaced this follower while the RPC
+    // response was travelling. Its older cut cannot replace the current view.
+    if (history.snapshotId !== undefined && followed !== undefined && followed.id !== history.snapshotId) {
+      pendingHistoriesRef.current.set(history.snapshotId, { sessionId: id, history })
+      // Bound retired RPC responses that will never receive another baseline.
+      if (pendingHistoriesRef.current.size > 32) {
+        const oldest = pendingHistoriesRef.current.keys().next().value
+        if (oldest !== undefined) pendingHistoriesRef.current.delete(oldest)
+      }
+      return
+    }
+    const events = history.events.map((entry) => entry.event)
+    if (history.snapshotId !== undefined && followed?.id === history.snapshotId) {
+      if (followed.overflow) {
+        void rebaselineStream(id)
+        return
+      }
+      events.push(...followed.suffix)
+      followed.applied = true
+      followed.suffix = []
+    }
+    applyHistoryImageProjection(id, history.projections)
+    // 任务轨数据源：turnOutline 轮次摘要与 inbox 排队都来自同一份会话投影。
+    const projectionValues = history.projections?.values
+    setTurnOutline(turnOutlineEntries(projectionValues?.turnOutline))
+    const inboxProjection = isRecord(projectionValues?.inbox) && Array.isArray(projectionValues.inbox['next-turn'])
+      ? projectionValues.inbox['next-turn']
+      : []
+    inboxRawRef.current = inboxProjection
+    setQueuedItems(inboxQueuedMessages({ 'next-turn': inboxProjection }))
+    // turn/start 事件携带轮次号；历史里没有时以 turnOutline 最大值兜底。
+    let lastTurn = 0
+    for (const ev of events) {
+      if (ev.type === 'turn/start') lastTurn = turnNumberOf(ev) ?? lastTurn + 1
+    }
+    if (lastTurn === 0 && Array.isArray(projectionValues?.turnOutline)) {
+      for (const raw of projectionValues.turnOutline) {
+        if (isRecord(raw) && typeof raw.turn === 'number' && raw.turn > lastTurn) lastTurn = raw.turn
+      }
+    }
+    liveTurnRef.current = lastTurn
+    setLiveTurn(lastTurn)
+    // 同会话 refresh/rebaseline 也走这里：不能把 live 阶段登记的配对清掉，
+    // 只把历史（含 follower suffix）里的 callId→工具名重建进 map。
+    for (const [callId, toolName] of collectToolCallNames(events)) {
+      toolCallNamesRef.current.set(callId, toolName)
+    }
+    const historyTitle = latestSessionTitle(events)
+    if (historyTitle !== undefined) setSessionTitle(historyTitle)
+    setRows(mergeHistoryRows(events, nextSeq, locale))
+    // Only the baseline correlated with this history may have a newer live
+    // suffix. A view left by a previous follower is stale, even when revisiting
+    // the same session; absent stream state authoritatively clears that view.
+    let stream = assistantStreamsRef.current.get(id)
+    const hasMatchingBaseline = history.snapshotId !== undefined && followed?.id === history.snapshotId
+    if (!hasMatchingBaseline || stream === undefined) {
+      stream = new AssistantStreamView()
+      if (history.assistantStream !== undefined) stream.replace(history.assistantStream)
+      assistantStreamsRef.current.set(id, stream)
+    }
+    setStreamRow(stream.row())
+  }
+
+  async function refreshHistory(requestedId: string | null = sessionRef.current): Promise<void> {
+    const id = requestedId
+    if (id === null) return
+    try {
+      applyHistory(id, await readHistory(id))
+    } catch (cause) {
+      if (sessionRef.current === id) setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+
+  async function createSession(transition: number): Promise<void> {
+    const payload: Record<string, unknown> = {}
+    if (selectedWorkspace?.path) {
+      payload.cwd = selectedWorkspace.path
+    } else if (selectedWorkspace?.id && selectedWorkspace.id !== 'default') {
+      payload.workspaceId = selectedWorkspace.id
+    }
+    const created = await api.rpc<{ sessionId: string }>('session.create', payload)
+    if (sessionTransitionRef.current !== transition) return
+    sessionRef.current = created.sessionId
+    await api.setActiveSession(created.sessionId, true)
+    if (selectedDefaultModel && selectedDefaultModel !== hostDefaultModel) {
+      void api.rpc('session.selectModel', {
+        sessionId: created.sessionId,
+        model: selectedDefaultModel,
+        ...(selectedDefaultProvider ? { provider: selectedDefaultProvider } : {}),
+      }).catch(() => {})
+    }
+    setSessionTitle(null)
+    sessionRuntimeRef.current.seedRunning(created.sessionId, false)
+    applyHistory(created.sessionId, await readHistory(created.sessionId))
+  }
+
+  /** Load the raw host index plus workspace archive state once. */
+  async function loadSessionCatalog(): Promise<{
+    items: SessionPickerEntry[]
+    archived: Set<string>
+  }> {
+    const [listed, workspaces] = await Promise.all([
+      api.rpc<{ items: SessionPickerEntry[] }>('session.list', {}),
+      api.rpc<{ archivedSessionIds?: string[] }>('workspace.list', {}).catch(() => ({ archivedSessionIds: [] as string[] })),
+    ])
+    const archived = new Set(workspaces.archivedSessionIds ?? [])
+    for (const entry of listed.items ?? []) {
+      sessionRuntimeRef.current.seedRunning(entry.sessionId, entry.running)
+    }
+    return { items: listed.items ?? [], archived }
+  }
+
+  /** Filter the raw catalog for the manual history picker. */
+  async function loadVisibleSessions(): Promise<SessionPickerEntry[]> {
+    const { items, archived } = await loadSessionCatalog()
+    return resumableSessions(items).filter((entry) => !archived.has(entry.sessionId))
+  }
+
+  /** Restore only the exact current-page conversation, otherwise create a chat. */
+  async function initializeSession(): Promise<void> {
+    if (sessionInitializationRef.current || sessionChangingRef.current || sessionRef.current !== null) return
+    sessionInitializationRef.current = true
+    const transition = beginSessionTransition()
+    try {
+      const hinted = settings.autoResumeSession ? resumeHint.sessionId : null
+      if (hinted !== null && hinted.trim() !== '') {
+        try {
+          const { items, archived } = await loadSessionCatalog()
+          // A contextual hint may identify a live provisional/blank session,
+          // which is intentionally hidden only from the manual history picker.
+          const entry = archived.has(hinted)
+            ? undefined
+            : items.find((candidate) => candidate.sessionId === hinted && candidate.origin !== 'subagent')
+          if (entry !== undefined) {
+            const history = await readHistory(hinted)
+            if (sessionTransitionRef.current !== transition) return
+            const runtime = sessionRuntimeRef.current.snapshot(hinted, entry.running)
+            // A highlight captured while startup history is loading belongs to
+            // the still-open page, so automatic restoration must not erase it.
+            prepareSessionSwitch(runtime.running, runtime.questions, true)
+            sessionRef.current = hinted
+            await api.setActiveSession(hinted)
+            setSessionTitle(projectedSessionTitle(entry) ?? sessionDisplayTitle(entry))
+            applyHistory(hinted, history)
+            return
+          }
+        } catch {
+          // Missing, archived, or unreadable contextual sessions start fresh.
+        }
+      }
+      await createSession(transition)
+    } catch (cause) {
+      if (sessionTransitionRef.current === transition) {
+        setError(cause instanceof Error ? cause.message : String(cause))
+      }
+    } finally {
+      sessionInitializationRef.current = false
+      finishSessionTransition(transition)
+    }
+  }
+
+  /** 打开历史会话选择器：拉取持久化会话列表（已过滤空白会话），供恢复。 */
+  async function openSessionPicker(): Promise<void> {
+    if (showSessionPicker) {
+      setShowSessionPicker(false)
+      return
+    }
+    if (sessionSwitchBlocked || sessionChangingRef.current) return
+    setShowSessionPicker(true)
+    setLoadingSessions(true)
+    try {
+      const items = await loadVisibleSessions()
+      const current = items.find((entry) => entry.sessionId === sessionRef.current)
+      const currentTitle = current === undefined ? undefined : projectedSessionTitle(current)
+      if (currentTitle !== undefined) setSessionTitle(currentTitle)
+      setSessionList(items)
+    } catch (cause) {
+      if (state === 'connected') {
+        setError(cause instanceof Error ? cause.message : String(cause))
+      }
+    } finally {
+      setLoadingSessions(false)
+    }
+  }
+
+  /** 恢复历史会话：切换当前 session 并加载其历史。 */
+  async function resumeSession(entry: SessionPickerEntry): Promise<void> {
+    if (sessionSwitchBlocked || sessionChangingRef.current) return
+    const transition = beginSessionTransition()
+    try {
+      await api.setActiveSession(entry.sessionId)
+      if (sessionTransitionRef.current !== transition) return
+      const runtime = sessionRuntimeRef.current.snapshot(entry.sessionId, entry.running)
+      prepareSessionSwitch(runtime.running, runtime.questions)
+      sessionRef.current = entry.sessionId
+      setSessionTitle(projectedSessionTitle(entry) ?? sessionDisplayTitle(entry))
+      await refreshHistory(entry.sessionId)
+    } catch (cause) {
+      if (sessionTransitionRef.current === transition) {
+        setError(cause instanceof Error ? cause.message : String(cause))
+      }
+    } finally {
+      finishSessionTransition(transition)
+    }
+  }
+
+  /** Load the session that owns an approval before exposing its decision UI. */
+  async function focusApprovalSession(request: ApprovalRequest): Promise<void> {
+    const sessionId = request.sessionId
+    if (sessionId === undefined || sessionChangingRef.current || sessionRef.current === sessionId) return
+    const transition = beginSessionTransition()
+    let history: HistoryPage | undefined
+    let historyError: unknown
+    try {
+      try {
+        history = await readHistory(sessionId)
+      } catch (cause) {
+        historyError = cause
+      }
+      if (sessionTransitionRef.current !== transition
+        || !approvalQueueRef.current.some((entry) => entry.id === request.id)) return
+      const runtime = sessionRuntimeRef.current.snapshot(sessionId)
+      prepareSessionSwitch(runtime.running, runtime.questions)
+      sessionRef.current = sessionId
+      await api.setActiveSession(sessionId)
+      setSessionTitle(sessionId)
+      if (history !== undefined) applyHistory(sessionId, history)
+      else setError(historyError instanceof Error ? historyError.message : String(historyError))
+    } finally {
+      finishSessionTransition(transition)
+    }
+  }
+
+  /** 新建会话：创建后由 session.active(isNew) 将其绑定到当前标签页。 */
+  async function startNewSession(): Promise<void> {
+    if (sessionSwitchBlocked || sessionChangingRef.current) return
+    const transition = beginSessionTransition()
+    try {
+      sessionRef.current = null
+      setSessionTitle(null)
+      prepareSessionSwitch(false)
+      await createSession(transition)
+    } catch (cause) {
+      if (sessionTransitionRef.current === transition) {
+        setError(cause instanceof Error ? cause.message : String(cause))
+      }
+    } finally {
+      finishSessionTransition(transition)
+    }
+  }
+
+  function beginSessionTransition(): number {
+    sessionChangingRef.current = true
+    setSessionChanging(true)
+    sessionTransitionRef.current += 1
+    return sessionTransitionRef.current
+  }
+
+  function finishSessionTransition(transition: number): void {
+    if (sessionTransitionRef.current !== transition) return
+    sessionChangingRef.current = false
+    setSessionChanging(false)
+  }
+
+  /** Drop the attached quote here and in every other open panel. */
+  function dismissSelection(): void {
+    const dismissed = selection
+    setSelection(null)
+    if (dismissed !== null) void api.clearSelection(dismissed).catch(() => {})
+  }
+
+  function prepareSessionSwitch(
+    nextWorking: boolean,
+    nextQuestions: PendingQuestion[] = [],
+    preserveSelection = false,
+  ): void {
+    setRows([])
+    setStreamRow(null)
+    setQueuedItems([])
+    setTurnOutline([])
+    setFailedTurn(null)
+    setLandedSeq(null)
+    inboxRawRef.current = []
+    liveTurnRef.current = 0
+    setLiveTurn(0)
+    toolCallNamesRef.current.clear()
+    updateDraft(() => emptyComposerDraft())
+    if (!preserveSelection) {
+      setSelection(null)
+      // An explicit conversation switch abandons whatever attachment is
+      // current when the background processes it, rather than a stale render.
+      void api.clearSelection().catch(() => {})
+    }
+    setImageLimits(null)
+    imageProjectionRef.current = { sessionId: null, seq: Number.NEGATIVE_INFINITY, limits: null }
+    setWorking(nextWorking)
+    setStopping(false)
+    stoppingRef.current = false
+    replaceQuestions(nextQuestions)
+    questionSubmissionsRef.current = []
+    setQuestionSubmissions([])
+    setError(null)
+    setShowSessionPicker(false)
+  }
+
+  /**
+   * Validates files against the host projection and mounts them in the draft.
+   *
+   * The refusal reason is returned rather than written to the error line, so a
+   * batch of page media can report every failure once instead of letting the last
+   * refusal overwrite the ones before it. `settled` separates the two silent
+   * outcomes: a refused guard leaves the previous message alone, while an intake
+   * that ran clears it.
+   *
+   * Intakes are chained rather than run concurrently. `prepareImageFiles` checks
+   * the host's aggregate limits (`maxImagesPerMessage`, `maxMessageImageBytes`)
+   * against the draft and only ever adds, so two overlapping intakes must not both
+   * measure the same "before" count: paired with {@link draftRef}, one intake's
+   * check sees every image its predecessor added.
+   */
+  async function intakeImageFiles(
+    files: readonly File[],
+  ): Promise<{ landed: boolean; message: string | null; settled: boolean; refusal: ImageInputError | null }> {
+    const run = intakeChainRef.current.then(
+      () => runImageIntake(files),
+      () => runImageIntake(files),
+    )
+    intakeChainRef.current = run.then(() => undefined, () => undefined)
+    return run
+  }
+
+  async function runImageIntake(
+    files: readonly File[],
+  ): Promise<{ landed: boolean; message: string | null; settled: boolean; refusal: ImageInputError | null }> {
+    // Read through the refs: hovered page media reaches this function from a
+    // listener that subscribed before the projection existed, and the draft may
+    // have grown while an earlier download was still in flight.
+    const limits = imageLimitsRef.current
+    const sessionId = sessionRef.current
+    if (files.length === 0 || limits === null || sessionId === null
+      || !canAcceptImageSelection(addingImagesRef.current, sendingRef.current)) {
+      return {
+        landed: false,
+        settled: false,
+        refusal: null,
+        message: sessionId !== null && limits === null ? copy.app.imageUnavailable : null,
+      }
+    }
+    addingImagesRef.current = true
+    setAddingImages(true)
+    const existing = draftRef.current.images
+    try {
+      const prepared = await prepareImageFiles(files, existing, limits)
+      if (sessionRef.current !== sessionId) return { landed: false, settled: true, message: null, refusal: null }
+      updateDraft((current) => ({ ...current, images: [...current.images, ...prepared] }))
+      return { landed: prepared.length > 0, settled: true, message: null, refusal: null }
+    } catch (cause) {
+      return {
+        landed: false,
+        settled: true,
+        refusal: cause instanceof ImageInputError ? cause : null,
+        message: sessionRef.current === sessionId ? imageErrorMessage(cause, copy, limits) : null,
+      }
+    } finally {
+      addingImagesRef.current = false
+      setAddingImages(false)
+    }
+  }
+
+  /**
+   * Mounts files in the draft and reports whether they really landed.
+   *
+   * A `false` return is not a cosmetic distinction: the caller paints the
+   * "attached" state from it, so a draft that never received the image has to be
+   * distinguishable from one that did.
+   */
+  async function addImageFiles(files: readonly File[]): Promise<boolean> {
+    const { landed, message, settled } = await intakeImageFiles(files)
+    if (message !== null) setError(message)
+    else if (settled) setError(null)
+    return landed
+  }
+
+  const handleFillDraft = async (fields: DraftField[]): Promise<{ ok: boolean; message?: string }> => {
+    if (window.parent && window.parent !== window) {
+      try {
+        return await chrome.runtime.sendMessage({
+          type: 'FILL_FLOAT_STRUCTURED_DRAFT', payload: { fields },
+        }) ?? { ok: false, message: '未收到有效响应' }
+      } catch {
+        return { ok: false, message: '页面暂时无法填写' }
+      }
+    }
+
+    const targetTabId = tabAffinity?.active?.tabId ?? tabAffinity?.controlled?.tabId
+    if (targetTabId) {
+      try {
+        const res = await chrome.tabs.sendMessage(targetTabId, {
+          action: 'FILL_STRUCTURED_DRAFT',
+          payload: { fields },
+        })
+        if (res) return res
+        return { ok: false, message: '未收到有效响应' }
+      } catch (err) {
+        return { ok: false, message: err instanceof Error ? err.message : '与页面通信失败' }
+      }
+    }
+
+    return { ok: false, message: '未连接到宿主网页' }
+  }
+
+  /**
+   * 把一条排队消息插话发送进当前运行轮（原生 steer 语义）。
+   * 宿主在插话窗口关闭或条目消失时返回 steer-unavailable / queue-item-not-found，
+   * 这两种情况静默——队列投影会自行刷新出真实状态。
+   */
+  async function steerQueued(itemId: string): Promise<void> {
+    const id = sessionRef.current
+    if (id === null) return
+    try {
+      await api.rpc('session.updateQueue', { sessionId: id, itemId, action: { kind: 'steer' } })
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause)
+      if (!/steer-unavailable|queue-item-not-found/.test(message)) setError(copy.app.queueSteerFailed)
+    }
+  }
+
+  async function send(textOverride?: string): Promise<void> {
+    const text = (textOverride ?? input).trim()
+    const submittedImages = textOverride === undefined ? draftImages : []
+    // A quick-start prompt asks about the whole page, not about a quote.
+    const submittedSelection = textOverride === undefined ? selection : null
+    let id = sessionRef.current
+    // busy state 是异步的：连续回车可能都通过 state 检查——用 ref 同步锁。
+    if ((text === '' && submittedImages.length === 0 && submittedSelection === null)
+      || busy || addingImagesRef.current || sendingRef.current) return
+    // 悬浮窗挂在网页 DOM 内：自动化一旦刷新/跳转会整页销毁会话 UI。
+    // sidePanel.open 必须落在用户手势内，因此在任何 await 之前同步打开原生边栏。
+    // 发送回合仍由当前悬浮面板完成：此处只收起、不立刻 unload，避免掐断本帧 prompt。
+    if (isFloatMode) dockFloatToNativeSidePanel(undefined, undefined, false)
+    sendingRef.current = true
+    const submittedDraft: ComposerDraft<DraftImage> = { text, images: submittedImages }
+    if (textOverride === undefined) {
+      updateDraft(() => emptyComposerDraft())
+    }
+    setBusy(true)
+    setWorking(true)
+    setError(null)
+    // 不渲染乐观行：live user/message 事件即时回显，避免同一消息出现两行。
+    try {
+      if (id === null) {
+        const createPayload: Record<string, unknown> = {}
+        if (selectedWorkspace?.path) {
+          createPayload.cwd = selectedWorkspace.path
+        } else if (selectedWorkspace?.id && selectedWorkspace.id !== 'default') {
+          createPayload.workspaceId = selectedWorkspace.id
+        }
+        const created = await api.rpc<{ sessionId: string }>('session.create', createPayload)
+        sessionRef.current = created.sessionId
+        id = created.sessionId
+        await api.setActiveSession(created.sessionId, true).catch(() => {})
+        if (selectedDefaultModel && selectedDefaultModel !== hostDefaultModel) {
+          void api.rpc('session.selectModel', {
+            sessionId: created.sessionId,
+            model: selectedDefaultModel,
+            ...(selectedDefaultProvider ? { provider: selectedDefaultProvider } : {}),
+          }).catch(() => {})
+        }
+      } else if (isFloatMode) {
+        // 既有会话也重新广播，让刚打开的原生边栏吃到 resume-hint。
+        await api.setActiveSession(id).catch(() => {})
+      }
+      const clientTimeZone = browserTimeZone()
+      // Only video still travels as a URL: an image that the attachment channel
+      // accepted is already in `submittedImages`, so repeating its address in the
+      // body would ask the model to go fetch what it was just handed.
+      const linkedMedia = activeMediaItems.filter((it) => it.type !== 'image')
+      const mediaContext = linkedMedia.length > 0
+        ? `\n\n已点亮挂载的页面媒体素材：\n` + linkedMedia.map((it, idx) => `[媒体 ${idx + 1}] (${it.type.toUpperCase()}): ${it.src}`).join('\n')
+        : ''
+      const promptWithMedia = text + mediaContext
+      await api.rpc('session.prompt', {
+        sessionId: id,
+        mode: 'queue',
+        content: promptContent(
+          submittedSelection === null ? promptWithMedia : selectionPromptText(submittedSelection, promptWithMedia),
+          submittedImages,
+        ),
+        ...(clientTimeZone === undefined ? {} : { clientTimeZone }),
+      })
+      if (submittedSelection !== null) {
+        // Keep the background authoritative while the prompt is in flight.
+        // Conditional clearing cannot consume a newer highlight captured in
+        // the meantime, and its broadcast updates every panel together.
+        void api.clearSelection(submittedSelection).then(() => {
+          setSelection((current) => current?.capturedAt === submittedSelection.capturedAt ? null : current)
+        }).catch(() => {})
+      }
+      // prompt 已入队：卸载悬浮 iframe，只留原生边栏承载后续刷新。
+      if (isFloatMode) {
+        try {
+          window.parent?.postMessage({ type: 'COLLAPSE_WORKSTATION', unload: true }, '*')
+        } catch { /* parent may be gone */ }
+      }
+    } catch (cause) {
+      if (sessionRef.current === id) {
+        setError(imageErrorMessage(cause, copy, imageLimits ?? undefined))
+        setWorking(false)
+        if (textOverride === undefined) {
+          updateDraft((current) => restoreSubmittedDraft(current, submittedDraft))
+        }
+      }
+    } finally {
+      setBusy(false)
+      sendingRef.current = false
+    }
+  }
+
+  /** Cancel the active turn while keeping the sidebar session available. */
+  async function stopTurn(): Promise<void> {
+    const id = sessionRef.current
+    if (id === null || stoppingRef.current || sessionChangingRef.current) return
+    stoppingRef.current = true
+    setStopping(true)
+    setError(null)
+    try {
+      await api.rpc('session.cancel', { sessionId: id })
+      if (sessionRef.current === id) {
+        sessionRuntimeRef.current.finishTurn(id)
+        setWorking(false)
+        clearQuestions()
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      stoppingRef.current = false
+      setStopping(false)
+    }
+  }
+
+  /**
+   * Persist the settings form and say what happened.
+   *
+   * Every outcome is visible in the settings view: the button holds a saving
+   * state, a failure keeps the view open with its reason next to the buttons,
+   * and a success is confirmed before the view closes itself.
+   */
+  async function saveSettings(): Promise<void> {
+    if (settingsSave.kind === 'saving') return
+    setSettingsSave({ kind: 'saving' })
+    try {
+      const relayProblem = await saveRelayProfiles()
+      if (relayProblem !== null) {
+        setSettingsSave({ kind: 'error', message: relayProblem })
+        return
+      }
+      // A pasted pairing token arrives with whatever whitespace the user's
+      // clipboard carried; the bridge compares byte-exact, so a trailing
+      // newline would read as a wrong token and look like a broken address.
+      const next = { ...settings, token: settings.token.trim() }
+      await api.updateSettings(next)
+      try {
+        chrome.runtime?.sendMessage?.({
+          type: 'SETTINGS_UPDATED',
+          payload: { bridgeUrl: next.bridgeUrl, token: next.token }
+        })
+      } catch {}
+      setSettingsSave({ kind: 'saved' })
+      cancelSettingsClose()
+      settingsCloseTimerRef.current = setTimeout(() => {
+        settingsCloseTimerRef.current = null
+        setShowSettings(false)
+      }, SETTINGS_SAVED_CLOSE_MS)
+    } catch (cause) {
+      setSettingsSave({ kind: 'error', message: cause instanceof Error ? cause.message : String(cause) })
+    }
+  }
+
+  /** Drop a pending success-close so it cannot shut a view the user reopened. */
+  function cancelSettingsClose(): void {
+    const timer = settingsCloseTimerRef.current
+    if (timer === null) return
+    clearTimeout(timer)
+    settingsCloseTimerRef.current = null
+  }
+
+  /** Leave the settings view: drop any pending close and clear the last result. */
+  function leaveSettings(): void {
+    cancelSettingsClose()
+    setSettingsSave({ kind: 'idle' })
+    setShowSettings(false)
+  }
+
+  /** Load relay profiles from the llm-pi-ai settings namespace once per settings visit. */
+  useEffect(() => {
+    if (!showSettings || relayLoaded) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const described = await api.rpc<{
+          namespaces?: Array<{ ns: string; value?: Record<string, unknown> }>
+        }>('settings.describe', {})
+        const ns = described.namespaces?.find((candidate) => candidate.ns === 'llm-pi-ai')
+        const providers = (ns?.value?.providers ?? {}) as Record<string, {
+          displayName?: string
+          api?: string
+          baseURL?: string
+          apiKeyEnv?: string
+          models?: Array<{ id: string; contextWindow?: number }>
+        }>
+        const defaults = (described.namespaces?.find((candidate) => candidate.ns === 'agent-default-model')
+          ?.value ?? {}) as { provider?: unknown; model?: unknown; reasoningEffort?: unknown }
+        if (typeof defaults.model === 'string' && defaults.model.trim() !== '') {
+          setHostDefaultModel(defaults.model.trim())
+        }
+        if (typeof defaults.reasoningEffort === 'string' && defaults.reasoningEffort.trim() !== '') {
+          setHostDefaultEffort(defaults.reasoningEffort.trim())
+        }
+        const discoveredModels: Array<{ id: string; name?: string }> = []
+        Object.values(providers).forEach((route) => {
+          (route.models ?? []).forEach((m) => {
+            if (m.id && !discoveredModels.some((x) => x.id === m.id)) {
+              discoveredModels.push({ id: m.id, name: m.id })
+            }
+          })
+        })
+        if (discoveredModels.length > 0) {
+          setDynamicModels(discoveredModels)
+        }
+        const refs = Object.entries(providers)
+          .filter(([key]) => key.startsWith(RELAY_ROUTE_PREFIX))
+          .map(([, route]) => typeof route.apiKeyEnv === 'string' ? route.apiKeyEnv : '')
+          .filter((ref) => ref !== '')
+        let configuredRefs = new Set<string>()
+        if (refs.length > 0) {
+          try {
+            const creds = await api.rpc<{ credentials?: Record<string, { configured?: boolean }> }>(
+              'credentials.describe',
+              { refs },
+            )
+            configuredRefs = new Set(
+              Object.entries(creds.credentials ?? {})
+                .filter(([, view]) => view.configured === true)
+                .map(([ref]) => ref),
+            )
+          } catch {
+            // Credential visibility is cosmetic here; treat every token as unconfigured.
+          }
+        }
+        const drafts = Object.entries(providers)
+          .filter(([key]) => key.startsWith(RELAY_ROUTE_PREFIX))
+          .map(([key, route]) => ({
+            key,
+            name: typeof route.displayName === 'string' && route.displayName !== '' ? route.displayName : key,
+            protocol: (route.api === 'anthropic-messages' || route.api === 'openai-codex-responses'
+              ? route.api
+              : 'openai-completions') as RelayProfileDraft['protocol'],
+            baseUrl: typeof route.baseURL === 'string' ? route.baseURL : '',
+            token: '',
+            tokenConfigured: route.apiKeyEnv !== undefined && configuredRefs.has(route.apiKeyEnv),
+            modelsText: (route.models ?? []).map((model) => [
+              model.id,
+              model.contextWindow === undefined ? '' : String(model.contextWindow),
+            ].filter((part) => part !== '').join(', ')).join('\n'),
+            setDefault: defaults.provider === key,
+          }))
+        if (!cancelled) setRelayProfiles(drafts)
+      } catch {
+        // The namespace may not exist yet; an empty list still allows creating profiles.
+      }
+      if (!cancelled) setRelayLoaded(true)
+    })()
+    return () => { cancelled = true }
+  }, [api, showSettings, relayLoaded])
+
+  function updateRelayProfile(index: number, patch: Partial<RelayProfileDraft>): void {
+    setRelayProfiles((current) => current.map((profile, at) => at === index ? { ...profile, ...patch } : profile))
+  }
+
+  function addRelayProfile(): void {
+    setRelayNotice(null)
+    setRelayProfiles((current) => [...current, {
+      key: '',
+      name: '',
+      protocol: 'openai-completions',
+      baseUrl: '',
+      token: '',
+      tokenConfigured: false,
+      modelsText: '',
+      setDefault: false,
+    }])
+  }
+
+  async function removeRelayProfile(index: number): Promise<void> {
+    const profile = relayProfiles[index]
+    setRelayProfiles((current) => current.filter((_, at) => at !== index))
+    setRelayNotice(null)
+    if (profile === undefined || profile.key === '') return
+    try {
+      await api.rpc('settings.mutate', {
+        ns: 'llm-pi-ai',
+        ops: [{ op: 'unset', path: ['providers', profile.key] }],
+      })
+      try {
+        await api.rpc('credentials.unset', { ref: relayTokenRef(profile.key) })
+      } catch {
+        // The route is gone either way; a stale credential reference harms nothing.
+      }
+    } catch (cause) {
+      setRelayNotice(copy.settings.relaySaveFailed(cause instanceof Error ? cause.message : String(cause)))
+    }
+  }
+
+  async function testRelayConnection(index: number): Promise<void> {
+    const profile = relayProfiles[index]
+    if (profile === undefined || relayBusy) return
+    setRelayBusy(true)
+    setRelayNotice(copy.settings.relayTesting)
+    try {
+      const { models, viaOpenaiListing } = await discoverWithFallback(api, profile)
+      const ids = models.map((model) => model.id)
+      if (ids.length === 0) {
+        setRelayNotice(copy.settings.relayTestManualOnly)
+        return
+      }
+      setRelayNotice(copy.settings.relayTestOk(ids.length, ids.slice(0, 4).join(', ')
+        + (ids.length > 4 ? ' …' : ''))
+        + (viaOpenaiListing ? copy.settings.relayOpenaiListingNote : ''))
+    } catch (cause) {
+      setRelayNotice(isManualOnlyDiscovery(cause)
+        ? copy.settings.relayTestManualOnly
+        : copy.settings.relayTestFailed(relayErrorText(cause)))
+    } finally {
+      setRelayBusy(false)
+    }
+  }
+
+  /** Discover models from the drafted endpoint and fill the textarea in place. */
+  async function fetchRelayModels(index: number): Promise<void> {
+    const profile = relayProfiles[index]
+    if (profile === undefined || relayBusy) return
+    if (profile.baseUrl.trim() === '') {
+      setRelayNotice(copy.settings.relayNeedBaseUrl)
+      return
+    }
+    setRelayBusy(true)
+    setRelayNotice(copy.settings.relayFetching)
+    try {
+      const { models, viaOpenaiListing } = await discoverWithFallback(api, profile)
+      if (models.length === 0) {
+        setRelayNotice(copy.settings.relayTestManualOnly)
+        return
+      }
+      updateRelayProfile(index, {
+        modelsText: models.map((model) => [
+          model.id,
+          model.contextWindow === undefined ? '' : String(model.contextWindow),
+        ].filter((part) => part !== '').join(', ')).join('\n'),
+      })
+      setRelayNotice(copy.settings.relayFetchOk(models.length)
+        + (viaOpenaiListing ? copy.settings.relayOpenaiListingNote : ''))
+    } catch (cause) {
+      setRelayNotice(isManualOnlyDiscovery(cause)
+        ? copy.settings.relayTestManualOnly
+        : copy.settings.relayTestFailed(relayErrorText(cause)))
+    } finally {
+      setRelayBusy(false)
+    }
+  }
+
+  /**
+   * Persist every relay draft: token to the credential store, route to the
+   * llm-pi-ai namespace, optional default to agent-default-model.
+   * @returns null when every draft was saved, otherwise the reason the outer
+   * save must abort with — the caller shows it, so it cannot be dropped here.
+   */
+  async function saveRelayProfiles(): Promise<string | null> {
+    for (const profile of relayProfiles) {
+      if (profile.name.trim() === '') {
+        setRelayNotice(copy.settings.relayInvalidName)
+        return copy.settings.relayInvalidName
+      }
+    }
+    try {
+      const usedKeys = new Set<string>()
+      let defaultApplied = false
+      for (const profile of relayProfiles) {
+        let key = profile.key !== '' ? profile.key : relayRouteKey(profile.name)
+        while (usedKeys.has(key)) key += '-x'
+        usedKeys.add(key)
+        const ref = relayTokenRef(key)
+        if (profile.token.trim() !== '') {
+          await api.rpc('credentials.set', { ref, value: profile.token.trim() })
+        }
+        const models = parseRelayModels(profile.modelsText)
+        const firstModel = models[0]
+        const routeValue: Record<string, unknown> = {
+          displayName: profile.name.trim(),
+          apiKeyEnv: ref,
+          baseURL: profile.baseUrl.trim(),
+          models,
+          api: profile.protocol,
+        }
+        await api.rpc('settings.mutate', {
+          ns: 'llm-pi-ai',
+          ops: [{ op: 'set', path: ['providers', key], value: routeValue }],
+        })
+        if (profile.setDefault && !defaultApplied && models.length > 0) {
+          await api.rpc('settings.mutate', {
+            ns: 'agent-default-model',
+            ops: [
+              { op: 'set', path: ['provider'], value: key },
+              { op: 'set', path: ['model'], value: firstModel?.id ?? '' },
+              { op: 'unset', path: ['reasoningEffort'] },
+            ],
+          })
+          defaultApplied = true
+          // Model selection is remembered per session; the active one would
+          // otherwise stay on its old provider until a new chat is started.
+          const activeSessionId = sessionRef.current
+          if (activeSessionId !== null && firstModel?.id !== undefined) {
+            try {
+              await api.rpc('session.selectModel', {
+                sessionId: activeSessionId,
+                provider: key,
+                model: firstModel.id,
+              })
+            } catch {
+              // Best effort: the default still applies to every new session.
+            }
+          }
+        }
+      }
+      if (relayProfiles.length > 0) setRelayNotice(copy.settings.relaySavedOk)
+      return null
+    } catch (cause) {
+      const failure = copy.settings.relaySaveFailed(cause instanceof Error ? cause.message : String(cause))
+      setRelayNotice(failure)
+      return failure
+    }
+  }
+
+  async function decideApproval(decision: ApprovalDecision): Promise<void> {
+    const request = approvalQueue[0]
+    if (request === undefined) return
+    try {
+      await api.respondToApproval(request.id, decision)
+      if (decision === 'always-allow-reads') {
+        setSettings((current) => ({ ...current, sharePageContent: 'auto' }))
+      }
+      updateApprovalQueue((current) => current.filter((entry) => entry.id !== request.id))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+
+  async function decideTabAffinity(decision: TabAffinityDecision): Promise<void> {
+    if (tabAffinity === null) return
+    try {
+      await api.resolveTabAffinity(tabAffinity.revision, decision, sessionRef.current)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+
+  function addTrustedOrigin(): void {
+    const origin = normalizeWebOrigin(trustedOriginInput)
+    if (origin === null) return
+    setSettings((current) => ({
+      ...current,
+      trustedActionOrigins: [...new Set([...current.trustedActionOrigins, origin])].sort(),
+    }))
+    setTrustedOriginInput('')
+  }
+
+  function removeTrustedOrigin(origin: string): void {
+    setSettings((current) => ({
+      ...current,
+      trustedActionOrigins: current.trustedActionOrigins.filter((candidate) => candidate !== origin),
+    }))
+  }
+
+  const sessionMenuTitle = sessionTitle ?? (locale === 'en' ? 'New Chat' : '新会话')
+  const filteredSessions = useMemo(() => {
+    if (!sessionSearchQuery.trim()) return sessionList
+    const q = sessionSearchQuery.toLowerCase().trim()
+    return sessionList.filter((entry) => {
+      const title = sessionDisplayTitle(entry).toLowerCase()
+      return title.includes(q) || (entry.cwd && entry.cwd.toLowerCase().includes(q))
+    })
+  }, [sessionList, sessionSearchQuery])
+  const approvalDialog = !approvalReadyForSession(queuedApproval, sessionRef.current, sessionChanging)
+    ? null
+    : <ApprovalDialog request={queuedApproval!} onDecision={decideApproval} copy={copy} />
+
+  if (showSettings) {
+    return (
+      <><div className="settings">
+        <div className="settings-heading">
+          <button className="icon-button" onClick={leaveSettings} aria-label={copy.settings.back}><BackIcon /></button>
+          <h1 className="settings-header-title">{copy.settings.title}</h1>
+        </div>
+        <div className="settings-panel">
+          <label>
+            <span>{locale === 'en' ? 'Connect Instance' : '连接实例'}</span>
+            <small>{locale === 'en' ? 'Select connected local service instance and port' : '选择连接的本地 OmniMux 或 DSH 服务实例'}</small>
+            <div style={{ gridColumn: '1 / -1', width: '100%', marginTop: '7px' }}>
+              <WorkspaceSelector
+                bridgeConnected={state === 'connected'}
+                locale={locale}
+                targetPort={targetPort}
+                onSelectWorkspace={(ws) => {
+                  if (ws.port) {
+                    handleSwitchDshInstance({ id: ws.id, port: ws.port, name: ws.name })
+                  }
+                }}
+              />
+            </div>
+          </label>
+          <label>
+            <span>{locale === 'en' ? 'Associated Workspace' : '默认工作区'}</span>
+            <small>{locale === 'en' ? 'Workspace for new sessions and tasks' : '选择会话工作区，新会话默认在此工作区创建'}</small>
+            <div style={{ gridColumn: '1 / -1', width: '100%', marginTop: '7px' }}>
+              <SessionWorkspaceSelector
+                locale={locale}
+                api={api}
+                activePort={targetPort}
+                bridgeConnected={state === 'connected'}
+                selectedWorkspaceId={selectedWorkspace?.id}
+                onSelectWorkspace={(ws) => {
+                  setSelectedWorkspace(ws)
+                }}
+              />
+            </div>
+          </label>
+          <label>
+            <span>{locale === 'en' ? 'Chat Model' : '对话模型'}</span>
+            <small>{locale === 'en' ? 'Match models and reasoning effort supported by the active instance' : '跟随当前实例匹配可用模型与思考推理等级'}</small>
+            <div style={{ gridColumn: '1 / -1', width: '100%', marginTop: '7px' }}>
+              <ModelSelector
+                locale={locale}
+                activePort={targetPort}
+                api={api}
+                hostDefaultModel={hostDefaultModel}
+                hostDefaultEffort={hostDefaultEffort}
+                dynamicModels={dynamicModels}
+                onSelectModel={handleSelectModel}
+                onSelectEffort={handleSelectEffort}
+              />
+            </div>
+          </label>
+          <label>
+            <span>{locale === 'en' ? 'Text Generation Model' : '文本生成模型'}</span>
+            <small>{locale === 'en' ? 'Model used for one-shot Copilot text generation; leave on Follow Chat Model to inherit the chat model' : '页面 Copilot 一次性正文生成使用的模型；保持「跟随对话模型」即继承对话模型'}</small>
+            <div style={{ gridColumn: '1 / -1', width: '100%', marginTop: '7px' }}>
+              <ModelSelector
+                locale={locale}
+                activePort={targetPort}
+                api={api}
+                storageScope="text"
+                allowEmptyOption
+                selectedModel={settings.textModel}
+                selectedEffort={settings.textEffort}
+                hostDefaultModel={hostDefaultModel}
+                hostDefaultEffort={hostDefaultEffort}
+                dynamicModels={dynamicModels}
+                onSelectModel={handleSelectTextModel}
+              />
+            </div>
+          </label>
+          <label>
+            <span>{copy.settings.bridgeAddress}</span>
+            <small>{copy.settings.bridgeHelp}</small>
+            <input
+              value={settings.bridgeUrl}
+              onChange={(e) => setSettings((prev) => ({ ...prev, bridgeUrl: e.target.value }))}
+              placeholder={copy.settings.bridgePlaceholder}
+            />
+          </label>
+          <label>
+            <span>{locale === 'en' ? 'Auth Token' : '鉴权 Token'}</span>
+            <small>{locale === 'en' ? 'Pairing token required by every instance, local included; copy it from the app' : '任何实例都需要配对令牌（本机同样需要）；在应用侧复制后粘贴到此处'}</small>
+            <input
+              type="password"
+              value={settings.token}
+              onChange={(e) => setSettings((prev) => ({ ...prev, token: e.target.value }))}
+              placeholder={locale === 'en' ? 'Paste the pairing token' : '粘贴配对令牌'}
+            />
+          </label>
+          <label>
+            <span>{copy.settings.pageSharing}</span>
+            <small>{copy.settings.pageSharingHelp}</small>
+            <select
+              value={settings.sharePageContent}
+              disabled={settings.unrestrictedBrowserAccess}
+              onChange={(e) => setSettings((prev) => ({ ...prev, sharePageContent: e.target.value as PanelSettings['sharePageContent'] }))}
+            >
+              <option value="auto">{copy.settings.sharingAuto}</option>
+              <option value="ask">{copy.settings.sharingAsk}</option>
+              <option value="off">{copy.settings.sharingOff}</option>
+            </select>
+          </label>
+          <label>
+            <span>{locale === 'en' ? 'Appearance Theme' : '界面主题'}</span>
+            <small>{locale === 'en' ? 'Light, dark, or system theme' : '深浅色外观模式'}</small>
+            <select
+              value={themeSetting}
+              onChange={(e) => updateThemeSetting(e.target.value as 'auto' | 'light' | 'dark')}
+            >
+              <option value="auto">{locale === 'en' ? 'Auto (Follow Browser / System)' : '跟随系统 (自适应)'}</option>
+              <option value="dark">{locale === 'en' ? 'Dark Theme' : '深色模式'}</option>
+              <option value="light">{locale === 'en' ? 'Light Theme' : '浅色模式'}</option>
+            </select>
+          </label>
+          <label>
+            <span>{copy.settings.language}</span>
+            <small>{copy.settings.languageHelp}</small>
+            <select
+              value={manualLocale}
+              onChange={(e) => {
+                const val = e.target.value
+                setManualLocale(val)
+                if (val === 'zh' || val === 'en') {
+                  safeSetStorage('omnimux_manual_locale', val)
+                  setLocale(val)
+                } else {
+                  safeRemoveStorage('omnimux_manual_locale')
+                  const dshPref = safeGetStorage('dsh_configured_locale') as UiLocale | null
+                  setLocale(dshPref || getUiLocale())
+                }
+              }}
+            >
+              <option value="auto">{copy.settings.languageFollowDsh}</option>
+              <option value="zh">{copy.settings.languageZh}</option>
+              <option value="en">{copy.settings.languageEn}</option>
+            </select>
+          </label>
+          <label>
+            <span>{locale === 'en' ? 'Interface Text Scale' : '界面字号大小'}</span>
+            <small>{locale === 'en' ? 'Font scale ratio' : '微调字号大小与阅读比例'}</small>
+            <div className="settings-scale-bar">
+              <button
+                type="button"
+                className="scale-action-btn"
+                onClick={() => changeUiScale(stepUiScale(uiScaleRef.current, -1))}
+                aria-label={locale === 'en' ? 'Decrease text size' : '缩小字号'}
+              >
+                A-
+              </button>
+              <span className="scale-indicator">{Math.round(uiScale * 100)}%</span>
+              <button
+                type="button"
+                className="scale-action-btn"
+                onClick={() => changeUiScale(stepUiScale(uiScaleRef.current, 1))}
+                aria-label={locale === 'en' ? 'Increase text size' : '放大字号'}
+              >
+                A+
+              </button>
+              <button
+                type="button"
+                className="scale-reset-btn"
+                onClick={() => changeUiScale(DEFAULT_UI_SCALE)}
+              >
+                {locale === 'en' ? 'Reset' : '重置'}
+              </button>
+            </div>
+          </label>
+        </div>
+        <section className="settings-panel feature-switch" aria-labelledby="omnimux-fab-setting">
+          <div id="omnimux-fab-setting" className="settings-card-heading">{copy.settings.fabSection}</div>
+          <label className="setting-toggle">
+            <span className="setting-toggle-copy">
+              <strong>{copy.settings.fabToggle}</strong>
+              <small>{copy.settings.fabToggleHelp}</small>
+            </span>
+            <input
+              className="setting-toggle-input"
+              type="checkbox"
+              checked={fabEnabled}
+              onChange={(event) => updateFeatureFlag(FEATURE_FLAG.fab, event.target.checked)}
+            />
+            <span className="setting-toggle-control" aria-hidden="true"><span /></span>
+          </label>
+        </section>
+        <section className="settings-panel feature-switch" aria-labelledby="omnimux-media-hover-setting">
+          <div id="omnimux-media-hover-setting" className="settings-card-heading">{copy.settings.mediaHoverSection}</div>
+          <label className="setting-toggle">
+            <span className="setting-toggle-copy">
+              <strong>{copy.settings.mediaHoverToggle}</strong>
+              <small>{copy.settings.mediaHoverToggleHelp}</small>
+            </span>
+            <input
+              className="setting-toggle-input"
+              type="checkbox"
+              checked={mediaHoverEnabled}
+              onChange={(event) => updateFeatureFlag(FEATURE_FLAG.mediaHover, event.target.checked)}
+            />
+            <span className="setting-toggle-control" aria-hidden="true"><span /></span>
+          </label>
+        </section>
+        <section className="settings-panel feature-switch" aria-labelledby="omnimux-velocity-setting">
+          <div id="omnimux-velocity-setting" className="settings-card-heading">{copy.settings.velocitySection}</div>
+          <label className="setting-toggle">
+            <span className="setting-toggle-copy">
+              <strong>{copy.settings.velocityToggle}</strong>
+              <small>{copy.settings.velocityToggleHelp}</small>
+            </span>
+            <input
+              className="setting-toggle-input"
+              type="checkbox"
+              checked={velocityEnabled}
+              onChange={(event) => updateFeatureFlag(FEATURE_FLAG.velocity, event.target.checked)}
+            />
+            <span className="setting-toggle-control" aria-hidden="true"><span /></span>
+          </label>
+          <div className="copilot-keywords">
+            <span className="setting-toggle-copy">
+              <strong id="copilot-keywords-title">{copy.settings.copilotKeywords}</strong>
+              <small>{copy.settings.copilotKeywordsHelp}</small>
+            </span>
+            <div className="keyword-tags-field" onClick={(event) => (event.currentTarget.querySelector('input') as HTMLInputElement | null)?.focus()}>
+              {keywordTags.map((tag) => (
+                <span className="keyword-tag" key={tag}>
+                  {tag}
+                  <button type="button" aria-label={copy.settings.copilotKeywordRemove(tag)} onClick={() => saveKeywordTags(keywordTags.filter((t) => t !== tag))}>×</button>
+                </span>
+              ))}
+              {keywordTags.length < MAX_KEYWORD_TAGS && (
+                <input
+                  aria-labelledby="copilot-keywords-title"
+                  value={keywordDraft}
+                  onChange={(event) => {
+                    const value = event.target.value
+                    if (/[,，、;；]/.test(value)) {
+                      saveKeywordTags(addKeywordTags(keywordTags, value))
+                      setKeywordDraft('')
+                    } else {
+                      setKeywordDraft(value)
+                    }
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+                      event.preventDefault()
+                      commitKeywordDraft()
+                    } else if (event.key === 'Backspace' && keywordDraft === '' && keywordTags.length > 0) {
+                      saveKeywordTags(keywordTags.slice(0, -1))
+                    }
+                  }}
+                  onBlur={commitKeywordDraft}
+                  placeholder={keywordTags.length === 0 ? copy.settings.copilotKeywordsPlaceholder : ''}
+                />
+              )}
+            </div>
+          </div>
+        </section>
+        <section className="settings-panel feature-switch" aria-labelledby="omnimux-poster-setting">
+          <div id="omnimux-poster-setting" className="settings-card-heading">{copy.settings.posterSection}</div>
+          <label className="setting-toggle">
+            <span className="setting-toggle-copy">
+              <strong>{copy.settings.posterToggle}</strong>
+              <small>{copy.settings.posterToggleHelp}</small>
+            </span>
+            <input
+              className="setting-toggle-input"
+              type="checkbox"
+              checked={posterEnabled}
+              onChange={(event) => updateFeatureFlag(FEATURE_FLAG.poster, event.target.checked)}
+            />
+            <span className="setting-toggle-control" aria-hidden="true"><span /></span>
+          </label>
+        </section>
+        <div className="settings-panel preference-toggles">
+          <label className="setting-toggle">
+            <span className="setting-toggle-copy">
+              <strong>{copy.settings.unrestrictedBrowserAccess}</strong>
+              <small>{copy.settings.unrestrictedBrowserAccessHelp}</small>
+            </span>
+            <input
+              className="setting-toggle-input"
+              type="checkbox"
+              checked={settings.unrestrictedBrowserAccess}
+              onChange={(event) => setSettings((current) => ({
+                ...current, unrestrictedBrowserAccess: event.target.checked,
+              }))}
+            />
+            <span className="setting-toggle-control" aria-hidden="true"><span /></span>
+          </label>
+          <label className="setting-toggle">
+            <span className="setting-toggle-copy">
+              <strong>{copy.settings.approvalNotifications}</strong>
+              <small>{copy.settings.approvalNotificationsHelp}</small>
+            </span>
+            <input
+              className="setting-toggle-input"
+              type="checkbox"
+              checked={settings.approvalNotifications}
+              onChange={(event) => setSettings((current) => ({
+                ...current, approvalNotifications: event.target.checked,
+              }))}
+            />
+            <span className="setting-toggle-control" aria-hidden="true"><span /></span>
+          </label>
+          <label className="setting-toggle">
+            <span className="setting-toggle-copy">
+              <strong>{copy.settings.autoResumeSession}</strong>
+              <small>{copy.settings.autoResumeSessionHelp}</small>
+            </span>
+            <input
+              className="setting-toggle-input"
+              type="checkbox"
+              checked={settings.autoResumeSession}
+              onChange={(event) => setSettings((current) => ({
+                ...current, autoResumeSession: event.target.checked,
+              }))}
+            />
+            <span className="setting-toggle-control" aria-hidden="true"><span /></span>
+          </label>
+        </div>
+        <section className="relay-config" aria-labelledby="relay-title">
+          <div className="relay-heading">
+            <span id="relay-title">
+              <strong>{copy.settings.relaySection}</strong>
+              <small>{copy.settings.relayHelp}</small>
+            </span>
+            <button className="secondary" onClick={addRelayProfile}>{copy.settings.relayAdd}</button>
+          </div>
+          {relayProfiles.length === 0 && <p>{copy.settings.relayEmpty}</p>}
+          {relayProfiles.map((profile, index) => (
+            <div className="relay-profile" key={profile.key === '' ? `new-${index}` : profile.key}>
+              <label>
+                <span>{copy.settings.relayName}</span>
+                <input
+                  value={profile.name}
+                  onChange={(event) => updateRelayProfile(index, { name: event.target.value })}
+                  placeholder={copy.settings.relayNamePlaceholder}
+                />
+              </label>
+              <label>
+                <span>{copy.settings.relayProtocol}</span>
+                <select
+                  value={profile.protocol}
+                  onChange={(event) => updateRelayProfile(index, {
+                    protocol: event.target.value as RelayProfileDraft['protocol'],
+                  })}
+                >
+                  <option value="openai-completions">{copy.settings.relayProtocolOpenai}</option>
+                  <option value="openai-codex-responses">{copy.settings.relayProtocolCodex}</option>
+                  <option value="anthropic-messages">{copy.settings.relayProtocolClaude}</option>
+                </select>
+              </label>
+              <label>
+                <span>{copy.settings.relayBaseUrl}</span>
+                <input
+                  value={profile.baseUrl}
+                  onChange={(event) => updateRelayProfile(index, { baseUrl: event.target.value })}
+                  placeholder="https://api.example.com/v1"
+                />
+              </label>
+              <label>
+                <span>{copy.settings.relayToken}</span>
+                <input
+                  type="password"
+                  value={profile.token}
+                  onChange={(event) => updateRelayProfile(index, { token: event.target.value })}
+                  placeholder={copy.settings.relayTokenPlaceholder(profile.tokenConfigured)}
+                />
+              </label>
+              <div className="relay-models">
+                <div className="relay-label-row">
+                  <span>{copy.settings.relayModels}</span>
+                  <button className="relay-fetch" disabled={profile.baseUrl.trim() === '' || relayBusy}
+                    onClick={() => { void fetchRelayModels(index) }}>
+                    {copy.settings.relayFetchModels}
+                  </button>
+                </div>
+                <small>{copy.settings.relayModelsHelp}</small>
+                <textarea
+                  rows={3}
+                  aria-label={copy.settings.relayModels}
+                  value={profile.modelsText}
+                  onChange={(event) => updateRelayProfile(index, { modelsText: event.target.value })}
+                  placeholder={copy.settings.relayModelsPlaceholder}
+                />
+              </div>
+              <label className="setting-toggle">
+                <span className="setting-toggle-copy">
+                  <strong>{copy.settings.relaySetDefault}</strong>
+                  <small>{copy.settings.relaySetDefaultHelp}</small>
+                </span>
+                <input
+                  className="setting-toggle-input"
+                  type="checkbox"
+                  checked={profile.setDefault}
+                  onChange={(event) => setRelayProfiles((current) => current.map((candidate, at) => at === index
+                    ? { ...candidate, setDefault: event.target.checked }
+                    : candidate))}
+                />
+                <span className="setting-toggle-control" aria-hidden="true"><span /></span>
+              </label>
+              <div className="relay-profile-actions">
+                <button
+                  disabled={profile.name.trim() === '' || profile.baseUrl.trim() === ''}
+                  onClick={() => { void testRelayConnection(index) }}
+                >
+                  {copy.settings.relayTest}
+                </button>
+                <button className="secondary" onClick={() => { void removeRelayProfile(index) }}>
+                  {copy.settings.relayRemove}
+                </button>
+              </div>
+            </div>
+          ))}
+          {relayNotice !== null && <p className="hint">{relayNotice}</p>}
+        </section>
+        <section className="trusted-origins" aria-labelledby="trusted-origins-title">
+          <div>
+            <span id="trusted-origins-title">{copy.settings.trustedOrigins}</span>
+            <small>{copy.settings.trustedOriginsHelp}</small>
+          </div>
+          <div className="trusted-origin-add">
+            <input
+              aria-label={copy.settings.trustedOriginInput}
+              value={trustedOriginInput}
+              onChange={(event) => setTrustedOriginInput(event.target.value)}
+              onKeyDown={(event) => { if (event.key === 'Enter') addTrustedOrigin() }}
+              placeholder="https://example.com / https://*.example.com"
+            />
+            <button disabled={normalizeWebOrigin(trustedOriginInput) === null} onClick={addTrustedOrigin}>{copy.settings.add}</button>
+          </div>
+          {trustedOriginInput.trim() !== '' && normalizeWebOrigin(trustedOriginInput) === null && (
+            <p className="origin-error">{copy.settings.invalidOrigin}</p>
+          )}
+          {settings.trustedActionOrigins.length === 0 && <p>{copy.settings.noTrustedOrigins}</p>}
+          {settings.trustedActionOrigins.map((origin) => (
+            <div className="trusted-origin" key={origin}>
+              <code>{origin}</code>
+              <button onClick={() => removeTrustedOrigin(origin)} aria-label={copy.settings.removeOrigin(origin)}>{copy.settings.remove}</button>
+            </div>
+          ))}
+        </section>
+        <div className="settings-actions">
+          {settingsSave.kind === 'error' && (
+            <p className="settings-feedback error" role="alert">
+              {copy.settings.saveFailed(settingsSave.message)}
+            </p>
+          )}
+          {settingsSave.kind === 'saved' && (
+            <p className="settings-feedback saved" role="status">{copy.settings.saveOk}</p>
+          )}
+          <button
+            className="primary"
+            disabled={settingsSave.kind === 'saving'}
+            onClick={() => { void saveSettings() }}
+          >
+            {settingsSave.kind === 'saving' && <span className="button-spinner" aria-hidden="true" />}
+            {settingsSave.kind === 'saving'
+              ? copy.settings.saving
+              : settingsSave.kind === 'error' ? copy.settings.retrySave : copy.settings.save}
+          </button>
+          <button className="secondary" onClick={leaveSettings}>{copy.settings.cancel}</button>
+        </div>
+      </div>{approvalDialog}</>
+    )
+  }
+
+  // 即使后台正在初始化或尚未分派 sessionId，输入框也必须立即可用，绝不锁定禁用
+  const composerDisabled = busy || sessionChanging
+  const sendDisabled = busy || addingImages || (!input.trim() && draftImages.length === 0 && selection === null)
+  // 排队态（任务执行中）只要输入框有内容就把右下角主按钮切回「发送」，提示用户还能继续排队；
+  // 清空输入框后回到「停止」。提交在途（busy/加图中）时发送会被 send() 早退，仍显示「停止」。
+  const composerHasContent = input.trim().length > 0 || draftImages.length > 0
+  const queueSendReady = working && composerHasContent && !sendDisabled
+
+  return (
+    <><div className="app">
+      <header className="topbar">
+        <div className="topbar-left">
+          <button className="session-menu-trigger"
+            aria-expanded={showSessionPicker} aria-label={copy.app.openSessions}
+            onClick={() => { void openSessionPicker() }} title={sessionMenuTitle}>
+            <MessageSquareIcon size={15} className="session-trigger-chat-icon" />
+            <span className="session-trigger-title">{sessionMenuTitle}</span>
+            <ChevronDownIcon size={12} />
+          </button>
+        </div>
+        <div className="topbar-actions">
+          <button className="icon-button new-session-trigger" disabled={sessionSwitchBlocked}
+            onClick={() => { void startNewSession() }}
+            aria-label={copy.app.newSession} title={copy.app.newSession}>
+            <PlusSvgIcon size={14} />
+          </button>
+          <button className="icon-button settings-trigger" onClick={() => { setSettingsSave({ kind: 'idle' }); setShowSettings(true) }}
+            aria-label={copy.app.openSettings} title={copy.app.settings}>
+            <MoreHorizontalIcon size={16} />
+          </button>
+          {isFloatMode && (
+            <div className="float-top-actions">
+              <button
+                type="button"
+                className="icon-button float-btn-icon"
+                onClick={() => { dockFloatToNativeSidePanel() }}
+                title={locale === 'en' ? "Open in native side panel" : "切换到 Chrome 原生右侧边栏并收起当前面板"}
+                aria-label={locale === 'en' ? "Open in native side panel" : "切换到 Chrome 原生右侧边栏并收起当前面板"}
+              >
+                <SidebarPanelIcon size={13} />
+              </button>
+              <button
+                type="button"
+                className="icon-button float-btn-icon close"
+                onClick={() => {
+                  window.parent?.postMessage({ type: 'COLLAPSE_WORKSTATION' }, '*')
+                }}
+                title={locale === 'en' ? "Collapse workstation (Esc)" : "收起工作台 (Esc)"}
+                aria-label={locale === 'en' ? "Collapse workstation (Esc)" : "收起工作台 (Esc)"}
+              >
+                <CloseIcon size={12} />
+              </button>
+            </div>
+          )}
+        </div>
+      </header>
+      {toastMessage && (
+        <div className="omnimux-toast-pill" role="status">
+          <span>{toastMessage}</span>
+        </div>
+      )}
+      <TabAffinityBanner state={tabAffinity} copy={copy} onDecision={decideTabAffinity} />
+      {stickyTopBarVisible && pageScene && (
+        <div className="sticky-top-page-bar visible">
+          <div
+            className="sticky-bar-left"
+            onClick={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+            style={{ cursor: 'pointer' }}
+            title={locale === 'en' ? 'Scroll to top' : '点击滚动回到顶部大卡片'}
+          >
+            <div className="sticky-bar-badge">
+              <PlatformMarkIcon platform={pageScene.platform} size={11} />
+            </div>
+            <span className="sticky-bar-title">{pageScene?.title || (locale === 'en' ? 'Active Page' : '当前浏览页面')}</span>
+          </div>
+          <button
+            type="button"
+            className={`sticky-bar-action-btn ${saveInspirationStatus === 'saved' ? 'success' : ''}`}
+            onClick={() => { void handleSaveToInspiration() }}
+            disabled={saveInspirationStatus === 'saving'}
+          >
+            <SaveIcon size={11} />
+            <span>
+              {saveButtonLabel({
+                // 成功态显示实际落库目标；其余状态跟随当前页面的 host 分类。
+                target: saveInspirationStatus === 'saved' ? savedSaveTarget : classifiedSaveTarget,
+                status: saveInspirationStatus,
+                locale,
+              })}
+            </span>
+          </button>
+        </div>
+      )}
+      {showSessionPicker && (
+        <section className="session-picker youmind-style" aria-label={copy.app.sessions}>
+          <div className="session-search-box">
+            <SearchIcon size={13} className="search-icon" />
+            <input
+              type="text"
+              className="session-search-input"
+              value={sessionSearchQuery}
+              onChange={(e) => setSessionSearchQuery(e.target.value)}
+              placeholder={locale === 'en' ? 'Search...' : '搜索...'}
+              autoFocus
+            />
+          </div>
+          {loadingSessions
+            ? <p className="session-empty">{copy.app.sessionPickerLoading}</p>
+            : filteredSessions.length === 0
+              ? <p className="session-empty">{copy.app.sessionPickerEmpty}</p>
+              : (
+                <ul className="session-list">
+                  {filteredSessions.map((entry) => {
+                    const title = sessionDisplayTitle(entry)
+                    const isCurrent = entry.sessionId === sessionRef.current
+                    return (
+                      <li key={entry.sessionId}>
+                        <button
+                          type="button"
+                          className={`session-item-row ${isCurrent ? 'active' : ''}`}
+                          aria-current={isCurrent ? 'true' : undefined}
+                          onClick={() => {
+                            void resumeSession(entry)
+                            setShowSessionPicker(false)
+                          }}>
+                          <span className="session-icon"><MessageSquareIcon size={13} /></span>
+                          <span className="session-title" title={title}>{title}</span>
+                          {isCurrent && <span className="session-active-check">✓</span>}
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+          <div className="session-picker-footer">
+            <button
+              type="button"
+              className="session-footer-new-btn"
+              onClick={() => {
+                void startNewSession()
+                setShowSessionPicker(false)
+              }}
+            >
+              <PlusSvgIcon size={13} />
+              <span>{locale === 'en' ? 'Start New Chat' : '开启新对话'}</span>
+            </button>
+          </div>
+        </section>
+      )}
+      <div className="messages" ref={scrollRef} onScroll={handleMessagesScroll}>
+        {pageScene && (
+          <div className="empty empty-hero-layout" style={{ width: '100%', margin: '8px auto 16px' }}>
+            <div className="hero-card-stack-wrapper">
+              <div className="hero-card-stack-underlay underlay-2" />
+              <div className="hero-card-stack-underlay underlay-1" />
+              <div className="page-hero-card youmind-exact-card">
+                {/* 1. 顶部真实封面大图 */}
+                <div className="hero-card-cover-box">
+                  {pageScene.heroImage ? (
+                    <img
+                      src={pageScene.heroImage}
+                      alt={pageScene.title || 'Page cover'}
+                      className="hero-card-cover-img"
+                    />
+                  ) : (
+                    <div className="hero-card-cover-placeholder">
+                      <PlatformMarkIcon platform={pageScene.platform} size={28} />
+                    </div>
+                  )}
+                </div>
+
+                {/* 2. 平台标识行 (1:1 对标 YouMind 图 2) */}
+                <div className="hero-platform-row">
+                  <span className="hero-square-badge">
+                    <PlatformMarkIcon platform={pageScene.platform} size={11} />
+                  </span>
+                  <span className="hero-platform-text">
+                    {pageScene.platformLabel || (pageScene.platform === 'twitter' ? 'X (formerly Twitter)' : (pageScene.title ? 'Web' : 'OmniMux'))}
+                  </span>
+                </div>
+
+                {/* 3. 页面大标题 */}
+                <div className="hero-card-title" title={pageScene.title || ''}>
+                  {pageScene.title || (pageScene.author ? `@${pageScene.author}` : (locale === 'en' ? 'Active Page' : '当前浏览页面'))}
+                </div>
+
+                {/* 4. 底部半悬浮保存药丸按钮 */}
+                <div className="hero-card-action-shelf">
+                  <button
+                    type="button"
+                    className={`hero-action-pill-btn ${saveInspirationStatus === 'saved' ? 'success' : ''}`}
+                    onClick={() => { void handleSaveToInspiration() }}
+                    disabled={saveInspirationStatus === 'saving'}
+                  >
+                    <span>
+                      {saveButtonLabel({
+                        // 成功态显示实际落库目标；其余状态跟随当前页面的 host 分类。
+                        target: saveInspirationStatus === 'saved' ? savedSaveTarget : classifiedSaveTarget,
+                        status: saveInspirationStatus,
+                        locale,
+                      })}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+            <PresetChips scene={pageScene} locale={locale} onSelectPrompt={(p) => void send(p)} />
+          </div>
+        )}
+        {rows.map((row) => (
+          <div key={row.seq} className={`row ${row.kind}${landedSeq === row.seq ? ' landed-flash' : ''}`} {...(row.turn === undefined ? {} : { 'data-turn': row.turn })}>
+            {row.kind === 'assistant' && <span className="assistant-avatar"><img src={omnimuxUrl} alt={copy.app.assistant} /></span>}
+            {row.kind === 'tool'
+              ? <ToolActivity row={row} copy={copy} />
+              : <MessageBody row={row} sessionId={sessionRef.current ?? ''} api={api} copy={copy} locale={locale} onFillDraft={handleFillDraft} />}
+          </div>
+        ))}
+        {streamRow !== null && (
+          <div className="row assistant" aria-live="polite">
+            <span className="assistant-avatar"><img src={omnimuxUrl} alt={copy.app.assistant} /></span>
+            <MessageBody row={streamRow} sessionId={sessionRef.current ?? ''} api={api} copy={copy} locale={locale} onFillDraft={handleFillDraft} />
+          </div>
+        )}
+        {working && streamRow === null && question === null && rows[rows.length - 1]?.status !== 'running' && (
+          <div className="ai-progress" role="status" aria-label={copy.app.assistantWorking}>
+            <span className="assistant-avatar"><img src={omnimuxUrl} alt="" /></span>
+            <span className="progress-dots" aria-hidden="true"><i /><i /><i /></span>
+            <span>{rows[rows.length - 1]?.kind === 'tool' ? copy.app.organizingResults : copy.app.thinking}</span>
+          </div>
+        )}
+      </div>
+      <TurnRail
+        items={railItems}
+        activeTurn={activeRailTurn}
+        onLocate={locateTurn}
+        copy={railCopy}
+      />
+      {question !== null && (
+        <QuestionCard
+          key={`${question.sessionId}:${question.rpcId}`}
+          question={question}
+          copy={copy}
+          submitting={questionSubmitting}
+          onAnswer={(answers) => { void answerQuestion(question, answers) }}
+          onDismiss={() => { void dismissQuestion(question) }}
+        />
+      )}
+      {state !== 'connected' && (
+        <div className="pair-card">
+          <button
+            type="button"
+            className="pair-button"
+            disabled={pairBusy}
+            onClick={() => {
+              if (pairBusy) return
+              setPairBusy(true)
+              setPairMessage(locale === 'en' ? 'Waiting for approval…' : '等待授权…')
+              // The background stops polling after 120s, and a restarted worker
+              // reports nothing at all: this bound always gives the card a way out.
+              if (pairTimeoutRef.current !== null) clearTimeout(pairTimeoutRef.current)
+              pairTimeoutRef.current = setTimeout(() => {
+                pairTimeoutRef.current = null
+                settlePairing(locale === 'en'
+                  ? 'Connection timed out: make sure the app is running, then retry'
+                  : '连接超时，请确认应用已启动后重试')
+              }, PAIR_APPROVAL_TIMEOUT_MS)
+              void chrome.runtime?.sendMessage?.({ type: 'PAIR_START' })
+                .then((res: { ok?: boolean; message?: string; code?: string } | undefined) => {
+                  if (res?.ok === true) {
+                    setPairMessage(locale === 'en'
+                      ? `Waiting for approval… code ${res.code ?? ''}`
+                      : `等待授权… 授权码 ${res.code ?? ''}`)
+                    return
+                  }
+                  settlePairing(res?.message ?? (locale === 'en' ? 'Pairing failed' : '配对失败'))
+                })
+                .catch(() => {
+                  settlePairing(locale === 'en' ? 'Pairing failed' : '配对失败')
+                })
+            }}
+          >{locale === 'en' ? 'Connect to local OmniMux' : '连接本机 OmniMux'}</button>
+          {pairMessage !== null && <div className="pair-message">{pairMessage}</div>}
+        </div>
+      )}
+      {error !== null && <div className="error">{error}</div>}
+      <footer className="composer">
+        {detectedMedia.some((item) => !attachedMediaIds.has(item.id)) && (
+          <MediaSnifferBar
+            items={detectedMedia.filter((item) => !attachedMediaIds.has(item.id))}
+            locale={locale}
+            onActiveChange={setActiveMediaItems}
+            onSaveToInspiration={handleSaveToInspiration}
+            attachedIds={attachedMediaIds}
+            onAttachMedia={attachLitMedia}
+          />
+        )}
+        <QueueDock
+          items={queuedItems}
+          sessionId={sessionRef.current}
+          api={api}
+          steerAvailable={working && !stopping}
+          copy={queueDockCopy}
+          onError={setError}
+        />
+        <div className="composer-box clean-chat-box">
+          {selection !== null && (
+            <SelectionQuote
+              selection={{ ...selection, quote: selection.text }}
+              copy={copy}
+              label={copy.app.selectionChip}
+              onRemove={dismissSelection}
+            />
+          )}
+          {draftImages.length > 0 && (
+            <div className="draft-images" aria-label={copy.app.addImages}>
+              {draftImages.map((image) => {
+                const name = image.name ?? copy.app.image
+                const isLit = litMediaIds.size > 0 && [...litMediaIds].some((mediaId) => name.includes(mediaId))
+                return (
+                  <span className={`draft-image${isLit ? ' lit' : ''}`} key={image.id}>
+                    <img src={draftImageDataUrl(image)} alt={name} />
+                    <button
+                      type="button"
+                      disabled={busy || addingImages}
+                      aria-label={copy.app.removeImage(name)}
+                      title={copy.app.removeImage(name)}
+                      onClick={() => updateDraft((current) => ({
+                        ...current,
+                        images: current.images.filter((item) => item.id !== image.id),
+                      }))}
+                    >×</button>
+                  </span>
+                )
+              })}
+            </div>
+          )}
+          <textarea
+            ref={composerRef}
+            value={input}
+            onChange={(e) => {
+              if (!sendingRef.current) updateDraft((current) => ({ ...current, text: e.target.value }))
+            }}
+            onKeyDown={(e) => {
+              // isComposing：输入法组词中的回车是确认选字，不是发送。
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault()
+                // 输入框空着时，回车把队首排队消息插话发送；连按可依次清空队列。
+                const steerId = nextQueueSteer({
+                  input,
+                  hasDraftImages: draftImages.length > 0,
+                  working,
+                  stopping,
+                  queuedIds: queuedItems.map((item) => item.id),
+                })
+                if (steerId !== null) {
+                  void steerQueued(steerId)
+                  return
+                }
+                void send()
+              }
+            }}
+            placeholder={locale === 'en' ? 'Ask anything...' : '随便问点什么'}
+            disabled={composerDisabled}
+            rows={1}
+          />
+          <div className="composer-actions clean-actions-row">
+            <span className="composer-actions-start">
+              <input
+                ref={fileInputRef}
+                className="image-file-input"
+                type="file"
+                accept={imageLimits?.mediaTypes.join(',')}
+                multiple
+                tabIndex={-1}
+                onChange={(event) => {
+                  const files = [...(event.target.files ?? [])]
+                  event.target.value = ''
+                  void addImageFiles(files)
+                }}
+              />
+              <button
+                type="button"
+                className="clean-add-btn"
+                disabled={composerDisabled || addingImages || imageLimits === null
+                  || draftImages.length >= imageLimits.maxImagesPerMessage}
+                aria-label={copy.app.addImages}
+                title={imageLimits === null ? copy.app.imageUnavailable : copy.app.addImages}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <PaperclipIcon size={18} />
+              </button>
+              <AutoModelPicker
+                locale={locale}
+                port={targetPort}
+                rpc={api.rpc}
+                selectedModel={selectedDefaultModel}
+                onSelectModel={handleSelectModel}
+                disabled={composerDisabled}
+              />
+            </span>
+            {working && !queueSendReady ? (
+              <button
+                className="stop-button clean-send-btn"
+                onClick={() => { void stopTurn() }}
+                disabled={stopping}
+                aria-label={stopping ? copy.app.stoppingTurn : copy.app.stopTurn}
+                title={stopping ? copy.app.stoppingTurn : copy.app.stopTurn}
+              >
+                <SquareIcon size={14} />
+              </button>
+            ) : (
+              <button
+                className={`clean-send-btn ${composerHasContent ? 'active' : ''}`}
+                onClick={() => void send()}
+                disabled={sendDisabled}
+                aria-label={copy.app.sendMessage}
+                title={copy.app.sendMessage}
+              >
+                <ArrowUpIcon size={15} />
+              </button>
+            )}
+          </div>
+        </div>
+      </footer>
+    </div>{approvalDialog}</>
+  )
+}

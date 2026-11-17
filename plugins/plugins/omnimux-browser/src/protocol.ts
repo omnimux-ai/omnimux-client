@@ -1,0 +1,627 @@
+/**
+ * Wire contract between the dsh bridge plugin and the browser extension.
+ *
+ * Zero-dependency module (pure types, constants, and a parser): both the
+ * plugin (node) and the Chrome extension (browser bundle) import this file, so
+ * the frame shapes can never drift between the two halves.
+ *
+ * Frames are one JSON object per WebSocket message, discriminated by `t`.
+ * Correlation ids (`id`) are minted by the requestor and echoed by the
+ * responder; they are opaque strings, never parsed.
+ *
+ * @module
+ */
+
+/** WebSocket pathname the bridge plugin registers on the host webserver. */
+export const BRIDGE_PATH = '/ext/bridge'
+
+/** Zero-config discovery endpoint: returns `{ wsUrl }` for the extension. */
+export const BRIDGE_CONFIG_PATH = '/ext/bridge-config'
+
+/**
+ * Pairing page: the host's own surface, where the user clicks 「确认授权」.
+ * Loopback-only and closed to page Origins.
+ */
+export const BRIDGE_PAIR_PATH = '/ext/pair'
+
+/** Pairing handshake: the extension opens a pending request here. */
+export const BRIDGE_PAIR_REQUEST_PATH = '/ext/pair/request'
+
+/** Pairing approval: accepted only from the host's own page origin. */
+export const BRIDGE_PAIR_APPROVE_PATH = '/ext/pair/approve'
+
+/** Pairing cancellation: the same admission as approval. */
+export const BRIDGE_PAIR_CANCEL_PATH = '/ext/pair/cancel'
+
+/** Pairing poll: the extension reads `pending | approved | expired | unknown`. */
+export const BRIDGE_PAIR_STATUS_PATH = '/ext/pair/status'
+
+/** Internal RPC used after an explicit tab handoff to seed the Agent's next step. */
+export const BRIDGE_INJECT_BROWSER_SNAPSHOT_METHOD = 'bridge.injectBrowserSnapshot'
+
+/** Internal RPC used by the panel to permanently delete one session's durable storage. */
+export const BRIDGE_SESSION_PURGE_METHOD = 'bridge.session.purge'
+
+/**
+ * Internal RPC the panel uses to fetch ONE page media the user explicitly lit.
+ *
+ * It exists because the extension page may not reach the open internet (its
+ * `connect-src` is loopback plus a fixed host allowlist), while the bytes have to
+ * reach the model as a real attachment. The host performs the request on the
+ * panel's behalf; the panel never opens an outbound connection of its own.
+ */
+export const BRIDGE_FETCH_MEDIA_METHOD = 'bridge.fetchMedia'
+export const BRIDGE_COMPLETE_TEXT_METHOD = 'bridge.completeText'
+
+/**
+ * Internal RPC: one bounded Jev choice decision (Issue #3100). The host
+ * forwards to the hub `decisions` seam; a missing seam answers
+ * `decision-unavailable` so callers fall back to local rules.
+ */
+export const BRIDGE_EVALUATE_DECISION_METHOD = 'bridge.evaluateDecision'
+
+/**
+ * Internal RPC: append one whitelisted Twitter-copilot generation record to
+ * `$DSH_HOME/omnimux-browser/twitter-copilot.ndjson` (Issue #3100).
+ */
+export const BRIDGE_APPEND_COPILOT_LOG_METHOD = 'bridge.appendCopilotLog'
+
+/**
+ * Internal RPC the extension uses to save ONE confirmed page image into the
+ * current host's asset library (Issue #3052).
+ *
+ * Loopback-only beyond the token handshake: the bridge itself further refuses
+ * the method for non-loopback remotes even with a valid token, because a
+ * media READ may tolerate remote clients while a disk WRITE never may.
+ * Input is the frozen narrow shape `{requestId,url,pageUrl,title?}` — no
+ * local paths, target directories, request headers, or site credentials.
+ */
+export const BRIDGE_SAVE_IMAGE_ASSET_METHOD = 'omnimux.saveImageAsset'
+
+/**
+ * Internal RPC the panel uses to read back one media file the assistant
+ * produced (display_file, read_image rasters, omnimux_*_submit outputs).
+ *
+ * The payload names `{sessionId, path}`; the host only serves paths its own
+ * produced-media registry saw in that session's events or history, so the
+ * panel can never turn this into an arbitrary file read. Bytes return base64
+ * because the frame is JSON and the panel's CSP cannot reach the host's HTTP
+ * asset routes cross-origin.
+ */
+export const BRIDGE_PRODUCED_MEDIA_METHOD = 'omnimux.producedMedia'
+
+/**
+ * Internal RPC the panel uses to push the composer model mode to the host.
+ *
+ * Set semantics only: the payload carries `{auto: boolean}` (with a reserved,
+ * unconsumed `modelId` for the manual selection); the host keeps the mode in
+ * process memory — like the session model, it never touches durable storage.
+ */
+export const BRIDGE_MODEL_MODE_METHOD = 'bridge.modelMode'
+
+/**
+ * Internal RPC the panel uses to pin ONE temporary session to an explicit
+ * text-generation model (Issue #3629).
+ *
+ * The panel keeps two independent model settings: the conversation model and
+ * the text-generation model. Before a one-shot body generation it pins the
+ * freshly created session here: the host materializes that deferred session,
+ * selects the model (with its provider), then records the session as pinned —
+ * a pinned session is never re-chosen by `bridge.modelMode` auto routing. Set
+ * semantics only, held in process memory like the session model itself: it
+ * never touches durable storage.
+ */
+export const BRIDGE_TEXT_GENERATION_METHOD = 'bridge.textGeneration'
+
+/** Longest accepted `sessionId`/`model` for {@link BRIDGE_TEXT_GENERATION_METHOD}. */
+export const TEXT_GENERATION_MAX_ID_CHARS = 200
+
+/** Longest accepted `provider`/`reasoningEffort` value. */
+export const TEXT_GENERATION_MAX_OPTION_CHARS = 64
+
+/** Payload of {@link BRIDGE_TEXT_GENERATION_METHOD}. */
+export interface TextGenerationRequest {
+  /** Session the pin applies to (the temporary text-generation session). */
+  sessionId: string
+  /** Explicit text-generation model the session must use. */
+  model: string
+  /**
+   * Gateway provider id for that model. Required: the Host's
+   * `session/selectModel` codec lists `provider` as required, so a provider-less
+   * pin would be rejected there instead of failing at this contract boundary.
+   */
+  provider: string
+  /** Optional reasoning effort for that model. */
+  reasoningEffort?: string
+}
+
+/** Sentinel distinguishing "present but illegal" from "absent" in {@link optionalBoundedText}. */
+const INVALID_OPTION = Symbol('invalid-option')
+
+function isBoundedNonEmptyText(value: unknown, max: number): value is string {
+  return typeof value === 'string' && value.trim() !== '' && value.length <= max
+}
+
+/**
+ * Read one optional bounded string. Absent and empty values mean "not set";
+ * a non-string or an over-long value is illegal.
+ */
+function optionalBoundedText(value: unknown, max: number): string | undefined | typeof INVALID_OPTION {
+  if (value === undefined || value === '') return undefined
+  if (typeof value !== 'string' || value.length > max) return INVALID_OPTION
+  return value
+}
+
+/**
+ * Validate a {@link TextGenerationRequest} that arrived over the bridge.
+ *
+ * `sessionId` and `model` must be non-empty and at most
+ * {@link TEXT_GENERATION_MAX_ID_CHARS} characters; `provider` must be non-empty
+ * and at most {@link TEXT_GENERATION_MAX_OPTION_CHARS} characters (the Host's
+ * `session/selectModel` codec requires it); the optional `reasoningEffort` must
+ * be a string of at most {@link TEXT_GENERATION_MAX_OPTION_CHARS} characters
+ * (an empty string is the panel's "not set" value and is dropped). Anything
+ * else is not a pin request, so the carrier answers `bad-request` instead of
+ * pinning a guessed model.
+ * @param payload - the decoded `rpc.payload`.
+ * @returns the request, or `undefined` when the payload is not one.
+ */
+export function parseTextGenerationRequest(payload: unknown): TextGenerationRequest | undefined {
+  if (!isRecord(payload)) return undefined
+  const { sessionId, model, provider } = payload
+  if (!isBoundedNonEmptyText(sessionId, TEXT_GENERATION_MAX_ID_CHARS)) return undefined
+  if (!isBoundedNonEmptyText(model, TEXT_GENERATION_MAX_ID_CHARS)) return undefined
+  // `provider` is required by the Host codec, so a missing or empty value is a
+  // contract violation here rather than a Host-side rejection later.
+  if (!isBoundedNonEmptyText(provider, TEXT_GENERATION_MAX_OPTION_CHARS)) return undefined
+  const reasoningEffort = optionalBoundedText(payload.reasoningEffort, TEXT_GENERATION_MAX_OPTION_CHARS)
+  if (reasoningEffort === INVALID_OPTION) return undefined
+  return {
+    sessionId,
+    model,
+    provider,
+    ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
+  }
+}
+
+/**
+ * How one {@link BRIDGE_FETCH_MEDIA_METHOD} call settled.
+ *
+ * Every outcome is a tagged **success** at the carrier level, because a 404 or a
+ * timeout on someone else's server is an expected answer to "fetch this", not a
+ * transport fault. Two consequences the shape is built around: the panel can tell
+ * the cases apart (the port collapses carrier errors into one code), and each
+ * failure keeps the evidence the message needs — the status code, the byte limit,
+ * the timeout budget — instead of flattening into a string.
+ */
+export type MediaFetchOutcome =
+  /** Bytes plus the type the response declared (empty when it declared none). */
+  | { status: 'ok'; contentType: string; byteLength: number; data: string }
+  /** The address is not something the host will fetch (not http/https). */
+  | { status: 'bad-request'; message: string }
+  | { status: 'timeout'; timeoutMs: number }
+  | { status: 'too-large'; limit: number }
+  | { status: 'http-error'; statusCode: number }
+  | { status: 'failed'; message: string }
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0
+}
+
+/**
+ * Validate a {@link MediaFetchOutcome} that arrived over the bridge.
+ *
+ * The payload crosses a socket and a port, so the receiving half re-checks it
+ * before acting on it — an unreadable base64 body must not reach the image intake.
+ * @param value - the decoded `rpc.result` payload.
+ * @returns the outcome, or `null` when the payload is not one.
+ */
+export function parseMediaFetchOutcome(value: unknown): MediaFetchOutcome | null {
+  if (!isRecord(value)) return null
+  switch (value.status) {
+    case 'ok':
+      return typeof value.contentType === 'string'
+        && isPositiveInteger(value.byteLength)
+        && typeof value.data === 'string'
+        && /^[A-Za-z0-9+/]*={0,2}$/.test(value.data)
+        ? { status: 'ok', contentType: value.contentType, byteLength: value.byteLength, data: value.data }
+        : null
+    case 'bad-request':
+      return typeof value.message === 'string' ? { status: 'bad-request', message: value.message } : null
+    case 'timeout':
+      return isPositiveInteger(value.timeoutMs) ? { status: 'timeout', timeoutMs: value.timeoutMs } : null
+    case 'too-large':
+      return isPositiveInteger(value.limit) ? { status: 'too-large', limit: value.limit } : null
+    case 'http-error':
+      return isPositiveInteger(value.statusCode) ? { status: 'http-error', statusCode: value.statusCode } : null
+    case 'failed':
+      return typeof value.message === 'string' ? { status: 'failed', message: value.message } : null
+    default:
+      return null
+  }
+}
+
+/** Payload of {@link BRIDGE_PRODUCED_MEDIA_METHOD}. */
+export interface ProducedMediaRequest {
+  /** Session whose events produced the file. */
+  sessionId: string
+  /** The produced file's path as the session event disclosed it. */
+  path: string
+}
+
+/**
+ * How one {@link BRIDGE_PRODUCED_MEDIA_METHOD} call settled.
+ *
+ * Like {@link MediaFetchOutcome}, every outcome is a tagged **success** at the
+ * carrier level: a path the registry never saw or a file that vanished is an
+ * expected answer, and the extension port collapses carrier-level errors into
+ * a single code, which would erase the distinctions the card needs.
+ */
+export type ProducedMediaOutcome =
+  /** The file's bytes, base64, with the media type its extension maps to. */
+  | { code: 'ok'; mediaType: string; bytes: number; data: string }
+  /** The path was never registered for this session (or vanished since). */
+  | { code: 'not-produced'; message: string }
+  /** The file exceeds the served byte ceiling. */
+  | { code: 'too-large'; message: string; limit: number }
+  /** The extension maps to no servable media type. */
+  | { code: 'unsupported'; message: string }
+  /** The read itself failed. */
+  | { code: 'internal'; message: string }
+
+/**
+ * Validate a {@link ProducedMediaOutcome} that arrived over the bridge.
+ * @param value - the decoded `rpc.result` payload.
+ * @returns the outcome, or `null` when the payload is not one.
+ */
+export function parseProducedMediaOutcome(value: unknown): ProducedMediaOutcome | null {
+  if (!isRecord(value)) return null
+  switch (value.code) {
+    case 'ok':
+      return typeof value.mediaType === 'string'
+        && typeof value.bytes === 'number' && Number.isSafeInteger(value.bytes) && value.bytes >= 0
+        && typeof value.data === 'string' && /^[A-Za-z0-9+/]*={0,2}$/.test(value.data)
+        ? { code: 'ok', mediaType: value.mediaType, bytes: value.bytes, data: value.data }
+        : null
+    case 'not-produced':
+    case 'unsupported':
+    case 'internal':
+      return typeof value.message === 'string'
+        ? { code: value.code, message: value.message }
+        : null
+    case 'too-large':
+      return typeof value.message === 'string' && isPositiveInteger(value.limit)
+        ? { code: 'too-large', message: value.message, limit: value.limit }
+        : null
+    default:
+      return null
+  }
+}
+
+/** Payload of {@link BRIDGE_SAVE_IMAGE_ASSET_METHOD} (Issue #3052 frozen input). */
+export interface ImageAssetSaveRequest {
+  /** One explicit click's retry identity. */
+  requestId: string
+  /** The page image address to download. */
+  url: string
+  /** Page the image was captured on; provenance only. */
+  pageUrl: string
+  /** Optional display name hint (alt text / page title), bounded to 200 chars. */
+  title?: string
+}
+
+/**
+ * How one {@link BRIDGE_SAVE_IMAGE_ASSET_METHOD} call settled.
+ *
+ * Like {@link MediaFetchOutcome}, every outcome rides a **successful** carrier
+ * frame: an expected answer to "save this image" (unavailable service,
+ * rejected bytes, a 404 upstream) must stay distinguishable from a transport
+ * fault. A `saved`/`duplicate` receipt is only real with non-empty
+ * assetId/fileId and a finite lrev; anything else is failure evidence.
+ */
+export type ImageAssetSaveOutcome =
+  | { status: 'saved'; assetId: string; fileId: string; lrev: number }
+  | { status: 'duplicate'; assetId: string; fileId: string; lrev: number }
+  /** The assets write seam or host validation capability is not mounted. */
+  | { status: 'unavailable' }
+  /** The address is not a public http(s) image URL. */
+  | { status: 'invalid-url' }
+  /** Declared or decoded content is not an acceptable raster image. */
+  | { status: 'unsupported-image' }
+  /** Declared MIME and decoded bytes disagree. */
+  | { status: 'mime-mismatch' }
+  | { status: 'too-large' }
+  | { status: 'timeout' }
+  | { status: 'http-error'; statusCode?: number }
+  /** Persistence failed after validation succeeded. */
+  | { status: 'storage-failed' }
+  /** The owning connection generation died before the save settled. */
+  | { status: 'cancelled' }
+
+/**
+ * Validate an {@link ImageAssetSaveOutcome} that arrived over the bridge.
+ * Only the frozen vocabulary is accepted; a malformed success (empty ids,
+ * non-integer revision, unknown status) is not a receipt.
+ * @param value - the decoded `rpc.result` payload.
+ * @returns the outcome, or `null` when the payload is not one.
+ */
+export function parseImageAssetSaveOutcome(value: unknown): ImageAssetSaveOutcome | null {
+  if (!isRecord(value)) return null
+  switch (value.status) {
+    case 'saved':
+    case 'duplicate':
+      return typeof value.assetId === 'string' && value.assetId !== ''
+        && typeof value.fileId === 'string' && value.fileId !== ''
+        && typeof value.lrev === 'number' && Number.isSafeInteger(value.lrev) && value.lrev >= 0
+        ? { status: value.status, assetId: value.assetId, fileId: value.fileId, lrev: value.lrev }
+        : null
+    case 'unavailable':
+    case 'invalid-url':
+    case 'unsupported-image':
+    case 'mime-mismatch':
+    case 'too-large':
+    case 'timeout':
+    case 'storage-failed':
+    case 'cancelled':
+      return { status: value.status }
+    case 'http-error':
+      return value.statusCode === undefined || isPositiveInteger(value.statusCode)
+        ? { status: 'http-error', ...(isPositiveInteger(value.statusCode) ? { statusCode: value.statusCode } : {}) }
+        : null
+    default:
+      return null
+  }
+}
+
+/** Seconds a fresh socket may take to present `hello` before it is closed. */
+export const HELLO_TIMEOUT_MS = 5_000
+
+/** Server-side ping cadence; the client answers `pong` to prove liveness. */
+export const PING_INTERVAL_MS = 30_000
+
+/** Default bytes of the generated bearer token (256-bit). */
+export const DEFAULT_TOKEN_BYTES = 32
+
+/** Default rendered-snapshot character budget. */
+export const DEFAULT_SNAPSHOT_MAX_CHARS = 32_000
+
+/** Smallest snapshot budget that can carry both trust boundaries and page text. */
+export const MIN_SNAPSHOT_MAX_CHARS = 500
+
+/** Error codes a tool call may settle with. Open set: consumers must tolerate unknown codes. */
+export type ToolErrorCode =
+  | 'no-active-tab'
+  | 'content-unavailable'
+  | 'action-failed'
+  | 'timeout'
+  | 'bridge-closed'
+  | 'bad-args'
+  | 'internal'
+
+/** One tool-call failure: stable machine code plus human text for the model. */
+export interface ToolError {
+  code: ToolErrorCode
+  message: string
+}
+
+/** Result sent for a pending host interaction such as ask_user_question. */
+export type RespondResult =
+  | { ok: true; value?: unknown }
+  | { ok: false; error: { code: string; message: string; details: Record<string, unknown> } }
+
+/** Capabilities negotiated in `hello`/`hello.ok`. The extension performs its own actions; these bounds shape page snapshots. */
+export interface BridgeCaps {
+  /** The extension renders page state as text only (no screenshots). */
+  textOnly: true
+  /** Upper bound on one rendered snapshot's characters (plugin config, minimum 500). */
+  snapshotMaxChars: number
+  /** Upper bound on interactive inventory items per snapshot (plugin config). */
+  maxInteractiveItems: number
+  /** Host DSH language preference ('zh' | 'en') read from settings.yaml. */
+  locale?: 'zh' | 'en'
+  /**
+   * Host-side image-asset save exists (Issue #3052). Absent on older hosts:
+   * the extension must not offer the asset-library action against them.
+   * The asset service itself can still be missing at call time, which the
+   * RPC answers with `unavailable`.
+   */
+  imageAssetSave?: true
+}
+
+/** Frames sent by the extension to the bridge plugin. */
+export type ClientFrame =
+  /** First frame, within HELLO_TIMEOUT_MS of socket open. */
+  | { t: 'hello'; token: string; caps: BridgeCaps }
+  /** Unary call projected by the active dsh Host adapter. */
+  | { t: 'rpc'; id: string; method: string; payload: unknown }
+  /** Answer or cancel a pending Host interaction waterfall. */
+  | { t: 'respond'; id: string; rpcId: string; result: RespondResult }
+  /** Result of a previously dispatched tool call. */
+  | { t: 'tool.result'; id: string; ok: true; result: unknown }
+  | { t: 'tool.result'; id: string; ok: false; error: ToolError }
+  /** Liveness reply. */
+  | { t: 'pong' }
+
+/** Frames sent by the bridge plugin to the extension. */
+export type ServerFrame =
+  /** Accepted after a valid `hello`. */
+  | { t: 'hello.ok'; caps: BridgeCaps }
+  /** Reply to an `rpc` frame; `result` is the bridge's stable ServerResponse envelope. */
+  | { t: 'rpc.result'; id: string; ok: true; result: unknown }
+  | { t: 'rpc.result'; id: string; ok: false; error: { code: string; message: string } }
+  /** Receipt for a `respond` frame (normally `{ accepted: boolean }`). */
+  | { t: 'respond.result'; id: string; ok: true; result: unknown }
+  | { t: 'respond.result'; id: string; ok: false; error: { code: string; message: string } }
+  /** One bridge-owned event envelope projected from Remote streams and waterfalls. */
+  | { t: 'event'; frame: { rpcId: string; method: string; payload: unknown } }
+  /** A model-requested browser action to execute in the user-controlled tab. */
+  | { t: 'tool.call'; id: string; name: string; args: Record<string, unknown>; expiresAt: number; sessionId?: string }
+  /** Withdraw a tool call that timed out or whose caller was cancelled. */
+  | { t: 'tool.cancel'; id: string }
+  /** Liveness probe. */
+  | { t: 'ping' }
+  /** Fatal connection error; the client should re-authenticate. */
+  | { t: 'error'; code: string; message: string }
+
+/** Any frame on the wire. */
+export type BridgeFrame = ClientFrame | ServerFrame
+
+/**
+ * Type guard: is this frame one the SERVER may send? Client-only shapes
+ * (hello/tool.result/pong) narrow out, so server-side consumers never
+ * dispatch on their own request vocabulary.
+ * @param frame - parsed frame.
+ * @returns true for server-sendable frames.
+ */
+export function isServerFrame(frame: BridgeFrame): frame is ServerFrame {
+  return frame.t === 'hello.ok'
+    || frame.t === 'rpc.result'
+    || frame.t === 'respond.result'
+    || frame.t === 'event'
+    || frame.t === 'tool.call'
+    || frame.t === 'tool.cancel'
+    || frame.t === 'ping'
+    || frame.t === 'error'
+}
+
+/**
+ * Type guard: is this frame one the CLIENT may send? Server-only shapes
+ * narrow out, so client-side consumers never dispatch on server vocabulary.
+ * @param frame - parsed frame.
+ * @returns true for client-sendable frames.
+ */
+export function isClientFrame(frame: BridgeFrame): frame is ClientFrame {
+  return frame.t === 'hello' || frame.t === 'rpc' || frame.t === 'respond' || frame.t === 'tool.result' || frame.t === 'pong'
+}
+
+/**
+ * Parse one WebSocket message into a frame.
+ * @param text - raw message text.
+ * @returns the frame, or `undefined` when the message is not a valid frame.
+ */
+export function parseBridgeFrame(text: string): BridgeFrame | undefined {
+  let value: unknown
+  try {
+    value = JSON.parse(text)
+  } catch {
+    return undefined
+  }
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  const frame = value as Record<string, unknown>
+  if (typeof frame.t !== 'string') return undefined
+  switch (frame.t) {
+    case 'hello':
+      return typeof frame.token === 'string'
+        && isCaps(frame.caps)
+        ? { t: 'hello', token: frame.token, caps: frame.caps }
+        : undefined
+    case 'rpc':
+      return typeof frame.id === 'string' && typeof frame.method === 'string'
+        ? { t: 'rpc', id: frame.id, method: frame.method, payload: frame.payload }
+        : undefined
+    case 'respond':
+      return typeof frame.id === 'string' && typeof frame.rpcId === 'string' && isRespondResult(frame.result)
+        ? { t: 'respond', id: frame.id, rpcId: frame.rpcId, result: frame.result }
+        : undefined
+    case 'tool.result':
+      if (typeof frame.id !== 'string') return undefined
+      if (frame.ok === true && 'result' in frame) {
+        return { t: 'tool.result', id: frame.id, ok: true, result: frame.result }
+      }
+      return isToolError(frame.error)
+        ? { t: 'tool.result', id: frame.id, ok: false, error: frame.error }
+        : undefined
+    case 'pong':
+      return { t: 'pong' }
+    case 'hello.ok':
+      return isCaps(frame.caps)
+        ? { t: 'hello.ok', caps: frame.caps }
+        : undefined
+    case 'rpc.result':
+      if (typeof frame.id !== 'string') return undefined
+      if (frame.ok === true && 'result' in frame) {
+        return { t: 'rpc.result', id: frame.id, ok: true, result: frame.result }
+      }
+      return typeof frame.error === 'object' && frame.error !== null
+        ? { t: 'rpc.result', id: frame.id, ok: false, error: frame.error as { code: string; message: string } }
+        : undefined
+    case 'respond.result':
+      if (typeof frame.id !== 'string') return undefined
+      if (frame.ok === true && 'result' in frame) {
+        return { t: 'respond.result', id: frame.id, ok: true, result: frame.result }
+      }
+      return isWireError(frame.error)
+        ? { t: 'respond.result', id: frame.id, ok: false, error: frame.error }
+        : undefined
+    case 'event':
+      return typeof frame.frame === 'object' && frame.frame !== null
+        ? { t: 'event', frame: frame.frame as ServerFrame extends { t: 'event' } ? ServerFrame['frame'] : never }
+        : undefined
+    case 'tool.call':
+      if (frame.sessionId !== undefined
+        && (typeof frame.sessionId !== 'string' || frame.sessionId.trim() === '')) return undefined
+      return typeof frame.id === 'string' && typeof frame.name === 'string'
+        && typeof frame.args === 'object' && frame.args !== null && !Array.isArray(frame.args)
+        && typeof frame.expiresAt === 'number' && Number.isFinite(frame.expiresAt) && frame.expiresAt > 0
+        ? {
+            t: 'tool.call',
+            id: frame.id,
+            name: frame.name,
+            args: frame.args as Record<string, unknown>,
+            expiresAt: frame.expiresAt,
+            ...(typeof frame.sessionId === 'string' ? { sessionId: frame.sessionId } : {}),
+          }
+        : undefined
+    case 'tool.cancel':
+      return typeof frame.id === 'string' ? { t: 'tool.cancel', id: frame.id } : undefined
+    case 'ping':
+      return { t: 'ping' }
+    case 'error':
+      return typeof frame.code === 'string' && typeof frame.message === 'string'
+        ? { t: 'error', code: frame.code, message: frame.message }
+        : undefined
+    default:
+      return undefined
+  }
+}
+
+function isCaps(value: unknown): value is BridgeCaps {
+  if (typeof value !== 'object' || value === null) return false
+  const caps = value as Record<string, unknown>
+  return caps.textOnly === true
+    && typeof caps.snapshotMaxChars === 'number'
+    && Number.isInteger(caps.snapshotMaxChars)
+    && caps.snapshotMaxChars >= MIN_SNAPSHOT_MAX_CHARS
+    && typeof caps.maxInteractiveItems === 'number' && caps.maxInteractiveItems > 0
+    && (caps.locale === undefined || caps.locale === 'zh' || caps.locale === 'en')
+}
+
+function isToolError(value: unknown): value is ToolError {
+  return typeof value === 'object' && value !== null
+    && typeof (value as Record<string, unknown>).code === 'string'
+    && typeof (value as Record<string, unknown>).message === 'string'
+}
+
+function isWireError(value: unknown): value is { code: string; message: string } {
+  return typeof value === 'object' && value !== null
+    && typeof (value as Record<string, unknown>).code === 'string'
+    && typeof (value as Record<string, unknown>).message === 'string'
+}
+
+export function isRespondResult(value: unknown): value is RespondResult {
+  if (typeof value !== 'object' || value === null) return false
+  const result = value as Record<string, unknown>
+  if (result.ok === true) return result.error === undefined
+  return result.ok === false && isRespondError(result.error)
+}
+
+function isRespondError(value: unknown): value is Extract<RespondResult, { ok: false }>['error'] {
+  return isWireError(value)
+    && typeof (value as Record<string, unknown>).details === 'object'
+    && (value as Record<string, unknown>).details !== null
+    && !Array.isArray((value as Record<string, unknown>).details)
+}

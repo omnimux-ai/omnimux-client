@@ -1,0 +1,378 @@
+// @vitest-environment jsdom
+/**
+ * Detection-layer contract: pointer → element resolution, eligibility
+ * thresholds, URL normalisation and the WeakMap candidate cache.
+ */
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { MediaDetector } from '../src/content/media-hover/detector.ts'
+import {
+  isPostOrWorkMedia,
+} from '../src/content/media-hover/classifier.ts'
+import {
+  MIN_MEDIA_SIZE_PX,
+  findMediaElement,
+  isEligibleMediaSize,
+  isXVideoPosterSource,
+  mediaIdOf,
+  mediaKindOf,
+  normalizeMedia,
+  siblingMediaOf,
+  toAbsoluteUrl,
+} from '../src/content/media-hover/payload.ts'
+
+const VIEWPORT = { width: 1200, height: 800 }
+
+function makeEnvironment(host = 'x.com') {
+  return {
+    elementFromPoint: () => null as Element | null,
+    viewport: () => ({ ...VIEWPORT }),
+    now: () => 1_700_000_000_000,
+    // Whitelisted social platform host so detector pipeline can be verified
+    host: () => host,
+  }
+}
+
+/**
+ * An <img> with an explicit layout box; jsdom has no layout engine.
+ *
+ * The image is mounted inside an `<article>`: the detector offers the capsule
+ * for posts and works only, so a bare image under `<body>` is rejected by the
+ * creative-asset classifier no matter how large it renders. Use `parent` to
+ * mount it somewhere else and assert the rejection instead.
+ */
+function appendImage(options: {
+  width: number
+  height: number
+  src?: string
+  naturalWidth?: number
+  naturalHeight?: number
+  top?: number
+  left?: number
+  alt?: string
+  parent?: Element
+}): HTMLImageElement {
+  const img = document.createElement('img')
+  img.setAttribute('src', options.src ?? 'https://cdn.example.com/a.png')
+  img.setAttribute('alt', options.alt ?? '')
+  if (options.naturalWidth !== undefined) {
+    Object.defineProperty(img, 'naturalWidth', { configurable: true, value: options.naturalWidth })
+  }
+  if (options.naturalHeight !== undefined) {
+    Object.defineProperty(img, 'naturalHeight', { configurable: true, value: options.naturalHeight })
+  }
+  const box = {
+    x: options.left ?? 100,
+    y: options.top ?? 100,
+    left: options.left ?? 100,
+    top: options.top ?? 100,
+    right: (options.left ?? 100) + options.width,
+    bottom: (options.top ?? 100) + options.height,
+    width: options.width,
+    height: options.height,
+    toJSON: () => ({}),
+  }
+  img.getBoundingClientRect = () => box as DOMRect
+  if (options.parent !== undefined) {
+    options.parent.appendChild(img)
+    return img
+  }
+  document.body.insertAdjacentHTML('beforeend', '<article></article>')
+  const article = document.querySelector('article')
+  if (article === null) throw new Error('article fixture missing')
+  article.appendChild(img)
+  return img
+}
+
+beforeEach(() => {
+  document.body.innerHTML = ''
+})
+
+describe('eligibility threshold', () => {
+  it('accepts exactly 40px and rejects 39px', () => {
+    expect(MIN_MEDIA_SIZE_PX).toBe(40)
+    expect(isEligibleMediaSize(40, 40)).toBe(true)
+    expect(isEligibleMediaSize(39, 40)).toBe(false)
+    expect(isEligibleMediaSize(40, 39)).toBe(false)
+  })
+
+  it('rejects a media element one pixel below the threshold', () => {
+    const detector = new MediaDetector({ onCandidate: vi.fn() }, makeEnvironment())
+    const tooSmall = appendImage({ width: 39, height: 120 })
+    expect(isEligibleMediaSize(39, 120)).toBe(false)
+    expect(detector.peek(tooSmall)).toBeNull()
+    expect(detector.rectOf(tooSmall).width).toBe(39)
+  })
+
+  it('accepts a media element exactly at the threshold', () => {
+    const img = appendImage({ width: 40, height: 40 })
+    expect(isEligibleMediaSize(40, 40)).toBe(true)
+    expect(normalizeMedia(img, 'image', 'https://page.example.com/')).not.toBeNull()
+  })
+
+  it('rejects an image that clears the detector floor but not the post floor', () => {
+    // The two thresholds answer different questions: 40px is what the detector
+    // can see, 120px is what the capsule will offer.
+    const thumbnail = appendImage({ width: 100, height: 100 })
+    expect(isEligibleMediaSize(100, 100)).toBe(true)
+    expect(isPostOrWorkMedia(thumbnail)).toBe(false)
+  })
+})
+
+describe('URL normalisation', () => {
+  it('absolutises a relative source against the page address', () => {
+    expect(toAbsoluteUrl('/media/a.png', 'https://page.example.com/post/1'))
+      .toBe('https://page.example.com/media/a.png')
+    expect(toAbsoluteUrl('b.png', 'https://page.example.com/post/1'))
+      .toBe('https://page.example.com/post/b.png')
+  })
+
+  it('rejects inline and object URLs that cannot be re-fetched downstream', () => {
+    const base = 'https://page.example.com/'
+    const inlineImage = appendImage({ width: 200, height: 200, src: 'data:image/png;base64,AAAA' })
+    const blobImage = appendImage({ width: 200, height: 200, src: 'blob:https://page.example.com/x' })
+    expect(normalizeMedia(inlineImage, 'image', base)).toBeNull()
+    expect(normalizeMedia(blobImage, 'image', base)).toBeNull()
+  })
+
+  it('falls back to the first <source> when a video has no poster', () => {
+    const video = document.createElement('video')
+    const source = document.createElement('source')
+    source.setAttribute('src', '/v/clip.mp4')
+    video.appendChild(source)
+    const box = {
+      x: 0, y: 0, left: 0, top: 0, right: 300, bottom: 200,
+      width: 300, height: 200, toJSON: () => ({}),
+    }
+    video.getBoundingClientRect = () => box as DOMRect
+    document.body.appendChild(video)
+
+    const payload = normalizeMedia(video, 'video', 'https://page.example.com/watch')
+    // Relative sources resolve against the page address the detector read from
+    // the document, so the payload is absolute before it leaves this layer.
+    expect(payload?.src).toBe('https://page.example.com/v/clip.mp4')
+    expect(payload?.pageUrl).toBe(location.href)
+    expect(payload?.type).toBe('video')
+    expect(payload?.type).toBe('video')
+  })
+
+  it('prefers the poster of a video over its playable source', () => {
+    const video = document.createElement('video')
+    video.setAttribute('poster', '/p/cover.jpg')
+    video.setAttribute('src', '/v/clip.mp4')
+    video.getBoundingClientRect = () => ({
+      x: 0, y: 0, left: 0, top: 0, right: 300, bottom: 200,
+      width: 300, height: 200, toJSON: () => ({}),
+    }) as DOMRect
+    document.body.appendChild(video)
+    // A bare relative poster resolves against the live document, because that is
+    // what the page itself would request; an absolute one passes straight through.
+    expect(normalizeMedia(video, 'video', 'https://page.example.com/')?.src)
+      .toBe(new URL('/p/cover.jpg', location.href).href)
+    video.setAttribute('poster', 'https://cdn.example.com/p/cover.jpg')
+    expect(normalizeMedia(video, 'video', 'https://page.example.com/')?.src)
+      .toBe('https://cdn.example.com/p/cover.jpg')
+  })
+})
+
+describe('pointer target resolution', () => {
+  it('walks up from a descendant to the nearest media ancestor', () => {
+    const wrapper = document.createElement('div')
+    const img = document.createElement('img')
+    img.setAttribute('src', 'https://cdn.example.com/a.png')
+    const badge = document.createElement('span')
+    img.appendChild(badge)
+    wrapper.appendChild(img)
+    document.body.appendChild(wrapper)
+    expect(findMediaElement(badge)).toBe(img)
+  })
+
+  it('resolves the element the hit test returns, not the event target', () => {
+    const img = appendImage({ width: 300, height: 300 })
+    const events: string[] = []
+    const detector = new MediaDetector(
+      { onCandidate: (candidate) => { events.push(candidate.payload.src) } },
+      { ...makeEnvironment(), elementFromPoint: () => img },
+    )
+    detector.start()
+    document.dispatchEvent(new MouseEvent('pointermove', { clientX: 150, clientY: 150 }))
+    expect(events).toEqual(['https://cdn.example.com/a.png'])
+    detector.dispose()
+  })
+
+  it('stays silent when the hit test lands outside any media', () => {
+    const onCandidate = vi.fn()
+    document.body.insertAdjacentHTML('beforeend', '<article></article>')
+    const article = document.querySelector('article') as Element
+    const detector = new MediaDetector(
+      { onCandidate },
+      { ...makeEnvironment(), elementFromPoint: () => article },
+    )
+    detector.start()
+    document.dispatchEvent(new MouseEvent('pointermove', { clientX: 10, clientY: 10 }))
+    expect(onCandidate).not.toHaveBeenCalled()
+    detector.dispose()
+  })
+
+  it('reports nothing while the pointer rests on a below-threshold element', () => {
+    const onCandidate = vi.fn()
+    const small = appendImage({ width: 20, height: 20 })
+    const detector = new MediaDetector(
+      { onCandidate },
+      { ...makeEnvironment(), elementFromPoint: () => small },
+    )
+    detector.start()
+    document.dispatchEvent(new MouseEvent('pointermove', { clientX: 5, clientY: 5 }))
+    expect(onCandidate).not.toHaveBeenCalled()
+    detector.dispose()
+  })
+
+  it('strictly stays silent on non-whitelisted hosts to protect normal browsing', () => {
+    const onCandidate = vi.fn()
+    const img = appendImage({ width: 300, height: 300 })
+    const detector = new MediaDetector(
+      { onCandidate },
+      { ...makeEnvironment('github.com'), elementFromPoint: () => img },
+    )
+    detector.start()
+    document.dispatchEvent(new MouseEvent('pointermove', { clientX: 100, clientY: 100 }))
+    expect(onCandidate).not.toHaveBeenCalled()
+    detector.dispose()
+  })
+})
+
+describe('candidate cache', () => {
+  it('reuses one payload for repeated moves over the same element', () => {
+    const img = appendImage({ width: 300, height: 300 })
+    const payloads: string[] = []
+    const detector = new MediaDetector(
+      { onCandidate: (candidate) => { payloads.push(candidate.payload.id) } },
+      { ...makeEnvironment(), elementFromPoint: () => img },
+    )
+    detector.start()
+    for (let i = 0; i < 5; i += 1) {
+      document.dispatchEvent(new MouseEvent('pointermove', { clientX: 120 + i, clientY: 120 }))
+    }
+    expect(payloads).toHaveLength(5)
+    expect(new Set(payloads).size).toBe(1)
+    expect(payloads[0]).toBe(mediaIdOf('image', 'https://cdn.example.com/a.png'))
+    detector.dispose()
+  })
+
+  it('stops reporting after dispose', () => {
+    const img = appendImage({ width: 300, height: 300 })
+    const onCandidate = vi.fn()
+    const detector = new MediaDetector(
+      { onCandidate },
+      { ...makeEnvironment(), elementFromPoint: () => img },
+    )
+    detector.start()
+    detector.dispose()
+    document.dispatchEvent(new MouseEvent('pointermove', { clientX: 120, clientY: 120 }))
+    expect(onCandidate).not.toHaveBeenCalled()
+  })
+
+  it('drops a candidate whose element left the viewport', () => {
+    const img = appendImage({ width: 300, height: 300, top: 100 })
+    const onInvalidate = vi.fn()
+    const detector = new MediaDetector(
+      { onCandidate: vi.fn(), onInvalidate },
+      { ...makeEnvironment(), elementFromPoint: () => img },
+    )
+    detector.start()
+    document.dispatchEvent(new MouseEvent('pointermove', { clientX: 150, clientY: 150 }))
+
+    img.getBoundingClientRect = () => ({
+      x: 0, y: -900, left: 0, top: -900, right: 300, bottom: -600,
+      width: 300, height: 300, toJSON: () => ({}),
+    }) as DOMRect
+    detector.refresh()
+    expect(onInvalidate).toHaveBeenCalledWith('scroll')
+    detector.dispose()
+  })
+
+  it('rejects media candidate when pointer is in blank area outside media bounds', () => {
+    const img = appendImage({ left: 100, top: 100, width: 300, height: 300 })
+    const onCandidate = vi.fn()
+    const detector = new MediaDetector(
+      { onCandidate },
+      { ...makeEnvironment(), elementFromPoint: () => img },
+    )
+    detector.start()
+    // Pointer is at (600, 200) - completely outside the image (e.g. tweet blank right side)
+    document.dispatchEvent(new MouseEvent('pointermove', { clientX: 600, clientY: 200 }))
+    expect(onCandidate).not.toHaveBeenCalled()
+
+    // Pointer enters the actual media bounds (200, 200)
+    document.dispatchEvent(new MouseEvent('pointermove', { clientX: 200, clientY: 200 }))
+    expect(onCandidate).toHaveBeenCalled()
+    detector.dispose()
+  })
+})
+/**
+ * #3607: on the home timeline a video is painted as its poster <img>, with the
+ * real <video> mounted under the same box and the image first in DOM order. The
+ * pointer must resolve to the video (or to a video-kind poster identity), never
+ * to a still image.
+ */
+describe('X video poster images (#3607)', () => {
+  const POSTER = 'https://pbs.twimg.com/amplify_video_thumb/2113045941498306560/img/PrGRmSujF2R7yDqY.jpg'
+  const PHOTO = 'https://pbs.twimg.com/media/HVHSaTQWMAA1D4T.jpg'
+
+  function mountCard(options: { withVideo: boolean }): {
+    image: HTMLImageElement
+    video: HTMLVideoElement | null
+  } {
+    document.body.innerHTML = `
+      <article data-testid="tweet">
+        <a href="/dotey/status/2113046543007641942"><time>now</time></a>
+        <div id="media-box">
+          <img id="poster" src="${POSTER}" width="520" height="290">
+          ${options.withVideo ? `<video id="player" poster="${POSTER}" width="520" height="290"></video>` : ''}
+        </div>
+      </article>`
+    const image = document.getElementById('poster') as HTMLImageElement
+    const video = document.getElementById('player') as HTMLVideoElement | null
+    // jsdom has no layout engine: give the card and its media one identical box
+    // so a hit test and the sibling probe see what a real page would.
+    const box = { x: 0, y: 0, width: 520, height: 290, top: 0, left: 0, right: 520, bottom: 290 } as DOMRect
+    const boxed = [document.querySelector('article'), document.getElementById('media-box'), image, video]
+    for (const element of boxed) {
+      if (element) vi.spyOn(element, 'getBoundingClientRect').mockReturnValue(box)
+    }
+    return { image, video }
+  }
+
+  it('treats a video poster as video and a media image as a photo', () => {
+    expect(isXVideoPosterSource(POSTER)).toBe(true)
+    expect(isXVideoPosterSource(PHOTO)).toBe(false)
+    const poster = document.createElement('img')
+    poster.setAttribute('src', POSTER)
+    expect(mediaKindOf(poster)).toBe('video')
+    const photo = document.createElement('img')
+    photo.setAttribute('src', PHOTO)
+    expect(mediaKindOf(photo)).toBe('image')
+  })
+
+  it('resolves a pointer on the poster to the card video', () => {
+    const card = mountCard({ withVideo: true })
+    expect(findMediaElement(card.image, { x: 100, y: 100 })).toBe(card.video)
+  })
+
+  it('keeps a poster-only card as a video identity', () => {
+    const card = mountCard({ withVideo: false })
+    expect(card.video).toBeNull()
+    expect(findMediaElement(card.image, { x: 100, y: 100 })).toBe(card.image)
+    const kind = mediaKindOf(card.image)
+    expect(kind).toBe('video')
+    const payload = normalizeMedia(card.image, kind as 'video', 'https://x.com/home')
+    expect(payload?.type).toBe('video')
+    expect(payload?.src).toBe(POSTER)
+    expect(payload?.sourceKind).toBe('poster')
+  })
+
+  it('prefers a video over its poster when both sit under the pointer', () => {
+    const card = mountCard({ withVideo: true })
+    const box = document.getElementById('media-box') as HTMLElement
+    expect(siblingMediaOf(box, { x: 100, y: 100 })).toBe(card.video)
+  })
+})

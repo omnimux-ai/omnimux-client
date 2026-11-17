@@ -1,0 +1,262 @@
+/**
+ * Page sensor: deeply inspects host URLs and DOM structures to detect
+ * platform (Twitter/X, TikTok, Zhihu, WeChat, Generic) and page scene
+ * (Home, Profile, Status/Detail, Article).
+ */
+
+import { platformForHost } from '../platform/registry.ts'
+import { extractTweetCapture } from './twitter-capture/extractor.ts'
+import type { TweetCapture } from './twitter-capture/types.ts'
+
+export interface PageSceneContext {
+  url: string
+  title: string
+  platform: 'twitter' | 'tiktok' | 'zhihu' | 'wechat' | 'generic'
+  platformLabel: string
+  pageType: 'home' | 'profile' | 'status' | 'detail' | 'article' | 'unknown'
+  selectedText: string
+  author?: string
+  postText?: string
+  heroImage?: string
+  timestamp?: number
+  /**
+   * Structured capture of the post on screen, when the page holds one.
+   *
+   * `postText` and `author` stay for every consumer that only needs those two;
+   * this carries the rest (media set, counters, quoted post, shape) so a save
+   * can store the post rather than the page's title.
+   */
+  tweet?: TweetCapture
+}
+
+/**
+ * Which platform a page belongs to.
+ *
+ * The answer comes from the platform registry, which owns the host suffixes and
+ * matches them on a dot boundary. A second host table here would be a second
+ * answer: `host.includes('x.com')` reads `notx.com` as X, and a page reports
+ * `generic` from one of these two functions and `twitter` from the other — which
+ * is exactly the kind of disagreement the registry exists to remove. The caller
+ * that places the brand mark already resolves the platform that way, so a page
+ * cannot be X for the mark and something else for the panel.
+ *
+ * @param url the page's address, defaulting to the current one
+ */
+export function detectPlatform(url: string = window.location.href): PageSceneContext['platform'] {
+  try {
+    return platformForHost(new URL(url).hostname).id
+  } catch {
+    return 'generic'
+  }
+}
+
+export function getPlatformLabel(platform: PageSceneContext['platform']): string {
+  if (platform === 'twitter') return 'X (formerly Twitter)'
+  if (platform === 'tiktok') return 'TikTok'
+  if (platform === 'zhihu') return '知乎 · Zhihu'
+  if (platform === 'wechat') return '微信公众号'
+  return 'Web'
+}
+
+export function detectPageType(platform: PageSceneContext['platform'], url: string = window.location.href): PageSceneContext['pageType'] {
+  try {
+    const pathname = new URL(url).pathname
+
+    if (platform === 'twitter') {
+      if (pathname.includes('/status/')) return 'status'
+      if (pathname === '/home' || pathname === '/' || pathname === '') return 'home'
+      if (pathname.startsWith('/i/articles')) return 'article'
+      const reserved = ['home', 'explore', 'notifications', 'messages', 'settings', 'i', 'compose', 'search', 'tos', 'privacy', 'logout']
+      const segments = pathname.split('/').filter(Boolean)
+      if (segments.length === 1 && !reserved.includes(segments[0].toLowerCase())) return 'profile'
+      if (segments.length === 2 && ['with_replies', 'highlights', 'media', 'likes'].includes(segments[1])) return 'profile'
+      return 'unknown'
+    }
+
+    if (platform === 'tiktok') {
+      if (pathname.includes('/video/') || pathname.includes('/photo/')) return 'detail'
+      if (pathname.includes('/@') && !pathname.includes('/video/')) return 'profile'
+      if (pathname === '/' || pathname === '' || pathname.includes('/foryou') || pathname.includes('/explore')) return 'home'
+      return 'unknown'
+    }
+
+    if (platform === 'zhihu') {
+      if (pathname.includes('/question/') || pathname.includes('/p/')) return 'status'
+      if (pathname.includes('/people/')) return 'profile'
+      if (pathname === '/' || pathname === '') return 'home'
+      return 'article'
+    }
+
+    if (platform === 'wechat') {
+      if (pathname.includes('/s') || document.getElementById('activity-name')) return 'article'
+      return 'unknown'
+    }
+
+    if (document.querySelector('article, .post-content, main')) return 'article'
+    if (pathname === '/' || pathname === '') return 'home'
+    return 'unknown'
+  } catch {
+    return 'unknown'
+  }
+}
+
+function isGenericBrandImage(url: string | undefined): boolean {
+  if (!url) return true
+  const lower = url.toLowerCase()
+  if (lower.includes('abs.twimg.com')) return true
+  if (lower.includes('icon-default')) return true
+  if (lower.includes('default_profile_images')) return true
+  if (lower.includes('rweb/ssr/default')) return true
+  return false
+}
+
+export function extractHeroImage(platform: PageSceneContext['platform']): string | undefined {
+  try {
+    if (platform === 'twitter') {
+      const pathname = window.location.pathname
+      const segments = pathname.split('/').filter(Boolean)
+      const reserved = ['home', 'explore', 'notifications', 'messages', 'settings', 'i', 'compose', 'search']
+      const handle = (segments.length >= 1 && !reserved.includes(segments[0].toLowerCase())) ? segments[0] : ''
+      const isProfile = !!handle && !pathname.includes('/status/')
+
+      // 锁定页面主内容区，坚决排除左侧导航栏账号切换按钮 (防止误抓登录用户头像)
+      const mainCol = document.querySelector('div[data-testid="primaryColumn"], main[role="main"], main') || document.body
+
+      // 1. Profile 个人主页：精准锚定博主专属头像链接 /${handle}/photo 或 mainArea 内大头像
+      if (isProfile) {
+        if (handle) {
+          const handleAvatar = mainCol.querySelector<HTMLImageElement>(`a[href*="/${handle}/photo"] img, a[href$="/photo"] img`)
+          if (handleAvatar?.src && !isGenericBrandImage(handleAvatar.src)) {
+            return handleAvatar.src.replace('_normal.', '_400x400.').replace('_bigger.', '_400x400.')
+          }
+        }
+        const profileAvatar = Array.from(mainCol.querySelectorAll<HTMLImageElement>('div[data-testid="UserAvatar-Container"] img')).find(
+          (img) => !img.closest('[data-testid="SideNav_AccountSwitcher_Button"], header[role="banner"]')
+        )
+        if (profileAvatar?.src && !isGenericBrandImage(profileAvatar.src)) {
+          return profileAvatar.src.replace('_normal.', '_400x400.').replace('_bigger.', '_400x400.')
+        }
+      }
+
+      // 2. Status 详情页首选推文大图或视频首帧 (优先详情页焦点推文)
+      const tweetArticle =
+        mainCol.querySelector('article[tabindex="-1"][data-testid="tweet"]') ||
+        mainCol.querySelector('article[data-testid="tweet"]')
+      if (tweetArticle) {
+        const photo = tweetArticle.querySelector<HTMLImageElement>(
+          'div[data-testid="tweetPhoto"] img, [data-testid*="card.layout"] img, img[src*="pbs.twimg.com/media"], img[src*="media"]'
+        )
+        if (photo?.src && !isGenericBrandImage(photo.src)) return photo.src
+        const video = tweetArticle.querySelector<HTMLVideoElement>('video')
+        if (video?.poster && !isGenericBrandImage(video.poster)) return video.poster
+        const tweetAvatar = tweetArticle.querySelector<HTMLImageElement>('div[data-testid="UserAvatar-Container"] img')
+        if (tweetAvatar?.src && !isGenericBrandImage(tweetAvatar.src)) {
+          return tweetAvatar.src.replace('_normal.', '_400x400.').replace('_bigger.', '_400x400.')
+        }
+      }
+
+      // 3. 用户 Banner 背景图
+      const bannerImg = mainCol.querySelector<HTMLImageElement>('a[href$="/header_photo"] img, img[src*="profile_banners"]')
+      if (bannerImg?.src && !isGenericBrandImage(bannerImg.src)) return bannerImg.src
+
+      // 4. 主内容区头像兜底 (严格排除左侧导航栏与账号切换器)
+      const anyMainAvatar = Array.from(mainCol.querySelectorAll<HTMLImageElement>('div[data-testid="UserAvatar-Container"] img')).find(
+        (img) => !img.closest('[data-testid="SideNav_AccountSwitcher_Button"], header[role="banner"]')
+      )
+      if (anyMainAvatar?.src && !isGenericBrandImage(anyMainAvatar.src)) {
+        return anyMainAvatar.src.replace('_normal.', '_400x400.').replace('_bigger.', '_400x400.')
+      }
+    }
+
+    if (platform === 'tiktok') {
+      const poster = document.querySelector<HTMLVideoElement>('video')?.getAttribute('poster')
+      if (poster && !isGenericBrandImage(poster)) return poster
+      const avatar = document.querySelector<HTMLImageElement>('[data-e2e="user-avatar"] img, [data-e2e="browser-avatar"] img')
+      if (avatar?.src && !isGenericBrandImage(avatar.src)) return avatar.src
+    }
+
+    // 5. OpenGraph / Twitter Card 元数据 (过滤平台通用占位图)
+    const ogImg = document.querySelector<HTMLMetaElement>(
+      'meta[property="og:image"], meta[name="twitter:image"], meta[name="twitter:image:src"]'
+    )?.content
+    if (ogImg && !isGenericBrandImage(ogImg)) return ogImg
+
+    // 6. 页面内首张有效大图 (限定在 main/article 内，排除小图标与品牌占位)
+    const firstImg = Array.from(document.querySelectorAll<HTMLImageElement>('main img, article img')).find(
+      (img) => (img.naturalWidth > 180 || img.width > 180) && (img.naturalHeight > 120 || img.height > 120) && !img.src.includes('svg') && !isGenericBrandImage(img.src)
+    )
+    if (firstImg?.src) return firstImg.src
+  } catch {
+    // Graceful fallback
+  }
+  return undefined
+}
+
+export function extractPostData(platform: PageSceneContext['platform']): { author?: string; postText?: string; tweet?: TweetCapture } {
+  try {
+    if (platform === 'twitter') {
+      const tweetArticle =
+        document.querySelector<HTMLElement>('article[tabindex="-1"][data-testid="tweet"]') ||
+        document.querySelector<HTMLElement>('main article[data-testid="tweet"]') ||
+        document.querySelector<HTMLElement>('article[data-testid="tweet"]')
+      if (tweetArticle) {
+        const tweet = extractTweetCapture(tweetArticle)
+        if (tweet !== null) {
+          return {
+            postText: tweet.text || undefined,
+            author: tweet.author.handle || tweet.author.name || undefined,
+            tweet
+          }
+        }
+        // A post with no permanent address is still worth the panel's body and
+        // author, even though there is nothing to save under a stable URL.
+        const textEl = tweetArticle.querySelector('div[data-testid="tweetText"]')
+        const userEl = tweetArticle.querySelector('div[data-testid="User-Name"]')
+        return {
+          postText: textEl?.textContent?.trim(),
+          author: userEl?.textContent?.split('@')[1]?.split('·')[0]?.trim() || userEl?.textContent?.trim()
+        }
+      }
+      // Profile 场景下提取博主账号
+      const pathname = window.location.pathname
+      const segments = pathname.split('/').filter(Boolean)
+      if (segments.length === 1) {
+        return { author: segments[0] }
+      }
+    }
+    if (platform === 'tiktok') {
+      const descEl = document.querySelector('[data-e2e="browse-video-desc"], h1[data-e2e="user-title"]')
+      const authorEl = document.querySelector('[data-e2e="browser-nickname"], [data-e2e="user-title"]')
+      return {
+        postText: descEl?.textContent?.trim(),
+        author: authorEl?.textContent?.trim()
+      }
+    }
+  } catch {
+    // Graceful fallback
+  }
+  return {}
+}
+
+export function getFullContext(url: string = window.location.href): PageSceneContext {
+  const platform = detectPlatform(url)
+  const platformLabel = getPlatformLabel(platform)
+  const pageType = detectPageType(platform, url)
+  const selection = window.getSelection()?.toString().trim() || ''
+  const extra = extractPostData(platform)
+  const heroImage = extractHeroImage(platform)
+
+  return {
+    url,
+    title: document.title,
+    platform,
+    platformLabel,
+    pageType,
+    selectedText: selection,
+    author: extra.author,
+    postText: extra.postText,
+    heroImage,
+    timestamp: Date.now(),
+    ...(extra.tweet === undefined ? {} : { tweet: extra.tweet })
+  }
+}

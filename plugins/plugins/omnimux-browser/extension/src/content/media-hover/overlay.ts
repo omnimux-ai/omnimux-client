@@ -1,0 +1,978 @@
+/**
+ * Overlay root: the single shadow host that owns the capsule and the tooltip.
+ *
+ * Structural contract (the reason this feature works at all):
+ *
+ * ```
+ * #omnimux-media-hover-root            (host: fixed, zero-size, page-level)
+ *   └─ layer (shadow root, .omnimux-media-hover-layer)
+ *        ├─ .omnimux-capsule-bar       ← position: fixed
+ *        └─ .white-tooltip             ← position: fixed, SIBLING of the capsule
+ * ```
+ *
+ * Both are direct children of the shadow root and neither is nested inside the
+ * media element, so a card with `overflow: hidden` cannot clip the tooltip. The
+ * capsule follows its media on scroll/resize and hides when the media leaves the
+ * viewport; the tooltip follows the icon it describes.
+ *
+ * @module
+ */
+
+import { MediaActionBridge, browserTransport } from './actions.ts'
+import { MediaCapsule } from './capsule.ts'
+import { CardRegionProbe, boxContains } from './card-region.ts'
+import { hoverCopy, type HoverCopy } from './copy.ts'
+import { MediaDetector } from './detector.ts'
+import { resolveSaveIntent } from './save-intent.ts'
+import {
+  CAPSULE_SPEC,
+  MEDIA_OVERLAY_HOST_ID,
+  OVERLAY_Z,
+  TIMING,
+  computeCapsuleGeometry,
+  type CapsuleGeometry,
+} from './messages.ts'
+import { OVERLAY_STYLES } from './styles.ts'
+import { MediaTooltip, readViewportBox } from './tooltip.ts'
+import { UNMEASURED_CONTROL, VideoAnchorProbe, resolveCapsuleAnchor } from './video-anchor.ts'
+import { FEATURE_FLAG, readFlag, subscribeFlag } from '../../feature-flags.ts'
+import type { ActionOutcome, AnchorRect, HoverCandidate, HoveredMedia, MediaActionKind, OverlayState } from './types.ts'
+
+/** Id of the host element; also how a duplicate injection is detected. */
+export { MEDIA_OVERLAY_HOST_ID }
+
+/** Icon slots that own a tooltip. */
+const TOOLTIP_ACTIONS: readonly MediaActionKind[] = ['inspiration', 'download', 'attach']
+
+/**
+ * Mounts and drives the hover overlay.
+ *
+ * Timing lives here rather than in the capsule: entering paints instantly once
+ * the detector settles on a candidate (no pre-show wait), leaving keeps a grace
+ * period so the pointer can travel from the media onto the capsule, and a
+ * scroll follows the media instead of dismissing the capsule.
+ */
+export class MediaOverlay {
+  private readonly doc: Document
+  private readonly copy: HoverCopy
+  private readonly bridge: MediaActionBridge
+
+  private host: HTMLElement | null = null
+  private shadow: ShadowRoot | null = null
+  private capsule: MediaCapsule | null = null
+  private tooltip: MediaTooltip | null = null
+  private detector: MediaDetector | null = null
+
+  /** Whether the hover behaviour is attached; `false` while the panel switch is off. */
+  private active = false
+  /** Releases the listeners that follow the panel switch. */
+  private unsubscribeFlag: (() => void) | null = null
+
+  private state: OverlayState = {
+    phase: 'idle',
+    activeId: '',
+    busyAction: null,
+    saved: false,
+    downloaded: false,
+    attached: false,
+  }
+  private payload: HoveredMedia | null = null
+  private anchorElement: Element | null = null
+  /**
+   * Renders the capsule served this media session. Every accepted candidate
+   * starts a new generation, so a receipt from an earlier press on the same
+   * payload id (after the pointer visited another media) is dropped as stale.
+   */
+  private mediaGeneration = 0
+  /**
+   * Actions with a request in flight. `OverlayState.busyAction` is a single
+   * field shared with the capsule paint contract, so concurrent slots are
+   * tracked here and the visible busy slot prefers the primary action — the
+   * image save is the only long-running request (UI-Spec §3.1: a pending
+   * primary action must not lock copy or attach).
+   */
+  private readonly pendingActions = new Set<MediaActionKind>()
+  /** Shared probe cache: one player is measured once, not once per frame. */
+  private readonly videoProbe = new VideoAnchorProbe()
+  /** Shared card-region probe: enclosing card container is walked and cached. */
+  private readonly cardProbe = new CardRegionProbe()
+
+  private lastPointerX = -1
+  private lastPointerY = -1
+
+  private leaveTimer: number | null = null
+  private collapseTimer: number | null = null
+  private flashTimer: number | null = null
+  private dismissTimer: number | null = null
+  private idleTimer: number | null = null
+  private frame: number | null = null
+  private activeIcon: MediaActionKind | null = null
+  /**
+   * The outcome line currently owning the tooltip, if any.
+   *
+   * `applyOutcome` paints a receipt ("Download started") and this member keeps
+   * it alive for its dismiss window: a reposition frame (scroll, resize, the
+   * capsule's own width animation) repaints this text instead of the hover hint,
+   * so a success line is never erased in the frame that produced it.
+   */
+  private outcome: { action: MediaActionKind; message: string } | null = null
+
+  private readonly onScroll = (): void => { this.scheduleReposition() }
+  private readonly onWindowResize = (): void => { this.scheduleReposition(true) }
+
+  constructor(doc: Document = document) {
+    this.doc = doc
+    this.copy = hoverCopy()
+    this.bridge = new MediaActionBridge(browserTransport(() => this.copy))
+  }
+
+  /** Builds the shadow tree and starts listening. Idempotent per instance. */
+  mount(): void {
+    if (this.host !== null) return
+    const target = this.doc.documentElement
+    if (target === null) return
+
+    const host = this.doc.createElement('div')
+    host.id = MEDIA_OVERLAY_HOST_ID
+    host.style.position = 'fixed'
+    host.style.top = '0'
+    host.style.left = '0'
+    host.style.width = '0'
+    host.style.height = '0'
+    host.style.overflow = 'visible'
+    host.style.pointerEvents = 'none'
+    host.style.zIndex = String(OVERLAY_Z.host)
+    target.appendChild(host)
+
+    const layer = this.doc.createElement('div')
+    layer.className = 'omnimux-media-hover-layer'
+
+    this.shadow = host.attachShadow({ mode: 'open' })
+    this.shadow.innerHTML = `<style>${OVERLAY_STYLES}</style>`
+
+    this.capsule = MediaCapsule.create(this.copy)
+    this.tooltip = MediaTooltip.create()
+
+    // Siblings in this order: the capsule first, the tooltip painted over it.
+    layer.appendChild(this.capsule.element)
+    layer.appendChild(this.tooltip.element)
+    this.shadow.appendChild(layer)
+
+    this.host = host
+    this.bindCapsule()
+    this.followSwitch()
+  }
+
+  /**
+   * Turns the hover assistant on or off.
+   *
+   * Off is a full stop rather than a hidden node: the detector and the pointer
+   * listeners are released, so a switched-off toolbar costs the page nothing and
+   * releases the media under the pointer at once. The shadow tree stays mounted,
+   * so switching back on re-attaches instead of rebuilding.
+   */
+  setEnabled(enabled: boolean): void {
+    if (enabled === this.active) return
+    this.active = enabled
+    if (enabled) this.activate()
+    else this.deactivate()
+  }
+
+  /** Whether the hover assistant is currently listening to the page. */
+  isEnabled(): boolean {
+    return this.active
+  }
+
+  private activate(): void {
+    this.bindDocument()
+    this.detector = new MediaDetector({
+      onCandidate: (candidate) => { this.handleCandidate(candidate) },
+      onInvalidate: (reason) => { this.handleInvalidate(reason) },
+    })
+    this.detector.start()
+  }
+
+  private deactivate(): void {
+    this.hideNow(true)
+    this.unbindDocument()
+    this.detector?.dispose()
+    this.detector = null
+  }
+
+  /**
+   * Follows the panel's switch.
+   *
+   * The stored value is read before anything is attached: the detector's capture
+   * listeners are how the extension observes the page, so a tab whose switch is
+   * off must never attach one — not even for the tick before the read lands.
+   * With no storage to read, the read falls back to the mirror and the default.
+   */
+  private followSwitch(): void {
+    this.unsubscribeFlag = subscribeFlag(FEATURE_FLAG.mediaHover, (enabled) => { this.setEnabled(enabled) })
+    void readFlag(FEATURE_FLAG.mediaHover).then((enabled) => {
+      // The read may land after a teardown; a disposed overlay owns no behaviour.
+      if (this.host !== null) this.setEnabled(enabled)
+    })
+  }
+
+  /** Tears everything down: listeners, timers and nodes. */
+  dispose(): void {
+    this.clearLeaveTimer()
+    this.clearCollapseTimer()
+    this.clearFlashTimer()
+    this.clearDismissTimer()
+    this.clearIdleTimer()
+    this.cancelFrame()
+
+    this.unsubscribeFlag?.()
+    this.unsubscribeFlag = null
+    this.active = false
+
+    this.detector?.dispose()
+    this.detector = null
+
+    this.unbindDocument()
+
+    this.capsule?.destroy()
+    this.tooltip?.destroy()
+    this.capsule = null
+    this.tooltip = null
+    this.shadow = null
+    this.host?.remove()
+    this.host = null
+    this.payload = null
+    this.anchorElement = null
+    this.state.phase = 'idle'
+  }
+
+  // ---- Candidate lifecycle -----------------------------------------------
+
+  private handleCandidate(candidate: HoverCandidate): void {
+    this.cancelLeave()
+
+    // A candidate arriving while the user is inside the capsule must not yank
+    // the capsule away from their pointer.
+    if (this.state.phase === 'interactive' && this.payload !== null) {
+      this.repositionNow()
+      return
+    }
+
+    if (this.anchorElement === candidate.element && this.payload !== null && this.payload.id === candidate.payload.id) {
+      this.repositionNow()
+      return
+    }
+
+    this.hideNow(true)
+    this.anchorElement = candidate.element
+    // Instant reveal: the candidate is already settled by the detector, so the
+    // stage-one brand mark paints on this same event. Flicker protection lives
+    // entirely on the leave side (leaveGrace + card-region checks), never as a
+    // pre-show wait — parity with competitor hover buttons.
+    this.showNow(candidate)
+  }
+
+  private handleInvalidate(reason: 'scroll' | 'resize' | 'detach' | 'leftmedia'): void {
+    if (reason === 'detach') {
+      if (this.isInsideOverlay(this.hoveredElement())) return
+      this.hideNow(true)
+      return
+    }
+    if (reason === 'leftmedia') {
+      // The pointer moved off the media element itself, but might still be inside
+      // the enclosing card or controls bar. Check the card region before scheduling leave.
+      if (this.state.phase !== 'shown' && this.state.phase !== 'interactive') return
+      if (this.lastPointerX >= 0 && this.lastPointerY >= 0 && this.isPointerInsideCard(this.lastPointerX, this.lastPointerY)) {
+        this.cancelLeave()
+        this.resetIdleTimer()
+        return
+      }
+      this.scheduleLeaveGrace()
+      return
+    }
+    this.scheduleReposition()
+  }
+
+  private scheduleLeaveGrace(): void {
+    if (this.leaveTimer !== null) return
+    this.leaveTimer = this.setTimer(() => {
+      this.leaveTimer = null
+      if (this.isInsideOverlay(this.hoveredElement())) return
+      if (this.lastPointerX >= 0 && this.lastPointerY >= 0 && this.isPointerInsideCard(this.lastPointerX, this.lastPointerY)) {
+        return
+      }
+      this.hideNow(true)
+    }, TIMING.leaveGrace)
+  }
+
+  /** Whether a coordinate falls inside the active media element's unified card region. */
+  private isPointerInsideCard(x: number, y: number): boolean {
+    const element = this.anchorElement
+    if (element === null || !element.isConnected) return false
+    const rect = element.getBoundingClientRect()
+    const kind = this.payload?.type ?? (element.localName === 'video' ? 'video' : 'image')
+    const region = this.cardProbe.region(
+      element,
+      kind,
+      rect,
+      this.capsule && this.capsule.visible ? this.capsule.element : null,
+    )
+    return boxContains(region, x, y)
+  }
+
+  private showNow(candidate: HoverCandidate): void {
+    const capsule = this.capsule
+    if (capsule === null) return
+    if (!candidate.element.isConnected) return
+    this.payload = candidate.payload
+    this.anchorElement = candidate.element
+    this.mediaGeneration += 1
+    // A new media owns a new busy ledger: its presses were issued against a
+    // payload that is gone, so a stale in-flight marker must not freeze this
+    // media's primary action.
+    this.pendingActions.clear()
+    capsule.render(candidate.payload)
+    this.state = { ...this.state, ...capsule.snapshot(), phase: 'shown' }
+    // Placement and the flip both come out of the one geometry call, so the
+    // transform origin can never disagree with where the pill actually landed.
+    const geometry = this.repositionNow()
+    capsule.show(geometry?.alignment ?? 'left')
+    this.startIdleTimer()
+  }
+
+  private hideNow(clear: boolean): void {
+    this.clearCollapseTimer()
+    this.clearDismissTimer()
+    this.clearIdleTimer()
+    this.capsule?.hide()
+    this.tooltip?.hide()
+    this.activeIcon = null
+    this.detector?.clearCandidate()
+    this.state.phase = 'idle'
+    if (clear) {
+      this.payload = null
+      this.anchorElement = null
+    }
+  }
+
+  // ---- Pointer plumbing --------------------------------------------------
+
+  private bindDocument(): void {
+    // Capture-phase target tracking is what keeps the capsule interactive: the
+    // pointer must be able to leave the media and land on the capsule without
+    // the detector clearing its candidate first.
+    this.doc.addEventListener('pointerover', this.onPointerOver, true)
+    this.doc.addEventListener('pointermove', this.onPointerMoveTarget, true)
+    this.doc.addEventListener('pointerout', this.onPointerOut, true)
+    this.doc.addEventListener('mouseover', this.onPointerOver, true)
+    this.doc.addEventListener('mousemove', this.onPointerMoveTarget, true)
+    this.doc.addEventListener('pointercancel', this.onPointerLost, true)
+    this.doc.documentElement?.addEventListener('pointerleave', this.onDocumentLeave, true)
+    this.doc.addEventListener('visibilitychange', this.onVisibilityChange)
+    window.addEventListener('blur', this.onPointerLost)
+    window.addEventListener('scroll', this.onScroll, { passive: true, capture: true })
+    window.addEventListener('resize', this.onWindowResize, { passive: true })
+  }
+
+  /** Releases exactly the listeners {@link bindDocument} installed. */
+  private unbindDocument(): void {
+    this.doc.removeEventListener('pointerover', this.onPointerOver, true)
+    this.doc.removeEventListener('pointermove', this.onPointerMoveTarget, true)
+    this.doc.removeEventListener('pointerout', this.onPointerOut, true)
+    this.doc.removeEventListener('mouseover', this.onPointerOver, true)
+    this.doc.removeEventListener('mousemove', this.onPointerMoveTarget, true)
+    this.doc.removeEventListener('pointercancel', this.onPointerLost, true)
+    this.doc.documentElement?.removeEventListener('pointerleave', this.onDocumentLeave, true)
+    this.doc.removeEventListener('visibilitychange', this.onVisibilityChange)
+    window.removeEventListener('blur', this.onPointerLost)
+    window.removeEventListener('scroll', this.onScroll, true)
+    window.removeEventListener('resize', this.onWindowResize)
+  }
+
+  private readonly onPointerLost = (): void => {
+    this.hideNow(true)
+  }
+
+  private readonly onVisibilityChange = (): void => {
+    if (this.doc.visibilityState === 'hidden') {
+      this.onPointerLost()
+    }
+  }
+
+  private readonly onDocumentLeave = (event: Event): void => {
+    const pEvent = event as PointerEvent
+    if (typeof pEvent.clientX === 'number' && typeof pEvent.clientY === 'number') {
+      const vw = currentViewportWidth()
+      const vh = currentViewportHeight()
+      // 严格视口物理边界拦截：光标只要仍在浏览器视口内部，绝不误判为离开文档
+      if (pEvent.clientX > 0 && pEvent.clientX < vw && pEvent.clientY > 0 && pEvent.clientY < vh) {
+        return
+      }
+    }
+    if (pEvent.relatedTarget === null || !this.isInsideOverlay(pEvent.relatedTarget)) {
+      this.onPointerLost()
+    }
+  }
+
+  private readonly onPointerOver = (event: Event): void => {
+    if (this.isInsideOverlay(event.target, event)) {
+      this.cancelLeave()
+      this.expandCapsule()
+    }
+  }
+
+  private readonly onPointerMoveTarget = (event: Event): void => {
+    const pEvent = event as PointerEvent
+    const hasCoords = typeof pEvent.clientX === 'number' && typeof pEvent.clientY === 'number'
+    if (hasCoords) {
+      this.lastPointerX = pEvent.clientX
+      this.lastPointerY = pEvent.clientY
+    }
+    const isTargetInside = this.isInsideOverlay(event.target, event)
+    const isCoordInside = hasCoords && this.isPointInsideCapsule(pEvent.clientX, pEvent.clientY)
+
+    if (isTargetInside || isCoordInside) {
+      this.cancelLeave()
+      this.clearIdleTimer()
+      this.state.phase = 'interactive'
+      this.capsule?.element.classList.add('is-visible')
+      this.capsule?.setInteractive(true)
+      this.expandCapsule()
+      return
+    }
+    if (this.state.phase === 'interactive') {
+      this.state.phase = 'shown'
+      this.capsule?.setInteractive(false)
+      this.scheduleCollapse()
+    }
+
+    if (this.state.phase === 'shown' && this.anchorElement !== null) {
+      if (!this.anchorElement.isConnected) {
+        this.hideNow(true)
+        return
+      }
+      const pEvent = event as PointerEvent
+      if (typeof pEvent.clientX === 'number' && typeof pEvent.clientY === 'number') {
+        const x = pEvent.clientX
+        const y = pEvent.clientY
+        const vw = currentViewportWidth()
+        const vh = currentViewportHeight()
+        if (x <= 0 || y <= 0 || x >= vw || y >= vh) {
+          this.hideNow(true)
+          return
+        }
+
+        if (this.isPointerInsideCard(x, y)) {
+          this.cancelLeave()
+          this.resetIdleTimer()
+          return
+        }
+
+        // 光标离开卡片统一走平滑宽限期隐藏，杜绝因边界微动突兀闪隐
+        this.scheduleLeaveGrace()
+      }
+    }
+  }
+
+  private readonly onPointerOut = (event: Event): void => {
+    const related = (event as PointerEvent).relatedTarget
+    if (this.isInsideOverlay(related, event)) return
+
+    if (this.state.phase !== 'shown' && this.state.phase !== 'interactive') return
+
+    // 光标坐标仍在卡片内部（例如移至控制条控件、子元素切换、或控制栏被隐藏重排导致 relatedTarget 为 null），绝不闪退
+    if (this.lastPointerX >= 0 && this.lastPointerY >= 0 &&
+        this.isPointerInsideCard(this.lastPointerX, this.lastPointerY)) {
+      this.cancelLeave()
+      this.resetIdleTimer()
+      return
+    }
+
+    this.cancelLeave()
+    this.scheduleLeaveGrace()
+  }
+
+  private hoveredElement(): Element | null {
+    try {
+      return this.doc.querySelector(':hover')
+    } catch {
+      return null
+    }
+  }
+
+  /** Whether a node belongs to this overlay (shadow content included). */
+  private isInsideOverlay(node: unknown, event?: Event): boolean {
+    const host = this.host
+    if (host === null) return false
+    if (event && typeof event.composedPath === 'function') {
+      const path = event.composedPath()
+      if (path.includes(host) || (this.capsule && path.includes(this.capsule.element))) {
+        return true
+      }
+    }
+    if (!(node instanceof Node)) return false
+    let cursor: Node | null = node
+    for (let depth = 0; cursor !== null && depth < 64; depth += 1) {
+      if (cursor === host) return true
+      cursor = cursor.parentNode ?? (cursor instanceof ShadowRoot ? cursor.host : null)
+    }
+    if (this.shadow !== null && this.shadow.contains(node)) return true
+    return false
+  }
+
+  /** Physical bounding box check for hover safety gate fallback. */
+  private isPointInsideCapsule(x: number, y: number): boolean {
+    if (this.capsule === null || !this.capsule.visible) return false
+    const cBox = this.capsule.element.getBoundingClientRect()
+    return x >= cBox.left - 4 && x <= cBox.right + 4 && y >= cBox.top - 4 && y <= cBox.bottom + 4
+  }
+
+  // ---- Capsule interaction -----------------------------------------------
+
+  private bindCapsule(): void {
+    const capsule = this.capsule
+    if (capsule === null) return
+
+    capsule.onAction(({ action }) => { void this.runAction(action) })
+
+    const openCapsule = (): void => { this.expandCapsule() }
+    const closeCapsule = (): void => { this.scheduleCollapse() }
+
+    // Two-stage hover. Reaching the capsule with mouse/pointer or keyboard Tab opens
+    // stage two; leaving it folds back after a 320ms buffer so transit between icons
+    // and the brand circle never flickers.
+    capsule.element.addEventListener('pointerenter', openCapsule)
+    capsule.element.addEventListener('mouseenter', openCapsule)
+    capsule.element.addEventListener('mouseover', openCapsule)
+    capsule.element.addEventListener('pointerleave', closeCapsule)
+    capsule.element.addEventListener('mouseleave', closeCapsule)
+    capsule.element.addEventListener('focusin', openCapsule)
+    capsule.element.addEventListener('focusout', closeCapsule)
+
+    // Ensure hovering directly on the stage-one brand trigger triggers expansion
+    const brand = capsule.brandElement()
+    brand.addEventListener('pointerenter', openCapsule)
+    brand.addEventListener('mouseenter', openCapsule)
+    brand.addEventListener('mouseover', openCapsule)
+    brand.addEventListener('focus', openCapsule)
+
+    for (const action of TOOLTIP_ACTIONS) {
+      const button = capsule.buttonElement(action)
+      if (button === null) continue
+      const show = (): void => {
+        this.expandCapsule()
+        this.showHint(action)
+      }
+      const clear = (): void => { this.clearHint(action) }
+      button.addEventListener('pointerenter', show)
+      button.addEventListener('mouseenter', show)
+      button.addEventListener('focus', show)
+      button.addEventListener('pointerleave', clear)
+      button.addEventListener('mouseleave', clear)
+      button.addEventListener('blur', clear)
+    }
+  }
+
+  /** Stage two: the pointer or the keyboard reached the capsule. Always guarantees visibility. */
+  private expandCapsule(): void {
+    this.clearCollapseTimer()
+    this.capsule?.element.classList.add('is-visible')
+    this.capsule?.expand()
+    if (this.state.phase === 'shown') this.state.phase = 'interactive'
+  }
+
+  /** Folds the capsule back once the pointer has genuinely left it. */
+  private scheduleCollapse(): void {
+    this.clearCollapseTimer()
+    this.collapseTimer = this.setTimer(() => {
+      this.collapseTimer = null
+      this.collapseCapsule()
+    }, TIMING.collapseGrace)
+  }
+
+  private collapseCapsule(): void {
+    const capsule = this.capsule
+    if (capsule === null) return
+    capsule.collapse()
+    // Stage one carries no tooltip: a hint left over from an icon would have
+    // nothing to point at.
+    this.activeIcon = null
+    this.tooltip?.hide()
+    if (this.state.phase === 'interactive') this.state.phase = 'shown'
+  }
+
+  private readonly onCapsuleEnter = (): void => {
+    this.expandCapsule()
+  }
+
+  private readonly onCapsuleLeave = (): void => {
+    this.scheduleCollapse()
+  }
+
+  /**
+   * The hover/focus hint a slot should read right now.
+   *
+   * The primary slot is intent-aware: an image advertises the asset-library
+   * action across its idle/busy/done states, a video keeps the baseline
+   * inspiration hint, and download/chat never change. Receipts are not derived
+   * here — {@link messageFor} layers the live outcome over this resolver, so a
+   * reposition repaints the same words the press produced.
+   */
+  private resolveHint(action: MediaActionKind): string {
+    if (action === 'inspiration' && this.payload !== null) {
+      const intent = resolveSaveIntent(this.payload)
+      if (intent === 'image-asset') {
+        if (this.state.busyAction === action) return this.copy.image.busy
+        if (this.state.saved) return this.copy.image.done
+        return this.copy.image.idle
+      }
+      if (intent === 'unknown') return this.copy.image.typeUnknown
+    }
+    return this.copy.hint[action]
+  }
+
+  /** The text the tooltip shows for one slot right now: a live outcome wins. */
+  private messageFor(action: MediaActionKind): string {
+    if (this.outcome !== null && this.outcome.action === action) return this.outcome.message
+    return this.resolveHint(action)
+  }
+
+  private showHint(action: MediaActionKind): void {
+    // Pointing at a different icon retires the previous receipt: the hint under
+    // the pointer is what the tooltip must say, and a later reposition may not
+    // resurrect the older message. The receipt's own icon keeps its words.
+    if (this.outcome !== null && this.outcome.action !== action) this.outcome = null
+    this.activeIcon = action
+    this.showMessage(this.messageFor(action), action)
+  }
+
+  private clearHint(action: MediaActionKind): void {
+    if (this.activeIcon !== action) return
+    this.activeIcon = null
+    this.tooltip?.hide()
+  }
+
+  private showMessage(text: string, action: MediaActionKind): void {
+    const button = this.capsule?.buttonElement(action)
+    if (button === null || button === undefined) return
+    this.tooltip?.show(text, rectOf(button), readViewportBox())
+  }
+
+  private async runAction(action: MediaActionKind): Promise<void> {
+    const payload = this.payload
+    // Only the action that is actually in flight is blocked: a pending save
+    // must not freeze the download and attach slots (UI-Spec §3.1).
+    if (payload === null || this.pendingActions.has(action)) return
+
+    // A media session that already holds a confirmed save answers the done
+    // message in place and sends nothing — re-pressing is not a new request
+    // and never an un-toggle.
+    if (action === 'inspiration' && this.state.saved) {
+      const intent = resolveSaveIntent(payload)
+      if (intent === 'image-asset') {
+        this.applyOutcome(action, { ok: true, status: 'saved', message: this.copy.image.done })
+      } else {
+        this.applyOutcome(action, { ok: true, status: 'saved', message: this.copy.done.inspiration })
+      }
+      return
+    }
+
+    // The payload is immutable, but the overlay's payload can be swapped out
+    // while the request is in flight (SPA card reuse, pointer moving to the
+    // next media). Capture the render generation now: a late receipt may only
+    // mark the media it was issued for, even when a re-rendered media reuses
+    // the same payload id (switching away and back must not light up the
+    // press that happened before the switch).
+    const issuedFor = payload.id
+    const issuedAt = this.mediaGeneration
+    this.setBusy(action, true)
+    let outcome: ActionOutcome
+    try {
+      outcome = await this.dispatch(action, payload)
+    } catch {
+      outcome = { ok: false, status: 'failed', message: this.copy.failed }
+    }
+    if (this.state.activeId !== issuedFor || this.mediaGeneration !== issuedAt) return
+    this.setBusy(action, false)
+    this.applyOutcome(action, outcome)
+  }
+
+  private dispatch(action: MediaActionKind, payload: HoveredMedia): Promise<ActionOutcome> {
+    switch (action) {
+      case 'inspiration': {
+        // The primary action re-resolves the work type at press time: the
+        // painted label and the write destination come from one derivation.
+        const intent = resolveSaveIntent(payload)
+        if (intent === 'image-asset') return this.bridge.saveImageToAssets(payload)
+        if (intent === 'unknown') {
+          return Promise.resolve({ ok: false, status: 'failed', message: this.copy.image.typeUnknown })
+        }
+        return this.bridge.saveToInspiration(payload)
+      }
+      case 'download':
+        return this.bridge.downloadMedia(payload)
+      case 'attach':
+        return this.bridge.attachToConversation(payload)
+    }
+  }
+
+  private applyOutcome(action: MediaActionKind, outcome: ActionOutcome): void {
+    const capsule = this.capsule
+    if (capsule === null) return
+
+    this.state.phase = 'shown'
+    if (outcome.ok) {
+      if (action === 'inspiration') {
+        this.state.saved = true
+        capsule.setState({ saved: true })
+      } else if (action === 'download') {
+        this.state.downloaded = true
+        capsule.setState({ downloaded: true })
+        this.clearFlashTimer()
+        this.flashTimer = this.setTimer(() => {
+          this.flashTimer = null
+          this.state.downloaded = false
+          capsule.setState({ downloaded: false })
+        }, TIMING.downloadCheckFlash)
+      } else {
+        this.state.attached = true
+        capsule.setState({ attached: true })
+      }
+    }
+
+    // An outcome message always replaces the hover hint for both the success and
+    // the failure path, then fades on its own so the capsule settles. It is kept
+    // in `this.outcome` for that window so a reposition repaints these same words
+    // instead of the hint they replaced.
+    this.activeIcon = action
+    this.outcome = { action, message: outcome.message }
+    this.showMessage(outcome.message, action)
+    this.clearDismissTimer()
+    this.dismissTimer = this.setTimer(() => {
+      this.dismissTimer = null
+      this.outcome = null
+      this.activeIcon = null
+      this.tooltip?.hide()
+    }, TIMING.errorDismiss)
+  }
+
+  private setBusy(action: MediaActionKind | null, busy: boolean): void {
+    if (busy && action !== null) this.pendingActions.add(action)
+    else this.pendingActions.delete(action)
+    // The capsule paints one busy slot; the primary action owns it while a
+    // save is pending so its busy label/aria stays put until the real receipt.
+    const next: MediaActionKind | null = this.pendingActions.has('inspiration')
+      ? 'inspiration'
+      : (busy && action !== null ? action : null)
+    this.state.busyAction = next
+    this.state.phase = busy ? 'interactive' : 'shown'
+    this.capsule?.setState({ busyAction: next })
+    // The busy feedback does not wait for a hover on the primary slot: the
+    // press itself anchors the single in-place hint (UI-Spec §3.1 busy is
+    // title/aria/tooltip too). Secondary slots keep their baseline feedback.
+    if (busy && action === 'inspiration') {
+      this.activeIcon = action
+      this.showMessage(this.resolveHint(action), action)
+    }
+  }
+
+  // ---- Geometry ----------------------------------------------------------
+
+  private scheduleReposition(force = false): void {
+    if (this.state.phase === 'idle' || this.host === null || this.payload === null) return
+    if (force) {
+      this.clearDismissTimer()
+      this.activeIcon = null
+      this.tooltip?.hide()
+    }
+    if (this.frame !== null) return
+    this.frame = rAF(() => {
+      this.frame = null
+      this.repositionNow()
+    })
+  }
+
+  /**
+   * Re-measures the media and places the capsule for its kind.
+   *
+   * Runs on every scroll frame: the anchor is read from the element itself, so
+   * the capsule tracks the media instead of drifting with a stale rect.
+   *
+   * @returns The geometry that was painted, or `null` when the capsule hid.
+   */
+  private repositionNow(): CapsuleGeometry | null {
+    const capsule = this.capsule
+    const element = this.anchorElement
+    const payload = this.payload
+    if (capsule === null || element === null || payload === null) return null
+    if (!element.isConnected) {
+      this.hideNow(true)
+      return null
+    }
+
+    const rect = element.getBoundingClientRect()
+    const viewport = {
+      width: currentViewportWidth(),
+      height: currentViewportHeight(),
+    }
+
+    if (rect.bottom <= 0 || rect.right <= 0 || rect.top >= viewport.height || rect.left >= viewport.width) {
+      this.hideNow(true)
+      return null
+    }
+
+    const box = capsule.element.getBoundingClientRect()
+    // A video's bottom-left corner belongs to the player's play control, so a
+    // video pill hugs the top-right corner instead.
+    const policy = resolveCapsuleAnchor(
+      rect,
+      payload.type,
+      payload.type === 'video' ? this.videoProbe.probe(element, rect) : UNMEASURED_CONTROL,
+    )
+    // Both stages are measured as the expanded row. The smaller circle is drawn
+    // inside that footprint at its pinned edge, so opening stage two grows into
+    // space the geometry already reserved and can never cross the viewport edge.
+    const reserved = Math.max(box.width, CAPSULE_SPEC.width)
+    // A right-pinned pill is placed with CSS `right`, which is measured against
+    // the layout viewport (no scrollbar), so its geometry is clamped against
+    // that same width; `innerWidth` includes the scrollbar and would let the
+    // pill run past the visible edge.
+    const layoutWidth = policy.corner === 'top-right'
+      ? (this.doc.documentElement?.clientWidth || viewport.width)
+      : viewport.width
+    const geometry = computeCapsuleGeometry(
+      rect,
+      {
+        width: reserved,
+        height: Math.max(box.height, CAPSULE_SPEC.height),
+      },
+      layoutWidth,
+      viewport.height,
+      policy,
+    )
+    if (geometry.edge === 'right') {
+      // Pinned by its right edge, the pill opens leftwards out of the corner.
+      capsule.element.style.left = 'auto'
+      capsule.element.style.right = `${Math.round(layoutWidth - (geometry.left + reserved))}px`
+    } else {
+      capsule.element.style.right = ''
+      capsule.element.style.left = `${Math.round(geometry.left)}px`
+    }
+    capsule.element.style.top = `${Math.round(geometry.top)}px`
+
+    const icon = this.activeIcon
+    if (icon !== null) this.showMessage(this.messageFor(icon), icon)
+    return geometry
+  }
+
+  private cancelFrame(): void {
+    if (this.frame === null) return
+    cancelAF(this.frame)
+    this.frame = null
+  }
+
+  // ---- Timers ------------------------------------------------------------
+
+  private setTimer(handler: () => void, delay: number): number {
+    return window.setTimeout(handler, delay)
+  }
+
+  private clearLeaveTimer(): void {
+    if (this.leaveTimer === null) return
+    window.clearTimeout(this.leaveTimer)
+    this.leaveTimer = null
+  }
+
+  private clearCollapseTimer(): void {
+    if (this.collapseTimer === null) return
+    window.clearTimeout(this.collapseTimer)
+    this.collapseTimer = null
+  }
+
+  private clearFlashTimer(): void {
+    if (this.flashTimer === null) return
+    window.clearTimeout(this.flashTimer)
+    this.flashTimer = null
+  }
+
+  private clearDismissTimer(): void {
+    if (this.dismissTimer === null) return
+    window.clearTimeout(this.dismissTimer)
+    this.dismissTimer = null
+  }
+
+  private startIdleTimer(): void {
+    this.clearIdleTimer()
+    this.idleTimer = this.setTimer(() => {
+      this.idleTimer = null
+      if (this.state.phase === 'shown' || this.state.phase === 'interactive') {
+        // 光标停留在卡片区域内静止，仅折叠回第一阶段圆钮，保持可见，绝不闪烁消失
+        if (this.lastPointerX >= 0 && this.lastPointerY >= 0 &&
+            this.isPointerInsideCard(this.lastPointerX, this.lastPointerY)) {
+          this.collapseCapsule()
+          return
+        }
+        this.hideNow(true)
+      }
+    }, TIMING.idleDismiss)
+  }
+
+  private resetIdleTimer(): void {
+    if (this.state.phase === 'shown') {
+      this.startIdleTimer()
+    }
+  }
+
+  private clearIdleTimer(): void {
+    if (this.idleTimer === null) return
+    window.clearTimeout(this.idleTimer)
+    this.idleTimer = null
+  }
+
+  private cancelLeave(): void {
+    this.clearLeaveTimer()
+  }
+}
+
+/** Bounding rect of an element as the tooltip contract expects it. */
+export function rectOf(element: Element): AnchorRect {
+  const rect = element.getBoundingClientRect()
+  return {
+    left: rect.left,
+    top: rect.top,
+    right: rect.right,
+    bottom: rect.bottom,
+    width: rect.width,
+    height: rect.height,
+  }
+}
+
+function currentViewportWidth(): number {
+  if (typeof window === 'undefined') return 1280
+  return window.innerWidth || document.documentElement?.clientWidth || 1280
+}
+
+function currentViewportHeight(): number {
+  if (typeof window === 'undefined') return 800
+  return window.innerHeight || document.documentElement?.clientHeight || 800
+}
+
+/** `requestAnimationFrame` with a timeout fallback for headless documents. */
+function rAF(handler: () => void): number {
+  if (typeof requestAnimationFrame === 'function') return requestAnimationFrame(handler)
+  return window.setTimeout(handler, 16)
+}
+
+function cancelAF(handle: number): void {
+  if (typeof cancelAnimationFrame === 'function') {
+    cancelAnimationFrame(handle)
+    return
+  }
+  window.clearTimeout(handle)
+}
+
+/** Installs the overlay once per document and returns the live instance. */
+export function initMediaHoverOverlay(doc: Document = document): MediaOverlay {
+  const overlay = new MediaOverlay(doc)
+  overlay.mount()
+  return overlay
+}
