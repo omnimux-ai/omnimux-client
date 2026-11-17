@@ -40,7 +40,14 @@ const PLATFORM_KEYS = {
   windows: 'windows',
 }
 
-function parseArgs(argv) {
+/**
+ * A normal publish always writes all three platform hashes. A partial preview
+ * may omit platforms, but it must use `--partial` and can never write the live
+ * `version-<channel>.json` manifest.
+ */
+const PUBLISH_PLATFORMS = ['mac-arm64', 'mac-x64', 'windows']
+
+export function parseArgs(argv) {
   const value = flag => {
     const index = argv.indexOf(flag)
     return index === -1 ? undefined : argv[index + 1]
@@ -49,8 +56,13 @@ function parseArgs(argv) {
     version: value('--version'),
     dir: value('--dir'),
     requirePlatforms: value('--require-platforms'),
+    partial: argv.includes('--partial'),
     check: argv.includes('--check'),
   }
+}
+
+function splitPlatforms(value) {
+  return (value ?? '').split(',').map(token => token.trim()).filter(Boolean)
 }
 
 function assertChannelVersion(version, channel) {
@@ -94,7 +106,7 @@ function assertArtifactVersion(label, artifact, version) {
   }
 }
 
-function buildMetadata(dir, version, channel, requiredPlatforms = []) {
+export function buildMetadata(dir, version, channel, requiredPlatforms = PUBLISH_PLATFORMS) {
   assertChannelVersion(version, channel)
   const macArm64 = digestFor(dir, [/-arm64\.dmg$/u])
   const macX64 = digestFor(dir, [/-x64\.dmg$/u])
@@ -130,13 +142,25 @@ function main() {
   const channel = CHANNELS.find(candidate => CHANNEL_TAG[candidate] === tag)
   if (channel === undefined) throw new Error(`${args.version} does not match any known release channel`)
 
-  const requiredPlatforms = (args.requirePlatforms ?? '')
-    .split(',')
-    .map(token => token.trim())
-    .filter(Boolean)
+  const requestedPlatforms = splitPlatforms(args.requirePlatforms)
+  let requiredPlatforms
+  if (args.partial) {
+    requiredPlatforms = requestedPlatforms
+  } else {
+    if (
+      requestedPlatforms.length > 0
+      && (requestedPlatforms.length !== PUBLISH_PLATFORMS.length
+        || PUBLISH_PLATFORMS.some(token => !requestedPlatforms.includes(token)))
+    ) {
+      throw new Error(
+        `--require-platforms must name exactly ${PUBLISH_PLATFORMS.join(',')} for a publish build; use --partial for an incomplete preview`,
+      )
+    }
+    requiredPlatforms = PUBLISH_PLATFORMS
+  }
   const built = buildMetadata(dir, args.version, channel, requiredPlatforms)
   const outDir = join(dir, 'api', 'desktop')
-  const path = join(outDir, `version-${channel}.json`)
+  const path = join(outDir, `version-${channel}${args.partial ? '-partial' : ''}.json`)
   const serialized = `${JSON.stringify(built.metadata, null, 2)}\n`
 
   if (args.check) {
@@ -156,4 +180,5 @@ function main() {
   console.log(`wrote ${path}${parts ? ` (${parts})` : ''}`)
 }
 
-main()
+const invokedPath = process.argv[1]
+if (invokedPath !== undefined && resolve(invokedPath) === fileURLToPath(import.meta.url)) main()

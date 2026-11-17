@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
@@ -49,5 +49,30 @@ describe('release build-info verification', () => {
     writeAppBuildInfo(appPath, 'release', { repoRoot: root, packageDir: 'dsh-desktop-next' })
     writeFileSync(join(root, 'tracked.txt'), 'dirty\n')
     expect(() => verifyAppBuildInfo(appPath, { repoRoot: root, packageDir: 'dsh-desktop-next' })).toThrow('dirty')
+  })
+})
+
+describe('build-info provenance safety', () => {
+  it('never records remote URLs or credentials', () => {
+    const root = makeRepo()
+    const fakeCredential = ['fake', 'credential'].join('-')
+    execFileSync('git', ['remote', 'add', 'origin', `https://fakeuser:${fakeCredential}@private.example.test/secret/repo.git`], { cwd: root })
+    const appPath = makeApp(root)
+    writeAppBuildInfo(appPath, 'release', { repoRoot: root, packageDir: 'dsh-desktop-next' })
+    const serialized = readFileSync(join(appPath, 'Contents', 'Resources', 'build-info.json'), 'utf8')
+    expect(serialized).not.toContain('private.example.test')
+    expect(serialized).not.toContain(fakeCredential)
+    const info = JSON.parse(serialized) as { repo: Record<string, unknown> }
+    expect(info.repo).not.toHaveProperty('origin')
+    expect(info.repo).not.toHaveProperty('fork')
+  })
+
+  it('fails closed when git status cannot be inspected', () => {
+    const root = mkdtempSync(join(tmpdir(), 'omnimux-build-info-nogit-'))
+    roots.push(root)
+    mkdirSync(join(root, 'dsh-desktop-next'), { recursive: true })
+    writeFileSync(join(root, 'dsh-desktop-next', 'package.json'), JSON.stringify({ name: 'dsh-desktop-next', version: '9.9.9' }))
+    const appPath = makeApp(root)
+    expect(() => writeAppBuildInfo(appPath, 'release', { repoRoot: root, packageDir: 'dsh-desktop-next' })).toThrow('cannot inspect git status')
   })
 })

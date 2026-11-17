@@ -16,6 +16,11 @@ name: Publish release assets to R2 (dl.omnimux.ai)
 # live `version-<channel>.json`. A rollback therefore means a forward-fix with a
 # higher version, never re-pointing latest at an older build.
 #
+# `mode=publish` always requires all three platform hashes and is the only mode
+# that writes `version-<channel>.json` and updates `releases/latest/*`.
+# `mode=partial` only uploads the versioned archive under `releases/v<version>/`;
+# it never touches latest aliases or channel manifests.
+#
 # Unlike the historical `r2-publish.yml` that lived under `app/.github/` (which
 # Actions never read, and which pulled artifacts from a private fork), this
 # workflow runs from the repository root and sources artifacts from this
@@ -27,8 +32,14 @@ on:
         description: 'Release version to publish (e.g. 2.0.23, leading "v" optional)'
         required: true
         type: string
+      mode:
+        description: 'publish: full three-platform latest promotion; partial: upload releases/v<version>/ only (never latest or version-*.json)'
+        required: true
+        type: choice
+        options: [publish, partial]
+        default: publish
       required_platforms:
-        description: 'Comma-separated platforms that must exist in the GitHub Release before latest is updated: mac-arm64,mac-x64,windows'
+        description: 'Platforms expected for a publish (must be exactly mac-arm64,mac-x64,windows); ignored in partial mode'
         required: false
         type: string
         default: 'mac-arm64,mac-x64,windows'
@@ -79,9 +90,17 @@ jobs:
       # Hard production guard: the CDN channel manifest only moves forward. This
       # fails before downloading or uploading anything when the requested version
       # is equal to or older than the live one, so a stale release can never
-      # surface as a production downgrade.
+      # surface as a production downgrade. A partial archive upload touches no
+      # live metadata, so it skips this gate.
       - name: Reject CDN version downgrade
+        if: ${{ inputs.mode == 'publish' }}
         run: node scripts/verify-version-advance.mjs --version "${{ steps.version.outputs.version }}"
+
+      - name: Reject incomplete platform set for publish
+        if: ${{ inputs.mode == 'publish' && inputs.required_platforms != 'mac-arm64,mac-x64,windows' }}
+        run: |
+          echo "::error::publish mode requires exactly mac-arm64,mac-x64,windows; use mode=partial for an incomplete upload"
+          exit 1
 
       - name: Download installers from the GitHub Release
         env:
@@ -95,10 +114,15 @@ jobs:
           gh release download "$tag" --repo "${{ github.repository }}" --dir release-assets --pattern '*.exe' --clobber
           echo "Downloaded assets:"
           ls -lh release-assets
-          test -n "$(find release-assets -maxdepth 1 -name '*.dmg' -print -quit)" || { echo "::error::no .dmg asset attached to $tag"; exit 1; }
-          test -n "$(find release-assets -maxdepth 1 -name '*.exe' -print -quit)" || { echo "::error::no .exe asset attached to $tag"; exit 1; }
+          if [ "${{ inputs.mode }}" = "publish" ]; then
+            test -n "$(find release-assets -maxdepth 1 -name '*.dmg' -print -quit)" || { echo "::error::no .dmg asset attached to $tag"; exit 1; }
+            test -n "$(find release-assets -maxdepth 1 -name '*.exe' -print -quit)" || { echo "::error::no .exe asset attached to $tag"; exit 1; }
+          else
+            test -n "$(find release-assets -maxdepth 1 \( -name '*.dmg' -o -name '*.exe' \) -print -quit)" || { echo "::error::no installer asset attached to $tag"; exit 1; }
+          fi
 
       - name: Generate release metadata (api/desktop/version-stable.json)
+        if: ${{ inputs.mode == 'publish' }}
         run: |
           node scripts/build-release-metadata.mjs \
             --version "${{ steps.version.outputs.version }}" \
@@ -106,9 +130,11 @@ jobs:
             --require-platforms "${{ inputs.required_platforms }}"
 
       - name: Generate plugin index
+        if: ${{ inputs.mode == 'publish' }}
         run: node scripts/build-plugin-index.mjs
 
       - name: Sync market catalog assets to R2
+        if: ${{ inputs.mode == 'publish' }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -131,13 +157,21 @@ jobs:
           fi
           # --skip-verify: the edge cache still serves the previous build until the
           # purge step below runs, so a post-upload verify here would race the cache.
-          node scripts/r2-dist-sync.mjs upload \
-            --dir release-assets \
-            --version "${{ steps.version.outputs.version }}" \
-            --skip-verify
+          if [ "${{ inputs.mode }}" = "partial" ]; then
+            node scripts/r2-dist-sync.mjs upload \
+              --dir release-assets \
+              --version "${{ steps.version.outputs.version }}" \
+              --partial \
+              --skip-verify
+          else
+            node scripts/r2-dist-sync.mjs upload \
+              --dir release-assets \
+              --version "${{ steps.version.outputs.version }}" \
+              --skip-verify
+          fi
 
       - name: Purge the CDN cache for release aliases
-        if: ${{ !inputs.skip_purge }}
+        if: ${{ inputs.mode == 'publish' && !inputs.skip_purge }}
         env:
           CLOUDFLARE_PURGE_TOKEN: ${{ secrets.CLOUDFLARE_PURGE_TOKEN }}
           CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
@@ -149,6 +183,7 @@ jobs:
           node scripts/cf-purge-cache.mjs --version "${{ steps.version.outputs.version }}"
 
       - name: Verify the published CDN
+        if: ${{ inputs.mode == 'publish' }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

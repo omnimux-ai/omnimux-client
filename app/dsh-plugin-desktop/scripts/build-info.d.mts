@@ -10,8 +10,6 @@ export interface BuildInfo {
     readonly commit: string | null
     readonly commitShort: string | null
     readonly dirty: boolean
-    readonly origin: string | null
-    readonly fork: string | null
   }
   readonly upstream: {
     readonly main: string | null

@@ -94,18 +94,25 @@ function git(cwd: string, ...args: string[]): string | null {
   return out.length > 0 ? out : null
 }
 
+/** Tracked-file status; empty output is a clean tree, null is an unreadable one. */
+function gitStatus(cwd: string): string | null {
+  const result = spawnSync('git', ['status', '--porcelain', '--untracked-files=no'], { cwd, encoding: 'utf8' })
+  if (result.status !== 0 || result.error) return null
+  return result.stdout.trim()
+}
+
 /**
  * Fail when a release would be built from anything other than a clean origin/main checkout.
  * @param repoRoot - Repository root above the desktop package.
  */
-function assertReleaseSource(repoRoot: string): void {
+export function assertReleaseSource(repoRoot: string): void {
   const fetched = spawnSync('git', ['fetch', 'origin', 'main', '--quiet'], { cwd: repoRoot, encoding: 'utf8' })
   if (fetched.error !== undefined || fetched.status !== 0) {
     throw new Error('macOS release source check: cannot refresh origin/main; release builds require network access')
   }
   const head = git(repoRoot, 'rev-parse', 'HEAD')
   const originMain = git(repoRoot, 'rev-parse', 'origin/main')
-  const status = git(repoRoot, 'status', '--porcelain', '--untracked-files=no')
+  const status = gitStatus(repoRoot)
   if (head === null || originMain === null) {
     throw new Error('macOS release source check: cannot resolve HEAD or origin/main')
   }

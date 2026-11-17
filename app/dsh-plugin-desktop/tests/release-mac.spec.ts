@@ -1,6 +1,9 @@
-import { resolve } from 'node:path'
-import { describe, expect, it, vi } from 'vitest'
-import { releaseMac, type MacReleaseOptions } from '../scripts/release-mac.ts'
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { assertReleaseSource, releaseMac, type MacReleaseOptions } from '../scripts/release-mac.ts'
 
 const DEVELOPER_ID_OUTPUT = `
   1) 0123456789ABCDEF "Developer ID Application: Mengxin Yang (TEAM123456)"
@@ -183,5 +186,67 @@ describe('macOS release command boundary', () => {
     expect(calls[0]?.args).toEqual(['scripts/prepare-agents-anywhere-release.mjs', '--verify-release'])
     expect(calls[0]?.cwd).toBe(resolve('/repo/dsh-plugin-desktop', '..'))
     expect(resetOutput).not.toHaveBeenCalled()
+  })
+})
+
+describe('release source guard', () => {
+  const roots: string[] = []
+
+  afterEach(() => {
+    for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+  })
+
+  function makeRepo(): { root: string; work: string; appDir: string } {
+    const root = mkdtempSync(join(tmpdir(), 'omnimux-release-source-'))
+    roots.push(root)
+    const remote = join(root, 'remote.git')
+    execFileSync('git', ['init', '--bare', '--quiet', remote])
+    const work = join(root, 'work')
+    mkdirSync(work)
+    execFileSync('git', ['init', '--quiet', '-b', 'main'], { cwd: work })
+    execFileSync('git', ['config', 'user.email', 'release@example.test'], { cwd: work })
+    execFileSync('git', ['config', 'user.name', 'Release Test'], { cwd: work })
+    writeFileSync(join(work, 'tracked.txt'), 'clean\n')
+    execFileSync('git', ['add', '.'], { cwd: work })
+    execFileSync('git', ['commit', '--quiet', '-m', 'initial'], { cwd: work })
+    execFileSync('git', ['remote', 'add', 'origin', remote], { cwd: work })
+    execFileSync('git', ['push', '--quiet', '-u', 'origin', 'main'], { cwd: work })
+    const appDir = join(work, 'app')
+    mkdirSync(appDir, { recursive: true })
+    return { root, work, appDir }
+  }
+
+  it('accepts a real clean origin/main checkout', () => {
+    const { work } = makeRepo()
+    expect(() => assertReleaseSource(work)).not.toThrow()
+  })
+
+  it('rejects a dirty tree before any build command runs', () => {
+    const { work, appDir } = makeRepo()
+    mkdirSync(join(appDir, 'dsh-desktop-next'), { recursive: true })
+    writeFileSync(join(work, 'tracked.txt'), 'dirty\n')
+    const calls: CommandCall[] = []
+    const { verifySource, ...base } = baseOptions({ APPLE_KEYCHAIN_PROFILE: 'dsh-notary' }, calls)
+    void verifySource
+    const options: MacReleaseOptions = {
+      ...base,
+      desktopRoot: join(appDir, 'dsh-desktop-next'),
+    }
+    expect(() => releaseMac(options)).toThrow('dirty')
+    expect(calls).toEqual([])
+  })
+
+  it('runs the default source check before building a clean checkout', () => {
+    const { appDir } = makeRepo()
+    mkdirSync(join(appDir, 'dsh-desktop-next'), { recursive: true })
+    const calls: CommandCall[] = []
+    const { verifySource, ...base } = baseOptions({ APPLE_KEYCHAIN_PROFILE: 'dsh-notary' }, calls)
+    void verifySource
+    const options: MacReleaseOptions = {
+      ...base,
+      desktopRoot: join(appDir, 'dsh-desktop-next'),
+    }
+    expect(() => releaseMac(options)).not.toThrow()
+    expect(calls).toHaveLength(5)
   })
 })

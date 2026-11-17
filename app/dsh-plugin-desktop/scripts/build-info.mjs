@@ -36,6 +36,9 @@ export function currentBuildInfo(channel, options = {}) {
   )
   const dshSpec = desktopPackage.dependencies?.['@deepseek-ai/dsh'] ?? null
   const status = gitStatus(root)
+  if (status === null) {
+    throw new Error('build-info: cannot inspect git status; refusing to record build provenance')
+  }
   return {
     product: desktopPackage.build?.productName ?? 'OmniMux',
     version: desktopPackage.version,
@@ -45,9 +48,9 @@ export function currentBuildInfo(channel, options = {}) {
       branch: git(root, 'branch', '--show-current'),
       commit: git(root, 'rev-parse', 'HEAD'),
       commitShort: git(root, 'rev-parse', '--short', 'HEAD'),
-      dirty: status !== null && status.length > 0,
-      origin: git(root, 'remote', 'get-url', 'origin'),
-      fork: git(root, 'remote', 'get-url', 'fork'),
+      dirty: status.length > 0,
+      // Remote URLs are deliberately not recorded: a public DMG must never
+      // carry a local SSH alias, a private fork address, or userinfo/PATs.
     },
     upstream: {
       main: git(root, 'rev-parse', '--short', 'origin/main'),
