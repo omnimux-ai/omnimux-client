@@ -38,7 +38,7 @@
       "version": "0.1.0",
       "path": "plugins/plugins/omnimux-browser",
       "spec": "link:../../plugins/plugins/omnimux-browser",
-      "contentHash": "sha256:7697657adc6b5fe42b9ede42d213eb2f110aab9e1ad9a53793973b9d41b38ac4"
+      "contentHash": "sha256:2ad9a251319cc50372a92a23b5fb1c1628a9496b778b63dfedea29de2792753e"
     },
     {
       "name": "omnimux-clip",
