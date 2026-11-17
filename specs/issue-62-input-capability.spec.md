@@ -108,6 +108,11 @@
   - 原断言：2 张 raw 图片仍选 `first_frame` 且只消费 1 张。
   - 必须改的理由：R2/R3 2 图选 `first_last_frame`。
   - 新期望证据：测试改为 1 张图片，保留原断言。
+- `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/videoParams/videoParamsIntegration.test.mjs` :: `R4: standby image cannot erase a single-operation duration schema or its validation`
+  - 原断言：源码字符串必须为 `upstreams: consumedUpstreams.filter(...)`，即能力判定只读已消费槽位。
+  - 必须改的理由：历史非法边未落槽（如 audio → seedance）时也必须参与 R2/R4，否则未消费媒体被丢弃、不可用 operation 仍显示可选。
+  - 新期望证据：源码使用 `videoDisplayUpstreams.filter(...)`，该列表由 consumed 与 `inputDisplay.unused` 的 ready 媒体合并，standby 仍排除。
+
 - `plugins/plugins/omnimux-workflow/src/canvas/editor/utils/slotEngine.test.mjs` :: `连线校验解耦：从图片节点拉线到图片节点（即使槽位已满或纯文生图），连线永远 valid: true`
   - 原断言：纯文生图模型接收图片也 `valid: true`。
   - 必须改的理由：R5 目标模型无任何 operation 能消费该媒体类型 → 拒绝。
