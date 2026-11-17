@@ -46,4 +46,19 @@
 
 ## 旧标准变更
 
-（本次新增测试与替换旧 guide 测试；未放宽既有断言 —— 无。）
+- `plugins/plugins/omnimux/src/client/runtime-guide-login-state.test.js` :: `*`
+  - 原断言：读取已删除的 `RuntimeGuideGate.jsx`，校验旧登录态路径。
+  - 必须改的理由：#77 删除 `RuntimeGuideGate`，改由原生 `NativeRuntimeSetup` 承担登录态。
+  - 新期望证据：`NativeRuntimeSetup.test.js` 的「provides official signed-out and signed-in actions through the auth gate」覆盖同一标签与 `ensureLogin` 路径。
+- `plugins/plugins/omnimux/src/client/runtime-guide-skip.test.js` :: `*`
+  - 原断言：旧 `RuntimeGuideGate` 的 skip 按钮源码与样式。
+  - 必须改的理由：#77 删除旧全屏 guide，skip 改为 `NativeRuntimeSetup` 的本地 dismissed。
+  - 新期望证据：`NativeRuntimeSetup.test.js` 的「skip is local only and never writes runtimeMode」。
+- `plugins/plugins/omnimux/src/client/settings-placement.test.js` :: `mounts the first-run runtime guide on the session overlay`
+  - 原断言：`index.js` 注册 `omnimux-runtime-guide` 到 `shell.overlay`。
+  - 必须改的理由：#77 改为注册 `onboarding.desktop.runtime`，旧 `shell.overlay` 注册必须消失。
+  - 新期望证据：同文件新用例「registers the native runtime setup on the onboarding child slot」，断言新 slot/id 且不再有旧 guide。
+- `plugins/plugins/omnimux/tests/e2e/runtime-guide-choice.e2e.test.mjs` :: `*`
+  - 原断言：旧 `RuntimeGuideGate` 的渲染与 key 流程。
+  - 必须改的理由：组件已删除；旧 e2e 的 DOM/交互契约不再适用。
+  - 新期望证据：`NativeRuntimeSetup.test.js` 覆盖 slot、老用户跳过、官方/Agent/Key 复用与 skip；真实 Dev 验收由独立实例执行。
