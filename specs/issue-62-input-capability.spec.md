@@ -51,7 +51,7 @@
 ## 验收标准
 
 - [ ] AC-1：视频节点连 1 图 → operation `first_frame`，`text_to_video` 灰态，参数 `adaptive`，无 chip/提示文案。
-- [ ] AC-2：断开图片 → 回 `text_to_video`，参数回该 operation 默认（历史/默认 9:16 · 5s）；无提示文案。
+- [ ] AC-2：断开图片 → 回 `text_to_video`。若连接前已有合法历史值 `9:16 · 5s`，断开后恢复 `9:16 · 5s`；无历史时按真实模型 catalog 的 `text_to_video` 默认（`muse-video` = `16:9`、`seedance-2-5` = `adaptive`，时长默认 `5s`），不得为验收强行写死 `9:16`；`DEFAULT_ASPECT_RATIO = 16:9` 仅作为 schema 缺失时的兜底，不得覆盖模型自己的 `defaultValue`。无提示文案。
 - [ ] AC-3：`seedance-2-5` 2 图 → `first_last_frame`；再连视频 → `video_multi_ref`；断开视频 → 回 `first_last_frame`。
 - [ ] AC-4：执行侧与 UI 一致：`first_frame` 请求体携带绑定图片，不含未消费媒体；`text_to_video` 请求体不携带图片。
 - [ ] AC-5：文案审计：`git diff` 无新增面向用户的解释性字符串；`wf-input-unused` 及其文案不再渲染；`aria-label`/控件名保留。

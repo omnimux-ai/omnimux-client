@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { buildModelCatalog } from '../../../../../../../omnimux/src/catalog/list.js';
 import { projectCanvasCatalog } from '../../../../../shared/generationPolicy.ts';
 import { resolveEffectiveVideoParams } from './videoParams/videoParamAdapter.ts';
+import { buildVideoParameterSelection } from './videoParams/videoParameterSelection.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolvePath(here, '../../../../../..');
@@ -80,7 +81,7 @@ test('connected image auto-selects first_frame, greys text_to_video and projects
   assert.equal(state('first_frame')?.disabled, false);
 });
 
-test('disconnecting every image returns to text_to_video with its defaults', () => {
+test('disconnecting every image without history returns to the real text_to_video defaults', () => {
   const result = effective('muse-video', { operation: 'first_frame', aspectRatio: 'adaptive', duration: 5, firstFrameUrl: 'https://example.test/frame.png' }, []);
   assert.equal(result.operation, 'text_to_video');
   assert.equal(result.aspectRatio, '16:9');
@@ -89,6 +90,28 @@ test('disconnecting every image returns to text_to_video with its defaults', () 
   const state = (id) => result.effectiveOperations.find((operation) => operation.id === id);
   assert.equal(state('first_frame')?.disabled, true);
   assert.equal(state('text_to_video')?.disabled, false);
+
+  const seedance = effective('seedance-2-5', { operation: 'first_frame', aspectRatio: 'adaptive', duration: 5 }, []);
+  assert.equal(seedance.operation, 'text_to_video');
+  assert.equal(seedance.aspectRatio, 'adaptive');
+  assert.equal(seedance.duration, 5);
+});
+
+test('disconnecting an image restores the pre-connection history 9:16 · 5s', () => {
+  const select = (params, parameterSelections, upstreams) => buildVideoParameterSelection({
+    params, parameterSelections, currentModelItem: modelItem('muse-video'), targetModelItem: modelItem('muse-video'),
+    catalog, upstreams, prompt: 'make a clip',
+  });
+  const initial = select({ model: 'muse-video', operation: 'text_to_video', aspectRatio: '9:16', duration: 5 }, undefined, []);
+  assert.equal(initial.params.operation, 'text_to_video');
+  assert.equal(initial.params.aspectRatio, '9:16');
+  const connected = select(initial.params, initial.parameterSelections, [imageUpstream('history')]);
+  assert.equal(connected.params.operation, 'first_frame');
+  assert.equal(connected.params.aspectRatio, 'adaptive');
+  const disconnected = select(connected.params, connected.parameterSelections, []);
+  assert.equal(disconnected.params.operation, 'text_to_video');
+  assert.equal(disconnected.params.aspectRatio, '9:16');
+  assert.equal(disconnected.params.duration, 5);
 });
 
 test('system-derived video_multi_ref yields to first_last_frame after video removal; explicit choice survives', () => {
