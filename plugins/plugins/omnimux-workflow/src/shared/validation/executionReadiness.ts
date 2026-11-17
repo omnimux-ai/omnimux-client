@@ -48,7 +48,7 @@ function upstreamSnapshots(nodeId: string, graph?: ExecutionReadinessGraph): Ups
   return (graph?.edges ?? []).filter((edge) => edge.target === nodeId).flatMap((edge, ordinal) => {
     const node = graph!.nodes.find((candidate) => candidate.id === edge.source);
     const source = readNodeInputSource(node ?? { id: edge.source }, graph?.workspaceId);
-    const binding = edge.data?.slotBinding as { role?: string } | undefined;
+    const binding = edge.data?.slotBinding as { role?: string; mirror?: boolean } | undefined;
     const inputs = graph?.resolvedInputs?.get(edge.source) ?? [{
       nodeId: edge.source, label: source.label, outputId: source.outputId, materialType: node ? source.materialType : String(edge.data?.feedType ?? source.materialType),
       availability: source.availability, availabilityMessage: source.message,
@@ -56,7 +56,7 @@ function upstreamSnapshots(nodeId: string, graph?: ExecutionReadinessGraph): Ups
       ...source.metadata,
     }];
     return inputs.map((input) => ({ ...input, edgeId: edge.id ?? `feed-${edge.source}-${ordinal}`,
-      role: typeof edge.data?.role === 'string' ? edge.data.role : binding?.role,
+      role: typeof edge.data?.role === 'string' ? edge.data.role : binding?.mirror === true ? undefined : binding?.role,
       targetSlot: readExplicitTargetSlot(edge.data ?? {}, edge.targetHandle),
     }));
   });

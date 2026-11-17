@@ -165,29 +165,33 @@ test('seedance-2-5: two images -> first_last_frame; add video -> video_multi_ref
   target.data.slotBindings = {};
   const img1 = importNode('img-1', 'image');
   const img2 = importNode('img-2', 'image');
-  let nodes = [img1, img2, target];
-  let edges = [edge('img-1'), edge('img-2')];
-  const first = recomputeCanvasSlots(target, { nodes, edges }, { catalog });
-  assert.equal(first.data.params.operation, 'first_last_frame');
-  assert.equal(first.data.autoOperationId, 'first_last_frame');
+  const first = planCanvasInputMutation(
+    { nodes: [img1, img2, target], edges: [] },
+    { addEdges: [{ source: 'img-1', target: 'target' }, { source: 'img-2', target: 'target' }] },
+    { catalog },
+  );
+  assert.equal(first.status, 'allowed');
+  assert.equal(first.nodes.find((node) => node.id === 'target').data.params.operation, 'first_last_frame');
+  assert.equal(first.nodes.find((node) => node.id === 'target').data.autoOperationId, 'first_last_frame');
 
   const video = importNode('video-1', 'video');
-  nodes = [...nodes, video];
-  edges = [...edges, { id: 'edge-video-1', source: 'video-1', target: 'target', data: { feedType: 'video' } }];
-  const withVideo = recomputeCanvasSlots(
-    { ...first, data: { ...first.data, params: { ...first.data.params } } },
-    { nodes, edges }, { catalog }, first, new Set(['edge-video-1']),
+  const withVideo = planCanvasInputMutation(
+    { nodes: [...first.nodes, video], edges: first.edges },
+    { addEdges: [{ source: 'video-1', target: 'target' }] },
+    { catalog },
   );
-  assert.equal(withVideo.data.params.operation, 'video_multi_ref');
-  assert.equal(withVideo.data.autoOperationId, 'video_multi_ref');
+  assert.equal(withVideo.status, 'allowed');
+  assert.equal(withVideo.nodes.find((node) => node.id === 'target').data.params.operation, 'video_multi_ref');
+  assert.equal(withVideo.nodes.find((node) => node.id === 'target').data.autoOperationId, 'video_multi_ref');
 
-  nodes = [img1, img2, { ...withVideo, data: { ...withVideo.data, params: { ...withVideo.data.params } } }];
-  edges = [edge('img-1'), edge('img-2')];
-  const withoutVideo = recomputeCanvasSlots(
-    nodes[2], { nodes, edges }, { catalog }, withVideo,
+  const withoutVideo = planCanvasInputMutation(
+    { nodes: withVideo.nodes, edges: withVideo.edges },
+    { removeEdgeIds: withVideo.edges.filter((edge) => edge.source === 'video-1').map((edge) => edge.id) },
+    { catalog },
   );
-  assert.equal(withoutVideo.data.params.operation, 'first_last_frame');
-  assert.equal(withoutVideo.data.autoOperationId, 'first_last_frame');
+  assert.equal(withoutVideo.status, 'allowed');
+  assert.equal(withoutVideo.nodes.find((node) => node.id === 'target').data.params.operation, 'first_last_frame');
+  assert.equal(withoutVideo.nodes.find((node) => node.id === 'target').data.autoOperationId, 'first_last_frame');
 });
 
 test('explicit video_multi_ref choice with two images survives video removal', () => {

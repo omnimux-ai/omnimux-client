@@ -200,7 +200,7 @@ export function mirrorCanvasSlots(node: CanvasNode, edges: Edge[], context: Canv
     const data = { ...edge.data };
     delete data.slotBinding;
     delete data.targetSlot;
-    if (slot) data.slotBinding = { slot: slot.slot, role: slot.role, type: slot.type };
+    if (slot) data.slotBinding = { slot: slot.slot, role: slot.role, type: slot.type, mirror: true };
     return { ...edge, data };
   });
 }

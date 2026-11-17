@@ -95,6 +95,7 @@ export function readExplicitTargetSlot(
   }
   const binding = edgeData.slotBinding;
   if (binding && typeof binding === 'object') {
+    if ((binding as { mirror?: unknown }).mirror === true) return undefined;
     const slot = (binding as { slot?: unknown }).slot;
     if (typeof slot === 'string' && slot.trim()) return slot.trim();
   }
