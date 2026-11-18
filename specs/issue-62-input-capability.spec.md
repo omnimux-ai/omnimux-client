@@ -83,6 +83,20 @@ A/B（真实 CanvasEditor + 真实 bundled catalog 投影 + 实际 `prepareExecu
 
 门禁（返工 head 本地实跑）：`omnimux-workflow` test 3376/3376、typecheck、build；`build:all` 11/11；`check:boundaries` 4242；`verify:stages` PASS 9；`verify:plugin-load` 13/13；`verify:product-baseline` pass；`plugins/scripts/input-capability.test.mjs` 33/33；workspace-check / bundle-lock OK；`git diff --check` OK。证据目录 `.tmp/pr64-ab-verify/{main-b2c18ee,rework-final}/`（ui.json / exec.json / host.json / scene-*.png）。
 
+## 返工 2（2026-11-18，AC-3 槽位归一）
+
+桌面端按 merged main `fd1a9f7`（含 `d5e87f4`）真机复验：6 项里 5 PASS，唯一真实缺陷是 AC-3 的自动切模式。
+
+- 场景：`seedance-2-5` 依次连 `img-a`（`first_frame`）→ `img-b`（`first_last_frame`）→ 视频。`params.operation` / `autoOperationId` 已切 `video_multi_ref`，但 `slotBindings` 仍是 `first_frame` + `last_frame` + `reference_videos`，`compat.acceptsCurrentInputs=false`、`role_conflict ×2`，6 个 operation 全 disabled。
+- 根因：`recomputeCanvasSlots` 在 V1 路径把已有 `slotBindings` 原样写回，只把新边追加进新槽；operation 换 layout 后旧模式的槽位键不会被清理，`matchOperationInputs` 读到跨模式槽位即报 `role_conflict`。
+- 修复：layout 变化导致 `slotBindings` 出现当前 operation 不存在的槽位键时，保留仍然合法的键与其占用（含用户 pin），释放旧键并用同一 `autoFillSlots` 规则重新分配到新 layout；用户显式清空 `{}` 的语义不变。删除视频后按同一规则回到 `first_last_frame`。
+
+`illegal-legacy`（历史 audio 边 → seedance 视频节点）按新口径处理，不恢复「6 个 operation 全灰」：候选音频不进入 `slotBindings`、不渲染 chip，面板按已消费供给判定，`text_to_video` 保持可选。执行侧 `executionReadiness` 仍按原始供给计算 capability（该场景与合并前 main 相同，返回 400 `operation_incompatible`）；未消费候选在执行侧的统一规则留在 #88，本切片不改。新增测试固化面板口径与「音频不占槽」。
+
+验收：`canvasSlotRecompute.multimodal.test.mjs` 断言三连后的 `slotBindings` 键（`reference_images` ×2、`reference_videos` ×1）、`acceptsCurrentInputs=true`、`readyToSubmit=true`、执行准备同源，以及删视频回 `first_last_frame`；历史音频边用例断言 `text_to_video` 可执行、音频不占槽、边保留。
+
+**返工 2 的 A/B 与门禁**：真实 CanvasEditor + 真实 catalog + `POST /executions` harness，main `fd1a9f7` 与修复 head 同场景对照；本机全量单测、typecheck、build、`build:all`、`check:boundaries`、`verify:stages`、`verify:plugin-load`、`verify:product-baseline`、`input-capability.test.mjs`、workspace / bundle-lock / `git diff --check` 全绿（证据见 PR）。
+
 ## 测试计划
 
 - 纯函数：`src/shared/validation/inputCapability.test.mjs` — 真实 16 模型 catalog（`buildModelCatalog` + `projectCanvasCatalog`）的视频/图片/音频/文本矩阵、R2b、R3 排序与 explicit preference、R6、R7 投影、fail-closed。

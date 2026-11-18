@@ -173,8 +173,19 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
   // nothing keeps the previous empty shape so untouched nodes stay byte-identical.
   const selfHealed = explicit === undefined ? autoFillSlots(feed, layout, {}, standbyIds) : undefined;
   const filledAnything = selfHealed !== undefined && Object.values(selfHealed.bindings).some((occupants) => occupants.length > 0);
+  // An operation change swaps the slot layout. Occupants still bound to slots of the
+  // previous mode are unreadable by the new operation (e.g. first_frame/last_frame after
+  // switching to video_multi_ref), so persisting them leaves the node permanently
+  // `role_conflict`. Re-assign the surviving supply into the new layout instead: keys that
+  // still exist keep their occupants (pinned choices included), stale keys are released and
+  // auto-filled into the operation's own slots. A user-cleared `{}` stays cleared.
+  const layoutSlotNames = new Set(layout.slots.map((slot) => slot.slot));
+  const renormalized = explicit && Object.keys(explicit).some((slot) => !layoutSlotNames.has(slot))
+    ? autoFillSlots(feed, layout, Object.fromEntries(Object.entries(explicit).filter(([slot]) => layoutSlotNames.has(slot))), standbyIds)
+    : undefined;
   const fill = currentVersion
-    ? (filledAnything ? selfHealed! : { bindings: explicit ?? {}, conflicts: (node.data.slotConflicts ?? []) as SlotConflict[] })
+    ? (filledAnything ? selfHealed!
+      : renormalized ?? { bindings: explicit ?? {}, conflicts: (node.data.slotConflicts ?? []) as SlotConflict[] })
     : explicit ? autoFillSlots(feed, layout, explicit, standbyIds) : hydrateSlotBindings(feed, layout, graph.edges.filter((edge) => edge.target === node.id));
   const fingerprint = effectiveSlotFingerprint(raw, layout, fill.bindings, fill.conflicts, currentVersion ? 1 : undefined);
   const match = operation && permitted ? matchOperationInputs(operation, fingerprint) : undefined;
