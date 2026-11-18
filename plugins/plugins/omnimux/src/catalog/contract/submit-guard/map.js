@@ -117,6 +117,11 @@ export function mapValidatedPlanToVendor(args) {
     logical.prompt = prompt
   }
   const extras = args.extras && typeof args.extras === 'object' ? args.extras : {}
+  // `muse-video` speaks the gateway's `openai_video` shape: the first frame
+  // travels as a bare `image` URL and the aspect ratio as `aspect_ratio`.
+  // Match the exact model id — a broad family check would also catch other
+  // video models that keep the frame-role / pixel-size contract.
+  const isMuseVideoModel = String(args.modelId ?? '').trim().toLowerCase() === 'muse-video'
   const {
     firstFrames, lastFrames, references, audioTracks, sources,
     genericImages, genericAudio, genericVideo, sourceVideos,
@@ -157,6 +162,11 @@ export function mapValidatedPlanToVendor(args) {
       }
       if (Object.keys(metadata).length) vendor.metadata = metadata
       if (opId === 'digital_human' && audioTracks[0]) vendor.audio_urls = [audioTracks[0]]
+    } else if (isMuseVideoModel && opId === 'first_frame') {
+      // `openai_video` first-frame lane: the frame is the plain `image` URL.
+      // `image_with_roles` belongs to the frame-role contract and would not be
+      // read by this model's upstream.
+      if (firstFrames[0]) vendor.image = firstFrames[0]
     } else if (opId === 'first_frame' || opId === 'first_last_frame' || opId === 'end_frame') {
       const rows = []
       if (opId !== 'end_frame' && firstFrames[0]) rows.push({ url: firstFrames[0], role: 'first_frame' })
@@ -352,6 +362,7 @@ export function mapValidatedPlanToVendor(args) {
       // field `size` is not their contract.
       const useAspectRatio = isKling || args.modelId.startsWith('minimax-h3')
         || args.modelId === 'grok-imagine-video-1-5'
+        || isMuseVideoModel
       vendor[useAspectRatio ? 'aspect_ratio' : 'size'] = extras.aspectRatio
       if (isKling) {
         vendor.metadata = { ...(vendor.metadata || {}), aspect_ratio: extras.aspectRatio }
@@ -485,6 +496,26 @@ export function mapValidatedPlanToVendor(args) {
       shapes[shapeOpId] = { ...shape, allow, require }
     }
     effectiveProfile = { ...profile, operationVendorShapes: shapes }
+  } else if (isMuseVideoModel && profile?.operationVendorShapes) {
+    // `muse-video`'s `openai_video` first_frame contract uses bare `image`, not
+    // the shared frame-role payload. Relax only this model's profile view so
+    // every other video model keeps the forbidden-field / require guard.
+    const shapes = {}
+    for (const [shapeOpId, shape] of Object.entries(profile.operationVendorShapes)) {
+      if (!shape) { shapes[shapeOpId] = shape; continue }
+      if (shapeOpId !== 'first_frame') { shapes[shapeOpId] = shape; continue }
+      const allow = Array.isArray(shape.allow) ? [...shape.allow, 'image'] : shape.allow
+      const require = Array.isArray(shape.require)
+        ? [...shape.require.filter((field) => field !== 'image_with_roles'), 'image']
+        : shape.require
+      shapes[shapeOpId] = { ...shape, allow, require }
+    }
+    effectiveProfile = {
+      ...profile,
+      vendorFields: [...(profile.vendorFields ?? []), 'image'],
+      forbiddenVendorFields: (profile.forbiddenVendorFields ?? []).filter((field) => field !== 'image'),
+      operationVendorShapes: shapes,
+    }
   }
   const checked = assertVendorBodyAllowed(vendor, effectiveProfile, opId)
   if (!checked.ok) return checked
