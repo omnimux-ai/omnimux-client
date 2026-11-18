@@ -138,7 +138,7 @@ export function RuntimeModeSection({ t, scope }) {
 /**
  * CLI Agents discovery and detail configuration panel
  */
-function AgentPanel({ t, scope, value, busy, setBusy, error, setError, notice, setNotice, onVerified, active }) {
+function AgentPanel({ t, scope, value, busy, setBusy, error, setError, notice, setNotice, onVerified, active, showEmptyState = false }) {
   const [agents, setAgents] = useState([])
   const [selectedAgent, setSelectedAgent] = useState(value.runtimeAgentId || '')
   const initialAgentModel = typeof value.runtimeAgentModel === 'string'
@@ -427,6 +427,9 @@ function AgentPanel({ t, scope, value, busy, setBusy, error, setError, notice, s
         </div>
       </div>
 
+      {showEmptyState && agents.length === 0 ? (
+        <p className="omx-agent-empty" role="status">{t('runtime.noAgents')}</p>
+      ) : null}
       <div className="omx-agent-grid">
         {agents.map((agent) => {
           const isSelected = selectedAgent === agent.id

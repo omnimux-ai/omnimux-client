@@ -9,7 +9,7 @@ import { BYOK_PROVIDERS } from '../settings/runtime-mode.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const panelSource = readFileSync(join(here, 'TextKeyPanel.jsx'), 'utf8')
-const guideSource = readFileSync(join(here, 'RuntimeGuideGate.jsx'), 'utf8')
+const guideSource = readFileSync(join(here, 'NativeRuntimeSetup.jsx'), 'utf8')
 const sectionSource = readFileSync(join(here, 'RuntimeModeSection.jsx'), 'utf8')
 
 describe('first-run text key providers', () => {

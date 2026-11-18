@@ -43,7 +43,7 @@ it.each([
   const result = view.render(String(step), String(status), String(account), Boolean(visible))
   expect(view.renderSlot).toHaveBeenCalledWith('onboarding.desktop.before', expect.anything(), expect.anything())
   expect(view.useOnboarding).not.toHaveBeenCalled()
-  expect(result.fallback.type.name).toBe('OnboardingSurface')
+  expect(result.fallback).toBeNull()
   const page = result.renderSurface('Existing Desktop wizard')
   expect(page.type(page.props).type.name).toBe('OnboardingSurface')
 })
