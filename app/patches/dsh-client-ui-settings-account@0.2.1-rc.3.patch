@@ -1,5 +1,5 @@
 diff --git a/lib/client.js b/lib/client.js
-index 623e809..77bb073 100644
+index 623e809..1581063 100644
 --- a/lib/client.js
 +++ b/lib/client.js
 @@ -904,7 +904,7 @@ window.__ModuleLoader__.load({
@@ -341,7 +341,7 @@ index 623e809..77bb073 100644
 +				renderSurface: (children) => (0, react_jsx_runtime.jsx)(DesktopOnboardingContinuationPage, { children }),
 +				renderNavigation: (options) => (0, react_jsx_runtime.jsx)(DesktopOnboardingNavigation, { ...options, t: props.t, flow: true }),
 +				renderLoading, renderNext
-+			}, { fallback: globalThis.dshDesktopSetup ? renderLoading() : renderNext() });
++			}, { fallback: globalThis.dshDesktopSetup ? null : renderNext() });
 +		}
 +		function OfficialDesktopOnboardingEntry({ useOnboarding, useAccount, setVisible, ...props }) {
  			const locale = props.t("onboardingArtworkLocale");
@@ -389,16 +389,50 @@ index 623e809..77bb073 100644
  		}
  		//#endregion
  		//#region lib/types/client/account-refresh.js
-@@ -4698,7 +4912,7 @@ window.__ModuleLoader__.load({
+@@ -4698,31 +4912,39 @@ window.__ModuleLoader__.load({
  				}
  			};
  			if (desktop) {
 -				const controller = new DesktopOnboardingController(ctx.configForms.get(DESKTOP_ONBOARDING_NAMESPACE), ctx.configForms.get("ui-chat"), (enabled) => ctx.configForms.developerTools.setEnabled(enabled), operations.hooks.account, readOnboardingApiKeyPresence, ctx.configForms.describe());
-+				const controller = new DesktopOnboardingController(ctx.configForms.get(DESKTOP_ONBOARDING_NAMESPACE), ctx.configForms.get("ui-chat"), (enabled) => ctx.configForms.developerTools.setEnabled(enabled), operations.hooks.account, () => readOnboardingApiKeyPresence(ctx), ctx.configForms.describe());
- 				ctx.effect(() => () => {
- 					controller.dispose();
- 				}, "account: desktop onboarding lifetime");
-@@ -4718,8 +4932,10 @@ window.__ModuleLoader__.load({
+-				ctx.effect(() => () => {
+-					controller.dispose();
+-				}, "account: desktop onboarding lifetime");
+-				ctx.effect(() => {
+-					const refreshCredentials = () => {
+-						controller.invalidateCredentials();
+-					};
+-					const disposers = [
+-						ctx.remote.$on("credentials/reference-updated", refreshCredentials),
+-						ctx.remote.$on("llm/adapters-updated", refreshCredentials),
+-						ctx.configForms.describe().subscribe(refreshCredentials)
+-					];
+-					return () => {
+-						for (const dispose of disposers) dispose();
+-					};
+-				}, "account: desktop credential readiness");
++				// OmniMux Desktop mounts its own runtime-only child slot; the stock
++				// Desktop fallback (no setup bridge) still owns the official flow.
++				const controller = globalThis.dshDesktopSetup === void 0
++					? new DesktopOnboardingController(ctx.configForms.get(DESKTOP_ONBOARDING_NAMESPACE), ctx.configForms.get("ui-chat"), (enabled) => ctx.configForms.developerTools.setEnabled(enabled), operations.hooks.account, () => readOnboardingApiKeyPresence(ctx), ctx.configForms.describe())
++					: void 0;
++				if (controller !== void 0) {
++					ctx.effect(() => () => {
++						controller.dispose();
++					}, "account: desktop onboarding lifetime");
++					ctx.effect(() => {
++						const refreshCredentials = () => {
++							controller.invalidateCredentials();
++						};
++						const disposers = [
++							ctx.remote.$on("credentials/reference-updated", refreshCredentials),
++							ctx.remote.$on("llm/adapters-updated", refreshCredentials),
++							ctx.configForms.describe().subscribe(refreshCredentials)
++						];
++						return () => {
++							for (const dispose of disposers) dispose();
++						};
++					}, "account: desktop credential readiness");
++				}
  				ctx.slots.inject("shell.overlay", () => ctx.slots.register({
  					name: "shell.overlay",
  					id: "desktop-onboarding",
@@ -408,7 +442,26 @@ index 623e809..77bb073 100644
 +						openDesktopLogin: () => operations.showLogin(true),
  						hooks: {
  							account: operations.hooks.account,
- 							onboarding: controller.state
+-							onboarding: controller.state
++							...controller === void 0 ? {} : { onboarding: controller.state }
+ 						},
+ 						setVisible: (visible) => {
+ 							if (snapshot.desktopOnboardingVisible !== visible) publish({
+@@ -4731,9 +4953,11 @@ window.__ModuleLoader__.load({
+ 							});
+ 						},
+ 						...nativePlatform === void 0 ? {} : { openPlatformPage: platformPageOpener(refresh) },
+-						update: (change) => controller.update(change),
+-						complete: (reason) => controller.complete(reason),
+-						retry: () => controller.retry(),
++						...controller === void 0 ? {} : {
++							update: (change) => controller.update(change),
++							complete: (reason) => controller.complete(reason),
++							retry: () => controller.retry()
++						},
+ 						track: (name, attributes) => ctx.get("productAnalytics")?.track(name, attributes)
+ 					})
+ 				}, DesktopOnboardingEntry));
 diff --git a/lib/index.js b/lib/index.js
 index 179e741..53805b4 100644
 --- a/lib/index.js
@@ -423,10 +476,10 @@ index 179e741..53805b4 100644
  	bonusAckRetryDelayMs: z.number().min(1).default(1e3),
  	bonusAckRetryMaxDelayMs: z.number().min(1).default(6e4)
 diff --git a/lib/types/client/index.d.ts b/lib/types/client/index.d.ts
-index 3952076..922885d 100644
+index 3952076..3470a29 100644
 --- a/lib/types/client/index.d.ts
 +++ b/lib/types/client/index.d.ts
-@@ -13,4 +13,17 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+@@ -13,4 +13,23 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
  export declare const inject: string[];
  /** Register account UI in Desktop and plain Web clients. @param ctx - client plugin context. */
  export declare function apply(ctx: Context): void;
@@ -443,6 +496,12 @@ index 3952076..922885d 100644
 +            renderNavigation(options: { busy: boolean; onBack?: (() => void) | undefined; onSkip(): void }): DesktopOnboardingNode;
 +            renderLoading(): DesktopOnboardingNode;
 +            renderNext(): DesktopOnboardingNode;
++        } };
++        'onboarding.desktop.runtime': { kind: 'single'; scope: 'root'; owner: {
++            accountStatus: 'loading' | 'error' | 'signed-out' | 'credential-stored';
++            openLogin(): void;
++            renderSurface(children: DesktopOnboardingNode): DesktopOnboardingNode;
++            renderNavigation(options: { busy: boolean; onBack?: (() => void) | undefined; onSkip(): void }): DesktopOnboardingNode;
 +        } };
 +    }
 +}

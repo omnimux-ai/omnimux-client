@@ -1,7 +1,7 @@
 /** Sequence existing Desktop setup content inside the official onboarding surface. */
 import { useEffect, useState, type ReactNode } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
-import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-settings-account/client'
 import { Button, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DesktopOnboardingBridge, DesktopOnboardingSnapshot } from '../setup-onboarding-bridge.ts'
@@ -29,11 +29,13 @@ export function registerDesktopOnboarding(ctx: Context, content: SetupContent): 
   const bridge = (window as unknown as { dshDesktopSetup?: DesktopOnboardingBridge }).dshDesktopSetup
   if (!bridge) return
   ctx.slots.inject('onboarding.desktop.before', () => ctx.slots.register({
-    name: 'onboarding.desktop.before', inject: () => ({ bridge, content, zh: ctx.locale.getLocale().active.startsWith('zh') }),
+    name: 'onboarding.desktop.before',
+    children: { 'onboarding.desktop.runtime': { kind: 'single', scope: 'root' } },
+    inject: () => ({ bridge, content, zh: ctx.locale.getLocale().active.startsWith('zh') }),
   }, DesktopOnboarding))
 }
 
-function DesktopOnboarding({ bridge, content, zh, renderSurface, renderLoading, renderNext, renderNavigation, accountStatus, openLogin }: PropsRuntime<'onboarding.desktop.before'> & {
+export function DesktopOnboarding({ bridge, content, zh, renderSurface, renderLoading, renderNavigation, renderSlot, accountStatus, openLogin }: PropsRuntime<'onboarding.desktop.before'> & PropsRenderSlots<'onboarding.desktop.runtime'> & {
   bridge: DesktopOnboardingBridge; content: SetupContent; zh: boolean
 }) {
   const [snapshot, setSnapshot] = useState<DesktopOnboardingSnapshot | null>()
@@ -75,11 +77,18 @@ function DesktopOnboarding({ bridge, content, zh, renderSurface, renderLoading, 
   if (error) return renderSurface(<div role="alert" style={{ padding: 48 }}>
     <p>{error}</p><Button onClick={() => { setError(''); setSnapshot(undefined); refresh(value => value + 1) }}>{zh ? '重试' : 'Retry'}</Button>
   </div>)
+  const renderRuntime = () => renderSlot('onboarding.desktop.runtime', {
+    accountStatus,
+    openLogin,
+    renderSurface,
+    renderNavigation,
+  }, { fallback: null })
   if (snapshot === undefined) return renderLoading()
-  if (snapshot === null) return renderNext()
+  if (snapshot === null) return renderRuntime()
   if (!snapshot.required && !snapshot.accountPending) {
-    // Use the official transient portal; onboarding-only styles are inactive
-    // once this continuation returns to the ordinary shell.
+    // Keep the runtime page under the transient setup-complete portal; its
+    // onboarding-only styles are inactive once this continuation returns to
+    // the ordinary shell.
     const apply = async () => {
       if (busy || !bridge.applyPending) return
       setBusy(true)
@@ -87,7 +96,7 @@ function DesktopOnboarding({ bridge, content, zh, renderSurface, renderLoading, 
       catch (cause) { setError(String(cause)) }
       finally { setBusy(false) }
     }
-    return <>{renderNext()}<Toast tone="success" holdMs={8000}
+    return <>{renderRuntime()}<Toast tone="success" holdMs={8000}
       text={zh ? '桌面设置已保存，下次重启后生效。' : 'Desktop settings saved. They will take effect after restarting.'}
       actions={[{ label: zh ? '立即重启' : 'Restart now', onClick: () => { void apply() } }]}
       onDone={() => { setSnapshot(null) }} /></>

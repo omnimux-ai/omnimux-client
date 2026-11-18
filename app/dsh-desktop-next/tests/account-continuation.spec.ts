@@ -32,36 +32,42 @@ function fixture(signedIn: boolean, required = false, failDismiss = false, overr
   const content = vi.fn((..._args: any[]) => 'Original wizard')
   registerDesktopOnboarding(ctx as any, content)
   const openLogin = vi.fn(), renderNext = vi.fn(), renderLoading = vi.fn(() => 'Loading')
+  const renderSlot = vi.fn((name: string, owner: unknown, options: { fallback?: unknown }) => ({ name, owner, fallback: options.fallback }))
   const props = { bridge, content, zh: true, accountStatus: (overrides as { accountStatus?: string }).accountStatus ?? (signedIn ? 'credential-stored' : 'signed-out'),
-    openLogin, renderNext, renderLoading, renderNavigation: vi.fn(), renderSurface: (value: unknown) => value }
+    openLogin, renderNext, renderLoading, renderSlot, renderNavigation: vi.fn(), renderSurface: (value: unknown) => value }
   const result = Component(props)
   const renderWithSnapshot = (value: unknown) => {
     hooks.values = [value, '', 0, false]
     return Component(props)
   }
-  return { bridge, content, openLogin, result, snapshot, renderNext, renderWithSnapshot }
+  return { bridge, content, openLogin, result, snapshot, renderNext, renderSlot, renderWithSnapshot }
 }
 
-it('hands a Profile with no Desktop setup pending to the official decision', async () => {
+it('hands a Profile with no Desktop setup pending to the runtime slot', async () => {
   const view = fixture(false)
   view.bridge.read.mockResolvedValue(null)
   hooks.effects[0]!()
   await vi.waitFor(() => expect(hooks.setters[0]).toHaveBeenCalledWith(null))
-  expect(view.renderWithSnapshot(null)).toBeUndefined()
-  expect(view.renderNext).toHaveBeenCalledOnce()
+  expect(view.renderWithSnapshot(null)).toMatchObject({ name: 'onboarding.desktop.runtime', fallback: null })
+  expect(view.renderSlot).toHaveBeenCalledWith('onboarding.desktop.runtime', expect.objectContaining({
+    accountStatus: 'signed-out',
+    openLogin: view.openLogin,
+  }), { fallback: null })
+  expect(view.renderNext).not.toHaveBeenCalled()
 })
 
-it('hands an explicitly skipped Desktop setup to the official decision', async () => {
+it('hands an explicitly skipped Desktop setup to the runtime slot', async () => {
   const view = fixture(false, true)
   view.bridge.read.mockResolvedValue({ ...view.snapshot, required: false, accountPending: false })
   await view.content.mock.calls[0]![2]('work')
   expect(view.bridge.finish).toHaveBeenCalledWith('work', undefined)
   expect(hooks.setters[0]).toHaveBeenCalledWith(null)
-  view.renderWithSnapshot(null)
-  expect(view.renderNext).toHaveBeenCalledOnce()
+  expect(view.renderWithSnapshot(null)).toMatchObject({ name: 'onboarding.desktop.runtime', fallback: null })
+  expect(view.renderSlot).toHaveBeenCalledWith('onboarding.desktop.runtime', expect.any(Object), { fallback: null })
+  expect(view.renderNext).not.toHaveBeenCalled()
 })
 
-it('hands an already signed-in Profile to the official flow without showing login', async () => {
+it('hands an already signed-in Profile to the runtime slot without showing login', async () => {
   const view = fixture(true)
   expect(view.result).toBe('Loading')
   hooks.effects[1]!()
@@ -111,7 +117,7 @@ it('keeps Next waiting for its existing Host restart', async () => {
   expect(view.bridge.read).not.toHaveBeenCalled()
 })
 
-it('retains pending application while an already signed-in user continues the official flow', async () => {
+it('retains pending application while an already signed-in user continues the runtime flow', async () => {
   const view = fixture(true, false, false, { restartPending: true })
   const next = { ...view.snapshot, accountPending: false }
   view.bridge.read.mockResolvedValue(next)
@@ -122,7 +128,8 @@ it('retains pending application while an already signed-in user continues the of
 
 it('applies saved settings only when the user explicitly requests the final restart', async () => {
   const view = fixture(false, false, false, { accountPending: false, restartPending: true })
-  expect(view.renderNext).toHaveBeenCalledOnce()
+  expect(view.renderSlot).toHaveBeenCalledWith('onboarding.desktop.runtime', expect.any(Object), { fallback: null })
+  expect(view.renderNext).not.toHaveBeenCalled()
   expect(view.bridge.applyPending).not.toHaveBeenCalled()
   expect(view.result.props.children[1].type).toBe('official-toast')
   view.result.props.children[1].props.actions[0].onClick()
