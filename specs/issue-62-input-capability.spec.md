@@ -10,13 +10,13 @@
 
 - 新增 `shared/validation/inputCapability.ts` 纯函数，作为「上游输入 → 可用 operation / 自动选中 / 参数投影 / blocked」的唯一判定：
   - R1 可消费：operation 有匹配已连媒体类型的 input slot。
-  - R2 可用：所有已连（ready、非待命）媒体被消费；所有 required 媒体槽位满足；R2b 媒体主输入满足。
+  - R2 可用：所有 required 媒体槽位满足；R2b 媒体主输入满足。视频首案（返工后）不再要求「所有已连媒体被消费」——容量/格式/类型不匹配的候选供给属于赋值关注点，留在图上但不阻断生成（见「返工切片」）。
   - R2b 语义表：`image_to_image` / `multi_reference` 需 ≥1 image；`video_multi_ref` 需 ≥1 媒体；`voice_clone` / `emotion_control` 需 ≥1 audio；`chat` 豁免。表只按 operation id，不按模型/品牌。
   - R3 自动切换：当前 operation 可用则保留；否则按 required 媒体槽位数降序 → 媒体槽位总数降序 → 目录顺序 → id 选；无媒体回 family 默认（视频 `text_to_video`）。
-  - R5 连线拒绝：目标模型没有任何 listed operation 能消费该媒体类型 → `model_incompatible`（复用 `edge.reject.modelIncompatible`）；有别的 operation 能消费 → 允许并同事务自动切换。
+  - R5 连线校验（返工后）：普通拖线与共享 `applyCanvasInputMutation` 只做结构校验，不再因模型类型产生 `model_incompatible`；供给边保留在图上。能力判定侧（视频）把「该模型任何 listed operation 都没有对应媒体槽位」的媒体类型排除出评分（如 Muse 上的音频），其余不可入槽的已连媒体按候选处理，不参与生成阻断。
   - R6 断开恢复：摘要重算，无媒体回默认 operation。
   - R7 参数投影：丢弃目标 operation 不存在的控制/媒体 URL 语义，再交 #55 `normalizeVideoParamsForSchema` 做值归一化。
-  - R10 模型选择：已连媒体时，无法消费该媒体的模型在视频模型选择器灰态（保留 DOM、无文案）。
+  - R10 模型选择（返工后）：只有真实不可执行（`executable === false`）的模型才灰态；候选边/未入槽媒体不再让原本可选的模型（如 Muse）变 disabled，模型菜单与 `applyCanvasInputMutation` 的 `validateModelPatches` 口径一致。
 - 视频节点 UI：`ConfigPanel` 使用 `inputCapability` 决定选中 operation；`OperationSegment` 对不可用 operation 逐项 `disabled`（灰态无 title）；`text_to_video` 等不可用项保留在 DOM 但不可点击。
 - 执行侧：`prepareExecutionSlotGraph` 先 `inputCapability` 定 operation → `paramsProjection` → #55 归一化；`executionReadiness` 同样用 `inputCapability`；payload operation 与 UI 一致，未消费媒体不进入 payload。
 - 文案：不新增任何面向用户的解释性字符串；删除 `wf-input-unused` chip、`wf-model-adaptation` hint、`wf-model-unsupported` 说明块；保留 `wf-channel-healing-notes`、`panel.reason.*`、`wf-video-validation-errors`；保留 `aria-label="生成方式"` 等 a11y 名称。
@@ -57,6 +57,31 @@
 - [ ] AC-5：文案审计：`git diff` 无新增面向用户的解释性字符串；`wf-input-unused` 及其文案不再渲染；`aria-label`/控件名保留。
 - [ ] AC-6：双向证伪——回退自动切换 → 用例红；回退灰态 → 用例红；回退参数投影 → 用例红；恢复全绿。
 - [ ] AC-7：真实 Dev 画布验收（截图 + DOM + 请求 payload），不创建真实付费任务。
+
+## 返工切片（2026-11-18，视频首案）
+
+原实现把「上游供给 = 生成输入」当成硬约束：模型类型不匹配直接拒绝连线/变更，未入槽媒体并入能力判定并阻断生成，模型菜单因候选边灰态。真实画布 A/B 暴露 Muse 两张 ready 图 + prompt 无法提交。返工改为复用 #88 的候选/已入槽规则，不新增按模型/场景的分散特判。
+
+- `shared/validation/compatKernel.ts`：`matchOperationInputs(op, fingerprint, { ignoreUnused })`；默认保持严格，`ignoreUnused` 只忽略 `slot_capacity` / `mime_unsupported` / `size_exceeded` / `duration_exceeded`，`role_conflict` / `operation_incompatible` 仍拒绝。
+- `shared/validation/inputCapability.ts`：视频能力判定启用 `ignoreUnused`；视频模型任何 listed operation 都不消费的媒体类型（如 Muse 音频）不进入评分；其他输出类型保持原严格矩阵。
+- `canvas/editor/utils/connectionValidator.ts`、`shared/graph/canvasInputMutationGateway.ts`：删除模型媒体类型的 `model_incompatible` 拒绝，只保留结构校验。
+- `ConfigPanel/index.tsx`：`videoDisplayUpstreams = consumedUpstreams`（不再把 `inputDisplay.unused` 并回能力输入）；`buildFilteredModelOptions` 用 `consumedFingerprint`；`strictVerdict` 参数校验改用 `videoEffectiveParams`。
+
+不做：完整全节点迁移、#88 严格槽位选择器（MIME/声明扩展名/剩余名额/本地导入）。
+
+A/B（真实 CanvasEditor + 真实 bundled catalog 投影 + 实际 `prepareExecutionSlotGraph → nodeExecutors → materialGatewayExecutor → resolveCanvasSubmission` + 实际 `POST /omnimux-workflow/api/workspaces/:id/executions`，本地 mock gateway，0 付费任务）：
+
+| 场景 | 新 main `b2c18ee` | 返工 head |
+| --- | --- | --- |
+| Muse 两图 + prompt | 200，仅首帧，但渲染「图片 · 卡槽已满，不会被使用」 | 200，仅首帧（`img-a`），无 unused 卡 |
+| Muse 空图 | `text_to_video`，`16:9` | `text_to_video`，`16:9` |
+| Muse 旧音频边 | 200 首帧，但渲染「音频 · 当前生成方式不支持该素材」 | 200 首帧，音频边保留、无 unused、无阻断 |
+| Muse 音频候选 | 拖线放行 + unused 文案 | 拖线放行，无 unused，模型菜单 Muse 不 disabled |
+| 切 Seedance `video_multi_ref` 再切回 | 回 Muse 后带 unused 文案 | 回 Muse 首帧可用、无 unused |
+| Seedance 两图 | `video_multi_ref`，仅 `img-a` 入 payload | `first_last_frame`，`img-a`→首帧、`img-b`→尾帧 |
+| 同图两槽 | `first_last_frame` 缺尾帧 → 400 `min_unsatisfied` | 同左（真实阻断，不是候选阻断） |
+
+门禁（返工 head 本地实跑）：`omnimux-workflow` test 3376/3376、typecheck、build；`build:all` 11/11；`check:boundaries` 4242；`verify:stages` PASS 9；`verify:plugin-load` 13/13；`verify:product-baseline` pass；`plugins/scripts/input-capability.test.mjs` 33/33；workspace-check / bundle-lock OK；`git diff --check` OK。证据目录 `.tmp/pr64-ab-verify/{main-b2c18ee,rework-final}/`（ui.json / exec.json / host.json / scene-*.png）。
 
 ## 测试计划
 
@@ -112,12 +137,12 @@
 - `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/videoParams/videoParamsIntegration.test.mjs` :: `R4: standby image cannot erase a single-operation duration schema or its validation`
   - 原断言：源码字符串必须为 `upstreams: consumedUpstreams.filter(...)`，即能力判定只读已消费槽位。
   - 必须改的理由：历史非法边未落槽（如 audio → seedance）时也必须参与 R2/R4，否则未消费媒体被丢弃、不可用 operation 仍显示可选。
-  - 新期望证据：源码使用 `videoDisplayUpstreams.filter(...)`，该列表由 consumed 与 `inputDisplay.unused` 的 ready 媒体合并，standby 仍排除。
+  - 新期望证据（返工后覆盖）：源码恢复 `upstreams: consumedUpstreams.filter(...)`；`videoDisplayUpstreams` 仅等于已消费槽位，未入槽候选不参与 R2/R4，standby 仍排除。
 
 - `plugins/plugins/omnimux-workflow/src/canvas/editor/utils/slotEngine.test.mjs` :: `连线校验解耦：从图片节点拉线到图片节点（即使槽位已满或纯文生图），连线永远 valid: true`
   - 原断言：纯文生图模型接收图片也 `valid: true`。
   - 必须改的理由：R5 目标模型无任何 operation 能消费该媒体类型 → 拒绝。
-  - 新期望证据：场景 B `valid: false`、`reasonCode: 'model_incompatible'`；容量满场景仍 `valid: true`。
+  - 新期望证据（返工后覆盖）：场景 B 恢复 `valid: true`、`reasonCode: undefined`；普通拖线只做结构校验，容量满同样 `valid: true`。测试名同步为「槽位满与纯文生图模型的图片供给都保持 valid」。
 - `plugins/plugins/omnimux-workflow/src/shared/generationPolicy.hub.test.mjs` :: `same-model valid operation recommendations initialize new nodes while invalid recommendations are removed (#3312)`
   - 原断言：新视频节点按目录推荐 `video_multi_ref`。
   - 必须改的理由：R6 无媒体视频默认 `text_to_video`；`video_multi_ref` 无媒体不可用。
@@ -125,7 +150,7 @@
 - `plugins/plugins/omnimux-workflow/src/shared/graph/canvasInputMutationGateway.compat.test.mjs` :: `new image supply cannot switch prompt-only model or operation`
   - 原断言：图片连接到纯文生图模型 allowed 且忽略。
   - 必须改的理由：R5 拒绝无图片槽位模型。
-  - 新期望证据：`plan.status = 'rejected'`、`reasonCode = 'model_incompatible'`。
+  - 新期望证据（返工后覆盖）：`plan.status = 'allowed'`、边保留（`plan.edges.length === 1`）、`slotBindings = {}`；测试名同步为「kept as unused」。
 - `plugins/plugins/omnimux-workflow/src/shared/validation/executionReadiness.test.mjs` :: `stale explicit operation blocks readiness instead of falling through to the gateway`
   - 原断言：stale operation 阻断。
   - 必须改的理由：R3/R6 当前 operation 不可用时自动切换到可用候选。
