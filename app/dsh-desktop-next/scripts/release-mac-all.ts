@@ -11,7 +11,7 @@ import {
 } from '../../dsh-plugin-desktop/scripts/release-preflight.ts'
 import { assertReleaseSource, macReleaseArchitecture } from '../../dsh-plugin-desktop/scripts/release-mac.ts'
 import { expectedNextVersion, type NextRuntimeArch } from './prepare-runtime.ts'
-import { packagingStepSync } from './packaging-step.ts'
+import { packagingStep, packagingStepSync } from './packaging-step.ts'
 import { verifyNextMacEntitlements } from './verify-mac-entitlements.ts'
 
 const desktopRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
@@ -152,11 +152,13 @@ async function buildApp(arch: NextRuntimeArch, outputRoot: string, runRoot: stri
   const outputDir = join(outputRoot, arch)
   const childEnv = childEnvironment(arch, outputRoot, runRoot)
   await runChild(process.execPath, ['scripts/package.ts', 'mac-app'], desktopRoot, childEnv, `build ${arch} app`)
-  const app = findDirectories(outputDir, '.app')[0]
-  if (app === undefined) throw new Error(`build ${arch} app: no .app found below ${outputDir}`)
+  const app = findDirectories(outputDir, '.app').find(path => existsSync(join(path, 'Contents', 'MacOS', 'OmniMux')))
+  if (app === undefined) throw new Error(`build ${arch} app: no OmniMux.app found below ${outputDir}`)
   const slices = arch === 'arm64' ? ['arm64'] : ['x86_64']
-  runSync('codesign', ['--verify', '--deep', '--strict', '--verbose=2', app], desktopRoot, childEnv, `verify ${arch} signature`)
-  verifyNextMacEntitlements(app, undefined, slices)
+  await packagingStep(`sign:app:${arch}`, async () => {
+    runSync('codesign', ['--verify', '--deep', '--strict', '--verbose=2', app], desktopRoot, childEnv, `verify ${arch} signature`)
+    verifyNextMacEntitlements(app, undefined, slices)
+  })
   console.log(`Verified ${arch} signed application and entitlements: ${app}`)
   return app
 }
@@ -164,8 +166,8 @@ async function buildApp(arch: NextRuntimeArch, outputRoot: string, runRoot: stri
 async function submitAndWait(arch: NextRuntimeArch, appPath: string, outputDir: string, env: NodeJS.ProcessEnv): Promise<{ readonly submissionId: string; readonly zip: string }> {
   const zip = join(outputDir, `OmniMux-${version}-${arch}.zip`)
   runSync('ditto', ['-c', '-k', '--keepParent', appPath, zip], desktopRoot, env, `zip ${arch}`)
-  const submitted = await runCapture('xcrun', ['notarytool', 'submit', '--no-wait', '--output-format', 'json', zip,
-    '--keychain-profile', notaryProfile], desktopRoot, env, `notarize submit ${arch}`)
+  const submitted = await packagingStep(`notary:submit:${arch}`, () => runCapture('xcrun', ['notarytool', 'submit', '--no-wait', '--output-format', 'json', zip,
+    '--keychain-profile', notaryProfile], desktopRoot, env, `notarize submit ${arch}`))
   let submissionId: string
   try {
     const parsed = JSON.parse(submitted.stdout) as { id?: unknown }
@@ -175,15 +177,19 @@ async function submitAndWait(arch: NextRuntimeArch, appPath: string, outputDir: 
     throw new Error(`notarize submit ${arch}: unexpected notarytool output: ${submitted.stdout.trim()}`, { cause: error })
   }
   console.log(`Notarization submitted for ${arch}: ${submissionId}`)
-  await runCapture('xcrun', ['notarytool', 'wait', submissionId, '--keychain-profile', notaryProfile], desktopRoot, env, `notarize wait ${arch}`)
-  runSync('xcrun', ['stapler', 'staple', appPath], desktopRoot, env, `staple ${arch}`)
+  await packagingStep(`notary:wait:${arch}`, () => runCapture('xcrun', ['notarytool', 'wait', submissionId, '--keychain-profile', notaryProfile], desktopRoot, env, `notarize wait ${arch}`))
+  await packagingStep(`notary:staple:${arch}`, async () => {
+    runSync('xcrun', ['stapler', 'staple', appPath], desktopRoot, env, `staple ${arch}`)
+  })
   return { submissionId, zip }
 }
 
 async function buildDmgAndVerify(arch: NextRuntimeArch, appPath: string, outputDir: string, env: NodeJS.ProcessEnv): Promise<string> {
   const dmg = join(outputDir, `OmniMux-${version}-${arch}.dmg`)
-  runSync('hdiutil', ['create', '-volname', 'OmniMux', '-srcfolder', appPath, '-ov', '-format', 'UDZO', dmg], desktopRoot, env, `dmg ${arch}`)
-  await runChild(process.execPath, ['scripts/verify-mac-release.ts', outputDir], desktopRoot, env, `verify ${arch} dmg`)
+  await packagingStep(`dmg:build:${arch}`, async () => {
+    runSync('hdiutil', ['create', '-volname', 'OmniMux', '-srcfolder', appPath, '-ov', '-format', 'UDZO', dmg], desktopRoot, env, `dmg ${arch}`)
+  })
+  await packagingStep(`verify:mac:${arch}`, () => runChild(process.execPath, ['scripts/verify-mac-release.ts', outputDir], desktopRoot, env, `verify ${arch} dmg`))
   return dmg
 }
 

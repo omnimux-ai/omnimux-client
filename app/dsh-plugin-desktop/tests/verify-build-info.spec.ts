@@ -50,6 +50,17 @@ describe('release build-info verification', () => {
     writeFileSync(join(root, 'tracked.txt'), 'dirty\n')
     expect(() => verifyAppBuildInfo(appPath, { repoRoot: root, packageDir: 'dsh-desktop-next' })).toThrow('dirty')
   })
+
+  it('can validate a clean candidate commit without pretending it is origin/main', () => {
+    const root = makeRepo()
+    const appPath = makeApp(root)
+    writeFileSync(join(root, 'candidate-only.txt'), 'candidate\n')
+    execFileSync('git', ['add', 'candidate-only.txt'], { cwd: root })
+    execFileSync('git', ['commit', '--quiet', '-m', 'candidate'], { cwd: root })
+    writeAppBuildInfo(appPath, 'release', { repoRoot: root, packageDir: 'dsh-desktop-next' })
+    expect(() => verifyAppBuildInfo(appPath, { repoRoot: root, packageDir: 'dsh-desktop-next' })).toThrow('not origin/main')
+    expect(verifyAppBuildInfo(appPath, { repoRoot: root, packageDir: 'dsh-desktop-next', allowNonOriginMain: true }).repo?.commit).toBeTruthy()
+  })
 })
 
 describe('build-info provenance safety', () => {
