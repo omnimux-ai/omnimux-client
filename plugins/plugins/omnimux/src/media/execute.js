@@ -6,7 +6,7 @@ import { classifyQuotaFailure } from '../errors/quota-classifier.js'
 import { downloadMediaFile } from './job.js'
 import { createOpenAiMediaRuntime, pollOpenAiMediaTask, withRoutingGroup } from './protocols/openai-media.js'
 import { parseMediaConfig, resolveMediaAuth, resolveMediaRoute } from './route.js'
-import { mapOmnimuxInput, pickMediaUrl, taskPathFor } from './vendors/omnimux.js'
+import { mapOmnimuxInput, pickMediaUrl, taskPathFor, taskPollPathFor } from './vendors/omnimux.js'
 import {
   assertGuardOutput,
   assertGuardSubmit,
@@ -861,7 +861,7 @@ export async function finishMediaTask(capability, route, input) {
     capability,
     // Submit and reconcile must address the same task route; an audio model
     // served on the shared video task endpoint carries its own path.
-    taskPath: input.taskPath ?? taskPathFor(capability, route.modelId),
+    taskPath: input.taskPath ?? taskPollPathFor(capability, route.modelId),
     signal: input.signal,
     // This is the reconcile entry a canvas node reports through, so it opts into
     // the detail read that names a terminal failure's cause (Issue #2092).

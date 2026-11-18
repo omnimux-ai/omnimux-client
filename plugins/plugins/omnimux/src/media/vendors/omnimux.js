@@ -18,6 +18,15 @@ export const SPEECH_PATH = 'audio/speech'
 export const AUDIO_VIDEO_TASK_MODEL_IDS = Object.freeze(['index-tts', 'suno', 'suno-sounds'])
 
 /**
+ * Video-capability models served on the newer `/v1/videos` task endpoint.
+ * `muse-video` uses the `openai_video` contract: submit and poll both address
+ * `/v1/videos` (not the legacy `/v1/video/generations` route). Keep this list
+ * exact — the other video models stay on the legacy route.
+ */
+export const MUSE_VIDEO_TASK_MODEL_IDS = Object.freeze(['muse-video'])
+export const MUSE_VIDEO_TASK_PATH = 'videos'
+
+/**
  * Audio-capability models served by the channel's AutoDL task lane
  * (`/v1/tasks/*`). Their submit path carries an extra `autodl` segment that the
  * poll endpoint does not, so submit and poll paths are recorded separately.
@@ -46,6 +55,7 @@ export const AUTODL_POLL_PATH = 'tasks'
  */
 export function taskPathFor(capability, modelId) {
   if (modelId && (AUDIO_AUTODL_TASK_MODEL_IDS.includes(String(modelId)) || AUTODL_VIDEO_TASK_MODEL_IDS.includes(String(modelId)))) return AUTODL_SUBMIT_PATH
+  if (modelId && MUSE_VIDEO_TASK_MODEL_IDS.includes(String(modelId))) return MUSE_VIDEO_TASK_PATH
   if (modelId && AUDIO_VIDEO_TASK_MODEL_IDS.includes(String(modelId))) return TASK_PATH.video
   return TASK_PATH[capability]
 }
