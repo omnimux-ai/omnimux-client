@@ -92,18 +92,20 @@ async function verifyFinalArtifacts(result: { outDir: string }): Promise<string[
         continue
       }
     }
+    // Pay one Electron Node-mode cold start before the timed Host smoke. On an Apple Silicon
+    // host the x64 archive runs through Rosetta, where four simultaneous first launches can
+    // starve the Host startup timer even though each smoke passes on its own.
+    await runPackagedNode(path, ['--input-type=module', '-e', `
+      import { createRequire } from 'node:module';
+      import { pathToFileURL } from 'node:url';
+      const root = process.argv[1];
+      const require = createRequire(root + '/package.json');
+      if (require('./package.json').name !== 'dsh-desktop-next') throw new Error('Wrong packaged application');
+      await import(pathToFileURL(root + '/lib/profiles.js'));
+      await import(pathToFileURL(root + '/lib/desktop-runtime.js'));
+      require.resolve('@deepseek-ai/dsh-web-frontend/dist/index.html');
+    `, root], 30_000, 'Packaged Next runtime failed')
     await Promise.all([
-      // Electron's Node mode reads the archive like a directory, as the Host and CLI will.
-      runPackagedNode(path, ['--input-type=module', '-e', `
-        import { createRequire } from 'node:module';
-        import { pathToFileURL } from 'node:url';
-        const root = process.argv[1];
-        const require = createRequire(root + '/package.json');
-        if (require('./package.json').name !== 'dsh-desktop-next') throw new Error('Wrong packaged application');
-        await import(pathToFileURL(root + '/lib/profiles.js'));
-        await import(pathToFileURL(root + '/lib/desktop-runtime.js'));
-        require.resolve('@deepseek-ai/dsh-web-frontend/dist/index.html');
-      `, root], 30_000, 'Packaged Next runtime failed'),
       // The native computer-use driver opens its library with the system loader; the Host's resolver must answer with the unpacked copy.
       runPackagedNode(path, [join(desktopRoot, 'scripts', 'packaged-driver-smoke.mjs'), root], 120_000, 'Packaged computer-use driver smoke failed'),
       // The badge skill announces its asset directory to the model; the Host's resolver must make it physical.
