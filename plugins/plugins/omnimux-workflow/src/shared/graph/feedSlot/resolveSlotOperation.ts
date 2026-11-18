@@ -6,6 +6,7 @@ import {
   resolveModelView,
   type UpstreamFingerprint,
 } from '../../validation/compatKernel.ts';
+import { buildInputCapability } from '../../validation/inputCapability.ts';
 import { buildEffectiveOpsUiState } from '../../validation/operationUi.ts';
 
 /** Legacy omitted operation uses the existing selection policy; explicit intent is never replaced. */
@@ -33,6 +34,21 @@ export function resolveSlotOperation(
       );
       if (multimodal) return multimodal.id;
     }
+  }
+
+  // Epic #63: video operations are derived from the connected media first; a
+  // saved operation is only kept while it remains usable (R3).
+  if (outputType === 'video') {
+    const capability = buildInputCapability({
+      catalog,
+      modelId,
+      outputType: 'video',
+      fingerprint,
+      ...(typeof operation === 'string' && operation.trim()
+        ? { preferredOperationId: operation.trim() }
+        : {}),
+    });
+    if (capability.selectedOperationId) return capability.selectedOperationId;
   }
 
   if (typeof operation === 'string' && operation.trim()) return operation.trim();

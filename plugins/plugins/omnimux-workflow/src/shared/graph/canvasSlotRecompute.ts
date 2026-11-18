@@ -3,6 +3,7 @@ import type { CanvasInputMutationState, CanvasMutationRuntimeContext, CanvasNode
 import type { MaterialType } from '../canvasTypes.ts';
 import { buildCanvasUpstreamFingerprint, readCanvasParams } from './canvasInputSources.ts';
 import { buildContractView, buildUpstreamFingerprint, isMediaInputType, matchOperationInputs, planAutoAdaptation, resolveModelView } from '../validation/compatKernel.ts';
+import { buildInputCapability } from '../validation/inputCapability.ts';
 import { autoFillSlots, deriveSlotLayout, hydrateSlotBindings, type SlotBindings, type SlotConflict, type SlotOccupant } from './feedSlot/index.ts';
 import { effectiveSlotFingerprint, feedFromFingerprint } from './feedSlot/effectiveFingerprint.ts';
 import { resolveSlotOperation } from './feedSlot/resolveSlotOperation.ts';
@@ -43,7 +44,9 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
     : undefined;
   // 系统写入的生成方式不是用户的创作选择：节点数据 autoOperationId 记录来源（string = 系统推导，
   // null = 用户拍板，undefined = 历史节点来源未知，仅当模式恰好等于该产出类型的目录推荐值时才按系统写入对待）。
-  const autoOperationId = node.data.autoOperationId;
+  const autoOperationId = typeof node.data.autoOperationId === 'string' || node.data.autoOperationId === null
+    ? node.data.autoOperationId as string | null
+    : undefined;
   const systemChosen = autoOperationId === undefined
     ? Boolean(savedOperation && savedOperation === recommendedId)
     : autoOperationId === savedOperation;
@@ -51,7 +54,28 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
   const strandedBySupply = Boolean(savedOp && !matchOperationInputs(savedOp, raw).accepts
     && raw.assets.some((asset) => isMediaInputType(asset.type) && asset.availability === 'ready'));
   let autoDerived: string | undefined;
-  if ((!savedOperation || legacyChat || (systemChosen && strandedBySupply)) && model) {
+  const preferredOperationId = systemChosen ? undefined : savedOperation;
+  if (outputType === 'video' && model) {
+    // Epic #63: video operation follows the connected media. The capability
+    // layer keeps the saved operation only while it is usable (R3), switches
+    // to the deterministic best candidate otherwise, and falls back to the
+    // family default after every media edge is removed (R6).
+    const capability = buildInputCapability({
+      catalog,
+      modelId: model.id,
+      outputType: 'video',
+      fingerprint: raw,
+      ...(preferredOperationId ? { preferredOperationId } : {}),
+      autoOperationId,
+      ignoredEdgeIds: Array.isArray(node.data.slotStandbyEdgeIds)
+        ? (node.data.slotStandbyEdgeIds as string[])
+        : [],
+    });
+    if (capability.selectedOperationId && capability.selectedOperationId !== savedOperation) {
+      params.operation = capability.selectedOperationId;
+      autoDerived = capability.selectedOperationId;
+    }
+  } else if ((!savedOperation || legacyChat || (systemChosen && strandedBySupply)) && model) {
     // A node without a saved mode starts in the catalog's recommended one — the mode that
     // consumes upstream media, so its slots exist from the first render. A saved mode, an
     // explicit connection or a user pick is never replaced here.
@@ -71,6 +95,7 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
   }
   const priorParams = previous ? readCanvasParams(previous) : {};
   const modeChanged = previous && (priorParams.operation !== params.operation || priorParams.model !== params.model);
+  const standbyIds = Array.isArray(node.data.slotStandbyEdgeIds) ? node.data.slotStandbyEdgeIds.filter((id): id is string => typeof id === 'string') : [];
   // A V1 occupant is authoritative only while its source node and edge still exist on the
   // canvas. Unpinned (auto-filled) occupants whose supply vanished are junk that must be
   // pruned here, otherwise the stale binding keeps re-persisting and the node stays blocked
@@ -106,12 +131,29 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
         // one slot that consumes every new text source as ordered body text;
         // append it instead of letting max=1 replace the earlier source.
         const textSlot = layout.slots.find((slot) => slot.type === 'text' && slot.composition);
-        if (asset.type !== 'text' || !textSlot || !explicit || Object.keys(explicit).length === 0) continue;
-        const values = explicit[textSlot.slot] ?? [];
-        if (values.some((occupant) => occupant.edgeId === edge.id && occupant.sourceNodeId === asset.sourceNodeId)) continue;
-        const ordinal = values.reduce((max, item) => Math.max(max, item.ordinal ?? -1), -1) + 1;
-        explicit[textSlot.slot] = [...values, { sourceNodeId: asset.sourceNodeId, edgeId: edge.id,
-          outputId: asset.outputId, ordinal, role: textSlot.role, pinned: true }];
+        if (asset.type === 'text') {
+          if (!textSlot || !explicit || Object.keys(explicit).length === 0) continue;
+          const values = explicit[textSlot.slot] ?? [];
+          if (values.some((occupant) => occupant.edgeId === edge.id && occupant.sourceNodeId === asset.sourceNodeId)) continue;
+          const ordinal = values.reduce((max, item) => Math.max(max, item.ordinal ?? -1), -1) + 1;
+          explicit[textSlot.slot] = [...values, { sourceNodeId: asset.sourceNodeId, edgeId: edge.id,
+            outputId: asset.outputId, ordinal, role: textSlot.role, pinned: true }];
+          continue;
+        }
+        // Media: a newly connected supply edge is a new user action and must
+        // land in a free accepting slot. Existing explicit choices stay put;
+        // only the new edge is copied from the auto-fill plan (a cleared slot
+        // must not be silently refilled from older supply).
+        if (!explicit) continue;
+        const planned = autoFillSlots(feed, layout, explicit, standbyIds);
+        for (const [slotName, occupants] of Object.entries(planned.bindings)) {
+          for (const occupant of occupants) {
+            if (occupant.edgeId !== edge.id) continue;
+            const current = explicit[slotName] ?? [];
+            if (current.some((item) => item.edgeId === occupant.edgeId && item.sourceNodeId === occupant.sourceNodeId)) continue;
+            explicit[slotName] = [...current, occupant];
+          }
+        }
         continue;
       }
       if (!asset.targetSlot && !asset.role) continue;
@@ -124,7 +166,6 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
         : slot?.max === 1 ? [occupant] : [...(explicit[hint] ?? []), occupant];
     }
   }
-  const standbyIds = Array.isArray(node.data.slotStandbyEdgeIds) ? node.data.slotStandbyEdgeIds.filter((id): id is string => typeof id === 'string') : [];
   // A missing V1 `slotBindings` means "not initialized yet", not "the user cleared every slot": the display
   // side self-heals such a node by auto-filling, so the store must persist that same fill. Leaving `{}` behind
   // splits the two readers — the panel shows a filled slot while submission skips the fill and drops the asset
@@ -159,7 +200,7 @@ export function mirrorCanvasSlots(node: CanvasNode, edges: Edge[], context: Canv
     const data = { ...edge.data };
     delete data.slotBinding;
     delete data.targetSlot;
-    if (slot) data.slotBinding = { slot: slot.slot, role: slot.role, type: slot.type };
+    if (slot) data.slotBinding = { slot: slot.slot, role: slot.role, type: slot.type, mirror: true };
     return { ...edge, data };
   });
 }

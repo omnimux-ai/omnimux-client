@@ -1,9 +1,9 @@
 /**
  * Video Param Segment Controls (Issue 467 / W2, 2026-09-07 全模态收敛 / T03).
  *
- * OperationSegment is driven by Catalog DTO effective operations (open string
- * ids + labels). Unsupported ops are not rendered (Hide, Don't Grey).
- * effectiveOps ≤ 1 → return null (no DOM).
+ * OperationSegment is driven by Catalog DTO operations (open string ids +
+ * labels). Operations that cannot consume the connected media remain in the
+ * DOM as disabled greys (Epic #63 / R4); ≤1 operation → return null (no DOM).
  *
  * 控件选型走 resolveControlKind 矩阵：长标签 / 单行溢出 → 2×N Choice Tile
  * （nowrap 零断词）；短标签 → Segment。有声从通栏 Segment 降级为
@@ -82,6 +82,8 @@ export function OperationSegment({
     value: op.id,
     // Issue #4103：与底栏摘要共用 resolveOperationLabel，禁止各自兜底成 id。
     label: resolveOperationLabel({ id: op.id, label: op.label }, locale),
+    // Epic #63 / R4：不可用的生成方式只呈现灰态，不携带任何解释性 title。
+    disabled: op.disabled === true,
   }));
 
   const kind = resolveControlKind({

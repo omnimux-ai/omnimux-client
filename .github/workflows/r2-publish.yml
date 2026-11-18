@@ -129,6 +129,19 @@ jobs:
             --dir release-assets \
             --require-platforms "${{ inputs.required_platforms }}"
 
+      # The plugin-index generator imports the market-index validator from
+      # app/dsh-desktop-next/node_modules, so the desktop workspace must be
+      # installed before this step runs on the clean release runner. Reuse the
+      # same Corepack/Yarn setup as release.yml; the immutable install keeps the
+      # committed lockfile authoritative.
+      - name: Enable Corepack
+        if: ${{ inputs.mode == 'publish' }}
+        run: corepack enable
+
+      - name: Install desktop dependencies
+        if: ${{ inputs.mode == 'publish' }}
+        run: corepack yarn install --immutable
+
       - name: Generate plugin index
         if: ${{ inputs.mode == 'publish' }}
         run: node scripts/build-plugin-index.mjs

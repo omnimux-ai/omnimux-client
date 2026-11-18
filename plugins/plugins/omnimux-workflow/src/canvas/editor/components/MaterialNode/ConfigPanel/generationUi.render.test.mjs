@@ -191,9 +191,9 @@ test('JSON document upstream renders a file card and invalid JSON blocks generat
   assert.match(invalid, /aria-disabled="true"/);
 });
 
-test('automatic model adaptation is a status message, not an error', () => {
+test('automatic model adaptation hint stays out of the DOM (Epic #63)', () => {
   const html = render(node('text',{prompt:'Explain',compat:{status:'ready',adaptation:{toModelLabel:'Gemini 3.8 Flash',inputTypes:['video']}}}),fixture('text'));
-  assert.match(html,/role="status" data-testid="wf-model-adaptation"/);
-  assert.match(html,/已切换至 Gemini 3.8 Flash，以处理视频输入/);
-  assert.doesNotMatch(html,/role="alert"/);
+  // 输入适配由选中态/灰态表达，旧 wf-model-adaptation 提示块已删除。
+  assert.doesNotMatch(html,/wf-model-adaptation/);
+  assert.doesNotMatch(html,/已切换至 Gemini 3.8 Flash，以处理视频输入/);
 });

@@ -15,6 +15,7 @@ import type {
   OperationContractDto,
 } from '../api.ts';
 import { resolveOperationLabel } from './operationLabels.ts';
+import { modelHasUsableOperation } from './inputCapability.ts';
 import {
   buildContractView,
   buildUpstreamFingerprint,
@@ -50,6 +51,8 @@ export interface OperationUiOption {
   bindings: OperationMatch['bindings'];
   /** True when this operation absorbs the current fingerprint. */
   effective: boolean;
+  /** R4: this mode cannot consume the connected inputs and must render grey. */
+  disabled?: boolean;
   /** Ready-to-submit for this operation under the current fingerprint. */
   ready: boolean;
   /** Blocking readiness reasons for this operation. */
@@ -89,6 +92,8 @@ export interface FilteredModelOption {
   subtitle?: string;
   family?: string;
   aliases?: string[];
+  /** R10: the model cannot consume the currently connected media; render grey, no copy. */
+  inputIncompatible?: boolean;
   /**
    * Gateway lines of this model, taken verbatim from the hub catalog row.
    *
@@ -256,11 +261,16 @@ function matchToOption(
  */
 export function readPreferredOperationId(
   params: Record<string, unknown> | null | undefined,
+  autoOperationId?: string | null,
 ): string | undefined {
   if (!params || typeof params !== 'object') return undefined;
-  return typeof params.operation === 'string' && params.operation.trim()
+  const operation = typeof params.operation === 'string' && params.operation.trim()
     ? params.operation.trim()
     : undefined;
+  if (!operation) return undefined;
+  // A system-written operation (recorded by node data) is not a user choice.
+  if (typeof autoOperationId === 'string' && autoOperationId.trim() && operation === autoOperationId.trim()) return undefined;
+  return operation;
 }
 
 /**
@@ -569,6 +579,12 @@ export function buildFilteredModelOptions(args: {
    * lists them and the transcription node never loses them.
    */
   tool?: string;
+  /**
+   * R10: keep catalog models that cannot consume the connected media in the list,
+   * marked `inputIncompatible` so the picker can render a grey (copy-free) row.
+   * Default false preserves the historical Hide-Don't-Grey behaviour elsewhere.
+   */
+  includeInputIncompatible?: boolean;
 }): FilteredModelListResult {
   const catalog = args.catalog;
   if (!catalog) {
@@ -603,17 +619,29 @@ export function buildFilteredModelOptions(args: {
   }
 
   const options: FilteredModelOption[] = [];
-  for (const verdict of evaluation.compatible) {
+  const checked = args.includeInputIncompatible ? evaluation.models : evaluation.compatible;
+  for (const verdict of checked) {
+    if (!verdict.known) continue;
+    if (args.includeInputIncompatible && verdict.listedOperationIds.length === 0) continue;
     if (!admitsModel(verdict.modelId)) continue;
     const auth = findAuthoritativeItem(catalog, verdict.modelId);
     const bucket = args.outputType
       ? findBucketItem(catalog, args.outputType, verdict.modelId)
       : undefined;
     if (args.outputType && !bucket && !isCanvasCapabilityModel(catalog, verdict.modelId)) continue;
+    const inputIncompatible = args.includeInputIncompatible
+      ? !modelHasUsableOperation({
+          catalog,
+          modelId: verdict.modelId,
+          outputType: args.outputType,
+          fingerprint: args.fingerprint,
+        })
+      : false;
     const label = auth?.label || bucket?.label || verdict.modelId;
     options.push({
       id: verdict.modelId,
       label,
+      ...(inputIncompatible ? { inputIncompatible: true } : {}),
       ...(auth?.badge || bucket?.badge ? { badge: (auth?.badge ?? bucket?.badge) as string } : {}),
       ...(auth?.subtitle || bucket?.subtitle
         ? { subtitle: (auth?.subtitle ?? bucket?.subtitle) as string }
@@ -637,7 +665,8 @@ export function buildFilteredModelOptions(args: {
     });
   }
 
-  if (options.length === 0) {
+  const compatibleOptions = options.filter((option) => option.inputIncompatible !== true);
+  if (compatibleOptions.length === 0) {
     // Prefer a specific rejection from the evaluation; fall back to generic.
     let reasonCode: CompatReasonCode = 'no_compatible_model';
     let reasonMessage = '当前输入没有可兼容的已上架模型';
@@ -652,7 +681,7 @@ export function buildFilteredModelOptions(args: {
       }
     }
     return {
-      options: [],
+      options,
       catalogAvailable: true,
       zeroCandidates: true,
       reasonCode,

@@ -18,12 +18,12 @@ import {
   buildUiUpstreamFingerprint,
   setParamsOperation,
   readPreferredOperationId,
-  shouldRenderModeUi,
   type EffectiveOpsUiState,
   type OperationUiOption,
   type UpstreamMediaSnapshot,
 } from '../../../../../../shared/validation/operationUi.ts';
 import { findDeclaredParameterFailure } from '../../../../../../shared/validation/declaredParameterValidation.ts';
+import { buildInputCapability } from '../../../../../../shared/validation/inputCapability.ts';
 import { resolveGenerationPrompt } from '../../../../../../shared/graph/generationPrompt.ts';
 import { mergeVideoParameterSchema, normalizeVideoParamsForSchema } from './videoParamNormalization.ts';
 export { mergeVideoParameterSchema };
@@ -54,6 +54,8 @@ export interface ResolveEffectiveVideoParamsArgs {
   lineConstraints?: LineConstraints | null;
   upstreams?: UpstreamMediaSnapshot[];
   prompt?: string;
+  /** Node-level provenance for a system-derived operation. */
+  autoOperationId?: string | null;
 }
 
 export interface PendingVideoParamAdjustment {
@@ -120,7 +122,7 @@ function integerIsValid(value: unknown, schema: ModelParameterSchema['seed']): v
 function buildOpsState(args: ResolveEffectiveVideoParamsArgs): EffectiveOpsUiState {
   const model = args.modelItem?.id
     ?? (typeof args.params?.model === 'string' ? args.params.model : '');
-  const preferred = readPreferredOperationId((args.params ?? {}) as Record<string, unknown>);
+  const preferred = readPreferredOperationId((args.params ?? {}) as Record<string, unknown>, args.autoOperationId);
   return buildEffectiveOpsUiState({
     catalog: args.catalog ?? null,
     modelId: model,
@@ -145,16 +147,34 @@ export function resolveEffectiveVideoParams(
   const model = args.modelItem?.id
     ?? (typeof params?.model === 'string' ? params.model : '');
   const opsState = buildOpsState(args);
-  const preferredOperation = readPreferredOperationId((params ?? {}) as Record<string, unknown>);
-  const defaultFallbackOp = opsState.effectiveOps.find((op) => op.id === 'text_to_video')
-    ?? opsState.effectiveOps.find((op) => op.ready)
-    ?? opsState.effectiveOps[0];
-  const baseOperationOption = preferredOperation
-    ? opsState.effectiveOps.find((option) => option.id === preferredOperation)
-    : (selectedOperation(opsState) ?? defaultFallbackOp);
-  const requestedOperation = baseOperationOption?.id ?? preferredOperation ?? '';
-  const normalized = normalizeVideoParamsForSchema({
+  const preferredOperation = readPreferredOperationId((params ?? {}) as Record<string, unknown>, args.autoOperationId);
+  const fingerprint = buildUiUpstreamFingerprint({
+    prompt: args.prompt,
+    upstreams: args.upstreams,
+  });
+  const capability = buildInputCapability({
+    catalog: args.catalog ?? null,
+    modelId: model,
+    outputType: 'video',
+    fingerprint,
+    ...(preferredOperation ? { preferredOperationId: preferredOperation } : {}),
+    autoOperationId: args.autoOperationId,
     params: (params ?? {}) as Record<string, unknown>,
+  });
+  const selectedOperationId = capability.selectedOperationId ?? preferredOperation ?? '';
+  const effectiveOperations = opsState.effectiveOps.map((operation) => ({
+    ...operation,
+    disabled: capability.operationStates.find((state) => state.id === operation.id)?.usable !== true,
+  }));
+  const defaultFallbackOp = effectiveOperations.find((op) => op.id === 'text_to_video')
+    ?? effectiveOperations.find((op) => op.ready)
+    ?? effectiveOperations[0];
+  const baseOperationOption = selectedOperationId
+    ? effectiveOperations.find((option) => option.id === selectedOperationId)
+    : (selectedOperation(opsState) ?? defaultFallbackOp);
+  const requestedOperation = baseOperationOption?.id ?? selectedOperationId;
+  const normalized = normalizeVideoParamsForSchema({
+    params: (capability.paramsProjection?.params ?? params ?? {}) as Record<string, unknown>,
     modelItem: args.modelItem,
     operationId: requestedOperation || undefined,
     catalog: args.catalog ?? null,
@@ -164,7 +184,7 @@ export function resolveEffectiveVideoParams(
   const operation = typeof normalizedParams.operation === 'string' && normalizedParams.operation.trim()
     ? normalizedParams.operation.trim()
     : requestedOperation;
-  const operationOption = opsState.effectiveOps.find((option) => option.id === operation) ?? baseOperationOption;
+  const operationOption = effectiveOperations.find((option) => option.id === operation) ?? baseOperationOption;
   const schema = mergeVideoParameterSchema(args.schema, operationOption?.parameters);
   const aspectRatio = typeof normalizedParams.aspectRatio === 'string' ? normalizedParams.aspectRatio : '';
   const resolution = typeof normalizedParams.resolution === 'string' ? normalizedParams.resolution : undefined;
@@ -177,13 +197,14 @@ export function resolveEffectiveVideoParams(
     model: typeof normalizedParams.model === 'string' ? normalizedParams.model : model,
     operation,
     operationLabel: resolveOperationLabel({ id: operation, label: operationOption?.label }),
-    effectiveOperations: opsState.effectiveOps,
-    showModeUi: shouldRenderModeUi(opsState),
+    effectiveOperations,
+    showModeUi: effectiveOperations.length >= 2,
     schema,
     aspectRatio,
     duration,
     sound,
     hasSoundSupport: Boolean(schema.sound?.supported),
+    blocked: normalized.blocked,
   };
 
   if (resolution !== undefined) result.resolution = resolution;

@@ -23,13 +23,14 @@ export function buildCanvasUpstreamFingerprint(
     if (!source) return [];
     const current = readNodeInputSource(source);
     const data = (edge.data ?? {}) as Record<string, unknown>;
-    const binding = data.slotBinding as { role?: string } | undefined;
+    const binding = data.slotBinding as { role?: string; mirror?: boolean } | undefined;
+    const mirrorRole = binding?.mirror === true ? undefined : binding?.role;
     return [{ edgeId: edge.id ?? `feed-${edge.source}-${ordinal}`, sourceNodeId: source.id, sourceLabel: current.label,
       availability: current.availability, availabilityMessage: current.message, outputId: current.outputId,
       url: current.output.mediaAssets?.[0]?.url, textContent: current.output.text,
       ...(current.output.documentText !== undefined ? { documentText: current.output.documentText } : {}),
       type: current.materialType, ...current.metadata,
-      role: typeof data.role === 'string' ? data.role : binding?.role,
+      role: typeof data.role === 'string' ? data.role : mirrorRole,
       targetSlot: readExplicitTargetSlot(data, edge.targetHandle),
     }];
   });

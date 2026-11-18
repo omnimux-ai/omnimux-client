@@ -2,6 +2,7 @@ import type { CapabilityCatalog } from '../../shared/api.ts';
 import type { ExecutionContext } from '../executors/registry.ts';
 import { buildContractView, buildUpstreamFingerprint, resolveModelView } from '../../shared/validation/compatKernel.ts';
 import { resolveSlotOperation } from '../../shared/graph/feedSlot/resolveSlotOperation.ts';
+import { readPreferredOperationId } from '../../shared/validation/operationUi.ts';
 import { resolveGenerationPrompt } from '../../shared/graph/generationPrompt.ts';
 import { parseJsonDocumentText } from '../../shared/jsonDocument.ts';
 import { assembleEffectiveInputsFromSlots, deriveSlotLayout, selectSlotOccupants,
@@ -16,7 +17,10 @@ export function collectMaterialSlotInputs(data: Record<string, unknown>, ctx: Ex
   const kind = (data.materialType ?? 'text') as keyof NonNullable<CapabilityCatalog['defaults']>;
   const modelId = typeof params.model === 'string' ? params.model : catalog.defaults?.[kind];
   const model = resolveModelView(buildContractView(catalog), modelId);
-  let operationId = typeof params.operation === 'string' ? params.operation : undefined;
+  const autoOperationId = typeof data.autoOperationId === 'string' || data.autoOperationId === null
+    ? data.autoOperationId as string | null : undefined;
+  const preferredOperationId = readPreferredOperationId(params, autoOperationId);
+  let operationId = preferredOperationId;
   let layout = deriveSlotLayout(catalog, model?.id, operationId);
   const currentVersion = data.inputBindingVersion === 1;
   const standbyEdgeIds = new Set(((data.slotStandbyEdgeIds ?? []) as unknown[]).filter((id): id is string => typeof id === 'string'));
@@ -69,9 +73,9 @@ export function collectMaterialSlotInputs(data: Record<string, unknown>, ctx: Ex
       url: asset?.url, pathOrUrl: asset?.relativePath || asset?.path, mimeType: asset?.mimeType, sizeBytes: asset?.sizeBytes, durationSec: asset?.durationSec });
     mediaByEdge.set(edgeId, output.mediaAssets);
   }
-  operationId = currentVersion && typeof params.operation === 'string' && params.operation.trim()
-    ? params.operation.trim()
-    : resolveSlotOperation(catalog, model?.id, params.operation, kind,
+  operationId = currentVersion && preferredOperationId
+    ? preferredOperationId
+    : resolveSlotOperation(catalog, model?.id, currentVersion ? preferredOperationId : params.operation, kind,
       buildUpstreamFingerprint({ prompt: resolveGenerationPrompt(data, texts), localText: resolveGenerationPrompt(data),
         nodeFields: params, assets: feed }));
   if (model && !operationId) throw new SeamGatewayError('operation-required', '请选择生成方式');

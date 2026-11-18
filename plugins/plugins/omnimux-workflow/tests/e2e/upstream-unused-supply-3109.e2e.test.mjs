@@ -1,9 +1,8 @@
 /**
- * Issue #3109 — upstream supply that this generation will not consume must stay visible.
+ * Issue #3109 regression, superseded by Epic #63 / Issue #62.
  *
- * Seam: the REAL ConfigPanel rendered with the real canvas i18n dictionary, driven by the
- * exact Dev snapshot of the reported symptom. Asserts the rendered `.wf-slot-well` set and
- * the `[data-testid="wf-input-unused"]` chips, so a silent drop cannot come back unnoticed.
+ * The old `[data-testid="wf-input-unused"]` chip and its explanatory copy are deleted from
+ * the DOM. These cases keep the exact Dev snapshot as a guard that the chip cannot return.
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -81,25 +80,23 @@ const emptyWells = (html) => wellTags(html).filter((tag) => tag.includes('--empt
 const unusedChips = (html) => (html.match(/<button[^>]*data-testid="wf-input-unused"[^>]*>/g) || [])
   .map((tag) => tag.match(/data-unused-reason="([^"]+)"/)?.[1]);
 
-test('E2E #3109: 已就绪的上游图片在当前生成方式不接纳时，必须在卡槽外显式呈现而不是消失', () => {
+test('E2E #3109 → #62: 未使用素材 chip 与「当前生成方式不支持该素材」不再渲染', () => {
   const html = render({ ...REPRO_NODE }, catalogFor('text_to_image'), UPSTREAM, EDGES);
-  assert.deepEqual(unusedChips(html), ['no_matching_slot'],
-    '上游图片必须作为「未使用」条目出现，并给出 no_matching_slot 原因');
+  assert.deepEqual(unusedChips(html), [], 'Epic #63 起未使用素材 chip 从 DOM 消失');
+  assert.doesNotMatch(html, /当前生成方式不支持该素材/);
   assert.equal(filledWells(html), 0, '当前 operation 没有图片槽位，不得伪造已装填卡');
   assert.equal(emptyWells(html), 1, '空态仍然只显示 1 个追加 +');
-  assert.match(html, /HTufQo8a4AA6tsR · 当前生成方式不支持该素材/,
-    '未使用条目必须给出可读原因，禁止静默');
 });
 
 test('E2E #3109: 同一份上游图片在 operation 声明图片槽位时照常入槽，且不再报未使用', () => {
   const html = render({ ...REPRO_NODE, params: { model: 'gate-model', operation: 'multi_reference' } },
     catalogFor('multi_reference', [referenceSlot]), UPSTREAM, EDGES);
-  assert.deepEqual(unusedChips(html), [], '被消费的供给不得出现在未使用列表');
+  assert.deepEqual(unusedChips(html), [], 'Epic #63 起未使用素材 chip 从 DOM 消失');
   assert.equal(filledWells(html), 1, '图片必须装填进卡槽并渲染为已装填卡');
 });
 
 test('E2E #3109: 用户主动置为待命的供给不进入未使用列表（待命池语义不变）', () => {
   const html = render({ ...REPRO_NODE, slotStandbyEdgeIds: ['e-img'] }, catalogFor('text_to_image'), UPSTREAM, EDGES);
-  assert.deepEqual(unusedChips(html), [], '待命池中的供给是用户主动排除，不得再报未使用');
+  assert.deepEqual(unusedChips(html), [], 'Epic #63 起未使用素材 chip 从 DOM 消失');
   assert.equal(filledWells(html), 0);
 });

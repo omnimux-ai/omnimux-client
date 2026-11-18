@@ -37,9 +37,10 @@ test('ConfigPanel 消费 buildFilteredModelOptions / buildEffectiveOpsUiState（
   assert.match(configSrc, /buildFilteredModelOptions/);
   assert.match(configSrc, /buildEffectiveOpsUiState/);
   assert.match(configSrc, /setParamsOperation/);
-  // 不再用 disabled 灰置不兼容模型
-  assert.match(configSrc, /disabled:\s*false/);
-  assert.match(configSrc, /Hide, Don't Grey|Hide, Don\\'t Grey|zeroCandidates|wf-model-empty/);
+  // Epic #63 R10：媒体不兼容的模型保留在列表并灰态，其他兼容行不置灰。
+  assert.match(configSrc, /inputIncompatible/);
+  assert.match(configSrc, /includeInputIncompatible: materialType === 'video'/);
+  assert.match(configSrc, /zeroCandidates|wf-model-empty/);
   // 不再 evaluateModelCompatibility 驱动 disabled 长列表
   assert.doesNotMatch(configSrc, /evaluateModelCompatibility/);
   assert.doesNotMatch(configSrc, /level === 'disabled'/);
@@ -188,8 +189,8 @@ test('empty inputs suppress the hint; block reason lives on the disabled button,
 test('manual selection remembers the model and reports failed persistence', () => {
   assert.match(configSrc, /rememberGenerationModel\(materialType, newModelId\)\.catch/);
   assert.match(configSrc, /toast\.error/);
-  assert.match(configSrc, /nodeCompat\?\.adaptation/);
-  assert.match(configSrc, /role="status" data-testid="wf-model-adaptation"/);
+  // Epic #63 §0.1：输入适配 hint 已删除，模型适配只由选中态与灰态表达。
+  assert.doesNotMatch(configSrc, /wf-model-adaptation/);
 });
 
 /**
@@ -228,14 +229,14 @@ test('#4103 参数适配器不再用 operation id 顶替 label', () => {
   assert.doesNotMatch(adapterSrc, /operationLabel: operationOption\?\.label \?\? operation/);
 });
 
-test('#4103 AC7 不可执行型号：生成禁用 + 中性提示 + 一键切换', () => {
+test('#4103 AC7 不可执行型号：生成禁用保留，解释块按 Epic #63 删除', () => {
   assert.match(configSrc, /resolveUnsupportedModelUi/);
   assert.match(configSrc, /selectedModelUnsupported/);
   // 门禁必须进 blockGenerate（否则用户能点生成、运行时才失败）
   assert.match(configSrc, /\|\| selectedModelUnsupported;/);
-  assert.match(configSrc, /data-testid="wf-model-unsupported"/);
-  assert.match(configSrc, /data-testid="wf-model-unsupported-switch"/);
-  assert.match(configSrc, /panel\.modelUnsupportedSwitch/);
+  // Epic #63 §0.1：说明块 + 切换按钮从 DOM 删除，历史数据只复用既有阻断机制。
+  assert.doesNotMatch(configSrc, /wf-model-unsupported/);
+  assert.doesNotMatch(configSrc, /panel\.modelUnsupportedSwitch/);
 });
 
 test('#4103 AC7 目录行置灰使用「暂不支持」而不是「不可执行」', () => {

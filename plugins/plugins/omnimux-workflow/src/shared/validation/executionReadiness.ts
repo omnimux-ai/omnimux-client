@@ -2,10 +2,11 @@
 
 import type { CapabilityCatalog, CatalogModelDto } from '../api.ts';
 import { findDeclaredParameterFailure } from './declaredParameterValidation.ts';
-import { buildEffectiveOpsUiState, buildUiUpstreamFingerprint } from './operationUi.ts';
+import { buildEffectiveOpsUiState, buildUiUpstreamFingerprint, readPreferredOperationId } from './operationUi.ts';
 import { readNodeInputSource } from '../graph/nodeInputSource.ts';
 import type { UpstreamMediaSnapshot } from './operationUi.ts';
 import { readExplicitTargetSlot } from './compatKernel.ts';
+import { buildInputCapability } from './inputCapability.ts';
 import { resolveNodeKind } from '../graph/materialNode.ts';
 import { materialTools } from '../specs/nodes/materialNodeSpec.ts';
 import { deriveSlotLayout, type SlotBindings, type SlotConflict } from '../graph/feedSlot/index.ts';
@@ -47,7 +48,7 @@ function upstreamSnapshots(nodeId: string, graph?: ExecutionReadinessGraph): Ups
   return (graph?.edges ?? []).filter((edge) => edge.target === nodeId).flatMap((edge, ordinal) => {
     const node = graph!.nodes.find((candidate) => candidate.id === edge.source);
     const source = readNodeInputSource(node ?? { id: edge.source }, graph?.workspaceId);
-    const binding = edge.data?.slotBinding as { role?: string } | undefined;
+    const binding = edge.data?.slotBinding as { role?: string; mirror?: boolean } | undefined;
     const inputs = graph?.resolvedInputs?.get(edge.source) ?? [{
       nodeId: edge.source, label: source.label, outputId: source.outputId, materialType: node ? source.materialType : String(edge.data?.feedType ?? source.materialType),
       availability: source.availability, availabilityMessage: source.message,
@@ -55,7 +56,7 @@ function upstreamSnapshots(nodeId: string, graph?: ExecutionReadinessGraph): Ups
       ...source.metadata,
     }];
     return inputs.map((input) => ({ ...input, edgeId: edge.id ?? `feed-${edge.source}-${ordinal}`,
-      role: typeof edge.data?.role === 'string' ? edge.data.role : binding?.role,
+      role: typeof edge.data?.role === 'string' ? edge.data.role : binding?.mirror === true ? undefined : binding?.role,
       targetSlot: readExplicitTargetSlot(edge.data ?? {}, edge.targetHandle),
     }));
   });
@@ -117,8 +118,29 @@ export function findExecutionReadinessFailure(
       };
     }
     const outputType = typeof data.materialType === 'string' ? data.materialType : undefined;
-    const chosenId = inputBindingVersion === 1 && readString(params.operation)
-      ? readString(params.operation) : resolveSlotOperation(catalog, model.id, params.operation, outputType, rawFingerprint);
+    const autoOperationId = typeof data.autoOperationId === 'string' || data.autoOperationId === null
+      ? data.autoOperationId as string | null
+      : undefined;
+    const preferredOperationId = readPreferredOperationId(params, autoOperationId);
+    const videoCapability = outputType === 'video'
+      ? buildInputCapability({
+          catalog,
+          modelId: model.id,
+          outputType: 'video',
+          fingerprint: rawFingerprint,
+          ...(preferredOperationId ? { preferredOperationId } : {}),
+          autoOperationId,
+          params,
+          ignoredEdgeIds: Array.isArray(data.slotStandbyEdgeIds) ? (data.slotStandbyEdgeIds as string[]) : [],
+        })
+      : undefined;
+    if (videoCapability?.blocked) {
+      return { nodeId: node.id, reasonCode: 'operation_incompatible', message: '当前模型没有可用的生成方式' };
+    }
+    const chosenId = videoCapability
+      ? videoCapability.selectedOperationId
+      : inputBindingVersion === 1 && readString(params.operation)
+        ? readString(params.operation) : resolveSlotOperation(catalog, model.id, params.operation, outputType, rawFingerprint);
     const layout = deriveSlotLayout(catalog, model.id, chosenId);
     const loaded = effectiveInputDisplay(layout, feedFromFingerprint(rawFingerprint, inputBindingVersion), data.slotBindings as SlotBindings | undefined,
       (data.slotConflicts ?? []) as SlotConflict[], graph?.edges.filter((edge) => edge.target === node.id) ?? [],
@@ -141,13 +163,15 @@ export function findExecutionReadinessFailure(
       ...(readString(params.operation) ? { preferredOperationId: readString(params.operation) } : {}),
     });
     const rawOperation = readString(params.operation);
-    const selectedOperationId = rawOperation ?? chosenId ?? opsState.selectedOperationId ?? opsState.implicitOperationId;
+    const selectedOperationId = videoCapability
+      ? chosenId
+      : rawOperation ?? chosenId ?? opsState.selectedOperationId ?? opsState.implicitOperationId;
     const operation = selectedOperationId
       ? model.operations.find((candidate) => candidate.id === selectedOperationId && candidate.listed)
       : undefined;
-    const selectedIsEffective = Boolean(
-      selectedOperationId && opsState.effectiveOps.some((candidate) => candidate.id === selectedOperationId),
-    );
+    const selectedIsEffective = videoCapability
+      ? Boolean(videoCapability.operationStates.find((candidate) => candidate.id === selectedOperationId)?.usable)
+      : Boolean(selectedOperationId && opsState.effectiveOps.some((candidate) => candidate.id === selectedOperationId));
     // Raw persisted operation ids are never a soft preference: if no longer
     // listed/effective for this model and node shape, block before mock or hub
     // submission. For an omitted id, the kernel's implicit/chosen operation is

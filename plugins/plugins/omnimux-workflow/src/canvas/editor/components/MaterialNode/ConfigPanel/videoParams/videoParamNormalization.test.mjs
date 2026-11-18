@@ -353,7 +353,10 @@ describe('buildVideoParameterSelection / readVideoParameterSelections', () => {
       currentModelItem: minimaxItem,
       targetModelItem: minimaxItem,
       catalog,
-      upstreams: [],
+      upstreams: [
+        { nodeId: 'img-1', materialType: 'image', hasMedia: true, availability: 'ready', url: 'https://example.test/1.png' },
+        { nodeId: 'img-2', materialType: 'image', hasMedia: true, availability: 'ready', url: 'https://example.test/2.png' },
+      ],
       prompt: '旧项目',
     });
     assert.equal(result.params.aspectRatio, 'adaptive');
@@ -387,25 +390,38 @@ describe('read-side / execution-side consistency', () => {
       model: 'minimax-h3-video', operation: 'first_last_frame',
       aspectRatio: '9:16', duration: 5, resolution: '768p', prompt: '首尾帧生成',
     };
+    const images = [
+      { nodeId: 'img-1', materialType: 'image', hasMedia: true, availability: 'ready', url: 'https://example.test/1.png' },
+      { nodeId: 'img-2', materialType: 'image', hasMedia: true, availability: 'ready', url: 'https://example.test/2.png' },
+    ];
     const effective = resolveEffectiveVideoParams({
       params,
       schema: minimaxParameters,
       modelItem: minimaxItem,
       catalog,
-      upstreams: [],
+      upstreams: images,
       prompt: '首尾帧生成',
     });
     assert.equal(effective.aspectRatio, 'adaptive');
     assert.equal(validateVideoParamsForUi({ params: effective, prompt: '首尾帧生成' }).some((error) => error.includes('aspectRatio')), false);
 
-    const nodes = [{
-      id: 'target', type: 'material',
-      data: { materialType: 'video', prompt: '首尾帧生成', params: { ...params } },
-    }];
-    const prepared = prepareExecutionSlotGraph(nodes, [], catalog);
-    assert.equal(prepared.nodes[0].data.params.aspectRatio, 'adaptive');
-    assert.equal(prepared.nodes[0].data.params.duration, 5);
-    assert.equal(prepared.nodes[0].data.params.resolution, '768p');
+    const nodes = [
+      { id: 'img-1', type: 'material', data: { materialType: 'image', nodeKind: 'import', mediaUrl: 'https://example.test/1.png' } },
+      { id: 'img-2', type: 'material', data: { materialType: 'image', nodeKind: 'import', mediaUrl: 'https://example.test/2.png' } },
+      {
+        id: 'target', type: 'material',
+        data: { materialType: 'video', prompt: '首尾帧生成', params: { ...params } },
+      },
+    ];
+    const edges = [
+      { id: 'e-1', source: 'img-1', target: 'target' },
+      { id: 'e-2', source: 'img-2', target: 'target' },
+    ];
+    const prepared = prepareExecutionSlotGraph(nodes, edges, catalog);
+    const preparedTarget = prepared.nodes.find((node) => node.id === 'target');
+    assert.equal(preparedTarget.data.params.aspectRatio, 'adaptive');
+    assert.equal(preparedTarget.data.params.duration, 5);
+    assert.equal(preparedTarget.data.params.resolution, '768p');
   });
 
   it('prepareExecutionSlotGraph normalizes an operation-level-only invalid ratio for a gateway catalog', () => {

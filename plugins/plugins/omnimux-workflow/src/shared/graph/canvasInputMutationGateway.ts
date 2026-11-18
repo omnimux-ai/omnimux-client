@@ -236,6 +236,10 @@ export function planCanvasInputMutation(current: CanvasInputMutationState, mutat
     const verdict = validateCanvasInputSelection({ nodes, edges }, mutation.strictConsumption, context);
     if (!verdict.accepts) return rejectMutation(current, verdict.reasonCode ?? 'operation_incompatible', { verdict });
   }
+  // Ordinary drag only validates graph structure. Model type / capacity / format
+  // are assignment concerns (#88): legal media edges stay connected even when
+  // the current model has no matching slot; recomputeCanvasSlots below derives
+  // the assigned/unused split without rejecting the mutation.
   if (!context) return { nodes, edges, status: 'allowed' };
   const invalidPatch = validateModelPatches(current, nodes, mutation, context);
   if (invalidPatch) return invalidPatch;

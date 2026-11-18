@@ -434,6 +434,7 @@
     "verify-video-thumbnail.mjs",
     "verify-workflow-apptab-browser.mjs",
     "video-param-normalization.test.mjs",
+    "windows-build-portability.test.mjs",
     "viewer-card-qa-entry.mjs",
     "watch-plugin.mjs",
     "workflows/evaluation/build-scorecard.mjs",
@@ -445,7 +446,8 @@
     "worktree-app-qa.test.mjs",
     "worktree-cleanup-3820.test.mjs",
     "worktree-default-mode-qa.mjs",
-    "worktree-web-qa-lifecycle.test.mjs"
+    "worktree-web-qa-lifecycle.test.mjs",
+    "input-capability.test.mjs"
   ],
   "deprecated": []
 }

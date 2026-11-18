@@ -1,5 +1,6 @@
 import type { CapabilityCatalog, CapabilityModelItem, ModelParameterSchema } from '../../../../../../shared/api.ts';
 import { buildEffectiveOpsUiState, buildUiUpstreamFingerprint, readPreferredOperationId, setParamsOperation, type UpstreamMediaSnapshot } from '../../../../../../shared/validation/operationUi.ts';
+import { buildInputCapability } from '../../../../../../shared/validation/inputCapability.ts';
 import { findDeclaredParameterFailure } from '../../../../../../shared/validation/declaredParameterValidation.ts';
 import { narrowModelByLineConstraints } from '../../../../../../shared/validation/lineConstraints.ts';
 import { directoryChannelGroups, resolveLineConstraints, type RuntimeByokChannelSettings } from '../channelGroups.ts';
@@ -32,6 +33,10 @@ export interface VideoParameterSelectionArgs {
   /** Undefined preserves routing; null selects automatic routing. */
   routing?: Record<string, unknown> | null;
   runtimeSettings?: RuntimeByokChannelSettings | null;
+  /** User-parked supply edges that do not participate in this generation. */
+  ignoredEdgeIds?: readonly string[];
+  /** Node-level provenance for a system-derived operation. */
+  autoOperationId?: string | null;
 }
 export interface VideoParameterSelectionResult {
   params: Record<string, unknown>;
@@ -176,18 +181,31 @@ export function buildVideoParameterSelection(args: VideoParameterSelectionArgs):
   const historyNotices = history.notices ? [...history.notices] : [];
   delete history.notices;
   const fingerprint = buildUiUpstreamFingerprint({prompt: args.prompt, upstreams: args.upstreams});
-  function branch(model: CapabilityModelItem, preferred?: string) {
+  function branch(model: CapabilityModelItem, preferred?: string, autoSelect = true) {
     const state = buildEffectiveOpsUiState({catalog, modelId:model.id, fingerprint, outputType:'video', ...(preferred ? {preferredOperationId:preferred} : {})});
-    const operation = preferred
-      ? state.effectiveOps.find(op => op.id === preferred)
-      : (state.effectiveOps.find(op => op.id === 'text_to_video') ?? state.effectiveOps.find(op => op.id === state.selectedOperationId) ?? state.effectiveOps[0]);
+    const capability = autoSelect
+      ? buildInputCapability({ catalog, modelId: model.id, outputType: 'video', fingerprint,
+          ...(preferred ? { preferredOperationId: preferred } : {}),
+          autoOperationId: args.autoOperationId,
+          ...(args.ignoredEdgeIds ? { ignoredEdgeIds: args.ignoredEdgeIds } : {}) })
+      : undefined;
+    const operationId = autoSelect ? capability?.selectedOperationId : preferred;
+    const operation = operationId
+      ? state.effectiveOps.find(op => op.id === operationId)
+      : (autoSelect
+        ? (state.effectiveOps.find(op => op.id === 'text_to_video') ?? state.effectiveOps.find(op => op.id === state.selectedOperationId) ?? state.effectiveOps[0])
+        : undefined);
     if (!operation) return undefined;
     return {id:operation.id, definitions:controlDefinitions(mergeVideoParameterSchema(model.parameters, operation.parameters))};
   }
   const current = currentMatches ? currentModelItem : undefined;
-  const currentBranch = current ? branch(current, readPreferredOperationId(args.params)) : undefined;
+  // A legacy node may carry controls without an operation. Resolve its branch
+  // from the current fingerprint so those values survive normalization instead
+  // of being reset to the target defaults.
+  const currentPreferred = readPreferredOperationId(args.params, args.autoOperationId);
+  const currentBranch = current ? branch(current, currentPreferred, currentPreferred === undefined) : undefined;
   const sameModel = current?.id === target.id;
-  let preferred = args.nextOperationId ?? (sameModel ? readPreferredOperationId(args.params) : history.byModel[target.id]?.lastOperationId);
+  let preferred = args.nextOperationId ?? (sameModel ? readPreferredOperationId(args.params, args.autoOperationId) : history.byModel[target.id]?.lastOperationId);
   // 1. 若渠道线明确限制了允许的操作集（例如口型版仅允许 digital_human），且原首选不在此范围内，自适应到渠道允许的操作
   if (preferred && lineConstraints?.operations && lineConstraints.operations.length > 0 && !lineConstraints.operations.includes(preferred)) {
     preferred = lineConstraints.operations[0];

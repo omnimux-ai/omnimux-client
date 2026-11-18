@@ -279,7 +279,11 @@ test('same-model valid operation recommendations initialize new nodes while inva
   for (const row of DEFAULT_CASES) {
     const created = createNode(catalog, row.kind);
     assert.equal(created.data.params.model, row.selected, row.kind);
-    assert.equal(created.data.params.operation, valueFor(hub.defaultOperations, row.kind).operationId, row.kind);
+    // Epic #63 R6：无媒体视频节点从 text_to_video 起步；其余节点仍按目录推荐。
+    const expectedOperation = row.kind === 'video'
+      ? 'text_to_video'
+      : valueFor(hub.defaultOperations, row.kind).operationId;
+    assert.equal(created.data.params.operation, expectedOperation, row.kind);
   }
   hub.defaultOperations = {
     text: { modelId: 'missing-model', operationId: 'chat' },

@@ -105,7 +105,7 @@ describe('videoParamAdapter - resolveEffectiveVideoParams (W2)', () => {
     assert.equal(result.hasSoundSupport, true);
   });
 
-  it('canonical operation remains selected when effective', () => {
+  it('canonical operation without its required media falls back to text_to_video (R6)', () => {
     const result = resolveEffectiveVideoParams({
       params: { model: 'vid-frames', operation: 'first_last_frame', aspectRatio: '16:9' },
       schema: klingSchema,
@@ -113,8 +113,7 @@ describe('videoParamAdapter - resolveEffectiveVideoParams (W2)', () => {
       catalog,
       upstreams: [],
     });
-    // Preferred first_last_frame stays selected when still effective (accepts with pending min).
-    assert.equal(result.operation, 'first_last_frame');
+    assert.equal(result.operation, 'text_to_video');
     assert.equal(typeof result.operationLabel, 'string');
   });
 

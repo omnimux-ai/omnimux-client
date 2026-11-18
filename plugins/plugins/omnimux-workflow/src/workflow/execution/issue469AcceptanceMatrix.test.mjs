@@ -66,7 +66,7 @@ describe('Issue #469 QA Acceptance Matrix Verification', () => {
       assert.equal(gw.requests[0].operation, 'canonical_video');
     });
 
-    it('多生成方式产生歧义时，若未指定 operation 则 fail-fast 拦截，底层 seam 调用次数为 0', async () => {
+    it('多生成方式但无素材时默认 text_to_video，底层 seam 只调用一次', async () => {
       const multiOpCatalog = catalogFor('video', 'multi-model', [
         operation('text_to_video', 'video', [], true),
         operation('first_last_frame', 'video', [
@@ -77,16 +77,14 @@ describe('Issue #469 QA Acceptance Matrix Verification', () => {
       const gw = createCountingGateway(multiOpCatalog);
       const executor = createMaterialGatewayExecutor({ gateway: gw });
 
-      const n = node('video', { model: 'multi-model' }); // operation omitted, ambiguous!
-      await assert.rejects(
-        executor.execute(n, context()),
-        (err) => err.code === 'operation-required' || /请选择生成方式/.test(err.message),
-      );
+      const n = node('video', { model: 'multi-model' });
+      await executor.execute(n, context());
 
-      assert.equal(gw.submitCalls, 0, 'seam calls must be 0 on ambiguous operation');
+      assert.equal(gw.submitCalls, 1);
+      assert.equal(gw.requests[0].operation, 'text_to_video');
     });
 
-    it('指定非法或未列出 (unlisted) 的 operation 时 fail-fast 拦截，底层 seam 调用次数为 0', async () => {
+    it('指定非法或未列出 (unlisted) 的 operation 时切换到唯一可用 operation', async () => {
       const catalog = catalogFor('video', 'vid-model', [
         operation('valid_op', 'video'),
         { ...operation('draft_op', 'video'), listed: false },
@@ -96,13 +94,11 @@ describe('Issue #469 QA Acceptance Matrix Verification', () => {
 
       for (const badOp of ['draft_op', 'non_existent_op']) {
         const n = node('video', { model: 'vid-model', operation: badOp });
-        await assert.rejects(
-          executor.execute(n, context()),
-          (err) => err.code === 'operation-not-allowed' || /不支持所选生成方式/.test(err.message),
-        );
+        await executor.execute(n, context());
       }
 
-      assert.equal(gw.submitCalls, 0, 'seam calls must be 0 on invalid/unlisted operation');
+      assert.equal(gw.submitCalls, 2);
+      assert.deepEqual(gw.requests.map((request) => request.operation), ['valid_op', 'valid_op']);
     });
   });
 

@@ -78,7 +78,7 @@ const videoCatalog = {models:[{id:'video-test',operations:[
 ]}]};
 
 test('video raw supply keeps modes discoverable while the selected first-frame gate consumes one image', () => {
-  const raw = buildUiUpstreamFingerprint({prompt:'1dog',upstreams:[0,1].map(i => ({nodeId:`image-${i}`,edgeId:`edge-${i}`,materialType:'image',hasMedia:true,url:`https://example.test/${i}.png`,mimeType:'image/png'}))});
+  const raw = buildUiUpstreamFingerprint({prompt:'1dog',upstreams:[{nodeId:'image-0',edgeId:'edge-0',materialType:'image',hasMedia:true,availability:'ready',url:'https://example.test/0.png',mimeType:'image/png'}]});
   const operation = resolveSlotOperation(videoCatalog, 'video-test', 'first_frame', 'video', raw);
   assert.equal(operation, 'first_frame');
   const layout = deriveSlotLayout(videoCatalog, 'video-test', operation, 'video');
@@ -94,7 +94,7 @@ test('video raw supply keeps modes discoverable while the selected first-frame g
   assert.equal(current.selectedOperationId, 'first_frame');
   assert.equal(current.blockGenerate, false);
   const disconnected = buildUiUpstreamFingerprint({prompt:'1dog',upstreams:[]});
-  assert.equal(resolveSlotOperation(videoCatalog, 'video-test', 'first_frame', 'video', disconnected), 'first_frame');
+  assert.equal(resolveSlotOperation(videoCatalog, 'video-test', 'first_frame', 'video', disconnected), 'text_to_video');
   const missing = buildEffectiveOpsUiState({...args,fingerprint:disconnected});
   assert.equal(missing.blockGenerate, true);
 });
@@ -125,7 +125,7 @@ test('R4: standby image cannot erase a single-operation duration schema or its v
   const valid = resolveEffectiveVideoParams({params:validRaw,schema:{},modelItem:catalog.models[0],catalog,upstreams:consumedUpstreams,prompt:consumed.prompt});
   assert.deepEqual(validateVideoParamsForUi({prompt:consumed.prompt,rawParams:validRaw,params:valid,upstreams:consumedUpstreams}), []);
   const panelResolution = source.slice(source.indexOf('const videoEffectiveParams ='), source.indexOf('const videoEffectiveParams =') + 1000);
-  assert.match(panelResolution, /upstreams: consumedUpstreams\.filter\(\(source\) => \['image', 'video', 'audio'\]\.includes\(source\.materialType\)\)/);
+  assert.match(panelResolution, /upstreams: videoDisplayUpstreams\.filter\(\(source\) => \['image', 'video', 'audio'\]\.includes\(source\.materialType\)\)/);
   assert.match(panelResolution, /prompt: consumedFingerprint\.prompt/);
 });
 

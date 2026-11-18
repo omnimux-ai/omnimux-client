@@ -252,6 +252,7 @@ const CascadeModelItem: React.FC<{
   const t = useT();
   // 文案解析是纯函数（resolveModelMenuItemCopy），行为由单测覆盖，不靠源码 grep。
   const { title, badge } = resolveModelMenuItemCopy(item, t);
+  const isDisabled = item.executable === false || item.inputIncompatible === true;
   return (
   <button
     type="button"
@@ -259,11 +260,11 @@ const CascadeModelItem: React.FC<{
     aria-current={interactive ? isSelected : undefined}
     data-testid={interactive ? `wf-cascade-model-${item.id}` : undefined}
     tabIndex={interactive ? undefined : -1}
-    disabled={interactive && item.executable === false}
+    disabled={interactive && isDisabled}
     title={title}
     onMouseEnter={interactive ? onHover : undefined}
-    onClick={interactive && item.executable !== false ? onSelect : undefined}
-    className={`wf-cascade-model-item ${isSelected ? 'is-selected' : ''} ${isHovered ? 'is-hovered' : ''} ${item.executable === false ? 'is-disabled' : ''}`}
+    onClick={interactive && !isDisabled ? onSelect : undefined}
+    className={`wf-cascade-model-item ${isSelected ? 'is-selected' : ''} ${isHovered ? 'is-hovered' : ''} ${isDisabled ? 'is-disabled' : ''}`}
   >
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
       <span className="wf-cascade-model-item__title">

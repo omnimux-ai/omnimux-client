@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import * as esbuild from 'esbuild'
 import postcss from 'postcss'
 import tailwindcss from 'tailwindcss'
@@ -9,7 +9,7 @@ import autoprefixer from 'autoprefixer'
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const outFile = join(root, 'lib', 'client.js')
 const openreel = join(root, 'src/client/openreel')
-const tailwindConfig = (await import(join(root, 'tailwind.openreel.config.js'))).default
+const tailwindConfig = (await import(pathToFileURL(join(root, 'tailwind.openreel.config.js')).href)).default
 tailwindConfig.content = [join(root, 'src/client/**/*.{js,jsx,ts,tsx}')]
 
 const envStub = {
