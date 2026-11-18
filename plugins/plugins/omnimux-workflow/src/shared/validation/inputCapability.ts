@@ -359,15 +359,21 @@ export function buildInputCapability(args: InputCapabilityArgs): InputCapability
     ? operationStates.find((state) => state.id === preferredRaw)
     : undefined;
   const strictCandidates = operationStates.filter((state) => state.usable);
+  // The operation already on the node — explicit choice or system-derived auto
+  // operation — is the fallback when strict matching finds nothing. A normal
+  // auto-created video node is `text_to_video` with autoOperationId set, and
+  // adding a legacy audio edge must not require the user to re-pick that mode.
+  const currentId = preferred?.id ?? autoRaw;
+  const current = currentId ? operationStates.find((state) => state.id === currentId) : undefined;
   if (preferred?.usable) {
     selected = preferred;
-  } else if (preferred && strictCandidates.length === 0) {
+  } else if (current && !current.usable && strictCandidates.length === 0) {
     // #62: when no mode is strictly usable, a saved mode whose required inputs are
     // all satisfied stays usable if the only conflicts come from media none of its
     // slots can take (e.g. a legacy audio edge on text_to_video). Those edges stay
     // on the canvas as silent candidates; they must not disable generation. As soon
     // as any mode is strictly usable (a newly consumable supply), switching wins.
-    const entry = listed.find(({ operation }) => operation.id === preferred.id);
+    const entry = listed.find(({ operation }) => operation.id === current.id);
     if (entry) {
       const relaxed = evaluateOperation(entry.operation, entry.order, fingerprint, counts, {
         ignoreUnused, ignoreUnassignable: true,

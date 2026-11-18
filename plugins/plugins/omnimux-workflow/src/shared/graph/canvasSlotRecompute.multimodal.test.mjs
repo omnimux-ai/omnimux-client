@@ -235,3 +235,60 @@ test('#62: an unconsumed audio candidate never flips readiness or the request (A
   assert.equal(recomputed.data.compat.acceptsCurrentInputs, true);
   assert.deepEqual(recomputed.data.compat.reasonCodes, []);
 });
+
+test('#62: a naturally auto-created video node keeps text_to_video after an audio edge', async () => {
+  // 桌面复验的最小真实路径：planCanvasInputMutation 新建只有 model 的视频节点，
+  // 系统自动得到 operation=autoOperationId=text_to_video；随后普通拖入 ready 音频边。
+  // 这条路径不能要求用户重选同一个模式。
+  const { planCanvasInputMutation } = await import('./canvasInputMutationGateway.ts');
+  const created = planCanvasInputMutation({ nodes: [], edges: [] }, {
+    addNodes: [targetNode()],
+  }, { catalog });
+  assert.equal(created.status, 'allowed');
+  const createdNode = created.nodes.find((node) => node.id === 'target');
+  assert.equal(createdNode.data.params.operation, 'text_to_video');
+  assert.equal(createdNode.data.autoOperationId, 'text_to_video');
+
+  const audio = {
+    id: 'src-1',
+    type: 'material',
+    data: {
+      materialType: 'audio',
+      nodeKind: 'import',
+      status: 'ready',
+      mediaUrl: 'https://example.test/src-1.mp3',
+      mediaAssets: [{ type: 'audio', url: 'https://example.test/src-1.mp3', mimeType: 'audio/mpeg', sizeBytes: 1024 }],
+      mimeType: 'audio/mpeg',
+      sizeBytes: 1024,
+    },
+  };
+  const audioEdge = { id: 'edge-audio', source: 'src-1', target: 'target', targetHandle: 'in', data: { feedType: 'audio' } };
+  const connected = planCanvasInputMutation({
+    nodes: [audio, createdNode],
+    edges: [],
+  }, { addEdges: [audioEdge] }, { catalog });
+  assert.equal(connected.status, 'allowed');
+  const node = connected.nodes.find((item) => item.id === 'target');
+  assert.equal(node.data.params.operation, 'text_to_video');
+  assert.equal(node.data.autoOperationId, 'text_to_video');
+  assert.deepEqual(node.data.slotBindings, {});
+
+  // 就绪与提交：与显式手选 text_to_video 的对照完全一致。
+  const { findExecutionReadinessFailure } = await import('../validation/executionReadiness.ts');
+  const readiness = findExecutionReadinessFailure([audio, node], catalog, { nodes: [audio, node], edges: connected.edges });
+  assert.equal(readiness, null, 'auto-derived text_to_video must be ready with a legacy audio candidate');
+
+  const prepared = prepareExecutionSlotGraph([audio, node], connected.edges, catalog);
+  const preparedTarget = prepared.nodes.find((item) => item.id === 'target');
+  assert.equal(preparedTarget.data.params.operation, 'text_to_video');
+  assert.deepEqual(preparedTarget.data.slotBindings, {});
+
+  const explicit = structuredClone(node);
+  explicit.data.params = { model: 'seedance-2-5', operation: 'text_to_video' };
+  explicit.data.autoOperationId = null;
+  assert.equal(findExecutionReadinessFailure([audio, explicit], catalog, { nodes: [audio, explicit], edges: connected.edges }), null);
+  const explicitPrepared = prepareExecutionSlotGraph([audio, explicit], connected.edges, catalog)
+    .nodes.find((item) => item.id === 'target');
+  assert.equal(explicitPrepared.data.params.operation, 'text_to_video');
+  assert.deepEqual(explicitPrepared.data.slotBindings, preparedTarget.data.slotBindings);
+});

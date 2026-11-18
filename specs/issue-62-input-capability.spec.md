@@ -93,7 +93,7 @@ A/B（真实 CanvasEditor + 真实 bundled catalog 投影 + 实际 `prepareExecu
 
 `illegal-legacy`（历史 audio 边 → seedance 视频节点）按新口径处理，不恢复「6 个 operation 全灰」：候选音频不进入 `slotBindings`、不渲染 chip，面板、就绪与执行链路统一按「当前模式未消费的候选不参与」判定，`text_to_video` 可生成并实际发出请求。
 
-实现上 `matchOperationInputs` 增加 `ignoreUnassignable`（只对已选模式的就绪判定生效：某媒体类型在该 operation 没有任何槽位时视为未消费候选，而非拒绝），`buildInputCapability` 在无可用候选但存在显式首选模式时，用放宽 matcher 复核该模式；自动选模式的严格匹配保持不变，P1 三连仍会切到 `video_multi_ref`。测试固化 A/B：同一节点、同一 prompt、同一 `text_to_video`，唯一差异是历史 audio 边，`readyToSubmit` 与执行准备结果必须一致（音频不进入 payload）。
+实现上 `matchOperationInputs` 增加 `ignoreUnassignable`（只对已选模式的就绪判定生效：某媒体类型在该 operation 没有任何槽位时视为未消费候选，而非拒绝）；`buildInputCapability` 在没有任何严格可用模式时，用放宽 matcher 复核节点当前模式——显式首选与系统自动写入的 `autoOperationId` 都算，因此正常新建（model-only → 自动 `text_to_video`）的视频节点拖入历史音频边后不需要用户重选模式。只要存在严格可用模式，仍按有效素材切首帧/首尾/多参考，P1 三连不变；缺 prompt、缺必需槽位或非法参数仍按契约阻断。测试固化 A/B：同一节点、同一 prompt、同一 `text_to_video`，唯一差异是历史 audio 边，`readyToSubmit` 与执行准备结果必须一致（音频不进入 payload）。
 
 验收：`canvasSlotRecompute.multimodal.test.mjs` 断言三连后的 `slotBindings` 键（`reference_images` ×2、`reference_videos` ×1）、`acceptsCurrentInputs=true`、`readyToSubmit=true`、执行准备同源，以及删视频回 `first_last_frame`；历史音频边用例断言 `text_to_video` 可执行、音频不占槽、边保留。
 
