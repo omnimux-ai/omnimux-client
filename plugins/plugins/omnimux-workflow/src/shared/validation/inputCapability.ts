@@ -180,8 +180,9 @@ function evaluateOperation(
   order: number,
   fingerprint: UpstreamFingerprint,
   counts: Record<'image' | 'video' | 'audio', number>,
+  options: { ignoreUnused?: boolean } = {},
 ): InputCapabilityOperationState {
-  const match = matchOperationInputs(op, fingerprint);
+  const match = matchOperationInputs(op, fingerprint, options);
   const rejections: InputCapabilityRejection[] = [];
   if (!match.accepts) {
     for (const item of match.rejections) {
@@ -295,28 +296,55 @@ export function projectParamsForOperation(
 }
 
 export function buildInputCapability(args: InputCapabilityArgs): InputCapabilityResult {
-  const fingerprint = usableAssets(args.fingerprint, args.ignoredEdgeIds);
-  const counts = mediaCounts(fingerprint);
-  const hasMedia = counts.image + counts.video + counts.audio > 0;
+  const rawFingerprint = usableAssets(args.fingerprint, args.ignoredEdgeIds);
+  const rawCounts = mediaCounts(rawFingerprint);
+  const rawHasMedia = rawCounts.image + rawCounts.video + rawCounts.audio > 0;
   const modelId = typeof args.modelId === 'string' ? args.modelId.trim() : '';
   const view = buildContractView(args.catalog);
   if (!view.available) {
-    return { operationStates: [], blocked: true, reasonCode: 'catalog_unavailable', hasMedia };
+    return { operationStates: [], blocked: true, reasonCode: 'catalog_unavailable', hasMedia: rawHasMedia };
   }
   const model = resolveModelView(view, modelId);
   if (!model) {
-    return { operationStates: [], blocked: true, reasonCode: 'unknown_model', hasMedia };
+    return { operationStates: [], blocked: true, reasonCode: 'unknown_model', hasMedia: rawHasMedia };
   }
   const listed = model.operations
     .map((operation, order) => ({ operation, order }))
     .filter(({ operation }) => operation.listed)
     .filter(({ operation }) => !args.outputType || operation.output.type === args.outputType);
   if (listed.length === 0) {
-    return { modelId: model.id, operationStates: [], blocked: true, reasonCode: 'not_listed', hasMedia };
+    return { modelId: model.id, operationStates: [], blocked: true, reasonCode: 'not_listed', hasMedia: rawHasMedia };
   }
 
+  const isVideoCapability = args.outputType === 'video';
+  // #62 rework / #88 (video first case): a media type that no listed video
+  // operation of this model can ever consume is irrelevant supply (e.g. audio
+  // on Muse). Keep the edge, but drop it from capability scoring so it cannot
+  // disable an otherwise valid operation. Types that are consumable somewhere
+  // stay in the fingerprint; an operation with no slot for them remains
+  // unavailable (AC-1). Other output types keep the historical strict matrix.
+  const consumableTypes = isVideoCapability
+    ? new Set(listed.flatMap(({ operation }) => operation.inputs
+      .filter((slot) => isMediaInputType(slot.type))
+      .map((slot) => slot.type)))
+    : null;
+  const fingerprint: UpstreamFingerprint = consumableTypes
+    ? {
+        ...rawFingerprint,
+        assets: rawFingerprint.assets.filter((asset) =>
+          !isMediaInputType(asset.type) || consumableTypes.has(asset.type)),
+        mediaAssets: rawFingerprint.mediaAssets.filter((asset) => consumableTypes.has(asset.type)),
+      }
+    : rawFingerprint;
+  const counts = mediaCounts(fingerprint);
+  const hasMedia = counts.image + counts.video + counts.audio > 0;
+
+  // #62 rework / #88: for video, capacity/format are assignment concerns, not
+  // operation availability gates. The selected operation still needs its own
+  // required slots satisfied; extra ready supply is silently unused.
+  const ignoreUnused = isVideoCapability;
   const operationStates = listed.map(({ operation, order }) =>
-    evaluateOperation(operation, order, fingerprint, counts),
+    evaluateOperation(operation, order, fingerprint, counts, { ignoreUnused }),
   );
   const candidates = operationStates.filter((state) => state.usable);
   const preferredRaw = typeof args.preferredOperationId === 'string' && args.preferredOperationId.trim()

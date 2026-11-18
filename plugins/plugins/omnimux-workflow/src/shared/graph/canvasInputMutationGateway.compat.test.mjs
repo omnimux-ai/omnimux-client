@@ -24,11 +24,11 @@ test('supply and node bindings commit atomically without changing creative choic
   assert.equal(target(plan).data.params.model, 'alias-img'); assert.equal(target(plan).data.compat.readyToSubmit, true);
   assert.equal(plan.edges[0].data.slotBinding.role, 'reference'); assert.deepEqual(current, before);
 });
-test('new image supply to a model with no image-consuming operation is rejected (Epic #63 R5)', () => {
+test('new image supply to a model with no image-consuming operation is kept as unused (#88)', () => {
   const plan = planCanvasInputMutation(graph(gen('img-prompt-only', 'text_to_image')), connect, { catalog });
-  assert.equal(plan.status, 'rejected');
-  assert.equal(plan.reasonCode, 'model_incompatible');
-  assert.deepEqual(plan.nodes, graph(gen('img-prompt-only', 'text_to_image')).nodes);
+  assert.equal(plan.status, 'allowed');
+  assert.equal(plan.edges.length, 1);
+  assert.deepEqual(target(plan).data.slotBindings, {});
 });
 test('alias model normalizes without replacement', () => {
   const plan = planCanvasInputMutation(graph(gen('alias-img-wire')), connect, { catalog });

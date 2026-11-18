@@ -8,8 +8,6 @@ import { feedFromFingerprint } from '../../../shared/graph/feedSlot/effectiveFin
 import { resolveSlotOperation } from '../../../shared/graph/feedSlot/resolveSlotOperation.ts';
 import { buildContractView, resolveModelView, type CompatReasonCode } from '../../../shared/validation/compatKernel.ts';
 import { readPreferredOperationId } from '../../../shared/validation/operationUi.ts';
-import { modelCanConsumeMediaType } from '../../../shared/validation/inputCapability.ts';
-import { readNodeInputSource } from '../../../shared/graph/nodeInputSource.ts';
 import type { CapabilityCatalog } from '../../../shared/api.ts';
 
 export type ConnectionRejectReasonCode = 'self_connection' | 'duplicate_edge' | 'missing_node' | 'cycle' | 'type_contract' | CompatReasonCode | 'capacity_exceeded';
@@ -48,19 +46,9 @@ export function validateDynamicModelCapacity(
   if (!fingerprint.mediaAssets.length) return { valid: true };
   const params = (target.data.params ?? {}) as Record<string, unknown>;
   const model = resolveModelView(buildContractView(catalog), params.model as string | undefined);
-  // R5: a model with no listed operation that can consume this media type must
-  // reject the edge; capacity / required-count issues remain advisory.
-  const sourceNode = nodes.find((node) => node.id === connection.source);
-  const sourceType = sourceNode ? readNodeInputSource(sourceNode).materialType : undefined;
-  if (model && sourceType && ['image', 'video', 'audio'].includes(sourceType)
-    && !modelCanConsumeMediaType({
-      catalog,
-      modelId: model.id,
-      outputType: target.data.materialType as string | undefined,
-      mediaType: sourceType,
-    })) {
-    return { valid: false, blockedBy: 'type-contract', reasonCode: 'model_incompatible' };
-  }
+  // Ordinary drag only validates graph structure. Model type / capacity / format
+  // are assignment concerns (#88): a legal edge is kept even when the current
+  // model has no slot for it, and the extra supply is silently unused.
   const autoOperationId = typeof target.data.autoOperationId === 'string' || target.data.autoOperationId === null
     ? target.data.autoOperationId as string | null : undefined;
   const preferredOperationId = readPreferredOperationId(params, autoOperationId);

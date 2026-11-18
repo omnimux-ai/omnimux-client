@@ -439,30 +439,19 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
     ...asset, nodeId: asset.sourceNodeId, materialType: asset.type,
     label: asset.sourceLabel,
   })), [consumedFingerprint]);
-  // R2/R4: media edges that no current-operation slot consumes (e.g. a legacy
-  // edge saved before bindings existed) still make every incompatible
-  // operation unusable. Add the display kernel's unused ready media back to the
-  // capability input; user-parked edges stay excluded by the kernel itself.
-  const videoDisplayUpstreams = useMemo(() => {
-    const seen = new Set(consumedUpstreams.map((source) => source.edgeId ?? source.nodeId));
-    const unused = inputDisplay.unused
-      .map((item) => upstreams.find((source) => source.edgeId === item.occupant.edgeId))
-      .filter((source): source is UpstreamMediaItem => {
-        if (!source) return false;
-        if (!['image', 'video', 'audio'].includes(source.materialType)) return false;
-        return !seen.has(source.edgeId ?? source.nodeId);
-      });
-    return [...consumedUpstreams, ...unused];
-  }, [consumedUpstreams, inputDisplay.unused, upstreams]);
+  // Card / prompt / submit all consume the assigned slot set. Ready supply that
+  // did not enter a slot is a candidate only: it must not be folded back into
+  // the capability input or it would disable generation / parameter controls.
+  const videoDisplayUpstreams = consumedUpstreams;
 
   // ---- Filtered model list (Hide, Don't Grey) ----
   // The shared kernel applies canvas model policy and input compatibility.
   const filteredModels = useMemo(
     () => buildFilteredModelOptions({
       catalog: activeCatalog,
-      // R10: the model list must reflect every connected media input, not only
-      // the ones the current operation happens to consume.
-      fingerprint: materialType === 'video' ? fingerprint : consumedFingerprint,
+      // Model availability follows the assigned slot set. Candidate edges that
+      // are silently unused must not grey a model or zero the list.
+      fingerprint: consumedFingerprint,
       outputType: outputTypeForCompat,
       // Capability tools (audio transcription) get their seam's contract models; every other
       // tool keeps the curated generative whitelist.
@@ -1190,7 +1179,19 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
       data: {
         ...node.data,
         slotBindings: inputDisplay.bindings,
-        params: { ...(params as Record<string, unknown>), operation: currentOperationId },
+        // Parameters in the store can still be the pre-normalized shape (for
+        // example a saved 16:9 on a fixed-adaptive operation). Validate the
+        // effective values the panel would submit, not a value the user cannot
+        // see in the controls.
+        params: {
+          ...(params as Record<string, unknown>),
+          operation: currentOperationId,
+          ...(materialType === 'video' && videoEffectiveParams ? {
+            ...(videoEffectiveParams.aspectRatio ? { aspectRatio: videoEffectiveParams.aspectRatio } : {}),
+            ...(videoEffectiveParams.duration !== '' ? { duration: videoEffectiveParams.duration } : {}),
+            ...(videoEffectiveParams.resolution ? { resolution: videoEffectiveParams.resolution } : {}),
+          } : {}),
+        },
       },
     } : node),
     edges: canvasEdges,

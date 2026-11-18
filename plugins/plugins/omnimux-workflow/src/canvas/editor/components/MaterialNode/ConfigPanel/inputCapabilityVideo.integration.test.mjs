@@ -126,7 +126,9 @@ test('two connected images select first_last_frame; video edit follows a video i
   const two = effective('seedance-2-5', { operation: 'text_to_video' }, [imageUpstream('a'), imageUpstream('b')]);
   assert.equal(two.operation, 'first_last_frame');
   const state = (id) => two.effectiveOperations.find((operation) => operation.id === id);
-  assert.equal(state('first_frame')?.disabled, true);
+  // #88 A17: first_frame is still an explicit valid choice; the second image
+  // is unused:capacity rather than a reason to disable the mode.
+  assert.equal(state('first_frame')?.disabled, false);
   assert.equal(state('video_multi_ref')?.disabled, false);
 
   const video = effective('seedance-2-5', { operation: 'text_to_video' }, [{

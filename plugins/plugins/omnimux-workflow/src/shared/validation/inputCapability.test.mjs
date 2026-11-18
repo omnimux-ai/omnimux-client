@@ -65,7 +65,9 @@ describe('R1/R2/R2b/R3 video matrix (real catalog)', () => {
     assert.equal(result.selectedOperationId, 'first_last_frame');
     assert.equal(stateOf(result, 'first_last_frame')?.usable, true);
     assert.equal(stateOf(result, 'video_multi_ref')?.usable, true);
-    assert.equal(stateOf(result, 'first_frame')?.usable, false);
+    // #88 A17: explicit first_frame with two images is a valid choice; the
+    // second image is unused:capacity, not an operation-level failure.
+    assert.equal(stateOf(result, 'first_frame')?.usable, true);
     assert.equal(stateOf(result, 'text_to_video')?.usable, false);
   });
 
@@ -195,7 +197,8 @@ describe('image / audio / text matrices (real catalog)', () => {
       includeInputIncompatible: true,
     });
     const videoOptions = new Map(videoModels.options.map((option) => [option.id, option]));
-    assert.equal(videoOptions.get('muse-video')?.inputIncompatible, true);
+    // #88: an audio candidate has no Muse slot and must not grey Muse.
+    assert.equal(videoOptions.get('muse-video')?.inputIncompatible, undefined);
     assert.equal(videoOptions.get('minimax-h3-video')?.inputIncompatible, undefined);
   });
 

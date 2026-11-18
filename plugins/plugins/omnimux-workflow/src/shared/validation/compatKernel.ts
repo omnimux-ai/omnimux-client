@@ -469,12 +469,24 @@ function bestRejection(candidates: CompatRejection[]): CompatRejection {
 export function matchOperationInputs(
   op: ContractOperationView,
   fingerprint: UpstreamFingerprint,
+  options: { ignoreUnused?: boolean } = {},
 ): OperationMatch {
   const slots = bindableSlots(op);
   const assignments = new Map<InputSlotDto, SlotAssignment>();
   for (const slot of slots) assignments.set(slot, { slot, assets: [] });
 
   const rejections: CompatRejection[] = [];
+  // Assignment mode (#88): candidates that cannot enter any slot are valid
+  // supply, but they are not generation input. Keep them out of `bindings`
+  // without turning capacity/type/format into an operation-level rejection.
+  // Strict callers keep the historical reject-on-extra behaviour by default.
+  const unusedRejectionCodes = new Set<CompatReasonCode>([
+    'slot_capacity', 'mime_unsupported', 'size_exceeded', 'duration_exceeded',
+  ]);
+  const pushRejection = (item: CompatRejection): void => {
+    if (options.ignoreUnused && unusedRejectionCodes.has(item.code)) return;
+    rejections.push(item);
+  };
 
   const tryAssign = (
     asset: UpstreamAssetFingerprint,
@@ -562,14 +574,14 @@ export function matchOperationInputs(
     if (asset.targetSlot) {
       const explicit = slots.filter((slot) => slot.slot === asset.targetSlot && slot.type === asset.type);
       if (explicit.length === 0) {
-        rejections.push(rejection('role_conflict', `显式目标槽位 ${asset.targetSlot} 不存在或类型不符`, {
+        pushRejection(rejection('role_conflict', `显式目标槽位 ${asset.targetSlot} 不存在或类型不符`, {
           operationId: op.id,
           slot: asset.targetSlot,
         }));
         continue;
       }
       const result = tryAssign(asset, explicit);
-      if (!result.assigned) rejections.push(bestRejection(result.attempts));
+      if (!result.assigned) pushRejection(bestRejection(result.attempts));
       continue;
     }
 
@@ -577,21 +589,21 @@ export function matchOperationInputs(
     if (asset.role) {
       const roleSlots = slots.filter((slot) => slot.role === asset.role && slot.type === asset.type);
       if (roleSlots.length === 0) {
-        rejections.push(rejection('role_conflict', `没有角色为 ${asset.role} 且类型为 ${asset.type} 的槽位`, {
+        pushRejection(rejection('role_conflict', `没有角色为 ${asset.role} 且类型为 ${asset.type} 的槽位`, {
           operationId: op.id,
           meta: { role: asset.role, type: asset.type },
         }));
         continue;
       }
       const result = tryAssign(asset, roleSlots);
-      if (!result.assigned) rejections.push(bestRejection(result.attempts));
+      if (!result.assigned) pushRejection(bestRejection(result.attempts));
       continue;
     }
 
     // 3. Type-matched slots: required narrow → generic reference → rest.
     const typed = slots.filter((slot) => slot.type === asset.type);
     if (typed.length === 0) {
-      rejections.push(rejection('operation_incompatible', `operation ${op.id} 没有可吸收 ${asset.type} 的槽位`, {
+      pushRejection(rejection('operation_incompatible', `operation ${op.id} 没有可吸收 ${asset.type} 的槽位`, {
         operationId: op.id,
         meta: { type: asset.type },
       }));
@@ -604,7 +616,7 @@ export function matchOperationInputs(
     const genericReference = typed.filter((slot) => slot.role === 'reference' && !requiredNarrow.includes(slot));
     const rest = typed.filter((slot) => !requiredNarrow.includes(slot) && !genericReference.includes(slot));
     const result = tryAssign(asset, [...requiredNarrow, ...genericReference, ...rest]);
-    if (!result.assigned) rejections.push(bestRejection(result.attempts));
+    if (!result.assigned) pushRejection(bestRejection(result.attempts));
   }
 
   for (const state of assignments.values()) {

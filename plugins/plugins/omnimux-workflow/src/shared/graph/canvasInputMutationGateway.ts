@@ -6,7 +6,6 @@ import { resolveNodeKind } from './materialNode.ts';
 import type { CapabilityCatalog } from '../api.ts';
 import type { MaterialType } from '../canvasTypes.ts';
 import { buildContractView, matchOperationInputs, resolveModelView, type OperationMatch } from '../validation/compatKernel.ts';
-import { modelCanConsumeMediaType } from '../validation/inputCapability.ts';
 import { buildCanvasUpstreamFingerprint, readCanvasParams } from './canvasInputSources.ts';
 import { deriveSlotLayout } from './feedSlot/deriveSlotLayout.ts';
 import { effectiveInputDisplay } from './feedSlot/effectiveInputDisplay.ts';
@@ -237,35 +236,10 @@ export function planCanvasInputMutation(current: CanvasInputMutationState, mutat
     const verdict = validateCanvasInputSelection({ nodes, edges }, mutation.strictConsumption, context);
     if (!verdict.accepts) return rejectMutation(current, verdict.reasonCode ?? 'operation_incompatible', { verdict });
   }
-  if (context) {
-    // Epic #63 / R5: reject a media edge when the target model has no listed
-    // operation that can consume this media type. Any operation-level switch
-    // that is still possible is committed by recomputeCanvasSlots below.
-    for (const edge of mutation.addEdges ?? []) {
-      const target = nodes.find((node) => node.id === edge.target);
-      if (!isGenerate(target)) continue;
-      const params = readCanvasParams(target);
-      const modelId = typeof params.model === 'string' ? params.model.trim() : '';
-      if (!modelId) continue;
-      // Unknown model / missing catalog is a configuration error, not a media
-      // type rejection: keep the legacy soft-admission path.
-      const modelView = resolveModelView(buildContractView(context.catalog), modelId);
-      if (!modelView) continue;
-      const source = nodes.find((node) => node.id === edge.source);
-      const sourceType = source ? readNodeInputSource(source).materialType : undefined;
-      if (!sourceType || !['image', 'video', 'audio'].includes(sourceType)) continue;
-      if (!modelCanConsumeMediaType({
-        catalog: context.catalog,
-        modelId,
-        outputType: target.data.materialType as string | undefined,
-        mediaType: sourceType,
-      })) {
-        return rejectMutation(current, 'model_incompatible', {
-          nodeId: target.id, modelId, mediaType: sourceType,
-        });
-      }
-    }
-  }
+  // Ordinary drag only validates graph structure. Model type / capacity / format
+  // are assignment concerns (#88): legal media edges stay connected even when
+  // the current model has no matching slot; recomputeCanvasSlots below derives
+  // the assigned/unused split without rejecting the mutation.
   if (!context) return { nodes, edges, status: 'allowed' };
   const invalidPatch = validateModelPatches(current, nodes, mutation, context);
   if (invalidPatch) return invalidPatch;
