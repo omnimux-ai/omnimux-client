@@ -29,7 +29,16 @@ export async function verifyNextMac(signed: boolean): Promise<void> {
     verifyRuntime: appPath => verifyNextMacRuntime(appPath, signed),
     ...(signed ? {
       verifyBuildInfo: appPath => verifyAppBuildInfo(appPath, { packageDir: 'dsh-desktop-next', allowNonOriginMain: process.env.DSH_MAC_RELEASE_CANDIDATE === '1' }),
-      smokeApp: appPath => smokeMacApp(appPath),
+      smokeApp: async appPath => {
+        // The x64 app runs through Rosetta on the release machine. Its first launch from a
+        // mounted DMG also pays the OS signature/Rosetta cache cost; one warm-up under a
+        // separate budget keeps the actual readiness gate at the documented 20s ceiling.
+        if (process.arch === 'arm64' && archSlices.length === 1 && archSlices[0] === 'x86_64') {
+          console.log('[verify-mac] warming x64 GUI under Rosetta')
+          await smokeMacApp(appPath, { settleMs: 60_000 })
+        }
+        await smokeMacApp(appPath)
+      },
     } : {}),
     run: (command, args) => {
       if (!signed && ['codesign', 'spctl', 'xcrun'].includes(command)) return
