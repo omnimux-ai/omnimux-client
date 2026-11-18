@@ -1,6 +1,6 @@
 /** Electron Builder's beforePack hook: the Office package closure joins the archive unpack patterns. */
 import { join } from 'node:path'
-import { nextPackagingTarget, PAYLOAD_DIR } from './packaged-payload.ts'
+import { nextPackagingTarget, payloadDir } from './packaged-payload.ts'
 import { officeUnpackPatterns } from './office-packages.ts'
 import { applyWindowsUnpack } from './windows-asar-unpack.ts'
 import { packagingStepSync } from './packaging-step.ts'
@@ -30,11 +30,12 @@ export function applyOfficeUnpack(config: { asarUnpack?: unknown }, payloadRoot:
 
 export default async function beforePack(context: PackContext): Promise<void> {
   const platform = context.electronPlatformName as NodeJS.Platform
-  const office = applyOfficeUnpack(context.packager.config, join(context.packager.projectDir, ...PAYLOAD_DIR.split('/')), platform)
+  const dir = payloadDir(platform)
+  const office = applyOfficeUnpack(context.packager.config, join(context.packager.projectDir, ...dir.split('/')), platform)
   if (office.length > 0) console.log(`Next ${context.electronPlatformName} payload unpacks the Office closure: ${String(office.length)} packages`)
   if (platform === 'win32') {
     const files = packagingStepSync('builder:prepare-pe-unpack', () => applyWindowsUnpack(context.packager.config,
-      context.packager.info.appDir, join(context.packager.projectDir, ...PAYLOAD_DIR.split('/'))))
+      context.packager.info.appDir, join(context.packager.projectDir, ...dir.split('/'))))
     console.log(`Next Windows payload unpacks ${String(files.length)} discovered PE files`)
   }
   await Promise.resolve()

@@ -7,7 +7,7 @@ import { verifyElectronExecutableFuses } from '../../dsh-plugin-desktop/scripts/
 import { withoutMacReleaseSecrets } from '../../dsh-plugin-desktop/scripts/release-preflight.ts'
 import { withoutWindowsSigningSecrets } from '../../dsh-plugin-desktop/scripts/package-win.ts'
 import { machOArchitectures, rosettaAvailable, type MachOArchitecture } from './primary-runtime.ts'
-import { archivedPayload, nextPackagingTarget, PAYLOAD_DIR, universalMergeRewrite, verifyNextRuntime, verifyUpdaterManifestShim } from './packaged-payload.ts'
+import { archivedPayload, nextPackagingTarget, payloadDir, universalMergeRewrite, verifyNextRuntime, verifyUpdaterManifestShim } from './packaged-payload.ts'
 import { expectedNextVersion, verifyNextRuntimeTree } from './prepare-runtime.ts'
 import { verifiedPackagedResources } from './verify-packaged.ts'
 import { packagingStep } from './packaging-step.ts'
@@ -70,7 +70,7 @@ async function verifyFinalArtifacts(result: { outDir: string }): Promise<string[
     const target = nextPackagingTarget(darwin ? 'darwin' : path.endsWith('.exe') ? 'win32' : 'linux')
     const alreadyVerifiedByAfterPack = verifiedPackagedResources.has(resolve(resources))
     if (darwin || !alreadyVerifiedByAfterPack) {
-      const merge = universalMergeRewrite(join(desktopRoot, ...PAYLOAD_DIR.split('/')))
+      const merge = universalMergeRewrite(join(desktopRoot, ...payloadDir(darwin ? 'darwin' : path.endsWith('.exe') ? 'win32' : 'linux').split('/')))
       const descriptor = verifyNextRuntime(resources, expectedVersion, target, { afterCodeSigning: true, acceptRewrite: merge.accept })
       console.log(`Verified ${root} against its sealed descriptor: ${String(descriptor.files.length)} files, dsh ${descriptor.release.dshVersion}`
         + (merge.accepted.length === 0 ? '' : `; the universal merge rewrote ${merge.accepted.join(', ')}`))

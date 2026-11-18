@@ -11,8 +11,9 @@ interface Phase {
 }
 
 function record(phase: Phase, event: object): void {
+  const arch = process.env.DSH_PACKAGING_ARCH
   appendFileSync(join(phase.directory, 'events.jsonl'), `${JSON.stringify({
-    time: new Date().toISOString(), pid: process.pid, stage: phase.stage, stageId: phase.stageId, ...event,
+    time: new Date().toISOString(), pid: process.pid, ...(arch === undefined ? {} : { arch }), stage: phase.stage, stageId: phase.stageId, ...event,
   })}\n`, { flush: true })
 }
 

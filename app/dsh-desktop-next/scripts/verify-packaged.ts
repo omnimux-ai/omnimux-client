@@ -2,7 +2,7 @@
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { archivedPayload, auditNextPayload, nextPackagingTarget, PAYLOAD_DIR, verifyArchiveAgainstPrepared, verifyNextPayload, verifyUpdaterManifestShim } from './packaged-payload.ts'
+import { archivedPayload, auditNextPayload, nextPackagingTarget, payloadDir, verifyArchiveAgainstPrepared, verifyNextPayload, verifyUpdaterManifestShim } from './packaged-payload.ts'
 import { expectedNextVersion, verifyNextRuntimeTree } from './prepare-runtime.ts'
 import { DESKTOP_RUNTIME_FILE } from '../src/runtime-tree.ts'
 import { packagingStepSync } from './packaging-step.ts'
@@ -55,9 +55,10 @@ export default async function afterPack(context: PackContext): Promise<void> {
     const target = nextPackagingTarget(platform)
     const problems = packagingStepSync('archive:audit', () => auditNextPayload(source, target))
     if (problems.length > 0) throw new Error(`Next payload audit failed:\n${problems.join('\n')}`)
-    const prepared = join(context.packager.projectDir, ...PAYLOAD_DIR.split('/'), DESKTOP_RUNTIME_FILE)
+    const dir = payloadDir(platform)
+    const prepared = join(context.packager.projectDir, ...dir.split('/'), DESKTOP_RUNTIME_FILE)
     const { descriptor, rewrittenPlists } = packagingStepSync('archive:verify-bytes', () => verifyArchiveAgainstPrepared(source, prepared, context.packager.appInfo.version, target))
-    if (platform === 'win32') packagingStepSync('archive:verify-pe-unpack', () => verifyWindowsCodeUnpacked(source, join(context.packager.projectDir, ...PAYLOAD_DIR.split('/'))))
+    if (platform === 'win32') packagingStepSync('archive:verify-pe-unpack', () => verifyWindowsCodeUnpacked(source, join(context.packager.projectDir, ...dir.split('/'))))
     const unpacked = source.list().filter(entry => entry.unpacked).length
     const { release } = descriptor
     console.log(`Verified the archive against the prepared Next payload: ${String(descriptor.files.length)} files (${String(unpacked)} unpacked) for ${descriptor.platform} ${descriptor.archs.join('/')}; `

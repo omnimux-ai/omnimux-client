@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import beforeBuild from '../scripts/before-build.ts'
-import { nextPackagingTarget, PAYLOAD_DIR, verifyNextPayload } from '../scripts/packaged-payload.ts'
+import { nextPackagingTarget, PAYLOAD_DIR, payloadDir, verifyNextPayload } from '../scripts/packaged-payload.ts'
 import { collectProductionClosure, collectProductionClosureReport, preparePayload, publishedEntries, publishedTree, SKIPPED_FEATURES_FILE } from '../scripts/prepare-payload.ts'
 import { DESKTOP_RUNTIME_FILE, physicalPayload, readDesktopRuntime, verifyPayload } from '../src/runtime-tree.ts'
 import { completeApplication, FIXTURE_RELEASE, writeApplication, writePackage } from './runtime-fixture.ts'
@@ -318,6 +318,14 @@ it('skips a required unused-feature package, records why, and still seals a reso
   manifest.dependencies['@fixture/other-os'] = '*'
   writeFileSync(join(desktop, 'package.json'), JSON.stringify(manifest))
   expect(() => collectProductionClosure(desktop, target)).toThrow(/@fixture\/other-os required by dsh-desktop-next cannot be packaged: package OS does not match target/u)
+})
+
+it('isolates single-architecture payloads while preserving the legacy universal and Windows layout', () => {
+  expect(payloadDir('darwin', { DSH_MAC_RELEASE_ARCH: 'arm64' })).toBe('.desktop-build/targets/arm64/payload')
+  expect(payloadDir('darwin', { DSH_MAC_RELEASE_ARCH: 'x64' })).toBe('.desktop-build/targets/x64/payload')
+  expect(payloadDir('darwin', {})).toBe(PAYLOAD_DIR)
+  expect(payloadDir('win32', {})).toBe(PAYLOAD_DIR)
+  expect(payloadDir('darwin', { DSH_NEXT_PAYLOAD_DIR: 'custom/payload' })).toBe('custom/payload')
 })
 
 it('declines electron-builder dependency handling once a matching payload is prepared', async () => {

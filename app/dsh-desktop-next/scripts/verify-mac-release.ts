@@ -12,7 +12,7 @@ import { NEXT_MAC_NATIVE_ENTRIES } from './mac-runtime.ts'
 import { verifyNextMacEntitlements } from './verify-mac-entitlements.ts'
 import { verifyNextMacRuntime } from './verify-mac-runtime.ts'
 
-export function verifyNextMac(signed: boolean): void {
+export async function verifyNextMac(signed: boolean): Promise<void> {
   const smokeSlices = signed ? undefined : macSmokeExecutableSlices(macSmokeArchitecture(process.env))
   // A signed release packages one architecture unless it is explicitly universal; the
   // mounted executable and unpacked native modules must carry exactly those slices.
@@ -20,7 +20,7 @@ export function verifyNextMac(signed: boolean): void {
   const archSlices = smokeSlices ?? (releaseArch === 'universal' ? ['x86_64', 'arm64']
     : [releaseArch === 'arm64' ? 'arm64' : 'x86_64'])
   const nativeEntries = NEXT_MAC_NATIVE_ENTRIES.filter(entry => archSlices.includes(entry.arch))
-  verifyMacRelease({ distDir: resolve(process.argv[2] ?? `dist/${signed ? 'mac-release' : 'mac-smoke'}`), productName: 'OmniMux', nativeEntries, archSlices,
+  await verifyMacRelease({ distDir: resolve(process.argv[2] ?? `dist/${signed ? 'mac-release' : 'mac-smoke'}`), productName: 'OmniMux', nativeEntries, archSlices,
     // Next archives its application; native files live beside the archive.
     unpackedRoot: appPath => join(appPath, 'Contents', 'Resources', 'app.asar.unpacked'),
     listDmgs: path => readdirSync(path).filter(name => name.endsWith('.dmg')).map(name => join(path, name)).filter(path => statSync(path).isFile()),
@@ -40,4 +40,4 @@ export function verifyNextMac(signed: boolean): void {
       if (signed && command === 'codesign' && args.includes('--verify')) verifyNextMacEntitlements(args.at(-1)!, undefined, archSlices)
     } })
 }
-if (process.argv[1]?.endsWith('/verify-mac-release.ts')) verifyNextMac(true)
+if (process.argv[1]?.endsWith('/verify-mac-release.ts')) await verifyNextMac(true)
