@@ -129,13 +129,14 @@ async function evaluateRenderer(webSocketUrl: string): Promise<RendererState> {
 }
 
 async function waitForRenderer(port: number, timeoutMs: number): Promise<RendererState> {
-  const target = await waitFor('CDP page target', 10_000, async () => {
+  const deadline = Date.now() + timeoutMs
+  const target = await waitFor('CDP page target', Math.min(10_000, Math.max(1, deadline - Date.now())), async () => {
     const targets = await cdpTargets(port)
     return targets.find(candidate => candidate.type === 'page' && candidate.webSocketDebuggerUrl !== undefined)
       ?? targets.find(candidate => candidate.webSocketDebuggerUrl !== undefined)
   })
   if (target.webSocketDebuggerUrl === undefined) throw new Error('CDP page target has no WebSocket URL')
-  return waitFor('renderer ready', timeoutMs, async () => {
+  return waitFor('renderer ready', Math.max(1, deadline - Date.now()), async () => {
     const state = await evaluateRenderer(target.webSocketDebuggerUrl!)
     return state.readyState === 'complete'
       && state.visibilityState === 'visible'
@@ -207,10 +208,11 @@ export async function smokeMacApp(appPath: string, options: MacAppSmokeOptions =
     if (child.exitCode !== null) {
       throw new Error(`macOS GUI smoke exited before launch: status=${String(child.exitCode)} stdout=${JSON.stringify(stdout.trim())} stderr=${JSON.stringify(stderr.trim())}`)
     }
-    const portFile = await waitFor('DevToolsActivePort', Math.min(settleMs, 10_000), () => findDevToolsActivePort(root))
+    const deadline = Date.now() + settleMs
+    const portFile = await waitFor('DevToolsActivePort', Math.max(1, deadline - Date.now()), () => findDevToolsActivePort(root))
     const port = Number.parseInt(readFileSync(portFile, 'utf8').split('\n')[0] ?? '', 10)
     if (!Number.isInteger(port) || port <= 0 || port > 65535) throw new Error(`macOS GUI smoke: invalid DevToolsActivePort at ${portFile}`)
-    const state = await waitForRenderer(port, settleMs)
+    const state = await waitForRenderer(port, Math.max(1, deadline - Date.now()))
     console.log(`macOS GUI smoke passed in ${String(Date.now() - started)}ms: ${executable} port=${String(port)} `
       + `readyState=${state.readyState} visibilityState=${state.visibilityState} rootChildren=${String(state.rootChildren)} textLength=${String(state.textLength)}`)
   } finally {

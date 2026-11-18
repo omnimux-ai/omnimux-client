@@ -69,7 +69,7 @@ function run(command: string, args: readonly string[]): void {
 }
 
 function detachImage(options: MacReleaseVerificationOptions, mountPoint: string): void {
-  const busyFailure = (cause: unknown): boolean => /(?:resource busy|couldn't unmount|resource busy)/iu.test(cause instanceof Error ? cause.message : String(cause))
+  const busyFailure = (cause: unknown): boolean => /(?:resource busy|couldn't unmount|资源忙)/iu.test(cause instanceof Error ? cause.message : String(cause))
   const delays = options.detachRetryDelaysMs ?? [1_000, 2_000, 4_000]
   const sleep = options.sleep ?? (milliseconds => {
     spawnSync('sleep', [String(milliseconds / 1_000)], { stdio: 'ignore' })
