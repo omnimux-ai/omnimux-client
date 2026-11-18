@@ -180,7 +180,7 @@ function evaluateOperation(
   order: number,
   fingerprint: UpstreamFingerprint,
   counts: Record<'image' | 'video' | 'audio', number>,
-  options: { ignoreUnused?: boolean } = {},
+  options: { ignoreUnused?: boolean; ignoreUnassignable?: boolean } = {},
 ): InputCapabilityOperationState {
   const match = matchOperationInputs(op, fingerprint, options);
   const rejections: InputCapabilityRejection[] = [];
@@ -346,7 +346,6 @@ export function buildInputCapability(args: InputCapabilityArgs): InputCapability
   const operationStates = listed.map(({ operation, order }) =>
     evaluateOperation(operation, order, fingerprint, counts, { ignoreUnused }),
   );
-  const candidates = operationStates.filter((state) => state.usable);
   const preferredRaw = typeof args.preferredOperationId === 'string' && args.preferredOperationId.trim()
     ? mapLegacyOperation(args.preferredOperationId.trim())
     : '';
@@ -359,14 +358,36 @@ export function buildInputCapability(args: InputCapabilityArgs): InputCapability
   const preferred = preferredRaw && preferredRaw !== autoRaw
     ? operationStates.find((state) => state.id === preferredRaw)
     : undefined;
+  const strictCandidates = operationStates.filter((state) => state.usable);
   if (preferred?.usable) {
     selected = preferred;
-  } else if (candidates.length > 0) {
-    if (!hasMedia) {
-      const defaultId = args.outputType ? DEFAULT_OPERATION_BY_OUTPUT[args.outputType] : undefined;
-      selected = defaultId ? candidates.find((state) => state.id === defaultId) : undefined;
+  } else if (preferred && strictCandidates.length === 0) {
+    // #62: when no mode is strictly usable, a saved mode whose required inputs are
+    // all satisfied stays usable if the only conflicts come from media none of its
+    // slots can take (e.g. a legacy audio edge on text_to_video). Those edges stay
+    // on the canvas as silent candidates; they must not disable generation. As soon
+    // as any mode is strictly usable (a newly consumable supply), switching wins.
+    const entry = listed.find(({ operation }) => operation.id === preferred.id);
+    if (entry) {
+      const relaxed = evaluateOperation(entry.operation, entry.order, fingerprint, counts, {
+        ignoreUnused, ignoreUnassignable: true,
+      });
+      if (relaxed.usable) {
+        const at = operationStates.findIndex((state) => state.id === relaxed.id);
+        if (at >= 0) operationStates[at] = relaxed;
+        selected = relaxed;
+      }
     }
-    selected ??= [...candidates].sort(sortCandidates)[0];
+  }
+  if (!selected) {
+    const candidates = operationStates.filter((state) => state.usable);
+    if (candidates.length > 0) {
+      if (!hasMedia) {
+        const defaultId = args.outputType ? DEFAULT_OPERATION_BY_OUTPUT[args.outputType] : undefined;
+        selected = defaultId ? candidates.find((state) => state.id === defaultId) : undefined;
+      }
+      selected ??= [...candidates].sort(sortCandidates)[0];
+    }
   }
 
   const result: InputCapabilityResult = {

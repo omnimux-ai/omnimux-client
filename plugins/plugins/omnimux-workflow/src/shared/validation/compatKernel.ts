@@ -469,7 +469,7 @@ function bestRejection(candidates: CompatRejection[]): CompatRejection {
 export function matchOperationInputs(
   op: ContractOperationView,
   fingerprint: UpstreamFingerprint,
-  options: { ignoreUnused?: boolean } = {},
+  options: { ignoreUnused?: boolean; ignoreUnassignable?: boolean } = {},
 ): OperationMatch {
   const slots = bindableSlots(op);
   const assignments = new Map<InputSlotDto, SlotAssignment>();
@@ -603,6 +603,11 @@ export function matchOperationInputs(
     // 3. Type-matched slots: required narrow → generic reference → rest.
     const typed = slots.filter((slot) => slot.type === asset.type);
     if (typed.length === 0) {
+      // A media type this operation has no slot for is an unconsumed candidate,
+      // not a reason to reject the mode: keep the edge, leave it out of bindings.
+      // Only readiness for an already-chosen mode relaxes this; auto-selection
+      // keeps the strict view so a newly consumable supply can still switch modes.
+      if (options.ignoreUnassignable) continue;
       pushRejection(rejection('operation_incompatible', `operation ${op.id} 没有可吸收 ${asset.type} 的槽位`, {
         operationId: op.id,
         meta: { type: asset.type },

@@ -172,3 +172,66 @@ test('#62: a legacy audio edge stays a silent candidate and keeps text_to_video 
   assert.equal(effective.operation, 'text_to_video');
   assert.equal(effective.effectiveOperations.find((operation) => operation.id === 'text_to_video')?.disabled, false);
 });
+
+test('#62: an unconsumed audio candidate never flips readiness or the request (A/B)', async () => {
+  // A/B：同一节点、同一 prompt、同一 seedance text_to_video，唯一差异是 B 多一条历史 audio 边。
+  // 两边 readyToSubmit 与执行请求必须一致：未消费候选既不阻断，也不进入 payload。
+  const { findExecutionReadinessFailure } = await import('../validation/executionReadiness.ts');
+  const prompt = 'issue-62 A/B contrast: 一艘船在湖面上缓慢航行';
+  const audio = {
+    id: 'src-1',
+    type: 'material',
+    data: {
+      materialType: 'audio',
+      nodeKind: 'import',
+      status: 'ready',
+      mediaUrl: 'https://example.test/src-1.mp3',
+      mediaAssets: [{ type: 'audio', url: 'https://example.test/src-1.mp3', mimeType: 'audio/mpeg', sizeBytes: 1024 }],
+      mimeType: 'audio/mpeg',
+      sizeBytes: 1024,
+    },
+  };
+  const target = () => ({
+    id: 'target',
+    type: 'material',
+    data: {
+      materialType: 'video',
+      nodeKind: 'generate',
+      selectedTool: 'video-generation',
+      status: 'empty',
+      prompt,
+      params: { model: 'seedance-2-5', operation: 'text_to_video' },
+      inputBindingVersion: 1,
+      slotBindings: {},
+      slotConflicts: [],
+    },
+  });
+  const audioEdge = {
+    id: 'edge-audio', source: 'src-1', target: 'target', targetHandle: 'in', data: { feedType: 'audio' },
+  };
+
+  const withoutEdge = findExecutionReadinessFailure([target()], catalog, { nodes: [target()], edges: [] });
+  assert.equal(withoutEdge, null, 'A (no audio edge) must be ready');
+
+  const withEdge = findExecutionReadinessFailure([audio, target()], catalog, {
+    nodes: [audio, target()], edges: [audioEdge],
+  });
+  assert.equal(withEdge, null, 'B (legacy audio candidate) must be ready');
+
+  // 请求同源：两种画布都准备出同一个 text_to_video 请求，音频不进入 references。
+  const prepare = (nodes, edges) => prepareExecutionSlotGraph(nodes, edges, catalog).nodes.find((node) => node.id === 'target');
+  const a = prepare([target()], []);
+  const b = prepare([audio, target()], [audioEdge]);
+  assert.equal(a.data.params.operation, 'text_to_video');
+  assert.equal(b.data.params.operation, 'text_to_video');
+  assert.deepEqual(a.data.slotBindings, b.data.slotBindings);
+  assert.deepEqual(b.data.slotBindings, {});
+
+  // 画布 store 的 compat 镜像也不能被候选边打成 configuration_error。
+  const recomputed = recomputeCanvasSlots(target(), {
+    nodes: [audio, target()], edges: [audioEdge],
+  }, { catalog }, undefined, new Set(['edge-audio']));
+  assert.equal(recomputed.data.params.operation, 'text_to_video');
+  assert.equal(recomputed.data.compat.acceptsCurrentInputs, true);
+  assert.deepEqual(recomputed.data.compat.reasonCodes, []);
+});

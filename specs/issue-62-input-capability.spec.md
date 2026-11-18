@@ -91,7 +91,9 @@ A/B（真实 CanvasEditor + 真实 bundled catalog 投影 + 实际 `prepareExecu
 - 根因：`recomputeCanvasSlots` 在 V1 路径把已有 `slotBindings` 原样写回，只把新边追加进新槽；operation 换 layout 后旧模式的槽位键不会被清理，`matchOperationInputs` 读到跨模式槽位即报 `role_conflict`。
 - 修复：layout 变化导致 `slotBindings` 出现当前 operation 不存在的槽位键时，保留仍然合法的键与其占用（含用户 pin），释放旧键并用同一 `autoFillSlots` 规则重新分配到新 layout；用户显式清空 `{}` 的语义不变。删除视频后按同一规则回到 `first_last_frame`。
 
-`illegal-legacy`（历史 audio 边 → seedance 视频节点）按新口径处理，不恢复「6 个 operation 全灰」：候选音频不进入 `slotBindings`、不渲染 chip，面板按已消费供给判定，`text_to_video` 保持可选。执行侧 `executionReadiness` 仍按原始供给计算 capability（该场景与合并前 main 相同，返回 400 `operation_incompatible`）；未消费候选在执行侧的统一规则留在 #88，本切片不改。新增测试固化面板口径与「音频不占槽」。
+`illegal-legacy`（历史 audio 边 → seedance 视频节点）按新口径处理，不恢复「6 个 operation 全灰」：候选音频不进入 `slotBindings`、不渲染 chip，面板、就绪与执行链路统一按「当前模式未消费的候选不参与」判定，`text_to_video` 可生成并实际发出请求。
+
+实现上 `matchOperationInputs` 增加 `ignoreUnassignable`（只对已选模式的就绪判定生效：某媒体类型在该 operation 没有任何槽位时视为未消费候选，而非拒绝），`buildInputCapability` 在无可用候选但存在显式首选模式时，用放宽 matcher 复核该模式；自动选模式的严格匹配保持不变，P1 三连仍会切到 `video_multi_ref`。测试固化 A/B：同一节点、同一 prompt、同一 `text_to_video`，唯一差异是历史 audio 边，`readyToSubmit` 与执行准备结果必须一致（音频不进入 payload）。
 
 验收：`canvasSlotRecompute.multimodal.test.mjs` 断言三连后的 `slotBindings` 键（`reference_images` ×2、`reference_videos` ×1）、`acceptsCurrentInputs=true`、`readyToSubmit=true`、执行准备同源，以及删视频回 `first_last_frame`；历史音频边用例断言 `text_to_video` 可执行、音频不占槽、边保留。
 
