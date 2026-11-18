@@ -62,11 +62,18 @@ const run = (command: string, args: readonly string[], cwd: string, env: NodeJS.
   if (TEST_BUILD_VERSION !== undefined && isBuilder) console.log(`Packaging with test build version ${TEST_BUILD_VERSION}; source manifests are unchanged.`)
   const isPreflight = (args.includes('run') && args.includes('check')) || args.some(arg => arg.includes('check:win-package') || arg.includes('check:linux-package'))
   const stage = isBuilder ? 'builder:total' : isPreflight ? 'build:package-preflight' : 'package:command'
-  const measuredArgs = isBuilder && env.DSH_DESKTOP_PACKAGING_RUN_DIR !== undefined
-    ? ['--import', new URL('./packaging-builder.mjs', import.meta.url).href, ...forwarded]
-    : forwarded
   const builderEnv = isBuilder ? { ...env, DSH_NEXT_WINDOWS_FAST_COMPRESSION: '1' } : env
-  packagingStepSync(stage, () => runNextPackagingCommand(command, measuredArgs, cwd, builderEnv, workspaceRoot))
+  if (isBuilder && env.DSH_DESKTOP_PACKAGING_RUN_DIR !== undefined) {
+    // `yarn exec electron-builder` cannot receive Node's `--import` flag. Run the
+    // resolved Electron Builder CLI through Node so the measurement adapter loads
+    // before the CLI, without putting secrets or script paths in the journal.
+    const builderArgs = forwarded[0] === 'exec' && forwarded[1] === 'electron-builder' ? forwarded.slice(2) : forwarded
+    const cli = require.resolve('electron-builder/cli.js')
+    packagingStepSync(stage, () => runNextPackagingCommand(process.execPath,
+      ['--import', new URL('./packaging-builder.mjs', import.meta.url).href, cli, ...builderArgs], cwd, builderEnv, workspaceRoot))
+    return
+  }
+  packagingStepSync(stage, () => runNextPackagingCommand(command, forwarded, cwd, builderEnv, workspaceRoot))
 }
 const listCodeSigningIdentities = (env: NodeJS.ProcessEnv): string => {
   const result = spawnSync('security', ['find-identity', '-v', '-p', 'codesigning'], { env, encoding: 'utf8' })

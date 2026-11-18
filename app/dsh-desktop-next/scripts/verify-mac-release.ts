@@ -28,7 +28,7 @@ export async function verifyNextMac(signed: boolean): Promise<void> {
     // The interpreter payloads beside the archive: both CPUs present, the host's CPU executed, release signatures checked.
     verifyRuntime: appPath => verifyNextMacRuntime(appPath, signed),
     ...(signed ? {
-      verifyBuildInfo: appPath => verifyAppBuildInfo(appPath, { packageDir: 'dsh-desktop-next' }),
+      verifyBuildInfo: appPath => verifyAppBuildInfo(appPath, { packageDir: 'dsh-desktop-next', allowNonOriginMain: process.env.DSH_MAC_RELEASE_CANDIDATE === '1' }),
       smokeApp: appPath => smokeMacApp(appPath),
     } : {}),
     run: (command, args) => {
