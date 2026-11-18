@@ -186,13 +186,19 @@ async function submitAndWait(arch: NextRuntimeArch, appPath: string, outputDir: 
   return { submissionId, zip }
 }
 
-async function buildDmgAndVerify(arch: NextRuntimeArch, appPath: string, outputDir: string, env: NodeJS.ProcessEnv): Promise<string> {
+async function buildDmg(arch: NextRuntimeArch, appPath: string, outputDir: string, env: NodeJS.ProcessEnv): Promise<string> {
   const dmg = join(outputDir, `OmniMux-${version}-${arch}.dmg`)
   await packagingStep(`dmg:build:${arch}`, async () => {
     runSync('hdiutil', ['create', '-volname', 'OmniMux', '-srcfolder', appPath, '-ov', '-format', 'UDZO', dmg], desktopRoot, env, `dmg ${arch}`)
   })
-  await packagingStep(`verify:mac:${arch}`, () => runChild(process.execPath, ['scripts/verify-mac-release.ts', outputDir], desktopRoot, env, `verify ${arch} dmg`))
   return dmg
+}
+
+async function verifyDmg(arch: NextRuntimeArch, outputDir: string, env: NodeJS.ProcessEnv): Promise<void> {
+  // The final verifier launches a real GUI. Run the two mounted-app smokes one at a
+  // time: on an Apple Silicon host the x64 app runs through Rosetta, and two cold
+  // GUI launches can exceed the per-package 20s readiness budget when overlapped.
+  await packagingStep(`verify:mac:${arch}`, () => runChild(process.execPath, ['scripts/verify-mac-release.ts', outputDir], desktopRoot, env, `verify ${arch} dmg`))
 }
 
 async function main(): Promise<void> {
@@ -230,11 +236,28 @@ async function main(): Promise<void> {
   const dmgResults = await Promise.allSettled(archs.map(arch => {
     const app = apps.get(arch)
     if (app === undefined) throw new Error(`missing ${arch} application`)
-    return buildDmgAndVerify(arch, app, join(outputRoot, arch), childEnvironment(arch, outputRoot, runRoot))
+    return buildDmg(arch, app, join(outputRoot, arch), childEnvironment(arch, outputRoot, runRoot))
   }))
   const dmgFailures = dmgResults.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
   if (dmgFailures.length > 0) {
-    throw new AggregateError(dmgFailures.map(result => result.reason), 'one or more macOS DMG verifications failed')
+    throw new AggregateError(dmgFailures.map(result => result.reason), 'one or more macOS DMG builds failed')
+  }
+  const dmgs = new Map<NextRuntimeArch, string>()
+  archs.forEach((arch, index) => {
+    const result = dmgResults[index]
+    if (result?.status !== 'fulfilled') throw new Error(`missing ${arch} DMG result`)
+    dmgs.set(arch, result.value)
+  })
+  const verifyFailures: unknown[] = []
+  for (const arch of archs) {
+    try {
+      await verifyDmg(arch, join(outputRoot, arch), childEnvironment(arch, outputRoot, runRoot))
+    } catch (error) {
+      verifyFailures.push(error)
+    }
+  }
+  if (verifyFailures.length > 0) {
+    throw new AggregateError(verifyFailures, 'one or more macOS DMG verifications failed')
   }
   const events = mergeEvents(runRoot)
   const summary = {
@@ -244,10 +267,7 @@ async function main(): Promise<void> {
     outputRoot,
     runRoot,
     events,
-    archs: Object.fromEntries(archs.map((arch, index) => {
-      const result = dmgResults[index]
-      return [arch, { app: apps.get(arch), dmg: result?.status === 'fulfilled' ? result.value : undefined }]
-    })),
+    archs: Object.fromEntries(archs.map(arch => [arch, { app: apps.get(arch), dmg: dmgs.get(arch) }])),
   }
   writeFileSync(join(runRoot, 'summary.json'), `${JSON.stringify(summary, undefined, 2)}\n`)
   console.log(`release:mac:all complete: ${JSON.stringify(summary)}`)
