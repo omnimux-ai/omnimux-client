@@ -1520,6 +1520,15 @@ describe('first-run onboarding gating (#67)', () => {
     assert.equal(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`), null)
     surface.remove()
 
+    // #77 起新引导页只挂 [data-omnimux-native-runtime]（NativeRuntimeSetup）；
+    // 旧标记继续兼容，但不得只适配旧引导。
+    const native = doc.createElement('div')
+    native.setAttribute('data-omnimux-native-runtime', '')
+    doc.body.appendChild(native)
+    assert.equal(ensureSidebarToggleTopbar(doc), null)
+    assert.equal(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`), null)
+    native.remove()
+
     const root = doc.getElementById('root') || doc.createElement('div')
     if (!root.id) { root.id = 'root'; doc.body.appendChild(root) }
     root.setAttribute('inert', '')
@@ -1583,6 +1592,15 @@ describe('first-run onboarding gating (#67)', () => {
       doc.body.appendChild(surface)
       await waitFor(() => hasControls() === false)
       surface.remove()
+      await waitFor(() => hasControls() === true)
+
+      // 新引导实现：#77 的 native runtime 页以 [data-omnimux-native-runtime] 标记，
+      // 可能没有旧的 surface 属性；顶层容器的插入/移除仍应触发隐藏与恢复。
+      const native = doc.createElement('div')
+      native.setAttribute('data-omnimux-native-runtime', '')
+      doc.body.appendChild(native)
+      await waitFor(() => hasControls() === false)
+      native.remove()
       await waitFor(() => hasControls() === true)
 
       root.setAttribute('inert', '')

@@ -1078,7 +1078,7 @@ function isOnboardingGuideActive(doc) {
   if (!doc) return false
   try {
     if (typeof doc.querySelector === 'function'
-      && doc.querySelector('[data-omnimux-runtime-guide], [data-desktop-onboarding-surface], #root[inert]')) {
+      && doc.querySelector('[data-omnimux-runtime-guide], [data-omnimux-native-runtime], [data-desktop-onboarding-surface], #root[inert]')) {
       return true
     }
     const root = typeof doc.getElementById === 'function' ? doc.getElementById('root') : null
