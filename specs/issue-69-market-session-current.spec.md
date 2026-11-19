@@ -31,6 +31,7 @@
 - [ ] AC-1：`session-create.js` 源码无 `sessions.list.getSnapshot().current` 读取；合法读口按上述顺序解析。
 - [ ] AC-2：`resolvedOfficialTarget` 在 rc.3 形状下能通过 `byId[sessionId].blank` 或 `ids` 新增 blank 返回 `{ ok:true, sessionId }`。
 - [ ] AC-3：`createReadySkillSession` 的 origin/expected/cancel 检查在无 `current` 的 store 下仍工作。
+- [ ] AC-3b：`createReadySkillSession` 在 `sessions.open(sessionId)` 后与会话创建链路一致地调用 `workbench.open({ tabId: 'omnimux-market:plaza', sessionId, title })`、`setFocus('split')`、`setConversationCollapsed(false, { sessionId })`；`session-create-ready.test.js` 断言三者与参数。
 - [ ] AC-4：`createSkillSession` 的会话 A 保护与 `currentPlazaSessionId` 在无 `current` 下仍工作。
 - [ ] AC-5：`pnpm --filter omnimux-market test` 与 typecheck、build、build:all、boundaries/stages/plugin-load 全部通过（除基线已有失败）。
 

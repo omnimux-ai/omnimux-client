@@ -10,7 +10,7 @@ function deferred() {
   return { promise, resolve, reject }
 }
 function setup({ install, create, attach, draft = '', protectedInput = false, receipt = true, mount = true } = {}) {
-  const calls = [], listeners = new Set(), writes = []
+  const calls = [], listeners = new Set(), writes = [], wbCalls = []
   let current = 'a'
   const state = new Map([
     ['a', { draft: 'old draft', attachments: ['image-a'] }],
@@ -23,7 +23,12 @@ function setup({ install, create, attach, draft = '', protectedInput = false, re
     create: async options => { calls.push(['create', options.workspaceId]); return create ? create() : 'b' },
     open: id => { calls.push(['open', id]); move(id) },
   }
-  const context = { plazaSessions: sessions, setTimeout, console, window: { __omnimuxWorkbench: { getSnapshot: () => ({ sessionId: current }) }, addEventListener: () => {} }, api: async (method, body) => {
+  const context = { plazaSessions: sessions, setTimeout, console, window: { __omnimuxWorkbench: {
+    getSnapshot: () => ({ sessionId: current }),
+    open: payload => { wbCalls.push(['open', payload]) },
+    setFocus: mode => { wbCalls.push(['setFocus', mode]) },
+    setConversationCollapsed: (value, opts) => { wbCalls.push(['setConversationCollapsed', value, opts]) },
+  }, addEventListener: () => {} }, api: async (method, body) => {
     calls.push([method, body.sessionId || body.slug])
     if (method === 'install') return install ? install() : { ok: true }
     if (method === 'tryAttach') return attach ? attach(body) : { attached: true, hasBody: true, sessionId: body.sessionId, slug: body.slug }
@@ -42,7 +47,7 @@ function setup({ install, create, attach, draft = '', protectedInput = false, re
       },
     })
   }
-  return { ...exports, calls, writes, move, state, listeners, current: () => current, run: options => exports.createSkillSession({ requireReady: true, timeoutMs: 5, ...options }) }
+  return { ...exports, calls, writes, wbCalls, move, state, listeners, current: () => current, run: options => exports.createSkillSession({ requireReady: true, timeoutMs: 5, ...options }) }
 }
 
 test('ready flow installs once, attaches nonempty body to B, writes once without reading stale draft, preserves A', async () => {
@@ -51,6 +56,17 @@ test('ready flow installs once, attaches nonempty body to B, writes once without
   assert.equal(result.ok, true)
   assert.equal(result.prefilled, true)
   assert.deepEqual(h.calls, [['install', 'skill-creator'], ['create', 'w'], ['tryAttach', 'b'], ['open', 'b']])
+  // ready 路径必须真的把新会话开进 workbench，否则实机会停在旧会话、无 composer。
+  // VM 里创建的对象跨 realm，用字段断言而不是 deepEqual 原型比较。
+  assert.equal(h.wbCalls.length, 3)
+  assert.equal(h.wbCalls[0][0], 'open')
+  assert.equal(h.wbCalls[0][1].tabId, 'omnimux-market:plaza')
+  assert.equal(h.wbCalls[0][1].sessionId, 'b')
+  assert.equal(typeof h.wbCalls[0][1].title, 'string')
+  assert.deepEqual([...h.wbCalls[1]], ['setFocus', 'split'])
+  assert.equal(h.wbCalls[2][0], 'setConversationCollapsed')
+  assert.equal(h.wbCalls[2][1], false)
+  assert.equal(h.wbCalls[2][2].sessionId, 'b')
   assert.equal(h.writes.length, 1)
   assert.equal(h.writes[0].sessionId, 'b')
   assert.match(h.state.get('b').draft, /^\/skill-creator\n/)

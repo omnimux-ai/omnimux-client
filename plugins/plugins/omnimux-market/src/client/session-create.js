@@ -33,6 +33,15 @@
         expected = sessionId;
         opts.onTarget?.(sessionId);
         sessions.open(sessionId);
+        // ready 路径同样要开 workbench：只 open 会话不会切到 split、也不会展开中间栏，
+        // 实机表现是停在旧会话、没有 composer（#69 AC-3 的 ready / 非 ready 两条链路同源）。
+        const wb = typeof window !== "undefined" ? window.__omnimuxWorkbench : undefined;
+        const plazaTitle = typeof lookup === "function" ? (lookup("plaza.title") || "Skills") : "Skills";
+        try {
+          window.__omnimuxWorkbench?.open?.({ tabId: "omnimux-market:plaza", sessionId, title: plazaTitle });
+        } catch {}
+        try { wb?.setFocus?.("split"); } catch {}
+        try { wb?.setConversationCollapsed?.(false, { sessionId }); } catch {}
         const text = typeof opts.text === "string" ? opts.text : "/skill-creator\n帮我使用它来创建一个新的技能。首先询问我这个技能应该做什么。";
         const start = Date.now();
         const timeout = Number.isFinite(opts.timeoutMs) ? opts.timeoutMs : 10000;
