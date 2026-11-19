@@ -6,6 +6,8 @@
  * twin) and opens `#omnimux-sidebar-new-menu`. Real new-session happens only
  * after the "新建会话" menuitem click. This helper mirrors that gesture.
  */
+import { normalizeSessionId, resolveCurrentSessionId } from './current-session.js'
+
 export const NEW_SESSION_WAIT_MS = 1500
 export const NEW_SESSION_POLL_MS = 50
 
@@ -21,7 +23,7 @@ export function bindOfficialSessions(sessions) {
   officialSessions = sessions || null
 }
 
-const SESSION_MENU_RE = /新会话|新建会话|new session/i
+const SESSION_MENU_RE = /新会话|新建会话|新建对话|新对话|new session/i
 const PROJECT_MENU_RE = /新建项目|create project|new project/i
 
 function resolveDoc(doc) {
@@ -65,7 +67,7 @@ function matchesOfficialNewSession(button) {
   }
   if (String(button.className || '').includes('newSession')) return true
   const aria = String(button.getAttribute('aria-label') || '').trim()
-  return /^(新建会话|新会话|New session)$/i.test(aria)
+  return /^(新建会话|新会话|新建对话|新对话|New session)$/i.test(aria)
 }
 
 /**
@@ -99,7 +101,7 @@ export function findSingleWorkspaceNewSessionButton(doc) {
   const matches = Array.from(d.querySelectorAll('button')).filter((button) => {
     if (!isVisible(button) || typeof button.getAttribute !== 'function') return false
     const aria = String(button.getAttribute('aria-label') || '').trim()
-    return /^(在.+中新建会话|New session in .+)$/i.test(aria)
+    return /^(在.+中新建会话|在.+中新建对话|New session in .+)$/i.test(aria)
   })
   return matches.length === 1 ? matches[0] : null
 }
@@ -163,18 +165,46 @@ function sessionSnapshot(sessions) {
   }
 }
 
-function resolvedOfficialTarget(sessions, beforeId) {
+function resolveWindow(doc, explicit) {
+  if (explicit) return explicit
+  if (doc && doc.defaultView) return doc.defaultView
+  if (typeof window !== 'undefined') return window
+  return undefined
+}
+
+/**
+ * Snapshot the two things the official click promise must watch: the ids that
+ * existed before the gesture and the current session from the legal host read
+ * ports (rc.3 SessionListState has no `current`).
+ */
+function officialTargetBaseline(sessions, windowObject) {
   const snapshot = sessionSnapshot(sessions)
-  const sessionId = snapshot?.current
-  if (!sessionId || typeof sessionId !== 'string') return null
-  const summary = snapshot.byId?.[sessionId]
+  const ids = Array.isArray(snapshot?.ids)
+    ? snapshot.ids.slice()
+    : Object.keys(snapshot?.byId && typeof snapshot.byId === 'object' ? snapshot.byId : {})
+  return { ids, currentId: normalizeSessionId(resolveCurrentSessionId(windowObject)) }
+}
+
+function resolvedOfficialTarget(sessions, baseline, windowObject) {
+  const snapshot = sessionSnapshot(sessions)
+  if (!snapshot) return null
+  const byId = snapshot.byId && typeof snapshot.byId === 'object' ? snapshot.byId : {}
+  const ids = Array.isArray(snapshot.ids) ? snapshot.ids : Object.keys(byId)
+  // Prefer a blank session added by this gesture. This is the only proof that
+  // does not depend on the workbench projection settling first.
+  const addedBlank = ids.filter((id) => !baseline.ids.includes(id) && byId[id]?.blank === true)
+  if (addedBlank.length > 0) {
+    const sessionId = addedBlank[addedBlank.length - 1]
+    return { ok: true, sessionId, reusedBlank: false }
+  }
+  const currentId = normalizeSessionId(resolveCurrentSessionId(windowObject))
   // `blank` is the official SessionSummary lifecycle bit. It proves that this
   // selected target is a legal new-session result, including blank reuse.
-  if (!summary || summary.blank !== true) return null
+  if (!currentId || byId[currentId]?.blank !== true) return null
   return {
     ok: true,
-    sessionId,
-    reusedBlank: sessionId === beforeId,
+    sessionId: currentId,
+    reusedBlank: currentId === baseline.currentId,
   }
 }
 
@@ -195,6 +225,7 @@ function resolvedOfficialTarget(sessions, beforeId) {
  */
 export async function clickOfficialNewSession(opts = {}) {
   const doc = resolveDoc(opts.document)
+  const win = resolveWindow(doc, opts.window)
   const sessions = opts.sessions || officialSessions
   const timeoutMs = Number.isFinite(opts.timeoutMs) ? opts.timeoutMs : NEW_SESSION_WAIT_MS
   const pollMs = Number.isFinite(opts.pollMs) ? opts.pollMs : NEW_SESSION_POLL_MS
@@ -206,14 +237,14 @@ export async function clickOfficialNewSession(opts = {}) {
   if (!list || typeof list.getSnapshot !== 'function' || typeof list.subscribe !== 'function') {
     return { ok: false, error: 'newSessionFailed' }
   }
-  const beforeId = sessionSnapshot(sessions)?.current || ''
-  const hasOfficialCurrent = Boolean(beforeId)
+  const baseline = officialTargetBaseline(sessions, win)
+  const hasOfficialCurrent = Boolean(baseline.currentId)
   let directActionPending = false
   let menuActionDispatched = false
   let observedTarget = null
   const unsubscribe = list.subscribe(() => {
     if (!directActionPending && !menuActionDispatched) return
-    observedTarget = resolvedOfficialTarget(sessions, beforeId)
+    observedTarget = resolvedOfficialTarget(sessions, baseline, win)
   })
   const dispatchMenu = (el) => clickIfPossible(el, () => { menuActionDispatched = true })
   const dispatchButton = (el) => clickIfPossible(el, () => { directActionPending = true })

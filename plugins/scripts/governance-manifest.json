@@ -447,7 +447,8 @@
     "worktree-cleanup-3820.test.mjs",
     "worktree-default-mode-qa.mjs",
     "worktree-web-qa-lifecycle.test.mjs",
-    "input-capability.test.mjs"
+    "input-capability.test.mjs",
+    "replicate-cta.test.mjs"
   ],
   "deprecated": []
 }
