@@ -9,12 +9,16 @@
  */
 
 import type { CapabilityCatalog } from '../../shared/api.ts';
-import type { UpstreamTaskRef } from '../seam/gateway.ts';
+import type { GenerationGateway, UpstreamTaskRef, WorkflowSubmission } from '../seam/gateway.ts';
 
 /** Upstream-resolved inputs handed to each executor. */
 export interface ExecutionContext {
   /** Catalog captured alongside dispatch validation for the current request. */
   catalog?: CapabilityCatalog;
+  /** Created only for a new generation, using the same catalog as dispatch readiness. */
+  submission?: WorkflowSubmission;
+  /** Owner used for the entire task lifecycle when multiple managers share the registry. */
+  gateway?: GenerationGateway;
   /** Node outputs keyed by upstream node id. */
   upstreamOutputs: Map<string, NodeOutput>;
   /** Inbound edges in canvas order, including semantic slot metadata. */

@@ -34,6 +34,7 @@ export function readUpstreamTaskRef(value: unknown): UpstreamTaskRef | undefined
     capability?: unknown;
     submittedAt?: unknown;
     owner?: unknown;
+    omittedNodePrompt?: unknown;
   };
   if (typeof candidate.taskId !== 'string' || candidate.taskId.trim() === '') return undefined;
   if (typeof candidate.capability !== 'string' || !CAPABILITIES.has(candidate.capability)) return undefined;
@@ -49,6 +50,7 @@ export function readUpstreamTaskRef(value: unknown): UpstreamTaskRef | undefined
     taskId: candidate.taskId.trim(),
     capability: candidate.capability as GenerationCapability,
     submittedAt: Math.max(0, Math.trunc(candidate.submittedAt)),
+    ...(candidate.capability === 'video' && candidate.omittedNodePrompt === true ? { omittedNodePrompt: true } : {}),
     ...(taskRef ? { taskRef } : {}),
     // #1386: an unknown owner is not a broken record — it means "no provenance",
     // which routes exactly like a reference written before #1386.

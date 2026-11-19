@@ -19,7 +19,7 @@ export function effectiveInputDisplay(layout: SlotLayout, feed: FeedAsset[], sav
   // 当显式传入已保存的字典（含空对象）时严格保持不变；仅当 explicit === undefined（未初始化装填态）时执行 autoFillSlots
   const fill = inputBindingVersion === 1
     ? (explicit === undefined ? autoFillSlots(feed, layout, {}, standby) : { bindings: explicit, conflicts: [] as SlotConflict[] })
-    : explicit === undefined ? hydrateSlotBindings(feed, layout, edges)
+    : explicit === undefined ? hydrateSlotBindings(feed, layout, edges, standby)
     : Object.keys(explicit).length > 0
       ? autoFillSlots(feed, layout, explicit, standby)
       : { bindings: explicit, conflicts: [] as SlotConflict[] };

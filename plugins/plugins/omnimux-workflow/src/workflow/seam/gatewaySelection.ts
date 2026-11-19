@@ -15,15 +15,19 @@
 
 import type {
   GenerationGateway,
+  SubmitRequest,
+  SubmitResult,
+  WorkflowSubmission,
   UpstreamTaskOwner,
   UpstreamTaskRef,
 } from './gateway';
-import { createMockGateway } from './mockGateway';
+import { openWorkflowSubmission } from './submitGuard.ts';
+import { createMockGateway } from './mockGateway.ts';
 import {
   createOmnimuxSeamClient,
   type SeamGetter,
-} from './omnimuxGateway';
-import { createWorkflowLogger } from '../execution/logger';
+} from './omnimuxGateway.ts';
+import { createWorkflowLogger } from '../execution/logger.ts';
 
 const LOG_TAG = 'gatewaySelection';
 
@@ -150,17 +154,34 @@ export function createAutoSwitchGateway(opts: AutoSwitchGatewayOptions): AutoSwi
   /** Resolve the active backend gateway object from the current mode. */
   const backendOf = (): GenerationGateway => (pick() === 'mock' ? mock : omnimux);
 
-  return {
-    async submit(req) {
-      const backend = backendOf();
-      const result = await backend.submit(req);
-      taskOwners.set(result.taskId, backend === omnimux ? 'omnimux' : 'mock');
-      // #1386: stamp the resolved owner onto the result. The executor persists it
-      // with the reference, so a later process can route the reconcile without
-      // this process's (necessarily empty) task table.
-      return { ...result, owner: result.owner ?? (backend === omnimux ? 'omnimux' : 'mock') };
-    },
+  function recordOwner(backend: GenerationGateway, result: SubmitResult): SubmitResult {
+    const owner = backend === omnimux ? 'omnimux' : 'mock';
+    taskOwners.set(result.taskId, owner);
+    return { ...result, owner: result.owner ?? owner };
+  }
 
+  async function openSubmission(): Promise<WorkflowSubmission> {
+    const backend = backendOf();
+    const submission = await openWorkflowSubmission(backend);
+    return {
+      catalog: submission.catalog,
+      async submit(req) {
+        // A hub mounted during input preparation changes the serving contract.
+        const current = backendOf();
+        const selected = current === backend ? submission : await openWorkflowSubmission(current);
+        const { task, model } = await selected.submit(req);
+        return { task: recordOwner(current, task), model };
+      },
+    };
+  }
+
+  async function submit(req: SubmitRequest): Promise<SubmitResult> {
+    const backend = backendOf();
+    return recordOwner(backend, await backend.submit(req));
+  }
+
+  return {
+    submit: Object.assign(submit, { openWorkflowSubmission: openSubmission }),
     async awaitTask(taskId, dest, signal) {
       const owner = taskOwners.get(taskId);
       const backend = owner === 'mock' ? mock : owner === 'omnimux' ? omnimux : backendOf();

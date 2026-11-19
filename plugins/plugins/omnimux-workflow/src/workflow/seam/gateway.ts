@@ -182,6 +182,8 @@ export interface AwaitTaskResult {
  * The hub never sees this type: it only recognizes `{ taskId, dest }`.
  */
 export interface UpstreamTaskRef {
+  /** The accepted H3 lip-sync request excluded the node's editable prompt. */
+  omittedNodePrompt?: true;
   /** Task id returned by the hub on submit. */
   taskId: string;
   /** Hub-issued opaque task reference (persisted across restarts). */
@@ -212,9 +214,19 @@ export interface UpstreamTaskRef {
   owner?: UpstreamTaskOwner;
 }
 
+/** Per-dispatch catalog and validated submission for one canvas node. */
+export interface WorkflowSubmission {
+  catalog: import('../../shared/api.ts').CapabilityCatalog;
+  submit(req: SubmitRequest): Promise<{ task: SubmitResult; model?: string; omittedNodePrompt?: true }>;
+}
+
 export interface GenerationGateway {
   /** Submit a generation task (wait:false semantics). */
-  submit(req: SubmitRequest): Promise<SubmitResult>;
+  submit: {
+    (req: SubmitRequest): Promise<SubmitResult>;
+    /** Optional on the submit function so wrappers that replace it keep their own dispatch path. */
+    openWorkflowSubmission?(): Promise<WorkflowSubmission>;
+  };
   /** Poll a task and download the artifact to its dest. */
   awaitTask(taskId: string, dest: string, signal?: AbortSignal): Promise<AwaitTaskResult>;
   /**

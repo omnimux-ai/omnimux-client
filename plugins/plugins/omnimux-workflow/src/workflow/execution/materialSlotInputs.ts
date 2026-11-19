@@ -115,7 +115,7 @@ export function collectMaterialSlotInputs(data: Record<string, unknown>, ctx: Ex
   // JSON document duration is a model-level parameter override, applied only
   // when the selected model declares a duration parameter (Issue #27).
   let documentDuration: number | undefined;
-  if (model) {
+  if (model && layout.acceptsDocuments !== false) {
     const modelRow = (catalog.models ?? []).find((candidate) =>
       candidate.id === model.id || (Array.isArray(candidate.aliases) && candidate.aliases.includes(model.id)));
     const operationRow = model.operations.find((candidate) => candidate.id === operationId);

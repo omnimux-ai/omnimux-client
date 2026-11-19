@@ -4,8 +4,12 @@ import { mkdtempSync, existsSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createOmnimuxSeamClient } from './omnimuxGateway.ts';
+import { createMaterialGatewayExecutor } from '../execution/materialGatewayExecutor.ts';
+import { registerExecutor } from '../executors/registry.ts';
+import { createDispatchingNodeExecutor } from '../execution/nodeExecutors.ts';
+import { createAutoSwitchGateway } from './gatewaySelection.ts';
 import { createMockGateway } from './mockGateway.ts';
-import { resolveCanvasSubmission, resolveExecutorSubmission } from './submitGuard.ts';
+import { openWorkflowSubmission, resolveCanvasSubmission, resolveExecutorSubmission } from './submitGuard.ts';
 import { buildContractView, buildUpstreamFingerprint, evaluateModelCompat } from '../../shared/validation/compatKernel.ts';
 import { catalogFor, operation, slot } from './submissionFixtures.mjs';
 
@@ -148,4 +152,76 @@ test('local-file video URL automatically self-heals duration and size via ffprob
     assert.equal(resolved.references[0].durationSec, 8);
     assert.ok(resolved.references[0].sizeBytes > 1000000);
   }
+});
+
+async function assertFreshDispatchCatalog(backend) {
+  let reads = 0;
+  const current = catalogFor('text', 'fixture', [operation('chat', 'text')]);
+  const read = () => { reads++; return current; };
+  const getSeam = name => name === 'modelCatalog' ? { list: read }
+    : name === 'textComplete' ? { execute: async () => ({ type: 'text', text: 'done' }) } : undefined;
+  const gateway = backend === 'mock' ? createMockGateway({ catalog: read, minLatencyMs: 0, maxLatencyMs: 0 })
+    : backend === 'auto' ? createAutoSwitchGateway({ getSeam }) : createOmnimuxSeamClient({ getSeam });
+  registerExecutor(createMaterialGatewayExecutor({ gateway }));
+  const dispatch = createDispatchingNodeExecutor({
+    gateway, edges: [], mediaRoot: root, executionId: backend, abortController: new AbortController(),
+  });
+  await dispatch.executor({ id: 'target', type: 'material', data: {
+    materialType: 'text', prompt: 'go', params: { model: 'fixture', operation: 'chat' },
+  } }, { getNodeOutput() {}, addMediaAsset() {}, reportProgress() {} });
+  assert.equal(reads, 1);
+
+  current.models[0].operations[0].listed = false;
+  const raw = { capability: 'text', model: 'fixture', operation: 'chat', prompt: 'go', dest: join(root, 'unused') };
+  await assert.rejects(gateway.submit(raw), { code: 'model-not-allowed' });
+  assert.equal(reads, 2);
+}
+
+test('mock dispatch uses one catalog and refreshes it on the next submission', async () => {
+  await assertFreshDispatchCatalog('mock');
+});
+
+test('official dispatch uses one catalog and refreshes it on the next submission', async () => {
+  await assertFreshDispatchCatalog('omnimux');
+});
+
+test('automatic dispatch uses one catalog and refreshes it on the next submission', async () => {
+  await assertFreshDispatchCatalog('auto');
+});
+
+test('editing the dispatch working catalog cannot add an operation to the submission contract', async () => {
+  const gateway = createMockGateway({ catalog: () => catalog });
+  const submission = await openWorkflowSubmission(gateway);
+  submission.catalog.models[0].operations.push(operation('invented', 'video'));
+  await assert.rejects(submission.submit(request({ operation: 'invented' })), { code: 'operation-not-allowed' });
+});
+
+test('auto upgrade during preparation validates against the new backend before submitting', async () => {
+  const local = catalogFor('text', 'local', [operation('chat', 'text')]);
+  const official = catalogFor('text', 'official', [operation('chat', 'text')]);
+  let mounted = false;
+  let liveReads = 0;
+  const gateway = createAutoSwitchGateway({
+    mockGateway: createMockGateway({ catalog: () => local }),
+    getSeam: name => !mounted ? undefined : name === 'modelCatalog'
+      ? { list: () => { liveReads++; return official; } }
+      : name === 'textComplete' ? { execute: async () => ({ text: 'done' }) } : undefined,
+  });
+  const submission = await openWorkflowSubmission(gateway);
+  mounted = true;
+  const req = { capability: 'text', operation: 'chat', model: 'local', prompt: 'ok', dest: join(root, 'upgrade') };
+  await assert.rejects(submission.submit(req), { code: 'model-not-allowed' });
+  assert.equal(liveReads, 1);
+});
+
+test('dispatch awaits the gateway that accepted its task across executor registry replacements', async () => {
+  const makeGateway = () => createMockGateway({ catalog: () => catalog, minLatencyMs: 0, maxLatencyMs: 0 });
+  const dispatch = createDispatchingNodeExecutor({ gateway: makeGateway(), edges: [], mediaRoot: root,
+    executionId: 'first-manager', abortController: new AbortController() });
+  registerExecutor(createMaterialGatewayExecutor({ gateway: makeGateway() }));
+  const result = await dispatch.executor({ id: 'target', type: 'material', data: {
+    materialType: 'video', prompt: 'go', params: { model: 'seedance-2-5', operation: 'text_to_video' },
+  } }, { getNodeOutput() {}, addMediaAsset() {}, reportProgress() {} });
+  assert.equal(result.mediaAssets[0].type, 'video');
+  assert.equal(result.simulated, true);
 });

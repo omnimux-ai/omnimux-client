@@ -1,7 +1,7 @@
 import type { CapabilityCatalog } from '../../shared/api.ts';
-import { buildContractView, buildUpstreamFingerprint, matchOperationInputs, resolveModelView } from '../../shared/validation/compatKernel.ts';
+import { buildContractView, buildUpstreamFingerprint, matchOperationInputs, operationAcceptsText, resolveModelView } from '../../shared/validation/compatKernel.ts';
 import { buildEffectiveOpsUiState } from '../../shared/validation/operationUi.ts';
-import type { ReferenceAssetPayload, SubmitRequest } from './gateway.ts';
+import type { GenerationGateway, ReferenceAssetPayload, SubmitRequest, WorkflowSubmission } from './gateway.ts';
 import { SeamGatewayError } from './SeamGatewayError.ts';
 import { submissionFingerprint, submissionReferences } from './submissionInputs.ts';
 
@@ -31,8 +31,8 @@ function submissionModel(req: SubmitRequest, catalog: CapabilityCatalog) {
 
 /** Only the executor may resolve an omitted operation using the shared canvas policy. */
 export function resolveExecutorSubmission(req: SubmitRequest, catalog: CapabilityCatalog): SubmitRequest {
-  const model = submissionModel(req, catalog);
   if (req.operation !== undefined) return resolveCanvasSubmission(req, catalog);
+  const model = submissionModel(req, catalog);
   const state = buildEffectiveOpsUiState({
     catalog, modelId: model.id, outputType: req.capability, fingerprint: submissionFingerprint(req),
   });
@@ -86,7 +86,38 @@ export function resolveCanvasSubmission(req: SubmitRequest, catalog: CapabilityC
   }
   const trackReference = req.audioTrack && references.find((ref) => ref.pathOrUrl === req.audioTrack!.pathOrUrl
     && ref.role === req.audioTrack!.role && ref.targetSlot === req.audioTrack!.targetSlot);
-  return { ...req, model: model.id,
+  const resolved = { ...req, model: model.id,
     ...(req.references ? { references: req.references.map((ref) => normalized.get(ref)!) } : {}),
     ...(trackReference ? { audioTrack: normalized.get(trackReference)! } : {}) };
+  if (model.hasGatewayInputContract && !operationAcceptsText(model, operation)) {
+    delete resolved.prompt;
+    delete resolved.localText;
+    delete resolved.textInputs;
+    delete resolved.interleavedParts;
+  }
+  return resolved;
+}
+
+/** Keep the authoritative snapshot private. Preparation code receives its own working copy. */
+export function createWorkflowSubmission(
+  catalog: CapabilityCatalog, submitResolved: GenerationGateway['submit'],
+): WorkflowSubmission {
+  const snapshot = structuredClone(catalog);
+  return {
+    catalog: structuredClone(snapshot),
+    async submit(request) {
+      const resolved = resolveExecutorSubmission(request, snapshot);
+      // Record what this backend actually accepted; a working catalog can be
+      // replaced between UI admission and dispatch. Older tasks have no proof.
+      const omittedNodePrompt = resolved.model === 'minimax-h3-video' && resolved.operation === 'digital_human'
+        && typeof request.prompt === 'string' && !Object.hasOwn(resolved, 'prompt');
+      return { task: await submitResolved(resolved), model: resolved.model, ...(omittedNodePrompt ? { omittedNodePrompt: true } : {}) };
+    },
+  };
+}
+
+/** Embedders that supply the original gateway interface still get guarded executor submissions. */
+export async function openWorkflowSubmission(gateway: GenerationGateway, catalog?: CapabilityCatalog): Promise<WorkflowSubmission> {
+  if (gateway.submit.openWorkflowSubmission) return gateway.submit.openWorkflowSubmission();
+  return createWorkflowSubmission(catalog ?? await gateway.capabilities(), request => gateway.submit(request));
 }

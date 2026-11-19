@@ -28,6 +28,7 @@ import { createWorkflowLogger } from './logger.ts';
 import { WORKFLOW_ROUTE_PREFIX } from '../../shared/api.ts';
 import { resolveNodeKind } from '../../shared/graph/materialNode.ts';
 import { materialTools } from '../../shared/specs/nodes/materialNodeSpec.ts';
+import { openWorkflowSubmission } from '../seam/submitGuard.ts';
 import { findExecutionReadinessFailure } from '../../shared/validation/executionReadiness.ts';
 import { readExplicitTargetSlot } from '../../shared/validation/compatKernel.ts';
 import { deriveSlotLayout, type SlotBindings, type SlotConflict } from '../../shared/graph/feedSlot/index.ts';
@@ -104,7 +105,8 @@ export function createDispatchingNodeExecutor(
     const edges = structuredClone(opts.edges);
     const upstreamOutputs = structuredClone(resolveUpstreamOutputs(node, edges, context));
     const collecting = executorKey === 'material:generate' && Boolean(context.readNodeUpstreamTask?.(node.id));
-    const catalog = executorKey === 'material:generate' && !collecting ? structuredClone(await opts.gateway.capabilities()) : undefined;
+    const submission = executorKey === 'material:generate' && !collecting ? await openWorkflowSubmission(opts.gateway) : undefined;
+    const catalog = submission?.catalog;
     const upstreamBindings = collecting ? [] : resolveUpstreamBindings(node, edges, { getNodeOutput: (id) => upstreamOutputs.get(id) }, catalog);
 
     if (executorKey === 'material:generate' && !collecting) {
@@ -141,6 +143,8 @@ export function createDispatchingNodeExecutor(
     assertProjectWriteSafe(mediaDir, opts.mediaRoot);
     const ctx: ExecutorContext = {
       catalog,
+      submission,
+      gateway: opts.gateway,
       upstreamOutputs,
       upstreamBindings,
       signal: opts.abortController.signal,

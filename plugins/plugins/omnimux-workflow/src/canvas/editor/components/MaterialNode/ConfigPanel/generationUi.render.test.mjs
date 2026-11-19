@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
+import { buildModelCatalog } from '../../../../../../../omnimux/src/catalog/list.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '../../../../../..');
@@ -14,7 +16,7 @@ const output = resolve(tmp, 'render.cjs');
 const stubs = {
   'useUpstreamMedia': `export const useUpstreamMedia = () => globalThis.__generationTestUpstreams ?? []; export const toUpstreamSnapshots = items => items;`,
   'useModelParameterSchema': `export const getCachedCatalog = () => null; export const useModelParameterSchema = (kind, id, catalog) => ({ schema: {}, modelItem: catalog?.[kind]?.find(m => m.id === id), aspectRatioOptions: [], defaultAspectRatio: '16:9', isAspectRatioValid: () => true, defaultDuration: 5, isDurationValid: () => true });`,
-  'canvasStore': `const state = () => ({ nodes: [], edges: (globalThis.__generationTestUpstreams ?? []).filter(item => item.edgeId).map(item => ({id:item.edgeId,source:item.nodeId,target:'target',targetHandle:'in'}))}); export const useCanvasStore = Object.assign(selector => selector(state()), { getState: state, subscribe: () => () => {} });`,
+  'canvasStore': `const state = () => ({ nodes: globalThis.__generationTestNodes ?? [], edges: (globalThis.__generationTestUpstreams ?? []).filter(item => item.edgeId).map(item => ({id:item.edgeId,source:item.nodeId,target:'target',targetHandle:'in'}))}); export const useCanvasStore = Object.assign(selector => selector(state()), { getState: state, subscribe: () => () => {} });`,
   'generationPreferencesStore': `export const rememberGenerationModel = async () => {};`,
   'i18n': `import zh from ${JSON.stringify(resolve(root, 'src/canvas/i18n/dict.zh.ts'))}; export const useT = () => key => zh[key] ?? key;`,
   'ui': `import React from 'react'; export const CustomSelect = ({options=[]}) => React.createElement('div', {'data-model-options': options.length}, options.map(o => React.createElement('span', {key:o.value}, o.label))); export const CustomSlider = () => null; export const toast = {error: () => {}};`,
@@ -22,7 +24,7 @@ const stubs = {
 await build({
   absWorkingDir: root,
   stdin: {
-    contents: `import React from 'react'; import {renderToStaticMarkup} from 'react-dom/server'; import ConfigPanel from ${JSON.stringify(resolve(here, 'index.tsx'))}; export function render(nodeData,catalog,upstreams=[]) { globalThis.__generationTestUpstreams=upstreams; return renderToStaticMarkup(React.createElement(ConfigPanel,{nodeId:'target',nodeData,catalog,onUpdateNodeData:()=>{},onGenerate:()=>{},execBusy:false})); }`,
+    contents: `import React from 'react'; import {renderToStaticMarkup} from 'react-dom/server'; import ConfigPanel from ${JSON.stringify(resolve(here, 'index.tsx'))}; export function render(nodeData,catalog,upstreams=[],nodes=[],execBusy=false) { globalThis.__generationTestUpstreams=upstreams; globalThis.__generationTestNodes=nodes; return renderToStaticMarkup(React.createElement(ConfigPanel,{nodeId:'target',nodeData,catalog,onUpdateNodeData:()=>{},onGenerate:()=>{},execBusy})); }`,
     resolveDir: root,
   },
   bundle: true, jsx: 'automatic', platform: 'node', format: 'cjs', outfile: output, logLevel: 'silent',
@@ -45,6 +47,31 @@ function fixture(type, multiple = true) {
   return {source:'omnimux',text:[],image:[],video:[],audio:[],[type]:[model],models:[model]};
 }
 const node = (materialType, extra={}) => ({materialType,kind:'generate',selectedTool:'text-to-text',params:{model:'test-model',operation:'plain'},prompt:'',...extra});
+
+test('H3 keeps its editor available, names the missing well, and blocks another click while busy', () => {
+  const bundled = JSON.parse(readFileSync(resolve(root, '../omnimux/src/catalog/cloud/bundled/pricing.json'), 'utf8'));
+  const catalog = buildModelCatalog({ snapshot: bundled, env: {} });
+  const params = { model: 'minimax-h3-video', operation: 'digital_human' };
+  const htmlFor = (kinds, draft, busy = false) => {
+    const sources = kinds.map(kind => ({ id: kind, type: 'material', data: { materialType: kind, nodeKind: 'import',
+      mediaUrl: `https://example.test/${kind}` } }));
+    const upstreams = sources.map(source => ({ nodeId: source.id, edgeId: source.id, materialType: source.id,
+      label: source.id, availability: 'ready', hasMedia: true, url: source.data.mediaUrl }));
+    const slotBindings = Object.fromEntries(kinds.map(kind => [`reference_${kind}`, [{ edgeId: kind, sourceNodeId: kind, use: 'active', role: 'reference' }]]));
+    return render(node('video', { selectedTool: 'text-to-video', nodeKind: 'generate', params, autoOperationId: null,
+      inputBindingVersion: 1, slotBindings, prompt: draft }), catalog, upstreams, sources, busy);
+  };
+  const button = html => html.match(/<button[^>]*wf-generate-btn__send[^>]*>/)?.[0] ?? '';
+  const empty = htmlFor([], '留给下个镜头');
+  assert.match(empty, /contentEditable="true"/i);
+  assert.match(empty, /留给下个镜头/);
+  assert.match(empty, /data-slot="reference_image"/);
+  assert.match(empty, /data-slot="reference_audio"/);
+  assert.match(button(empty), /title="[^"]*角色图/);
+  assert.match(button(htmlFor(['image'], '')), /title="[^"]*驱动音频/);
+  assert.match(button(htmlFor(['image', 'audio'], '')), /aria-disabled="false"/);
+  assert.match(button(htmlFor(['image', 'audio'], '新草稿', true)), /aria-disabled="true"/);
+});
 
 test('new text panel has no quiet input hint element, no mode selector, and a disabled generation action', () => {
   const html = render(node('text'),fixture('text'));

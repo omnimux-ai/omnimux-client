@@ -26,7 +26,7 @@ export const SLOT_NAME_ALIASES: Readonly<Record<string, readonly string[]>> = Ob
   first_frame: ['start_frame'],
   last_frame: ['end_frame'],
   character: ['character_image', 'portrait', 'reference_image', 'reference_images', 'first_frame'],
-  driving_audio: ['audio_track', 'audio', 'source_audio'],
+  driving_audio: ['audio_track', 'audio', 'source_audio', 'reference_audio'],
   reference_image: ['reference', 'references', 'input_image', 'input_images'],
   reference: ['reference_image', 'references', 'input_image', 'input_images'],
   reference_audio: ['reference', 'references', 'input_audio', 'audio_track', 'audio'],
