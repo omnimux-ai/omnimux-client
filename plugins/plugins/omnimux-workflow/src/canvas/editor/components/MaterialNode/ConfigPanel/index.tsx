@@ -446,10 +446,10 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   // A parked pin can make the mode that owns its named slot selectable again.
   const videoModeUpstreams = useMemo(() => [...consumedUpstreams, ...slotConflicts.flatMap(conflict => {
     if (conflict.reason !== 'slot_inactive' || conflict.occupant.use === 'inactive') return [];
-    const asset = feedAssets.find(item => item.edgeId === conflict.occupant.edgeId && item.sourceNodeId === conflict.occupant.sourceNodeId);
+    const asset = fingerprint.assets.find(item => item.edgeId === conflict.occupant.edgeId && item.sourceNodeId === conflict.occupant.sourceNodeId);
     return asset ? [{ ...asset, nodeId: asset.sourceNodeId, materialType: asset.type, label: asset.sourceLabel,
       targetSlot: conflict.slot, role: conflict.occupant.role }] : [];
-  })], [consumedUpstreams, slotConflicts, feedAssets]);
+  })], [consumedUpstreams, slotConflicts, fingerprint.assets]);
 
   // Model eligibility comes from the directory. The selected model reassigns supply.
   const filteredModels = useMemo(
