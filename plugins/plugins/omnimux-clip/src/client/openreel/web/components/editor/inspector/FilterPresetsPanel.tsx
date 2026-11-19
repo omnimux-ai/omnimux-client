@@ -140,7 +140,6 @@ export const FilterPresetsPanel: React.FC<FilterPresetsPanelProps> = ({
     }
 
     setAppliedPresetId(null);
-    toast.info("Effects Cleared");
   }, [targetClipId, getVideoEffects, removeVideoEffect]);
 
   if (!targetClipId) {

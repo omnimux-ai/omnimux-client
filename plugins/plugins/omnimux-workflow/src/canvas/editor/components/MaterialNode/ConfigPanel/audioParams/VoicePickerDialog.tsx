@@ -170,7 +170,7 @@ export function VoicePickerDialog({
     const reportFailure = (audio: HTMLAudioElement): void => {
       if (!isCurrent()) return;
       clearPlayback(audio);
-      toast.info('试听暂不可用，请稍后重试。');
+      toast.warning('试听暂不可用，请稍后重试。');
     };
 
     /**

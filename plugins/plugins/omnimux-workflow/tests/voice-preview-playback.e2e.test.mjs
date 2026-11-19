@@ -9,7 +9,7 @@
  * 源码字符串断言（既有 voicePickerDialog.test.mjs / voicePreviewContract.test.mjs）
  * 无法覆盖这个时序——只有受控 Audio 的 deferred play() 能真实复现。
  * 本测试用 esbuild 打包真实 VoicePickerDialog.tsx（lucide-react 与 ui/index.ts
- * 替换为桩：CustomModal 直接渲染 children/footer，toast.info 计数），
+ * 替换为桩：CustomModal 直接渲染 children/footer，toast.warning 计数），
  * react / react-dom 由 Node 侧同一实例注入，DOM 由 JSDOM 提供。
  * 每条断言都是强断言 assert.equal / deepEqual；不验证真实媒体可播。
  */
@@ -82,14 +82,14 @@ function installAudioStub() {
   return instances;
 }
 
-/** toast.info 计数桩：核定失败文案只应出现一次。 */
+/** toast.warning 计数桩：核定失败文案只应出现一次。 */
 function installToast() {
   const calls = [];
   globalThis.__voiceToast = {
     calls,
-    info: (msg) => calls.push(msg),
+    info: () => {},
     success: () => {},
-    warning: () => {},
+    warning: (msg) => calls.push(msg),
     error: () => {},
   };
   return calls;

@@ -510,8 +510,6 @@ export const MotionPresetsPanel: React.FC<MotionPresetsPanelProps> = ({
       } else {
         updateClipKeyframes(targetClipId, filteredKeyframes);
       }
-
-      toast.info("Preset Removed");
     },
     [
       clip,

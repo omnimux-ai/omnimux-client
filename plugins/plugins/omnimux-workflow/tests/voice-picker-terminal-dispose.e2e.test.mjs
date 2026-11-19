@@ -12,7 +12,7 @@
  *     element）；终态释放后旧 element 迟到的 error 不再触发任何回调。
  *
  * 真实组件经 esbuild 打包（lucide-react 与 ui/index.ts 替换为桩，
- * toast.info 计数），react / react-dom 由 Node 侧同一实例注入，DOM 由
+ * toast.warning 计数），react / react-dom 由 Node 侧同一实例注入，DOM 由
  * JSDOM 提供。每条断言都是强断言；不验证真实媒体可播。
  */
 
@@ -92,9 +92,9 @@ function installToast() {
   const calls = [];
   globalThis.__voiceToast = {
     calls,
-    info: (msg) => calls.push(msg),
+    info: () => {},
     success: () => {},
-    warning: () => {},
+    warning: (msg) => calls.push(msg),
     error: () => {},
   };
   return calls;

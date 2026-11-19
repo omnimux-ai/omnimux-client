@@ -150,7 +150,6 @@ export const BackgroundRemovalSection: React.FC<
   const handleToggleEnabled = useCallback(() => {
     if (settings.enabled) {
       updateSettings({ enabled: false });
-      toast.info("Background Removal Disabled");
     } else {
       processBackgroundRemoval();
     }

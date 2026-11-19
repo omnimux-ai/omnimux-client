@@ -93,7 +93,6 @@ export async function dispatchSaveToAssets(
 function handlePreview(item: CanvasNodeItem): void {
   if (item.previewUrl) {
     window.open(item.previewUrl, '_blank', 'noopener,noreferrer');
-    toast.success('已打开预览');
     return;
   }
   toast.warning('当前素材暂无预览');
@@ -116,7 +115,6 @@ function handleToggleView(
 ): void {
   const nextMode = canvasViewMode === 'tree' ? 'grid' : 'tree';
   setCanvasViewMode(nextMode);
-  toast.success(canvasViewMode === 'tree' ? '已切换到网格视图' : '已切换到树形视图');
 }
 
 type CanvasUtilityHandler = (
