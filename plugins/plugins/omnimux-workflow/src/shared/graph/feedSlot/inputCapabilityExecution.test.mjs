@@ -13,7 +13,7 @@ import { buildModelCatalog } from '../../../../../omnimux/src/catalog/list.js';
 import { projectCanvasCatalog } from '../../generationPolicy.ts';
 import { prepareExecutionSlotGraph } from './prepareExecutionSlotGraph.ts';
 import { recomputeCanvasSlots } from '../canvasSlotRecompute.ts';
-import { planCanvasInputMutation } from '../canvasInputMutationGateway.ts';
+import { planCanvasInputMutation, planCanvasInputSelection } from '../canvasInputMutationGateway.ts';
 import { findExecutionReadinessFailure } from '../../validation/executionReadiness.ts';
 import { deriveSlotLayout } from './deriveSlotLayout.ts';
 import { createMaterialGatewayExecutor } from '../../../workflow/execution/materialGatewayExecutor.ts';
@@ -208,21 +208,18 @@ test('explicit video_multi_ref choice with two images survives video removal', (
   assert.equal(result.data.autoOperationId, null);
 });
 
-// The bundled floor predates gateway #54, so overlay its ordered pair input.
-const museOrderedCatalog = { ...catalog, models: catalog.models.map(model => model.id === 'muse-video' ? {
-  ...model,
-  operations: [...model.operations, {
-    ...model.operations.find(operation => operation.id === 'text_to_video'),
-    id: 'video_multi_ref',
-    inputs: [
-      ...model.operations.find(operation => operation.id === 'text_to_video').inputs,
-      { slot: 'reference_images', type: 'image', role: 'reference', firstItemRole: 'first_frame', source: 'upstream_edge', min: 2, max: 2 },
-    ],
-  }],
-} : model) };
+function museCatalogWithReferenceCap(max) {
+  return { ...catalog, models: catalog.models.map(model => model.id === 'muse-video' ? {
+    ...model,
+    operations: model.operations.map(operation => operation.id === 'video_multi_ref' ? {
+      ...operation,
+      inputs: operation.inputs.map(slot => slot.slot === 'reference_images' ? { ...slot, max } : slot),
+    } : operation),
+  } : model) };
+}
 
 test('Muse keeps an explicit ordered pair mode through missing inputs, swap, and execution reload', async () => {
-  const contract = museOrderedCatalog;
+  const contract = museCatalogWithReferenceCap(2);
   const context = { catalog: contract };
   const target = targetNode({ model: 'muse-video', operation: 'first_frame', aspectRatio: 'adaptive', duration: 5 });
   target.data.autoOperationId = null;
@@ -267,7 +264,7 @@ test('Muse keeps an explicit ordered pair mode through missing inputs, swap, and
 });
 
 test('Muse legacy mode changes carry the chosen start image between single and ordered pair slots', () => {
-  const context = { catalog: museOrderedCatalog };
+  const context = { catalog: museCatalogWithReferenceCap(2) };
   const target = targetNode({ model: 'muse-video', operation: 'first_frame', aspectRatio: 'adaptive', duration: 5 });
   target.data.autoOperationId = null;
   target.data.slotBindings = { first_frame: [{ sourceNodeId: 'img-1', edgeId: 'edge-img-1', role: 'first_frame', pinned: true }] };
@@ -293,4 +290,108 @@ test('Muse legacy mode changes carry the chosen start image between single and o
   assert.equal(data(single).inputBindingVersion, undefined);
   assert.deepEqual(data(single).slotBindings.first_frame.map(item => item.sourceNodeId), ['img-2']);
   assert.deepEqual(data(single).slotConflicts, []);
+});
+
+test('Muse keeps the start image through a ten-image selection, promotion and restart', async () => {
+  const contract = museCatalogWithReferenceCap(10);
+  const context = { catalog: contract };
+  const images = Array.from({ length: 11 }, (_, index) => `img-${index + 1}`);
+  const connected = images.slice(0, 10);
+  const data = state => state.nodes.find(node => node.id === 'target').data;
+  for (const inputBindingVersion of [undefined, 1]) {
+    const target = targetNode({ model: 'muse-video', operation: 'first_frame', aspectRatio: 'adaptive', duration: 5 });
+    target.data.inputBindingVersion = inputBindingVersion;
+    target.data.autoOperationId = null;
+    target.data.slotBindings = { first_frame: [{ sourceNodeId: 'img-10', edgeId: 'edge-img-10', role: 'first_frame', pinned: true }] };
+    const graph = { nodes: [...images.map(id => importNode(id, 'image')), target], edges: connected.map(id => edge(id)) };
+    const reopened = prepareExecutionSlotGraph(graph.nodes, graph.edges, contract);
+    assert.equal(data(reopened).params.operation, 'first_frame');
+    assert.deepEqual(data(reopened).slotBindings.first_frame.map(item => item.sourceNodeId), ['img-10']);
+    const changeMode = (state, operation, aspectRatio) => planCanvasInputMutation(state, { nodePatches: [{
+      nodeId: 'target', data: { params: { ...data(state).params, operation, aspectRatio }, autoOperationId: null },
+    }] }, context);
+    const multi = changeMode(reopened, 'video_multi_ref', '16:9');
+    assert.equal(multi.status, 'allowed');
+    assert.equal(findExecutionReadinessFailure([multi.nodes.at(-1)], contract, multi), null);
+    const original = ['img-10', ...connected.slice(0, -1)];
+    // Historical slots may contain colliding ordinals. A promotion must keep
+    // the other images in place even when the legacy loader groups pinned ones.
+    const slots = data(multi).slotBindings;
+    const tied = planCanvasInputMutation(multi, { nodePatches: [{ nodeId: 'target', data: {
+      slotBindings: { ...slots, reference_images: slots.reference_images.map(binding => ({ ...binding, ordinal: 0 })) },
+    } }] }, context);
+    assert.equal(tied.status, 'allowed');
+    const swap = { orderedSlotSwap: {
+      targetNodeId: 'target', slot: 'reference_images', firstEdgeId: 'edge-img-10', secondEdgeId: 'edge-img-8',
+    } };
+    const swapped = planCanvasInputMutation(tied, swap, context);
+    assert.equal(swapped.status, 'allowed');
+    assert.equal(planCanvasInputMutation(swapped, swap, context).reasonCode, 'input_changed');
+    assert.deepEqual(swapped.edges.map(item => item.id), multi.edges.map(item => item.id));
+    const saved = JSON.parse(JSON.stringify({ nodes: swapped.nodes, edges: swapped.edges }));
+    const gw = gateway(contract);
+    await dispatch(prepareExecutionSlotGraph(saved.nodes, saved.edges, contract), gw);
+    const expected = original.map(item => item === 'img-10' ? 'img-8' : item === 'img-8' ? 'img-10' : item);
+    assert.deepEqual(gw.requests[0].references.map(item => item.sourceNodeId), expected);
+
+    if (inputBindingVersion === 1) {
+      const overflow = planCanvasInputSelection(swapped, {
+        targetNodeId: 'target', chosenOperationId: 'video_multi_ref',
+        selections: [{ sourceNodeId: 'img-11', outputId: 'https://example.test/img-11.png', targetSlot: 'reference_images' }],
+      }, context);
+      assert.equal(overflow.status, 'rejected');
+      assert.equal(overflow.reasonCode, 'slot_capacity');
+      assert.equal(overflow.nodes, swapped.nodes);
+    }
+    const single = changeMode(swapped, 'first_frame', 'adaptive');
+    assert.equal(single.status, 'allowed');
+    assert.deepEqual(data(single).slotBindings.first_frame.map(item => item.sourceNodeId), ['img-8']);
+  }
+});
+
+test('Muse V1 preserves disabled image choices across mode changes and permits explicit reactivation', async () => {
+  const contract = museCatalogWithReferenceCap(10);
+  const context = { catalog: contract };
+  const slot = 'reference_images';
+  const images = ['a', 'b', 'c', 'd'];
+  const target = targetNode({ model: 'muse-video', operation: 'video_multi_ref', aspectRatio: '16:9', duration: 5 });
+  Object.assign(target.data, { inputBindingVersion: 1, autoOperationId: null, slotStandbyEdgeIds: ['edge-d'],
+    slotBindings: { reference_images: images.slice(0, 3).map((sourceNodeId, ordinal) => ({
+      edgeId: `edge-${sourceNodeId}`, sourceNodeId, ordinal, pinned: true, role: 'reference',
+    })) } });
+  const graph = { nodes: [...images.map(id => importNode(id, 'image')), target], edges: images.map(id => edge(id)) };
+  const data = state => state.nodes.find(node => node.id === 'target').data;
+  const changeMode = (state, operation, aspectRatio) => planCanvasInputMutation(state, { nodePatches: [{
+    nodeId: 'target', data: { params: { ...data(state).params, operation, aspectRatio }, autoOperationId: null },
+  }] }, context);
+  const intent = { targetNodeId: 'target', chosenOperationId: 'video_multi_ref' };
+  const setUse = (state, edgeId, use) => planCanvasInputSelection(state, { ...intent, setUse: { slot, edgeId, use } }, context);
+  const dispatchedReferences = async state => {
+    const saved = JSON.parse(JSON.stringify({ nodes: state.nodes, edges: state.edges }));
+    const gw = gateway(contract);
+    await dispatch(prepareExecutionSlotGraph(saved.nodes, saved.edges, contract), gw);
+    return gw.requests[0].references.map(item => item.sourceNodeId);
+  };
+  const paused = setUse(graph, 'edge-a', 'inactive');
+  assert.equal(paused.status, 'allowed');
+  const single = changeMode(paused, 'first_frame', 'adaptive');
+  assert.equal(single.status, 'allowed');
+  assert.deepEqual(await dispatchedReferences(single), ['b']);
+  const multi = changeMode(single, 'video_multi_ref', '16:9');
+  assert.equal(multi.status, 'allowed');
+  assert.equal(data(multi).slotBindings.reference_images.find(item => item.edgeId === 'edge-a').use, 'inactive');
+  assert.deepEqual(await dispatchedReferences(multi), ['b', 'c']);
+  const reactivated = setUse(multi, 'edge-a', 'active');
+  assert.equal(reactivated.status, 'allowed');
+  const added = planCanvasInputSelection(reactivated, { ...intent,
+    selections: [{ sourceNodeId: 'd', outputId: 'https://example.test/d.png', targetSlot: slot }],
+  }, context);
+  assert.equal(added.status, 'allowed');
+  assert.deepEqual(await dispatchedReferences(added), ['b', 'c', 'a', 'd']);
+
+  const allPaused = images.reduce((state, id) => setUse(state, `edge-${id}`, 'inactive'), added);
+  const emptySingle = changeMode(allPaused, 'first_frame', 'adaptive');
+  assert.equal(emptySingle.status, 'allowed');
+  assert.ok(data(emptySingle).slotBindings.first_frame.every(item => item.use === 'inactive'));
+  assert.equal(findExecutionReadinessFailure([emptySingle.nodes.at(-1)], contract, emptySingle)?.reasonCode, 'min_unsatisfied');
 });

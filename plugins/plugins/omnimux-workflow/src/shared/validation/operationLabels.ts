@@ -18,7 +18,7 @@
  */
 
 import type { InputSlotDto } from '../api.ts';
-import { isOrderedReferencePair } from './compatKernel.ts';
+import { isOrderedImageReferenceSlot } from './compatKernel.ts';
 
 export type OperationLabelLocale = 'zh' | 'en';
 
@@ -71,8 +71,10 @@ export function resolveOperationLabel(
 ): string {
   const source: OperationLabelSource = typeof input === 'string' ? { id: input } : (input ?? {});
   const id = typeof source.id === 'string' ? source.id.trim() : '';
-  if (id === 'video_multi_ref' && source.slots?.some(isOrderedReferencePair)) {
-    return locale === 'en' ? 'Two image references' : '双图参考';
+  const orderedImages = id === 'video_multi_ref' ? source.slots?.find(isOrderedImageReferenceSlot) : undefined;
+  if (orderedImages) {
+    if (orderedImages.max === 2) return locale === 'en' ? 'Two image references' : '双图参考';
+    return locale === 'en' ? 'Multi-image reference' : '多图参考';
   }
   const label = typeof source.label === 'string' ? source.label.trim() : '';
   const entry = id ? OPERATION_LABELS[id] : undefined;

@@ -3,11 +3,12 @@ import type { CanvasInputMutationState, CanvasMutationRuntimeContext, CanvasNode
 import type { MaterialType } from '../canvasTypes.ts';
 import type { MaterialNodeData } from './materialNode.ts';
 import { readCanvasParams } from './canvasInputSources.ts';
-import { buildContractView, buildUpstreamFingerprint, isMediaInputType, isOrderedReferencePair, matchOperationInputs, planAutoAdaptation, resolveModelView } from '../validation/compatKernel.ts';
+import { buildContractView, buildUpstreamFingerprint, isMediaInputType, isOrderedImageReferenceSlot, matchOperationInputs, planAutoAdaptation, resolveModelView } from '../validation/compatKernel.ts';
 import { buildInputCapability } from '../validation/inputCapability.ts';
 import { autoFillSlots, deriveSlotLayout, hydrateSlotBindings, type SlotBindings, type SlotConflict, type SlotOccupant, type SlotSpec } from './feedSlot/index.ts';
 import { effectiveSlotFingerprint, feedFromFingerprint } from './feedSlot/effectiveFingerprint.ts';
 import { effectiveInputDisplay } from './feedSlot/effectiveInputDisplay.ts';
+import { resolveSlotOccupantOrdinal } from './feedSlot/assembleEffectiveInputs.ts';
 import { projectCanvasInputSources } from './feedSlot/legacyH3Slots.ts';
 import { resolveSlotOperation } from './feedSlot/resolveSlotOperation.ts';
 import { narrowCatalogByRouting } from '../validation/lineConstraints.ts';
@@ -118,24 +119,28 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
   }
   const modeChanged = previous && (priorParams.operation !== params.operation || priorParams.model !== params.model);
   let transferredStartSlot: string | undefined;
-  if (!currentVersion && sameModel && modeChanged && autoOperationId === null && params.operation === savedOperation
+  let transferredInactive: SlotOccupant[] = [];
+  if (sameModel && modeChanged && autoOperationId === null && params.operation === savedOperation
     && typeof priorParams.operation === 'string') {
     const priorCatalog = narrowCatalogByRouting(context.catalog, priorParams.model, priorParams.routing);
     const priorLayout = deriveSlotLayout(priorCatalog, model.id, priorParams.operation);
-    const priorPair = priorLayout.slots.find(isOrderedReferencePair);
-    const nextPair = layout.slots.find(isOrderedReferencePair);
-    const from = priorPair ?? (nextPair ? priorLayout.slots.find(isSingleStartImage) : undefined);
-    const to = nextPair ?? (priorPair ? layout.slots.find(isSingleStartImage) : undefined);
-    if (from && to && Boolean(priorPair) !== Boolean(nextPair)) {
+    const priorOrderedImages = priorLayout.slots.find(isOrderedImageReferenceSlot);
+    const nextOrderedImages = layout.slots.find(isOrderedImageReferenceSlot);
+    const from = priorOrderedImages ?? (nextOrderedImages ? priorLayout.slots.find(isSingleStartImage) : undefined);
+    const to = nextOrderedImages ?? (priorOrderedImages ? layout.slots.find(isSingleStartImage) : undefined);
+    if (from && to && Boolean(priorOrderedImages) !== Boolean(nextOrderedImages)) {
       const loaded = effectiveInputDisplay(priorLayout, feed, explicit, storedConflicts,
-        graph.edges.filter(edge => edge.target === node.id), standbyIds);
+        graph.edges.filter(edge => edge.target === node.id), standbyIds, currentVersion ? 1 : undefined);
       const start = loaded.selected.find(record => record.slot.slot === from.slot);
       const rest = { ...explicit };
       delete rest[from.slot];
       if (start && !rest[to.slot]?.length) {
         rest[to.slot] = [{ ...start.occupant, role: to.role, pinned: true, ordinal: 0 }];
-        transferredStartSlot = to.slot;
       }
+      transferredInactive = loaded.records.filter(record => record.slot.slot === from.slot && record.state === 'inactive'
+        && !rest[to.slot]?.some(occupant => occupant.edgeId === record.occupant.edgeId))
+        .map(record => ({ ...record.occupant, role: to.role }));
+      transferredStartSlot = to.slot;
       explicit = rest;
       storedConflicts = storedConflicts?.filter(conflict => conflict.slot !== from.slot);
     }
@@ -205,6 +210,12 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
             if (occupant.edgeId !== edge.id) continue;
             const current = explicit[slotName] ?? [];
             if (current.some((item) => item.edgeId === occupant.edgeId && item.sourceNodeId === occupant.sourceNodeId)) continue;
+            const slot = layout.slots.find(candidate => candidate.slot === slotName);
+            if (slot && isOrderedImageReferenceSlot(slot)) {
+              // Keep the new connection after the saved order, even if removing an older edge shortened feed ordinals.
+              occupant.ordinal = current.reduce((max, item) => Math.max(max,
+                resolveSlotOccupantOrdinal(item, feed.find(asset => asset.edgeId === item.edgeId))), -1) + 1;
+            }
             explicit[slotName] = [...current, occupant];
           }
         }
@@ -234,8 +245,9 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
   // still exist keep their occupants (pinned choices included), stale keys are released and
   // auto-filled into the operation's own slots. A user-cleared `{}` stays cleared.
   const layoutSlotNames = new Set(layout.slots.map((slot) => slot.slot));
-  const renormalized = !keepSavedLipSlots && explicit && Object.keys(explicit).some((slot) => !layoutSlotNames.has(slot))
-    ? autoFillSlots(feed, layout, Object.fromEntries(Object.entries(explicit).filter(([slot]) => layoutSlotNames.has(slot))), standbyIds)
+  const renormalized = !keepSavedLipSlots && explicit && (transferredStartSlot || Object.keys(explicit).some((slot) => !layoutSlotNames.has(slot)))
+    ? autoFillSlots(feed, layout, Object.fromEntries(Object.entries(explicit).filter(([slot]) => layoutSlotNames.has(slot))),
+      [...standbyIds, ...transferredInactive.map(occupant => occupant.edgeId)])
     : undefined;
   const fill = useSavedSlots
     ? (filledAnything ? selfHealed!
@@ -243,7 +255,8 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
     : explicit ? autoFillSlots(feed, layout, explicit, standbyIds) : hydrateSlotBindings(feed, layout, graph.edges.filter((edge) => edge.target === node.id), standbyIds);
   if (transferredStartSlot && fill.bindings[transferredStartSlot]) {
     // The transferred start image is first in the new slot, regardless of when its edge was drawn.
-    fill.bindings[transferredStartSlot] = fill.bindings[transferredStartSlot]!.map((occupant, ordinal) => ({ ...occupant, ordinal }));
+    fill.bindings[transferredStartSlot] = [...fill.bindings[transferredStartSlot]!, ...transferredInactive]
+      .map((occupant, ordinal) => ({ ...occupant, ordinal }));
   }
   const fingerprint = effectiveSlotFingerprint(raw, layout, fill.bindings, fill.conflicts, currentVersion || upgradeRestored ? 1 : undefined);
   const match = operation && permitted ? matchOperationInputs(operation, fingerprint) : undefined;

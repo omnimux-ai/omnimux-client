@@ -31,9 +31,9 @@ dsh 会话里的 Agent 可通过宿主侧工具指挥画布（注册在 cordis `
 | `workflow_list` | `include_executions?: boolean` | 列出工作区（id/name/version/nodeCount/updatedAt，新→旧）；`include_executions=true` 附带最近 5 条执行概览（状态 + 进度） |
 | `workflow_run` | `workspace_id \| workspace_name`、`mode: full\|subset`、`node_ids?`、`wait?`、`timeout_ms?`（默认 120000） | 创建执行。`wait=false`（默认）立即返回 `executionId` + 提示（用户可在画布看实时进度）；`wait=true` 轮询到终态（completed/error/cancelled）返回结果摘要：各节点状态、文本产物摘录（240 字截断）、媒体文件 URL + 本地绝对路径。subset 模式自动补传递上游闭包。画布、工具和无界面执行共用启动检查。能匹配到已受理的失败任务时，按原任务 ID 取回；新任务根据当前模型目录和素材检查后提交 |
 | `workflow_snapshot` | `workspace_id`、`include_nodes?: boolean` | 工作区摘要（节点/边计数、素材类型分布、执行设置）或完整节点/边结构（供 Agent 分析画布 / 给修改建议） |
-| `workflow_node_update` | `workspace_id`、`node_id`、`patch` | 更新属性。交换有序双图参考时，先用 `workflow_snapshot` 的 `include_nodes=true` 读取当前绑定，再单独传入 `patch.swap_reference_images`，其中 `slot` 为卡槽名称，`first_edge_id` 和 `second_edge_id` 分别为当前第一、第二张图的连线 ID |
+| `workflow_node_update` | `workspace_id`、`node_id`、`patch` | 更新属性。更换起始图时，先用 `workflow_snapshot` 的 `include_nodes=true` 读取当前绑定，再单独传入 `patch.swap_reference_images`。`slot` 为有序参考图卡槽名称，`first_edge_id` 和 `second_edge_id` 分别为当前起始图与待交换图片的连线 ID |
 
-双图换序与画布共用校验和保存逻辑，保留原连线。若当前顺序已改变，工具返回 `error: "mutation-rejected"` 和 `reasonCode: "input_changed"`，应先重读快照再判断是否仍需换序。
+更换起始图与画布共用校验和保存逻辑，保留原连线。若起始图已改变或待交换图片不可用，工具返回 `error: "mutation-rejected"` 和 `reasonCode: "input_changed"`，应先重读快照再判断是否仍需换序。
 
 - 错误统一 `{error, message}` 返回形态（不抛出）：`invalid-args` / `workspace-not-found` / `ambiguous-workspace-name` / `invalid-subgraph` / `empty-graph` / `execution-not-found`
 - 系统提示词：`ctx.systemPrompt.section` 注册 `workflow:ops`（order 60，与 omnimux-assets 的 assets:ops=50 不冲突），说明工具用法和 Agent 与画布的协作方式
