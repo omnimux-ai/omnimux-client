@@ -292,15 +292,18 @@ test('较早发起的执行迟到失败时，仍显示最近操作的终态', ()
 test('恢复旧执行保留原来的顺序和最新提交的焦点', () => {
   useExecutionStore.getState().resetExecution();
   const store = useExecutionStore.getState();
-  store.ensureRun('newest', { restored: true });
-  store.ensureRun('oldest', { restored: true });
+  const createdAt = (second) => new Date(second * 1000).toISOString();
+  store.ensureRun('earlier', { createdAt: createdAt(1) });
+  store.patchRun('earlier', { status: 'error', error: '较早的执行失败' });
+  store.ensureRun('newest', { createdAt: createdAt(3), restored: true });
+  store.ensureRun('oldest', { createdAt: createdAt(0), restored: true });
   assert.equal(useExecutionStore.getState().focusExecutionId, 'newest');
 
-  store.ensureRun('fresh');
-  store.ensureRun('restored-late', { restored: true });
+  store.ensureRun('fresh', { createdAt: createdAt(4) });
+  store.ensureRun('restored-late', { createdAt: createdAt(2), restored: true });
   assert.equal(useExecutionStore.getState().focusExecutionId, 'fresh');
   assert.deepEqual(useExecutionStore.getState().runs.map((run) => run.executionId),
-    ['restored-late', 'oldest', 'newest', 'fresh']);
+    ['oldest', 'earlier', 'restored-late', 'newest', 'fresh']);
 
   store.patchRun('fresh', { status: 'error', error: '最新提交失败' });
   for (const executionId of ['oldest', 'newest', 'restored-late']) {

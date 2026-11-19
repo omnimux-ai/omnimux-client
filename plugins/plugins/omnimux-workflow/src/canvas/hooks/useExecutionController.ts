@@ -639,7 +639,7 @@ export function useExecutionController(
   /** Backfill one run's node badges/results from a status snapshot. */
   const applySnapshot = useCallback((snapshot: ExecutionSnapshotDto) => {
     const exec = useExecutionStore.getState();
-    exec.ensureRun(snapshot.id, { restored: true });
+    exec.ensureRun(snapshot.id, { createdAt: snapshot.createdAt, restored: true });
     exec.patchRun(snapshot.id, {
       status: snapshot.status,
       error: snapshot.error,
@@ -740,7 +740,7 @@ export function useExecutionController(
             : (result.body.message ?? t('error.createExecutionFailed')));
         }
         const exec = useExecutionStore.getState();
-        exec.ensureRun(result.body.execution.id);
+        exec.ensureRun(result.body.execution.id, { createdAt: result.body.execution.createdAt });
         runMetaRef.current.set(result.body.execution.id, {
           ...(opts.groupId ? { groupId: opts.groupId } : {}),
           ...(opts.graphHash ? { graphHash: opts.graphHash } : {}),

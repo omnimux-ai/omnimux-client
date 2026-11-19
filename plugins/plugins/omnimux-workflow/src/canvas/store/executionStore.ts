@@ -105,6 +105,8 @@ export interface ExecutionNodeRecord {
 
 export interface ExecutionRun {
   executionId: string;
+  /** Host creation time, shared by the submission and recovery responses. */
+  createdAt?: string;
   status: ExecutionUiStatus;
   error: string | null;
   progress: ExecutionProgressState;
@@ -318,8 +320,8 @@ export interface ExecutionState extends ExecutionProjection {
 
   setStartNodeExecution: (fn: ((nodeId: string) => NodeSubmissionResult | Promise<NodeSubmissionResult>) | null) => void;
 
-  /** Create and focus a new submission. Restored runs arrive newest first and preserve existing focus. */
-  ensureRun: (executionId: string, options?: { restored: boolean }) => void;
+  /** Create a run. Recovery uses host creation order to avoid refocusing a newer submission. */
+  ensureRun: (executionId: string, options?: { createdAt?: string; restored?: boolean }) => void;
   /**
    * Patch an already-registered run. A patch for an unknown id is ignored:
    * `ensureRun` is the only creator, so an event for a stale or duplicated
@@ -393,15 +395,22 @@ export const useExecutionStore = create<ExecutionState>()((set, get) => {
 
     setStartNodeExecution: (fn) => set({ startNodeExecution: fn }),
 
-    ensureRun: (executionId, { restored } = { restored: false }) =>
+    ensureRun: (executionId, { createdAt, restored } = {}) =>
       mutate((runs, focus) => {
-        if (!runs.some((run) => run.executionId === executionId)) {
+        const existing = runs.find((run) => run.executionId === executionId);
+        if (!existing) {
           // A registered run is one the server accepted and has not started yet.
-          const run = createRun(executionId, 'pending');
-          if (restored) runs.unshift(run);
-          else runs.push(run);
+          const run = { ...createRun(executionId, 'pending'), createdAt };
+          const next = restored
+            ? runs.findIndex((candidate) => !createdAt || !candidate.createdAt || candidate.createdAt >= createdAt)
+            : -1;
+          runs.splice(next < 0 ? runs.length : next, 0, run);
         }
-        return [runs, restored ? focus ?? executionId : executionId];
+        const focusedRun = runs.find((run) => run.executionId === focus);
+        if (!restored || !focusedRun || (createdAt && focusedRun.createdAt && createdAt > focusedRun.createdAt)) {
+          return [runs, executionId];
+        }
+        return [runs, focus];
       }),
 
     patchRun: (executionId, patch) =>
