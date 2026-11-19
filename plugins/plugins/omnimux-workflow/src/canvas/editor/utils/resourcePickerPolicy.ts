@@ -394,12 +394,35 @@ export function listCanvasResources(
   return items;
 }
 
-/** Translate an allowed graph plan into one strict store mutation; never replay selections. */
-export function planPickerSelectionMutation(current: CanvasInputMutationState, request: CanvasInputSelectionRequest, context: CanvasMutationRuntimeContext): {
+export function resourcePickerContextKey(node: CanvasNode | undefined, context: CanvasMutationRuntimeContext): string {
+  const params = node ? readCanvasParams(node) : {};
+  return JSON.stringify([node?.data.inputBindingVersion, params.model, params.operation, params.routing, context.catalog?.fingerprint]);
+}
+
+/** Stage local files as upstream nodes and run the same strict selection as canvas assets. */
+export function planPickerSelectionMutation(current: CanvasInputMutationState, request: CanvasInputSelectionRequest,
+  context: CanvasMutationRuntimeContext, local?: { files: LocalFileDraft[]; targetSlot?: string }): {
   status: 'allowed' | 'rejected' | 'configuration_error'; reasonCode?: string;
   mutation?: CanvasInputMutation; verdict?: CanvasInputSelectionVerdict;
 } {
-  const plan = planCanvasInputSelection(current, request, context);
+  let addNodes: CanvasNode[] = [];
+  if (local?.files.length) {
+    const target = current.nodes.find(node => node.id === request.targetNodeId);
+    if (!target) return { status: 'rejected', reasonCode: 'missing_node' };
+    if (!local.targetSlot) return { status: 'rejected', reasonCode: 'role_required' };
+    const files = usableMediaFiles(local.files, []);
+    if (files.length !== local.files.length) return { status: 'rejected', reasonCode: 'input_unavailable' };
+    addNodes = files.map((file, index) => createPickerImportNode(target, index, file));
+    const selections = [];
+    for (const node of addNodes) {
+      const source = readNodeInputSource(node);
+      if (!source.outputId) return { status: 'rejected', reasonCode: 'input_unavailable' };
+      selections.push({ sourceNodeId: source.nodeId, outputId: source.outputId, targetSlot: local.targetSlot });
+    }
+    request = { ...request, selections: [...(request.selections ?? []), ...selections] };
+  }
+  const draft = addNodes.length ? { ...current, nodes: [...current.nodes, ...addNodes] } : current;
+  const plan = planCanvasInputSelection(draft, request, context);
   if (plan.status !== 'allowed') return { status: plan.status, reasonCode: plan.reasonCode };
   const verdict = validateCanvasInputSelection(plan, request, context);
   // The selection endpoint alone verifies the unique saved binding and reduction.
@@ -412,13 +435,13 @@ export function planPickerSelectionMutation(current: CanvasInputMutationState, r
   }
   if (!verdict.accepts) return { status: 'rejected', reasonCode: verdict.reasonCode, verdict };
   const nodePatches = plan.nodes.flatMap(node => {
-    const previous = current.nodes.find(item => item.id === node.id);
+    const previous = draft.nodes.find(item => item.id === node.id);
     return previous && previous.data !== node.data ? [{ nodeId: node.id, data: node.data }] : [];
   });
   // Derived edge mirrors are recomputed by the original gateway after these explicit bindings.
   const addEdges = plan.edges.filter(edge => !current.edges.some(item => item.id === edge.id));
   const removeEdgeIds = current.edges.filter(edge => !plan.edges.some(item => item.id === edge.id)).map(edge => edge.id);
-  return { status: 'allowed', verdict, mutation: { nodePatches, addEdges,
+  return { status: 'allowed', verdict, mutation: { nodePatches, addEdges, ...(addNodes.length ? { addNodes } : {}),
     removeEdgeIds: removeEdgeIds.length ? removeEdgeIds : undefined,
     strictConsumption: { targetNodeId: request.targetNodeId, chosenOperationId: request.chosenOperationId,
       ...(request.chosenRouteId !== undefined ? { chosenRouteId: request.chosenRouteId } : {}) } } };
@@ -546,6 +569,13 @@ function placeUpstream(
   };
 }
 
+function createPickerImportNode(target: CanvasNode, index: number, file: ImportFileDraft): CanvasNode {
+  return createImportNode(file.materialType, placeUpstream(target, index, file.materialType), {
+    ...mediaPatch(file),
+    label: file.name.replace(/\.[^.]+$/, '') || file.name,
+  });
+}
+
 /**
  * 置换 Mutation 计划生成器：
  * - 当在替换模式下确认选择某个素材时：
@@ -651,11 +681,7 @@ export function planResourcePickerReplaceCommit(
       return { hasWork: false, rejected };
     }
     const file = usable[0]!;
-    const position = placeUpstream(target, 0, file.materialType);
-    const node = createImportNode(file.materialType, position, {
-      ...mediaPatch(file),
-      label: file.name.replace(/\.[^.]+$/, '') || file.name,
-    });
+    const node = createPickerImportNode(target, 0, file);
     if (!canConnect(node, target)) {
       return { hasWork: false, rejected: [{ id: file.id, reason: 'type_contract' }] };
     }
@@ -836,11 +862,7 @@ export function planResourcePickerCommit(input: ResourcePickerCommitInput): Reso
 
   let upstreamIndex = 0;
   for (const file of usableFiles) {
-    const position = placeUpstream(target, upstreamIndex, file.materialType);
-    const node = createImportNode(file.materialType, position, {
-      ...mediaPatch(file),
-      label: file.name.replace(/\.[^.]+$/, '') || file.name,
-    });
+    const node = createPickerImportNode(target, upstreamIndex, file);
     if (!canConnect(node, target)) {
       rejected.push({ id: file.id, reason: 'type_contract' });
       continue;

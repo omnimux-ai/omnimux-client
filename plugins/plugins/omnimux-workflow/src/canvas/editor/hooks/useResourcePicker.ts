@@ -14,6 +14,7 @@ import {
   planResourcePickerCommit,
   planPickerSelectionMutation,
   pickerReasonKey,
+  resourcePickerContextKey,
   type LocalFileDraft,
   type ResourcePickerTab,
   type ResourcePickerMode,
@@ -32,6 +33,7 @@ export interface ResourcePickerSlotTarget {
   /** 槽位上限；null 表示官方未公布上限。 */
   max: number | null;
   replaceEdgeId?: string;
+  contextKey?: string;
   openerAnchor?: HTMLElement;
   onReturnFocus?: (anchor: HTMLElement) => void;
   /** 借出型展示槽位：提交前须先把节点 operation 切到该 op。 */
@@ -89,13 +91,17 @@ export function useResourcePicker(nodeId: string, workspaceId?: string | null): 
         setSlotTarget(null);
         setTargetSlotIndex(slotIdx);
       } else {
+        const state = useCanvasStore.getState();
         setMode(target?.replaceEdgeId ? 'replace' : 'add');
-        setSlotTarget(target);
+        setSlotTarget(target ? {
+          ...target,
+          contextKey: resourcePickerContextKey(state.nodes.find(node => node.id === nodeId), { catalog: state.catalogRuntime }),
+        } : null);
         setTargetSlotIndex(slotIdx);
       }
       setOpen(true);
     },
-    [guard],
+    [guard, nodeId],
   );
 
   const closePicker = useCallback(() => {
@@ -122,10 +128,15 @@ export function useResourcePicker(nodeId: string, workspaceId?: string | null): 
       const commitMode = payload.mode ?? mode;
       const commitSlotIndex = payload.targetSlotIndex ?? targetSlotIndex;
       const targetNode = state.nodes.find((n) => n.id === nodeId);
+      const context = { catalog: state.catalogRuntime };
+      if (slotTarget?.contextKey && slotTarget.contextKey !== resourcePickerContextKey(targetNode, context)) {
+        toast.error(t(pickerReasonKey('input_changed')));
+        return false;
+      }
       const slotState = targetNode?.data?.slotState as NodeSlotEngineState | undefined;
       if (targetNode?.data.inputBindingVersion === 1) {
         const params = targetNode.data.params as Record<string, unknown> | undefined;
-        if (payload.localFiles.length || !payload.selections?.length) return false;
+        if (!payload.localFiles.length && !payload.selections?.length) return false;
         const prepared = planPickerSelectionMutation({ nodes: state.nodes, edges: state.edges }, {
           targetNodeId: nodeId,
           chosenOperationId: payload.chosenOperationId ?? String(params?.operation ?? ''),
@@ -133,7 +144,7 @@ export function useResourcePicker(nodeId: string, workspaceId?: string | null): 
           selections: payload.selections,
           replaceEdgeId: slotTarget?.replaceEdgeId,
           replaceSlot: slotTarget?.replaceEdgeId ? slotTarget.slot : undefined,
-        }, { catalog: state.catalogRuntime });
+        }, context, { files: payload.localFiles, targetSlot: slotTarget?.slot });
         if (prepared.status !== 'allowed' || !prepared.mutation) {
           toast.error(t(pickerReasonKey(prepared.reasonCode)));
           return false;

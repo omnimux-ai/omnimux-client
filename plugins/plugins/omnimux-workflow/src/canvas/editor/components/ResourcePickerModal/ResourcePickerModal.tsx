@@ -3,7 +3,7 @@ import { X } from 'lucide-react';
 import { CustomModal } from '../../../ui';
 import { useT } from '../../../i18n';
 import { useCanvasStore } from '../../../store/canvasStore';
-import { listCanvasResources, planPickerSelectionMutation, pickerReasonKey, updatePickerLocalDrafts,
+import { listCanvasResources, planPickerSelectionMutation, pickerReasonKey, resourcePickerContextKey, updatePickerLocalDrafts,
   type LocalFileDraft, type ResourcePickerTab, type ResourcePickerMode } from '../../utils/resourcePickerPolicy.ts';
 import type { ResourcePickerSlotTarget } from '../../hooks/useResourcePicker.ts';
 import type { NodeSlotEngineState } from '../../../../shared/graph/slotContractTypes.ts';
@@ -77,13 +77,15 @@ const ResourcePickerModal: React.FC<ResourcePickerModalProps> = ({
     selections: mode === 'replace' ? [] : selections,
   }), [nodes, edges, nodeId, catalog, slotTarget, mode, selections]);
   const selectedCount = selections.length + localFiles.length;
-  const prepared = useMemo(() => current ? planPickerSelectionMutation({ nodes, edges }, {
+  const stale = Boolean(slotTarget?.contextKey && slotTarget.contextKey !== resourcePickerContextKey(target, { catalog }));
+  const prepared = useMemo(() => current && !stale ? planPickerSelectionMutation({ nodes, edges }, {
     targetNodeId: nodeId, chosenOperationId: slotTarget?.displayOnlyFromOperation ?? operationId,
     selections, replaceEdgeId: slotTarget?.replaceEdgeId, replaceSlot: slotTarget?.replaceEdgeId ? slotTarget.slot : undefined,
-  }, { catalog }) : null, [current, nodes, edges, nodeId, operationId, slotTarget, selections, catalog]);
-  const accepts = current ? prepared?.status === 'allowed' && localFiles.length === 0 : true;
-  const reason = current && selectedCount > 0 && !accepts
-    ? t(pickerReasonKey(localFiles.length ? 'role_conflict' : prepared?.reasonCode)) : undefined;
+  }, { catalog }, { files: localFiles, targetSlot: slotTarget?.slot }) : null,
+  [current, stale, nodes, edges, nodeId, operationId, slotTarget, selections, catalog, localFiles]);
+  const accepts = !stale && (!current || prepared?.status === 'allowed');
+  const reason = selectedCount > 0 && !accepts
+    ? t(pickerReasonKey(stale ? 'input_changed' : prepared?.reasonCode)) : undefined;
 
   useEffect(() => {
     if (!open) return;

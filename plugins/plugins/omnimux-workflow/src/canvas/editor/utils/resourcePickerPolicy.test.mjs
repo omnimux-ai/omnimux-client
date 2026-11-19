@@ -58,6 +58,43 @@ test('V1 qualified current picker lists selected ready text, not blank/waiting o
   assert.deepEqual(listCanvasResources(nodes, [], 'target', { catalog: null }), []);
 });
 
+test('V1 adds or replaces a named slot from a local file through one strict graph mutation', async () => {
+  const { planPickerSelectionMutation } = await import('./resourcePickerPolicy.ts');
+  const target = { id: 'target', type: 'material', position: { x: 300, y: 40 }, data: { materialType: 'image', nodeKind: 'generate',
+    inputBindingVersion: 1, slotBindings: {}, params: { model: 'qualified', operation: 'image_to_image' } } };
+  const context = { catalog: { models: [{ id: 'qualified', operations: [{ id: 'image_to_image', listed: true,
+    output: { type: 'image' }, inputs: [{ slot: 'reference', type: 'image', role: 'reference', source: 'upstream_output',
+      min: 1, max: 1, allowedMimes: ['image/png'] }] }] }] } };
+  const graph = { nodes: [target], edges: [] };
+  const request = { targetNodeId: target.id, chosenOperationId: 'image_to_image' };
+  const file = name => ({ id: name, name, mime: 'image/png', size: 20, realPath: `/fixtures/${name}`, materialType: 'image' });
+  const before = structuredClone(graph);
+  for (const files of [[{ ...file('bad.jpg'), mime: 'image/jpeg' }], [file('a.png'), file('b.png')]]) {
+    const rejected = planPickerSelectionMutation(graph, request, context, { targetSlot: 'reference', files });
+    assert.equal(rejected.status, 'rejected');
+    assert.equal(rejected.mutation, undefined);
+    assert.deepEqual(graph, before);
+  }
+  const plan = planPickerSelectionMutation(graph, request, context, { targetSlot: 'reference', files: [file('a.png')] });
+  assert.equal(plan.status, 'allowed');
+  assert.equal(plan.mutation.addNodes.length, 1);
+  assert.equal(plan.mutation.addEdges.length, 1);
+  const added = planCanvasInputMutation(graph, plan.mutation, context);
+  assert.equal(added.status, 'allowed');
+  const binding = added.nodes.find(node => node.id === target.id).data.slotBindings.reference[0];
+  assert.equal(binding.sourceNodeId, plan.mutation.addNodes[0].id);
+  const replace = { ...request, replaceEdgeId: binding.edgeId, replaceSlot: 'reference' };
+  const replacement = planPickerSelectionMutation(added, replace, context, { targetSlot: 'reference', files: [file('b.png')] });
+  assert.equal(replacement.status, 'allowed');
+  const changed = planCanvasInputMutation(added, replacement.mutation, context);
+  assert.equal(changed.status, 'allowed');
+  const next = changed.nodes.find(node => node.id === target.id).data.slotBindings.reference[0];
+  assert.equal(next.sourceNodeId, replacement.mutation.addNodes[0].id);
+  assert.equal(next.ordinal, binding.ordinal);
+  assert.equal(graph.nodes.length, 1);
+  assert.equal(graph.edges.length, 0);
+});
+
 test('V1 strict adapter commits explicit selected text once through original gateway, supply stays unused and rejects stale output', async () => {
   const { planPickerSelectionMutation } = await import('./resourcePickerPolicy.ts');
   const { planCanvasInputMutation } = await import('../../../shared/graph/canvasInputMutationGateway.ts');
