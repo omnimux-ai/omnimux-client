@@ -1,0 +1,35 @@
+name: Prepare desktop package
+description: Install and build the committed desktop and plugin dependencies.
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38  # v6
+      with:
+        node-version: 22.23.2
+    - name: Enable Corepack
+      shell: bash
+      run: corepack enable
+    - name: Verify version consistency
+      shell: bash
+      working-directory: app
+      run: node scripts/verify-version.mjs
+    - name: Install plugin workspace dependencies
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      run: corepack pnpm install --frozen-lockfile
+    - name: Build plugin workspace
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      run: corepack pnpm --dir plugins run build:all
+    - name: Install desktop dependencies
+      shell: bash
+      working-directory: app
+      run: corepack yarn install --immutable
+    - name: Refresh Agents Anywhere vendor
+      shell: bash
+      working-directory: app
+      run: corepack yarn aa:prepare-release
+    - name: Refresh dshmarket package versions
+      shell: bash
+      working-directory: app
+      run: corepack yarn market:prepare
