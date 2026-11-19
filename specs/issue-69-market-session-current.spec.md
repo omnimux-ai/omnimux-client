@@ -37,6 +37,17 @@
 
 ## 旧标准变更
 
+- `plugins/plugins/omnimux-market/src/client/session-create-ready.test.js` :: `ready flow installs once, attaches nonempty body to B, writes once without reading stale draft, preserves A`
+  原断言：`h.calls` 末项为 `['open', 'b']`（`sessions.open` 触发导航）。
+  必须改：ready 路径改走 `uiWorkspace.openSession`；有 uiWorkspace 时不再调用 `sessions.open`，原断言不再成立。
+  新期望证据：`uiCalls = [['openSession', 'b']]`、`h.calls` 不含 `open`、`workbench.open` 在会话切到 b 后才调用；`session-create-ready.test.js` 16/16 全绿。
+
+- `plugins/plugins/omnimux-market/src/client/session-create-ready.test.js` :: `switch away while target input is mounting never writes or reopens target`
+  原断言：`h.calls` 中 `open` 次数为 1。
+  必须改：导航由 `uiWorkspace.openSession` 发起，`sessions.open` 不再被调用。
+  新期望证据：`uiCalls.length === 1` 且会话最终停在 c、writes 为 0；同一用例 16/16 全绿。
+
+
 - `plugins/plugins/omnimux-market/src/client/session-create-ready.test.js` :: `no current session can create through the same public service`
   原断言：`setup` 的 `sessions.list.getSnapshot()` 以 `{ current, byId }` 模拟官方 store，`h.move('')` 依赖 `list.current`；rc.3 无 `current`。
   必须改：`getSnapshot` 改为 `{ ids, byId, phase, projectionsBySession }`，当前会话由 `window.__omnimuxWorkbench.getSnapshot().sessionId` 模拟；用例名保持。

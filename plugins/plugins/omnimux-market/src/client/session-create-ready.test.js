@@ -9,7 +9,7 @@ function deferred() {
   const promise = new Promise((yes, no) => { resolve = yes; reject = no })
   return { promise, resolve, reject }
 }
-function setup({ install, create, attach, draft = '', protectedInput = false, receipt = true, mount = true, uiWorkspace = true, uiSwitches = true } = {}) {
+function setup({ install, create, attach, draft = '', protectedInput = false, receipt = true, mount = true, uiWorkspace = false, uiSwitches = true } = {}) {
   const calls = [], listeners = new Set(), writes = [], wbCalls = [], uiCalls = []
   let current = 'a'
   const state = new Map([
@@ -52,7 +52,7 @@ function setup({ install, create, attach, draft = '', protectedInput = false, re
 }
 
 test('ready flow installs once, attaches nonempty body to B, writes once without reading stale draft, preserves A', async () => {
-  const h = setup()
+  const h = setup({ uiWorkspace: true })
   const result = await h.run()
   assert.equal(result.ok, true)
   assert.equal(result.prefilled, true)
@@ -96,8 +96,7 @@ for (const [options, error, attempts] of [
     assert.equal(result.sessionId, 'b')
     assert.equal(h.writes.length, attempts)
     assert.deepEqual([...h.state], before)
-    assert.deepEqual(h.calls, [['install', 'skill-creator'], ['create', 'w'], ['tryAttach', 'b']])
-    assert.deepEqual(h.uiCalls, [['openSession', 'b']])
+    assert.deepEqual(h.calls, [['install', 'skill-creator'], ['create', 'w'], ['tryAttach', 'b'], ['open', 'b']])
     assert.equal(h.listeners.size, 0)
   })
 }
@@ -151,7 +150,7 @@ test('no current session can create through the same public service', async () =
 })
 
 test('switch away while target input is mounting never writes or reopens target', async () => {
-  const h = setup({ mount: false })
+  const h = setup({ mount: false, uiWorkspace: true })
   const result = await h.run({ onTarget: () => queueMicrotask(() => h.move('c')) })
   assert.equal(result.cancelled, true)
   assert.equal(h.current(), 'c')
@@ -179,7 +178,7 @@ test('falls back to sessions.open when uiWorkspace is unavailable', async () => 
 })
 
 test('returns session-navigation-unavailable instead of silently waiting when the host never switches', async () => {
-  const h = setup({ uiSwitches: false })
+  const h = setup({ uiWorkspace: true, uiSwitches: false })
   const result = await h.run({ navTimeoutMs: 80 })
   assert.equal(result.ok, false)
   assert.equal(result.error, 'session-navigation-unavailable')
