@@ -128,7 +128,9 @@ test('minimax-h3-video digital_human emits audio_urls require + metadata audio s
   assert.equal(plan.vendorPayload.metadata.ref_image_0, 'https://example.invalid/avatar.png')
   assert.equal(plan.vendorPayload.metadata.ref_audio_0, 'https://example.invalid/voice.mp3')
   assert.equal(plan.vendorPayload.metadata.audio_duration, 10)
-  for (const forbidden of ['image_with_roles', 'image_urls', 'video_urls', 'file_url', 'link_url']) {
+  // A filled legacy prompt must not be reinserted by the runtime mapper.
+  assert.deepEqual(mapOmnimuxInput('video', { prompt: 'lipsync', guardPlan: plan }), plan.vendorPayload)
+  for (const forbidden of ['prompt', 'image_with_roles', 'image_urls', 'video_urls', 'file_url', 'link_url']) {
     assert.equal(forbidden in plan.vendorPayload, false, `${forbidden} must not leak`)
   }
 })

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
 import { Readable } from 'node:stream'
 import { OmnimuxError } from './errors.js'
+import { prepareH3MetadataMedia } from './vendors/autodl-h3-media.js'
 import { mediaFromMagic } from '../text/image.js'
 
 const EXT_TO_MIME = Object.freeze({
@@ -601,19 +602,26 @@ export async function uploadMediaToGateway(source, options) {
  *   apiKey: string,
  *   fetcher?: typeof fetch,
  *   signal?: AbortSignal,
+ *   hostH3Metadata?: boolean,
  * }} options
  * @returns {Promise<Record<string, unknown>>}
  */
 export async function hostLocalAssetsIfNeeded(payload, options) {
   if (!payload || typeof payload !== 'object') return payload
-  const { baseUrl, apiKey, fetcher = fetch, signal } = options
+  const { baseUrl, apiKey, fetcher = fetch, signal, hostH3Metadata } = options
 
   const cloned = { ...payload }
+  const hostedSources = hostH3Metadata ? new Map() : null
 
   async function hostOne(val) {
     if (typeof val !== 'string') return val
     if (!isLocalMediaSource(val)) return val
-    return uploadMediaToGateway(val, { baseUrl, apiKey, fetcher, signal })
+    const source = val.trim()
+    const pending = hostedSources?.get(source)
+    if (pending) return pending
+    const uploaded = uploadMediaToGateway(val, { baseUrl, apiKey, fetcher, signal })
+    hostedSources?.set(source, uploaded)
+    return uploaded
   }
 
   // 1. image_urls: string[]
@@ -696,6 +704,10 @@ export async function hostLocalAssetsIfNeeded(payload, options) {
   // 9. voice_clone reference audio (indextts-2 via AutoDL tasks, Issue #3063)
   if (typeof cloned.prompt_simple === 'string' && isLocalMediaSource(cloned.prompt_simple)) {
     cloned.prompt_simple = await hostOne(cloned.prompt_simple)
+  }
+
+  if (hostH3Metadata && cloned.metadata) {
+    cloned.metadata = await prepareH3MetadataMedia(cloned.metadata, hostOne)
   }
 
   return cloned

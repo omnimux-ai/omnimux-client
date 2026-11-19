@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it, beforeEach } from 'node:test'
-import { writeFile, unlink, mkdir } from 'node:fs/promises'
+import { writeFile, unlink, mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
@@ -307,10 +307,112 @@ describe('gateway-upload: payload interception (hostLocalAssetsIfNeeded)', () =>
     await unlink(tmpImg).catch(() => {})
     await unlink(tmpVid).catch(() => {})
   })
+
+  it('hosts only official H3 metadata slots and reuses existing uploads within the same payload', async () => {
+    const audio = 'data:audio/wav;base64,AA=='
+    const remote = 'https://existing.example.test/last.png'
+    const hits = []
+    const fetcher = async (url, init) => {
+      if (url.endsWith('/files/upload/presign')) return new Response(null, { status: 404 })
+      assert.ok(url.endsWith('/files/upload/stream'))
+      const category = init.body.get('upload_path')
+      hits.push(category)
+      return Response.json({ data: {
+        file_url: `https://files.example.test/${category}`,
+        expires_at: new Date(Date.now() + 15_000).toISOString(),
+      } })
+    }
+    const options = { fetcher, baseUrl: 'https://gateway.example.test/v1', apiKey: 'test-only' }
+    const metadata = {
+      ref_image_0: tmpImg, ref_image_10: remote, first_frame: tmpImg, last_frame: remote,
+      ref_audio_0: audio, audio_duration: 5, ref_audio_0_extra: '/tmp/unknown.wav',
+      nested: { ref_image_0: '/tmp/ignored.png' },
+    }
+    try {
+      assert.deepEqual((await hostLocalAssetsIfNeeded({ metadata }, options)).metadata, metadata)
+      assert.deepEqual(hits, [])
+
+      const input = { audio_urls: [audio], metadata }
+      const result = await hostLocalAssetsIfNeeded(input, { ...options, hostH3Metadata: true })
+      assert.deepEqual(hits, ['audios', 'photos'])
+      assert.deepEqual(result.metadata, {
+        ...metadata, ref_image_0: 'https://files.example.test/photos', first_frame: 'https://files.example.test/photos',
+        ref_audio_0: 'https://files.example.test/audios',
+      })
+      assert.deepEqual(result.audio_urls, [result.metadata.ref_audio_0])
+      assert.equal(input.metadata.ref_audio_0, audio)
+    } finally {
+      await Promise.all([unlink(tmpImg), unlink(tmpVid)])
+    }
+  })
 })
 
 describe('gateway-upload: end-to-end media integration', () => {
   const PNG = Buffer.from('iVBORw0KGgoAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64')
+
+  it('submits official H3 with both hosted references when given local image and driving audio', async (t) => {
+    clearGatewayUploadCache()
+    const home = await mkdtemp(join(tmpdir(), 'h3-lipsync-upload-'))
+    const previousHome = process.env.DSH_HOME
+    process.env.DSH_HOME = home
+    t.after(async () => {
+      if (previousHome === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previousHome
+      await rm(home, { recursive: true, force: true })
+    })
+
+    const image = join(home, 'face.png')
+    const audio = join(home, 'voice.wav')
+    // Five seconds of mono, 16-bit PCM at 8 kHz.
+    const wav = Buffer.alloc(44 + 5 * 16_000)
+    wav.write('RIFF', 0)
+    wav.writeUInt32LE(wav.length - 8, 4)
+    wav.write('WAVEfmt ', 8)
+    wav.writeUInt32LE(16, 16)
+    wav.writeUInt16LE(1, 20)
+    wav.writeUInt16LE(1, 22)
+    wav.writeUInt32LE(8_000, 24)
+    wav.writeUInt32LE(16_000, 28)
+    wav.writeUInt16LE(2, 32)
+    wav.writeUInt16LE(16, 34)
+    wav.write('data', 36)
+    wav.writeUInt32LE(wav.length - 44, 40)
+    await Promise.all([writeFile(image, PNG), writeFile(audio, wav)])
+
+    const uploads = []
+    const submits = []
+    const hosted = { photos: 'https://files.example.test/face.png', audios: 'https://files.example.test/voice.wav' }
+    const fetcher = async (url, init) => {
+      assert.equal(init.method, 'POST')
+      if (url.endsWith('/files/upload/presign')) return new Response(null, { status: 501 })
+      if (url.endsWith('/files/upload/stream')) {
+        const category = init.body.get('upload_path')
+        assert.ok(category === 'photos' || category === 'audios')
+        uploads.push(category)
+        return Response.json({ data: {
+          file_url: category === 'photos' ? hosted.photos : hosted.audios,
+          expires_at: new Date(Date.now() + 15_000).toISOString(),
+        } })
+      }
+      assert.ok(url.endsWith('/v1/tasks/autodl'))
+      submits.push(JSON.parse(init.body))
+      return Response.json({ data: { task_id: 'fixture-local-h3' } })
+    }
+    const result = await executeOmnimuxVideo({
+      model: 'minimax-h3-video', operation: 'digital_human', prompt: '', duration: 5, resolution: '768p',
+      image, audioTrack: { pathOrUrl: audio }, dest: join(home, 'out.mp4'),
+      fetcher, env: { OMNIMUX_API_KEY: 'sk-test-only' }, wait: false,
+    })
+    assert.equal(result.mode, 'submitted')
+    assert.equal(result.taskId, 'fixture-local-h3')
+    assert.deepEqual(uploads.sort(), ['audios', 'photos'])
+    assert.equal(submits.length, 1)
+    assert.equal(Object.hasOwn(submits[0], 'prompt'), false)
+    assert.equal(JSON.stringify(submits[0]).includes(home), false)
+    assert.deepEqual(submits[0].metadata, {
+      ref_image_0: hosted.photos, ref_audio_0: hosted.audios, audio_duration: 5,
+    })
+  })
 
   it('executeOmnimuxVideo automatically hosts local image when uploadLocalAssets is enabled', async () => {
     clearGatewayUploadCache()

@@ -14,6 +14,8 @@ plugins/    产品插件（omnimux 及 20 个能力插件、3 个共享包），
 
 仓库根是**插件工作区的唯一 pnpm workspace 根**（单一 `pnpm-lock.yaml`），`app/` 仍是独立的 Yarn 4 工作区；桌面依赖通过 `link:` 指向本仓 `plugins/plugins/*`，因此同一个 PR 可以同时改壳和插件并在打包时消费本仓源码。
 
+开发任务的研究顺序、对标项目和验收办法见[研究与决策指引](docs/development-research.md)，合并条件见[仓库开发规则](AGENTS.md#合并与复核)。
+
 ## 构建
 
 ```bash

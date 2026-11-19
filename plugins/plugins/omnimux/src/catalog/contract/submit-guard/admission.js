@@ -4,6 +4,7 @@
  */
 
 import { mapLegacyOperation } from '../legacy-operation-map.js'
+import { isH3AutoDlLipSync, resolveH3LipSyncSlotAliases } from '../../../media/vendors/autodl-h3.js'
 import {
   adapterProfileCompatible,
   getAdapterProfile,
@@ -270,7 +271,8 @@ export function inferUniqueOperation(model, assets, ctx = {}) {
   /** @type {object[]} */
   const accepting = []
   for (const op of candidates) {
-    const match = operationAcceptsAssets(op, assets, { prompt: ctx.prompt, requireMins: false })
+    const candidateAssets = isH3AutoDlLipSync(model.id, op.id) ? resolveH3LipSyncSlotAliases(assets, op.inputs) : assets
+    const match = operationAcceptsAssets(op, candidateAssets, { prompt: ctx.prompt, requireMins: false })
     if (match.ok) accepting.push(op)
   }
 

@@ -415,7 +415,7 @@ function checkEventListenerCleanup(report, rel, content) {
 
 function scanLifecycle(report, file, rel, content) {
   if (isTestFile(file)) return
-  if (rel.startsWith('scripts/')) return
+  if (rel.startsWith('scripts/') || rel.startsWith('plugins/scripts/')) return
   if (VENDOR_ENGINE_RE.test(rel)) return
 
   const flags = lifecycleFlags(content)
