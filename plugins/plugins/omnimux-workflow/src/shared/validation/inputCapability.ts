@@ -57,6 +57,8 @@ export interface InputCapabilityOperationState {
   usable: boolean;
   /** The user can choose this mode before attaching its inputs. Readiness still checks the chosen slots. */
   selectableBeforeInputs?: boolean;
+  /** R3 ordering: distinct source outputs actually assigned across all slots. */
+  potentialHits: number;
   /** R3 ordering: required media slots that are actually filled. */
   requiredMediaHits: number;
   /** R3 ordering: media slots with at least one occupied input. */
@@ -226,6 +228,7 @@ function evaluateOperation(
     order,
     consumes: match.accepts,
     usable,
+    potentialHits: match.potentialHits,
     requiredMediaHits,
     mediaSlotHits,
     rejections,
@@ -233,6 +236,7 @@ function evaluateOperation(
 }
 
 function sortCandidates(a: InputCapabilityOperationState, b: InputCapabilityOperationState): number {
+  if (a.potentialHits !== b.potentialHits) return b.potentialHits - a.potentialHits;
   if (a.requiredMediaHits !== b.requiredMediaHits) return b.requiredMediaHits - a.requiredMediaHits;
   if (a.mediaSlotHits !== b.mediaSlotHits) return b.mediaSlotHits - a.mediaSlotHits;
   if (a.order !== b.order) return a.order - b.order;
@@ -383,7 +387,8 @@ export function buildInputCapability(args: InputCapabilityArgs): InputCapability
   // adding a legacy audio edge must not require the user to re-pick that mode.
   const currentId = preferred?.id ?? autoRaw;
   const current = currentId ? operationStates.find((state) => state.id === currentId) : undefined;
-  if (preferred?.usable || preferred?.selectableBeforeInputs) {
+  const waitingForOtherFrame = preferred?.id === 'first_last_frame' && preferred.consumes && preferred.requiredMediaHits === 1;
+  if (preferred?.usable || preferred?.selectableBeforeInputs || waitingForOtherFrame) {
     selected = preferred;
   } else if (current && !current.usable && strictCandidates.length === 0) {
     // #62: when no mode is strictly usable, a saved mode whose required inputs are

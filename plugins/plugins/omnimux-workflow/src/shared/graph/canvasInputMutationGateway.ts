@@ -309,12 +309,17 @@ export function planCanvasInputMutation(current: CanvasInputMutationState, mutat
   if (invalidPatch) return invalidPatch;
   const targets = new Set((mutation.addNodes ?? []).map((node) => node.id));
   for (const patch of mutation.nodePatches ?? []) targets.add(patch.nodeId);
-  for (const edge of current.edges) if (removedEdges.has(edge.id) || removedNodes.has(edge.source)) targets.add(edge.target);
+  const disconnected = new Set<string>();
+  for (const edge of current.edges) {
+    if (!removedEdges.has(edge.id) && !removedNodes.has(edge.source)) continue;
+    targets.add(edge.target);
+    disconnected.add(edge.id);
+  }
   for (const edge of edges) if (newEdgeIds.has(edge.id) || patches.has(edge.source)) targets.add(edge.target);
   for (const id of targets) {
     const node = nodes.find((item) => item.id === id);
     if (!isGenerate(node)) continue;
-    const next = recomputeCanvasSlots(node, { nodes, edges }, context, current.nodes.find((item) => item.id === id), newEdgeIds);
+    const next = recomputeCanvasSlots(node, { nodes, edges }, context, current.nodes.find((item) => item.id === id), newEdgeIds, disconnected);
     nodes = nodes.map((item) => item.id === id ? next : item);
     edges = mirrorCanvasSlots(next, edges, context);
   }

@@ -16,7 +16,7 @@ import {
   modelCanConsumeMediaType,
   projectParamsForOperation,
 } from './inputCapability.ts';
-import { buildContractView, resolveModelView } from './compatKernel.ts';
+import { buildContractView, buildUpstreamFingerprint, resolveModelView } from './compatKernel.ts';
 
 const bundled = JSON.parse(readFileSync(new URL('../../../../omnimux/src/catalog/cloud/bundled/pricing.json', import.meta.url), 'utf8'));
 const catalog = projectCanvasCatalog(buildModelCatalog({ env: {}, snapshot: bundled }));
@@ -71,6 +71,29 @@ describe('R1/R2/R2b/R3 video matrix (real catalog)', () => {
     assert.equal(stateOf(result, 'text_to_video')?.usable, false);
   });
 
+  it('R3 prefers the mode that consumes more distinct references across all slots', () => {
+    const result = selected('seedance-2-5', ['image', 'image', 'image']);
+    assert.equal(result.selectedOperationId, 'video_multi_ref');
+    assert.equal(stateOf(result, 'video_multi_ref')?.potentialHits, 3);
+    assert.equal(stateOf(result, 'first_last_frame')?.potentialHits, 2);
+    assert.equal(selected('seedance-2-5', ['image', 'image', 'image'], 'video', 'first_frame').selectedOperationId, 'first_frame');
+  });
+
+  it('R3 does not count two connections to one output as two automatic frame inputs', () => {
+    const asset = fingerprint(['image']).assets[0];
+    const input = buildUpstreamFingerprint({ prompt: 'make a clip', assets: [
+      { ...asset, edgeId: 'image-a', outputId: 'same-output' },
+      { ...asset, edgeId: 'image-b', outputId: 'same-output' },
+    ] });
+    const duplicate = buildInputCapability({ catalog, modelId: 'seedance-2-5', outputType: 'video', fingerprint: input });
+    assert.equal(duplicate.selectedOperationId, 'first_frame');
+    assert.equal(stateOf(duplicate, 'first_last_frame')?.potentialHits, 1);
+    assert.equal(stateOf(duplicate, 'first_last_frame')?.usable, false);
+    input.assets[1].outputId = 'another-output';
+    const distinct = buildInputCapability({ catalog, modelId: 'seedance-2-5', outputType: 'video', fingerprint: buildUpstreamFingerprint(input) });
+    assert.equal(distinct.selectedOperationId, 'first_last_frame');
+  });
+
   it('seedance-2-5: 1 image → first_frame; 1 video → video_edit; media mix → video_multi_ref', () => {
     assert.equal(selected('seedance-2-5', ['image']).selectedOperationId, 'first_frame');
     const video = selected('seedance-2-5', ['video']);
@@ -114,6 +137,29 @@ describe('R1/R2/R2b/R3 video matrix (real catalog)', () => {
   it('R3 keeps an explicitly chosen usable operation instead of the sorting winner', () => {
     const result = selected('seedance-2-5', ['image', 'image'], 'video', 'video_multi_ref');
     assert.equal(result.selectedOperationId, 'video_multi_ref');
+  });
+
+  it('A6 keeps an explicit first/last-frame choice when one frame is missing', () => {
+    const result = selected('seedance-2-5', ['image'], 'video', 'first_last_frame');
+    assert.equal(result.selectedOperationId, 'first_last_frame');
+    const operation = stateOf(result, 'first_last_frame');
+    assert.equal(operation?.usable, false);
+    assert.equal(operation?.requiredMediaHits, 1);
+    assert.ok(operation?.rejections.some(item => item.code === 'missing_required_input' && item.slot === 'last_frame'));
+  });
+
+  it('A32 permits a mode that can use the first frame while the explicit tail is out of scope', () => {
+    const [a, b] = fingerprint(['image', 'image']).assets;
+    const input = buildUpstreamFingerprint({ prompt: 'make a clip', assets: [
+      { ...a, targetSlot: 'first_frame', role: 'first_frame' },
+      { ...b, targetSlot: 'last_frame', role: 'last_frame' },
+    ] });
+    const result = buildInputCapability({ catalog, modelId: 'seedance-2-5', outputType: 'video', fingerprint: input,
+      preferredOperationId: 'first_frame' });
+    assert.equal(result.selectedOperationId, 'first_frame');
+    assert.equal(stateOf(result, 'first_frame')?.potentialHits, 1);
+    assert.equal(stateOf(result, 'first_last_frame')?.usable, true);
+    assert.equal(stateOf(result, 'text_to_video')?.usable, false);
   });
 
   it('R3 ignores a system-derived operation but keeps an explicit user choice', () => {

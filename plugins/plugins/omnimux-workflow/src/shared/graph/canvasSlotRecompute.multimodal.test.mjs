@@ -16,8 +16,10 @@ import { recomputeCanvasSlots } from './canvasSlotRecompute.ts';
 import { prepareExecutionSlotGraph } from './feedSlot/prepareExecutionSlotGraph.ts';
 import { deriveSlotLayout } from './feedSlot/deriveSlotLayout.ts';
 import { effectiveInputDisplay } from './feedSlot/effectiveInputDisplay.ts';
+import { assembleEffectiveInputsFromSlots } from './feedSlot/assembleEffectiveInputs.ts';
 import { feedFromFingerprint } from './feedSlot/effectiveFingerprint.ts';
 import { buildCanvasUpstreamFingerprint } from './canvasInputSources.ts';
+import { planCanvasInputMutation } from './canvasInputMutationGateway.ts';
 import { resolveEffectiveVideoParams } from '../../canvas/editor/components/MaterialNode/ConfigPanel/videoParams/videoParamAdapter.ts';
 
 const bundled = JSON.parse(readFileSync(new URL('../../../../omnimux/src/catalog/cloud/bundled/pricing.json', import.meta.url), 'utf8'));
@@ -76,6 +78,77 @@ const boundKeys = (node) => Object.entries(node.data.slotBindings ?? {})
   .filter(([, occupants]) => occupants.length > 0)
   .map(([slot]) => slot)
   .sort();
+
+test('Muse V1 refills a vacated automatic first-frame slot in supply order', () => {
+  const target = targetNode();
+  target.data.params = { model: 'muse-video', operation: 'first_frame' };
+  target.data.autoOperationId = null;
+  const sources = ['a', 'b', 'c'].map(id => importNode(id, 'image'));
+  let graph = { nodes: [...sources, target], edges: [] };
+  for (const source of sources) {
+    graph = planCanvasInputMutation(graph, { addEdges: [edge(`e-${source.id}`, source.id, 'image')] }, { catalog });
+    assert.equal(graph.status, 'allowed');
+  }
+  const used = graph => graph.nodes.find(node => node.id === target.id).data.slotBindings.first_frame?.map(binding => binding.sourceNodeId) ?? [];
+  assert.deepEqual(used(graph), ['a']);
+  const withoutA = planCanvasInputMutation(graph, { removeEdgeIds: ['e-a'] }, { catalog });
+  assert.deepEqual(used(withoutA), ['b']);
+  assert.deepEqual(withoutA.edges.map(edge => edge.id), ['e-b', 'e-c']);
+  assert.deepEqual(used(planCanvasInputMutation(withoutA, { removeEdgeIds: ['e-b'] }, { catalog })), ['c']);
+
+  const cleared = planCanvasInputMutation(graph, { nodePatches: [{ nodeId: target.id, data: { slotBindings: {} } }] }, { catalog });
+  assert.deepEqual(used(planCanvasInputMutation(cleared, { removeEdgeIds: ['e-a'] }, { catalog })), []);
+});
+
+test('disconnecting a pinned first frame keeps the pinned last frame in its own role', () => {
+  const target = targetNode();
+  target.data.params = { model: 'seedance-2-5', operation: 'first_last_frame' };
+  target.data.autoOperationId = null;
+  target.data.slotBindings = {
+    first_frame: [{ sourceNodeId: 'a', edgeId: 'e-a', pinned: true }],
+    last_frame: [{ sourceNodeId: 'b', edgeId: 'e-b', pinned: true }],
+  };
+  const graph = { nodes: [importNode('a', 'image'), importNode('b', 'image'), target],
+    edges: [edge('e-a', 'a', 'image'), edge('e-b', 'b', 'image')] };
+  const result = planCanvasInputMutation(graph, { removeEdgeIds: ['e-a'] }, { catalog });
+  const updated = result.nodes.find(node => node.id === target.id);
+  assert.equal(updated.data.params.operation, 'first_last_frame');
+  assert.deepEqual(updated.data.slotBindings.first_frame ?? [], []);
+  assert.deepEqual(updated.data.slotBindings.last_frame.map(binding => binding.sourceNodeId), ['b']);
+  assert.equal(updated.data.compat.readyToSubmit, false);
+});
+
+test('A32 keeps an explicit last-frame intent through an operation without that role', () => {
+  const target = targetNode();
+  target.data.params = { model: 'seedance-2-5', operation: 'first_last_frame' };
+  target.data.autoOperationId = null;
+  target.data.slotBindings = {
+    first_frame: [{ sourceNodeId: 'a', edgeId: 'e-a', pinned: true, role: 'first_frame' }],
+    last_frame: [{ sourceNodeId: 'b', edgeId: 'e-b', pinned: true, role: 'last_frame' }],
+  };
+  const graph = { nodes: [...['a', 'b', 'c'].map(id => importNode(id, 'image')), target],
+    edges: ['a', 'b', 'c'].map(id => edge(`e-${id}`, id, 'image')) };
+  const changeMode = (current, operation) => planCanvasInputMutation(current, {
+    nodePatches: [{ nodeId: target.id, data: { params: { ...target.data.params, operation }, autoOperationId: null } }],
+  }, { catalog });
+  const firstOnly = changeMode(graph, 'first_frame');
+  const changed = firstOnly.nodes.find(node => node.id === target.id);
+  const layout = deriveSlotLayout(catalog, 'seedance-2-5', 'first_frame');
+  const feed = feedFromFingerprint(buildCanvasUpstreamFingerprint(target.id, firstOnly.nodes, firstOnly.edges), 1);
+  const displayed = effectiveInputDisplay(layout, feed, changed.data.slotBindings, changed.data.slotConflicts, firstOnly.edges, [], 1);
+  assert.deepEqual(displayed.records.map(record => record.occupant.sourceNodeId), ['a']);
+  assert.equal(displayed.unused.find(input => input.occupant.edgeId === 'e-b')?.reasonCode, 'role_not_supported');
+  const requestInputs = assembleEffectiveInputsFromSlots({ layout, bindings: displayed.bindings, conflicts: displayed.conflicts,
+    nodeData: changed.data, feedAssets: feed, incomingText: [] });
+  assert.deepEqual(requestInputs.references.map(input => [input.sourceNodeId, input.targetSlot]), [['a', 'first_frame']]);
+  assert.deepEqual(requestInputs.blockedInputs, []);
+  assert.equal(changed.data.compat.readyToSubmit, true);
+  assert.ok(!changed.data.compat.reasonCodes.includes('role_conflict'));
+  assert.equal(firstOnly.edges.length, 3);
+  const reopened = JSON.parse(JSON.stringify(firstOnly));
+  const restored = changeMode(reopened, 'first_last_frame').nodes.find(node => node.id === target.id);
+  assert.deepEqual(restored.data.slotBindings.last_frame.map(binding => [binding.sourceNodeId, binding.pinned]), [['b', true]]);
+});
 
 test('#62 AC-3: two images then a video re-binds slots for video_multi_ref and stays submittable', () => {
   const imgA = importNode('img-a', 'image');

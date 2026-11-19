@@ -443,10 +443,14 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
     ...asset, nodeId: asset.sourceNodeId, materialType: asset.type,
     label: asset.sourceLabel,
   })), [consumedFingerprint]);
-  // Card / prompt / submit all consume the assigned slot set. Ready supply that
-  // did not enter a slot is a candidate only: it must not be folded back into
-  // the capability input or it would disable generation / parameter controls.
   const videoDisplayUpstreams = consumedUpstreams;
+  // A parked pin can make the mode that owns its named slot selectable again.
+  const parkedVideoUpstreams = useMemo(() => slotConflicts.flatMap(conflict => {
+    if (conflict.reason !== 'slot_inactive' || conflict.occupant.use === 'inactive') return [];
+    const asset = fingerprint.assets.find(item => item.edgeId === conflict.occupant.edgeId && item.sourceNodeId === conflict.occupant.sourceNodeId);
+    return asset ? [{ ...asset, nodeId: asset.sourceNodeId, materialType: asset.type, label: asset.sourceLabel,
+      targetSlot: conflict.slot, role: conflict.occupant.role }] : [];
+  }), [slotConflicts, fingerprint.assets]);
 
   // Model eligibility comes from the directory. The selected model reassigns supply.
   const filteredModels = useMemo(
@@ -638,11 +642,12 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
             catalog: activeCatalog,
             lineConstraints,
             upstreams: videoDisplayUpstreams.filter((source) => ['image', 'video', 'audio'].includes(source.materialType)),
+            parkedUpstreams: parkedVideoUpstreams,
             prompt: consumedFingerprint.prompt,
             autoOperationId: nodeData.autoOperationId,
           })
         : null,
-    [materialType, params, schema, modelItem, activeCatalog, lineConstraints, videoDisplayUpstreams, consumedFingerprint.prompt, nodeData.autoOperationId],
+    [materialType, params, schema, modelItem, activeCatalog, lineConstraints, videoDisplayUpstreams, parkedVideoUpstreams, consumedFingerprint.prompt, nodeData.autoOperationId],
   );
 
   // Issue #27: a JSON document's duration becomes the effective video duration

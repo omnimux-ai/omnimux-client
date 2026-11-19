@@ -33,7 +33,7 @@ export interface SlotOccupant {
 }
 
 export type SlotBindings = Record<string, SlotOccupant[]>;
-export type SlotConflictReason = 'type_mismatch' | 'role_illegal' | 'slot_removed';
+export type SlotConflictReason = 'type_mismatch' | 'role_illegal' | 'slot_removed' | 'slot_inactive';
 export interface SlotConflict {
   slot: string;
   occupant: SlotOccupant;
@@ -81,8 +81,8 @@ export interface FillResult {
 }
 
 /** Why ready supply stayed out of every slot of the current operation. */
-export type UnusedSupplyReason = 'no_matching_slot' | 'slot_capacity' | 'not_bound' | 'input_unavailable';
-/** Ready inbound media this operation will not consume; the UI must show it instead of hiding it. */
+export type UnusedSupplyReason = 'no_matching_slot' | 'slot_capacity' | 'not_bound' | 'input_unavailable' | 'role_not_supported';
+/** Ready inbound media outside the current assignment. */
 export interface UnusedSupply {
   occupant: SlotOccupant;
   asset: FeedAsset;
