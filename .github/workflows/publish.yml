@@ -6,7 +6,7 @@ name: Publish npm package (Trusted Publishing)
 #   Provider=GitHub Actions / Owner=omnimux-ai / Repository=omnimux-client
 #   Workflow filename=publish.yml / Environment 留空
 # 注意：本仓 plugins/ 是插件工作区根，workflow 的 run 步骤默认在该目录下执行。
-# 版本 bump 仍走现有 PR + Merge Queue，合入后由维护者手动触发本 workflow。
+# 版本变更按仓库合并规则经 PR 合入；获得发布授权后由维护者手动触发本 workflow。
 #
 # packages=all（默认）会展开 12 个活跃包；dry_run 默认 true。dry-run 下：
 #   - 未发布版本走 npm publish --dry-run；
