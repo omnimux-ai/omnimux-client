@@ -1070,7 +1070,12 @@ function runTopbarGeometryHook(doc) {
  */
 export function findTopbarAnchor(doc) {
   if (!doc || typeof doc.querySelector !== 'function') return null
-  return doc.querySelector('[data-dsh-better-sidebar] [class*="tabBar"], [class*="tabBar"], [data-dsh-better-sidebar]') || null
+  // tabBar 叶子优先，better-sidebar 宿主只作兜底（早期壳没有 tabBar 时用）。
+  // 三者写进同一个 querySelector 会被文档序坑：宿主是 tabBar 的祖先、总是先命中，
+  // 按钮实际落在 wrapper 上，tabBar 整体替换时就看不到重注入（#67 AC-4）。
+  return doc.querySelector('[data-dsh-better-sidebar] [class*="tabBar"], [class*="tabBar"]')
+    || doc.querySelector('[data-dsh-better-sidebar]')
+    || null
 }
 
 /** True while any first-run guide layer is on screen (#67). */
@@ -1489,11 +1494,14 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
         ensureSidebarToggleTopbar(doc)
         ensureObserveTargets()
         rebindHostObservers()
+        watchTopbarAnchorAppearance()
       } catch {
         // Best-effort chrome sync: a host may tear down its document while a
         // hostile observer is still queued (covered by the E2E cleanup test).
       } finally {
         isEnsuring = false
+        // 引导退出与外壳挂载不在同一次提交里：控件缺失时补跑（成功/回引导即停）。
+        armTopbarRetry()
       }
     }
 
@@ -1524,6 +1532,103 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
 
   const ObserverClass = doc.defaultView?.MutationObserver || (typeof MutationObserver !== 'undefined' ? MutationObserver : undefined)
 
+  /**
+   * #67 AC-4：引导退出与工作区外壳挂载是两次独立提交。跳过引导后 tabBar /
+   * better-sidebar 可能晚一步才挂上，而现有观察者只覆盖「已经存在的宿主」，
+   * 于是控件可能一直不注入（实测偶发跳过 30s 后仍为 0）。这里补一条有限、
+   * 可取消的自愈链：引导已结束且控件确实缺失时按退避重排，注入成功即停。
+   * 展开态不要求 new-session（它只在左栏收起时存在），避免白跑满窗口。
+   */
+  const TOPBAR_RETRY_BACKOFF_MS = Object.freeze([0, 60, 150, 300, 600, 1000, 1400])
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let topbarRetryTimer = null
+  let topbarRetryAttempt = 0
+
+  const topbarControlMissing = () => {
+    if (!doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`)) return true
+    return isLeftSidebarCollapsed(doc) && !doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`)
+  }
+
+  const cancelTopbarRetry = () => {
+    if (topbarRetryTimer !== null) {
+      safeDom(() => clearTimeout(topbarRetryTimer))
+      topbarRetryTimer = null
+    }
+    topbarRetryAttempt = 0
+  }
+
+  const armTopbarRetry = () => {
+    if (topbarRetryTimer !== null) return
+    if (doc.defaultView?.closed === true) return
+    // 引导再现（重新登录、回到引导）时整条链取消：此时控件就该不在。
+    if (isOnboardingGuideActive(doc) || !topbarControlMissing()) {
+      topbarRetryAttempt = 0
+      return
+    }
+    if (topbarRetryAttempt >= TOPBAR_RETRY_BACKOFF_MS.length) return
+    const delay = TOPBAR_RETRY_BACKOFF_MS[topbarRetryAttempt]
+    topbarRetryAttempt += 1
+    topbarRetryTimer = setTimeout(() => {
+      topbarRetryTimer = null
+      if (doc.defaultView?.closed === true) return
+      // 每个 tick 仍走 scheduleSync：与观察者共用同一次 rAF 合并，不直接调 ensure。
+      scheduleSync()
+    }, delay)
+  }
+
+  /**
+   * 自愈链只等有限时间；外壳若在 `#root` 里晚一步插入 tabBar / better-sidebar，
+   * 用一次性过滤观察立刻接住，绑到即断开，不留全树观察。
+   */
+  const TOPBAR_ANCHOR_APPEAR_SELECTOR = '[data-dsh-better-sidebar], [class*="tabBar"]'
+  /** @type {MutationObserver | null} */
+  let anchorWatchObserver = null
+
+  const stopAnchorWatch = () => {
+    if (!anchorWatchObserver) return
+    safeDom(() => anchorWatchObserver.disconnect())
+    anchorWatchObserver = null
+  }
+
+  const watchTopbarAnchorAppearance = () => {
+    if (anchorWatchObserver || !ObserverClass) return
+    if (findTopbarAnchor(doc)) return
+    const host = doc.getElementById?.('root')
+    if (!host) return
+    anchorWatchObserver = new ObserverClass((records) => {
+      for (const record of records) {
+        for (const node of [...record.addedNodes, ...record.removedNodes]) {
+          if (node.nodeType !== 1) continue
+          if (node.matches?.(TOPBAR_ANCHOR_APPEAR_SELECTOR) || node.querySelector?.(TOPBAR_ANCHOR_APPEAR_SELECTOR)) {
+            stopAnchorWatch()
+            scheduleSync()
+            return
+          }
+        }
+      }
+    })
+    anchorWatchObserver.observe(host, { childList: true, subtree: true })
+  }
+
+  /**
+   * 观察目标绑稳定的 better-sidebar 宿主（tabBar 整体替换也能看到），注入目标
+   * 仍走 findTopbarAnchor() 的 tabBar 叶子——两者是不同变量。宿主子树包含工作区
+   * 内容，回调只在「外壳节点增删」时同步，避免正文流式渲染每帧重跑一次注入
+   * （ensure 幂等，但几何读取代价高）。
+   */
+  const TOPBAR_CHROME_SELECTOR = '[data-dsh-better-sidebar], [class*="tabBar"], [class*="toggleCluster"], [data-dsh-toggle-cluster], [data-omnimux-sidebar-toggle-topbar], [data-omnimux-topbar-new-session]'
+  const isTopbarChromeMutation = (records) => {
+    for (const record of records) {
+      for (const node of [...record.addedNodes, ...record.removedNodes]) {
+        if (node.nodeType !== 1) continue
+        if (node.matches?.(TOPBAR_CHROME_SELECTOR) || node.querySelector?.(TOPBAR_CHROME_SELECTOR)) return true
+      }
+      const target = record.target
+      if (target && typeof target.closest === 'function' && target.closest('[class*="tabBar"]')) return true
+    }
+    return false
+  }
+
   let observedCollapsedHost = null
   const bindCollapsedObserver = () => {
     if (!ObserverClass) return
@@ -1549,15 +1654,17 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
   let observedAnchor = null
   const bindAnchorObserver = () => {
     if (!ObserverClass) return
-    const anchor = findTopbarAnchor(doc) || doc.querySelector?.('[data-dsh-better-sidebar]')
+    // 观察绑稳定的 better-sidebar 宿主：tabBar 被整体替换时仍能收到信号并重注入。
+    // 注入仍然走 findTopbarAnchor()（tabBar 叶子），观察目标与注入目标分开。
+    const anchor = doc.querySelector('[data-dsh-better-sidebar]') || findTopbarAnchor(doc)
     if (!anchor || anchor === observedAnchor) return
     if (anchorObserver) {
       safeDom(() => anchorObserver.disconnect())
       anchorObserver = null
     }
     observedAnchor = anchor
-    anchorObserver = new ObserverClass(() => {
-      scheduleSync()
+    anchorObserver = new ObserverClass((records) => {
+      if (isTopbarChromeMutation(records)) scheduleSync()
     })
     anchorObserver.observe(anchor, {
       childList: true,
@@ -1658,6 +1765,8 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
 
   rebindHostObservers()
   ensureObserveTargets()
+  watchTopbarAnchorAppearance()
+  armTopbarRetry()
   safeDom(() => {
     const win = doc.defaultView
     if (win?.addEventListener) {
@@ -1667,6 +1776,9 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
   })
 
   return () => {
+    // 先停自愈链与一次性观察，避免 teardown 后仍有排队中的 sync。
+    cancelTopbarRetry()
+    stopAnchorWatch()
     if (typeof pendingSchedule === 'function') {
       safeDom(() => pendingSchedule())
       pendingSchedule = null

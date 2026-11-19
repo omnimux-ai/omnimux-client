@@ -1611,6 +1611,162 @@ describe('first-run onboarding gating (#67)', () => {
       stop()
     }
   })
+
+  // AC-4 实测失败时序：引导页是 body portal，工作区外壳（better-sidebar +
+  // tabBar）可能在它卸载之后 50–100ms 才挂进 #root。下面四条钉住这个时序，
+  // 现有用例都是「body 直接子节点 + anchor 预先存在」，覆盖不到。
+  it('restores the toggle when the workbench tab bar mounts after the guide exits', async () => {
+    const doc = setup('<!doctype html><html><body><div id="root"></div></body></html>')
+    const guide = doc.createElement('div')
+    guide.setAttribute('data-omnimux-native-runtime', '')
+    doc.body.appendChild(guide)
+    const stop = installSidebarToggleTopbar(doc)
+    const injected = () => Boolean(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`))
+    try {
+      assert.equal(injected(), false)
+      guide.remove()
+      await new Promise((resolve) => setTimeout(resolve, 80))
+      assert.equal(injected(), false, '外壳还没挂上时不注入')
+
+      // 外壳容器先作为 #root 直接子节点挂载（旧观察者能看到），稳定后再把
+      // better-sidebar 插到更深一层——旧观察者只盯 #root 直接子节点，看不到。
+      const shell = doc.createElement('div')
+      shell.className = 'late_shell'
+      doc.getElementById('root').appendChild(shell)
+      await new Promise((resolve) => setTimeout(resolve, 60))
+      const host = doc.createElement('div')
+      host.setAttribute('data-dsh-better-sidebar', '')
+      const bar = doc.createElement('div')
+      bar.className = 'late_tabBar'
+      host.appendChild(bar)
+      shell.appendChild(host)
+      await waitFor(injected)
+      assert.ok(host.querySelector(`button[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`))
+    } finally {
+      stop()
+    }
+  })
+
+  it('restores the toggle when the workspace host only gains its chrome markers later', async () => {
+    // 外壳先挂一个普通容器、稍后才补上 data-dsh-better-sidebar / tabBar 类名：
+    // 没有 childList 增删可看，只有有限重试链能接住（一次性观察只过滤节点）。
+    const doc = setup('<!doctype html><html><body><div id="root"></div></body></html>')
+    const guide = doc.createElement('div')
+    guide.setAttribute('data-omnimux-native-runtime', '')
+    doc.body.appendChild(guide)
+    const stop = installSidebarToggleTopbar(doc)
+    const injected = () => Boolean(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`))
+    try {
+      guide.remove()
+      await new Promise((resolve) => setTimeout(resolve, 60))
+      // 先把普通容器整棵插好，全程只改属性/类名补标记：没有 childList 增删可看，
+      // 一次性观察不会触发，只有有限重试链能接住。
+      const shell = doc.createElement('div')
+      shell.className = 'late_shell'
+      const host = doc.createElement('div')
+      const bar = doc.createElement('div')
+      host.appendChild(bar)
+      shell.appendChild(host)
+      doc.getElementById('root').appendChild(shell)
+      await new Promise((resolve) => setTimeout(resolve, 120))
+      assert.equal(injected(), false, '还没有外壳标记时不注入')
+
+      host.setAttribute('data-dsh-better-sidebar', '')
+      bar.className = 'late_tabBar'
+      await waitFor(injected)
+      assert.ok(bar.querySelector(`button[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`))
+    } finally {
+      stop()
+    }
+  })
+
+  it('cancels the retry chain when the guide comes back inside the window', async () => {
+    const doc = setup('<!doctype html><html><body><div id="root"></div></body></html>')
+    const guide = doc.createElement('div')
+    guide.setAttribute('data-desktop-onboarding-surface', '')
+    doc.body.appendChild(guide)
+    const stop = installSidebarToggleTopbar(doc)
+    const injected = () => Boolean(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`))
+    try {
+      guide.remove()
+      await new Promise((resolve) => setTimeout(resolve, 60))
+      const again = doc.createElement('div')
+      again.setAttribute('data-omnimux-native-runtime', '')
+      doc.body.appendChild(again)
+      const late = doc.createElement('div')
+      late.setAttribute('data-dsh-better-sidebar', '')
+      const bar = doc.createElement('div')
+      bar.className = 'late_tabBar'
+      late.appendChild(bar)
+      doc.getElementById('root').appendChild(late)
+      await new Promise((resolve) => setTimeout(resolve, 400))
+      assert.equal(injected(), false, '重试窗口内回到引导态不得注入')
+      again.remove()
+      await waitFor(injected)
+    } finally {
+      stop()
+    }
+  })
+
+  it('leaves no retry timer behind after teardown', async () => {
+    const doc = setup('<!doctype html><html><body><div id="root"></div></body></html>')
+    const guide = doc.createElement('div')
+    guide.setAttribute('data-omnimux-native-runtime', '')
+    doc.body.appendChild(guide)
+    const stop = installSidebarToggleTopbar(doc)
+    guide.remove()
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    stop()
+
+    const host = doc.createElement('div')
+    host.setAttribute('data-dsh-better-sidebar', '')
+    const bar = doc.createElement('div')
+    bar.className = 'late_tabBar'
+    host.appendChild(bar)
+    doc.getElementById('root').appendChild(host)
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    assert.equal(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`), null, 'teardown 后不得再注入')
+    assert.equal(doc.documentElement.hasAttribute(SIDEBAR_TOGGLE_TOPBAR_HTML_ATTR), false)
+  })
+
+  it('re-injects when the workbench tab bar or its host is replaced', async () => {
+    // 宿主（better-sidebar）与 tabBar 叶子分开，才能分别覆盖两种替换。
+    const doc = setup(`<!doctype html><html><body>
+      <div class="frame_abc" data-sidebar-collapsed>
+        <div class="sidebarCol_x">
+          <div class="logoRow_y"><button type="button" class="toggle_w" aria-label="打开侧边栏">T</button></div>
+          <button type="button" class="newSession_n" aria-label="新建会话">新会话</button>
+        </div>
+      </div>
+      <div data-dsh-better-sidebar>
+        <div class="pane_x"><div class="tabBar_n"><div class="tabList_m"></div></div></div>
+      </div>
+    </body></html>`)
+    const stop = installSidebarToggleTopbar(doc)
+    const injectedIn = (scope) => Boolean(scope.querySelector(`button[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`))
+    try {
+      assert.equal(injectedIn(doc), true)
+
+      // tabBar 整体替换、better-sidebar 宿主不变：靠绑宿主的 childList 观察重注入。
+      const host = doc.querySelector('[data-dsh-better-sidebar]')
+      const oldBar = doc.querySelector('.tabBar_n')
+      const nextBar = doc.createElement('div')
+      nextBar.className = 'replacement_tabBar'
+      oldBar.replaceWith(nextBar)
+      await waitFor(() => injectedIn(nextBar))
+
+      // 宿主整体替换：body 直接子节点变化触发重绑，注入目标重新指向新 tabBar。
+      const nextHost = doc.createElement('div')
+      nextHost.setAttribute('data-dsh-better-sidebar', '')
+      const nextNextBar = doc.createElement('div')
+      nextNextBar.className = 'second_tabBar'
+      nextHost.appendChild(nextNextBar)
+      host.replaceWith(nextHost)
+      await waitFor(() => injectedIn(nextNextBar))
+    } finally {
+      stop()
+    }
+  })
 })
 
 async function waitFor(predicate, timeoutMs = 500) {
