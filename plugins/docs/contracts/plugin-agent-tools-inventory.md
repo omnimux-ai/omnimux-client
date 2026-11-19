@@ -194,9 +194,9 @@ related:
 | 向画布添加物料/AI生成节点 | 左侧物料库拖拽入画布 | `workflow_node_add` | L1 | `Implemented` | 否 |
 | 更新指定节点的参数与配置，在有序参考图卡槽内交换当前起始图和另一张可用图（`patch.swap_reference_images`） | 节点右侧属性面板及参考图卡槽的起始图设置 | `workflow_node_update` | L1 | `Implemented` | 否 |
 | 移除画布上的指定节点及其相连边 | 节点选中按 Delete 键 | `workflow_node_remove` | L1 | `Implemented` | 是 (`confirm: true`) |
-| 在两节点端口之间建立连接边 | 鼠标拖拽连线 | `workflow_connect` | L1 | `Implemented` | 否 |
+| 在两节点端口之间建立连接边，按不同素材输出重算自动生成方式 | 鼠标拖拽连线 | `workflow_connect` | L1 | `Implemented` | 否 |
 | 按当前生成方式的具名卡槽添加或替换素材。系统对话框与拖入可使用桌面本地文件 | 卡槽「添加」及预览「替换」 | — | UI-Only | `UI-Only` | 豁免（桌面文件选择与画布撤销） |
-| 断开指定两节点之间的连线边 | 边右键删除 | `workflow_disconnect` | L1 | `Implemented` | 是 (`confirm: true`) |
+| 断开指定两节点之间的连线边，按连线次序补自动卡槽并保留其余具名绑定 | 边右键删除 | `workflow_disconnect` | L1 | `Implemented` | 是 (`confirm: true`) |
 | 暂停、恢复或取消正在运行的流程 | 控制台暂停/中止按钮 | `workflow_execution_control` | L2 | `Implemented` | 否 |
 | 写入 TableNode 数据表格单元格 | 表格节点全屏编辑器 | `canvas_write_table_node` | L2 | `Implemented` | 否 |
 | 读取 TableNode 数据表格内容 | 表格节点渲染面板 | `canvas_get_table_node` | L2 | `Implemented` | 否 |

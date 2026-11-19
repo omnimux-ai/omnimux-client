@@ -422,6 +422,8 @@ export interface OperationMatch {
   /** accepts ∧ all slot min satisfied ∧ required prompt present. */
   ready: boolean;
   bindings: SlotBinding[];
+  /** Distinct assigned source outputs across all bindable slots. */
+  potentialHits: number;
   /** Blocking-for-accept rejections (typed, deterministic). */
   rejections: CompatRejection[];
   /** Blocking-for-ready-only reasons (min_unsatisfied / prompt_required). */
@@ -495,6 +497,8 @@ export function matchOperationInputs(
   const slots = bindableSlots(op);
   const assignments = new Map<InputSlotDto, SlotAssignment>();
   for (const slot of slots) assignments.set(slot, { slot, assets: [] });
+  const assignedInputs = new Set<string>();
+  const inputIdentity = (asset: UpstreamAssetFingerprint) => JSON.stringify([asset.sourceNodeId, asset.outputId ?? '']);
 
   const rejections: CompatRejection[] = [];
   // Assignment mode (#88): candidates that cannot enter any slot are valid
@@ -579,6 +583,7 @@ export function matchOperationInputs(
         continue;
       }
       state.assets.push(asset);
+      assignedInputs.add(inputIdentity(asset));
       return { assigned: true, attempts };
     }
     return { assigned: false, attempts };
@@ -590,7 +595,12 @@ export function matchOperationInputs(
     // only joins the hard media gate when this operation declares a document slot.
     && (asset.type !== 'document' || acceptsDocumentSlot))
     || (asset.type === 'text' && op.inputs.some(slot => slot.valueSources !== undefined)));
-  for (const asset of upstreamAssets) {
+  // Honor a named media input before filling any open media slot in graph order.
+  const explicitMedia = (asset: UpstreamAssetFingerprint) => isMediaInputType(asset.type) && Boolean(asset.targetSlot || asset.role);
+  const candidates = options.ignoreUnused
+    ? [...upstreamAssets.filter(explicitMedia), ...upstreamAssets.filter(asset => !explicitMedia(asset))]
+    : upstreamAssets;
+  for (const asset of candidates) {
     // 1. Explicit target slot wins above everything.
     if (asset.targetSlot) {
       const explicit = slots.filter((slot) => slot.slot === asset.targetSlot && slot.type === asset.type);
@@ -622,6 +632,7 @@ export function matchOperationInputs(
     }
 
     // 3. Type-matched slots: required narrow → generic reference → rest.
+    if (options.ignoreUnused && isMediaInputType(asset.type) && assignedInputs.has(inputIdentity(asset))) continue;
     const typed = slots.filter((slot) => slot.type === asset.type);
     if (typed.length === 0) {
       // A media type this operation has no slot for is an unconsumed candidate,
@@ -759,6 +770,7 @@ export function matchOperationInputs(
 
   return {
     operationId: op.id,
+    potentialHits: assignedInputs.size,
     accepts,
     ready: accepts && pending.length === 0,
     bindings,

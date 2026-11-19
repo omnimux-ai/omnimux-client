@@ -57,6 +57,8 @@ export interface InputCapabilityOperationState {
   usable: boolean;
   /** The user can choose this mode before attaching its inputs. Readiness still checks the chosen slots. */
   selectableBeforeInputs?: boolean;
+  /** R3 ordering: distinct source outputs actually assigned across all slots. */
+  potentialHits: number;
   /** R3 ordering: required media slots that are actually filled. */
   requiredMediaHits: number;
   /** R3 ordering: media slots with at least one occupied input. */
@@ -226,6 +228,7 @@ function evaluateOperation(
     order,
     consumes: match.accepts,
     usable,
+    potentialHits: match.potentialHits,
     requiredMediaHits,
     mediaSlotHits,
     rejections,
@@ -233,6 +236,7 @@ function evaluateOperation(
 }
 
 function sortCandidates(a: InputCapabilityOperationState, b: InputCapabilityOperationState): number {
+  if (a.potentialHits !== b.potentialHits) return b.potentialHits - a.potentialHits;
   if (a.requiredMediaHits !== b.requiredMediaHits) return b.requiredMediaHits - a.requiredMediaHits;
   if (a.mediaSlotHits !== b.mediaSlotHits) return b.mediaSlotHits - a.mediaSlotHits;
   if (a.order !== b.order) return a.order - b.order;

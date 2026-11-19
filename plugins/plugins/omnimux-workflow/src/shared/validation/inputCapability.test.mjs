@@ -16,7 +16,7 @@ import {
   modelCanConsumeMediaType,
   projectParamsForOperation,
 } from './inputCapability.ts';
-import { buildContractView, resolveModelView } from './compatKernel.ts';
+import { buildContractView, buildUpstreamFingerprint, resolveModelView } from './compatKernel.ts';
 
 const bundled = JSON.parse(readFileSync(new URL('../../../../omnimux/src/catalog/cloud/bundled/pricing.json', import.meta.url), 'utf8'));
 const catalog = projectCanvasCatalog(buildModelCatalog({ env: {}, snapshot: bundled }));
@@ -69,6 +69,29 @@ describe('R1/R2/R2b/R3 video matrix (real catalog)', () => {
     // second image is unused:capacity, not an operation-level failure.
     assert.equal(stateOf(result, 'first_frame')?.usable, true);
     assert.equal(stateOf(result, 'text_to_video')?.usable, false);
+  });
+
+  it('R3 prefers the mode that consumes more distinct references across all slots', () => {
+    const result = selected('seedance-2-5', ['image', 'image', 'image']);
+    assert.equal(result.selectedOperationId, 'video_multi_ref');
+    assert.equal(stateOf(result, 'video_multi_ref')?.potentialHits, 3);
+    assert.equal(stateOf(result, 'first_last_frame')?.potentialHits, 2);
+    assert.equal(selected('seedance-2-5', ['image', 'image', 'image'], 'video', 'first_frame').selectedOperationId, 'first_frame');
+  });
+
+  it('R3 does not count two connections to one output as two automatic frame inputs', () => {
+    const asset = fingerprint(['image']).assets[0];
+    const input = buildUpstreamFingerprint({ prompt: 'make a clip', assets: [
+      { ...asset, edgeId: 'image-a', outputId: 'same-output' },
+      { ...asset, edgeId: 'image-b', outputId: 'same-output' },
+    ] });
+    const duplicate = buildInputCapability({ catalog, modelId: 'seedance-2-5', outputType: 'video', fingerprint: input });
+    assert.equal(duplicate.selectedOperationId, 'first_frame');
+    assert.equal(stateOf(duplicate, 'first_last_frame')?.potentialHits, 1);
+    assert.equal(stateOf(duplicate, 'first_last_frame')?.usable, false);
+    input.assets[1].outputId = 'another-output';
+    const distinct = buildInputCapability({ catalog, modelId: 'seedance-2-5', outputType: 'video', fingerprint: buildUpstreamFingerprint(input) });
+    assert.equal(distinct.selectedOperationId, 'first_last_frame');
   });
 
   it('seedance-2-5: 1 image → first_frame; 1 video → video_edit; media mix → video_multi_ref', () => {
