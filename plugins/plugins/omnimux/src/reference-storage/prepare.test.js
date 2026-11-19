@@ -84,6 +84,42 @@ test('mapped metadata audio is prepared without changing unrelated metadata', as
   assert.equal(result.metadata.speech, 'retain words')
 })
 
+test('official H3 prepares numbered image and audio slots and frames only once per source', async () => {
+  const d = deps()
+  const image = '/tmp/face.png'
+  const audio = '/tmp/voice.wav'
+  const remote = 'https://existing.example.test/last.png'
+  const imageAsset = { type: 'image', pathOrUrl: image, contentDigest: 'fixture-image' }
+  const audioAsset = { type: 'audio', pathOrUrl: audio, contentDigest: 'fixture-audio' }
+  const remoteAsset = { type: 'image', pathOrUrl: remote, contentDigest: 'fixture-remote' }
+  d.expectedAssets = [imageAsset, audioAsset, remoteAsset]
+  const checks = []
+  d.verifyRemote = async (url, options) => { checks.push([url, options.expectedType, options.expectedAsset]) }
+  d.upload = async (source, options) => {
+    d.calls.push([source, options.expectedAsset])
+    return `https://media.example.test/${source.split('/').at(-1)}`
+  }
+  const metadata = {
+    ref_image_0: image, ref_image_10: remote, first_frame: image, last_frame: remote,
+    ref_audio_0: audio, audio_duration: 5, ref_audio_0_extra: '/tmp/unknown.wav',
+    nested: { ref_image_0: '/tmp/ignored.png' },
+  }
+  const input = { audio_urls: [audio], metadata }
+  assert.deepEqual((await prepareReferencePayload({ metadata }, d)).metadata, metadata)
+  assert.deepEqual(d.calls, [])
+  assert.deepEqual(checks, [])
+
+  const result = await prepareReferencePayload(input, { ...d, hostH3Metadata: true })
+  assert.deepEqual(d.calls, [[audio, audioAsset], [image, imageAsset]])
+  assert.deepEqual(checks, [[remote, 'image', remoteAsset]])
+  assert.deepEqual(result.metadata, {
+    ...metadata, ref_image_0: 'https://media.example.test/face.png', first_frame: 'https://media.example.test/face.png',
+    ref_audio_0: 'https://media.example.test/voice.wav',
+  })
+  assert.deepEqual(result.audio_urls, [result.metadata.ref_audio_0])
+  assert.equal(input.metadata.ref_audio_0, audio)
+})
+
 test('existing public media is verified but never copied into user storage', async () => {
   const d = deps()
   let checks = 0

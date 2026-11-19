@@ -2,6 +2,7 @@
 import { GUARD_CODES } from './codes.js'
 import { collectMappedBindings } from './map-bindings.js'
 import { assertVendorBodyAllowed } from './map-contract.js'
+import { H3_AUTODL_MODEL, isH3AutoDlLipSync, mapH3LipSyncMedia } from '../../../media/vendors/autodl-h3.js'
 export { DEFAULT_PROFILE_PAYLOADS, resolveProfilePayloadContract, assertVendorBodyAllowed } from './map-contract.js'
 
 /**
@@ -103,6 +104,7 @@ export function mapValidatedPlanToVendor(args) {
   const profileId = profile.id
   const opId = args.operation.id
   const speech = profileId === 'audioGenerate' && opId === 'text_to_speech'
+  const h3LipSync = isH3AutoDlLipSync(args.modelId, opId)
   /** @type {Record<string, unknown>} */
   let vendor = {}
   /** @type {Record<string, unknown>} */
@@ -111,7 +113,8 @@ export function mapValidatedPlanToVendor(args) {
   const prompt = typeof args.prompt === 'string' ? args.prompt : ''
   // Issue #3063: indextts-2 voice_clone keeps the script in `prompt_text` —
   // the AutoDL contract has no bare `prompt` field, so skip the generic write.
-  const suppressGenericPrompt = profileId === 'audioGenerate' && opId === 'voice_clone'
+  // H3 classifies image + audio as lip-sync only when there is no text.
+  const suppressGenericPrompt = h3LipSync || (profileId === 'audioGenerate' && opId === 'voice_clone')
   if (prompt && profileId !== 'speechToText' && !suppressGenericPrompt) {
     vendor[speech ? 'input' : 'prompt'] = prompt
     logical.prompt = prompt
@@ -138,30 +141,27 @@ export function mapValidatedPlanToVendor(args) {
     // `audio_duration` (see gateway collectSlots + detectShape). The legacy
     // `image_with_roles` / `image_urls` / `video_urls` / `file_url` / `link_url`
     // field family is not part of that wire shape and is forbidden here; the
-    // lone `audio_urls` top-level emitted for digital_human only satisfies the
-    // local shape `require` — the gateway marks it RESERVED and the real slot
-    // still travels through `metadata`.
-    if (args.modelId === 'minimax-h3-video') {
+    // lone `audio_urls` top-level emitted for digital_human satisfies the
+    // profile's requirement. AutoDL reads the real slot from `metadata`.
+    if (h3LipSync) {
+      const lipSyncMedia = mapH3LipSyncMedia(args.bindings, extras.duration)
+      if (lipSyncMedia) Object.assign(vendor, lipSyncMedia)
+    } else if (args.modelId === H3_AUTODL_MODEL) {
       const metadata = {}
       firstFrames.forEach((url, i) => { metadata[`ref_image_${i}`] = url })
       references.forEach((url, i) => { metadata[`ref_image_${firstFrames.length + i}`] = url })
-      audioTracks.forEach((url, i) => { metadata[`ref_audio_${i}`] = url })
+      const audioUrls = opId === 'video_multi_ref'
+        ? args.bindings.filter((binding) => binding.type === 'audio').map((binding) => binding.pathOrUrl)
+        : audioTracks
+      audioUrls.forEach((url, i) => { metadata[`ref_audio_${i}`] = url })
       if (opId === 'first_last_frame') {
         if (firstFrames[0]) metadata.first_frame = firstFrames[0]
         if (lastFrames[0]) metadata.last_frame = lastFrames[0]
       } else if (opId === 'first_frame' || opId === 'end_frame') {
         if (firstFrames[0]) metadata.first_frame = firstFrames[0]
         if (lastFrames[0]) metadata.last_frame = lastFrames[0]
-      } else if (opId === 'digital_human' && firstFrames[0]) {
-        metadata.ref_image_0 = firstFrames[0]
-      }
-      // audio_duration only makes sense when a driving audio exists (lip-sync /
-      // digital_human); a plain text_to_video must not leak it.
-      if (opId === 'digital_human' && typeof extras.duration === 'number' && extras.duration > 0) {
-        metadata.audio_duration = extras.duration
       }
       if (Object.keys(metadata).length) vendor.metadata = metadata
-      if (opId === 'digital_human' && audioTracks[0]) vendor.audio_urls = [audioTracks[0]]
     } else if (isMuseVideoModel && opId === 'first_frame') {
       // `openai_video` first-frame lane: the frame is the plain `image` URL.
       // `image_with_roles` belongs to the frame-role contract and would not be
@@ -487,7 +487,7 @@ export function mapValidatedPlanToVendor(args) {
   // Build a per-call profile view that relaxes those shape requires while the
   // emitted fields still pass the allow list (metadata / audio_urls stay).
   let effectiveProfile = profile
-  if (args.modelId === 'minimax-h3-video' && profile?.operationVendorShapes) {
+  if (args.modelId === H3_AUTODL_MODEL && profile?.operationVendorShapes) {
     const shapes = {}
     for (const [shapeOpId, shape] of Object.entries(profile.operationVendorShapes)) {
       if (!shape) { shapes[shapeOpId] = shape; continue }

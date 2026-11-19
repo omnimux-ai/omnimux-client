@@ -6,9 +6,13 @@ import { PROTOCOLS, resolveMediaRoute } from './route.js'
 
 const SOURCE_PATHS = [
   'media/generation-mapping.js', 'media/route.js', 'media/execute.js', 'media/vendors/omnimux.js',
+  'media/vendors/autodl-h3.js', 'media/vendors/autodl-h3-media.js', 'media/gateway-upload.js',
+  'reference-storage/prepare.js',
   'media/protocols/openai-media.js', 'catalog/generation-products.js', 'catalog/serving/id-universe.js',
   'catalog/serving/channel-groups.js', 'catalog/contract/auto-serving-manifest.json',
-  'catalog/contract/dispositions.json', 'catalog/contract/submit-guard/map.js',
+  'catalog/contract/dispositions.json', 'catalog/contract/adapter-profiles.json',
+  'catalog/contract/submit-guard/admission.js', 'catalog/contract/submit-guard/guard.js',
+  'catalog/contract/submit-guard/map.js',
   'catalog/contract/submit-guard/map-bindings.js', 'catalog/contract/submit-guard/map-contract.js',
   '../lib/generation-core.js',
 ]

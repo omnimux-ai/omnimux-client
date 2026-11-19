@@ -1,4 +1,7 @@
 /** OmniMux catalog defaults and response envelopes. Not a second HTTP client. */
+import { normalizeLogicalRequest } from '../../catalog/contract/submit-guard/normalize.js'
+import { OmnimuxError } from '../errors.js'
+import { H3_AUTODL_MODEL, isH3AutoDlLipSync, mapH3LipSyncMedia } from './autodl-h3.js'
 
 export const TASK_PATH = Object.freeze({
   video: 'video/generations',
@@ -42,7 +45,7 @@ export const AUDIO_AUTODL_TASK_MODEL_IDS = Object.freeze(['indextts-2'])
  * image/image_tail/reference_images fields, which the AutoDL wire shape does not
  * accept.
  */
-export const AUTODL_VIDEO_TASK_MODEL_IDS = Object.freeze(['minimax-h3-video'])
+export const AUTODL_VIDEO_TASK_MODEL_IDS = Object.freeze([H3_AUTODL_MODEL])
 
 export const AUTODL_SUBMIT_PATH = 'tasks/autodl'
 export const AUTODL_POLL_PATH = 'tasks'
@@ -388,16 +391,41 @@ export function describeTaskFailure(input) {
  *   aspectRatio?: string,
  *   resolution?: string,
  *   operation?: string,
- *   guardPlan?: { vendorPayload?: Record<string, unknown>, operationId?: string, profileId?: string, modelId?: string },
+ *   guardPlan?: { vendorPayload?: Record<string, unknown>, operationId?: string, profileId?: string, modelId?: string, byok?: boolean },
  * }} request
  */
 export function mapOmnimuxInput(capability, request) {
+  const h3LipSync = capability === 'video' && !request.guardPlan?.byok
+    && isH3AutoDlLipSync(
+      request.guardPlan?.modelId ?? request.model,
+      request.guardPlan?.operationId ?? request.operation,
+    )
   // Profile-validated payload from SubmitGuard — fail-closed shape already enforced.
   if (request.guardPlan?.vendorPayload && typeof request.guardPlan.vendorPayload === 'object') {
     const fromGuard = { ...request.guardPlan.vendorPayload }
     // Ensure model wire id is not injected here (protocol layer owns model).
-    if (fromGuard.prompt === undefined && fromGuard.input === undefined && request.prompt) fromGuard.prompt = request.prompt
+    if (!h3LipSync && fromGuard.prompt === undefined && fromGuard.input === undefined && request.prompt) fromGuard.prompt = request.prompt
     return fromGuard
+  }
+
+  if (h3LipSync) {
+    // A legacy shorthand can mirror a structured reference. Use the explicit
+    // reference so the actual image and audio each occupy only one slot.
+    const mirrors = (type, source) => Array.isArray(request.references)
+      && request.references.some((ref) => ref?.type === type && ref.pathOrUrl === source)
+    const { assets } = normalizeLogicalRequest({
+      ...request,
+      capability,
+      image: mirrors('image', request.image) ? undefined : request.image,
+      audio: mirrors('audio', request.audio) ? undefined : request.audio,
+      audioTrack: mirrors('audio', request.audioTrack?.pathOrUrl) ? undefined : request.audioTrack,
+    })
+    const payload = mapH3LipSyncMedia(assets, request.duration)
+    if (!payload) throw new OmnimuxError('omnimux-invalid-request', 'H3 对口型需要一张人像图和一段驱动音频')
+    if (request.duration) payload.duration = request.duration
+    if (request.aspectRatio) payload.aspect_ratio = request.aspectRatio
+    if (request.resolution) payload.resolution = request.resolution
+    return payload
   }
 
   if (capability === 'audio' && (request.operation === 'text_to_speech' || request.operation === 'voice_clone' || request.model === 'seed-audio-1.0')) {
