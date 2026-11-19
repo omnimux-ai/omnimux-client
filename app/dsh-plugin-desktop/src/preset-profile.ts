@@ -18,7 +18,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { parseDocument } from 'yaml'
 import {
   assertExistingManagedProfile,
@@ -63,7 +63,31 @@ const RELEASE_HOME_DIRNAME = '.omnimux'
  * @param home - Harness home directory under consideration.
  */
 export function isReleaseHarnessHome(home: string): boolean {
-  return resolve(home) === join(homedir(), RELEASE_HOME_DIRNAME)
+  return relative(join(homedir(), RELEASE_HOME_DIRNAME), resolve(home)) === ''
+}
+
+function resolveAvailablePath(path: string): string {
+  try {
+    return realpathSync(path)
+  } catch (cause) {
+    const parent = dirname(path)
+    if ((cause as NodeJS.ErrnoException).code !== 'ENOENT' || parent === path) throw cause
+    return join(resolveAvailablePath(parent), basename(path))
+  }
+}
+
+function checkedSeedHome(home: string): string {
+  const target = resolve(home)
+  const userHome = homedir()
+  const physicalLocation = relative(realpathSync(userHome), resolveAvailablePath(target))
+  const [first] = physicalLocation.split(sep, 1)
+  // Standard homes are valid by their own name. A custom home must not reach
+  // a shared home through an alias or use a directory under it.
+  if (first && ['.dsh', '.omnimux-dev', RELEASE_HOME_DIRNAME].includes(first.toLowerCase())
+    && (physicalLocation !== first || relative(join(userHome, first), target) !== '')) {
+    throw new Error('Isolated OmniMux home cannot point into a shared Harness home')
+  }
+  return target
 }
 
 /** Stamp written inside the user profile after a successful seed or refresh. */
@@ -204,14 +228,17 @@ export function resolveHarnessHome(env: NodeJS.ProcessEnv = process.env): string
  * participates in the legacy migration from the user's DSH installation.
  */
 export function seedOmnimuxSettings(homeDir: string): void {
-  const targetHome = resolve(homeDir)
+  seedSettingsInHome(checkedSeedHome(homeDir))
+}
+
+function seedSettingsInHome(targetHome: string): void {
   mkdirSync(targetHome, { recursive: true, mode: 0o700 })
   const settingsFile = join(targetHome, 'settings.yaml')
   const credsFile = join(targetHome, '.credentials.yaml')
   const globalDshHome = join(homedir(), '.dsh')
 
   if (!isReleaseHarnessHome(targetHome)) {
-    if (targetHome === globalDshHome) {
+    if (relative(globalDshHome, targetHome) === '') {
       if (!existsSync(settingsFile)) writeFileSync(settingsFile, defaultSettings())
     } else {
       seedIsolatedHomeFile(settingsFile, defaultSettings())
@@ -330,6 +357,7 @@ function defaultSettings(): string {
  * @returns which writes this call performed.
  */
 export function seedOmnimuxProfile(options: SeedOmnimuxProfileOptions): SeedOmnimuxProfileResult {
+  const home = checkedSeedHome(options.home)
   const presetDir = resolve(options.presetDir)
   const version = readSeedVersion(join(presetDir, SEED_VERSION_FILENAME))
   const skeletonDir = join(presetDir, 'skeleton')
@@ -345,7 +373,7 @@ export function seedOmnimuxProfile(options: SeedOmnimuxProfileOptions): SeedOmni
     )
   }
 
-  const profileDir = join(resolve(options.home), 'profiles', OMNIMUX_PROFILE_NAME)
+  const profileDir = join(home, 'profiles', OMNIMUX_PROFILE_NAME)
   const candidateDir = join(dirname(profileDir), `.${basename(profileDir)}-initializing`)
   const created = !existsSync(join(profileDir, 'package.json'))
   const owned = readOwnedPackages(presetDir, pluginsDir)
@@ -364,7 +392,7 @@ export function seedOmnimuxProfile(options: SeedOmnimuxProfileOptions): SeedOmni
       policy.excludedPackages,
       version,
     )
-    seedOmnimuxSettings(options.home)
+    seedSettingsInHome(home)
     // Reconciliation owns the managed sources and the Home's skills from here:
     // it refreshes what this desktop installed and leaves a user's edits alone.
     const reconciled = reconcileManagedProfile({
@@ -397,7 +425,7 @@ export function seedOmnimuxProfile(options: SeedOmnimuxProfileOptions): SeedOmni
     createFreshManagedSources(presetDir, candidateDir, owned)
     writeFileSync(join(candidateDir, PROFILE_SEED_STAMP), `${String(version)}\n`)
     writeFileSync(join(candidateDir, PROFILE_MATERIALIZATION_PENDING), `${String(version)}\n`)
-    seedOmnimuxSettings(options.home)
+    seedSettingsInHome(home)
     seedPresetSkills(options.home, presetDir)
     publishFreshCandidate(candidateDir, profileDir, owned)
     // Record the baseline this Profile was installed from, so the next upgrade

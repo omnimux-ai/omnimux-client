@@ -354,6 +354,30 @@ describe('seedOmnimuxSettings', () => {
       expect(parseDocument(readFileSync(join(home, 'settings.yaml'), 'utf8')).getIn(['locale', 'preference'])).toBe('en')
     })
   })
+
+  it('rejects a home alias into a shared Harness directory before any profile write', () => {
+    withSharedFixture((root, shared) => {
+      const alias = join(root, 'aliased-home')
+      symlinkSync(shared, alias, process.platform === 'win32' ? 'junction' : 'dir')
+      const presetDir = createPreset(root)
+
+      expect(() => seedOmnimuxSettings(alias)).toThrow('shared Harness home')
+      expect(() => seedOmnimuxProfile({ home: join(alias, 'new-task'), presetDir })).toThrow('shared Harness home')
+      expect(existsSync(join(shared, 'new-task'))).toBe(false)
+      expect(readFileSync(join(shared, credentialsName), 'utf8')).toBe(sharedCredentials)
+    })
+  })
+
+  it('accepts a task under a private parent directory alias', () => {
+    withSharedFixture((root) => {
+      const workspace = join(root, 'private-workspace')
+      const alias = join(root, 'alias')
+      mkdirSync(workspace)
+      symlinkSync(workspace, alias, process.platform === 'win32' ? 'junction' : 'dir')
+      seedOmnimuxSettings(join(alias, 'task-home'))
+      expect(parseDocument(readFileSync(join(workspace, 'task-home', credentialsName), 'utf8')).toJS()).toEqual({})
+    })
+  })
 })
 
 describe('seedOmnimuxProfile managed sources', () => {
