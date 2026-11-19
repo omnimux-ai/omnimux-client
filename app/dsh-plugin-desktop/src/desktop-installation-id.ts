@@ -24,13 +24,15 @@ export type DesktopInstallationId = string & { readonly __desktopInstallationId:
 /** Installation identity along with a flag indicating whether it was freshly generated. */
 export interface DesktopInstallationIdentity {
   readonly id: DesktopInstallationId
-  /** True when the private installation ID file was newly created during this invocation. */
+  /** True when a fresh UUID was generated for this installation. */
   readonly isNew: boolean
 }
 
-/** Injectable UUID source used only by focused tests. */
 export interface DesktopInstallationIdOptions {
+  /** Injectable UUID source used only by focused tests. */
   readonly randomUUID?: () => string
+  /** Earlier state directories to check, in order, when the destination has no valid ID. */
+  readonly migrateFrom?: readonly string[]
 }
 
 /** Failure raised when the identity state path is unsafe or cannot be persisted. */
@@ -88,12 +90,13 @@ export async function getOrCreateDesktopInstallationIdentity(
       const persisted = await readPersistedInstallationId(statePath)
       if (persisted !== undefined) return { id: persisted, isNew: false }
 
-      const generated = assertDesktopInstallationId((options.randomUUID ?? randomUUID)())
-      await writeFileAtomic(statePath, `${generated}\n`, {
+      const inherited = await findPreviousInstallationId(options.migrateFrom ?? [])
+      const id = inherited ?? assertDesktopInstallationId((options.randomUUID ?? randomUUID)())
+      await writeFileAtomic(statePath, `${id}\n`, {
         mode: PRIVATE_FILE_MODE,
         dirMode: PRIVATE_DIRECTORY_MODE,
       })
-      return { id: generated, isNew: true }
+      return { id, isNew: inherited === undefined }
     })
   } catch (cause) {
     if (cause instanceof DesktopInstallationIdError) throw cause
@@ -131,7 +134,30 @@ async function prepareIdentityDirectory(directory: string): Promise<void> {
   }
 }
 
-async function readPersistedInstallationId(statePath: string): Promise<DesktopInstallationId | undefined> {
+async function findPreviousInstallationId(directories: readonly string[]): Promise<DesktopInstallationId | undefined> {
+  for (const directory of directories) {
+    const path = desktopInstallationIdPath(directory)
+    if (!await isPreviousIdentityDirectory(directory) || !await isPreviousIdentityDirectory(dirname(path))) continue
+    const id = await readPersistedInstallationId(path, false)
+    if (id !== undefined) return id
+  }
+  return undefined
+}
+
+async function isPreviousIdentityDirectory(path: string): Promise<boolean> {
+  try {
+    const stat = await lstat(path)
+    if (!stat.isDirectory() || stat.isSymbolicLink()) {
+      throw new DesktopInstallationIdError('Previous Desktop identity state must be in an ordinary directory.')
+    }
+    return true
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === 'ENOENT') return false
+    throw cause
+  }
+}
+
+async function readPersistedInstallationId(statePath: string, repairPermissions = true): Promise<DesktopInstallationId | undefined> {
   let stat: Awaited<ReturnType<typeof lstat>>
   try {
     stat = await lstat(statePath)
@@ -158,7 +184,7 @@ async function readPersistedInstallationId(statePath: string): Promise<DesktopIn
     const match = /^([0-9a-f-]+)\n?$/u.exec(text)
     const parsed = match === null ? undefined : parseDesktopInstallationId(match[1])
     if (parsed === undefined) return undefined
-    await handle.chmod(PRIVATE_FILE_MODE)
+    if (repairPermissions) await handle.chmod(PRIVATE_FILE_MODE)
     return parsed
   } catch (cause) {
     if (cause instanceof TypeError) return undefined

@@ -162,6 +162,12 @@ Upstream also provides Desktop product analytics (`product-analytics` and `deskt
 
 External HTTP, HTTPS, and email links in the application or documentation are handed to the system browser or email client. The destination's policy applies after you open it.
 
+### 6.6 Optional OmniMux Desktop launch analytics
+
+When both `OMNIMUX_ANALYTICS_ENDPOINT` and `OMNIMUX_ANALYTICS_WEBSITE_ID` are configured, OmniMux Desktop sends a launch event to the configured Umami site after the main window is ready. The event contains the first-launch flag, application version, operating system, operating system version, and a pseudonymous installation UUID stored locally. The recipient also sees ordinary network metadata such as the IP address and request time.
+
+The app stores the installation state locally across updates and Profile changes, including when analytics is disabled. Set `OMNIMUX_ANALYTICS_DISABLED=1` or `true` in the app's launch environment to disable this event. A failed send ends within the request timeout and the app discards that launch event.
+
 ## 7. Browser and LAN access
 
 Allowing DSH to open in a browser does not itself upload a session to Anywhere Labs. It lets an ordinary browser access the local Host. Loopback access is limited to `127.0.0.1` by default; LAN access is available only in compatibility mode.

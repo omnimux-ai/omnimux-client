@@ -47,6 +47,7 @@ import { NextUpdateInstaller } from './update-installer.ts'
 import { updateLabel } from './update-state.ts'
 import { DESKTOP_SHUTDOWN_TIMEOUT_MS } from '../../dsh-plugin-desktop/src/shutdown.ts'
 import { isDesktopRendererStatus, NextRendererRecovery } from './renderer-recovery.ts'
+import { DesktopLaunchAnalytics } from './desktop-launch-analytics.ts'
 
 // Inherit the package policy across the Host and every runtime child process.
 applyDesktopPackageAgePolicy(process.env)
@@ -89,6 +90,7 @@ protocol.registerSchemesAsPrivileged([{ scheme: 'dsh-app', privileges: {
 let mainWindow: BrowserWindow | undefined
 let rendererRecovery: NextRendererRecovery | undefined
 let rendererDocumentId = ''
+let launchAnalytics: DesktopLaunchAnalytics | undefined
 // Storage partitions outlive individual windows, so the guest owner is process-scoped.
 let desktopShortcuts: ReturnType<typeof installDesktopShortcuts> | undefined
 const browserGuests = new DesktopBrowserGuests(() => runtime.auth ? [new URL(runtime.auth.url).origin] : [])
@@ -243,6 +245,13 @@ function show(window: BrowserWindow): void {
   if (quitting || window.isDestroyed()) return
   if (window.isMinimized()) window.restore()
   window.show(); window.focus()
+  reportDesktopLaunch(window)
+}
+
+function reportDesktopLaunch(window: BrowserWindow | undefined): void {
+  if (!launchAnalytics || quitting || runtime.safeMode || runtime.recoveryMode
+    || !rendererRecovery?.healthy || !window || window !== mainWindow || window.isDestroyed() || !window.isVisible()) return
+  void launchAnalytics.reportReady()
 }
 /**
  * Windows caption buttons never paint a fill of their own. Upstream fills them with the sidebar
@@ -398,6 +407,7 @@ function openMain(): void {
     if (mainWindow !== owner) return
     rendererRecovery?.loaded()
     if (runtime.backend.state.phase === 'ready') rendererRecovery?.booted()
+    reportDesktopLaunch(owner)
   })
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     if (quitting || mainWindow !== owner || owner.isDestroyed() || runtime.recoveryMode) return
@@ -926,6 +936,7 @@ async function main(): Promise<void> {
     if (!isDesktopRendererStatus(status)) throw new Error('Invalid renderer status')
     if (documentId !== rendererDocumentId || !documentId) return
     rendererRecovery?.report(status)
+    reportDesktopLaunch(mainWindow)
   })
   ipcMain.handle(IPC.failed, (event, message: unknown, documentId: unknown) => {
     assertSender(event, mainWindow, APP_URL)
@@ -1188,7 +1199,26 @@ if (ownsInstance) {
   app.on('child-process-gone', (_event, details) => runtime.diagnostics.record({ source: 'electron', event: 'child-process-gone', level: 'error',
     fields: { type: details.type, reason: details.reason, exitCode: details.exitCode, service: details.serviceName ?? null } }))
   app.once('will-quit', () => runtime.diagnostics.flush())
-  runtime.diagnostics.begin({ version, platform: process.platform, electron: process.versions.electron ?? '', node: process.version, safeMode: safeModeRequested,
+  const hadPreviousRun = runtime.diagnostics.begin({ version, platform: process.platform, electron: process.versions.electron ?? '', node: process.version, safeMode: safeModeRequested,
     ...(dshVersion === undefined ? {} : { dsh: dshVersion }) })
+  if (!safeModeRequested && !process.argv.includes(RECOVERY_ARGUMENT)) {
+    const previousUserData = [normalElectronData]
+    if (app.isPackaged && !process.env.DSH_DESKTOP_NEXT_HOME) {
+      previousUserData.push(join(app.getPath('appData'), DESKTOP_USER_DATA_DIRECTORY_NAME))
+    }
+    launchAnalytics = new DesktopLaunchAnalytics({
+      // Keep the install identity outside Profile state, including when a Dev
+      // home doubles as the configuration root and is reset in place.
+      identityDirectory: join(locationRoot, 'electron-user-data', 'launch-analytics'),
+      previousUserData,
+      hadPreviousRun,
+      appVersion: version,
+      platform: process.platform,
+      systemVersion: () => process.getSystemVersion(),
+      environment: process.env,
+      request: (url, init) => net.fetch(url, init),
+      record: input => runtime.diagnostics.record(input),
+    })
+  }
   void main().catch(error => runtime.report(error))
 }

@@ -10,13 +10,12 @@ import { performance } from 'node:perf_hooks'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import type { DesktopLogger } from './desktop-logger.ts'
 import type { DesktopLifecycleSummary } from './lifecycle-events.ts'
+import { DEFAULT_ANALYTICS_HOSTNAME, DEFAULT_ANALYTICS_URL, DEFAULT_ANALYTICS_USER_AGENT, umamiEventRequest } from './umami-event.ts'
+
+export { DEFAULT_ANALYTICS_HOSTNAME, DEFAULT_ANALYTICS_URL, DEFAULT_ANALYTICS_USER_AGENT } from './umami-event.ts'
 
 export const DEFAULT_ANALYTICS_ENDPOINT = 'https://analytics.omnimux.ai/api/send'
 export const DEFAULT_ANALYTICS_WEBSITE_ID = 'dee7cef3-7da5-4a5b-8cc2-6381418d0303'
-export const DEFAULT_ANALYTICS_HOSTNAME = 'omnimux-desktop'
-export const DEFAULT_ANALYTICS_URL = 'omnimux://desktop'
-export const DEFAULT_ANALYTICS_USER_AGENT =
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36'
 export const DEFAULT_ANALYTICS_TIMEOUT_MS = 5_000
 export const EXIT_ANALYTICS_TIMEOUT_MS = 1_500
 export const DEFAULT_HEARTBEAT_INTERVAL_MS = 60 * 60 * 1000
@@ -253,28 +252,13 @@ export class DesktopAnalyticsClient {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeoutMs)
     try {
-      const body = JSON.stringify({
-        type: 'event',
-        payload: {
-          website: this.websiteId,
-          hostname: this.hostname,
-          url: this.url,
-          name,
-          data,
-        },
-      })
-
-      const response = await this.request(this.endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': this.userAgent,
-          'x-umami-website-id': this.websiteId,
-          'x-umami-hostname': this.hostname,
-        },
-        body,
-        signal: controller.signal,
-      })
+      const response = await this.request(this.endpoint, umamiEventRequest({
+        website: this.websiteId,
+        hostname: this.hostname,
+        url: this.url,
+        name,
+        data,
+      }, this.userAgent, controller.signal))
 
       if (!response.ok) {
         this.logDebug(`desktop-analytics: endpoint responded with status ${response.status}`)

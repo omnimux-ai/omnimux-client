@@ -34,9 +34,11 @@ export class DesktopDiagnostics {
     try { this.history = new LogHistory(directory, options) } catch { /* Retain the recent log when history is unavailable. */ }
   }
   /** Called only by the single-instance owner, after preferences are loaded. */
-  begin(fields: LogInput['fields']): void {
+  begin(fields: LogInput['fields']): boolean {
+    let hadPreviousRun = false
     try {
       const previous = readPrivateFile(this.marker)
+      hadPreviousRun = previous !== undefined
       if (previous) {
         const run = JSON.parse(previous) as { runId?: unknown; clean?: unknown; started?: unknown }
         if (run.clean !== true) this.record({ source: 'electron', event: 'run.previous-unclean', level: 'warn',
@@ -46,6 +48,7 @@ export class DesktopDiagnostics {
     } catch (error) { this.record({ source: 'logging', event: 'run.marker-failed', level: 'warn', error }) }
     this.record({ source: 'electron', event: 'run.start', fields })
     this.flush()
+    return hadPreviousRun
   }
   end(clean: boolean): void {
     this.record({ source: 'electron', event: clean ? 'run.end' : 'run.forced-exit', level: clean ? 'info' : 'error', fields: { pendingOperations: this.active.size } })

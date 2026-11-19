@@ -24,6 +24,10 @@ export class NextRendererRecovery {
 
   constructor(private readonly options: RendererRecoveryOptions) {}
 
+  get healthy(): boolean {
+    return this.phase === 'idle' && this.documentLoaded && this.clientHealthy
+  }
+
   /** Invalidate both page readiness and pending completions from an older navigation. */
   navigating(): void {
     if (!this.available()) return
