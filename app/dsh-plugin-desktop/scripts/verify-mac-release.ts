@@ -35,10 +35,14 @@ export interface MacReleaseVerificationOptions {
   readonly verifyRuntime?: (appPath: string) => void
   /** Check the packaged build-info against the release source tree. */
   readonly verifyBuildInfo?: (appPath: string) => void
-  /** Launch the packaged application with isolated userData and DSH_HOME. */
-  readonly smokeApp?: (appPath: string) => void
+  /** Launch the packaged application with isolated userData and DSH_HOME; readiness may be async. */
+  readonly smokeApp?: (appPath: string) => void | Promise<void>
   /** Remove the detached empty mount point. */
   readonly removeMountPoint: (mountPoint: string) => void
+  /** Delay between busy-detach retries; defaults to 1s/2s/4s. */
+  readonly detachRetryDelaysMs?: readonly number[]
+  /** Test seam for sleeping between retries. */
+  readonly sleep?: (milliseconds: number) => void
 }
 
 function listDmgs(distDir: string): readonly string[] {
@@ -61,6 +65,32 @@ function run(command: string, args: readonly string[]): void {
   }
   if (result.status !== 0) {
     throw new Error(`${command} ${args.join(' ')} exited with ${String(result.status)}`)
+  }
+}
+
+function detachImage(options: MacReleaseVerificationOptions, mountPoint: string): void {
+  const busyFailure = (cause: unknown): boolean => /(?:resource busy|couldn't unmount|资源忙)/iu.test(cause instanceof Error ? cause.message : String(cause))
+  const delays = options.detachRetryDelaysMs ?? [1_000, 2_000, 4_000]
+  const sleep = options.sleep ?? (milliseconds => {
+    spawnSync('sleep', [String(milliseconds / 1_000)], { stdio: 'ignore' })
+  })
+  const failures: unknown[] = []
+  for (const [index, delay] of [0, ...delays].entries()) {
+    if (index > 0) sleep(delay)
+    try {
+      options.run('hdiutil', ['detach', mountPoint])
+      return
+    } catch (cause) {
+      if (!busyFailure(cause)) throw cause
+      failures.push(cause)
+    }
+  }
+  try {
+    options.run('diskutil', ['eject', mountPoint])
+    return
+  } catch (cause) {
+    failures.push(cause)
+    throw new AggregateError(failures, `hdiutil detach and diskutil eject failed for ${mountPoint}`)
   }
 }
 
@@ -88,9 +118,9 @@ function defaultOptions(): MacReleaseVerificationOptions {
  * @param options - Filesystem and command boundaries.
  * @returns The verified DMG and application paths.
  */
-export function verifyMacRelease(
+export async function verifyMacRelease(
   options: MacReleaseVerificationOptions = defaultOptions(),
-): { readonly appPath: string; readonly dmgPath: string } {
+): Promise<{ readonly appPath: string; readonly dmgPath: string }> {
   const dmgs = options.listDmgs(options.distDir)
   if (dmgs.length !== 1) {
     throw new Error(
@@ -133,7 +163,7 @@ export function verifyMacRelease(
     console.log(`[verify-mac] build-info`)
     options.verifyBuildInfo?.(appPath)
     console.log(`[verify-mac] gui smoke`)
-    options.smokeApp?.(appPath)
+    await options.smokeApp?.(appPath)
     console.log(`[verify-mac] spctl assess`)
     options.run('spctl', ['--assess', '--type', 'execute', '--verbose=4', appPath])
     console.log(`[verify-mac] stapler validate`)
@@ -145,7 +175,7 @@ export function verifyMacRelease(
   const cleanupFailures: unknown[] = []
   if (mounted) {
     try {
-      options.run('hdiutil', ['detach', mountPoint])
+      detachImage(options, mountPoint)
     } catch (cause) {
       cleanupFailures.push(cause)
     }
@@ -166,7 +196,7 @@ export function verifyMacRelease(
 const invokedPath = process.argv[1]
 if (invokedPath !== undefined && resolve(invokedPath) === fileURLToPath(import.meta.url)) {
   try {
-    const verified = verifyMacRelease()
+    const verified = await verifyMacRelease()
     console.log(`macOS release verification passed: ${verified.dmgPath}`)
   } catch (error) {
     console.error(error)

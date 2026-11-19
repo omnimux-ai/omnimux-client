@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import { primaryRuntimePayloadDigest, readPrimaryRuntimeLock } from '../scripts/primary-runtime.ts'
-import { expectedNextVersion, nextRuntimeBuildPaths, nextRuntimeTargets, officeSkillsDirectory, primaryRuntimeDirectory, reusableNextRuntimeTree, verifyNextRuntimeTree, type NextRuntimeArch } from '../scripts/prepare-runtime.ts'
+import { expectedNextVersion, nextRuntimeBuildPaths, nextRuntimeTargets, officeSkillsDirectory, primaryRuntimeDirectory, reusableNextRuntimeTree, runtimeBuildArch, verifyNextRuntimeTree, type NextRuntimeArch } from '../scripts/prepare-runtime.ts'
 
 const roots: string[] = []
 afterEach(() => { for (const path of roots.splice(0)) rmSync(path, { recursive: true, force: true }) })
@@ -64,6 +64,12 @@ it('ships both Darwin CPUs by default or the requested smoke/release CPU, Window
 
 it('lays out each CPU payload beside its Office resources under the build directory', () => {
   expect(nextRuntimeBuildPaths('/next')).toEqual({ runtime: join('/next', '.desktop-build', 'runtime'), downloads: join('/next', '.desktop-build', 'downloads') })
+  expect(nextRuntimeBuildPaths('/next', 'arm64')).toEqual({ runtime: join('/next', '.desktop-build', 'targets', 'arm64', 'runtime'), downloads: join('/next', '.desktop-build', 'downloads') })
+  expect(nextRuntimeBuildPaths('/next', 'x64')).toEqual({ runtime: join('/next', '.desktop-build', 'targets', 'x64', 'runtime'), downloads: join('/next', '.desktop-build', 'downloads') })
+  expect(runtimeBuildArch('darwin', { DSH_MAC_RELEASE_ARCH: 'arm64' })).toBe('arm64')
+  expect(runtimeBuildArch('darwin', { DSH_MAC_RELEASE_ARCH: 'x64' })).toBe('x64')
+  expect(runtimeBuildArch('darwin', { DSH_MAC_RELEASE_ARCH: 'universal' })).toBeUndefined()
+  expect(runtimeBuildArch('win32', { DSH_MAC_RELEASE_ARCH: 'arm64' })).toBeUndefined()
   expect(primaryRuntimeDirectory('/resources/runtime', 'x64')).toBe(join('/resources/runtime', 'x64', 'primary-runtime'))
   expect(officeSkillsDirectory('/resources/runtime', 'x64')).toBe(join('/resources/runtime', 'x64', 'office-skills'))
 })

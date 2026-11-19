@@ -33,8 +33,8 @@ it('archives the application like upstream Desktop while keeping fuses and nativ
     '**/node_modules/@deepseek-ai/dsh-skill-badge/**/*']))
   // The prepared tree is archived verbatim, as upstream archives its prepared dsh tree: one file set for the
   // shell files and one for the dependency tree, because electron-builder leaves out a file set's root node_modules.
-  expect(next.build.files).toEqual([{ from: '.desktop-build/payload', filter: ['**/*'] },
-    { from: '.desktop-build/payload/node_modules', to: 'node_modules', filter: ['**/*'] }])
+  expect(next.build.files).toEqual([{ from: '${env.DSH_NEXT_PAYLOAD_DIR}', filter: ['**/*'] },
+    { from: '${env.DSH_NEXT_PAYLOAD_DIR}/node_modules', to: 'node_modules', filter: ['**/*'] }])
   for (const platform of ['mac', 'win', 'linux']) expect(next.build[platform].files, platform).toBeUndefined()
   // electron-builder collects node_modules itself unless beforeBuild declines, and npmRebuild: false would skip that hook.
   expect(next.build.beforeBuild).toBe('./scripts/before-build.ts')
@@ -42,8 +42,8 @@ it('archives the application like upstream Desktop while keeping fuses and nativ
   // beforePack only adds the Office closure of the prepared payload to the unpack patterns.
   expect(next.build.beforePack).toBe('./scripts/prepare-pack.ts')
   // Unpack patterns are matched below the application directory, so payload-root patterns name the prepared directory.
-  expect(next.build.asarUnpack).toEqual(expect.arrayContaining(['.desktop-build/payload/scripts/node-bin/**/*', '.desktop-build/payload/assets/**/*', '.desktop-build/payload/build/**/*']))
-  expect(next.build.asarUnpack.every((pattern: string) => pattern.startsWith('**/') || pattern.startsWith('.desktop-build/payload/'))).toBe(true)
+  expect(next.build.asarUnpack).toEqual(expect.arrayContaining(['${env.DSH_NEXT_PAYLOAD_DIR}/scripts/node-bin/**/*', '${env.DSH_NEXT_PAYLOAD_DIR}/assets/**/*', '${env.DSH_NEXT_PAYLOAD_DIR}/build/**/*']))
+  expect(next.build.asarUnpack.every((pattern: string) => pattern.startsWith('**/') || pattern.startsWith('${env.DSH_NEXT_PAYLOAD_DIR}/'))).toBe(true)
   expect(next.build.afterPack).toBe('./scripts/verify-packaged.ts')
   expect(next.build.afterAllArtifactBuild).toBe('./scripts/verify-fuses.ts')
   expect(next.build.electronFuses).toEqual(stable.build.electronFuses)
@@ -55,7 +55,7 @@ it('archives the application like upstream Desktop while keeping fuses and nativ
   expect(next.build.mac.x64ArchFiles).toBeUndefined()
   // Both CPU payloads ride beside the archive as extra resources; electron-builder must not re-sign the pre-signed payloads.
   // macOS also carries the manifest copy the updaters shipped in 2.0.14-next through 2.0.17-next read beside the archive.
-  expect(next.build.mac.extraResources).toEqual([{ from: '.desktop-build/runtime', to: 'runtime' }, { from: '.desktop-build/payload/package.json', to: 'app/package.json' }])
+  expect(next.build.mac.extraResources).toEqual([{ from: '${env.DSH_NEXT_RUNTIME_DIR}', to: 'runtime' }, { from: '${env.DSH_NEXT_PAYLOAD_DIR}/package.json', to: 'app/package.json' }])
   expect(next.build.win.extraResources).toEqual([{ from: '.desktop-build/runtime', to: 'runtime' }])
   expect(next.build.linux.extraResources).toEqual([{ from: '.desktop-build/runtime', to: 'runtime' }])
   expect(next.build.extraResources).toBeUndefined()

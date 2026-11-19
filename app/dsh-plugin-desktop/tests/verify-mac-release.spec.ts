@@ -24,11 +24,11 @@ function options(overrides: Partial<MacReleaseVerificationOptions> = {}) {
 }
 
 describe('macOS release artifact verification', () => {
-  it('mounts one DMG and verifies signature, Gatekeeper, and the stapled ticket', () => {
+  it('mounts one DMG and verifies signature, Gatekeeper, and the stapled ticket', async () => {
     const harness = options()
     const appPath = join('/private/tmp/dsh-desktop-dmg-test', 'OmniMux.app')
 
-    expect(verifyMacRelease(harness.value)).toEqual({
+    expect(await verifyMacRelease(harness.value)).toEqual({
       appPath,
       dmgPath: '/release/dist/OmniMux-2.0.0-universal.dmg',
     })
@@ -82,11 +82,11 @@ describe('macOS release artifact verification', () => {
     expect(harness.verifyEntitlements).toHaveBeenCalledWith(appPath, 'OmniMux')
   })
 
-  it('rejects a release missing microphone signature access and detaches the image', () => {
+  it('rejects a release missing microphone signature access and detaches the image', async () => {
     const failure = new Error('Missing macOS entitlement com.apple.security.device.audio-input')
     const harness = options({ verifyEntitlements: () => { throw failure } })
     let caught: unknown
-    try { verifyMacRelease(harness.value) } catch (cause) { caught = cause }
+    try { await verifyMacRelease(harness.value) } catch (cause) { caught = cause }
     expect(caught).toBeInstanceOf(AggregateError)
     expect((caught as AggregateError).errors).toEqual([failure])
     expect(harness.calls.some(call => call.command === 'spctl')).toBe(false)
@@ -94,37 +94,37 @@ describe('macOS release artifact verification', () => {
     expect(harness.removeMountPoint).toHaveBeenCalledOnce()
   })
 
-  it('checks bundled resources inside the mounted application after the signature checks', () => {
+  it('checks bundled resources inside the mounted application after the signature checks', async () => {
     const order: string[] = []
     const harness = options({
       verifyEntitlements: () => { order.push('entitlements') },
       verifyRuntime: appPath => { order.push(`runtime:${appPath}`) },
     })
-    verifyMacRelease(harness.value)
+    await verifyMacRelease(harness.value)
     expect(order).toEqual(['entitlements', `runtime:${join('/private/tmp/dsh-desktop-dmg-test', 'OmniMux.app')}`])
     expect(harness.calls.some(call => call.command === 'spctl')).toBe(true)
   })
 
-  it('checks release build-info and runs the isolated GUI smoke before Gatekeeper', () => {
+  it('checks release build-info and runs the isolated GUI smoke before Gatekeeper', async () => {
     const order: string[] = []
     const harness = options({
       verifyBuildInfo: () => { order.push('build-info') },
       smokeApp: () => { order.push('gui-smoke') },
     })
-    verifyMacRelease(harness.value)
+    await verifyMacRelease(harness.value)
     expect(order).toEqual(['build-info', 'gui-smoke'])
     expect(harness.calls.some(call => call.command === 'spctl')).toBe(true)
   })
 
-  it('rejects absent or ambiguous release images before mounting', () => {
+  it('rejects absent or ambiguous release images before mounting', async () => {
     for (const dmgs of [[], ['/one.dmg', '/two.dmg']]) {
       const harness = options({ listDmgs: () => dmgs })
-      expect(() => verifyMacRelease(harness.value)).toThrow(`found ${String(dmgs.length)}`)
+      await expect(verifyMacRelease(harness.value)).rejects.toThrow(`found ${String(dmgs.length)}`)
       expect(harness.calls).toEqual([])
     }
   })
 
-  it('detaches the image and preserves verification and cleanup failures', () => {
+  it('detaches the image and preserves verification and cleanup failures', async () => {
     const verifyFailure = new Error('Gatekeeper rejected the app')
     const detachFailure = new Error('detach failed')
     const harness = options({
@@ -137,7 +137,7 @@ describe('macOS release artifact verification', () => {
 
     let caught: unknown
     try {
-      verifyMacRelease(harness.value)
+      await verifyMacRelease(harness.value)
     } catch (cause) {
       caught = cause
     }

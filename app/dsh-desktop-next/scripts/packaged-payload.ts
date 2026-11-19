@@ -10,7 +10,7 @@ import { macReleaseArchitecture } from '../../dsh-plugin-desktop/scripts/release
 import { nextRuntimeFileExclusion, nextRuntimePackageExclusion, nextRuntimeUnusedFeatureExclusion, type NextPackagingTarget, type RuntimePackageConstraints } from './runtime-file-policy.ts'
 import { DESKTOP_RUNTIME_FILE, parseDesktopRuntime, verifyPayload, type DesktopRuntimeDescriptor, type DesktopRuntimeFile, type NextRelease, type PayloadEntry, type PayloadSource, type VerifyPayloadOptions } from '../src/runtime-tree.ts'
 
-/** Application-relative directory holding the prepared payload that Electron Builder archives verbatim. */
+/** Legacy application-relative directory holding the prepared payload. */
 export const PAYLOAD_DIR = '.desktop-build/payload'
 
 /**
@@ -38,6 +38,25 @@ export function nextPackagingTarget(
   }
   if (platform === 'win32') return { platform, archs: ['x64'] }
   return { platform, archs: [hostArch] }
+}
+
+/**
+ * Application-relative directory of the prepared payload for the selected target.
+ * Single-architecture Darwin builds use `.desktop-build/targets/<arch>/payload`; universal
+ * macOS and the other platforms keep the legacy shared path, so their existing build
+ * contracts and Windows/Linux extraResources stay unchanged.
+ * @param platform - Electron platform being packaged.
+ * @param env - Process environment inspected for the selected architecture.
+ * @returns The prepared payload directory.
+ */
+export function payloadDir(platform: NodeJS.Platform = process.platform, env: NodeJS.ProcessEnv = process.env): string {
+  const explicit = env.DSH_NEXT_PAYLOAD_DIR
+  if (explicit !== undefined && explicit !== '') return explicit
+  if (platform === 'darwin') {
+    const target = nextPackagingTarget(platform, process.arch, env)
+    if (target.archs.length === 1) return `.desktop-build/targets/${target.archs[0]}/payload`
+  }
+  return PAYLOAD_DIR
 }
 
 interface AsarFile { readonly size: number; readonly offset?: string; readonly executable?: boolean; readonly unpacked?: boolean }

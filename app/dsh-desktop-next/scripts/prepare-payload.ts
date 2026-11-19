@@ -5,7 +5,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { nextRuntimeFileExclusion, nextRuntimePackageExclusion, nextRuntimeUnusedFeatureExclusion, type NextPackagingTarget, type RuntimePackageConstraints } from './runtime-file-policy.ts'
-import { nextPackagingTarget, nextPayloadRelease, PAYLOAD_DIR, verifyNextPayload } from './packaged-payload.ts'
+import { nextPackagingTarget, nextPayloadRelease, payloadDir, verifyNextPayload } from './packaged-payload.ts'
 import { DESKTOP_RUNTIME_FILE, physicalPayload, sealPayloadAsync, type DesktopRuntimeDescriptor } from '../src/runtime-tree.ts'
 import { packagingStep, packagingStepSync } from './packaging-step.ts'
 import { windowsCodePayload, writeWindowsCodeFiles } from './windows-asar-unpack.ts'
@@ -423,7 +423,7 @@ if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === resolve(
   const { values } = parseArgs({ options: { platform: { type: 'string' }, version: { type: 'string' } }, allowPositionals: false })
   const desktopRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
   await preparePayload({
-    desktopRoot, output: join(desktopRoot, ...PAYLOAD_DIR.split('/')),
+    desktopRoot, output: join(desktopRoot, ...payloadDir((values.platform ?? process.platform) as NodeJS.Platform).split('/')),
     target: nextPackagingTarget((values.platform ?? process.platform) as NodeJS.Platform),
     electronVersion: electronVersion(desktopRoot),
     ...(values.version === undefined ? {} : { extraMetadata: { version: values.version } }),

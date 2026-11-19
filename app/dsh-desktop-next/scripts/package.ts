@@ -13,7 +13,7 @@ import { packageMacSmoke } from '../../dsh-plugin-desktop/scripts/package-mac.ts
 import { createWindowsPackageOptions, packageWindowsArtifact, packageWindowsInstaller } from '../../dsh-plugin-desktop/scripts/package-win.ts'
 import { prepareNextMacRuntime } from './mac-runtime.ts'
 import { runNextPackagingCommand } from './packaging-command.ts'
-import { expectedNextVersion, nextRuntimeBuildPaths, nextRuntimeTargets, prepareNextRuntime, primaryRuntimeDirectory, reusableNextRuntimeTree, smokeNextRuntime, verifyNextRuntimeTree } from './prepare-runtime.ts'
+import { expectedNextVersion, nextRuntimeBuildPaths, nextRuntimeTargets, prepareNextRuntime, primaryRuntimeDirectory, reusableNextRuntimeTree, runtimeBuildArch, smokeNextRuntime, verifyNextRuntimeTree } from './prepare-runtime.ts'
 import { signMacRuntime, withMacSigningIdentity } from './sign-runtime.ts'
 import { packagingStep, packagingStepSync } from './packaging-step.ts'
 
@@ -39,6 +39,16 @@ if (TEST_BUILD_VERSION !== undefined && !/^[0-9]+\.[0-9]+\.[0-9]+-next(?:\.[0-9]
   throw new Error(`DSH_NEXT_BUILD_VERSION must be x.y.z-next or x.y.z-next.N; received ${TEST_BUILD_VERSION}`)
 }
 const buildVersion = expectedNextVersion(desktopRoot)
+// Electron Builder config macros read these paths from the environment. Single-architecture
+// Darwin builds use an isolated target directory; universal and non-Darwin builds keep the
+// historical shared paths so Windows/Linux packaging and old entries stay compatible.
+const selectedArch = runtimeBuildArch(process.platform)
+process.env.DSH_NEXT_RUNTIME_DIR ??= selectedArch === undefined
+  ? '.desktop-build/runtime'
+  : `.desktop-build/targets/${selectedArch}/runtime`
+process.env.DSH_NEXT_PAYLOAD_DIR ??= selectedArch === undefined
+  ? '.desktop-build/payload'
+  : `.desktop-build/targets/${selectedArch}/payload`
 const run = (command: string, args: readonly string[], cwd: string, env: NodeJS.ProcessEnv): void => {
   // Windows resolves the CLI path with backslashes.
   const isBuilder = args.includes('electron-builder') || args.some(arg => arg.replaceAll('\\', '/').endsWith('electron-builder/cli.js'))
@@ -52,11 +62,18 @@ const run = (command: string, args: readonly string[], cwd: string, env: NodeJS.
   if (TEST_BUILD_VERSION !== undefined && isBuilder) console.log(`Packaging with test build version ${TEST_BUILD_VERSION}; source manifests are unchanged.`)
   const isPreflight = (args.includes('run') && args.includes('check')) || args.some(arg => arg.includes('check:win-package') || arg.includes('check:linux-package'))
   const stage = isBuilder ? 'builder:total' : isPreflight ? 'build:package-preflight' : 'package:command'
-  const measuredArgs = isBuilder && env.DSH_DESKTOP_PACKAGING_RUN_DIR !== undefined
-    ? ['--import', new URL('./packaging-builder.mjs', import.meta.url).href, ...forwarded]
-    : forwarded
   const builderEnv = isBuilder ? { ...env, DSH_NEXT_WINDOWS_FAST_COMPRESSION: '1' } : env
-  packagingStepSync(stage, () => runNextPackagingCommand(command, measuredArgs, cwd, builderEnv, workspaceRoot))
+  if (isBuilder && env.DSH_DESKTOP_PACKAGING_RUN_DIR !== undefined) {
+    // `yarn exec electron-builder` cannot receive Node's `--import` flag. Run the
+    // resolved Electron Builder CLI through Node so the measurement adapter loads
+    // before the CLI, without putting secrets or script paths in the journal.
+    const builderArgs = forwarded[0] === 'exec' && forwarded[1] === 'electron-builder' ? forwarded.slice(2) : forwarded
+    const cli = require.resolve('electron-builder/cli.js')
+    packagingStepSync(stage, () => runNextPackagingCommand(process.execPath,
+      ['--import', new URL('./packaging-builder.mjs', import.meta.url).href, cli, ...builderArgs], cwd, builderEnv, workspaceRoot))
+    return
+  }
+  packagingStepSync(stage, () => runNextPackagingCommand(command, forwarded, cwd, builderEnv, workspaceRoot))
 }
 const listCodeSigningIdentities = (env: NodeJS.ProcessEnv): string => {
   const result = spawnSync('security', ['find-identity', '-v', '-p', 'codesigning'], { env, encoding: 'utf8' })
@@ -71,7 +88,7 @@ let interpretersVerified = false
  * then check and execute the final bytes. electron-builder copies the tree as extra resources.
  */
 async function prepareInterpreters(sign?: (runtimeRoot: string) => Promise<void>): Promise<void> {
-  const paths = nextRuntimeBuildPaths(desktopRoot)
+  const paths = nextRuntimeBuildPaths(desktopRoot, runtimeBuildArch(process.platform))
   const reusable = packagingStepSync('runtime:check-reuse', () => reusableNextRuntimeTree(paths.runtime, process.platform, buildVersion))
   if (reusable.length > 0 && sign === undefined) {
     console.log(`Reusing prepared primary runtime for ${reusable.map(item => item.arch).join(', ')}`)
@@ -105,7 +122,7 @@ const preparePayload = (platform: NodeJS.Platform): void => packagingStepSync('p
 const prepareRuntime = (platform: NodeJS.Platform = process.platform): void => {
   if (platform === 'darwin') prepareNextMacRuntime(desktopRoot)
   if (!interpretersVerified || platform !== process.platform) {
-    verifyNextRuntimeTree(nextRuntimeBuildPaths(desktopRoot).runtime, platform, buildVersion)
+    verifyNextRuntimeTree(nextRuntimeBuildPaths(desktopRoot, runtimeBuildArch(platform)).runtime, platform, buildVersion)
   }
   if (process.env.DSH_WINDOWS_REUSE_UNPACKED === '1' && existsSync(join(desktopRoot, '.desktop-build', 'payload', '.dsh-desktop-runtime.json'))) {
     console.log('Reusing prepared payload for unpacked Windows application directory.')
@@ -124,7 +141,7 @@ if (mode === 'dir') {
   await prepareInterpreters()
   prepareRuntime()
   packageDirectory({ cwd: desktopRoot, electronBuilderCli: require.resolve('electron-builder/cli.js'), electronDistPath: join(dirname(require.resolve('electron/package.json')), 'dist') })
-} else if (mode === 'mac') {
+} else if (mode === 'mac' || mode === 'mac-app') {
   // The preflight the shared release flow repeats; the payload signatures must carry the identity it selects.
   const releaseEnvironment = adaptMacReleaseEnvironment(process.env)
   const ready = assertMacReleaseReady({ env: releaseEnvironment, platform: process.platform,
@@ -135,7 +152,12 @@ if (mode === 'dir') {
       console.log(`Signed ${String(signed)} native files of the ${arch} primary runtime as ${ready.identity}`)
     }
   }))
-  releaseMac({ ...shared, listCodeSigningIdentities })
+  releaseMac({
+    ...shared,
+    listCodeSigningIdentities,
+    commonPrepDone: process.env.DSH_MAC_RELEASE_COMMON_PREP === '1',
+    ...(mode === 'mac-app' ? { packageTarget: 'dir' as const, notarize: false, verify: false } : {}),
+  })
 } else if (mode === 'mac-smoke') {
   await prepareInterpreters()
   packageMacSmoke({ ...shared, workspaceRoot, arch: process.arch, nodeVersion: process.versions.node,
@@ -154,4 +176,4 @@ if (mode === 'dir') {
   const linuxOptions = createLinuxPackageOptions()
   packageLinuxArtifacts({ ...linuxOptions, env: { ...linuxOptions.env, DSH_PACKAGE_VERIFY_MODE: 'linux' }, desktopRoot, workspaceRoot, run, prepareRuntime,
     verifier: join(desktopRoot, 'scripts/verify-win-installer.ts') })
-} else throw new Error('Expected dir, mac, mac-smoke, win, win-portable or linux')
+} else throw new Error('Expected dir, mac, mac-app, mac-smoke, win, win-portable or linux')

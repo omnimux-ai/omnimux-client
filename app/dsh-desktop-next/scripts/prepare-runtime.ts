@@ -48,13 +48,32 @@ export function nextRuntimeTargets(
 }
 
 /**
+ * Resolve the single Darwin payload CPU selected by the current packaging environment.
+ * A universal build returns undefined, keeping the historical shared runtime directory.
+ * @param platform - Electron platform being packaged.
+ * @param env - Process environment inspected for the selected architecture.
+ * @returns The selected CPU, or undefined for universal/non-Darwin builds.
+ */
+export function runtimeBuildArch(platform: NodeJS.Platform = process.platform, env: NodeJS.ProcessEnv = process.env): NextRuntimeArch | undefined {
+  if (platform !== 'darwin') return undefined
+  const targets = nextRuntimeTargets(platform, process.arch, env)
+  return targets.length === 1 ? targets[0]?.arch : undefined
+}
+
+/**
  * Build-owned directories under the Next package: the prepared runtime tree that `extraResources`
  * copies verbatim, and the SHA-256-addressed download cache shared by every build.
  * @param desktopRoot - Next package root.
+ * @param arch - Optional single Darwin CPU; when supplied the tree is isolated under `targets/<arch>`.
  * @returns Runtime root and download cache.
  */
-export function nextRuntimeBuildPaths(desktopRoot: string): { readonly runtime: string; readonly downloads: string } {
-  return { runtime: join(desktopRoot, '.desktop-build', 'runtime'), downloads: join(desktopRoot, '.desktop-build', 'downloads') }
+export function nextRuntimeBuildPaths(desktopRoot: string, arch?: NextRuntimeArch): { readonly runtime: string; readonly downloads: string } {
+  return {
+    runtime: arch === undefined
+      ? join(desktopRoot, '.desktop-build', 'runtime')
+      : join(desktopRoot, '.desktop-build', 'targets', arch, 'runtime'),
+    downloads: join(desktopRoot, '.desktop-build', 'downloads'),
+  }
 }
 
 /**
@@ -105,10 +124,11 @@ export interface PrepareNextRuntimeOptions {
  * @returns The runtime root, empty for platforms without a payload.
  */
 export async function prepareNextRuntime(options: PrepareNextRuntimeOptions): Promise<string> {
-  const paths = nextRuntimeBuildPaths(options.desktopRoot)
+  const targets = nextRuntimeTargets(options.platform, options.hostArch)
+  const arch = options.platform === 'darwin' && targets.length === 1 ? targets[0]?.arch : undefined
+  const paths = nextRuntimeBuildPaths(options.desktopRoot, arch)
   const log = options.log ?? console.log
   rmSync(paths.runtime, { recursive: true, force: true })
-  const targets = nextRuntimeTargets(options.platform, options.hostArch)
   if (targets.length === 0) {
     log(`Next ships no interpreter payload for ${options.platform}`)
     return paths.runtime
@@ -237,7 +257,8 @@ const invokedPath = process.argv[1]
 if (invokedPath !== undefined && resolve(invokedPath) === fileURLToPath(import.meta.url)) {
   const desktopRoot = resolve(import.meta.dirname, '..')
   const version = expectedNextVersion(desktopRoot)
-  const paths = nextRuntimeBuildPaths(desktopRoot)
+  const arch = runtimeBuildArch(process.platform)
+  const paths = nextRuntimeBuildPaths(desktopRoot, arch)
   const reusable = reusableNextRuntimeTree(paths.runtime, process.platform, version)
   if (reusable.length > 0) {
     console.log(`Reusing prepared primary runtime for ${reusable.map(item => item.arch).join(', ')}`)

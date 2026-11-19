@@ -36,6 +36,7 @@
     "prepare:runtime": "node scripts/prepare-runtime.ts",
     "package:dir": "node ../../scripts/prepare-local-plugins.mjs && yarn build && node scripts/package.ts dir",
     "dist:mac": "node ../../scripts/prepare-local-plugins.mjs && node scripts/package.ts mac",
+    "release:mac:all": "node scripts/release-mac-all.ts",
     "dist:mac-smoke": "node ../../scripts/prepare-local-plugins.mjs && node scripts/package.ts mac-smoke",
     "dist:mac-arm64": "node ../../scripts/prepare-local-plugins.mjs && DSH_MAC_RELEASE_ARCH=arm64 node scripts/package.ts mac",
     "dist:mac-x64": "node ../../scripts/prepare-local-plugins.mjs && DSH_MAC_RELEASE_ARCH=x64 node scripts/package.ts mac",
@@ -359,13 +360,13 @@
     },
     "files": [
       {
-        "from": ".desktop-build/payload",
+        "from": "${env.DSH_NEXT_PAYLOAD_DIR}",
         "filter": [
           "**/*"
         ]
       },
       {
-        "from": ".desktop-build/payload/node_modules",
+        "from": "${env.DSH_NEXT_PAYLOAD_DIR}/node_modules",
         "to": "node_modules",
         "filter": [
           "**/*"
@@ -398,11 +399,11 @@
       "icon": "build/app-icon.icon",
       "extraResources": [
         {
-          "from": ".desktop-build/runtime",
+          "from": "${env.DSH_NEXT_RUNTIME_DIR}",
           "to": "runtime"
         },
         {
-          "from": ".desktop-build/payload/package.json",
+          "from": "${env.DSH_NEXT_PAYLOAD_DIR}/package.json",
           "to": "app/package.json"
         }
       ],
@@ -488,9 +489,9 @@
       "**/node_modules/@deepseek-ai/dsh-agent-preset/**/*",
       "**/node_modules/@deepseek-ai/dsh-skill-badge/**/*",
       "**/node_modules/pnpm/**/*",
-      ".desktop-build/payload/scripts/node-bin/**/*",
-      ".desktop-build/payload/assets/**/*",
-      ".desktop-build/payload/build/**/*"
+      "${env.DSH_NEXT_PAYLOAD_DIR}/scripts/node-bin/**/*",
+      "${env.DSH_NEXT_PAYLOAD_DIR}/assets/**/*",
+      "${env.DSH_NEXT_PAYLOAD_DIR}/build/**/*"
     ]
   },
   "optionalDependencies": {

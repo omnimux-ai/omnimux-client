@@ -1,7 +1,7 @@
 /** Electron Builder's beforeBuild hook: the prepared payload is the only source of `node_modules`. */
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { PAYLOAD_DIR } from './packaged-payload.ts'
+import { payloadDir } from './packaged-payload.ts'
 import { DESKTOP_RUNTIME_FILE, readDesktopRuntime } from '../src/runtime-tree.ts'
 
 interface BuildContext {
@@ -19,8 +19,9 @@ interface BuildContext {
  * @returns False: dependencies are handled outside electron-builder.
  */
 export default async function beforeBuild(context: BuildContext): Promise<boolean> {
-  const file = join(context.appDir, ...PAYLOAD_DIR.split('/'), DESKTOP_RUNTIME_FILE)
-  if (!existsSync(file)) throw new Error(`Next packaging: no prepared payload at ${PAYLOAD_DIR}; run scripts/prepare-payload.ts first`)
+  const dir = payloadDir(context.platform.nodeName as NodeJS.Platform)
+  const file = join(context.appDir, ...dir.split('/'), DESKTOP_RUNTIME_FILE)
+  if (!existsSync(file)) throw new Error(`Next packaging: no prepared payload at ${dir}; run scripts/prepare-payload.ts first`)
   const descriptor = readDesktopRuntime(file)
   if (descriptor.platform !== context.platform.nodeName) {
     throw new Error(`Next packaging: the prepared payload targets ${descriptor.platform}, not ${context.platform.nodeName}`)

@@ -45,6 +45,8 @@ export interface VerifyBuildInfoOptions {
   readonly repoRoot?: string
   /** Explicit expected commit; defaults to local HEAD. */
   readonly expectedCommit?: string
+  /** Candidate-only check: require a clean tree and matching HEAD, but not HEAD == origin/main. */
+  readonly allowNonOriginMain?: boolean
 }
 
 /**
@@ -60,7 +62,7 @@ export function verifyAppBuildInfo(appPath: string, options: VerifyBuildInfoOpti
   const originMain = git(root, 'rev-parse', 'origin/main')
   if (expectedCommit === null) throw new Error('release build-info check: cannot resolve git HEAD')
   if (originMain === null) throw new Error('release build-info check: cannot resolve origin/main')
-  if (expectedCommit !== originMain) {
+  if (options.allowNonOriginMain !== true && expectedCommit !== originMain) {
     throw new Error(`release build-info check: HEAD ${expectedCommit} is not origin/main ${originMain}`)
   }
   const status = gitStatus(root)

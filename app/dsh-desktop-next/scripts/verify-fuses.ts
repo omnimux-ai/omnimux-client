@@ -7,7 +7,7 @@ import { verifyElectronExecutableFuses } from '../../dsh-plugin-desktop/scripts/
 import { withoutMacReleaseSecrets } from '../../dsh-plugin-desktop/scripts/release-preflight.ts'
 import { withoutWindowsSigningSecrets } from '../../dsh-plugin-desktop/scripts/package-win.ts'
 import { machOArchitectures, rosettaAvailable, type MachOArchitecture } from './primary-runtime.ts'
-import { archivedPayload, nextPackagingTarget, PAYLOAD_DIR, universalMergeRewrite, verifyNextRuntime, verifyUpdaterManifestShim } from './packaged-payload.ts'
+import { archivedPayload, nextPackagingTarget, payloadDir, universalMergeRewrite, verifyNextRuntime, verifyUpdaterManifestShim } from './packaged-payload.ts'
 import { expectedNextVersion, verifyNextRuntimeTree } from './prepare-runtime.ts'
 import { verifiedPackagedResources } from './verify-packaged.ts'
 import { packagingStep } from './packaging-step.ts'
@@ -70,7 +70,7 @@ async function verifyFinalArtifacts(result: { outDir: string }): Promise<string[
     const target = nextPackagingTarget(darwin ? 'darwin' : path.endsWith('.exe') ? 'win32' : 'linux')
     const alreadyVerifiedByAfterPack = verifiedPackagedResources.has(resolve(resources))
     if (darwin || !alreadyVerifiedByAfterPack) {
-      const merge = universalMergeRewrite(join(desktopRoot, ...PAYLOAD_DIR.split('/')))
+      const merge = universalMergeRewrite(join(desktopRoot, ...payloadDir(darwin ? 'darwin' : path.endsWith('.exe') ? 'win32' : 'linux').split('/')))
       const descriptor = verifyNextRuntime(resources, expectedVersion, target, { afterCodeSigning: true, acceptRewrite: merge.accept })
       console.log(`Verified ${root} against its sealed descriptor: ${String(descriptor.files.length)} files, dsh ${descriptor.release.dshVersion}`
         + (merge.accepted.length === 0 ? '' : `; the universal merge rewrote ${merge.accepted.join(', ')}`))
@@ -92,18 +92,20 @@ async function verifyFinalArtifacts(result: { outDir: string }): Promise<string[
         continue
       }
     }
+    // Pay one Electron Node-mode cold start before the timed Host smoke. On an Apple Silicon
+    // host the x64 archive runs through Rosetta, where four simultaneous first launches can
+    // starve the Host startup timer even though each smoke passes on its own.
+    await runPackagedNode(path, ['--input-type=module', '-e', `
+      import { createRequire } from 'node:module';
+      import { pathToFileURL } from 'node:url';
+      const root = process.argv[1];
+      const require = createRequire(root + '/package.json');
+      if (require('./package.json').name !== 'dsh-desktop-next') throw new Error('Wrong packaged application');
+      await import(pathToFileURL(root + '/lib/profiles.js'));
+      await import(pathToFileURL(root + '/lib/desktop-runtime.js'));
+      require.resolve('@deepseek-ai/dsh-web-frontend/dist/index.html');
+    `, root], 30_000, 'Packaged Next runtime failed')
     await Promise.all([
-      // Electron's Node mode reads the archive like a directory, as the Host and CLI will.
-      runPackagedNode(path, ['--input-type=module', '-e', `
-        import { createRequire } from 'node:module';
-        import { pathToFileURL } from 'node:url';
-        const root = process.argv[1];
-        const require = createRequire(root + '/package.json');
-        if (require('./package.json').name !== 'dsh-desktop-next') throw new Error('Wrong packaged application');
-        await import(pathToFileURL(root + '/lib/profiles.js'));
-        await import(pathToFileURL(root + '/lib/desktop-runtime.js'));
-        require.resolve('@deepseek-ai/dsh-web-frontend/dist/index.html');
-      `, root], 30_000, 'Packaged Next runtime failed'),
       // The native computer-use driver opens its library with the system loader; the Host's resolver must answer with the unpacked copy.
       runPackagedNode(path, [join(desktopRoot, 'scripts', 'packaged-driver-smoke.mjs'), root], 120_000, 'Packaged computer-use driver smoke failed'),
       // The badge skill announces its asset directory to the model; the Host's resolver must make it physical.

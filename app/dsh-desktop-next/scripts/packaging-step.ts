@@ -1,6 +1,6 @@
 /** Optional phase journal, following upstream Desktop's packaging-step.mjs event format. */
 import { randomUUID } from 'node:crypto'
-import { appendFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 interface Phase {
@@ -11,14 +11,16 @@ interface Phase {
 }
 
 function record(phase: Phase, event: object): void {
+  const arch = process.env.DSH_PACKAGING_ARCH
   appendFileSync(join(phase.directory, 'events.jsonl'), `${JSON.stringify({
-    time: new Date().toISOString(), pid: process.pid, stage: phase.stage, stageId: phase.stageId, ...event,
+    time: new Date().toISOString(), pid: process.pid, ...(arch === undefined ? {} : { arch }), stage: phase.stage, stageId: phase.stageId, ...event,
   })}\n`, { flush: true })
 }
 
 function start(stage: string): Phase | undefined {
   const directory = process.env.DSH_DESKTOP_PACKAGING_RUN_DIR
   if (directory === undefined) return undefined
+  mkdirSync(directory, { recursive: true })
   const phase = { directory, stage, stageId: randomUUID(), started: performance.now() }
   record(phase, { type: 'stage-start' })
   return phase

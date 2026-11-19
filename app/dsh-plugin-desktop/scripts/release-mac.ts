@@ -64,6 +64,14 @@ export interface MacReleaseOptions {
   readonly prepareRuntime: () => void
   /** Assert the build checkout is exactly origin/main with no tracked changes. */
   readonly verifySource?: () => void
+  /** Skip the shared source/AA/market/check preflight when the caller already ran it once. */
+  readonly commonPrepDone?: boolean
+  /** Build a DMG (default) or leave the signed .app directory for external notarization. */
+  readonly packageTarget?: 'dmg' | 'dir'
+  /** Enable electron-builder notarization; the staged .app flow disables it here. */
+  readonly notarize?: boolean
+  /** Run the final mounted-DMG verifier; staged .app builds defer verification to the orchestrator. */
+  readonly verify?: boolean
 }
 
 function listCodeSigningIdentities(env: NodeJS.ProcessEnv): string {
@@ -166,47 +174,55 @@ export function releaseMac(options: MacReleaseOptions = defaultReleaseOptions())
     DSH_BUILD_CHANNEL: 'release',
     DSH_RELEASE_BUILD: '1',
   }
-  ;(options.verifySource ?? (() => assertReleaseSource(resolve(options.desktopRoot, '..'))))()
-  const result = assertMacReleaseReady({
-    env: releaseEnvironment,
-    platform: options.platform,
-    listCodeSigningIdentities: () => options.listCodeSigningIdentities(buildEnvironment),
-  })
-  options.log(
-    `macOS release preflight passed: ${result.identity}; signing via ${result.signing}; notarization via ${result.notarization}`,
-  )
+  if (options.commonPrepDone !== true) {
+    ;(options.verifySource ?? (() => assertReleaseSource(resolve(options.desktopRoot, '..'))))()
+    const result = assertMacReleaseReady({
+      env: releaseEnvironment,
+      platform: options.platform,
+      listCodeSigningIdentities: () => options.listCodeSigningIdentities(buildEnvironment),
+    })
+    options.log(
+      `macOS release preflight passed: ${result.identity}; signing via ${result.signing}; notarization via ${result.notarization}`,
+    )
 
-  // The workspace check includes the package build and repository-layout gate. Signing
-  // material is withheld from every build, test, Loader smoke, and layout subprocess.
-  options.run(
-    process.execPath,
-    ['scripts/prepare-agents-anywhere-release.mjs', '--verify-release'],
-    resolve(options.desktopRoot, '..'),
-    buildEnvironment,
-  )
-  options.run(process.execPath, ['scripts/prepare-dsh-market.mjs', '--check'], resolve(options.desktopRoot, '..'), buildEnvironment)
-  options.run('yarn', ['run', 'check'], resolve(options.desktopRoot, '..'), buildEnvironment)
+    // The workspace check includes the package build and repository-layout gate. Signing
+    // material is withheld from every build, test, Loader smoke, and layout subprocess.
+    options.run(
+      process.execPath,
+      ['scripts/prepare-agents-anywhere-release.mjs', '--verify-release'],
+      resolve(options.desktopRoot, '..'),
+      buildEnvironment,
+    )
+    options.run(process.execPath, ['scripts/prepare-dsh-market.mjs', '--check'], resolve(options.desktopRoot, '..'), buildEnvironment)
+    options.run('yarn', ['run', 'check'], resolve(options.desktopRoot, '..'), buildEnvironment)
+  } else {
+    options.log('macOS release common preflight already passed; skipping shared AA/market/check commands')
+  }
   options.resetOutput()
   options.prepareRuntime()
   const archFlag = options.releaseArch === 'universal' ? '--universal'
     : options.releaseArch === 'arm64' ? '--arm64' : '--x64'
-  options.log(`macOS release target: ${options.releaseArch}`)
+  const packageTarget = options.packageTarget ?? 'dmg'
+  const notarize = options.notarize ?? true
+  options.log(`macOS release target: ${options.releaseArch} (${packageTarget}${notarize ? ', notarize' : ', notarize off'})`)
   // electron-builder auto-enables publishing when it detects CI and then aborts the
   // whole packaging step with "GitHub Personal Access Token is not set". Releasing is
   // the workflow's job (artifact upload plus the publish job), so the build declares
   // that it never publishes on its own.
   options.run('yarn', [
-    'exec', 'electron-builder', '--mac', 'dmg', archFlag,
-    '--config.forceCodeSigning=true', '--config.mac.notarize=true',
+    'exec', 'electron-builder', '--mac', packageTarget === 'dir' ? 'dir' : 'dmg', archFlag,
+    '--config.forceCodeSigning=true', `--config.mac.notarize=${String(notarize)}`,
     '--config.npmRebuild=false', '--publish', 'never',
     `--config.directories.output=${options.outputDir}`,
   ], options.desktopRoot, electronBuilderEnvironment(releaseBuildEnvironment))
-  options.run(
-    process.execPath,
-    ['scripts/verify-mac-release.ts', options.outputDir],
-    options.desktopRoot,
-    buildEnvironment,
-  )
+  if (options.verify !== false) {
+    options.run(
+      process.execPath,
+      ['scripts/verify-mac-release.ts', options.outputDir],
+      options.desktopRoot,
+      buildEnvironment,
+    )
+  }
 }
 
 const invokedPath = process.argv[1]
