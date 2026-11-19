@@ -8,6 +8,7 @@ import {
   LEFT_COLLAPSED_HTML_ATTR,
   SIDEBAR_TOGGLE_TOPBAR_ATTR,
   SIDEBAR_TOGGLE_TOPBAR_HTML_ATTR,
+  SIDEBAR_ORIGINAL_TOGGLE_ATTR,
   TOPBAR_NEW_SESSION_ATTR,
   TOPBAR_MACOS_INSET_PX,
   TOPBAR_TOGGLE_GAP_PX,
@@ -266,6 +267,25 @@ describe('ensureSidebarToggleTopbar', () => {
     doc.querySelector('[data-sidebar-collapsed]')?.removeAttribute('data-sidebar-collapsed')
     syncLeftCollapsedHtmlAttr(doc)
     assert.equal(doc.documentElement.hasAttribute(LEFT_COLLAPSED_HTML_ATTR), false)
+  })
+
+  it('detects the Next shell collapsed rail from CSS module classes', () => {
+    const doc = setup(`<!doctype html><html><body>
+      <div class="sidebarCol_x">
+        <div class="x-Wl6W_root x-Wl6W_collapsed x-Wl6W_railIn x-Wl6W_quietBars">
+          <div class="x_topStrip"><button type="button" aria-label="展开侧边栏">T</button></div>
+        </div>
+      </div>
+    </body></html>`)
+    const rail = doc.querySelector('.x-Wl6W_root')
+    rail.getBoundingClientRect = () => ({ left: 0, top: 0, width: 20, height: 840, right: 20, bottom: 840, x: 0, y: 0, toJSON() {} })
+    assert.equal(isLeftSidebarCollapsed(doc), true, '折叠 class 必须被识别为收起')
+    assert.equal(syncLeftCollapsedHtmlAttr(doc), true)
+    assert.ok(ensureSidebarToggleTopbar(doc))
+    assert.ok(doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`), '折叠态必须注入 new-session')
+
+    rail.classList.remove('x-Wl6W_collapsed', 'x-Wl6W_railIn')
+    assert.equal(isLeftSidebarCollapsed(doc), false, '展开态不得误判为折叠')
   })
 
   it('applyTopbarToggleCssVars accepts custom geometry', () => {
@@ -1517,6 +1537,11 @@ describe('first-run onboarding gating (#67)', () => {
     assert.equal(ensureSidebarToggleTopbar(doc), null)
     assert.equal(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`), null)
     assert.equal(doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`), null)
+    assert.equal(
+      doc.documentElement.hasAttribute(SIDEBAR_TOGGLE_TOPBAR_HTML_ATTR),
+      false,
+      '引导分支必须同时摘掉已有 html marker',
+    )
 
     guide.remove()
     assert.ok(ensureSidebarToggleTopbar(doc))
@@ -1925,6 +1950,80 @@ describe('topbar anchor visibility (#67 AC-4)', () => {
     } finally {
       stop()
     }
+  })
+
+  it('restores when a visible topStrip mounts after the retry window', async () => {
+    const doc = setup('<!doctype html><html><body><div id="root"></div></body></html>')
+    const guide = doc.createElement('div')
+    guide.setAttribute('data-omnimux-native-runtime', '')
+    doc.body.appendChild(guide)
+    const stop = installSidebarToggleTopbar(doc)
+    const injected = () => Boolean(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`))
+    try {
+      guide.remove()
+      await new Promise((resolve) => setTimeout(resolve, 4000))
+      assert.equal(injected(), false, 'topStrip 晚挂前不得注入')
+
+      const shell = doc.createElement('div')
+      const topStrip = doc.createElement('div')
+      topStrip.className = 'late_topStrip'
+      mockRect(topStrip, rect(0, 0, 280, 52))
+      shell.appendChild(topStrip)
+      doc.getElementById('root').appendChild(shell)
+      await waitFor(injected)
+      assert.equal(doc.querySelector(`button[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`).parentElement, topStrip)
+    } finally {
+      stop()
+    }
+  })
+
+  it('re-injects when the visible topStrip is replaced', async () => {
+    const doc = setup(`<!doctype html><html><body>
+      <div class="sidebarCol_x">
+        <div class="x_topStrip"><button type="button" aria-label="收起侧边栏">T</button></div>
+      </div>
+    </body></html>`)
+    const stop = installSidebarToggleTopbar(doc)
+    const injectedIn = (scope) => Boolean(scope.querySelector(`button[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`))
+    try {
+      const oldStrip = doc.querySelector('.x_topStrip')
+      assert.equal(injectedIn(oldStrip), true)
+      const nextStrip = doc.createElement('div')
+      nextStrip.className = 'x_topStrip_replacement'
+      mockRect(nextStrip, rect(0, 0, 280, 52))
+      oldStrip.replaceWith(nextStrip)
+      await waitFor(() => injectedIn(nextStrip))
+    } finally {
+      stop()
+    }
+  })
+
+  it('hides only the visible native toggle when a hidden duplicate comes first', () => {
+    const doc = setup(`<!doctype html><html><body>
+      <div class="x_bottomPanel x_bottomPanelHidden">
+        <button type="button" aria-label="收起侧边栏">H</button>
+      </div>
+      <div class="sidebarCol_x">
+        <div class="x_topStrip"><button type="button" aria-label="收起侧边栏">V</button></div>
+      </div>
+    </body></html>`)
+    const hidden = doc.querySelector('.x_bottomPanel button')
+    hidden.style.display = 'none'
+    const visible = doc.querySelector('.x_topStrip button')
+    const btn = ensureSidebarToggleTopbar(doc)
+    assert.ok(btn)
+    assert.equal(hidden.hasAttribute(SIDEBAR_ORIGINAL_TOGGLE_ATTR), false, '隐藏的同标签按钮不得被隐藏')
+    assert.equal(visible.hasAttribute(SIDEBAR_ORIGINAL_TOGGLE_ATTR), true, '可见原生按钮必须被隐藏')
+    assert.equal(visible.style.display, 'none')
+  })
+
+  it('does not treat a zero-size better-sidebar host as an anchor', () => {
+    const doc = setup('<!doctype html><html><body><div data-dsh-better-sidebar></div></body></html>')
+    const host = doc.querySelector('[data-dsh-better-sidebar]')
+    mockRect(host, rect(0, 840, 1280, 0))
+    assert.equal(findTopbarAnchor(doc), null)
+    assert.equal(ensureSidebarToggleTopbar(doc), null)
+    assert.equal(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`), null)
   })
 })
 
