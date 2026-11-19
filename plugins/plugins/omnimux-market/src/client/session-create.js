@@ -56,7 +56,9 @@
           await new Promise((resolve) => setTimeout(resolve, 50));
         }
         expected = sessionId;
-        navigatingTo = "";
+        // 注意：navigatingTo 必须保持到 workbench.open + 预填全部结束。异步切 tab 期间
+        // marketCurrentSessionId() 会短暂为空/非 sessionId；提前清掉会让 check() 把这段
+        // 正常过渡误判成用户抢走，预填循环第一条就 return stopped()，setDraft 一次都不调。
         // ready 路径同样要开 workbench：只 open 会话不会切到 split、也不会展开中间栏，
         // 实机表现是停在旧会话、没有 composer（#69 AC-3 的 ready / 非 ready 两条链路同源）。
         const wb = typeof window !== "undefined" ? window.__omnimuxWorkbench : undefined;
@@ -147,6 +149,7 @@
         if (!check()) return stopped();
         return { ok: false, sessionId, prefilled: false, error: "input-unavailable" };
       } finally {
+        navigatingTo = "";
         if (typeof unsubscribe === "function") unsubscribe();
       }
     }

@@ -9,7 +9,7 @@ function deferred() {
   const promise = new Promise((yes, no) => { resolve = yes; reject = no })
   return { promise, resolve, reject }
 }
-function setup({ install, create, attach, draft = '', protectedInput = false, receipt = true, mount = true, uiWorkspace = false, uiSwitches = true, openDelay = 0, composerActions = null } = {}) {
+function setup({ install, create, attach, draft = '', protectedInput = false, receipt = true, mount = true, uiWorkspace = false, uiSwitches = true, openDelay = 0, openClearsSession = false, composerActions = null } = {}) {
   const calls = [], listeners = new Set(), writes = [], wbCalls = [], uiCalls = []
   let current = 'a'
   const state = new Map([
@@ -28,6 +28,10 @@ function setup({ install, create, attach, draft = '', protectedInput = false, re
     getSnapshot: () => ({ sessionId: current }),
     open: async payload => {
       wbCalls.push(['open', payload, current])
+      if (openClearsSession) {
+        move('')
+        setTimeout(() => move(payload.sessionId), 30)
+      }
       if (openDelay) {
         await new Promise(resolve => setTimeout(resolve, openDelay))
         wbCalls.push(['open-done', payload.sessionId])
@@ -211,6 +215,22 @@ test('ready prefill uses composer bridge receipt and verifies getDraft readback'
   assert.equal(result.prefilled, true)
   assert.match(drafts[0], /^\/skill-creator\n/)
   assert.equal(h.writes.length, 0, '真实 composer 桥可用时不得走 slot 内部通路')
+})
+
+test('does not cancel prefill when workbench.open transiently clears the active session', async () => {
+  const drafts = []
+  const h = setup({
+    uiWorkspace: true,
+    openClearsSession: true,
+    composerActions: {
+      setDraft: text => { drafts.push(text); return true },
+      getDraft: () => drafts.at(-1) || '',
+    },
+  })
+  const result = await h.run({ timeoutMs: 1000 })
+  assert.equal(result.ok, true)
+  assert.equal(result.prefilled, true)
+  assert.match(drafts[0], /^\/skill-creator\n/)
 })
 
 test('composer bridge setDraft false returns visible prefill-failed', async () => {
