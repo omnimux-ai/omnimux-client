@@ -135,7 +135,20 @@ function setup(html) {
   globalThis.document = dom.window.document
   globalThis.HTMLElement = dom.window.HTMLElement
   globalThis.MutationObserver = dom.window.MutationObserver
+  stubDefaultAnchorRects(dom.window.document)
   return dom.window.document
+}
+
+/**
+ * 可见性判定要求真实 rect；jsdom 没有布局。给静态锚点候选补一个视口内的默认
+ * rect，测试需要「隐藏」时用 mockRect 或内联 display/visibility 覆盖。
+ * @param {Document} doc
+ */
+function stubDefaultAnchorRects(doc) {
+  const box = { left: 0, top: 0, width: 280, height: 52, right: 280, bottom: 52, x: 0, y: 0, toJSON() {} }
+  for (const el of doc.querySelectorAll('[data-dsh-better-sidebar], [class*="tabBar"], [class*="topStrip"], [class*="logoRow"]')) {
+    if (!Object.prototype.hasOwnProperty.call(el, 'getBoundingClientRect')) el.getBoundingClientRect = () => box
+  }
 }
 
 describe('sidebar-toggle-topbar selectors', () => {
@@ -1639,6 +1652,7 @@ describe('first-run onboarding gating (#67)', () => {
       host.setAttribute('data-dsh-better-sidebar', '')
       const bar = doc.createElement('div')
       bar.className = 'late_tabBar'
+      bar.getBoundingClientRect = () => ({ left: 280, top: 4, width: 1000, height: 34, right: 1280, bottom: 38 })
       host.appendChild(bar)
       shell.appendChild(host)
       await waitFor(injected)
@@ -1674,6 +1688,7 @@ describe('first-run onboarding gating (#67)', () => {
 
       host.setAttribute('data-dsh-better-sidebar', '')
       bar.className = 'late_tabBar'
+      bar.getBoundingClientRect = () => ({ left: 280, top: 4, width: 1000, height: 34, right: 1280, bottom: 38 })
       await waitFor(injected)
       assert.ok(bar.querySelector(`button[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`))
     } finally {
@@ -1698,6 +1713,7 @@ describe('first-run onboarding gating (#67)', () => {
       late.setAttribute('data-dsh-better-sidebar', '')
       const bar = doc.createElement('div')
       bar.className = 'late_tabBar'
+      bar.getBoundingClientRect = () => ({ left: 280, top: 4, width: 1000, height: 34, right: 1280, bottom: 38 })
       late.appendChild(bar)
       doc.getElementById('root').appendChild(late)
       await new Promise((resolve) => setTimeout(resolve, 400))
@@ -1753,6 +1769,7 @@ describe('first-run onboarding gating (#67)', () => {
       const oldBar = doc.querySelector('.tabBar_n')
       const nextBar = doc.createElement('div')
       nextBar.className = 'replacement_tabBar'
+      nextBar.getBoundingClientRect = () => ({ left: 280, top: 4, width: 1000, height: 34, right: 1280, bottom: 38 })
       oldBar.replaceWith(nextBar)
       await waitFor(() => injectedIn(nextBar))
 
@@ -1761,6 +1778,7 @@ describe('first-run onboarding gating (#67)', () => {
       nextHost.setAttribute('data-dsh-better-sidebar', '')
       const nextNextBar = doc.createElement('div')
       nextNextBar.className = 'second_tabBar'
+      nextNextBar.getBoundingClientRect = () => ({ left: 280, top: 4, width: 1000, height: 34, right: 1280, bottom: 38 })
       nextHost.appendChild(nextNextBar)
       host.replaceWith(nextHost)
       await waitFor(() => injectedIn(nextNextBar))
@@ -1817,10 +1835,41 @@ describe('topbar anchor visibility (#67 AC-4)', () => {
     assert.ok(box.right <= doc.defaultView.innerWidth && box.bottom <= doc.defaultView.innerHeight)
   })
 
+  it('leaves the native toggle visible and the html marker off when no anchor exists', () => {
+    const doc = setup(`<!doctype html><html><body>
+      <div class="sidebarCol_x"><button type="button" class="toggle_x" aria-label="收起侧边栏">T</button></div>
+    </body></html>`)
+    assert.equal(findTopbarAnchor(doc), null)
+    assert.equal(ensureSidebarToggleTopbar(doc), null)
+    assert.equal(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`), null)
+    assert.equal(doc.documentElement.hasAttribute(SIDEBAR_TOGGLE_TOPBAR_HTML_ATTR), false, '注入失败不得设 marker')
+    const official = doc.querySelector('button[aria-label="收起侧边栏"]')
+    assert.equal(official.hasAttribute('data-omnimux-original-sidebar-toggle'), false, '原生 toggle 不得被隐藏')
+    assert.notEqual(official.style.display, 'none')
+  })
+
+  it('injects into a visible sidebarCol topStrip and then hides the native toggle', () => {
+    const doc = setup(`<!doctype html><html><body>
+      <div class="sidebarCol_x">
+        <div class="x_topStrip"><button type="button" class="toggle_x" aria-label="收起侧边栏">T</button></div>
+      </div>
+    </body></html>`)
+    const topStrip = doc.querySelector('.x_topStrip')
+    assert.equal(findTopbarAnchor(doc), topStrip)
+    const btn = ensureSidebarToggleTopbar(doc)
+    assert.ok(btn)
+    assert.equal(btn.parentElement, topStrip, '按钮必须注入可见 topStrip')
+    assert.equal(doc.documentElement.hasAttribute(SIDEBAR_TOGGLE_TOPBAR_HTML_ATTR), true)
+    const official = doc.querySelector('button[aria-label="收起侧边栏"]')
+    assert.equal(official.hasAttribute('data-omnimux-original-sidebar-toggle'), true, '注入成功后才隐藏原生')
+    assert.equal(official.style.display, 'none')
+  })
+
   it('does not inject when every candidate anchor is hidden', () => {
     const doc = shellFixture({ withVisiblePanel: false })
     const host = doc.querySelector('[data-dsh-better-sidebar]')
     host.style.display = 'none'
+    doc.querySelector('.logoRow_y').style.display = 'none'
     mockRect(doc.querySelector('.hidden_tabBar'), rect(280, 845, 1000, 34))
 
     assert.equal(findTopbarAnchor(doc), null)

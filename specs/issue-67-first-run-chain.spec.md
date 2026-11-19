@@ -8,7 +8,7 @@
 ## 目标
 
 1. `plugins/plugins/omnimux/src/client/sidebar-toggle-topbar.js`：`findTopbarAnchor()` 删除 `doc.body || doc.documentElement` fallback；无 workbench tabBar 返回 null 不注入。
-2. 引导态（存在 `[data-omnimux-runtime-guide]` / `[data-omnimux-native-runtime]` / `[data-desktop-onboarding-surface]` / `#root[inert]`）移除注入的 toggle 与 new-session，引导结束后恢复。
+2. 引导态（存在 `[data-omnimux-runtime-guide]` / `[data-omnimux-native-runtime]` / `[data-desktop-onboarding-surface]` / `#root[inert]`）移除注入的 toggle 与 new-session，引导结束后恢复。可见锚点：可见 workbench panel 的 tabBar → 可见 tabBar → 可见 `sidebarCol` 的 `topStrip` → 可见 `topStrip`/`logoRow` → null；零尺寸/隐藏节点一律不注入；注入失败时不得隐藏原生 toggle、不设 html marker。
 3. 引导退出与工作区外壳挂载是两次提交：控件缺失时补一条有限、可取消的自愈重试链，并对 `#root` 内晚到的 `[data-dsh-better-sidebar]` / tabBar 挂一次性过滤观察；`bindAnchorObserver` 绑稳定的 better-sidebar 宿主，注入目标仍是 `findTopbarAnchor()`（tabBar 叶子优先、宿主兜底）。
 4. 不新增解释性文案；`aria-label` 等可访问名称保留。
 

@@ -366,13 +366,30 @@ export function isTopbarElementVisible(el, doc) {
   const top = Number(rect.top) || 0
   const width = Number(rect.width) || 0
   const height = Number(rect.height) || 0
-  if (width <= 0 && height <= 0) return true
+  // 零尺寸一律不可见：实测 `[data-dsh-better-sidebar]` 是 0 高 portal 宿主
+  // （rect y=840 h=0），把它当锚点会把按钮插进隐藏层。
+  if (width <= 0 || height <= 0) return false
   const vw = Number(win?.innerWidth) || 0
   const vh = Number(win?.innerHeight) || 0
   if (!vw || !vh) return true
   const right = typeof rect.right === 'number' ? rect.right : left + width
   const bottom = typeof rect.bottom === 'number' ? rect.bottom : top + height
   return right > 0 && bottom > 0 && left < vw && top < vh
+}
+
+/**
+ * 注入控件是否算「可见」。刚插入尚未布局（rect 全 0）时按锚点判定，避免把
+ * 新节点误判成失败；真实浏览器里被隐藏祖先裁掉的按钮 rect 非 0，会走
+ * isTopbarElementVisible 的祖先/视口检查。
+ * @param {Element | null | undefined} el
+ * @param {Document | null | undefined} doc
+ * @returns {boolean}
+ */
+export function isInjectedControlVisible(el, doc) {
+  if (!el) return false
+  const box = safeDom(() => el.getBoundingClientRect(), null)
+  if (box && (Number(box.width) > 0 || Number(box.height) > 0)) return isTopbarElementVisible(el, doc)
+  return isTopbarElementVisible(el.parentElement, doc)
 }
 
 /** Rail narrower than this while expanded is a poisoned reading, never a layout. */
@@ -1110,19 +1127,25 @@ function runTopbarGeometryHook(doc) {
  */
 export function findTopbarAnchor(doc) {
   if (!doc || typeof doc.querySelector !== 'function') return null
-  // 只认可见锚点：隐藏 bottomPanel 的 tabBar 在文档序上更靠前，纯 querySelector
-  // 会先命中它（#67 AC-4 实测按钮落在视口外、visibility:hidden）。
+  // 只认可见锚点（#67 AC-4）：
+  // 1) 可见 workbench panel 的 tabBar；
+  // 2) 可见 sidebarCol 内的 topStrip（真实壳里左侧可见侧栏的顶栏）；
+  // 3) 可见 topStrip / logoRow；
+  // 4) null。`[data-dsh-better-sidebar]` 实测是 0 高 portal 宿主，不能当锚点。
   const panel = findVisibleWorkbenchPanel(doc)
   if (panel) {
     const bar = panel.querySelector('[class*="tabBar"]:not([class*="Plus"])')
     if (bar instanceof HTMLElement && isTopbarElementVisible(bar, doc)) return bar
   }
-  // 没有可见 panel 时，只回退到实测可见的 better-sidebar 宿主；隐藏节点一律 null。
-  for (const host of doc.querySelectorAll('[data-dsh-better-sidebar]')) {
-    if (!(host instanceof HTMLElement) || !isTopbarElementVisible(host, doc)) continue
-    const bar = host.querySelector('[class*="tabBar"]:not([class*="Plus"])')
+  // 可见 tabBar（panel 判定不到的壳，或 panel 自身还没可见时）：rect/显隐都验过，
+  // 隐藏 bottomPanel tabBar 会被 isTopbarElementVisible 拒掉。
+  for (const bar of doc.querySelectorAll('[class*="tabBar"]:not([class*="Plus"])')) {
     if (bar instanceof HTMLElement && isTopbarElementVisible(bar, doc)) return bar
-    return host
+  }
+  for (const selector of ['[class*="sidebarCol"] [class*="topStrip"]', '[class*="topStrip"]', '[class*="logoRow"]']) {
+    for (const el of doc.querySelectorAll(selector)) {
+      if (el instanceof HTMLElement && isTopbarElementVisible(el, doc)) return el
+    }
   }
   return null
 }
@@ -1270,6 +1293,19 @@ function hideOriginalToggle(doc) {
   btn.setAttribute(SIDEBAR_ORIGINAL_TOGGLE_ATTR, '1')
   safeDom(() => btn.style.setProperty('display', 'none', 'important'))
   return btn
+}
+
+/**
+ * 注入失败时恢复原生 toggle（#67 AC-4）：CSS 按
+ * `[data-omnimux-original-sidebar-toggle="1"]` 隐藏，所以先摘标记再清 inline display。
+ * @param {Document | null | undefined} doc
+ */
+function restoreOriginalToggle(doc) {
+  if (!doc || typeof doc.querySelector !== 'function') return
+  const btn = doc.querySelector(`[${SIDEBAR_ORIGINAL_TOGGLE_ATTR}="1"]`)
+  if (!btn) return
+  btn.removeAttribute(SIDEBAR_ORIGINAL_TOGGLE_ATTR)
+  safeDom(() => btn.style.removeProperty('display'))
 }
 
 const RIGHTBAR_CHROME_STYLES_ID = 'omnimux-rightbar-chrome-styles'
@@ -1451,22 +1487,30 @@ export function ensureSidebarToggleTopbar(doc) {
   if (!doc?.documentElement) return null
   if (isOnboardingGuideActive(doc)) {
     removeInjectedTopbarControls(doc)
+    restoreOriginalToggle(doc)
     return null
   }
   const root = doc.documentElement
-  root.setAttribute(SIDEBAR_TOGGLE_TOPBAR_HTML_ATTR, '')
-  applyTopbarToggleCssVars(doc)
   const collapsed = syncLeftCollapsedHtmlAttr(doc)
-  hideOriginalToggle(doc)
+  // 几何变量与注入成败无关：拖动/缩放每帧都要发布中栏宽度，不能因暂无可见锚点而停。
+  safeDom(() => applyTopbarToggleCssVars(doc))
   const btn = injectTopbarToggleButton(doc)
+  // 只有注入成功且可见才隐藏原生 toggle / 设 html marker；否则恢复原生。
+  // 否则会出现「原生被 display:none、注入又返回 null」→ 0 个可见 toggle（#67 AC-4）。
+  if (!btn || !isInjectedControlVisible(btn, doc)) {
+    root.removeAttribute(SIDEBAR_TOGGLE_TOPBAR_HTML_ATTR)
+    restoreOriginalToggle(doc)
+    injectTopbarNewSessionButton(doc, false)
+    return null
+  }
+  root.setAttribute(SIDEBAR_TOGGLE_TOPBAR_HTML_ATTR, '')
+  hideOriginalToggle(doc)
   injectTopbarNewSessionButton(doc, collapsed)
   syncNativeRightbarControls(doc)
   // Guard against the observer's aria-label attribute filter: setting the same
   // value would still fire a MutationRecord and loop forever.
-  if (btn) {
-    const label = collapsed ? '打开侧边栏' : '收起侧边栏'
-    if (btn.getAttribute('aria-label') !== label) btn.setAttribute('aria-label', label)
-  }
+  const label = collapsed ? '打开侧边栏' : '收起侧边栏'
+  if (btn.getAttribute('aria-label') !== label) btn.setAttribute('aria-label', label)
   return btn
 }
 
@@ -1601,10 +1645,10 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
   const topbarControlMissing = () => {
     // 存在但不可见（例如落在隐藏 bottomPanel tabBar 里）同样算缺失，继续自愈。
     const toggle = doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`)
-    if (!toggle || !isTopbarElementVisible(toggle, doc)) return true
+    if (!toggle || !isInjectedControlVisible(toggle, doc)) return true
     if (!isLeftSidebarCollapsed(doc)) return false
     const newSession = doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`)
-    return !newSession || !isTopbarElementVisible(newSession, doc)
+    return !newSession || !isInjectedControlVisible(newSession, doc)
   }
 
   const cancelTopbarRetry = () => {

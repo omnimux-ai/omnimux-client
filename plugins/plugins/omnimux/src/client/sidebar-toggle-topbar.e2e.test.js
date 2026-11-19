@@ -68,7 +68,16 @@ function setup(html = FIXTURE_HTML) {
   globalThis.HTMLElement = window.HTMLElement
   globalThis.MouseEvent = window.MouseEvent
   globalThis.MutationObserver = window.MutationObserver
+  stubDefaultAnchorRects(window.document)
   return window.document
+}
+
+/** 可见性判定要求真实 rect；jsdom 没有布局，静态锚点候选补视口内默认 rect。 */
+function stubDefaultAnchorRects(doc) {
+  const box = { left: 0, top: 0, width: 280, height: 52, right: 280, bottom: 52, x: 0, y: 0, toJSON() {} }
+  for (const el of doc.querySelectorAll('[data-dsh-better-sidebar], [class*="tabBar"], [class*="topStrip"], [class*="logoRow"]')) {
+    if (!Object.prototype.hasOwnProperty.call(el, 'getBoundingClientRect')) el.getBoundingClientRect = () => box
+  }
 }
 
 function injectedToggle(doc) {
