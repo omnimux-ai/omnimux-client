@@ -19,6 +19,7 @@
 | 余额从零恢复后再次提交或点击重试 | 用户动作即时复核旧的零余额；同时发起的复核共用一次状态请求。正余额及后台轮询继续使用 30 秒缓存。 | [中枢预检测试](../plugins/plugins/omnimux/src/client/quota-precheck.test.js)、[账号操作测试](../plugins/plugins/omnimux-accounts/src/client/api.test.js) |
 | 退出或切换账号，前一账号的余额查询仍在进行 | 额度缓存和查询绑定当前登录状态。旧应答停止原动作，新账号按自己的余额判断。因登录状态切换而中止的写操作须重新发起。 | [跨账号及过期应答测试](../plugins/plugins/omnimux/src/client/quota-precheck.test.js)、[灵感账号写操作测试](../plugins/plugins/omnimux-inspiration/src/client/api.test.js) |
 | 分析看板加载、筛选、重试或同步 | 整页只预检一次，筛选用账号列表和各数据分块直接读取。某个分块报告额度不足时保留其他已返回数据；普通权限或业务错误沿原路径返回。 | [看板请求测试](../plugins/plugins/omnimux-analytics/src/client/api.test.js)、[数据状态测试](../plugins/plugins/omnimux-analytics/src/client/store.test.js) |
+| 分析分块中的数据源报告额度不足 | 总览和洞察保留成功的数据，并在 `partialErrors` 中列出受限来源。分块内所有数据源均失败且涉及额度时返回 402，单一数据源的粉丝与帖子分块也遵循该规则。登录失效返回 401。 | [中枢聚合读取测试](../plugins/plugins/omnimux/src/official/http-routes.test.js) |
 | 分析看板预检弹出登录窗，或点击看板的登录按钮 | 复用中枢登录窗。取消后留在原页面，登录成功只读取一次看板数据。 | [登录交互回归](../plugins/plugins/omnimux-analytics/src/client/analytics-login-action.test.js) |
 | 点击画布节点的生成按钮 | 发起提交的同时检查额度；同一节点连续点击只创建一次任务。 | [画布提交测试](../plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/submitNode.test.mjs) |
 | 从 Agent 工具提交音乐 | 工具和页面将显式的风格和纯音乐开关交给同一执行器。关闭开关保留为 `false`，发给模型的字段按该操作声明映射。 | [工具与执行器测试](../plugins/plugins/omnimux/src/media/mount.test.js) |

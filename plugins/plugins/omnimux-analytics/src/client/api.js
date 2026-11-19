@@ -3,8 +3,8 @@
  * Field names match `GET /omnimux/analytics/overview` + insights + followers
  * + posts so the mock fixture stays isomorphic.
  */
-import { quotaGuard as guardRequest, quotaPrecheckFailure } from 'dsh-ui-kit/quota-request'
-export { isQuotaHttpResult, notifyQuota } from 'dsh-ui-kit/quota-request'
+import { isQuotaHttpResult, notifyQuota, quotaGuard as guardRequest, quotaPrecheckFailure } from 'dsh-ui-kit/quota-request'
+export { isQuotaHttpResult, notifyQuota }
 import { resolveUseMock } from './defaults.js'
 import { applyDashboardQuery, materializeFixture } from './query.js'
 import fixture from './mock/dashboard-fixture.json' with { type: 'json' }
@@ -49,11 +49,10 @@ export async function analyticsRequest(path, opts = {}) {
 }
 
 /**
- * Wrap a Host write so a 401 pops the hub login gate, then replays once.
- * Mirrors omnimux-accounts `authGuard`.
+ * Open the Hub login gate after a 401. Reads can resume after sign-in.
  * @param {(...args: any[]) => Promise<{ ok: boolean, status: number, body: any }>} fn
  */
-export function authGuard(fn) {
+export function authGuard(fn, { replayAfterLogin = true } = {}) {
   return (...args) => {
     const run = async () => {
       const result = await fn(...args)
@@ -64,7 +63,10 @@ export function authGuard(fn) {
         gate.ensureLogin({
           kind: 'write',
           action: 'accounts',
-          onSuccess: () => { fn(...args).then(resolve, reject) },
+          onSuccess: () => {
+            if (replayAfterLogin) fn(...args).then(resolve, reject)
+            else resolve(result)
+          },
           onCancel: () => resolve(result),
         })
       })
@@ -177,35 +179,49 @@ export async function fetchDashboardLive(query, opts = {}) {
   const denied = await quotaPrecheckFailure({ capability: 'analytics', userInitiated: opts.userInitiated === true })
   if (denied) return failedDashboard(query, denied)
   const params = hostQuery(query)
-  const guarded = quotaGuard(authGuard(analyticsRequest), { capability: 'analytics' })
+  const request = authGuard(analyticsRequest)
   const [overview, insights, followers, posts] = await Promise.all([
-    guarded(HOST_PATHS.overview, { query: params }),
-    guarded(HOST_PATHS.insights, { query: params }),
-    guarded(HOST_PATHS.followers, { query: params }),
-    guarded(HOST_PATHS.posts, { query: params }),
+    request(HOST_PATHS.overview, { query: params }),
+    request(HOST_PATHS.insights, { query: params }),
+    request(HOST_PATHS.followers, { query: params }),
+    request(HOST_PATHS.posts, { query: params }),
   ])
-  if (!overview.ok) return failedDashboard(query, overview)
-  const kpi = { ...(overview.body?.kpi || {}) }
+  const partialErrors = [overview, insights].flatMap(section =>
+    section.ok && Array.isArray(section.body?.partialErrors) ? section.body.partialErrors : [])
+  const refusals = partialErrors.map(({ status, error }) => ({ ok: false, status, body: { error } }))
+  const quotaFailure = [overview, insights, followers, posts, ...refusals].find(isQuotaHttpResult)
+  if (quotaFailure) notifyQuota(quotaFailure, { capability: 'analytics' })
+  if (!overview.ok && (!isQuotaHttpResult(overview) || ![insights, followers, posts].some(section => section.ok))) {
+    return failedDashboard(query, overview)
+  }
+  const overviewData = overview.ok ? overview.body : failedDashboard(query, overview)
+  const kpi = { ...(overviewData?.kpi || {}) }
   if (followers.ok && followers.body?.kpiPatch) Object.assign(kpi, followers.body.kpiPatch)
   const payload = {
-    ...overview.body,
+    ...overviewData,
     kpi,
-    heatmap: insights.ok ? (insights.body?.heatmap ?? overview.body?.heatmap) : emptyBlock('heatmap'),
-    strategy: insights.ok ? (insights.body?.strategy ?? overview.body?.strategy) : emptyBlock('strategy'),
+    heatmap: insights.ok ? (insights.body?.heatmap ?? overviewData?.heatmap) : emptyBlock('heatmap'),
+    strategy: insights.ok ? (insights.body?.strategy ?? overviewData?.strategy) : emptyBlock('strategy'),
     followerEvolution: followers.ok
-      ? (followers.body?.followerEvolution ?? overview.body?.followerEvolution)
+      ? (followers.body?.followerEvolution ?? overviewData?.followerEvolution)
       : emptyBlock('followers'),
     topPosts: posts.ok
-      ? (posts.body?.topPosts ?? overview.body?.topPosts)
-      : (overview.body?.topPosts ?? []),
+      ? (posts.body?.topPosts ?? overviewData?.topPosts)
+      : (overviewData?.topPosts ?? []),
   }
   const BLOCK_LABEL = {
     insights: '热力图 / 策略分析',
     followers: '粉丝演进',
     posts: '爆款排行',
     overview: '核心指标',
+    'best-time-to-post': '最佳发布时间热力图',
+    'posting-frequency': '发帖频次',
+    'content-decay': '内容互动衰减',
+    'daily-metrics': '每日指标',
   }
   const failed = [
+    ...partialErrors,
+    !overview.ok && { key: 'overview', status: overview.status, error: overview.body?.error },
     !insights.ok && { key: 'insights', status: insights.status, error: insights.body?.error },
     !followers.ok && { key: 'followers', status: followers.status, error: followers.body?.error },
     !posts.ok && { key: 'posts', status: posts.status, error: posts.body?.error },
@@ -214,7 +230,7 @@ export async function fetchDashboardLive(query, opts = {}) {
     const names = failed.map((row) => BLOCK_LABEL[row.key] || row.key).join('、')
     const detail = `未拉到：${names}（${failed.map((row) => `${row.key} ${row.status}${row.error ? ` ${row.error}` : ''}`).join('；')}）`
     const unauthorized = failed.some((row) => row.status === 401)
-    if (!payload.emptyState || payload.emptyState.code === 'network_error') {
+    if (!overview.ok || !payload.emptyState || payload.emptyState.code === 'network_error') {
       payload.emptyState = {
         code: unauthorized ? 'unauthorized' : 'network_error',
         action: unauthorized ? 'login' : 'retry',
@@ -278,7 +294,7 @@ export async function syncNow(query = {}, opts = {}) {
     }
     return payload
   }
-  const run = guardRequest(authGuard(analyticsRequest), { capability: 'analytics', userInitiated: true })
+  const run = guardRequest(authGuard(analyticsRequest, { replayAfterLogin: false }), { capability: 'analytics', userInitiated: true })
   const result = await run(HOST_PATHS.sync, { method: 'POST', body: query })
   if (!result.ok) throwHttp(result)
   return fetchDashboardLive(query)

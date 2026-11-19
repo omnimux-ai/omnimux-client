@@ -134,3 +134,101 @@ it('checks once before loading the four dashboard sections', async (t) => {
   assert.equal(fetch.mock.callCount(), 4)
   assert.equal(payload.syncStatus.lastError, 'overview-unavailable')
 })
+
+it('keeps available charts and reports a quota refusal from inside an insights response', async (t) => {
+  const originalWindow = globalThis.window
+  t.after(() => { globalThis.window = originalWindow })
+  let checks = 0
+  const notices = []
+  globalThis.window = { __omnimuxQuota: {
+    ensureQuota: async () => { checks++; return { ok: true } },
+    notify: result => notices.push(result),
+  } }
+  const heatmap = { cells: [{ dayOfWeek: 3, hour: 9, score: 80 }] }
+  const strategy = { cadence: { optimal: ['1-5/wk'] }, accumulation: { windows: [] } }
+  const responses = new Map([
+    [HOST_PATHS.overview, { kpi: { postsCount: { value: 4 } } }],
+    [HOST_PATHS.insights, { heatmap, strategy, partialErrors: [{ key: 'content-decay', status: 402, error: 'quota-exceeded' }] }],
+    [HOST_PATHS.followers, { kpiPatch: { totalFollowers: { value: 12 } } }],
+    [HOST_PATHS.posts, { topPosts: [{ postId: 'retained' }] }],
+  ])
+  let postsDenied = false
+  const reads = []
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    assert.equal(options.method, 'GET')
+    const path = url.split('?')[0]
+    reads.push(path)
+    if (postsDenied && path === HOST_PATHS.posts) return Response.json({ error: 'quota-exceeded' }, { status: 402 })
+    return Response.json(responses.get(path))
+  })
+  const result = await fetchDashboard({}, { useMock: false })
+  assert.deepEqual(result.heatmap, heatmap)
+  assert.deepEqual(result.strategy, strategy)
+  assert.equal(result.kpi.postsCount.value, 4)
+  assert.equal(result.kpi.totalFollowers.value, 12)
+  assert.equal(result.topPosts[0].postId, 'retained')
+  assert.equal(result.emptyState?.action, 'retry')
+  assert.match(result.syncStatus.lastError, /内容.*衰减/)
+  assert.deepEqual(notices.map(({status,code}) => [status,code]), [[402, 'quota-exceeded']])
+  assert.equal(checks, 1)
+  assert.deepEqual(reads.sort(), [HOST_PATHS.overview, HOST_PATHS.insights, HOST_PATHS.followers, HOST_PATHS.posts].sort())
+
+  postsDenied = true
+  notices.length = 0
+  const retry = await fetchDashboard({}, { useMock: false, userInitiated: true })
+  assert.deepEqual(retry.heatmap, heatmap)
+  assert.match(retry.syncStatus.lastError, /content-decay 402.*posts 402/)
+  assert.equal(notices.length, 1)
+  assert.equal(checks, 2)
+})
+
+it('retains independent sections when part or all of overview is refused for quota', async (t) => {
+  const originalWindow = globalThis.window
+  t.after(() => { globalThis.window = originalWindow })
+  const notices = []
+  globalThis.window = { __omnimuxQuota: { ensureQuota: async () => ({ ok: true }), notify: event => notices.push(event) } }
+  let overviewDenied = false
+  t.mock.method(globalThis, 'fetch', async url => {
+    switch (url.split('?')[0]) {
+      case HOST_PATHS.insights: return Response.json({ heatmap: { maxScore: 85 } })
+      case HOST_PATHS.followers: return Response.json({ kpiPatch: { totalFollowers: { value: 63 } } })
+      case HOST_PATHS.posts: return Response.json({ topPosts: [{ postId: 'kept' }] })
+      case HOST_PATHS.overview: return overviewDenied
+        ? Response.json({ error: 'quota-exceeded' }, { status: 402 })
+        : Response.json({ kpi: { postsCount: { value: 12 } }, partialErrors: [{ key: 'daily-metrics', status: 402, error: 'quota-exceeded' }] })
+      default: throw new Error('Unexpected analytics request')
+    }
+  })
+  const partial = await fetchDashboard({}, { useMock: false })
+  assert.equal(partial.kpi.postsCount.value, 12)
+  assert.equal(partial.emptyState?.action, 'retry')
+  assert.match(partial.syncStatus.lastError, /daily-metrics 402/)
+  overviewDenied = true
+  const reduced = await fetchDashboard({}, { useMock: false })
+  assert.equal(reduced.emptyState?.code, 'network_error')
+  assert.equal(reduced.heatmap.maxScore, 85)
+  assert.equal(reduced.kpi.totalFollowers.value, 63)
+  assert.equal(reduced.topPosts[0].postId, 'kept')
+  assert.equal(notices.length, 2)
+})
+
+it('opens login after a rejected sync without replaying the write on success or cancel', async (t) => {
+  const originalWindow = globalThis.window
+  t.after(() => { globalThis.window = originalWindow })
+  const posts = []
+  t.mock.method(globalThis, 'fetch', async (path, options) => {
+    posts.push([path, options.method])
+    return Response.json({ error: 'needs-omnimux' }, { status: 401 })
+  })
+  for (const finish of [gate => gate.onSuccess(), gate => gate.onCancel()]) {
+    let logins = 0
+    globalThis.window = {
+      __omnimuxQuota: { ensureQuota: async () => ({ ok: true }) },
+      __omnimuxAuth: { ensureLogin: gate => { logins++; finish(gate) } },
+    }
+    posts.length = 0
+    await assert.rejects(syncNow({}, { useMock: false }), { status: 401 })
+    assert.equal(logins, 1)
+    assert.deepEqual(posts, [[HOST_PATHS.sync, 'POST']])
+  }
+})
