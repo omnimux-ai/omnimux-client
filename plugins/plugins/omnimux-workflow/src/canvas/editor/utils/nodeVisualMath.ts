@@ -509,9 +509,9 @@ export const COLLAPSED_GROUP_HEIGHT = 44;
 export function projectGroupVisibility(
   nodes: ReadonlyArray<Pick<Node, 'id' | 'type' | 'parentId' | 'data' | 'hidden'>>,
   edges: Edge[],
-): { hiddenNodeIds: Set<string>; visibleEdges: Edge[] } {
+): { hiddenNodeIds: Set<string>; flowEdges: Edge[] } {
   const collapsedGroupIds = new Set(
-    nodes.filter((node) => node.type === 'group' && node.data.isCollapsed === true).map((node) => node.id),
+    nodes.filter((node) => node.type === 'group' && Boolean(node.data.isCollapsed)).map((node) => node.id),
   );
   const hiddenNodeIds = new Set<string>();
   for (const node of nodes) {
@@ -519,10 +519,16 @@ export function projectGroupVisibility(
       hiddenNodeIds.add(node.id);
     }
   }
-  const visibleEdges = hiddenNodeIds.size === 0
+  // Consumers of React Flow's graph still need the original source and target
+  // for inputs. Hide only the rendered edge when either endpoint is hidden.
+  const flowEdges = hiddenNodeIds.size === 0
     ? edges
-    : edges.filter((edge) => !hiddenNodeIds.has(edge.source) && !hiddenNodeIds.has(edge.target));
-  return { hiddenNodeIds, visibleEdges };
+    : edges.map((edge) => (
+      hiddenNodeIds.has(edge.source) || hiddenNodeIds.has(edge.target)
+        ? { ...edge, hidden: true, selected: false }
+        : edge
+    ));
+  return { hiddenNodeIds, flowEdges };
 }
 
 /**

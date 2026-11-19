@@ -95,7 +95,8 @@ function recordGroupAction(state: CanvasState, nodes: CanvasNode[]) {
   // effect hasn't recorded a preceding drag yet.
   const previous = snapshotOf(state.nodes, state.edges);
   history.current = snapshotOf(nodes, state.edges);
-  history.lastPushAt = Date.now();
+  // Let the first graph change after a discrete action start its own step.
+  history.lastPushAt = 0;
   return {
     nodes,
     past: [...state.past, previous].slice(-MAX_HISTORY_SIZE),

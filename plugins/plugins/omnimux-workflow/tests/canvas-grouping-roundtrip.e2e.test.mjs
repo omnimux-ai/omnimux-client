@@ -58,9 +58,21 @@ function reopenSavedCanvas() {
 
 function assertProjection(hiddenIds, visibleEdges) {
   const current = state();
-  const projection = projectGroupVisibility(current.nodes, current.edges);
-  assert.deepEqual(projection.hiddenNodeIds, new Set(hiddenIds));
-  assert.deepEqual(projection.visibleEdges, visibleEdges);
+  const originalEdges = structuredClone(current.edges);
+  const { hiddenNodeIds, flowEdges } = projectGroupVisibility(current.nodes, current.edges);
+  assert.deepEqual(hiddenNodeIds, new Set(hiddenIds));
+  assert.deepEqual(flowEdges.filter(({ hidden }) => !hidden), visibleEdges);
+  assert.equal(flowEdges.length, originalEdges.length);
+  const visibleEdgeIds = new Set(visibleEdges.map(({ id }) => id));
+  for (const [index, edge] of flowEdges.entries()) {
+    const original = originalEdges[index];
+    if (visibleEdgeIds.has(original.id)) {
+      assert.strictEqual(edge, current.edges[index]);
+    } else {
+      assert.deepEqual(edge, { ...original, hidden: true, selected: false });
+    }
+  }
+  assert.deepEqual(current.edges, originalEdges);
 }
 
 test('moved group stays collapsed after save and reopen, then releases both nodes and original edges', () => {
@@ -112,11 +124,12 @@ test('moved group stays collapsed after save and reopen, then releases both node
   assertUngrouped();
 });
 
-test('only edges with a hidden endpoint are removed from the visible graph', () => {
+test('a hidden endpoint affects only rendering and selection, preserving references for downstream nodes', () => {
   const unrelated = link('outside-a', 'outside-b', 'in');
   const withinOpenGroup = link('c', 'd', 'text');
   const acrossGroups = link('b', 'c', 'reference');
-  const edges = [unrelated, withinOpenGroup, acrossGroups];
+  const downstreamReference = { ...link('b', 'outside-b', 'reference'), selected: true };
+  const edges = [unrelated, withinOpenGroup, acrossGroups, downstreamReference];
   state().hydrateGraph(
     ['a', 'b', 'c', 'd', 'outside-a', 'outside-b'].map((id, index) => material(id, index * 400, 100)),
     edges,
@@ -128,7 +141,7 @@ test('only edges with a hidden endpoint are removed from the visible graph', () 
   state().toggleGroupCollapse(groupCD);
   assertProjection(['a', 'b', 'c', 'd'], [unrelated]);
   state().toggleGroupCollapse(groupAB);
-  assertProjection(['c', 'd'], [unrelated]);
+  assertProjection(['c', 'd'], [unrelated, downstreamReference]);
   state().toggleGroupCollapse(groupCD);
   assertProjection([], edges);
   assert.deepEqual(state().edges, edges);

@@ -234,7 +234,7 @@ const CanvasEditorContent: React.FC<CanvasEditorProps> = ({
   const [isQueueOpen, setIsQueueOpen] = useState(false);
   const nodeCreateCounter = useRef(0);
 
-  const { hiddenNodeIds, visibleEdges } = useMemo(() => projectGroupVisibility(nodes, edges), [nodes, edges]);
+  const { hiddenNodeIds, flowEdges } = useMemo(() => projectGroupVisibility(nodes, edges), [nodes, edges]);
 
   const hasSelection = useMemo(
     () => nodes.some((node) => node.selected && !hiddenNodeIds.has(node.id)),
@@ -914,7 +914,7 @@ const CanvasEditorContent: React.FC<CanvasEditorProps> = ({
     <div className="wf-canvas-editor" style={{ position: 'relative', height: '100%' }}>
       <ReactFlow
         nodes={flowNodes}
-        edges={visibleEdges}
+        edges={flowEdges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={handleConnect}

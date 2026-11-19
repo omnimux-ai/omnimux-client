@@ -94,6 +94,29 @@ test('undoing dissolve restores the moved group and selection or measurements pr
   assert.deepEqual(store.getState().edges, edges);
 });
 
+test('dragging immediately after grouping undoes back to the new group before its move', (t) => {
+  t.mock.method(Date, 'now', () => 1000);
+  seed();
+  const state = store.getState();
+  const group = state.groupNodes(['a', 'b']);
+  const initial = findNode(group).position;
+  const intermediate = { x: initial.x + 24, y: initial.y + 20 };
+  const final = { x: initial.x + 68, y: initial.y + 43 };
+
+  state.onNodesChange([{ id: group, type: 'position', position: intermediate, dragging: true }]);
+  state.pushHistory();
+  state.onNodesChange([{ id: group, type: 'position', position: final, dragging: false }]);
+  state.pushHistory();
+
+  assert.equal(store.getState().past.length, 2);
+  state.undo();
+  assert.deepEqual(findNode(group).position, initial);
+  assert.equal(findNode('a').parentId, group);
+  state.redo();
+  assert.deepEqual(findNode(group).position, final);
+  assert.deepEqual(store.getState().edges, edges);
+});
+
 test('invalid group actions leave history alone, and a real new edit clears redo', () => {
   seed();
   const state = store.getState();
