@@ -207,6 +207,9 @@ const zh = {
   'panel.slotPick': '选择{slot}素材',
   'panel.slotClear': '移除（保留连线）',
   'panel.slotSwap': '对调首尾帧',
+  'panel.slotSwapImages': '交换两张图',
+  'panel.slot.startImage': '起始图',
+  'panel.slot.referenceImage': '参考图',
   'panel.slotMissing': '还差必需素材：{slots}',
   // 画板级通知（T05）
   'notice.submitBlocked': '当前还不能生成',

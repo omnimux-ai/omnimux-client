@@ -44,6 +44,7 @@ export interface SlotSpec {
   slot: string;
   role: string;
   type: string;
+  firstItemRole?: string;
   min: number;
   max: number | null;
   labelKey: string;

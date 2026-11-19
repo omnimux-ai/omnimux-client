@@ -246,6 +246,8 @@ export interface InputSlotDto {
   /** 'text' | 'image' | 'video' | 'audio' | 'document' (open string). */
   type: string;
   role: string;
+  /** Presentation role of the first item within an ordered multi-item slot. */
+  firstItemRole?: string;
   source?: 'user' | 'upstream_edge' | 'node_field';
   valueSources?: ValueSource[];
   composition?: TextComposition;

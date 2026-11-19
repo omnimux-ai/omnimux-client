@@ -200,6 +200,9 @@ const en: Record<DictKey, string> = {
   'panel.slotPick': 'Pick {slot}',
   'panel.slotClear': 'Remove (keep connection)',
   'panel.slotSwap': 'Swap first/last frame',
+  'panel.slotSwapImages': 'Swap reference images',
+  'panel.slot.startImage': 'Start',
+  'panel.slot.referenceImage': 'Reference',
   'panel.slotMissing': 'Missing required: {slots}',
   // Canvas-level notices (T05)
   'notice.submitBlocked': 'Not ready to generate yet',

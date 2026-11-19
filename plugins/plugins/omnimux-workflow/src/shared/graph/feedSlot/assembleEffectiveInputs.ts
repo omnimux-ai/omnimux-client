@@ -11,6 +11,10 @@ export interface SlotSelection {
   reasonCode?: 'input_waiting' | 'input_unavailable' | 'slot_removed' | 'role_conflict' | 'slot_capacity';
 }
 
+export function resolveSlotOccupantOrdinal(occupant: SlotOccupant, asset?: FeedAsset): number {
+  return occupant.ordinal ?? (asset?.sourceNodeId === occupant.sourceNodeId ? asset.ordinal : 0);
+}
+
 /** The sole traversal of persisted consumption; never fills gaps from standby feed. */
 export function selectSlotOccupants(layout: SlotLayout, bindings: SlotBindings, feedAssets: FeedAsset[], conflicts: SlotConflict[] = [], inputBindingVersion?: number): SlotSelection[] {
   const byEdge = new Map(feedAssets.map(asset => [asset.edgeId, asset]));
@@ -52,7 +56,7 @@ export function selectSlotOccupants(layout: SlotLayout, bindings: SlotBindings, 
       }, ...(asset ? { asset: { ...asset } } : {}), state, ...(reasonCode ? { reasonCode } : {}) });
     }
   }
-  return records.sort((a, b) => (a.occupant.ordinal ?? a.asset?.ordinal ?? 0) - (b.occupant.ordinal ?? b.asset?.ordinal ?? 0));
+  return records.sort((a, b) => resolveSlotOccupantOrdinal(a.occupant, a.asset) - resolveSlotOccupantOrdinal(b.occupant, b.asset));
 }
 
 export function assembleEffectiveInputsFromSlots(args: {

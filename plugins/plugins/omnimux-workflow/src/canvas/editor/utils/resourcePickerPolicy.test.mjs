@@ -3,6 +3,8 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { planCanvasInputMutation, buildCanvasUpstreamFingerprint } from '../../../shared/graph/canvasInputMutationGateway.ts';
+import { deriveSlotLayout, assembleEffectiveInputsFromSlots, feedFromFingerprint } from '../../../shared/graph/feedSlot/index.ts';
 import {
   listCanvasResources,
   filterCanvasResources,
@@ -399,6 +401,44 @@ test('filterCanvasResources：按类型与搜索词过滤', () => {
   assert.deepEqual(filterCanvasResources(items, '尾帧', 'all').map((i) => i.nodeId), ['n2']);
   assert.deepEqual(filterCanvasResources(items, 'n3', 'audio').map((i) => i.nodeId), ['n3']);
   assert.equal(filterCanvasResources(items, '不存在', 'all').length, 0);
+});
+
+test('legacy ordered picker preserves image positions when replacing and refilling', () => {
+  const action = { id: 'video_multi_ref', output: { type: 'video' }, listed: true, inputs: [
+    { slot: 'reference', type: 'image', role: 'reference', firstItemRole: 'first_frame', source: 'upstream_edge', min: 2, max: 2 },
+  ] };
+  const catalog = { models: [{ id: 'ordered-video', operations: [action] }] };
+  const target = materialNode('target', 'video', { selectedTool: 'video-generation' });
+  Object.assign(target.data, { nodeKind: 'generate', autoOperationId: null,
+    params: { model: 'ordered-video', operation: action.id },
+    slotBindings: { reference: ['a', 'b'].map(id => ({ sourceNodeId: id, edgeId: `e-${id}`, pinned: false })) } });
+  const graph = { nodes: [...['a', 'b', 'c'].map(id => materialNode(id, 'image', { mediaUrl: `https://fixture.test/${id}.png` })), target],
+    edges: ['a', 'b'].map(id => ({ id: `e-${id}`, source: id, target: target.id })) };
+  const pick = (state, id, replacement = {}) => planResourcePickerCommit({ ...state, catalog, targetNodeId: target.id,
+    targetSlot: 'reference', selectedCanvasNodeIds: [id], localFiles: [], acceptedTypes: ['image'], slotMax: 2, ...replacement });
+  const nodeData = state => state.nodes.find(node => node.id === target.id).data;
+  const referenceOrder = state => assembleEffectiveInputsFromSlots({
+    layout: deriveSlotLayout(catalog, 'ordered-video', action.id), bindings: nodeData(state).slotBindings, conflicts: [],
+    feedAssets: feedFromFingerprint(buildCanvasUpstreamFingerprint(target.id, state.nodes, state.edges)),
+    nodeData: {}, incomingText: [],
+  }).references.map(ref => ref.sourceNodeId);
+  const plan = pick(graph, 'c', { replaceEdgeId: 'e-a', mode: 'replace' });
+  assert.equal(plan.hasWork, true);
+  const applied = planCanvasInputMutation(graph, plan, { catalog });
+  assert.equal(applied.status, 'allowed');
+  assert.deepEqual(referenceOrder(applied), ['c', 'b']);
+  assert.ok(applied.edges.some(edge => edge.id === 'e-a'), 'legacy replacement retains supply');
+
+  const { slotBindings, slotStandbyEdgeIds } = nodeData(applied);
+  const removed = slotBindings.reference.find(item => item.sourceNodeId === 'c');
+  const cleared = planCanvasInputMutation(applied, { nodePatches: [{ nodeId: target.id, data: {
+    slotBindings: { reference: slotBindings.reference.filter(item => item !== removed) },
+    slotStandbyEdgeIds: [...slotStandbyEdgeIds, removed.edgeId],
+  } }] }, { catalog });
+  assert.deepEqual(referenceOrder(cleared), ['b']);
+  const refilled = planCanvasInputMutation(cleared, pick(cleared, 'a'), { catalog });
+  assert.equal(refilled.status, 'allowed');
+  assert.deepEqual(referenceOrder(refilled), ['b', 'a']);
 });
 
 test('planResourcePickerCommit：画布资源只给未连线节点加边，已连线进 rejected', () => {

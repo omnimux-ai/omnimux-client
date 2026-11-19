@@ -326,9 +326,10 @@ export function localInputSlot(input) {
   const type = normalizeInputType(text(input.type))
   if (!slot || !['text', 'image', 'video', 'audio', 'document'].includes(type)) return null
   const required = input.required === true
-  const min = required ? 1 : (typeof input.min === 'number' ? input.min : 0)
+  const declaredMin = typeof input.min === 'number' && Number.isSafeInteger(input.min) ? input.min : 0
+  const min = Math.max(required ? 1 : 0, declaredMin)
   const max = input.max === null || input.max === undefined
-    ? (required ? 1 : null)
+    ? (required ? min : null)
     : input.max
   const role = text(input.role) || (slot === 'prompt' ? 'prompt' : 'reference')
   /** @type {Record<string, unknown>} */
@@ -340,6 +341,9 @@ export function localInputSlot(input) {
     source,
     min,
     max,
+    ...(type === 'image' && role === 'reference' && input.firstItemRole === 'first_frame'
+      ? { firstItemRole: input.firstItemRole }
+      : {}),
     // Gateway v2 inputs declare cardinality/MIME but not the local editor's
     // value-source/composition hints. Infer the safe local defaults so the
     // canvas does not treat a declared slot as missing.

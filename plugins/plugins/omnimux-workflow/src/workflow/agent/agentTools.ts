@@ -15,7 +15,7 @@
  * shared graph core + GraphMutator optimistic-lock replay):
  *   - workflow_create:        new empty workspace
  *   - workflow_node_add:      add a material node (type/tool/position/prompt)
- *   - workflow_node_update:   patch node label/prompt/tool/params/position
+ *   - workflow_node_update:   patch a node or swap ordered image references
  *   - workflow_node_remove:   remove nodes (cascading edges)
  *   - workflow_connect:       add a validated edge
  *   - workflow_disconnect:    remove edges by id or by endpoint pair
@@ -73,6 +73,7 @@ Workspace targeting (CRITICAL):
 
 Reading: workflow_snapshot returns one workspace's structure; workflow_run starts an execution (full or subset with node_ids) and with wait=true returns per-node statuses, text excerpts and generated media file paths.
 Editing: workflow_create makes a new empty canvas; workflow_node_add adds a material node (returns its id; for text, content sets manual text while prompt sets model generation); workflow_node_update patches label/prompt/content/tool/params/position; workflow_node_remove deletes nodes (edges cascade); workflow_connect / workflow_disconnect wire and unwire edges. Write tools fail with a structured error (invalid-args / no-current-workspace / node-not-found / mutation-rejected with reasonCode like cycle or type_contract) — fix the arguments and retry, do not work around the validation. After each edit the response carries the new workspace version; the open canvas refreshes itself within a few seconds.
+To swap ordered reference images, read workflow_snapshot with include_nodes=true, then pass the slot and current edge IDs in order to workflow_node_update using patch.swap_reference_images alone. Refresh the snapshot on input_changed before deciding whether to swap.
 Control: workflow_execution_control pauses / resumes / cancels a live execution by executionId (from workflow_run).
 When the user mentions a canvas, a workflow, nodes, or asks to run/analyze/modify their graph, use these tools instead of guessing. Executions stream live progress on the canvas (SSE, pause/resume/cancel available there). Generation goes through the OmniMux hub seams when available (mock gateway offline) — never invent results: report what the tools return, including per-node errors like [omnimux:<code>].`;
 

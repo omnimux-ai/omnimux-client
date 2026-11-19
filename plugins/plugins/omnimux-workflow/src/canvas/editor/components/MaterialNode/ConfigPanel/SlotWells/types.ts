@@ -48,6 +48,7 @@ export interface SlotWellsProps {
   onPickSlot: (request: SlotPickRequest) => void;
   /** pair 预设的首尾帧对调（保持边不变，仅交换槽位占用）。 */
   onSwapSlots?: (firstSlot: string, lastSlot: string) => void;
+  onSwapOrderedSlot?: (slot: string, firstEdgeId: string, secondEdgeId: string) => void;
   /** 卸装填：仅摘除槽位占用，不断开供给边。 */
   onClearOccupant: (slot: string, edgeId: string) => void;
   /** 点击已装填卡槽本体插入 Token 到提示词输入框。 */
