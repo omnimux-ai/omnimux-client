@@ -17,3 +17,8 @@
 - macOS 原生对话框按允许的扩展名选取。文件拖入使用桌面宿主提供的真实路径。旧画布按当前方式展示入口，选择素材时不切换方式。
 - 替换完成后保留原有上游节点和连线。撤销恢复替换前的槽绑定及图状态。
 - 多参考视频方式可先选择合规的音频。必填参考图空缺时仍在此方式下显示音频，生成继续等待参考图。
+
+## 旧标准变更
+
+- `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/videoParams/videoParamsIntegration.test.mjs` :: `Issue #986：ConfigPanel 为视频节点提供基于模型能力的卡槽驱动与素材模式双向流转`
+  旧断言要求卡槽从整个模型的能力派生。#88 要求入口限于当前生成方式。新断言检查当前方式的槽位派生和借用槽位缺失，继续检查生成方式解析、实际消费指纹和断开后的已选方式。

@@ -12,6 +12,7 @@ import {
   mimeToMaterialType,
   formatFileSize,
   planResourcePickerCommit,
+  planPickerSelectionMutation,
   planStandaloneImportNodes,
   planImportNodeFill,
   evaluateResourcePickerAvailability,
@@ -77,8 +78,7 @@ test('V1 qualified current picker lists selected ready text, not blank/waiting o
   assert.deepEqual(listCanvasResources(nodes, [], 'target', { catalog: null }), []);
 });
 
-test('V1 adds or replaces a named slot from a local file through one strict graph mutation', async () => {
-  const { planPickerSelectionMutation } = await import('./resourcePickerPolicy.ts');
+test('V1 adds or replaces a named slot from a local file through one strict graph mutation', () => {
   const target = { id: 'target', type: 'material', position: { x: 300, y: 40 }, data: { materialType: 'image', nodeKind: 'generate',
     inputBindingVersion: 1, slotBindings: {}, params: { model: 'qualified', operation: 'image_to_image' } } };
   const context = { catalog: { models: [{ id: 'qualified', operations: [{ id: 'image_to_image', listed: true,
