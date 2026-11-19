@@ -1,54 +1,20 @@
 import type { CapabilityCatalog } from '../../api.ts';
-import { buildContractView, readExplicitTargetSlot, resolveModelView, type ContractOperationView } from '../../validation/compatKernel.ts';
+import { buildContractView, resolveModelView } from '../../validation/compatKernel.ts';
 import { buildInputCapability } from '../../validation/inputCapability.ts';
 import { readNodeInputSource } from '../nodeInputSource.ts';
 import { resolveNodeKind } from '../materialNode.ts';
 import { materialTools } from '../../specs/nodes/materialNodeSpec.ts';
+import { H3_SLOT_RENAMES, projectLegacyH3Slots } from './legacyH3Slots.ts';
 import { deriveSlotLayout } from './deriveSlotLayout.ts';
 import { readPreferredOperationId } from '../../validation/operationUi.ts';
 import { effectiveInputDisplay } from './effectiveInputDisplay.ts';
 import type { LegacySlotEdge } from './hydrateSlotBindings.ts';
-import type { FeedAsset, SlotBindings, SlotConflict, SlotOccupant } from './types.ts';
+import type { FeedAsset, SlotBindings, SlotConflict } from './types.ts';
 import { buildCanvasUpstreamFingerprint } from '../canvasInputSources.ts';
 import type { CanvasNode } from '../canvasInputMutationGateway.ts';
 import type { Edge } from '@xyflow/react';
 import { resolveSlotOperation } from './resolveSlotOperation.ts';
 import { normalizeVideoParamsForSchema } from '../../../canvas/editor/components/MaterialNode/ConfigPanel/videoParams/videoParamNormalization.ts';
-
-const H3_SLOT_RENAMES = [
-  { from: 'character', fromRole: 'first_frame', to: 'reference_image', type: 'image' },
-  { from: 'driving_audio', fromRole: 'audio_track', to: 'reference_audio', type: 'audio' },
-] as const;
-
-/** Project the pre-gateway H3 slot names onto a cloned execution graph. */
-function projectSavedH3Slots(data: Record<string, unknown>, incoming: LegacySlotEdge[], operation: ContractOperationView): void {
-  const bindings = data.slotBindings as SlotBindings | undefined;
-  for (const { from, fromRole, to, type } of H3_SLOT_RENAMES) {
-    if (operation.inputs.some(input => input.slot === from)) continue;
-    const target = operation.inputs.find(input => input.slot === to && input.type === type && input.role === 'reference'
-      && input.source === 'upstream_edge' && input.min === 1 && input.max === 1);
-    if (!target) continue;
-    const savedOccupants = bindings?.[from];
-    if (bindings && Array.isArray(savedOccupants) && !Object.hasOwn(bindings, to)) {
-      const projectRole = (occupant: SlotOccupant) => occupant.role === fromRole ? { ...occupant, role: target.role } : occupant;
-      bindings[to] = savedOccupants.map(projectRole);
-      delete bindings[from];
-      const conflicts = data.slotConflicts as SlotConflict[] | undefined;
-      if (Array.isArray(conflicts)) {
-        data.slotConflicts = conflicts.map(conflict => conflict.slot === from
-          ? { ...conflict, slot: to, occupant: projectRole(conflict.occupant) }
-          : conflict);
-      }
-    }
-    for (const edge of incoming) {
-      const metadata = edge.data ?? {};
-      if (readExplicitTargetSlot(metadata, edge.targetHandle) !== from) continue;
-      const binding = metadata.slotBinding as { role?: string; mirror?: boolean } | undefined;
-      const role = typeof metadata.role === 'string' ? metadata.role : binding?.mirror === true ? undefined : binding?.role;
-      edge.data = { ...metadata, targetSlot: to, ...(role === fromRole ? { role: target.role } : {}) };
-    }
-  }
-}
 
 /** Freeze legacy hydration for dispatch without modifying the persisted graph or topology. */
 export function prepareExecutionSlotGraph<
@@ -58,7 +24,7 @@ export function prepareExecutionSlotGraph<
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const view = buildContractView(catalog);
   const ordinalByTarget = new Map<string, number>();
-  const nextEdges = edges.map((edge) => {
+  let nextEdges = edges.map((edge) => {
     const ordinal = ordinalByTarget.get(edge.target) ?? 0;
     ordinalByTarget.set(edge.target, ordinal + 1);
     return { ...structuredClone(edge), id: edge.id ?? `feed-${edge.source}-${ordinal}`,
@@ -70,18 +36,16 @@ export function prepareExecutionSlotGraph<
       ? node.data.outputCapabilityId.trim()
       : '';
     if (capabilityId && materialTools[capabilityId]?.executorKey) return structuredClone(node);
-    const data = structuredClone(node.data ?? {});
+    let data = structuredClone(node.data ?? {});
     let params = (data.params ?? {}) as Record<string, unknown>;
     const kind = (data.materialType ?? 'text') as keyof NonNullable<CapabilityCatalog['defaults']>;
     const autoOperationId = typeof data.autoOperationId === 'string' || data.autoOperationId === null
       ? data.autoOperationId as string | null
       : undefined;
     const model = resolveModelView(view, (params.model ?? catalog?.defaults?.[kind]) as string | undefined);
-    if (kind === 'video' && catalog?.source === 'omnimux' && typeof params.model === 'string' && model?.id === 'minimax-h3-video'
-      && params.operation === 'digital_human') {
-      const operation = model.operations.find(candidate => candidate.id === params.operation && candidate.listed && candidate.output.type === kind);
-      if (operation) projectSavedH3Slots(data, nextEdges.filter(edge => edge.target === node.id), operation);
-    }
+    const projected = projectLegacyH3Slots(node.id, data, nextEdges, catalog?.source, model);
+    data = projected.data;
+    nextEdges = projected.edges;
     params.model ??= model?.id;
     const fingerprint = buildCanvasUpstreamFingerprint(node.id, nodes as unknown as CanvasNode[], nextEdges as unknown as Edge[]);
     if (kind === 'video') {
@@ -100,6 +64,18 @@ export function prepareExecutionSlotGraph<
       });
       if (capability.selectedOperationId) params.operation = capability.selectedOperationId;
       if (capability.paramsProjection) params = capability.paramsProjection.params;
+      // A saved or click-time snapshot may still carry the previous lip-sync
+      // wells after the user explicitly switched to text. Keep the original
+      // graph intact and use only the current operation's inputs in this run.
+      const textMode = capability.operationStates.find(state => state.id === 'text_to_video');
+      if (params.operation === textMode?.id && textMode?.selectableBeforeInputs && data.slotBindings) {
+        const lip = model?.operations.find(operation => operation.id === 'digital_human');
+        const dormant = new Set(lip?.inputs.filter(input => input.type === 'image' || input.type === 'audio').map(input => input.slot));
+        for (const rename of H3_SLOT_RENAMES) if (dormant.has(rename.to)) dormant.add(rename.from);
+        for (const input of model?.operations.find(operation => operation.id === textMode.id)?.inputs ?? []) dormant.delete(input.slot);
+        data.slotBindings = Object.fromEntries(Object.entries(data.slotBindings).filter(([slot]) => !dormant.has(slot)));
+        if (Array.isArray(data.slotConflicts)) data.slotConflicts = data.slotConflicts.filter(conflict => !dormant.has(conflict.slot));
+      }
     } else {
       params.operation ??= resolveSlotOperation(catalog, model?.id, params.operation, kind, fingerprint);
     }

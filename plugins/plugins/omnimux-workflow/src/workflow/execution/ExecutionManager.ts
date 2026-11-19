@@ -13,6 +13,7 @@ import { ExecutionContext } from './ExecutionContext';
 import { ExecutionScheduler } from './ExecutionScheduler';
 import { loadExecutionRecord, listPersistedExecutionIds, buildExecutionRecord, type PersistedExecutionRecord } from './executionStore';
 import { readUpstreamTaskRef } from './upstreamTask.ts';
+import { lacksPriorProjectDigest, matchesWithPreviousNodePrompt } from './executionIdentity.ts';
 import { resolveExecutorKey } from './nodeExecutors.ts';
 import { canonicalJson } from '../../shared/validation/compatKernel.ts';
 import { compareLegacyExecutionInput, UnverifiedLegacyTask } from './legacyExecutionInput.ts';
@@ -199,6 +200,7 @@ function findRecoverableTasks(
   const ordered = [...records.values()].reverse().filter(record => record.workspaceId === opts.workspaceId)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const signatures = opts.inputSignatures ?? executionInputSignatures(opts);
+  const sourceIdentities = opts.sourceIdentities ?? executionSourceIdentities(opts, undefined, { workspaceId: opts.workspaceId, resolveProjectFile: deps.resolveProjectFile });
   for (const node of candidates) {
     // Re-running a scheduled dependency can change its output after admission.
     if (opts.edges.some(edge => edge.target === node.id && opts.nodes.some(source => source.id === edge.source))) continue;
@@ -207,8 +209,8 @@ function findRecoverableTasks(
     const saved = previous.variables.executionInputSignatures as Record<string, string> | undefined;
     inputsChanged[node.id] = !saved?.[node.id] || saved[node.id] !== signatures[node.id];
     const savedBytes = previous.variables.executionSourceIdentities as Record<string, Record<string, string>> | undefined;
-    const currentBytes = (opts.sourceIdentities ?? executionSourceIdentities(opts))[node.id] ?? {};
-    if (Object.entries(currentBytes).some(([path, digest]) => savedBytes?.[node.id]?.[path] && savedBytes?.[node.id]?.[path] !== digest)) {
+    const currentBytes = sourceIdentities[node.id] ?? {};
+    if (Object.entries(currentBytes).some(([path, digest]) => digest && savedBytes?.[node.id]?.[path] && savedBytes?.[node.id]?.[path] !== digest)) {
       inputsChanged[node.id] = true;
       continue;
     }
@@ -218,8 +220,16 @@ function findRecoverableTasks(
     if (state?.status !== 'error' || !ref || ref.owner === 'mock') continue;
     const kind = node.data?.materialType ?? 'text';
     if (ref.capability !== kind) continue;
+    const savedSignature = saved?.[node.id];
+    if (inputsChanged[node.id] && ref.omittedNodePrompt && opts.rawGraph && savedSignature
+      && previous.variables.executionInputSignatureScope === 'workspace') {
+      const previousPrompt = previous.nodes.find(candidate => candidate.id === node.id)?.data?.prompt;
+      if (matchesWithPreviousNodePrompt(opts.rawGraph, node.id, previousPrompt, savedSignature)) {
+        if (lacksPriorProjectDigest(currentBytes, savedBytes?.[node.id])) throw new UnverifiedLegacyTask(node.id, previous.id, ref.taskId, false);
+        inputsChanged[node.id] = false;
+      }
+    }
     if (inputsChanged[node.id]) {
-      const savedSignature = saved?.[node.id];
       if (!opts.rawGraph || !savedSignature) continue;
       const match = compareLegacyExecutionInput(opts.rawGraph, previous, node.id, savedSignature, deps, opts.legacyCatalogProjection);
       if (match === 'unverified' || match === 'catalog-needed') throw new UnverifiedLegacyTask(node.id, previous.id, ref.taskId, match === 'catalog-needed');
@@ -245,6 +255,7 @@ function createExecutionInstance(
     nodes: structuredClone(opts.nodes),
     edges: structuredClone(opts.edges),
     initialOutputs: structuredClone(opts.initialOutputs),
+    sourceIdentities: opts.sourceIdentities ?? executionSourceIdentities(opts, undefined, { workspaceId: opts.workspaceId, resolveProjectFile: deps.resolveProjectFile }),
   };
   const recovery = findRecoverableTasks(deps, entries, opts, opts.recoveryTasks);
   const breakpointsList = opts.breakpoints || [];
@@ -258,7 +269,7 @@ function createExecutionInstance(
   context.set('executionInputSignatures', opts.inputSignatures ?? executionInputSignatures(opts));
   if (opts.inputSignatures) context.set('executionInputSignatureScope', 'workspace');
   context.set('executionInputsChanged', recovery.inputsChanged);
-  context.set('executionSourceIdentities', opts.sourceIdentities ?? executionSourceIdentities(opts));
+  context.set('executionSourceIdentities', opts.sourceIdentities);
   for (const [nodeId, upstreamTask] of Object.entries(recovery.tasks)) {
     context.nodeStates.set(nodeId, { status: 'pending', startedAt: null, completedAt: null, error: null, upstreamTask });
   }

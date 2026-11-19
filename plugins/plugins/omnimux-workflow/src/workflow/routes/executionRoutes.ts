@@ -146,7 +146,7 @@ export function createExecutionRoutes(opts: {
             nodes: snapshot.nodes, edges: snapshot.edges, executionMode: mode, nodeIds: normalizeNodeIds(body.nodeIds),
           });
           const { subgraph, readiness, sourceGraph, recovery } = await prepareExecutionAdmission(
-            workspaceId, snapshot, rawSubgraph, mode, executionManager, getCatalog,
+            workspaceId, snapshot, rawSubgraph, mode, executionManager, getCatalog, opts.resolveProjectFile,
           );
           if (readiness) {
             return {

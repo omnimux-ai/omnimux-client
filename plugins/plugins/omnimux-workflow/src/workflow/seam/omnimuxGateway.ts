@@ -100,9 +100,9 @@ export function createOmnimuxSeamClient(opts: OmniumuxSeamClientOptions): Genera
       tasks.set(taskId, { kind: 'text', request });
       return { taskId, mode: 'submitted' };
     }
-    const request: Record<string, unknown> = { prompt: req.prompt ?? '', dest: req.dest, wait: false };
+    const request: Record<string, unknown> = { dest: req.dest, wait: false };
     for (const key of [
-      'image', 'video', 'references', 'audioTrack', 'duration', 'operation', 'resolution', 'quality', 'n', 'aspectRatio',
+      'prompt', 'image', 'video', 'references', 'audioTrack', 'duration', 'operation', 'resolution', 'quality', 'n', 'aspectRatio',
       'speech', 'audio', 'voice', 'style', 'instrumental', 'speed', 'sound', 'seed', 'watermark',
       'outputFormat', 'referenceTaskType', 'generationType', 'returnLastFrame', 'webSearch',
       'nsfwCheck', 'fileUrl', 'linkUrl', 'model', 'strategy', 'allowedGroups', 'signal',

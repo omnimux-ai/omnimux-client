@@ -228,7 +228,6 @@ export interface ContractOperationView {
   inputGroups: Array<{ slots: string[]; min: number; hint?: string }>;
   parameters?: Record<string, unknown>;
   listed: boolean;
-  promptPolicy?: string;
 }
 
 export interface ContractModelView {
@@ -243,6 +242,20 @@ export interface ContractModelView {
   order: number;
   /** True when synthesized from legacy inputCapability rows (pre-v1.1 DTO). */
   synthesized: boolean;
+  /** Gateway v2 publishes the complete operation input list, including text when supported. */
+  hasGatewayInputContract?: boolean;
+}
+
+export function operationAcceptsText(model: ContractModelView, operation: ContractOperationView): boolean {
+  if (operation.inputs.some(input => input.type === 'text' || input.role === 'prompt' || input.slot === 'prompt')) return true;
+  // Older image/video catalogs described their media wells without listing free text.
+  return !model.hasGatewayInputContract && (operation.output.type === 'video' || operation.output.type === 'image');
+}
+
+/** JSON documents can provide prompt text and parameters, or occupy a declared document slot. */
+export function operationAcceptsDocuments(model: ContractModelView, operation: ContractOperationView): boolean {
+  return !model.hasGatewayInputContract || operationAcceptsText(model, operation)
+    || operation.inputs.some(input => input.type === 'document');
 }
 
 export interface ContractView {
@@ -324,6 +337,7 @@ function toModelView(model: CatalogModelDto, order: number): ContractModelView |
       : {}),
     order,
     synthesized: false,
+    ...(model.gateway?.schemaVersion === '2.0' ? { hasGatewayInputContract: true } : {}),
   };
 }
 

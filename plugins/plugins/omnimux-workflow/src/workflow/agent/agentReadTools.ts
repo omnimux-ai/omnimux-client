@@ -172,7 +172,7 @@ export function createWorkflowRunTool(deps: WorkflowAgentDeps): AgentToolSpec {
       const readCatalog = deps.getExecutionCatalog ?? deps.getCatalog;
       const { subgraph, readiness, sourceGraph, recovery } = await prepareExecutionAdmission(
         workspace.id, workspace, selected, mode, executionManager,
-        readCatalog ? async () => await readCatalog() as CapabilityCatalog | null : undefined,
+        readCatalog ? async () => await readCatalog() as CapabilityCatalog | null : undefined, deps.resolveProjectFile,
       );
       if (readiness) {
         return {

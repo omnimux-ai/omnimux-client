@@ -5,6 +5,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildModelCatalog } from '../../omnimux/src/catalog/list.js';
 
 const bundle = await build({ stdin: { contents: `
   export { createExecutionManager } from '../src/workflow/execution/ExecutionManager.ts';
@@ -22,7 +23,7 @@ const { createExecutionManager, createExecutionRoutes, executionInputSignatures,
   createWorkflowRunTool, createHeadlessExecutionSeam, buildInitialOutputs, prepareExecutionSlotGraph,
   mockCatalog, SeamGatewayError } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
 
-function harness(t, { kind = 'image', source = false, error = new Error('temporary 401') } = {}) {
+function harness(t, { kind = 'image', source = false, error = new Error('temporary 401'), persistGenerated } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'workflow-recovery-3054-'));
   let manager;
   const calls = { submit: 0, collect: [], catalog: 0, source: 0 };
@@ -40,11 +41,12 @@ function harness(t, { kind = 'image', source = false, error = new Error('tempora
     reconcileTask: async (ref, dest) => { calls.collect.push(ref); return { url: dest,
       type: kind, mimeType: kind === 'image' ? 'image/png' : 'video/mp4', sizeBytes: 100 }; },
   };
-  const newManager = () => createExecutionManager({ executionsDir: join(root, 'executions'), mediaDir: join(root, 'media'), gateway });
+  const resolveProjectFile = (_workspaceId, rel) => { calls.source++; if (!sourceAvailable) throw new Error('source gone'); return join(root, rel); };
+  const newManager = () => createExecutionManager({ executionsDir: join(root, 'executions'), mediaDir: join(root, 'media'), gateway, persistGenerated, resolveProjectFile });
   manager = newManager();
   const request = async (body = {}) => createExecutionRoutes({
     store: { get: () => snapshot, resolveProjectRoot: () => root }, executionManager: manager,
-    getCatalog: gateway.capabilities, resolveProjectFile: () => { calls.source++; if (!sourceAvailable) throw new Error('source gone'); return root; },
+    getCatalog: gateway.capabilities, resolveProjectFile,
   }).tryHandle('POST', '/omnimux-workflow/api/workspaces/ws_recovery/executions', { body: { mode: 'single', nodeIds: ['target'], expectedVersion: 1, ...body } });
   const ended = async id => {
     const entry = manager.getEntry(id);
@@ -60,6 +62,162 @@ function harness(t, { kind = 'image', source = false, error = new Error('tempora
     catalogOff: () => { catalogAvailable = false; }, sourceOff: () => { sourceAvailable = false; },
     restart: () => { manager.disposeAll(); manager = newManager(); } };
 }
+
+async function acceptedH3(t, gatewayContracts = true, configureSources) {
+  const artifacts = [];
+  const h = harness(t, { kind: 'video', persistGenerated: async input => {
+    artifacts.push(input);
+    return { url: 'https://fixture.example/result.mp4', relativePath: 'result.mp4', assetId: 'result' };
+  } });
+  const snapshot = JSON.parse(readFileSync(new URL('../../omnimux/src/catalog/cloud/bundled/pricing.json', import.meta.url), 'utf8'));
+  const catalog = buildModelCatalog({ snapshot, gatewayContracts, env: {} });
+  const readCatalog = h.gateway.capabilities;
+  h.gateway.capabilities = async () => { await readCatalog(); return catalog; };
+  const model = 'minimax-h3-video';
+  const operation = 'digital_human';
+  const target = h.snapshot.nodes[0];
+  target.data.params = { model, operation };
+  const slots = catalog.models.find(row => row.id === model).operations.find(op => op.id === operation).inputs;
+  target.data.slotBindings = Object.fromEntries(slots.map(input => {
+    const id = input.type;
+    const ext = id === 'image' ? 'png' : 'wav';
+    h.snapshot.nodes.unshift({ id, type: 'material', data: { materialType: id, nodeKind: 'import',
+      mediaUrl: `https://fixture.example/${id}.${ext}`, mimeType: `${id}/${ext}`, sizeBytes: 64 } });
+    h.snapshot.edges.push({ id, source: id, target: target.id });
+    return [input.slot, [{ edgeId: id, sourceNodeId: id, role: input.role, use: 'active', pinned: true }]];
+  }));
+  configureSources?.(h);
+  const first = await h.request();
+  assert.equal(first.status, 200);
+  const entry = await h.ended(first.body.execution.id);
+  assert.equal(entry.context.status, 'error');
+  const ref = entry.context.readNodeUpstreamTask(target.id);
+  assert.equal(ref.taskRef, 'mtask_original_1');
+  return { h, target, ref, id: entry.context.id, artifacts };
+}
+
+function projectAudio(h, urlOnly = false) {
+  const wav = Buffer.alloc(80044);
+  wav.write('RIFF'); wav.writeUInt32LE(wav.length - 8, 4); wav.write('WAVEfmt ', 8);
+  wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(8000, 24); wav.writeUInt32LE(16000, 28); wav.writeUInt16LE(2, 32);
+  wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(wav.length - 44, 40);
+  writeFileSync(join(h.root, 'voice.wav'), wav);
+  Object.assign(h.snapshot.nodes.find(node => node.id === 'audio').data, {
+    mediaUrl: '/omnimux-workflow/api/workspaces/ws_recovery/file?rel=voice.wav',
+    ...(!urlOnly && { relativePath: 'voice.wav' }), sizeBytes: wav.length, durationSec: 5,
+  });
+}
+
+test('changing project audio bytes at the same path cannot collect an earlier H3 task', async t => {
+  for (const urlOnly of [false, true]) {
+    const { h, target } = await acceptedH3(t, true, h => projectAudio(h, urlOnly));
+    h.restart();
+    const file = join(h.root, 'voice.wav');
+    const bytes = readFileSync(file);
+    bytes[50] = 1;
+    writeFileSync(file, bytes);
+    target.data.prompt = 'edited only in graph';
+    const second = await h.request();
+    assert.equal(second.status, 200);
+    const entry = await h.ended(second.body.execution.id);
+    assert.equal(entry.context.get('executionInputsChanged').target, true);
+    assert.equal(h.calls.submit, 2);
+    assert.deepEqual(h.calls.collect, []);
+  }
+});
+
+test('unchanged or subsequently missing project audio still collects the accepted H3 task', async t => {
+  for (const removed of [false, true]) {
+    const { h, target, ref } = await acceptedH3(t, true, projectAudio);
+    h.restart();
+    h.catalogOff();
+    if (removed) rmSync(join(h.root, 'voice.wav'));
+    target.data.prompt = 'edited only in graph';
+    const second = await h.request();
+    assert.equal(second.status, 200);
+    const entry = await h.ended(second.body.execution.id);
+    assert.equal(entry.context.status, 'completed');
+    assert.equal(h.calls.submit, 1);
+    assert.deepEqual(h.calls.collect, [ref]);
+  }
+});
+
+test('an older H3 record without a project audio fingerprint reports its paid handle after a draft edit', async t => {
+  const { h, target, id, ref } = await acceptedH3(t, true, projectAudio);
+  h.restart();
+  const file = join(h.root, 'executions', id, 'execution.json');
+  const old = JSON.parse(readFileSync(file, 'utf8'));
+  old.variables.executionSourceIdentities.target = {};
+  writeFileSync(file, JSON.stringify(old));
+  target.data.prompt = 'edited only in graph';
+  const second = await h.request();
+  assert.equal(second.status, 400);
+  assert.equal(second.body.reasonCode, 'previous_task_input_unverified');
+  assert.ok(second.body.message.includes(ref.taskId));
+  assert.equal(h.calls.submit, 1);
+  assert.deepEqual(h.calls.collect, []);
+});
+
+test('editing only an unsent H3 lip-sync draft recovers the paid task after restart without a catalog', async t => {
+  const { h, target, ref, artifacts } = await acceptedH3(t);
+  h.restart();
+  h.catalogOff();
+  target.data.prompt = 'save this for another mode';
+  const reads = h.calls.catalog;
+  const retry = await h.request();
+  assert.equal(retry.status, 200);
+  const entry = await h.ended(retry.body.execution.id);
+  assert.equal(entry.context.status, 'completed');
+  assert.equal(entry.context.get('executionInputsChanged').target, false);
+  assert.equal(h.calls.catalog, reads);
+  assert.equal(h.calls.submit, 1);
+  assert.deepEqual(h.calls.collect, [ref]);
+  assert.equal(artifacts[0].prompt, '');
+});
+
+test('edited H3 media, parameters and other workspace fields still require a new submission', async t => {
+  for (const change of [
+    (h) => { h.snapshot.nodes.find(node => node.id === 'image').data.mediaUrl = 'https://fixture.example/other.png'; },
+    (h) => { h.snapshot.nodes.find(node => node.id === 'audio').data.mediaUrl = 'https://fixture.example/other.wav'; },
+    (_h, target) => { target.data.params.duration = 3; },
+    (_h, target) => { target.data.otherInput = 'future input'; },
+    (h, target) => {
+      h.snapshot.nodes.unshift({ id: 'note', type: 'material', data: { nodeKind: 'import', materialType: 'text', content: 'unused upstream' } });
+      h.snapshot.edges.push({ id: 'note-edge', source: 'note', target: target.id });
+    },
+  ]) {
+    const { h, target } = await acceptedH3(t);
+    h.restart();
+    target.data.prompt = 'new draft';
+    change(h, target);
+    const retry = await h.request();
+    assert.equal(retry.status, 200);
+    const entry = await h.ended(retry.body.execution.id);
+    assert.equal(entry.context.get('executionInputsChanged').target, true);
+    assert.equal(h.calls.submit, 2);
+    assert.deepEqual(h.calls.collect, []);
+  }
+});
+
+test('H3 records without verified prompt omission keep the original draft comparison', async t => {
+  for (const gatewayContracts of [true, false]) {
+    const { h, target, id, ref } = await acceptedH3(t, gatewayContracts);
+    h.restart();
+    if (gatewayContracts) {
+      const file = join(h.root, 'executions', id, 'execution.json');
+      const record = JSON.parse(readFileSync(file, 'utf8'));
+      delete record.nodeStates.target.upstreamTask.omittedNodePrompt;
+      writeFileSync(file, JSON.stringify(record));
+    } else assert.equal(ref.omittedNodePrompt, undefined);
+    target.data.prompt = 'edited';
+    h.catalogOff();
+    const retry = await h.request();
+    assert.equal(retry.status, 400);
+    assert.equal(h.calls.submit, 1);
+    assert.deepEqual(h.calls.collect, []);
+  }
+});
 
 for (const kind of ['image', 'video']) test(`${kind}: error retry creates fresh execution but collects original persisted task before catalog`, async t => {
   const h = harness(t, { kind });

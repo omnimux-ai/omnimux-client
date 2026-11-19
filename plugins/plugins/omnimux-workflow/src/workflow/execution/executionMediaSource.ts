@@ -20,27 +20,30 @@ function requireFile(path: string): string {
   throw new WorkflowStoreError('not-found', '输入素材文件不可用，请替换素材或移除引用');
 }
 
+/** Interpret a project URL with the same workspace boundary as its file resolver. */
+export function projectRelativePathFromMediaUrl(url: string, workspaceId?: string): string | undefined {
+  if (!url.startsWith('/omnimux-workflow/api/workspaces/')) return undefined;
+  const parsed = new URL(url, 'http://localhost');
+  const match = /^\/omnimux-workflow\/api\/workspaces\/([^/]+)\/file$/.exec(parsed.pathname);
+  if (!match || decodeURIComponent(match[1]!) !== workspaceId) {
+    throw new WorkflowStoreError('path-denied', '输入素材不属于当前项目，请重新选择素材');
+  }
+  return parsed.searchParams.get('rel') ?? '';
+}
+
 /** Resolve browser media identities before a gateway consumes the input snapshot. */
 export function resolveExecutionMediaSource(
   asset: { url?: string; path?: string; relativePath?: string },
   options: ExecutionMediaSourceOptions,
 ): string {
-  const projectFile = (relativePath: string): string => {
+  const url = asset.url?.trim() ?? '';
+  // Project identity takes precedence over an absolute path cached before a move.
+  const relativePath = asset.relativePath?.trim() || projectRelativePathFromMediaUrl(url, options.workspaceId);
+  if (relativePath !== undefined) {
     if (!options.workspaceId || !options.resolveProjectFile) {
       throw new WorkflowStoreError('project-required', '输入素材需要可用的项目文件，请重新绑定项目');
     }
     return options.resolveProjectFile(options.workspaceId, relativePath);
-  };
-  // Project identity takes precedence over an absolute path cached before a move.
-  if (asset.relativePath?.trim()) return projectFile(asset.relativePath.trim());
-  const url = asset.url?.trim() ?? '';
-  if (url.startsWith('/omnimux-workflow/api/workspaces/')) {
-    const parsed = new URL(url, 'http://localhost');
-    const match = /^\/omnimux-workflow\/api\/workspaces\/([^/]+)\/file$/.exec(parsed.pathname);
-    if (!match || decodeURIComponent(match[1]!) !== options.workspaceId) {
-      throw new WorkflowStoreError('path-denied', '输入素材不属于当前项目，请重新选择素材');
-    }
-    return projectFile(parsed.searchParams.get('rel') ?? '');
   }
   if (asset.path?.trim()) return requireFile(asset.path.trim());
   if (/^https?:\/\//i.test(url) || /^data:(image|video|audio)\/[^,]+,.+/s.test(url)) return url;

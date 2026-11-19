@@ -4,8 +4,13 @@ import { test } from 'node:test';
 import { buildModelCatalog } from '../../../../../omnimux/src/catalog/list.js';
 import { findExecutionReadinessFailure } from '../../validation/executionReadiness.ts';
 import { prepareExecutionSlotGraph } from './prepareExecutionSlotGraph.ts';
+import { deriveSlotLayout } from './deriveSlotLayout.ts';
+import { createOmnimuxSeamClient } from '../../../workflow/seam/omnimuxGateway.ts';
+import { prepareExecutionAdmission } from '../../../workflow/execution/prepareExecutionAdmission.ts';
+import { buildInitialOutputs } from '../../../workflow/execution/executionInputs.ts';
 import { createMaterialGatewayExecutor } from '../../../workflow/execution/materialGatewayExecutor.ts';
 import { readNodeInputSource } from '../nodeInputSource.ts';
+import { reconcileCanvasForCatalog } from '../catalogReconcile.ts';
 
 const snapshot = JSON.parse(readFileSync(new URL('../../../../../omnimux/src/catalog/cloud/bundled/pricing.json', import.meta.url), 'utf8'));
 const historical = buildModelCatalog({ snapshot, gatewayContracts: false, env: {} });
@@ -55,8 +60,7 @@ function savedGraph(versioned) {
   return JSON.parse(JSON.stringify({ nodes: [...sources, target], edges }));
 }
 
-for (const versioned of [true, false]) {
-  test(`saved H3 ${versioned ? 'versioned bindings' : 'legacy edge hints'} run against the current catalog without editing the graph`, async (t) => {
+async function checkSavedGraph(t, versioned) {
     const saved = savedGraph(versioned);
     const before = structuredClone(saved);
     const oldGraph = prepareExecutionSlotGraph(saved.nodes, saved.edges, historical);
@@ -90,8 +94,48 @@ for (const versioned of [true, false]) {
     assert.deepEqual(graph.edges.map(({ id, source, target }) => [id, source, target]),
       saved.edges.map(({ id, source, target }) => [id, source, target]));
     assert.deepEqual(saved, before);
-  });
 }
+test('saved H3 versioned bindings run against the current catalog without editing the graph', t => checkSavedGraph(t, true));
+test('saved H3 legacy edge hints run against the current catalog without editing the graph', t => checkSavedGraph(t, false));
+
+function checkCanvasLoad(versioned) {
+  const saved = savedGraph(versioned);
+  const before = structuredClone(saved);
+  const loaded = reconcileCanvasForCatalog({ ...saved, catalog: current });
+  const data = loaded.nodes.at(-1).data;
+  assert.deepEqual(data.slotConflicts, []);
+  assert.deepEqual(data.slotBindings.reference_image.map(item => item.sourceNodeId), ['portrait']);
+  assert.deepEqual(data.slotBindings.reference_audio.map(item => item.sourceNodeId), ['voice']);
+  assert.equal(data.compat.readyToSubmit, true);
+  const prepared = prepareExecutionSlotGraph(loaded.nodes, loaded.edges, current);
+  assert.equal(findExecutionReadinessFailure([prepared.nodes.at(-1)], current, prepared), null);
+  assert.deepEqual(saved, before);
+}
+
+test('opening an H3 canvas with only old edge hints displays the chosen portrait and voice', () => checkCanvasLoad(false));
+test('opening an H3 canvas with old pinned bindings keeps its chosen sources over earlier alternatives', () => checkCanvasLoad(true));
+
+test('opening or submitting old H3 edges keeps a voice put on standby out of the two slots', () => {
+  const saved = savedGraph(false);
+  saved.edges = saved.edges.filter(edge => !edge.source.startsWith('unused-'));
+  saved.nodes.at(-1).data.slotStandbyEdgeIds = ['edge-voice'];
+  const loaded = reconcileCanvasForCatalog({ ...saved, catalog: current });
+  assert.deepEqual(loaded.nodes.at(-1).data.slotBindings.reference_audio, []);
+  assert.equal(loaded.nodes.at(-1).data.compat.readyToSubmit, false);
+  const prepared = prepareExecutionSlotGraph(saved.nodes, saved.edges, current);
+  assert.deepEqual(prepared.nodes.at(-1).data.slotBindings.reference_audio, []);
+  assert.equal(findExecutionReadinessFailure([prepared.nodes.at(-1)], current, prepared)?.reasonCode, 'min_unsatisfied');
+});
+
+test('a deliberately cleared current audio slot on an old H3 canvas stays empty on open', () => {
+  const saved = savedGraph(true);
+  saved.nodes.at(-1).data.slotBindings.reference_audio = [];
+  const loaded = reconcileCanvasForCatalog({ ...saved, catalog: current });
+  const data = loaded.nodes.at(-1).data;
+  assert.equal(data.slotBindings.reference_audio?.length ?? 0, 0);
+  const prepared = prepareExecutionSlotGraph(loaded.nodes, loaded.edges, current);
+  assert.notEqual(findExecutionReadinessFailure([prepared.nodes.at(-1)], current, prepared), null);
+});
 
 test('H3 compatibility does not rebind inactive, intentionally empty, or unrelated saved intent', () => {
   const saved = savedGraph(true);
@@ -103,9 +147,9 @@ test('H3 compatibility does not rebind inactive, intentionally empty, or unrelat
   const graph = prepareExecutionSlotGraph(saved.nodes, saved.edges, current);
   const target = graph.nodes.at(-1);
   assert.deepEqual(target.data.slotBindings.reference_image, [{ ...data.slotBindings.character[0], role: 'reference' }]);
-  for (const slot of ['reference_audio', 'driving_audio', 'custom_portrait']) {
-    assert.deepEqual(target.data.slotBindings[slot], data.slotBindings[slot]);
-  }
+  assert.deepEqual(target.data.slotBindings.reference_audio, data.slotBindings.reference_audio);
+  assert.deepEqual(target.data.slotBindings.driving_audio, data.slotBindings.driving_audio);
+  assert.deepEqual(target.data.slotBindings.custom_portrait, data.slotBindings.custom_portrait);
   assert.notEqual(findExecutionReadinessFailure([target], current, graph), null);
   assert.deepEqual(saved, before);
 });
@@ -119,4 +163,80 @@ test('legacy H3 binding with a mismatched edge and source stays blocked', () => 
   assert.equal(target.data.slotBindings.reference_image[0].sourceNodeId, 'portrait');
   assert.equal(findExecutionReadinessFailure([target], current, graph)?.reasonCode, 'input_unavailable');
   assert.deepEqual(saved, before);
+});
+
+test('H3 uses the selected gateway operation for prompt consumption and keeps the two named wells', () => {
+  const layout = deriveSlotLayout(current, modelId, operationId);
+  assert.equal(layout.acceptsText, false);
+  assert.deepEqual(layout.slots.map(slot => [slot.slot, slot.labelKey]),
+    [['reference_image', 'panel.slot.character'], ['reference_audio', 'panel.slot.driving_audio']]);
+  assert.deepEqual(layout.implementationGaps, []);
+  assert.equal(deriveSlotLayout(current, modelId, 'text_to_video').acceptsText, true);
+  assert.equal(deriveSlotLayout(current, modelId, 'video_multi_ref').acceptsText, true);
+  assert.equal(deriveSlotLayout(historical, modelId, operationId).acceptsText, true);
+});
+
+test('H3 dispatch keeps the editable draft and upstream text out of a media-only request', async t => {
+  const saved = savedGraph(true);
+  saved.nodes.at(-1).data.prompt = 'local editable draft';
+  saved.nodes.at(-1).data.params.duration = 4;
+  const graph = prepareExecutionSlotGraph(saved.nodes, saved.edges, current);
+  const target = graph.nodes.at(-1);
+  const received = [];
+  const gateway = createOmnimuxSeamClient({ getSeam: name => name === 'modelCatalog'
+    ? { list: () => current } : name === 'videoGenerate'
+      ? { execute: async req => {
+          received.push(req);
+          return { mode: 'live', type: 'video', url: 'https://fixture.example/result.mp4', mimeType: 'video/mp4', durationSec: 3 };
+        } }
+      : undefined });
+  const executor = createMaterialGatewayExecutor({ gateway });
+  t.mock.method(globalThis, 'fetch', () => { throw new Error('unexpected fetch'); });
+  await executor.execute(target, { upstreamBindings: [
+    ...graph.edges.map(edge => ({ edgeId: edge.id, sourceNodeId: edge.source,
+      output: readNodeInputSource(graph.nodes.find(node => node.id === edge.source)).output })),
+    { edgeId: 'text', sourceNodeId: 'text', output: { text: 'unconsumed upstream text' } },
+    { edgeId: 'document', sourceNodeId: 'document', output: {
+      text: 'unconsumed upstream text', documentText: JSON.stringify({ duration: 11 }),
+      mediaAssets: [{ type: 'document', url: 'https://fixture.example/parameters.json' }],
+    } },
+  ], upstreamOutputs: new Map(), mediaDir: '/tmp', signal: new AbortController().signal });
+  assert.equal(received.length, 1);
+  assert.equal(received[0].operation, operationId);
+  assert.deepEqual(received[0].references.map(ref => [ref.sourceNodeId, ref.targetSlot]),
+    [['portrait', 'reference_image'], ['voice', 'reference_audio']]);
+  assert.equal(Object.hasOwn(received[0], 'prompt'), false);
+  assert.equal(received[0].duration, 4);
+  assert.doesNotMatch(JSON.stringify(received[0]), /local editable draft|unconsumed upstream text/);
+  assert.equal(target.data.prompt, saved.nodes.at(-1).data.prompt);
+});
+
+test('a missing unconsumed JSON file cannot block lip sync but remains required when used by text-to-video', async () => {
+  const graph = savedGraph(true);
+  const target = graph.nodes.at(-1);
+  const document = { id: 'document', type: 'material', data: {
+    nodeKind: 'import', materialType: 'document', relativePath: 'story.json',
+    documentText: JSON.stringify({ prompt: 'cached text', duration: 11 }),
+  } };
+  graph.nodes.unshift(document);
+  graph.edges.push({ id: 'document-edge', source: document.id, target: target.id });
+  const snapshot = { id: 'ws_h3', version: 1, settings: {}, ...graph };
+  let fileReads = 0;
+  const readSources = async () => {
+    const selected = { nodes: [target], edges: snapshot.edges, nodeIdSet: new Set([target.id]) };
+    const admission = await prepareExecutionAdmission(snapshot.id, snapshot, selected, 'single', {}, () => current);
+    assert.equal(admission.readiness, null);
+    return buildInitialOutputs(admission.sourceGraph, selected.nodeIdSet, {
+      mediaDir: '/tmp', resolveProjectFile() { fileReads++; throw new Error('JSON file unavailable'); },
+    });
+  };
+  assert.deepEqual(Object.keys(await readSources()).sort(), ['portrait', 'voice']);
+  assert.equal(fileReads, 0);
+
+  target.data.params.operation = 'text_to_video';
+  target.data.prompt = 'video scene';
+  target.data.slotBindings = {};
+  snapshot.edges = snapshot.edges.filter(edge => edge.source === document.id);
+  await assert.rejects(readSources(), /JSON file unavailable/);
+  assert.equal(fileReads, 1);
 });

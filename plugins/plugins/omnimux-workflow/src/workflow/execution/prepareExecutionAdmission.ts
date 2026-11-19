@@ -2,6 +2,7 @@ import type { CapabilityCatalog } from '../../shared/api.ts';
 import { prepareExecutionSlotGraph } from '../../shared/graph/feedSlot/prepareExecutionSlotGraph.ts';
 import { findExecutionReadinessFailure, type ExecutionReadinessGraph } from '../../shared/validation/executionReadiness.ts';
 import type { ExecutionManager } from './ExecutionManager.ts';
+import type { ResolveExecutionProjectFile } from './executionMediaSource.ts';
 import { executionInputSignatures, executionSourceIdentities } from './executionIdentity.ts';
 import { UnverifiedLegacyTask } from './legacyExecutionInput.ts';
 import type { ExecutableNode } from './ExecutionScheduler.ts';
@@ -13,11 +14,12 @@ export async function prepareExecutionAdmission<
   N extends SubgraphNodeLike & ExecutionReadinessGraph['nodes'][number],
   E extends SubgraphEdgeLike & ExecutionReadinessGraph['edges'][number],
 >(workspaceId: string, graph: { nodes: N[]; edges: E[] }, selected: ResolvedExecutionSubgraph<N, E>,
-  mode: ExecutionMode, manager: Partial<Pick<ExecutionManager, 'findRecoverableTasks'>>, getCatalog?: () => CapabilityCatalog | null | Promise<CapabilityCatalog | null>) {
+  mode: ExecutionMode, manager: Partial<Pick<ExecutionManager, 'findRecoverableTasks'>>, getCatalog?: () => CapabilityCatalog | null | Promise<CapabilityCatalog | null>,
+  resolveProjectFile?: ResolveExecutionProjectFile) {
   const findRecoverableTasks = manager.findRecoverableTasks?.bind(manager);
   const identity = findRecoverableTasks ? {
     inputSignatures: executionInputSignatures(graph, selected.nodeIdSet),
-    sourceIdentities: executionSourceIdentities(graph, selected.nodeIdSet),
+    sourceIdentities: executionSourceIdentities(graph, selected.nodeIdSet, { workspaceId, resolveProjectFile }),
     rawGraph: graph,
   } : undefined;
   let catalog: CapabilityCatalog | null = null;
@@ -64,7 +66,7 @@ export async function prepareExecutionAdmission<
   );
   return {
     subgraph, readiness,
-    sourceGraph: { id: workspaceId, nodes: prepared.nodes, edges: prepared.edges.filter(edge => !Object.hasOwn(recoveryTasks, edge.target)) },
+    sourceGraph: { id: workspaceId, nodes: prepared.nodes, edges: prepared.edges.filter(edge => !Object.hasOwn(recoveryTasks, edge.target)), catalog },
     recovery: identity ? { ...identity, ...(catalog ? { legacyCatalogProjection: prepared } : {}), recoveryTasks } : {},
   };
 }

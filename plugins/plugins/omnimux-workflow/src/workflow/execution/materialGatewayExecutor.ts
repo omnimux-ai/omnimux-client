@@ -193,7 +193,7 @@ export function createMaterialGatewayExecutor(opts: {
         });
         if (outcome.kind === 'downloaded') {
           const output = await finalizeMedia(outcome.result, {
-            prompt: resolveGenerationPrompt(data),
+            prompt: upstreamTaskRef.omittedNodePrompt ? '' : resolveGenerationPrompt(data),
             modelId: readString(params, 'model'),
           });
           ctx.clearUpstreamTask?.();
@@ -379,7 +379,7 @@ export function createMaterialGatewayExecutor(opts: {
         request.audioTrack = await enrichRemoteReference(request.audioTrack);
       }
 
-      const { task: submitted, model: submittedModel } = await submission.submit(request);
+      const { task: submitted, model: submittedModel, omittedNodePrompt } = await submission.submit(request);
       ctx.reportProgress?.(10, '已提交生成任务');
       // #1382: record the moment the hub owns a task, before any polling. The
       // record is written immediately (not at the next sync tick): a crash in
@@ -391,6 +391,7 @@ export function createMaterialGatewayExecutor(opts: {
           capability,
           submittedAt: Date.now(),
           ...(submitted.taskRef ? { taskRef: submitted.taskRef } : {}),
+          ...(omittedNodePrompt ? { omittedNodePrompt } : {}),
           // #1386: persist which backend owns the task alongside its id, so the
           // recovery in a later process routes the reconcile back to that same
           // backend instead of assuming the hub.

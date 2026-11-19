@@ -329,7 +329,7 @@ export function createHeadlessExecutionSeam(deps: HeadlessExecutionSeamDeps): He
 
       // Validate new work and resolve accepted tasks through the same admission as HTTP and Agent.
       const { subgraph, readiness: readinessFailure, sourceGraph, recovery } = await prepareExecutionAdmission(
-        workspaceId, { nodes: rawNodes, edges: rawEdges }, selected, mode, deps.executionManager, deps.getCatalog,
+        workspaceId, { nodes: rawNodes, edges: rawEdges }, selected, mode, deps.executionManager, deps.getCatalog, deps.resolveProjectFile,
       );
 
       if (readinessFailure) {

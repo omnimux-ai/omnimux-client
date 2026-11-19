@@ -22,6 +22,8 @@ DeepSeek Harness（dsh）的工作流无限画布插件：拖拽节点、连线�
 
 ## Agent 工具（M5）
 
+H3 的「数字人/对口型」可先选方式，再分别添加角色图和驱动音频。官方目录要求一张图和一段音频，两项可用后即可生成。提示词可继续编辑，切回「文生视频」时保留最新草稿。画布、Agent 和无界面运行按同一份操作声明选择要提交的输入。
+
 dsh 会话里的 Agent 可通过三个宿主侧工具指挥画布（注册在 cordis `tools` 座位，直连进程内 store / executionManager，无额外 HTTP 调用）：
 
 | 工具 | 参数 | 行为 |
@@ -101,7 +103,7 @@ npm run build      # 显式重建：dist/index.js + lib/client.js + lib/canvas.j
 
 | 节点字段 | seam 请求字段 | 说明 |
 |---|---|---|
-| `prompt` / `content` / 上游文本 | `prompt` | 必填 |
+| `prompt` / `content` / 上游文本 | `prompt` | 按操作声明决定是否接收及是否必填。H3 对口型只发送所选角色图和驱动音频。 |
 | 上游图片产物 | `image` | i2v / 图生图 / 视觉文本输入 |
 | 上游音频产物（视频节点） | `audio` | 参考音频 |
 | `params.duration` | `duration` | 秒 |
