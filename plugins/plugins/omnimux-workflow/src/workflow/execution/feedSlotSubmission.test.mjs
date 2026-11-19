@@ -25,6 +25,23 @@ function gateway(inputCatalog = catalog) {
 const context = (outputs = {}, extras = {}) => ({ upstreamOutputs: new Map(Object.entries(outputs)), mediaDir: '/tmp/feed-slot', signal: new AbortController().signal, ...extras });
 const graphNode = (id, type = 'image', data = {}) => ({ id, type: 'material', data: { materialType: type, nodeKind: 'import', mediaUrl: `https://example.test/${id}.png`, ...data } });
 
+test('versioned dispatch uses graph reference order when saved occupants have no explicit ordinal', async () => {
+  const multiple = operation('video_multi_ref', 'video', [slot('image', 'reference', 1, 4, 'reference_images')]);
+  const gw = gateway(catalogFor('video', 'frames', [multiple]));
+  registerExecutor(createMaterialGatewayExecutor({ gateway: gw }));
+  const ids = ['a', 'b', 'c'];
+  const target = node({ reference_images: ['c', 'a', 'b'].map(id => ({ ...occupant(id), pinned: false })) }, multiple.id);
+  target.data.inputBindingVersion = 1;
+  const dispatch = createDispatchingNodeExecutor({ gateway: gw, edges: ids.map(id => edge(id)), mediaRoot: '/tmp',
+    executionId: 'reference-order', abortController: new AbortController() });
+  const inputs = { getNodeOutput: id => media(id), reportProgress() {}, addMediaAsset() {} };
+  await dispatch.executor(target, inputs);
+  assert.deepEqual(gw.requests[0].references.map(reference => reference.sourceNodeId), ids);
+  target.data.slotBindings.reference_images.forEach((binding, ordinal) => { binding.ordinal = ordinal; });
+  await dispatch.executor(target, inputs);
+  assert.deepEqual(gw.requests[1].references.map(reference => reference.sourceNodeId), ['c', 'a', 'b']);
+});
+
 test('current waiting text has one pending reason at display, readiness and executor, never a submission', async () => {
   const inputCatalog = catalogFor('text', 'qualified', [{ ...operation('chat', 'text', []), inputs: [{ slot: 'prompt', type: 'text', role: 'prompt', source: 'node_field', min: 1, max: 1,
     valueSources: ['local_field', 'upstream_output'], composition: { kind: 'content_with_instruction', localRole: 'instruction' } }] }]);

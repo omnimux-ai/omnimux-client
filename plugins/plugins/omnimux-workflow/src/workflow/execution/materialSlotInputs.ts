@@ -25,12 +25,11 @@ export function collectMaterialSlotInputs(data: Record<string, unknown>, ctx: Ex
   const currentVersion = data.inputBindingVersion === 1;
   const standbyEdgeIds = new Set(((data.slotStandbyEdgeIds ?? []) as unknown[]).filter((id): id is string => typeof id === 'string'));
   const boundOccupants = Object.entries((data.slotBindings ?? {}) as SlotBindings).flatMap(([targetSlot, occupants]) => occupants
-    .filter(occupant => occupant.use !== 'inactive').map(occupant => ({
-      edgeId: occupant.edgeId, sourceNodeId: occupant.sourceNodeId, targetSlot, role: occupant.role,
-      output: ctx.upstreamBindings !== undefined
-        ? ctx.upstreamBindings.find(binding => binding.edgeId === occupant.edgeId && binding.sourceNodeId === occupant.sourceNodeId)?.output ?? {}
-        : ctx.upstreamOutputs.get(occupant.sourceNodeId) ?? {},
-    })))
+    .filter(occupant => occupant.use !== 'inactive').map(occupant => {
+      const resolved = ctx.upstreamBindings?.find(binding => binding.edgeId === occupant.edgeId && binding.sourceNodeId === occupant.sourceNodeId);
+      return { edgeId: occupant.edgeId, sourceNodeId: occupant.sourceNodeId, targetSlot, role: occupant.role, ordinal: resolved?.ordinal,
+        output: (ctx.upstreamBindings !== undefined ? resolved?.output : ctx.upstreamOutputs.get(occupant.sourceNodeId)) ?? {} };
+    }));
   const rawBindings: NonNullable<ExecutionContext['upstreamBindings']> = ctx.upstreamBindings
     ?? [...ctx.upstreamOutputs].map(([sourceNodeId, output]) => ({ sourceNodeId, output }));
   const ordered: NonNullable<ExecutionContext['upstreamBindings']> = currentVersion
@@ -61,7 +60,7 @@ export function collectMaterialSlotInputs(data: Record<string, unknown>, ctx: Ex
     }
     if (feed.some((asset) => asset.edgeId === edgeId)) continue;
     const asset = output.mediaAssets?.[0];
-    feed.push({ edgeId, sourceNodeId: binding.sourceNodeId, type, ordinal,
+    feed.push({ edgeId, sourceNodeId: binding.sourceNodeId, type, ordinal: binding.ordinal ?? ordinal,
       outputId: asset?.assetId ?? asset?.relativePath ?? asset?.path ?? asset?.url ?? output.assetId,
       availability: asset || (type === 'text' && output.text?.trim()) ? 'ready'
         : (currentVersion && ctx.upstreamBindings !== undefined

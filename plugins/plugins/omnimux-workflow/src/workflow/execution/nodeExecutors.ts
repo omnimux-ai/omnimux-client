@@ -216,11 +216,11 @@ export function resolveUpstreamBindings(
       });
       const loaded = effectiveInputDisplay(layout, feed, saved, (node.data?.slotConflicts ?? []) as SlotConflict[], [],
         (node.data?.slotStandbyEdgeIds ?? []) as string[], 1);
-      for (const { slot, occupant, state } of loaded.records) {
+      for (const { slot, occupant, state, asset } of loaded.records) {
         if (state !== 'ready' && state !== 'pending') continue;
         const edge = incoming.find((item) => item.id === occupant.edgeId && item.source === occupant.sourceNodeId);
         if (!edge) continue;
-        bindings.push({ edgeId: edge.id, sourceNodeId: edge.source, role: slot.role, targetSlot: slot.slot,
+        bindings.push({ edgeId: edge.id, sourceNodeId: edge.source, ordinal: asset?.ordinal, role: slot.role, targetSlot: slot.slot,
           output: structuredClone(normalizeOutput(context.getNodeOutput(edge.source))) });
       }
       // Unbound connected edges still flow: the free-text contract consumes ready
@@ -229,7 +229,7 @@ export function resolveUpstreamBindings(
       const bound = new Set(bindings.map((item) => `${item.edgeId}:${item.sourceNodeId}`));
       for (const item of feed) {
         if (standby.has(item.edgeId) || bound.has(`${item.edgeId}:${item.sourceNodeId}`)) continue;
-        bindings.push({ edgeId: item.edgeId, sourceNodeId: item.sourceNodeId,
+        bindings.push({ edgeId: item.edgeId, sourceNodeId: item.sourceNodeId, ordinal: item.ordinal,
           output: structuredClone(normalizeOutput(context.getNodeOutput(item.sourceNodeId))) });
       }
       return bindings;

@@ -148,6 +148,20 @@ describe('R1/R2/R2b/R3 video matrix (real catalog)', () => {
     assert.ok(operation?.rejections.some(item => item.code === 'missing_required_input' && item.slot === 'last_frame'));
   });
 
+  it('A32 permits a mode that can use the first frame while the explicit tail is out of scope', () => {
+    const [a, b] = fingerprint(['image', 'image']).assets;
+    const input = buildUpstreamFingerprint({ prompt: 'make a clip', assets: [
+      { ...a, targetSlot: 'first_frame', role: 'first_frame' },
+      { ...b, targetSlot: 'last_frame', role: 'last_frame' },
+    ] });
+    const result = buildInputCapability({ catalog, modelId: 'seedance-2-5', outputType: 'video', fingerprint: input,
+      preferredOperationId: 'first_frame' });
+    assert.equal(result.selectedOperationId, 'first_frame');
+    assert.equal(stateOf(result, 'first_frame')?.potentialHits, 1);
+    assert.equal(stateOf(result, 'first_last_frame')?.usable, true);
+    assert.equal(stateOf(result, 'text_to_video')?.usable, false);
+  });
+
   it('R3 ignores a system-derived operation but keeps an explicit user choice', () => {
     const auto = buildInputCapability({
       catalog, modelId: 'seedance-2-5', outputType: 'video',

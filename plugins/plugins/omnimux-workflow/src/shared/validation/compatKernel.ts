@@ -601,10 +601,14 @@ export function matchOperationInputs(
     ? [...upstreamAssets.filter(explicitMedia), ...upstreamAssets.filter(asset => !explicitMedia(asset))]
     : upstreamAssets;
   for (const asset of candidates) {
+    // An operation using this media type can leave a different named role parked.
+    // A mode with no slot of that type keeps its existing availability rules.
+    const canParkRole = options.ignoreUnused && isMediaInputType(asset.type) && slots.some(slot => slot.type === asset.type);
     // 1. Explicit target slot wins above everything.
     if (asset.targetSlot) {
       const explicit = slots.filter((slot) => slot.slot === asset.targetSlot && slot.type === asset.type);
       if (explicit.length === 0) {
+        if (canParkRole) continue;
         pushRejection(rejection('role_conflict', `显式目标槽位 ${asset.targetSlot} 不存在或类型不符`, {
           operationId: op.id,
           slot: asset.targetSlot,
@@ -620,6 +624,7 @@ export function matchOperationInputs(
     if (asset.role) {
       const roleSlots = slots.filter((slot) => slot.role === asset.role && slot.type === asset.type);
       if (roleSlots.length === 0) {
+        if (canParkRole) continue;
         pushRejection(rejection('role_conflict', `没有角色为 ${asset.role} 且类型为 ${asset.type} 的槽位`, {
           operationId: op.id,
           meta: { role: asset.role, type: asset.type },

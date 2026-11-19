@@ -21,12 +21,13 @@ export interface ExecutionContext {
   gateway?: GenerationGateway;
   /** Node outputs keyed by upstream node id. */
   upstreamOutputs: Map<string, NodeOutput>;
-  /** Inbound edges in canvas order, including semantic slot metadata. */
+  /** Resolved inbound edges with their canvas positions and semantic slot metadata. */
   upstreamBindings?: Array<{
     edgeId?: string;
     sourceNodeId: string;
     sourceHandle?: string | null;
     targetHandle?: string | null;
+    ordinal?: number;
     role?: string;
     targetSlot?: string;
     output: NodeOutput;

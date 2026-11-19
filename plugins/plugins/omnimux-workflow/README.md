@@ -35,7 +35,7 @@ dsh 会话里的 Agent 可通过宿主侧工具指挥画布（注册在 cordis `
 
 更换起始图与画布共用校验和保存逻辑，保留原连线。若起始图已改变或待交换图片不可用，工具返回 `error: "mutation-rejected"` 和 `reasonCode: "input_changed"`，应先重读快照再判断是否仍需换序。
 
-`workflow_connect` 和 `workflow_disconnect` 按画布规则重算自动入槽。自动方式按实际分配的不同素材输出排序。断开自动占用的连线后可依序补位，其余显式槽位保留原角色。
+`workflow_connect` 和 `workflow_disconnect` 按画布规则重算自动入槽。自动方式按实际分配的不同素材输出排序。断开自动占用的连线后可依序补位，其余显式槽位保留原角色。`workflow_run` 按画布显示的顺序提交实际入槽素材。
 
 - 错误统一 `{error, message}` 返回形态（不抛出）：`invalid-args` / `workspace-not-found` / `ambiguous-workspace-name` / `invalid-subgraph` / `empty-graph` / `execution-not-found`
 - 系统提示词：`ctx.systemPrompt.section` 注册 `workflow:ops`（order 60，与 omnimux-assets 的 assets:ops=50 不冲突），说明工具用法和 Agent 与画布的协作方式
