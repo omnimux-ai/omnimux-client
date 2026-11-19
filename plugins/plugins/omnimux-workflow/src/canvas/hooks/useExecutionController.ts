@@ -820,6 +820,7 @@ export function useExecutionController(
   useEffect(() => {
     if (!workspaceId) return;
     let cancelled = false;
+    const runsAtRestoreStart = new Map(useExecutionStore.getState().runs.map((run) => [run.executionId, run]));
     (async () => {
       try {
         const list = await listExecutions(workspaceId);
@@ -841,11 +842,12 @@ export function useExecutionController(
           snapshot: await getExecution(workspaceId, row.id),
         })));
         if (cancelled) return;
-        // The host lists newest first. Restoring older runs must leave any
-        // submission already tracked during these requests in control.
+        // The host lists newest first. Hydrate runs carried across a remount,
+        // but leave runs registered or updated by this mount's stream alone.
         for (const { row, snapshot } of snapshots) {
           if (!snapshot.ok || !snapshot.body.execution) continue;
-          if (useExecutionStore.getState().runs.some((run) => run.executionId === row.id && run.status !== 'idle')) continue;
+          const current = useExecutionStore.getState().runs.find((run) => run.executionId === row.id);
+          if (current !== runsAtRestoreStart.get(row.id)) continue;
           applySnapshot(snapshot.body.execution);
           if (isLiveExecutionStatus(snapshot.body.execution.status)) subscribe(row.id);
         }
