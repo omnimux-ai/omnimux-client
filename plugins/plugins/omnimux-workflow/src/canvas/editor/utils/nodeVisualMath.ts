@@ -505,6 +505,19 @@ export function childIdsOfGroup(nodes: Array<{ id: string; type?: string; parent
 export const COLLAPSED_GROUP_WIDTH = 220;
 export const COLLAPSED_GROUP_HEIGHT = 44;
 
+/** React Flow lays out the group wrapper at its declared size but gives its
+ * contents and bounds the measured size first. Use the declared axes there
+ * too, since a fold/expand or history restore may retain the old measurement.
+ */
+export function projectGroupDimensions<T extends Pick<Node, 'type' | 'width' | 'height' | 'measured'>>(node: T): T {
+  const measured = node.measured;
+  if (node.type !== 'group' || !measured) return node;
+  const width = node.width ?? measured.width;
+  const height = node.height ?? measured.height;
+  if (width === measured.width && height === measured.height) return node;
+  return { ...node, measured: { width, height } };
+}
+
 /** Derive the visible canvas from group state while keeping the saved graph intact. */
 export function projectGroupVisibility(
   nodes: ReadonlyArray<Pick<Node, 'id' | 'type' | 'parentId' | 'data' | 'hidden'>>,

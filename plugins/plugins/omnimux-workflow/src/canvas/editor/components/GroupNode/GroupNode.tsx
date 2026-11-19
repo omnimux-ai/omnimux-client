@@ -12,6 +12,11 @@ import { GroupTopBar } from './GroupTopBar';
 import { GroupResizeHandles } from './GroupResizeHandles';
 import { GroupHeader } from './GroupHeader';
 
+function resolveGroupDimension(declared: number | undefined, measured: number | undefined, fallback: number): number {
+  if (typeof declared === 'number' && declared > 0) return declared;
+  return typeof measured === 'number' && measured > 0 ? measured : fallback;
+}
+
 export const GroupNode: React.FC<NodeProps> = memo(({
   id,
   data,
@@ -28,18 +33,18 @@ export const GroupNode: React.FC<NodeProps> = memo(({
   const minHeight = groupData.minHeight || 44;
   const accentStyle = useMemo(() => resolveGroupAccentStyle(color), [color]);
 
-  const width = typeof rawWidth === 'number' && rawWidth > 0 ? rawWidth : 400;
-  const height = typeof rawHeight === 'number' && rawHeight > 0 ? rawHeight : 300;
-
   const ungroup = useCanvasStore((state) => state.ungroup);
   const toggleGroupCollapse = useCanvasStore((state) => state.toggleGroupCollapse);
   const resizeGroup = useCanvasStore((state) => state.resizeGroup);
   const setNodes = useCanvasStore((state) => state.setNodes);
   const setSelectedElement = useCanvasStore((state) => state.setSelectedElement);
   const liveNodes = useCanvasStore((state) => state.nodes);
-  const groupPosition = useCanvasStore(
-    (state) => state.nodes.find((n) => n.id === id)?.position || { x: 0, y: 0 },
-  );
+  const currentGroup = liveNodes.find((node) => node.id === id);
+  const groupPosition = currentGroup?.position ?? { x: 0, y: 0 };
+  // The wrapper uses the declared size. A measurement prop can still reflect
+  // the previous frame after a quick fold, expand or history restore.
+  const width = resolveGroupDimension(currentGroup?.width, rawWidth, 400);
+  const height = resolveGroupDimension(currentGroup?.height, rawHeight, 300);
   const { getViewport } = useReactFlow();
   const zoom = getViewport()?.zoom || 1;
 
