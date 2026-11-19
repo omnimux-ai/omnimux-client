@@ -1,3 +1,6 @@
+import { quotaGuard } from 'dsh-ui-kit/quota-request'
+export { isQuotaHttpResult, notifyQuota, quotaGuard } from 'dsh-ui-kit/quota-request'
+
 /**
  * @param {string} path
  * @param {{ method?: string, body?: unknown }} [opts]
@@ -26,33 +29,6 @@ export async function accountsRequest(path, opts = {}) {
  * @param {(...args: any[]) => Promise<{ ok: boolean, status: number, body: any }>} fn
  * @returns {(...args: any[]) => Promise<{ ok: boolean, status: number, body: any }>}
  */
-export function isQuotaHttpResult(result) {
-  if (!result || result.ok) return false
-  if (result.status === 402) return true
-  const err = result.body && typeof result.body === 'object' ? result.body.error : null
-  return err === 'quota-exceeded'
-}
-
-export function notifyQuota(result, context) {
-  const quota = typeof window !== 'undefined' ? window.__omnimuxQuota : undefined
-  if (!quota || typeof quota.notify !== 'function' || !isQuotaHttpResult(result)) return result
-  quota.notify({ status: result.status, body: result.body, code: result.body?.error }, context)
-  return result
-}
-
-export function quotaGuard(fn, context) {
-  return (...args) => {
-    const quota = typeof window !== 'undefined' ? window.__omnimuxQuota : undefined
-    const run = () => Promise.resolve(fn(...args)).then((result) => notifyQuota(result, context))
-    if (!quota || typeof quota.ensureQuota !== 'function') return run()
-    return Promise.resolve(quota.ensureQuota(context)).then((gate) => {
-      if (gate?.ok === false && gate.reason === 'quota') return { ok: false, status: 402, body: { error: 'quota-exceeded' } }
-      if (gate?.ok === false) return { ok: false, status: 401, body: { error: 'needs-omnimux' } }
-      return run()
-    })
-  }
-}
-
 export function authGuard(fn) {
   return (...args) => {
     const run = async () => {
@@ -121,13 +97,13 @@ export async function listAccounts(filters = {}) {
  * @param {string} platform
  */
 export const connectAccount = quotaGuard(authGuard((platform) =>
-  accountsRequest('/omnimux/accounts', { method: 'POST', body: { platform, provider: 'zernio' } })), { capability: 'accounts' })
+  accountsRequest('/omnimux/accounts', { method: 'POST', body: { platform, provider: 'zernio' } })), { capability: 'accounts', userInitiated: true })
 
 /**
  * @param {string} id
  */
 export const disconnectAccount = quotaGuard(authGuard((id) =>
-  accountsRequest(`/omnimux/accounts/${encodeURIComponent(id)}?provider=zernio`, { method: 'DELETE' })), { capability: 'accounts' })
+  accountsRequest(`/omnimux/accounts/${encodeURIComponent(id)}?provider=zernio`, { method: 'DELETE' })), { capability: 'accounts', userInitiated: true })
 
 /**
  * Updates Host-local account metadata (group / agent_usable).
@@ -135,4 +111,4 @@ export const disconnectAccount = quotaGuard(authGuard((id) =>
  * @param {{ group?: string | null, agent_usable?: boolean }} body
  */
 export const patchAccount = quotaGuard(authGuard((id, body) =>
-  accountsRequest(`/omnimux/accounts/${encodeURIComponent(id)}?provider=zernio`, { method: 'PATCH', body })), { capability: 'accounts' })
+  accountsRequest(`/omnimux/accounts/${encodeURIComponent(id)}?provider=zernio`, { method: 'PATCH', body })), { capability: 'accounts', userInitiated: true })

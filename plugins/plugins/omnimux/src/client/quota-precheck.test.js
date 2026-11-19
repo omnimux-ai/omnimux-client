@@ -22,6 +22,25 @@ test('正余额放行并在 TTL 内复用', async () => {
   assert.equal(calls, 1)
 })
 
+test('concurrent user retries refresh a cached denial once and reuse the recovered balance', async () => {
+  let balance = 0
+  let reads = 0
+  setQuotaPrecheckImpl({
+    getStatus: async () => {
+      reads += 1
+      return { ok: true, status: 200, body: { logged_in: true, quota_usd: balance } }
+    },
+    notify: () => {},
+  })
+  const retry = { capability: 'publish', userInitiated: true }
+  assert.deepEqual(await ensureQuota(retry), { ok: false, reason: 'quota' })
+  balance = 1
+  const results = await Promise.all([ensureQuota(retry), ensureQuota(retry)])
+  assert.deepEqual(results, [{ ok: true }, { ok: true }])
+  assert.deepEqual(await ensureQuota(retry), { ok: true })
+  assert.equal(reads, 2)
+})
+
 test('5xx fail-open 且不通知', async () => {
   let notices = 0
   setQuotaPrecheckImpl({ getStatus: async () => ({ ok: false, status: 503, body: { error: 'down' } }), notify: () => { notices += 1 } })

@@ -76,3 +76,23 @@ describe('query object identity (React #185 guard)', () => {
     assert.equal(analyticsStore.getSnapshot().query, before)
   })
 })
+
+it('marks only an explicit dashboard retry as a user-initiated quota check', async (t) => {
+  const originalWindow = globalThis.window
+  const previousMock = process.env.OMNIMUX_ANALYTICS_MOCK
+  t.after(() => {
+    globalThis.window = originalWindow
+    if (previousMock === undefined) delete process.env.OMNIMUX_ANALYTICS_MOCK
+    else process.env.OMNIMUX_ANALYTICS_MOCK = previousMock
+  })
+  process.env.OMNIMUX_ANALYTICS_MOCK = '0'
+  const checks = []
+  globalThis.window = { __omnimuxQuota: {
+    ensureQuota: async ({ userInitiated }) => { checks.push(Boolean(userInitiated)); return { ok: false, reason: 'quota' } },
+  } }
+  const fetch = t.mock.method(globalThis, 'fetch', async () => { throw new Error('unexpected Host request') })
+  await analyticsStore.refresh()
+  await analyticsStore.refresh({ userInitiated: true })
+  assert.deepEqual(checks, [false, true])
+  assert.equal(fetch.mock.callCount(), 0)
+})

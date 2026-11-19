@@ -1,3 +1,6 @@
+import { quotaGuard } from 'dsh-ui-kit/quota-request'
+export { isQuotaHttpResult, notifyQuota, quotaGuard } from 'dsh-ui-kit/quota-request'
+
 import { PUBLISH_PROVIDER, isPublishingAccount } from '../account-policy.js'
 /**
  * fetch 封装 over 本插件 Host 路由（/omnimux/publish/*）与 hub 只读面
@@ -12,33 +15,6 @@ import { PUBLISH_PROVIDER, isPublishingAccount } from '../account-policy.js'
  * @param {unknown} body
  * @param {number} [status]
  */
-export function isQuotaHttpResult(result) {
-  if (!result || result.ok) return false
-  if (result.status === 402) return true
-  const err = result.body && typeof result.body === 'object' ? result.body.error : null
-  return err === 'quota-exceeded'
-}
-
-export function notifyQuota(result, context) {
-  const quota = typeof window !== 'undefined' ? window.__omnimuxQuota : undefined
-  if (!quota || typeof quota.notify !== 'function' || !isQuotaHttpResult(result)) return result
-  quota.notify({ status: result.status, body: result.body, code: result.body?.error }, context)
-  return result
-}
-
-export function quotaGuard(fn, context) {
-  return (...args) => {
-    const quota = typeof window !== 'undefined' ? window.__omnimuxQuota : undefined
-    const run = () => Promise.resolve(fn(...args)).then((result) => notifyQuota(result, context))
-    if (!quota || typeof quota.ensureQuota !== 'function') return run()
-    return Promise.resolve(quota.ensureQuota(context)).then((gate) => {
-      if (gate?.ok === false && gate.reason === 'quota') return { ok: false, status: 402, body: { error: 'quota-exceeded' } }
-      if (gate?.ok === false) return { ok: false, status: 401, body: { error: 'needs-omnimux' } }
-      return run()
-    })
-  }
-}
-
 export function errorText(body, status) {
   const row = body && typeof body === 'object' && !Array.isArray(body)
     ? /** @type {Record<string, unknown>} */ (body)
@@ -151,17 +127,17 @@ export function assignAccounts(draftId, accountIds) {
 
 /** 一键发布：立即返回，进度经 state?rev= 轮询。 */
 export function submitRecord(recordId) {
-  return quotaGuard(() => publishRequest('/omnimux/publish/records/submit', { method: 'POST', body: { record_id: recordId } }), { capability: 'publish' })()
+  return quotaGuard(() => publishRequest('/omnimux/publish/records/submit', { method: 'POST', body: { record_id: recordId } }), { capability: 'publish', userInitiated: true })()
 }
 
 /** 手动状态同步（publish_get_record refresh 同源）。 */
 export function refreshRecord(recordId) {
-  return quotaGuard(() => publishRequest('/omnimux/publish/records/refresh', { method: 'POST', body: { record_id: recordId } }), { capability: 'publish' })()
+  return quotaGuard(() => publishRequest('/omnimux/publish/records/refresh', { method: 'POST', body: { record_id: recordId } }), { capability: 'publish', userInitiated: true })()
 }
 
 /** 单账号重试（复用已上传媒体）。 */
 export function retryTask(taskId) {
-  return quotaGuard(() => publishRequest('/omnimux/publish/tasks/retry', { method: 'POST', body: { task_id: taskId } }), { capability: 'publish' })()
+  return quotaGuard(() => publishRequest('/omnimux/publish/tasks/retry', { method: 'POST', body: { task_id: taskId } }), { capability: 'publish', userInitiated: true })()
 }
 
 /**
@@ -186,7 +162,7 @@ export async function listHubAccounts(filters = {}) {
 export function connectTikTokAccount() {
   return quotaGuard(
     () => publishRequest('/omnimux/accounts', { method: 'POST', body: { platform: 'tiktok', provider: PUBLISH_PROVIDER } }),
-    { capability: 'publish' },
+    { capability: 'publish', userInitiated: true },
   )()
 }
 
@@ -206,6 +182,6 @@ export function disconnectHubAccount(accountId) {
   }
   return quotaGuard(
     () => publishRequest(`/omnimux/accounts/${encodeURIComponent(id)}?provider=${PUBLISH_PROVIDER}`, { method: 'DELETE' }),
-    { capability: 'publish' },
+    { capability: 'publish', userInitiated: true },
   )()
 }

@@ -23,8 +23,8 @@ export function setQuotaPrecheckImpl(next = {}) {
   impl = { ...impl, ...next }
 }
 
-export function invalidateQuotaVerify() {
-  cached = null
+export function invalidatePositiveQuota() {
+  if (cached?.quota_usd > 0) cached = null
 }
 
 export function resetQuotaPrecheck() {
@@ -51,14 +51,15 @@ function login() {
 
 export function ensureQuota(context = {}) {
   const now = Date.now()
-  if (cached && now - cached.at < VERIFY_TTL_MS) {
+  if (inflight) return inflight
+  const retryDenied = context.userInitiated === true && cached?.quota_usd <= 0
+  if (cached && now - cached.at < VERIFY_TTL_MS && !retryDenied) {
     if (cached.quota_usd <= 0) {
       impl.notify({ status: 402, code: 'quota-exceeded', body: { error: 'quota-exceeded' } }, context)
       return Promise.resolve({ ok: false, reason: 'quota' })
     }
     return Promise.resolve({ ok: true })
   }
-  if (inflight) return inflight
   inflight = Promise.resolve().then(() => impl.getStatus(true)).then(async (result) => {
     if (authFailure(result)) {
       await login()
@@ -66,7 +67,7 @@ export function ensureQuota(context = {}) {
     }
     const classified = classifyQuotaFailure(result || {})
     if (classified.kind === 'quota-exceeded') {
-      invalidateQuotaVerify()
+      invalidatePositiveQuota()
       impl.notify({ status: 402, code: 'quota-exceeded', body: { error: 'quota-exceeded' } }, context)
       return { ok: false, reason: 'quota' }
     }

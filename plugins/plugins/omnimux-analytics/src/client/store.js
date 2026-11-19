@@ -104,7 +104,7 @@ function commitPayload(payload, query) {
 
 /**
  * @param {Partial<typeof DEFAULT_QUERY>} query
- * @param {{ force?: boolean, now?: number }} [opts]
+ * @param {{ force?: boolean, now?: number, userInitiated?: boolean }} [opts]
  */
 export async function loadDashboard(query = state.query, opts = {}) {
   const nextQuery = normalizeQuery(query)
@@ -124,7 +124,7 @@ export async function loadDashboard(query = state.query, opts = {}) {
     setState({ query: nextQuery })
   }
   try {
-    const payload = await fetchDashboard(nextQuery, { now })
+    const payload = await fetchDashboard(nextQuery, { now, userInitiated: opts.userInitiated })
     if (seq !== fetchSeq) return payload
     commitPayload(payload, nextQuery)
     return payload
@@ -160,8 +160,9 @@ export function setQuery(patch, opts = {}) {
   }, delay)
 }
 
-export function refresh() {
-  return loadDashboard(state.query, { force: true })
+/** @param {{ userInitiated?: boolean }} [opts] */
+export function refresh(opts = {}) {
+  return loadDashboard(state.query, { force: true, userInitiated: opts.userInitiated })
 }
 
 export async function syncNow() {
@@ -217,7 +218,7 @@ export function getStoreState() {
 export function useAnalyticsStore() {
   const snap = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
   const setQueryStable = useCallback((patch, opts) => setQuery(patch, opts), [])
-  const refreshStable = useCallback(() => refresh(), [])
+  const refreshStable = useCallback((opts) => refresh(opts), [])
   const syncNowStable = useCallback(() => syncNow(), [])
   const loadStable = useCallback((query, opts) => loadDashboard(query, opts), [])
   const setThemeStable = useCallback((theme) => setTheme(theme), [])

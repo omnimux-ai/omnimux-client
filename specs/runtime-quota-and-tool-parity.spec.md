@@ -6,15 +6,23 @@
 
 ## 假设
 
-用户在额度恢复后立即重试可以继续原操作；音乐工具将显式设置的参数传递给选定协议。
+缓存的零余额会让已恢复额度的用户继续被拒。复用旧结果适合后台轮询，用户主动重试时需要重新查询。音乐工具可以复用页面的执行器传递显式设置。
 
 ## 证伪方式
 
-分别模拟拒绝后恢复、两个同时重试及仅提示的分析入口；捕获音乐请求，检查约定字段及显式关闭开关的取值。
+在缓存期内将测试余额从零改为正数，连续发起两次重试。如果仍被拒或出现两次状态请求，重试策略未达到目标。用同一份音乐参数走工具和页面入口，逐项比对执行器收到的风格与开关。
 
-## 验收
+## 已实现的行为与验收
 
-余额由零恢复后可立即重试；并发只查一次。确认登录、权限、业务拒绝及仅提示入口维持原语义；核对工具字段到执行器。
+| 操作 | 决策与预期结果 | 验证入口 |
+|---|---|---|
+| 余额从零恢复后再次提交或点击重试 | 用户动作即时复核旧的零余额；同时发起的复核共用一次状态请求。正余额及后台轮询继续使用 30 秒缓存。 | [中枢预检测试](../plugins/plugins/omnimux/src/client/quota-precheck.test.js)、[账号操作测试](../plugins/plugins/omnimux-accounts/src/client/api.test.js) |
+| 分析看板加载、筛选、重试或同步 | 整页只预检一次，筛选用账号列表和各数据分块直接读取。某个分块报告额度不足时保留其他已返回数据；普通权限或业务错误沿原路径返回。 | [看板请求测试](../plugins/plugins/omnimux-analytics/src/client/api.test.js)、[数据状态测试](../plugins/plugins/omnimux-analytics/src/client/store.test.js) |
+| 点击分析看板的登录按钮 | 调用中枢现有登录窗。取消后留在原页面，成功后只读取看板数据。 | [浏览器交互测试](../plugins/plugins/omnimux-analytics/src/client/analytics-header-divider.e2e.test.js) |
+| 点击画布节点的生成按钮 | 发起提交的同时检查额度；同一节点连续点击只创建一次任务。 | [画布提交测试](../plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/submitNode.test.mjs) |
+| 从 Agent 工具提交音乐 | 工具和页面将显式的风格和纯音乐开关交给同一执行器。关闭开关保留为 `false`，发给模型的字段按该操作声明映射。 | [工具与执行器测试](../plugins/plugins/omnimux/src/media/mount.test.js) |
+
+浏览器验收使用本地可控账户与额度响应，覆盖缓存期内恢复、部分数据失败及登录成功与取消。线上账户扣费和真实音乐生成单独验收。
 
 ## 运行时规则责任清单
 
@@ -35,4 +43,4 @@
 | [浏览器 omnimux-browser](../plugins/plugins/omnimux-browser/src/pairing.ts) | 浏览器扩展配对 | 配对服务核对请求与用户授予的连接许可。保留，模型的调用资格不能代替用户授权。 |
 | [市场 omnimux-market](../plugins/plugins/omnimux-market/src/install-validation.ts) | 从市场安装包 | 市场安装器接触实际文件后校验内容和目录结构。保留，列表中的可选状态只用于选择。 |
 | [视频 omnimux-video](../plugins/plugins/omnimux-video/src/understand/pack-video.js) | 视频分析和逆向拆解 | 两种操作共用本地视频检查，核对文件可读性与大小。保留在首次读取文件处。 |
-| [分析 omnimux-analytics](../plugins/plugins/omnimux-analytics/src/stage-events.js) | 页面上报打开、关闭等事件 | Host 入口校验事件与字段白名单，限制可进入分析队列的数据。保留。 |
+| [分析看板](../plugins/plugins/omnimux-analytics/src/client/api.js)与[事件上报](../plugins/plugins/omnimux-analytics/src/stage-events.js) | 读取看板、手动同步、上报页面打开与关闭 | 看板共用中枢的额度与登录结果。事件上报由 Host 核对事件与字段白名单。 |

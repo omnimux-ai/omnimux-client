@@ -13,6 +13,7 @@
       "import": "./lib/index.js",
       "default": "./lib/index.js"
     },
+    "./quota-request": "./src/quota-request.js",
     "./package.json": "./package.json"
   },
   "files": [

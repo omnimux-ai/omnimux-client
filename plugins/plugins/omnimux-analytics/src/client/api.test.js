@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { authGuard, fetchDashboard, HOST_PATHS, syncNow } from './api.js'
+import { authGuard, fetchAccounts, fetchDashboard, HOST_PATHS, syncNow } from './api.js'
 
 describe('fetchDashboard mock', () => {
   it('returns a complete Phase-1 payload with 9 series and 168 heatmap cells', async () => {
@@ -79,4 +79,58 @@ describe('HOST_PATHS', () => {
     assert.equal(HOST_PATHS.posts, '/omnimux/analytics/posts')
     assert.equal(HOST_PATHS.sync, '/omnimux/analytics/sync')
   })
+})
+
+it('notifies a quota refusal when listing filter accounts without prechecking the balance', async (t) => {
+  const originalWindow = globalThis.window
+  t.after(() => { globalThis.window = originalWindow })
+  let prechecks = 0
+  let notifications = 0
+  globalThis.window = { __omnimuxQuota: {
+    ensureQuota: async () => { prechecks++; return { ok: false, reason: 'quota' } },
+    notify: () => { notifications++ },
+  } }
+  const fetch = t.mock.method(globalThis, 'fetch', async () =>
+    Response.json({ error: 'quota-exceeded' }, { status: 402 }))
+  await assert.rejects(fetchAccounts(), /quota-exceeded/)
+  assert.equal(fetch.mock.callCount(), 1)
+  assert.equal(prechecks, 0)
+  assert.equal(notifications, 1)
+})
+
+it('keeps login and quota denials distinct for the dashboard and manual sync', async (t) => {
+  const originalWindow = globalThis.window
+  t.after(() => { globalThis.window = originalWindow })
+  const fetch = t.mock.method(globalThis, 'fetch', async () => { throw new Error('unexpected Host request') })
+  for (const [reason, status, message, action] of [
+    ['auth', 401, 'needs-omnimux', 'login'],
+    ['quota', 402, 'quota-exceeded', 'retry'],
+  ]) {
+    const checks = []
+    globalThis.window = { __omnimuxQuota: {
+      ensureQuota: async (context) => { checks.push(context); return { ok: false, reason } },
+    } }
+    const payload = await fetchDashboard({}, { useMock: false })
+    assert.equal(payload.syncStatus.lastError, message)
+    assert.equal(payload.emptyState.action, action)
+    await fetchDashboard({}, { useMock: false, userInitiated: true })
+    await assert.rejects(syncNow({}, { useMock: false }), { status, message })
+    assert.deepEqual(checks.map(({ userInitiated }) => Boolean(userInitiated)), [false, true, true])
+  }
+  assert.equal(fetch.mock.callCount(), 0)
+})
+
+it('checks once before loading the four dashboard sections', async (t) => {
+  const originalWindow = globalThis.window
+  t.after(() => { globalThis.window = originalWindow })
+  let checks = 0
+  globalThis.window = { __omnimuxQuota: {
+    ensureQuota: async () => { checks++; return { ok: true } },
+  } }
+  const fetch = t.mock.method(globalThis, 'fetch', async () =>
+    Response.json({ error: 'overview-unavailable' }, { status: 503 }))
+  const payload = await fetchDashboard({}, { useMock: false })
+  assert.equal(checks, 1)
+  assert.equal(fetch.mock.callCount(), 4)
+  assert.equal(payload.syncStatus.lastError, 'overview-unavailable')
 })

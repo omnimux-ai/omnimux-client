@@ -81,7 +81,15 @@ export function AnalyticsStage({ t, stage, store, visible = true }) {
 
   const handleAction = (action) => {
     if (action === 'retry') {
-      void analyticsStore.refresh()
+      void analyticsStore.refresh({ userInitiated: true })
+    } else if (action === 'login') {
+      const refreshDashboard = () => { void analyticsStore.refresh({ userInitiated: true }) }
+      const gate = window.__omnimuxAuth
+      if (typeof gate?.ensureLogin === 'function') {
+        gate.ensureLogin({ kind: 'explicit', action: 'accounts', onSuccess: refreshDashboard })
+      } else {
+        refreshDashboard()
+      }
     } else if (action === 'sync') {
       void analyticsStore.syncNow()
     } else if (action === 'bind') {

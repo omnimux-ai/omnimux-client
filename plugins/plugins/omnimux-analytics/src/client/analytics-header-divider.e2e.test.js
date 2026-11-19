@@ -42,13 +42,20 @@ function probePageHtml() {
 <script>
   window.__probeErrors = []
   window.addEventListener('error', (e) => window.__probeErrors.push(String(e.message || e.error)))
+  const loginProbe = { signedIn: false, intents: [], requests: [] }
+  window.__omnimuxQuota = { ensureQuota: () => loginProbe.signedIn ? { ok: true } : { ok: false, reason: 'auth' } }
+  window.__omnimuxAuth = { ensureLogin: options => loginProbe.intents.push(options) }
+  window.fetch = async (url, options) => {
+    loginProbe.requests.push({ path: url.split('?')[0], method: options?.method || 'GET' })
+    return new Response('{}', { status: 503 })
+  }
 </script>
 <script src="./stage.js"></script>
 <script>
   (function () {
     var tries = 0
     function finish(payload) { document.title = 'RESULT:' + JSON.stringify(payload) }
-    function tick() {
+    async function tick() {
       var stage = document.querySelector('.omnimux-analytics-stage')
       if (!stage) {
         if (++tries > 80) return finish({ error: 'stage-not-mounted', errors: window.__probeErrors })
@@ -58,7 +65,8 @@ function probePageHtml() {
       var divider = stage.querySelector('[role="separator"]')
       var actionRow = stage.querySelector('.omnimux-analytics-stage-action-row')
       var filterBar = stage.querySelector('.omnimux-analytics-stage-filter')
-      if (!header || !divider || !actionRow || !filterBar) {
+      var loginButton = stage.querySelector('[data-code="unauthorized"] button')
+      if (!header || !divider || !actionRow || !filterBar || !loginButton) {
         if (++tries > 80) return finish({ error: 'stage-children-missing', errors: window.__probeErrors })
         return setTimeout(tick, 50)
       }
@@ -66,7 +74,16 @@ function probePageHtml() {
       var stageBox = box(stage)
       var rowRect = actionRow.getBoundingClientRect()
       var filterRect = filterBar.getBoundingClientRect()
+      loginButton.click()
+      loginProbe.intents[0]?.onCancel?.()
+      await new Promise(resolve => setTimeout(resolve, 0))
+      const afterCancel = loginProbe.requests.slice()
+      loginButton.click()
+      loginProbe.signedIn = true
+      loginProbe.intents[1]?.onSuccess?.()
+      await new Promise(resolve => setTimeout(resolve, 0))
       finish({
+        login: { kinds: loginProbe.intents.map(intent => intent.kind), afterCancel, afterLogin: loginProbe.requests },
         childOrder: Array.prototype.map.call(stage.children, function (el) { return el === divider ? 'SEPARATOR' : el.className }),
         separatorCount: stage.querySelectorAll('[role="separator"]').length,
         dividerFollowsHeader: header.compareDocumentPosition(divider) & Node.DOCUMENT_POSITION_FOLLOWING ? true : false,
@@ -135,6 +152,13 @@ async function runStageProbe() {
 }
 
 const probe = await runStageProbe()
+
+test('看板登录按钮复用显式登录，取消不发请求，登录后只刷新看板', { skip: probe.skipped === true }, () => {
+  assert.deepEqual(probe.login.kinds, ['explicit', 'explicit'])
+  assert.deepEqual(probe.login.afterCancel, [])
+  assert.deepEqual(probe.login.afterLogin, ['overview', 'insights', 'followers', 'posts']
+    .map(section => ({ path: '/omnimux/analytics/' + section, method: 'GET' })))
+})
 
 test('数据分析看板的分割线渲染在页头与标签行之间', { skip: probe.skipped === true }, () => {
   assert.equal(probe.separatorCount, 1)
