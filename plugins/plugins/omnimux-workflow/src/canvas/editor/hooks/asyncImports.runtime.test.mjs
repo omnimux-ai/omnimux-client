@@ -43,6 +43,7 @@ const bundle = await build({
         export const AssetItemContextMenu = () => null;
         export const FolderContextMenu = () => null;`
       : `export const pickLocalFiles = () => window.fixture.pick();
+        export const probeLocalFiles = () => { throw new Error('Unexpected local file probe in the async import fixture'); };
         export const getWorkspaceAssets = (...args) => window.fixture.get(...args);
         export const indexWorkspaceAssets = (...args) => window.fixture.mutate('index', ...args);
         export const instantiateWorkspaceAssets = (...args) => window.fixture.mutate('instantiate', ...args);

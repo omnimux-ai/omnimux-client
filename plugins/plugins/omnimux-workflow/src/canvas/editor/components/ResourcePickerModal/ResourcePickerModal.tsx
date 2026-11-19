@@ -10,7 +10,7 @@ import type { NodeSlotEngineState } from '../../../../shared/graph/slotContractT
 import type { CanvasInputSelectionRequest } from '../../../../shared/graph/canvasInputMutationGateway.ts';
 import { extensionsForMimes } from '../../../../shared/localMedia.ts';
 import { useAsyncInstanceGuard } from '../../hooks/useAsyncInstanceGuard.ts';
-import { probePickerDrafts } from '../../utils/localFileDraft.ts';
+import { probePickerDrafts } from '../../utils/probePickerDrafts.ts';
 import CanvasResourcePane from './CanvasResourcePane';
 import LocalUploadPane from './LocalUploadPane';
 

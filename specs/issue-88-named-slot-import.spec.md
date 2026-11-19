@@ -26,3 +26,7 @@
   旧断言要求卡槽从整个模型的能力派生。#88 要求入口限于当前生成方式。新断言检查当前方式的槽位派生和借用槽位缺失，继续检查生成方式解析、实际消费指纹和断开后的已选方式。
 - `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/operationUi.dom.test.mjs` :: `ConfigPanel 消费 buildFilteredModelOptions / buildEffectiveOpsUiState（唯一判定）`
   旧断言要求视频节点将不消费已连素材的模型置灰。#88 和 #63 的最新验收要求模型列表按目录可用性显示。新断言检查 ConfigPanel 使用共用策略，真实目录用例验证 Seedance 已分配图和音频时 Muse 仍可选。
+- `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/generationUi.render.test.mjs` :: `audio modes come from the selected model, with no fixed speech/music tabs`
+  音频节点的纯提示方式只渲染当前方式卡槽，继续核对实际有卡槽的音乐方式及底栏。
+- `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/generationUi.render.test.mjs` :: `image panel borrows sibling operation slots as display-only for a prompt-only operation`
+  图片节点按同一入口契约更新。运行态断言同时覆盖无素材槽的方式和明确声明图片槽的方式。

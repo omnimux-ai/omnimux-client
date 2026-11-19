@@ -11,7 +11,8 @@ import {
   formatFileSize,
   type LocalFileDraft,
 } from '../../utils/resourcePickerPolicy.ts';
-import { draftFromRealPath, draftsFromPickedPaths, filterDraftsByTypes, nativePathOf, probePickerDrafts } from '../../utils/localFileDraft.ts';
+import { draftFromRealPath, draftsFromPickedPaths, filterDraftsByTypes, nativePathOf } from '../../utils/localFileDraft.ts';
+import { probePickerDrafts } from '../../utils/probePickerDrafts.ts';
 import { localFileMediaUrl } from '../../../../shared/localMedia.ts';
 import PreviewThumb from './PreviewThumb.tsx';
 import { useAsyncInstanceGuard } from '../../hooks/useAsyncInstanceGuard.ts';
