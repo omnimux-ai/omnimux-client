@@ -192,12 +192,32 @@ jobs:
       # ci.yml, so these repo-root-specific steps do not apply here.
       # Per-step rationale is listed in the PR description (no silent skip).
 
+      - name: Run worktree gate regressions
+        env:
+          GIT_CONFIG_COUNT: '1'
+          GIT_CONFIG_KEY_0: safe.bareRepository
+          GIT_CONFIG_VALUE_0: explicit
+        run: |
+          set -euo pipefail
+          worktrees="$GITHUB_WORKSPACE/.worktrees"
+          mkdir -p "$worktrees"
+          task_root="$(mktemp -d "$worktrees/ci-gates.XXXXXX")"
+          git -C "$GITHUB_WORKSPACE" worktree add --detach "$task_root" HEAD
+          trap 'git -C "$GITHUB_WORKSPACE" worktree remove "$task_root"' EXIT
+          cd "$task_root/plugins"
+          test -f ../.git
+          test "$(git config --get safe.bareRepository)" = explicit
+          git --version
+          node --version
+          printf 'Running in a linked worktree with safe.bareRepository=explicit\n'
+          node --test scripts/guard-worktree.test.mjs scripts/git-wt.test.mjs scripts/worktree-sag-index.test.mjs
+
       - name: Run regression tests
         run: |
           node --test scripts/video-param-normalization.test.mjs
           node --test scripts/windows-build-portability.test.mjs
           node --test scripts/input-capability.test.mjs
-          node --test scripts/git-wt.test.mjs scripts/test-dx-pipeline.mjs scripts/worktree-delivery.test.mjs scripts/dev-launch-env.test.mjs scripts/omnimux-paths.test.mjs scripts/dev-app-unlock.test.mjs scripts/app-restart.test.mjs scripts/run-workspace-tests.test.mjs scripts/style-dom-probe.test.mjs
+          node --test scripts/test-dx-pipeline.mjs scripts/worktree-delivery.test.mjs scripts/dev-launch-env.test.mjs scripts/omnimux-paths.test.mjs scripts/dev-app-unlock.test.mjs scripts/app-restart.test.mjs scripts/run-workspace-tests.test.mjs scripts/style-dom-probe.test.mjs
           node --test scripts/auto-qa-scan.test.mjs
           node --test scripts/test-authoring-inspection.test.mjs scripts/test-change-review.test.mjs scripts/review-packet.test.mjs
           node --test scripts/impact-matrix.test.mjs scripts/authorization.test.mjs scripts/qa-label.test.mjs scripts/ci-verdict.test.mjs scripts/auto-pipeline.test.mjs scripts/auto-pipeline-qa.test.mjs scripts/check-tracked-artifacts.test.mjs scripts/live-runtime-proof.test.mjs scripts/ego-browser-page.test.mjs scripts/live-page-preparation.test.mjs scripts/ego-live-qa.test.mjs scripts/repair-inspiration-covers.test.mjs scripts/import-gxgen-inspirations.test.mjs
