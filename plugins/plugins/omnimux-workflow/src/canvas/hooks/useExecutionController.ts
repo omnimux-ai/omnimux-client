@@ -639,7 +639,7 @@ export function useExecutionController(
   /** Backfill one run's node badges/results from a status snapshot. */
   const applySnapshot = useCallback((snapshot: ExecutionSnapshotDto) => {
     const exec = useExecutionStore.getState();
-    exec.ensureRun(snapshot.id);
+    exec.ensureRun(snapshot.id, { restored: true });
     exec.patchRun(snapshot.id, {
       status: snapshot.status,
       error: snapshot.error,
@@ -841,8 +841,11 @@ export function useExecutionController(
           snapshot: await getExecution(workspaceId, row.id),
         })));
         if (cancelled) return;
+        // The host lists newest first. Restoring older runs must leave any
+        // submission already tracked during these requests in control.
         for (const { row, snapshot } of snapshots) {
           if (!snapshot.ok || !snapshot.body.execution) continue;
+          if (useExecutionStore.getState().runs.some((run) => run.executionId === row.id && run.status !== 'idle')) continue;
           applySnapshot(snapshot.body.execution);
           if (isLiveExecutionStatus(snapshot.body.execution.status)) subscribe(row.id);
         }

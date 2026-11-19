@@ -25,6 +25,7 @@ buildSync({
     contents: [
       "export { dispatchExecutionEvent, settleInFlightNodes, shouldConvergeInFlightOnReload } from './useExecutionController.ts';",
       "export { useCanvasStore } from '../store/canvasStore.ts';",
+      "export { buildExecutionQueueView } from '../editor/components/executionQueue.ts';",
       "export { useExecutionStore, LOCAL_RUN_ID } from '../store/executionStore.ts';",
     ].join('\n'),
     resolveDir: here,
@@ -42,6 +43,7 @@ const {
   useCanvasStore,
   useExecutionStore,
   LOCAL_RUN_ID,
+  buildExecutionQueueView,
 } = await import(pathToFileURL(bundle).href);
 
 /** 画布上摆若干节点，并把它们登记为某个执行的「待执行」节点。 */
@@ -224,4 +226,86 @@ test('#2255 终态执行被新提交挤掉后，投影不再残留它的节点�
   assert.equal(exec.nodeStatuses.a1, undefined);
   assert.equal(exec.status, 'idle');
   assert.equal(exec.activeRunCount, 0);
+});
+
+test('重试成功后显示本次状态和进度，执行队列保留旧失败', () => {
+  arrangeRuns([{ executionId: 'first', nodeIds: ['video'] }]);
+  startRun('first', ['video']);
+  dispatchExecutionEvent('execution_error', JSON.stringify({
+    executionId: 'first', failedNode: 'video', error: '成片地址暂未返回',
+  }), () => {});
+  assert.equal(useExecutionStore.getState().status, 'error');
+
+  const store = useExecutionStore.getState();
+  store.ensureRun('retry');
+  store.setRunNodeStatus('retry', 'video', 'pending');
+  startRun('retry', ['video']);
+  const during = useExecutionStore.getState();
+  assert.equal(during.status, 'running');
+  assert.equal(during.progress.total, 1);
+  assert.equal(during.error, null);
+
+  dispatchExecutionEvent('node_complete', JSON.stringify({ executionId: 'retry', nodeId: 'video' }), () => {});
+  dispatchExecutionEvent('execution_complete', JSON.stringify({ executionId: 'retry' }), () => {});
+  const after = useExecutionStore.getState();
+  assert.equal(after.status, 'completed');
+  assert.equal(after.error, null);
+  assert.equal(after.progress.total, 1);
+  assert.equal(after.progress.completed, 1);
+  assert.equal(after.nodeStatuses.video, 'completed');
+  const { history } = buildExecutionQueueView({ runs: after.runs });
+  assert.deepEqual(history.map(({ executionId, status, error }) => [executionId, status, error]), [
+    ['retry', 'completed', null],
+    ['first', 'error', '成片地址暂未返回'],
+  ]);
+});
+
+test('较早发起的执行迟到失败时，仍显示最近操作的终态', () => {
+  arrangeRuns([
+    { executionId: 'first', nodeIds: ['a'] },
+    { executionId: 'second', nodeIds: ['b'] },
+  ]);
+  startRun('first', ['a']);
+  startRun('second', ['b']);
+  dispatchExecutionEvent('execution_complete', JSON.stringify({ executionId: 'second' }), () => {});
+  assert.equal(useExecutionStore.getState().status, 'running');
+
+  dispatchExecutionEvent('execution_error', JSON.stringify({
+    executionId: 'first', failedNode: 'a', error: '较早的执行失败',
+  }), () => {});
+  assert.equal(useExecutionStore.getState().status, 'completed');
+  assert.equal(useExecutionStore.getState().error, null);
+
+  useExecutionStore.getState().ensureRun('third');
+  useExecutionStore.getState().patchRun('third', { status: 'cancelled' });
+  assert.equal(useExecutionStore.getState().status, 'cancelled');
+  useExecutionStore.getState().dropRun('third');
+  assert.equal(useExecutionStore.getState().status, 'completed');
+
+  useExecutionStore.getState().setExecution({
+    executionId: LOCAL_RUN_ID, status: 'error', error: '最新提交失败',
+  });
+  assert.equal(useExecutionStore.getState().status, 'error');
+  assert.equal(useExecutionStore.getState().error, '最新提交失败');
+});
+
+test('恢复旧执行保留原来的顺序和最新提交的焦点', () => {
+  useExecutionStore.getState().resetExecution();
+  const store = useExecutionStore.getState();
+  store.ensureRun('newest', { restored: true });
+  store.ensureRun('oldest', { restored: true });
+  assert.equal(useExecutionStore.getState().focusExecutionId, 'newest');
+
+  store.ensureRun('fresh');
+  store.ensureRun('restored-late', { restored: true });
+  assert.equal(useExecutionStore.getState().focusExecutionId, 'fresh');
+  assert.deepEqual(useExecutionStore.getState().runs.map((run) => run.executionId),
+    ['restored-late', 'oldest', 'newest', 'fresh']);
+
+  store.patchRun('fresh', { status: 'error', error: '最新提交失败' });
+  for (const executionId of ['oldest', 'newest', 'restored-late']) {
+    store.patchRun(executionId, { status: 'completed' });
+  }
+  assert.equal(useExecutionStore.getState().status, 'error');
+  assert.equal(useExecutionStore.getState().error, '最新提交失败');
 });

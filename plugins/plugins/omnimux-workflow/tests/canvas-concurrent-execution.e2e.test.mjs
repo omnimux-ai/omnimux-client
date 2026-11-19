@@ -41,7 +41,9 @@ test('E2E: 执行状态存储以运行槽列表为真源并投影聚合视图 (#
   assert.match(storeSrc, /export interface ExecutionRun\b/, '必须存在运行槽类型');
   assert.match(storeSrc, /runs:\s*ExecutionRun\[\]/, '运行槽列表必须是存储状态');
   assert.match(storeSrc, /export function projectRuns\(/, '聚合视图必须由 projectRuns 投影');
-  assert.match(storeSrc, /activeRunCount:\s*runs\.filter\(/, '活跃执行条数必须由运行槽派生');
+  assert.match(storeSrc, /const live = runs\.filter\(\(run\) => LIVE_STATUS_SET\.has\(run\.status\)\)/,
+    '活跃执行必须由运行槽状态筛出');
+  assert.match(storeSrc, /activeRunCount:\s*live\.length\b/, '活跃执行条数必须与活跃状态取自同一列表');
   assert.match(storeSrc, /setRunNodeStatus:\s*\(executionId,\s*nodeId,\s*status\)/, '节点状态必须能按执行归属写入');
 });
 
