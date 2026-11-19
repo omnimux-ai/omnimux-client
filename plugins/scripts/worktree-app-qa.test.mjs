@@ -217,6 +217,7 @@ test('runner 对合规根产出报告且 cleanup 只调用一次', async () => {
   };
   let cleanupCount = 0;
   let cleanupBehavior = 'success';
+  let environmentStart;
   const browserReceipt = {};
   const browserAssertions = [
     { name: 'app-dom-mounted', pass: true },
@@ -230,16 +231,19 @@ test('runner 对合规根产出报告且 cleanup 只调用一次', async () => {
       status: 303,
       headers: { getSetCookie: () => ['dsh-auth-unit=unit-cookie-value; Path=/; HttpOnly'] },
     }),
-    startEnv: async () => ({
-      origin: 'http://127.0.0.1:15000',
-      summary: Object.freeze({ mode: 'ui', evidenceLevel: 'core-only', taskPluginsInstalled: false }),
-      loginUrl: 'http://127.0.0.1:15000/?token=unit-only',
-      cleanup: async () => {
-        cleanupCount += 1;
-        if (cleanupBehavior === 'throw') throw new Error('unit-secret-never-log');
-        return { cleaned: cleanupBehavior !== 'false' };
-      },
-    }),
+    startEnv: async options => {
+      environmentStart = options;
+      return {
+        origin: 'http://127.0.0.1:15000',
+        summary: Object.freeze({ mode: 'ui', evidenceLevel: 'core-only', taskPluginsInstalled: false }),
+        loginUrl: 'http://127.0.0.1:15000/?token=unit-only',
+        cleanup: async () => {
+          cleanupCount += 1;
+          if (cleanupBehavior === 'throw') throw new Error('unit-secret-never-log');
+          return { cleaned: cleanupBehavior !== 'false' };
+        },
+      };
+    },
     driveBrowser: async () => ({
       cdpPort: 15001,
       assertions: browserAssertions,
@@ -251,6 +255,7 @@ test('runner 对合规根产出报告且 cleanup 只调用一次', async () => {
 
   const report = await run({ root, repo: '/repo' });
   assert.equal(report.pass, true);
+  assert.deepEqual(environmentStart, { root, mode: 'ui', freshSmoke: true });
   assert.equal(cleanupCount, 1, 'cleanup 必须恰好调用一次');
   assert.equal(report.summary.evidenceLevel, 'core-only');
   assert.equal(report.assertions.every(assertion => assertion.pass), true);
@@ -337,6 +342,7 @@ test('legacy journey 断言带 journey: 前缀时保留并计入通过，未知�
     writeFileSync: (path, value) => written.push({ path, value }),
   };
   let browserAssertions = [];
+  let environmentStart;
   const run = createAppQaRunner({
     io,
     uuid: () => 'run-journey-whitelist',
@@ -345,12 +351,15 @@ test('legacy journey 断言带 journey: 前缀时保留并计入通过，未知�
       status: 303,
       headers: { getSetCookie: () => ['dsh-auth-unit=unit-cookie-value; Path=/; HttpOnly'] },
     }),
-    startEnv: async () => ({
-      origin: 'http://127.0.0.1:15000',
-      summary: Object.freeze({ mode: 'ui', evidenceLevel: 'core-only', taskPluginsInstalled: false }),
-      loginUrl: 'http://127.0.0.1:15000/?token=unit-only',
-      cleanup: async () => ({ cleaned: true }),
-    }),
+    startEnv: async options => {
+      environmentStart = options;
+      return {
+        origin: 'http://127.0.0.1:15000',
+        summary: Object.freeze({ mode: 'ui', evidenceLevel: 'core-only', taskPluginsInstalled: false }),
+        loginUrl: 'http://127.0.0.1:15000/?token=unit-only',
+        cleanup: async () => ({ cleaned: true }),
+      };
+    },
     driveBrowser: async ({ journey }) => ({
       cdpPort: 15001,
       // 真实 driver 只在传入 journey 时追加 journey 断言；桩保持同一行为。
@@ -378,6 +387,7 @@ test('legacy journey 断言带 journey: 前缀时保留并计入通过，未知�
   ];
   const allowed = await run({ root, repo: '/repo', journey: 'qa/journey.mjs' });
   assert.equal(allowed.pass, true, 'legacy journey 断言必须计入通过');
+  assert.deepEqual(environmentStart, { root, mode: 'ui', enableExplore: true });
   assert.ok(allowed.assertions.some(item => item.name === 'journey:C1-derived-node-created'));
   assert.equal(allowed.errors.includes('TEST_APP_QA_ASSERTION_SET_MISMATCH'), false);
 

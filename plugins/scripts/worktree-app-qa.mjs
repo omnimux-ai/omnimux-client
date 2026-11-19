@@ -22,7 +22,7 @@ import { findChromePath, assertPng } from './worktree-web-qa.mjs';
 import { stopOwnedChild } from './lib/child-lifecycle.mjs';
 import { validateTaskPeerResolution } from './task-runtime-proof.mjs';
 
-const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const repositoryRoot = sourceRoot.split(`${sep}.worktrees${sep}`)[0];
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -1208,7 +1208,9 @@ export function createAppQaRunner(deps = {}) {
     };
     try {
       prepareAttempted = true;
-      env = await startEnv({ root, mode, ...(request ? { evidenceContext: { taskId: request.taskId, runId },
+      const smokeProfile = !request && mode === 'ui' ? (journey ? { enableExplore: true } : { freshSmoke: true }) : {};
+      env = await startEnv({ root, mode, ...smokeProfile,
+        ...(request ? { evidenceContext: { taskId: request.taskId, runId },
         ...(request.taskPlugins ? { taskPlugins: request.taskPlugins,
           candidate: { base: request.base, head: request.head, outputs, extraInputs: request.extraInputs } } : {}) } : {}) });
       const origin = new URL(env.origin);
@@ -1220,6 +1222,7 @@ export function createAppQaRunner(deps = {}) {
       report.summary = { mode, evidenceLevel: ['core-only', 'full'].includes(env.summary?.evidenceLevel) ? env.summary.evidenceLevel : 'unknown',
         taskPluginsInstalled: env.summary?.taskPluginsInstalled === true, realModelRequest: false,
         seededWorkspace: env.summary?.seededWorkspace === 'ws_qa_media' ? 'ws_qa_media' : null };
+      if (env.summary?.profileSource === 'packaged-smoke') report.summary.profileSource = 'packaged-smoke';
       addAssertions([{ name: 'app-runtime-ready', pass: true }]);
       const loginResponse = await fetchImpl(env.loginUrl, { redirect: 'manual', signal: AbortSignal.timeout(15000) });
       const rawCookie = loginResponse.headers.getSetCookie()[0] ?? '';

@@ -13,7 +13,7 @@ import { runPnpm } from './managed-tarball.mjs';
 import { privatePnpmEnvironment } from './materialize-cache.mjs';
 import { prepareFiles, payloadManifest, hashFile, readJson, stable } from './materialize-graph.mjs';
 import { createTaskPnpmTool, installTaskRuntime } from './task-runtime-install.mjs';
-import { resolveHostRuntimeLayout, defaultHostLayout, composeAgentPresetRows, hasShippedPresetRoot, stringifyStructuredFile, readAsarTree, archiveResolvable } from './host-runtime-layout.mjs';
+import { resolveHostRuntimeLayout, defaultHostLayout, composeAgentPresetRows, hasShippedPresetRoot, stringifyStructuredFile, readAsarTree, archiveResolvable, resolveUnpackedPath } from './host-runtime-layout.mjs';
 
 /**
  * 宿主布局按实际安装探测（asar:false 的 `Resources/app` 优先，旧 `app.asar` 回退）。
@@ -52,7 +52,7 @@ const MOCK_IMAGE_IMAGE_TO_IMAGE = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGPQiLoDAAIMAV9Wszw4AAAAAElFTkSuQmCC',
   'base64',
 );
-const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const repositoryRoot = sourceRoot.split(`${sep}.worktrees${sep}`)[0];
 const failure = (code, hint) => Object.assign(new Error('TEST_ENV_' + code), { code: 'TEST_ENV_' + code, ...(hint ? { hint } : {}) });
 /** Attach a stable machine-readable reason and structured detail; `hint` stays human-readable. */
@@ -894,6 +894,49 @@ export async function prepareTaskRuntime(options = {}) {
   return runTaskPreparation({ options, io: fs, deps: {} });
 }
 
+const EXPLORE_BUNDLE = 'omnimux-inspiration';
+
+function registerExploreBundle(registry, nodeModules) {
+  const bundles = registry.dsh?.profile?.bundles;
+  if (!Array.isArray(bundles)) throw failure('SMOKE_PROFILE_INVALID', '冒烟测试配置缺少插件启用清单。');
+  if (!bundles.includes(EXPLORE_BUNDLE)) bundles.push(EXPLORE_BUNDLE);
+  registry.dependencies ??= {};
+  registry.dependencies[EXPLORE_BUNDLE] = `file:${join(nodeModules, EXPLORE_BUNDLE)}`;
+}
+
+function stagePackagedSmokeProfile({ io, presetRoot, profile }) {
+  const hint = '浏览器冒烟需要已安装的 OmniMux Dev App 提供完整的打包预设。';
+  if (!presetRoot) throw failure('SMOKE_PROFILE_MISSING', hint);
+  const skeleton = join(presetRoot, 'skeleton');
+  const manifestPath = join(skeleton, 'package.json');
+  const patchPath = join(skeleton, 'cordis.patch.yml');
+  if (!io.existsSync(manifestPath) || !io.existsSync(patchPath)) throw failure('SMOKE_PROFILE_MISSING', hint);
+
+  const registry = JSON.parse(io.readFileSync(manifestPath, 'utf8'));
+  const bundles = registry.dsh?.profile?.bundles;
+  if (!Array.isArray(bundles) || !bundles.every(name => typeof name === 'string' && /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/.test(name))) {
+    throw failure('SMOKE_PROFILE_INVALID', hint);
+  }
+  const packagedPlugins = join(presetRoot, 'plugins');
+  const nodeModules = join(profile, 'node_modules');
+  // The generic browser smoke asserts the guide, Explore section, and cards from this bundle.
+  registerExploreBundle(registry, nodeModules);
+  for (const name of bundles) {
+    if (name.startsWith('@deepseek-ai/')) continue; // Core bundles resolve from the installed host.
+    if (!io.existsSync(join(packagedPlugins, name, 'package.json'))) {
+      throw failure('SMOKE_BUNDLE_MISSING', `打包预设缺少冒烟所需插件 ${name}。请更新 OmniMux Dev App。`);
+    }
+    registry.dependencies[name] = `file:${join(nodeModules, name)}`;
+  }
+
+  io.mkdirSync(profile, { recursive: true, mode: 0o700 });
+  io.cpSync(packagedPlugins, nodeModules, { recursive: true, mode: fs.constants.COPYFILE_FICLONE });
+  io.writeFileSync(join(profile, 'package.json'), JSON.stringify(registry, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
+  const isolatedPatch = join(profile, 'cordis.patch.yml');
+  io.writeFileSync(isolatedPatch, io.readFileSync(patchPath, 'utf8'), { mode: 0o600, flag: 'wx' });
+  return isolatedPatch;
+}
+
 /** Test-only dependency seam. Overrides never come from CLI flags or process environment.
  * @param {{fs?: typeof fs, repositoryRoot?: string, spawn?: typeof spawn, readCredential?: () => string, signals?: NodeJS.Process, startupTimeoutMs?: number, shutdownTimeoutMs?: number}} [deps]
  */
@@ -901,9 +944,13 @@ export function createTestEnvironmentStarter(deps = {}) {
   const io = deps.fs ?? fs;
   const signals = deps.signals ?? process;
   return async function start(options = {}) {
-    if (!options || typeof options !== 'object' || Object.keys(options).some(k => !['root', 'mode', 'evidenceContext', 'preparationOnly', 'candidate', 'taskPlugins'].includes(k))) throw failure('OPTIONS');
-    const { root, mode = 'ui', evidenceContext = null, preparationOnly = false, candidate = null } = options;
+    if (!options || typeof options !== 'object' || Object.keys(options).some(k => !['root', 'mode', 'evidenceContext', 'preparationOnly', 'candidate', 'taskPlugins', 'freshSmoke', 'enableExplore'].includes(k))) throw failure('OPTIONS');
+    const { root, mode = 'ui', evidenceContext = null, preparationOnly = false, candidate = null, freshSmoke = false, enableExplore = false } = options;
     if (!['ui', 'onboarding', 'live'].includes(mode)) throw failure('OPTIONS');
+    if (typeof freshSmoke !== 'boolean' || typeof enableExplore !== 'boolean' ||
+      ((freshSmoke || enableExplore) && (mode !== 'ui' || evidenceContext !== null || preparationOnly || options.taskPlugins !== undefined))) {
+      throw failure('OPTIONS');
+    }
     validateRoot(root, io, deps.repositoryRoot ?? repositoryRoot);
     if (preparationOnly) {
       if (mode !== 'ui') throw failure('OPTIONS');
@@ -992,6 +1039,7 @@ export function createTestEnvironmentStarter(deps = {}) {
         // 只写隔离进程的环境变量，绝不落盘，也绝不指向真实上游。
         if (mode === 'ui') {
           env.OMNIMUX_BASE_URL = `${mock.origin}/v1`;
+          if (freshSmoke || enableExplore) env.OMNIMUX_SITE_URL = mock.origin;
           env.OMNIMUX_API_KEY = SYNTHETIC_MEDIA_KEY;
         }
         if (mode === 'live' && credentialBundle) {
@@ -1021,7 +1069,7 @@ export function createTestEnvironmentStarter(deps = {}) {
       }
       const realUserHome = process.env.HOME || '';
       const devHome = join(realUserHome, '.omnimux-dev');
-      if (mode !== 'onboarding') {
+      if (mode !== 'onboarding' && !freshSmoke) {
         try {
           const devSettingsPath = join(devHome, 'settings.yaml');
           if (io.existsSync(devSettingsPath)) {
@@ -1043,7 +1091,7 @@ export function createTestEnvironmentStarter(deps = {}) {
       // 预置标准测试工程夹具（自带视频素材节点，解除测试环境空画布造数据死锁）
       // 必须同时写入 storages/workspace.json 账本，否则 UI 无合法 workspace，
       // openWorkbench / 新对话都会因无 sessionId 失败，SessionGuide 永不渲染。
-      const fixtureSrc = join(root, 'tests', 'fixtures', 'qa-workspace-media');
+      const fixtureSrc = join(root, 'plugins', 'tests', 'fixtures', 'qa-workspace-media');
       const seededWorkspaceId = 'ws_qa_media';
       let hasSeededFixture = false;
       try {
@@ -1074,10 +1122,14 @@ export function createTestEnvironmentStarter(deps = {}) {
           }
         }
       } catch {}
+      if (freshSmoke && !hasSeededFixture) {
+        throw failure('SMOKE_FIXTURE_MISSING', '浏览器冒烟需要仓库的 plugins/tests/fixtures/qa-workspace-media 测试工程。');
+      }
 
       // 检测并挂载本地 OmniMux 完整插件 Profile 与业务测试数据集（若存在）
       const devProfile = join(devHome, 'profiles', 'omnimux');
       let profileName = 'web';
+      let packagedSmoke = false;
       let pluginsInstalled = false;
       let evidenceLevel = 'core-only';
       let taskPluginsCount = 0;
@@ -1086,8 +1138,20 @@ export function createTestEnvironmentStarter(deps = {}) {
       // 不能被下面的「Dev profile 挂载失败可降级」catch 吞掉（评审阻断）。
       let patchPathForPresets = null;
 
+      const packagedPreset = (freshSmoke || enableExplore) ? (deps.resolveUnpackedPath ?? resolveUnpackedPath)(layout.appRoot, 'preset') : null;
+      if (freshSmoke) {
+        profileName = 'omnimux';
+        packagedSmoke = true;
+        evidenceLevel = 'full';
+        patchPathForPresets = stagePackagedSmokeProfile({
+          io,
+          presetRoot: packagedPreset,
+          profile: join(env.DSH_HOME, 'profiles', profileName),
+        });
+      }
+
       try {
-        if (io.existsSync(devProfile) && io.existsSync(join(devProfile, 'package.json')) && io.existsSync(join(devProfile, 'node_modules'))) {
+        if (!freshSmoke && io.existsSync(devProfile) && io.existsSync(join(devProfile, 'package.json')) && io.existsSync(join(devProfile, 'node_modules'))) {
           profileName = 'omnimux';
           pluginsInstalled = true;
           evidenceLevel = 'full';
@@ -1157,24 +1221,8 @@ export function createTestEnvironmentStarter(deps = {}) {
           if (mode === 'ui') {
             const devCordisPatch = join(devProfile, 'cordis.patch.yml');
             if (io.existsSync(devCordisPatch)) {
-              const base = io.readFileSync(devCordisPatch, 'utf8');
-              const override = [
-                '',
-                '# QA 隔离环境（仅此一次性 profile，绝不写 Dev）：把中枢媒体线路指向本机 mock。',
-                '- id: omnimux',
-                '  config:',
-                '    media:',
-                '      providers:',
-                '        omnimux:',
-                `          baseUrl: ${mock.origin}/v1`,
-                '',
-              ].join('\n');
-              io.writeFileSync(
-                join(omnimuxProfileDir, 'cordis.patch.yml'),
-                base.replace(/\n*$/, '\n') + override,
-                { mode: 0o600 },
-              );
               patchPathForPresets = join(omnimuxProfileDir, 'cordis.patch.yml');
+              io.writeFileSync(patchPathForPresets, io.readFileSync(devCordisPatch, 'utf8'), { mode: 0o600 });
             }
           }
 
@@ -1374,15 +1422,45 @@ export function createTestEnvironmentStarter(deps = {}) {
         }
       } catch {}
 
+      if (enableExplore && !freshSmoke) {
+        const profile = join(env.DSH_HOME, 'profiles', 'omnimux');
+        const manifestPath = join(profile, 'package.json');
+        if (!io.existsSync(manifestPath)) {
+          // A journey can run in a fresh checkout with no Dev profile to overlay.
+          patchPathForPresets = stagePackagedSmokeProfile({ io, presetRoot: packagedPreset, profile });
+          profileName = 'omnimux';
+          packagedSmoke = true;
+          evidenceLevel = 'full';
+        } else {
+          canonical(io, manifestPath, false);
+          const nodeModules = join(profile, 'node_modules');
+          const installed = join(nodeModules, EXPLORE_BUNDLE);
+          if (!io.existsSync(join(installed, 'package.json'))) {
+            const source = packagedPreset && join(packagedPreset, 'plugins', EXPLORE_BUNDLE);
+            if (!source || !io.existsSync(join(source, 'package.json'))) {
+              throw failure('SMOKE_BUNDLE_MISSING', '打包预设缺少「灵感」插件。请更新 OmniMux Dev App。');
+            }
+            io.cpSync(source, installed, { recursive: true, mode: fs.constants.COPYFILE_FICLONE });
+          }
+          const registry = JSON.parse(io.readFileSync(manifestPath, 'utf8'));
+          registerExploreBundle(registry, nodeModules);
+          io.writeFileSync(manifestPath, JSON.stringify(registry, null, 2) + '\n', { mode: 0o600 });
+        }
+      }
+
       // preset 声明是「缺了就会让新建会话失败」的硬依赖：在降级 catch 之外求值，
       // 失败直接冒泡（PRESET_ROOT_MISSING / PRESET_COMPOSE_FAILED / PRESET_ROWS_EMPTY），
       // 不允许退回「宿主照常启动、建会话才报 agent-preset/not-found」的静默降级。
       if (patchPathForPresets) {
-        const agentPresetPatch = agentPresetPatchText(layout);
-        if (agentPresetPatch) {
-          const current = io.readFileSync(patchPathForPresets, 'utf8');
-          io.writeFileSync(patchPathForPresets, current.replace(/\n*$/, '\n') + agentPresetPatch, { mode: 0o600 });
+        const base = parseDocument(io.readFileSync(patchPathForPresets, 'utf8'));
+        const agentPresets = parseDocument(agentPresetPatchText(layout, deps));
+        const baseRows = base.toJS() ?? [];
+        const presetRows = agentPresets.toJS();
+        if (base.errors.length || agentPresets.errors.length || !Array.isArray(baseRows) || !Array.isArray(presetRows)) {
+          throw failure('SMOKE_PROFILE_INVALID', '隔离环境的插件配置必须是 YAML 列表。');
         }
+        const localMedia = { id: 'omnimux', config: { media: { providers: { omnimux: { baseUrl: `${mock.origin}/v1` } } } } };
+        io.writeFileSync(patchPathForPresets, stringifyStructuredFile([...baseRows, localMedia, ...presetRows]), { mode: 0o600 });
       }
 
       signals.on('SIGINT', onSignal); signals.on('SIGTERM', onSignal);
@@ -1423,6 +1501,7 @@ export function createTestEnvironmentStarter(deps = {}) {
         mode,
         origin: url.origin,
         evidenceLevel,
+        ...(packagedSmoke ? { profileSource: 'packaged-smoke' } : {}),
         taskPluginsInstalled: pluginsInstalled,
         taskPluginsCount,
         seededDataDomains,
@@ -1451,7 +1530,7 @@ export function createTestEnvironmentStarter(deps = {}) {
  * loginUrl is a secret in-memory capability: never log it or put it in evidence.
  * Explicit taskPlugins + candidate select the ui-only, task-private installation path.
  * A legacy evidenceContext without taskPlugins still refuses to claim a fresh installation.
- * @param {{root: string, mode?: 'ui'|'onboarding'|'live', evidenceContext?: {taskId:string, runId:string}}} options
+ * @param {{root: string, mode?: 'ui'|'onboarding'|'live', freshSmoke?: boolean, enableExplore?: boolean, evidenceContext?: {taskId:string, runId:string}}} options
  */
 export const startTestEnvironment = createTestEnvironmentStarter();
 
