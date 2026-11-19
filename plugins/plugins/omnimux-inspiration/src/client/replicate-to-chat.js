@@ -10,6 +10,9 @@
 import { buildReplicationPrompt } from './replication.js'
 import { queueSessionPrefill } from './session-prefill.js'
 import { clickOfficialNewSession } from './new-session-click.js'
+import { attachInspirationToCurrentSession } from './attach-to-current-session.js'
+
+export { buildInspirationPayload, pickReplicationPreviewUrl } from './inspiration-payload.js'
 
 /** Module-level inflight lock. A second call returns `{ error: 'busy' }` and does not queue. */
 let replicateInflight = null
@@ -57,55 +60,6 @@ function resolveWindow(io, doc) {
   if (doc && doc.defaultView) return doc.defaultView
   if (typeof window !== 'undefined') return window
   return undefined
-}
-
-/**
- * Cover fallback copied from CoverCard's pickCoverSrc usage; do not import api.js.
- * @param {object | null | undefined} row
- * @returns {string}
- */
-export function pickReplicationPreviewUrl(row) {
-  if (!row || typeof row !== 'object') return ''
-  const rec = /** @type {Record<string, unknown>} */ (row)
-  const raw = rec.cover_key ?? rec.cover_url
-  if (typeof raw !== 'string' || raw === '') return ''
-  if (raw.includes('..')) return ''
-  if (/^https?:\/\//i.test(raw)) return raw
-  if (raw.startsWith('/omnimux/inspiration/local/media/')) return raw
-  if (raw.startsWith('/omnimux/inspiration/media/')) return raw
-  if (raw.startsWith('/api/inspiration/v1/media/')) {
-    return `/omnimux/inspiration/media/${raw.slice('/api/inspiration/v1/media/'.length)}`
-  }
-  return `/omnimux/inspiration/media/${raw.replace(/^\/+/, '')}`
-}
-
-/**
- * Attachment payload for this CTA only.
- * @param {object} row
- */
-export function buildInspirationPayload(row) {
-  const id = row?.id
-  const decon = row?.deconstruction && typeof row.deconstruction === 'object' ? row.deconstruction : {}
-  const shots = Array.isArray(decon.shots) ? decon.shots : (Array.isArray(row?.shots) ? row.shots : [])
-  const structure = Array.isArray(decon.structure) ? decon.structure : []
-  return {
-    sourcePlugin: 'omnimux-inspiration',
-    kind: 'inspiration',
-    entityId: id,
-    title: row?.title || row?.source_url || '灵感素材',
-    extension: 'INSPIRATION',
-    relativePath: row?.local_paths?.video || row?.local_paths?.cover || `inspiration/${id}`,
-    previewUrl: pickReplicationPreviewUrl(row),
-    metadata: {
-      inspiration_id: id,
-      source_url: row?.source_url,
-      source_platform: row?.source_platform,
-      hook: decon.hook || decon.hook_highlight || '',
-      summary: decon.summary || '',
-      shots,
-      structure,
-    },
-  }
 }
 
 /**
@@ -303,7 +257,27 @@ export async function oneClickReplicate(row, io = {}) {
         return { ok: false, error: '参考文件带入失败，请重试' }
       }
     }
-    const payload = prepared ? null : buildInspirationPayload(row)
+    // The normal CTA hands its attachment to the shared current-session helper;
+    // the helper reads only host-owned session seams, never sessions.list.current.
+    const attachInspiration = () => {
+      const result = attachInspirationToCurrentSession(row, {
+        document: doc,
+        window: win,
+        sessionId,
+        addAttachment,
+      })
+      if (!result.ok) {
+        return {
+          ok: false,
+          reason: result.error === 'attachFull' ? 'quota-exceeded' : 'invalid-payload',
+        }
+      }
+      if (result.duplicate) return { ok: false, reason: 'duplicate' }
+      return {
+        ok: true,
+        ...(result.attachmentId ? { attachment: { id: result.attachmentId } } : {}),
+      }
+    }
     const recoveryKey = prepared ? `${row.id}:${row.creation_reference.id}` : null
     const ownDraft = prepared ? recoverableDrafts.get(recoveryKey) : null
     let prefilled
@@ -311,7 +285,7 @@ export async function oneClickReplicate(row, io = {}) {
       prefilled = await prefill({
         targetSessionId: sessionId,
         prompt,
-        attach: batch ? batch.attach : () => addAttachment(sessionId, payload),
+        attach: batch ? batch.attach : attachInspiration,
         ...(prepared ? {
           requireReadback: true,
           resumeOwnPrompt: ownDraft?.sessionId === sessionId && ownDraft?.prompt === prompt,
