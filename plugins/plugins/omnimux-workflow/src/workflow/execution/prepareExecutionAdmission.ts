@@ -3,7 +3,7 @@ import { prepareExecutionSlotGraph } from '../../shared/graph/feedSlot/prepareEx
 import { findExecutionReadinessFailure, type ExecutionReadinessGraph } from '../../shared/validation/executionReadiness.ts';
 import type { ExecutionManager } from './ExecutionManager.ts';
 import type { ResolveExecutionProjectFile } from './executionMediaSource.ts';
-import { executionInputSignatures, executionSourceIdentities } from './executionIdentity.ts';
+import { executionInputSignatures, readExecutionSourceIdentities } from './executionIdentity.ts';
 import { UnverifiedLegacyTask } from './legacyExecutionInput.ts';
 import type { ExecutableNode } from './ExecutionScheduler.ts';
 import type { ExecutionMode, ResolvedExecutionSubgraph, SubgraphNodeLike, SubgraphEdgeLike } from './subgraph.ts';
@@ -19,7 +19,7 @@ export async function prepareExecutionAdmission<
   const findRecoverableTasks = manager.findRecoverableTasks?.bind(manager);
   const identity = findRecoverableTasks ? {
     inputSignatures: executionInputSignatures(graph, selected.nodeIdSet),
-    sourceIdentities: executionSourceIdentities(graph, selected.nodeIdSet, { workspaceId, resolveProjectFile }),
+    sourceIdentities: await readExecutionSourceIdentities(graph, selected.nodeIdSet, { workspaceId, resolveProjectFile }),
     rawGraph: graph,
   } : undefined;
   let catalog: CapabilityCatalog | null = null;
