@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { getNodesBounds } from '@xyflow/react';
 import {
   calculateGroupBounds,
   toRelativeCoordinates,
@@ -8,6 +9,7 @@ import {
   planGroupNodes,
   planUngroupNode,
   planToggleGroupCollapse,
+  projectGroupDimensions,
   projectGroupVisibility,
   screenDeltaToFlowDelta,
   childIdsOfGroup,
@@ -260,4 +262,43 @@ test('planToggleGroupCollapse: 收起与展开只改变组状态，组内节点�
 
   assert.deepEqual(expandedNodes.slice(1), plan.nodes.slice(1));
   assert.deepEqual(projectGroupVisibility(expandedNodes, []).hiddenNodeIds, new Set());
+});
+
+test('group view uses the declared size after fold and expand even with the prior measurement', () => {
+  const expanded = {
+    id: 'group',
+    type: 'group',
+    position: { x: 32, y: 72 },
+    width: 800,
+    height: 420,
+    measured: { width: 800, height: 420 },
+    data: { expandedBounds: { width: 720, height: 360 } },
+  };
+  const [folded] = planToggleGroupCollapse([expanded], 'group');
+  const foldedWithPriorMeasurement = { ...folded, measured: expanded.measured };
+  const compactView = projectGroupDimensions(foldedWithPriorMeasurement);
+  assert.deepEqual(getNodesBounds([compactView]), {
+    ...expanded.position,
+    width: COLLAPSED_GROUP_WIDTH,
+    height: COLLAPSED_GROUP_HEIGHT,
+  });
+  assert.deepEqual(foldedWithPriorMeasurement.measured, { width: 800, height: 420 });
+
+  const movedPosition = { x: 87, y: 109 };
+  const measuredFolded = { ...folded, position: movedPosition, measured: compactView.measured };
+  const [reopened] = planToggleGroupCollapse([measuredFolded], 'group');
+  const reopenedWithPriorMeasurement = { ...reopened, measured: measuredFolded.measured };
+  assert.deepEqual(getNodesBounds([projectGroupDimensions(reopenedWithPriorMeasurement)]), {
+    ...movedPosition,
+    width: 800,
+    height: 420,
+  });
+});
+
+test('group view preserves measurements for undeclared axes and other node types', () => {
+  const group = { id: 'group', type: 'group', position: { x: 0, y: 0 }, width: 360, measured: { width: 220, height: 250 } };
+  assert.deepEqual(getNodesBounds([projectGroupDimensions(group)]), { ...group.position, width: 360, height: 250 });
+
+  const material = { ...group, type: 'material' };
+  assert.equal(projectGroupDimensions(material), material);
 });
