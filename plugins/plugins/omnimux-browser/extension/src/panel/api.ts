@@ -7,7 +7,8 @@
 
 import type { BridgeCaps, RespondResult } from 'omnimux-browser/src/protocol.ts'
 import type { ServerFrame } from 'omnimux-browser/src/protocol.ts'
-import type { BridgeState } from '../background/bridge.ts'
+import type { BridgeConnection, BridgeState } from '../background/bridge.ts'
+export type { BridgeConnection } from '../background/bridge.ts'
 import type { Settings } from '../background/index.ts'
 import type { TabAffinityDecision, TabAffinityState } from '../background/tab-affinity.ts'
 import type { ApprovalDecision, ApprovalRequest } from '../security/approval.ts'
@@ -76,6 +77,7 @@ interface StatusMessage {
   type: 'status'
   state: BridgeState
   caps: BridgeCaps | null
+  connection?: BridgeConnection
   /** Connection settings a pairing just bound, for an already-open panel to fill in. */
   settings?: { bridgeUrl: string; token: string }
 }
@@ -184,12 +186,13 @@ function panelRpcError(failure: RpcFailurePayload | undefined, fallbackMessage: 
 
 /** The panel API surface. */
 export interface PanelApi {
-  rpc<T = unknown>(method: string, payload?: unknown): Promise<T>
+  rpc<T = unknown>(method: string, payload?: unknown, connectionId?: string): Promise<T>
   respond(rpcId: string, result: RespondResult): Promise<unknown>
   onStatus(callback: (
     state: BridgeState,
     caps: BridgeCaps | null,
     boundSettings?: { bridgeUrl: string; token: string },
+    connection?: BridgeConnection,
   ) => void): () => void
   onEvent(callback: (frame: ServerFrame) => void): () => void
   onApprovalRequest(callback: (request: ApprovalRequest) => void): () => void
@@ -240,6 +243,7 @@ export function connectPanel(): PanelApi {
     state: BridgeState,
     caps: BridgeCaps | null,
     boundSettings?: { bridgeUrl: string; token: string },
+    connection?: BridgeConnection,
   ) => void>()
   const eventListeners = new Set<(frame: ServerFrame) => void>()
   const approvalListeners = new Set<(request: ApprovalRequest) => void>()
@@ -294,7 +298,7 @@ export function connectPanel(): PanelApi {
         break
       }
       case 'status':
-        for (const listener of statusListeners) listener(msg.state, msg.caps, msg.settings)
+        for (const listener of statusListeners) listener(msg.state, msg.caps, msg.settings, msg.connection)
         break
       case 'event':
         for (const listener of eventListeners) listener(msg.frame)
@@ -375,11 +379,10 @@ export function connectPanel(): PanelApi {
 
   function attach(next: chrome.runtime.Port): chrome.runtime.Port {
     port = next
-    next.onMessage.addListener(onMessage)
+    next.onMessage.addListener((message) => { if (port === next) onMessage(message) })
     next.onDisconnect.addListener(() => {
       if (port !== next) return
-      port = null
-      failAll(connectionError())
+      invalidate(next, connectionError())
       // Firefox event pages and extension reloads can invalidate a live Port.
       // Reconnect once while the panel is still open; later sends share the
       // same attempt instead of opening competing ports.
@@ -410,6 +413,7 @@ export function connectPanel(): PanelApi {
     if (port !== stale) return
     port = null
     failAll(error, preserve)
+    for (const listener of statusListeners) listener('stopped', null)
   }
 
   /**
@@ -450,13 +454,13 @@ export function connectPanel(): PanelApi {
   }
 
   return {
-    rpc<T>(method: string, payload?: unknown): Promise<T> {
+    rpc<T>(method: string, payload?: unknown, connectionId?: string): Promise<T> {
       const id = crypto.randomUUID()
       return new Promise<T>((resolve, reject) => {
         const entry = { resolve: (value: unknown) => resolve(value as T), reject }
         pending.set(id, entry)
         void send(
-          { type: 'rpc', id, method, payload },
+          { type: 'rpc', id, method, payload, ...(connectionId === undefined ? {} : { connectionId }) },
           { kind: 'rpc', id },
         ).catch((error: unknown) => {
           if (pending.get(id) !== entry) return

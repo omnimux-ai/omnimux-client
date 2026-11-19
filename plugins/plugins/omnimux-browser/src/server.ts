@@ -647,8 +647,7 @@ export class BridgeServer {
       return
     }
     if (frame.method === BRIDGE_TEXT_GENERATION_METHOD) {
-      // Panel-local control RPC (like modelMode): it never reaches the gateway
-      // itself — the injected pin performs the one `session.selectModel` call.
+      // Apply the explicit model to this Agent before accepting its prompt.
       const request = parseTextGenerationRequest(frame.payload)
       if (request === undefined) {
         sendFrame(conn.ws, {

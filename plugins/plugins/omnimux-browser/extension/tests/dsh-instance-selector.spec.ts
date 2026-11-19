@@ -11,7 +11,7 @@ import {
 } from '../src/shared/instance-discovery.ts'
 import {
   ModelSelector,
-  REAL_LOCAL_SUBSCRIPTION_GROUPS,
+  type ModelGroup,
 } from '../src/panel/components/ModelSelector.tsx'
 
 /** 指定端口在线（返回合法 wsUrl 的 bridge-config），其余端口一律拒绝。 */
@@ -147,128 +147,81 @@ describe('WorkspaceSelector (Dynamic Instance Discovery) Suite', () => {
   })
 })
 
-describe('ModelSelector Component & Real Subscription Models Suite', () => {
+describe('ModelSelector with desktop provider groups', () => {
+  const groups: ModelGroup[] = [
+    { provider: 'a', group: 'First', models: [{ id: 'same', name: 'First model' }] },
+    {
+      provider: 'b', group: 'Second',
+      models: [{ id: 'same', name: 'Second model', reasoning: {
+        efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }],
+        defaultEffort: 'low',
+      } }, { id: 'unique', name: 'Unique' }],
+    },
+  ]
+  const onSelect = vi.fn()
   let container: HTMLDivElement
   let root: ReturnType<typeof createRoot>
 
   beforeEach(() => {
     container = document.createElement('div')
-    document.body.appendChild(container)
     root = createRoot(container)
+    onSelect.mockClear()
     localStorage.clear()
-    vi.restoreAllMocks()
   })
 
-  it('matches real local subscription models from ChatGPT (Codex) and Grok', () => {
-    expect(REAL_LOCAL_SUBSCRIPTION_GROUPS.length).toBe(2)
-    const codex = REAL_LOCAL_SUBSCRIPTION_GROUPS.find((g) => g.group === 'ChatGPT (Codex)')
-    expect(codex).not.toBeUndefined()
-    expect(codex?.models.some((m) => m.id === 'gpt-6-astra')).toBe(true)
-    expect(codex?.models.some((m) => m.id === 'gpt-5.6-sol')).toBe(true)
-    expect(codex?.models.some((m) => m.id === 'gpt-5.6-terra')).toBe(true)
-    expect(codex?.models.some((m) => m.id === 'gpt-5.6-luna')).toBe(true)
-    expect(codex?.models.some((m) => m.id === 'gpt-5.5')).toBe(true)
-    expect(codex?.models.some((m) => m.id === 'gpt-5.3-codex-spark')).toBe(true)
+  const render = (props: Partial<React.ComponentProps<typeof ModelSelector>> = {}) =>
+    act(async () => { root.render(createElement(ModelSelector, {
+      modelGroups: groups, selectedModel: 'same', selectedProvider: 'b', onSelectModel: onSelect, ...props,
+    })) })
 
-    const grok = REAL_LOCAL_SUBSCRIPTION_GROUPS.find((g) => g.group === 'Grok (Subscription)')
-    expect(grok).not.toBeUndefined()
-    expect(grok?.models.some((m) => m.id === 'grok-4.20-0309-non-reasoning')).toBe(true)
-    expect(grok?.models.some((m) => m.id === 'grok-4.20-0309-reasoning')).toBe(true)
+  it('hydrates without writing, and sends the precise provider for each model and effort edit', async () => {
+    await render()
+    const model = container.querySelector<HTMLSelectElement>('.model-select-control')!
+    const effort = container.querySelector<HTMLSelectElement>('.effort-select-control')!
+    expect(model.selectedOptions[0].textContent).toBe('Second model')
+    expect(effort.value).toBe('low')
+    expect(onSelect).not.toHaveBeenCalled()
+    expect(localStorage.length).toBe(0)
+
+    await act(async () => {
+      effort.value = 'high'
+      effort.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(onSelect).toHaveBeenLastCalledWith('same', 'high', 'b')
+    await act(async () => {
+      model.value = model.options[0].value
+      model.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(onSelect).toHaveBeenLastCalledWith('same', undefined, 'a')
+    await render({ disabled: true })
+    expect(model.disabled).toBe(true)
+    expect(effort.disabled).toBe(true)
   })
 
-  it('renders select with real local models grouped by provider and switches model', async () => {
-    const onSelect = vi.fn()
-
-    await act(async () => {
-      root.render(
-        createElement(ModelSelector, {
-          locale: 'zh',
-          activePort: 45120,
-          onSelectModel: onSelect,
-        })
-      )
-    })
-
-    const select = container.querySelector<HTMLSelectElement>('.model-select-control')!
-    expect(select).not.toBeNull()
-
-    const optgroups = container.querySelectorAll('optgroup')
-    expect(optgroups.length).toBeGreaterThanOrEqual(2)
-    expect(optgroups[0].label).toBe('ChatGPT (Codex)')
-    expect(optgroups[1].label).toBe('Grok (Subscription)')
-
-    // Change model to gpt-6-astra
-    await act(async () => {
-      select.value = 'gpt-6-astra'
-      select.dispatchEvent(new Event('change', { bubbles: true }))
-    })
-
-    expect(onSelect).toHaveBeenCalledWith('gpt-6-astra', 'medium')
-    expect(localStorage.getItem('omnimux_default_model_45120')).toBe('gpt-6-astra')
+  it('only resolves an old provider-less preference when its model id is unique', async () => {
+    await render({ selectedProvider: '', selectedModel: 'unique' })
+    const model = container.querySelector<HTMLSelectElement>('.model-select-control')!
+    expect(model.selectedOptions[0].textContent).toBe('Unique')
+    await render({ selectedProvider: '' })
+    expect(model.selectedOptions[0].disabled).toBe(true)
+    expect(model.selectedOptions[0].textContent).toContain('不可用')
+    await render({ selectedProvider: 'missing' })
+    expect(model.selectedOptions[0].disabled).toBe(true)
+    expect(onSelect).not.toHaveBeenCalled()
   })
 
-  it('supports custom model entry and persistence', async () => {
-    const onSelect = vi.fn()
-
+  it('clears an old text override even when the connected catalog is unavailable', async () => {
+    await render({ allowEmptyOption: true, status: 'unavailable' })
+    const model = container.querySelector<HTMLSelectElement>('.model-select-control')!
+    expect(model.disabled).toBe(false)
+    expect(model.querySelectorAll('optgroup')).toHaveLength(0)
     await act(async () => {
-      root.render(
-        createElement(ModelSelector, {
-          locale: 'zh',
-          activePort: 45120,
-          onSelectModel: onSelect,
-        })
-      )
+      model.value = ''
+      model.dispatchEvent(new Event('change', { bubbles: true }))
     })
-
-    const select = container.querySelector<HTMLSelectElement>('.model-select-control')!
-    await act(async () => {
-      select.value = '__custom__'
-      select.dispatchEvent(new Event('change', { bubbles: true }))
-    })
-
-    // Custom input should appear
-    const input = container.querySelector<HTMLInputElement>('.custom-port-input')!
-    expect(input).not.toBeNull()
-
-    const okBtn = container.querySelector<HTMLButtonElement>('.custom-port-apply-btn')!
-    await act(async () => {
-      input.value = 'my-custom-llm'
-      input.dispatchEvent(new Event('input', { bubbles: true }))
-      // Trigger onChange
-      const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
-      nativeSetter.call(input, 'my-custom-llm')
-      input.dispatchEvent(new Event('change', { bubbles: true }))
-      okBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(onSelect).toHaveBeenCalled()
-  })
-
-  it('renders reasoning effort selector on the right and allows changing effort', async () => {
-    const onSelect = vi.fn()
-    const onEffort = vi.fn()
-
-    await act(async () => {
-      root.render(
-        createElement(ModelSelector, {
-          locale: 'zh',
-          activePort: 45120,
-          onSelectModel: onSelect,
-          onSelectEffort: onEffort,
-        })
-      )
-    })
-
-    const effortSelect = container.querySelector<HTMLSelectElement>('.effort-select-control')!
-    expect(effortSelect).not.toBeNull()
-
-    // Select 'high' effort
-    await act(async () => {
-      effortSelect.value = 'high'
-      effortSelect.dispatchEvent(new Event('change', { bubbles: true }))
-    })
-
-    expect(onEffort).toHaveBeenCalledWith('high')
-    expect(localStorage.getItem('omnimux_default_effort_45120')).toBe('high')
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('')
+    await render({ status: 'empty', modelGroups: [], selectedModel: '' })
+    expect(model.disabled).toBe(true)
+    expect(model.selectedOptions[0].textContent).toBe('暂无可用模型')
   })
 })

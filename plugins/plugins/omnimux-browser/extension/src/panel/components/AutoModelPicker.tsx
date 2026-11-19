@@ -28,7 +28,8 @@ export interface AutoModelPickerProps {
   rpc?: (method: string, payload?: unknown) => Promise<unknown>
   fetchImpl?: typeof fetch
   selectedModel?: string
-  onSelectModel?: (modelId: string, effort?: string, provider?: string) => void
+  selectedProvider?: string
+  onSelectModel?: (modelId: string, effort?: string, provider?: string) => void | Promise<void>
   disabled?: boolean
 }
 
@@ -123,7 +124,7 @@ export function pickEffortForRow(row: PickerModelRow): string | undefined {
 
 /**
  * `/ext/bridge-config` 的 `modelGroups` → 拍平行；provider 沿用
- * ModelSelector 的 group→provider 规则（ChatGPT (Codex) → chatgpt、
+ * 旧订阅目录的 group→provider 规则（ChatGPT (Codex) → chatgpt、
  * Grok (Subscription) → grok、组自带 provider 优先、其他 undefined）。
  */
 export function flattenModelGroupsFallback(payload: unknown): PickerModelRow[] {
@@ -201,16 +202,16 @@ export const AutoModelPicker = memo(function AutoModelPicker({
   copy,
   rpc,
   fetchImpl,
-  selectedModel = '',
+  selectedModel,
+  selectedProvider,
   onSelectModel,
   disabled = false,
 }: AutoModelPickerProps) {
   const resolvedCopy: AutoModelPickerCopy = copy ?? PANEL_COPY[locale].modelPicker
   const [isOpen, setIsOpen] = useState(false)
   const [mode, setMode] = useState<ModelMode>(() => readStoredMode(port))
-  // 点选后立即生效的乐观选中态；父组件回写 selectedModel 后以 props 为准。
-  // 初始值与 App/ModelSelector 读同一真源：omnimux_default_model(_<port>)。
-  const [pickedModelId, setPickedModelId] = useState<string>(() => readStoredModel(port))
+  const [storedModel, setStoredModel] = useState(() => readStoredModel(port))
+  const [picked, setPicked] = useState<PickerModelRow | null>(null)
   const [rows, setRows] = useState<PickerModelRow[]>([])
   const [listState, setListState] = useState<'idle' | 'loading' | 'ok' | 'empty' | 'unavailable'>('idle')
   const rootRef = useRef<HTMLSpanElement | null>(null)
@@ -224,14 +225,14 @@ export const AutoModelPicker = memo(function AutoModelPicker({
   // 实例切换时同步该端口的持久化模式与手动偏好，避免把上一实例的选择推给新宿主。
   useEffect(() => {
     setMode(readStoredMode(port))
-    setPickedModelId(readStoredModel(port))
+    setStoredModel(readStoredModel(port))
   }, [port])
 
   // 外部真源变化（设置页 ModelSelector 或 settings 回填）以 props 为准，
   // 乐观选中态只覆盖到父组件回写为止。
   useEffect(() => {
-    if (selectedModel !== '') setPickedModelId(selectedModel)
-  }, [selectedModel])
+    setPicked(null)
+  }, [port, selectedModel, selectedProvider])
 
   // 宿主可能尚未实现 bridge.modelMode —— 每次失败静默即可（fire-and-forget）。
   useEffect(() => {
@@ -354,10 +355,15 @@ export const AutoModelPicker = memo(function AutoModelPicker({
 
   const handlePick = (row: PickerModelRow) => {
     if (mode !== 'manual') setModelMode('manual')
-    setPickedModelId(row.id)
+    setPicked(row)
     setIsOpen(false)
     triggerRef.current?.focus()
-    onSelectModel?.(row.id, pickEffortForRow(row), row.provider)
+    const write = onSelectModel?.(row.id, pickEffortForRow(row), row.provider)
+    if (write && selectedModel !== undefined) {
+      // The parent reports write errors and supplies the last confirmed route.
+      const useConfirmed = () => setPicked(current => current === row ? null : current)
+      void write.then(useConfirmed, useConfirmed)
+    }
   }
 
   const handleToggle = () => {
@@ -371,11 +377,13 @@ export const AutoModelPicker = memo(function AutoModelPicker({
     }
   }
 
-  const effectiveModel = pickedModelId !== '' ? pickedModelId : selectedModel
-  const isManual = mode === 'manual' && effectiveModel !== ''
-  const selectedRow = isManual ? rows.find((r) => r.id === effectiveModel) : undefined
+  const effectiveModel = picked?.id ?? selectedModel ?? storedModel
+  const provider = picked ? picked.provider : selectedProvider
+  const isManual = mode === 'manual'
+  const matches = rows.filter(row => row.id === effectiveModel && (!provider || row.provider === provider))
+  const selectedRow = matches.length === 1 ? matches[0] : undefined
   const triggerBrand = isManual ? resolveModelBrandKey(effectiveModel) : null
-  const triggerLabel = isManual ? (selectedRow?.name ?? effectiveModel) : resolvedCopy.triggerAuto
+  const triggerLabel = isManual ? (selectedRow?.name ?? (effectiveModel || '—')) : resolvedCopy.triggerAuto
 
   return (
     <span className="amp-wrap" ref={rootRef}>
@@ -421,13 +429,13 @@ export const AutoModelPicker = memo(function AutoModelPicker({
                 <div className="amp-divider" />
                 <div className="amp-list" role="listbox" aria-label={resolvedCopy.panelTitle}>
                   {listState === 'ok' && rows.map((row) => {
-                    const selected = effectiveModel !== '' && row.id === effectiveModel
+                    const selected = row === selectedRow
                     const brand = resolveModelBrandKey(row.id)
                     const subtitle = resolvedCopy.modelSubtitles[row.id] ?? resolvedCopy.fallbackSubtitle
                     return (
                       <button
                         type="button"
-                        key={row.id}
+                        key={JSON.stringify([row.provider, row.id])}
                         role="option"
                         aria-selected={selected}
                         aria-label={selected ? `${row.name}, ${resolvedCopy.rowSelectedAria}` : row.name}

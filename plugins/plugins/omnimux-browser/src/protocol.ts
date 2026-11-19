@@ -142,11 +142,7 @@ export interface TextGenerationRequest {
   sessionId: string
   /** Explicit text-generation model the session must use. */
   model: string
-  /**
-   * Gateway provider id for that model. Required: the Host's
-   * `session/selectModel` codec lists `provider` as required, so a provider-less
-   * pin would be rejected there instead of failing at this contract boundary.
-   */
+  /** Provider id distinguishes models shared by several providers. */
   provider: string
   /** Optional reasoning effort for that model. */
   reasoningEffort?: string
@@ -174,8 +170,8 @@ function optionalBoundedText(value: unknown, max: number): string | undefined | 
  *
  * `sessionId` and `model` must be non-empty and at most
  * {@link TEXT_GENERATION_MAX_ID_CHARS} characters; `provider` must be non-empty
- * and at most {@link TEXT_GENERATION_MAX_OPTION_CHARS} characters (the Host's
- * `session/selectModel` codec requires it); the optional `reasoningEffort` must
+ * and at most {@link TEXT_GENERATION_MAX_OPTION_CHARS} characters. The optional
+ * `reasoningEffort` must
  * be a string of at most {@link TEXT_GENERATION_MAX_OPTION_CHARS} characters
  * (an empty string is the panel's "not set" value and is dropped). Anything
  * else is not a pin request, so the carrier answers `bad-request` instead of

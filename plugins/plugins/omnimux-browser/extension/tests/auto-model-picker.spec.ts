@@ -160,7 +160,7 @@ describe('Issue #2966 会话栏「自动/手动」模型选择器', () => {
       expect(flattenCatalogGroups({ groups: [{ id: 'x', models: 'nope' }] })).toEqual([])
     })
 
-    it('flattenModelGroupsFallback：沿用 ModelSelector 的 group→provider 规则', () => {
+    it('flattenModelGroupsFallback：沿用旧订阅目录的 group→provider 规则', () => {
       const rows = flattenModelGroupsFallback([
         { group: 'ChatGPT (Codex)', models: [{ id: 'gpt-5.5', name: 'GPT-5.5' }] },
         { group: 'Grok (Subscription)', models: [{ id: 'grok-4.5', name: 'Grok 4.5' }] },
@@ -274,6 +274,38 @@ describe('Issue #2966 会话栏「自动/手动」模型选择器', () => {
       expect(selected).not.toBeNull()
       expect(selected!.querySelector('.amp-row-name')?.textContent).toBe('GPT-5.5')
       expect(selected!.querySelector('.amp-check')).not.toBeNull()
+      h.unmount()
+    })
+
+    it('同名模型只勾选指定提供方，旧偏好遇到多个提供方时显示模型 id', async () => {
+      localStorage.setItem(`${MODEL_MODE_STORAGE_PREFIX}${PORT}`, 'manual')
+      localStorage.setItem(`omnimux_default_model_${PORT}`, 'shared')
+      const rpc = async (method: string) => method === 'session.modelCatalog'
+        ? { groups: [
+          { id: 'a', models: [{ id: 'shared', name: 'Model A' }] },
+          { id: 'b', models: [{ id: 'shared', name: 'Model B' }] },
+        ] }
+        : {}
+      const legacy = await mountPicker({ rpc })
+      click(trigger(legacy.container))
+      await flush()
+      expect(trigger(legacy.container).textContent).toBe('shared')
+      expect(legacy.container.querySelector('[aria-selected="true"]')).toBeNull()
+      legacy.unmount()
+
+      let finish!: () => void
+      const onSelectModel = vi.fn(() => new Promise<void>(resolve => { finish = resolve }))
+      const h = await mountPicker({ rpc, selectedModel: 'shared', selectedProvider: 'b', onSelectModel })
+      click(trigger(h.container))
+      await flush()
+      expect(trigger(h.container).textContent).toBe('Model B')
+      expect([...h.container.querySelectorAll('[aria-selected="true"] .amp-row-name')].map(row => row.textContent)).toEqual(['Model B'])
+      click(h.container.querySelector('[role="option"]')!)
+      expect(onSelectModel).toHaveBeenCalledWith('shared', undefined, 'a')
+      expect(trigger(h.container).textContent).toBe('Model A')
+      // If the caller finishes without confirming A, the control shows its confirmed prop.
+      await act(async () => { finish() })
+      expect(trigger(h.container).textContent).toBe('Model B')
       h.unmount()
     })
 

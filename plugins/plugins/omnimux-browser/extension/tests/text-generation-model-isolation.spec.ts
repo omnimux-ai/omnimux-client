@@ -310,6 +310,32 @@ describe('Copilot 正文生成与文本生成模型（#3629）', () => {
     assert.equal(frameWith(framesFrom(socket, from), 'bridge.session.purge').payload.sessionId, 'session-pin-failed')
   })
 
+  it('生成中的配置变更不改写路由，指定提供方的会话被拒时直接显示宿主原因', async () => {
+    const socket = await connectedSocket()
+    await configureTextModel('shared-id', 'second-provider', 'high')
+    const respond = vi.fn()
+    const from = rpcFrames(socket).length
+    generate(respond)
+    await vi.waitFor(() => { assert.ok(frameWith(framesFrom(socket, from), 'session.create')) })
+    await configureTextModel('', '', '')
+    reply(socket, frameWith(framesFrom(socket, from), 'session.create'), { sessionId: 'session-qualified' })
+    await vi.waitFor(() => { assert.ok(frameWith(framesFrom(socket, from), 'bridge.textGeneration')) })
+    const pin = frameWith(framesFrom(socket, from), 'bridge.textGeneration')
+    assert.deepStrictEqual(pin.payload, {
+      sessionId: 'session-qualified', model: 'shared-id', provider: 'second-provider', reasoningEffort: 'high',
+    })
+    reply(socket, pin, { pinned: true })
+    await vi.waitFor(() => { assert.ok(frameWith(framesFrom(socket, from), 'session.prompt')) })
+    const prompt = frameWith(framesFrom(socket, from), 'session.prompt')
+    reply(socket, prompt, {
+      type: 'server-response', rpcId: prompt.id,
+      result: { ok: false, error: { code: 'session/model-unavailable', message: 'selected route unavailable', details: {} } },
+    })
+    await vi.waitFor(() => { assert.ok(respond.mock.calls.length > 0) })
+    assert.deepStrictEqual(firstResponse(respond), { ok: false, message: 'selected route unavailable' })
+    assert.equal(frameWith(framesFrom(socket, from), 'bridge.completeText'), undefined)
+  })
+
   it('兜底 bridge.completeText 携带已配置的 model', async () => {
     const socket = await connectedSocket()
     await configureTextModel('claude-opus-4-6', '', '')
@@ -436,5 +462,35 @@ describe('Copilot 正文生成与文本生成模型（#3629）', () => {
 
     await vi.waitFor(() => { assert.ok(frameWith(framesFrom(socket, from), 'bridge.session.purge')) })
     assert.equal(frameWith(framesFrom(socket, from), 'bridge.session.purge').payload.sessionId, 'session-provider-missing')
+  })
+
+  it('provider 为空且目录中有两条同名模型路由时显式报错并回收会话', async () => {
+    const socket = await connectedSocket()
+    await configureTextModel('legacy-model', '', '')
+    const respond = vi.fn()
+    const from = await startGeneration(socket, respond, 'session-provider-ambiguous')
+
+    await vi.waitFor(() => { assert.ok(frameWith(framesFrom(socket, from), 'session.modelCatalog')) })
+    const lookup = frameWith(framesFrom(socket, from), 'session.modelCatalog')
+    reply(socket, lookup, {
+      groups: [
+        { id: 'one', models: [{ id: 'legacy-model' }] },
+        { id: 'two', models: [{ id: 'legacy-model' }] },
+      ],
+    })
+
+    await vi.waitFor(() => { assert.ok(respond.mock.calls.length > 0) })
+    const response = firstResponse(respond)
+    assert.equal(response.ok, false)
+    assert.ok(response.message.includes('legacy-model'))
+    assert.equal(response.text, undefined)
+
+    const frames = framesFrom(socket, from)
+    assert.equal(frames.some((frame) => frame.method === 'bridge.textGeneration'), false)
+    assert.equal(frames.some((frame) => frame.method === 'session.prompt'), false)
+    assert.equal(frames.some((frame) => frame.method === 'bridge.completeText'), false)
+
+    await vi.waitFor(() => { assert.ok(frameWith(framesFrom(socket, from), 'bridge.session.purge')) })
+    assert.equal(frameWith(framesFrom(socket, from), 'bridge.session.purge').payload.sessionId, 'session-provider-ambiguous')
   })
 })

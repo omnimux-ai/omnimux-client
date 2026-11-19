@@ -67,7 +67,7 @@ describe('withSessionDeferral', () => {
     const id = await provisionalId(wrapped)
 
     await expect(wrapped.call(request('session.history', { sessionId: id })))
-      .resolves.toEqual({ ok: true, value: { events: [], hasMore: false } })
+      .resolves.toEqual({ ok: true, value: { provisional: true, events: [], hasMore: false } })
     expect(sessionHistory).not.toHaveBeenCalled()
 
     await wrapped.call(request('session.history', { sessionId: 'session-real' }))
@@ -92,6 +92,7 @@ describe('withSessionDeferral', () => {
       value: {
         events: [],
         hasMore: false,
+        provisional: true,
         projections: { asOfSeq: -1, values: { imageLimits: limits } },
       },
     })

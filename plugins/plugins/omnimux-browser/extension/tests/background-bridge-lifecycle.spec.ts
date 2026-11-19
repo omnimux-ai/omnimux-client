@@ -140,6 +140,48 @@ afterEach(() => {
 })
 
 describe('background bridge lifecycle', () => {
+  it('binds model requests to the authenticated connection that supplied the directory', async () => {
+    const url = 'wss://bridge.example/ext/bridge'
+    const chromeMock = mockChrome({ localGet: async () => ({ dshSettings: { bridgeUrl: url } }) })
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    await import('../src/background/index.ts')
+    const panel = panelPort()
+    chromeMock.onConnect.emit(panel.port)
+
+    async function authenticate(index: number) {
+      await vi.waitFor(() => { expect(FakeWebSocket.instances).toHaveLength(index + 1) })
+      const socket = FakeWebSocket.instances[index]!
+      socket.open()
+      await Promise.resolve()
+      socket.receive({ t: 'hello.ok', caps: { textOnly: true, snapshotMaxChars: 32_000, maxInteractiveItems: 60 } })
+      await Promise.resolve()
+      panel.onMessage.emit({ type: 'request-status' })
+      const statuses = panel.postMessage.mock.calls.map(([value]) => value)
+      const connection = statuses.filter((value) => value.type === 'status' && value.state === 'connected').at(-1)?.connection
+      expect(connection).toEqual({ id: expect.any(String), url })
+      return { socket, id: connection.id as string }
+    }
+
+    const first = await authenticate(0)
+    panel.onMessage.emit({ type: 'settings', settings: { token: 'replacement' } })
+    const second = await authenticate(1)
+    expect(second.id).not.toBe(first.id)
+    panel.onMessage.emit({ type: 'rpc', id: 'stale', method: 'session.selectModel', payload: {}, connectionId: first.id })
+    await vi.waitFor(() => {
+      expect(panel.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'rpc.result', id: 'stale', ok: false }))
+    })
+    expect(second.socket.sent).not.toContainEqual(expect.objectContaining({ method: 'session.selectModel' }))
+    panel.onMessage.emit({ type: 'rpc', id: 'fresh', method: 'session.modelCatalog', payload: {}, connectionId: second.id })
+    await vi.waitFor(() => {
+      expect(second.socket.sent).toContainEqual(expect.objectContaining({ t: 'rpc', method: 'session.modelCatalog' }))
+    })
+    const frame = second.socket.sent.find((item) => (item as { method?: string }).method === 'session.modelCatalog') as { id: string }
+    second.socket.receive({ t: 'rpc.result', id: frame.id, ok: true, result: { groups: [] } })
+    await vi.waitFor(() => {
+      expect(panel.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'rpc.result', id: 'fresh', ok: true }))
+    })
+  })
+
   it('arms the keepalive on load but still makes no connection attempt until a lease claims the bridge', async () => {
     const chromeMock = mockChrome()
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({
@@ -160,7 +202,7 @@ describe('background bridge lifecycle', () => {
 
   it('probes the saved custom port before the shared default list', async () => {
     const chromeMock = mockChrome({ localGet: async () => ({ omnimux_target_port: '62001' }) })
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) => new Response(JSON.stringify({
       wsUrl: 'ws://127.0.0.1:62001/ext/bridge',
     }), { status: 200 }))
     vi.stubGlobal('fetch', fetchMock)

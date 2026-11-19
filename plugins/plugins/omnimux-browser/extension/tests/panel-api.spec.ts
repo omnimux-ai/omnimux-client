@@ -278,7 +278,10 @@ describe('panel protocol', () => {
     const api = connectPanel()
 
     disconnectFirst?.()
-    const pending = api.rpc<string>('session.list', {})
+    const connection = { id: 'catalog-connection', url: 'wss://bridge.example/ext/bridge' }
+    const onStatus = vi.fn()
+    api.onStatus(onStatus)
+    const pending = api.rpc<string>('session.list', {}, connection.id)
     expect(secondPost).not.toHaveBeenCalled()
 
     await vi.advanceTimersByTimeAsync(150)
@@ -288,7 +291,10 @@ describe('panel protocol', () => {
       id: '12345678-1234-4234-8234-123456789ac0',
       method: 'session.list',
       payload: {},
+      connectionId: connection.id,
     })
+    receiveSecond?.({ type: 'status', state: 'connected', caps: null, connection })
+    expect(onStatus).toHaveBeenCalledWith('connected', null, undefined, connection)
     receiveSecond?.({
       type: 'rpc.result',
       id: '12345678-1234-4234-8234-123456789ac0',
