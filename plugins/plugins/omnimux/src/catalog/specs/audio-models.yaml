@@ -344,13 +344,6 @@ models:
             min: 1
             max: 1
     parameters:
-      duration:
-        options:
-          - { value: 30, label: "30s" }
-          - { value: 60, label: "60s" }
-          - { value: 120, label: "120s" }
-        defaultValue: 60
-        unit: "s"
       instrumental:
         supported: true
         defaultValue: false

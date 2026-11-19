@@ -124,21 +124,26 @@ test('voice_clone operation inference works once indextts-2 is listed', async ()
 test('a listed audio task submits, polls and downloads the artifact', async (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'audio-task-'))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
-  const dest = join(dir, 'track.mp3')
-  // #3516：音频任务通道现由在架的 suno（text_to_music）承载。
-  const { calls, promise } = run({ dest, model: 'suno', operation: 'text_to_music', prompt: 'a calm piano melody' })
-  const result = await promise
-  assert.equal(result.mode, 'live')
-  assert.equal(result.taskId, 'task_suno_1')
-  assert.deepEqual(readFileSync(dest), AUDIO_BYTES)
-  const submit = calls.find((call) => call.method === 'POST')
-  assert.ok(submit, 'submit request was issued')
-  assert.ok(submit.url.endsWith('/v1/video/generations'), submit.url)
-  assert.equal(submit.body.model, 'suno')
-  assert.equal(submit.body.prompt, 'a calm piano melody')
-  const poll = calls.find((call) => call.method === 'GET' && call.url.includes('task_suno_1'))
-  assert.ok(poll, 'task was polled')
-  assert.ok(poll.url.endsWith('/v1/video/generations/task_suno_1'), poll.url)
+  for (const duration of [undefined, 60]) {
+    const dest = join(dir, duration === undefined ? 'fresh.mp3' : 'legacy.mp3')
+    const { calls, promise } = run({
+      dest, model: 'suno', operation: 'text_to_music', prompt: 'a calm piano melody', duration, instrumental: true,
+    })
+    const result = await promise
+    assert.equal(result.mode, 'live')
+    assert.equal(result.taskId, 'task_suno_1')
+    assert.deepEqual(readFileSync(dest), AUDIO_BYTES)
+    const submit = calls.find((call) => call.method === 'POST')
+    assert.ok(submit, 'submit request was issued')
+    assert.ok(submit.url.endsWith('/v1/video/generations'), submit.url)
+    assert.equal(submit.body.model, 'suno')
+    assert.equal(submit.body.prompt, 'a calm piano melody')
+    assert.equal(submit.body.instrumental, true)
+    assert.equal(Object.hasOwn(submit.body, 'duration'), false)
+    const poll = calls.find((call) => call.method === 'GET' && call.url.includes('task_suno_1'))
+    assert.ok(poll, 'task was polled')
+    assert.ok(poll.url.endsWith('/v1/video/generations/task_suno_1'), poll.url)
+  }
 })
 
 test('a resumed audio task polls the same task route without resubmitting', async (t) => {
