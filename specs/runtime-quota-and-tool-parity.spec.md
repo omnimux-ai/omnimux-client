@@ -22,9 +22,11 @@
 | 分析分块中的数据源报告额度不足 | 总览和洞察保留成功的数据，并在 `partialErrors` 中列出受限来源。分块内所有数据源均失败且涉及额度时返回 402，单一数据源的粉丝与帖子分块也遵循该规则。登录失效返回 401。 | [中枢聚合读取测试](../plugins/plugins/omnimux/src/official/http-routes.test.js) |
 | 分析看板预检弹出登录窗，或点击看板的登录按钮 | 复用中枢登录窗。取消后留在原页面，登录成功只读取一次看板数据。 | [登录交互回归](../plugins/plugins/omnimux-analytics/src/client/analytics-login-action.test.js) |
 | 点击画布节点的生成按钮 | 发起提交的同时检查额度；同一节点连续点击只创建一次任务。 | [画布提交测试](../plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/submitNode.test.mjs) |
-| 从 Agent 工具提交音乐 | 工具和页面将显式的风格和纯音乐开关交给同一执行器。关闭开关保留为 `false`，发给模型的字段按该操作声明映射。 | [工具与执行器测试](../plugins/plugins/omnimux/src/media/mount.test.js) |
+| 从 Agent 工具提交音乐 | 工具和页面将显式的风格和纯音乐开关交给同一执行器。当前 Suno 操作将关闭的纯音乐开关传为 `false`。独立风格字段未列入该操作的契约，风格要求可写在主提示词中。 | [工具与执行器测试](../plugins/plugins/omnimux/src/media/mount.test.js) |
 
 浏览器验收使用本地可控账户与额度响应，覆盖缓存期内恢复、部分数据失败及登录成功与取消。线上账户扣费和真实音乐生成单独验收。
+
+保持看板打开并退出时，页面立即清除上个账号的数据。切换筛选后立即点重试，旧筛选计时被取消，本次发出一组读取。已退出账号的迟到结果不能唤起登录、充值提示或覆盖新账号的看板。
 
 ## 运行时规则责任清单
 
@@ -46,3 +48,10 @@
 | [市场 omnimux-market](../plugins/plugins/omnimux-market/src/install-validation.ts) | 从市场安装包 | 市场安装器接触实际文件后校验内容和目录结构。保留，列表中的可选状态只用于选择。 |
 | [视频 omnimux-video](../plugins/plugins/omnimux-video/src/understand/pack-video.js) | 视频分析和逆向拆解 | 两种操作共用本地视频检查，核对文件可读性与大小。保留在首次读取文件处。 |
 | [分析看板](../plugins/plugins/omnimux-analytics/src/client/api.js)与[事件上报](../plugins/plugins/omnimux-analytics/src/stage-events.js) | 读取看板、手动同步、上报页面打开与关闭 | 看板共用中枢的额度与登录结果。事件上报由 Host 核对事件与字段白名单。 |
+
+
+## 旧标准变更
+
+- `plugins/plugins/omnimux-analytics/src/client/workbench-seat.test.js` :: `refresh effect depends on primitive query fields, not query object identity`
+
+原用例要求页面监听平台、账号、时段三个筛选字段。筛选由 Store 延迟读取后，页面仅在首次显示或重新打开时刷新。保留对查询对象依赖导致重复刷新的检查，并在[渲染交互测试](../plugins/plugins/omnimux-analytics/src/client/analytics-session-filter.test.js)核对一次筛选和重新打开各自的请求次数。

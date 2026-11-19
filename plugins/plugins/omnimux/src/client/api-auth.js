@@ -19,6 +19,29 @@ let statusInflight = null
 let statusGeneration = 0
 // A transient read failure can drop the cached response without changing identity.
 let lastIdentity = null
+let identitySnapshot = null
+const identityListeners = new Set()
+
+export function getIdentitySnapshot() {
+  return identitySnapshot
+}
+
+export function subscribeIdentity(listener) {
+  identityListeners.add(listener)
+  return () => identityListeners.delete(listener)
+}
+
+function rememberIdentity(body) {
+  const loggedIn = body.logged_in === true
+  const changed = !lastIdentity || changedAccount(lastIdentity, loggedIn, body)
+  if (!changed) {
+    lastIdentity = { ...lastIdentity, ...body }
+    return
+  }
+  lastIdentity = body
+  identitySnapshot = Object.freeze({ loggedIn, id: body.id ?? null, username: body.username ?? null })
+  for (const listener of identityListeners) listener()
+}
 
 /**
  * @param {unknown} raw
@@ -71,12 +94,13 @@ export function invalidateStatusCache() {
   statusGeneration += 1
   statusCache = null
   statusInflight = null
-  lastIdentity = null
 }
 
-/** Test-only: identical to invalidate; kept as a named seam for L1 resets. */
+/** Test-only: clear all observations between independent sessions. */
 export function resetStatusCache() {
   invalidateStatusCache()
+  lastIdentity = null
+  identitySnapshot = null
 }
 
 /**
@@ -96,7 +120,7 @@ export function rememberLoggedInStatus(profile) {
     status: 200,
     body: body.logged_in === true ? body : { ...body, logged_in: true },
   }
-  lastIdentity = statusCache.body
+  rememberIdentity(statusCache.body)
 }
 
 function changedAccount(previous, signedIn, body) {
@@ -119,12 +143,12 @@ function rememberStatusResult(result, generation) {
   const loggedOut = body?.logged_in === false || pickAuthError(result) !== null
   if (loggedIn || loggedOut) {
     if (changedAccount(lastIdentity, loggedIn, body)) invalidateStatusCache()
-    lastIdentity = loggedIn ? body : { logged_in: false }
     statusCache = {
       ok: Boolean(result.ok),
       status: Number(result.status) || 0,
       body,
     }
+    rememberIdentity(loggedIn ? body : { logged_in: false })
     return
   }
   // verify / network-shaped failure: never write as logged in; drop a
@@ -237,7 +261,10 @@ export function logout() {
   const generation = statusGeneration
   return authRequest('/omnimux/auth/logout', { method: 'POST' }).then((result) => {
     // A read started during logout can still have seen the old Host session.
-    if (result.ok && generation === statusGeneration) invalidateStatusCache()
+    if (result.ok && generation === statusGeneration) {
+      invalidateStatusCache()
+      rememberIdentity({ logged_in: false })
+    }
     return result
   })
 }

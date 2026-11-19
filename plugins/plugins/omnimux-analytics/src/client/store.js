@@ -8,7 +8,7 @@
  */
 import { useCallback, useSyncExternalStore } from 'react'
 import { CACHE_TTL_MS, DEFAULT_QUERY, FILTER_DEBOUNCE_MS } from './defaults.js'
-import { fetchDashboard, syncNow as requestSync } from './api.js'
+import { failedDashboard, fetchDashboard, syncNow as requestSync } from './api.js'
 import { applyDashboardQuery, cacheKey, patchNeedsFetch } from './query.js'
 
 /**
@@ -43,6 +43,7 @@ let state = initialState
 let debounceTimer = null
 /** @type {number} */
 let fetchSeq = 0
+let accountIdentity = null
 
 function emit() {
   for (const listener of listeners) listener()
@@ -160,8 +161,16 @@ export function setQuery(patch, opts = {}) {
   }, delay)
 }
 
+function cancelPendingFilter() {
+  if (debounceTimer !== null) {
+    clearTimeout(debounceTimer)
+    debounceTimer = null
+  }
+}
+
 /** @param {{ userInitiated?: boolean }} [opts] */
 export function refresh(opts = {}) {
+  cancelPendingFilter()
   return loadDashboard(state.query, { force: true, userInitiated: opts.userInitiated })
 }
 
@@ -195,15 +204,32 @@ export function setTheme(theme) {
   setState({ theme })
 }
 
-export function resetStore() {
-  if (debounceTimer) {
-    clearTimeout(debounceTimer)
-    debounceTimer = null
-  }
+function resetDashboard(patch = {}) {
+  cancelPendingFilter()
   fetchSeq += 1
   cache.clear()
-  state = { ...initialState, query: { ...DEFAULT_QUERY } }
+  state = { ...initialState, query: { ...DEFAULT_QUERY }, ...patch }
   emit()
+}
+
+// The Hub keeps this snapshot stable across balance checks for the same account.
+export function observeDashboardIdentity(identity) {
+  if (!identity || identity === accountIdentity) return false
+  const previous = accountIdentity
+  accountIdentity = identity
+  // The first successful precheck identifies the request already loading the dashboard.
+  if (!previous && identity.loggedIn) return false
+  const signedOut = identity.loggedIn ? {} : {
+    phase: 'empty',
+    payload: failedDashboard(DEFAULT_QUERY, { status: 401, body: { error: 'needs-omnimux' } }),
+  }
+  resetDashboard({ theme: state.theme, ...signedOut })
+  return true
+}
+
+export function resetStore() {
+  accountIdentity = null
+  resetDashboard()
 }
 
 export function getStoreState() {

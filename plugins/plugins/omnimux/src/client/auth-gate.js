@@ -33,6 +33,8 @@
  * item D.3).
  */
 import {
+  getIdentitySnapshot,
+  subscribeIdentity,
   getStatus,
   getStatusCached,
   peekStatusCache,
@@ -395,6 +397,8 @@ export function installAuthGlobal(target, overrides = {}) {
   const existing = target[AUTH_GLOBAL_KEY]
   if (existing !== undefined) return existing
   const api = {
+    getIdentitySnapshot,
+    subscribeIdentity,
     getStatus: (verify) => impl.getStatus(verify),
     isLoggedIn: () => {
       const peeked = impl.peekCache()

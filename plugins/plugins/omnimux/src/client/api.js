@@ -9,6 +9,8 @@ export {
   peekStatusCache,
   invalidateStatusCache,
   resetStatusCache,
+  getIdentitySnapshot,
+  subscribeIdentity,
   rememberLoggedInStatus,
   NEEDS_AUTH_CODE,
   pickAuthError,

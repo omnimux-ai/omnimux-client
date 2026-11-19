@@ -232,3 +232,34 @@ it('opens login after a rejected sync without replaying the write on success or 
     assert.deepEqual(posts, [[HOST_PATHS.sync, 'POST']])
   }
 })
+
+it('discards login prompts and quota notices from an earlier account dashboard read', async (t) => {
+  const originalWindow = globalThis.window
+  t.after(() => { globalThis.window = originalWindow })
+  let identity = { loggedIn: true, id: 1, username: 'a' }
+  let logins = 0
+  let notices = 0
+  globalThis.window = {
+    __omnimuxAuth: {
+      getIdentitySnapshot: () => identity,
+      ensureLogin: gate => { logins++; gate.onCancel() },
+    },
+    __omnimuxQuota: { ensureQuota: async () => ({ ok: true }), notify: () => { notices++ } },
+  }
+  const launched = Promise.withResolvers()
+  const unblock = Promise.withResolvers()
+  let reads = 0
+  t.mock.method(globalThis, 'fetch', async path => {
+    if (++reads === 4) launched.resolve()
+    await unblock.promise
+    if (path.startsWith(HOST_PATHS.followers)) return Response.json({ error: 'needs-omnimux' }, { status: 401 })
+    if (path.startsWith(HOST_PATHS.insights)) return Response.json({ error: 'quota-exceeded' }, { status: 402 })
+    return Response.json({})
+  })
+  const prior = fetchDashboard({}, { useMock: false })
+  await launched.promise
+  identity = { loggedIn: true, id: 2, username: 'b' }
+  unblock.resolve()
+  await prior
+  assert.deepEqual([logins, notices, reads], [0, 0, 4])
+})

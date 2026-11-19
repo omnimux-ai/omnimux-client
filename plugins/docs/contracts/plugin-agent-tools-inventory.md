@@ -83,7 +83,7 @@ related:
 | 查询灵感社区服务与抓取状态 | 灵感社区状态指示 | `omnimux_inspiration_status` | L2 | `Implemented` | 否 |
 | 提交视频生成任务。官方 H3 对口型接收一张图片和一段驱动音频 | 工作流视频生成节点 | `omnimux_video_submit` | L1 | `Implemented` | 否 |
 | 提交图片生成任务 | 工作流生图节点 | `omnimux_image_submit` | L1 | `Implemented` | 否 |
-| 提交音频生成任务，向执行中枢传递 `style` 与 `instrumental`（含显式 `false`），实际发送字段由所选操作决定 | 工作流生音频节点 | `omnimux_audio_submit` | L1 | `Implemented` | 否 |
+| 提交音频生成任务，向执行中枢传递 `style` 与 `instrumental`（含显式 `false`），当前 Suno 操作传递纯音乐开关，风格说明可写在主提示词中 | 工作流生音频节点 | `omnimux_audio_submit` | L1 | `Implemented` | 否 |
 | 查询音频模型可用音色库 | 属性面板音色选择器 | `omnimux_audio_voices` | L1 | `Implemented` | 否 |
 | 查询社媒多维日频核心指标 | 分析看板概览 | `omnimux_analytics_daily_metrics` | L2 | `Implemented` | 否 |
 | 分析账号最佳发帖时间热力图 | 最佳发帖时间卡片 | `omnimux_analytics_best_time` | L2 | `Implemented` | 否 |

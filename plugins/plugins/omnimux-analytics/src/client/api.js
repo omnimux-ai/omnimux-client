@@ -48,6 +48,10 @@ export async function analyticsRequest(path, opts = {}) {
   return { ok: response.ok, status: response.status, body: json }
 }
 
+function dashboardIdentity() {
+  return globalThis.window?.__omnimuxAuth?.getIdentitySnapshot?.()
+}
+
 /**
  * Open the Hub login gate after a 401. Reads can resume after sign-in.
  * @param {(...args: any[]) => Promise<{ ok: boolean, status: number, body: any }>} fn
@@ -55,8 +59,9 @@ export async function analyticsRequest(path, opts = {}) {
 export function authGuard(fn, { replayAfterLogin = true } = {}) {
   return (...args) => {
     const run = async () => {
+      const owner = dashboardIdentity()
       const result = await fn(...args)
-      if (result.status !== 401) return result
+      if (result.status !== 401 || (owner && owner !== dashboardIdentity())) return result
       const gate = typeof window !== 'undefined' ? /** @type {any} */ (window).__omnimuxAuth : undefined
       if (!gate || typeof gate.ensureLogin !== 'function') return result
       return new Promise((resolve, reject) => {
@@ -64,7 +69,7 @@ export function authGuard(fn, { replayAfterLogin = true } = {}) {
           kind: 'write',
           action: 'accounts',
           onSuccess: () => {
-            if (replayAfterLogin) fn(...args).then(resolve, reject)
+            if (replayAfterLogin && (!owner?.loggedIn || owner === dashboardIdentity())) fn(...args).then(resolve, reject)
             else resolve(result)
           },
           onCancel: () => resolve(result),
@@ -138,7 +143,7 @@ function emptyBlock(kind) {
   return { totalFollowers: null, platforms: [], timeline: [] }
 }
 
-function failedDashboard(query, failure) {
+export function failedDashboard(query, failure) {
   return applyDashboardQuery({
     meta: { boundAccountCount: 0, authorizedPlatforms: [], filterAccounts: [], reachApprox: false },
     syncStatus: {
@@ -178,6 +183,7 @@ function failedDashboard(query, failure) {
 export async function fetchDashboardLive(query, opts = {}) {
   const denied = await quotaPrecheckFailure({ capability: 'analytics', userInitiated: opts.userInitiated === true })
   if (denied) return failedDashboard(query, denied)
+  const owner = dashboardIdentity()
   const params = hostQuery(query)
   const request = authGuard(analyticsRequest)
   const [overview, insights, followers, posts] = await Promise.all([
@@ -190,7 +196,7 @@ export async function fetchDashboardLive(query, opts = {}) {
     section.ok && Array.isArray(section.body?.partialErrors) ? section.body.partialErrors : [])
   const refusals = partialErrors.map(({ status, error }) => ({ ok: false, status, body: { error } }))
   const quotaFailure = [overview, insights, followers, posts, ...refusals].find(isQuotaHttpResult)
-  if (quotaFailure) notifyQuota(quotaFailure, { capability: 'analytics' })
+  if (quotaFailure && (!owner || owner === dashboardIdentity())) notifyQuota(quotaFailure, { capability: 'analytics' })
   if (!overview.ok && (!isQuotaHttpResult(overview) || ![insights, followers, posts].some(section => section.ok))) {
     return failedDashboard(query, overview)
   }
