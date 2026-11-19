@@ -56,7 +56,7 @@ function repositoryHref(value) {
  * copy here (titles, categories) separate from the shipping decision is what
  * lets a plugin move to `beta` without deleting its metadata.
  */
-const DESCRIBED_PLUGINS = [
+export const DESCRIBED_PLUGINS = [
   {
     dir: 'omnimux',
     category: 'core',
@@ -328,4 +328,4 @@ async function main() {
   for (const plugin of index.plugins) console.log(`  - ${plugin.name}@${plugin.versions[0].version}`)
 }
 
-await main()
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main()

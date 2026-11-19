@@ -1,0 +1,31 @@
+name: Generate and verify market index
+description: Build the format-1 index and reconcile its complete package list.
+inputs:
+  preflight:
+    description: Allow manifest versions awaiting publication when building the PR artifact.
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - name: Enable Corepack
+      shell: bash
+      run: corepack enable
+    - name: Install desktop dependencies for the index parser
+      shell: bash
+      working-directory: app
+      run: corepack yarn install --immutable
+    - name: Generate and reconcile plugin index
+      shell: bash
+      working-directory: app
+      env:
+        INDEX_PREFLIGHT: ${{ inputs.preflight }}
+      run: |
+        index_args=()
+        if [[ "$INDEX_PREFLIGHT" == 'true' ]]; then
+          index_args+=(--offline)
+        fi
+        if ! node scripts/build-plugin-index.mjs "${index_args[@]}" ||
+           ! node scripts/verify-plugin-index.mjs; then
+          echo "::error::Market index verification failed. See https://github.com/omnimux-ai/omnimux-client/blob/main/AGENTS.md#release-preflight"
+          exit 1
+        fi

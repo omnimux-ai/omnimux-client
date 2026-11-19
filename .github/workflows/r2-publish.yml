@@ -26,6 +26,23 @@ name: Publish release assets to R2 (dl.omnimux.ai)
 # workflow runs from the repository root and sources artifacts from this
 # repository's own public GitHub Release.
 on:
+  pull_request:
+    paths:
+      - '.github/workflows/r2-publish.yml'
+      - '.github/actions/generate-market-index/**'
+      - 'app/scripts/build-plugin-index.mjs'
+      - 'app/scripts/verify-plugin-index.mjs'
+      - 'app/scripts/verify-plugin-index.test.mjs'
+      - 'app/scripts/plugin-tiers.mjs'
+      - 'app/scripts/build-release-metadata.mjs'
+      - 'app/scripts/r2-dist-sync.mjs'
+      - 'app/scripts/verify-version-advance.mjs'
+      - 'app/config/plugin-tiers.json'
+      - 'app/*.json'
+      - 'app/dsh-desktop-next/package.json'
+      - 'app/yarn.lock'
+      - 'app/.yarnrc.yml'
+      - 'plugins/plugins/*/package.json'
   workflow_dispatch:
     inputs:
       version:
@@ -53,15 +70,32 @@ permissions:
   contents: read
 
 concurrency:
-  group: r2-publish-${{ inputs.version }}
+  group: r2-publish-${{ github.event_name }}-${{ inputs.version || github.event.pull_request.number }}
   cancel-in-progress: false
 
 env:
   DSH_TELEMETRY_DISABLED: '1'
 
 jobs:
+  preflight-index:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38  # v6
+        with:
+          node-version: 22.23.2
+      - name: Test index package reconciliation
+        run: node --test app/scripts/verify-plugin-index.test.mjs
+      - uses: ./.github/actions/generate-market-index
+        with:
+          preflight: 'true'
+
   publish:
-    if: ${{ github.ref == 'refs/heads/main' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
     defaults:
@@ -129,22 +163,8 @@ jobs:
             --dir release-assets \
             --require-platforms "${{ inputs.required_platforms }}"
 
-      # The plugin-index generator imports the market-index validator from
-      # app/dsh-desktop-next/node_modules, so the desktop workspace must be
-      # installed before this step runs on the clean release runner. Reuse the
-      # same Corepack/Yarn setup as release.yml; the immutable install keeps the
-      # committed lockfile authoritative.
-      - name: Enable Corepack
+      - uses: ./.github/actions/generate-market-index
         if: ${{ inputs.mode == 'publish' }}
-        run: corepack enable
-
-      - name: Install desktop dependencies
-        if: ${{ inputs.mode == 'publish' }}
-        run: corepack yarn install --immutable
-
-      - name: Generate plugin index
-        if: ${{ inputs.mode == 'publish' }}
-        run: node scripts/build-plugin-index.mjs
 
       - name: Sync market catalog assets to R2
         if: ${{ inputs.mode == 'publish' }}

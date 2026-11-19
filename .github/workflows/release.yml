@@ -8,6 +8,32 @@ name: Release
 # all-platform gate in `r2-publish.yml`.
 
 on:
+  pull_request:
+    paths:
+      - '.github/workflows/release.yml'
+      - '.github/actions/prepare-desktop-package/**'
+      - 'app/dsh-desktop-next/scripts/**'
+      - 'app/dsh-plugin-desktop/scripts/**'
+      - 'app/scripts/*package*'
+      - 'app/scripts/*release*'
+      - 'app/scripts/prepare-dsh-market.mjs'
+      - 'app/scripts/verify-version.mjs'
+      - 'app/scripts/run-parallel.mjs'
+      - 'app/config/plugin-tiers.json'
+      - 'app/deepseek-harness'
+      - 'app/vendor/**'
+      - 'app/*.json'
+      - 'app/*/package.json'
+      - 'app/yarn.lock'
+      - 'app/.yarnrc.yml'
+      - 'app/.yarn/**'
+      - 'app/patches/**'
+      - 'app/dsh-desktop-next/*.yml'
+      - 'app/dsh-desktop-next/*config.ts'
+      - 'plugins/plugins/*/package.json'
+      - 'scripts/prepare-local-plugins.mjs'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
   workflow_dispatch:
     inputs:
       mode:
@@ -21,7 +47,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.workflow }}-${{ inputs.mode }}-${{ github.ref }}
+  group: release-${{ github.workflow }}-${{ inputs.mode || 'preflight' }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -58,13 +84,6 @@ jobs:
           fetch-depth: 0
           submodules: recursive
           persist-credentials: false
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38  # v6
-        with:
-          node-version: 22.23.2
-      - name: Enable Corepack
-        run: corepack enable
-      - name: Verify version consistency
-        run: node scripts/verify-version.mjs
       - name: Verify release source is origin/main
         if: ${{ inputs.mode == 'release' }}
         shell: bash
@@ -80,21 +99,7 @@ jobs:
             echo "::error::release build worktree is dirty"
             exit 1
           }
-      # The monorepo plugin workspace is a packaging input for the desktop shell.
-      - name: Install plugin workspace dependencies
-        working-directory: .
-        shell: bash
-        run: corepack pnpm install --frozen-lockfile
-      - name: Build plugin workspace
-        working-directory: .
-        shell: bash
-        run: corepack pnpm --dir plugins run build:all
-      - name: Install desktop dependencies
-        run: corepack yarn install --immutable
-      - name: Refresh Agents Anywhere vendor
-        run: corepack yarn aa:prepare-release
-      - name: Refresh dshmarket package versions
-        run: corepack yarn market:prepare
+      - uses: ./.github/actions/prepare-desktop-package
       - name: Build Windows installer (website unsigned)
         run: corepack yarn workspace dsh-desktop-next dist:win
       - name: Upload Windows installer
@@ -106,9 +111,36 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  preflight-mac:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x64
+            runner: macos-15-intel
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: ./.github/actions/prepare-desktop-package
+      - name: Build and verify an unsigned macOS DMG
+        env:
+          DSH_MAC_RELEASE_ARCH: ${{ matrix.arch }}
+          DSH_MAC_SMOKE_ARCH: ${{ matrix.arch }}
+        run: corepack yarn workspace dsh-desktop-next dist:mac-smoke
+
   publish-win:
     needs: build-win
-    if: ${{ inputs.mode == 'release' && github.ref == 'refs/heads/main' && needs.build-win.result == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'release' && github.ref == 'refs/heads/main' && needs.build-win.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
