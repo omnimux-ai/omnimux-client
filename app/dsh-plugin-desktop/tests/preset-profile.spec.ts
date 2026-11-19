@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { describe, expect, it, vi } from 'vitest'
+import { cpSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir, homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { createRequire } from 'node:module'
@@ -286,6 +286,73 @@ describe('seedOmnimuxSettings', () => {
     } finally {
       rmSync(tempHome, { recursive: true, force: true })
     }
+  })
+
+  const credentialsName = '.credentials.yaml'
+  const sharedCredentials = 'version: 1\nrefs: { SYNTHETIC_SHARED_ONLY: synthetic-shared }\n'
+  const sharedSettings = 'locale: { preference: en }\n'
+
+  function withSharedFixture(run: (root: string, shared: string) => void): void {
+    const root = mkdtempSync(join(tmpdir(), 'omnimux-credential-isolation-'))
+    const shared = join(root, '.dsh')
+    try {
+      vi.stubEnv('HOME', root)
+      vi.stubEnv('USERPROFILE', root)
+      mkdirSync(shared)
+      writeFileSync(join(shared, credentialsName), sharedCredentials)
+      writeFileSync(join(shared, 'settings.yaml'), sharedSettings)
+      run(root, shared)
+    } finally {
+      vi.unstubAllEnvs()
+      rmSync(root, { recursive: true, force: true })
+    }
+  }
+
+  it.each(['.omnimux-dev', 'task-home'])('seeds %s with empty credentials instead of shared data', (name) => {
+    withSharedFixture((root, shared) => {
+      const home = join(root, name)
+      const presetDir = createPreset(root)
+      const credentialFile = join(home, credentialsName)
+      const settingsFile = join(home, 'settings.yaml')
+      expect(seedOmnimuxProfile({ home, presetDir }).created).toBe(true)
+      expect(parseDocument(readFileSync(credentialFile, 'utf8')).toJS()).toEqual({})
+      expect(readFileSync(settingsFile, 'utf8')).not.toBe(sharedSettings)
+      expect(parseDocument(readFileSync(settingsFile, 'utf8')).getIn(['locale', 'preference'])).toBe('zh')
+      if (process.platform !== 'win32') expect(statSync(credentialFile).mode & 0o777).toBe(0o600)
+
+      rmSync(credentialFile)
+      expect(seedOmnimuxProfile({ home, presetDir }).created).toBe(false)
+      expect(parseDocument(readFileSync(credentialFile, 'utf8')).toJS()).toEqual({})
+
+      const localCredentials = 'version: 1\nrefs: { SYNTHETIC_TASK_ONLY: synthetic-task }\n'
+      writeFileSync(credentialFile, localCredentials)
+      seedOmnimuxProfile({ home, presetDir })
+      expect(readFileSync(credentialFile, 'utf8')).toBe(localCredentials)
+      expect(readFileSync(join(shared, credentialsName), 'utf8')).toBe(sharedCredentials)
+    })
+  })
+
+  it.skipIf(process.platform === 'win32').each([
+    [credentialsName, symlinkSync],
+    [credentialsName, linkSync],
+    ['settings.yaml', symlinkSync],
+  ] as const)('rejects a linked isolated file (%s, %#) without changing the shared file', (name, link) => {
+    withSharedFixture((root, shared) => {
+      const home = join(root, 'task-home')
+      mkdirSync(home)
+      link(join(shared, name), join(home, name))
+      expect(() => seedOmnimuxSettings(home)).toThrow('standalone regular file')
+      expect(readFileSync(join(shared, name), 'utf8')).toBe(name === credentialsName ? sharedCredentials : sharedSettings)
+    })
+  })
+
+  it('retains the legacy migration for the default release home', () => {
+    withSharedFixture((root) => {
+      const home = join(root, '.omnimux')
+      seedOmnimuxSettings(home)
+      expect(readFileSync(join(home, credentialsName), 'utf8')).toBe(sharedCredentials)
+      expect(parseDocument(readFileSync(join(home, 'settings.yaml'), 'utf8')).getIn(['locale', 'preference'])).toBe('en')
+    })
   })
 })
 

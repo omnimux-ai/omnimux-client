@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto'
 import {
   cpSync,
   existsSync,
+  lstatSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
@@ -199,19 +200,30 @@ export function resolveHarnessHome(env: NodeJS.ProcessEnv = process.env): string
 }
 
 /**
- * Seed initial settings.yaml and credentials in the isolated OmniMux home if absent.
- * If fresh and an existing ~/.dsh/settings.yaml exists, bootstrap user credentials and models while enforcing compatibility mode.
+ * Seed settings and credentials if absent. Only the default release home
+ * participates in the legacy migration from the user's DSH installation.
  */
 export function seedOmnimuxSettings(homeDir: string): void {
   const targetHome = resolve(homeDir)
-  mkdirSync(targetHome, { recursive: true })
+  mkdirSync(targetHome, { recursive: true, mode: 0o700 })
   const settingsFile = join(targetHome, 'settings.yaml')
+  const credsFile = join(targetHome, '.credentials.yaml')
   const globalDshHome = join(homedir(), '.dsh')
+
+  if (!isReleaseHarnessHome(targetHome)) {
+    if (targetHome === globalDshHome) {
+      if (!existsSync(settingsFile)) writeFileSync(settingsFile, defaultSettings())
+    } else {
+      seedIsolatedHomeFile(settingsFile, defaultSettings())
+      seedIsolatedHomeFile(credsFile, '{}\n')
+    }
+    return
+  }
 
   // 1. Initial settings.yaml bootstrapping
   if (!existsSync(settingsFile)) {
     const globalSettingsFile = join(globalDshHome, 'settings.yaml')
-    if (existsSync(globalSettingsFile) && targetHome !== globalDshHome) {
+    if (existsSync(globalSettingsFile)) {
       try {
         const raw = readFileSync(globalSettingsFile, 'utf8')
         const doc = parseDocument(raw)
@@ -257,25 +269,36 @@ export function seedOmnimuxSettings(homeDir: string): void {
         }
         writeFileSync(settingsFile, doc.toString())
       } catch {
-        writeDefaultSettings(settingsFile)
+        writeFileSync(settingsFile, defaultSettings())
       }
     } else {
-      writeDefaultSettings(settingsFile)
+      writeFileSync(settingsFile, defaultSettings())
     }
   }
 
   // 2. Initial .credentials.yaml bootstrapping (API Keys migration)
-  const credsFile = join(targetHome, '.credentials.yaml')
   const globalCreds = join(globalDshHome, '.credentials.yaml')
-  if (!existsSync(credsFile) && existsSync(globalCreds) && targetHome !== globalDshHome) {
+  if (!existsSync(credsFile) && existsSync(globalCreds)) {
     try {
       cpSync(globalCreds, credsFile)
     } catch {}
   }
 }
 
-function writeDefaultSettings(settingsFile: string): void {
-  const initial = [
+function seedIsolatedHomeFile(path: string, content: string): void {
+  try {
+    writeFileSync(path, content, { flag: 'wx', mode: 0o600 })
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code !== 'EEXIST') throw cause
+    const localFile = lstatSync(path)
+    if (!localFile.isFile() || localFile.nlink !== 1) {
+      throw new Error(`Isolated OmniMux home requires a standalone regular file for ${basename(path)}`)
+    }
+  }
+}
+
+function defaultSettings(): string {
+  return [
     'ui-onboarding:',
     '  welcomeNoticeVersion: 2026-08-13.1',
     'locale:',
@@ -295,7 +318,6 @@ function writeDefaultSettings(settingsFile: string): void {
     '    browser: true',
     '',
   ].join('\n')
-  writeFileSync(settingsFile, initial)
 }
 
 /**
