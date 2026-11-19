@@ -404,6 +404,33 @@ test('old-standard declarations must match both path and case name', () => {
   )
 })
 
+test('old-standard declarations with double fences match a literal backtick case name exactly', () => {
+  const filePath = 'plugins/demo/tests/a.test.mjs'
+  const caseName = 'denies `cd <home> && find .` in the workspace'
+  const section = [
+    '- `plugins/demo/tests/a.test.mjs` :: ``denies `cd <home> && find .` in the workspace``',
+    '- `plugins/demo/tests/a.test.mjs` :: ``denies `cd .` with a mismatched fence`',
+    '- `plugins/demo/tests/a.test.mjs` :: `denies `cd .` with embedded backticks`',
+    '- `plugins/demo/tests/a.test.mjs` :: ``denies `cd .` with trailing text`` outside',
+    '- `plugins/demo/tests/a.test.mjs` :: ``*``',
+  ].join('\n')
+  const declarations = parseOldStandardDeclarations(section)
+
+  assert.deepEqual(declarations, [{ path: filePath, caseName }])
+  assert.deepEqual(
+    matchOldStandardDeclarations({ declarations, filePath, changedCases: [caseName] }),
+    { ok: true, missing: [] },
+  )
+  assert.deepEqual(
+    matchOldStandardDeclarations({ declarations, filePath, changedCases: ['denies cd <home> && find . in the workspace'] }),
+    { ok: false, missing: ['denies cd <home> && find . in the workspace'] },
+  )
+  assert.deepEqual(
+    matchOldStandardDeclarations({ declarations, filePath: 'plugins/demo/tests/b.test.mjs', changedCases: [caseName] }),
+    { ok: false, missing: [caseName] },
+  )
+})
+
 // 口径收窄：数组/对象展开是**数据拷贝**，只有**调用位**展开（`f(...args)` / `new C(...args)`）
 // 才是执行风险。判定基于 AST 父节点与 `arguments` 槽位，不做文本匹配。
 test('call-position spread stays an execution risk while array and object spread is data copy', () => {
