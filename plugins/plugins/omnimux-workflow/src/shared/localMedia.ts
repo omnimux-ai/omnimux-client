@@ -19,9 +19,12 @@ const MIME_BY_EXT: Record<string, string> = {
   gif: 'image/gif',
   webp: 'image/webp',
   bmp: 'image/bmp',
+  tif: 'image/tiff',
+  tiff: 'image/tiff',
   svg: 'image/svg+xml',
   avif: 'image/avif',
   heic: 'image/heic',
+  heif: 'image/heif',
   mp4: 'video/mp4',
   webm: 'video/webm',
   mov: 'video/quicktime',
@@ -110,6 +113,7 @@ export function sniffMimeType(buf: Uint8Array): string | undefined {
   if (asciiEq(bytes, 0, 'RIFF') && asciiEq(bytes, 8, 'WEBP')) return 'image/webp';
   // WAV: RIFF....WAVE
   if (asciiEq(bytes, 0, 'RIFF') && asciiEq(bytes, 8, 'WAVE')) return 'audio/wav';
+  if (asciiEq(bytes, 0, 'fLaC')) return 'audio/flac';
   // MP4: offset 4 is "ftyp"
   if (asciiEq(bytes, 4, 'ftyp')) return 'video/mp4';
   // WebM: 1A 45 DF A3 (EBML)
@@ -207,6 +211,10 @@ export function extensionOf(filename: string): string {
 
 export function mimeFromFilename(filename: string): string | undefined {
   return MIME_BY_EXT[extensionOf(filename)];
+}
+
+export function extensionsForMimes(mimes: readonly string[]): string[] {
+  return Object.entries(MIME_BY_EXT).filter(([, mime]) => mimes.includes(mime)).map(([extension]) => extension);
 }
 
 export function materialTypeFromFilename(filename: string, mime = ''): MaterialType | null {

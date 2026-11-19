@@ -6,6 +6,7 @@ import { existsSync, realpathSync, statSync } from 'node:fs';
 import { basename, isAbsolute } from 'node:path';
 import { WORKFLOW_ROUTE_PREFIX } from '../../shared/api.ts';
 import {
+  detectMimeFromFile,
   isAllowedImportedMedia,
   looksAbsolutePath,
   mimeFromFilename,
@@ -23,9 +24,15 @@ const PICKER_PROMPTS = {
 
 export type NativePickerKind = 'file' | 'directory';
 
+interface NativePickerOptions {
+  prompt?: string;
+  extensions?: string[];
+  multiple?: boolean;
+}
+
 type NativePicker = (
   kind: NativePickerKind,
-  options?: { prompt?: string },
+  options?: NativePickerOptions,
 ) => Promise<{ path: string | null; paths: string[] }>;
 
 export interface LocalFileRouteDeps {
@@ -35,14 +42,13 @@ export interface LocalFileRouteDeps {
   getService?: (name: string) => unknown;
 }
 
-/** The shared picker lives in the hub; workflow only forwards kind + its copy. */
 function nativePickerFromSeam(getService?: (name: string) => unknown): NativePicker {
-  return async (kind) => {
+  return async (kind, options) => {
     const seam = getService?.('nativeFilePicker') as { pick?: NativePicker } | undefined;
     if (!seam || typeof seam.pick !== 'function') {
       throw Object.assign(new Error('nativeFilePicker seam is unavailable'), { code: 'picker-unavailable' });
     }
-    return seam.pick(kind, { prompt: PICKER_PROMPTS[kind] });
+    return seam.pick(kind, { ...options, prompt: PICKER_PROMPTS[kind] });
   };
 }
 
@@ -106,7 +112,7 @@ function resolveReadableFile(rawPath: string):
   return { ok: true, path: real };
 }
 
-function probeOne(rawPath: string): {
+function probeOne(rawPath: string, contentMime: boolean): {
   path: string;
   exists: boolean;
   size?: number;
@@ -117,14 +123,16 @@ function probeOne(rawPath: string): {
   if (!resolved.ok) {
     return { path: rawPath, exists: false };
   }
-  const stat = statSync(resolved.path);
-  return {
-    path: rawPath,
-    exists: true,
-    size: stat.size,
-    mime: mimeFromFilename(resolved.path),
-    name: basename(resolved.path),
-  };
+  try {
+    const declared = mimeFromFilename(resolved.path);
+    const detected = contentMime ? detectMimeFromFile(resolved.path) : declared;
+    // ISO base media magic is shared by MP4, MOV, M4A and HEIF.
+    const mime = detected === 'video/mp4' && declared && /^(video\/quicktime|audio\/mp4|image\/hei[cf])$/.test(declared)
+      ? declared : detected;
+    return { path: rawPath, exists: true, size: statSync(resolved.path).size, mime, name: basename(resolved.path) };
+  } catch {
+    return { path: rawPath, exists: false };
+  }
 }
 
 export function createLocalFileRoutes(deps: LocalFileRouteDeps = {}): { tryHandle: RouteTry } {
@@ -140,13 +148,22 @@ export function createLocalFileRoutes(deps: LocalFileRouteDeps = {}): { tryHandl
       if (denied) return denied;
       const problem = jsonBodyProblem(req.body);
       if (problem) return problem;
-      const body = (req.body ?? {}) as { kind?: string };
+      const body = (req.body ?? {}) as { kind?: string; extensions?: unknown; multiple?: unknown };
       const kind = body.kind ?? 'file';
       if (kind !== 'file' && kind !== 'directory') {
         return jsonError(400, 'picker-invalid-kind', `unknown pick kind: ${String(kind)}`);
       }
+      const { extensions, multiple } = body;
+      if (extensions !== undefined && (kind !== 'file' || !Array.isArray(extensions) || extensions.length > PROBE_LIMIT
+        || extensions.some(extension => typeof extension !== 'string' || !/^[a-z0-9]{1,12}$/.test(extension)))) {
+        return jsonError(400, 'picker-invalid-extensions', 'extensions must be a list of filename extensions');
+      }
+      if (multiple !== undefined && (kind !== 'file' || typeof multiple !== 'boolean')) {
+        return jsonError(400, 'picker-invalid-multiple', 'multiple must be a boolean for a file picker');
+      }
       try {
-        const result = await picker(kind);
+        const options = { ...(extensions ? { extensions } : {}), ...(multiple !== undefined ? { multiple } : {}) };
+        const result = extensions !== undefined || multiple !== undefined ? await picker(kind, options) : await picker(kind);
         const paths = Array.isArray(result.paths)
           ? result.paths.filter((row) => typeof row === 'string' && row !== '')
           : [];
@@ -191,12 +208,12 @@ export function createLocalFileRoutes(deps: LocalFileRouteDeps = {}): { tryHandl
       if (denied) return denied;
       const problem = jsonBodyProblem(req.body);
       if (problem) return problem;
-      const body = (req.body ?? {}) as { paths?: unknown };
+      const body = (req.body ?? {}) as { paths?: unknown; contentMime?: boolean };
       if (!Array.isArray(body.paths)) {
         return jsonError(400, 'invalid-json', 'paths must be an array');
       }
       const raw = body.paths.filter((row): row is string => typeof row === 'string').slice(0, PROBE_LIMIT);
-      return { status: 200, body: { items: raw.map(probeOne) } };
+      return { status: 200, body: { items: raw.map(path => probeOne(path, body.contentMime === true)) } };
     }
 
     if (method === 'GET' && path === filePath) {

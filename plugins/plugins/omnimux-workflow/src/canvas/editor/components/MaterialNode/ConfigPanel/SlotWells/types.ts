@@ -29,8 +29,6 @@ export interface SlotPickRequest {
   openerAnchor?: HTMLElement;
   /** Session-only focus return owned by the original well. */
   onReturnFocus?: (anchor: HTMLElement) => void;
-  /** Borrowed-capability display: commit must first switch the node to this operation. */
-  displayOnlyFromOperation?: string;
 }
 
 export interface SlotWellsProps {

@@ -101,7 +101,8 @@ export function planCanvasInputSelection(current: CanvasInputMutationState, requ
   const params = readCanvasParams(target);
   if (request.chosenOperationId !== params.operation || request.chosenRouteId !== undefined) return rejectMutation(current, 'route_plan_required');
   if (request.setUse && ((request.selections?.length ?? 0) > 0 || request.replaceEdgeId)) return rejectMutation(current, 'invalid_selection');
-  const layout = deriveSlotLayout(context.catalog, typeof params.model === 'string' ? params.model : undefined, request.chosenOperationId);
+  const catalog = narrowCatalogByRouting(context.catalog, params.model, params.routing);
+  const layout = deriveSlotLayout(catalog, typeof params.model === 'string' ? params.model : undefined, request.chosenOperationId);
   const reactivatedEdges = new Set<string>();
   const bindings: SlotBindings = Object.fromEntries(Object.entries((target.data.slotBindings ?? {}) as SlotBindings)
     .map(([slot, values]) => [slot, values.map(value => ({ ...value }))]));
@@ -113,9 +114,7 @@ export function planCanvasInputSelection(current: CanvasInputMutationState, requ
     // Only this endpoint's existing-binding reduction may retain other invalid intent.
     if (request.setUse.use === 'inactive') return planCanvasInputMutation(current,
       { nodePatches: [{ nodeId: target.id, data: { slotBindings: bindings } }] }, context);
-    if (layout.slots.some(slot => slot.slot === request.setUse!.slot && isOrderedImageReferenceSlot(slot))) {
-      reactivatedEdges.add(matches[0]!.edgeId);
-    }
+    reactivatedEdges.add(matches[0]!.edgeId);
   }
   const addEdges: CanvasConnectionLike[] = [];
   const all = Object.entries(bindings).flatMap(([slot, values]) => values.map(occupant => ({ slot, occupant })));
@@ -154,7 +153,7 @@ export function planCanvasInputSelection(current: CanvasInputMutationState, requ
     while (!existing && [...current.edges, ...addEdges].some(edge => edge.id === edgeId)) edgeId = `input-${source.nodeId}-${target.id}-${++suffix}`;
     if (!existing) addEdges.push({ id: edgeId, source: source.nodeId, target: target.id });
     const orderedImages = orderedFeed && isOrderedImageReferenceSlot(spec) ? bindings[spec.slot] ?? [] : undefined;
-    if (orderedImages) reactivatedEdges.add(edgeId);
+    reactivatedEdges.add(edgeId);
     // A replacement can remove an earlier edge, shifting the remaining implicit ordinals.
     for (const occupant of orderedImages ?? []) {
       occupant.ordinal = resolveSlotOccupantOrdinal(occupant, orderedFeed?.get(occupant.edgeId));
@@ -172,17 +171,20 @@ export function planCanvasInputSelection(current: CanvasInputMutationState, requ
     }
   }
   const removeEdgeIds: string[] = [];
+  const previousStandby = Array.isArray(target.data.slotStandbyEdgeIds) ? target.data.slotStandbyEdgeIds : [];
+  const standby = new Set(previousStandby);
   if (previousReplacingEdgeId) {
     const stillReferenced = Object.values(bindings).flat().some(item => item.edgeId === previousReplacingEdgeId);
     if (!stillReferenced && current.edges.some(edge => edge.id === previousReplacingEdgeId)) {
-      removeEdgeIds.push(previousReplacingEdgeId);
+      if (request.replaceSlot) standby.add(previousReplacingEdgeId);
+      else removeEdgeIds.push(previousReplacingEdgeId);
     }
   }
-  const standby = Array.isArray(target.data.slotStandbyEdgeIds) ? target.data.slotStandbyEdgeIds : [];
-  const remainingStandby = standby.filter(edgeId => !reactivatedEdges.has(edgeId));
+  const remainingStandby = [...standby].filter(edgeId => !reactivatedEdges.has(edgeId));
+  const standbyChanged = remainingStandby.length !== previousStandby.length || remainingStandby.some(id => !previousStandby.includes(id));
   return planCanvasInputMutation(current, { addEdges, removeEdgeIds: removeEdgeIds.length ? removeEdgeIds : undefined,
     nodePatches: [{ nodeId: target.id, data: { slotBindings: bindings,
-      ...(remainingStandby.length !== standby.length ? { slotStandbyEdgeIds: remainingStandby } : {}) } }],
+      ...(standbyChanged ? { slotStandbyEdgeIds: remainingStandby } : {}) } }],
     strictConsumption: request }, context);
 }
 

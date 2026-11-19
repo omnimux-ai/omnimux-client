@@ -53,9 +53,10 @@ export class PickerError extends Error {
  * containing newlines, trailing spaces or tabs survive unchanged.
  * @param {'file' | 'directory'} kind
  * @param {string} prompt
+ * @param {{ extensions?: string[], multiple?: boolean }} [options]
  * @returns {string}
  */
-export function pickScript(kind, prompt) {
+export function pickScript(kind, prompt, options = {}) {
   const chooseFiles = kind === 'file'
   const chooseDirectories = kind === 'directory'
   return [
@@ -67,7 +68,8 @@ export function pickScript(kind, prompt) {
     '  var panel = $.NSOpenPanel.openPanel;',
     `  panel.setCanChooseFiles(${chooseFiles});`,
     `  panel.setCanChooseDirectories(${chooseDirectories});`,
-    '  panel.setAllowsMultipleSelection(true);',
+    `  panel.setAllowsMultipleSelection(${!chooseFiles || options.multiple !== false});`,
+    ...(chooseFiles && options.extensions?.length ? [`  panel.setAllowedFileTypes(${JSON.stringify(options.extensions)});`] : []),
     `  panel.setMessage(${JSON.stringify(prompt)});`,
     '  panel.setPrompt("选取");',
     '  if (Number(panel.runModal) !== 1) return "";',
@@ -166,6 +168,8 @@ function runCommand(command, argv) {
  *   platform?: NodeJS.Platform,
  *   run?: (command: string, argv: string[]) => Promise<{ stdout: string, stderr: string }>,
  *   prompt?: string,
+ *   extensions?: string[],
+ *   multiple?: boolean,
  *   log?: (message: string) => void,
  * }} PickNativePathDeps
  */
@@ -213,7 +217,7 @@ export async function pickNativePath(kind, deps = {}) {
   const run = deps.run ?? runCommand
   let stdout = ''
   try {
-    const result = await run('osascript', ['-l', 'JavaScript', '-e', pickScript(kind, prompt)])
+    const result = await run('osascript', ['-l', 'JavaScript', '-e', pickScript(kind, prompt, deps)])
     stdout = result.stdout
     const paths = parsePickedPaths(stdout)
     return { path: paths[0] ?? null, paths }
@@ -236,7 +240,7 @@ export async function pickNativePath(kind, deps = {}) {
   }
 }
 
-/** @typedef {{ pick: (kind: 'file' | 'directory', options?: { prompt?: string }) => Promise<{ path: string | null, paths: string[] }> }} NativeFilePicker */
+/** @typedef {{ pick: (kind: 'file' | 'directory', options?: { prompt?: string, extensions?: string[], multiple?: boolean }) => Promise<{ path: string | null, paths: string[] }> }} NativeFilePicker */
 
 /**
  * Build the seam value registered as `ctx.provide('nativeFilePicker', …)`.
@@ -250,6 +254,8 @@ export function createNativeFilePicker(deps = {}) {
     pick(kind, options = {}) {
       const next = { ...deps }
       if (typeof options?.prompt === 'string' && options.prompt !== '') next.prompt = options.prompt
+      if (options.extensions) next.extensions = options.extensions
+      if (typeof options.multiple === 'boolean') next.multiple = options.multiple
       return pickNativePath(kind, next)
     },
   }

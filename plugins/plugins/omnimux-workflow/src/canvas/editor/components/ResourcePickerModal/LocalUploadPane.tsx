@@ -11,7 +11,7 @@ import {
   formatFileSize,
   type LocalFileDraft,
 } from '../../utils/resourcePickerPolicy.ts';
-import { draftFromRealPath, draftsFromPickedPaths, filterDraftsByTypes, nativePathOf } from '../../utils/localFileDraft.ts';
+import { draftFromRealPath, draftsFromPickedPaths, filterDraftsByTypes, nativePathOf, probePickerDrafts } from '../../utils/localFileDraft.ts';
 import { localFileMediaUrl } from '../../../../shared/localMedia.ts';
 import PreviewThumb from './PreviewThumb.tsx';
 import { useAsyncInstanceGuard } from '../../hooks/useAsyncInstanceGuard.ts';
@@ -23,31 +23,42 @@ export interface LocalUploadPaneProps {
   onRemove: (id: string) => void;
   /** 卡槽装填会话：仅接受这些素材类型，其余在入口处拦截。 */
   acceptedTypes?: string[];
+  namedSlot?: { extensions: string[]; remaining: number; readDuration: boolean; accepts: (file: LocalFileDraft) => boolean };
 }
 
-const LocalUploadPane: React.FC<LocalUploadPaneProps> = ({ files, active, onAddFiles, onRemove, acceptedTypes }) => {
+const LocalUploadPane: React.FC<LocalUploadPaneProps> = ({ files, active, onAddFiles, onRemove, acceptedTypes, namedSlot }) => {
   const guard = useAsyncInstanceGuard(active);
   const t = useT();
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [measured, setMeasured] = useState<Record<string, { width: number; height: number }>>({});
 
-  const ingestPaths = useCallback(
-    (paths: string[]) => {
-      if (!paths.length) return;
-      const drafts = draftsFromPickedPaths(paths);
+  const ingest = useCallback(
+    async (drafts: LocalFileDraft[], incomingCount: number) => {
+      if (!active) return;
+      const ticket = guard.capture();
+      if (!guard.isCurrent(ticket)) return;
+      if (namedSlot) {
+        if (namedSlot.remaining <= 0) return;
+        const probed = await probePickerDrafts(drafts, namedSlot.readDuration).catch(() => null);
+        if (!guard.isCurrent(ticket)) return;
+        if (!probed) { toast.error(t('picker.pickFailed')); return; }
+        const filtered = probed.filter(namedSlot.accepts);
+        if (filtered.length > 0) onAddFiles(filtered);
+        return;
+      }
       const filtered = filterDraftsByTypes(drafts, acceptedTypes);
       if (filtered.length > 0) onAddFiles(filtered);
-      if (filtered.length < paths.length) toast.warning(t('picker.unsupported'));
+      if (filtered.length < incomingCount) toast.warning(t('picker.unsupported'));
     },
-    [acceptedTypes, onAddFiles, t],
+    [acceptedTypes, active, guard, namedSlot, onAddFiles, t],
   );
 
   const chooseNative = useCallback(async () => {
-    if (!active) return;
+    if (!active || (namedSlot && namedSlot.remaining <= 0)) return;
     const ticket = guard.capture();
     if (!guard.isCurrent(ticket)) return;
-    const result = await pickLocalFiles().catch(() => null);
+    const result = await pickLocalFiles(namedSlot ? { extensions: namedSlot.extensions, multiple: namedSlot.remaining > 1 } : undefined).catch(() => null);
     if (!guard.isCurrent(ticket)) return;
     if (!result || !result.ok) {
       if (result?.body.error === 'picker-unsupported') {
@@ -59,15 +70,14 @@ const LocalUploadPane: React.FC<LocalUploadPaneProps> = ({ files, active, onAddF
     }
     const paths = result.body.paths ?? [];
     if (paths.length === 0) return;
-    ingestPaths(paths);
-  }, [active, guard, ingestPaths, t]);
+    await ingest(draftsFromPickedPaths(paths), paths.length);
+  }, [active, guard, ingest, namedSlot, t]);
 
   const ingestFiles = useCallback(
     (list: FileList | File[]) => {
       const incoming = Array.from(list);
       const drafted: LocalFileDraft[] = [];
       let missingPath = 0;
-      let rejected = 0;
       for (const file of incoming) {
         const path = nativePathOf(file);
         if (!path) {
@@ -81,24 +91,17 @@ const LocalUploadPane: React.FC<LocalUploadPaneProps> = ({ files, active, onAddF
         });
         if (draft) {
           drafted.push(draft);
-        } else {
-          rejected += 1;
         }
       }
-      const accepted = filterDraftsByTypes(drafted, acceptedTypes);
-      rejected += drafted.length - accepted.length;
-      if (accepted.length > 0) onAddFiles(accepted);
+      void ingest(drafted, incoming.length - missingPath);
       if (missingPath > 0) toast.warning(t('picker.needPath'));
-      if (rejected > 0) toast.warning(t('picker.unsupported'));
     },
-    [acceptedTypes, onAddFiles, t],
+    [ingest, t],
   );
 
   const handleClick = useCallback(() => {
     if (!active) return;
-    // File.path was removed in modern Electron, so the hidden input always
-    // falls back to the native picker anyway — go straight there instead of
-    // making the user pick files in two consecutive dialogs.
+    // Request the desktop file chooser directly so the current slot filters apply.
     void chooseNative();
   }, [active, chooseNative]);
 
@@ -141,6 +144,7 @@ const LocalUploadPane: React.FC<LocalUploadPaneProps> = ({ files, active, onAddF
       />
       <button
         type="button"
+        disabled={Boolean(namedSlot && namedSlot.remaining <= 0)}
         className={`wf-picker-dropzone ${dragging ? 'wf-picker-dropzone--active' : ''}`}
         onClick={handleClick}
         onDragOver={(e) => {

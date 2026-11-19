@@ -38,6 +38,25 @@ function materialNode(id, materialType, extras = {}) {
   };
 }
 
+test('named picker hides unsupported audio before selection on both canvas versions', () => {
+  const source = (name, mimeType, sizeBytes = 256) => ({ id: name, type: 'material', position: { x: 0, y: 0 },
+    data: { materialType: 'audio', nodeKind: 'import', mediaUrl: `https://fixtures.invalid/${name}`, mimeType, sizeBytes } });
+  const target = { id: 'target', type: 'material', position: { x: 200, y: 0 }, data: {
+    materialType: 'video', nodeKind: 'generate', params: { model: 'seedance-fixture', operation: 'video_multi_ref' } } };
+  const catalog = { models: [{ id: 'seedance-fixture', operations: [{ id: 'video_multi_ref', listed: true,
+    output: { type: 'video' }, inputs: [
+      { slot: 'reference_images', type: 'image', role: 'reference', source: 'upstream_output', min: 1, max: 2 },
+      { slot: 'reference_audios', type: 'audio', role: 'reference', source: 'upstream_output', min: 0, max: 2,
+        maxSizeMb: 1, allowedMimes: ['audio/wav', 'audio/mpeg'] },
+    ] }] }] };
+  const audio = [source('good.wav'), source('good.mp3', 'audio/mpeg'), source('bad.flac', 'audio/flac'),
+    source('renamed.wav', 'audio/flac'), source('too-large.wav', 'audio/wav', 2 ** 20 + 1)];
+  for (const node of [target, { ...target, data: { ...target.data, inputBindingVersion: 1, slotBindings: {} } }]) {
+    const items = listCanvasResources([node, ...audio], [], target.id, { catalog }, { targetSlot: 'reference_audios' });
+    assert.deepEqual(items.map(item => item.nodeId), ['good.wav', 'good.mp3']);
+  }
+});
+
 test('V1 qualified current picker lists selected ready text, not blank/waiting or local-only sources', () => {
   const source = (id, content, status = 'ready') => ({ id, type: 'material', position: { x: 0, y: 0 },
     data: { materialType: 'text', nodeKind: 'import', label: id, content, status } });
@@ -91,6 +110,9 @@ test('V1 adds or replaces a named slot from a local file through one strict grap
   const next = changed.nodes.find(node => node.id === target.id).data.slotBindings.reference[0];
   assert.equal(next.sourceNodeId, replacement.mutation.addNodes[0].id);
   assert.equal(next.ordinal, binding.ordinal);
+  assert.ok(changed.edges.some(edge => edge.id === binding.edgeId));
+  assert.equal(changed.edges.length, 2);
+  assert.deepEqual(changed.nodes.find(node => node.id === target.id).data.slotStandbyEdgeIds, [binding.edgeId]);
   assert.equal(graph.nodes.length, 1);
   assert.equal(graph.edges.length, 0);
 });

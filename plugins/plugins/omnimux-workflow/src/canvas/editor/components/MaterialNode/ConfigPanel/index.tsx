@@ -324,9 +324,8 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
     const workspaceId = typeof nodeData.__workspaceId === 'string' ? nodeData.__workspaceId : undefined;
     return { target, edges: graph.edges, failure: findExecutionReadinessFailure([target], opsCatalog, { ...graph, workspaceId }) };
   }, [useSelectedOperation, canvasEdges, nodeId, nodeData, params, opsCatalog, upstreamSnapshots]);
-  const effectiveSlotLayout = useMemo(() => currentInputs || useSelectedOperation
-    ? deriveSlotLayout(activeCatalog, modelValue, currentOperationId)
-    : deriveModelSlotLayout(activeCatalog, modelValue, currentOperationId), [activeCatalog, modelValue, currentOperationId, currentInputs, useSelectedOperation]);
+  const effectiveSlotLayout = useMemo(() => deriveSlotLayout(activeCatalog, modelValue, currentOperationId),
+    [activeCatalog, modelValue, currentOperationId]);
 
   const fallbackState = useMemo<ChannelFallbackState>(() => {
     const family = (activeCatalog?.[materialType] as CapabilityModelItem[] | undefined)?.find((m) => m.id === modelValue)?.family;
@@ -997,14 +996,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
     }
   }, [canvasEdges, nodeId, nodeData.slotStandbyEdgeIds]);
 
-  const handlePickSlot = useCallback(
-    (request: SlotPickRequest) => onOpenResourcePicker?.(
-      displayedSlotLayout.displayOnlyFromOperation
-        ? { ...request, displayOnlyFromOperation: displayedSlotLayout.displayOnlyFromOperation }
-        : request,
-    ),
-    [onOpenResourcePicker, displayedSlotLayout],
-  );
+  const handlePickSlot = useCallback((request: SlotPickRequest) => onOpenResourcePicker?.(request), [onOpenResourcePicker]);
 
 
   // 必需槽位缺口：空卡槽自解释，提交按钮 disabledReason 同步提示。
@@ -1022,7 +1014,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   const hasConsumedPrompt = Boolean(consumedFingerprint.prompt?.trim());
   const missingRequiredSlots = useMemo(
     () => displayedSlotLayout.slots.filter((spec: SlotSpec) => (
-      !selectedOperation && !currentInputs && !displayedSlotLayout.displayOnlyFromOperation
+      !selectedOperation && !currentInputs
       && (spec.type === 'text' && spec.composition && spec.valueSources?.includes('local_field')
         ? Number(hasConsumedPrompt) < spec.min
         : (slotBindings[spec.slot]?.length ?? 0) < spec.min)
