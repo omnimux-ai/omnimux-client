@@ -5,7 +5,7 @@ import { validateCanvasConnectionStructure } from './canvasConnectionStructure.t
 import { resolveNodeKind } from './materialNode.ts';
 import type { CapabilityCatalog } from '../api.ts';
 import type { MaterialType } from '../canvasTypes.ts';
-import { buildContractView, isOrderedReferencePair, matchOperationInputs, resolveModelView, type OperationMatch } from '../validation/compatKernel.ts';
+import { buildContractView, isOrderedImageReferenceSlot, matchOperationInputs, resolveModelView, type OperationMatch } from '../validation/compatKernel.ts';
 import { buildCanvasUpstreamFingerprint, readCanvasParams } from './canvasInputSources.ts';
 import { deriveSlotLayout } from './feedSlot/deriveSlotLayout.ts';
 import { effectiveInputDisplay } from './feedSlot/effectiveInputDisplay.ts';
@@ -101,6 +101,8 @@ export function planCanvasInputSelection(current: CanvasInputMutationState, requ
   const params = readCanvasParams(target);
   if (request.chosenOperationId !== params.operation || request.chosenRouteId !== undefined) return rejectMutation(current, 'route_plan_required');
   if (request.setUse && ((request.selections?.length ?? 0) > 0 || request.replaceEdgeId)) return rejectMutation(current, 'invalid_selection');
+  const layout = deriveSlotLayout(context.catalog, typeof params.model === 'string' ? params.model : undefined, request.chosenOperationId);
+  const reactivatedEdges = new Set<string>();
   const bindings: SlotBindings = Object.fromEntries(Object.entries((target.data.slotBindings ?? {}) as SlotBindings)
     .map(([slot, values]) => [slot, values.map(value => ({ ...value }))]));
   if (request.setUse) {
@@ -111,8 +113,10 @@ export function planCanvasInputSelection(current: CanvasInputMutationState, requ
     // Only this endpoint's existing-binding reduction may retain other invalid intent.
     if (request.setUse.use === 'inactive') return planCanvasInputMutation(current,
       { nodePatches: [{ nodeId: target.id, data: { slotBindings: bindings } }] }, context);
+    if (layout.slots.some(slot => slot.slot === request.setUse!.slot && isOrderedImageReferenceSlot(slot))) {
+      reactivatedEdges.add(matches[0]!.edgeId);
+    }
   }
-  const layout = deriveSlotLayout(context.catalog, typeof params.model === 'string' ? params.model : undefined, request.chosenOperationId);
   const addEdges: CanvasConnectionLike[] = [];
   const all = Object.entries(bindings).flatMap(([slot, values]) => values.map(occupant => ({ slot, occupant })));
   const replacements = request.replaceEdgeId ? all.filter(item => item.occupant.edgeId === request.replaceEdgeId
@@ -124,7 +128,7 @@ export function planCanvasInputSelection(current: CanvasInputMutationState, requ
   const replacing = replacements[0];
   const previousReplacingEdgeId = replacing?.occupant.edgeId;
   if (request.replaceEdgeId && (!replacing || request.selections?.length !== 1)) return rejectMutation(current, 'invalid_selection');
-  const orderedFeed = layout.slots.some(isOrderedReferencePair)
+  const orderedFeed = layout.slots.some(isOrderedImageReferenceSlot)
     ? new Map(feedFromFingerprint(buildCanvasUpstreamFingerprint(target.id, current.nodes, current.edges), 1).map(asset => [asset.edgeId, asset]))
     : undefined;
   let ordinal = all.reduce((max, item) => Math.max(max, item.occupant.ordinal ?? -1), -1) + 1;
@@ -149,14 +153,15 @@ export function planCanvasInputSelection(current: CanvasInputMutationState, requ
     let suffix = 0;
     while (!existing && [...current.edges, ...addEdges].some(edge => edge.id === edgeId)) edgeId = `input-${source.nodeId}-${target.id}-${++suffix}`;
     if (!existing) addEdges.push({ id: edgeId, source: source.nodeId, target: target.id });
-    const orderedPair = orderedFeed && isOrderedReferencePair(spec) ? bindings[spec.slot] ?? [] : undefined;
+    const orderedImages = orderedFeed && isOrderedImageReferenceSlot(spec) ? bindings[spec.slot] ?? [] : undefined;
+    if (orderedImages) reactivatedEdges.add(edgeId);
     // A replacement can remove an earlier edge, shifting the remaining implicit ordinals.
-    for (const occupant of orderedPair ?? []) {
+    for (const occupant of orderedImages ?? []) {
       occupant.ordinal = resolveSlotOccupantOrdinal(occupant, orderedFeed?.get(occupant.edgeId));
     }
     const next: SlotOccupant = { sourceNodeId: source.nodeId, edgeId, outputId: source.outputId, pinned: true,
       ordinal: updating?.occupant.ordinal
-        ?? (orderedPair ? orderedPair.reduce((max, item) => Math.max(max, item.ordinal ?? -1), -1) + 1 : ordinal++),
+        ?? (orderedImages ? orderedImages.reduce((max, item) => Math.max(max, item.ordinal ?? -1), -1) + 1 : ordinal++),
       role: spec.role, use: 'active' };
     if (updating) {
       bindings[updating.slot] = bindings[updating.slot]!.map(item => item === updating.occupant ? next : item);
@@ -173,8 +178,11 @@ export function planCanvasInputSelection(current: CanvasInputMutationState, requ
       removeEdgeIds.push(previousReplacingEdgeId);
     }
   }
+  const standby = Array.isArray(target.data.slotStandbyEdgeIds) ? target.data.slotStandbyEdgeIds : [];
+  const remainingStandby = standby.filter(edgeId => !reactivatedEdges.has(edgeId));
   return planCanvasInputMutation(current, { addEdges, removeEdgeIds: removeEdgeIds.length ? removeEdgeIds : undefined,
-    nodePatches: [{ nodeId: target.id, data: { slotBindings: bindings } }],
+    nodePatches: [{ nodeId: target.id, data: { slotBindings: bindings,
+      ...(remainingStandby.length !== standby.length ? { slotStandbyEdgeIds: remainingStandby } : {}) } }],
     strictConsumption: request }, context);
 }
 
@@ -227,29 +235,34 @@ export function planCanvasInputMutation(current: CanvasInputMutationState, mutat
     if (!catalog) return rejectMutation(current, 'catalog_unavailable');
     const layout = deriveSlotLayout(catalog, typeof params.model === 'string' ? params.model : undefined,
       typeof params.operation === 'string' ? params.operation : undefined);
-    const orderedSlot = layout.slots.find(spec => spec.slot === slot && isOrderedReferencePair(spec));
+    const orderedSlot = layout.slots.find(spec => spec.slot === slot && isOrderedImageReferenceSlot(spec));
     if (!orderedSlot) return rejectMutation(current, 'operation_incompatible');
 
     const version = target.data.inputBindingVersion === 1 ? 1 : undefined;
     const raw = buildCanvasUpstreamFingerprint(target.id, current.nodes, current.edges);
-    const loaded = effectiveInputDisplay(layout, feedFromFingerprint(raw, version), target.data.slotBindings as SlotBindings | undefined,
+    const feed = feedFromFingerprint(raw, version);
+    const loaded = effectiveInputDisplay(layout, feed, target.data.slotBindings as SlotBindings | undefined,
       (target.data.slotConflicts ?? []) as SlotConflict[], current.edges.filter(edge => edge.target === target.id),
       (target.data.slotStandbyEdgeIds ?? []) as string[], version);
     const active = loaded.records.filter(record => record.slot.slot === slot && record.state !== 'inactive');
-    const [first, second] = active;
-    if (active.length !== 2 || first?.state !== 'ready' || second?.state !== 'ready'
-      || first.occupant.edgeId !== firstEdgeId || second.occupant.edgeId !== secondEdgeId) {
+    const first = active[0];
+    const second = active.find(record => record !== first && record.occupant.edgeId === secondEdgeId);
+    if (first?.state !== 'ready' || second?.state !== 'ready' || first.occupant.edgeId !== firstEdgeId) {
       return rejectMutation(current, 'input_changed');
     }
-    // The shared reader orders both display and dispatch by ordinal. Preserve the
-    // pair's rank relative to other slots and pin the explicit change.
-    const reversed = (loaded.bindings[slot] ?? []).map(occupant => {
-      if (occupant.edgeId === firstEdgeId) return { ...second.occupant, pinned: true, ordinal: resolveSlotOccupantOrdinal(first.occupant, first.asset) };
-      if (occupant.edgeId === secondEdgeId) return { ...first.occupant, pinned: true, ordinal: resolveSlotOccupantOrdinal(second.occupant, second.asset) };
-      return occupant;
-    });
+    // Persist unique ranks in this slot before reloading. Older bindings may
+    // share an ordinal, and the legacy loader groups pinned choices first.
+    const feedByEdge = new Map(feed.map(asset => [asset.edgeId, asset]));
+    const rank = (occupant: SlotOccupant) => resolveSlotOccupantOrdinal(occupant, feedByEdge.get(occupant.edgeId));
+    const reordered = [...(loaded.bindings[slot] ?? [])]
+      .sort((left, right) => rank(left) - rank(right))
+      .map((occupant, ordinal) => {
+        if (occupant.edgeId === firstEdgeId) return { ...second.occupant, pinned: true, ordinal };
+        if (occupant.edgeId === secondEdgeId) return { ...first.occupant, pinned: true, ordinal };
+        return { ...occupant, ordinal };
+      });
     return planCanvasInputMutation(current, { nodePatches: [{ nodeId: target.id, data: {
-      slotBindings: { ...loaded.bindings, [slot]: reversed }, slotConflicts: loaded.conflicts,
+      slotBindings: { ...loaded.bindings, [slot]: reordered }, slotConflicts: loaded.conflicts,
     } }] }, context);
   }
   const ids = new Set(current.nodes.map((node) => node.id));

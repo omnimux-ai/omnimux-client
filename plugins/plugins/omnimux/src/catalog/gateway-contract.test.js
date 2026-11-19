@@ -141,6 +141,49 @@ test('Muse ordered reference slots keep the gateway minimum through catalog and 
   })
 })
 
+test('Muse accepts the expanded gateway reference range and preserves request order', () => {
+  const expandedSnapshot = structuredClone(bundled)
+  const rawModel = expandedSnapshot.models.find((model) => model.id === 'muse-video')
+  const rawOperation = rawModel.contract.operations.find((operation) => operation.id === 'video_multi_ref')
+  rawOperation.inputs.find((input) => input.slot === 'reference_images').max = 10
+
+  const catalog = buildModelCatalog({ env: {}, snapshot: expandedSnapshot })
+  const model = catalog.models.find((row) => row.id === 'muse-video')
+  const operation = model.operations.find((entry) => entry.id === 'video_multi_ref')
+  const slot = operation.inputs.find((input) => input.slot === 'reference_images')
+  assert.deepEqual([slot.min, slot.max, slot.role, slot.firstItemRole], [2, 10, 'reference', 'first_frame'])
+
+  const { index } = getRuntimeContractIndex({ snapshot: expandedSnapshot })
+  const context = { index, seam: 'videoGenerate', capability: 'video', outputType: 'video' }
+  const urls = Array.from({ length: 11 }, (_, i) => `https://example.test/frame-${11 - i}.png`)
+  const assets = urls.map((pathOrUrl) => ({ type: 'image', role: 'reference', pathOrUrl, mime: 'image/png' }))
+  const submit = (assets) => guardSubmit(
+    { model: model.id, operation: 'video_multi_ref', prompt: 'fixture', aspectRatio: '9:16', duration: 5, assets },
+    context,
+  )
+
+  assert.equal(submit(assets.slice(0, 1)).code, 'min_unsatisfied')
+  for (const count of [2, 3, 10]) {
+    const result = submit(assets.slice(0, count))
+    assert.equal(result.ok, true, result.message)
+    assert.deepEqual(result.vendorPayload, {
+      prompt: 'fixture', operation: 'video_multi_ref', image_urls: urls.slice(0, count),
+      aspect_ratio: '9:16', duration: 5, output_format: 'mp4',
+    })
+  }
+  assert.equal(submit(assets).code, 'slot_capacity')
+
+  const firstFrame = guardSubmit({
+    model: model.id, operation: 'first_frame', prompt: 'fixture', aspectRatio: 'adaptive', duration: 10,
+    assets: [{ ...assets[0], role: 'first_frame' }],
+  }, context)
+  assert.equal(firstFrame.ok, true, firstFrame.message)
+  assert.deepEqual(firstFrame.vendorPayload, {
+    prompt: 'fixture', operation: 'first_frame', image: urls[0],
+    aspect_ratio: 'adaptive', duration: 10, output_format: 'mp4',
+  })
+})
+
 test('the bundled snapshot carries the live 16-model membership, including Muse and excluding delisted rows', () => {
   const ids = snapshot.models.map((row) => row.id).sort()
   assert.equal(ids.length, 16)

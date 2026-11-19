@@ -18,7 +18,7 @@ import type {
 import {
   buildContractView,
   isMediaInputType,
-  isOrderedReferencePair,
+  isOrderedImageReferenceSlot,
   mapLegacyOperation,
   matchOperationInputs,
   operationAcceptsText,
@@ -351,7 +351,7 @@ export function buildInputCapability(args: InputCapabilityArgs): InputCapability
     operation.id === 'digital_human' && !operationAcceptsText(model, operation));
   const operationStates = listed.map(({ operation, order }) => {
     const state = evaluateOperation(operation, order, fingerprint, counts, { ignoreUnused });
-    if (isVideoCapability && operation.inputs.some(isOrderedReferencePair)
+    if (isVideoCapability && operation.inputs.some(isOrderedImageReferenceSlot)
       || hasMediaOnlyLipSync && (operation.id === 'digital_human' || operation.id === 'text_to_video')) {
       state.selectableBeforeInputs = true;
     }
