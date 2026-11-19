@@ -273,6 +273,35 @@ describe('auto-qa-scan：事故反证与全仓回归', () => {
   })
 })
 
+it('仅对根级工具脚本跳过产品生命周期检查，保留现行目录下工具脚本的语法与安全检查', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'qa-tooling-lifecycle-'))
+  try {
+    const legacyTool = 'scripts/watch.mjs'
+    const tool = 'plugins/scripts/watch.mjs'
+    const product = 'plugins/plugins/omnimux-workflow/src/scripts/watch.mjs'
+    const intervalWithoutCleanup = 'setInterval(() => {}, 1000)\n'
+
+    const fixtures = [
+      [legacyTool, intervalWithoutCleanup],
+      [tool, `${intervalWithoutCleanup}const key = '${FAKE_KEY}'\nconst invalid =\n`],
+      [product, intervalWithoutCleanup],
+    ]
+    for (const [file, source] of fixtures) {
+      const full = join(dir, file)
+      mkdirSync(dirname(full), { recursive: true })
+      writeFileSync(full, source)
+    }
+
+    const { dimensions } = runGate(parseArgs([dir, '--all']))
+    const affectedFiles = (dimension) => dimension.errors.map((error) => error.file)
+    assert.deepEqual(affectedFiles(dimensions.lifecycle), [product])
+    assert.deepEqual(affectedFiles(dimensions.syntax), [tool])
+    assert.deepEqual(affectedFiles(dimensions.security), [tool])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 describe('auto-qa-scan：vendored OpenReel 路径豁免（契约真源 docs/contracts/openreel-vendor-contract.md §3「Vendor 根」）', () => {
   // 契约规定现行 vendor 根是 plugins/omnimux-clip/src/client/openreel/；src/client/engine/openreel/ 是退役过渡路径，保留兼容。
   const VENDOR_CURRENT = 'plugins/omnimux-clip/src/client/openreel/web/motion/components/MotionTimeline.tsx'
