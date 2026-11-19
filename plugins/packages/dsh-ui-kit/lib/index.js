@@ -3,7 +3,7 @@ import { Modal, Tooltip } from "@deepseek-ai/dsh-client-ui-primitives";
 import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 import { createPortal } from "react-dom";
-//#region src/icons/compat-icons.tsx
+// src/icons/compat-icons.tsx
 /** Renders nothing when neither generation provides the glyph. */
 const MissingIcon = () => null;
 const registry = primitives;
@@ -37,15 +37,13 @@ const IconRefreshOutline16 = resolve("IconRefreshOutline16", "IconRefreshOutline
 const IconRightUpOutline14 = resolve("IconRightUpOutline14", "IconRightUpOutlineRegular");
 const IconSearchOutline16 = resolve("IconSearchOutline16", "IconSearchOutlineRegular");
 const IconTrashOutline16 = resolve("IconTrashOutline16", "IconTrashOutlineRegular");
-//#endregion
-//#region src/internal/cssClass.ts
+// src/internal/cssClass.ts
 /** CSS Modules values are `string | undefined` under `noUncheckedIndexedAccess`. */
 function cssClass(value, name) {
 	if (!value) throw new Error(`dsh-ui-kit: missing CSS module class "${name}"`);
 	return value;
 }
-//#endregion
-//#region src/internal/cx.ts
+// src/internal/cx.ts
 /** Tiny className joiner. Avoids a `clsx` dependency in the kit. */
 function cx(...parts) {
 	const out = [];
@@ -59,8 +57,7 @@ function cx(...parts) {
 	}
 	return out.join(" ");
 }
-//#endregion
-//#region src/internal/injectCss.ts
+// src/internal/injectCss.ts
 const injected = /* @__PURE__ */ new Set();
 /**
 * Insert a kit stylesheet once per id. Safe to call from every CSS-module
@@ -75,8 +72,7 @@ function injectCss(id, css) {
 	style.textContent = css;
 	document.head.appendChild(style);
 }
-//#endregion
-//#region \0dsh-ui-kit-css:src/button/Button.module.css.mjs
+// \0dsh-ui-kit-css:src/button/Button.module.css.mjs
 injectCss("Button.module.css", ".dshUk-Button-button {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n  gap: 6px;\n  box-sizing: border-box;\n  margin: 0;\n  border: 1px solid transparent;\n  border-radius: 8px;\n  cursor: pointer;\n  font: inherit;\n  font-size: 13px;\n  font-weight: 500;\n  line-height: 18px;\n  letter-spacing: 0;\n  white-space: nowrap;\n  color: var(--dsw-alias-label-primary);\n  background: transparent;\n  padding: 0 12px;\n  height: 32px;\n  vertical-align: middle;\n  user-select: none;\n  transition:\n    background-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    border-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    transform 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    box-shadow 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    opacity 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-Button-button:focus {\n  outline: none;\n}\n\n.dshUk-Button-button:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 2px;\n}\n\n.dshUk-Button-button:disabled,\n.dshUk-Button-button[aria-disabled=\"true\"] {\n  cursor: not-allowed;\n  opacity: 0.4;\n}\n\n.dshUk-Button-button:active:not(:disabled):not([aria-disabled=\"true\"]) {\n  transform: scale(0.96);\n}\n\n.dshUk-Button-sm {\n  height: 28px;\n  padding: 0 10px;\n  border-radius: 6px;\n  font-size: 12px;\n  line-height: 16px;\n}\n\n.dshUk-Button-xs {\n  height: 24px;\n  padding: 0 8px;\n  border-radius: 6px;\n  font-size: 12px;\n  line-height: 16px;\n  gap: 4px;\n}\n\n.dshUk-Button-iconOnly {\n  padding: 0;\n  width: 32px;\n}\n\n.dshUk-Button-iconOnly.dshUk-Button-sm {\n  width: 28px;\n}\n\n.dshUk-Button-iconOnly.dshUk-Button-xs {\n  width: 24px;\n}\n\n.dshUk-Button-primary {\n  background: var(--dsw-alias-button-primary-fill);\n  color: var(--dsw-alias-label-primary-foreground);\n}\n\n.dshUk-Button-primary:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-button-primary-hover);\n}\n\n.dshUk-Button-secondary {\n  background: var(--dsw-alias-bg-layer-1);\n  border-color: var(--dsw-alias-border-l2);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-Button-secondary:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-interactive-bg-hover);\n  border-color: var(--dsw-alias-border-l3);\n}\n\n.dshUk-Button-ghost {\n  background: transparent;\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-Button-ghost:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.dshUk-Button-ghost:active:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-interactive-bg-active);\n}\n\n.dshUk-Button-outline {\n  background: transparent;\n  border-color: var(--dsw-alias-border-l2);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-Button-outline:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-interactive-bg-hover);\n  border-color: var(--dsw-alias-border-l3);\n}\n\n.dshUk-Button-danger {\n  background: var(--dsw-alias-state-error-primary);\n  color: var(--dsw-alias-label-primary-foreground);\n}\n\n.dshUk-Button-danger:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-state-error-secondary);\n}\n\n.dshUk-Button-ghost[aria-pressed=\"true\"],\n.dshUk-Button-secondary[aria-pressed=\"true\"] {\n  background: var(--dsw-alias-button-ghost-active-fill);\n  box-shadow: inset 0 0 0 1px var(--dsw-alias-button-ghost-active-border);\n}\n\n/* Outline already owns a real 1px border. Keep pressed fill/border as\n * declarations — do not share the ghost/secondary inset box-shadow or the\n * pressed state would double-stroke. */\n.dshUk-Button-outline[aria-pressed=\"true\"] {\n  background: var(--dsw-alias-button-ghost-active-fill);\n  border-color: var(--dsw-alias-button-ghost-active-border);\n  color: var(--dsw-alias-label-primary);\n}\n\n/* Hover specificity defense: `.dshUk-Button-outline:hover` (and ghost/secondary hover)\n * would otherwise wash the pressed fill/border back to the idle hover tokens. */\n.dshUk-Button-ghost[aria-pressed=\"true\"]:hover:not(:disabled):not([aria-disabled=\"true\"]),\n.dshUk-Button-secondary[aria-pressed=\"true\"]:hover:not(:disabled):not([aria-disabled=\"true\"]),\n.dshUk-Button-outline[aria-pressed=\"true\"]:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-button-ghost-active-hover);\n}\n\n.dshUk-Button-outline[aria-pressed=\"true\"]:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  border-color: var(--dsw-alias-button-ghost-active-border);\n}\n\n.dshUk-Button-slot {\n  display: inline-flex;\n  width: 16px;\n  height: 16px;\n  align-items: center;\n  justify-content: center;\n  flex: none;\n}\n\n.dshUk-Button-xs .dshUk-Button-slot {\n  width: 14px;\n  height: 14px;\n}\n\n.dshUk-Button-spinner {\n  animation: dshUkSpin 0.7s linear infinite;\n}\n\n.dshUk-Button-label {\n  min-width: 0;\n}\n\n.dshUk-Button-loadingLabel {\n  opacity: 0.84;\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-Button-button {\n    transition: none;\n  }\n\n  .dshUk-Button-button:active:not(:disabled):not([aria-disabled=\"true\"]) {\n    transform: none;\n  }\n\n  .dshUk-Button-spinner {\n    animation: none;\n  }\n}\n\n@keyframes dshUkSpin {\n  from {\n    transform: rotate(0deg);\n  }\n  to {\n    transform: rotate(360deg);\n  }\n}\n");
 var Button_module_css_default = {
 	"button": "dshUk-Button-button",
@@ -93,8 +89,7 @@ var Button_module_css_default = {
 	"label": "dshUk-Button-label",
 	"loadingLabel": "dshUk-Button-loadingLabel"
 };
-//#endregion
-//#region src/button/Button.tsx
+// src/button/Button.tsx
 const VARIANT_CLASS$1 = {
 	primary: cssClass(Button_module_css_default.primary, "primary"),
 	secondary: cssClass(Button_module_css_default.secondary, "secondary"),
@@ -171,8 +166,7 @@ const IconButton = forwardRef(function IconButton({ variant = "ghost", size = "d
 		children: button
 	});
 });
-//#endregion
-//#region src/internal/clipboard.ts
+// src/internal/clipboard.ts
 /**
 * Robust asynchronous clipboard write with legacy document.execCommand fallback.
 */
@@ -201,8 +195,7 @@ async function copyToClipboard(text) {
 		return false;
 	}
 }
-//#endregion
-//#region \0dsh-ui-kit-css:src/button/CopyButton.module.css.mjs
+// \0dsh-ui-kit-css:src/button/CopyButton.module.css.mjs
 injectCss("CopyButton.module.css", ".dshUk-CopyButton-copySuccessIcon {\n  color: var(--dsw-alias-state-success-primary);\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.dshUk-CopyButton-copyErrorIcon {\n  color: var(--dsw-alias-state-error-primary);\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.dshUk-CopyButton-copyButtonSuccess {\n  color: var(--dsw-alias-state-success-primary);\n}\n\n.dshUk-CopyButton-copyButtonError {\n  color: var(--dsw-alias-state-error-primary);\n}\n");
 var CopyButton_module_css_default = {
 	"copySuccessIcon": "dshUk-CopyButton-copySuccessIcon",
@@ -210,8 +203,7 @@ var CopyButton_module_css_default = {
 	"copyButtonSuccess": "dshUk-CopyButton-copyButtonSuccess",
 	"copyButtonError": "dshUk-CopyButton-copyButtonError"
 };
-//#endregion
-//#region src/button/CopyButton.tsx
+// src/button/CopyButton.tsx
 /**
 * One-click copy button with 2s automatic reset state machine and clipboard fallback.
 */
@@ -270,8 +262,7 @@ const CopyButton = forwardRef(function CopyButton({ text, timeout = 2e3, label =
 		children: currentLabel
 	});
 });
-//#endregion
-//#region \0dsh-ui-kit-css:src/badge/Badge.module.css.mjs
+// \0dsh-ui-kit-css:src/badge/Badge.module.css.mjs
 injectCss("Badge.module.css", ".dshUk-Badge-badge {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  box-sizing: border-box;\n  font-family: inherit;\n  font-weight: 500;\n  line-height: 1;\n  white-space: nowrap;\n  vertical-align: middle;\n  user-select: none;\n  border: 1px solid transparent;\n  transition:\n    background-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    border-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    color 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n/* Shapes */\n.dshUk-Badge-capsule {\n  border-radius: 9999px;\n}\n\n.dshUk-Badge-square {\n  border-radius: 4px;\n}\n\n.dshUk-Badge-dotShape {\n  border-radius: 9999px;\n  padding: 0;\n  min-width: 0;\n}\n\n/* Sizes for text/capsule/square */\n.dshUk-Badge-sm {\n  height: 16px;\n  padding: 0 6px;\n  font-size: 11px;\n  gap: 3px;\n}\n\n.dshUk-Badge-md {\n  height: 20px;\n  padding: 0 8px;\n  font-size: 12px;\n  gap: 4px;\n}\n\n.dshUk-Badge-lg {\n  height: 24px;\n  padding: 0 10px;\n  font-size: 13px;\n  gap: 6px;\n}\n\n/* Dot sizes when standalone */\n.dshUk-Badge-dotShape.dshUk-Badge-sm {\n  width: 6px;\n  height: 6px;\n}\n\n.dshUk-Badge-dotShape.dshUk-Badge-md {\n  width: 8px;\n  height: 8px;\n}\n\n.dshUk-Badge-dotShape.dshUk-Badge-lg {\n  width: 10px;\n  height: 10px;\n}\n\n/* Inline dot indicator inside badge */\n.dshUk-Badge-statusDot {\n  display: inline-block;\n  width: 6px;\n  height: 6px;\n  border-radius: 9999px;\n  background-color: currentColor;\n  flex-shrink: 0;\n}\n\n.dshUk-Badge-iconSlot {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n}\n\n/* Semantic Variants */\n.dshUk-Badge-default {\n  background-color: var(--dsw-alias-bg-layer-2);\n  border-color: var(--dsw-alias-border-l1);\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dshUk-Badge-neutral {\n  background-color: var(--dsw-alias-bg-layer-1);\n  border-color: var(--dsw-alias-border-l2);\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dshUk-Badge-brand {\n  background-color: var(--dsw-alias-brand-secondary);\n  border-color: var(--dsw-alias-brand-primary);\n  color: var(--dsw-alias-brand-primary);\n}\n\n.dshUk-Badge-success {\n  background-color: var(--dsw-alias-state-success-subtle);\n  border-color: var(--dsw-alias-state-success-primary);\n  color: var(--dsw-alias-state-success-primary);\n}\n\n.dshUk-Badge-warning {\n  background-color: var(--dsw-alias-state-warning-subtle);\n  border-color: var(--dsw-alias-state-warning-primary);\n  color: var(--dsw-alias-state-warning-primary);\n}\n\n.dshUk-Badge-error {\n  background-color: var(--dsw-alias-state-error-subtle);\n  border-color: var(--dsw-alias-state-error-primary);\n  color: var(--dsw-alias-state-error-primary);\n}\n\n.dshUk-Badge-info {\n  background-color: var(--dsw-alias-state-info-subtle);\n  border-color: var(--dsw-alias-state-info-primary);\n  color: var(--dsw-alias-state-info-primary);\n}\n");
 var Badge_module_css_default = {
 	"badge": "dshUk-Badge-badge",
@@ -291,8 +282,7 @@ var Badge_module_css_default = {
 	"error": "dshUk-Badge-error",
 	"info": "dshUk-Badge-info"
 };
-//#endregion
-//#region src/badge/Badge.tsx
+// src/badge/Badge.tsx
 const VARIANT_CLASS = {
 	default: cssClass(Badge_module_css_default.default, "default"),
 	neutral: cssClass(Badge_module_css_default.neutral, "neutral"),
@@ -332,8 +322,7 @@ const Badge = forwardRef(function Badge({ variant = "default", shape = "capsule"
 		}) : null, displayContent != null && displayContent !== "" ? displayContent : null] })
 	});
 });
-//#endregion
-//#region \0dsh-ui-kit-css:src/tile/SelectableTile.module.css.mjs
+// \0dsh-ui-kit-css:src/tile/SelectableTile.module.css.mjs
 injectCss("SelectableTile.module.css", ".dshUk-SelectableTile-tile {\n  display: flex;\n  align-items: flex-start;\n  gap: 12px;\n  box-sizing: border-box;\n  width: 100%;\n  min-height: 48px;\n  padding: 12px 14px;\n  margin: 0;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 8px;\n  background-color: var(--dsw-alias-bg-layer-1);\n  color: var(--dsw-alias-label-primary);\n  cursor: pointer;\n  user-select: none;\n  text-align: left;\n  transition:\n    background-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    border-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    box-shadow 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    opacity 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-SelectableTile-tile:hover:not(.dshUk-SelectableTile-disabled):not(.dshUk-SelectableTile-loading) {\n  background-color: var(--dsw-alias-interactive-bg-hover);\n  border-color: var(--dsw-alias-border-l3);\n}\n\n.dshUk-SelectableTile-tile:focus {\n  outline: none;\n}\n\n.dshUk-SelectableTile-tile:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 2px;\n}\n\n.dshUk-SelectableTile-selected {\n  background-color: var(--dsw-alias-interactive-bg-selected);\n  border-color: var(--dsw-alias-brand-primary);\n  box-shadow: inset 0 0 0 1px var(--dsw-alias-brand-primary);\n}\n\n.dshUk-SelectableTile-selected:hover:not(.dshUk-SelectableTile-disabled):not(.dshUk-SelectableTile-loading) {\n  background-color: var(--dsw-alias-interactive-bg-selected);\n  border-color: var(--dsw-alias-brand-primary);\n}\n\n.dshUk-SelectableTile-disabled {\n  cursor: not-allowed;\n  opacity: 0.45;\n}\n\n.dshUk-SelectableTile-loading {\n  cursor: wait;\n  opacity: 0.8;\n}\n\n/* Custom indicator icon for radio / checkbox */\n.dshUk-SelectableTile-indicator {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 16px;\n  height: 16px;\n  margin-top: 2px;\n  flex-shrink: 0;\n  border: 1px solid var(--dsw-alias-border-l3);\n  background-color: var(--dsw-alias-bg-layer-2);\n  transition:\n    border-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    background-color 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-SelectableTile-checkboxIndicator {\n  border-radius: 4px;\n}\n\n.dshUk-SelectableTile-radioIndicator {\n  border-radius: 9999px;\n}\n\n.dshUk-SelectableTile-selected .dshUk-SelectableTile-indicator {\n  border-color: var(--dsw-alias-brand-primary);\n  background-color: var(--dsw-alias-brand-primary);\n}\n\n.dshUk-SelectableTile-checkmark {\n  width: 10px;\n  height: 10px;\n  stroke: var(--dsw-alias-label-primary-foreground);\n  stroke-width: 2;\n  fill: none;\n  stroke-linecap: round;\n  stroke-linejoin: round;\n}\n\n.dshUk-SelectableTile-radioDot {\n  width: 6px;\n  height: 6px;\n  border-radius: 9999px;\n  background-color: var(--dsw-alias-label-primary-foreground);\n}\n\n.dshUk-SelectableTile-iconSlot {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n  margin-top: 2px;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dshUk-SelectableTile-content {\n  display: flex;\n  flex-direction: column;\n  flex: 1;\n  min-width: 0;\n  gap: 4px;\n}\n\n.dshUk-SelectableTile-headerRow {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  flex-wrap: wrap;\n}\n\n.dshUk-SelectableTile-title {\n  font-size: 13px;\n  font-weight: 500;\n  line-height: 18px;\n  color: var(--dsw-alias-label-primary);\n  word-break: break-word;\n}\n\n.dshUk-SelectableTile-description {\n  font-size: 12px;\n  line-height: 16px;\n  color: var(--dsw-alias-label-secondary);\n  word-break: break-word;\n}\n\n.dshUk-SelectableTile-extraSlot {\n  display: inline-flex;\n  align-items: center;\n  flex-shrink: 0;\n  margin-left: auto;\n}\n");
 var SelectableTile_module_css_default = {
 	"tile": "dshUk-SelectableTile-tile",
@@ -352,8 +341,7 @@ var SelectableTile_module_css_default = {
 	"description": "dshUk-SelectableTile-description",
 	"extraSlot": "dshUk-SelectableTile-extraSlot"
 };
-//#endregion
-//#region src/tile/SelectableTile.tsx
+// src/tile/SelectableTile.tsx
 const CHECKMARK_PATH$1 = "M2 5.5 L4.5 8 L8.5 2.5";
 /**
 * Multi-line block-level selectable tile solving the 32px Button constraint.
@@ -417,8 +405,7 @@ const SelectableTile = forwardRef(function SelectableTile({ id, selected = false
 		]
 	});
 });
-//#endregion
-//#region \0dsh-ui-kit-css:src/table/Table.module.css.mjs
+// \0dsh-ui-kit-css:src/table/Table.module.css.mjs
 injectCss("Table.module.css", ".dshUk-Table-table {\n  width: 100%;\n  border-collapse: collapse;\n  box-sizing: border-box;\n  font-family: inherit;\n  font-size: 13px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-primary);\n  background-color: var(--dsw-alias-bg-layer-1);\n  text-align: left;\n}\n\n.dshUk-Table-bordered {\n  border: 1px solid var(--dsw-alias-border-l1);\n}\n\n.dshUk-Table-bordered th,\n.dshUk-Table-bordered td {\n  border: 1px solid var(--dsw-alias-border-l1);\n}\n\n.dshUk-Table-tableHeader {\n  background-color: var(--dsw-alias-bg-layer-2);\n}\n\n.dshUk-Table-stickyHeader .dshUk-Table-headCell {\n  position: sticky;\n  top: 0;\n  z-index: 2;\n  background-color: var(--dsw-alias-bg-layer-2);\n}\n\n.dshUk-Table-headCell {\n  padding: 10px 12px;\n  font-size: 12px;\n  font-weight: 500;\n  line-height: 16px;\n  color: var(--dsw-alias-label-secondary);\n  border-bottom: 1px solid var(--dsw-alias-border-l2);\n  user-select: none;\n  box-sizing: border-box;\n  white-space: nowrap;\n}\n\n.dshUk-Table-dense .dshUk-Table-headCell {\n  padding: 6px 8px;\n}\n\n.dshUk-Table-headCellSortable {\n  cursor: pointer;\n  transition:\n    background-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    color 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-Table-headCellSortable:hover {\n  background-color: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-Table-headCellContent {\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n}\n\n.dshUk-Table-sortIcon {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 14px;\n  height: 14px;\n  flex-shrink: 0;\n  color: var(--dsw-alias-label-tertiary);\n  transition: color 120ms ease;\n}\n\n.dshUk-Table-sortIconActive {\n  color: var(--dsw-alias-brand-primary);\n}\n\n.dshUk-Table-tableBody {\n  background-color: var(--dsw-alias-bg-layer-1);\n}\n\n.dshUk-Table-row {\n  border-bottom: 1px solid var(--dsw-alias-border-l1);\n  transition: background-color 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-Table-row:hover {\n  background-color: var(--dsw-alias-interactive-bg-hover);\n}\n\n.dshUk-Table-rowSelected {\n  background-color: var(--dsw-alias-interactive-bg-selected);\n}\n\n.dshUk-Table-rowSelected:hover {\n  background-color: var(--dsw-alias-interactive-bg-selected);\n}\n\n.dshUk-Table-cell {\n  padding: 10px 12px;\n  font-size: 13px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-primary);\n  box-sizing: border-box;\n}\n\n.dshUk-Table-dense .dshUk-Table-cell {\n  padding: 6px 8px;\n}\n\n.dshUk-Table-alignLeft {\n  text-align: left;\n}\n\n.dshUk-Table-alignCenter {\n  text-align: center;\n}\n\n.dshUk-Table-alignRight {\n  text-align: right;\n}\n");
 var Table_module_css_default = {
 	"table": "dshUk-Table-table",
@@ -439,8 +426,7 @@ var Table_module_css_default = {
 	"alignCenter": "dshUk-Table-alignCenter",
 	"alignRight": "dshUk-Table-alignRight"
 };
-//#endregion
-//#region src/table/Table.tsx
+// src/table/Table.tsx
 const Table = forwardRef(function Table({ stickyHeader = false, bordered = false, dense = false, className, children, ...rest }, ref) {
 	return /* @__PURE__ */ jsx("table", {
 		...rest,
@@ -523,8 +509,7 @@ const TableHead = forwardRef(function TableHead({ align = "left", sortable = fal
 		})
 	});
 });
-//#endregion
-//#region \0dsh-ui-kit-css:src/empty/EmptyState.module.css.mjs
+// \0dsh-ui-kit-css:src/empty/EmptyState.module.css.mjs
 injectCss("EmptyState.module.css", ".dshUk-EmptyState-emptyState {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  justify-content: center;\n  text-align: center;\n  padding: 48px 24px;\n  min-height: 240px;\n  box-sizing: border-box;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dshUk-EmptyState-emptyState.dshUk-EmptyState-compact {\n  padding: 24px 16px;\n  min-height: 140px;\n}\n\n.dshUk-EmptyState-iconWrap {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  margin-bottom: 12px;\n  color: var(--dsw-alias-label-tertiary);\n}\n\n.dshUk-EmptyState-title {\n  margin: 0 0 6px;\n  font-size: 15px;\n  font-weight: 600;\n  line-height: 20px;\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-EmptyState-description {\n  margin: 0;\n  font-size: 13px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-secondary);\n  max-width: 360px;\n}\n\n.dshUk-EmptyState-actions {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  margin-top: 16px;\n}\n");
 var EmptyState_module_css_default = {
 	"emptyState": "dshUk-EmptyState-emptyState",
@@ -534,8 +519,7 @@ var EmptyState_module_css_default = {
 	"description": "dshUk-EmptyState-description",
 	"actions": "dshUk-EmptyState-actions"
 };
-//#endregion
-//#region src/empty/EmptyState.tsx
+// src/empty/EmptyState.tsx
 const EMPTY_CLASS = cssClass(EmptyState_module_css_default.emptyState, "emptyState");
 const COMPACT_CLASS = cssClass(EmptyState_module_css_default.compact, "compact");
 const ICON_WRAP_CLASS = cssClass(EmptyState_module_css_default.iconWrap, "iconWrap");
@@ -567,8 +551,7 @@ const EmptyState = forwardRef(function EmptyState({ icon, title, description, ac
 		]
 	});
 });
-//#endregion
-//#region \0dsh-ui-kit-css:src/table/DataTable.module.css.mjs
+// \0dsh-ui-kit-css:src/table/DataTable.module.css.mjs
 injectCss("DataTable.module.css", ".dshUk-DataTable-tableWrap {\n  position: relative;\n  width: 100%;\n  box-sizing: border-box;\n  background-color: var(--dsw-alias-bg-layer-1);\n  border: 1px solid var(--dsw-alias-border-l1);\n  border-radius: 8px;\n  overflow: hidden;\n}\n\n/* Horizontal scroll indicators via pseudo-elements */\n.dshUk-DataTable-tableWrap::before {\n  content: \"\";\n  position: absolute;\n  top: 0;\n  bottom: 0;\n  left: 0;\n  width: 16px;\n  background: linear-gradient(90deg, var(--dsw-alias-border-l2), transparent);\n  opacity: 0;\n  pointer-events: none;\n  z-index: 3;\n  transition: opacity 150ms ease;\n}\n\n.dshUk-DataTable-tableWrap::after {\n  content: \"\";\n  position: absolute;\n  top: 0;\n  bottom: 0;\n  right: 0;\n  width: 16px;\n  background: linear-gradient(270deg, var(--dsw-alias-border-l2), transparent);\n  opacity: 0;\n  pointer-events: none;\n  z-index: 3;\n  transition: opacity 150ms ease;\n}\n\n.dshUk-DataTable-hasScrollLeft::before {\n  opacity: 1;\n}\n\n.dshUk-DataTable-hasScrollRight::after {\n  opacity: 1;\n}\n\n.dshUk-DataTable-scrollContainer {\n  width: 100%;\n  overflow-x: auto;\n  box-sizing: border-box;\n}\n\n.dshUk-DataTable-clickableRow {\n  cursor: pointer;\n}\n\n/* Custom accessible checkbox/radio indicator for table rows */\n.dshUk-DataTable-selectCell {\n  width: 40px;\n  min-width: 40px;\n  max-width: 40px;\n  text-align: center;\n  padding: 10px 8px;\n  vertical-align: middle;\n}\n\n.dshUk-DataTable-checkboxIndicator {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 16px;\n  height: 16px;\n  border: 1px solid var(--dsw-alias-border-l3);\n  border-radius: 4px;\n  background-color: var(--dsw-alias-bg-layer-2);\n  cursor: pointer;\n  box-sizing: border-box;\n  transition:\n    background-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    border-color 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-DataTable-radioIndicator {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 16px;\n  height: 16px;\n  border: 1px solid var(--dsw-alias-border-l3);\n  border-radius: 9999px;\n  background-color: var(--dsw-alias-bg-layer-2);\n  cursor: pointer;\n  box-sizing: border-box;\n  transition:\n    background-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    border-color 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-DataTable-checkboxIndicator:focus-visible,\n.dshUk-DataTable-radioIndicator:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 1px;\n}\n\n.dshUk-DataTable-checkboxSelected,\n.dshUk-DataTable-radioSelected {\n  background-color: var(--dsw-alias-brand-primary);\n  border-color: var(--dsw-alias-brand-primary);\n}\n\n.dshUk-DataTable-checkboxIndeterminate {\n  background-color: var(--dsw-alias-brand-primary);\n  border-color: var(--dsw-alias-brand-primary);\n}\n\n.dshUk-DataTable-checkmark {\n  width: 10px;\n  height: 10px;\n  stroke: var(--dsw-alias-label-primary-foreground);\n  stroke-width: 2;\n  fill: none;\n  stroke-linecap: round;\n  stroke-linejoin: round;\n}\n\n.dshUk-DataTable-minusMark {\n  width: 8px;\n  height: 2px;\n  background-color: var(--dsw-alias-label-primary-foreground);\n  border-radius: 1px;\n}\n\n.dshUk-DataTable-radioDot {\n  width: 6px;\n  height: 6px;\n  border-radius: 9999px;\n  background-color: var(--dsw-alias-label-primary-foreground);\n}\n\n/* Empty container */\n.dshUk-DataTable-emptyContainer {\n  padding: 32px 16px;\n  text-align: center;\n}\n\n/* Skeleton loader */\n.dshUk-DataTable-skeletonRow td {\n  padding: 12px;\n}\n\n.dshUk-DataTable-skeletonBar {\n  height: 14px;\n  border-radius: 4px;\n  background: var(--dsw-alias-bg-layer-2);\n  animation: pulse 1.5s ease-in-out infinite;\n}\n\n@keyframes pulse {\n  0% {\n    opacity: 0.5;\n  }\n  50% {\n    opacity: 0.9;\n  }\n  100% {\n    opacity: 0.5;\n  }\n}\n");
 var DataTable_module_css_default = {
 	"tableWrap": "dshUk-DataTable-tableWrap",
@@ -589,8 +572,7 @@ var DataTable_module_css_default = {
 	"skeletonRow": "dshUk-DataTable-skeletonRow",
 	"skeletonBar": "dshUk-DataTable-skeletonBar"
 };
-//#endregion
-//#region src/table/DataTable.tsx
+// src/table/DataTable.tsx
 const CHECKMARK_PATH = "M2 5.5 L4.5 8 L8.5 2.5";
 /**
 * Generic declarative high-level data table with sorting, multi-selection,
@@ -797,8 +779,7 @@ function DataTable({ data, columns, rowKey, selectedRowKeys = [], onSelectionCha
 		})
 	});
 }
-//#endregion
-//#region \0dsh-ui-kit-css:src/card/MediaCard.module.css.mjs
+// \0dsh-ui-kit-css:src/card/MediaCard.module.css.mjs
 injectCss("MediaCard.module.css", ".dshUk-MediaCard-card {\n  display: flex;\n  flex-direction: column;\n  box-sizing: border-box;\n  width: 100%;\n  border: 1px solid var(--dsw-alias-border-l1);\n  border-radius: 8px;\n  background-color: var(--dsw-alias-bg-layer-1);\n  color: var(--dsw-alias-label-primary);\n  overflow: hidden;\n  user-select: none;\n  cursor: pointer;\n  transition:\n    background-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    border-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    box-shadow 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    transform 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    opacity 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-MediaCard-card:hover:not(.dshUk-MediaCard-disabled):not(.dshUk-MediaCard-loading) {\n  border-color: var(--dsw-alias-border-l3);\n  box-shadow: 0 4px 12px var(--dsw-alias-border-l1);\n}\n\n.dshUk-MediaCard-card:focus {\n  outline: none;\n}\n\n.dshUk-MediaCard-card:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 2px;\n}\n\n.dshUk-MediaCard-selected {\n  border-color: var(--dsw-alias-brand-primary);\n  box-shadow: inset 0 0 0 1px var(--dsw-alias-brand-primary);\n  background-color: var(--dsw-alias-interactive-bg-selected);\n}\n\n.dshUk-MediaCard-disabled {\n  cursor: not-allowed;\n  opacity: 0.45;\n}\n\n.dshUk-MediaCard-loading {\n  cursor: wait;\n  opacity: 0.8;\n}\n\n/* Media cover wrapper */\n.dshUk-MediaCard-coverWrapper {\n  position: relative;\n  width: 100%;\n  overflow: hidden;\n  background-color: var(--dsw-alias-bg-layer-2);\n}\n\n.dshUk-MediaCard-aspect16x9 {\n  aspect-ratio: 16 / 9;\n}\n\n.dshUk-MediaCard-aspect4x3 {\n  aspect-ratio: 4 / 3;\n}\n\n.dshUk-MediaCard-aspect1x1 {\n  aspect-ratio: 1 / 1;\n}\n\n.dshUk-MediaCard-aspect9x16 {\n  aspect-ratio: 9 / 16;\n}\n\n.dshUk-MediaCard-coverImage {\n  width: 100%;\n  height: 100%;\n  object-fit: cover;\n  display: block;\n  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-MediaCard-card:hover:not(.dshUk-MediaCard-disabled):not(.dshUk-MediaCard-loading) .dshUk-MediaCard-coverImage {\n  transform: scale(1.03);\n}\n\n.dshUk-MediaCard-coverPlaceholder {\n  width: 100%;\n  height: 100%;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  color: var(--dsw-alias-label-tertiary);\n}\n\n.dshUk-MediaCard-badgeSlot {\n  position: absolute;\n  top: 8px;\n  right: 8px;\n  z-index: 2;\n  pointer-events: none;\n}\n\n/* Hover overlay actions */\n.dshUk-MediaCard-actionsOverlay {\n  position: absolute;\n  bottom: 8px;\n  right: 8px;\n  display: flex;\n  align-items: center;\n  gap: 6px;\n  padding: 4px 6px;\n  border-radius: 6px;\n  background-color: var(--dsw-alias-bg-layer-1);\n  border: 1px solid var(--dsw-alias-border-l2);\n  opacity: 0;\n  transform: translateY(4px);\n  pointer-events: none;\n  transition:\n    opacity 150ms cubic-bezier(0.16, 1, 0.3, 1),\n    transform 150ms cubic-bezier(0.16, 1, 0.3, 1);\n  z-index: 3;\n}\n\n.dshUk-MediaCard-card:hover:not(.dshUk-MediaCard-disabled):not(.dshUk-MediaCard-loading) .dshUk-MediaCard-actionsOverlay,\n.dshUk-MediaCard-card:focus-within .dshUk-MediaCard-actionsOverlay {\n  opacity: 1;\n  transform: translateY(0);\n  pointer-events: auto;\n}\n\n/* Body */\n.dshUk-MediaCard-body {\n  display: flex;\n  flex-direction: column;\n  gap: 4px;\n  padding: 10px 12px 12px;\n  flex: 1;\n}\n\n.dshUk-MediaCard-title {\n  font-size: 13px;\n  font-weight: 500;\n  line-height: 18px;\n  color: var(--dsw-alias-label-primary);\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.dshUk-MediaCard-subtitle {\n  font-size: 12px;\n  line-height: 16px;\n  color: var(--dsw-alias-label-secondary);\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.dshUk-MediaCard-footer {\n  margin-top: auto;\n  padding-top: 8px;\n  font-size: 11px;\n  line-height: 14px;\n  color: var(--dsw-alias-label-tertiary);\n  border-top: 1px solid var(--dsw-alias-border-l1);\n}\n");
 var MediaCard_module_css_default = {
 	"card": "dshUk-MediaCard-card",
@@ -819,8 +800,7 @@ var MediaCard_module_css_default = {
 	"subtitle": "dshUk-MediaCard-subtitle",
 	"footer": "dshUk-MediaCard-footer"
 };
-//#endregion
-//#region src/card/MediaCard.tsx
+// src/card/MediaCard.tsx
 const ASPECT_CLASS = {
 	"16:9": cssClass(MediaCard_module_css_default.aspect16x9, "aspect16x9"),
 	"4:3": cssClass(MediaCard_module_css_default.aspect4x3, "aspect4x3"),
@@ -917,12 +897,10 @@ const MediaCard = forwardRef(function MediaCard({ title, coverUrl, coverNode, as
 		})]
 	});
 });
-//#endregion
-//#region \0dsh-ui-kit-css:src/card/CardGrid.module.css.mjs
+// \0dsh-ui-kit-css:src/card/CardGrid.module.css.mjs
 injectCss("CardGrid.module.css", ".dshUk-CardGrid-grid {\n  display: grid;\n  grid-template-columns: repeat(\n    auto-fill,\n    minmax(var(--card-grid-min-width, 220px), 1fr)\n  );\n  gap: var(--card-grid-gap, 16px);\n  width: 100%;\n  box-sizing: border-box;\n}\n");
 var CardGrid_module_css_default = { "grid": "dshUk-CardGrid-grid" };
-//#endregion
-//#region src/card/CardGrid.tsx
+// src/card/CardGrid.tsx
 /**
 * Responsive fluid card grid container for MediaCard and other card items.
 */
@@ -943,8 +921,7 @@ const CardGrid = forwardRef(function CardGrid({ children, minItemWidth = "220px"
 		children
 	});
 });
-//#endregion
-//#region src/internal/a11y.ts
+// src/internal/a11y.ts
 const FOCUSABLE_SELECTOR = [
 	"a[href]",
 	"area[href]",
@@ -1005,8 +982,7 @@ function focusFirstDescendant(container) {
 	container.focus();
 	return false;
 }
-//#endregion
-//#region src/internal/portal.ts
+// src/internal/portal.ts
 /**
 * Resolves a portal container element safely, defaulting to `document.body` if available.
 */
@@ -1024,16 +1000,14 @@ function createPortalSafe(children, container, key) {
 	if (!target) return null;
 	return createPortal(children, target, key);
 }
-//#endregion
-//#region src/drawer/DrawerPortal.tsx
+// src/drawer/DrawerPortal.tsx
 /**
 * Portal wrapper for Drawer with SSR safety and container resolution.
 */
 function DrawerPortal({ children, container }) {
 	return createPortalSafe(children, container);
 }
-//#endregion
-//#region \0dsh-ui-kit-css:src/drawer/Drawer.module.css.mjs
+// \0dsh-ui-kit-css:src/drawer/Drawer.module.css.mjs
 injectCss("Drawer.module.css", ".dshUk-Drawer-root {\n  position: fixed;\n  inset: 0;\n  z-index: 1000;\n  overflow: hidden;\n}\n\n.dshUk-Drawer-mask {\n  position: absolute;\n  inset: 0;\n  background: var(--dsw-alias-bg-mask-1);\n  backdrop-filter: var(--dsw-mask-blur);\n  transition: opacity 200ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-Drawer-drawer {\n  position: absolute;\n  display: flex;\n  flex-direction: column;\n  box-sizing: border-box;\n  background-color: var(--dsw-alias-bg-layer-2);\n  box-shadow: var(--dsw-shadow-lv3);\n  z-index: 1;\n  transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n/* Placements */\n.dshUk-Drawer-placementRight {\n  top: 0;\n  right: 0;\n  bottom: 0;\n  border-left: 1px solid var(--dsw-alias-border-l2);\n}\n\n.dshUk-Drawer-placementLeft {\n  top: 0;\n  left: 0;\n  bottom: 0;\n  border-right: 1px solid var(--dsw-alias-border-l2);\n}\n\n.dshUk-Drawer-placementTop {\n  top: 0;\n  left: 0;\n  right: 0;\n  border-bottom: 1px solid var(--dsw-alias-border-l2);\n}\n\n.dshUk-Drawer-placementBottom {\n  bottom: 0;\n  left: 0;\n  right: 0;\n  border-top: 1px solid var(--dsw-alias-border-l2);\n}\n\n/* Header */\n.dshUk-Drawer-header {\n  display: flex;\n  align-items: flex-start;\n  justify-content: space-between;\n  gap: 12px;\n  padding: 18px 20px 14px;\n  border-bottom: 1px solid var(--dsw-alias-border-l1);\n  flex-shrink: 0;\n}\n\n.dshUk-Drawer-headerText {\n  display: flex;\n  flex-direction: column;\n  gap: 4px;\n  min-width: 0;\n  flex: 1;\n}\n\n.dshUk-Drawer-title {\n  margin: 0;\n  font-size: 16px;\n  line-height: 22px;\n  font-weight: 500;\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-Drawer-description {\n  margin: 0;\n  font-size: 13px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-secondary);\n}\n\n/* Body */\n.dshUk-Drawer-body {\n  flex: 1;\n  overflow-y: auto;\n  padding: 20px;\n  box-sizing: border-box;\n}\n\n/* Footer */\n.dshUk-Drawer-footer {\n  display: flex;\n  align-items: center;\n  justify-content: flex-end;\n  gap: 8px;\n  padding: 14px 20px;\n  border-top: 1px solid var(--dsw-alias-border-l1);\n  background-color: var(--dsw-alias-bg-layer-2);\n  flex-shrink: 0;\n}\n");
 var Drawer_module_css_default = {
 	"root": "dshUk-Drawer-root",
@@ -1050,8 +1024,7 @@ var Drawer_module_css_default = {
 	"body": "dshUk-Drawer-body",
 	"footer": "dshUk-Drawer-footer"
 };
-//#endregion
-//#region src/drawer/Drawer.tsx
+// src/drawer/Drawer.tsx
 const PLACEMENT_CLASS = {
 	right: cssClass(Drawer_module_css_default.placementRight, "placementRight"),
 	left: cssClass(Drawer_module_css_default.placementLeft, "placementLeft"),
@@ -1154,8 +1127,7 @@ function Drawer({ open, onClose, title, description, children, footer, placement
 		})
 	});
 }
-//#endregion
-//#region \0dsh-ui-kit-css:src/search/SearchField.module.css.mjs
+// \0dsh-ui-kit-css:src/search/SearchField.module.css.mjs
 injectCss("SearchField.module.css", ".dshUk-SearchField-root {\n  display: inline-flex;\n  align-items: center;\n  gap: 6px;\n  box-sizing: border-box;\n  height: 32px;\n  min-width: 140px;\n  max-width: 260px;\n  width: 100%;\n  padding: 0 8px 0 10px;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 8px;\n  background: var(--dsw-alias-bg-layer-1);\n  color: var(--dsw-alias-label-primary);\n  transition:\n    border-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    box-shadow 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    background-color 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-SearchField-stretch {\n  flex: 1 1 200px;\n}\n\n.dshUk-SearchField-root:hover:not(.dshUk-SearchField-disabled) {\n  border-color: var(--dsw-alias-border-l3);\n}\n\n.dshUk-SearchField-root:focus-within {\n  border-color: var(--dsw-alias-brand-primary);\n  box-shadow: 0 0 0 2px var(--dsw-alias-state-business-tertiary);\n}\n\n.dshUk-SearchField-disabled {\n  opacity: 0.4;\n  cursor: not-allowed;\n}\n\n.dshUk-SearchField-icon {\n  display: inline-flex;\n  width: 16px;\n  height: 16px;\n  align-items: center;\n  justify-content: center;\n  flex: none;\n  color: var(--dsw-alias-label-tertiary);\n}\n\n.dshUk-SearchField-input {\n  flex: 1;\n  min-width: 0;\n  height: 100%;\n  border: none;\n  outline: none;\n  background: transparent;\n  font: inherit;\n  font-size: 13px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-SearchField-input::placeholder {\n  color: var(--dsw-alias-label-dimmed);\n}\n\n.dshUk-SearchField-input:disabled {\n  cursor: not-allowed;\n}\n\n.dshUk-SearchField-input::-webkit-search-decoration,\n.dshUk-SearchField-input::-webkit-search-cancel-button,\n.dshUk-SearchField-input::-webkit-search-results-button,\n.dshUk-SearchField-input::-webkit-search-results-decoration {\n  -webkit-appearance: none;\n  appearance: none;\n}\n\n.dshUk-SearchField-input[type=\"search\"] {\n  -webkit-appearance: none;\n  appearance: none;\n}\n\n.dshUk-SearchField-shortcut {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  flex: none;\n  min-width: 18px;\n  height: 18px;\n  padding: 0 5px;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 4px;\n  background: var(--dsw-alias-bg-layer-2);\n  color: var(--dsw-alias-label-tertiary);\n  font-size: 11px;\n  line-height: 16px;\n  font-weight: 500;\n  letter-spacing: 0;\n}\n\n.dshUk-SearchField-clear {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  flex: none;\n  width: 20px;\n  height: 20px;\n  margin: 0;\n  padding: 0;\n  border: none;\n  border-radius: 6px;\n  background: transparent;\n  color: var(--dsw-alias-label-tertiary);\n  cursor: pointer;\n}\n\n.dshUk-SearchField-clear:hover:not(:disabled) {\n  background: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-SearchField-clear:focus {\n  outline: none;\n}\n\n.dshUk-SearchField-clear:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 1px;\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-SearchField-root {\n    transition: none;\n  }\n}\n");
 var SearchField_module_css_default = {
 	"root": "dshUk-SearchField-root",
@@ -1166,8 +1138,7 @@ var SearchField_module_css_default = {
 	"shortcut": "dshUk-SearchField-shortcut",
 	"clear": "dshUk-SearchField-clear"
 };
-//#endregion
-//#region src/search/SearchField.tsx
+// src/search/SearchField.tsx
 function isTypingTarget(target) {
 	if (!(target instanceof HTMLElement)) return false;
 	const tag = target.tagName;
@@ -1303,8 +1274,7 @@ const SearchField = forwardRef(function SearchField({ value, defaultValue = "", 
 		]
 	});
 });
-//#endregion
-//#region \0dsh-ui-kit-css:src/field/InputField.module.css.mjs
+// \0dsh-ui-kit-css:src/field/InputField.module.css.mjs
 injectCss("InputField.module.css", ".dshUk-InputField-root {\n  display: flex;\n  flex-direction: column;\n  gap: 6px;\n  min-width: 0;\n}\n\n.dshUk-InputField-label {\n  display: block;\n  font-size: 12px;\n  line-height: 16px;\n  font-weight: 500;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dshUk-InputField-required {\n  margin-left: 2px;\n  color: var(--dsw-alias-state-error-primary);\n}\n\n.dshUk-InputField-control {\n  display: flex;\n  align-items: center;\n  gap: 6px;\n  box-sizing: border-box;\n  height: 32px;\n  padding: 0 10px;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 8px;\n  background: var(--dsw-alias-bg-layer-1);\n  transition:\n    border-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    box-shadow 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-InputField-control:hover:not(.dshUk-InputField-disabled) {\n  border-color: var(--dsw-alias-border-l3);\n}\n\n.dshUk-InputField-control:focus-within {\n  border-color: var(--dsw-alias-brand-primary);\n  box-shadow: 0 0 0 2px var(--dsw-alias-state-business-tertiary);\n}\n\n.dshUk-InputField-invalid {\n  border-color: var(--dsw-alias-state-error-primary);\n}\n\n.dshUk-InputField-invalid:focus-within {\n  border-color: var(--dsw-alias-state-error-primary);\n  box-shadow: 0 0 0 2px var(--dsw-alias-interactive-bg-hover-danger);\n}\n\n.dshUk-InputField-disabled {\n  opacity: 0.4;\n  cursor: not-allowed;\n}\n\n.dshUk-InputField-affix {\n  display: inline-flex;\n  align-items: center;\n  flex: none;\n  color: var(--dsw-alias-label-tertiary);\n  font-size: 12px;\n  line-height: 16px;\n}\n\n.dshUk-InputField-input {\n  flex: 1;\n  min-width: 0;\n  height: 100%;\n  border: none;\n  outline: none;\n  background: transparent;\n  font: inherit;\n  font-size: 13px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-InputField-input::placeholder {\n  color: var(--dsw-alias-label-dimmed);\n}\n\n.dshUk-InputField-input:disabled {\n  cursor: not-allowed;\n}\n\n.dshUk-InputField-meta {\n  min-height: 16px;\n  font-size: 12px;\n  line-height: 16px;\n}\n\n.dshUk-InputField-hint {\n  color: var(--dsw-alias-label-tertiary);\n}\n\n.dshUk-InputField-error {\n  color: var(--dsw-alias-state-error-primary);\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-InputField-control {\n    transition: none;\n  }\n}\n");
 var InputField_module_css_default = {
 	"root": "dshUk-InputField-root",
@@ -1319,8 +1289,7 @@ var InputField_module_css_default = {
 	"hint": "dshUk-InputField-hint",
 	"error": "dshUk-InputField-error"
 };
-//#endregion
-//#region src/field/InputField.tsx
+// src/field/InputField.tsx
 /**
 * Labeled single-line field with prefix / suffix slots, hint, and error text.
 * Height stays 32px to line up with Button and SearchField.
@@ -1384,8 +1353,7 @@ const InputField = forwardRef(function InputField({ label, hint, error, prefix, 
 		]
 	});
 });
-//#endregion
-//#region \0dsh-ui-kit-css:src/field/DropdownSelect.module.css.mjs
+// \0dsh-ui-kit-css:src/field/DropdownSelect.module.css.mjs
 injectCss("DropdownSelect.module.css", ".dshUk-DropdownSelect-anchor {\n  display: inline-flex;\n  flex-shrink: 0;\n  min-width: 0;\n}\n\n.dshUk-DropdownSelect-trigger {\n  display: inline-flex;\n  align-items: center;\n  gap: 8px;\n  box-sizing: border-box;\n  width: 100%;\n  min-width: 112px;\n  height: 32px;\n  margin: 0;\n  padding: 0 10px;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 8px;\n  background: var(--dsw-alias-bg-layer-1);\n  color: var(--dsw-alias-label-primary);\n  cursor: pointer;\n  font: inherit;\n  font-size: 13px;\n  line-height: 18px;\n  text-align: left;\n  transition:\n    background-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    border-color 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-DropdownSelect-trigger:hover:not(:disabled) {\n  border-color: var(--dsw-alias-border-l3);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.dshUk-DropdownSelect-trigger:focus {\n  outline: none;\n}\n\n.dshUk-DropdownSelect-trigger:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 2px;\n}\n\n.dshUk-DropdownSelect-trigger:disabled {\n  opacity: 0.4;\n  cursor: not-allowed;\n}\n\n.dshUk-DropdownSelect-open {\n  border-color: var(--dsw-alias-brand-primary);\n}\n\n.dshUk-DropdownSelect-label {\n  flex: 1;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.dshUk-DropdownSelect-placeholder {\n  color: var(--dsw-alias-label-dimmed);\n}\n\n.dshUk-DropdownSelect-chevron {\n  display: inline-flex;\n  width: 14px;\n  height: 14px;\n  align-items: center;\n  justify-content: center;\n  flex: none;\n  color: var(--dsw-alias-label-tertiary);\n  transition: transform 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-DropdownSelect-chevronOpen {\n  transform: rotate(180deg);\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-DropdownSelect-trigger,\n  .dshUk-DropdownSelect-chevron {\n    transition: none;\n  }\n}\n");
 var DropdownSelect_module_css_default = {
 	"anchor": "dshUk-DropdownSelect-anchor",
@@ -1396,8 +1364,7 @@ var DropdownSelect_module_css_default = {
 	"chevron": "dshUk-DropdownSelect-chevron",
 	"chevronOpen": "dshUk-DropdownSelect-chevronOpen"
 };
-//#endregion
-//#region src/field/DropdownSelect.tsx
+// src/field/DropdownSelect.tsx
 const Menu = primitives.Menu;
 /**
 * 32px select built on the official Menu. Never renders a native `<select>`.
@@ -1454,8 +1421,7 @@ function DropdownSelect({ value, options, onChange, placeholder = "Select", disa
 		})
 	});
 }
-//#endregion
-//#region \0dsh-ui-kit-css:src/toolbar/Toolbar.module.css.mjs
+// \0dsh-ui-kit-css:src/toolbar/Toolbar.module.css.mjs
 injectCss("Toolbar.module.css", ".dshUk-Toolbar-bar {\n  display: flex;\n  flex-wrap: nowrap;\n  align-items: center;\n  gap: 8px;\n  box-sizing: border-box;\n  height: 48px;\n  min-height: 44px;\n  max-height: 48px;\n  overflow: hidden;\n  white-space: nowrap;\n}\n\n/* 默认水平内边距走 :where() 的零优先级。使用方常在自己的类上声明 padding\n   来跟所在页面的内容基准线对齐（如 .dshUk-Toolbar-omnimux-assets-stage-toolbar 的 0 24px）。\n   两边同为单类选择器时由文档顺序决定胜负，而本包样式随各消费方打包、在文档中\n   后注入（同一规则实测有 10 份副本），使用方的声明会被静默吃掉，整行左右两侧\n   一起外扩。降到零优先级后使用方声明即可胜出；未声明的使用方仍是 12px。 */\n:where(.dshUk-Toolbar-bar) {\n  padding: 0 12px;\n}\n\n.dshUk-Toolbar-compact {\n  height: 44px;\n  min-height: 44px;\n}\n\n.dshUk-Toolbar-left,\n.dshUk-Toolbar-right {\n  display: flex;\n  flex-wrap: nowrap;\n  align-items: center;\n  gap: 8px;\n  min-width: 0;\n}\n\n.dshUk-Toolbar-left {\n  flex: 1 1 auto;\n  overflow: hidden;\n}\n\n.dshUk-Toolbar-right {\n  flex: 0 0 auto;\n  margin-left: auto;\n}\n\n.dshUk-Toolbar-right > * {\n  flex-shrink: 0;\n}\n\n.dshUk-Toolbar-filters {\n  display: flex;\n  flex-wrap: nowrap;\n  align-items: center;\n  gap: 8px;\n  flex: 0 0 auto;\n}\n\n.dshUk-Toolbar-filters > * {\n  flex-shrink: 0;\n}\n");
 var Toolbar_module_css_default = {
 	"bar": "dshUk-Toolbar-bar",
@@ -1465,8 +1431,7 @@ var Toolbar_module_css_default = {
 	"right": "dshUk-Toolbar-right",
 	"filters": "dshUk-Toolbar-filters"
 };
-//#endregion
-//#region src/toolbar/Toolbar.tsx
+// src/toolbar/Toolbar.tsx
 /**
 * Single-row 44–48px toolbar. Left holds search + filters, right holds actions.
 * Children never wrap.
@@ -1525,16 +1490,14 @@ function FilterBar({ left, search, filters, actions, right, tools, className, co
 		...className !== void 0 ? { className } : {}
 	});
 }
-//#endregion
-//#region \0dsh-ui-kit-css:src/divider/Divider.module.css.mjs
+// \0dsh-ui-kit-css:src/divider/Divider.module.css.mjs
 injectCss("Divider.module.css", ".dshUk-Divider-divider {\n  display: block;\n  box-sizing: border-box;\n  flex-shrink: 0;\n  border: none;\n}\n\n.dshUk-Divider-horizontal {\n  width: 100%;\n  height: 1px;\n  min-height: 1px;\n  max-height: 1px;\n  background: var(--dsw-alias-border-l2, rgba(255, 255, 255, 0.12));\n  margin: 12px 0 8px;\n  padding: 0;\n  border: none;\n  flex-shrink: 0;\n}\n\n.dshUk-Divider-vertical {\n  display: inline-block;\n  width: 1px;\n  min-width: 1px;\n  max-width: 1px;\n  height: 100%;\n  min-height: 16px;\n  max-height: none;\n  background: var(--dsw-alias-border-l2, rgba(255, 255, 255, 0.12));\n  margin: 0;\n  padding: 0;\n  border: none;\n}\n");
 var Divider_module_css_default = {
 	"divider": "dshUk-Divider-divider",
 	"horizontal": "dshUk-Divider-horizontal",
 	"vertical": "dshUk-Divider-vertical"
 };
-//#endregion
-//#region src/divider/Divider.tsx
+// src/divider/Divider.tsx
 const DIVIDER_CLASS = cssClass(Divider_module_css_default.divider, "divider");
 const HORIZONTAL_CLASS = cssClass(Divider_module_css_default.horizontal, "horizontal");
 const VERTICAL_CLASS = cssClass(Divider_module_css_default.vertical, "vertical");
@@ -1550,19 +1513,24 @@ const Divider = forwardRef(function Divider({ orientation = "horizontal", classN
 		className: cx(DIVIDER_CLASS, orientation === "vertical" ? VERTICAL_CLASS : HORIZONTAL_CLASS, className)
 	});
 });
-//#endregion
-//#region \0dsh-ui-kit-css:src/dialog/Dialog.module.css.mjs
-injectCss("Dialog.module.css", ".dshUk-Dialog-dialog {\n  width: min(480px, 100%);\n  max-height: min(80vh, 720px);\n  border-radius: 16px;\n}\n\n.dshUk-Dialog-sm {\n  width: min(380px, 100%);\n}\n\n.dshUk-Dialog-lg {\n  width: min(640px, 100%);\n}\n\n.dshUk-Dialog-body {\n  overflow: auto;\n  max-height: min(56vh, 480px);\n}\n\n.dshUk-Dialog-footer {\n  display: flex;\n  align-items: center;\n  justify-content: flex-end;\n  gap: 8px;\n  width: 100%;\n}\n\n.dshUk-Dialog-message {\n  margin: 0;\n  font-size: 14px;\n  line-height: 22px;\n  color: var(--dsw-alias-label-primary);\n}\n");
+// \0dsh-ui-kit-css:src/dialog/Dialog.module.css.mjs
+injectCss("Dialog.module.css", ".dshUk-Dialog-dialog {\n  width: min(480px, 100%);\n  max-height: min(80vh, 720px);\n  border-radius: 16px;\n}\n\n.dshUk-Dialog-sm {\n  width: min(380px, 100%);\n}\n\n.dshUk-Dialog-lg {\n  width: min(640px, 100%);\n}\n\n.dshUk-Dialog-body {\n  overflow: auto;\n  max-height: min(56vh, 480px);\n}\n\n.dshUk-Dialog-iconContent {\n  display: flex;\n  flex-direction: column;\n  min-height: 0;\n}\n\n.dshUk-Dialog-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 22px 18px 0 24px;\n}\n\n.dshUk-Dialog-title {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  min-width: 0;\n  margin: 0;\n  color: var(--dsw-alias-label-primary);\n  font-size: 16px;\n  font-weight: 600;\n  line-height: 24px;\n  overflow-wrap: anywhere;\n}\n\n.dshUk-Dialog-titleIcon {\n  display: inline-flex;\n  flex: none;\n  align-items: center;\n}\n\n.dshUk-Dialog-description {\n  margin: 8px 0 0;\n  padding: 0 24px;\n  color: var(--dsw-alias-label-primary);\n  font-size: 14px;\n  line-height: 22px;\n}\n\n.dshUk-Dialog-iconBody {\n  min-height: 0;\n  margin-top: 16px;\n  padding: 0 24px;\n}\n\n.dshUk-Dialog-footer {\n  display: flex;\n  align-items: center;\n  justify-content: flex-end;\n  gap: 8px;\n  width: 100%;\n}\n\n.dshUk-Dialog-iconFooter {\n  box-sizing: border-box;\n  flex: none;\n  padding: 0 24px;\n}\n\n.dshUk-Dialog-message {\n  margin: 0;\n  font-size: 14px;\n  line-height: 22px;\n  color: var(--dsw-alias-label-primary);\n}\n");
 var Dialog_module_css_default = {
 	"dialog": "dshUk-Dialog-dialog",
 	"sm": "dshUk-Dialog-sm",
 	"lg": "dshUk-Dialog-lg",
 	"body": "dshUk-Dialog-body",
+	"iconContent": "dshUk-Dialog-iconContent",
+	"header": "dshUk-Dialog-header",
+	"title": "dshUk-Dialog-title",
+	"titleIcon": "dshUk-Dialog-titleIcon",
+	"description": "dshUk-Dialog-description",
+	"iconBody": "dshUk-Dialog-iconBody",
 	"footer": "dshUk-Dialog-footer",
+	"iconFooter": "dshUk-Dialog-iconFooter",
 	"message": "dshUk-Dialog-message"
 };
-//#endregion
-//#region src/dialog/Dialog.tsx
+// src/dialog/Dialog.tsx
 const SIZE_CLASS = {
 	sm: cssClass(Dialog_module_css_default.sm, "sm"),
 	md: void 0,
@@ -1570,15 +1538,55 @@ const SIZE_CLASS = {
 };
 /**
 * Official Modal with kit geometry: 16px radius, scrollable body, right-aligned
-* action footer. Header + close button stay with the primitive.
+* action footer. Icon headings use the primitive's headless surface.
 */
-function ModalDialog({ open, onClose, title, description, children, footer, size = "md", closeLabel = "Close", className, contentClassName }) {
-	return /* @__PURE__ */ jsx(Modal, {
+function ModalDialog({ open, onClose, title, titleIcon, description, children, footer, size = "md", closeLabel = "Close", className, contentClassName }) {
+	const modalProps = {
 		open,
 		onClose,
 		title,
+		className: cx(Dialog_module_css_default.dialog, SIZE_CLASS[size], className)
+	};
+	if (titleIcon != null && titleIcon !== false) return /* @__PURE__ */ jsxs(Modal, {
+		...modalProps,
+		headless: true,
+		children: [/* @__PURE__ */ jsxs("div", {
+			className: Dialog_module_css_default.iconContent,
+			children: [
+				/* @__PURE__ */ jsxs("div", {
+					className: Dialog_module_css_default.header,
+					children: [/* @__PURE__ */ jsxs("h2", {
+						className: Dialog_module_css_default.title,
+						children: [/* @__PURE__ */ jsx("span", {
+							className: Dialog_module_css_default.titleIcon,
+							"aria-hidden": "true",
+							children: titleIcon
+						}), title]
+					}), /* @__PURE__ */ jsx(IconButton, {
+						variant: "ghost",
+						size: "sm",
+						"aria-label": closeLabel,
+						onClick: onClose,
+						children: /* @__PURE__ */ jsx(IconCloseOutline16, { size: 14 })
+					})]
+				}),
+				description ? /* @__PURE__ */ jsx("p", {
+					className: Dialog_module_css_default.description,
+					children: description
+				}) : null,
+				children !== void 0 ? /* @__PURE__ */ jsx("div", {
+					className: cx(Dialog_module_css_default.body, Dialog_module_css_default.iconBody, contentClassName),
+					children
+				}) : null
+			]
+		}), footer !== void 0 ? /* @__PURE__ */ jsx("div", {
+			className: cx(Dialog_module_css_default.footer, Dialog_module_css_default.iconFooter),
+			children: footer
+		}) : null]
+	});
+	return /* @__PURE__ */ jsx(Modal, {
+		...modalProps,
 		closeLabel,
-		className: cx(Dialog_module_css_default.dialog, SIZE_CLASS[size], className),
 		contentClassName: cx(Dialog_module_css_default.body, contentClassName),
 		...description !== void 0 ? { description } : {},
 		...footer !== void 0 ? { footer } : {},
@@ -1611,11 +1619,9 @@ function ConfirmModal({ message, children, confirmLabel = "Confirm", cancelLabel
 		}) : children
 	});
 }
-//#endregion
-//#region \0dsh-ui-kit-css:src/stage/StageContainer.module.css.mjs
+// \0dsh-ui-kit-css:src/stage/StageContainer.module.css.mjs
 injectCss("StageContainer.module.css", ".dshUk-StageContainer-stageContainer {\n  position: absolute;\n  top: var(--stage-top, 0px);\n  left: var(--stage-left, 56px);\n  width: var(--stage-width, calc(100vw - 56px));\n  height: var(--stage-height, 100vh);\n  background: var(--dsw-alias-bg-base);\n  color: var(--dsw-alias-label-primary);\n  z-index: 200;\n  display: flex;\n  flex-direction: column;\n  box-sizing: border-box;\n  overflow: hidden;\n}\n\n.dshUk-StageContainer-stageContainer[data-visible=\"false\"] {\n  display: none !important;\n  pointer-events: none !important;\n}\n");
-//#endregion
-//#region src/stage/StageContainer.tsx
+// src/stage/StageContainer.tsx
 const CONTAINER_CLASS = cssClass({ "stageContainer": "dshUk-StageContainer-stageContainer" }.stageContainer, "stageContainer");
 /**
 * Standard Stage Container for first-level product pages.
@@ -1669,8 +1675,7 @@ const StageContainer = forwardRef(function StageContainer({ stageStore, title, c
 		children
 	});
 });
-//#endregion
-//#region \0dsh-ui-kit-css:src/tabs/Tabs.module.css.mjs
+// \0dsh-ui-kit-css:src/tabs/Tabs.module.css.mjs
 injectCss("Tabs.module.css", "/* Base container */\n.dshUk-Tabs-tabs {\n  display: inline-flex;\n  align-items: center;\n  box-sizing: border-box;\n  flex-shrink: 0;\n  user-select: none;\n  background: transparent;\n  border: none;\n  border-radius: 0;\n  box-shadow: none;\n}\n\n/* Pill variant (classic capsule) */\n.dshUk-Tabs-pill {\n  gap: 2px;\n  padding: 2px;\n  height: 32px;\n  background: var(--dsw-alias-bg-layer-1);\n  border: 1px solid var(--dsw-alias-border-l1);\n  border-radius: 8px;\n}\n\n.dshUk-Tabs-pill.dshUk-Tabs-sm {\n  height: 28px;\n  padding: 2px;\n  border-radius: 6px;\n}\n\n.dshUk-Tabs-pill .dshUk-Tabs-tabItem {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  gap: 6px;\n  height: 26px;\n  padding: 0 10px;\n  border-radius: 6px;\n  border: none;\n  background: transparent;\n  color: var(--dsw-alias-label-secondary);\n  font: inherit;\n  font-size: 13px;\n  font-weight: 500;\n  line-height: 18px;\n  cursor: pointer;\n  white-space: nowrap;\n  box-sizing: border-box;\n  transition:\n    background-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    box-shadow 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-Tabs-pill.dshUk-Tabs-sm .dshUk-Tabs-tabItem {\n  height: 22px;\n  padding: 0 8px;\n  border-radius: 4px;\n  font-size: 12px;\n  line-height: 16px;\n  gap: 4px;\n}\n\n.dshUk-Tabs-pill .dshUk-Tabs-tabItem:hover:not(:disabled):not([aria-selected=\"true\"]) {\n  background: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-Tabs-pill .dshUk-Tabs-tabItem:focus {\n  outline: none;\n}\n\n.dshUk-Tabs-pill .dshUk-Tabs-tabItem:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 1px;\n}\n\n.dshUk-Tabs-pill .dshUk-Tabs-tabItem:disabled {\n  cursor: not-allowed;\n  opacity: 0.4;\n}\n\n.dshUk-Tabs-pill .dshUk-Tabs-tabItem.dshUk-Tabs-active {\n  background: var(--dsw-alias-bg-elevated);\n  color: var(--dsw-alias-label-primary);\n  font-weight: 600;\n  box-shadow: 0 1px 2px var(--dsw-alias-border-l1);\n}\n\n.dshUk-Tabs-pill .dshUk-Tabs-tabItem.dshUk-Tabs-active:hover {\n  background: var(--dsw-alias-bg-elevated);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-Tabs-pill .dshUk-Tabs-badge {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-width: 16px;\n  height: 16px;\n  padding: 0 4px;\n  box-sizing: border-box;\n  border-radius: 9999px;\n  font-size: 11px;\n  font-weight: 600;\n  line-height: 1;\n  background: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dshUk-Tabs-pill.dshUk-Tabs-sm .dshUk-Tabs-badge {\n  min-width: 14px;\n  height: 14px;\n  padding: 0 3px;\n  font-size: 10px;\n}\n\n.dshUk-Tabs-pill .dshUk-Tabs-tabItem.dshUk-Tabs-active .dshUk-Tabs-badge {\n  background: var(--dsw-alias-interactive-bg-active);\n  color: var(--dsw-alias-label-primary);\n}\n\n/* Underline variant (pure text + 2px bottom highlight line) */\n.dshUk-Tabs-underline {\n  /* 标签左右热区宽度。容器两端用等量负边距抵消它，首末标签的文字才落在容器\n     内容边缘、与所在页面的内容基准线对齐；激活下划线也用同一变量内缩，保证\n     与文字等宽。改热区只改这一个值。 */\n  --underline-tab-pad-x: 4px;\n  display: inline-flex;\n  align-items: center;\n  gap: 24px;\n  padding: 0 !important;\n  margin-inline: calc(-1 * var(--underline-tab-pad-x));\n  height: 44px;\n  background: transparent !important;\n  border: none !important;\n  border-radius: 0 !important;\n  box-shadow: none !important;\n}\n\n.dshUk-Tabs-underline.dshUk-Tabs-sm {\n  height: 36px;\n  gap: 16px;\n}\n\n.dshUk-Tabs-underline .dshUk-Tabs-tabItem {\n  position: relative;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  gap: 6px;\n  height: 100%;\n  padding: 0 var(--underline-tab-pad-x) !important;\n  border: none !important;\n  border-radius: 0 !important;\n  background: transparent !important;\n  box-shadow: none !important;\n  color: var(--dsw-alias-label-secondary);\n  font: inherit;\n  font-size: 14px;\n  font-weight: 500;\n  line-height: 20px;\n  cursor: pointer;\n  white-space: nowrap;\n  box-sizing: border-box;\n  transition:\n    color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    font-weight 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-Tabs-underline.dshUk-Tabs-sm .dshUk-Tabs-tabItem {\n  font-size: 13px;\n  line-height: 18px;\n  gap: 4px;\n}\n\n.dshUk-Tabs-underline .dshUk-Tabs-tabItem:hover {\n  color: var(--dsw-alias-label-primary) !important;\n  background: transparent !important;\n}\n\n.dshUk-Tabs-underline .dshUk-Tabs-tabItem:focus {\n  outline: none;\n}\n\n.dshUk-Tabs-underline .dshUk-Tabs-tabItem:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 2px;\n}\n\n.dshUk-Tabs-underline .dshUk-Tabs-tabItem:disabled {\n  cursor: not-allowed;\n  opacity: 0.4;\n}\n\n.dshUk-Tabs-underline .dshUk-Tabs-tabItem.dshUk-Tabs-active {\n  color: var(--dsw-alias-label-primary) !important;\n  font-weight: 600;\n  background: transparent !important;\n  box-shadow: none !important;\n}\n\n.dshUk-Tabs-underline .dshUk-Tabs-tabItem.dshUk-Tabs-active::after {\n  content: \"\";\n  position: absolute;\n  bottom: 0;\n  left: var(--underline-tab-pad-x);\n  right: var(--underline-tab-pad-x);\n  height: 2px;\n  background: var(--dsw-alias-label-primary);\n  border-radius: 1px;\n}\n\n.dshUk-Tabs-underline .dshUk-Tabs-badge {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-width: 16px;\n  height: 16px;\n  padding: 0 4px;\n  box-sizing: border-box;\n  border-radius: 9999px;\n  font-size: 11px;\n  font-weight: 600;\n  line-height: 1;\n  background: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-secondary);\n  transition:\n    background-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    color 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-Tabs-underline.dshUk-Tabs-sm .dshUk-Tabs-badge {\n  min-width: 14px;\n  height: 14px;\n  padding: 0 3px;\n  font-size: 10px;\n}\n\n.dshUk-Tabs-underline .dshUk-Tabs-tabItem.dshUk-Tabs-active .dshUk-Tabs-badge {\n  background: var(--dsw-alias-interactive-bg-active);\n  color: var(--dsw-alias-label-primary);\n}\n\n/* Shared element styles */\n.dshUk-Tabs-label {\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n");
 var Tabs_module_css_default = {
 	"tabs": "dshUk-Tabs-tabs",
@@ -1682,8 +1687,7 @@ var Tabs_module_css_default = {
 	"underline": "dshUk-Tabs-underline",
 	"label": "dshUk-Tabs-label"
 };
-//#endregion
-//#region src/tabs/Tabs.tsx
+// src/tabs/Tabs.tsx
 const TABS_CLASS = cssClass(Tabs_module_css_default.tabs, "tabs");
 const PILL_CLASS = cssClass(Tabs_module_css_default.pill, "pill");
 const UNDERLINE_CLASS = cssClass(Tabs_module_css_default.underline, "underline");
@@ -1721,8 +1725,7 @@ const Tabs = forwardRef(function Tabs({ items, activeId, onChange, size = "defau
 		})
 	});
 });
-//#endregion
-//#region \0dsh-ui-kit-css:src/stage/PageHeader.module.css.mjs
+// \0dsh-ui-kit-css:src/stage/PageHeader.module.css.mjs
 injectCss("PageHeader.module.css", ".dshUk-PageHeader-pageHeader {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  padding: 12px 20px;\n  min-height: 56px;\n  box-sizing: border-box;\n  flex: none;\n  gap: 16px;\n  border-bottom: none;\n  -webkit-app-region: drag;\n}\n\n.dshUk-PageHeader-heading {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n  min-width: 0;\n  flex: 1 1 auto;\n}\n\n.dshUk-PageHeader-breadcrumb {\n  display: flex;\n  align-items: center;\n  font-size: 12px;\n  line-height: 16px;\n  color: var(--dsw-alias-label-secondary);\n  margin-bottom: 2px;\n}\n\n.dshUk-PageHeader-titleRow {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n}\n\n.dshUk-PageHeader-title {\n  margin: 0;\n  font-size: 20px;\n  font-weight: 600;\n  line-height: 28px;\n  color: var(--dsw-alias-label-primary);\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.dshUk-PageHeader-subtitle {\n  margin: 0;\n  font-size: 13px;\n  font-weight: 400;\n  line-height: 18px;\n  color: var(--dsw-alias-label-secondary);\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.dshUk-PageHeader-tabsContainer {\n  display: flex;\n  align-items: center;\n  flex: none;\n  -webkit-app-region: no-drag;\n}\n\n.dshUk-PageHeader-controls {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  flex: none;\n  -webkit-app-region: no-drag;\n}\n");
 var PageHeader_module_css_default = {
 	"pageHeader": "dshUk-PageHeader-pageHeader",
@@ -1734,8 +1737,7 @@ var PageHeader_module_css_default = {
 	"tabsContainer": "dshUk-PageHeader-tabsContainer",
 	"controls": "dshUk-PageHeader-controls"
 };
-//#endregion
-//#region src/stage/PageHeader.tsx
+// src/stage/PageHeader.tsx
 const PAGE_HEADER_CLASS = cssClass(PageHeader_module_css_default.pageHeader, "pageHeader");
 const HEADING_CLASS = cssClass(PageHeader_module_css_default.heading, "heading");
 const BREADCRUMB_CLASS = cssClass(PageHeader_module_css_default.breadcrumb, "breadcrumb");
@@ -1814,8 +1816,7 @@ const PageHeader = forwardRef(function PageHeader({ title, subtitle, badge, tabs
 		]
 	});
 });
-//#endregion
-//#region src/stage/StageHeader.tsx
+// src/stage/StageHeader.tsx
 /**
 * StageHeader forwards to PageHeader for backward compatibility.
 * Standard Layer 1 Header for OmniMux first-level product stages.
@@ -1827,8 +1828,7 @@ const StageHeader = forwardRef(function StageHeader(props, ref) {
 		ref
 	});
 });
-//#endregion
-//#region \0dsh-ui-kit-css:src/stat/StatBar.module.css.mjs
+// \0dsh-ui-kit-css:src/stat/StatBar.module.css.mjs
 injectCss("StatBar.module.css", ".dshUk-StatBar-statBar {\n  display: flex;\n  align-items: stretch;\n  gap: 12px;\n  width: 100%;\n  box-sizing: border-box;\n  flex-wrap: wrap;\n}\n\n.dshUk-StatBar-item {\n  display: flex;\n  flex-direction: column;\n  gap: 4px;\n  flex: 1 1 0;\n  min-width: 140px;\n  padding: 12px 16px;\n  background: var(--dsw-alias-bg-layer-1);\n  border: 1px solid var(--dsw-alias-border-l1);\n  border-radius: 8px;\n  box-sizing: border-box;\n}\n\n.dshUk-StatBar-label {\n  font-size: 12px;\n  font-weight: 400;\n  line-height: 16px;\n  color: var(--dsw-alias-label-secondary);\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.dshUk-StatBar-valueRow {\n  display: flex;\n  align-items: baseline;\n  gap: 8px;\n  flex-wrap: wrap;\n}\n\n.dshUk-StatBar-value {\n  font-size: 20px;\n  font-weight: 600;\n  line-height: 28px;\n  color: var(--dsw-alias-label-primary);\n  letter-spacing: -0.01em;\n}\n\n.dshUk-StatBar-trend {\n  display: inline-flex;\n  align-items: center;\n  gap: 2px;\n  font-size: 12px;\n  font-weight: 500;\n  line-height: 16px;\n}\n\n.dshUk-StatBar-trendUp {\n  color: var(--dsw-alias-status-success);\n}\n\n.dshUk-StatBar-trendDown {\n  color: var(--dsw-alias-state-error-primary);\n}\n\n.dshUk-StatBar-trendNeutral {\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dshUk-StatBar-trendIcon {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 14px;\n  height: 14px;\n  flex: none;\n}\n\n.dshUk-StatBar-extra {\n  font-size: 12px;\n  font-weight: 400;\n  line-height: 16px;\n  color: var(--dsw-alias-label-tertiary);\n  margin-top: auto;\n}\n");
 var StatBar_module_css_default = {
 	"statBar": "dshUk-StatBar-statBar",
@@ -1843,8 +1843,7 @@ var StatBar_module_css_default = {
 	"trendIcon": "dshUk-StatBar-trendIcon",
 	"extra": "dshUk-StatBar-extra"
 };
-//#endregion
-//#region src/stat/StatBar.tsx
+// src/stat/StatBar.tsx
 const STAT_BAR_CLASS = cssClass(StatBar_module_css_default.statBar, "statBar");
 const ITEM_CLASS = cssClass(StatBar_module_css_default.item, "item");
 const LABEL_CLASS = cssClass(StatBar_module_css_default.label, "label");
@@ -1905,16 +1904,14 @@ const StatBar = forwardRef(function StatBar({ items, className, ...rest }, ref) 
 		})
 	});
 });
-//#endregion
-//#region \0dsh-ui-kit-css:src/action/ActionRow.module.css.mjs
+// \0dsh-ui-kit-css:src/action/ActionRow.module.css.mjs
 injectCss("ActionRow.module.css", ".dshUk-ActionRow-actionRow {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  flex-wrap: nowrap;\n  min-height: 32px;\n  box-sizing: border-box;\n  width: 100%;\n}\n\n.dshUk-ActionRow-leftGroup {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  flex-shrink: 0;\n  min-width: 0;\n}\n\n.dshUk-ActionRow-rightGroup {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  margin-left: auto;\n  flex-shrink: 0;\n}\n");
 var ActionRow_module_css_default = {
 	"actionRow": "dshUk-ActionRow-actionRow",
 	"leftGroup": "dshUk-ActionRow-leftGroup",
 	"rightGroup": "dshUk-ActionRow-rightGroup"
 };
-//#endregion
-//#region src/action/ActionRow.tsx
+// src/action/ActionRow.tsx
 const ACTION_ROW_CLASS = cssClass(ActionRow_module_css_default.actionRow, "actionRow");
 const LEFT_GROUP_CLASS = cssClass(ActionRow_module_css_default.leftGroup, "leftGroup");
 const RIGHT_GROUP_CLASS = cssClass(ActionRow_module_css_default.rightGroup, "rightGroup");
@@ -1943,8 +1940,7 @@ const ActionRow = forwardRef(function ActionRow({ primaryAction, secondaryAction
 		]
 	});
 });
-//#endregion
-//#region \0dsh-ui-kit-css:src/gen-wave-card/GenWaveCard.module.css.mjs
+// \0dsh-ui-kit-css:src/gen-wave-card/GenWaveCard.module.css.mjs
 injectCss("GenWaveCard.module.css", "/* GenWaveCard · 1:1 移植自 chatgpt-gen-loading-card.dshUk-GenWaveCard-html\n   色值全部来自根元素注入的 --gen-wave-* CSS 变量（见 GenWaveCard.dshUk-GenWaveCard-tsx，\n   常量真源在 genWavePalette.dshUk-GenWaveCard-ts，固定深色既定视觉）；\n   唯一例外是卡片底色：不再封装固定色，走 var(--gen-wave-card-bg,\n   var(--dsw-alias-bg-layer-2)) 跟随宿主层级底色，保证卡片与页面\n   （--dsw-alias-bg-base）有可区分的层次差。 */\n\n.dshUk-GenWaveCard-card {\n  position: relative;\n  display: flex;\n  flex-direction: column;\n  width: 100%;\n  height: 100%;\n  background: var(--gen-wave-card-bg, var(--dsw-alias-bg-layer-2));\n  border-radius: 8px;\n  padding: 10px 10px 23px;\n  overflow: hidden;\n  box-sizing: border-box;\n  font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto,\n    \"PingFang SC\", \"Microsoft YaHei\", \"Hiragino Sans GB\", sans-serif;\n  -webkit-font-smoothing: antialiased;\n}\n\n/* ---------- 顶部行：工具图标 + 状态文案 ---------- */\n.dshUk-GenWaveCard-head {\n  display: flex;\n  align-items: center;\n  gap: 11px; /* 实测: 图标右缘 ~34.5 → 文字 47 */\n  height: 14px;\n}\n\n.dshUk-GenWaveCard-icon {\n  width: 13.5px;\n  height: 13.5px;\n  flex: 0 0 auto;\n  border-radius: 4px;\n  border: 1.2px solid var(--gen-wave-icon); /* 实测描边 ~1.25px */\n  display: grid;\n  place-items: center;\n  color: var(--gen-wave-icon);\n}\n\n.dshUk-GenWaveCard-icon svg {\n  display: block;\n}\n\n.dshUk-GenWaveCard-status {\n  color: var(--gen-wave-status);\n  font-size: 16px; /* 字形 cap 高 23px@2x → ~16px */\n  font-weight: 400;\n  line-height: 1;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  min-width: 0;\n}\n\n/* ---------- 点阵画布 ---------- */\n.dshUk-GenWaveCard-field {\n  display: block;\n  width: 100%;\n  flex: 1;\n  min-height: 0;\n  margin-top: 26px; /* 实测: 顶行底 ~24 → 首行点心 53 */\n}\n\n/* 无头行变体：点阵画布铺满整卡，彻底清除四周内缩空白间距 */\n.dshUk-GenWaveCard-cardFull {\n  padding: 0 !important;\n  border-radius: inherit !important;\n}\n\n.dshUk-GenWaveCard-fieldFull {\n  margin-top: 0 !important;\n  width: 100% !important;\n  height: 100% !important;\n}\n\n/* ---------- 右下角进度胶囊 ----------\n   视觉由点阵 canvas 同层绘制（DOM 元素保留作 ARIA/状态载体，\n   headless Chrome 下 absolute+大圆角浮层会屏蔽 canvas 合成） */\n.dshUk-GenWaveCard-badge {\n  position: absolute;\n  right: 19px;\n  bottom: 23px;\n  width: 58px;\n  height: 36px;\n  opacity: 0; /* 不可见但保留语义与 API 目标 */\n  user-select: none;\n  pointer-events: none;\n}\n");
 var GenWaveCard_module_css_default = {
 	"html": "dshUk-GenWaveCard-html",
@@ -1959,8 +1955,7 @@ var GenWaveCard_module_css_default = {
 	"fieldFull": "dshUk-GenWaveCard-fieldFull",
 	"badge": "dshUk-GenWaveCard-badge"
 };
-//#endregion
-//#region src/gen-wave-card/genWavePalette.ts
+// src/gen-wave-card/genWavePalette.ts
 /**
 * GenWaveCard 视觉参数与色值常量。
 *
@@ -2039,8 +2034,7 @@ function dotFillStyle(k) {
 	const [lr, lg, lb] = GEN_WAVE_COLORS.litRgb;
 	return `rgb(${Math.round(dr + (lr - dr) * k)},${Math.round(dg + (lg - dg) * k)},${Math.round(db + (lb - db) * k)})`;
 }
-//#endregion
-//#region src/gen-wave-card/GenWaveCard.tsx
+// src/gen-wave-card/GenWaveCard.tsx
 /**
 * 固定深色既定视觉：点阵/文案/胶囊色值不消费 --dsw-alias-* 动态主题，
 * 真源为 genWavePalette.ts（实测色，见该文件注释），
@@ -2259,8 +2253,7 @@ const GenWaveCard = forwardRef(function GenWaveCard({ statusText, progress, auto
 		]
 	});
 });
-//#endregion
-//#region src/stage/createStageStore.ts
+// src/stage/createStageStore.ts
 const PRODUCT_STAGE_EVENT = "dsh-product-stage";
 const ACTIVE_STAGE_STORAGE_KEY = "omnimux_active_product_stage";
 /**
@@ -2339,8 +2332,7 @@ function createStageStore(stageId, getStage = () => typeof window !== "undefined
 		}
 	};
 }
-//#endregion
-//#region src/stage/createSidebarEntry.ts
+// src/stage/createSidebarEntry.ts
 const SIDEBAR_ENTRY_COMMON_STYLES = `
 .omnimux-sidebar-nav-entry {
   box-sizing: border-box; display: flex; align-items: center; gap: 6px; position: relative;
@@ -2449,7 +2441,6 @@ function createSidebarEntry(options) {
 		unsubscribeLocale();
 	};
 }
-//#endregion
 export { ActionRow, Badge, Button, CardGrid, ConfirmModal, CopyButton, DataTable, Divider, Drawer, DrawerPortal, DropdownSelect, EmptyState, FilterBar, GenWaveCard, IconButton, IconCheckOutline16, IconChevronDownOutline14, IconChevronLeftOutline14, IconChevronUpOutline14, IconCloseFill14, IconCloseOutline16, IconCopyOutline16, IconDownloadOutline16, IconEditOutline16, IconEllipsisOutline16, IconLoadingOutline16, IconPaperclipOutline16, IconPlayOutline16, IconPlusOutline16, IconRefreshOutline14, IconRefreshOutline16, IconRightUpOutline14, IconSearchOutline16, IconTrashOutline16, InputField, MediaCard, ModalDialog, PageHeader, SearchField, SelectableTile, StageContainer, StageHeader, StatBar, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tabs, Toolbar, copyToClipboard, createPortalSafe, createSidebarEntry, createStageStore, focusFirstDescendant, resolvePortalContainer, trapFocus };
 
 //# sourceMappingURL=index.js.map

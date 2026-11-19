@@ -785,6 +785,7 @@ export function ProjectLibraryPage(props) {
           initialPath=""
           initialTitle=""
           onCancel={() => { if (!busy) setDialogOpen(false) }}
+          onClearError={() => setError('')}
           onSubmit={handleDialogSubmit}
         />
       ) : null}
