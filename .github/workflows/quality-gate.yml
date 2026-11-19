@@ -314,8 +314,8 @@ jobs:
           OMNIMUX_TEST_SHARD: ${{ matrix.shard }}
         run: node scripts/run-workspace-tests.mjs --logs .tmp/ci-workspace-logs --json .tmp/ci-workspace-summary.json
 
-      # [client-port] Omitted: "Browser extension vitest suite" targets
-      # dsh-browser-extension, which is not shipped in omnimux-client.
+      # The workspace runner invokes omnimux-browser's test script, which
+      # includes the browser extension's Vitest suite.
 
       - name: Upload plugin test logs
         if: ${{ always() }}

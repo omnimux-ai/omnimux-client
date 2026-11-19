@@ -30,14 +30,14 @@ This fork is the **main ops entry** for OmniMux plugin develop / browser QA / sy
 | `yarn omnimux:dev start <task> <plugin>` | L2: isolated Host + link one in-progress plugin + unified watch (official HMR) |
 | `yarn omnimux:dev watch <task> <plugin>` | Switch which plugin the watch targets (Host stays up) |
 | `yarn omnimux:sync [plugin…]` | Build then materialize into `~/.omnimux-dev/profiles/omnimux` (`--prod` targets `~/.omnimux`) (**does not restart App**) |
-| `yarn omnimux:restart` | Manually restart `/Applications/OmniMux.app` after sync |
+| `yarn omnimux:restart dev` | Reload the Dev app after syncing the merged build |
 | `yarn omnimux:doctor` | Compliance check (prod must not link, etc.) |
 | `yarn omnimux:stage` | Materialize into `preset/plugins/` before packaging |
 | `yarn omnimux:path` | Print resolved product/plugin paths |
 | `yarn omnimux:prod-reset` | Dry-run wipe of local **production** install (`OmniMux.app` + `~/.omnimux`); add `--yes` to execute. Never touches Dev. For clean user-scenario retests. |
 | `yarn omnimux:dev-reset` | Reset **Dev** to first-run state so the runtime guide reappears; auto-backs up `~/.omnimux-dev/profiles/omnimux/cordis.patch.yml`; `--dry-run` previews, `--restart` quits/reopens Dev. |
 
-MUST NOT hand-`rsync`/`cp` into any profile. Daily iteration uses `omnimux:sync` + `omnimux:restart`; packaging uses `omnimux:stage` then `package:dir` / `dist:*`.
+MUST NOT hand-`rsync`/`cp` into any profile. Use `omnimux:sync` and, when a reload is needed, `omnimux:restart dev` for shared Dev verification after merge. Packaging uses `omnimux:stage` then `package:dir` / `dist:*`.
 **Packaging Pre-requisite Rule**: Direct packaging or running `package-dir.mjs` without staging will cause startup crash (`missing dsh-better-sidebar` recovery window). When rebuilding `/Applications/OmniMux.app` or packaging distribution bundles, ALWAYS ensure `OMNIMUX_PLUGINS_DIR` is set and run `stage-preset-profile` (`node ./dsh-plugin-desktop/scripts/stage-preset-profile.ts` or `yarn omnimux:stage`) before packaging. Before `yarn package:dir` / `dist:*`, also run `corepack yarn install --immutable` at the repo root when `node_modules` may be stale: a hollow tree (declared `@deepseek-ai/*` missing from workspace `node_modules`) fails `tsc --emitDeclarationOnly` and makes electron-builder abort on missing production deps such as `@deepseek-ai/dsh-api-session-controller`.
 
 - `deepseek-harness/` is a pinned upstream Git submodule. Never edit files inside it from a desktop feature branch.
@@ -78,6 +78,8 @@ Distribution assets (macOS arm64/x64 DMGs & Windows x64 NSIS) are hosted in Clou
 
 ## Parallel development & PR contract
 
-Multi-session feature work follows one task → one path lease → one worktree → one branch → one PR; the main checkout is read-only for day-to-day coding. Local board/leases live under `.workbuddy/` (not committed). PR merge and dev delivery are automated once strict verifications pass (L0 unit tests, L2 dev environment, real browser / live runtime verification, and CI pass); manual review/pause is required only on test failure, unresolved blockers, production `--prod` release, or explicit user hold. After a PR is open/merged, follow-up updates `.workbuddy/pr-board.md`. Plugin-tree Git/PR lives in this repository's `plugins/` tree — do not reuse the desktop fork's topology there.
+Multi-session feature work follows one task → one path lease → one worktree → one branch → one PR. The main checkout is read-only for day-to-day coding. Keep the local board and leases under `.workbuddy/` and update `.workbuddy/pr-board.md` when the PR opens or merges. Plugin work uses this repository's `plugins/` tree.
+
+After requirements are confirmed, follow the [repository research and design process](../AGENTS.md#从需求到方案), then the [merge and acceptance rules](../AGENTS.md#合并与复核) for local end-to-end checks, PR merge, and verification of the merged build in Dev. Fix failures within the agreed acceptance criteria and rerun the affected checks. Never use the desktop `scripts/worktree.sh ship` for PR delivery. It merges locally, pushes the default branch directly, and removes the worktree before Dev verification.
 
 DSH PreToolUse worktree guard: `scripts/ops/guard-worktree.mjs` denies tracked-file edits and protected-scope new files in the main checkout — enforced both through `edit`/`write` and through shell writes (`>`/`tee`/`cp`/`mv`/`sed -i`, nested `bash -c`) — plus primary `git switch`/`checkout`. It is wired in via the hub dispatcher `.dsh/hooks.local.json` → `.dsh/guard-dispatch.mjs` (`REPO_GUARDS`), and may also be registered in this repo's own `.dsh/hooks.json` for standalone sessions. Guards/config: bash-editable only.
