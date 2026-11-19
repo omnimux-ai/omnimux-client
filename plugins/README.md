@@ -82,13 +82,14 @@ OmniMux 自行编写的插件代码采用 **[AGPL-3.0](LICENSE)**，另附 [NOTI
 
 ### 本地开发与交付
 
-从 [AGENTS.md](AGENTS.md) 和仓库 workflow 进入开发流程：
+插件开发按[插件规则](AGENTS.md)选验证项，合并与复核遵循[仓库规则](../AGENTS.md#合并与复核)。
 
-1. 在仓内隔离 worktree 实施，运行与变更面相关的自动化测试、静态检查和独立评审；选择依据见插件 QA。例如在当前任务 worktree 执行 `pnpm --filter <package> test`，文档变更执行 `git diff --check` 与 `pnpm doc:lint`。
-2. PR 满足 required CI，经 Merge Queue 合入 `main`。CI `qa:pass` 只证明合入前静态与测试，不证明 Dev 已通过。
-3. 界面变更在任务隔离工作树内取得实际功能路径浏览器证据；合入后仅影响已安装运行时的改动物化 Dev `~/.omnimux-dev`。45120 的开发版验收由人工负责；纯文档无需安装或重启应用。完整规则见插件 QA。
+1. 在任务工作树运行受影响插件的静态检查和测试，完成代码审查。在隔离测试环境从真实入口走完本次变更的用户流程，记录待合入版本、验收项与实际结果。纯开发文档按文档验证项检查。
+2. 本地验收通过后，Agent 跟进 GitHub 必需检查并通过 PR 合入 `main`。必验项失败时，自行修复并复测。
+3. 改动涉及已安装插件时，从包含该 PR 且已对齐最新 `origin/main` 的干净检出进入 `app/`，执行 `corepack yarn omnimux:sync <插件名>` 同步到 Dev。需要重新加载宿主时使用 `corepack yarn omnimux:restart dev`。
+4. 桌面 Bot 核对运行中的桌面构建与插件产物，在 Dev 重走受影响流程并记录结果。复核失败由 Agent 跟进修复，修复合入后再验。全部适用项通过且已保存证据后，清理任务工作树。
 
-没有合并前独立 App/Host 测试环境。不得将未合并 worktree link 或物化到 Dev/Prod；生产 `~/.omnimux`、`--prod`、`--all` 与正式发布仍需独立授权。完整边界见开发环境合同。
+合前测试使用隔离环境，共享 Dev 只接收已合入的版本。纯开发文档无需安装或重启应用。生产 `~/.omnimux`、`--prod`、`--all` 与正式发布须另获授权。
 
 ---
 
