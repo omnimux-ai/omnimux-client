@@ -263,3 +263,37 @@ it('discards login prompts and quota notices from an earlier account dashboard r
   await prior
   assert.deepEqual([logins, notices, reads], [0, 0, 4])
 })
+
+it('verifies the session after a sync 401 before choosing the login window', async (t) => {
+  const originalWindow = globalThis.window
+  t.after(() => { globalThis.window = originalWindow })
+  const calls = []
+  let expired = false
+  let cachedLogin = true
+  globalThis.window = {
+    __omnimuxQuota: { ensureQuota: async () => ({ ok: true }) },
+    __omnimuxAuth: {
+      getStatus: async verify => {
+        assert.equal(verify, true)
+        calls.push('verify')
+        cachedLogin = !expired
+        return { ok: true, body: { logged_in: cachedLogin } }
+      },
+      ensureLogin: gate => {
+        if (cachedLogin) gate.onSuccess()
+        else { calls.push('login'); gate.onCancel() }
+      },
+    },
+  }
+  t.mock.method(globalThis, 'fetch', async (path, options) => {
+    assert.equal(path, HOST_PATHS.sync)
+    calls.push(options.method)
+    return Response.json({ error: 'needs-omnimux' }, { status: 401 })
+  })
+  await assert.rejects(syncNow({}, { useMock: false }), { status: 401 })
+  assert.deepEqual(calls, ['POST', 'verify'])
+  expired = true
+  calls.length = 0
+  await assert.rejects(syncNow({}, { useMock: false }), { status: 401 })
+  assert.deepEqual(calls, ['POST', 'verify', 'login'])
+})

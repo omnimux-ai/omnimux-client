@@ -24,7 +24,7 @@
       "version": "0.2.2",
       "path": "plugins/plugins/omnimux-analytics",
       "spec": "link:../../plugins/plugins/omnimux-analytics",
-      "contentHash": "sha256:a403cb926653605d402d5b12f9d2e49698a4d4b6a7b80bc5f4d124d8b52a9d51"
+      "contentHash": "sha256:8968c5f288051a979829a464bae88d3bc846f2e821009811df51b2485b5a5c36"
     },
     {
       "name": "omnimux-assets",

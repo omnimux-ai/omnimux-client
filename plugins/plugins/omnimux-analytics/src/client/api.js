@@ -64,6 +64,13 @@ export function authGuard(fn, { replayAfterLogin = true } = {}) {
       if (result.status !== 401 || (owner && owner !== dashboardIdentity())) return result
       const gate = typeof window !== 'undefined' ? /** @type {any} */ (window).__omnimuxAuth : undefined
       if (!gate || typeof gate.ensureLogin !== 'function') return result
+      if (!replayAfterLogin && typeof gate.getStatus === 'function') {
+        // A rejected sync may still have a valid account session. Refresh the Hub's cached identity.
+        let status
+        try { status = await gate.getStatus(true) } catch { return result }
+        if (status?.body?.logged_in !== false && status?.status !== 401) return result
+        if (owner && dashboardIdentity()?.loggedIn && owner !== dashboardIdentity()) return result
+      }
       return new Promise((resolve, reject) => {
         gate.ensureLogin({
           kind: 'write',
