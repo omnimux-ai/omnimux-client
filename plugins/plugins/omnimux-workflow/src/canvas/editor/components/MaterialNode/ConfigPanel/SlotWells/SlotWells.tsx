@@ -163,6 +163,14 @@ const SlotWells: React.FC<SlotWellsProps> = (props) => {
     };
   };
 
+  const renderStripAppend = (spec: SlotSpec, requiredEmpty: boolean) => {
+    const label = t('panel.slotPick').replace('{slot}', slotLabel(spec));
+    return <button key={spec.slot} type="button"
+      className={`wf-slot-well wf-slot-well--append nodrag${requiredEmpty ? ' wf-slot-well--required' : ''}`}
+      data-slot={spec.slot} data-slot-role={spec.role} title={label} aria-label={label}
+      onClick={() => onPickSlot(pickRequest(spec))}><Plus size={20} aria-hidden="true" /></button>;
+  };
+
   const renderWell = (model: WellModel, index: number) => {
     const { spec, occupant } = model;
     const label = model.positionLabel ?? slotLabel(spec);
@@ -412,16 +420,13 @@ const SlotWells: React.FC<SlotWellsProps> = (props) => {
     const otherRecords = props.records.filter(record => record.slot.slot !== orderedSlot?.slot);
     const models: WellModel[] = otherRecords.map(record => ({ spec: record.slot, occupant: record.occupant,
       upstream: upstreamByEdge.get(record.occupant.edgeId), requiredEmpty: false, state: record.state, reasonCode: record.reasonCode }));
-    // 同一槽位定义至多 1 个空卡：具名帧空卡覆盖各自定义；追加按钮只覆盖其余未满定义，
-    // 且不与已渲染的具名空卡重复。组合正文槽（composition）允许多来源，始终可追加。
-    const frameDefs = new Set(
-      otherSlots.filter(spec => spec.role === 'first_frame' || spec.role === 'last_frame').map(spec => spec.slot),
-    );
-    const unfilledDefs = otherSlots.filter(spec =>
-      spec.type === 'text' && Boolean(spec.composition) || spec.max === null
-      || otherRecords.filter(record => record.slot.slot === spec.slot && record.state !== 'inactive').length < spec.max);
     const frames = otherSlots.filter(spec => spec.role === 'first_frame' || spec.role === 'last_frame');
-    const canAdd = unfilledDefs.some(spec => !frameDefs.has(spec.slot));
+    const append = otherSlots.flatMap(spec => {
+      if (frames.includes(spec)) return [];
+      const count = otherRecords.filter(record => record.slot.slot === spec.slot && record.state !== 'inactive').length;
+      return spec.type === 'text' && spec.composition || spec.max === null || count < spec.max
+        ? [renderStripAppend(spec, count < spec.min)] : [];
+    });
     return <div className="wf-slot-wells wf-slot-wells--strip" data-testid="wf-slot-wells" data-preset={orderedSlot ? 'strip' : layout.preset}>
       {orderedSlot ? renderOrderedWells(orderedSlot, props.records.filter(record => record.slot.slot === orderedSlot.slot)) : null}
       {models.map(renderWell)}
@@ -429,8 +434,7 @@ const SlotWells: React.FC<SlotWellsProps> = (props) => {
         className="wf-slot-well wf-slot-well--empty nodrag" data-slot={spec.slot} data-slot-role={spec.role}
         aria-label={t(spec.role === 'first_frame' ? 'input.first' : 'input.last')}
         onClick={() => onPickSlot(pickRequest(spec))}><Plus size={20} aria-hidden="true" /></button>)}
-      {canAdd ? <button type="button" className="wf-slot-well wf-slot-well--append nodrag" title={t('input.add')} aria-label={t('input.add')}
-        onClick={() => onPickSlot({ acceptedTypes: [...new Set(otherSlots.map(spec => spec.type))], max: null })}><Plus size={20} aria-hidden="true" /></button> : null}
+      {append}
     </div>;
   }
 
@@ -460,34 +464,14 @@ const SlotWells: React.FC<SlotWellsProps> = (props) => {
   if (layout.preset === 'strip') {
     const wells = layout.slots.flatMap((spec) => buildWellModels(spec, props, upstreamByEdge)
       .filter((model) => model.occupant || model.requiredEmpty));
-    const filled = layout.slots.reduce(
-      (total, spec) => total + (props.bindings[spec.slot]?.length ?? 0),
-      0,
-    );
-    // The append well exists only for a definition that is bound at least to its
-    // minimum and still has capacity; unbound definitions already show their own
-    // required-empty well, so the append button never duplicates a slot's empty card.
-    const addSpec = layout.slots.find((spec) => {
+    const append = layout.addButton ? layout.slots.flatMap(spec => {
       const bound = props.bindings[spec.slot]?.length ?? 0;
-      return bound >= (spec.min ?? 0) && (spec.max === null || bound < spec.max);
-    });
-    const showAdd = layout.addButton && addSpec
-      && (addSpec.max === null || filled < layout.slots.reduce((total, spec) => total + (spec.max ?? Number.MAX_SAFE_INTEGER), 0));
+      return bound >= spec.min && (spec.max === null || bound < spec.max) ? [renderStripAppend(spec, false)] : [];
+    }) : [];
     return (
       <div className="wf-slot-wells wf-slot-wells--strip" data-testid="wf-slot-wells" data-preset="strip">
         {wells.map(renderWell)}
-        {showAdd ? (
-          <button
-            type="button"
-            className="wf-slot-well wf-slot-well--append nodrag"
-            data-slot={addSpec.slot}
-            title={t('panel.slotPick').replace('{slot}', slotLabel(addSpec))}
-            aria-label={t('panel.slotPick').replace('{slot}', slotLabel(addSpec))}
-            onClick={() => onPickSlot(pickRequest(addSpec))}
-          >
-            <Plus size={20} />
-          </button>
-        ) : null}
+        {append}
       </div>
     );
   }
