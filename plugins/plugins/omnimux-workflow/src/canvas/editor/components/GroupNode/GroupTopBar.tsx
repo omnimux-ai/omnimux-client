@@ -171,12 +171,10 @@ export const GroupTopBar: React.FC<GroupTopBarProps> = memo(({
           )}
         </div>
 
-        <span className="wf-floating-top-pill__divider" />
-
-        {/* 解体 */}
+        <span className="wf-floating-top-pill__divider wf-group-topbar__ungroup" />
         <button
           type="button"
-          className="wf-floating-top-pill__btn"
+          className="wf-floating-top-pill__btn wf-group-topbar__ungroup"
           onClick={onUngroup}
           title={t('group.ungroupGroupTitle')}
         >
