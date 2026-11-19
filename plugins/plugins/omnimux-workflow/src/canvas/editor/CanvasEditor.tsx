@@ -70,7 +70,13 @@ import { comfyPageNodeDefinition } from '../nodes/definitions/comfyPage.tsx';
 import { FloatingSelectionToolbar } from './components/FloatingSelectionToolbar';
 import { BatchCreateAssetModal, type MediaAssetItem } from './components/BatchCreateAssetModal';
 import { CreateWorkflowModal } from './components/CreateWorkflowModal';
-import { calculateGroupBounds, childIdsOfGroup, planAlignLayout, projectGroupVisibility } from './utils/nodeVisualMath';
+import {
+  calculateGroupBounds,
+  childIdsOfGroup,
+  planAlignLayout,
+  projectGroupDimensions,
+  projectGroupVisibility,
+} from './utils/nodeVisualMath';
 import { resolveWorkflowTemplateScope, toFlatTemplateSnapshot } from './utils/workflowTemplateScope';
 import { createTemplate, getTemplate, listTemplates } from '../bridge/templateApi';
 import { sanitizeEdges, sanitizeNodes } from '../bridge/persistSanitize';
@@ -624,7 +630,7 @@ const CanvasEditorContent: React.FC<CanvasEditorProps> = ({
   const flowNodes = useMemo(
     () =>
       nodes.map((node) => ({
-        ...node,
+        ...projectGroupDimensions(node),
         hidden: hiddenNodeIds.has(node.id),
         data: { ...node.data, __catalog: catalog, __workspaceId: workspaceId },
       })),
