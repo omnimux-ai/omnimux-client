@@ -160,6 +160,9 @@ async function loadApply() {
     export function IconChevronUpOutline14() { return null }
     export function IconCheckOutline16() { return null }
     export function IconCopyOutline16() { return null }
+    export function IconArchiveOutlineRegular() { return null }
+    export function IconFolderCloseRegular() { return null }
+    export function IconInfoOutlineRegular() { return null }
     export function Tooltip({ children }) { return children }
     export function Modal({ children }) { return children }
     export function Menu({ children }) { return children }

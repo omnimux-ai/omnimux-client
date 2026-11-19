@@ -230,6 +230,7 @@ export function CanvasTab({
           initialPath={contextForThisSession?.workspacePath || ''}
           initialTitle=""
           onCancel={() => { if (!busy) setProjectDialogOpen(false) }}
+          onClearError={() => setCreateError('')}
           onSubmit={async (payload) => {
             setBusy(true)
             setCreateError('')

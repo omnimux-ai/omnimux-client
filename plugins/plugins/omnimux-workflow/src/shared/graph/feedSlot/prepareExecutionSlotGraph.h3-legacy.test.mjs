@@ -11,6 +11,7 @@ import { buildInitialOutputs } from '../../../workflow/execution/executionInputs
 import { createMaterialGatewayExecutor } from '../../../workflow/execution/materialGatewayExecutor.ts';
 import { readNodeInputSource } from '../nodeInputSource.ts';
 import { reconcileCanvasForCatalog } from '../catalogReconcile.ts';
+import { planCanvasInputMutation } from '../canvasInputMutationGateway.ts';
 
 const snapshot = JSON.parse(readFileSync(new URL('../../../../../omnimux/src/catalog/cloud/bundled/pricing.json', import.meta.url), 'utf8'));
 const historical = buildModelCatalog({ snapshot, gatewayContracts: false, env: {} });
@@ -114,6 +115,52 @@ function checkCanvasLoad(versioned) {
 
 test('opening an H3 canvas with only old edge hints displays the chosen portrait and voice', () => checkCanvasLoad(false));
 test('opening an H3 canvas with old pinned bindings keeps its chosen sources over earlier alternatives', () => checkCanvasLoad(true));
+
+function roundTripLegacyMode(saved, whileText) {
+  let graph = reconcileCanvasForCatalog({ ...saved, catalog: current });
+  function mutate(mutation) {
+    const plan = planCanvasInputMutation(graph, mutation, { catalog: current });
+    assert.equal(plan.status, 'allowed');
+    graph = { nodes: plan.nodes, edges: plan.edges };
+    return graph.nodes.at(-1);
+  }
+  function patch(data) { return mutate({ nodePatches: [{ nodeId: 'h3', data }] }); }
+  const text = patch({ params: { model: modelId, operation: 'text_to_video' }, autoOperationId: null });
+  assert.equal(text.data.params.operation, 'text_to_video');
+  patch({ prompt: 'edited text draft' });
+  if (whileText) mutate(whileText);
+  const target = patch({ params: { model: modelId, operation: operationId }, autoOperationId: null });
+  assert.equal(target.data.prompt, 'edited text draft');
+  assert.equal(target.data.params.operation, operationId);
+  return prepareExecutionSlotGraph(graph.nodes, graph.edges, current);
+}
+
+test('returning an edge-only H3 canvas to lip sync sends the previously chosen portrait and voice', () => {
+  const prepared = roundTripLegacyMode(savedGraph(false));
+  const data = prepared.nodes.at(-1).data;
+  assert.deepEqual(data.slotBindings.reference_image.map(item => item.sourceNodeId), ['portrait']);
+  assert.deepEqual(data.slotBindings.reference_audio.map(item => item.sourceNodeId), ['voice']);
+  assert.equal(findExecutionReadinessFailure([prepared.nodes.at(-1)], current, prepared), null);
+});
+
+test('returning to lip sync keeps a cleared voice empty with an unselected alternative connected', () => {
+  const saved = savedGraph(false);
+  saved.nodes.at(-1).data.slotBindings = {};
+  const prepared = roundTripLegacyMode(saved);
+  const target = prepared.nodes.at(-1);
+  assert.deepEqual(target.data.slotBindings.reference_audio ?? [], []);
+  assert.notEqual(findExecutionReadinessFailure([target], current, prepared), null);
+});
+
+test('returning to lip sync after disconnecting the chosen voice leaves the missing slot visible', () => {
+  const saved = savedGraph(false);
+  saved.nodes.at(-1).data.slotStandbyEdgeIds = ['edge-unused-audio'];
+  const prepared = roundTripLegacyMode(saved, { removeEdgeIds: ['edge-voice'] });
+  const target = prepared.nodes.at(-1);
+  assert.deepEqual(target.data.slotBindings.reference_audio ?? [], []);
+  assert.deepEqual(target.data.slotStandbyEdgeIds, ['edge-unused-audio']);
+  assert.equal(findExecutionReadinessFailure([target], current, prepared)?.slot, 'reference_audio');
+});
 
 test('opening or submitting old H3 edges keeps a voice put on standby out of the two slots', () => {
   const saved = savedGraph(false);

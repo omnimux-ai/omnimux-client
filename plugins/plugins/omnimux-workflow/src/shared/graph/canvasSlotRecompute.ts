@@ -109,9 +109,15 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
     explicit = undefined;
   }
   const modeChanged = previous && (priorParams.operation !== params.operation || priorParams.model !== params.model);
-  // Opening an existing media-only lip-sync mode must preserve a cleared current slot
-  // alongside an obsolete saved hint. Auto-filling from other edges would change the cast.
-  const keepSavedLipSlots = currentVersion && selectableBeforeInputs && params.operation === 'digital_human' && !modeChanged;
+  const verifiedH3Lip = selectableBeforeInputs && model?.id === 'minimax-h3-video' && params.operation === 'digital_human';
+  // A return to a previously configured mode is an explicit user edit. Freeze exactly its
+  // earlier choices so subsequent legacy auto-fill cannot substitute other connected media.
+  const upgradeRestored = !currentVersion && verifiedH3Lip && Boolean(restoring);
+  const savedClears = !modeChanged && !newEdgeIds.size && verifiedH3Lip && explicit !== undefined
+    && (Object.keys(explicit).length === 0 || Object.values(explicit).some(occupants => occupants.length === 0));
+  const useSavedSlots = currentVersion || upgradeRestored || savedClears;
+  const keepSavedLipSlots = selectableBeforeInputs && params.operation === 'digital_human'
+    && ((useSavedSlots && !modeChanged) || upgradeRestored);
   const standbyIds = Array.isArray(node.data.slotStandbyEdgeIds) ? node.data.slotStandbyEdgeIds.filter((id): id is string => typeof id === 'string') : [];
   // A V1 occupant is authoritative only while its source node and edge still exist on the
   // canvas. Unpinned (auto-filled) occupants whose supply vanished are junk that must be
@@ -129,7 +135,7 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
     explicit = Object.fromEntries(Object.entries(explicit)
       .map(([slot, occupants]) => [slot,
         occupants
-          .filter((occupant) => currentVersion ? (isLiveOccupant(occupant) || occupant.pinned) : (!modeChanged || occupant.pinned))
+          .filter((occupant) => useSavedSlots ? (isLiveOccupant(occupant) || occupant.pinned) : (!modeChanged || occupant.pinned))
           .map((occupant) => ({ ...occupant }))] as const)
       // Drop slots emptied by pruning so the node does not keep a `{slot: []}` residue
       // that reads as an explicit user-clear to downstream readers.
@@ -143,7 +149,7 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
     for (const edge of newEdges) {
       const asset = feed.find((item) => item.edgeId === edge.id);
       if (!asset) continue;
-      if (currentVersion) {
+      if (useSavedSlots) {
         // V1 plain connects carry no picker hint. A composed text slot is the
         // one slot that consumes every new text source as ordered body text;
         // append it instead of letting max=1 replace the earlier source.
@@ -200,16 +206,17 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
   const renormalized = !keepSavedLipSlots && explicit && Object.keys(explicit).some((slot) => !layoutSlotNames.has(slot))
     ? autoFillSlots(feed, layout, Object.fromEntries(Object.entries(explicit).filter(([slot]) => layoutSlotNames.has(slot))), standbyIds)
     : undefined;
-  const fill = currentVersion
+  const fill = useSavedSlots
     ? (filledAnything ? selfHealed!
-      : renormalized ?? { bindings: explicit ?? {}, conflicts: (node.data.slotConflicts ?? []) as SlotConflict[] })
+      : renormalized ?? { bindings: explicit ?? {}, conflicts: storedConflicts ?? [] })
     : explicit ? autoFillSlots(feed, layout, explicit, standbyIds) : hydrateSlotBindings(feed, layout, graph.edges.filter((edge) => edge.target === node.id), standbyIds);
-  const fingerprint = effectiveSlotFingerprint(raw, layout, fill.bindings, fill.conflicts, currentVersion ? 1 : undefined);
+  const fingerprint = effectiveSlotFingerprint(raw, layout, fill.bindings, fill.conflicts, currentVersion || upgradeRestored ? 1 : undefined);
   const match = operation && permitted ? matchOperationInputs(operation, fingerprint) : undefined;
   const reasonCodes = !view.available ? ['catalog_unavailable'] : !permitted ? ['not_listed'] : !model ? ['unknown_model']
     : !operation ? ['operation_incompatible'] : [...(match?.rejections ?? []), ...(match?.pending ?? [])].map((item) => item.code);
   if (fill.conflicts.length) reasonCodes.push('role_conflict');
   const data = { ...node.data };
+  if (upgradeRestored) data.inputBindingVersion = 1;
   if (selectableBeforeInputs && sameModel && params.operation === 'text_to_video' && priorParams.operation === 'digital_human' && previous?.data.slotBindings) {
     data.parkedLipSyncInputs = { model: model.id, bindings: previous.data.slotBindings, conflicts: previous.data.slotConflicts };
   } else if (params.operation !== 'text_to_video' || cached?.model !== model?.id) {

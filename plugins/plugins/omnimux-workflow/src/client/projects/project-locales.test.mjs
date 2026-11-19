@@ -39,9 +39,9 @@ describe('Workflow Projects Locales & i18n Dictionaries', () => {
     assert.match(zh['projects.purgeConfirm'], /画布与资产/)
     assert.match(en['projects.purgeConfirm'], /canvases and assets/)
     assert.match(zh['projects.removeFromLibraryConfirm'], /保留在磁盘/)
-    assert.equal(zh['projects.preflight.initialize'], '将在该工作区初始化项目与首个创作页。')
+    assert.equal(zh['projects.preflight.initialize'], '将在此文件夹创建项目和首个画布。')
     assert.match(zh['projects.preflight.open'], /\{title\}/)
-    assert.equal(en['projects.preflight.rebuild'], 'Existing creative pages were found; the project will be rebuilt and included.')
+    assert.equal(en['projects.preflight.rebuild'], 'Rebuilds the project using the canvases in this folder.')
   })
 
   it('ensures all projects.* keys exist in both zh and en dictionaries', () => {

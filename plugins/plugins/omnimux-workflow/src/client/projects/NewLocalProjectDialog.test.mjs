@@ -11,7 +11,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 
 const SEAM = `
 const React = require('react');
-const Button = ({ children, className, disabled, onClick, ...rest }) => React.createElement('button', {
+const Button = ({ children, className, disabled, loading, onClick, ...rest }) => React.createElement('button', {
   ...rest, type: 'button', className, disabled, onClick,
 }, children);
 const IconButton = ({ children, onClick, disabled, ...rest }) => React.createElement('button', {
@@ -25,6 +25,9 @@ exports.IconButton = IconButton;
 exports.InputField = InputField;
 exports.ModalDialog = ModalDialog;
 exports.IconCloseOutline16 = icon('close');
+exports.IconArchiveOutlineRegular = icon('archive');
+exports.IconFolderCloseRegular = icon('folder');
+exports.IconInfoOutlineRegular = icon('info');
 `
 
 async function loadModule() {
@@ -88,11 +91,12 @@ test('firstPickedDirectory reads the first non-empty path', async () => {
   }
 })
 
-test('empty initialPath renders drop zone, not picked card', async () => {
+test('empty initialPath displays the default destination and folder chooser', async () => {
   const { container, root, dom, act } = await mount({ initialPath: '' })
   try {
     assert.ok(container.querySelector('[data-omnimux-new-project-drop]'))
     assert.equal(container.querySelector('[data-omnimux-new-project-picked]'), null)
+    assert.equal(container.querySelector('.omnimux-project-create-path').textContent, 'projects.dialog.defaultLibrary')
   } finally {
     await act(async () => root.unmount())
     dom.window.close()
@@ -104,7 +108,7 @@ test('initialPath renders removable folder card', async () => {
   try {
     const picked = container.querySelector('[data-omnimux-new-project-picked]')
     assert.ok(picked)
-    assert.match(picked.textContent, /projects/)
+    assert.equal(picked.querySelector('.omnimux-project-create-path').textContent, '/tmp/omnimux-test/projects')
     assert.ok(container.querySelector('[data-omnimux-new-project-remove]'))
     assert.equal(container.querySelector('[data-omnimux-new-project-drop]'), null)
   } finally {
@@ -202,7 +206,7 @@ test('preflight 中性状态与明确动作：open/rebuild/repair 不再红字',
       assert.ok(status)
       assert.equal(status.getAttribute('data-preflight-state'), item.state)
       assert.equal(status.getAttribute('data-preflight-action'), item.action)
-      assert.equal(status.classList.contains('omnimux-workflow-form-error'), false, '预检状态必须是中性提示，不是红字错误')
+      assert.equal(status.hasAttribute('data-error'), false)
       assert.equal(container.textContent.includes('projects.existingConfirm'), false, '不得再出现「已有项目」红字确认')
 
       const primary = [...container.querySelectorAll('button')].find((btn) =>
@@ -243,23 +247,40 @@ test('默认独立项目：无目录时不发预检、直接提交 independent',
   }
 })
 
-test('preflight 失败：中性失败提示 + 禁用提交，不回退成独立项目', async () => {
+test('a failing directory check blocks submission and can retry the same folder', async () => {
+  const folder = '/tmp/omnimux-test/projects'
+  const checkedPaths = []
+  let finishRetry
+  const retry = new Promise((resolve) => { finishRetry = resolve })
   const { container, root, dom, act } = await mount({
-    initialPath: '/tmp/omnimux-test/projects',
+    initialPath: folder,
     initialTitle: '失败目录',
-    onPreflight: async () => { throw new Error('boom') },
-    onSubmit: () => {},
+    onPickDirectory: async () => folder,
+    onPreflight: async ({ workspaceDir }) => {
+      checkedPaths.push(workspaceDir)
+      if (checkedPaths.length === 1) throw new Error('unreadable')
+      return retry
+    },
   })
   try {
-    await act(async () => { await new Promise((done) => setTimeout(done, 20)) })
     const status = container.querySelector('[data-omnimux-new-project-preflight]')
     assert.equal(status.getAttribute('data-preflight-state'), 'failed')
     assert.match(status.textContent, /projects\.preflight\.failed/)
-    assert.equal(status.classList.contains('omnimux-workflow-form-error'), false, '中性提示，不用红字')
+    assert.equal(status.hasAttribute('data-error'), true)
     const primary = [...container.querySelectorAll('button')].find((btn) =>
       (btn.textContent || '').includes('projects.dialog.submit')
     )
     assert.equal(primary.disabled, true, '预检失败必须禁用提交（不得按独立项目误建）')
+
+    await act(async () => container.querySelector('[data-omnimux-new-project-change]').click())
+    assert.deepEqual(checkedPaths, [folder, folder])
+    assert.equal(status.getAttribute('data-preflight-state'), 'checking')
+    assert.equal(primary.disabled, true)
+
+    await act(async () => finishRetry({ ok: true, body: { state: 'S0', action: 'initialize' } }))
+    assert.equal(status.getAttribute('data-preflight-state'), 'S0')
+    assert.equal(status.hasAttribute('data-error'), false)
+    assert.equal(primary.disabled, false)
   } finally {
     await act(async () => root.unmount())
     dom.window.close()

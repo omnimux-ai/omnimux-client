@@ -34,7 +34,7 @@ describe('create-project dialog source contracts', () => {
 
   it('keeps initialPath state and empty/picked folder cards with native picker', () => {
     assert.match(dialogSrc, /initialPath\s*=\s*''/)
-    assert.match(dialogSrc, /const\s*\[path,\s*setPath\]\s*=\s*useState\s*\(\s*initialPath/)
+    assert.match(dialogSrc, /useState\(\{ path: initialPath/)
     assert.match(dialogSrc, /extractFolderName\s*\(\s*initialPath\s*\)/)
     assert.match(dialogSrc, /data-omnimux-new-project-drop/)
     assert.match(dialogSrc, /data-omnimux-new-project-picked/)
@@ -59,7 +59,7 @@ describe('create-project dialog source contracts', () => {
 
   it('uses create-project copy for title, location, choose folder, change and remove', () => {
     assert.match(localesSrc, /'projects\.dialog\.title': '创建项目'/)
-    assert.match(localesSrc, /'projects\.dialog\.pathLabel': '存放位置'/)
+    assert.match(localesSrc, /'projects\.dialog\.pathLabel': '保存位置'/)
     assert.match(localesSrc, /'projects\.dialog\.addFolder': '选择文件夹'/)
     assert.match(localesSrc, /'projects\.dialog\.change': '更改'/)
     assert.match(localesSrc, /'projects\.dialog\.removeFolder': '移除文件夹'/)
