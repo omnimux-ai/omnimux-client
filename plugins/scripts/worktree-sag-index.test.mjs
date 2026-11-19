@@ -105,7 +105,7 @@ describe('钩子是 best-effort，且不写共享知识库 (#4060)', () => {
     // 解析顺序：显式指定 → 仓内实现 → PATH 里的旧脚本。仓内实现按路径哈希命名数据目录，
     // 默认依赖家目录脚本时，两个仓的同名任务会共用一份索引。
     const explicit = sagAvailable.indexOf('SAG_WORKTREE_BIN:-')
-    const inRepo = sagAvailable.indexOf('scripts/sag-worktree.mjs')
+    const inRepo = sagAvailable.indexOf('SAG_CMD=(node "${SCRIPT_DIR}/sag-worktree.mjs")')
     const onPath = sagAvailable.indexOf('command -v sag-worktree')
     assert.ok(explicit !== -1 && inRepo !== -1 && onPath !== -1, '三个来源都要出现在解析函数里')
     assert.ok(explicit < inRepo, '显式指定必须排在最前面')
