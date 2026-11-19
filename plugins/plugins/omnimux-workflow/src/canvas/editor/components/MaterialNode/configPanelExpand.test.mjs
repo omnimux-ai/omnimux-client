@@ -115,8 +115,10 @@ test('Issue #109: 参数联动提示清零，归一化参数仍直接写回控�
   // 不保留任何参数联动 Toast / healing 提示条 / 模式消费通知
   assert.doesNotMatch(panelSrc, /toast\.info/);
   assert.doesNotMatch(panelSrc, /healingNotes|wf-channel-healing-notes|wf-healing-note/);
-  // 底层归一化结果仍完整写回 nodeData，由控件直接呈现
-  assert.match(panelSrc, /onUpdateNodeData\(\{ params: transition\.params, parameterSelections: transition\.parameterSelections \}\)/);
+  // 底层归一化结果仍完整写回 nodeData，由控件直接呈现；#110 的
+  // userPickedMode / autoOperationId 语义保留（用户手选模式时清空自动来源）。
+  assert.match(panelSrc, /onUpdateNodeData\(\{ params: transition\.params, parameterSelections: transition\.parameterSelections,/);
+  assert.match(panelSrc, /userPickedMode \? \{ autoOperationId: null \}/);
   assert.match(panelSrc, /buildVideoParameterSelection/);
   assert.match(panelSrc, /reconcileParamsWithContract/);
 });
