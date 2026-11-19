@@ -162,10 +162,10 @@ export function resolveEffectiveVideoParams(
     params: (params ?? {}) as Record<string, unknown>,
   });
   const selectedOperationId = capability.selectedOperationId ?? preferredOperation ?? '';
-  const effectiveOperations = opsState.effectiveOps.map((operation) => ({
-    ...operation,
-    disabled: capability.operationStates.find((state) => state.id === operation.id)?.usable !== true,
-  }));
+  const effectiveOperations = opsState.effectiveOps.map((operation) => {
+    const state = capability.operationStates.find(item => item.id === operation.id);
+    return { ...operation, disabled: !state?.usable && !state?.selectableBeforeInputs };
+  });
   const defaultFallbackOp = effectiveOperations.find((op) => op.id === 'text_to_video')
     ?? effectiveOperations.find((op) => op.ready)
     ?? effectiveOperations[0];

@@ -98,6 +98,8 @@ import {
 } from '../../../../../shared/graph/feedSlot/index.ts';
 import { bindableSlots } from '../../../../../shared/validation/compatKernel.ts';
 import { buildInputCapability } from '../../../../../shared/validation/inputCapability.ts';
+import { findExecutionReadinessFailure } from '../../../../../shared/validation/executionReadiness.ts';
+import { prepareExecutionSlotGraph } from '../../../../../shared/graph/feedSlot/prepareExecutionSlotGraph.ts';
 import { resolveUnsupportedModelUi } from '../../../../../shared/validation/modelExecutionUi.ts';
 import {
   buildEffectiveOpsUiState,
@@ -320,9 +322,23 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
     ? videoCapability.selectedOperationId
     : currentInputs && preferredOperationId && !isTextTask ? preferredOperationId
       : resolveSlotOperation(activeCatalog, modelValue, preferredOperationId, outputTypeForCompat, fingerprint);
-  const effectiveSlotLayout = useMemo(() => currentInputs
+  const useSelectedOperation = videoCapability?.operationStates.find(mode => mode.id === currentOperationId)?.selectableBeforeInputs;
+  const canvasEdges = useCanvasStore((state) => state.edges);
+  // Use the same execution copy as admission, including historical H3 slot names.
+  // Keep all edits, including the prompt draft, on the original canvas node.
+  const selectedOperation = useMemo(() => {
+    if (!useSelectedOperation) return;
+    const edges = canvasEdges.filter(edge => edge.target === nodeId);
+    const sources = new Set(edges.map(edge => edge.source));
+    const nodes = useCanvasStore.getState().nodes.filter(node => sources.has(node.id));
+    const graph = prepareExecutionSlotGraph([...nodes, { id: nodeId, type: 'material', data: { ...nodeData, params } }], edges, opsCatalog);
+    const target = graph.nodes[graph.nodes.length - 1]!;
+    const workspaceId = typeof nodeData.__workspaceId === 'string' ? nodeData.__workspaceId : undefined;
+    return { target, edges: graph.edges, failure: findExecutionReadinessFailure([target], opsCatalog, { ...graph, workspaceId }) };
+  }, [useSelectedOperation, canvasEdges, nodeId, nodeData, params, opsCatalog, upstreamSnapshots]);
+  const effectiveSlotLayout = useMemo(() => currentInputs || useSelectedOperation
     ? deriveSlotLayout(activeCatalog, modelValue, currentOperationId)
-    : deriveModelSlotLayout(activeCatalog, modelValue, currentOperationId), [activeCatalog, modelValue, currentOperationId, currentInputs]);
+    : deriveModelSlotLayout(activeCatalog, modelValue, currentOperationId), [activeCatalog, modelValue, currentOperationId, currentInputs, useSelectedOperation]);
 
   const fallbackState = useMemo<ChannelFallbackState>(() => {
     const family = (activeCatalog?.[materialType] as CapabilityModelItem[] | undefined)?.find((m) => m.id === modelValue)?.family;
@@ -364,7 +380,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   }, [allChannelGroups]);
 
   const displayedSlotLayout = useMemo(() => {
-    if (currentInputs || !isSingleImageChannel || !effectiveSlotLayout?.slots || effectiveSlotLayout.slots.length <= 1) {
+    if (currentInputs || useSelectedOperation || !isSingleImageChannel || !effectiveSlotLayout?.slots || effectiveSlotLayout.slots.length <= 1) {
       return effectiveSlotLayout;
     }
     return {
@@ -372,10 +388,11 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
       preset: 'strip' as const,
       slots: effectiveSlotLayout.slots.slice(0, 1),
     };
-  }, [effectiveSlotLayout, isSingleImageChannel, currentInputs]);
+  }, [effectiveSlotLayout, isSingleImageChannel, currentInputs, useSelectedOperation]);
   const feedAssets = useMemo(() => feedFromFingerprint(fingerprint, nodeData.inputBindingVersion), [fingerprint, nodeData.inputBindingVersion]);
   const storedSlotBindings = useMemo(() => {
     const raw = nodeData.slotBindings as SlotBindings | undefined;
+    if (selectedOperation) return selectedOperation.target.data.slotBindings as SlotBindings | undefined;
     if (!raw) return undefined;
     const standby = (nodeData.slotStandbyEdgeIds ?? []) as string[];
     // 1. 若已保存的 slotBindings 为空对象且待命池未记录卸载边，视为未装填态，触发 autoFillSlots
@@ -389,12 +406,11 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
       return undefined;
     }
     return raw;
-  }, [nodeData.slotBindings, nodeData.slotStandbyEdgeIds, displayedSlotLayout.slots]);
-  const canvasEdges = useCanvasStore((state) => state.edges);
+  }, [nodeData.slotBindings, nodeData.slotStandbyEdgeIds, displayedSlotLayout.slots, selectedOperation]);
   const inputDisplay = useMemo(() => effectiveInputDisplay(displayedSlotLayout, feedAssets,
-    storedSlotBindings, (nodeData.slotConflicts ?? []) as SlotConflict[],
-    canvasEdges.filter((edge) => edge.target === nodeId), (nodeData.slotStandbyEdgeIds ?? []) as string[], nodeData.inputBindingVersion),
-  [storedSlotBindings, displayedSlotLayout, feedAssets, canvasEdges, nodeId, nodeData.slotConflicts, nodeData.slotStandbyEdgeIds, nodeData.inputBindingVersion]);
+    storedSlotBindings, (selectedOperation?.target.data.slotConflicts ?? nodeData.slotConflicts ?? []) as SlotConflict[],
+    selectedOperation?.edges ?? canvasEdges.filter((edge) => edge.target === nodeId), (nodeData.slotStandbyEdgeIds ?? []) as string[], nodeData.inputBindingVersion),
+  [storedSlotBindings, displayedSlotLayout, feedAssets, canvasEdges, nodeId, nodeData.slotConflicts, nodeData.slotStandbyEdgeIds, nodeData.inputBindingVersion, selectedOperation]);
   const slotBindings = inputDisplay.bindings;
   const slotConflicts = inputDisplay.conflicts;
   const consumedFingerprint = useMemo(() => effectiveSlotFingerprint(
@@ -412,12 +428,13 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   const textOnlySources = useMemo(() => textSources.filter((source) => source.type !== 'document'
     && !(source.edgeId && textSlotEdgeIds.has(source.edgeId))), [textSources, textSlotEdgeIds]);
   const documentSources = useMemo(() => {
+    if (displayedSlotLayout.acceptsDocuments === false) return [];
     const standby = new Set((nodeData.slotStandbyEdgeIds ?? []) as string[]);
     return upstreams
       .filter((source) => source.materialType === 'document'
         && (!source.edgeId || !standby.has(source.edgeId)))
       .map((source) => ({ source, parsed: parseJsonDocumentText(source.documentText) }));
-  }, [upstreams, nodeData.slotStandbyEdgeIds]);
+  }, [upstreams, nodeData.slotStandbyEdgeIds, displayedSlotLayout.acceptsDocuments]);
   const documentValidationErrors = useMemo(() => {
     const errors: string[] = [];
     for (const { source, parsed } of documentSources) {
@@ -521,8 +538,9 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   } = useModelParameterSchema(materialType, modelValue, catalog);
 
   const parameterSelections = nodeData.parameterSelections as VideoParameterSelections | undefined;
-  const commitVideoSelection = useCallback((transition: VideoParameterSelectionResult) => {
-    onUpdateNodeData({ params: transition.params, parameterSelections: transition.parameterSelections });
+  const commitVideoSelection = useCallback((transition: VideoParameterSelectionResult, userPickedMode = false) => {
+    onUpdateNodeData({ params: transition.params, parameterSelections: transition.parameterSelections,
+      ...(userPickedMode ? { autoOperationId: null } : {}) });
     for (const message of transition.notices) toast.info(message);
     if (typeof setHealingNotes === 'function') {
       setHealingNotes(transition.notices.map((message: string) => ({
@@ -586,11 +604,10 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
             params, parameterSelections, currentModelItem: modelItem, targetModelItem: modelItem,
             catalog: activeCatalog, upstreams: upstreamSnapshots, prompt: localPrompt,
             nextOperationId: nextOpId,
-            autoOperationId: nodeData.autoOperationId,
+            autoOperationId: null,
             ignoredEdgeIds: (nodeData.slotStandbyEdgeIds ?? []) as string[],
           });
-          commitVideoSelection(transition);
-          onUpdateNodeData({ autoOperationId: null });
+          commitVideoSelection(transition, true);
           return;
         }
         const next = setParamsOperation(
@@ -1062,12 +1079,12 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   const hasConsumedPrompt = Boolean(consumedFingerprint.prompt?.trim());
   const missingRequiredSlots = useMemo(
     () => displayedSlotLayout.slots.filter((spec: SlotSpec) => (
-      !currentInputs && !displayedSlotLayout.displayOnlyFromOperation
+      !selectedOperation && !currentInputs && !displayedSlotLayout.displayOnlyFromOperation
       && (spec.type === 'text' && spec.composition && spec.valueSources?.includes('local_field')
         ? Number(hasConsumedPrompt) < spec.min
         : (slotBindings[spec.slot]?.length ?? 0) < spec.min)
     )),
-    [displayedSlotLayout, slotBindings, currentInputs, hasConsumedPrompt],
+    [displayedSlotLayout, slotBindings, currentInputs, hasConsumedPrompt, selectedOperation],
   );
   const slotShortageReason = missingRequiredSlots.length > 0
     ? t('panel.slotMissing').replace('{slots}', missingRequiredSlots.map(slotLabelOf).join('、'))
@@ -1152,7 +1169,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   }, [materialType, isMusicOperation, isAsrTool, textSources, t, currentInputs, displayedSlotLayout]);
 
   const videoValidationErrors = useMemo(
-    () => [...new Set([
+    () => selectedOperation ? [] : [...new Set([
       ...documentValidationErrors,
       ...(materialType === 'video' && videoEffectiveParams
         ? [...(videoSelection?.errors ?? []),
@@ -1165,7 +1182,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
             })]
         : []),
     ])],
-    [documentValidationErrors, materialType, consumedFingerprint.prompt, params, consumedUpstreams, videoEffectiveParams, opsState.effectiveOps, videoSelection],
+    [documentValidationErrors, materialType, consumedFingerprint.prompt, params, consumedUpstreams, videoEffectiveParams, opsState.effectiveOps, videoSelection, selectedOperation],
   );
 
   // Generate gate: blocked when zero effective ops / zero candidates / configuration_error /
@@ -1173,7 +1190,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   const nodeCompat = (nodeData as Record<string, unknown>).compat as
     | { status?: string; readyToSubmit?: boolean; reasonCodes?: string[]; adaptation?: { toModelLabel: string; inputTypes: string[] } }
     | undefined;
-  const strictVerdict = currentInputs ? validateCanvasInputSelection({
+  const strictVerdict = currentInputs && !selectedOperation ? validateCanvasInputSelection({
     nodes: useCanvasStore.getState().nodes.map((node) => node.id === nodeId ? {
       ...node,
       data: {
@@ -1198,30 +1215,29 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   }, {
     targetNodeId: nodeId, chosenOperationId: currentOperationId ?? '',
   }, { catalog: activeCatalog }) : undefined;
-  const blockGenerate =
-    Boolean(strictVerdict && !strictVerdict.ready)
-    || opsState.blockGenerate
-    || (materialType === 'video' && (!videoCapability?.selectedOperationId || videoCapability.blocked))
-    || filteredModels.zeroCandidates
-    || nodeCompat?.status === 'configuration_error'
-    || videoValidationErrors.length > 0
-    || Boolean(audioPromptGate?.exceeded)
-    || missingRequiredSlots.length > 0
-    || cloneMissingAudio
-    || execBusy
-    || Boolean(fallbackState?.isFallback)
-    || selectedModelUnsupported;
   const reasonCode = opsState.reasonCode || filteredModels.reasonCode
     || (nodeCompat?.status === 'configuration_error' ? nodeCompat.reasonCodes?.[0] || 'no_compatible_model' : undefined);
-  const blockReason =
-    (strictVerdict && !strictVerdict.ready ? t(pickerReasonKey(strictVerdict.reasonCode)) : undefined)
-    || (fallbackState?.isFallback ? (fallbackState.runBlockedReason || undefined) : undefined)
+  const legacyOperationBlocked = opsState.blockGenerate || filteredModels.zeroCandidates || nodeCompat?.status === 'configuration_error'
+    || (materialType === 'video' && (!videoCapability?.selectedOperationId || videoCapability.blocked));
+  const failure = selectedOperation?.failure;
+  const failedSlot = failure?.slot && displayedSlotLayout.slots.find(slot => slot.slot === failure.slot);
+  let selectedOperationReason = failure?.message;
+  if (failedSlot && failure?.reasonCode === 'min_unsatisfied') selectedOperationReason = t('panel.slotMissing').replace('{slots}', slotLabelOf(failedSlot));
+  if (failedSlot && (failure?.reasonCode === 'input_unavailable' || failure?.reasonCode === 'input_waiting')) {
+    selectedOperationReason = t(`panel.reason.${failure.reasonCode}`).replace('{source}', slotLabelOf(failedSlot));
+  }
+  if (failure?.reasonCode === 'prompt_required') selectedOperationReason = t('panel.reason.prompt_required');
+  const operationReason = selectedOperation
+    ? selectedOperationReason
+    : (strictVerdict && !strictVerdict.ready ? t(pickerReasonKey(strictVerdict.reasonCode)) : undefined)
+      || (legacyOperationBlocked ? generationReasonText(t, reasonCode, opsState.reason || filteredModels.reason) || t('notice.submitBlocked') : undefined)
+      || videoValidationErrors[0] || slotShortageReason;
+  const readinessReason = (fallbackState?.isFallback ? fallbackState.runBlockedReason || t('notice.submitBlocked') : undefined)
     || (cloneMissingAudio ? '参考音频模式需先连接上游音频输入' : undefined)
     || (audioPromptGate?.exceeded ? `朗读正文不能超过 ${AUDIO_PROMPT_MAX_CHARS} 字符` : undefined)
-    || generationReasonText(t, reasonCode, opsState.reason || filteredModels.reason)
-    || (selectedModelUnsupported ? t('panel.modelUnsupported') : undefined)
-    || videoValidationErrors[0]
-    || slotShortageReason;
+    || operationReason;
+  const blockGenerate = execBusy || Boolean(readinessReason) || selectedModelUnsupported;
+  const blockReason = readinessReason || (selectedModelUnsupported ? t('panel.modelUnsupported') : undefined);
 
   const showEmptyModels = modelOptions.length === 0;
 

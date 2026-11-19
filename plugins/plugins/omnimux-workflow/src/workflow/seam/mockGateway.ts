@@ -4,7 +4,7 @@ import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { CapabilityCatalog } from '../../shared/api.ts';
 import type { GenerationGateway, SubmitRequest, SubmitResult, UpstreamTaskRef } from './gateway';
-import { resolveCanvasSubmission } from './submitGuard.ts';
+import { createWorkflowSubmission, resolveCanvasSubmission } from './submitGuard.ts';
 import { mockCatalog } from './mockCatalog.ts';
 import { SeamGatewayError } from './SeamGatewayError.ts';
 
@@ -47,17 +47,20 @@ export function createMockGateway(opts: MockGatewayOptions = {}): GenerationGate
       if (signal?.aborted) abort();
     });
   }
+  async function submitResolved(req: SubmitRequest): Promise<SubmitResult> {
+    const taskId = `mock_${randomUUID().slice(0, 12)}`;
+    const latencyMs = minLatency + Math.floor(Math.random() * (maxLatency - minLatency + 1));
+    tasks.set(taskId, { req, latencyMs });
+    // #1386: declare provenance so a restart routes this task's reconcile back
+    // to the mock (whose "cannot reconcile" answer means resubmit) instead of
+    // to the hub, whose `needs-provider` no caller reads as a fallback signal.
+    return { taskId, mode: 'submitted', owner: 'mock' };
+  }
   return {
-    async submit(req: SubmitRequest): Promise<SubmitResult> {
-      req = resolveCanvasSubmission(req, await capabilities());
-      const taskId = `mock_${randomUUID().slice(0, 12)}`;
-      const latencyMs = minLatency + Math.floor(Math.random() * (maxLatency - minLatency + 1));
-      tasks.set(taskId, { req, latencyMs });
-      // #1386: declare provenance so a restart routes this task's reconcile back
-      // to the mock (whose "cannot reconcile" answer means resubmit) instead of
-      // to the hub, whose `needs-provider` no caller reads as a fallback signal.
-      return { taskId, mode: 'submitted', owner: 'mock' };
-    },
+    submit: Object.assign(
+      async (req: SubmitRequest) => submitResolved(resolveCanvasSubmission(req, await capabilities())),
+      { openWorkflowSubmission: async () => createWorkflowSubmission(await capabilities(), submitResolved) },
+    ),
     async awaitTask(taskId: string, dest: string, signal?: AbortSignal) {
       const task = tasks.get(taskId);
       if (!task) throw new Error(`mock gateway: unknown task ${taskId}`);

@@ -133,6 +133,8 @@ export interface MaterialNodeData {
   /** Upstream consumption authority; absent on legacy graphs awaiting migration. */
   slotBindings?: SlotBindings;
   slotConflicts?: SlotConflict[];
+  /** Lip-sync selection parked while editing the same model's text-to-video operation. */
+  parkedLipSyncInputs?: { model: string; bindings: SlotBindings; conflicts?: SlotConflict[] };
   /** Incoming edge IDs explicitly kept outside the active input slots. */
   slotStandbyEdgeIds?: string[];
   /**

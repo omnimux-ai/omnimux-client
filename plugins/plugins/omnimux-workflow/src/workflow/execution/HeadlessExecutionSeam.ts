@@ -16,10 +16,9 @@ import type { ExecutionManager } from './ExecutionManager.ts';
 // #1390: `ExecutionStatusValue` — the engine's execution-state union — is the
 // source of truth for the mapping below, and typing the table against it is what
 // makes the mapping total. Type-only on purpose: the seam needs those *states*,
-// not the state machine, so it must not pull `ExecutionContext` (and with it
-// `node:crypto`) into its runtime graph.
+// without importing the execution state machine at runtime.
 import type { ExecutionStatusValue } from './ExecutionContext.ts';
-import { prepareExecutionSlotGraph } from '../../shared/graph/feedSlot/prepareExecutionSlotGraph.ts';
+import { prepareExecutionAdmission } from './prepareExecutionAdmission.ts';
 import {
   resolveExecutionSubgraph,
   toExecutionMode,
@@ -27,7 +26,6 @@ import {
   subgraphContainsMediaGenerate,
   type ExecutionMode,
 } from './subgraph.ts';
-import { findExecutionReadinessFailure } from '../../shared/validation/executionReadiness.ts';
 import { buildInitialOutputs } from './executionInputs.ts';
 import type { ResolveExecutionProjectFile } from './executionMediaSource.ts';
 import type { CapabilityCatalog } from '../../shared/api.ts';
@@ -310,41 +308,28 @@ export function createHeadlessExecutionSeam(deps: HeadlessExecutionSeamDeps): He
         );
       }
 
-      // 2. Fetch capability catalog
-      const catalog = deps.getCatalog ? await deps.getCatalog() : null;
-
-      // 2b. App execution: apply form inputs to the snapshot before slot preparation.
+      // Apply app form inputs before comparing the snapshot with previously accepted tasks.
       applyPublishPlanInputs(rawNodes, params.publishPlan, params.inputs);
 
-      // 3. Prepare slot bindings and freeze hydration (reusing shared Canvas preparation logic)
-      const slotGraph = prepareExecutionSlotGraph(rawNodes, rawEdges, catalog);
-
-      // 4. Resolve execution mode and subgraph
+      // Resolve the requested subgraph before reading model capabilities.
       const planNodeIds = params.publishPlan
         ? params.publishPlan.workflows.flatMap((workflow) => workflow.nodeIds)
         : undefined;
       const mode = params.publishPlan ? 'subset' : toExecutionMode(params.mode);
-      const subgraph = resolveExecutionSubgraph({
-        nodes: slotGraph.nodes,
-        edges: slotGraph.edges,
+      const selected = resolveExecutionSubgraph({
+        nodes: rawNodes,
+        edges: rawEdges,
         executionMode: mode,
         nodeIds: normalizeNodeIds(planNodeIds ?? params.nodeIds),
       });
 
-      if (!subgraph.nodes || subgraph.nodes.length === 0) {
+      if (selected.nodes.length === 0) {
         throw new HeadlessExecutionError('empty_subgraph', 'Resolved execution subgraph contains no executable nodes');
       }
 
-      // 5. Readiness verification (Fail-Closed invariant: check all input sources, parameters, model slots)
-      const readinessFailure = findExecutionReadinessFailure(
-        subgraph.nodes as Array<{ id: string; type: string; data?: Record<string, unknown> }>,
-        catalog,
-        {
-          nodes: slotGraph.nodes,
-          edges: slotGraph.edges,
-          workspaceId,
-          scheduledNodeIds: mode === 'single' ? undefined : subgraph.nodeIdSet,
-        },
+      // Validate new work and resolve accepted tasks through the same admission as HTTP and Agent.
+      const { subgraph, readiness: readinessFailure, sourceGraph, recovery } = await prepareExecutionAdmission(
+        workspaceId, { nodes: rawNodes, edges: rawEdges }, selected, mode, deps.executionManager, deps.getCatalog, deps.resolveProjectFile,
       );
 
       if (readinessFailure) {
@@ -355,7 +340,7 @@ export function createHeadlessExecutionSeam(deps: HeadlessExecutionSeamDeps): He
         );
       }
 
-      // 6. Project binding requirement for media generation
+      // Media output requires a bound project.
       if (
         subgraphContainsMediaGenerate(subgraph.nodes as Array<{ type?: string; data?: Record<string, unknown> }>) &&
         deps.workspaceStore &&
@@ -368,28 +353,29 @@ export function createHeadlessExecutionSeam(deps: HeadlessExecutionSeamDeps): He
         );
       }
 
-      // 7. Calculate initial outputs for single/subgraph mode if applicable
+      // Seed outputs only for inputs that still need submitting.
       let initialOutputs: Record<string, unknown> | undefined;
       try {
         initialOutputs = buildInitialOutputs(
-          { nodes: slotGraph.nodes, edges: slotGraph.edges } as any,
+          sourceGraph,
           subgraph.nodeIdSet,
           {
             mediaDir: deps.mediaDir ?? '',
             resolveProjectFile: deps.resolveProjectFile,
           },
         );
-      } catch {
-        // Non-fatal if initialOutputs cannot be resolved
+      } catch (error) {
+        throw new HeadlessExecutionError('invalid_input', error instanceof Error ? error.message : String(error));
       }
 
-      // 8. Launch real execution via ExecutionManager
+      // Launch execution using the original recovery handles when available.
       const entry = deps.executionManager.createExecution({
         workspaceId,
         nodes: subgraph.nodes as any,
         edges: subgraph.edges as any,
         maxParallel,
         initialOutputs,
+        ...recovery,
       });
 
       const executionId = entry.context.id;

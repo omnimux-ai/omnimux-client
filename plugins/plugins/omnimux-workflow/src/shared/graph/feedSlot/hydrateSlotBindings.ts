@@ -11,10 +11,12 @@ export interface LegacySlotEdge {
 
 /** Only call on absent node bindings; an existing empty map means intentionally empty. */
 export function hydrateSlotBindings(
-  feedAssets: FeedAsset[], layout: SlotLayout, edges: LegacySlotEdge[] = [],
+  feedAssets: FeedAsset[], layout: SlotLayout, edges: LegacySlotEdge[] = [], standbyEdgeIds: readonly string[] = [],
 ): FillResult {
   const explicit: SlotBindings = {};
+  const standby = new Set(standbyEdgeIds);
   for (const asset of feedAssets) {
+    if (standby.has(asset.edgeId)) continue;
     const edge = edges.find((candidate) => candidate.id === asset.edgeId);
     const data = edge?.data ?? {};
     const slotName = readExplicitTargetSlot(data, edge?.targetHandle) ?? asset.targetSlot;
@@ -28,5 +30,5 @@ export function hydrateSlotBindings(
         outputId: asset.outputId, pinned: !slot || !acceptsFeedAsset(slot, asset) });
     }
   }
-  return autoFillSlots(feedAssets, layout, explicit);
+  return autoFillSlots(feedAssets, layout, explicit, standbyEdgeIds);
 }

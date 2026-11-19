@@ -13,8 +13,10 @@ import { ExecutionContext } from './ExecutionContext';
 import { ExecutionScheduler } from './ExecutionScheduler';
 import { loadExecutionRecord, listPersistedExecutionIds, buildExecutionRecord, type PersistedExecutionRecord } from './executionStore';
 import { readUpstreamTaskRef } from './upstreamTask.ts';
+import { lacksPriorProjectDigest, matchesWithPreviousNodePrompt } from './executionIdentity.ts';
 import { resolveExecutorKey } from './nodeExecutors.ts';
 import { canonicalJson } from '../../shared/validation/compatKernel.ts';
+import { compareLegacyExecutionInput, UnverifiedLegacyTask } from './legacyExecutionInput.ts';
 import type { UpstreamTaskRef } from '../seam/gateway.ts';
 import { createDispatchingNodeExecutor } from './nodeExecutors';
 import { createMaterialGatewayExecutor } from './materialGatewayExecutor';
@@ -176,7 +178,15 @@ function findRecoverableTasks(
   deps: ExecutionManagerDeps,
   entries: Map<string, ExecutionEntry>,
   opts: CreateExecutionOptions,
+  acceptedTasks: Record<string, UpstreamTaskRef> = {},
 ): { tasks: Record<string, UpstreamTaskRef>; inputsChanged: Record<string, boolean> } {
+  // Keep handles fixed by admission. A different submission may have failed with
+  // a recoverable handle while admission awaited the catalog or source files.
+  const tasks = { ...acceptedTasks };
+  const inputsChanged: Record<string, boolean> = Object.fromEntries(Object.keys(tasks).map(id => [id, false]));
+  const candidates = opts.nodes.filter(node => !Object.hasOwn(tasks, node.id) && resolveExecutorKey(node) === 'material:generate');
+  if (!candidates.length) return { tasks, inputsChanged };
+
   const records = new Map<string, PersistedExecutionRecord>();
   for (const id of listPersistedExecutionIds(deps.executionsDir)) {
     const record = loadExecutionRecord(deps.executionsDir, id);
@@ -190,10 +200,8 @@ function findRecoverableTasks(
   const ordered = [...records.values()].reverse().filter(record => record.workspaceId === opts.workspaceId)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const signatures = opts.inputSignatures ?? executionInputSignatures(opts);
-  const tasks: Record<string, UpstreamTaskRef> = {};
-  const inputsChanged: Record<string, boolean> = {};
-  for (const node of opts.nodes) {
-    if (resolveExecutorKey(node) !== 'material:generate') continue;
+  const sourceIdentities = opts.sourceIdentities ?? executionSourceIdentities(opts, undefined, { workspaceId: opts.workspaceId, resolveProjectFile: deps.resolveProjectFile });
+  for (const node of candidates) {
     // Re-running a scheduled dependency can change its output after admission.
     if (opts.edges.some(edge => edge.target === node.id && opts.nodes.some(source => source.id === edge.source))) continue;
     const previous = ordered.find(record => record.nodes.some(candidate => candidate.id === node.id));
@@ -201,14 +209,33 @@ function findRecoverableTasks(
     const saved = previous.variables.executionInputSignatures as Record<string, string> | undefined;
     inputsChanged[node.id] = !saved?.[node.id] || saved[node.id] !== signatures[node.id];
     const savedBytes = previous.variables.executionSourceIdentities as Record<string, Record<string, string>> | undefined;
-    const currentBytes = (opts.sourceIdentities ?? executionSourceIdentities(opts))[node.id] ?? {};
-    if (Object.entries(currentBytes).some(([path, digest]) => savedBytes?.[node.id]?.[path] && savedBytes?.[node.id]?.[path] !== digest)) inputsChanged[node.id] = true;
-    if (inputsChanged[node.id] || previous.status !== 'error') continue;
+    const currentBytes = sourceIdentities[node.id] ?? {};
+    if (Object.entries(currentBytes).some(([path, digest]) => digest && savedBytes?.[node.id]?.[path] && savedBytes?.[node.id]?.[path] !== digest)) {
+      inputsChanged[node.id] = true;
+      continue;
+    }
+    if (previous.status !== 'error') continue;
     const state = previous.nodeStates[node.id];
     const ref = readUpstreamTaskRef(state?.upstreamTask);
     if (state?.status !== 'error' || !ref || ref.owner === 'mock') continue;
     const kind = node.data?.materialType ?? 'text';
     if (ref.capability !== kind) continue;
+    const savedSignature = saved?.[node.id];
+    if (inputsChanged[node.id] && ref.omittedNodePrompt && opts.rawGraph && savedSignature
+      && previous.variables.executionInputSignatureScope === 'workspace') {
+      const previousPrompt = previous.nodes.find(candidate => candidate.id === node.id)?.data?.prompt;
+      if (matchesWithPreviousNodePrompt(opts.rawGraph, node.id, previousPrompt, savedSignature)) {
+        if (lacksPriorProjectDigest(currentBytes, savedBytes?.[node.id])) throw new UnverifiedLegacyTask(node.id, previous.id, ref.taskId, false);
+        inputsChanged[node.id] = false;
+      }
+    }
+    if (inputsChanged[node.id]) {
+      if (!opts.rawGraph || !savedSignature) continue;
+      const match = compareLegacyExecutionInput(opts.rawGraph, previous, node.id, savedSignature, deps, opts.legacyCatalogProjection);
+      if (match === 'unverified' || match === 'catalog-needed') throw new UnverifiedLegacyTask(node.id, previous.id, ref.taskId, match === 'catalog-needed');
+      if (match === 'changed') continue;
+      inputsChanged[node.id] = false;
+    }
     // Direct callers additionally prove unchanged pre-seeded outputs.
     if (!opts.inputSignatures && canonicalJson(opts.initialOutputs ?? {}) !== canonicalJson(
       Object.fromEntries(Object.entries(previous.nodeOutputs).filter(([id]) => !previous.nodes.some(candidate => candidate.id === id))),
@@ -228,12 +255,9 @@ function createExecutionInstance(
     nodes: structuredClone(opts.nodes),
     edges: structuredClone(opts.edges),
     initialOutputs: structuredClone(opts.initialOutputs),
+    sourceIdentities: opts.sourceIdentities ?? executionSourceIdentities(opts, undefined, { workspaceId: opts.workspaceId, resolveProjectFile: deps.resolveProjectFile }),
   };
-  const checked = findRecoverableTasks(deps, entries, opts);
-  const recovery = opts.recoveryTasks ? {
-    tasks: opts.recoveryTasks,
-    inputsChanged: { ...checked.inputsChanged, ...Object.fromEntries(Object.keys(opts.recoveryTasks).map(id => [id, false])) },
-  } : checked;
+  const recovery = findRecoverableTasks(deps, entries, opts, opts.recoveryTasks);
   const breakpointsList = opts.breakpoints || [];
   const breakpoints = new Set(breakpointsList);
   const context = new ExecutionContext({
@@ -243,8 +267,9 @@ function createExecutionInstance(
   });
   if (opts.request) context.set('executionRequest', opts.request);
   context.set('executionInputSignatures', opts.inputSignatures ?? executionInputSignatures(opts));
+  if (opts.inputSignatures) context.set('executionInputSignatureScope', 'workspace');
   context.set('executionInputsChanged', recovery.inputsChanged);
-  context.set('executionSourceIdentities', opts.sourceIdentities ?? executionSourceIdentities(opts));
+  context.set('executionSourceIdentities', opts.sourceIdentities);
   for (const [nodeId, upstreamTask] of Object.entries(recovery.tasks)) {
     context.nodeStates.set(nodeId, { status: 'pending', startedAt: null, completedAt: null, error: null, upstreamTask });
   }

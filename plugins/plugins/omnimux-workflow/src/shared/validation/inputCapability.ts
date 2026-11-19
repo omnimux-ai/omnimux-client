@@ -20,6 +20,7 @@ import {
   isMediaInputType,
   mapLegacyOperation,
   matchOperationInputs,
+  operationAcceptsText,
   resolveModelView,
   type ContractModelView,
   type ContractOperationView,
@@ -53,6 +54,8 @@ export interface InputCapabilityOperationState {
   consumes: boolean;
   /** R2 + R2b: usable for generation under the current connected inputs. */
   usable: boolean;
+  /** The user can choose this mode before attaching its inputs. Readiness still checks the chosen slots. */
+  selectableBeforeInputs?: boolean;
   /** R3 ordering: required media slots that are actually filled. */
   requiredMediaHits: number;
   /** R3 ordering: media slots with at least one occupied input. */
@@ -343,9 +346,13 @@ export function buildInputCapability(args: InputCapabilityArgs): InputCapability
   // operation availability gates. The selected operation still needs its own
   // required slots satisfied; extra ready supply is silently unused.
   const ignoreUnused = isVideoCapability;
-  const operationStates = listed.map(({ operation, order }) =>
-    evaluateOperation(operation, order, fingerprint, counts, { ignoreUnused }),
-  );
+  const hasMediaOnlyLipSync = model.hasGatewayInputContract && listed.some(({ operation }) =>
+    operation.id === 'digital_human' && !operationAcceptsText(model, operation));
+  const operationStates = listed.map(({ operation, order }) => {
+    const state = evaluateOperation(operation, order, fingerprint, counts, { ignoreUnused });
+    if (hasMediaOnlyLipSync && (operation.id === 'digital_human' || operation.id === 'text_to_video')) state.selectableBeforeInputs = true;
+    return state;
+  });
   const preferredRaw = typeof args.preferredOperationId === 'string' && args.preferredOperationId.trim()
     ? mapLegacyOperation(args.preferredOperationId.trim())
     : '';
@@ -365,7 +372,7 @@ export function buildInputCapability(args: InputCapabilityArgs): InputCapability
   // adding a legacy audio edge must not require the user to re-pick that mode.
   const currentId = preferred?.id ?? autoRaw;
   const current = currentId ? operationStates.find((state) => state.id === currentId) : undefined;
-  if (preferred?.usable) {
+  if (preferred?.usable || preferred?.selectableBeforeInputs) {
     selected = preferred;
   } else if (current && !current.usable && strictCandidates.length === 0) {
     // #62: when no mode is strictly usable, a saved mode whose required inputs are

@@ -1,11 +1,13 @@
 import type { Edge } from '@xyflow/react';
 import type { CanvasInputMutationState, CanvasMutationRuntimeContext, CanvasNode } from './canvasInputMutationGateway.ts';
 import type { MaterialType } from '../canvasTypes.ts';
-import { buildCanvasUpstreamFingerprint, readCanvasParams } from './canvasInputSources.ts';
+import type { MaterialNodeData } from './materialNode.ts';
+import { readCanvasParams } from './canvasInputSources.ts';
 import { buildContractView, buildUpstreamFingerprint, isMediaInputType, matchOperationInputs, planAutoAdaptation, resolveModelView } from '../validation/compatKernel.ts';
 import { buildInputCapability } from '../validation/inputCapability.ts';
 import { autoFillSlots, deriveSlotLayout, hydrateSlotBindings, type SlotBindings, type SlotConflict, type SlotOccupant } from './feedSlot/index.ts';
 import { effectiveSlotFingerprint, feedFromFingerprint } from './feedSlot/effectiveFingerprint.ts';
+import { projectCanvasInputSources } from './feedSlot/legacyH3Slots.ts';
 import { resolveSlotOperation } from './feedSlot/resolveSlotOperation.ts';
 import { narrowCatalogByRouting } from '../validation/lineConstraints.ts';
 
@@ -17,8 +19,12 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
   const catalog = narrowCatalogByRouting(context.catalog, params.model, params.routing);
   const outputType = node.data.materialType as MaterialType;
   const currentVersion = node.data.inputBindingVersion === 1;
-  const raw = buildCanvasUpstreamFingerprint(node.id, graph.nodes, graph.edges);
   const view = buildContractView(catalog);
+  const savedModel = typeof params.model === 'string' ? resolveModelView(view, params.model) : undefined;
+  const projected = projectCanvasInputSources(node.id, node.data, graph.nodes, graph.edges, catalog, savedModel);
+  if (projected.data !== node.data) node = { ...node, data: projected.data };
+  if (projected.edges !== graph.edges) graph = { ...graph, edges: projected.edges };
+  const raw = projected.fingerprint;
   if (!params.model && catalog) {
     const recommended = catalog.defaultOperations?.[outputType];
     const pick = planAutoAdaptation({ catalog, outputType, preferredModelId: context.preferredModels?.[outputType],
@@ -33,7 +39,7 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
       params.operation ??= recommendedId ?? pick.operationId;
     }
   }
-  const model = resolveModelView(view, typeof params.model === 'string' ? params.model : undefined);
+  const model = savedModel ?? resolveModelView(view, typeof params.model === 'string' ? params.model : undefined);
   if (model) params.model = model.id;
   const modelRecommendation = catalog?.defaultOperations?.[outputType];
   const recommendedId = modelRecommendation?.modelId === model?.id ? modelRecommendation?.operationId : undefined;
@@ -54,6 +60,7 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
   const strandedBySupply = Boolean(savedOp && !matchOperationInputs(savedOp, raw).accepts
     && raw.assets.some((asset) => isMediaInputType(asset.type) && asset.availability === 'ready'));
   let autoDerived: string | undefined;
+  let selectableBeforeInputs = false;
   const preferredOperationId = systemChosen ? undefined : savedOperation;
   if (outputType === 'video' && model) {
     // Epic #63: video operation follows the connected media. The capability
@@ -75,6 +82,7 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
       params.operation = capability.selectedOperationId;
       autoDerived = capability.selectedOperationId;
     }
+    selectableBeforeInputs = capability.operationStates.some(state => state.id === params.operation && state.selectableBeforeInputs);
   } else if ((!savedOperation || legacyChat || (systemChosen && strandedBySupply)) && model) {
     // A node without a saved mode starts in the catalog's recommended one — the mode that
     // consumes upstream media, so its slots exist from the first render. A saved mode, an
@@ -89,13 +97,30 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
   const layout = deriveSlotLayout(catalog, model?.id, operation?.id);
   const feed = feedFromFingerprint(raw, currentVersion ? 1 : undefined);
   const plainSpeech = !currentVersion && outputType === 'audio' && params.operation === 'text_to_speech';
-  let explicit = plainSpeech ? {} : node.data.slotBindings as SlotBindings | undefined;
+  const priorParams = previous ? readCanvasParams(previous) : {};
+  const cached = node.data.parkedLipSyncInputs as MaterialNodeData['parkedLipSyncInputs'];
+  const sameModel = model && model.id === priorParams.model;
+  const restoring = selectableBeforeInputs && sameModel && priorParams.operation === 'text_to_video'
+    && params.operation === 'digital_human' && cached?.model === model.id
+    && node.data.slotBindings === previous?.data.slotBindings ? cached : undefined;
+  const standbyIds = Array.isArray(node.data.slotStandbyEdgeIds) ? node.data.slotStandbyEdgeIds.filter((id): id is string => typeof id === 'string') : [];
+  const excludedOnRestore = restoring && model?.id === 'minimax-h3-video' ? new Set(standbyIds) : undefined;
+  const storedConflicts = restoring ? restoring.conflicts?.filter(conflict => !excludedOnRestore?.has(conflict.occupant.edgeId))
+    : node.data.slotConflicts as SlotConflict[] | undefined;
+  let explicit = plainSpeech ? {} : restoring?.bindings ?? node.data.slotBindings as SlotBindings | undefined;
   if (!currentVersion && outputType === 'text' && explicit && Object.keys(explicit).length === 0 && (!node.data.slotStandbyEdgeIds || (node.data.slotStandbyEdgeIds as unknown[]).length === 0)) {
     explicit = undefined;
   }
-  const priorParams = previous ? readCanvasParams(previous) : {};
   const modeChanged = previous && (priorParams.operation !== params.operation || priorParams.model !== params.model);
-  const standbyIds = Array.isArray(node.data.slotStandbyEdgeIds) ? node.data.slotStandbyEdgeIds.filter((id): id is string => typeof id === 'string') : [];
+  const verifiedH3Lip = selectableBeforeInputs && model?.id === 'minimax-h3-video' && params.operation === 'digital_human';
+  // A return to a previously configured mode is an explicit user edit. Freeze exactly its
+  // earlier choices so subsequent legacy auto-fill cannot substitute other connected media.
+  const upgradeRestored = !currentVersion && verifiedH3Lip && Boolean(restoring);
+  const savedClears = !modeChanged && !newEdgeIds.size && verifiedH3Lip && explicit !== undefined
+    && (Object.keys(explicit).length === 0 || Object.values(explicit).some(occupants => occupants.length === 0));
+  const useSavedSlots = currentVersion || upgradeRestored || savedClears;
+  const keepSavedLipSlots = selectableBeforeInputs && params.operation === 'digital_human'
+    && useSavedSlots && (!modeChanged || (verifiedH3Lip && Boolean(restoring)));
   // A V1 occupant is authoritative only while its source node and edge still exist on the
   // canvas. Unpinned (auto-filled) occupants whose supply vanished are junk that must be
   // pruned here, otherwise the stale binding keeps re-persisting and the node stays blocked
@@ -112,12 +137,13 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
     explicit = Object.fromEntries(Object.entries(explicit)
       .map(([slot, occupants]) => [slot,
         occupants
-          .filter((occupant) => currentVersion ? (isLiveOccupant(occupant) || occupant.pinned) : (!modeChanged || occupant.pinned))
+          .filter((occupant) => !excludedOnRestore?.has(occupant.edgeId)
+            && (useSavedSlots ? (isLiveOccupant(occupant) || occupant.pinned) : (!modeChanged || occupant.pinned)))
           .map((occupant) => ({ ...occupant }))] as const)
       // Drop slots emptied by pruning so the node does not keep a `{slot: []}` residue
       // that reads as an explicit user-clear to downstream readers.
-      .filter(([, occupants]) => occupants.length > 0));
-    for (const conflict of (plainSpeech ? [] : node.data.slotConflicts ?? []) as SlotConflict[]) {
+      .filter(([slot, occupants]) => occupants.length > 0 || (keepSavedLipSlots && explicit?.[slot]?.length === 0)));
+    for (const conflict of (plainSpeech ? [] : storedConflicts ?? [])) {
       const occupants = explicit[conflict.slot] ??= [];
       if (!occupants.some((item) => item.edgeId === conflict.occupant.edgeId)) occupants.push({ ...conflict.occupant });
     }
@@ -126,7 +152,7 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
     for (const edge of newEdges) {
       const asset = feed.find((item) => item.edgeId === edge.id);
       if (!asset) continue;
-      if (currentVersion) {
+      if (useSavedSlots) {
         // V1 plain connects carry no picker hint. A composed text slot is the
         // one slot that consumes every new text source as ordered body text;
         // append it instead of letting max=1 replace the earlier source.
@@ -180,19 +206,26 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
   // still exist keep their occupants (pinned choices included), stale keys are released and
   // auto-filled into the operation's own slots. A user-cleared `{}` stays cleared.
   const layoutSlotNames = new Set(layout.slots.map((slot) => slot.slot));
-  const renormalized = explicit && Object.keys(explicit).some((slot) => !layoutSlotNames.has(slot))
+  const renormalized = !keepSavedLipSlots && explicit && Object.keys(explicit).some((slot) => !layoutSlotNames.has(slot))
     ? autoFillSlots(feed, layout, Object.fromEntries(Object.entries(explicit).filter(([slot]) => layoutSlotNames.has(slot))), standbyIds)
     : undefined;
-  const fill = currentVersion
+  const fill = useSavedSlots
     ? (filledAnything ? selfHealed!
-      : renormalized ?? { bindings: explicit ?? {}, conflicts: (node.data.slotConflicts ?? []) as SlotConflict[] })
-    : explicit ? autoFillSlots(feed, layout, explicit, standbyIds) : hydrateSlotBindings(feed, layout, graph.edges.filter((edge) => edge.target === node.id));
-  const fingerprint = effectiveSlotFingerprint(raw, layout, fill.bindings, fill.conflicts, currentVersion ? 1 : undefined);
+      : renormalized ?? { bindings: explicit ?? {}, conflicts: storedConflicts ?? [] })
+    : explicit ? autoFillSlots(feed, layout, explicit, standbyIds) : hydrateSlotBindings(feed, layout, graph.edges.filter((edge) => edge.target === node.id), standbyIds);
+  const fingerprint = effectiveSlotFingerprint(raw, layout, fill.bindings, fill.conflicts, currentVersion || upgradeRestored ? 1 : undefined);
   const match = operation && permitted ? matchOperationInputs(operation, fingerprint) : undefined;
   const reasonCodes = !view.available ? ['catalog_unavailable'] : !permitted ? ['not_listed'] : !model ? ['unknown_model']
     : !operation ? ['operation_incompatible'] : [...(match?.rejections ?? []), ...(match?.pending ?? [])].map((item) => item.code);
   if (fill.conflicts.length) reasonCodes.push('role_conflict');
-  return { ...node, data: { ...node.data, params, ...(autoDerived ? { autoOperationId: autoDerived } : {}),
+  const data = { ...node.data };
+  if (upgradeRestored) data.inputBindingVersion = 1;
+  if (selectableBeforeInputs && sameModel && params.operation === 'text_to_video' && priorParams.operation === 'digital_human' && previous?.data.slotBindings) {
+    data.parkedLipSyncInputs = { model: model.id, bindings: previous.data.slotBindings, conflicts: previous.data.slotConflicts };
+  } else if (params.operation !== 'text_to_video' || cached?.model !== model?.id) {
+    delete data.parkedLipSyncInputs;
+  }
+  return { ...node, data: { ...data, params, ...(autoDerived ? { autoOperationId: autoDerived } : {}),
     slotBindings: fill.bindings, slotConflicts: fill.conflicts,
     compat: { status: operation && permitted ? 'ok' : 'configuration_error', acceptsCurrentInputs: match?.accepts ?? false,
       readyToSubmit: Boolean(match?.ready), operation: operation?.id, reasonCodes,

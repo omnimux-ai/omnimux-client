@@ -4,14 +4,13 @@ import { buildInputCapability } from '../../validation/inputCapability.ts';
 import { readNodeInputSource } from '../nodeInputSource.ts';
 import { resolveNodeKind } from '../materialNode.ts';
 import { materialTools } from '../../specs/nodes/materialNodeSpec.ts';
+import { H3_SLOT_RENAMES, projectCanvasInputSources } from './legacyH3Slots.ts';
 import { deriveSlotLayout } from './deriveSlotLayout.ts';
 import { readPreferredOperationId } from '../../validation/operationUi.ts';
 import { effectiveInputDisplay } from './effectiveInputDisplay.ts';
 import type { LegacySlotEdge } from './hydrateSlotBindings.ts';
 import type { FeedAsset, SlotBindings, SlotConflict } from './types.ts';
-import { buildCanvasUpstreamFingerprint } from '../canvasInputSources.ts';
 import type { CanvasNode } from '../canvasInputMutationGateway.ts';
-import type { Edge } from '@xyflow/react';
 import { resolveSlotOperation } from './resolveSlotOperation.ts';
 import { normalizeVideoParamsForSchema } from '../../../canvas/editor/components/MaterialNode/ConfigPanel/videoParams/videoParamNormalization.ts';
 
@@ -23,7 +22,7 @@ export function prepareExecutionSlotGraph<
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const view = buildContractView(catalog);
   const ordinalByTarget = new Map<string, number>();
-  const nextEdges = edges.map((edge) => {
+  let nextEdges = edges.map((edge) => {
     const ordinal = ordinalByTarget.get(edge.target) ?? 0;
     ordinalByTarget.set(edge.target, ordinal + 1);
     return { ...structuredClone(edge), id: edge.id ?? `feed-${edge.source}-${ordinal}`,
@@ -35,15 +34,18 @@ export function prepareExecutionSlotGraph<
       ? node.data.outputCapabilityId.trim()
       : '';
     if (capabilityId && materialTools[capabilityId]?.executorKey) return structuredClone(node);
-    const data = structuredClone(node.data ?? {});
+    let data = structuredClone(node.data ?? {});
     let params = (data.params ?? {}) as Record<string, unknown>;
     const kind = (data.materialType ?? 'text') as keyof NonNullable<CapabilityCatalog['defaults']>;
     const autoOperationId = typeof data.autoOperationId === 'string' || data.autoOperationId === null
       ? data.autoOperationId as string | null
       : undefined;
     const model = resolveModelView(view, (params.model ?? catalog?.defaults?.[kind]) as string | undefined);
+    const projected = projectCanvasInputSources(node.id, data, nodes as unknown as CanvasNode[], nextEdges, catalog, model);
+    data = projected.data;
+    nextEdges = projected.edges;
     params.model ??= model?.id;
-    const fingerprint = buildCanvasUpstreamFingerprint(node.id, nodes as unknown as CanvasNode[], nextEdges as unknown as Edge[]);
+    const fingerprint = projected.fingerprint;
     if (kind === 'video') {
       // R9: inputCapability decides the operation from the connected media;
       // #55 below only normalizes the values against that operation schema.
@@ -60,6 +62,18 @@ export function prepareExecutionSlotGraph<
       });
       if (capability.selectedOperationId) params.operation = capability.selectedOperationId;
       if (capability.paramsProjection) params = capability.paramsProjection.params;
+      // A saved or click-time snapshot may still carry the previous lip-sync
+      // wells after the user explicitly switched to text. Keep the original
+      // graph intact and use only the current operation's inputs in this run.
+      const textMode = capability.operationStates.find(state => state.id === 'text_to_video');
+      if (params.operation === textMode?.id && textMode?.selectableBeforeInputs && data.slotBindings) {
+        const lip = model?.operations.find(operation => operation.id === 'digital_human');
+        const dormant = new Set(lip?.inputs.filter(input => input.type === 'image' || input.type === 'audio').map(input => input.slot));
+        for (const rename of H3_SLOT_RENAMES) if (dormant.has(rename.to)) dormant.add(rename.from);
+        for (const input of model?.operations.find(operation => operation.id === textMode.id)?.inputs ?? []) dormant.delete(input.slot);
+        data.slotBindings = Object.fromEntries(Object.entries(data.slotBindings).filter(([slot]) => !dormant.has(slot)));
+        if (Array.isArray(data.slotConflicts)) data.slotConflicts = data.slotConflicts.filter(conflict => !dormant.has(conflict.slot));
+      }
     } else {
       params.operation ??= resolveSlotOperation(catalog, model?.id, params.operation, kind, fingerprint);
     }

@@ -3,8 +3,8 @@ import { test } from 'node:test';
 import { build } from 'esbuild';
 import { fileURLToPath } from 'node:url';
 const dir = fileURLToPath(new URL('.', import.meta.url));
-const bundle = await build({ stdin: { contents: "export { createExecutionRoutes } from '../routes/executionRoutes.ts'; export { createWorkflowRunTool } from '../agent/agentReadTools.ts';", resolveDir: dir }, bundle: true, write: false, format: 'esm', platform: 'node' });
-const { createExecutionRoutes, createWorkflowRunTool } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
+const bundle = await build({ stdin: { contents: "export { createHeadlessExecutionSeam } from './HeadlessExecutionSeam.ts'; export { createExecutionRoutes } from '../routes/executionRoutes.ts'; export { createWorkflowRunTool } from '../agent/agentReadTools.ts';", resolveDir: dir }, bundle: true, write: false, format: 'esm', platform: 'node' });
+const { createHeadlessExecutionSeam, createExecutionRoutes, createWorkflowRunTool } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
 
 test('HTTP and Agent reject a missing required prompt without reviving historical source text', async () => {
   let creates = 0;
@@ -89,4 +89,38 @@ test('IN-01/27: valid current source enters the same execution snapshot through 
   assert.equal(captures.length, 2);
   assert.deepEqual(captures[0], captures[1]);
   assert.deepEqual(captures[0].initialOutputs, { source: { text: '1dog' } });
+});
+
+test('all entries collect the same paid task after its model leaves the catalog', async () => {
+  const workspace = { id: 'ws_resume', version: 1, name: 'resume', settings: {}, edges: [],
+    nodes: [{ id: 'target', type: 'material', data: { materialType: 'video', params: { model: 'unlisted' } } }] };
+  const ref = { taskId: 'existing', owner: 'omnimux', capability: 'video', submittedAt: 1 };
+  const calls = [];
+  const manager = {
+    findRecoverableTasks(input) {
+      assert.equal(input.workspaceId, workspace.id);
+      assert.ok(input.inputSignatures.target);
+      return { target: ref };
+    },
+    createExecution(input) {
+      calls.push(input);
+      return { context: { id: 'collected', status: 'pending', workflowId: workspace.id }, createdAt: 2 };
+    },
+  };
+  const deps = { store: { get: () => workspace, resolveProjectRoot: () => '/tmp' },
+    getCatalog: () => { throw new Error('collection must not depend on a current catalog'); },
+    executionManager: manager, mediaDir: '/tmp' };
+  const http = await createExecutionRoutes(deps).tryHandle('POST', '/omnimux-workflow/api/workspaces/ws_resume/executions',
+    { body: { mode: 'single', nodeIds: ['target'] } });
+  assert.equal(http.status, 200);
+  const agent = await createWorkflowRunTool(deps).execute({ workspace_id: workspace.id, mode: 'single', node_ids: ['target'] });
+  assert.equal(agent.executionId, 'collected');
+  const headless = await createHeadlessExecutionSeam({ ...deps, workspaceStore: deps.store }).executeHeadless({
+    workspaceId: workspace.id, mode: 'single', nodeIds: ['target'] });
+  assert.equal(headless.executionId, 'collected');
+  assert.equal(calls.length, 3);
+  for (const call of calls) {
+    assert.deepEqual(call.recoveryTasks, { target: ref });
+    assert.deepEqual(call.nodes, workspace.nodes);
+  }
 });
