@@ -448,16 +448,20 @@ export function inspectTestAuthoringDelta(before, after, trustedFacts = {}) {
 
 /**
  * `## 旧标准变更` declaration lines: `- `<repo-relative path>` :: `<case name>``.
- * A strict single-line shape keeps matching unambiguous; anything else is not a declaration.
+ * Use a double-backtick case fence when the case name contains literal single backticks.
+ * A strict single-line shape keeps matching unambiguous.
  */
-const OLD_STANDARD_DECLARATION = /^\s*[-*]\s+`([^`]+)`\s*::\s*`([^`]+)`\s*$/
+const OLD_STANDARD_DECLARATION = /^\s*[-*]\s+`([^`]+)`\s*::\s*(?:`([^`]+)`|``([^`]+(?:`[^`]+)+)``)\s*$/
 
 /** Parse the `## 旧标准变更` section body into declarations. Pure; no filesystem access. */
 export function parseOldStandardDeclarations(sectionText) {
   const out = []
   for (const line of String(sectionText ?? '').split(/\r?\n/)) {
     const match = OLD_STANDARD_DECLARATION.exec(line)
-    if (match) out.push({ path: match[1].trim(), caseName: match[2].trim() })
+    if (match) {
+      const [, path, singleFenced, doubleFenced] = match
+      out.push({ path: path.trim(), caseName: (singleFenced ?? doubleFenced).trim() })
+    }
   }
   return out
 }

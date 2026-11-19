@@ -1,6 +1,6 @@
 import { after, describe, it } from 'node:test'
 import { chmodSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, writeFileSync, symlinkSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
@@ -1205,17 +1205,18 @@ describe('guard-worktree materialization safety guard (多 Agent 物化防覆盖
 })
 
 describe('guard-worktree unbounded scan guard (全盘扫盘硬拦截)', () => {
-  const home = '/Users/x'
+  const home = homedir().replace(/\/+$/, '')
+  const homeArgument = /^[/\w.-]+$/.test(home) ? home : '$HOME'
   const project = '.'
 
   it('denies the incident command: find over the user home directory', () => {
     const result = decideBashCommand({
-      command: 'find /Users/x -name "*insp_ad704927*" 2>/dev/null',
+      command: `find ${homeArgument} -name "*insp_ad704927*" 2>/dev/null`,
       cwd: project,
     })
     assert.equal(result.decision, 'deny')
     assert.equal(result.reason, 'forbidden-unbounded-scan')
-    assert.equal(result.target, '/Users/x')
+    assert.equal(result.target, home)
     assert.equal(result.binary, 'find')
   })
 
@@ -1230,10 +1231,10 @@ describe('guard-worktree unbounded scan guard (全盘扫盘硬拦截)', () => {
   it('denies recursive grep/rg/du/ls -R against a traversal root', () => {
     const commands = [
       'grep -r "TODO" /Users',
-      'rg --hidden foo /Users/x',
-      'du -sh /Users/x',
-      'ls -R /Users/x',
-      'find /Users/x -type f -name "*.mov"',
+      `rg --hidden foo ${homeArgument}`,
+      `du -sh ${homeArgument}`,
+      `ls -R ${homeArgument}`,
+      `find ${homeArgument} -type f -name "*.mov"`,
     ]
     for (const command of commands) {
       const result = decideBashCommand({ command, cwd: home })
@@ -1244,12 +1245,12 @@ describe('guard-worktree unbounded scan guard (全盘扫盘硬拦截)', () => {
 
   it('denies `cd <home> && find .` where the sweep root is armed by the previous segment', () => {
     const result = decideBashCommand({
-      command: 'cd /Users/x && find . -name "*insp*"',
+      command: `cd ${homeArgument} && find . -name "*insp*"`,
       cwd: home,
     })
     assert.equal(result.decision, 'deny')
     assert.equal(result.reason, 'forbidden-unbounded-scan')
-    assert.equal(result.target, '/Users/x')
+    assert.equal(result.target, home)
   })
 
   it('allows bounded searches inside the project and scoped find depth', () => {
@@ -1257,14 +1258,14 @@ describe('guard-worktree unbounded scan guard (全盘扫盘硬拦截)', () => {
       'find . -name "*.mjs"',
       'find plugins -name "*.js"',
       'find . -name "*.md"',
-      'find /Users/x -maxdepth 2 -name "*.json"',
-      'find /Users/x -maxdepth=3 -type d',
+      `find ${homeArgument} -maxdepth 2 -name "*.json"`,
+      `find ${homeArgument} -maxdepth=3 -type d`,
       'rg "TODO" plugins/scripts',
       'grep -rn "guard" scripts/',
       'ls -la plugins',
       'cd . && find . -name "*.md"',
       'find ~/Movies -name "*.mov"',
-      'cd /Users/x && ls -la',
+      `cd ${homeArgument} && ls -la`,
     ]
     for (const command of commands) {
       const result = decideBashCommand({ command, cwd: project })
@@ -1273,7 +1274,7 @@ describe('guard-worktree unbounded scan guard (全盘扫盘硬拦截)', () => {
   })
 
   it('classifies scan roots without flagging project-internal paths', () => {
-    assert.equal(isUnboundedScanRoot('/Users/x'), true)
+    assert.equal(isUnboundedScanRoot(home), true)
     assert.equal(isUnboundedScanRoot('/'), true)
     assert.equal(isUnboundedScanRoot('~'), true)
     assert.equal(isUnboundedScanRoot('.'), false)
@@ -1283,11 +1284,11 @@ describe('guard-worktree unbounded scan guard (全盘扫盘硬拦截)', () => {
   it('guards the glob and grep tools when their path argument names a traversal root', () => {
     const deniedGlob = decideSearchTarget({
       toolName: 'glob',
-      toolInput: { pattern: '**/*insp_ad704927*', path: '/Users/x' },
+      toolInput: { pattern: '**/*insp_ad704927*', path: home },
     })
     assert.equal(deniedGlob.decision, 'deny')
     assert.equal(deniedGlob.reason, 'forbidden-unbounded-scan')
-    assert.equal(deniedGlob.target, '/Users/x')
+    assert.equal(deniedGlob.target, home)
 
     assert.equal(decideSearchTarget({ toolName: 'grep', toolInput: { pattern: 'TODO', path: '/' } }).decision, 'deny')
 
@@ -1304,7 +1305,7 @@ describe('guard-worktree unbounded scan guard (全盘扫盘硬拦截)', () => {
       hook_event_name: 'PreToolUse',
       tool_name: 'bash',
       cwd: home,
-      tool_input: { command: 'find /Users/x -name "*insp*"' },
+      tool_input: { command: `find ${homeArgument} -name "*insp*"` },
     })
     const result = spawnSync('node', [join(here, 'guard-worktree.mjs')], { input: payload, encoding: 'utf8' })
     assert.equal(result.status, 0, result.stderr)
@@ -1320,7 +1321,7 @@ describe('guard-worktree unbounded scan guard (全盘扫盘硬拦截)', () => {
       hook_event_name: 'PreToolUse',
       tool_name: 'default_api:glob',
       cwd: home,
-      tool_input: { pattern: '**/*insp_ad704927*', path: '/Users/x' },
+      tool_input: { pattern: '**/*insp_ad704927*', path: home },
     })
     const result = spawnSync('node', [join(here, 'guard-worktree.mjs')], { input: payload, encoding: 'utf8' })
     assert.equal(result.status, 0, result.stderr)
