@@ -121,9 +121,9 @@ jobs:
       matrix:
         include:
           - arch: arm64
-            runner: macos-15
+            runner: macos-26
           - arch: x64
-            runner: macos-15-intel
+            runner: macos-26-intel
     defaults:
       run:
         working-directory: app
@@ -132,13 +132,10 @@ jobs:
         with:
           submodules: recursive
           persist-credentials: false
-      - name: Select Xcode for Electron icon compilation
-        env:
-          DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      - name: Report the native icon toolchain
         run: |
           xcodebuild -version
           xcrun actool --version
-          printf 'DEVELOPER_DIR=%s\n' "$DEVELOPER_DIR" >> "$GITHUB_ENV"
       - uses: ./.github/actions/prepare-desktop-package
       - name: Build and verify an unsigned macOS DMG
         env:
