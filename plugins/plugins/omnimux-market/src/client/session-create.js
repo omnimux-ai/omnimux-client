@@ -62,7 +62,15 @@
         const wb = typeof window !== "undefined" ? window.__omnimuxWorkbench : undefined;
         const plazaTitle = typeof lookup === "function" ? (lookup("plaza.title") || "Skills") : "Skills";
         try {
-          window.__omnimuxWorkbench?.open?.({ tabId: "omnimux-market:plaza", sessionId, title: plazaTitle });
+          // open 是异步的，且默认按市场 tab 的 focus=gui 落位；直接带 focus:'split'
+          // 并在 await 后再补 setFocus/展开中栏，否则异步 open 会覆盖后面的状态。
+          const opened = window.__omnimuxWorkbench?.open?.({
+            tabId: "omnimux-market:plaza",
+            sessionId,
+            title: plazaTitle,
+            focus: "split",
+          });
+          if (opened && typeof opened.then === "function") await opened;
         } catch {}
         try { wb?.setFocus?.("split"); } catch {}
         try { wb?.setConversationCollapsed?.(false, { sessionId }); } catch {}

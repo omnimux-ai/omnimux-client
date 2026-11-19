@@ -1,4 +1,4 @@
-    const inject = ["slots", "sessions", "uiWorkspace"];
+    const inject = ["slots", "sessions"];
     // rc.6 list slots require `id`; rc.7+ keyed slots require `key`. Pass both.
     function registerSlot(slots, options, component) {
       const next = { ...options };
@@ -11,11 +11,19 @@
       const sessions = ctx.sessions;
       plazaSessions = sessions;
       try {
-        plazaUiWorkspace = ctx.uiWorkspace ?? (typeof ctx.get === "function" ? ctx.get("uiWorkspace") : null) ?? plazaUiWorkspace;
+        // 不直接读 ctx.uiWorkspace：Cordis 客户端 Proxy 对未 inject 的服务会 throw。
+        // uiWorkspace 是可选能力，懒取不到就保留 null，由 createReadySkillSession 回落 sessions.open。
+        plazaUiWorkspace = (typeof ctx.get === "function" ? ctx.get("uiWorkspace") : null) ?? plazaUiWorkspace;
       } catch {
         // 老壳没有 uiWorkspace：保留 null，由 createReadySkillSession 回落 sessions.open。
       }
       if (typeof ctx.inject === "function") {
+        // 可选服务只能 ctx.inject 懒挂：写进顶层 inject 会让老壳整个插件停在 waiting for activation。
+        ctx.inject(["uiWorkspace"], (c) => {
+          try {
+            plazaUiWorkspace = c.uiWorkspace ?? c.get?.("uiWorkspace") ?? plazaUiWorkspace;
+          } catch {}
+        });
         ctx.inject(["remote"], (c) => {
           try {
             plazaRemote = c.remote ?? c.get?.("remote") ?? plazaRemote;

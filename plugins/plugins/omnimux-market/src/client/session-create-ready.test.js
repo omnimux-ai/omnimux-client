@@ -9,7 +9,7 @@ function deferred() {
   const promise = new Promise((yes, no) => { resolve = yes; reject = no })
   return { promise, resolve, reject }
 }
-function setup({ install, create, attach, draft = '', protectedInput = false, receipt = true, mount = true, uiWorkspace = false, uiSwitches = true } = {}) {
+function setup({ install, create, attach, draft = '', protectedInput = false, receipt = true, mount = true, uiWorkspace = false, uiSwitches = true, openDelay = 0 } = {}) {
   const calls = [], listeners = new Set(), writes = [], wbCalls = [], uiCalls = []
   let current = 'a'
   const state = new Map([
@@ -26,7 +26,13 @@ function setup({ install, create, attach, draft = '', protectedInput = false, re
   const ui = uiWorkspace ? { openSession: id => { uiCalls.push(['openSession', id]); if (uiSwitches) move(id) } } : null
   const context = { plazaSessions: sessions, plazaUiWorkspace: ui, setTimeout, console, window: { __omnimuxWorkbench: {
     getSnapshot: () => ({ sessionId: current }),
-    open: payload => { wbCalls.push(['open', payload, current]) },
+    open: async payload => {
+      wbCalls.push(['open', payload, current])
+      if (openDelay) {
+        await new Promise(resolve => setTimeout(resolve, openDelay))
+        wbCalls.push(['open-done', payload.sessionId])
+      }
+    },
     setFocus: mode => { wbCalls.push(['setFocus', mode]) },
     setConversationCollapsed: (value, opts) => { wbCalls.push(['setConversationCollapsed', value, opts]) },
   }, addEventListener: () => {} }, api: async (method, body) => {
@@ -68,6 +74,8 @@ test('ready flow installs once, attaches nonempty body to B, writes once without
   assert.equal(h.wbCalls[0][1].tabId, 'omnimux-market:plaza')
   assert.equal(h.wbCalls[0][1].sessionId, 'b')
   assert.equal(typeof h.wbCalls[0][1].title, 'string')
+  assert.equal(h.wbCalls[0][1].focus, 'split', 'open 必须直接带 focus=split，避免异步 open 按 gui 覆盖')
+  assert.deepEqual(h.wbCalls.map(call => call[0]), ['open', 'setFocus', 'setConversationCollapsed'])
   assert.deepEqual([...h.wbCalls[1]], ['setFocus', 'split'])
   assert.equal(h.wbCalls[2][0], 'setConversationCollapsed')
   assert.equal(h.wbCalls[2][1], false)
@@ -175,6 +183,17 @@ test('falls back to sessions.open when uiWorkspace is unavailable', async () => 
   assert.deepEqual(h.calls, [['install', 'skill-creator'], ['create', 'w'], ['tryAttach', 'b'], ['open', 'b']])
   assert.equal(h.uiCalls.length, 0)
   assert.equal(h.wbCalls[0][2], 'b', 'workbench.open 必须在会话切到 C 之后')
+})
+
+test('awaits async workbench.open before forcing split focus', async () => {
+  const h = setup({ uiWorkspace: true, openDelay: 20 })
+  const result = await h.run()
+  assert.equal(result.ok, true)
+  assert.deepEqual(
+    h.wbCalls.map(call => call[0]),
+    ['open', 'open-done', 'setFocus', 'setConversationCollapsed'],
+    'setFocus 必须在异步 open 落定之后',
+  )
 })
 
 test('returns session-navigation-unavailable instead of silently waiting when the host never switches', async () => {
