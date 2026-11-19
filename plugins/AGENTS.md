@@ -78,7 +78,7 @@ Select the minimal sufficient checks for the changed surfaces using plugin QA ·
 | Model contracts | `pnpm verify:model-contracts` (incl. cross-plugin) + `pnpm catalog:snapshot:check`; refresh `pnpm hub:interfaces` |
 | Client / Stage / sidebar | Read design.md, UI guidelines, and copy standards first; `pnpm verify:stages` + `node --test scripts/verify-anti-slop.test.mjs`, then worktree browser evidence |
 
-- **Quality Loop (Spec → Code → Verify → Test → Green)**: Enforced mechanically by `scripts/guard-quality-loop.mjs`. Modifying business code requires an active task spec in `specs/`; E2E tests require prior live verification evidence.
+- **Quality Loop (Spec → Code → Verify → Test → Green)**: Apply the [research and design process](../AGENTS.md#从需求到方案) in the task spec before choosing a solution. The existing `scripts/guard-quality-loop.mjs` checks for an active spec on business changes and prior verification evidence for E2E tests.
 - **Specs** live in the task's own worktree (`specs/<feature>.spec.md`, uncommitted or ahead of `origin/main`); never mirror drafts into the primary checkout, which stays a read-only mirror.
 - **Browser acceptance** uses a real browser in the task worktree. Use ego-browser by default, or the worktree web QA runner if it exercises the required journey. Keep screenshots or a report. If neither can verify a required interaction, record it as blocked. Unit tests, HTTP 200, CI `qa:pass`, private harnesses and IAB do not count. For unpacked extensions use `scripts/lib/extension-e2e.mjs` (one browser per run, self-cleaning).
 - **Test environments** use the worktree bootstrap: synthetic `ui` mode by default; `live` needs task-specific credential authorization; never copy shared profiles or type real keys into test pages.
