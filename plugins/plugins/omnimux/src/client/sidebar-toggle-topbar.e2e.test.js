@@ -68,7 +68,16 @@ function setup(html = FIXTURE_HTML) {
   globalThis.HTMLElement = window.HTMLElement
   globalThis.MouseEvent = window.MouseEvent
   globalThis.MutationObserver = window.MutationObserver
+  stubDefaultAnchorRects(window.document)
   return window.document
+}
+
+/** 可见性判定要求真实 rect；jsdom 没有布局，静态锚点候选补视口内默认 rect。 */
+function stubDefaultAnchorRects(doc) {
+  const box = { left: 0, top: 0, width: 280, height: 52, right: 280, bottom: 52, x: 0, y: 0, toJSON() {} }
+  for (const el of doc.querySelectorAll('[data-dsh-better-sidebar], [class*="tabBar"], [class*="topStrip"], [class*="logoRow"]')) {
+    if (!Object.hasOwn(el, 'getBoundingClientRect')) el.getBoundingClientRect = () => box
+  }
 }
 
 function injectedToggle(doc) {
@@ -140,16 +149,20 @@ describe('injected topbar chrome survives throwing DOM operations (jsdom E2E)', 
 
   it('keeps new-session injection working when the stale button cannot be removed', () => {
     const doc = setup()
-    installSidebarToggleTopbar(doc)
-    const staleNewSession = doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`)
-    assert.notEqual(staleNewSession, null)
-    staleNewSession.remove = () => { throw new Error('remove is blocked by host') }
+    const cleanup = installSidebarToggleTopbar(doc)
+    try {
+      const staleNewSession = doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`)
+      assert.notEqual(staleNewSession, null)
+      staleNewSession.remove = () => { throw new Error('remove is blocked by host') }
 
-    let returned
-    assert.doesNotThrow(() => {
-      returned = injectTopbarNewSessionButton(doc, false)
-    }, '移除失败不得让折叠态切换抛错')
-    assert.equal(returned, null, '展开态不保留新会话按钮，返回 null 的契约不变')
+      let returned
+      assert.doesNotThrow(() => {
+        returned = injectTopbarNewSessionButton(doc, false)
+      }, '移除失败不得让折叠态切换抛错')
+      assert.equal(returned, null, '展开态不保留新会话按钮，返回 null 的契约不变')
+    } finally {
+      cleanup()
+    }
   })
 
   it('triggerClick falls back to dispatchEvent when the React props handler throws', () => {

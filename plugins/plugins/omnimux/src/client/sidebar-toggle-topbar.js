@@ -150,20 +150,42 @@ export const RIGHT_EXPAND_ICON_SVG = `<svg data-omnimux-right-expand-icon width=
  * @param {Document | null | undefined} doc
  * @returns {HTMLElement | null}
  */
-export function findOfficialSidebarToggle(doc) {
-  if (!doc || typeof doc.querySelector !== 'function') return null
+function collectOfficialSidebarToggleCandidates(doc) {
+  if (!doc || typeof doc.querySelector !== 'function') return []
   // Never match our own injected topbar toggle (would cause click recursion).
   const notInjected = `:not([${SIDEBAR_TOGGLE_TOPBAR_ATTR}])`
-  for (const label of TOGGLE_ARIA_LABELS) {
-    const byAria = doc.querySelector(`button[aria-label="${label}"]${notInjected}`)
-    if (byAria instanceof HTMLElement) return byAria
+  const seen = new Set()
+  const out = []
+  const push = (el) => {
+    if (el instanceof HTMLElement && !seen.has(el)) {
+      seen.add(el)
+      out.push(el)
+    }
   }
-  const byClass = doc.querySelector(`button.x-Wl6W_toggle${notInjected}, .x-Wl6W_toggle${notInjected}`)
-  if (byClass instanceof HTMLElement) return byClass
-  const fallback = doc.querySelector(
+  for (const label of TOGGLE_ARIA_LABELS) {
+    for (const el of doc.querySelectorAll(`button[aria-label="${label}"]${notInjected}`)) push(el)
+  }
+  for (const el of doc.querySelectorAll(`button.x-Wl6W_toggle${notInjected}, .x-Wl6W_toggle${notInjected}`)) push(el)
+  for (const el of doc.querySelectorAll(
     `[class*="sidebarCol"] [class*="logoRow"] [class*="toggle"]${notInjected}, [class*="sidebarCol"] [class*="logoRow"] button[class*="toggle"]${notInjected}`,
-  )
-  if (fallback instanceof HTMLElement) return fallback
+  )) push(el)
+  return out
+}
+
+export function findOfficialSidebarToggle(doc) {
+  return collectOfficialSidebarToggleCandidates(doc)[0] ?? null
+}
+
+/**
+ * Visible native toggle only (#67 AC-4)：隐藏 bottomPanel 里的同标签按钮可能在
+ * 文档序更前，只隐藏第一个会隐藏错对象，留下可见原生按钮与注入按钮双显。
+ * @param {Document | null | undefined} doc
+ * @returns {HTMLElement | null}
+ */
+export function findVisibleOfficialSidebarToggle(doc) {
+  for (const el of collectOfficialSidebarToggleCandidates(doc)) {
+    if (isNativeControlVisible(el, doc)) return el
+  }
   return null
 }
 
@@ -254,6 +276,35 @@ export function isLeftSidebarCollapsed(doc) {
   if (column && typeof column.closest === 'function') {
     if (safeDom(() => column.closest('[data-sidebar-collapsed]'), null)) return true
   }
+  // Next/rc.3 新壳不再写 data-sidebar-collapsed：折叠态只写在侧栏根 class 上
+  // （实测 `x-Wl6W_root x-Wl6W_collapsed x-Wl6W_railIn x-Wl6W_quietBars`，宽 20px）。
+  // 只看 attribute 会把折叠一直判成展开，new-session 永远不注入。
+  const isShellCollapsed = (el) => {
+    if (!el || el.nodeType !== 1) return false
+    const cls = typeof el.className === 'string' ? el.className : ''
+    if (!/collapsed/i.test(cls)) return false
+    if (/railIn/i.test(cls)) return true
+    const box = safeDom(() => el.getBoundingClientRect?.(), null)
+    return Boolean(box && Number(box.width) > 0 && Number(box.width) <= 24)
+  }
+  const scanAll = (selector) => (typeof doc.querySelectorAll === 'function' ? doc.querySelectorAll(selector) : [])
+  if (column) {
+    if (isShellCollapsed(column)) return true
+    if (typeof column.querySelectorAll === 'function') {
+      for (const el of column.querySelectorAll('[class*="railIn"], [class*="collapsed"]')) {
+        if (isShellCollapsed(el)) return true
+      }
+    }
+  }
+  // 侧栏根可能不在 sidebarCol 之下：railIn + collapsed 同时出现即认定为 rail 折叠。
+  for (const el of scanAll('[class*="railIn"]')) {
+    if (/collapsed/i.test(String(el.className || ''))) return true
+  }
+  // 兜底：任何宽 <=24px 且 class 含 collapsed 的根节点都视为折叠 rail。
+  for (const el of scanAll('[class*="collapsed"]')) {
+    const box = safeDom(() => el.getBoundingClientRect?.(), null)
+    if (box && Number(box.width) > 0 && Number(box.width) <= 24) return true
+  }
   return Boolean(
     doc.querySelector(
       '[class*="frame"][data-sidebar-collapsed], .dshDesktopFrame[data-sidebar-collapsed]',
@@ -333,6 +384,81 @@ export function findVisibleWorkbenchPanel(doc) {
     if (visible) return el
   }
   return null
+}
+
+/**
+ * 顶栏控件/锚点是否真的可见（#67 AC-4）。
+ *
+ * 只看 `querySelector` 会被文档序坑：隐藏 bottomPanel 的 tabBar 在 DOM 里更靠前，
+ * 结果按钮被注入到视口下方、`visibility:hidden` 的底栏里（实测 anchor rect
+ * `{x:280,y:845,w:1000,h:34}`，viewport 840 高）。这里统一按「祖先无
+ * display:none / visibility:hidden + rect 与视口相交」判定。
+ *
+ * 无布局信息的环境（jsdom 或刚插入尚未布局）rect 全 0，此时交给显隐样式判定，
+ * 避免把「还没量到」误判成隐藏；真实浏览器里被隐藏祖先裁掉的节点会拿到 0 尺寸，
+ * 而它的祖先样式已经先被上面拦掉。
+ *
+ * @param {Element | null | undefined} el
+ * @param {Document | null | undefined} doc
+ * @returns {boolean}
+ */
+export function isTopbarElementVisible(el, doc) {
+  if (!el || typeof el.getBoundingClientRect !== 'function') return false
+  const win = doc?.defaultView
+  let cur = el
+  while (cur && cur.nodeType === 1) {
+    const style = safeDom(() => win?.getComputedStyle?.(cur), null)
+    if (style && (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse')) return false
+    cur = cur.parentElement
+  }
+  const rect = safeDom(() => el.getBoundingClientRect(), null)
+  if (!rect) return false
+  const left = Number(rect.left) || 0
+  const top = Number(rect.top) || 0
+  const width = Number(rect.width) || 0
+  const height = Number(rect.height) || 0
+  // 零尺寸一律不可见：实测 `[data-dsh-better-sidebar]` 是 0 高 portal 宿主
+  // （rect y=840 h=0），把它当锚点会把按钮插进隐藏层。
+  if (width <= 0 || height <= 0) return false
+  const vw = Number(win?.innerWidth) || 0
+  const vh = Number(win?.innerHeight) || 0
+  if (!vw || !vh) return true
+  const right = typeof rect.right === 'number' ? rect.right : left + width
+  const bottom = typeof rect.bottom === 'number' ? rect.bottom : top + height
+  return right > 0 && bottom > 0 && left < vw && top < vh
+}
+
+/**
+ * 注入控件是否算「可见」。刚插入尚未布局（rect 全 0）时按锚点判定，避免把
+ * 新节点误判成失败；真实浏览器里被隐藏祖先裁掉的按钮 rect 非 0，会走
+ * isTopbarElementVisible 的祖先/视口检查。
+ * @param {Element | null | undefined} el
+ * @param {Document | null | undefined} doc
+ * @returns {boolean}
+ */
+export function isInjectedControlVisible(el, doc) {
+  if (!el) return false
+  const box = safeDom(() => el.getBoundingClientRect(), null)
+  if (box && (Number(box.width) > 0 || Number(box.height) > 0)) return isTopbarElementVisible(el, doc)
+  return isTopbarElementVisible(el.parentElement, doc)
+}
+
+/**
+ * 原生控件是否可见。真实浏览器按自身 rect + 祖先显隐判定；jsdom / 尚未布局
+ * （rect 全 0）时按最近容器判定，但自身 display:none / visibility:hidden 仍必须
+ * 先被拦掉——否则会把隐藏面板里的同标签按钮误当成可见。
+ * @param {Element | null | undefined} el
+ * @param {Document | null | undefined} doc
+ * @returns {boolean}
+ */
+export function isNativeControlVisible(el, doc) {
+  if (!el) return false
+  const style = safeDom(() => doc?.defaultView?.getComputedStyle?.(el), null)
+  if (style && (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse')) return false
+  const box = safeDom(() => el.getBoundingClientRect?.(), null)
+  const hasBox = box && (Number(box.width) > 0 || Number(box.height) > 0)
+  if (hasBox) return isTopbarElementVisible(el, doc)
+  return isTopbarElementVisible(el.parentElement, doc)
 }
 
 /** Rail narrower than this while expanded is a poisoned reading, never a layout. */
@@ -1070,19 +1196,83 @@ function runTopbarGeometryHook(doc) {
  */
 export function findTopbarAnchor(doc) {
   if (!doc || typeof doc.querySelector !== 'function') return null
-  const anchor = doc.querySelector('[data-dsh-better-sidebar] [class*="tabBar"], [class*="tabBar"], [data-dsh-better-sidebar]')
-  if (anchor) return anchor
-  return doc.body || doc.documentElement || null
+  // 只认可见锚点（#67 AC-4）：
+  // 1) 可见 workbench panel 的 tabBar；
+  // 2) 可见 sidebarCol 内的 topStrip（真实壳里左侧可见侧栏的顶栏）；
+  // 3) 可见 topStrip / logoRow；
+  // 4) null。`[data-dsh-better-sidebar]` 实测是 0 高 portal 宿主，不能当锚点。
+  const panel = findVisibleWorkbenchPanel(doc)
+  if (panel) {
+    const bar = panel.querySelector('[class*="tabBar"]:not([class*="Plus"])')
+    if (bar instanceof HTMLElement && isTopbarElementVisible(bar, doc)) return bar
+  }
+  // 可见 tabBar（panel 判定不到的壳，或 panel 自身还没可见时）：rect/显隐都验过，
+  // 隐藏 bottomPanel tabBar 会被 isTopbarElementVisible 拒掉。
+  for (const bar of doc.querySelectorAll('[class*="tabBar"]:not([class*="Plus"])')) {
+    if (bar instanceof HTMLElement && isTopbarElementVisible(bar, doc)) return bar
+  }
+  for (const selector of ['[class*="sidebarCol"] [class*="topStrip"]', '[class*="topStrip"]', '[class*="logoRow"]']) {
+    for (const el of doc.querySelectorAll(selector)) {
+      if (el instanceof HTMLElement && isTopbarElementVisible(el, doc)) return el
+    }
+  }
+  return null
+}
+
+/** True while any first-run guide layer is on screen (#67). */
+function isOnboardingGuideActive(doc) {
+  if (!doc) return false
+  try {
+    if (typeof doc.querySelector === 'function'
+      && doc.querySelector('[data-omnimux-runtime-guide], [data-omnimux-native-runtime], [data-desktop-onboarding-surface], #root[inert]')) {
+      return true
+    }
+    const root = typeof doc.getElementById === 'function' ? doc.getElementById('root') : null
+    return Boolean(root && (root.inert === true || (typeof root.hasAttribute === 'function' && root.hasAttribute('inert'))))
+  } catch {
+    return false
+  }
+}
+
+function removeInjectedTopbarControls(doc) {
+  if (!doc || typeof doc.querySelector !== 'function') return
+  for (const selector of [`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`, `[${TOPBAR_NEW_SESSION_ATTR}="1"]`]) {
+    const el = doc.querySelector(selector)
+    if (el && typeof el.remove === 'function') safeDom(() => el.remove())
+  }
+  // 引导分支同样要摘掉 html marker：只移除控件会留下「已注入」的 CSS 状态。
+  if (doc.documentElement) safeDom(() => doc.documentElement.removeAttribute(SIDEBAR_TOGGLE_TOPBAR_HTML_ATTR))
+}
+
+/**
+ * Body fallback（#67 AC-4）：新壳折叠时整个侧栏 `display:none`，topStrip 0×0，
+ * `findTopbarAnchor()` 必然为 null；此时把 fixed 定位的控件挂到 body 上仍可见。
+ * 只在引导已结束且调用方明确放行时使用；引导态继续由 `isOnboardingGuideActive`
+ * 早退，绝不把按钮带回引导页左上角。
+ * @param {Document | null | undefined} doc
+ * @param {boolean} allow
+ * @returns {HTMLElement | null}
+ */
+function resolveBodyFallbackAnchor(doc, allow) {
+  if (!allow || !doc || isOnboardingGuideActive(doc)) return null
+  const body = doc.body
+  if (!body || typeof body.appendChild !== 'function') return null
+  return body
 }
 
 /**
  * Inject (idempotently) our own topbar toggle button into the better-sidebar
  * tab bar. Its click drives the official button's programmatic click.
  * @param {Document | null | undefined} doc
+ * @param {{ allowBodyFallback?: boolean }} [options]
  * @returns {HTMLElement | null}
  */
-export function injectTopbarToggleButton(doc) {
-  const anchor = findTopbarAnchor(doc)
+export function injectTopbarToggleButton(doc, options = {}) {
+  if (isOnboardingGuideActive(doc)) {
+    removeInjectedTopbarControls(doc)
+    return null
+  }
+  const anchor = findTopbarAnchor(doc) || resolveBodyFallbackAnchor(doc, options.allowBodyFallback === true)
   if (!anchor) return null
   let btn = doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`)
   if (!btn) {
@@ -1096,9 +1286,15 @@ export function injectTopbarToggleButton(doc) {
       safeDom(() => event.stopPropagation())
       const willCollapse = !isLeftSidebarCollapsed(doc)
       setExplicitLeftCollapseIntent(willCollapse)
-      const official = findOfficialSidebarToggle(doc)
+      // 优先点我们自己标记的那一个原生 trigger（它才是当前可见侧栏的按钮；
+      // 注入后它被 display:none 隐藏，所以不能只按可见性找）。
+      const marked = doc.querySelector(`[${SIDEBAR_ORIGINAL_TOGGLE_ATTR}="1"]`)
+      const official = marked || findVisibleOfficialSidebarToggle(doc) || findOfficialSidebarToggle(doc)
       if (official) triggerClick(official)
     })
+    anchor.appendChild(btn)
+  } else if (btn.parentElement !== anchor && typeof anchor.appendChild === 'function') {
+    // 可见锚点换位（隐藏 bottomPanel → 可见 panel）时把已有按钮搬过去。
     anchor.appendChild(btn)
   }
   applyButtonChrome(btn)
@@ -1109,10 +1305,15 @@ export function injectTopbarToggleButton(doc) {
  * Inject (idempotently) the collapsed-only topbar new-session button.
  * @param {Document | null | undefined} doc
  * @param {boolean} collapsed
+ * @param {{ allowBodyFallback?: boolean }} [options]
  * @returns {HTMLElement | null}
  */
-export function injectTopbarNewSessionButton(doc, collapsed) {
+export function injectTopbarNewSessionButton(doc, collapsed, options = {}) {
   if (!doc) return null
+  if (isOnboardingGuideActive(doc)) {
+    removeInjectedTopbarControls(doc)
+    return null
+  }
   let btn = doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`)
   if (!collapsed) {
     if (btn instanceof HTMLElement) {
@@ -1120,7 +1321,7 @@ export function injectTopbarNewSessionButton(doc, collapsed) {
     }
     return null
   }
-  const anchor = findTopbarAnchor(doc)
+  const anchor = findTopbarAnchor(doc) || resolveBodyFallbackAnchor(doc, options.allowBodyFallback === true)
   if (!anchor) return null
   if (!btn) {
     btn = doc.createElement('button')
@@ -1140,6 +1341,8 @@ export function injectTopbarNewSessionButton(doc, collapsed) {
       const official = findOfficialNewSessionButton(doc)
       if (official) triggerClick(official)
     })
+    anchor.appendChild(btn)
+  } else if (btn.parentElement !== anchor && typeof anchor.appendChild === 'function') {
     anchor.appendChild(btn)
   }
   applyButtonChrome(btn)
@@ -1177,11 +1380,26 @@ function applyButtonChrome(btn) {
  * @returns {HTMLElement | null}
  */
 function hideOriginalToggle(doc) {
-  const btn = findOfficialSidebarToggle(doc)
+  // 只隐藏可见的原生 toggle：隐藏 bottomPanel 里的同标签按钮可能排在文档序更前，
+  // 隐藏错对象会留下可见原生按钮与注入按钮双显（#67 AC-4）。
+  const btn = findVisibleOfficialSidebarToggle(doc)
   if (!btn) return null
   btn.setAttribute(SIDEBAR_ORIGINAL_TOGGLE_ATTR, '1')
   safeDom(() => btn.style.setProperty('display', 'none', 'important'))
   return btn
+}
+
+/**
+ * 注入失败时恢复原生 toggle（#67 AC-4）：CSS 按
+ * `[data-omnimux-original-sidebar-toggle="1"]` 隐藏，所以先摘标记再清 inline display。
+ * @param {Document | null | undefined} doc
+ */
+function restoreOriginalToggle(doc) {
+  if (!doc || typeof doc.querySelector !== 'function') return
+  const btn = doc.querySelector(`[${SIDEBAR_ORIGINAL_TOGGLE_ATTR}="1"]`)
+  if (!btn) return
+  btn.removeAttribute(SIDEBAR_ORIGINAL_TOGGLE_ATTR)
+  safeDom(() => btn.style.removeProperty('display'))
 }
 
 const RIGHTBAR_CHROME_STYLES_ID = 'omnimux-rightbar-chrome-styles'
@@ -1357,24 +1575,37 @@ export function injectTopbarRightExpandButton(doc) {
 /**
  * Wire the topbar toggle + collapsed mirror. Returns the injected toggle button.
  * @param {Document | null | undefined} doc
+ * @param {{ allowBodyFallback?: boolean }} [options]
  * @returns {HTMLElement | null}
  */
-export function ensureSidebarToggleTopbar(doc) {
+export function ensureSidebarToggleTopbar(doc, options = {}) {
   if (!doc?.documentElement) return null
+  if (isOnboardingGuideActive(doc)) {
+    removeInjectedTopbarControls(doc)
+    restoreOriginalToggle(doc)
+    return null
+  }
   const root = doc.documentElement
-  root.setAttribute(SIDEBAR_TOGGLE_TOPBAR_HTML_ATTR, '')
-  applyTopbarToggleCssVars(doc)
   const collapsed = syncLeftCollapsedHtmlAttr(doc)
+  // 几何变量与注入成败无关：拖动/缩放每帧都要发布中栏宽度，不能因暂无可见锚点而停。
+  safeDom(() => applyTopbarToggleCssVars(doc))
+  const btn = injectTopbarToggleButton(doc, options)
+  // 只有注入成功且可见才隐藏原生 toggle / 设 html marker；否则恢复原生。
+  // 否则会出现「原生被 display:none、注入又返回 null」→ 0 个可见 toggle（#67 AC-4）。
+  if (!btn || !isInjectedControlVisible(btn, doc)) {
+    root.removeAttribute(SIDEBAR_TOGGLE_TOPBAR_HTML_ATTR)
+    restoreOriginalToggle(doc)
+    injectTopbarNewSessionButton(doc, false, options)
+    return null
+  }
+  root.setAttribute(SIDEBAR_TOGGLE_TOPBAR_HTML_ATTR, '')
   hideOriginalToggle(doc)
-  const btn = injectTopbarToggleButton(doc)
-  injectTopbarNewSessionButton(doc, collapsed)
+  injectTopbarNewSessionButton(doc, collapsed, options)
   syncNativeRightbarControls(doc)
   // Guard against the observer's aria-label attribute filter: setting the same
   // value would still fire a MutationRecord and loop forever.
-  if (btn) {
-    const label = collapsed ? '打开侧边栏' : '收起侧边栏'
-    if (btn.getAttribute('aria-label') !== label) btn.setAttribute('aria-label', label)
-  }
+  const label = collapsed ? '打开侧边栏' : '收起侧边栏'
+  if (btn.getAttribute('aria-label') !== label) btn.setAttribute('aria-label', label)
   return btn
 }
 
@@ -1397,6 +1628,8 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
   let desktopObserver = null
   /** @type {MutationObserver | null} */
   let frameObserver = null
+  /** @type {MutationObserver | null} */
+  let guideObserver = null
   /** @type {ResizeObserver | null} */
   let widthObserver = null
   /** @type {((this: Window, ev: UIEvent) => void) | null} */
@@ -1439,6 +1672,10 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
   }
 
   const scheduleSync = () => {
+    // A host can close its document while a hostile observer refuses to
+    // disconnect (covered by the E2E cleanup contract). Never schedule work
+    // against a closed window: its globals/constructors are gone with it.
+    if (doc.defaultView?.closed === true) return
     if (pendingSchedule !== null) return
     let isCancelled = false
     const runner = () => {
@@ -1447,11 +1684,22 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
       if (isEnsuring) return
       isEnsuring = true
       try {
-        ensureSidebarToggleTopbar(doc)
+        // 折叠态（侧栏 display:none / topStrip 0×0）没有可见锚点，直接允许 body fallback；
+        // 展开态等可见锚点重试窗口耗尽后同样放行，避免外壳晚挂载时无限等不到控件。
+        const retryExhausted = topbarRetryTimer === null
+          && topbarRetryAttempt >= TOPBAR_RETRY_BACKOFF_MS.length
+        const allowBodyFallback = isLeftSidebarCollapsed(doc) || retryExhausted
+        ensureSidebarToggleTopbar(doc, { allowBodyFallback })
         ensureObserveTargets()
         rebindHostObservers()
+        watchTopbarAnchorAppearance()
+      } catch {
+        // Best-effort chrome sync: a host may tear down its document while a
+        // hostile observer is still queued (covered by the E2E cleanup test).
       } finally {
         isEnsuring = false
+        // 引导退出与外壳挂载不在同一次提交里：控件缺失时补跑（成功/回引导即停）。
+        armTopbarRetry()
       }
     }
 
@@ -1482,6 +1730,120 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
 
   const ObserverClass = doc.defaultView?.MutationObserver || (typeof MutationObserver !== 'undefined' ? MutationObserver : undefined)
 
+  /**
+   * #67 AC-4：引导退出与工作区外壳挂载是两次独立提交。跳过引导后 tabBar /
+   * better-sidebar 可能晚一步才挂上，而现有观察者只覆盖「已经存在的宿主」，
+   * 于是控件可能一直不注入（实测偶发跳过 30s 后仍为 0）。这里补一条有限、
+   * 可取消的自愈链：引导已结束且控件确实缺失时按退避重排，注入成功即停。
+   * 展开态不要求 new-session（它只在左栏收起时存在），避免白跑满窗口。
+   */
+  const TOPBAR_RETRY_BACKOFF_MS = Object.freeze([0, 60, 150, 300, 600, 1000, 1400])
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let topbarRetryTimer = null
+  let topbarRetryAttempt = 0
+
+  const topbarControlMissing = () => {
+    // 存在但不可见（例如落在隐藏 bottomPanel tabBar 里）同样算缺失，继续自愈。
+    const toggle = doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`)
+    if (!toggle || !isInjectedControlVisible(toggle, doc)) return true
+    if (!isLeftSidebarCollapsed(doc)) return false
+    const newSession = doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`)
+    return !newSession || !isInjectedControlVisible(newSession, doc)
+  }
+
+  const cancelTopbarRetry = () => {
+    if (topbarRetryTimer !== null) {
+      safeDom(() => clearTimeout(topbarRetryTimer))
+      topbarRetryTimer = null
+    }
+    topbarRetryAttempt = 0
+  }
+
+  const armTopbarRetry = () => {
+    if (topbarRetryTimer !== null) return
+    if (doc.defaultView?.closed === true) return
+    // 引导再现（重新登录、回到引导）时整条链取消：此时控件就该不在。
+    if (isOnboardingGuideActive(doc) || !topbarControlMissing()) {
+      topbarRetryAttempt = 0
+      return
+    }
+    if (topbarRetryAttempt >= TOPBAR_RETRY_BACKOFF_MS.length) return
+    const delay = TOPBAR_RETRY_BACKOFF_MS[topbarRetryAttempt]
+    topbarRetryAttempt += 1
+    topbarRetryTimer = setTimeout(() => {
+      topbarRetryTimer = null
+      if (doc.defaultView?.closed === true) return
+      // 每个 tick 仍走 scheduleSync：与观察者共用同一次 rAF 合并，不直接调 ensure。
+      scheduleSync()
+    }, delay)
+  }
+
+  /**
+   * 自愈链只等有限时间；外壳若在 `#root` 里晚一步插入 tabBar / better-sidebar，
+   * 用一次性过滤观察立刻接住，绑到即断开，不留全树观察。
+   */
+  const TOPBAR_ANCHOR_APPEAR_SELECTOR = '[data-dsh-better-sidebar], [class*="tabBar"], [class*="topStrip"], [class*="logoRow"]'
+  /** @type {MutationObserver | null} */
+  let anchorWatchObserver = null
+  /** @type {Element | null} */
+  let observedAnchorWatchRoot = null
+
+  const stopAnchorWatch = () => {
+    if (anchorWatchObserver) {
+      safeDom(() => anchorWatchObserver.disconnect())
+      anchorWatchObserver = null
+    }
+    observedAnchorWatchRoot = null
+  }
+
+  const watchTopbarAnchorAppearance = () => {
+    if (!ObserverClass) return
+    // 只有「可见锚点已就绪且控件不再缺失」才停观察；锚点存在但注入失败时继续等。
+    if (findTopbarAnchor(doc) && !topbarControlMissing()) {
+      stopAnchorWatch()
+      return
+    }
+    const root = doc.getElementById?.('root')
+    if (!root) return
+    // #root 自身被替换时旧 observer 绑在死节点上：换根就重绑。
+    if (anchorWatchObserver && observedAnchorWatchRoot === root) return
+    stopAnchorWatch()
+    observedAnchorWatchRoot = root
+    anchorWatchObserver = new ObserverClass((records) => {
+      for (const record of records) {
+        for (const node of [...record.addedNodes, ...record.removedNodes]) {
+          if (node.nodeType !== 1) continue
+          if (node.matches?.(TOPBAR_ANCHOR_APPEAR_SELECTOR) || node.querySelector?.(TOPBAR_ANCHOR_APPEAR_SELECTOR)) {
+            // 隐藏 tabBar / topStrip 不算命中：只有「可见锚点 + 控件已恢复」才撤销观察。
+            if (findTopbarAnchor(doc) && !topbarControlMissing()) stopAnchorWatch()
+            scheduleSync()
+            return
+          }
+        }
+      }
+    })
+    anchorWatchObserver.observe(root, { childList: true, subtree: true })
+  }
+
+  /**
+   * 观察目标绑稳定的 better-sidebar 宿主（tabBar 整体替换也能看到），注入目标
+   * 仍走 findTopbarAnchor() 的 tabBar 叶子——两者是不同变量。宿主子树包含工作区
+   * 内容，回调只在「外壳节点增删」时同步，避免正文流式渲染每帧重跑一次注入
+   * （ensure 幂等，但几何读取代价高）。
+   */
+  const TOPBAR_CHROME_SELECTOR = '[data-dsh-better-sidebar], [class*="tabBar"], [class*="topStrip"], [class*="logoRow"], [class*="toggleCluster"], [data-dsh-toggle-cluster], [data-omnimux-sidebar-toggle-topbar], [data-omnimux-topbar-new-session]'
+  const isTopbarChromeMutation = (records) => {
+    for (const record of records) {
+      for (const node of [...record.addedNodes, ...record.removedNodes]) {
+        if (node.nodeType !== 1) continue
+        if (node.matches?.(TOPBAR_CHROME_SELECTOR) || node.querySelector?.(TOPBAR_CHROME_SELECTOR)) return true
+      }
+      const target = record.target
+      if (target && typeof target.closest === 'function' && target.closest('[class*="tabBar"], [class*="topStrip"], [class*="logoRow"]')) return true
+    }
+    return false
+  }
+
   let observedCollapsedHost = null
   const bindCollapsedObserver = () => {
     if (!ObserverClass) return
@@ -1507,15 +1869,22 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
   let observedAnchor = null
   const bindAnchorObserver = () => {
     if (!ObserverClass) return
-    const anchor = findTopbarAnchor(doc) || doc.querySelector?.('[data-dsh-better-sidebar]')
+    // 观察绑稳定的宿主：better-sidebar 整体子树、或 sidebar 列；tabBar / topStrip
+    // 被整体替换时仍能收到信号并重注入。注入仍走 findTopbarAnchor() 的叶子，
+    // 观察目标与注入目标分开。
+    const leaf = findTopbarAnchor(doc)
+    const anchor = doc.querySelector('[data-dsh-better-sidebar]')
+      || findSidebarColumn(doc)
+      || (leaf && leaf.parentElement)
+      || leaf
     if (!anchor || anchor === observedAnchor) return
     if (anchorObserver) {
       safeDom(() => anchorObserver.disconnect())
       anchorObserver = null
     }
     observedAnchor = anchor
-    anchorObserver = new ObserverClass(() => {
-      scheduleSync()
+    anchorObserver = new ObserverClass((records) => {
+      if (isTopbarChromeMutation(records)) scheduleSync()
     })
     anchorObserver.observe(anchor, {
       childList: true,
@@ -1540,6 +1909,41 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
       desktopObserver.observe(doc.body, {
         attributes: true,
         attributeFilter: filter,
+        subtree: false,
+      })
+    }
+  }
+
+  let observedGuideBody = null
+  let observedGuideRoot = null
+  /**
+   * First-run guides are portaled to `body` (or mounted inside `#root`) and
+   * `#root[inert]` toggles with the same lifecycle. Observe only the two
+   * concrete hosts and the root inert attribute: a full document subtree
+   * observer would also see our own tabBar injections and re-arm itself.
+   */
+  const bindGuideObserver = () => {
+    if (!ObserverClass) return
+    const body = doc.body
+    const root = doc.getElementById('root')
+    if (guideObserver && observedGuideBody === body && observedGuideRoot === root) return
+    if (guideObserver) {
+      safeDom(() => guideObserver.disconnect())
+      guideObserver = null
+    }
+    observedGuideBody = body
+    observedGuideRoot = root
+    guideObserver = new ObserverClass(() => {
+      scheduleSync()
+    })
+    if (body) {
+      guideObserver.observe(body, { childList: true, subtree: false })
+    }
+    if (root) {
+      guideObserver.observe(root, {
+        attributes: true,
+        attributeFilter: ['inert'],
+        childList: true,
         subtree: false,
       })
     }
@@ -1575,11 +1979,14 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
     bindCollapsedObserver()
     bindAnchorObserver()
     bindDesktopObserver()
+    bindGuideObserver()
     bindFrameObserver()
   }
 
   rebindHostObservers()
   ensureObserveTargets()
+  watchTopbarAnchorAppearance()
+  armTopbarRetry()
   safeDom(() => {
     const win = doc.defaultView
     if (win?.addEventListener) {
@@ -1589,6 +1996,9 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
   })
 
   return () => {
+    // 先停自愈链与一次性观察，避免 teardown 后仍有排队中的 sync。
+    cancelTopbarRetry()
+    stopAnchorWatch()
     if (typeof pendingSchedule === 'function') {
       safeDom(() => pendingSchedule())
       pendingSchedule = null
@@ -1609,9 +2019,15 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
       safeDom(() => frameObserver.disconnect())
       frameObserver = null
     }
+    if (guideObserver) {
+      safeDom(() => guideObserver.disconnect())
+      guideObserver = null
+    }
     observedCollapsedHost = null
     observedAnchor = null
     observedFrame = null
+    observedGuideBody = null
+    observedGuideRoot = null
     if (widthObserver) {
       safeDom(() => widthObserver.disconnect())
       widthObserver = null

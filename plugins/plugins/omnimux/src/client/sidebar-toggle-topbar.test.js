@@ -8,6 +8,7 @@ import {
   LEFT_COLLAPSED_HTML_ATTR,
   SIDEBAR_TOGGLE_TOPBAR_ATTR,
   SIDEBAR_TOGGLE_TOPBAR_HTML_ATTR,
+  SIDEBAR_ORIGINAL_TOGGLE_ATTR,
   TOPBAR_NEW_SESSION_ATTR,
   TOPBAR_MACOS_INSET_PX,
   TOPBAR_TOGGLE_GAP_PX,
@@ -22,6 +23,7 @@ import {
   computeToggleLeftPx,
   deriveConversationWidthPx,
   ensureSidebarToggleTopbar,
+  findTopbarAnchor,
   findVisibleWorkbenchPanel,
   findOfficialNewSessionButton,
   findOfficialSidebarToggle,
@@ -29,6 +31,7 @@ import {
   installSidebarToggleTopbar,
   isLeftSidebarCollapsed,
   isSamePxValue,
+  isTopbarElementVisible,
   isShellSplitDragging,
   notePluginPanelWidthWrite,
   noteShellSplitDragObserved,
@@ -133,7 +136,20 @@ function setup(html) {
   globalThis.document = dom.window.document
   globalThis.HTMLElement = dom.window.HTMLElement
   globalThis.MutationObserver = dom.window.MutationObserver
+  stubDefaultAnchorRects(dom.window.document)
   return dom.window.document
+}
+
+/**
+ * 可见性判定要求真实 rect；jsdom 没有布局。给静态锚点候选补一个视口内的默认
+ * rect，测试需要「隐藏」时用 mockRect 或内联 display/visibility 覆盖。
+ * @param {Document} doc
+ */
+function stubDefaultAnchorRects(doc) {
+  const box = { left: 0, top: 0, width: 280, height: 52, right: 280, bottom: 52, x: 0, y: 0, toJSON() {} }
+  for (const el of doc.querySelectorAll('[data-dsh-better-sidebar], [class*="tabBar"], [class*="topStrip"], [class*="logoRow"]')) {
+    if (!Object.hasOwn(el, 'getBoundingClientRect')) el.getBoundingClientRect = () => box
+  }
 }
 
 describe('sidebar-toggle-topbar selectors', () => {
@@ -251,6 +267,25 @@ describe('ensureSidebarToggleTopbar', () => {
     doc.querySelector('[data-sidebar-collapsed]')?.removeAttribute('data-sidebar-collapsed')
     syncLeftCollapsedHtmlAttr(doc)
     assert.equal(doc.documentElement.hasAttribute(LEFT_COLLAPSED_HTML_ATTR), false)
+  })
+
+  it('detects the Next shell collapsed rail from CSS module classes', () => {
+    const doc = setup(`<!doctype html><html><body>
+      <div class="sidebarCol_x">
+        <div class="x-Wl6W_root x-Wl6W_collapsed x-Wl6W_railIn x-Wl6W_quietBars">
+          <div class="x_topStrip"><button type="button" aria-label="展开侧边栏">T</button></div>
+        </div>
+      </div>
+    </body></html>`)
+    const rail = doc.querySelector('.x-Wl6W_root')
+    rail.getBoundingClientRect = () => ({ left: 0, top: 0, width: 20, height: 840, right: 20, bottom: 840, x: 0, y: 0, toJSON() {} })
+    assert.equal(isLeftSidebarCollapsed(doc), true, '折叠 class 必须被识别为收起')
+    assert.equal(syncLeftCollapsedHtmlAttr(doc), true)
+    assert.ok(ensureSidebarToggleTopbar(doc))
+    assert.ok(doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`), '折叠态必须注入 new-session')
+
+    rail.classList.remove('x-Wl6W_collapsed', 'x-Wl6W_railIn')
+    assert.equal(isLeftSidebarCollapsed(doc), false, '展开态不得误判为折叠')
   })
 
   it('applyTopbarToggleCssVars accepts custom geometry', () => {
@@ -1481,3 +1516,566 @@ describe('老用户迁移门槛（H-1：插件自己写出的几何不得被当�
 })
 })
 
+describe('first-run onboarding gating (#67)', () => {
+  it('does not fall back to body when the workbench tabBar is absent', () => {
+    const doc = setup('<!doctype html><html><body><div id="root"></div></body></html>')
+    assert.equal(findTopbarAnchor(doc), null)
+    assert.equal(ensureSidebarToggleTopbar(doc), null)
+    assert.equal(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`), null)
+    assert.equal(doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`), null)
+  })
+
+  it('removes injected toggle and new-session while any guide layer is mounted, then restores them', () => {
+    const doc = setup()
+    assert.ok(ensureSidebarToggleTopbar(doc))
+    assert.ok(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`))
+    assert.ok(doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`))
+
+    const guide = doc.createElement('div')
+    guide.setAttribute('data-omnimux-runtime-guide', '')
+    doc.body.appendChild(guide)
+    assert.equal(ensureSidebarToggleTopbar(doc), null)
+    assert.equal(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`), null)
+    assert.equal(doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`), null)
+    assert.equal(
+      doc.documentElement.hasAttribute(SIDEBAR_TOGGLE_TOPBAR_HTML_ATTR),
+      false,
+      '引导分支必须同时摘掉已有 html marker',
+    )
+
+    guide.remove()
+    assert.ok(ensureSidebarToggleTopbar(doc))
+    assert.ok(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`))
+    assert.ok(doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`))
+  })
+
+  it('treats the upstream onboarding surface and inert root as guide state too', () => {
+    const doc = setup()
+    assert.ok(ensureSidebarToggleTopbar(doc))
+    const surface = doc.createElement('div')
+    surface.setAttribute('data-desktop-onboarding-surface', '')
+    doc.body.appendChild(surface)
+    assert.equal(ensureSidebarToggleTopbar(doc), null)
+    assert.equal(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`), null)
+    surface.remove()
+
+    // #77 起新引导页只挂 [data-omnimux-native-runtime]（NativeRuntimeSetup）；
+    // 旧标记继续兼容，但不得只适配旧引导。
+    const native = doc.createElement('div')
+    native.setAttribute('data-omnimux-native-runtime', '')
+    doc.body.appendChild(native)
+    assert.equal(ensureSidebarToggleTopbar(doc), null)
+    assert.equal(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`), null)
+    native.remove()
+
+    const root = doc.getElementById('root') || doc.createElement('div')
+    if (!root.id) { root.id = 'root'; doc.body.appendChild(root) }
+    root.setAttribute('inert', '')
+    assert.equal(ensureSidebarToggleTopbar(doc), null)
+    assert.equal(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`), null)
+  })
+
+  it('observes a guide appended after install and restores when it disappears', async () => {
+    const doc = setup()
+    const stop = installSidebarToggleTopbar(doc)
+    const hasControls = () => Boolean(
+      doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`)
+      && doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`),
+    )
+    try {
+      assert.equal(hasControls(), true)
+      const guide = doc.createElement('div')
+      guide.setAttribute('data-omnimux-runtime-guide', '')
+      doc.body.appendChild(guide)
+      await waitFor(() => hasControls() === false)
+      guide.remove()
+      await waitFor(() => hasControls() === true)
+    } finally {
+      stop()
+    }
+  })
+
+  it('observes an initially-mounted guide through the production install entry', async () => {
+    const doc = setup()
+    const guide = doc.createElement('div')
+    guide.setAttribute('data-omnimux-runtime-guide', '')
+    doc.body.appendChild(guide)
+    const stop = installSidebarToggleTopbar(doc)
+    const hasControls = () => Boolean(
+      doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`)
+      && doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`),
+    )
+    try {
+      assert.equal(hasControls(), false)
+      guide.remove()
+      await waitFor(() => hasControls() === true)
+    } finally {
+      stop()
+    }
+  })
+
+  it('observes the native onboarding surface and inert root through the production install entry', async () => {
+    const doc = setup()
+    const root = doc.createElement('div')
+    root.id = 'root'
+    doc.body.appendChild(root)
+    const stop = installSidebarToggleTopbar(doc)
+    const hasControls = () => Boolean(
+      doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`)
+      && doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`),
+    )
+    try {
+      assert.equal(hasControls(), true)
+      const surface = doc.createElement('div')
+      surface.setAttribute('data-desktop-onboarding-surface', '')
+      doc.body.appendChild(surface)
+      await waitFor(() => hasControls() === false)
+      surface.remove()
+      await waitFor(() => hasControls() === true)
+
+      // 新引导实现：#77 的 native runtime 页以 [data-omnimux-native-runtime] 标记，
+      // 可能没有旧的 surface 属性；顶层容器的插入/移除仍应触发隐藏与恢复。
+      const native = doc.createElement('div')
+      native.setAttribute('data-omnimux-native-runtime', '')
+      doc.body.appendChild(native)
+      await waitFor(() => hasControls() === false)
+      native.remove()
+      await waitFor(() => hasControls() === true)
+
+      root.setAttribute('inert', '')
+      await waitFor(() => hasControls() === false)
+      root.removeAttribute('inert')
+      await waitFor(() => hasControls() === true)
+    } finally {
+      stop()
+    }
+  })
+
+  // AC-4 实测失败时序：引导页是 body portal，工作区外壳（better-sidebar +
+  // tabBar）可能在它卸载之后 50–100ms 才挂进 #root。下面四条钉住这个时序，
+  // 现有用例都是「body 直接子节点 + anchor 预先存在」，覆盖不到。
+  it('restores the toggle when the workbench tab bar mounts after the guide exits', async () => {
+    const doc = setup('<!doctype html><html><body><div id="root"></div></body></html>')
+    const guide = doc.createElement('div')
+    guide.setAttribute('data-omnimux-native-runtime', '')
+    doc.body.appendChild(guide)
+    const stop = installSidebarToggleTopbar(doc)
+    const injected = () => Boolean(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`))
+    try {
+      assert.equal(injected(), false)
+      guide.remove()
+      await new Promise((resolve) => setTimeout(resolve, 80))
+      assert.equal(injected(), false, '外壳还没挂上时不注入')
+
+      // 外壳容器先作为 #root 直接子节点挂载（旧观察者能看到），稳定后再把
+      // better-sidebar 插到更深一层——旧观察者只盯 #root 直接子节点，看不到。
+      const shell = doc.createElement('div')
+      shell.className = 'late_shell'
+      doc.getElementById('root').appendChild(shell)
+      await new Promise((resolve) => setTimeout(resolve, 60))
+      const host = doc.createElement('div')
+      host.setAttribute('data-dsh-better-sidebar', '')
+      const bar = doc.createElement('div')
+      bar.className = 'late_tabBar'
+      bar.getBoundingClientRect = () => ({ left: 280, top: 4, width: 1000, height: 34, right: 1280, bottom: 38 })
+      host.appendChild(bar)
+      shell.appendChild(host)
+      await waitFor(injected)
+      assert.ok(host.querySelector(`button[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`))
+    } finally {
+      stop()
+    }
+  })
+
+  it('restores the toggle when the workspace host only gains its chrome markers later', async () => {
+    // 外壳先挂一个普通容器、稍后才补上 data-dsh-better-sidebar / tabBar 类名：
+    // 没有 childList 增删可看，只有有限重试链能接住（一次性观察只过滤节点）。
+    const doc = setup('<!doctype html><html><body><div id="root"></div></body></html>')
+    const guide = doc.createElement('div')
+    guide.setAttribute('data-omnimux-native-runtime', '')
+    doc.body.appendChild(guide)
+    const stop = installSidebarToggleTopbar(doc)
+    const injected = () => Boolean(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`))
+    try {
+      guide.remove()
+      await new Promise((resolve) => setTimeout(resolve, 60))
+      // 先把普通容器整棵插好，全程只改属性/类名补标记：没有 childList 增删可看，
+      // 一次性观察不会触发，只有有限重试链能接住。
+      const shell = doc.createElement('div')
+      shell.className = 'late_shell'
+      const host = doc.createElement('div')
+      const bar = doc.createElement('div')
+      host.appendChild(bar)
+      shell.appendChild(host)
+      doc.getElementById('root').appendChild(shell)
+      await new Promise((resolve) => setTimeout(resolve, 120))
+      assert.equal(injected(), false, '还没有外壳标记时不注入')
+
+      host.setAttribute('data-dsh-better-sidebar', '')
+      bar.className = 'late_tabBar'
+      bar.getBoundingClientRect = () => ({ left: 280, top: 4, width: 1000, height: 34, right: 1280, bottom: 38 })
+      await waitFor(injected)
+      assert.ok(bar.querySelector(`button[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`))
+    } finally {
+      stop()
+    }
+  })
+
+  it('cancels the retry chain when the guide comes back inside the window', async () => {
+    const doc = setup('<!doctype html><html><body><div id="root"></div></body></html>')
+    const guide = doc.createElement('div')
+    guide.setAttribute('data-desktop-onboarding-surface', '')
+    doc.body.appendChild(guide)
+    const stop = installSidebarToggleTopbar(doc)
+    const injected = () => Boolean(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`))
+    try {
+      guide.remove()
+      await new Promise((resolve) => setTimeout(resolve, 60))
+      const again = doc.createElement('div')
+      again.setAttribute('data-omnimux-native-runtime', '')
+      doc.body.appendChild(again)
+      const late = doc.createElement('div')
+      late.setAttribute('data-dsh-better-sidebar', '')
+      const bar = doc.createElement('div')
+      bar.className = 'late_tabBar'
+      bar.getBoundingClientRect = () => ({ left: 280, top: 4, width: 1000, height: 34, right: 1280, bottom: 38 })
+      late.appendChild(bar)
+      doc.getElementById('root').appendChild(late)
+      await new Promise((resolve) => setTimeout(resolve, 400))
+      assert.equal(injected(), false, '重试窗口内回到引导态不得注入')
+      again.remove()
+      await waitFor(injected)
+    } finally {
+      stop()
+    }
+  })
+
+  it('leaves no retry timer behind after teardown', async () => {
+    const doc = setup('<!doctype html><html><body><div id="root"></div></body></html>')
+    const guide = doc.createElement('div')
+    guide.setAttribute('data-omnimux-native-runtime', '')
+    doc.body.appendChild(guide)
+    const stop = installSidebarToggleTopbar(doc)
+    guide.remove()
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    stop()
+
+    const host = doc.createElement('div')
+    host.setAttribute('data-dsh-better-sidebar', '')
+    const bar = doc.createElement('div')
+    bar.className = 'late_tabBar'
+    host.appendChild(bar)
+    doc.getElementById('root').appendChild(host)
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    assert.equal(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`), null, 'teardown 后不得再注入')
+    assert.equal(doc.documentElement.hasAttribute(SIDEBAR_TOGGLE_TOPBAR_HTML_ATTR), false)
+  })
+
+  it('re-injects when the workbench tab bar or its host is replaced', async () => {
+    // 宿主（better-sidebar）与 tabBar 叶子分开，才能分别覆盖两种替换。
+    const doc = setup(`<!doctype html><html><body>
+      <div class="frame_abc" data-sidebar-collapsed>
+        <div class="sidebarCol_x">
+          <div class="logoRow_y"><button type="button" class="toggle_w" aria-label="打开侧边栏">T</button></div>
+          <button type="button" class="newSession_n" aria-label="新建会话">新会话</button>
+        </div>
+      </div>
+      <div data-dsh-better-sidebar>
+        <div class="pane_x"><div class="tabBar_n"><div class="tabList_m"></div></div></div>
+      </div>
+    </body></html>`)
+    const stop = installSidebarToggleTopbar(doc)
+    const injectedIn = (scope) => Boolean(scope.querySelector(`button[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`))
+    try {
+      assert.equal(injectedIn(doc), true)
+
+      // tabBar 整体替换、better-sidebar 宿主不变：靠绑宿主的 childList 观察重注入。
+      const host = doc.querySelector('[data-dsh-better-sidebar]')
+      const oldBar = doc.querySelector('.tabBar_n')
+      const nextBar = doc.createElement('div')
+      nextBar.className = 'replacement_tabBar'
+      nextBar.getBoundingClientRect = () => ({ left: 280, top: 4, width: 1000, height: 34, right: 1280, bottom: 38 })
+      oldBar.replaceWith(nextBar)
+      await waitFor(() => injectedIn(nextBar))
+
+      // 宿主整体替换：body 直接子节点变化触发重绑，注入目标重新指向新 tabBar。
+      const nextHost = doc.createElement('div')
+      nextHost.setAttribute('data-dsh-better-sidebar', '')
+      const nextNextBar = doc.createElement('div')
+      nextNextBar.className = 'second_tabBar'
+      nextNextBar.getBoundingClientRect = () => ({ left: 280, top: 4, width: 1000, height: 34, right: 1280, bottom: 38 })
+      nextHost.appendChild(nextNextBar)
+      host.replaceWith(nextHost)
+      await waitFor(() => injectedIn(nextNextBar))
+    } finally {
+      stop()
+    }
+  })
+})
+
+describe('topbar anchor visibility (#67 AC-4)', () => {
+  const rect = (left, top, width, height) => ({
+    left, top, width, height, right: left + width, bottom: top + height,
+    x: left, y: top, toJSON() {},
+  })
+  const mockRect = (el, box) => { el.getBoundingClientRect = () => box }
+
+  function shellFixture({ withVisiblePanel = true } = {}) {
+    return setup(`<!doctype html><html><body>
+      <div class="frame_abc" data-sidebar-collapsed>
+        <div class="sidebarCol_x">
+          <div class="logoRow_y"><button type="button" class="toggle_w" aria-label="打开侧边栏">T</button></div>
+          <button type="button" class="newSession_n" aria-label="新建会话">新会话</button>
+        </div>
+      </div>
+      <div data-dsh-better-sidebar>
+        <div data-dsh-panel-host="true">
+          <div class="x_bottomPanel x_bottomPanelHidden"><div class="hidden_tabBar"></div></div>
+          ${withVisiblePanel ? '<div class="x_panel"><div class="visible_tabBar"></div></div>' : ''}
+        </div>
+      </div>
+    </body></html>`)
+  }
+
+  it('injects into the visible panel tabBar even when a hidden bottomPanel tabBar comes first', () => {
+    const doc = shellFixture()
+    const hiddenBar = doc.querySelector('.hidden_tabBar')
+    mockRect(hiddenBar, rect(280, 845, 1000, 34)) // 视口下方（viewport 1280×840）
+    const visiblePanel = doc.querySelector('.x_panel')
+    mockRect(visiblePanel, rect(280, 0, 1000, 800))
+    const visibleBar = doc.querySelector('.visible_tabBar')
+    mockRect(visibleBar, rect(280, 4, 1000, 34))
+
+    assert.equal(findTopbarAnchor(doc), visibleBar, '文档序靠前的隐藏 tabBar 不得被选中')
+    const btn = ensureSidebarToggleTopbar(doc)
+    assert.ok(btn)
+    assert.equal(btn.parentElement, visibleBar, '按钮必须注入可见 tabBar')
+    assert.equal(isTopbarElementVisible(hiddenBar, doc), false, '隐藏底栏不算可见')
+
+    // d) 按钮自身 rect 在视口内（按真实 fixed 几何 mock）
+    mockRect(btn, rect(520, 4, 32, 32))
+    assert.equal(isTopbarElementVisible(btn, doc), true)
+    const box = btn.getBoundingClientRect()
+    assert.ok(box.left >= 0 && box.top >= 0)
+    assert.ok(box.right <= doc.defaultView.innerWidth && box.bottom <= doc.defaultView.innerHeight)
+  })
+
+  it('leaves the native toggle visible and the html marker off when no anchor exists', () => {
+    const doc = setup(`<!doctype html><html><body>
+      <div class="sidebarCol_x"><button type="button" class="toggle_x" aria-label="收起侧边栏">T</button></div>
+    </body></html>`)
+    assert.equal(findTopbarAnchor(doc), null)
+    assert.equal(ensureSidebarToggleTopbar(doc), null)
+    assert.equal(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`), null)
+    assert.equal(doc.documentElement.hasAttribute(SIDEBAR_TOGGLE_TOPBAR_HTML_ATTR), false, '注入失败不得设 marker')
+    const official = doc.querySelector('button[aria-label="收起侧边栏"]')
+    assert.equal(official.hasAttribute('data-omnimux-original-sidebar-toggle'), false, '原生 toggle 不得被隐藏')
+    assert.notEqual(official.style.display, 'none')
+  })
+
+  it('injects into a visible sidebarCol topStrip and then hides the native toggle', () => {
+    const doc = setup(`<!doctype html><html><body>
+      <div class="sidebarCol_x">
+        <div class="x_topStrip"><button type="button" class="toggle_x" aria-label="收起侧边栏">T</button></div>
+      </div>
+    </body></html>`)
+    const topStrip = doc.querySelector('.x_topStrip')
+    assert.equal(findTopbarAnchor(doc), topStrip)
+    const btn = ensureSidebarToggleTopbar(doc)
+    assert.ok(btn)
+    assert.equal(btn.parentElement, topStrip, '按钮必须注入可见 topStrip')
+    assert.equal(doc.documentElement.hasAttribute(SIDEBAR_TOGGLE_TOPBAR_HTML_ATTR), true)
+    const official = doc.querySelector('button[aria-label="收起侧边栏"]')
+    assert.equal(official.hasAttribute('data-omnimux-original-sidebar-toggle'), true, '注入成功后才隐藏原生')
+    assert.equal(official.style.display, 'none')
+  })
+
+  it('does not inject when every candidate anchor is hidden', () => {
+    const doc = shellFixture({ withVisiblePanel: false })
+    const host = doc.querySelector('[data-dsh-better-sidebar]')
+    host.style.display = 'none'
+    doc.querySelector('.logoRow_y').style.display = 'none'
+    mockRect(doc.querySelector('.hidden_tabBar'), rect(280, 845, 1000, 34))
+
+    assert.equal(findTopbarAnchor(doc), null)
+    assert.equal(ensureSidebarToggleTopbar(doc), null)
+    assert.equal(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`), null)
+    assert.equal(doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`), null)
+  })
+
+  it('falls back to body past the retry window, then migrates when the panel becomes visible', async () => {
+    const doc = setup('<!doctype html><html><body><div id="root"></div></body></html>')
+    mockRect(doc.body, rect(0, 0, 1280, 840))
+    const guide = doc.createElement('div')
+    guide.setAttribute('data-omnimux-native-runtime', '')
+    doc.body.appendChild(guide)
+    const stop = installSidebarToggleTopbar(doc)
+    const injected = () => Boolean(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`))
+    try {
+      guide.remove()
+      await new Promise((resolve) => setTimeout(resolve, 60))
+
+      // 先出现隐藏的 bottomPanel tabBar：不注入、观察不能被撤销。
+      const host = doc.createElement('div')
+      host.setAttribute('data-dsh-better-sidebar', '')
+      host.style.display = 'none' // 宿主也不可见：只有 hidden 锚点时不得注入
+      const panelHost = doc.createElement('div')
+      panelHost.setAttribute('data-dsh-panel-host', 'true')
+      const hiddenPanel = doc.createElement('div')
+      hiddenPanel.className = 'x_bottomPanel x_bottomPanelHidden'
+      const hiddenBar = doc.createElement('div')
+      hiddenBar.className = 'hidden_tabBar'
+      hiddenPanel.appendChild(hiddenBar)
+      panelHost.appendChild(hiddenPanel)
+      host.appendChild(panelHost)
+      doc.getElementById('root').appendChild(host)
+      mockRect(hiddenBar, rect(280, 845, 1000, 34))
+      await new Promise((resolve) => setTimeout(resolve, 120))
+      assert.equal(injected(), false, '隐藏 tabBar 不得触发注入')
+
+      // 等过自愈链窗口（3.5s）：无可见锚点时允许 body fallback，控件必须已存在。
+      await new Promise((resolve) => setTimeout(resolve, 4000))
+      assert.equal(injected(), true)
+      assert.equal(doc.querySelector(`button[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`).parentElement, doc.body)
+      host.style.display = ''
+      const visiblePanel = doc.createElement('div')
+      visiblePanel.className = 'x_panel'
+      const visibleBar = doc.createElement('div')
+      visibleBar.className = 'visible_tabBar'
+      visiblePanel.appendChild(visibleBar)
+      panelHost.appendChild(visiblePanel)
+      mockRect(visiblePanel, rect(280, 0, 1000, 800))
+      mockRect(visibleBar, rect(280, 4, 1000, 34))
+
+      await waitFor(() => doc.querySelector(`button[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`)?.parentElement === visibleBar)
+    } finally {
+      stop()
+    }
+  })
+
+  it('restores when a visible topStrip mounts after the retry window', async () => {
+    const doc = setup('<!doctype html><html><body><div id="root"></div></body></html>')
+    mockRect(doc.body, rect(0, 0, 1280, 840))
+    const guide = doc.createElement('div')
+    guide.setAttribute('data-omnimux-native-runtime', '')
+    doc.body.appendChild(guide)
+    const stop = installSidebarToggleTopbar(doc)
+    const injected = () => Boolean(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`))
+    try {
+      guide.remove()
+      await new Promise((resolve) => setTimeout(resolve, 4000))
+      assert.equal(injected(), true, '重试窗口耗尽后应走 body fallback')
+      assert.equal(doc.querySelector(`button[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`).parentElement, doc.body)
+
+      const shell = doc.createElement('div')
+      const topStrip = doc.createElement('div')
+      topStrip.className = 'late_topStrip'
+      mockRect(topStrip, rect(0, 0, 280, 52))
+      shell.appendChild(topStrip)
+      doc.getElementById('root').appendChild(shell)
+      await waitFor(() => doc.querySelector(`button[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`)?.parentElement === topStrip)
+    } finally {
+      stop()
+    }
+  })
+
+  it('re-injects when the visible topStrip is replaced', async () => {
+    const doc = setup(`<!doctype html><html><body>
+      <div class="sidebarCol_x">
+        <div class="x_topStrip"><button type="button" aria-label="收起侧边栏">T</button></div>
+      </div>
+    </body></html>`)
+    const stop = installSidebarToggleTopbar(doc)
+    const injectedIn = (scope) => Boolean(scope.querySelector(`button[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`))
+    try {
+      const oldStrip = doc.querySelector('.x_topStrip')
+      assert.equal(injectedIn(oldStrip), true)
+      const nextStrip = doc.createElement('div')
+      nextStrip.className = 'x_topStrip_replacement'
+      mockRect(nextStrip, rect(0, 0, 280, 52))
+      oldStrip.replaceWith(nextStrip)
+      await waitFor(() => injectedIn(nextStrip))
+    } finally {
+      stop()
+    }
+  })
+
+  it('hides only the visible native toggle when a hidden duplicate comes first', () => {
+    const doc = setup(`<!doctype html><html><body>
+      <div class="x_bottomPanel x_bottomPanelHidden">
+        <button type="button" aria-label="收起侧边栏">H</button>
+      </div>
+      <div class="sidebarCol_x">
+        <div class="x_topStrip"><button type="button" aria-label="收起侧边栏">V</button></div>
+      </div>
+    </body></html>`)
+    const hidden = doc.querySelector('.x_bottomPanel button')
+    hidden.style.display = 'none'
+    const visible = doc.querySelector('.x_topStrip button')
+    const btn = ensureSidebarToggleTopbar(doc)
+    assert.ok(btn)
+    assert.equal(hidden.hasAttribute(SIDEBAR_ORIGINAL_TOGGLE_ATTR), false, '隐藏的同标签按钮不得被隐藏')
+    assert.equal(visible.hasAttribute(SIDEBAR_ORIGINAL_TOGGLE_ATTR), true, '可见原生按钮必须被隐藏')
+    assert.equal(visible.style.display, 'none')
+  })
+
+  it('does not treat a zero-size better-sidebar host as an anchor', () => {
+    const doc = setup('<!doctype html><html><body><div data-dsh-better-sidebar></div></body></html>')
+    const host = doc.querySelector('[data-dsh-better-sidebar]')
+    mockRect(host, rect(0, 840, 1280, 0))
+    assert.equal(findTopbarAnchor(doc), null)
+    assert.equal(ensureSidebarToggleTopbar(doc), null)
+    assert.equal(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`), null)
+  })
+
+  it('falls back to body when the collapsed shell hides the sidebar', async () => {
+    const doc = setup(`<!doctype html><html><body>
+      <div class="sidebarCol_x" style="display:none">
+        <div class="x-Wl6W_root x-Wl6W_collapsed x-Wl6W_railIn x-Wl6W_quietBars">
+          <div class="x_topStrip"><button type="button" aria-label="展开侧边栏">T</button></div>
+        </div>
+      </div>
+    </body></html>`)
+    mockRect(doc.body, rect(0, 0, 1280, 840))
+    const stop = installSidebarToggleTopbar(doc)
+    try {
+      await waitFor(() => Boolean(doc.querySelector(`button[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`)), 1000)
+      const toggle = doc.querySelector(`button[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`)
+      const newSession = doc.querySelector(`button[${TOPBAR_NEW_SESSION_ATTR}="1"]`)
+      assert.equal(toggle.parentElement, doc.body, '折叠态 toggle 必须回退到 body')
+      assert.ok(newSession, '折叠态 new-session 必须同时注入')
+      assert.equal(newSession.parentElement, doc.body, '折叠态 new-session 必须回退到 body')
+      assert.equal(doc.documentElement.hasAttribute(SIDEBAR_TOGGLE_TOPBAR_HTML_ATTR), true)
+    } finally {
+      stop()
+    }
+  })
+
+  it('never injects the body fallback while the guide is active', async () => {
+    const doc = setup(`<!doctype html><html><body>
+      <div data-omnimux-native-runtime></div>
+      <div class="sidebarCol_x" style="display:none">
+        <div class="x-Wl6W_root x-Wl6W_collapsed x-Wl6W_railIn"></div>
+      </div>
+    </body></html>`)
+    mockRect(doc.body, rect(0, 0, 1280, 840))
+    const stop = installSidebarToggleTopbar(doc)
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      assert.equal(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`), null, '引导态不得出现 body fallback 控件')
+      assert.equal(doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`), null)
+      assert.equal(doc.documentElement.hasAttribute(SIDEBAR_TOGGLE_TOPBAR_HTML_ATTR), false)
+    } finally {
+      stop()
+    }
+  })
+})
+
+async function waitFor(predicate, timeoutMs = 500) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (predicate()) return
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+  assert.fail('condition was not met before timeout')
+}
