@@ -1,4 +1,4 @@
-    const inject = ["slots", "sessions"];
+    const inject = ["slots", "sessions", "uiWorkspace"];
     // rc.6 list slots require `id`; rc.7+ keyed slots require `key`. Pass both.
     function registerSlot(slots, options, component) {
       const next = { ...options };
@@ -10,6 +10,11 @@
       const slots = ctx.slots;
       const sessions = ctx.sessions;
       plazaSessions = sessions;
+      try {
+        plazaUiWorkspace = ctx.uiWorkspace ?? (typeof ctx.get === "function" ? ctx.get("uiWorkspace") : null) ?? plazaUiWorkspace;
+      } catch {
+        // 老壳没有 uiWorkspace：保留 null，由 createReadySkillSession 回落 sessions.open。
+      }
       if (typeof ctx.inject === "function") {
         ctx.inject(["remote"], (c) => {
           try {

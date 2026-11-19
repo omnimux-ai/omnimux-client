@@ -9,8 +9,8 @@ function deferred() {
   const promise = new Promise((yes, no) => { resolve = yes; reject = no })
   return { promise, resolve, reject }
 }
-function setup({ install, create, attach, draft = '', protectedInput = false, receipt = true, mount = true } = {}) {
-  const calls = [], listeners = new Set(), writes = [], wbCalls = []
+function setup({ install, create, attach, draft = '', protectedInput = false, receipt = true, mount = true, uiWorkspace = true, uiSwitches = true } = {}) {
+  const calls = [], listeners = new Set(), writes = [], wbCalls = [], uiCalls = []
   let current = 'a'
   const state = new Map([
     ['a', { draft: 'old draft', attachments: ['image-a'] }],
@@ -23,9 +23,10 @@ function setup({ install, create, attach, draft = '', protectedInput = false, re
     create: async options => { calls.push(['create', options.workspaceId]); return create ? create() : 'b' },
     open: id => { calls.push(['open', id]); move(id) },
   }
-  const context = { plazaSessions: sessions, setTimeout, console, window: { __omnimuxWorkbench: {
+  const ui = uiWorkspace ? { openSession: id => { uiCalls.push(['openSession', id]); if (uiSwitches) move(id) } } : null
+  const context = { plazaSessions: sessions, plazaUiWorkspace: ui, setTimeout, console, window: { __omnimuxWorkbench: {
     getSnapshot: () => ({ sessionId: current }),
-    open: payload => { wbCalls.push(['open', payload]) },
+    open: payload => { wbCalls.push(['open', payload, current]) },
     setFocus: mode => { wbCalls.push(['setFocus', mode]) },
     setConversationCollapsed: (value, opts) => { wbCalls.push(['setConversationCollapsed', value, opts]) },
   }, addEventListener: () => {} }, api: async (method, body) => {
@@ -47,7 +48,7 @@ function setup({ install, create, attach, draft = '', protectedInput = false, re
       },
     })
   }
-  return { ...exports, calls, writes, wbCalls, move, state, listeners, current: () => current, run: options => exports.createSkillSession({ requireReady: true, timeoutMs: 5, ...options }) }
+  return { ...exports, calls, writes, wbCalls, uiCalls, move, state, listeners, current: () => current, run: options => exports.createSkillSession({ requireReady: true, timeoutMs: 5, navTimeoutMs: 1000, ...options }) }
 }
 
 test('ready flow installs once, attaches nonempty body to B, writes once without reading stale draft, preserves A', async () => {
@@ -55,11 +56,15 @@ test('ready flow installs once, attaches nonempty body to B, writes once without
   const result = await h.run()
   assert.equal(result.ok, true)
   assert.equal(result.prefilled, true)
-  assert.deepEqual(h.calls, [['install', 'skill-creator'], ['create', 'w'], ['tryAttach', 'b'], ['open', 'b']])
+  // ready 路径走 uiWorkspace.openSession（Next/rc.3 壳里 sessions.open 不切主会话）。
+  assert.deepEqual(h.uiCalls, [['openSession', 'b']])
+  assert.equal(h.calls.some(call => call[0] === 'open'), false, '有 uiWorkspace 时不应回落 sessions.open')
+  assert.deepEqual(h.calls, [['install', 'skill-creator'], ['create', 'w'], ['tryAttach', 'b']])
   // ready 路径必须真的把新会话开进 workbench，否则实机会停在旧会话、无 composer。
   // VM 里创建的对象跨 realm，用字段断言而不是 deepEqual 原型比较。
   assert.equal(h.wbCalls.length, 3)
   assert.equal(h.wbCalls[0][0], 'open')
+  assert.equal(h.wbCalls[0][2], 'b', 'workbench.open 必须在会话切到 C 之后才调用')
   assert.equal(h.wbCalls[0][1].tabId, 'omnimux-market:plaza')
   assert.equal(h.wbCalls[0][1].sessionId, 'b')
   assert.equal(typeof h.wbCalls[0][1].title, 'string')
@@ -91,7 +96,8 @@ for (const [options, error, attempts] of [
     assert.equal(result.sessionId, 'b')
     assert.equal(h.writes.length, attempts)
     assert.deepEqual([...h.state], before)
-    assert.deepEqual(h.calls, [['install', 'skill-creator'], ['create', 'w'], ['tryAttach', 'b'], ['open', 'b']])
+    assert.deepEqual(h.calls, [['install', 'skill-creator'], ['create', 'w'], ['tryAttach', 'b']])
+    assert.deepEqual(h.uiCalls, [['openSession', 'b']])
     assert.equal(h.listeners.size, 0)
   })
 }
@@ -150,7 +156,7 @@ test('switch away while target input is mounting never writes or reopens target'
   assert.equal(result.cancelled, true)
   assert.equal(h.current(), 'c')
   assert.equal(h.writes.length, 0)
-  assert.equal(h.calls.filter(call => call[0] === 'open').length, 1)
+  assert.equal(h.uiCalls.length, 1, '导航必须只发起一次（uiWorkspace.openSession）')
 })
 
 test('concurrent calls cannot borrow another creation result', async () => {
@@ -161,4 +167,22 @@ test('concurrent calls cannot borrow another creation result', async () => {
   pending.resolve({ ok: true })
   assert.equal((await first).ok, true)
   assert.equal(h.calls.filter(call => call[0] === 'create').length, 1)
+})
+
+test('falls back to sessions.open when uiWorkspace is unavailable', async () => {
+  const h = setup({ uiWorkspace: false })
+  const result = await h.run()
+  assert.equal(result.ok, true)
+  assert.deepEqual(h.calls, [['install', 'skill-creator'], ['create', 'w'], ['tryAttach', 'b'], ['open', 'b']])
+  assert.equal(h.uiCalls.length, 0)
+  assert.equal(h.wbCalls[0][2], 'b', 'workbench.open 必须在会话切到 C 之后')
+})
+
+test('returns session-navigation-unavailable instead of silently waiting when the host never switches', async () => {
+  const h = setup({ uiSwitches: false })
+  const result = await h.run({ navTimeoutMs: 80 })
+  assert.equal(result.ok, false)
+  assert.equal(result.error, 'session-navigation-unavailable')
+  assert.equal(h.wbCalls.length, 0, '没切到目标会话不得开 workbench')
+  assert.deepEqual(h.uiCalls, [['openSession', 'b']])
 })

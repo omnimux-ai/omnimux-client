@@ -7,9 +7,16 @@
     async function createReadySkillSession(sessions, opts) {
       const origin = marketCurrentSessionId();
       let expected = origin;
+      let navigatingTo = "";
       let cancelled = false;
       const check = () => {
-        if (marketCurrentSessionId() !== expected) cancelled = true;
+        const active = marketCurrentSessionId();
+        if (navigatingTo) {
+          // 导航窗口：origin → target 之间属于正常过渡，切到第三会话才算用户抢走。
+          if (active && active !== origin && active !== navigatingTo) cancelled = true;
+        } else if (active !== expected) {
+          cancelled = true;
+        }
         return !cancelled && !opts.isCancelled?.();
       };
       const unsubscribe = sessions.list?.subscribe?.(check);
@@ -29,10 +36,27 @@
         if (attached?.attached !== true || attached?.hasBody !== true || attached.sessionId !== sessionId || attached.slug !== slug) {
           throw new Error("skill-body-unavailable");
         }
-        if (typeof sessions.open !== "function") throw new Error("sessions-open-unavailable");
-        expected = sessionId;
+        const hasUiWorkspaceOpen = typeof plazaUiWorkspace?.openSession === "function";
+        if (!hasUiWorkspaceOpen && typeof sessions.open !== "function") throw new Error("sessions-open-unavailable");
         opts.onTarget?.(sessionId);
-        sessions.open(sessionId);
+        // Next/rc.3 壳里 sessions.open 不切主会话；真正的导航接缝是 uiWorkspace.openSession。
+        navigatingTo = sessionId;
+        if (hasUiWorkspaceOpen) plazaUiWorkspace.openSession(sessionId);
+        else sessions.open(sessionId);
+        // 有界等待宿主真的切到目标会话（默认 3s）：等不到就按现有错误路径失败，不静默 10s。
+        const navStart = Date.now();
+        const navTimeout = Number.isFinite(opts.navTimeoutMs) ? opts.navTimeoutMs : 3000;
+        while (marketCurrentSessionId() !== sessionId) {
+          if (opts.isCancelled?.()) return stopped();
+          const active = marketCurrentSessionId();
+          if (active && active !== origin && active !== sessionId) return stopped();
+          if (Date.now() - navStart >= navTimeout) {
+            return { ok: false, sessionId, prefilled: false, error: "session-navigation-unavailable" };
+          }
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        expected = sessionId;
+        navigatingTo = "";
         // ready 路径同样要开 workbench：只 open 会话不会切到 split、也不会展开中间栏，
         // 实机表现是停在旧会话、没有 composer（#69 AC-3 的 ready / 非 ready 两条链路同源）。
         const wb = typeof window !== "undefined" ? window.__omnimuxWorkbench : undefined;
