@@ -210,7 +210,6 @@ const zh = {
   'panel.slotMissing': '还差必需素材：{slots}',
   // 画板级通知（T05）
   'notice.submitBlocked': '当前还不能生成',
-  'notice.modeConsumptionChanged': '生成方式已切换，部分已连接素材不再被使用',
   'panel.promptPlaceholder': '输入提示词…',
   'panel.textPromptPlaceholder': '描述你想生成、分析或改写的内容，也可以连接参考素材。',
   'panel.imagePromptPlaceholder': '描述你要生成的内容',

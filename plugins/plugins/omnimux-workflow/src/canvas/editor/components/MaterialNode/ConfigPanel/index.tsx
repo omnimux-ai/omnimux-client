@@ -42,7 +42,6 @@ import {
   buildChannelContract,
   reconcileParamsWithContract,
   resolveFallbackRouting,
-  type HealingNote,
   type ChannelFallbackState,
 } from './channelContractReconciler';
 import type { MaterialNodeData, MaterialType } from '../../../../types/materialNode';
@@ -139,15 +138,6 @@ import { ImportConfigPanelImpl, type ImportConfigPanelProps } from './ImportConf
 
 const ImportConfigPanel: React.FC<ImportConfigPanelProps> = (props) => <ImportConfigPanelImpl {...props} />;
 
-function healingFieldForNotice(message: string): HealingNote['field'] {
-  if (message.includes('画幅') || message.includes('比例')) return 'aspectRatio';
-  if (message.includes('时长')) return 'duration';
-  if (message.includes('清晰度')) return 'resolution';
-  if (message.includes('声音')) return 'sound';
-  if (message.includes('参考图')) return 'referenceImages';
-  return 'aspectRatio';
-}
-
 const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   nodeId,
   nodeData,
@@ -202,8 +192,6 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
     }
     return envSettings;
   }, [runtimeSettings, envSettings]);
-
-  const [healingNotes, setHealingNotes] = useState<HealingNote[]>([]);
 
   const routing = (params.routing && typeof params.routing === 'object')
     ? (params.routing as { strategy?: 'auto' | 'stability_first' | 'cost_first'; allowedGroups?: string[]; channelGroupId?: string; sourceType?: 'official' | 'byok' })
@@ -541,13 +529,6 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   const commitVideoSelection = useCallback((transition: VideoParameterSelectionResult, userPickedMode = false) => {
     onUpdateNodeData({ params: transition.params, parameterSelections: transition.parameterSelections,
       ...(userPickedMode ? { autoOperationId: null } : {}) });
-    for (const message of transition.notices) toast.info(message);
-    if (typeof setHealingNotes === 'function') {
-      setHealingNotes(transition.notices.map((message: string) => ({
-        field: healingFieldForNotice(message),
-        message,
-      })));
-    }
   }, [onUpdateNodeData]);
   const videoSelection = useMemo(() => materialType === 'video' ? buildVideoParameterSelection({
     params, parameterSelections, currentModelItem: modelItem, targetModelItem: modelItem,
@@ -570,33 +551,8 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
     commitVideoSelection(videoSelection);
   }, [videoSelection, params, parameterSelections, commitVideoSelection, activeCatalog, nodeId, migrationKey]);
 
-  useEffect(() => {
-    const notices = videoSelection?.notices ?? [];
-    if (notices.length === 0 || typeof setHealingNotes !== 'function') return;
-    setHealingNotes((prev) => {
-      const seen = new Set(prev.map((note) => note.message));
-      const additions = notices
-        .filter((message) => !seen.has(message))
-        .map((message) => ({ field: healingFieldForNotice(message), message }));
-      return additions.length > 0 ? [...prev, ...additions] : prev;
-    });
-  }, [videoSelection]);
-
   const updateParam = useCallback(
     (key: string, value: unknown) => {
-      // 用户主动修改对应参数时消除自愈提示条
-      if (key === 'aspectRatio' || key === 'aspect_ratio') {
-        setHealingNotes((prev) => prev.filter((n) => n.field !== 'aspectRatio'));
-      } else if (key === 'duration') {
-        setHealingNotes((prev) => prev.filter((n) => n.field !== 'duration'));
-      } else if (key === 'resolution') {
-        setHealingNotes((prev) => prev.filter((n) => n.field !== 'resolution'));
-      } else if (key === 'sound' || key === 'generateSound') {
-        setHealingNotes((prev) => prev.filter((n) => n.field !== 'sound'));
-      } else if (key === 'referenceImages' || key === 'slotBindings') {
-        setHealingNotes((prev) => prev.filter((n) => n.field !== 'referenceImages'));
-      }
-
       if (key === 'operation') {
         const nextOpId = typeof value === 'string' ? value : undefined;
         if (materialType === 'video' && modelItem) {
@@ -779,11 +735,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   );
 
   const patchSlotBindings = useCallback(
-    (next: SlotBindings, options?: { isUserAction?: boolean }) => {
-      // 仅在用户主动操作时才清除附注，避免渠道切换刚产生的“该渠道仅支持单张参考图”提示被自动修剪瞬间抹除
-      if (options?.isUserAction) {
-        setHealingNotes((prev) => prev.filter((n) => n.field !== 'referenceImages'));
-      }
+    (next: SlotBindings) => {
       useCanvasStore.getState().applyCanvasInputMutation({
         nodePatches: [{ nodeId, data: { slotBindings: next } }],
       });
@@ -855,15 +807,6 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
             });
         nextParams = transition.params;
         if (transition.parameterSelections) nextSelections = transition.parameterSelections;
-        if (transition.notices) {
-          for (const message of transition.notices) toast.info(message);
-          if (typeof setHealingNotes === 'function') {
-            setHealingNotes(transition.notices.map((message: string) => ({
-              field: healingFieldForNotice(message),
-              message,
-            })));
-          }
-        }
         nextOperation = readPreferredOperationId(nextParams as Record<string, unknown>)
           || resolveSlotOperation(activeCatalog, newModelId, preferredOperationId, outputTypeForCompat, fingerprint);
       } else if (channelSelection && newModelId === params.model) {
@@ -951,14 +894,11 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
           }
           const contract = buildChannelContract(newModelId, matchedGroup);
           if (materialType !== 'video') {
-            const { nextParams: reconciledParams, healingNotes: newNotes } = reconcileParamsWithContract(
+            const { nextParams: reconciledParams } = reconcileParamsWithContract(
               nextParams,
               contract,
             );
             nextParams = reconciledParams;
-            if (typeof setHealingNotes === 'function') {
-              setHealingNotes(newNotes);
-            }
           }
           if (
             matchedGroup.constraints?.inputs?.image?.max === 1 ||
@@ -981,14 +921,9 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
               }
             }
           }
-        } else if (materialType !== 'video' && typeof setHealingNotes === 'function') {
-          setHealingNotes([]);
         }
       } catch (error) {
         console.error('[ConfigPanel] reconcileParamsWithContract failed:', error);
-        if (typeof setHealingNotes === 'function') {
-          setHealingNotes([]);
-        }
       }
 
       onUpdateNodeData({
@@ -1007,7 +942,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
 
   const handleSwapSlots = useCallback(
     (firstSlot: string, lastSlot: string) => {
-      patchSlotBindings(swapNamedSlots(slotBindings, firstSlot, lastSlot), { isUserAction: true });
+      patchSlotBindings(swapNamedSlots(slotBindings, firstSlot, lastSlot));
     },
     [patchSlotBindings, slotBindings],
   );
@@ -1091,29 +1026,6 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
     : undefined;
 
   const hasSlots = effectiveSlotLayout.slots.length > 0 || currentInputs && inputDisplay.records.length > 0;
-
-  // T05：切换模式/模型导致已有供给不再被消费 → 画板 Banner（5s 自动淡出）。
-  const boundEdgeIds = useMemo(
-    () => Object.values(slotBindings).flatMap((occupants) => occupants.map((occupant) => occupant.edgeId)).sort(),
-    [slotBindings],
-  );
-  const modeConsumptionRef = useRef<{ key: string; bound: string[] } | null>(null);
-  useEffect(() => {
-    const key = `${modelValue}::${opsState.selectedOperationId || ''}`;
-    const prev = modeConsumptionRef.current;
-    if (!prev || prev.key === key || prev.bound.length === 0) {
-      modeConsumptionRef.current = { key, bound: boundEdgeIds };
-      return;
-    }
-    const lost = prev.bound.filter((edgeId) => !boundEdgeIds.includes(edgeId));
-    if (lost.length > 0) {
-      canvasNoticeService.publish({
-        kind: 'mode_consumption_changed',
-        message: t('notice.modeConsumptionChanged'),
-      });
-    }
-    modeConsumptionRef.current = { key, bound: boundEdgeIds };
-  }, [modelValue, opsState.selectedOperationId, boundEdgeIds, t]);
 
   // 视频节点业务状态机：上游媒体决定可用生成方式（Epic #63 / R3/R6）。
   useEffect(() => {
@@ -1304,42 +1216,6 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
           >
             {fallbackState.actionLabel}
           </button>
-        </div>
-      ) : null}
-
-      {healingNotes.length > 0 ? (
-        <div
-          className="wf-config-panel__healing-notes"
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 6,
-            marginBottom: 8,
-          }}
-          data-testid="wf-channel-healing-notes"
-        >
-          {healingNotes.map((note) => (
-            <div
-              key={`${note.field}-${note.message}`}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                fontSize: 12,
-                lineHeight: 1.4,
-                padding: '6px 10px',
-                borderRadius: 6,
-                background: 'var(--dsw-alias-bg-layer-2)',
-                border: '1px solid var(--dsw-alias-border-l1)',
-                color: 'var(--dsw-alias-label-secondary)',
-              }}
-              role="status"
-              data-testid={`wf-healing-note-${note.field}`}
-            >
-              <span style={{ fontSize: 13, color: 'var(--dsw-alias-label-tertiary)', lineHeight: 1 }}>ⓘ</span>
-              <span>{note.message}</span>
-            </div>
-          ))}
         </div>
       ) : null}
 

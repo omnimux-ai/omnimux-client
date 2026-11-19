@@ -142,7 +142,6 @@ export function executeCanvasMenuAction(
     case 'add-to-canvas':
     case 'focus-in-canvas':
       handleFocusNode(item.id);
-      toast.info('已在创作画布中定位');
       break;
     case 'add-to-dialog':
     case 'add-to-chat':

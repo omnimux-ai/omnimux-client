@@ -203,7 +203,6 @@ const en: Record<DictKey, string> = {
   'panel.slotMissing': 'Missing required: {slots}',
   // Canvas-level notices (T05)
   'notice.submitBlocked': 'Not ready to generate yet',
-  'notice.modeConsumptionChanged': 'Mode changed — some connected media is no longer consumed',
   'panel.promptPlaceholder': 'Describe what you want to generate...',
   'panel.textPromptPlaceholder': 'Describe what you want to generate, analyze, or rewrite. You can also connect reference inputs.',
   'panel.imagePromptPlaceholder': 'Describe what you want to generate',

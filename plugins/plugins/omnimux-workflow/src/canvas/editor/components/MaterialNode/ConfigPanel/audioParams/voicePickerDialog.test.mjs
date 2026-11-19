@@ -8,7 +8,7 @@
  *    空态「未找到匹配音色 + 清除筛选」、选中即 onSelect(voice_type)、底部常驻选中条；
  *  - Issue #771 试听：原生 Audio 对象经 getVoiceSampleUrl 加载火山官方 CDN 样音
  *    （零 fetch / TTS 请求），playingVoice + audioRef 单例控制，play/pause 切换，
- *    onended/onerror/play().catch 兜底 toast.info('该音色暂无官方试听音频')，
+ *    onended/onerror/play().catch 兜底 toast.warning('试听暂不可用，请稍后重试。')，
  *    弹窗关闭或卸载即停播清理；
  *  - ConfigPanel 宿主：朗读正文字数闸门（Array.from / 10000）经 maxLength/countOverride
  *    传入 PromptTokenEditor 内置 meta-bar，右下角仅保留唯一字符统计（Issue #746）、
@@ -95,8 +95,8 @@ test('VoicePickerDialog：试听安全（原生 Audio 消费 hub preview DTO，�
   // 弹窗关闭 / 组件卸载时停止播放并清理
   assert.match(dialogSrc, /if \(!open\) stopPlayback\(\)/);
   assert.match(dialogSrc, /useEffect\(\(\) => stopPlayback, \[\]\)/);
-  // 核定失败文案（双语锁定 zh），旧文案清零
-  assert.match(dialogSrc, /toast\.info\('试听暂不可用，请稍后重试。'\)/);
+  // 核定失败文案（双语锁定 zh），按 #109 统一为 warning；旧文案清零
+  assert.match(dialogSrc, /toast\.warning\('试听暂不可用，请稍后重试。'\)/);
   assert.doesNotMatch(dialogSrc, /该音色暂无官方试听音频/);
   // 播放/暂停按钮状态与无障碍文案
   assert.match(dialogSrc, /wf-voice-picker__preview--playing/);

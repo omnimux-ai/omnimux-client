@@ -726,7 +726,7 @@ const MaterialNode: React.FC<NodeProps> = ({ id, data, selected }) => {
       if (result.body.data.noAudioStream) {
         const message = t('extractAudio.toast.noAudioStream');
         updateNodeData({ executionStatus: 'error', executionError: message, status: 'failed', audioExtractActive: true });
-        toast.info(message);
+        toast.warning(message);
         return;
       }
       updateNodeData({
@@ -832,7 +832,7 @@ const MaterialNode: React.FC<NodeProps> = ({ id, data, selected }) => {
         applyCanvasInputMutation({
           nodePatches: settlement.nodePatches as any,
         });
-        toast.info(message);
+        toast.warning(message);
         return;
       }
 

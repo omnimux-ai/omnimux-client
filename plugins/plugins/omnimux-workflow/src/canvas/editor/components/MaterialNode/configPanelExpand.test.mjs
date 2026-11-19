@@ -105,8 +105,20 @@ test('Feed-Slot 卡槽：SlotWells 驱动 + 卸装填不断边 + 无节点内静
   assert.doesNotMatch(panelSrc, /wf-compat-error/);
   assert.doesNotMatch(panelSrc, /isModelDegraded/);
   assert.doesNotMatch(panelSrc, /evaluateModelCompatibility/);
-  // T05：禁用点击与模式切换走画板级通知
+  // T05：禁用点击走画板级通知；Issue #109：模式切换不再发冗余通知
   assert.match(panelSrc, /canvasNoticeService\.publish/);
   assert.match(panelSrc, /submit_blocked_click/);
-  assert.match(panelSrc, /mode_consumption_changed/);
+  assert.doesNotMatch(panelSrc, /mode_consumption_changed/);
+});
+
+test('Issue #109: 参数联动提示清零，归一化参数仍直接写回控件状态', () => {
+  // 不保留任何参数联动 Toast / healing 提示条 / 模式消费通知
+  assert.doesNotMatch(panelSrc, /toast\.info/);
+  assert.doesNotMatch(panelSrc, /healingNotes|wf-channel-healing-notes|wf-healing-note/);
+  // 底层归一化结果仍完整写回 nodeData，由控件直接呈现；#110 的
+  // userPickedMode / autoOperationId 语义保留（用户手选模式时清空自动来源）。
+  assert.match(panelSrc, /onUpdateNodeData\(\{ params: transition\.params, parameterSelections: transition\.parameterSelections,/);
+  assert.match(panelSrc, /userPickedMode \? \{ autoOperationId: null \}/);
+  assert.match(panelSrc, /buildVideoParameterSelection/);
+  assert.match(panelSrc, /reconcileParamsWithContract/);
 });

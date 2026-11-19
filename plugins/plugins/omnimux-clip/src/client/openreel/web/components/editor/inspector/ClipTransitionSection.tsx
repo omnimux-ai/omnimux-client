@@ -1189,8 +1189,6 @@ export const ClipTransitionSection: React.FC<ClipTransitionSectionProps> = ({
     }
     if (parts.length > 0) {
       toast.success("Clip Animation Applied", parts.join(", "));
-    } else {
-      toast.info("Animations Cleared");
     }
   }, [
     clip,
