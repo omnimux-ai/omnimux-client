@@ -18,7 +18,7 @@ function walk(node, predicate) {
 function harness({ api, createSkillSession, document, onCreate = async () => ({ ok: true }), onClose = () => {} } = {}) {
   const writes = [], activations = []
   const slots = new Map()
-  let owner, cursor
+  let owner, cursor, unmountButton
   function slot(init) {
     const index = cursor++
     const state = slots.get(owner)
@@ -42,7 +42,10 @@ function harness({ api, createSkillSession, document, onCreate = async () => ({ 
       }]
     },
     useRef: initial => { const [state, index] = slot(() => ({ current: initial })); return state[index] },
-    useEffect: () => {}, useLayoutEffect: () => {},
+    useEffect: (effect, deps) => {
+      if (owner === 'button' && deps?.length === 0 && !unmountButton) unmountButton = effect()
+    },
+    useLayoutEffect: () => {},
     useCallback: fn => fn, SearchField: 'SearchField', setTimeout: (fn, ms) => { if (ms !== 8000) return setTimeout(fn, ms) }, clearTimeout,
     document, createPortal: node => node,
   }
@@ -59,7 +62,7 @@ function harness({ api, createSkillSession, document, onCreate = async () => ({ 
     writes, activations, rerender,
     get create() { return walk(panel, node => node.props.className === 'sh-picker-btn primary') },
     get notice() { return walk(panel, node => node.props.role === 'status') },
-    invoke: panelProps.onCreate, close: panelProps.onClose,
+    invoke: panelProps.onCreate, close: panelProps.onClose, unmount: () => unmountButton(),
   }
 }
 
@@ -84,6 +87,22 @@ test('incomplete prefill is not a successful creation', async () => {
   const run = harness({ createSkillSession: async () => ({ ok: true, prefilled: false }) })
   await assert.rejects(run.invoke(), /create-unavailable/)
   assert.equal(run.activations.length, 0)
+})
+
+test('unmount before navigation cancels creation, but a navigation remount leaves it to the session flow', async () => {
+  for (const navigating of [false, true]) {
+    let options, finish
+    const run = harness({ createSkillSession: value => {
+      options = value
+      if (navigating) options.onTarget('new-session')
+      return new Promise(resolve => { finish = resolve })
+    } })
+    const pending = run.invoke()
+    run.unmount()
+    assert.equal(options.isCancelled(), !navigating)
+    finish({ ok: false, cancelled: true })
+    await pending
+  }
 })
 
 test('failed creation keeps the panel and presents a retryable error; parallel clicks deduplicate across renders', async () => {
