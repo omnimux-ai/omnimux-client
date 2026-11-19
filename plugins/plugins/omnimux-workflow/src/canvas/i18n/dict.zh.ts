@@ -529,7 +529,7 @@ const zh = {
   'group.ungroup': '解组',
   'group.ungroupTitle': '解除当前分组',
   'group.ungroupGroup': '解体',
-  'group.ungroupGroupTitle': '解体当前模板并释放节点',
+  'group.ungroupGroupTitle': '解体分组并显示组内节点',
   'group.deleteWorkflow': '删除模板',
   'group.deleteWorkflowTitle': '删除当前模板',
   'group.deleteConfirm': '确定要删除模板「{name}」吗？组内节点将一并移除。',

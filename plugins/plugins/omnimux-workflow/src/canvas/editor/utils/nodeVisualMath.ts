@@ -4,6 +4,7 @@
  * 抽成无 React 依赖的纯函数，供 node:test 直接断言（计划 §8）。
  */
 
+import type { Edge, Node } from '@xyflow/react';
 import type { MaterialStatus } from '../../types/materialNode';
 import type { NodeExecutionApiStatus } from '../../../shared/api';
 import { materialTools } from '../../../shared/specs/nodes/materialNodeSpec.ts';
@@ -504,6 +505,26 @@ export function childIdsOfGroup(nodes: Array<{ id: string; type?: string; parent
 export const COLLAPSED_GROUP_WIDTH = 220;
 export const COLLAPSED_GROUP_HEIGHT = 44;
 
+/** Derive the visible canvas from group state while keeping the saved graph intact. */
+export function projectGroupVisibility(
+  nodes: ReadonlyArray<Pick<Node, 'id' | 'type' | 'parentId' | 'data' | 'hidden'>>,
+  edges: Edge[],
+): { hiddenNodeIds: Set<string>; visibleEdges: Edge[] } {
+  const collapsedGroupIds = new Set(
+    nodes.filter((node) => node.type === 'group' && node.data.isCollapsed === true).map((node) => node.id),
+  );
+  const hiddenNodeIds = new Set<string>();
+  for (const node of nodes) {
+    if (node.hidden || (node.parentId && collapsedGroupIds.has(node.parentId))) {
+      hiddenNodeIds.add(node.id);
+    }
+  }
+  const visibleEdges = hiddenNodeIds.size === 0
+    ? edges
+    : edges.filter((edge) => !hiddenNodeIds.has(edge.source) && !hiddenNodeIds.has(edge.target));
+  return { hiddenNodeIds, visibleEdges };
+}
+
 /**
  * 纯逻辑：将指定节点打组为 GroupNode 并将子节点转为相对坐标。
  */
@@ -573,13 +594,7 @@ export function planGroupNodes(
 
 /**
  * 纯逻辑：切换组的收起/展开状态。
- * 收起时：
- * 1. 记录 expandedBounds（如果未记录或有变更）；
- * 2. 组尺寸变为紧凑胶囊尺寸（220x44）；
- * 3. 组内所有子节点设为 hidden: true（隐藏子节点）；
- * 展开时：
- * 1. 还原 groupNode.width 和 groupNode.height 为 expandedBounds；
- * 2. 组内所有子节点恢复 hidden: false。
+ * 收起时记录尺寸，展开时还原。组内节点及连线的可见性由画布绘制时计算。
  */
 export function planToggleGroupCollapse(
   currentNodes: any[],
@@ -619,12 +634,6 @@ export function planToggleGroupCollapse(
             ? { width: groupNode.width || expandedBounds.width, height: groupNode.height || expandedBounds.height }
             : expandedBounds,
         },
-      };
-    }
-    if (node.parentId === groupId) {
-      return {
-        ...node,
-        hidden: willCollapse,
       };
     }
     return node;
