@@ -119,6 +119,7 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
   const operation = model?.operations.find((op) => op.id === params.operation && op.listed && op.output.type === outputType);
   const permitted = Boolean(model);
   const layout = deriveSlotLayout(catalog, model?.id, operation?.id);
+  const slotByName = new Map(layout.slots.map(slot => [slot.slot, slot]));
   const feed = feedFromFingerprint(raw, currentVersion ? 1 : undefined);
   const plainSpeech = !currentVersion && outputType === 'audio' && params.operation === 'text_to_speech';
   const priorParams = previous ? readCanvasParams(previous) : {};
@@ -186,6 +187,16 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
     && Boolean(occupant.edgeId) && liveEdgeSource.get(occupant.edgeId as string) === occupant.sourceNodeId;
   const wasDisconnected = (occupant: SlotOccupant) => disconnected.has(occupant.edgeId) && !isLiveOccupant(occupant);
   if (disconnected.size) storedConflicts = storedConflicts?.filter(conflict => !wasDisconnected(conflict.occupant));
+  const parkedSlots: SlotConflict[] = [];
+  const restoredSlots: SlotConflict[] = [];
+  storedConflicts = storedConflicts?.filter(conflict => {
+    if (conflict.reason !== 'slot_inactive') return true;
+    const spec = slotByName.get(conflict.slot);
+    if (spec && (!conflict.occupant.role || spec.role === conflict.occupant.role)) restoredSlots.push(conflict);
+    else parkedSlots.push(conflict);
+    return false;
+  });
+  const autoStandby = [...standbyIds, ...parkedSlots.map(conflict => conflict.occupant.edgeId)];
   if (explicit) {
     const vacancies = new Map<string, number>();
     if (useSavedSlots && !modeChanged && disconnected.size) {
@@ -204,7 +215,7 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
       // Drop slots emptied by pruning so the node does not keep a `{slot: []}` residue
       // that reads as an explicit user-clear to downstream readers.
       .filter(([slot, occupants]) => occupants.length > 0 || (keepSavedLipSlots && explicit?.[slot]?.length === 0)));
-    for (const conflict of (plainSpeech ? [] : storedConflicts ?? [])) {
+    for (const conflict of (plainSpeech ? [] : [...(storedConflicts ?? []), ...restoredSlots])) {
       const occupants = explicit[conflict.slot] ??= [];
       if (!occupants.some((item) => item.edgeId === conflict.occupant.edgeId)) occupants.push({ ...conflict.occupant });
     }
@@ -232,7 +243,7 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
         // only the new edge is copied from the auto-fill plan (a cleared slot
         // must not be silently refilled from older supply).
         if (!explicit) continue;
-        const planned = autoFillSlots(feed, layout, explicit, standbyIds);
+        const planned = autoFillSlots(feed, layout, explicit, autoStandby);
         for (const [slotName, occupants] of Object.entries(planned.bindings)) {
           for (const occupant of occupants) {
             if (occupant.edgeId !== edge.id) continue;
@@ -258,40 +269,41 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
         ? [...(explicit[hint] ?? []), occupant]
         : slot?.max === 1 ? [occupant] : [...(explicit[hint] ?? []), occupant];
     }
-    if (vacancies.size) refillDisconnectedSlots(layout, feed, explicit, vacancies, standbyIds);
+    if (vacancies.size) refillDisconnectedSlots(layout, feed, explicit, vacancies, autoStandby);
   }
   // A missing V1 `slotBindings` means "not initialized yet", not "the user cleared every slot": the display
   // side self-heals such a node by auto-filling, so the store must persist that same fill. Leaving `{}` behind
   // splits the two readers — the panel shows a filled slot while submission skips the fill and drops the asset
   // silently. An explicit `{}` (a user clear, or a parked edge) keeps its meaning, and a fill that binds
   // nothing keeps the previous empty shape so untouched nodes stay byte-identical.
-  const selfHealed = explicit === undefined ? autoFillSlots(feed, layout, {}, standbyIds) : undefined;
+  const selfHealed = explicit === undefined ? autoFillSlots(feed, layout, {}, autoStandby) : undefined;
   const filledAnything = selfHealed !== undefined && Object.values(selfHealed.bindings).some((occupants) => occupants.length > 0);
-  // An operation change swaps the slot layout. Occupants still bound to slots of the
-  // previous mode are unreadable by the new operation (e.g. first_frame/last_frame after
-  // switching to video_multi_ref), so persisting them leaves the node permanently
-  // `role_conflict`. Re-assign the surviving supply into the new layout instead: keys that
-  // still exist keep their occupants (pinned choices included), stale keys are released and
-  // auto-filled into the operation's own slots. A user-cleared `{}` stays cleared.
-  const layoutSlotNames = new Set(layout.slots.map((slot) => slot.slot));
-  const renormalized = !keepSavedLipSlots && explicit && (transferredStartSlot || Object.keys(explicit).some((slot) => !layoutSlotNames.has(slot)))
-    ? autoFillSlots(feed, layout, Object.fromEntries(Object.entries(explicit).filter(([slot]) => layoutSlotNames.has(slot))),
-      [...standbyIds, ...transferredInactive.map(occupant => occupant.edgeId)])
+  // Reassign automatic supply after a layout change. Hold pins for missing roles
+  // outside the current assignment so the same inputs can be restored later.
+  const renormalized = !keepSavedLipSlots && explicit && (transferredStartSlot || restoredSlots.length || Object.keys(explicit).some(slot => !slotByName.has(slot)))
+    ? autoFillSlots(feed, layout, Object.fromEntries(Object.entries(explicit).map(([slot, occupants]) => [slot,
+      slotByName.has(slot) ? occupants : occupants.filter(occupant => occupant.pinned && modeChanged),
+    ])), [...autoStandby, ...transferredInactive.map(occupant => occupant.edgeId)])
     : undefined;
   const fill = useSavedSlots
     ? (filledAnything ? selfHealed!
       : renormalized ?? { bindings: explicit ?? {}, conflicts: storedConflicts ?? [] })
-    : explicit ? autoFillSlots(feed, layout, explicit, standbyIds) : hydrateSlotBindings(feed, layout, graph.edges.filter((edge) => edge.target === node.id), standbyIds);
+    : explicit ? autoFillSlots(feed, layout, explicit, autoStandby) : hydrateSlotBindings(feed, layout, graph.edges.filter((edge) => edge.target === node.id), autoStandby);
   if (transferredStartSlot && fill.bindings[transferredStartSlot]) {
     // The transferred start image is first in the new slot, regardless of when its edge was drawn.
     fill.bindings[transferredStartSlot] = [...fill.bindings[transferredStartSlot]!, ...transferredInactive]
       .map((occupant, ordinal) => ({ ...occupant, ordinal }));
   }
-  const fingerprint = effectiveSlotFingerprint(raw, layout, fill.bindings, fill.conflicts, currentVersion || upgradeRestored ? 1 : undefined);
+  const conflicts = fill.conflicts.filter(conflict => {
+    if (!renormalized || fill !== renormalized || conflict.reason !== 'slot_removed' || slotByName.has(conflict.slot)) return true;
+    parkedSlots.push({ ...conflict, reason: 'slot_inactive' });
+    return false;
+  });
+  const fingerprint = effectiveSlotFingerprint(raw, layout, fill.bindings, conflicts, currentVersion || upgradeRestored ? 1 : undefined);
   const match = operation && permitted ? matchOperationInputs(operation, fingerprint) : undefined;
   const reasonCodes = !view.available ? ['catalog_unavailable'] : !permitted ? ['not_listed'] : !model ? ['unknown_model']
     : !operation ? ['operation_incompatible'] : [...(match?.rejections ?? []), ...(match?.pending ?? [])].map((item) => item.code);
-  if (fill.conflicts.length) reasonCodes.push('role_conflict');
+  if (conflicts.length) reasonCodes.push('role_conflict');
   const data = { ...node.data };
   if (upgradeRestored) data.inputBindingVersion = 1;
   if (selectableBeforeInputs && sameModel && params.operation === 'text_to_video' && priorParams.operation === 'digital_human' && previous?.data.slotBindings) {
@@ -300,7 +312,7 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
     delete data.parkedLipSyncInputs;
   }
   return { ...node, data: { ...data, params, ...(autoDerived ? { autoOperationId: autoDerived } : {}),
-    slotBindings: fill.bindings, slotConflicts: fill.conflicts,
+    slotBindings: fill.bindings, slotConflicts: [...conflicts, ...parkedSlots],
     compat: { status: operation && permitted ? 'ok' : 'configuration_error', acceptsCurrentInputs: match?.accepts ?? false,
       readyToSubmit: Boolean(match?.ready), operation: operation?.id, reasonCodes,
       fingerprint: fingerprint.signature, catalogFingerprint: catalog?.fingerprint ?? '' } } };
