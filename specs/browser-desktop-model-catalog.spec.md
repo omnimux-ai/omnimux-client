@@ -13,3 +13,14 @@
 - 切换实例或重连时清掉过期选项，慢响应不会覆盖新目录；失败后重新进入设置可以恢复。宿主返回空目录时明确显示无可用模型。
 - 打开设置不改写宿主模型。更改文本生成模型只保存其独立设置，改回跟随时清除覆盖项。
 - 在候选扩展产物上验证亮色、暗色、窄屏及展开的菜单。区分真实浏览器和宿主验证、测试模型夹具及真实模型调用。
+
+## 旧标准变更
+
+- `plugins/plugins/omnimux-browser/extension/tests/panel-text-model-isolation.spec.ts` :: `两行同时存在、文案已更新，文本行带「跟随对话模型」空值选项`
+  原断言要求离线订阅模型与自定义选项。两个下拉改读桌面目录，验证冷连接后选项来自同一次加载，只有文本生成保留「跟随对话模型」。
+- `plugins/plugins/omnimux-browser/extension/tests/panel-text-model-isolation.spec.ts` :: `切换文本生成模型只写 textModel 三元组，对话模型键不变（A1）`
+  原用例通过发现接口夹具选择模型。现通过宿主目录选取同一模型 ID 下的两个渠道，核对三项文本设置、跟随时的清空操作以及对话设置保持原值。
+- `plugins/plugins/omnimux-browser/extension/tests/panel-text-model-isolation.spec.ts` :: `切换对话模型不改文本生成选择，也不写文本设置（A1）`
+  原用例通过订阅快照选择对话模型，仅核对一次设置写入。现逐项核对实际连接、渠道、模型和推理等级写入，以及已保存的文本选择未受影响。
+- `plugins/plugins/omnimux-browser/extension/tests/panel-text-model-isolation.spec.ts` :: `重新打开设置面板时两行各自保持已保存的值（A1）`
+  原断言以浏览器的旧偏好为对话默认值。现实际关闭并重开设置，核对对话回显宿主默认值，文本继续回显浏览器保存的独立选择。

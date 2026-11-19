@@ -10,6 +10,8 @@ import { createRoot } from 'react-dom/client'
 
 const LABEL_CHAT = '对话模型'
 const LABEL_TEXT = '文本生成模型'
+assert.equal(LABEL_CHAT, '对话模型')
+assert.equal(LABEL_TEXT, '文本生成模型')
 const TAB_ID = 7
 const CONNECTION = { id: 'host-a', url: 'ws://127.0.0.1:45120/ext/bridge' }
 const HOST_CATALOG = {
@@ -118,7 +120,7 @@ beforeEach(() => {
   updateSettings = vi.fn(async () => undefined)
   const unsubscribe = () => {}
   panelApi = {
-    rpc: (...args) => rpc(...args),
+    rpc: (method, payload, connectionId) => rpc(method, payload, connectionId),
     respond: vi.fn(async () => undefined),
     onStatus: vi.fn((callback) => { onStatus = callback; return unsubscribe }),
     onEvent: vi.fn(() => unsubscribe),
@@ -147,10 +149,15 @@ afterEach(async () => {
   delete globalThis.IS_REACT_ACT_ENVIRONMENT
 })
 
-describe('Settings model catalog', () => {
-  it('loads one host catalog for both rows after cold connection without mutating chat defaults', async () => {
+describe('设置面板的文本生成模型行（#3629 A1）', () => {
+  it('两行同时存在、文案已更新，文本行带「跟随对话模型」空值选项', async () => {
     globalThis.localStorage.setItem('omnimux_default_model', 'stale-browser-model')
     await openSettings({ connected: false })
+    const labels = [...document.querySelectorAll('.settings-panel label > span')].map((span) => span.textContent)
+    assert.ok(labels.includes(LABEL_CHAT))
+    assert.ok(labels.includes(LABEL_TEXT))
+    assert.ok(!labels.includes('对话模型与推理等级'))
+    assert.ok(!labels.includes('文本生成模型与推理等级'))
     assert.equal(selectIn(LABEL_CHAT).disabled, true)
     assert.deepEqual(catalogValues(LABEL_CHAT), [])
 
@@ -167,23 +174,27 @@ describe('Settings model catalog', () => {
     assert.equal(globalThis.localStorage.getItem('omnimux_default_model'), 'stale-browser-model')
   })
 
-  it('selects an exact text provider and clears only the text override when following chat', async () => {
+  it('切换文本生成模型只写 textModel 三元组，对话模型键不变（A1）', async () => {
     await openSettings()
+    const browserDefaultBefore = localStorage.getItem('omnimux_default_model')
     await choose(selectIn(LABEL_TEXT), modelValue('local', 'shared'))
     await choose(selectIn(LABEL_TEXT), modelValue('relay', 'shared'))
     assert.deepEqual(updateSettings.mock.calls.at(-1), [{ textModel: 'shared', textProvider: 'relay', textEffort: '' }])
     await choose(selectIn(LABEL_TEXT), '')
     assert.deepEqual(updateSettings.mock.calls.at(-1), [{ textModel: '', textProvider: '', textEffort: '' }])
     assert.equal(selectIn(LABEL_CHAT).value, modelValue('local', 'chat-default'))
+    assert.equal(localStorage.getItem('omnimux_default_model'), browserDefaultBefore)
+    assert.equal(localStorage.getItem('omnimux_default_text_model'), null)
     assert.equal(rpc.mock.calls.some(([method]) => method === 'settings.mutate'), false)
   })
 
-  it('updates the complete chat selection on its host and keeps the saved text setting', async () => {
+  it('切换对话模型不改文本生成选择，也不写文本设置（A1）', async () => {
     stubChrome({ textModel: 'shared', textProvider: 'local' })
     await openSettings()
     await choose(selectIn(LABEL_CHAT), modelValue('relay', 'shared'))
     assert.equal(selectIn(LABEL_CHAT).value, modelValue('relay', 'shared'))
     assert.equal(selectIn(LABEL_TEXT).value, modelValue('local', 'shared'))
+    assert.equal(localStorage.getItem('omnimux_default_model'), 'shared')
     assert.deepEqual(updateSettings.mock.calls, [])
     assert.ok(rpc.mock.calls.some(([method, payload, id]) => method === 'bridge.modelMode' && payload.auto === false && id === CONNECTION.id))
     assert.deepEqual(rpc.mock.calls.find(([method]) => method === 'settings.mutate'), [
@@ -196,6 +207,17 @@ describe('Settings model catalog', () => {
         ],
       }, CONNECTION.id,
     ])
+  })
+
+  it('重新打开设置面板时两行各自保持已保存的值（A1）', async () => {
+    localStorage.setItem('omnimux_default_model_45120', 'stale-browser-model')
+    stubChrome({ textModel: 'shared', textProvider: 'relay' })
+    await openSettings()
+    await act(async () => { document.querySelector('.settings-actions button.secondary').click() })
+    await act(async () => { document.querySelector('.settings-trigger').click() })
+    assert.equal(selectIn(LABEL_CHAT).value, modelValue('local', 'chat-default'))
+    assert.equal(selectIn(LABEL_TEXT).value, modelValue('relay', 'shared'))
+    assert.deepEqual(updateSettings.mock.calls, [])
   })
 
   it('keeps the explicitly chosen chat route when saving with an existing relay', async () => {

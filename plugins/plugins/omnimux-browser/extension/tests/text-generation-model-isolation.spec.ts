@@ -435,21 +435,49 @@ describe('Copilot 正文生成与文本生成模型（#3629）', () => {
     assert.equal(firstResponse(respond).ok, true)
   })
 
-  it.each([
-    ['missing', [{ id: 'one', models: [{ id: 'other-model' }] }]],
-    ['ambiguous', [
-      { id: 'one', models: [{ id: 'legacy-model' }] },
-      { id: 'two', models: [{ id: 'legacy-model' }] },
-    ]],
-  ])('provider 为空且模型路由 %s 时显式报错并回收会话', async (scenario, groups) => {
+  it('provider 为空且目录查不到时不发钉定、显式报错、仍 purge', async () => {
     const socket = await connectedSocket()
-    await configureTextModel('legacy-model', '', '')
+    await configureTextModel('ghost-model-9', '', '')
     const respond = vi.fn()
-    const from = await startGeneration(socket, respond, 'session-provider-' + scenario)
+    const from = await startGeneration(socket, respond, 'session-provider-missing')
 
     await vi.waitFor(() => { assert.ok(frameWith(framesFrom(socket, from), 'session.modelCatalog')) })
     const lookup = frameWith(framesFrom(socket, from), 'session.modelCatalog')
-    reply(socket, lookup, { groups })
+    reply(socket, lookup, {
+      groups: [
+        { id: 'grok-subscription', name: 'Grok (Subscription)', models: [{ id: 'grok-4.6', name: 'Grok 4.6' }] },
+      ],
+    })
+
+    await vi.waitFor(() => { assert.ok(respond.mock.calls.length > 0) })
+    const response = firstResponse(respond)
+    assert.equal(response.ok, false)
+    assert.ok(response.message.includes('ghost-model-9'))
+    assert.equal(response.text, undefined)
+
+    const frames = framesFrom(socket, from)
+    assert.equal(frames.some((frame) => frame.method === 'bridge.textGeneration'), false)
+    assert.equal(frames.some((frame) => frame.method === 'session.prompt'), false)
+    assert.equal(frames.some((frame) => frame.method === 'bridge.completeText'), false)
+
+    await vi.waitFor(() => { assert.ok(frameWith(framesFrom(socket, from), 'bridge.session.purge')) })
+    assert.equal(frameWith(framesFrom(socket, from), 'bridge.session.purge').payload.sessionId, 'session-provider-missing')
+  })
+
+  it('provider 为空且目录中有两条同名模型路由时显式报错并回收会话', async () => {
+    const socket = await connectedSocket()
+    await configureTextModel('legacy-model', '', '')
+    const respond = vi.fn()
+    const from = await startGeneration(socket, respond, 'session-provider-ambiguous')
+
+    await vi.waitFor(() => { assert.ok(frameWith(framesFrom(socket, from), 'session.modelCatalog')) })
+    const lookup = frameWith(framesFrom(socket, from), 'session.modelCatalog')
+    reply(socket, lookup, {
+      groups: [
+        { id: 'one', models: [{ id: 'legacy-model' }] },
+        { id: 'two', models: [{ id: 'legacy-model' }] },
+      ],
+    })
 
     await vi.waitFor(() => { assert.ok(respond.mock.calls.length > 0) })
     const response = firstResponse(respond)
@@ -463,6 +491,6 @@ describe('Copilot 正文生成与文本生成模型（#3629）', () => {
     assert.equal(frames.some((frame) => frame.method === 'bridge.completeText'), false)
 
     await vi.waitFor(() => { assert.ok(frameWith(framesFrom(socket, from), 'bridge.session.purge')) })
-    assert.equal(frameWith(framesFrom(socket, from), 'bridge.session.purge').payload.sessionId, 'session-provider-' + scenario)
+    assert.equal(frameWith(framesFrom(socket, from), 'bridge.session.purge').payload.sessionId, 'session-provider-ambiguous')
   })
 })
