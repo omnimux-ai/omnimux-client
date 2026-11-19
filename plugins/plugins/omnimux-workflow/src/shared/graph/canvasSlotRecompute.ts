@@ -175,8 +175,8 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
   // A V1 occupant is authoritative only while its source node and edge still exist on the
   // canvas. Unpinned (auto-filled) occupants whose supply vanished are junk that must be
   // pruned here, otherwise the stale binding keeps re-persisting and the node stays blocked
-  // as `input_unavailable`. Pinned occupants are user intent and are kept as an invalid
-  // conflict the user can disable/repair (matching the invalid-intent flows).
+  // as `input_unavailable`. Keep invalid pinned intent for repair unless the user
+  // removed its connection in this mutation.
   const liveNodeIds = new Set(graph.nodes.map((item) => item.id));
   const liveEdgeSource = new Map(
     graph.edges.filter((edge) => edge.target === node.id).map((edge) => [edge.id, edge.source]),
@@ -184,18 +184,21 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
   const isLiveOccupant = (occupant: SlotOccupant): boolean =>
     Boolean(occupant.sourceNodeId) && liveNodeIds.has(occupant.sourceNodeId)
     && Boolean(occupant.edgeId) && liveEdgeSource.get(occupant.edgeId as string) === occupant.sourceNodeId;
+  const wasDisconnected = (occupant: SlotOccupant) => disconnected.has(occupant.edgeId) && !isLiveOccupant(occupant);
+  if (disconnected.size) storedConflicts = storedConflicts?.filter(conflict => !wasDisconnected(conflict.occupant));
   if (explicit) {
     const vacancies = new Map<string, number>();
     if (useSavedSlots && !modeChanged && disconnected.size) {
       for (const [slot, occupants] of Object.entries(explicit)) {
         const active = occupants.filter(occupant => occupant.use !== 'inactive');
-        if (active.some(occupant => !occupant.pinned && disconnected.has(occupant.edgeId))) vacancies.set(slot, active.length);
+        if (active.some(occupant => !occupant.pinned && wasDisconnected(occupant))) vacancies.set(slot, active.length);
       }
     }
     explicit = Object.fromEntries(Object.entries(explicit)
       .map(([slot, occupants]) => [slot,
         occupants
           .filter((occupant) => !excludedOnRestore?.has(occupant.edgeId)
+            && !wasDisconnected(occupant)
             && (useSavedSlots ? (isLiveOccupant(occupant) || occupant.pinned) : (!modeChanged || occupant.pinned)))
           .map((occupant) => ({ ...occupant }))] as const)
       // Drop slots emptied by pruning so the node does not keep a `{slot: []}` residue

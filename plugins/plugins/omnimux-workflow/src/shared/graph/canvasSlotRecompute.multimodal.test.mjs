@@ -99,6 +99,24 @@ test('Muse V1 refills a vacated automatic first-frame slot in supply order', () 
   assert.deepEqual(used(planCanvasInputMutation(cleared, { removeEdgeIds: ['e-a'] }, { catalog })), []);
 });
 
+test('disconnecting a pinned first frame keeps the pinned last frame in its own role', () => {
+  const target = targetNode();
+  target.data.params = { model: 'seedance-2-5', operation: 'first_last_frame' };
+  target.data.autoOperationId = null;
+  target.data.slotBindings = {
+    first_frame: [{ sourceNodeId: 'a', edgeId: 'e-a', pinned: true }],
+    last_frame: [{ sourceNodeId: 'b', edgeId: 'e-b', pinned: true }],
+  };
+  const graph = { nodes: [importNode('a', 'image'), importNode('b', 'image'), target],
+    edges: [edge('e-a', 'a', 'image'), edge('e-b', 'b', 'image')] };
+  const result = planCanvasInputMutation(graph, { removeEdgeIds: ['e-a'] }, { catalog });
+  const updated = result.nodes.find(node => node.id === target.id);
+  assert.equal(updated.data.params.operation, 'first_last_frame');
+  assert.deepEqual(updated.data.slotBindings.first_frame ?? [], []);
+  assert.deepEqual(updated.data.slotBindings.last_frame.map(binding => binding.sourceNodeId), ['b']);
+  assert.equal(updated.data.compat.readyToSubmit, false);
+});
+
 test('#62 AC-3: two images then a video re-binds slots for video_multi_ref and stays submittable', () => {
   const imgA = importNode('img-a', 'image');
   const imgB = importNode('img-b', 'image');
