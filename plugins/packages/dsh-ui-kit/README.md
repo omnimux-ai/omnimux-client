@@ -34,6 +34,10 @@ peer：`react`、`react-dom`、`@deepseek-ai/dsh-client-ui-primitives`（与宿�
 ["react", "react-dom", "react/jsx-runtime", "@deepseek-ai/dsh-client-ui-primitives"]
 ```
 
+## 请求的额度反馈
+
+账号、发布、灵感和分析页通过 `dsh-ui-kit/quota-request` 调用 Hub 的额度预检和提示接口。交互入口可用 `userInitiated` 标记主动重试。仅提示的请求直接送达 Host，由 Host 响应触发额度提示。
+
 ## 组件 API
 
 ### 1. PageHeader & StageHeader

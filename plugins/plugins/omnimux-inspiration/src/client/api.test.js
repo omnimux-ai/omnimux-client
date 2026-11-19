@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import { patchRivalAccount } from './rival-api.js'
 import {
   authGuard,
   createShareLink,
@@ -66,6 +67,19 @@ function fakeGate() {
     args: () => ensureArgs,
   }
 }
+
+it('does not replay a rival account write after the precheck stops it on a changed session', async (t) => {
+  const gate = fakeGate()
+  let checks = 0
+  const quota = { ensureQuota: async () => ++checks === 1 ? { ok: false, reason: 'auth' } : { ok: true } }
+  const requests = t.mock.method(globalThis, 'fetch', async () => Response.json({ ok: true }))
+  await withWindow({ __omnimuxQuota: quota, __omnimuxAuth: gate.api }, async () => {
+    const result = await patchRivalAccount('fixture', { tags: ['test'] })
+    assert.equal(result.status, 401)
+    assert.equal(gate.args(), null)
+    assert.equal(requests.mock.callCount(), 0)
+  })
+})
 
 function withWindow(win, run) {
   const saved = globalThis.window

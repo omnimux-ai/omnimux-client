@@ -310,7 +310,7 @@ export function mountMedia(ctx, opts) {
           strategy: args.strategy,
           group: args.group,
           allowedGroups: args.allowed_groups,
-          ...(kind === 'audio' ? { format: args.format } : {}),
+          ...(kind === 'audio' ? { format: args.format, style: args.style, instrumental: args.instrumental } : {}),
           wait: args.wait,
           taskId: args.task_id,
           taskRef: args.task_ref,

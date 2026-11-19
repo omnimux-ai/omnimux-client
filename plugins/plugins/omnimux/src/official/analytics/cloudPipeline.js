@@ -77,12 +77,22 @@ export async function settleCloud(promise, label = 'cloud') {
     if (caught instanceof OmnimuxError && caught.code === 'needs-omnimux') {
       throw caught
     }
+    const quotaError = caught instanceof OmnimuxError && caught.code === 'quota-exceeded' ? caught : undefined
     const error = caught instanceof Error ? caught.message : String(caught)
     try {
       console.warn(`[omnimux-analytics] ${label} failed: ${error}`)
     } catch {}
-    return { ok: false, value: null, error, label }
+    return { ok: false, value: null, error, label, quotaError }
   }
+}
+
+/** @param {Array<[string, Promise<unknown>]>} requests */
+async function settleDashboardSources(requests) {
+  const results = await Promise.all(requests.map(([label, request]) => settleCloud(request, label)))
+  const denied = results.filter(source => source.quotaError)
+  if (denied.length && !results.some(source => source.ok)) throw denied[0].quotaError
+  const partialErrors = denied.map(source => ({ key: source.label, status: 402, error: source.quotaError.code }))
+  return { results, partialErrors }
 }
 
 function formatUpstreamErrors(results) {
@@ -106,14 +116,14 @@ export async function aggregateOverview(client, uiQuery = {}, opts = {}) {
     return emptyDashboard({ query, now, accounts, code: 'no_accounts' })
   }
 
-  const [dailyRes, postsRes] = await Promise.all([
-    settleCloud(getDailyMetrics(client, cloud), 'daily-metrics'),
-    settleCloud(getPostAnalytics(client, {
+  const { results: [dailyRes, postsRes], partialErrors } = await settleDashboardSources([
+    ['daily-metrics', getDailyMetrics(client, cloud)],
+    ['posts', getPostAnalytics(client, {
       ...cloud,
       sortBy: 'engagement',
       sortOrder: 'desc',
       limit: 50,
-    }), 'posts'),
+    })],
   ])
 
   const daily = mapDailyMetrics(dailyRes.value, {
@@ -127,6 +137,7 @@ export async function aggregateOverview(client, uiQuery = {}, opts = {}) {
   const emptyState = emptyStateFor(accounts, daily.postsCount, upstreamError)
 
   return {
+    ...(partialErrors.length ? { partialErrors } : {}),
     meta: stampMeta(query, accounts, now),
     syncStatus: stampSync(now, { lastError: upstreamError || null }),
     filtersEcho: query,
@@ -148,12 +159,13 @@ export async function aggregateInsights(client, uiQuery = {}, opts = {}) {
   const now = opts.now ?? Date.now()
   const query = normalizeQuery(uiQuery)
   const cloud = buildCloudQuery(query, now)
-  const [heatRes, freqRes, decayRes] = await Promise.all([
-    settleCloud(getBestTimeToPost(client, cloud), 'best-time-to-post'),
-    settleCloud(getPostingFrequency(client, cloud), 'posting-frequency'),
-    settleCloud(getContentDecay(client, cloud), 'content-decay'),
+  const { results: [heatRes, freqRes, decayRes], partialErrors } = await settleDashboardSources([
+    ['best-time-to-post', getBestTimeToPost(client, cloud)],
+    ['posting-frequency', getPostingFrequency(client, cloud)],
+    ['content-decay', getContentDecay(client, cloud)],
   ])
   return {
+    ...(partialErrors.length ? { partialErrors } : {}),
     heatmap: mapHeatmap(heatRes.value),
     strategy: {
       cadence: mapCadence(freqRes.value),
@@ -171,7 +183,7 @@ export async function aggregateFollowers(client, uiQuery = {}, opts = {}) {
   const now = opts.now ?? Date.now()
   const query = normalizeQuery(uiQuery)
   const cloud = buildCloudQuery(query, now)
-  const res = await settleCloud(getFollowerStats(client, cloud), 'follower-stats')
+  const { results: [res] } = await settleDashboardSources([['follower-stats', getFollowerStats(client, cloud)]])
   const mapped = mapFollowers(res.value)
   return {
     followerEvolution: {
@@ -195,12 +207,14 @@ export async function aggregatePosts(client, uiQuery = {}, opts = {}) {
   const now = opts.now ?? Date.now()
   const query = normalizeQuery(uiQuery)
   const cloud = buildCloudQuery(query, now)
-  const res = await settleCloud(getPostAnalytics(client, {
-    ...cloud,
-    sortBy: 'engagement',
-    sortOrder: 'desc',
-    limit: 50,
-  }), 'posts')
+  const { results: [res] } = await settleDashboardSources([
+    ['posts', getPostAnalytics(client, {
+      ...cloud,
+      sortBy: 'engagement',
+      sortOrder: 'desc',
+      limit: 50,
+    })],
+  ])
   const topPosts = res.ok ? mapPosts(res.value) : []
   return { topPosts }
 }

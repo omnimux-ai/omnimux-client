@@ -18,7 +18,7 @@ export interface SubmitNodeOptions {
   /** Synchronous click guard shared by every render of the node. */
   isPendingRef: { current: boolean };
   start: (nodeId: string) => NodeSubmissionResult | Promise<NodeSubmissionResult> | void;
-  ensureQuota?: (context: { capability?: string; correlationId?: string }) => Promise<NodeQuotaCheckResult | undefined> | NodeQuotaCheckResult | undefined;
+  ensureQuota?: (context: { capability?: string; correlationId?: string; userInitiated?: boolean }) => Promise<NodeQuotaCheckResult | undefined> | NodeQuotaCheckResult | undefined;
   /** Called once when the create request settles, regardless of outcome. */
   onSettled?: () => void;
   /** Transport failure from the quota seam (not the normal quota-denied notice). */
@@ -33,7 +33,7 @@ export function submitNodeImmediate(options: SubmitNodeOptions): Promise<NodeSub
   if (ensureQuota) {
     // Parallel, deliberately not awaited: create must go out immediately.
     void Promise.resolve()
-      .then(() => ensureQuota({ capability: 'canvas', correlationId: nodeId }))
+      .then(() => ensureQuota({ capability: 'canvas', correlationId: nodeId, userInitiated: true }))
       .then((result) => {
         if (result && result.ok === false) onQuotaFailure?.();
       })

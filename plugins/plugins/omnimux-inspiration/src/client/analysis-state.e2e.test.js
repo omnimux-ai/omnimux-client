@@ -3,6 +3,7 @@ import test from 'node:test'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
+import { uiKitShimPlugin } from '../../tests/fixtures/ui-kit-shim-plugin.mjs'
 import { JSDOM } from 'jsdom'
 import '../../tests/fixtures/dom-bootstrap.mjs'
 import { act } from 'react'
@@ -20,7 +21,7 @@ async function previewService() {
     entryPoints: [fileURLToPath(new URL('./preview-service.jsx', import.meta.url))],
     bundle: true, write: false, format: 'cjs', platform: 'node', jsx: 'automatic',
     external: ['react', 'react-dom', 'react-dom/client'],
-    alias: { 'dsh-ui-kit': fileURLToPath(new URL('../../tests/fixtures/ui-kit-shim.mjs', import.meta.url)) },
+    plugins: [uiKitShimPlugin],
   })
   const module = { exports: {} }
   new Function('require', 'module', 'exports', result.outputFiles[0].text)(require, module, module.exports)

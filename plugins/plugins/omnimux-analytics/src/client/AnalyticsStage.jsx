@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Divider, IconButton, IconDownloadOutline16, PageHeader } from 'dsh-ui-kit'
 import { injectAnalyticsStyles } from './styles.js'
-import { useAnalyticsStore } from './store.js'
+import { observeDashboardIdentity, useAnalyticsStore } from './store.js'
 import { buildDashboardCsv, downloadCsv } from './csv.js'
 import { ActionNavRow } from './components/ActionNavRow.jsx'
 import { FilterBar } from './components/FilterBar.jsx'
@@ -16,6 +16,14 @@ import { StrategyCharts } from './components/StrategyCharts.jsx'
 import { Banner, EmptyState, InboxPlaceholder, LoadingState } from './components/EmptyState.jsx'
 
 const TAB_ID = 'omnimux-analytics:library'
+
+function canObserveLogin(gate) {
+  return typeof gate?.subscribe === 'function' && typeof gate.isLoggedIn === 'function' && typeof gate.getSnapshot === 'function'
+}
+
+function canObserveIdentity(gate) {
+  return typeof gate?.subscribeIdentity === 'function' && typeof gate.getIdentitySnapshot === 'function'
+}
 
 function readLocale() {
   if (typeof document === 'undefined') return 'zh-CN'
@@ -55,13 +63,7 @@ export function AnalyticsStage({ t, stage, store, visible = true }) {
 
   const [now, setNow] = useState(() => Date.now())
   const analyticsStore = useAnalyticsStore()
-  // Primitive fetch keys only — never depend on analyticsStore.query object
-  // identity. refresh()/loadDashboard() always clone query into a new object,
-  // so an object dependency re-fires this effect forever (React #185 / max update depth).
-  // tab + searchQuery are client-side only (see query.patchNeedsFetch / cacheKey).
-  const queryPlatform = analyticsStore.query.platform
-  const queryProfileId = analyticsStore.query.profileId
-  const queryTimeRange = analyticsStore.query.timeRange
+  const refresh = analyticsStore.refresh
 
   useEffect(() => {
     if (!visible) return undefined
@@ -70,18 +72,49 @@ export function AnalyticsStage({ t, stage, store, visible = true }) {
   }, [visible])
 
   useEffect(() => {
-    if (!visible) return undefined
-    void analyticsStore.refresh()
-  }, [visible, queryPlatform, queryProfileId, queryTimeRange])
+    const gate = window.__omnimuxAuth
+    let unsubscribe
+    if (canObserveIdentity(gate)) {
+      observeDashboardIdentity(gate.getIdentitySnapshot())
+      unsubscribe = gate.subscribeIdentity(() => {
+        const identity = gate.getIdentitySnapshot()
+        if (observeDashboardIdentity(identity) && visible && identity.loggedIn) {
+          void refresh({ userInitiated: true })
+        }
+      })
+    }
+    if (visible) void refresh()
+    return unsubscribe
+  }, [visible, refresh])
 
   const payload = analyticsStore.payload
   const empty = payload?.emptyState || null
   const blockingEmpty = empty && (empty.code === 'no_accounts' || empty.code === 'no_data')
   const locale = readLocale()
 
+  useEffect(() => {
+    if (!visible || empty?.code !== 'unauthorized') return
+    const gate = window.__omnimuxAuth
+    if (canObserveIdentity(gate) || !canObserveLogin(gate)) return
+    let refreshing = false
+    return gate.subscribe(() => {
+      if (refreshing || gate.getSnapshot().phase !== 'closed' || !gate.isLoggedIn()) return
+      refreshing = true
+      void analyticsStore.refresh({ userInitiated: true }).finally(() => { refreshing = false })
+    })
+  }, [visible, empty?.code, analyticsStore.refresh])
+
   const handleAction = (action) => {
     if (action === 'retry') {
-      void analyticsStore.refresh()
+      void analyticsStore.refresh({ userInitiated: true })
+    } else if (action === 'login') {
+      const refreshDashboard = () => { void analyticsStore.refresh({ userInitiated: true }) }
+      const gate = window.__omnimuxAuth
+      if (typeof gate?.ensureLogin === 'function') {
+        gate.ensureLogin({ kind: 'explicit', action: 'accounts', onSuccess: canObserveIdentity(gate) || canObserveLogin(gate) ? undefined : refreshDashboard })
+      } else {
+        refreshDashboard()
+      }
     } else if (action === 'sync') {
       void analyticsStore.syncNow()
     } else if (action === 'bind') {

@@ -76,3 +76,54 @@ describe('query object identity (React #185 guard)', () => {
     assert.equal(analyticsStore.getSnapshot().query, before)
   })
 })
+
+it('marks only an explicit dashboard retry as a user-initiated quota check', async (t) => {
+  const originalWindow = globalThis.window
+  const previousMock = process.env.OMNIMUX_ANALYTICS_MOCK
+  t.after(() => {
+    globalThis.window = originalWindow
+    if (previousMock === undefined) delete process.env.OMNIMUX_ANALYTICS_MOCK
+    else process.env.OMNIMUX_ANALYTICS_MOCK = previousMock
+  })
+  process.env.OMNIMUX_ANALYTICS_MOCK = '0'
+  const checks = []
+  globalThis.window = { __omnimuxQuota: {
+    ensureQuota: async ({ userInitiated }) => { checks.push(Boolean(userInitiated)); return { ok: false, reason: 'quota' } },
+  } }
+  const fetch = t.mock.method(globalThis, 'fetch', async () => { throw new Error('unexpected Host request') })
+  await analyticsStore.refresh()
+  await analyticsStore.refresh({ userInitiated: true })
+  assert.deepEqual(checks, [false, true])
+  assert.equal(fetch.mock.callCount(), 0)
+})
+
+it('uses one dashboard read when a retry follows a pending filter', async (t) => {
+  const previousMock = process.env.OMNIMUX_ANALYTICS_MOCK
+  t.after(() => {
+    if (previousMock === undefined) delete process.env.OMNIMUX_ANALYTICS_MOCK
+    else process.env.OMNIMUX_ANALYTICS_MOCK = previousMock
+  })
+  process.env.OMNIMUX_ANALYTICS_MOCK = '0'
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const held = Promise.withResolvers()
+  const reads = []
+  t.mock.method(globalThis, 'fetch', async (path) => {
+    reads.push(String(path))
+    await held.promise
+    return Response.json({}, { status: 503 })
+  })
+
+  setQuery({ platform: 'tiktok' })
+  const retry = analyticsStore.refresh({ userInitiated: true })
+  await new Promise(resolve => setImmediate(resolve))
+  t.mock.timers.tick(FILTER_DEBOUNCE_MS)
+  await new Promise(resolve => setImmediate(resolve))
+  held.resolve()
+  await retry
+
+  assert.deepEqual(reads.map(path => path.split('?')[0]), [
+    '/omnimux/analytics/overview', '/omnimux/analytics/insights',
+    '/omnimux/analytics/followers', '/omnimux/analytics/posts',
+  ])
+  assert.ok(reads.every(path => new URLSearchParams(path.split('?')[1]).get('platform') === 'tiktok'))
+})
