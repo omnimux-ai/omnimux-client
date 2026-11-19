@@ -198,6 +198,35 @@ test('a deliberately cleared current audio slot on an old H3 canvas stays empty 
   assert.notEqual(findExecutionReadinessFailure([prepared.nodes.at(-1)], current, prepared), null);
 });
 
+test('returning to H3 honors an explicit current choice even when an older binding survives beside it', () => {
+  for (const voice of [null, 'unused-audio']) {
+    const saved = savedGraph(true);
+    saved.nodes.at(-1).data.slotBindings.reference_audio = voice
+      ? [{ edgeId: 'edge-' + voice, sourceNodeId: voice, pinned: true, use: 'active', role: 'reference' }] : [];
+    const loaded = reconcileCanvasForCatalog({ ...saved, catalog: current });
+    const prepared = roundTripLegacyMode(saved);
+    for (const graph of [loaded, prepared]) {
+      const target = graph.nodes.at(-1);
+      assert.deepEqual(target.data.slotBindings.reference_image.map(item => item.sourceNodeId), ['portrait']);
+      assert.deepEqual(target.data.slotBindings.reference_audio.map(item => item.sourceNodeId), voice ? [voice] : []);
+      assert.equal(findExecutionReadinessFailure([target], current, graph)?.slot, voice ? undefined : 'reference_audio');
+    }
+  }
+});
+
+test('current-version H3 without saved slot bindings restores an explicit older edge choice', () => {
+  const saved = savedGraph(false);
+  saved.nodes.at(-1).data.inputBindingVersion = 1;
+  const opened = reconcileCanvasForCatalog({ ...saved, catalog: current });
+  const prepared = roundTripLegacyMode(saved);
+  for (const graph of [opened, prepared]) {
+    const target = graph.nodes.at(-1);
+    assert.deepEqual(target.data.slotBindings.reference_image.map(item => item.sourceNodeId), ['portrait']);
+    assert.deepEqual(target.data.slotBindings.reference_audio.map(item => item.sourceNodeId), ['voice']);
+    assert.equal(findExecutionReadinessFailure([target], current, graph), null);
+  }
+});
+
 test('H3 compatibility does not rebind inactive, intentionally empty, or unrelated saved intent', () => {
   const saved = savedGraph(true);
   const data = saved.nodes.at(-1).data;
@@ -209,7 +238,7 @@ test('H3 compatibility does not rebind inactive, intentionally empty, or unrelat
   const target = graph.nodes.at(-1);
   assert.deepEqual(target.data.slotBindings.reference_image, [{ ...data.slotBindings.character[0], role: 'reference' }]);
   assert.deepEqual(target.data.slotBindings.reference_audio, data.slotBindings.reference_audio);
-  assert.deepEqual(target.data.slotBindings.driving_audio, data.slotBindings.driving_audio);
+  assert.equal(Object.hasOwn(target.data.slotBindings, 'driving_audio'), false, 'the retired alias cannot override the current empty slot');
   assert.deepEqual(target.data.slotBindings.custom_portrait, data.slotBindings.custom_portrait);
   assert.notEqual(findExecutionReadinessFailure([target], current, graph), null);
   assert.deepEqual(saved, before);

@@ -2,12 +2,12 @@ import type { Edge } from '@xyflow/react';
 import type { CanvasInputMutationState, CanvasMutationRuntimeContext, CanvasNode } from './canvasInputMutationGateway.ts';
 import type { MaterialType } from '../canvasTypes.ts';
 import type { MaterialNodeData } from './materialNode.ts';
-import { buildCanvasUpstreamFingerprint, readCanvasParams } from './canvasInputSources.ts';
+import { readCanvasParams } from './canvasInputSources.ts';
 import { buildContractView, buildUpstreamFingerprint, isMediaInputType, matchOperationInputs, planAutoAdaptation, resolveModelView } from '../validation/compatKernel.ts';
 import { buildInputCapability } from '../validation/inputCapability.ts';
 import { autoFillSlots, deriveSlotLayout, hydrateSlotBindings, type SlotBindings, type SlotConflict, type SlotOccupant } from './feedSlot/index.ts';
 import { effectiveSlotFingerprint, feedFromFingerprint } from './feedSlot/effectiveFingerprint.ts';
-import { projectLegacyH3Slots } from './feedSlot/legacyH3Slots.ts';
+import { projectCanvasInputSources } from './feedSlot/legacyH3Slots.ts';
 import { resolveSlotOperation } from './feedSlot/resolveSlotOperation.ts';
 import { narrowCatalogByRouting } from '../validation/lineConstraints.ts';
 
@@ -21,10 +21,10 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
   const currentVersion = node.data.inputBindingVersion === 1;
   const view = buildContractView(catalog);
   const savedModel = typeof params.model === 'string' ? resolveModelView(view, params.model) : undefined;
-  const projected = projectLegacyH3Slots(node.id, node.data, graph.edges, catalog?.source, savedModel);
+  const projected = projectCanvasInputSources(node.id, node.data, graph.nodes, graph.edges, catalog, savedModel);
   if (projected.data !== node.data) node = { ...node, data: projected.data };
   if (projected.edges !== graph.edges) graph = { ...graph, edges: projected.edges };
-  const raw = buildCanvasUpstreamFingerprint(node.id, graph.nodes, graph.edges);
+  const raw = projected.fingerprint;
   if (!params.model && catalog) {
     const recommended = catalog.defaultOperations?.[outputType];
     const pick = planAutoAdaptation({ catalog, outputType, preferredModelId: context.preferredModels?.[outputType],
@@ -120,7 +120,7 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
     && (Object.keys(explicit).length === 0 || Object.values(explicit).some(occupants => occupants.length === 0));
   const useSavedSlots = currentVersion || upgradeRestored || savedClears;
   const keepSavedLipSlots = selectableBeforeInputs && params.operation === 'digital_human'
-    && ((useSavedSlots && !modeChanged) || upgradeRestored);
+    && useSavedSlots && (!modeChanged || (verifiedH3Lip && Boolean(restoring)));
   // A V1 occupant is authoritative only while its source node and edge still exist on the
   // canvas. Unpinned (auto-filled) occupants whose supply vanished are junk that must be
   // pruned here, otherwise the stale binding keeps re-persisting and the node stays blocked

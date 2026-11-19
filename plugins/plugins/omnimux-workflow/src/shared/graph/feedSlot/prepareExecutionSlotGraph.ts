@@ -4,15 +4,13 @@ import { buildInputCapability } from '../../validation/inputCapability.ts';
 import { readNodeInputSource } from '../nodeInputSource.ts';
 import { resolveNodeKind } from '../materialNode.ts';
 import { materialTools } from '../../specs/nodes/materialNodeSpec.ts';
-import { H3_SLOT_RENAMES, projectLegacyH3Slots } from './legacyH3Slots.ts';
+import { H3_SLOT_RENAMES, projectCanvasInputSources } from './legacyH3Slots.ts';
 import { deriveSlotLayout } from './deriveSlotLayout.ts';
 import { readPreferredOperationId } from '../../validation/operationUi.ts';
 import { effectiveInputDisplay } from './effectiveInputDisplay.ts';
 import type { LegacySlotEdge } from './hydrateSlotBindings.ts';
 import type { FeedAsset, SlotBindings, SlotConflict } from './types.ts';
-import { buildCanvasUpstreamFingerprint } from '../canvasInputSources.ts';
 import type { CanvasNode } from '../canvasInputMutationGateway.ts';
-import type { Edge } from '@xyflow/react';
 import { resolveSlotOperation } from './resolveSlotOperation.ts';
 import { normalizeVideoParamsForSchema } from '../../../canvas/editor/components/MaterialNode/ConfigPanel/videoParams/videoParamNormalization.ts';
 
@@ -43,11 +41,11 @@ export function prepareExecutionSlotGraph<
       ? data.autoOperationId as string | null
       : undefined;
     const model = resolveModelView(view, (params.model ?? catalog?.defaults?.[kind]) as string | undefined);
-    const projected = projectLegacyH3Slots(node.id, data, nextEdges, catalog?.source, model);
+    const projected = projectCanvasInputSources(node.id, data, nodes as unknown as CanvasNode[], nextEdges, catalog, model);
     data = projected.data;
     nextEdges = projected.edges;
     params.model ??= model?.id;
-    const fingerprint = buildCanvasUpstreamFingerprint(node.id, nodes as unknown as CanvasNode[], nextEdges as unknown as Edge[]);
+    const fingerprint = projected.fingerprint;
     if (kind === 'video') {
       // R9: inputCapability decides the operation from the connected media;
       // #55 below only normalizes the values against that operation schema.
