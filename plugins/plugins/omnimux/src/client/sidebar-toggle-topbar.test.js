@@ -1903,8 +1903,9 @@ describe('topbar anchor visibility (#67 AC-4)', () => {
     assert.equal(doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`), null)
   })
 
-  it('keeps the appearance observer armed past the retry window and restores when the panel becomes visible', async () => {
+  it('falls back to body past the retry window, then migrates when the panel becomes visible', async () => {
     const doc = setup('<!doctype html><html><body><div id="root"></div></body></html>')
+    mockRect(doc.body, rect(0, 0, 1280, 840))
     const guide = doc.createElement('div')
     guide.setAttribute('data-omnimux-native-runtime', '')
     doc.body.appendChild(guide)
@@ -1932,9 +1933,10 @@ describe('topbar anchor visibility (#67 AC-4)', () => {
       await new Promise((resolve) => setTimeout(resolve, 120))
       assert.equal(injected(), false, '隐藏 tabBar 不得触发注入')
 
-      // 等过自愈链窗口（3.5s）后再出现可见 panel：只有观察者仍在才可能恢复。
+      // 等过自愈链窗口（3.5s）：无可见锚点时允许 body fallback，控件必须已存在。
       await new Promise((resolve) => setTimeout(resolve, 4000))
-      assert.equal(injected(), false)
+      assert.equal(injected(), true)
+      assert.equal(doc.querySelector(`button[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`).parentElement, doc.body)
       host.style.display = ''
       const visiblePanel = doc.createElement('div')
       visiblePanel.className = 'x_panel'
@@ -1945,8 +1947,7 @@ describe('topbar anchor visibility (#67 AC-4)', () => {
       mockRect(visiblePanel, rect(280, 0, 1000, 800))
       mockRect(visibleBar, rect(280, 4, 1000, 34))
 
-      await waitFor(injected)
-      assert.equal(doc.querySelector(`button[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`).parentElement, visibleBar)
+      await waitFor(() => doc.querySelector(`button[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`)?.parentElement === visibleBar)
     } finally {
       stop()
     }
@@ -1954,6 +1955,7 @@ describe('topbar anchor visibility (#67 AC-4)', () => {
 
   it('restores when a visible topStrip mounts after the retry window', async () => {
     const doc = setup('<!doctype html><html><body><div id="root"></div></body></html>')
+    mockRect(doc.body, rect(0, 0, 1280, 840))
     const guide = doc.createElement('div')
     guide.setAttribute('data-omnimux-native-runtime', '')
     doc.body.appendChild(guide)
@@ -1962,7 +1964,8 @@ describe('topbar anchor visibility (#67 AC-4)', () => {
     try {
       guide.remove()
       await new Promise((resolve) => setTimeout(resolve, 4000))
-      assert.equal(injected(), false, 'topStrip 晚挂前不得注入')
+      assert.equal(injected(), true, '重试窗口耗尽后应走 body fallback')
+      assert.equal(doc.querySelector(`button[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`).parentElement, doc.body)
 
       const shell = doc.createElement('div')
       const topStrip = doc.createElement('div')
@@ -1970,8 +1973,7 @@ describe('topbar anchor visibility (#67 AC-4)', () => {
       mockRect(topStrip, rect(0, 0, 280, 52))
       shell.appendChild(topStrip)
       doc.getElementById('root').appendChild(shell)
-      await waitFor(injected)
-      assert.equal(doc.querySelector(`button[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`).parentElement, topStrip)
+      await waitFor(() => doc.querySelector(`button[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`)?.parentElement === topStrip)
     } finally {
       stop()
     }
@@ -2024,6 +2026,48 @@ describe('topbar anchor visibility (#67 AC-4)', () => {
     assert.equal(findTopbarAnchor(doc), null)
     assert.equal(ensureSidebarToggleTopbar(doc), null)
     assert.equal(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`), null)
+  })
+
+  it('falls back to body when the collapsed shell hides the sidebar', async () => {
+    const doc = setup(`<!doctype html><html><body>
+      <div class="sidebarCol_x" style="display:none">
+        <div class="x-Wl6W_root x-Wl6W_collapsed x-Wl6W_railIn x-Wl6W_quietBars">
+          <div class="x_topStrip"><button type="button" aria-label="展开侧边栏">T</button></div>
+        </div>
+      </div>
+    </body></html>`)
+    mockRect(doc.body, rect(0, 0, 1280, 840))
+    const stop = installSidebarToggleTopbar(doc)
+    try {
+      await waitFor(() => Boolean(doc.querySelector(`button[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`)), 1000)
+      const toggle = doc.querySelector(`button[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`)
+      const newSession = doc.querySelector(`button[${TOPBAR_NEW_SESSION_ATTR}="1"]`)
+      assert.equal(toggle.parentElement, doc.body, '折叠态 toggle 必须回退到 body')
+      assert.ok(newSession, '折叠态 new-session 必须同时注入')
+      assert.equal(newSession.parentElement, doc.body, '折叠态 new-session 必须回退到 body')
+      assert.equal(doc.documentElement.hasAttribute(SIDEBAR_TOGGLE_TOPBAR_HTML_ATTR), true)
+    } finally {
+      stop()
+    }
+  })
+
+  it('never injects the body fallback while the guide is active', async () => {
+    const doc = setup(`<!doctype html><html><body>
+      <div data-omnimux-native-runtime></div>
+      <div class="sidebarCol_x" style="display:none">
+        <div class="x-Wl6W_root x-Wl6W_collapsed x-Wl6W_railIn"></div>
+      </div>
+    </body></html>`)
+    mockRect(doc.body, rect(0, 0, 1280, 840))
+    const stop = installSidebarToggleTopbar(doc)
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      assert.equal(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`), null, '引导态不得出现 body fallback 控件')
+      assert.equal(doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`), null)
+      assert.equal(doc.documentElement.hasAttribute(SIDEBAR_TOGGLE_TOPBAR_HTML_ATTR), false)
+    } finally {
+      stop()
+    }
   })
 })
 

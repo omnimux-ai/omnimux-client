@@ -1245,17 +1245,34 @@ function removeInjectedTopbarControls(doc) {
 }
 
 /**
+ * Body fallback（#67 AC-4）：新壳折叠时整个侧栏 `display:none`，topStrip 0×0，
+ * `findTopbarAnchor()` 必然为 null；此时把 fixed 定位的控件挂到 body 上仍可见。
+ * 只在引导已结束且调用方明确放行时使用；引导态继续由 `isOnboardingGuideActive`
+ * 早退，绝不把按钮带回引导页左上角。
+ * @param {Document | null | undefined} doc
+ * @param {boolean} allow
+ * @returns {HTMLElement | null}
+ */
+function resolveBodyFallbackAnchor(doc, allow) {
+  if (!allow || !doc || isOnboardingGuideActive(doc)) return null
+  const body = doc.body
+  if (!body || typeof body.appendChild !== 'function') return null
+  return body
+}
+
+/**
  * Inject (idempotently) our own topbar toggle button into the better-sidebar
  * tab bar. Its click drives the official button's programmatic click.
  * @param {Document | null | undefined} doc
+ * @param {{ allowBodyFallback?: boolean }} [options]
  * @returns {HTMLElement | null}
  */
-export function injectTopbarToggleButton(doc) {
+export function injectTopbarToggleButton(doc, options = {}) {
   if (isOnboardingGuideActive(doc)) {
     removeInjectedTopbarControls(doc)
     return null
   }
-  const anchor = findTopbarAnchor(doc)
+  const anchor = findTopbarAnchor(doc) || resolveBodyFallbackAnchor(doc, options.allowBodyFallback === true)
   if (!anchor) return null
   let btn = doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`)
   if (!btn) {
@@ -1288,9 +1305,10 @@ export function injectTopbarToggleButton(doc) {
  * Inject (idempotently) the collapsed-only topbar new-session button.
  * @param {Document | null | undefined} doc
  * @param {boolean} collapsed
+ * @param {{ allowBodyFallback?: boolean }} [options]
  * @returns {HTMLElement | null}
  */
-export function injectTopbarNewSessionButton(doc, collapsed) {
+export function injectTopbarNewSessionButton(doc, collapsed, options = {}) {
   if (!doc) return null
   if (isOnboardingGuideActive(doc)) {
     removeInjectedTopbarControls(doc)
@@ -1303,7 +1321,7 @@ export function injectTopbarNewSessionButton(doc, collapsed) {
     }
     return null
   }
-  const anchor = findTopbarAnchor(doc)
+  const anchor = findTopbarAnchor(doc) || resolveBodyFallbackAnchor(doc, options.allowBodyFallback === true)
   if (!anchor) return null
   if (!btn) {
     btn = doc.createElement('button')
@@ -1557,9 +1575,10 @@ export function injectTopbarRightExpandButton(doc) {
 /**
  * Wire the topbar toggle + collapsed mirror. Returns the injected toggle button.
  * @param {Document | null | undefined} doc
+ * @param {{ allowBodyFallback?: boolean }} [options]
  * @returns {HTMLElement | null}
  */
-export function ensureSidebarToggleTopbar(doc) {
+export function ensureSidebarToggleTopbar(doc, options = {}) {
   if (!doc?.documentElement) return null
   if (isOnboardingGuideActive(doc)) {
     removeInjectedTopbarControls(doc)
@@ -1570,18 +1589,18 @@ export function ensureSidebarToggleTopbar(doc) {
   const collapsed = syncLeftCollapsedHtmlAttr(doc)
   // 几何变量与注入成败无关：拖动/缩放每帧都要发布中栏宽度，不能因暂无可见锚点而停。
   safeDom(() => applyTopbarToggleCssVars(doc))
-  const btn = injectTopbarToggleButton(doc)
+  const btn = injectTopbarToggleButton(doc, options)
   // 只有注入成功且可见才隐藏原生 toggle / 设 html marker；否则恢复原生。
   // 否则会出现「原生被 display:none、注入又返回 null」→ 0 个可见 toggle（#67 AC-4）。
   if (!btn || !isInjectedControlVisible(btn, doc)) {
     root.removeAttribute(SIDEBAR_TOGGLE_TOPBAR_HTML_ATTR)
     restoreOriginalToggle(doc)
-    injectTopbarNewSessionButton(doc, false)
+    injectTopbarNewSessionButton(doc, false, options)
     return null
   }
   root.setAttribute(SIDEBAR_TOGGLE_TOPBAR_HTML_ATTR, '')
   hideOriginalToggle(doc)
-  injectTopbarNewSessionButton(doc, collapsed)
+  injectTopbarNewSessionButton(doc, collapsed, options)
   syncNativeRightbarControls(doc)
   // Guard against the observer's aria-label attribute filter: setting the same
   // value would still fire a MutationRecord and loop forever.
@@ -1665,7 +1684,12 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
       if (isEnsuring) return
       isEnsuring = true
       try {
-        ensureSidebarToggleTopbar(doc)
+        // 折叠态（侧栏 display:none / topStrip 0×0）没有可见锚点，直接允许 body fallback；
+        // 展开态等可见锚点重试窗口耗尽后同样放行，避免外壳晚挂载时无限等不到控件。
+        const retryExhausted = topbarRetryTimer === null
+          && topbarRetryAttempt >= TOPBAR_RETRY_BACKOFF_MS.length
+        const allowBodyFallback = isLeftSidebarCollapsed(doc) || retryExhausted
+        ensureSidebarToggleTopbar(doc, { allowBodyFallback })
         ensureObserveTargets()
         rebindHostObservers()
         watchTopbarAnchorAppearance()
