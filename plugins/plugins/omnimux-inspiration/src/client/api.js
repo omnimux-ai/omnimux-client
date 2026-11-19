@@ -1,3 +1,6 @@
+import { quotaGuard } from 'dsh-ui-kit/quota-request'
+export { isQuotaHttpResult, notifyQuota, quotaGuard } from 'dsh-ui-kit/quota-request'
+
 import { shareSourceOf } from './share-status.js'
 
 /**
@@ -24,33 +27,6 @@ export async function inspirationRequest(path, opts = {}) {
  * Wrap a Host call so a 401 pops the hub login gate, then replays once.
  * @param {(...args: any[]) => Promise<{ ok: boolean, status: number, body: any }>} fn
  */
-export function isQuotaHttpResult(result) {
-  if (!result || result.ok) return false
-  if (result.status === 402) return true
-  const err = result.body && typeof result.body === 'object' ? result.body.error : null
-  return err === 'quota-exceeded'
-}
-
-export function notifyQuota(result, context) {
-  const quota = typeof window !== 'undefined' ? window.__omnimuxQuota : undefined
-  if (!quota || typeof quota.notify !== 'function' || !isQuotaHttpResult(result)) return result
-  quota.notify({ status: result.status, body: result.body, code: result.body?.error }, context)
-  return result
-}
-
-export function quotaGuard(fn, context) {
-  return (...args) => {
-    const quota = typeof window !== 'undefined' ? window.__omnimuxQuota : undefined
-    const run = () => Promise.resolve(fn(...args)).then((result) => notifyQuota(result, context))
-    if (!quota || typeof quota.ensureQuota !== 'function') return run()
-    return Promise.resolve(quota.ensureQuota(context)).then((gate) => {
-      if (gate?.ok === false && gate.reason === 'quota') return { ok: false, status: 402, body: { error: 'quota-exceeded' } }
-      if (gate?.ok === false) return { ok: false, status: 401, body: { error: 'needs-omnimux' } }
-      return run()
-    })
-  }
-}
-
 export function authGuard(fn) {
   return (...args) => {
     const run = async () => {
@@ -306,7 +282,7 @@ export function triggerAnalyzeInspiration(id, selection) {
   return quotaGuard(() => inspirationRequest(`/omnimux/inspiration/local/${encodeURIComponent(id)}/analyze`, {
     method: 'POST',
     body: selection,
-  }), { capability: 'inspiration-analyze' })()
+  }), { capability: 'inspiration-analyze', userInitiated: true })()
 }
 
 /** The hub owns service choices; a library never writes model settings itself. */
@@ -325,7 +301,7 @@ export function translateInspiration(id, lang = 'zh', options = {}) {
   return quotaGuard(() => inspirationRequest(`/omnimux/inspiration/local/${encodeURIComponent(id)}/translate`, {
     method: 'POST',
     body: { ...options, lang },
-  }), { capability: 'inspiration-analyze' })()
+  }), { capability: 'inspiration-analyze', userInitiated: true })()
 }
 
 /** Save the domain-owned draft without starting a session or producing media. */

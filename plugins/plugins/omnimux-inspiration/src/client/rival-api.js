@@ -17,12 +17,11 @@ function request(path, opts) {
 }
 
 /**
- * @template T
  * @param {(...args: any[]) => Promise<{ ok: boolean, status: number, body: any }>} fn
- * @param {string} capability
+ * @param {boolean} [userInitiated]
  */
-function guarded(fn, capability) {
-  return authGuard(quotaGuard(fn, { capability }))
+function guarded(fn, userInitiated = false) {
+  return quotaGuard(authGuard(fn), { capability: 'inspiration-rival', userInitiated })
 }
 
 /**
@@ -39,7 +38,7 @@ export function fetchRivalAccounts(filter = {}) {
     }
     const suffix = query.toString() ? `?${query}` : ''
     return request(suffix, {})
-  }, 'inspiration-rival')()
+  })()
 }
 
 /**
@@ -49,7 +48,7 @@ export function fetchRivalAccounts(filter = {}) {
 export function classifyRivalInput(url) {
   return guarded(
     () => request('/classify', { method: 'POST', body: { url } }),
-    'inspiration-rival',
+    true,
   )()
 }
 
@@ -60,7 +59,7 @@ export function classifyRivalInput(url) {
 export function importRivalAccount(payload) {
   return guarded(
     () => request('', { method: 'POST', body: { ...payload, background: true } }),
-    'inspiration-rival',
+    true,
   )()
 }
 
@@ -69,7 +68,7 @@ export function importRivalAccount(payload) {
  * @param {string} id
  */
 export function fetchRivalAccount(id) {
-  return guarded(() => request(`/${encodeURIComponent(id)}`), 'inspiration-rival')()
+  return guarded(() => request(`/${encodeURIComponent(id)}`))()
 }
 
 /**
@@ -80,7 +79,7 @@ export function fetchRivalAccount(id) {
 export function patchRivalAccount(id, patch) {
   return guarded(
     () => request(`/${encodeURIComponent(id)}`, { method: 'PATCH', body: patch }),
-    'inspiration-rival',
+    true,
   )()
 }
 
@@ -91,7 +90,7 @@ export function patchRivalAccount(id, patch) {
 export function removeRivalAccount(id) {
   return guarded(
     () => request(`/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-    'inspiration-rival',
+    true,
   )()
 }
 
@@ -108,7 +107,7 @@ export function fetchRivalPosts(id, filter = {}) {
     if (filter.sort) query.set('sort', String(filter.sort))
     const suffix = query.toString() ? `?${query}` : ''
     return request(`/${encodeURIComponent(id)}/posts${suffix}`)
-  }, 'inspiration-rival')()
+  })()
 }
 
 /**
@@ -138,7 +137,7 @@ export function fetchRivalFeed(filter = {}) {
     }
     const suffix = query.toString() ? `?${query}` : ''
     return request(`/posts${suffix}`)
-  }, 'inspiration-rival')()
+  })()
 }
 
 /** Convert one post into the inspiration library (E13). */
@@ -148,7 +147,7 @@ export function convertRivalPost(id, postId, opts = {}) {
       method: 'POST',
       body: { tags: opts.tags, auto_analyze: opts.auto_analyze !== false },
     }),
-    'inspiration-rival',
+    true,
   )()
 }
 
@@ -164,7 +163,7 @@ export function ensureRivalPostMedia(id, postId, kind = 'cover') {
       method: 'POST',
       body: { kind },
     }),
-    'inspiration-rival',
+    true,
   )()
 }
 
@@ -187,7 +186,7 @@ export function refreshRivalAccount(id, opts = {}) {
       method: 'POST',
       body: { manual: opts.manual === true },
     }),
-    'inspiration-rival',
+    opts.manual === true,
   )()
 }
 
@@ -209,7 +208,7 @@ export function retryRivalAccount(id) {
 export function requestRivalPluginRefresh(id) {
   return guarded(
     () => request(`/${encodeURIComponent(id)}/plugin-refresh-request`, { method: 'POST' }),
-    'inspiration-rival',
+    true,
   )()
 }
 
@@ -219,7 +218,7 @@ export function requestRivalPluginRefresh(id) {
  * place the used side of the ledger is already on the wire.
  */
 export function fetchRivalStatus() {
-  return guarded(() => request('/status', {}), 'inspiration-rival')()
+  return guarded(() => request('/status', {}))()
 }
 
 /**
@@ -230,7 +229,7 @@ export function fetchRivalStatus() {
 export function refreshAllRivalAccounts() {
   return guarded(
     () => request('/refresh-all', { method: 'POST', body: { manual: true } }),
-    'inspiration-rival',
+    true,
   )()
 }
 
@@ -248,5 +247,5 @@ export function markRivalPostDone(accountId, postId) {
       method: 'POST',
       body: JSON.stringify({ done: true }),
     })
-  }, 'inspiration-rival')()
+  }, true)()
 }

@@ -106,6 +106,27 @@ describe('mountMedia capability gate', () => {
     assert.ok(tools[0].parameters.properties.allowed_groups)
   })
 
+  it('forwards music style and explicit vocal choices from the audio tool to the same executor as the seam', async () => {
+    let audioTool
+    let audioGenerate
+    mountMedia({
+      tools: { register(tool) { audioTool = tool } },
+      provide(name, api) { if (name === 'audioGenerate') audioGenerate = api },
+    }, {
+      kind: 'audio', media: {}, jsonOut: {},
+      execute: async ({ style, instrumental }) => ({ style, instrumental }),
+    })
+    assert.equal(audioTool.name, 'omnimux_audio_submit')
+    assert.equal(audioTool.parameters.properties.style.type, 'string')
+    assert.equal(audioTool.parameters.properties.instrumental.type, 'boolean')
+    for (const choices of [{ style: 'jazz', instrumental: true }, { style: 'folk', instrumental: false }, {}]) {
+      const args = { model: 'suno', operation: 'text_to_music', prompt: 'a short song', dest: '/tmp/song.mp3', ...choices }
+      const expected = { style: choices.style, instrumental: choices.instrumental }
+      assert.deepEqual(await audioTool.execute(args, {}), expected)
+      assert.deepEqual(await audioGenerate.execute(args), expected)
+    }
+  })
+
   it('mounts the complete workflow media shape through both tool and seam', async () => {
     const tools = []
     const provided = {}

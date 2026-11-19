@@ -4,6 +4,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { build } from 'esbuild'
+import { uiKitShimPlugin } from '../../tests/fixtures/ui-kit-shim-plugin.mjs'
 import { JSDOM } from 'jsdom'
 import { zh } from './locales.js'
 
@@ -32,7 +33,7 @@ const result = await build({
   jsx: 'automatic',
   write: false,
   external: ['lucide-react', 'react', 'react/jsx-runtime', 'react-dom', 'react-dom/client'],
-  alias: { 'dsh-ui-kit': join(here, '../../tests/fixtures/ui-kit-shim.mjs') },
+  plugins: [uiKitShimPlugin],
 })
 const bundlePath = join(cache, 'preview.mjs')
 writeFileSync(bundlePath, result.outputFiles[0].text)

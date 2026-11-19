@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { afterEach, beforeEach, describe, it } from 'node:test'
 import {
+  getIdentitySnapshot,
+  subscribeIdentity,
   getStatus,
   getStatusCached,
   invalidateStatusCache,
@@ -171,4 +173,23 @@ describe('api-auth session status cache', () => {
     resetStatusCache()
     assert.equal(peekStatusCache(), null)
   })
+})
+
+it('publishes login, account switch and successful logout without treating quota changes as identity changes', async t => {
+  resetStatusCache()
+  t.after(() => resetStatusCache())
+  const events = []
+  const stop = subscribeIdentity(() => events.push(getIdentitySnapshot()))
+  t.after(stop)
+  rememberLoggedInStatus({ logged_in: true, id: 1, username: 'a', quota_usd: 0 })
+  const initial = getIdentitySnapshot()
+  let active = { logged_in: true, id: 1, username: 'a', quota_usd: 8 }
+  t.mock.method(globalThis, 'fetch', async path => jsonResponse(path.endsWith('/logout') ? { ok: true } : active))
+  await getStatus(true)
+  assert.equal(getIdentitySnapshot(), initial)
+  active = { logged_in: true, id: 2, username: 'b' }
+  await getStatus(true)
+  assert.equal(getIdentitySnapshot().id, 2)
+  await logout()
+  assert.deepEqual(events.map(({ loggedIn, id }) => [loggedIn, id]), [[true, 1], [true, 2], [false, null]])
 })

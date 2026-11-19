@@ -853,3 +853,81 @@ describe('registerOfficialRoutes body parsing', () => {
     assert.equal(result.status, 401)
   })
 })
+
+describe('aggregated analytics dispatcher', () => {
+  async function readBlock(block, statuses) {
+    const byStatus = new Map(Object.entries(statuses))
+    const data = new Map(Object.entries({
+      accounts: accountFixture(),
+      'daily-metrics': { dailyData: [{ date: '2026-08-02', postCount: 1, metrics: { views: 30 } }] },
+      posts: { posts: [{ postId: 'visible', publishedAt: '2026-08-02T10:00:00Z', analytics: { views: 30 } }] },
+      'best-time-to-post': { slots: [{ day_of_week: 1, hour: 9, score: 27 }] },
+      'posting-frequency': { optimalCadence: { tiktok: { recommendation: '11+/wk', er: 2.2 } } },
+      'content-decay': {},
+    }))
+    const client = createOfficialClient({
+      siteBaseUrl: LOCAL_ORIGIN,
+      resolveApiKey: () => undefined,
+      resolveAccess: () => ({ token: 'fixture' }),
+      fetcher: async (url) => {
+        const endpoint = new URL(url).pathname.split('/').pop()
+        const status = byStatus.get(endpoint) ?? 200
+        return Response.json(status === 200 ? data.get(endpoint) : {}, { status })
+      },
+    })
+    return createOfficialDispatcher({ official: { mount: true }, client })
+      .dispatch({ method: 'GET', url: `/omnimux/analytics/${block}?timeRange=30d` })
+  }
+
+  it('reports content-decay quota while preserving heatmap and cadence data', async () => {
+    const result = await readBlock('insights', { 'content-decay': 402 })
+    assert.equal(result.status, 200)
+    assert.equal(result.body.heatmap.maxScore, 27)
+    assert.equal(result.body.strategy.cadence.optimal[0].erPercent, 2.2)
+    assert.deepEqual(result.body.partialErrors, [{ key: 'content-decay', status: 402, error: 'quota-exceeded' }])
+  })
+
+  it('returns the quota error when no insight source succeeds', async () => {
+    const result = await readBlock('insights', { 'best-time-to-post': 502, 'posting-frequency': 404, 'content-decay': 402 })
+    assert.equal(result.status, 402)
+    assert.equal(result.body.error, 'quota-exceeded')
+  })
+
+  it('requires sign-in even when another insight source succeeds or needs quota', async () => {
+    const result = await readBlock('insights', { 'best-time-to-post': 401, 'content-decay': 402 })
+    assert.equal(result.status, 401)
+    assert.equal(result.body.error, 'needs-omnimux')
+  })
+
+  it('preserves the healthy insight data when other sources are unavailable', async () => {
+    const result = await readBlock('insights', { 'posting-frequency': 404, 'content-decay': 502 })
+    assert.equal(result.status, 200)
+    assert.equal(result.body.heatmap.maxScore, 27)
+    assert.equal(result.body.partialErrors, undefined)
+  })
+
+  it('keeps the overview post data when daily metrics is quota-limited', async () => {
+    const result = await readBlock('overview', { 'daily-metrics': 402 })
+    assert.equal(result.status, 200)
+    assert.equal(result.body.topPosts[0].postId, 'visible')
+    assert.deepEqual(result.body.partialErrors, [{ key: 'daily-metrics', status: 402, error: 'quota-exceeded' }])
+  })
+
+  it('returns 402 when none of the overview metrics succeed and one is quota-limited', async () => {
+    const result = await readBlock('overview', { 'daily-metrics': 502, posts: 402 })
+    assert.equal(result.status, 402)
+    assert.equal(result.body.error, 'quota-exceeded')
+  })
+
+  it('returns the quota failure from the single followers source', async () => {
+    const result = await readBlock('followers', { 'follower-stats': 402 })
+    assert.equal(result.status, 402)
+    assert.equal(result.body.error, 'quota-exceeded')
+  })
+
+  it('returns the quota failure from the single posts source', async () => {
+    const result = await readBlock('posts', { posts: 402 })
+    assert.equal(result.status, 402)
+    assert.equal(result.body.error, 'quota-exceeded')
+  })
+})

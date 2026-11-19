@@ -15,6 +15,7 @@ interface Window {
     ensureQuota?: (context: {
       capability?: string;
       correlationId?: string;
+      userInitiated?: boolean;
     }) => Promise<{ ok?: boolean } | undefined> | { ok?: boolean } | undefined;
   };
 }

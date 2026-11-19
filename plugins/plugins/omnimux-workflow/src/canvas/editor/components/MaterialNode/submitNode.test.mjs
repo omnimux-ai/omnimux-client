@@ -12,6 +12,7 @@ function deferred() {
 test('#48 点击提交：创建请求立即发出，quota 并行检查不阻塞', async () => {
   const pending = deferred()
   const calls = []
+  let quotaContext
   const result = submitNodeImmediate({
     nodeId: 'n1',
     isPendingRef: { current: false },
@@ -19,10 +20,14 @@ test('#48 点击提交：创建请求立即发出，quota 并行检查不阻塞'
       calls.push(nodeId)
       return pending.promise
     },
-    ensureQuota: () => new Promise(() => {}), // deliberately never settles
+    ensureQuota: (context) => {
+      quotaContext = context
+      return new Promise(() => {}) // deliberately never settles
+    },
   })
   await Promise.resolve()
   assert.deepEqual(calls, ['n1'], 'quota 未返回前 start 必须已经调用')
+  assert.deepEqual(quotaContext, { capability: 'canvas', correlationId: 'n1', userInitiated: true })
   pending.resolve({ ok: true })
   assert.equal((await result).ok, true)
 })

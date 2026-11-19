@@ -55,6 +55,31 @@ it('distinguishes an empty source from malformed, failed and unauthenticated lis
   }
 })
 
+it('keeps list polling passive and rechecks a denied account edit on user retry', async (t) => {
+  let balance = 0
+  const calls = []
+  const fetch = t.mock.method(globalThis, 'fetch', async (_url, options) => {
+    calls.push(options.method)
+    return Response.json({ accounts: [] })
+  })
+  const contexts = []
+  const quota = {
+    ensureQuota(context) {
+      contexts.push(context.userInitiated === true)
+      return balance === 0 ? { ok: false, reason: 'quota' } : { ok: true }
+    },
+  }
+  await withWindow({ __omnimuxQuota: quota }, async () => {
+    assert.equal((await listAccounts()).status, 402)
+    assert.equal((await patchAccount('fixture', { group: 'one' })).status, 402)
+    balance = 1
+    assert.equal((await patchAccount('fixture', { group: 'one' })).status, 200)
+  })
+  assert.deepEqual(contexts, [false, true, true])
+  assert.deepEqual(calls, ['PATCH'])
+  assert.equal(fetch.mock.callCount(), 1)
+})
+
 /** Small stub of the hub's `window.__omnimuxAuth` gate. */
 function fakeGate() {
   let ensureArgs = null
@@ -178,6 +203,16 @@ describe('accounts api authGuard', () => {
 })
 
 describe('accounts api quotaGuard', () => {
+  it('preserves authentication, permission and business failures without opening the balance dialog', async () => {
+    const quota = { notify: assert.fail }
+    await withWindow({ __omnimuxQuota: quota }, async () => {
+      for (const [status, error] of [[401, 'quota-exceeded'], [403, 'forbidden'], [409, 'conflict']]) {
+        const result = { ok: false, status, body: { error } }
+        assert.equal(await quotaGuard(async () => result, { capability: 'accounts' })(), result)
+      }
+    })
+  })
+
   it('402 → notify once, no retry', async () => {
     let calls = 0
     const notified = []
