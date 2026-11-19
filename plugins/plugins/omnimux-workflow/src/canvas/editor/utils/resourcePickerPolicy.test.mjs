@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { planCanvasInputMutation, buildCanvasUpstreamFingerprint } from '../../../shared/graph/canvasInputMutationGateway.ts';
 import { deriveSlotLayout, assembleEffectiveInputsFromSlots, feedFromFingerprint } from '../../../shared/graph/feedSlot/index.ts';
+import { collectMaterialSlotInputs } from '../../../workflow/execution/materialSlotInputs.ts';
 import {
   listCanvasResources,
   filterCanvasResources,
@@ -439,6 +440,46 @@ test('legacy ordered picker preserves image positions when replacing and refilli
   const refilled = planCanvasInputMutation(cleared, pick(cleared, 'a'), { catalog });
   assert.equal(refilled.status, 'allowed');
   assert.deepEqual(referenceOrder(refilled), ['b', 'a']);
+});
+
+test('legacy ordered picker appends into the contract capacity without replacing the existing images', () => {
+  const action = { id: 'video_multi_ref', output: { type: 'video' }, listed: true, inputs: [
+    { slot: 'reference', type: 'image', role: 'reference', firstItemRole: 'first_frame', source: 'upstream_edge', min: 2, max: 10 },
+  ] };
+  const catalog = { models: [{ id: 'ordered-video', operations: [action] }] };
+  const target = materialNode('target', 'video', { selectedTool: 'video-generation' });
+  Object.assign(target.data, { nodeKind: 'generate', autoOperationId: null,
+    params: { model: 'ordered-video', operation: action.id }, slotStandbyEdgeIds: ['e-img-10'] });
+  const images = Array.from({ length: 11 }, (_, index) => `img-${index + 1}`);
+  const connectionOrder = ['text', 'img-10', ...images.slice(0, 9)];
+  const graph = { nodes: [materialNode('text', 'text', { content: 'Prompt' }),
+    ...images.map(id => materialNode(id, 'image', { mediaUrl: `https://fixture.test/${id}.png` })), target],
+  edges: connectionOrder.map(id => ({ id: `e-${id}`, source: id, target: target.id })) };
+  // The picker allows one selection per click, independently of the slot's actual cap.
+  const pick = (state, id) => planResourcePickerCommit({ ...state, catalog,
+    targetNodeId: target.id, targetSlot: 'reference', selectedCanvasNodeIds: [id],
+    localFiles: [], acceptedTypes: ['image'], slotMax: 1 });
+  const append = pick(graph, 'img-10');
+  assert.equal(append.hasWork, true);
+  const applied = planCanvasInputMutation(graph, append, { catalog });
+  assert.equal(applied.status, 'allowed');
+  const targetData = applied.nodes.find(node => node.id === target.id).data;
+  const saved = targetData.slotBindings;
+  const feedAssets = feedFromFingerprint(buildCanvasUpstreamFingerprint(target.id, applied.nodes, applied.edges));
+  const { references } = assembleEffectiveInputsFromSlots({ layout: deriveSlotLayout(catalog, 'ordered-video', action.id),
+    bindings: saved, feedAssets, conflicts: [], nodeData: {}, incomingText: [] });
+  assert.deepEqual(references.map(item => item.sourceNodeId), images.slice(0, 10));
+  assert.deepEqual(applied.edges.map(edge => edge.id), graph.edges.map(edge => edge.id));
+  const executionInputs = collectMaterialSlotInputs(targetData, { upstreamOutputs: new Map(), upstreamBindings: applied.edges.map(edge => ({
+    sourceNodeId: edge.source, edgeId: edge.id,
+    output: edge.source === 'text' ? { text: 'Prompt' }
+      : { mediaAssets: [{ type: 'image', url: `https://fixture.test/${edge.source}.png`, mimeType: 'image/png' }] },
+  })) }, catalog);
+  assert.deepEqual(executionInputs.references.map(item => item.sourceNodeId), images.slice(0, 10));
+
+  const overflow = pick(applied, 'img-11');
+  assert.equal(overflow.hasWork, false);
+  assert.deepEqual(overflow.rejected, [{ id: 'img-11', reason: 'slot_capacity' }]);
 });
 
 test('planResourcePickerCommit：画布资源只给未连线节点加边，已连线进 rejected', () => {

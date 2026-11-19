@@ -265,10 +265,10 @@ export interface ContractView {
   defaultsByOperation: Record<string, string>;
 }
 
-/** An ordered pair has one reference slot and gives its first item the first-frame role. */
-export function isOrderedReferencePair(slot: Pick<InputSlotDto, 'type' | 'role' | 'firstItemRole' | 'min' | 'max'>): boolean {
+/** The contract assigns the first image in this reference slot the first-frame role. */
+export function isOrderedImageReferenceSlot(slot: Pick<InputSlotDto, 'type' | 'role' | 'firstItemRole' | 'min' | 'max'>): boolean {
   return slot.type === 'image' && slot.role === 'reference' && slot.firstItemRole === 'first_frame'
-    && slot.min === 2 && slot.max === 2;
+    && slot.min === 2 && slot.max !== null && Number.isInteger(slot.max) && slot.max >= slot.min;
 }
 
 function normalizeSlot(raw: unknown): InputSlotDto | null {

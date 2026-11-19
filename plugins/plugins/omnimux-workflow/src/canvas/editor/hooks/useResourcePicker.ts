@@ -168,7 +168,8 @@ export function useResourcePicker(nodeId: string, workspaceId?: string | null): 
       });
 
       if (!plan.hasWork) {
-        toast.warning(t('picker.commitEmpty'));
+        toast.warning(t(plan.rejected.some(item => item.reason === 'slot_capacity')
+          ? pickerReasonKey('slot_capacity') : 'picker.commitEmpty'));
         return false;
       }
 

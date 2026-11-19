@@ -266,7 +266,7 @@ export function createWorkflowNodeUpdateTool(deps: WorkflowAgentDeps): AgentTool
   return {
     name: 'workflow_node_update',
     description:
-      'Patch one node on the current or specified workflow canvas: label / prompt / content / tool / params / position (all optional, shallow-merged into the node). As a separate edit, swap_reference_images exchanges the two images in an ordered reference slot if the current edge order matches. For text nodes, content can be set to directly edit manual text content. Omit workspace_id to use the ui_context current canvas. tool must be valid for the node\'s material_type. Changing tool never invalidates existing edges (edge validation uses the union of all tools of the material type), but it changes what the node does on the next workflow_run. material_type and media output content fields cannot be changed — remove and re-add the node instead.',
+      'Patch one node on the current or specified workflow canvas: label / prompt / content / tool / params / position (all optional, shallow-merged into the node). As a separate edit, swap_reference_images exchanges the current start image with another ready image in the same ordered reference slot. For text nodes, content can be set to directly edit manual text content. Omit workspace_id to use the ui_context current canvas. tool must be valid for the node\'s material_type. Changing tool never invalidates existing edges (edge validation uses the union of all tools of the material type), but it changes what the node does on the next workflow_run. material_type and media output content fields cannot be changed — remove and re-add the node instead.',
     parameters: objectParams({
       workspace_id: { type: 'string', description: WORKSPACE_ID_PARAM_DESC },
       node_id: { type: 'string', required: true, description: 'Node id (from workflow_snapshot include_nodes=true)' },
@@ -292,12 +292,12 @@ export function createWorkflowNodeUpdateTool(deps: WorkflowAgentDeps): AgentTool
             type: 'object',
             properties: {
               slot: { type: 'string', description: 'Ordered reference-image slot from the current node' },
-              first_edge_id: { type: 'string', description: 'Current first image edge ID' },
-              second_edge_id: { type: 'string', description: 'Current second image edge ID' },
+              first_edge_id: { type: 'string', description: 'Current start image edge ID' },
+              second_edge_id: { type: 'string', description: 'Edge ID of the ready image to swap into the start position' },
             },
             required: ['slot', 'first_edge_id', 'second_edge_id'],
             additionalProperties: false,
-            description: 'Exchange two ready images in an ordered reference slot. Read workflow_snapshot with include_nodes=true first. Send as the only patch field. If the order changed, refresh before retrying.',
+            description: 'Exchange the start image with another ready image in an ordered reference slot. Read workflow_snapshot with include_nodes=true first. Send as the only patch field. If the start image changed, refresh before retrying.',
           },
         },
         additionalProperties: false,
