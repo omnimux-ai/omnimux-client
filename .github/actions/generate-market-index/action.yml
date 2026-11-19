@@ -24,8 +24,9 @@ runs:
         if [[ "$INDEX_PREFLIGHT" == 'true' ]]; then
           index_args+=(--offline)
         fi
-        if ! node scripts/build-plugin-index.mjs "${index_args[@]}" ||
-           ! node scripts/verify-plugin-index.mjs; then
-          echo "::error::Market index verification failed. See https://github.com/omnimux-ai/omnimux-client/blob/main/AGENTS.md#release-preflight"
-          exit 1
-        fi
+        node scripts/build-plugin-index.mjs "${index_args[@]}"
+        node scripts/verify-plugin-index.mjs
+    - name: Link to release preflight instructions on failure
+      if: ${{ failure() }}
+      shell: bash
+      run: echo "::error::Market index verification failed. See https://github.com/omnimux-ai/omnimux-client/blob/main/AGENTS.md#release-preflight"
