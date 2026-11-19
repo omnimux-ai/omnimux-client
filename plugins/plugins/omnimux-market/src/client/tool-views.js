@@ -88,6 +88,7 @@
     }
 
     let plazaSessions = null;
+    let plazaUiWorkspace = null;
 
     function plazaOfferKey(sessionId) {
       return "omnimux-market:plaza:" + String(sessionId || "");

@@ -5,11 +5,18 @@
 
     // Only mounted official input slots may write a session's creation guide.
     async function createReadySkillSession(sessions, opts) {
-      const origin = sessions.list?.getSnapshot?.()?.current || "";
+      const origin = marketCurrentSessionId();
       let expected = origin;
+      let navigatingTo = "";
       let cancelled = false;
       const check = () => {
-        if ((sessions.list?.getSnapshot?.()?.current || "") !== expected) cancelled = true;
+        const active = marketCurrentSessionId();
+        if (navigatingTo) {
+          // 导航窗口：origin → target 之间属于正常过渡，切到第三会话才算用户抢走。
+          if (active && active !== origin && active !== navigatingTo) cancelled = true;
+        } else if (active !== expected) {
+          cancelled = true;
+        }
         return !cancelled && !opts.isCancelled?.();
       };
       const unsubscribe = sessions.list?.subscribe?.(check);
@@ -29,20 +36,109 @@
         if (attached?.attached !== true || attached?.hasBody !== true || attached.sessionId !== sessionId || attached.slug !== slug) {
           throw new Error("skill-body-unavailable");
         }
-        if (typeof sessions.open !== "function") throw new Error("sessions-open-unavailable");
-        expected = sessionId;
+        const hasUiWorkspaceOpen = typeof plazaUiWorkspace?.openSession === "function";
+        if (!hasUiWorkspaceOpen && typeof sessions.open !== "function") throw new Error("sessions-open-unavailable");
         opts.onTarget?.(sessionId);
-        sessions.open(sessionId);
+        // Next/rc.3 壳里 sessions.open 不切主会话；真正的导航接缝是 uiWorkspace.openSession。
+        navigatingTo = sessionId;
+        if (hasUiWorkspaceOpen) plazaUiWorkspace.openSession(sessionId);
+        else sessions.open(sessionId);
+        // 有界等待宿主真的切到目标会话（默认 3s）：等不到就按现有错误路径失败，不静默 10s。
+        const navStart = Date.now();
+        const navTimeout = Number.isFinite(opts.navTimeoutMs) ? opts.navTimeoutMs : 3000;
+        while (marketCurrentSessionId() !== sessionId) {
+          if (opts.isCancelled?.()) return stopped();
+          const active = marketCurrentSessionId();
+          if (active && active !== origin && active !== sessionId) return stopped();
+          if (Date.now() - navStart >= navTimeout) {
+            return { ok: false, sessionId, prefilled: false, error: "session-navigation-unavailable" };
+          }
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        expected = sessionId;
+        navigatingTo = "";
+        // ready 路径同样要开 workbench：只 open 会话不会切到 split、也不会展开中间栏，
+        // 实机表现是停在旧会话、没有 composer（#69 AC-3 的 ready / 非 ready 两条链路同源）。
+        const wb = typeof window !== "undefined" ? window.__omnimuxWorkbench : undefined;
+        const plazaTitle = typeof lookup === "function" ? (lookup("plaza.title") || "Skills") : "Skills";
+        try {
+          // open 是异步的，且默认按市场 tab 的 focus=gui 落位；直接带 focus:'split'
+          // 并在 await 后再补 setFocus/展开中栏，否则异步 open 会覆盖后面的状态。
+          const opened = window.__omnimuxWorkbench?.open?.({
+            tabId: "omnimux-market:plaza",
+            sessionId,
+            title: plazaTitle,
+            focus: "split",
+          });
+          if (opened && typeof opened.then === "function") await opened;
+        } catch {}
+        try { wb?.setFocus?.("split"); } catch {}
+        try { wb?.setConversationCollapsed?.(false, { sessionId }); } catch {}
         const text = typeof opts.text === "string" ? opts.text : "/skill-creator\n帮我使用它来创建一个新的技能。首先询问我这个技能应该做什么。";
         const start = Date.now();
         const timeout = Number.isFinite(opts.timeoutMs) ? opts.timeoutMs : 10000;
+        const readBridgeDraft = () => {
+          try {
+            const actions = typeof window !== "undefined" ? window.__omnimuxComposerActions : null;
+            return actions && typeof actions.getDraft === "function" ? String(actions.getDraft() || "") : null;
+          } catch {
+            return null;
+          }
+        };
+        let bridgeAttempted = false;
+        // 真实壳里 AttachmentSubmitBridge 与 SkillPickerButton 同树挂载，但布局 effect 的
+        // 落地顺序不保证。先给 composer 桥一个短 grace，避免 slot 先到、桥晚到而走回
+        // 已验证不可靠的 slot 内部通路；老壳无桥时再回落 slot。
+        const bridgeGraceMs = timeout > 1000 ? 500 : 0;
         while (Date.now() - start < timeout) {
           if (!check()) return stopped();
           const slot = skillCreationInputs.get(sessionId);
+          if (slot && (slot.draft || slot.protected)) return { ok: false, sessionId, prefilled: false, error: "draft-protected" };
+          const actions = typeof window !== "undefined" ? window.__omnimuxComposerActions : null;
+          const hasSetDraft = Boolean(actions && typeof actions.setDraft === "function");
+          if (!bridgeAttempted && hasSetDraft) {
+            bridgeAttempted = true;
+            let receipt = false;
+            try { receipt = actions.setDraft(text); } catch { receipt = false; }
+            // 回执 false 是真实失败，必须可见地返回，不能把 slot 写入当成功兜底。
+            if (receipt === false) return { ok: false, sessionId, prefilled: false, error: "prefill-failed" };
+            // 稍后读回：getDraft 可能在 React 提交后才反映新草稿，不能只看 setDraft 的当次回执。
+            const readbackDeadline = Math.min(start + timeout, Date.now() + 2000);
+            while (Date.now() < readbackDeadline) {
+              if (!check()) return stopped();
+              const draft = readBridgeDraft();
+              if (typeof draft === "string" && draft.includes("/skill-creator")) {
+                return { ok: true, sessionId, prefilled: true };
+              }
+              await new Promise((resolve) => setTimeout(resolve, 50));
+            }
+            return { ok: false, sessionId, prefilled: false, error: "prefill-failed" };
+          }
+          if (!bridgeAttempted && actions && typeof actions.getDraft === "function") {
+            // 只有 getDraft 没有 setDraft：走同款事件通道，再用读回确认。
+            bridgeAttempted = true;
+            try {
+              if (typeof CustomEvent === "function") {
+                window.dispatchEvent(new CustomEvent("omnimux:composer:set-draft", { detail: { sessionId, draft: text } }));
+                const readbackDeadline = Math.min(start + timeout, Date.now() + 2000);
+                while (Date.now() < readbackDeadline) {
+                  if (!check()) return stopped();
+                  const draft = readBridgeDraft();
+                  if (typeof draft === "string" && draft.includes("/skill-creator")) {
+                    return { ok: true, sessionId, prefilled: true };
+                  }
+                  await new Promise((resolve) => setTimeout(resolve, 50));
+                }
+              }
+            } catch {}
+            return { ok: false, sessionId, prefilled: false, error: "prefill-failed" };
+          }
+          if (slot && !hasSetDraft && !actions && Date.now() - start < bridgeGraceMs) {
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            continue;
+          }
           if (slot) {
-            if (slot.draft || slot.protected) return { ok: false, sessionId, prefilled: false, error: "draft-protected" };
-            // Official setDraft is synchronous/void; this wrapper returns an explicit receipt.
-            // Do not read a render-captured draft snapshot immediately after writing.
+            // 兼容没有 composer 桥的老壳：保留原 slot 通路作为最后备选。
             if (!slot.write(text)) return { ok: false, sessionId, prefilled: false, error: "prefill-failed" };
             return { ok: true, sessionId, prefilled: true };
           }
@@ -61,6 +157,28 @@
     function resolveDoc(doc) {
       if (doc) return doc;
       return typeof document !== "undefined" ? document : null;
+    }
+
+    // rc.3 SessionListState has no `current`; read the host-owned session seams
+    // instead. Keep this local to the market client fragment (same contract as
+    // inspiration's current-session.js; fragments cannot import across plugins).
+    var UNBOUND_SESSION_IDS = new Set(["default", "__none__", "undefined", "null"]);
+    function normalizeSessionId(value) {
+      var id = typeof value === "string" ? value.trim() : (typeof value === "number" && Number.isFinite(value) ? String(value) : "");
+      return UNBOUND_SESSION_IDS.has(id) ? "" : id;
+    }
+    function readHostSession(fn) {
+      try { return typeof fn === "function" ? fn() : undefined; } catch { return undefined; }
+    }
+    function marketCurrentSessionId() {
+      if (typeof window === "undefined") return "";
+      var workbench = window.__omnimuxWorkbench;
+      var snapshot = readHostSession(workbench && workbench.getSnapshot);
+      var fromSnapshot = normalizeSessionId(snapshot && snapshot.sessionId);
+      if (fromSnapshot) return fromSnapshot;
+      var fromWorkbench = normalizeSessionId(readHostSession(workbench && workbench.getCurrentSessionId));
+      if (fromWorkbench) return fromWorkbench;
+      return normalizeSessionId(readHostSession(window.__omnimuxAttachments && window.__omnimuxAttachments.getActiveSessionId));
     }
 
     function isElementVisible(el) {
@@ -177,18 +295,32 @@
       }
     }
 
-    function resolvedOfficialTarget(sessions, beforeId) {
+    function officialTargetBaseline(sessions) {
       const snapshot = sessionSnapshot(sessions);
-      const sessionId = snapshot?.current;
-      if (!sessionId || typeof sessionId !== "string") return null;
-      if (sessionId !== beforeId) {
-        return { ok: true, sessionId };
+      const ids = Array.isArray(snapshot?.ids)
+        ? snapshot.ids.slice()
+        : Object.keys(snapshot?.byId && typeof snapshot.byId === "object" ? snapshot.byId : {});
+      return { ids, currentId: marketCurrentSessionId() };
+    }
+
+    function resolvedOfficialTarget(sessions, baseline) {
+      const snapshot = sessionSnapshot(sessions);
+      if (!snapshot) return null;
+      const byId = snapshot.byId && typeof snapshot.byId === "object" ? snapshot.byId : {};
+      const ids = Array.isArray(snapshot.ids) ? snapshot.ids : Object.keys(byId);
+      // A blank id added by this gesture proves a new-session result even when
+      // the workbench projection has not caught up yet.
+      const addedBlank = ids.filter((id) => !baseline.ids.includes(id) && byId[id]?.blank === true);
+      if (addedBlank.length > 0) {
+        return { ok: true, sessionId: addedBlank[addedBlank.length - 1] };
       }
-      const summary = snapshot.byId?.[sessionId];
-      if (summary && summary.blank === true) {
-        return { ok: true, sessionId, reusedBlank: true };
-      }
-      return null;
+      const sessionId = marketCurrentSessionId();
+      if (!sessionId || byId[sessionId]?.blank !== true) return null;
+      return {
+        ok: true,
+        sessionId,
+        ...(sessionId === baseline.currentId ? { reusedBlank: true } : {}),
+      };
     }
 
     /**
@@ -203,8 +335,8 @@
         return { ok: false, error: "no-sessions" };
       }
 
-      const beforeId = sessionSnapshot(sessions)?.current || "";
-      const hasOfficialCurrent = Boolean(beforeId);
+      const baseline = officialTargetBaseline(sessions);
+      const hasOfficialCurrent = Boolean(baseline.currentId);
       let directActionPending = false;
       let menuActionDispatched = false;
       let observedTarget = null;
@@ -212,7 +344,7 @@
       const unsubscribe = typeof list.subscribe === "function"
         ? list.subscribe(() => {
             if (!directActionPending && !menuActionDispatched) return;
-            const target = resolvedOfficialTarget(sessions, beforeId);
+            const target = resolvedOfficialTarget(sessions, baseline);
             if (target) observedTarget = target;
           })
         : () => {};
@@ -253,7 +385,7 @@
             }
           }
           if (observedTarget) return observedTarget;
-          const target = resolvedOfficialTarget(sessions, beforeId);
+          const target = resolvedOfficialTarget(sessions, baseline);
           if (target && (directActionPending || menuActionDispatched)) {
             return target;
           }
@@ -298,10 +430,10 @@
     /**
      * 兜底解析合法工作区 ID：从当前会话、workspaces 服务或 sessions 历史中获取。
      */
-    function resolveFallbackWorkspaceId(sessions, workspaces) {
+    function resolveFallbackWorkspaceId(sessions, workspaces, explicitCurrentId) {
       try {
         const sessionSnapshot = sessions?.list?.getSnapshot?.();
-        const currentId = sessionSnapshot?.current;
+        const currentId = explicitCurrentId !== undefined ? explicitCurrentId : marketCurrentSessionId();
         const currentSession = currentId && sessionSnapshot?.byId ? sessionSnapshot.byId[currentId] : null;
 
         // 1. 当前会话如果有 workspaceId，直接继承
@@ -440,8 +572,7 @@
           if (opts.requireReady) return await createReadySkillSession(sessions, opts);
 
           // 1. 捕获当前会话 A 状态（只读，防污染，绝不改写其草稿与附件）
-          const snapshot = typeof sessions.list?.getSnapshot === "function" ? sessions.list.getSnapshot() : null;
-          const sessionAId = snapshot?.current;
+          const sessionAId = marketCurrentSessionId();
 
           // 2. 准备 skill-creator 目标（试用挂载跳过安装）
           if (!opts.preset && !opts.skipInstall) {
@@ -521,7 +652,7 @@
 
             while (Date.now() - start < maxWait) {
               // 检查当前会话是否已被用户切换到 C
-              const currentActive = sessions.list?.getSnapshot?.()?.current;
+              const currentActive = marketCurrentSessionId();
               if (currentActive && currentActive !== sessionBId) {
                 break;
               }
@@ -634,15 +765,7 @@
     }
 
     function currentPlazaSessionId() {
-      const sessions = plazaSessions || (typeof window !== "undefined" ? window.__omnimuxSessions : undefined);
-      try {
-        const snap = sessions && sessions.list && typeof sessions.list.getSnapshot === "function"
-          ? sessions.list.getSnapshot()
-          : null;
-        return (snap && snap.current) || "";
-      } catch {
-        return "";
-      }
+      return marketCurrentSessionId();
     }
 
     /**
