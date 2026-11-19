@@ -17,6 +17,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import { Peer, type PeerScope } from '@deepseek-ai/dsh-client-connection'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import WebSocket from 'ws'
@@ -56,7 +57,7 @@ const RemoteApiHost = {
   apply(ctx: Context, config: { cwd: string }): void {
     const gateway = {
       wireStream: {
-        async open(endpoint: string, _payload: unknown, signal: AbortSignal): Promise<AsyncIterable<unknown>> {
+        async open(endpoint: string, _payload: unknown, _uplink: AsyncIterable<unknown>, _peer: PeerScope, signal: AbortSignal): Promise<AsyncIterable<unknown>> {
           if (endpoint === '$events') {
             return {
               async *[Symbol.asyncIterator]() {
@@ -99,6 +100,7 @@ const RemoteApiHost = {
       },
     }
     const connection = {
+      browserPeer: new Peer(ctx, { principal: { kind: 'owner' } }),
       createSharedFetchHandler: () => ({
         fetch: async (request: Request) => {
           const envelope = await request.json() as { rpcId: string }

@@ -25,8 +25,8 @@ import { loopbackFetch } from '../shared/loopback-fetch.ts'
 import type { DraftField } from '../shared/draft.ts'
 import { WorkspaceSelector } from './components/WorkspaceSelector.tsx'
 import { SessionWorkspaceSelector, type SessionWorkspaceItem } from './components/SessionWorkspaceSelector.tsx'
-import { ModelSelector } from './components/ModelSelector.tsx'
-import { AutoModelPicker } from './components/AutoModelPicker.tsx'
+import { catalogToModelGroups, ModelSelector, type ModelGroup } from './components/ModelSelector.tsx'
+import { AutoModelPicker, MODEL_MODE_STORAGE_PREFIX } from './components/AutoModelPicker.tsx'
 import { CloseIcon, SearchIcon, MenuIcon, ArrowUpIcon, SquareIcon, MessageSquareIcon, PlusIcon as PlusSvgIcon, PaperclipIcon, SidebarPanelIcon, TwitterXIcon, PlatformMarkIcon, SaveIcon, BinocularsIcon, MoreHorizontalIcon } from './components/icons.tsx'
 import type { ApprovalDecision, ApprovalRequest } from '../security/approval.ts'
 import { getUiLocale, safeGetStorage, safeSetStorage, safeRemoveStorage } from '../i18n.ts'
@@ -806,6 +806,26 @@ function defaultPanelSettings(targetPort: number): PanelSettings {
   }
 }
 
+interface ChatModelSelection {
+  model: string
+  provider: string
+  reasoningEffort?: string
+}
+
+type SettingsModelCatalog = {
+  connectionId: string
+  groups: ModelGroup[]
+  defaultSelection?: ChatModelSelection
+  failed: boolean
+}
+
+function readCatalogDefault(value: unknown): ChatModelSelection | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const { model, provider, reasoningEffort } = value as Partial<ChatModelSelection>
+  if (typeof model !== 'string' || typeof provider !== 'string') return undefined
+  return { model, provider, ...(typeof reasoningEffort === 'string' ? { reasoningEffort } : {}) }
+}
+
 export function App(): React.JSX.Element {
   const [themeSetting, setThemeSetting] = useState<'auto' | 'light' | 'dark'>(() => {
     const saved = safeGetStorage('omnimux_theme_mode')
@@ -865,92 +885,79 @@ export function App(): React.JSX.Element {
     return !isNaN(num) && num > 0 ? num : 45120
   })
 
-  const [hostDefaultModel, setHostDefaultModel] = useState<string>('')
-  const [hostDefaultEffort, setHostDefaultEffort] = useState<string>('')
-  const [dynamicModels, setDynamicModels] = useState<Array<{ id: string; name?: string }>>([])
-  const [selectedDefaultModel, setSelectedDefaultModel] = useState<string>(() => {
-    const saved = safeGetStorage(`omnimux_default_model_${targetPort}`) || safeGetStorage('omnimux_default_model')
-    if (saved === 'gpt-6-astra') return ''
-    return saved || ''
-  })
-  const [selectedReasoningEffort, setSelectedReasoningEffort] = useState<string>(() => {
-    return safeGetStorage(`omnimux_default_effort_${targetPort}`) || safeGetStorage('omnimux_default_effort') || 'medium'
-  })
-  const [selectedDefaultProvider, setSelectedDefaultProvider] = useState<string>(() => {
-    return safeGetStorage('omnimux_default_provider') || ''
-  })
-
-  const handleSelectModel = (modelId: string, effort?: string, provider?: string) => {
-    setSelectedDefaultModel(modelId)
-    safeSetStorage(`omnimux_default_model_${targetPort}`, modelId)
-    safeSetStorage('omnimux_default_model', modelId)
-    if (provider) {
-      setSelectedDefaultProvider(provider)
-      safeSetStorage('omnimux_default_provider', provider)
-    }
-
-    // effort === '' 表示该模型没有 reasoning 元数据：必须清除，不能继承 max。
-    // 未显式给 effort 的模型选择（如 AutoModelPicker）按「无 reasoning」处理，
-    // 不能沿用上一模型的 max。
-    const eff = effort !== undefined ? effort : ''
-    const hasEffort = eff !== '' && eff !== 'none'
-    if (hasEffort) {
-      setSelectedReasoningEffort(eff)
-      safeSetStorage(`omnimux_default_effort_${targetPort}`, eff)
-      safeSetStorage('omnimux_default_effort', eff)
-    } else {
-      setSelectedReasoningEffort('')
-      safeRemoveStorage(`omnimux_default_effort_${targetPort}`)
-      safeRemoveStorage('omnimux_default_effort')
-    }
-
-    // 同步到当前 Host 实例的 agent-default-model
-    const ops: Array<{ op: string; path: string[]; value?: unknown }> = [
-      { op: 'set', path: ['model'], value: modelId },
-    ]
-    if (provider) {
-      ops.push({ op: 'set', path: ['provider'], value: provider })
-    }
-    if (hasEffort) {
-      ops.push({ op: 'set', path: ['reasoningEffort'], value: eff })
-    } else {
-      ops.push({ op: 'unset', path: ['reasoningEffort'] })
-    }
-
-    void api.rpc('settings.mutate', {
-      ns: 'agent-default-model',
-      ops,
-    }).catch(() => {})
-
-    // 如果当前会话处于活跃状态，即时应用
-    if (sessionRef.current) {
-      void api.rpc('session.selectModel', {
-        sessionId: sessionRef.current,
-        model: modelId,
-        ...(provider ? { provider } : {}),
-        ...(hasEffort ? { reasoningEffort: eff } : {}),
-      }).catch(() => {})
-    }
+  const [catalogConnectionId, setCatalogConnectionId] = useState<string | null>(null)
+  const catalogConnectionRef = useRef<string | null>(null)
+  const updateCatalogConnection = (id: string | null) => {
+    catalogConnectionRef.current = id
+    setCatalogConnectionId(id)
   }
+  const requestedCatalogPort = useRef<number | null>(null)
+  const [settingsModelCatalog, setSettingsModelCatalog] = useState<SettingsModelCatalog | null>(null)
+  const [savingChatModelFor, setSavingChatModelFor] = useState<string | null>(null)
+  const chatModelSaving = catalogConnectionId !== null && savingChatModelFor === catalogConnectionId
+  const [composerModel, setComposerModel] = useState<Pick<ChatModelSelection, 'model' | 'provider'>>(() => ({
+    model: safeGetStorage(`omnimux_default_model_${targetPort}`) || safeGetStorage('omnimux_default_model') || '',
+    provider: '',
+  }))
 
-  const handleSelectEffort = (effort: string) => {
-    setSelectedReasoningEffort(effort)
-    safeSetStorage(`omnimux_default_effort_${targetPort}`, effort)
-    safeSetStorage('omnimux_default_effort', effort)
+  const handleSelectModel = async (model: string, effort?: string, provider?: string): Promise<void> => {
+    if (catalogConnectionId === null || catalogConnectionId !== catalogConnectionRef.current ||
+      !provider || chatModelSaving) return
+    const connectionId = catalogConnectionId
+    const sessionId = sessionRef.current
+    const selection: ChatModelSelection = { model, provider, ...(effort ? { reasoningEffort: effort } : {}) }
+    setSavingChatModelFor(connectionId)
+    setToastMessage(null)
+    let savedDefault = false
+    try {
+      await api.rpc('settings.mutate', {
+        ns: 'agent-default-model',
+        ops: [
+          { op: 'set', path: ['model'], value: model },
+          { op: 'set', path: ['provider'], value: provider },
+          ...(effort
+            ? [{ op: 'set', path: ['reasoningEffort'], value: effort }]
+            : [{ op: 'unset', path: ['reasoningEffort'] }]),
+        ],
+      }, connectionId)
+      savedDefault = true
+      if (catalogConnectionRef.current !== connectionId) return
+      setSettingsModelCatalog((current) => current?.connectionId === connectionId
+        ? { ...current, defaultSelection: selection }
+        : current)
+      setComposerModel(selection)
+      safeSetStorage(`omnimux_default_model_${targetPort}`, model)
+      safeSetStorage('omnimux_default_model', model)
+      if (showSettings) {
+        setRelayProfiles((current) => current.map((profile) => profile.setDefault
+          ? { ...profile, setDefault: false }
+          : profile))
+        // The composer already switches to manual when the user picks a model.
+        // An explicit settings choice must also survive automatic routing.
+        await api.rpc('bridge.modelMode', { auto: false }, connectionId)
+        safeSetStorage(`${MODEL_MODE_STORAGE_PREFIX}${targetPort}`, 'manual')
+      }
 
-    void api.rpc('settings.mutate', {
-      ns: 'agent-default-model',
-      ops: [
-        { op: 'set', path: ['reasoningEffort'], value: effort },
-      ],
-    }).catch(() => {})
-
-    if (sessionRef.current && selectedDefaultModel) {
-      void api.rpc('session.selectModel', {
-        sessionId: sessionRef.current,
-        model: selectedDefaultModel,
-        reasoningEffort: effort,
-      }).catch(() => {})
+      if (sessionId !== null && sessionRef.current === sessionId) {
+        try {
+          await api.rpc('session.selectModel', { sessionId, ...selection }, connectionId)
+        } catch (cause) {
+          if (!(cause instanceof PanelRpcError) || cause.code !== 'session/not-found') throw cause
+          // A browser chat with no first message may still be provisional.
+          // Its first request will use the default just saved on this Host.
+          const history = await api.rpc<{ provisional?: boolean }>('session.history', { sessionId }, connectionId)
+          if (history.provisional !== true) throw cause
+        }
+      }
+    } catch (cause) {
+      if (catalogConnectionRef.current !== connectionId) return
+      const reason = cause instanceof Error ? cause.message : String(cause)
+      const message = savedDefault
+        ? (locale === 'en' ? 'Default saved. Could not apply the chat selection.' : '默认模型已保存，对话切换未完成。')
+        : (locale === 'en' ? 'Could not save the chat model.' : '对话模型保存失败。')
+      setToastMessage(`${message} ${reason}`)
+    } finally {
+      setSavingChatModelFor((current) => current === connectionId ? null : current)
     }
   }
 
@@ -968,21 +975,12 @@ export function App(): React.JSX.Element {
     })
   }
 
-  /**
-   * 文本生成行选择回调。
-   *
-   * 同一模型内改推理等级时（onSelectModel(selectedModel, effort)）不会带
-   * provider；只有真正切换模型才允许改写 provider，避免改等级时丢掉它。
-   */
   const handleSelectTextModel = (modelId: string, effort?: string, provider?: string) => {
-    const modelChanged = settings.textModel !== modelId
-    const textEffort = modelId === ''
-      ? ''
-      : modelChanged ? (effort ?? '') : (effort ?? settings.textEffort)
-    const textProvider = modelId === ''
-      ? ''
-      : modelChanged ? (provider ?? '') : settings.textProvider
-    persistTextModel({ textModel: modelId, textProvider, textEffort })
+    persistTextModel({
+      textModel: modelId,
+      textProvider: provider ?? '',
+      textEffort: effort ?? '',
+    })
   }
 
   const [selectedWorkspace, setSelectedWorkspace] = useState<SessionWorkspaceItem | null>(() => {
@@ -993,6 +991,12 @@ export function App(): React.JSX.Element {
   })
 
   const handleSwitchDshInstance = (inst: { id: string; port: number; name: string }) => {
+    if (inst.port !== targetPort) {
+      requestedCatalogPort.current = inst.port
+      updateCatalogConnection(null)
+      setSettingsModelCatalog(null)
+      setComposerModel({ model: safeGetStorage(`omnimux_default_model_${inst.port}`) ?? '', provider: '' })
+    }
     setTargetPort(inst.port)
     safeSetStorage('omnimux_target_port', String(inst.port))
     const nextUrl = `ws://127.0.0.1:${inst.port}/ext/bridge`
@@ -1925,41 +1929,28 @@ export function App(): React.JSX.Element {
   const [sessionEpoch, setSessionEpoch] = useState(0)
   const lastStateRef = useRef<BridgeState | null>(null)
   useEffect(() => {
-    const offStatus = api.onStatus((next, nextCaps, boundSettings) => {
+    const offStatus = api.onStatus((next, nextCaps, boundSettings, connection) => {
       setState(next)
       setCaps(nextCaps)
       // A completed pairing travels with the status that switches the view:
       // fill the form with the approved pair and end the card's busy state.
       if (boundSettings !== undefined) {
+        requestedCatalogPort.current = null
         setSettings((current) => ({ ...current, bridgeUrl: boundSettings.bridgeUrl, token: boundSettings.token }))
       }
       if (next === 'connected') settlePairing(null)
       const previous = lastStateRef.current
       lastStateRef.current = next
-      if (next === 'connected') {
-        void api.rpc<{
-          namespaces?: Array<{ ns: string; value?: Record<string, unknown> }>
-        }>('settings.describe', {}).then((described) => {
-          const defaults = (described.namespaces?.find((c) => c.ns === 'agent-default-model')
-            ?.value ?? {}) as { provider?: unknown; model?: unknown; reasoningEffort?: unknown }
-          if (typeof defaults.model === 'string' && defaults.model.trim() !== '') {
-            const m = defaults.model.trim()
-            setHostDefaultModel(m)
-            setSelectedDefaultModel((current) => {
-              if (!current || current === 'gpt-6-astra') {
-                safeSetStorage(`omnimux_default_model_${targetPort}`, m)
-                return m
-              }
-              return current
-            })
-          }
-          if (typeof defaults.reasoningEffort === 'string' && defaults.reasoningEffort.trim() !== '') {
-            setHostDefaultEffort(defaults.reasoningEffort.trim())
-          }
-          if (typeof defaults.provider === 'string' && defaults.provider.trim() !== '') {
-            setSelectedDefaultProvider((current) => current || String(defaults.provider).trim())
-          }
-        }).catch(() => {})
+      if (next !== 'connected' || connection === undefined) {
+        updateCatalogConnection(null)
+      } else {
+        const requestedPort = requestedCatalogPort.current
+        const url = new URL(connection.url)
+        const connectedPort = Number(url.port || (url.protocol === 'wss:' ? 443 : 80))
+        if (requestedPort === null || connectedPort === requestedPort) {
+          requestedCatalogPort.current = null
+          updateCatalogConnection(connection.id)
+        }
       }
       if (previous !== null && next !== previous && next === 'stopped') {
         sessionTransitionRef.current += 1
@@ -2470,13 +2461,6 @@ export function App(): React.JSX.Element {
     if (sessionTransitionRef.current !== transition) return
     sessionRef.current = created.sessionId
     await api.setActiveSession(created.sessionId, true)
-    if (selectedDefaultModel && selectedDefaultModel !== hostDefaultModel) {
-      void api.rpc('session.selectModel', {
-        sessionId: created.sessionId,
-        model: selectedDefaultModel,
-        ...(selectedDefaultProvider ? { provider: selectedDefaultProvider } : {}),
-      }).catch(() => {})
-    }
     setSessionTitle(null)
     sessionRuntimeRef.current.seedRunning(created.sessionId, false)
     applyHistory(created.sessionId, await readHistory(created.sessionId))
@@ -2847,13 +2831,6 @@ export function App(): React.JSX.Element {
         sessionRef.current = created.sessionId
         id = created.sessionId
         await api.setActiveSession(created.sessionId, true).catch(() => {})
-        if (selectedDefaultModel && selectedDefaultModel !== hostDefaultModel) {
-          void api.rpc('session.selectModel', {
-            sessionId: created.sessionId,
-            model: selectedDefaultModel,
-            ...(selectedDefaultProvider ? { provider: selectedDefaultProvider } : {}),
-          }).catch(() => {})
-        }
       } else if (isFloatMode) {
         // 既有会话也重新广播，让刚打开的原生边栏吃到 resume-hint。
         await api.setActiveSession(id).catch(() => {})
@@ -2934,7 +2911,7 @@ export function App(): React.JSX.Element {
    * and a success is confirmed before the view closes itself.
    */
   async function saveSettings(): Promise<void> {
-    if (settingsSave.kind === 'saving') return
+    if (settingsSave.kind === 'saving' || chatModelSaving) return
     setSettingsSave({ kind: 'saving' })
     try {
       const relayProblem = await saveRelayProfiles()
@@ -2946,6 +2923,7 @@ export function App(): React.JSX.Element {
       // clipboard carried; the bridge compares byte-exact, so a trailing
       // newline would read as a wrong token and look like a broken address.
       const next = { ...settings, token: settings.token.trim() }
+      requestedCatalogPort.current = null
       await api.updateSettings(next)
       try {
         chrome.runtime?.sendMessage?.({
@@ -2979,6 +2957,43 @@ export function App(): React.JSX.Element {
     setShowSettings(false)
   }
 
+  // Refresh when the user returns from desktop settings, reopens this view, or reconnects.
+  useEffect(() => {
+    if (!showSettings || catalogConnectionId === null) return
+    let cancelled = false
+    let loading = false
+    const isCurrent = () => !cancelled && catalogConnectionRef.current === catalogConnectionId
+    const load = async () => {
+      if (loading || !isCurrent()) return
+      loading = true
+      setSettingsModelCatalog(null)
+      try {
+        const value = await api.rpc<{ groups?: unknown; default?: unknown }>('session.modelCatalog', {}, catalogConnectionId)
+        if (!isCurrent()) return
+        if (!Array.isArray(value?.groups)) throw new Error('Invalid host model catalog')
+        const defaultSelection = readCatalogDefault(value.default)
+        setSettingsModelCatalog({
+          connectionId: catalogConnectionId,
+          groups: catalogToModelGroups(value),
+          defaultSelection,
+          failed: false,
+        })
+        if (defaultSelection !== undefined) setComposerModel(defaultSelection)
+      } catch {
+        if (isCurrent()) setSettingsModelCatalog({ connectionId: catalogConnectionId, groups: [], failed: true })
+      } finally {
+        loading = false
+      }
+    }
+    const refreshOnFocus = () => { void load() }
+    void load()
+    window.addEventListener('focus', refreshOnFocus)
+    return () => {
+      cancelled = true
+      window.removeEventListener('focus', refreshOnFocus)
+    }
+  }, [api, catalogConnectionId, showSettings])
+
   /** Load relay profiles from the llm-pi-ai settings namespace once per settings visit. */
   useEffect(() => {
     if (!showSettings || relayLoaded) return
@@ -2996,25 +3011,6 @@ export function App(): React.JSX.Element {
           apiKeyEnv?: string
           models?: Array<{ id: string; contextWindow?: number }>
         }>
-        const defaults = (described.namespaces?.find((candidate) => candidate.ns === 'agent-default-model')
-          ?.value ?? {}) as { provider?: unknown; model?: unknown; reasoningEffort?: unknown }
-        if (typeof defaults.model === 'string' && defaults.model.trim() !== '') {
-          setHostDefaultModel(defaults.model.trim())
-        }
-        if (typeof defaults.reasoningEffort === 'string' && defaults.reasoningEffort.trim() !== '') {
-          setHostDefaultEffort(defaults.reasoningEffort.trim())
-        }
-        const discoveredModels: Array<{ id: string; name?: string }> = []
-        Object.values(providers).forEach((route) => {
-          (route.models ?? []).forEach((m) => {
-            if (m.id && !discoveredModels.some((x) => x.id === m.id)) {
-              discoveredModels.push({ id: m.id, name: m.id })
-            }
-          })
-        })
-        if (discoveredModels.length > 0) {
-          setDynamicModels(discoveredModels)
-        }
         const refs = Object.entries(providers)
           .filter(([key]) => key.startsWith(RELAY_ROUTE_PREFIX))
           .map(([, route]) => typeof route.apiKeyEnv === 'string' ? route.apiKeyEnv : '')
@@ -3050,7 +3046,7 @@ export function App(): React.JSX.Element {
               model.id,
               model.contextWindow === undefined ? '' : String(model.contextWindow),
             ].filter((part) => part !== '').join(', ')).join('\n'),
-            setDefault: defaults.provider === key,
+            setDefault: false,
           }))
         if (!cancelled) setRelayProfiles(drafts)
       } catch {
@@ -3219,6 +3215,11 @@ export function App(): React.JSX.Element {
           }
         }
       }
+      if (defaultApplied) {
+        setRelayProfiles((current) => current.map((profile) => profile.setDefault
+          ? { ...profile, setDefault: false }
+          : profile))
+      }
       if (relayProfiles.length > 0) setRelayNotice(copy.settings.relaySavedOk)
       return null
     } catch (cause) {
@@ -3282,12 +3283,18 @@ export function App(): React.JSX.Element {
     : <ApprovalDialog request={queuedApproval!} onDecision={decideApproval} copy={copy} />
 
   if (showSettings) {
+    const catalog = settingsModelCatalog?.connectionId === catalogConnectionId ? settingsModelCatalog : null
+    const modelGroups = catalog?.groups ?? []
+    const catalogStatus = catalogConnectionId === null || catalog?.failed
+      ? 'unavailable'
+      : catalog === null ? 'loading' : modelGroups.length === 0 ? 'empty' : undefined
     return (
       <><div className="settings">
         <div className="settings-heading">
           <button className="icon-button" onClick={leaveSettings} aria-label={copy.settings.back}><BackIcon /></button>
           <h1 className="settings-header-title">{copy.settings.title}</h1>
         </div>
+        {toastMessage && <div className="omnimux-toast-pill" role="status"><span>{toastMessage}</span></div>}
         <div className="settings-panel">
           <label>
             <span>{locale === 'en' ? 'Connect Instance' : '连接实例'}</span>
@@ -3327,13 +3334,13 @@ export function App(): React.JSX.Element {
             <div style={{ gridColumn: '1 / -1', width: '100%', marginTop: '7px' }}>
               <ModelSelector
                 locale={locale}
-                activePort={targetPort}
-                api={api}
-                hostDefaultModel={hostDefaultModel}
-                hostDefaultEffort={hostDefaultEffort}
-                dynamicModels={dynamicModels}
+                modelGroups={modelGroups}
+                status={catalogStatus}
+                selectedModel={catalog?.defaultSelection?.model ?? ''}
+                selectedProvider={catalog?.defaultSelection?.provider}
+                selectedEffort={catalog?.defaultSelection?.reasoningEffort}
                 onSelectModel={handleSelectModel}
-                onSelectEffort={handleSelectEffort}
+                disabled={chatModelSaving}
               />
             </div>
           </label>
@@ -3343,15 +3350,12 @@ export function App(): React.JSX.Element {
             <div style={{ gridColumn: '1 / -1', width: '100%', marginTop: '7px' }}>
               <ModelSelector
                 locale={locale}
-                activePort={targetPort}
-                api={api}
-                storageScope="text"
+                modelGroups={modelGroups}
+                status={catalogStatus}
                 allowEmptyOption
                 selectedModel={settings.textModel}
+                selectedProvider={settings.textProvider}
                 selectedEffort={settings.textEffort}
-                hostDefaultModel={hostDefaultModel}
-                hostDefaultEffort={hostDefaultEffort}
-                dynamicModels={dynamicModels}
                 onSelectModel={handleSelectTextModel}
               />
             </div>
@@ -3737,7 +3741,7 @@ export function App(): React.JSX.Element {
           )}
           <button
             className="primary"
-            disabled={settingsSave.kind === 'saving'}
+            disabled={settingsSave.kind === 'saving' || chatModelSaving}
             onClick={() => { void saveSettings() }}
           >
             {settingsSave.kind === 'saving' && <span className="button-spinner" aria-hidden="true" />}
@@ -3777,7 +3781,11 @@ export function App(): React.JSX.Element {
             aria-label={copy.app.newSession} title={copy.app.newSession}>
             <PlusSvgIcon size={14} />
           </button>
-          <button className="icon-button settings-trigger" onClick={() => { setSettingsSave({ kind: 'idle' }); setShowSettings(true) }}
+          <button className="icon-button settings-trigger" onClick={() => {
+            setSettingsSave({ kind: 'idle' })
+            setSettingsModelCatalog(null)
+            setShowSettings(true)
+          }}
             aria-label={copy.app.openSettings} title={copy.app.settings}>
             <MoreHorizontalIcon size={16} />
           </button>
@@ -4146,9 +4154,10 @@ export function App(): React.JSX.Element {
                 locale={locale}
                 port={targetPort}
                 rpc={api.rpc}
-                selectedModel={selectedDefaultModel}
+                selectedModel={composerModel.model}
+                selectedProvider={composerModel.provider}
                 onSelectModel={handleSelectModel}
-                disabled={composerDisabled}
+                disabled={composerDisabled || chatModelSaving}
               />
             </span>
             {working && !queueSendReady ? (

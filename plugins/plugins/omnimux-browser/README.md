@@ -10,6 +10,8 @@ The host and Chrome extension communicate through the authenticated WebSocket br
 
 The endpoint belongs to the running host; do not assume a fixed port. Browser automation reads structured text rather than treating a page snapshot as an image.
 
+Both model selectors in extension settings read the same live model directory as the connected desktop instance. Chat model changes update the host default. The text-generation model can follow that default or use a separate model from the same directory.
+
 ## Source layout
 
 - `package.json`: server package metadata and build commands.

@@ -265,7 +265,10 @@ describe('scripts/git-wt.sh finish lifecycle in isolated environment', () => {
       assert.ok(!existsSync(join(mainRepo, 'plugins', 'omnimux-workflow', 'table-feature.js')), 'Local main must not receive the feature via finish')
       const mainLog = execSync(`git -C "${mainRepo}" log -n 1 --oneline`, { encoding: 'utf8' })
       assert.ok(!mainLog.includes('implement table action'), 'Local main must stay on the previous tip')
-      const remoteBranches = execSync(`git -C "${remoteRepo}" branch`, { encoding: 'utf8' })
+      const remoteBranches = execSync('git branch', {
+        encoding: 'utf8',
+        env: { ...process.env, GIT_DIR: remoteRepo },
+      })
       assert.ok(remoteBranches.includes('agent/workflow-table-action-issue-103'), 'Feature branch must be on origin')
     } finally {
       cleanupSandbox()

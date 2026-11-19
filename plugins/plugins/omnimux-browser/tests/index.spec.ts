@@ -2,7 +2,8 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { Context } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
+import { Peer, type PeerScope } from '@deepseek-ai/dsh-client-connection'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { apply, assertPositiveInteger, Config, loadSubscriptionModelGroups, resolveConfig } from '../src/index.ts'
 
@@ -18,6 +19,7 @@ function stubContext(): Context {
     invoke: async () => undefined,
   }
   const connection = {
+    browserPeer: new Peer(new Context(), { principal: { kind: 'owner' } }),
     createSharedFetchHandler: () => ({ fetch: async () => new Response('not found', { status: 404 }) }),
   }
   return {
@@ -182,18 +184,36 @@ async function waitForFrame(predicate: () => boolean, timeoutMs = 5000): Promise
   }
 }
 
+/** A real Cordis scope with the host's chat route already installed. */
+function stubTextAgent() {
+  const ctx = new Context()
+  const chatRoute = { provider: 'chat-provider', model: 'chat-default' }
+  ctx.on('system-prompt/assemble', async (_assembly, _context, next) => ({
+    ...await next(), variables: { ...chatRoute },
+  }))
+  ctx.on('agent/request', async (_request, next) => ({ ...await next(), ...chatRoute }))
+  return { ctx }
+}
+
+const textRegistry = {
+  listModels: async (provider: string) => provider === 'anthropic' ? [{ id: 'claude-opus-4-6' }] : [],
+  resolveCallConfig: async (config: unknown) => config,
+}
+
 /** Stub context for a REAL mount: real sockets, stub Gateway/Connection/decisions. */
 function mountContext(
   evaluate: (args: { state: string; choices: Record<string, string>; instructions: string }) => Promise<{ decision?: string } | undefined>,
 ): {
   context: Context
+  disposeAgent(id: string): void
+  textAgent: ReturnType<typeof stubTextAgent>
   invokes: Array<{ namespace: string; method: string; args: Record<string, unknown> }>
   upgradeRoute: () => { path: string; handler: (req: unknown, socket: unknown, head: unknown) => void }
 } {
   const invokes: Array<{ namespace: string; method: string; args: Record<string, unknown> }> = []
   const gateway = {
     wireStream: {
-      open: async (endpoint: string, _payload: unknown, signal: AbortSignal): Promise<AsyncIterable<unknown>> => {
+      open: async (endpoint: string, _payload: unknown, _uplink: AsyncIterable<unknown>, _peer: PeerScope, signal: AbortSignal): Promise<AsyncIterable<unknown>> => {
         if (endpoint !== '$events') throw new Error(`unexpected stub stream ${endpoint}`)
         return {
           async *[Symbol.asyncIterator]() {
@@ -210,8 +230,11 @@ function mountContext(
     },
   }
   const connection = {
+    browserPeer: new Peer(new Context(), { principal: { kind: 'owner' } }),
     createSharedFetchHandler: () => ({ fetch: async () => new Response('not found', { status: 404 }) }),
   }
+  let disposeAgent: (payload: { agent: { id: string } }) => void = () => {}
+  const textAgent = stubTextAgent()
   const decisions = { evaluate }
   let upgrade: { path: string; handler: (req: unknown, socket: unknown, head: unknown) => void } | undefined
   const context = {
@@ -224,14 +247,19 @@ function mountContext(
       register: () => () => {},
     },
     tools: { register: () => () => {} },
-    agents: { get: () => undefined },
-    get: (key: string) => key === 'typertGateway' ? gateway : key === 'connection' ? connection : key === 'decisions' ? decisions : undefined,
-    on: () => () => {},
+    agents: { get: (id: string) => id === 'session-11111111-1111-1111-1111-111111111111' ? textAgent : undefined },
+    get: (key: string) => key === 'typertGateway' ? gateway : key === 'connection' ? connection : key === 'decisions' ? decisions : key === 'llm' ? textRegistry : undefined,
+    on: (name: string, fn: typeof disposeAgent) => {
+      if (name === 'agent/disposed') disposeAgent = fn
+      return () => {}
+    },
     logger: { info: () => {}, warn: () => {}, error: () => {} },
     effect: (fn: () => unknown) => fn(),
   }
   return {
     context: context as unknown as Context,
+    textAgent,
+    disposeAgent: id => { disposeAgent({ agent: { id } }) },
     invokes,
     upgradeRoute: () => upgrade!,
   }
@@ -331,7 +359,7 @@ describe('text generation pin lifecycle', () => {
 })
 
 describe('mounted bridge with a stub host', () => {
-  it('pins the session, skips auto routing, and deregisters the pin on purge', { timeout: 30000 }, async () => {
+  it('pins only the temporary Agent and keeps its model through a refused purge', { timeout: 30000 }, async () => {
     const home = await mkdtemp(join(tmpdir(), 'dsh-bridge-pin-'))
     dirs.push(home)
     vi.stubEnv('DSH_HOME', home)
@@ -374,18 +402,11 @@ describe('mounted bridge with a stub host', () => {
     }))
     await waitForFrame(() => rpcFrame(frames, 'pin') !== undefined)
     expect(rpcFrame(frames, 'pin')).toEqual({ t: 'rpc.result', id: 'pin', ok: true, result: { pinned: true } })
-    expect(host.invokes).toContainEqual({
-      namespace: 'session',
-      method: 'selectModel',
-      args: {
-        request: {
-          sessionId: pinnedSession,
-          model: 'claude-opus-4-6',
-          provider: 'anthropic',
-          reasoningEffort: 'high',
-        },
-      },
-    })
+    expect(host.invokes.some((call) => call.method === 'selectModel')).toBe(false)
+    const assemble = () => host.textAgent.ctx.waterfall('system-prompt/assemble', {} as never, {}, async () => ({ variables: {} }) as never)
+    const requestConfig = () => host.textAgent.ctx.waterfall('agent/request', {} as never, async () => ({ provider: 'base', model: 'base' }))
+    expect((await assemble()).variables).toMatchObject({ provider: 'anthropic', model: 'claude-opus-4-6' })
+    expect(await requestConfig()).toMatchObject({ provider: 'anthropic', model: 'claude-opus-4-6', reasoningEffort: 'high' })
 
     // The pinned session's prompt is forwarded without a routing pass.
     ws.send(JSON.stringify({
@@ -406,11 +427,11 @@ describe('mounted bridge with a stub host', () => {
     }))
     await waitForFrame(() => rpcFrame(frames, 'chat-prompt') !== undefined)
     expect(evaluate).toHaveBeenCalledTimes(1)
-    expect(host.invokes).toContainEqual({
+    expect(host.invokes).toEqual(expect.arrayContaining([expect.objectContaining({
       namespace: 'session',
       method: 'selectModel',
       args: { request: { sessionId: 'session-chat', model: 'gpt-5.5', provider: 'chatgpt' } },
-    })
+    })]))
 
     // Purge is refused here (no durable storage in this environment); that
     // refusal is still the panel's answer, so pin bookkeeping never changes it.
@@ -425,7 +446,11 @@ describe('mounted bridge with a stub host', () => {
     expect(purge.ok).toBe(false)
     expect(['not-found', 'internal']).toContain(purge.error!.code)
 
-    // The pin died with the purge attempt, so the session routes again.
+    expect(await requestConfig()).toMatchObject({ provider: 'anthropic', model: 'claude-opus-4-6' })
+    host.disposeAgent(pinnedSession)
+    expect(await requestConfig()).toEqual({ provider: 'chat-provider', model: 'chat-default' })
+
+    // Agent disposal removed the pin even though the purge was refused.
     ws.send(JSON.stringify({
       t: 'rpc',
       id: 'after-purge',
@@ -448,9 +473,10 @@ function strictMountContext(): {
 } {
   const invokes: Array<{ namespace: string; method: string; args: Record<string, unknown> }> = []
   const created = new Set<string>()
+  const textAgent = stubTextAgent()
   const gateway = {
     wireStream: {
-      open: async (endpoint: string, _payload: unknown, signal: AbortSignal): Promise<AsyncIterable<unknown>> => {
+      open: async (endpoint: string, _payload: unknown, _uplink: AsyncIterable<unknown>, _peer: PeerScope, signal: AbortSignal): Promise<AsyncIterable<unknown>> => {
         if (endpoint !== '$events') throw new Error(`unexpected stub stream ${endpoint}`)
         return {
           async *[Symbol.asyncIterator]() {
@@ -480,6 +506,7 @@ function strictMountContext(): {
     },
   }
   const connection = {
+    browserPeer: new Peer(new Context(), { principal: { kind: 'owner' } }),
     createSharedFetchHandler: () => ({ fetch: async () => new Response('not found', { status: 404 }) }),
   }
   const decisions = { evaluate: async () => ({ decision: 'gpt-5.5' }) }
@@ -494,8 +521,8 @@ function strictMountContext(): {
       register: () => () => {},
     },
     tools: { register: () => () => {} },
-    agents: { get: () => undefined },
-    get: (key: string) => key === 'typertGateway' ? gateway : key === 'connection' ? connection : key === 'decisions' ? decisions : undefined,
+    agents: { get: (id: string) => created.has(id) ? textAgent : undefined },
+    get: (key: string) => key === 'typertGateway' ? gateway : key === 'connection' ? connection : key === 'decisions' ? decisions : key === 'llm' ? textRegistry : undefined,
     on: () => () => {},
     logger: { info: () => {}, warn: () => {}, error: () => {} },
     effect: (fn: () => unknown) => fn(),
@@ -568,12 +595,9 @@ describe('mounted bridge with a strict host stub', () => {
         && (entry.method === 'create' || entry.method === 'selectModel')
         && (entry.args.request as { sessionId?: unknown } | undefined)?.sessionId === sessionId)
       .map((entry) => entry.method)
-    expect(sessionCalls).toEqual(['create', 'selectModel'])
-    expect(host.invokes).toContainEqual({
-      namespace: 'session',
-      method: 'selectModel',
-      args: { request: { sessionId, model: 'claude-opus-4-6', provider: 'anthropic', reasoningEffort: 'high' } },
-    })
+    // The temporary Agent exists, but its scoped selection never invokes the
+    // desktop command which also changes the deployment-wide default.
+    expect(sessionCalls).toEqual(['create'])
 
     ws.close()
     await new Promise<void>((resolve) => { server.close(() => resolve()) })

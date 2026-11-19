@@ -91,6 +91,14 @@ OmniMux 自行编写的插件代码采用 **[AGPL-3.0](LICENSE)**，另附 [NOTI
 
 合前测试使用隔离环境，共享 Dev 只接收已合入的版本。纯开发文档无需安装或重启应用。生产 `~/.omnimux`、`--prod`、`--all` 与正式发布须另获授权。
 
+#### 隔离浏览器冒烟
+
+本机需安装 OmniMux Dev 和 Chrome 或 Chromium。在任务工作树根目录运行 `corepack pnpm --dir plugins run verify:app --mode=ui`。此入口每次都从安装包预设和插件创建一次性配置，自动启用「灵感」并连接本机模拟服务，无需复制正在使用的 Dev 配置或手动启用插件。
+
+[验收脚本](scripts/worktree-app-qa.mjs)通过浏览器检查空白会话引导、Explore 区域和卡片，以及从会话打开素材库，并保存报告和截图。报告用 `packaged-smoke` 标记基于安装包的冒烟结果。普通冒烟的插件版本取自安装包，工作树源码的验收需另有运行版本证据。
+
+带 `--journey` 的普通 UI 验收也会在隔离配置启用「灵感」。`--request` 仍由任务声明验收所需的插件。`live` 模式沿用其环境准备流程。
+
 ---
 
 ## 💬 社区交流与开发者群 (Community)

@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
+import { parse } from 'yaml';
 
 const moduleUrl = new URL('./test-env-bootstrap.mjs', import.meta.url);
 const repo = '/repo';
@@ -44,6 +46,125 @@ function fixture(behavior = 'ready') {
   return { deps, files, removed, spawned, signals, reads: () => reads };
 }
 async function load() { return import(moduleUrl); }
+
+function packagedSmokeFixture({ inspirationEnabled = false, inspirationPackaged = true } = {}) {
+  const f = fixture();
+  const preset = '/packaged-preset';
+  const seed = join(root, 'plugins/tests/fixtures/qa-workspace-media');
+  const clientBundles = ['omnimux', 'omnimux-assets'];
+  const manifestPath = join(preset, 'skeleton/package.json');
+  const patchPath = join(preset, 'skeleton/cordis.patch.yml');
+  const manifest = JSON.stringify({
+    dependencies: {},
+    dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', ...clientBundles, ...(inspirationEnabled ? ['omnimux-inspiration'] : [])] } },
+  });
+  f.files.set(manifestPath, manifest);
+  f.files.set(patchPath, '[]\n');
+  for (const name of [...clientBundles, ...(inspirationPackaged ? ['omnimux-inspiration'] : [])]) {
+    f.files.set(join(preset, 'plugins', name, 'package.json'), JSON.stringify({ name }));
+  }
+  f.files.set(join(seed, 'project.json'), '{}');
+
+  const detectedReads = [];
+  const io = f.deps.fs;
+  const originalRead = io.readFileSync;
+  io.readFileSync = path => {
+    detectedReads.push(path);
+    return originalRead(path);
+  };
+  io.existsSync = path => {
+    detectedReads.push(path);
+    return f.files.has(path) || [...f.files.keys()].some(file => file.startsWith(path + '/'));
+  };
+  io.cpSync = (source, target) => {
+    detectedReads.push(source);
+    if (f.files.has(source)) f.files.set(target, f.files.get(source));
+    for (const [path, value] of [...f.files]) {
+      if (path.startsWith(source + '/')) f.files.set(target + path.slice(source.length), value);
+    }
+  };
+  f.deps.resolveUnpackedPath = (_appRoot, relativePath) => {
+    assert.equal(relativePath, 'preset');
+    return preset;
+  };
+  f.deps.hasShippedPresetRoot = () => true;
+  f.deps.composeAgentPresetRows = () => ({ rows: [{ config: { plugins: [{ id: 'unit-agent' }] } }] });
+  return { ...f, manifestPath, manifest, patchPath, detectedReads };
+}
+
+async function assertPackagedSmokeProfile(inspirationEnabled) {
+  const { createTestEnvironmentStarter } = await load();
+  const f = packagedSmokeFixture({ inspirationEnabled });
+  const run = await createTestEnvironmentStarter(f.deps)({ root, freshSmoke: true });
+  try {
+    const { args, options: { env } } = f.spawned[0];
+    const [profileName] = args.slice(args.indexOf('--profile') + 1);
+    const profileDir = join(env.DSH_HOME, 'profiles', profileName);
+    const packageDir = join(profileDir, 'node_modules', 'omnimux-inspiration');
+    const localManifest = JSON.parse(f.files.get(join(profileDir, 'package.json')));
+
+    assert.deepEqual(localManifest.dsh.profile.bundles, ['@deepseek-ai/dsh-base', 'omnimux', 'omnimux-assets', 'omnimux-inspiration']);
+    assert.equal(localManifest.dependencies['omnimux-inspiration'], 'file:' + packageDir);
+    assert.deepEqual(JSON.parse(f.files.get(join(packageDir, 'package.json'))), { name: 'omnimux-inspiration' });
+    const localPatch = parse(f.files.get(join(profileDir, 'cordis.patch.yml')));
+    assert.equal(localPatch.find(row => row.id === 'omnimux')?.config.media.providers.omnimux.baseUrl, env.OMNIMUX_BASE_URL);
+    assert.deepEqual(localPatch.find(row => row.insert)?.insert, [{ config: { plugins: [{ id: 'unit-agent' }] } }]);
+    assert.equal(f.files.get(f.manifestPath), f.manifest);
+    assert.equal(f.files.get(f.patchPath), '[]\n');
+    assert.equal(f.detectedReads.some(path => path.split('/').includes('.omnimux-dev')), false);
+    assert.equal(f.reads(), 0);
+    assert.equal(env.OMNIMUX_SITE_URL, env.DEEPSEEK_BASE_URL);
+    assert.equal(run.summary.profileSource, 'packaged-smoke');
+    assert.equal(run.summary.seededWorkspace, 'ws_qa_media');
+  } finally { await run.cleanup(); }
+}
+
+test('fresh UI smoke stages one Inspiration bundle when the packaged profile starts disabled', async () => {
+  await assertPackagedSmokeProfile(false);
+});
+
+test('fresh UI smoke stages one Inspiration bundle when the packaged profile starts enabled', async () => {
+  await assertPackagedSmokeProfile(true);
+});
+
+test('fresh UI smoke rejects a missing packaged Inspiration bundle before spawning the host', async () => {
+  const { createTestEnvironmentStarter } = await load();
+  const f = packagedSmokeFixture({ inspirationPackaged: false });
+  await assert.rejects(createTestEnvironmentStarter(f.deps)({ root, freshSmoke: true }), { code: 'TEST_ENV_SMOKE_BUNDLE_MISSING' });
+  assert.equal(f.spawned.length, 0);
+  assert.equal(f.removed.length, 1);
+  assert.equal(f.files.get(f.manifestPath), f.manifest);
+});
+
+test('legacy UI Explore check activates installed Inspiration only in the isolated Dev overlay', async () => {
+  const { createTestEnvironmentStarter } = await load();
+  const f = packagedSmokeFixture();
+  const devProfile = join(process.env.HOME || '', '.omnimux-dev/profiles/omnimux');
+  const devManifestPath = join(devProfile, 'package.json');
+  const installedInspiration = join(devProfile, 'node_modules/omnimux-inspiration/package.json');
+  f.files.set(devManifestPath, f.manifest);
+  f.files.set(join(devProfile, 'cordis.patch.yml'), '[]\n');
+  f.files.set(installedInspiration, JSON.stringify({ name: 'omnimux-inspiration' }));
+  const io = f.deps.fs;
+  io.readdirSync = path => [...new Set([...f.files.keys()]
+    .filter(file => file.startsWith(path + '/'))
+    .map(file => file.slice(path.length + 1).split('/')[0]))];
+  io.symlinkSync = io.cpSync;
+
+  const run = await createTestEnvironmentStarter(f.deps)({ root, enableExplore: true });
+  try {
+    const { args, options: { env } } = f.spawned[0];
+    const [profileName] = args.slice(args.indexOf('--profile') + 1);
+    const profileDir = join(env.DSH_HOME, 'profiles', profileName);
+    const localManifest = JSON.parse(f.files.get(join(profileDir, 'package.json')));
+
+    assert.equal(profileName, 'omnimux');
+    assert.deepEqual(localManifest.dsh.profile.bundles, ['@deepseek-ai/dsh-base', 'omnimux', 'omnimux-assets', 'omnimux-inspiration']);
+    assert.equal(localManifest.dependencies['omnimux-inspiration'], 'file:' + join(profileDir, 'node_modules/omnimux-inspiration'));
+    assert.equal(f.files.get(devManifestPath), f.manifest);
+    assert.equal(f.files.get(join(devProfile, 'cordis.patch.yml')), '[]\n');
+  } finally { await run.cleanup(); }
+});
 
 test('preparation-only requires an explicit candidate before creating resources', async () => {
   const { createTestEnvironmentStarter } = await load();
@@ -105,7 +226,7 @@ test('default ui isolates environment, fixed config, login capability and cleanu
 test('seeded media fixture also writes storages/workspace.json ledger', async () => {
   const { createTestEnvironmentStarter } = await load();
   const f = fixture();
-  const fixturePath = root + '/tests/fixtures/qa-workspace-media';
+  const fixturePath = root + '/plugins/tests/fixtures/qa-workspace-media';
   f.deps.fs.existsSync = p => p === fixturePath;
   f.deps.fs.cpSync = () => {};
   const run = await createTestEnvironmentStarter(f.deps)({ root });

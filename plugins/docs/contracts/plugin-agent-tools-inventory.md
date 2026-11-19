@@ -188,7 +188,7 @@ related:
 | 业务功能描述 | 对应 UI 交互 / HTTP 路由 | Agent 工具名称 (`Tool Name`) | 分级 | 状态 | 破坏性 confirm |
 |---|---|---|---|---|---|
 | 列出全部工作区与执行历史 | 一级 Stage 工作区选择器 | `workflow_list` | L1 | `Implemented` | 否 |
-| 执行整个工作区或指定节点子图，按原任务标识恢复已受理生成。H3 对口型按当前契约消费角色图与驱动音频 | 顶部「运行」及节点生成按钮 | `workflow_run` | L1 | `Implemented` | 否 |
+| 执行整个工作区或指定节点子图，按原任务标识恢复已受理生成（含 H3 已完成、成片尚未列出）。H3 对口型按当前契约消费角色图与驱动音频 | 顶部「运行」及节点生成按钮 | `workflow_run` | L1 | `Implemented` | 否 |
 | 获取工作区画布完整快照 (节点+边) | 画布加载与状态初始化 | `workflow_snapshot` | L1 | `Implemented` | 否 |
 | 创建新工作区与画布 | 新建工作区按钮 | `workflow_create` | L1 | `Implemented` | 否 |
 | 向画布添加物料/AI生成节点 | 左侧物料库拖拽入画布 | `workflow_node_add` | L1 | `Implemented` | 否 |

@@ -74,12 +74,13 @@ describe('bash workdir JSON dispatch', () => {
 
 describe('guard-worktree path classification', () => {
   it('detects worktree vs ephemeral vs tracked', () => {
+    const trackedPluginPath = 'plugins/omnimux/src/host/apply.js'
     assert.equal(
-      isWorktreePath(join(worktreeRoot, 'plugins/omnimux/src/index.js')),
+      isWorktreePath(join(worktreeRoot, trackedPluginPath)),
       true,
     )
     assert.equal(
-      isWorktreePath('./plugins/omnimux/src/index.js'),
+      isWorktreePath(join(mainRepoRoot, trackedPluginPath)),
       false,
     )
     assert.equal(isEphemeralPath(`${mainRepoRoot}/plugins/omnimux/node_modules/foo/index.js`), true)

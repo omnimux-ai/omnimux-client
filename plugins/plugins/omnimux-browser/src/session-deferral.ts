@@ -11,8 +11,7 @@
  *
  * Materialization is also exposed on demand, because `session.prompt` is no
  * longer the only Host call that needs a persisted session: pinning a
- * text-generation model calls `session.selectModel`, which the Host resolves
- * against a real session (Issue #3629).
+ * text-generation model requires a live Agent for that session.
  *
  * @module @yuxianglin/dsh-bridge-browser/src/session-deferral
  */
@@ -130,6 +129,7 @@ export function createSessionDeferral(
         return {
           ok: true,
           value: {
+            provisional: true,
             events: [],
             hasMore: false,
             ...(imageLimits === undefined
