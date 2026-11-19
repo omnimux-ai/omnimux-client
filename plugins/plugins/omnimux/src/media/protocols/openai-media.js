@@ -205,7 +205,11 @@ export async function pollOpenAiMediaTask(options) {
         // so the caller's pickMediaUrl sees one envelope.
         if (isAutodlTaskPath(submitPath) && !pickMediaUrl(json)) {
           const artifactsUrl = `${options.baseUrl}/${AUTODL_POLL_PATH}/${options.taskId}/artifacts`
-          for (let attempt = 0; attempt < 3; attempt++) {
+          const attempts = 3
+          let recoverableReads = 0
+          let sawEmptyListing = false
+          let lastReadFailure
+          for (let attempt = 0; attempt < attempts; attempt++) {
             try {
               const artifacts = await getJson(
                 options.fetcher,
@@ -217,11 +221,25 @@ export async function pollOpenAiMediaTask(options) {
               if (artifacts && typeof artifacts === 'object') {
                 const merged = { ...json, artifacts: artifacts.artifacts ?? artifacts.data ?? artifacts }
                 if (pickMediaUrl(merged)) return merged
+                if (Array.isArray(merged.artifacts) && merged.artifacts.length === 0) {
+                  sawEmptyListing = true
+                  recoverableReads++
+                }
               }
-            } catch {
-              // Transient poll lag before artifacts propagate.
+            } catch (error) {
+              if (options.capability === 'video' && (error?.status === 401 || error?.status === 403 || options.signal?.aborted)) throw error
+              if (isRetryablePollError(error)) {
+                lastReadFailure = error
+                recoverableReads++
+              }
             }
-            if (attempt < 2) await sleep(500)
+            if (attempt + 1 < attempts) await sleep(500)
+          }
+          // A valid empty listing is publication lag, even across a transient GET failure.
+          // If no listing was read, preserve the transport error. Malformed results keep their own semantics.
+          if (options.capability === 'video' && recoverableReads === attempts) {
+            if (!sawEmptyListing) throw lastReadFailure
+            throw new OmnimuxError('omnimux-artifact-pending', '视频任务已完成，成片暂未就绪。请稍后重试取回原任务。', { retryable: true })
           }
         }
         return json
