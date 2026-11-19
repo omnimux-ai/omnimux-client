@@ -116,6 +116,15 @@ describe('R1/R2/R2b/R3 video matrix (real catalog)', () => {
     assert.equal(result.selectedOperationId, 'video_multi_ref');
   });
 
+  it('A6 keeps an explicit first/last-frame choice when one frame is missing', () => {
+    const result = selected('seedance-2-5', ['image'], 'video', 'first_last_frame');
+    assert.equal(result.selectedOperationId, 'first_last_frame');
+    const operation = stateOf(result, 'first_last_frame');
+    assert.equal(operation?.usable, false);
+    assert.equal(operation?.requiredMediaHits, 1);
+    assert.ok(operation?.rejections.some(item => item.code === 'missing_required_input' && item.slot === 'last_frame'));
+  });
+
   it('R3 ignores a system-derived operation but keeps an explicit user choice', () => {
     const auto = buildInputCapability({
       catalog, modelId: 'seedance-2-5', outputType: 'video',

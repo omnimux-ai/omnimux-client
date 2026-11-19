@@ -383,7 +383,8 @@ export function buildInputCapability(args: InputCapabilityArgs): InputCapability
   // adding a legacy audio edge must not require the user to re-pick that mode.
   const currentId = preferred?.id ?? autoRaw;
   const current = currentId ? operationStates.find((state) => state.id === currentId) : undefined;
-  if (preferred?.usable || preferred?.selectableBeforeInputs) {
+  const waitingForOtherFrame = preferred?.id === 'first_last_frame' && preferred.consumes && preferred.requiredMediaHits === 1;
+  if (preferred?.usable || preferred?.selectableBeforeInputs || waitingForOtherFrame) {
     selected = preferred;
   } else if (current && !current.usable && strictCandidates.length === 0) {
     // #62: when no mode is strictly usable, a saved mode whose required inputs are

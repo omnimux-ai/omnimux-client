@@ -18,6 +18,7 @@ import { deriveSlotLayout } from './feedSlot/deriveSlotLayout.ts';
 import { effectiveInputDisplay } from './feedSlot/effectiveInputDisplay.ts';
 import { feedFromFingerprint } from './feedSlot/effectiveFingerprint.ts';
 import { buildCanvasUpstreamFingerprint } from './canvasInputSources.ts';
+import { planCanvasInputMutation } from './canvasInputMutationGateway.ts';
 import { resolveEffectiveVideoParams } from '../../canvas/editor/components/MaterialNode/ConfigPanel/videoParams/videoParamAdapter.ts';
 
 const bundled = JSON.parse(readFileSync(new URL('../../../../omnimux/src/catalog/cloud/bundled/pricing.json', import.meta.url), 'utf8'));
@@ -76,6 +77,27 @@ const boundKeys = (node) => Object.entries(node.data.slotBindings ?? {})
   .filter(([, occupants]) => occupants.length > 0)
   .map(([slot]) => slot)
   .sort();
+
+test('Muse V1 refills a vacated automatic first-frame slot in supply order', () => {
+  const target = targetNode();
+  target.data.params = { model: 'muse-video', operation: 'first_frame' };
+  target.data.autoOperationId = null;
+  const sources = ['a', 'b', 'c'].map(id => importNode(id, 'image'));
+  let graph = { nodes: [...sources, target], edges: [] };
+  for (const source of sources) {
+    graph = planCanvasInputMutation(graph, { addEdges: [edge(`e-${source.id}`, source.id, 'image')] }, { catalog });
+    assert.equal(graph.status, 'allowed');
+  }
+  const used = graph => graph.nodes.find(node => node.id === target.id).data.slotBindings.first_frame?.map(binding => binding.sourceNodeId) ?? [];
+  assert.deepEqual(used(graph), ['a']);
+  const withoutA = planCanvasInputMutation(graph, { removeEdgeIds: ['e-a'] }, { catalog });
+  assert.deepEqual(used(withoutA), ['b']);
+  assert.deepEqual(withoutA.edges.map(edge => edge.id), ['e-b', 'e-c']);
+  assert.deepEqual(used(planCanvasInputMutation(withoutA, { removeEdgeIds: ['e-b'] }, { catalog })), ['c']);
+
+  const cleared = planCanvasInputMutation(graph, { nodePatches: [{ nodeId: target.id, data: { slotBindings: {} } }] }, { catalog });
+  assert.deepEqual(used(planCanvasInputMutation(cleared, { removeEdgeIds: ['e-a'] }, { catalog })), []);
+});
 
 test('#62 AC-3: two images then a video re-binds slots for video_multi_ref and stays submittable', () => {
   const imgA = importNode('img-a', 'image');

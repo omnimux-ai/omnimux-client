@@ -5,7 +5,7 @@ import type { MaterialNodeData } from './materialNode.ts';
 import { readCanvasParams } from './canvasInputSources.ts';
 import { buildContractView, buildUpstreamFingerprint, isMediaInputType, isOrderedImageReferenceSlot, matchOperationInputs, planAutoAdaptation, resolveModelView } from '../validation/compatKernel.ts';
 import { buildInputCapability } from '../validation/inputCapability.ts';
-import { autoFillSlots, deriveSlotLayout, hydrateSlotBindings, type SlotBindings, type SlotConflict, type SlotOccupant, type SlotSpec } from './feedSlot/index.ts';
+import { autoFillSlots, deriveSlotLayout, hydrateSlotBindings, type FeedAsset, type SlotBindings, type SlotConflict, type SlotLayout, type SlotOccupant, type SlotSpec } from './feedSlot/index.ts';
 import { effectiveSlotFingerprint, feedFromFingerprint } from './feedSlot/effectiveFingerprint.ts';
 import { effectiveInputDisplay } from './feedSlot/effectiveInputDisplay.ts';
 import { resolveSlotOccupantOrdinal } from './feedSlot/assembleEffectiveInputs.ts';
@@ -17,8 +17,26 @@ function isSingleStartImage(slot: SlotSpec): boolean {
   return slot.type === 'image' && slot.role === 'first_frame' && slot.max === 1;
 }
 
+function refillDisconnectedSlots(layout: SlotLayout, feed: FeedAsset[], bindings: SlotBindings,
+  vacancies: ReadonlyMap<string, number>, standby: readonly string[]): void {
+  const slots = layout.slots.flatMap(slot => {
+    const priorCount = vacancies.get(slot.slot);
+    return priorCount === undefined ? [] : [{ ...slot, max: Math.min(priorCount, slot.max ?? Infinity) }];
+  });
+  const scoped = Object.fromEntries(slots.map(slot => [slot.slot, (bindings[slot.slot] ?? []).filter(item => item.use !== 'inactive')]));
+  const activeEdges = new Set(Object.values(scoped).flat().map(item => item.edgeId));
+  const assignedSources = new Set(Object.values(bindings).flat().map(item => item.sourceNodeId));
+  const eligible = feed.filter(asset => activeEdges.has(asset.edgeId) || !assignedSources.has(asset.sourceNodeId));
+  const { bindings: planned } = autoFillSlots(eligible, { ...layout, slots }, scoped, standby);
+  for (const [slot, occupants] of Object.entries(planned)) {
+    const added = occupants.filter(item => !activeEdges.has(item.edgeId));
+    if (added.length) bindings[slot] = [...(bindings[slot] ?? []), ...added];
+  }
+}
+
 /** Initialize unspecified choices only; supply changes cannot replace a saved creative choice. */
-export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutationState, context: CanvasMutationRuntimeContext, previous?: CanvasNode, newEdgeIds = new Set<string>()): CanvasNode {
+export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutationState, context: CanvasMutationRuntimeContext,
+  previous?: CanvasNode, newEdgeIds: ReadonlySet<string> = new Set(), disconnected: ReadonlySet<string> = new Set()): CanvasNode {
   const params = { ...readCanvasParams(node) };
   // A narrow line accepts far less than the contract publishes; narrowing the routed model
   // once here keeps the slot layout, the operation list and the parameter view aligned.
@@ -167,6 +185,13 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
     Boolean(occupant.sourceNodeId) && liveNodeIds.has(occupant.sourceNodeId)
     && Boolean(occupant.edgeId) && liveEdgeSource.get(occupant.edgeId as string) === occupant.sourceNodeId;
   if (explicit) {
+    const vacancies = new Map<string, number>();
+    if (useSavedSlots && !modeChanged && disconnected.size) {
+      for (const [slot, occupants] of Object.entries(explicit)) {
+        const active = occupants.filter(occupant => occupant.use !== 'inactive');
+        if (active.some(occupant => !occupant.pinned && disconnected.has(occupant.edgeId))) vacancies.set(slot, active.length);
+      }
+    }
     explicit = Object.fromEntries(Object.entries(explicit)
       .map(([slot, occupants]) => [slot,
         occupants
@@ -230,6 +255,7 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
         ? [...(explicit[hint] ?? []), occupant]
         : slot?.max === 1 ? [occupant] : [...(explicit[hint] ?? []), occupant];
     }
+    if (vacancies.size) refillDisconnectedSlots(layout, feed, explicit, vacancies, standbyIds);
   }
   // A missing V1 `slotBindings` means "not initialized yet", not "the user cleared every slot": the display
   // side self-heals such a node by auto-filling, so the store must persist that same fill. Leaving `{}` behind
