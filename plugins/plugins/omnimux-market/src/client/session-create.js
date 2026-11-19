@@ -77,13 +77,68 @@
         const text = typeof opts.text === "string" ? opts.text : "/skill-creator\n帮我使用它来创建一个新的技能。首先询问我这个技能应该做什么。";
         const start = Date.now();
         const timeout = Number.isFinite(opts.timeoutMs) ? opts.timeoutMs : 10000;
+        const readBridgeDraft = () => {
+          try {
+            const actions = typeof window !== "undefined" ? window.__omnimuxComposerActions : null;
+            return actions && typeof actions.getDraft === "function" ? String(actions.getDraft() || "") : null;
+          } catch {
+            return null;
+          }
+        };
+        let bridgeAttempted = false;
+        // 真实壳里 AttachmentSubmitBridge 与 SkillPickerButton 同树挂载，但布局 effect 的
+        // 落地顺序不保证。先给 composer 桥一个短 grace，避免 slot 先到、桥晚到而走回
+        // 已验证不可靠的 slot 内部通路；老壳无桥时再回落 slot。
+        const bridgeGraceMs = timeout > 1000 ? 500 : 0;
         while (Date.now() - start < timeout) {
           if (!check()) return stopped();
           const slot = skillCreationInputs.get(sessionId);
+          if (slot && (slot.draft || slot.protected)) return { ok: false, sessionId, prefilled: false, error: "draft-protected" };
+          const actions = typeof window !== "undefined" ? window.__omnimuxComposerActions : null;
+          const hasSetDraft = Boolean(actions && typeof actions.setDraft === "function");
+          if (!bridgeAttempted && hasSetDraft) {
+            bridgeAttempted = true;
+            let receipt = false;
+            try { receipt = actions.setDraft(text); } catch { receipt = false; }
+            // 回执 false 是真实失败，必须可见地返回，不能把 slot 写入当成功兜底。
+            if (receipt === false) return { ok: false, sessionId, prefilled: false, error: "prefill-failed" };
+            // 稍后读回：getDraft 可能在 React 提交后才反映新草稿，不能只看 setDraft 的当次回执。
+            const readbackDeadline = Math.min(start + timeout, Date.now() + 2000);
+            while (Date.now() < readbackDeadline) {
+              if (!check()) return stopped();
+              const draft = readBridgeDraft();
+              if (typeof draft === "string" && draft.includes("/skill-creator")) {
+                return { ok: true, sessionId, prefilled: true };
+              }
+              await new Promise((resolve) => setTimeout(resolve, 50));
+            }
+            return { ok: false, sessionId, prefilled: false, error: "prefill-failed" };
+          }
+          if (!bridgeAttempted && actions && typeof actions.getDraft === "function") {
+            // 只有 getDraft 没有 setDraft：走同款事件通道，再用读回确认。
+            bridgeAttempted = true;
+            try {
+              if (typeof CustomEvent === "function") {
+                window.dispatchEvent(new CustomEvent("omnimux:composer:set-draft", { detail: { sessionId, draft: text } }));
+                const readbackDeadline = Math.min(start + timeout, Date.now() + 2000);
+                while (Date.now() < readbackDeadline) {
+                  if (!check()) return stopped();
+                  const draft = readBridgeDraft();
+                  if (typeof draft === "string" && draft.includes("/skill-creator")) {
+                    return { ok: true, sessionId, prefilled: true };
+                  }
+                  await new Promise((resolve) => setTimeout(resolve, 50));
+                }
+              }
+            } catch {}
+            return { ok: false, sessionId, prefilled: false, error: "prefill-failed" };
+          }
+          if (slot && !hasSetDraft && !actions && Date.now() - start < bridgeGraceMs) {
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            continue;
+          }
           if (slot) {
-            if (slot.draft || slot.protected) return { ok: false, sessionId, prefilled: false, error: "draft-protected" };
-            // Official setDraft is synchronous/void; this wrapper returns an explicit receipt.
-            // Do not read a render-captured draft snapshot immediately after writing.
+            // 兼容没有 composer 桥的老壳：保留原 slot 通路作为最后备选。
             if (!slot.write(text)) return { ok: false, sessionId, prefilled: false, error: "prefill-failed" };
             return { ok: true, sessionId, prefilled: true };
           }

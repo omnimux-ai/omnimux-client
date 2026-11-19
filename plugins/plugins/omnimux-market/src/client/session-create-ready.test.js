@@ -9,7 +9,7 @@ function deferred() {
   const promise = new Promise((yes, no) => { resolve = yes; reject = no })
   return { promise, resolve, reject }
 }
-function setup({ install, create, attach, draft = '', protectedInput = false, receipt = true, mount = true, uiWorkspace = false, uiSwitches = true, openDelay = 0 } = {}) {
+function setup({ install, create, attach, draft = '', protectedInput = false, receipt = true, mount = true, uiWorkspace = false, uiSwitches = true, openDelay = 0, composerActions = null } = {}) {
   const calls = [], listeners = new Set(), writes = [], wbCalls = [], uiCalls = []
   let current = 'a'
   const state = new Map([
@@ -41,6 +41,7 @@ function setup({ install, create, attach, draft = '', protectedInput = false, re
     if (method === 'tryAttach') return attach ? attach(body) : { attached: true, hasBody: true, sessionId: body.sessionId, slug: body.slug }
     throw Error('unexpected API')
   } }
+  if (composerActions) context.window.__omnimuxComposerActions = composerActions
   const exports = runInNewContext(source + '\n({createSkillSession,skillCreationInputs})', context)
   for (const [id, input] of state) {
     if (id === 'b' && !mount) continue
@@ -194,6 +195,34 @@ test('awaits async workbench.open before forcing split focus', async () => {
     ['open', 'open-done', 'setFocus', 'setConversationCollapsed'],
     'setFocus 必须在异步 open 落定之后',
   )
+})
+
+test('ready prefill uses composer bridge receipt and verifies getDraft readback', async () => {
+  const drafts = []
+  const h = setup({
+    uiWorkspace: true,
+    composerActions: {
+      setDraft: text => { drafts.push(text); return true },
+      getDraft: () => drafts.at(-1) || '',
+    },
+  })
+  const result = await h.run({ timeoutMs: 1000 })
+  assert.equal(result.ok, true)
+  assert.equal(result.prefilled, true)
+  assert.match(drafts[0], /^\/skill-creator\n/)
+  assert.equal(h.writes.length, 0, '真实 composer 桥可用时不得走 slot 内部通路')
+})
+
+test('composer bridge setDraft false returns visible prefill-failed', async () => {
+  const h = setup({
+    uiWorkspace: true,
+    composerActions: { setDraft: () => false, getDraft: () => '' },
+  })
+  const result = await h.run({ timeoutMs: 1000 })
+  assert.equal(result.ok, false)
+  assert.equal(result.prefilled, false)
+  assert.equal(result.error, 'prefill-failed')
+  assert.equal(h.writes.length, 0)
 })
 
 test('returns session-navigation-unavailable instead of silently waiting when the host never switches', async () => {
