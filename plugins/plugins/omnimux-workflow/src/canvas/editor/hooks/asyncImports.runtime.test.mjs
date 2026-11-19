@@ -203,6 +203,24 @@ test('local pane ignores selection after closing, while a new selection still ad
   assert.equal(added[0].realPath, '/new.png');
 });
 
+test('named slot opens the desktop file input with its extensions and available count', async t => {
+  const f = setup(t);
+  f.win.__DSH_HOST_PATHS__ = { pathFor: () => '' };
+  const namedSlot = { extensions: ['mp3', 'wav'], remaining: 1, readDuration: false, accepts: () => true };
+  const props = { files: [], active: true, onAddFiles() {}, onRemove() {} };
+  await f.render(f.api.LocalUploadPane, { ...props, namedSlot });
+  const input = f.win.document.querySelector('input[type="file"]');
+  let opened = 0;
+  input.addEventListener('click', () => { opened += 1; });
+  await f.flush(() => f.win.document.querySelector('.wf-picker-dropzone').click());
+  assert.equal(opened, 1);
+  assert.equal(f.picks.length, 0);
+  assert.equal(input.accept, '.mp3,.wav');
+  assert.equal(input.multiple, false);
+  await f.render(f.api.LocalUploadPane, { ...props, namedSlot: { ...namedSlot, remaining: 2 } });
+  assert.equal(input.multiple, true);
+});
+
 test('drawer asset-library selection and index response are isolated across workspaces', async t => {
   const f = setup(t); const inserted = [];
   const drawer = workspaceId => f.render(f.api.AssetsDrawer, { workspaceId, isOpen: true, onClose() {}, onInsertAsset: asset => inserted.push(asset), nodes: [] });

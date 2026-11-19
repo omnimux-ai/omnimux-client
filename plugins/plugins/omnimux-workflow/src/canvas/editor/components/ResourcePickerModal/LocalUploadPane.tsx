@@ -11,7 +11,7 @@ import {
   formatFileSize,
   type LocalFileDraft,
 } from '../../utils/resourcePickerPolicy.ts';
-import { draftFromRealPath, draftsFromPickedPaths, filterDraftsByTypes, nativePathOf } from '../../utils/localFileDraft.ts';
+import { draftFromRealPath, draftsFromPickedPaths, filterDraftsByTypes, hasDesktopFilePaths, nativePathOf } from '../../utils/localFileDraft.ts';
 import { probePickerDrafts } from '../../utils/probePickerDrafts.ts';
 import { localFileMediaUrl } from '../../../../shared/localMedia.ts';
 import PreviewThumb from './PreviewThumb.tsx';
@@ -101,10 +101,13 @@ const LocalUploadPane: React.FC<LocalUploadPaneProps> = ({ files, active, onAddF
   );
 
   const handleClick = useCallback(() => {
-    if (!active) return;
-    // Request the desktop file chooser directly so the current slot filters apply.
+    if (!active || (namedSlot && namedSlot.remaining <= 0)) return;
+    if (namedSlot && hasDesktopFilePaths() && fileInputRef.current) {
+      fileInputRef.current.click();
+      return;
+    }
     void chooseNative();
-  }, [active, chooseNative]);
+  }, [active, chooseNative, namedSlot]);
 
   const handleInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -137,7 +140,8 @@ const LocalUploadPane: React.FC<LocalUploadPaneProps> = ({ files, active, onAddF
       <input
         ref={fileInputRef}
         type="file"
-        multiple
+        accept={namedSlot?.extensions.map(extension => `.${extension}`).join(',')}
+        multiple={!namedSlot || namedSlot.remaining > 1}
         style={{ display: 'none' }}
         onChange={handleInputChange}
         aria-hidden="true"

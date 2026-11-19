@@ -10,8 +10,13 @@ import {
 } from '../../../shared/localMedia.ts';
 import type { LocalFileDraft } from './resourcePickerPolicy.ts';
 
+const host = globalThis as typeof globalThis & { __DSH_HOST_PATHS__?: { pathFor(file: File): string } };
+
+export function hasDesktopFilePaths(): boolean {
+  return typeof host.__DSH_HOST_PATHS__?.pathFor === 'function';
+}
+
 export function nativePathOf(file: File): string {
-  const host = globalThis as typeof globalThis & { __DSH_HOST_PATHS__?: { pathFor(file: File): string } };
   const hostPath = host.__DSH_HOST_PATHS__?.pathFor(file);
   if (hostPath) return hostPath;
   const path = (file as File & { path?: string }).path;
