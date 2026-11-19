@@ -214,6 +214,7 @@ jobs:
 
       - name: Run regression tests
         run: |
+          node --test ../app/scripts/verify-desktop-acceptance.test.mjs
           node --test scripts/video-param-normalization.test.mjs
           node --test scripts/windows-build-portability.test.mjs
           node --test scripts/input-capability.test.mjs
