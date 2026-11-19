@@ -438,7 +438,8 @@
       const creationRef = useRef(null);
       useEffect(() => () => {
         const attempt = creationRef.current;
-        if (attempt && currentPlazaSessionId() !== attempt.targetSessionId) attempt.cancelled = true;
+        // Navigation remounts this picker. Once requested, the session flow owns cancellation.
+        if (attempt && !attempt.targetSessionId) attempt.cancelled = true;
       }, []);
       useLayoutEffect(() => {
         if (!sessionId || !input) return undefined;

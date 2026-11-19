@@ -9,7 +9,7 @@ function deferred() {
   const promise = new Promise((yes, no) => { resolve = yes; reject = no })
   return { promise, resolve, reject }
 }
-function setup({ install, create, attach, draft = '', protectedInput = false, receipt = true, mount = true, uiWorkspace = false, uiSwitches = true, openDelay = 0, composerActions = null } = {}) {
+function setup({ install, create, attach, draft = '', protectedInput = false, receipt = true, mount = true, uiWorkspace = false, uiSwitches = true, openDelay = 0, duringWorkbenchOpen, composerActions = null } = {}) {
   const calls = [], listeners = new Set(), writes = [], wbCalls = [], uiCalls = []
   let current = 'a'
   const state = new Map([
@@ -28,6 +28,7 @@ function setup({ install, create, attach, draft = '', protectedInput = false, re
     getSnapshot: () => ({ sessionId: current }),
     open: async payload => {
       wbCalls.push(['open', payload, current])
+      await duringWorkbenchOpen?.(move)
       if (openDelay) {
         await new Promise(resolve => setTimeout(resolve, openDelay))
         wbCalls.push(['open-done', payload.sessionId])
@@ -195,6 +196,53 @@ test('awaits async workbench.open before forcing split focus', async () => {
     ['open', 'open-done', 'setFocus', 'setConversationCollapsed'],
     'setFocus 必须在异步 open 落定之后',
   )
+})
+
+test('prefills once after workbench.open temporarily leaves the current session unbound', async () => {
+  const writes = []
+  const h = setup({
+    uiWorkspace: true,
+    duringWorkbenchOpen: async move => {
+      move('')
+      await Promise.resolve()
+      move('b')
+    },
+    composerActions: {
+      setDraft: text => { writes.push(text); return true },
+      getDraft: () => writes[0] || '',
+    },
+  })
+  const result = await h.run({ timeoutMs: 1000 })
+  assert.equal(result.ok, true)
+  assert.equal(result.prefilled, true)
+  assert.equal(writes.length, 1)
+  assert.match(writes[0], /^\/skill-creator\n/)
+  assert.equal(h.writes.length, 0)
+  assert.equal(h.state.get('a').draft, 'old draft')
+})
+
+test('manual switch during workbench.open cancels even if the target returns', async () => {
+  const h = setup({
+    uiWorkspace: true,
+    duringWorkbenchOpen: move => { move('c'); move('b') },
+  })
+  assert.equal((await h.run()).cancelled, true)
+  assert.equal(h.writes.length, 0)
+  assert.deepEqual(h.wbCalls.map(call => call[0]), ['open'])
+})
+
+test('a draft already present in the composer bridge is protected', async () => {
+  const writes = []
+  const h = setup({
+    uiWorkspace: true,
+    composerActions: {
+      setDraft: text => { writes.push(text); return true },
+      getDraft: () => 'user draft',
+    },
+  })
+  const result = await h.run({ timeoutMs: 1000 })
+  assert.equal(result.error, 'draft-protected')
+  assert.deepEqual(writes, [])
 })
 
 test('ready prefill uses composer bridge receipt and verifies getDraft readback', async () => {
