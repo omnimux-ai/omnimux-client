@@ -335,6 +335,46 @@ export function findVisibleWorkbenchPanel(doc) {
   return null
 }
 
+/**
+ * 顶栏控件/锚点是否真的可见（#67 AC-4）。
+ *
+ * 只看 `querySelector` 会被文档序坑：隐藏 bottomPanel 的 tabBar 在 DOM 里更靠前，
+ * 结果按钮被注入到视口下方、`visibility:hidden` 的底栏里（实测 anchor rect
+ * `{x:280,y:845,w:1000,h:34}`，viewport 840 高）。这里统一按「祖先无
+ * display:none / visibility:hidden + rect 与视口相交」判定。
+ *
+ * 无布局信息的环境（jsdom 或刚插入尚未布局）rect 全 0，此时交给显隐样式判定，
+ * 避免把「还没量到」误判成隐藏；真实浏览器里被隐藏祖先裁掉的节点会拿到 0 尺寸，
+ * 而它的祖先样式已经先被上面拦掉。
+ *
+ * @param {Element | null | undefined} el
+ * @param {Document | null | undefined} doc
+ * @returns {boolean}
+ */
+export function isTopbarElementVisible(el, doc) {
+  if (!el || typeof el.getBoundingClientRect !== 'function') return false
+  const win = doc?.defaultView
+  let cur = el
+  while (cur && cur.nodeType === 1) {
+    const style = safeDom(() => win?.getComputedStyle?.(cur), null)
+    if (style && (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse')) return false
+    cur = cur.parentElement
+  }
+  const rect = safeDom(() => el.getBoundingClientRect(), null)
+  if (!rect) return false
+  const left = Number(rect.left) || 0
+  const top = Number(rect.top) || 0
+  const width = Number(rect.width) || 0
+  const height = Number(rect.height) || 0
+  if (width <= 0 && height <= 0) return true
+  const vw = Number(win?.innerWidth) || 0
+  const vh = Number(win?.innerHeight) || 0
+  if (!vw || !vh) return true
+  const right = typeof rect.right === 'number' ? rect.right : left + width
+  const bottom = typeof rect.bottom === 'number' ? rect.bottom : top + height
+  return right > 0 && bottom > 0 && left < vw && top < vh
+}
+
 /** Rail narrower than this while expanded is a poisoned reading, never a layout. */
 export const LEFT_RAIL_MIN_PX = 64
 
@@ -1070,12 +1110,21 @@ function runTopbarGeometryHook(doc) {
  */
 export function findTopbarAnchor(doc) {
   if (!doc || typeof doc.querySelector !== 'function') return null
-  // tabBar 叶子优先，better-sidebar 宿主只作兜底（早期壳没有 tabBar 时用）。
-  // 三者写进同一个 querySelector 会被文档序坑：宿主是 tabBar 的祖先、总是先命中，
-  // 按钮实际落在 wrapper 上，tabBar 整体替换时就看不到重注入（#67 AC-4）。
-  return doc.querySelector('[data-dsh-better-sidebar] [class*="tabBar"], [class*="tabBar"]')
-    || doc.querySelector('[data-dsh-better-sidebar]')
-    || null
+  // 只认可见锚点：隐藏 bottomPanel 的 tabBar 在文档序上更靠前，纯 querySelector
+  // 会先命中它（#67 AC-4 实测按钮落在视口外、visibility:hidden）。
+  const panel = findVisibleWorkbenchPanel(doc)
+  if (panel) {
+    const bar = panel.querySelector('[class*="tabBar"]:not([class*="Plus"])')
+    if (bar instanceof HTMLElement && isTopbarElementVisible(bar, doc)) return bar
+  }
+  // 没有可见 panel 时，只回退到实测可见的 better-sidebar 宿主；隐藏节点一律 null。
+  for (const host of doc.querySelectorAll('[data-dsh-better-sidebar]')) {
+    if (!(host instanceof HTMLElement) || !isTopbarElementVisible(host, doc)) continue
+    const bar = host.querySelector('[class*="tabBar"]:not([class*="Plus"])')
+    if (bar instanceof HTMLElement && isTopbarElementVisible(bar, doc)) return bar
+    return host
+  }
+  return null
 }
 
 /** True while any first-run guide layer is on screen (#67). */
@@ -1130,6 +1179,9 @@ export function injectTopbarToggleButton(doc) {
       if (official) triggerClick(official)
     })
     anchor.appendChild(btn)
+  } else if (btn.parentElement !== anchor && typeof anchor.appendChild === 'function') {
+    // 可见锚点换位（隐藏 bottomPanel → 可见 panel）时把已有按钮搬过去。
+    anchor.appendChild(btn)
   }
   applyButtonChrome(btn)
   return btn
@@ -1174,6 +1226,8 @@ export function injectTopbarNewSessionButton(doc, collapsed) {
       const official = findOfficialNewSessionButton(doc)
       if (official) triggerClick(official)
     })
+    anchor.appendChild(btn)
+  } else if (btn.parentElement !== anchor && typeof anchor.appendChild === 'function') {
     anchor.appendChild(btn)
   }
   applyButtonChrome(btn)
@@ -1545,8 +1599,12 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
   let topbarRetryAttempt = 0
 
   const topbarControlMissing = () => {
-    if (!doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`)) return true
-    return isLeftSidebarCollapsed(doc) && !doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`)
+    // 存在但不可见（例如落在隐藏 bottomPanel tabBar 里）同样算缺失，继续自愈。
+    const toggle = doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`)
+    if (!toggle || !isTopbarElementVisible(toggle, doc)) return true
+    if (!isLeftSidebarCollapsed(doc)) return false
+    const newSession = doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`)
+    return !newSession || !isTopbarElementVisible(newSession, doc)
   }
 
   const cancelTopbarRetry = () => {
@@ -1583,31 +1641,45 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
   const TOPBAR_ANCHOR_APPEAR_SELECTOR = '[data-dsh-better-sidebar], [class*="tabBar"]'
   /** @type {MutationObserver | null} */
   let anchorWatchObserver = null
+  /** @type {Element | null} */
+  let observedAnchorWatchRoot = null
 
   const stopAnchorWatch = () => {
-    if (!anchorWatchObserver) return
-    safeDom(() => anchorWatchObserver.disconnect())
-    anchorWatchObserver = null
+    if (anchorWatchObserver) {
+      safeDom(() => anchorWatchObserver.disconnect())
+      anchorWatchObserver = null
+    }
+    observedAnchorWatchRoot = null
   }
 
   const watchTopbarAnchorAppearance = () => {
-    if (anchorWatchObserver || !ObserverClass) return
-    if (findTopbarAnchor(doc)) return
-    const host = doc.getElementById?.('root')
-    if (!host) return
+    if (!ObserverClass) return
+    if (findTopbarAnchor(doc)) {
+      stopAnchorWatch()
+      return
+    }
+    const root = doc.getElementById?.('root')
+    if (!root) return
+    // #root 自身被替换时旧 observer 绑在死节点上：换根就重绑。
+    if (anchorWatchObserver && observedAnchorWatchRoot === root) return
+    stopAnchorWatch()
+    observedAnchorWatchRoot = root
     anchorWatchObserver = new ObserverClass((records) => {
       for (const record of records) {
         for (const node of [...record.addedNodes, ...record.removedNodes]) {
           if (node.nodeType !== 1) continue
           if (node.matches?.(TOPBAR_ANCHOR_APPEAR_SELECTOR) || node.querySelector?.(TOPBAR_ANCHOR_APPEAR_SELECTOR)) {
-            stopAnchorWatch()
-            scheduleSync()
+            // 隐藏 tabBar 不算命中：只有出现「可见」锚点才撤销观察。
+            if (findTopbarAnchor(doc)) {
+              stopAnchorWatch()
+              scheduleSync()
+            }
             return
           }
         }
       }
     })
-    anchorWatchObserver.observe(host, { childList: true, subtree: true })
+    anchorWatchObserver.observe(root, { childList: true, subtree: true })
   }
 
   /**

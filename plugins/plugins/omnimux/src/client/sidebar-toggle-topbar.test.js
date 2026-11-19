@@ -30,6 +30,7 @@ import {
   installSidebarToggleTopbar,
   isLeftSidebarCollapsed,
   isSamePxValue,
+  isTopbarElementVisible,
   isShellSplitDragging,
   notePluginPanelWidthWrite,
   noteShellSplitDragObserved,
@@ -1763,6 +1764,115 @@ describe('first-run onboarding gating (#67)', () => {
       nextHost.appendChild(nextNextBar)
       host.replaceWith(nextHost)
       await waitFor(() => injectedIn(nextNextBar))
+    } finally {
+      stop()
+    }
+  })
+})
+
+describe('topbar anchor visibility (#67 AC-4)', () => {
+  const rect = (left, top, width, height) => ({
+    left, top, width, height, right: left + width, bottom: top + height,
+    x: left, y: top, toJSON() {},
+  })
+  const mockRect = (el, box) => { el.getBoundingClientRect = () => box }
+
+  function shellFixture({ withVisiblePanel = true } = {}) {
+    return setup(`<!doctype html><html><body>
+      <div class="frame_abc" data-sidebar-collapsed>
+        <div class="sidebarCol_x">
+          <div class="logoRow_y"><button type="button" class="toggle_w" aria-label="打开侧边栏">T</button></div>
+          <button type="button" class="newSession_n" aria-label="新建会话">新会话</button>
+        </div>
+      </div>
+      <div data-dsh-better-sidebar>
+        <div data-dsh-panel-host="true">
+          <div class="x_bottomPanel x_bottomPanelHidden"><div class="hidden_tabBar"></div></div>
+          ${withVisiblePanel ? '<div class="x_panel"><div class="visible_tabBar"></div></div>' : ''}
+        </div>
+      </div>
+    </body></html>`)
+  }
+
+  it('injects into the visible panel tabBar even when a hidden bottomPanel tabBar comes first', () => {
+    const doc = shellFixture()
+    const hiddenBar = doc.querySelector('.hidden_tabBar')
+    mockRect(hiddenBar, rect(280, 845, 1000, 34)) // 视口下方（viewport 1280×840）
+    const visiblePanel = doc.querySelector('.x_panel')
+    mockRect(visiblePanel, rect(280, 0, 1000, 800))
+    const visibleBar = doc.querySelector('.visible_tabBar')
+    mockRect(visibleBar, rect(280, 4, 1000, 34))
+
+    assert.equal(findTopbarAnchor(doc), visibleBar, '文档序靠前的隐藏 tabBar 不得被选中')
+    const btn = ensureSidebarToggleTopbar(doc)
+    assert.ok(btn)
+    assert.equal(btn.parentElement, visibleBar, '按钮必须注入可见 tabBar')
+    assert.equal(isTopbarElementVisible(hiddenBar, doc), false, '隐藏底栏不算可见')
+
+    // d) 按钮自身 rect 在视口内（按真实 fixed 几何 mock）
+    mockRect(btn, rect(520, 4, 32, 32))
+    assert.equal(isTopbarElementVisible(btn, doc), true)
+    const box = btn.getBoundingClientRect()
+    assert.ok(box.left >= 0 && box.top >= 0)
+    assert.ok(box.right <= doc.defaultView.innerWidth && box.bottom <= doc.defaultView.innerHeight)
+  })
+
+  it('does not inject when every candidate anchor is hidden', () => {
+    const doc = shellFixture({ withVisiblePanel: false })
+    const host = doc.querySelector('[data-dsh-better-sidebar]')
+    host.style.display = 'none'
+    mockRect(doc.querySelector('.hidden_tabBar'), rect(280, 845, 1000, 34))
+
+    assert.equal(findTopbarAnchor(doc), null)
+    assert.equal(ensureSidebarToggleTopbar(doc), null)
+    assert.equal(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`), null)
+    assert.equal(doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`), null)
+  })
+
+  it('keeps the appearance observer armed past the retry window and restores when the panel becomes visible', async () => {
+    const doc = setup('<!doctype html><html><body><div id="root"></div></body></html>')
+    const guide = doc.createElement('div')
+    guide.setAttribute('data-omnimux-native-runtime', '')
+    doc.body.appendChild(guide)
+    const stop = installSidebarToggleTopbar(doc)
+    const injected = () => Boolean(doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`))
+    try {
+      guide.remove()
+      await new Promise((resolve) => setTimeout(resolve, 60))
+
+      // 先出现隐藏的 bottomPanel tabBar：不注入、观察不能被撤销。
+      const host = doc.createElement('div')
+      host.setAttribute('data-dsh-better-sidebar', '')
+      host.style.display = 'none' // 宿主也不可见：只有 hidden 锚点时不得注入
+      const panelHost = doc.createElement('div')
+      panelHost.setAttribute('data-dsh-panel-host', 'true')
+      const hiddenPanel = doc.createElement('div')
+      hiddenPanel.className = 'x_bottomPanel x_bottomPanelHidden'
+      const hiddenBar = doc.createElement('div')
+      hiddenBar.className = 'hidden_tabBar'
+      hiddenPanel.appendChild(hiddenBar)
+      panelHost.appendChild(hiddenPanel)
+      host.appendChild(panelHost)
+      doc.getElementById('root').appendChild(host)
+      mockRect(hiddenBar, rect(280, 845, 1000, 34))
+      await new Promise((resolve) => setTimeout(resolve, 120))
+      assert.equal(injected(), false, '隐藏 tabBar 不得触发注入')
+
+      // 等过自愈链窗口（3.5s）后再出现可见 panel：只有观察者仍在才可能恢复。
+      await new Promise((resolve) => setTimeout(resolve, 4000))
+      assert.equal(injected(), false)
+      host.style.display = ''
+      const visiblePanel = doc.createElement('div')
+      visiblePanel.className = 'x_panel'
+      const visibleBar = doc.createElement('div')
+      visibleBar.className = 'visible_tabBar'
+      visiblePanel.appendChild(visibleBar)
+      panelHost.appendChild(visiblePanel)
+      mockRect(visiblePanel, rect(280, 0, 1000, 800))
+      mockRect(visibleBar, rect(280, 4, 1000, 34))
+
+      await waitFor(injected)
+      assert.equal(doc.querySelector(`button[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`).parentElement, visibleBar)
     } finally {
       stop()
     }
