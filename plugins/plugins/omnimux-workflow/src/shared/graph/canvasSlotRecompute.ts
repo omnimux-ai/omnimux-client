@@ -103,7 +103,10 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
   const restoring = selectableBeforeInputs && sameModel && priorParams.operation === 'text_to_video'
     && params.operation === 'digital_human' && cached?.model === model.id
     && node.data.slotBindings === previous?.data.slotBindings ? cached : undefined;
-  const storedConflicts = restoring?.conflicts ?? node.data.slotConflicts as SlotConflict[] | undefined;
+  const standbyIds = Array.isArray(node.data.slotStandbyEdgeIds) ? node.data.slotStandbyEdgeIds.filter((id): id is string => typeof id === 'string') : [];
+  const excludedOnRestore = restoring && model?.id === 'minimax-h3-video' ? new Set(standbyIds) : undefined;
+  const storedConflicts = restoring ? restoring.conflicts?.filter(conflict => !excludedOnRestore?.has(conflict.occupant.edgeId))
+    : node.data.slotConflicts as SlotConflict[] | undefined;
   let explicit = plainSpeech ? {} : restoring?.bindings ?? node.data.slotBindings as SlotBindings | undefined;
   if (!currentVersion && outputType === 'text' && explicit && Object.keys(explicit).length === 0 && (!node.data.slotStandbyEdgeIds || (node.data.slotStandbyEdgeIds as unknown[]).length === 0)) {
     explicit = undefined;
@@ -118,7 +121,6 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
   const useSavedSlots = currentVersion || upgradeRestored || savedClears;
   const keepSavedLipSlots = selectableBeforeInputs && params.operation === 'digital_human'
     && ((useSavedSlots && !modeChanged) || upgradeRestored);
-  const standbyIds = Array.isArray(node.data.slotStandbyEdgeIds) ? node.data.slotStandbyEdgeIds.filter((id): id is string => typeof id === 'string') : [];
   // A V1 occupant is authoritative only while its source node and edge still exist on the
   // canvas. Unpinned (auto-filled) occupants whose supply vanished are junk that must be
   // pruned here, otherwise the stale binding keeps re-persisting and the node stays blocked
@@ -135,7 +137,8 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
     explicit = Object.fromEntries(Object.entries(explicit)
       .map(([slot, occupants]) => [slot,
         occupants
-          .filter((occupant) => useSavedSlots ? (isLiveOccupant(occupant) || occupant.pinned) : (!modeChanged || occupant.pinned))
+          .filter((occupant) => !excludedOnRestore?.has(occupant.edgeId)
+            && (useSavedSlots ? (isLiveOccupant(occupant) || occupant.pinned) : (!modeChanged || occupant.pinned)))
           .map((occupant) => ({ ...occupant }))] as const)
       // Drop slots emptied by pruning so the node does not keep a `{slot: []}` residue
       // that reads as an explicit user-clear to downstream readers.

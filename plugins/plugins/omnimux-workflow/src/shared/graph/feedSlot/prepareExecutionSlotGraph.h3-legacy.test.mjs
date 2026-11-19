@@ -118,6 +118,7 @@ test('opening an H3 canvas with old pinned bindings keeps its chosen sources ove
 
 function roundTripLegacyMode(saved, whileText) {
   let graph = reconcileCanvasForCatalog({ ...saved, catalog: current });
+  assert.equal(graph.nodes.at(-1).data.inputBindingVersion, saved.nodes.at(-1).data.inputBindingVersion);
   function mutate(mutation) {
     const plan = planCanvasInputMutation(graph, mutation, { catalog: current });
     assert.equal(plan.status, 'allowed');
@@ -132,6 +133,7 @@ function roundTripLegacyMode(saved, whileText) {
   const target = patch({ params: { model: modelId, operation: operationId }, autoOperationId: null });
   assert.equal(target.data.prompt, 'edited text draft');
   assert.equal(target.data.params.operation, operationId);
+  assert.equal(target.data.inputBindingVersion, 1);
   return prepareExecutionSlotGraph(graph.nodes, graph.edges, current);
 }
 
@@ -145,9 +147,12 @@ test('returning an edge-only H3 canvas to lip sync sends the previously chosen p
 
 test('returning to lip sync keeps a cleared voice empty with an unselected alternative connected', () => {
   const saved = savedGraph(false);
-  saved.nodes.at(-1).data.slotBindings = {};
+  saved.nodes.at(-1).data.slotBindings = {
+    reference_image: [{ edgeId: 'edge-portrait', sourceNodeId: 'portrait', pinned: true }], reference_audio: [],
+  };
   const prepared = roundTripLegacyMode(saved);
   const target = prepared.nodes.at(-1);
+  assert.deepEqual(target.data.slotBindings.reference_image.map(item => item.sourceNodeId), ['portrait']);
   assert.deepEqual(target.data.slotBindings.reference_audio ?? [], []);
   assert.notEqual(findExecutionReadinessFailure([target], current, prepared), null);
 });
@@ -159,6 +164,15 @@ test('returning to lip sync after disconnecting the chosen voice leaves the miss
   const target = prepared.nodes.at(-1);
   assert.deepEqual(target.data.slotBindings.reference_audio ?? [], []);
   assert.deepEqual(target.data.slotStandbyEdgeIds, ['edge-unused-audio']);
+  assert.equal(findExecutionReadinessFailure([target], current, prepared)?.slot, 'reference_audio');
+});
+
+test('a voice put on standby during text editing is excluded when returning to lip sync', () => {
+  const prepared = roundTripLegacyMode(savedGraph(false), {
+    nodePatches: [{ nodeId: 'h3', data: { slotStandbyEdgeIds: ['edge-voice'] } }],
+  });
+  const target = prepared.nodes.at(-1);
+  assert.deepEqual(target.data.slotBindings.reference_audio ?? [], []);
   assert.equal(findExecutionReadinessFailure([target], current, prepared)?.slot, 'reference_audio');
 });
 
