@@ -165,6 +165,7 @@ export const GroupNode: React.FC<NodeProps> = memo(({
           selected={selected}
           color={color}
           onToggleCollapse={() => toggleGroupCollapse(id)}
+          onUngroup={handleUngroup}
           onRename={handleRename}
           onSelect={handleSelectGroup}
         />
