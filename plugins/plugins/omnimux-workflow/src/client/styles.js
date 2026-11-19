@@ -241,16 +241,102 @@ export const WORKFLOW_CSS = `
   font-size: 12px;
   color: var(--dsw-alias-state-error-primary, var(--dsw-alias-label-error));
 }
-/* 对齐预检的中性状态：不是错误，不用红字（B2）。 */
-.omnimux-new-project-preflight {
-  margin: 0;
-  padding: 8px 10px;
+.omnimux-project-create-fields {
+  container-type: inline-size;
   border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
+  border-radius: 12px;
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.omnimux-project-create-fields .omnimux-new-project-name {
+  height: 48px;
+  margin: -1px -1px 0;
+  border-radius: 12px;
   background: var(--dsw-alias-bg-layer-2);
+}
+.omnimux-project-create-fields .omnimux-new-project-name:focus-within {
+  box-shadow: inset 0 0 0 1px var(--dsw-alias-brand-primary);
+}
+.omnimux-project-create-fields .omnimux-new-project-name input {
+  padding-inline: 12px;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+.omnimux-project-create-location {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 5px 6px 5px 12px;
+  gap: 6px;
+}
+.omnimux-project-create-location-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+}
+.omnimux-project-create-location > .omnimux-project-create-location-icon,
+.omnimux-project-create-location-label {
   color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  line-height: 1.5;
+}
+.omnimux-project-create-destination {
+  display: flex;
+  align-items: baseline;
+  flex: 1;
+  min-width: 0;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 18px;
+}
+.omnimux-project-create-location-label {
+  flex: none;
+}
+.omnimux-project-create-path {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-primary);
+}
+.omnimux-project-create-location .omnimux-project-create-change {
+  color: var(--dsw-alias-link);
+  font-weight: 600;
+}
+.omnimux-project-create-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  min-height: 52px;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+.omnimux-project-create-status[data-error] {
+  color: var(--dsw-alias-state-error-primary);
+}
+.omnimux-project-create .omnimux-workflow-dialog-footer button {
+  min-width: 68px;
+}
+@container (max-width: 340px) {
+  .omnimux-project-create-location {
+    min-height: 56px;
+    padding-inline-start: 8px;
+  }
+  .omnimux-project-create-destination {
+    display: block;
+  }
+  .omnimux-project-create-location-label {
+    font-size: 11px;
+    line-height: 16px;
+  }
 }
 .omnimux-workflow-dialog-footer {
   display: flex;

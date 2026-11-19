@@ -261,6 +261,7 @@ export async function pollOpenAiMediaTask(options) {
  *   group?: string,
  *   poll?: typeof pollOpenAiMediaTask,
  *   onSubmitted?: (taskId: string) => void,
+ *   promptRequired?: boolean,
  * }} options
  */
 export function createOpenAiMediaRuntime(options) {
@@ -312,7 +313,7 @@ export function createOpenAiMediaRuntime(options) {
       capability,
       enabled: true,
       parameterSchema: {
-        prompt: { type: 'string', required: true },
+        prompt: { type: 'string', required: options.promptRequired ?? true },
         duration: { type: 'number' },
         image: { type: 'string' },
       },

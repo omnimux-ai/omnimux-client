@@ -69,7 +69,7 @@
           "require": ["link_url"]
         },
         "digital_human": {
-          "allow": ["operation", "prompt", "audio_urls", "metadata", "duration", "size", "aspect_ratio", "resolution", "generate_audio", "audio", "seed", "watermark", "output_format", "tools", "nsfw_check"],
+          "allow": ["operation", "audio_urls", "metadata", "duration", "size", "aspect_ratio", "resolution", "generate_audio", "audio", "seed", "watermark", "output_format", "tools", "nsfw_check"],
           "require": ["audio_urls"]
         }
       },

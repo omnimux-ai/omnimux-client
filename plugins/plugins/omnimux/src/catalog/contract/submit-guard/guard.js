@@ -14,6 +14,7 @@ import { loadAdapterProfiles } from '../schema.js'
 import { loadDispositions } from '../dispositions.js'
 import { mapLegacyOperation } from '../legacy-operation-map.js'
 import { OmnimuxError } from '../../../media/errors.js'
+import { isH3AutoDlLipSync, resolveH3LipSyncSlotAliases } from '../../../media/vendors/autodl-h3.js'
 import { GUARD_CODES } from './codes.js'
 import { normalizeLogicalRequest } from './normalize.js'
 import { assignAndValidateSlots } from './slots.js'
@@ -243,6 +244,11 @@ export function guardSubmit(request, opts = {}) {
   if (!opAdmit.ok) {
     return reject({ ...opAdmit, modelId: modelAdmit.modelId })
   }
+  const h3LipSync = isH3AutoDlLipSync(modelAdmit.modelId, opAdmit.operationId)
+  const prompt = h3LipSync ? '' : normalized.prompt
+  const assets = h3LipSync
+    ? resolveH3LipSyncSlotAliases(normalized.assets, opAdmit.operation.inputs)
+    : normalized.assets
 
   // P1b membership gate, deliberately after model+operation admission so the most
   // specific contract reason wins: a delisted model whose operation is also
@@ -273,7 +279,7 @@ export function guardSubmit(request, opts = {}) {
   }
 
   const parameterResult = validateDeclaredParameters(
-    { ...request, ...normalized.extras, prompt: normalized.prompt },
+    { ...request, ...normalized.extras, prompt },
     opAdmit.operation.parameters,
     modelAdmit.model.parameters,
   )
@@ -301,8 +307,8 @@ export function guardSubmit(request, opts = {}) {
     })
   }
 
-  const slotResult = assignAndValidateSlots(opAdmit.operation, normalized.assets, {
-    prompt: normalized.prompt,
+  const slotResult = assignAndValidateSlots(opAdmit.operation, assets, {
+    prompt,
     duration: parameterResult.values.duration,
   })
   if (!slotResult.ok) {
@@ -333,12 +339,12 @@ export function guardSubmit(request, opts = {}) {
       profile: opAdmit.profile,
       profileId: opAdmit.profileId,
       seam: opAdmit.profile.seam,
-      prompt: normalized.prompt,
-      assets: normalized.assets,
+      prompt,
+      assets,
       bindings: slotResult.bindings,
       bySlot: slotResult.bySlot,
       vendorPayload: {},
-      logicalPayload: { prompt: normalized.prompt },
+      logicalPayload: { prompt },
       extras: parameterResult.values,
       diagnostics,
       disposition: disp.disposition ?? undefined,
@@ -353,7 +359,7 @@ export function guardSubmit(request, opts = {}) {
     model: modelAdmit.model,
     group: request?.group,
     family: modelAdmit.model?.family,
-    prompt: normalized.prompt,
+    prompt,
     bindings: slotResult.bindings,
     bySlot: slotResult.bySlot,
     extras: parameterResult.values,
@@ -380,8 +386,8 @@ export function guardSubmit(request, opts = {}) {
     profile: opAdmit.profile,
     profileId: opAdmit.profileId,
     seam: opAdmit.profile.seam,
-    prompt: normalized.prompt,
-    assets: normalized.assets,
+    prompt,
+    assets,
     bindings: slotResult.bindings,
     bySlot: slotResult.bySlot,
     vendorPayload: mapped.vendorPayload,

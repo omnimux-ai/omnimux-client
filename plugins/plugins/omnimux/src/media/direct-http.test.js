@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import { DIRECT_MEDIA_GENERATE_ROUTE, registerDirectMediaRoutes } from './direct-http.js'
+import { executeOmnimuxImage } from './image.js'
 import {
   createMediaTaskRecord,
   saveMediaTaskRecord,
@@ -66,12 +67,60 @@ describe('Direct Media Generate HTTP Route', () => {
   })
 
   it('rejects empty prompt with 400', async () => {
-    const { route } = fixture()
+    const { route } = fixture({
+      executeImage: (req) => executeOmnimuxImage({
+        ...req,
+        env: {},
+        fetcher: () => assert.fail('missing required prompt must fail before network access'),
+      }),
+    })
     const req = post({ prompt: '' })
     const res = response()
     await route.handler(req, res)
     assert.equal(res.status, 400)
     assert.equal(res.json().error, 'prompt-required')
+  })
+
+  it('dispatches promptless H3 lip-sync to the same video executor', async () => {
+    const { route, calls } = fixture()
+    const res = response()
+    await route.handler(post({
+      kind: 'video',
+      model: 'minimax-h3-video',
+      operation: 'digital_human',
+      references: [
+        { type: 'image', role: 'reference', targetSlot: 'reference_image', pathOrUrl: 'https://example.test/photo.png' },
+        { type: 'audio', role: 'reference', targetSlot: 'reference_audio', pathOrUrl: 'https://example.test/driver.wav' },
+      ],
+    }), res)
+    assert.equal(res.status, 200)
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].req.prompt, '')
+    assert.equal(calls[0].req.operation, 'digital_human')
+    assert.equal(calls[0].req.references.length, 2)
+  })
+
+  it('retains the prompt requirement for external endpoints', async () => {
+    const { route, calls } = fixture({
+      runtimeSettings: {
+        byokProviders: [{
+          provider: 'openai',
+          endpoint: 'https://provider.example.test/v1',
+          models: { video: 'external-video' },
+          capabilities: ['video'],
+        }],
+      },
+    })
+    const res = response()
+    await route.handler(post({
+      kind: 'video',
+      provider: 'openai',
+      model: 'minimax-h3-video',
+      operation: 'digital_human',
+    }), res)
+    assert.equal(res.status, 400)
+    assert.equal(res.json().error, 'prompt-required')
+    assert.equal(calls.length, 0)
   })
 
   it('successfully dispatches image generation and returns result', async () => {

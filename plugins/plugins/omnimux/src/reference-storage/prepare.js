@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { isLocalMediaSource } from '../media/gateway-upload.js'
+import { prepareH3MetadataMedia } from '../media/vendors/autodl-h3-media.js'
 import { assertReferenceMediaType } from './media-type.js'
 import { parseReferenceStorageConfig, credentialRefs, storageConfigError } from './config.js'
 import { uploadReferenceMedia } from './upload.js'
@@ -98,6 +99,9 @@ export async function prepareReferencePayload(payload, options) {
   }
   if (result.metadata && typeof result.metadata === 'object' && typeof result.metadata.audio === 'string') {
     result.metadata = Object.assign({}, result.metadata, { audio: await prepare(result.metadata.audio, 'audio') })
+  }
+  if (options.hostH3Metadata && result.metadata) {
+    result.metadata = await prepareH3MetadataMedia(result.metadata, prepare)
   }
   if (typeof result.audio_url === 'string') result.audio_url = await prepare(result.audio_url, 'audio')
   return result

@@ -67,17 +67,6 @@ export function registerDirectMediaRoutes(webServer, deps) {
         || (typeof body.taskRef === 'string' && body.taskRef.trim())
         || (typeof body.task_ref === 'string' && body.task_ref.trim())
       )
-      if (!prompt && !hasTaskHandle) {
-        void appendMediaTaskLog({
-          event: 'submit.rejected',
-          capability: body.kind === 'video' ? 'video' : 'image',
-          httpStatus: 400,
-          message: 'prompt-required',
-        })
-        sendJson(res, 400, { ok: false, error: 'prompt-required' })
-        return
-      }
-
       const kind = body.kind === 'video' ? 'video' : 'image'
       const operation = typeof body.operation === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(body.operation)
         ? body.operation
@@ -200,6 +189,10 @@ export function registerDirectMediaRoutes(webServer, deps) {
           current: deps?.getRuntimeSettings?.() ?? deps?.runtimeSettings,
           media: deps.media,
         })
+        if (!prompt && !hasTaskHandle && plan.isByok) {
+          sendJson(res, 400, { ok: false, error: 'prompt-required' })
+          return
+        }
         const recoveredHandle = (ledgerRecord?.upstreamTaskId || ledgerRecord?.artifact?.sourceUrl) && canRecoverMediaTask(ledgerRecord)
         const executePayload = {
           ...plan.finalReq,
@@ -282,6 +275,12 @@ export function registerDirectMediaRoutes(webServer, deps) {
           upstreamCode: typeof err?.code === 'string' ? err.code : undefined,
           message,
         })
+        // The shared guard decides which official operations require a prompt.
+        // Preserve the direct API's original error for a missing required prompt.
+        if (err?.code === 'omnimux-invalid-request' && err.details?.guardCode === 'prompt_required') {
+          sendJson(res, 400, { ok: false, error: 'prompt-required' })
+          return
+        }
         const failure = { ok: false, error: message }
         if (latest) {
           failure.taskRef = latest.taskRef
