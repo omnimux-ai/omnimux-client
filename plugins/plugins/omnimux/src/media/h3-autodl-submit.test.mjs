@@ -64,7 +64,7 @@ function fixture(t) {
     fetcher,
     ...overrides,
   })
-  return { calls, dest, execute, submissions: () => calls.filter(call => call.method === 'POST') }
+  return { calls, dest, execute, fetcher, submissions: () => calls.filter(call => call.method === 'POST') }
 }
 
 const expectedLipSync = {
@@ -159,6 +159,51 @@ test('H3 collects an existing task ID without submitting again', async (t) => {
     BASE + '/tasks/' + taskId + '/artifacts',
     VIDEO,
   ])
+})
+
+test('a synchronous H3 wait preserves its accepted handle when the artifact is not yet listed', async t => {
+  const { execute, submissions, fetcher } = fixture(t)
+  let pending
+  await assert.rejects(execute({
+    wait: true,
+    fetcher: (url, init) => String(url).endsWith('/artifacts') ? Response.json({ data: [] }) : fetcher(url, init),
+  }), error => {
+    assert.equal(error.code, 'omnimux-artifact-pending')
+    assert.ok(error.taskRef)
+    pending = error.taskRef
+    return true
+  })
+  const done = await execute({ taskRef: pending })
+  assert.equal(done.mode, 'live')
+  assert.equal(submissions().length, 1)
+})
+
+test('empty H3 artifact listings are distinct from malformed results and terminal provider errors', async t => {
+  const { execute } = fixture(t)
+  for (const [status, listings, expected] of [
+    ['SUCCESS', [{ artifacts: [] }, { data: [] }, []], 'omnimux-artifact-pending'],
+    ['SUCCESS', [503, { data: [] }, { data: [] }], 'omnimux-artifact-pending'],
+    ['SUCCESS', [503, 503, 503], 'omnimux-request-failed'],
+    ['SUCCESS', [401], 'needs-omnimux'],
+    ['SUCCESS', [403], 'omnimux-request-failed'],
+    ['SUCCESS', [{ data: [{}] }, { data: {} }, {}], 'omnimux-invalid-response'],
+    ['SUCCESS', [{ data: [] }, {}, { data: [] }], 'omnimux-invalid-response'],
+    ['FAILED', [], 'omnimux-failed'],
+  ]) {
+    let reads = 0
+    await assert.rejects(execute({
+      taskId: 'task-existing-h3', sleep: async () => {},
+      fetcher: async (url, init) => {
+        assert.equal(init.method, 'GET')
+        if (String(url).endsWith('/artifacts')) {
+          const response = listings.at(reads++)
+          return typeof response === 'number' ? Response.json({}, { status: response }) : Response.json(response)
+        }
+        return Response.json({ status, message: 'provider status' })
+      },
+    }), { code: expected })
+    assert.equal(reads, listings.length)
+  }
 })
 
 test('H3 keeps the driving audio in legacy mapping while BYOK uses its existing fields', () => {

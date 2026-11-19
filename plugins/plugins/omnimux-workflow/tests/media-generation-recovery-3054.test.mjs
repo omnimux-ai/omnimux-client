@@ -5,9 +5,11 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { executeOmnimuxVideo } from '../../omnimux/src/media/video.js';
 import { buildModelCatalog } from '../../omnimux/src/catalog/list.js';
 
 const bundle = await build({ stdin: { contents: `
+  export { createOmnimuxSeamClient } from '../src/workflow/seam/omnimuxGateway.ts';
   export { createExecutionManager } from '../src/workflow/execution/ExecutionManager.ts';
   export { createExecutionRoutes } from '../src/workflow/routes/executionRoutes.ts';
   export { createWorkflowRunTool } from '../src/workflow/agent/agentReadTools.ts';
@@ -19,7 +21,7 @@ const bundle = await build({ stdin: { contents: `
   export { mockCatalog } from '../src/workflow/seam/mockCatalog.ts';
   export { SeamGatewayError } from '../src/workflow/seam/SeamGatewayError.ts';
 `, resolveDir: fileURLToPath(new URL('.', import.meta.url)) }, bundle: true, write: false, format: 'esm', platform: 'node' });
-const { createExecutionManager, createExecutionRoutes, executionInputSignatures, createMaterialGatewayExecutor,
+const { createOmnimuxSeamClient, createExecutionManager, createExecutionRoutes, executionInputSignatures, createMaterialGatewayExecutor,
   createWorkflowRunTool, createHeadlessExecutionSeam, buildInitialOutputs, prepareExecutionSlotGraph,
   mockCatalog, SeamGatewayError } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
 
@@ -63,7 +65,7 @@ function harness(t, { kind = 'image', source = false, error = new Error('tempora
     restart: () => { manager.disposeAll(); manager = newManager(); } };
 }
 
-async function acceptedH3(t, gatewayContracts = true, configureSources) {
+function h3Fixture(t, gatewayContracts = true) {
   const artifacts = [];
   const h = harness(t, { kind: 'video', persistGenerated: async input => {
     artifacts.push(input);
@@ -86,6 +88,11 @@ async function acceptedH3(t, gatewayContracts = true, configureSources) {
     h.snapshot.edges.push({ id, source: id, target: target.id });
     return [input.slot, [{ edgeId: id, sourceNodeId: id, role: input.role, use: 'active', pinned: true }]];
   }));
+  return { h, target, artifacts, catalog };
+}
+
+async function acceptedH3(t, gatewayContracts = true, configureSources) {
+  const { h, target, artifacts } = h3Fixture(t, gatewayContracts);
   configureSources?.(h);
   const first = await h.request();
   assert.equal(first.status, 200);
@@ -96,18 +103,93 @@ async function acceptedH3(t, gatewayContracts = true, configureSources) {
   return { h, target, ref, id: entry.context.id, artifacts };
 }
 
-function projectAudio(h, urlOnly = false) {
+function fiveSecondWav() {
   const wav = Buffer.alloc(80044);
   wav.write('RIFF'); wav.writeUInt32LE(wav.length - 8, 4); wav.write('WAVEfmt ', 8);
   wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
   wav.writeUInt32LE(8000, 24); wav.writeUInt32LE(16000, 28); wav.writeUInt16LE(2, 32);
   wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(wav.length - 44, 40);
+  return wav;
+}
+
+function projectAudio(h, urlOnly = false) {
+  const wav = fiveSecondWav();
   writeFileSync(join(h.root, 'voice.wav'), wav);
   Object.assign(h.snapshot.nodes.find(node => node.id === 'audio').data, {
     mediaUrl: '/omnimux-workflow/api/workspaces/ws_recovery/file?rel=voice.wav',
     ...(!urlOnly && { relativePath: 'voice.wav' }), sizeBytes: wav.length, durationSec: 5,
   });
 }
+
+async function collectDelayedHubVideo(t, transientRead) {
+  const { h, target, artifacts, catalog } = h3Fixture(t);
+  const oldHome = process.env.DSH_HOME;
+  process.env.DSH_HOME = h.root;
+  t.after(() => { if (oldHome === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = oldHome; });
+  const wav = fiveSecondWav();
+  Object.assign(h.snapshot.nodes.find(node => node.id === 'audio').data, { sizeBytes: wav.length, durationSec: 5 });
+  const submitIds = [];
+  const polledIds = [];
+  let artifactReads = 0;
+  const video = Buffer.from('fixture video content');
+  const base = 'https://gateway.example.test/v1';
+  const videoUrl = 'https://fixture.example/result.mp4';
+  const fetcher = async (url, init) => {
+    const address = String(url);
+    if (address === 'https://fixture.example/audio.wav') return new Response(wav, { headers: { 'content-type': 'audio/wav' } });
+    if (address === 'https://fixture.example/image.png') {
+      const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+      return new Response(image, { headers: { 'content-type': 'image/png' } });
+    }
+    if (address === base + '/tasks/autodl' && init?.method === 'POST') {
+      const taskId = 'accepted-' + (submitIds.length + 1);
+      submitIds.push(taskId);
+      return Response.json({ task_id: taskId });
+    }
+    if (address === base + '/tasks/accepted-1') {
+      polledIds.push('accepted-1');
+      return Response.json({ status: 'SUCCESS' });
+    }
+    if (address === base + '/tasks/accepted-1/artifacts') {
+      artifactReads++;
+      if (transientRead && artifactReads === 1) return Response.json({}, { status: 503 });
+      return Response.json({ data: artifactReads <= 3 ? [] : [{ url: videoUrl }] });
+    }
+    if (address === videoUrl) return new Response(video, { headers: { 'content-type': 'video/mp4' } });
+    throw new Error('Unexpected fixture call ' + address);
+  };
+  // Both attempts use the production Hub executor. Recreate its workflow seam on restart
+  // so the second one cannot retrieve the handle from an in-memory task map.
+  const attachHub = () => Object.assign(h.gateway, createOmnimuxSeamClient({
+    getSeam: name => name === 'modelCatalog' ? { list: () => catalog } : name === 'videoGenerate' ? {
+      execute: request => executeOmnimuxVideo({ ...request, fetcher, sleep: async () => {},
+        env: { OMNIMUX_BASE_URL: base, OMNIMUX_API_KEY: 'sk-fixture' } }),
+    } : undefined,
+  }));
+  attachHub();
+  const first = await h.request();
+  assert.equal(first.status, 200);
+  const failed = await h.ended(first.body.execution.id);
+  assert.deepEqual(submitIds, ['accepted-1'], failed.context.nodeStates.get(target.id).error);
+  assert.equal(failed.context.status, 'error');
+  assert.match(failed.context.nodeStates.get(target.id).error, /omnimux-artifact-pending/);
+  const accepted = failed.context.readNodeUpstreamTask(target.id);
+  assert.equal(accepted.taskId, 'accepted-1');
+  assert.ok(accepted.taskRef);
+  h.restart();
+  attachHub();
+  const second = await h.request();
+  assert.equal(second.status, 200);
+  const completed = await h.ended(second.body.execution.id);
+  assert.equal(completed.context.status, 'completed', completed.context.nodeStates.get(target.id).error);
+  assert.equal(artifactReads, 4);
+  assert.deepEqual(polledIds, ['accepted-1', 'accepted-1']);
+  assert.deepEqual(submitIds, ['accepted-1']);
+  assert.deepEqual(readFileSync(artifacts[0].tmpAbs), video);
+}
+
+test('accepted H3 retries the same Hub task after SUCCESS precedes the artifact listing', t => collectDelayedHubVideo(t, false));
+test('accepted H3 retries the same Hub task after both transient and empty artifact reads', t => collectDelayedHubVideo(t, true));
 
 test('changing project audio bytes at the same path cannot collect an earlier H3 task', async t => {
   for (const urlOnly of [false, true]) {
