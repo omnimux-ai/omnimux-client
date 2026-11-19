@@ -105,6 +105,8 @@ export interface ExecutionNodeRecord {
 
 export interface ExecutionRun {
   executionId: string;
+  /** Host creation time, shared by the submission and recovery responses. */
+  createdAt?: string;
   status: ExecutionUiStatus;
   error: string | null;
   progress: ExecutionProgressState;
@@ -129,25 +131,13 @@ function createRun(executionId: string, status: ExecutionUiStatus = 'idle'): Exe
 }
 
 /**
- * Aggregate status precedence: an in-flight run outranks a finished one, and
- * among in-flight states `running` > `pending` > `paused`, so the bar shows
- * the most active thing happening on the canvas.
+ * When multiple runs are active, the bar shows the highest priority live state.
  */
-const AGGREGATE_PRECEDENCE: readonly ExecutionUiStatus[] = [
+const LIVE_STATUS_PRECEDENCE: readonly ExecutionUiStatus[] = [
   'running',
   'pending',
   'paused',
-  'error',
-  'completed',
-  'cancelled',
 ];
-
-function aggregateStatus(runs: readonly ExecutionRun[]): ExecutionUiStatus {
-  for (const status of AGGREGATE_PRECEDENCE) {
-    if (runs.some((run) => run.status === status)) return status;
-  }
-  return 'idle';
-}
 
 function aggregateProgress(runs: readonly ExecutionRun[]): ExecutionProgressState {
   if (runs.length === 0) return emptyProgress();
@@ -212,13 +202,24 @@ export function projectRuns(
   focusExecutionId: string | null,
 ): ExecutionProjection {
   const focus = runs.find((run) => run.executionId === focusExecutionId) ?? null;
+  const live = runs.filter((run) => LIVE_STATUS_SET.has(run.status));
+  // Terminal outcomes belong to the latest operation. Older attempts stay in
+  // the queue, where their results and errors can still be inspected.
+  const latestTerminal = focus && TERMINAL_STATUSES.has(focus.status)
+    ? focus
+    : live.length === 0
+      ? runs.filter((run) => TERMINAL_STATUSES.has(run.status)).at(-1)
+      : undefined;
+  const liveStatus = LIVE_STATUS_PRECEDENCE.find((status) => live.some((run) => run.status === status));
   return {
     executionId: focus?.executionId ?? null,
-    status: aggregateStatus(runs),
-    error: focus?.error ?? runs.find((run) => run.status === 'error')?.error ?? null,
-    progress: aggregateProgress(runs),
+    status: liveStatus ?? latestTerminal?.status ?? 'idle',
+    error: liveStatus
+      ? focus?.error ?? live.find((run) => run.error !== null)?.error ?? null
+      : latestTerminal?.error ?? null,
+    progress: liveStatus ? aggregateProgress(live) : latestTerminal?.progress ?? emptyProgress(),
     nodeStatuses: aggregateNodeStatuses(runs),
-    activeRunCount: runs.filter((run) => LIVE_STATUS_SET.has(run.status)).length,
+    activeRunCount: live.length,
   };
 }
 
@@ -319,8 +320,8 @@ export interface ExecutionState extends ExecutionProjection {
 
   setStartNodeExecution: (fn: ((nodeId: string) => NodeSubmissionResult | Promise<NodeSubmissionResult>) | null) => void;
 
-  /** Create the run if absent and focus it. */
-  ensureRun: (executionId: string) => void;
+  /** Create a run. Recovery uses host creation order to avoid refocusing a newer submission. */
+  ensureRun: (executionId: string, options?: { createdAt?: string; restored?: boolean }) => void;
   /**
    * Patch an already-registered run. A patch for an unknown id is ignored:
    * `ensureRun` is the only creator, so an event for a stale or duplicated
@@ -394,13 +395,22 @@ export const useExecutionStore = create<ExecutionState>()((set, get) => {
 
     setStartNodeExecution: (fn) => set({ startNodeExecution: fn }),
 
-    ensureRun: (executionId) =>
-      mutate((runs) => {
-        if (!runs.some((run) => run.executionId === executionId)) {
+    ensureRun: (executionId, { createdAt, restored } = {}) =>
+      mutate((runs, focus) => {
+        const existing = runs.find((run) => run.executionId === executionId);
+        if (!existing) {
           // A registered run is one the server accepted and has not started yet.
-          runs.push(createRun(executionId, 'pending'));
+          const run = { ...createRun(executionId, 'pending'), createdAt };
+          const next = restored
+            ? runs.findIndex((candidate) => !createdAt || !candidate.createdAt || candidate.createdAt >= createdAt)
+            : -1;
+          runs.splice(next < 0 ? runs.length : next, 0, run);
         }
-        return [runs, executionId];
+        const focusedRun = runs.find((run) => run.executionId === focus);
+        if (!restored || !focusedRun || (createdAt && focusedRun.createdAt && createdAt > focusedRun.createdAt)) {
+          return [runs, executionId];
+        }
+        return [runs, focus];
       }),
 
     patchRun: (executionId, patch) =>

@@ -639,7 +639,7 @@ export function useExecutionController(
   /** Backfill one run's node badges/results from a status snapshot. */
   const applySnapshot = useCallback((snapshot: ExecutionSnapshotDto) => {
     const exec = useExecutionStore.getState();
-    exec.ensureRun(snapshot.id);
+    exec.ensureRun(snapshot.id, { createdAt: snapshot.createdAt, restored: true });
     exec.patchRun(snapshot.id, {
       status: snapshot.status,
       error: snapshot.error,
@@ -740,7 +740,7 @@ export function useExecutionController(
             : (result.body.message ?? t('error.createExecutionFailed')));
         }
         const exec = useExecutionStore.getState();
-        exec.ensureRun(result.body.execution.id);
+        exec.ensureRun(result.body.execution.id, { createdAt: result.body.execution.createdAt });
         runMetaRef.current.set(result.body.execution.id, {
           ...(opts.groupId ? { groupId: opts.groupId } : {}),
           ...(opts.graphHash ? { graphHash: opts.graphHash } : {}),
@@ -820,6 +820,7 @@ export function useExecutionController(
   useEffect(() => {
     if (!workspaceId) return;
     let cancelled = false;
+    const runsAtRestoreStart = new Map(useExecutionStore.getState().runs.map((run) => [run.executionId, run]));
     (async () => {
       try {
         const list = await listExecutions(workspaceId);
@@ -841,8 +842,12 @@ export function useExecutionController(
           snapshot: await getExecution(workspaceId, row.id),
         })));
         if (cancelled) return;
+        // The host lists newest first. Hydrate runs carried across a remount,
+        // but leave runs registered or updated by this mount's stream alone.
         for (const { row, snapshot } of snapshots) {
           if (!snapshot.ok || !snapshot.body.execution) continue;
+          const current = useExecutionStore.getState().runs.find((run) => run.executionId === row.id);
+          if (current !== runsAtRestoreStart.get(row.id)) continue;
           applySnapshot(snapshot.body.execution);
           if (isLiveExecutionStatus(snapshot.body.execution.status)) subscribe(row.id);
         }
