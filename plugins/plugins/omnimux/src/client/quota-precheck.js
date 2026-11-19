@@ -1,4 +1,4 @@
-import { getStatus } from './api-auth.js'
+import { getStatus, getStatusGeneration, peekStatusCache } from './api-auth.js'
 import { classifyQuotaFailure } from '../errors/quota-classifier.js'
 
 export const VERIFY_TTL_MS = 30_000
@@ -16,20 +16,25 @@ const defaultEnsureLogin = (options) => {
 }
 
 let impl = { getStatus, ensureLogin: defaultEnsureLogin, notify: defaultNotify }
-let cached = null
-let inflight = null
+let session
+
+function currentSession() {
+  const generation = getStatusGeneration()
+  if (session?.generation !== generation) session = { generation, cached: null, inflight: null }
+  return session
+}
 
 export function setQuotaPrecheckImpl(next = {}) {
   impl = { ...impl, ...next }
 }
 
 export function invalidatePositiveQuota() {
-  if (cached?.quota_usd > 0) cached = null
+  const owner = currentSession()
+  if (owner.cached?.quota_usd > 0) owner.cached = null
 }
 
 export function resetQuotaPrecheck() {
-  cached = null
-  inflight = null
+  session = undefined
   impl = { getStatus, ensureLogin: defaultEnsureLogin, notify: defaultNotify }
 }
 
@@ -50,6 +55,8 @@ function login() {
 }
 
 export function ensureQuota(context = {}) {
+  const owner = currentSession()
+  const { cached, inflight } = owner
   const now = Date.now()
   if (inflight) return inflight
   const retryDenied = context.userInitiated === true && cached?.quota_usd <= 0
@@ -60,7 +67,13 @@ export function ensureQuota(context = {}) {
     }
     return Promise.resolve({ ok: true })
   }
-  inflight = Promise.resolve().then(() => impl.getStatus(true)).then(async (result) => {
+  owner.inflight = Promise.resolve().then(() => owner === currentSession() ? impl.getStatus(true) : undefined).then(async (result) => {
+    if (owner !== currentSession()) {
+      // A current status response can itself be the first observation of logout.
+      // Every other obsolete receipt must stop its original action silently.
+      if (result?.body && authFailure(result) && result.body === peekStatusCache()?.body) await login()
+      return { ok: false, reason: 'auth' }
+    }
     if (authFailure(result)) {
       await login()
       return { ok: false, reason: 'auth' }
@@ -72,19 +85,19 @@ export function ensureQuota(context = {}) {
       return { ok: false, reason: 'quota' }
     }
     if (result?.ok && result.body?.logged_in === true && typeof result.body.quota_usd === 'number') {
+      owner.cached = { at: Date.now(), quota_usd: result.body.quota_usd }
       if (result.body.quota_usd <= 0) {
-        cached = { at: Date.now(), quota_usd: result.body.quota_usd }
         impl.notify({ status: 402, code: 'quota-exceeded', body: { error: 'quota-exceeded' } }, context)
         return { ok: false, reason: 'quota' }
       }
-      cached = { at: Date.now(), quota_usd: result.body.quota_usd }
     }
     return { ok: true }
   }).catch((error) => {
+    if (owner !== currentSession()) return { ok: false, reason: 'auth' }
     if (classifyQuotaFailure({ error }).kind === 'needs-omnimux') {
       return login().then(() => ({ ok: false, reason: 'auth' }))
     }
     return { ok: true }
-  }).finally(() => { inflight = null })
-  return inflight
+  }).finally(() => { owner.inflight = null })
+  return owner.inflight
 }

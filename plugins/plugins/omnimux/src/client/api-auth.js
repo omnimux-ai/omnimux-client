@@ -17,6 +17,8 @@ let statusCache = null
 let statusInflight = null
 /** Bumped on invalidate so a stale inflight cannot rewrite the cache. */
 let statusGeneration = 0
+// A transient read failure can drop the cached response without changing identity.
+let lastIdentity = null
 
 /**
  * @param {unknown} raw
@@ -57,6 +59,11 @@ export function peekStatusCache() {
   return statusCache
 }
 
+/** Revision shared by caches whose contents belong to the signed-in account. */
+export function getStatusGeneration() {
+  return statusGeneration
+}
+
 /**
  * Drop the session cache immediately and discard any inflight write.
  */
@@ -64,6 +71,7 @@ export function invalidateStatusCache() {
   statusGeneration += 1
   statusCache = null
   statusInflight = null
+  lastIdentity = null
 }
 
 /** Test-only: identical to invalidate; kept as a named seam for L1 resets. */
@@ -78,15 +86,26 @@ export function resetStatusCache() {
  * @param {any} profile
  */
 export function rememberLoggedInStatus(profile) {
-  statusGeneration += 1
-  statusInflight = null
   if (!profile || typeof profile !== 'object') return
+  // The gate also passes its existing positive peek here on ordinary navigation.
+  if (profile === statusCache?.body && profile.logged_in === true) return
+  invalidateStatusCache()
   const body = /** @type {Record<string, unknown>} */ (profile)
   statusCache = {
     ok: true,
     status: 200,
     body: body.logged_in === true ? body : { ...body, logged_in: true },
   }
+  lastIdentity = statusCache.body
+}
+
+function changedAccount(previous, signedIn, body) {
+  if (!previous) return false
+  if (Boolean(previous.logged_in) !== signedIn) return true
+  if (!signedIn) return false
+  if (previous.base_url && body.base_url && previous.base_url !== body.base_url) return true
+  if (previous.id != null && body.id != null) return String(previous.id) !== String(body.id)
+  return Boolean(previous.username && body.username && previous.username !== body.username)
 }
 
 /**
@@ -97,8 +116,10 @@ function rememberStatusResult(result, generation) {
   if (generation !== statusGeneration) return
   const body = result && result.body
   const loggedIn = Boolean(result && result.ok && body && body.logged_in === true)
-  const loggedOut = Boolean(body && body.logged_in === false)
+  const loggedOut = body?.logged_in === false || pickAuthError(result) !== null
   if (loggedIn || loggedOut) {
+    if (changedAccount(lastIdentity, loggedIn, body)) invalidateStatusCache()
+    lastIdentity = loggedIn ? body : { logged_in: false }
     statusCache = {
       ok: Boolean(result.ok),
       status: Number(result.status) || 0,
@@ -213,5 +234,10 @@ export function logout() {
   // Drop the session picture *before* the request leaves, so a concurrent
   // `ensureLogin` cannot peek a stale logged-in row while logout is in flight.
   invalidateStatusCache()
-  return authRequest('/omnimux/auth/logout', { method: 'POST' })
+  const generation = statusGeneration
+  return authRequest('/omnimux/auth/logout', { method: 'POST' }).then((result) => {
+    // A read started during logout can still have seen the old Host session.
+    if (result.ok && generation === statusGeneration) invalidateStatusCache()
+    return result
+  })
 }

@@ -17,6 +17,10 @@ import { Banner, EmptyState, InboxPlaceholder, LoadingState } from './components
 
 const TAB_ID = 'omnimux-analytics:library'
 
+function canObserveLogin(gate) {
+  return typeof gate?.subscribe === 'function' && typeof gate.isLoggedIn === 'function' && typeof gate.getSnapshot === 'function'
+}
+
 function readLocale() {
   if (typeof document === 'undefined') return 'zh-CN'
   const lang = document.documentElement.lang || ''
@@ -79,6 +83,18 @@ export function AnalyticsStage({ t, stage, store, visible = true }) {
   const blockingEmpty = empty && (empty.code === 'no_accounts' || empty.code === 'no_data')
   const locale = readLocale()
 
+  useEffect(() => {
+    if (!visible || empty?.code !== 'unauthorized') return
+    const gate = window.__omnimuxAuth
+    if (!canObserveLogin(gate)) return
+    let refreshing = false
+    return gate.subscribe(() => {
+      if (refreshing || gate.getSnapshot().phase !== 'closed' || !gate.isLoggedIn()) return
+      refreshing = true
+      void analyticsStore.refresh({ userInitiated: true }).finally(() => { refreshing = false })
+    })
+  }, [visible, empty?.code, analyticsStore.refresh])
+
   const handleAction = (action) => {
     if (action === 'retry') {
       void analyticsStore.refresh({ userInitiated: true })
@@ -86,7 +102,7 @@ export function AnalyticsStage({ t, stage, store, visible = true }) {
       const refreshDashboard = () => { void analyticsStore.refresh({ userInitiated: true }) }
       const gate = window.__omnimuxAuth
       if (typeof gate?.ensureLogin === 'function') {
-        gate.ensureLogin({ kind: 'explicit', action: 'accounts', onSuccess: refreshDashboard })
+        gate.ensureLogin({ kind: 'explicit', action: 'accounts', onSuccess: canObserveLogin(gate) ? undefined : refreshDashboard })
       } else {
         refreshDashboard()
       }

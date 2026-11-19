@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { getStatus, logout, pollLogin, startLogin } from './api.js'
+import { getStatus, logout, pollLogin, rememberLoggedInStatus, startLogin } from './api.js'
 
 /**
  * @param {unknown} url
@@ -184,6 +184,7 @@ export function useOmnimuxAuth(opts = {}) {
       pollLogin(state.flow_id).then((result) => {
         if (cancelled) return
         if (result.body.logged_in) {
+          rememberLoggedInStatus(result.body)
           setState({ phase: 'ready', profile: result.body })
           return
         }

@@ -21,7 +21,7 @@ function request(path, opts) {
  * @param {boolean} [userInitiated]
  */
 function guarded(fn, userInitiated = false) {
-  return authGuard(quotaGuard(fn, { capability: 'inspiration-rival', userInitiated }))
+  return quotaGuard(authGuard(fn), { capability: 'inspiration-rival', userInitiated })
 }
 
 /**
