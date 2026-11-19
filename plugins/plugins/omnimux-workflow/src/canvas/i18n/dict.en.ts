@@ -201,6 +201,8 @@ const en: Record<DictKey, string> = {
   'panel.slotClear': 'Remove (keep connection)',
   'panel.slotSwap': 'Swap first/last frame',
   'panel.slotSwapImages': 'Swap reference images',
+  'panel.slotAddReferenceImage': 'Add reference image',
+  'panel.slotUseAsStart': 'Set as start',
   'panel.slot.startImage': 'Start',
   'panel.slot.referenceImage': 'Reference',
   'panel.slotMissing': 'Missing required: {slots}',

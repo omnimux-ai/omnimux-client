@@ -95,7 +95,7 @@ import {
   type SlotLayout,
   type SlotSpec,
 } from '../../../../../shared/graph/feedSlot/index.ts';
-import { bindableSlots, isOrderedReferencePair } from '../../../../../shared/validation/compatKernel.ts';
+import { bindableSlots, isOrderedImageReferenceSlot } from '../../../../../shared/validation/compatKernel.ts';
 import { buildInputCapability } from '../../../../../shared/validation/inputCapability.ts';
 import { findExecutionReadinessFailure } from '../../../../../shared/validation/executionReadiness.ts';
 import { prepareExecutionSlotGraph } from '../../../../../shared/graph/feedSlot/prepareExecutionSlotGraph.ts';
@@ -1330,7 +1330,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
             <SlotWells
               layout={displayedSlotLayout}
               bindings={currentInputs ? slotBindings : inputDisplay.visibleBindings}
-              records={currentInputs || displayedSlotLayout.slots.some(isOrderedReferencePair) ? inputDisplay.records : undefined}
+              records={currentInputs || displayedSlotLayout.slots.some(isOrderedImageReferenceSlot) ? inputDisplay.records : undefined}
               onSetUse={currentInputs ? handleSetUse : undefined}
               conflicts={slotConflicts}
               upstreams={upstreams}

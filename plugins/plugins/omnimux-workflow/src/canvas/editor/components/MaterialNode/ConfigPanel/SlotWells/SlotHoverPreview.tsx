@@ -9,6 +9,7 @@ interface SlotHoverPreviewProps {
   anchor: HTMLElement;
   upstream?: UpstreamMediaItem;
   onReplace?: () => void;
+  onUseAsStart?: () => void;
   onClear?: () => void;
   state?: 'ready' | 'inactive' | 'pending' | 'invalid';
   reasonCode?: string;
@@ -22,7 +23,7 @@ interface SlotHoverPreviewProps {
 const ACTION_ROW_HEIGHT = 48;
 
 /** One hover region spans thumbnail, gap, preview and action, outside the clipped canvas. */
-export default function SlotHoverPreview({ anchor, upstream, state, reasonCode, onReturnFocus, onReplace, onClear, use = 'active', onSetUse, onClose }: SlotHoverPreviewProps) {
+export default function SlotHoverPreview({ anchor, upstream, state, reasonCode, onReturnFocus, onReplace, onUseAsStart, onClear, use = 'active', onSetUse, onClose }: SlotHoverPreviewProps) {
   const t = useT();
   const panelRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<PopoverPosition | null>(null);
@@ -63,7 +64,7 @@ export default function SlotHoverPreview({ anchor, upstream, state, reasonCode, 
   }, [anchor, onClose, onReturnFocus]);
   if (!position) return null;
   const available = Math.max(0, Math.min(position.maxHeight, position.placement === 'top' ? window.innerHeight - (position.bottom ?? 0) - 12 : window.innerHeight - (position.top ?? 0) - 12));
-  const hasActions = Boolean(onReplace || onSetUse || onClear);
+  const hasActions = Boolean(onReplace || onUseAsStart || onSetUse || onClear);
   const mediaMaxHeight = Math.max(0, available - (hasActions ? ACTION_ROW_HEIGHT : 16));
   const media = state === 'invalid' || state === 'pending' ? <span>{t(reasonCode === 'input_unavailable' ? 'input.state.unavailable'
     : state === 'pending' ? 'input.state.pending' : 'input.state.invalid')}</span>
@@ -81,6 +82,12 @@ export default function SlotHoverPreview({ anchor, upstream, state, reasonCode, 
       </div>
       {hasActions ? (
         <div className="wf-slot-hover-preview__actions">
+          {onUseAsStart && <button type="button" className="wf-slot-well__replace-pill nodrag" onClick={(event) => {
+            event.stopPropagation();
+            onUseAsStart();
+            onClose();
+            onReturnFocus?.(anchor);
+          }}>{t('panel.slotUseAsStart')}</button>}
           {onReplace && <button type="button" className="wf-slot-well__replace-pill nodrag" aria-label={t('node.replace')} onClick={(event) => { event.stopPropagation(); onReplace(); onClose(); }}>{t('node.replace')}</button>}
           {onSetUse && <button type="button" className="wf-slot-well__replace-pill nodrag" onClick={event => { event.stopPropagation(); onSetUse(use === 'inactive' ? 'active' : 'inactive'); onClose(); }}>{t(use === 'inactive' ? 'input.use' : 'input.disable')}</button>}
           {onClear && <button type="button" className="wf-slot-well__replace-pill nodrag" onClick={event => { event.stopPropagation(); onClear(); onClose(); }}>{t('panel.slotClear')}</button>}

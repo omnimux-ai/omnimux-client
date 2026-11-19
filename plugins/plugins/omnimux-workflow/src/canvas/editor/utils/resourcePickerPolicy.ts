@@ -15,10 +15,11 @@ import { readNodeInputSource } from '../../../shared/graph/nodeInputSource.ts';
 import { deriveSlotLayout } from '../../../shared/graph/feedSlot/deriveSlotLayout.ts';
 import { resolveSlotOperation } from '../../../shared/graph/feedSlot/resolveSlotOperation.ts';
 import { resolveSlotOccupantOrdinal } from '../../../shared/graph/feedSlot/assembleEffectiveInputs.ts';
+import { effectiveInputDisplay } from '../../../shared/graph/feedSlot/effectiveInputDisplay.ts';
 import { feedFromFingerprint } from '../../../shared/graph/feedSlot/effectiveFingerprint.ts';
 import { buildCanvasUpstreamFingerprint, readCanvasParams } from '../../../shared/graph/canvasInputSources.ts';
 import { narrowCatalogByRouting } from '../../../shared/validation/lineConstraints.ts';
-import { isOrderedReferencePair } from '../../../shared/validation/compatKernel.ts';
+import { isOrderedImageReferenceSlot } from '../../../shared/validation/compatKernel.ts';
 import type {
   CanvasInputSelectionRequest,
   CanvasInputSelectionVerdict,
@@ -28,7 +29,7 @@ import type {
   CanvasInputNodePatch,
   CanvasNode,
 } from '../../../shared/graph/canvasInputMutationGateway.ts';
-import type { SlotBindings, SlotOccupant } from '../../../shared/graph/feedSlot/index.ts';
+import type { SlotBindings, SlotConflict, SlotOccupant } from '../../../shared/graph/feedSlot/index.ts';
 import { resolveMediaPreviewUrl, type MediaAssetLike } from './mediaUrl.ts';
 import { buildImportedMediaData, looksAbsolutePath, projectFileMediaUrl } from '../../../shared/localMedia.ts';
 import { buildMediaMetadata } from '../../../shared/mediaMetadata.ts';
@@ -196,7 +197,7 @@ export function evaluateResourcePickerAvailability(args: {
 
 export interface ResourcePickerRejection {
   id: string;
-  reason: 'already_connected' | 'self' | 'missing' | 'type_contract' | 'unsupported';
+  reason: 'already_connected' | 'self' | 'missing' | 'type_contract' | 'unsupported' | 'slot_capacity';
 }
 
 export interface ResourcePickerCommitPlan extends CanvasInputMutation {
@@ -467,15 +468,19 @@ function edgeDraft(source: string, target: string, targetSlot?: string) {
   };
 }
 
-function orderedSlotFeed(input: ResourcePickerCommitInput, target: CanvasNode, slot: string | undefined) {
+function orderedSlotState(input: ResourcePickerCommitInput, target: CanvasNode, slot: string | undefined) {
   if (!slot) return undefined;
   const params = readCanvasParams(target);
   const catalog = narrowCatalogByRouting(input.catalog, params.model, params.routing);
   const layout = deriveSlotLayout(catalog, typeof params.model === 'string' ? params.model : undefined,
     typeof params.operation === 'string' ? params.operation : undefined);
-  if (!layout.slots.some(spec => spec.slot === slot && isOrderedReferencePair(spec))) return undefined;
-  return new Map(feedFromFingerprint(buildCanvasUpstreamFingerprint(target.id, input.nodes, input.edges))
-    .map(asset => [asset.edgeId, asset]));
+  const spec = layout.slots.find(spec => spec.slot === slot && isOrderedImageReferenceSlot(spec));
+  if (!spec || spec.max === null) return undefined;
+  const feed = feedFromFingerprint(buildCanvasUpstreamFingerprint(target.id, input.nodes, input.edges));
+  const data = nodeData(target);
+  const resolved = effectiveInputDisplay(layout, feed, data.slotBindings as SlotBindings | undefined,
+    data.slotConflicts as SlotConflict[] | undefined, input.edges, data.slotStandbyEdgeIds as string[] | undefined);
+  return { max: spec.max, occupants: resolved.bindings[slot] ?? [], feed: new Map(feed.map(asset => [asset.edgeId, asset])) };
 }
 
 /** 装填 pinned 占用进 slotBindings：max 1 替换；上限内追加；超限替换末位。 */
@@ -745,30 +750,45 @@ export function planResourcePickerCommit(input: ResourcePickerCommitInput): Reso
 
   const existing = incomingSourceIds(input.edges, input.targetNodeId);
   const seenSources = new Set<string>(existing);
-  const orderedFeed = orderedSlotFeed(input, target, targetSlot);
+  const ordered = orderedSlotState(input, target, targetSlot);
   const savedBindings = nodeData(target).slotBindings as SlotBindings | undefined;
+  const standby = Array.isArray(target.data.slotStandbyEdgeIds) ? target.data.slotStandbyEdgeIds : [];
+  const reactivatedEdges = new Set<string>();
   let pinnedBindings: SlotBindings | undefined;
-  function pinSupply(slot: string, occupant: SlotOccupant) {
-    let bindings = pinnedBindings ?? savedBindings;
-    if (orderedFeed) {
-      const occupants = (bindings?.[slot] ?? []).map(item => ({
-        ...item, ordinal: resolveSlotOccupantOrdinal(item, orderedFeed.get(item.edgeId)),
-      }));
-      bindings = { ...bindings, [slot]: occupants };
-      occupant.ordinal = occupants.reduce((max, item) => Math.max(max, item.ordinal), -1) + 1;
+  function pinSupply(slot: string, occupant: SlotOccupant): boolean {
+    if (!ordered) {
+      pinnedBindings = pinOccupantInto(pinnedBindings ?? savedBindings, slot, occupant, input.slotMax);
+      return true;
     }
-    pinnedBindings = pinOccupantInto(bindings, slot, occupant, input.slotMax);
+    const occupants = pinnedBindings?.[slot] ?? ordered.occupants;
+    const active = occupants.filter(item => item.use !== 'inactive');
+    if (active.some(item => item.edgeId === occupant.edgeId)) {
+      rejected.push({ id: occupant.sourceNodeId, reason: 'already_connected' });
+      return false;
+    }
+    if (active.length >= ordered.max) {
+      rejected.push({ id: occupant.sourceNodeId, reason: 'slot_capacity' });
+      return false;
+    }
+    const existing = occupants.filter(item => item.edgeId !== occupant.edgeId).map(item => ({
+      ...item, ordinal: resolveSlotOccupantOrdinal(item, ordered.feed.get(item.edgeId)),
+    }));
+    const ordinal = existing.reduce((max, item) => Math.max(max, item.ordinal), -1) + 1;
+    pinnedBindings = { ...(pinnedBindings ?? savedBindings), [slot]: [...existing, { ...occupant, ordinal }] };
+    reactivatedEdges.add(occupant.edgeId);
+    return true;
   }
   function addSupply(sourceNodeId: string) {
-    const draft = edgeDraft(sourceNodeId, input.targetNodeId, orderedFeed ? undefined : targetSlot);
-    if (orderedFeed && targetSlot) {
+    const draft = edgeDraft(sourceNodeId, input.targetNodeId, ordered ? undefined : targetSlot);
+    if (ordered && targetSlot) {
       // Persist placement by edge ID; a legacy slot hint can only append by connection order.
       const edge = normalizeCanvasEdge(draft);
+      if (!pinSupply(targetSlot, { sourceNodeId, edgeId: edge.id, pinned: true })) return false;
       addEdges.push(edge);
-      pinSupply(targetSlot, { sourceNodeId, edgeId: edge.id, pinned: true });
     } else {
       addEdges.push(draft);
     }
+    return true;
   }
 
   for (const nodeId of input.selectedCanvasNodeIds) {
@@ -800,8 +820,7 @@ export function planResourcePickerCommit(input: ResourcePickerCommitInput): Reso
       rejected.push({ id: nodeId, reason: 'type_contract' });
       continue;
     }
-    addSupply(nodeId);
-    seenSources.add(nodeId);
+    if (addSupply(nodeId)) seenSources.add(nodeId);
   }
 
   // 本地上传：全部可用文件都在当前节点左侧创建导入型上游并连线。
@@ -826,14 +845,16 @@ export function planResourcePickerCommit(input: ResourcePickerCommitInput): Reso
       rejected.push({ id: file.id, reason: 'type_contract' });
       continue;
     }
+    if (!addSupply(node.id)) continue;
     addNodes.push(node);
-    addSupply(node.id);
     seenSources.add(node.id);
     upstreamIndex += 1;
   }
 
+  const remainingStandby = standby.filter(edgeId => !reactivatedEdges.has(edgeId));
   const nodePatches: CanvasInputNodePatch[] | undefined = pinnedBindings
-    ? [{ nodeId: input.targetNodeId, data: { slotBindings: pinnedBindings } }]
+    ? [{ nodeId: input.targetNodeId, data: { slotBindings: pinnedBindings,
+      ...(remainingStandby.length !== standby.length ? { slotStandbyEdgeIds: remainingStandby } : {}) } }]
     : undefined;
   const hasWork = addNodes.length > 0 || addEdges.length > 0 || Boolean(nodePatches);
   return {
@@ -850,7 +871,8 @@ function planNamedOccupantReplacement(input: ResourcePickerCommitInput): Resourc
   const target = input.nodes.find((node) => node.id === input.targetNodeId);
   const slot = input.targetSlot;
   const bindings = target ? nodeData(target).slotBindings as SlotBindings | undefined : undefined;
-  const occupants = slot ? bindings?.[slot] : undefined;
+  const ordered = target && orderedSlotState(input, target, slot);
+  const occupants = ordered?.occupants ?? (slot ? bindings?.[slot] : undefined);
   const index = occupants?.findIndex((item) => item.edgeId === input.replaceEdgeId) ?? -1;
   if (!target || !slot || !occupants || index < 0) {
     return { hasWork: false, rejected: [{ id: input.replaceEdgeId!, reason: 'missing' }] };
@@ -874,10 +896,9 @@ function planNamedOccupantReplacement(input: ResourcePickerCommitInput): Resourc
   const newEdges = plan.addEdges?.map(normalizeCanvasEdge);
   const edge = existingEdge ?? newEdges?.[0];
   if (!edge) return { hasWork: false, rejected: [{ id: source.id, reason: 'missing' }] };
-  const feed = orderedSlotFeed(input, target, slot);
   const next = occupants.map((item, position) => ({
     ...(position === index ? { sourceNodeId: source.id, edgeId: edge.id } : item),
-    ...(feed ? { ordinal: resolveSlotOccupantOrdinal(item, feed.get(item.edgeId)) } : {}),
+    ...(ordered ? { ordinal: resolveSlotOccupantOrdinal(item, ordered.feed.get(item.edgeId)) } : {}),
     pinned: true,
   }));
   return { hasWork: true, rejected: [], addNodes: plan.addNodes, addEdges: newEdges,
