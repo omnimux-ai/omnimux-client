@@ -81,7 +81,7 @@ related:
 | 上传灵感封面/媒体素材 | 灵感上传组件 | `omnimux_inspiration_upload_media` | L2 | `Implemented` | 否 |
 | 查询灵感全量标签分类 | 灵感筛选栏 | `omnimux_inspiration_tags` | L2 | `Implemented` | 否 |
 | 查询灵感社区服务与抓取状态 | 灵感社区状态指示 | `omnimux_inspiration_status` | L2 | `Implemented` | 否 |
-| 提交视频生成任务 | 工作流视频生成节点 | `omnimux_video_submit` | L1 | `Implemented` | 否 |
+| 提交视频生成任务。官方 H3 对口型接收一张图片和一段驱动音频 | 工作流视频生成节点 | `omnimux_video_submit` | L1 | `Implemented` | 否 |
 | 提交图片生成任务 | 工作流生图节点 | `omnimux_image_submit` | L1 | `Implemented` | 否 |
 | 提交音频生成任务 | 工作流生音频节点 | `omnimux_audio_submit` | L1 | `Implemented` | 否 |
 | 查询音频模型可用音色库 | 属性面板音色选择器 | `omnimux_audio_voices` | L1 | `Implemented` | 否 |

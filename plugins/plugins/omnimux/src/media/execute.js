@@ -6,7 +6,8 @@ import { classifyQuotaFailure } from '../errors/quota-classifier.js'
 import { downloadMediaFile } from './job.js'
 import { createOpenAiMediaRuntime, pollOpenAiMediaTask, withRoutingGroup } from './protocols/openai-media.js'
 import { parseMediaConfig, resolveMediaAuth, resolveMediaRoute } from './route.js'
-import { mapOmnimuxInput, pickMediaUrl, taskPathFor, taskPollPathFor } from './vendors/omnimux.js'
+import { mapOmnimuxInput, pickMediaUrl, taskPathFor } from './vendors/omnimux.js'
+import { H3_AUTODL_MODEL } from './vendors/autodl-h3.js'
 import {
   assertGuardOutput,
   assertGuardSubmit,
@@ -583,12 +584,14 @@ export async function executeOmnimuxMedia(capability, input) {
 
   const shouldHost = (input.uploadLocalAssets ?? !input.runtime) && isRemoteGateway(route.baseUrl) && Boolean(auth.apiKey)
   const useReferenceStorage = ['image', 'video'].includes(capability) && input.runtimeSettings?.referenceStorage?.enabled === true
+  const hostH3Metadata = !isByok && guardPlan.modelId === H3_AUTODL_MODEL
   const finalInput = useReferenceStorage
     ? await prepareReferencePayload(mappedInput, {
       config: input.runtimeSettings.referenceStorage,
       expectedAssets: assets,
       credentials: input.credentials,
       signal: input.signal,
+      hostH3Metadata,
     })
     : shouldHost
       ? await hostLocalAssetsIfNeeded(mappedInput, {
@@ -596,6 +599,7 @@ export async function executeOmnimuxMedia(capability, input) {
         apiKey: auth.apiKey,
         fetcher: input.fetcher,
         signal: input.signal,
+        hostH3Metadata,
       })
       : mappedInput
 
@@ -616,6 +620,9 @@ export async function executeOmnimuxMedia(capability, input) {
       saveMediaTaskRecord(pendingTaskRecord)
   }
 
+  // Official requests have already passed the selected operation's text
+  // requirements. The transport sees wire fields, which need not use "prompt".
+  const promptRequired = isByok
   let result
   let acceptedRoute = route
   const isChannelRouting = Boolean(route.group || route.candidates?.some((c) => c.includes('@')))
@@ -646,7 +653,7 @@ export async function executeOmnimuxMedia(capability, input) {
         attempt,
       })
     }
-    const runtime = input.runtime ?? createProtocolRuntime(candidateRoute, input.fetcher, auth.apiKey, onSubmitted)
+    const runtime = input.runtime ?? createProtocolRuntime(candidateRoute, input.fetcher, auth.apiKey, onSubmitted, promptRequired)
     try {
       acceptedRoute = candidateRoute
       if (!isByok && guardRequest) {
@@ -859,9 +866,9 @@ export async function finishMediaTask(capability, route, input) {
     apiKey,
     taskId: input.taskId,
     capability,
-    // Submit and reconcile must address the same task route; an audio model
-    // served on the shared video task endpoint carries its own path.
-    taskPath: input.taskPath ?? taskPollPathFor(capability, route.modelId),
+    // The protocol derives the poll path and artifact handling from the submit
+    // lane, including when the caller only has a task ID and no ledger record.
+    taskPath: input.taskPath ?? taskPathFor(capability, route.modelId),
     signal: input.signal,
     // This is the reconcile entry a canvas node reports through, so it opts into
     // the detail read that names a terminal failure's cause (Issue #2092).
@@ -901,8 +908,9 @@ export async function finishMediaTask(capability, route, input) {
  * @param {typeof fetch} [fetcher]
  * @param {string} [apiKey]
  * @param {(taskId: string) => void} [onSubmitted]
+ * @param {boolean} [promptRequired]
  */
-function createProtocolRuntime(route, fetcher, apiKey = route.apiKey, onSubmitted) {
+function createProtocolRuntime(route, fetcher, apiKey = route.apiKey, onSubmitted, promptRequired) {
   if (route.protocol === 'openai-media') {
     return createOpenAiMediaRuntime({
       fetcher,
@@ -914,6 +922,7 @@ function createProtocolRuntime(route, fetcher, apiKey = route.apiKey, onSubmitte
       group: route.group,
       taskPath: route.taskPath,
       onSubmitted,
+      promptRequired,
     })
   }
   throw new OmnimuxError('unknown-protocol', `unsupported media protocol '${route.protocol}'`)
