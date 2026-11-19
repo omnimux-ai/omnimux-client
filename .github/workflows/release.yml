@@ -132,6 +132,13 @@ jobs:
         with:
           submodules: recursive
           persist-credentials: false
+      - name: Select Xcode for Electron icon compilation
+        env:
+          DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+        run: |
+          xcodebuild -version
+          xcrun actool --version
+          printf 'DEVELOPER_DIR=%s\n' "$DEVELOPER_DIR" >> "$GITHUB_ENV"
       - uses: ./.github/actions/prepare-desktop-package
       - name: Build and verify an unsigned macOS DMG
         env:
