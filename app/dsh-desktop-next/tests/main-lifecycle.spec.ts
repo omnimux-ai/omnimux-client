@@ -88,6 +88,7 @@ vi.mock('electron', async () => {
     destroyed = false
     isDestroyed() { return this.destroyed }
     isMinimized() { return false }
+    isVisible() { return this.visible }
     isFocused() { return false }
     show() { this.visible = true }
     hide() { this.visible = false }
@@ -152,6 +153,57 @@ beforeEach(async () => {
 })
 
 afterEach(() => { for (const window of fixture.windows) if (!window.destroyed) window.destroy() })
+
+it.each([
+  ['visible', 'loaded', 'healthy'],
+  ['healthy', 'visible', 'loaded'],
+  ['loaded', 'healthy', 'visible'],
+] as const)('reports a launch only after the main window is %s, %s and %s', async (first, second, third) => {
+  const home = mkdtempSync(join(tmpdir(), 'next-launch-analytics-ready-'))
+  vi.stubEnv('DSH_DESKTOP_NEXT_HOME', home)
+  vi.stubEnv('OMNIMUX_ANALYTICS_ENDPOINT', 'http://localhost:8077/api/send')
+  vi.stubEnv('OMNIMUX_ANALYTICS_WEBSITE_ID', '11111111-2222-4333-8444-555555555555')
+  vi.stubEnv('OMNIMUX_ANALYTICS_DISABLED', undefined)
+  fixture.hostReady = true
+  const systemVersion = Object.getOwnPropertyDescriptor(process, 'getSystemVersion')
+  Object.defineProperty(process, 'getSystemVersion', { configurable: true, value: () => '26.0.1' })
+  const { app, net } = await import('electron')
+  vi.mocked(net.fetch).mockReset().mockResolvedValue(new Response(null, { status: 200 }))
+  let finishLoad!: () => void
+  const documentLoading = new Promise<void>(resolve => { finishLoad = resolve })
+  fixture.load.mockImplementation(() => documentLoading)
+  try {
+    await import('../src/main.ts')
+    await vi.waitFor(() => expect(fixture.windows).toHaveLength(1))
+    const window = fixture.windows[0]!
+    const sender = { sender: window.webContents, senderFrame: window.webContents.mainFrame }
+    const { documentId } = await fixture.handlers.get('dsh-next:boot')!(sender)
+    const report = fixture.handlers.get('dsh-next:renderer-status')!
+    await report(sender, 'superseded-document', 'healthy')
+    const actions = {
+      visible: () => window.emit('ready-to-show'),
+      loaded: () => { finishLoad(); return documentLoading },
+      healthy: () => report(sender, documentId, 'healthy'),
+    }
+    for (const step of [first, second]) {
+      await actions[step]()
+      expect(net.fetch).not.toHaveBeenCalled()
+    }
+    await actions[third]()
+    await vi.waitFor(() => expect(net.fetch).toHaveBeenCalledTimes(1))
+    expect(existsSync(join(home, 'electron-user-data', 'launch-analytics', 'identity', 'installation-id'))).toBe(true)
+    await report(sender, documentId, 'healthy')
+    app.emit('activate')
+    expect(net.fetch).toHaveBeenCalledTimes(1)
+  } finally {
+    finishLoad()
+    vi.mocked(net.fetch).mockReset()
+    if (systemVersion) Object.defineProperty(process, 'getSystemVersion', systemVersion)
+    else Reflect.deleteProperty(process, 'getSystemVersion')
+    vi.unstubAllEnvs()
+    rmSync(home, { recursive: true, force: true })
+  }
+})
 
 it('repairs a crashed renderer and fences old document reports while preserving its Host', async () => {
   const home = mkdtempSync(join(tmpdir(), 'next-renderer-repair-'))
