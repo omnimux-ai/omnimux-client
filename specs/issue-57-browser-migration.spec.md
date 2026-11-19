@@ -8,7 +8,7 @@
 ## 目标
 
 - 把冻结旧树的 `omnimux-browser` 源码逐字节迁入 `plugins/plugins/omnimux-browser`，保留 MIT 与 `omdsh-dev/dsh-browser` 归属，纳入 workspace、registry、tier、desktop bundle 与 CI。
-- 插件能发现 Dev 45120、Prod / 遗留 Dev 44120，以及 App 端口冲突后的有界回退端口；43128 不再显示旧的「OmniMux PRD」，43120 只显示 DSH Desktop。
+- 插件能发现 Dev 45120、Prod / 遗留 Dev 44120，以及 App 端口冲突后的有界回退端口。43128 无预设名称，43120 的预设名称为 DSH Desktop。
 - 实例显示名优先取 bridge-config 的实例身份（`name` / `channel`），取不到才回退端口默认名。
 - 面板与后台共用同一份端口列表；保留自定义端口保存机制。
 
@@ -20,12 +20,12 @@
 
 ## 端口与命名设计
 
-- 共享真源：`extension/src/shared/discovery-ports.ts`。后台 `background/index.ts` 与面板 `instance-discovery.ts` 都从这里导入，不再各写一份。
-- 默认候选（10 个）：`45120, 44120, 45128, 43120, 43128, 3080, 3081, 3090, 14389, 43189`。新增 44120；43128 保留为历史 DSH Desktop 回退口但不再命名。
-- 有界回退窗口（各 10 个）：`45120–45129`、`44120–44129`，合计 27 个循环端口。只覆盖 App 的顺序冲突回退，禁止全端口扫描；超出窗口的极端冲突（>9 次）不在本单范围。
+- 后台和面板共用同一份[端口清单](../plugins/plugins/omnimux-browser/extension/src/shared/discovery-ports.ts)。
+- 9 个基础候选为 `45120, 44120, 43120, 43128, 3080, 3081, 3090, 14389, 43189`。43128 是 DSH Desktop 的历史回退口。
+- 两个回退窗口为 `45120–45129` 和 `44120–44129`，合并基础候选并去重后共 27 个本机端口。候选顺序先是 `45120, 44120`，再按 `45121, 44121, …, 45129, 44129` 交替列出回退端口，最后是其余基础候选。45128 由第一个回退窗口覆盖。
 - 命名优先级：`bridge-config.name` → `bridge-config.channel`（dev/prod）→ 端口默认名（45120 Dev、44120 Prod、43120 DSH Desktop、未知端口“本地实例”）。
-- 取舍：选择「有界端口探测」而不是「读 App 写入的实例描述文件」，因为后者需要 `app/**` 新增契约，按分工由桌面端承接；当前 App 已把实际端口绑定在顺序回退逻辑里，bounded 探测无需 App 改动。代价是探测请求数从 9 增到 27，面板并发、后台按优先级并发读取，最坏仍是一个超时窗口。
-- 自定义端口：面板写 `localStorage.omnimux_target_port`，并通过 `SWITCH_DSH_PORT` 同步到后台 `chrome.storage.local`；后台探测把保存端口放在候选首位，面板 `discoverInstances(extras)` 同样优先合并。
+- 有界探测覆盖桌面端已有的顺序回退逻辑，无需新增桌面端接口。默认探测端口从 9 个增至 27 个。每轮请求并行发出，后台按候选优先级读取结果。
+- 实际端口超出候选范围时，可在面板输入自定义端口。面板保存该端口并同步到后台。后台优先采用该端口的探测结果，面板将该端口并入并行探测，结果按实例状态和预设顺序展示。
 
 ## 范围
 

@@ -109,7 +109,7 @@ jobs:
       - name: Enable package managers
         run: corepack enable
 
-      # The 12 product bundles are `link:` dependencies: install/build the plugin
+      # The 13 product bundles are `link:` dependencies: install/build the plugin
       # workspace first so later runtime checks can boot them from plugins/plugins/*
       # and packaging never consumes a missing/stale lib/.
       - name: Install plugin workspace
