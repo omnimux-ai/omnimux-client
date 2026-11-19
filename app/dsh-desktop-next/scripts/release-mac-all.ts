@@ -1,7 +1,8 @@
 /** Build arm64 and x64 macOS candidates from one shared release preflight. */
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -188,8 +189,34 @@ async function submitAndWait(arch: NextRuntimeArch, appPath: string, outputDir: 
 
 async function buildDmg(arch: NextRuntimeArch, appPath: string, outputDir: string, env: NodeJS.ProcessEnv): Promise<string> {
   const dmg = join(outputDir, `OmniMux-${version}-${arch}.dmg`)
+  const staging = mkdtempSync(join(tmpdir(), `omnimux-dmg-stage-${arch}-`))
+  const writable = join(outputDir, `.OmniMux-${version}-${arch}.rw.dmg`)
+  const mountPoint = mkdtempSync(join(tmpdir(), `omnimux-dmg-mount-${arch}-`))
+  const icon = join(desktopRoot, 'build', 'app-icon.icns')
+  let mounted = false
   await packagingStep(`dmg:build:${arch}`, async () => {
-    runSync('hdiutil', ['create', '-volname', 'OmniMux', '-srcfolder', appPath, '-ov', '-format', 'UDZO', dmg], desktopRoot, env, `dmg ${arch}`)
+    try {
+      // Match electron-builder's default DMG presentation: the application, the
+      // Applications shortcut and a volume icon. `hdiutil -srcfolder app` alone
+      // produces a bare app-only image and changes the install experience.
+      runSync('ditto', [appPath, join(staging, 'OmniMux.app')], desktopRoot, env, `dmg staging ${arch}`)
+      symlinkSync('/Applications', join(staging, 'Applications'), 'dir')
+      if (existsSync(icon)) copyFileSync(icon, join(staging, '.VolumeIcon.icns'))
+      runSync('hdiutil', ['create', '-volname', 'OmniMux', '-srcfolder', staging, '-ov', '-format', 'UDRW', '-fs', 'HFS+', writable], desktopRoot, env, `dmg rw image ${arch}`)
+      runSync('hdiutil', ['attach', writable, '-mountpoint', mountPoint, '-nobrowse'], desktopRoot, env, `dmg mount ${arch}`)
+      mounted = true
+      runSync('SetFile', ['-a', 'C', mountPoint], desktopRoot, env, `dmg icon flag ${arch}`)
+      runSync('hdiutil', ['detach', mountPoint], desktopRoot, env, `dmg detach ${arch}`)
+      mounted = false
+      runSync('hdiutil', ['convert', writable, '-format', 'UDZO', '-o', dmg], desktopRoot, env, `dmg convert ${arch}`)
+    } finally {
+      if (mounted) {
+        try { runSync('hdiutil', ['detach', mountPoint], desktopRoot, env, `dmg cleanup detach ${arch}`) } catch { /* preserve the original failure */ }
+      }
+      rmSync(staging, { recursive: true, force: true })
+      rmSync(mountPoint, { recursive: true, force: true })
+      rmSync(writable, { force: true })
+    }
   })
   return dmg
 }
