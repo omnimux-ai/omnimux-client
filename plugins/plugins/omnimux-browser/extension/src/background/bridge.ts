@@ -19,6 +19,12 @@ import {
 /** Coarse connection state for the UI. */
 export type BridgeState = 'connecting' | 'connected' | 'reconnecting' | 'stopped'
 
+/** Identifies a particular authenticated socket, including across worker restarts. */
+export interface BridgeConnection {
+  id: string
+  url: string
+}
+
 /** Frame/state sinks owned by the background assembly. */
 export interface BridgeSinks {
   onStateChange(state: BridgeState): void
@@ -61,6 +67,7 @@ export class BridgeClient {
 
   /** Current coarse state (mirrors the last emitted sink value). */
   state: BridgeState = 'stopped'
+  connection?: BridgeConnection
 
   /**
    * The bridge handed this client's slot to another browser (close 4000).
@@ -204,6 +211,7 @@ export class BridgeClient {
       let authed = false
       const accepted = await new Promise<boolean>((resolve) => {
         const onMessage = (event: MessageEvent): void => {
+          if (this.ws !== socket || this.generation !== generation) return
           const frame = parseBridgeFrame(String(event.data))
           if (frame === undefined) return
           if (!authed) {
@@ -237,12 +245,15 @@ export class BridgeClient {
         }, { once: true })
         this.ackTimer = setTimeout(() => resolve(false), HELLO_ACK_TIMEOUT_MS)
       })
-      if (!accepted || !this.running || generation !== this.generation) {
+      if (!this.running || generation !== this.generation) return
+      if (!accepted) {
         await this.fail(socket)
         continue
       }
 
       this.attempt = 0
+      const endpoint = new URL(this.url)
+      this.connection = { id: crypto.randomUUID(), url: endpoint.origin + endpoint.pathname }
       this.emitState('connected')
 
       await new Promise<void>((resolve) => {
@@ -290,6 +301,7 @@ export class BridgeClient {
   }
 
   private emitState(state: BridgeState): void {
+    if (state !== 'connected') this.connection = undefined
     this.state = state
     this.sinks.onStateChange(state)
   }

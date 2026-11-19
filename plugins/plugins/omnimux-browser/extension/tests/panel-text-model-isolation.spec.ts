@@ -10,10 +10,21 @@ import { createRoot } from 'react-dom/client'
 
 const LABEL_CHAT = '对话模型'
 const LABEL_TEXT = '文本生成模型'
-// 行标签简化锚点：把定位常量钉在新文案上，防止旧长标签回归。
-assert.equal(LABEL_CHAT, '对话模型')
-assert.equal(LABEL_TEXT, '文本生成模型')
 const TAB_ID = 7
+const CONNECTION = { id: 'host-a', url: 'ws://127.0.0.1:45120/ext/bridge' }
+const HOST_CATALOG = {
+  default: { provider: 'local', model: 'chat-default', reasoningEffort: 'high' },
+  groups: [
+    { id: 'local', name: 'Local', models: [
+      { id: 'chat-default', name: 'Desktop Chat', reasoning: {
+        efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }], defaultEffort: 'low',
+      } },
+      { id: 'shared', name: 'Shared Local' },
+    ] },
+    { id: 'relay', name: 'Relay', models: [{ id: 'shared', name: 'Shared Relay' }] },
+  ],
+}
+const modelValue = (provider, model) => JSON.stringify([provider, model])
 
 let panelApi = null
 let onStatus = null
@@ -53,10 +64,6 @@ function stubChrome(storedSettings) {
   return { set, get }
 }
 
-function labels() {
-  return Array.from(document.querySelectorAll('.settings-panel label > span')).map((span) => span.textContent || '')
-}
-
 /** 按行标签取该行自己的模型选择器。 */
 function selectIn(labelText) {
   const row = Array.from(document.querySelectorAll('.settings-panel label'))
@@ -67,12 +74,20 @@ function selectIn(labelText) {
   return select
 }
 
-async function openSettings() {
+async function openSettings({ connected = true } = {}) {
   await act(async () => { root.render(createElement(App)) })
-  await act(async () => { if (onStatus !== null) onStatus('connected', null) })
+  if (connected) await connect(CONNECTION)
   await vi.waitFor(() => { assert.ok(document.querySelector('.settings-trigger')) })
   await act(async () => { document.querySelector('.settings-trigger').click() })
   await vi.waitFor(() => { assert.ok(document.querySelector('.settings-actions')) })
+}
+
+async function connect(connection) {
+  await act(async () => { onStatus('connected', null, undefined, connection) })
+}
+
+function catalogValues(label) {
+  return Array.from(selectIn(label).querySelectorAll('optgroup option')).map((option) => option.value)
 }
 
 async function choose(select, value) {
@@ -95,13 +110,15 @@ beforeEach(() => {
     if (method === 'session.create') return { sessionId: 'session-current' }
     if (method === 'session.history') return { events: [] }
     if (method === 'settings.describe') return { namespaces: [] }
+    if (method === 'session.modelCatalog') return HOST_CATALOG
+    if (['settings.mutate', 'session.selectModel', 'bridge.modelMode'].includes(method)) return {}
     if (method === 'credentials.describe') return { credentials: {} }
     throw new Error('unexpected RPC: ' + method)
   })
   updateSettings = vi.fn(async () => undefined)
   const unsubscribe = () => {}
   panelApi = {
-    rpc: async (method, payload) => await rpc(method, payload),
+    rpc: (...args) => rpc(...args),
     respond: vi.fn(async () => undefined),
     onStatus: vi.fn((callback) => { onStatus = callback; return unsubscribe }),
     onEvent: vi.fn(() => unsubscribe),
@@ -130,81 +147,108 @@ afterEach(async () => {
   delete globalThis.IS_REACT_ACT_ENVIRONMENT
 })
 
-describe('设置面板的文本生成模型行（#3629 A1）', () => {
-  it('两行同时存在、文案已更新，文本行带「跟随对话模型」空值选项', async () => {
-    await openSettings()
-    const texts = labels()
-    assert.ok(texts.some((label) => label.includes(LABEL_CHAT)))
-    assert.ok(texts.some((label) => label.includes(LABEL_TEXT)))
-    assert.equal(texts.some((label) => label.includes('对话模型与推理等级')), false)
-    assert.equal(texts.some((label) => label.includes('文本生成模型与推理等级')), false)
+describe('Settings model catalog', () => {
+  it('loads one host catalog for both rows after cold connection without mutating chat defaults', async () => {
+    globalThis.localStorage.setItem('omnimux_default_model', 'stale-browser-model')
+    await openSettings({ connected: false })
+    assert.equal(selectIn(LABEL_CHAT).disabled, true)
+    assert.deepEqual(catalogValues(LABEL_CHAT), [])
 
-    const textSelect = selectIn(LABEL_TEXT)
-    assert.equal(textSelect.value, '')
-    const textValues = Array.from(textSelect.options).map((option) => option.value)
-    assert.ok(textValues.includes(''))
-    assert.ok(textValues.includes('gpt-6-astra'))
-    assert.ok(textValues.includes('__custom__'))
-
-    // 对话行不允许「空模型」：空值选项只属于文本生成行。
-    const chatValues = Array.from(selectIn(LABEL_CHAT).options).map((option) => option.value)
-    assert.equal(chatValues.includes(''), false)
-  })
-
-  it('切换文本生成模型只写 textModel 三元组，对话模型键不变（A1）', async () => {
-    // 实时目录夹具：组 provider 与组名映射给出的值不同（'grok-subscription' vs
-    // 'grok'），所以下面的 provider 断言只能命中目录解析路径，空串或兜底名都算失败。
-    globalThis.fetch = async () => new Response(JSON.stringify({
-      modelGroups: [
-        { group: 'Grok (Subscription)', provider: 'grok-subscription', models: [{ id: 'grok-4.6', name: 'Grok 4.6' }] },
-      ],
-    }), { status: 200, headers: { 'content-type': 'application/json' } })
-
-    await openSettings()
-    const chatValueBefore = selectIn(LABEL_CHAT).value
-    const chatStoredBefore = globalThis.localStorage.getItem('omnimux_default_model')
-
-    // 等目录落地：夹具组替换了离线快照组（'gpt-6-astra' 只存在于快照里）。
-    await vi.waitFor(() => {
-      const values = Array.from(selectIn(LABEL_TEXT).options).map((option) => option.value)
-      assert.equal(values.includes('gpt-6-astra'), false)
-    })
-
-    await choose(selectIn(LABEL_TEXT), 'grok-4.6')
-    await vi.waitFor(() => { assert.ok(updateSettings.mock.calls.length > 0) })
-
-    const patch = updateSettings.mock.calls.at(-1).at(0)
-    assert.equal(patch.textModel, 'grok-4.6')
-    assert.equal(typeof patch.textEffort, 'string')
-    assert.equal(typeof patch.textProvider, 'string')
-    assert.equal(patch.textProvider, 'grok-subscription')
-    assert.equal(Object.keys(patch).includes('bridgeUrl'), false)
-    assert.equal(Object.keys(patch).includes('token'), false)
-
-    assert.equal(selectIn(LABEL_CHAT).value, chatValueBefore)
-    assert.equal(globalThis.localStorage.getItem('omnimux_default_model'), chatStoredBefore)
-    assert.equal(globalThis.localStorage.getItem('omnimux_default_text_model'), null)
-  })
-
-  it('切换对话模型不改文本生成选择，也不写文本设置（A1）', async () => {
-    await openSettings()
-    await choose(selectIn(LABEL_CHAT), 'grok-4.3')
-    await vi.waitFor(() => { assert.equal(globalThis.localStorage.getItem('omnimux_default_model'), 'grok-4.3') })
-
+    await connect(CONNECTION)
+    const expected = [modelValue('local', 'chat-default'), modelValue('local', 'shared'), modelValue('relay', 'shared')]
+    assert.deepEqual(catalogValues(LABEL_CHAT), expected)
+    assert.deepEqual(catalogValues(LABEL_TEXT), expected)
+    assert.equal(selectIn(LABEL_CHAT).value, expected[0])
     assert.equal(selectIn(LABEL_TEXT).value, '')
-    assert.equal(updateSettings.mock.calls.length, 0)
-    assert.ok(rpc.mock.calls.some((call) => call.at(0) === 'settings.mutate'))
+    assert.deepEqual(rpc.mock.calls.filter(([method, , id]) => method === 'session.modelCatalog' && id !== undefined), [
+      ['session.modelCatalog', {}, CONNECTION.id],
+    ])
+    assert.equal(rpc.mock.calls.some(([method]) => method === 'settings.mutate'), false)
+    assert.equal(globalThis.localStorage.getItem('omnimux_default_model'), 'stale-browser-model')
   })
 
-  it('重新打开设置面板时两行各自保持已保存的值（A1）', async () => {
-    // 对话选择器按实例端口读键（默认实例 45120），文本行读 dshSettings。
-    // 两行各自从自己的来源恢复，互不覆盖。
-    globalThis.localStorage.setItem('omnimux_default_model_45120', 'gpt-5.5')
-    globalThis.localStorage.setItem('omnimux_default_model', 'gpt-5.5')
-    stubChrome({ textModel: 'claude-opus-4-6', textEffort: 'high', textProvider: 'anthropic' })
+  it('selects an exact text provider and clears only the text override when following chat', async () => {
     await openSettings()
+    await choose(selectIn(LABEL_TEXT), modelValue('local', 'shared'))
+    await choose(selectIn(LABEL_TEXT), modelValue('relay', 'shared'))
+    assert.deepEqual(updateSettings.mock.calls.at(-1), [{ textModel: 'shared', textProvider: 'relay', textEffort: '' }])
+    await choose(selectIn(LABEL_TEXT), '')
+    assert.deepEqual(updateSettings.mock.calls.at(-1), [{ textModel: '', textProvider: '', textEffort: '' }])
+    assert.equal(selectIn(LABEL_CHAT).value, modelValue('local', 'chat-default'))
+    assert.equal(rpc.mock.calls.some(([method]) => method === 'settings.mutate'), false)
+  })
 
-    assert.equal(selectIn(LABEL_CHAT).value, 'gpt-5.5')
-    await vi.waitFor(() => { assert.equal(selectIn(LABEL_TEXT).value, 'claude-opus-4-6') })
+  it('updates the complete chat selection on its host and keeps the saved text setting', async () => {
+    stubChrome({ textModel: 'shared', textProvider: 'local' })
+    await openSettings()
+    await choose(selectIn(LABEL_CHAT), modelValue('relay', 'shared'))
+    assert.equal(selectIn(LABEL_CHAT).value, modelValue('relay', 'shared'))
+    assert.equal(selectIn(LABEL_TEXT).value, modelValue('local', 'shared'))
+    assert.deepEqual(updateSettings.mock.calls, [])
+    assert.ok(rpc.mock.calls.some(([method, payload, id]) => method === 'bridge.modelMode' && payload.auto === false && id === CONNECTION.id))
+    assert.deepEqual(rpc.mock.calls.find(([method]) => method === 'settings.mutate'), [
+      'settings.mutate', {
+        ns: 'agent-default-model',
+        ops: [
+          { op: 'set', path: ['model'], value: 'shared' },
+          { op: 'set', path: ['provider'], value: 'relay' },
+          { op: 'unset', path: ['reasoningEffort'] },
+        ],
+      }, CONNECTION.id,
+    ])
+  })
+
+  it('keeps the explicitly chosen chat route when saving with an existing relay', async () => {
+    const base = rpc.getMockImplementation()
+    rpc.mockImplementation((method, payload, id) => method === 'settings.describe' ? Promise.resolve({
+      namespaces: [
+        { ns: 'agent-default-model', value: { provider: 'relay-existing', model: 'old-model' } },
+        { ns: 'llm-pi-ai', value: { providers: {
+          'relay-existing': { displayName: 'Existing Relay', models: [{ id: 'old-model' }] },
+        } } },
+      ],
+    }) : base(method, payload, id))
+
+    await openSettings()
+    await vi.waitFor(() => assert.ok(document.querySelector('.relay-profile-actions')))
+    await choose(selectIn(LABEL_CHAT), modelValue('relay', 'shared'))
+    await act(async () => { document.querySelector('.settings-actions button.primary').click() })
+    await vi.waitFor(() => assert.equal(updateSettings.mock.calls.length, 1))
+    const writes = rpc.mock.calls.filter(([method, payload]) =>
+      method === 'settings.mutate' && payload.ns === 'agent-default-model')
+    assert.equal(writes.length, 1)
+    assert.equal(writes[0][1].ops.find((op) => op.path[0] === 'model').value, 'shared')
+  })
+
+  it('refreshes the shared directory and desktop default when settings regain focus', async () => {
+    await openSettings()
+    const refreshed = { groups: [HOST_CATALOG.groups[1]], default: { model: 'shared', provider: 'relay' } }
+    const defaultRpc = rpc.getMockImplementation()
+    rpc.mockImplementation((method, payload, id) => method === 'session.modelCatalog'
+      ? Promise.resolve(refreshed)
+      : defaultRpc(method, payload, id))
+
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
+    const expected = [modelValue('relay', 'shared')]
+    assert.deepEqual(catalogValues(LABEL_CHAT), expected)
+    assert.deepEqual(catalogValues(LABEL_TEXT), expected)
+    assert.equal(selectIn(LABEL_CHAT).value, expected[0])
+    assert.equal(rpc.mock.calls.some(([method]) => method === 'settings.mutate'), false)
+  })
+
+  it('ignores a stale response and honors an empty catalog on the replacement connection', async () => {
+    let resolveStale
+    const stale = new Promise((resolve) => { resolveStale = resolve })
+    const defaultRpc = rpc.getMockImplementation()
+    rpc.mockImplementation((method, payload, id) => method === 'session.modelCatalog'
+      ? id === CONNECTION.id ? stale : Promise.resolve({ groups: [] })
+      : defaultRpc(method, payload, id))
+
+    await openSettings()
+    await connect({ id: 'host-b', url: 'ws://127.0.0.1:45121/ext/bridge' })
+    await act(async () => { resolveStale(HOST_CATALOG) })
+    assert.ok(selectIn(LABEL_CHAT).textContent.includes('暂无可用模型'))
+    assert.deepEqual(catalogValues(LABEL_CHAT), [])
+    assert.deepEqual(catalogValues(LABEL_TEXT), [])
   })
 })

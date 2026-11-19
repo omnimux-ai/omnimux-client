@@ -50,13 +50,14 @@ import {
   type SubscriptionModelGroup,
 } from './auto-model.ts'
 import { createSessionDeferral } from './session-deferral.ts'
+import { bindTextSessionModel } from './text-session-model.ts'
 import { withSessionWorkspace } from './session-workspace.ts'
 import { purgeSessionFiles, type SessionPurgeDeps } from './session-purge.ts'
 import { resolveToken } from './token.ts'
 import {
   createRemoteHostApi,
-  type HostConnectionLike,
-  type TypertGatewayLike,
+  type BrowserHostConnection,
+  type BrowserHostGateway,
 } from './remote-host-api.ts'
 import { createProducedRegistry, type ProducedRegistry } from './produced-registry.ts'
 import { createImageAssetSaveDeps, saveImageAsset } from './image-assets.ts'
@@ -67,7 +68,7 @@ import { appendCopilotLog } from './copilot-log.ts'
 export const name = 'bridge-browser'
 
 /** Services required by this plugin. */
-export const inject = ['webServer', 'typertGateway', 'connection', 'tools', 'agents']
+export const inject = ['webServer', 'typertGateway', 'connection', 'tools', 'agents', 'llm']
 
 /** Default per-tool-call budget (ms). */
 const DEFAULT_TOOL_TIMEOUT_MS = 90_000
@@ -167,9 +168,10 @@ export interface TextGenerationPinRegistry {
   /** Whether `sessionId` currently carries a text-generation pin. */
   isPinned(sessionId: string): boolean
   /** Record one session as pinned; idempotent. */
-  pin(sessionId: string): void
+  pin(sessionId: string, dispose?: () => void): void
   /** Drop one session's pin; unknown ids are ignored. */
   unpin(sessionId: string): void
+  clear(): void
 }
 
 /**
@@ -177,11 +179,21 @@ export interface TextGenerationPinRegistry {
  * @returns a registry the auto router and the purge path share.
  */
 export function createTextGenerationPinRegistry(): TextGenerationPinRegistry {
-  const pinned = new Set<string>()
+  const pinned = new Map<string, (() => void) | undefined>()
   return {
     isPinned: sessionId => pinned.has(sessionId),
-    pin: sessionId => { pinned.add(sessionId) },
-    unpin: sessionId => { pinned.delete(sessionId) },
+    pin: (sessionId, dispose) => {
+      pinned.get(sessionId)?.()
+      pinned.set(sessionId, dispose)
+    },
+    unpin: sessionId => {
+      pinned.get(sessionId)?.()
+      pinned.delete(sessionId)
+    },
+    clear: () => {
+      for (const dispose of pinned.values()) dispose?.()
+      pinned.clear()
+    },
   }
 }
 
@@ -189,11 +201,7 @@ export function createTextGenerationPinRegistry(): TextGenerationPinRegistry {
 export interface TextGenerationModelSelection {
   readonly sessionId: string
   readonly model: string
-  /**
-   * Gateway provider id. Optional on the shared selectModel seam because auto
-   * routing may pick a candidate without one; the pin path always supplies it
-   * (`bridge.textGeneration` requires a non-empty provider).
-   */
+  /** Provider of an automatically selected chat model, when known. */
   readonly provider?: string
   readonly reasoningEffort?: string
 }
@@ -201,17 +209,11 @@ export interface TextGenerationModelSelection {
 /**
  * Pin one temporary session to an explicit text-generation model.
  *
- * Order contract (Issue #3629 §7.1.5): materialize the deferred session →
- * `selectModel` → register. Materialization comes first because the Host
- * resolves `session/selectModel` against a persisted session and answers
- * `session/not-found` for a provisional id. The registration then lands before
- * the caller forwards its prompt — the carrier also orders the pin frame ahead
- * of that session's prompts, so the auto router already sees the pin on the
- * first turn. A failed materialization or selection registers nothing: the
- * caller must surface the error instead of silently falling back to the
- * conversation model.
+ * Materialize the Agent before installing its route and registering it with
+ * the auto router. The carrier orders the pin before the first prompt.
+ * A failed materialization or selection registers nothing.
  *
- * @param deps - on-demand materialization, gateway selection, registry write.
+ * @param deps - on-demand materialization, session-scoped selection and registry.
  * @param request - validated `bridge.textGeneration` payload.
  */
 export async function pinTextGenerationSession(
@@ -221,19 +223,14 @@ export async function pinTextGenerationSession(
      * session deferral is disabled, where the create already persisted.
      */
     materialize?: (sessionId: string) => Promise<void>
-    selectModel: (input: TextGenerationModelSelection) => Promise<void>
-    pin: (sessionId: string) => void
+    selectModel: (input: TextGenerationRequest) => Promise<void | (() => void)>
+    pin: (sessionId: string, dispose?: () => void) => void
   },
   request: TextGenerationRequest,
 ): Promise<void> {
   await deps.materialize?.(request.sessionId)
-  await deps.selectModel({
-    sessionId: request.sessionId,
-    model: request.model,
-    provider: request.provider,
-    ...(request.reasoningEffort === undefined ? {} : { reasoningEffort: request.reasoningEffort }),
-  })
-  deps.pin(request.sessionId)
+  const dispose = await deps.selectModel(request)
+  deps.pin(request.sessionId, dispose || undefined)
 }
 
 /**
@@ -269,24 +266,25 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const resolved = resolveConfig(config)
 
   const gateway = ctx.get('typertGateway') as unknown as GatewayCandidate | undefined
-  const connection = ctx.get('connection') as unknown as HostConnectionLike | undefined
+  const connection = ctx.get('connection') as unknown as BrowserHostConnection | undefined
   if (gateway === undefined || !hasRemoteWireStream(gateway)) {
     throw new Error('bridge-browser: dsh 0.1.5-rc.2 or a compatible newer runtime is required (Gateway wireStream unavailable)')
   }
-  if (connection === undefined) throw new Error('bridge-browser: dsh connection service is required')
+  if (typeof connection?.createSharedFetchHandler !== 'function') {
+    throw new Error('bridge-browser: dsh connection service is required')
+  }
   const tokenRes = await resolveToken(resolved.token)
   // One registry shared by both halves: the Host adapter writes it from the
   // event stream and history, the WebSocket server reads it for
   // `omnimux.producedMedia`. Two instances would silently disagree.
   const produced = createProducedRegistry()
-  mountBridge(ctx, resolved, tokenRes, gateway, createRemoteHostApi(gateway, connection, produced), produced)
+  mountBridge(ctx, resolved, tokenRes, createRemoteHostApi(gateway, connection, produced), produced)
 }
 
 function mountBridge(
   ctx: Context,
   resolved: ResolvedConfig,
   tokenRes: Awaited<ReturnType<typeof resolveToken>>,
-  gateway: TypertGatewayLike,
   hostApi: BrowserHostApi,
   produced: ProducedRegistry,
 ): void {
@@ -302,6 +300,8 @@ function mountBridge(
   // Issue #3629: text-generation sessions the panel pinned to an explicit
   // model. Shared by the auto router (skip routing) and the purge path (drop).
   const textGenerationPins = createTextGenerationPinRegistry()
+  ctx.effect(() => () => textGenerationPins.clear(), 'bridge-browser: temporary text model selections')
+  ctx.on('agent/disposed', ({ agent }) => { textGenerationPins.unpin(String(agent.id)) })
 
   const routerDeps = {
     // Resolved per call: the hub's `decisions` seam may mount after this
@@ -309,11 +309,13 @@ function mountBridge(
     evaluate: (args: Parameters<AutoModelEvaluate>[0], options?: { signal?: AbortSignal }) =>
       ctx.get('decisions')?.evaluate?.(args, options) as ReturnType<AutoModelEvaluate>,
     selectModel: async (input: TextGenerationModelSelection) => {
-      await gateway.invoke({
-        namespace: 'session',
-        method: 'selectModel',
-        args: { request: input },
+      const result = await hostApi.call({
+        rpcId: crypto.randomUUID(),
+        method: 'session.selectModel',
+        payload: input,
+        signal: new AbortController().signal,
       })
+      if (!result.ok) throw new Error(result.error.message)
     },
     candidates: () => flattenModelCandidates(loadSubscriptionModelGroups()),
     getMode,
@@ -331,9 +333,7 @@ function mountBridge(
   // Auto-model routing wraps the gateway adapter directly; session deferral
   // stays outermost so a provisional session materializes before selectModel
   // runs, and workspace grouping sits between the two. The deferral handle is
-  // kept because pinning must materialize a provisional session on demand —
-  // the Host answers `session/not-found` for `session.selectModel` on an
-  // unmaterialized id (Issue #3629 B1).
+  // kept because the explicit text model is bound to a live Agent.
   const workspaceApi = withSessionWorkspace(
     withAutoModelRouting(hostApi, routerDeps),
     resolved.sessionWorkspacePath,
@@ -390,14 +390,8 @@ function mountBridge(
         if (!archived.ok) throw new Error(archived.error.message)
       },
     }
-    try {
-      await purgeSessionFiles(deps, sessionId)
-    } finally {
-      // The pin must not outlive the purge attempt that named the session, so
-      // it is dropped on both outcomes. Deregistration stays best-effort: a
-      // registry that cannot forget the id never changes the purge result.
-      unpinTextGenerationSession(textGenerationPins, sessionId, message => { ctx.logger.warn(message) })
-    }
+    await purgeSessionFiles(deps, sessionId)
+    unpinTextGenerationSession(textGenerationPins, sessionId, message => { ctx.logger.warn(message) })
   }
 
   function getDshHostLocale(): 'zh' | 'en' {
@@ -446,8 +440,8 @@ function mountBridge(
       {
         // Undefined when deferral is off: the create already persisted.
         ...(deferral === undefined ? {} : { materialize: deferral.materialize }),
-        selectModel: routerDeps.selectModel,
-        pin: sessionId => { textGenerationPins.pin(sessionId) },
+        selectModel: input => bindTextSessionModel(ctx, input),
+        pin: textGenerationPins.pin,
       },
       request,
     ),
@@ -627,12 +621,12 @@ function readSubscriptionModelGroups(): SubscriptionModelGroup[] {
   return []
 }
 
-type GatewayCandidate = Pick<TypertGatewayLike, 'invoke'> & {
-  readonly wireStream?: TypertGatewayLike['wireStream']
+type GatewayCandidate = Pick<BrowserHostGateway, 'invoke'> & {
+  readonly wireStream?: BrowserHostGateway['wireStream']
 }
 
 /** Check the minimum supported Gateway contract before mounting the bridge. */
-function hasRemoteWireStream(gateway: GatewayCandidate): gateway is TypertGatewayLike {
+function hasRemoteWireStream(gateway: GatewayCandidate): gateway is BrowserHostGateway {
   return gateway.wireStream !== undefined
     && typeof gateway.wireStream.open === 'function'
     && typeof gateway.wireStream.failure === 'function'

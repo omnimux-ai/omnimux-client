@@ -1,5 +1,5 @@
 /**
- * dsh ≥0.2.1-rc.3 Host adapter.
+ * DSH Host adapter for the supported Gateway generations.
  *
  * Unary calls go directly through TypertGateway. Long-lived Session and
  * forwarded-event streams use the Gateway wire seam, while `$events/result`
@@ -9,6 +9,8 @@
  * @module @yuxianglin/dsh-bridge-browser/src/remote-host-api
  */
 
+import type { InvokeRemoteRequest, TypertGateway } from '@deepseek-ai/dsh-api-gateway'
+import type { ConnectionFetchHandler, HostConnectionHandle } from '@deepseek-ai/dsh-client-connection'
 import type {
   BrowserHostApi,
   HostEventFrame,
@@ -24,24 +26,63 @@ import {
 import { NULL_PRODUCED_REGISTRY, type ProducedRegistry } from './produced-registry.ts'
 import type { RespondResult } from './protocol.ts'
 
-/** Structural subset of the Host TypertGateway service (dsh ≥0.2.1-rc.3). */
-export interface TypertGatewayLike {
+/** Pinned Gateway methods used by Peer-aware Hosts. */
+export type TypertGatewayLike = Pick<TypertGateway, 'wireStream' | 'invoke'>
+
+/** The published 0.1.5 gateway has no Peer or Stream uplink parameters. */
+interface LegacyGateway {
   readonly wireStream: {
     open(endpoint: string, payload: unknown, signal: AbortSignal): Promise<AsyncIterable<unknown>>
-    failure(error: unknown): HostRpcFailure
+    failure: TypertGatewayLike['wireStream']['failure']
   }
-  invoke(request: {
-    readonly namespace: string
-    readonly method: string
-    readonly args: Readonly<Record<string, unknown>>
-    readonly signal?: AbortSignal
-  }): Promise<unknown>
+  invoke(request: Omit<InvokeRemoteRequest, 'peer' | 'uplink' | 'uplinkWindow'>): Promise<unknown>
 }
 
-/** Structural subset of the Host Connection service (dsh ≥0.2.1-rc.3). */
-export interface HostConnectionLike {
-  createSharedFetchHandler(channel: '/api'): {
-    fetch(request: Request): Promise<Response>
+/** Host Gateway services accepted by the bridge. */
+export type BrowserHostGateway = TypertGatewayLike | LegacyGateway
+
+/** Connection methods used by the bridge on 0.2.1-rc.3 and later. */
+export interface HostConnectionLike extends Pick<HostConnectionHandle, 'browserPeer'> {
+  createSharedFetchHandler(channel: '/api'): Pick<ConnectionFetchHandler, 'fetch'>
+}
+
+/** The published 0.1.5 connection dispatches without a separate Peer. */
+interface LegacyConnection {
+  createSharedFetchHandler(channel: '/api'): { fetch(request: Request): Promise<Response> }
+}
+
+/** Host Connection services accepted by the bridge. */
+export type BrowserHostConnection = HostConnectionLike | LegacyConnection
+
+interface HostTransport {
+  readonly gateway: LegacyGateway
+  fetch(request: Request): Promise<Response>
+}
+
+/** Bind the authenticated bridge to the Gateway and Connection from the same Host generation. */
+function bindHostTransport(gateway: BrowserHostGateway, connection: BrowserHostConnection): HostTransport {
+  if (!('browserPeer' in connection)) {
+    const handler = connection.createSharedFetchHandler('/api')
+    return { gateway: gateway as LegacyGateway, fetch: request => handler.fetch(request) }
+  }
+
+  // Paired bridge requests run as the browser identity supplied by this Host.
+  // Reuse it for the event stream and replies, which must use the identical Peer.
+  const peer = connection.browserPeer
+  const current = gateway as TypertGatewayLike
+  const handler = connection.createSharedFetchHandler('/api')
+  return {
+    gateway: {
+      invoke: request => current.invoke({ ...request, peer }),
+      wireStream: {
+        open(endpoint, payload, signal) {
+          const uplink = (async function* () {})()
+          return current.wireStream.open(endpoint, payload, uplink, peer, signal)
+        },
+        failure: error => current.wireStream.failure(error),
+      },
+    },
+    fetch: request => handler.fetch(request, peer),
   }
 }
 
@@ -68,7 +109,7 @@ interface PendingQuestion {
 }
 
 /**
- * Build the Host adapter implementation (dsh ≥0.2.1-rc.3 wireStream contract).
+ * Build the Host adapter implementation.
  * @param gateway - Host TypertGateway service.
  * @param connection - Host Connection service ($events/result carrier).
  * @param produced - the produced-media allowlist this adapter feeds from the
@@ -76,26 +117,27 @@ interface PendingQuestion {
  *   serves `omnimux.producedMedia` against. Absent, observation is skipped.
  */
 export function createRemoteHostApi(
-  gateway: TypertGatewayLike,
-  connection: HostConnectionLike,
+  gateway: BrowserHostGateway,
+  connection: BrowserHostConnection,
   produced?: ProducedRegistry,
 ): BrowserHostApi {
-  return new RemoteHostApi(gateway, connection, produced)
+  return new RemoteHostApi(bindHostTransport(gateway, connection), produced)
 }
 
 class RemoteHostApi implements BrowserHostApi {
-  private readonly fetchHandler: ReturnType<HostConnectionLike['createSharedFetchHandler']>
+  private readonly gateway: LegacyGateway
+  private readonly fetch: HostTransport['fetch']
   private readonly extensionSessions = new ExtensionSessionRegistry()
   /** Last known session/follow tip per Session; drives session/page throughSeq. */
   private readonly historyCursors = new Map<string, number>()
   private activeEvents: EventGeneration | undefined
 
   constructor(
-    private readonly gateway: TypertGatewayLike,
-    connection: HostConnectionLike,
+    transport: HostTransport,
     produced?: ProducedRegistry,
   ) {
-    this.fetchHandler = connection.createSharedFetchHandler('/api')
+    this.gateway = transport.gateway
+    this.fetch = transport.fetch
     this.produced = produced ?? NULL_PRODUCED_REGISTRY
   }
 
@@ -298,7 +340,7 @@ class RemoteHostApi implements BrowserHostApi {
       }),
       signal,
     })
-    const response = await this.fetchHandler.fetch(request)
+    const response = await this.fetch(request)
     if (!response.ok) {
       throw new Error(`$events/result transport failed with HTTP ${String(response.status)}: ${await response.text()}`)
     }
@@ -353,7 +395,7 @@ class EventGeneration {
   private disposed = false
 
   constructor(
-    private readonly gateway: TypertGatewayLike,
+    private readonly gateway: LegacyGateway,
     private readonly sendResult: SendRemoteEventResult,
     private readonly extensionSessions: ExtensionSessionRegistry,
     private readonly onHistoryCursor: (sessionId: string, cursor: number) => void,
@@ -722,7 +764,7 @@ function invokeTarget(call: HostRpcCall): InvokeTarget | { readonly error: HostR
 }
 
 async function oneShotSessionSnapshot(
-  gateway: TypertGatewayLike,
+  gateway: LegacyGateway,
   sessionId: string,
   outerSignal: AbortSignal,
   maxMessages?: number,

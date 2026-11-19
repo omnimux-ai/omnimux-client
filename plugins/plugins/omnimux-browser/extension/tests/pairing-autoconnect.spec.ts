@@ -388,6 +388,6 @@ describe('panel status relay', () => {
       settings: { bridgeUrl: PAIRED_URL, token: PAIRED_TOKEN },
     })
 
-    expect(calls).toEqual([['stopped', null, { bridgeUrl: PAIRED_URL, token: PAIRED_TOKEN }]])
+    expect(calls).toEqual([['stopped', null, { bridgeUrl: PAIRED_URL, token: PAIRED_TOKEN }, undefined]])
   })
 })
