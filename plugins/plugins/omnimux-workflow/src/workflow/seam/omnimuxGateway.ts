@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import type { AwaitTaskResult, GenerationCapability, GenerationGateway, SubmitRequest, SubmitResult, UpstreamTaskRef } from './gateway';
 import { createWorkflowLogger } from '../execution/logger.ts';
 import { readCanvasCatalog } from './canvasCatalog.ts';
-import { resolveCanvasSubmission } from './submitGuard.ts';
+import { createWorkflowSubmission, resolveCanvasSubmission } from './submitGuard.ts';
 import { SeamGatewayError } from './SeamGatewayError.ts';
 import { validateGeneratedResult } from './generatedResult.ts';
 export { SeamGatewayError } from './SeamGatewayError.ts';
@@ -85,53 +85,59 @@ export function createOmnimuxSeamClient(opts: OmniumuxSeamClientOptions): Genera
     const release = await semaphore.acquire();
     try { return await fn(); } catch (error) { throw toSeamError(error); } finally { release(); }
   }
-  return {
-    async submit(req: SubmitRequest): Promise<SubmitResult> {
-      const seam = requireSeam(opts.getSeam, req.capability);
-      req = resolveCanvasSubmission(req, readCanvasCatalog(opts.getSeam));
-      const structured = [...(req.references ?? []), ...(req.audioTrack ? [req.audioTrack] : [])];
-      const isMirror = (key: string, value: unknown) => ['image', 'video', 'audio', 'speech'].includes(key)
-        && structured.some((ref) => ref.type === (key === 'speech' ? 'audio' : key) && ref.pathOrUrl === value);
-      if (req.capability === 'text') {
-        const request: Record<string, unknown> = { prompt: req.prompt ?? '', model: req.model, operation: req.operation };
-        for (const key of ['video', 'image', 'references', 'audioTrack', 'fileUrl', 'linkUrl', 'strategy', 'allowedGroups'] as const) {
-          if (req[key] !== undefined && !isMirror(key, req[key])) request[key] = req[key];
-        }
-        // The text seam is one-shot; defer execution until awaitTask, but guard now.
-        const taskId = `text_${randomUUID().slice(0, 12)}`;
-        tasks.set(taskId, { kind: 'text', request });
-        return { taskId, mode: 'submitted' };
-      }
-      const request: Record<string, unknown> = { prompt: req.prompt ?? '', dest: req.dest, wait: false };
-      for (const key of [
-        'image', 'video', 'references', 'audioTrack', 'duration', 'operation', 'resolution', 'quality', 'n', 'aspectRatio',
-        'speech', 'audio', 'voice', 'style', 'instrumental', 'speed', 'sound', 'seed', 'watermark',
-        'outputFormat', 'referenceTaskType', 'generationType', 'returnLastFrame', 'webSearch',
-        'nsfwCheck', 'fileUrl', 'linkUrl', 'model', 'strategy', 'allowedGroups', 'signal',
-      ] as const) {
+  const readCatalog = () => readCanvasCatalog(opts.getSeam);
+  async function submitResolved(req: SubmitRequest, seam = requireSeam(opts.getSeam, req.capability)): Promise<SubmitResult> {
+    const structured = [...(req.references ?? []), ...(req.audioTrack ? [req.audioTrack] : [])];
+    const isMirror = (key: string, value: unknown) => ['image', 'video', 'audio', 'speech'].includes(key)
+      && structured.some((ref) => ref.type === (key === 'speech' ? 'audio' : key) && ref.pathOrUrl === value);
+    if (req.capability === 'text') {
+      const request: Record<string, unknown> = { prompt: req.prompt ?? '', model: req.model, operation: req.operation };
+      for (const key of ['video', 'image', 'references', 'audioTrack', 'fileUrl', 'linkUrl', 'strategy', 'allowedGroups'] as const) {
         if (req[key] !== undefined && !isMirror(key, req[key])) request[key] = req[key];
       }
-      const result = await guarded(() => seam.execute(request));
-      if (!result || (result.type !== undefined && result.type !== req.capability)) {
-        throw new SeamGatewayError('omnimux-invalid-response', '生成服务返回了不匹配的产物类型');
-      }
-      const hubTaskId = typeof result.taskId === 'string' ? result.taskId.trim() : '';
-      const hubTaskRef = typeof result.taskRef === 'string' ? result.taskRef.trim() : undefined;
-      if (result.mode === 'live') {
-        const metadata = validateGeneratedResult({ ...result, url: result.url ?? req.dest }, req.capability, req.dest);
-        const localId = hubTaskId || `live_${randomUUID().slice(0, 12)}`;
-        tasks.set(localId, { kind: 'media', capability: req.capability, hubTaskId: localId, hubTaskRef,
-          settled: { url: req.dest, type: req.capability, ...metadata } });
-        return { taskId: localId, taskRef: hubTaskRef, mode: 'live', url: result.url ?? undefined, owner: 'omnimux' };
-      }
-      if (result.mode !== 'submitted' || !hubTaskId) {
-        throw new SeamGatewayError('omnimux-invalid-response', '提交结果无效或缺少 taskId（无法轮询）');
-      }
-      tasks.set(hubTaskId, { kind: 'media', capability: req.capability, hubTaskId, hubTaskRef });
-      // #1386: name the owner explicitly so the persisted reference says "the
-      // hub" rather than relying on the absent-field default.
-      return { taskId: hubTaskId, taskRef: hubTaskRef, mode: 'submitted', owner: 'omnimux' };
-    },
+      // The text seam is one-shot; defer execution until awaitTask, but guard now.
+      const taskId = `text_${randomUUID().slice(0, 12)}`;
+      tasks.set(taskId, { kind: 'text', request });
+      return { taskId, mode: 'submitted' };
+    }
+    const request: Record<string, unknown> = { dest: req.dest, wait: false };
+    for (const key of [
+      'prompt', 'image', 'video', 'references', 'audioTrack', 'duration', 'operation', 'resolution', 'quality', 'n', 'aspectRatio',
+      'speech', 'audio', 'voice', 'style', 'instrumental', 'speed', 'sound', 'seed', 'watermark',
+      'outputFormat', 'referenceTaskType', 'generationType', 'returnLastFrame', 'webSearch',
+      'nsfwCheck', 'fileUrl', 'linkUrl', 'model', 'strategy', 'allowedGroups', 'signal',
+    ] as const) {
+      if (req[key] !== undefined && !isMirror(key, req[key])) request[key] = req[key];
+    }
+    const result = await guarded(() => seam.execute(request));
+    if (!result || (result.type !== undefined && result.type !== req.capability)) {
+      throw new SeamGatewayError('omnimux-invalid-response', '生成服务返回了不匹配的产物类型');
+    }
+    const hubTaskId = typeof result.taskId === 'string' ? result.taskId.trim() : '';
+    const hubTaskRef = typeof result.taskRef === 'string' ? result.taskRef.trim() : undefined;
+    if (result.mode === 'live') {
+      const metadata = validateGeneratedResult({ ...result, url: result.url ?? req.dest }, req.capability, req.dest);
+      const localId = hubTaskId || `live_${randomUUID().slice(0, 12)}`;
+      tasks.set(localId, { kind: 'media', capability: req.capability, hubTaskId: localId, hubTaskRef,
+        settled: { url: req.dest, type: req.capability, ...metadata } });
+      return { taskId: localId, taskRef: hubTaskRef, mode: 'live', url: result.url ?? undefined, owner: 'omnimux' };
+    }
+    if (result.mode !== 'submitted' || !hubTaskId) {
+      throw new SeamGatewayError('omnimux-invalid-response', '提交结果无效或缺少 taskId（无法轮询）');
+    }
+    tasks.set(hubTaskId, { kind: 'media', capability: req.capability, hubTaskId, hubTaskRef });
+    // #1386: name the owner explicitly so the persisted reference says "the
+    // hub" rather than relying on the absent-field default.
+    return { taskId: hubTaskId, taskRef: hubTaskRef, mode: 'submitted', owner: 'omnimux' };
+  }
+  async function submit(req: SubmitRequest): Promise<SubmitResult> {
+    const seam = requireSeam(opts.getSeam, req.capability);
+    return submitResolved(resolveCanvasSubmission(req, readCatalog()), seam);
+  }
+  return {
+    submit: Object.assign(submit, {
+      openWorkflowSubmission: async () => createWorkflowSubmission(readCatalog(), submitResolved),
+    }),
     async awaitTask(taskId: string, dest: string, signal?: AbortSignal): Promise<AwaitTaskResult> {
       const record = tasks.get(taskId);
       if (!record) throw new SeamGatewayError('omnimux-invalid-request', `未知任务 ${taskId}（进程重启后节点需重新提交）`);
@@ -164,7 +170,7 @@ export function createOmnimuxSeamClient(opts: OmniumuxSeamClientOptions): Genera
       tasks.delete(taskId);
       return { url: dest, type: record.capability, ...metadata };
     },
-    async capabilities() { return readCanvasCatalog(opts.getSeam); },
+    async capabilities() { return readCatalog(); },
     /**
      * #1382: finish a task from a persisted reference.
      *

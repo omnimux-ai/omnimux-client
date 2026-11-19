@@ -58,6 +58,8 @@ export interface SlotSpec {
 export interface SlotLayout {
   /** True only when the selected operation declares a text/prompt input. */
   acceptsText?: boolean;
+  /** Whether connected JSON documents can supply text, parameters or a document attachment. */
+  acceptsDocuments?: boolean;
   operationId: string;
   /**
    * Set when the layout was borrowed from another listed operation of the same

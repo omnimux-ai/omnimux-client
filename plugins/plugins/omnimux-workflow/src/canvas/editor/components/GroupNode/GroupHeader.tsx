@@ -1,6 +1,6 @@
 import React, { memo, useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useViewport } from '@xyflow/react';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, Ungroup } from 'lucide-react';
 import { useT } from '../../../i18n';
 import { stopToolbarNativeEvent } from '../toolbarPointerGuard';
 import {
@@ -16,6 +16,7 @@ export interface GroupHeaderProps {
   selected: boolean;
   color?: string;
   onToggleCollapse: () => void;
+  onUngroup: () => void;
   onRename: (newTitle: string) => void;
   onSelect: () => void;
 }
@@ -27,6 +28,7 @@ export const GroupHeader: React.FC<GroupHeaderProps> = memo(({
   selected,
   color,
   onToggleCollapse,
+  onUngroup,
   onRename,
   onSelect,
 }) => {
@@ -122,6 +124,20 @@ export const GroupHeader: React.FC<GroupHeaderProps> = memo(({
       >
         {isCollapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
       </button>
+      {selected && (
+        <button
+          type="button"
+          className="wf-group-header-pill__toggle wf-group-header-pill__ungroup"
+          aria-label={t('group.ungroupGroup')}
+          title={t('group.ungroupGroupTitle')}
+          onClick={(event) => {
+            event.stopPropagation();
+            onUngroup();
+          }}
+        >
+          <Ungroup size={14} />
+        </button>
+      )}
 
       {isEditing ? (
         <input

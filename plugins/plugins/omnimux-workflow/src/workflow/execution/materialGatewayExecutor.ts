@@ -15,7 +15,7 @@ import { resolveGenerationPrompt } from '../../shared/graph/generationPrompt.ts'
 import { compileMultimodalPrompt } from './multimodalCompiler.ts';
 import type { AwaitTaskResult, GenerationGateway, SubmitRequest } from '../seam/gateway';
 import { SeamGatewayError } from '../seam/SeamGatewayError.ts';
-import { resolveExecutorSubmission } from '../seam/submitGuard.ts';
+import { openWorkflowSubmission } from '../seam/submitGuard.ts';
 import { validateGeneratedResult } from '../seam/generatedResult.ts';
 import { reconcileUpstreamTask } from './upstreamReconcile.ts';
 import type {
@@ -105,11 +105,10 @@ export function createMaterialGatewayExecutor(opts: {
   gateway: GenerationGateway;
   resolveProjectFile?: ResolveExecutionProjectFile;
 }): NodeExecutor {
-  const { gateway } = opts;
-
   return {
     key: 'material:generate',
     async execute(node, ctx): Promise<NodeOutput> {
+      const gateway = ctx.gateway ?? opts.gateway;
       const data = structuredClone(node.data ?? {});
       const params = data.params as Record<string, unknown> | undefined;
       // A persisted task belongs to the hub; collecting it needs no source or catalog.
@@ -194,7 +193,7 @@ export function createMaterialGatewayExecutor(opts: {
         });
         if (outcome.kind === 'downloaded') {
           const output = await finalizeMedia(outcome.result, {
-            prompt: resolveGenerationPrompt(data),
+            prompt: upstreamTaskRef.omittedNodePrompt ? '' : resolveGenerationPrompt(data),
             modelId: readString(params, 'model'),
           });
           ctx.clearUpstreamTask?.();
@@ -213,7 +212,8 @@ export function createMaterialGatewayExecutor(opts: {
       }
 
       const inputs = { ...ctx, upstreamOutputs: structuredClone(ctx.upstreamOutputs), upstreamBindings: structuredClone(ctx.upstreamBindings) };
-      const catalog = structuredClone(ctx.catalog ?? await gateway.capabilities());
+      const submission = ctx.submission ?? await openWorkflowSubmission(gateway, ctx.catalog);
+      const catalog = submission.catalog;
       const upstream = collectMaterialSlotInputs(data, inputs, catalog, opts.resolveProjectFile);
       if (data.inputBindingVersion !== 1 && capability === 'audio' && upstream.texts.length && resolveGenerationPrompt(data).trim()) {
         throw new Error('当前音频任务不能分别表达上游正文和本地要求；请保留一个正文来源并调整音色、语速等参数');
@@ -379,8 +379,7 @@ export function createMaterialGatewayExecutor(opts: {
         request.audioTrack = await enrichRemoteReference(request.audioTrack);
       }
 
-      const resolved = resolveExecutorSubmission(request, catalog);
-      const submitted = await gateway.submit(resolved);
+      const { task: submitted, model: submittedModel, omittedNodePrompt } = await submission.submit(request);
       ctx.reportProgress?.(10, '已提交生成任务');
       // #1382: record the moment the hub owns a task, before any polling. The
       // record is written immediately (not at the next sync tick): a crash in
@@ -392,6 +391,7 @@ export function createMaterialGatewayExecutor(opts: {
           capability,
           submittedAt: Date.now(),
           ...(submitted.taskRef ? { taskRef: submitted.taskRef } : {}),
+          ...(omittedNodePrompt ? { omittedNodePrompt } : {}),
           // #1386: persist which backend owns the task alongside its id, so the
           // recovery in a later process routes the reconcile back to that same
           // backend instead of assuming the hub.
@@ -401,7 +401,7 @@ export function createMaterialGatewayExecutor(opts: {
       try {
         ctx.reportProgress?.(40, '生成中…');
         const settled = await gateway.awaitTask(submitted.taskId, dest, ctx.signal);
-        const output = await finalizeMedia(settled, { prompt, modelId: resolved.model });
+        const output = await finalizeMedia(settled, { prompt, modelId: submittedModel });
         // Terminal: a finished node must not leave a stale reference for the next
         // recovery to chase.
         ctx.clearUpstreamTask?.();

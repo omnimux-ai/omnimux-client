@@ -1,6 +1,5 @@
 import { TooltipSide } from "@deepseek-ai/dsh-client-ui-primitives";
 import { ButtonHTMLAttributes, ComponentType, HTMLAttributes, InputHTMLAttributes, MouseEvent, ReactNode, ReactPortal, TableHTMLAttributes, TdHTMLAttributes, ThHTMLAttributes } from "react";
-//#region src/icons/compat-icons.d.ts
 interface CompatIconProps {
   size?: number | undefined;
   className?: string | undefined;
@@ -25,8 +24,6 @@ declare const IconRefreshOutline16: IconComponent;
 declare const IconRightUpOutline14: IconComponent;
 declare const IconSearchOutline16: IconComponent;
 declare const IconTrashOutline16: IconComponent;
-//#endregion
-//#region src/button/Button.d.ts
 type ButtonVariant = "primary" | "secondary" | "ghost" | "outline" | "danger";
 type ButtonSize = "default" | "sm" | "xs";
 interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "type"> {
@@ -52,8 +49,6 @@ interface IconButtonProps extends Omit<ButtonProps, "leadingIcon" | "trailingIco
 }
 /** Square icon-only button with an official Tooltip and a required aria-label. */
 declare const IconButton: import("react").ForwardRefExoticComponent<IconButtonProps & import("react").RefAttributes<HTMLButtonElement>>;
-//#endregion
-//#region src/button/CopyButton.d.ts
 type CopyState = "idle" | "copied" | "error";
 interface CopyButtonProps extends Omit<ButtonProps, "onClick" | "size" | "variant" | "onCopy" | "onError"> {
   /** Text content to copy, or an accessor function returning text / Promise<string>. */
@@ -83,8 +78,6 @@ interface CopyButtonProps extends Omit<ButtonProps, "onClick" | "size" | "varian
  * One-click copy button with 2s automatic reset state machine and clipboard fallback.
  */
 declare const CopyButton: import("react").ForwardRefExoticComponent<CopyButtonProps & import("react").RefAttributes<HTMLButtonElement>>;
-//#endregion
-//#region src/badge/Badge.d.ts
 type BadgeVariant = "default" | "neutral" | "brand" | "success" | "warning" | "error" | "info";
 type BadgeShape = "capsule" | "dot" | "square";
 type BadgeSize = "sm" | "md" | "lg";
@@ -112,8 +105,6 @@ interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
  * Universal badge / status indicator conforming to official `--dsw-alias-*` tokens.
  */
 declare const Badge: import("react").ForwardRefExoticComponent<BadgeProps & import("react").RefAttributes<HTMLSpanElement>>;
-//#endregion
-//#region src/tile/SelectableTile.d.ts
 type TileSelectionMode = "checkbox" | "radio";
 interface SelectableTileProps {
   /** Unique identifier for the tile. */
@@ -146,8 +137,6 @@ interface SelectableTileProps {
  * Supports keyboard navigation (Space / Enter) and official `--dsw-alias-*` tokens.
  */
 declare const SelectableTile: import("react").ForwardRefExoticComponent<SelectableTileProps & import("react").RefAttributes<HTMLDivElement>>;
-//#endregion
-//#region src/table/Table.d.ts
 type SortDirection = "asc" | "desc" | null;
 interface TableProps extends TableHTMLAttributes<HTMLTableElement> {
   /** Whether the table header sticks to the top of its scroll container. */
@@ -181,8 +170,6 @@ interface TableHeadProps extends ThHTMLAttributes<HTMLTableCellElement> {
   sortDirection?: SortDirection | undefined;
 }
 declare const TableHead: import("react").ForwardRefExoticComponent<TableHeadProps & import("react").RefAttributes<HTMLTableCellElement>>;
-//#endregion
-//#region src/table/DataTable.d.ts
 interface HeaderContext<T> {
   column: ColumnDef<T>;
   sortDirection: SortDirection;
@@ -253,8 +240,6 @@ interface DataTableProps<T> {
  * horizontal scroll indicators, and EmptyState integration.
  */
 declare function DataTable<T>({ data, columns, rowKey, selectedRowKeys, onSelectionChange, selectionMode, sortKey, sortDirection, onSortChange, loading, emptyContent, stickyHeader, scrollX, className, rowClassName, onRowClick }: DataTableProps<T>): JSX.Element;
-//#endregion
-//#region src/card/MediaCard.d.ts
 type MediaAspectRatio = "16:9" | "4:3" | "1:1" | "9:16";
 interface MediaCardProps {
   /** Card title text or node. */
@@ -289,8 +274,6 @@ interface MediaCardProps {
  * hover actions overlay, and footer metadata slot.
  */
 declare const MediaCard: import("react").ForwardRefExoticComponent<MediaCardProps & import("react").RefAttributes<HTMLDivElement>>;
-//#endregion
-//#region src/card/CardGrid.d.ts
 interface CardGridProps extends HTMLAttributes<HTMLDivElement> {
   /** Grid items. */
   children: ReactNode;
@@ -307,8 +290,6 @@ interface CardGridProps extends HTMLAttributes<HTMLDivElement> {
  * Responsive fluid card grid container for MediaCard and other card items.
  */
 declare const CardGrid: import("react").ForwardRefExoticComponent<CardGridProps & import("react").RefAttributes<HTMLDivElement>>;
-//#endregion
-//#region src/internal/portal.d.ts
 type PortalContainer = HTMLElement | (() => HTMLElement | null) | null | undefined;
 /**
  * Resolves a portal container element safely, defaulting to `document.body` if available.
@@ -318,8 +299,6 @@ declare function resolvePortalContainer(container?: PortalContainer): HTMLElemen
  * Safely renders React children into a DOM portal with SSR protection.
  */
 declare function createPortalSafe(children: ReactNode, container?: PortalContainer, key?: string | null): ReactPortal | null;
-//#endregion
-//#region src/drawer/Drawer.d.ts
 type DrawerPlacement = "right" | "left" | "top" | "bottom";
 interface DrawerProps {
   /** Whether the drawer is visible. */
@@ -356,8 +335,6 @@ interface DrawerProps {
  * FocusTrap, Escape key handling, and scroll lock prevention.
  */
 declare function Drawer({ open, onClose, title, description, children, footer, placement, width, height, closable, closeOnOverlayClick, closeOnEsc, container, className }: DrawerProps): JSX.Element | null;
-//#endregion
-//#region src/drawer/DrawerPortal.d.ts
 interface DrawerPortalProps {
   children: ReactNode;
   container?: PortalContainer;
@@ -366,8 +343,6 @@ interface DrawerPortalProps {
  * Portal wrapper for Drawer with SSR safety and container resolution.
  */
 declare function DrawerPortal({ children, container }: DrawerPortalProps): ReactPortal | null;
-//#endregion
-//#region src/search/SearchField.d.ts
 interface SearchFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "size" | "type" | "value" | "defaultValue" | "onChange"> {
   value?: string;
   defaultValue?: string;
@@ -388,8 +363,6 @@ interface SearchFieldHandle {
  * (or a controlled `value`) to emit immediately.
  */
 declare const SearchField: import("react").ForwardRefExoticComponent<SearchFieldProps & import("react").RefAttributes<SearchFieldHandle>>;
-//#endregion
-//#region src/field/InputField.d.ts
 interface InputFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "size" | "prefix"> {
   label?: ReactNode;
   hint?: ReactNode;
@@ -402,8 +375,6 @@ interface InputFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "s
  * Height stays 32px to line up with Button and SearchField.
  */
 declare const InputField: import("react").ForwardRefExoticComponent<InputFieldProps & import("react").RefAttributes<HTMLInputElement>>;
-//#endregion
-//#region src/field/DropdownSelect.d.ts
 interface DropdownOption {
   value: string;
   label: ReactNode;
@@ -426,8 +397,6 @@ interface DropdownSelectProps {
  * 32px select built on the official Menu. Never renders a native `<select>`.
  */
 declare function DropdownSelect({ value, options, onChange, placeholder, disabled, className, "aria-label": ariaLabel, id, align }: DropdownSelectProps): import("react").JSX.Element;
-//#endregion
-//#region src/toolbar/Toolbar.d.ts
 interface ToolbarProps extends HTMLAttributes<HTMLDivElement> {
   left?: ReactNode;
   right?: ReactNode;
@@ -450,8 +419,6 @@ interface FilterBarProps extends ToolbarProps {
  * 2. Classic layout (Legacy): `search` + `filters` on the left, `actions` on the right.
  */
 declare function FilterBar({ left, search, filters, actions, right, tools, className, compact, ...rest }: FilterBarProps): import("react").JSX.Element;
-//#endregion
-//#region src/divider/Divider.d.ts
 interface DividerProps extends HTMLAttributes<HTMLDivElement> {
   orientation?: 'horizontal' | 'vertical';
 }
@@ -459,13 +426,13 @@ interface DividerProps extends HTMLAttributes<HTMLDivElement> {
  * Standard 1px divider consuming var(--dsw-alias-border-l2).
  */
 declare const Divider: import("react").ForwardRefExoticComponent<DividerProps & import("react").RefAttributes<HTMLDivElement>>;
-//#endregion
-//#region src/dialog/Dialog.d.ts
 type DialogSize = "sm" | "md" | "lg";
 interface ModalDialogProps {
   open: boolean;
   onClose: () => void;
   title: string;
+  /** Optional decorative icon beside the visible heading. */
+  titleIcon?: ReactNode;
   description?: string;
   children?: ReactNode;
   footer?: ReactNode;
@@ -476,9 +443,9 @@ interface ModalDialogProps {
 }
 /**
  * Official Modal with kit geometry: 16px radius, scrollable body, right-aligned
- * action footer. Header + close button stay with the primitive.
+ * action footer. Icon headings use the primitive's headless surface.
  */
-declare function ModalDialog({ open, onClose, title, description, children, footer, size, closeLabel, className, contentClassName }: ModalDialogProps): import("react").JSX.Element;
+declare function ModalDialog({ open, onClose, title, titleIcon, description, children, footer, size, closeLabel, className, contentClassName }: ModalDialogProps): import("react").JSX.Element;
 interface ConfirmModalProps extends Omit<ModalDialogProps, "footer" | "children"> {
   message?: ReactNode;
   children?: ReactNode;
@@ -490,8 +457,6 @@ interface ConfirmModalProps extends Omit<ModalDialogProps, "footer" | "children"
 }
 /** Two-button confirm dialog. Destructive flows should pass `confirmVariant="danger"`. */
 declare function ConfirmModal({ message, children, confirmLabel, cancelLabel, confirmVariant, confirmLoading, onConfirm, onClose, size, ...rest }: ConfirmModalProps): import("react").JSX.Element;
-//#endregion
-//#region src/empty/EmptyState.d.ts
 interface EmptyStateProps extends HTMLAttributes<HTMLDivElement> {
   icon?: ReactNode;
   title: string;
@@ -501,8 +466,6 @@ interface EmptyStateProps extends HTMLAttributes<HTMLDivElement> {
   compact?: boolean;
 }
 declare const EmptyState: import("react").ForwardRefExoticComponent<EmptyStateProps & import("react").RefAttributes<HTMLDivElement>>;
-//#endregion
-//#region src/stage/createStageStore.d.ts
 interface StageBox {
   top: number;
   left: number;
@@ -529,8 +492,6 @@ interface StageStore {
  * @param getStage Function resolving the host singleton (defaults to window.__omnimuxStage)
  */
 declare function createStageStore(stageId: string, getStage?: () => StageHostSingleton | undefined): StageStore;
-//#endregion
-//#region src/stage/StageContainer.d.ts
 interface StageContainerProps extends HTMLAttributes<HTMLDivElement> {
   stageStore: StageStore;
   title?: string;
@@ -542,8 +503,6 @@ interface StageContainerProps extends HTMLAttributes<HTMLDivElement> {
  * and ResizeObserver layout tracking.
  */
 declare const StageContainer: import("react").ForwardRefExoticComponent<StageContainerProps & import("react").RefAttributes<HTMLDivElement>>;
-//#endregion
-//#region src/tabs/Tabs.d.ts
 interface PageHeaderTabItem {
   id: string;
   label: ReactNode;
@@ -560,8 +519,6 @@ interface TabsProps extends Omit<HTMLAttributes<HTMLDivElement>, 'onChange'> {
   className?: string;
 }
 declare const Tabs: import("react").ForwardRefExoticComponent<TabsProps & import("react").RefAttributes<HTMLDivElement>>;
-//#endregion
-//#region src/stage/PageHeader.d.ts
 interface PageHeaderProps extends Omit<HTMLAttributes<HTMLElement>, 'title'> {
   title: ReactNode;
   subtitle?: ReactNode;
@@ -585,8 +542,6 @@ interface PageHeaderProps extends Omit<HTMLAttributes<HTMLElement>, 'title'> {
  * Layout: heading (breadcrumb + title + subtitle) | tabs | controls (actions + refresh + close).
  */
 declare const PageHeader: import("react").ForwardRefExoticComponent<PageHeaderProps & import("react").RefAttributes<HTMLElement>>;
-//#endregion
-//#region src/stage/StageHeader.d.ts
 type StageHeaderProps = PageHeaderProps;
 /**
  * StageHeader forwards to PageHeader for backward compatibility.
@@ -594,8 +549,6 @@ type StageHeaderProps = PageHeaderProps;
  * Typography single source of truth: 20px / 600 / 28px.
  */
 declare const StageHeader: import("react").ForwardRefExoticComponent<PageHeaderProps & import("react").RefAttributes<HTMLElement>>;
-//#endregion
-//#region src/stat/StatBar.d.ts
 interface StatItem {
   key: string;
   label: ReactNode;
@@ -615,8 +568,6 @@ interface StatBarProps extends HTMLAttributes<HTMLDivElement> {
  * Trends strictly consume official IconChevron* SVG icons and DSW semantic status tokens.
  */
 declare const StatBar: import("react").ForwardRefExoticComponent<StatBarProps & import("react").RefAttributes<HTMLDivElement>>;
-//#endregion
-//#region src/action/ActionRow.d.ts
 interface ActionRowProps extends HTMLAttributes<HTMLDivElement> {
   primaryAction?: ReactNode;
   secondaryActions?: ReactNode;
@@ -628,8 +579,6 @@ interface ActionRowProps extends HTMLAttributes<HTMLDivElement> {
  * and rightActions pushed to the right.
  */
 declare const ActionRow: import("react").ForwardRefExoticComponent<ActionRowProps & import("react").RefAttributes<HTMLDivElement>>;
-//#endregion
-//#region src/gen-wave-card/GenWaveCard.d.ts
 interface GenWaveCardProps extends HTMLAttributes<HTMLDivElement> {
   /** 顶部任务文案，外部供给；缺省时不渲染头行，点阵画布铺满整卡。 */
   statusText?: string;
@@ -652,8 +601,6 @@ interface GenWaveCardProps extends HTMLAttributes<HTMLDivElement> {
  * prefers-reduced-motion 定格参考帧。
  */
 declare const GenWaveCard: import("react").ForwardRefExoticComponent<GenWaveCardProps & import("react").RefAttributes<HTMLDivElement>>;
-//#endregion
-//#region src/stage/createSidebarEntry.d.ts
 interface SidebarCoordinatorApi {
   register: (row: {
     id: string;
@@ -691,14 +638,10 @@ interface SidebarEntryOptions {
  * Uses idempotent activation (stageStore.open()) to guarantee persistent selection.
  */
 declare function createSidebarEntry(options: SidebarEntryOptions): () => void;
-//#endregion
-//#region src/internal/clipboard.d.ts
 /**
  * Robust asynchronous clipboard write with legacy document.execCommand fallback.
  */
 declare function copyToClipboard(text: string): Promise<boolean>;
-//#endregion
-//#region src/internal/a11y.d.ts
 /**
  * Traps Tab and Shift+Tab key navigation within the given container element.
  */
@@ -707,6 +650,5 @@ declare function trapFocus(container: HTMLElement, event: KeyboardEvent): void;
  * Attempts to focus the first focusable descendant in a container.
  */
 declare function focusFirstDescendant(container: HTMLElement): boolean;
-//#endregion
 export { ActionRow, type ActionRowProps, Badge, type BadgeProps, type BadgeShape, type BadgeSize, type BadgeVariant, Button, type ButtonProps, type ButtonSize, type ButtonVariant, CardGrid, type CardGridProps, type CellContext, type ColumnDef, type CompatIconProps, ConfirmModal, type ConfirmModalProps, CopyButton, type CopyButtonProps, type CopyState, DataTable, type DataTableProps, type DialogSize, Divider, type DividerProps, Drawer, type DrawerPlacement, DrawerPortal, type DrawerPortalProps, type DrawerProps, type DropdownOption, DropdownSelect, type DropdownSelectProps, EmptyState, type EmptyStateProps, FilterBar, type FilterBarProps, GenWaveCard, type GenWaveCardProps, type HeaderContext, IconButton, type IconButtonProps, IconCheckOutline16, IconChevronDownOutline14, IconChevronLeftOutline14, IconChevronUpOutline14, IconCloseFill14, IconCloseOutline16, IconCopyOutline16, IconDownloadOutline16, IconEditOutline16, IconEllipsisOutline16, IconLoadingOutline16, IconPaperclipOutline16, IconPlayOutline16, IconPlusOutline16, IconRefreshOutline14, IconRefreshOutline16, IconRightUpOutline14, IconSearchOutline16, IconTrashOutline16, InputField, type InputFieldProps, type MediaAspectRatio, MediaCard, type MediaCardProps, ModalDialog, type ModalDialogProps, PageHeader, type PageHeaderProps, type PageHeaderTabItem, type PortalContainer, SearchField, type SearchFieldHandle, type SearchFieldProps, SelectableTile, type SelectableTileProps, type SidebarCoordinatorApi, type SidebarEntryOptions, type SortDirection, type StageBox, StageContainer, type StageContainerProps, StageHeader, type StageHeaderProps, type StageHostSingleton, type StageStore, StatBar, type StatBarProps, type StatItem, Table, TableBody, type TableBodyProps, TableCell, type TableCellProps, TableHead, type TableHeadProps, TableHeader, type TableHeaderProps, type TableProps, TableRow, type TableRowProps, Tabs, type TabsProps, type TabsVariant, type TileSelectionMode, Toolbar, type ToolbarProps, copyToClipboard, createPortalSafe, createSidebarEntry, createStageStore, focusFirstDescendant, resolvePortalContainer, trapFocus };
 //# sourceMappingURL=index.d.ts.map

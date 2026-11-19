@@ -29,6 +29,7 @@ export interface ExecutionReadinessFailure {
   nodeId: string;
   reasonCode: string;
   message: string;
+  slot?: string;
 }
 
 function readString(value: unknown): string | undefined {
@@ -108,15 +109,6 @@ export function findExecutionReadinessFailure(
       upstreams,
       nodeFields: params,
     });
-    const rawDocumentFailure = rawFingerprint.assets.find((asset) =>
-      asset.type === 'document' && asset.availability !== undefined && asset.availability !== 'ready');
-    if (rawDocumentFailure) {
-      return {
-        nodeId: node.id,
-        reasonCode: rawDocumentFailure.availability === 'waiting' ? 'input_waiting' : 'input_unavailable',
-        message: rawDocumentFailure.availabilityMessage ?? 'JSON 文件不可用，请修复或移除该输入',
-      };
-    }
     const outputType = typeof data.materialType === 'string' ? data.materialType : undefined;
     const autoOperationId = typeof data.autoOperationId === 'string' || data.autoOperationId === null
       ? data.autoOperationId as string | null
@@ -142,16 +134,25 @@ export function findExecutionReadinessFailure(
       : inputBindingVersion === 1 && readString(params.operation)
         ? readString(params.operation) : resolveSlotOperation(catalog, model.id, params.operation, outputType, rawFingerprint);
     const layout = deriveSlotLayout(catalog, model.id, chosenId);
+    const rawDocumentFailure = layout.acceptsDocuments !== false && rawFingerprint.assets.find(asset =>
+      asset.type === 'document' && asset.availability !== undefined && asset.availability !== 'ready');
+    if (rawDocumentFailure) return {
+      nodeId: node.id, reasonCode: rawDocumentFailure.availability === 'waiting' ? 'input_waiting' : 'input_unavailable',
+      message: rawDocumentFailure.availabilityMessage ?? 'JSON 文件不可用，请修复或移除该输入',
+    };
     const loaded = effectiveInputDisplay(layout, feedFromFingerprint(rawFingerprint, inputBindingVersion), data.slotBindings as SlotBindings | undefined,
       (data.slotConflicts ?? []) as SlotConflict[], graph?.edges.filter((edge) => edge.target === node.id) ?? [],
       (data.slotStandbyEdgeIds ?? []) as string[], inputBindingVersion);
     const { bindings, conflicts } = loaded;
+    const videoMode = videoCapability?.operationStates.find(candidate => candidate.id === chosenId);
     if (loaded.requiredUnavailable && !deferred.has(loaded.requiredUnavailable.occupant.sourceNodeId)) return {
       nodeId: node.id, reasonCode: inputBindingVersion === 1
         ? loaded.records.find(record => record.occupant.edgeId === loaded.requiredUnavailable!.occupant.edgeId)?.reasonCode ?? 'input_unavailable' : 'input_unavailable',
       message: `来源 ${loaded.requiredUnavailable.occupant.sourceNodeId} 的素材尚不可用，请替换或停用`,
+      ...(videoMode?.selectableBeforeInputs ? { slot: loaded.requiredUnavailable.slot } : {}),
     };
-    const fingerprint = effectiveSlotFingerprint(rawFingerprint, layout, bindings, conflicts, inputBindingVersion);
+    const fingerprint = effectiveSlotFingerprint(rawFingerprint, layout, bindings, conflicts, inputBindingVersion,
+      (data.slotStandbyEdgeIds ?? []) as string[]);
     const unavailable = fingerprint.assets.find((asset) => asset.availability !== 'ready' && !deferred.has(asset.sourceNodeId));
     if (unavailable) return { nodeId: node.id, reasonCode: unavailable.availability === 'unavailable' ? 'input_unavailable' : 'input_waiting',
       message: unavailable.availabilityMessage ?? `等待来源 ${unavailable.sourceNodeId} 的内容` };
@@ -170,7 +171,7 @@ export function findExecutionReadinessFailure(
       ? model.operations.find((candidate) => candidate.id === selectedOperationId && candidate.listed)
       : undefined;
     const selectedIsEffective = videoCapability
-      ? Boolean(videoCapability.operationStates.find((candidate) => candidate.id === selectedOperationId)?.usable)
+      ? videoMode?.usable || videoMode?.selectableBeforeInputs
       : Boolean(selectedOperationId && opsState.effectiveOps.some((candidate) => candidate.id === selectedOperationId));
     // Raw persisted operation ids are never a soft preference: if no longer
     // listed/effective for this model and node shape, block before mock or hub
@@ -210,7 +211,8 @@ export function findExecutionReadinessFailure(
       return !(failure.code === 'prompt_required'
         && upstreams.some((input) => deferred.has(input.nodeId) && input.materialType === 'text'));
     });
-    if (missing) return { nodeId: node.id, reasonCode: missing.code, message: missing.message };
+    if (missing) return { nodeId: node.id, reasonCode: missing.code, message: missing.message,
+      ...(videoMode?.selectableBeforeInputs && missing.slot ? { slot: missing.slot } : {}) };
   }
   return null;
 }

@@ -22,12 +22,14 @@ DeepSeek Harness（dsh）的工作流无限画布插件：拖拽节点、连线�
 
 ## Agent 工具（M5）
 
+H3 的「数字人/对口型」可先选方式，再分别添加角色图和驱动音频。官方目录要求一张图和一段音频，两项可用后即可生成。提示词可继续编辑，切回「文生视频」时保留最新草稿。画布、Agent 和无界面运行按同一份操作声明选择要提交的输入。
+
 dsh 会话里的 Agent 可通过三个宿主侧工具指挥画布（注册在 cordis `tools` 座位，直连进程内 store / executionManager，无额外 HTTP 调用）：
 
 | 工具 | 参数 | 行为 |
 |---|---|---|
 | `workflow_list` | `include_executions?: boolean` | 列出工作区（id/name/version/nodeCount/updatedAt，新→旧）；`include_executions=true` 附带最近 5 条执行概览（状态 + 进度） |
-| `workflow_run` | `workspace_id \| workspace_name`、`mode: full\|subset`、`node_ids?`、`wait?`、`timeout_ms?`（默认 120000） | 创建执行。`wait=false`（默认）立即返回 `executionId` + 提示（用户可在画布看实时进度）；`wait=true` 轮询到终态（completed/error/cancelled）返回结果摘要：各节点状态、文本产物摘录（240 字截断）、媒体文件 URL + 本地绝对路径。subset 模式自动补传递上游闭包 |
+| `workflow_run` | `workspace_id \| workspace_name`、`mode: full\|subset`、`node_ids?`、`wait?`、`timeout_ms?`（默认 120000） | 创建执行。`wait=false`（默认）立即返回 `executionId` + 提示（用户可在画布看实时进度）；`wait=true` 轮询到终态（completed/error/cancelled）返回结果摘要：各节点状态、文本产物摘录（240 字截断）、媒体文件 URL + 本地绝对路径。subset 模式自动补传递上游闭包。画布、工具和无界面执行共用启动检查。能匹配到已受理的失败任务时，按原任务 ID 取回；新任务根据当前模型目录和素材检查后提交 |
 | `workflow_snapshot` | `workspace_id`、`include_nodes?: boolean` | 工作区摘要（节点/边计数、素材类型分布、执行设置）或完整节点/边结构（供 Agent 分析画布 / 给修改建议） |
 
 - 错误统一 `{error, message}` 返回形态（不抛出）：`invalid-args` / `workspace-not-found` / `ambiguous-workspace-name` / `invalid-subgraph` / `empty-graph` / `execution-not-found`
@@ -101,7 +103,7 @@ npm run build      # 显式重建：dist/index.js + lib/client.js + lib/canvas.j
 
 | 节点字段 | seam 请求字段 | 说明 |
 |---|---|---|
-| `prompt` / `content` / 上游文本 | `prompt` | 必填 |
+| `prompt` / `content` / 上游文本 | `prompt` | 按操作声明决定是否接收及是否必填。H3 对口型只发送所选角色图和驱动音频。 |
 | 上游图片产物 | `image` | i2v / 图生图 / 视觉文本输入 |
 | 上游音频产物（视频节点） | `audio` | 参考音频 |
 | `params.duration` | `duration` | 秒 |

@@ -8,6 +8,7 @@ import {
   planGroupNodes,
   planUngroupNode,
   planToggleGroupCollapse,
+  projectGroupVisibility,
   screenDeltaToFlowDelta,
   childIdsOfGroup,
   COLLAPSED_GROUP_WIDTH,
@@ -223,7 +224,7 @@ test('planGroupNodes: 未传 title 时默认生成「编组 N 个节点」', () 
   assert.deepEqual(groupNode.data.expandedBounds, { width: groupNode.width, height: groupNode.height });
 });
 
-test('planToggleGroupCollapse: 收起组并隐藏子节点，再次触发完整展开还原', () => {
+test('planToggleGroupCollapse: 收起与展开只改变组状态，组内节点可见性由视图推导', () => {
   const initialNodes = [
     { id: 'n1', type: 'material', position: { x: 0, y: 0 }, width: 300, height: 200 },
     { id: 'n2', type: 'material', position: { x: 400, y: 0 }, width: 300, height: 200 },
@@ -244,10 +245,8 @@ test('planToggleGroupCollapse: 收起组并隐藏子节点，再次触发完整�
   assert.equal(collapsedGroup.style.width, COLLAPSED_GROUP_WIDTH);
   assert.equal(collapsedGroup.style.height, COLLAPSED_GROUP_HEIGHT);
 
-  const collapsedChild1 = collapsedNodes.find((n) => n.id === 'n1');
-  const collapsedChild2 = collapsedNodes.find((n) => n.id === 'n2');
-  assert.equal(collapsedChild1.hidden, true);
-  assert.equal(collapsedChild2.hidden, true);
+  assert.deepEqual(collapsedNodes.slice(1), plan.nodes.slice(1));
+  assert.deepEqual(projectGroupVisibility(collapsedNodes, []).hiddenNodeIds, new Set(['n1', 'n2']));
 
   // 2. 展开
   const expandedNodes = planToggleGroupCollapse(collapsedNodes, plan.groupId);
@@ -259,8 +258,6 @@ test('planToggleGroupCollapse: 收起组并隐藏子节点，再次触发完整�
   assert.equal(expandedGroup.style.width, originalWidth);
   assert.equal(expandedGroup.style.height, originalHeight);
 
-  const expandedChild1 = expandedNodes.find((n) => n.id === 'n1');
-  const expandedChild2 = expandedNodes.find((n) => n.id === 'n2');
-  assert.equal(expandedChild1.hidden, false);
-  assert.equal(expandedChild2.hidden, false);
+  assert.deepEqual(expandedNodes.slice(1), plan.nodes.slice(1));
+  assert.deepEqual(projectGroupVisibility(expandedNodes, []).hiddenNodeIds, new Set());
 });

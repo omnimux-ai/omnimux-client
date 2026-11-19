@@ -1,5 +1,5 @@
 import type { CapabilityCatalog } from '../../api.ts';
-import { bindableSlots, buildContractView, resolveModelView } from '../../validation/compatKernel.ts';
+import { bindableSlots, buildContractView, operationAcceptsDocuments, operationAcceptsText, resolveModelView } from '../../validation/compatKernel.ts';
 import { SLOT_LAYOUT_TABLE, SLOT_NAME_ALIASES } from './slotLayoutTable.ts';
 import type { SlotLayout } from './types.ts';
 
@@ -16,10 +16,9 @@ export function deriveSlotLayout(
   };
   const model = resolveModelView(buildContractView(catalog), modelId);
   const operation = model?.operations.find((op) => op.id === operationId && op.listed);
-  if (!operation) return { ...layout, acceptsText: false, implementationGaps: ['operation_unlisted'] };
-  layout.acceptsText = operation.inputs.some((input) => input.type === 'text' || input.role === 'prompt' || input.slot === 'prompt')
-    || (operation.promptPolicy != null && operation.promptPolicy !== 'forbidden')
-    || operation.output?.type === 'video' || operation.output?.type === 'image';
+  if (!model || !operation) return { ...layout, acceptsText: false, implementationGaps: ['operation_unlisted'] };
+  layout.acceptsText = operationAcceptsText(model, operation);
+  layout.acceptsDocuments = operationAcceptsDocuments(model, operation);
   // Plain speech has no implemented reference-media mapping; verified text remains bindable.
   const inputs = bindableSlots(operation).filter(input => operation.output.type !== 'audio'
     || operation.id !== 'text_to_speech' || input.type === 'text');
@@ -37,9 +36,11 @@ export function deriveSlotLayout(
     for (const input of matches) if (!ordered.includes(input)) ordered.push(input);
   }
   for (const input of inputs) if (!ordered.includes(input)) ordered.push(input);
+  const roleLabels: Record<string, string> = model.hasGatewayInputContract && operation.id === 'digital_human' && !layout.acceptsText
+    ? { image: 'character', audio: 'driving_audio' } : {};
   layout.slots = ordered.map((input) => ({
     slot: input.slot, role: input.role, type: input.type, min: input.min, max: input.max,
-    labelKey: `panel.slot.${input.slot}`,
+    labelKey: `panel.slot.${roleLabels[input.type] ?? input.slot}`,
     maxSizeMb: input.maxSizeMb, maxSizeExclusive: input.maxSizeExclusive,
     minDurationSec: input.minDurationSec, maxDurationSec: input.maxDurationSec,
     ...(input.valueSources ? { valueSources: [...input.valueSources] } : {}),

@@ -4,9 +4,8 @@
  */
 
 import { buildInitialOutputs } from '../execution/executionInputs.ts';
-import { prepareExecutionSlotGraph } from '../../shared/graph/feedSlot/prepareExecutionSlotGraph.ts';
+import { prepareExecutionAdmission } from '../execution/prepareExecutionAdmission.ts';
 import type { CapabilityCatalog } from '../../shared/api.ts';
-import { findExecutionReadinessFailure } from '../../shared/validation/executionReadiness.ts';
 import {
   normalizeNodeIds,
   resolveExecutionSubgraph,
@@ -140,7 +139,7 @@ export function createWorkflowRunTool(deps: WorkflowAgentDeps): AgentToolSpec {
       const workspaceName = readString(args, 'workspace_name');
       const resolved = resolveWorkspace(store, workspaceId, workspaceName, { getActiveView });
       if ('error' in resolved) return resolved;
-      let workspace = resolved.snapshot;
+      const workspace = resolved.snapshot;
 
       let mode: 'full' | 'subset' | 'single';
       try {
@@ -152,14 +151,12 @@ export function createWorkflowRunTool(deps: WorkflowAgentDeps): AgentToolSpec {
         );
       }
 
-      const catalog = (deps.getExecutionCatalog ? await deps.getExecutionCatalog() : deps.getCatalog ? await deps.getCatalog() : null) as CapabilityCatalog | null;
-      workspace = { ...workspace, ...prepareExecutionSlotGraph(workspace.nodes, workspace.edges, catalog) };
       const nodeIds = normalizeNodeIds(args.node_ids);
-      let subgraph;
+      let selected;
       try {
-        subgraph = resolveExecutionSubgraph({
-          nodes: workspace.nodes as Array<{ id: string; [key: string]: unknown }>,
-          edges: workspace.edges as Array<{ source: string; target: string; [key: string]: unknown }>,
+        selected = resolveExecutionSubgraph({
+          nodes: workspace.nodes,
+          edges: workspace.edges,
           executionMode: mode,
           nodeIds,
         });
@@ -169,13 +166,13 @@ export function createWorkflowRunTool(deps: WorkflowAgentDeps): AgentToolSpec {
           error instanceof Error ? error.message : String(error),
         );
       }
-      if (subgraph.nodes.length === 0) {
+      if (selected.nodes.length === 0) {
         return errorBody('empty-graph', `workspace ${workspace.id} has no nodes to execute`);
       }
-      const readiness = findExecutionReadinessFailure(
-        subgraph.nodes as Array<{ id: string; type: string; data?: Record<string, unknown> }>,
-        catalog,
-        { nodes: workspace.nodes, edges: workspace.edges, workspaceId: workspace.id, scheduledNodeIds: mode === 'single' ? undefined : subgraph.nodeIdSet },
+      const readCatalog = deps.getExecutionCatalog ?? deps.getCatalog;
+      const { subgraph, readiness, sourceGraph, recovery } = await prepareExecutionAdmission(
+        workspace.id, workspace, selected, mode, executionManager,
+        readCatalog ? async () => await readCatalog() as CapabilityCatalog | null : undefined, deps.resolveProjectFile,
       );
       if (readiness) {
         return {
@@ -201,7 +198,7 @@ export function createWorkflowRunTool(deps: WorkflowAgentDeps): AgentToolSpec {
       }
       let initialOutputs;
       try {
-        initialOutputs = buildInitialOutputs(workspace, subgraph.nodeIdSet, { mediaDir, resolveProjectFile: deps.resolveProjectFile });
+        initialOutputs = buildInitialOutputs(sourceGraph, subgraph.nodeIdSet, { mediaDir, resolveProjectFile: deps.resolveProjectFile });
       } catch (error) {
         return errorBody((error as { code?: string }).code ?? 'invalid-input', error instanceof Error ? error.message : String(error));
       }
@@ -212,6 +209,7 @@ export function createWorkflowRunTool(deps: WorkflowAgentDeps): AgentToolSpec {
         edges: subgraph.edges as unknown as Array<{ source: string; target: string }>,
         maxParallel: workspace.settings.maxParallel,
         initialOutputs,
+        ...recovery,
       });
       const executionId = entry.context.id;
 

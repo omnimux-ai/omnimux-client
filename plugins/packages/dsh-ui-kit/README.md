@@ -248,6 +248,8 @@ import { IconPlusOutline16, IconRefreshOutline16 } from '@deepseek-ai/dsh-client
 
 ### 9. Dialog / ModalDialog / ConfirmModal
 
+`ModalDialog` 的 `titleIcon` 可在标题旁放置装饰图标。传入图标时，宿主 Modal 提供遮罩、键盘与焦点管理，读屏使用 `title` 作为弹窗名称。
+
 ```tsx
 <ModalDialog open={open} onClose={close} title="编辑资产" footer={<Button variant="primary">保存</Button>}>
   <InputField label="名称" value={name} onChange={...} />
