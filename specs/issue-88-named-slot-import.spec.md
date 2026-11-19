@@ -18,8 +18,11 @@
 - 替换完成后保留原有上游节点和连线。撤销恢复替换前的槽绑定及图状态。
 - 多参考视频方式可先选择合规的音频。必填参考图空缺时仍在此方式下显示音频，生成继续等待参考图。
 - 多参考素材条中，每个未满的具名槽最多出现一个可点击加号。按钮以原有槽名提供可访问名称。
+- 连线和已分配的素材不改动模型列表的可选范围。切换模型时按选中模型重新分配，保留目录自身的上架和执行状态限制。
 
 ## 旧标准变更
 
 - `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/videoParams/videoParamsIntegration.test.mjs` :: `Issue #986：ConfigPanel 为视频节点提供基于模型能力的卡槽驱动与素材模式双向流转`
   旧断言要求卡槽从整个模型的能力派生。#88 要求入口限于当前生成方式。新断言检查当前方式的槽位派生和借用槽位缺失，继续检查生成方式解析、实际消费指纹和断开后的已选方式。
+- `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/operationUi.dom.test.mjs` :: `ConfigPanel 消费 buildFilteredModelOptions / buildEffectiveOpsUiState（唯一判定）`
+  旧断言要求视频节点将不消费已连素材的模型置灰。#88 和 #63 的最新验收要求模型列表按目录可用性显示。新断言检查 ConfigPanel 使用共用策略，真实目录用例验证 Seedance 已分配图和音频时 Muse 仍可选。

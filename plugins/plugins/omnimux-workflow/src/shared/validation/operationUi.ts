@@ -585,6 +585,8 @@ export function buildFilteredModelOptions(args: {
    * Default false preserves the historical Hide-Don't-Grey behaviour elsewhere.
    */
   includeInputIncompatible?: boolean;
+  /** Canvas model changes reassign registered supply under the new contract. */
+  allowUnassignedInputs?: boolean;
 }): FilteredModelListResult {
   const catalog = args.catalog;
   if (!catalog) {
@@ -619,17 +621,18 @@ export function buildFilteredModelOptions(args: {
   }
 
   const options: FilteredModelOption[] = [];
-  const checked = args.includeInputIncompatible ? evaluation.models : evaluation.compatible;
+  const listAll = args.allowUnassignedInputs || args.includeInputIncompatible;
+  const checked = listAll ? evaluation.models : evaluation.compatible;
   for (const verdict of checked) {
     if (!verdict.known) continue;
-    if (args.includeInputIncompatible && verdict.listedOperationIds.length === 0) continue;
+    if (listAll && verdict.listedOperationIds.length === 0) continue;
     if (!admitsModel(verdict.modelId)) continue;
     const auth = findAuthoritativeItem(catalog, verdict.modelId);
     const bucket = args.outputType
       ? findBucketItem(catalog, args.outputType, verdict.modelId)
       : undefined;
     if (args.outputType && !bucket && !isCanvasCapabilityModel(catalog, verdict.modelId)) continue;
-    const inputIncompatible = args.includeInputIncompatible
+    const inputIncompatible = !args.allowUnassignedInputs && args.includeInputIncompatible
       ? !modelHasUsableOperation({
           catalog,
           modelId: verdict.modelId,

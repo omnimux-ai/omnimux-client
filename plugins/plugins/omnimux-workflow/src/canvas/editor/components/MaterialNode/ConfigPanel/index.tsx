@@ -2,7 +2,7 @@
  * ConfigPanel — 统一材质创作底栏（Issue 467 / W2；Feed-Slot 阶段二 T03/T04/T05）。
  *
  * Contract-driven:
- *   - model picker = compatible rows selectable; media-incompatible rows grey (R10)
+ *   - model picker follows catalog eligibility; the selected model reassigns inputs
  *   - text adapts its operation automatically; other outputs show genuine model modes
  *   - writes canonical params.operation only
  *   - zero candidates → empty state + block generate with typed reason
@@ -448,22 +448,18 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   // the capability input or it would disable generation / parameter controls.
   const videoDisplayUpstreams = consumedUpstreams;
 
-  // ---- Filtered model list (Hide, Don't Grey) ----
-  // The shared kernel applies canvas model policy and input compatibility.
+  // Model eligibility comes from the directory. The selected model reassigns supply.
   const filteredModels = useMemo(
     () => buildFilteredModelOptions({
       catalog: activeCatalog,
-      // Model availability follows the assigned slot set. Candidate edges that
-      // are silently unused must not grey a model or zero the list.
       fingerprint: consumedFingerprint,
       outputType: outputTypeForCompat,
       // Capability tools (audio transcription) get their seam's contract models; every other
       // tool keeps the curated generative whitelist.
       tool: selectedTool,
-      // Epic #63 R10: connected media greys out models that cannot consume it.
-      includeInputIncompatible: materialType === 'video',
+      allowUnassignedInputs: true,
     }),
-    [activeCatalog, consumedFingerprint, fingerprint, materialType, outputTypeForCompat, selectedTool],
+    [activeCatalog, consumedFingerprint, outputTypeForCompat, selectedTool],
   );
 
   // ---- 不可执行型号（Issue #4103 / AC7）----

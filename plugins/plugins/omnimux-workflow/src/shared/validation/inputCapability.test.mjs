@@ -214,6 +214,21 @@ describe('image / audio / text matrices (real catalog)', () => {
     assert.equal(videoOptions.get('minimax-h3-video')?.inputIncompatible, undefined);
   });
 
+  it('A55 keeps the same selectable video models after another model assigns image and audio', () => {
+    const options = upstreams => buildFilteredModelOptions({
+      catalog,
+      fingerprint: buildUiUpstreamFingerprint({ prompt: 'Local', upstreams }),
+      outputType: 'video',
+      allowUnassignedInputs: true,
+    }).options.filter(option => option.executable && !option.inputIncompatible).map(option => option.id);
+    const populated = options([
+      { nodeId: 'a', edgeId: 'ea', materialType: 'image', mimeType: 'image/png', targetSlot: 'reference_images', hasMedia: true, availability: 'ready' },
+      { nodeId: 'b', edgeId: 'eb', materialType: 'audio', mimeType: 'audio/wav', targetSlot: 'reference_audios', hasMedia: true, availability: 'ready' },
+    ]);
+    assert.ok(populated.includes('muse-video'));
+    assert.deepEqual(populated, options([]));
+  });
+
   it('seed-evolving absorbs image/video but rejects audio/pdf', () => {
     const media = selected('seed-evolving', ['image', 'video'], 'text');
     assert.equal(media.selectedOperationId, 'chat');
