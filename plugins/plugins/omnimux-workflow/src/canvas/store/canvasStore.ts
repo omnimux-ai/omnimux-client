@@ -65,14 +65,22 @@ const HISTORY_DEBOUNCE_MS = 300;
 interface HistorySnapshot {
   nodes: CanvasNode[];
   edges: Edge[];
-  /** Serialized signature cache — equality checks avoid re-stringify. */
+  /** Graph signature excludes transient React Flow state. */
   sig: string;
 }
 
-function snapshotOf(nodes: CanvasNode[], edges: Edge[]): HistorySnapshot {
+function graphSignature(nodes: CanvasNode[], edges: Edge[]): string {
+  // React Flow can report selection and remeasure restored nodes after undo.
+  // Only graph changes should record an undo step or invalidate redo.
+  return JSON.stringify({
+    nodes: nodes.map(({ selected, dragging, resizing, measured, ...node }) => node),
+    edges: edges.map(({ selected, ...edge }) => edge),
+  });
+}
+
+function snapshotOf(nodes: CanvasNode[], edges: Edge[], sig = graphSignature(nodes, edges)): HistorySnapshot {
   // Deep clone via JSON so history entries are detached from live state.
-  const sig = JSON.stringify({ nodes, edges });
-  const clone = JSON.parse(sig) as { nodes: CanvasNode[]; edges: Edge[] };
+  const clone = JSON.parse(JSON.stringify({ nodes, edges })) as { nodes: CanvasNode[]; edges: Edge[] };
   return { nodes: clone.nodes, edges: clone.edges, sig };
 }
 
@@ -81,6 +89,20 @@ const history = {
   current: null as HistorySnapshot | null,
   lastPushAt: 0,
 };
+
+function recordGroupAction(state: CanvasState, nodes: CanvasNode[]) {
+  // Capture the graph at the action boundary, even when the last renderer
+  // effect hasn't recorded a preceding drag yet.
+  const previous = snapshotOf(state.nodes, state.edges);
+  history.current = snapshotOf(nodes, state.edges);
+  // Let the first graph change after a discrete action start its own step.
+  history.lastPushAt = 0;
+  return {
+    nodes,
+    past: [...state.past, previous].slice(-MAX_HISTORY_SIZE),
+    future: [],
+  };
+}
 
 export interface CanvasState {
   // ===== Graph Slice =====
@@ -257,11 +279,12 @@ export const useCanvasStore = create<CanvasState>()(
     },
 
     groupNodes: (nodeIds, title = '新建组', color = DEFAULT_GROUP_COLOR) => {
-      const plan = planGroupNodes(get().nodes, nodeIds, title, color);
+      const state = get();
+      const plan = planGroupNodes(state.nodes, nodeIds, title, color);
       if (!plan) return null;
 
       set({
-        nodes: plan.nodes,
+        ...recordGroupAction(state, plan.nodes),
         selectedElement: { type: 'node', id: plan.groupId },
       });
 
@@ -269,20 +292,22 @@ export const useCanvasStore = create<CanvasState>()(
     },
 
     ungroup: (groupId) => {
-      const updatedNodes = planUngroupNode(get().nodes, groupId);
+      const state = get();
+      const updatedNodes = planUngroupNode(state.nodes, groupId);
       if (!updatedNodes) return;
 
       set({
-        nodes: updatedNodes,
+        ...recordGroupAction(state, updatedNodes),
         selectedElement: { type: 'none', id: null },
       });
     },
 
     toggleGroupCollapse: (groupId) => {
-      const updatedNodes = planToggleGroupCollapse(get().nodes, groupId);
+      const state = get();
+      const updatedNodes = planToggleGroupCollapse(state.nodes, groupId);
       if (!updatedNodes) return;
 
-      set({ nodes: updatedNodes });
+      set(recordGroupAction(state, updatedNodes));
     },
 
     resizeGroup: (groupId, bounds) => {
@@ -358,27 +383,25 @@ export const useCanvasStore = create<CanvasState>()(
     future: [] as HistorySnapshot[],
 
     pushHistory: (force = false) => {
-      const snap = snapshotOf(get().nodes, get().edges);
+      const { nodes, edges, future } = get();
+      const sig = graphSignature(nodes, edges);
       // No-op when nothing changed (also absorbs the re-render that undo
       // itself triggers: history.current was already moved to the restored
       // state before set(), so the signatures match and we return early).
-      if (history.current && history.current.sig === snap.sig) return;
+      if (history.current?.sig === sig) return;
 
       const now = Date.now();
-      if (
-        history.current
-        && (force || now - history.lastPushAt >= HISTORY_DEBOUNCE_MS)
-      ) {
-        const previous = history.current;
+      const previous = history.current;
+      // Within the debounce window we only move the "current" pointer —
+      // rapid changes (node drags, typing) coalesce into one undo step.
+      history.current = snapshotOf(nodes, edges, sig);
+      if (previous && (force || future.length > 0 || now - history.lastPushAt >= HISTORY_DEBOUNCE_MS)) {
+        history.lastPushAt = now;
         set((state) => ({
           past: [...state.past, previous].slice(-MAX_HISTORY_SIZE),
           future: [],
         }));
-        history.lastPushAt = now;
       }
-      // Within the debounce window we only move the "current" pointer —
-      // rapid changes (node drags, typing) coalesce into one undo step.
-      history.current = snap;
     },
 
     undo: () => {

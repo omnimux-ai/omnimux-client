@@ -70,7 +70,7 @@ import { comfyPageNodeDefinition } from '../nodes/definitions/comfyPage.tsx';
 import { FloatingSelectionToolbar } from './components/FloatingSelectionToolbar';
 import { BatchCreateAssetModal, type MediaAssetItem } from './components/BatchCreateAssetModal';
 import { CreateWorkflowModal } from './components/CreateWorkflowModal';
-import { calculateGroupBounds, childIdsOfGroup, planAlignLayout } from './utils/nodeVisualMath';
+import { calculateGroupBounds, childIdsOfGroup, planAlignLayout, projectGroupVisibility } from './utils/nodeVisualMath';
 import { resolveWorkflowTemplateScope, toFlatTemplateSnapshot } from './utils/workflowTemplateScope';
 import { createTemplate, getTemplate, listTemplates } from '../bridge/templateApi';
 import { sanitizeEdges, sanitizeNodes } from '../bridge/persistSanitize';
@@ -234,11 +234,16 @@ const CanvasEditorContent: React.FC<CanvasEditorProps> = ({
   const [isQueueOpen, setIsQueueOpen] = useState(false);
   const nodeCreateCounter = useRef(0);
 
-  const hasSelection = useMemo(() => nodes.some((node) => node.selected), [nodes]);
+  const { hiddenNodeIds, flowEdges } = useMemo(() => projectGroupVisibility(nodes, edges), [nodes, edges]);
+
+  const hasSelection = useMemo(
+    () => nodes.some((node) => node.selected && !hiddenNodeIds.has(node.id)),
+    [nodes, hiddenNodeIds],
+  );
 
   const selectedRegularNodes = useMemo(
-    () => nodes.filter((node) => node.selected && node.type !== 'group'),
-    [nodes],
+    () => nodes.filter((node) => node.selected && node.type !== 'group' && !hiddenNodeIds.has(node.id)),
+    [nodes, hiddenNodeIds],
   );
 
   /**
@@ -594,9 +599,6 @@ const CanvasEditorContent: React.FC<CanvasEditorProps> = ({
 
   const clipboard = useCanvasClipboard(setNodes, setSelectedElement);
 
-  // W3 T3.2: beam activation moved into AnimatedEdge (downstream-target
-  // subscription); the old upstream flowEdges mapping was removed — edges
-  // pass through unchanged.
   // W3 T3.4: release menu + rejection toast three-branch split.
   const connectionMenuTitle = t('menu.generateFromNode');
   const {
@@ -623,9 +625,10 @@ const CanvasEditorContent: React.FC<CanvasEditorProps> = ({
     () =>
       nodes.map((node) => ({
         ...node,
+        hidden: hiddenNodeIds.has(node.id),
         data: { ...node.data, __catalog: catalog, __workspaceId: workspaceId },
       })),
-    [nodes, catalog, workspaceId],
+    [nodes, catalog, workspaceId, hiddenNodeIds],
   );
 
   // 「项目」页「AI应用」卡片「编辑」的定位落点：等目标工作流组进入 nodes
@@ -911,7 +914,7 @@ const CanvasEditorContent: React.FC<CanvasEditorProps> = ({
     <div className="wf-canvas-editor" style={{ position: 'relative', height: '100%' }}>
       <ReactFlow
         nodes={flowNodes}
-        edges={edges}
+        edges={flowEdges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={handleConnect}

@@ -6732,6 +6732,24 @@ body[data-ds-dark-theme] .wf-canvas-root .wf-edge-disconnect__button:focus-visib
 }
 
 /* ==================== 分组 / 多选工具栏 / 模板弹窗 ==================== */
+.wf-canvas-editor {
+  container: workflow-canvas / inline-size;
+}
+
+.wf-group-header-pill .wf-group-header-pill__ungroup {
+  display: none;
+}
+
+@container workflow-canvas (max-width: 640px) {
+  .wf-group-header-pill .wf-group-header-pill__ungroup {
+    display: inline-flex;
+  }
+
+  .wf-group-topbar .wf-group-topbar__ungroup {
+    display: none;
+  }
+}
+
 .wf-floating-selection-bar {
   position: absolute;
   z-index: 1000;
