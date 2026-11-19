@@ -18,6 +18,8 @@ H3 已受理任务第一次因成片地址晚到而显示失败。用户重试�
 - 并行执行仍以进行中的任务为准。最近一次提交失败或取消时，状态栏能显示对应结果。
 - 重新打开画布时，较早的执行恢复信息不能覆盖已经跟踪的提交或改变最新操作的顺序。
 
-## 既有回归检查
+## 旧标准变更
 
-`tests/canvas-concurrent-execution.e2e.test.mjs` 的「执行状态存储以运行槽列表为真源并投影聚合视图」仍验证活跃计数来自运行槽。检查改为验证运行状态和计数复用同一个活跃列表。并发运行的计数继续由 `executionConcurrency.test.mjs` 直接断言。
+- `plugins/plugins/omnimux-workflow/tests/canvas-concurrent-execution.e2e.test.mjs` :: `E2E: 执行状态存储以运行槽列表为真源并投影聚合视图 (#2255)`
+
+旧断言要求在活跃数量处直接过滤运行槽。新断言验证运行状态与计数复用从运行槽派生的同一列表。并发运行的实际计数继续由 `executionConcurrency.test.mjs` 直接断言。
