@@ -6,33 +6,48 @@
     // Only mounted official input slots may write a session's creation guide.
     async function createReadySkillSession(sessions, opts) {
       const origin = marketCurrentSessionId();
-      let expected = origin;
-      let navigatingTo = "";
+      let target = "";
+      let reachedTarget = false;
       let cancelled = false;
-      const check = () => {
-        const active = marketCurrentSessionId();
-        if (navigatingTo) {
-          // 导航窗口：origin → target 之间属于正常过渡，切到第三会话才算用户抢走。
-          if (active && active !== origin && active !== navigatingTo) cancelled = true;
-        } else if (active !== expected) {
+      const check = (active) => {
+        if (!target) {
+          if (active !== origin) cancelled = true;
+        } else if (active === target) {
+          reachedTarget = true;
+        } else if (active && (reachedTarget || active !== origin)) {
           cancelled = true;
         }
         return !cancelled && !opts.isCancelled?.();
       };
-      const unsubscribe = sessions.list?.subscribe?.(check);
+      const wb = typeof window !== "undefined" ? window.__omnimuxWorkbench : undefined;
+      const checkCurrent = () => check(marketCurrentSessionId());
+      const subscriptions = [sessions.list?.subscribe?.(checkCurrent), wb?.subscribe?.(checkCurrent)];
       const stopped = () => ({ ok: false, cancelled: true, prefilled: false });
+      const waitForTarget = async () => {
+        const navTimeout = Number.isFinite(opts.navTimeoutMs) ? opts.navTimeoutMs : 3000;
+        const deadline = Date.now() + navTimeout;
+        while (true) {
+          const active = marketCurrentSessionId();
+          if (!check(active)) return stopped();
+          if (active === target) return null;
+          if (Date.now() >= deadline) {
+            return { ok: false, sessionId: target, prefilled: false, error: "session-navigation-unavailable" };
+          }
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+      };
       try {
-        if (!check()) return stopped();
+        if (!checkCurrent()) return stopped();
         const slug = opts.slug || "skill-creator";
         const catalogId = opts.catalogId || "sk-omx-skill-creator";
         await api("install", { slug, catalogId });
-        if (!check()) return stopped();
+        if (!checkCurrent()) return stopped();
         const workspaceId = resolveFallbackWorkspaceId(sessions, plazaWorkspaces);
         const sessionId = await sessions.create(workspaceId ? { workspaceId } : {});
-        if (!check()) return stopped();
+        if (!checkCurrent()) return stopped();
         if (!sessionId || sessionId === origin) throw new Error("create-session-failed");
         const attached = await api("tryAttach", { sessionId, slug, catalogId, title: opts.title || slug });
-        if (!check()) return stopped();
+        if (!checkCurrent()) return stopped();
         if (attached?.attached !== true || attached?.hasBody !== true || attached.sessionId !== sessionId || attached.slug !== slug) {
           throw new Error("skill-body-unavailable");
         }
@@ -40,31 +55,18 @@
         if (!hasUiWorkspaceOpen && typeof sessions.open !== "function") throw new Error("sessions-open-unavailable");
         opts.onTarget?.(sessionId);
         // Next/rc.3 壳里 sessions.open 不切主会话；真正的导航接缝是 uiWorkspace.openSession。
-        navigatingTo = sessionId;
+        target = sessionId;
         if (hasUiWorkspaceOpen) plazaUiWorkspace.openSession(sessionId);
         else sessions.open(sessionId);
-        // 有界等待宿主真的切到目标会话（默认 3s）：等不到就按现有错误路径失败，不静默 10s。
-        const navStart = Date.now();
-        const navTimeout = Number.isFinite(opts.navTimeoutMs) ? opts.navTimeoutMs : 3000;
-        while (marketCurrentSessionId() !== sessionId) {
-          if (opts.isCancelled?.()) return stopped();
-          const active = marketCurrentSessionId();
-          if (active && active !== origin && active !== sessionId) return stopped();
-          if (Date.now() - navStart >= navTimeout) {
-            return { ok: false, sessionId, prefilled: false, error: "session-navigation-unavailable" };
-          }
-          await new Promise((resolve) => setTimeout(resolve, 50));
-        }
-        expected = sessionId;
-        navigatingTo = "";
+        const sessionFailure = await waitForTarget();
+        if (sessionFailure) return sessionFailure;
         // ready 路径同样要开 workbench：只 open 会话不会切到 split、也不会展开中间栏，
         // 实机表现是停在旧会话、没有 composer（#69 AC-3 的 ready / 非 ready 两条链路同源）。
-        const wb = typeof window !== "undefined" ? window.__omnimuxWorkbench : undefined;
         const plazaTitle = typeof lookup === "function" ? (lookup("plaza.title") || "Skills") : "Skills";
         try {
           // open 是异步的，且默认按市场 tab 的 focus=gui 落位；直接带 focus:'split'
           // 并在 await 后再补 setFocus/展开中栏，否则异步 open 会覆盖后面的状态。
-          const opened = window.__omnimuxWorkbench?.open?.({
+          const opened = wb?.open?.({
             tabId: "omnimux-market:plaza",
             sessionId,
             title: plazaTitle,
@@ -72,6 +74,9 @@
           });
           if (opened && typeof opened.then === "function") await opened;
         } catch {}
+        // 分栏重挂载会暂时解绑会话。只在目标重新就绪后操作输入框。
+        const workbenchFailure = await waitForTarget();
+        if (workbenchFailure) return workbenchFailure;
         try { wb?.setFocus?.("split"); } catch {}
         try { wb?.setConversationCollapsed?.(false, { sessionId }); } catch {}
         const text = typeof opts.text === "string" ? opts.text : "/skill-creator\n帮我使用它来创建一个新的技能。首先询问我这个技能应该做什么。";
@@ -91,9 +96,16 @@
         // 已验证不可靠的 slot 内部通路；老壳无桥时再回落 slot。
         const bridgeGraceMs = timeout > 1000 ? 500 : 0;
         while (Date.now() - start < timeout) {
-          if (!check()) return stopped();
+          const active = marketCurrentSessionId();
+          if (!check(active)) return stopped();
+          if (active !== sessionId) {
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            continue;
+          }
           const slot = skillCreationInputs.get(sessionId);
-          if (slot && (slot.draft || slot.protected)) return { ok: false, sessionId, prefilled: false, error: "draft-protected" };
+          if (slot?.draft || slot?.protected || readBridgeDraft()) {
+            return { ok: false, sessionId, prefilled: false, error: "draft-protected" };
+          }
           const actions = typeof window !== "undefined" ? window.__omnimuxComposerActions : null;
           const hasSetDraft = Boolean(actions && typeof actions.setDraft === "function");
           if (!bridgeAttempted && hasSetDraft) {
@@ -105,8 +117,9 @@
             // 稍后读回：getDraft 可能在 React 提交后才反映新草稿，不能只看 setDraft 的当次回执。
             const readbackDeadline = Math.min(start + timeout, Date.now() + 2000);
             while (Date.now() < readbackDeadline) {
-              if (!check()) return stopped();
-              const draft = readBridgeDraft();
+              const active = marketCurrentSessionId();
+              if (!check(active)) return stopped();
+              const draft = active === sessionId ? readBridgeDraft() : null;
               if (typeof draft === "string" && draft.includes("/skill-creator")) {
                 return { ok: true, sessionId, prefilled: true };
               }
@@ -122,8 +135,9 @@
                 window.dispatchEvent(new CustomEvent("omnimux:composer:set-draft", { detail: { sessionId, draft: text } }));
                 const readbackDeadline = Math.min(start + timeout, Date.now() + 2000);
                 while (Date.now() < readbackDeadline) {
-                  if (!check()) return stopped();
-                  const draft = readBridgeDraft();
+                  const active = marketCurrentSessionId();
+                  if (!check(active)) return stopped();
+                  const draft = active === sessionId ? readBridgeDraft() : null;
                   if (typeof draft === "string" && draft.includes("/skill-creator")) {
                     return { ok: true, sessionId, prefilled: true };
                   }
@@ -144,10 +158,12 @@
           }
           await new Promise((resolve) => setTimeout(resolve, 50));
         }
-        if (!check()) return stopped();
+        if (!checkCurrent()) return stopped();
         return { ok: false, sessionId, prefilled: false, error: "input-unavailable" };
       } finally {
-        if (typeof unsubscribe === "function") unsubscribe();
+        for (const unsubscribe of subscriptions) {
+          if (typeof unsubscribe === "function") unsubscribe();
+        }
       }
     }
 
