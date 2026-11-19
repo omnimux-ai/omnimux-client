@@ -33,6 +33,9 @@
 | [社媒增长专家团产品闭环](omnimux-growth-expert-loop.md) | 业务画像、增长方案、实验、内容、分发和复盘如何组成新的增长垂直插件 |
 | [Desktop service 参考](../dsh-plugin-desktop/docs/plugin-services.md) | `desktopProfiles`、`desktopPnpm` 的稳定 contract 和 TypeScript 示例 |
 | [包级参考](../dsh-plugin-desktop/README.md) | 完整的构建、运行、发布和已知限制 |
+| [发布链路预演](../../AGENTS.md#release-preflight) | 独立环境构建 Windows 安装器、macOS DMG 和市场索引 |
+
+打包输入或工作流变动会启动 [打包检查](../../.github/workflows/release.yml)，分别构建 Windows x64 安装器和两种架构的未签名 macOS DMG。[分发检查](../../.github/workflows/r2-publish.yml) 在自己的干净 Runner 中按 Yarn 锁文件安装、生成索引，再根据市场描述、插件档位和包清单核对每个包名和版本。索引预演允许尚未发布的 npm 版本。正式分发仍检查 npm 上的版本是否可安装。
 
 ## README 文件怎么分工
 
