@@ -53,6 +53,8 @@ export interface ResolveEffectiveVideoParamsArgs {
   catalog?: CapabilityCatalog | null;
   lineConstraints?: LineConstraints | null;
   upstreams?: UpstreamMediaSnapshot[];
+  /** Released named pins are considered only when displaying alternate mode options. */
+  parkedUpstreams?: UpstreamMediaSnapshot[];
   prompt?: string;
   /** Node-level provenance for a system-derived operation. */
   autoOperationId?: string | null;
@@ -152,18 +154,23 @@ export function resolveEffectiveVideoParams(
     prompt: args.prompt,
     upstreams: args.upstreams,
   });
-  const capability = buildInputCapability({
+  const capabilityArgs = {
     catalog: args.catalog ?? null,
     modelId: model,
     outputType: 'video',
-    fingerprint,
     ...(preferredOperation ? { preferredOperationId: preferredOperation } : {}),
     autoOperationId: args.autoOperationId,
     params: (params ?? {}) as Record<string, unknown>,
-  });
+  };
+  const capability = buildInputCapability({ ...capabilityArgs, fingerprint });
+  const modeOptions = args.parkedUpstreams?.length
+    ? buildInputCapability({ ...capabilityArgs, fingerprint: buildUiUpstreamFingerprint({
+      prompt: args.prompt, upstreams: [...(args.upstreams ?? []), ...args.parkedUpstreams],
+    }) }).operationStates
+    : capability.operationStates;
   const selectedOperationId = capability.selectedOperationId ?? preferredOperation ?? '';
   const effectiveOperations = opsState.effectiveOps.map((operation) => {
-    const state = capability.operationStates.find(item => item.id === operation.id);
+    const state = modeOptions.find(item => item.id === operation.id);
     return { ...operation, disabled: !state?.usable && !state?.selectableBeforeInputs };
   });
   const defaultFallbackOp = effectiveOperations.find((op) => op.id === 'text_to_video')

@@ -443,13 +443,14 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
     ...asset, nodeId: asset.sourceNodeId, materialType: asset.type,
     label: asset.sourceLabel,
   })), [consumedFingerprint]);
+  const videoDisplayUpstreams = consumedUpstreams;
   // A parked pin can make the mode that owns its named slot selectable again.
-  const videoModeUpstreams = useMemo(() => [...consumedUpstreams, ...slotConflicts.flatMap(conflict => {
+  const parkedVideoUpstreams = useMemo(() => slotConflicts.flatMap(conflict => {
     if (conflict.reason !== 'slot_inactive' || conflict.occupant.use === 'inactive') return [];
     const asset = fingerprint.assets.find(item => item.edgeId === conflict.occupant.edgeId && item.sourceNodeId === conflict.occupant.sourceNodeId);
     return asset ? [{ ...asset, nodeId: asset.sourceNodeId, materialType: asset.type, label: asset.sourceLabel,
       targetSlot: conflict.slot, role: conflict.occupant.role }] : [];
-  })], [consumedUpstreams, slotConflicts, fingerprint.assets]);
+  }), [slotConflicts, fingerprint.assets]);
 
   // Model eligibility comes from the directory. The selected model reassigns supply.
   const filteredModels = useMemo(
@@ -640,12 +641,13 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
             modelItem,
             catalog: activeCatalog,
             lineConstraints,
-            upstreams: videoModeUpstreams.filter((source) => ['image', 'video', 'audio'].includes(source.materialType)),
+            upstreams: videoDisplayUpstreams.filter((source) => ['image', 'video', 'audio'].includes(source.materialType)),
+            parkedUpstreams: parkedVideoUpstreams,
             prompt: consumedFingerprint.prompt,
             autoOperationId: nodeData.autoOperationId,
           })
         : null,
-    [materialType, params, schema, modelItem, activeCatalog, lineConstraints, videoModeUpstreams, consumedFingerprint.prompt, nodeData.autoOperationId],
+    [materialType, params, schema, modelItem, activeCatalog, lineConstraints, videoDisplayUpstreams, parkedVideoUpstreams, consumedFingerprint.prompt, nodeData.autoOperationId],
   );
 
   // Issue #27: a JSON document's duration becomes the effective video duration
