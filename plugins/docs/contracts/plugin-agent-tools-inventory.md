@@ -192,7 +192,7 @@ related:
 | 获取工作区画布完整快照 (节点+边) | 画布加载与状态初始化 | `workflow_snapshot` | L1 | `Implemented` | 否 |
 | 创建新工作区与画布 | 新建工作区按钮 | `workflow_create` | L1 | `Implemented` | 否 |
 | 向画布添加物料/AI生成节点 | 左侧物料库拖拽入画布 | `workflow_node_add` | L1 | `Implemented` | 否 |
-| 更新指定节点的参数与配置 | 节点右侧属性面板 | `workflow_node_update` | L1 | `Implemented` | 否 |
+| 更新指定节点的参数与配置，交换有序双图参考槽内的两张图片（`patch.swap_reference_images`） | 节点右侧属性面板及双图参考槽换序 | `workflow_node_update` | L1 | `Implemented` | 否 |
 | 移除画布上的指定节点及其相连边 | 节点选中按 Delete 键 | `workflow_node_remove` | L1 | `Implemented` | 是 (`confirm: true`) |
 | 在两节点端口之间建立连接边 | 鼠标拖拽连线 | `workflow_connect` | L1 | `Implemented` | 否 |
 | 断开指定两节点之间的连线边 | 边右键删除 | `workflow_disconnect` | L1 | `Implemented` | 是 (`confirm: true`) |

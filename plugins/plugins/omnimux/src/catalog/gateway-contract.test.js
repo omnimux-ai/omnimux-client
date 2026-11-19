@@ -106,6 +106,41 @@ test('video/audio gateway contracts overlay without per-model YAML', () => {
   assert.equal(catalog.audio.some((row) => row.id === 'suno-sounds'), false)
 })
 
+test('Muse ordered reference slots keep the gateway minimum through catalog and submission', () => {
+  const catalog = buildModelCatalog({ env: {} })
+  assert.equal(catalog.gateway.source, 'bundled')
+  const model = catalog.models.find((row) => row.id === 'muse-video')
+  assert.deepEqual(model.operations.filter((operation) => operation.listed).map((operation) => operation.id), [
+    'text_to_video', 'first_frame', 'video_multi_ref',
+  ])
+  const operation = model.operations.find((entry) => entry.id === 'video_multi_ref')
+  const slot = operation.inputs.find((input) => input.slot === 'reference_images')
+  assert.equal(slot.min, 2)
+  assert.equal(slot.max, 2)
+  assert.equal(slot.role, 'reference')
+  assert.equal(slot.firstItemRole, 'first_frame')
+  assert.deepEqual(slot.allowedMimes, ['image/jpeg', 'image/png', 'image/webp'])
+
+  const { index } = getRuntimeContractIndex()
+  const urls = ['https://example.test/z.png', 'https://example.test/a.png']
+  const assets = urls.map((pathOrUrl) => ({ type: 'image', role: 'reference', pathOrUrl, mime: 'image/png' }))
+  const submit = (assets) => guardSubmit(
+    { model: model.id, operation: 'video_multi_ref', prompt: 'fixture', aspectRatio: '9:16', duration: 5, assets },
+    { index, seam: 'videoGenerate', capability: 'video', outputType: 'video' },
+  )
+  for (const insufficientAssets of [[], assets.slice(0, 1)]) {
+    assert.equal(submit(insufficientAssets).code, 'min_unsatisfied')
+  }
+  assert.equal(submit([...assets, { ...assets[0], pathOrUrl: 'https://example.test/extra.png' }]).code, 'slot_capacity')
+
+  const result = submit(assets)
+  assert.equal(result.ok, true, result.message)
+  assert.deepEqual(result.vendorPayload, {
+    prompt: 'fixture', operation: 'video_multi_ref', image_urls: urls,
+    aspect_ratio: '9:16', duration: 5, output_format: 'mp4',
+  })
+})
+
 test('the bundled snapshot carries the live 16-model membership, including Muse and excluding delisted rows', () => {
   const ids = snapshot.models.map((row) => row.id).sort()
   assert.equal(ids.length, 16)

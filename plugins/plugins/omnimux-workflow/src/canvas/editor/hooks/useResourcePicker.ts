@@ -152,6 +152,7 @@ export function useResourcePicker(nodeId: string, workspaceId?: string | null): 
       const plan = planResourcePickerCommit({
         nodes: state.nodes,
         edges: state.edges,
+        catalog: state.catalogRuntime,
         targetNodeId: nodeId,
         selectedCanvasNodeIds: payload.selectedCanvasNodeIds,
         localFiles: payload.localFiles,

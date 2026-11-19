@@ -40,6 +40,7 @@ export function deriveSlotLayout(
     ? { image: 'character', audio: 'driving_audio' } : {};
   layout.slots = ordered.map((input) => ({
     slot: input.slot, role: input.role, type: input.type, min: input.min, max: input.max,
+    ...(input.firstItemRole ? { firstItemRole: input.firstItemRole } : {}),
     labelKey: `panel.slot.${roleLabels[input.type] ?? input.slot}`,
     maxSizeMb: input.maxSizeMb, maxSizeExclusive: input.maxSizeExclusive,
     minDurationSec: input.minDurationSec, maxDurationSec: input.maxDurationSec,

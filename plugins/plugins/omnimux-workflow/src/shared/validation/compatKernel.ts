@@ -265,6 +265,12 @@ export interface ContractView {
   defaultsByOperation: Record<string, string>;
 }
 
+/** An ordered pair has one reference slot and gives its first item the first-frame role. */
+export function isOrderedReferencePair(slot: Pick<InputSlotDto, 'type' | 'role' | 'firstItemRole' | 'min' | 'max'>): boolean {
+  return slot.type === 'image' && slot.role === 'reference' && slot.firstItemRole === 'first_frame'
+    && slot.min === 2 && slot.max === 2;
+}
+
 function normalizeSlot(raw: unknown): InputSlotDto | null {
   if (!raw || typeof raw !== 'object') return null;
   const slot = raw as Record<string, unknown>;
@@ -273,6 +279,7 @@ function normalizeSlot(raw: unknown): InputSlotDto | null {
     slot: slot.slot,
     type: slot.type,
     role: typeof slot.role === 'string' ? slot.role : 'reference',
+    ...(typeof slot.firstItemRole === 'string' && slot.firstItemRole ? { firstItemRole: slot.firstItemRole } : {}),
     ...(typeof slot.source === 'string' ? { source: slot.source as InputSlotDto['source'] } : {}),
     ...(Array.isArray(slot.valueSources) ? { valueSources: slot.valueSources.filter((source): source is 'local_field' | 'upstream_output' => source === 'local_field' || source === 'upstream_output') } : {}),
     ...(slot.type === 'text' && slot.composition && typeof slot.composition === 'object'

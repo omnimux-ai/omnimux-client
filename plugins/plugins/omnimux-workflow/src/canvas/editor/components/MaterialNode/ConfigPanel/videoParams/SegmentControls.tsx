@@ -81,7 +81,7 @@ export function OperationSegment({
   const options: Array<CfgSegmentOption<string>> = effective.map((op) => ({
     value: op.id,
     // Issue #4103：与底栏摘要共用 resolveOperationLabel，禁止各自兜底成 id。
-    label: resolveOperationLabel({ id: op.id, label: op.label }, locale),
+    label: resolveOperationLabel(op, locale),
     // Epic #63 / R4：不可用的生成方式只呈现灰态，不携带任何解释性 title。
     disabled: op.disabled === true,
   }));

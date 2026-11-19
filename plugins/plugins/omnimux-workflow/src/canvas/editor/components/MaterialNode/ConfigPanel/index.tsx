@@ -95,7 +95,7 @@ import {
   type SlotLayout,
   type SlotSpec,
 } from '../../../../../shared/graph/feedSlot/index.ts';
-import { bindableSlots } from '../../../../../shared/validation/compatKernel.ts';
+import { bindableSlots, isOrderedReferencePair } from '../../../../../shared/validation/compatKernel.ts';
 import { buildInputCapability } from '../../../../../shared/validation/inputCapability.ts';
 import { findExecutionReadinessFailure } from '../../../../../shared/validation/executionReadiness.ts';
 import { prepareExecutionSlotGraph } from '../../../../../shared/graph/feedSlot/prepareExecutionSlotGraph.ts';
@@ -947,6 +947,14 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
     [patchSlotBindings, slotBindings],
   );
 
+  const handleSwapOrderedSlot = useCallback((slot: string, firstEdgeId: string, secondEdgeId: string) => {
+    const store = useCanvasStore.getState();
+    store.pushHistory(true);
+    const result = store.applyCanvasInputMutation({ orderedSlotSwap: { targetNodeId: nodeId, slot, firstEdgeId, secondEdgeId } });
+    if (result.status !== 'allowed') { toast.error(t(pickerReasonKey(result.reasonCode))); return; }
+    store.pushHistory(true);
+  }, [nodeId, t]);
+
   const handleSetUse = useCallback((slot: string, edgeId: string, use: 'active' | 'inactive') => {
     const store = useCanvasStore.getState();
     const live = store.nodes.find(node => node.id === nodeId);
@@ -1322,12 +1330,13 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
             <SlotWells
               layout={displayedSlotLayout}
               bindings={currentInputs ? slotBindings : inputDisplay.visibleBindings}
-               records={currentInputs ? inputDisplay.records : undefined}
-               onSetUse={currentInputs ? handleSetUse : undefined}
+              records={currentInputs || displayedSlotLayout.slots.some(isOrderedReferencePair) ? inputDisplay.records : undefined}
+              onSetUse={currentInputs ? handleSetUse : undefined}
               conflicts={slotConflicts}
               upstreams={upstreams}
               onPickSlot={handlePickSlot}
               onSwapSlots={handleSwapSlots}
+              onSwapOrderedSlot={handleSwapOrderedSlot}
               onClearOccupant={handleClearOccupant}
               onInsertToken={currentInputs ? undefined : handleInsertToken}
             />

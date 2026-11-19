@@ -88,7 +88,8 @@ function normalizeDuration(duration: number | string | undefined): string {
 function resolveModeText(params: EffectiveVideoParams, locale: OperationLabelLocale): string {
   if (!params.showModeUi) return '';
   return resolveOperationLabel(
-    { id: params.operation, label: params.operationLabel },
+    { id: params.operation, label: params.operationLabel,
+      slots: params.effectiveOperations?.find(option => option.id === params.operation)?.slots },
     locale,
   );
 }

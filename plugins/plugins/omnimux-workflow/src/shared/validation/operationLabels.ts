@@ -17,6 +17,9 @@
  * `summaryFormatter`（底栏摘要）共用它，禁止各自再写一份字典。
  */
 
+import type { InputSlotDto } from '../api.ts';
+import { isOrderedReferencePair } from './compatKernel.ts';
+
 export type OperationLabelLocale = 'zh' | 'en';
 
 /** operation id → 中英已审校名；与 operation-registry.json 一一对应。 */
@@ -48,6 +51,7 @@ export const OPERATION_LABELS: Readonly<Record<string, { zh: string; en: string 
 /** 解析入参：只需要 id；目录给的 label 作为「更具体」的候选优先。 */
 export interface OperationLabelSource {
   id?: string | null;
+  slots?: InputSlotDto[];
   /** Catalog DTO label（已审校目录给的名字；gateway-only 行为空）。 */
   label?: string | null;
 }
@@ -67,6 +71,9 @@ export function resolveOperationLabel(
 ): string {
   const source: OperationLabelSource = typeof input === 'string' ? { id: input } : (input ?? {});
   const id = typeof source.id === 'string' ? source.id.trim() : '';
+  if (id === 'video_multi_ref' && source.slots?.some(isOrderedReferencePair)) {
+    return locale === 'en' ? 'Two image references' : '双图参考';
+  }
   const label = typeof source.label === 'string' ? source.label.trim() : '';
   const entry = id ? OPERATION_LABELS[id] : undefined;
   if (label && label !== id) {

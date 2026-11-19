@@ -3,13 +3,18 @@ import type { CanvasInputMutationState, CanvasMutationRuntimeContext, CanvasNode
 import type { MaterialType } from '../canvasTypes.ts';
 import type { MaterialNodeData } from './materialNode.ts';
 import { readCanvasParams } from './canvasInputSources.ts';
-import { buildContractView, buildUpstreamFingerprint, isMediaInputType, matchOperationInputs, planAutoAdaptation, resolveModelView } from '../validation/compatKernel.ts';
+import { buildContractView, buildUpstreamFingerprint, isMediaInputType, isOrderedReferencePair, matchOperationInputs, planAutoAdaptation, resolveModelView } from '../validation/compatKernel.ts';
 import { buildInputCapability } from '../validation/inputCapability.ts';
-import { autoFillSlots, deriveSlotLayout, hydrateSlotBindings, type SlotBindings, type SlotConflict, type SlotOccupant } from './feedSlot/index.ts';
+import { autoFillSlots, deriveSlotLayout, hydrateSlotBindings, type SlotBindings, type SlotConflict, type SlotOccupant, type SlotSpec } from './feedSlot/index.ts';
 import { effectiveSlotFingerprint, feedFromFingerprint } from './feedSlot/effectiveFingerprint.ts';
+import { effectiveInputDisplay } from './feedSlot/effectiveInputDisplay.ts';
 import { projectCanvasInputSources } from './feedSlot/legacyH3Slots.ts';
 import { resolveSlotOperation } from './feedSlot/resolveSlotOperation.ts';
 import { narrowCatalogByRouting } from '../validation/lineConstraints.ts';
+
+function isSingleStartImage(slot: SlotSpec): boolean {
+  return slot.type === 'image' && slot.role === 'first_frame' && slot.max === 1;
+}
 
 /** Initialize unspecified choices only; supply changes cannot replace a saved creative choice. */
 export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutationState, context: CanvasMutationRuntimeContext, previous?: CanvasNode, newEdgeIds = new Set<string>()): CanvasNode {
@@ -105,13 +110,36 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
     && node.data.slotBindings === previous?.data.slotBindings ? cached : undefined;
   const standbyIds = Array.isArray(node.data.slotStandbyEdgeIds) ? node.data.slotStandbyEdgeIds.filter((id): id is string => typeof id === 'string') : [];
   const excludedOnRestore = restoring && model?.id === 'minimax-h3-video' ? new Set(standbyIds) : undefined;
-  const storedConflicts = restoring ? restoring.conflicts?.filter(conflict => !excludedOnRestore?.has(conflict.occupant.edgeId))
+  let storedConflicts = restoring ? restoring.conflicts?.filter(conflict => !excludedOnRestore?.has(conflict.occupant.edgeId))
     : node.data.slotConflicts as SlotConflict[] | undefined;
   let explicit = plainSpeech ? {} : restoring?.bindings ?? node.data.slotBindings as SlotBindings | undefined;
   if (!currentVersion && outputType === 'text' && explicit && Object.keys(explicit).length === 0 && (!node.data.slotStandbyEdgeIds || (node.data.slotStandbyEdgeIds as unknown[]).length === 0)) {
     explicit = undefined;
   }
   const modeChanged = previous && (priorParams.operation !== params.operation || priorParams.model !== params.model);
+  let transferredStartSlot: string | undefined;
+  if (!currentVersion && sameModel && modeChanged && autoOperationId === null && params.operation === savedOperation
+    && typeof priorParams.operation === 'string') {
+    const priorCatalog = narrowCatalogByRouting(context.catalog, priorParams.model, priorParams.routing);
+    const priorLayout = deriveSlotLayout(priorCatalog, model.id, priorParams.operation);
+    const priorPair = priorLayout.slots.find(isOrderedReferencePair);
+    const nextPair = layout.slots.find(isOrderedReferencePair);
+    const from = priorPair ?? (nextPair ? priorLayout.slots.find(isSingleStartImage) : undefined);
+    const to = nextPair ?? (priorPair ? layout.slots.find(isSingleStartImage) : undefined);
+    if (from && to && Boolean(priorPair) !== Boolean(nextPair)) {
+      const loaded = effectiveInputDisplay(priorLayout, feed, explicit, storedConflicts,
+        graph.edges.filter(edge => edge.target === node.id), standbyIds);
+      const start = loaded.selected.find(record => record.slot.slot === from.slot);
+      const rest = { ...explicit };
+      delete rest[from.slot];
+      if (start && !rest[to.slot]?.length) {
+        rest[to.slot] = [{ ...start.occupant, role: to.role, pinned: true, ordinal: 0 }];
+        transferredStartSlot = to.slot;
+      }
+      explicit = rest;
+      storedConflicts = storedConflicts?.filter(conflict => conflict.slot !== from.slot);
+    }
+  }
   const verifiedH3Lip = selectableBeforeInputs && model?.id === 'minimax-h3-video' && params.operation === 'digital_human';
   // A return to a previously configured mode is an explicit user edit. Freeze exactly its
   // earlier choices so subsequent legacy auto-fill cannot substitute other connected media.
@@ -213,6 +241,10 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
     ? (filledAnything ? selfHealed!
       : renormalized ?? { bindings: explicit ?? {}, conflicts: storedConflicts ?? [] })
     : explicit ? autoFillSlots(feed, layout, explicit, standbyIds) : hydrateSlotBindings(feed, layout, graph.edges.filter((edge) => edge.target === node.id), standbyIds);
+  if (transferredStartSlot && fill.bindings[transferredStartSlot]) {
+    // The transferred start image is first in the new slot, regardless of when its edge was drawn.
+    fill.bindings[transferredStartSlot] = fill.bindings[transferredStartSlot]!.map((occupant, ordinal) => ({ ...occupant, ordinal }));
+  }
   const fingerprint = effectiveSlotFingerprint(raw, layout, fill.bindings, fill.conflicts, currentVersion || upgradeRestored ? 1 : undefined);
   const match = operation && permitted ? matchOperationInputs(operation, fingerprint) : undefined;
   const reasonCodes = !view.available ? ['catalog_unavailable'] : !permitted ? ['not_listed'] : !model ? ['unknown_model']

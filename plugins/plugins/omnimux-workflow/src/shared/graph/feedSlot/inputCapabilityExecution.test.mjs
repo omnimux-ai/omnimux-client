@@ -14,6 +14,8 @@ import { projectCanvasCatalog } from '../../generationPolicy.ts';
 import { prepareExecutionSlotGraph } from './prepareExecutionSlotGraph.ts';
 import { recomputeCanvasSlots } from '../canvasSlotRecompute.ts';
 import { planCanvasInputMutation } from '../canvasInputMutationGateway.ts';
+import { findExecutionReadinessFailure } from '../../validation/executionReadiness.ts';
+import { deriveSlotLayout } from './deriveSlotLayout.ts';
 import { createMaterialGatewayExecutor } from '../../../workflow/execution/materialGatewayExecutor.ts';
 import { registerExecutor } from '../../../workflow/executors/registry.ts';
 
@@ -45,11 +47,11 @@ const targetNode = (params) => ({
 
 const edge = (source, extra = {}) => ({ id: `edge-${source}`, source, target: 'target', data: { feedType: 'image', ...extra } });
 
-function gateway() {
+function gateway(capabilities = catalog) {
   const requests = [];
   return {
     requests,
-    capabilities: async () => catalog,
+    capabilities: async () => capabilities,
     submit: async (request) => { requests.push(request); return { taskId: 'captured' }; },
     awaitTask: async () => ({ type: 'video', url: 'https://example.test/out.mp4' }),
   };
@@ -204,4 +206,91 @@ test('explicit video_multi_ref choice with two images survives video removal', (
   const result = recomputeCanvasSlots(target, { nodes, edges }, { catalog });
   assert.equal(result.data.params.operation, 'video_multi_ref');
   assert.equal(result.data.autoOperationId, null);
+});
+
+// The bundled floor predates gateway #54, so overlay its ordered pair input.
+const museOrderedCatalog = { ...catalog, models: catalog.models.map(model => model.id === 'muse-video' ? {
+  ...model,
+  operations: [...model.operations, {
+    ...model.operations.find(operation => operation.id === 'text_to_video'),
+    id: 'video_multi_ref',
+    inputs: [
+      ...model.operations.find(operation => operation.id === 'text_to_video').inputs,
+      { slot: 'reference_images', type: 'image', role: 'reference', firstItemRole: 'first_frame', source: 'upstream_edge', min: 2, max: 2 },
+    ],
+  }],
+} : model) };
+
+test('Muse keeps an explicit ordered pair mode through missing inputs, swap, and execution reload', async () => {
+  const contract = museOrderedCatalog;
+  const context = { catalog: contract };
+  const target = targetNode({ model: 'muse-video', operation: 'first_frame', aspectRatio: 'adaptive', duration: 5 });
+  target.data.autoOperationId = null;
+  target.data.slotBindings = { first_frame: [{ sourceNodeId: 'img-1', edgeId: 'edge-img-1', pinned: false }] };
+  const findTarget = (snapshot) => snapshot.nodes.find(node => node.id === 'target');
+  const original = { nodes: [importNode('img-1', 'image'), importNode('img-2', 'image'), target], edges: [edge('img-1'), edge('img-2')] };
+  const legacy = findTarget(prepareExecutionSlotGraph(original.nodes, original.edges, contract));
+  assert.equal(legacy.data.params.operation, 'first_frame');
+  assert.deepEqual(legacy.data.slotBindings.first_frame.map(({ edgeId }) => edgeId), ['edge-img-1']);
+  target.data.inputBindingVersion = 1;
+
+  const plan = planCanvasInputMutation(original, { nodePatches: [{ nodeId: 'target', data: {
+    params: { ...target.data.params, operation: 'video_multi_ref', aspectRatio: '16:9' }, autoOperationId: null,
+  } }] }, context);
+  assert.equal(plan.status, 'allowed');
+  assert.equal(findTarget(plan).data.params.operation, 'video_multi_ref');
+  assert.equal(deriveSlotLayout(contract, 'muse-video', 'video_multi_ref').slots.find(slot => slot.slot === 'reference_images').firstItemRole, 'first_frame');
+
+  const missingSecond = planCanvasInputMutation(plan, { removeEdgeIds: ['edge-img-2'] }, context);
+  assert.equal(missingSecond.status, 'allowed');
+  const incomplete = prepareExecutionSlotGraph(missingSecond.nodes, missingSecond.edges, contract);
+  assert.equal(findTarget(incomplete).data.params.operation, 'video_multi_ref');
+  assert.equal(findExecutionReadinessFailure([findTarget(incomplete)], contract, incomplete)?.reasonCode, 'min_unsatisfied');
+
+  const restored = planCanvasInputMutation(missingSecond, { addEdges: [edge('img-2')] }, context);
+  assert.equal(restored.status, 'allowed');
+  assert.equal(findExecutionReadinessFailure([findTarget(restored)], contract, restored), null);
+  const mutation = { orderedSlotSwap: {
+    targetNodeId: 'target', slot: 'reference_images', firstEdgeId: 'edge-img-1', secondEdgeId: 'edge-img-2',
+  } };
+  const swapped = planCanvasInputMutation(restored, mutation, context);
+  assert.equal(swapped.status, 'allowed');
+  assert.equal(planCanvasInputMutation(swapped, mutation, context).reasonCode, 'input_changed');
+  const reopened = JSON.parse(JSON.stringify(swapped));
+  const prepared = prepareExecutionSlotGraph(reopened.nodes, reopened.edges, contract);
+  const gw = gateway(contract);
+  await dispatch(prepared, gw);
+  assert.equal(gw.requests[0].operation, 'video_multi_ref');
+  assert.deepEqual(gw.requests[0].references?.map(({ sourceNodeId, role }) => [sourceNodeId, role]), [
+    ['img-2', 'reference'], ['img-1', 'reference'],
+  ]);
+});
+
+test('Muse legacy mode changes carry the chosen start image between single and ordered pair slots', () => {
+  const context = { catalog: museOrderedCatalog };
+  const target = targetNode({ model: 'muse-video', operation: 'first_frame', aspectRatio: 'adaptive', duration: 5 });
+  target.data.autoOperationId = null;
+  target.data.slotBindings = { first_frame: [{ sourceNodeId: 'img-1', edgeId: 'edge-img-1', role: 'first_frame', pinned: true }] };
+  const graph = { nodes: [importNode('img-1', 'image'), importNode('img-2', 'image'), target], edges: [edge('img-2'), edge('img-1')] };
+  const data = state => state.nodes.find(node => node.id === 'target').data;
+  const changeMode = (state, operation, aspectRatio) => planCanvasInputMutation(state, { nodePatches: [{
+    nodeId: 'target', data: { params: { ...data(state).params, operation, aspectRatio }, autoOperationId: null },
+  }] }, context);
+
+  const dual = changeMode(graph, 'video_multi_ref', '16:9');
+  assert.equal(dual.status, 'allowed');
+  assert.equal(data(dual).inputBindingVersion, undefined);
+  assert.deepEqual(data(dual).slotBindings.reference_images.map(item => item.sourceNodeId), ['img-1', 'img-2']);
+  assert.deepEqual(data(dual).slotConflicts, []);
+  const swapped = planCanvasInputMutation(dual, { orderedSlotSwap: {
+    targetNodeId: 'target', slot: 'reference_images', firstEdgeId: 'edge-img-1', secondEdgeId: 'edge-img-2',
+  } }, context);
+  assert.equal(swapped.status, 'allowed');
+
+  const single = changeMode(swapped, 'first_frame', 'adaptive');
+  assert.equal(single.status, 'allowed');
+  assert.equal(data(single).params.operation, 'first_frame');
+  assert.equal(data(single).inputBindingVersion, undefined);
+  assert.deepEqual(data(single).slotBindings.first_frame.map(item => item.sourceNodeId), ['img-2']);
+  assert.deepEqual(data(single).slotConflicts, []);
 });

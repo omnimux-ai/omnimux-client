@@ -14,8 +14,11 @@ import { planCanvasInputSelection, validateCanvasInputSelection } from '../../..
 import { readNodeInputSource } from '../../../shared/graph/nodeInputSource.ts';
 import { deriveSlotLayout } from '../../../shared/graph/feedSlot/deriveSlotLayout.ts';
 import { resolveSlotOperation } from '../../../shared/graph/feedSlot/resolveSlotOperation.ts';
-import { buildCanvasUpstreamFingerprint } from '../../../shared/graph/canvasInputSources.ts';
+import { resolveSlotOccupantOrdinal } from '../../../shared/graph/feedSlot/assembleEffectiveInputs.ts';
+import { feedFromFingerprint } from '../../../shared/graph/feedSlot/effectiveFingerprint.ts';
+import { buildCanvasUpstreamFingerprint, readCanvasParams } from '../../../shared/graph/canvasInputSources.ts';
 import { narrowCatalogByRouting } from '../../../shared/validation/lineConstraints.ts';
+import { isOrderedReferencePair } from '../../../shared/validation/compatKernel.ts';
 import type {
   CanvasInputSelectionRequest,
   CanvasInputSelectionVerdict,
@@ -105,6 +108,7 @@ export type ImportFileDraft = LocalFileDraft | ProjectFileDraft;
 export interface ResourcePickerCommitInput {
   nodes: CanvasNode[];
   edges: Edge[];
+  catalog?: CanvasMutationRuntimeContext['catalog'];
   targetNodeId: string;
   selectedCanvasNodeIds: string[];
   localFiles: LocalFileDraft[];
@@ -463,6 +467,17 @@ function edgeDraft(source: string, target: string, targetSlot?: string) {
   };
 }
 
+function orderedSlotFeed(input: ResourcePickerCommitInput, target: CanvasNode, slot: string | undefined) {
+  if (!slot) return undefined;
+  const params = readCanvasParams(target);
+  const catalog = narrowCatalogByRouting(input.catalog, params.model, params.routing);
+  const layout = deriveSlotLayout(catalog, typeof params.model === 'string' ? params.model : undefined,
+    typeof params.operation === 'string' ? params.operation : undefined);
+  if (!layout.slots.some(spec => spec.slot === slot && isOrderedReferencePair(spec))) return undefined;
+  return new Map(feedFromFingerprint(buildCanvasUpstreamFingerprint(target.id, input.nodes, input.edges))
+    .map(asset => [asset.edgeId, asset]));
+}
+
 /** 装填 pinned 占用进 slotBindings：max 1 替换；上限内追加；超限替换末位。 */
 function pinOccupantInto(
   bindings: SlotBindings | undefined,
@@ -730,9 +745,31 @@ export function planResourcePickerCommit(input: ResourcePickerCommitInput): Reso
 
   const existing = incomingSourceIds(input.edges, input.targetNodeId);
   const seenSources = new Set<string>(existing);
-  // 已连入但未被消费的供给：直接装填（pinned 进目标 slot），不重复连线。
+  const orderedFeed = orderedSlotFeed(input, target, targetSlot);
+  const savedBindings = nodeData(target).slotBindings as SlotBindings | undefined;
   let pinnedBindings: SlotBindings | undefined;
-  let pinned = false;
+  function pinSupply(slot: string, occupant: SlotOccupant) {
+    let bindings = pinnedBindings ?? savedBindings;
+    if (orderedFeed) {
+      const occupants = (bindings?.[slot] ?? []).map(item => ({
+        ...item, ordinal: resolveSlotOccupantOrdinal(item, orderedFeed.get(item.edgeId)),
+      }));
+      bindings = { ...bindings, [slot]: occupants };
+      occupant.ordinal = occupants.reduce((max, item) => Math.max(max, item.ordinal), -1) + 1;
+    }
+    pinnedBindings = pinOccupantInto(bindings, slot, occupant, input.slotMax);
+  }
+  function addSupply(sourceNodeId: string) {
+    const draft = edgeDraft(sourceNodeId, input.targetNodeId, orderedFeed ? undefined : targetSlot);
+    if (orderedFeed && targetSlot) {
+      // Persist placement by edge ID; a legacy slot hint can only append by connection order.
+      const edge = normalizeCanvasEdge(draft);
+      addEdges.push(edge);
+      pinSupply(targetSlot, { sourceNodeId, edgeId: edge.id, pinned: true });
+    } else {
+      addEdges.push(draft);
+    }
+  }
 
   for (const nodeId of input.selectedCanvasNodeIds) {
     if (nodeId === input.targetNodeId) {
@@ -752,13 +789,7 @@ export function planResourcePickerCommit(input: ResourcePickerCommitInput): Reso
       if (targetSlot && existing.has(nodeId)) {
         const edge = input.edges.find((item) => item.target === input.targetNodeId && item.source === nodeId);
         if (edge) {
-          pinnedBindings = pinOccupantInto(
-            pinnedBindings ?? (nodeData(target).slotBindings as SlotBindings | undefined),
-            targetSlot,
-            { sourceNodeId: nodeId, edgeId: edge.id, pinned: true },
-            input.slotMax,
-          );
-          pinned = true;
+          pinSupply(targetSlot, { sourceNodeId: nodeId, edgeId: edge.id, pinned: true });
           continue;
         }
       }
@@ -769,7 +800,7 @@ export function planResourcePickerCommit(input: ResourcePickerCommitInput): Reso
       rejected.push({ id: nodeId, reason: 'type_contract' });
       continue;
     }
-    addEdges.push(edgeDraft(nodeId, input.targetNodeId, targetSlot));
+    addSupply(nodeId);
     seenSources.add(nodeId);
   }
 
@@ -796,12 +827,12 @@ export function planResourcePickerCommit(input: ResourcePickerCommitInput): Reso
       continue;
     }
     addNodes.push(node);
-    addEdges.push(edgeDraft(node.id, input.targetNodeId, targetSlot));
+    addSupply(node.id);
     seenSources.add(node.id);
     upstreamIndex += 1;
   }
 
-  const nodePatches: CanvasInputNodePatch[] | undefined = pinned && pinnedBindings
+  const nodePatches: CanvasInputNodePatch[] | undefined = pinnedBindings
     ? [{ nodeId: input.targetNodeId, data: { slotBindings: pinnedBindings } }]
     : undefined;
   const hasWork = addNodes.length > 0 || addEdges.length > 0 || Boolean(nodePatches);
@@ -843,9 +874,12 @@ function planNamedOccupantReplacement(input: ResourcePickerCommitInput): Resourc
   const newEdges = plan.addEdges?.map(normalizeCanvasEdge);
   const edge = existingEdge ?? newEdges?.[0];
   if (!edge) return { hasWork: false, rejected: [{ id: source.id, reason: 'missing' }] };
-  const next = occupants.map((item, position) => position === index
-    ? { sourceNodeId: source.id, edgeId: edge.id, pinned: true }
-    : { ...item, pinned: true });
+  const feed = orderedSlotFeed(input, target, slot);
+  const next = occupants.map((item, position) => ({
+    ...(position === index ? { sourceNodeId: source.id, edgeId: edge.id } : item),
+    ...(feed ? { ordinal: resolveSlotOccupantOrdinal(item, feed.get(item.edgeId)) } : {}),
+    pinned: true,
+  }));
   return { hasWork: true, rejected: [], addNodes: plan.addNodes, addEdges: newEdges,
     nodePatches: [{ nodeId: target.id, data: { slotBindings: { ...bindings, [slot]: next },
       slotStandbyEdgeIds: [...new Set([

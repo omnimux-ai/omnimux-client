@@ -5,7 +5,7 @@ import { effectiveInputDisplay } from './effectiveInputDisplay.ts';
 import { buildUpstreamFingerprint } from '../../validation/compatKernel.ts';
 import { effectiveSlotFingerprint } from './effectiveFingerprint.ts';
 import { createMaterialNode } from '../nodeFactory.ts';
-import { planCanvasInputMutation } from '../canvasInputMutationGateway.ts';
+import { planCanvasInputMutation, planCanvasInputSelection, validateCanvasInputSelection } from '../canvasInputMutationGateway.ts';
 
 const input = (slot, type, role, min = 1, max = 1) => ({ slot, type, role, min, max, source: 'upstream_edge' });
 const catalog = { models: [{ id: 'video', operations: [
@@ -22,7 +22,6 @@ const occupant = (asset, pinned = true) => ({ edgeId: asset.edgeId, sourceNodeId
 const assemble = (l, assets, bindings) => assembleEffectiveInputsFromSlots({ layout: l, bindings, feedAssets: assets, conflicts: [], nodeData: {}, incomingText: [] });
 
 test('selection callback adds supply and explicit text binding together, replaces in place and refuses stale output', async () => {
-  const { planCanvasInputSelection } = await import('../canvasInputMutationGateway.ts');
   const qualified = { models: [{ id: 'qualified', operations: [{ id: 'chat', listed: true, output: { type: 'text' }, inputs: [
     { slot: 'prompt', type: 'text', role: 'prompt', source: 'node_field', min: 1, max: 1, valueSources: ['local_field', 'upstream_output'],
       composition: { kind: 'content_with_instruction', localRole: 'instruction' } }], }, { id: 'vision_chat', listed: true, output: { type: 'text' }, inputs: [input('images', 'image', 'reference', 0, 1)] }] }] };
@@ -45,6 +44,44 @@ test('selection callback adds supply and explicit text binding together, replace
   assert.equal(disabled.status, 'allowed'); assert.equal(disabled.edges.length, 1);
   assert.equal(disabled.nodes.find(node => node.id === target.id).data.slotBindings.prompt[0].use, 'inactive');
   assert.deepEqual(graph, before);
+});
+
+test('ordered image picker appends after an implicit first frame and replaces either image in place', () => {
+  const orderedCatalog = { models: [{ id: 'ordered-video', operations: [{
+    id: 'video_multi_ref', listed: true, output: { type: 'video' },
+    inputs: [{ ...input('reference', 'image', 'reference', 2, 2), firstItemRole: 'first_frame' }],
+  }] }] };
+  const context = { catalog: orderedCatalog };
+  const image = id => ({ id, type: 'material', data: { materialType: 'image', nodeKind: 'import', mediaUrl: `https://fixture.test/${id}.png` } });
+  const text = { id: 'text', type: 'material', data: { materialType: 'text', nodeKind: 'import', content: 'Upstream prompt' } };
+  const bind = id => ({ sourceNodeId: id, edgeId: `e-${id}`, pinned: false });
+  const edge = id => ({ id: `e-${id}`, source: id, target: 'target' });
+  const target = {
+    id: 'target', type: 'material', data: { materialType: 'video', nodeKind: 'generate', inputBindingVersion: 1,
+      params: { model: 'ordered-video', operation: 'video_multi_ref' }, autoOperationId: null,
+      slotBindings: { reference: [bind('a')] } },
+  };
+  const sources = [text, image('a'), image('b'), image('c')];
+  const oneImage = { nodes: [...sources, target], edges: [edge('text'), edge('a')] };
+  const intent = { targetNodeId: target.id, chosenOperationId: 'video_multi_ref' };
+  const pick = (graph, id, replacement = {}) => planCanvasInputSelection(graph, {
+    ...intent, ...replacement, selections: [{ sourceNodeId: id, outputId: `https://fixture.test/${id}.png`, targetSlot: 'reference' }],
+  }, context);
+  const imageOrder = graph => validateCanvasInputSelection(graph, intent, context).records
+    .filter(record => record.state === 'ready').map(record => record.occupant.sourceNodeId);
+  const added = pick(oneImage, 'b');
+  assert.equal(added.status, 'allowed');
+  assert.deepEqual(imageOrder(added), ['a', 'b']);
+
+  const twoImages = { nodes: [...sources, { ...target, data: { ...target.data, slotBindings: { reference: [bind('a'), bind('b')] } } }],
+    edges: [...oneImage.edges, edge('b')] };
+  const replaceSecond = pick(twoImages, 'c', { replaceEdgeId: 'e-b' });
+  assert.equal(replaceSecond.status, 'allowed');
+  assert.deepEqual(imageOrder(replaceSecond), ['a', 'c']);
+  const replaceFirst = pick(twoImages, 'c', { replaceEdgeId: 'e-a' });
+  assert.equal(replaceFirst.status, 'allowed');
+  assert.deepEqual(imageOrder(replaceFirst), ['c', 'b']);
+  assert.deepEqual(twoImages.nodes.at(-1).data.slotBindings.reference, [bind('a'), bind('b')]);
 });
 
 test('strict current selection rejects the full over-capacity set atomically and validates reactivation', async () => {

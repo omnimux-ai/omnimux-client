@@ -1,6 +1,6 @@
 /**
  * Structural write / control agent tools.
- * Names, descriptions and JSON schemas are unchanged from the monolith.
+ * Mutations use the same graph validation as the canvas.
  */
 
 import { resolveTableAbsPath, TablePathError } from '../storage/tablePath.ts';
@@ -115,6 +115,37 @@ function parseNodePatch(
   return {
     data,
     ...(position !== undefined ? { position: position as { x: number; y: number } } : {}),
+  };
+}
+
+function parseNodeMutation(
+  nodeId: string,
+  node: { data?: Record<string, unknown> },
+  spec: Record<string, unknown>,
+): CanvasInputMutation | { error: string; message: string } {
+  if ('swap_reference_images' in spec) {
+    const swap = spec.swap_reference_images;
+    if (Object.keys(spec).length !== 1 || !swap || typeof swap !== 'object' || Array.isArray(swap)) {
+      return errorBody('invalid-args', 'patch.swap_reference_images must be the only patch field and must be an object');
+    }
+    const fields = swap as Record<string, unknown>;
+    const slot = readString(fields, 'slot');
+    const firstEdgeId = readString(fields, 'first_edge_id');
+    const secondEdgeId = readString(fields, 'second_edge_id');
+    if (Object.keys(fields).length !== 3 || !slot || !firstEdgeId || !secondEdgeId || firstEdgeId === secondEdgeId) {
+      return errorBody('invalid-args', 'patch.swap_reference_images requires slot and distinct first_edge_id and second_edge_id');
+    }
+    return { orderedSlotSwap: { targetNodeId: nodeId, slot, firstEdgeId, secondEdgeId } };
+  }
+
+  const parsed = parseNodePatch(nodeId, node, spec);
+  if ('error' in parsed) return parsed;
+  return {
+    nodePatches: [{
+      nodeId,
+      data: parsed.data,
+      ...(parsed.position !== undefined ? { node: { position: parsed.position } } : {}),
+    }],
   };
 }
 
@@ -235,7 +266,7 @@ export function createWorkflowNodeUpdateTool(deps: WorkflowAgentDeps): AgentTool
   return {
     name: 'workflow_node_update',
     description:
-      'Patch one node on the current or specified workflow canvas: label / prompt / content / tool / params / position (all optional, shallow-merged into the node). For text nodes, content can be set to directly edit manual text content. Omit workspace_id to use the ui_context current canvas. tool must be valid for the node\'s material_type. Changing tool never invalidates existing edges (edge validation uses the union of all tools of the material type), but it changes what the node does on the next workflow_run. material_type and media output content fields cannot be changed — remove and re-add the node instead.',
+      'Patch one node on the current or specified workflow canvas: label / prompt / content / tool / params / position (all optional, shallow-merged into the node). As a separate edit, swap_reference_images exchanges the two images in an ordered reference slot if the current edge order matches. For text nodes, content can be set to directly edit manual text content. Omit workspace_id to use the ui_context current canvas. tool must be valid for the node\'s material_type. Changing tool never invalidates existing edges (edge validation uses the union of all tools of the material type), but it changes what the node does on the next workflow_run. material_type and media output content fields cannot be changed — remove and re-add the node instead.',
     parameters: objectParams({
       workspace_id: { type: 'string', description: WORKSPACE_ID_PARAM_DESC },
       node_id: { type: 'string', required: true, description: 'Node id (from workflow_snapshot include_nodes=true)' },
@@ -256,6 +287,17 @@ export function createWorkflowNodeUpdateTool(deps: WorkflowAgentDeps): AgentTool
             properties: { x: { type: 'number' }, y: { type: 'number' } },
             required: ['x', 'y'],
             additionalProperties: false,
+          },
+          swap_reference_images: {
+            type: 'object',
+            properties: {
+              slot: { type: 'string', description: 'Ordered reference-image slot from the current node' },
+              first_edge_id: { type: 'string', description: 'Current first image edge ID' },
+              second_edge_id: { type: 'string', description: 'Current second image edge ID' },
+            },
+            required: ['slot', 'first_edge_id', 'second_edge_id'],
+            additionalProperties: false,
+            description: 'Exchange two ready images in an ordered reference slot. Read workflow_snapshot with include_nodes=true first. Send as the only patch field. If the order changed, refresh before retrying.',
           },
         },
         additionalProperties: false,
@@ -286,18 +328,15 @@ export function createWorkflowNodeUpdateTool(deps: WorkflowAgentDeps): AgentTool
         const node = snapshot.nodes.find((row) => row.id === nodeId);
         if (!node) return errorBody('node-not-found', `node ${nodeId} not found in workspace ${workspaceId}`);
 
-        const parsed = parseNodePatch(nodeId, node, patch as Record<string, unknown>);
-        if ('error' in parsed) return parsed;
-
-        const mutation: CanvasInputMutation = {
-          nodePatches: [{
-            nodeId,
-            data: parsed.data,
-            ...(parsed.position !== undefined ? { node: { position: parsed.position } } : {}),
-          }],
-        };
+        const mutation = parseNodeMutation(nodeId, node, patch as Record<string, unknown>);
+        if ('error' in mutation) return mutation;
         const result = mutateWorkspaceGraph(store, workspaceId, mutation, mutationContext(deps));
-        if (!result.ok) return errorBody(result.error, result.message);
+        if (!result.ok) {
+          return {
+            ...errorBody(result.error, result.message),
+            ...(mutation.orderedSlotSwap && result.reasonCode ? { reasonCode: result.reasonCode } : {}),
+          };
+        }
         return {
           workspace: workspaceSummary(result.snapshot),
           node: result.snapshot.nodes.find((row) => row.id === nodeId),

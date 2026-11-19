@@ -1657,6 +1657,22 @@ body[data-ds-dark-theme] .wf-canvas-root .wf-gsc__loading-overlay {
   transition: border-color 150ms ease, background 150ms ease;
 }
 
+.wf-slot-well__position {
+  position: absolute;
+  inset: auto 1px 1px;
+  padding: 1px 2px;
+  border-radius: 0 0 7px 7px;
+  background: var(--dsw-alias-bg-secondary, var(--wb-surface));
+  color: var(--dsw-alias-label-primary, var(--wb-text-primary));
+  font-size: 9px;
+  line-height: 12px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
 .wf-slot-well--filled {
   width: 44px;
   height: 44px;
