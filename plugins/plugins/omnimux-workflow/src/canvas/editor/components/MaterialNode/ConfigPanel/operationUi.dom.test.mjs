@@ -37,9 +37,10 @@ test('ConfigPanel 消费 buildFilteredModelOptions / buildEffectiveOpsUiState（
   assert.match(configSrc, /buildFilteredModelOptions/);
   assert.match(configSrc, /buildEffectiveOpsUiState/);
   assert.match(configSrc, /setParamsOperation/);
-  // Epic #63 R10：媒体不兼容的模型保留在列表并灰态，其他兼容行不置灰。
+  // #88：模型的可选范围按目录。重新分配素材发生在选定模型后。
   assert.match(configSrc, /inputIncompatible/);
-  assert.match(configSrc, /includeInputIncompatible: materialType === 'video'/);
+  assert.match(configSrc, /allowUnassignedInputs: true/);
+  assert.doesNotMatch(configSrc, /includeInputIncompatible: materialType === 'video'/);
   assert.match(configSrc, /zeroCandidates|wf-model-empty/);
   // 不再 evaluateModelCompatibility 驱动 disabled 长列表
   assert.doesNotMatch(configSrc, /evaluateModelCompatibility/);

@@ -14,13 +14,15 @@ import {
   planResourcePickerCommit,
   planPickerSelectionMutation,
   pickerReasonKey,
+  resourcePickerContextKey,
+  validatesNamedPickerSelection,
   type LocalFileDraft,
   type ResourcePickerTab,
   type ResourcePickerMode,
 } from '../utils/resourcePickerPolicy.ts';
 import { draftsFromPickedPaths } from '../utils/localFileDraft.ts';
 import { buildImportedMediaData } from '../../../shared/localMedia.ts';
-import { setParamsOperation } from '../../../shared/validation/operationUi.ts';
+import { readNodeInputSource } from '../../../shared/graph/nodeInputSource.ts';
 import type { MaterialType } from '../../../shared/graph/materialNode.ts';
 import type { NodeSlotEngineState } from '../../../shared/graph/slotContractTypes.ts';
 
@@ -32,10 +34,9 @@ export interface ResourcePickerSlotTarget {
   /** 槽位上限；null 表示官方未公布上限。 */
   max: number | null;
   replaceEdgeId?: string;
+  contextKey?: string;
   openerAnchor?: HTMLElement;
   onReturnFocus?: (anchor: HTMLElement) => void;
-  /** 借出型展示槽位：提交前须先把节点 operation 切到该 op。 */
-  displayOnlyFromOperation?: string;
 }
 
 export interface UseResourcePickerResult {
@@ -89,13 +90,17 @@ export function useResourcePicker(nodeId: string, workspaceId?: string | null): 
         setSlotTarget(null);
         setTargetSlotIndex(slotIdx);
       } else {
+        const state = useCanvasStore.getState();
         setMode(target?.replaceEdgeId ? 'replace' : 'add');
-        setSlotTarget(target);
+        setSlotTarget(target ? {
+          ...target,
+          contextKey: resourcePickerContextKey(state.nodes.find(node => node.id === nodeId), { catalog: state.catalogRuntime }),
+        } : null);
         setTargetSlotIndex(slotIdx);
       }
       setOpen(true);
     },
-    [guard],
+    [guard, nodeId],
   );
 
   const closePicker = useCallback(() => {
@@ -122,10 +127,28 @@ export function useResourcePicker(nodeId: string, workspaceId?: string | null): 
       const commitMode = payload.mode ?? mode;
       const commitSlotIndex = payload.targetSlotIndex ?? targetSlotIndex;
       const targetNode = state.nodes.find((n) => n.id === nodeId);
+      const context = { catalog: state.catalogRuntime };
+      if (slotTarget?.contextKey && slotTarget.contextKey !== resourcePickerContextKey(targetNode, context)) {
+        toast.error(t(pickerReasonKey('input_changed')));
+        return false;
+      }
       const slotState = targetNode?.data?.slotState as NodeSlotEngineState | undefined;
+      const pickerInput = {
+        nodes: state.nodes, edges: state.edges, catalog: context.catalog, targetNodeId: nodeId,
+        selectedCanvasNodeIds: payload.selectedCanvasNodeIds, localFiles: payload.localFiles,
+        targetSlot: slotTarget?.slot, acceptedTypes: slotTarget?.acceptedTypes, slotMax: slotTarget?.max,
+        replaceEdgeId: slotTarget?.replaceEdgeId, mode: commitMode, targetSlotIndex: commitSlotIndex, slotState,
+      };
+      if (!validatesNamedPickerSelection(pickerInput) || (slotTarget?.slot && payload.selections?.some(selection => {
+        const source = state.nodes.find(node => node.id === selection.sourceNodeId);
+        return !source || readNodeInputSource(source).outputId !== selection.outputId;
+      }))) {
+        toast.error(t(pickerReasonKey('input_changed')));
+        return false;
+      }
       if (targetNode?.data.inputBindingVersion === 1) {
         const params = targetNode.data.params as Record<string, unknown> | undefined;
-        if (payload.localFiles.length || !payload.selections?.length) return false;
+        if (!payload.localFiles.length && !payload.selections?.length) return false;
         const prepared = planPickerSelectionMutation({ nodes: state.nodes, edges: state.edges }, {
           targetNodeId: nodeId,
           chosenOperationId: payload.chosenOperationId ?? String(params?.operation ?? ''),
@@ -133,7 +156,7 @@ export function useResourcePicker(nodeId: string, workspaceId?: string | null): 
           selections: payload.selections,
           replaceEdgeId: slotTarget?.replaceEdgeId,
           replaceSlot: slotTarget?.replaceEdgeId ? slotTarget.slot : undefined,
-        }, { catalog: state.catalogRuntime });
+        }, context, { files: payload.localFiles, targetSlot: slotTarget?.slot });
         if (prepared.status !== 'allowed' || !prepared.mutation) {
           toast.error(t(pickerReasonKey(prepared.reasonCode)));
           return false;
@@ -149,49 +172,19 @@ export function useResourcePicker(nodeId: string, workspaceId?: string | null): 
         return true;
       }
 
-      const plan = planResourcePickerCommit({
-        nodes: state.nodes,
-        edges: state.edges,
-        catalog: state.catalogRuntime,
-        targetNodeId: nodeId,
-        selectedCanvasNodeIds: payload.selectedCanvasNodeIds,
-        localFiles: payload.localFiles,
-        ...(slotTarget ? {
-          targetSlot: slotTarget.slot,
-          acceptedTypes: slotTarget.acceptedTypes,
-          slotMax: slotTarget.max,
-          replaceEdgeId: slotTarget.replaceEdgeId,
-        } : {}),
-        mode: commitMode,
-        targetSlotIndex: commitSlotIndex,
-        slotState,
-      });
+      const plan = planResourcePickerCommit(pickerInput);
 
-      if (!plan.hasWork) {
+      if (!plan.hasWork || (slotTarget?.slot && plan.rejected.length > 0)) {
         toast.warning(t(plan.rejected.some(item => item.reason === 'slot_capacity')
           ? pickerReasonKey('slot_capacity') : 'picker.commitEmpty'));
         return false;
       }
 
-      // 借出型展示槽位：提交前先切换节点 operation 到借出 op。
-      // 同一 nodeId 的补丁必须并入已存在补丁，gateway 会拒绝 duplicate_node_patch。
-      let nodePatches = plan.nodePatches;
-      const borrowOp = slotTarget?.displayOnlyFromOperation;
-      if (borrowOp) {
-        const params = setParamsOperation(targetNode?.data?.params as Record<string, unknown> | undefined, borrowOp);
-        const existing = plan.nodePatches?.find((patch) => patch.nodeId === nodeId);
-        nodePatches = existing
-          ? plan.nodePatches!.map((patch) => patch.nodeId === nodeId
-              ? { ...patch, data: { ...patch.data, params } }
-              : patch)
-          : [...(plan.nodePatches ?? []), { nodeId, data: { params } }];
-      }
-
-      if (slotTarget?.replaceEdgeId) state.pushHistory();
+      if (slotTarget?.slot) state.pushHistory();
       const result = state.applyCanvasInputMutation({
         addNodes: plan.addNodes,
         addEdges: plan.addEdges,
-        nodePatches,
+        nodePatches: plan.nodePatches,
       });
 
       if (result.status !== 'allowed') {
@@ -199,10 +192,10 @@ export function useResourcePicker(nodeId: string, workspaceId?: string | null): 
         return false;
       }
 
-      if (slotTarget?.replaceEdgeId) state.pushHistory(true);
+      if (slotTarget?.slot) state.pushHistory(true);
       if (plan.rejected.length > 0) {
         toast.warning(t('picker.commitPartial'));
-      } else {
+      } else if (!slotTarget?.slot) {
         toast.success(t('picker.commitOk'));
       }
       closePicker();

@@ -2,7 +2,7 @@
  * ConfigPanel — 统一材质创作底栏（Issue 467 / W2；Feed-Slot 阶段二 T03/T04/T05）。
  *
  * Contract-driven:
- *   - model picker = compatible rows selectable; media-incompatible rows grey (R10)
+ *   - model picker follows catalog eligibility; the selected model reassigns inputs
  *   - text adapts its operation automatically; other outputs show genuine model modes
  *   - writes canonical params.operation only
  *   - zero candidates → empty state + block generate with typed reason
@@ -324,9 +324,8 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
     const workspaceId = typeof nodeData.__workspaceId === 'string' ? nodeData.__workspaceId : undefined;
     return { target, edges: graph.edges, failure: findExecutionReadinessFailure([target], opsCatalog, { ...graph, workspaceId }) };
   }, [useSelectedOperation, canvasEdges, nodeId, nodeData, params, opsCatalog, upstreamSnapshots]);
-  const effectiveSlotLayout = useMemo(() => currentInputs || useSelectedOperation
-    ? deriveSlotLayout(activeCatalog, modelValue, currentOperationId)
-    : deriveModelSlotLayout(activeCatalog, modelValue, currentOperationId), [activeCatalog, modelValue, currentOperationId, currentInputs, useSelectedOperation]);
+  const effectiveSlotLayout = useMemo(() => deriveSlotLayout(activeCatalog, modelValue, currentOperationId),
+    [activeCatalog, modelValue, currentOperationId]);
 
   const fallbackState = useMemo<ChannelFallbackState>(() => {
     const family = (activeCatalog?.[materialType] as CapabilityModelItem[] | undefined)?.find((m) => m.id === modelValue)?.family;
@@ -449,22 +448,18 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   // the capability input or it would disable generation / parameter controls.
   const videoDisplayUpstreams = consumedUpstreams;
 
-  // ---- Filtered model list (Hide, Don't Grey) ----
-  // The shared kernel applies canvas model policy and input compatibility.
+  // Model eligibility comes from the directory. The selected model reassigns supply.
   const filteredModels = useMemo(
     () => buildFilteredModelOptions({
       catalog: activeCatalog,
-      // Model availability follows the assigned slot set. Candidate edges that
-      // are silently unused must not grey a model or zero the list.
       fingerprint: consumedFingerprint,
       outputType: outputTypeForCompat,
       // Capability tools (audio transcription) get their seam's contract models; every other
       // tool keeps the curated generative whitelist.
       tool: selectedTool,
-      // Epic #63 R10: connected media greys out models that cannot consume it.
-      includeInputIncompatible: materialType === 'video',
+      allowUnassignedInputs: true,
     }),
-    [activeCatalog, consumedFingerprint, fingerprint, materialType, outputTypeForCompat, selectedTool],
+    [activeCatalog, consumedFingerprint, outputTypeForCompat, selectedTool],
   );
 
   // ---- 不可执行型号（Issue #4103 / AC7）----
@@ -997,14 +992,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
     }
   }, [canvasEdges, nodeId, nodeData.slotStandbyEdgeIds]);
 
-  const handlePickSlot = useCallback(
-    (request: SlotPickRequest) => onOpenResourcePicker?.(
-      displayedSlotLayout.displayOnlyFromOperation
-        ? { ...request, displayOnlyFromOperation: displayedSlotLayout.displayOnlyFromOperation }
-        : request,
-    ),
-    [onOpenResourcePicker, displayedSlotLayout],
-  );
+  const handlePickSlot = useCallback((request: SlotPickRequest) => onOpenResourcePicker?.(request), [onOpenResourcePicker]);
 
 
   // 必需槽位缺口：空卡槽自解释，提交按钮 disabledReason 同步提示。
@@ -1022,7 +1010,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   const hasConsumedPrompt = Boolean(consumedFingerprint.prompt?.trim());
   const missingRequiredSlots = useMemo(
     () => displayedSlotLayout.slots.filter((spec: SlotSpec) => (
-      !selectedOperation && !currentInputs && !displayedSlotLayout.displayOnlyFromOperation
+      !selectedOperation && !currentInputs
       && (spec.type === 'text' && spec.composition && spec.valueSources?.includes('local_field')
         ? Number(hasConsumedPrompt) < spec.min
         : (slotBindings[spec.slot]?.length ?? 0) < spec.min)

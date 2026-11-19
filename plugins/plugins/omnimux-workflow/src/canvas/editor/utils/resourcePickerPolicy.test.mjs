@@ -12,6 +12,7 @@ import {
   mimeToMaterialType,
   formatFileSize,
   planResourcePickerCommit,
+  planPickerSelectionMutation,
   planStandaloneImportNodes,
   planImportNodeFill,
   evaluateResourcePickerAvailability,
@@ -38,6 +39,25 @@ function materialNode(id, materialType, extras = {}) {
   };
 }
 
+test('named picker hides unsupported audio before selection on both canvas versions', () => {
+  const source = (name, mimeType, sizeBytes = 256) => ({ id: name, type: 'material', position: { x: 0, y: 0 },
+    data: { materialType: 'audio', nodeKind: 'import', mediaUrl: `https://fixtures.invalid/${name}`, mimeType, sizeBytes } });
+  const target = { id: 'target', type: 'material', position: { x: 200, y: 0 }, data: {
+    materialType: 'video', nodeKind: 'generate', params: { model: 'seedance-fixture', operation: 'video_multi_ref' } } };
+  const catalog = { models: [{ id: 'seedance-fixture', operations: [{ id: 'video_multi_ref', listed: true,
+    output: { type: 'video' }, inputs: [
+      { slot: 'reference_images', type: 'image', role: 'reference', source: 'upstream_output', min: 1, max: 2 },
+      { slot: 'reference_audios', type: 'audio', role: 'reference', source: 'upstream_output', min: 0, max: 2,
+        maxSizeMb: 1, allowedMimes: ['audio/wav', 'audio/mpeg'] },
+    ] }] }] };
+  const audio = [source('good.wav'), source('good.mp3', 'audio/mpeg'), source('bad.flac', 'audio/flac'),
+    source('renamed.wav', 'audio/flac'), source('too-large.wav', 'audio/wav', 2 ** 20 + 1)];
+  for (const node of [target, { ...target, data: { ...target.data, inputBindingVersion: 1, slotBindings: {} } }]) {
+    const items = listCanvasResources([node, ...audio], [], target.id, { catalog }, { targetSlot: 'reference_audios' });
+    assert.deepEqual(items.map(item => item.nodeId), ['good.wav', 'good.mp3']);
+  }
+});
+
 test('V1 qualified current picker lists selected ready text, not blank/waiting or local-only sources', () => {
   const source = (id, content, status = 'ready') => ({ id, type: 'material', position: { x: 0, y: 0 },
     data: { materialType: 'text', nodeKind: 'import', label: id, content, status } });
@@ -56,6 +76,45 @@ test('V1 qualified current picker lists selected ready text, not blank/waiting o
   localOnly.catalog.models[0].operations[0].inputs[0].valueSources = ['local_field'];
   assert.deepEqual(listCanvasResources(nodes, [], 'target', localOnly), []);
   assert.deepEqual(listCanvasResources(nodes, [], 'target', { catalog: null }), []);
+});
+
+test('V1 adds or replaces a named slot from a local file through one strict graph mutation', () => {
+  const target = { id: 'target', type: 'material', position: { x: 300, y: 40 }, data: { materialType: 'image', nodeKind: 'generate',
+    inputBindingVersion: 1, slotBindings: {}, params: { model: 'qualified', operation: 'image_to_image' } } };
+  const context = { catalog: { models: [{ id: 'qualified', operations: [{ id: 'image_to_image', listed: true,
+    output: { type: 'image' }, inputs: [{ slot: 'reference', type: 'image', role: 'reference', source: 'upstream_output',
+      min: 1, max: 1, allowedMimes: ['image/png'] }] }] }] } };
+  const graph = { nodes: [target], edges: [] };
+  const request = { targetNodeId: target.id, chosenOperationId: 'image_to_image' };
+  const file = name => ({ id: name, name, mime: 'image/png', size: 20, realPath: `/fixtures/${name}`, materialType: 'image' });
+  const before = structuredClone(graph);
+  for (const files of [[{ ...file('bad.jpg'), mime: 'image/jpeg' }], [file('a.png'), file('b.png')]]) {
+    const rejected = planPickerSelectionMutation(graph, request, context, { targetSlot: 'reference', files });
+    assert.equal(rejected.status, 'rejected');
+    assert.equal(rejected.mutation, undefined);
+    assert.deepEqual(graph, before);
+  }
+  const plan = planPickerSelectionMutation(graph, request, context, { targetSlot: 'reference', files: [file('a.png')] });
+  assert.equal(plan.status, 'allowed');
+  assert.equal(plan.mutation.addNodes.length, 1);
+  assert.equal(plan.mutation.addEdges.length, 1);
+  const added = planCanvasInputMutation(graph, plan.mutation, context);
+  assert.equal(added.status, 'allowed');
+  const binding = added.nodes.find(node => node.id === target.id).data.slotBindings.reference[0];
+  assert.equal(binding.sourceNodeId, plan.mutation.addNodes[0].id);
+  const replace = { ...request, replaceEdgeId: binding.edgeId, replaceSlot: 'reference' };
+  const replacement = planPickerSelectionMutation(added, replace, context, { targetSlot: 'reference', files: [file('b.png')] });
+  assert.equal(replacement.status, 'allowed');
+  const changed = planCanvasInputMutation(added, replacement.mutation, context);
+  assert.equal(changed.status, 'allowed');
+  const next = changed.nodes.find(node => node.id === target.id).data.slotBindings.reference[0];
+  assert.equal(next.sourceNodeId, replacement.mutation.addNodes[0].id);
+  assert.equal(next.ordinal, binding.ordinal);
+  assert.ok(changed.edges.some(edge => edge.id === binding.edgeId));
+  assert.equal(changed.edges.length, 2);
+  assert.deepEqual(changed.nodes.find(node => node.id === target.id).data.slotStandbyEdgeIds, [binding.edgeId]);
+  assert.equal(graph.nodes.length, 1);
+  assert.equal(graph.edges.length, 0);
 });
 
 test('V1 strict adapter commits explicit selected text once through original gateway, supply stays unused and rejects stale output', async () => {

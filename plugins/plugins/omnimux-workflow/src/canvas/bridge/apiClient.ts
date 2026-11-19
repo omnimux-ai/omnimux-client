@@ -264,10 +264,10 @@ export function promoteWorkspaceAsset(
   );
 }
 
-export function pickLocalFiles(): Promise<ApiResult<{ path: string | null; paths: string[] }>> {
+export function pickLocalFiles(options?: { extensions?: string[]; multiple?: boolean }): Promise<ApiResult<{ path: string | null; paths: string[] }>> {
   return request<{ path: string | null; paths: string[] }>(WORKFLOW_API_ROUTES.pick, {
     method: 'POST',
-    body: { kind: 'file' },
+    body: { kind: 'file', ...options },
   });
 }
 
@@ -281,10 +281,11 @@ export function pickLocalDirectory(): Promise<ApiResult<{ path: string | null; p
 
 export function probeLocalFiles(
   paths: string[],
+  contentMime?: boolean,
 ): Promise<ApiResult<{ items: Array<{ path: string; exists: boolean; size?: number; mime?: string; name?: string }> }>> {
   return request<{ items: Array<{ path: string; exists: boolean; size?: number; mime?: string; name?: string }> }>(
     WORKFLOW_API_ROUTES.localFileProbe,
-    { method: 'POST', body: { paths } },
+    { method: 'POST', body: { paths, contentMime } },
   );
 }
 

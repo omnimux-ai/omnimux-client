@@ -86,6 +86,14 @@ describe('pickNativePath kind and platform gates', () => {
 })
 
 describe('pickNativePath macOS JXA script', () => {
+  it('restricts a named file selection to extensions and one item', async () => {
+    const picker = createNativeFilePicker({ platform: 'darwin', run: async (_command, argv) => {
+      assert.match(argv[3], /setAllowedFileTypes\(\["wav","mp3"\]\)/)
+      assert.match(argv[3], /setAllowsMultipleSelection\(false\)/)
+      return { stdout: '', stderr: '' }
+    } })
+    assert.deepEqual(await picker.pick('file', { extensions: ['wav', 'mp3'], multiple: false }), { path: null, paths: [] })
+  })
   it('runs osascript JXA with an accessory NSOpenPanel and no Apple Events', async () => {
     let seen = null
     const result = await pickNativePath('file', {

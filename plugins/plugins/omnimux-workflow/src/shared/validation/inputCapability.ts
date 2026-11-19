@@ -349,10 +349,17 @@ export function buildInputCapability(args: InputCapabilityArgs): InputCapability
   const ignoreUnused = isVideoCapability;
   const hasMediaOnlyLipSync = model.hasGatewayInputContract && listed.some(({ operation }) =>
     operation.id === 'digital_human' && !operationAcceptsText(model, operation));
+  const allowsAudioBeforeImages = new Set<string>();
   const operationStates = listed.map(({ operation, order }) => {
     const state = evaluateOperation(operation, order, fingerprint, counts, { ignoreUnused });
+    if (isVideoCapability && operation.id === 'video_multi_ref'
+      && operation.inputs.some(slot => slot.type === 'audio' && slot.source !== 'node_field' && slot.min === 0)
+      && operation.inputs.some(slot => slot.type === 'image' && slot.source !== 'node_field' && slot.min > 0)) {
+      allowsAudioBeforeImages.add(operation.id);
+    }
     if (isVideoCapability && operation.inputs.some(isOrderedImageReferenceSlot)
-      || hasMediaOnlyLipSync && (operation.id === 'digital_human' || operation.id === 'text_to_video')) {
+      || hasMediaOnlyLipSync && (operation.id === 'digital_human' || operation.id === 'text_to_video')
+      || allowsAudioBeforeImages.has(operation.id)) {
       state.selectableBeforeInputs = true;
     }
     return state;
@@ -405,6 +412,9 @@ export function buildInputCapability(args: InputCapabilityArgs): InputCapability
       }
       selected ??= [...candidates].sort(sortCandidates)[0];
     }
+  }
+  if (!selected && counts.audio > 0 && !counts.image) {
+    selected = operationStates.find(state => allowsAudioBeforeImages.has(state.id) && state.consumes && state.mediaSlotHits > 0);
   }
 
   const result: InputCapabilityResult = {

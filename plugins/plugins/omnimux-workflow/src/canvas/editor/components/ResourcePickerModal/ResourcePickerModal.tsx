@@ -1,13 +1,16 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { X } from 'lucide-react';
-import { CustomModal } from '../../../ui';
+import { CustomModal, toast } from '../../../ui';
 import { useT } from '../../../i18n';
 import { useCanvasStore } from '../../../store/canvasStore';
-import { listCanvasResources, planPickerSelectionMutation, pickerReasonKey, updatePickerLocalDrafts,
+import { acceptsPickerFile, listCanvasResources, planPickerSelectionMutation, pickerReasonKey, resourcePickerContextKey, resourcePickerSlot, updatePickerLocalDrafts,
   type LocalFileDraft, type ResourcePickerTab, type ResourcePickerMode } from '../../utils/resourcePickerPolicy.ts';
 import type { ResourcePickerSlotTarget } from '../../hooks/useResourcePicker.ts';
 import type { NodeSlotEngineState } from '../../../../shared/graph/slotContractTypes.ts';
 import type { CanvasInputSelectionRequest } from '../../../../shared/graph/canvasInputMutationGateway.ts';
+import { extensionsForMimes } from '../../../../shared/localMedia.ts';
+import { useAsyncInstanceGuard } from '../../hooks/useAsyncInstanceGuard.ts';
+import { probePickerDrafts } from '../../utils/probePickerDrafts.ts';
 import CanvasResourcePane from './CanvasResourcePane';
 import LocalUploadPane from './LocalUploadPane';
 
@@ -69,6 +72,9 @@ const ResourcePickerModal: React.FC<ResourcePickerModalProps> = ({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedOutputs, setSelectedOutputs] = useState<Record<string, string>>({});
   const [localFiles, setLocalFiles] = useState<LocalFileDraft[]>([]);
+  const confirmation = useAsyncInstanceGuard(JSON.stringify([open, tab, slotTarget?.contextKey]));
+  const [confirming, setConfirming] = useState(false);
+  const confirmingRef = useRef(false);
   const selections = useMemo(() => selectedIds.flatMap(id => {
     return selectedOutputs[id] ? [{ sourceNodeId: id, outputId: selectedOutputs[id]!, targetSlot: slotTarget?.slot }] : [];
   }), [selectedIds, selectedOutputs, slotTarget?.slot]);
@@ -77,13 +83,20 @@ const ResourcePickerModal: React.FC<ResourcePickerModalProps> = ({
     selections: mode === 'replace' ? [] : selections,
   }), [nodes, edges, nodeId, catalog, slotTarget, mode, selections]);
   const selectedCount = selections.length + localFiles.length;
-  const prepared = useMemo(() => current ? planPickerSelectionMutation({ nodes, edges }, {
-    targetNodeId: nodeId, chosenOperationId: slotTarget?.displayOnlyFromOperation ?? operationId,
+  const stale = Boolean(slotTarget?.contextKey && slotTarget.contextKey !== resourcePickerContextKey(target, { catalog }));
+  const slot = useMemo(() => slotTarget?.slot && !stale
+    ? resourcePickerSlot({ nodes, edges }, nodeId, { catalog }, slotTarget.slot, slotTarget.replaceEdgeId) : undefined,
+  [nodes, edges, nodeId, catalog, slotTarget, stale]);
+  const limit = slotTarget?.slot ? Math.min(slot?.remaining ?? 0, slotTarget.max ?? Infinity) : Infinity;
+  const readDuration = Number.isFinite(slot?.spec.minDurationSec) || Number.isFinite(slot?.spec.maxDurationSec);
+  const prepared = useMemo(() => current && !stale ? planPickerSelectionMutation({ nodes, edges }, {
+    targetNodeId: nodeId, chosenOperationId: operationId,
     selections, replaceEdgeId: slotTarget?.replaceEdgeId, replaceSlot: slotTarget?.replaceEdgeId ? slotTarget.slot : undefined,
-  }, { catalog }) : null, [current, nodes, edges, nodeId, operationId, slotTarget, selections, catalog]);
-  const accepts = current ? prepared?.status === 'allowed' && localFiles.length === 0 : true;
-  const reason = current && selectedCount > 0 && !accepts
-    ? t(pickerReasonKey(localFiles.length ? 'role_conflict' : prepared?.reasonCode)) : undefined;
+  }, { catalog }, { files: localFiles, targetSlot: slotTarget?.slot }) : null,
+  [current, stale, nodes, edges, nodeId, operationId, slotTarget, selections, catalog, localFiles]);
+  const accepts = !stale && selectedCount <= limit && (!current || prepared?.status === 'allowed');
+  const reason = selectedCount > 0 && !accepts
+    ? t(pickerReasonKey(stale ? 'input_changed' : prepared?.reasonCode)) : undefined;
 
   useEffect(() => {
     if (!open) return;
@@ -213,24 +226,42 @@ const ResourcePickerModal: React.FC<ResourcePickerModalProps> = ({
     };
   }, [open, t, titleId]);
 
-  const handleCancel = useCallback(() => { setLocalFiles([]); onCancel(); }, [onCancel]);
+  const handleCancel = useCallback(() => { confirmation.deactivate(); setLocalFiles([]); onCancel(); }, [confirmation, onCancel]);
   const handleToggle = useCallback((id: string, inUse: boolean, disabled?: boolean) => {
     if (disabled || inUse) return;
     const outputId = canvasItems.find(item => item.nodeId === id)?.outputId;
     if (!outputId) return;
     setSelectedOutputs(previous => ({ ...previous, [id]: outputId }));
-    setSelectedIds(previous => previous.includes(id) ? previous.filter(value => value !== id) : mode === 'replace' ? [id] : [...previous, id]);
+    setSelectedIds(previous => previous.includes(id) ? previous.filter(value => value !== id) : mode === 'replace' && limit > 0 ? [id]
+      : previous.length < limit ? [...previous, id] : previous);
     if (mode === 'replace') setLocalFiles([]);
-  }, [mode, canvasItems]);
-  const handleUse = () => {
-    if (selectedCount === 0 || !accepts) return;
-    onCommit({ selectedCanvasNodeIds: selectedIds, selections, chosenOperationId: operationId, localFiles, mode, targetSlotIndex });
+  }, [mode, canvasItems, limit]);
+  const handleUse = async () => {
+    if (selectedCount === 0 || !accepts || confirmingRef.current) return;
+    const ticket = confirmation.capture();
+    if (!confirmation.isCurrent(ticket)) return;
+    let files = localFiles;
+    if (slotTarget?.slot && localFiles.length > 0) {
+      confirmingRef.current = true;
+      setConfirming(true);
+      try {
+        files = await probePickerDrafts(localFiles, readDuration);
+      } catch {
+        files = [];
+      } finally {
+        confirmingRef.current = false;
+        setConfirming(false);
+      }
+      if (!confirmation.isCurrent(ticket)) return;
+      if (files.length !== localFiles.length) { toast.error(t(pickerReasonKey('input_unavailable'))); return; }
+    }
+    onCommit({ selectedCanvasNodeIds: selectedIds, selections, chosenOperationId: operationId, localFiles: files, mode, targetSlotIndex });
   };
   const modalTitle =
     title || t('picker.title');
   const footer = <div className="wf-picker-footer">
     <button type="button" className="wf-picker-btn wf-picker-btn--ghost" onClick={handleCancel}>{t('picker.cancel')}</button>
-    <button type="button" className="wf-picker-btn wf-picker-btn--primary" disabled={selectedCount === 0 || !accepts}
+    <button type="button" className="wf-picker-btn wf-picker-btn--primary" disabled={selectedCount === 0 || !accepts || confirming}
       aria-describedby={reason ? reasonId : undefined} onClick={handleUse}>{t(mode === 'replace' ? 'node.replace' : 'picker.use')}</button>
   </div>;
   const changeTab = (next: ResourcePickerTab) => { setTab(next); setSelectedIds([]); setLocalFiles([]); };
@@ -239,7 +270,7 @@ const ResourcePickerModal: React.FC<ResourcePickerModalProps> = ({
     <ModalCloseButton onClose={handleCancel} placement="external" ariaLabel={t('app.close') || 'Close'} />
     <div ref={bodyRef} className="wf-picker-content">
       <div className="wf-picker-tabs" role="tablist">
-        {(['canvas', 'local'] as const).map(source => <button key={source} type="button" role="tab" id={`${titleId}-${source}-tab`}
+        {(['canvas', 'local'] as const).map(source => <button key={source} disabled={confirming} type="button" role="tab" id={`${titleId}-${source}-tab`}
           aria-controls={`${titleId}-${source}-pane`} aria-selected={tab === source} tabIndex={tab === source ? 0 : -1}
           className={`wf-picker-tab ${tab === source ? 'wf-picker-tab--active' : ''}`} onClick={() => changeTab(source)}
           onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); const next = source === 'canvas' ? 'local' : 'canvas'; changeTab(next); document.getElementById(`${titleId}-${next}-tab`)?.focus(); } }}>
@@ -250,12 +281,19 @@ const ResourcePickerModal: React.FC<ResourcePickerModalProps> = ({
         {tab === 'canvas' ? <CanvasResourcePane items={canvasItems} selectedIds={selectedIds} mode={mode}
           targetSlotIndex={targetSlotIndex} slotState={slotState} onToggle={handleToggle}
           acceptedTypes={slotTarget?.acceptedTypes} allowConnectedSelection={current || Boolean(slotTarget)} />
-          : <LocalUploadPane active={open} files={localFiles} onAddFiles={incoming => {
-            const next = updatePickerLocalDrafts(mode, selectedIds, localFiles, incoming);
-            setSelectedIds(next.selectedIds); setLocalFiles(next.localFiles);
-            if (mode === 'replace' && incoming.length) setSelectedOutputs({});
+          : <LocalUploadPane active={open && !confirming} files={localFiles} onAddFiles={incoming => {
+            if (confirmingRef.current || limit <= 0) return;
+            setLocalFiles(previous => updatePickerLocalDrafts(mode, [], previous,
+              mode === 'replace' ? incoming : incoming.slice(0, Math.max(0, limit - previous.length))).localFiles);
+            if (mode === 'replace' && incoming.length) { setSelectedIds([]); setSelectedOutputs({}); }
           }}
-            onRemove={id => setLocalFiles(previous => previous.filter(file => file.id !== id))} acceptedTypes={slotTarget?.acceptedTypes} />}
+            onRemove={id => { if (!confirmingRef.current) setLocalFiles(previous => previous.filter(file => file.id !== id)); }}
+            acceptedTypes={slotTarget?.acceptedTypes} namedSlot={slotTarget?.slot ? {
+              extensions: extensionsForMimes(slot?.spec.allowedMimes ?? []),
+              remaining: Math.max(0, limit - (mode === 'add' ? selectedCount : 0)),
+              readDuration,
+              accepts: file => Boolean(slot && acceptsPickerFile(slot.spec, file)),
+            } : undefined} />}
       </div>
       {reason ? <div id={reasonId} className="wf-picker-reason" role="status">{reason}</div> : null}
     </div>

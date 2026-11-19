@@ -1,6 +1,6 @@
 import type { FeedAsset, FillResult, SlotBindings, SlotLayout, SlotOccupant, SlotSpec } from './types.ts';
 
-export function acceptsFeedAsset(slot: SlotSpec, asset: FeedAsset): boolean {
+export function acceptsFeedAsset(slot: SlotSpec, asset: Pick<FeedAsset, 'type' | 'mimeType' | 'sizeBytes' | 'durationSec'>): boolean {
   if (slot.type !== asset.type || (asset.mimeType && slot.allowedMimes?.length && !slot.allowedMimes.includes(asset.mimeType))) return false;
   if (Number.isFinite(slot.maxSizeMb) && Number.isFinite(asset.sizeBytes)
     && (slot.maxSizeExclusive ? asset.sizeBytes! >= slot.maxSizeMb! * 1024 * 1024 : asset.sizeBytes! > slot.maxSizeMb! * 1024 * 1024)) return false;

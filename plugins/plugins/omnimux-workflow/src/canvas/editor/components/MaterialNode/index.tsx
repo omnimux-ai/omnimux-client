@@ -1515,7 +1515,6 @@ const MaterialNode: React.FC<NodeProps> = ({ id, data, selected }) => {
           replaceEdgeId: requestOrMode.replaceEdgeId,
           openerAnchor: requestOrMode.openerAnchor,
           onReturnFocus: requestOrMode.onReturnFocus,
-          displayOnlyFromOperation: requestOrMode.displayOnlyFromOperation,
         });
         return;
       }

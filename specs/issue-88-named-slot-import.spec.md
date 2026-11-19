@@ -1,0 +1,32 @@
+# #88 具名卡槽导入本地文件
+
+## 假设
+
+[#88](https://github.com/omnimux-ai/omnimux-client/issues/88) 要求具名槽对画布已有素材和本地文件使用同一契约。现有 V1 选择器只规划已有节点的选择，本地文件在确认前被禁止。将本地文件先转成待提交的导入节点，再交给同一个选择规划器，可保留卡槽、路由与提交校验。
+
+## 证伪方式
+
+用一个声明格式和数量上限的槽复现 V1 选择本地文件。若现有实现能一次提交新节点、连线和槽绑定，检查缺失的交互入口。提交失败时画布应完全保持原状。选择同一类型的不同格式时，结果应与已有素材选择一致。
+
+## 验收
+
+- 在已适配 V1 的画布，从具名槽入口确认一个兼容本地文件后，导入节点、边和显式槽绑定一起生效。撤销后一起移除。
+- 在替换模式选中一个兼容的本地文件，替换选中的槽位并保留位置次序。
+- 格式不兼容、数量超限、操作或目录变化后确认时不写入画布。普通拖线继续遵守结构校验。
+- 新旧画布的选择器在当前具名槽过滤已有素材、本地选取和拖入。Seedance 多参考音频槽只接收契约允许的文件。校验内容识别到的 MIME 及实际大小，支持读取时长的本地媒体带上时长进入原有校验。
+- 桌面系统选择器按当前槽声明的扩展名筛选，单剩余名额时仅允许单选。选取及拖入使用桌面宿主提供的真实路径。旧画布按当前方式展示入口，选择素材时不切换方式。
+- 替换完成后保留原有上游节点和连线。撤销恢复替换前的槽绑定及图状态。
+- 多参考视频方式可先选择合规的音频。必填参考图空缺时仍在此方式下显示音频，生成继续等待参考图。
+- 多参考素材条中，每个未满的具名槽最多出现一个可点击加号。按钮以原有槽名提供可访问名称。
+- 连线和已分配的素材不改动模型列表的可选范围。切换模型时按选中模型重新分配，保留目录自身的上架和执行状态限制。
+
+## 旧标准变更
+
+- `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/videoParams/videoParamsIntegration.test.mjs` :: `Issue #986：ConfigPanel 为视频节点提供基于模型能力的卡槽驱动与素材模式双向流转`
+  旧断言要求卡槽从整个模型的能力派生。#88 要求入口限于当前生成方式。新断言检查当前方式的槽位派生和借用槽位缺失，继续检查生成方式解析、实际消费指纹和断开后的已选方式。
+- `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/operationUi.dom.test.mjs` :: `ConfigPanel 消费 buildFilteredModelOptions / buildEffectiveOpsUiState（唯一判定）`
+  旧断言要求视频节点将不消费已连素材的模型置灰。#88 和 #63 的最新验收要求模型列表按目录可用性显示。新断言检查 ConfigPanel 使用共用策略，真实目录用例验证 Seedance 已分配图和音频时 Muse 仍可选。
+- `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/generationUi.render.test.mjs` :: `audio modes come from the selected model, with no fixed speech/music tabs`
+  音频节点的纯提示方式只渲染当前方式卡槽，继续核对实际有卡槽的音乐方式及底栏。
+- `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/generationUi.render.test.mjs` :: `image panel borrows sibling operation slots as display-only for a prompt-only operation`
+  图片节点按同一入口契约更新。运行态断言同时覆盖无素材槽的方式和明确声明图片槽的方式。

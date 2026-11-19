@@ -79,6 +79,18 @@ describe('R1/R2/R2b/R3 video matrix (real catalog)', () => {
     assert.equal(selected('seedance-2-5', ['image', 'video', 'audio']).selectedOperationId, 'video_multi_ref');
   });
 
+  it('A53: Seedance accepts an audio reference before the required image is present', () => {
+    const explicit = selected('seedance-2-5', [], 'video', 'video_multi_ref');
+    assert.equal(explicit.selectedOperationId, 'video_multi_ref');
+    assert.equal(stateOf(explicit, 'video_multi_ref')?.usable, false);
+    const connected = selected('seedance-2-5', ['audio']);
+    assert.equal(connected.selectedOperationId, 'video_multi_ref');
+    const operation = stateOf(connected, 'video_multi_ref');
+    assert.equal(operation?.mediaSlotHits, 1);
+    assert.equal(operation?.usable, false);
+    assert.ok(operation?.rejections.some(rejection => rejection.code === 'missing_required_input' && rejection.slot === 'reference_images'));
+  });
+
   it('minimax-h3-video: 1 image → video_multi_ref; image+audio → digital_human', () => {
     const image = selected('minimax-h3-video', ['image']);
     assert.equal(image.selectedOperationId, 'video_multi_ref');
@@ -200,6 +212,21 @@ describe('image / audio / text matrices (real catalog)', () => {
     // #88: an audio candidate has no Muse slot and must not grey Muse.
     assert.equal(videoOptions.get('muse-video')?.inputIncompatible, undefined);
     assert.equal(videoOptions.get('minimax-h3-video')?.inputIncompatible, undefined);
+  });
+
+  it('A55 keeps the same selectable video models after another model assigns image and audio', () => {
+    const options = upstreams => buildFilteredModelOptions({
+      catalog,
+      fingerprint: buildUiUpstreamFingerprint({ prompt: 'Local', upstreams }),
+      outputType: 'video',
+      allowUnassignedInputs: true,
+    }).options.filter(option => option.executable && !option.inputIncompatible).map(option => option.id);
+    const populated = options([
+      { nodeId: 'a', edgeId: 'ea', materialType: 'image', mimeType: 'image/png', targetSlot: 'reference_images', hasMedia: true, availability: 'ready' },
+      { nodeId: 'b', edgeId: 'eb', materialType: 'audio', mimeType: 'audio/wav', targetSlot: 'reference_audios', hasMedia: true, availability: 'ready' },
+    ]);
+    assert.ok(populated.includes('muse-video'));
+    assert.deepEqual(populated, options([]));
   });
 
   it('seed-evolving absorbs image/video but rejects audio/pdf', () => {

@@ -63,6 +63,34 @@ test('POST /api/pick：seam 缺失时明确 503 picker-unavailable', async () =>
   assert.equal(missing.body.error, 'picker-unavailable');
 });
 
+test('file-picker extensions and single selection are forwarded only for file requests', async () => {
+  const calls = [];
+  const routes = createLocalFileRoutes({ getService: () => ({ pick: async (...args) => {
+    calls.push(args);
+    return { path: null, paths: [] };
+  } }) });
+  const pick = body => routes.tryHandle('POST', '/omnimux-workflow/api/pick', { ...local, body });
+  const valid = await pick({ kind: 'file', extensions: ['wav', 'mp3'], multiple: false });
+  assert.deepEqual(valid, { status: 200, body: { path: null, paths: [] } });
+  assert.deepEqual(calls, [['file', { prompt: '选择要导入的素材', extensions: ['wav', 'mp3'], multiple: false }]]);
+  assert.equal((await pick({ kind: 'file', extensions: ['*.wav'] })).status, 400);
+  assert.equal((await pick({ kind: 'directory', multiple: false })).status, 400);
+  assert.equal(calls.length, 1);
+});
+
+test('named picker probe distinguishes FLAC data from a WAV filename', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'wf-probe-mime-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const file = join(dir, 'renamed.wav');
+  writeFileSync(file, 'fLaC');
+  const routes = createLocalFileRoutes();
+  const probe = contentMime => routes.tryHandle('POST', '/omnimux-workflow/api/local-file/probe', {
+    ...local, body: { paths: [file], contentMime },
+  });
+  assert.equal((await probe(false)).body.items[0].mime, 'audio/wav');
+  assert.equal((await probe(true)).body.items[0].mime, 'audio/flac');
+});
+
 test('POST /api/pick 注入 picker：取消 / 多选 / invalid-kind / unsupported', async () => {
   const cancelled = await createLocalFileRoutes({
     picker: async () => ({ path: null, paths: [] }),
