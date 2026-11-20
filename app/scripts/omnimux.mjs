@@ -89,9 +89,13 @@ function runProfile(args) {
     .filter(entry => entry.isFile())
     .map(entry => join(executableDir, entry.name))
   if (executables.length !== 1) die(`候选 App 的主可执行文件不唯一: ${executableDir}`)
+  const environment = { ...process.env, ELECTRON_RUN_AS_NODE: '1' }
+  // The NAS verifier compares native tar entries with the physical installation.
+  // Electron's Node mode otherwise reports .asar files as virtual directories.
+  if (args[0] === 'upgrade-dev') environment.ELECTRON_NO_ASAR = '1'
   const result = spawnSync(executables[0], [script, ...args], {
     cwd: forkRoot,
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+    env: environment,
     stdio: 'inherit',
   })
   process.exit(result.status === null ? 1 : result.status)
