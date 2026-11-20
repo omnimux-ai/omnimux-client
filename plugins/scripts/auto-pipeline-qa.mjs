@@ -37,7 +37,8 @@ export function runPackageTest(root, packageName, packageDir, options, evidenceD
   return { packageName, status: result.status, ...summary }
 }
 export function runStaticQa(wtDir, plugin, base, options, evidenceDir) {
-  const qaScript = join(wtDir, 'scripts', 'auto-qa-gate.mjs')
+  const workspace = existsSync(join(wtDir, 'plugins', 'scripts', 'auto-qa-gate.mjs')) ? join(wtDir, 'plugins') : wtDir
+  const qaScript = join(workspace, 'scripts', 'auto-qa-gate.mjs')
   if (!existsSync(qaScript)) throw new PipelineError(`Worktree 缺少 auto-qa-gate.mjs: ${qaScript}`)
   const reportPath = join(evidenceDir, 'auto-qa-report.json')
   const args = [qaScript, wtDir, '--plugin', plugin, '--diff', '--base', base, '--json', '--output', reportPath]

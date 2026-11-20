@@ -13,5 +13,9 @@ coverage/
 # Git worktrees isolation directory
 .worktrees/
 
+# Local delivery evidence and resumable pipeline state
+/.workbuddy/evidence/
+/plugins/.workbuddy/pipeline/
+
 # Local daily review notes: intentionally never committed (kept only in the working copy)
 LESSONS.md

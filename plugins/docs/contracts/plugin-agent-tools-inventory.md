@@ -11,19 +11,15 @@ subsystem: "global"
 tags: ["agent-tools", "dual-surface", "inventory", "verification", "governance"]
 supersedes: []
 superseded_by: null
-related:
-  - "docs/contracts/docs-governance-standard.md"
-  - "docs/contracts/hub.md"
-  - "docs/contracts/project-assets-contract.md"
 ---
 
 # OmniMux 全量插件 Agent 工具与双面交付清单契约
 
-本页数字、`Implemented` 与“双面就绪”是既有源码注册记录，不是当前上线或真实业务可用证明，不作为正式版宣传数量。发布阶段读[生命周期清单](../../plugins/omnimux/src/plugin-lifecycle.json)，运行可用性需当前版本证据；现行产品范围见[产品定位](product-positioning.md)。
+本页数字、`Implemented` 与“双面就绪”是既有源码注册记录，不是当前上线或真实业务可用证明，不作为正式版宣传数量。发布阶段读[生命周期清单](../../plugins/omnimux/src/plugin-lifecycle.json)，运行可用性需当前版本证据；现行产品范围见[产品说明](../../README.md#工程结构与能力状态)。
 
 > **版本**：v1.0.0 | **权威级别**：L1（工程契约）  
 > **适用范围**：`plugins/` 下全部 12 个插件的 UI 交互与 Agent Tool 注册规范。  
-> **持续治理**：由 `scripts/verify-plugin-agent-tools.mjs`（`pnpm verify:tools`）门禁执行 100% 静态扫描与一致性断言。
+> **持续治理**：由 `scripts/verify-plugin-agent-tools.mjs`（`pnpm verify:tools`）执行静态扫描。CI 拦截注册源码与本清单新增的不一致，已存在的差异作为告警。
 
 ---
 
@@ -51,7 +47,7 @@ related:
 | 统计指标 | 数值 | 说明 |
 |---|---|---|
 | **体检插件总数** | 13 个 | 覆盖 `plugins/` 下全部生产插件 |
-| **已注册 Agent 工具总数** | 98 个 | 源码中实装并可在会话中调用的工具 (29+4+6+3+9+12+6+15+0+0+4+1+9)。Hub 规划 +2 `workbench_*`（`Planned`，见 [agent-workbench-sync.md](agent-workbench-sync.md)）落地后改此行。 |
+| **已注册 Agent 工具总数** | 98 个 | 源码中实装并可在会话中调用的工具 (29+4+6+3+9+12+6+15+0+0+4+1+9)。Hub 规划 +2 `workbench_*`（`Planned`，见下文中枢工具清单）落地后改此行。 |
 | **双面齐备标杆插件 (A+)** | 4 个 | `omnimux-workflow` (12 tools), `omnimux-publish` (9 tools), `omnimux-market` (15 tools), `omnimux-avatar` (9 tools) |
 | **需补齐写操作工具插件 (B)** | 4 个 | `omnimux-assets`, `omnimux-products`, `omnimux-inspiration`, `omnimux-accounts` |
 | **纯后端/纯中枢/纯视图插件** | 5 个 | `omnimux` (中枢 29 tools), `omnimux-video` (4 tools), `omnimux-video-preview` (2 tools), `omnimux-analytics` (0 tools), `omnimux-clip` (6 tools) |

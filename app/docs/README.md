@@ -30,7 +30,6 @@
 | [Community Market 设计](../dsh-community-market/README.zh.md) | 规划中的插件市场壳、可扩展目录来源、用户选择、安装确认和安全边界 |
 | [Market 目录提供方合同](../dsh-community-market/docs/catalog-provider-contract.zh.md) | 面向后续实现团队的 Schema、query 参数、多来源和适配器规范 |
 | [架构说明](architecture.md) | Electron、Host、Web carrier、profile 和打包之间的关系 |
-| [社媒增长专家团产品闭环](omnimux-growth-expert-loop.md) | 业务画像、增长方案、实验、内容、分发和复盘如何组成新的增长垂直插件 |
 | [Desktop service 参考](../dsh-plugin-desktop/docs/plugin-services.md) | `desktopProfiles`、`desktopPnpm` 的稳定 contract 和 TypeScript 示例 |
 | [包级参考](../dsh-plugin-desktop/README.md) | 完整的构建、运行、发布和已知限制 |
 | [发布链路预演](../../AGENTS.md#release-preflight) | 独立环境构建 Windows 安装器、macOS DMG 和市场索引 |

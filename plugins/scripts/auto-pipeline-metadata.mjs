@@ -10,7 +10,7 @@ export function parseArgs(argv = process.argv.slice(2)) {
   const options = {
     issueId: '', plugin: '', topic: '', dryRun: false, manual: false, forceRetry: false, allowExistingChanges: false,
     implementationCommand: process.env.OMNIMUX_IMPLEMENT_COMMAND || '',
-    evidenceDir: '',
+    evidenceDir: '', docsImpactPath: '',
     waitSeconds: Number(process.env.OMNIMUX_PIPELINE_WAIT_SECONDS || 600), noMerge: false, materialize: true, worktree: '',
   }
   for (let index = 0; index < argv.length; index += 1) {
@@ -24,6 +24,7 @@ export function parseArgs(argv = process.argv.slice(2)) {
     else if (arg === '--topic') options.topic = next()
     else if (arg === '--implementation-command' || arg === '--implement-command') options.implementationCommand = next()
     else if (arg === '--evidence-dir') options.evidenceDir = resolve(next())
+    else if (arg === '--docs-impact') options.docsImpactPath = resolve(next())
     else if (arg === '--wait-seconds') options.waitSeconds = Number(next())
     else if (arg === '--worktree') options.worktree = resolve(next())
     else if (arg === '--dry-run') options.dryRun = true
@@ -61,11 +62,12 @@ export function classifyRisk(issue, changedFiles = []) {
   let tier = declared || 'R2'
   if (declared === 'R0') reasons.push('Issue 声明为 R0')
   if (declared === 'R1') reasons.push('Issue 声明为 R1')
-  if (changedFiles.some(file => HIGH_RISK_PATHS.some(pattern => pattern.test(file)))) {
+  if (changedFiles.some(file => HIGH_RISK_PATHS.some(pattern => pattern.test(file) ||
+      (file.startsWith('plugins/') && pattern.test(file.slice('plugins/'.length)))))) {
     if (tier !== 'R0') tier = 'R1'
     reasons.push('变更命中合同/CI/脚本/manifest 等 R1 路径')
   }
-  const pluginPaths = new Set(changedFiles.map(file => /^plugins\/([^/]+)\//.exec(file)?.[1]).filter(Boolean))
+  const pluginPaths = new Set(changedFiles.map(file => /^plugins\/(?:plugins\/)?([^/]+)\//.exec(file)?.[1]).filter(Boolean))
   if (pluginPaths.size > 1) {
     if (tier !== 'R0') tier = 'R1'
     reasons.push(`跨插件变更（${[...pluginPaths].join(', ')}）`)
@@ -89,7 +91,7 @@ export function fetchIssue(issueId, options = {}) {
   }
   const result = runCommand('gh', [
     'issue', 'view', String(issueId), '--repo', REPO, '--json', 'number,title,labels,body,comments,state,url,author',
-  ], { cwd: repoRoot })
+  ], { cwd: repoRoot, quietOutput: true })
   const issue = JSON.parse(result.stdout)
   if (!issue || typeof issue !== 'object') throw new PipelineError('gh 返回的 Issue JSON 无效')
   if (String(issue.state || '').toUpperCase() !== 'OPEN') throw new PipelineError(`Issue #${issueId} 不是 OPEN 状态`)

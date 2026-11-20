@@ -24,6 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       QA_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || 'origin/main' }}
+      QA_HEAD: ${{ github.sha }}
     permissions:
       contents: read
       pull-requests: write
@@ -125,6 +126,12 @@ jobs:
           node --test scripts/verify-publish-source.test.mjs
           node --test scripts/release-check.test.mjs
 
+      - name: Documentation drift and review gates
+        run: |
+          node scripts/doc-lint.mjs --base "$QA_BASE" --head "$QA_HEAD"
+          node scripts/verify-plugin-agent-tools.mjs --base "$QA_BASE" --head "$QA_HEAD"
+          node --test scripts/docs-drift.test.mjs scripts/docs-impact.test.mjs scripts/docs-review-merge.test.mjs
+
       # 旧测试标准声明闭环：写入时刻的门禁只能做早期反馈——声明被消费之后没人再校验它，
       # 而声明可以写在未跟踪的 specs/*.md 里（读得到、不进 PR diff），也可以事后删除。
       # 这里只看**已提交范围**，因此是唯一能真正闭环的位置；判定口径与 hook 共用。
@@ -222,7 +229,7 @@ jobs:
           node --test scripts/test-dx-pipeline.mjs scripts/worktree-delivery.test.mjs scripts/dev-launch-env.test.mjs scripts/omnimux-paths.test.mjs scripts/dev-app-unlock.test.mjs scripts/app-restart.test.mjs scripts/run-workspace-tests.test.mjs scripts/style-dom-probe.test.mjs
           node --test scripts/auto-qa-scan.test.mjs
           node --test scripts/test-authoring-inspection.test.mjs scripts/test-change-review.test.mjs scripts/review-packet.test.mjs
-          node --test scripts/impact-matrix.test.mjs scripts/authorization.test.mjs scripts/qa-label.test.mjs scripts/ci-verdict.test.mjs scripts/auto-pipeline.test.mjs scripts/auto-pipeline-qa.test.mjs scripts/check-tracked-artifacts.test.mjs scripts/live-runtime-proof.test.mjs scripts/ego-browser-page.test.mjs scripts/live-page-preparation.test.mjs scripts/ego-live-qa.test.mjs scripts/repair-inspiration-covers.test.mjs scripts/import-gxgen-inspirations.test.mjs
+          node --test scripts/impact-matrix.test.mjs scripts/authorization.test.mjs scripts/qa-label.test.mjs scripts/ci-verdict.test.mjs scripts/auto-pipeline.test.mjs scripts/auto-pipeline-docs.test.mjs scripts/auto-pipeline-qa.test.mjs scripts/check-tracked-artifacts.test.mjs scripts/live-runtime-proof.test.mjs scripts/ego-browser-page.test.mjs scripts/live-page-preparation.test.mjs scripts/ego-live-qa.test.mjs scripts/repair-inspiration-covers.test.mjs scripts/import-gxgen-inspirations.test.mjs
           node --test scripts/sync-bypass.test.mjs scripts/resolve-omnimux-profile.test.mjs scripts/sync-plugin-scope.test.mjs scripts/verify-cross-plugin-model-alignment.test.mjs scripts/verify-auto-serving.test.mjs scripts/verify-profile-preflight.test.mjs scripts/test-agent-tools.test.mjs
           node --test scripts/verify-skill-bilingual.test.mjs scripts/generate-featured-skills.test.mjs
           node scripts/verify-skill-bilingual.mjs

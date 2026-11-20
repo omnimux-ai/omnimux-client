@@ -3,17 +3,17 @@
  * scripts/review-packet.mjs
  *
  * 净室评审输入包：把「已提交 diff + 需求原文 + 真实测试证据」三样输入打成一份 Markdown，
- * 交给全新上下文的评审者。协议见 docs/contracts/plugin-git-pr.md「净室评审协议」；
- * 规格见 specs/3848-independent-review-packet.spec.md。
+ * 交给全新上下文的评审者。规则见 docs/subsystems.md。
  *
  * 只用 git 与 Node 内置模块；不读会话日志与环境密钥，不联网，不往仓库里写文件。
  * 输入校验：规格与证据必须是 UTF-8 文本（二进制如截图按协议以路径交付）；每份证据必须含当前 head
- * SHA 前 7 位；写出前扫描高置信密钥模式，命中即失败且不回显匹配值。
+ * SHA（试点要求完整 SHA，其他保留前 7 位）；写出前扫描高置信密钥模式，命中即失败且不回显匹配值。
  * 输出：目录 0700、文件 0600；文件名含输入内容哈希，换证据生成新文件，不覆盖旧包。
  *
  * 用法：
- *   node scripts/review-packet.mjs --spec <path> --evidence <file> [--evidence <file> ...]
- *     [--base <ref>]      默认 origin/main
+ *   node scripts/review-packet.mjs (--spec <path> | --issue-snapshot <path>) --evidence <file> [--evidence <file> ...]
+ *     [--docs-impact <path>]  命中试点时必需
+ *     [--base <ref>]         默认 origin/main
  *     [--out-dir <dir>]   默认 <os.tmpdir()>/omnimux-review
  */
 
@@ -23,6 +23,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, statSync,
 import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { classifyDocsImpact, readDocsImpact, renderDocsImpact, SUBSYSTEM_DOCUMENTS } from './docs-impact.mjs'
 
 export const DEFAULT_BASE = 'origin/main'
 export const DEFAULT_OUT_DIR = join(tmpdir(), 'omnimux-review')
@@ -53,7 +54,7 @@ export class ReviewPacketError extends Error {
   }
 }
 
-const USAGE = '用法：node scripts/review-packet.mjs --spec <path> --evidence <file> [--evidence <file> ...] [--base <ref>] [--out-dir <dir>]'
+const USAGE = '用法：node scripts/review-packet.mjs (--spec <path> | --issue-snapshot <path>) --evidence <file> [--evidence <file> ...] [--docs-impact <path>] [--base <ref>] [--out-dir <dir>]'
 
 /** 解析 CLI 参数；未知参数或缺值直接报错。 */
 export function parseArgs(argv) {
@@ -70,6 +71,8 @@ export function parseArgs(argv) {
       return value
     }
     if (flag === '--spec') options.spec = takeValue()
+    else if (flag === '--issue-snapshot') options.issueSnapshot = takeValue()
+    else if (flag === '--docs-impact') options.docsImpact = takeValue()
     else if (flag === '--evidence') options.evidence.push(takeValue())
     else if (flag === '--base') options.base = takeValue()
     else if (flag === '--out-dir') options.outDir = takeValue()
@@ -208,7 +211,7 @@ export function collectGitState({ cwd, base }) {
 }
 
 /** 纯函数：由已收集的输入拼出评审包 Markdown。 */
-export function buildPacket({ state, spec, evidence, generatedAt }) {
+export function buildPacket({ state, spec, evidence, generatedAt, docsImpact, requiredDocuments = [] }) {
   const fileLines = state.files.map(([status, ...paths]) => `  - ${status} \`${paths.join('` → `')}\``)
   const evidenceBlocks = evidence.map((item, index) => `### 证据 ${index + 1}：\`${item.name}\`\n\n${fenced(item.text, 'text')}`)
   return [
@@ -218,13 +221,14 @@ export function buildPacket({ state, spec, evidence, generatedAt }) {
     `- base 提交时间：${state.baseDate}`,
     `- merge-base：\`${state.mergeBase}\``,
     `- head：\`${state.headSha}\``,
+    ...(requiredDocuments.length ? ['- 文档复核：必需', '- 必核对文档：' + requiredDocuments.map(path => '`' + path + '`').join('、')] : []),
     `- 分支：\`${state.branch}\``,
     `- 生成日期：${generatedAt}`,
     `- 规格：\`${spec.name}\``,
     `- 改动文件（${state.files.length}）：`,
     ...fileLines,
     '',
-    PACKET_SECTIONS[0],
+    spec.kind === 'issue' ? '## 需求（Issue 快照）' : PACKET_SECTIONS[0],
     '',
     fenced(spec.text, 'markdown'),
     '',
@@ -236,12 +240,17 @@ export function buildPacket({ state, spec, evidence, generatedAt }) {
     '',
     evidenceBlocks.join('\n\n'),
     '',
+    ...(docsImpact ? [renderDocsImpact(docsImpact), ''] : []),
     PACKET_SECTIONS[3],
     '',
     '- 你在全新上下文中评审，只依据本包的需求、改动与测试证据（另附 Issue/PR 中的授权范围与风险等级，R0 须为明确授权记录；界面任务另附截图/结构化报告路径）；不要索取或参考实施者的对话、计划或自评。',
-    '- 核对项以 docs/contracts/plugin-qa.md「评审与验收结论」为准（实际 diff、测试证据、授权、未解决风险），并补充关注：未验证的假设；未被覆盖的需求条目；不真正执行需求路径也能通过的测试；超出范围的行为改动。',
+    '- 按 AGENTS.md「合并与复核」核对实际 diff、测试证据、授权和未解决风险，并关注：未验证的假设；未被覆盖的需求条目；不真正执行需求路径也能通过的测试；超出范围的行为改动。',
+    ...(requiredDocuments.length ? [
+      '- 对照 base/head 源码独立判断接口、默认值、状态、路径、兼容性和失败行为是否变化。逐一核对必核对文档的叙述、源码入口与测试证据。行为有变化且主文档缺失或不符时，给出阻断结论。',
+    ] : []),
+    '- 直接返回 JSON 给协调 Agent。字段为 baseSha、headSha、packetSha256（评审包文件 SHA256）、verdict（pass 或 block）、findings（severity 为 block 或 note，附位置与证据）、reviewed（每项含仓库相对 path 与 evidence）。通过也要列出已核对的路径与证据。',
     '- 每条发现必须包含：问题 / 位置（文件:行）/ 证据 / 严重度（阻断·建议·细节）/ 对应需求条目。',
-    `- 结论只对 head \`${state.headSha}\` 有效；head 变化后需重新评审。`,
+    '- 结论绑定本包所列 base 和 head。候选或相关基线输入变化后重新评审。',
     '',
   ].join('\n')
 }
@@ -252,33 +261,56 @@ function displayName(path, root) {
   return isInside(real, root) ? relative(root, real) : basename(real)
 }
 
-/** 校验输入、生成并写出评审包，返回绝对路径。任何缺失都抛 ReviewPacketError。 */
-export function createReviewPacket({ cwd = process.cwd(), spec, evidence = [], base = DEFAULT_BASE, outDir = DEFAULT_OUT_DIR, now = new Date() }) {
-  if (!spec) throw new ReviewPacketError(`缺少 --spec。${USAGE}`)
-  const specPath = resolve(cwd, spec)
-  const specText = readRequiredText(specPath, '规格文件')
-  if (evidence.length === 0) throw new ReviewPacketError(`缺少 --evidence：评审包必须附真实测试证据。${USAGE}`)
+function readTaskInput(cwd, state, spec, issueSnapshot) {
+  if (spec) {
+    const path = resolve(cwd, spec)
+    const text = readRequiredText(path, '规格文件')
+    const real = realpathLoose(path)
+    if (!isInside(real, state.root)) throw new ReviewPacketError('规格必须是仓库内已提交的文件：' + basename(real))
+    const relativePath = relative(state.root, real)
+    if (git(state.root, ['ls-files', '--error-unmatch', '--', relativePath]).status !== 0) {
+      throw new ReviewPacketError('规格未提交到 git（或被忽略）：' + relativePath + '；请先提交规格再生成评审包')
+    }
+    return { name: displayName(path, state.root), text }
+  }
+
+  const issue = JSON.parse(readRequiredText(resolve(cwd, issueSnapshot), 'Issue 快照'))
+  if (!Number.isSafeInteger(issue?.number) || issue.number < 1 || typeof issue.title !== 'string' ||
+      !issue.title.trim() || typeof issue.body !== 'string' ||
+      typeof issue.url !== 'string' || !/^https:\/\/github\.com\/[^/]+\/[^/]+\/issues\/\d+$/.test(issue.url) ||
+      !issue.url.endsWith('/' + issue.number)) {
+    throw new ReviewPacketError('Issue 快照需要 GitHub Issue 编号、URL、标题与正文')
+  }
+  return {
+    kind: 'issue',
+    name: 'Issue #' + issue.number,
+    text: [issue.url, issue.title, '', issue.body].join('\n'),
+  }
+}
+
+/** 校验输入、生成并写出评审包，返回绝对路径。 */
+export function createReviewPacket({ cwd = process.cwd(), spec, issueSnapshot, docsImpact, evidence = [], base = DEFAULT_BASE, outDir = DEFAULT_OUT_DIR, now = new Date() }) {
+  if (Boolean(spec) === Boolean(issueSnapshot)) throw new ReviewPacketError('请提供 --spec 或 --issue-snapshot 中的一项。' + USAGE)
+  if (evidence.length === 0) throw new ReviewPacketError('缺少 --evidence：评审包必须附真实测试证据。' + USAGE)
   const evidenceItems = evidence.map(item => {
     const path = resolve(cwd, item)
     return { path, text: readRequiredText(path, '测试证据文件') }
   })
   const state = collectGitState({ cwd, base })
-  // 规格必须是 head 中已跟踪的文件（工作区已干净，故内容即 head 版本）；仓库外或被忽略的规格不受提交约束
-  const specReal = realpathLoose(specPath)
-  if (!isInside(specReal, state.root)) throw new ReviewPacketError(`规格必须是仓库内已提交的文件：${basename(specReal)}`)
-  const specRel = relative(state.root, specReal)
-  if (git(state.root, ['ls-files', '--error-unmatch', '--', specRel]).status !== 0) {
-    throw new ReviewPacketError(`规格未提交到 git（或被忽略）：${specRel}；请先提交规格再生成评审包`)
-  }
-  const specInput = { name: displayName(specPath, state.root), text: specText }
+  const specInput = readTaskInput(cwd, state, spec, issueSnapshot)
+  const paths = state.files.flatMap(([, ...names]) => names)
+  const requiredIds = classifyDocsImpact(paths, { cwd: state.root, base: state.mergeBase, head: state.headSha })
+  if (requiredIds.length && !docsImpact) throw new ReviewPacketError('命中试点，缺少 --docs-impact：' + requiredIds.join(', '))
+  const impact = docsImpact ? readDocsImpact(resolve(cwd, docsImpact), requiredIds, paths) : undefined
+  const impactInputs = impact ? [{ name: '文档影响', text: renderDocsImpact(impact) }] : []
   const evidenceInputs = evidenceItems.map(item => ({ name: displayName(item.path, state.root), text: item.text }))
 
-  const headPrefix = state.headSha.slice(0, HEAD_BINDING_PREFIX)
+  const headPrefix = requiredIds.length ? state.headSha : state.headSha.slice(0, HEAD_BINDING_PREFIX)
   const unbound = evidenceInputs.filter(item => !item.text.includes(headPrefix)).map(item => item.name)
   if (unbound.length > 0) {
     throw new ReviewPacketError(`${HEAD_BINDING_MESSAGE}：${unbound.join('、')} 不含 head ${headPrefix}`)
   }
-  const secrets = findSecrets([specInput, ...evidenceInputs])
+  const secrets = findSecrets([specInput, ...impactInputs, ...evidenceInputs])
   if (secrets.length > 0) {
     throw new ReviewPacketError(`规格或证据疑似含密钥，拒绝生成评审包（不回显匹配内容；请删除后重试）：\n${secrets.join('\n')}`)
   }
@@ -289,12 +321,14 @@ export function createReviewPacket({ cwd = process.cwd(), spec, evidence = [], b
     state,
     spec: specInput,
     evidence: evidenceInputs,
+    docsImpact: impact,
+    requiredDocuments: requiredIds.map(id => SUBSYSTEM_DOCUMENTS[id]),
     generatedAt: now.toISOString().slice(0, 10),
   })
   mkdirSync(outReal, { recursive: true, mode: 0o700 })
   // mkdir 的 mode 只在新建时生效；本工具独占的默认目录若已存在则收紧到 0700。用户自带目录不改其权限。
   if (outReal === realpathLoose(DEFAULT_OUT_DIR)) chmodSync(outReal, 0o700)
-  const hash8 = inputHash({ baseSha: state.baseSha, spec: specInput, evidence: evidenceInputs })
+  const hash8 = inputHash({ baseSha: state.baseSha, spec: specInput, evidence: [...impactInputs, ...evidenceInputs] })
   const outPath = join(outReal, `${sanitizeBranch(state.branch)}-${state.headSha.slice(0, 12)}-${hash8}.md`)
   writeFileSync(outPath, markdown, { mode: 0o600 })
   chmodSync(outPath, 0o600)
