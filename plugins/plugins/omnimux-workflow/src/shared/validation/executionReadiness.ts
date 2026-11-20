@@ -9,7 +9,7 @@ import { readExplicitTargetSlot } from './compatKernel.ts';
 import { buildInputCapability } from './inputCapability.ts';
 import { resolveNodeKind } from '../graph/materialNode.ts';
 import { materialTools } from '../specs/nodes/materialNodeSpec.ts';
-import { deriveSlotLayout, type FeedAsset, type SlotBindings, type SlotConflict } from '../graph/feedSlot/index.ts';
+import { deriveSlotLayout, type SlotBindings, type SlotConflict, type SlotLayout } from '../graph/feedSlot/index.ts';
 import { effectiveSlotFingerprint, feedFromFingerprint } from '../graph/feedSlot/effectiveFingerprint.ts';
 import { resolveSlotOperation } from '../graph/feedSlot/resolveSlotOperation.ts';
 import { effectiveInputDisplay } from '../graph/feedSlot/effectiveInputDisplay.ts';
@@ -21,6 +21,7 @@ import {
   isVisualGeneration,
   matchOperationInputs,
   resolveModelView,
+  type UpstreamFingerprint,
 } from './compatKernel.ts';
 
 export interface ExecutionReadinessNode {
@@ -42,24 +43,37 @@ interface ProjectedVisualInputs {
     slotConflicts: SlotConflict[];
     slotStandbyEdgeIds: string[];
   };
-  unusedMediaEdgeIds: ReadonlySet<string>;
+  unusedInputEdgeIds: ReadonlySet<string>;
 }
 
-function freezeVisualInputs(loaded: ReturnType<typeof effectiveInputDisplay>, feed: FeedAsset[], standby: string[]): ProjectedVisualInputs {
+function freezeVisualInputs(
+  loaded: ReturnType<typeof effectiveInputDisplay>, layout: SlotLayout, raw: UpstreamFingerprint,
+  effective: UpstreamFingerprint, standby: string[],
+): ProjectedVisualInputs {
   const slotBindings: SlotBindings = {};
   const active = new Set<string>();
+  const parked = new Set([...standby, ...loaded.conflicts.filter(conflict => conflict.reason === 'slot_inactive')
+    .map(conflict => conflict.occupant.edgeId)]);
   for (const { slot, occupant, state } of loaded.records) {
     (slotBindings[slot.slot] ??= []).push(occupant);
-    if (state !== 'inactive') active.add(occupant.edgeId);
+    if (state === 'inactive') parked.add(occupant.edgeId);
+    else active.add(occupant.edgeId);
   }
   const slotConflicts = loaded.conflicts.filter(({ slot, occupant }) =>
     slotBindings[slot]?.some(value => value.edgeId === occupant.edgeId && value.sourceNodeId === occupant.sourceNodeId));
-  // Documents may supply generation text and parameters outside a named slot.
-  const unusedMediaEdgeIds = new Set(feed
-    .filter(asset => asset.type !== 'document' && isMediaInputType(asset.type) && !active.has(asset.edgeId))
-    .map(asset => asset.edgeId));
-  const slotStandbyEdgeIds = [...new Set([...standby, ...unusedMediaEdgeIds])];
-  return { data: { slotBindings, slotConflicts, slotStandbyEdgeIds }, unusedMediaEdgeIds };
+  const consumed = new Set(effective.assets.map(asset => asset.edgeId));
+  const unusedInputEdgeIds = new Set(raw.assets.flatMap(asset => {
+    const { edgeId, type } = asset;
+    if (!edgeId) return [];
+    // Legacy documents can supply generation text and parameters outside a named slot.
+    if (type === 'document' && layout.acceptsDocuments !== false) return [];
+    const text = type === 'text' || type === 'table';
+    if (!text && !isMediaInputType(type)) return [];
+    const retiredText = text && parked.has(edgeId) && !active.has(edgeId);
+    return !consumed.has(edgeId) || retiredText ? [edgeId] : [];
+  }));
+  const slotStandbyEdgeIds = [...new Set([...standby, ...unusedInputEdgeIds])];
+  return { data: { slotBindings, slotConflicts, slotStandbyEdgeIds }, unusedInputEdgeIds };
 }
 
 function readString(value: unknown): string | undefined {
@@ -114,7 +128,8 @@ function createExecutionReadinessCheck(
       ? { nodeId: input.nodeId, label: input.label, materialType: input.materialType, edgeId: input.edgeId,
           role: input.role, targetSlot: input.targetSlot, availability: 'ready' as const,
           // Admission-only placeholder: dispatch revalidates the completed scheduled output.
-          ...(input.materialType === 'text' ? { textContent: '__scheduled_text__' } : { url: 'scheduled:pending' }) }
+          ...(input.materialType === 'text' || input.materialType === 'table'
+            ? { textContent: '__scheduled_text__' } : { url: 'scheduled:pending' }) }
       : input);
     const data = node.data ?? {};
     const inputBindingVersion = data.inputBindingVersion === 1 ? 1 : undefined;
@@ -260,7 +275,9 @@ function createExecutionReadinessCheck(
     });
     if (missing) return { nodeId: node.id, reasonCode: missing.code, message: missing.message,
       ...(videoMode?.selectableBeforeInputs && missing.slot ? { slot: missing.slot } : {}) };
-    if (onVisualInputs && isVisualGeneration(outputKind)) onVisualInputs(node.id, freezeVisualInputs(loaded, feed, standby));
+    if (onVisualInputs && isVisualGeneration(outputKind)) {
+      onVisualInputs(node.id, freezeVisualInputs(loaded, layout, rawFingerprint, fingerprint, standby));
+    }
     return null;
   };
 }

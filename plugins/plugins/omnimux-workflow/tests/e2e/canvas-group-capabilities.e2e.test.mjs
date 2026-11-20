@@ -467,9 +467,11 @@ async function checkVideoModes(page, config, observations, assert) {
   }
   observations.failure = { phase: 'Seedance 全能参考' };
   await page.keyboard.press('Escape');
+  await page.cdp('Emulation.clearDeviceMetricsOverride');
   await page.click('loc=css:' + seedance + ' .wf-node-header', { label: 'Open Seedance' });
   await page.click('loc=css:' + seedance + ' .wf-video-trigger-bar', { label: 'Open Seedance generation modes' });
-  await page.click('loc=css:' + modeMenu + ' [role="radio"]:has-text("全能参考")', { label: 'Select 全能参考' });
+  await page.waitForSelector('loc=css:' + modeMenu, { timeout: 8000 });
+  await page.click('loc=css:' + modeMenu + ' [data-operation-id="video_multi_ref"]', { label: 'Select 全能参考' });
   const multimodal = await inspect(seedance, '全能参考');
   assert.deepEqual([multimodal.add, multimodal.promptSources], [1, 1]);
   observations.videoModes.multimodal = multimodal;

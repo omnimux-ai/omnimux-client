@@ -112,7 +112,7 @@ export async function prepareExecutionAdmission<
       return projection ? { ...node, data: { ...node.data, ...projection.data } } : node;
     });
     const edges = mode === 'single' ? scopedEdges
-      : scopedEdges.filter(edge => !edge.id || !projectedInputs.get(edge.target)?.unusedMediaEdgeIds.has(edge.id));
+      : scopedEdges.filter(edge => !edge.id || !projectedInputs.get(edge.target)?.unusedInputEdgeIds.has(edge.id));
     // Re-expand from the original roots so an unused connection cannot start an implicit paid node.
     const subgraph = mode === 'full' || selected.requestedNodeIds
       ? resolveExecutionSubgraph({ nodes, edges, executionMode: mode, nodeIds: selected.requestedNodeIds ?? [] })

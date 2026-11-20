@@ -124,3 +124,61 @@ test('overflow image and video dependencies cannot start an implicit generation'
   await assertOverflowGenerationIsExcluded('image');
   await assertOverflowGenerationIsExcluded('video');
 });
+
+test('subset generation schedules only the upstream text used by the selected video mode', async () => {
+  const lipSync = { id: 'digital_human', listed: true, output: { type: 'video' }, inputs: [
+    slot('image', 'reference', 1, 1, 'reference_image'),
+    slot('audio', 'reference', 1, 1, 'reference_audio'),
+  ] };
+  const textVideo = operation('text_to_video', 'video');
+  const composed = {
+    ...textVideo, inputs: textVideo.inputs.map(input => ({ ...input, valueSources: ['local_field', 'upstream_output'],
+      composition: { kind: 'content_with_instruction', localRole: 'instruction' } })),
+  };
+  const catalog = catalogFor('video', 'minimax-h3-video', [lipSync, composed]);
+  const textCatalog = catalogFor('text', 'caption-fixture', [operation('chat', 'text')]);
+  catalog.models = [{ ...catalog.models[0], gateway: { schemaVersion: '2.0' } }, ...textCatalog.models];
+  catalog.text = textCatalog.text;
+  const portrait = { id: 'portrait', type: 'material', data: {
+    nodeKind: 'import', materialType: 'image', mediaUrl: 'https://example.test/portrait.png',
+  } };
+  const voice = { id: 'voice', type: 'material', data: {
+    nodeKind: 'import', materialType: 'audio', mediaUrl: 'https://example.test/voice.wav',
+  } };
+  const caption = (id) => ({ id, type: 'material', data: {
+    nodeKind: 'generate', materialType: 'text', prompt: 'Describe the scene.',
+    params: { model: 'caption-fixture', operation: 'chat' },
+  } });
+  const target = { id: 'target', type: 'material', data: {
+    nodeKind: 'generate', materialType: 'video', inputBindingVersion: 1, prompt: '',
+    params: { model: 'minimax-h3-video', operation: lipSync.id },
+    slotBindings: {
+      reference_image: [{ sourceNodeId: 'portrait', edgeId: 'p', pinned: true }],
+      reference_audio: [{ sourceNodeId: 'voice', edgeId: 'v', pinned: true }],
+    },
+  } };
+  const graph = { nodes: [portrait, voice, caption('caption'), caption('unused'), target], edges: [
+    { id: 'p', source: 'portrait', target: 'target' },
+    { id: 'v', source: 'voice', target: 'target' },
+    { id: 'c', source: 'caption', target: 'target' },
+    { id: 'u', source: 'unused', target: 'target' },
+  ] };
+  async function run() {
+    const original = structuredClone(graph);
+    const selection = resolveExecutionSubgraph({ ...graph, executionMode: 'subset', nodeIds: ['target'] });
+    const result = await prepareExecutionAdmission('ws_text_dependencies', graph, selection, 'subset', {}, () => catalog);
+    assert.equal(result.readiness, null);
+    assert.deepEqual(graph, original);
+    return { nodes: [...result.subgraph.nodeIdSet], edges: result.subgraph.edges.map(edge => edge.id) };
+  }
+  assert.deepEqual(await run(), { nodes: ['portrait', 'voice', 'target'], edges: ['p', 'v'] });
+  target.data.params.operation = composed.id;
+  target.data.slotBindings = { prompt: [{ sourceNodeId: 'caption', edgeId: 'c', pinned: true }] };
+  assert.deepEqual(await run(), { nodes: ['caption', 'target'], edges: ['c'] });
+
+  // When the model accepts free text, an explicitly paused reference stays
+  // paused without suppressing another connected text source.
+  catalog.models = [{ ...catalog.models[0], operations: [lipSync, textVideo] }, ...textCatalog.models];
+  target.data.slotBindings = { prompt: [{ sourceNodeId: 'caption', edgeId: 'c', pinned: true, use: 'inactive' }] };
+  assert.deepEqual(await run(), { nodes: ['unused', 'target'], edges: ['u'] });
+});
