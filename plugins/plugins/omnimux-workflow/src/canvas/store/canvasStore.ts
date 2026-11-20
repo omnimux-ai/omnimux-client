@@ -111,7 +111,7 @@ export interface CanvasState {
   onNodesChange: OnNodesChange<CanvasNode>;
   onEdgesChange: OnEdgesChange;
   onConnect: OnConnect;
-  applyCanvasInputMutation: (mutation: CanvasInputMutation) => CanvasInputMutationPlan;
+  applyCanvasInputMutation: (mutation: CanvasInputMutation, options?: { undoStep?: boolean }) => CanvasInputMutationPlan;
   /** Catalog v1.1 runtime DTO (boot-synced; runtime-only, never persisted). */
   catalogRuntime: CapabilityCatalog | null;
   setCatalogRuntime: (catalog: CapabilityCatalog | null) => void;
@@ -185,7 +185,7 @@ export const useCanvasStore = create<CanvasState>()(
       get().applyCanvasInputMutation({ addEdges: [connection] });
     },
 
-    applyCanvasInputMutation: (mutation: CanvasInputMutation) => {
+    applyCanvasInputMutation: (mutation, { undoStep = false } = {}) => {
       if (mutation.removeNodeIds && mutation.removeNodeIds.length > 0) {
         noteUserDeletedGraphElements();
       }
@@ -198,7 +198,9 @@ export const useCanvasStore = create<CanvasState>()(
         { catalog: current.catalogRuntime, preferredModels: useGenerationPreferencesStore.getState().lastModelByType },
       );
       if (plan.status !== 'allowed') return plan;
+      if (undoStep) current.pushHistory();
       set({ nodes: plan.nodes, edges: plan.edges });
+      if (undoStep) get().pushHistory(true);
       const addedEdges = plan.edges.filter((edge) => (
         !current.edges.some((existing) => existing.id === edge.id)
       ));

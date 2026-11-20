@@ -551,8 +551,11 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
     onUpdateNodeData({ params: transition.params, parameterSelections: transition.parameterSelections,
       ...(userPickedMode ? { autoOperationId: null } : {}) });
   }, [onUpdateNodeData]);
-  const commitManagedVideoSelection = useCallback((next: Record<string, unknown>) =>
-    useCanvasStore.getState().applyCanvasInputMutation({ nodePatches: [{ nodeId, data: { params: next, autoOperationId: null } }] }), [nodeId]);
+  const commitManagedVideoSelection = useCallback((next: Record<string, unknown>, undoStep: boolean) =>
+    useCanvasStore.getState().applyCanvasInputMutation(
+      { nodePatches: [{ nodeId, data: { params: next, autoOperationId: null } }] },
+      { undoStep },
+    ), [nodeId]);
   const videoSelection = useMemo(() => materialType === 'video' && !managedVideo ? buildVideoParameterSelection({
     params, parameterSelections, currentModelItem: modelItem, targetModelItem: modelItem,
     catalog: activeCatalog, upstreams: upstreamSnapshots, prompt: localPrompt,
@@ -580,7 +583,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
         const change = key === 'operation' && typeof value === 'string'
           ? { operationId: value } : { parameter: { key, value } };
         const next = transitionEffectiveVideoParams(activeCatalog, managedVideo, params, params.routing, change);
-        if (next) commitManagedVideoSelection(next);
+        if (next) commitManagedVideoSelection(next, key === 'operation');
         return;
       }
       if (key === 'operation') {
@@ -831,7 +834,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
         const quotedRouting = { ...nextRouting, videoLineQuote: managedVideoLinePricingFingerprint(target.group) };
         const next = transitionEffectiveVideoParams(activeCatalog, target, params, quotedRouting);
         if (!next) return;
-        if (commitManagedVideoSelection(next).status !== 'allowed') return;
+        if (commitManagedVideoSelection(next, true).status !== 'allowed') return;
         void rememberGenerationModel(materialType, newModelId).catch((error: unknown) => {
           console.warn('Unable to save the generation model preference', error);
         });
