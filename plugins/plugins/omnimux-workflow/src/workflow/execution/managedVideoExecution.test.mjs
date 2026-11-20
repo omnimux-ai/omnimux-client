@@ -115,6 +115,39 @@ test('managed submission rejects an unpinned group or a parameter valid only in 
   assert.throws(() => resolveCanvasSubmission({ ...req, duration: undefined, allowedGroups: ['line-a'] }, catalog), { code: 'parameter_required' });
 });
 
+test('managed executor submits only the URL declared as an input of the chosen mode', async () => {
+  const testCase = fixture();
+  const [group] = testCase.catalog.models.find(({ id }) => id === modelId).channelGroups;
+  const capture = [];
+  const gateway = {
+    capabilities: async () => testCase.catalog,
+    submit: async request => { capture.push(request); return { taskId: 'fixture-url-task', mode: 'submitted' }; },
+    awaitTask: async () => ({ type: 'video', url: 'https://fixture.invalid/result.mp4' }),
+  };
+  const execute = createMaterialGatewayExecutor({ gateway }).execute;
+  const context = {
+    signal: new AbortController().signal, upstreamOutputs: new Map(), upstreamBindings: [], mediaDir: '/tmp',
+  };
+  const modes = [
+    ['document_to_video', 'file_url', 'fileUrl', 'document', 'https://fixture.invalid/script.pdf', 'linkUrl'],
+    ['webpage_to_video', 'link_url', 'linkUrl', 'webpage', 'https://fixture.invalid/story', 'fileUrl'],
+  ];
+  for (const [id, input, field, role, url, hiddenField] of modes) {
+    group.effectiveOperations.push(operation(id, 'video', [
+      { slot: input, role, type: 'document', source: 'node_field', min: 1, max: 1 },
+    ]));
+    const { data } = testCase.target;
+    data.params = { model: modelId, operation: id, routing: { channelGroupId: 'cheap' }, [field]: url };
+    data.videoAssetFieldDrafts = { dormant: { [hiddenField]: 'https://fixture.invalid/dormant' } };
+    const prepared = await admit(testCase, ['target']);
+    assert.equal(prepared.readiness, null);
+    await execute(prepared.subgraph.nodes[0], context);
+    assert.equal(capture.at(-1)[field], url);
+    assert.equal(Object.hasOwn(capture.at(-1), hiddenField), false);
+  }
+  assert.equal(capture.length, 2);
+});
+
 test('admission reads the mode draft when the saved visible slot list came from a smaller group', async () => {
   const testCase = fixture();
   const { data } = testCase.target;

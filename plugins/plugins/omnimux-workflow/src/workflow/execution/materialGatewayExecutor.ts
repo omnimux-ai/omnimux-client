@@ -12,6 +12,7 @@ import { assertProjectWriteSafe } from '../../projects/paths.ts';
 import type { ResolveExecutionProjectFile } from './executionMediaSource.ts';
 import { collectMaterialSlotInputs } from './materialSlotInputs.ts';
 import { resolveGenerationPrompt } from '../../shared/graph/generationPrompt.ts';
+import { effectiveVideoAssetFields } from '../../shared/validation/lineConstraints.ts';
 import { compileMultimodalPrompt, PROMPT_REF_REGEX } from './multimodalCompiler.ts';
 import type { AwaitTaskResult, GenerationGateway, SubmitRequest } from '../seam/gateway';
 import { SeamGatewayError } from '../seam/SeamGatewayError.ts';
@@ -321,9 +322,13 @@ export function createMaterialGatewayExecutor(opts: {
         for (const key of [
           'duration', 'resolution', 'quality', 'n', 'aspectRatio', 'voice', 'style', 'instrumental',
           'speed', 'sound', 'seed', 'watermark', 'outputFormat', 'referenceTaskType', 'generationType',
-          'returnLastFrame', 'webSearch', 'nsfwCheck', 'fileUrl', 'linkUrl',
+          'returnLastFrame', 'webSearch', 'nsfwCheck',
         ] as const) {
           if (!Object.hasOwn(upstream.variant.parameters ?? {}, key)) delete request[key];
+        }
+        const urlInputs = effectiveVideoAssetFields(upstream.variant);
+        for (const key of ['fileUrl', 'linkUrl'] as const) {
+          if (!urlInputs.includes(key)) delete request[key];
         }
       }
       // Synchronous speech preserves reference audio when supplied (reference audio clone mode).

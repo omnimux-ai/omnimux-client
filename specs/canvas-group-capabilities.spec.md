@@ -36,7 +36,8 @@
 - `node --test plugins/scripts/verify-agents-md.test.mjs`。
 - `corepack pnpm --dir plugins run verify:model-contracts`。
 - `corepack pnpm --dir plugins run test:agent-tools`，以及受影响插件单测和 `corepack pnpm --dir plugins run build:all`。
-- 隔离运行按[插件验收入口](../plugins/README.md#本地开发与交付)记录候选版本和具体旅程。真实测试环境和生产发布各需对应授权。
+- `node --test plugins/plugins/omnimux-workflow/tests/e2e/canvas-group-capabilities.e2e.test.mjs` 用候选画布和 Workflow Host 跑隔离 Chromium，使用合成中枢和素材。保存实际请求、界面结果和构建指纹。
+- 隔离桌面 Dev 按[桌面验收证据](../app/docs/desktop-acceptance.md)记录候选版本和具体旅程。真实测试环境和生产发布各需对应授权。
 
 ## 假设
 
