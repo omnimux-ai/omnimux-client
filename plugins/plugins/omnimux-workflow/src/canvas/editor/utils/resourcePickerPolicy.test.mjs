@@ -6,6 +6,8 @@ import assert from 'node:assert/strict';
 import { planCanvasInputMutation, buildCanvasUpstreamFingerprint } from '../../../shared/graph/canvasInputMutationGateway.ts';
 import { deriveSlotLayout, assembleEffectiveInputsFromSlots, feedFromFingerprint } from '../../../shared/graph/feedSlot/index.ts';
 import { collectMaterialSlotInputs } from '../../../workflow/execution/materialSlotInputs.ts';
+import { createImportExecutor } from '../../../workflow/execution/importExecutor.ts';
+import { resolveExecutorKey } from '../../../workflow/execution/nodeExecutors.ts';
 import {
   listCanvasResources,
   filterCanvasResources,
@@ -761,6 +763,34 @@ test('planImportNodeFill：首个文件替换当前导入节点，其余向下�
   assert.equal(plan.addNodes[0].position.x, 400);
   assert.ok(plan.addNodes[0].position.y > 80);
   assert.equal(plan.addEdges, undefined);
+});
+
+test('replacing a project-backed video uses the new local file for workflow execution', async () => {
+  const node = materialNode('target', 'video');
+  Object.assign(node.data, {
+    nodeKind: 'generate',
+    relativePath: 'assets/old.mp4',
+    assetId: 'old',
+    outputCapabilityId: 'video-extraction',
+    executionStatus: 'error',
+  });
+  assert.equal(resolveExecutorKey(node), 'capability:video-extraction');
+  const edges = [{ id: 'upstream', source: 'other', target: 'target' }, { id: 'downstream', source: 'target', target: 'other' }];
+  const graph = { nodes: [node, materialNode('other', 'video')], edges };
+  const file = { id: 'new', name: 'new.mp4', mime: 'video/mp4', size: 10, realPath: '/media/new.mp4', materialType: 'video' };
+  const plan = planImportNodeFill({ ...graph, targetNodeId: node.id, files: [file] });
+  const next = planCanvasInputMutation(graph, { nodePatches: plan.nodePatches, removeEdgeIds: plan.removeEdgeIds });
+  assert.equal(next.status, 'allowed');
+  assert.deepEqual(next.edges, [edges[1]]);
+  const replaced = next.nodes.find(candidate => candidate.id === node.id);
+  assert.equal(replaced.data.nodeKind, 'import');
+  assert.equal(replaced.data.executionStatus, undefined);
+  assert.equal(resolveExecutorKey(replaced), 'material:import');
+  const output = await createImportExecutor().execute(replaced, { workspaceId: 'project', upstreamOutputs: new Map() });
+  assert.equal(output.realPath, file.realPath);
+  assert.equal(output.mediaAssets[0].path, file.realPath);
+  assert.equal(output.relativePath, undefined);
+  assert.equal(output.assetId, undefined);
 });
 
 test('evaluateResourcePickerAvailability：防重锁判定（活跃卡槽占用、当前使用中、溢出候选池）', () => {
