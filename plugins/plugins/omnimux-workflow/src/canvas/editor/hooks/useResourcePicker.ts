@@ -21,10 +21,10 @@ import {
   type ResourcePickerTab,
   type ResourcePickerMode,
 } from '../utils/resourcePickerPolicy.ts';
-import { draftsFromPickedPaths } from '../utils/localFileDraft.ts';
-import { buildImportedMediaData } from '../../../shared/localMedia.ts';
+import { draftFromRealPath, draftsFromPickedPaths } from '../utils/localFileDraft.ts';
+import { buildImportedMediaData, extensionsForMaterialType } from '../../../shared/localMedia.ts';
 import { readNodeInputSource } from '../../../shared/graph/nodeInputSource.ts';
-import type { MaterialType } from '../../../shared/graph/materialNode.ts';
+import { MATERIAL_TYPES, type MaterialType } from '../../../shared/graph/materialNode.ts';
 import type { NodeSlotEngineState } from '../../../shared/graph/slotContractTypes.ts';
 
 export interface ResourcePickerSlotTarget {
@@ -206,7 +206,10 @@ export function useResourcePicker(nodeId: string, workspaceId?: string | null): 
   const fillImportNode = useCallback(async () => {
     const ticket = guard.capture();
     if (!guard.isCurrent(ticket)) return false;
-    const result = await pickLocalFiles().catch(() => null);
+    const node = useCanvasStore.getState().nodes.find(node => node.id === nodeId);
+    const materialType = node?.data.materialType as MaterialType | undefined;
+    if (node?.type !== 'material' || !materialType || !MATERIAL_TYPES.includes(materialType)) return false;
+    const result = await pickLocalFiles({ extensions: extensionsForMaterialType(materialType), multiple: false }).catch(() => null);
     if (!guard.isCurrent(ticket)) return false;
     if (!result || !result.ok) {
       reportLocalFilePickerFailure(result, t);
@@ -214,16 +217,25 @@ export function useResourcePicker(nodeId: string, workspaceId?: string | null): 
     }
     const paths = result.body.paths ?? [];
     if (paths.length === 0) return false;
-    const drafts = draftsFromPickedPaths(paths);
-    if (drafts.length === 0) {
+    const [path] = paths;
+    if (paths.length !== 1 || !path) {
+      toast.error(t('picker.pickFailed'));
+      return false;
+    }
+    const draft = draftFromRealPath(path);
+    if (draft?.materialType !== materialType) {
       toast.warning(t('picker.unsupported'));
       return false;
     }
     const state = useCanvasStore.getState();
+    const current = state.nodes.find(node => node.id === nodeId);
+    if (current?.type !== 'material' || current.data.materialType !== materialType
+      || current.data.status === 'generating' || current.data.executionStatus === 'pending'
+      || current.data.executionStatus === 'running') return false;
     const plan = planImportNodeFill({
       nodes: state.nodes,
       targetNodeId: nodeId,
-      files: drafts,
+      files: [draft],
       edges: state.edges,
     });
     if (!plan.hasWork) {
@@ -231,7 +243,6 @@ export function useResourcePicker(nodeId: string, workspaceId?: string | null): 
       return false;
     }
     const applied = state.applyCanvasInputMutation({
-      addNodes: plan.addNodes,
       nodePatches: plan.nodePatches,
       removeEdgeIds: plan.removeEdgeIds,
     });

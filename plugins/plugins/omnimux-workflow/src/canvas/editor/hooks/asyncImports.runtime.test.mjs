@@ -125,6 +125,52 @@ test('native fill uses current gateway and native path; cancellation and network
   assert.equal(await pending, false); assert.equal(f.toasts[0].message, 'picker.pickFailed');
 });
 
+test('typed node import asks the native picker for matching extensions and rejects mismatches', async t => {
+  const f = setup(t); await f.hooks('A');
+  const examples = [
+    { type: 'image', extension: 'png', wrong: 'mp4' },
+    { type: 'video', extension: 'mp4', wrong: 'wav' },
+    { type: 'audio', extension: 'wav', wrong: 'png' },
+  ];
+  for (const { type, extension, wrong } of examples) {
+    f.win.fixture.state.nodes[0].data.materialType = type;
+    const pending = f.win.currentPicker.fillImportNode();
+    const lastPick = f.picks.at(-1);
+    assert.equal(lastPick.options?.multiple, false);
+    assert.ok(lastPick.options?.extensions.includes(extension));
+    assert.ok(!lastPick.options.extensions.includes(wrong));
+    await f.flush(() => lastPick.resolve(picked(`/wrong.${wrong}`)));
+    assert.equal(await pending, false);
+    assert.equal(f.writes.length, 0);
+    assert.equal(f.toasts.at(-1).message, 'picker.unsupported');
+  }
+});
+
+test('node import and replacement write only one file to the existing node', async t => {
+  const f = setup(t); await f.hooks('A');
+  const multiple = f.win.currentPicker.fillImportNode();
+  const selected = ['/first.PNG', '/second.jpg'];
+  await f.flush(() => f.picks.at(-1).resolve({ ok: true, body: { path: selected[0], paths: selected } }));
+  assert.equal(await multiple, false);
+  assert.equal(f.writes.length, 0);
+  assert.equal(f.toasts.at(-1).message, 'picker.pickFailed');
+
+  for (const path of selected) {
+    const pending = f.win.currentPicker.fillImportNode();
+    await f.flush(() => f.picks.at(-1).resolve(picked(path)));
+    assert.equal(await pending, true);
+    const write = f.writes.at(-1);
+    assert.equal(write.addNodes, undefined);
+    assert.equal(write.nodePatches.length, 1);
+    const patch = write.nodePatches[0];
+    assert.equal(patch.nodeId, 'target');
+    assert.equal(patch.data.realPath, path);
+    assert.equal(patch.data.materialType, 'image');
+    assert.equal(patch.data.nodeKind, 'import');
+    Object.assign(f.win.fixture.state.nodes[0].data, patch.data);
+  }
+});
+
 test('native canvas import keeps a Windows network path for the node and media URL', async t => {
   const f = setup(t);
   await f.hooks('A');

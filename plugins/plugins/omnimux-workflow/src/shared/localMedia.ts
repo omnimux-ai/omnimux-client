@@ -217,6 +217,13 @@ export function extensionsForMimes(mimes: readonly string[]): string[] {
   return Object.entries(MIME_BY_EXT).filter(([, mime]) => mimes.includes(mime)).map(([extension]) => extension);
 }
 
+export function extensionsForMaterialType(type: MaterialType): string[] {
+  if (type === 'text') return [...TEXT_EXT];
+  if (type === 'document') return [...DOCUMENT_EXT];
+  const mimePrefix = `${type}/`;
+  return Object.entries(MIME_BY_EXT).filter(([, mime]) => mime.startsWith(mimePrefix)).map(([extension]) => extension);
+}
+
 export function materialTypeFromFilename(filename: string, mime = ''): MaterialType | null {
   const normalized = (mime || '').toLowerCase().trim();
   if (normalized.split(';')[0]?.trim() === 'application/json') return 'document';
