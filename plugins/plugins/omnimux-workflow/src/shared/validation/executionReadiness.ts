@@ -37,9 +37,12 @@ export interface ExecutionReadinessFailure {
 }
 
 interface ProjectedVisualInputs {
-  slotBindings: SlotBindings;
-  slotConflicts: SlotConflict[];
-  slotStandbyEdgeIds: string[];
+  data: {
+    slotBindings: SlotBindings;
+    slotConflicts: SlotConflict[];
+    slotStandbyEdgeIds: string[];
+  };
+  unusedMediaEdgeIds: ReadonlySet<string>;
 }
 
 function freezeVisualInputs(loaded: ReturnType<typeof effectiveInputDisplay>, feed: FeedAsset[], standby: string[]): ProjectedVisualInputs {
@@ -51,10 +54,12 @@ function freezeVisualInputs(loaded: ReturnType<typeof effectiveInputDisplay>, fe
   }
   const slotConflicts = loaded.conflicts.filter(({ slot, occupant }) =>
     slotBindings[slot]?.some(value => value.edgeId === occupant.edgeId && value.sourceNodeId === occupant.sourceNodeId));
-  const slotStandbyEdgeIds = [...new Set([...standby, ...feed
-    .filter(asset => isMediaInputType(asset.type) && !active.has(asset.edgeId))
-    .map(asset => asset.edgeId)])];
-  return { slotBindings, slotConflicts, slotStandbyEdgeIds };
+  // Documents may supply generation text and parameters outside a named slot.
+  const unusedMediaEdgeIds = new Set(feed
+    .filter(asset => asset.type !== 'document' && isMediaInputType(asset.type) && !active.has(asset.edgeId))
+    .map(asset => asset.edgeId));
+  const slotStandbyEdgeIds = [...new Set([...standby, ...unusedMediaEdgeIds])];
+  return { data: { slotBindings, slotConflicts, slotStandbyEdgeIds }, unusedMediaEdgeIds };
 }
 
 function readString(value: unknown): string | undefined {
@@ -88,21 +93,16 @@ function upstreamSnapshots(nodeId: string, graph?: ExecutionReadinessGraph): Ups
   });
 }
 
-/**
- * Check current sources, roles, slots and declared model parameters. Scheduled
- * generation dependencies may wait until dispatch; imported sources must exist.
- */
-export function findExecutionReadinessFailure(
-  nodes: ExecutionReadinessNode[],
+function createExecutionReadinessCheck(
   inputCatalog: CapabilityCatalog | null | undefined,
   graph?: ExecutionReadinessGraph,
   onVisualInputs?: (nodeId: string, inputs: ProjectedVisualInputs) => void,
-): ExecutionReadinessFailure | null {
+) {
   const baseView = buildContractView(inputCatalog);
-  for (const node of nodes) {
-    if (node.type !== 'material' || resolveNodeKind(node.data ?? {}) !== 'generate') continue;
+  return (node: ExecutionReadinessNode): ExecutionReadinessFailure | null => {
+    if (node.type !== 'material' || resolveNodeKind(node.data ?? {}) !== 'generate') return null;
     const outputCapabilityId = typeof node.data?.outputCapabilityId === 'string' ? node.data.outputCapabilityId : '';
-    if (outputCapabilityId && materialTools[outputCapabilityId]?.executorKey) continue;
+    if (outputCapabilityId && materialTools[outputCapabilityId]?.executorKey) return null;
     let upstreams = upstreamSnapshots(node.id, graph);
     const deferred = new Set(upstreams.filter((input) => {
       const source = graph?.nodes.find((candidate) => candidate.id === input.nodeId);
@@ -125,6 +125,7 @@ export function findExecutionReadinessFailure(
     const outputKind = typeof data.materialType === 'string' ? data.materialType : 'text';
     const defaultModel = inputCatalog?.defaults?.[outputKind as keyof NonNullable<CapabilityCatalog['defaults']>];
     const managed = outputKind === 'video' ? resolveEffectiveVideoGroup(inputCatalog, requestedModel ?? defaultModel, params.routing) : null;
+    if (managed && onVisualInputs) return null; // Managed execution already projected the chosen line.
     const reviewed = data.managedVideoGeneration;
     if ((managed || reviewed) && !managed?.group) return {
       nodeId: node.id, reasonCode: 'line_selection_required', message: '请选择当前可用的生成线路',
@@ -259,7 +260,32 @@ export function findExecutionReadinessFailure(
     });
     if (missing) return { nodeId: node.id, reasonCode: missing.code, message: missing.message,
       ...(videoMode?.selectableBeforeInputs && missing.slot ? { slot: missing.slot } : {}) };
-    if (onVisualInputs && !managed && isVisualGeneration(outputKind)) onVisualInputs(node.id, freezeVisualInputs(loaded, feed, standby));
+    if (onVisualInputs && isVisualGeneration(outputKind)) onVisualInputs(node.id, freezeVisualInputs(loaded, feed, standby));
+    return null;
+  };
+}
+
+/** Check in execution order after resolving the run's dependency scope. */
+export function findExecutionReadinessFailure(
+  nodes: ExecutionReadinessNode[], catalog: CapabilityCatalog | null | undefined, graph?: ExecutionReadinessGraph,
+): ExecutionReadinessFailure | null {
+  const check = createExecutionReadinessCheck(catalog, graph);
+  for (const node of nodes) {
+    const failure = check(node);
+    if (failure) return failure;
   }
   return null;
+}
+
+/** Select inputs independently before pruning the dependency closure. A dormant
+ * node's configuration failure must not stop the requested target's projection. */
+export function collectVisualExecutionInputs(
+  nodes: ExecutionReadinessNode[], catalog: CapabilityCatalog | null | undefined, graph: ExecutionReadinessGraph,
+) {
+  const projections = new Map<string, ProjectedVisualInputs>();
+  const check = createExecutionReadinessCheck(catalog, graph, (nodeId, inputs) => projections.set(nodeId, inputs));
+  for (const node of nodes) {
+    if (typeof node.data?.materialType === 'string' && isVisualGeneration(node.data.materialType)) check(node);
+  }
+  return projections;
 }

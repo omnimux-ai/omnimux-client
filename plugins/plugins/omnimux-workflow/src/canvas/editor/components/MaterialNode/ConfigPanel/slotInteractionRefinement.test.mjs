@@ -78,6 +78,16 @@ test('input_unavailable 记录不再渲染常驻裸「不可用」，但保留�
  assert.doesNotMatch(html,/wf-slot-well__state/);
  assert.doesNotMatch(html,/不可用/);
 });
+test('a composed text binding with a role conflict remains available for replacement', () => {
+ const prompt = {slot:'prompt', type:'text', role:'prompt', min:1, max:1, labelKey:'panel.slot.prompt',
+  composition:{kind:'content_with_instruction', localRole:'instruction'}};
+ const occupant = {edgeId:'replaced', sourceNodeId:'source'};
+ const html = render({
+  ...props, presentation:'prompt', layout:{preset:'strip', outputType:'text', slots:[prompt], addButton:false},
+  records:[{slot:prompt, occupant, state:'invalid', reasonCode:'role_conflict'}],
+ });
+ assert.match(html, /role="button" tabindex="0" data-slot="prompt" data-slot-role="prompt" data-slot-edge="replaced" data-slot-state="invalid"/);
+});
 test('任何槽位状态都不再渲染卡槽下方常驻文案（Issue #4048）',()=>{
  const imageSpec = {slot:'reference_images',type:'image',role:'reference',min:0,max:1,labelKey:'panel.slot.reference_image'};
  const base = {layout:{preset:'strip',slots:[imageSpec],addButton:false},

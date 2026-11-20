@@ -7,7 +7,7 @@ import { findExecutionReadinessFailure } from '../../shared/validation/execution
 import { prepareExecutionSlotGraph } from '../../shared/graph/feedSlot/prepareExecutionSlotGraph.ts';
 import { buildInitialOutputs } from './executionInputs.ts';
 import { catalogFor, operation, slot } from '../seam/submissionFixtures.mjs';
-import { createOmnimuxSeamClient } from '../seam/omnimuxGateway.ts';
+import { createOmnimuxSeamClient as createFixtureGateway } from '../seam/omnimuxGateway.ts';
 import { buildCanvasUpstreamFingerprint } from '../../shared/graph/canvasInputSources.ts';
 import { planCanvasInputSelection, validateCanvasInputSelection } from '../../shared/graph/canvasInputMutationGateway.ts';
 import { deriveSlotLayout } from '../../shared/graph/feedSlot/deriveSlotLayout.ts';
@@ -83,7 +83,7 @@ test('the current visual slot projection carries only visible media to the hub e
   assert.equal(pick('overflow', picked).reasonCode, 'slot_capacity');
 
   const requests = [];
-  const seam = createOmnimuxSeamClient({ getSeam: name => name === 'modelCatalog' ? { list: () => inputCatalog } : {
+  const seam = createFixtureGateway({ getSeam: name => name === 'modelCatalog' ? { list: () => inputCatalog } : {
     execute: async request => {
       requests.push(request);
       throw Object.assign(new Error('endpoint prompt decision'), { code: 'fixture_prompt_decision' });

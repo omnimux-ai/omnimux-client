@@ -131,7 +131,7 @@ test('a newly chosen reference can fill space vacated by incompatible saved supp
   const target = materialNode('target', 'image');
   Object.assign(target.data, {
     nodeKind: 'generate', inputBindingVersion: 1, params: { model: 'png-fixture', operation },
-    slotBindings: { [slot]: [{ edgeId: 'old-edge', sourceNodeId: parked.id, outputId: parked.data.mediaUrl,
+    slotBindings: { reference_image: [{ edgeId: 'old-edge', sourceNodeId: parked.id, outputId: parked.data.mediaUrl,
       role: 'reference', use: 'active', pinned: true }] },
   });
   const graph = { nodes: [target, parked, newImage], edges: [{ id: 'old-edge', source: parked.id, target: target.id }] };
@@ -142,7 +142,7 @@ test('a newly chosen reference can fill space vacated by incompatible saved supp
   assert.equal(plan.status, 'allowed', plan.reasonCode);
   const changed = planCanvasInputMutation(graph, plan.mutation, context);
   assert.equal(changed.status, 'allowed');
-  assert.deepEqual(changed.nodes.find(node => node.id === target.id).data.slotBindings[slot].map(item => item.sourceNodeId), ['old', 'new']);
+  assert.deepEqual(changed.nodes.find(node => node.id === target.id).data.slotBindings.reference_image.map(item => item.sourceNodeId), ['old', 'new']);
   assert.equal(changed.edges.some(edge => edge.id === 'old-edge'), true);
 
   const unexpectedlyChanged = { ...graph, nodes: [target, parked, { ...newImage, data: { ...newImage.data, mimeType: 'image/jpeg' } }] };
@@ -167,7 +167,7 @@ test('managed picker uses the selected variant and projected draft even before i
   Object.assign(target.data, {
     nodeKind: 'generate', slotBindings: {},
     params: { model, operation, routing: { channelGroupId: 'fixture' }, resolution: '720p' },
-    videoSlotDrafts: { image_reference: { [slot]: [{ sourceNodeId: existing.id, edgeId: edge.id,
+    videoSlotDrafts: { image_reference: { reference_images: [{ sourceNodeId: existing.id, edgeId: edge.id,
       role: 'reference', pinned: true }] } },
   });
   const graph = { nodes: [target, existing, additional], edges: [edge] };
@@ -183,7 +183,7 @@ test('managed picker uses the selected variant and projected draft even before i
   const result = planCanvasInputMutation(widerGraph, plan.mutation, context);
   assert.equal(result.status, 'allowed', result.reasonCode);
   assert.equal(result.nodes[0].data.inputBindingVersion, 1);
-  assert.deepEqual(result.nodes[0].data.slotBindings[slot].map(item => item.sourceNodeId), ['existing', 'additional']);
+  assert.deepEqual(result.nodes[0].data.slotBindings.reference_images.map(item => item.sourceNodeId), ['existing', 'additional']);
 });
 
 test('V1 qualified current picker lists selected ready text, not blank/waiting or local-only sources', () => {

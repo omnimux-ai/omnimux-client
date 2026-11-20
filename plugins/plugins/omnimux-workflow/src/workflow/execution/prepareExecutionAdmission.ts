@@ -4,7 +4,7 @@ import { deriveSlotLayout, type SlotBindings } from '../../shared/graph/feedSlot
 import { prepareExecutionSlotGraph } from '../../shared/graph/feedSlot/prepareExecutionSlotGraph.ts';
 import { resolveNodeKind, resolveNodeOutputType } from '../../shared/graph/materialNode.ts';
 import { materialTools } from '../../shared/specs/nodes/materialNodeSpec.ts';
-import { findExecutionReadinessFailure, type ExecutionReadinessGraph } from '../../shared/validation/executionReadiness.ts';
+import { collectVisualExecutionInputs, findExecutionReadinessFailure, type ExecutionReadinessGraph } from '../../shared/validation/executionReadiness.ts';
 import { narrowCatalogByRouting, resolveEffectiveVideoGroup } from '../../shared/validation/lineConstraints.ts';
 import type { ExecutionManager } from './ExecutionManager.ts';
 import type { ResolveExecutionProjectFile } from './executionMediaSource.ts';
@@ -98,8 +98,21 @@ export async function prepareExecutionAdmission<
   if (catalog && needsSubmission) legacyCatalogProjection ??= prepared;
   const selectedEdges = new Set(selected.edges);
   const buildScope = (tasks: Record<string, unknown>) => {
-    const nodes = prepared.nodes.map((node, i) => Object.hasOwn(tasks, node.id) ? graph.nodes[i]! : node);
-    const edges = executionEdges(prepared, catalog, tasks);
+    const scopedEdges = executionEdges(prepared, catalog, tasks);
+    const projectedInputs = collectVisualExecutionInputs(
+      prepared.nodes.filter(node => selected.nodeIdSet.has(node.id) && !Object.hasOwn(tasks, node.id)),
+      catalog, { nodes: prepared.nodes, edges: scopedEdges, workspaceId,
+        scheduledNodeIds: mode === 'single' ? undefined : selected.nodeIdSet },
+    );
+    // Freeze the assignment before pruning edges. Missing metadata for a
+    // pruned source must not revive it as an unavailable slot at dispatch.
+    const nodes = prepared.nodes.map((node, i) => {
+      if (Object.hasOwn(tasks, node.id)) return graph.nodes[i]!;
+      const projection = projectedInputs.get(node.id);
+      return projection ? { ...node, data: { ...node.data, ...projection.data } } : node;
+    });
+    const edges = mode === 'single' ? scopedEdges
+      : scopedEdges.filter(edge => !edge.id || !projectedInputs.get(edge.target)?.unusedMediaEdgeIds.has(edge.id));
     // Re-expand from the original roots so an unused connection cannot start an implicit paid node.
     const subgraph = mode === 'full' || selected.requestedNodeIds
       ? resolveExecutionSubgraph({ nodes, edges, executionMode: mode, nodeIds: selected.requestedNodeIds ?? [] })
@@ -126,22 +139,13 @@ export async function prepareExecutionAdmission<
     }
   }
   const { nodes, edges, subgraph } = scope;
-  const projectedInputs = new Map<string, Record<string, unknown>>();
   const readiness = findExecutionReadinessFailure(
     subgraph.nodes.filter(node => !Object.hasOwn(recoveryTasks, node.id)), catalog,
     { nodes, edges, workspaceId, scheduledNodeIds: mode === 'single' ? undefined : subgraph.nodeIdSet },
-    (nodeId, inputs) => projectedInputs.set(nodeId, { ...inputs }),
   );
-  // Freeze the admitted assignment on the execution copy. Otherwise a skipped
-  // source would lose its type/format metadata and look like an unavailable
-  // occupied slot on the second projection at dispatch.
-  const withProjectedInputs = (node: N): N => {
-    const inputs = projectedInputs.get(node.id);
-    return inputs ? { ...node, data: { ...node.data, ...inputs } } : node;
-  };
   return {
-    subgraph: { ...subgraph, nodes: subgraph.nodes.map(withProjectedInputs) }, readiness,
-    sourceGraph: { id: workspaceId, nodes: nodes.map(withProjectedInputs), edges, catalog },
+    subgraph, readiness,
+    sourceGraph: { id: workspaceId, nodes, edges, catalog },
     recovery: identity ? { ...identity, legacyCatalogProjection, recoveryTasks } : {},
   };
 }

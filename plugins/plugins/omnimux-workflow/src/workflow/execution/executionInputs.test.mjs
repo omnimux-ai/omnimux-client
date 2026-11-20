@@ -57,9 +57,10 @@ test('execution copies seed only admitted visual sources, while another consumer
   const seeded = buildInitialOutputs(admission.sourceGraph, admission.subgraph.nodeIdSet, opts);
   assert.deepEqual(Object.keys(seeded), [showing.id]);
   const admitted = admission.subgraph.nodes[0];
-  const result = collectMaterialSlotInputs(admitted.data, { upstreamOutputs: new Map(Object.entries(seeded)),
+  const upstreamOutputs = new Map(Object.entries(seeded));
+  const result = collectMaterialSlotInputs(admitted.data, { upstreamOutputs,
     upstreamBindings: admission.sourceGraph.edges.filter(edge => edge.target === target.id).map(edge => ({
-      sourceNodeId: edge.source, edgeId: edge.id, output: seeded[edge.source] ?? {},
+      sourceNodeId: edge.source, edgeId: edge.id, output: upstreamOutputs.get(edge.source) ?? {},
     })), mediaDir: '/tmp' }, catalog);
   assert.deepEqual(result.references.map(ref => ref.sourceNodeId), [showing.id]);
   assert.deepEqual(graph, snapshot);
@@ -71,4 +72,55 @@ test('execution copies seed only admitted visual sources, while another consumer
   const visible = await prepareExecutionAdmission('ws_input', graph, selected, 'single', {}, () => valid);
   assert.equal(visible.readiness, null);
   assert.throws(() => buildInitialOutputs(visible.sourceGraph, visible.subgraph.nodeIdSet, opts), /deleted project file/);
+});
+
+async function assertOverflowGenerationIsExcluded(outputType) {
+  const input = slot('image', 'reference', 1, 1, 'reference_images');
+  const edit = operation(outputType === 'image' ? 'image_to_image' : 'video_multi_ref', outputType, [input]);
+  const sourceOp = operation('text_to_image', 'image');
+  const catalog = catalogFor(outputType, 'fixture', [edit]);
+  const sourceCatalog = catalogFor('image', 'source-fixture', [sourceOp]);
+  catalog.models = [...catalog.models, ...sourceCatalog.models];
+  catalog.image = [...catalog.image, ...sourceCatalog.image];
+  const shown = { id: 'shown', type: 'material', data: {
+    materialType: 'image', nodeKind: 'import', mediaUrl: 'https://example.test/shown.png',
+  } };
+  const generated = { id: 'generated', type: 'material', data: {
+    materialType: 'image', nodeKind: 'generate', prompt: 'upstream prompt',
+    params: { model: 'source-fixture', operation: sourceOp.id },
+  } };
+  const occupant = (source, target, ordinal) => ({
+    sourceNodeId: source.id, edgeId: `${source.id}-${target}`, ordinal, pinned: true,
+  });
+  const target = (id, assets) => ({ id, type: 'material', data: {
+    materialType: outputType, nodeKind: 'generate', inputBindingVersion: 1, prompt: 'target prompt',
+    params: { model: 'fixture', operation: edit.id }, slotBindings: { reference_images: assets },
+  } });
+  const graph = {
+    nodes: [shown, generated, target('target', [occupant(generated, 'target', 1), occupant(shown, 'target', 0)]),
+      target('other', [occupant(generated, 'other', 0)])],
+    edges: [
+      { id: 'generated-target', source: generated.id, target: 'target' },
+      { id: 'shown-target', source: shown.id, target: 'target' },
+      { id: 'generated-other', source: generated.id, target: 'other' },
+    ],
+  };
+  const saved = structuredClone(graph);
+  async function admit(executionMode, nodeIds) {
+    const selection = resolveExecutionSubgraph({ ...graph, executionMode, nodeIds });
+    const result = await prepareExecutionAdmission('ws_billing', graph, selection, executionMode, {}, () => catalog);
+    assert.equal(result.readiness, null);
+    assert.equal(result.subgraph.edges.some(edge => edge.id === 'generated-target'), false);
+    return [...result.subgraph.nodeIdSet];
+  }
+  assert.deepEqual(await admit('subset', ['target']), ['shown', 'target']);
+  assert.deepEqual(await admit('subset', ['target', 'generated']), ['shown', 'generated', 'target']);
+  assert.deepEqual(await admit('subset', ['target', 'other']), ['shown', 'generated', 'target', 'other']);
+  assert.deepEqual(await admit('full', []), ['shown', 'generated', 'target', 'other']);
+  assert.deepEqual(graph, saved);
+}
+
+test('overflow image and video dependencies cannot start an implicit generation', async () => {
+  await assertOverflowGenerationIsExcluded('image');
+  await assertOverflowGenerationIsExcluded('video');
 });

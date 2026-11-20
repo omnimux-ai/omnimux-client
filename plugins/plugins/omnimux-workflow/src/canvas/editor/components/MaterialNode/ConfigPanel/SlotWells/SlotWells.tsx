@@ -18,7 +18,7 @@ import SlotHoverPreview from './SlotHoverPreview.tsx';
 import { ArrowLeftRight, FileJson, FileText, Image as ImageIcon, Link2, Loader2, Music, Play, Plus, X } from 'lucide-react';
 import type { MaterialType } from '../../../../../../shared/canvasTypes.ts';
 import type { SlotOccupant, SlotSpec } from '../../../../../../shared/graph/feedSlot/index.ts';
-import { isOrderedImageReferenceSlot } from '../../../../../../shared/validation/compatKernel.ts';
+import { isOrderedImageReferenceSlot, isVisualGeneration } from '../../../../../../shared/validation/compatKernel.ts';
 import { useT } from '../../../../../i18n';
 import type { UpstreamMediaItem } from '../../../../hooks/useUpstreamMedia.ts';
 import type { SlotPickRequest, SlotWellsProps } from './types.ts';
@@ -228,25 +228,27 @@ const SlotWells: React.FC<SlotWellsProps> = (props) => {
     );
   };
 
+  const hideInactive = isVisualGeneration(layout.outputType);
   const slotModels = layout.slots.map(spec => {
     const records = props.records?.filter(record => record.slot.slot === spec.slot
-      && (record.state === 'ready' || record.state === 'pending' || record.reasonCode === 'input_unavailable'));
+      && (record.state !== 'inactive' || !hideInactive));
     const models: WellModel[] = records ? records.map(record => ({
       spec, occupant: record.occupant, upstream: upstreamByEdge.get(record.occupant.edgeId),
       requiredEmpty: false, state: record.state, reasonCode: record.reasonCode,
     })) : (props.bindings[spec.slot] ?? []).filter(occupant => occupant.use !== 'inactive').map(occupant => ({
       spec, occupant, upstream: upstreamByEdge.get(occupant.edgeId), requiredEmpty: false,
     }));
-    const remaining = spec.composition ? Infinity : Math.max(0, (spec.max ?? Infinity) - models.length);
-    return { spec, models, remaining };
+    const occupied = models.filter(model => model.state !== 'inactive').length;
+    const remaining = spec.composition ? Infinity : Math.max(0, (spec.max ?? Infinity) - occupied);
+    return { spec, models, occupied, remaining };
   });
 
-  const renderNamedSlot = ({ spec, models, remaining }: typeof slotModels[number]) => {
+  const renderNamedSlot = ({ spec, models, occupied, remaining }: typeof slotModels[number]) => {
     const positionLabel = slotLabel(spec);
     return [
       ...models.map((model, index) => renderWell({ ...model, positionLabel }, index)),
       ...(remaining > 0
-        ? [renderWell({ spec, positionLabel, requiredEmpty: models.length < spec.min }, models.length)]
+        ? [renderWell({ spec, positionLabel, requiredEmpty: occupied < spec.min }, models.length)]
         : []),
     ];
   };
