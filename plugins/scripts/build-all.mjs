@@ -93,25 +93,22 @@ function resolvePluginBuildTask(pluginName, dir) {
 
   try {
     const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
-    if(['omnimux','omnimux-avatar'].includes(pluginName)&&pkg.scripts?.build){
-      return {name:pluginName,dir, ...pnpm, args:[...pnpm.args,'--silent','run','build']}
-    }
-    // 1. 特殊脚本：build-client.mjs
-    if (existsSync(join(dir, 'scripts/build-client.mjs'))) {
-      return {
-        name: pluginName,
-        dir,
-        command: process.execPath,
-        args: ['scripts/build-client.mjs'],
-      }
-    }
-    // 2. package.json 声明了 scripts.build
+    // The package build owns all of its shipped outputs.
     if (pkg.scripts?.build) {
       return {
         name: pluginName,
         dir,
         ...pnpm,
         args: [...pnpm.args, '--silent', 'run', 'build'],
+      }
+    }
+    // Older plugins without a package build can still declare a client script.
+    if (existsSync(join(dir, 'scripts/build-client.mjs'))) {
+      return {
+        name: pluginName,
+        dir,
+        command: process.execPath,
+        args: ['scripts/build-client.mjs'],
       }
     }
   } catch (e) {
