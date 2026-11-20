@@ -6,6 +6,7 @@
  * src/shared/api.ts — the single source of truth shared with the host.
  */
 
+import { requestFilePicker } from 'dsh-ui-kit/native-file-picker';
 import { WORKFLOW_API_ROUTES } from '../../shared/api.ts';
 import type {
   ApiUpstream,
@@ -264,19 +265,26 @@ export function promoteWorkspaceAsset(
   );
 }
 
-export function pickLocalFiles(options?: { extensions?: string[]; multiple?: boolean }): Promise<ApiResult<{ path: string | null; paths: string[] }>> {
-  return request<{ path: string | null; paths: string[] }>(WORKFLOW_API_ROUTES.pick, {
-    method: 'POST',
-    body: { kind: 'file', ...options },
-  });
+type LocalPickResult = { path: string | null; paths: string[] };
+
+export function pickLocalFiles(options?: { extensions?: string[]; multiple?: boolean }): Promise<ApiResult<LocalPickResult>> {
+  return requestFilePicker(
+    { kind: 'file', multiple: true, ...options },
+    () => request<LocalPickResult>(WORKFLOW_API_ROUTES.pick, {
+      method: 'POST',
+      body: { kind: 'file', ...options },
+    }),
+  );
 }
 
-/** 同一个原生选择器，`kind: 'directory'`（宿主 `/api/pick` 支持两种 kind）。 */
-export function pickLocalDirectory(): Promise<ApiResult<{ path: string | null; paths: string[] }>> {
-  return request<{ path: string | null; paths: string[] }>(WORKFLOW_API_ROUTES.pick, {
-    method: 'POST',
-    body: { kind: 'directory' },
-  });
+export function pickLocalDirectory(): Promise<ApiResult<LocalPickResult>> {
+  return requestFilePicker(
+    { kind: 'directory', multiple: false },
+    () => request<LocalPickResult>(WORKFLOW_API_ROUTES.pick, {
+      method: 'POST',
+      body: { kind: 'directory' },
+    }),
+  );
 }
 
 export function probeLocalFiles(

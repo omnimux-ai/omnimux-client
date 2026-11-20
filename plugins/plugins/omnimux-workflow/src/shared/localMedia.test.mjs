@@ -21,6 +21,7 @@ import {
   sniffMediaExtension,
   sniffMimeType,
 } from './localMedia.ts';
+import { forbiddenRelativePathCode, forbiddenSourcePathCode } from './projectAssets.ts';
 
 test('localFileMediaUrl 编码绝对路径，禁止 blob', () => {
   const url = localFileMediaUrl('/Users/me/a b.png');
@@ -41,6 +42,21 @@ test('MIME / 扩展名白名单：媒体放行，pdf 拒绝', () => {
   assert.equal(looksAbsolutePath('/tmp/a.png'), true);
   assert.equal(looksAbsolutePath('relative.png'), false);
   assert.equal(looksAbsolutePath('C:\\clips\\a.mp4'), true);
+});
+
+test('absolute media paths include Windows shares with a server and share name', () => {
+  const unc = '\\\\nas.example\\项目 素材\\剪辑.mp4';
+  for (const path of ['/var/tmp/a.mp4', '///tmp/a.mp4', 'C:\\clips\\a.mp4', 'd:/clips/a.mp4', unc, '//nas.example/Share/a.mp4', '\\\\nas.example\\C$']) {
+    assert.equal(looksAbsolutePath(path), true, JSON.stringify(path));
+  }
+  for (const path of ['a.mp4', '\\clips\\a.mp4', 'C:clips\\a.mp4', '\\\\nas', '\\\\nas\\', '\\\\nas\\\\Share\\a.mp4',
+    '\\\\nas\\..\\a.mp4', '\\\\nas\\ \\a.mp4', '//nas', '\\\\.\\pipe\\a.mp4', '//./pipe/a.mp4', '\\\\?\\UNC\\nas\\Share\\a.mp4',
+    '\\\\?\\C:\\clips\\a.mp4', '\\\\nas\\Share\\a\0.mp4']) {
+    assert.equal(looksAbsolutePath(path), false, JSON.stringify(path));
+  }
+  assert.equal(localFilePathFromUrl(localFileMediaUrl(unc)), unc);
+  assert.equal(forbiddenSourcePathCode(unc), null);
+  assert.equal(forbiddenRelativePathCode(unc), 'path-denied');
 });
 
 test('JSON document：.json 识别为 document，可导入且派生 MIME', () => {

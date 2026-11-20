@@ -42,8 +42,8 @@ const bundle = await build({
         export const CanvasItemContextMenu = () => null;
         export const AssetItemContextMenu = () => null;
         export const FolderContextMenu = () => null;`
-      : `export const pickLocalFiles = () => window.fixture.pick();
-        export const probeLocalFiles = () => { throw new Error('Unexpected local file probe in the async import fixture'); };
+      : `export const pickLocalFiles = options => window.fixture.pick(options);
+        export const probeLocalFiles = (paths, contentMime) => window.fixture.probe(paths, contentMime);
         export const getWorkspaceAssets = (...args) => window.fixture.get(...args);
         export const indexWorkspaceAssets = (...args) => window.fixture.mutate('index', ...args);
         export const instantiateWorkspaceAssets = (...args) => window.fixture.mutate('instantiate', ...args);
@@ -77,7 +77,8 @@ function setup(t) {
     toasts,
     state: { nodes: [{ id: 'target', type: 'material', position: { x: 0, y: 0 }, data: { materialType: 'image', nodeKind: 'import' } }], edges: [],
       applyCanvasInputMutation: plan => { writes.push(plan); return { status: 'allowed' }; } },
-    pick: () => { const pending = deferred(); picks.push(pending); return pending.promise; },
+    pick: options => { const pending = deferred(); picks.push({ ...pending, options }); return pending.promise; },
+    probe: () => { throw new Error('Unexpected local file probe in the async import fixture'); },
     libraryPick: () => { const pending = deferred(); picks.push(pending); return pending.promise; },
     get: (id, signal) => { reads.push({ id, signal }); return Promise.resolve(assetsResponse(1, id)); },
     mutate: (method, id, payload) => { const pending = deferred(); mutations.push({ method, id, payload, ...pending }); return pending.promise; },
@@ -122,6 +123,19 @@ test('native fill uses current gateway and native path; cancellation and network
   pending = f.win.currentPicker.fillImportNode();
   await f.flush(() => f.picks[2].reject(new Error('offline')));
   assert.equal(await pending, false); assert.equal(f.toasts[0].message, 'picker.pickFailed');
+});
+
+test('native canvas import keeps a Windows network path for the node and media URL', async t => {
+  const f = setup(t);
+  await f.hooks('A');
+  const path = '\\\\nas.example\\项目 素材\\网络 图像.png';
+  const pending = f.win.currentPicker.fillImportNode();
+  await f.flush(() => f.picks[0].resolve(picked(path)));
+  assert.equal(await pending, true);
+  const imported = f.writes[0].nodePatches[0].data;
+  assert.equal(imported.realPath, path);
+  assert.equal(imported.originalName, '网络 图像.png');
+  assert.equal(new URL(imported.mediaUrl, 'http://localhost').searchParams.get('path'), path);
 });
 
 test('close and reopen retires pending native selection and retained canvas commit callback', async t => {
@@ -182,24 +196,15 @@ test('local pane ignores selection after closing, while a new selection still ad
   const f = setup(t); const added = [];
   const props = { files: [], onAddFiles: files => added.push(...files), onRemove() {} };
   await f.render(f.api.LocalUploadPane, { ...props, active: true });
-  // #2860: dropzone click now goes through the hidden <input type=file> →
-  // handleInputChange; a File without .path falls back to chooseNative. Drive the
-  // stale pick through chooseNative (no .path) then a fresh File with .path.
-  const fileInput = () => f.win.document.querySelector('input[type="file"]');
-  const fireFiles = (files) => {
-    const input = fileInput();
-    Object.defineProperty(input, 'files', { value: files, configurable: true });
-    input.dispatchEvent(new f.win.Event('change', { bubbles: true }));
-  };
-  const pathless = () => Object.assign(new f.win.File(['x'], 'old.png'), {});
-  const withPath = (p) => Object.assign(new f.win.File(['x'], p.split('/').pop()), { path: p });
-  // First selection goes through chooseNative (File without .path → pick())
-  await f.flush(() => fireFiles([pathless()]));
+  const openPicker = () => f.win.document.querySelector('.wf-picker-dropzone').click();
+  await f.flush(openPicker);
   await f.render(f.api.LocalUploadPane, { ...props, active: false });
   await f.render(f.api.LocalUploadPane, { ...props, active: true });
   await f.flush(() => f.picks[0].resolve(picked('/old.png')));
-  assert.equal(added.length, 0); assert.equal(f.toasts.length, 0);
-  await f.flush(() => fireFiles([withPath('/new.png')]));
+  assert.equal(added.length, 0);
+  assert.equal(f.toasts.length, 0);
+  await f.flush(openPicker);
+  await f.flush(() => f.picks[1].resolve(picked('/new.png')));
   assert.equal(added[0].realPath, '/new.png');
 });
 
@@ -219,6 +224,48 @@ test('named slot opens the desktop file input with its extensions and available 
   assert.equal(input.multiple, false);
   await f.render(f.api.LocalUploadPane, { ...props, namedSlot: { ...namedSlot, remaining: 2 } });
   assert.equal(input.multiple, true);
+  await f.flush(() => {
+    Object.defineProperty(input, 'files', { value: [new f.win.File(['x'], 'track.mp3')], configurable: true });
+    input.dispatchEvent(new f.win.Event('change', { bubbles: true }));
+  });
+  assert.equal(f.picks.length, 0);
+  assert.equal(f.toasts[0].message, 'picker.needPath');
+});
+
+test('named slot uses the shared picker with its extensions, count and metadata probe', async t => {
+  const f = setup(t);
+  const added = [], probed = [];
+  f.win.dshDesktop = { filePicker: { version: 1, open() {} } };
+  f.win.__DSH_HOST_PATHS__ = { pathFor: () => '' };
+  f.win.fixture.probe = async (paths, contentMime) => {
+    probed.push({ paths: Array.from(paths), contentMime });
+    return { ok: true, body: { items: paths.map(path => ({ path, exists: true, mime: 'audio/mpeg', size: 42 })) } };
+  };
+  const namedSlot = { extensions: ['mp3', 'wav'], remaining: 1, readDuration: false, accepts: file => file.mime === 'audio/mpeg' };
+  const props = {
+    files: [], active: true, onRemove() {},
+    onAddFiles(files) {
+      for (const file of files) added.push(file);
+    },
+  };
+  await f.render(f.api.LocalUploadPane, { ...props, namedSlot });
+  let inputOpens = 0;
+  f.win.document.querySelector('input[type="file"]').addEventListener('click', () => { inputOpens += 1; });
+  const openPicker = () => f.win.document.querySelector('.wf-picker-dropzone').click();
+  await f.flush(openPicker);
+  assert.equal(inputOpens, 0);
+  assert.deepEqual(f.picks[0].options.extensions, ['mp3', 'wav']);
+  assert.equal(f.picks[0].options.multiple, false);
+  await f.flush(() => f.picks[0].resolve(picked('/音频 文件.mp3')));
+  assert.deepEqual(probed, [{ paths: ['/音频 文件.mp3'], contentMime: true }]);
+  assert.equal(added[0].realPath, '/音频 文件.mp3');
+  assert.equal(added[0].size, 42);
+  await f.render(f.api.LocalUploadPane, { ...props, namedSlot: { ...namedSlot, remaining: 2 } });
+  await f.flush(openPicker);
+  assert.equal(f.picks[1].options.multiple, true);
+  await f.flush(() => f.picks[1].resolve(picked(null)));
+  assert.equal(added.length, 1);
+  assert.equal(f.toasts.length, 0);
 });
 
 test('drawer asset-library selection and index response are isolated across workspaces', async t => {
@@ -259,5 +306,5 @@ test('drawer native canvas import drops A response and inserts only B selection'
   await f.flush(choose);
   await f.flush(() => f.picks[1].resolve(picked('/B.png')));
   assert.equal(inserted.length, 1); assert.equal(inserted[0].real_path, '/B.png');
-  assert.equal(f.toasts[0].level, 'success');
+  assert.equal(f.toasts.length, 0);
 });

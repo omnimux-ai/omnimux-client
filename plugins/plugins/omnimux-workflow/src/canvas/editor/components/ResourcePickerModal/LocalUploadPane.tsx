@@ -3,6 +3,7 @@
  */
 
 import React, { useCallback, useState } from 'react';
+import { hasDesktopFilePicker } from 'dsh-ui-kit/native-file-picker';
 import { FileUp, Trash2, Upload } from 'lucide-react';
 import { useT } from '../../../i18n';
 import { toast } from '../../../ui';
@@ -16,6 +17,7 @@ import { probePickerDrafts } from '../../utils/probePickerDrafts.ts';
 import { localFileMediaUrl } from '../../../../shared/localMedia.ts';
 import PreviewThumb from './PreviewThumb.tsx';
 import { useAsyncInstanceGuard } from '../../hooks/useAsyncInstanceGuard.ts';
+import { reportLocalFilePickerFailure } from '../../utils/reportLocalFilePickerFailure.ts';
 
 export interface LocalUploadPaneProps {
   files: LocalFileDraft[];
@@ -62,11 +64,7 @@ const LocalUploadPane: React.FC<LocalUploadPaneProps> = ({ files, active, onAddF
     const result = await pickLocalFiles(namedSlot ? { extensions: namedSlot.extensions, multiple: namedSlot.remaining > 1 } : undefined).catch(() => null);
     if (!guard.isCurrent(ticket)) return;
     if (!result || !result.ok) {
-      if (result?.body.error === 'picker-unsupported') {
-        toast.warning(t('picker.needPath'));
-      } else {
-        toast.error(t('picker.pickFailed'));
-      }
+      reportLocalFilePickerFailure(result, t);
       return;
     }
     const paths = result.body.paths ?? [];
@@ -102,7 +100,7 @@ const LocalUploadPane: React.FC<LocalUploadPaneProps> = ({ files, active, onAddF
 
   const handleClick = useCallback(() => {
     if (!active || (namedSlot && namedSlot.remaining <= 0)) return;
-    if (namedSlot && hasDesktopFilePaths() && fileInputRef.current) {
+    if (namedSlot && !hasDesktopFilePicker() && hasDesktopFilePaths() && fileInputRef.current) {
       fileInputRef.current.click();
       return;
     }
@@ -112,17 +110,12 @@ const LocalUploadPane: React.FC<LocalUploadPaneProps> = ({ files, active, onAddF
   const handleInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const list = e.target.files;
-      if (list && list.length > 0) {
-        const hasPath = Boolean(list[0] && nativePathOf(list[0]));
-        if (hasPath) {
-          ingestFiles(list);
-        } else {
-          void chooseNative();
-        }
+      if (list?.length) {
+        ingestFiles(list);
         e.target.value = '';
       }
     },
-    [chooseNative, ingestFiles],
+    [ingestFiles],
   );
 
   const handleDrop = useCallback(

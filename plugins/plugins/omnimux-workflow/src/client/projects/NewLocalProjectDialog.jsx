@@ -6,6 +6,7 @@ import {
   IconInfoOutlineRegular,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { pickProjectDirectory, preflightProject } from '../api.js'
+import { useAsyncInstanceGuard } from '../../canvas/editor/hooks/useAsyncInstanceGuard.ts'
 import { MAX_PROJECT_TITLE_LENGTH } from './limits.js'
 import { extractFolderName, firstPickedDirectory } from './pickDirectory.js'
 
@@ -50,7 +51,8 @@ export function NewLocalProjectDialog({
   const defaultTitle = initialTitle || extractFolderName(initialPath)
   const [name, setName] = useState(defaultTitle)
   const [selection, setSelection] = useState({ path: initialPath || '' })
-  const [nameTouched, setNameTouched] = useState(Boolean(defaultTitle))
+  const nameTouched = useRef(Boolean(defaultTitle))
+  const pickGuard = useAsyncInstanceGuard(true)
   const [picking, setPicking] = useState(false)
   const [pickError, setPickError] = useState('')
   const [directoryCheck, setDirectoryCheck] = useState(null)
@@ -98,14 +100,22 @@ export function NewLocalProjectDialog({
     if (next === '') return
     setSelection({ path: next })
     onClearError?.()
-    if (!nameTouched) {
+    if (!nameTouched.current) {
       const fromFolder = extractFolderName(next)
       if (fromFolder) setName(fromFolder)
     }
   }
 
+  const handleCancel = () => {
+    if (busy) return
+    pickGuard.deactivate()
+    onCancel()
+  }
+
   const handlePickDirectory = async () => {
     if (busy || picking) return
+    const ticket = pickGuard.capture()
+    if (!pickGuard.isCurrent(ticket)) return
     setPicking(true)
     setPickError('')
     try {
@@ -115,21 +125,26 @@ export function NewLocalProjectDialog({
           ? onBrowseDirectory
           : pickProjectDirectory
       const result = await picker()
+      if (!pickGuard.isCurrent(ticket)) return
+      if (result?.ok === false) {
+        setPickError(result.body?.message || t('projects.dialog.browseFailed'))
+        return
+      }
       const chosen = firstPickedDirectory(result)
       if (chosen) {
         applyPickedPath(chosen)
       }
     } catch {
-      setPickError(t('projects.dialog.browseFailed'))
+      if (pickGuard.isCurrent(ticket)) setPickError(t('projects.dialog.browseFailed'))
     } finally {
-      setPicking(false)
+      if (pickGuard.isCurrent(ticket)) setPicking(false)
     }
   }
 
   return (
     <ModalDialog
       open
-      onClose={() => { if (!busy) onCancel() }}
+      onClose={handleCancel}
       title={t('projects.dialog.title')}
       titleIcon={<IconFolderCloseRegular size={18} />}
       closeLabel={t('projects.close')}
@@ -137,7 +152,7 @@ export function NewLocalProjectDialog({
       size="md"
       footer={(
         <div className="omnimux-workflow-dialog-footer">
-          <Button variant="secondary" disabled={busy} onClick={onCancel}>
+          <Button variant="secondary" disabled={busy} onClick={handleCancel}>
             {t('projects.dialog.cancel')}
           </Button>
           <Button variant="primary" disabled={!canSubmit} loading={busy} onClick={submit}>
@@ -160,7 +175,7 @@ export function NewLocalProjectDialog({
               aria-label={t('projects.dialog.nameLabel')}
               onChange={(event) => {
                 setName(event.target.value)
-                setNameTouched(event.target.value.trim() !== '')
+                nameTouched.current = event.target.value.trim() !== ''
                 if (error) onClearError?.()
               }}
               onKeyDown={(event) => {

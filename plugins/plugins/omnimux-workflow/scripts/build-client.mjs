@@ -39,6 +39,7 @@ const result = await esbuild.build({
   logLevel: 'info',
   alias: {
     'dsh-ui-kit': kitDir,
+    'dsh-ui-kit/native-file-picker': join(dirname(kitDir), '../src/native-file-picker.js'),
   },
   nodePaths: [
     join(root, 'node_modules'),

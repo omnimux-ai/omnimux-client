@@ -8,6 +8,7 @@
  * there, and still falls back to the Host when the gateway cannot answer.
  * Media, search and save stay on the Host routes below.
  */
+import { requestFilePicker } from 'dsh-ui-kit/native-file-picker'
 import { cloudManifestUrl, cloudPageUrl, resolveCloudBase } from './cloud-source.js'
 import { defaultRequestCoalescer } from './request-coalescer.js'
 
@@ -98,7 +99,9 @@ export function deleteMapping(id) {
  * @param {'file' | 'directory'} kind
  */
 export function pickPath(kind) {
-  return assetsRequest('/omnimux/assets/pick', { method: 'POST', body: { kind } })
+  const prompt = kind === 'directory' ? '选择要添加的文件夹' : '选择要添加的文件'
+  return requestFilePicker({ kind, multiple: true, prompt }, () =>
+    assetsRequest('/omnimux/assets/pick', { method: 'POST', body: { kind } }))
 }
 
 /**

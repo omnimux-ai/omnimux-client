@@ -1,7 +1,8 @@
 /**
- * ACL over Host /omnimux/assets/* — string paths only, no package import.
+ * ACL over Host /omnimux/assets/* with desktop-owned path selection.
  * 404 / network failures return ok:false + empty lists; they never throw.
  */
+import { requestFilePicker } from 'dsh-ui-kit/native-file-picker';
 import {
   interpretPickResponse,
   mapLibraryAssetToSubject,
@@ -128,23 +129,25 @@ export function createAssetsLibraryClient(opts: { fetch?: AssetsFetch } = {}) {
 
   async function pickAssets(kind: PickKind): Promise<AssetsPickResult> {
     try {
-      const response = await fetchImpl('/omnimux/assets/pick', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind }),
+      const result = await requestFilePicker({ kind, multiple: true }, async () => {
+        const response = await fetchImpl('/omnimux/assets/pick', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kind }),
+        });
+        const body = await readJson(response);
+        return {
+          ok: response.ok,
+          status: response.status,
+          body: {
+            error: typeof body.error === 'string' ? body.error : undefined,
+            message: typeof body.message === 'string' ? body.message : undefined,
+            path: typeof body.path === 'string' ? body.path : null,
+            paths: Array.isArray(body.paths) ? (body.paths as string[]) : undefined,
+          },
+        };
       });
-      const body = await readJson(response);
-      const interpretation = interpretPickResponse({
-        ok: response.ok,
-        status: response.status,
-        body: {
-          error: typeof body.error === 'string' ? body.error : undefined,
-          message: typeof body.message === 'string' ? body.message : undefined,
-          path: typeof body.path === 'string' || body.path === null ? (body.path as string | null) : null,
-          paths: Array.isArray(body.paths) ? (body.paths as string[]) : [],
-        },
-      });
-      return { ok: response.ok, status: response.status, interpretation };
+      return { ok: result.ok, status: result.status, interpretation: interpretPickResponse(result) };
     } catch {
       return {
         ok: false,

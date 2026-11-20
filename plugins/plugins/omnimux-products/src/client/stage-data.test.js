@@ -24,12 +24,18 @@ export { CreateProductMenu } from './CreateProductMenu.jsx'
 export * from './api.js'
 export { ChatIcon } from './icons.jsx'`,
 }
+const uiKitBoundary = {
+  name: 'ui-kit-components',
+  setup(ctx) {
+    ctx.onResolve({ filter: /^dsh-ui-kit$/ }, ({ path }) => ({ path, external: true }))
+  },
+}
 const bundle = await build({
   // 产品库宿主已并入资产库：被测对象改为 ProductTab（产品 UI 仍取本插件的生产源码）。
   entryPoints: [fileURLToPath(new URL('../../../omnimux-assets/src/client/ProductTab.jsx', import.meta.url))],
   bundle: true, write: false, format: 'cjs', platform: 'browser', jsx: 'automatic',
-  external: ['react', 'react/jsx-runtime', 'dsh-ui-kit'],
-  plugins: [{ name: 'visual-boundaries', setup(ctx) {
+  external: ['react', 'react/jsx-runtime'],
+  plugins: [uiKitBoundary, { name: 'visual-boundaries', setup(ctx) {
     ctx.onResolve({ filter: /.*/ }, ({ path }) => Object.hasOwn(stubs, path) ? { path, namespace: 'stub' } : undefined)
     ctx.onLoad({ filter: /.*/, namespace: 'stub' }, ({ path }) => ({
       contents: stubs[path], loader: 'jsx',
@@ -41,7 +47,7 @@ const bundle = await build({
 const gridBundle = await build({
   entryPoints: [fileURLToPath(new URL('./ProductGrid.jsx', import.meta.url))],
   bundle: true, write: false, format: 'cjs', platform: 'browser', jsx: 'automatic',
-  external: ['dsh-ui-kit'],
+  plugins: [uiKitBoundary],
   logLevel: 'silent',
 })
 const gridContext = {
@@ -65,7 +71,7 @@ function find(tree, matches) {
   return null
 }
 
-function mount(dispatcher, overrides = {}) {
+function mount(dispatcher, overrides = {}, dshDesktop) {
   const hooks = []
   let pendingEffects = []
   let liveCleanups = []
@@ -83,9 +89,11 @@ function mount(dispatcher, overrides = {}) {
       return hooks[slot]
     },
     useEffect(effect) { pendingEffects.push(effect) },
+    useLayoutEffect(effect) { pendingEffects.push(effect) },
     useCallback(callback) { return callback },
   }
   const context = {
+    dshDesktop,
     module: { exports: {} },
     require(name) {
       if (name === 'react') return react
@@ -542,4 +550,42 @@ test('ProductGrid triggers onOpen on card click and onEmptyAction on empty butto
   assert.doesNotThrow(() => {
     safeCard.props.onClick()
   }, 'clicking card without onOpen should safely do nothing')
+})
+
+test('product forms use the Desktop chooser and keep a pending result in its own form', async () => {
+  await withStore(async ({ dispatcher }) => {
+    const expectedPaths = ['/fixtures/媒体 二.png', '/fixtures/媒体一.png']
+    const requests = []
+    const pending = Promise.withResolvers()
+    const desktop = {
+      protocolVersion: 1,
+      filePicker: {
+        version: 1,
+        open: options => {
+          requests.push(options)
+          return requests.length === 1
+            ? pending.promise
+            : Promise.resolve({ ok: true, path: expectedPaths[0], paths: expectedPaths })
+        },
+      },
+    }
+    const mounted = mount(dispatcher, { intent: { mode: 'create', kind: 'physical', nonce: 1 } }, desktop)
+    let form = find(mounted.render(), component('ProductFormPage'))
+    const pick = form.props.onPick('file')
+    assert.equal(requests.length, 1)
+    assert.equal(requests[0].kind, 'file')
+    assert.equal(requests[0].multiple, true)
+    assert.deepEqual(Array.from(await form.props.onPick('file')), [])
+    assert.equal(requests.length, 1)
+
+    mounted.unmount()
+    pending.resolve({ ok: true, path: expectedPaths[0], paths: expectedPaths })
+    assert.deepEqual(Array.from(await pick), [])
+
+    const next = mount(dispatcher, { intent: { mode: 'create', kind: 'digital', nonce: 2 } }, desktop)
+    form = find(next.render(), component('ProductFormPage'))
+    assert.equal(form.props.kind, 'digital')
+    assert.deepEqual(Array.from(await form.props.onPick('file')), expectedPaths)
+    next.unmount()
+  })
 })

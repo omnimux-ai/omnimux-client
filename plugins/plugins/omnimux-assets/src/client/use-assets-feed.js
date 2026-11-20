@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createAsset, deleteAsset, getState, pickPath, updateAsset } from './api.js'
 import { subscribeAssetsChanged } from './assets-events.js'
+import { useFormFilePicker } from './use-form-file-picker.js'
 import {
   citeOf,
   cleanRemovedSelection,
   errText,
   filterAndSortAssets,
   messageOf,
-  parsePickedPathsResult,
   toggleAssetIdInSet,
 } from './feed-helpers.js'
 
@@ -259,18 +259,6 @@ function useCiteCopy() {
   return { copiedId, copyCite }
 }
 
-function usePickHandler(t, setFormError) {
-  return useCallback(async (kind) => {
-    const result = await pickPath(kind)
-    const parsed = parsePickedPathsResult(result, t)
-    if (!parsed.ok) {
-      setFormError(parsed.error)
-      return []
-    }
-    return parsed.paths
-  }, [setFormError, t])
-}
-
 function useCreateHandler(options) {
   const { run, setCreating, setDetail, setFilterType } = options
   return useCallback((payload) => {
@@ -314,7 +302,7 @@ function useFeedMutations(options) {
     return executeMutation({ work, after, refreshState, setBusy, setError, setFormError, t })
   }, [refreshState, setBusy, setError, setFormError, t])
 
-  const handlePick = usePickHandler(t, setFormError)
+  const handlePick = useFormFilePicker({ active: options.open && Boolean(options.creating), owner: options.creating, pickPath, t, setFormError })
   const { copiedId, copyCite } = useCiteCopy()
   const handleCreate = useCreateHandler({ run, setCreating, setDetail, setFilterType })
   const handleSaveDetail = useSaveDetailHandler({ detail, run, setDetail })
@@ -366,6 +354,8 @@ export function useAssetsFeed(options) {
 
   const mutations = useFeedMutations({
     t,
+    open,
+    creating,
     detail,
     setDetail,
     setCreating,

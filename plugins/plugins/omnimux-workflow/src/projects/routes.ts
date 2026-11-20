@@ -13,7 +13,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import {
   MAX_JSON_BODY_BYTES,
   sendJson,
@@ -479,8 +479,7 @@ export function createProjectDispatcher(opts: { libraryRoot?: string; workspaceS
         mkdirSync(targetDir, { recursive: true });
         for (const src of paths) {
           if (existsSync(src)) {
-            const basename = join(src).split('/').pop() || 'upload';
-            copyFileSync(src, join(targetDir, basename));
+            copyFileSync(src, join(targetDir, basename(src) || 'upload'));
           }
         }
         return { status: 200, body: { ok: true } };

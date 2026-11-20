@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { Badge, Button, DropdownSelect, IconButton, InputField, ModalDialog } from 'dsh-ui-kit';
 import { ModalCloseButton } from '../ModalCloseButton.jsx';
+import { pickAssetPaths } from './asset-file-picker.js';
 
 export const ASSET_TYPE_KEYS = ['character', 'scene', 'style', 'prop', 'knowledge', 'custom'];
 
@@ -63,7 +64,7 @@ function extractBaseName(filePath) {
  * @param {{
  *   open: boolean,
  *   presetType?: string,
- *   autoPick?: boolean,
+ *   initialPick?: ReturnType<typeof pickAssetPaths> | null,
  *   t: (key: string, vars?: object) => string,
  *   onClose: () => void,
  *   onPick?: (kind: 'file' | 'directory') => Promise<string[]>,
@@ -74,7 +75,7 @@ function extractBaseName(filePath) {
 export function AssetAddModal({
   open,
   presetType = 'character',
-  autoPick = false,
+  initialPick = null,
   t,
   onClose,
   onPick,
@@ -93,23 +94,10 @@ export function AssetAddModal({
   const [files, setFiles] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const autoPickedRef = useRef(false);
+  const pendingPick = useRef(null);
+  const [picking, setPicking] = useState(Boolean(initialPick));
 
-  useEffect(() => {
-    if (open) {
-      setType(ASSET_TYPE_KEYS.includes(presetType) ? presetType : 'character');
-      setName('');
-      setDescription('');
-      setTags([]);
-      setFiles([]);
-      setError('');
-      setBusy(false);
-      autoPickedRef.current = false;
-      nameRef.current?.focus();
-    }
-  }, [open, presetType]);
-
-  const addPaths = (paths) => {
+  const addPaths = useCallback((paths) => {
     const next = Array.isArray(paths)
       ? paths.filter((path) => typeof path === 'string' && path !== '')
       : [];
@@ -129,41 +117,48 @@ export function AssetAddModal({
       if (currentName.trim()) return currentName;
       return extractBaseName(next[0]) || currentName;
     });
-  };
+  }, []);
 
-  const handlePickKind = async (kind = 'file') => {
-    if (busy) return;
-    try {
-      let paths = [];
-      if (typeof onPick === 'function') {
-        paths = await onPick(kind);
-      } else {
-        const response = await fetch('/omnimux/assets/pick', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ kind }),
-        });
-        const data = await response.json();
-        paths = Array.isArray(data.paths) ? data.paths : (data.path ? [data.path] : []);
+  const consumePick = useCallback((request) => {
+    pendingPick.current = request;
+    setPicking(true);
+    void request.then((result) => {
+      if (pendingPick.current !== request) return;
+      pendingPick.current = null;
+      setPicking(false);
+      if ('error' in result) {
+        setError(result.error);
+      } else if (result.paths.length > 0) {
+        setError('');
+        addPaths(result.paths);
       }
-      addPaths(paths);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
-    }
+    });
+  }, [addPaths]);
+
+  useLayoutEffect(() => {
+    if (!open) return undefined;
+    setType(ASSET_TYPE_KEYS.includes(presetType) ? presetType : 'character');
+    setName('');
+    setDescription('');
+    setTags([]);
+    setFiles([]);
+    setError('');
+    setBusy(false);
+    if (initialPick) consumePick(initialPick);
+    else setPicking(false);
+    nameRef.current?.focus();
+    return () => { pendingPick.current = null; };
+  }, [open, presetType, initialPick, consumePick]);
+
+  const handlePickKind = (kind) => {
+    if (busy || pendingPick.current) return;
+    consumePick(pickAssetPaths(kind, onPick));
   };
 
-  // 连携唤起：弹窗打开且带有 autoPick 时自动拉起系统选文件
-  useEffect(() => {
-    if (open && autoPick && !autoPickedRef.current) {
-      autoPickedRef.current = true;
-      // 轻微延迟以确保弹窗挂载后立即拉起系统选择器
-      const timer = setTimeout(() => {
-        void handlePickKind('file');
-      }, 50);
-      return () => clearTimeout(timer);
-    }
-    return undefined;
-  }, [open, autoPick]);
+  const handleClose = () => {
+    pendingPick.current = null;
+    onClose();
+  };
 
   const addTag = () => {
     const next = tagDraft.trim();
@@ -178,7 +173,7 @@ export function AssetAddModal({
 
   const handleSubmit = async () => {
     const finalName = name.trim();
-    if (!finalName || busy) return;
+    if (!finalName || busy || pendingPick.current) return;
     setBusy(true);
     setError('');
     try {
@@ -220,12 +215,12 @@ export function AssetAddModal({
     label: t ? t(`composerAdd.cat.${key}`) : key,
   }));
 
-  const canSubmit = name.trim() !== '' && !busy;
+  const canSubmit = name.trim() !== '' && !busy && !picking;
 
   return (
     <ModalDialog
       open={open}
-      onClose={onClose}
+      onClose={handleClose}
       title={t ? t('composerAdd.addAssetModalTitle') : '添加资产'}
       closeLabel={t ? t('composerAdd.cancel') : '取消'}
       size="lg"
@@ -243,7 +238,7 @@ export function AssetAddModal({
       }
     >
       <div className="omx-asset-add-form">
-        <ModalCloseButton onClose={onClose} placement="external" ariaLabel={t ? t('composerAdd.cancel') : '取消'} />
+        <ModalCloseButton onClose={handleClose} placement="external" ariaLabel={t ? t('composerAdd.cancel') : '取消'} />
 
         <div className="omx-asset-add-name-row">
           <span className="omx-asset-add-at" aria-hidden="true">@</span>
@@ -296,9 +291,9 @@ export function AssetAddModal({
             <Button
               variant="outline"
               size="sm"
-              disabled={busy}
+              disabled={busy || picking}
               onClick={() => {
-                void handlePickKind('file');
+                handlePickKind('file');
               }}
             >
               {t ? t('composerAdd.pickFiles') : '选择文件'}
@@ -306,9 +301,9 @@ export function AssetAddModal({
             <Button
               variant="outline"
               size="sm"
-              disabled={busy}
+              disabled={busy || picking}
               onClick={() => {
-                void handlePickKind('directory');
+                handlePickKind('directory');
               }}
             >
               {t ? t('composerAdd.pickFolders') : '选择文件夹'}

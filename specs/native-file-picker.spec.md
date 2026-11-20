@@ -1,0 +1,29 @@
+# OmniMux 主窗口文件选择器
+
+在本地 OmniMux 桌面中，所有产品插件的打开文件、导入、重连和选择文件夹都由主窗口承载。用户从画布截图中的「导入图片」和「素材 → 本地 → 导入文件」开始遇到左栏无法切换路径。资产库、会话素材和商品库共用相同的 Host 路径选择器。用户确认本次范围为打开和选目录。
+
+## 用户路径与结果
+
+- 创作画布的工具栏、节点导入及重连、素材弹窗、两个资产导入面和项目库上传都从原入口得到选中的文件。命名槽位保留扩展名、格式、容量和单选、多选约束。
+- 新建与复制项目、ComfyUI 安装目录及模型目录均使用主窗口的系统目录选择。取消后保留目录、项目名及编辑状态。
+- 资产库及会话素材可选择多个文件或文件夹。商品的实体和数字表单继续把选中的媒体放入原列表。选取与业务提交仍为不同步骤。
+- 剪辑工坊、任务表单、灵感、市场、发布、头像及附件的原生文件输入从主窗口渲染器触发。剪辑工坊批量重连使用 Chromium 的文件夹授权，以保留重开后的素材恢复。浏览器独立扩展按浏览器窗口运行。
+
+## 假设
+
+- 在 Legacy Dev 上观察到当前画布入口由独立的系统辅助进程打开。AppKit 记录未激活进程置前窗口，同机「添加工作区」能用一次侧栏点击切换。远端主线保留相同 Host 路径。Electron 支持把系统文件目录窗口附到指定父窗。 [Electron 的选择器契约](https://www.electronjs.org/docs/latest/api/dialog#dialogshowopendialogwindow-options)
+- 可信桌面主窗内的 Chromium 文件输入与文件系统选择器已有所属窗口。保持 File、目录授权和字节消费的契约，可以让大文件导入和项目重开继续使用原路径。 [Electron 窗口归属](https://github.com/electron/electron/blob/v44.7.0/shell/browser/file_select_helper.cc#L359-L403) · [Chromium 目录授权](https://github.com/chromium/chromium/blob/152.0.7977.130/content/browser/file_system_access/file_system_chooser.cc#L327-L339)
+- 共享客户端适配器把新的桌面结果映射为已有路径结果，Web 仍使用已有的 Host 入口。需要应用更新的桌面版本收到独立失败状态。
+
+## 证伪方式
+
+- 在隔离 macOS 和 Windows 桌面从每类实际入口打开窗口，检查主窗归属和左栏首击。打开后无法进目录、选中的合法文件不可确认，或者出现第二个弹窗，均判定失败。
+- 用本地夹具验证带空格和中文路径、单选、多选、取消后重开、类型筛选、切项目丢弃过期结果，另外核对资产列表、画布预览、项目目录和剪辑重连。亮暗主题与窄屏都检查打开态。
+- 用校验和并发测试验证未信任的请求被拒绝、同窗仅有一个选择器、失败与取消可区分。合并前验收与合入复验记录实际运行桌面壳和插件的指纹。
+
+## 旧标准变更
+
+- `plugins/plugins/omnimux-workflow/src/canvas/editor/hooks/asyncImports.runtime.test.mjs` :: `drawer native canvas import drops A response and inserts only B selection`
+  原用例在断言画布已插入素材后还要求成功 Toast。插入结果已可见，移除重复反馈后仍断言只插入 B 的素材，并检查没有弹出重复提示。
+- `plugins/plugins/omnimux/src/client/components/asset-picker/asset-picker-add-card.test.js` :: `AssetPicker 规范：非搜索态下首位恒定呈现 AssetPickerAddCard，搜索态下收起`
+  原用例用 `setAutoPick(true)` 的源码字样证明点击会打开窗口。现在在点击事件内直接发起选择以保留用户手势。原有卡片和表单结构断言继续执行，新增交互用例点击卡片并验证同步发起一次文件选择和结果回填。

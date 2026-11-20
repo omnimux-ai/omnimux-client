@@ -58,6 +58,7 @@ import { createMaterialNode, appendWithSelectionReset } from './utils/nodeFactor
 import { pickLocalFiles } from '../bridge/apiClient.ts';
 import { useAsyncInstanceGuard } from './hooks/useAsyncInstanceGuard.ts';
 import { draftsFromPickedPaths } from './utils/localFileDraft.ts';
+import { reportLocalFilePickerFailure } from './utils/reportLocalFilePickerFailure.ts';
 import { classifyAssetImport } from './utils/assetImportAdapter.ts';
 import { planStandaloneImportNodes } from './utils/resourcePickerPolicy.ts';
 import { buildNodeTypes, createNode, registerNodeDefinition } from '../nodes/registry';
@@ -692,11 +693,7 @@ const CanvasEditorContent: React.FC<CanvasEditorProps> = ({
         const picked = await pickLocalFiles().catch(() => null);
         if (!importGuard.isCurrent(ticket)) return;
         if (!picked || !picked.ok) {
-          if (picked?.body.error === 'picker-unsupported') {
-            toast.warning(t('picker.needPath'));
-          } else {
-            toast.error(t('picker.pickFailed'));
-          }
+          reportLocalFilePickerFailure(picked, t);
           return;
         }
         const paths = picked.body.paths ?? [];
@@ -719,7 +716,6 @@ const CanvasEditorContent: React.FC<CanvasEditorProps> = ({
           return node.selected ? { ...node, selected: false } : node;
         }));
         nodeCreateCounter.current += plan.addNodes.length;
-        toast.success(t('picker.importOk'));
         return;
       }
 

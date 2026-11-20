@@ -27,6 +27,8 @@ import {
 } from './launch-workspace-contract.ts'
 import { DESKTOP_RENDERER_ACTION_CHANNEL } from './renderer-actions-contract.ts'
 import { DESKTOP_NATIVE_DIRECTORY_PICKER_CHANNEL } from './directory-picker-contract.ts'
+import { createNativeFilePicker } from './native-file-picker.ts'
+import { DESKTOP_FILE_PICKER_CHANNEL } from './native-file-picker-contract.ts'
 import { createDesktopRendererActionDispatcher } from './renderer-actions-dispatch.ts'
 import type { DesktopNotification, DesktopShellSpec } from './runtime.ts'
 import { prepareTrayIcon } from './tray-icons.ts'
@@ -48,6 +50,7 @@ import {
 const MIN_ZOOM_LEVEL = -4
 const MAX_ZOOM_LEVEL = 4
 const WINDOW_STATE_WRITE_DELAY_MS = 250
+const openNativeFilePicker = createNativeFilePicker((owner, options) => dialog.showOpenDialog(owner, options))
 /**
  * How long a forced renderer termination may take to report its exit before the
  * reload proceeds without it. Windows writes a crash dump for the hung process
@@ -377,6 +380,19 @@ export class ElectronShellGeneration {
       })
     }
 
+    renderer.ipc.handle(DESKTOP_FILE_PICKER_CHANNEL, async (event, request: unknown) => {
+      if (this.released || this.options.isQuitting() || this.window !== window || event.sender !== renderer
+        || event.senderFrame === null || event.senderFrame !== renderer.mainFrame
+        || !sameOriginFrame(event.senderFrame.url, origin)) {
+        return { ok: false, error: 'picker-unavailable' }
+      }
+      const result = await openNativeFilePicker(window, renderer, request)
+      if (this.released || this.options.isQuitting() || this.window !== window) {
+        return { ok: false, error: 'picker-unavailable' }
+      }
+      return result
+    })
+
     renderer.ipc.handle(SETUP_ONBOARDING_CHANNEL, async (event, request: unknown) => {
       if (this.released || event.sender !== renderer || event.senderFrame !== renderer.mainFrame
         || !sameOriginFrame(event.senderFrame.url, origin)) throw new Error('Untrusted setup sender')
@@ -690,6 +706,7 @@ export class ElectronShellGeneration {
       if (!renderer.isDestroyed()) {
         renderer.ipc.removeHandler(DESKTOP_RENDERER_ACTION_CHANNEL)
         if (platform.platform === 'darwin') renderer.ipc.removeHandler(DESKTOP_NATIVE_DIRECTORY_PICKER_CHANNEL)
+        renderer.ipc.removeHandler(DESKTOP_FILE_PICKER_CHANNEL)
         renderer.ipc.removeHandler(SETUP_ONBOARDING_CHANNEL)
       }
       if (isolated) {

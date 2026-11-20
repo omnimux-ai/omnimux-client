@@ -10,6 +10,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, ConfirmModal, Divider, FilterBar, IconPlusOutline16, ModalDialog, PageHeader, SearchField, Tabs } from 'dsh-ui-kit'
 import { Info } from 'lucide-react'
+import { Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   listProjects,
   getProject,
@@ -28,6 +29,7 @@ import {
   ingestWorkspaceAssets,
   pickLocalFiles,
 } from '../../canvas/bridge/apiClient.ts'
+import { useAsyncInstanceGuard } from '../../canvas/editor/hooks/useAsyncInstanceGuard.ts'
 import { injectWorkflowStyles } from '../styles.js'
 import { NewLocalProjectDialog } from './NewLocalProjectDialog.jsx'
 import { dismissProductStage, runNewProject } from './newProject.js'
@@ -132,6 +134,11 @@ export function ProjectLibraryPage(props) {
 
   const [projects, setProjects] = useState([])
   const [selectedProject, setSelectedProject] = useState(null)
+  const projectGuard = useAsyncInstanceGuard(JSON.stringify([visible, selectedProject?.id]))
+  const pendingUpload = useRef(null)
+  const [pickerNotice, setPickerNotice] = useState(null)
+  const [uploadingProject, setUploadingProject] = useState(null)
+  const [loadingProject, setLoadingProject] = useState(null)
   const [projectDetail, setProjectDetail] = useState(null)
   const [detailTab, setDetailTab] = useState('pages') // pages | assets
   const [assetsDoc, setAssetsDoc] = useState(null)
@@ -224,10 +231,12 @@ export function ProjectLibraryPage(props) {
 
   // 2. 当进入某个项目时，加载该项目的完整 pages 与资产列表
   const loadProjectDetail = useCallback(async (project) => {
-    if (!project?.id) return
-    setBusy(true)
+    const ticket = projectGuard.capture()
+    if (!project?.id || !projectGuard.isCurrent(ticket)) return
+    setLoadingProject(projectGuard)
     try {
       const res = await getProject(project.id)
+      if (!projectGuard.isCurrent(ticket)) return
       if (res.ok && res.body?.project) {
         setProjectDetail(res.body.project)
         setProjects((current) => current.map((item) => item.id === project.id ? { ...item, cover: res.body.project.cover, pages: res.body.project.pages } : item))
@@ -237,6 +246,7 @@ export function ProjectLibraryPage(props) {
 
       // 优先从真实物理工作区目录读取文件列表
       const filesRes = await fetchProjectFiles(project.id)
+      if (!projectGuard.isCurrent(ticket)) return
       if (filesRes.ok && Array.isArray(filesRes.body?.items)) {
         setAssetsDoc({
           folders: filesRes.body.items.filter((i) => i.isFolder),
@@ -246,16 +256,17 @@ export function ProjectLibraryPage(props) {
         // 加载项目资产 (回退)
         const assetsWorkspaceId = project.pages?.[0]?.canvasWorkspaceId || project.id
         const assetsRes = await getWorkspaceAssets(assetsWorkspaceId)
+        if (!projectGuard.isCurrent(ticket)) return
         if (assetsRes.ok && assetsRes.body?.assets) {
           setAssetsDoc(assetsRes.body.assets)
         }
       }
     } catch {
-      setProjectDetail(project)
+      if (projectGuard.isCurrent(ticket)) setProjectDetail(project)
     } finally {
-      setBusy(false)
+      if (projectGuard.isCurrent(ticket)) setLoadingProject(null)
     }
-  }, [])
+  }, [projectGuard])
 
   useEffect(() => {
     if (!visible) return
@@ -446,24 +457,43 @@ export function ProjectLibraryPage(props) {
 
   // 9. 资产管理：上传文件 (物理工作区目录)
   const handleUploadFile = async () => {
-    if (!selectedProject) return
+    const ticket = projectGuard.capture()
+    if (!visible || !selectedProject || pendingUpload.current === projectGuard || !projectGuard.isCurrent(ticket)) return
+    pendingUpload.current = projectGuard
     try {
-      const pickRes = await pickLocalFiles()
-      if (pickRes.ok && Array.isArray(pickRes.body?.paths) && pickRes.body.paths.length > 0) {
-        setBusy(true)
-        const uploadRes = await uploadProjectFiles(selectedProject.id, pickRes.body.paths)
-        if (uploadRes.ok) {
-          void loadProjectDetail(selectedProject)
-        } else {
-          const wsId = selectedProject.pages?.find((page) => page.id === selectedProject.activePageId)?.canvasWorkspaceId || selectedProject.pages?.[0]?.canvasWorkspaceId || selectedProject.id
-          await ingestWorkspaceAssets(wsId, {
-            files: pickRes.body.paths.map((p) => ({ source_path: p })),
-          })
-          void loadProjectDetail(selectedProject)
+      const pickRes = await pickLocalFiles().catch(() => null)
+      if (!projectGuard.isCurrent(ticket)) return
+      if (!pickRes?.ok) {
+        setPickerNotice(previous => ({
+          id: (previous?.id ?? 0) + 1,
+          projectGuard,
+          message: errText(pickRes, t),
+        }))
+        return
+      }
+      const paths = pickRes.body?.paths
+      if (!Array.isArray(paths) || !paths.length) return
+      setError('')
+      setUploadingProject(projectGuard)
+      const uploadRes = await uploadProjectFiles(selectedProject.id, paths)
+      if (!projectGuard.isCurrent(ticket)) return
+      if (!uploadRes.ok) {
+        const wsId = selectedProject.pages?.find((page) => page.id === selectedProject.activePageId)?.canvasWorkspaceId || selectedProject.pages?.[0]?.canvasWorkspaceId || selectedProject.id
+        const indexed = await ingestWorkspaceAssets(wsId, {
+          files: paths.map((source_path) => ({ source_path })),
+        })
+        if (!projectGuard.isCurrent(ticket)) return
+        if (!indexed.ok) {
+          setError(errText(indexed, t))
+          return
         }
       }
+      await loadProjectDetail(selectedProject)
+    } catch (error) {
+      if (projectGuard.isCurrent(ticket)) setError(error?.message || t('projects.genericError'))
     } finally {
-      setBusy(false)
+      if (pendingUpload.current === projectGuard) pendingUpload.current = null
+      if (projectGuard.isCurrent(ticket)) setUploadingProject(null)
     }
   }
 
@@ -575,6 +605,7 @@ export function ProjectLibraryPage(props) {
         canvasWorkspaceId: selectedProject?.pages?.find((page) => page.id === selectedProject?.activePageId)?.canvasWorkspaceId || selectedProject?.pages?.[0]?.canvasWorkspaceId || selectedProject?.id,
         createdAt: selectedProject?.createdAt || new Date().toISOString(),
       }]
+  const detailBusy = busy || loadingProject === projectGuard
   const currentAssetsCount = (assetsDoc?.folders?.length ?? 0) + (assetsDoc?.items?.length ?? 0)
 
   return (
@@ -585,6 +616,14 @@ export function ProjectLibraryPage(props) {
       className="omnimux-workflow-library-page"
       data-visible={visible ? 'true' : 'false'}
     >
+      {pickerNotice?.projectGuard === projectGuard && (
+        <Toast
+          key={pickerNotice.id}
+          text={pickerNotice.message}
+          icon={<Info size={16} />}
+          onDone={() => setPickerNotice(current => current === pickerNotice ? null : current)}
+        />
+      )}
       {/* 视图分支 A：项目详情页 (图 2 & 图 3 模式) */}
       {selectedProject ? (
         <>
@@ -635,7 +674,7 @@ export function ProjectLibraryPage(props) {
                 variant="primary"
                 className="omnimux-create-page-btn"
                 leadingIcon={<IconPlusOutline16 />}
-                disabled={busy}
+                disabled={detailBusy}
                 onClick={handleCreatePageInProject}
                 title="新建创作页"
               >
@@ -656,7 +695,7 @@ export function ProjectLibraryPage(props) {
               onCreatePage={handleCreatePageInProject}
               onRenamePage={handleRenamePage}
               onDeletePage={handleDeletePage}
-              loading={busy}
+              loading={detailBusy}
               t={t}
             />
           )}
@@ -668,7 +707,7 @@ export function ProjectLibraryPage(props) {
               onCreateFolder={handleCreateFolder}
               onUploadFile={handleUploadFile}
               onRefresh={() => void loadProjectDetail(selectedProject)}
-              loading={busy}
+              loading={detailBusy || uploadingProject === projectGuard}
               t={t}
             />
           )}

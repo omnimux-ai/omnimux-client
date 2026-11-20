@@ -165,6 +165,14 @@ test('T0 paths：libraryRoot / projectRoot 必须绝对路径 + 越界断言', (
       () => host.resolveProjectRelPath(projectRoot, '../evil.png'),
       (e) => e.code === 'path-denied',
     );
+    assert.throws(
+      () => host.resolveProjectRelPath(projectRoot, '\\\\nas.example\\Share\\image.png'),
+      (e) => e.code === 'path-denied',
+    );
+    assert.throws(
+      () => host.resolveProjectRelPath(projectRoot, '\\images\\image.png'),
+      (e) => e.code === 'path-denied',
+    );
   } finally {
     rmSync(libraryRoot, { recursive: true, force: true });
   }
