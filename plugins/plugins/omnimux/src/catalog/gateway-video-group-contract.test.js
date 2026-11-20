@@ -72,7 +72,7 @@ function snapshotOf(payload = groupedResponse()) {
   return normalizePricingPayload(payload).snapshot
 }
 
-function validate(snapshot, request) {
+function validate(snapshot, request, options = {}) {
   return guardSubmit({
     model: MODEL, group: 'premium', operation: 'first_frame', prompt: 'fixture',
     assets: [{ type: 'image', role: 'first_frame', mime: 'image/png', pathOrUrl: FIRST_FRAME }],
@@ -82,6 +82,7 @@ function validate(snapshot, request) {
     snapshot,
     seam: 'videoGenerate',
     outputType: 'video',
+    ...options,
   })
 }
 
@@ -131,6 +132,20 @@ test('the gateway-generated examples retain whole group variants and required pa
   assert.equal(accepted.ok, true, accepted.message)
   assert.equal(validate(snapshot, { ...request, resolution: '720p' }).ok, false)
   assert.equal(validate(snapshot, { ...request, group: 'narrow', resolution: '480p' }).ok, false)
+})
+
+test('deferring a managed visual prompt keeps required parameters, media and upstream-only text', async () => {
+  const snapshot = await mixedProtocolSnapshot()
+  const request = { model: MODEL_MIXED, group: 'default', operation: 'first_frame', prompt: '' }
+  const options = { deferVisualPrompt: true }
+  assert.equal(validate(snapshot, request, options).details.field, 'duration')
+  assert.equal(validate(snapshot, { ...request, duration: 5, assets: [] }, options).code, 'min_unsatisfied')
+  assert.equal(validate(snapshot, { ...request, duration: 5 }, options).ok, true)
+
+  const upstreamOnly = groupedResponse()
+  const [firstFrame] = upstreamOnly.data[0].effective_video.groups.premium
+  firstFrame.inputs[0] = { ...firstFrame.inputs[0], source: 'upstream_edge' }
+  assert.equal(validate(snapshotOf(upstreamOnly), { prompt: '' }, options).code, 'prompt_required')
 })
 
 test('gateway-only id projects only authorized and supported groups with complete variants', () => {
@@ -342,4 +357,22 @@ test('a new model starts and recovers on the recorded protocol and selected grou
     url: `${GATEWAY_BASE}/video/generations/synthetic-native-task`, method: 'GET', group: 'default',
   })
   assert.deepEqual(await readFile(dest), videoBytes)
+
+  snapshot = snapshotOf()
+  const emptyPrompt = {
+    ...request, allowedGroups: ['budget'], duration: 5, resolution: '720p',
+    prompt: '', deferVisualPrompt: true, effectiveVideoVersion: 'fixture-effective-v1',
+  }
+  const beforeEmptyPrompt = requests.length
+  await assert.rejects(executeOmnimuxVideo({ ...emptyPrompt, deferVisualPrompt: false }), { code: 'omnimux-invalid-request' })
+  assert.equal(requests.length, beforeEmptyPrompt)
+  await executeOmnimuxVideo(emptyPrompt)
+  assert.equal(requests.length, beforeEmptyPrompt + 1)
+  assert.deepEqual(requests.at(-1), {
+    url: `${GATEWAY_BASE}/video/generations`, method: 'POST', group: 'budget', protocol: 'video_generations',
+    body: {
+      operation: 'first_frame', model: MODEL, duration: 5, size: 'adaptive', resolution: '720p',
+      image_with_roles: [{ url: FIRST_FRAME, role: 'first_frame' }],
+    },
+  })
 })

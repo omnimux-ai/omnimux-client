@@ -1437,6 +1437,38 @@ body[data-ds-dark-theme] .wf-canvas-root .wf-gsc__loading-overlay {
 
 .wf-config-panel__prompt-header { flex-wrap: wrap; }
 .wf-config-panel__prompt-header > .wf-slot-wells { flex-wrap: wrap; max-width: 100%; }
+.wf-config-panel__prompt-references {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.wf-config-panel__prompt-references:empty { display: none; }
+.wf-prompt-reference {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  min-height: 26px;
+  padding: 3px 7px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-secondary);
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.wf-prompt-reference:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+.wf-prompt-reference > svg { flex-shrink: 0; }
+.wf-prompt-reference > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .wf-effective-text {
   display: flex;
   align-items: center;
@@ -1672,6 +1704,7 @@ body[data-ds-dark-theme] .wf-canvas-root .wf-gsc__loading-overlay {
   text-overflow: ellipsis;
   pointer-events: none;
 }
+.wf-slot-well--empty:has(.wf-slot-well__position) > svg { transform: translateY(-5px); }
 
 .wf-slot-well--filled {
   width: 44px;

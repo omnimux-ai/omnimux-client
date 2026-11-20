@@ -2,8 +2,8 @@
  * Issue #3034 — each slot definition renders at most one empty well (placeholder + append merged).
  *
  * Seam: rendered ConfigPanel slot wells (.wf-slot-well--empty / --append) counted per data-slot.
- * - prompt unbound → exactly 1 empty card
- * - prompt bound and at max → 0 empty cards
+ * - prompt unbound → one text reference action, zero media wells
+ * - full media capacity → filled card with no add action
  * - first_frame / last_frame (two distinct definitions) → 1 each (total 2, not a conflict)
  */
 import assert from 'node:assert/strict';
@@ -87,24 +87,19 @@ const emptyWells = (html) => {
 const emptyWellsOf = (html, slot) => emptyWells(html).bySlot[slot] ?? 0;
 const totalEmptyWells = (html) => emptyWells(html).total;
 
-for (const legacy of [false, true]) {
-  const tag = legacy ? 'legacy' : 'new';
-
-  test(`${tag} image: unbound prompt slot renders exactly 1 empty well`, () => {
+test('both canvas versions keep image prompt references out of empty media wells', () => {
+  for (const legacy of [false, true]) {
     const html = render(node('image', { legacy }), catalogFor('image'));
-    assert.equal(totalEmptyWells(html), 1, `expect exactly 1 empty well, got ${totalEmptyWells(html)}`);
-  });
-
-  test(`${tag} image: bound+full media slot renders occupant + 0 empty wells`, () => {
+    assert.equal(totalEmptyWells(html), 0, 'the prompt does not occupy a media well');
     const mediaSlot = { slot: 'reference_image', type: 'image', role: 'reference', source: 'upstream_edge', min: 0, max: 1 };
-    const html = render(
+    const filled = render(
       node('image', { legacy, slotBindings: { reference_image: [{ edgeId: 'e-img', sourceNodeId: 'img1', pinned: true }] } }),
       catalogFor('image', [mediaSlot]),
       [{ edgeId: 'e-img', nodeId: 'img1', label: '图', materialType: 'image', url: 'https://example.test/a.png', mimeType: 'image/png', hasMedia: true, availability: 'ready' }],
       [{ id: 'e-img', source: 'img1', target: 'target', targetHandle: 'in' }]);
-    assert.equal(emptyWellsOf(html, 'reference_image'), 0, `bound media slot must not keep an empty well, got ${emptyWellsOf(html, 'reference_image')}`);
-  });
-}
+    assert.equal(emptyWellsOf(filled, 'reference_image'), 0, 'a full media slot does not keep an empty well');
+  }
+});
 
 test('video: first_frame and last_frame each render exactly one named empty well, prompt gets one append', () => {
   const frames = [
@@ -112,9 +107,10 @@ test('video: first_frame and last_frame each render exactly one named empty well
     { slot: 'last_frame', type: 'image', role: 'last_frame', source: 'upstream_edge', min: 1, max: 1 },
   ];
   const html = render(node('video'), catalogFor('video', frames));
-  assert.equal(totalEmptyWells(html), 3, `expect 3 empty wells total (first/last/prompt), got ${totalEmptyWells(html)}`);
+  assert.equal(totalEmptyWells(html), 2);
   assert.equal((html.match(/aria-label="添加首帧"/g) || []).length, 1);
   assert.equal((html.match(/aria-label="添加尾帧"/g) || []).length, 1);
+  assert.match(html, /data-testid="wf-add-prompt-reference"/);
 });
 
 test('new image: bound prompt slot with composition renders occupant + exactly 1 append well (PM adjudication A: capacity-exempt)', () => {
@@ -127,10 +123,9 @@ test('new image: bound prompt slot with composition renders occupant + exactly 1
     [{ edgeId: 'e-text', nodeId: 'text1', label: '正文', materialType: 'text', textContent: '上游正文内容', hasMedia: true, availability: 'ready' }],
     [{ id: 'e-text', source: 'text1', target: 'target', targetHandle: 'in' }],
   );
-  assert.equal(totalEmptyWells(html), 1, `composition prompt keeps exactly 1 append well, got ${totalEmptyWells(html)}`);
-  assert.match(html, /wf-slot-well--filled/);
-  assert.match(html, /data-slot-state="ready"/);
-  assert.match(html, /wf-slot-well--append/);
+  assert.equal(totalEmptyWells(html), 0);
+  assert.match(html, /data-testid="wf-prompt-references"[\s\S]*data-slot-edge="e-text" data-slot-state="ready"/);
+  assert.equal((html.match(/data-testid="wf-add-prompt-reference"/g) ?? []).length, 1);
 });
 
 test('legacy image: slot with min=2 unbound renders at most 1 empty well (capped at 1 per OCR finding)', () => {

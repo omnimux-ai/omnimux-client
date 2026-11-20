@@ -1,5 +1,5 @@
 import type { CapabilityCatalog } from '../../api.ts';
-import { buildContractView, buildUpstreamFingerprint, resolveModelView } from '../../validation/compatKernel.ts';
+import { buildContractView, buildUpstreamFingerprint, isVisualGeneration, resolveModelView } from '../../validation/compatKernel.ts';
 import { buildInputCapability } from '../../validation/inputCapability.ts';
 import { narrowCatalogByRouting, resolveEffectiveVideoGroup, resolveEffectiveVideoOperation } from '../../validation/lineConstraints.ts';
 import { managedVideoLineFingerprint } from '../../validation/managedVideoExecution.ts';
@@ -22,11 +22,11 @@ import { projectVideoSlotBindings, readVideoSlotDrafts, videoSlotDraftKey } from
 export function prepareExecutionSlotGraph<
   N extends { id: string; type?: string; data?: Record<string, unknown> },
   E extends LegacySlotEdge & { target: string },
->(nodes: N[], edges: E[], catalog: CapabilityCatalog | null | undefined,
+>(nodes: N[], edges: E[], sourceCatalog: CapabilityCatalog | null | undefined,
   scheduledNodeIds?: ReadonlySet<string>,
 ): { nodes: N[]; edges: E[] } {
   const byId = new Map(nodes.map((node) => [node.id, node]));
-  const view = buildContractView(catalog);
+  const view = buildContractView(sourceCatalog);
   const ordinalByTarget = new Map<string, number>();
   let nextEdges = edges.map((edge) => {
     const ordinal = ordinalByTarget.get(edge.target) ?? 0;
@@ -43,12 +43,12 @@ export function prepareExecutionSlotGraph<
     let data = structuredClone(node.data ?? {});
     let params = (data.params ?? {}) as Record<string, unknown>;
     const kind = (data.materialType ?? 'text') as keyof NonNullable<CapabilityCatalog['defaults']>;
-    const modelId = (params.model ?? catalog?.defaults?.[kind]) as string | undefined;
-    const managed = kind === 'video' ? resolveEffectiveVideoGroup(catalog, modelId, params.routing) : null;
+    const modelId = (params.model ?? sourceCatalog?.defaults?.[kind]) as string | undefined;
+    const managed = kind === 'video' ? resolveEffectiveVideoGroup(sourceCatalog, modelId, params.routing) : null;
     if (managed) {
       const variant = resolveEffectiveVideoOperation(managed.group, params.operation, params);
       if (variant) params.operation = variant.id;
-      const effectiveCatalog = narrowCatalogByRouting(catalog, modelId, params.routing, params);
+      const effectiveCatalog = narrowCatalogByRouting(sourceCatalog, modelId, params.routing, params);
       const model = resolveModelView(buildContractView(effectiveCatalog), modelId);
       const projected = projectCanvasInputSources(node.id, data, nodes as unknown as CanvasNode[], nextEdges, effectiveCatalog, model);
       nextEdges = projected.edges;
@@ -85,7 +85,9 @@ export function prepareExecutionSlotGraph<
     const autoOperationId = typeof data.autoOperationId === 'string' || data.autoOperationId === null
       ? data.autoOperationId as string | null
       : undefined;
-    const model = resolveModelView(view, modelId);
+    const baseModel = resolveModelView(view, modelId);
+    const catalog = isVisualGeneration(kind) ? narrowCatalogByRouting(sourceCatalog, baseModel?.id, params.routing, params) : sourceCatalog;
+    const model = catalog === sourceCatalog ? baseModel : resolveModelView(buildContractView(catalog), baseModel?.id);
     const projected = projectCanvasInputSources(node.id, data, nodes as unknown as CanvasNode[], nextEdges, catalog, model);
     data = projected.data;
     nextEdges = projected.edges;

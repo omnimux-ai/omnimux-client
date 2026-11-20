@@ -181,6 +181,7 @@ superseded_by: null
 - **存储**：`$DSH_HOME/omnimux/workflow/` + Canvas JSON。
 - **状态**：双面就绪 (已实装 12 大工具，标杆级画布 Agent 控制)。
 - **视频模式**：画布与 Agent 共用[画布生成契约](canvas-generation.md)。界面按目录中的 `modeKind` 显示名称，`workflow_run` 和节点参数使用原 operation ID。已接入分组能力的节点按有效组合查组、方式、参数和槽位。生产范围以实际验收为准。
+- **生成输入**：节点提交与 `workflow_run` 共用[当前操作和线路的输入投影](canvas-generation.md#选择和素材)。
 
 | 业务功能描述 | 对应 UI 交互 / HTTP 路由 | Agent 工具名称 (`Tool Name`) | 分级 | 状态 | 破坏性 confirm |
 |---|---|---|---|---|---|
@@ -192,7 +193,7 @@ superseded_by: null
 | 更新指定节点的参数与配置。网关分组的选择、默认值及参数校验遵循[画布生成契约](canvas-generation.md#选择和素材)。可用 `patch.swap_reference_images` 交换有序参考图卡槽的起始图 | 节点右侧属性面板及参考图卡槽的起始图设置 | `workflow_node_update` | L1 | `Implemented` | 否 |
 | 移除画布上的指定节点及其相连边 | 节点选中按 Delete 键 | `workflow_node_remove` | L1 | `Implemented` | 是 (`confirm: true`) |
 | 在两节点端口之间建立连接边并重算入槽，分组能力节点保留用户已选方式 | 鼠标拖拽连线 | `workflow_connect` | L1 | `Implemented` | 否 |
-| 按当前生成方式的具名卡槽添加或替换素材。系统对话框与拖入可使用桌面本地文件 | 卡槽「添加」及预览「替换」 | — | UI-Only | `UI-Only` | 豁免（桌面文件选择与画布撤销） |
+| 添加同用途的参考素材，向首帧、尾帧等具名角色分配素材，或在提示词区引用上游文本。系统对话框与拖入可使用桌面本地文件 | 素材区「添加素材」、角色卡槽、提示词区「引用上游文本」及预览「替换」 | — | UI-Only | `UI-Only` | 豁免（桌面文件选择与画布撤销） |
 | 断开指定两节点之间的连线边，按连线次序补自动卡槽并保留其余具名绑定 | 边右键删除 | `workflow_disconnect` | L1 | `Implemented` | 是 (`confirm: true`) |
 | 暂停、恢复或取消正在运行的流程 | 控制台暂停/中止按钮 | `workflow_execution_control` | L2 | `Implemented` | 否 |
 | 写入 TableNode 数据表格单元格 | 表格节点全屏编辑器 | `canvas_write_table_node` | L2 | `Implemented` | 否 |

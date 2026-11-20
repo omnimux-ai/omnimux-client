@@ -43,15 +43,23 @@ test('empty and full strips preserve model capacity affordances',()=>{
  const full=render({...props,layout:{...props.layout,slots:[{...spec,max:1}]}});
  assert.doesNotMatch(full,/wf-slot-well--append/);
 });
-test('multi-reference strips have one add control for each open named slot on both canvas versions', () => {
+test('image and audio references share one add control on both canvas versions', () => {
  const images = {...spec, slot:'reference_images', min:1};
  const audio = {...spec, slot:'reference_audios', type:'audio', labelKey:'panel.slot.reference_audios'};
  const layout = {preset:'strip', slots:[images, audio], addButton:true};
  for (const records of [undefined, []]) {
   const html = render({...props, layout, bindings:{}, records});
-  assert.equal((html.match(/data-slot="reference_images"/g) ?? []).length, 1);
-  assert.equal((html.match(/data-slot="reference_audios"/g) ?? []).length, 1);
+  assert.equal((html.match(/data-testid="wf-add-reference"/g) ?? []).length, 1);
+  assert.doesNotMatch(html, /data-slot="reference_images"|data-slot="reference_audios"/);
  }
+});
+test('mixed reference cards follow the projected input order across types', () => {
+ const audio = {...spec, slot:'audio', type:'audio', labelKey:'panel.slot.reference_audios'};
+ const sound = {edgeId:'sound-edge', sourceNodeId:'sound'};
+ const image = props.bindings.refs[0];
+ const records = [{slot:audio, occupant:sound, state:'ready'}, {slot:spec, occupant:image, state:'ready'}];
+ const html = render({...props, layout:{...props.layout, slots:[spec, audio]}, records});
+ assert.match(html,/data-slot-edge="sound-edge"[\s\S]*data-slot-edge="e"/);
 });
 test('replacement and reference grouping labels cover both locales',()=>{
  assert.equal(zh['node.replaceMaterial'],'替换素材'); assert.equal(en['node.replaceMaterial'],'Replace asset');
@@ -69,6 +77,16 @@ test('input_unavailable 记录不再渲染常驻裸「不可用」，但保留�
  assert.match(html,/wf-slot-well__placeholder--broken/);
  assert.doesNotMatch(html,/wf-slot-well__state/);
  assert.doesNotMatch(html,/不可用/);
+});
+test('a composed text binding with a role conflict remains available for replacement', () => {
+ const prompt = {slot:'prompt', type:'text', role:'prompt', min:1, max:1, labelKey:'panel.slot.prompt',
+  composition:{kind:'content_with_instruction', localRole:'instruction'}};
+ const occupant = {edgeId:'replaced', sourceNodeId:'source'};
+ const html = render({
+  ...props, presentation:'prompt', layout:{preset:'strip', outputType:'text', slots:[prompt], addButton:false},
+  records:[{slot:prompt, occupant, state:'invalid', reasonCode:'role_conflict'}],
+ });
+ assert.match(html, /role="button" tabindex="0" data-slot="prompt" data-slot-role="prompt" data-slot-edge="replaced" data-slot-state="invalid"/);
 });
 test('任何槽位状态都不再渲染卡槽下方常驻文案（Issue #4048）',()=>{
  const imageSpec = {slot:'reference_images',type:'image',role:'reference',min:0,max:1,labelKey:'panel.slot.reference_image'};

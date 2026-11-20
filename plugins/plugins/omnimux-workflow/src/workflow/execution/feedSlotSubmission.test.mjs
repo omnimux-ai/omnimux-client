@@ -7,6 +7,14 @@ import { findExecutionReadinessFailure } from '../../shared/validation/execution
 import { prepareExecutionSlotGraph } from '../../shared/graph/feedSlot/prepareExecutionSlotGraph.ts';
 import { buildInitialOutputs } from './executionInputs.ts';
 import { catalogFor, operation, slot } from '../seam/submissionFixtures.mjs';
+import { createOmnimuxSeamClient as createFixtureGateway } from '../seam/omnimuxGateway.ts';
+import { buildCanvasUpstreamFingerprint } from '../../shared/graph/canvasInputSources.ts';
+import { planCanvasInputSelection, validateCanvasInputSelection } from '../../shared/graph/canvasInputMutationGateway.ts';
+import { deriveSlotLayout } from '../../shared/graph/feedSlot/deriveSlotLayout.ts';
+import { effectiveInputDisplay } from '../../shared/graph/feedSlot/effectiveInputDisplay.ts';
+import { feedFromFingerprint } from '../../shared/graph/feedSlot/effectiveFingerprint.ts';
+import { narrowCatalogByRouting } from '../../shared/validation/lineConstraints.ts';
+import '../../canvas/editor/components/MaterialNode/ConfigPanel/channelGroups.ts';
 
 const op = operation('first_last_frame', 'video', [slot('image', 'first_frame', 1, 1, 'first_frame'), slot('image', 'last_frame', 1, 1, 'last_frame')]);
 const catalog = catalogFor('video', 'frames', [op, operation('text_to_video', 'video', [])]);
@@ -24,6 +32,76 @@ function gateway(inputCatalog = catalog) {
 }
 const context = (outputs = {}, extras = {}) => ({ upstreamOutputs: new Map(Object.entries(outputs)), mediaDir: '/tmp/feed-slot', signal: new AbortController().signal, ...extras });
 const graphNode = (id, type = 'image', data = {}) => ({ id, type: 'material', data: { materialType: type, nodeKind: 'import', mediaUrl: `https://example.test/${id}.png`, ...data } });
+
+test('the current visual slot projection carries only visible media to the hub even with an empty prompt', async () => {
+  const prompt = {
+    slot: 'prompt', role: 'prompt', type: 'text', source: 'node_field', min: 1, max: 1,
+    valueSources: ['local_field', 'upstream_output'],
+    composition: { kind: 'content_with_instruction', localRole: 'instruction' },
+  };
+  const reference = { ...slot('image', 'reference', 1, 2, 'reference_images'), allowedMimes: ['image/png'] };
+  const visual = { ...operation('video_multi_ref', 'video'), inputs: [prompt, reference] };
+  const inputCatalog = catalogFor('video', 'frames', [visual]);
+  inputCatalog.models[0].channelGroups = [{ id: 'single', label: 'One image', enabled: true, constraints: { inputs: { image: { max: 1 } } } }];
+  const target = node({
+    reference_images: [
+      { ...occupant('overflow'), ordinal: 1 }, { ...occupant('shown'), ordinal: 0 }, { ...occupant('missing'), ordinal: -1 },
+      { ...occupant('wrong-type'), ordinal: 2 }, { ...occupant('wrong-mime'), ordinal: 3 },
+    ],
+    old_audio_role: [occupant('old-role')],
+  }, visual.id);
+  Object.assign(target.data, { prompt: '', inputBindingVersion: 1, autoOperationId: null });
+  target.data.params.routing = { channelGroupId: 'single', allowedGroups: ['single'] };
+  const nodes = [target, graphNode('shown', 'image', { mimeType: 'image/png', sizeBytes: 100 }),
+    graphNode('overflow', 'image'), graphNode('wrong-type', 'audio'),
+    graphNode('wrong-mime', 'image', { mimeType: 'image/jpeg' }), graphNode('old-role', 'audio')];
+  const edges = nodes.slice(1).map(source => edge(source.id, source.data.materialType));
+  const graph = { nodes, edges };
+  const before = structuredClone(graph);
+  const layout = deriveSlotLayout(narrowCatalogByRouting(inputCatalog, 'frames', target.data.params.routing), 'frames', visual.id);
+  assert.equal(layout.slots.find(slot => slot.type === 'image').max, 1);
+  const raw = buildCanvasUpstreamFingerprint(target.id, nodes, edges);
+  const display = effectiveInputDisplay(layout, feedFromFingerprint(raw, 1), target.data.slotBindings, [], edges, [], 1);
+  assert.deepEqual(display.records.map(record => record.occupant.sourceNodeId), ['shown']);
+  const intent = { targetNodeId: target.id, chosenOperationId: visual.id };
+  assert.equal(validateCanvasInputSelection(graph, intent, { catalog: inputCatalog }).accepts, false,
+    'picker mutations still use strict assignment validation');
+  assert.equal(validateCanvasInputSelection(graph, intent, { catalog: inputCatalog }, { forSubmission: true }).ready, true);
+  assert.equal(findExecutionReadinessFailure([target], inputCatalog, graph), null);
+  const missingOnly = { ...target, data: { ...target.data, slotBindings: { reference_images: [occupant('missing')] } } };
+  assert.equal(findExecutionReadinessFailure([missingOnly], inputCatalog, { ...graph, nodes: [missingOnly, ...nodes.slice(1)] })?.reasonCode, 'input_unavailable');
+
+  const hasStale = { ...target, data: { ...target.data, slotBindings: { reference_images: [occupant('wrong-type')] } } };
+  const pick = (sourceNodeId, sourceGraph) => {
+    const source = sourceGraph.nodes.find(node => node.id === sourceNodeId);
+    return planCanvasInputSelection(sourceGraph, { ...intent, selections: [
+      { sourceNodeId, outputId: source.data.mediaUrl, targetSlot: 'reference_images' },
+    ] }, { catalog: inputCatalog });
+  };
+  const picked = pick('shown', { ...graph, nodes: [hasStale, ...nodes.slice(1)] });
+  assert.equal(picked.status, 'allowed');
+  assert.equal(pick('overflow', picked).reasonCode, 'slot_capacity');
+
+  const requests = [];
+  const seam = createFixtureGateway({ getSeam: name => name === 'modelCatalog' ? { list: () => inputCatalog } : {
+    execute: async request => {
+      requests.push(request);
+      throw Object.assign(new Error('endpoint prompt decision'), { code: 'fixture_prompt_decision' });
+    },
+  } });
+  const bindings = nodes.slice(1).map(source => ({
+    edgeId: edge(source.id).id, sourceNodeId: source.id,
+    output: { mediaAssets: [{ type: source.data.materialType, url: source.data.mediaUrl, mimeType: source.data.mimeType, sizeBytes: 100 }] },
+  }));
+  await assert.rejects(createMaterialGatewayExecutor({ gateway: seam }).execute(target, context({}, {
+    upstreamBindings: bindings,
+  })), { code: 'fixture_prompt_decision' });
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].prompt, '');
+  assert.equal(requests[0].deferVisualPrompt, true);
+  assert.deepEqual(requests[0].references.map(ref => ref.sourceNodeId), display.selected.map(record => record.occupant.sourceNodeId));
+  assert.deepEqual(graph, before);
+});
 
 test('versioned dispatch uses graph reference order when saved occupants have no explicit ordinal', async () => {
   const multiple = operation('video_multi_ref', 'video', [slot('image', 'reference', 1, 4, 'reference_images')]);

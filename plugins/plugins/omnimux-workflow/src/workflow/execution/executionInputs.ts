@@ -35,9 +35,12 @@ export function buildInitialOutputs(
       if (model && operation && !operationAcceptsDocuments(model, operation)) continue;
     }
     const resolved = readNodeInputSource(source, workspace.id);
+    // Admission has already projected visual bindings against the selected
+    // operation and line. Preserve the source if another target consumes it.
     const slots = target?.data?.slotBindings as SlotBindings | undefined;
     if (slots !== undefined && ['image', 'video', 'audio'].includes(resolved.materialType)
-      && !Object.values(slots).flat().some((item) => item.edgeId === edge.id && item.sourceNodeId === edge.source)) continue;
+      && !Object.values(slots).some(values => values.some(item => item.use !== 'inactive'
+        && item.edgeId === edge.id && item.sourceNodeId === edge.source))) continue;
     if (resolved.availability === 'ready') {
       const output = {
         ...resolved.output,

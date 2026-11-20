@@ -43,6 +43,7 @@ export interface CanvasInputSelectionVerdict {
 }
 export interface CanvasInputMutation {
   strictConsumption?: CanvasStrictConsumptionIntent;
+  strictAssignments?: readonly { slot: string; edgeId: string }[];
   orderedSlotSwap?: { targetNodeId: string; slot: string; firstEdgeId: string; secondEdgeId: string };
   addNodes?: CanvasNode[];
   addEdges?: CanvasConnectionLike[];
@@ -56,6 +57,7 @@ export interface CanvasMutationRuntimeContext {
 }
 export interface CanvasInputMutationPlan extends CanvasInputMutationState {
   status: 'allowed' | 'rejected' | 'configuration_error';
+  strictAssignments?: CanvasInputMutation['strictAssignments'];
   reasonCode?: string;
   reasonMeta?: Record<string, unknown>;
 }
@@ -114,6 +116,7 @@ export function planCanvasInputSelection(current: CanvasInputMutationState, requ
   const catalog = narrowCatalogByRouting(context.catalog, params.model, params.routing, params);
   const layout = deriveSlotLayout(catalog, typeof params.model === 'string' ? params.model : undefined, request.chosenOperationId);
   const reactivatedEdges = new Set<string>();
+  const strictAssignments: { slot: string; edgeId: string }[] = [];
   const currentBindings = managed
     ? projectVideoSlotBindings(layout, feedFromFingerprint(buildCanvasUpstreamFingerprint(target.id, current.nodes, current.edges), 1),
       readVideoOperationDraft(target.data, variant)) : (target.data.slotBindings ?? {}) as SlotBindings;
@@ -128,6 +131,7 @@ export function planCanvasInputSelection(current: CanvasInputMutationState, requ
     if (request.setUse.use === 'inactive') return planCanvasInputMutation(current,
       { nodePatches: [{ nodeId: target.id, data: { slotBindings: bindings, ...(managed ? { inputBindingVersion: 1 } : {}) } }] }, context);
     reactivatedEdges.add(matches[0]!.edgeId);
+    strictAssignments.push({ slot: request.setUse.slot, edgeId: request.setUse.edgeId });
   }
   const addEdges: CanvasConnectionLike[] = [];
   const all = Object.entries(bindings).flatMap(([slot, values]) => values.map(occupant => ({ slot, occupant })));
@@ -167,6 +171,7 @@ export function planCanvasInputSelection(current: CanvasInputMutationState, requ
     if (!existing) addEdges.push({ id: edgeId, source: source.nodeId, target: target.id });
     const orderedImages = orderedFeed && isOrderedImageReferenceSlot(spec) ? bindings[spec.slot] ?? [] : undefined;
     reactivatedEdges.add(edgeId);
+    strictAssignments.push({ slot: spec.slot, edgeId });
     // A replacement can remove an earlier edge, shifting the remaining implicit ordinals.
     for (const occupant of orderedImages ?? []) {
       occupant.ordinal = resolveSlotOccupantOrdinal(occupant, orderedFeed?.get(occupant.edgeId));
@@ -199,11 +204,12 @@ export function planCanvasInputSelection(current: CanvasInputMutationState, requ
     nodePatches: [{ nodeId: target.id, data: { slotBindings: bindings,
       ...(managed ? { inputBindingVersion: 1 } : {}),
       ...(standbyChanged ? { slotStandbyEdgeIds: remainingStandby } : {}) } }],
-    strictConsumption: request }, context);
+    strictConsumption: request, ...(strictAssignments.length ? { strictAssignments } : {}) }, context);
 }
 
 /** Evaluate a complete saved V1 selection in the current operation context; no route search. */
-export function validateCanvasInputSelection(graph: CanvasInputMutationState, intent: CanvasStrictConsumptionIntent, context: CanvasMutationRuntimeContext): CanvasInputSelectionVerdict {
+export function validateCanvasInputSelection(graph: CanvasInputMutationState, intent: CanvasStrictConsumptionIntent, context: CanvasMutationRuntimeContext,
+  options: { forSubmission?: boolean; strictAssignments?: CanvasInputMutation['strictAssignments'] } = {}): CanvasInputSelectionVerdict {
   const node = graph.nodes.find(item => item.id === intent.targetNodeId);
   const base: CanvasInputSelectionVerdict = { accepts: false, ready: false, operationId: intent.chosenOperationId,
     records: [], bindings: {}, pending: [], rejections: [], contractFingerprint: context.catalog?.fingerprint ?? '', fingerprint: '' };
@@ -229,10 +235,11 @@ export function validateCanvasInputSelection(graph: CanvasInputMutationState, in
   const layout = deriveSlotLayout(catalog, model.id, operation.id);
   const raw = buildCanvasUpstreamFingerprint(node.id, graph.nodes, graph.edges);
   const standbyEdgeIds = (node.data.slotStandbyEdgeIds ?? []) as string[];
+  const selectionOptions = { strictMedia: !options.forSubmission && !options.strictAssignments, strictAssignments: options.strictAssignments };
   const loaded = effectiveInputDisplay(layout, feedFromFingerprint(raw, 1), node.data.slotBindings as SlotBindings | undefined,
-    (node.data.slotConflicts ?? []) as SlotConflict[], [], standbyEdgeIds, 1);
-  const fingerprint = effectiveSlotFingerprint(raw, layout, loaded.bindings, loaded.conflicts, 1, standbyEdgeIds);
-  const match = matchOperationInputs(operation, fingerprint);
+    (node.data.slotConflicts ?? []) as SlotConflict[], [], standbyEdgeIds, 1, selectionOptions);
+  const fingerprint = effectiveSlotFingerprint(raw, layout, loaded.bindings, loaded.conflicts, 1, standbyEdgeIds, selectionOptions);
+  const match = matchOperationInputs(operation, fingerprint, { deferVisualPrompt: options.forSubmission });
   const invalid = loaded.records.find(record => record.state === 'invalid');
   const parameterFailure = findDeclaredParameterFailure(params, operation.parameters, catalog?.models?.find(item => item.id === model.id)?.parameters as Record<string, unknown> | undefined);
   const accepts = !invalid && !parameterFailure && match.accepts;
@@ -320,7 +327,8 @@ export function planCanvasInputMutation(current: CanvasInputMutationState, mutat
   }
   if (mutation.strictConsumption) {
     if (!context) return rejectMutation(current, 'catalog_unavailable');
-    const verdict = validateCanvasInputSelection({ nodes, edges }, mutation.strictConsumption, context);
+    const verdict = validateCanvasInputSelection({ nodes, edges }, mutation.strictConsumption, context,
+      { strictAssignments: mutation.strictAssignments });
     if (!verdict.accepts) return rejectMutation(current, verdict.reasonCode ?? 'operation_incompatible', { verdict });
   }
   // Ordinary drag only validates graph structure. Model type / capacity / format
@@ -346,7 +354,7 @@ export function planCanvasInputMutation(current: CanvasInputMutationState, mutat
     nodes = nodes.map((item) => item.id === id ? next : item);
     edges = mirrorCanvasSlots(next, edges, context);
   }
-  return { nodes, edges, status: 'allowed' };
+  return { nodes, edges, status: 'allowed', ...(mutation.strictAssignments ? { strictAssignments: mutation.strictAssignments } : {}) };
 }
 
 export function dispatchSuccessfulConnectionEvents(edges: Edge[]): void {

@@ -9,7 +9,7 @@ import { readExplicitTargetSlot } from './compatKernel.ts';
 import { buildInputCapability } from './inputCapability.ts';
 import { resolveNodeKind } from '../graph/materialNode.ts';
 import { materialTools } from '../specs/nodes/materialNodeSpec.ts';
-import { deriveSlotLayout, type SlotBindings, type SlotConflict } from '../graph/feedSlot/index.ts';
+import { deriveSlotLayout, type SlotBindings, type SlotConflict, type SlotLayout } from '../graph/feedSlot/index.ts';
 import { effectiveSlotFingerprint, feedFromFingerprint } from '../graph/feedSlot/effectiveFingerprint.ts';
 import { resolveSlotOperation } from '../graph/feedSlot/resolveSlotOperation.ts';
 import { effectiveInputDisplay } from '../graph/feedSlot/effectiveInputDisplay.ts';
@@ -17,8 +17,11 @@ import { narrowCatalogByRouting, requiredEffectiveVideoParameter, resolveEffecti
 import { isManagedVideoLineChanged } from './managedVideoExecution.ts';
 import {
   buildContractView,
+  isMediaInputType,
+  isVisualGeneration,
   matchOperationInputs,
   resolveModelView,
+  type UpstreamFingerprint,
 } from './compatKernel.ts';
 
 export interface ExecutionReadinessNode {
@@ -32,6 +35,45 @@ export interface ExecutionReadinessFailure {
   reasonCode: string;
   message: string;
   slot?: string;
+}
+
+interface ProjectedVisualInputs {
+  data: {
+    slotBindings: SlotBindings;
+    slotConflicts: SlotConflict[];
+    slotStandbyEdgeIds: string[];
+  };
+  unusedInputEdgeIds: ReadonlySet<string>;
+}
+
+function freezeVisualInputs(
+  loaded: ReturnType<typeof effectiveInputDisplay>, layout: SlotLayout, raw: UpstreamFingerprint,
+  effective: UpstreamFingerprint, standby: string[],
+): ProjectedVisualInputs {
+  const slotBindings: SlotBindings = {};
+  const active = new Set<string>();
+  const parked = new Set([...standby, ...loaded.conflicts.filter(conflict => conflict.reason === 'slot_inactive')
+    .map(conflict => conflict.occupant.edgeId)]);
+  for (const { slot, occupant, state } of loaded.records) {
+    (slotBindings[slot.slot] ??= []).push(occupant);
+    if (state === 'inactive') parked.add(occupant.edgeId);
+    else active.add(occupant.edgeId);
+  }
+  const slotConflicts = loaded.conflicts.filter(({ slot, occupant }) =>
+    slotBindings[slot]?.some(value => value.edgeId === occupant.edgeId && value.sourceNodeId === occupant.sourceNodeId));
+  const consumed = new Set(effective.assets.map(asset => asset.edgeId));
+  const unusedInputEdgeIds = new Set(raw.assets.flatMap(asset => {
+    const { edgeId, type } = asset;
+    if (!edgeId) return [];
+    // Legacy documents can supply generation text and parameters outside a named slot.
+    if (type === 'document' && layout.acceptsDocuments !== false) return [];
+    const text = type === 'text' || type === 'table';
+    if (!text && !isMediaInputType(type)) return [];
+    const retiredText = text && parked.has(edgeId) && !active.has(edgeId);
+    return !consumed.has(edgeId) || retiredText ? [edgeId] : [];
+  }));
+  const slotStandbyEdgeIds = [...new Set([...standby, ...unusedInputEdgeIds])];
+  return { data: { slotBindings, slotConflicts, slotStandbyEdgeIds }, unusedInputEdgeIds };
 }
 
 function readString(value: unknown): string | undefined {
@@ -65,20 +107,16 @@ function upstreamSnapshots(nodeId: string, graph?: ExecutionReadinessGraph): Ups
   });
 }
 
-/**
- * Check current sources, roles, slots and declared model parameters. Scheduled
- * generation dependencies may wait until dispatch; imported sources must exist.
- */
-export function findExecutionReadinessFailure(
-  nodes: ExecutionReadinessNode[],
+function createExecutionReadinessCheck(
   inputCatalog: CapabilityCatalog | null | undefined,
   graph?: ExecutionReadinessGraph,
-): ExecutionReadinessFailure | null {
+  onVisualInputs?: (nodeId: string, inputs: ProjectedVisualInputs) => void,
+) {
   const baseView = buildContractView(inputCatalog);
-  for (const node of nodes) {
-    if (node.type !== 'material' || resolveNodeKind(node.data ?? {}) !== 'generate') continue;
+  return (node: ExecutionReadinessNode): ExecutionReadinessFailure | null => {
+    if (node.type !== 'material' || resolveNodeKind(node.data ?? {}) !== 'generate') return null;
     const outputCapabilityId = typeof node.data?.outputCapabilityId === 'string' ? node.data.outputCapabilityId : '';
-    if (outputCapabilityId && materialTools[outputCapabilityId]?.executorKey) continue;
+    if (outputCapabilityId && materialTools[outputCapabilityId]?.executorKey) return null;
     let upstreams = upstreamSnapshots(node.id, graph);
     const deferred = new Set(upstreams.filter((input) => {
       const source = graph?.nodes.find((candidate) => candidate.id === input.nodeId);
@@ -90,7 +128,8 @@ export function findExecutionReadinessFailure(
       ? { nodeId: input.nodeId, label: input.label, materialType: input.materialType, edgeId: input.edgeId,
           role: input.role, targetSlot: input.targetSlot, availability: 'ready' as const,
           // Admission-only placeholder: dispatch revalidates the completed scheduled output.
-          ...(input.materialType === 'text' ? { textContent: '__scheduled_text__' } : { url: 'scheduled:pending' }) }
+          ...(input.materialType === 'text' || input.materialType === 'table'
+            ? { textContent: '__scheduled_text__' } : { url: 'scheduled:pending' }) }
       : input);
     const data = node.data ?? {};
     const inputBindingVersion = data.inputBindingVersion === 1 ? 1 : undefined;
@@ -101,6 +140,7 @@ export function findExecutionReadinessFailure(
     const outputKind = typeof data.materialType === 'string' ? data.materialType : 'text';
     const defaultModel = inputCatalog?.defaults?.[outputKind as keyof NonNullable<CapabilityCatalog['defaults']>];
     const managed = outputKind === 'video' ? resolveEffectiveVideoGroup(inputCatalog, requestedModel ?? defaultModel, params.routing) : null;
+    if (managed && onVisualInputs) return null; // Managed execution already projected the chosen line.
     const reviewed = data.managedVideoGeneration;
     if ((managed || reviewed) && !managed?.group) return {
       nodeId: node.id, reasonCode: 'line_selection_required', message: '请选择当前可用的生成线路',
@@ -116,8 +156,10 @@ export function findExecutionReadinessFailure(
     if (requiredParameter) return {
       nodeId: node.id, reasonCode: 'parameter_required', message: `请选择参数“${requiredParameter}”`,
     };
-    const catalog = managed ? narrowCatalogByRouting(inputCatalog, requestedModel ?? defaultModel, params.routing, params) : inputCatalog;
-    const view = managed ? buildContractView(catalog) : baseView;
+    const baseModel = resolveModelView(baseView, requestedModel ?? defaultModel);
+    const catalog = isVisualGeneration(outputKind)
+      ? narrowCatalogByRouting(inputCatalog, baseModel?.id, params.routing, params) : inputCatalog;
+    const view = catalog === inputCatalog ? baseView : buildContractView(catalog);
     if (!view.available) return { nodeId: node.id, reasonCode: 'catalog_unavailable', message: '模型目录不可用，请稍后重试' };
     const model = resolveModelView(view, requestedModel ?? defaultModel);
     if (!model) return { nodeId: node.id, reasonCode: 'unknown_model', message: '当前模型不可用，请选择模型后重试' };
@@ -159,9 +201,11 @@ export function findExecutionReadinessFailure(
       nodeId: node.id, reasonCode: rawDocumentFailure.availability === 'waiting' ? 'input_waiting' : 'input_unavailable',
       message: rawDocumentFailure.availabilityMessage ?? 'JSON 文件不可用，请修复或移除该输入',
     };
-    const loaded = effectiveInputDisplay(layout, feedFromFingerprint(rawFingerprint, inputBindingVersion), data.slotBindings as SlotBindings | undefined,
+    const feed = feedFromFingerprint(rawFingerprint, inputBindingVersion);
+    const standby = (data.slotStandbyEdgeIds ?? []) as string[];
+    const loaded = effectiveInputDisplay(layout, feed, data.slotBindings as SlotBindings | undefined,
       (data.slotConflicts ?? []) as SlotConflict[], graph?.edges.filter((edge) => edge.target === node.id) ?? [],
-      (data.slotStandbyEdgeIds ?? []) as string[], inputBindingVersion);
+      standby, inputBindingVersion);
     const { bindings, conflicts } = loaded;
     const videoMode = videoCapability?.operationStates.find(candidate => candidate.id === chosenId);
     if (loaded.requiredUnavailable && !deferred.has(loaded.requiredUnavailable.occupant.sourceNodeId)) return {
@@ -170,8 +214,7 @@ export function findExecutionReadinessFailure(
       message: `来源 ${loaded.requiredUnavailable.occupant.sourceNodeId} 的素材尚不可用，请替换或停用`,
       ...(videoMode?.selectableBeforeInputs ? { slot: loaded.requiredUnavailable.slot } : {}),
     };
-    const fingerprint = effectiveSlotFingerprint(rawFingerprint, layout, bindings, conflicts, inputBindingVersion,
-      (data.slotStandbyEdgeIds ?? []) as string[]);
+    const fingerprint = effectiveSlotFingerprint(rawFingerprint, layout, bindings, conflicts, inputBindingVersion, standby);
     const unavailable = fingerprint.assets.find((asset) => asset.availability !== 'ready' && !deferred.has(asset.sourceNodeId));
     if (unavailable) return { nodeId: node.id, reasonCode: unavailable.availability === 'unavailable' ? 'input_unavailable' : 'input_waiting',
       message: unavailable.availabilityMessage ?? `等待来源 ${unavailable.sourceNodeId} 的内容` };
@@ -220,7 +263,7 @@ export function findExecutionReadinessFailure(
         message: parameterFailure.message,
       };
     }
-    const match = matchOperationInputs(operation, fingerprint);
+    const match = matchOperationInputs(operation, fingerprint, { deferVisualPrompt: true });
     const missing = [...match.rejections, ...match.pending].find((failure) => {
       if (deferred.size === 0) return true;
       // Missing dynamic content is checked again against completed scheduler outputs.
@@ -232,6 +275,34 @@ export function findExecutionReadinessFailure(
     });
     if (missing) return { nodeId: node.id, reasonCode: missing.code, message: missing.message,
       ...(videoMode?.selectableBeforeInputs && missing.slot ? { slot: missing.slot } : {}) };
+    if (onVisualInputs && isVisualGeneration(outputKind)) {
+      onVisualInputs(node.id, freezeVisualInputs(loaded, layout, rawFingerprint, fingerprint, standby));
+    }
+    return null;
+  };
+}
+
+/** Check in execution order after resolving the run's dependency scope. */
+export function findExecutionReadinessFailure(
+  nodes: ExecutionReadinessNode[], catalog: CapabilityCatalog | null | undefined, graph?: ExecutionReadinessGraph,
+): ExecutionReadinessFailure | null {
+  const check = createExecutionReadinessCheck(catalog, graph);
+  for (const node of nodes) {
+    const failure = check(node);
+    if (failure) return failure;
   }
   return null;
+}
+
+/** Select inputs independently before pruning the dependency closure. A dormant
+ * node's configuration failure must not stop the requested target's projection. */
+export function collectVisualExecutionInputs(
+  nodes: ExecutionReadinessNode[], catalog: CapabilityCatalog | null | undefined, graph: ExecutionReadinessGraph,
+) {
+  const projections = new Map<string, ProjectedVisualInputs>();
+  const check = createExecutionReadinessCheck(catalog, graph, (nodeId, inputs) => projections.set(nodeId, inputs));
+  for (const node of nodes) {
+    if (typeof node.data?.materialType === 'string' && isVisualGeneration(node.data.materialType)) check(node);
+  }
+  return projections;
 }

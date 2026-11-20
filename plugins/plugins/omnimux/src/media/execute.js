@@ -185,6 +185,7 @@ const CAPABILITY_SEAM = Object.freeze({
  * @param {string} capability
  * @param {{
  *   prompt?: string,
+ *   deferVisualPrompt?: boolean,
  *   dest: string,
  *   duration?: number,
  *   image?: string,
@@ -471,6 +472,7 @@ export async function executeOmnimuxMedia(capability, input) {
 
   try {
     const prompt = typeof input.prompt === 'string' ? input.prompt : ''
+  const deferVisualPrompt = input.deferVisualPrompt === true && (capability === 'image' || capability === 'video')
   const seam = CAPABILITY_SEAM[capability] ?? capability
   const assets = await probeMediaAssets(input, { capability, seam })
 
@@ -532,6 +534,7 @@ export async function executeOmnimuxMedia(capability, input) {
       outputType: capability === 'video' || capability === 'image' || capability === 'audio' ? capability : undefined,
       requireListed: input.requireListed,
       snapshot: runtimeContractIndex.snapshot,
+      deferVisualPrompt,
     },
   )
   }
@@ -641,9 +644,9 @@ export async function executeOmnimuxMedia(capability, input) {
       saveMediaTaskRecord(pendingTaskRecord)
   }
 
-  // Official requests have already passed the selected operation's text
-  // requirements. The transport sees wire fields, which need not use "prompt".
-  const promptRequired = isByok
+  // Canvas visual prompts can be checked by the selected endpoint. Other
+  // official requests use their validated operation-specific wire fields.
+  const promptRequired = isByok && !deferVisualPrompt
   let result
   let acceptedRoute = route
   const isChannelRouting = Boolean(route.group || route.candidates?.some((c) => c.includes('@')))
@@ -704,7 +707,7 @@ export async function executeOmnimuxMedia(capability, input) {
           }
         }
         assertGuardSubmit({ ...guardRequest, group: candidateRow?.id || candidateRoute.group }, {
-          index: runtimeContractIndex.index, seam, capability, outputType: capability, requireListed: input.requireListed,
+          index: runtimeContractIndex.index, seam, capability, outputType: capability, requireListed: input.requireListed, deferVisualPrompt,
         })
       }
       // Pools may cross image protocols. Re-admit each candidate against the
@@ -712,7 +715,7 @@ export async function executeOmnimuxMedia(capability, input) {
       let candidateInput = finalInput
       if (!isByok && route.modelId === 'gpt-image-2.5') {
         const remapped = assertGuardSubmit({ ...guardRequest, group: candidateRoute.group }, {
-          index: runtimeContractIndex.index, seam, capability, outputType: capability, requireListed: input.requireListed,
+          index: runtimeContractIndex.index, seam, capability, outputType: capability, requireListed: input.requireListed, deferVisualPrompt,
         }).vendorPayload
         // Asset hosting is independent of the line's size protocol. Preserve its
         // public URLs and remap only the line-dependent generation parameters.

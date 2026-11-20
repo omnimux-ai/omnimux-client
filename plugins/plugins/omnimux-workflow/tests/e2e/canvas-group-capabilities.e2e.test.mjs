@@ -1,5 +1,5 @@
 /**
- * #140 verifies one synthetic member catalog with an unknown model ID and two lines.
+ * Exercises line capacity, installed model mode names and the canvas input controls.
  * Browser and workflow host use production bundles. The Hub execution seam writes
  * a local synthetic MP4. No gateway, account, credential or real billing is used.
  */
@@ -11,12 +11,24 @@ import { createServer } from 'node:http';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { readBundledSnapshot } from '../../../omnimux/src/catalog/cloud/bundled.js';
 import { buildModelCatalog } from '../../../omnimux/src/catalog/list.js';
 import { normalizePricingPayload } from '../../../omnimux/src/catalog/cloud/snapshot.js';
 
 const plugin = fileURLToPath(new URL('../..', import.meta.url));
 const root = fileURLToPath(new URL('../../../../../', import.meta.url));
 const hash = value => createHash('sha256').update(value).digest('hex');
+
+function buildModeCatalog(max) {
+  const snapshot = structuredClone(readBundledSnapshot().snapshot);
+  const muse = snapshot.models.find(model => model.id === 'muse-video');
+  const seedance = snapshot.models.find(model => model.id === 'seedance-2-5');
+  const imageReference = muse.contract.operations.find(op => op.id === 'video_multi_ref');
+  imageReference.modeKind = 'image_reference';
+  imageReference.inputs.find(input => input.slot === 'reference_images').max = max;
+  seedance.contract.operations.find(op => op.id === 'video_multi_ref').modeKind = 'multimodal_reference';
+  return buildModelCatalog({ snapshot, env: {} });
+}
 
 async function mountFixture(run, canvasBundle, themeCss) {
   const { mountWorkflowHost } = await import(pathToFileURL(join(plugin, 'dist/index.js')).href);
@@ -46,6 +58,10 @@ async function mountFixture(run, canvasBundle, themeCss) {
   const row = catalog.models.find(model => model.id === modelId);
   assert.equal(row?.effectiveVideoVersion, edition);
   assert.deepEqual(row.channelGroups.map(group => group.id).sort(), ['economy', 'studio']);
+  const modeCatalogs = new Map([[2, buildModeCatalog(2)], [10, buildModeCatalog(10)]]);
+  assert.notEqual(modeCatalogs.get(2).fingerprint, modeCatalogs.get(10).fingerprint);
+  let requestedCapacity;
+  const deliveredCapacities = [];
 
   const requests = [];
   const videoFixture = join(run, 'clip.mp4');
@@ -54,7 +70,11 @@ async function mountFixture(run, canvasBundle, themeCss) {
   const referencePng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aU1sAAAAASUVORK5CYII=', 'base64');
   let origin;
   const seams = {
-    modelCatalog: { list: () => catalog },
+    modelCatalog: { list() {
+      if (requestedCapacity === undefined) return catalog;
+      deliveredCapacities.push(requestedCapacity);
+      return modeCatalogs.get(requestedCapacity);
+    } },
     imageGenerate: { execute: async req => { requests.push({ kind: 'unexpected-image', model: req.model }); throw new Error('Hidden source must not be generated'); } },
     videoGenerate: { execute: async req => {
       if (req.taskId) {
@@ -79,6 +99,7 @@ async function mountFixture(run, canvasBundle, themeCss) {
     libraryRoot: join(run, 'library'), gatewayMode: 'omnimux', env: {},
   });
   let workspaceId;
+  let modeWorkspaceId;
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, origin);
     const pathname = url.pathname;
@@ -86,7 +107,8 @@ async function mountFixture(run, canvasBundle, themeCss) {
     res.setHeader('content-security-policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; media-src 'self' blob:; font-src 'self' data:");
     if (pathname === '/canvas.js' || pathname === '/boot.js') {
       res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8' });
-      return res.end(pathname === '/canvas.js' ? canvasBundle : `globalThis.__omnimuxWorkflowCanvas.mountCanvas(document.getElementById('root'),${JSON.stringify({ workspaceId, locale: 'zh' })});`);
+      const activeWorkspace = url.searchParams.get('scenario') === 'modes' ? modeWorkspaceId : workspaceId;
+      return res.end(pathname === '/canvas.js' ? canvasBundle : `globalThis.__omnimuxWorkflowCanvas.mountCanvas(document.getElementById('root'),${JSON.stringify({ workspaceId: activeWorkspace, locale: 'zh' })});`);
     }
     if (pathname === '/theme.css') {
       res.writeHead(200, { 'content-type': 'text/css; charset=utf-8' });
@@ -95,7 +117,22 @@ async function mountFixture(run, canvasBundle, themeCss) {
     if (pathname === '/') {
       const dark = url.searchParams.get('theme') === 'dark';
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-      return res.end(`<!doctype html><html lang="zh" data-theme="${dark ? 'dark' : 'light'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Canvas Group QA</title><link rel="stylesheet" href="/theme.css"><style>html,body,#root{height:100%;margin:0}</style></head><body${dark ? ' data-ds-dark-theme="true"' : ''}><div id="root"></div><script src="/canvas.js"></script><script src="/boot.js"></script></body></html>`);
+      const boot = url.searchParams.get('scenario') === 'modes' ? '/boot.js?scenario=modes' : '/boot.js';
+      return res.end(`<!doctype html><html lang="zh" data-theme="${dark ? 'dark' : 'light'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Canvas Group QA</title><link rel="stylesheet" href="/theme.css"><style>html,body,#root{height:100%;margin:0}</style></head><body${dark ? ' data-ds-dark-theme="true"' : ''}><div id="root"></div><script src="/canvas.js"></script><script src="${boot}"></script></body></html>`);
+    }
+    if (pathname === '/_qa/mode-catalog') {
+      if (req.method === 'POST') {
+        const count = Number(url.searchParams.get('count'));
+        if (!modeCatalogs.has(count)) {
+          res.writeHead(400);
+          return res.end();
+        }
+        requestedCapacity = count;
+        res.writeHead(204);
+        return res.end();
+      }
+      res.writeHead(200, { 'content-type': 'application/json' });
+      return res.end(JSON.stringify({ deliveredCapacities }));
     }
     if (pathname === '/_qa/receipt') {
       res.writeHead(200, { 'content-type': 'application/json' });
@@ -134,12 +171,21 @@ async function mountFixture(run, canvasBundle, themeCss) {
     } };
   });
   const edges = refs.map(node => ({ id: `edge-${node.id}`, source: node.id, target: 'video-target', sourceHandle: 'out', targetHandle: 'in', type: 'animated' }));
-  const bindings = { reference_images: edges.map((edge, ordinal) => ({ edgeId: edge.id, sourceNodeId: edge.source, role: 'reference', pinned: true, ordinal })) };
+  const bindings = { reference_images: edges.slice(0, 5).map((edge, ordinal) => ({ edgeId: edge.id, sourceNodeId: edge.source, role: 'reference', pinned: true, ordinal })) };
   const target = { id: 'video-target', type: 'material', position: { x: 420, y: 140 }, data: { label: '分组验收目标', materialType: 'video', nodeKind: 'generate', selectedTool: 'video-generation', status: 'empty',
-    prompt: '让光线缓慢扫过六个参考物件', params: { model: modelId, operation: 'video_multi_ref', routing: { allowedGroups: ['studio'] }, resolution: '1080p', duration: 10, aspectRatio: '16:9' },
+    prompt: '', params: { model: modelId, operation: 'video_multi_ref', routing: { allowedGroups: ['studio'] }, resolution: '1080p', duration: 10, aspectRatio: '16:9' },
     inputBindingVersion: 1, autoOperationId: null, slotBindings: bindings,
   } };
   await request(`/api/workspaces/${workspaceId}`, 'PUT', { expectedVersion: 0, nodes: [...refs, target], edges });
+  modeWorkspaceId = (await request('/api/workspaces', 'POST', { name: '视频模式验收' })).workspace.id;
+  const modeNodes = [
+    { id: 'n-video-muse', model: 'muse-video', x: 36 }, { id: 'n-video-seedance', model: 'seedance-2-5', x: 360 },
+  ].map(({ id, model, x }) => ({
+    id, type: 'material', position: { x, y: 72 },
+    data: { materialType: 'video', nodeKind: 'generate', label: model, selectedTool: 'video-generation',
+      params: { model, operation: 'video_multi_ref' } },
+  }));
+  await request(`/api/workspaces/${modeWorkspaceId}`, 'PUT', { expectedVersion: 0, nodes: modeNodes, edges: [] });
 
   return {
     origin, workspaceId, modelId, requests, catalogSha256: hash(JSON.stringify(catalog)), inputSha256: hash(JSON.stringify(raw)),
@@ -152,7 +198,7 @@ async function mountFixture(run, canvasBundle, themeCss) {
   };
 }
 
-async function drive(config) {
+async function drive(config, checkVideoModes) {
   const assert = (await import('node:assert/strict')).default;
   const { writeFile } = await import('node:fs/promises');
   const task = await taskSpace(config.taskName);
@@ -228,6 +274,7 @@ async function drive(config) {
       const anchors = [...node.querySelectorAll('[data-slot="reference_images"].wf-slot-well--filled')];
       return {
         refs: anchors.map(element => element.getAttribute('aria-label')),
+        addReference: node.querySelectorAll('[data-testid="wf-add-reference"]').length,
         emptyFrames: [...node.querySelectorAll('[data-slot="first_frame"],[data-slot="last_frame"]')]
           .filter(element => !element.classList.contains('wf-slot-well--filled')).map(element => element.getAttribute('data-slot')),
         ready: node.querySelector('.wf-generate-btn__send')?.getAttribute('aria-disabled') === 'false',
@@ -239,12 +286,21 @@ async function drive(config) {
   try {
     await page.goto(config.origin + '/?theme=dark');
     await selectNode();
+    observations.withCapacity = await readPanel('图片参考.*1080P.*10s');
+    assert.deepEqual(observations.withCapacity.refs, refs.slice(0, 5));
+    assert.equal(observations.withCapacity.addReference, 1);
+    await page.click('loc=css:' + target + ' [data-testid="wf-add-reference"]', { label: 'Open reference asset picker' });
+    await page.click('loc=css:.wf-picker-modal [aria-label="参考素材 6"]', { label: 'Select last reference image' });
+    await page.click('loc=css:.wf-picker-modal .wf-picker-btn--primary', { label: 'Apply reference asset selection' });
+    await page.waitForFunction(selector => document.querySelectorAll(selector + ' [data-slot="reference_images"].wf-slot-well--filled').length === 6, target);
     observations.initial = await readPanel('图片参考.*1080P.*10s');
     assert.deepEqual(observations.initial.refs, refs);
+    assert.equal(observations.initial.addReference, 0);
 
     await chooseLine('低价少图');
     observations.economy = await readPanel('图片参考.*720P.*5s');
     assert.deepEqual(observations.economy.refs, refs.slice(0, 2));
+    assert.equal(observations.economy.addReference, 0);
     assert.equal(observations.economy.ready, true);
     observations.groups = await readGroupRows();
     assert.equal(observations.groups.length, 2);
@@ -257,6 +313,7 @@ async function drive(config) {
     observations.frames = await readPanel('首尾帧过渡.*720P.*5s');
     assert.deepEqual(observations.frames.refs, []);
     assert.deepEqual(observations.frames.emptyFrames, ['first_frame', 'last_frame']);
+    assert.equal(observations.frames.addReference, 0);
     assert.equal(observations.frames.ready, false);
 
     await chooseMode('图片参考');
@@ -306,10 +363,119 @@ async function drive(config) {
     await chooseLine('高价多图');
     observations.reopenedRestored = await readPanel('图片参考.*1080P.*10s');
     assert.deepEqual(observations.reopenedRestored.refs, refs);
+    await checkVideoModes(page, config, observations, assert);
+  } catch (error) {
+    observations.failure = {
+      ...observations.failure,
+      message: String(error.message).slice(0, 1200),
+      state: await page.evaluate(() => ({
+        panels: [...document.querySelectorAll('.react-flow__node.selected .wf-config-panel')].map(panel => ({
+          node: panel.closest('.react-flow__node')?.dataset.id,
+          summary: panel.querySelector('.wf-video-trigger-bar')?.textContent.trim(),
+        })),
+        choices: [...document.querySelectorAll('[role="radiogroup"][aria-label="生成方式"] [role="radio"]')]
+          .map(option => ({ label: option.textContent.trim(), checked: option.getAttribute('aria-checked'), disabled: option.disabled })),
+      })),
+    };
+    await page.screenshot({ path: config.run + '/failure.png' });
+    throw error;
   } finally {
     await writeFile(config.run + '/browser.json', JSON.stringify(observations, null, 2));
     await task.finish({ keep: [] });
   }
+}
+
+async function checkVideoModes(page, config, observations, assert) {
+  const modeMenu = '[role="radiogroup"][aria-label="生成方式"]';
+  const muse = '.react-flow__node[data-id="n-video-muse"]';
+  const seedance = '.react-flow__node[data-id="n-video-seedance"]';
+  await page.cdp('Emulation.setDeviceMetricsOverride', { width: 820, height: 800, deviceScaleFactor: 1, mobile: false });
+  await page.evaluate(async () => {
+    const response = await fetch('/_qa/mode-catalog?count=2', { method: 'POST' });
+    if (!response.ok) throw new Error('Could not activate the synthetic mode catalog');
+  });
+  await page.goto(config.origin + '/?scenario=modes&theme=light');
+
+  async function inspect(node, label) {
+    const summary = node + ' .wf-video-trigger-bar';
+    await page.waitForFunction(({ summary, label }) => document.querySelector(summary)?.textContent.trim().startsWith(label),
+      { summary, label }, { timeout: 8000 });
+    if (!await page.evaluate(menu => Boolean(document.querySelector(menu)), modeMenu)) {
+      await page.click('loc=css:' + summary, { label: 'Open generation modes' });
+    }
+    await page.waitForSelector('loc=css:' + modeMenu, { timeout: 8000 });
+    const result = await page.evaluate(({ node, modeMenu }) => {
+      const panel = document.querySelector(node + '.selected .wf-config-panel');
+      const menu = document.querySelector(modeMenu);
+      const box = menu.getBoundingClientRect();
+      return {
+        choices: [...menu.querySelectorAll('[role="radio"]')].map(option => ({
+          label: option.textContent.trim(), checked: option.getAttribute('aria-checked') === 'true',
+          disabled: option.disabled,
+          complete: option.scrollWidth <= option.clientWidth + 1
+            && [...option.children].every(child => child.scrollWidth <= child.clientWidth + 1),
+        })),
+        visible: box.left >= -1 && box.right <= innerWidth + 1 && box.top >= -1 && box.bottom <= innerHeight + 1,
+        width: innerWidth, dark: document.body.hasAttribute('data-ds-dark-theme'),
+        surface: getComputedStyle(document.querySelector('.wf-canvas-root')).getPropertyValue('--wb-surface-elevated').trim(),
+        add: panel?.querySelectorAll('[data-testid="wf-add-reference"]').length,
+        promptSources: panel?.querySelectorAll('[data-testid="wf-add-prompt-reference"]').length,
+        firstFrame: panel?.querySelector('[data-slot="first_frame"]')?.dataset.slotState,
+        ready: panel?.querySelector('.wf-generate-btn__send')?.getAttribute('aria-disabled') === 'false',
+      };
+    }, { node, modeMenu });
+    assert.deepEqual(result.choices.filter(option => option.checked).map(option => option.label), [label]);
+    return result;
+  }
+
+  await page.click('loc=css:' + muse + ' .wf-node-header', { label: 'Open Muse' });
+  const two = await inspect(muse, '图片参考');
+  assert.deepEqual([two.add, two.promptSources], [1, 1]);
+  assert.equal(two.width, 820);
+  assert.equal(two.dark, false);
+  assert.ok(two.visible && two.choices.every(option => option.complete));
+  await page.screenshot({ path: config.run + '/light-narrow-muse-modes.png' });
+  await page.waitForFunction(async () => (await (await fetch('/_qa/mode-catalog')).json()).deliveredCapacities.includes(2));
+  await page.evaluate(async () => {
+    const response = await fetch('/_qa/mode-catalog?count=10', { method: 'POST' });
+    if (!response.ok) throw new Error('Could not refresh the synthetic mode catalog');
+    window.dispatchEvent(new CustomEvent('omnimux:model-catalog-updated'));
+    document.body.toggleAttribute('data-ds-dark-theme', true);
+    document.documentElement.dataset.theme = 'dark';
+  });
+  await page.waitForFunction(async () => (await (await fetch('/_qa/mode-catalog')).json()).deliveredCapacities.includes(10));
+  const ten = await inspect(muse, '图片参考');
+  assert.deepEqual([ten.add, ten.promptSources], [1, 1]);
+  assert.equal(ten.width, 820);
+  assert.equal(ten.dark, true);
+  assert.ok(ten.visible && ten.choices.every(option => option.complete));
+  assert.notEqual(ten.surface, two.surface);
+  await page.screenshot({ path: config.run + '/dark-narrow-muse-modes.png' });
+
+  const cycle = [];
+  observations.videoModes = { two, ten, cycle };
+  for (const label of ['首帧驱动', '文生视频', '图片参考']) {
+    observations.failure = { phase: label };
+    await page.click('loc=css:' + modeMenu + ' [role="radio"]:has-text("' + label + '")', { label: 'Select ' + label });
+    const state = await inspect(muse, label);
+    assert.equal(state.add, Number(label === '图片参考'));
+    if (label === '首帧驱动') {
+      assert.equal(state.firstFrame, 'empty');
+      assert.equal(state.ready, false);
+    }
+    cycle.push({ label, ...state });
+  }
+  observations.failure = { phase: 'Seedance 全能参考' };
+  await page.keyboard.press('Escape');
+  await page.cdp('Emulation.clearDeviceMetricsOverride');
+  await page.click('loc=css:' + seedance + ' .wf-node-header', { label: 'Open Seedance' });
+  await page.click('loc=css:' + seedance + ' .wf-video-trigger-bar', { label: 'Open Seedance generation modes' });
+  await page.waitForSelector('loc=css:' + modeMenu, { timeout: 8000 });
+  await page.click('loc=css:' + modeMenu + ' [data-operation-id="video_multi_ref"]', { label: 'Select 全能参考' });
+  const multimodal = await inspect(seedance, '全能参考');
+  assert.deepEqual([multimodal.add, multimodal.promptSources], [1, 1]);
+  observations.videoModes.multimodal = multimodal;
+  delete observations.failure;
 }
 
 async function runBrowser(config) {
@@ -322,7 +488,8 @@ async function runBrowser(config) {
     });
   });
   child.stdin.on('error', error => { if (error.code !== 'EPIPE') child.emit('error', error); });
-  child.stdin.end('const drive=' + drive.toString() + ';await drive(' + JSON.stringify(config) + ');');
+  child.stdin.end('const drive=' + drive.toString() + ';const checkVideoModes=' + checkVideoModes.toString()
+    + ';await drive(' + JSON.stringify(config) + ', checkVideoModes);');
   await completed;
 }
 
@@ -335,7 +502,7 @@ async function loadVendoredTheme() {
   return JSON.parse(css);
 }
 
-test('#140 real canvas narrows one selected line, restores draft inputs, and submits only active references', { timeout: 90000 }, async () => {
+test('#140 real canvas narrows one selected line, restores draft inputs, and submits only active references', { timeout: 120000 }, async () => {
   const scratch = join(root, '.tmp/canvas-group-qa');
   await mkdir(scratch, { recursive: true });
   const run = await mkdtemp(join(scratch, 'browser-'));
@@ -359,6 +526,7 @@ test('#140 real canvas narrows one selected line, restores draft inputs, and sub
     assert.deepEqual(submit.groups, ['economy']);
     assert.equal(submit.resolution, '720p');
     assert.equal(submit.duration, 5);
+    assert.equal(submit.prompt, '');
     assert.deepEqual(submit.references.map(reference => reference.sourceNodeId), ['ref-1', 'ref-2']);
     assert.deepEqual(submit.references.map(reference => reference.pathOrUrl),
       [fixture.origin + '/assets/ref-1.png', fixture.origin + '/assets/ref-2.png']);

@@ -6,6 +6,10 @@ import type { GenerationGateway, ReferenceAssetPayload, SubmitRequest, WorkflowS
 import { SeamGatewayError } from './SeamGatewayError.ts';
 import { submissionFingerprint, submissionReferences } from './submissionInputs.ts';
 
+interface SubmissionValidationOptions {
+  deferVisualPrompt?: boolean;
+}
+
 function submissionModel(req: SubmitRequest, catalog: CapabilityCatalog) {
   if (req.model !== undefined && typeof req.model !== 'string') {
     throw new SeamGatewayError('model-not-allowed', '模型标识无效，请重新选择模型');
@@ -31,8 +35,8 @@ function submissionModel(req: SubmitRequest, catalog: CapabilityCatalog) {
 }
 
 /** Only the executor may resolve an omitted operation using the shared canvas policy. */
-export function resolveExecutorSubmission(req: SubmitRequest, catalog: CapabilityCatalog): SubmitRequest {
-  if (req.operation !== undefined) return resolveCanvasSubmission(req, catalog);
+export function resolveExecutorSubmission(req: SubmitRequest, catalog: CapabilityCatalog, options: SubmissionValidationOptions = {}): SubmitRequest {
+  if (req.operation !== undefined) return resolveCanvasSubmission(req, catalog, options);
   const requestedModel = typeof req.model === 'string' ? req.model.trim() : '';
   if (req.capability === 'video' && resolveEffectiveVideoGroup(catalog, requestedModel || catalog.defaults?.video, req)) {
     throw new SeamGatewayError('operation-required', '请选择生成方式后再提交');
@@ -40,15 +44,16 @@ export function resolveExecutorSubmission(req: SubmitRequest, catalog: Capabilit
   const model = submissionModel(req, catalog);
   const state = buildEffectiveOpsUiState({
     catalog, modelId: model.id, outputType: req.capability, fingerprint: submissionFingerprint(req),
+    deferVisualPrompt: options.deferVisualPrompt,
   });
   if (state.blockGenerate || !state.selectedOperationId) {
     throw new SeamGatewayError(state.reasonCode ?? 'operation-required', state.reasonMessage ?? '请选择生成方式');
   }
-  return resolveCanvasSubmission({ ...req, model: model.id, operation: state.selectedOperationId }, catalog);
+  return resolveCanvasSubmission({ ...req, model: model.id, operation: state.selectedOperationId }, catalog, options);
 }
 
 /** SubmitGuard: accepting connections is not sufficient to submit a new task. */
-export function resolveCanvasSubmission(req: SubmitRequest, inputCatalog: CapabilityCatalog): SubmitRequest {
+export function resolveCanvasSubmission(req: SubmitRequest, inputCatalog: CapabilityCatalog, options: SubmissionValidationOptions = {}): SubmitRequest {
   const requestedModel = typeof req.model === 'string' ? req.model.trim() : '';
   const modelId = requestedModel || inputCatalog.defaults?.[req.capability];
   const managed = req.capability === 'video' ? resolveEffectiveVideoGroup(inputCatalog, modelId, req) : null;
@@ -75,7 +80,7 @@ export function resolveCanvasSubmission(req: SubmitRequest, inputCatalog: Capabi
   const fingerprint = buildUpstreamFingerprint({ ...submitted, localText: req.localText,
     assets: [...submitted.assets, ...(req.textInputs ?? []).map(input => ({ ...input, type: 'text', availability: 'ready' as const }))] });
   // Limit the matcher to the requested operation; never replace an explicit creative choice.
-  const match = matchOperationInputs(operation, fingerprint);
+  const match = matchOperationInputs(operation, fingerprint, options);
   const failure = !match.accepts ? match.rejections[0] : !match.ready ? match.pending[0] : undefined;
   if (!match.accepts || !match.ready) {
     throw new SeamGatewayError(failure?.code ?? 'operation_incompatible', failure?.message ?? '当前输入尚不满足生成要求');
@@ -122,13 +127,13 @@ export function resolveCanvasSubmission(req: SubmitRequest, inputCatalog: Capabi
 
 /** Keep the authoritative snapshot private. Preparation code receives its own working copy. */
 export function createWorkflowSubmission(
-  catalog: CapabilityCatalog, submitResolved: GenerationGateway['submit'],
+  catalog: CapabilityCatalog, submitResolved: GenerationGateway['submit'], options: SubmissionValidationOptions = {},
 ): WorkflowSubmission {
   const snapshot = structuredClone(catalog);
   return {
     catalog: structuredClone(snapshot),
     async submit(request) {
-      const resolved = resolveExecutorSubmission(request, snapshot);
+      const resolved = resolveExecutorSubmission(request, snapshot, options);
       // Record what this backend actually accepted; a working catalog can be
       // replaced between UI admission and dispatch. Older tasks have no proof.
       const omittedNodePrompt = resolved.model === 'minimax-h3-video' && resolved.operation === 'digital_human'

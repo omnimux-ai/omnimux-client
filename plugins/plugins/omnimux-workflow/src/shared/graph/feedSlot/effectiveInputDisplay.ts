@@ -1,5 +1,6 @@
 import { hydrateSlotBindings, type LegacySlotEdge } from './hydrateSlotBindings.ts';
-import { selectSlotOccupants } from './assembleEffectiveInputs.ts';
+import { selectSlotOccupants, type SlotSelectionOptions } from './assembleEffectiveInputs.ts';
+import { isMediaInputType, isVisualGeneration } from '../../validation/compatKernel.ts';
 import { acceptsFeedAsset, autoFillSlots, isReadyFeedAsset } from './autoFillSlots.ts';
 import { slotBindingConflicts } from './slotBindingConflicts.ts';
 import type { FeedAsset, SlotBindings, SlotConflict, SlotLayout, UnusedSupply } from './types.ts';
@@ -9,7 +10,8 @@ const UNUSED_MEDIA_TYPES = new Set(['image', 'video', 'audio']);
 
 /** Refresh automatic loading while retaining explicit intent and intentional standby. */
 export function effectiveInputDisplay(layout: SlotLayout, feed: FeedAsset[], saved?: SlotBindings,
-  savedConflicts: SlotConflict[] = [], edges: LegacySlotEdge[] = [], standby: readonly string[] = [], inputBindingVersion?: number) {
+  savedConflicts: SlotConflict[] = [], edges: LegacySlotEdge[] = [], standby: readonly string[] = [], inputBindingVersion?: number,
+  options: SlotSelectionOptions = {}) {
   const parked = new Set(savedConflicts.filter(conflict => conflict.reason === 'slot_inactive').map(conflict => conflict.occupant.edgeId));
   const autoStandby = parked.size ? [...standby, ...parked] : standby;
   const explicit: SlotBindings | undefined = saved && Object.fromEntries(Object.entries(saved).map(([key, values]) => [key, values.map((value) => ({ ...value }))]));
@@ -33,15 +35,16 @@ export function effectiveInputDisplay(layout: SlotLayout, feed: FeedAsset[], sav
   }
   const conflicts = [...savedConflicts, ...fill.conflicts, ...slotBindingConflicts(layout, bindings, feed)]
     .filter((item, index, all) => all.findIndex((other) => other.slot === item.slot && other.occupant.edgeId === item.occupant.edgeId) === index);
-  const records = selectSlotOccupants(layout, bindings, feed, conflicts, inputBindingVersion);
+  const records = selectSlotOccupants(layout, bindings, feed, conflicts, inputBindingVersion, options);
   const selected = records.filter(record => record.state === 'ready');
   const visibleBindings: SlotBindings = {};
   for (const { slot, occupant } of selected) (visibleBindings[slot.slot] ??= []).push(occupant);
   const unloaded = Object.entries(bindings).flatMap(([slot, values]) => values.filter((value) => value.pinned && value.use !== 'inactive'
     && !isReadyFeedAsset(feed.find((asset) => asset.edgeId === value.edgeId))).map((occupant) => ({ slot, occupant })));
   // Classify ready supply outside the current assignment without adding slot records.
-  const consumedEdges = new Set<string>();
-  for (const values of Object.values(bindings)) for (const occupant of values) consumedEdges.add(occupant.edgeId);
+  const projectSupply = isVisualGeneration(layout.outputType) && !options.strictMedia;
+  const consumedEdges = new Set(projectSupply ? records.map(record => record.occupant.edgeId)
+    : Object.values(bindings).flatMap(values => values.map(occupant => occupant.edgeId)));
   const standbyEdges = new Set(standby);
   const unused: UnusedSupply[] = feed
     .filter((asset) => UNUSED_MEDIA_TYPES.has(asset.type) && asset.availability === 'ready'
@@ -49,7 +52,9 @@ export function effectiveInputDisplay(layout: SlotLayout, feed: FeedAsset[], sav
     .map((asset) => {
       const accepting = layout.slots.filter((spec) => acceptsFeedAsset(spec, asset));
       // 容量只算会被本次生成消费的占位者：待命（inactive）占位不算「已满」，与 selectSlotOccupants 口径一致。
-      const occupied = (slot: string) => (bindings[slot] ?? []).filter((occupant) => occupant.use !== 'inactive').length;
+      const occupied = (slot: string) => projectSupply
+        ? records.filter(record => record.slot.slot === slot && (record.state === 'ready' || record.state === 'pending')).length
+        : (bindings[slot] ?? []).filter(occupant => occupant.use !== 'inactive').length;
       const reasonCode: UnusedSupply['reasonCode'] = !isReadyFeedAsset(asset) ? 'input_unavailable'
         : parked.has(asset.edgeId) ? 'role_not_supported'
         : accepting.length === 0 ? 'no_matching_slot'
@@ -63,7 +68,9 @@ export function effectiveInputDisplay(layout: SlotLayout, feed: FeedAsset[], sav
     });
   const currentInvalid = inputBindingVersion === 1 ? records.filter(record => record.state === 'pending' || record.state === 'invalid')
     .map(record => ({ slot: record.slot.slot, occupant: record.occupant, reasonCode: record.reasonCode })) : [];
-  const requiredUnavailable = inputBindingVersion === 1 ? currentInvalid[0] : [...unloaded, ...conflicts.filter(conflict => conflict.reason !== 'slot_inactive')].find(({ slot }) => {
+  const blockingConflicts = conflicts.filter(conflict => conflict.reason !== 'slot_inactive' && (!projectSupply
+    || layout.slots.some(spec => spec.slot === conflict.slot && !isMediaInputType(spec.type))));
+  const requiredUnavailable = inputBindingVersion === 1 ? currentInvalid[0] : [...unloaded, ...blockingConflicts].find(({ slot }) => {
     const spec = layout.slots.find((item) => item.slot === slot);
     return spec && (visibleBindings[slot]?.length ?? 0) < spec.min;
   });

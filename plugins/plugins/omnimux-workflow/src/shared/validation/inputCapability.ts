@@ -94,8 +94,8 @@ export interface InputCapabilityArgs {
   outputType?: string;
   fingerprint: UpstreamFingerprint;
   /**
-   * Current operation (or the last explicit user choice). R3 keeps it when
-   * it is usable; it is never replaced by another usable candidate otherwise.
+   * Current operation (or the last explicit user choice). A user-picked
+   * video operation remains selected while the catalog lists it.
    */
   preferredOperationId?: string;
   /**
@@ -375,11 +375,13 @@ export function buildInputCapability(args: InputCapabilityArgs): InputCapability
     ? mapLegacyOperation(args.autoOperationId.trim())
     : '';
   let selected: InputCapabilityOperationState | undefined;
-  // An automatically derived operation is not a creative preference: only an
-  // explicit user choice may keep a usable operation against the fingerprint.
+  // An automatically derived operation never outranks the current feed.
   const preferred = preferredRaw && preferredRaw !== autoRaw
     ? operationStates.find((state) => state.id === preferredRaw)
     : undefined;
+  if (preferred && isVideoCapability && args.autoOperationId === null) {
+    preferred.selectableBeforeInputs = true;
+  }
   const strictCandidates = operationStates.filter((state) => state.usable);
   // The operation already on the node — explicit choice or system-derived auto
   // operation — is the fallback when strict matching finds nothing. A normal

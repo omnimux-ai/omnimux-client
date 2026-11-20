@@ -5,7 +5,8 @@
  * For image / video / text / audio nodes whose prompt slot accepts both local text and
  * upstream text (valueSources [local_field, upstream_output], min 1):
  *   1. local prompt only, no upstream → button enabled, no "还差必需素材";
- *   2. empty prompt, no upstream text → button disabled up front with the kernel copy.
+ *   2. empty prompt, no upstream text → image and video defer the decision to
+ *      the gateway; text and audio still show the existing required-input copy.
  */
 
 import assert from 'node:assert/strict';
@@ -79,21 +80,21 @@ function newNode(type, prompt) {
 
 const sendButton = (html) => html.match(/<button[^>]*wf-generate-btn__send[^>]*>/)?.[0] ?? '';
 
-for (const type of ['image', 'video', 'text', 'audio']) {
-  test(`${type}: local prompt only (no upstream) can submit`, () => {
+test('versioned prompt gates defer blank visual prompts while requiring text and audio input', () => {
+  for (const type of ['image', 'video', 'text', 'audio']) {
     const html = render(newNode(type, '1dog'), catalogFor(type));
     assert.doesNotMatch(html, /还差必需素材/);
     assert.match(sendButton(html), /aria-disabled="false"/);
-  });
-
-  test(`${type}: empty prompt without upstream text is disabled up front with kernel copy`, () => {
-    const html = render(newNode(type, ''), catalogFor(type));
-    assert.doesNotMatch(html, /还差必需素材/);
-    const button = sendButton(html);
-    assert.match(button, /aria-disabled="true"/);
-    assert.match(button, /title="请补齐正文"/);
-  });
-}
+    const blank = render(newNode(type, ''), catalogFor(type));
+    assert.doesNotMatch(blank, /还差必需素材/);
+    const button = sendButton(blank);
+    const visual = type === 'image' || type === 'video';
+    const expectedState = visual ? /aria-disabled="false"/ : /aria-disabled="true"/;
+    const expectedTitle = visual ? /title="生成"/ : /title="请补齐正文"/;
+    assert.match(button, expectedState);
+    assert.match(button, expectedTitle);
+  }
+});
 
 // #2990: legacy nodes (no inputBindingVersion) count local text toward composed text slots.
 function legacyNode(type, prompt) {
@@ -102,20 +103,20 @@ function legacyNode(type, prompt) {
   return nodeData;
 }
 
-for (const type of ['image', 'video', 'text', 'audio']) {
-  test(`legacy ${type}: local prompt only (no upstream) can submit`, () => {
+test('legacy prompt gates defer blank visual prompts while requiring text and audio input', () => {
+  for (const type of ['image', 'video', 'text', 'audio']) {
     const html = render(legacyNode(type, '1dog'), catalogFor(type));
     assert.doesNotMatch(html, /还差必需素材/);
     assert.match(sendButton(html), /aria-disabled="false"/);
-  });
-
-  test(`legacy ${type}: empty prompt without upstream text is disabled up front`, () => {
-    const html = render(legacyNode(type, ''), catalogFor(type));
-    const button = sendButton(html);
-    assert.match(button, /aria-disabled="true"/);
-    assert.match(button, /title="请输入内容或连接上游文本"/);
-  });
-}
+    const blank = render(legacyNode(type, ''), catalogFor(type));
+    const button = sendButton(blank);
+    const visual = type === 'image' || type === 'video';
+    const expectedState = visual ? /aria-disabled="false"/ : /aria-disabled="true"/;
+    const expectedTitle = visual ? /title="生成"/ : /title="请输入内容或连接上游文本"/;
+    assert.match(button, expectedState);
+    assert.match(button, expectedTitle);
+  }
+});
 
 test('legacy video: typed prompt does not unblock an unbound required first_frame media slot', () => {
   const catalog = catalogFor('video');

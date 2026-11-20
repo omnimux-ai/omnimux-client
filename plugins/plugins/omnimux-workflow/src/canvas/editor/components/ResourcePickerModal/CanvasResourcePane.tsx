@@ -64,6 +64,7 @@ const CanvasResourcePane: React.FC<CanvasResourcePaneProps> = ({
       { value: 'image' as const, label: t('panel.slot.image') },
       { value: 'video' as const, label: t('panel.slot.video') },
       { value: 'audio' as const, label: t('picker.filter.audio') },
+      { value: 'document' as const, label: t('panel.slot.document') },
     ].filter(option => option.value === 'all' || qualifiedTypes.includes(option.value as MaterialType)),
     [t, qualifiedTypes.join(',')],
   );

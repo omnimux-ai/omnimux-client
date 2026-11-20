@@ -483,6 +483,11 @@ function bestRejection(candidates: CompatRejection[]): CompatRejection {
   return candidates[0] ?? rejection('operation_incompatible', '输入无法被该 operation 吸收');
 }
 
+export const isVisualGeneration = (outputType?: string): boolean => outputType === 'image' || outputType === 'video';
+
+export const isPromptInput = (slot: { type: string; slot: string; role: string }): boolean =>
+  slot.type === 'text' && (slot.role === 'prompt' || slot.slot === 'prompt');
+
 /**
  * Match one operation's slots against the fingerprint's media assets.
  *
@@ -494,7 +499,7 @@ function bestRejection(candidates: CompatRejection[]): CompatRejection {
 export function matchOperationInputs(
   op: ContractOperationView,
   fingerprint: UpstreamFingerprint,
-  options: { ignoreUnused?: boolean; ignoreUnassignable?: boolean } = {},
+  options: { ignoreUnused?: boolean; ignoreUnassignable?: boolean; deferVisualPrompt?: boolean } = {},
 ): OperationMatch {
   const slots = bindableSlots(op);
   const assignments = new Map<InputSlotDto, SlotAssignment>();
@@ -710,6 +715,7 @@ export function matchOperationInputs(
 
   // readyToSubmit: every slot min satisfied + required prompt present.
   const pending: CompatRejection[] = [];
+  const deferPrompt = options.deferVisualPrompt && isVisualGeneration(op.output.type);
   if (accepts) {
     if (!op.inputs.some(slot => slot.composition) && op.output.type === 'audio' && fingerprint.localText?.trim()
       && fingerprint.assets.some((asset) => asset.type === 'text' && asset.textContent?.trim())) {
@@ -737,7 +743,9 @@ export function matchOperationInputs(
         : state.assets.length;
       if (count < state.slot.min && state.slot.type === 'text' && composition && state.slot.valueSources?.includes('local_field')) {
         // Typing locally would satisfy this slot, so the missing item is the body text itself.
-        pending.push(rejection('prompt_required', '请提供正文或补充要求，也可连接已有文本', { operationId: op.id, slot: state.slot.slot }));
+        if (!deferPrompt || !isPromptInput(state.slot)) {
+          pending.push(rejection('prompt_required', '请提供正文或补充要求，也可连接已有文本', { operationId: op.id, slot: state.slot.slot }));
+        }
       } else if (count < state.slot.min) {
         pending.push(rejection('min_unsatisfied', `槽位 ${state.slot.slot} 需要至少 ${state.slot.min} 个输入（当前 ${state.assets.length}）`, {
           operationId: op.id,
@@ -761,7 +769,7 @@ export function matchOperationInputs(
     const promptRequired = op.inputs.some(
       (slot) => (slot.role === 'prompt' || slot.slot === 'prompt') && slot.min >= 1,
     );
-    if (promptRequired && !fingerprint.prompt.trim() && !pending.some((item) => item.code === 'prompt_required')) {
+    if (!deferPrompt && promptRequired && !fingerprint.prompt.trim() && !pending.some((item) => item.code === 'prompt_required')) {
       pending.push(rejection('prompt_required', '请提供正文或补充要求，也可连接已有文本', { operationId: op.id }));
     }
     for (const slot of op.inputs) {
@@ -811,7 +819,7 @@ export interface ModelCompatVerdict {
 export function evaluateModelCompat(
   model: ContractModelView | undefined,
   fingerprint: UpstreamFingerprint,
-  opts: { operationId?: string; outputType?: string } = {},
+  opts: { operationId?: string; outputType?: string; deferVisualPrompt?: boolean } = {},
 ): ModelCompatVerdict {
   if (!model) {
     return {
@@ -862,7 +870,7 @@ export function evaluateModelCompat(
     return base;
   }
 
-  const matches = candidateOps.map((op) => matchOperationInputs(op, fingerprint));
+  const matches = candidateOps.map((op) => matchOperationInputs(op, fingerprint, { deferVisualPrompt: opts.deferVisualPrompt }));
   const effective = matches.filter((match) => match.accepts);
 
   base.matches = matches;

@@ -70,14 +70,14 @@ function effective(modelId, params, upstreams = [], autoOperationId) {
   });
 }
 
-test('connected image auto-selects first_frame, greys text_to_video and projects adaptive', () => {
+test('a connected image auto-selects first frame and keeps text to video selectable', () => {
   const result = effective('muse-video', { operation: 'text_to_video', aspectRatio: '9:16', duration: 8 }, [imageUpstream('img')]);
   assert.equal(result.operation, 'first_frame');
   assert.equal(result.aspectRatio, 'adaptive');
   assert.equal(result.duration, 8);
   assert.equal(result.showModeUi, true);
   const state = (id) => result.effectiveOperations.find((operation) => operation.id === id);
-  assert.equal(state('text_to_video')?.disabled, true);
+  assert.equal(state('text_to_video')?.disabled, false);
   assert.equal(state('first_frame')?.disabled, false);
 });
 
@@ -88,7 +88,7 @@ test('disconnecting every image without history returns to the real text_to_vide
   assert.equal(result.duration, 5);
   assert.equal(result.firstFrameUrl, undefined, 'R7 projection drops firstFrameUrl on text_to_video');
   const state = (id) => result.effectiveOperations.find((operation) => operation.id === id);
-  assert.equal(state('first_frame')?.disabled, true);
+  assert.equal(state('first_frame')?.disabled, false);
   assert.equal(state('text_to_video')?.disabled, false);
 
   const seedance = effective('seedance-2-5', { operation: 'first_frame', aspectRatio: 'adaptive', duration: 5 }, []);

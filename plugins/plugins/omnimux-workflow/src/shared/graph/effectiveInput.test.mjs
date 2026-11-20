@@ -73,7 +73,7 @@ test('IN-23: same image may fill two frame roles, but cannot duplicate the same 
   assert.equal(validateCanvasConnectionStructure({ source: edge.source, target: edge.target, data: { role: 'reference' } }, nodes, [automatic]).reasonCode, 'duplicate_edge');
 });
 
-test('IN-10: upstream description satisfies both shared and video-specific prompt validation', async () => {
+test('IN-10: upstream descriptions are composed and blank visual prompts can go to the gateway', async () => {
   const { validateVideoParamsForUi } = await import('../../canvas/editor/components/MaterialNode/ConfigPanel/videoParams/videoParamAdapter.ts');
   const upstreams = [{ nodeId: 'script', materialType: 'text', availability: 'ready', textContent: '1dog' }];
   for (const materialType of ['image', 'video']) {
@@ -82,13 +82,18 @@ test('IN-10: upstream description satisfies both shared and video-specific promp
     const fingerprint = buildUiUpstreamFingerprint({ materialType, prompt: '', upstreams });
     const state = buildEffectiveOpsUiState({ catalog: { models: [model] }, modelId: model.id, fingerprint, outputType: materialType });
     assert.equal(state.blockGenerate, false);
+    const empty = buildEffectiveOpsUiState({
+      catalog: { models: [model] }, modelId: model.id, outputType: materialType,
+      fingerprint: buildUiUpstreamFingerprint({ materialType, prompt: '', upstreams: [] }), deferVisualPrompt: true,
+    });
+    assert.equal(empty.blockGenerate, false);
     if (materialType === 'video') {
       assert.deepEqual(validateVideoParamsForUi({ prompt: '', upstreams, params: {
         operation: 'text_to_video', effectiveOperations: state.effectiveOps, schema: {},
       } }), []);
-      assert.match(validateVideoParamsForUi({ prompt: '', upstreams: [], params: {
-        operation: 'text_to_video', effectiveOperations: state.effectiveOps, schema: {},
-      } })[0], /提示词/);
+      assert.deepEqual(validateVideoParamsForUi({ prompt: '', upstreams: [], params: {
+        operation: 'text_to_video', effectiveOperations: empty.effectiveOps, schema: {},
+      } }), []);
     }
     let request;
     await createMaterialGatewayExecutor({ gateway: {

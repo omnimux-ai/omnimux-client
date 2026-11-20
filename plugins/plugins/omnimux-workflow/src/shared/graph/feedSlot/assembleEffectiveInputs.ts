@@ -1,5 +1,5 @@
 import { resolveGenerationPrompt } from '../generationPrompt.ts';
-import { isMediaInputType } from '../../validation/compatKernel.ts';
+import { isMediaInputType, isVisualGeneration } from '../../validation/compatKernel.ts';
 import { acceptsFeedAsset, isReadyFeedAsset } from './autoFillSlots.ts';
 import type { EffectiveSubmitInputs, FeedAsset, SlotBindings, SlotConflict, SlotLayout, SlotOccupant, SlotSpec } from './types.ts';
 
@@ -15,29 +15,51 @@ export function resolveSlotOccupantOrdinal(occupant: SlotOccupant, asset?: FeedA
   return occupant.ordinal ?? (asset?.sourceNodeId === occupant.sourceNodeId ? asset.ordinal : 0);
 }
 
+export interface SlotSelectionOptions {
+  /** Mutations validate the requested assignment before any unused supply is projected out. */
+  strictMedia?: boolean;
+  strictAssignments?: readonly { slot: string; edgeId: string }[];
+}
+
 /** The sole traversal of persisted consumption; never fills gaps from standby feed. */
-export function selectSlotOccupants(layout: SlotLayout, bindings: SlotBindings, feedAssets: FeedAsset[], conflicts: SlotConflict[] = [], inputBindingVersion?: number): SlotSelection[] {
+export function selectSlotOccupants(layout: SlotLayout, bindings: SlotBindings, feedAssets: FeedAsset[], conflicts: SlotConflict[] = [],
+  inputBindingVersion?: number, options: SlotSelectionOptions = {}): SlotSelection[] {
   const byEdge = new Map(feedAssets.map(asset => [asset.edgeId, asset]));
   const seenRoles = new Set<string>();
   const counts = new Map<string, number>();
   const records: SlotSelection[] = [];
+  const projectSupply = isVisualGeneration(layout.outputType) && !options.strictMedia;
+  const isStrictAssignment = (slot: string, edgeId: string) => options.strictAssignments?.some(item => item.slot === slot && item.edgeId === edgeId);
   for (const [name, occupants] of Object.entries(bindings)) {
     const spec = layout.slots.find(slot => slot.slot === name);
     const seen = new Set<string>();
-    for (const occupant of occupants) {
+    const ordered = projectSupply && spec && isMediaInputType(spec.type)
+      ? [...occupants].sort((a, b) => resolveSlotOccupantOrdinal(a, byEdge.get(a.edgeId)) - resolveSlotOccupantOrdinal(b, byEdge.get(b.edgeId)))
+      : occupants;
+    for (const occupant of ordered) {
       if (inputBindingVersion !== 1 && seen.has(occupant.edgeId)) continue;
       seen.add(occupant.edgeId);
       const candidate = byEdge.get(occupant.edgeId);
       const asset = candidate?.sourceNodeId === occupant.sourceNodeId ? candidate : undefined;
       const slot: SlotSpec = spec ?? { slot: name, role: occupant.role ?? '', type: asset?.type ?? '', min: 0, max: null, labelKey: '' };
+      const savedConflict = conflicts.some(item => item.slot === name && item.occupant.edgeId === occupant.edgeId);
+      const differentRole = occupant.role !== undefined && occupant.role !== spec?.role;
+      const incompatibleAsset = asset && !acceptsFeedAsset(slot, asset);
+      if (projectSupply && !isStrictAssignment(name, occupant.edgeId) && occupant.use !== 'inactive') {
+        // A mode or channel change can leave these bindings in a saved graph.
+        // Keep the graph intact and expose only supported assignments for this run.
+        if (!spec) continue;
+        if ((isMediaInputType(spec.type) || asset && isMediaInputType(asset.type))
+          && (differentRole || incompatibleAsset || savedConflict || (counts.get(name) ?? 0) >= (spec.max ?? Infinity))) continue;
+      }
       let state: SlotSelection['state'] = 'ready';
       let reasonCode: SlotSelection['reasonCode'];
       if (occupant.use === 'inactive') state = 'inactive';
       else if (!spec) { state = 'invalid'; reasonCode = 'slot_removed'; }
-      else if ((occupant.role !== undefined && occupant.role !== spec.role)
+      else if (differentRole
         || (inputBindingVersion === 1 && occupants.filter(item => item.edgeId === occupant.edgeId).length > 1)
-        || conflicts.some(item => item.slot === name && item.occupant.edgeId === occupant.edgeId)
-        || (asset && !acceptsFeedAsset(spec, asset))) { state = 'invalid'; reasonCode = 'role_conflict'; }
+        || savedConflict
+        || incompatibleAsset) { state = 'invalid'; reasonCode = 'role_conflict'; }
       else if (asset?.availability === 'waiting') { state = 'pending'; reasonCode = 'input_waiting'; }
       else if (!isReadyFeedAsset(asset)) { state = 'invalid'; reasonCode = 'input_unavailable'; }
       if (state === 'ready' || state === 'pending') {
@@ -46,6 +68,8 @@ export function selectSlotOccupants(layout: SlotLayout, bindings: SlotBindings, 
           if (inputBindingVersion !== 1) continue;
           state = 'invalid'; reasonCode = 'role_conflict';
         } else seenRoles.add(identity);
+      }
+      if (state === 'ready' || state === 'pending') {
         const count = (counts.get(name) ?? 0) + 1;
         counts.set(name, count);
         if (!slot.composition && count > (slot.max ?? Infinity)) { state = 'invalid'; reasonCode = 'slot_capacity'; }
@@ -56,7 +80,21 @@ export function selectSlotOccupants(layout: SlotLayout, bindings: SlotBindings, 
       }, ...(asset ? { asset: { ...asset } } : {}), state, ...(reasonCode ? { reasonCode } : {}) });
     }
   }
-  return records.sort((a, b) => resolveSlotOccupantOrdinal(a.occupant, a.asset) - resolveSlotOccupantOrdinal(b.occupant, b.asset));
+  records.sort((a, b) => resolveSlotOccupantOrdinal(a.occupant, a.asset) - resolveSlotOccupantOrdinal(b.occupant, b.asset));
+  if (!projectSupply) return records;
+  // Show repairable missing inputs only in positions left open by ready and
+  // scheduled occupants. Obsolete unavailable extras cannot block the run.
+  const occupied = new Map<string, number>();
+  for (const { slot, state } of records) {
+    if (state === 'ready' || state === 'pending') occupied.set(slot.slot, (occupied.get(slot.slot) ?? 0) + 1);
+  }
+  return records.filter(({ slot, occupant, state }) => {
+    if (state !== 'invalid' || !isMediaInputType(slot.type) || isStrictAssignment(slot.slot, occupant.edgeId)) return true;
+    const count = occupied.get(slot.slot) ?? 0;
+    if (count >= (slot.max ?? Infinity)) return false;
+    occupied.set(slot.slot, count + 1);
+    return true;
+  });
 }
 
 export function assembleEffectiveInputsFromSlots(args: {
