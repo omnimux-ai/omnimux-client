@@ -13,13 +13,31 @@ import { fetchSelf, publicStatus, resolveSiteBaseUrl } from './omnimux-auth.js'
 export function createIdentity(deps) {
   const siteBaseUrl = resolveSiteBaseUrl(deps.siteBaseUrl)
   const fetcher = deps.fetcher ?? fetch
+  let revision = 0
+
+  // An account can change through this Host or through the shared credential store.
+  // Check after resolving the current credential in case that operation itself yielded.
+  async function isCurrent(expectedRevision, token) {
+    const currentToken = await deps.store.resolve()
+    return revision === expectedRevision && currentToken === token
+  }
+
+  function currentStatus() {
+    const { logged_in } = getSnapshot()
+    return {
+      kind: logged_in ? 'cached' : 'unsigned',
+      body: publicStatus({ loggedIn: logged_in, verified: null, siteBaseUrl, profile: logged_in ? deps.store.readProfileCache() : null }),
+    }
+  }
 
   /**
    * @param {{ verify?: boolean }} [opts]
    */
   async function load(opts = {}) {
     const verify = opts.verify === true
+    const expectedRevision = revision
     const info = await deps.store.describe()
+    if (revision !== expectedRevision) return currentStatus()
     if (!info.configured) {
       return { kind: 'unsigned', body: publicStatus({ loggedIn: false, verified: null, siteBaseUrl }) }
     }
@@ -50,6 +68,7 @@ export function createIdentity(deps) {
         siteBaseUrl,
         token,
       })
+      if (!await isCurrent(expectedRevision, token) || revision !== expectedRevision) return currentStatus()
       deps.store.writeProfileCache(profile)
       if (profile && profile.id != null && typeof deps.store.writeConfig === 'function') {
         deps.store.writeConfig({ userId: String(profile.id), baseUrl: siteBaseUrl })
@@ -62,6 +81,7 @@ export function createIdentity(deps) {
         body: publicStatus({ loggedIn: true, verified: true, siteBaseUrl, profile }),
       }
     } catch (error) {
+      if (!await isCurrent(expectedRevision, token) || revision !== expectedRevision) return currentStatus()
       const invalid = error instanceof Error && error.code === 'token_invalid'
       if (invalid) {
         if (typeof deps.store.markExpired === 'function') {
@@ -131,7 +151,7 @@ export function createIdentity(deps) {
     }
   }
 
-  return { load, status, require, getSnapshot }
+  return { load, status, require, getSnapshot, getRevision: () => revision, invalidate: () => ++revision, isCurrent }
 }
 
 /** @param {unknown} row @param {unknown} key */

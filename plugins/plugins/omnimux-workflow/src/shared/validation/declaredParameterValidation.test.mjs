@@ -74,3 +74,16 @@ test('#1804 an options-only declaration still enforces its whitelist', () => {
     { field: 'resolution', message: '参数“resolution”不支持值 "480p"' },
   );
 });
+
+test('declared boolean controls preserve false and reject type coercion', () => {
+  const sound = { type: 'boolean', defaultValue: true };
+  assert.equal(findDeclaredParameterFailure({ sound: false }, { sound }, undefined), null);
+  assert.deepEqual(
+    findDeclaredParameterFailure({ sound: 'false' }, { sound }, undefined),
+    { field: 'sound', message: '参数“sound”必须为布尔值' },
+  );
+  const fixed = { ...sound, defaultValue: false, options: [{ value: false }] };
+  assert.equal(findDeclaredParameterFailure({ sound: false }, { sound: fixed }, undefined), null);
+  assert.ok(findDeclaredParameterFailure({ sound: true }, { sound: fixed }, undefined));
+  assert.ok(findDeclaredParameterFailure({ sound: 'false' }, { sound: fixed }, undefined));
+});

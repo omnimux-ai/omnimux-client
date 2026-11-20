@@ -86,7 +86,7 @@ export function findDeclaredParameterFailure(
         return { field, message: `参数“${field}”不支持值 ${JSON.stringify(value)}` };
       }
     }
-    if (definition.supported === true && typeof value !== 'boolean') {
+    if ((definition.type === 'boolean' || definition.supported === true) && typeof value !== 'boolean') {
       return { field, message: `参数“${field}”必须为布尔值` };
     }
     if (definition.supported === false && supplied) {

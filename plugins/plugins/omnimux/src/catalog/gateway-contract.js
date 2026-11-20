@@ -153,21 +153,37 @@ function toLocalParameter(parameter, effective = false) {
 
   if (parameter.fixed !== undefined) {
     const fixed = normalizeEnumValue(parameter.fixed)
-    definition.type = type === 'integer' || type === 'number'
-      ? type
-      : type === 'boolean' ? 'boolean' : 'string'
+    const fixedBoolean = type === 'boolean' || (effective && type === 'enum' && typeof fixed === 'boolean')
+    definition.type = type === 'integer' || type === 'number' ? type : fixedBoolean ? 'boolean' : 'string'
     definition.options = [{ value: fixed }]
     definition.defaultValue = fixed
     return { name, definition }
   }
 
+  const values = array(parameter.enum)
+  const booleanEnum = effective && type === 'enum' && values.length > 0
+    && values.every((value) => typeof value === 'boolean')
+  if (type === 'boolean' || booleanEnum) {
+    definition.type = 'boolean'
+    if (effective) {
+      if (values.length > 0) definition.options = values.map((value) => ({ value }))
+      // The canvas renders a switch only when both positions can be submitted.
+      if (values.length === 0 || (values.includes(true) && values.includes(false))) definition.supported = true
+      if (parameter.default !== undefined) definition.defaultValue = parameter.default
+      else if (values.length === 1) definition.defaultValue = values[0]
+    } else {
+      definition.defaultValue = parameter.default === true
+    }
+    return { name, definition }
+  }
+
   if (type === 'enum') {
-    const values = array(parameter.enum).map(normalizeEnumValue)
     if (values.length === 0) return null
-    definition.type = values.every((value) => typeof value === 'number') ? 'number' : 'string'
-    definition.options = values.map((value) => ({ value }))
+    const normalizedValues = values.map(normalizeEnumValue)
+    definition.type = normalizedValues.every((value) => typeof value === 'number') ? 'number' : 'string'
+    definition.options = normalizedValues.map((value) => ({ value }))
     if (parameter.default !== undefined) definition.defaultValue = normalizeEnumValue(parameter.default)
-    else if (!effective || values.length === 1) definition.defaultValue = values[0]
+    else if (!effective || normalizedValues.length === 1) definition.defaultValue = normalizedValues[0]
     if (name === 'resolution') definition.caseInsensitive = true
     return { name, definition }
   }
@@ -183,12 +199,6 @@ function toLocalParameter(parameter, effective = false) {
       if (parameter.enum.length === 1) definition.defaultValue = parameter.enum[0]
     } else if (Object.keys(range).length > 0) definition.range = range
     if (parameter.default !== undefined) definition.defaultValue = parameter.default
-    return { name, definition }
-  }
-
-  if (type === 'boolean') {
-    definition.type = 'boolean'
-    if (!effective || parameter.default !== undefined) definition.defaultValue = parameter.default === true
     return { name, definition }
   }
 

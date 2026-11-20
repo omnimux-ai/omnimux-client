@@ -361,7 +361,7 @@ test('workflow_node_update applies managed group defaults and rejects incoherent
     ...videoMode('text_to_video', '1440P', 14, 16, { watermark: { supported: true, defaultValue: false } }),
     gatewayProtocol: 'fixture-alternate',
   };
-  const economy = videoMode('text_to_video', '720P', 5, 6);
+  const economy = videoMode('text_to_video', '720P', 5, 6, { sound: { type: 'boolean', defaultValue: true } });
   const extraMode = videoMode('extra_video_mode', '480P', 8, 9);
   const line = (id, effectiveOperations, ratio, defaultOperationId) => ({
     id, label: id, effectiveOperations, enabled: true, effectiveVersion: 'scope-v1',
@@ -378,7 +378,20 @@ test('workflow_node_update applies managed group defaults and rejects incoherent
   };
   const catalog = { source: 'omnimux', schemaVersion: '1.1', fingerprint: 'fixture-agent-write',
     text: [], image: [], audio: [], video: [row], models: [row] };
-  const h = makeHarness({ catalog, gateway: host.createMockGateway({ catalog: () => catalog, minLatencyMs: 10, maxLatencyMs: 10 }) });
+  const gateway = host.createMockGateway({ catalog: () => catalog, minLatencyMs: 10, maxLatencyMs: 10 });
+  const openSubmission = gateway.submit.openWorkflowSubmission;
+  const requests = [];
+  gateway.submit.openWorkflowSubmission = async () => {
+    const submission = await openSubmission();
+    return {
+      ...submission,
+      submit(request) {
+        requests.push(request);
+        return submission.submit(request);
+      },
+    };
+  };
+  const h = makeHarness({ catalog, gateway });
   try {
     const created = await h.tool('workflow_create').execute({ name: 'Managed line edits' });
     const workspace_id = created.workspace.id;
@@ -432,12 +445,21 @@ test('workflow_node_update applies managed group defaults and rejects incoherent
     assert.equal(switched.node.data.params.resolution, '720P');
     assert.equal(switched.node.data.params.duration, 5);
     assert.equal(switched.node.data.params.watermark, undefined);
+    assert.equal(switched.node.data.params.sound, true);
     assert.equal(switched.node.data.params.routing.videoLineQuote, economyLine.videoLineQuote);
+    const withoutSound = await update({ sound: false });
+    assert.equal(withoutSound.error, undefined);
+    assert.equal(withoutSound.node.data.params.sound, false);
+    const coercedSound = await update({ sound: 'false', duration: 6 });
+    assert.equal(coercedSound.reasonCode, 'parameter_unsupported');
     const saved = await h.tool('workflow_snapshot').execute({ workspace_id, include_nodes: true });
-    assert.deepEqual(saved.workspace.nodes[0].data.params, switched.node.data.params);
+    assert.equal(saved.workspace.version, withoutSound.workspace.version);
+    assert.deepEqual(saved.workspace.nodes[0].data.params, withoutSound.node.data.params);
 
     const generated = await h.tool('workflow_run').execute({ workspace_id, wait: true });
     assert.equal(generated.status, 'completed');
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].sound, false);
 
     row.channelGroups[1].pricing = { groupRatio: 0.6 };
     const changedPrice = await update({ duration: 6 });

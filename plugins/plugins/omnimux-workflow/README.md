@@ -47,11 +47,11 @@ dsh 会话里的 Agent 可通过宿主侧工具指挥画布（注册在 cordis `
 # 本地源码位于 plugins/plugins/omnimux-workflow/
 cd /path/to/omnimux-workflow
 pnpm install       # workspace 根执行亦可：pnpm install --filter omnimux-workflow
-                   # prepare 会现场 build 三 bundle；禁止 --ignore-scripts
-npm run build      # 显式重建：dist/index.js + lib/client.js + lib/canvas.js（不进 Git）
+                   # prepare 会构建四个产物；禁止 --ignore-scripts
+npm run build      # 显式重建：dist/index.js、lib/client.js、lib/canvas.js、lib/director.js
 ```
 
-三 bundle **不入库**。新检出需先构建生成 `dist/` 和 `lib/*.js`。桌面 Dev 的同步与运行版本核对见[插件开发与交付](../../README.md#本地开发与交付)。
+这些构建产物**不入库**。新检出需先构建生成 `dist/` 和 `lib/*.js`。桌面 Dev 的同步与运行版本核对见[插件开发与交付](../../README.md#本地开发与交付)。
 
 ### Profile 方式加载（dsh 标准安装形态）
 
@@ -208,7 +208,7 @@ hub 错误（`OmnimuxError`，带 `code`）映射为节点执行错误，格式 
 - **视频输入和参数**按[画布生成契约](../../docs/contracts/canvas-generation.md)判断。运行环境的实际分组覆盖以对应版本的测试线路验收为准。
 - **音频生成不可用**：hub 无 `audioGenerate` seam；音频生成节点在真实网关下报 `[omnimux:needs-provider]`，能力目录 audio 列表为空
 - **能力目录不代表真实执行历史**：目录来自 Hub 的本地合同投影；文档确认、适配就绪和真实执行证据分别记录。
-- **跨进程任务恢复优先复核，无法复核才重新提交**：提交成功后 `taskId` / 能力 / 提交时刻 / **归属后端**随节点状态落盘（`nodeStates[<nodeId>].upstreamTask`），进程重启后在途节点仍回置 pending，但执行器先按该引用向 hub 复核——上游已完成则直接下载回填（不重复提交、不重复计费），未完成则在**剩余窗口**内继续等待（deadline 锚定持久化的提交时刻，不因重启重置），上游失败则节点标错。回退重新提交有**三个**条件，任一成立即回投：①「无引用」（#1382 之前的老记录）；② hub 明确不认这个任务（`omnimux-invalid-request`，含 404/410）；③ **引用登记的归属后端是 mock**——mock 的任务不跨进程存活，其 `reconcileTask` 显式报「不可复核」，因此回投，与今天行为一致。第 ③ 条依赖持久化的 `owner`（#1386）：重启后的进程没有提交时的内存任务表，只能靠引用自身说明归属；未记录 `owner` 的旧引用按 hub 处理，老记录行为不变。
+- **跨进程任务恢复**按[执行和恢复](../../docs/contracts/canvas-generation.md#执行和恢复)查询原任务。任务仍在运行时沿用原提交时刻计算的剩余等待窗口。上游确认原任务无法取回时，需要重新确认输入后再创建任务。
 - **Agent 修改范围**见[工具清单](../../docs/contracts/plugin-agent-tools-inventory.md#36-omnimux-workflow工作流无限画布)。结构修改和 UI 使用同一校验，破坏性操作按工具的确认字段执行。
 - hub 不可达时的 auto 回退是 mock 网关（模拟生成）——`source: "static-stub"` 目录会明示；要硬保证不跑 mock，用 `OMNIMUX_WORKFLOW_GATEWAY=omnimux`
 - canvas.json 损坏（zod 校验不过）按「工作区不存在」（404）处理——文件仍在磁盘上，可手工修复后恢复

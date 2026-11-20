@@ -153,6 +153,39 @@ test('gateway-only id projects only authorized and supported groups with complet
   }
 })
 
+test('native video sound exposes the full boolean domain and keeps fixed sound noninteractive', () => {
+  for (const [parameter, selectable] of [
+    [{ type: 'boolean', default: false }, true],
+    [{ type: 'boolean', enum: [true, false], default: false }, true],
+    [{ type: 'enum', enum: [false, true], default: false }, true],
+    [{ type: 'boolean', fixed: false }, false],
+    [{ type: 'enum', fixed: false, enum: [false] }, false],
+    [{ type: 'boolean', enum: [false] }, false],
+  ]) {
+    const response = groupedResponse()
+    const [native] = response.data[0].effective_video.groups.budget
+    native.parameters.push({ name: 'generate_audio', ...parameter })
+    response.data[0].effective_video.groups.budget = [native]
+    const snapshot = snapshotOf(response)
+    const model = buildModelCatalog({ snapshot, env: {} }).video.find((row) => row.id === MODEL)
+    const sound = model.channelGroups.find((group) => group.id === 'budget').effectiveOperations[0].parameters.sound
+    assert.equal(sound.type, 'boolean')
+    assert.equal(sound.supported === true, selectable)
+    assert.equal(sound.defaultValue, false)
+
+    const request = { group: 'budget', duration: 10, aspectRatio: 'adaptive', resolution: '1080p' }
+    const defaultOff = validate(snapshot, request)
+    assert.equal(defaultOff.ok, true, defaultOff.message)
+    assert.equal(defaultOff.vendorPayload.generate_audio, false)
+    const explicitOff = validate(snapshot, { ...request, sound: false })
+    assert.equal(explicitOff.ok, true, explicitOff.message)
+    assert.equal(explicitOff.vendorPayload.generate_audio, false)
+    const on = validate(snapshot, { ...request, sound: true })
+    assert.equal(on.ok, selectable, on.message)
+    if (selectable) assert.equal(on.vendorPayload.generate_audio, true)
+  }
+})
+
 test('the guard selects one whole variant and rejects omissions, empty groups, and cross-group fallbacks', () => {
   const snapshot = snapshotOf()
   const openai = validate(snapshot, { duration: 10, aspectRatio: 'adaptive' })

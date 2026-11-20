@@ -81,6 +81,15 @@ export function createAuthDispatcher(deps) {
     siteBaseUrl,
     fetcher,
   })
+  const superseded = () => ({ status: 410, body: { kind: 'expired', error: 'login flow superseded' } })
+  let credentialMutation = Promise.resolve()
+
+  function mutateCredential(change) {
+    const next = credentialMutation.then(change)
+    // A failed mutation still rejects its own request and must not block the next one.
+    credentialMutation = next.then(() => {}, () => {})
+    return next
+  }
 
   /**
    * @param {{ method: string, url: string, body?: unknown }} req
@@ -171,13 +180,21 @@ export function createAuthDispatcher(deps) {
       const flowId = typeof body.flow_id === 'string' ? body.flow_id : ''
       const pending = flowId ? deps.pending.get(flowId) : undefined
       if (!pending) return { status: 404, body: { kind: 'expired', error: 'login flow not found or expired' } }
+      const revision = identity.getRevision()
       const polled = await pollDeviceToken({
         fetcher,
         siteBaseUrl: pending.siteBaseUrl,
         deviceCode: pending.deviceCode,
       })
+      if (revision !== identity.getRevision() || deps.pending.get(flowId) !== pending) return superseded()
       if (polled.kind === 'success') {
-        await deps.store.set(polled.accessToken, { userId: polled.userId, baseUrl: pending.siteBaseUrl })
+        deps.pending.remove(flowId)
+        const loginRevision = identity.invalidate()
+        await mutateCredential(() => {
+          if (identity.getRevision() !== loginRevision) return
+          return deps.store.set(polled.accessToken, { userId: polled.userId, baseUrl: pending.siteBaseUrl })
+        })
+        if (identity.getRevision() !== loginRevision) return superseded()
         let profile = { id: polled.userId || undefined, username: polled.username || undefined }
         try {
           profile = await fetchSelf({
@@ -188,11 +205,17 @@ export function createAuthDispatcher(deps) {
         } catch {
           // token is stored; profile can fill in on the next verify
         }
-        deps.store.writeProfileCache(profile)
-        if (profile && profile.id != null && typeof deps.store.writeConfig === 'function') {
-          deps.store.writeConfig({ userId: String(profile.id), baseUrl: pending.siteBaseUrl })
+        const current = await identity.isCurrent(loginRevision, polled.accessToken.trim())
+        const shadowed = !current && (await deps.store.describe()).source === 'env'
+        if (identity.getRevision() !== loginRevision || (!current && !shadowed)) return superseded()
+        // An explicit environment override remains the current identity. Keep the
+        // accepted login as a stored fallback without replacing that profile cache.
+        if (current) {
+          deps.store.writeProfileCache(profile)
+          if (profile && profile.id != null && typeof deps.store.writeConfig === 'function') {
+            deps.store.writeConfig({ userId: String(profile.id), baseUrl: pending.siteBaseUrl })
+          }
         }
-        deps.pending.remove(flowId)
         deps.onIdentityChanged?.()
         return {
           status: 200,
@@ -213,8 +236,9 @@ export function createAuthDispatcher(deps) {
     }
 
     if (method === 'POST' && path === '/omnimux/auth/logout') {
+      identity.invalidate()
       deps.pending.clear()
-      await deps.store.unset()
+      await mutateCredential(() => deps.store.unset())
       deps.onIdentityChanged?.()
       return { status: 200, body: publicStatus({ loggedIn: false, verified: null, siteBaseUrl }) }
     }
