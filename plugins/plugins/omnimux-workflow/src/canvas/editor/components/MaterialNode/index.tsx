@@ -199,6 +199,7 @@ const MaterialNode: React.FC<NodeProps> = ({ id, data, selected }) => {
   // uses, then persist it so graph validation and execution see the content.
   useDocumentHydration(
     materialType === 'document' ? mediaUrl : undefined,
+    mediaAssets,
     typeof nodeData.documentText === 'string' || Boolean(nodeData.documentError),
     updateNodeData,
   );

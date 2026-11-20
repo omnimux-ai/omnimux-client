@@ -22,7 +22,7 @@ import {
   type ResourcePickerMode,
 } from '../utils/resourcePickerPolicy.ts';
 import { draftFromRealPath, draftsFromPickedPaths } from '../utils/localFileDraft.ts';
-import { buildImportedMediaData, extensionsForMaterialType } from '../../../shared/localMedia.ts';
+import { buildImportedMediaData, extensionOf, extensionsForMaterialType } from '../../../shared/localMedia.ts';
 import { readNodeInputSource } from '../../../shared/graph/nodeInputSource.ts';
 import { MATERIAL_TYPES, type MaterialType } from '../../../shared/graph/materialNode.ts';
 import type { NodeSlotEngineState } from '../../../shared/graph/slotContractTypes.ts';
@@ -209,7 +209,8 @@ export function useResourcePicker(nodeId: string, workspaceId?: string | null): 
     const node = useCanvasStore.getState().nodes.find(node => node.id === nodeId);
     const materialType = node?.data.materialType as MaterialType | undefined;
     if (node?.type !== 'material' || !materialType || !MATERIAL_TYPES.includes(materialType)) return false;
-    const result = await pickLocalFiles({ extensions: extensionsForMaterialType(materialType), multiple: false }).catch(() => null);
+    const extensions = extensionsForMaterialType(materialType);
+    const result = await pickLocalFiles({ extensions, multiple: false }).catch(() => null);
     if (!guard.isCurrent(ticket)) return false;
     if (!result || !result.ok) {
       reportLocalFilePickerFailure(result, t);
@@ -223,7 +224,7 @@ export function useResourcePicker(nodeId: string, workspaceId?: string | null): 
       return false;
     }
     const draft = draftFromRealPath(path);
-    if (draft?.materialType !== materialType) {
+    if (draft?.materialType !== materialType || !extensions.includes(extensionOf(path))) {
       toast.warning(t('picker.unsupported'));
       return false;
     }

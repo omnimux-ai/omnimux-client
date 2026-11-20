@@ -11,6 +11,13 @@ const VIDEO_EXT = new Set(['mp4', 'webm', 'mov', 'mkv', 'avi', 'm4v']);
 const AUDIO_EXT = new Set(['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'opus']);
 const TEXT_EXT = new Set(['txt', 'md']);
 const DOCUMENT_EXT = new Set(['json']);
+const IMPORT_EXTENSIONS: Record<MaterialType, ReadonlySet<string>> = {
+  image: IMAGE_EXT,
+  video: VIDEO_EXT,
+  audio: AUDIO_EXT,
+  text: TEXT_EXT,
+  document: DOCUMENT_EXT,
+};
 
 const MIME_BY_EXT: Record<string, string> = {
   png: 'image/png',
@@ -218,10 +225,7 @@ export function extensionsForMimes(mimes: readonly string[]): string[] {
 }
 
 export function extensionsForMaterialType(type: MaterialType): string[] {
-  if (type === 'text') return [...TEXT_EXT];
-  if (type === 'document') return [...DOCUMENT_EXT];
-  const mimePrefix = `${type}/`;
-  return Object.entries(MIME_BY_EXT).filter(([, mime]) => mime.startsWith(mimePrefix)).map(([extension]) => extension);
+  return [...IMPORT_EXTENSIONS[type]];
 }
 
 export function materialTypeFromFilename(filename: string, mime = ''): MaterialType | null {

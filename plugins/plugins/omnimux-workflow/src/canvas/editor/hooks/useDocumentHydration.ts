@@ -7,9 +7,11 @@ type DocumentHydrationPatch = {
 
 export function useDocumentHydration(
   sourceUrl: string | undefined,
+  sourceAssets: readonly unknown[] | undefined,
   loaded: boolean,
   update: (patch: DocumentHydrationPatch) => void,
 ): void {
+  // Replacement creates a new asset list even when the selected file URL is unchanged.
   useEffect(() => {
     if (!sourceUrl || loaded) return;
     const controller = new AbortController();
@@ -27,5 +29,5 @@ export function useDocumentHydration(
         update({ documentError: `JSON 文件读取失败：${detail}` });
       });
     return () => controller.abort();
-  }, [sourceUrl, loaded, update]);
+  }, [sourceUrl, sourceAssets, loaded, update]);
 }

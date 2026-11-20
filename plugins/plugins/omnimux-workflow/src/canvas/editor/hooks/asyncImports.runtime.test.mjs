@@ -25,7 +25,7 @@ const bundle = await build({
       const [data, setData] = React.useState(source);
       const update = React.useCallback(patch => setData(current => ({ ...current, ...patch })), []);
       window.documentFixture = { data, update };
-      useDocumentHydration(data.mediaUrl, typeof data.documentText === 'string' || Boolean(data.documentError), update);
+      useDocumentHydration(data.mediaUrl, data.mediaAssets, typeof data.documentText === 'string' || Boolean(data.documentError), update);
       return null;
     }
     export { createElement, act, StrictMode } from 'react';
@@ -139,6 +139,8 @@ test('typed node import asks the native picker for matching extensions and rejec
   const f = setup(t); await f.hooks('A');
   const examples = [
     { type: 'image', extension: 'png', wrong: 'mp4' },
+    { type: 'image', extension: 'png', wrong: 'tiff' },
+    { type: 'image', extension: 'png', wrong: 'heif' },
     { type: 'video', extension: 'mp4', wrong: 'wav' },
     { type: 'audio', extension: 'wav', wrong: 'png' },
   ];
@@ -202,6 +204,33 @@ test('replacing a mounted JSON node with the same file path rereads its edited c
   await f.flush(() => f.win.documentFixture.update(plan.nodePatches[0].data));
   assert.equal(f.win.documentFixture.data.documentText, contents);
   assert.deepEqual(requests.slice(lastRequestCount), [{ url: source.mediaUrl, cache: 'no-store' }]);
+});
+
+test('reselecting a JSON source while its prior read is pending ignores the old response', async t => {
+  const f = setup(t);
+  const file = draftFromRealPath('/media/prompt.json');
+  const source = { materialType: 'document', nodeKind: 'import', mediaUrl: file.previewUrl,
+    mediaAssets: [{ type: 'document', url: file.previewUrl }] };
+  const requests = [];
+  f.win.fetch = (url, options) => {
+    const request = deferred();
+    requests.push({ ...request, url, signal: options.signal });
+    return request.promise;
+  };
+  await f.render(f.api.DocumentHost, { source });
+  const previous = requests.at(-1);
+  const nodes = [{ id: 'document', type: 'material', position: { x: 0, y: 0 }, data: source }];
+  const plan = planImportNodeFill({ nodes, targetNodeId: 'document', files: [file] });
+  await f.flush(() => f.win.documentFixture.update(plan.nodePatches[0].data));
+  const next = requests.at(-1);
+  assert.notEqual(next, previous);
+  assert.equal(next.url, previous.url);
+  assert.equal(previous.signal.aborted, true);
+
+  await f.flush(() => previous.resolve({ ok: true, text: async () => '{"prompt":"stale"}' }));
+  assert.equal(f.win.documentFixture.data.documentText, undefined);
+  await f.flush(() => next.resolve({ ok: true, text: async () => '{"prompt":"current"}' }));
+  assert.equal(f.win.documentFixture.data.documentText, '{"prompt":"current"}');
 });
 
 test('native canvas import keeps a Windows network path for the node and media URL', async t => {
