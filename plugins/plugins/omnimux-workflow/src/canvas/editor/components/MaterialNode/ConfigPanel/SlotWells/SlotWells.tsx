@@ -15,7 +15,7 @@
 
 import React, { memo, useCallback, useRef, useState } from 'react';
 import SlotHoverPreview from './SlotHoverPreview.tsx';
-import { ArrowLeftRight, FileJson, FileText, Image as ImageIcon, Link2, Loader2, Music, Play, Plus, X } from 'lucide-react';
+import { ArrowLeftRight, FileJson, FileText, Image as ImageIcon, Loader2, Music, Play, Plus, X } from 'lucide-react';
 import type { MaterialType } from '../../../../../../shared/canvasTypes.ts';
 import type { SlotOccupant, SlotSpec } from '../../../../../../shared/graph/feedSlot/index.ts';
 import { isOrderedImageReferenceSlot, isVisualGeneration } from '../../../../../../shared/validation/compatKernel.ts';
@@ -254,18 +254,11 @@ const SlotWells: React.FC<SlotWellsProps> = (props) => {
   };
 
   if (props.presentation === 'prompt') {
-    const label = t('panel.addPromptReference');
+    const references = slotModels.flatMap(({ models }) => models.map(renderWell));
+    if (references.length === 0) return null;
     return (
       <div className="wf-config-panel__prompt-references" data-testid="wf-prompt-references">
-        {slotModels.flatMap(({ spec, models, remaining }) => [
-          ...models.map(renderWell),
-          ...(remaining > 0 ? [<button key={spec.slot + ':add'} type="button"
-            className="wf-prompt-reference nodrag" data-testid="wf-add-prompt-reference"
-            aria-label={label} onClick={() => onPickSlot(pickRequest(spec))}>
-            <Link2 size={13} aria-hidden="true" />
-            {label}
-          </button>] : []),
-        ])}
+        {references}
       </div>
     );
   }
