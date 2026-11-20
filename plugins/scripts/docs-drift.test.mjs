@@ -109,3 +109,18 @@ test('drift verification feeds the required job from PR and merge-group comparis
   assert.match(driftStep.run, /^node scripts\/verify-plugin-agent-tools\.mjs --base "\$QA_BASE" --head "\$QA_HEAD"$/m)
   assert.ok(workflow.jobs['static-and-tests'].needs.includes('gates'))
 })
+
+test('tool names passed as literals to a definition factory count as registrations', () => withDocsFixture(({ write, commit, check }) => {
+  const source = `${plugin}/src/tools.ts`
+  const factory = "const nav = (\n  name: 'browser_preexisting' | 'browser_added',\n  description: string,\n): ToolDefinition => defineTool({ name, description, output: adapter })\n"
+  write(source, factory + "export const tools = [nav('browser_preexisting', 'Back')]\n")
+  write(inventory, row('browser_preexisting'))
+  const base = commit('one registered navigation tool')
+  write(source, factory + "export const tools = [nav('browser_added', 'Forward')]\n")
+  const head = commit('change only literal factory calls')
+  const changed = check('verify-plugin-agent-tools.mjs', base, head)
+  assert.equal(changed.status, 1)
+  assert.match(changed.stderr, /新增 已注册但未登记为 Implemented browser_added/)
+  assert.match(changed.stderr, /新增 登记为 Implemented 但未注册 browser_preexisting/)
+  assert.match(changed.stdout, /新增 2 项，存量 0 项/)
+}))

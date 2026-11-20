@@ -189,6 +189,13 @@ function scanToolSource(code, relPath, foundTools, toolDetails) {
     foundTools.add(toolName);
   }
 
+  // Browser tools pass literal names to local defineTool factories.
+  const declarations = /\bconst\s+([A-Za-z_]\w*)\s*=\s*\(\s*name\b[^()]*\)\s*(?::\s*\w+)?\s*=>\s*defineTool\s*\(\s*\{\s*name\s*,/g;
+  for (const [, factory] of code.matchAll(declarations)) {
+    const calls = new RegExp("\\b" + factory + "\\s*\\(\\s*(['\"])([\\w-]+)\\1", 'g');
+    for (const [, , name] of code.matchAll(calls)) foundTools.add(name);
+  }
+
   // 4. 匹配动态模板字面量 omnimux_${kind}_submit
   if (code.includes('omnimux_${kind}_submit')) {
     foundTools.add('omnimux_video_submit');
