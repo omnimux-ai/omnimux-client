@@ -436,6 +436,33 @@ describe('stagePresetProfile', () => {
     }
   }, 30_000)
 
+  it('stages a fresh development preset without replacing or backing up the input', () => {
+    const fixture = mkdtempSync(join(tmpdir(), 'omnimux fresh dev preset '))
+    try {
+      const pluginsRoot = join(fixture, 'product plugins')
+      const presetDir = join(fixture, 'preset-source')
+      const freshPresetDir = join(fixture, 'build-preset')
+      createProductPlugins(pluginsRoot)
+      createPresetSkeleton(presetDir)
+      const sourceManifest = join(presetDir, 'skeleton', 'package.json')
+      const before = readFileSync(sourceManifest)
+      const entries = readdirSync(presetDir)
+      const options = { pluginsRoot, presetDir, freshPresetDir, releaseChannel: 'development' as const }
+
+      expect(() => stagePresetProfile({ pluginsRoot, presetDir, freshPresetDir })).toThrow('requires the development channel')
+      expect(stagePresetProfile(options)).toBe(14)
+      expect(readFileSync(sourceManifest)).toEqual(before)
+      expect(readdirSync(presetDir)).toEqual(entries)
+      expect(readdirSync(freshPresetDir).some(name => name.startsWith('.preset-backup-'))).toBe(false)
+      const output = join(freshPresetDir, 'owned-packages.json')
+      const stagedManifest = readFileSync(output)
+      expect(() => stagePresetProfile(options)).toThrow('EEXIST')
+      expect(readFileSync(output)).toEqual(stagedManifest)
+    } finally {
+      rmSync(fixture, { recursive: true, force: true })
+    }
+  }, 30_000)
+
   it('refuses a development stage whose skeleton would name an unstaged Alpha bundle', () => {
     const fixture = mkdtempSync(join(tmpdir(), 'omnimux unstaged alpha bundle '))
     try {

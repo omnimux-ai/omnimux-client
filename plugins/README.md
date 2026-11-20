@@ -91,6 +91,16 @@ OmniMux 自行编写的插件代码采用 **[AGPL-3.0](LICENSE)**，另附 [NOTI
 
 合前测试使用隔离环境，共享 Dev 只接收已合入的版本。纯开发文档无需安装或重启应用。生产 `~/.omnimux`、`--prod`、`--all` 与正式发布须另获授权。
 
+#### 重建并升级共享 macOS Dev
+
+共享 Dev 缺少托管插件源时，可用同一提交打包的开发版重建依赖并升级桌面壳。先在干净的任务检出构建插件，再在 `app/` 下设置 `OMNIMUX_PLUGINS_DIR` 为该检出的 `plugins/plugins` 绝对路径，执行 `corepack yarn package:dev --fresh-preset`。打包从独立的预设目录读取新产物。
+
+在 `app/` 下执行以下步骤，`<batch>` 使用已挂载的 SMB 或 NFS 上尚不存在的批次目录绝对路径，其父目录须已存在。
+
+1. 运行 `corepack yarn omnimux:profile upgrade-dev --app <frozen-dev.app> --recovery-dir <batch> --dry-run`，核对构建提交、依赖来源和恢复位置。
+2. 正常退出 Dev，等 Host 和其他 App 子进程退出。去掉 `--dry-run` 执行切换，脚本在改动应用和依赖之前会直接向 NAS 归档并校验原状态。
+3. 打开共享 Dev，核对版本、原有会话、项目和已启用插件，并实测受影响的入口。验收后运行 `corepack yarn omnimux:profile accept-dev --recovery-dir <batch>`。首启失败或切换中断时，退出 Dev 后运行 `corepack yarn omnimux:profile recover-dev --recovery-dir <batch>`，验证旧版启动。
+
 #### 隔离浏览器冒烟
 
 本机需安装 OmniMux Dev 和 Chrome 或 Chromium。在任务工作树根目录运行 `corepack pnpm --dir plugins run verify:app --mode=ui`。此入口每次都从安装包预设和插件创建一次性配置，自动启用「灵感」并连接本机模拟服务，无需复制正在使用的 Dev 配置或手动启用插件。

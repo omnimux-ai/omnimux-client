@@ -2,12 +2,12 @@
 
 import { spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { electronBuilderEnvironment } from './electron-builder-environment.ts'
 import { withoutWindowsSigningSecrets } from './package-win.ts'
 import { withoutMacReleaseSecrets } from './release-preflight.ts'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { writeAppBuildInfo } from './build-info.mjs'
 
 const require = createRequire(import.meta.url)
@@ -39,12 +39,43 @@ export function unsignedDirectoryBuildEnvironment(environment) {
 }
 
 /**
+ * Keep the regular file mappings and substitute the fresh preset for this build.
+ * @param {string} cwd
+ * @param {string} freshPresetDir
+ */
+function writeFreshPresetConfig(cwd, freshPresetDir) {
+  const packageDir = realpathSync(cwd)
+  const presetDirectory = realpathSync(freshPresetDir)
+  const scratchDirectory = dirname(presetDirectory)
+  if (!lstatSync(freshPresetDir).isDirectory() || basename(presetDirectory) !== 'preset' ||
+    dirname(scratchDirectory) !== join(packageDir, '.desktop-build') ||
+    !basename(scratchDirectory).startsWith('dev-preset-')) {
+    throw new Error('fresh preset must be in the current desktop package disposable build directory')
+  }
+  const markerPath = join(presetDirectory, 'plugins', 'omnimux', 'src', 'release-channel.json')
+  if (JSON.parse(readFileSync(markerPath, 'utf8')).channel !== 'development') {
+    throw new Error('fresh preset must be staged for the development channel')
+  }
+  const { build } = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8'))
+  const isPreset = file => file !== null && typeof file === 'object' && file.from === 'preset' && file.to === 'preset'
+  if (build.files.filter(isPreset).length !== 1) throw new Error('desktop builder requires one preset file mapping')
+  const files = build.files.map(file => isPreset(file) ? { ...file, from: relative(packageDir, presetDirectory) } : file)
+
+  // A full config file replaces the package.json build config. Supplying an
+  // extra files override instead would merge in the original preset mapping.
+  const configPath = join(scratchDirectory, 'electron-builder.json')
+  writeFileSync(configPath, JSON.stringify({ ...build, files }), { flag: 'wx', mode: 0o600 })
+  return configPath
+}
+
+/**
  * Build an unsigned, unpacked application for the current host platform.
  * @param {{
  *   env?: NodeJS.ProcessEnv,
  *   cwd?: string,
  *   electronBuilderCli?: string,
  *   electronDistPath?: string,
+ *   freshPresetDir?: string,
  *   nodeExecutable?: string,
  *   run?: typeof spawnSync,
  * }} [options]
@@ -54,15 +85,18 @@ export function packageDirectory(options = {}) {
   const nodeExecutable = options.nodeExecutable ?? process.execPath
   const electronBuilderCli = options.electronBuilderCli ?? builderCli
   const configuredElectronDist = options.electronDistPath ?? electronDist
+  const cwd = options.cwd ?? packageRoot
+  const configArgs = options.freshPresetDir === undefined ? [] : [`--config=${writeFreshPresetConfig(cwd, options.freshPresetDir)}`]
   const result = run(
     nodeExecutable,
     [
       electronBuilderCli,
+      ...configArgs,
       ...UNSIGNED_DIRECTORY_BUILD_ARGS,
       `--config.electronDist=${configuredElectronDist}`,
     ],
     {
-      cwd: options.cwd ?? packageRoot,
+      cwd,
       env: unsignedDirectoryBuildEnvironment(options.env ?? process.env),
       stdio: 'inherit',
     },
@@ -87,7 +121,10 @@ function packagedMarkerPath(appPath) {
 }
 
 if (invokedPath !== undefined && fileURLToPath(import.meta.url) === resolve(invokedPath)) {
-  packageDirectory()
+  const args = process.argv.slice(2)
+  const freshPresetDir = args.length === 2 && args[0] === '--fresh-preset-dir' ? args[1] : undefined
+  if (args.length !== 0 && freshPresetDir === undefined) throw new Error('usage: package-dir.mjs [--fresh-preset-dir <dir>]')
+  packageDirectory(freshPresetDir === undefined ? {} : { freshPresetDir })
   // Record build provenance so any agent can identify the source tree of this app.
   if (process.platform === 'darwin') {
     const appDir = join(packageRoot, 'dist', process.arch === 'arm64' ? 'mac-arm64' : 'mac')

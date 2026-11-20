@@ -9,6 +9,7 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   readdirSync,
   realpathSync,
@@ -34,10 +35,14 @@ const NODE_PTY_DARWIN_HELPERS = [
 export const OFFICIAL_PROFILE_REBUILD_REMEDY =
   'Run: yarn omnimux:profile rebuild --target dev|prod --app <frozen-candidate.app>'
 
-const GRAPH_ENTRIES = [
+const GRAPH_FILES = [
   'package.json',
   'pnpm-lock.yaml',
   'pnpm-workspace.yaml',
+] as const
+
+export const MANAGED_GRAPH_ENTRIES = [
+  ...GRAPH_FILES,
   'node_modules',
   '.materialize-snapshots',
 ] as const
@@ -61,6 +66,9 @@ export interface ManagedProfileRebuildOptions {
   readonly profileDir: string
   readonly presetDir: string
   readonly ownedPackages: readonly string[]
+  readonly mode?: 'dev-upgrade'
+  /** Dev-upgrade staging must stay on the Profile volume, outside the archived Home. */
+  readonly stagingParent?: string
   readonly materialize: (candidateProfileDir: string) => Promise<void>
   /** Return pnpm's exact publish file list without running package scripts. */
   readonly packedFiles: (sourceDir: string) => Promise<readonly string[]>
@@ -72,10 +80,18 @@ export interface ManagedProfileRebuildResult {
   readonly profileDir: string
   readonly packageCount: number
   readonly preservedManagedSources: readonly string[]
+  readonly recoveredInstalledSources?: readonly string[]
   /** Legacy Profile-local dependencies the staged preset no longer owns. */
   readonly droppedLegacySources: readonly string[]
   readonly sourceHash: string
   readonly manifestHash: string
+}
+
+export interface PreparedManagedProfile {
+  readonly candidateDir: string
+  readonly result: ManagedProfileRebuildResult
+  readonly verify: (profileDir: string) => void
+  readonly dispose: () => void
 }
 
 export function packagePathSegments(name: string): string[] {
@@ -189,6 +205,7 @@ function assertPhysicalTree(root: string): void {
     const path = join(root, entry.name)
     if (entry.isSymbolicLink()) fail(`managed source contains symbolic link ${path}`)
     if (entry.isDirectory()) assertPhysicalTree(path)
+    else if (!entry.isFile()) fail(`managed source contains a special file ${path}`)
   }
 }
 
@@ -231,8 +248,11 @@ function assertManagedPackage(root: string, name: string, allowMissingTargets = 
     if (targetStat.isSymbolicLink() || !targetStat.isDirectory()) {
       fail(`${name} dependency ${dependency} local source is not a physical directory ${spec}`)
     }
-    if (!existsSync(join(target, 'package.json'))) fail(`${name} dependency ${dependency} has incomplete local source ${spec}`)
-    const targetManifest = readManifest(join(target, 'package.json'))
+    const targetManifestPath = join(target, 'package.json')
+    if (!assertOptionalPhysicalFile(targetManifestPath, 'managed dependency manifest')) {
+      fail(`${name} dependency ${dependency} has incomplete local source ${spec}`)
+    }
+    const targetManifest = readManifest(targetManifestPath)
     if (targetManifest.name !== dependency) {
       fail(`${name} dependency ${dependency} local source declares name ${JSON.stringify(targetManifest.name)}`)
     }
@@ -314,11 +334,19 @@ export function createFreshManagedSources(
   ensureManagedBuildPolicy(profileDir, ownedPackages)
 }
 
-function setManagedDependencies(manifestPath: string, packageNames: readonly string[]): void {
+function setManagedDependencies(manifestPath: string, packageNames: readonly string[], devUpgrade = false): void {
   const manifest = readManifest(manifestPath)
   const dependencies = { ...manifest.dependencies }
-  for (const name of packageNames) dependencies[name] = managedDependencySpec(name)
-  writeFileSync(manifestPath, `${JSON.stringify({ ...manifest, dependencies }, undefined, 2)}\n`)
+  const optionalDependencies = devUpgrade && manifest.optionalDependencies !== undefined
+    ? { ...manifest.optionalDependencies }
+    : undefined
+  for (const name of packageNames) {
+    const spec = managedDependencySpec(name)
+    dependencies[name] = spec
+    if (optionalDependencies !== undefined && Object.hasOwn(optionalDependencies, name)) optionalDependencies[name] = spec
+  }
+  const updated = { ...manifest, dependencies, ...(optionalDependencies === undefined ? {} : { optionalDependencies }) }
+  writeFileSync(manifestPath, `${JSON.stringify(updated, undefined, 2)}\n`)
 }
 
 /**
@@ -448,25 +476,87 @@ function managedNameFromSpec(spec: string): string | undefined {
   return spec.startsWith(prefix) ? spec.slice(prefix.length) : undefined
 }
 
+function record(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  return value as Record<string, unknown>
+}
+
+function enabledBundles(manifest: PackageManifest): unknown {
+  return record(record(manifest.dsh)?.profile)?.bundles
+}
+
+function readRecoveryLock(profileDir: string): Record<string, unknown> {
+  const path = join(profileDir, 'pnpm-lock.yaml')
+  if (!assertOptionalPhysicalFile(path, 'Profile pnpm lockfile')) fail('missing lockfile for installed package recovery')
+  const document = parseDocument(readFileSync(path, 'utf8'))
+  const lock = document.errors.length === 0 ? record(document.toJS()) : undefined
+  if (lock === undefined) fail('invalid lockfile for installed package recovery')
+  return lock
+}
+
+function recoverInstalledSource(
+  profileDir: string,
+  dependency: LocalDependencySpec,
+  lock: Record<string, unknown>,
+): string {
+  const { dependency: name, spec, optional } = dependency
+  const importer = record(record(lock.importers)?.['.'])
+  const importerEntry = record(record(importer?.[optional ? 'optionalDependencies' : 'dependencies'])?.[name])
+  const packageEntry = record(record(lock.packages)?.[`${name}@${spec}`])
+  const resolution = record(packageEntry?.resolution)
+  if (importerEntry?.specifier !== spec || typeof importerEntry.version !== 'string'
+    || importerEntry.version.split('(', 1)[0] !== spec
+    || resolution?.type !== 'directory' || resolution.directory !== spec.slice('file:'.length)) {
+    fail(`lockfile does not match managed source for ${JSON.stringify(name)}`)
+  }
+
+  const installedRoot = join(profileDir, 'node_modules')
+  assertManagedPackage(installedRoot, name, true)
+  const source = join(installedRoot, ...packagePathSegments(name))
+  assertContained(realpathSync(installedRoot), realpathSync(source), `installed source for ${name}`)
+  const installed = readManifest(join(source, 'package.json'))
+  if (typeof installed.version !== 'string' || valid(installed.version) === null
+    || (packageEntry?.version !== undefined && packageEntry.version !== installed.version)) {
+    fail(`installed version does not match package identity for ${JSON.stringify(name)}`)
+  }
+  return source
+}
+
 function chooseRebuildSources(
   profileDir: string,
   presetDir: string,
   ownedPackages: readonly string[],
-): { readonly names: string[]; readonly sources: Map<string, string>; readonly preserved: string[]; readonly dropped: string[] } {
-  const manifest = readManifest(join(profileDir, 'package.json'))
-  const dependencies = manifest.dependencies ?? {}
+  devUpgrade = false,
+): {
+  readonly names: string[]
+  readonly sources: Map<string, string>
+  readonly preserved: string[]
+  readonly recovered: string[]
+  readonly dropped: string[]
+  readonly bundles: unknown
+} {
+  assertPhysicalProfileBoundary(profileDir)
+  const manifestPath = join(profileDir, 'package.json')
+  if (!assertOptionalPhysicalFile(manifestPath, 'Profile manifest')) fail(`Profile does not exist at ${profileDir}`)
+  const manifest = readManifest(manifestPath)
+  const dependencies = devUpgrade
+    ? localDependencySpecs(manifest)
+    : Object.entries(manifest.dependencies ?? {}).map(([dependency, spec]) => ({ dependency, spec, optional: false }))
   const presetRoot = join(presetDir, 'plugins')
   assertManagedSourceGraph(presetRoot, ownedPackages)
   const existingRoot = managedSourceRoot(profileDir)
   assertExistingManagedBoundary(profileDir)
   const names = [...ownedPackages]
+  const managed = new Map<string, LocalDependencySpec>()
   const dropped: string[] = []
-  for (const [name, spec] of Object.entries(dependencies)) {
+  for (const dependency of dependencies) {
+    const { dependency: name, spec } = dependency
     if (ownedPackages.includes(name)) continue
     if (spec.startsWith('link:')) {
       fail(`non-candidate dependency ${JSON.stringify(name)} has unsupported source ${JSON.stringify(spec)}`)
     }
     if (LEGACY_PROFILE_LOCAL_SPEC.test(spec)) {
+      if (devUpgrade) fail(`Dev upgrade would drop legacy package ${JSON.stringify(name)}`)
       // A Profile seeded before the managed model kept every package as its own
       // `file:./node_modules/<name>` copy. The staged preset owns the
       // composition now, so a dependency it does not own — an Alpha package the
@@ -481,12 +571,20 @@ function chooseRebuildSources(
       continue
     }
     if (managedName !== name) fail(`dependency ${JSON.stringify(name)} points at managed source ${JSON.stringify(managedName)}`)
+    managed.set(name, dependency)
     names.push(name)
   }
   const sources = new Map<string, string>()
   const preserved: string[] = []
+  const recovered: string[] = []
+  let recoveryLock: Record<string, unknown> | undefined
   for (const name of names) {
     const segments = packagePathSegments(name)
+    const bundled = ownedPackages.includes(name)
+    if (devUpgrade && bundled) {
+      sources.set(name, join(presetRoot, ...segments))
+      continue
+    }
     if (segments.length === 2) {
       const scope = join(existingRoot, segments[0]!)
       if (lstatIfPresent(scope) !== undefined) assertPhysicalDirectory(scope, `managed scope ${segments[0]}`)
@@ -499,10 +597,27 @@ function chooseRebuildSources(
       preserved.push(name)
       continue
     }
-    if (!ownedPackages.includes(name)) fail(`non-candidate managed source ${JSON.stringify(name)} is missing`)
-    sources.set(name, join(presetRoot, ...packagePathSegments(name)))
+    if (bundled) {
+      sources.set(name, join(presetRoot, ...segments))
+      continue
+    }
+    const dependency = managed.get(name)
+    if (!devUpgrade || dependency === undefined) fail(`non-candidate managed source ${JSON.stringify(name)} is missing`)
+    recoveryLock ??= readRecoveryLock(profileDir)
+    sources.set(name, recoverInstalledSource(profileDir, dependency, recoveryLock))
+    recovered.push(name)
   }
-  return { names, sources, preserved, dropped }
+  return { names, sources, preserved, recovered, dropped, bundles: enabledBundles(manifest) }
+}
+
+export function inspectDevProfileSources(profileDir: string, presetDir: string, ownedPackages: readonly string[]) {
+  const plan = chooseRebuildSources(resolve(profileDir), resolve(presetDir), ownedPackages, true)
+  return {
+    packageCount: plan.names.length,
+    preservedManagedSources: plan.preserved,
+    recoveredInstalledSources: plan.recovered,
+    droppedLegacySources: plan.dropped,
+  }
 }
 
 function copyRebuildCandidate(
@@ -511,8 +626,8 @@ function copyRebuildCandidate(
   packageNames: readonly string[],
   sources: ReadonlyMap<string, string>,
   droppedLegacyNames: readonly string[],
+  devUpgrade: boolean,
 ): void {
-  mkdirSync(candidateDir, { recursive: true })
   for (const name of ['package.json', 'pnpm-workspace.yaml', 'pnpm-lock.yaml'] as const) {
     const source = join(profileDir, name)
     const sourceStat = lstatIfPresent(source)
@@ -522,7 +637,7 @@ function copyRebuildCandidate(
       cpSync(source, join(candidateDir, name))
     }
   }
-  const graphEntries = new Set<string>(GRAPH_ENTRIES)
+  const graphEntries = new Set<string>(MANAGED_GRAPH_ENTRIES)
   for (const entry of readdirSync(profileDir, { withFileTypes: true })) {
     if (graphEntries.has(entry.name) || entry.name === '.dsh-module-fallback') continue
     const source = join(profileDir, entry.name)
@@ -554,10 +669,10 @@ function copyRebuildCandidate(
     if (source === undefined) fail(`no authoritative source selected for ${name}`)
     const destination = join(root, ...packagePathSegments(name))
     mkdirSync(dirname(destination), { recursive: true })
-    cpSync(source, destination, { recursive: true, dereference: true })
+    cpSync(source, destination, { recursive: true, dereference: !devUpgrade })
     prepareManagedPackage(destination, name)
   }
-  setManagedDependencies(join(candidateDir, 'package.json'), packageNames)
+  setManagedDependencies(join(candidateDir, 'package.json'), packageNames, devUpgrade)
   dropLegacyDependencies(join(candidateDir, 'package.json'), droppedLegacyNames)
   ensureManagedBuildPolicy(candidateDir, packageNames)
   assertManagedSourceGraph(root, packageNames)
@@ -759,13 +874,13 @@ function commitCandidateGraph(
   const backedUp: string[] = []
   const installed: string[] = []
   try {
-    for (const name of GRAPH_ENTRIES) {
+    for (const name of MANAGED_GRAPH_ENTRIES) {
       const active = join(profileDir, name)
       if (!existsSync(active)) continue
       rename(active, join(backupDir, name))
       backedUp.push(name)
     }
-    for (const name of GRAPH_ENTRIES) {
+    for (const name of MANAGED_GRAPH_ENTRIES) {
       const candidate = join(candidateDir, name)
       if (!existsSync(candidate)) fail(`rebuilt candidate is missing ${name}`)
       rename(candidate, join(profileDir, name))
@@ -789,38 +904,83 @@ function commitCandidateGraph(
   rmSync(backupDir, { recursive: true, force: true })
 }
 
-export async function rebuildManagedProfile(options: ManagedProfileRebuildOptions): Promise<ManagedProfileRebuildResult> {
+function graphFileHash(profileDir: string, name: typeof GRAPH_FILES[number]): string {
+  const path = join(profileDir, name)
+  if (!assertOptionalPhysicalFile(path, `Profile ${name}`)) fail(`rebuilt graph is missing ${name}`)
+  return hashFile(path)
+}
+
+export async function prepareManagedProfile(options: ManagedProfileRebuildOptions): Promise<PreparedManagedProfile> {
   const profileDir = resolve(options.profileDir)
   const presetDir = resolve(options.presetDir)
-  assertPhysicalProfileBoundary(profileDir)
-  if (!existsSync(join(profileDir, 'package.json'))) fail(`Profile does not exist at ${profileDir}`)
-  const plan = chooseRebuildSources(profileDir, presetDir, options.ownedPackages)
-  const candidateDir = join(dirname(profileDir), `.omnimux-profile-candidate-${basename(profileDir)}-${randomUUID()}`)
+  const devUpgrade = options.mode === 'dev-upgrade'
+  const plan = chooseRebuildSources(profileDir, presetDir, options.ownedPackages, devUpgrade)
+  const homeDir = dirname(dirname(profileDir))
+  const stagingParent = devUpgrade ? resolve(options.stagingParent ?? dirname(homeDir)) : dirname(profileDir)
+  if (devUpgrade) {
+    assertPhysicalDirectory(stagingParent, 'Dev upgrade staging parent')
+    const fromHome = relative(realpathSync(homeDir), realpathSync(stagingParent))
+    if (fromHome !== '..' && !fromHome.startsWith(`..${sep}`) && !isAbsolute(fromHome)) {
+      fail('Dev upgrade staging must be outside the archived Profile home')
+    }
+    if (statSync(stagingParent).dev !== statSync(profileDir).dev) fail('Dev upgrade staging must share the Profile filesystem')
+  }
+  const candidateDir = mkdtempSync(join(stagingParent, `.omnimux-profile-candidate-${basename(profileDir)}-`))
+  const dispose = () => rmSync(candidateDir, { recursive: true, force: true })
   try {
-    copyRebuildCandidate(profileDir, candidateDir, plan.names, plan.sources, plan.dropped)
+    copyRebuildCandidate(profileDir, candidateDir, plan.names, plan.sources, plan.dropped, devUpgrade)
     const packedFiles = new Map<string, readonly string[]>()
     for (const name of plan.names) {
       packedFiles.set(name, await options.packedFiles(managedSourcePath(candidateDir, name)))
     }
     await options.materialize(candidateDir)
+    if (devUpgrade) {
+      assertExistingManagedProfile(candidateDir, plan.names)
+      const candidateManifest = readManifest(join(candidateDir, 'package.json'))
+      if (JSON.stringify(enabledBundles(candidateManifest)) !== JSON.stringify(plan.bundles)) {
+        fail('Dev upgrade changed the enabled Profile bundles')
+      }
+    }
     assertInstalledGraph(candidateDir, plan.names, packedFiles)
     const sourceHash = hashDirectory(managedSourceRoot(candidateDir))
-    const manifestHash = hashFile(join(candidateDir, 'package.json'))
-    commitCandidateGraph(profileDir, candidateDir, options.rename ?? renameSync, () => {
-      assertExistingManagedProfile(profileDir, plan.names)
-      assertInstalledGraph(profileDir, plan.names, packedFiles)
-      if (hashDirectory(managedSourceRoot(profileDir)) !== sourceHash) fail('published managed source hash changed')
-      if (hashFile(join(profileDir, 'package.json')) !== manifestHash) fail('published Profile manifest hash changed')
-    })
-    return {
-      profileDir,
-      packageCount: plan.names.length,
-      preservedManagedSources: plan.preserved,
-      droppedLegacySources: plan.dropped,
-      sourceHash,
-      manifestHash,
+    const graphFileHashes = new Map(GRAPH_FILES.map(name => [name, graphFileHash(candidateDir, name)]))
+    const manifestHash = graphFileHashes.get('package.json')!
+    const verify = (targetDir: string) => {
+      assertExistingManagedProfile(targetDir, plan.names)
+      assertInstalledGraph(targetDir, plan.names, packedFiles)
+      if (hashDirectory(managedSourceRoot(targetDir)) !== sourceHash) fail('published managed source hash changed')
+      for (const [name, hash] of graphFileHashes) {
+        if (graphFileHash(targetDir, name) !== hash) fail(`published Profile ${name} hash changed`)
+      }
     }
+    return {
+      candidateDir,
+      result: {
+        profileDir,
+        packageCount: plan.names.length,
+        preservedManagedSources: plan.preserved,
+        ...(devUpgrade ? { recoveredInstalledSources: plan.recovered } : {}),
+        droppedLegacySources: plan.dropped,
+        sourceHash,
+        manifestHash,
+      },
+      verify,
+      dispose,
+    }
+  } catch (cause) {
+    dispose()
+    throw cause
+  }
+}
+
+export async function rebuildManagedProfile(options: ManagedProfileRebuildOptions): Promise<ManagedProfileRebuildResult> {
+  if (options.mode === 'dev-upgrade') fail('Dev upgrade requires an external recovery transaction')
+  const prepared = await prepareManagedProfile(options)
+  const { profileDir } = prepared.result
+  try {
+    commitCandidateGraph(profileDir, prepared.candidateDir, options.rename ?? renameSync, () => prepared.verify(profileDir))
+    return prepared.result
   } finally {
-    rmSync(candidateDir, { recursive: true, force: true })
+    prepared.dispose()
   }
 }

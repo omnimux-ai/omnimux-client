@@ -104,6 +104,8 @@ export interface StagePresetProfileOptions {
   readonly pluginsRoot?: string
   readonly presetDir?: string
   readonly releaseChannel?: ReleaseChannel
+  /** New development-only output directory. Never replaces the input preset. */
+  readonly freshPresetDir?: string
 }
 
 /**
@@ -118,7 +120,12 @@ export function stagePresetProfile(options: StagePresetProfileOptions = {}): num
   if (!RELEASE_CHANNELS.includes(releaseChannel)) {
     throw new Error(`release channel must be production or development: ${JSON.stringify(releaseChannel)}`)
   }
-  const targetPresetDir = resolve(options.presetDir ?? defaultPresetDir)
+  const inputPresetDir = resolve(options.presetDir ?? defaultPresetDir)
+  const fresh = options.freshPresetDir !== undefined
+  const targetPresetDir = resolve(options.freshPresetDir ?? inputPresetDir)
+  if (fresh && releaseChannel !== 'development') {
+    throw new Error('fresh preset output requires the development channel')
+  }
   const pluginsRoot = options.pluginsRoot ?? process.env.OMNIMUX_PLUGINS_DIR
   if (pluginsRoot === undefined || pluginsRoot === '') {
     throw new Error('OMNIMUX_PLUGINS_DIR is required (absolute path to the omnimux-dsh product-tree plugins directory)')
@@ -134,13 +141,18 @@ export function stagePresetProfile(options: StagePresetProfileOptions = {}): num
     }
   }
   for (const name of PRODUCT_PLUGINS) assertProductPluginSource(resolvedPluginsRoot, name)
-  mkdirSync(targetPresetDir, { recursive: true })
+  if (!fresh) mkdirSync(targetPresetDir, { recursive: true })
   // Keep every local file: spec on one canonical path namespace. macOS may
   // expose the same temporary directory as both /var and /private/var;
   // mixing those spellings makes pnpm resolve a valid tarball as /private/private/var.
   const staging = realpathSync(mkdtempSync(join(tmpdir(), 'omnimux-preset-')))
   let candidateDir: string | undefined
   try {
+    if (fresh) {
+      // Reserve a new output without following an existing directory or symlink.
+      mkdirSync(targetPresetDir, { mode: 0o700 })
+      candidateDir = targetPresetDir
+    }
     const sidebar = buildPatchedBetterSidebar(join(staging, 'better-sidebar'))
     const dependencies: Record<string, string> = {
       'dsh-better-sidebar': toFileSpec(staging, sidebar.tarballPath),
@@ -187,7 +199,7 @@ export function stagePresetProfile(options: StagePresetProfileOptions = {}): num
     installStaging(staging)
     assertNoAlphaPackages(join(staging, 'node_modules'), alphaPlugins, releaseChannel)
 
-    candidateDir = mkdtempSync(join(targetPresetDir, '.preset-stage-'))
+    candidateDir ??= mkdtempSync(join(targetPresetDir, '.preset-stage-'))
     const candidatePluginsDir = join(candidateDir, 'plugins')
     mkdirSync(candidatePluginsDir)
     copyHoistedModules(join(staging, 'node_modules'), candidatePluginsDir)
@@ -201,7 +213,7 @@ export function stagePresetProfile(options: StagePresetProfileOptions = {}): num
     assertReleaseChannel(candidatePluginsDir, releaseChannel)
     assertStagedSelfContained(candidatePluginsDir)
     verifyInstalledBetterSidebar(join(candidatePluginsDir, 'dsh-better-sidebar'), sidebar.packedRoot)
-    stageSkeleton(targetPresetDir, candidateDir, alphaPlugins, releaseChannel)
+    stageSkeleton(inputPresetDir, candidateDir, alphaPlugins, releaseChannel)
     assertSkeletonBundlesAreStaged(candidateDir)
     stageAgentPresets(resolvedPluginsRoot, candidateDir)
     const skills = stageSkills(resolvedPluginsRoot, candidateDir, productPlugins)
@@ -210,12 +222,12 @@ export function stagePresetProfile(options: StagePresetProfileOptions = {}): num
       join(candidateDir, DISTRIBUTION_FILENAME),
       `${JSON.stringify(distributionManifest(owned, skills, candidateDir, releaseChannel, alphaPlugins), undefined, 2)}\n`,
     )
-    const seedVersionPath = join(targetPresetDir, 'seed-version')
+    const seedVersionPath = join(inputPresetDir, 'seed-version')
     writeFileSync(
       join(candidateDir, 'seed-version'),
       existsSync(seedVersionPath) ? readFileSync(seedVersionPath) : '1\n',
     )
-    publishCandidate(candidateDir, targetPresetDir)
+    if (!fresh) publishCandidate(candidateDir, targetPresetDir)
     candidateDir = undefined
     return owned.length
   } finally {
@@ -892,8 +904,15 @@ export function publishCandidate(
   }
 }
 function main(): void {
-  const count = stagePresetProfile({ releaseChannel: parseReleaseChannel(process.argv.slice(2)) })
-  process.stdout.write(`staged ${String(count)} preset packages into ${defaultPluginsDir}\n`)
+  const args = process.argv.slice(2)
+  const freshPresetDir = args.length === 4 && args[2] === '--fresh-preset-dir' ? args[3] : undefined
+  if (freshPresetDir !== undefined && !isAbsolute(freshPresetDir)) {
+    throw new Error('--fresh-preset-dir must be an absolute path to a new directory')
+  }
+  const releaseChannel = parseReleaseChannel(freshPresetDir === undefined ? args : args.slice(0, 2))
+  const count = stagePresetProfile({ releaseChannel, ...(freshPresetDir === undefined ? {} : { freshPresetDir }) })
+  const pluginsDir = freshPresetDir === undefined ? defaultPluginsDir : join(freshPresetDir, 'plugins')
+  process.stdout.write(`staged ${String(count)} preset packages into ${pluginsDir}\n`)
 }
 
 export function parseReleaseChannel(args: readonly string[]): ReleaseChannel {

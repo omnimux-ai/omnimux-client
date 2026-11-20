@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { execFileSync, spawnSync } from 'node:child_process'
 import type { SpawnSyncOptions } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -10,7 +10,7 @@ type Run = (command: string, args: readonly string[], options: SpawnSyncOptions)
 const packageRoot = dirname(fileURLToPath(new URL('../package.json', import.meta.url)))
 const scriptUrl = new URL('../scripts/package-dev.mjs', import.meta.url).href
 const { packageDev } = await import(scriptUrl) as {
-  packageDev(options: { platform: NodeJS.Platform; arch?: string; run: Run }): string
+  packageDev(options: { platform: NodeJS.Platform; arch?: string; freshPreset?: boolean; run: Run }): string
 }
 const stampScript = fileURLToPath(new URL('../scripts/stamp-dev-app.mjs', import.meta.url))
 
@@ -49,6 +49,23 @@ describe('development app packaging', () => {
     }))
     expect(() => packageDev({ platform: 'darwin', arch: 'arm64', run })).toThrow('exited with 1')
     expect(run).toHaveBeenCalledTimes(failedStep)
+  })
+
+  it.each([false, true])('uses one disposable preset and removes it after packaging (failure=%s)', fail => {
+    const run = vi.fn<Run>().mockImplementation(() => ({
+      status: fail && run.mock.calls.length === 5 ? 1 : 0,
+    }))
+    const assemble = () => packageDev({ platform: 'darwin', arch: 'arm64', freshPreset: true, run })
+    if (fail) expect(assemble).toThrow('exited with 1')
+    else expect(assemble()).toContain('OmniMux.app')
+
+    const stageArgs = run.mock.calls[3]![1]
+    const packArgs = run.mock.calls[4]![1]
+    const preset = stageArgs[4]!
+    expect(stageArgs.slice(1)).toEqual(['--channel', 'development', '--fresh-preset-dir', preset])
+    expect(packArgs.slice(1)).toEqual(['--fresh-preset-dir', preset])
+    expect(dirname(dirname(preset))).toBe(join(packageRoot, '.desktop-build'))
+    expect(existsSync(dirname(preset))).toBe(false)
   })
 
   it('rejects an unsupported host before building or staging', () => {
