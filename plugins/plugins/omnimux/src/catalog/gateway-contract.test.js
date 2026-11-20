@@ -210,8 +210,8 @@ test('gateway video mode names reach both catalog projections independently of i
 
       const firstFrame = findOperation('muse-video', 'first_frame')
       assert.equal(firstFrame.modeKind, 'first_frame')
-      assert.equal(firstFrame.label, '首帧驱动')
-      assert.equal(firstFrame.labelEn, 'First-frame driven')
+      assert.equal(firstFrame.label, '首帧')
+      assert.equal(firstFrame.labelEn, 'First frame')
 
       const multimodal = findOperation('seedance-2-5', 'video_multi_ref')
       assert.equal(multimodal.modeKind, 'multimodal_reference')

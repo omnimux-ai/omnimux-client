@@ -11,7 +11,7 @@ const registry = { version: '1', operations: [
   { id: 'image_to_image', label: '图生图', defaultOutputType: 'image' },
   { id: 'multi_reference', label: '多图主体参考', defaultOutputType: 'image' },
   { id: 'video_multi_ref', label: '全能参考', defaultOutputType: 'video' },
-  { id: 'first_last_frame', label: '首尾帧过渡', defaultOutputType: 'video' },
+  { id: 'first_last_frame', label: '首尾帧', defaultOutputType: 'video' },
   { id: 'video_edit', label: '视频编辑', defaultOutputType: 'video' },
 ] }
 const image = (pathOrUrl = 'https://example.invalid/a.png') => ({ type: 'image', pathOrUrl })

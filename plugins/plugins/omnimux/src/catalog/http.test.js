@@ -16,7 +16,7 @@ function products() {
     readIndex: () => ({ schemaVersion: '1.1', profiles, issues: [], parseErrors: [], all: () => models,
       registry: { operations: [{ id: 'text_to_image', label: '文生图', defaultOutputType: 'image' },
         { id: 'image_to_image', label: '图生图', defaultOutputType: 'image' }, { id: 'multi_reference', label: '多图主体参考', defaultOutputType: 'image' },
-        { id: 'video_multi_ref', label: '全能参考', defaultOutputType: 'video' }, { id: 'first_last_frame', label: '首尾帧过渡', defaultOutputType: 'video' }] } }),
+        { id: 'video_multi_ref', label: '全能参考', defaultOutputType: 'video' }, { id: 'first_last_frame', label: '首尾帧', defaultOutputType: 'video' }] } }),
     readGroups: () => [{ id: 'PRIVATE-GROUP', wireGroup: 'PRIVATE-WIRE-GROUP', enabled: true, constraints: {} }],
     readMapping: ({ model, group }) => ({ providerId: 'PRIVATE-REGISTERED', sourceVersion: 'b'.repeat(64),
       channelId: models.find(row => row.id === model.id).routing.channel, protocol: models.find(row => row.id === model.id).routing.protocol,

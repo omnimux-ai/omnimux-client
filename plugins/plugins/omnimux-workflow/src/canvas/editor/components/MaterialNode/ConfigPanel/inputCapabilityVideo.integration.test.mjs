@@ -168,7 +168,7 @@ test('R4 mode segment renders disabled operations grey with no title copy and ke
     value: 'first_frame',
     operations: [
       { id: 'text_to_video', label: '文生视频', slots: [], bindings: [], effective: false, ready: false, pending: [], disabled: true },
-      { id: 'first_frame', label: '首帧驱动', slots: [], bindings: [], effective: true, ready: true, pending: [], disabled: false },
+      { id: 'first_frame', label: '首帧', slots: [], bindings: [], effective: true, ready: true, pending: [], disabled: false },
     ],
     onChange: () => {},
   });

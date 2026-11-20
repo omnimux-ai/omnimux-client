@@ -143,8 +143,8 @@ describe('summaryFormatter - Issue #4103 生成模式文案不再直出英文 id
   it('wan-3.0 六个模式都显示中文（AC1）', () => {
     const cases = {
       text_to_video: '文生视频',
-      first_frame: '首帧驱动',
-      first_last_frame: '首尾帧过渡',
+      first_frame: '首帧',
+      first_last_frame: '首尾帧',
       video_multi_ref: '全能参考',
       document_to_video: '文档参考',
       webpage_to_video: '网页参考',

@@ -2168,7 +2168,7 @@ models:
       # 上游为网关渠道 44 的独立公开型号 minimax-h3-lip-sync（fal.ai 官方直连，
       # minimax/h3-max/lip-sync/image-to-video），经渠道分组 wireModel 路由，不改动本模型既有操作的路由。
       - id: digital_human
-        label: 数字人/对口型
+        label: 对口型
         output:
           type: video
           allowedMimes:
@@ -2438,7 +2438,7 @@ models:
           seam: videoGenerate
           notes: 离线合同验证；真实执行证据待画布验收
       - id: digital_human
-        label: 数字人/对口型
+        label: 对口型
         output:
           type: video
           allowedMimes:

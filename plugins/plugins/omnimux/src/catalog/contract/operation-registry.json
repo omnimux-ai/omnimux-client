@@ -70,24 +70,24 @@
     },
     {
       "id": "first_frame",
-      "label": "首帧驱动",
-      "labelEn": "First-frame driven",
+      "label": "首帧",
+      "labelEn": "First frame",
       "group": "video",
       "defaultOutputType": "video",
       "promptPolicy": "optional"
     },
     {
       "id": "first_last_frame",
-      "label": "首尾帧过渡",
-      "labelEn": "First-last frame transition",
+      "label": "首尾帧",
+      "labelEn": "First-last frame",
       "group": "video",
       "defaultOutputType": "video",
       "promptPolicy": "optional"
     },
     {
       "id": "end_frame",
-      "label": "尾帧参考",
-      "labelEn": "Last-frame reference",
+      "label": "尾帧",
+      "labelEn": "Last frame",
       "group": "video",
       "defaultOutputType": "video",
       "promptPolicy": "optional",
@@ -103,8 +103,8 @@
     },
     {
       "id": "digital_human",
-      "label": "数字人/对口型",
-      "labelEn": "Digital human / lip sync",
+      "label": "对口型",
+      "labelEn": "Lip sync",
       "group": "video",
       "defaultOutputType": "video",
       "promptPolicy": "optional",
@@ -112,8 +112,8 @@
     },
     {
       "id": "video_edit",
-      "label": "视频编辑/重绘",
-      "labelEn": "Video edit / repaint",
+      "label": "视频编辑",
+      "labelEn": "Video edit",
       "group": "video",
       "defaultOutputType": "video",
       "promptPolicy": "optional"
