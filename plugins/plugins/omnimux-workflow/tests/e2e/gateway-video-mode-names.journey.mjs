@@ -219,8 +219,10 @@ export default async function journey({ send, sleep, evidenceDir, io }) {
     await shot('muse-ten-open.png');
 
     stage = 'same node mode cycle';
+    const initial = await expectSelected('图片参考');
+    assert.equal(initial.modeOptions.find(option => option.label === '首帧驱动')?.disabled, true);
     const cycle = [];
-    for (const label of ['文生视频', '首帧驱动', '图片参考']) {
+    for (const label of ['文生视频', '图片参考']) {
       await ensureMenu();
       await click(modes + ' [role="radio"]', label);
       await waitFor('document.querySelector(' + JSON.stringify(trigger) + ')?.textContent.trim().startsWith(' + JSON.stringify(label) + ')');
@@ -253,6 +255,9 @@ export default async function journey({ send, sleep, evidenceDir, io }) {
     if ((await readModeUi()).modeOptions.length) await click(trigger);
     await click(seedance + ' .wf-node-header');
     await waitFor('document.querySelector(' + JSON.stringify(seedance + '.selected') + ')');
+    await ensureMenu();
+    await click(modes + ' [role="radio"]', '全能参考');
+    await waitFor('document.querySelector(' + JSON.stringify(trigger) + ')?.textContent.trim().startsWith("全能参考")');
     record('seedance-multimodal-label', await expectSelected('全能参考'));
     await shot('seedance-multimodal-open.png');
   } catch (error) {
