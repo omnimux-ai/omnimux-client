@@ -5,6 +5,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { wrapDocsImpact } from './docs-impact.mjs'
 import { mergeReviewedPr, parseArgs, verifyReview } from './docs-review-merge.mjs'
 
 const otherwise = '1'.repeat(40)
@@ -39,12 +40,17 @@ function fixture(t) {
   git(cwd, 'commit', '--quiet', '-m', 'candidate')
   const head = git(cwd, 'rev-parse', 'HEAD')
   const tree = git(cwd, 'rev-parse', 'HEAD^{tree}')
+  const section = wrapDocsImpact([{
+    subsystem: 'native-file-picker', document: 'architecture.md', decision: 'updated',
+    behavior: 'Save default changed', evidence: 'Fixture test verified the default',
+  }])
   const packet = [
     '# 评审包 · codex/task',
     `- base：\`origin/main\`（\`${base}\`）`,
     `- head：\`${head}\``,
     '- 文档复核：必需',
     '- 必核对文档：`architecture.md`',
+    `- 文档影响 SHA256：${createHash('sha256').update(section).digest('hex')}`,
     '',
     '## 已提交差异',
     'fixture diff',
@@ -68,6 +74,7 @@ function fixture(t) {
     id: 'task-pr',
     number: 123,
     url: 'https://github.com/fixture/client/pull/123',
+    body: '## 变更\r\n\r\n说明\r\n\r\n' + section.replaceAll('\n', '\r\n') + '\r\n\r\n## 验收',
     state: 'OPEN',
     headRepository: { nameWithOwner: 'fixture/client' },
     headRefName: 'codex/task',
@@ -114,6 +121,7 @@ function fixture(t) {
       } else if (query.includes('repository(owner:')) {
         assert.ok(args.includes('number=123') && args.includes('owner=fixture') && args.includes('repo=client'))
         const snapshot = reads.length > 1 ? reads.shift() : reads[0]
+        if (snapshot instanceof Error) return { error: snapshot }
         response = { data: { repository: { nameWithOwner: 'fixture/client', pullRequest: snapshot } } }
       } else {
         assert.deepEqual(args.slice(0, 6), ['pr', 'checks', '123', '--repo', 'github.com/fixture/client', '--required'])
@@ -168,10 +176,23 @@ test('rejects missing or stale proof, a blocking review and an omitted pilot pri
 
 test('requires proof for infrastructure reviews without a pilot document', t => {
   const sample = fixture(t)
-  const packet = sample.packet.replace(/^- (文档复核|必核对文档)：.*\n/gm, '')
+  const packet = sample.packet.replace(/^- (文档复核|必核对文档|文档影响 SHA256)：.*\n/gm, '')
   const review = { ...sample.review, packetSha256: createHash('sha256').update(packet).digest('hex') }
   assert.deepEqual(verifyReview(packet, review), { base: sample.base, head: sample.head })
   assert.throws(() => verifyReview(packet, { ...review, reviewed: [] }), /核对路径/)
+})
+
+test('checks the current pilot PR author block before enqueue and while queued', async t => {
+  const sample = fixture(t)
+  const stale = sample.open.body.replace('Save default changed', 'Superseded author summary')
+  for (const body of ['', stale, sample.open.body + '\n' + sample.open.body]) {
+    const gh = sample.fakeGitHub([sample.open, { ...sample.open, body }])
+    await assert.rejects(mergeReviewedPr(sample.options, gh.dependencies), /文档影响区块/)
+    assert.deepEqual(gh.mutations, [])
+  }
+  const gh = sample.fakeGitHub([sample.open, sample.open, { ...sample.queued, body: stale }])
+  await assert.rejects(mergeReviewedPr(sample.options, gh.dependencies), /文档影响区块.*已移出/)
+  assert.deepEqual(gh.mutations, ['enqueue', 'dequeue'])
 })
 
 test('rejects the primary checkout or a dirty task tree', async t => {
@@ -247,4 +268,16 @@ test('reports a merged but mismatching tree or squash parent as requiring repair
     await assert.rejects(mergeReviewedPr(sample.options, gh.dependencies), /已合入.*不一致/)
     assert.deepEqual(gh.mutations, ['enqueue'])
   }
+})
+
+test('retries queue reads after enqueue and preserves the queue identity if all attempts fail', async t => {
+  const sample = fixture(t)
+  const failedRead = new Error('temporary failure')
+  const recovered = sample.fakeGitHub([sample.open, sample.open, failedRead, failedRead, sample.merged])
+  assert.equal((await mergeReviewedPr(sample.options, recovered.dependencies)).mergedSha, otherwise)
+  assert.deepEqual(recovered.mutations, ['enqueue'])
+
+  const unreadable = sample.fakeGitHub([sample.open, sample.open, failedRead, failedRead, failedRead, sample.merged])
+  await assert.rejects(mergeReviewedPr(sample.options, unreadable.dependencies), /队列条目 task-entry.*temporary failure/)
+  assert.deepEqual(unreadable.mutations, ['enqueue'])
 })

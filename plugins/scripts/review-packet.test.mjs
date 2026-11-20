@@ -371,6 +371,7 @@ test('Issue-only pilot packet requires author record and full head-bound evidenc
     assert.match(packet, /## 需求（Issue 快照）/)
     assert.match(packet, /Verify both shell modes/)
     assert.match(packet, /文档复核：必需/)
+    assert.match(packet, /文档影响 SHA256：[a-f0-9]{64}/)
     assert.match(packet, /必核对文档：`app\/docs\/architecture.md`/)
     assert.match(packet, /## 文档影响/)
     assert.throws(() => createReviewPacket({ ...options, docsImpact, evidence: [writeEvidence(scratch, oldHead)] }), /未绑定当前 head/)

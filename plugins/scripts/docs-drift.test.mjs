@@ -63,7 +63,7 @@ test('Markdown gate detects a removed index and reports an invalid base as a che
 }))
 
 const row = (id, status = 'Implemented') => `| 调用 | 界面 | \`${id}\` | L1 | \`${status}\` | 否 |\n`
-const registration = id => `ctx.tools.register({ name: '${id}', output: adapter })\n`
+const registration = (id, register = 'ctx.tools.register') => `${register}({ name: '${id}', output: adapter })\n`
 
 test('tool inventory gate keys added drift by registration identity and checks both directions', () => withDocsFixture(({ write, commit, check }) => {
   const source = `${plugin}/src/index.js`
@@ -78,7 +78,7 @@ test('tool inventory gate keys added drift by registration identity and checks b
   assert.match(old.stderr, /存量 已注册但未登记为 Implemented preexisting/)
   assert.match(old.stderr, /存量 登记为 Implemented 但未注册 outdated/)
 
-  write(source, '\n' + registration('preexisting') + registration('added') + registration('planned'))
+  write(source, '\n' + registration('preexisting') + registration('added', 'ctx.tools?.register') + registration('planned'))
   write(`${plugin}/src/ignored.test.js`, registration('test_fixture'))
   const head = commit('add and remove registrations without updating the inventory')
   const broken = check('verify-plugin-agent-tools.mjs', base, head)

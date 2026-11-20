@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 export const DOCS_IMPACT_START = '<!-- omnimux-docs-impact:start -->'
 export const DOCS_IMPACT_END = '<!-- omnimux-docs-impact:end -->'
@@ -10,7 +11,12 @@ export const SUBSYSTEM_DOCUMENTS = {
   'plugin-agent-tools': 'plugins/docs/contracts/plugin-agent-tools-inventory.md',
 }
 
-const pickerPaths = /^(?:app\/dsh-plugin-desktop\/src\/(?:native-file-picker[^/]*|preload\.ts)|app\/dsh-desktop-next\/src\/(?:main|preload-app)\.ts|plugins\/packages\/dsh-ui-kit\/src\/native-file-picker[^/]*|app\/docs\/architecture(?:\.en)?\.md|specs\/native-file-picker\.spec\.md)$/
+const pickerPaths = [
+  /^app\/dsh-plugin-desktop\/src\/(?:native-file-picker[^/]*|electron-shell-generation\.ts|preload\.ts)$/,
+  /^app\/dsh-desktop-next\/src\/(?:main|preload-app)\.ts$/,
+  /^plugins\/packages\/dsh-ui-kit\/src\/native-file-picker[^/]*$/,
+  /^(?:app\/docs\/architecture(?:\.en)?\.md|specs\/native-file-picker\.spec\.md)$/,
+]
 const productSource = /^plugins\/plugins\/[^/]+\/src\/.+\.[cm]?[jt]sx?$/
 const tests = /(?:\.(?:test|spec)\.|\/(?:tests|__tests__|test-fixtures)\/)/
 const pickerCode = /\b(?:requestFilePicker|hasDesktopFilePicker|nativeFilePicker|openNativeFilePicker|DESKTOP_FILE_PICKER_CHANNEL)\b|\.filePicker\.(?:open|\w+)/
@@ -34,7 +40,7 @@ function sourceAt(cwd, path, version) {
 export function classifyDocsImpact(paths, { cwd, base, head } = {}) {
   const impacted = new Set()
   for (const path of paths) {
-    if (pickerPaths.test(path)) impacted.add('desktop-file-picker')
+    if (pickerPaths.some(pattern => pattern.test(path))) impacted.add('desktop-file-picker')
     if (path === SUBSYSTEM_DOCUMENTS['plugin-agent-tools']) impacted.add('plugin-agent-tools')
     if (!productSource.test(path) || tests.test(path)) continue
 
@@ -96,4 +102,27 @@ export function renderDocsImpact(rows) {
 
 export function wrapDocsImpact(rows) {
   return [DOCS_IMPACT_START, renderDocsImpact(rows), DOCS_IMPACT_END].join('\n')
+}
+
+/** Return the exact managed PR section. Normalize CRLF used by some editors. */
+export function readDocsImpactSection(markdown) {
+  const lines = markdown.replaceAll('\r\n', '\n').split('\n')
+  const start = lines.indexOf(DOCS_IMPACT_START)
+  const end = lines.indexOf(DOCS_IMPACT_END)
+  if (start === -1 && end === -1) return undefined
+  if (start === -1 || end < start || start !== lines.lastIndexOf(DOCS_IMPACT_START) ||
+      end !== lines.lastIndexOf(DOCS_IMPACT_END)) {
+    throw new Error('PR 文档影响段落的边界标记不完整或重复')
+  }
+  return lines.slice(start, end + 1).join('\n')
+}
+
+if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
+  try {
+    if (process.argv.length !== 3) throw new Error('用法：node plugins/scripts/docs-impact.mjs <文档影响 JSON>')
+    console.log(wrapDocsImpact(readDocsImpact(process.argv[2], [])))
+  } catch (error) {
+    console.error(error.message)
+    process.exitCode = 1
+  }
 }

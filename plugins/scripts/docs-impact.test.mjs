@@ -28,6 +28,7 @@ test('classifies cross-package consumers and changes or deletions of registratio
     const head = repo.commit('changed callers')
     assert.deepEqual(classifyDocsImpact([oldRegister, pickerConsumer], { cwd: repo.root, base, head }), [pickerId, toolsId])
     assert.deepEqual(classifyDocsImpact(['app/dsh-desktop-next/src/preload-app.ts']), [pickerId])
+    assert.deepEqual(classifyDocsImpact(['app/dsh-plugin-desktop/src/electron-shell-generation.ts']), [pickerId])
     assert.deepEqual(classifyDocsImpact(['plugins/plugins/example/src/tools/tool.ts']), [toolsId])
     assert.deepEqual(classifyDocsImpact(['plugins/plugins/example/src/tools/tool.test.ts']), [])
   })

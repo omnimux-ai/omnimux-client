@@ -23,7 +23,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, statSync,
 import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { classifyDocsImpact, readDocsImpact, renderDocsImpact, SUBSYSTEM_DOCUMENTS } from './docs-impact.mjs'
+import { classifyDocsImpact, readDocsImpact, renderDocsImpact, SUBSYSTEM_DOCUMENTS, wrapDocsImpact } from './docs-impact.mjs'
 
 export const DEFAULT_BASE = 'origin/main'
 export const DEFAULT_OUT_DIR = join(tmpdir(), 'omnimux-review')
@@ -212,6 +212,9 @@ export function collectGitState({ cwd, base }) {
 
 /** 纯函数：由已收集的输入拼出评审包 Markdown。 */
 export function buildPacket({ state, spec, evidence, generatedAt, docsImpact, requiredDocuments = [] }) {
+  const impactDigest = requiredDocuments.length
+    ? createHash('sha256').update(wrapDocsImpact(docsImpact)).digest('hex')
+    : null
   const fileLines = state.files.map(([status, ...paths]) => `  - ${status} \`${paths.join('` → `')}\``)
   const evidenceBlocks = evidence.map((item, index) => `### 证据 ${index + 1}：\`${item.name}\`\n\n${fenced(item.text, 'text')}`)
   return [
@@ -221,7 +224,7 @@ export function buildPacket({ state, spec, evidence, generatedAt, docsImpact, re
     `- base 提交时间：${state.baseDate}`,
     `- merge-base：\`${state.mergeBase}\``,
     `- head：\`${state.headSha}\``,
-    ...(requiredDocuments.length ? ['- 文档复核：必需', '- 必核对文档：' + requiredDocuments.map(path => '`' + path + '`').join('、')] : []),
+    ...(impactDigest ? ['- 文档复核：必需', '- 文档影响 SHA256：' + impactDigest, '- 必核对文档：' + requiredDocuments.map(path => '`' + path + '`').join('、')] : []),
     `- 分支：\`${state.branch}\``,
     `- 生成日期：${generatedAt}`,
     `- 规格：\`${spec.name}\``,

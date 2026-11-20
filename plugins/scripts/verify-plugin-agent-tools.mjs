@@ -126,7 +126,7 @@ function extractCallObject(code, callIndex) {
 
 function scanToolSource(code, relPath, foundTools, toolDetails) {
   // 1. 结构化审计：提取通过 ctx.tools.register / defineTool 传入的工具配置对象
-  const callRegex = /(?:ctx\.tools(?:\.register|\?\.register\?\.)|defineTool)\s*\(/g;
+  const callRegex = /(?:ctx\.tools(?:\.|\?\.)register(?:\?\.)?|defineTool)\s*\(/g;
   let match;
   while ((match = callRegex.exec(code)) !== null) {
     const obj = extractCallObject(code, match.index);
@@ -138,7 +138,7 @@ function scanToolSource(code, relPath, foundTools, toolDetails) {
     const toolName = nameMatch[1];
     foundTools.add(toolName);
 
-    const hasOutput = /\boutput\s*:/.test(obj);
+    const hasOutput = /\boutput\s*:|^\s*output\s*[,}]/m.test(obj);
     let outputValid = true;
     let outputError = '';
 

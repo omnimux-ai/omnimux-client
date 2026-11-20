@@ -5,6 +5,7 @@ import { readFileSync, realpathSync } from 'node:fs'
 import { basename, dirname, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
+import { readDocsImpactSection } from './docs-impact.mjs'
 
 const SHA = /^[a-f0-9]{40}$/
 const POLL_MS = 15_000
@@ -12,7 +13,7 @@ const QUERY = `query($owner:String!,$repo:String!,$number:Int!) {
   repository(owner:$owner,name:$repo) {
     nameWithOwner
     pullRequest(number:$number) {
-      id number url state isDraft isMergeQueueEnabled isInMergeQueue
+      id number url body state isDraft isMergeQueueEnabled isInMergeQueue
       headRefName headRefOid headRepository { nameWithOwner }
       baseRefName baseRef { target { oid } branchProtectionRule { requiredStatusCheckContexts } }
       autoMergeRequest { enabledAt }
@@ -84,6 +85,9 @@ export function verifyReview(packet, result) {
     if (!paths.length || paths.some(path => !reviewed.some(item => item.path === path))) {
       throw new Error('独立评审缺少试点主文档的核对证据')
     }
+    const docsImpactSha256 = header.match(/^- 文档影响 SHA256：([a-f0-9]{64})\r?$/m)?.[1]
+    if (!docsImpactSha256) throw new Error('评审包缺少已核对文档影响区块的 SHA-256')
+    return { base, head, docsImpactSha256 }
   }
   return { base, head }
 }
@@ -157,7 +161,7 @@ function remoteClient(cwd, run, repository, number) {
   }
 }
 
-function candidateMismatch(pr, candidate, base, head) {
+function candidateMismatch(pr, candidate, { base, head, docsImpactSha256 }) {
   if (pr.baseRefName !== 'main' || pr.headRefName !== candidate.branch ||
       pr.headRepository?.nameWithOwner?.toLowerCase() !== candidate.repository.toLowerCase() ||
       pr.headRefOid !== head || pr.baseRef?.target?.oid !== base) {
@@ -166,11 +170,22 @@ function candidateMismatch(pr, candidate, base, head) {
   if (pr.state !== 'OPEN' || pr.isDraft !== false || pr.isMergeQueueEnabled !== true) {
     return 'PR 必须开放、可评审，且目标分支启用合并队列'
   }
+  if (docsImpactSha256) {
+    let section
+    try {
+      section = readDocsImpactSection(pr.body ?? '')
+    } catch {
+      return 'PR 的文档影响区块标记无效，须更新正文并重新评审'
+    }
+    if (!section || createHash('sha256').update(section.replaceAll('\r\n', '\n')).digest('hex') !== docsImpactSha256) {
+      return 'PR 缺少已评审的文档影响区块或区块内容已变化，须更新正文并重新评审'
+    }
+  }
   return ''
 }
 
-function requireReady(pr, candidate, base, head) {
-  const mismatch = candidateMismatch(pr, candidate, base, head)
+function requireReady(pr, candidate, review) {
+  const mismatch = candidateMismatch(pr, candidate, review)
   if (mismatch) throw new Error(mismatch)
   if (pr.autoMergeRequest || pr.isInMergeQueue !== false || pr.mergeQueueEntry) {
     throw new Error('PR 已有合并请求或队列条目，须先核对该请求的归属和证据')
@@ -187,11 +202,26 @@ function verifyMerged(pr, base, head, tree, queueId) {
   return { pr: pr.number, url: pr.url, baseSha: base, headSha: head, queueId, mergedSha: commit.oid, mergedTree: tree, mergedAt: pr.mergedAt }
 }
 
+async function readQueuedPr(remote, queueId, deadline, now, sleep) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return remote.read()
+    } catch (error) {
+      const remaining = deadline - now()
+      if (attempt === 3 || remaining <= 0) {
+        throw new Error(`GitHub 查询失败，本次队列条目 ${queueId} 的状态待核对：${error.message}`, { cause: error })
+      }
+      await sleep(Math.min(2_000, remaining))
+    }
+  }
+}
+
 export async function mergeReviewedPr(options, deps = {}) {
   const { cwd = process.cwd(), run = spawnSync, now = Date.now, sleep = delay } = deps
   const packet = readFileSync(resolve(cwd, options.packet), 'utf8')
   const result = JSON.parse(readFileSync(resolve(cwd, options.result), 'utf8'))
-  const { base, head } = verifyReview(packet, result)
+  const review = verifyReview(packet, result)
+  const { base, head } = review
   const candidate = localCandidate(cwd, run, head)
   const tree = candidate.git('merge-tree', '--write-tree', base, head)
   if (!SHA.test(tree)) throw new Error('无法取得已评审 base/head 的合并树')
@@ -199,18 +229,18 @@ export async function mergeReviewedPr(options, deps = {}) {
   const deadline = now() + options.waitSeconds * 1000
 
   let pr = remote.read()
-  requireReady(pr, candidate, base, head)
+  requireReady(pr, candidate, review)
   const prId = pr.id
   while (!remote.checks(pr)) {
     if (now() >= deadline) throw new Error('等待必需 CI 超时，未请求入队')
     await sleep(Math.min(POLL_MS, deadline - now()))
     pr = remote.read()
-    requireReady(pr, candidate, base, head)
+    requireReady(pr, candidate, review)
   }
   if (now() >= deadline) throw new Error('等待必需 CI 超时，未请求入队')
   const checkedContexts = pr.baseRef.branchProtectionRule.requiredStatusCheckContexts
   pr = remote.read()
-  requireReady(pr, candidate, base, head)
+  requireReady(pr, candidate, review)
   if (pr.id !== prId) throw new Error('PR 身份已变化，未请求入队')
   const currentContexts = pr.baseRef.branchProtectionRule?.requiredStatusCheckContexts
   if (!currentContexts || currentContexts.length !== checkedContexts.length || !currentContexts.every(name => checkedContexts.includes(name))) {
@@ -222,13 +252,13 @@ export async function mergeReviewedPr(options, deps = {}) {
   if (!queueId) throw new Error('GitHub 未返回入队凭证，须核对 PR 实际状态')
 
   for (;;) {
-    pr = remote.read()
+    pr = await readQueuedPr(remote, queueId, deadline, now, sleep)
     if (pr.id !== prId) throw new Error('PR 身份已变化，须核对队列状态')
     if (pr.state === 'MERGED') return verifyMerged(pr, base, head, tree, queueId)
     if (!pr.isInMergeQueue || pr.mergeQueueEntry?.id !== queueId) {
       throw new Error('本次队列条目已失效，须核对 PR 状态并重新评审')
     }
-    const mismatch = candidateMismatch(pr, candidate, base, head)
+    const mismatch = candidateMismatch(pr, candidate, review)
     const queueBase = pr.mergeQueueEntry.baseCommit?.oid
     const reason = mismatch || (queueBase && queueBase !== base ? '队列基线已变化，须重新评审' : '') ||
       (now() >= deadline ? '等待合并队列超时' : '')
