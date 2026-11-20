@@ -1,16 +1,17 @@
 #!/usr/bin/env node
 /** Issue-driven delivery: admission -> isolated implementation -> evidence -> authorized merge. */
-import { mkdirSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync } from 'node:fs'
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { acquireIssueLock, assertSameRun, makeRunKey, readState, transitionState, writeState } from './pipeline-state.mjs'
 import { assessAdmission, assessRuntimeAuthorization, parseFrontmatter } from './authorization.mjs'
 import { deriveImpactMatrix, postMergeAcceptance, requiresDev } from './impact-matrix.mjs'
 import { PipelineError, repoRoot, runCommand, writeEvidence } from './auto-pipeline-runtime.mjs'
 import { classifyRisk, fetchIssue, inferPlugin, maintainersFor, parseArgs, resolveDeliveryChannel, slugifyTopic } from './auto-pipeline-metadata.mjs'
-import { baseSha, changedPaths, ensureBranchAndWorktree, getPackageInfo, hasCodeChanges, materializeAndCleanup, pluginNamesFromChanges, runImplementation } from './auto-pipeline-worktree.mjs'
+import { baseSha, changedPaths, ensureBranchAndWorktree, ensureWorkspaceDependencies, getPackageInfo, hasCodeChanges, materializeAndCleanup, pluginNamesFromChanges, runImplementation } from './auto-pipeline-worktree.mjs'
 import { runIntegrationGates, runPackageTest, runStaticQa } from './auto-pipeline-qa.mjs'
 import { commitAndPush, findOrCreatePr, labelPr, requestAndConfirmMerge, transitionIssue, waitForCi } from './auto-pipeline-github.mjs'
+import { classifyDocsImpact, readDocsImpact } from './docs-impact.mjs'
 
 export { assessAdmission, assessRuntimeAuthorization, parseFrontmatter } from './authorization.mjs'
 export function assessAuthorization(issue, maintainers = maintainersFor()) {
@@ -19,6 +20,36 @@ export function assessAuthorization(issue, maintainers = maintainersFor()) {
 export { PipelineError, runCommand } from './auto-pipeline-runtime.mjs'
 export { classifyRisk, fetchIssue, maintainersFor, parseArgs, resolveDeliveryChannel, slugifyTopic } from './auto-pipeline-metadata.mjs'
 const saveState = transitionState
+
+function resolvedArtifactPath(path) {
+  if (existsSync(path)) return realpathSync(path)
+  return join(resolvedArtifactPath(dirname(path)), basename(path))
+}
+
+function checkPrivateArtifact(worktree, path) {
+  for (const candidate of new Set([path, resolvedArtifactPath(path)])) {
+    const rel = relative(worktree, candidate)
+    if (isAbsolute(rel) || rel === '..' || rel.startsWith('../')) continue
+    const result = runCommand('git', ['check-ignore', '--quiet', '--', rel], { cwd: worktree, allowFailure: true, quietOutput: true })
+    if (result.status !== 0) throw new PipelineError(`流水线证据必须位于 Git 忽略目录或工作树之外：${basename(path)}`)
+  }
+}
+
+function prepareDocsImpact(worktree, base, paths, path) {
+  const subsystems = classifyDocsImpact(paths, { cwd: worktree, base })
+  if (!subsystems.length) return { subsystems, rows: [] }
+  checkPrivateArtifact(worktree, path)
+  return { subsystems, rows: readDocsImpact(path, subsystems, paths) }
+}
+
+function writeIssueSnapshot(worktree, evidenceDir, issue) {
+  checkPrivateArtifact(worktree, join(evidenceDir, 'issue-snapshot.json'))
+  const snapshotDir = mkdtempSync(join(evidenceDir, 'review-'))
+  const path = join(snapshotDir, 'issue-snapshot.json')
+  const { number, title, body, url } = issue
+  writeEvidence(path, `${JSON.stringify({ number, title, body, url }, null, 2)}\n`)
+  return path
+}
 
 function printDryRun(options, issue, plugin, topic) {
   process.stdout.write(`\n================================================================\n`)
@@ -55,11 +86,12 @@ export function handoffToAgent(root, issueId, evidence, options, fromPhase = 'pr
     owner: 'coordinating-agent', fromPhase, phase: merged ? 'post-merge-dev' : 'pre-merge',
     mergeProhibited: merged || Boolean(options.noMerge),
     materializeProhibited: options.materialize === false,
+    ...(evidence.docsImpact ? { docsImpact: evidence.docsImpact } : {}),
     nextAction: merged
-      ? `${options.materialize === false ? 'Do not materialize (--no-materialize).' : 'Automatically materialize merged changes into the development app (~/.omnimux-dev) only through verified safe closeout.'} Recheck current task authorization, base/head and independent review; resolve completion gaps: ${(evidence.completionGaps || ['applicable delivery evidence must be rechecked']).join('; ')}. The agent-side delivery gate is this task's isolated-worktree real-browser web verification evidence (screenshots or structured report); Dev 45120 real-device acceptance is owned by the desktop Bot as agent delivery evidence; humans do final confirmation. Preserve evidence and worktree; do not invoke legacy runtime cleanup. Complete applicable evidence and safe closeout before claiming success.`
+      ? `${options.materialize === false ? 'Do not materialize (--no-materialize).' : 'Automatically materialize merged changes into the development app (~/.omnimux-dev) only through verified safe closeout.'} Recheck current task authorization, base/head and independent review; resolve completion gaps: ${(evidence.completionGaps || ['applicable delivery evidence must be rechecked']).join('; ')}. The agent-side delivery gate is this task's isolated-worktree real-browser web verification evidence (screenshots or structured report); Dev 45120 real-device acceptance is owned by the desktop Bot. The coordinating Agent verifies the evidence against the final merged revision. Preserve evidence and worktree; do not invoke legacy runtime cleanup. Complete applicable evidence and safe closeout before claiming success.`
       : options.noMerge
         ? 'Complete PR acceptance and report within --no-merge scope; do not merge or materialize.'
-        : `Recheck current user scope and revocation, PR head, required static/test checks and independent review; perform authorized merge${options.materialize === false ? '; do not materialize (--no-materialize)' : ' then auto-materialize into ~/.omnimux-dev'}, requesting only missing boundary authorization.`,
+        : `Recheck current user scope and revocation, PR head, required static/test checks and independent review. ${evidence.docsImpact ? 'Use the author impact record and task snapshot as review inputs. Obtain and validate an independent review of the current base and head before queueing the PR. ' : ''}Perform authorized merge${options.materialize === false ? '; do not materialize (--no-materialize)' : ' then auto-materialize into ~/.omnimux-dev'}, requesting only missing boundary authorization.`,
   }
   return saveState(root, issueId, fromPhase, 'ready-for-agent', { ...evidence, handoff })
 }
@@ -106,7 +138,7 @@ export function finishMergedDelivery(root, wt, { issueId, plugin, topic, ...evid
     completionGaps.push('test reports are missing, failed or incomplete')
   }
   for (const [name, check] of Object.entries(reports)) {
-    // Human Dev acceptance is separate. Other declared requirements cannot disappear.
+    // The desktop Bot owns Dev acceptance. Other declared requirements remain applicable.
     if (name === 'dev' || name === 'browser' || check?.required !== true) continue
     if (check.pass !== true || check.status !== 'passed') completionGaps.push(`required ${name} has not passed`)
     if (name === 'runtime') completionGaps.push('required runtime evidence needs a trusted current receipt, not a pass field')
@@ -176,34 +208,38 @@ export async function executePipeline(options) {
     transitionIssue(options.issueId, 'status:in-progress', options, [`risk:${preRisk.tier}`])
 
     process.stdout.write('\n==> [2/6] 创建独立 Worktree 物理沙箱并实施代码...\n')
-    const wt = ensureBranchAndWorktree(plugin, topic, options.issueId, options)
+    const wt = ensureBranchAndWorktree(plugin, topic, options.issueId, { ...options, base: sha })
+    const evidenceDir = options.evidenceDir || join(wt.wtDir, '.workbuddy', 'evidence', `issue-${options.issueId}`)
+    const docsImpactPath = options.docsImpactPath || join(evidenceDir, 'docs-impact.json')
+    checkPrivateArtifact(wt.wtDir, docsImpactPath)
+    checkPrivateArtifact(wt.wtDir, join(evidenceDir, 'pr-body.md'))
+    mkdirSync(evidenceDir, { recursive: true, mode: 0o700 })
     current = 'implementation'
     saveState(repoRoot, options.issueId, 'metadata', current, { worktree: wt.wtDir, branch: wt.expectedBranch })
-    runImplementation(wt.wtDir, plugin, topic, options.issueId, options)
+    runImplementation(wt.wtDir, plugin, topic, options.issueId, { ...options, docsImpactPath })
+    const comparisonBase = runCommand('git', ['merge-base', sha, 'HEAD'], { cwd: wt.wtDir }).stdout.trim()
     const paths = changedPaths(wt.wtDir, sha, options)
+    if (!paths.length) throw new PipelineError('没有相对任务基线的可交付变更')
+    prepareDocsImpact(wt.wtDir, comparisonBase, paths, docsImpactPath)
     const risk = classifyRisk(issue, paths)
-    const effectiveChannel = channel === 'auto' && risk.automaticAllowed ? 'auto' : 'agent'
-    saveState(repoRoot, options.issueId, current, current, { changedFiles: paths, riskTier: risk.tier, channel: effectiveChannel, riskReasons: risk.reasons })
+    saveState(repoRoot, options.issueId, current, current, { changedFiles: paths, riskTier: risk.tier, riskReasons: risk.reasons })
 
     process.stdout.write('\n==> [3/6] 执行 L1 敏捷自动化测试 (Worktree)...\n')
     current = 'tests'
     saveState(repoRoot, options.issueId, 'implementation', current)
-    const evidenceDir = options.evidenceDir || join(wt.wtDir, '.workbuddy', 'evidence', `issue-${options.issueId}`)
-    mkdirSync(evidenceDir, { recursive: true, mode: 0o700 })
+    ensureWorkspaceDependencies(wt.wtDir, paths)
+    // Dependency preparation above controls writes to node_modules. Keep pnpm's implicit install off in its subprocesses.
+    const packageOptions = { ...options, packageEnv: { pnpm_config_verify_deps_before_run: 'false' } }
+    const pluginWorkspace = join(wt.wtDir, 'plugins')
     const allowSkips = parseFrontmatter(issue.body || '')['allow-skips'] === true
     const changedPlugins = pluginNamesFromChanges(paths)
     const packages = changedPlugins.length > 0 ? changedPlugins : (plugin !== 'common' ? [plugin] : [])
     const testReports = []
     const codeChanged = hasCodeChanges(paths)
     for (const changedPlugin of packages) {
-      const info = getPackageInfo(wt.wtDir, changedPlugin)
+      const info = getPackageInfo(pluginWorkspace, changedPlugin)
       if (!info) throw new PipelineError(`无法定位变更插件 package.json: ${changedPlugin}`)
-      testReports.push(runPackageTest(wt.wtDir, changedPlugin, info.dir, options, evidenceDir, codeChanged, allowSkips))
-    }
-    if (packages.length === 0 || paths.some(file => !file.startsWith('plugins/'))) {
-      const rootGate = runCommand('pnpm', ['test:gates'], { cwd: wt.wtDir, dryRun: options.dryRun })
-      writeEvidence(join(evidenceDir, 'test-root-gates.log'), `${rootGate.stdout || ''}${rootGate.stderr || ''}`)
-      if (rootGate.status !== 0) throw new PipelineError('根级 test:gates 失败')
+      testReports.push(runPackageTest(pluginWorkspace, changedPlugin, info.dir, packageOptions, evidenceDir, codeChanged, allowSkips))
     }
 
     process.stdout.write('\n==> [4/6] 执行严过关五维静态质检与测试集成门禁...\n')
@@ -211,19 +247,26 @@ export async function executePipeline(options) {
     saveState(repoRoot, options.issueId, 'tests', current, { testReports })
     const impactMatrix = deriveImpactMatrix(paths)
     const qa = runStaticQa(wt.wtDir, plugin, sha, options, evidenceDir)
-    const integration = runIntegrationGates(wt.wtDir, options, evidenceDir)
+    const integration = runIntegrationGates(pluginWorkspace, packageOptions, evidenceDir)
     const reports = { qa, ...postMergeAcceptance(impactMatrix), impactMatrix, integration, tests: testReports }
     saveState(repoRoot, options.issueId, 'qa', 'qa', { reports })
     transitionIssue(options.issueId, 'status:qa-review', options, [`risk:${risk.tier}`])
 
     process.stdout.write('\n==> [5/6] 自动提交、发起 PR 并按风险决定合入...\n')
+    const finalPaths = changedPaths(wt.wtDir, sha, options)
+    if (JSON.stringify(finalPaths) !== JSON.stringify(paths)) throw new PipelineError('验证期间变更路径发生变化，请重新核对任务差异')
+    const { rows, subsystems } = prepareDocsImpact(wt.wtDir, comparisonBase, finalPaths, docsImpactPath)
+    const docsImpact = subsystems.length > 0
+      ? { recordPath: docsImpactPath, subsystems, issueSnapshotPath: writeIssueSnapshot(wt.wtDir, evidenceDir, issue) }
+      : null
+    const effectiveChannel = channel === 'auto' && risk.automaticAllowed && !docsImpact ? 'auto' : 'agent'
     current = 'pr'
-    saveState(repoRoot, options.issueId, 'qa', current)
+    saveState(repoRoot, options.issueId, 'qa', current, { channel: effectiveChannel, docsImpact })
     const commit = commitAndPush(wt.wtDir, plugin, issue.title || `Issue #${options.issueId}`, options.issueId, wt.expectedBranch, options)
-    const pr = findOrCreatePr(wt.wtDir, wt.expectedBranch, plugin, issue.title || `Issue #${options.issueId}`, options.issueId, reports, risk, options, evidenceDir)
+    const pr = findOrCreatePr(wt.wtDir, wt.expectedBranch, issue.title || `Issue #${options.issueId}`, options.issueId, reports, risk, options, evidenceDir, { rows, headSha: commit.headSha, channel: effectiveChannel })
     labelPr(pr.number, risk, options)
     if (effectiveChannel !== 'auto' || options.noMerge) {
-      const handoff = handoffToAgent(repoRoot, options.issueId, { commit, pr, reports, risk }, options)
+      const handoff = handoffToAgent(repoRoot, options.issueId, { commit, pr, reports, risk, docsImpact }, options)
       process.stdout.write(`✓ PR #${pr.number || '(dry-run)'} 已准备；协调 Agent 按任务授权继续验收与交付。${options.noMerge ? '--no-merge 保持有效。' : ''}\n`)
       return { ...handoff, issue, plugin, topic }
     }
@@ -241,7 +284,7 @@ export async function executePipeline(options) {
       throw new PipelineError(`合入前重新核验授权失败，已被撤销或状态改变: ${latestAuth.reasons.join('；')}`)
     }
     saveState(repoRoot, options.issueId, 'ci', 'auto-merge-pending', { ci })
-    const merged = await requestAndConfirmMerge(pr.number, options)
+    const merged = await requestAndConfirmMerge(pr.number, commit.headSha, options)
     saveState(repoRoot, options.issueId, 'auto-merge-pending', 'merged-confirmed', { merged })
     const delivery = finishMergedDelivery(repoRoot, wt, { issueId: options.issueId, plugin, topic, commit, risk, pr, merged, reports }, options)
     process.stdout.write(delivery.state === 'ready-for-agent'

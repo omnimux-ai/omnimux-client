@@ -8,14 +8,22 @@
  * 2. Dimension B: 双面交付对齐审计 (HTTP Write Endpoints vs Registered Tools)
  * 3. Dimension C: Tool Schema 与破坏性操作安全守卫 (Schema & Destructive Confirm Guard)
  * 4. Dimension D: 文档契约与代码真源一致性 (Inventory Document Parity)
+ *
+ * --base <commit> --head <commit> 对两个已提交树执行清单差异检查。
  */
 
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { resolve, join, relative } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { compareDocTrees, reportDocDelta } from './lib/git-doc-tree.mjs';
 
 const REPO_ROOT = resolve(process.cwd());
 const PLUGINS_DIR = join(REPO_ROOT, 'plugins');
-const INVENTORY_PATH = join(REPO_ROOT, 'docs/contracts/plugin-agent-tools-inventory.md');
+const INVENTORY_PATH = 'docs/contracts/plugin-agent-tools-inventory.md';
+const TRACKED_INVENTORY = `plugins/${INVENTORY_PATH}`;
+
+const ignoredSourceFolders = new Set(['client', 'node_modules', '__tests__']);
+const isToolSource = file => /\.(?:js|ts)$/.test(file) && !/\.(?:test|spec)\./.test(file);
 
 // 颜色输出
 const colors = {
@@ -46,11 +54,7 @@ function getPluginList() {
     .sort();
 }
 
-function parseInventoryTools() {
-  if (!existsSync(INVENTORY_PATH)) {
-    return { error: 'Inventory document not found at ' + INVENTORY_PATH, tools: [] };
-  }
-  const content = readFileSync(INVENTORY_PATH, 'utf-8');
+function parseInventoryTools(content) {
   const tableRowRegex = /\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*`([^`]+?)`\s*\|\s*([^|]+?)\s*\|\s*`([^`]+?)`\s*\|\s*([^|]+?)\s*\|/g;
   
   const tools = [];
@@ -120,104 +124,148 @@ function extractCallObject(code, callIndex) {
   return null;
 }
 
+function scanToolSource(code, relPath, foundTools, toolDetails) {
+  // 1. 结构化审计：提取通过 ctx.tools.register / defineTool 传入的工具配置对象
+  const callRegex = /\b(?:tools(?:\.|\?\.)register(?:\?\.)?|defineTool)\s*\(/g;
+  let match;
+  while ((match = callRegex.exec(code)) !== null) {
+    const obj = extractCallObject(code, match.index);
+    if (!obj) continue;
+
+    const nameMatch = obj.match(/\bname:\s*['"`]([a-zA-Z0-9_-]+)['"`]/);
+    if (!nameMatch) continue;
+
+    const toolName = nameMatch[1];
+    foundTools.add(toolName);
+
+    const hasOutput = /\boutput\s*:|^\s*output\s*[,}]/m.test(obj);
+    let outputValid = true;
+    let outputError = '';
+
+    if (!hasOutput) {
+      outputValid = false;
+      outputError = '未声明 output 契约字段（DSH 要求工具必须显式声明 output { schema, render }）';
+    } else {
+      // 校验 output 内部定义或所指向的定义
+      const outputMatch = obj.match(/\boutput\s*:\s*([^,\n}]+)/);
+      const outputVal = outputMatch ? outputMatch[1].trim() : '';
+      if (outputVal.startsWith('{') && !obj.includes('render')) {
+        outputValid = false;
+        outputError = 'output 对象字面量缺失 render 函数';
+      }
+    }
+
+    toolDetails.push({
+      name: toolName,
+      file: relPath,
+      hasOutput,
+      outputValid,
+      outputError,
+    });
+  }
+
+  // 2. 匹配 tool('xxx', ...) 辅助函数定义 (在 omnimux/src/official/mount.js 中统一声明 output: deps.jsonOut)
+  const toolHelperRegex = /\btool\s*\(\s*['"`]([a-zA-Z0-9_-]+)['"`]/g;
+  let thm;
+  while ((thm = toolHelperRegex.exec(code)) !== null) {
+    if (!['test', 'it', 'describe'].includes(thm[1])) {
+      const toolName = thm[1];
+      foundTools.add(toolName);
+      toolDetails.push({
+        name: toolName,
+        file: relPath,
+        hasOutput: true,
+        outputValid: true,
+        viaHelper: true,
+      });
+    }
+  }
+
+  // 3. 匹配通用导出名 (如 workflow 批量工具与 clip 批量工具)
+  const rawToolNameRegex = /name:\s*['"`](workflow_[a-z0-9_]+|canvas_[a-z0-9_]+|clip_[a-z0-9_]+|plaza_[a-z0-9_]+|plugin_[a-z0-9_]+|connector_[a-z0-9_]+|skillhub_[a-z0-9_]+)['"`]/g;
+  let rm;
+  while ((rm = rawToolNameRegex.exec(code)) !== null) {
+    const toolName = rm[1];
+    foundTools.add(toolName);
+  }
+
+  // Browser tools pass literal names to local defineTool factories.
+  const declarations = /\bconst\s+([A-Za-z_]\w*)\s*=\s*\(\s*name\b[^()]*\)\s*(?::\s*\w+)?\s*=>\s*defineTool\s*\(\s*\{\s*name\s*,/g;
+  for (const [, factory] of code.matchAll(declarations)) {
+    const calls = new RegExp("\\b" + factory + "\\s*\\(\\s*(['\"])([\\w-]+)\\1", 'g');
+    for (const [, , name] of code.matchAll(calls)) foundTools.add(name);
+  }
+
+  // 4. 匹配动态模板字面量 omnimux_${kind}_submit
+  if (code.includes('omnimux_${kind}_submit')) {
+    foundTools.add('omnimux_video_submit');
+    foundTools.add('omnimux_image_submit');
+    foundTools.add('omnimux_audio_submit');
+  }
+}
+
+export function findToolNamesInSource(code) {
+  const names = new Set();
+  scanToolSource(code, '', names, []);
+  return names;
+}
+
 function scanCodeRegisteredTools(pluginName) {
-  const pluginDir = join(PLUGINS_DIR, pluginName);
-  const srcDir = join(pluginDir, 'src');
+  const srcDir = join(PLUGINS_DIR, pluginName, 'src');
   if (!existsSync(srcDir)) return { tools: [], toolDetails: [] };
 
   const foundTools = new Set();
   const toolDetails = [];
-  
+
   function walk(dir) {
-    const files = readdirSync(dir, { withFileTypes: true });
-    for (const file of files) {
+    for (const file of readdirSync(dir, { withFileTypes: true })) {
       const fullPath = join(dir, file.name);
       if (file.isDirectory()) {
-        if (file.name === 'client' || file.name === 'node_modules' || file.name === '__tests__') continue;
-        walk(fullPath);
-      } else if (file.name.endsWith('.js') || file.name.endsWith('.ts')) {
-        // 忽略测试与 Spec 文件
-        if (file.name.includes('.test.') || file.name.includes('.spec.')) continue;
-
+        if (!ignoredSourceFolders.has(file.name)) walk(fullPath);
+      } else if (isToolSource(file.name)) {
         const code = readFileSync(fullPath, 'utf-8');
         const relPath = relative(REPO_ROOT, fullPath).replace(/\\/g, '/');
-        
-        // 1. 结构化审计：提取通过 ctx.tools.register / defineTool 传入的工具配置对象
-        const callRegex = /(?:ctx\.tools(?:\.register|\?\.register\?\.)|defineTool)\s*\(/g;
-        let match;
-        while ((match = callRegex.exec(code)) !== null) {
-          const obj = extractCallObject(code, match.index);
-          if (!obj) continue;
-
-          const nameMatch = obj.match(/\bname:\s*['"`]([a-zA-Z0-9_-]+)['"`]/);
-          if (!nameMatch) continue;
-
-          const toolName = nameMatch[1];
-          foundTools.add(toolName);
-
-          const hasOutput = /\boutput\s*:/.test(obj);
-          let outputValid = true;
-          let outputError = '';
-
-          if (!hasOutput) {
-            outputValid = false;
-            outputError = '未声明 output 契约字段（DSH 要求工具必须显式声明 output { schema, render }）';
-          } else {
-            // 校验 output 内部定义或所指向的定义
-            const outputMatch = obj.match(/\boutput\s*:\s*([^,\n}]+)/);
-            const outputVal = outputMatch ? outputMatch[1].trim() : '';
-            if (outputVal.startsWith('{') && !obj.includes('render')) {
-              outputValid = false;
-              outputError = 'output 对象字面量缺失 render 函数';
-            }
-          }
-
-          toolDetails.push({
-            name: toolName,
-            file: relPath,
-            hasOutput,
-            outputValid,
-            outputError,
-          });
-        }
-
-        // 2. 匹配 tool('xxx', ...) 辅助函数定义 (在 omnimux/src/official/mount.js 中统一声明 output: deps.jsonOut)
-        const toolHelperRegex = /\btool\s*\(\s*['"`]([a-zA-Z0-9_-]+)['"`]/g;
-        let thm;
-        while ((thm = toolHelperRegex.exec(code)) !== null) {
-          if (!['test', 'it', 'describe'].includes(thm[1])) {
-            const toolName = thm[1];
-            foundTools.add(toolName);
-            toolDetails.push({
-              name: toolName,
-              file: relPath,
-              hasOutput: true,
-              outputValid: true,
-              viaHelper: true,
-            });
-          }
-        }
-
-        // 3. 匹配通用导出名 (如 workflow 批量工具与 clip 批量工具)
-        const rawToolNameRegex = /name:\s*['"`](workflow_[a-z0-9_]+|canvas_[a-z0-9_]+|clip_[a-z0-9_]+|plaza_[a-z0-9_]+|plugin_[a-z0-9_]+|connector_[a-z0-9_]+|skillhub_[a-z0-9_]+)['"`]/g;
-        let rm;
-        while ((rm = rawToolNameRegex.exec(code)) !== null) {
-          const toolName = rm[1];
-          foundTools.add(toolName);
-        }
-
-        // 4. 匹配动态模板字面量 omnimux_${kind}_submit
-        if (code.includes('omnimux_${kind}_submit')) {
-          foundTools.add('omnimux_video_submit');
-          foundTools.add('omnimux_image_submit');
-          foundTools.add('omnimux_audio_submit');
-        }
+        scanToolSource(code, relPath, foundTools, toolDetails);
       }
     }
   }
 
   walk(srcDir);
-  return { tools: Array.from(foundTools), toolDetails };
+  return { tools: [...foundTools], toolDetails };
+}
+
+function isTrackedToolSource(file, mode, entries) {
+  if (!mode.startsWith('100') || !file.startsWith('plugins/plugins/')) return false;
+  const [, , plugin, folder, ...source] = file.split('/');
+  const name = source.at(-1);
+  return !plugin.startsWith('.') && folder === 'src' && name && isToolSource(name)
+    && !source.slice(0, -1).some(part => ignoredSourceFolders.has(part))
+    && entries.has(`plugins/plugins/${plugin}/package.json`);
+}
+
+function inventoryProblems(tree, cache) {
+  if (!/^100/.test(tree.entries.get(TRACKED_INVENTORY)?.mode || '')) {
+    return [`缺少工具契约清单 ${TRACKED_INVENTORY}`];
+  }
+  const sources = [...tree.entries].filter(([file, { mode }]) => isTrackedToolSource(file, mode, tree.entries));
+  const needed = sources.filter(([, { object }]) => !cache.has(object)).map(([file]) => file);
+  const texts = tree.readText([TRACKED_INVENTORY, ...needed]);
+  const registered = new Set();
+  for (const [file, { object }] of sources) {
+    let names = cache.get(object);
+    if (!names) {
+      names = findToolNamesInSource(texts.get(file));
+      cache.set(object, names);
+    }
+    for (const name of names) registered.add(name);
+  }
+
+  const implemented = new Set(parseInventoryTools(texts.get(TRACKED_INVENTORY)).tools
+    .filter(tool => tool.status === 'Implemented').map(tool => tool.name));
+  return [
+    ...[...registered].filter(name => !implemented.has(name)).map(name => `已注册但未登记为 Implemented ${name}`),
+    ...[...implemented].filter(name => !registered.has(name)).map(name => `登记为 Implemented 但未注册 ${name}`),
+  ];
 }
 
 // 主体审计流程
@@ -232,17 +280,20 @@ async function runAudits() {
 
   // 1. 文档契约检查
   log.header('Dimension D: 文档契约与代码真源一致性 (Inventory Document Parity)');
-  const inventoryResult = parseInventoryTools();
-  if (inventoryResult.error) {
-    log.fail(inventoryResult.error);
+  const inventoryPath = join(REPO_ROOT, INVENTORY_PATH);
+  const inventoryTools = existsSync(inventoryPath)
+    ? parseInventoryTools(readFileSync(inventoryPath, 'utf-8')).tools
+    : null;
+  if (!inventoryTools) {
+    log.fail(`Inventory document not found at ${inventoryPath}`);
     totalErrors++;
   } else {
-    log.pass(`成功加载清单契约文档，共包含 ${inventoryResult.tools.length} 条工具条目`);
+    log.pass(`成功加载清单契约文档，共包含 ${inventoryTools.length} 条工具条目`);
   }
 
   const inventoryImplementedMap = new Map();
   const inventoryPlannedMap = new Map();
-  for (const t of inventoryResult.tools || []) {
+  for (const t of inventoryTools || []) {
     if (t.status === 'Implemented') {
       inventoryImplementedMap.set(t.name, t);
     } else if (t.status === 'Planned') {
@@ -332,7 +383,21 @@ async function runAudits() {
   }
 }
 
-runAudits().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  const args = process.argv.slice(2);
+  if (args.length === 0) {
+    runAudits().catch(error => {
+      console.error(error.message);
+      process.exitCode = 1;
+    });
+  } else {
+    try {
+      const { base, head } = compareDocTrees(args);
+      const cache = new Map();
+      process.exitCode = reportDocDelta('工具清单', new Set(inventoryProblems(base, cache)), inventoryProblems(head, cache));
+    } catch (error) {
+      console.error(error.message);
+      process.exitCode = 1;
+    }
+  }
+}

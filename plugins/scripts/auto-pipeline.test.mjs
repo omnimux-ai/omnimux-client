@@ -362,7 +362,7 @@ allow-skips: false
           const result = finishMergedDelivery(root, { wtDir: '/task' }, evidence, {
             materialize, execCommand: (command, args) => { calls.push([command, args]); return { status: 0 } },
           }, (wt, plugin, topic, issueId, pr, options) => { cleanups.push({ issueId, pr, options }) })
-          // Human Dev acceptance stays separate; missing Agent evidence must preserve the workspace.
+          // Missing Agent evidence must preserve the workspace.
           assert.equal(reports.dev.required, false)
           assert.equal(reports.dev.status, 'not-applicable')
           assert.equal(reports.dev.pass, null)
@@ -409,11 +409,10 @@ allow-skips: false
         assert.equal(result.handoff.mergeProhibited, true)
         assert.equal(result.handoff.materializeProhibited, !materialize)
         assert.equal(result.worktree, '/task')
-        // The agent-side delivery gate is this task's own worktree browser evidence; Dev acceptance is
-        // owned by the desktop Bot as agent delivery evidence, with humans doing final confirmation.
+        // The desktop Bot supplies Dev acceptance, which the coordinating Agent verifies.
         assert.match(result.handoff.nextAction, /isolated-worktree real-browser web verification/)
         assert.match(result.handoff.nextAction, /Dev 45120 real-device acceptance is owned by the desktop Bot/)
-        assert.match(result.handoff.nextAction, /humans do final confirmation/)
+        assert.match(result.handoff.nextAction, /coordinating Agent verifies the evidence against the final merged revision/)
         assert.match(result.handoff.nextAction, /Preserve evidence and worktree/)
         assert.doesNotMatch(result.handoff.nextAction, /awaiting Dev|pending Dev|materialize the merged main revision/)
         if (materialize) assert.match(result.handoff.nextAction, /Automatically materialize merged changes/)
@@ -461,8 +460,8 @@ allow-skips: false
       assert.equal(result.completionGaps.includes('required runtime evidence needs a trusted current receipt, not a pass field'), true)
     } finally { rmSync(root, { recursive: true, force: true }) }
   })
-  it('Dev acceptance remains non-blocking and final human confirmation is independent of complete document evidence', () => {
-    const root = mkdtempSync(join(tmpdir(), 'pipeline-human-dev-independent-'))
+  it('inapplicable Dev acceptance does not block complete document evidence', () => {
+    const root = mkdtempSync(join(tmpdir(), 'pipeline-docs-dev-inapplicable-'))
     try {
       const reports = passingDeliveryReports()
       reports.dev = { required: false, status: 'failed', pass: false }

@@ -3,8 +3,9 @@
  * scripts/doc-lint.mjs
  * OmniMux 开发文档工程实践合规性检测与门禁脚本
  *
- * 遵循规范：《开发文档工程实践管理规范》(docs/contracts/docs-governance-standard.md)
- * 
+ * 无参数时扫描插件文档。CI 使用 --base <commit> --head <commit>
+ * 比较两个已提交树，只拦截文档入口和本地链接的新增问题。
+ *
  * 校验维度：
  * 1. 简化 Frontmatter 解析、必填字段与 type/status/authority 枚举检查，非完整 Schema 校验
  * 2. Markdown 内部链接目标路径存在性检查，不验证锚点
@@ -16,11 +17,73 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { fromMarkdown } from 'mdast-util-from-markdown'
+import { gfmFromMarkdown } from 'mdast-util-gfm'
+import { gfm } from 'micromark-extension-gfm'
+import { compareDocTrees, reportDocDelta } from './lib/git-doc-tree.mjs'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const productRoot = path.resolve(__dirname, '..')
 const docsRoot = path.join(productRoot, 'docs')
+const repoRoot = path.dirname(productRoot)
+const criticalFiles = [
+  'docs/subsystems.md',
+  'app/docs/architecture.md',
+  'app/docs/architecture.en.md',
+  'plugins/docs/contracts/plugin-agent-tools-inventory.md',
+]
+const markdown = { extensions: [gfm()], mdastExtensions: [gfmFromMarkdown()] }
+
+function inDocScope(file) {
+  return /\.md$/i.test(file) && (
+    /^(?:(?:app|plugins)\/)?(?:AGENTS|README)(?:\.[^.\/]+)?\.md$/i.test(file)
+    || /^(?:(?:app|plugins)\/)?docs\//.test(file)
+  )
+}
+
+function linkTargets(content, file) {
+  const links = new Set()
+  const nodes = [fromMarkdown(content, markdown)]
+  while (nodes.length) {
+    const node = nodes.pop()
+    if (node.children) nodes.push(...node.children)
+    if (!['link', 'image', 'definition'].includes(node.type)) continue
+    if (/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(node.url)) continue
+    const raw = node.url.split(/[?#]/, 1)[0]
+    if (!raw) continue
+    let link
+    try {
+      link = decodeURIComponent(raw)
+    } catch {
+      // Preserve malformed escapes so a nonexistent target is still diagnosed.
+      link = raw
+    }
+    const target = path.posix.normalize(link.startsWith('/')
+      ? link.slice(1)
+      : path.posix.join(path.posix.dirname(file), link))
+    links.add(target.replace(/\/$/, '') || '.')
+  }
+  return links
+}
+
+function brokenLinks(content, file, exists) {
+  return [...linkTargets(content, file)].filter(target => target !== '.' && !exists(target))
+}
+
+function linkProblems(tree) {
+  const problems = criticalFiles.filter(file => !/^100/.test(tree.entries.get(file)?.mode || ''))
+    .map(file => `缺少文档入口 ${file}`)
+  const documents = [...tree.entries]
+    .filter(([file, { mode }]) => /^100/.test(mode) && inDocScope(file))
+    .map(([file]) => file)
+  for (const [file, content] of tree.readText(documents)) {
+    for (const target of brokenLinks(content, file, target => tree.entries.has(target))) {
+      problems.push(`${file} → ${target}`)
+    }
+  }
+  return problems
+}
 
 const VALID_TYPES = [
   'contract',
@@ -64,7 +127,7 @@ const FORBIDDEN_TERMS = [
   {
     regex: /(?<![\w\d])(?:API\s*)?网关(?![\w\d])/g,
     desc: '违禁词："网关" (执行中枢规范要求使用"执行中枢 (Hub)"，见 docs/contracts/hub.md)',
-    exemptFiles: ['docs/contracts/hub.md', 'docs/contracts/docs-governance-standard.md']
+    exemptFiles: ['docs/contracts/hub.md']
   }
 ]
 
@@ -162,7 +225,7 @@ function parseFrontmatter(content) {
 /**
  * 校验单一文档
  */
-function lintDocument(file, allDocPaths) {
+function lintDocument(file) {
   const relPath = path.relative(productRoot, file)
   const basename = path.basename(file)
   const ext = path.extname(file).toLowerCase()
@@ -211,30 +274,11 @@ function lintDocument(file, allDocPaths) {
     }
   }
 
-  // 4. 内部链接与死链扫描
-  const markdownLinkRegex = /\[([^\]]+)\]\(([^)]+)\)/g
-  let match
-  while ((match = markdownLinkRegex.exec(content)) !== null) {
-    const linkText = match[1]
-    const href = match[2].trim()
-
-    // 忽略网络链接与协议
-    if (/^(https?:|mailto:|ftp:|#)/.test(href)) continue
-
-    const [cleanPath, anchor] = href.split('#')
-    if (!cleanPath) continue // 纯本页锚点
-
-    // 解析目标文件物理路径
-    let targetAbsPath
-    if (cleanPath.startsWith('/')) {
-      targetAbsPath = path.join(productRoot, cleanPath.slice(1))
-    } else {
-      targetAbsPath = path.resolve(path.dirname(file), cleanPath)
-    }
-
-    if (!fs.existsSync(targetAbsPath)) {
-      logError(file, `检测到失效链接: [${linkText}](${href}) -> 目标文件不存在: ${path.relative(productRoot, targetAbsPath)}`)
-    }
+  // 4. 内部链接目标缺失
+  const repoPath = path.relative(repoRoot, file).split(path.sep).join('/')
+  for (const target of brokenLinks(content, repoPath, target =>
+    !target.startsWith('../') && fs.existsSync(path.join(repoRoot, target)))) {
+    logError(file, `链接目标文件不存在: ${target}`)
   }
 
   // 5. 违禁词与用语合规检测
@@ -259,29 +303,17 @@ export async function run() {
   console.log('╚═══════════════════════════════════════════════════════════════╝\n')
 
   const allFiles = getAllFiles(docsRoot)
-  const allDocPaths = new Set(allFiles)
 
   console.log(`📁 扫描目录: docs/ (共计发现 ${allFiles.length} 个文档/资源文件)\n`)
 
   for (const file of allFiles) {
-    lintDocument(file, allDocPaths)
+    lintDocument(file)
   }
 
-  // 检查关键根索引文件是否存在
-  const criticalFiles = [
-    'docs/README.md',
-    'docs/capabilities.md',
-    'docs/briefing.md',
-    'docs/harness-pin.md',
-    'docs/contracts/README.md',
-    'docs/decisions/README.md',
-    'docs/specs/README.md'
-  ]
-
-  for (const cf of criticalFiles) {
-    const p = path.join(productRoot, cf)
-    if (!fs.existsSync(p)) {
-      logError(p, `核心索引/根文档缺失: ${cf}`)
+  for (const file of criticalFiles) {
+    const fullPath = path.join(repoRoot, file)
+    if (!fs.existsSync(fullPath)) {
+      logError(fullPath, `缺少文档入口: ${file}`)
     }
   }
 
@@ -300,8 +332,19 @@ export async function run() {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  run().catch((err) => {
-    console.error('DocLint 执行异常:', err)
-    process.exit(1)
-  })
+  const args = process.argv.slice(2)
+  if (args.length === 0) {
+    run().catch((error) => {
+      console.error('DocLint 执行异常:', error.message)
+      process.exitCode = 1
+    })
+  } else {
+    try {
+      const { base, head } = compareDocTrees(args)
+      process.exitCode = reportDocDelta('文档链接', new Set(linkProblems(base)), linkProblems(head))
+    } catch (error) {
+      console.error('DocLint 执行异常:', error.message)
+      process.exitCode = 1
+    }
+  }
 }

@@ -43,8 +43,10 @@ export function runCommand(command, args = [], options = {}) {
   })
   const stdout = result.stdout || ''
   const stderr = result.stderr || ''
-  if (stdout) process.stdout.write(stdout)
-  if (stderr) process.stderr.write(stderr)
+  if (!options.quietOutput) {
+    if (stdout) process.stdout.write(stdout)
+    if (stderr) process.stderr.write(stderr)
+  }
   const status = result.status == null ? 1 : result.status
   if (status !== 0 && !options.allowFailure) {
     throw new PipelineError(`命令失败（exit ${status}）: ${command} ${displayArgs(args)}`, { command, args, status, stdout, stderr })
