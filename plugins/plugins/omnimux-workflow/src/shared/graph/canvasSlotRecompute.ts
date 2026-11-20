@@ -5,7 +5,7 @@ import type { MaterialNodeData } from './materialNode.ts';
 import { readCanvasParams } from './canvasInputSources.ts';
 import { buildContractView, buildUpstreamFingerprint, isMediaInputType, isOrderedImageReferenceSlot, matchOperationInputs, planAutoAdaptation, resolveModelView } from '../validation/compatKernel.ts';
 import { buildInputCapability } from '../validation/inputCapability.ts';
-import { autoFillSlots, deriveSlotLayout, hydrateSlotBindings, type FeedAsset, type SlotBindings, type SlotConflict, type SlotLayout, type SlotOccupant, type SlotSpec } from './feedSlot/index.ts';
+import { autoFillSlots, deriveSlotLayout, deriveImageGenerationLayout, hydrateSlotBindings, type FeedAsset, type SlotBindings, type SlotConflict, type SlotLayout, type SlotOccupant, type SlotSpec } from './feedSlot/index.ts';
 import { acceptsFeedAsset } from './feedSlot/autoFillSlots.ts';
 import { effectiveSlotFingerprint, feedFromFingerprint } from './feedSlot/effectiveFingerprint.ts';
 import { effectiveInputDisplay } from './feedSlot/effectiveInputDisplay.ts';
@@ -212,9 +212,15 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
     params.operation = resolveSlotOperation(catalog, model.id, systemChosen && strandedBySupply ? undefined : params.operation, outputType, raw) ?? recommended;
     if (typeof params.operation === 'string' && params.operation) autoDerived = params.operation;
   }
-  const operation = model?.operations.find((op) => op.id === params.operation && op.listed && op.output.type === outputType);
   const permitted = Boolean(model);
-  const layout = deriveSlotLayout(catalog, model?.id, operation?.id);
+  // Picture nodes display the model-level reference layout even while their
+  // saved operation is text_to_image; the actual operation is derived after
+  // the consumed bindings are known.
+  const imageLayout = outputType === 'image' && model
+    ? deriveImageGenerationLayout(catalog, model.id, typeof params.operation === 'string' ? params.operation : undefined)
+    : undefined;
+  let operation = model?.operations.find((op) => op.id === params.operation && op.listed && op.output.type === outputType);
+  const layout = imageLayout ?? deriveSlotLayout(catalog, model?.id, operation?.id);
   const slotByName = new Map(layout.slots.map(slot => [slot.slot, slot]));
   const feed = feedFromFingerprint(raw, currentVersion ? 1 : undefined);
   const plainSpeech = !currentVersion && outputType === 'audio' && params.operation === 'text_to_speech';
@@ -396,6 +402,20 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
     return false;
   });
   const fingerprint = effectiveSlotFingerprint(raw, layout, fill.bindings, conflicts, currentVersion || upgradeRestored ? 1 : undefined);
+  if (outputType === 'image' && model) {
+    const capability = buildInputCapability({
+      catalog,
+      modelId: model.id,
+      outputType: 'image',
+      fingerprint,
+      ignoredEdgeIds: autoStandby,
+    });
+    if (capability.selectedOperationId) {
+      params.operation = capability.selectedOperationId;
+      autoDerived = capability.selectedOperationId;
+    }
+    operation = model.operations.find((op) => op.id === params.operation && op.listed && op.output.type === outputType);
+  }
   const match = operation && permitted ? matchOperationInputs(operation, fingerprint) : undefined;
   const reasonCodes = !view.available ? ['catalog_unavailable'] : !permitted ? ['not_listed'] : !model ? ['unknown_model']
     : !operation ? ['operation_incompatible'] : [...(match?.rejections ?? []), ...(match?.pending ?? [])].map((item) => item.code);
@@ -418,7 +438,10 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
 export function mirrorCanvasSlots(node: CanvasNode, edges: Edge[], context: CanvasMutationRuntimeContext): Edge[] {
   const params = readCanvasParams(node);
   const catalog = narrowCatalogByRouting(context.catalog, params.model, params.routing);
-  const layout = deriveSlotLayout(catalog, params.model as string | undefined, params.operation as string | undefined);
+  const layout = node.data.materialType === 'image'
+    ? (deriveImageGenerationLayout(catalog, params.model as string | undefined, params.operation as string | undefined)
+      ?? deriveSlotLayout(catalog, params.model as string | undefined, params.operation as string | undefined))
+    : deriveSlotLayout(catalog, params.model as string | undefined, params.operation as string | undefined);
   const bindings = (node.data.slotBindings ?? {}) as SlotBindings;
   return edges.map((edge) => {
     if (edge.target !== node.id) return edge;

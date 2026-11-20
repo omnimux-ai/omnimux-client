@@ -1,4 +1,4 @@
-import type { CatalogChannelGroupDto } from '../../../../../shared/api.ts';
+import type { CatalogChannelGroupDto, OperationContractDto } from '../../../../../shared/api.ts';
 
 export interface PickerCandidate {
   id: string;
@@ -17,6 +17,8 @@ export interface PickerCandidate {
    * column renders these and nothing else.
    */
   channelGroups?: CatalogChannelGroupDto[];
+  /** Model contract operations; their inputs feed media-capability chips when a line has no variants. */
+  operations?: OperationContractDto[];
 }
 
 export interface PickerCandidateGroup {

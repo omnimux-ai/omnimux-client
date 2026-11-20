@@ -92,17 +92,16 @@ test('#3214：连入就绪 JPG 后自动改用可吸收它的模式，素材落�
   assert.equal(wired.data.compat.readyToSubmit, true);
 });
 
-test('#3214：用户显式拍板过的生成方式不被自动改写', () => {
+test('#3214：图片节点的参考图决定生成方式，旧的手工模式不再压过参考图', () => {
   const doc = catalog();
   const picked = genNode('img-ref', {
     autoOperationId: null, params: { model: 'img-ref', operation: 'text_to_image' },
   });
   const wired = connect(picked, doc);
-  assert.equal(wired.data.params.operation, 'text_to_image', '用户选择必须保留');
-  assert.equal(filledCount(wired, doc, 'img-ref', 'text_to_image'), 0);
-  assert.equal(wired.data.autoOperationId, null);
-  assert.deepEqual(unusedReasons(wired, doc, 'img-ref', 'text_to_image'), ['no_matching_slot'],
-    '用户拍板后吸收不了，仍要如实列出未使用素材');
+  assert.equal(wired.data.params.operation, 'image_to_image', '有参考图时派生为图生图');
+  assert.equal(filledCount(wired, doc, 'img-ref', 'image_to_image'), 1);
+  assert.equal(wired.data.autoOperationId, 'image_to_image');
+  assert.deepEqual(unusedReasons(wired, doc, 'img-ref', 'image_to_image'), []);
 });
 
 test('#3214：历史节点（无来源标记、模式等于目录推荐值）同样自愈', () => {

@@ -104,6 +104,8 @@ export interface FilteredModelOption {
    * line, a price or a constraint of its own.
    */
   channelGroups?: CatalogChannelGroupDto[];
+  /** Model contract operations; the channel row uses their media inputs when a line has no variants. */
+  operations?: OperationContractDto[];
   /** Catalog row (bucket or models[] projection) when available. */
   item?: CapabilityModelItem | CatalogModelDto;
   /** Gateway/custom row execution capability; never used as a visibility filter. */
@@ -661,6 +663,7 @@ export function buildFilteredModelOptions(args: {
       ...(auth?.channelGroups ?? bucket?.channelGroups
         ? { channelGroups: (auth?.channelGroups ?? bucket?.channelGroups) as CatalogChannelGroupDto[] }
         : {}),
+      ...(Array.isArray(auth?.operations) ? { operations: auth.operations } : {}),
       ...(auth || bucket ? { item: (auth ?? bucket) as CapabilityModelItem | CatalogModelDto } : {}),
       executionStatus: (auth?.executionStatus ?? bucket?.executionStatus ?? 'ready') as ModelExecutionStatus,
       selectable: auth?.selectable ?? bucket?.selectable,

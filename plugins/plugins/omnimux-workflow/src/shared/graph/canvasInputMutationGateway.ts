@@ -8,6 +8,7 @@ import type { MaterialType } from '../canvasTypes.ts';
 import { buildContractView, isOrderedImageReferenceSlot, matchOperationInputs, resolveModelView, type OperationMatch } from '../validation/compatKernel.ts';
 import { buildCanvasUpstreamFingerprint, readCanvasParams } from './canvasInputSources.ts';
 import { deriveSlotLayout } from './feedSlot/deriveSlotLayout.ts';
+import { deriveImageGenerationLayout, resolveImageOperationForReferenceCount } from './feedSlot/imageGeneration.ts';
 import { effectiveInputDisplay } from './feedSlot/effectiveInputDisplay.ts';
 import { effectiveSlotFingerprint, feedFromFingerprint } from './feedSlot/effectiveFingerprint.ts';
 import { resolveSlotOccupantOrdinal, type SlotSelection } from './feedSlot/assembleEffectiveInputs.ts';
@@ -17,6 +18,7 @@ import { narrowCatalogByRouting, requiredEffectiveVideoParameter, resolveEffecti
 import { readNodeInputSource } from './nodeInputSource.ts';
 import type { SlotOccupant } from './feedSlot/types.ts';
 import { mirrorCanvasSlots, recomputeCanvasSlots } from './canvasSlotRecompute.ts';
+import { acceptsFeedAsset } from './feedSlot/autoFillSlots.ts';
 import { projectVideoSlotBindings, readVideoOperationDraft } from './feedSlot/videoSlotDrafts.ts';
 export { buildCanvasUpstreamFingerprint } from './canvasInputSources.ts';
 
@@ -114,7 +116,11 @@ export function planCanvasInputSelection(current: CanvasInputMutationState, requ
   const variant = managed ? resolveEffectiveVideoOperation(managed.group, params.operation, params) : undefined;
   if (managed && !variant) return rejectMutation(current, 'parameter_unsupported');
   const catalog = narrowCatalogByRouting(context.catalog, params.model, params.routing, params);
-  const layout = deriveSlotLayout(catalog, typeof params.model === 'string' ? params.model : undefined, request.chosenOperationId);
+  const isImage = target.data.materialType === 'image';
+  const imageLayout = isImage
+    ? deriveImageGenerationLayout(catalog, typeof params.model === 'string' ? params.model : undefined, params.operation)
+    : undefined;
+  const layout = imageLayout ?? deriveSlotLayout(catalog, typeof params.model === 'string' ? params.model : undefined, request.chosenOperationId);
   const reactivatedEdges = new Set<string>();
   const strictAssignments: { slot: string; edgeId: string }[] = [];
   const currentBindings = managed
@@ -200,11 +206,32 @@ export function planCanvasInputSelection(current: CanvasInputMutationState, requ
   }
   const remainingStandby = [...standby].filter(edgeId => !reactivatedEdges.has(edgeId));
   const standbyChanged = remainingStandby.length !== previousStandby.length || remainingStandby.some(id => !previousStandby.includes(id));
+  const imageReferenceCount = isImage
+    ? layout.slots.filter((slot) => slot.type === 'image').reduce((count, slot) => count
+      + (bindings[slot.slot] ?? []).filter((occupant) => {
+        if (occupant.use === 'inactive') return false;
+        const source = current.nodes.find((node) => node.id === occupant.sourceNodeId);
+        if (!source) return true;
+        const input = readNodeInputSource(source);
+        return acceptsFeedAsset(slot, {
+          type: input.materialType,
+          mimeType: input.metadata?.mimeType,
+          sizeBytes: input.metadata?.sizeBytes,
+          durationSec: input.metadata?.durationSec,
+        });
+      }).length, 0)
+    : 0;
+  const imageOperationId = isImage
+    ? resolveImageOperationForReferenceCount(catalog, typeof params.model === 'string' ? params.model : undefined, imageReferenceCount)
+    : undefined;
+  if (isImage && !imageOperationId) return rejectMutation(current, 'operation_incompatible');
   return planCanvasInputMutation(current, { addEdges, removeEdgeIds: removeEdgeIds.length ? removeEdgeIds : undefined,
     nodePatches: [{ nodeId: target.id, data: { slotBindings: bindings,
+      ...(isImage ? { params: { ...params, operation: imageOperationId }, autoOperationId: imageOperationId } : {}),
       ...(managed ? { inputBindingVersion: 1 } : {}),
       ...(standbyChanged ? { slotStandbyEdgeIds: remainingStandby } : {}) } }],
-    strictConsumption: request, ...(strictAssignments.length ? { strictAssignments } : {}) }, context);
+    strictConsumption: isImage ? { ...request, chosenOperationId: imageOperationId! } : request,
+    ...(strictAssignments.length ? { strictAssignments } : {}) }, context);
 }
 
 /** Evaluate a complete saved V1 selection in the current operation context; no route search. */

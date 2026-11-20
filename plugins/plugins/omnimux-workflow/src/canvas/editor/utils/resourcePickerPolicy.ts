@@ -13,6 +13,7 @@ import { isNodeConnectionValid } from '../../../shared/graph/connectionConfig.ts
 import { planCanvasInputMutation, planCanvasInputSelection, validateCanvasInputSelection } from '../../../shared/graph/canvasInputMutationGateway.ts';
 import { readNodeInputSource, type NodeInputSource } from '../../../shared/graph/nodeInputSource.ts';
 import { deriveSlotLayout } from '../../../shared/graph/feedSlot/deriveSlotLayout.ts';
+import { deriveImageGenerationLayout } from '../../../shared/graph/feedSlot/imageGeneration.ts';
 import { resolveSlotOperation } from '../../../shared/graph/feedSlot/resolveSlotOperation.ts';
 import { acceptsFeedAsset } from '../../../shared/graph/feedSlot/autoFillSlots.ts';
 import { resolveSlotOccupantOrdinal, type SlotSelection } from '../../../shared/graph/feedSlot/assembleEffectiveInputs.ts';
@@ -352,7 +353,10 @@ function resourcePickerLayout({ nodes, edges }: CanvasInputMutationState, target
     operation = resolveSlotOperation(catalog, model, undefined,
       String(target?.data.materialType ?? ''), buildCanvasUpstreamFingerprint(targetNodeId, nodes, edges)) ?? '';
   }
-  return { target, layout: deriveSlotLayout(catalog, model, operation), qualified, managed, variant };
+  const layout = target?.data.materialType === 'image'
+    ? (deriveImageGenerationLayout(catalog, model, operation) ?? deriveSlotLayout(catalog, model, operation))
+    : deriveSlotLayout(catalog, model, operation);
+  return { target, layout, qualified, managed, variant };
 }
 
 function acceptsPickerSource(spec: SlotSpec, source: NodeInputSource): boolean {
@@ -632,7 +636,15 @@ export function planPickerSelectionMutation(current: CanvasInputMutationState, r
   const draft = addNodes.length ? { ...current, nodes: [...current.nodes, ...addNodes] } : current;
   const plan = planCanvasInputSelection(draft, request, context);
   if (plan.status !== 'allowed') return { status: plan.status, reasonCode: plan.reasonCode };
-  const verdict = validateCanvasInputSelection(plan, request, context, { strictAssignments: plan.strictAssignments });
+  // An image selection may switch the node's operation in the same atomic
+  // mutation; validate against the planned operation, not the pre-selection one.
+  const plannedParams = plan.nodes.find((node) => node.id === request.targetNodeId)?.data.params as Record<string, unknown> | undefined;
+  const plannedOperationId = typeof plannedParams?.operation === 'string' && plannedParams.operation
+    ? plannedParams.operation : request.chosenOperationId;
+  const effectiveRequest = plannedOperationId !== request.chosenOperationId
+    ? { ...request, chosenOperationId: plannedOperationId }
+    : request;
+  const verdict = validateCanvasInputSelection(plan, effectiveRequest, context, { strictAssignments: plan.strictAssignments });
   // The selection endpoint alone verifies the unique saved binding and reduction.
   // Apply only its binding result, without claiming the remaining graph is ready.
   if (request.setUse?.use === 'inactive' && !request.replaceEdgeId && !(request.selections?.length)) {
@@ -655,8 +667,8 @@ export function planPickerSelectionMutation(current: CanvasInputMutationState, r
   return { status: 'allowed', verdict, mutation: { nodePatches, addEdges, ...(addNodes.length ? { addNodes } : {}),
     removeEdgeIds: removeEdgeIds.length ? removeEdgeIds : undefined,
     ...(plan.strictAssignments ? { strictAssignments: plan.strictAssignments } : {}),
-    strictConsumption: { targetNodeId: request.targetNodeId, chosenOperationId: request.chosenOperationId,
-      ...(request.chosenRouteId !== undefined ? { chosenRouteId: request.chosenRouteId } : {}) } } };
+    strictConsumption: { targetNodeId: effectiveRequest.targetNodeId, chosenOperationId: effectiveRequest.chosenOperationId,
+      ...(effectiveRequest.chosenRouteId !== undefined ? { chosenRouteId: effectiveRequest.chosenRouteId } : {}) } } };
 }
 
 export function pickerReasonKey(reasonCode?: string): string {

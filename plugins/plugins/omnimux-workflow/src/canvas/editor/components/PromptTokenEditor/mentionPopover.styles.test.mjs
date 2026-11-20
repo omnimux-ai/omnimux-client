@@ -50,6 +50,10 @@ test('slot hover previews use opaque host surfaces and the host foreground', () 
   assert.equal(value(card, 'border'), '1px solid var(--dsw-alias-border-l2)');
   assert.equal(value(card, 'box-shadow'), '0 8px 24px var(--dsw-alias-bg-mask-1)');
   assert.equal(value(pill, 'color'), 'inherit');
+  assert.equal(
+    value(pill, '--wf-slot-preview-action-surface'),
+    'var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-layer-1, var(--dsw-alias-bg-base)))',
+  );
   assert.match(value(pill, 'background'), /^rgb\(from var\(--wf-slot-preview-action-surface\) r g b \/ 1\)$/);
   assert.match(value(hovered, 'background-color'), /--dsw-alias-interactive-bg-hover\)\) r g b \/ 1\)$/);
 });
