@@ -197,6 +197,12 @@ function scanToolSource(code, relPath, foundTools, toolDetails) {
   }
 }
 
+export function findToolNamesInSource(code) {
+  const names = new Set();
+  scanToolSource(code, '', names, []);
+  return names;
+}
+
 function scanCodeRegisteredTools(pluginName) {
   const srcDir = join(PLUGINS_DIR, pluginName, 'src');
   if (!existsSync(srcDir)) return { tools: [], toolDetails: [] };
@@ -241,8 +247,7 @@ function inventoryProblems(tree, cache) {
   for (const [file, { object }] of sources) {
     let names = cache.get(object);
     if (!names) {
-      names = new Set();
-      scanToolSource(texts.get(file), file, names, []);
+      names = findToolNamesInSource(texts.get(file));
       cache.set(object, names);
     }
     for (const name of names) registered.add(name);

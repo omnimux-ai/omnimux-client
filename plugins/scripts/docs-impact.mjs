@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { findToolNamesInSource } from './verify-plugin-agent-tools.mjs'
 
 export const DOCS_IMPACT_START = '<!-- omnimux-docs-impact:start -->'
 export const DOCS_IMPACT_END = '<!-- omnimux-docs-impact:end -->'
@@ -20,7 +21,8 @@ const pickerPaths = [
 const productSource = /^plugins\/plugins\/[^/]+\/src\/.+\.[cm]?[jt]sx?$/
 const tests = /(?:\.(?:test|spec)\.|\/(?:tests|__tests__|test-fixtures)\/)/
 const pickerCode = /\b(?:requestFilePicker|hasDesktopFilePicker|nativeFilePicker|openNativeFilePicker|DESKTOP_FILE_PICKER_CHANNEL)\b|\.filePicker\.(?:open|\w+)/
-const toolCode = /\bdefineTool\b|\bctx\.tools(?:\?\.|\.)register\b|from\s+['"][^'"]*(?:agent-tools|\/tools(?:\/|\.))/
+const toolPaths = /\/(?:agent-tools|tools)(?:\/|[.\/-])|^plugins\/plugins\/omnimux-workflow\/src\/workflow\/agent\//
+const toolCode = /\b(?:defineTool|AgentToolSpec)\b|\bctx\.tools(?:\?\.|\.)register\b|from\s+['"][^'"]*(?:agent-tools|\/tools(?:\/|\.))/
 
 function sourceAt(cwd, path, version) {
   try {
@@ -44,12 +46,14 @@ export function classifyDocsImpact(paths, { cwd, base, head } = {}) {
     if (path === SUBSYSTEM_DOCUMENTS['plugin-agent-tools']) impacted.add('plugin-agent-tools')
     if (!productSource.test(path) || tests.test(path)) continue
 
-    if (/\/(?:agent-tools|tools)(?:\/|[.\/-])/.test(path)) impacted.add('plugin-agent-tools')
+    if (toolPaths.test(path)) impacted.add('plugin-agent-tools')
     if (!cwd || impacted.size === Object.keys(SUBSYSTEM_DOCUMENTS).length) continue
     const sources = [sourceAt(cwd, path, head)]
     if (base) sources.push(sourceAt(cwd, path, base))
     if (sources.some(source => pickerCode.test(source))) impacted.add('desktop-file-picker')
-    if (sources.some(source => toolCode.test(source))) impacted.add('plugin-agent-tools')
+    if (!impacted.has('plugin-agent-tools') && sources.some(source => toolCode.test(source) || findToolNamesInSource(source).size > 0)) {
+      impacted.add('plugin-agent-tools')
+    }
   }
   return Object.keys(SUBSYSTEM_DOCUMENTS).filter(id => impacted.has(id))
 }

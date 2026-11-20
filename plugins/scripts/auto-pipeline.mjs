@@ -8,7 +8,7 @@ import { assessAdmission, assessRuntimeAuthorization, parseFrontmatter } from '.
 import { deriveImpactMatrix, postMergeAcceptance, requiresDev } from './impact-matrix.mjs'
 import { PipelineError, repoRoot, runCommand, writeEvidence } from './auto-pipeline-runtime.mjs'
 import { classifyRisk, fetchIssue, inferPlugin, maintainersFor, parseArgs, resolveDeliveryChannel, slugifyTopic } from './auto-pipeline-metadata.mjs'
-import { baseSha, changedPaths, ensureBranchAndWorktree, getPackageInfo, hasCodeChanges, materializeAndCleanup, pluginNamesFromChanges, runImplementation } from './auto-pipeline-worktree.mjs'
+import { baseSha, changedPaths, ensureBranchAndWorktree, ensureWorkspaceDependencies, getPackageInfo, hasCodeChanges, materializeAndCleanup, pluginNamesFromChanges, runImplementation } from './auto-pipeline-worktree.mjs'
 import { runIntegrationGates, runPackageTest, runStaticQa } from './auto-pipeline-qa.mjs'
 import { commitAndPush, findOrCreatePr, labelPr, requestAndConfirmMerge, transitionIssue, waitForCi } from './auto-pipeline-github.mjs'
 import { classifyDocsImpact, readDocsImpact } from './docs-impact.mjs'
@@ -227,6 +227,9 @@ export async function executePipeline(options) {
     process.stdout.write('\n==> [3/6] 执行 L1 敏捷自动化测试 (Worktree)...\n')
     current = 'tests'
     saveState(repoRoot, options.issueId, 'implementation', current)
+    ensureWorkspaceDependencies(wt.wtDir, paths)
+    // Dependency preparation above controls writes to node_modules. Keep pnpm's implicit install off in its subprocesses.
+    const packageOptions = { ...options, packageEnv: { pnpm_config_verify_deps_before_run: 'false' } }
     const pluginWorkspace = join(wt.wtDir, 'plugins')
     const allowSkips = parseFrontmatter(issue.body || '')['allow-skips'] === true
     const changedPlugins = pluginNamesFromChanges(paths)
@@ -236,7 +239,7 @@ export async function executePipeline(options) {
     for (const changedPlugin of packages) {
       const info = getPackageInfo(pluginWorkspace, changedPlugin)
       if (!info) throw new PipelineError(`无法定位变更插件 package.json: ${changedPlugin}`)
-      testReports.push(runPackageTest(pluginWorkspace, changedPlugin, info.dir, options, evidenceDir, codeChanged, allowSkips))
+      testReports.push(runPackageTest(pluginWorkspace, changedPlugin, info.dir, packageOptions, evidenceDir, codeChanged, allowSkips))
     }
 
     process.stdout.write('\n==> [4/6] 执行严过关五维静态质检与测试集成门禁...\n')
@@ -244,7 +247,7 @@ export async function executePipeline(options) {
     saveState(repoRoot, options.issueId, 'tests', current, { testReports })
     const impactMatrix = deriveImpactMatrix(paths)
     const qa = runStaticQa(wt.wtDir, plugin, sha, options, evidenceDir)
-    const integration = runIntegrationGates(pluginWorkspace, options, evidenceDir)
+    const integration = runIntegrationGates(pluginWorkspace, packageOptions, evidenceDir)
     const reports = { qa, ...postMergeAcceptance(impactMatrix), impactMatrix, integration, tests: testReports }
     saveState(repoRoot, options.issueId, 'qa', 'qa', { reports })
     transitionIssue(options.issueId, 'status:qa-review', options, [`risk:${risk.tier}`])

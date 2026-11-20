@@ -1,10 +1,54 @@
-import { existsSync, realpathSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { basename, dirname, extname, join, relative } from 'node:path'
 import { changedFilesFromGit } from './auto-qa-gate.mjs'
 import { BASE_BRANCH, PipelineError, readJsonFile, repoRoot, runCommand } from './auto-pipeline-runtime.mjs'
 
 const CODE_EXTENSIONS = new Set(['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.css', '.scss', '.html'])
 const TEST_FILE_RE = /(?:^|[./\\])[^/\\]*\.(?:test|spec)\.[^/\\]+$/
+const WORKSPACE_INPUT = /^(?:pnpm-lock\.yaml|pnpm-workspace\.yaml|package\.json|plugins\/(?:package\.json|(?:plugins|packages)\/[^/]+\/package\.json|plugins\/omnimux-browser\/extension\/package\.json))$/
+
+function workspacePackageDirectories(root) {
+  const workspace = join(root, 'plugins')
+  const candidates = [root, workspace, join(workspace, 'plugins', 'omnimux-browser', 'extension')]
+  for (const name of ['plugins', 'packages']) {
+    const directory = join(workspace, name)
+    if (!existsSync(directory)) continue
+    for (const item of readdirSync(directory, { withFileTypes: true })) {
+      if (!item.name.startsWith('.') && (item.isDirectory() || item.isSymbolicLink())) candidates.push(join(directory, item.name))
+    }
+  }
+  return candidates.filter(directory => existsSync(join(directory, 'package.json')))
+}
+
+function workspaceDependenciesPresent(root, packages) {
+  const installedLock = join(root, 'node_modules', '.pnpm', 'lock.yaml')
+  if (!statSync(join(root, 'node_modules', '.modules.yaml'), { throwIfNoEntry: false })?.isFile() ||
+      !statSync(installedLock, { throwIfNoEntry: false })?.isFile() ||
+      !readFileSync(installedLock).equals(readFileSync(join(root, 'pnpm-lock.yaml')))) return false
+  return packages.every(directory => {
+    const manifest = readJsonFile(join(directory, 'package.json'))
+    if (!manifest) return false
+    const direct = { ...manifest.dependencies, ...manifest.devDependencies }
+    return Object.keys(direct).every(name => Object.hasOwn(manifest.optionalDependencies || {}, name) ||
+      statSync(join(directory, 'node_modules', name), { throwIfNoEntry: false })?.isDirectory())
+  })
+}
+
+export function ensureWorkspaceDependencies(root, changedFiles) {
+  const packages = workspacePackageDirectories(root)
+  if (!changedFiles.some(file => WORKSPACE_INPUT.test(file)) && workspaceDependenciesPresent(root, packages)) return
+
+  const installPaths = [join(root, 'node_modules', '.pnpm'), join(root, 'node_modules', '.modules.yaml')]
+  for (const directory of new Set([root, ...packages])) {
+    if (realpathSync(directory) !== directory) throw new PipelineError('无法安装到通过软链接复用的工作区包，请使用独立依赖工作树')
+    installPaths.push(join(directory, 'node_modules'))
+  }
+  if (installPaths.some(path => lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink())) {
+    throw new PipelineError('无法安装到共享依赖软链接，请使用独立依赖工作树')
+  }
+  runCommand('corepack', ['pnpm', 'install', '--frozen-lockfile', '--ignore-scripts'], { cwd: root })
+  if (!workspaceDependenciesPresent(root, packages)) throw new PipelineError('工作树依赖安装后仍不完整或与锁文件不一致')
+}
 export function getPackageInfo(root, plugin) {
   const dir = !plugin || plugin === 'common' ? null : join(root, 'plugins', plugin)
   if (!dir || !existsSync(join(dir, 'package.json'))) return null

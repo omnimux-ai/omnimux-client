@@ -34,6 +34,18 @@ test('classifies cross-package consumers and changes or deletions of registratio
   })
 })
 
+test('classifies registered tool specs defined outside direct registration calls', () => {
+  withFixtureRepo(repo => {
+    const spec = 'plugins/plugins/example/src/factories/createWriter.ts'
+    repo.write(spec, "export const write = () => ({ name: 'workflow_create', parameters: {} })\n")
+    const base = repo.commit('base')
+    repo.write(spec, "export const write = () => ({ name: 'workflow_create', parameters: { confirmed: true } })\n")
+    assert.deepEqual(classifyDocsImpact([spec], { cwd: repo.root, base }), [toolsId])
+    const workflowHelper = 'plugins/plugins/omnimux-workflow/src/workflow/agent/agentToolShared.ts'
+    assert.deepEqual(classifyDocsImpact([workflowHelper]), [toolsId])
+  })
+})
+
 test('validates behavior-unchanged rationale and rejects missing or misleading records', () => {
   assert.deepEqual(validateDocsImpact([row], [pickerId], []), [row])
   assert.throws(() => validateDocsImpact([], [pickerId], []), /缺少试点子系统/)

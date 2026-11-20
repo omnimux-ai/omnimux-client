@@ -26,7 +26,7 @@ export function runPackageTest(root, packageName, packageDir, options, evidenceD
     if (codeChanged) throw new PipelineError(`${packageName} 没有 test script，代码变更不能放行`)
     return { packageName, status: 0, tests: 0, skipped: 0, notApplicable: true }
   }
-  const result = runCommand('pnpm', ['--filter', packageJson.name || packageName, 'test'], { cwd: root, dryRun: options.dryRun })
+  const result = runCommand('pnpm', ['--filter', packageJson.name || packageName, 'test'], { cwd: root, dryRun: options.dryRun, env: options.packageEnv })
   const output = `${result.stdout || ''}${result.stderr || ''}`
   const summary = options.dryRun ? { tests: 1, passed: 1, failed: 0, skipped: 0 } : parseTestSummary(output)
   writeEvidence(join(evidenceDir, `test-${packageName}.log`), output)
@@ -59,7 +59,7 @@ export function runIntegrationGates(root, options, evidenceDir) {
   const commands = [['pnpm', ['test:gates']], ['pnpm', ['check:boundaries']], ['pnpm', ['verify:stages']]]
   const results = []
   for (const [command, args] of commands) {
-    const result = runCommand(command, args, { cwd: root, dryRun: options.dryRun })
+    const result = runCommand(command, args, { cwd: root, dryRun: options.dryRun, env: options.packageEnv })
     writeEvidence(join(evidenceDir, `integration-${command}-${args[0]}.log`), `${result.stdout || ''}${result.stderr || ''}`)
     if (result.status !== 0) throw new PipelineError(`集成门禁失败: ${command} ${args.join(' ')}`)
     results.push({ command, args, status: result.status })

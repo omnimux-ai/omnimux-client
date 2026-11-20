@@ -5,7 +5,7 @@
 | 子系统 | 主文档 | 源码入口 | 验证命令 |
 | --- | --- | --- | --- |
 | 桌面原生文件选择 | [架构说明](../app/docs/architecture.md#插件的原生文件选择) · [英文版](../app/docs/architecture.en.md) | [桌面实现](../app/dsh-plugin-desktop/src/native-file-picker.ts) · [Legacy 主进程](../app/dsh-plugin-desktop/src/electron-shell-generation.ts) · [Legacy preload](../app/dsh-plugin-desktop/src/preload.ts) · [Next 主进程](../app/dsh-desktop-next/src/main.ts) · [Next preload](../app/dsh-desktop-next/src/preload-app.ts) · [共享选择器](../plugins/packages/dsh-ui-kit/src/native-file-picker.js) | 从仓库根运行 `node --test plugins/packages/dsh-ui-kit/src/native-file-picker.test.js`。桌面变更按 [app 规则](../app/AGENTS.md)补受影响的壳测试和运行态验证。 |
-| 插件 Agent 工具契约 | [工具契约清单](../plugins/docs/contracts/plugin-agent-tools-inventory.md) | [Hub 注册入口](../plugins/plugins/omnimux/src/host/apply.js) · [工具检查](../plugins/scripts/verify-plugin-agent-tools.mjs) | 从仓库根运行 `corepack pnpm --dir plugins verify:tools` 和 `corepack pnpm --dir plugins test:agent-tools`。 |
+| 插件 Agent 工具契约 | [工具契约清单](../plugins/docs/contracts/plugin-agent-tools-inventory.md) | [Hub 注册入口](../plugins/plugins/omnimux/src/host/apply.js) · [工作流工具注册](../plugins/plugins/omnimux-workflow/src/workflow/agent/agentTools.ts) · [工具检查](../plugins/scripts/verify-plugin-agent-tools.mjs) | 从仓库根运行 `corepack pnpm --dir plugins verify:tools` 和 `corepack pnpm --dir plugins test:agent-tools`。 |
 
 ## 开 PR 前核对
 
@@ -13,7 +13,7 @@
 
 保存一份 JSON 数组作为任务私有证据。每个对象有 `subsystem`、`document`、`decision`、`behavior`、`evidence` 五个字段。子系统 ID 为 `desktop-file-picker` 或 `plugin-agent-tools`。主文档使用上表中文页面的仓库相对路径，决定为 `updated` 或 `unchanged`，其余两项为单行说明。只把可公开的内容放入作者记录。从仓库根运行 `node plugins/scripts/docs-impact.mjs <记录路径>` 生成可粘贴到 PR 的段落，保留段落两侧的标记。
 
-`auto:run` 提供 `OMNIMUX_DOCS_IMPACT_PATH` 给实施命令，也可通过 `--docs-impact` 接收既有记录。脚本开出试点 PR 后把任务快照、作者记录和测试证据交还协调 Agent。
+`auto:run` 提供 `OMNIMUX_DOCS_IMPACT_PATH` 给实施命令，也可通过 `--docs-impact` 接收既有记录。作者记录齐备后，脚本在依赖缺失或锁文件、工作区清单变动时，在隔离工作树按锁文件安装依赖。开出试点 PR 后，脚本把任务快照、作者记录和测试证据交还协调 Agent。
 
 ## 评审及合并
 
