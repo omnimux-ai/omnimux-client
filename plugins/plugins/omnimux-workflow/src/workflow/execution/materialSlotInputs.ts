@@ -1,11 +1,11 @@
 import type { CapabilityCatalog } from '../../shared/api.ts';
 import type { ExecutionContext } from '../executors/registry.ts';
-import { buildContractView, buildUpstreamFingerprint, resolveModelView } from '../../shared/validation/compatKernel.ts';
+import { buildContractView, buildUpstreamFingerprint, isPromptInput, isVisualGeneration, resolveModelView } from '../../shared/validation/compatKernel.ts';
 import { resolveSlotOperation } from '../../shared/graph/feedSlot/resolveSlotOperation.ts';
 import { readPreferredOperationId } from '../../shared/validation/operationUi.ts';
 import { resolveGenerationPrompt } from '../../shared/graph/generationPrompt.ts';
 import { parseJsonDocumentText } from '../../shared/jsonDocument.ts';
-import { assembleEffectiveInputsFromSlots, deriveSlotLayout, selectSlotOccupants,
+import { assembleEffectiveInputsFromSlots, deriveSlotLayout,
   type FeedAsset, type SlotBindings, type SlotConflict } from '../../shared/graph/feedSlot/index.ts';
 import { resolveExecutionMediaSource, type ResolveExecutionProjectFile } from './executionMediaSource.ts';
 import { SeamGatewayError } from '../seam/SeamGatewayError.ts';
@@ -28,7 +28,9 @@ export function collectMaterialSlotInputs(data: Record<string, unknown>, ctx: Ex
   }
   const variant = managed?.group ? resolveEffectiveVideoOperation(managed.group, params.operation, params) : undefined;
   if (managed && !variant) throw new SeamGatewayError('operation-not-allowed', '当前线路不支持所选生成方式或参数，请重新选择');
-  const catalog = managed ? narrowCatalogByRouting(inputCatalog, modelId, params.routing, params) ?? inputCatalog : inputCatalog;
+  const baseModel = resolveModelView(buildContractView(inputCatalog), modelId);
+  const catalog = isVisualGeneration(kind)
+    ? narrowCatalogByRouting(inputCatalog, baseModel?.id, params.routing, params) ?? inputCatalog : inputCatalog;
   const model = resolveModelView(buildContractView(catalog), modelId);
   const autoOperationId = typeof data.autoOperationId === 'string' || data.autoOperationId === null
     ? data.autoOperationId as string | null : undefined;
@@ -103,8 +105,7 @@ export function collectMaterialSlotInputs(data: Record<string, unknown>, ctx: Ex
     const reason = currentVersion ? loaded.records.find(record => record.occupant.edgeId === loaded.requiredUnavailable!.occupant.edgeId)?.reasonCode : undefined;
     throw new SeamGatewayError(reason === 'input_waiting' ? reason : 'input_unavailable', `来源 ${loaded.requiredUnavailable.occupant.sourceNodeId} 的素材尚不可用，请替换或停用`);
   }
-  const selected = selectSlotOccupants(layout, bindings, feed, conflicts);
-  for (const { occupant } of selected) {
+  for (const { occupant } of loaded.selected) {
     const asset = feed.find((item) => item.edgeId === occupant.edgeId);
     const output = mediaByEdge.get(occupant.edgeId);
     if (!asset || !output?.length) continue;
@@ -119,7 +120,10 @@ export function collectMaterialSlotInputs(data: Record<string, unknown>, ctx: Ex
     const failure = effective.blockedInputs[0]!;
     throw new SeamGatewayError(failure.reason, `来源 ${failure.sourceNodeId} 的已入坑素材尚不可用，请补齐或移除引用`);
   }
-  if (effective.emptyRequiredSlots.length) throw new SeamGatewayError('min_unsatisfied', `还需要卡槽 ${effective.emptyRequiredSlots.join('、')} 的素材`);
+  const localPromptSlot = isVisualGeneration(layout.outputType) && layout.slots.find(slot => isPromptInput(slot)
+    && slot.composition && slot.valueSources?.includes('local_field'));
+  const missingSlots = localPromptSlot ? effective.emptyRequiredSlots.filter(slot => slot !== localPromptSlot.slot) : effective.emptyRequiredSlots;
+  if (missingSlots.length) throw new SeamGatewayError('min_unsatisfied', `还需要卡槽 ${missingSlots.join('、')} 的素材`);
   const textSlot = layout.slots.find(slot => slot.type === 'text' && slot.composition);
   const localText = layout.acceptsText === false || textSlot && !textSlot.valueSources?.includes('local_field') ? '' : resolveGenerationPrompt(data);
   const textInputs = loaded.records.filter(record => record.state === 'ready' && record.slot.type === 'text').map(record => ({

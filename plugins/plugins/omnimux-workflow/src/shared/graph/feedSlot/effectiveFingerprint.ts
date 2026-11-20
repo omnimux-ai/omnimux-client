@@ -1,5 +1,5 @@
 import { buildUpstreamFingerprint, isMediaInputType, type UpstreamFingerprint } from '../../validation/compatKernel.ts';
-import { selectSlotOccupants } from './assembleEffectiveInputs.ts';
+import { selectSlotOccupants, type SlotSelectionOptions } from './assembleEffectiveInputs.ts';
 import { resolveGenerationPrompt, selectGenerationTextSources } from '../generationPrompt.ts';
 import type { FeedAsset, SlotBindings, SlotConflict, SlotLayout } from './types.ts';
 
@@ -13,9 +13,9 @@ export function feedFromFingerprint(fingerprint: UpstreamFingerprint, inputBindi
 /** Readiness uses the same available occupant traversal as payload assembly. */
 export function effectiveSlotFingerprint(
   fingerprint: UpstreamFingerprint, layout: SlotLayout, bindings: SlotBindings, conflicts: SlotConflict[] = [], inputBindingVersion?: number,
-  standbyEdgeIds: readonly string[] = [],
+  standbyEdgeIds: readonly string[] = [], options: SlotSelectionOptions = {},
 ): UpstreamFingerprint {
-  const records = selectSlotOccupants(layout, bindings, feedFromFingerprint(fingerprint, inputBindingVersion), conflicts, inputBindingVersion);
+  const records = selectSlotOccupants(layout, bindings, feedFromFingerprint(fingerprint, inputBindingVersion), conflicts, inputBindingVersion, options);
   const selected = records.filter(record => record.state !== 'inactive');
   const media = selected.map(({ slot, occupant, asset, state }) => ({
     ...asset, edgeId: occupant.edgeId, sourceNodeId: occupant.sourceNodeId,

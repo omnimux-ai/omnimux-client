@@ -6,6 +6,7 @@ import type { AwaitTaskResult, GenerationCapability, GenerationGateway, SubmitRe
 import { createWorkflowLogger } from '../execution/logger.ts';
 import { readCanvasCatalog } from './canvasCatalog.ts';
 import { createWorkflowSubmission, resolveCanvasSubmission } from './submitGuard.ts';
+import { isVisualGeneration } from '../../shared/validation/compatKernel.ts';
 import { SeamGatewayError } from './SeamGatewayError.ts';
 import { validateGeneratedResult } from './generatedResult.ts';
 export { SeamGatewayError } from './SeamGatewayError.ts';
@@ -86,7 +87,7 @@ export function createOmnimuxSeamClient(opts: OmniumuxSeamClientOptions): Genera
     try { return await fn(); } catch (error) { throw toSeamError(error); } finally { release(); }
   }
   const readCatalog = () => readCanvasCatalog(opts.getSeam);
-  async function submitResolved(req: SubmitRequest, seam = requireSeam(opts.getSeam, req.capability)): Promise<SubmitResult> {
+  async function submitResolved(req: SubmitRequest, seam = requireSeam(opts.getSeam, req.capability), deferVisualPrompt = false): Promise<SubmitResult> {
     const structured = [...(req.references ?? []), ...(req.audioTrack ? [req.audioTrack] : [])];
     const isMirror = (key: string, value: unknown) => ['image', 'video', 'audio', 'speech'].includes(key)
       && structured.some((ref) => ref.type === (key === 'speech' ? 'audio' : key) && ref.pathOrUrl === value);
@@ -100,7 +101,8 @@ export function createOmnimuxSeamClient(opts: OmniumuxSeamClientOptions): Genera
       tasks.set(taskId, { kind: 'text', request });
       return { taskId, mode: 'submitted' };
     }
-    const request: Record<string, unknown> = { dest: req.dest, wait: false };
+    const request: Record<string, unknown> = { dest: req.dest, wait: false,
+      ...(deferVisualPrompt && isVisualGeneration(req.capability) ? { deferVisualPrompt: true } : {}) };
     for (const key of [
       'prompt', 'image', 'video', 'references', 'audioTrack', 'duration', 'operation', 'resolution', 'quality', 'n', 'aspectRatio',
       'speech', 'audio', 'voice', 'style', 'instrumental', 'speed', 'sound', 'seed', 'watermark',
@@ -136,7 +138,8 @@ export function createOmnimuxSeamClient(opts: OmniumuxSeamClientOptions): Genera
   }
   return {
     submit: Object.assign(submit, {
-      openWorkflowSubmission: async () => createWorkflowSubmission(readCatalog(), submitResolved),
+      openWorkflowSubmission: async () => createWorkflowSubmission(readCatalog(),
+        req => submitResolved(req, undefined, true), { deferVisualPrompt: true }),
     }),
     async awaitTask(taskId: string, dest: string, signal?: AbortSignal): Promise<AwaitTaskResult> {
       const record = tasks.get(taskId);

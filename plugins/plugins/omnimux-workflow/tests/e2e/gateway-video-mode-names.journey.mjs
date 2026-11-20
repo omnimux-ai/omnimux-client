@@ -67,12 +67,16 @@ function measureModeUi(triggerSelector, modeSelector) {
     return height > 0 && width > 0 && style.display !== 'none' && style.visibility !== 'hidden';
   };
   const summary = [...document.querySelectorAll(triggerSelector)].find(visible);
+  const panel = summary?.closest('.wf-config-panel');
   const group = [...document.querySelectorAll(modeSelector)].find(visible);
   const buttons = group ? [...group.querySelectorAll('[role="radio"]')] : [];
   const box = group?.getBoundingClientRect();
   const canvas = document.querySelector('.wf-canvas-root');
   return {
     summary: summary?.textContent.trim(),
+    addReference: panel?.querySelectorAll('[data-testid="wf-add-reference"]').length ?? 0,
+    addPromptReference: panel?.querySelectorAll('[data-testid="wf-add-prompt-reference"]').length ?? 0,
+    emptyRoleSlots: panel?.querySelectorAll('.wf-slot-wells [data-slot-state="empty"]').length ?? 0,
     modeOptions: buttons.map(button => ({
       label: button.textContent.trim(),
       checked: button.getAttribute('aria-checked') === 'true',
@@ -198,8 +202,10 @@ export default async function journey({ send, sleep, evidenceDir, io }) {
     stage = 'Muse max two';
     await click(muse + ' .wf-node-header');
     await waitFor('document.querySelector(' + JSON.stringify(muse + '.selected') + ')');
+    const maxTwo = await expectSelected('图片参考');
+    assert.deepEqual([maxTwo.addReference, maxTwo.addPromptReference, maxTwo.emptyRoleSlots], [1, 1, 0]);
     record('muse-max-two-mode-label', {
-      ...await expectSelected('图片参考'),
+      ...maxTwo,
       catalog: await evaluate('window.omnimuxModeNamingFixture.lastDelivered'),
     });
     assert.equal(evidence.observations['muse-max-two-mode-label'].catalog.max, 2);
@@ -212,15 +218,17 @@ export default async function journey({ send, sleep, evidenceDir, io }) {
     })()`);
     await waitFor('window.omnimuxModeNamingFixture.lastDelivered.max === 10');
     assert.ok(await evaluate('document.querySelector(' + JSON.stringify(muse + '.selected') + ') !== null'));
+    const maxTen = await expectSelected('图片参考');
+    assert.deepEqual([maxTen.addReference, maxTen.addPromptReference, maxTen.emptyRoleSlots], [1, 1, 0]);
     record('muse-max-ten-mode-label', {
-      ...await expectSelected('图片参考'),
+      ...maxTen,
       catalog: await evaluate('window.omnimuxModeNamingFixture.lastDelivered'),
     });
     await shot('muse-ten-open.png');
 
     stage = 'same node mode cycle';
     const initial = await expectSelected('图片参考');
-    assert.equal(initial.modeOptions.find(option => option.label === '首帧驱动')?.disabled, true);
+    assert.equal(initial.modeOptions.find(option => option.label === '首帧驱动')?.disabled, false);
     const cycle = [];
     for (const label of ['文生视频', '图片参考']) {
       await ensureMenu();
@@ -228,6 +236,8 @@ export default async function journey({ send, sleep, evidenceDir, io }) {
       await waitFor('document.querySelector(' + JSON.stringify(trigger) + ')?.textContent.trim().startsWith(' + JSON.stringify(label) + ')');
       assert.ok(await evaluate('document.querySelector(' + JSON.stringify(muse + '.selected') + ') !== null'));
       const selected = await expectSelected(label);
+      assert.equal(selected.addReference, Number(label === '图片参考'));
+      assert.equal(selected.addPromptReference, 1);
       cycle.push({ label, summary: selected.summary });
     }
     record('same-node-mode-cycle', cycle);
@@ -258,7 +268,9 @@ export default async function journey({ send, sleep, evidenceDir, io }) {
     await ensureMenu();
     await click(modes + ' [role="radio"]', '全能参考');
     await waitFor('document.querySelector(' + JSON.stringify(trigger) + ')?.textContent.trim().startsWith("全能参考")');
-    record('seedance-multimodal-label', await expectSelected('全能参考'));
+    const seedancePanel = await expectSelected('全能参考');
+    assert.deepEqual([seedancePanel.addReference, seedancePanel.addPromptReference, seedancePanel.emptyRoleSlots], [1, 1, 0]);
+    record('seedance-multimodal-label', seedancePanel);
     await shot('seedance-multimodal-open.png');
   } catch (error) {
     evidence.failure = { stage, message: String(error?.message ?? error).slice(0, 1800), ui: await readModeUi() };

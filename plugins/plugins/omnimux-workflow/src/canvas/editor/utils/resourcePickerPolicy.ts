@@ -10,17 +10,18 @@ import type { Edge } from '@xyflow/react';
 import type { MaterialType } from '../../types/materialNode.ts';
 import { createImportNode } from '../../../shared/graph/nodeFactory.ts';
 import { isNodeConnectionValid } from '../../../shared/graph/connectionConfig.ts';
-import { planCanvasInputSelection, validateCanvasInputSelection } from '../../../shared/graph/canvasInputMutationGateway.ts';
+import { planCanvasInputMutation, planCanvasInputSelection, validateCanvasInputSelection } from '../../../shared/graph/canvasInputMutationGateway.ts';
 import { readNodeInputSource, type NodeInputSource } from '../../../shared/graph/nodeInputSource.ts';
 import { deriveSlotLayout } from '../../../shared/graph/feedSlot/deriveSlotLayout.ts';
 import { resolveSlotOperation } from '../../../shared/graph/feedSlot/resolveSlotOperation.ts';
 import { acceptsFeedAsset } from '../../../shared/graph/feedSlot/autoFillSlots.ts';
-import { resolveSlotOccupantOrdinal } from '../../../shared/graph/feedSlot/assembleEffectiveInputs.ts';
+import { resolveSlotOccupantOrdinal, type SlotSelection } from '../../../shared/graph/feedSlot/assembleEffectiveInputs.ts';
 import { effectiveInputDisplay } from '../../../shared/graph/feedSlot/effectiveInputDisplay.ts';
 import { feedFromFingerprint } from '../../../shared/graph/feedSlot/effectiveFingerprint.ts';
+import { projectVideoSlotBindings, readVideoOperationDraft } from '../../../shared/graph/feedSlot/videoSlotDrafts.ts';
 import { buildCanvasUpstreamFingerprint, readCanvasParams } from '../../../shared/graph/canvasInputSources.ts';
-import { narrowCatalogByRouting } from '../../../shared/validation/lineConstraints.ts';
-import { isOrderedImageReferenceSlot } from '../../../shared/validation/compatKernel.ts';
+import { narrowCatalogByRouting, resolveEffectiveVideoGroup, resolveEffectiveVideoOperation } from '../../../shared/validation/lineConstraints.ts';
+import { isMediaInputType, isOrderedImageReferenceSlot } from '../../../shared/validation/compatKernel.ts';
 import type {
   CanvasInputSelectionRequest,
   CanvasInputSelectionVerdict,
@@ -328,17 +329,30 @@ export function canvasResourceDisplayName(node: CanvasNode, source = readNodeInp
   return { title: '', titleKey: source.materialType === 'text' ? 'node.type.text' : `panel.slot.${source.materialType}` };
 }
 
+function managedPickerGroup(target: CanvasNode | undefined, context: CanvasMutationRuntimeContext, params = target ? readCanvasParams(target) : {}) {
+  return target?.data.materialType === 'video' ? resolveEffectiveVideoGroup(context.catalog, params.model, params.routing) : null;
+}
+
+export function usesQualifiedResourcePicker(target: CanvasNode | undefined, context: CanvasMutationRuntimeContext): boolean {
+  return target?.data.inputBindingVersion === 1 || Boolean(managedPickerGroup(target, context));
+}
+
 /** Current operation candidates are projections of the same strict selection planner. */
 function resourcePickerLayout({ nodes, edges }: CanvasInputMutationState, targetNodeId: string, context: CanvasMutationRuntimeContext) {
   const target = nodes.find(node => node.id === targetNodeId);
-  const params = target ? readCanvasParams(target) : undefined;
-  const explicitOperation = typeof params?.operation === 'string' ? params.operation : '';
-  const catalog = narrowCatalogByRouting(context.catalog, params?.model, params?.routing);
-  const model = typeof params?.model === 'string' ? params.model : undefined;
-  const operation = explicitOperation || (target?.data.inputBindingVersion !== 1
-    ? resolveSlotOperation(catalog, model, undefined,
-      String(target?.data.materialType ?? ''), buildCanvasUpstreamFingerprint(targetNodeId, nodes, edges)) ?? '' : '');
-  return { target, layout: deriveSlotLayout(catalog, model, operation) };
+  const params = target ? readCanvasParams(target) : {};
+  const explicitOperation = typeof params.operation === 'string' ? params.operation : '';
+  const managed = managedPickerGroup(target, context, params);
+  const variant = managed ? resolveEffectiveVideoOperation(managed.group, params.operation, params) : undefined;
+  const qualified = Boolean(managed || target?.data.inputBindingVersion === 1);
+  const catalog = narrowCatalogByRouting(context.catalog, params.model, params.routing, params);
+  const model = typeof params.model === 'string' ? params.model : undefined;
+  let operation = managed && !variant ? '' : explicitOperation;
+  if (!qualified && !operation) {
+    operation = resolveSlotOperation(catalog, model, undefined,
+      String(target?.data.materialType ?? ''), buildCanvasUpstreamFingerprint(targetNodeId, nodes, edges)) ?? '';
+  }
+  return { target, layout: deriveSlotLayout(catalog, model, operation), qualified, managed, variant };
 }
 
 function acceptsPickerSource(spec: SlotSpec, source: NodeInputSource): boolean {
@@ -348,28 +362,101 @@ function acceptsPickerSource(spec: SlotSpec, source: NodeInputSource): boolean {
     && acceptsFeedAsset(spec, { ...source.metadata, type: source.materialType, mimeType });
 }
 
-export function acceptsPickerFile(spec: SlotSpec, file: LocalFileDraft): boolean {
+export function acceptsPickerFile(spec: SlotSpec, file: ImportFileDraft): boolean {
   const mimeType = file.mime || mimeFromFilename(file.name);
   return (!spec.allowedMimes?.length || Boolean(mimeType))
-    && acceptsFeedAsset(spec, { type: file.materialType, mimeType, sizeBytes: file.size, durationSec: file.durationSec ?? undefined });
+    && acceptsFeedAsset(spec, { type: file.materialType, mimeType, sizeBytes: file.size ?? undefined, durationSec: file.durationSec ?? undefined });
+}
+
+function resourcePickerInputs(state: CanvasInputMutationState, targetNodeId: string, context: CanvasMutationRuntimeContext) {
+  const { target, layout, qualified, managed, variant } = resourcePickerLayout(state, targetNodeId, context);
+  if (!target) return undefined;
+  const version = qualified ? 1 : undefined;
+  const feed = feedFromFingerprint(buildCanvasUpstreamFingerprint(targetNodeId, state.nodes, state.edges), version);
+  const bindings = managed ? projectVideoSlotBindings(layout, feed, readVideoOperationDraft(target.data, variant))
+    : target.data.slotBindings as SlotBindings | undefined;
+  const savedConflicts = managed ? [] : target.data.slotConflicts as SlotConflict[] | undefined;
+  const display = effectiveInputDisplay(layout, feed, bindings, savedConflicts, state.edges.filter(edge => edge.target === targetNodeId),
+    target.data.slotStandbyEdgeIds as string[] | undefined, version);
+  return { target, layout, display, qualified, managed };
+}
+
+function occupiesPickerSlot(record: SlotSelection): boolean {
+  return record.state === 'ready' || record.state === 'pending' || record.reasonCode === 'input_unavailable';
 }
 
 export function resourcePickerSlot(state: CanvasInputMutationState, targetNodeId: string, context: CanvasMutationRuntimeContext,
   slot: string, replaceEdgeId?: string) {
-  const { target, layout } = resourcePickerLayout(state, targetNodeId, context);
-  const spec = layout.slots.find(candidate => candidate.slot === slot);
-  if (!target || !spec) return undefined;
-  const version = target.data.inputBindingVersion === 1 ? 1 : undefined;
-  const feed = feedFromFingerprint(buildCanvasUpstreamFingerprint(targetNodeId, state.nodes, state.edges), version);
-  const display = effectiveInputDisplay(layout, feed, target.data.slotBindings as SlotBindings | undefined,
-    target.data.slotConflicts as SlotConflict[] | undefined, state.edges.filter(edge => edge.target === targetNodeId),
-    target.data.slotStandbyEdgeIds as string[] | undefined, version);
-  const occupants = display.bindings[slot] ?? [];
-  const count = occupants.filter(occupant => occupant.use !== 'inactive').length;
+  const inputs = resourcePickerInputs(state, targetNodeId, context);
+  const spec = inputs?.layout.slots.find(candidate => candidate.slot === slot);
+  if (!inputs || !spec) return undefined;
   const max = spec.type === 'text' && spec.composition ? Infinity : spec.max ?? Infinity;
+  const occupants = inputs.display.bindings[slot] ?? [];
+  const count = inputs.display.records.filter(record => record.slot.slot === slot && occupiesPickerSlot(record)).length;
   const remaining = replaceEdgeId ? Number(max > 0 && occupants.filter(item => item.edgeId === replaceEdgeId).length === 1)
     : Math.max(0, max - count);
   return { spec, remaining };
+}
+
+type ReferencePickerSlot = { spec: SlotSpec; remaining: number };
+type PickerSelections = NonNullable<CanvasInputSelectionRequest['selections']>;
+
+export function resourcePickerReferenceGroup(state: CanvasInputMutationState, targetNodeId: string,
+  context: CanvasMutationRuntimeContext, referenceSlots: readonly string[]) {
+  const inputs = resourcePickerInputs(state, targetNodeId, context);
+  if (!inputs) return undefined;
+  const eligible = inputs.layout.slots.filter(spec => spec.role === 'reference' && isMediaInputType(spec.type)
+    && referenceSlots.includes(spec.slot));
+  const active = inputs.display.records.filter(record => occupiesPickerSlot(record)
+    && eligible.some(spec => spec.slot === record.slot.slot));
+  const slots = eligible.map(spec => ({ spec, remaining: Math.max(0, (spec.max ?? Infinity)
+    - active.filter(record => record.slot.slot === spec.slot).length) }));
+  return { ...inputs, slots, inUse: new Set(active.map(record => record.occupant.sourceNodeId)) };
+}
+
+/** Resolve a mixed batch without changing existing bindings. Earlier choices keep their slot unless a later choice needs it. */
+export function routePickerReferences(slots: ReferencePickerSlot[], nodes: CanvasNode[], inUse: ReadonlySet<string>,
+  selections: PickerSelections, files: ImportFileDraft[]): { slotNames: string[]; reasonCode?: never } | { reasonCode: string; slotNames?: never } {
+  const seen = new Set(inUse);
+  const candidates: ReferencePickerSlot[][] = [];
+  for (const selection of selections) {
+    if (seen.has(selection.sourceNodeId)) return { reasonCode: 'input_already_bound' };
+    const node = nodes.find(item => item.id === selection.sourceNodeId);
+    if (!node) return { reasonCode: 'input_unavailable' };
+    const source = readNodeInputSource(node);
+    if (source.outputId !== selection.outputId) return { reasonCode: 'input_changed' };
+    seen.add(selection.sourceNodeId);
+    candidates.push(slots.filter(({ spec }) => acceptsPickerSource(spec, source)));
+  }
+  for (const file of files) candidates.push(slots.filter(({ spec }) => acceptsPickerFile(spec, file)));
+  if (candidates.some(options => !options.length)) return { reasonCode: 'role_conflict' };
+
+  const occupants = new Map(slots.map(slot => [slot, [] as number[]]));
+  const slotNames: string[] = [];
+  const assign = (index: number, visited: Set<ReferencePickerSlot>): boolean => {
+    const options = candidates[index]!.filter(slot => !visited.has(slot));
+    const direct = options.find(slot => occupants.get(slot)!.length < slot.remaining);
+    if (direct) {
+      occupants.get(direct)!.push(index);
+      slotNames[index] = direct.spec.slot;
+      return true;
+    }
+    for (const option of options) {
+      if (visited.has(option)) continue;
+      visited.add(option);
+      const current = occupants.get(option)!;
+      const position = current.findIndex(other => assign(other, visited));
+      if (position < 0) continue;
+      current[position] = index;
+      slotNames[index] = option.spec.slot;
+      return true;
+    }
+    return false;
+  };
+  for (const [index] of candidates.entries()) {
+    if (!assign(index, new Set())) return { reasonCode: 'slot_capacity' };
+  }
+  return { slotNames };
 }
 
 export function validatesNamedPickerSelection(input: ResourcePickerCommitInput): boolean {
@@ -390,9 +477,18 @@ export function listCanvasResources(
   targetNodeId: string,
   context: CanvasMutationRuntimeContext = {},
   selectionTarget?: { targetSlot?: string; role?: string; replaceEdgeId?: string; replaceSlot?: string;
-    selections?: NonNullable<CanvasInputSelectionRequest['selections']> },
+    referenceSlots?: string[]; selections?: PickerSelections; localFiles?: LocalFileDraft[] },
 ): CanvasResourceItem[] {
-  const { target, layout } = resourcePickerLayout({ nodes, edges }, targetNodeId, context);
+  const graph = { nodes, edges };
+  const group = selectionTarget?.referenceSlots && resourcePickerReferenceGroup(graph, targetNodeId, context,
+    selectionTarget.referenceSlots);
+  const picker = selectionTarget?.referenceSlots ? group : resourcePickerInputs(graph, targetNodeId, context);
+  if (!picker) return [];
+  const { layout, target, display, managed } = picker;
+  const bindings = managed ? display.bindings : (target.data.slotBindings ?? {}) as SlotBindings;
+  const slots = group
+    ? group.slots.map(item => item.spec)
+    : layout.slots.filter(slot => !selectionTarget?.targetSlot || slot.slot === selectionTarget.targetSlot);
   const connected = incomingSourceIds(edges, targetNodeId);
   const items: CanvasResourceItem[] = [];
   for (const node of nodes) {
@@ -403,11 +499,10 @@ export function listCanvasResources(
     if (!materialType) continue;
     const source = readNodeInputSource(node);
     if (source.availability !== 'ready' || !source.outputId) continue;
-    const matchingSlots = layout.slots.filter(slot => slot.type === materialType && (!selectionTarget?.targetSlot
-      || slot.slot === selectionTarget.targetSlot && acceptsPickerSource(slot, source)));
+    const matchingSlots = slots.filter(slot => slot.type === materialType
+      && (!(group || selectionTarget?.targetSlot) || acceptsPickerSource(slot, source)));
     if (!matchingSlots.length) continue;
-    const bindings = (target?.data.slotBindings ?? {}) as SlotBindings;
-    const inUse = matchingSlots.some(slot => bindings[slot.slot]?.some(item => item.use !== 'inactive'
+    const inUse = group ? group.inUse.has(node.id) : matchingSlots.some(slot => bindings[slot.slot]?.some(item => item.use !== 'inactive'
       && item.sourceNodeId === source.nodeId && (item.role ?? slot.role) === slot.role
       && edges.some(edge => edge.id === item.edgeId && edge.source === source.nodeId && edge.target === targetNodeId)));
     const selected = selectionTarget?.selections ?? [];
@@ -416,10 +511,13 @@ export function listCanvasResources(
         sourceNodeId: source.nodeId, outputId: source.outputId,
         targetSlot: selectionTarget?.targetSlot, role: selectionTarget?.role,
       }], replaceEdgeId: selectionTarget?.replaceEdgeId, replaceSlot: selectionTarget?.replaceSlot };
-    const candidate = target?.data.inputBindingVersion === 1
-      ? (inUse ? { status: 'allowed', verdict: validateCanvasInputSelection({ nodes, edges }, candidateRequest, context) }
-        : planPickerSelectionMutation({ nodes, edges }, candidateRequest, context)) : undefined;
-    const selectable = candidate ? candidate.status === 'allowed' && candidate.verdict?.accepts === true : true;
+    const referenceRoute = group && !inUse ? routePickerReferences(group.slots, nodes, group.inUse, candidateRequest.selections,
+      selectionTarget?.localFiles ?? []) : undefined;
+    const candidate = !group && picker.qualified
+      ? (inUse ? { status: 'allowed', verdict: validateCanvasInputSelection(graph, candidateRequest, context) }
+        : planPickerSelectionMutation(graph, candidateRequest, context)) : undefined;
+    const selectable = group ? !referenceRoute?.reasonCode && canConnect(node, group.target)
+      : candidate ? candidate.status === 'allowed' && candidate.verdict?.accepts === true : true;
     const displayName = canvasResourceDisplayName(node, source);
     const size = dimensionPair(data);
     items.push({
@@ -428,7 +526,8 @@ export function listCanvasResources(
       textContent: source.output.text,
       inUse,
       selectable,
-      reasonCode: candidate?.verdict?.reasonCode ?? (candidate && 'reasonCode' in candidate ? candidate.reasonCode : undefined),
+      reasonCode: referenceRoute?.reasonCode ?? candidate?.verdict?.reasonCode
+        ?? (candidate && 'reasonCode' in candidate ? candidate.reasonCode : undefined),
       materialType,
       ...displayName,
       previewUrl: resolveMediaPreviewUrl(
@@ -447,35 +546,93 @@ export function listCanvasResources(
 
 export function resourcePickerContextKey(node: CanvasNode | undefined, context: CanvasMutationRuntimeContext): string {
   const params = node ? readCanvasParams(node) : {};
-  return JSON.stringify([node?.data.inputBindingVersion, params.model, params.operation, params.routing, context.catalog?.fingerprint]);
+  const managed = managedPickerGroup(node, context, params);
+  const variant = managed ? resolveEffectiveVideoOperation(managed.group, params.operation, params) : undefined;
+  return JSON.stringify([node?.data.inputBindingVersion, params.model, params.operation, params.routing, context.catalog?.fingerprint,
+    managed?.model.effectiveVideoVersion, managed?.group?.id, variant]);
+}
+
+function includesReferenceSelections(records: SlotSelection[], selections: PickerSelections): boolean {
+  return selections.every(selection => records.some(record => record.state === 'ready'
+    && record.occupant.sourceNodeId === selection.sourceNodeId && record.occupant.outputId === selection.outputId
+    && record.slot.slot === selection.targetSlot));
+}
+
+function planLegacyReferencePickerMutation(current: CanvasInputMutationState,
+  group: NonNullable<ReturnType<typeof resourcePickerReferenceGroup>>, selections: PickerSelections, addNodes: CanvasNode[],
+  context: CanvasMutationRuntimeContext) {
+  const { target, display } = group;
+  const bindings: SlotBindings = Object.fromEntries(Object.entries(display.bindings).map(([name, values]) => [name, [...values]]));
+  const standby = new Set((target.data.slotStandbyEdgeIds ?? []) as string[]);
+  const newEdges: Edge[] = [];
+  let ordinal = display.records.reduce((max, record) =>
+    Math.max(max, resolveSlotOccupantOrdinal(record.occupant, record.asset)), -1) + 1;
+  for (const selection of selections) {
+    const existing = current.edges.find(edge => edge.source === selection.sourceNodeId && edge.target === target.id);
+    const edge = existing ?? normalizeCanvasEdge(edgeDraft(selection.sourceNodeId, target.id));
+    if (!existing) newEdges.push(edge);
+    const slot = selection.targetSlot!;
+    bindings[slot] = [...(bindings[slot] ?? []).filter(occupant => occupant.edgeId !== edge.id),
+      { sourceNodeId: selection.sourceNodeId, edgeId: edge.id, outputId: selection.outputId, ordinal: ordinal++, pinned: true }];
+    standby.delete(edge.id);
+  }
+  const mutation: CanvasInputMutation = {
+    addNodes,
+    addEdges: newEdges,
+    nodePatches: [{ nodeId: target.id, data: {
+      slotBindings: bindings, slotConflicts: display.conflicts, slotStandbyEdgeIds: [...standby],
+    } }],
+  };
+  const plan = planCanvasInputMutation(current, mutation, context);
+  if (plan.status !== 'allowed') return { status: plan.status, reasonCode: plan.reasonCode };
+  const updated = resourcePickerInputs(plan, target.id, context);
+  if (!updated || updated.layout.operationId !== group.layout.operationId
+    || !includesReferenceSelections(updated.display.records, selections)) {
+    return { status: 'rejected' as const, reasonCode: 'input_changed' };
+  }
+  return { status: plan.status, mutation };
 }
 
 /** Stage local files as upstream nodes and run the same strict selection as canvas assets. */
 export function planPickerSelectionMutation(current: CanvasInputMutationState, request: CanvasInputSelectionRequest,
-  context: CanvasMutationRuntimeContext, local?: { files: LocalFileDraft[]; targetSlot?: string }): {
+  context: CanvasMutationRuntimeContext, local?: { files: LocalFileDraft[]; targetSlot?: string; referenceSlots?: string[] }): {
   status: 'allowed' | 'rejected' | 'configuration_error'; reasonCode?: string;
   mutation?: CanvasInputMutation; verdict?: CanvasInputSelectionVerdict;
 } {
-  let addNodes: CanvasNode[] = [];
-  if (local?.files.length) {
-    const target = current.nodes.find(node => node.id === request.targetNodeId);
-    if (!target) return { status: 'rejected', reasonCode: 'missing_node' };
-    if (!local.targetSlot) return { status: 'rejected', reasonCode: 'role_required' };
-    const files = usableMediaFiles(local.files, []);
-    if (files.length !== local.files.length) return { status: 'rejected', reasonCode: 'input_unavailable' };
-    addNodes = files.map((file, index) => createPickerImportNode(target, index, file));
-    const selections = [];
-    for (const node of addNodes) {
-      const source = readNodeInputSource(node);
-      if (!source.outputId) return { status: 'rejected', reasonCode: 'input_unavailable' };
-      selections.push({ sourceNodeId: source.nodeId, outputId: source.outputId, targetSlot: local.targetSlot });
-    }
-    request = { ...request, selections: [...(request.selections ?? []), ...selections] };
+  const group = local?.referenceSlots ? resourcePickerReferenceGroup(current, request.targetNodeId, context, local.referenceSlots) : undefined;
+  if (local?.referenceSlots && (!group || request.chosenOperationId && request.chosenOperationId !== group.layout.operationId)) {
+    return { status: 'rejected', reasonCode: 'input_changed' };
   }
+  const files = local?.files.length ? usableMediaFiles(local.files, []) : [];
+  if (files.length !== (local?.files.length ?? 0)) return { status: 'rejected', reasonCode: 'input_unavailable' };
+  const selections = [...(request.selections ?? [])];
+  const target = group?.target ?? current.nodes.find(node => node.id === request.targetNodeId);
+  if (!target) return { status: 'rejected', reasonCode: 'missing_node' };
+  if (files.length && !group && !local?.targetSlot) return { status: 'rejected', reasonCode: 'role_required' };
+  const routed = group && routePickerReferences(group.slots, current.nodes, group.inUse, selections, files);
+  if (routed?.reasonCode) return { status: 'rejected', reasonCode: routed.reasonCode };
+  const slotNames = routed?.slotNames;
+  const canvasCount = selections.length;
+  if (slotNames) {
+    for (const [index, selection] of selections.entries()) {
+      selections[index] = { sourceNodeId: selection.sourceNodeId, outputId: selection.outputId, targetSlot: slotNames[index] };
+    }
+  }
+  const addNodes = files.map((file, index) => createPickerImportNode(target, index, file));
+  for (const [index, node] of addNodes.entries()) {
+    const source = readNodeInputSource(node);
+    if (!source.outputId) return { status: 'rejected', reasonCode: 'input_unavailable' };
+    selections.push({ sourceNodeId: source.nodeId, outputId: source.outputId,
+      targetSlot: slotNames ? slotNames[canvasCount + index] : local?.targetSlot });
+  }
+  if (group && !group.qualified) {
+    return planLegacyReferencePickerMutation(current, group, selections, addNodes, context);
+  }
+  request = { ...request, selections };
   const draft = addNodes.length ? { ...current, nodes: [...current.nodes, ...addNodes] } : current;
   const plan = planCanvasInputSelection(draft, request, context);
   if (plan.status !== 'allowed') return { status: plan.status, reasonCode: plan.reasonCode };
-  const verdict = validateCanvasInputSelection(plan, request, context);
+  const verdict = validateCanvasInputSelection(plan, request, context, { strictAssignments: plan.strictAssignments });
   // The selection endpoint alone verifies the unique saved binding and reduction.
   // Apply only its binding result, without claiming the remaining graph is ready.
   if (request.setUse?.use === 'inactive' && !request.replaceEdgeId && !(request.selections?.length)) {
@@ -485,6 +642,9 @@ export function planPickerSelectionMutation(current: CanvasInputMutationState, r
     } };
   }
   if (!verdict.accepts) return { status: 'rejected', reasonCode: verdict.reasonCode, verdict };
+  if (slotNames && !includesReferenceSelections(verdict.records, selections)) {
+    return { status: 'rejected', reasonCode: 'input_changed', verdict };
+  }
   const nodePatches = plan.nodes.flatMap(node => {
     const previous = draft.nodes.find(item => item.id === node.id);
     return previous && previous.data !== node.data ? [{ nodeId: node.id, data: node.data }] : [];
@@ -494,6 +654,7 @@ export function planPickerSelectionMutation(current: CanvasInputMutationState, r
   const removeEdgeIds = current.edges.filter(edge => !plan.edges.some(item => item.id === edge.id)).map(edge => edge.id);
   return { status: 'allowed', verdict, mutation: { nodePatches, addEdges, ...(addNodes.length ? { addNodes } : {}),
     removeEdgeIds: removeEdgeIds.length ? removeEdgeIds : undefined,
+    ...(plan.strictAssignments ? { strictAssignments: plan.strictAssignments } : {}),
     strictConsumption: { targetNodeId: request.targetNodeId, chosenOperationId: request.chosenOperationId,
       ...(request.chosenRouteId !== undefined ? { chosenRouteId: request.chosenRouteId } : {}) } } };
 }
@@ -545,7 +706,7 @@ function edgeDraft(source: string, target: string, targetSlot?: string) {
 function orderedSlotState(input: ResourcePickerCommitInput, target: CanvasNode, slot: string | undefined) {
   if (!slot) return undefined;
   const params = readCanvasParams(target);
-  const catalog = narrowCatalogByRouting(input.catalog, params.model, params.routing);
+  const catalog = narrowCatalogByRouting(input.catalog, params.model, params.routing, params);
   const layout = deriveSlotLayout(catalog, typeof params.model === 'string' ? params.model : undefined,
     typeof params.operation === 'string' ? params.operation : undefined);
   const spec = layout.slots.find(spec => spec.slot === slot && isOrderedImageReferenceSlot(spec));

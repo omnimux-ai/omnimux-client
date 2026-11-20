@@ -1492,6 +1492,7 @@ const MaterialNode: React.FC<NodeProps> = ({ id, data, selected }) => {
       if (typeof requestOrMode === 'object' && requestOrMode !== null) {
         resourcePicker.openPicker('canvas', {
           slot: requestOrMode.targetSlot,
+          referenceSlots: requestOrMode.referenceSlots,
           acceptedTypes: requestOrMode.acceptedTypes,
           max: requestOrMode.max,
           replaceEdgeId: requestOrMode.replaceEdgeId,

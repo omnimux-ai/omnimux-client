@@ -106,9 +106,11 @@ npm run build      # 显式重建：dist/index.js、lib/client.js、lib/canvas.j
 
 ### 输入映射（节点 data → seam 请求）
 
+素材入口、上游文本引用及执行范围见[画布生成契约](../../docs/contracts/canvas-generation.md#选择和素材)。
+
 | 节点字段 | seam 请求字段 | 说明 |
 |---|---|---|
-| `prompt` / `content` / 上游文本 | `prompt` | 按操作声明决定是否接收及是否必填。H3 对口型只发送所选角色图和驱动音频。 |
+| `prompt` / `content` / 上游文本 | `prompt` | 按操作声明组合可用文本。普通图像及视频生成的空提示词交由上游网关校验。H3 对口型发送所选角色图和驱动音频。 |
 | 上游图片产物 | `image` | i2v / 图生图 / 视觉文本输入 |
 | 上游音频产物（视频节点） | `audio` | 参考音频 |
 | `params.duration` | `duration` | 秒 |

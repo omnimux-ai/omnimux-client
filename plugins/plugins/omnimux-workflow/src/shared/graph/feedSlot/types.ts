@@ -64,6 +64,7 @@ export interface SlotLayout {
   /** A managed video operation accepts only document inputs assigned to its declared slots. */
   requireBoundDocuments?: boolean;
   operationId: string;
+  outputType?: string;
   /**
    * Set when the layout was borrowed from another listed operation of the same
    * model (model-level material capability display). Submitting material through

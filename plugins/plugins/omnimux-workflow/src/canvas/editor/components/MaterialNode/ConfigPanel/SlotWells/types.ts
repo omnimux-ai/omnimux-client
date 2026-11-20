@@ -10,6 +10,7 @@ import type {
   SlotBindings,
   SlotConflict,
   SlotLayout,
+  SlotSpec,
 } from '../../../../../../shared/graph/feedSlot/index.ts';
 import type { UpstreamMediaItem } from '../../../../hooks/useUpstreamMedia.ts';
 
@@ -19,6 +20,8 @@ export type { SlotBindings, SlotConflict, SlotLayout };
 export interface SlotPickRequest {
   /** 目标 slot 名（内核 SlotSpec.slot）。 */
   targetSlot?: string;
+  /** 通用参考素材可填入的槽位，按合同声明顺序。 */
+  referenceSlots?: string[];
   /** 该 slot 接受的素材类型（SlotSpec.type 展开）。 */
   acceptedTypes: string[];
   /** 槽位上限；null 表示官方未公布上限。 */
@@ -32,6 +35,8 @@ export interface SlotPickRequest {
 }
 
 export interface SlotWellsProps {
+  /** Text sources are shown beside the prompt field. */
+  presentation?: 'prompt';
   /** deriveSlotLayout 派生的布局预设与槽位定义。 */
   layout: SlotLayout;
   records?: import('../../../../../../shared/graph/feedSlot/assembleEffectiveInputs.ts').SlotSelection[];
@@ -45,7 +50,7 @@ export interface SlotWellsProps {
   /** 打开 ResourcePicker 装填指定 slot。 */
   onPickSlot: (request: SlotPickRequest) => void;
   /** pair 预设的首尾帧对调（保持边不变，仅交换槽位占用）。 */
-  onSwapSlots?: (firstSlot: string, lastSlot: string) => void;
+  onSwapSlots?: (firstSlot: SlotSpec, lastSlot: SlotSpec) => void;
   onSwapOrderedSlot?: (slot: string, firstEdgeId: string, secondEdgeId: string) => void;
   /** 卸装填：仅摘除槽位占用，不断开供给边。 */
   onClearOccupant: (slot: string, edgeId: string) => void;

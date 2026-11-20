@@ -171,6 +171,7 @@ function gatewayMembershipRejection(modelId, opts = {}) {
  *   capability?: string,
  *   outputType?: string,
  *   skipVendorMap?: boolean,
+ *   deferVisualPrompt?: boolean,
  *   snapshot?: object,
  *   gatewayMembership?: boolean,
  * }} [opts]
@@ -304,6 +305,12 @@ function validateAndMapSubmission({ request, opts, normalized, modelAdmit, opAdm
   operationInferred, diagnostics, managed }) {
   const h3LipSync = !managed && isH3AutoDlLipSync(modelAdmit.modelId, opAdmit.operationId)
   const prompt = h3LipSync ? '' : normalized.prompt
+  const deferPrompt = opts.deferVisualPrompt === true
+    && ['image', 'video'].includes(opAdmit.operation.output?.type) && !prompt.trim()
+  const isDeferredPrompt = failure => deferPrompt && failure.code === GUARD_CODES.PROMPT_REQUIRED
+    && opAdmit.operation.inputs.some(slot => slot.slot === failure.slot && slot.type === 'text'
+      && (slot.role === 'prompt' || slot.slot === 'prompt')
+      && (!slot.valueSources || slot.valueSources.includes('local_field')))
   const assets = h3LipSync
     ? resolveH3LipSyncSlotAliases(normalized.assets, opAdmit.operation.inputs)
     : normalized.assets
@@ -336,8 +343,10 @@ function validateAndMapSubmission({ request, opts, normalized, modelAdmit, opAdm
     })
   }
 
+  const logicalParameters = managed ? normalized.extras : { ...request, ...normalized.extras, prompt }
+  if (!managed && deferPrompt) delete logicalParameters.prompt
   const parameterResult = validateDeclaredParameters(
-    managed ? normalized.extras : { ...request, ...normalized.extras, prompt },
+    logicalParameters,
     opAdmit.operation.parameters,
     managed ? undefined : modelAdmit.model.parameters,
     managed,
@@ -370,8 +379,9 @@ function validateAndMapSubmission({ request, opts, normalized, modelAdmit, opAdm
     prompt,
     duration: parameterResult.values.duration,
   })
-  if (!slotResult.ok) {
-    const top = slotResult.rejections[0] ?? {
+  const slotFailures = slotResult.rejections.filter(failure => !isDeferredPrompt(failure))
+  if (!slotResult.ok && (slotFailures.length || !slotResult.rejections.length)) {
+    const top = slotFailures[0] ?? {
       code: GUARD_CODES.OPERATION_INCOMPATIBLE,
       message: 'slot validation failed',
     }
@@ -381,7 +391,7 @@ function validateAndMapSubmission({ request, opts, normalized, modelAdmit, opAdm
       modelId: modelAdmit.modelId,
       operationId: opAdmit.operationId,
       slot: top.slot,
-      extra: { rejections: slotResult.rejections },
+      extra: { rejections: slotFailures },
       diagnostics,
     })
   }

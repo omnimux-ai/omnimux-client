@@ -177,6 +177,17 @@ describe('R1/R2/R2b/R3 video matrix (real catalog)', () => {
     assert.equal(explicit.selectedOperationId, 'video_multi_ref');
   });
 
+  it('keeps user-selected first and last frames when extra supply only fits another mode', () => {
+    const result = buildInputCapability({
+      catalog, modelId: 'seedance-2-5', outputType: 'video',
+      fingerprint: fingerprint(['image', 'image', 'audio']),
+      preferredOperationId: 'first_last_frame', autoOperationId: null,
+    });
+    assert.equal(result.selectedOperationId, 'first_last_frame');
+    assert.equal(stateOf(result, 'first_last_frame')?.selectableBeforeInputs, true);
+    assert.equal(stateOf(result, 'video_multi_ref')?.usable, true);
+  });
+
   it('R6 no media falls back to the family default operation', () => {
     const result = selected('seedance-2-5', [], 'video', 'first_frame');
     assert.equal(result.selectedOperationId, 'text_to_video');

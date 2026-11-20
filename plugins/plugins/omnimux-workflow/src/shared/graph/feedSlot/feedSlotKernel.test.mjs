@@ -240,8 +240,12 @@ test('first frame alone leaves tail empty; second source fills tail without reus
 test('swap changes roles without changing edges; same image can occupy two explicit roles', () => {
   const l = layout('first_last_frame'); const assets = [feed(1), feed(2)];
   const filled = autoFillSlots(assets, l, {}).bindings;
-  const swapped = swapNamedSlots(filled, 'start_frame', 'end_frame');
+  filled.start_frame[0].role = 'first_frame';
+  filled.end_frame[0].role = 'last_frame';
+  const swapped = swapNamedSlots(filled, l.slots[0], l.slots[1]);
   assert.equal(swapped.start_frame[0].edgeId, 'e2'); assert.equal(swapped.end_frame[0].pinned, true);
+  assert.deepEqual(assemble(l, assets, swapped).references.map(ref => [ref.role, ref.edgeId]),
+    [['first_frame', 'e2'], ['last_frame', 'e1']]);
   assert.equal(filled.start_frame[0].edgeId, 'e1');
   const same = autoFillSlots([assets[0]], l, { start_frame: [occupant(assets[0])], end_frame: [occupant(assets[0])] });
   assert.deepEqual(assemble(l, assets, same.bindings).references.map((ref) => ref.role), ['first_frame', 'last_frame']);

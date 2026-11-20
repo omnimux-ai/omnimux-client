@@ -90,9 +90,10 @@ const totalEmptyWells = (html) => emptyWells(html).total;
 for (const legacy of [false, true]) {
   const tag = legacy ? 'legacy' : 'new';
 
-  test(`${tag} image: unbound prompt slot renders exactly 1 empty well`, () => {
+  test(`${tag} image: prompt reference is available beside the prompt without a media well`, () => {
     const html = render(node('image', { legacy }), catalogFor('image'));
-    assert.equal(totalEmptyWells(html), 1, `expect exactly 1 empty well, got ${totalEmptyWells(html)}`);
+    assert.equal(totalEmptyWells(html), 0);
+    assert.match(html, /data-testid="wf-prompt-references"[\s\S]*data-testid="wf-add-prompt-reference"/);
   });
 
   test(`${tag} image: bound+full media slot renders occupant + 0 empty wells`, () => {
@@ -106,18 +107,19 @@ for (const legacy of [false, true]) {
   });
 }
 
-test('video: first_frame and last_frame each render exactly one named empty well, prompt gets one append', () => {
+test('video: first and last frames are named wells, with a separate prompt reference', () => {
   const frames = [
     { slot: 'first_frame', type: 'image', role: 'first_frame', source: 'upstream_edge', min: 1, max: 1 },
     { slot: 'last_frame', type: 'image', role: 'last_frame', source: 'upstream_edge', min: 1, max: 1 },
   ];
   const html = render(node('video'), catalogFor('video', frames));
-  assert.equal(totalEmptyWells(html), 3, `expect 3 empty wells total (first/last/prompt), got ${totalEmptyWells(html)}`);
+  assert.equal(totalEmptyWells(html), 2);
   assert.equal((html.match(/aria-label="添加首帧"/g) || []).length, 1);
   assert.equal((html.match(/aria-label="添加尾帧"/g) || []).length, 1);
+  assert.match(html, /data-testid="wf-add-prompt-reference"/);
 });
 
-test('new image: bound prompt slot with composition renders occupant + exactly 1 append well (PM adjudication A: capacity-exempt)', () => {
+test('composed text shows the bound source and can reference more text in the prompt area', () => {
   const html = render(
     node('image', {
       legacy: false,
@@ -127,10 +129,9 @@ test('new image: bound prompt slot with composition renders occupant + exactly 1
     [{ edgeId: 'e-text', nodeId: 'text1', label: '正文', materialType: 'text', textContent: '上游正文内容', hasMedia: true, availability: 'ready' }],
     [{ id: 'e-text', source: 'text1', target: 'target', targetHandle: 'in' }],
   );
-  assert.equal(totalEmptyWells(html), 1, `composition prompt keeps exactly 1 append well, got ${totalEmptyWells(html)}`);
-  assert.match(html, /wf-slot-well--filled/);
-  assert.match(html, /data-slot-state="ready"/);
-  assert.match(html, /wf-slot-well--append/);
+  assert.equal(totalEmptyWells(html), 0);
+  assert.match(html, /data-testid="wf-prompt-references"[\s\S]*data-slot-edge="e-text" data-slot-state="ready"/);
+  assert.equal((html.match(/data-testid="wf-add-prompt-reference"/g) ?? []).length, 1);
 });
 
 test('legacy image: slot with min=2 unbound renders at most 1 empty well (capped at 1 per OCR finding)', () => {

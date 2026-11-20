@@ -5,6 +5,7 @@ import { prepareExecutionAdmission } from './prepareExecutionAdmission.ts';
 import { resolveExecutionSubgraph } from './subgraph.ts';
 import { executionInputSignatures } from './executionIdentity.ts';
 import { resolveCanvasSubmission } from '../seam/submitGuard.ts';
+import { createOmnimuxSeamClient } from '../seam/omnimuxGateway.ts';
 import { mockCatalog } from '../seam/mockCatalog.ts';
 import { operation, slot } from '../seam/submissionFixtures.mjs';
 import { managedVideoLinePricingFingerprint } from '../../shared/validation/managedVideoExecution.ts';
@@ -113,6 +114,39 @@ test('managed submission rejects an unpinned group or a parameter valid only in 
   assert.throws(() => resolveCanvasSubmission(req, catalog), { code: 'line_selection_required' });
   assert.throws(() => resolveCanvasSubmission({ ...req, duration: 10, allowedGroups: ['line-a'] }, catalog), { code: 'operation-not-allowed' });
   assert.throws(() => resolveCanvasSubmission({ ...req, duration: undefined, allowedGroups: ['line-a'] }, catalog), { code: 'parameter_required' });
+});
+
+test('a managed video canvas passes an empty prompt and only selected references to the execution hub', async () => {
+  const testCase = fixture();
+  testCase.target.data.prompt = '';
+  const admission = await admit(testCase, ['target']);
+  assert.equal(admission.readiness, null);
+  const target = admission.subgraph.nodes.find(node => node.id === 'target');
+  const requests = [];
+  const gateway = createOmnimuxSeamClient({ getSeam: name => {
+    if (name === 'modelCatalog') return { list: () => testCase.catalog };
+    if (name === 'videoGenerate') return {
+      async execute(request) {
+        requests.push(request);
+        throw Object.assign(new Error('Fixture endpoint rejected empty prompt'), { code: 'fixture_prompt_decision' });
+      },
+    };
+  } });
+  const execute = createMaterialGatewayExecutor({ gateway }).execute;
+  const context = {
+    signal: new AbortController().signal, upstreamOutputs: new Map(), mediaDir: '/tmp',
+    upstreamBindings: testCase.graph.edges.map(edge => ({
+      edgeId: edge.id, sourceNodeId: edge.source,
+      output: { mediaAssets: media(edge.source).mediaAssets.map(asset => ({ ...asset, mimeType: 'image/png', sizeBytes: 100 })) },
+    })),
+  };
+  await assert.rejects(execute(target, context), { code: 'fixture_prompt_decision' });
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].prompt, '');
+  assert.equal(requests[0].deferVisualPrompt, true);
+  assert.deepEqual(requests[0].allowedGroups, ['line-a']);
+  assert.equal(requests[0].effectiveVideoVersion, 'fixture-v1');
+  assert.deepEqual(requests[0].references.map(ref => ref.sourceNodeId), ['input-b', 'input-a']);
 });
 
 test('managed executor submits only the URL declared as an input of the chosen mode', async () => {

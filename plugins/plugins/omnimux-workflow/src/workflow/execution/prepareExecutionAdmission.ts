@@ -126,13 +126,22 @@ export async function prepareExecutionAdmission<
     }
   }
   const { nodes, edges, subgraph } = scope;
+  const projectedInputs = new Map<string, Record<string, unknown>>();
   const readiness = findExecutionReadinessFailure(
     subgraph.nodes.filter(node => !Object.hasOwn(recoveryTasks, node.id)), catalog,
     { nodes, edges, workspaceId, scheduledNodeIds: mode === 'single' ? undefined : subgraph.nodeIdSet },
+    (nodeId, inputs) => projectedInputs.set(nodeId, { ...inputs }),
   );
+  // Freeze the admitted assignment on the execution copy. Otherwise a skipped
+  // source would lose its type/format metadata and look like an unavailable
+  // occupied slot on the second projection at dispatch.
+  const withProjectedInputs = (node: N): N => {
+    const inputs = projectedInputs.get(node.id);
+    return inputs ? { ...node, data: { ...node.data, ...inputs } } : node;
+  };
   return {
-    subgraph, readiness,
-    sourceGraph: { id: workspaceId, nodes, edges, catalog },
+    subgraph: { ...subgraph, nodes: subgraph.nodes.map(withProjectedInputs) }, readiness,
+    sourceGraph: { id: workspaceId, nodes: nodes.map(withProjectedInputs), edges, catalog },
     recovery: identity ? { ...identity, legacyCatalogProjection, recoveryTasks } : {},
   };
 }

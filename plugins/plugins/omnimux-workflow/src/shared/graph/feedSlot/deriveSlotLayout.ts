@@ -17,6 +17,7 @@ export function deriveSlotLayout(
   const model = resolveModelView(buildContractView(catalog), modelId);
   const operation = model?.operations.find((op) => op.id === operationId && op.listed);
   if (!model || !operation) return { ...layout, acceptsText: false, implementationGaps: ['operation_unlisted'] };
+  layout.outputType = operation.output.type;
   layout.acceptsText = operationAcceptsText(model, operation);
   if (catalog?.models?.find(row => row.id === model.id)?.effectiveVideoProjection) {
     layout.requireBoundDocuments = true;
@@ -53,8 +54,9 @@ export function deriveSlotLayout(
     ...(input.composition ? { composition: { ...input.composition } } : {}),
     ...(input.allowedMimes ? { allowedMimes: [...input.allowedMimes] } : {}),
   }));
-  layout.swap = policy?.swap === true && layout.slots.length === 2
-    && layout.slots.every((slot) => slot.type === 'image' && slot.max === 1);
+  const frames = layout.slots.filter(slot => slot.role === 'first_frame' || slot.role === 'last_frame');
+  layout.swap = policy?.swap === true && frames.length === 2
+    && frames.every(slot => slot.type === 'image' && slot.max === 1);
   layout.addButton = layout.preset === 'strip' && layout.slots.some((slot) => slot.max == null || slot.max > 0);
   return layout;
 }

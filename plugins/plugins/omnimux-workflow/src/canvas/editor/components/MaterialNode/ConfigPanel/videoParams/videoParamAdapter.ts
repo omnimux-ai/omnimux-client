@@ -207,7 +207,7 @@ export function resolveEffectiveVideoParams(
   const selectedOperationId = capability?.selectedOperationId ?? preferredOperation ?? '';
   const effectiveOperations = opsState.effectiveOps.map((operation) => {
     const state = modeOptions.find(item => item.id === operation.id);
-    return { ...operation, disabled: !managed && !state?.usable && !state?.selectableBeforeInputs };
+    return { ...operation, disabled: !managed && !state };
   });
   const defaultFallbackOp = effectiveOperations.find((op) => op.id === 'text_to_video')
     ?? effectiveOperations.find((op) => op.ready)
@@ -553,11 +553,7 @@ export function validateVideoParamsForUi(input: {
   if (declaredFailure) errors.push(declaredFailure.message);
   const prompt = resolveGenerationPrompt(input, (input.upstreams ?? []).filter((item) => item.materialType === 'text').map((item) => item.textContent));
   const operation = params.effectiveOperations.find((entry) => entry.id === params.operation);
-  const promptSlot = operation?.slots.find((slot) => slot.type === 'text' || slot.role === 'prompt');
   const promptLength = Array.from(prompt).length;
-  if ((promptSlot?.min ?? 0) > 0 && prompt.trim().length === 0) {
-    errors.push('当前生成方式需要提示词');
-  }
   if (
     promptLength > 0
     && typeof params.schema.prompt?.minLength === 'number'
@@ -572,7 +568,8 @@ export function validateVideoParamsForUi(input: {
   const requiredUpstreamSlots = operation?.slots.filter(
     (slot) => slot.source === 'upstream_edge' && slot.min > 0,
   ) ?? [];
-  if (operation && !operation.ready && requiredUpstreamSlots.length > 0) {
+  if (operation && !operation.ready && requiredUpstreamSlots.length > 0
+    && (operation.pending.length === 0 || operation.pending.some(item => item.code !== 'prompt_required'))) {
     errors.push(`请补齐当前方式的必填素材：${requiredUpstreamSlots.map((slot) => slot.role || slot.slot).join('、')}`);
   }
   const fileSlot = operation?.slots.find((slot) => slot.slot === 'file_url');

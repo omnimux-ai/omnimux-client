@@ -96,6 +96,21 @@ test('standard rejects stale high resolution, batches and explicit quality befor
   assert.equal(requests, 0)
 })
 
+test('canvas empty image prompt reaches the selected gateway and propagates its response', async (t) => {
+  const calls = []
+  const req = input(t, { prompt: '', operation: 'text_to_image', deferVisualPrompt: true,
+    fetcher: async (_url, init) => {
+      calls.push(JSON.parse(init.body))
+      return json({ error: { code: 'invalid_request', message: 'fixture gateway prompt required' } }, 400)
+    },
+  })
+  await assert.rejects(executeOmnimuxMedia('image', req), /fixture gateway prompt required/)
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].model, model)
+  assert.equal(calls[0].prompt ?? '', '')
+  assert.equal(Object.hasOwn(calls[0], 'deferVisualPrompt'), false)
+})
+
 test('default execute uses beta-compatible request once and stores synchronous result', async (t) => {
   const calls = []
   const req = input(t, { aspectRatio: 'auto', fetcher: async (url, init) => {

@@ -134,9 +134,9 @@ async function mountFixture(run, canvasBundle, themeCss) {
     } };
   });
   const edges = refs.map(node => ({ id: `edge-${node.id}`, source: node.id, target: 'video-target', sourceHandle: 'out', targetHandle: 'in', type: 'animated' }));
-  const bindings = { reference_images: edges.map((edge, ordinal) => ({ edgeId: edge.id, sourceNodeId: edge.source, role: 'reference', pinned: true, ordinal })) };
+  const bindings = { reference_images: edges.slice(0, 5).map((edge, ordinal) => ({ edgeId: edge.id, sourceNodeId: edge.source, role: 'reference', pinned: true, ordinal })) };
   const target = { id: 'video-target', type: 'material', position: { x: 420, y: 140 }, data: { label: '分组验收目标', materialType: 'video', nodeKind: 'generate', selectedTool: 'video-generation', status: 'empty',
-    prompt: '让光线缓慢扫过六个参考物件', params: { model: modelId, operation: 'video_multi_ref', routing: { allowedGroups: ['studio'] }, resolution: '1080p', duration: 10, aspectRatio: '16:9' },
+    prompt: '', params: { model: modelId, operation: 'video_multi_ref', routing: { allowedGroups: ['studio'] }, resolution: '1080p', duration: 10, aspectRatio: '16:9' },
     inputBindingVersion: 1, autoOperationId: null, slotBindings: bindings,
   } };
   await request(`/api/workspaces/${workspaceId}`, 'PUT', { expectedVersion: 0, nodes: [...refs, target], edges });
@@ -228,6 +228,7 @@ async function drive(config) {
       const anchors = [...node.querySelectorAll('[data-slot="reference_images"].wf-slot-well--filled')];
       return {
         refs: anchors.map(element => element.getAttribute('aria-label')),
+        addReference: node.querySelectorAll('[data-testid="wf-add-reference"]').length,
         emptyFrames: [...node.querySelectorAll('[data-slot="first_frame"],[data-slot="last_frame"]')]
           .filter(element => !element.classList.contains('wf-slot-well--filled')).map(element => element.getAttribute('data-slot')),
         ready: node.querySelector('.wf-generate-btn__send')?.getAttribute('aria-disabled') === 'false',
@@ -240,11 +241,20 @@ async function drive(config) {
     await page.goto(config.origin + '/?theme=dark');
     await selectNode();
     observations.initial = await readPanel('图片参考.*1080P.*10s');
-    assert.deepEqual(observations.initial.refs, refs);
+    assert.deepEqual(observations.initial.refs, refs.slice(0, 5));
+    assert.equal(observations.initial.addReference, 1);
+    await page.click('loc=css:' + target + ' [data-testid="wf-add-reference"]', { label: 'Open reference asset picker' });
+    await page.click('loc=css:.wf-picker-modal [aria-label="参考素材 6"]', { label: 'Select last reference image' });
+    await page.click('loc=css:.wf-picker-modal .wf-picker-btn--primary', { label: 'Apply reference asset selection' });
+    await page.waitForFunction(selector => document.querySelectorAll(selector + ' [data-slot="reference_images"].wf-slot-well--filled').length === 6, target);
+    observations.filled = await readPanel('图片参考.*1080P.*10s');
+    assert.deepEqual(observations.filled.refs, refs);
+    assert.equal(observations.filled.addReference, 0);
 
     await chooseLine('低价少图');
     observations.economy = await readPanel('图片参考.*720P.*5s');
     assert.deepEqual(observations.economy.refs, refs.slice(0, 2));
+    assert.equal(observations.economy.addReference, 0);
     assert.equal(observations.economy.ready, true);
     observations.groups = await readGroupRows();
     assert.equal(observations.groups.length, 2);
@@ -257,6 +267,7 @@ async function drive(config) {
     observations.frames = await readPanel('首尾帧过渡.*720P.*5s');
     assert.deepEqual(observations.frames.refs, []);
     assert.deepEqual(observations.frames.emptyFrames, ['first_frame', 'last_frame']);
+    assert.equal(observations.frames.addReference, 0);
     assert.equal(observations.frames.ready, false);
 
     await chooseMode('图片参考');
@@ -359,6 +370,7 @@ test('#140 real canvas narrows one selected line, restores draft inputs, and sub
     assert.deepEqual(submit.groups, ['economy']);
     assert.equal(submit.resolution, '720p');
     assert.equal(submit.duration, 5);
+    assert.equal(submit.prompt, '');
     assert.deepEqual(submit.references.map(reference => reference.sourceNodeId), ['ref-1', 'ref-2']);
     assert.deepEqual(submit.references.map(reference => reference.pathOrUrl),
       [fixture.origin + '/assets/ref-1.png', fixture.origin + '/assets/ref-2.png']);

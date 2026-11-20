@@ -16,6 +16,7 @@ import {
   planPickerSelectionMutation,
   pickerReasonKey,
   resourcePickerContextKey,
+  usesQualifiedResourcePicker,
   validatesNamedPickerSelection,
   type LocalFileDraft,
   type ResourcePickerTab,
@@ -30,6 +31,8 @@ import type { NodeSlotEngineState } from '../../../shared/graph/slotContractType
 export interface ResourcePickerSlotTarget {
   /** 目标 slot 名（内核 SlotSpec.slot）。 */
   slot?: string;
+  /** Flexible slots sharing the add-material entry, in the current operation. */
+  referenceSlots?: string[];
   /** 该 slot 接受的素材类型。 */
   acceptedTypes: string[];
   /** 槽位上限；null 表示官方未公布上限。 */
@@ -147,8 +150,8 @@ export function useResourcePicker(nodeId: string, workspaceId?: string | null): 
         toast.error(t(pickerReasonKey('input_changed')));
         return false;
       }
-      if (targetNode?.data.inputBindingVersion === 1) {
-        const params = targetNode.data.params as Record<string, unknown> | undefined;
+      if (usesQualifiedResourcePicker(targetNode, context) || slotTarget?.referenceSlots) {
+        const params = targetNode?.data.params as Record<string, unknown> | undefined;
         if (!payload.localFiles.length && !payload.selections?.length) return false;
         const prepared = planPickerSelectionMutation({ nodes: state.nodes, edges: state.edges }, {
           targetNodeId: nodeId,
@@ -157,7 +160,7 @@ export function useResourcePicker(nodeId: string, workspaceId?: string | null): 
           selections: payload.selections,
           replaceEdgeId: slotTarget?.replaceEdgeId,
           replaceSlot: slotTarget?.replaceEdgeId ? slotTarget.slot : undefined,
-        }, context, { files: payload.localFiles, targetSlot: slotTarget?.slot });
+        }, context, { files: payload.localFiles, targetSlot: slotTarget?.slot, referenceSlots: slotTarget?.referenceSlots });
         if (prepared.status !== 'allowed' || !prepared.mutation) {
           toast.error(t(pickerReasonKey(prepared.reasonCode)));
           return false;

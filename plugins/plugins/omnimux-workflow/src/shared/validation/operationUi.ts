@@ -290,6 +290,7 @@ export function buildEffectiveOpsUiState(args: {
   fingerprint: UpstreamFingerprint;
   preferredOperationId?: string;
   outputType?: string;
+  deferVisualPrompt?: boolean;
 }): EffectiveOpsUiState {
   const catalog = args.catalog;
   const modelId = typeof args.modelId === 'string' ? args.modelId.trim() : '';
@@ -413,6 +414,7 @@ export function buildEffectiveOpsUiState(args: {
     const verdict = evaluateModelCompat(model, args.fingerprint, {
       ...(preferred ? { operationId: preferred } : {}),
       ...(args.outputType ? { outputType: args.outputType } : {}),
+      deferVisualPrompt: args.deferVisualPrompt,
     });
     const effectiveOps = verdict.effectiveOperations.map((match) => matchToOption(match, model));
     const count = effectiveOps.length;
@@ -468,7 +470,7 @@ export function buildEffectiveOpsUiState(args: {
         return allowedMediaTypes.has(asset.type);
       }),
     });
-    const match = matchOperationInputs(op, opFingerprint);
+    const match = matchOperationInputs(op, opFingerprint, { deferVisualPrompt: args.deferVisualPrompt });
     return matchToOption(match, model);
   });
 

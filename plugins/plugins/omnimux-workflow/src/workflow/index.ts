@@ -49,6 +49,8 @@ import { createDirectorSessionFactory } from './director/directorSession.ts';
 import { createDirectorHost } from './director/directorHost.ts';
 import { createDirectorOperations } from './director/directorOperations.ts';
 import type { AgentSeatContext } from './agent/agentTools';
+// Installs the same pure catalog line resolver as the canvas bundle.
+import '../canvas/editor/components/MaterialNode/ConfigPanel/channelGroups.ts';
 
 type WebServer = {
   register: (route: {

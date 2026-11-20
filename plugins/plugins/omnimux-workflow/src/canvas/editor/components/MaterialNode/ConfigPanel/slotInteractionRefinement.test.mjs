@@ -43,15 +43,23 @@ test('empty and full strips preserve model capacity affordances',()=>{
  const full=render({...props,layout:{...props.layout,slots:[{...spec,max:1}]}});
  assert.doesNotMatch(full,/wf-slot-well--append/);
 });
-test('multi-reference strips have one add control for each open named slot on both canvas versions', () => {
+test('image and audio references share one add control on both canvas versions', () => {
  const images = {...spec, slot:'reference_images', min:1};
  const audio = {...spec, slot:'reference_audios', type:'audio', labelKey:'panel.slot.reference_audios'};
  const layout = {preset:'strip', slots:[images, audio], addButton:true};
  for (const records of [undefined, []]) {
   const html = render({...props, layout, bindings:{}, records});
-  assert.equal((html.match(/data-slot="reference_images"/g) ?? []).length, 1);
-  assert.equal((html.match(/data-slot="reference_audios"/g) ?? []).length, 1);
+  assert.equal((html.match(/data-testid="wf-add-reference"/g) ?? []).length, 1);
+  assert.doesNotMatch(html, /data-slot="reference_images"|data-slot="reference_audios"/);
  }
+});
+test('mixed reference cards follow the projected input order across types', () => {
+ const audio = {...spec, slot:'audio', type:'audio', labelKey:'panel.slot.reference_audios'};
+ const sound = {edgeId:'sound-edge', sourceNodeId:'sound'};
+ const image = props.bindings.refs[0];
+ const records = [{slot:audio, occupant:sound, state:'ready'}, {slot:spec, occupant:image, state:'ready'}];
+ const html = render({...props, layout:{...props.layout, slots:[spec, audio]}, records});
+ assert.match(html,/data-slot-edge="sound-edge"[\s\S]*data-slot-edge="e"/);
 });
 test('replacement and reference grouping labels cover both locales',()=>{
  assert.equal(zh['node.replaceMaterial'],'替换素材'); assert.equal(en['node.replaceMaterial'],'Replace asset');

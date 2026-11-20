@@ -86,12 +86,13 @@ for (const type of ['image', 'video', 'text', 'audio']) {
     assert.match(sendButton(html), /aria-disabled="false"/);
   });
 
-  test(`${type}: empty prompt without upstream text is disabled up front with kernel copy`, () => {
+  test(`${type}: only visual generation defers empty prompt validation`, () => {
     const html = render(newNode(type, ''), catalogFor(type));
     assert.doesNotMatch(html, /还差必需素材/);
     const button = sendButton(html);
-    assert.match(button, /aria-disabled="true"/);
-    assert.match(button, /title="请补齐正文"/);
+    const visual = type === 'image' || type === 'video';
+    assert.match(button, new RegExp(`aria-disabled="${!visual}"`));
+    if (!visual) assert.match(button, /title="请补齐正文"/);
   });
 }
 
@@ -109,11 +110,12 @@ for (const type of ['image', 'video', 'text', 'audio']) {
     assert.match(sendButton(html), /aria-disabled="false"/);
   });
 
-  test(`legacy ${type}: empty prompt without upstream text is disabled up front`, () => {
+  test(`legacy ${type}: only visual generation defers empty prompt validation`, () => {
     const html = render(legacyNode(type, ''), catalogFor(type));
     const button = sendButton(html);
-    assert.match(button, /aria-disabled="true"/);
-    assert.match(button, /title="请输入内容或连接上游文本"/);
+    const visual = type === 'image' || type === 'video';
+    assert.match(button, new RegExp(`aria-disabled="${!visual}"`));
+    if (!visual) assert.match(button, /title="请输入内容或连接上游文本"/);
   });
 }
 

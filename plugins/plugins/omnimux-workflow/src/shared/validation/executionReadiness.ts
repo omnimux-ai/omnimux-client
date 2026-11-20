@@ -9,7 +9,7 @@ import { readExplicitTargetSlot } from './compatKernel.ts';
 import { buildInputCapability } from './inputCapability.ts';
 import { resolveNodeKind } from '../graph/materialNode.ts';
 import { materialTools } from '../specs/nodes/materialNodeSpec.ts';
-import { deriveSlotLayout, type SlotBindings, type SlotConflict } from '../graph/feedSlot/index.ts';
+import { deriveSlotLayout, type FeedAsset, type SlotBindings, type SlotConflict } from '../graph/feedSlot/index.ts';
 import { effectiveSlotFingerprint, feedFromFingerprint } from '../graph/feedSlot/effectiveFingerprint.ts';
 import { resolveSlotOperation } from '../graph/feedSlot/resolveSlotOperation.ts';
 import { effectiveInputDisplay } from '../graph/feedSlot/effectiveInputDisplay.ts';
@@ -17,6 +17,8 @@ import { narrowCatalogByRouting, requiredEffectiveVideoParameter, resolveEffecti
 import { isManagedVideoLineChanged } from './managedVideoExecution.ts';
 import {
   buildContractView,
+  isMediaInputType,
+  isVisualGeneration,
   matchOperationInputs,
   resolveModelView,
 } from './compatKernel.ts';
@@ -32,6 +34,27 @@ export interface ExecutionReadinessFailure {
   reasonCode: string;
   message: string;
   slot?: string;
+}
+
+interface ProjectedVisualInputs {
+  slotBindings: SlotBindings;
+  slotConflicts: SlotConflict[];
+  slotStandbyEdgeIds: string[];
+}
+
+function freezeVisualInputs(loaded: ReturnType<typeof effectiveInputDisplay>, feed: FeedAsset[], standby: string[]): ProjectedVisualInputs {
+  const slotBindings: SlotBindings = {};
+  const active = new Set<string>();
+  for (const { slot, occupant, state } of loaded.records) {
+    (slotBindings[slot.slot] ??= []).push(occupant);
+    if (state !== 'inactive') active.add(occupant.edgeId);
+  }
+  const slotConflicts = loaded.conflicts.filter(({ slot, occupant }) =>
+    slotBindings[slot]?.some(value => value.edgeId === occupant.edgeId && value.sourceNodeId === occupant.sourceNodeId));
+  const slotStandbyEdgeIds = [...new Set([...standby, ...feed
+    .filter(asset => isMediaInputType(asset.type) && !active.has(asset.edgeId))
+    .map(asset => asset.edgeId)])];
+  return { slotBindings, slotConflicts, slotStandbyEdgeIds };
 }
 
 function readString(value: unknown): string | undefined {
@@ -73,6 +96,7 @@ export function findExecutionReadinessFailure(
   nodes: ExecutionReadinessNode[],
   inputCatalog: CapabilityCatalog | null | undefined,
   graph?: ExecutionReadinessGraph,
+  onVisualInputs?: (nodeId: string, inputs: ProjectedVisualInputs) => void,
 ): ExecutionReadinessFailure | null {
   const baseView = buildContractView(inputCatalog);
   for (const node of nodes) {
@@ -116,8 +140,10 @@ export function findExecutionReadinessFailure(
     if (requiredParameter) return {
       nodeId: node.id, reasonCode: 'parameter_required', message: `请选择参数“${requiredParameter}”`,
     };
-    const catalog = managed ? narrowCatalogByRouting(inputCatalog, requestedModel ?? defaultModel, params.routing, params) : inputCatalog;
-    const view = managed ? buildContractView(catalog) : baseView;
+    const baseModel = resolveModelView(baseView, requestedModel ?? defaultModel);
+    const catalog = isVisualGeneration(outputKind)
+      ? narrowCatalogByRouting(inputCatalog, baseModel?.id, params.routing, params) : inputCatalog;
+    const view = catalog === inputCatalog ? baseView : buildContractView(catalog);
     if (!view.available) return { nodeId: node.id, reasonCode: 'catalog_unavailable', message: '模型目录不可用，请稍后重试' };
     const model = resolveModelView(view, requestedModel ?? defaultModel);
     if (!model) return { nodeId: node.id, reasonCode: 'unknown_model', message: '当前模型不可用，请选择模型后重试' };
@@ -159,9 +185,11 @@ export function findExecutionReadinessFailure(
       nodeId: node.id, reasonCode: rawDocumentFailure.availability === 'waiting' ? 'input_waiting' : 'input_unavailable',
       message: rawDocumentFailure.availabilityMessage ?? 'JSON 文件不可用，请修复或移除该输入',
     };
-    const loaded = effectiveInputDisplay(layout, feedFromFingerprint(rawFingerprint, inputBindingVersion), data.slotBindings as SlotBindings | undefined,
+    const feed = feedFromFingerprint(rawFingerprint, inputBindingVersion);
+    const standby = (data.slotStandbyEdgeIds ?? []) as string[];
+    const loaded = effectiveInputDisplay(layout, feed, data.slotBindings as SlotBindings | undefined,
       (data.slotConflicts ?? []) as SlotConflict[], graph?.edges.filter((edge) => edge.target === node.id) ?? [],
-      (data.slotStandbyEdgeIds ?? []) as string[], inputBindingVersion);
+      standby, inputBindingVersion);
     const { bindings, conflicts } = loaded;
     const videoMode = videoCapability?.operationStates.find(candidate => candidate.id === chosenId);
     if (loaded.requiredUnavailable && !deferred.has(loaded.requiredUnavailable.occupant.sourceNodeId)) return {
@@ -170,8 +198,7 @@ export function findExecutionReadinessFailure(
       message: `来源 ${loaded.requiredUnavailable.occupant.sourceNodeId} 的素材尚不可用，请替换或停用`,
       ...(videoMode?.selectableBeforeInputs ? { slot: loaded.requiredUnavailable.slot } : {}),
     };
-    const fingerprint = effectiveSlotFingerprint(rawFingerprint, layout, bindings, conflicts, inputBindingVersion,
-      (data.slotStandbyEdgeIds ?? []) as string[]);
+    const fingerprint = effectiveSlotFingerprint(rawFingerprint, layout, bindings, conflicts, inputBindingVersion, standby);
     const unavailable = fingerprint.assets.find((asset) => asset.availability !== 'ready' && !deferred.has(asset.sourceNodeId));
     if (unavailable) return { nodeId: node.id, reasonCode: unavailable.availability === 'unavailable' ? 'input_unavailable' : 'input_waiting',
       message: unavailable.availabilityMessage ?? `等待来源 ${unavailable.sourceNodeId} 的内容` };
@@ -220,7 +247,7 @@ export function findExecutionReadinessFailure(
         message: parameterFailure.message,
       };
     }
-    const match = matchOperationInputs(operation, fingerprint);
+    const match = matchOperationInputs(operation, fingerprint, { deferVisualPrompt: true });
     const missing = [...match.rejections, ...match.pending].find((failure) => {
       if (deferred.size === 0) return true;
       // Missing dynamic content is checked again against completed scheduler outputs.
@@ -232,6 +259,7 @@ export function findExecutionReadinessFailure(
     });
     if (missing) return { nodeId: node.id, reasonCode: missing.code, message: missing.message,
       ...(videoMode?.selectableBeforeInputs && missing.slot ? { slot: missing.slot } : {}) };
+    if (onVisualInputs && !managed && isVisualGeneration(outputKind)) onVisualInputs(node.id, freezeVisualInputs(loaded, feed, standby));
   }
   return null;
 }

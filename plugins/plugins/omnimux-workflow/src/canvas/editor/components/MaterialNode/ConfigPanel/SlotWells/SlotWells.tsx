@@ -4,18 +4,18 @@
  * 按 deriveSlotLayout 的 preset 渲染：
  *   - none  → 不渲染（文生视频等纯文本输入不占高度）；
  *   - pair  → [首帧] ⇆ [尾帧]，ArrowLeftRight 对调（swapNamedSlots，保持边不变）；
- *   - strip → 已填缩略图顺序排列，尾部虚线 + 槽（未达上限或上限未定时）；
+ *   - strip → 已填缩略图顺序排列，同用途的参考素材共用一个添加入口；
  *   - named → 各具名卡槽并列（角色图 / 音频驱动等）。
  *
  * 视觉规格（对齐图 2）：
  *   - 空态与添加卡槽为 44px × 44px 大方圆角虚线加号框，圆角 10px，居中清爽 Plus(size=20) 图标；
- *   - 空态坚决不展示截断文字（绝无 refe... 截断标签）；
+ *   - 有独立用途的卡槽显示角色；
  *   - 填入素材后展示完整圆角大方块预览，悬浮显示小叉号 ✕ 卸装填。
  */
 
 import React, { memo, useCallback, useRef, useState } from 'react';
 import SlotHoverPreview from './SlotHoverPreview.tsx';
-import { ArrowLeftRight, FileJson, FileText, Image as ImageIcon, Loader2, Music, Play, Plus, X } from 'lucide-react';
+import { ArrowLeftRight, FileJson, FileText, Image as ImageIcon, Link2, Loader2, Music, Play, Plus, X } from 'lucide-react';
 import type { MaterialType } from '../../../../../../shared/canvasTypes.ts';
 import type { SlotOccupant, SlotSpec } from '../../../../../../shared/graph/feedSlot/index.ts';
 import { isOrderedImageReferenceSlot } from '../../../../../../shared/validation/compatKernel.ts';
@@ -27,6 +27,8 @@ import type { SlotPickRequest, SlotWellsProps } from './types.ts';
 function useSlotLabel() {
   const t = useT();
   return (spec: SlotSpec): string => {
+    if (spec.role === 'first_frame') return t('panel.slot.first_frame');
+    if (spec.role === 'last_frame') return t('panel.slot.last_frame');
     const label = t(spec.labelKey);
     return label === spec.labelKey ? spec.slot : label;
   };
@@ -42,23 +44,6 @@ interface WellModel {
   state?: 'ready' | 'inactive' | 'pending' | 'invalid';
   reasonCode?: string;
   onUseAsStart?: () => void;
-}
-
-function buildWellModels(spec: SlotSpec, props: SlotWellsProps, upstreamByEdge: Map<string, UpstreamMediaItem>): WellModel[] {
-  const occupants = props.bindings[spec.slot] ?? [];
-  const models: WellModel[] = occupants.map((occupant) => ({
-    spec,
-    occupant,
-    upstream: upstreamByEdge.get(occupant.edgeId),
-    requiredEmpty: false,
-  }));
-  // 同一槽位定义至多渲染 1 个空卡（占位与追加合一）：已绑显示素材卡，未满给 1 个空卡，绑满隐藏。
-  const capacity = spec.max ?? occupants.length + 1;
-  const target = Math.max(Math.min(capacity, occupants.length + 1), Math.min(spec.min ?? 0, occupants.length + 1), occupants.length);
-  while (models.length < target) {
-    models.push({ spec, requiredEmpty: models.length < spec.min });
-  }
-  return models;
 }
 
 function WellThumb({ model }: { model: WellModel }) {
@@ -147,32 +132,15 @@ const SlotWells: React.FC<SlotWellsProps> = (props) => {
 
   if (layout.slots.length === 0 && !props.records?.length) return null;
 
-  // Contract type stays the single-slot whitelist ('image'/'video'/'audio'/
-  // 'document'/'text'). Any other value (e.g. a role) widens to all media
-  // types so the picker still accepts files instead of rejecting every pick.
-  const pickRequest = (spec: SlotSpec): SlotPickRequest => {
-    const type = String(spec.type || '');
-    const acceptedTypes =
-      type === 'image' || type === 'video' || type === 'audio' || type === 'document' || type === 'text'
-        ? [type]
-        : ['image', 'video', 'audio', 'document', 'text'];
-    return {
-      targetSlot: spec.slot,
-      acceptedTypes,
-      max: spec.max,
-    };
-  };
-
-  const renderStripAppend = (spec: SlotSpec, requiredEmpty: boolean) => {
-    const label = t('panel.slotPick').replace('{slot}', slotLabel(spec));
-    return <button key={spec.slot} type="button"
-      className={`wf-slot-well wf-slot-well--append nodrag${requiredEmpty ? ' wf-slot-well--required' : ''}`}
-      data-slot={spec.slot} data-slot-role={spec.role} title={label} aria-label={label}
-      onClick={() => onPickSlot(pickRequest(spec))}><Plus size={20} aria-hidden="true" /></button>;
-  };
+  const pickRequest = (spec: SlotSpec): SlotPickRequest => ({
+    targetSlot: spec.slot,
+    acceptedTypes: [spec.type],
+    max: spec.composition ? null : spec.max,
+  });
 
   const renderWell = (model: WellModel, index: number) => {
     const { spec, occupant } = model;
+    const promptReference = props.presentation === 'prompt';
     const label = model.positionLabel ?? slotLabel(spec);
     const conflicted = occupant ? conflictedEdges.has(occupant.edgeId) : false;
     const className = [
@@ -200,14 +168,14 @@ const SlotWells: React.FC<SlotWellsProps> = (props) => {
           onPickSlot(pickRequest(spec));
         }
       } else {
-        onPickSlot({ ...pickRequest(spec), ...(model.positionLabel ? { max: 1 } : {}) });
+        onPickSlot(pickRequest(spec));
       }
     };
 
     return (
       <div
         key={`${spec.slot}:${occupant?.edgeId ?? `empty-${index}`}`}
-        className={className}
+        className={promptReference ? 'wf-prompt-reference nodrag' : className}
         role="button"
         tabIndex={0}
         data-slot={spec.slot}
@@ -216,7 +184,10 @@ const SlotWells: React.FC<SlotWellsProps> = (props) => {
         data-slot-state={model.state ?? (occupant ? (conflicted ? 'conflict' : 'filled') : 'empty')}
         aria-label={occupant && model.upstream?.label && model.positionLabel
           ? `${label} · ${model.upstream.label}`
-          : occupant ? (model.upstream?.label ?? label) : t('panel.slotPick').replace('{slot}', label)}
+          : occupant ? (model.upstream?.label ?? label)
+            : spec.role === 'first_frame' || spec.role === 'last_frame'
+              ? t(spec.role === 'first_frame' ? 'input.first' : 'input.last')
+              : t('panel.slotPick').replace('{slot}', label)}
         onMouseEnter={(event) => { if (occupant) setHover({ anchor: event.currentTarget, model }); }}
         onFocus={(event) => { if (suppressFocus.current === event.currentTarget) return;
           if (occupant && event.target === event.currentTarget) setHover({ anchor: event.currentTarget, model }); }}
@@ -228,13 +199,16 @@ const SlotWells: React.FC<SlotWellsProps> = (props) => {
           }
         }}
       >
-        <WellThumb model={model} />
+        {promptReference ? <>
+          <FileText size={13} aria-hidden="true" />
+          <span>{model.upstream?.label ?? label}</span>
+        </> : <WellThumb model={model} />}
         {model.positionLabel ? <span className="wf-slot-well__position">{model.positionLabel}</span> : null}
         {hover?.anchor.dataset.slot === spec.slot && hover.model.occupant?.edgeId === occupant?.edgeId && occupant ? (
           <SlotHoverPreview anchor={hover.anchor} upstream={model.upstream} state={model.state} reasonCode={model.reasonCode}
             onReturnFocus={returnPreviewFocus} onReplace={() => onPickSlot({ ...pickRequest(spec), replaceEdgeId: occupant.edgeId, openerAnchor: hover.anchor, onReturnFocus: returnPreviewFocus })}
             onUseAsStart={model.onUseAsStart}
-            onClear={model.positionLabel && !props.onSetUse ? () => onClearOccupant(spec.slot, occupant.edgeId) : undefined}
+            onClear={(model.positionLabel || promptReference) && !props.onSetUse ? () => onClearOccupant(spec.slot, occupant.edgeId) : undefined}
             use={model.state === 'inactive' ? 'inactive' : 'active'} onSetUse={props.onSetUse ? use => props.onSetUse!(spec.slot, occupant.edgeId, use) : undefined} onClose={closeHover} />
         ) : null}
         {occupant && !props.records ? (
@@ -254,232 +228,126 @@ const SlotWells: React.FC<SlotWellsProps> = (props) => {
     );
   };
 
-  const renderOrderedWells = (slot: SlotSpec, records: NonNullable<SlotWellsProps['records']>) => {
-    const capacity = slot.max ?? slot.min;
-    const active = records.filter(record => record.state !== 'inactive');
-    const paused = records.filter(record => record.state === 'inactive');
-    const visible = [...active, ...paused.slice(0, Math.max(0, capacity - active.length))];
-    const wells = Array.from({ length: Math.max(slot.min, visible.length) }, (_, index) => visible[index]);
-    const [first, second] = active;
-    const canAdd = capacity > slot.min && active.length < capacity && visible.length >= slot.min;
-    return (
-      <>
-        {wells.map((record, index) => renderWell({
-          spec: slot,
-          positionLabel: t(index === 0 ? 'panel.slot.startImage' : 'panel.slot.referenceImage'),
-          occupant: record?.occupant,
-          upstream: record ? upstreamByEdge.get(record.occupant.edgeId) : undefined,
-          requiredEmpty: !record,
-          state: record?.state,
-          reasonCode: record?.reasonCode,
-          onUseAsStart: capacity > 2 && index > 0 && first?.state === 'ready' && record?.state === 'ready'
-            ? () => props.onSwapOrderedSlot?.(slot.slot, first.occupant.edgeId, record.occupant.edgeId)
-            : undefined,
-        }, index))}
-        {(capacity === 2 || active.length === 2) && <button
-          type="button"
-          className="wf-slot-wells__swap nodrag"
-          aria-label={t('panel.slotSwapImages')}
-          title={t('panel.slotSwapImages')}
-          disabled={first?.state !== 'ready' || second?.state !== 'ready'}
-          onClick={(event) => {
-            event.stopPropagation();
-            if (first?.state === 'ready' && second?.state === 'ready') {
-              props.onSwapOrderedSlot?.(slot.slot, first.occupant.edgeId, second.occupant.edgeId);
-            }
-          }}
-        >
-          <ArrowLeftRight size={14} aria-hidden="true" />
-        </button>}
-        {canAdd && <button
-          type="button"
-          className="wf-slot-well wf-slot-well--append nodrag"
-          data-slot={slot.slot}
-          aria-label={t('panel.slotAddReferenceImage')}
-          title={t('panel.slotAddReferenceImage')}
-          onClick={() => onPickSlot({ ...pickRequest(slot), max: capacity - active.length })}
-        >
-          <Plus size={20} aria-hidden="true" />
-        </button>}
-      </>
-    );
+  const slotModels = layout.slots.map(spec => {
+    const records = props.records?.filter(record => record.slot.slot === spec.slot
+      && (record.state === 'ready' || record.state === 'pending' || record.reasonCode === 'input_unavailable'));
+    const models: WellModel[] = records ? records.map(record => ({
+      spec, occupant: record.occupant, upstream: upstreamByEdge.get(record.occupant.edgeId),
+      requiredEmpty: false, state: record.state, reasonCode: record.reasonCode,
+    })) : (props.bindings[spec.slot] ?? []).filter(occupant => occupant.use !== 'inactive').map(occupant => ({
+      spec, occupant, upstream: upstreamByEdge.get(occupant.edgeId), requiredEmpty: false,
+    }));
+    const remaining = spec.composition ? Infinity : Math.max(0, (spec.max ?? Infinity) - models.length);
+    return { spec, models, remaining };
+  });
+
+  const renderNamedSlot = ({ spec, models, remaining }: typeof slotModels[number]) => {
+    const positionLabel = slotLabel(spec);
+    return [
+      ...models.map((model, index) => renderWell({ ...model, positionLabel }, index)),
+      ...(remaining > 0
+        ? [renderWell({ spec, positionLabel, requiredEmpty: models.length < spec.min }, models.length)]
+        : []),
+    ];
   };
 
-  if (props.records) {
-    const orderedSlot = layout.slots.find(isOrderedImageReferenceSlot);
-    if (!orderedSlot && layout.preset === 'named') {
-      const recordsBySlot = new Map<string, typeof props.records>();
-      for (const record of props.records) {
-        const list = recordsBySlot.get(record.slot.slot) ?? [];
-        list.push(record);
-        recordsBySlot.set(record.slot.slot, list);
-      }
-      return (
-        <div className="wf-slot-wells wf-slot-wells--named" data-testid="wf-slot-wells" data-preset="named">
-          {layout.slots.flatMap((spec) => {
-            const slotRecords = recordsBySlot.get(spec.slot) ?? [];
-            const models: WellModel[] = slotRecords.map((record) => ({
-              spec: record.slot,
-              occupant: record.occupant,
-              upstream: upstreamByEdge.get(record.occupant.edgeId),
-              requiredEmpty: false,
-              state: record.state,
-              reasonCode: record.reasonCode,
-            }));
-            // Same rule: at most one empty well per slot definition.
-            const needed = Math.min(1, Math.max((spec.min ?? 1) - models.length, models.length < (spec.max ?? 1) ? 1 : 0));
-            const emptyWells = [];
-            for (let i = 0; i < needed; i++) {
-              emptyWells.push(
-                <button
-                  key={`${spec.slot}:empty-${i}`}
-                  type="button"
-                  className={`wf-slot-well wf-slot-well--empty nodrag${models.length < (spec.min ?? 0) ? ' wf-slot-well--required' : ''}`}
-                  data-slot={spec.slot}
-                  data-slot-role={spec.role}
-                  aria-label={t('panel.slotPick').replace('{slot}', slotLabel(spec))}
-                  title={t('panel.slotPick').replace('{slot}', slotLabel(spec))}
-                  onClick={() => onPickSlot(pickRequest(spec))}
-                >
-                  <Plus size={20} aria-hidden="true" />
-                </button>
-              );
-            }
-            return [...models.map(renderWell), ...emptyWells];
-          })}
-        </div>
-      );
-    }
-
-    if (!orderedSlot && layout.preset === 'pair' && layout.slots.length === 2) {
-      const [first, last] = layout.slots as [SlotSpec, SlotSpec];
-      const recordsFirst = props.records.filter((r) => r.slot.slot === first.slot);
-      const recordsLast = props.records.filter((r) => r.slot.slot === last.slot);
-      const modelsFirst: WellModel[] = recordsFirst.map((record) => ({
-        spec: record.slot,
-        occupant: record.occupant,
-        upstream: upstreamByEdge.get(record.occupant.edgeId),
-        requiredEmpty: false,
-        state: record.state,
-        reasonCode: record.reasonCode,
-      }));
-      const modelsLast: WellModel[] = recordsLast.map((record) => ({
-        spec: record.slot,
-        occupant: record.occupant,
-        upstream: upstreamByEdge.get(record.occupant.edgeId),
-        requiredEmpty: false,
-        state: record.state,
-        reasonCode: record.reasonCode,
-      }));
-      return (
-        <div className="wf-slot-wells wf-slot-wells--pair" data-testid="wf-slot-wells" data-preset="pair">
-          {modelsFirst.length ? modelsFirst.map(renderWell) : (
-            <button
-              type="button"
-              className="wf-slot-well wf-slot-well--empty nodrag"
-              data-slot={first.slot}
-              data-slot-role={first.role}
-              aria-label={t('input.first')}
-              title={t('input.first')}
-              onClick={() => onPickSlot(pickRequest(first))}
-            >
-              <Plus size={20} aria-hidden="true" />
-            </button>
-          )}
-          <button
-            type="button"
-            className="wf-slot-wells__swap nodrag"
-            title={t('panel.slotSwap')}
-            aria-label={t('panel.slotSwap')}
-            disabled={!layout.swap}
-            onClick={(event) => {
-              event.stopPropagation();
-              onSwapSlots?.(first.slot, last.slot);
-            }}
-          >
-            <ArrowLeftRight size={14} />
-          </button>
-          {modelsLast.length ? modelsLast.map(renderWell) : (
-            <button
-              type="button"
-              className="wf-slot-well wf-slot-well--empty nodrag"
-              data-slot={last.slot}
-              data-slot-role={last.role}
-              aria-label={t('input.last')}
-              title={t('input.last')}
-              onClick={() => onPickSlot(pickRequest(last))}
-            >
-              <Plus size={20} aria-hidden="true" />
-            </button>
-          )}
-        </div>
-      );
-    }
-
-    const otherSlots = layout.slots.filter(spec => spec.slot !== orderedSlot?.slot);
-    const otherRecords = props.records.filter(record => record.slot.slot !== orderedSlot?.slot);
-    const models: WellModel[] = otherRecords.map(record => ({ spec: record.slot, occupant: record.occupant,
-      upstream: upstreamByEdge.get(record.occupant.edgeId), requiredEmpty: false, state: record.state, reasonCode: record.reasonCode }));
-    const frames = otherSlots.filter(spec => spec.role === 'first_frame' || spec.role === 'last_frame');
-    const append = otherSlots.flatMap(spec => {
-      if (frames.includes(spec)) return [];
-      const count = otherRecords.filter(record => record.slot.slot === spec.slot && record.state !== 'inactive').length;
-      return spec.type === 'text' && spec.composition || spec.max === null || count < spec.max
-        ? [renderStripAppend(spec, count < spec.min)] : [];
-    });
-    return <div className="wf-slot-wells wf-slot-wells--strip" data-testid="wf-slot-wells" data-preset={orderedSlot ? 'strip' : layout.preset}>
-      {orderedSlot ? renderOrderedWells(orderedSlot, props.records.filter(record => record.slot.slot === orderedSlot.slot)) : null}
-      {models.map(renderWell)}
-      {frames.filter(spec => !models.some(model => model.spec.slot === spec.slot)).map(spec => <button key={spec.slot} type="button"
-        className="wf-slot-well wf-slot-well--empty nodrag" data-slot={spec.slot} data-slot-role={spec.role}
-        aria-label={t(spec.role === 'first_frame' ? 'input.first' : 'input.last')}
-        onClick={() => onPickSlot(pickRequest(spec))}><Plus size={20} aria-hidden="true" /></button>)}
-      {append}
-    </div>;
+  if (props.presentation === 'prompt') {
+    const label = t('panel.addPromptReference');
+    return (
+      <div className="wf-config-panel__prompt-references" data-testid="wf-prompt-references">
+        {slotModels.flatMap(({ spec, models, remaining }) => [
+          ...models.map(renderWell),
+          ...(remaining > 0 ? [<button key={spec.slot + ':add'} type="button"
+            className="wf-prompt-reference nodrag" data-testid="wf-add-prompt-reference"
+            aria-label={label} onClick={() => onPickSlot(pickRequest(spec))}>
+            <Link2 size={13} aria-hidden="true" />
+            {label}
+          </button>] : []),
+        ])}
+      </div>
+    );
   }
 
-  if (layout.preset === 'pair' && layout.slots.length === 2) {
-    const [first, last] = layout.slots as [SlotSpec, SlotSpec];
+  const [firstSlot, lastSlot] = slotModels;
+  if (layout.preset === 'pair' && slotModels.length === 2 && firstSlot && lastSlot) {
     return (
       <div className="wf-slot-wells wf-slot-wells--pair" data-testid="wf-slot-wells" data-preset="pair">
-        {buildWellModels(first, props, upstreamByEdge).map(renderWell)}
+        {renderNamedSlot(firstSlot)}
         <button
           type="button"
           className="wf-slot-wells__swap nodrag"
           title={t('panel.slotSwap')}
           aria-label={t('panel.slotSwap')}
-          disabled={!layout.swap}
-          onClick={(event) => {
+          disabled={!layout.swap || !firstSlot.models.some(model => !model.state || model.state === 'ready')
+            || !lastSlot.models.some(model => !model.state || model.state === 'ready')}
+          onClick={event => {
             event.stopPropagation();
-            onSwapSlots?.(first.slot, last.slot);
+            onSwapSlots?.(firstSlot.spec, lastSlot.spec);
           }}
         >
-          <ArrowLeftRight size={14} />
+          <ArrowLeftRight size={14} aria-hidden="true" />
         </button>
-        {buildWellModels(last, props, upstreamByEdge).map(renderWell)}
+        {renderNamedSlot(lastSlot)}
       </div>
     );
   }
 
-  if (layout.preset === 'strip') {
-    const wells = layout.slots.flatMap((spec) => buildWellModels(spec, props, upstreamByEdge)
-      .filter((model) => model.occupant || model.requiredEmpty));
-    const append = layout.addButton ? layout.slots.flatMap(spec => {
-      const bound = props.bindings[spec.slot]?.length ?? 0;
-      return bound >= spec.min && (spec.max === null || bound < spec.max) ? [renderStripAppend(spec, false)] : [];
-    }) : [];
+  if (layout.preset === 'named' || layout.preset === 'pair') {
     return (
-      <div className="wf-slot-wells wf-slot-wells--strip" data-testid="wf-slot-wells" data-preset="strip">
-        {wells.map(renderWell)}
-        {append}
+      <div className="wf-slot-wells wf-slot-wells--named" data-testid="wf-slot-wells" data-preset="named">
+        {slotModels.flatMap(renderNamedSlot)}
       </div>
     );
   }
 
-  // named：各具名卡槽并列（数字人角色图 / 驱动音频等）。
+  const references = slotModels.filter(({ spec }) => spec.role === 'reference' && spec.type !== 'text');
+  const named = slotModels.filter(slot => !references.includes(slot));
+  const available = layout.addButton ? references.filter(({ remaining }) => remaining > 0) : [];
+  const maximum = available.reduce((sum, { remaining }) => sum + remaining, 0);
+  const addLabel = t('panel.slotAddAsset');
+  const displayOrder = new Map(props.records?.map(({ slot, occupant }, index) => [slot.slot + ':' + occupant.edgeId, index]));
+  const upstreamOrder = new Map(props.upstreams.map(({ edgeId }, index) => [edgeId, index]));
+  const orderOf = ({ spec, occupant }: WellModel) => displayOrder.get(spec.slot + ':' + occupant?.edgeId)
+    ?? occupant?.ordinal ?? upstreamOrder.get(occupant?.edgeId) ?? 0;
+  const referenceCards = references.flatMap(({ spec, models }) => {
+    if (!isOrderedImageReferenceSlot(spec)) return models;
+    const first = models[0];
+    return models.map((model, index) => ({
+      ...model,
+      positionLabel: t(index === 0 ? 'panel.slot.startImage' : 'panel.slot.referenceImage'),
+      onUseAsStart: index > 0 && spec.max !== 2 && first?.state === 'ready' && model.state === 'ready'
+        ? () => props.onSwapOrderedSlot?.(spec.slot, first.occupant!.edgeId, model.occupant!.edgeId)
+        : undefined,
+    }));
+  }).sort((first, second) => orderOf(first) - orderOf(second));
   return (
-    <div className="wf-slot-wells wf-slot-wells--named" data-testid="wf-slot-wells" data-preset="named">
-      {layout.slots.flatMap((spec) => buildWellModels(spec, props, upstreamByEdge).map((model, index) => renderWell(model, index)))}
+    <div className="wf-slot-wells wf-slot-wells--strip" data-testid="wf-slot-wells" data-preset="strip">
+      {referenceCards.map(renderWell)}
+      {references.map(({ spec, models }) => {
+        const [first, second] = models;
+        if (!isOrderedImageReferenceSlot(spec) || models.length !== 2 || first?.state !== 'ready' || second?.state !== 'ready') return null;
+        return <button key={spec.slot + ':swap'} type="button" className="wf-slot-wells__swap nodrag"
+          aria-label={t('panel.slotSwapImages')} title={t('panel.slotSwapImages')}
+          onClick={event => {
+            event.stopPropagation();
+            props.onSwapOrderedSlot?.(spec.slot, first.occupant!.edgeId, second.occupant!.edgeId);
+          }}>
+          <ArrowLeftRight size={14} aria-hidden="true" />
+        </button>;
+      })}
+      {named.flatMap(renderNamedSlot)}
+      {available.length > 0 && (
+        <button type="button" className="wf-slot-well wf-slot-well--append nodrag"
+          data-testid="wf-add-reference" data-slot={available.length === 1 ? available[0]!.spec.slot : undefined}
+          aria-label={addLabel} title={addLabel}
+          onClick={() => onPickSlot({
+            referenceSlots: available.map(({ spec }) => spec.slot),
+            acceptedTypes: [...new Set(available.map(({ spec }) => spec.type))],
+            max: Number.isFinite(maximum) ? maximum : null,
+          })}>
+          <Plus size={20} aria-hidden="true" />
+        </button>
+      )}
     </div>
   );
 };

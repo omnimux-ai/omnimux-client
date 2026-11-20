@@ -145,7 +145,7 @@ const textUpstream = (id, content) => ({
 function textChipCounts(html) {
   return {
     effective: (html.match(/class="wf-effective-text wf-effective-text--slot"/g) || []).length,
-    slotWells: (html.match(/class="wf-slot-well__text"/g) || []).length,
+    slotWells: (html.match(/class="wf-prompt-reference nodrag" role="button"/g) || []).length,
   };
 }
 

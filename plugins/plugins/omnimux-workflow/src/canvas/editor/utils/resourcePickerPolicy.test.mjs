@@ -15,6 +15,7 @@ import {
   formatFileSize,
   planResourcePickerCommit,
   planPickerSelectionMutation,
+  resourcePickerContextKey,
   planStandaloneImportNodes,
   planImportNodeFill,
   evaluateResourcePickerAvailability,
@@ -58,6 +59,131 @@ test('named picker hides unsupported audio before selection on both canvas versi
     const items = listCanvasResources([node, ...audio], [], target.id, { catalog }, { targetSlot: 'reference_audios' });
     assert.deepEqual(items.map(item => item.nodeId), ['good.wav', 'good.mp3']);
   }
+});
+
+test('shared reference picker routes a mixed canvas and local batch through current compatible slots', () => {
+  const referenceSlots = ['reference_image', 'png_reference', 'reference_audio'];
+  const mode = 'video_multi_ref';
+  const context = { catalog: { models: [{ id: 'mixed-fixture', operations: [{ id: mode, listed: true, output: { type: 'video' }, inputs: [
+    { slot: referenceSlots[0], type: 'image', role: 'reference', source: 'upstream_output', min: 0, max: 1 },
+    { slot: referenceSlots[1], type: 'image', role: 'reference', source: 'upstream_output', min: 0, max: 1, allowedMimes: ['image/png'] },
+    { slot: referenceSlots[2], type: 'audio', role: 'reference', source: 'upstream_output', min: 0, max: 1,
+      allowedMimes: ['audio/wav'], maxSizeMb: 1, maxDurationSec: 4 },
+    { slot: 'first_frame', type: 'image', role: 'first_frame', source: 'upstream_output', min: 0, max: 1 },
+  ] }] }] } };
+  const png = materialNode('png', 'image', { mediaUrl: 'https://fixtures.invalid/sample.png' });
+  const jpeg = materialNode('jpeg', 'image', { mediaUrl: 'https://fixtures.invalid/sample.jpg' });
+  const extra = materialNode('extra', 'image', { mediaUrl: 'https://fixtures.invalid/extra.png' });
+  const video = materialNode('video', 'video', { mediaUrl: 'https://fixtures.invalid/clip.mp4' });
+  const text = materialNode('text', 'text', { content: 'Example text' });
+  const wav = { id: 'sample.wav', name: 'sample.wav', mime: 'audio/wav', size: 128,
+    durationSec: 3, realPath: '/fixtures/sample.wav', materialType: 'audio' };
+  const select = node => ({ sourceNodeId: node.id, outputId: node.data.mediaUrl });
+  const request = { targetNodeId: 'target', chosenOperationId: mode, selections: [select(png), select(jpeg)] };
+
+  for (const version of [undefined, 1]) {
+    const target = materialNode('target', 'video');
+    Object.assign(target.data, { nodeKind: 'generate', inputBindingVersion: version,
+      slotBindings: {}, params: { model: 'mixed-fixture', operation: mode } });
+    const graph = { nodes: [target, png, jpeg, extra, video, text], edges: [] };
+    const before = structuredClone(graph);
+    const items = listCanvasResources(graph.nodes, graph.edges, target.id, context, {
+      referenceSlots, selections: request.selections, localFiles: [wav],
+    });
+    assert.deepEqual(items.map(item => [item.nodeId, item.selectable]), [['png', true], ['jpeg', true], ['extra', false]]);
+
+    const rejected = planPickerSelectionMutation(graph, { ...request, selections: [...request.selections, select(extra)] },
+      context, { referenceSlots, files: [wav] });
+    assert.equal(rejected.reasonCode, 'slot_capacity');
+    assert.equal(rejected.mutation, undefined);
+    for (const file of [{ ...wav, mime: 'audio/mpeg' }, { ...wav, size: 2 ** 20 + 1 }, { ...wav, durationSec: 5 }]) {
+      const result = planPickerSelectionMutation(graph, request, context, { referenceSlots, files: [file] });
+      assert.equal(result.status, 'rejected');
+      assert.equal(result.mutation, undefined);
+    }
+    assert.deepEqual(graph, before);
+
+    const accepted = planPickerSelectionMutation(graph, request, context, { referenceSlots, files: [wav] });
+    assert.equal(accepted.status, 'allowed', accepted.reasonCode);
+    const applied = planCanvasInputMutation(graph, accepted.mutation, context);
+    assert.equal(applied.status, 'allowed');
+    const bindings = applied.nodes.find(node => node.id === target.id).data.slotBindings;
+    assert.equal(bindings.reference_image[0].sourceNodeId, 'jpeg');
+    assert.equal(bindings.png_reference[0].sourceNodeId, 'png');
+    assert.equal(bindings.reference_audio[0].sourceNodeId, accepted.mutation.addNodes[0].id);
+    assert.equal(bindings.first_frame?.length ?? 0, 0);
+    assert.equal(applied.edges.length, 3);
+  }
+});
+
+test('a newly chosen reference can fill space vacated by incompatible saved supply', () => {
+  const slot = 'reference_image';
+  const operation = 'multi_reference';
+  const context = { catalog: { models: [{ id: 'png-fixture', operations: [{
+    id: operation, listed: true, output: { type: 'image' }, inputs: [
+      { slot, type: 'image', role: 'reference', source: 'upstream_output', min: 0, max: 1, allowedMimes: ['image/png'] },
+    ],
+  }] }] } };
+  const parked = materialNode('old', 'image', { mediaUrl: 'https://fixtures.invalid/old.jpg' });
+  const newImage = materialNode('new', 'image', { mediaUrl: 'https://fixtures.invalid/new.png' });
+  parked.data.mimeType = 'image/jpeg';
+  newImage.data.mimeType = 'image/png';
+  const target = materialNode('target', 'image');
+  Object.assign(target.data, {
+    nodeKind: 'generate', inputBindingVersion: 1, params: { model: 'png-fixture', operation },
+    slotBindings: { [slot]: [{ edgeId: 'old-edge', sourceNodeId: parked.id, outputId: parked.data.mediaUrl,
+      role: 'reference', use: 'active', pinned: true }] },
+  });
+  const graph = { nodes: [target, parked, newImage], edges: [{ id: 'old-edge', source: parked.id, target: target.id }] };
+  const request = { targetNodeId: target.id, chosenOperationId: operation,
+    selections: [{ sourceNodeId: newImage.id, outputId: newImage.data.mediaUrl }] };
+
+  const plan = planPickerSelectionMutation(graph, request, context, { referenceSlots: [slot], files: [] });
+  assert.equal(plan.status, 'allowed', plan.reasonCode);
+  const changed = planCanvasInputMutation(graph, plan.mutation, context);
+  assert.equal(changed.status, 'allowed');
+  assert.deepEqual(changed.nodes.find(node => node.id === target.id).data.slotBindings[slot].map(item => item.sourceNodeId), ['old', 'new']);
+  assert.equal(changed.edges.some(edge => edge.id === 'old-edge'), true);
+
+  const unexpectedlyChanged = { ...graph, nodes: [target, parked, { ...newImage, data: { ...newImage.data, mimeType: 'image/jpeg' } }] };
+  assert.equal(planCanvasInputMutation(unexpectedlyChanged, plan.mutation, context).status, 'rejected');
+});
+
+test('managed picker uses the selected variant and projected draft even before input migration', () => {
+  const model = 'managed-reference-fixture';
+  const operation = 'video_multi_ref';
+  const slot = 'reference_images';
+  const variant = (resolution, max) => ({ id: operation, modeKind: 'image_reference', listed: true,
+    output: { type: 'video' }, inputs: [{ slot, type: 'image', role: 'reference', source: 'upstream_edge', min: 1, max }],
+    parameters: { resolution: { options: [{ value: resolution, label: resolution }] } } });
+  const narrow = variant('720p', 1);
+  const wide = variant('1080p', 2);
+  const context = { catalog: { models: [{ id: model, effectiveVideoVersion: 'fixture-v1', operations: [wide],
+    channelGroups: [{ id: 'fixture', enabled: true, effectiveOperations: [narrow, wide] }] }] } };
+  const existing = materialNode('existing', 'image', { mediaUrl: 'https://fixtures.invalid/existing.png' });
+  const additional = materialNode('additional', 'image', { mediaUrl: 'https://fixtures.invalid/additional.png' });
+  const edge = { id: 'existing-edge', source: existing.id, target: 'target' };
+  const target = materialNode('target', 'video');
+  Object.assign(target.data, {
+    nodeKind: 'generate', slotBindings: {},
+    params: { model, operation, routing: { channelGroupId: 'fixture' }, resolution: '720p' },
+    videoSlotDrafts: { image_reference: { [slot]: [{ sourceNodeId: existing.id, edgeId: edge.id,
+      role: 'reference', pinned: true }] } },
+  });
+  const graph = { nodes: [target, existing, additional], edges: [edge] };
+  const request = { targetNodeId: target.id, chosenOperationId: operation,
+    selections: [{ sourceNodeId: additional.id, outputId: additional.data.mediaUrl }] };
+  const selection = { referenceSlots: [slot], files: [] };
+  assert.equal(planPickerSelectionMutation(graph, request, context, selection).reasonCode, 'slot_capacity');
+  const wider = { ...target, data: { ...target.data, params: { ...target.data.params, resolution: '1080p' } } };
+  assert.notEqual(resourcePickerContextKey(target, context), resourcePickerContextKey(wider, context));
+  const widerGraph = { ...graph, nodes: [wider, existing, additional] };
+  const plan = planPickerSelectionMutation(widerGraph, request, context, selection);
+  assert.equal(plan.status, 'allowed', plan.reasonCode);
+  const result = planCanvasInputMutation(widerGraph, plan.mutation, context);
+  assert.equal(result.status, 'allowed', result.reasonCode);
+  assert.equal(result.nodes[0].data.inputBindingVersion, 1);
+  assert.deepEqual(result.nodes[0].data.slotBindings[slot].map(item => item.sourceNodeId), ['existing', 'additional']);
 });
 
 test('V1 qualified current picker lists selected ready text, not blank/waiting or local-only sources', () => {

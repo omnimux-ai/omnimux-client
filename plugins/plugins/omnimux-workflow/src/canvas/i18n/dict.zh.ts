@@ -208,6 +208,8 @@ const zh = {
   'panel.slotClear': '移除（保留连线）',
   'panel.slotSwap': '对调首尾帧',
   'panel.slotSwapImages': '交换两张图',
+  'panel.slotAddAsset': '添加素材',
+  'panel.addPromptReference': '引用上游文本',
   'panel.slotAddReferenceImage': '添加参考图',
   'panel.slotUseAsStart': '设为起始图',
   'panel.slot.startImage': '起始图',

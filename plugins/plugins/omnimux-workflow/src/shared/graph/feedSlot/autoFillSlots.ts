@@ -85,11 +85,17 @@ export function autoFillSlots(feedAssets: FeedAsset[], layout: SlotLayout, expli
   return { bindings, conflicts, unusedFeed: feed.filter((asset) => !used.has(asset.edgeId)).map((asset) => ({ ...asset })) };
 }
 
-/** One edge may occupy two named roles only through an explicit choice. */
-export function swapNamedSlots(bindings: SlotBindings, first: string, last: string): SlotBindings {
-  const next = Object.fromEntries(Object.entries(bindings).map(([key, values]) => [key, values.map((value) => ({ ...value }))]));
-  if (first === last) return next;
-  next[first] = (bindings[last] ?? []).map((value) => ({ ...value, pinned: true }));
-  next[last] = (bindings[first] ?? []).map((value) => ({ ...value, pinned: true }));
+/** Exchange assignments while retaining the destination role and position. */
+export function swapNamedSlots(bindings: SlotBindings, first: Pick<SlotSpec, 'slot' | 'role'>, last: Pick<SlotSpec, 'slot' | 'role'>): SlotBindings {
+  const next = { ...bindings };
+  if (first.slot === last.slot) return next;
+  const firstItems = bindings[first.slot] ?? [];
+  const lastItems = bindings[last.slot] ?? [];
+  next[first.slot] = lastItems.map((value, index) => ({
+    ...value, role: first.role, ordinal: firstItems[index]?.ordinal ?? index, pinned: true,
+  }));
+  next[last.slot] = firstItems.map((value, index) => ({
+    ...value, role: last.role, ordinal: lastItems[index]?.ordinal ?? firstItems.length + index, pinned: true,
+  }));
   return next;
 }

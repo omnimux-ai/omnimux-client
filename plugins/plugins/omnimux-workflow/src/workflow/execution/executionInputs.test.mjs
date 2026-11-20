@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildInitialOutputs } from './executionInputs.ts';
+import { prepareExecutionAdmission } from './prepareExecutionAdmission.ts';
+import { collectMaterialSlotInputs } from './materialSlotInputs.ts';
+import { resolveExecutionSubgraph } from './subgraph.ts';
+import { catalogFor, operation, slot } from '../seam/submissionFixtures.mjs';
 
 test('waiting and unavailable sources do not become synthetic text outputs', () => {
   const nodes = [
@@ -20,4 +24,51 @@ test('project media is resolved before execution and relative paths never become
   assert.equal(output.image.mediaAssets[0].url, '/tmp/project/image.png');
   assert.equal(output.image.mediaAssets[0].path, '/tmp/project/image.png');
   assert.throws(() => buildInitialOutputs(workspace, new Set(['target', 'image']), { mediaDir: '/tmp', resolveProjectFile: () => { throw new Error('deleted file'); } }), /deleted file/);
+});
+
+test('execution copies seed only admitted visual sources, while another consumer still needs its file', async () => {
+  const input = { ...slot('image', 'reference', 0, 2, 'reference_images'), allowedMimes: ['image/png'] };
+  const imageOp = operation('image_to_image', 'image', [input], false);
+  const catalog = catalogFor('image', 'fixture', [imageOp]);
+  const showing = { id: 'shown', type: 'material', data: {
+    materialType: 'image', nodeKind: 'import', mediaUrl: 'https://example.test/shown.png', mimeType: 'image/png',
+  } };
+  const unresolved = { id: 'hidden', type: 'material', data: {
+    materialType: 'image', nodeKind: 'import', relativePath: 'assets/deleted.jpg', mimeType: 'image/jpeg',
+  } };
+  const target = { id: 'target', type: 'material', data: {
+    materialType: 'image', nodeKind: 'generate', inputBindingVersion: 1, params: { model: 'fixture', operation: imageOp.id },
+    slotBindings: { reference_images: [
+      { sourceNodeId: showing.id, edgeId: 'shown-edge', pinned: true },
+      { sourceNodeId: unresolved.id, edgeId: 'hidden-edge', pinned: true },
+    ] },
+  } };
+  const tool = { id: 'tool', type: 'fixture-tool', data: {} };
+  const graph = { nodes: [showing, unresolved, target, tool], edges: [
+    { id: 'shown-edge', source: showing.id, target: target.id },
+    { id: 'hidden-edge', source: unresolved.id, target: target.id },
+    { id: 'tool-edge', source: unresolved.id, target: tool.id },
+  ] };
+  const snapshot = structuredClone(graph);
+  const selected = resolveExecutionSubgraph({ ...graph, executionMode: 'single', nodeIds: [target.id] });
+  const admission = await prepareExecutionAdmission('ws_input', graph, selected, 'single', {}, () => catalog);
+  assert.equal(admission.readiness, null);
+  const opts = { mediaDir: '/tmp', resolveProjectFile: () => { throw new Error('deleted project file'); } };
+  const seeded = buildInitialOutputs(admission.sourceGraph, admission.subgraph.nodeIdSet, opts);
+  assert.deepEqual(Object.keys(seeded), [showing.id]);
+  const admitted = admission.subgraph.nodes[0];
+  const result = collectMaterialSlotInputs(admitted.data, { upstreamOutputs: new Map(Object.entries(seeded)),
+    upstreamBindings: admission.sourceGraph.edges.filter(edge => edge.target === target.id).map(edge => ({
+      sourceNodeId: edge.source, edgeId: edge.id, output: seeded[edge.source] ?? {},
+    })), mediaDir: '/tmp' }, catalog);
+  assert.deepEqual(result.references.map(ref => ref.sourceNodeId), [showing.id]);
+  assert.deepEqual(graph, snapshot);
+
+  // The same source is valid for a target which does not filter it out.
+  assert.throws(() => buildInitialOutputs(admission.sourceGraph, new Set(['target', 'tool']), opts), /deleted project file/);
+  const valid = structuredClone(catalog);
+  valid.models[0].operations[0].inputs.find(item => item.slot === 'reference_images').allowedMimes.push('image/jpeg');
+  const visible = await prepareExecutionAdmission('ws_input', graph, selected, 'single', {}, () => valid);
+  assert.equal(visible.readiness, null);
+  assert.throws(() => buildInitialOutputs(visible.sourceGraph, visible.subgraph.nodeIdSet, opts), /deleted project file/);
 });
