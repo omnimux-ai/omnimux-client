@@ -22,7 +22,7 @@ const productSource = /^plugins\/plugins\/[^/]+\/src\/.+\.[cm]?[jt]sx?$/
 const tests = /(?:\.(?:test|spec)\.|\/(?:tests|__tests__|test-fixtures)\/)/
 const pickerCode = /\b(?:requestFilePicker|hasDesktopFilePicker|nativeFilePicker|openNativeFilePicker|DESKTOP_FILE_PICKER_CHANNEL)\b|\.filePicker\.(?:open|\w+)/
 const toolPaths = /\/(?:agent-tools|tools)(?:\/|[.\/-])|^plugins\/plugins\/omnimux-workflow\/src\/workflow\/agent\//
-const toolCode = /\b(?:defineTool|AgentToolSpec)\b|\bctx\.tools(?:\?\.|\.)register\b|from\s+['"][^'"]*(?:agent-tools|\/tools(?:\/|\.))/
+const toolCode = /\b(?:defineTool|AgentToolSpec)\b|\btools(?:\?\.|\.)register\b|from\s+['"][^'"]*(?:agent-tools|\/tools(?:\/|\.))/
 
 function sourceAt(cwd, path, version) {
   try {

@@ -41,6 +41,9 @@ test('classifies registered tool specs defined outside direct registration calls
     const base = repo.commit('base')
     repo.write(spec, "export const write = () => ({ name: 'workflow_create', parameters: { confirmed: true } })\n")
     assert.deepEqual(classifyDocsImpact([spec], { cwd: repo.root, base }), [toolsId])
+    const aliased = 'plugins/plugins/example/src/rival/rival-agent-tools.js'
+    repo.write(aliased, "export function register(tools) { tools.register({ name: 'rival_accounts' }) }\n")
+    assert.deepEqual(classifyDocsImpact([aliased], { cwd: repo.root, base }), [toolsId])
     const workflowHelper = 'plugins/plugins/omnimux-workflow/src/workflow/agent/agentToolShared.ts'
     assert.deepEqual(classifyDocsImpact([workflowHelper]), [toolsId])
   })
