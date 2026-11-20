@@ -9,7 +9,7 @@ import { readExplicitTargetSlot } from './compatKernel.ts';
 import { buildInputCapability } from './inputCapability.ts';
 import { resolveNodeKind } from '../graph/materialNode.ts';
 import { materialTools } from '../specs/nodes/materialNodeSpec.ts';
-import { deriveSlotLayout, type SlotBindings, type SlotConflict, type SlotLayout } from '../graph/feedSlot/index.ts';
+import { deriveSlotLayout, deriveImageGenerationLayout, buildImageGenerationCapability, type SlotBindings, type SlotConflict, type SlotLayout } from '../graph/feedSlot/index.ts';
 import { effectiveSlotFingerprint, feedFromFingerprint } from '../graph/feedSlot/effectiveFingerprint.ts';
 import { resolveSlotOperation } from '../graph/feedSlot/resolveSlotOperation.ts';
 import { effectiveInputDisplay } from '../graph/feedSlot/effectiveInputDisplay.ts';
@@ -190,11 +190,14 @@ function createExecutionReadinessCheck(
     if (videoCapability?.blocked) {
       return { nodeId: node.id, reasonCode: 'operation_incompatible', message: '当前模型没有可用的生成方式' };
     }
-    const chosenId = variant?.id ?? (videoCapability
+    let chosenId = variant?.id ?? (videoCapability
       ? videoCapability.selectedOperationId
       : inputBindingVersion === 1 && readString(params.operation)
         ? readString(params.operation) : resolveSlotOperation(catalog, model.id, params.operation, outputType, rawFingerprint));
-    const layout = deriveSlotLayout(catalog, model.id, chosenId);
+    const imageLayout = outputType === 'image'
+      ? deriveImageGenerationLayout(catalog, model.id, chosenId)
+      : undefined;
+    let layout = imageLayout ?? deriveSlotLayout(catalog, model.id, chosenId);
     const rawDocumentFailure = layout.acceptsDocuments !== false && rawFingerprint.assets.find(asset =>
       asset.type === 'document' && asset.availability !== undefined && asset.availability !== 'ready');
     if (rawDocumentFailure) return {
@@ -218,6 +221,25 @@ function createExecutionReadinessCheck(
     const unavailable = fingerprint.assets.find((asset) => asset.availability !== 'ready' && !deferred.has(asset.sourceNodeId));
     if (unavailable) return { nodeId: node.id, reasonCode: unavailable.availability === 'unavailable' ? 'input_unavailable' : 'input_waiting',
       message: unavailable.availabilityMessage ?? `等待来源 ${unavailable.sourceNodeId} 的内容` };
+    let imageOperationId: string | undefined;
+    if (outputType === 'image') {
+      const imageCapability = buildImageGenerationCapability({
+        catalog,
+        modelId: model.id,
+        fingerprint,
+        ignoredEdgeIds: standby,
+      });
+      imageOperationId = imageCapability.selectedOperationId;
+      if (!imageOperationId) {
+        return {
+          nodeId: node.id,
+          reasonCode: 'operation_incompatible',
+          message: imageCapability.reasonCode === 'main_input_required' ? '请添加参考图后生成' : '当前模型无法处理这些素材',
+        };
+      }
+      chosenId = imageOperationId;
+      layout = deriveSlotLayout(catalog, model.id, chosenId);
+    }
     const opsState = managed ? undefined : buildEffectiveOpsUiState({
       catalog,
       modelId: model.id,
@@ -228,13 +250,15 @@ function createExecutionReadinessCheck(
     const rawOperation = readString(params.operation);
     const selectedOperationId = variant?.id ?? (videoCapability
       ? chosenId
-      : rawOperation ?? chosenId ?? opsState?.selectedOperationId ?? opsState?.implicitOperationId);
+      : imageOperationId ?? rawOperation ?? chosenId ?? opsState?.selectedOperationId ?? opsState?.implicitOperationId);
     const operation = selectedOperationId
       ? model.operations.find((candidate) => candidate.id === selectedOperationId && candidate.listed)
       : undefined;
     const selectedIsEffective = managed ? Boolean(operation) : videoCapability
       ? videoMode?.usable || videoMode?.selectableBeforeInputs
-      : Boolean(selectedOperationId && opsState?.effectiveOps.some((candidate) => candidate.id === selectedOperationId));
+      : imageOperationId
+        ? Boolean(operation)
+        : Boolean(selectedOperationId && opsState?.effectiveOps.some((candidate) => candidate.id === selectedOperationId));
     // Raw persisted operation ids are never a soft preference: if no longer
     // listed/effective for this model and node shape, block before mock or hub
     // submission. For an omitted id, the kernel's implicit/chosen operation is

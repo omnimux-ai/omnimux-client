@@ -120,6 +120,8 @@ npm run build      # 显式重建：dist/index.js、lib/client.js、lib/canvas.j
 
 提交语义：`wait:false` 异步提交拿 `taskId` → `{ dest, taskId }` 轮询 + 下载。`textComplete` 无 taskId 机制，在 awaitTask 阶段一次性执行并把文本落盘。
 
+图片节点的生成方式不在面板单独选择：`params.operation` 由参考图槽派生，本轮消费 0 张参考图提交 `text_to_image`，消费 ≥1 张提交该模型消费参考图的已上架 operation（`image_to_image` / `multi_reference`）。画布展示、执行前检查与请求构造共用同一派生结果。
+
 ### 并发与限流
 
 - 节点级并发：工作区 `settings.maxParallel`（=1 串行，N>1 批量，M3 既有行为，真实网关下不变）

@@ -113,10 +113,12 @@ test('text sources occupy the input header without creating media slots or copyi
   assert.match(supplied, /<textarea[^>]*><\/textarea>/);
 });
 
-test('image panel only renders slots of the selected operation', () => {
+test('image panel always exposes the optional reference well and never a mode selector', () => {
   const catalog = fixture('image');
   const html = render(node('image', {prompt:'Draw'}), catalog);
-  assert.doesNotMatch(html, /data-testid="wf-slot-wells"|data-slot="images"/);
+  assert.match(html, /data-testid="wf-slot-wells"/);
+  assert.match(html, /data-slot="images"/);
+  assert.doesNotMatch(html, /wf-image-operation-mode-section|生成方式/);
   assert.doesNotMatch(html, /aria-disabled="true"/);
   const withImage = render(node('image', {prompt:'Draw', params:{model:'test-model',operation:'with_image'}}), catalog);
   assert.match(withImage, /data-testid="wf-slot-wells"/);

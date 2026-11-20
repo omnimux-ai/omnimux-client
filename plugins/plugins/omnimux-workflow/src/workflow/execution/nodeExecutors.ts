@@ -32,7 +32,7 @@ import { openWorkflowSubmission } from '../seam/submitGuard.ts';
 import { findExecutionReadinessFailure } from '../../shared/validation/executionReadiness.ts';
 import { narrowCatalogByRouting, resolveEffectiveVideoGroup } from '../../shared/validation/lineConstraints.ts';
 import { readExplicitTargetSlot } from '../../shared/validation/compatKernel.ts';
-import { deriveSlotLayout, type SlotBindings, type SlotConflict } from '../../shared/graph/feedSlot/index.ts';
+import { deriveImageGenerationLayout, deriveSlotLayout, type SlotBindings, type SlotConflict } from '../../shared/graph/feedSlot/index.ts';
 import { effectiveInputDisplay } from '../../shared/graph/feedSlot/effectiveInputDisplay.ts';
 import type { CapabilityCatalog } from '../../shared/api.ts';
 
@@ -198,7 +198,10 @@ export function resolveUpstreamBindings(
     const effectiveCatalog = kind === 'video' && resolveEffectiveVideoGroup(catalog, modelId, params.routing)
       ? narrowCatalogByRouting(catalog, modelId, params.routing, params)
       : catalog;
-    const layout = deriveSlotLayout(effectiveCatalog, modelId, params.operation as string | undefined);
+    const layout = kind === 'image'
+      ? (deriveImageGenerationLayout(effectiveCatalog, modelId, params.operation as string | undefined)
+        ?? deriveSlotLayout(effectiveCatalog, modelId, params.operation as string | undefined))
+      : deriveSlotLayout(effectiveCatalog, modelId, params.operation as string | undefined);
     const incoming = edges.filter((edge) => edge.target === node.id);
     const standby = new Set((node.data?.slotStandbyEdgeIds ?? []) as string[]);
     if (node.data?.inputBindingVersion === 1) {
