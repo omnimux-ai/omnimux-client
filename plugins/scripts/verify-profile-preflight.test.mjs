@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -104,9 +104,44 @@ function buildAsar(files) {
   return Buffer.concat([head, ...chunks])
 }
 
-function runPreflight(profileRoot, appRoot) {
-  return spawnSync(process.execPath, [PREFLIGHT, profileRoot, '--app', appRoot], { encoding: 'utf8' })
+function runPreflight(profileRoot, appRoot, env = process.env) {
+  return spawnSync(process.execPath, [PREFLIGHT, profileRoot, '--app', appRoot], { encoding: 'utf8', env })
 }
+
+test('preflight provides its own DSH_HOME and cleans it on success and failure', (t) => {
+  const ambientHome = mkdtempSync(join(tmpdir(), 'omnimux-ambient-home-'))
+  const profile = makeProfile([{ name: 'omnimux-forms', source: `
+    import { statSync, writeFileSync } from 'node:fs'
+    import { join } from 'node:path'
+    export function apply() {
+      const home = process.env.DSH_HOME
+      if (!home || !statSync(home).isDirectory()) throw new Error('requires explicit DSH_HOME')
+      writeFileSync(join(home, 'fixture'), 'preflight')
+      console.log('fixture home=' + home)
+      if (process.env.OMNIMUX_PREFLIGHT_FIXTURE_FAIL === '1') throw new Error('fixture failure')
+    }
+  ` }])
+  const app = makeApp()
+  t.after(() => {
+    for (const path of [ambientHome, profile, app]) rmSync(path, { recursive: true, force: true })
+  })
+  const cleanEnv = { ...process.env }
+  delete cleanEnv.DSH_HOME
+  delete cleanEnv.OMNIMUX_PREFLIGHT_FIXTURE_FAIL
+
+  for (const [env, expectedStatus] of [
+    [cleanEnv, 0],
+    [{ ...cleanEnv, DSH_HOME: ambientHome, OMNIMUX_PREFLIGHT_FIXTURE_FAIL: '1' }, 1],
+  ]) {
+    const result = runPreflight(profile, app, env)
+    assert.equal(result.status, expectedStatus, result.stderr)
+    const temporaryHome = /^fixture home=(.+)$/m.exec(result.stdout)?.[1]
+    assert.ok(temporaryHome, result.stderr)
+    assert.notEqual(temporaryHome, ambientHome)
+    assert.equal(existsSync(temporaryHome), false)
+  }
+  assert.equal(existsSync(join(ambientHome, 'fixture')), false)
+})
 
 /** 一个用宿主包 `defineTool` 注册单个工具的插件。 */
 const HOST_TOOL_PLUGIN = `

@@ -96,10 +96,12 @@ function restartApp(target = 'prod') {
   }
 
   if (target === 'dev') {
-    spawnSync('pkill', ['-f', 'OmniMux Dev.app'], { stdio: 'ignore' })
+    const devApp = '/Applications/OmniMux Dev.app'
+    const devProcess = `^${devApp.replaceAll('.', '[.]')}/Contents/MacOS/OmniMux([[:space:]]|$)`
+    spawnSync('pkill', ['-f', devProcess], { stdio: 'ignore' })
     spawnSync('sleep', ['1'], { stdio: 'ignore' })
-    const open = spawnSync('open', ['-a', 'OmniMux Dev'], { stdio: 'inherit' })
-    if (open.status !== 0) die('open -a "OmniMux Dev" 失败（确认已打包或安装开发版）')
+    const open = spawnSync('open', ['-a', devApp], { stdio: 'inherit' })
+    if (open.status !== 0) die(`无法打开 ${devApp}（确认已打包或安装开发版）`)
     process.stdout.write('✓ 已请求重启 OmniMux Dev 开发版\n')
     return
   }
