@@ -162,9 +162,9 @@ function isScannableFile(root, file) {
   return isScannableSourceFile(root, file) || isExtensionManifestFile(root, file)
 }
 
-export function changedFilesFromGit(root, base = 'origin/main', { strict = false } = {}) {
+export function changedFilesFromGit(root, base = 'origin/main', { strict = false, includeRenameSources = false } = {}) {
   const changed = new Set()
-  const diff = spawnSync('git', ['-C', root, 'diff', '--name-only', '-z', `${base}...HEAD`], {
+  const diff = spawnSync('git', ['-C', root, 'diff', '--name-only', '-z', ...(includeRenameSources ? ['--no-renames'] : []), `${base}...HEAD`], {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   })

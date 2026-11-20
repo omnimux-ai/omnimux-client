@@ -1,7 +1,6 @@
 /**
  * scripts/review-packet.test.mjs
  * 净室评审输入包：只含三段输入 + 评审要求，缺任一输入、工作区不干净、证据为二进制/未绑定 head/含密钥都必须失败。
- * 规格：specs/3848-independent-review-packet.spec.md
  */
 
 import test from 'node:test'
@@ -97,7 +96,7 @@ test('干净工作区生成评审包：三段输入 + 评审要求 + SHA，无�
     assert.ok(!packet.includes(scratch), '不得出现仓库外绝对路径')
     assert.ok(packet.includes(evidenceText(headSha)), '证据原文完整保留')
     assert.ok(packet.includes('`````diff\n'), 'diff 围栏比内容里最长的反引号串更长')
-    assert.ok(packet.includes('docs/contracts/plugin-qa.md「评审与验收结论」'), '评审要求引用 plugin-qa 核对项')
+    assert.ok(packet.includes('AGENTS.md「合并与复核」'), '评审要求引用现行仓库规则')
     assert.ok(packet.includes('问题 / 位置（文件:行）/ 证据 / 严重度（阻断·建议·细节）/ 对应需求条目'))
     assert.ok(!packet.includes('README.md'), '不得混入 merge-base 之前的内容')
 
@@ -348,5 +347,35 @@ test('规格未提交（被忽略）或在仓库外：拒绝生成', () => {
       /仓库内已提交/,
     )
     assert.ok(existsSync(evidence))
+  }))
+})
+
+test('Issue-only pilot packet requires author record and full head-bound evidence', () => {
+  withFixtureRepo(repo => withScratch(scratch => {
+    const { headSha: oldHead } = prepareFeature(repo)
+    repo.write('app/docs/architecture.md', '# File picker\n\nBehavior verified against the implementation.\n')
+    const headSha = repo.commit('Change pilot docs')
+    const issueSnapshot = join(scratch, 'issue.json')
+    writeFileSync(issueSnapshot, JSON.stringify({
+      number: 123, url: 'https://github.com/example/example/issues/123', title: 'Describe file picker behavior', body: 'Verify both shell modes.',
+    }))
+    const evidence = writeEvidence(scratch, headSha)
+    const options = { cwd: repo.root, issueSnapshot, evidence: [evidence], base: 'main', outDir: join(scratch, 'out') }
+    assert.throws(() => createReviewPacket(options), /缺少 --docs-impact/)
+    const docsImpact = join(scratch, 'impact.json')
+    writeFileSync(docsImpact, JSON.stringify([{
+      subsystem: 'desktop-file-picker', document: 'app/docs/architecture.md', decision: 'updated',
+      behavior: 'Describe the observed file picker behavior', evidence: 'node --test demo.test.mjs',
+    }]))
+    const packet = readFileSync(createReviewPacket({ ...options, docsImpact }), 'utf8')
+    assert.match(packet, /## 需求（Issue 快照）/)
+    assert.match(packet, /Verify both shell modes/)
+    assert.match(packet, /文档复核：必需/)
+    assert.match(packet, /文档影响 SHA256：[a-f0-9]{64}/)
+    assert.match(packet, /必核对文档：`app\/docs\/architecture.md`/)
+    assert.match(packet, /## 文档影响/)
+    assert.throws(() => createReviewPacket({ ...options, docsImpact, evidence: [writeEvidence(scratch, oldHead)] }), /未绑定当前 head/)
+    assert.throws(() => createReviewPacket({ ...options, docsImpact, evidence: [writeEvidence(scratch, headSha.slice(0, 7))] }), /未绑定当前 head/)
+    assert.throws(() => createReviewPacket({ ...options, spec: SPEC_REL, docsImpact }), /其中|中的一项/)
   }))
 })

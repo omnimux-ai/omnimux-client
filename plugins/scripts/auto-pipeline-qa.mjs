@@ -26,7 +26,7 @@ export function runPackageTest(root, packageName, packageDir, options, evidenceD
     if (codeChanged) throw new PipelineError(`${packageName} 没有 test script，代码变更不能放行`)
     return { packageName, status: 0, tests: 0, skipped: 0, notApplicable: true }
   }
-  const result = runCommand('pnpm', ['--filter', packageJson.name || packageName, 'test'], { cwd: root, dryRun: options.dryRun })
+  const result = runCommand('pnpm', ['--filter', packageJson.name || packageName, 'test'], { cwd: root, dryRun: options.dryRun, env: options.packageEnv })
   const output = `${result.stdout || ''}${result.stderr || ''}`
   const summary = options.dryRun ? { tests: 1, passed: 1, failed: 0, skipped: 0 } : parseTestSummary(output)
   writeEvidence(join(evidenceDir, `test-${packageName}.log`), output)
@@ -37,7 +37,8 @@ export function runPackageTest(root, packageName, packageDir, options, evidenceD
   return { packageName, status: result.status, ...summary }
 }
 export function runStaticQa(wtDir, plugin, base, options, evidenceDir) {
-  const qaScript = join(wtDir, 'scripts', 'auto-qa-gate.mjs')
+  const workspace = existsSync(join(wtDir, 'plugins', 'scripts', 'auto-qa-gate.mjs')) ? join(wtDir, 'plugins') : wtDir
+  const qaScript = join(workspace, 'scripts', 'auto-qa-gate.mjs')
   if (!existsSync(qaScript)) throw new PipelineError(`Worktree 缺少 auto-qa-gate.mjs: ${qaScript}`)
   const reportPath = join(evidenceDir, 'auto-qa-report.json')
   const args = [qaScript, wtDir, '--plugin', plugin, '--diff', '--base', base, '--json', '--output', reportPath]
@@ -58,7 +59,7 @@ export function runIntegrationGates(root, options, evidenceDir) {
   const commands = [['pnpm', ['test:gates']], ['pnpm', ['check:boundaries']], ['pnpm', ['verify:stages']]]
   const results = []
   for (const [command, args] of commands) {
-    const result = runCommand(command, args, { cwd: root, dryRun: options.dryRun })
+    const result = runCommand(command, args, { cwd: root, dryRun: options.dryRun, env: options.packageEnv })
     writeEvidence(join(evidenceDir, `integration-${command}-${args[0]}.log`), `${result.stdout || ''}${result.stderr || ''}`)
     if (result.status !== 0) throw new PipelineError(`集成门禁失败: ${command} ${args.join(' ')}`)
     results.push({ command, args, status: result.status })

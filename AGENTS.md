@@ -38,7 +38,7 @@ plugins/    产品插件；仓库根单一 pnpm workspace；含共享包（如 p
    - **Toast / 提示条唯一适用范围**：仅限 ① 失败或阻断性错误；② 需要用户介入补救的异常（如原线路已下线需重选、自备渠道失效需切换扣费源）；③ 界面本身无直观视觉变化的回执（如复制到剪贴板）。
 5. **能力与工具面同源**：新增或调整核心业务能力时，产品 UI（HTTP/IPC）与 Agent 工具面（`ctx.tools` / 对外暴露工具）必须共享同一领域 Store/Service 与版本、校验及冲突语义（破坏性操作带显式确认守卫），并在同一 PR 同步更新 [插件工具契约清单](plugins/docs/contracts/plugin-agent-tools-inventory.md) 与对应使用说明。
 6. **i18n 与子模块**：i18n 走脚本，不手改多语言 JSON；密钥不入库、不入日志、不入群。子模块 `app/deepseek-harness` 的 pin 改动必须同时更新 `PROVENANCE.json`，并在 PR 里说明升级原因。
-7. **文档随改动复核**：凡改变结构、工具契约、构建脚本或发布边界的 PR，必须同步核查并更新受影响的 `README.md`、`app/docs/`、`plugins/docs/contracts/` 或 `specs/`；文档严格区分「当前已实现」与「规划中」。
+7. **文档随改动复核**：凡改变结构、工具契约、构建脚本或发布边界的 PR，必须同步核查并更新受影响的 `README.md`、`app/docs/`、`plugins/docs/contracts/` 或 `specs/`；文档严格区分「当前已实现」与「规划中」。涉及试点子系统时，改前从[子系统索引](docs/subsystems.md)定位主文档与源码。开 PR 前核对行为并记录文档影响。独立评审 Agent 对照实际改动、文档和证据，协调 Agent 核对当前提交的通过结果后入队。
 
 ## 验证（按改动边界选最小集）
 

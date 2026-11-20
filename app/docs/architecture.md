@@ -79,7 +79,3 @@ OmniMux 使用 `ai.omnimux.desktop` 并保留既有更新端点。版本检查�
 
 - [Desktop service contract](../dsh-plugin-desktop/docs/plugin-services.md)
 - [Package README](../dsh-plugin-desktop/README.md)
-- [Pinned upstream and isolated Yarn workspace](../.agents/notes/implemented/process/2026-08-15-pinned-upstream-and-isolated-yarn-workspace.md)
-- [Profile and pnpm services decision](../.agents/notes/implemented/architecture/2026-08-15-desktop-profile-and-pnpm-services.md)
-- [Advanced shell decision](../.agents/notes/implemented/architecture/2026-08-15-desktop-advanced-shell.md)
-- [Native shell generation and platform adapters](../.agents/notes/implemented/architecture/2026-08-19-native-shell-generation-and-platform-adapters.md)

@@ -52,7 +52,7 @@ The current MVP boundary and its admission and consent rules are owned by mvp-sc
 
 | Path | Owns / read when | Does not own |
 | --- | --- | --- |
-| CONTEXT.md, docs/README.md | Product map and document discovery | Live deployment status or new authority |
+| [Subsystem index](../docs/subsystems.md) | Pilot subsystem documentation, source and verification | Live deployment status or new authority |
 | docs/tools/hub-interfaces.html | Hub interface panel (models, tools, accounts, publish channels); regenerate with `pnpm hub:interfaces` | A deployed service |
 | `plugins/omnimux/` | Hub implementation; [hub rules](plugins/omnimux/AGENTS.md) | Domain-private storage |
 | `plugins/omnimux-*/` | Each business domain; nested `AGENTS.md` where present | Hub chrome, keys, provider routing |
@@ -87,7 +87,7 @@ Select the minimal sufficient checks for the changed surfaces using plugin QA ·
 
 ## Delivery
 
-- The coordinating Agent merges product PRs through the [repository merge and acceptance rules](../AGENTS.md#合并与复核). Use the ordinary PR workflow for these changes: the `auto:run` merge path can request a merge before checking local end-to-end evidence. Never push to `main` or bypass required checks.
+- The coordinating Agent merges product PRs through the [repository merge and acceptance rules](../AGENTS.md#合并与复核). Use the ordinary PR workflow for product changes. For a documentation review pilot PR, `auto:run` hands off to the coordinating Agent for independent review and applicable end-to-end acceptance before enqueueing. Never push to `main` or bypass required checks.
 - For installed runtime changes, use the [Dev sync procedure](README.md#本地开发与交付) after merge. Keep unmerged worktrees out of shared Dev/Prod. Prod `~/.omnimux`, `--prod` and `--all` need explicit release authorization.
 - Report actual check results and skip reasons. Keep code, merge, worktree verification, Dev materialization, and Dev acceptance as distinct states; materialization alone is not delivery.
 - Retain the task worktree until all applicable post-merge checks pass and their evidence is saved. Clean up only this task's files and worktree.
