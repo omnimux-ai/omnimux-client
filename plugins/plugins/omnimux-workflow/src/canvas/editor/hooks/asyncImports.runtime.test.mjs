@@ -3,6 +3,9 @@ import { test } from 'node:test';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
+import { draftFromRealPath } from '../utils/localFileDraft.ts';
+import { planImportNodeFill } from '../utils/resourcePickerPolicy.ts';
+import { buildImportedMediaData } from '../../../shared/localMedia.ts';
 
 const requireHub = createRequire(new URL('../../../../../omnimux/package.json', import.meta.url));
 const { JSDOM } = requireHub('jsdom');
@@ -11,11 +14,19 @@ const bundle = await build({
     import React from 'react';
     import { useResourcePicker } from './useResourcePicker.ts';
     import { useProjectAssets } from './useProjectAssets.ts';
+    import { useDocumentHydration } from './useDocumentHydration.ts';
     export { AssetsDrawer } from '../components/AssetsDrawer.tsx';
     export { default as LocalUploadPane } from '../components/ResourcePickerModal/LocalUploadPane.tsx';
     export function HookHost({ workspaceId }) {
       window.currentPicker = useResourcePicker('target', workspaceId);
       window.currentAssets = useProjectAssets(workspaceId);
+      return null;
+    }
+    export function DocumentHost({ source }) {
+      const [data, setData] = React.useState(source);
+      const update = React.useCallback(patch => setData(current => ({ ...current, ...patch })), []);
+      window.documentFixture = { data, update };
+      useDocumentHydration(data.mediaUrl, data.mediaAssets, typeof data.documentText === 'string', update);
       return null;
     }
     export { createElement, act, StrictMode } from 'react';
@@ -123,6 +134,122 @@ test('native fill uses current gateway and native path; cancellation and network
   pending = f.win.currentPicker.fillImportNode();
   await f.flush(() => f.picks[2].reject(new Error('offline')));
   assert.equal(await pending, false); assert.equal(f.toasts[0].message, 'picker.pickFailed');
+});
+
+test('typed node import asks the native picker for matching extensions and rejects mismatches', async t => {
+  const f = setup(t); await f.hooks('A');
+  const examples = [
+    { type: 'image', extension: 'png', wrong: 'mp4' },
+    { type: 'image', extension: 'png', wrong: 'tiff' },
+    { type: 'image', extension: 'png', wrong: 'heif' },
+    { type: 'video', extension: 'mp4', wrong: 'wav' },
+    { type: 'audio', extension: 'wav', wrong: 'png' },
+  ];
+  for (const { type, extension, wrong } of examples) {
+    f.win.fixture.state.nodes[0].data.materialType = type;
+    const pending = f.win.currentPicker.fillImportNode();
+    const lastPick = f.picks.at(-1);
+    assert.equal(lastPick.options?.multiple, false);
+    assert.ok(lastPick.options?.extensions.includes(extension));
+    assert.ok(!lastPick.options.extensions.includes(wrong));
+    await f.flush(() => lastPick.resolve(picked(`/wrong.${wrong}`)));
+    assert.equal(await pending, false);
+    assert.equal(f.writes.length, 0);
+    assert.equal(f.toasts.at(-1).message, 'picker.unsupported');
+  }
+});
+
+test('node import and replacement write only one file to the existing node', async t => {
+  const f = setup(t); await f.hooks('A');
+  const multiple = f.win.currentPicker.fillImportNode();
+  const selected = ['/first.PNG', '/second.jpg'];
+  await f.flush(() => f.picks.at(-1).resolve({ ok: true, body: { path: selected[0], paths: selected } }));
+  assert.equal(await multiple, false);
+  assert.equal(f.writes.length, 0);
+  assert.equal(f.toasts.at(-1).message, 'picker.pickFailed');
+
+  for (const path of selected) {
+    const pending = f.win.currentPicker.fillImportNode();
+    await f.flush(() => f.picks.at(-1).resolve(picked(path)));
+    assert.equal(await pending, true);
+    const write = f.writes.at(-1);
+    assert.equal(write.addNodes, undefined);
+    assert.equal(write.nodePatches.length, 1);
+    const patch = write.nodePatches[0];
+    assert.equal(patch.nodeId, 'target');
+    assert.equal(patch.data.realPath, path);
+    assert.equal(patch.data.materialType, 'image');
+    assert.equal(patch.data.nodeKind, 'import');
+    Object.assign(f.win.fixture.state.nodes[0].data, patch.data);
+  }
+});
+
+test('replacing a mounted JSON node with the same file path rereads its edited contents', async t => {
+  const f = setup(t);
+  const file = draftFromRealPath('/media/prompt.json');
+  const source = { materialType: 'document', nodeKind: 'import', mediaUrl: file.previewUrl };
+  const requests = [];
+  let contents = '{"prompt":"original"}';
+  f.win.fetch = async (url, options) => {
+    requests.push({ url, cache: options.cache });
+    const current = contents;
+    return { ok: true, text: async () => current };
+  };
+  await f.render(f.api.DocumentHost, { source });
+  assert.equal(f.win.documentFixture.data.documentText, contents);
+  const lastRequestCount = requests.length;
+
+  contents = '{"prompt":"edited"}';
+  const nodes = [{ id: 'document', type: 'material', position: { x: 0, y: 0 }, data: f.win.documentFixture.data }];
+  const plan = planImportNodeFill({ nodes, targetNodeId: 'document', files: [file] });
+  await f.flush(() => f.win.documentFixture.update(plan.nodePatches[0].data));
+  assert.equal(f.win.documentFixture.data.documentText, contents);
+  assert.deepEqual(requests.slice(lastRequestCount), [{ url: source.mediaUrl, cache: 'no-store' }]);
+});
+
+test('reselecting a JSON source while its prior read is pending ignores the old response', async t => {
+  const f = setup(t);
+  const file = draftFromRealPath('/media/prompt.json');
+  const source = { materialType: 'document', nodeKind: 'import', mediaUrl: file.previewUrl,
+    mediaAssets: [{ type: 'document', url: file.previewUrl }] };
+  const requests = [];
+  f.win.fetch = (url, options) => {
+    const request = deferred();
+    requests.push({ ...request, url, signal: options.signal });
+    return request.promise;
+  };
+  await f.render(f.api.DocumentHost, { source });
+  const previous = requests.at(-1);
+  const nodes = [{ id: 'document', type: 'material', position: { x: 0, y: 0 }, data: source }];
+  const plan = planImportNodeFill({ nodes, targetNodeId: 'document', files: [file] });
+  await f.flush(() => f.win.documentFixture.update(plan.nodePatches[0].data));
+  const next = requests.at(-1);
+  assert.notEqual(next, previous);
+  assert.equal(next.url, previous.url);
+  assert.equal(previous.signal.aborted, true);
+
+  await f.flush(() => previous.resolve({ ok: true, text: async () => '{"prompt":"stale"}' }));
+  assert.equal(f.win.documentFixture.data.documentText, undefined);
+  await f.flush(() => next.resolve({ ok: true, text: async () => '{"prompt":"current"}' }));
+  assert.equal(f.win.documentFixture.data.documentText, '{"prompt":"current"}');
+});
+
+test('reconnecting a missing JSON resource reads the replacement and clears the previous error', async t => {
+  const f = setup(t);
+  const source = buildImportedMediaData({ realPath: '/media/missing.json', name: 'missing.json', materialType: 'document' });
+  const replacement = buildImportedMediaData({ realPath: '/media/reconnected.json', name: 'reconnected.json', materialType: 'document' });
+  const requests = [];
+  f.win.fetch = async url => {
+    requests.push(url);
+    return url === source.mediaUrl ? { ok: false, status: 404 } : { ok: true, text: async () => '{"prompt":"recovered"}' };
+  };
+  await f.render(f.api.DocumentHost, { source });
+  assert.match(f.win.documentFixture.data.documentError, /404/);
+  const failedReads = requests.length;
+  await f.flush(() => f.win.documentFixture.update(replacement));
+  assert.deepEqual(requests.slice(failedReads), [replacement.mediaUrl]);
+  assert.equal(f.win.documentFixture.data.documentText, '{"prompt":"recovered"}');
+  assert.equal(f.win.documentFixture.data.documentError, undefined);
 });
 
 test('native canvas import keeps a Windows network path for the node and media URL', async t => {
