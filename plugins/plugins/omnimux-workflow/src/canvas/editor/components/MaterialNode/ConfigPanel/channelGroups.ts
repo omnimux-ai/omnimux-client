@@ -24,6 +24,7 @@ import type {
   CapabilityCatalog,
   CatalogChannelGroupDto,
   CatalogChannelGroupPricingDto,
+  OperationContractDto,
 } from '../../../../../shared/api.ts';
 
 export interface ChannelGroupItem {
@@ -60,7 +61,62 @@ export interface ChannelGroupItem {
    * resolution and aspect, and the input types it refuses (`max: 0` drops the slot).
    */
   constraints?: LineConstraints;
+  /** Gateway operation variants of this line; their inputs carry the real media caps. */
+  effectiveOperations?: OperationContractDto[];
   enabled: boolean;
+}
+
+/** One media type a channel group accepts, with the maximum number of items. */
+export type GroupMediaType = 'image' | 'video' | 'audio';
+
+export interface GroupMediaCapability {
+  type: GroupMediaType;
+  max: number;
+}
+
+const GROUP_MEDIA_TYPES: readonly GroupMediaType[] = ['image', 'video', 'audio'];
+
+/** Sum each media type inside one operation variant, then take the max across variants. */
+function mediaMaxima(operations?: readonly OperationContractDto[]): Map<GroupMediaType, number> {
+  const maxima = new Map<GroupMediaType, number>();
+  for (const operation of operations ?? []) {
+    const variantSums = new Map<GroupMediaType, number>();
+    for (const input of operation.inputs ?? []) {
+      const type = input.type as GroupMediaType;
+      if (!GROUP_MEDIA_TYPES.includes(type)) continue;
+      const max = typeof input.max === 'number' && Number.isFinite(input.max) && input.max > 0 ? input.max : 0;
+      if (max > 0) variantSums.set(type, (variantSums.get(type) ?? 0) + max);
+    }
+    for (const [type, sum] of variantSums) maxima.set(type, Math.max(maxima.get(type) ?? 0, sum));
+  }
+  return maxima;
+}
+
+/**
+ * Media chips a channel row shows. A group's own variants win; a snapshot without
+ * group variants falls back to the model contract. Explicit per-type ceilings on
+ * the line (`max: 0`) remove a type entirely.
+ */
+export function resolveGroupMediaCapabilities(
+  group: Pick<ChannelGroupItem, 'constraints' | 'effectiveOperations'>,
+  modelOperations?: readonly OperationContractDto[],
+): GroupMediaCapability[] {
+  const maxima = mediaMaxima(
+    group.effectiveOperations && group.effectiveOperations.length > 0
+      ? group.effectiveOperations
+      : modelOperations,
+  );
+  for (const type of GROUP_MEDIA_TYPES) {
+    const ceiling = group.constraints?.inputs?.[type]?.max;
+    if (typeof ceiling !== 'number') continue;
+    if (ceiling <= 0) maxima.delete(type);
+    else maxima.set(type, Math.min(maxima.get(type) ?? ceiling, ceiling));
+  }
+  return GROUP_MEDIA_TYPES
+    .flatMap((type) => {
+      const max = maxima.get(type);
+      return typeof max === 'number' && max > 0 ? [{ type, max }] : [];
+    });
 }
 
 /**

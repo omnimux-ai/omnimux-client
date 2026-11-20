@@ -37,9 +37,12 @@ import {
   parseModelAndGroup,
   isByokGroup,
   buildChannelSelectionPayload,
+  resolveGroupMediaCapabilities,
   type ChannelGroupItem,
+  type GroupMediaCapability,
   type RuntimeByokChannelSettings,
 } from './channelGroups';
+import type { OperationContractDto } from '../../../../../shared/api.ts';
 import type { ChannelFallbackState } from './channelContractReconciler';
 import { groupMatchesEffectiveVideoVersion } from '../../../../../shared/validation/lineConstraints.ts';
 
@@ -70,8 +73,7 @@ export interface ModelCascadeMenuProps {
   onSelect: (value: ModelCascadeSelectValue) => void;
 }
 
-const Chip: React.FC<{ tone?: 'danger' | 'muted'; children: React.ReactNode }> = ({ tone = 'muted', children }) => (
-  <span
+const Chip: React.FC<{ tone?: 'danger' | 'muted'; children: React.ReactNode }> = ({ tone = 'muted', children }) => (  <span
     style={{
       fontSize: 10,
       padding: '1px 5px',
@@ -86,6 +88,16 @@ const Chip: React.FC<{ tone?: 'danger' | 'muted'; children: React.ReactNode }> =
     {children}
   </span>
 );
+
+const GROUP_MEDIA_CHIP_LABEL: Record<GroupMediaCapability['type'], string> = {
+  image: '图',
+  video: '视频',
+  audio: '音频',
+};
+
+function groupMediaChipText(capability: GroupMediaCapability): string {
+  return `≤${capability.max} ${GROUP_MEDIA_CHIP_LABEL[capability.type]}`;
+}
 
 /**
  * 读取浮层要用的不透明表面色。
@@ -149,10 +161,12 @@ const ChannelRow: React.FC<{
   checked: boolean;
   disabled?: boolean;
   onSelect: () => void;
-}> = ({ group, checked, disabled = false, onSelect }) => {
+  modelOperations?: readonly OperationContractDto[];
+}> = ({ group, checked, disabled = false, onSelect, modelOperations }) => {
   const isAvailable = group.isAvailable !== false && group.enabled !== false;
   const isRowDisabled = disabled || !isAvailable;
   const isByok = isByokGroup(group);
+  const mediaCapabilities = resolveGroupMediaCapabilities(group, modelOperations);
   // 价格芯片只在目录真的给了可比数字时出现：表达式/token 计费的线路照实显示目录的说明文字。
   const priceChip = !isByok && typeof group.pricing?.pointsEstimate === 'number'
     ? formatPriceChip(group.pricing?.priceRatio ?? group.pricing?.discountRate)
@@ -190,6 +204,9 @@ const ChannelRow: React.FC<{
           {group.chipLabel ? <Chip tone="muted">{group.chipLabel}</Chip> : null}
           {priceChip ? <Chip tone={chipIsMarkup ? 'muted' : 'danger'}>{priceChip}</Chip> : null}
           {billing ? <Chip>{billing}</Chip> : null}
+          {mediaCapabilities.map((capability) => (
+            <Chip key={capability.type} tone="muted">{groupMediaChipText(capability)}</Chip>
+          ))}
         </div>
         {group.badge ? (
           <div style={{ fontSize: 11, color: 'var(--wf-cascade-muted)', lineHeight: 1.4 }}>
@@ -287,7 +304,8 @@ const CascadeChannelColumn: React.FC<{
   onSelect?: (groupId: string) => void;
   runtimeSettings?: RuntimeByokChannelSettings | null;
   fallbackState?: ChannelFallbackState | null;
-}> = ({ channelGroups, checkedIds, preview = false, onSelect, runtimeSettings, fallbackState }) => {
+  modelOperations?: readonly OperationContractDto[];
+}> = ({ channelGroups, checkedIds, preview = false, onSelect, runtimeSettings, fallbackState, modelOperations }) => {
   const handleSelectGroup = (groupId: string) => {
     onSelect?.(groupId);
   };
@@ -332,6 +350,7 @@ const CascadeChannelColumn: React.FC<{
                     checked={checkedIds.includes(group.id)}
                     disabled={preview}
                     onSelect={() => handleSelectGroup(group.id)}
+                    modelOperations={modelOperations}
                   />
                 ))}
               </div>
@@ -355,6 +374,7 @@ const CascadeChannelColumn: React.FC<{
                       checked={checkedIds.includes(group.id)}
                       disabled={preview}
                       onSelect={() => handleSelectGroup(group.id)}
+                      modelOperations={modelOperations}
                     />
                   ))}
                 </div>
@@ -434,6 +454,10 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
       ? groupsForModel(activeModelId)
       : [],
     [options, activeModelId, groupsForModel],
+  );
+  const channelModelOperations = useMemo(
+    () => options.find((item) => item.id === channelModelId)?.operations,
+    [options, channelModelId],
   );
   const hasMultipleChannels = channelGroups.length > 1;
   const showChannelColumn = hasMultipleChannels && (hoveringOtherBrand ? hoverModelId !== null : true);
@@ -612,6 +636,7 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
               checkedIds={NO_GROUP_IDS}
               runtimeSettings={runtimeSettings}
               fallbackState={fallbackState}
+              modelOperations={item.operations}
             />
           </div>
         );
@@ -761,6 +786,7 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
                   onSelect={handleSelectGroup}
                   runtimeSettings={runtimeSettings}
                   fallbackState={fallbackState}
+                  modelOperations={channelModelOperations}
                 />
               </div>
             ) : null}
