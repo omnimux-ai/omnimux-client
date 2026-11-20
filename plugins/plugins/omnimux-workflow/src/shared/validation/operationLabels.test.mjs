@@ -31,7 +31,7 @@ test('#4103 label 非空且 ≠ id 时原样使用（型号 YAML 文案优先）
 
 test('#4103 label 等于 id（gateway-only 旧行为）时改用已审校目录', () => {
   assert.equal(resolveOperationLabel({ id: 'text_to_video', label: 'text_to_video' }), '文生视频');
-  assert.equal(resolveOperationLabel({ id: 'first_last_frame', label: 'first_last_frame' }), '首尾帧过渡');
+  assert.equal(resolveOperationLabel({ id: 'first_last_frame', label: 'first_last_frame' }), '首尾帧');
 });
 
 test('#4103 六个视频 operation 中英齐备，document/webpage 不再回落 id', () => {
@@ -45,14 +45,14 @@ test('#4103 六个视频 operation 中英齐备，document/webpage 不再回落 
   ];
   assert.deepEqual(
     videoOps.map((id) => resolveOperationLabel({ id })),
-    ['文生视频', '首帧驱动', '首尾帧过渡', '全能参考', '文档参考', '网页参考'],
+    ['文生视频', '首帧', '首尾帧', '全能参考', '文档参考', '网页参考'],
   );
   assert.deepEqual(
     videoOps.map((id) => resolveOperationLabel({ id }, 'en')),
     [
       'Text to video',
-      'First-frame driven',
-      'First-last frame transition',
+      'First frame',
+      'First-last frame',
       'All-reference video',
       'Document to video',
       'Webpage to video',

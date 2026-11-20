@@ -309,8 +309,8 @@ async function drive(config, checkVideoModes) {
     assert.ok(observations.groups.every(group => !group.disabled));
     await page.screenshot({ path: config.run + '/dark-economy-picker.png' });
 
-    await chooseMode('首尾帧过渡');
-    observations.frames = await readPanel('首尾帧过渡.*720P.*5s');
+    await chooseMode('首尾帧');
+    observations.frames = await readPanel('首尾帧.*720P.*5s');
     assert.deepEqual(observations.frames.refs, []);
     assert.deepEqual(observations.frames.emptyFrames, ['first_frame', 'last_frame']);
     assert.equal(observations.frames.addReference, 0);
@@ -454,12 +454,12 @@ async function checkVideoModes(page, config, observations, assert) {
 
   const cycle = [];
   observations.videoModes = { two, ten, cycle };
-  for (const label of ['首帧驱动', '文生视频', '图片参考']) {
+  for (const label of ['首帧', '文生视频', '图片参考']) {
     observations.failure = { phase: label };
     await page.click('loc=css:' + modeMenu + ' [role="radio"]:has-text("' + label + '")', { label: 'Select ' + label });
     const state = await inspect(muse, label);
     assert.equal(state.add, Number(label === '图片参考'));
-    if (label === '首帧驱动') {
+    if (label === '首帧') {
       assert.equal(state.firstFrame, 'empty');
       assert.equal(state.ready, false);
     }
