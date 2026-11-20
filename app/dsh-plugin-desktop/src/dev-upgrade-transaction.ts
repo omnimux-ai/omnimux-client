@@ -375,7 +375,9 @@ async function capture(options: DevRecoveryOptions, device: number, root: RootKe
   const descriptor = openSync(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600)
   try {
     if (fstatSync(descriptor).dev !== device) throw new Error('Recovery archive is outside its NAS volume')
-    const tar = spawnSync('/usr/bin/tar', ['-c', '--format=pax', ...ARCHIVE_OPTIONS, '-f', '-', '-C', dirname(source), '--', basename(source)], {
+    // Archive logical file bytes. The streaming verifier expects ordinary PAX
+    // members, while libarchive otherwise substitutes GNU sparse paths.
+    const tar = spawnSync('/usr/bin/tar', ['-c', '--format=pax', '--no-read-sparse', ...ARCHIVE_OPTIONS, '-f', '-', '-C', dirname(source), '--', basename(source)], {
       stdio: ['ignore', descriptor, 'ignore'],
     })
     if (tar.status !== 0) throw new Error('Could not archive stopped Dev on NAS', { cause: tar.error })
@@ -543,7 +545,7 @@ export async function recoverDevFromArchive(options: DevRollbackOptions): Promis
         const scratch = mkdtempSync(join(dirname(target), '.omnimux-dev-restore-'))
         const source = join(scratch, basename(target))
         staging.push({ scratch, source, target })
-        run('/usr/bin/tar', ['-x', '-p', ...ARCHIVE_OPTIONS, '-f', archive, '-C', scratch])
+        run('/usr/bin/tar', ['-x', '-p', '-S', ...ARCHIVE_OPTIONS, '-f', archive, '-C', scratch])
         if (archiveIdentity(archive) !== identity) throw new Error('Recovery archive changed during restore')
         if (treeHash(await readTree(source)) !== content) throw new Error('Restored Dev data differs from the NAS archive')
         if (root === 'appPath') (options.hooks?.verifyApp ?? verifyApp)(source)

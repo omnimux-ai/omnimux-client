@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, closeSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readlinkSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync, writeSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'vitest'
@@ -119,6 +119,26 @@ describe.skipIf(process.platform !== 'darwin')('macOS Dev archive cutover', () =
     expect(existsSync(fixture.recoveryDir)).toBe(false)
     expect(readFileSync(join(fixture.paths.appPath, 'binary'), 'utf8')).toBe('old-app')
     expect(readFileSync(join(fixture.profileDir, 'package.json'), 'utf8')).toBe('old-graph')
+  })
+
+  test('verifies and recovers sparse Chromium cache files', async () => {
+    const fixture = makeFixture()
+    const path = join(fixture.paths.userDataDir, 'chromium-cache')
+    const offset = 2 * 1024 * 1024
+    const tail = Buffer.from('cache payload')
+    const descriptor = openSync(path, 'wx', 0o600)
+    try {
+      writeSync(descriptor, tail, 0, tail.length, offset)
+    } finally {
+      closeSync(descriptor)
+    }
+    const original = readFileSync(path)
+    expect(original.length).toBe(offset + tail.length)
+    await upgradeDevWithRecovery(fixture)
+    writeFileSync(path, 'changed by the new process')
+    await recoverDevFromArchive(fixture)
+    expect(readFileSync(path).equals(original)).toBe(true)
+    expect(lstatSync(path).mode & 0o777).toBe(0o600)
   })
 
   test('rejects a changed NAS archive before replacing any live path', async () => {
