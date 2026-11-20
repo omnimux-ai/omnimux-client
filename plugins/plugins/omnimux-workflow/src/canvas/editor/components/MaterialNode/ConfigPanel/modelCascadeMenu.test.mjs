@@ -209,6 +209,10 @@ test('model transition and routing are written atomically once', () => {
   assert.doesNotMatch(picker, /onUpdateNodeData|\.\.\.params/);
   assert.match(picker, /handleModelChange\(modelId, \{ strategy, allowedGroups, channelGroupId, sourceType \}\)/);
 });
+test('channel rows render media-capability chips from group or model operations', () => {
+  assert.match(cascadeSrc, /resolveGroupMediaCapabilities\(group, modelOperations\)/);
+  assert.match(cascadeSrc, /groupMediaChipText\(capability\)/);
+});
 test('official channel section no longer renders a 官方专线 subheading', () => {
   assert.doesNotMatch(cascadeSrc, /官方专线/);
   assert.match(cascadeSrc, /className="wf-cascade-channel-list"/);

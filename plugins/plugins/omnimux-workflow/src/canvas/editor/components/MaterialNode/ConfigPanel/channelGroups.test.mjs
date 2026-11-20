@@ -18,6 +18,7 @@ import {
   isLineConstraintsShape,
   buildChannelSelectionPayload,
   detectModelModality,
+  resolveGroupMediaCapabilities,
 } from './channelGroups.ts';
 // 官方线路只来自中枢目录：测试用真实中枢投影当夹具（产品代码不得 import 中枢内部）。
 // 同一份「目录 → 画布」投影一致性由 scripts/verify-cross-plugin-model-alignment.mjs 门禁覆盖。
@@ -34,6 +35,36 @@ const directoryCatalog = (modelId) => ({ models: [{ id: modelId, channelGroups: 
 const constraintOnly = (values) => Object.fromEntries([['only', values]]);
 
 describe('Canvas ConfigPanel ChannelGroups', () => {
+  it('resolves media capabilities from group variants, model contract and line ceilings', () => {
+    const modelOperations = [{
+      id: 'video_multi_ref',
+      inputs: [
+        { type: 'text', slot: 'prompt' },
+        { type: 'image', slot: 'reference_images', max: 30 },
+        { type: 'video', slot: 'reference_videos', max: 10 },
+        { type: 'audio', slot: 'reference_audios', max: 10 },
+      ],
+    }];
+    assert.deepEqual(resolveGroupMediaCapabilities({}, modelOperations), [
+      { type: 'image', max: 30 },
+      { type: 'video', max: 10 },
+      { type: 'audio', max: 10 },
+    ]);
+    assert.deepEqual(resolveGroupMediaCapabilities({
+      effectiveOperations: [{ id: 'video_multi_ref', inputs: [{ type: 'image', max: 2 }] }],
+    }, modelOperations), [{ type: 'image', max: 2 }]);
+    assert.deepEqual(resolveGroupMediaCapabilities({
+      constraints: { inputs: { image: { max: 0 } } },
+    }, modelOperations), [
+      { type: 'video', max: 10 },
+      { type: 'audio', max: 10 },
+    ]);
+    assert.deepEqual(resolveGroupMediaCapabilities({}, [{
+      id: 'first_last_frame',
+      inputs: [{ type: 'image', max: 1 }, { type: 'image', max: 1 }],
+    }]), [{ type: 'image', max: 2 }]);
+  });
+
   it('parses model and group safely', () => {
     assert.deepEqual(parseModelAndGroup('seedance-2-0@standard'), {
       modelId: 'seedance-2-0',
