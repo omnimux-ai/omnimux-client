@@ -200,7 +200,7 @@ const MaterialNode: React.FC<NodeProps> = ({ id, data, selected }) => {
   useDocumentHydration(
     materialType === 'document' ? mediaUrl : undefined,
     mediaAssets,
-    typeof nodeData.documentText === 'string' || Boolean(nodeData.documentError),
+    typeof nodeData.documentText === 'string',
     updateNodeData,
   );
 

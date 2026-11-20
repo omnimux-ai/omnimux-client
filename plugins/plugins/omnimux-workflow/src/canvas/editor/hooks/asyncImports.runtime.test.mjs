@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { draftFromRealPath } from '../utils/localFileDraft.ts';
 import { planImportNodeFill } from '../utils/resourcePickerPolicy.ts';
+import { buildImportedMediaData } from '../../../shared/localMedia.ts';
 
 const requireHub = createRequire(new URL('../../../../../omnimux/package.json', import.meta.url));
 const { JSDOM } = requireHub('jsdom');
@@ -25,7 +26,7 @@ const bundle = await build({
       const [data, setData] = React.useState(source);
       const update = React.useCallback(patch => setData(current => ({ ...current, ...patch })), []);
       window.documentFixture = { data, update };
-      useDocumentHydration(data.mediaUrl, data.mediaAssets, typeof data.documentText === 'string' || Boolean(data.documentError), update);
+      useDocumentHydration(data.mediaUrl, data.mediaAssets, typeof data.documentText === 'string', update);
       return null;
     }
     export { createElement, act, StrictMode } from 'react';
@@ -231,6 +232,24 @@ test('reselecting a JSON source while its prior read is pending ignores the old 
   assert.equal(f.win.documentFixture.data.documentText, undefined);
   await f.flush(() => next.resolve({ ok: true, text: async () => '{"prompt":"current"}' }));
   assert.equal(f.win.documentFixture.data.documentText, '{"prompt":"current"}');
+});
+
+test('reconnecting a missing JSON resource reads the replacement and clears the previous error', async t => {
+  const f = setup(t);
+  const source = buildImportedMediaData({ realPath: '/media/missing.json', name: 'missing.json', materialType: 'document' });
+  const replacement = buildImportedMediaData({ realPath: '/media/reconnected.json', name: 'reconnected.json', materialType: 'document' });
+  const requests = [];
+  f.win.fetch = async url => {
+    requests.push(url);
+    return url === source.mediaUrl ? { ok: false, status: 404 } : { ok: true, text: async () => '{"prompt":"recovered"}' };
+  };
+  await f.render(f.api.DocumentHost, { source });
+  assert.match(f.win.documentFixture.data.documentError, /404/);
+  const failedReads = requests.length;
+  await f.flush(() => f.win.documentFixture.update(replacement));
+  assert.deepEqual(requests.slice(failedReads), [replacement.mediaUrl]);
+  assert.equal(f.win.documentFixture.data.documentText, '{"prompt":"recovered"}');
+  assert.equal(f.win.documentFixture.data.documentError, undefined);
 });
 
 test('native canvas import keeps a Windows network path for the node and media URL', async t => {
