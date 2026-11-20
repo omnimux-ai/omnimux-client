@@ -43,7 +43,7 @@ const bundle = await build({
         export const AssetItemContextMenu = () => null;
         export const FolderContextMenu = () => null;`
       : `export const pickLocalFiles = options => window.fixture.pick(options);
-        export const probeLocalFiles = (...args) => window.fixture.probe(...args);
+        export const probeLocalFiles = (paths, contentMime) => window.fixture.probe(paths, contentMime);
         export const getWorkspaceAssets = (...args) => window.fixture.get(...args);
         export const indexWorkspaceAssets = (...args) => window.fixture.mutate('index', ...args);
         export const instantiateWorkspaceAssets = (...args) => window.fixture.mutate('instantiate', ...args);
@@ -208,7 +208,7 @@ test('local pane ignores selection after closing, while a new selection still ad
   assert.equal(added[0].realPath, '/new.png');
 });
 
-test('named slot preserves the legacy desktop input and reports a missing path without reopening', async t => {
+test('named slot opens the desktop file input with its extensions and available count', async t => {
   const f = setup(t);
   f.win.__DSH_HOST_PATHS__ = { pathFor: () => '' };
   const namedSlot = { extensions: ['mp3', 'wav'], remaining: 1, readDuration: false, accepts: () => true };
@@ -242,7 +242,12 @@ test('named slot uses the shared picker with its extensions, count and metadata 
     return { ok: true, body: { items: paths.map(path => ({ path, exists: true, mime: 'audio/mpeg', size: 42 })) } };
   };
   const namedSlot = { extensions: ['mp3', 'wav'], remaining: 1, readDuration: false, accepts: file => file.mime === 'audio/mpeg' };
-  const props = { files: [], active: true, onAddFiles: files => added.push(...files), onRemove() {} };
+  const props = {
+    files: [], active: true, onRemove() {},
+    onAddFiles(files) {
+      for (const file of files) added.push(file);
+    },
+  };
   await f.render(f.api.LocalUploadPane, { ...props, namedSlot });
   let inputOpens = 0;
   f.win.document.querySelector('input[type="file"]').addEventListener('click', () => { inputOpens += 1; });

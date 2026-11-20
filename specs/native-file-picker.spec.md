@@ -20,3 +20,10 @@
 - 在隔离 macOS 和 Windows 桌面从每类实际入口打开窗口，检查主窗归属和左栏首击。打开后无法进目录、选中的合法文件不可确认，或者出现第二个弹窗，均判定失败。
 - 用本地夹具验证带空格和中文路径、单选、多选、取消后重开、类型筛选、切项目丢弃过期结果，另外核对资产列表、画布预览、项目目录和剪辑重连。亮暗主题与窄屏都检查打开态。
 - 用校验和并发测试验证未信任的请求被拒绝、同窗仅有一个选择器、失败与取消可区分。合并前验收与合入复验记录实际运行桌面壳和插件的指纹。
+
+## 旧标准变更
+
+- `plugins/plugins/omnimux-workflow/src/canvas/editor/hooks/asyncImports.runtime.test.mjs` :: `drawer native canvas import drops A response and inserts only B selection`
+  原用例在断言画布已插入素材后还要求成功 Toast。插入结果已可见，移除重复反馈后仍断言只插入 B 的素材，并检查没有弹出重复提示。
+- `plugins/plugins/omnimux/src/client/components/asset-picker/asset-picker-add-card.test.js` :: `AssetPicker 规范：非搜索态下首位恒定呈现 AssetPickerAddCard，搜索态下收起`
+  原用例用 `setAutoPick(true)` 的源码字样证明点击会打开窗口。现在在点击事件内直接发起选择以保留用户手势。原有卡片和表单结构断言继续执行，新增交互用例点击卡片并验证同步发起一次文件选择和结果回填。
