@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import * as nativeFilePicker from 'dsh-ui-kit/native-file-picker'
 import { build, transform } from 'esbuild'
 
 const nodeRequire = createRequire(import.meta.url)
@@ -77,6 +78,7 @@ function shimRequire(name) {
   if (name === 'react') return nodeRequire('react')
   if (name === 'react-dom/client') return nodeRequire('react-dom/client')
   if (name === 'react/jsx-runtime') return nodeRequire('react/jsx-runtime')
+  if (name === 'dsh-ui-kit/native-file-picker') return nativeFilePicker
   if (name === 'dsh-ui-kit') return makeKitStub()
   throw new Error(`unexpected require ${name}`)
 }
