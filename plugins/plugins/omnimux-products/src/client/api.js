@@ -1,6 +1,7 @@
 /**
  * fetch wrapper over Host `/omnimux/products`. UI uses `{ ok, status, body }`.
  */
+import { requestFilePicker } from 'dsh-ui-kit/native-file-picker'
 
 /**
  * @param {string} path
@@ -63,7 +64,9 @@ export function deleteProduct(id) {
  * @param {'file' | 'directory'} kind
  */
 export function pickPath(kind) {
-  return productsRequest('/omnimux/products/pick', { method: 'POST', body: { kind } })
+  const prompt = kind === 'directory' ? '选择要挂到产品的文件夹' : '选择要挂到产品的文件'
+  return requestFilePicker({ kind, multiple: true, prompt }, () =>
+    productsRequest('/omnimux/products/pick', { method: 'POST', body: { kind } }))
 }
 
 /**

@@ -1,5 +1,6 @@
 /** Alpha.2 boot, directory-picker, and host-path contracts; no generic IPC bridge. */
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import { createNativeFilePickerBridge } from '../../dsh-plugin-desktop/src/native-file-picker-contract.ts'
 import { IPC } from './ipc.ts'
 import { markDocumentPlatform } from './preload-platform.ts'
 import { syncNativeTheme } from './preload-theme.ts'
@@ -40,7 +41,12 @@ if (location.protocol === 'dsh-app:' && location.hostname === 'app') {
   })
   // dsh 0.1.7 implements the native Sidebar browser itself and reads its transport from this
   // carrier; without `browser` the official plugin silently falls back to the sandboxed iframe.
-  contextBridge.exposeInMainWorld('dshDesktop', { protocolVersion: 1, browser: createDesktopBrowserBridge(), ...createDesktopKeyboardBridge() })
+  contextBridge.exposeInMainWorld('dshDesktop', {
+    protocolVersion: 1,
+    browser: createDesktopBrowserBridge(),
+    ...createDesktopKeyboardBridge(),
+    filePicker: createNativeFilePickerBridge((channel, request) => ipcRenderer.invoke(channel, request)),
+  })
   contextBridge.exposeInMainWorld('dshDesktopBoot', {
     ready: async () => {
       const boot = await ipcRenderer.invoke(IPC.boot)

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { pickProjectDirectory } from '../api.js'
+import { useAsyncInstanceGuard } from '../../canvas/editor/hooks/useAsyncInstanceGuard.ts'
 import { MAX_PROJECT_TITLE_LENGTH } from './limits.js'
 import { extractFolderName, firstPickedDirectory } from './pickDirectory.js'
 
@@ -84,7 +85,8 @@ export function ForkAppProjectDialog({
   const defaultPageTitle = `${appName}_副本`
   const defaultProjectTitle = `${appName} (副本)`
   const [name, setName] = useState(hasHostProject ? defaultPageTitle : defaultProjectTitle)
-  const [nameTouched, setNameTouched] = useState(false)
+  const nameTouched = useRef(false)
+  const pickGuard = useAsyncInstanceGuard(mode)
 
   const [path, setPath] = useState(initialPath || '')
   const [picking, setPicking] = useState(false)
@@ -98,9 +100,11 @@ export function ForkAppProjectDialog({
 
   const handleModeChange = (nextMode) => {
     if (nextMode === mode) return
+    pickGuard.invalidate()
     setMode(nextMode)
+    setPicking(false)
     setPickError('')
-    if (!nameTouched) {
+    if (!nameTouched.current) {
       setName(nextMode === 'page' ? defaultPageTitle : defaultProjectTitle)
     }
   }
@@ -122,14 +126,22 @@ export function ForkAppProjectDialog({
     const next = typeof nextPath === 'string' ? nextPath.trim() : ''
     if (next === '') return
     setPath(next)
-    if (!nameTouched && mode === 'project') {
+    if (!nameTouched.current && mode === 'project') {
       const fromFolder = extractFolderName(next)
       if (fromFolder) setName(fromFolder)
     }
   }
 
+  const handleCancel = () => {
+    if (busy) return
+    pickGuard.deactivate()
+    onCancel()
+  }
+
   const handlePickDirectory = async () => {
     if (busy || picking) return
+    const ticket = pickGuard.capture()
+    if (!pickGuard.isCurrent(ticket)) return
     setPicking(true)
     setPickError('')
     try {
@@ -139,14 +151,19 @@ export function ForkAppProjectDialog({
           ? onBrowseDirectory
           : pickProjectDirectory
       const result = await picker()
+      if (!pickGuard.isCurrent(ticket)) return
+      if (result?.ok === false) {
+        setPickError(result.body?.message || '无法选择文件夹，请重试。')
+        return
+      }
       const chosen = firstPickedDirectory(result)
       if (chosen) {
         applyPickedPath(chosen)
       }
     } catch {
-      setPickError('操作失败，请重试。')
+      if (pickGuard.isCurrent(ticket)) setPickError('无法选择文件夹，请重试。')
     } finally {
-      setPicking(false)
+      if (pickGuard.isCurrent(ticket)) setPicking(false)
     }
   }
 
@@ -205,7 +222,7 @@ export function ForkAppProjectDialog({
             className="omx-apptab-modal-close"
             disabled={busy}
             aria-label="关闭"
-            onClick={() => { if (!busy) onCancel() }}
+            onClick={handleCancel}
           >
             <CloseGlyph size={14} />
           </button>
@@ -264,7 +281,7 @@ export function ForkAppProjectDialog({
                 disabled={busy}
                 onChange={(event) => {
                   setName(event.target.value)
-                  setNameTouched(true)
+                  nameTouched.current = true
                 }}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' && canSubmit) {
@@ -299,7 +316,7 @@ export function ForkAppProjectDialog({
             type="button"
             className="omx-apptab-btn-ghost"
             disabled={busy}
-            onClick={onCancel}
+            onClick={handleCancel}
           >
             取消
           </button>

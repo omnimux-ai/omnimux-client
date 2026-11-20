@@ -13,6 +13,7 @@ import {
   pickPath,
   updateProduct,
 } from 'omnimux-products/ui'
+import { useFormFilePicker } from './use-form-file-picker.js'
 
 const POLL_MS = 5000
 
@@ -26,13 +27,6 @@ function messageOf(result, t) {
 
 function errText(caught) {
   return caught instanceof Error ? caught.message : String(caught)
-}
-
-function pickErrorText(result, t) {
-  const code = String(result.body?.error ?? '')
-  if (code === 'picker-unsupported') return t('error.pickerUnsupported')
-  if (code === 'picker-failed') return t('error.pickerFailed')
-  return messageOf(result, t)
 }
 
 /**
@@ -188,18 +182,13 @@ export function ProductTab(props) {
     }
   }, [view, t, refreshState])
 
-  const handlePick = useCallback(async (kind) => {
-    const result = await pickPath(kind)
-    if (!result.ok) {
-      setFormError(pickErrorText(result, t))
-      return []
-    }
-    const paths = Array.isArray(result.body?.paths)
-      ? result.body.paths.filter((path) => typeof path === 'string' && path !== '')
-      : []
-    if (paths.length > 0) return paths
-    return typeof result.body?.path === 'string' && result.body.path !== '' ? [result.body.path] : []
-  }, [t])
+  const handlePick = useFormFilePicker({
+    active: visible && view.name === 'form',
+    owner: view,
+    pickPath,
+    t,
+    setFormError,
+  })
 
   const handleConfirmDelete = () => {
     if (!pendingRemove) return

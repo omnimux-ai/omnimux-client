@@ -47,6 +47,12 @@ Desktop 级确认、警告、错误与结果不会进入 Web Client 组件树。
 
 平台差异集中在启动时选择一次的 `ElectronPlatformStrategy` seam。Windows、macOS 与 Linux adapter 声明目录选择、Shell 模式切换和更新下载能力，并负责各自的菜单、Dock 图标与原生材质操作。新的平台分支应进入对应 adapter；generation 与 runtime 中只保留各平台共享的生命周期流程。
 
+### 插件的原生文件选择
+
+Legacy 和 Next 的产品主页面可通过 `dshDesktop.filePicker.open` 请求选择文件或目录。可信顶层页面的用户操作沿 preload 进入桌面主进程，选择窗附到该产品窗口。每个窗口只接受一个进行中的插件选择，返回的路径交给原有插件导入流程。取消返回空路径列表，失败返回错误码。
+
+纯 Web 入口继续由 Host 处理。桌面壳和插件版本配套验证，旧壳缺少此能力时，相关路径选择提示更新客户端。
+
 ## Profile 与服务边界
 
 profile 的名字和绝对目录由 `desktopProfiles.current` 提供，不能从 argv、settings 或 URL 猜测。`list()` 是只读发现；`select()` 记录 pending target，并通过重启完成切换。

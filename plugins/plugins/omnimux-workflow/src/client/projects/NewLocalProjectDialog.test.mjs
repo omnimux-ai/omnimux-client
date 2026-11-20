@@ -286,3 +286,31 @@ test('a failing directory check blocks submission and can retry the same folder'
     dom.window.close()
   }
 })
+
+
+test('canceling the system chooser keeps the default folder and an update error is actionable', async () => {
+  const choices = [
+    { ok: true, body: { path: null, paths: [] } },
+    { ok: false, body: { error: 'picker-update-required', message: '请更新 OmniMux 后再选文件夹。' } },
+  ]
+  let preflights = 0
+  const { container, root, dom, act } = await mount({
+    onPickDirectory: async () => choices.shift(),
+    onPreflight: () => { preflights += 1 },
+  })
+  try {
+    const choose = container.querySelector('[data-omnimux-new-project-drop]')
+    const status = container.querySelector('[data-omnimux-new-project-preflight]')
+    await act(async () => choose.click())
+    assert.equal(status.hasAttribute('data-error'), false)
+    assert.equal(choose.disabled, false)
+    await act(async () => choose.click())
+    assert.equal(status.hasAttribute('data-error'), true)
+    assert.equal(status.textContent, '请更新 OmniMux 后再选文件夹。')
+    assert.equal(container.querySelector('[data-omnimux-new-project-picked]'), null)
+    assert.equal(preflights, 0)
+  } finally {
+    await act(async () => root.unmount())
+    dom.window.close()
+  }
+})

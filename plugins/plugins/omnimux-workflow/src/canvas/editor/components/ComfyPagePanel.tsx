@@ -19,6 +19,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useT } from '../../i18n';
+import { toast } from '../../ui';
+import { useAsyncInstanceGuard } from '../hooks/useAsyncInstanceGuard.ts';
 import { useCanvasStore } from '../../store/canvasStore';
 import { pickLocalDirectory } from '../../bridge/apiClient.ts';
 import {
@@ -177,6 +179,7 @@ export function ComfyPagePanel({
   };
   const panel = managed ? resolveComfyBackendPanel(backend, context) : null;
   const view = panel && panel.kind === 'state' ? panel.view : null;
+  const pickerGuard = useAsyncInstanceGuard(JSON.stringify([nodeId, url, fullscreen, settingsOpen, panel?.kind]));
   /** 读不到托管状态时回落 M1 探测/引导，而不是给死胡同面板。 */
   const useProbe = shouldProbeComfyPage(managed, backend);
 
@@ -339,16 +342,23 @@ export function ComfyPagePanel({
     [nodeId],
   );
 
-  /** 「选择目录」：复用画布既有的原生选择器（宿主 /api/pick，kind=directory）。 */
+  /** 项目设置与画布共用系统目录选择器。 */
   const pickDirectory = useCallback(
     async (field: 'installRoot' | 'modelsPath') => {
+      const ticket = pickerGuard.capture();
+      if (!pickerGuard.isCurrent(ticket)) return;
       const picked = await pickLocalDirectory().catch(() => null);
+      if (!pickerGuard.isCurrent(ticket)) return;
       if (!picked) {
         setSettingsErrorKey('comfyPage.backend.settings.pickFailed');
         setSettingsErrorCode(null);
         return;
       }
       if (!picked.ok) {
+        if (picked.body.error !== 'picker-unsupported' && picked.body.message) {
+          toast.error(picked.body.message);
+          return;
+        }
         setSettingsErrorKey(
           picked.body.error === 'picker-unsupported'
             ? 'comfyPage.backend.settings.pickUnsupported'
@@ -363,7 +373,7 @@ export function ComfyPagePanel({
       else setModelsPathDraft(path);
       await saveSettings(field === 'installRoot' ? { installRoot: path } : { modelsPath: path });
     },
-    [saveSettings],
+    [pickerGuard, saveSettings],
   );
 
   const runAction = useCallback(

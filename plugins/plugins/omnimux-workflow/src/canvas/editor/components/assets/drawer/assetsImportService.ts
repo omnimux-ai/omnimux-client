@@ -79,7 +79,6 @@ export async function executeCanvasImport(options: CanvasImportOptions): Promise
       real_path: filePath,
     });
   }
-  toast.success(`已导入 ${String(interpretation.paths.length)} 个文件到创作画布`);
 }
 
 export interface AssetsImportOptions {
@@ -108,9 +107,7 @@ export async function executeAssetsImport(options: AssetsImportOptions): Promise
   const ok = await options.projectAssets.indexPaths(interpretation.paths);
   if (!options.guard.isCurrent(ticket)) return;
 
-  if (ok) {
-    toast.success(`已导入 ${String(interpretation.paths.length)} 个文件`);
-  } else {
+  if (!ok) {
     toast.error(options.projectAssets.error || '写入项目资产失败');
   }
 }

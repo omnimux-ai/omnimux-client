@@ -298,3 +298,7 @@ node --test src/kit-export.test.js
 ```
 
 产物：`lib/index.js` + `lib/index.d.ts`。CSS Modules 在构建期哈希为 `dshUk-<file>-<local>`，运行时注入 `<style data-dsh-ui-kit>`，消费方无需再配 CSS loader。
+
+## 原生文件选择
+
+`dsh-ui-kit/native-file-picker` 把需要真实文件路径的选择入口接到桌面主窗口，在浏览器里调用传入的 Host 请求。调用方继续使用既有的结果结构和业务校验。取消返回空路径，失败携带错误码和消息。

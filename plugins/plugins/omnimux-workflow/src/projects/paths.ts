@@ -11,6 +11,7 @@
  */
 import { realpathSync, statSync, lstatSync } from 'node:fs';
 import { isAbsolute, join, resolve, sep } from 'node:path';
+import { looksAbsolutePath } from '../shared/localMedia.ts';
 
 /** 结构化错误：路径非法 / 写入越界。路由层据此映射 400/403。 */
 export class ProjectPathError extends Error {
@@ -107,10 +108,6 @@ export function resolveProjectPaths(projectRoot: string): ProjectPaths {
   };
 }
 
-function looksAbsolutePath(p: string): boolean {
-  return p.startsWith('/') || /^[A-Za-z]:[\\/]/.test(p);
-}
-
 /**
  * Resolve a project-relative POSIX path. Absolute / `..` / NUL → path-denied.
  */
@@ -121,8 +118,8 @@ export function resolveProjectRelPath(projectRoot: string, rel: string): string 
   if (rel.includes('\0')) {
     throw new ProjectPathError('path-denied', 'relative path contains NUL');
   }
-  const posix = rel.replace(/\\/g, '/').replace(/^\/+/, '');
-  if (looksAbsolutePath(rel) || isAbsolute(rel)) {
+  const posix = rel.replace(/\\/g, '/');
+  if (posix.startsWith('/') || looksAbsolutePath(rel)) {
     throw new ProjectPathError('path-denied', 'absolute paths are not allowed as relative_path');
   }
   if (posix.split('/').some((segment) => segment === '..')) {

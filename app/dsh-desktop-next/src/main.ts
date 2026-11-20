@@ -31,6 +31,8 @@ import { applyDesktopPackageAgePolicy } from './pnpm-policy.ts'
 import { auxiliaryWindowChromeOptions, auxiliaryWindowHasCustomFrame } from '../../dsh-plugin-desktop/src/auxiliary-window-options.ts'
 import { cleanupDisposableTree } from '../../dsh-plugin-desktop/src/disposable-tree.ts'
 import { installEditingContextMenu } from '../../dsh-plugin-desktop/src/context-menu.ts'
+import { createNativeFilePicker } from '../../dsh-plugin-desktop/src/native-file-picker.ts'
+import { DESKTOP_FILE_PICKER_CHANNEL } from '../../dsh-plugin-desktop/src/native-file-picker-contract.ts'
 import { atomicJson, privateDirectory } from './private-files.ts'
 import { windowMaterial } from './window-material.ts'
 import { ONBOARDING_ARGUMENT, RECOVERY_ARGUMENT, SAFE_ARGUMENT, relaunchApp, relaunchArguments } from './relaunch.ts'
@@ -1028,6 +1030,23 @@ async function main(): Promise<void> {
     picking ??= dialog.showOpenDialog(window, { properties: ['openDirectory', 'createDirectory'] })
       .then(result => result.canceled ? null : result.filePaths[0] ?? null).finally(() => { picking = undefined })
     return picking
+  })
+  const openNativeFilePicker = createNativeFilePicker((owner, options) => dialog.showOpenDialog(owner, options))
+  ipcMain.handle(DESKTOP_FILE_PICKER_CHANNEL, async (event, request: unknown) => {
+    const owner = mainWindow
+    if (!owner || !event.senderFrame || quitting || runtime.recoveryMode) {
+      return { ok: false, error: 'picker-unavailable' }
+    }
+    try {
+      assertSender(event, owner, APP_URL)
+    } catch {
+      return { ok: false, error: 'picker-unavailable' }
+    }
+    const result = await openNativeFilePicker(owner, event.sender, request)
+    if (mainWindow !== owner || quitting || runtime.recoveryMode) {
+      return { ok: false, error: 'picker-unavailable' }
+    }
+    return result
   })
   session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['<all_urls>'] }, (details, callback) => {
     const auth = runtime.auth

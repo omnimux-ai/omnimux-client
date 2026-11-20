@@ -28,7 +28,6 @@ describe('AssetPicker 首位添加资产卡片及连携弹窗规范', () => {
     assert.ok(pickerSource.includes('<AssetPickerAddCard'), '网格首位注入 AssetPickerAddCard')
     assert.ok(pickerSource.includes('!searchQuery.trim()'), '非搜索态下必定激活首位添加卡片')
     assert.ok(pickerSource.includes('<AssetAddModal'), '集成自包含 AssetAddModal 添加模态框')
-    assert.ok(pickerSource.includes('setAutoPick(true)'), '点击添加卡片后连携激活自动选取文件标记')
   })
 
   it('AssetAddModal 界面结构：完整复刻标准入库表单（名称/分类/描述/文件选区/标签）', () => {

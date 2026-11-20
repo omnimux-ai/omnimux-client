@@ -4,6 +4,7 @@ import {
   type DesktopHostPathBridge,
 } from '../src/file-path-bridge-contract.ts'
 import { DESKTOP_NATIVE_DIRECTORY_PICKER_CHANNEL } from '../src/directory-picker-contract.ts'
+import { DESKTOP_FILE_PICKER_CHANNEL, type NativeFilePickerBridge } from '../src/native-file-picker-contract.ts'
 import {
   DESKTOP_RENDERER_ACTION_CHANNEL,
   DESKTOP_RENDERER_ACTIONS_BRIDGE,
@@ -47,6 +48,7 @@ describe('Desktop renderer preload bridges', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
   })
 
   it('exposes the upstream __DSH_HOST_PATHS__ bridge so dropped folders and files resolve to host paths', async () => {
@@ -79,7 +81,7 @@ describe('Desktop renderer preload bridges', () => {
     await picker?.pick()
     expect(electron.ipcRenderer.invoke).toHaveBeenCalledWith(DESKTOP_NATIVE_DIRECTORY_PICKER_CHANNEL)
 
-    expect(electron.exposed.get('dshDesktop')).toEqual({ protocolVersion: 1 })
+    expect(electron.exposed.get('dshDesktop')).toMatchObject({ protocolVersion: 1 })
 
     const setup = electron.exposed.get('dshDesktopSetup') as {
       read(): Promise<unknown>
@@ -89,5 +91,26 @@ describe('Desktop renderer preload bridges', () => {
     } | undefined
     await setup?.read()
     expect(electron.ipcRenderer.invoke).toHaveBeenCalledWith(SETUP_ONBOARDING_CHANNEL, { action: 'read' })
+  })
+
+  it('requires a user gesture before opening the product file picker', async () => {
+    const userActivation = { isActive: false }
+    vi.stubGlobal('navigator', { userActivation })
+    await import('../src/preload.ts')
+
+    const desktop = electron.exposed.get('dshDesktop') as { filePicker: NativeFilePickerBridge }
+    expect(desktop.filePicker.version).toBe(1)
+    const request = { kind: 'file' as const, extensions: ['png'] }
+    await expect(desktop.filePicker.open(request)).resolves.toEqual({ ok: false, error: 'picker-gesture-required' })
+    expect(electron.ipcRenderer.invoke).not.toHaveBeenCalled()
+
+    userActivation.isActive = true
+    const canceled = { ok: true, path: null, paths: [] }
+    electron.ipcRenderer.invoke.mockResolvedValueOnce(canceled)
+    await expect(desktop.filePicker.open(request)).resolves.toEqual(canceled)
+    expect(electron.ipcRenderer.invoke).toHaveBeenCalledExactlyOnceWith(DESKTOP_FILE_PICKER_CHANNEL, request)
+
+    electron.ipcRenderer.invoke.mockRejectedValueOnce(new Error('IPC handler removed'))
+    await expect(desktop.filePicker.open(request)).resolves.toEqual({ ok: false, error: 'picker-unavailable' })
   })
 })

@@ -1,10 +1,11 @@
 import { readFileSync, unlinkSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { Readable } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DesktopShellSpec } from '../src/runtime.ts'
 import { desktopTrayLabel } from '../src/tray-locale.ts'
 import { DESKTOP_FRAME_HEIGHT } from '../src/window-chrome.ts'
+import { DESKTOP_FILE_PICKER_CHANNEL } from '../src/native-file-picker-contract.ts'
 
 const terminal = vi.hoisted(() => ({ open: vi.fn() }))
 const diagnostics = vi.hoisted(() => ({ export: vi.fn() }))
@@ -121,11 +122,13 @@ const electron = vi.hoisted(() => {
     getZoomLevel: vi.fn(() => zoomLevel),
     isDevToolsOpened: vi.fn(() => devToolsOpened),
     on: vi.fn(),
+    once: vi.fn(),
     off: vi.fn(),
     openDevTools: vi.fn(() => { devToolsOpened = true }),
     reloadIgnoringCache: vi.fn(),
     forcefullyCrashRenderer: vi.fn(),
     isLoadingMainFrame: vi.fn(() => false),
+    isFocused: vi.fn(() => true),
     setZoomLevel: vi.fn((level: number) => { zoomLevel = level }),
     setWindowOpenHandler: vi.fn(),
     focus: vi.fn(),
@@ -963,6 +966,47 @@ describe('Electron desktop runtime', () => {
       frame.url = previousUrl
       await release()
     }
+  })
+
+  it('parents plugin file selection to the main window when its renderer is a content view', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const runtime = new ElectronDesktopRuntime(async () => {})
+    const release = runtime.schedule(spec)
+    await runtime.mountScheduled()
+
+    const owner = electron.browserWindows[0]!
+    const renderer = electron.webContents
+    const frame = renderer.mainFrame
+    const previousUrl = frame.url
+    const handler = renderer.ipc.handle.mock.calls.find(([channel]) => channel === DESKTOP_FILE_PICKER_CHANNEL)?.[1]
+    expect(owner.webContents).toBe(electron.chromeWebContents)
+    expect(handler).toEqual(expect.any(Function))
+    const path = resolve('商品 图片.png')
+    electron.dialog.showOpenDialog.mockResolvedValue({ canceled: false, filePaths: [path] })
+    frame.url = spec.url
+    try {
+      const request = { kind: 'file', extensions: ['png'], multiple: false }
+      await expect(handler({ sender: renderer, senderFrame: { url: spec.url } }, request))
+        .resolves.toEqual({ ok: false, error: 'picker-unavailable' })
+      frame.url = 'https://example.test/'
+      await expect(handler({ sender: renderer, senderFrame: frame }, request))
+        .resolves.toEqual({ ok: false, error: 'picker-unavailable' })
+      expect(electron.dialog.showOpenDialog).not.toHaveBeenCalled()
+
+      frame.url = spec.url
+      owner.isFocused.mockReturnValueOnce(true)
+      await expect(handler({ sender: renderer, senderFrame: frame }, request))
+        .resolves.toEqual({ ok: true, path, paths: [path] })
+      expect(electron.dialog.showOpenDialog).toHaveBeenCalledExactlyOnceWith(owner, {
+        properties: ['openFile'],
+        filters: [{ name: 'png', extensions: ['png'] }],
+      })
+    } finally {
+      frame.url = previousUrl
+      await release()
+    }
+    expect(renderer.ipc.removeHandler).toHaveBeenCalledWith(DESKTOP_FILE_PICKER_CHANNEL)
   })
 
   it('uses Electron media consent without the microphone workaround or permission IPC', async () => {

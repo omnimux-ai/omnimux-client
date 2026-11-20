@@ -9,6 +9,7 @@ import { useCanvasStore } from '../../store/canvasStore';
 import { toast } from '../../ui';
 import { useT } from '../../i18n';
 import { pickLocalFiles } from '../../bridge/apiClient.ts';
+import { reportLocalFilePickerFailure } from '../utils/reportLocalFilePickerFailure.ts';
 import {
   planImportNodeFill,
   planResourcePickerCommit,
@@ -195,8 +196,6 @@ export function useResourcePicker(nodeId: string, workspaceId?: string | null): 
       if (slotTarget?.slot) state.pushHistory(true);
       if (plan.rejected.length > 0) {
         toast.warning(t('picker.commitPartial'));
-      } else if (!slotTarget?.slot) {
-        toast.success(t('picker.commitOk'));
       }
       closePicker();
       return true;
@@ -210,11 +209,7 @@ export function useResourcePicker(nodeId: string, workspaceId?: string | null): 
     const result = await pickLocalFiles().catch(() => null);
     if (!guard.isCurrent(ticket)) return false;
     if (!result || !result.ok) {
-      if (result?.body.error === 'picker-unsupported') {
-        toast.warning(t('picker.needPath'));
-      } else {
-        toast.error(t('picker.pickFailed'));
-      }
+      reportLocalFilePickerFailure(result, t);
       return false;
     }
     const paths = result.body.paths ?? [];
@@ -244,7 +239,6 @@ export function useResourcePicker(nodeId: string, workspaceId?: string | null): 
       toast.error(t('picker.commitFailed'));
       return false;
     }
-    toast.success(t('picker.importOk'));
     return true;
   }, [guard, nodeId, t]);
 
@@ -254,11 +248,7 @@ export function useResourcePicker(nodeId: string, workspaceId?: string | null): 
     const result = await pickLocalFiles().catch(() => null);
     if (!guard.isCurrent(ticket)) return false;
     if (!result || !result.ok) {
-      if (result?.body.error === 'picker-unsupported') {
-        toast.warning(t('picker.needPath'));
-      } else {
-        toast.error(t('picker.pickFailed'));
-      }
+      reportLocalFilePickerFailure(result, t);
       return false;
     }
     const paths = result.body.paths ?? [];
@@ -274,10 +264,10 @@ export function useResourcePicker(nodeId: string, workspaceId?: string | null): 
   const relinkLocalFile = useCallback(async (materialType: MaterialType) => {
     const ticket = guard.capture();
     if (!guard.isCurrent(ticket)) return false;
-    const result = await pickLocalFiles().catch(() => null);
+    const result = await pickLocalFiles({ multiple: false }).catch(() => null);
     if (!guard.isCurrent(ticket)) return false;
     if (!result || !result.ok) {
-      toast.error(t('picker.pickFailed'));
+      reportLocalFilePickerFailure(result, t);
       return false;
     }
     const path = result.body.path;
@@ -302,7 +292,6 @@ export function useResourcePicker(nodeId: string, workspaceId?: string | null): 
       toast.error(t('picker.commitFailed'));
       return false;
     }
-    toast.success(t('node.relinkOk'));
     return true;
   }, [guard, nodeId, t]);
 

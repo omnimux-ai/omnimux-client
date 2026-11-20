@@ -299,6 +299,11 @@ export function promptNewProjectName(t, opts = {}) {
             ? opts.browseDirectory
             : pickProjectDirectory
         const result = await picker()
+        if (settled) return
+        if (result?.ok === false) {
+          setError(result.body?.message || t('projects.dialog.browseFailed'))
+          return
+        }
         const chosen = firstPickedDirectory(result)
         if (chosen) {
           folderPath = chosen
@@ -308,11 +313,13 @@ export function promptNewProjectName(t, opts = {}) {
           confirmedExisting = false
         }
       } catch {
-        setError(t('projects.dialog.browseFailed'))
+        if (!settled) setError(t('projects.dialog.browseFailed'))
       } finally {
-        picking = false
-        paintFolder()
-        paintSubmit()
+        if (!settled) {
+          picking = false
+          paintFolder()
+          paintSubmit()
+        }
       }
     }
 

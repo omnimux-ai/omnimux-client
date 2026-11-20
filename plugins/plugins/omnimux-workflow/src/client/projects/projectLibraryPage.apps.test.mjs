@@ -33,14 +33,14 @@ exports.updateProjectPage = async () => ({ ok: true })
 exports.deleteProjectPage = async () => ({ ok: true })
 exports.fetchProjectFiles = async () => ({ ok: false })
 exports.mkdirProjectFile = async () => ({ ok: false })
-exports.uploadProjectFiles = async () => ({ ok: false })
+exports.uploadProjectFiles = async (...args) => globalThis.__testUploadProjectFiles?.(...args) ?? { ok: false }
 `
 
 const API_CLIENT_STUB = `
 exports.getWorkspaceAssets = async () => ({ ok: false })
 exports.mkdirWorkspaceAsset = async () => ({ ok: false })
 exports.ingestWorkspaceAssets = async () => ({ ok: false })
-exports.pickLocalFiles = async () => ({ ok: false, body: { paths: [] } })
+exports.pickLocalFiles = async () => globalThis.__testPickLocalFiles?.() ?? { ok: false, body: { paths: [] } }
 `
 
 const NEW_PROJECT_STUB = `
@@ -763,6 +763,70 @@ test('新建项目成功但画布未打开时，项目库页给出可见错误�
     delete globalThis.__testRunNewProject
     if (previousIntersectionObserver === undefined) delete globalThis.IntersectionObserver
     else globalThis.IntersectionObserver = previousIntersectionObserver
+    await page.teardown()
+  }
+})
+
+
+test('selecting project B retires the file chooser opened in project A', async () => {
+  const page = await mountPage({ projects: [{ id: 'project-a', title: '项目甲' }, { id: 'project-b', title: '项目乙' }] })
+  const picks = []
+  const uploads = []
+  globalThis.__testPickLocalFiles = () => new Promise(resolve => picks.push(resolve))
+  globalThis.__testUploadProjectFiles = (id, paths) => { uploads.push({ id, paths }); return { ok: true } }
+  const click = element => page.act(async () => { assert.ok(element); element.click() })
+  const enterProject = async title => {
+    const folder = [...page.container.querySelectorAll('.omnimux-folder-open')].find(item => item.textContent.includes(title))
+    await click(folder)
+    await click(tabButtons(page.container).find(item => item.textContent.trim() === '项目资产'))
+  }
+  const openPicker = () => click(page.container.querySelector('[title^="上传文件到工作区目录"]'))
+  try {
+    await enterProject('项目甲')
+    await openPicker()
+    assert.equal(picks.length, 1)
+    await click(page.container.querySelector('.omnimux-project-breadcrumbs .omnimux-project-crumb-link'))
+    await enterProject('项目乙')
+    await page.act(async () => picks[0]({ ok: true, body: { paths: ['/甲.png'] } }))
+    assert.equal(uploads.length, 0)
+    await openPicker()
+    await page.act(async () => picks[1]({ ok: true, body: { paths: ['/乙.png'] } }))
+    assert.deepEqual(uploads, [{ id: 'project-b', paths: ['/乙.png'] }])
+  } finally {
+    delete globalThis.__testPickLocalFiles
+    delete globalThis.__testUploadProjectFiles
+    await page.teardown()
+  }
+})
+
+
+test('a picker failure uses a transient toast that leaves with the project', async () => {
+  const page = await mountPage({ projects: [{ id: 'project-a', title: '项目甲' }, { id: 'project-b', title: '项目乙' }] })
+  const messages = ['请更新 OmniMux 后再选择文件。', '迟到的选择器错误']
+  const picks = []
+  globalThis.__testPickLocalFiles = () => new Promise(resolve => picks.push(resolve))
+  const click = element => page.act(async () => { assert.ok(element); element.click() })
+  const enterProject = async title => {
+    const folder = [...page.container.querySelectorAll('.omnimux-folder-open')].find(item => item.textContent.includes(title))
+    await click(folder)
+    await click(tabButtons(page.container).find(item => item.textContent.trim() === '项目资产'))
+  }
+  const openPicker = () => click(page.container.querySelector('[title^="上传文件到工作区目录"]'))
+  const back = () => click(page.container.querySelector('.omnimux-project-breadcrumbs .omnimux-project-crumb-link'))
+  try {
+    await enterProject('项目甲')
+    await openPicker()
+    await page.act(async () => picks[0]({ ok: false, body: { error: 'picker-update-required', message: messages[0] } }))
+    assert.ok(document.body.textContent.includes(messages[0]))
+    assert.equal(page.container.querySelector('.omnimux-workflow-library-error'), null)
+    await openPicker()
+    await back()
+    await enterProject('项目乙')
+    await page.act(async () => picks[1]({ ok: false, body: { error: 'picker-failed', message: messages[1] } }))
+    for (const message of messages) assert.equal(document.body.textContent.includes(message), false)
+    assert.equal(page.container.querySelector('.omnimux-workflow-library-error'), null)
+  } finally {
+    delete globalThis.__testPickLocalFiles
     await page.teardown()
   }
 })

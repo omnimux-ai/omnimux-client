@@ -274,7 +274,7 @@ export const zh = {
   'mapping.cancel': '取消',
   'error.generic': '请求失败',
   'error.saveFailed': '保存到本地失败。',
-  'error.pickerUnsupported': '当前运行环境不支持原生文件选择器，请在 macOS 桌面端使用。',
+  'error.pickerUnsupported': '当前环境无法打开本地文件选择器，请使用 OmniMux 桌面版。',
   'error.pickerFailed': '系统选择窗口打开失败。',
   'error.nameConflict': '已有同名资产，请使用其他名称。',
 }
@@ -555,7 +555,7 @@ export const en = {
   'mapping.cancel': 'Cancel',
   'error.generic': 'Request failed',
   'error.saveFailed': 'Saving to the library failed.',
-  'error.pickerUnsupported': 'Native file picker is only supported on macOS desktop.',
+  'error.pickerUnsupported': 'Use the OmniMux desktop app to choose local files.',
   'error.pickerFailed': 'Failed to open file picker.',
   'error.nameConflict': 'An asset with this name already exists.',
 }

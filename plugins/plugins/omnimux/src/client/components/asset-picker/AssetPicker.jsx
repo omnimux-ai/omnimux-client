@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, ModalDialog } from 'dsh-ui-kit';
 import { AssetPickerCard, ASSET_CARD_CSS } from './AssetPickerCard.jsx';
 import { AssetPickerAddCard } from './AssetPickerAddCard.jsx';
 import { AssetAddModal, ASSET_TYPE_KEYS } from './AssetAddModal.jsx';
+import { pickAssetPaths } from './asset-file-picker.js';
 import { ASSET_CATEGORIES, isAlreadyAdded, remainingQuota, toggleSelect } from './picker-model.js';
 import {
   PICKER_DIALOG_VARIANT_CLASS,
@@ -275,8 +276,12 @@ export function AssetPicker({
   const [error, setError] = useState('');
   const [selected, setSelected] = useState(() => new Set());
   const [busy, setBusy] = useState(false);
-  const [addModalOpen, setAddModalOpen] = useState(false);
-  const [autoPick, setAutoPick] = useState(false);
+  const [initialPick, setInitialPick] = useState(null);
+  const addModalPick = useRef(null);
+  const closeAddModal = useCallback(() => {
+    addModalPick.current = null;
+    setInitialPick(null);
+  }, []);
   const requestRevision = useRef(0);
   const openRevision = useRef(0);
   const previousOpen = useRef(open);
@@ -293,8 +298,7 @@ export function AssetPicker({
     if (!open) {
       requestRevision.current += 1;
       setBusy(false);
-      setAddModalOpen(false);
-      setAutoPick(false);
+      closeAddModal();
       return undefined;
     }
     const revision = requestRevision.current + 1;
@@ -304,8 +308,7 @@ export function AssetPicker({
     setSearchQuery('');
     setSelected(new Set());
     setError('');
-    setAddModalOpen(false);
-    setAutoPick(false);
+    closeAddModal();
     setLoading(true);
     Promise.resolve()
       .then(() => (fetchAssets || defaultFetchAssets)())
@@ -323,7 +326,7 @@ export function AssetPicker({
     return () => {
       if (requestRevision.current === revision) requestRevision.current += 1;
     };
-  }, [open, fetchAssets]);
+  }, [open, fetchAssets, closeAddModal]);
 
   const tabs = useMemo(
     () => ['all', ...(Array.isArray(categories) && categories.length > 0 ? categories : ASSET_CATEGORIES)],
@@ -390,8 +393,10 @@ export function AssetPicker({
   };
 
   const handleOpenAddModal = () => {
-    setAutoPick(true);
-    setAddModalOpen(true);
+    if (addModalPick.current) return;
+    const request = pickAssetPaths('file', onPick);
+    addModalPick.current = request;
+    setInitialPick(request);
   };
 
   const handleAssetCreated = (createdAsset) => {
@@ -557,14 +562,11 @@ export function AssetPicker({
       </div>
 
       <AssetAddModal
-        open={addModalOpen}
+        open={open && initialPick !== null}
         presetType={category !== 'all' && ASSET_TYPE_KEYS.includes(category) ? category : 'character'}
-        autoPick={autoPick}
+        initialPick={initialPick}
         t={tt}
-        onClose={() => {
-          setAddModalOpen(false);
-          setAutoPick(false);
-        }}
+        onClose={closeAddModal}
         onPick={onPick}
         onSubmit={onCreateAsset}
         onSuccess={handleAssetCreated}

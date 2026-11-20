@@ -267,8 +267,15 @@ export function localFilePathFromUrl(url: unknown): string | null {
 
 export function looksAbsolutePath(path: string): boolean {
   if (!path || path.includes('\0')) return false;
-  if (path.startsWith('/')) return true;
-  return /^[a-zA-Z]:[\\/]/.test(path);
+  // A Windows UNC root must name both a server and a share. Three or more
+  // forward slashes still denote a POSIX path, like a single forward slash.
+  if (/^[\\/]{2}/.test(path) && !path.startsWith('///')) {
+    const [server, share] = path.slice(2).split(/[\\/]/, 2);
+    return [server, share].every(part =>
+      typeof part === 'string' && part.trim() !== '' && part !== '.' && part !== '..'
+      && !/[<>:"|?*\u0000-\u001f]/.test(part));
+  }
+  return path.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(path);
 }
 
 export function displayNameOf(realPath: string, originalName?: string): string {

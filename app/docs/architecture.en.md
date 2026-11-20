@@ -47,6 +47,12 @@ Desktop-level confirmations, warnings, errors, and results do not enter the Web 
 
 Platform differences live at the `ElectronPlatformStrategy` seam selected once during startup. The Windows, macOS, and Linux adapters declare directory-picking, shell-mode, and update-download capabilities and own their platform-specific menu, Dock icon, and native-material operations. New platform branches belong in the corresponding adapter; the generation and runtime retain only the lifecycle shared across platforms.
 
+### Native file selection for plugins
+
+The Legacy and Next product pages use `dshDesktop.filePicker.open` to choose files or a directory. A user action from the trusted top-level page reaches the main process through the preload, and the operating system dialog is attached to that product window. Each window accepts one pending plugin selection at a time. Existing plugin import flows consume the paths, cancellation returns an empty list, and failures return an error code.
+
+Browser sessions use the existing Host path. Verify matching shell and plugin builds together. An older shell without the bridge presents an update message for the affected path selectors.
+
 ## Profile and service boundaries
 
 The profile name and absolute directory come from `desktopProfiles.current`; they must not be inferred from argv, settings, or a URL. `list()` is read-only discovery. `select()` records a pending target and completes the switch through restart.
