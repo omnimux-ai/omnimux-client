@@ -31,6 +31,7 @@ This fork is the **main ops entry** for OmniMux plugin develop / browser QA / sy
 | `yarn omnimux:dev watch <task> <plugin>` | Switch which plugin the watch targets (Host stays up) |
 | `yarn omnimux:sync [plugin…]` | Build then materialize into `~/.omnimux-dev/profiles/omnimux` (`--prod` targets `~/.omnimux`) (**does not restart App**) |
 | `yarn omnimux:restart dev` | Reload the Dev app after syncing the merged build |
+| `yarn omnimux:profile upgrade-dev --app <app> --recovery-dir <batch>` | Rebuild the shared macOS Dev Profile and install a frozen Dev App with NAS recovery |
 | `yarn omnimux:doctor` | Compliance check (prod must not link, etc.) |
 | `yarn omnimux:stage` | Materialize into `preset/plugins/` before packaging |
 | `yarn omnimux:path` | Print resolved product/plugin paths |
@@ -38,6 +39,7 @@ This fork is the **main ops entry** for OmniMux plugin develop / browser QA / sy
 | `yarn omnimux:dev-reset` | Reset **Dev** to first-run state so the runtime guide reappears; auto-backs up `~/.omnimux-dev/profiles/omnimux/cordis.patch.yml`; `--dry-run` previews, `--restart` quits/reopens Dev. |
 
 MUST NOT hand-`rsync`/`cp` into any profile. Use `omnimux:sync` and, when a reload is needed, `omnimux:restart dev` for shared Dev verification after merge. Packaging uses `omnimux:stage` then `package:dir` / `dist:*`.
+For a shared macOS Dev rebuild with NAS recovery, use the [Dev upgrade procedure](../plugins/README.md#重建并升级共享-macos-dev).
 **Packaging Pre-requisite Rule**: Direct packaging or running `package-dir.mjs` without staging will cause startup crash (`missing dsh-better-sidebar` recovery window). When rebuilding `/Applications/OmniMux.app` or packaging distribution bundles, ALWAYS ensure `OMNIMUX_PLUGINS_DIR` is set and run `stage-preset-profile` (`node ./dsh-plugin-desktop/scripts/stage-preset-profile.ts` or `yarn omnimux:stage`) before packaging. Before `yarn package:dir` / `dist:*`, also run `corepack yarn install --immutable` at the repo root when `node_modules` may be stale: a hollow tree (declared `@deepseek-ai/*` missing from workspace `node_modules`) fails `tsc --emitDeclarationOnly` and makes electron-builder abort on missing production deps such as `@deepseek-ai/dsh-api-session-controller`.
 
 - `deepseek-harness/` is a pinned upstream Git submodule. Never edit files inside it from a desktop feature branch.

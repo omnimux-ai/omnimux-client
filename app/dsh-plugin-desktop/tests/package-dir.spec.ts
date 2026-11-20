@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -78,6 +78,42 @@ describe('unsigned directory packaging', () => {
         stdio: 'inherit',
       },
     )
+  })
+
+  it('replaces the preset mapping only for a disposable development build', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'dsh-fresh-builder-config-')))
+    temporaryDirectories.push(root)
+    const freshRelative = join('.desktop-build', 'dev-preset-fixture', 'preset')
+    const freshPresetDir = join(root, freshRelative)
+    const marker = join(freshPresetDir, 'plugins', 'omnimux', 'src', 'release-channel.json')
+    const build = {
+      asar: false,
+      files: ['lib/**', { from: 'preset', to: 'preset', filter: ['**/*'] }],
+      mac: { target: ['dir'] },
+    }
+    const manifest = JSON.stringify({ build })
+    writeFileSync(join(root, 'package.json'), manifest)
+    mkdirSync(dirname(marker), { recursive: true })
+    writeFileSync(marker, '{"channel":"development"}')
+    const run = vi.fn(() => ({ status: 0 }))
+
+    packageDirectory({ cwd: root, freshPresetDir, run })
+
+    const configFile = join(dirname(freshPresetDir), 'electron-builder.json')
+    expect(JSON.parse(readFileSync(configFile, 'utf8'))).toEqual({
+      ...build,
+      files: ['lib/**', { from: freshRelative, to: 'preset', filter: ['**/*'] }],
+    })
+    expect(readFileSync(join(root, 'package.json'), 'utf8')).toBe(manifest)
+    expect(run).toHaveBeenCalledWith(expect.any(String), expect.arrayContaining([
+      `--config=${configFile}`,
+      '--config.mac.identity=null',
+    ]), expect.objectContaining({ cwd: root }))
+
+    writeFileSync(marker, '{"channel":"production"}')
+    expect(() => packageDirectory({ cwd: root, freshPresetDir, run })).toThrow('staged for the development channel')
+    expect(() => packageDirectory({ cwd: root, freshPresetDir: root, run })).toThrow('disposable build directory')
+    expect(run).toHaveBeenCalledOnce()
   })
 
   it('propagates spawn failures and non-zero exits', () => {

@@ -1,13 +1,28 @@
 #!/usr/bin/env node
-/** Explicit, headless full-profile rebuild from one frozen OmniMux app. */
+/** Rebuild a Profile or switch shared Dev using one frozen OmniMux app. */
 
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { isAbsolute, join, resolve } from 'node:path'
+import { isAbsolute, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { resolveDesktopDataDirectory } from '../src/desktop-data-directory.ts'
 import { installDesktopPnpmRuntime } from '../src/desktop-runtime-environment.ts'
-import { assertPhysicalProfileBoundary, rebuildManagedProfile } from '../src/managed-profile.ts'
+import {
+  acceptDevUpgrade,
+  inspectDevUpgrade,
+  recoverDevFromArchive,
+  upgradeDevWithRecovery,
+  type DevUpgradePaths,
+} from '../src/dev-upgrade-transaction.ts'
+import {
+  MANAGED_GRAPH_ENTRIES,
+  assertPhysicalProfileBoundary,
+  inspectDevProfileSources,
+  prepareManagedProfile,
+  rebuildManagedProfile,
+  type ManagedProfileRebuildOptions,
+} from '../src/managed-profile.ts'
 import { materializeProfile } from '../src/profile-materializer.ts'
 import { readOwnedPackages } from '../src/preset-profile.ts'
 
@@ -16,37 +31,58 @@ const PROFILE_TARGETS = Object.freeze({
   dev: join(homedir(), '.omnimux-dev'),
   prod: join(homedir(), '.omnimux'),
 })
+const SHARED_DEV_APP_PATH = '/Applications/OmniMux Dev.app'
+const REPOSITORY_ROOT = fileURLToPath(new URL('../../../', import.meta.url))
 type ProfileTarget = keyof typeof PROFILE_TARGETS
 
-interface Arguments {
-  readonly target: ProfileTarget
-  readonly app: string
-}
+type Arguments =
+  | { readonly command: 'rebuild'; readonly target: ProfileTarget; readonly app: string }
+  | { readonly command: 'upgrade-dev'; readonly app: string; readonly recoveryDir: string; readonly dryRun: boolean }
+  | { readonly command: 'recover-dev' | 'accept-dev'; readonly recoveryDir: string }
 
 function usage(): never {
-  throw new Error('usage: yarn omnimux:profile rebuild --target dev|prod --app <frozen-candidate.app>')
+  throw new Error([
+    'usage: yarn omnimux:profile rebuild --target dev|prod --app <frozen-candidate.app>',
+    '       yarn omnimux:profile upgrade-dev --app <frozen-dev.app> --recovery-dir <nas-batch-dir> [--dry-run]',
+    '       yarn omnimux:profile recover-dev|accept-dev --recovery-dir <nas-batch-dir>',
+  ].join('\n'))
 }
 
-function parseArguments(argv: readonly string[]): Arguments {
-  if (argv[0] !== 'rebuild') usage()
-  let target: string | undefined
-  let app: string | undefined
+export function parseProfileArguments(argv: readonly string[]): Arguments {
+  const command = argv[0]
+  if (command !== 'rebuild' && command !== 'upgrade-dev' && command !== 'recover-dev' && command !== 'accept-dev') usage()
+  const flags = new Map<string, string>()
+  let dryRun = false
   for (let index = 1; index < argv.length; index += 1) {
-    const flag = argv[index]
+    const flag = argv[index]!
+    if (flag === '--dry-run' && command === 'upgrade-dev' && !dryRun) {
+      dryRun = true
+      continue
+    }
     const value = argv[index + 1]
-    if ((flag !== '--target' && flag !== '--app') || value === undefined || value.startsWith('--')) usage()
-    if (flag === '--target') target = value
-    else app = value
+    if (flags.has(flag) || value === undefined || value.startsWith('--')) usage()
+    if (flag === '--target' && command === 'rebuild'
+      || flag === '--app' && (command === 'rebuild' || command === 'upgrade-dev')
+      || flag === '--recovery-dir' && command !== 'rebuild') {
+      flags.set(flag, value)
+    } else {
+      usage()
+    }
     index += 1
   }
-  if ((target !== 'dev' && target !== 'prod') || app === undefined) usage()
-  if (!isAbsolute(app)) throw new Error('--app must be an absolute path to a frozen candidate .app')
-  const frozen = realpathSync(app)
-  if (!frozen.endsWith('.app')) throw new Error(`--app is not a macOS application bundle: ${frozen}`)
-  return { target, app: frozen }
+
+  const recoveryDir = flags.get('--recovery-dir')
+  if (command !== 'rebuild' && (recoveryDir === undefined || !isAbsolute(recoveryDir))) usage()
+  if (command === 'recover-dev' || command === 'accept-dev') return { command, recoveryDir: recoveryDir! }
+  const app = flags.get('--app')
+  if (app === undefined || !isAbsolute(app) || !app.endsWith('.app')) usage()
+  if (command === 'upgrade-dev') return { command, app, recoveryDir: recoveryDir!, dryRun }
+  const target = flags.get('--target')
+  if (target !== 'dev' && target !== 'prod') usage()
+  return { command, target, app }
 }
 
-function candidateLayout(app: string): {
+export function candidateLayout(app: string): {
   readonly executable: string
   readonly presetDir: string
   readonly pnpmBinPath: string
@@ -58,13 +94,15 @@ function candidateLayout(app: string): {
   if (executables.length !== 1) {
     throw new Error(`candidate App must contain exactly one main executable in ${executableDir}`)
   }
-  const unpacked = join(app, 'Contents', 'Resources', 'app.asar.unpacked')
-  const presetDir = join(unpacked, 'preset')
-  const pnpmBinPath = join(unpacked, 'node_modules', 'pnpm', 'bin', 'pnpm.mjs')
-  for (const path of [join(presetDir, 'owned-packages.json'), join(presetDir, 'plugins'), pnpmBinPath]) {
-    if (!existsSync(path)) throw new Error(`candidate App is incomplete: ${path}`)
+  for (const name of ['app', 'app.asar.unpacked']) {
+    const packageRoot = join(app, 'Contents', 'Resources', name)
+    const presetDir = join(packageRoot, 'preset')
+    const pnpmBinPath = join(packageRoot, 'node_modules', 'pnpm', 'bin', 'pnpm.mjs')
+    if ([join(presetDir, 'owned-packages.json'), join(presetDir, 'plugins'), pnpmBinPath].every(existsSync)) {
+      return { executable: executables[0]!, presetDir, pnpmBinPath }
+    }
   }
-  return { executable: executables[0]!, presetDir, pnpmBinPath }
+  throw new Error('candidate App must contain a complete preset and pnpm under Resources/app or Resources/app.asar.unpacked')
 }
 
 function listPackedFiles(pnpmCommand: string, sourceDir: string): string[] {
@@ -110,54 +148,159 @@ function listPackedFiles(pnpmCommand: string, sourceDir: string): string[] {
   return files.map(file => (file as { path: string }).path)
 }
 
-export async function runManagedProfileRebuild(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
-  const args = parseArguments(argv)
+async function withProfileBuilder<T>(
+  app: string,
+  homeDir: string,
+  profileDir: string,
+  build: (options: ManagedProfileRebuildOptions) => Promise<T>,
+  isolatedInstall = false,
+): Promise<T> {
   const electronVersion = process.versions.electron
   if (electronVersion === undefined) {
     throw new Error('profile rebuild must run through the frozen candidate App in ELECTRON_RUN_AS_NODE mode')
   }
-  const layout = candidateLayout(args.app)
+  const layout = candidateLayout(app)
   if (realpathSync(process.execPath) !== realpathSync(layout.executable)) {
     throw new Error(`profile rebuild is running through ${process.execPath}, not frozen candidate ${layout.executable}`)
   }
-  const homeDir = PROFILE_TARGETS[args.target]
-  const profileDir = join(homeDir, 'profiles', 'omnimux')
   assertPhysicalProfileBoundary(profileDir)
   const runtimeDir = mkdtempSync(join(tmpdir(), 'omnimux-profile-rebuild-runtime-'))
-  const runtime = installDesktopPnpmRuntime({
-    platform: process.platform,
-    appExecutable: layout.executable,
-    pnpmBinPath: layout.pnpmBinPath,
-    electronVersion,
-    stateDir: runtimeDir,
-    environment: process.env,
-  })
   try {
-    const ownedPackages = readOwnedPackages(layout.presetDir)
-    const result = await rebuildManagedProfile({
-      profileDir,
-      presetDir: layout.presetDir,
-      ownedPackages,
-      packedFiles: async sourceDir => listPackedFiles(runtime.pnpmShimPath, sourceDir),
-      materialize: async candidateProfileDir => {
-        await materializeProfile({
-          appExecutable: layout.executable,
-          clearEnvironmentPath: runtime.clearEnvironmentPath,
-          pnpmBinPath: layout.pnpmBinPath,
-          nodeBinDir: runtime.nodeBinDir,
-          nodeShimPath: runtime.nodeShimPath,
-          homeDir,
-          profileDir: candidateProfileDir,
-          electronVersion,
-          updateLockfile: true,
-        })
-      },
+    const runtime = installDesktopPnpmRuntime({
+      platform: process.platform,
+      appExecutable: layout.executable,
+      pnpmBinPath: layout.pnpmBinPath,
+      electronVersion,
+      stateDir: runtimeDir,
+      environment: process.env,
     })
-    process.stdout.write(`${JSON.stringify(result)}\n`)
+    try {
+      return await build({
+        profileDir,
+        presetDir: layout.presetDir,
+        ownedPackages: readOwnedPackages(layout.presetDir),
+        packedFiles: async sourceDir => listPackedFiles(runtime.pnpmShimPath, sourceDir),
+        materialize: async candidateProfileDir => {
+          await materializeProfile({
+            appExecutable: layout.executable,
+            clearEnvironmentPath: runtime.clearEnvironmentPath,
+            pnpmBinPath: layout.pnpmBinPath,
+            nodeBinDir: runtime.nodeBinDir,
+            nodeShimPath: runtime.nodeShimPath,
+            homeDir: isolatedInstall ? runtimeDir : homeDir,
+            profileDir: candidateProfileDir,
+            electronVersion,
+            updateLockfile: true,
+          })
+        },
+      })
+    } finally {
+      runtime.dispose()
+    }
   } finally {
-    runtime.dispose()
     rmSync(runtimeDir, { recursive: true, force: true })
   }
+}
+
+function sharedDevPaths(checkActiveHome = true): DevUpgradePaths {
+  if (process.platform !== 'darwin') throw new Error('Shared Dev migration requires macOS')
+  const homeDir = PROFILE_TARGETS.dev
+  const userDataDir = join(homedir(), 'Library', 'Application Support', 'OmniMux-Dev')
+  if (checkActiveHome && resolveDesktopDataDirectory(userDataDir, homeDir, 'default').homeDir !== homeDir) {
+    throw new Error('Shared Dev migration requires the default Dev data directory')
+  }
+  return { appPath: SHARED_DEV_APP_PATH, homeDir, userDataDir }
+}
+
+export function devAppIsRunning(processPaths: string, appPath: string): boolean {
+  const appContents = `${appPath}${sep}Contents${sep}`
+  return processPaths.split('\n').some(line => line.trimStart().startsWith(appContents))
+}
+
+function assertDevStopped(paths: DevUpgradePaths): void {
+  const result = spawnSync('/bin/ps', ['-axww', '-o', 'comm='], { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 })
+  if (result.status !== 0) throw new Error('Cannot verify that the shared Dev App and its helpers have exited')
+  if (devAppIsRunning(result.stdout, paths.appPath)) {
+    throw new Error('Quit shared OmniMux Dev and wait for its Host and helpers to exit before proceeding')
+  }
+}
+
+function readDevBuild(app: string, presetDir: string): { version: string; commit: string } {
+  const channel = JSON.parse(readFileSync(join(presetDir, 'plugins', 'omnimux', 'src', 'release-channel.json'), 'utf8')) as { channel?: unknown }
+  const build = JSON.parse(readFileSync(join(app, 'Contents', 'Resources', 'build-info.json'), 'utf8')) as {
+    channel?: unknown
+    version?: unknown
+    repo?: { commit?: unknown; dirty?: unknown }
+  }
+  if (channel.channel !== 'development' || build.channel !== 'package-dev' || typeof build.version !== 'string'
+    || build.repo?.dirty !== false || typeof build.repo.commit !== 'string' || !/^[a-f0-9]{40}$/u.test(build.repo.commit)) {
+    throw new Error('Use a signed development App produced by package:dev from a clean commit')
+  }
+  if (spawnSync('/usr/bin/codesign', ['--verify', '--deep', '--strict', app]).status !== 0) {
+    throw new Error('Candidate Dev App signature verification failed')
+  }
+  return { version: build.version, commit: build.repo.commit }
+}
+
+function assertMergedBuild(commit: string): void {
+  const result = spawnSync('git', ['-C', REPOSITORY_ROOT, 'merge-base', '--is-ancestor', commit, 'refs/remotes/origin/main'])
+  if (result.status !== 0) throw new Error('Fetch origin/main and use a Dev App built from an already merged commit')
+}
+
+export async function runDevProfileUpgrade(
+  args: Pick<Extract<Arguments, { command: 'upgrade-dev' }>, 'app' | 'recoveryDir' | 'dryRun'>,
+  paths: DevUpgradePaths = sharedDevPaths(),
+): Promise<unknown> {
+  const app = realpathSync(args.app)
+  if (app === paths.appPath) throw new Error('Use the frozen build outside the shared Dev installation')
+  const profileDir = join(paths.homeDir, 'profiles', 'omnimux')
+  const recovery = { paths, recoveryDir: args.recoveryDir }
+  const preflight = inspectDevUpgrade(recovery)
+  const layout = candidateLayout(app)
+  const build = readDevBuild(app, layout.presetDir)
+  if (paths.appPath === SHARED_DEV_APP_PATH) assertMergedBuild(build.commit)
+  const sources = inspectDevProfileSources(profileDir, layout.presetDir, readOwnedPackages(layout.presetDir))
+  if (args.dryRun) return { build, sources, preflight }
+
+  const confirmStopped = () => assertDevStopped(paths)
+  confirmStopped()
+  return withProfileBuilder(app, paths.homeDir, profileDir, async options => {
+    const graph = await prepareManagedProfile({ ...options, mode: 'dev-upgrade' })
+    try {
+      await upgradeDevWithRecovery({
+        ...recovery,
+        candidateApp: app,
+        profileDir,
+        graph: { candidateDir: graph.candidateDir, entries: MANAGED_GRAPH_ENTRIES, verify: graph.verify },
+        confirmStopped,
+      })
+      return { status: 'switched', recoveryDir: args.recoveryDir, build, graph: graph.result }
+    } finally {
+      graph.dispose()
+    }
+  }, true)
+}
+
+export async function runManagedProfileRebuild(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
+  const args = parseProfileArguments(argv)
+  let result: unknown
+  if (args.command === 'rebuild') {
+    const homeDir = PROFILE_TARGETS[args.target]
+    result = await withProfileBuilder(realpathSync(args.app), homeDir, join(homeDir, 'profiles', 'omnimux'), rebuildManagedProfile)
+  } else if (args.command === 'upgrade-dev') {
+    result = await runDevProfileUpgrade(args)
+  } else {
+    const paths = sharedDevPaths(args.command !== 'recover-dev')
+    const recovery = { paths, recoveryDir: args.recoveryDir }
+    if (args.command === 'recover-dev') {
+      await recoverDevFromArchive({ ...recovery, confirmStopped: () => assertDevStopped(paths) })
+      result = { status: 'restored', recoveryDir: args.recoveryDir }
+    } else {
+      await acceptDevUpgrade(recovery)
+      result = { status: 'accepted', recoveryDir: args.recoveryDir }
+    }
+  }
+  process.stdout.write(`${JSON.stringify(result)}\n`)
 }
 
 function isDirectExecution(): boolean {

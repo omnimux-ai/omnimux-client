@@ -13,6 +13,7 @@
  *   node scripts/omnimux.mjs doctor
  *   node scripts/omnimux.mjs restart
  *   node scripts/omnimux.mjs profile rebuild --target dev --app /absolute/frozen/OmniMux.app
+ *   node scripts/omnimux.mjs profile upgrade-dev --app <frozen-dev.app> --recovery-dir <nas-batch-dir> --dry-run
  *   node scripts/omnimux.mjs stage
  *   node scripts/omnimux.mjs path
  */
@@ -71,6 +72,13 @@ function runYarnWorkspace(scriptName, args = []) {
 }
 
 function runProfile(args) {
+  const script = join(forkRoot, 'dsh-plugin-desktop/scripts/rebuild-managed-profile.ts')
+  if (args[0] === 'recover-dev' || args[0] === 'accept-dev' || args.includes('--dry-run')) {
+    const environment = { ...process.env }
+    delete environment.ELECTRON_RUN_AS_NODE
+    const result = spawnSync(process.execPath, [script, ...args], { cwd: forkRoot, env: environment, stdio: 'inherit' })
+    process.exit(result.status === null ? 1 : result.status)
+  }
   const appIndex = args.indexOf('--app')
   const appArgument = appIndex === -1 ? undefined : args[appIndex + 1]
   if (!appArgument) die('profile rebuild 必须显式传入 --app <frozen-candidate.app>')
@@ -81,7 +89,6 @@ function runProfile(args) {
     .filter(entry => entry.isFile())
     .map(entry => join(executableDir, entry.name))
   if (executables.length !== 1) die(`候选 App 的主可执行文件不唯一: ${executableDir}`)
-  const script = join(forkRoot, 'dsh-plugin-desktop/scripts/rebuild-managed-profile.ts')
   const result = spawnSync(executables[0], [script, ...args], {
     cwd: forkRoot,
     env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
@@ -129,6 +136,10 @@ function printHelp() {
   doctor                          三层环境合规自检
   profile rebuild --target dev --app <frozen-candidate.app>
                                   从冻结候选 App 全量重建 Dev Profile 依赖图
+  profile upgrade-dev --app <frozen-dev.app> --recovery-dir <nas-batch-dir> [--dry-run]
+                                  预检或升级共享 Dev，恢复副本直接归档到 NAS
+  profile recover-dev|accept-dev --recovery-dir <nas-batch-dir>
+                                  恢复同批次 Dev，或在运行验收后确认切换
   stage                           物化进 preset/plugins（发布前）
   verify --preset <dir>           校验发行清单与打包内容是否一致（发布前）
   verify --profile <dir> --expect <distribution.json>

@@ -37,11 +37,11 @@ export type DesktopDataDirectoryErrorCode =
   | 'target-unavailable'
 
 export class DesktopDataDirectoryError extends Error {
-  constructor(
-    readonly code: DesktopDataDirectoryErrorCode,
-    message: string,
-  ) {
+  readonly code: DesktopDataDirectoryErrorCode
+
+  constructor(code: DesktopDataDirectoryErrorCode, message: string) {
     super(`${DESKTOP_PACKAGE_NAME}: ${message}`)
+    this.code = code
     this.name = 'DesktopDataDirectoryError'
   }
 }
