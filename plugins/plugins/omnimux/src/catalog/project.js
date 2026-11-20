@@ -209,6 +209,8 @@ export function projectRow(model, ops, snapshot) {
   row.operations = (ops ?? []).map((op) => ({
     id: op.id,
     label: op.label,
+    ...(op.modeKind ? { modeKind: op.modeKind } : {}),
+    ...(op.labelEn ? { labelEn: op.labelEn } : {}),
     output: structuredClone(op.output ?? {}),
     inputs: structuredClone(op.inputs ?? []),
     ...(op.parameters ? { parameters: structuredClone(op.parameters) } : {}),
@@ -364,6 +366,8 @@ export function projectModelDto(model, dispositionsDoc, snapshot) {
     operations: (model.operations ?? []).map((op) => ({
       id: op.id,
       label: op.label,
+      ...(op.modeKind ? { modeKind: op.modeKind } : {}),
+      ...(op.labelEn ? { labelEn: op.labelEn } : {}),
       output: structuredClone(op.output ?? {}),
       inputs: structuredClone(op.inputs ?? []),
       ...(op.parameters ? { parameters: structuredClone(op.parameters) } : {}),

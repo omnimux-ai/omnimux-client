@@ -223,6 +223,7 @@ export function buildUpstreamFingerprint(input: {
 export interface ContractOperationView {
   id: string;
   label: string;
+  labelEn?: string;
   output: { type: string; allowedMimes?: string[]; min?: number; max?: number };
   inputs: InputSlotDto[];
   inputGroups: Array<{ slots: string[]; min: number; hint?: string }>;
@@ -311,6 +312,7 @@ function normalizeOperation(raw: OperationContractDto): ContractOperationView | 
   return {
     id: raw.id,
     label: typeof raw.label === 'string' ? raw.label : raw.id,
+    ...(typeof raw.labelEn === 'string' ? { labelEn: raw.labelEn } : {}),
     output: { ...raw.output, type: outputType },
     inputs: (Array.isArray(raw.inputs) ? raw.inputs : [])
       .map(normalizeSlot)

@@ -307,6 +307,11 @@ export function buildModelCatalog(opts = {}) {
     defaultsMeta.analysis = { modelId: defaults.analysis, source: defaults.analysis ? 'first-ready' : 'none' }
   }
 
+  // Cache keys cover the projected names as well as the input snapshot.
+  const videoModeLabels = dto.models.flatMap((model) => model.operations
+    .filter((operation) => operation.modeKind)
+    .map((operation) => [model.id, operation.id, operation.modeKind, operation.label, operation.labelEn]))
+
   return {
     schemaVersion: CANONICAL_SCHEMA_VERSION,
     source: 'omnimux',
@@ -318,6 +323,7 @@ export function buildModelCatalog(opts = {}) {
       defaultsMeta,
       defaultOperations,
       channelGroups: dto.models.map((model) => ({ modelId: model.id, groups: model.channelGroups })),
+      videoModeLabels,
       dispositions: (dispositionsDoc.dispositions ?? []).map((row) => [
         row?.id,
         row?.disposition,
@@ -487,6 +493,7 @@ function trimId(value) {
  *   defaultsMeta?: Record<string, { modelId: string, source: string, needsConfirmation?: boolean }>,
  *   defaultOperations?: Record<string, { modelId: string, operationId: string, rule: string }>,
  *   channelGroups?: Array<{ modelId: string, groups: object[] }>,
+ *   videoModeLabels?: Array<Array<string | undefined>>,
  *   dispositions: unknown[],
  *   gateway?: { source: string, digest: string|null, missingContract: string[] },
  * }} [contract]
@@ -508,6 +515,7 @@ export function fingerprintOf(lists, defaults, contract) {
           defaultsMeta: contract.defaultsMeta ?? {},
           defaultOperations: contract.defaultOperations ?? {},
           channelGroups: contract.channelGroups ?? [],
+          ...(contract.videoModeLabels?.length ? { videoModeLabels: contract.videoModeLabels } : {}),
           dispositions: contract.dispositions ?? [],
           gateway: contract.gateway ?? null,
           lists: listIds,

@@ -77,21 +77,11 @@ function normalizeDuration(duration: number | string | undefined): string {
   return `${str}s`;
 }
 
-/**
- * Resolve mode text from EffectiveVideoParams.
- *
- * Issue #4103：只经 `resolveOperationLabel`（与 SegmentControls 共用同一函数）——
- * operationLabel 为空或等于 id 时查已审校目录，registry 也没有才回落 id。
- * 这里曾有一份只覆盖 4 个 id 的内联字典，正是它让 document/webpage 变成英文 id，
- * 已随本次修复删除，禁止再把字典复制回来。
- */
+/** Use the same catalog option as the mode selector. */
 function resolveModeText(params: EffectiveVideoParams, locale: OperationLabelLocale): string {
   if (!params.showModeUi) return '';
-  return resolveOperationLabel(
-    { id: params.operation, label: params.operationLabel,
-      slots: params.effectiveOperations?.find(option => option.id === params.operation)?.slots },
-    locale,
-  );
+  const selected = params.effectiveOperations?.find(option => option.id === params.operation);
+  return resolveOperationLabel(selected ?? { id: params.operation, label: params.operationLabel }, locale);
 }
 
 /**

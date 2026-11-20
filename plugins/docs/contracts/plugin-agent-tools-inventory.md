@@ -184,6 +184,7 @@ related:
 - **功能域**：React Flow DAG 画布编排、物料节点 CRUD、连线规则校验、异步执行与 TableNode 数据表。
 - **存储**：`$DSH_HOME/omnimux/workflow/` + Canvas JSON。
 - **状态**：双面就绪 (已实装 12 大工具，标杆级画布 Agent 控制)。
+- **视频模式**：画布与 Agent 执行消费同一目录的操作和槽位规则。界面按目录中的 `modeKind` 显示名称，`workflow_run` 和节点参数使用原 operation ID。
 
 | 业务功能描述 | 对应 UI 交互 / HTTP 路由 | Agent 工具名称 (`Tool Name`) | 分级 | 状态 | 破坏性 confirm |
 |---|---|---|---|---|---|

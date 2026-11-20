@@ -220,3 +220,13 @@ test('fingerprintOf reuses canonical key ordering in both supported overloads', 
   assert.equal(fingerprintOf(lists, defaults, context),
     fingerprintOf(lists, reverseObjectKeys(defaults), reverseObjectKeys(context)))
 })
+
+test('a projected video mode label invalidates cached catalogs from the same gateway snapshot', () => {
+  const lists = { text: [], image: [], video: [{ id: 'muse-video' }], audio: [] }
+  const defaults = { video: 'muse-video' }
+  const contract = { schemaVersion: '1.1', contractFingerprint: 'same-operations', gateway: { digest: 'same-snapshot' } }
+  const legacy = fingerprintOf(lists, defaults, contract)
+  const videoModeLabels = [['muse-video', 'video_multi_ref', 'image_reference', '图片参考', 'Image reference']]
+  assert.notEqual(fingerprintOf(lists, defaults, { ...contract, videoModeLabels }), legacy)
+  assert.equal(fingerprintOf(lists, defaults, { ...contract, videoModeLabels: [] }), legacy)
+})
