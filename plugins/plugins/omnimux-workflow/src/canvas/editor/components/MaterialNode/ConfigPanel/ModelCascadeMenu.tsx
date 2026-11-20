@@ -324,9 +324,6 @@ const CascadeChannelColumn: React.FC<{
         <div className="wf-cascade-channel-sections" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {officialGroups.length > 0 ? (
             <div className="wf-cascade-channel-section">
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--wf-cascade-muted)', padding: '2px 8px 6px' }}>
-                官方专线
-              </div>
               <div className="wf-cascade-channel-list">
                 {officialGroups.map((group) => (
                   <ChannelRow
