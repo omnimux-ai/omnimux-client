@@ -6,7 +6,7 @@
  * 在物化脚本写入目标 Profile 之后，模拟真实 DSH/Cordis 插件树加载与 apply(ctx) 执行：
  * 1. 验证目标 Profile 的 package.json 及其依赖拓扑；
  * 2. 模拟真实 Cordis 宿主上下文（含严格的 tools.register 契约门禁）；
- * 3. 动态加载并执行所有 omnimux-* 插件的 apply(ctx)；
+ * 3. 在独立的临时 DSH_HOME 内加载并执行所有 omnimux-* 插件的 apply(ctx)；
  * 4. 若任何插件在 apply 阶段报错（如缺失 output、语法错误、缺失依赖），立即返回退出码 1，触发物化脚本回滚。
  *
  * 宿主包（`@deepseek-ai/*`）只存在于桌面 App 的 `app.asar` 内：Profile 不落地它们，
@@ -25,9 +25,9 @@
  *   schema 编译与参数校验。
  */
 
-import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync } from 'node:fs';
 import * as nodeModule from 'node:module';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -667,6 +667,12 @@ if (generationMismatches.length > 0) {
 }
 
 installHostPackageStub();
+
+// Some plugins require an explicit DSH_HOME at load time. Give the rehearsal
+// its own directory so it works from a clean shell and keeps writes isolated.
+const preflightHome = mkdtempSync(join(tmpdir(), 'omnimux-profile-preflight-'));
+process.once('exit', () => rmSync(preflightHome, { recursive: true, force: true }));
+process.env.DSH_HOME = preflightHome;
 
 let totalErrors = 0;
 let totalToolsVerified = 0;

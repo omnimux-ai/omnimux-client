@@ -41,6 +41,27 @@ test('Agent cannot use the bulk App kill/restart shortcut', () => {
   assert.match(result.stderr, /Agent 严禁通过此批量命令强杀或重启/)
 })
 
+test('desktop Dev restart uses the installed Dev bundle explicitly', () => {
+  const fixture = mkdtempSync(join(tmpdir(), 'omnimux-dev-restart-'))
+  try {
+    const trace = join(fixture, 'argv')
+    for (const command of ['pkill', 'sleep', 'open']) {
+      writeFileSync(join(fixture, command), `#!/bin/sh\nprintf '%s\\n' '${command}' "$@" >> "$OMNIMUX_RESTART_TRACE"\n`, { mode: 0o700 })
+    }
+    const script = join(root, '..', 'app', 'scripts', 'omnimux.mjs')
+    const result = spawnSync(process.execPath, [script, 'restart', 'dev'], {
+      cwd: root,
+      encoding: 'utf8',
+      env: { ...process.env, PATH: fixture, OMNIMUX_RESTART_TRACE: trace },
+    })
+    assert.equal(result.status, 0, result.stderr)
+    assert.deepEqual(readFileSync(trace, 'utf8').trimEnd().split('\n'), [
+      'pkill', '-f', '^/Applications/OmniMux Dev[.]app/Contents/MacOS/OmniMux([[:space:]]|$)',
+      'sleep', '1', 'open', '-a', '/Applications/OmniMux Dev.app',
+    ])
+  } finally { rmSync(fixture, { recursive: true, force: true }) }
+})
+
 test('active hooks preserve worktree and UI guards without the removed guard', () => {
   const hooks = JSON.parse(readFileSync(join(root, '.dsh/hooks.json'), 'utf8'))
   assert.deepEqual(hooks.PreToolUse.flatMap(row => row.hooks.map(hook => hook.command)), [
