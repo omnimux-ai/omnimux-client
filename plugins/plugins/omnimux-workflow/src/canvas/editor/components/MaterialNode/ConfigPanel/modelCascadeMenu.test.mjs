@@ -209,6 +209,10 @@ test('model transition and routing are written atomically once', () => {
   assert.doesNotMatch(picker, /onUpdateNodeData|\.\.\.params/);
   assert.match(picker, /handleModelChange\(modelId, \{ strategy, allowedGroups, channelGroupId, sourceType \}\)/);
 });
+test('official channel section no longer renders a 官方专线 subheading', () => {
+  assert.doesNotMatch(cascadeSrc, /官方专线/);
+  assert.match(cascadeSrc, /className="wf-cascade-channel-list"/);
+});
 test('hover remains preview-only and legacy brand clicks select a real model row', () => {
   assert.match(cascadeSrc, /models\.find\(\(item\) => item\.executable !== false\)\?\.id/);
   assert.match(cascadeSrc, /onHover=\{\(\) => handleBrandHover\(brand\.id\)\}/);
