@@ -9,13 +9,13 @@ import { afterEach, test } from 'node:test';
 const here = fileURLToPath(new URL('.', import.meta.url));
 const bundle = join(mkdtempSync(join(tmpdir(), 'omnimux-canvas-store-')), 'runtime.mjs');
 buildSync({
-  stdin: { contents: "export { useCanvasStore } from './canvasStore.ts';", resolveDir: here, sourcefile: 'runtime.ts' },
+  stdin: { contents: "export { UNAVAILABLE_CATALOG, useCanvasStore } from './canvasStore.ts';", resolveDir: here, sourcefile: 'runtime.ts' },
   bundle: true,
   format: 'esm',
   platform: 'node',
   outfile: bundle,
 });
-const { useCanvasStore } = await import(pathToFileURL(bundle).href);
+const { UNAVAILABLE_CATALOG, useCanvasStore } = await import(pathToFileURL(bundle).href);
 import { createCompatTestCatalog } from '../../shared/validation/compatTestCatalog.ts';
 import { createMaterialNode } from '../../shared/graph/nodeFactory.ts';
 
@@ -82,6 +82,23 @@ test('graph-first hydrate reconciles after catalog arrives and preserves an expl
   const node = useCanvasStore.getState().nodes.find((candidate) => candidate.id === 'gen');
   assert.equal(node.data.params.model, 'img-ref');
   assert.equal(node.data.params.operation, 'image_to_image');
+});
+
+test('pending catalog hides the previous catalog without reconciling saved nodes or edges', () => {
+  const store = useCanvasStore.getState();
+  const catalog = createCompatTestCatalog();
+  const saved = graph('img-ref');
+  store.setCatalogRuntime(catalog);
+  store.hydrateGraph(saved.nodes, saved.edges);
+  const ready = useCanvasStore.getState();
+  assert.equal(ready.nodes[0].data.params.operation, 'image_to_image');
+
+  store.setCatalogRuntime(UNAVAILABLE_CATALOG);
+  const pending = useCanvasStore.getState();
+  assert.strictEqual(pending.catalogRuntime, UNAVAILABLE_CATALOG);
+  assert.strictEqual(pending.nodes, ready.nodes);
+  assert.strictEqual(pending.edges, ready.edges);
+  assert.strictEqual(pending.past, ready.past);
 });
 
 test('catalog-ready standalone video creation writes the effective listed model and operation atomically', () => {

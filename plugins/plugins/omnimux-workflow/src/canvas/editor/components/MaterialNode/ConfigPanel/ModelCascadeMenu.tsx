@@ -549,10 +549,12 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
     emit(modelId, nextGroupIds);
   }, [options, groupsForModel, emit]);
 
-  /** 点击品牌只选择该分组第一个可执行候选。 */
+  // Keyboard activation enters the brand without requiring a pointer hover.
   const handleBrandClick = useCallback((brandId: string) => {
     const targetModelId = modelsForBrand(brandId).find((item) => item.executable !== false)?.id;
-    if (targetModelId) handleSelectModel(targetModelId);
+    if (!targetModelId) return;
+    setHoverBrandId(brandId);
+    handleSelectModel(targetModelId);
   }, [handleSelectModel, modelsForBrand]);
 
   const handleSelectGroup = useCallback((groupId: string) => {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { createEventsClient } from './events-client.js'
+import { createEventsClient, installHubEventsGlobal } from './events-client.js'
 
 describe('EventsClient', () => {
   it('dispatches RPC and sends ack', async () => {
@@ -131,6 +131,32 @@ describe('event connection lifecycle', () => {
     client.disconnect()
     t.mock.timers.tick(10000)
     assert.equal(instances.length, 2)
+  })
+
+  it('invalidates the DOM catalog after reconnect without relying on replay', (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: 1000 })
+    const { Socket, instances } = sockets()
+    const client = createEventsClient({ WebSocket: Socket, streamUrl: 'ws://localhost/omnimux/events/stream' })
+    const target = Object.assign(new EventTarget(), { Event })
+    const uninstall = installHubEventsGlobal(client, target)
+    const type = 'omnimux:model-catalog-updated'
+    let invalidations = 0
+    target.addEventListener(type, () => { invalidations++ })
+    t.after(() => { uninstall(); client.disconnect() })
+
+    client.connect()
+    instances[0].open()
+    assert.equal(invalidations, 1)
+    instances[0].emit({ type, payload: {} })
+    assert.equal(invalidations, 2)
+    instances[0].close()
+    t.mock.timers.tick(3000)
+    instances[1].open()
+    assert.equal(invalidations, 3)
+
+    uninstall()
+    instances[1].emit({ type, payload: {} })
+    assert.equal(invalidations, 3)
   })
 
   it('does not enqueue viewport requests without an actual session', (t) => {

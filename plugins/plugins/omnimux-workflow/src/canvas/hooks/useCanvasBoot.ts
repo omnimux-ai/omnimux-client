@@ -3,7 +3,7 @@
  * capability catalog. Extracted from App so chrome stays presentational.
  */
 import { useEffect, useRef, useState } from 'react';
-import { useCanvasStore } from '../store/canvasStore';
+import { UNAVAILABLE_CATALOG, useCanvasStore } from '../store/canvasStore';
 import { loadGenerationPreferences } from '../store/generationPreferencesStore';
 import { t } from '../i18n';
 import {
@@ -23,11 +23,6 @@ import {
 } from '../editor/hooks/useModelParameterSchema';
 import { sortCatalogRows } from '../../shared/sortCatalog';
 import { tableDocumentCache } from '../store/tableDocumentCache';
-
-// Explicit empty catalog prevents consumers' nullish cache fallback while unavailable.
-const UNAVAILABLE_CATALOG: CapabilityCatalog = {
-  source: 'omnimux', models: [], text: [], image: [], video: [], audio: [],
-};
 
 export type BootState =
   | { phase: 'loading' }
@@ -69,13 +64,15 @@ export function useCanvasBoot(opts: UseCanvasBootOptions = {}) {
       };
     }
 
-    let catalogRequest = 0;
+    let catalogRequest: AbortController | undefined;
     async function refreshCatalog(force = false): Promise<void> {
-      const request = ++catalogRequest;
+      catalogRequest?.abort();
+      const request = new AbortController();
+      catalogRequest = request;
       setCatalog(UNAVAILABLE_CATALOG);
       useCanvasStore.getState().setCatalogRuntime(UNAVAILABLE_CATALOG);
       try {
-        const result = await fetchCapabilities();
+        const result = await fetchCapabilities(request.signal);
         if (cancelled || request !== catalogRequest) return;
         if (!result.ok) {
           invalidateCachedCatalog();
@@ -94,6 +91,8 @@ export function useCanvasBoot(opts: UseCanvasBootOptions = {}) {
       } catch {
         if (cancelled || request !== catalogRequest) return;
         invalidateCachedCatalog();
+      } finally {
+        if (catalogRequest === request) catalogRequest = undefined;
       }
     }
 
@@ -156,6 +155,7 @@ export function useCanvasBoot(opts: UseCanvasBootOptions = {}) {
     })();
     return () => {
       cancelled = true;
+      catalogRequest?.abort();
       if (typeof window !== 'undefined') {
         window.removeEventListener('omnimux:model-catalog-updated', onCatalogUpdated);
       }

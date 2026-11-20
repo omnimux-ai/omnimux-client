@@ -29,7 +29,9 @@ dsh 会话里的 Agent 可通过宿主侧工具指挥画布（注册在 cordis `
 | `workflow_list` | `include_executions?: boolean` | 列出工作区（id/name/version/nodeCount/updatedAt，新→旧）；`include_executions=true` 附带最近 5 条执行概览（状态 + 进度） |
 | `workflow_run` | `workspace_id \| workspace_name`、`execution_id?`、`mode: full\|subset\|single`、`node_ids?`、`wait?`、`timeout_ms?`（默认 120000） | 创建执行。`subset` 执行指定节点及有效上游，`single` 使用已有输入执行指定节点。`wait=true` 等待终态或超时。传返回的 `executionId` 作为 `execution_id` 查询或等待原执行。分组节点按[执行契约](../../docs/contracts/canvas-generation.md#执行和恢复)校验和恢复。 |
 | `workflow_snapshot` | `workspace_id`、`include_nodes?: boolean`、`node_id?` | 查看画布摘要或完整结构。传入 `node_id` 可查看指定节点的当前分组、方式、参数和目录版本。 |
-| `workflow_node_update` | `workspace_id`、`node_id`、`patch` | 更新属性。更换起始图时，先用 `workflow_snapshot` 的 `include_nodes=true` 读取当前绑定，再单独传入 `patch.swap_reference_images`。`slot` 为有序参考图卡槽名称，`first_edge_id` 和 `second_edge_id` 分别为当前起始图与待交换图片的连线 ID |
+| `workflow_node_update` | `workspace_id`、`node_id`、`patch` | 更新属性。网关分组切换和参数编辑按[选择规则](../../docs/contracts/canvas-generation.md#选择和素材)执行。更换起始图时，先用 `workflow_snapshot` 的 `include_nodes=true` 读取当前绑定，再单独传入 `patch.swap_reference_images`。`slot` 为有序参考图卡槽名称，`first_edge_id` 和 `second_edge_id` 分别为当前起始图与待交换图片的连线 ID |
+
+为节点选择网关视频线路前，按 `node_id` 读取 `workflow_snapshot`，再提交 `patch.params.model` 和 `patch.params.routing.channelGroupId`，并在需要时带上该组的新报价 `patch.params.routing.videoLineQuote`。更换模型、组或方式会应用相应默认值。当前组合内可以只修改需要调整的参数。过期报价或无法共同匹配组内规则的参数会被拒绝，节点保持原状。
 
 更换起始图与画布共用校验和保存逻辑，保留原连线。若起始图已改变或待交换图片不可用，工具返回 `error: "mutation-rejected"` 和 `reasonCode: "input_changed"`，应先重读快照再判断是否仍需换序。
 
@@ -130,7 +132,7 @@ hub 错误（`OmnimuxError`，带 `code`）映射为节点执行错误，格式 
 
 视频生成模式的目录项可包含网关发布的 `modeKind`。中枢根据该字段提供本地化名称，画布菜单与摘要共用这组名称。图片张数等限制读取同一操作的槽位。历史节点与 Agent 工具继续使用 operation ID。
 
-`GET /omnimux-workflow/api/capabilities` 在 seam 可达时返回 hub `modelCatalog.list()`（`source: "omnimux"`，含 `fingerprint` / `defaults` / 四类模型行，按显示名 A–Z）。目录由中枢构建，官方模型信息来自网关快照。模型是否可选以及如何消费分组和操作，见[目录和协议](../../docs/contracts/canvas-generation.md#目录和协议)。`OMNIMUX_*_MODEL` env 与 Settings 默认模型字段只覆盖 **defaults**，不收缩列表。画布 ConfigPanel 无生产假回退；已保存但不在目录中的 `params.model` 保留并标 deprecated。hub 不可达 / mock 模式返回 `source: "static-stub"` 夹具。
+`GET /omnimux-workflow/api/capabilities` 在 seam 可达时返回 hub `modelCatalog.list()`（`source: "omnimux"`，含 `fingerprint` / `defaults` / 四类模型行，按显示名 A–Z）。目录由中枢构建，官方模型信息来自网关快照。账号目录仅对授权的本机 Host 视图返回，鉴权响应和缓存规则见下方契约。模型是否可选以及如何消费分组和操作，见[目录和协议](../../docs/contracts/canvas-generation.md#目录和协议)。`OMNIMUX_*_MODEL` env 与 Settings 默认模型字段只覆盖 **defaults**，不收缩列表。画布 ConfigPanel 无生产假回退；已保存但不在目录中的 `params.model` 保留并标 deprecated。hub 不可达 / mock 模式返回 `source: "static-stub"` 夹具。
 
 ## 性能基线（M5）
 

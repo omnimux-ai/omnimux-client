@@ -6,8 +6,17 @@
 import { resolveTableAbsPath, TablePathError } from '../storage/tablePath.ts';
 import { mutateWorkspaceGraph } from '../graph/GraphMutator.ts';
 import { createMaterialNode } from '../../shared/graph/nodeFactory.ts';
-import type { MaterialType, MaterialTool } from '../../shared/graph/materialNode.ts';
+import { resolveNodeKind, type MaterialType, type MaterialTool } from '../../shared/graph/materialNode.ts';
 import type { CanvasInputMutation } from '../../shared/graph/canvasInputMutationGateway.ts';
+import type { CapabilityCatalog } from '../../shared/api.ts';
+import {
+  effectiveVideoAssetFields,
+  effectiveVideoOperations,
+  resolveEffectiveVideoGroup,
+  resolveEffectiveVideoOperation,
+  transitionEffectiveVideoParams,
+} from '../../shared/validation/lineConstraints.ts';
+import { managedVideoLinePricingFingerprint } from '../../shared/validation/managedVideoExecution.ts';
 import { mutationContext } from './agentMutationContext.ts';
 import { normalizeNodeIds } from '../execution/subgraph.ts';
 import { TableStorageService } from '../storage/TableStorageService.ts';
@@ -29,6 +38,81 @@ import {
   bindCanvasWorkspaceProject,
   extractSessionContext,
 } from './agentToolShared.ts';
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+function rejectVideoSelection(reasonCode: string, message: string) {
+  return { ...errorBody('mutation-rejected', message), reasonCode };
+}
+
+/** Apply explicit Agent choices using the same line and mode transition as the canvas. */
+function prepareManagedVideoUpdate(
+  catalog: CapabilityCatalog | null | undefined,
+  previous: Record<string, unknown>,
+  params: Record<string, unknown>,
+): { params: Record<string, unknown> } | ReturnType<typeof rejectVideoSelection> | undefined {
+  const model = Object.hasOwn(params, 'model') ? params.model : previous.model;
+  const managedModel = resolveEffectiveVideoGroup(catalog, model, undefined)?.model;
+  const previousModel = resolveEffectiveVideoGroup(catalog, previous.model, undefined)?.model;
+  const sameModel = model === previous.model || (managedModel && managedModel.id === previousModel?.id);
+  const explicitRoute = Object.hasOwn(params, 'routing');
+  const routing = asRecord(explicitRoute ? params.routing : sameModel ? previous.routing : undefined);
+  const noRoute = () => rejectVideoSelection('route_plan_required', 'Choose one available group from workflow_snapshot.');
+  if (!managedModel && typeof routing?.videoLineQuote !== 'string') return;
+  if (!catalog || !routing) return noRoute();
+  const { channelGroupId, allowedGroups, sourceType, videoLineQuote } = routing;
+  if ((channelGroupId !== undefined && (typeof channelGroupId !== 'string' || !channelGroupId.trim()))
+    || (allowedGroups !== undefined && (!Array.isArray(allowedGroups)
+      || allowedGroups.some(id => typeof id !== 'string' || !id.trim())))
+    || (sourceType !== undefined && sourceType !== 'official' && sourceType !== 'byok')) return noRoute();
+  const groupIds = [channelGroupId, ...(Array.isArray(allowedGroups) ? allowedGroups : [])]
+    .filter((id): id is string => typeof id === 'string');
+  const byok = groupIds.length > 0 && groupIds.every(id => id.trim().startsWith('byok-'));
+  if ((sourceType === 'byok' && !byok) || (sourceType === 'official' && byok)) return noRoute();
+  if (byok) return; // BYOK keeps its existing provider-specific editing path.
+
+  const selection = resolveEffectiveVideoGroup(catalog, model, routing);
+  if (!selection?.group) return noRoute();
+  const previousGroup = resolveEffectiveVideoGroup(catalog, previous.model, previous.routing)?.group;
+  const quote = managedVideoLinePricingFingerprint(selection.group);
+  const reviewedQuote = videoLineQuote === undefined && sameModel && previousGroup?.id === selection.group.id
+    ? asRecord(previous.routing)?.videoLineQuote : videoLineQuote;
+  if (reviewedQuote !== undefined && quote !== reviewedQuote) {
+    return rejectVideoSelection('line_capability_changed', 'Refresh workflow_snapshot and confirm the updated group price.');
+  }
+  const nextRouting = explicitRoute
+    ? { ...routing, channelGroupId: selection.group.id, allowedGroups: [selection.group.id], sourceType: 'official', videoLineQuote: quote }
+    : routing;
+  const variants = effectiveVideoOperations(selection.group);
+  const invalidParams = () => rejectVideoSelection('parameter_unsupported', 'Choose a published operation and parameters from one complete group variant.');
+  const { operation, model: _model, routing: _routing, ...overrides } = params;
+  const operationId = operation === undefined ? undefined
+    : variants.find(variant => variant.id === operation || (typeof operation === 'string' && variant.aliases?.includes(operation)))?.id;
+  if (operation !== undefined && !operationId) return invalidParams();
+  const previousParams = sameModel && previousGroup ? { ...previous, model: selection.model.id } : {};
+  const next = transitionEffectiveVideoParams(catalog, selection, previousParams, nextRouting, { operationId });
+  if (!next) return invalidParams();
+  const fields = Object.keys(overrides);
+  if (fields.length === 0) return { params: next };
+  const candidates = variants.filter(variant => {
+    const assets = effectiveVideoAssetFields(variant);
+    return fields.every(key => assets.some(asset => asset === key)
+      ? typeof overrides[key] === 'string'
+      : Object.hasOwn(variant.parameters ?? {}, key)
+        && overrides[key] !== undefined && overrides[key] !== null && overrides[key] !== '');
+  });
+  const compatibleGroup = { ...selection.group, effectiveOperations: candidates };
+  const variant = resolveEffectiveVideoOperation(compatibleGroup, next.operation, { ...next, ...overrides })
+    ?? resolveEffectiveVideoOperation(compatibleGroup, next.operation, overrides);
+  if (!variant) return invalidParams();
+  const withDefaults = transitionEffectiveVideoParams(
+    catalog, { ...selection, group: { ...selection.group, effectiveOperations: [variant] } },
+    previousParams, nextRouting, { operationId: variant.id },
+  );
+  return withDefaults ? { params: { ...withDefaults, ...overrides } } : invalidParams();
+}
 
 /**
  * Validate and parse patch payload for workflow_node_update.
@@ -281,7 +365,7 @@ export function createWorkflowNodeUpdateTool(deps: WorkflowAgentDeps): AgentTool
             description: 'Direct text content for manual edit (text nodes only). Setting non-empty text puts the node in manual edit mode as static text input and disables model generation; clearing content restores empty state and re-enables model generation.',
           },
           tool: { type: 'string', description: 'New selectedTool; must belong to the node material_type' },
-          params: { type: 'object', additionalProperties: true, description: 'Tool params (e.g. aspectRatio 1:1|4:3|16:9|9:16, duration) — replaces the whole params object' },
+          params: { type: 'object', additionalProperties: true, description: 'Replaces tool params. For gateway video, read workflow_snapshot first, select model and routing.channelGroupId, and pass routing.videoLineQuote from the group. Choose operation explicitly when multiple modes have no default. Edits on a selected group can pass only the changed parameters.' },
           position: {
             type: 'object',
             properties: { x: { type: 'number' }, y: { type: 'number' } },
@@ -330,7 +414,18 @@ export function createWorkflowNodeUpdateTool(deps: WorkflowAgentDeps): AgentTool
 
         const mutation = parseNodeMutation(nodeId, node, patch as Record<string, unknown>);
         if ('error' in mutation) return mutation;
-        const result = mutateWorkspaceGraph(store, workspaceId, mutation, mutationContext(deps));
+        const context = mutationContext(deps);
+        const data = mutation.nodePatches?.[0]?.data;
+        const params = asRecord(data?.params);
+        if (data && params && node.data?.materialType === 'video' && resolveNodeKind({ ...node.data, ...data }) === 'generate') {
+          const managed = prepareManagedVideoUpdate(context.catalog, asRecord(node.data.params) ?? {}, params);
+          if (managed && 'error' in managed) return managed;
+          if (managed) {
+            data.params = managed.params;
+            data.autoOperationId = null;
+          }
+        }
+        const result = mutateWorkspaceGraph(store, workspaceId, mutation, context);
         if (!result.ok) {
           return {
             ...errorBody(result.error, result.message),

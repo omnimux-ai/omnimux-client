@@ -220,6 +220,11 @@ test('hover remains preview-only and clicks select a real brand row', () => {
   assert.match(cascadeSrc, /disabled=\{preview\}/);
 });
 
+test('activating a brand by keyboard exposes its models before requiring a line choice', () => {
+  assert.match(cascadeSrc, /const handleBrandClick = useCallback[\s\S]+?setHoverBrandId\(brandId\);\s*handleSelectModel\(targetModelId\);/);
+  assert.match(cascadeSrc, /onSelect=\{\(\) => handleBrandClick\(brand\.id\)\}/);
+});
+
 test('popover height is locked once per open and never follows hover state (Issue #2250)', () => {
   // 量尺：离屏渲染候选集里所有可能的列形态，只用于量高度。
   assert.match(cascadeSrc, /data-cascade-probe-col/, 'Probe columns must exist');

@@ -53,6 +53,12 @@ import {
 
 export type SelectedElementType = 'none' | 'node';
 
+// Explicit empty runtime prevents a nullish fallback to a previously cached
+// catalog. A pending request changes availability without editing the draft.
+export const UNAVAILABLE_CATALOG: CapabilityCatalog = {
+  source: 'omnimux', models: [], text: [], image: [], video: [], audio: [],
+};
+
 // ============================================================================
 // History (ported from Gxgen useCanvasHistory, narrowed to nodes/edges)
 // ============================================================================
@@ -231,7 +237,7 @@ export const useCanvasStore = create<CanvasState>()(
 
       // Soft reconcile generate nodes when the fingerprint changes. Historical
       // zero-candidate graphs keep their edges and only flip configuration_error.
-      if (previousFingerprint !== nextFingerprint && current.nodes.length > 0) {
+      if (catalog !== UNAVAILABLE_CATALOG && previousFingerprint !== nextFingerprint && current.nodes.length > 0) {
         const reconciled = reconcileCanvasForCatalog({
           nodes: current.nodes,
           edges: current.edges,

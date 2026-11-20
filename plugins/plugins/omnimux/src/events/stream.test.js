@@ -5,7 +5,7 @@ import { test } from 'node:test'
 import { WebSocket } from 'ws'
 import { createHubEventBus } from './hub-event-bus.js'
 import { EVENTS_PATH, registerHubEventStream } from './stream.js'
-import { createEventsClient } from '../client/events-client.js'
+import { createEventsClient, installHubEventsGlobal } from '../client/events-client.js'
 
 async function host(t) {
   const upgrades = new Map()
@@ -110,6 +110,31 @@ test('the event socket cannot accept commands or retain a disconnected subscribe
   assert.equal(bus.getSnapshot().seq, 0)
   await new Promise((resolve) => setImmediate(resolve))
   assert.equal(bus.subscriberCount(), 0)
+})
+
+test('catalog invalidation reaches the browser DOM through the authenticated event stream', async (t) => {
+  const { base, url, bus } = await host(t)
+  class BrowserSocket extends WebSocket {
+    constructor(address) {
+      super(address, { headers: { cookie: 'test-session=valid', origin: base } })
+    }
+  }
+  const client = createEventsClient({ WebSocket: BrowserSocket, streamUrl: url, getWorkbench: () => null })
+  const target = Object.assign(new EventTarget(), { Event })
+  const uninstall = installHubEventsGlobal(client, target)
+  t.after(() => { uninstall(); client.disconnect() })
+  const type = 'omnimux:model-catalog-updated'
+  const waitForInvalidation = () => once(target, type, { signal: AbortSignal.timeout(2000) })
+  const initial = waitForInvalidation()
+  client.connect()
+  await initial
+
+  const changed = waitForInvalidation()
+  const notification = bus.emit({ type })
+  const [event] = await changed
+  assert.deepEqual(notification.payload, {})
+  assert.equal(event.type, type)
+  assert.equal(event.detail, undefined)
 })
 
 test('hub events leave the sixth HTTP/1 slot available for ordinary requests', { timeout: 4000 }, async (t) => {

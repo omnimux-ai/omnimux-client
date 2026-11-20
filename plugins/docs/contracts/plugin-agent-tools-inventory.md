@@ -189,7 +189,7 @@ superseded_by: null
 | 获取画布快照。用 `node_id` 查询指定节点及其分组生成选项 | 画布加载与节点配置 | `workflow_snapshot` | L1 | `Implemented` | 否 |
 | 创建新工作区与画布 | 新建工作区按钮 | `workflow_create` | L1 | `Implemented` | 否 |
 | 向画布添加物料/AI生成节点 | 左侧物料库拖拽入画布 | `workflow_node_add` | L1 | `Implemented` | 否 |
-| 更新指定节点的参数与配置，在有序参考图卡槽内交换当前起始图和另一张可用图（`patch.swap_reference_images`） | 节点右侧属性面板及参考图卡槽的起始图设置 | `workflow_node_update` | L1 | `Implemented` | 否 |
+| 更新指定节点的参数与配置。网关分组的选择、默认值及参数校验遵循[画布生成契约](canvas-generation.md#选择和素材)。可用 `patch.swap_reference_images` 交换有序参考图卡槽的起始图 | 节点右侧属性面板及参考图卡槽的起始图设置 | `workflow_node_update` | L1 | `Implemented` | 否 |
 | 移除画布上的指定节点及其相连边 | 节点选中按 Delete 键 | `workflow_node_remove` | L1 | `Implemented` | 是 (`confirm: true`) |
 | 在两节点端口之间建立连接边并重算入槽，分组能力节点保留用户已选方式 | 鼠标拖拽连线 | `workflow_connect` | L1 | `Implemented` | 否 |
 | 按当前生成方式的具名卡槽添加或替换素材。系统对话框与拖入可使用桌面本地文件 | 卡槽「添加」及预览「替换」 | — | UI-Only | `UI-Only` | 豁免（桌面文件选择与画布撤销） |

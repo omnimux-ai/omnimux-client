@@ -14,7 +14,8 @@ const bundle = await build({
       path === 'react' ? `export const useRef = value => ({ current: value });
         export const useState = value => [typeof value === 'function' ? value() : value, () => {}];
         export const useEffect = effect => { env.cleanups.push(effect()); };`
-      : path.endsWith('canvasStore') ? 'export const useCanvasStore = env.store;'
+      : path.endsWith('canvasStore') ? `export const useCanvasStore = env.store;
+        export const UNAVAILABLE_CATALOG = { source: 'omnimux', models: [], text: [], image: [], video: [], audio: [] };`
       : path.endsWith('generationPreferencesStore') ? 'export const loadGenerationPreferences = async () => { env.preferencesLoads++; };'
       : path.endsWith('i18n') ? 'export const t = key => key;'
       : path.endsWith('tableDocumentCache') ? 'export const tableDocumentCache = { resetAll: () => env.resets++ };'
@@ -52,7 +53,7 @@ for (const boundary of ['load', 'probe']) test(`retired boot ignores delayed A $
     capabilities: () => catalog.promise,
     probe: () => { env.probes++; return pending.promise; },
   };
-  const ctx = vm.createContext({ env, window: { addEventListener() {}, removeEventListener() {} } });
+  const ctx = vm.createContext({ env, AbortController, window: { addEventListener() {}, removeEventListener() {} } });
   vm.runInContext(bundle.outputFiles[0].text, ctx);
   let captured;
   ctx.hooks.useCanvasBoot({ workspaceId: 'A', beforeReset: () => { captured = canvas.nodes.map(n => n.id); } });

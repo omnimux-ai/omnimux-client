@@ -217,7 +217,15 @@ export function installHubEventsGlobal(client, target = globalThis.window) {
     pushViewport: () => { void client.pushViewport?.() },
   }
   target[HUB_EVENTS_GLOBAL_KEY] = facade
+  const catalogUpdated = 'omnimux:model-catalog-updated'
+  const invalidateCatalog = () => target.dispatchEvent(new target.Event(catalogUpdated))
+  const unsubscribeCatalog = client.subscribe(catalogUpdated, invalidateCatalog)
+  // A connection can open after a change, including after the replay window
+  // has expired. Reload once per connection in addition to live invalidations.
+  const unsubscribeConnected = client.subscribe('omnimux:connected', invalidateCatalog)
   return () => {
+    unsubscribeCatalog()
+    unsubscribeConnected()
     if (target[HUB_EVENTS_GLOBAL_KEY] === facade) delete target[HUB_EVENTS_GLOBAL_KEY]
   }
 }

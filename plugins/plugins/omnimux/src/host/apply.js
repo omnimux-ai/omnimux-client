@@ -101,6 +101,7 @@ export function apply(ctx, config = {}) {
     ctx.effect(() => () => appsStore.dispose(), 'omnimux: apps catalog')
   }
   appsStore.maybeRefresh()
+  const hubEvents = createHubEventBus()
   // Gateway snapshot (P1a, now the catalog's authority since P1b): resolved for
   // diagnostics, for membership/lines/prices, and shared with every catalog
   // consumer through the current-snapshot seam below.
@@ -119,6 +120,9 @@ export function apply(ctx, config = {}) {
     ttlSeconds: hub.catalog.ttlSeconds,
     timeoutMs: hub.catalog.timeoutMs,
     onChanged: () => {
+      // The event carries invalidation only. Each consumer reloads its current
+      // authorized catalog through the existing HTTP route.
+      hubEvents.emit({ type: 'omnimux:model-catalog-updated' })
       ctx.emit?.('omnimux/model-catalog-updated')
       syncComposerListAfterCatalogRefresh?.()
     },
@@ -153,8 +157,7 @@ export function apply(ctx, config = {}) {
   })
   const tabsStore = createTabsStore({ home: homeDir })
 
-  // Initialize in-process HubEventBus and Workbench mailbox
-  const hubEvents = createHubEventBus()
+  // Initialize the Workbench mailbox using the shared in-process event bus.
   const mailbox = createWorkbenchMailbox({ hubEvents })
   ctx.provide?.('hubEvents', hubEvents)
   // Vertical tools (workflow_*) may read last-known viewport for default workspace targeting.

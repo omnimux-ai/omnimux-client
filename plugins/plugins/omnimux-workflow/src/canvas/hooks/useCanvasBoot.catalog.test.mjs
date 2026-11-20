@@ -23,6 +23,7 @@ function executable(source) {
 const stale = { source: 'omnimux', fingerprint: 'same',
   models: [{ id: 'old', operations: [{ id: 'generate', listed: true, output: { type: 'text' } }] }],
   text: [{ id: 'old', name: 'Old' }], image: [], video: [], audio: [] };
+const UNAVAILABLE_CATALOG = { source: 'omnimux', models: [], text: [], image: [], video: [], audio: [] };
 function harness(initialCache = stale) {
   const values = new Map();
   const listeners = new Map();
@@ -45,12 +46,12 @@ function harness(initialCache = stale) {
   useCanvasStore.getState = () => store;
   let effect;
   const useCanvasBoot = runInNewContext(executable(bootSrc) + '\nuseCanvasBoot', {
-    window, ...cache, shouldReplaceCatalogCache, sortCatalogRows, useCanvasStore,
+    window, ...cache, shouldReplaceCatalogCache, sortCatalogRows, useCanvasStore, UNAVAILABLE_CATALOG, AbortController,
     tableDocumentCache: { resetAll: () => {} },
     useState: (initial) => { const index = states.length; states.push(typeof initial === 'function' ? initial() : initial);
       return [states[index], (value) => { states[index] = value; }]; },
     useRef: (current) => ({ current }), useEffect: (fn) => { effect = fn; },
-    fetchCapabilities: () => new Promise((resolve, reject) => requests.push({ resolve, reject })),
+    fetchCapabilities: (signal) => new Promise((resolve, reject) => requests.push({ resolve, reject, signal })),
   });
   const initial = useCanvasBoot();
   const cleanup = effect();
@@ -150,6 +151,7 @@ test('production boot: explicit unavailable catalog overrides still-cached schem
 test('production boot: superseded success and post-unmount failure cannot revive or clear current cache', async () => {
   const h = harness();
   h.refresh();
+  assert.equal(h.requests[0].signal.aborted, true);
   h.requests[1].resolve({ ok: false, body: {} });
   await flush();
   h.requests[0].resolve({ ok: true, body: stale });
@@ -158,10 +160,35 @@ test('production boot: superseded success and post-unmount failure cannot revive
   assert.equal(h.cache.getCachedCatalog(), null);
   h.refresh();
   h.cleanup();
+  assert.equal(h.requests[2].signal.aborted, true);
   h.cache.setCachedCatalog(stale);
   h.requests[2].reject(new Error('late'));
   await flush();
   assert.equal(h.cache.getCachedCatalog().fingerprint, 'same');
+});
+
+test('catalog invalidation hides the previous choices while a serialized old reply is still pending', async () => {
+  const h = harness();
+  h.requests[0].resolve({ ok: true, body: stale });
+  await flush();
+  assert.equal(h.store.catalog.text[0].id, 'old');
+
+  h.refresh();
+  h.refresh();
+  assert.equal(h.requests[1].signal.aborted, true);
+  assertUnavailable(h.store.catalog);
+  assert.equal(h.cache.getCachedCatalog(), null);
+  h.requests[1].resolve({ ok: true, body: stale });
+  await flush();
+  assertUnavailable(h.store.catalog);
+  assert.equal(h.cache.getCachedCatalog(), null);
+
+  h.requests[2].resolve({ ok: true, body: { ...UNAVAILABLE_CATALOG, fingerprint: 'revoked' } });
+  await flush();
+  assertUnavailable(h.store.catalog);
+  assert.equal(h.cache.getCachedCatalog().fingerprint, 'revoked');
+  assert.strictEqual(h.store.nodes, h.graph.nodes);
+  assert.strictEqual(h.store.edges, h.graph.edges);
 });
 
 test('shouldReplaceCatalogCache: force true → replace', () => {
@@ -236,7 +263,7 @@ test('shouldReplaceCatalogCache: 不同 fingerprint → replace', () => {
 
 test('源码契约：refreshCatalog(false) 始终 fetchCapabilities，不因 TTL 提前 return', () => {
   assert.match(bootSrc, /async function refreshCatalog\(force = false\)/);
-  assert.match(bootSrc, /fetchCapabilities\(\)/);
+  assert.match(bootSrc, /fetchCapabilities\(request\.signal\)/);
   assert.match(bootSrc, /shouldReplaceCatalogCache/);
   assert.match(bootSrc, /getCachedFingerprint/);
   assert.doesNotMatch(bootSrc, /isCatalogCacheStale/);
@@ -245,7 +272,7 @@ test('源码契约：refreshCatalog(false) 始终 fetchCapabilities，不因 TTL
   assert.ok(refreshStart >= 0 && refreshEnd > refreshStart, 'refreshCatalog 函数边界');
   const body = bootSrc.slice(refreshStart, refreshEnd);
   assert.doesNotMatch(body, /if \(!force && !isCatalogCacheStale/);
-  assert.match(body, /const result = await fetchCapabilities\(\)/);
+  assert.match(body, /const result = await fetchCapabilities\(request\.signal\)/);
   // Runtime may only receive a directory after the current fetch succeeds.
   assert.doesNotMatch(body, /setCatalogRuntime\(cached\)/);
 });
