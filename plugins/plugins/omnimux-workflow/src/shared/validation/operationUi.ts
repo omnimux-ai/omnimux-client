@@ -41,6 +41,8 @@ export interface OperationUiOption {
   id: string;
   /** Resolved display name: catalog label, else approved directory, else id. */
   label: string;
+  /** English catalog label, when supplied for a gateway video mode. */
+  labelEn?: string;
   /** Slot metadata from the contract (may be empty). */
   slots: OperationContractDto['inputs'];
   /** Output type when known. */
@@ -245,6 +247,7 @@ function matchToOption(
     id: match.operationId,
     // Issue #4103：label 非空且 ≠ id 才用，否则走已审校目录，再否则回落 id。
     label: resolveOperationLabel({ id: match.operationId, label: opView?.label }),
+    ...(opView?.labelEn ? { labelEn: opView.labelEn } : {}),
     slots: opView?.inputs ?? [],
     ...(opView?.output?.type ? { outputType: opView.output.type } : {}),
     ...(opView?.parameters ? { parameters: opView.parameters } : {}),
@@ -735,5 +738,5 @@ export function resolveTriggerModeText(
   const id = selectedOperationId || state.selectedOperationId;
   if (!id) return '';
   const hit = state.effectiveOps.find((op) => op.id === id);
-  return resolveOperationLabel({ id, label: hit?.label });
+  return resolveOperationLabel(hit ?? id);
 }

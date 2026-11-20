@@ -80,6 +80,11 @@ export function mergeRuntimeContractIndex(localIndex, snapshot) {
       gatewayContractVersion: model.gatewayContractVersion ?? null,
       operations: (model.operations ?? []).map((operation) => ({
         id: operation.id,
+        ...(operation.modeKind ? {
+          modeKind: operation.modeKind,
+          label: operation.label,
+          labelEn: operation.labelEn,
+        } : {}),
         listed: operation.listed === true,
         inputs: operation.inputs ?? [],
         parameters: operation.parameters ?? {},

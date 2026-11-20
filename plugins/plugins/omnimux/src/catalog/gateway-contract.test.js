@@ -184,6 +184,65 @@ test('Muse accepts the expanded gateway reference range and preserves request or
   })
 })
 
+test('gateway video mode names reach both catalog projections independently of image count', () => {
+  const fixture = structuredClone(bundled)
+  const muse = fixture.models.find((model) => model.id === 'muse-video')
+  const museReference = muse.contract.operations.find((operation) => operation.id === 'video_multi_ref')
+  const museFirstFrame = muse.contract.operations.find((operation) => operation.id === 'first_frame')
+  const seedance = fixture.models.find((model) => model.id === 'seedance-2-5')
+  const seedanceReference = seedance.contract.operations.find((operation) => operation.id === 'video_multi_ref')
+  museReference.modeKind = 'image_reference'
+  museFirstFrame.modeKind = 'first_frame'
+  seedanceReference.modeKind = 'multimodal_reference'
+
+  for (const max of [2, 10]) {
+    museReference.inputs.find((input) => input.slot === 'reference_images').max = max
+    const catalog = buildModelCatalog({ env: {}, snapshot: fixture })
+    for (const rows of [catalog.models, catalog.video]) {
+      const findOperation = (modelId, operationId) => rows
+        .find((model) => model.id === modelId).operations
+        .find((operation) => operation.id === operationId)
+      const reference = findOperation('muse-video', 'video_multi_ref')
+      assert.equal(reference.modeKind, 'image_reference')
+      assert.equal(reference.label, '图片参考')
+      assert.equal(reference.labelEn, 'Image reference')
+      assert.equal(reference.inputs.find((input) => input.slot === 'reference_images').max, max)
+
+      const firstFrame = findOperation('muse-video', 'first_frame')
+      assert.equal(firstFrame.modeKind, 'first_frame')
+      assert.equal(firstFrame.label, '首帧驱动')
+      assert.equal(firstFrame.labelEn, 'First-frame driven')
+
+      const multimodal = findOperation('seedance-2-5', 'video_multi_ref')
+      assert.equal(multimodal.modeKind, 'multimodal_reference')
+      assert.equal(multimodal.label, '全能参考')
+      assert.equal(multimodal.labelEn, 'All-reference video')
+    }
+  }
+})
+
+test('missing and unknown mode kinds retain the approved operation label', () => {
+  const fixture = structuredClone(bundled)
+  const muse = fixture.models.find((model) => model.id === 'muse-video')
+  const operation = muse.contract.operations.find((entry) => entry.id === 'video_multi_ref')
+  const read = () => buildModelCatalog({ env: {}, snapshot: fixture })
+  const readReference = (catalog) => catalog.models.find((model) => model.id === muse.id)
+    .operations.find((entry) => entry.id === operation.id)
+
+  delete operation.modeKind
+  const legacy = read()
+  assert.equal(readReference(legacy).modeKind, undefined)
+  assert.equal(readReference(legacy).label, '全能参考')
+  const legacyIndexFingerprint = getRuntimeContractIndex({ snapshot: fixture }).index.contentFingerprint
+
+  operation.modeKind = 'future_reference'
+  const future = read()
+  assert.equal(readReference(future).modeKind, 'future_reference')
+  assert.equal(readReference(future).label, '全能参考')
+  assert.notEqual(future.fingerprint, legacy.fingerprint)
+  assert.notEqual(getRuntimeContractIndex({ snapshot: fixture }).index.contentFingerprint, legacyIndexFingerprint)
+})
+
 test('the bundled snapshot carries the live 16-model membership, including Muse and excluding delisted rows', () => {
   const ids = snapshot.models.map((row) => row.id).sort()
   assert.equal(ids.length, 16)

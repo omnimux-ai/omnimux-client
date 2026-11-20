@@ -1,10 +1,9 @@
 /**
  * Operation display names — the canvas-side resolver for Catalog operation ids (Issue #4103).
  *
- * 语义：一条 operation 的对外文案只允许来自「已审校目录」
- * （`plugins/omnimux/src/catalog/contract/operation-registry.json`）。
- * 网关快照里只有 id、本地 YAML 没写 label 的型号（`wan-3.0` 等 gateway-only 行）
- * 因此没有任何合法文案 —— 这里按 registry 的中英名解析，registry 也没有才回落 id。
+ * 目录按网关 modeKind 提供视频模式文案。缺少文案的旧目录使用已审校目录
+ * （`plugins/omnimux/src/catalog/contract/operation-registry.json`）的中英名称，
+ * 未收录的操作回落到操作 ID。
  *
  * 为什么本仓有一份镜像而不是直接 import 那份 JSON：
  * - 画布是浏览器岛（`lib/canvas.js`），构建产物里没有 Node 文件系统，运行期读不到
@@ -16,9 +15,6 @@
  * 展示层只经过 `resolveOperationLabel`：`SegmentControls`（生成方式分段/胶囊）与
  * `summaryFormatter`（底栏摘要）共用它，禁止各自再写一份字典。
  */
-
-import type { InputSlotDto } from '../api.ts';
-import { isOrderedImageReferenceSlot } from './compatKernel.ts';
 
 export type OperationLabelLocale = 'zh' | 'en';
 
@@ -51,19 +47,12 @@ export const OPERATION_LABELS: Readonly<Record<string, { zh: string; en: string 
 /** 解析入参：只需要 id；目录给的 label 作为「更具体」的候选优先。 */
 export interface OperationLabelSource {
   id?: string | null;
-  slots?: InputSlotDto[];
-  /** Catalog DTO label（已审校目录给的名字；gateway-only 行为空）。 */
   label?: string | null;
+  labelEn?: string | null;
 }
 
 /**
- * 解析 operation 的展示名（Issue #4103）。
- *
- * 规则（顺序固定，不可调整）：
- * 1. `label` 非空且 **≠ id** → 用它（型号 YAML 里写的具体文案优先）；
- * 2. 否则查已审校目录（`{zh,en}`，按 locale）；
- * 3. 都没有 → 回落 id（绝不空白、绝不抛错）；
- * 4. id 也空 → 空串（调用方据此隐藏该段）。
+ * 使用当前语言的目录文案，旧目录缺少文案时按已审校目录回退到操作 ID。
  */
 export function resolveOperationLabel(
   input: OperationLabelSource | string | null | undefined,
@@ -71,10 +60,9 @@ export function resolveOperationLabel(
 ): string {
   const source: OperationLabelSource = typeof input === 'string' ? { id: input } : (input ?? {});
   const id = typeof source.id === 'string' ? source.id.trim() : '';
-  const orderedImages = id === 'video_multi_ref' ? source.slots?.find(isOrderedImageReferenceSlot) : undefined;
-  if (orderedImages) {
-    if (orderedImages.max === 2) return locale === 'en' ? 'Two image references' : '双图参考';
-    return locale === 'en' ? 'Multi-image reference' : '多图参考';
+  if (locale === 'en' && typeof source.labelEn === 'string') {
+    const labelEn = source.labelEn.trim();
+    if (labelEn && labelEn !== id) return labelEn;
   }
   const label = typeof source.label === 'string' ? source.label.trim() : '';
   const entry = id ? OPERATION_LABELS[id] : undefined;

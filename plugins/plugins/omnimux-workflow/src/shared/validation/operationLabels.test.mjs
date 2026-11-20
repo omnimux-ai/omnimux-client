@@ -15,13 +15,11 @@ import {
   resolveOperationLabel,
 } from './operationLabels.ts';
 
-test('ordered image reference labels follow the declared capacity', () => {
-  const label = (max, locale) => resolveOperationLabel({ id: 'video_multi_ref', slots: [
-    { type: 'image', role: 'reference', firstItemRole: 'first_frame', min: 2, max },
-  ] }, locale);
-  assert.equal(label(2, 'zh'), '双图参考');
-  assert.equal(label(10, 'zh'), '多图参考');
-  assert.equal(label(10, 'en'), 'Multi-image reference');
+test('uses catalog-localized labels before the legacy operation dictionary', () => {
+  const imageReference = { id: 'video_multi_ref', label: '图片参考', labelEn: 'Image reference' };
+  assert.equal(resolveOperationLabel(imageReference, 'zh'), '图片参考');
+  assert.equal(resolveOperationLabel(imageReference, 'en'), 'Image reference');
+  assert.equal(resolveOperationLabel({ ...imageReference, labelEn: '  ' }, 'en'), '图片参考');
 });
 
 test('#4103 label 非空且 ≠ id 时原样使用（型号 YAML 文案优先）', () => {

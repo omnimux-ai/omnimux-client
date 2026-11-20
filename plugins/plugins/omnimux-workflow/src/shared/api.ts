@@ -272,7 +272,10 @@ export interface InputSlotDto {
 /** Operation-level contract (research/execution/listed are per-operation). */
 export interface OperationContractDto {
   id: string;
+  /** Display semantics published by the gateway, independent of the request operation ID. */
+  modeKind?: string;
   label?: string;
+  labelEn?: string;
   output: { type: string; allowedMimes?: string[]; min?: number; max?: number };
   inputs: InputSlotDto[];
   inputGroups?: Array<{ slots: string[]; min: number; hint?: string }>;

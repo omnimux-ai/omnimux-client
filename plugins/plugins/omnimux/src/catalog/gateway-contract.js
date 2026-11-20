@@ -9,7 +9,7 @@
  */
 
 import { mapLegacyOperation } from './contract/legacy-operation-map.js'
-import { approvedOperationLabel } from './contract/operation-label.js'
+import { approvedOperationLabel, approvedVideoModeLabels } from './contract/operation-label.js'
 import { executionProfileFromContract, isExecutionProfileComplete, mergeExecutionProfiles } from './execution-profile.js'
 
 export const GATEWAY_CONTRACT_SCHEMA_VERSION = '2.0'
@@ -520,16 +520,18 @@ function toLocalOperation(gatewayOperation, localModel, profiles, family) {
     ? { ...parameters, ...localModelParameters }
     : parameters
 
-  /** @type {Record<string, unknown>} */
-  // label 只来自已审校目录；都不认就省略该字段（Issue #4103）。
-  // 视频/音频 overlay 以 operation-registry（审校目录）为准，YAML 的短名只在
-  // registry 未收录时兜底，避免网关行与本地行同名操作出现两套 label。
-  const approvedLabel = family === 'video' || family === 'audio'
+  const modeKind = family === 'video' ? text(gatewayOperation.modeKind) : ''
+  const modeLabels = modeKind ? approvedVideoModeLabels(operationId, modeKind) : undefined
+  // Older contracts retain the approved operation label and the existing YAML fallback.
+  const approvedLabel = modeLabels?.label || (family === 'video' || family === 'audio'
     ? (approvedOperationLabel(operationId) || text(localOp?.label) || '')
-    : (text(localOp?.label) || approvedOperationLabel(operationId) || '')
+    : (text(localOp?.label) || approvedOperationLabel(operationId) || ''))
+  /** @type {Record<string, unknown>} */
   const operation = {
     id: operationId,
+    ...(modeKind ? { modeKind } : {}),
     ...(approvedLabel ? { label: approvedLabel } : {}),
+    ...(modeLabels?.labelEn ? { labelEn: modeLabels.labelEn } : {}),
     output: {
       type: outputType,
       ...(output.formats ? { allowedMimes: stringList(output.formats).map(toMime) } : {}),

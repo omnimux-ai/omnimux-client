@@ -8,6 +8,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { createCompatTestCatalog } from '../../../../../../shared/validation/compatTestCatalog.ts';
+import { resolveOperationLabel } from '../../../../../../shared/validation/operationLabels.ts';
+import { formatVideoSummary } from './summaryFormatter.ts';
 import {
   applyPendingVideoParamAdjustment,
   buildVideoParamTransition,
@@ -83,6 +85,43 @@ const klingItem = { id: 'vid-frames', label: 'vid-frames', parameters: klingSche
 const veoItem = { id: 'vid-frames', label: 'vid-frames', parameters: veoSchema };
 
 describe('videoParamAdapter - resolveEffectiveVideoParams (W2)', () => {
+  it('uses the same catalog label for the mode selector and summary across image limits and locales', () => {
+    const operation = 'video_multi_ref';
+    const cases = [
+      { max: 2, modeKind: 'image_reference', label: '图片参考', labelEn: 'Image reference' },
+      { max: 10, modeKind: 'image_reference', label: '图片参考', labelEn: 'Image reference' },
+      { max: 9, modeKind: 'multimodal_reference', label: '全能参考', labelEn: 'All-reference video' },
+      { max: 2, label: '全能参考' },
+    ];
+    for (const { max, modeKind, label, labelEn } of cases) {
+      const modelCatalog = createCompatTestCatalog();
+      modelCatalog.models.find(model => model.id === klingItem.id).operations.push({
+        id: operation,
+        modeKind,
+        label,
+        labelEn,
+        listed: true,
+        output: { type: 'video' },
+        inputs: [{ slot: 'reference_images', type: 'image', role: 'reference', firstItemRole: 'first_frame', min: 2, max }],
+      });
+      const result = resolveEffectiveVideoParams({
+        params: { model: klingItem.id, operation, aspectRatio: '9:16', duration: 10 },
+        schema: klingSchema,
+        modelItem: klingItem,
+        catalog: modelCatalog,
+        upstreams: [0, 1].map(index => ({ materialType: 'image', hasMedia: true, nodeId: `image-${index}` })),
+        prompt: 'hi',
+      });
+      const option = result.effectiveOperations.find(candidate => candidate.id === operation);
+      assert.equal(result.operation, operation);
+      assert.equal(option?.slots[0]?.max, max);
+      assert.equal(resolveOperationLabel(option, 'zh'), label);
+      assert.equal(formatVideoSummary(result, 'zh').modeText, label);
+      assert.equal(resolveOperationLabel(option, 'en'), labelEn ?? 'All-reference video');
+      assert.equal(formatVideoSummary(result, 'en').modeText, labelEn ?? 'All-reference video');
+    }
+  });
+
   it('catalog + no media → operation set; schema fields scrubbed', () => {
     const result = resolveEffectiveVideoParams({
       params: { model: 'vid-frames', operation: 'video_multi_ref', aspectRatio: '9:16', duration: 10, sound: true },

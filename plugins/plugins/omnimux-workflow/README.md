@@ -130,6 +130,8 @@ hub 错误（`OmnimuxError`，带 `code`）映射为节点执行错误，格式 
 
 ### 能力目录（模型下拉数据源）
 
+视频生成模式的目录项可包含网关发布的 `modeKind`。中枢根据该字段提供本地化名称，画布菜单与摘要共用这组名称。图片张数等限制读取同一操作的槽位。历史节点与 Agent 工具继续使用 operation ID。
+
 `GET /omnimux-workflow/api/capabilities` 在 seam 可达时返回 hub `modelCatalog.list()`（`source: "omnimux"`，含 `fingerprint` / `defaults` / 四类模型行，按显示名 A–Z）。文本来自 hub `CHAT_MODELS`，图/视/音来自 hub `src/media/catalog.js` SPECS。`OMNIMUX_*_MODEL` env 与 Settings 默认模型字段只覆盖 **defaults**，不收缩列表。画布 ConfigPanel 无生产假回退；已保存但不在目录中的 `params.model` 保留并标 deprecated。hub 不可达 / mock 模式返回 `source: "static-stub"` 夹具。
 
 ## 性能基线（M5）
