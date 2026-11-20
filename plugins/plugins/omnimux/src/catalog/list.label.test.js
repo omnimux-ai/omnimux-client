@@ -16,8 +16,8 @@ function hub() {
 
 const APPROVED_VIDEO_LABELS = {
   text_to_video: '文生视频',
-  first_frame: '首帧驱动',
-  first_last_frame: '首尾帧过渡',
+  first_frame: '首帧',
+  first_last_frame: '首尾帧',
   video_multi_ref: '全能参考',
   document_to_video: '文档参考',
   webpage_to_video: '网页参考',

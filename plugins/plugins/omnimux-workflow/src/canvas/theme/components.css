@@ -1802,12 +1802,7 @@ body[data-ds-dark-theme] .wf-canvas-root .wf-gsc__loading-overlay {
   to { transform: rotate(360deg); }
 }
 
-/* Portaled hover popover: a transparent column whose first child is the media
-   card and whose second child is the action row sitting outside that card.
-   The card is sized by the media itself (fit-content), so a portrait still
-   renders a portrait card and a landscape still a landscape card. The popover
-   is portaled to document.body, outside the .wf-canvas-root token scope, so
-   every host token carries a --wb-* fallback. */
+/* The body portal keeps the media card and its actions on separate surfaces. */
 .wf-slot-hover-preview {
   z-index: 1200;
   box-sizing: border-box;
@@ -1816,7 +1811,7 @@ body[data-ds-dark-theme] .wf-canvas-root .wf-gsc__loading-overlay {
   align-items: center;
   gap: 8px;
   overflow: visible;
-  color: var(--dsw-alias-label-primary, var(--wb-text-primary, #1a1d26));
+  color: var(--dsw-alias-label-primary);
   font-size: 12px;
 }
 .wf-slot-hover-preview__card {
@@ -1826,9 +1821,9 @@ body[data-ds-dark-theme] .wf-canvas-root .wf-gsc__loading-overlay {
   overflow: hidden;
   padding: 6px;
   border-radius: 12px;
-  background: var(--dsw-alias-bg-elevated, var(--wb-surface-elevated, var(--wb-surface, #ffffff)));
-  border: 1px solid var(--dsw-alias-border-l2, var(--wb-border, rgba(15, 20, 32, 0.1)));
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  background: rgb(from var(--dsw-specific-menu, var(--dsw-alias-bg-layer-1, var(--dsw-alias-bg-base))) r g b / 1);
+  border: 1px solid var(--dsw-alias-border-l2);
+  box-shadow: 0 8px 24px var(--dsw-alias-bg-mask-1);
 }
 .wf-slot-hover-preview__media {
   display: flex;
@@ -1858,20 +1853,21 @@ body[data-ds-dark-theme] .wf-canvas-root .wf-gsc__loading-overlay {
   gap: 8px;
 }
 .wf-slot-well__replace-pill {
+  --wf-slot-preview-action-surface: var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-layer-1, var(--dsw-alias-bg-base)));
   flex-shrink: 0;
   height: 32px;
   padding: 0 10px;
   border-radius: 8px;
-  border: 1px solid var(--dsw-alias-border-l2, var(--wb-border));
-  background: var(--dsw-alias-bg-layer-2, var(--wb-surface-raised, var(--wb-surface, #ffffff)));
-  color: var(--dsw-alias-label-primary, var(--wb-text-primary, #1a1d26));
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: rgb(from var(--wf-slot-preview-action-surface) r g b / 1);
+  color: inherit;
   font-size: 12px;
   white-space: nowrap;
   cursor: pointer;
-  transition: background 120ms ease;
+  transition: background-color 120ms ease;
 }
 .wf-slot-well__replace-pill:hover {
-  background: var(--dsw-alias-interactive-bg-hover, var(--wb-dock-item-hover, rgba(0, 0, 0, 0.05)));
+  background-color: rgb(from color-mix(in srgb, var(--wf-slot-preview-action-surface), var(--dsw-alias-interactive-bg-hover)) r g b / 1);
 }
 
 /* 卡槽本体文字标签已彻底移除，全模态抑制该类名渲染残余 */

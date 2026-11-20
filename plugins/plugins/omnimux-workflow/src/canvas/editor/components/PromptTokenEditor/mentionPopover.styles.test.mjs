@@ -32,3 +32,24 @@ test('submenu overrides the shared mention popover layer at equal specificity', 
   assert.equal(declarations('.wf-mention-popover')['z-index'], '10000');
   assert.equal(declarations('.wf-mention-submenu')['z-index'], '10001');
 });
+
+test('slot hover previews use opaque host surfaces and the host foreground', () => {
+  const css = readFileSync(new URL('../../../theme/components.css', import.meta.url), 'utf8');
+  const previewRules = postcss.parse(css).nodes.filter(rule => rule.type === 'rule'
+    && /^\.wf-(?:slot-hover-preview(?:__card)?|slot-well__replace-pill(?::hover)?)$/.test(rule.selector));
+  const wrapper = previewRules.find(rule => rule.selector === '.wf-slot-hover-preview');
+  const card = previewRules.find(rule => rule.selector === '.wf-slot-hover-preview__card');
+  const pill = previewRules.find(rule => rule.selector === '.wf-slot-well__replace-pill');
+  const hovered = previewRules.find(rule => rule.selector === '.wf-slot-well__replace-pill:hover');
+  const value = (rule, property) => rule.nodes.find(node => node.type === 'decl' && node.prop === property)?.value;
+  for (const rule of previewRules) {
+    assert.doesNotMatch(rule.toString(), /--dsw-alias-bg-elevated|--wb-|#[\da-f]{3,8}\b|rgba?\(\s*\d/i);
+  }
+  assert.equal(value(wrapper, 'color'), 'var(--dsw-alias-label-primary)');
+  assert.equal(value(card, 'background'), `rgb(from ${menuSurface} r g b / 1)`);
+  assert.equal(value(card, 'border'), '1px solid var(--dsw-alias-border-l2)');
+  assert.equal(value(card, 'box-shadow'), '0 8px 24px var(--dsw-alias-bg-mask-1)');
+  assert.equal(value(pill, 'color'), 'inherit');
+  assert.match(value(pill, 'background'), /^rgb\(from var\(--wf-slot-preview-action-surface\) r g b \/ 1\)$/);
+  assert.match(value(hovered, 'background-color'), /--dsw-alias-interactive-bg-hover\)\) r g b \/ 1\)$/);
+});

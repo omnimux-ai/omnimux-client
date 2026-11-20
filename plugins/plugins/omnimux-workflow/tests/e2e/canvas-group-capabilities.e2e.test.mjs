@@ -328,8 +328,8 @@ async function drive(config, checkVideoModes, checkPromptMentions) {
     assert.ok(observations.groups.every(group => !group.disabled));
     await page.screenshot({ path: config.run + '/dark-economy-picker.png' });
 
-    await chooseMode('首尾帧过渡');
-    observations.frames = await readPanel('首尾帧过渡.*720P.*5s');
+    await chooseMode('首尾帧');
+    observations.frames = await readPanel('首尾帧.*720P.*5s');
     assert.deepEqual(observations.frames.refs, []);
     assert.deepEqual(observations.frames.emptyFrames, ['first_frame', 'last_frame']);
     assert.equal(observations.frames.addReference, 0);
@@ -476,13 +476,13 @@ async function checkVideoModes(page, config, observations, assert) {
 
   const cycle = [];
   observations.videoModes = { two, ten, cycle };
-  for (const label of ['首帧驱动', '文生视频', '图片参考']) {
+  for (const label of ['首帧', '文生视频', '图片参考']) {
     observations.failure = { phase: label };
     await page.click('loc=css:' + modeMenu + ' [role="radio"]:has-text("' + label + '")', { label: 'Select ' + label });
     const state = await inspect(muse, label);
     assert.equal(state.add, Number(label === '图片参考'));
     assert.equal(state.promptSources, 1);
-    if (label === '首帧驱动') {
+    if (label === '首帧') {
       assert.equal(state.firstFrame, 'empty');
       assert.equal(state.ready, false);
     }
@@ -512,17 +512,79 @@ async function checkPromptMentions(page, config, observations, assert) {
   const submenu = '.wf-mention-submenu';
   const expanded = main + ' [aria-expanded="true"].wf-mention-item--highlighted';
   const url = config.origin + '/?scenario=mentions';
+  const replace = preview + ' button[aria-label="替换"]';
   observations.promptMentions = [];
-  observations.failure = { phase: 'bound prompt preview' };
-  await page.cdp('Emulation.setDeviceMetricsOverride', { width: 1280, height: 820, deviceScaleFactor: 1, mobile: false });
-  await page.goto(url);
-  await page.click('loc=css:' + node + ' .wf-node-header', { label: 'Open prompt target' });
-  await page.waitForSelector('loc=css:' + chip);
-  assert.equal(await page.evaluate(selector => document.querySelector(selector).children.length, row), 1);
-  await page.hover('loc=css:' + chip, { label: 'Preview upstream text' });
-  await page.waitForSelector('loc=css:' + preview);
-  assert.match(await page.evaluate(selector => document.querySelector(selector).textContent, preview), /雨后的橱窗映着街灯。/);
-  await page.screenshot({ path: config.run + '/bound-prompt-preview.png' });
+  observations.promptPreviewColors = [];
+
+  // Read CSS colors as sRGB channels to handle relative colors and alpha uniformly.
+  function readPreviewColors(selector) {
+    const portal = document.querySelector(selector);
+    const card = portal.querySelector('.wf-slot-hover-preview__card');
+    const context = document.createElement('canvas').getContext('2d');
+    function channels(color) {
+      context.clearRect(0, 0, 1, 1);
+      context.fillStyle = color;
+      context.fillRect(0, 0, 1, 1);
+      return context.getImageData(0, 0, 1, 1).data;
+    }
+    function luminance([r, g, b]) {
+      const linear = (byte) => {
+        const v = byte / 255;
+        return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+      };
+      return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+    }
+    function surface(element, text = element) {
+      const style = getComputedStyle(element);
+      const foreground = getComputedStyle(text).color;
+      const background = style.backgroundColor;
+      const ink = channels(foreground);
+      const fill = channels(background);
+      const a = luminance(ink);
+      const b = luminance(fill);
+      return { foreground, background, alpha: fill[3] / 255, textAlpha: ink[3] / 255,
+        contrast: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05), border: style.borderTopStyle, shadow: style.boxShadow };
+    }
+    return {
+      bodyPortal: portal.parentElement === document.body,
+      wrapperAlpha: channels(getComputedStyle(portal).backgroundColor)[3] / 255,
+      card: surface(card, card.querySelector('.wf-slot-hover-preview__media span')),
+      actions: [...portal.querySelectorAll('.wf-slot-well__replace-pill')].map(button => ({ label: button.textContent, ...surface(button) })),
+    };
+  }
+
+  for (const [theme, width] of [['dark', 760], ['light', 1280]]) {
+    observations.failure = { phase: 'bound prompt preview ' + theme };
+    await page.cdp('Emulation.setDeviceMetricsOverride', { width, height: 820, deviceScaleFactor: 1, mobile: false });
+    await page.goto(url + `&theme=${theme}&platform=darwin`);
+    await page.click('loc=css:' + node + ' .wf-node-header', { label: 'Open prompt target' });
+    await page.waitForSelector('loc=css:' + chip);
+    assert.equal(await page.evaluate(selector => document.querySelector(selector).children.length, row), 1);
+    await page.hover('loc=css:' + chip, { label: 'Preview upstream text' });
+    await page.waitForSelector('loc=css:' + preview);
+    assert.match(await page.evaluate(selector => document.querySelector(selector).textContent, preview), /雨后的橱窗映着街灯。/);
+    const palette = await page.evaluate(readPreviewColors, preview);
+    await page.screenshot({ path: config.run + `/bound-prompt-preview-${theme}.png` });
+    await page.hover('loc=css:' + replace, { label: 'Hover replace action' });
+    await page.waitForFunction(selector => {
+      const button = document.querySelector(selector);
+      return button?.matches(':hover') && !button.getAnimations().some(animation => animation.pending || animation.playState === 'running');
+    }, replace);
+    const hovered = (await page.evaluate(readPreviewColors, preview)).actions.find(action => action.label === '替换');
+    observations.promptPreviewColors.push({ theme, width, ...palette, hovered });
+    assert.equal(palette.bodyPortal, true);
+    assert.equal(palette.wrapperAlpha, 0);
+    assert.notEqual(palette.card.shadow, 'none');
+    assert.deepEqual(palette.actions.map(action => action.label), ['替换', '停用']);
+    for (const surface of [palette.card, ...palette.actions, hovered]) {
+      const label = `${theme} ${surface.label ?? 'preview card'}`;
+      assert.equal(surface.contrast >= 4.5, true, `${label} contrast ${surface.contrast.toFixed(3)}:1, expected at least 4.5:1`);
+      assert.equal(surface.alpha, 1, `${label} background alpha`);
+      assert.equal(surface.textAlpha, 1, `${label} text alpha`);
+      assert.equal(surface.border, 'solid', `${label} border`);
+    }
+    assert.notEqual(hovered.background, palette.actions[0].background);
+  }
   await page.click('loc=css:' + preview + ' button[aria-label="替换"]', { label: 'Replace upstream text' });
   await page.waitForSelector('loc=css:' + picker);
   await page.click('loc=css:' + picker + ' .wf-picker-card[aria-label="备用文案"]', { label: 'Select another text source' });

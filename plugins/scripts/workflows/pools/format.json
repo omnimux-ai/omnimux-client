@@ -28,17 +28,17 @@
     },
     {
       "id": "first_frame",
-      "name": "首帧驱动",
+      "name": "首帧",
       "role": "画面"
     },
     {
       "id": "first_last_frame",
-      "name": "首尾帧过渡",
+      "name": "首尾帧",
       "role": "画面"
     },
     {
       "id": "digital_human",
-      "name": "数字人/对口型",
+      "name": "对口型",
       "role": "出镜"
     },
     {

@@ -73,7 +73,7 @@ const catalog = {
       ],
       operations: [
         operation('text_to_video', '文生视频', [], minimaxParameters),
-        operation('first_last_frame', '首尾帧过渡', [promptSlot, firstFrameSlot, lastFrameSlot], firstLastFrameParameters),
+        operation('first_last_frame', '首尾帧', [promptSlot, firstFrameSlot, lastFrameSlot], firstLastFrameParameters),
         operation('video_multi_ref', '多参考', [promptSlot, referenceImagesSlot], minimaxParameters),
       ],
     },

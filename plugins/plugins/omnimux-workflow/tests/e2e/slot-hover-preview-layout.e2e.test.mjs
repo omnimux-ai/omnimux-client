@@ -19,8 +19,8 @@ const evidenceDir = join(root, 'docs/evidence/slot-preview-card-fit');
 const PORT = 4943;
 const ORIGIN = `http://localhost:${PORT}`;
 
-/** 宿主令牌缺失时卡片不得退化为透明：注入与真实宿主等价的 body 令牌。 */
-const HOST_TOKENS = 'body{--dsw-alias-bg-elevated:#1c1c1f;--dsw-alias-border-l2:rgba(255,255,255,0.12);--dsw-alias-label-primary:#f5f5f5;--dsw-alias-label-secondary:#a1a1aa;--dsw-alias-label-tertiary:#71717a;--dsw-alias-bg-layer-2:#2c2c2e;--dsw-alias-interactive-bg-hover:rgba(255,255,255,0.08);--dsw-alias-border-l3:rgba(255,255,255,0.2);--dsw-alias-bg-secondary:#222226;--dsw-alias-label-primary-foreground:#fff}';
+/** 在 body 上模拟宿主暗色主题的半透明菜单底色。 */
+const HOST_TOKENS = 'body{--dsw-specific-menu:#303136f0;--dsw-alias-bg-mask-1:#00000080;--dsw-alias-border-l2:rgba(255,255,255,0.12);--dsw-alias-label-primary:#f5f5f5;--dsw-alias-label-secondary:#a1a1aa;--dsw-alias-label-tertiary:#71717a;--dsw-alias-bg-layer-2:#2c2c2e;--dsw-alias-interactive-bg-hover:rgba(255,255,255,0.08);--dsw-alias-border-l3:rgba(255,255,255,0.2);--dsw-alias-bg-secondary:#222226;--dsw-alias-label-primary-foreground:#fff}';
 
 /** 内联 SVG 自带固有尺寸：无需网络即可验证「卡片随图比例」。 */
 function svgDataUrl(width, height, fill) {
