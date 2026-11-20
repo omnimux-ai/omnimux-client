@@ -64,10 +64,13 @@ describe('EventsClient', () => {
 function sockets() {
   const instances = []
   class Socket {
+    listeners = new Map()
     constructor(url) { this.url = url; this.readyState = 0; instances.push(this) }
-    open() { this.readyState = 1; this.onopen?.() }
-    emit(event) { this.onmessage?.({ data: JSON.stringify(event) }) }
-    close() { this.readyState = 3; this.onclose?.() }
+    addEventListener(type, callback) { this.listeners.set(type, callback) }
+    removeEventListener(type) { this.listeners.delete(type) }
+    open() { this.readyState = 1; this.listeners.get('open')?.() }
+    emit(event) { this.listeners.get('message')?.({ data: JSON.stringify(event) }) }
+    close() { this.readyState = 3; this.listeners.get('close')?.() }
   }
   return { Socket, instances }
 }
@@ -118,9 +121,10 @@ describe('event connection lifecycle', () => {
     client.connect()
     instances[0].open()
     instances[0].emit({ id: '7', type: 'omnimux:assets:changed', payload: { lrev: 7 } })
-    const staleMessage = instances[0].onmessage
+    const staleMessage = instances[0].listeners.get('message')
     instances[0].close()
     assert.equal(client.isHealthy(), false)
+    assert.equal(instances[0].listeners.size, 0)
     t.mock.timers.tick(3000)
     assert.equal(instances.length, 2)
     assert.equal(new URL(instances[1].url).searchParams.get('after'), '7')
@@ -131,6 +135,36 @@ describe('event connection lifecycle', () => {
     client.disconnect()
     t.mock.timers.tick(10000)
     assert.equal(instances.length, 2)
+  })
+
+  it('passes the logical Hub path and replay cursor to the selected Host carrier', (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: 1000 })
+    const { Socket, instances } = sockets()
+    const paths = []
+    const client = createEventsClient({
+      baseUrl: 'dsh-app://app/',
+      openWebSocket(path) {
+        paths.push(path)
+        return new Socket(new URL(path, 'ws://127.0.0.1:31337/').href)
+      },
+    })
+    t.after(() => client.disconnect())
+    client.connect()
+    instances[0].open()
+    instances[0].emit({ id: '13', type: 'omnimux:model-catalog-updated', payload: {} })
+    assert.equal(client.isHealthy(), true)
+    instances[0].close()
+    t.mock.timers.tick(3000)
+    assert.deepEqual(paths, ['/omnimux/events/stream', '/omnimux/events/stream?after=13'])
+    assert.equal(instances[1].url, 'ws://127.0.0.1:31337/omnimux/events/stream?after=13')
+  })
+
+  it('retains the standalone browser transport for an HTTPS document', (t) => {
+    const { Socket, instances } = sockets()
+    const client = createEventsClient({ WebSocket: Socket, baseUrl: 'https://example.test/' })
+    t.after(() => client.disconnect())
+    client.connect()
+    assert.equal(instances[0].url, 'wss://example.test/omnimux/events/stream')
   })
 
   it('invalidates the DOM catalog after reconnect without relying on replay', (t) => {

@@ -9,7 +9,7 @@ import { afterEach, test } from 'node:test';
 const here = fileURLToPath(new URL('.', import.meta.url));
 const bundle = join(mkdtempSync(join(tmpdir(), 'omnimux-canvas-store-')), 'runtime.mjs');
 buildSync({
-  stdin: { contents: "export { UNAVAILABLE_CATALOG, useCanvasStore } from './canvasStore.ts';", resolveDir: here, sourcefile: 'runtime.ts' },
+  stdin: { contents: "export { useCanvasStore } from './canvasStore.ts'; export { UNAVAILABLE_CATALOG } from './catalogAvailability.ts';", resolveDir: here, sourcefile: 'runtime.ts' },
   bundle: true,
   format: 'esm',
   platform: 'node',

@@ -3,7 +3,8 @@
  * capability catalog. Extracted from App so chrome stays presentational.
  */
 import { useEffect, useRef, useState } from 'react';
-import { UNAVAILABLE_CATALOG, useCanvasStore } from '../store/canvasStore';
+import { useCanvasStore } from '../store/canvasStore';
+import { UNAVAILABLE_CATALOG } from '../store/catalogAvailability';
 import { loadGenerationPreferences } from '../store/generationPreferencesStore';
 import { t } from '../i18n';
 import {
@@ -64,15 +65,15 @@ export function useCanvasBoot(opts: UseCanvasBootOptions = {}) {
       };
     }
 
-    let catalogRequest: AbortController | undefined;
+    let catalogRequest: { controller?: AbortController } | undefined;
     async function refreshCatalog(force = false): Promise<void> {
-      catalogRequest?.abort();
-      const request = new AbortController();
+      catalogRequest?.controller?.abort();
+      const request = { controller: typeof AbortController === 'function' ? new AbortController() : undefined };
       catalogRequest = request;
       setCatalog(UNAVAILABLE_CATALOG);
       useCanvasStore.getState().setCatalogRuntime(UNAVAILABLE_CATALOG);
       try {
-        const result = await fetchCapabilities(request.signal);
+        const result = await fetchCapabilities(request.controller?.signal);
         if (cancelled || request !== catalogRequest) return;
         if (!result.ok) {
           invalidateCachedCatalog();
@@ -155,7 +156,7 @@ export function useCanvasBoot(opts: UseCanvasBootOptions = {}) {
     })();
     return () => {
       cancelled = true;
-      catalogRequest?.abort();
+      catalogRequest?.controller?.abort();
       if (typeof window !== 'undefined') {
         window.removeEventListener('omnimux:model-catalog-updated', onCatalogUpdated);
       }

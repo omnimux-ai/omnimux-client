@@ -58,7 +58,9 @@
 - `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/modelCascadeMenu.test.mjs` :: `emission and channel lists validate model membership`
   - 原断言逐处绑定旧分组查询调用。现在各处复用同一受管分组筛选入口，并继续校验模型和渠道都属于目录。
 - `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/modelCascadeMenu.test.mjs` :: `hover remains preview-only and clicks select a real brand row`
-  - 原断言禁止点预览分组。受管型号有多个组时，悬停和点击型号只展开候选，点击具体可用组才保存。旧目录的预览保持只读。
+  - 原断言禁止点预览分组，并要求激活品牌后选择首个型号。包含受管型号的品牌先展示型号，避免在用户选型号前更改节点。有多个组时，点击具体可用组才保存。旧目录保持原品牌点击行为与只读预览。
 
 - `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/videoParams/videoParamsIntegration.test.mjs` :: `Issue #986：ConfigPanel 为视频节点提供基于模型能力的卡槽驱动与素材模式双向流转`
   - 原断言要求所有模式直接从模型目录取卡槽。受管视频改为从所选组和已选模式取卡槽，供给变更只影响该模式的素材；旧目录保留基于模型能力与素材的卡槽逻辑。两个分支都保留不同模式不借用卡槽、断开素材不重置已选模式的约束。
+- `plugins/plugins/omnimux-workflow/src/canvas/hooks/useCanvasBoot.catalog.test.mjs` :: `源码契约：refreshCatalog(false) 始终 fetchCapabilities，不因 TTL 提前 return`
+  - 原断言要求无参数调用 `fetchCapabilities()`。现在传入本次读取的取消信号，仍要求启动时发起请求且不因缓存 TTL 提前返回。新增行为验证覆盖收到目录变更后取消旧请求，并忽略已经开始返回的旧响应。

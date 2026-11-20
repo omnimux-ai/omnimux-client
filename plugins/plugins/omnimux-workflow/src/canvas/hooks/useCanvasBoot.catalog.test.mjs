@@ -263,7 +263,7 @@ test('shouldReplaceCatalogCache: 不同 fingerprint → replace', () => {
 
 test('源码契约：refreshCatalog(false) 始终 fetchCapabilities，不因 TTL 提前 return', () => {
   assert.match(bootSrc, /async function refreshCatalog\(force = false\)/);
-  assert.match(bootSrc, /fetchCapabilities\(request\.signal\)/);
+  assert.match(bootSrc, /fetchCapabilities\(request\.controller\?\.signal\)/);
   assert.match(bootSrc, /shouldReplaceCatalogCache/);
   assert.match(bootSrc, /getCachedFingerprint/);
   assert.doesNotMatch(bootSrc, /isCatalogCacheStale/);
@@ -272,7 +272,7 @@ test('源码契约：refreshCatalog(false) 始终 fetchCapabilities，不因 TTL
   assert.ok(refreshStart >= 0 && refreshEnd > refreshStart, 'refreshCatalog 函数边界');
   const body = bootSrc.slice(refreshStart, refreshEnd);
   assert.doesNotMatch(body, /if \(!force && !isCatalogCacheStale/);
-  assert.match(body, /const result = await fetchCapabilities\(request\.signal\)/);
+  assert.match(body, /const result = await fetchCapabilities\(request\.controller\?\.signal\)/);
   // Runtime may only receive a directory after the current fetch succeeds.
   assert.doesNotMatch(body, /setCatalogRuntime\(cached\)/);
 });

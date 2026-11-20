@@ -549,13 +549,16 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
     emit(modelId, nextGroupIds);
   }, [options, groupsForModel, emit]);
 
-  // Keyboard activation enters the brand without requiring a pointer hover.
   const handleBrandClick = useCallback((brandId: string) => {
-    const targetModelId = modelsForBrand(brandId).find((item) => item.executable !== false)?.id;
+    const models = modelsForBrand(brandId);
+    if (models.some((item) => item.effectiveVideoVersion !== undefined)) {
+      handleBrandHover(brandId);
+      return;
+    }
+    const targetModelId = models.find((item) => item.executable !== false)?.id;
     if (!targetModelId) return;
-    setHoverBrandId(brandId);
     handleSelectModel(targetModelId);
-  }, [handleSelectModel, modelsForBrand]);
+  }, [handleBrandHover, handleSelectModel, modelsForBrand]);
 
   const handleSelectGroup = useCallback((groupId: string) => {
     const target = isManagedChannelModel ? channelModelId : activeModelId;

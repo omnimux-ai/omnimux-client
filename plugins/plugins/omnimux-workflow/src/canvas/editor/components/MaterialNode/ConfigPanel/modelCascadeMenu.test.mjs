@@ -209,8 +209,8 @@ test('model transition and routing are written atomically once', () => {
   assert.doesNotMatch(picker, /onUpdateNodeData|\.\.\.params/);
   assert.match(picker, /handleModelChange\(modelId, \{ strategy, allowedGroups, channelGroupId, sourceType \}\)/);
 });
-test('hover remains preview-only and clicks select a real brand row', () => {
-  assert.match(cascadeSrc, /modelsForBrand\(brandId\)\.find\(\(item\) => item\.executable !== false\)\?\.id/);
+test('hover remains preview-only and legacy brand clicks select a real model row', () => {
+  assert.match(cascadeSrc, /models\.find\(\(item\) => item\.executable !== false\)\?\.id/);
   assert.match(cascadeSrc, /onHover=\{\(\) => handleBrandHover\(brand\.id\)\}/);
   assert.match(cascadeSrc, /onHover=\{\(\) => handleModelHover\(item\.id\)\}/);
   assert.match(cascadeSrc, /onSelect=\{\(\) => handleSelectModel\(item\.id\)\}/);
@@ -220,8 +220,8 @@ test('hover remains preview-only and clicks select a real brand row', () => {
   assert.match(cascadeSrc, /disabled=\{preview\}/);
 });
 
-test('activating a brand by keyboard exposes its models before requiring a line choice', () => {
-  assert.match(cascadeSrc, /const handleBrandClick = useCallback[\s\S]+?setHoverBrandId\(brandId\);\s*handleSelectModel\(targetModelId\);/);
+test('activating a managed brand by keyboard previews its models without selecting one', () => {
+  assert.match(cascadeSrc, /const handleBrandClick = useCallback[\s\S]+?if \(models\.some\(\(item\) => item\.effectiveVideoVersion !== undefined\)\) \{\s*handleBrandHover\(brandId\);\s*return;\s*\}/);
   assert.match(cascadeSrc, /onSelect=\{\(\) => handleBrandClick\(brand\.id\)\}/);
 });
 

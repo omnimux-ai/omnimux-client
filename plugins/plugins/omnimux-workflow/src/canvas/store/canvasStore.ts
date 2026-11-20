@@ -14,6 +14,7 @@
  */
 
 import { create } from 'zustand';
+import { UNAVAILABLE_CATALOG } from './catalogAvailability';
 import { useGenerationPreferencesStore } from './generationPreferencesStore';
 import { useShallow } from 'zustand/react/shallow';
 import {
@@ -52,12 +53,6 @@ import {
 } from '../editor/utils/nodeVisualMath';
 
 export type SelectedElementType = 'none' | 'node';
-
-// Explicit empty runtime prevents a nullish fallback to a previously cached
-// catalog. A pending request changes availability without editing the draft.
-export const UNAVAILABLE_CATALOG: CapabilityCatalog = {
-  source: 'omnimux', models: [], text: [], image: [], video: [], audio: [],
-};
 
 // ============================================================================
 // History (ported from Gxgen useCanvasHistory, narrowed to nodes/edges)
