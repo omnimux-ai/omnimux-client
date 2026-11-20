@@ -3,6 +3,8 @@ import { test } from 'node:test';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
+import { draftFromRealPath } from '../utils/localFileDraft.ts';
+import { planImportNodeFill } from '../utils/resourcePickerPolicy.ts';
 
 const requireHub = createRequire(new URL('../../../../../omnimux/package.json', import.meta.url));
 const { JSDOM } = requireHub('jsdom');
@@ -11,11 +13,19 @@ const bundle = await build({
     import React from 'react';
     import { useResourcePicker } from './useResourcePicker.ts';
     import { useProjectAssets } from './useProjectAssets.ts';
+    import { useDocumentHydration } from './useDocumentHydration.ts';
     export { AssetsDrawer } from '../components/AssetsDrawer.tsx';
     export { default as LocalUploadPane } from '../components/ResourcePickerModal/LocalUploadPane.tsx';
     export function HookHost({ workspaceId }) {
       window.currentPicker = useResourcePicker('target', workspaceId);
       window.currentAssets = useProjectAssets(workspaceId);
+      return null;
+    }
+    export function DocumentHost({ source }) {
+      const [data, setData] = React.useState(source);
+      const update = React.useCallback(patch => setData(current => ({ ...current, ...patch })), []);
+      window.documentFixture = { data, update };
+      useDocumentHydration(data.mediaUrl, typeof data.documentText === 'string' || Boolean(data.documentError), update);
       return null;
     }
     export { createElement, act, StrictMode } from 'react';
@@ -169,6 +179,29 @@ test('node import and replacement write only one file to the existing node', asy
     assert.equal(patch.data.nodeKind, 'import');
     Object.assign(f.win.fixture.state.nodes[0].data, patch.data);
   }
+});
+
+test('replacing a mounted JSON node with the same file path rereads its edited contents', async t => {
+  const f = setup(t);
+  const file = draftFromRealPath('/media/prompt.json');
+  const source = { materialType: 'document', nodeKind: 'import', mediaUrl: file.previewUrl };
+  const requests = [];
+  let contents = '{"prompt":"original"}';
+  f.win.fetch = async (url, options) => {
+    requests.push({ url, cache: options.cache });
+    const current = contents;
+    return { ok: true, text: async () => current };
+  };
+  await f.render(f.api.DocumentHost, { source });
+  assert.equal(f.win.documentFixture.data.documentText, contents);
+  const lastRequestCount = requests.length;
+
+  contents = '{"prompt":"edited"}';
+  const nodes = [{ id: 'document', type: 'material', position: { x: 0, y: 0 }, data: f.win.documentFixture.data }];
+  const plan = planImportNodeFill({ nodes, targetNodeId: 'document', files: [file] });
+  await f.flush(() => f.win.documentFixture.update(plan.nodePatches[0].data));
+  assert.equal(f.win.documentFixture.data.documentText, contents);
+  assert.deepEqual(requests.slice(lastRequestCount), [{ url: source.mediaUrl, cache: 'no-store' }]);
 });
 
 test('native canvas import keeps a Windows network path for the node and media URL', async t => {

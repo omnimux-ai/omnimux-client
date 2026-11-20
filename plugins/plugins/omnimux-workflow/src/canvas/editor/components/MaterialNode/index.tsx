@@ -77,6 +77,7 @@ import { toast } from '../../../ui';
 import type { ApiUpstream, CapabilityCatalog, NodeExecutionApiStatus } from '../../../../shared/api';
 import { draftFromRealPath, nativePathOf } from '../../utils/localFileDraft.ts';
 import { planImportNodeFill } from '../../utils/resourcePickerPolicy.ts';
+import { useDocumentHydration } from '../../hooks/useDocumentHydration.ts';
 import { resolveModelInputCapability } from '../../../../shared/validation/modelCompatibilityEvaluator.ts';
 import type { NodeSlotEngineState } from '../../../../shared/graph/slotContractTypes.ts';
 import type { SlotPickRequest } from './ConfigPanel/SlotWells/types.ts';
@@ -196,31 +197,11 @@ const MaterialNode: React.FC<NodeProps> = ({ id, data, selected }) => {
   // Issue #27: JSON documents are imported as file identities first. Load
   // their text once through the same local/project file route the preview
   // uses, then persist it so graph validation and execution see the content.
-  const documentText = typeof nodeData.documentText === 'string' ? nodeData.documentText : undefined;
-  const documentSourceUrl = typeof mediaUrl === 'string' ? mediaUrl : '';
-  const documentHydrationRef = useRef('');
-  useEffect(() => {
-    if (materialType !== 'document' || documentText !== undefined || !documentSourceUrl) return;
-    if (documentHydrationRef.current === documentSourceUrl) return;
-    documentHydrationRef.current = documentSourceUrl;
-    let cancelled = false;
-    void fetch(documentSourceUrl, { credentials: 'same-origin' })
-      .then((response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.text();
-      })
-      .then((text) => {
-        if (!cancelled) updateNodeData({ documentText: text, documentError: undefined });
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        const detail = error instanceof Error && error.message ? error.message : '读取失败';
-        updateNodeData({ documentError: `JSON 文件读取失败：${detail}` });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [materialType, documentText, documentSourceUrl, updateNodeData]);
+  useDocumentHydration(
+    materialType === 'document' ? mediaUrl : undefined,
+    typeof nodeData.documentText === 'string' || Boolean(nodeData.documentError),
+    updateNodeData,
+  );
 
   // 媒体素材宽高自适应计算
   const handleMediaSizeChange = useCallback(
