@@ -1443,7 +1443,6 @@ body[data-ds-dark-theme] .wf-canvas-root .wf-gsc__loading-overlay {
   gap: 6px;
   margin-top: 6px;
 }
-.wf-config-panel__prompt-references:empty { display: none; }
 .wf-prompt-reference {
   display: inline-flex;
   align-items: center;

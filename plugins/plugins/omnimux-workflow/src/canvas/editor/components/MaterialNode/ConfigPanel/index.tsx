@@ -419,6 +419,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   const textSources = useMemo(() => selectGenerationTextSources(currentInputs ? consumedFingerprint.assets : displayedSlotLayout.acceptsText === false ? [] : fingerprint.assets), [currentInputs, consumedFingerprint, displayedSlotLayout, fingerprint]);
   const isPromptReferenceSlot = (spec: SlotSpec) => isPromptInput(spec) || Boolean(spec.composition);
   const promptSlots = displayedSlotLayout.slots.filter(isPromptReferenceSlot);
+  const promptRecords = inputDisplay.records.filter(({ slot }) => promptSlots.some(spec => spec.slot === slot.slot));
   const mediaLayout = { ...displayedSlotLayout, slots: displayedSlotLayout.slots.filter(spec => !isPromptReferenceSlot(spec)) };
   // Bound text is shown in the prompt references or in its assigned role.
   const textSlotEdgeIds = useMemo(() => new Set(inputDisplay.records
@@ -1426,12 +1427,12 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
             aria-hidden="true"
           />
         </PromptTokenEditor>
-        {promptSlots.length > 0 && (
+        {promptRecords.length > 0 && (
           <SlotWells
             presentation="prompt"
             layout={{ ...displayedSlotLayout, slots: promptSlots }}
             bindings={slotBindings}
-            records={inputDisplay.records}
+            records={promptRecords}
             conflicts={slotConflicts}
             upstreams={upstreams}
             onPickSlot={handlePickSlot}

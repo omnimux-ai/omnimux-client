@@ -73,6 +73,41 @@ test('two-level keyboard navigation enters text category, rejects cycle, and sup
  await key(editor,'ArrowRight');await key(editor,'Enter');assert.equal(commits[0].token.materialType,'text');
  await type(editor,'@');await key(editor,'Escape');assert.equal(document.querySelector('[role="listbox"]'),null);
 });
+test('image and text categories stay highlighted when selected or expanded by keyboard', async () => {
+  const { editor } = await mount();
+  await type(editor, '@');
+  const categories = document.querySelectorAll('.wf-mention-popover [aria-haspopup="listbox"]');
+  const [images, texts] = categories;
+  const highlighted = (row) => row.classList.contains('wf-mention-item--highlighted');
+  assert.deepEqual([...categories].map(highlighted), [true, false]);
+  await key(editor, 'ArrowRight');
+  assert.equal(images.getAttribute('aria-expanded'), 'true');
+  assert.equal(images.getAttribute('aria-selected'), 'false');
+  assert.equal(highlighted(images), true);
+  await key(editor, 'ArrowLeft');
+  await key(editor, 'ArrowDown');
+  assert.deepEqual([...categories].map(highlighted), [false, true]);
+  await key(editor, 'ArrowRight');
+  assert.equal(texts.getAttribute('aria-expanded'), 'true');
+  assert.equal(highlighted(texts), true);
+});
+
+test('hover and click keep the expanded category highlighted while navigating its items', async () => {
+  const { editor } = await mount();
+  await type(editor, '@');
+  const categories = [...document.querySelectorAll('.wf-mention-popover [aria-haspopup="listbox"]')];
+  for (const category of [...categories].reverse()) {
+    await act(() => category.dispatchEvent(new window.MouseEvent('mouseover', { bubbles: true })));
+    assert.equal(category.getAttribute('aria-expanded'), 'true');
+    assert.equal(category.getAttribute('aria-selected'), 'true');
+    await act(() => category.click());
+    assert.equal(category.getAttribute('aria-selected'), 'false');
+    const item = document.querySelector('.wf-mention-submenu [role="option"]');
+    await act(() => item.dispatchEvent(new window.MouseEvent('mouseover', { bubbles: true })));
+    assert.deepEqual(categories.map(row => row.classList.contains('wf-mention-item--highlighted')), categories.map(row => row === category));
+  }
+});
+
 test('IME Enter never selects a reference or prevents composition',async()=>{
  const {editor,commits}=await mount();await type(editor,'@');
  const event=new window.KeyboardEvent('keydown',{key:'Enter',isComposing:true,bubbles:true,cancelable:true});

@@ -172,6 +172,7 @@ test('image node text chips stay deduplicated across repeated renders and disapp
   assert.equal(textChipCounts(second).effective + textChipCounts(second).slotWells, 1);
   const without = render(bindableImageNode(), catalog, []);
   assert.equal(textChipCounts(without).effective + textChipCounts(without).slotWells, 0);
+  assert.doesNotMatch(without, /data-testid="wf-prompt-references"/);
 });
 
 test('image node keeps image and file inputs while deduplicating text chips', () => {

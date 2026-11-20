@@ -2,7 +2,7 @@
  * Issue #3034 — each slot definition renders at most one empty well (placeholder + append merged).
  *
  * Seam: rendered ConfigPanel slot wells (.wf-slot-well--empty / --append) counted per data-slot.
- * - prompt unbound → one text reference action, zero media wells
+ * - prompt unbound → no text reference row and zero media wells
  * - full media capacity → filled card with no add action
  * - first_frame / last_frame (two distinct definitions) → 1 each (total 2, not a conflict)
  */
@@ -52,8 +52,8 @@ export function render(nodeData, catalog, upstreams = [], edges = []) {
 const { render } = createRequire(import.meta.url)(output);
 await rm(tmp, { recursive: true, force: true });
 
-const OPS = { image: 'text_to_image', video: 'text_to_video' };
-const TOOLS = { image: 'text-to-image', video: 'text-to-video' };
+const OPS = { image: 'text_to_image', video: 'text_to_video', text: 'text_to_text', audio: 'text_to_music' };
+const TOOLS = { image: 'text-to-image', video: 'text-to-video', text: 'text-to-text', audio: 'text-to-music' };
 const promptSlot = { slot: 'prompt', type: 'text', role: 'prompt', source: 'node_field',
   valueSources: ['local_field', 'upstream_output'], composition: { kind: 'content_with_instruction', localRole: 'instruction' }, min: 1, max: 1 };
 
@@ -101,7 +101,7 @@ test('both canvas versions keep image prompt references out of empty media wells
   }
 });
 
-test('video: first_frame and last_frame each render exactly one named empty well, prompt gets one append', () => {
+test('video: first_frame and last_frame each render exactly one named empty well, with no unbound prompt row', () => {
   const frames = [
     { slot: 'first_frame', type: 'image', role: 'first_frame', source: 'upstream_edge', min: 1, max: 1 },
     { slot: 'last_frame', type: 'image', role: 'last_frame', source: 'upstream_edge', min: 1, max: 1 },
@@ -110,10 +110,23 @@ test('video: first_frame and last_frame each render exactly one named empty well
   assert.equal(totalEmptyWells(html), 2);
   assert.equal((html.match(/aria-label="添加首帧"/g) || []).length, 1);
   assert.equal((html.match(/aria-label="添加尾帧"/g) || []).length, 1);
-  assert.match(html, /data-testid="wf-add-prompt-reference"/);
+  assert.doesNotMatch(html, /data-testid="wf-prompt-references"/);
 });
 
-test('new image: bound prompt slot with composition renders occupant + exactly 1 append well (PM adjudication A: capacity-exempt)', () => {
+function checkUnboundPrompt(type) {
+  for (const legacy of [false, true]) {
+    const html = render(node(type, { legacy }), catalogFor(type));
+    assert.match(html, /role="textbox"/, `prompt editor for legacy=${legacy}`);
+    assert.doesNotMatch(html, /data-testid="wf-prompt-references"/, `unbound prompt for legacy=${legacy}`);
+  }
+}
+
+test('image: an unbound prompt has no reference row on either canvas version', () => checkUnboundPrompt('image'));
+test('video: an unbound prompt has no reference row on either canvas version', () => checkUnboundPrompt('video'));
+test('text: an unbound prompt has no reference row on either canvas version', () => checkUnboundPrompt('text'));
+test('audio: an unbound prompt has no reference row on either canvas version', () => checkUnboundPrompt('audio'));
+
+test('new image: a bound prompt slot only renders the upstream text chip', () => {
   const html = render(
     node('image', {
       legacy: false,
@@ -125,7 +138,7 @@ test('new image: bound prompt slot with composition renders occupant + exactly 1
   );
   assert.equal(totalEmptyWells(html), 0);
   assert.match(html, /data-testid="wf-prompt-references"[\s\S]*data-slot-edge="e-text" data-slot-state="ready"/);
-  assert.equal((html.match(/data-testid="wf-add-prompt-reference"/g) ?? []).length, 1);
+  assert.equal((html.match(/class="wf-prompt-reference nodrag"/g) ?? []).length, 1);
 });
 
 test('legacy image: slot with min=2 unbound renders at most 1 empty well (capped at 1 per OCR finding)', () => {

@@ -202,7 +202,6 @@ const en: Record<DictKey, string> = {
   'panel.slotSwap': 'Swap first/last frame',
   'panel.slotSwapImages': 'Swap reference images',
   'panel.slotAddAsset': 'Add assets',
-  'panel.addPromptReference': 'Reference upstream text',
   'panel.slotAddReferenceImage': 'Add reference image',
   'panel.slotUseAsStart': 'Set as start',
   'panel.slot.startImage': 'Start',

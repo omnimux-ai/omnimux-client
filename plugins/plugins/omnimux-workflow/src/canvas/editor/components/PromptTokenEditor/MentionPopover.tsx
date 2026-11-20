@@ -109,10 +109,17 @@ export default function MentionPopover({ open, position, query, current, canvas,
       <div className="wf-mention-popover__header">{t('mention.current')}</div>
       {references.length ? references.map((item, itemIndex) => renderCandidate(item, itemIndex, false)) : <div className="wf-mention-popover__empty">{t('mention.empty')}</div>}
       <div className="wf-mention-popover__header wf-mention-popover__divider">{t('mention.canvas')}</div>
-      {(['image', 'text'] as const).map((type, offset) => <button key={type} type="button" role="option" aria-selected={!inSubmenu && index === references.length + offset} aria-haspopup="listbox" aria-expanded={category === type} className="wf-mention-item"
-        onMouseEnter={() => { setCategory(type); setInSubmenu(false); setIndex(references.length + offset); }} onClick={() => { setCategory(type); setInSubmenu(true); setIndex(0); }}>
-        {type === 'image' ? <ImageIcon size={18} /> : <FileText size={18} />}<span className="wf-mention-item__name">{t(`node.type.${type}`)}</span><span>{canvas.filter((item) => item.materialType === type).length}</span><ChevronRight size={14} />
-      </button>)}
+      {(['image', 'text'] as const).map((type, offset) => {
+        const selected = !inSubmenu && index === references.length + offset;
+        const expanded = category === type;
+        return (
+          <button key={type} type="button" role="option" aria-selected={selected} aria-haspopup="listbox" aria-expanded={expanded}
+            className={`wf-mention-item${selected || expanded ? ' wf-mention-item--highlighted' : ''}`}
+            onMouseEnter={() => { setCategory(type); setInSubmenu(false); setIndex(references.length + offset); }} onClick={() => { setCategory(type); setInSubmenu(true); setIndex(0); }}>
+            {type === 'image' ? <ImageIcon size={18} /> : <FileText size={18} />}<span className="wf-mention-item__name">{t(`node.type.${type}`)}</span><span>{canvas.filter((item) => item.materialType === type).length}</span><ChevronRight size={14} />
+          </button>
+        );
+      })}
     </div>
     {category && <div ref={subRef} className="wf-mention-popover wf-mention-submenu nodrag nowheel" style={subStyle} role="listbox" aria-label={t(`node.type.${category}`)} onMouseDown={(event) => event.preventDefault()} onPointerDown={(event) => event.stopPropagation()} onWheel={(event) => event.stopPropagation()}>
       {children.length ? children.map((item, itemIndex) => renderCandidate(item, itemIndex, true)) : <div className="wf-mention-popover__empty">{t('mention.noMatches')}</div>}

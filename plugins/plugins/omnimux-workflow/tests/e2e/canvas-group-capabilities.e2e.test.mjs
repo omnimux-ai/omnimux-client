@@ -98,16 +98,16 @@ async function mountFixture(run, canvasBundle, themeCss) {
     paths: { root: appRoot, workspacesDir: join(appRoot, 'workspaces'), executionsDir: join(appRoot, 'executions'), mediaDir: join(appRoot, 'media') },
     libraryRoot: join(run, 'library'), gatewayMode: 'omnimux', env: {},
   });
-  let workspaceId;
-  let modeWorkspaceId;
+  const workspaceIds = new Map();
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, origin);
     const pathname = url.pathname;
+    const scenario = url.searchParams.get('scenario') ?? 'groups';
     res.setHeader('cache-control', 'no-store');
     res.setHeader('content-security-policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; media-src 'self' blob:; font-src 'self' data:");
     if (pathname === '/canvas.js' || pathname === '/boot.js') {
       res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8' });
-      const activeWorkspace = url.searchParams.get('scenario') === 'modes' ? modeWorkspaceId : workspaceId;
+      const activeWorkspace = workspaceIds.get(scenario);
       return res.end(pathname === '/canvas.js' ? canvasBundle : `globalThis.__omnimuxWorkflowCanvas.mountCanvas(document.getElementById('root'),${JSON.stringify({ workspaceId: activeWorkspace, locale: 'zh' })});`);
     }
     if (pathname === '/theme.css') {
@@ -117,8 +117,9 @@ async function mountFixture(run, canvasBundle, themeCss) {
     if (pathname === '/') {
       const dark = url.searchParams.get('theme') === 'dark';
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-      const boot = url.searchParams.get('scenario') === 'modes' ? '/boot.js?scenario=modes' : '/boot.js';
-      return res.end(`<!doctype html><html lang="zh" data-theme="${dark ? 'dark' : 'light'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Canvas Group QA</title><link rel="stylesheet" href="/theme.css"><style>html,body,#root{height:100%;margin:0}</style></head><body${dark ? ' data-ds-dark-theme="true"' : ''}><div id="root"></div><script src="/canvas.js"></script><script src="${boot}"></script></body></html>`);
+      const platform = url.searchParams.get('platform') === 'darwin' ? ' data-platform="darwin"' : '';
+      const boot = '/boot.js?scenario=' + encodeURIComponent(scenario);
+      return res.end(`<!doctype html><html lang="zh" data-theme="${dark ? 'dark' : 'light'}"${platform}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Canvas Group QA</title><link rel="stylesheet" href="/theme.css"><style>html,body,#root{height:100%;margin:0}</style></head><body${dark ? ' data-ds-dark-theme="true"' : ''}><div id="root"></div><script src="/canvas.js"></script><script src="${boot}"></script></body></html>`);
     }
     if (pathname === '/_qa/mode-catalog') {
       if (req.method === 'POST') {
@@ -161,7 +162,8 @@ async function mountFixture(run, canvasBundle, themeCss) {
     assert.ok(response.ok, `${method} ${path}: ${response.status} ${JSON.stringify(data)}`);
     return data;
   }
-  workspaceId = (await request('/api/workspaces', 'POST', { name: '分组验收' })).workspace.id;
+  const workspaceId = (await request('/api/workspaces', 'POST', { name: '分组验收' })).workspace.id;
+  workspaceIds.set('groups', workspaceId);
   const refs = Array.from({ length: 6 }, (_, i) => {
     const n = i + 1;
     const url = `${origin}/assets/ref-${n}.png`;
@@ -177,7 +179,8 @@ async function mountFixture(run, canvasBundle, themeCss) {
     inputBindingVersion: 1, autoOperationId: null, slotBindings: bindings,
   } };
   await request(`/api/workspaces/${workspaceId}`, 'PUT', { expectedVersion: 0, nodes: [...refs, target], edges });
-  modeWorkspaceId = (await request('/api/workspaces', 'POST', { name: '视频模式验收' })).workspace.id;
+  const modeWorkspaceId = (await request('/api/workspaces', 'POST', { name: '视频模式验收' })).workspace.id;
+  workspaceIds.set('modes', modeWorkspaceId);
   const modeNodes = [
     { id: 'n-video-muse', model: 'muse-video', x: 36 }, { id: 'n-video-seedance', model: 'seedance-2-5', x: 360 },
   ].map(({ id, model, x }) => ({
@@ -186,6 +189,22 @@ async function mountFixture(run, canvasBundle, themeCss) {
       params: { model, operation: 'video_multi_ref' } },
   }));
   await request(`/api/workspaces/${modeWorkspaceId}`, 'PUT', { expectedVersion: 0, nodes: modeNodes, edges: [] });
+
+  const mentionWorkspaceId = (await request('/api/workspaces', 'POST', { name: '提示词引用验收' })).workspace.id;
+  workspaceIds.set('mentions', mentionWorkspaceId);
+  const mentionTexts = [
+    { id: 'script', label: '镜头文案', content: '雨后的橱窗映着街灯。', y: 24 },
+    { id: 'alternate', label: '备用文案', content: '镜头沿着雨滴缓慢拉远。', y: 372 },
+  ].map(({ id, y, ...data }) => ({ id, type: 'material', position: { x: 32, y }, data: {
+    ...data, materialType: 'text', nodeKind: 'import', selectedTool: 'text-editor', status: 'ready', params: {},
+  } }));
+  const mentionEdge = { id: 'script-edge', source: 'script', target: 'mention-target', sourceHandle: 'out', targetHandle: 'in', type: 'animated' };
+  const mentionTarget = { ...target, id: 'mention-target', position: { x: 430, y: 128 }, data: {
+    ...target.data, label: '提示词验收目标', slotBindings: { prompt: [{ edgeId: mentionEdge.id, sourceNodeId: 'script', role: 'prompt', pinned: true, use: 'active' }] },
+  } };
+  await request(`/api/workspaces/${mentionWorkspaceId}`, 'PUT', { expectedVersion: 0,
+    nodes: [...mentionTexts, mentionTarget, { ...refs[0], position: { x: 820, y: 270 } }], edges: [mentionEdge],
+  });
 
   return {
     origin, workspaceId, modelId, requests, catalogSha256: hash(JSON.stringify(catalog)), inputSha256: hash(JSON.stringify(raw)),
@@ -198,7 +217,7 @@ async function mountFixture(run, canvasBundle, themeCss) {
   };
 }
 
-async function drive(config, checkVideoModes) {
+async function drive(config, checkVideoModes, checkPromptMentions) {
   const assert = (await import('node:assert/strict')).default;
   const { writeFile } = await import('node:fs/promises');
   const task = await taskSpace(config.taskName);
@@ -363,6 +382,7 @@ async function drive(config, checkVideoModes) {
     await chooseLine('高价多图');
     observations.reopenedRestored = await readPanel('图片参考.*1080P.*10s');
     assert.deepEqual(observations.reopenedRestored.refs, refs);
+    await checkPromptMentions(page, config, observations, assert);
     await checkVideoModes(page, config, observations, assert);
   } catch (error) {
     observations.failure = {
@@ -419,12 +439,14 @@ async function checkVideoModes(page, config, observations, assert) {
         width: innerWidth, dark: document.body.hasAttribute('data-ds-dark-theme'),
         surface: getComputedStyle(document.querySelector('.wf-canvas-root')).getPropertyValue('--wb-surface-elevated').trim(),
         add: panel?.querySelectorAll('[data-testid="wf-add-reference"]').length,
-        promptSources: panel?.querySelectorAll('[data-testid="wf-add-prompt-reference"]').length,
+        promptSources: panel?.querySelectorAll('.wf-prompt-token-editor[role="textbox"][contenteditable="true"]').length,
+        promptRows: panel?.querySelectorAll('[data-testid="wf-prompt-references"]').length,
         firstFrame: panel?.querySelector('[data-slot="first_frame"]')?.dataset.slotState,
         ready: panel?.querySelector('.wf-generate-btn__send')?.getAttribute('aria-disabled') === 'false',
       };
     }, { node, modeMenu });
     assert.deepEqual(result.choices.filter(option => option.checked).map(option => option.label), [label]);
+    assert.equal(result.promptRows, 0);
     return result;
   }
 
@@ -459,6 +481,7 @@ async function checkVideoModes(page, config, observations, assert) {
     await page.click('loc=css:' + modeMenu + ' [role="radio"]:has-text("' + label + '")', { label: 'Select ' + label });
     const state = await inspect(muse, label);
     assert.equal(state.add, Number(label === '图片参考'));
+    assert.equal(state.promptSources, 1);
     if (label === '首帧驱动') {
       assert.equal(state.firstFrame, 'empty');
       assert.equal(state.ready, false);
@@ -478,6 +501,111 @@ async function checkVideoModes(page, config, observations, assert) {
   delete observations.failure;
 }
 
+async function checkPromptMentions(page, config, observations, assert) {
+  const node = '.react-flow__node[data-id="mention-target"]';
+  const editor = node + ' .wf-prompt-token-editor';
+  const row = node + ' [data-testid="wf-prompt-references"]';
+  const chip = row + ' [data-slot-edge]';
+  const preview = '.wf-slot-hover-preview';
+  const picker = '.wf-picker-modal';
+  const main = '.wf-mention-popover:not(.wf-mention-submenu)';
+  const submenu = '.wf-mention-submenu';
+  const expanded = main + ' [aria-expanded="true"].wf-mention-item--highlighted';
+  const url = config.origin + '/?scenario=mentions';
+  observations.promptMentions = [];
+  observations.failure = { phase: 'bound prompt preview' };
+  await page.cdp('Emulation.setDeviceMetricsOverride', { width: 1280, height: 820, deviceScaleFactor: 1, mobile: false });
+  await page.goto(url);
+  await page.click('loc=css:' + node + ' .wf-node-header', { label: 'Open prompt target' });
+  await page.waitForSelector('loc=css:' + chip);
+  assert.equal(await page.evaluate(selector => document.querySelector(selector).children.length, row), 1);
+  await page.hover('loc=css:' + chip, { label: 'Preview upstream text' });
+  await page.waitForSelector('loc=css:' + preview);
+  assert.match(await page.evaluate(selector => document.querySelector(selector).textContent, preview), /雨后的橱窗映着街灯。/);
+  await page.screenshot({ path: config.run + '/bound-prompt-preview.png' });
+  await page.click('loc=css:' + preview + ' button[aria-label="替换"]', { label: 'Replace upstream text' });
+  await page.waitForSelector('loc=css:' + picker);
+  await page.click('loc=css:' + picker + ' .wf-picker-card[aria-label="备用文案"]', { label: 'Select another text source' });
+  await page.click('loc=css:' + picker + ' .wf-picker-btn--primary:not(:disabled)', { label: 'Apply text source replacement' });
+  await page.waitForFunction(selector => document.querySelector(selector)?.textContent.includes('备用文案'), chip);
+  const edgeId = await page.evaluate(selector => document.querySelector(selector).dataset.slotEdge, chip);
+  await page.hover('loc=css:' + chip, { label: 'Preview the replacement text' });
+  await page.click('loc=css:' + preview + ' button:has-text("停用")', { label: 'Disable the text source' });
+  await page.waitForFunction(selector => !document.querySelector(selector), row);
+  const edge = '.react-flow__edge[data-id=' + JSON.stringify(edgeId) + ']';
+  await page.waitForSelector('loc=css:' + edge + ' .react-flow__edge-interaction');
+  const point = await page.evaluate(selector => {
+    const edge = document.querySelector(selector);
+    const path = edge.querySelector('.react-flow__edge-interaction');
+    const length = path.getTotalLength();
+    const matrix = path.getScreenCTM();
+    for (let step = 1; step < 20; step++) {
+      const { x, y } = path.getPointAtLength(length * step / 20).matrixTransform(matrix);
+      if (edge.contains(document.elementFromPoint(x, y))) return { x, y };
+    }
+    return null;
+  }, edge);
+  assert.ok(point, 'the connection has a visible segment outside the node panels');
+  await page.mouse.click(point.x, point.y, { label: 'Select the preserved connection' });
+  await page.waitForSelector('loc=css:' + edge + '.selected .react-flow__edge-interaction');
+  await page.keyboard.press('Backspace');
+  await page.waitForFunction(selector => !document.querySelector(selector), edge);
+  observations.promptBinding = { preview: true, replaced: true, disabled: true, disconnected: true };
+
+  for (const [theme, width, platform] of [['light', 1280, 'web'], ['dark', 540, 'darwin']]) {
+    observations.failure = { phase: 'prompt mention ' + theme };
+    await page.cdp('Emulation.setDeviceMetricsOverride', { width, height: 820, deviceScaleFactor: 1, mobile: false });
+    await page.goto(url + `&theme=${theme}&platform=${platform}`);
+    await page.click('loc=css:' + node + ' .wf-node-header', { label: 'Select prompt target again' });
+    await page.waitForSelector('loc=css:' + editor);
+    assert.equal(await page.evaluate(selector => Boolean(document.querySelector(selector)), row), false);
+    await page.focus('loc=css:' + editor);
+    await page.keyboard.insertText('@');
+    await page.waitForSelector('loc=css:' + main);
+    // Text is the last option, including when a previous source still supplies text.
+    await page.keyboard.press('ArrowUp');
+    await page.keyboard.press('ArrowRight');
+    await page.waitForSelector('loc=css:' + submenu + '[aria-label="文本"]');
+    await page.waitForSelector('loc=css:' + expanded + ':has-text("文本")');
+    const menus = await page.evaluate(({ main, submenu }) => {
+      const root = document.querySelector(main);
+      const child = document.querySelector(submenu);
+      const context = document.createElement('canvas').getContext('2d');
+      const observe = menu => {
+        const style = getComputedStyle(menu);
+        const bounds = menu.getBoundingClientRect();
+        context.clearRect(0, 0, 1, 1);
+        context.fillStyle = style.backgroundColor;
+        context.fillRect(0, 0, 1, 1);
+        return {
+          alpha: context.getImageData(0, 0, 1, 1).data[3] / 255, zIndex: Number(style.zIndex),
+          opaqueColor: style.backgroundColor, bodyPortal: menu.parentElement === document.body,
+          fits: bounds.left >= 0 && bounds.top >= 0 && bounds.right <= innerWidth && bounds.bottom <= innerHeight,
+        };
+      };
+      const a = root.getBoundingClientRect();
+      const b = child.getBoundingClientRect();
+      const left = Math.max(a.left, b.left);
+      const right = Math.min(a.right, b.right);
+      const top = Math.max(a.top, b.top);
+      const bottom = Math.min(a.bottom, b.bottom);
+      const overlaps = left < right && top < bottom;
+      const submenuOnTop = overlaps && child.contains(document.elementFromPoint((left + right) / 2, (top + bottom) / 2));
+      return { surfaces: [observe(root), observe(child)], overlaps, submenuOnTop };
+    }, { main, submenu });
+    assert.deepEqual(menus.surfaces.map(({ alpha, zIndex }) => [alpha, zIndex]), [[1, 10000], [1, 10001]]);
+    assert.ok(menus.surfaces.every(({ bodyPortal, fits }) => bodyPortal && fits));
+    if (theme === 'dark') assert.ok(menus.overlaps && menus.submenuOnTop);
+    await page.screenshot({ path: config.run + `/prompt-mentions-${theme}.png` });
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('loc=css:' + picker);
+    assert.equal(await page.evaluate(selector => Boolean(document.querySelector(selector + ' .wf-prompt-token')), editor), false);
+    observations.promptMentions.push({ theme, width, ...menus, opensV1Picker: true });
+  }
+  assert.notEqual(observations.promptMentions[0].surfaces[0].opaqueColor, observations.promptMentions[1].surfaces[0].opaqueColor);
+  delete observations.failure;
+}
+
 async function runBrowser(config) {
   const child = spawn('ego-browser', ['nodejs'], { stdio: ['pipe', 'inherit', 'inherit'] });
   const completed = new Promise((resolve, reject) => {
@@ -489,7 +617,8 @@ async function runBrowser(config) {
   });
   child.stdin.on('error', error => { if (error.code !== 'EPIPE') child.emit('error', error); });
   child.stdin.end('const drive=' + drive.toString() + ';const checkVideoModes=' + checkVideoModes.toString()
-    + ';await drive(' + JSON.stringify(config) + ', checkVideoModes);');
+    + ';const checkPromptMentions=' + checkPromptMentions.toString()
+    + ';await drive(' + JSON.stringify(config) + ', checkVideoModes, checkPromptMentions);');
   await completed;
 }
 
