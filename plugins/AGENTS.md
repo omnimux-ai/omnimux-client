@@ -52,8 +52,7 @@ The current MVP boundary and its admission and consent rules are owned by mvp-sc
 
 | Path | Owns / read when | Does not own |
 | --- | --- | --- |
-| [Subsystem index](../docs/subsystems.md) | Pilot subsystem documentation, source and verification | Live deployment status or new authority |
-| [README.md](README.md), [tool contracts](docs/contracts/plugin-agent-tools-inventory.md) | Product map and document discovery | Live deployment status or new authority |
+| [Subsystem index](../docs/subsystems.md), [README](README.md), [tool contracts](docs/contracts/plugin-agent-tools-inventory.md) | Product and subsystem source, documentation and verification | Live deployment status or new authority |
 | `pnpm hub:interfaces` | Generate the Hub interface panel from the current checkout | A deployed service |
 | `plugins/omnimux/` | Hub implementation; [hub rules](plugins/omnimux/AGENTS.md) | Domain-private storage |
 | `plugins/omnimux-*/` | Each business domain; nested `AGENTS.md` where present | Hub chrome, keys, provider routing |
