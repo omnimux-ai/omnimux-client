@@ -81,7 +81,7 @@ export function checkParameterMember(definition, value, policy) {
   const mode = modeOf(policy)
   if (!plain(definition)) return { status: 'indeterminate', diagnostic: 'malformed_definition' }
   const malformed = { status: /** @type {const} */ ('indeterminate'), diagnostic: /** @type {const} */ ('malformed_definition') }
-  for (const flag of /** @type {const} */ (['allowAuto', 'supported', 'caseInsensitive'])) {
+  for (const flag of /** @type {const} */ (['allowAuto', 'supported', 'caseInsensitive', 'required'])) {
     if (definition[flag] !== undefined && typeof definition[flag] !== 'boolean') return malformed
   }
   for (const bound of /** @type {const} */ (['minLength', 'maxLength'])) {
@@ -92,7 +92,7 @@ export function checkParameterMember(definition, value, policy) {
     && definition.minLength > definition.maxLength) return malformed
   if (Object.prototype.hasOwnProperty.call(definition, 'defaultValue') && definition.defaultValue === undefined) return malformed
   const known = ['type', 'options', 'optionsFrom', 'range', 'defaultValue', 'minLength', 'maxLength',
-    'supported', 'allowAuto', 'caseInsensitive', 'unit', 'description', 'label', 'help']
+    'supported', 'allowAuto', 'caseInsensitive', 'required', 'unit', 'description', 'label', 'help']
   if (Object.getOwnPropertySymbols(definition).length > 0
     || Object.getOwnPropertyNames(definition).some((key) => !known.includes(key))) return malformed
   const range = definition.range
@@ -188,7 +188,12 @@ export function evaluateDeclaredParameters(request, operationDefinitions, modelD
     if (!plain(definition)) return { ok: false, field, source: 'definition', result: { status: 'indeterminate', diagnostic: 'malformed_definition' } }
     const supplied = Object.prototype.hasOwnProperty.call(request, field) && request[field] !== undefined
       && (mode !== 'legacyGuard' || (request[field] !== null && request[field] !== ''))
-    if (!supplied && !Object.prototype.hasOwnProperty.call(definition, 'defaultValue')) continue
+    if (!supplied && !Object.prototype.hasOwnProperty.call(definition, 'defaultValue')) {
+      if (mode === 'canonical' && definition.required === true) return {
+        ok: false, field, source: 'request', result: { status: 'nonmember', reason: 'required' },
+      }
+      continue
+    }
     const value = supplied ? request[field] : definition.defaultValue
     const domain = !supplied && mode === 'legacyGuard' && definition.supported === false
       ? Object.create(Object.getPrototypeOf(definition), {

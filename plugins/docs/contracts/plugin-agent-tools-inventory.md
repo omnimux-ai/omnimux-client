@@ -180,18 +180,18 @@ superseded_by: null
 - **功能域**：React Flow DAG 画布编排、物料节点 CRUD、连线规则校验、异步执行与 TableNode 数据表。
 - **存储**：`$DSH_HOME/omnimux/workflow/` + Canvas JSON。
 - **状态**：双面就绪 (已实装 12 大工具，标杆级画布 Agent 控制)。
-- **视频模式**：画布与 Agent 执行消费同一目录的操作和槽位规则。界面按目录中的 `modeKind` 显示名称，`workflow_run` 和节点参数使用原 operation ID。
+- **视频模式**：画布与 Agent 共用[画布生成契约](canvas-generation.md)。界面按目录中的 `modeKind` 显示名称，`workflow_run` 和节点参数使用原 operation ID。已接入分组能力的节点按有效组合查组、方式、参数和槽位。生产范围以实际验收为准。
 
 | 业务功能描述 | 对应 UI 交互 / HTTP 路由 | Agent 工具名称 (`Tool Name`) | 分级 | 状态 | 破坏性 confirm |
 |---|---|---|---|---|---|
 | 列出全部工作区与执行历史 | 一级 Stage 工作区选择器 | `workflow_list` | L1 | `Implemented` | 否 |
-| 执行整个工作区或指定节点子图，按原任务标识恢复已受理生成（含 H3 已完成、成片尚未列出）。H3 对口型按当前契约消费角色图与驱动音频 | 顶部「运行」及节点生成按钮 | `workflow_run` | L1 | `Implemented` | 否 |
-| 获取工作区画布完整快照 (节点+边) | 画布加载与状态初始化 | `workflow_snapshot` | L1 | `Implemented` | 否 |
+| 执行工作区或指定节点。已受理任务按原标识恢复；用 `execution_id` 查询或等待已有执行 | 顶部「运行」及节点生成按钮 | `workflow_run` | L1 | `Implemented` | 否 |
+| 获取画布快照。用 `node_id` 查询指定节点及其分组生成选项 | 画布加载与节点配置 | `workflow_snapshot` | L1 | `Implemented` | 否 |
 | 创建新工作区与画布 | 新建工作区按钮 | `workflow_create` | L1 | `Implemented` | 否 |
 | 向画布添加物料/AI生成节点 | 左侧物料库拖拽入画布 | `workflow_node_add` | L1 | `Implemented` | 否 |
-| 更新指定节点的参数与配置，在有序参考图卡槽内交换当前起始图和另一张可用图（`patch.swap_reference_images`） | 节点右侧属性面板及参考图卡槽的起始图设置 | `workflow_node_update` | L1 | `Implemented` | 否 |
+| 更新指定节点的参数与配置。网关分组的选择、默认值及参数校验遵循[画布生成契约](canvas-generation.md#选择和素材)。可用 `patch.swap_reference_images` 交换有序参考图卡槽的起始图 | 节点右侧属性面板及参考图卡槽的起始图设置 | `workflow_node_update` | L1 | `Implemented` | 否 |
 | 移除画布上的指定节点及其相连边 | 节点选中按 Delete 键 | `workflow_node_remove` | L1 | `Implemented` | 是 (`confirm: true`) |
-| 在两节点端口之间建立连接边，按不同素材输出重算自动生成方式 | 鼠标拖拽连线 | `workflow_connect` | L1 | `Implemented` | 否 |
+| 在两节点端口之间建立连接边并重算入槽，分组能力节点保留用户已选方式 | 鼠标拖拽连线 | `workflow_connect` | L1 | `Implemented` | 否 |
 | 按当前生成方式的具名卡槽添加或替换素材。系统对话框与拖入可使用桌面本地文件 | 卡槽「添加」及预览「替换」 | — | UI-Only | `UI-Only` | 豁免（桌面文件选择与画布撤销） |
 | 断开指定两节点之间的连线边，按连线次序补自动卡槽并保留其余具名绑定 | 边右键删除 | `workflow_disconnect` | L1 | `Implemented` | 是 (`confirm: true`) |
 | 暂停、恢复或取消正在运行的流程 | 控制台暂停/中止按钮 | `workflow_execution_control` | L2 | `Implemented` | 否 |

@@ -59,6 +59,11 @@ export function disappearance(current, incoming) {
  *   now?: () => number,
  *   onChanged?: (snapshot: object) => void,
  *   origin?: string,
+ *   accountScoped?: boolean,
+ *   isCurrent?: () => boolean,
+ *   authorizationHeaders?: () => Promise<Record<string, string>>,
+ *   onDenied?: () => void,
+ *   onUnchanged?: () => void,
  * }} deps
  */
 export function createCatalogRefresher(deps) {
@@ -72,6 +77,7 @@ export function createCatalogRefresher(deps) {
   function due() {
     if (!(deps.ttlSeconds > 0)) return false
     const meta = deps.live.store.read()?.meta
+    if (meta?.staleReason === 'access-denied') return true
     // The clock is the last *successful* attempt, recorded by `acceptRefresh`
     // (changed) or `markFresh` (unchanged). A failed attempt deliberately does
     // not move it, so the next tick retries instead of waiting out a full TTL.
@@ -105,12 +111,19 @@ export function createCatalogRefresher(deps) {
     inFlight = (async () => {
       const fetchedAt = new Date(now()).toISOString()
       let payload
+      let denied = false
       try {
         const controller = new AbortController()
         const timer = setTimeout(() => controller.abort(), deps.timeoutMs)
         try {
-          const response = await fetchImpl(deps.url, { signal: controller.signal, headers: { accept: 'application/json' } })
+          const auth = await deps.authorizationHeaders?.()
+          const response = await fetchImpl(deps.url, {
+            signal: controller.signal,
+            headers: { accept: 'application/json', ...auth },
+            ...(auth ? { redirect: 'error', cache: 'no-store' } : {}),
+          })
           if (!response || response.ok !== true) {
+            denied = Boolean(deps.accountScoped && [401, 403].includes(response?.status))
             throw new Error(`http-${response?.status ?? 'unknown'}`)
           }
           payload = await response.json()
@@ -118,16 +131,22 @@ export function createCatalogRefresher(deps) {
           clearTimeout(timer)
         }
       } catch (error) {
-        deps.live.store.markStale('fetch-failed', fetchedAt)
+        if (deps.isCurrent?.() === false) return { status: 'skipped', changed: false, reason: 'account-changed' }
+        deps.live.store.markStale(denied ? 'access-denied' : 'fetch-failed', fetchedAt)
+        if (denied) deps.onDenied?.()
         refresh = 'failed'
         lastError = `fetch-failed: ${String(error?.message ?? error)}`
         lastFetchedAt = fetchedAt
         return { status: 'failed', changed: false, reason: 'fetch-failed' }
       }
 
+      if (deps.isCurrent?.() === false) return { status: 'skipped', changed: false, reason: 'account-changed' }
       const normalized = normalizePricingPayload(payload, { generatedAt: fetchedAt })
       const snapshot = normalized.snapshot
-      if (isSnapshotEmpty(snapshot)) {
+      // Authenticated permissions can legitimately shrink to an empty view.
+      // Only accept a deliberate, well-formed empty result from that endpoint.
+      const emptyAccount = deps.accountScoped && payload?.success === true && Array.isArray(payload.data) && payload.data.length === 0
+      if (isSnapshotEmpty(snapshot) && !emptyAccount) {
         deps.live.store.markStale('empty-response', fetchedAt)
         refresh = 'failed'
         lastError = 'empty-response'
@@ -137,7 +156,7 @@ export function createCatalogRefresher(deps) {
 
       const current = deps.live.resolve().snapshot
       const gone = disappearance(current, snapshot)
-      if (gone.known >= DISAPPEARANCE_MIN_MODELS && gone.ratio > DISAPPEARANCE_LIMIT) {
+      if (!deps.accountScoped && gone.known >= DISAPPEARANCE_MIN_MODELS && gone.ratio > DISAPPEARANCE_LIMIT) {
         deps.live.store.markStale('disappearance-guard', fetchedAt)
         refresh = 'failed'
         lastError = `disappearance-guard: ${gone.missing}/${gone.known}`
@@ -149,6 +168,7 @@ export function createCatalogRefresher(deps) {
         fetchedAt,
         origin: deps.origin ?? null,
         source: snapshot.source,
+        allowEmpty: emptyAccount,
       })
       lastFetchedAt = fetchedAt
       lastError = null
@@ -157,6 +177,7 @@ export function createCatalogRefresher(deps) {
         // 'unchanged' is a healthy outcome: nothing to announce, but the
         // attempt time and any stale mark still have to move.
         deps.live.store.markFresh({ fetchedAt })
+        if (accepted.reason === 'unchanged') deps.onUnchanged?.()
         return { status: 'ok', changed: false, reason: accepted.reason, digest: accepted.digest }
       }
       deps.live.setMemory(snapshot)

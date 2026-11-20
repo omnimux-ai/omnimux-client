@@ -38,6 +38,8 @@ import { createTemplatesDispatcher, registerTemplatesRoutes } from '../templates
  *   accountAvatarStore?: object,
  *   avatarStore: object,
  *   listCatalog?: () => object,
+ *   accountCatalogScoped?: () => boolean,
+ *   onIdentityChanged?: () => void,
  *   getConnection?: () => { requestRejection: Function } | undefined,
  * }} deps
  */
@@ -50,6 +52,7 @@ export function mountHubHttp(httpCtx, deps) {
     siteBaseUrl: deps.siteBaseUrl,
     clientName: deps.clientName,
     identity: deps.identity,
+    onIdentityChanged: deps.onIdentityChanged,
     modelKeys: deps.modelKeys,
     capabilities: {
       identity: true,
@@ -67,6 +70,7 @@ export function mountHubHttp(httpCtx, deps) {
     const stopAuth = registerAuthRoutes(webServer, dispatcher, { getConnection: deps.getConnection })
     const stopCatalog = registerCatalogRoutes(webServer, {
       list: typeof deps.listCatalog === 'function' ? deps.listCatalog : () => null,
+      isAccountScoped: deps.accountCatalogScoped,
       diagnostics: typeof deps.catalogDiagnostics === 'function' ? deps.catalogDiagnostics : () => null,
       refresh: typeof deps.refreshCatalog === 'function' ? deps.refreshCatalog : undefined,
       getConnection: deps.getConnection,

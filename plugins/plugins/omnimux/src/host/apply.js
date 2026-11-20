@@ -11,6 +11,7 @@ import { mountContractsPrompt } from '../agents/contracts-loader.js'
 import { executeOmnimuxAudio } from '../media/audio.js'
 import { executeOmnimuxImage } from '../media/image.js'
 import { executeOmnimuxVideo } from '../media/video.js'
+import { DEFAULT_MEDIA } from '../media/route.js'
 import { CLIENT_NAME, DEFAULT_SITE, resolveSiteBaseUrl } from '../auth/omnimux-auth.js'
 import { createAppsStore } from '../apps/store.js'
 import { createTabsStore } from '../apps/tabs.js'
@@ -35,9 +36,8 @@ import { mountAudioVoices } from '../media/voices-mount.js'
 import { executeOmnimuxSpeechToText } from '../media/stt.js'
 import { mountTextComplete } from '../text/mount.js'
 import { buildModelCatalog } from '../catalog/list.js'
-import { createLiveCatalog } from '../catalog/cloud/live.js'
+import { createAccountCatalog } from '../catalog/cloud/account-view.js'
 import { setCurrentSnapshotResolver } from '../catalog/cloud/current.js'
-import { createCatalogRefresher } from '../catalog/cloud/refresh.js'
 import { resolvePricingUrl } from '../catalog/cloud/config.js'
 import { createCatalogDiagnostics } from '../catalog/cloud/diagnostics.js'
 import { createGenerationProducts } from '../catalog/generation-products.js'
@@ -87,6 +87,7 @@ export function apply(ctx, config = {}) {
   })
   const identity = createIdentity({ store, siteBaseUrl })
   const modelKeys = createAccountModelKeyService({ store, identity, siteBaseUrl,
+    catalogGatewayBaseUrl: siteBaseUrl === DEFAULT_SITE ? DEFAULT_MEDIA.providers.omnimux.baseUrl : siteBaseUrl,
     getCredentials: () => ctx.get?.('credentials') })
   ctx.provide('identity', { status: identity.status, require: identity.require, getSnapshot: identity.getSnapshot })
   const profile = hubProfileName()
@@ -100,42 +101,40 @@ export function apply(ctx, config = {}) {
     ctx.effect(() => () => appsStore.dispose(), 'omnimux: apps catalog')
   }
   appsStore.maybeRefresh()
+  const hubEvents = createHubEventBus()
   // Gateway snapshot (P1a, now the catalog's authority since P1b): resolved for
   // diagnostics, for membership/lines/prices, and shared with every catalog
   // consumer through the current-snapshot seam below.
-  const liveCatalog = createLiveCatalog({
-    home: homeDir,
-    bundledDir: hub.catalog.bundledDir || undefined,
-  })
   // Set once the settings surface is ready; lets a manual catalog refresh
   // rewrite the composer provider list without waiting for another startup.
   let syncComposerListAfterCatalogRefresh = null;
-  const catalogRefresher = createCatalogRefresher({
-    live: liveCatalog,
+  const accountCatalog = createAccountCatalog({
+    home: homeDir,
+    bundledDir: hub.catalog.bundledDir || undefined,
+    identity,
+    store,
+    resolveCatalogKey: modelKeys.resolveCatalogKey,
+    remote: hub.catalog.remote,
+    siteBaseUrl,
     url: resolvePricingUrl(hub.catalog, siteBaseUrl),
     ttlSeconds: hub.catalog.ttlSeconds,
     timeoutMs: hub.catalog.timeoutMs,
-    origin: siteBaseUrl,
     onChanged: () => {
-      refreshCurrentCatalogView()
+      // The event carries invalidation only. Each consumer reloads its current
+      // authorized catalog through the existing HTTP route.
+      hubEvents.emit({ type: 'omnimux:model-catalog-updated' })
       ctx.emit?.('omnimux/model-catalog-updated')
       syncComposerListAfterCatalogRefresh?.()
     },
+    onError: (error) => {
+      console.error('[omnimux] gateway catalog refresh failed:', String(error?.message ?? error))
+    },
   })
-  // P1b: one resolution per catalog change, shared by the served catalog, the
-  // submit guard and channel routing. Resolving on every call would re-read the
-  // bundled file and the disk cache per request; refreshing here keeps the
-  // account view authoritative without that cost.
-  let currentCatalogView = liveCatalog.resolve()
-  const refreshCurrentCatalogView = () => {
-    currentCatalogView = liveCatalog.resolve()
-    return currentCatalogView
-  }
-  setCurrentSnapshotResolver(() => currentCatalogView)
+  setCurrentSnapshotResolver(accountCatalog.resolve)
 
   let catalogTimer
   const kickCatalogRefresh = () => {
-    catalogRefresher.maybeRefresh().catch((error) => {
+    accountCatalog.maybeRefresh().catch((error) => {
       console.error('[omnimux] gateway catalog refresh failed:', String(error?.message ?? error))
     })
   }
@@ -158,8 +157,7 @@ export function apply(ctx, config = {}) {
   })
   const tabsStore = createTabsStore({ home: homeDir })
 
-  // Initialize in-process HubEventBus and Workbench mailbox
-  const hubEvents = createHubEventBus()
+  // Initialize the Workbench mailbox using the shared in-process event bus.
   const mailbox = createWorkbenchMailbox({ hubEvents })
   ctx.provide?.('hubEvents', hubEvents)
   // Vertical tools (workflow_*) may read last-known viewport for default workspace targeting.
@@ -169,6 +167,7 @@ export function apply(ctx, config = {}) {
   })
 
   const listCatalog = () => {
+    const currentCatalogView = accountCatalog.resolve()
     const settingsService = typeof ctx.get === 'function' ? ctx.get('settings') : undefined
     const settingsDefaults = settingsService && typeof settingsService.get === 'function'
       ? settingsService.get('omnimux')
@@ -192,8 +191,8 @@ export function apply(ctx, config = {}) {
   }
 
   const catalogDiagnostics = createCatalogDiagnostics({
-    live: liveCatalog,
-    refresher: catalogRefresher,
+    live: { resolve: accountCatalog.diagnosticsView },
+    refresher: accountCatalog,
     listCatalog,
   })
 
@@ -215,9 +214,11 @@ export function apply(ctx, config = {}) {
     accountAvatarStore,
     avatarStore,
     listCatalog,
+    accountCatalogScoped: accountCatalog.isAccountScoped,
+    onIdentityChanged: () => { accountCatalog.resolve() },
     catalogDiagnostics,
     refreshCatalog: async () => {
-      const result = await catalogRefresher.refreshOnce(true)
+      const result = await accountCatalog.refreshOnce(true)
       syncComposerListAfterCatalogRefresh?.()
       return result
     },
@@ -485,7 +486,7 @@ export function apply(ctx, config = {}) {
   if (typeof ctx.on === 'function') mountCommentInjector(ctx)
   mountContractsPrompt(ctx)
   if (typeof ctx.provide === 'function') {
-    ctx.provide('modelCatalog', { list: listCatalog })
+    ctx.provide('modelCatalog', { list: listCatalog, isAccountScoped: accountCatalog.isAccountScoped })
     ctx.provide('generationProducts', generationProducts)
     ctx.provide('mediaInspect', createMediaInspector())
     // Shared macOS file/folder chooser: assets, products and workflow consume

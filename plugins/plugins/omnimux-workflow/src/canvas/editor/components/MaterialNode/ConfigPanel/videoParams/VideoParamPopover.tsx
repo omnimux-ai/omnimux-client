@@ -107,11 +107,11 @@ export function VideoParamPopover({
   const popoverKeys = new Set(projected.popover);
   const advancedKeys = new Set(projected.advanced);
 
-  const needsFileUrl = advancedKeys.has('fileUrl')
-    && (activeOperation?.slots.some((slot) => slot.slot === 'file_url') ?? false);
-  const needsLinkUrl = advancedKeys.has('linkUrl')
-    && (activeOperation?.slots.some((slot) => slot.slot === 'link_url') ?? false);
-  const fileUrlSlot = activeOperation?.slots.find((slot) => slot.slot === 'file_url');
+  const localUrlInput = (name: string) => activeOperation?.slots.find(slot => slot.slot === name
+    && (!params.choiceSchema || slot.source === 'node_field' || slot.valueSources?.includes('local_field')));
+  const fileUrlSlot = localUrlInput('file_url');
+  const needsFileUrl = advancedKeys.has('fileUrl') && Boolean(fileUrlSlot);
+  const needsLinkUrl = advancedKeys.has('linkUrl') && Boolean(localUrlInput('link_url'));
   const fileUrlValue = typeof params.fileUrl === 'string' ? params.fileUrl : '';
   const fileUrlCheck = needsFileUrl && fileUrlSlot
     ? inspectDocumentUrl(fileUrlValue, fileUrlSlot.allowedMimes)

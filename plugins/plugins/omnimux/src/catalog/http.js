@@ -46,7 +46,7 @@ export function registerGenerationProductRoutes(webServer, deps) {
  * in sync, and the catalog body is byte-for-byte what it was before.
  *
  * @param {{register: (route: {kind: string, path: string, handler: (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => Promise<void>}) => () => void}} webServer
- * @param {{list?: () => object|null, diagnostics?: () => object|null, refresh?: () => Promise<object>, getConnection?: () => {requestRejection: (req: import('node:http').IncomingMessage) => number | undefined} | undefined}} deps
+ * @param {{list?: () => object|null, isAccountScoped?: () => boolean, diagnostics?: () => object|null, refresh?: () => Promise<object>, getConnection?: () => {requestRejection: (req: import('node:http').IncomingMessage) => number | undefined} | undefined}} deps
  */
 export function registerCatalogRoutes(webServer, deps) {
   const stopCatalog = webServer.register({
@@ -59,6 +59,11 @@ export function registerCatalogRoutes(webServer, deps) {
         return
       }
       try {
+        if (deps.isAccountScoped?.()) {
+          const rejection = requestRejection(req, deps.getConnection)
+          if (rejection !== undefined) return sendJson(res, rejection, { error: 'request-denied' })
+          res.setHeader('Cache-Control', 'private, no-store')
+        }
         const view = new URL(req.url || '/', 'http://localhost').searchParams.get('view')
         const read = view === 'diagnostics' ? deps.diagnostics : deps.list
         const body = typeof read === 'function' ? read() : null

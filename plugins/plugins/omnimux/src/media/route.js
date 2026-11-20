@@ -1,4 +1,7 @@
 import { OmnimuxError } from './errors.js'
+import { resolveCurrentSnapshot } from '../catalog/cloud/current.js'
+import { findSnapshotModel } from '../catalog/cloud/view.js'
+import { effectiveVideoRequestedGroup } from '../catalog/serving/channel-groups.js'
 import {
   gatewayCandidates,
   getModelChannelGroups,
@@ -117,8 +120,9 @@ export function parseMediaConfig(value) {
  * @param {{ provider?: string, model?: string }} request
  * @param {ReturnType<typeof parseMediaConfig>} media
  * @param {Record<string, string | undefined>} [env]
+ * @param {object} [snapshot]
  */
-export function resolveMediaRoute(capability, request, media, env = process.env) {
+export function resolveMediaRoute(capability, request, media, env = process.env, snapshot = resolveCurrentSnapshot().snapshot) {
   const providerId = typeof request.provider === 'string' && request.provider.trim()
     ? request.provider.trim()
     : media.defaultProvider
@@ -156,6 +160,12 @@ export function resolveMediaRoute(capability, request, media, env = process.env)
     && (!Array.isArray(request.allowedGroups) || request.allowedGroups.length > 0)
   const allowedGroups = hasAllowedIntent ? request.allowedGroups : undefined
   const callerIntent = Boolean(requestedGroup || hasAllowedIntent || explicitStrategy)
+  const effective = providerId === 'omnimux' && capability === 'video' && !request.taskId && !request.taskRef
+    ? findSnapshotModel(snapshot, modelId)?.effectiveVideo : undefined
+  const effectiveGroup = effective ? effectiveVideoRequestedGroup(request) : undefined
+  if (effective && !effectiveGroup) {
+    throw new OmnimuxError('unknown-group', '请选择一条可用的视频线路')
+  }
 
   // A model may pin its own line. Callers such as the canvas cannot name a group
   // (their request whitelist carries `strategy`/`allowedGroups` only), and the
@@ -165,10 +175,10 @@ export function resolveMediaRoute(capability, request, media, env = process.env)
   // differently priced one.
   const pinned = callerIntent || providerId !== 'omnimux' ? undefined : pinnedChannelGroup(modelId, request)
   const pinnedWire = pinned ? (pinned.wireGroup || pinned.id) : undefined
-  const group = requestedGroup ?? pinnedWire
+  const group = effectiveGroup ?? requestedGroup ?? pinnedWire
   // This model's lines use incompatible size protocols; an explicitly selected
   // line cannot silently fail over with a body built for another line.
-  const effectiveAllowedGroups = allowedGroups
+  const effectiveAllowedGroups = effective ? undefined : allowedGroups
     ?? (modelId === 'gpt-image-2.5' && ['standard', 'default', 'economy', 'pro', 'gpt-image-2.5-economy', 'gpt-image-2.5-pro'].includes(requestedGroup) ? [requestedGroup] : undefined)
     ?? (pinnedWire ? [pinnedWire] : undefined)
   const hasRoutingIntent = Boolean(group || hasAllowedIntent || effectiveAllowedGroups || explicitStrategy)
@@ -176,8 +186,9 @@ export function resolveMediaRoute(capability, request, media, env = process.env)
   const plan = providerId === 'omnimux'
     ? resolveChannelPlan(catalogModelId, {
       ...(explicitStrategy ? { strategy: request.strategy } : {}),
-      group: fieldGroup ?? pinnedWire,
+      group: effectiveGroup ?? fieldGroup ?? pinnedWire,
       allowedGroups: effectiveAllowedGroups,
+      snapshot,
     })
     : { candidates: [modelId], unresolvedGroups: [] }
   if (hasRoutingIntent && plan.candidates.length === 0) {
@@ -268,6 +279,7 @@ function readProviderKey(providerId, apiKeyEnv, inlineApiKey, env) {
  *   env?: Record<string, string | undefined>,
  *   store?: { resolve: () => Promise<string | undefined> },
  *   credentials?: { resolve: (ref: string) => Promise<{ value?: string } | undefined> },
+ *   allowMissingOfficialKey?: boolean,
  * }} [deps]
  * @returns {Promise<{ apiKey: string, authType: 'api-key' | 'none' }>}
  */
@@ -319,6 +331,7 @@ export async function resolveMediaAuth(route, deps = {}) {
 
   // 4. 若均未获取到：
   if (route.providerId === 'omnimux') {
+    if (deps.allowMissingOfficialKey === true) return { apiKey: '', authType: 'none' }
     throw new OmnimuxError('needs-omnimux', '生成服务需要 API 密钥，请在当前凭证中配置 OMNIMUX_API_KEY；登录凭证不能用于生成')
   }
   throw new OmnimuxError('omnimux-unconfigured', `media provider '${route.providerId}' has no apiKey configured`)

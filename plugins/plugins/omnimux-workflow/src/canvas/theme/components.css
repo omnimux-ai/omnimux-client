@@ -5236,9 +5236,17 @@ body[data-ds-dark-theme] .wf-canvas-root .wf-edge-disconnect__button:focus-visib
 
 
 
-/* ==================== Loomi 1:1 像素级复刻：模型级联与渠道策略面板 ==================== */
+/* ==================== 模型级联与渠道策略面板 ==================== */
 
 .wf-loomi-popover {
+  /* The three columns share the space left by two 8px gaps and 12px edge margins. */
+  --wf-cascade-column-space: calc(100vw - 40px);
+  --wf-cascade-foreground: var(--wb-text-primary, var(--dsw-alias-label-primary));
+  --wf-cascade-muted: var(--wb-text-secondary, var(--dsw-alias-label-secondary));
+  --wf-cascade-border: color-mix(in srgb, var(--wf-cascade-foreground) 12%, transparent);
+  --wf-cascade-border-strong: color-mix(in srgb, var(--wf-cascade-foreground) 24%, transparent);
+  --wf-cascade-hover: color-mix(in srgb, var(--wf-cascade-foreground) 7%, transparent);
+  --wf-cascade-active: color-mix(in srgb, var(--wf-cascade-foreground) 13%, transparent);
   position: fixed;
   display: flex;
   gap: 8px;
@@ -5250,13 +5258,14 @@ body[data-ds-dark-theme] .wf-canvas-root .wf-edge-disconnect__button:focus-visib
 }
 
 .wf-loomi-col {
-  background: rgb(34, 34, 37);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--wf-cascade-surface, var(--dsw-alias-bg-elevated));
+  color: var(--wf-cascade-foreground);
+  border: 1px solid var(--wf-cascade-border);
   border-radius: 16px;
-  box-shadow: 0 20px 40px -4px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  box-shadow: var(--wb-shadow-pop);
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+  scrollbar-color: var(--wf-cascade-border) transparent;
   box-sizing: border-box;
   min-height: 160px;
   max-height: min(400px, calc(100vh - 120px));
@@ -5267,12 +5276,12 @@ body[data-ds-dark-theme] .wf-canvas-root .wf-edge-disconnect__button:focus-visib
   width: 4px;
 }
 .wf-loomi-col::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.18);
+  background: var(--wf-cascade-border-strong);
   border-radius: 4px;
 }
 
 .wf-loomi-col--brand {
-  width: 168px;
+  width: min(168px, calc(var(--wf-cascade-column-space) * 168 / 798));
   padding: 8px;
   display: flex;
   flex-direction: column;
@@ -5280,7 +5289,7 @@ body[data-ds-dark-theme] .wf-canvas-root .wf-edge-disconnect__button:focus-visib
 }
 
 .wf-loomi-col--model {
-  width: 230px;
+  width: min(230px, calc(var(--wf-cascade-column-space) * 230 / 798));
   padding: 8px;
   display: flex;
   flex-direction: column;
@@ -5288,7 +5297,7 @@ body[data-ds-dark-theme] .wf-canvas-root .wf-edge-disconnect__button:focus-visib
 }
 
 .wf-loomi-col--channel {
-  width: 400px;
+  width: min(400px, calc(var(--wf-cascade-column-space) * 400 / 798));
   padding: 12px;
   display: flex;
   flex-direction: column;
@@ -5300,7 +5309,7 @@ body[data-ds-dark-theme] .wf-canvas-root .wf-edge-disconnect__button:focus-visib
   padding: 4px 8px 6px;
   font-size: 12px;
   font-weight: 500;
-  color: var(--dsw-alias-label-secondary, #a1a1aa);
+  color: var(--wf-cascade-muted);
   letter-spacing: 0.2px;
 }
 
@@ -5317,28 +5326,28 @@ body[data-ds-dark-theme] .wf-canvas-root .wf-edge-disconnect__button:focus-visib
   width: 100%;
   border: 1px solid transparent;
   background: transparent;
-  color: var(--dsw-alias-label-secondary, #cfd3d6);
+  color: var(--wf-cascade-muted);
   transition: all 120ms ease;
   box-sizing: border-box;
 }
 
 .wf-cascade-brand-item:hover,
 .wf-cascade-brand-item.is-hovered {
-  background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.08)) !important;
-  color: var(--dsw-alias-label-primary, #ffffff) !important;
+  background: var(--wf-cascade-hover) !important;
+  color: var(--wf-cascade-foreground) !important;
 }
 
 .wf-cascade-brand-item.is-selected {
-  background: var(--dsw-alias-interactive-bg-active, rgba(255, 255, 255, 0.12));
-  color: var(--dsw-alias-label-primary, #ffffff);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.10);
-  border-color: rgba(255, 255, 255, 0.15);
+  background: var(--wf-cascade-active);
+  color: var(--wf-cascade-foreground);
+  box-shadow: 0 0 0 1px var(--wf-cascade-border);
+  border-color: var(--wf-cascade-border);
   font-weight: 600;
 }
 
 .wf-cascade-brand-item.is-selected:hover,
 .wf-cascade-brand-item.is-selected.is-hovered {
-  background: rgba(255, 255, 255, 0.16) !important;
+  background: var(--wf-cascade-active) !important;
 }
 
 /* --- 第二列：型号卡片项 --- */
@@ -5352,34 +5361,34 @@ body[data-ds-dark-theme] .wf-canvas-root .wf-edge-disconnect__button:focus-visib
   text-align: left;
   width: 100%;
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  color: var(--dsw-alias-label-secondary, #a1a1aa);
+  border: 1px solid var(--wf-cascade-border);
+  color: var(--wf-cascade-muted);
   transition: all 120ms ease;
   box-sizing: border-box;
 }
 
 .wf-cascade-model-item:hover,
 .wf-cascade-model-item.is-hovered {
-  background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.08)) !important;
-  border-color: rgba(255, 255, 255, 0.22) !important;
-  color: var(--dsw-alias-label-primary, #ffffff) !important;
+  background: var(--wf-cascade-hover) !important;
+  border-color: var(--wf-cascade-border-strong) !important;
+  color: var(--wf-cascade-foreground) !important;
 }
 
 .wf-cascade-model-item:hover .wf-cascade-model-item__title,
 .wf-cascade-model-item.is-hovered .wf-cascade-model-item__title {
-  color: var(--dsw-alias-label-primary, #ffffff);
+  color: var(--wf-cascade-foreground);
 }
 
 .wf-cascade-model-item.is-selected {
-  background: var(--dsw-alias-interactive-bg-active, rgba(255, 255, 255, 0.12));
-  border: 1px solid rgba(255, 255, 255, 0.3) !important;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15);
-  color: var(--dsw-alias-label-primary, #ffffff);
+  background: var(--wf-cascade-active);
+  border: 1px solid var(--wf-cascade-border-strong) !important;
+  box-shadow: 0 0 0 1px var(--wf-cascade-border);
+  color: var(--wf-cascade-foreground);
 }
 
 .wf-cascade-model-item.is-selected:hover,
 .wf-cascade-model-item.is-selected.is-hovered {
-  background: rgba(255, 255, 255, 0.16) !important;
+  background: var(--wf-cascade-active) !important;
 }
 
 .wf-cascade-model-item.is-disabled,
@@ -5391,8 +5400,8 @@ body[data-ds-dark-theme] .wf-canvas-root .wf-edge-disconnect__button:focus-visib
 .wf-cascade-model-item.is-disabled:hover,
 .wf-cascade-model-item:disabled:hover {
   background: transparent !important;
-  border-color: rgba(255, 255, 255, 0.10) !important;
-  color: var(--dsw-alias-label-secondary, #a1a1aa) !important;
+  border-color: var(--wf-cascade-border) !important;
+  color: var(--wf-cascade-muted) !important;
 }
 
 .wf-cascade-model-item__title {
@@ -5403,12 +5412,12 @@ body[data-ds-dark-theme] .wf-canvas-root .wf-edge-disconnect__button:focus-visib
 }
 
 .wf-cascade-model-item.is-selected .wf-cascade-model-item__title {
-  color: var(--dsw-alias-label-primary, #ffffff);
+  color: var(--wf-cascade-foreground);
 }
 
 .wf-cascade-model-item__desc {
   font-size: 11px;
-  color: var(--dsw-alias-label-secondary, #a1a1aa);
+  color: var(--wf-cascade-muted);
   line-height: 1.35;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -5428,12 +5437,12 @@ body[data-ds-dark-theme] .wf-canvas-root .wf-edge-disconnect__button:focus-visib
   height: 52px;
   border-radius: 12px;
   cursor: pointer;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: transparent;
+  border: 1px solid var(--wf-cascade-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  color: var(--dsw-alias-label-primary, #ffffff);
+  color: var(--wf-cascade-foreground);
   font-size: 12px;
   font-weight: 600;
   transition: all 120ms ease;
@@ -5441,14 +5450,14 @@ body[data-ds-dark-theme] .wf-canvas-root .wf-edge-disconnect__button:focus-visib
 }
 
 .wf-cascade-strategy-btn:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.08)) !important;
-  border-color: rgba(255, 255, 255, 0.22) !important;
+  background: var(--wf-cascade-hover) !important;
+  border-color: var(--wf-cascade-border-strong) !important;
 }
 
 .wf-cascade-strategy-btn.is-active {
-  background: var(--dsw-alias-interactive-bg-active, rgba(255, 255, 255, 0.12));
-  border: 1px solid rgba(255, 255, 255, 0.3) !important;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12);
+  background: var(--wf-cascade-active);
+  border: 1px solid var(--wf-cascade-border-strong) !important;
+  box-shadow: 0 0 0 1px var(--wf-cascade-border);
 }
 
 /* --- 第三列：渠道列表卡片 --- */
@@ -5465,8 +5474,8 @@ body[data-ds-dark-theme] .wf-canvas-root .wf-edge-disconnect__button:focus-visib
   padding: 10px 12px;
   border-radius: 12px;
   cursor: pointer;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: transparent;
+  border: 1px solid var(--wf-cascade-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -5475,14 +5484,14 @@ body[data-ds-dark-theme] .wf-canvas-root .wf-edge-disconnect__button:focus-visib
 }
 
 .wf-cascade-channel-row:hover:not(.is-disabled) {
-  background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.08)) !important;
-  border-color: rgba(255, 255, 255, 0.24) !important;
+  background: var(--wf-cascade-hover) !important;
+  border-color: var(--wf-cascade-border-strong) !important;
 }
 
 .wf-cascade-channel-row.is-checked:not(.is-disabled) {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.28) !important;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12);
+  background: var(--wf-cascade-active);
+  border: 1px solid var(--wf-cascade-border-strong) !important;
+  box-shadow: 0 0 0 1px var(--wf-cascade-border);
 }
 
 .wf-cascade-channel-row.is-disabled {

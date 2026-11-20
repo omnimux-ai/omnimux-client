@@ -7,6 +7,11 @@ export const RECONNECT_DELAY_MS = 3000
 
 export function createEventsClient(options = {}) {
   const WebSocketImpl = options.WebSocket ?? globalThis.WebSocket
+  const openWebSocket = options.openWebSocket ?? ((path) => {
+    const url = new URL(path, options.baseUrl ?? globalThis.location?.href)
+    url.protocol = url.protocol === 'https:' || url.protocol === 'wss:' ? 'wss:' : 'ws:'
+    return new WebSocketImpl(url.href)
+  })
   const fetchImpl = options.fetch ?? globalThis.fetch
   const getWorkbench = options.getWorkbench || (() => globalThis.window?.__omnimuxWorkbench)
   const streamUrl = options.streamUrl || '/omnimux/events/stream'
@@ -15,6 +20,7 @@ export function createEventsClient(options = {}) {
   const subscribers = new Map()
   const requests = new Set()
   let socket = null
+  let detachSocketListeners = null
   let running = false
   let generation = 0
   let watchdogTimer = null
@@ -117,7 +123,8 @@ export function createEventsClient(options = {}) {
     if (socket !== current) return
     socket = null
     healthy = false
-    current.onopen = current.onmessage = current.onerror = current.onclose = null
+    detachSocketListeners?.()
+    detachSocketListeners = null
     if (current.readyState < 2) current.close()
     notifySubscribers({ type: 'omnimux:disconnected', at: Date.now() })
     scheduleReconnect()
@@ -125,12 +132,16 @@ export function createEventsClient(options = {}) {
 
   function openSocket() {
     if (!running || socket) return
-    const url = new URL(streamUrl, options.baseUrl ?? globalThis.location?.href)
-    url.protocol = url.protocol === 'https:' || url.protocol === 'wss:' ? 'wss:' : 'ws:'
-    if (lastEventId !== null) url.searchParams.set('after', lastEventId)
+    let path = streamUrl
+    if (lastEventId !== null) {
+      const [endpoint, query] = streamUrl.split('?')
+      const params = new URLSearchParams(query)
+      params.set('after', lastEventId)
+      path = `${endpoint}?${params}`
+    }
     let current
     try {
-      current = new WebSocketImpl(url.href)
+      current = openWebSocket(path)
     } catch (error) {
       console.error('[EventsClient] connection failed:', error)
       scheduleReconnect()
@@ -138,14 +149,14 @@ export function createEventsClient(options = {}) {
     }
     socket = current
     lastEventAt = Date.now()
-    current.onopen = () => {
+    const onOpen = () => {
       if (socket !== current) return
       lastEventAt = Date.now()
       healthy = true
       notifySubscribers({ type: 'omnimux:connected', at: lastEventAt })
       void sendViewportHeartbeat()
     }
-    current.onmessage = ({ data }) => {
+    const onMessage = ({ data }) => {
       if (socket !== current) return
       let event
       try {
@@ -160,13 +171,17 @@ export function createEventsClient(options = {}) {
       }
       void handleMessage(event)
     }
-    current.onerror = () => { releaseSocket(current) }
-    current.onclose = () => { releaseSocket(current) }
+    const onClose = () => releaseSocket(current)
+    const listeners = { open: onOpen, message: onMessage, error: onClose, close: onClose }
+    for (const [type, listener] of Object.entries(listeners)) current.addEventListener(type, listener)
+    detachSocketListeners = () => {
+      for (const [type, listener] of Object.entries(listeners)) current.removeEventListener(type, listener)
+    }
   }
 
   function connect() {
     if (running) return
-    if (!WebSocketImpl) throw new Error('WebSocket is required for hub events')
+    if (!options.openWebSocket && !WebSocketImpl) throw new Error('WebSocket is required for hub events')
     running = true
     openSocket()
     watchdogTimer = setInterval(() => {
@@ -217,7 +232,15 @@ export function installHubEventsGlobal(client, target = globalThis.window) {
     pushViewport: () => { void client.pushViewport?.() },
   }
   target[HUB_EVENTS_GLOBAL_KEY] = facade
+  const catalogUpdated = 'omnimux:model-catalog-updated'
+  const invalidateCatalog = () => target.dispatchEvent(new target.Event(catalogUpdated))
+  const unsubscribeCatalog = client.subscribe(catalogUpdated, invalidateCatalog)
+  // A connection can open after a change, including after the replay window
+  // has expired. Reload once per connection in addition to live invalidations.
+  const unsubscribeConnected = client.subscribe('omnimux:connected', invalidateCatalog)
   return () => {
+    unsubscribeCatalog()
+    unsubscribeConnected()
     if (target[HUB_EVENTS_GLOBAL_KEY] === facade) delete target[HUB_EVENTS_GLOBAL_KEY]
   }
 }

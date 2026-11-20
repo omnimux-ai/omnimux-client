@@ -175,7 +175,7 @@ function makeHarness({ gatewayLatency = { minLatencyMs: 10, maxLatencyMs: 30 }, 
     return ws.id;
   };
 
-  return { dir, libraryRoot, tools, promptSections, dispose, call, tool, seedWorkspace };
+  return { dir, libraryRoot, tools, promptSections, dispose, call, request: call, tool, seedWorkspace };
 }
 
 test('agent seats register the thirteen tools + workflow:ops prompt section', () => {
@@ -308,6 +308,176 @@ test('workflow_snapshot errors carry the {error, message} envelope', async () =>
   }
 });
 
+test('workflow_snapshot node_id exposes only published usable videos and group contracts', async () => {
+  const operation = { id: 'text_to_video', modeKind: 'text_to_video', inputs: [], output: { type: 'video' }, listed: true };
+  const row = {
+    id: 'atlas-fixture', label: 'Atlas Fixture', effectiveVideoVersion: 'scope-v1', selectable: true,
+    channelGroups: [
+      { id: 'priced', label: 'Available', effectiveVersion: 'scope-v1', defaultOperationId: operation.id,
+        effectiveOperations: [operation], pricing: { groupRatio: 0.5 } },
+      { id: 'empty', label: 'No routes', effectiveOperations: [] },
+      { id: 'disabled', label: 'Disabled', enabled: false, effectiveOperations: [operation] },
+      { id: 'stale', label: 'Stale snapshot', effectiveVersion: 'scope-v0', effectiveOperations: [operation] },
+    ],
+  };
+  const h = makeHarness({ catalog: { source: 'omnimux', schemaVersion: '1.1', fingerprint: 'fixture-snapshot',
+    text: [], image: [], audio: [], video: [row], models: [row, { ...row, id: 'not-selectable', selectable: false }] } });
+  try {
+    const { body } = await h.request({ method: 'POST', url: `${PREFIX}/api/workspaces`, body: { name: 'Managed choices' } });
+    const workspaceId = body.workspace.id;
+    await h.request({ method: 'PUT', url: `${PREFIX}/api/workspaces/${workspaceId}`, body: {
+      expectedVersion: 0,
+      nodes: [{ id: 'video', type: 'material', position: { x: 0, y: 0 }, data: {
+        nodeKind: 'generate', materialType: 'video', selectedTool: 'video-generation',
+        params: { model: row.id, operation: operation.id, routing: { channelGroupId: 'priced' } },
+      } }],
+      edges: [],
+    } });
+    const result = await h.tool('workflow_snapshot').execute({ workspace_id: workspaceId, node_id: 'video' });
+    assert.equal(result.catalogFingerprint, 'fixture-snapshot');
+    assert.equal(result.selected.groupId, 'priced');
+    assert.deepEqual(result.models.map(model => model.id), [row.id]);
+    const [group] = result.models[0].groups;
+    assert.equal(result.models[0].groups.length, 1);
+    assert.equal(group.id, 'priced');
+    assert.equal(group.version, 'scope-v1');
+    assert.equal(group.pricing.groupRatio, 0.5);
+    assert.equal(typeof group.videoLineQuote, 'string');
+    assert.deepEqual(group.operations, [operation]);
+  } finally {
+    h.dispose();
+    rmSync(h.dir, { recursive: true, force: true });
+  }
+});
+
+test('workflow_node_update applies managed group defaults and rejects incoherent overrides before saving', async () => {
+  const options = (defaultValue, ...extra) => ({ defaultValue, options: [defaultValue, ...extra].map(value => ({ value })) });
+  const videoMode = (id, resolution, duration, extraDuration, extraParameter = {}) => ({
+    id, modeKind: 'text_to_video', inputs: [], output: { type: 'video' }, listed: true,
+    parameters: { resolution: options(resolution), duration: options(duration, extraDuration), seed: options(1, 2), ...extraParameter },
+  });
+  const studio = { ...videoMode('text_to_video', '1080P', 10, 12), gatewayProtocol: 'fixture-default' };
+  const alternateStudio = {
+    ...videoMode('text_to_video', '1440P', 14, 16, { watermark: { supported: true, defaultValue: false } }),
+    gatewayProtocol: 'fixture-alternate',
+  };
+  const economy = videoMode('text_to_video', '720P', 5, 6, { sound: { type: 'boolean', defaultValue: true } });
+  const extraMode = videoMode('extra_video_mode', '480P', 8, 9);
+  const line = (id, effectiveOperations, ratio, defaultOperationId) => ({
+    id, label: id, effectiveOperations, enabled: true, effectiveVersion: 'scope-v1',
+    pricing: { groupRatio: ratio }, ...(defaultOperationId ? { defaultOperationId } : {}),
+  });
+  const row = {
+    id: 'atlas-fixture', label: 'Atlas Fixture', effectiveVideoVersion: 'scope-v1',
+    operations: [studio, extraMode],
+    channelGroups: [
+      line('studio', [studio, alternateStudio, extraMode], 1, studio.id),
+      line('economy', [economy], 0.5),
+      line('choose-mode', [economy, extraMode], 0.7),
+    ],
+  };
+  const catalog = { source: 'omnimux', schemaVersion: '1.1', fingerprint: 'fixture-agent-write',
+    text: [], image: [], audio: [], video: [row], models: [row] };
+  const gateway = host.createMockGateway({ catalog: () => catalog, minLatencyMs: 10, maxLatencyMs: 10 });
+  const openSubmission = gateway.submit.openWorkflowSubmission;
+  const requests = [];
+  gateway.submit.openWorkflowSubmission = async () => {
+    const submission = await openSubmission();
+    return {
+      ...submission,
+      submit(request) {
+        requests.push(request);
+        return submission.submit(request);
+      },
+    };
+  };
+  const h = makeHarness({ catalog, gateway });
+  try {
+    const created = await h.tool('workflow_create').execute({ name: 'Managed line edits' });
+    const workspace_id = created.workspace.id;
+    const added = await h.tool('workflow_node_add').execute({ workspace_id, material_type: 'video', prompt: 'A moving cloud' });
+    const node_id = added.node.id;
+    const args = { workspace_id, node_id };
+    const snapshot = await h.tool('workflow_snapshot').execute(args);
+    const [studioLine, economyLine, noDefaultLine] = snapshot.models[0].groups;
+    const update = params => h.tool('workflow_node_update').execute({ ...args, patch: { params } });
+    const route = group => ({ channelGroupId: group.id, videoLineQuote: group.videoLineQuote });
+    const choose = (group, overrides = {}) => update({ model: row.id, routing: route(group), ...overrides });
+
+    const ambiguous = await choose(noDefaultLine);
+    assert.equal(ambiguous.error, undefined);
+    assert.equal(ambiguous.node.data.params.operation, undefined);
+    const first = await choose(studioLine);
+    assert.equal(first.error, undefined);
+    assert.match(first.node.data.params.routing.videoLineQuote, /studio/);
+    assert.equal(first.node.data.params.operation, studio.id);
+    assert.equal(first.node.data.params.resolution, '1080P');
+    assert.equal(first.node.data.params.duration, 10);
+
+    const override = await update({ duration: 16, watermark: true });
+    assert.equal(override.error, undefined);
+    assert.equal(override.node.data.params.resolution, '1440P');
+    assert.equal(override.node.data.params.duration, 16);
+    assert.equal(override.node.data.params.watermark, true);
+    assert.equal(override.node.data.params.routing.videoLineQuote, studioLine.videoLineQuote);
+    const compatibleEdit = await update({ seed: 2 });
+    assert.equal(compatibleEdit.error, undefined);
+    assert.equal(compatibleEdit.node.data.params.resolution, '1440P');
+    assert.equal(compatibleEdit.node.data.params.duration, 16);
+    assert.equal(compatibleEdit.node.data.params.seed, 2);
+
+    for (const [invalid, reason] of [
+      [{ model: row.id, routing: route(studioLine), duration: 12, watermark: true }, 'parameter_unsupported'],
+      [{ model: row.id, routing: route(studioLine), resolution: '720P' }, 'parameter_unsupported'],
+      [{ model: row.id, routing: route(studioLine), operation: 'missing' }, 'parameter_unsupported'],
+      [{ model: row.id, routing: route(studioLine), unlistedField: true }, 'parameter_unsupported'],
+      [{ model: row.id, routing: { channelGroupId: studioLine.id, allowedGroups: [economyLine.id] } }, 'route_plan_required'],
+      [{ model: row.id, routing: { ...route(studioLine), videoLineQuote: 'stale' } }, 'line_capability_changed'],
+    ]) {
+      const result = await update(invalid);
+      assert.equal(result.reasonCode, reason);
+    }
+    const savedBefore = await h.tool('workflow_snapshot').execute({ workspace_id, include_nodes: true });
+    assert.equal(savedBefore.workspace.version, compatibleEdit.workspace.version);
+    const switched = await choose(economyLine);
+    assert.equal(switched.error, undefined);
+    assert.equal(switched.node.data.params.operation, studio.id);
+    assert.equal(switched.node.data.params.resolution, '720P');
+    assert.equal(switched.node.data.params.duration, 5);
+    assert.equal(switched.node.data.params.watermark, undefined);
+    assert.equal(switched.node.data.params.sound, true);
+    assert.equal(switched.node.data.params.routing.videoLineQuote, economyLine.videoLineQuote);
+    const withoutSound = await update({ sound: false });
+    assert.equal(withoutSound.error, undefined);
+    assert.equal(withoutSound.node.data.params.sound, false);
+    const coercedSound = await update({ sound: 'false', duration: 6 });
+    assert.equal(coercedSound.reasonCode, 'parameter_unsupported');
+    const saved = await h.tool('workflow_snapshot').execute({ workspace_id, include_nodes: true });
+    assert.equal(saved.workspace.version, withoutSound.workspace.version);
+    assert.deepEqual(saved.workspace.nodes[0].data.params, withoutSound.node.data.params);
+
+    const generated = await h.tool('workflow_run').execute({ workspace_id, wait: true });
+    assert.equal(generated.status, 'completed');
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].sound, false);
+
+    row.channelGroups[1].pricing = { groupRatio: 0.6 };
+    const changedPrice = await update({ duration: 6 });
+    assert.equal(changedPrice.reasonCode, 'line_capability_changed');
+    const unreviewedReselection = await update({ model: row.id, routing: { channelGroupId: economyLine.id } });
+    assert.equal(unreviewedReselection.reasonCode, 'line_capability_changed');
+    const refreshed = await h.tool('workflow_snapshot').execute(args);
+    const refreshedLine = refreshed.models[0].groups.find(group => group.id === economyLine.id);
+    const reselected = await choose(refreshedLine, { duration: 6 });
+    assert.equal(reselected.error, undefined);
+    assert.equal(reselected.node.data.params.duration, 6);
+    assert.equal(reselected.node.data.params.routing.videoLineQuote, refreshedLine.videoLineQuote);
+  } finally {
+    h.dispose();
+    rmSync(h.dir, { recursive: true, force: true });
+  }
+});
+
 test('workflow_run wait=false returns immediately with an executionId + hint', async () => {
   const h = makeHarness();
   try {
@@ -416,12 +586,22 @@ test('workflow_run wait=true reports timedOut when the budget is exhausted', asy
     const wsId = await h.seedWorkspace();
     const result = await h.tool('workflow_run').execute({
       workspace_id: wsId,
+      mode: 'single',
+      node_ids: ['txt1'],
       wait: true,
       timeout_ms: 60, // far below the 800ms+ node latency
     });
     assert.equal(result.timedOut, true);
     assert.notEqual(result.status, 'completed');
     assert.equal(typeof result.hint, 'string');
+    const checked = await h.tool('workflow_run').execute({
+      execution_id: result.executionId, wait: true, timeout_ms: 10000,
+    });
+    assert.equal(checked.executionId, result.executionId);
+    assert.equal(checked.status, 'completed');
+    assert.equal(checked.nodes.length, 1);
+    const history = await h.tool('workflow_list').execute({ include_executions: true });
+    assert.equal(history.executions.filter(execution => execution.workspaceId === wsId).length, 1);
   } finally {
     h.dispose();
     rmSync(h.dir, { recursive: true, force: true });

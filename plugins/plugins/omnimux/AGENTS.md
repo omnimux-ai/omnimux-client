@@ -3,7 +3,7 @@
 Product scope follows product positioning and root rules; the existing domain mission does not authorize matrix-publishing expansion or prove shipped capability.
 
 
-The hub is the only place OmniMux talks to providers. Root [AGENTS.md](../../AGENTS.md) still applies; this file adds hub-only rules. The normative I/O lives in the hub contract.
+The hub is the only place OmniMux talks to providers. Root [AGENTS.md](../../AGENTS.md) still applies; this file adds hub-only rules. Video catalog, protocol selection and execution follow the [canvas generation contract](../../docs/contracts/canvas-generation.md).
 
 ## Owns / does not own
 
@@ -21,11 +21,10 @@ The hub is the only place OmniMux talks to providers. Root [AGENTS.md](../../AGE
 - A seam returns a result object or throws. Missing provider → `needs-provider`; official-only tool while unconfigured or signed out → `needs-omnimux`. Never return 500, an empty success, or `mode: "live"` for a stub.
 - Keep vendor fields and protocol paths inside the protocol/vendor-map layers; never copy cloud channel integers into the hub. Unknown provider or protocol fails at resolve, not mid-HTTP.
 - Deployment-varying choices (brand strings, `media.providers`, `text.models`, `gate`) are validated `Config` fields, not constants inside `apply()`.
-- Route every scenario call across all registered channels; never gate a capability on the chat model or a global mode (channels).
+- Resolve each call against permitted channels. For a new task with an explicit group, use that group only. A capability is independent of the chat model or a global mode.
 - Propagate upstream auth/capability errors with their real cause; no empty `catch {}`.
 - Hub events go through the single event WebSocket (workbench sync); domain plugins emit via `ctx.get('hubEvents')`, never a private socket.
-- Model rows change only per model-list ownership and close across consuming plugins.
-- Model listing lifecycle: When adding or enabling a model for canvas/consumers, execute the 5-step loop atomically (contract definition, authorized live probe in docs/evidence/, promote research from draft to verified so op.listed=true, channel groups + canvas whitelist, and strict gate verification). Membership itself comes from the gateway snapshot (#3734): there is no local on-sale flag to set. Never stop at "draft" when user requests model listing or canvas availability.
+- The gateway publishes official model and group eligibility. Select the protocol from the effective contract and verify the consumer end to end with a previously unseen model ID. Onboarding a model on a supported protocol requires no client allowlist or model-specific adapter. Use [the cross-repo checks](../../docs/contracts/canvas-generation.md#跨仓验证与交接).
 
 ## Verify
 

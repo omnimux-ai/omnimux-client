@@ -62,13 +62,14 @@ export interface ApiResult<T> {
 
 export async function request<T>(
   path: string,
-  opts: { method?: string; body?: unknown; signal?: AbortSignal } = {},
+  opts: { method?: string; body?: unknown; signal?: AbortSignal; cache?: RequestCache } = {},
 ): Promise<ApiResult<T>> {
   const response = await fetch(path, {
     method: opts.method ?? 'GET',
     headers: opts.body === undefined ? undefined : { 'Content-Type': 'application/json' },
     body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
     signal: opts.signal,
+    cache: opts.cache,
   });
   let json = {} as T & ApiErrorEnvelope;
   try {
@@ -94,8 +95,8 @@ export function fetchManifest(): Promise<ApiResult<BuildManifest>> {
   return request<BuildManifest>(WORKFLOW_API_ROUTES.manifest);
 }
 
-export function fetchCapabilities(): Promise<ApiResult<CapabilityCatalog>> {
-  return request<CapabilityCatalog>(WORKFLOW_API_ROUTES.capabilities);
+export function fetchCapabilities(signal?: AbortSignal): Promise<ApiResult<CapabilityCatalog>> {
+  return request<CapabilityCatalog>(WORKFLOW_API_ROUTES.capabilities, { signal, cache: 'no-store' });
 }
 
 export function listWorkspaces(): Promise<ApiResult<{ workspaces: WorkspaceSummary[] }>> {

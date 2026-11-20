@@ -138,3 +138,49 @@ test('invalid group actions leave history alone, and a real new edit clears redo
   assert.equal(findNode('c').data.label, 'c');
   assert.equal(findNode(group).data.isCollapsed, false);
 });
+
+
+test('discrete video selection restores each prior line without waiting between edits', () => {
+  const state = store.getState();
+  const model = 'grouped-example';
+  const operation = 'video_multi_ref';
+  const line = (channelGroupId, resolution, duration) => ({
+    model, operation, routing: { channelGroupId, allowedGroups: [channelGroupId], sourceType: 'official' },
+    resolution, duration,
+  });
+  const economy = line('economy', '720p', 5);
+  const studio = line('studio', '1080p', 10);
+  const channelGroups = [economy, studio].map(({ routing, resolution, duration }) => ({
+    id: routing.channelGroupId, label: routing.channelGroupId, effectiveVersion: 'one', effectiveOperations: [{
+      id: operation,
+      modeKind: 'image_reference',
+      listed: true,
+      output: { type: 'video' },
+      inputs: [],
+      parameters: {
+        resolution: { options: [{ value: resolution }], defaultValue: resolution },
+        duration: { options: [{ value: duration }], defaultValue: duration },
+      },
+    }],
+  }));
+  const modelEntry = { id: model, label: model, effectiveVideoVersion: 'one', selectable: true, operations: channelGroups[0].effectiveOperations, channelGroups };
+  const initial = node('video', 100);
+  initial.data = { ...initial.data, materialType: 'video', nodeKind: 'generate', selectedTool: 'video-generation', params: economy };
+  state.resetStore();
+  state.setCatalogRuntime({ source: 'omnimux', fingerprint: 'undo-test', models: [modelEntry], video: [modelEntry] });
+  state.hydrateGraph([initial], []);
+  for (const params of [studio, economy]) {
+    const result = state.applyCanvasInputMutation({ nodePatches: [{ nodeId: 'video', data: { params } }] }, { undoStep: true });
+    assert.equal(result.status, 'allowed', JSON.stringify(result));
+    state.pushHistory();
+  }
+
+  state.undo();
+  assert.deepEqual(findNode('video').data.params, studio);
+  state.undo();
+  assert.deepEqual(findNode('video').data.params, economy);
+  state.redo();
+  assert.deepEqual(findNode('video').data.params, studio);
+  state.redo();
+  assert.deepEqual(findNode('video').data.params, economy);
+});

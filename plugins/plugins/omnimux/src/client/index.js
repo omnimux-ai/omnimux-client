@@ -289,26 +289,31 @@ export function apply(ctx) {
     }),
   }, AttachmentTray))
 
-  ctx.effect(() => {
-    const eventsClient = createEventsClient()
-    const uninstall = installHubEventsGlobal(eventsClient)
-    const generationBinding = ctx.inject(['sessions'], (inner) => {
-      inner.effect(() => {
-        const feedback = createGenerationFeedback({ sessions: inner.sessions, store: getGlobalMediaViewerStore(), getUiContext, eventsClient, getSubmittedCanvasText, subscribeSubmittedCanvasText })
-        return () => feedback.dispose()
-      }, 'omnimux: canvas generation feedback')
-    })
-    const hmr = ctx.inject(['loader', 'modules'], hmrCtx => {
-      hmrCtx.effect(() => installWebSocketHmr(hmrCtx, eventsClient, document), 'omnimux: HMR client')
-    })
-    eventsClient.connect()
-    return () => {
-      void hmr.dispose()
-      void generationBinding.dispose()
-      eventsClient.disconnect()
-      uninstall()
-    }
-  }, 'omnimux: hub event client')
+  ctx.inject(['connection'], (connectionCtx) => {
+    connectionCtx.effect(() => {
+      const eventsClient = createEventsClient({
+        // Connection selects the native Host carrier for the desktop document.
+        openWebSocket: path => connectionCtx.connection.openWebSocket(path),
+      })
+      const uninstall = installHubEventsGlobal(eventsClient)
+      const generationBinding = connectionCtx.inject(['sessions'], (inner) => {
+        inner.effect(() => {
+          const feedback = createGenerationFeedback({ sessions: inner.sessions, store: getGlobalMediaViewerStore(), getUiContext, eventsClient, getSubmittedCanvasText, subscribeSubmittedCanvasText })
+          return () => feedback.dispose()
+        }, 'omnimux: canvas generation feedback')
+      })
+      const hmr = connectionCtx.inject(['loader', 'modules'], hmrCtx => {
+        hmrCtx.effect(() => installWebSocketHmr(hmrCtx, eventsClient, document), 'omnimux: HMR client')
+      })
+      eventsClient.connect()
+      return () => {
+        void hmr.dispose()
+        void generationBinding.dispose()
+        eventsClient.disconnect()
+        uninstall()
+      }
+    }, 'omnimux: hub event client')
+  })
   if (typeof document !== 'undefined') {
     ctx.effect(() => { injectUiContextStyle(document) }, 'omnimux: composer context style')
     ctx.effect(() => installUserMessageLinkEnhancer(document), 'omnimux: user message link pill enhancer')

@@ -9,9 +9,11 @@
 import type {
   CapabilityCatalog,
   CapabilityModelItem,
+  CatalogChannelGroupDto,
   ModelParameterSchema,
 } from '../../../../../../shared/api.ts';
 import type { LineConstraints } from '../../../../../../shared/validation/lineConstraints.ts';
+import { effectiveVideoOperations, requiredEffectiveVideoParameter, resolveEffectiveVideoOperation } from '../../../../../../shared/validation/lineConstraints.ts';
 import { resolveOperationLabel } from '../../../../../../shared/validation/operationLabels.ts';
 import {
   buildEffectiveOpsUiState,
@@ -52,6 +54,8 @@ export interface ResolveEffectiveVideoParamsArgs {
   modelItem: CapabilityModelItem | undefined;
   catalog?: CapabilityCatalog | null;
   lineConstraints?: LineConstraints | null;
+  /** Undefined uses the legacy catalog. Null denotes a managed video with no selected group. */
+  effectiveVideoGroup?: CatalogChannelGroupDto | null;
   upstreams?: UpstreamMediaSnapshot[];
   /** Released named pins are considered only when displaying alternate mode options. */
   parkedUpstreams?: UpstreamMediaSnapshot[];
@@ -124,7 +128,8 @@ function integerIsValid(value: unknown, schema: ModelParameterSchema['seed']): v
 function buildOpsState(args: ResolveEffectiveVideoParamsArgs): EffectiveOpsUiState {
   const model = args.modelItem?.id
     ?? (typeof args.params?.model === 'string' ? args.params.model : '');
-  const preferred = readPreferredOperationId((args.params ?? {}) as Record<string, unknown>, args.autoOperationId);
+  const preferred = readPreferredOperationId((args.params ?? {}) as Record<string, unknown>,
+    args.effectiveVideoGroup === undefined ? args.autoOperationId : undefined);
   return buildEffectiveOpsUiState({
     catalog: args.catalog ?? null,
     modelId: model,
@@ -137,6 +142,36 @@ function buildOpsState(args: ResolveEffectiveVideoParamsArgs): EffectiveOpsUiSta
   });
 }
 
+function effectiveVideoChoices(group: CatalogChannelGroupDto, operationId: string, schema: ModelParameterSchema): ModelParameterSchema {
+  const variants = effectiveVideoOperations(group).filter(variant => variant.id === operationId);
+  if (variants.length < 2) return schema;
+  const choices: ModelParameterSchema = { ...schema };
+  for (const key of ['aspectRatio', 'resolution'] as const) {
+    const definitions = variants.map(item => item.parameters?.[key] as ModelParameterSchema[typeof key]).filter(item => item?.options?.length);
+    const options = [...new Map(definitions.flatMap(definition => (definition?.options ?? []).map(option => [option.value, option]))).values()];
+    if (options.length) choices[key] = { ...(schema[key] ?? definitions[0]), options };
+  }
+  const durations = variants.map(item => item.parameters?.duration as ModelParameterSchema['duration']).filter(Boolean);
+  if (!durations.length) return choices;
+  const ranges = durations.map(definition => definition?.range);
+  const options = new Map<number, NonNullable<NonNullable<ModelParameterSchema['duration']>['options']>[number]>();
+  for (const definition of durations) for (const option of definition?.options ?? []) options.set(option.value, option);
+  if (ranges.some(range => JSON.stringify(range) !== JSON.stringify(ranges[0]))) {
+    for (const range of ranges) {
+      const step = range?.step ?? 1;
+      if (!range || !Number.isFinite(step) || step <= 0 || (range.max - range.min) / step > 120) continue;
+      for (let index = 0; index <= 120 && range.min + index * step <= range.max; index++) {
+        const value = range.min + index * step;
+        options.set(value, { value, label: `${value}s` });
+      }
+    }
+    if (options.size) choices.duration = { ...(schema.duration ?? durations[0]), range: undefined, options: [...options.values()] };
+  } else if (options.size) {
+    choices.duration = { ...(schema.duration ?? durations[0]), options: [...options.values()] };
+  }
+  return choices;
+}
+
 /**
  * Resolve the values saved on the node. It defaults only fields that were
  * never set; an unsupported saved value remains visible until the user either
@@ -146,10 +181,11 @@ export function resolveEffectiveVideoParams(
   args: ResolveEffectiveVideoParamsArgs,
 ): EffectiveVideoParams {
   const params = args.params;
+  const managed = args.effectiveVideoGroup !== undefined;
   const model = args.modelItem?.id
     ?? (typeof params?.model === 'string' ? params.model : '');
   const opsState = buildOpsState(args);
-  const preferredOperation = readPreferredOperationId((params ?? {}) as Record<string, unknown>, args.autoOperationId);
+  const preferredOperation = readPreferredOperationId((params ?? {}) as Record<string, unknown>, managed ? undefined : args.autoOperationId);
   const fingerprint = buildUiUpstreamFingerprint({
     prompt: args.prompt,
     upstreams: args.upstreams,
@@ -162,16 +198,16 @@ export function resolveEffectiveVideoParams(
     autoOperationId: args.autoOperationId,
     params: (params ?? {}) as Record<string, unknown>,
   };
-  const capability = buildInputCapability({ ...capabilityArgs, fingerprint });
-  const modeOptions = args.parkedUpstreams?.length
+  const capability = managed ? undefined : buildInputCapability({ ...capabilityArgs, fingerprint });
+  const modeOptions = !managed && args.parkedUpstreams?.length
     ? buildInputCapability({ ...capabilityArgs, fingerprint: buildUiUpstreamFingerprint({
       prompt: args.prompt, upstreams: [...(args.upstreams ?? []), ...args.parkedUpstreams],
     }) }).operationStates
-    : capability.operationStates;
-  const selectedOperationId = capability.selectedOperationId ?? preferredOperation ?? '';
+    : capability?.operationStates ?? [];
+  const selectedOperationId = capability?.selectedOperationId ?? preferredOperation ?? '';
   const effectiveOperations = opsState.effectiveOps.map((operation) => {
     const state = modeOptions.find(item => item.id === operation.id);
-    return { ...operation, disabled: !state?.usable && !state?.selectableBeforeInputs };
+    return { ...operation, disabled: !managed && !state?.usable && !state?.selectableBeforeInputs };
   });
   const defaultFallbackOp = effectiveOperations.find((op) => op.id === 'text_to_video')
     ?? effectiveOperations.find((op) => op.ready)
@@ -179,9 +215,14 @@ export function resolveEffectiveVideoParams(
   const baseOperationOption = selectedOperationId
     ? effectiveOperations.find((option) => option.id === selectedOperationId)
     : (selectedOperation(opsState) ?? defaultFallbackOp);
-  const requestedOperation = baseOperationOption?.id ?? selectedOperationId;
-  const normalized = normalizeVideoParamsForSchema({
-    params: (capability.paramsProjection?.params ?? params ?? {}) as Record<string, unknown>,
+  const requestedOperation = managed ? selectedOperationId : baseOperationOption?.id ?? selectedOperationId;
+  const variant = managed ? resolveEffectiveVideoOperation(args.effectiveVideoGroup ?? undefined, requestedOperation, (params ?? {}) as Record<string, unknown>) : undefined;
+  const missing = variant ? requiredEffectiveVideoParameter(variant, (params ?? {}) as Record<string, unknown>) : undefined;
+  const normalized = managed ? {
+    params: (params ?? {}) as Record<string, unknown>,
+    blocked: missing ? [{ field: missing, message: `请设置参数「${missing}」`, required: true }] : [],
+  } : normalizeVideoParamsForSchema({
+    params: (capability?.paramsProjection?.params ?? params ?? {}) as Record<string, unknown>,
     modelItem: args.modelItem,
     operationId: requestedOperation || undefined,
     catalog: args.catalog ?? null,
@@ -192,7 +233,8 @@ export function resolveEffectiveVideoParams(
     ? normalizedParams.operation.trim()
     : requestedOperation;
   const operationOption = effectiveOperations.find((option) => option.id === operation) ?? baseOperationOption;
-  const schema = mergeVideoParameterSchema(args.schema, operationOption?.parameters);
+  const schema = mergeVideoParameterSchema(managed ? undefined : args.schema, operationOption?.parameters);
+  const choiceSchema = args.effectiveVideoGroup ? effectiveVideoChoices(args.effectiveVideoGroup, operation, schema) : undefined;
   const aspectRatio = typeof normalizedParams.aspectRatio === 'string' ? normalizedParams.aspectRatio : '';
   const resolution = typeof normalizedParams.resolution === 'string' ? normalizedParams.resolution : undefined;
   const duration = normalizedParams.duration !== undefined && normalizedParams.duration !== null
@@ -207,6 +249,7 @@ export function resolveEffectiveVideoParams(
     effectiveOperations,
     showModeUi: effectiveOperations.length >= 2,
     schema,
+    ...(choiceSchema ? { choiceSchema } : {}),
     aspectRatio,
     duration,
     sound,

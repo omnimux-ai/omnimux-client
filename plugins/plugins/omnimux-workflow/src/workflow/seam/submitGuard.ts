@@ -1,6 +1,7 @@
 import type { CapabilityCatalog } from '../../shared/api.ts';
 import { buildContractView, buildUpstreamFingerprint, matchOperationInputs, operationAcceptsText, resolveModelView } from '../../shared/validation/compatKernel.ts';
 import { buildEffectiveOpsUiState } from '../../shared/validation/operationUi.ts';
+import { narrowCatalogByRouting, requiredEffectiveVideoParameter, resolveEffectiveVideoGroup, resolveEffectiveVideoOperation } from '../../shared/validation/lineConstraints.ts';
 import type { GenerationGateway, ReferenceAssetPayload, SubmitRequest, WorkflowSubmission } from './gateway.ts';
 import { SeamGatewayError } from './SeamGatewayError.ts';
 import { submissionFingerprint, submissionReferences } from './submissionInputs.ts';
@@ -32,6 +33,10 @@ function submissionModel(req: SubmitRequest, catalog: CapabilityCatalog) {
 /** Only the executor may resolve an omitted operation using the shared canvas policy. */
 export function resolveExecutorSubmission(req: SubmitRequest, catalog: CapabilityCatalog): SubmitRequest {
   if (req.operation !== undefined) return resolveCanvasSubmission(req, catalog);
+  const requestedModel = typeof req.model === 'string' ? req.model.trim() : '';
+  if (req.capability === 'video' && resolveEffectiveVideoGroup(catalog, requestedModel || catalog.defaults?.video, req)) {
+    throw new SeamGatewayError('operation-required', '请选择生成方式后再提交');
+  }
   const model = submissionModel(req, catalog);
   const state = buildEffectiveOpsUiState({
     catalog, modelId: model.id, outputType: req.capability, fingerprint: submissionFingerprint(req),
@@ -43,10 +48,23 @@ export function resolveExecutorSubmission(req: SubmitRequest, catalog: Capabilit
 }
 
 /** SubmitGuard: accepting connections is not sufficient to submit a new task. */
-export function resolveCanvasSubmission(req: SubmitRequest, catalog: CapabilityCatalog): SubmitRequest {
+export function resolveCanvasSubmission(req: SubmitRequest, inputCatalog: CapabilityCatalog): SubmitRequest {
+  const requestedModel = typeof req.model === 'string' ? req.model.trim() : '';
+  const modelId = requestedModel || inputCatalog.defaults?.[req.capability];
+  const managed = req.capability === 'video' ? resolveEffectiveVideoGroup(inputCatalog, modelId, req) : null;
+  if (managed && !managed.group) throw new SeamGatewayError('line_selection_required', '请选择当前可用的生成线路');
+  if (req.effectiveVideoVersion !== undefined && req.effectiveVideoVersion !== managed?.model.effectiveVideoVersion) {
+    throw new SeamGatewayError('line_capability_changed', '线路规则或价格已更新，请确认后重新生成');
+  }
+  const params = { ...req };
+  const variant = managed?.group ? resolveEffectiveVideoOperation(managed.group, req.operation, params) : undefined;
+  if (managed && !variant) throw new SeamGatewayError('operation-not-allowed', '当前线路不支持所选生成方式或参数，请重新选择');
+  const required = variant && requiredEffectiveVideoParameter(variant, params);
+  if (required) throw new SeamGatewayError('parameter_required', `请选择参数“${required}”`);
+  const catalog = managed ? narrowCatalogByRouting(inputCatalog, modelId, req, { ...params, operation: variant?.id }) ?? inputCatalog : inputCatalog;
   const model = submissionModel(req, catalog);
   if (typeof req.operation !== 'string' || !req.operation.trim()) throw new SeamGatewayError('operation-required', '请选择生成方式后再提交');
-  const operation = model.operations.find((op) => op.id === req.operation);
+  const operation = model.operations.find((op) => op.id === (variant?.id ?? req.operation));
   if (!operation?.listed || operation.output.type !== req.capability) {
     throw new SeamGatewayError('operation-not-allowed', '当前模型不支持所选生成方式，请重新选择');
   }
@@ -87,6 +105,10 @@ export function resolveCanvasSubmission(req: SubmitRequest, catalog: CapabilityC
   const trackReference = req.audioTrack && references.find((ref) => ref.pathOrUrl === req.audioTrack!.pathOrUrl
     && ref.role === req.audioTrack!.role && ref.targetSlot === req.audioTrack!.targetSlot);
   const resolved = { ...req, model: model.id,
+    ...(managed?.group && variant ? {
+      operation: variant.id,
+      allowedGroups: [managed.group.wireGroup ?? managed.group.id],
+    } : {}),
     ...(req.references ? { references: req.references.map((ref) => normalized.get(ref)!) } : {}),
     ...(trackReference ? { audioTrack: normalized.get(trackReference)! } : {}) };
   if (model.hasGatewayInputContract && !operationAcceptsText(model, operation)) {

@@ -1,5 +1,7 @@
 # Spec: 模型目录可见 / 可执行 / 可选择语义统一
 
+> 历史规格。模型可见性、可执行和可选择的区分仍适用。分组和协议行为以[现行画布生成契约](../plugins/docs/contracts/canvas-generation.md)为准。
+
 - 任务：`omnimux-model-catalog-availability`
 - 日期：2026-11-14
 - 基线：`main` / `1ec38f08a`
@@ -46,8 +48,7 @@
 
 ### 文档
 
-- 原分支涉及的 `docs/contracts/{model-list-ownership,model-capabilities-matrix,generation-node-policy,hub}.md` 四份契约文档：**本仓（omnimux-client）无 `docs/` 目录**，这些文档不在此仓库，故本轮移植跳过，不在本 PR 内改动；如需同步在文档所在仓处理。
-- 语义以本 spec 与 `plugins/omnimux/AGENTS.md` 的 model-truth 口径为准。
+- 历史移植没有带入旧仓的模型列表和节点策略文档。当前目录、分组与协议以[画布生成契约](../plugins/docs/contracts/canvas-generation.md)为准。目录可见性验收仍适用，分组提交、查询与产物另按现行契约验收。
 
 ## 数据模型
 

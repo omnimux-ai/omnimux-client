@@ -13,6 +13,8 @@ import { deriveSlotLayout, type SlotBindings, type SlotConflict } from '../graph
 import { effectiveSlotFingerprint, feedFromFingerprint } from '../graph/feedSlot/effectiveFingerprint.ts';
 import { resolveSlotOperation } from '../graph/feedSlot/resolveSlotOperation.ts';
 import { effectiveInputDisplay } from '../graph/feedSlot/effectiveInputDisplay.ts';
+import { narrowCatalogByRouting, requiredEffectiveVideoParameter, resolveEffectiveVideoGroup, resolveEffectiveVideoOperation } from './lineConstraints.ts';
+import { isManagedVideoLineChanged } from './managedVideoExecution.ts';
 import {
   buildContractView,
   matchOperationInputs,
@@ -69,11 +71,10 @@ function upstreamSnapshots(nodeId: string, graph?: ExecutionReadinessGraph): Ups
  */
 export function findExecutionReadinessFailure(
   nodes: ExecutionReadinessNode[],
-  catalog: CapabilityCatalog | null | undefined,
+  inputCatalog: CapabilityCatalog | null | undefined,
   graph?: ExecutionReadinessGraph,
 ): ExecutionReadinessFailure | null {
-  const view = buildContractView(catalog);
-
+  const baseView = buildContractView(inputCatalog);
   for (const node of nodes) {
     if (node.type !== 'material' || resolveNodeKind(node.data ?? {}) !== 'generate') continue;
     const outputCapabilityId = typeof node.data?.outputCapabilityId === 'string' ? node.data.outputCapabilityId : '';
@@ -84,7 +85,6 @@ export function findExecutionReadinessFailure(
       return source?.type === 'material' && resolveNodeKind(source.data ?? {}) === 'generate'
         && graph?.scheduledNodeIds?.has(source.id);
     }).map((input) => input.nodeId));
-    if (!view.available) return { nodeId: node.id, reasonCode: 'catalog_unavailable', message: '模型目录不可用，请稍后重试' };
     // These sources will run again; their old result metadata is not this run's input.
     upstreams = upstreams.map((input) => deferred.has(input.nodeId)
       ? { nodeId: input.nodeId, label: input.label, materialType: input.materialType, edgeId: input.edgeId,
@@ -99,7 +99,26 @@ export function findExecutionReadinessFailure(
       : {};
     const requestedModel = readString(params.model);
     const outputKind = typeof data.materialType === 'string' ? data.materialType : 'text';
-    const defaultModel = catalog?.defaults?.[outputKind as keyof NonNullable<CapabilityCatalog['defaults']>];
+    const defaultModel = inputCatalog?.defaults?.[outputKind as keyof NonNullable<CapabilityCatalog['defaults']>];
+    const managed = outputKind === 'video' ? resolveEffectiveVideoGroup(inputCatalog, requestedModel ?? defaultModel, params.routing) : null;
+    const reviewed = data.managedVideoGeneration;
+    if ((managed || reviewed) && !managed?.group) return {
+      nodeId: node.id, reasonCode: 'line_selection_required', message: '请选择当前可用的生成线路',
+    };
+    if (managed?.group && isManagedVideoLineChanged(managed.group, managed.model.effectiveVideoVersion, params.routing, reviewed)) return {
+      nodeId: node.id, reasonCode: 'line_capability_changed', message: '线路规则或价格已更新，请确认后重新生成',
+    };
+    const variant = managed?.group ? resolveEffectiveVideoOperation(managed.group, params.operation, params) : undefined;
+    if (managed && !variant) return {
+      nodeId: node.id, reasonCode: 'operation_incompatible', message: '当前线路不支持所选生成方式或参数，请重新选择',
+    };
+    const requiredParameter = variant && requiredEffectiveVideoParameter(variant, params);
+    if (requiredParameter) return {
+      nodeId: node.id, reasonCode: 'parameter_required', message: `请选择参数“${requiredParameter}”`,
+    };
+    const catalog = managed ? narrowCatalogByRouting(inputCatalog, requestedModel ?? defaultModel, params.routing, params) : inputCatalog;
+    const view = managed ? buildContractView(catalog) : baseView;
+    if (!view.available) return { nodeId: node.id, reasonCode: 'catalog_unavailable', message: '模型目录不可用，请稍后重试' };
     const model = resolveModelView(view, requestedModel ?? defaultModel);
     if (!model) return { nodeId: node.id, reasonCode: 'unknown_model', message: '当前模型不可用，请选择模型后重试' };
     const rawFingerprint = buildUiUpstreamFingerprint({
@@ -114,7 +133,7 @@ export function findExecutionReadinessFailure(
       ? data.autoOperationId as string | null
       : undefined;
     const preferredOperationId = readPreferredOperationId(params, autoOperationId);
-    const videoCapability = outputType === 'video'
+    const videoCapability = outputType === 'video' && !managed
       ? buildInputCapability({
           catalog,
           modelId: model.id,
@@ -129,10 +148,10 @@ export function findExecutionReadinessFailure(
     if (videoCapability?.blocked) {
       return { nodeId: node.id, reasonCode: 'operation_incompatible', message: '当前模型没有可用的生成方式' };
     }
-    const chosenId = videoCapability
+    const chosenId = variant?.id ?? (videoCapability
       ? videoCapability.selectedOperationId
       : inputBindingVersion === 1 && readString(params.operation)
-        ? readString(params.operation) : resolveSlotOperation(catalog, model.id, params.operation, outputType, rawFingerprint);
+        ? readString(params.operation) : resolveSlotOperation(catalog, model.id, params.operation, outputType, rawFingerprint));
     const layout = deriveSlotLayout(catalog, model.id, chosenId);
     const rawDocumentFailure = layout.acceptsDocuments !== false && rawFingerprint.assets.find(asset =>
       asset.type === 'document' && asset.availability !== undefined && asset.availability !== 'ready');
@@ -156,7 +175,7 @@ export function findExecutionReadinessFailure(
     const unavailable = fingerprint.assets.find((asset) => asset.availability !== 'ready' && !deferred.has(asset.sourceNodeId));
     if (unavailable) return { nodeId: node.id, reasonCode: unavailable.availability === 'unavailable' ? 'input_unavailable' : 'input_waiting',
       message: unavailable.availabilityMessage ?? `等待来源 ${unavailable.sourceNodeId} 的内容` };
-    const opsState = buildEffectiveOpsUiState({
+    const opsState = managed ? undefined : buildEffectiveOpsUiState({
       catalog,
       modelId: model.id,
       fingerprint,
@@ -164,15 +183,15 @@ export function findExecutionReadinessFailure(
       ...(readString(params.operation) ? { preferredOperationId: readString(params.operation) } : {}),
     });
     const rawOperation = readString(params.operation);
-    const selectedOperationId = videoCapability
+    const selectedOperationId = variant?.id ?? (videoCapability
       ? chosenId
-      : rawOperation ?? chosenId ?? opsState.selectedOperationId ?? opsState.implicitOperationId;
+      : rawOperation ?? chosenId ?? opsState?.selectedOperationId ?? opsState?.implicitOperationId);
     const operation = selectedOperationId
       ? model.operations.find((candidate) => candidate.id === selectedOperationId && candidate.listed)
       : undefined;
-    const selectedIsEffective = videoCapability
+    const selectedIsEffective = managed ? Boolean(operation) : videoCapability
       ? videoMode?.usable || videoMode?.selectableBeforeInputs
-      : Boolean(selectedOperationId && opsState.effectiveOps.some((candidate) => candidate.id === selectedOperationId));
+      : Boolean(selectedOperationId && opsState?.effectiveOps.some((candidate) => candidate.id === selectedOperationId));
     // Raw persisted operation ids are never a soft preference: if no longer
     // listed/effective for this model and node shape, block before mock or hub
     // submission. For an omitted id, the kernel's implicit/chosen operation is
@@ -183,7 +202,7 @@ export function findExecutionReadinessFailure(
         reasonCode: 'operation_incompatible',
         message: rawOperation
           ? `当前模型不支持已保存的生成方式 ${rawOperation}`
-          : (opsState.reasonMessage ?? '当前模型没有可用的生成方式'),
+          : (opsState?.reasonMessage ?? '请选择生成方式'),
       };
     }
     const catalogModel = (catalog?.models ?? []).find((candidate: CatalogModelDto) =>

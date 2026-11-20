@@ -66,6 +66,7 @@ export function isValidTaskRef(taskRef) {
  *   taskPath: string,
  *   requestKey?: string,
  *   credentialRef?: string,
+ *   accountViewKey?: string,
  *   deadlineMs?: number,
  * }} params
  * @returns {Record<string, unknown>}
@@ -89,6 +90,7 @@ export function createMediaTaskRecord(params) {
     group: params.group || undefined,
     taskPath: params.taskPath,
     credentialRef: params.credentialRef || undefined,
+    ...(params.accountViewKey ? { accountViewKey: params.accountViewKey } : {}),
     submittedAt: now,
     updatedAt: now,
     deadlineMs: params.deadlineMs ?? DEFAULT_TASK_DEADLINE_MS,

@@ -28,6 +28,7 @@ import { mapValidatedPlanToVendor, resolveProfilePayloadContract } from './map.j
 import { validateVendorResult } from './output.js'
 import { resolveCurrentSnapshot } from '../../cloud/current.js'
 import { findSnapshotModel, hasUsableGatewayGroups } from '../../cloud/view.js'
+import { effectiveVideoRequestedGroup, getModelChannelGroups } from '../../serving/channel-groups.js'
 
 /**
  * @typedef {object} GuardRejection
@@ -211,6 +212,57 @@ export function guardSubmit(request, opts = {}) {
     return reject(disp)
   }
 
+  const snapshot = opts.snapshot ?? resolveCurrentSnapshot().snapshot
+  const snapshotModel = findSnapshotModel(snapshot, modelAdmit.modelId)
+  const effective = snapshotModel?.effectiveVideo
+  if (request.effectiveVideoVersion !== undefined && request.effectiveVideoVersion !== effective?.version) {
+    return reject({
+      code: GUARD_CODES.OPERATION_INCOMPATIBLE,
+      message: '视频线路规则已更新，请核对当前选择',
+      modelId: modelAdmit.modelId,
+      extra: { reason: 'effective_video_version_changed' },
+    })
+  }
+  if (effective || modelAdmit.model.effectiveVideoVersion !== undefined) {
+    const requestedGroup = effectiveVideoRequestedGroup(request)
+    const wireGroup = getModelChannelGroups(modelAdmit.modelId, snapshot).find((line) => line.enabled
+      && line.wireGroup.toLowerCase() === requestedGroup?.toLowerCase())?.wireGroup
+    const variants = Object.hasOwn(modelAdmit.model.effectiveVideoOperations ?? {}, wireGroup)
+      ? modelAdmit.model.effectiveVideoOperations[wireGroup] : []
+    if (!wireGroup || variants.length === 0
+      || modelAdmit.model.effectiveVideoVersion !== effective?.version) {
+      return reject({
+        code: GUARD_CODES.OPERATION_INCOMPATIBLE,
+        message: '所选视频线路已不可用，请重新选择',
+        modelId: modelAdmit.modelId,
+        extra: { reason: 'effective_video_group_unavailable' },
+      })
+    }
+    if (!normalized.operation) return reject({
+      code: GUARD_CODES.OPERATION_REQUIRED, message: '请先选择视频生成方式', modelId: modelAdmit.modelId,
+    })
+    const operationId = mapLegacyOperation(normalized.operation)
+    const candidates = variants.filter((variant) => variant.id === operationId)
+    let failed
+    for (const operation of candidates) {
+      const admitted = admitOperation({ ...modelAdmit.model, operations: [operation] }, operationId, profiles, {
+        gateAllows: opts.gateAllows, seam: opts.seam || normalized.seam || normalized.capability,
+      })
+      const result = admitted.ok
+        ? validateAndMapSubmission({ request, opts, normalized, modelAdmit, opAdmit: admitted, disp,
+          operationInferred: false, diagnostics, managed: true })
+        : reject({ ...admitted, modelId: modelAdmit.modelId })
+      if (result.ok) return result
+      failed ??= result
+    }
+    return failed ?? reject({
+      code: GUARD_CODES.OPERATION_NOT_ON_MODEL,
+      message: '所选线路不支持此视频生成方式，请重新选择',
+      modelId: modelAdmit.modelId,
+      operationId,
+    })
+  }
+
   let operationId = normalized.operation
   let operationInferred = false
   if (!operationId) {
@@ -244,7 +296,13 @@ export function guardSubmit(request, opts = {}) {
   if (!opAdmit.ok) {
     return reject({ ...opAdmit, modelId: modelAdmit.modelId })
   }
-  const h3LipSync = isH3AutoDlLipSync(modelAdmit.modelId, opAdmit.operationId)
+  return validateAndMapSubmission({ request, opts, normalized, modelAdmit, opAdmit, disp,
+    operationInferred, diagnostics, managed: false })
+}
+
+function validateAndMapSubmission({ request, opts, normalized, modelAdmit, opAdmit, disp,
+  operationInferred, diagnostics, managed }) {
+  const h3LipSync = !managed && isH3AutoDlLipSync(modelAdmit.modelId, opAdmit.operationId)
   const prompt = h3LipSync ? '' : normalized.prompt
   const assets = h3LipSync
     ? resolveH3LipSyncSlotAliases(normalized.assets, opAdmit.operation.inputs)
@@ -254,7 +312,7 @@ export function guardSubmit(request, opts = {}) {
   // specific contract reason wins: a delisted model whose operation is also
   // unverified reports the operation problem, and only an otherwise-admissible
   // request is refused with "该模型已下架".
-  if (opts.requireListed !== false && opts.gatewayMembership !== false) {
+  if (!managed && opts.requireListed !== false && opts.gatewayMembership !== false) {
     const delisted = gatewayMembershipRejection(modelAdmit.modelId, opts)
     if (delisted) {
       return reject({
@@ -268,7 +326,7 @@ export function guardSubmit(request, opts = {}) {
     }
   }
 
-  if (modelAdmit.modelId.startsWith('minimax-h3')
+  if (!managed && modelAdmit.modelId.startsWith('minimax-h3')
     && /^720p?$/i.test(String(normalized.extras?.resolution ?? request?.resolution ?? ''))) {
     return reject({
       code: GUARD_CODES.OPERATION_INCOMPATIBLE,
@@ -279,9 +337,10 @@ export function guardSubmit(request, opts = {}) {
   }
 
   const parameterResult = validateDeclaredParameters(
-    { ...request, ...normalized.extras, prompt },
+    managed ? normalized.extras : { ...request, ...normalized.extras, prompt },
     opAdmit.operation.parameters,
-    modelAdmit.model.parameters,
+    managed ? undefined : modelAdmit.model.parameters,
+    managed,
   )
   if (!parameterResult.ok) {
     return reject({
@@ -363,6 +422,7 @@ export function guardSubmit(request, opts = {}) {
     bindings: slotResult.bindings,
     bySlot: slotResult.bySlot,
     extras: parameterResult.values,
+    managed,
     userSpecifiedQuality: (request?.quality !== undefined && request?.quality !== null && request?.quality !== '')
       || (normalized.extras?.quality !== undefined && Object.prototype.hasOwnProperty.call(request, 'quality')),
   })
@@ -431,15 +491,31 @@ export function assertGuardOutput(plan, result, opts = {}) {
  * @param {object | undefined} operationParameters
  * @param {object | undefined} modelParameters
  */
-function validateDeclaredParameters(request, operationParameters, modelParameters) {
-  const result = evaluateDeclaredParameters(request, operationParameters, modelParameters, { mode: 'legacyGuard' })
-  if (result.ok) return result
+function validateDeclaredParameters(request, operationParameters, modelParameters, managed = false) {
+  const result = evaluateDeclaredParameters(request, operationParameters, modelParameters, { mode: managed ? 'canonical' : 'legacyGuard' })
+  if (result.ok) {
+    if (managed) {
+      for (const [field, definition] of Object.entries(operationParameters ?? {})) {
+        const value = result.values[field]
+        // UI configuration accepts resolution aliases case-insensitively. The
+        // request to the gateway must carry the literal it published.
+        if (definition.caseInsensitive === true && typeof value === 'string' && Array.isArray(definition.options)) {
+          result.values[field] = definition.options.find((option) => typeof option.value === 'string'
+            && option.value.toLowerCase() === value.toLowerCase())?.value ?? value
+        }
+      }
+    }
+    return result
+  }
   const { field, source } = result
   const definition = operationParameters?.[field] ?? modelParameters?.[field]
   const value = request[field]
   if (source !== 'request' || result.result.status === 'indeterminate') return {
     ok: false, code: GUARD_CODES.CATALOG_MALFORMED, field,
     message: `parameter "${field}" has an invalid or unresolved ${source === 'default' ? 'defaultValue' : 'definition'}`,
+  }
+  if (result.result.reason === 'required') return {
+    ok: false, code: GUARD_CODES.PARAMETER_UNSUPPORTED, field, message: `请设置参数「${field}」`,
   }
   const suffix = {
     boolean: 'must be boolean', unsupported: 'is not supported', integer: 'must be an integer',

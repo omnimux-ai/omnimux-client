@@ -15,7 +15,13 @@ interface ExecutionIntentGraph {
 export function executionInputSignatures(input: ExecutionIntentGraph, selected?: ReadonlySet<string>): Record<string, string> {
   const intentData = (data: Record<string, unknown> = {}) => {
     const { executionStatus, executionError, taskId, status, probeStatus, isMissing, fileMissing,
-      fileCorrupted, isOffline, ...intent } = data;
+      fileCorrupted, isOffline, videoSlotDrafts, videoAssetFieldDrafts, managedVideoGeneration, ...intent } = data;
+    const params = intent.params as Record<string, unknown> | undefined;
+    const routing = params?.routing;
+    if (routing && typeof routing === 'object' && 'videoLineQuote' in routing) {
+      const { videoLineQuote, ...selectedRoute } = routing;
+      return { ...intent, params: { ...params, routing: selectedRoute } };
+    }
     return intent;
   };
   return Object.fromEntries(input.nodes.filter(node => !selected || selected.has(node.id)).map(node => [node.id, createHash('sha256').update(canonicalJson({

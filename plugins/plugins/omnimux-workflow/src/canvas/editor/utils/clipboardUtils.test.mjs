@@ -79,6 +79,23 @@ test('只粘贴生成节点时，源/边不在范围内的绑定被丢弃为空�
   assert.deepEqual(newGen.data.slotStandbyEdgeIds, [], '无法映射的待命边应过滤');
 });
 
+test('paste remaps retained video mode drafts without retaining unselected upstream references', () => {
+  const target = genNode();
+  target.data.videoSlotDrafts = {
+    image_reference: { reference_images: [
+      { sourceNodeId: 'src1', edgeId: 'e1', role: 'reference', ordinal: 3, pinned: true },
+      { sourceNodeId: 'src-away', edgeId: 'away', role: 'reference', ordinal: 4, pinned: true },
+    ] },
+  };
+  const result = pasteFromClipboard(copyNodesToClipboard([sourceNode(), target], [edge]));
+  assert.ok(result);
+  const cloned = result.nodes.find(node => node.data.label === 'gen');
+  assert.deepEqual(cloned.data.videoSlotDrafts.image_reference.reference_images, [{
+    sourceNodeId: result.edges[0].source, edgeId: result.edges[0].id, role: 'reference', ordinal: 3, pinned: true,
+  }]);
+  assert.equal(target.data.videoSlotDrafts.image_reference.reference_images.length, 2);
+});
+
 test('重映射后的绑定在克隆图上重算仍存活（不会被 #4032 的存活校验清除）', () => {
   // 未固定(pinned=false)占位者：base 下会被 #4032 清除；重映射到新 id 后应存活。
   const nodes = [sourceNode(), genNode('gen1', { pinned: false })];

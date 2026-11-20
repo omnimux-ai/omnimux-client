@@ -89,6 +89,7 @@ export interface EffectiveOpsUiState {
 
 export interface FilteredModelOption {
   id: string;
+  effectiveVideoVersion?: string;
   label: string;
   badge?: string;
   subtitle?: string;
@@ -646,6 +647,7 @@ export function buildFilteredModelOptions(args: {
     const label = auth?.label || bucket?.label || verdict.modelId;
     options.push({
       id: verdict.modelId,
+      ...(auth?.effectiveVideoVersion !== undefined ? { effectiveVideoVersion: auth.effectiveVideoVersion } : {}),
       label,
       ...(inputIncompatible ? { inputIncompatible: true } : {}),
       ...(auth?.badge || bucket?.badge ? { badge: (auth?.badge ?? bucket?.badge) as string } : {}),

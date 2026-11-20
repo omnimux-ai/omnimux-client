@@ -34,6 +34,8 @@ import { resolveScenarioChoice, resolveMediaProviderChoice, DEFAULT_MEDIA_MODELS
 import { resolveExecutionPlan } from './execution-plan.js'
 import { parseModelAndGroup, getModelChannelGroups } from '../catalog/serving/channel-groups.js'
 import { getRuntimeContractIndex } from '../catalog/runtime-index.js'
+import { resolveCurrentSnapshot } from '../catalog/cloud/current.js'
+import { findSnapshotModel, snapshotGroupRatio } from '../catalog/cloud/view.js'
 export { probeMediaAssets } from './asset-probe.js'
 export { hostLocalAssetsIfNeeded, uploadMediaToGateway, isLocalMediaSource } from './gateway-upload.js'
 
@@ -249,9 +251,11 @@ export async function executeOmnimuxMedia(capability, input) {
     : (taskId ? findMediaTaskByUpstreamId(taskId) : null)
 
   let media = parseMediaConfig(input.media)
-  const runtimeContractIndex = getRuntimeContractIndex(
-    input.catalogIndex ? { localIndex: input.catalogIndex } : {},
-  )
+  const plannedCatalog = resolveCurrentSnapshot()
+  const runtimeContractIndex = getRuntimeContractIndex({
+    ...(input.catalogIndex ? { localIndex: input.catalogIndex } : {}),
+    snapshot: plannedCatalog.snapshot,
+  })
 
   // Collection belongs to the persisted provider, never today's composer settings.
   if (isCollectRequest) {
@@ -261,6 +265,8 @@ export async function executeOmnimuxMedia(capability, input) {
     if (taskRecord && taskRecord.capability !== capability) {
       throw new OmnimuxError('omnimux-invalid-request', '任务媒体类型与取回请求不一致')
     }
+    const accountView = taskRecord?.accountViewKey
+      ? requireTaskAccountView(taskRecord.accountViewKey) : undefined
     if(taskRecord?.status==='ready'&&taskRecord.artifact?.cachePath&&existsSync(taskRecord.artifact.cachePath)) {
       if(input.dest!==taskRecord.artifact.cachePath){mkdirSync(dirname(input.dest),{recursive:true});copyFileSync(taskRecord.artifact.cachePath,input.dest)}
       return {mode:'live',taskRef:taskRecord.taskRef,taskId:taskRecord.upstreamTaskId??null,dest:input.dest,url:input.dest}
@@ -306,7 +312,8 @@ export async function executeOmnimuxMedia(capability, input) {
     } else {
       route = resolveMediaRoute(capability, input, media, input.env)
     }
-    const auth = await resolveMediaAuth(route, { env: input.env, store: input.store, credentials: input.credentials })
+    const auth = await resolveTaskAuth(route, input, accountView)
+    if (taskRecord?.accountViewKey) requireTaskAccountView(taskRecord.accountViewKey)
     if (taskRecord?.artifact?.sourceUrl) {
       try {
         await downloadMediaFile({ dest: input.dest, url: taskRecord.artifact.sourceUrl, capability, apiKey: auth.apiKey, providerId: route.providerId, fetcher: input.fetcher, signal: input.signal })
@@ -394,7 +401,11 @@ export async function executeOmnimuxMedia(capability, input) {
       env: { [keyRef]: providerKey } }
   }
 
-  const route = resolveMediaRoute(capability, input, media, input.env)
+  const route = resolveMediaRoute(capability, input, media, input.env, runtimeContractIndex.snapshot)
+  if (capability === 'video' && route.providerId === 'omnimux' && input.effectiveVideoVersion !== undefined
+    && input.effectiveVideoVersion !== findSnapshotModel(runtimeContractIndex.snapshot, route.modelId)?.effectiveVideo?.version) {
+    throw new OmnimuxError('unknown-group', '视频线路规则已更新，请核对当前选择')
+  }
 
   // 基于 requestKey 的幂等查重短路与原子排他占位：若账本中已存在相同调用意图，直接复用任务句柄，杜绝二次提交与扣费
   const requestKey = typeof input.requestKey === 'string' ? input.requestKey.trim() : ''
@@ -403,6 +414,7 @@ export async function executeOmnimuxMedia(capability, input) {
   if (!isCollectRequest && requestKey) {
     const existingRecord = findMediaTaskByRequestKey(requestKey)
     if (existingRecord && existingRecord.capability === capability && existingRecord.model === route.modelId) {
+      if (existingRecord.accountViewKey) requireTaskAccountView(existingRecord.accountViewKey)
       if (existingRecord.status === 'ready' && existingRecord.artifact?.cachePath && existsSync(existingRecord.artifact.cachePath)) {
         let finalUrl = existingRecord.artifact.cachePath
         if (input.dest && existingRecord.artifact.cachePath !== input.dest && existsSync(existingRecord.artifact.cachePath)) {
@@ -443,6 +455,7 @@ export async function executeOmnimuxMedia(capability, input) {
     if (!taskLock.acquired) {
       const concurrentRecord = findMediaTaskByRequestKey(requestKey)
       if (concurrentRecord && concurrentRecord.capability === capability && concurrentRecord.model === route.modelId) {
+        if (concurrentRecord.accountViewKey) requireTaskAccountView(concurrentRecord.accountViewKey)
         if (concurrentRecord.status === 'submitted' || (concurrentRecord.status === 'submitting' && concurrentRecord.upstreamTaskId)) {
           return {
             mode: 'submitted',
@@ -486,6 +499,7 @@ export async function executeOmnimuxMedia(capability, input) {
       quality: input.quality,
       n: input.n,
       operation: input.operation,
+      effectiveVideoVersion: input.effectiveVideoVersion,
       speech: input.speech,
       duration: input.duration,
       voice: input.voice,
@@ -517,9 +531,16 @@ export async function executeOmnimuxMedia(capability, input) {
       capability,
       outputType: capability === 'video' || capability === 'image' || capability === 'audio' ? capability : undefined,
       requireListed: input.requireListed,
+      snapshot: runtimeContractIndex.snapshot,
     },
   )
   }
+
+  const gatewayProtocol = guardPlan.operation?.gatewayProtocol
+  const managedVideo = capability === 'video' && !isByok
+    && guardPlan.model?.effectiveVideoVersion !== undefined
+  const taskPath = taskPathFor(capability, route.modelId, gatewayProtocol)
+  if (managedVideo) assertEffectiveVideoRouteCurrent(route, plannedCatalog)
 
   const mappedInput = mapOmnimuxInput(capability, {
     prompt: guardPlan.prompt,
@@ -555,7 +576,7 @@ export async function executeOmnimuxMedia(capability, input) {
   // ComfyUI 专属 GPU 算力实例（工作流 U06，docs/comfyui-instance-api-spec.md）：
   // 画布/调用方以 minimax-h3@comfyui 显式选中「全能参考版」渠道组时才命中；
   // 该实例自有多模态素材上传与任务队列，不依赖云端网关凭据，未配置地址时响亮失败。
-  if (isComfyUiVideoRoute({ capability, group: route.group, candidates: route.candidates, modelId: guardPlan.modelId })) {
+  if (!managedVideo && isComfyUiVideoRoute({ capability, group: route.group, candidates: route.candidates, modelId: guardPlan.modelId })) {
     return generateComfyUiVideo({
       payload: mappedInput,
       dest: input.dest,
@@ -567,11 +588,9 @@ export async function executeOmnimuxMedia(capability, input) {
     })
   }
 
-  const auth = await resolveMediaAuth(route, {
-    env: input.env,
-    store: input.store,
-    credentials: input.credentials,
-  })
+  const accountView = managedVideo ? assertEffectiveVideoRouteCurrent(route, plannedCatalog) : undefined
+  const auth = await resolveTaskAuth(route, input, accountView)
+  if (managedVideo) assertEffectiveVideoRouteCurrent(route, plannedCatalog)
 
   const wait = input.wait !== false
 
@@ -584,7 +603,7 @@ export async function executeOmnimuxMedia(capability, input) {
 
   const shouldHost = (input.uploadLocalAssets ?? !input.runtime) && isRemoteGateway(route.baseUrl) && Boolean(auth.apiKey)
   const useReferenceStorage = ['image', 'video'].includes(capability) && input.runtimeSettings?.referenceStorage?.enabled === true
-  const hostH3Metadata = !isByok && guardPlan.modelId === H3_AUTODL_MODEL
+  const hostH3Metadata = !managedVideo && !isByok && guardPlan.modelId === H3_AUTODL_MODEL
   const finalInput = useReferenceStorage
     ? await prepareReferencePayload(mappedInput, {
       config: input.runtimeSettings.referenceStorage,
@@ -603,6 +622,7 @@ export async function executeOmnimuxMedia(capability, input) {
       })
       : mappedInput
 
+  if (managedVideo) assertEffectiveVideoRouteCurrent(route, plannedCatalog)
   {
       pendingTaskRecord = createMediaTaskRecord({
         capability,
@@ -613,9 +633,10 @@ export async function executeOmnimuxMedia(capability, input) {
         baseUrl: route.baseUrl,
         wireModel: route.wireModel || route.modelId,
         group: route.group,
-        taskPath: taskPathFor(capability, route.modelId),
+        taskPath,
         requestKey,
         credentialRef: route.apiKeyEnv,
+        ...(managedVideo && plannedCatalog.accountViewKey ? { accountViewKey: plannedCatalog.accountViewKey } : {}),
       })
       saveMediaTaskRecord(pendingTaskRecord)
   }
@@ -634,7 +655,7 @@ export async function executeOmnimuxMedia(capability, input) {
     // as its own header, so the model id sent upstream must be the bare id — not
     // the candidate string, which the gateway would read as an unknown model.
     const { modelId: candidateModelId, group: candidateGroup } = splitRoutingCandidate(candidate)
-    const candidateRoute = { ...route, modelId: candidateModelId || route.modelId, group: candidateGroup ?? route.group, taskPath: taskPathFor(capability, route.modelId) }
+    const candidateRoute = { ...route, modelId: candidateModelId || route.modelId, group: candidateGroup ?? route.group, taskPath, gatewayProtocol }
     const onSubmitted = (upstreamTaskId) => {
       submitted = true
       acceptedRoute = candidateRoute
@@ -656,7 +677,7 @@ export async function executeOmnimuxMedia(capability, input) {
     const runtime = input.runtime ?? createProtocolRuntime(candidateRoute, input.fetcher, auth.apiKey, onSubmitted, promptRequired)
     try {
       acceptedRoute = candidateRoute
-      if (!isByok && guardRequest) {
+      if (!managedVideo && !isByok && guardRequest) {
         const candidateRow = getModelChannelGroups(route.modelId).find((row) =>
           (row.wireModel || route.modelId) === candidateRoute.modelId
           && (row.wireGroup || row.id) === candidateRoute.group)
@@ -903,6 +924,53 @@ export async function finishMediaTask(capability, route, input) {
   return { mode: 'live', taskId: input.taskId, url }
 }
 
+function assertEffectiveVideoRouteCurrent(route, plannedCatalog) {
+  const view = resolveCurrentSnapshot()
+  if (view.accountViewKey !== plannedCatalog.accountViewKey) {
+    throw new OmnimuxError('unknown-group', '账号已切换，请重新选择视频线路')
+  }
+  if (view.accountViewKey && typeof view.resolveGenerationKey !== 'function') {
+    throw new OmnimuxError('needs-omnimux', '无法验证所选账号的生成服务密钥')
+  }
+  const current = view.snapshot
+  const plannedSnapshot = plannedCatalog.snapshot
+  if (current === plannedSnapshot) return view
+  const wireGroup = splitRoutingCandidate(route.candidates[0]).group
+  const planned = findSnapshotModel(plannedSnapshot, route.modelId)
+  const latest = findSnapshotModel(current, route.modelId)
+  if (!latest?.effectiveVideo || latest.effectiveVideo.version !== planned?.effectiveVideo?.version
+    || !getModelChannelGroups(route.modelId, current).some((line) => line.wireGroup === wireGroup)
+    || snapshotGroupRatio(current, wireGroup) !== snapshotGroupRatio(plannedSnapshot, wireGroup)
+    || JSON.stringify(latest.billing) !== JSON.stringify(planned.billing)) {
+    throw new OmnimuxError('unknown-group', '视频线路的能力、权限或价格已变更，请重新选择后生成')
+  }
+  return view
+}
+
+function requireTaskAccountView(accountViewKey) {
+  const view = resolveCurrentSnapshot()
+  if (view.accountViewKey !== accountViewKey || typeof view.resolveGenerationKey !== 'function') {
+    throw new OmnimuxError('needs-omnimux', '请切回提交任务的账号，再查询原生成任务')
+  }
+  return view
+}
+
+async function resolveTaskAuth(route, input, accountView) {
+  const resolveGenerationKey = accountView?.resolveGenerationKey
+  const auth = await resolveMediaAuth(route, {
+    env: input.env,
+    store: input.store,
+    credentials: input.credentials,
+    allowMissingOfficialKey: typeof resolveGenerationKey === 'function',
+  })
+  if (typeof resolveGenerationKey !== 'function') return auth
+  const apiKey = await resolveGenerationKey({ apiKey: auth.apiKey || undefined, baseUrl: route.baseUrl })
+  if (typeof apiKey !== 'string' || !apiKey.trim()) {
+    throw new OmnimuxError('needs-omnimux', '所选账号没有可用的生成服务密钥')
+  }
+  return { apiKey, authType: 'api-key' }
+}
+
 /**
  * @param {ReturnType<typeof resolveMediaRoute>} route
  * @param {typeof fetch} [fetcher]
@@ -921,6 +989,7 @@ function createProtocolRuntime(route, fetcher, apiKey = route.apiKey, onSubmitte
       capability: route.capability,
       group: route.group,
       taskPath: route.taskPath,
+      gatewayProtocol: route.gatewayProtocol,
       onSubmitted,
       promptRequired,
     })

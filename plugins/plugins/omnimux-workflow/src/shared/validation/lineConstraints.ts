@@ -13,6 +13,10 @@
  * producing a parameter with no selectable value.
  */
 
+import type { CapabilityCatalog, CatalogChannelGroupDto, CatalogModelDto, OperationContractDto } from '../api.ts';
+import { canonicalJson } from './compatKernel.ts';
+import { findDeclaredParameterFailure } from './declaredParameterValidation.ts';
+
 export interface LineParameterConstraint {
   /** Explicitly remove a parameter the selected line does not expose. */
   supported?: boolean;
@@ -35,6 +39,159 @@ type AnyRecord = Record<string, unknown>;
 
 function asRecord(value: unknown): AnyRecord | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as AnyRecord) : null;
+}
+
+export interface EffectiveVideoGroupSelection {
+  model: CatalogModelDto;
+  group?: CatalogChannelGroupDto;
+}
+
+export function hasEffectiveVideoOperations(group: CatalogChannelGroupDto): boolean {
+  return group.enabled !== false && (group.effectiveOperations ?? []).some(operation =>
+    operation.output?.type === 'video' && operation.listed !== false);
+}
+
+export function groupMatchesEffectiveVideoVersion(group: CatalogChannelGroupDto, version: string): boolean {
+  return hasEffectiveVideoOperations(group) && (group.effectiveVersion === undefined || group.effectiveVersion === version);
+}
+
+/** Null means a legacy route. A managed model without a matching group stays unconfigured. */
+export function resolveEffectiveVideoGroup(catalog: CapabilityCatalog | null | undefined,
+  modelId: unknown, routing: unknown): EffectiveVideoGroupSelection | null {
+  if (typeof modelId !== 'string' || !modelId.trim()) return null;
+  const id = modelId.trim();
+  const model = catalog?.models?.find(row => row.id === id || row.aliases?.includes(id));
+  const intent = asRecord(routing);
+  const allowed = Array.isArray(intent?.allowedGroups) ? intent.allowedGroups : [];
+  const requested = [...new Set([intent?.channelGroupId, ...allowed]
+    .filter((value): value is string => typeof value === 'string' && Boolean(value.trim()))
+    .map(value => value.trim()))];
+  if (!model || intent?.sourceType === 'byok'
+    || (requested.length > 0 && requested.every(group => group.startsWith('byok-')))) return null;
+  if (model.effectiveVideoVersion === undefined) return typeof intent?.videoLineQuote === 'string' ? { model } : null;
+  if (!requested.length || requested.includes('auto') || model.visible === false || model.selectable === false) return { model };
+  const group = model.channelGroups?.find(candidate => groupMatchesEffectiveVideoVersion(candidate, model.effectiveVideoVersion!)
+    && requested.every(id => candidate.id === id || candidate.wireGroup === id));
+  return group ? { model, group } : { model };
+}
+
+export function effectiveVideoOperations(group: CatalogChannelGroupDto | undefined): OperationContractDto[] {
+  return (group?.effectiveOperations ?? []).filter(operation => operation.listed !== false && operation.output?.type === 'video');
+}
+
+function hasValue(value: unknown): boolean {
+  return value !== undefined && value !== null && value !== '';
+}
+
+/** The editor takes these material inputs from named URL controls. */
+const VIDEO_ASSET_FIELDS = { fileUrl: 'file_url', linkUrl: 'link_url' } as const;
+
+export function effectiveVideoAssetFields(variant: OperationContractDto | undefined): Array<keyof typeof VIDEO_ASSET_FIELDS> {
+  return (Object.keys(VIDEO_ASSET_FIELDS) as Array<keyof typeof VIDEO_ASSET_FIELDS>).filter(key =>
+    variant?.inputs.some(input => input.slot === VIDEO_ASSET_FIELDS[key]
+      && (input.source === 'node_field' || input.valueSources?.includes('local_field'))));
+}
+
+function matchesVariantParameters(variant: OperationContractDto, params: AnyRecord, fields: Set<string>): boolean {
+  const definitions = variant.parameters ?? {};
+  return [...fields].every(key => !hasValue(params[key]) || Object.hasOwn(definitions, key))
+    && Object.keys(VIDEO_ASSET_FIELDS).every(key => !hasValue(params[key])
+      || effectiveVideoAssetFields(variant).includes(key as keyof typeof VIDEO_ASSET_FIELDS))
+    && !findDeclaredParameterFailure(params, definitions, undefined);
+}
+
+/** Prefer an already published superset when the same controls serve identical input roles. */
+function hasWiderInputLimits(candidate: OperationContractDto, current: OperationContractDto): boolean {
+  if (candidate.gatewayProtocol !== current.gatewayProtocol || candidate.modeKind !== current.modeKind
+    || candidate.inputs.length !== current.inputs.length
+    || canonicalJson(candidate.parameters) !== canonicalJson(current.parameters)
+    || canonicalJson(candidate.inputGroups) !== canonicalJson(current.inputGroups)
+    || canonicalJson(candidate.output) !== canonicalJson(current.output)) return false;
+  let increased = false;
+  for (const [index, input] of candidate.inputs.entries()) {
+    const { min = 0, max, limitSource: _source, ...rule } = input;
+    const { min: oldMin = 0, max: oldMax, limitSource: _oldSource, ...oldRule } = current.inputs[index]!;
+    const limit = max ?? Infinity;
+    const oldLimit = oldMax ?? Infinity;
+    if (min > oldMin || limit < oldLimit || canonicalJson(rule) !== canonicalJson(oldRule)) return false;
+    increased ||= min < oldMin || limit > oldLimit;
+  }
+  return increased;
+}
+
+/** Every supplied control must fit one whole variant. Missing required controls are assessed by readiness. */
+export function resolveEffectiveVideoOperation(group: CatalogChannelGroupDto | undefined,
+  operationId: unknown, params: AnyRecord = {}): OperationContractDto | undefined {
+  const variants = effectiveVideoOperations(group);
+  const fields = new Set(variants.flatMap(variant => Object.keys(variant.parameters ?? {})));
+  let selected: OperationContractDto | undefined;
+  for (const variant of variants) {
+    const matches = variant.id === operationId || typeof operationId === 'string' && variant.aliases?.includes(operationId);
+    if (matches && matchesVariantParameters(variant, params, fields)
+      && (!selected || hasWiderInputLimits(variant, selected))) selected = variant;
+  }
+  return selected;
+}
+
+export function requiredEffectiveVideoParameter(variant: OperationContractDto, params: AnyRecord): string | undefined {
+  return Object.entries(variant.parameters ?? {}).find(([key, value]) => {
+    const definition = asRecord(value);
+    return definition?.required === true && !hasValue(params[key]);
+  })?.[0];
+}
+
+/** Build a selection as one edit, resetting controls only when its model, line or mode changed. */
+export function transitionEffectiveVideoParams(
+  catalog: CapabilityCatalog,
+  selection: EffectiveVideoGroupSelection,
+  previous: AnyRecord,
+  routing: unknown,
+  change: { operationId?: string; parameter?: { key: string; value: unknown } } = {},
+): AnyRecord | undefined {
+  const group = selection.group;
+  if (!group) return;
+  const variants = effectiveVideoOperations(group);
+  const previousGroup = resolveEffectiveVideoGroup(catalog, previous.model, previous.routing)?.group;
+  const sameModel = previous.model === selection.model.id;
+  const sameGroup = sameModel && previousGroup?.id === group.id;
+  const advertisedDefault = group.defaultOperationId;
+  const modeIds = [...new Set(variants.map(variant => variant.id))];
+  const priorMode = typeof previous.operation === 'string' && modeIds.includes(previous.operation) ? previous.operation : undefined;
+  const operationId = change.operationId ?? (sameModel ? priorMode : undefined)
+    ?? (advertisedDefault && modeIds.includes(advertisedDefault) ? advertisedDefault : undefined)
+    ?? (modeIds.length === 1 ? modeIds[0] : undefined);
+  const next: AnyRecord = { model: selection.model.id, routing };
+  if (!operationId) return change.parameter ? undefined : next;
+  next.operation = operationId;
+  const forMode = variants.filter(variant => variant.id === operationId);
+  if (!forMode.length) return;
+  const oldValues = sameGroup && operationId === priorMode ? previous : {};
+  const edit = change.parameter;
+  const matchingEdit = forMode.filter(variant => !edit
+    || (typeof edit.value === 'string' && effectiveVideoAssetFields(variant).includes(edit.key as keyof typeof VIDEO_ASSET_FIELDS))
+    || (Object.hasOwn(variant.parameters ?? {}, edit.key)
+      && !findDeclaredParameterFailure({ [edit.key]: edit.value }, { [edit.key]: variant.parameters?.[edit.key] }, undefined)));
+  const currentVariant = resolveEffectiveVideoOperation(group, operationId, oldValues);
+  const variant = currentVariant && matchingEdit.includes(currentVariant) ? currentVariant : matchingEdit[0];
+  if (!variant) return;
+  for (const [key, value] of Object.entries(variant.parameters ?? {})) {
+    const definition = asRecord(value);
+    if (!definition || definition.supported === false) continue;
+    const options = Array.isArray(definition.options) ? definition.options : [];
+    const range = asRecord(definition.range);
+    const singleOption = options.length === 1 && !range ? valueOf(options[0]) : undefined;
+    const fixedRange = range && options.length === 0 && typeof range.min === 'number' && range.max === range.min
+      ? range.min : undefined;
+    const oldValue = key === edit?.key ? edit.value : oldValues[key];
+    const candidate = hasValue(oldValue) && !findDeclaredParameterFailure({ [key]: oldValue }, { [key]: definition }, undefined)
+      ? oldValue : definition.defaultValue ?? singleOption ?? fixedRange;
+    if (hasValue(candidate) && !findDeclaredParameterFailure({ [key]: candidate }, { [key]: definition }, undefined)) next[key] = candidate;
+  }
+  for (const key of effectiveVideoAssetFields(variant)) {
+    const value = key === edit?.key ? edit.value : oldValues[key];
+    if (typeof value === 'string') next[key] = value;
+  }
+  return next;
 }
 
 function valueOf(option: unknown): unknown {
@@ -200,11 +357,32 @@ export function narrowCatalogByRouting<C>(
   catalog: C | null | undefined,
   modelId: unknown,
   routing: unknown,
+  params: AnyRecord = {},
 ): C | null | undefined {
-  if (!resolver || !catalog || typeof catalog !== 'object') return catalog;
+  if (!catalog || typeof catalog !== 'object') return catalog;
   if (typeof modelId !== 'string' || !modelId) return catalog;
   const catalogRecord = catalog as unknown as Record<string, unknown>;
   const models = Array.isArray(catalogRecord.models) ? catalogRecord.models : null;
+  const managed = resolveEffectiveVideoGroup(catalog as unknown as CapabilityCatalog, modelId, routing);
+  if (managed) {
+    const variants = effectiveVideoOperations(managed.group);
+    const operationIds = new Set(variants.map(operation => operation.id));
+    const selected = resolveEffectiveVideoOperation(managed.group, params.operation, params);
+    const operations = [...operationIds].flatMap(id => {
+      const variant = selected?.id === id ? selected : resolveEffectiveVideoOperation(managed.group, id);
+      // Keep a mode's contract renderable so an outdated parameter choice can be repaired.
+      // Submission validates the persisted choice against the exact matching variant above.
+      return variant ? [variant] : [];
+    });
+    const projectedModel = { ...managed.model, parameters: {}, operations, effectiveVideoProjection: true };
+    return {
+      ...catalogRecord,
+      models: (models ?? []).map(model => (asRecord(model)?.id === managed.model.id ? projectedModel : model)),
+      ...(Array.isArray(catalogRecord.video) ? { video: catalogRecord.video.map(model =>
+        asRecord(model)?.id === managed.model.id ? { ...model, parameters: {} } : model) } : {}),
+    } as unknown as C;
+  }
+  if (!resolver) return catalog;
   if (!models || !models.some((model) => asRecord(model)?.id === modelId)) return catalog;
   const constraints = resolver(modelId, routing, catalogRecord);
   if (!constraints || Object.keys(constraints).length === 0) return catalog;

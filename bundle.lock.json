@@ -10,7 +10,7 @@
       "version": "0.1.8",
       "path": "plugins/plugins/omnimux",
       "spec": "link:../../plugins/plugins/omnimux",
-      "contentHash": "sha256:5337d93e90432ba7091e84f1dddfc226b4df1025ff90a4f18869364d4f824dc3"
+      "contentHash": "sha256:8d30a02a7bc0f7d54d28aa403ef7398ec7407b2696190f35551c37832f36abc7"
     },
     {
       "name": "omnimux-accounts",
@@ -94,7 +94,7 @@
       "version": "1.0.0-rc.3",
       "path": "plugins/plugins/omnimux-workflow",
       "spec": "link:../../plugins/plugins/omnimux-workflow",
-      "contentHash": "sha256:ac811dc2557a622546476cdd04981e210352a4be27ed6ffc186f3583c029fcb9"
+      "contentHash": "sha256:93b2b281f3b6b88b227a9fbf0312c7665d344246ea25b34ecbe8503230ee4a30"
     }
   ]
 }

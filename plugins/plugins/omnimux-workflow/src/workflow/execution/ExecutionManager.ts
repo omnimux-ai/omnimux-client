@@ -411,7 +411,7 @@ export function createExecutionManager(deps: ExecutionManagerDeps) {
 
   return {
     createExecution: (opts: CreateExecutionOptions) => createExecutionInstance(deps, entries, opts),
-    findRecoverableTasks: (opts: CreateExecutionOptions) => findRecoverableTasks(deps, entries, opts).tasks,
+    findRecoverableTasks: (opts: CreateExecutionOptions) => findRecoverableTasks(deps, entries, opts, opts.recoveryTasks).tasks,
     getEntry: (executionId: string) => lookupEntryById(entries, executionId),
     listExecutions: (workspaceId?: string) => listExecutionSummaries(entries, workspaceId),
     getSnapshot: (executionId: string) => readExecutionSnapshot(executionsDir, entries, executionId),

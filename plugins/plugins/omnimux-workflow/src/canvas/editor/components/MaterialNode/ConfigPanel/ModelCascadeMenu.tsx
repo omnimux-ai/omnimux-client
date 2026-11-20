@@ -13,7 +13,7 @@
  * 2. 悬停即切换子菜单与高亮，不需要点击；**点击才写入节点**（悬停只预览，鼠标扫过不会改配置）。
  * 3. 渐进展开：当前选中链默认显示三级；悬停到非选中品牌时只显示二级（型号），
  *    悬停到某个型号后才显示三级（渠道）——即「选中激活显示三级，悬停激活只显示下级」。
- * 4. 预览态（悬停到非选中型号）的渠道列只读：勾选属于已提交型号，预览时不给假交互。
+ * 4. 旧目录的预览渠道只读。受管视频的预览渠道可直接选择，只有点击具体渠道才写入型号和分组。
  */
 
 import React, { useState, useMemo, useCallback, useRef, useEffect, useLayoutEffect } from 'react';
@@ -41,6 +41,7 @@ import {
   type RuntimeByokChannelSettings,
 } from './channelGroups';
 import type { ChannelFallbackState } from './channelContractReconciler';
+import { groupMatchesEffectiveVideoVersion } from '../../../../../shared/validation/lineConstraints.ts';
 
 export type RouteStrategy = 'auto' | 'stability_first' | 'cost_first';
 
@@ -75,8 +76,10 @@ const Chip: React.FC<{ tone?: 'danger' | 'muted'; children: React.ReactNode }> =
       fontSize: 10,
       padding: '1px 5px',
       borderRadius: 4,
-      background: tone === 'danger' ? 'var(--dsw-alias-state-danger-bg)' : 'var(--dsw-alias-badge-bg)',
-      color: tone === 'danger' ? 'var(--dsw-alias-state-danger)' : 'var(--dsw-alias-label-secondary)',
+      background: tone === 'danger'
+        ? 'color-mix(in srgb, var(--wb-danger, var(--dsw-alias-label-danger)) 12%, transparent)'
+        : 'var(--wf-cascade-hover)',
+      color: 'var(--wf-cascade-foreground)',
       fontWeight: tone === 'danger' ? 600 : 400,
     }}
   >
@@ -116,17 +119,13 @@ export const POPOVER_MAX_HEIGHT = 400;
 /** 向后兼容常量 */
 export const POPOVER_HEIGHT = POPOVER_MAX_HEIGHT;
 
-const PANEL_STYLE: React.CSSProperties = {
-  // 底色由调用处按画布真实表面色覆盖（见 resolvePopoverSurface）；
-  // 这里的宿主 token 只是兜底，它是配 backdrop-blur 用的半透明层。
-  background: 'var(--dsw-alias-bg-elevated)',
-  borderRadius: 14,
-  border: '1px solid var(--dsw-alias-border-subtle)',
-  boxShadow: '0 16px 36px var(--dsw-alias-shadow-strong, rgba(0, 0, 0, 0.6))',
-  minHeight: POPOVER_MIN_HEIGHT,
-  maxHeight: POPOVER_MAX_HEIGHT,
-  overflowY: 'auto',
-};
+const CASCADE_THEME_TOKENS = [
+  '--wb-text-primary',
+  '--wb-text-secondary',
+  '--wb-danger',
+  '--wb-accent',
+  '--wb-shadow-pop',
+] as const;
 
 /**
  * 量尺宿主：离屏、不可见、不可交互。
@@ -182,9 +181,9 @@ const ChannelRow: React.FC<{
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--dsw-alias-text-primary)' }}>{group.label}</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--wf-cascade-foreground)' }}>{group.label}</span>
           {priceLabel ? (
-            <span style={{ fontSize: 12, color: 'var(--dsw-alias-label-secondary)' }}>
+            <span style={{ fontSize: 12, color: 'var(--wf-cascade-muted)' }}>
               {priceLabel}
             </span>
           ) : null}
@@ -193,18 +192,18 @@ const ChannelRow: React.FC<{
           {billing ? <Chip>{billing}</Chip> : null}
         </div>
         {group.badge ? (
-          <div style={{ fontSize: 11, color: 'var(--dsw-alias-label-secondary)', lineHeight: 1.4 }}>
+          <div style={{ fontSize: 11, color: 'var(--wf-cascade-muted)', lineHeight: 1.4 }}>
             {group.badge}
           </div>
         ) : null}
         {group.description ? (
-          <div style={{ fontSize: 11, color: 'var(--dsw-alias-label-tertiary)', lineHeight: 1.4 }}>
+          <div style={{ fontSize: 11, color: 'var(--wf-cascade-muted)', lineHeight: 1.4 }}>
             {group.description}
           </div>
         ) : null}
       </div>
       <div style={{ paddingLeft: 10, display: 'flex', alignItems: 'center' }}>
-        {checked && !disabled ? <Check size={15} color="var(--dsw-alias-brand-primary)" strokeWidth={2.5} /> : null}
+        {checked && !disabled ? <Check size={15} color="var(--wb-accent, var(--dsw-alias-brand-primary))" strokeWidth={2.5} /> : null}
       </div>
     </div>
   );
@@ -268,10 +267,10 @@ const CascadeModelItem: React.FC<{
   >
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
       <span className="wf-cascade-model-item__title">
-        {item.id}
+        {item.effectiveVideoVersion === undefined ? item.id : item.label}
       </span>
       {item.executable === false ? (
-        <span style={{ fontSize: 10, color: 'var(--dsw-alias-label-tertiary)', marginLeft: 6 }}>
+        <span style={{ fontSize: 10, color: 'var(--wf-cascade-muted)', marginLeft: 6 }}>
           {badge}
         </span>
       ) : null}
@@ -313,19 +312,19 @@ const CascadeChannelColumn: React.FC<{
 
   return (
     <>
-      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--dsw-alias-label-secondary)', padding: '6px 8px 8px' }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--wf-cascade-muted)', padding: '6px 8px 8px' }}>
         渠道
       </div>
 
       {channelGroups.length === 0 ? (
-        <div style={{ fontSize: 12, lineHeight: 1.6, color: 'var(--dsw-alias-label-secondary)', padding: '4px 8px' }}>
+        <div style={{ fontSize: 12, lineHeight: 1.6, color: 'var(--wf-cascade-muted)', padding: '4px 8px' }}>
           该模型尚未配置渠道分组，请求将按模型默认通道执行。
         </div>
       ) : (
         <div className="wf-cascade-channel-sections" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {officialGroups.length > 0 ? (
             <div className="wf-cascade-channel-section">
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--dsw-alias-label-tertiary)', padding: '2px 8px 6px' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--wf-cascade-muted)', padding: '2px 8px 6px' }}>
                 官方专线
               </div>
               <div className="wf-cascade-channel-list">
@@ -345,9 +344,9 @@ const CascadeChannelColumn: React.FC<{
           {hasByokEnvSupport ? (
             <div
               className="wf-cascade-channel-section"
-              style={officialGroups.length > 0 ? { borderTop: '1px solid var(--dsw-alias-border-l1)', paddingTop: 8 } : undefined}
+              style={officialGroups.length > 0 ? { borderTop: '1px solid var(--wf-cascade-border)', paddingTop: 8 } : undefined}
             >
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--dsw-alias-label-tertiary)', padding: '2px 8px 6px' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--wf-cascade-muted)', padding: '2px 8px 6px' }}>
                 自备渠道
               </div>
               {byokGroups.length > 0 ? (
@@ -363,7 +362,7 @@ const CascadeChannelColumn: React.FC<{
                   ))}
                 </div>
               ) : (
-                <div style={{ fontSize: 12, color: 'var(--dsw-alias-label-dimmed)', padding: '4px 8px 6px' }}>
+                <div style={{ fontSize: 12, color: 'var(--wf-cascade-muted)', padding: '4px 8px 6px' }}>
                   未配置自备渠道
                 </div>
               )}
@@ -393,7 +392,9 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
   const lockedHeightRef = useRef<number | null>(null);
 
   const selectableOptions = useMemo(
-    () => options.filter((item) => item.executable !== false),
+    () => options.filter((item) => item.executable !== false
+      && (item.effectiveVideoVersion === undefined || item.inputIncompatible !== true
+        && item.channelGroups?.some(group => groupMatchesEffectiveVideoVersion(group, item.effectiveVideoVersion!)))),
     [options],
   );
   const brandList = useMemo(() => groupPickerCandidates(selectableOptions), [selectableOptions]);
@@ -415,18 +416,27 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
   // 若分组为空（0个）或只有唯一默认渠道（<=1），则直接不显示三级菜单。
   const hoveringOtherBrand = hoverBrandId !== null && hoverBrandId !== activeBrandId;
   const channelModelId = hoverModelId ?? activeModelId;
+  const isManagedChannelModel = options.some(item => item.id === channelModelId && item.effectiveVideoVersion !== undefined);
+  const isManagedActiveModel = options.some(item => item.id === activeModelId && item.effectiveVideoVersion !== undefined);
+  const groupsForModel = useCallback((modelId: string) => {
+    const rows = rowChannelGroups(options, modelId);
+    const version = options.find(item => item.id === modelId)?.effectiveVideoVersion;
+    const groups = resolveModelChannelGroups(modelId, version === undefined ? rows
+      : rows.filter(group => groupMatchesEffectiveVideoVersion(group, version)), runtimeSettings);
+    return version === undefined ? groups : groups.filter(group => group.enabled !== false && group.isAvailable !== false);
+  }, [options, runtimeSettings]);
   // 线路只来自上游目录行：不再有本地线路表可读，也不再需要额外的目录查询。
   const channelGroups = useMemo(
     () => isPickerCandidate(options, channelModelId)
-      ? resolveModelChannelGroups(channelModelId, rowChannelGroups(options, channelModelId), runtimeSettings)
+      ? groupsForModel(channelModelId)
       : [],
-    [options, channelModelId, runtimeSettings],
+    [options, channelModelId, groupsForModel],
   );
   const activeChannelGroups = useMemo(
     () => isPickerCandidate(options, activeModelId)
-      ? resolveModelChannelGroups(activeModelId, rowChannelGroups(options, activeModelId), runtimeSettings)
+      ? groupsForModel(activeModelId)
       : [],
-    [options, activeModelId, runtimeSettings],
+    [options, activeModelId, groupsForModel],
   );
   const hasMultipleChannels = channelGroups.length > 1;
   const showChannelColumn = hasMultipleChannels && (hoveringOtherBrand ? hoverModelId !== null : true);
@@ -440,6 +450,7 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
     const normExplicit = typeof rawExplicit === 'string' && rawExplicit.trim() !== '' ? rawExplicit.trim() : undefined;
     let candidate: string | undefined;
     if (normAllowed && normExplicit && normAllowed !== normExplicit) {
+      if (isManagedActiveModel) return [];
       // 检测到 normAllowed 与 normExplicit 冲突时优先取 normExplicit（BYOK 权威 ID）或回退至安全首项
       candidate = activeChannelGroups.some((g) => g.id === normExplicit)
         ? normExplicit
@@ -452,6 +463,7 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
     if (candidate && activeChannelGroups.some((g) => g.id === candidate && g.enabled !== false && g.isAvailable !== false)) {
       return [candidate];
     }
+    if (isManagedActiveModel) return [];
     const fallbackGroup = activeChannelGroups.find((group) => group.enabled !== false && group.isAvailable !== false);
     return fallbackGroup ? [fallbackGroup.id] : [];
   });
@@ -471,6 +483,10 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
     const normExplicit = typeof rawExplicit === 'string' && rawExplicit.trim() !== '' ? rawExplicit.trim() : undefined;
     let candidate: string | undefined;
     if (normAllowed && normExplicit && normAllowed !== normExplicit) {
+      if (isManagedActiveModel) {
+        setSelectedGroupIds([]);
+        return;
+      }
       // 检测到 normAllowed 与 normExplicit 冲突时优先取 normExplicit（BYOK 权威 ID）或回退至安全首项
       candidate = activeChannelGroups.some((g) => g.id === normExplicit)
         ? normExplicit
@@ -482,19 +498,24 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
     }
     if (candidate && activeChannelGroups.some((g) => g.id === candidate && g.enabled !== false && g.isAvailable !== false)) {
       setSelectedGroupIds([candidate]);
+    } else if (isManagedActiveModel) {
+      setSelectedGroupIds([]);
     } else {
       const fallbackGroup = activeChannelGroups.find((group) => group.enabled !== false && group.isAvailable !== false);
       setSelectedGroupIds(fallbackGroup ? [fallbackGroup.id] : []);
     }
-  }, [activeChannelGroups, persistedGroups, persistedGroupId]);
+  }, [activeChannelGroups, persistedGroups, persistedGroupId, isManagedActiveModel]);
 
   const emit = useCallback((modelId: string, groupIds: string[]) => {
     if (!isPickerCandidate(options, modelId)) return;
-    const groups = resolveModelChannelGroups(modelId, rowChannelGroups(options, modelId), runtimeSettings);
+    const groups = groupsForModel(modelId);
     const payload = buildChannelSelectionPayload(modelId, groupIds, groups);
     if (!payload) return;
-    onSelect(payload);
-  }, [onSelect, options, runtimeSettings]);
+    const managed = options.some(item => item.id === modelId && item.effectiveVideoVersion !== undefined);
+    if (managed && groupIds.length !== 1) return;
+    onSelect(managed && payload.sourceType !== 'byok'
+      ? { ...payload, channelGroupId: groupIds[0], sourceType: 'official' } : payload);
+  }, [onSelect, options, groupsForModel]);
 
   /** 悬停只切换预览；写入节点只发生在点击与渠道单选。 */
   const handleBrandHover = useCallback((brandId: string) => {
@@ -515,30 +536,40 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
     if (!isPickerCandidate(options, modelId)) return;
     const candidate = options.find((item) => item.id === modelId);
     if (candidate?.executable === false) return;
-    const groups = resolveModelChannelGroups(modelId, rowChannelGroups(options, modelId), runtimeSettings);
+    const groups = groupsForModel(modelId);
+    if (candidate?.effectiveVideoVersion !== undefined && groups.length > 1) {
+      setHoverModelId(modelId);
+      return;
+    }
     const defaultGroup = groups.find((group) => group.enabled !== false && group.isAvailable !== false)?.id;
     const nextGroupIds = defaultGroup ? [defaultGroup] : [];
     setSelectedGroupIds(nextGroupIds);
     setHoverBrandId(null);
     setHoverModelId(null);
     emit(modelId, nextGroupIds);
-  }, [options, runtimeSettings, emit]);
+  }, [options, groupsForModel, emit]);
 
-  /** 点击品牌只选择该分组第一个可执行候选。 */
   const handleBrandClick = useCallback((brandId: string) => {
-    const targetModelId = modelsForBrand(brandId).find((item) => item.executable !== false)?.id;
-    if (targetModelId) handleSelectModel(targetModelId);
-  }, [handleSelectModel, modelsForBrand]);
+    const models = modelsForBrand(brandId);
+    if (models.some((item) => item.effectiveVideoVersion !== undefined)) {
+      handleBrandHover(brandId);
+      return;
+    }
+    const targetModelId = models.find((item) => item.executable !== false)?.id;
+    if (!targetModelId) return;
+    handleSelectModel(targetModelId);
+  }, [handleBrandHover, handleSelectModel, modelsForBrand]);
 
   const handleSelectGroup = useCallback((groupId: string) => {
-    if (!isPickerCandidate(options, activeModelId) || !activeChannelGroups.some((group) => group.id === groupId)) return;
+    const target = isManagedChannelModel ? channelModelId : activeModelId;
+    const groups = isManagedChannelModel ? channelGroups : activeChannelGroups;
+    if (!isPickerCandidate(options, target) || !groups.some((group) => group.id === groupId)) return;
     const next = [groupId];
     setSelectedGroupIds(next);
-    emit(activeModelId, next);
-  }, [options, activeChannelGroups, activeModelId, emit]);
+    emit(target, next);
+  }, [options, activeChannelGroups, activeModelId, channelGroups, channelModelId, isManagedChannelModel, emit]);
 
   const [popoverPos, setPopoverPos] = useState<{ bottom: number; left: number }>({ bottom: 44, left: 16 });
-  const [popoverSurface, setPopoverSurface] = useState<string>('var(--dsw-alias-bg-elevated)');
 
   useLayoutEffect(() => {
     if (!isOpen) {
@@ -561,21 +592,21 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
   const probeColumns = useMemo(() => (
     <>
       <div className="wf-loomi-col wf-loomi-col--brand" data-cascade-probe-col="">
-        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--dsw-alias-label-secondary)', padding: '6px 8px 8px' }}>品牌</div>
+        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--wf-cascade-muted)', padding: '6px 8px 8px' }}>品牌</div>
         {brandList.map((brand) => (
           <CascadeBrandItem key={brand.id} brand={brand} isSelected={false} interactive={false} />
         ))}
       </div>
       {brandList.map((brand) => (
         <div key={brand.id} className="wf-loomi-col wf-loomi-col--model" data-cascade-probe-col="">
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--dsw-alias-label-secondary)', padding: '6px 8px 8px' }}>型号</div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--wf-cascade-muted)', padding: '6px 8px 8px' }}>型号</div>
           {brand.rows.map((item) => (
             <CascadeModelItem key={item.id} item={item} isSelected={false} interactive={false} />
           ))}
         </div>
       ))}
       {brandList.flatMap((brand) => brand.rows).map((item) => {
-        const groups = resolveModelChannelGroups(item.id, rowChannelGroups(options, item.id), runtimeSettings);
+        const groups = groupsForModel(item.id);
         if (groups.length <= 1) return null;
         return (
           <div key={item.id} className="wf-loomi-col wf-loomi-col--channel" data-cascade-probe-col="">
@@ -589,14 +620,21 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
         );
       })}
     </>
-  ), [brandList, options, runtimeSettings, fallbackState]);
+  ), [brandList, groupsForModel, runtimeSettings, fallbackState]);
 
   useEffect(() => {
     if (!isOpen) return;
     const place = () => {
-      const rect = triggerRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      setPopoverSurface(resolvePopoverSurface(triggerRef.current));
+      const anchor = triggerRef.current;
+      const popover = popoverRef.current;
+      if (!anchor || !popover) return;
+      const rect = anchor.getBoundingClientRect();
+      // The body portal needs the same scoped foreground and surface as the canvas.
+      const theme = getComputedStyle(anchor);
+      popover.style.setProperty('--wf-cascade-surface', resolvePopoverSurface(triggerRef.current));
+      for (const token of CASCADE_THEME_TOKENS) {
+        popover.style.setProperty(token, theme.getPropertyValue(token));
+      }
       setPopoverPos({
         bottom: Math.max(8, Math.min(window.innerHeight - rect.top + 8, Math.max(8, window.innerHeight - (lockedHeightRef.current ?? POPOVER_MAX_HEIGHT) - 12))),
         left: Math.max(12, Math.min(rect.left, Math.max(12, window.innerWidth - POPOVER_MAX_WIDTH - 12))),
@@ -636,7 +674,10 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
   }, [isOpen]);
 
   const { modelId: triggerModelId } = parseModelAndGroup(activeModelId);
-  const triggerDisplayText = triggerModelId || '待重新选择';
+  const managedModelLabel = isManagedActiveModel ? options.find(item => item.id === activeModelId)?.label : undefined;
+  const managedGroupLabel = isManagedActiveModel ? activeChannelGroups.find(group => selectedGroupIds.includes(group.id))?.label : undefined;
+  const triggerDisplayText = managedModelLabel
+    ? [managedModelLabel, managedGroupLabel].filter(Boolean).join(' · ') : triggerModelId || '待重新选择';
 
   return (
     <>
@@ -673,7 +714,7 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
           >
             {/* 栏 1：品牌 */}
             <div role="group" aria-label="选择品牌" className="wf-loomi-col wf-loomi-col--brand">
-              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--dsw-alias-label-secondary)', padding: '6px 8px 8px' }}>品牌</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--wf-cascade-muted)', padding: '6px 8px 8px' }}>品牌</div>
               {brandList.map((brand) => {
                 const isSelected = activeBrandId === brand.id;
                 const isHovered = shownBrandId === brand.id && hoverBrandId !== null;
@@ -692,7 +733,7 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
 
             {/* 栏 2：型号 */}
             <div role="group" aria-label="选择模型版本" className="wf-loomi-col wf-loomi-col--model">
-              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--dsw-alias-label-secondary)', padding: '6px 8px 8px' }}>型号</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--wf-cascade-muted)', padding: '6px 8px 8px' }}>型号</div>
               {shownModels.map((item) => {
                 const isSelected = activeModelId === item.id;
                 const isHovered = hoverModelId === item.id;
@@ -718,8 +759,8 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
               >
                 <CascadeChannelColumn
                   channelGroups={channelGroups}
-                  checkedIds={isChannelPreview ? [channelGroups[0]?.id ?? ''] : selectedGroupIds}
-                  preview={isChannelPreview}
+                  checkedIds={isChannelPreview ? (isManagedChannelModel ? [] : [channelGroups[0]?.id ?? '']) : selectedGroupIds}
+                  preview={isChannelPreview && !isManagedChannelModel}
                   onSelect={handleSelectGroup}
                   runtimeSettings={runtimeSettings}
                   fallbackState={fallbackState}

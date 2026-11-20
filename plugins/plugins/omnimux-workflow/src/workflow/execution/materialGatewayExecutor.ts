@@ -12,7 +12,8 @@ import { assertProjectWriteSafe } from '../../projects/paths.ts';
 import type { ResolveExecutionProjectFile } from './executionMediaSource.ts';
 import { collectMaterialSlotInputs } from './materialSlotInputs.ts';
 import { resolveGenerationPrompt } from '../../shared/graph/generationPrompt.ts';
-import { compileMultimodalPrompt } from './multimodalCompiler.ts';
+import { effectiveVideoAssetFields } from '../../shared/validation/lineConstraints.ts';
+import { compileMultimodalPrompt, PROMPT_REF_REGEX } from './multimodalCompiler.ts';
 import type { AwaitTaskResult, GenerationGateway, SubmitRequest } from '../seam/gateway';
 import { SeamGatewayError } from '../seam/SeamGatewayError.ts';
 import { openWorkflowSubmission } from '../seam/submitGuard.ts';
@@ -218,17 +219,21 @@ export function createMaterialGatewayExecutor(opts: {
       if (data.inputBindingVersion !== 1 && capability === 'audio' && upstream.texts.length && resolveGenerationPrompt(data).trim()) {
         throw new Error('当前音频任务不能分别表达上游正文和本地要求；请保留一个正文来源并调整音色、语速等参数');
       }
-      const rawPrompt = upstream.prompt;
-
       // Upstream reference mapping (multi-modal references + audioTrack + backward compatibility)
       const references = [...upstream.references];
+      const managed = upstream.managedGroup;
+      const activePromptSources = new Set([...references, ...(upstream.textInputs ?? []), ...(upstream.audioTrack ? [upstream.audioTrack] : [])]
+        .map(item => item.sourceNodeId));
+      const projectPrompt = (prompt: string | undefined) => managed ? prompt?.replace(PROMPT_REF_REGEX, (token, sourceId) =>
+        activePromptSources.has(sourceId) ? token : '') : prompt;
+      const rawPrompt = projectPrompt(upstream.prompt) ?? '';
 
       // Compile multimodal prompt (Issue #714 / T05)
       const modelId = upstream.modelId ?? readString(params, 'model');
       const modelDef = catalog.models?.find((m) => m.id === modelId) as Record<string, unknown> | undefined;
       const supportsInterleaved = Boolean(
         modelDef?.supportsInterleaved ||
-        (params as Record<string, unknown> | undefined)?.supportsInterleaved
+        (!managed && params?.supportsInterleaved)
       );
 
       const upstreamOutputsObj: Record<string, { mediaUrl?: string; text?: string; mimeType?: string }> = {};
@@ -273,15 +278,17 @@ export function createMaterialGatewayExecutor(opts: {
       const request: SubmitRequest = {
         capability,
         prompt,
-        ...(data.inputBindingVersion === 1 ? { localText: upstream.localText, textInputs: upstream.textInputs } : {}),
+        ...(data.inputBindingVersion === 1 ? {
+          localText: projectPrompt(upstream.localText),
+          textInputs: upstream.textInputs?.map(input => ({ ...input, textContent: projectPrompt(input.textContent) ?? '' })),
+        } : {}),
         interleavedParts: compiled.interleavedParts && compiled.interleavedParts.length > 0
           ? compiled.interleavedParts
           : undefined,
-        image,
-        audio,
+        ...(managed ? {} : { image, audio }),
         references: references.length > 0 ? references : undefined,
         audioTrack,
-        duration: upstream.documentDuration ?? readDuration(data),
+        duration: managed ? readNumber(params, 'duration') : upstream.documentDuration ?? readDuration(data),
         operation: upstream.operationId,
         model: upstream.modelId,
         resolution: readString(params, 'resolution'),
@@ -303,11 +310,27 @@ export function createMaterialGatewayExecutor(opts: {
         nsfwCheck: readBoolean(params, 'nsfwCheck'),
         fileUrl: readString(params, 'fileUrl'),
         linkUrl: readString(params, 'linkUrl'),
-        ...readRouting(params),
+        ...(managed ? {
+          allowedGroups: [managed.wireGroup ?? managed.id],
+          effectiveVideoVersion: upstream.effectiveVideoVersion,
+        } : readRouting(params)),
         dest,
         signal: ctx.signal,
         mockFail: readMockFail(data),
       };
+      if (upstream.variant) {
+        for (const key of [
+          'duration', 'resolution', 'quality', 'n', 'aspectRatio', 'voice', 'style', 'instrumental',
+          'speed', 'sound', 'seed', 'watermark', 'outputFormat', 'referenceTaskType', 'generationType',
+          'returnLastFrame', 'webSearch', 'nsfwCheck',
+        ] as const) {
+          if (!Object.hasOwn(upstream.variant.parameters ?? {}, key)) delete request[key];
+        }
+        const urlInputs = effectiveVideoAssetFields(upstream.variant);
+        for (const key of ['fileUrl', 'linkUrl'] as const) {
+          if (!urlInputs.includes(key)) delete request[key];
+        }
+      }
       // Synchronous speech preserves reference audio when supplied (reference audio clone mode).
       if (capability === 'audio' && upstream.operationId === 'text_to_speech') {
         delete request.image;

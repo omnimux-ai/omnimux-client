@@ -97,6 +97,7 @@ export function mapOpenAiImageSize(aspectRatio = '16:9', resolution = '2K') {
  *   bindings: Array<{ slot: string, role?: string, type: string, pathOrUrl: string, asset: object }>,
  *   bySlot: Map<string, object[]>,
  *   extras?: Record<string, unknown>,
+ *   managed?: boolean,
  * }} args
  */
 export function mapValidatedPlanToVendor(args) {
@@ -104,7 +105,7 @@ export function mapValidatedPlanToVendor(args) {
   const profileId = profile.id
   const opId = args.operation.id
   const speech = profileId === 'audioGenerate' && opId === 'text_to_speech'
-  const h3LipSync = isH3AutoDlLipSync(args.modelId, opId)
+  const h3LipSync = !args.managed && isH3AutoDlLipSync(args.modelId, opId)
   /** @type {Record<string, unknown>} */
   let vendor = {}
   /** @type {Record<string, unknown>} */
@@ -120,11 +121,10 @@ export function mapValidatedPlanToVendor(args) {
     logical.prompt = prompt
   }
   const extras = args.extras && typeof args.extras === 'object' ? args.extras : {}
-  // `muse-video` speaks the gateway's `openai_video` shape: the first frame
-  // travels as a bare `image` URL and the aspect ratio as `aspect_ratio`.
-  // Match the exact model id — a broad family check would also catch other
-  // video models that keep the frame-role / pixel-size contract.
-  const isMuseVideoModel = String(args.modelId ?? '').trim().toLowerCase() === 'muse-video'
+  // Old snapshots predate protocol declarations. Keep their legacy wire shape.
+  const openAiVideo = args.operation.gatewayProtocol === 'openai_video'
+    || (!args.managed && !args.operation.gatewayProtocol && args.modelId === 'muse-video')
+  const autoDlVideo = !args.managed && !args.operation.gatewayProtocol && args.modelId === H3_AUTODL_MODEL
   const {
     firstFrames, lastFrames, references, audioTracks, sources,
     genericImages, genericAudio, genericVideo, sourceVideos,
@@ -146,7 +146,7 @@ export function mapValidatedPlanToVendor(args) {
     if (h3LipSync) {
       const lipSyncMedia = mapH3LipSyncMedia(args.bindings, extras.duration)
       if (lipSyncMedia) Object.assign(vendor, lipSyncMedia)
-    } else if (args.modelId === H3_AUTODL_MODEL) {
+    } else if (autoDlVideo) {
       const metadata = {}
       firstFrames.forEach((url, i) => { metadata[`ref_image_${i}`] = url })
       references.forEach((url, i) => { metadata[`ref_image_${firstFrames.length + i}`] = url })
@@ -162,7 +162,7 @@ export function mapValidatedPlanToVendor(args) {
         if (lastFrames[0]) metadata.last_frame = lastFrames[0]
       }
       if (Object.keys(metadata).length) vendor.metadata = metadata
-    } else if (isMuseVideoModel && opId === 'first_frame') {
+    } else if (openAiVideo && opId === 'first_frame') {
       // `openai_video` first-frame lane: the frame is the plain `image` URL.
       // `image_with_roles` belongs to the frame-role contract and would not be
       // read by this model's upstream.
@@ -177,7 +177,7 @@ export function mapValidatedPlanToVendor(args) {
     } else if (opId === 'video_multi_ref' || opId === 'video_edit') {
       const images = references.length ? references : genericImages
       const videos = opId === 'video_edit' ? [...sourceVideos, ...referenceVideos] : referenceVideos
-      if (images.length) vendor.image_urls = [...images]
+      if (images.length) vendor[openAiVideo && args.managed ? 'images' : 'image_urls'] = [...images]
       if (videos.length) vendor.video_urls = [...videos]
       if (referenceAudios.length) vendor.audio_urls = [...referenceAudios]
     } else if (opId === 'video_extend') {
@@ -357,12 +357,11 @@ export function mapValidatedPlanToVendor(args) {
   }
   if (typeof extras.aspectRatio === 'string' && extras.aspectRatio) {
     if (profileId === 'videoGenerate' || profileId === 'videoDigitalHuman') {
-      const isKling = args.family === 'kling' || args.model?.family === 'kling' || String(args.modelId ?? '').startsWith('kling')
+      const isKling = !args.managed && (args.family === 'kling' || args.model?.family === 'kling' || String(args.modelId ?? '').startsWith('kling'))
       // These families read the ratio as `aspect_ratio`; the generic gateway
       // field `size` is not their contract.
-      const useAspectRatio = isKling || args.modelId.startsWith('minimax-h3')
-        || args.modelId === 'grok-imagine-video-1-5'
-        || isMuseVideoModel
+      const useAspectRatio = openAiVideo || isKling
+        || (!args.managed && (args.modelId.startsWith('minimax-h3') || args.modelId === 'grok-imagine-video-1-5'))
       vendor[useAspectRatio ? 'aspect_ratio' : 'size'] = extras.aspectRatio
       if (isKling) {
         vendor.metadata = { ...(vendor.metadata || {}), aspect_ratio: extras.aspectRatio }
@@ -372,14 +371,14 @@ export function mapValidatedPlanToVendor(args) {
   }
   if (typeof extras.resolution === 'string' && extras.resolution) {
     if (profileId === 'videoGenerate' || profileId === 'videoDigitalHuman') {
-      const isWan = args.modelId === 'wan-3.0' || args.family === 'wan' || args.model?.family === 'wan'
+      const isWan = !args.managed && (args.modelId === 'wan-3.0' || args.family === 'wan' || args.model?.family === 'wan')
       vendor.resolution = isWan ? extras.resolution.toUpperCase() : extras.resolution
     }
     logical.resolution = extras.resolution
   }
   if (profileId === 'videoGenerate') {
     if (typeof extras.sound === 'boolean') {
-      const isWan = args.modelId === 'wan-3.0' || args.family === 'wan' || args.model?.family === 'wan'
+      const isWan = !args.managed && (args.modelId === 'wan-3.0' || args.family === 'wan' || args.model?.family === 'wan')
       vendor[isWan ? 'audio' : 'generate_audio'] = extras.sound
       logical.sound = extras.sound
     }
@@ -487,7 +486,7 @@ export function mapValidatedPlanToVendor(args) {
   // Build a per-call profile view that relaxes those shape requires while the
   // emitted fields still pass the allow list (metadata / audio_urls stay).
   let effectiveProfile = profile
-  if (args.modelId === H3_AUTODL_MODEL && profile?.operationVendorShapes) {
+  if (autoDlVideo && profile?.operationVendorShapes) {
     const shapes = {}
     for (const [shapeOpId, shape] of Object.entries(profile.operationVendorShapes)) {
       if (!shape) { shapes[shapeOpId] = shape; continue }
@@ -496,25 +495,22 @@ export function mapValidatedPlanToVendor(args) {
       shapes[shapeOpId] = { ...shape, allow, require }
     }
     effectiveProfile = { ...profile, operationVendorShapes: shapes }
-  } else if (isMuseVideoModel && profile?.operationVendorShapes) {
-    // `muse-video`'s `openai_video` first_frame contract uses bare `image`, not
-    // the shared frame-role payload. Relax only this model's profile view so
-    // every other video model keeps the forbidden-field / require guard.
-    const shapes = {}
-    for (const [shapeOpId, shape] of Object.entries(profile.operationVendorShapes)) {
-      if (!shape) { shapes[shapeOpId] = shape; continue }
-      if (shapeOpId !== 'first_frame') { shapes[shapeOpId] = shape; continue }
-      const allow = Array.isArray(shape.allow) ? [...shape.allow, 'image'] : shape.allow
-      const require = Array.isArray(shape.require)
-        ? [...shape.require.filter((field) => field !== 'image_with_roles'), 'image']
-        : shape.require
-      shapes[shapeOpId] = { ...shape, allow, require }
-    }
-    effectiveProfile = {
-      ...profile,
-      vendorFields: [...(profile.vendorFields ?? []), 'image'],
-      forbiddenVendorFields: (profile.forbiddenVendorFields ?? []).filter((field) => field !== 'image'),
-      operationVendorShapes: shapes,
+  } else if (openAiVideo && profile?.operationVendorShapes) {
+    const mediaField = opId === 'first_frame' ? 'image'
+      : opId === 'video_multi_ref' && args.managed ? 'images' : undefined
+    if (mediaField) {
+      const shape = profile.operationVendorShapes[opId]
+      const replacedField = mediaField === 'image' ? 'image_with_roles' : 'image_urls'
+      const allow = Array.isArray(shape?.allow) ? [...shape.allow.filter((field) => field !== replacedField), mediaField] : shape?.allow
+      const require = Array.isArray(shape?.require)
+        ? [...shape.require.filter((field) => field !== replacedField), mediaField]
+        : shape?.require
+      effectiveProfile = {
+        ...profile,
+        vendorFields: [...(profile.vendorFields ?? []), mediaField],
+        forbiddenVendorFields: (profile.forbiddenVendorFields ?? []).filter((field) => field !== mediaField),
+        operationVendorShapes: { ...profile.operationVendorShapes, [opId]: { ...shape, allow, require } },
+      }
     }
   }
   const checked = assertVendorBodyAllowed(vendor, effectiveProfile, opId)

@@ -5,6 +5,22 @@ import * as artifact from '../../../plugins/omnimux/lib/generation-core.js'
 
 const candidate = (parameters = {}, constraints = {}, inputs = [], inputGroups) => ({ operation: { id: 'op', inputs, ...(inputGroups === undefined ? {} : { inputGroups }) }, parameters, constraints, knownOperationIds: ['op'], currentEligibility: 'eligible' })
 const snapshot = (logicalParameters = {}, parameterSources = {}, assets = [], extra = {}) => ({ assets, logicalParameters, parameterSources, parameterAuthority: 'resolved', ...extra })
+function assertRequiredRangeParameter(core) {
+  const duration = { type: 'integer', required: true, range: { min: 4, max: 6, step: 1 } }
+  const selection = candidate({ duration })
+  const missing = core.evaluateCandidateRequest(selection, snapshot({}, { duration: { source: 'absent' } }))
+  assert.equal(missing.status, 'pending')
+  assert.deepEqual(missing.diagnostics, [{ code: 'parameter_required', field: 'duration' }])
+  const selected = core.evaluateCandidateRequest(selection, snapshot({ duration: 5 }, {
+    duration: { source: 'explicit', value: 5 },
+  }))
+  assert.equal(selected.status, 'ready')
+  assert.deepEqual(selected.effectiveParameters, { duration: 5 })
+}
+
+test('source accepts a selected required range parameter without a default', () => assertRequiredRangeParameter(source))
+test('packaged core accepts a selected required range parameter without a default', () => assertRequiredRangeParameter(artifact))
+
 for (const [entry, core] of [['source', source], ['artifact', artifact]]) {
   test(`${entry}: repair1 alias lookup is own-only and preserves special exact targets and hard verdicts`, () => {
     const slots = [{ slot: 'reference', type: 'image', max: 1 }]

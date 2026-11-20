@@ -6,6 +6,10 @@
 import { buildInitialOutputs } from '../execution/executionInputs.ts';
 import { prepareExecutionAdmission } from '../execution/prepareExecutionAdmission.ts';
 import type { CapabilityCatalog } from '../../shared/api.ts';
+import { readCanvasParams } from '../../shared/graph/canvasInputSources.ts';
+import { resolveNodeKind } from '../../shared/graph/materialNode.ts';
+import { effectiveVideoOperations, groupMatchesEffectiveVideoVersion, resolveEffectiveVideoGroup } from '../../shared/validation/lineConstraints.ts';
+import { managedVideoLinePricingFingerprint } from '../../shared/validation/managedVideoExecution.ts';
 import {
   normalizeNodeIds,
   resolveExecutionSubgraph,
@@ -30,7 +34,7 @@ import {
   extractSessionContext,
 } from './agentToolShared.ts';
 import { sessionToWorkspaceId } from '../../shared/sessionWorkspaceId.ts';
-import type { WorkspaceSummary } from '../../shared/canvasTypes.ts';
+import type { CanvasWorkspaceSnapshot, WorkspaceSummary } from '../../shared/canvasTypes.ts';
 
 export function createWorkflowListTool(deps: WorkflowAgentDeps): AgentToolSpec {
   const { store, executionManager, projectStore, resolveSessionWorkspaceDir } = deps;
@@ -101,10 +105,35 @@ export function createWorkflowListTool(deps: WorkflowAgentDeps): AgentToolSpec {
 
 export function createWorkflowRunTool(deps: WorkflowAgentDeps): AgentToolSpec {
   const { store, executionManager, mediaDir, getActiveView } = deps;
+  async function report(executionId: string, workspace: CanvasWorkspaceSnapshot, args: Record<string, unknown>) {
+    const timeoutMs = typeof args.timeout_ms === 'number' && args.timeout_ms > 0
+      ? Math.floor(args.timeout_ms) : DEFAULT_RUN_WAIT_TIMEOUT_MS;
+    const { snapshot: final, timedOut } = readBoolean(args, 'wait')
+      ? await waitForTerminal(executionManager, executionId, timeoutMs)
+      : { snapshot: executionManager.getSnapshot(executionId), timedOut: false };
+    if (!final || final.workspaceId !== workspace.id) {
+      return errorBody('execution-not-found', `execution ${executionId} does not belong to workspace ${workspace.id}`);
+    }
+    const durationMs = final.completedAt !== null && final.startedAt !== null
+      ? final.completedAt - final.startedAt : null;
+    return {
+      executionId,
+      workspaceId: workspace.id,
+      workspaceName: workspace.name,
+      totalNodes: final.totalNodes,
+      status: final.status,
+      timedOut,
+      error: final.error,
+      progress: final.progress,
+      ...(durationMs !== null ? { durationMs } : {}),
+      nodes: summarizeNodes(workspace, new Set(Object.keys(final.nodeStates)), final, mediaDir),
+      ...(timedOut ? { hint: 'Execution is still running. Call workflow_run with this execution_id to check it again.' } : {}),
+    };
+  }
   return {
     name: 'workflow_run',
     description:
-      'Run a workflow canvas (node DAG) on the omnimux-workflow execution engine. Prefer the current canvas from ui_context when workspace_id is omitted. mode "full" runs every node; mode "subset" runs only the given nodeIds plus their transitive upstream closure; mode "single" runs only the given nodeIds directly (inheriting existing upstream outputs). wait=false (default) returns the executionId immediately — the user can watch live progress on the canvas (per-node badges + SSE). wait=true polls until a terminal status (completed/error/cancelled) or the timeout (default 120s) and returns per-node statuses, text excerpts and media file paths. The canvas performs generation through the OmniMux gateway (real hub seams when available, mock otherwise).',
+      'Run a workflow canvas, or check an existing execution by execution_id without creating another run. Prefer the current canvas from ui_context when workspace_id is omitted. mode "full" runs every node; mode "subset" runs the given node IDs and the inputs they use; mode "single" runs the given node IDs using existing outputs. wait=false returns immediately. wait=true polls until terminal or the timeout (default 120s) and returns per-node results. After a timeout pass the returned executionId as execution_id.',
     parameters: objectParams({
       workspace_id: {
         type: 'string',
@@ -113,6 +142,10 @@ export function createWorkflowRunTool(deps: WorkflowAgentDeps): AgentToolSpec {
       workspace_name: {
         type: 'string',
         description: 'Exact workspace name (fallback when the id is unknown; must be unique)',
+      },
+      execution_id: {
+        type: 'string',
+        description: 'Existing executionId to read or wait for. Omit to create a new execution.',
       },
       mode: {
         type: 'string',
@@ -137,6 +170,21 @@ export function createWorkflowRunTool(deps: WorkflowAgentDeps): AgentToolSpec {
     async execute(args) {
       const workspaceId = readString(args, 'workspace_id');
       const workspaceName = readString(args, 'workspace_name');
+      const existingId = readString(args, 'execution_id');
+      if (args.execution_id !== undefined && (!existingId || !/^[A-Za-z0-9_-]{1,128}$/.test(existingId))) {
+        return errorBody('invalid-args', 'execution_id must be a valid execution identifier');
+      }
+      if (existingId) {
+        if (args.mode !== undefined || args.node_ids !== undefined) return errorBody('invalid-args', 'execution_id cannot be combined with mode or node_ids');
+        const snapshot = executionManager.getSnapshot(existingId);
+        if (!snapshot || (workspaceId && snapshot.workspaceId !== workspaceId)) {
+          return errorBody('execution-not-found', `execution ${existingId} not found in this workspace`);
+        }
+        return withWorkspace(store, snapshot.workspaceId, async (workspace) =>
+          workspaceName && workspace.name !== workspaceName
+            ? errorBody('execution-not-found', `execution ${existingId} not found in this workspace`)
+            : report(existingId, workspace, args));
+      }
       const resolved = resolveWorkspace(store, workspaceId, workspaceName, { getActiveView });
       if ('error' in resolved) return resolved;
       const workspace = resolved.snapshot;
@@ -223,43 +271,12 @@ export function createWorkflowRunTool(deps: WorkflowAgentDeps): AgentToolSpec {
           maxParallel: workspace.settings.maxParallel,
           status: entry.context.status,
           hint:
-            'Execution started in the background — the user can watch live per-node progress on the canvas. Call workflow_snapshot / workflow_list(include_executions=true) or re-run with wait=true to fetch the outcome.',
+            'Execution started in the background. Call workflow_run with this execution_id to check the same run.',
         };
       }
 
-      const timeoutMs =
-        typeof args.timeout_ms === 'number' && args.timeout_ms > 0
-          ? Math.floor(args.timeout_ms)
-          : DEFAULT_RUN_WAIT_TIMEOUT_MS;
-      const { snapshot: final, timedOut } = await waitForTerminal(
-        executionManager,
-        executionId,
-        timeoutMs,
-      );
-      if (!final) {
-        return errorBody('execution-not-found', `execution ${executionId} disappeared`);
-      }
-
-      const durationMs =
-        final.completedAt !== null && final.startedAt !== null
-          ? final.completedAt - final.startedAt
-          : null;
-      return {
-        executionId,
-        workspaceId: workspace.id,
-        workspaceName: workspace.name,
-        mode,
-        totalNodes: subgraph.nodes.length,
-        status: final.status,
-        timedOut,
-        error: final.error,
-        progress: final.progress,
-        ...(durationMs !== null ? { durationMs } : {}),
-        nodes: summarizeNodes(workspace, subgraph.nodeIdSet, final, mediaDir),
-        ...(timedOut
-          ? { hint: `Still not terminal after ${String(timeoutMs)}ms — the run continues in the background; retry workflow_run or check the canvas.` }
-          : {}),
-      };
+      const result = await report(executionId, workspace, args);
+      return 'status' in result ? { ...result, mode } : result;
     },
   };
 }
@@ -269,7 +286,7 @@ export function createWorkflowSnapshotTool(deps: WorkflowAgentDeps): AgentToolSp
   return {
     name: 'workflow_snapshot',
     description:
-      'Read the current state of one workflow canvas workspace (defaults to the ui_context current canvas when workspace_id is omitted). Default: a compact summary (name, version, node/edge counts, node type/material breakdown, execution settings). includeNodes=true returns the FULL node and edge structure (positions, prompts, tools, models, connections) so the graph can be analyzed or modification advice given. Read-only. Unbound canvases live under $DSH_HOME/omnimux/workflow/workspaces/<id>/canvas.json; bound canvases live under <ProjectRoot>/.omnimux/canvases/<id>.json.',
+      'Inspect one workflow canvas. Default: compact summary. include_nodes=true returns the full graph. For the groups, modes and parameters currently available to a video generation node, pass node_id.',
     parameters: objectParams({
       workspace_id: {
         type: 'string',
@@ -278,6 +295,10 @@ export function createWorkflowSnapshotTool(deps: WorkflowAgentDeps): AgentToolSp
       include_nodes: {
         type: 'boolean',
         description: 'Return the full nodes/edges structure instead of the compact summary',
+      },
+      node_id: {
+        type: 'string',
+        description: 'Read the published group choices for this video generation node.',
       },
     }),
     output: jsonOut,
@@ -291,7 +312,35 @@ export function createWorkflowSnapshotTool(deps: WorkflowAgentDeps): AgentToolSp
       if ('error' in resolved) return resolved;
       const workspaceId = resolved.snapshot.id;
 
-      return withWorkspace(store, workspaceId, (workspace) => {
+      return withWorkspace(store, workspaceId, async (workspace) => {
+        const nodeId = readString(args, 'node_id');
+        if (args.node_id !== undefined && !nodeId) return errorBody('invalid-args', 'node_id must be a non-empty string');
+        if (nodeId) {
+          const node = workspace.nodes.find(candidate => candidate.id === nodeId);
+          if (!node) return errorBody('node-not-found', `node ${nodeId} not found in workspace ${workspaceId}`);
+          if (node.type !== 'material' || node.data?.materialType !== 'video' || resolveNodeKind(node.data) !== 'generate') {
+            return errorBody('invalid-args', 'node_id must identify a video generation node');
+          }
+          const catalog = await (deps.getExecutionCatalog ?? deps.getCatalog)?.() as CapabilityCatalog | null | undefined;
+          if (!catalog) return errorBody('catalog_unavailable', '模型目录不可用，请稍后重试');
+          const params = readCanvasParams(node);
+          const selected = resolveEffectiveVideoGroup(catalog, params.model, params.routing);
+          return {
+            workspaceId, version: workspace.version, nodeId, catalogFingerprint: catalog.fingerprint,
+            selected: { modelId: params.model, groupId: selected?.group?.id, operationId: params.operation },
+            models: (catalog.models ?? []).flatMap(model => {
+              const version = model.effectiveVideoVersion;
+              if (!version || model.selectable === false || model.visible === false) return [];
+              const groups = (model.channelGroups ?? []).filter(group => groupMatchesEffectiveVideoVersion(group, version)).map(group => ({
+                id: group.id, label: group.label, wireGroup: group.wireGroup, version: group.effectiveVersion,
+                pricing: group.pricing, defaultOperationId: group.defaultOperationId,
+                videoLineQuote: managedVideoLinePricingFingerprint(group),
+                operations: effectiveVideoOperations(group),
+              }));
+              return groups.length ? [{ id: model.id, label: model.label, version, groups }] : [];
+            }),
+          };
+        }
         if (readBoolean(args, 'include_nodes')) {
           return { workspace };
         }
