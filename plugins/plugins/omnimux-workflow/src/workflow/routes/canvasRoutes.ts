@@ -364,7 +364,7 @@ export function createWorkflowDispatcher(deps: WorkflowDispatcherDeps) {
 
   const audioRoutes = createAudioBytesRoutes(assetsStore, () => deps.getSeam?.('connection'));
   const directorBytes = createDirectorBytesRoutes({ store, assetsStore, getSeam: deps.getSeam });
-  const authorizeDirectorRequest = (request: IncomingMessage): number | undefined => {
+  const authorizeHostRequest = (request: IncomingMessage): number | undefined => {
     const connection = deps.getSeam?.('connection') as { requestRejection?: (request: IncomingMessage) => number | undefined } | undefined;
     return typeof connection?.requestRejection === 'function' ? connection.requestRejection(request) : 503;
   };
@@ -378,7 +378,8 @@ export function createWorkflowDispatcher(deps: WorkflowDispatcherDeps) {
     const refreshed = directorSession(request);
     return refreshed?.epoch === session.epoch && deps.directorSessionFactory.isCurrent(session);
   };
-  return { dispatch, bundleEtag, authorizeDirectorRequest, directorSession, directorSessionCurrent, handleAudioRequest: audioRoutes.handle, handleDirectorRequest: directorBytes.handle };
+  const accountCatalogScoped = () => Boolean((deps.getSeam?.('modelCatalog') as { isAccountScoped?: () => boolean } | undefined)?.isAccountScoped?.());
+  return { dispatch, bundleEtag, authorizeHostRequest, accountCatalogScoped, directorSession, directorSessionCurrent, handleAudioRequest: audioRoutes.handle, handleDirectorRequest: directorBytes.handle };
 }
 
 /**
@@ -396,8 +397,19 @@ export function registerWorkflowRoutes(
         let authenticatedDirectorSession: import('../director/directorSession.ts').DirectorSessionContext | undefined;
         const requestUrl = new URL(req.url || '/', 'http://127.0.0.1');
         const requestPath = decodeURIComponent(requestUrl.pathname);
+        if (req.method === 'GET' && /^\/(?:omnimux-workflow|dsh-workflow)\/api\/capabilities$/.test(requestPath) && dispatcher.accountCatalogScoped()) {
+          const rejection = dispatcher.authorizeHostRequest(req);
+          if (rejection !== undefined) { sendJson(res, rejection, { error: 'unauthorized' }); return; }
+          try {
+            assertLocalWrite({ origin: header(req, 'origin'), referer: header(req, 'referer'), secFetchSite: header(req, 'sec-fetch-site'), host: header(req, 'host'), secure: Boolean((req.socket as { encrypted?: boolean } | undefined)?.encrypted) });
+          } catch {
+            sendJson(res, 403, { error: 'not-local' });
+            return;
+          }
+          res.setHeader('Cache-Control', 'private, no-store');
+        }
         if (/^\/(?:omnimux-workflow|dsh-workflow)\/api\/workspaces\/[^/]+\/director(?:-operations)?\//.test(requestPath) || /^\/(?:omnimux-workflow|dsh-workflow)\/api\/workspaces\/[^/]+\/director-operations$/.test(requestPath) || /^\/(?:omnimux-workflow|dsh-workflow)\/api\/workspaces\/[^/]+\/director\/[^/]+$/.test(requestPath)) {
-          const rejection = dispatcher.authorizeDirectorRequest(req);
+          const rejection = dispatcher.authorizeHostRequest(req);
           if (rejection !== undefined) { sendJson(res, rejection, { error: rejection === 503 ? 'auth-unavailable' : 'unauthorized' }); return; }
           assertAudioRequestOrigin(req);
           authenticatedDirectorSession = dispatcher.directorSession(req);
@@ -425,11 +437,11 @@ export function registerWorkflowRoutes(
           browserOwner: authenticatedDirectorSession?.owner,
           directorSession: authenticatedDirectorSession,
           directorTaskScope: authenticatedDirectorSession ? () => {
-            if (dispatcher.authorizeDirectorRequest(req) !== undefined) return null;
+            if (dispatcher.authorizeHostRequest(req) !== undefined) return null;
             return dispatcher.directorSessionCurrent(authenticatedDirectorSession!, req) ? authenticatedDirectorSession!.modelTaskScope : null;
           } : undefined,
           directorTaskOwner: authenticatedDirectorSession ? () => {
-            if (dispatcher.authorizeDirectorRequest(req) !== undefined) return null;
+            if (dispatcher.authorizeHostRequest(req) !== undefined) return null;
             return dispatcher.directorSessionCurrent(authenticatedDirectorSession!, req) ? authenticatedDirectorSession!.modelTaskOwner : null;
           } : undefined,
         });

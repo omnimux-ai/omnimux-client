@@ -91,7 +91,7 @@ export function assembleEffectiveInputsFromSlots(args: {
     const boundEdgeIds = new Set(selections.map((item) => item.occupant.edgeId));
     const standbyEdgeIds = new Set(args.standbyEdgeIds ?? []);
     const freeTexts = !textSlot && args.layout.acceptsText !== false
-      ? args.feedAssets.filter((asset) => (asset.type === 'text' || asset.type === 'document') && asset.availability === 'ready'
+      ? args.feedAssets.filter((asset) => (asset.type === 'text' || asset.type === 'document' && !args.layout.requireBoundDocuments) && asset.availability === 'ready'
         && asset.textContent?.trim() && !boundEdgeIds.has(asset.edgeId) && !standbyEdgeIds.has(asset.edgeId))
       : [];
     result.prompt = args.layout.acceptsText === false ? '' : resolveGenerationPrompt(local,

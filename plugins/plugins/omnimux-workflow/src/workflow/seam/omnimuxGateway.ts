@@ -105,7 +105,7 @@ export function createOmnimuxSeamClient(opts: OmniumuxSeamClientOptions): Genera
       'prompt', 'image', 'video', 'references', 'audioTrack', 'duration', 'operation', 'resolution', 'quality', 'n', 'aspectRatio',
       'speech', 'audio', 'voice', 'style', 'instrumental', 'speed', 'sound', 'seed', 'watermark',
       'outputFormat', 'referenceTaskType', 'generationType', 'returnLastFrame', 'webSearch',
-      'nsfwCheck', 'fileUrl', 'linkUrl', 'model', 'strategy', 'allowedGroups', 'signal',
+      'nsfwCheck', 'fileUrl', 'linkUrl', 'model', 'strategy', 'allowedGroups', 'effectiveVideoVersion', 'signal',
     ] as const) {
       if (req[key] !== undefined && !isMirror(key, req[key])) request[key] = req[key];
     }

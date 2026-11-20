@@ -1,5 +1,7 @@
 # Spec: 视频节点上游输入自动适配（#62 / Epic #63）
 
+> 历史规格。连线触发自动换方式、保留灰选项和历史参数覆盖默认值的条款，已由分组能力路径的选择与素材规则替代。 [现行画布生成契约](../plugins/docs/contracts/canvas-generation.md)
+
 - 任务：`issue-62-input-capability`
 - 日期：2026-11-17
 - 基线：`c81e70e3d5b5f9467cf9b47020008fb7bd6c6e98`（origin/main）

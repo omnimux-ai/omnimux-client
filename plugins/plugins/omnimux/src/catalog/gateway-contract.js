@@ -14,6 +14,14 @@ import { executionProfileFromContract, isExecutionProfileComplete, mergeExecutio
 
 export const GATEWAY_CONTRACT_SCHEMA_VERSION = '2.0'
 
+const OPENAI_VIDEO_OPERATIONS = new Set(['text_to_video', 'first_frame', 'video_multi_ref'])
+const NATIVE_VIDEO_OPERATIONS = new Set([
+  ...OPENAI_VIDEO_OPERATIONS, 'first_last_frame', 'end_frame', 'video_edit', 'video_extend',
+  'document_to_video', 'webpage_to_video',
+])
+const OPENAI_VIDEO_PARAMETERS = new Set(['duration', 'aspectRatio', 'outputFormat'])
+const NATIVE_VIDEO_PARAMETERS = new Set([...OPENAI_VIDEO_PARAMETERS, 'resolution', 'sound'])
+
 /** Gateway operation ids that have a local historical name on some models. */
 const GATEWAY_OPERATION_ALIASES = Object.freeze({
   image_to_image: ['multi_reference'],
@@ -129,9 +137,10 @@ function stringList(value) {
  * declarative entries; local contracts use a keyed definition object.
  *
  * @param {Record<string, unknown>} parameter
+ * @param {boolean} [effective]
  * @returns {{ name: string, definition: Record<string, unknown> } | null}
  */
-function toLocalParameter(parameter) {
+function toLocalParameter(parameter, effective = false) {
   const gatewayName = text(parameter.name)
   if (!gatewayName) return null
   const name = PARAMETER_NAME_MAP[gatewayName] ?? gatewayName
@@ -139,7 +148,8 @@ function toLocalParameter(parameter) {
   /** @type {Record<string, unknown>} */
   const definition = {}
 
-  const normalizeEnumValue = (value) => (name === 'resolution' && typeof value === 'string' ? value.toLowerCase() : value)
+  const normalizeEnumValue = (value) => (!effective && name === 'resolution' && typeof value === 'string' ? value.toLowerCase() : value)
+  if (effective && parameter.required === true) definition.required = true
 
   if (parameter.fixed !== undefined) {
     const fixed = normalizeEnumValue(parameter.fixed)
@@ -156,8 +166,8 @@ function toLocalParameter(parameter) {
     if (values.length === 0) return null
     definition.type = values.every((value) => typeof value === 'number') ? 'number' : 'string'
     definition.options = values.map((value) => ({ value }))
-    const defaultValue = parameter.default === undefined ? values[0] : normalizeEnumValue(parameter.default)
-    definition.defaultValue = defaultValue
+    if (parameter.default !== undefined) definition.defaultValue = normalizeEnumValue(parameter.default)
+    else if (!effective || values.length === 1) definition.defaultValue = values[0]
     if (name === 'resolution') definition.caseInsensitive = true
     return { name, definition }
   }
@@ -168,14 +178,17 @@ function toLocalParameter(parameter) {
     if (parameter.minimum !== undefined) range.min = parameter.minimum
     if (parameter.maximum !== undefined) range.max = parameter.maximum
     if (parameter.step !== undefined) range.step = parameter.step
-    if (Object.keys(range).length > 0) definition.range = range
+    if (effective && Array.isArray(parameter.enum) && parameter.enum.length > 0) {
+      definition.options = parameter.enum.map((value) => ({ value }))
+      if (parameter.enum.length === 1) definition.defaultValue = parameter.enum[0]
+    } else if (Object.keys(range).length > 0) definition.range = range
     if (parameter.default !== undefined) definition.defaultValue = parameter.default
     return { name, definition }
   }
 
   if (type === 'boolean') {
     definition.type = 'boolean'
-    definition.defaultValue = parameter.default === true
+    if (!effective || parameter.default !== undefined) definition.defaultValue = parameter.default === true
     return { name, definition }
   }
 
@@ -188,9 +201,10 @@ function toLocalParameter(parameter) {
  * Convert gateway operation parameters to the local keyed definition map.
  *
  * @param {unknown} parameters
+ * @param {boolean} [effective]
  * @returns {Record<string, unknown>}
  */
-export function localParameterDefinitions(parameters) {
+export function localParameterDefinitions(parameters, effective = false) {
   if (parameters && typeof parameters === 'object' && !Array.isArray(parameters)) {
     return { .../** @type {Record<string, unknown>} */ (parameters) }
   }
@@ -198,7 +212,7 @@ export function localParameterDefinitions(parameters) {
   const out = {}
   for (const entry of array(parameters)) {
     if (!entry || typeof entry !== 'object') continue
-    const converted = toLocalParameter(/** @type {Record<string, unknown>} */ (entry))
+    const converted = toLocalParameter(/** @type {Record<string, unknown>} */ (entry), effective)
     if (!converted) continue
     out[converted.name] = converted.definition
   }
@@ -356,9 +370,13 @@ export function localInputSlot(input) {
   }
   const mimes = stringList(input.allowedMimes).map(toMime).filter(Boolean)
   if (mimes.length > 0) out.allowedMimes = mimes
-  if (typeof input.maxSizeMb === 'number') out.maxSizeMb = input.maxSizeMb
-  if (typeof input.minDurationSec === 'number') out.minDurationSec = input.minDurationSec
-  if (typeof input.maxDurationSec === 'number') out.maxDurationSec = input.maxDurationSec
+  for (const key of ['maxSizeMb', 'minDurationSec', 'maxDurationSec', 'totalMinDurationSec',
+    'totalMaxDurationSec', 'combinedOutputMaxDurationSec']) {
+    if (typeof input[key] === 'number') out[key] = input[key]
+  }
+  for (const key of ['maxSizeExclusive', 'totalMinExclusive', 'totalMaxExclusive']) {
+    if (typeof input[key] === 'boolean') out[key] = input[key]
+  }
   return out
 }
 
@@ -449,9 +467,10 @@ function findLocalAudioInput(localOperation, gatewayInput) {
  * @param {object | null} localModel
  * @param {object} profiles
  * @param {string} family
+ * @param {{ effective?: boolean, gatewayProtocol?: string }} [options]
  * @returns {{ operation: Record<string, unknown>, adapterSupported: boolean } | null}
  */
-function toLocalOperation(gatewayOperation, localModel, profiles, family) {
+function toLocalOperation(gatewayOperation, localModel, profiles, family, options = {}) {
   const gatewayId = text(gatewayOperation.id)
   if (!gatewayId) return null
   const localOp = findLocalOperation(localModel, gatewayId)
@@ -508,8 +527,8 @@ function toLocalOperation(gatewayOperation, localModel, profiles, family) {
       return mapped
     })
     .filter(Boolean)
-  const parameters = localParameterDefinitions(gatewayOperation.parameters)
-  if (!parameters.resolution) {
+  const parameters = localParameterDefinitions(gatewayOperation.parameters, options.effective === true)
+  if (!options.effective && !parameters.resolution) {
     const resolution = resolutionFromOutputSizes(output.sizes)
     if (resolution) parameters.resolution = resolution
   }
@@ -529,6 +548,7 @@ function toLocalOperation(gatewayOperation, localModel, profiles, family) {
   /** @type {Record<string, unknown>} */
   const operation = {
     id: operationId,
+    ...(options.gatewayProtocol ? { gatewayProtocol: options.gatewayProtocol } : {}),
     ...(modeKind ? { modeKind } : {}),
     ...(approvedLabel ? { label: approvedLabel } : {}),
     ...(modeLabels?.labelEn ? { labelEn: modeLabels.labelEn } : {}),
@@ -565,6 +585,54 @@ function toLocalOperation(gatewayOperation, localModel, profiles, family) {
   return { operation, adapterSupported }
 }
 
+function transportConsumesSlot(operation, protocol, input) {
+  if (input.type === 'text') return input.slot === 'prompt'
+  const { id } = operation
+  if (input.type === 'image') {
+    if (input.role === 'first_frame') return input.max === 1 && (id === 'first_frame' || id === 'first_last_frame')
+    if (input.role === 'last_frame') return input.max === 1 && (id === 'end_frame' || id === 'first_last_frame')
+    return input.role === 'reference' && (id === 'video_multi_ref'
+      || (protocol === 'video_generations' && (id === 'video_edit' || id === 'video_extend')))
+  }
+  if (protocol !== 'video_generations') return false
+  if (input.type === 'video') return input.role === 'reference'
+    ? (id === 'video_multi_ref' || id === 'video_edit')
+    : (input.role === 'source' && (id === 'video_edit' || id === 'video_extend'))
+  if (input.type === 'audio') return input.role === 'reference'
+    && (id === 'video_multi_ref' || id === 'video_edit' || id === 'video_extend')
+  if (input.type === 'document') return (id === 'document_to_video' && (input.role === 'document' || input.slot === 'file_url'))
+    || (id === 'webpage_to_video' && (input.role === 'webpage' || input.slot === 'link_url'))
+  return false
+}
+
+/** A view and its guard consume the same complete operation variants. */
+function effectiveVideoOperations(groups, profiles, contract) {
+  return Object.fromEntries(Object.entries(groups).map(([wireGroup, variants]) => [
+    wireGroup,
+    array(variants).flatMap((raw) => {
+      if (!raw || typeof raw !== 'object' || !Array.isArray(raw.inputs) || !text(raw.modeKind)) return []
+      const protocol = Object.hasOwn(raw, 'gateway_protocol')
+        ? text(raw.gateway_protocol) : text(contract.gateway_protocol)
+      const supportedOperations = protocol === 'openai_video' ? OPENAI_VIDEO_OPERATIONS
+        : protocol === 'video_generations' ? NATIVE_VIDEO_OPERATIONS : null
+      const supportedParameters = protocol === 'openai_video' ? OPENAI_VIDEO_PARAMETERS : NATIVE_VIDEO_PARAMETERS
+      if (!supportedOperations?.has(raw.id) || raw.output?.type !== 'video') return []
+      if (raw.inputs.some((input) => !input || (input.type !== 'text'
+        && (!Number.isSafeInteger(input.min) || !Number.isSafeInteger(input.max) || input.min < 0 || input.min > input.max)))) return []
+      const parameters = array(raw.parameters).filter((parameter) =>
+        supportedParameters.has(PARAMETER_NAME_MAP[parameter?.name] ?? parameter?.name)
+        && ['enum', 'integer', 'number', 'boolean', 'string'].includes(parameter?.type))
+      if (array(raw.parameters).some((parameter) => parameter?.required === true && !parameters.includes(parameter))) return []
+      const mapped = toLocalOperation({ ...raw, parameters }, null, profiles, 'video', {
+        effective: true, gatewayProtocol: protocol,
+      })?.operation
+      if (!mapped?.listed || mapped.inputs.length !== raw.inputs.length
+        || mapped.inputs.some((input) => !transportConsumesSlot(mapped, protocol, input))) return []
+      return [mapped]
+    }),
+  ]))
+}
+
 /**
  * Build one runtime model from a gateway contract.
  *
@@ -582,12 +650,17 @@ function toRuntimeModel(snapshotModel, localModel, profiles) {
   const gatewayFamily = text(contract.family)
   const managementGroup = text(localModel?.managementGroup) || groupForFamily(gatewayFamily)
   if (!managementGroup) return null
+  const gatewayProtocol = gatewayFamily === 'video' ? text(contract.gateway_protocol) : ''
+  const effectiveVideo = gatewayFamily === 'video' && Object.hasOwn(snapshotModel, 'effectiveVideo')
+    ? object(snapshotModel.effectiveVideo) : undefined
 
   const operations = []
   let anyAdapterSupported = false
   for (const raw of gatewayOperations) {
     if (!raw || typeof raw !== 'object') continue
-    const result = toLocalOperation(/** @type {Record<string, unknown>} */ (raw), localModel, profiles, gatewayFamily)
+    const result = toLocalOperation(/** @type {Record<string, unknown>} */ (raw), localModel, profiles, gatewayFamily, {
+      gatewayProtocol,
+    })
     if (!result) continue
     operations.push(result.operation)
     anyAdapterSupported ||= result.adapterSupported
@@ -611,7 +684,7 @@ function toRuntimeModel(snapshotModel, localModel, profiles) {
   const executionProfile = mergeExecutionProfiles(localModel?.executionProfile, executionProfileFromContract(contract))
   const model = {
     id,
-    label: text(localModel?.label) || (displayName && displayName !== id ? displayName : humanizeId(id)),
+    label: (effectiveVideo && displayName) || text(localModel?.label) || (displayName && displayName !== id ? displayName : humanizeId(id)),
     ...(text(localModel?.family) ? { family: text(localModel.family) } : { family }),
     ...(text(localModel?.badge) ? { badge: text(localModel.badge) } : {}),
     ...(text(localModel?.subtitle) ? { subtitle: text(localModel.subtitle) } : {}),
@@ -636,6 +709,10 @@ function toRuntimeModel(snapshotModel, localModel, profiles) {
     implementation: localModel?.implementation ?? { status: 'ready', profileId: '', seam: '' },
     execution: localModel?.execution ?? { status: 'stub', profileId: '', seam: '', notes: 'Gateway Contract v2' },
     gatewaySource: true,
+    ...(effectiveVideo ? {
+      effectiveVideoVersion: text(effectiveVideo.version) || 'invalid',
+      effectiveVideoOperations: effectiveVideoOperations(object(effectiveVideo.groups), profiles, contract),
+    } : {}),
     gatewaySchemaVersion: GATEWAY_CONTRACT_SCHEMA_VERSION,
     gatewayContractVersion: text(contract.contractVersion),
     gatewayStatus: text(contract.status) || 'documented',

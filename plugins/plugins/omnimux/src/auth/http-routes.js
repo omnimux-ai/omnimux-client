@@ -68,6 +68,7 @@ export async function readJsonBody(req, maxBytes = Infinity) {
  *   clientName?: string,
  *   fetcher?: typeof fetch,
  *   identity?: ReturnType<typeof import('./identity.js').createIdentity>,
+ *   onIdentityChanged?: () => void,
  *   capabilities?: Record<string, boolean>,
  * }} deps
  */
@@ -123,6 +124,7 @@ export function createAuthDispatcher(deps) {
 
     if (method === 'GET' && path === '/omnimux/auth/status') {
       const loaded = await identity.load({ verify: url.searchParams.get('verify') === '1' })
+      deps.onIdentityChanged?.()
       const status = loaded.kind === 'token_invalid' ? 401 : loaded.kind === 'self_failed' ? 502 : 200
       return { status, body: loaded.body }
     }
@@ -191,6 +193,7 @@ export function createAuthDispatcher(deps) {
           deps.store.writeConfig({ userId: String(profile.id), baseUrl: pending.siteBaseUrl })
         }
         deps.pending.remove(flowId)
+        deps.onIdentityChanged?.()
         return {
           status: 200,
           body: publicStatus({
@@ -212,6 +215,7 @@ export function createAuthDispatcher(deps) {
     if (method === 'POST' && path === '/omnimux/auth/logout') {
       deps.pending.clear()
       await deps.store.unset()
+      deps.onIdentityChanged?.()
       return { status: 200, body: publicStatus({ loggedIn: false, verified: null, siteBaseUrl }) }
     }
 

@@ -116,6 +116,8 @@ export interface SubmitRequest {
    */
   strategy?: 'auto' | 'stability_first' | 'cost_first';
   allowedGroups?: string[];
+  /** Reviewed managed-video catalog version; checked again by the hub before submit. */
+  effectiveVideoVersion?: string;
   /** Absolute download destination (plugin-owned media dir). */
   dest: string;
   /** Cooperative cancel. */

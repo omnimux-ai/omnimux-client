@@ -27,7 +27,7 @@ Out-of-tree OmniMux product plugins for official DeepSeek Harness. This director
 ## Hard bounds
 
 - **Product baseline.** The baseline is a brand-new user's machine after install and sign-in, not the dev machine. Dev-only state (local model services, compat proxies, dev profiles, dev ports or model aliases, absolute checkout paths) MUST NOT be a default, first choice, or silent fallback — only an explicit opt-in that fails loudly (product baseline).
-- **No exclusive runtime modes.** Official account, local CLI, and user API are coexisting channels, never a global mutually exclusive mode; models bind per consumption scenario (chat / multimodal analysis / media generation) and the hub routes each call across all registered channels. Never disable a capability because the chat model lacks it, never tell users to "switch mode", never swallow upstream errors in an empty `catch` (hub § channels).
+- **No exclusive runtime modes.** Official account, local CLI, and user API are coexisting channels, never a global mutually exclusive mode; models bind per consumption scenario (chat / multimodal analysis / media generation) and the hub resolves the permitted channel for each call and honors explicit group selection. Never disable a capability because the chat model lacks it, never tell users to "switch mode", never swallow upstream errors in an empty `catch` (hub § channels).
 - **Hub owns integration.** Chrome, auth, credentials, provider HTTP, model routes, and execution seams live only in `plugins/omnimux/`; domain plugins use `ctx.get` / `omnimux_*` seams, own only their stores, and never import hub internals, ship provider clients, or store keys. Hub-side rules: [plugins/omnimux/AGENTS.md](plugins/omnimux/AGENTS.md).
 - **Secrets and irreversible writes.** Never commit or log secrets; inject via `omnimux tokens exec` or the process environment. Account, credential, publication, and production writes need explicit authorization; real-money transactions are human-only.
 - **Official DSH is read-only.** Product source stays here, never in `deepseek-harness/packages/` or upstream PRs; no `apps/desktop/` in the official clone. MUST NOT modify official DSH source, submodules, copies, or packages, including via patch/apply/reset scripts; use plugin/shell/config seams. Pin/RC changes follow harness-pin and the RC skill with its full report.
@@ -38,8 +38,8 @@ Out-of-tree OmniMux product plugins for official DeepSeek Harness. This director
 - **Release publishing.** After the version-bump PR merges and release authorization is granted, run `node scripts/release-check.mjs` from `plugins/` before dispatching the [npm publishing workflow](../.github/workflows/publish.yml) (Trusted Publishing / OIDC). Never publish/delete from a local npm/pnpm CLI or bypass-2FA token.
 - **Fix data at its source.** Never mask data or state inconsistencies in UI/DOM/CSS or with client blacklists (`LEGACY_*_IDS`, `HIDDEN_*_LIST`, `EXCLUDED_*`); filter only by `manifest.json` or schema whitelists (UI guidelines §1).
 - **UI copy.** Labels, options, placeholders, badges, status text, and `locales.js` follow the copy standards; a dropdown's first option is exactly `全部`, never `全部+维度`.
-- **Node inputs.** Input, connection, generation-control, and submission changes follow the node input contract: generic `in`/`input` edges never lock slots or hide generation modes; verify clean empty nodes and connected project graphs.
-- **Model truth.** Model support comes from the selected channel's official docs, checked offline; never probe real model APIs, and only submission `mode: "live"` proves live generation (model API authority). On-sale truth is the shipped gateway snapshot, not a local flag; model changes close atomically across all consuming plugins (model-list ownership).
+- **Node inputs.** Input, connection, generation controls, and submission follow the [canvas generation contract](docs/contracts/canvas-generation.md). Verify empty nodes and connected project graphs.
+- **Model truth.** The gateway catalog owns official model and group availability. Consult official provider docs for research and validate the client projection through the [canvas generation contract](docs/contracts/canvas-generation.md#目录和协议). Record simulated and real results separately.
 - **Real verification boundary.** Image/audio real-task verification is agent-allowed; video-generation live verification requires task-level approval (plugin QA).
 - **State truth.** Degraded output (`ui` fixtures, cached results, fallbacks) is never reported as live or persisted; business-error or non-OK responses are failures even when the page still renders.
 - **Validated write paths.** Delete, publish, quota, credential, and account writes verify ownership and references first — no fallback IDs, default permissions, or silent `catch`; referenced assets are preserved, failed physical cleanup never erases the record.
@@ -52,8 +52,8 @@ The current MVP boundary and its admission and consent rules are owned by mvp-sc
 
 | Path | Owns / read when | Does not own |
 | --- | --- | --- |
-| CONTEXT.md, docs/README.md | Product map and document discovery | Live deployment status or new authority |
-| docs/tools/hub-interfaces.html | Hub interface panel (models, tools, accounts, publish channels); regenerate with `pnpm hub:interfaces` | A deployed service |
+| [README.md](README.md), [tool contracts](docs/contracts/plugin-agent-tools-inventory.md) | Product map and document discovery | Live deployment status or new authority |
+| `pnpm hub:interfaces` | Generate the Hub interface panel from the current checkout | A deployed service |
 | `plugins/omnimux/` | Hub implementation; [hub rules](plugins/omnimux/AGENTS.md) | Domain-private storage |
 | `plugins/omnimux-*/` | Each business domain; nested `AGENTS.md` where present | Hub chrome, keys, provider routing |
 | `.agents/skills/` | Repo development skills; check symlink vs in-tree before editing, change only in-repo files | External shared skill sources |

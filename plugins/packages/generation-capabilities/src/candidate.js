@@ -53,7 +53,7 @@ function sum(left, right) { return left === Infinity || right === Infinity || le
  * @param {unknown} value @returns {value is Definition}
  */
 function definition(value) {
-  if (!record(value) || !bounded(value, ['type', 'options', 'optionsFrom', 'range', 'defaultValue', 'minLength', 'maxLength', 'supported', 'allowAuto', 'caseInsensitive', 'unit', 'label', 'help', 'description'])) return false
+  if (!record(value) || !bounded(value, ['type', 'options', 'optionsFrom', 'range', 'defaultValue', 'minLength', 'maxLength', 'supported', 'allowAuto', 'caseInsensitive', 'required', 'unit', 'label', 'help', 'description'])) return false
   if (Object.getOwnPropertyNames(value).some(key => value[key] === undefined)) return false
   const range = value.range
   if (own(value, 'range') && record(range) && Object.getOwnPropertyNames(range).some(key => range[key] === undefined)) return false
@@ -155,6 +155,7 @@ export function evaluateCandidateRequest(candidate, snapshot, policy) {
       const checked = checkParameterMember(def, value, { mode: 'canonical' })
       if (checked.status === 'indeterminate') issue('indeterminate', 'parameter_indeterminate', { field })
       else if (checked.status === 'nonmember' && (active || own(def, 'defaultValue'))) issue('rejected', 'parameter_nonmember', { field })
+      if (!active && def.required === true && !own(def, 'defaultValue')) issue('pending', 'parameter_required', { field })
       if (!active && !own(def, 'defaultValue') && (own(def, 'optionsFrom') || (def.range !== undefined && own(def.range, 'step') && !own(def.range, 'min')))) issue('indeterminate', 'parameter_indeterminate', { field })
       if (!limitOK) continue
       const fixed = own(limit, 'fixed') ? checkParameterMember(def, limit.fixed, { mode: 'canonical' }) : undefined

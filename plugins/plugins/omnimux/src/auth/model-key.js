@@ -46,6 +46,7 @@ function parseStored(value) {
  */
 export function createAccountModelKeyService(deps) {
   const origin = new URL(deps.siteBaseUrl).origin
+  const catalogGatewayOrigin = new URL(deps.catalogGatewayBaseUrl || deps.siteBaseUrl).origin
   const credentials = () => deps.getCredentials?.() ?? deps.credentials
   let tail = Promise.resolve()
   const exclusive = (run) => {
@@ -185,5 +186,18 @@ export function createAccountModelKeyService(deps) {
     return selected.key
   }
 
-  return { list, select, resolve }
+  /** Use the verified selection for the account that owns the displayed prices. */
+  async function resolveCatalogKey({ apiKey, baseUrl, accountId }) {
+    const account = await current()
+    if (String(account.userId) !== accountId || new URL(baseUrl).origin !== catalogGatewayOrigin) {
+      fail('official-account-changed', '目录账号或站点已变化，请重新选择线路', 409)
+    }
+    const selected = await read(account)
+    if (!selected || (apiKey && selected.key !== apiKey)) {
+      fail('official-account-key-mismatch', '请使用当前已登录账号中已验证的调用密钥，以使用此线路和价格', 409)
+    }
+    return selected.key
+  }
+
+  return { list, select, resolve, resolveCatalogKey }
 }

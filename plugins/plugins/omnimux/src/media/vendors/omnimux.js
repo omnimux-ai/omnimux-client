@@ -21,10 +21,8 @@ export const SPEECH_PATH = 'audio/speech'
 export const AUDIO_VIDEO_TASK_MODEL_IDS = Object.freeze(['index-tts', 'suno', 'suno-sounds'])
 
 /**
- * Video-capability models served on the newer `/v1/videos` task endpoint.
- * `muse-video` uses the `openai_video` contract: submit and poll both address
- * `/v1/videos` (not the legacy `/v1/video/generations` route). Keep this list
- * exact — the other video models stay on the legacy route.
+ * Older contracts and task handles lack a declared gateway protocol. Keep the
+ * historical endpoint for their recorded models.
  */
 export const MUSE_VIDEO_TASK_MODEL_IDS = Object.freeze(['muse-video'])
 export const MUSE_VIDEO_TASK_PATH = 'videos'
@@ -54,9 +52,15 @@ export const AUTODL_POLL_PATH = 'tasks'
  * Submit endpoint for one task submission, honouring the model overrides above.
  * @param {string} capability
  * @param {unknown} [modelId]
+ * @param {string} [gatewayProtocol]
  * @returns {string | undefined}
  */
-export function taskPathFor(capability, modelId) {
+export function taskPathFor(capability, modelId, gatewayProtocol) {
+  if (capability === 'video' && gatewayProtocol) {
+    if (gatewayProtocol === 'openai_video') return MUSE_VIDEO_TASK_PATH
+    if (gatewayProtocol === 'video_generations') return TASK_PATH.video
+    throw new OmnimuxError('unknown-protocol', `unsupported gateway video protocol '${gatewayProtocol}'`)
+  }
   if (modelId && (AUDIO_AUTODL_TASK_MODEL_IDS.includes(String(modelId)) || AUTODL_VIDEO_TASK_MODEL_IDS.includes(String(modelId)))) return AUTODL_SUBMIT_PATH
   if (modelId && MUSE_VIDEO_TASK_MODEL_IDS.includes(String(modelId))) return MUSE_VIDEO_TASK_PATH
   if (modelId && AUDIO_VIDEO_TASK_MODEL_IDS.includes(String(modelId))) return TASK_PATH.video
@@ -69,9 +73,11 @@ export function taskPathFor(capability, modelId) {
  * every other model polls the same path it submitted to.
  * @param {string} capability
  * @param {unknown} [modelId]
+ * @param {string} [gatewayProtocol]
  * @returns {string | undefined}
  */
-export function taskPollPathFor(capability, modelId) {
+export function taskPollPathFor(capability, modelId, gatewayProtocol) {
+  if (gatewayProtocol) return taskPathFor(capability, modelId, gatewayProtocol)
   if (modelId && (AUDIO_AUTODL_TASK_MODEL_IDS.includes(String(modelId)) || AUTODL_VIDEO_TASK_MODEL_IDS.includes(String(modelId)))) return AUTODL_POLL_PATH
   return taskPathFor(capability, modelId)
 }

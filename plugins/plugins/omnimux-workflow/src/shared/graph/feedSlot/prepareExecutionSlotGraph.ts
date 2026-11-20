@@ -1,6 +1,8 @@
 import type { CapabilityCatalog } from '../../api.ts';
-import { buildContractView, resolveModelView } from '../../validation/compatKernel.ts';
+import { buildContractView, buildUpstreamFingerprint, resolveModelView } from '../../validation/compatKernel.ts';
 import { buildInputCapability } from '../../validation/inputCapability.ts';
+import { narrowCatalogByRouting, resolveEffectiveVideoGroup, resolveEffectiveVideoOperation } from '../../validation/lineConstraints.ts';
+import { managedVideoLineFingerprint } from '../../validation/managedVideoExecution.ts';
 import { readNodeInputSource } from '../nodeInputSource.ts';
 import { resolveNodeKind } from '../materialNode.ts';
 import { materialTools } from '../../specs/nodes/materialNodeSpec.ts';
@@ -13,12 +15,16 @@ import type { FeedAsset, SlotBindings, SlotConflict } from './types.ts';
 import type { CanvasNode } from '../canvasInputMutationGateway.ts';
 import { resolveSlotOperation } from './resolveSlotOperation.ts';
 import { normalizeVideoParamsForSchema } from '../../../canvas/editor/components/MaterialNode/ConfigPanel/videoParams/videoParamNormalization.ts';
+import { feedFromFingerprint } from './effectiveFingerprint.ts';
+import { projectVideoSlotBindings, readVideoSlotDrafts, videoSlotDraftKey } from './videoSlotDrafts.ts';
 
 /** Freeze legacy hydration for dispatch without modifying the persisted graph or topology. */
 export function prepareExecutionSlotGraph<
   N extends { id: string; type?: string; data?: Record<string, unknown> },
   E extends LegacySlotEdge & { target: string },
->(nodes: N[], edges: E[], catalog: CapabilityCatalog | null | undefined): { nodes: N[]; edges: E[] } {
+>(nodes: N[], edges: E[], catalog: CapabilityCatalog | null | undefined,
+  scheduledNodeIds?: ReadonlySet<string>,
+): { nodes: N[]; edges: E[] } {
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const view = buildContractView(catalog);
   const ordinalByTarget = new Map<string, number>();
@@ -37,10 +43,49 @@ export function prepareExecutionSlotGraph<
     let data = structuredClone(node.data ?? {});
     let params = (data.params ?? {}) as Record<string, unknown>;
     const kind = (data.materialType ?? 'text') as keyof NonNullable<CapabilityCatalog['defaults']>;
+    const modelId = (params.model ?? catalog?.defaults?.[kind]) as string | undefined;
+    const managed = kind === 'video' ? resolveEffectiveVideoGroup(catalog, modelId, params.routing) : null;
+    if (managed) {
+      const variant = resolveEffectiveVideoOperation(managed.group, params.operation, params);
+      if (variant) params.operation = variant.id;
+      const effectiveCatalog = narrowCatalogByRouting(catalog, modelId, params.routing, params);
+      const model = resolveModelView(buildContractView(effectiveCatalog), modelId);
+      const projected = projectCanvasInputSources(node.id, data, nodes as unknown as CanvasNode[], nextEdges, effectiveCatalog, model);
+      nextEdges = projected.edges;
+      data = projected.data;
+      const operationId = typeof params.operation === 'string' ? params.operation : undefined;
+      const layout = deriveSlotLayout(effectiveCatalog, model?.id, operationId);
+      const feed = feedFromFingerprint(buildUpstreamFingerprint({
+        ...projected.fingerprint,
+        assets: projected.fingerprint.assets.map(asset => {
+          const source = byId.get(asset.sourceNodeId);
+          if (source?.type !== 'material' || resolveNodeKind(source.data ?? {}) !== 'generate'
+            || !scheduledNodeIds?.has(source.id)) return asset;
+          const { mimeType, sizeBytes, durationSec, ...pending } = asset;
+          return { ...pending, availability: 'waiting' as const };
+        }),
+      }), 1);
+      const incoming = nextEdges.filter(edge => edge.target === node.id);
+      const standby = (data.slotStandbyEdgeIds ?? []) as string[];
+      const draftKey = videoSlotDraftKey(variant);
+      const drafts = readVideoSlotDrafts(data.videoSlotDrafts);
+      const existing = draftKey && Object.hasOwn(drafts, draftKey) ? drafts[draftKey] : data.slotBindings as SlotBindings | undefined;
+      const bindings = existing ?? effectiveInputDisplay(layout, feed, undefined, [], incoming, standby,
+        data.inputBindingVersion === 1 ? 1 : undefined).bindings;
+      data.params = { ...params, model: model?.id ?? modelId };
+      data.managedVideoGeneration = managed.group
+        ? managedVideoLineFingerprint(managed.group, managed.model.effectiveVideoVersion)
+        : true;
+      const parked = new Set(standby);
+      data.slotBindings = projectVideoSlotBindings(layout, feed.filter(asset => !parked.has(asset.edgeId)), bindings);
+      data.slotConflicts = [];
+      data.inputBindingVersion = 1;
+      return { ...node, data } as N;
+    }
     const autoOperationId = typeof data.autoOperationId === 'string' || data.autoOperationId === null
       ? data.autoOperationId as string | null
       : undefined;
-    const model = resolveModelView(view, (params.model ?? catalog?.defaults?.[kind]) as string | undefined);
+    const model = resolveModelView(view, modelId);
     const projected = projectCanvasInputSources(node.id, data, nodes as unknown as CanvasNode[], nextEdges, catalog, model);
     data = projected.data;
     nextEdges = projected.edges;

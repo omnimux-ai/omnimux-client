@@ -253,7 +253,10 @@ test('Issue #986：ConfigPanel 为视频节点提供基于模型能力的卡槽�
     '视频节点应支持基于模型能力的卡槽逻辑',
   );
   assert.match(source, /resolveSlotOperation\(activeCatalog, modelValue, preferredOperationId, outputTypeForCompat, fingerprint\)/);
-  assert.match(source, /deriveSlotLayout\(activeCatalog, modelValue, currentOperationId\)/);
+  assert.match(source, /const currentOperationId = managedVideo \? \(typeof params\.operation === 'string' \? params\.operation : undefined\)/,
+    '受管视频只用保存的模式，素材变化不推断模式');
+  assert.match(source, /deriveSlotLayout\(managedVideo \? opsCatalog : activeCatalog, modelValue, currentOperationId\)/,
+    '受管视频按所选分组投影卡槽，旧目录继续使用原卡槽逻辑');
   assert.doesNotMatch(source, /deriveModelSlotLayout\(activeCatalog, modelValue, currentOperationId\)/, '当前模式不借用其它模式的可点击槽位');
   assert.match(source, /fingerprint: consumedFingerprint/);
   assert.doesNotMatch(source, /updateParam\('operation', 'text_to_video'\)/, '断开供给不能重置已选模式');

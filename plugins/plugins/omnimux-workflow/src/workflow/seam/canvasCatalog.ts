@@ -35,6 +35,9 @@ function channelGroups(value: unknown): CatalogChannelGroupDto[] | undefined {
       ...(group.constraints && typeof group.constraints === 'object'
         ? { constraints: group.constraints as CatalogChannelGroupDto['constraints'] }
         : {}),
+      ...(Array.isArray(group.effectiveOperations) ? { effectiveOperations: group.effectiveOperations } : {}),
+      ...(typeof group.effectiveVersion === 'string' ? { effectiveVersion: group.effectiveVersion } : {}),
+      ...(typeof group.defaultOperationId === 'string' ? { defaultOperationId: group.defaultOperationId } : {}),
       ...(group.sla && typeof group.sla === 'object'
         ? { sla: group.sla as CatalogChannelGroupDto['sla'] }
         : {}),
@@ -51,6 +54,7 @@ function rows(value: unknown): CapabilityModelItem[] {
     const lines = channelGroups(row.channelGroups);
     return {
       id: String(row.id ?? ''),
+      ...(typeof row.effectiveVideoVersion === 'string' ? { effectiveVideoVersion: row.effectiveVideoVersion } : {}),
       label: typeof row.label === 'string' && row.label.trim() ? row.label : String(row.id ?? ''),
       ...(row.source === 'gateway' || row.source === 'custom' ? { source: row.source } : {}),
       ...(row.executionStatus === 'ready' || row.executionStatus === 'unsupported' || row.executionStatus === 'unverified'

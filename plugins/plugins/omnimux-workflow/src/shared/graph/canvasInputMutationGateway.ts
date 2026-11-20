@@ -13,10 +13,11 @@ import { effectiveSlotFingerprint, feedFromFingerprint } from './feedSlot/effect
 import { resolveSlotOccupantOrdinal, type SlotSelection } from './feedSlot/assembleEffectiveInputs.ts';
 import type { SlotBindings, SlotConflict } from './feedSlot/types.ts';
 import { findDeclaredParameterFailure } from '../validation/declaredParameterValidation.ts';
-import { narrowCatalogByRouting } from '../validation/lineConstraints.ts';
+import { narrowCatalogByRouting, requiredEffectiveVideoParameter, resolveEffectiveVideoGroup, resolveEffectiveVideoOperation } from '../validation/lineConstraints.ts';
 import { readNodeInputSource } from './nodeInputSource.ts';
 import type { SlotOccupant } from './feedSlot/types.ts';
 import { mirrorCanvasSlots, recomputeCanvasSlots } from './canvasSlotRecompute.ts';
+import { projectVideoSlotBindings, readVideoOperationDraft } from './feedSlot/videoSlotDrafts.ts';
 export { buildCanvasUpstreamFingerprint } from './canvasInputSources.ts';
 
 export type CanvasNode = Node<Record<string, unknown>>;
@@ -75,6 +76,11 @@ function validateModelPatches(current: CanvasInputMutationState, nodes: CanvasNo
     if (!isGenerate(node) || !params || !('model' in params)) continue;
     const modelId = typeof params.model === 'string' ? params.model.trim() : '';
     const model = resolveModelView(view, modelId);
+    const managed = node.data.materialType === 'video' ? resolveEffectiveVideoGroup(context.catalog, modelId, params.routing) : null;
+    if (managed && !managed.group) return rejectMutation(current, 'route_plan_required', { nodeId: node.id, modelId });
+    if (managed && typeof params.operation === 'string' && !resolveEffectiveVideoOperation(managed.group, params.operation, params)) {
+      return rejectMutation(current, 'parameter_unsupported', { nodeId: node.id, modelId, operationId: params.operation });
+    }
     const reasonCode = !view.available ? 'catalog_unavailable' : !model ? 'unknown_model'
       : !model.operations.some((op) => op.listed && op.output.type === node.data.materialType)
         ? 'not_listed' : undefined;
@@ -97,14 +103,21 @@ export interface CanvasInputSelectionRequest extends CanvasStrictConsumptionInte
 export function planCanvasInputSelection(current: CanvasInputMutationState, request: CanvasInputSelectionRequest, context: CanvasMutationRuntimeContext): CanvasInputMutationPlan {
   const target = current.nodes.find(node => node.id === request.targetNodeId);
   if (!isGenerate(target)) return rejectMutation(current, 'missing_node');
-  if (target.data.inputBindingVersion !== 1) return rejectMutation(current, 'input_migration_required');
   const params = readCanvasParams(target);
+  const managed = target.data.materialType === 'video' ? resolveEffectiveVideoGroup(context.catalog, params.model, params.routing) : null;
+  if (!managed && target.data.inputBindingVersion !== 1) return rejectMutation(current, 'input_migration_required');
   if (request.chosenOperationId !== params.operation || request.chosenRouteId !== undefined) return rejectMutation(current, 'route_plan_required');
   if (request.setUse && ((request.selections?.length ?? 0) > 0 || request.replaceEdgeId)) return rejectMutation(current, 'invalid_selection');
-  const catalog = narrowCatalogByRouting(context.catalog, params.model, params.routing);
+  if (managed && !managed.group) return rejectMutation(current, 'route_plan_required');
+  const variant = managed ? resolveEffectiveVideoOperation(managed.group, params.operation, params) : undefined;
+  if (managed && !variant) return rejectMutation(current, 'parameter_unsupported');
+  const catalog = narrowCatalogByRouting(context.catalog, params.model, params.routing, params);
   const layout = deriveSlotLayout(catalog, typeof params.model === 'string' ? params.model : undefined, request.chosenOperationId);
   const reactivatedEdges = new Set<string>();
-  const bindings: SlotBindings = Object.fromEntries(Object.entries((target.data.slotBindings ?? {}) as SlotBindings)
+  const currentBindings = managed
+    ? projectVideoSlotBindings(layout, feedFromFingerprint(buildCanvasUpstreamFingerprint(target.id, current.nodes, current.edges), 1),
+      readVideoOperationDraft(target.data, variant)) : (target.data.slotBindings ?? {}) as SlotBindings;
+  const bindings: SlotBindings = Object.fromEntries(Object.entries(currentBindings)
     .map(([slot, values]) => [slot, values.map(value => ({ ...value }))]));
   if (request.setUse) {
     if (request.setUse.use !== 'active' && request.setUse.use !== 'inactive') return rejectMutation(current, 'invalid_selection');
@@ -113,7 +126,7 @@ export function planCanvasInputSelection(current: CanvasInputMutationState, requ
     matches[0]!.use = request.setUse.use;
     // Only this endpoint's existing-binding reduction may retain other invalid intent.
     if (request.setUse.use === 'inactive') return planCanvasInputMutation(current,
-      { nodePatches: [{ nodeId: target.id, data: { slotBindings: bindings } }] }, context);
+      { nodePatches: [{ nodeId: target.id, data: { slotBindings: bindings, ...(managed ? { inputBindingVersion: 1 } : {}) } }] }, context);
     reactivatedEdges.add(matches[0]!.edgeId);
   }
   const addEdges: CanvasConnectionLike[] = [];
@@ -184,6 +197,7 @@ export function planCanvasInputSelection(current: CanvasInputMutationState, requ
   const standbyChanged = remainingStandby.length !== previousStandby.length || remainingStandby.some(id => !previousStandby.includes(id));
   return planCanvasInputMutation(current, { addEdges, removeEdgeIds: removeEdgeIds.length ? removeEdgeIds : undefined,
     nodePatches: [{ nodeId: target.id, data: { slotBindings: bindings,
+      ...(managed ? { inputBindingVersion: 1 } : {}),
       ...(standbyChanged ? { slotStandbyEdgeIds: remainingStandby } : {}) } }],
     strictConsumption: request }, context);
 }
@@ -200,7 +214,12 @@ export function validateCanvasInputSelection(graph: CanvasInputMutationState, in
   if (params.operation !== intent.chosenOperationId) return fail('operation_confirmation_required');
   // A route stamp must not masquerade as V1 qualified routing evidence.
   if (intent.chosenRouteId !== undefined) return fail('route_plan_required');
-  const catalog = narrowCatalogByRouting(context.catalog, params.model, params.routing);
+  const managed = node.data.materialType === 'video' ? resolveEffectiveVideoGroup(context.catalog, params.model, params.routing) : null;
+  if (managed && !managed.group) return fail('route_plan_required');
+  const variant = managed ? resolveEffectiveVideoOperation(managed.group, params.operation, params) : undefined;
+  if (managed && !variant) return fail('parameter_unsupported');
+  const missingParameter = variant ? requiredEffectiveVideoParameter(variant, params) : undefined;
+  const catalog = narrowCatalogByRouting(context.catalog, params.model, params.routing, params);
   const view = buildContractView(catalog);
   if (!view.available) return fail('catalog_unavailable');
   const model = resolveModelView(view, typeof params.model === 'string' ? params.model : undefined);
@@ -217,8 +236,8 @@ export function validateCanvasInputSelection(graph: CanvasInputMutationState, in
   const invalid = loaded.records.find(record => record.state === 'invalid');
   const parameterFailure = findDeclaredParameterFailure(params, operation.parameters, catalog?.models?.find(item => item.id === model.id)?.parameters as Record<string, unknown> | undefined);
   const accepts = !invalid && !parameterFailure && match.accepts;
-  const reasonCode = invalid?.reasonCode ?? (parameterFailure ? 'parameter_unsupported' : match.rejections[0]?.code ?? match.pending[0]?.code);
-  return { accepts, ready: accepts && match.ready && !loaded.records.some(record => record.state === 'pending'), operationId: operation.id,
+  const reasonCode = invalid?.reasonCode ?? (parameterFailure || missingParameter ? 'parameter_unsupported' : match.rejections[0]?.code ?? match.pending[0]?.code);
+  return { accepts, ready: accepts && !missingParameter && match.ready && !loaded.records.some(record => record.state === 'pending'), operationId: operation.id,
     records: loaded.records, bindings: loaded.bindings, pending: match.pending, rejections: match.rejections,
     ...(reasonCode ? { reasonCode } : {}), contractFingerprint: catalog?.fingerprint ?? '', fingerprint: fingerprint.signature };
 }
@@ -233,17 +252,21 @@ export function planCanvasInputMutation(current: CanvasInputMutationState, mutat
     const target = current.nodes.find(node => node.id === targetNodeId);
     if (!isGenerate(target)) return rejectMutation(current, 'missing_node');
     const params = readCanvasParams(target);
-    const catalog = narrowCatalogByRouting(context?.catalog, params.model, params.routing);
+    const managed = target.data.materialType === 'video' ? resolveEffectiveVideoGroup(context?.catalog, params.model, params.routing) : null;
+    const catalog = narrowCatalogByRouting(context?.catalog, params.model, params.routing, params);
     if (!catalog) return rejectMutation(current, 'catalog_unavailable');
     const layout = deriveSlotLayout(catalog, typeof params.model === 'string' ? params.model : undefined,
       typeof params.operation === 'string' ? params.operation : undefined);
     const orderedSlot = layout.slots.find(spec => spec.slot === slot && isOrderedImageReferenceSlot(spec));
     if (!orderedSlot) return rejectMutation(current, 'operation_incompatible');
 
-    const version = target.data.inputBindingVersion === 1 ? 1 : undefined;
+    const version = managed || target.data.inputBindingVersion === 1 ? 1 : undefined;
     const raw = buildCanvasUpstreamFingerprint(target.id, current.nodes, current.edges);
     const feed = feedFromFingerprint(raw, version);
-    const loaded = effectiveInputDisplay(layout, feed, target.data.slotBindings as SlotBindings | undefined,
+    const saved = managed ? projectVideoSlotBindings(layout, feed,
+      readVideoOperationDraft(target.data, resolveEffectiveVideoOperation(managed.group, params.operation, params)))
+      : target.data.slotBindings as SlotBindings | undefined;
+    const loaded = effectiveInputDisplay(layout, feed, saved,
       (target.data.slotConflicts ?? []) as SlotConflict[], current.edges.filter(edge => edge.target === target.id),
       (target.data.slotStandbyEdgeIds ?? []) as string[], version);
     const active = loaded.records.filter(record => record.slot.slot === slot && record.state !== 'inactive');

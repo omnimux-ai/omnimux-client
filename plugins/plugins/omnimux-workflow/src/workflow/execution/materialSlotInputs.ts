@@ -10,16 +10,29 @@ import { assembleEffectiveInputsFromSlots, deriveSlotLayout, selectSlotOccupants
 import { resolveExecutionMediaSource, type ResolveExecutionProjectFile } from './executionMediaSource.ts';
 import { SeamGatewayError } from '../seam/SeamGatewayError.ts';
 import { effectiveInputDisplay } from '../../shared/graph/feedSlot/effectiveInputDisplay.ts';
+import { narrowCatalogByRouting, resolveEffectiveVideoGroup, resolveEffectiveVideoOperation } from '../../shared/validation/lineConstraints.ts';
+import { isManagedVideoLineChanged } from '../../shared/validation/managedVideoExecution.ts';
 
 /** Resolve only occupied media. Standby URLs are never opened, parsed or sent to a provider. */
-export function collectMaterialSlotInputs(data: Record<string, unknown>, ctx: ExecutionContext, catalog: CapabilityCatalog, resolveProjectFile?: ResolveExecutionProjectFile) {
+export function collectMaterialSlotInputs(data: Record<string, unknown>, ctx: ExecutionContext, inputCatalog: CapabilityCatalog, resolveProjectFile?: ResolveExecutionProjectFile) {
   const params = (data.params ?? {}) as Record<string, unknown>;
   const kind = (data.materialType ?? 'text') as keyof NonNullable<CapabilityCatalog['defaults']>;
-  const modelId = typeof params.model === 'string' ? params.model : catalog.defaults?.[kind];
+  const modelId = typeof params.model === 'string' ? params.model : inputCatalog.defaults?.[kind];
+  const managed = kind === 'video' ? resolveEffectiveVideoGroup(inputCatalog, modelId, params.routing) : null;
+  const reviewed = data.managedVideoGeneration;
+  if ((managed || reviewed) && !managed?.group) {
+    throw new SeamGatewayError('line_selection_required', '请选择当前可用的生成线路');
+  }
+  if (managed?.group && isManagedVideoLineChanged(managed.group, managed.model.effectiveVideoVersion, params.routing, reviewed)) {
+    throw new SeamGatewayError('line_capability_changed', '线路规则或价格已更新，请确认后重新生成');
+  }
+  const variant = managed?.group ? resolveEffectiveVideoOperation(managed.group, params.operation, params) : undefined;
+  if (managed && !variant) throw new SeamGatewayError('operation-not-allowed', '当前线路不支持所选生成方式或参数，请重新选择');
+  const catalog = managed ? narrowCatalogByRouting(inputCatalog, modelId, params.routing, params) ?? inputCatalog : inputCatalog;
   const model = resolveModelView(buildContractView(catalog), modelId);
   const autoOperationId = typeof data.autoOperationId === 'string' || data.autoOperationId === null
     ? data.autoOperationId as string | null : undefined;
-  const preferredOperationId = readPreferredOperationId(params, autoOperationId);
+  const preferredOperationId = variant?.id ?? readPreferredOperationId(params, autoOperationId);
   let operationId = preferredOperationId;
   let layout = deriveSlotLayout(catalog, model?.id, operationId);
   const currentVersion = data.inputBindingVersion === 1;
@@ -38,6 +51,8 @@ export function collectMaterialSlotInputs(data: Record<string, unknown>, ctx: Ex
       // Free-text contract: unbound connected edges (not in slotBindings, not
       // standby) stay in feed so assemble picks them up as freeTextAssets.
       ...rawBindings.filter((binding) => !standbyEdgeIds.has(binding.edgeId ?? '')
+        && (!managed || !(binding.output.documentText !== undefined || binding.output.documentError
+          || binding.output.mediaAssets?.some(asset => asset.type === 'document')))
         && !boundOccupants.some((item) => item.edgeId === binding.edgeId && item.sourceNodeId === binding.sourceNodeId)),
     ]
     : rawBindings.filter((binding) => !standbyEdgeIds.has(binding.edgeId ?? ''));
@@ -72,7 +87,7 @@ export function collectMaterialSlotInputs(data: Record<string, unknown>, ctx: Ex
       url: asset?.url, pathOrUrl: asset?.relativePath || asset?.path, mimeType: asset?.mimeType, sizeBytes: asset?.sizeBytes, durationSec: asset?.durationSec });
     mediaByEdge.set(edgeId, output.mediaAssets);
   }
-  operationId = currentVersion && preferredOperationId
+  operationId = managed || currentVersion && preferredOperationId
     ? preferredOperationId
     : resolveSlotOperation(catalog, model?.id, currentVersion ? preferredOperationId : params.operation, kind,
       buildUpstreamFingerprint({ prompt: resolveGenerationPrompt(data, texts), localText: resolveGenerationPrompt(data),
@@ -114,7 +129,7 @@ export function collectMaterialSlotInputs(data: Record<string, unknown>, ctx: Ex
   // JSON document duration is a model-level parameter override, applied only
   // when the selected model declares a duration parameter (Issue #27).
   let documentDuration: number | undefined;
-  if (model && layout.acceptsDocuments !== false) {
+  if (!managed && model && layout.acceptsDocuments !== false) {
     const modelRow = (catalog.models ?? []).find((candidate) =>
       candidate.id === model.id || (Array.isArray(candidate.aliases) && candidate.aliases.includes(model.id)));
     const operationRow = model.operations.find((candidate) => candidate.id === operationId);
@@ -131,6 +146,7 @@ export function collectMaterialSlotInputs(data: Record<string, unknown>, ctx: Ex
     }
   }
   return { ...effective, ...(currentVersion ? { localText, textInputs } : {}),
+    ...(managed?.group && variant ? { managedGroup: managed.group, variant, effectiveVideoVersion: managed.model.effectiveVideoVersion } : {}),
     ...(documentDuration !== undefined ? { documentDuration } : {}),
     texts: layout.acceptsText === false ? [] : texts, operationId, modelId: model?.id ?? modelId };
 }

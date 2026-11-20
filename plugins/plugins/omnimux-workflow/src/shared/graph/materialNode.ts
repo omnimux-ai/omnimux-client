@@ -132,6 +132,9 @@ export interface MaterialNodeData {
   localTextRole?: 'body' | 'instruction' | 'lyrics' | 'style';
   /** Upstream consumption authority; absent on legacy graphs awaiting migration. */
   slotBindings?: SlotBindings;
+  /** Ordered video inputs retained by operation purpose, including inputs outside the current line's limits. */
+  videoSlotDrafts?: import('./feedSlot/videoSlotDrafts.ts').VideoSlotDrafts;
+  videoAssetFieldDrafts?: Record<string, { fileUrl?: string; linkUrl?: string }>;
   slotConflicts?: SlotConflict[];
   /** Lip-sync selection parked while editing the same model's text-to-video operation. */
   parkedLipSyncInputs?: { model: string; bindings: SlotBindings; conflicts?: SlotConflict[] };

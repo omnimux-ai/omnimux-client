@@ -253,6 +253,19 @@ test('gate allows business source once the task produced its own spec', () => {
   }
 })
 
+test('updating a historical specification never revives its acceptance rules', () => {
+  const root = makeRepo('superseded-spec')
+  try {
+    writeFileAt(root, 'specs/historical.spec.md', '# Historical\n\n> 历史规格。请阅读当前规则。\n\nThe old acceptance record is retained here.\n')
+    assert.equal(taskSpecs(root).length, 0)
+    writeFileAt(root, 'specs/active.spec.md', SPEC_BODY)
+    assert.equal(taskSpecs(root).length, 1)
+    assert.equal(inspectSpecContract(taskSpecs(root)).ok, true)
+  } finally {
+    cleanup(root)
+  }
+})
+
 test('task spec committed ahead of origin/main also counts', () => {
   const root = makeRepo('committed-spec')
   try {

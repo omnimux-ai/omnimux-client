@@ -128,3 +128,17 @@ test('AGENTS.md preserves hard-bound markers', () => {
   const missing = REQUIRED_MARKERS.filter((marker) => !agents.includes(marker))
   assert.deepEqual(missing, [], 'a hard bound was removed or renamed; update the marker only with user approval')
 })
+
+test('canvas generation rules are discoverable without local skills or task history', () => {
+  const contract = 'docs/contracts/canvas-generation.md'
+  const hub = 'plugins/omnimux/AGENTS.md'
+  assert.ok(agents.includes(`(${contract})`), 'link the active canvas contract from plugins/AGENTS.md')
+  assert.ok(readFileSync(join(root, hub), 'utf8').includes(`(../../${contract})`), 'link the same contract from the hub rules')
+
+  const contractPath = join(root, contract)
+  assert.deepEqual(brokenLinks(readFileSync(contractPath, 'utf8'), dirname(contractPath)), [])
+  for (const spec of ['issue-62-input-capability', 'issue-89-muse-video-mapping']) {
+    const historical = readFileSync(join(root, '..', `specs/${spec}.spec.md`), 'utf8')
+    assert.ok(historical.includes(`(../plugins/${contract})`), `${spec} must point readers to the active canvas contract`)
+  }
+})

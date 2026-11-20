@@ -1,5 +1,7 @@
 # Spec: muse-video 首帧/文生提交映射到 openai_video 契约
 
+> 历史规格。按 Muse ID 选择协议的条款是当时的兼容修复。接入分组能力后的新任务按有效组合声明的协议选择地址和字段，旧任务恢复仍按原任务记录执行。 [现行画布生成契约](../plugins/docs/contracts/canvas-generation.md)
+
 - 任务：`issue-89-muse-video-mapping`
 - 日期：2026-11-18
 - 基线：`origin/main` `5a76534`

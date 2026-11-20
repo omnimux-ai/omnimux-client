@@ -175,7 +175,7 @@ function makeHarness({ gatewayLatency = { minLatencyMs: 10, maxLatencyMs: 30 }, 
     return ws.id;
   };
 
-  return { dir, libraryRoot, tools, promptSections, dispose, call, tool, seedWorkspace };
+  return { dir, libraryRoot, tools, promptSections, dispose, call, request: call, tool, seedWorkspace };
 }
 
 test('agent seats register the thirteen tools + workflow:ops prompt section', () => {
@@ -308,6 +308,48 @@ test('workflow_snapshot errors carry the {error, message} envelope', async () =>
   }
 });
 
+test('workflow_snapshot node_id exposes only published usable videos and group contracts', async () => {
+  const operation = { id: 'text_to_video', modeKind: 'text_to_video', inputs: [], output: { type: 'video' }, listed: true };
+  const row = {
+    id: 'atlas-fixture', label: 'Atlas Fixture', effectiveVideoVersion: 'scope-v1', selectable: true,
+    channelGroups: [
+      { id: 'priced', label: 'Available', effectiveVersion: 'scope-v1', defaultOperationId: operation.id,
+        effectiveOperations: [operation], pricing: { groupRatio: 0.5 } },
+      { id: 'empty', label: 'No routes', effectiveOperations: [] },
+      { id: 'disabled', label: 'Disabled', enabled: false, effectiveOperations: [operation] },
+      { id: 'stale', label: 'Stale snapshot', effectiveVersion: 'scope-v0', effectiveOperations: [operation] },
+    ],
+  };
+  const h = makeHarness({ catalog: { source: 'omnimux', schemaVersion: '1.1', fingerprint: 'fixture-snapshot',
+    text: [], image: [], audio: [], video: [row], models: [row, { ...row, id: 'not-selectable', selectable: false }] } });
+  try {
+    const { body } = await h.request({ method: 'POST', url: `${PREFIX}/api/workspaces`, body: { name: 'Managed choices' } });
+    const workspaceId = body.workspace.id;
+    await h.request({ method: 'PUT', url: `${PREFIX}/api/workspaces/${workspaceId}`, body: {
+      expectedVersion: 0,
+      nodes: [{ id: 'video', type: 'material', position: { x: 0, y: 0 }, data: {
+        nodeKind: 'generate', materialType: 'video', selectedTool: 'video-generation',
+        params: { model: row.id, operation: operation.id, routing: { channelGroupId: 'priced' } },
+      } }],
+      edges: [],
+    } });
+    const result = await h.tool('workflow_snapshot').execute({ workspace_id: workspaceId, node_id: 'video' });
+    assert.equal(result.catalogFingerprint, 'fixture-snapshot');
+    assert.equal(result.selected.groupId, 'priced');
+    assert.deepEqual(result.models.map(model => model.id), [row.id]);
+    const [group] = result.models[0].groups;
+    assert.equal(result.models[0].groups.length, 1);
+    assert.equal(group.id, 'priced');
+    assert.equal(group.version, 'scope-v1');
+    assert.equal(group.pricing.groupRatio, 0.5);
+    assert.equal(typeof group.videoLineQuote, 'string');
+    assert.deepEqual(group.operations, [operation]);
+  } finally {
+    h.dispose();
+    rmSync(h.dir, { recursive: true, force: true });
+  }
+});
+
 test('workflow_run wait=false returns immediately with an executionId + hint', async () => {
   const h = makeHarness();
   try {
@@ -416,12 +458,22 @@ test('workflow_run wait=true reports timedOut when the budget is exhausted', asy
     const wsId = await h.seedWorkspace();
     const result = await h.tool('workflow_run').execute({
       workspace_id: wsId,
+      mode: 'single',
+      node_ids: ['txt1'],
       wait: true,
       timeout_ms: 60, // far below the 800ms+ node latency
     });
     assert.equal(result.timedOut, true);
     assert.notEqual(result.status, 'completed');
     assert.equal(typeof result.hint, 'string');
+    const checked = await h.tool('workflow_run').execute({
+      execution_id: result.executionId, wait: true, timeout_ms: 10000,
+    });
+    assert.equal(checked.executionId, result.executionId);
+    assert.equal(checked.status, 'completed');
+    assert.equal(checked.nodes.length, 1);
+    const history = await h.tool('workflow_list').execute({ include_executions: true });
+    assert.equal(history.executions.filter(execution => execution.workspaceId === wsId).length, 1);
   } finally {
     h.dispose();
     rmSync(h.dir, { recursive: true, force: true });

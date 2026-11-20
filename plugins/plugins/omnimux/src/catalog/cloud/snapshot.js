@@ -184,6 +184,11 @@ export function normalizePricingPayload(payload, opts = {}) {
       continue
     }
     if (models.has(id)) issues.push({ code: 'duplicate-model-row', detail: id })
+    const effectiveVideo = objectOrEmpty(row.effective_video)
+    const effectiveVersion = text(effectiveVideo.version)
+    if (Object.hasOwn(row, 'effective_video') && !effectiveVersion) {
+      issues.push({ code: 'invalid-effective-video', detail: id })
+    }
     models.set(id, {
       id,
       displayName: text(row.model_name) === id ? text(row.display_name) || id : text(row.model_name) || id,
@@ -204,6 +209,14 @@ export function normalizePricingPayload(payload, opts = {}) {
       },
       contract: objectOrEmpty(row.contract),
       contractPresent: Object.keys(objectOrEmpty(row.contract)).length > 0,
+      // Presence with no usable group is authoritative. An invalid declaration
+      // must also stay on this branch, so it cannot revive the wide model rule.
+      ...(Object.hasOwn(row, 'effective_video') ? {
+        effectiveVideo: {
+          version: effectiveVersion || 'invalid',
+          groups: effectiveVersion ? keyedObject(effectiveVideo.groups) : {},
+        },
+      } : {}),
     })
   }
 

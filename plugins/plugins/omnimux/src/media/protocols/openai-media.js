@@ -277,6 +277,8 @@ export async function pollOpenAiMediaTask(options) {
  *   modelId: string,
  *   capability: string,
  *   group?: string,
+ *   taskPath?: string,
+ *   gatewayProtocol?: string,
  *   poll?: typeof pollOpenAiMediaTask,
  *   onSubmitted?: (taskId: string) => void,
  *   promptRequired?: boolean,
@@ -296,8 +298,13 @@ export function createOpenAiMediaRuntime(options) {
     // Image submission may return synchronously; runtime-kit's two-minute
     // default aborts before a valid result. Its supported maximum stays bounded.
     ...(capability === 'image' ? { requestTimeoutMs: 600_000 } : {}),
-    fetcher: async (...args) => {
-      const response = await routing.fetcher(...args)
+    fetcher: async (request, init) => {
+      if (options.gatewayProtocol === 'video_generations' && init?.method === 'POST') {
+        const headers = new Headers(init.headers)
+        headers.set('X-OmniMux-Video-Protocol', options.gatewayProtocol)
+        init = { ...init, headers }
+      }
+      const response = await routing.fetcher(request, init)
       // runtime-kit keeps only error.message; classify code-only envelopes first.
       if (!response.ok && typeof response.clone === 'function') {
         let body

@@ -34,7 +34,8 @@ export function effectiveSlotFingerprint(
     // 则上游连入的就绪文本资产（且未被用于媒体槽、未被用户明确设为待命的）作为自由上游提示词源消费
     const freeTextAssets = (!textSlot && layout.acceptsText !== false)
       ? selectGenerationTextSources(fingerprint.assets).filter(asset =>
-          !selected.some(sel => sel.asset?.edgeId === asset.edgeId) && (!asset.edgeId || !standbySet.has(asset.edgeId)))
+          (!layout.requireBoundDocuments || asset.type !== 'document')
+          && !selected.some(sel => sel.asset?.edgeId === asset.edgeId) && (!asset.edgeId || !standbySet.has(asset.edgeId)))
       : [];
     const freeTexts = freeTextAssets.map(asset => asset.textContent);
     const allTexts = [...boundTexts, ...freeTexts].filter((t): t is string => typeof t === 'string' && Boolean(t.trim()));

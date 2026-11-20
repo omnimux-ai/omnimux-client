@@ -2,6 +2,7 @@ import type { CatalogChannelGroupDto } from '../../../../../shared/api.ts';
 
 export interface PickerCandidate {
   id: string;
+  effectiveVideoVersion?: string;
   label: string;
   subtitle?: string;
   family?: string;

@@ -30,6 +30,7 @@ import { resolveNodeKind } from '../../shared/graph/materialNode.ts';
 import { materialTools } from '../../shared/specs/nodes/materialNodeSpec.ts';
 import { openWorkflowSubmission } from '../seam/submitGuard.ts';
 import { findExecutionReadinessFailure } from '../../shared/validation/executionReadiness.ts';
+import { narrowCatalogByRouting, resolveEffectiveVideoGroup } from '../../shared/validation/lineConstraints.ts';
 import { readExplicitTargetSlot } from '../../shared/validation/compatKernel.ts';
 import { deriveSlotLayout, type SlotBindings, type SlotConflict } from '../../shared/graph/feedSlot/index.ts';
 import { effectiveInputDisplay } from '../../shared/graph/feedSlot/effectiveInputDisplay.ts';
@@ -193,7 +194,11 @@ export function resolveUpstreamBindings(
   if (saved !== undefined && catalog) {
     const params = (node.data?.params ?? {}) as Record<string, unknown>;
     const kind = (node.data?.materialType ?? 'text') as keyof NonNullable<CapabilityCatalog['defaults']>;
-    const layout = deriveSlotLayout(catalog, (params.model ?? catalog.defaults?.[kind]) as string | undefined, params.operation as string | undefined);
+    const modelId = (params.model ?? catalog.defaults?.[kind]) as string | undefined;
+    const effectiveCatalog = kind === 'video' && resolveEffectiveVideoGroup(catalog, modelId, params.routing)
+      ? narrowCatalogByRouting(catalog, modelId, params.routing, params)
+      : catalog;
+    const layout = deriveSlotLayout(effectiveCatalog, modelId, params.operation as string | undefined);
     const incoming = edges.filter((edge) => edge.target === node.id);
     const standby = new Set((node.data?.slotStandbyEdgeIds ?? []) as string[]);
     if (node.data?.inputBindingVersion === 1) {

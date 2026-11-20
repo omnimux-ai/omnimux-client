@@ -200,7 +200,7 @@ export interface CandidateSnapshot<A extends CandidateAsset> {
   readonly parameterSources: Readonly<Record<string, LogicalSource>>;
   readonly parameterAuthority: 'resolved' | 'unresolved';
 }
-export type CandidateCode = 'malformed_input' | 'malformed_constraint' | 'unknown_operation' | 'unknown_field' | 'parameter_nonmember' | 'parameter_indeterminate' | 'empty_domain' | 'fixed_conflict' | 'disabled' | 'source_mismatch' | 'default_ambiguous' | 'input_limit' | 'media_unclassified' | 'asset_rejected' | 'asset_pending' | 'asset_indeterminate' | 'completion_unproven' | 'unchecked_constraint' | 'eligibility_pending' | 'eligibility_rejected';
+export type CandidateCode = 'malformed_input' | 'malformed_constraint' | 'unknown_operation' | 'unknown_field' | 'parameter_nonmember' | 'parameter_required' | 'parameter_indeterminate' | 'empty_domain' | 'fixed_conflict' | 'disabled' | 'source_mismatch' | 'default_ambiguous' | 'input_limit' | 'media_unclassified' | 'asset_rejected' | 'asset_pending' | 'asset_indeterminate' | 'completion_unproven' | 'unchecked_constraint' | 'eligibility_pending' | 'eligibility_rejected';
 export interface CandidateDiagnostic { readonly code: CandidateCode; readonly field?: string; readonly assetIndex?: number; readonly slotIndex?: number }
 export type CheckedAssignment<A extends CandidateAsset> = Extract<AssignmentResult<A>, { readonly status: 'ready' }> & { readonly uncheckedConstraints: readonly [] };
 export type CandidateResult<A extends CandidateAsset> =
@@ -220,10 +220,11 @@ export interface ParameterDefinition {
   readonly maxLength?: number;
   readonly supported?: boolean;
   readonly allowAuto?: boolean;
+  readonly required?: boolean;
   readonly caseInsensitive?: boolean;
   readonly unit?: string;
 }
-export type ParameterNonmemberReason = 'domain' | 'boolean' | 'unsupported' | 'integer' | 'number' | 'string' | 'type' | 'length_type' | 'minLength' | 'maxLength' | 'range' | 'unknown_field';
+export type ParameterNonmemberReason = 'domain' | 'boolean' | 'unsupported' | 'integer' | 'number' | 'string' | 'type' | 'length_type' | 'minLength' | 'maxLength' | 'range' | 'required' | 'unknown_field';
 export type ParameterMemberResult =
   | { readonly status: 'member' }
   | { readonly status: 'nonmember'; readonly reason: ParameterNonmemberReason }

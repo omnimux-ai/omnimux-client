@@ -61,6 +61,8 @@ export interface SlotLayout {
   acceptsText?: boolean;
   /** Whether connected JSON documents can supply text, parameters or a document attachment. */
   acceptsDocuments?: boolean;
+  /** A managed video operation accepts only document inputs assigned to its declared slots. */
+  requireBoundDocuments?: boolean;
   operationId: string;
   /**
    * Set when the layout was borrowed from another listed operation of the same

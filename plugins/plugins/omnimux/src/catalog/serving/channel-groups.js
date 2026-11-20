@@ -358,6 +358,20 @@ export function parseModelAndGroup(input) {
   }
 }
 
+/** A grouped video task carries one explicit line, including through the canvas seam. */
+export function effectiveVideoRequestedGroup(request) {
+  const inline = parseModelAndGroup(request?.model).group
+  const field = typeof request?.group === 'string' ? request.group.trim() : ''
+  const allowed = request?.allowedGroups
+  const singleton = Array.isArray(allowed) && allowed.length === 1 && typeof allowed[0] === 'string'
+    ? allowed[0].trim() : ''
+  const selected = inline || field || singleton
+  if (!selected || selected.toLowerCase() === 'auto') return undefined
+  if (inline && field && inline.toLowerCase() !== field.toLowerCase()) return undefined
+  if (allowed != null && (!singleton || singleton.toLowerCase() !== selected.toLowerCase())) return undefined
+  return selected
+}
+
 /**
  * Build one model's lines from the gateway snapshot (P1b).
  *
@@ -379,7 +393,8 @@ export function snapshotChannelGroups(modelId, snapshot) {
   if (!snapshotModel || enableGroups.length === 0) return []
   const ratios = snapshotGroupRatio
   const labels = snapshotGroupLabels(snapshot)
-  const overrides = Array.isArray(MODEL_CHANNEL_GROUPS[canonical]) ? MODEL_CHANNEL_GROUPS[canonical] : []
+  const effective = snapshotModel.effectiveVideo
+  const overrides = !effective && Array.isArray(MODEL_CHANNEL_GROUPS[canonical]) ? MODEL_CHANNEL_GROUPS[canonical] : []
   /** @type {Map<string, object>} */
   const overrideByWire = new Map()
   for (const group of overrides) {
@@ -389,7 +404,16 @@ export function snapshotChannelGroups(modelId, snapshot) {
     if (key && !overrideByWire.has(key)) overrideByWire.set(key, group)
   }
 
-  return enableGroups.map((wireGroup) => {
+  const permitted = effective
+    ? enableGroups.filter((group) => group.toLowerCase() !== 'auto'
+      && Object.hasOwn(labels, group)
+      && ratios(snapshot, group) !== null
+      && ratios(snapshot, group) >= 0
+      && Object.hasOwn(effective.groups ?? {}, group)
+      && Array.isArray(effective.groups[group]) && effective.groups[group].length > 0)
+    : enableGroups
+
+  return permitted.map((wireGroup) => {
     const override = overrideByWire.get(wireGroup)
     const pricing = gatewayPricingBlock(snapshotModel, ratios(snapshot, wireGroup))
     const gatewayLabel = typeof labels[wireGroup] === 'string' && labels[wireGroup].trim() ? labels[wireGroup].trim() : ''

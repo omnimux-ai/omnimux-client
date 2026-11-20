@@ -57,7 +57,8 @@ test('production emit rejects stale models and alien channel groups', () => {
   assert.match(cascadeSrc, /if \(!isPickerCandidate\(options, modelId\)\) return;/);
   assert.match(cascadeSrc, /const payload = buildChannelSelectionPayload\(modelId, groupIds, groups\);/);
   assert.match(cascadeSrc, /if \(!payload\) return;/);
-  assert.match(cascadeSrc, /onSelect\(payload\);/);
+  assert.match(cascadeSrc, /if \(managed && groupIds\.length !== 1\) return;/);
+  assert.match(cascadeSrc, /onSelect\(managed && payload\.sourceType !== 'byok'\s*\? \{ \.\.\.payload, channelGroupId: groupIds\[0\], sourceType: 'official' \} : payload\);/);
 
   // 3. 候选集门禁纯函数断言
   assert.equal(isPickerCandidate([{ id: 'legal', label: 'Legal' }], 'stale'), false);
@@ -177,20 +178,22 @@ test('empty brand selection has no fabricated default', () => {
   assert.equal(groupPickerCandidates([])[0]?.rows[0]?.id, undefined);
   assert.doesNotMatch(cascadeSrc, /FALLBACK_MODELS_BY_BRAND|DEFAULT_MODEL_BY_BRAND|needsActive|defaultModelFor\(/);
 });
-test('picker consumes only final filtered options and renders canonical model IDs', () => {
+test('picker consumes only final filtered options and renders directory labels for managed models', () => {
   assert.match(configSrc, /options=\{filteredModels\.options\}/);
   assert.match(cascadeSrc, /groupPickerCandidates\(selectableOptions\)/);
   assert.doesNotMatch(cascadeSrc, /catalog\?\.|allowedBrandsFor/);
-  assert.match(cascadeSrc, /\{item\.id\}/);
+  assert.match(cascadeSrc, /\{item\.effectiveVideoVersion === undefined \? item\.id : item\.label\}/);
   assert.doesNotMatch(cascadeSrc, /item\.label \|\| item\.id/);
   assert.doesNotMatch(cascadeSrc, /item\.subtitle/);
 });
 test('emission and channel lists validate model membership', () => {
   assert.match(cascadeSrc, /if \(!isPickerCandidate\(options, modelId\)\) return;/);
   // 线路只来自上游候选行自带的目录字段：菜单不再有任何本地线路表可读。
-  assert.match(cascadeSrc, /resolveModelChannelGroups\(channelModelId, rowChannelGroups\(options, channelModelId\), runtimeSettings\)/);
-  assert.match(cascadeSrc, /resolveModelChannelGroups\(activeModelId, rowChannelGroups\(options, activeModelId\), runtimeSettings\)/);
-  assert.match(cascadeSrc, /resolveModelChannelGroups\(item\.id, rowChannelGroups\(options, item\.id\), runtimeSettings\)/);
+  assert.match(cascadeSrc, /const rows = rowChannelGroups\(options, modelId\);/);
+  assert.match(cascadeSrc, /rows\.filter\(group => groupMatchesEffectiveVideoVersion\(group, version\)\)/);
+  assert.match(cascadeSrc, /isPickerCandidate\(options, channelModelId\)\s*\? groupsForModel\(channelModelId\)/);
+  assert.match(cascadeSrc, /isPickerCandidate\(options, activeModelId\)\s*\? groupsForModel\(activeModelId\)/);
+  assert.match(cascadeSrc, /const groups = groupsForModel\(item\.id\);/);
   assert.doesNotMatch(cascadeSrc, /getModelChannelGroups|MODEL_CHANNEL_GROUPS/);
   assert.match(cascadeSrc, /buildChannelSelectionPayload\(modelId, groupIds, groups\)/);
   assert.match(cascadeSrc, /待重新选择/);
@@ -212,7 +215,8 @@ test('hover remains preview-only and clicks select a real brand row', () => {
   assert.match(cascadeSrc, /onHover=\{\(\) => handleModelHover\(item\.id\)\}/);
   assert.match(cascadeSrc, /onSelect=\{\(\) => handleSelectModel\(item\.id\)\}/);
   assert.doesNotMatch(cascadeSrc, /onMouseEnter=\{\(\) => handleSelectModel/);
-  assert.match(cascadeSrc, /preview=\{isChannelPreview\}/);
+  assert.match(cascadeSrc, /preview=\{isChannelPreview && !isManagedChannelModel\}/);
+  assert.match(cascadeSrc, /if \(candidate\?\.effectiveVideoVersion !== undefined && groups\.length > 1\) \{\s*setHoverModelId\(modelId\);\s*return;/);
   assert.match(cascadeSrc, /disabled=\{preview\}/);
 });
 

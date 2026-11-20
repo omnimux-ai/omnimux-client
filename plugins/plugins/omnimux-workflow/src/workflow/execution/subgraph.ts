@@ -70,6 +70,8 @@ export interface ResolvedExecutionSubgraph<TNode extends SubgraphNodeLike, TEdge
   nodes: TNode[];
   edges: TEdge[];
   nodeIdSet: Set<string>;
+  /** Explicit roots before expanding the upstream dependency closure. */
+  requestedNodeIds?: string[];
 }
 
 export function resolveExecutionSubgraph<TNode extends SubgraphNodeLike, TEdge extends SubgraphEdgeLike>(
@@ -114,6 +116,7 @@ export function resolveExecutionSubgraph<TNode extends SubgraphNodeLike, TEdge e
       nodes: targetNodes,
       edges: edges.filter((edge) => targetIdSet.has(edge.target) && nodeMap.has(edge.source)),
       nodeIdSet: new Set(targetNodes.map((n) => n.id)),
+      requestedNodeIds: targetNodeIds,
     };
   }
 
@@ -144,5 +147,6 @@ export function resolveExecutionSubgraph<TNode extends SubgraphNodeLike, TEdge e
     nodes: resultNodes,
     edges: edges.filter((edge) => closure.has(edge.source) && closure.has(edge.target)),
     nodeIdSet: new Set(resultNodes.map((n) => n.id)),
+    requestedNodeIds: targetNodeIds,
   };
 }

@@ -48,7 +48,9 @@ export function resolveCatalogAvailability(model, snapshot) {
     ? hasUsableGatewayGroups(findSnapshotModel(snapshot, model?.id))
     : model?.listed === true;
   const visible = source === 'custom' || gatewayAvailable;
-  const hasExecutableOperation = (model?.operations ?? []).some((operation) => operation?.listed === true);
+  const hasExecutableOperation = effectiveVideoVersion(model, snapshot) !== undefined
+    ? projectChannelGroups(model.id, snapshot, model).length > 0
+    : (model?.operations ?? []).some((operation) => operation?.listed === true);
   const selectable = visible && executionStatus === 'ready' && hasExecutableOperation;
   /** @type {string|undefined} */
   let availabilityReason;
@@ -183,6 +185,7 @@ export function mergeInputCapability(ops) {
  */
 export function projectRow(model, ops, snapshot) {
   const availability = resolveCatalogAvailability(model, snapshot);
+  const effectiveVersion = effectiveVideoVersion(model, snapshot);
   /** @type {Record<string, unknown>} */
   const row = {
     id: model.id,
@@ -194,6 +197,7 @@ export function projectRow(model, ops, snapshot) {
     ...(availability.availabilityReason ? { availabilityReason: availability.availabilityReason } : {}),
     ...(model.providerId ? { providerId: model.providerId } : {}),
     ...(model.sourceLabel ? { sourceLabel: model.sourceLabel } : {}),
+    ...(effectiveVersion !== undefined ? { effectiveVideoVersion: effectiveVersion } : {}),
   };
   if (typeof model.badge === 'string') row.badge = model.badge;
   if (typeof model.subtitle === 'string') row.subtitle = model.subtitle;
@@ -210,6 +214,7 @@ export function projectRow(model, ops, snapshot) {
     id: op.id,
     label: op.label,
     ...(op.modeKind ? { modeKind: op.modeKind } : {}),
+    ...(op.gatewayProtocol ? { gatewayProtocol: op.gatewayProtocol } : {}),
     ...(op.labelEn ? { labelEn: op.labelEn } : {}),
     output: structuredClone(op.output ?? {}),
     inputs: structuredClone(op.inputs ?? []),
@@ -230,7 +235,7 @@ export function projectRow(model, ops, snapshot) {
   }
   // The composer's model picker reads these rows, so pricing has to travel
   // with them — not only on the flat `models[]` DTO.
-  row.channelGroups = projectChannelGroups(model.id, snapshot);
+  row.channelGroups = projectChannelGroups(model.id, snapshot, model);
   return row;
 }
 
@@ -313,14 +318,19 @@ export function projectChatRows(index) {
  *
  * @param {string} modelId
  * @param {object} [snapshot] gateway snapshot; defaults to the read-only current one
+ * @param {object} [model] runtime contract containing the recognized grouped variants
  * @returns {object[]}
  */
-export function projectChannelGroups(modelId, snapshot) {
-  return getModelChannelGroups(modelId, snapshot).map((group) => {
+export function projectChannelGroups(modelId, snapshot, model) {
+  const effectiveVersion = effectiveVideoVersion(model ?? { id: modelId }, snapshot);
+  return getModelChannelGroups(modelId, snapshot).flatMap((group) => {
+    const effectiveOperations = Object.hasOwn(model?.effectiveVideoOperations ?? {}, group.wireGroup || group.id)
+      ? model.effectiveVideoOperations[group.wireGroup || group.id] : [];
+    if (effectiveVersion !== undefined && effectiveOperations.length === 0) return [];
     const pricing = group.pricing && typeof group.pricing === 'object'
       ? structuredClone(group.pricing)
       : null;
-    return {
+    return [{
       id: group.id,
       label: group.label,
       ...(typeof group.badge === 'string' ? { badge: group.badge } : {}),
@@ -332,8 +342,14 @@ export function projectChannelGroups(modelId, snapshot) {
       ...(group.sla && typeof group.sla === 'object' ? { sla: structuredClone(group.sla) } : {}),
       enabled: group.enabled !== false,
       ...(group.default === true ? { default: true } : {}),
-    };
+      ...(effectiveVersion !== undefined ? { effectiveVersion, effectiveOperations: structuredClone(effectiveOperations) } : {}),
+    }];
   });
+}
+
+function effectiveVideoVersion(model, snapshot) {
+  return model?.source === 'custom' ? undefined
+    : model?.effectiveVideoVersion ?? findSnapshotModel(snapshot, model?.id)?.effectiveVideo?.version;
 }
 
 /**
@@ -346,6 +362,7 @@ export function projectChannelGroups(modelId, snapshot) {
 export function projectModelDto(model, dispositionsDoc, snapshot) {
   const row = resolveDisposition(dispositionsDoc, model.id);
   const availability = resolveCatalogAvailability(model, snapshot);
+  const effectiveVersion = effectiveVideoVersion(model, snapshot);
   return {
     id: model.id,
     label: model.label,
@@ -356,6 +373,7 @@ export function projectModelDto(model, dispositionsDoc, snapshot) {
     ...(availability.availabilityReason ? { availabilityReason: availability.availabilityReason } : {}),
     ...(model.providerId ? { providerId: model.providerId } : {}),
     ...(model.sourceLabel ? { sourceLabel: model.sourceLabel } : {}),
+    ...(effectiveVersion !== undefined ? { effectiveVideoVersion: effectiveVersion } : {}),
     ...(typeof model.family === 'string' ? { family: model.family } : {}),
     ...(typeof model.badge === 'string' ? { badge: model.badge } : {}),
     ...(typeof model.subtitle === 'string' ? { subtitle: model.subtitle } : {}),
@@ -367,6 +385,7 @@ export function projectModelDto(model, dispositionsDoc, snapshot) {
       id: op.id,
       label: op.label,
       ...(op.modeKind ? { modeKind: op.modeKind } : {}),
+      ...(op.gatewayProtocol ? { gatewayProtocol: op.gatewayProtocol } : {}),
       ...(op.labelEn ? { labelEn: op.labelEn } : {}),
       output: structuredClone(op.output ?? {}),
       inputs: structuredClone(op.inputs ?? []),
@@ -394,7 +413,7 @@ export function projectModelDto(model, dispositionsDoc, snapshot) {
           },
         }
       : {}),
-    channelGroups: projectChannelGroups(model.id, snapshot),
+    channelGroups: projectChannelGroups(model.id, snapshot, model),
     // P1b: whether the hub can offer this model right now - the gateway sells it on a
     // usable line AND the local contract exposes a callable operation. The contract's
     // own `listed` is left untouched (it describes the contract alone).

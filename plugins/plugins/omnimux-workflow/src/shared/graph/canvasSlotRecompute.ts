@@ -6,12 +6,14 @@ import { readCanvasParams } from './canvasInputSources.ts';
 import { buildContractView, buildUpstreamFingerprint, isMediaInputType, isOrderedImageReferenceSlot, matchOperationInputs, planAutoAdaptation, resolveModelView } from '../validation/compatKernel.ts';
 import { buildInputCapability } from '../validation/inputCapability.ts';
 import { autoFillSlots, deriveSlotLayout, hydrateSlotBindings, type FeedAsset, type SlotBindings, type SlotConflict, type SlotLayout, type SlotOccupant, type SlotSpec } from './feedSlot/index.ts';
+import { acceptsFeedAsset } from './feedSlot/autoFillSlots.ts';
 import { effectiveSlotFingerprint, feedFromFingerprint } from './feedSlot/effectiveFingerprint.ts';
 import { effectiveInputDisplay } from './feedSlot/effectiveInputDisplay.ts';
 import { resolveSlotOccupantOrdinal } from './feedSlot/assembleEffectiveInputs.ts';
 import { projectCanvasInputSources } from './feedSlot/legacyH3Slots.ts';
 import { resolveSlotOperation } from './feedSlot/resolveSlotOperation.ts';
-import { narrowCatalogByRouting } from '../validation/lineConstraints.ts';
+import { effectiveVideoAssetFields, narrowCatalogByRouting, resolveEffectiveVideoGroup, type EffectiveVideoGroupSelection } from '../validation/lineConstraints.ts';
+import { mergeVideoSlotDraft, projectVideoSlotBindings, readVideoSlotDrafts, videoSlotDraftKey } from './feedSlot/videoSlotDrafts.ts';
 
 function isSingleStartImage(slot: SlotSpec): boolean {
   return slot.type === 'image' && slot.role === 'first_frame' && slot.max === 1;
@@ -34,14 +36,106 @@ function refillDisconnectedSlots(layout: SlotLayout, feed: FeedAsset[], bindings
   }
 }
 
+function recomputeEffectiveVideoSlots(node: CanvasNode, graph: CanvasInputMutationState, context: CanvasMutationRuntimeContext,
+  managed: EffectiveVideoGroupSelection, params: Record<string, unknown>, previous: CanvasNode | undefined,
+  newEdgeIds: ReadonlySet<string>, disconnected: ReadonlySet<string>): CanvasNode {
+  const catalog = narrowCatalogByRouting(context.catalog, managed.model.id, params.routing, params);
+  const operation = catalog?.models?.find(model => model.id === managed.model.id)?.operations?.find(item => item.id === params.operation);
+  const key = videoSlotDraftKey(operation);
+  const priorParams = previous ? readCanvasParams(previous) : params;
+  const priorCatalog = narrowCatalogByRouting(context.catalog, priorParams.model, priorParams.routing, priorParams);
+  const priorModel = priorCatalog?.models?.find(model => model.id === priorParams.model || model.aliases?.includes(String(priorParams.model)));
+  const priorOperation = priorModel?.operations?.find(item => item.id === priorParams.operation)
+    ?? context.catalog?.models?.find(model => model.id === priorParams.model)?.operations?.find(item => item.id === priorParams.operation);
+  const priorKey = videoSlotDraftKey(priorOperation);
+  const drafts = readVideoSlotDrafts(node.data.videoSlotDrafts, disconnected);
+  const assetDrafts: NonNullable<MaterialNodeData['videoAssetFieldDrafts']> = {
+    ...(node.data.videoAssetFieldDrafts as MaterialNodeData['videoAssetFieldDrafts']),
+  };
+  if (priorKey) {
+    const saved = Object.fromEntries(effectiveVideoAssetFields(priorOperation).flatMap(field =>
+      typeof priorParams[field] === 'string' ? [[field, priorParams[field]]] : []));
+    if (Object.keys(saved).length) Object.defineProperty(assetDrafts, priorKey, {
+      value: { ...assetDrafts[priorKey], ...saved }, enumerable: true, configurable: true, writable: true,
+    });
+  }
+  if (key) {
+    const saved = Object.fromEntries(effectiveVideoAssetFields(operation).flatMap(field => {
+      const value = params[field] ?? assetDrafts[key]?.[field];
+      if (typeof value !== 'string') return [];
+      params[field] = value;
+      return [[field, value]];
+    }));
+    if (Object.keys(saved).length) Object.defineProperty(assetDrafts, key, {
+      value: { ...assetDrafts[key], ...saved }, enumerable: true, configurable: true, writable: true,
+    });
+  }
+  const previousBindings = (previous?.data.slotBindings ?? node.data.slotBindings ?? {}) as SlotBindings;
+  const editedBindings = (node.data.slotBindings ?? {}) as SlotBindings;
+  if (priorKey && !Object.hasOwn(drafts, priorKey)) {
+    const priorConflicts = ((previous?.data.slotConflicts ?? node.data.slotConflicts ?? []) as SlotConflict[])
+      .filter(conflict => !disconnected.has(conflict.occupant.edgeId));
+    const previousDraft = Object.fromEntries(Object.entries(previousBindings).map(([slot, values]) =>
+      [slot, values.filter(occupant => !disconnected.has(occupant.edgeId))]));
+    for (const conflict of priorConflicts) {
+      const occupants = previousDraft[conflict.slot] ??= [];
+      if (!occupants.some(occupant => occupant.edgeId === conflict.occupant.edgeId)) occupants.push(conflict.occupant);
+    }
+    Object.defineProperty(drafts, priorKey, { value: previousDraft, enumerable: true, configurable: true, writable: true });
+  }
+
+  const feed = feedFromFingerprint(projectCanvasInputSources(node.id, node.data, graph.nodes, graph.edges, context.catalog, undefined).fingerprint, 1);
+  const layout = deriveSlotLayout(catalog, managed.model.id, operation?.id);
+  let active: SlotBindings = {};
+  if (key) {
+    let draft = Object.hasOwn(drafts, key) ? drafts[key]! : {};
+    if (previous && key === priorKey && previous.data.slotBindings !== node.data.slotBindings) {
+      const priorLayout = deriveSlotLayout(priorCatalog, priorModel?.id, priorOperation?.id);
+      draft = mergeVideoSlotDraft(draft, projectVideoSlotBindings(priorLayout, feed, draft), editedBindings);
+    }
+    active = projectVideoSlotBindings(layout, feed, draft);
+    if (newEdgeIds.size) {
+      // Only the new connection is eligible for automatic assignment in this mode.
+      const activeIds = new Set(Object.values(active).flat().map(occupant => occupant.edgeId));
+      const eligible = feed.filter(asset => activeIds.has(asset.edgeId) || newEdgeIds.has(asset.edgeId));
+      const standby = Array.isArray(node.data.slotStandbyEdgeIds) ? node.data.slotStandbyEdgeIds as string[] : [];
+      const added = autoFillSlots(eligible, layout, active, standby).bindings;
+      for (const asset of eligible) {
+        if (asset.availability !== 'waiting' || !newEdgeIds.has(asset.edgeId) || activeIds.has(asset.edgeId) || standby.includes(asset.edgeId)) continue;
+        const slot = layout.slots.find(candidate => candidate.role !== 'mask' && candidate.role !== 'controlnet'
+          && (candidate.composition || (added[candidate.slot]?.length ?? 0) < (candidate.max ?? Infinity))
+          && acceptsFeedAsset(candidate, asset));
+        if (slot) (added[slot.slot] ??= []).push({ sourceNodeId: asset.sourceNodeId, edgeId: asset.edgeId,
+          outputId: asset.outputId, role: slot.role, pinned: false });
+      }
+      for (const slot of layout.slots) {
+        const occupants = added[slot.slot] ?? [];
+        const preceding = draft[slot.slot] ?? [];
+        let ordinal = preceding.reduce((max, occupant) => Math.max(max, occupant.ordinal ?? -1), -1) + 1;
+        const next = occupants.filter(occupant => newEdgeIds.has(occupant.edgeId)
+          && !preceding.some(saved => saved.edgeId === occupant.edgeId));
+        if (next.length) draft[slot.slot] = [...preceding, ...next.map(occupant => ({ ...occupant, role: slot.role, ordinal: ordinal++ }))];
+      }
+      active = projectVideoSlotBindings(layout, feed, draft);
+    }
+    Object.defineProperty(drafts, key, { value: draft, enumerable: true, configurable: true, writable: true });
+  }
+  return { ...node, data: {
+    ...node.data, params, videoSlotDrafts: drafts, ...(Object.keys(assetDrafts).length ? { videoAssetFieldDrafts: assetDrafts } : {}),
+    slotBindings: active, slotConflicts: [], inputBindingVersion: 1,
+  } };
+}
+
 /** Initialize unspecified choices only; supply changes cannot replace a saved creative choice. */
 export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutationState, context: CanvasMutationRuntimeContext,
   previous?: CanvasNode, newEdgeIds: ReadonlySet<string> = new Set(), disconnected: ReadonlySet<string> = new Set()): CanvasNode {
   const params = { ...readCanvasParams(node) };
   // A narrow line accepts far less than the contract publishes; narrowing the routed model
   // once here keeps the slot layout, the operation list and the parameter view aligned.
-  const catalog = narrowCatalogByRouting(context.catalog, params.model, params.routing);
+  const catalog = narrowCatalogByRouting(context.catalog, params.model, params.routing, params);
   const outputType = node.data.materialType as MaterialType;
+  const managed = outputType === 'video' ? resolveEffectiveVideoGroup(context.catalog, params.model, params.routing) : null;
+  if (managed) return recomputeEffectiveVideoSlots(node, graph, context, managed, params, previous, newEdgeIds, disconnected);
   const currentVersion = node.data.inputBindingVersion === 1;
   const view = buildContractView(catalog);
   const savedModel = typeof params.model === 'string' ? resolveModelView(view, params.model) : undefined;
@@ -63,6 +157,8 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
       params.operation ??= recommendedId ?? pick.operationId;
     }
   }
+  const defaultManaged = outputType === 'video' ? resolveEffectiveVideoGroup(context.catalog, params.model, params.routing) : null;
+  if (defaultManaged) return recomputeEffectiveVideoSlots(node, graph, context, defaultManaged, params, previous, newEdgeIds, disconnected);
   const model = savedModel ?? resolveModelView(view, typeof params.model === 'string' ? params.model : undefined);
   if (model) params.model = model.id;
   const modelRecommendation = catalog?.defaultOperations?.[outputType];

@@ -1,4 +1,4 @@
-// Generated from @omnimux/generation-capabilities; source-sha256: e2ed2b63222fff8ec0564c30c746bffaddab576ae201561909db9c2f586f5aaa
+// Generated from @omnimux/generation-capabilities; source-sha256: d09c102b5f57b7fff5e7b3e86c4e5601175b8ad1668a25ee8a993a8ef3b52dad
 
 // src/units.js
 var BYTES_PER_MB = 1024 * 1024;
@@ -618,7 +618,7 @@ function checkParameterMember(definition2, value, policy) {
   for (
     const flag of
     /** @type {const} */
-    ["allowAuto", "supported", "caseInsensitive"]
+    ["allowAuto", "supported", "caseInsensitive", "required"]
   ) {
     if (definition2[flag] !== void 0 && typeof definition2[flag] !== "boolean") return malformed;
   }
@@ -643,6 +643,7 @@ function checkParameterMember(definition2, value, policy) {
     "supported",
     "allowAuto",
     "caseInsensitive",
+    "required",
     "unit",
     "description",
     "label",
@@ -730,7 +731,15 @@ function evaluateDeclaredParameters(request, operationDefinitions, modelDefiniti
   for (const [field, definition2] of Object.entries(definitions)) {
     if (!plain(definition2)) return { ok: false, field, source: "definition", result: { status: "indeterminate", diagnostic: "malformed_definition" } };
     const supplied = Object.prototype.hasOwnProperty.call(request, field) && request[field] !== void 0 && (mode !== "legacyGuard" || request[field] !== null && request[field] !== "");
-    if (!supplied && !Object.prototype.hasOwnProperty.call(definition2, "defaultValue")) continue;
+    if (!supplied && !Object.prototype.hasOwnProperty.call(definition2, "defaultValue")) {
+      if (mode === "canonical" && definition2.required === true) return {
+        ok: false,
+        field,
+        source: "request",
+        result: { status: "nonmember", reason: "required" }
+      };
+      continue;
+    }
     const value = supplied ? request[field] : definition2.defaultValue;
     const domain = !supplied && mode === "legacyGuard" && definition2.supported === false ? Object.create(Object.getPrototypeOf(definition2), {
       ...Object.getOwnPropertyDescriptors(definition2),
@@ -787,7 +796,7 @@ function sum(left, right) {
   return left === Infinity || right === Infinity || left > Number.MAX_SAFE_INTEGER - right ? Infinity : left + right;
 }
 function definition(value) {
-  if (!record(value) || !bounded(value, ["type", "options", "optionsFrom", "range", "defaultValue", "minLength", "maxLength", "supported", "allowAuto", "caseInsensitive", "unit", "label", "help", "description"])) return false;
+  if (!record(value) || !bounded(value, ["type", "options", "optionsFrom", "range", "defaultValue", "minLength", "maxLength", "supported", "allowAuto", "caseInsensitive", "required", "unit", "label", "help", "description"])) return false;
   if (Object.getOwnPropertyNames(value).some((key) => value[key] === void 0)) return false;
   const range = value.range;
   if (own(value, "range") && record(range) && Object.getOwnPropertyNames(range).some((key) => range[key] === void 0)) return false;
@@ -880,6 +889,7 @@ function evaluateCandidateRequest(candidate, snapshot, policy) {
       const checked = checkParameterMember(def, value, { mode: "canonical" });
       if (checked.status === "indeterminate") issue("indeterminate", "parameter_indeterminate", { field });
       else if (checked.status === "nonmember" && (active || own(def, "defaultValue"))) issue("rejected", "parameter_nonmember", { field });
+      if (!active && def.required === true && !own(def, "defaultValue")) issue("pending", "parameter_required", { field });
       if (!active && !own(def, "defaultValue") && (own(def, "optionsFrom") || def.range !== void 0 && own(def.range, "step") && !own(def.range, "min"))) issue("indeterminate", "parameter_indeterminate", { field });
       if (!limitOK) continue;
       const fixed = own(limit, "fixed") ? checkParameterMember(def, limit.fixed, { mode: "canonical" }) : void 0;

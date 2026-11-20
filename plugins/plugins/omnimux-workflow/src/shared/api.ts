@@ -151,13 +151,13 @@ export interface ModelParameterSchema {
   /** 画幅选项与默认值 */
   aspectRatio?: {
     options: Array<ModelParameterOption<string>>;
-    defaultValue: string;
+    defaultValue?: string;
   };
   /** 时长选项或范围与默认值 */
   duration?: {
     options?: Array<ModelParameterOption<number>>;
     range?: { min: number; max: number; step?: number };
-    defaultValue: number;
+    defaultValue?: number;
     unit?: string;
     /** -1 asks the provider to choose the output duration. */
     allowAuto?: boolean;
@@ -165,7 +165,7 @@ export interface ModelParameterSchema {
   /** 分辨率选项与默认值 */
   resolution?: {
     options: Array<ModelParameterOption<string>>;
-    defaultValue: string;
+    defaultValue?: string;
     /** Provider enum accepts case-insensitive input and emits the documented spelling. */
     caseInsensitive?: boolean;
   };
@@ -272,6 +272,8 @@ export interface InputSlotDto {
 /** Operation-level contract (research/execution/listed are per-operation). */
 export interface OperationContractDto {
   id: string;
+  /** Public submit and poll protocol for a verified gateway operation. */
+  gatewayProtocol?: string;
   /** Display semantics published by the gateway, independent of the request operation ID. */
   modeKind?: string;
   label?: string;
@@ -332,6 +334,10 @@ export interface CatalogChannelGroupDto {
   pricing?: CatalogChannelGroupPricingDto;
   /** What this line actually accepts; narrows the model contract for this node. */
   constraints?: import('./validation/lineConstraints.ts').LineConstraints;
+  /** Complete gateway operation variants. Alternatives must never be flattened. */
+  effectiveOperations?: OperationContractDto[];
+  effectiveVersion?: string;
+  defaultOperationId?: string;
   sla?: { stability24h: number; avgWaitTimeSec?: number };
   enabled: boolean;
   /** Marks the line pre-selected when the model offers several tiers. */
@@ -344,6 +350,10 @@ export type ModelCatalogSource = 'gateway' | 'custom';
 
 export interface CatalogModelDto {
   id: string;
+  /** Presence identifies a verified gateway directory, including an empty group set. */
+  effectiveVideoVersion?: string;
+  /** Transient row constrained to a selected gateway video group. */
+  effectiveVideoProjection?: true;
   label: string;
   /** Where this row came from: gateway publication or a user-configured provider. */
   source?: ModelCatalogSource;
@@ -383,6 +393,7 @@ export interface CatalogModelDto {
 
 export interface CapabilityModelItem {
   id: string;
+  effectiveVideoVersion?: string;
   label: string;
   source?: ModelCatalogSource;
   executionStatus?: ModelExecutionStatus;

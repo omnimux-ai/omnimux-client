@@ -97,6 +97,9 @@ import {
 } from '../../../../../shared/graph/feedSlot/index.ts';
 import { bindableSlots, isOrderedImageReferenceSlot } from '../../../../../shared/validation/compatKernel.ts';
 import { buildInputCapability } from '../../../../../shared/validation/inputCapability.ts';
+import { groupMatchesEffectiveVideoVersion, narrowCatalogByRouting, resolveEffectiveVideoGroup, transitionEffectiveVideoParams } from '../../../../../shared/validation/lineConstraints.ts';
+import { managedVideoLinePricingFingerprint } from '../../../../../shared/validation/managedVideoExecution.ts';
+import { projectVideoSlotBindings, readVideoOperationDraft } from '../../../../../shared/graph/feedSlot/videoSlotDrafts.ts';
 import { findExecutionReadinessFailure } from '../../../../../shared/validation/executionReadiness.ts';
 import { prepareExecutionSlotGraph } from '../../../../../shared/graph/feedSlot/prepareExecutionSlotGraph.ts';
 import { resolveUnsupportedModelUi } from '../../../../../shared/validation/modelExecutionUi.ts';
@@ -263,19 +266,23 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   const outputTypeForCompat = isAsrTool ? 'text' : materialType;
 
   const modelValue = typeof params?.model === 'string' ? params.model.trim() : '';
+  const managedVideo = useMemo(() => materialType === 'video'
+    ? resolveEffectiveVideoGroup(activeCatalog, modelValue, params.routing) : null,
+  [materialType, activeCatalog, modelValue, params.routing]);
 
   // 渠道组 operations 约束（如 comfyui 仅 video_multi_ref）：收窄目录后
   // 页签、选中态与提交路径天然一致，不再出现不可用的生成模式。
   const lineConstraints = useMemo(
-    () => resolveLineConstraints(
+    () => managedVideo ? null : resolveLineConstraints(
       modelValue,
       params.routing,
       directoryChannelGroups(activeCatalog, modelValue),
       effectiveRuntimeSettings,
     ),
-    [modelValue, activeCatalog, params.routing, effectiveRuntimeSettings],
+    [modelValue, activeCatalog, params.routing, effectiveRuntimeSettings, managedVideo],
   );
   const opsCatalog = useMemo(() => {
+    if (managedVideo) return narrowCatalogByRouting(activeCatalog, modelValue, params.routing, params);
     if (!activeCatalog || !Array.isArray(lineConstraints?.operations) || lineConstraints.operations.length === 0) {
       return activeCatalog;
     }
@@ -286,13 +293,13 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
         : model,
     );
     return models ? { ...activeCatalog, models } : activeCatalog;
-  }, [activeCatalog, modelValue, lineConstraints]);
+  }, [activeCatalog, modelValue, lineConstraints, managedVideo, params]);
 
   const preferredOperationId = readPreferredOperationId(params as Record<string, unknown>, nodeData.autoOperationId);
-  const currentInputs = nodeData.inputBindingVersion === 1;
+  const currentInputs = Boolean(managedVideo) || nodeData.inputBindingVersion === 1;
   const isTextTask = outputTypeForCompat === 'text';
   const videoCapability = useMemo(
-    () => materialType === 'video'
+    () => materialType === 'video' && !managedVideo
       ? buildInputCapability({
           catalog: opsCatalog,
           modelId: modelValue,
@@ -304,9 +311,10 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
           ignoredEdgeIds: (nodeData.slotStandbyEdgeIds ?? []) as string[],
         })
       : null,
-    [materialType, opsCatalog, modelValue, fingerprint, preferredOperationId, params, nodeData.slotStandbyEdgeIds],
+    [materialType, opsCatalog, modelValue, fingerprint, preferredOperationId, params, nodeData.slotStandbyEdgeIds, managedVideo],
   );
-  const currentOperationId = materialType === 'video' && videoCapability?.selectedOperationId
+  const currentOperationId = managedVideo ? (typeof params.operation === 'string' ? params.operation : undefined)
+    : materialType === 'video' && videoCapability?.selectedOperationId
     ? videoCapability.selectedOperationId
     : currentInputs && preferredOperationId && !isTextTask ? preferredOperationId
       : resolveSlotOperation(activeCatalog, modelValue, preferredOperationId, outputTypeForCompat, fingerprint);
@@ -324,8 +332,8 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
     const workspaceId = typeof nodeData.__workspaceId === 'string' ? nodeData.__workspaceId : undefined;
     return { target, edges: graph.edges, failure: findExecutionReadinessFailure([target], opsCatalog, { ...graph, workspaceId }) };
   }, [useSelectedOperation, canvasEdges, nodeId, nodeData, params, opsCatalog, upstreamSnapshots]);
-  const effectiveSlotLayout = useMemo(() => deriveSlotLayout(activeCatalog, modelValue, currentOperationId),
-    [activeCatalog, modelValue, currentOperationId]);
+  const effectiveSlotLayout = useMemo(() => deriveSlotLayout(managedVideo ? opsCatalog : activeCatalog, modelValue, currentOperationId),
+    [activeCatalog, opsCatalog, managedVideo, modelValue, currentOperationId]);
 
   const fallbackState = useMemo<ChannelFallbackState>(() => {
     const family = (activeCatalog?.[materialType] as CapabilityModelItem[] | undefined)?.find((m) => m.id === modelValue)?.family;
@@ -376,9 +384,15 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
       slots: effectiveSlotLayout.slots.slice(0, 1),
     };
   }, [effectiveSlotLayout, isSingleImageChannel, currentInputs, useSelectedOperation]);
-  const feedAssets = useMemo(() => feedFromFingerprint(fingerprint, nodeData.inputBindingVersion), [fingerprint, nodeData.inputBindingVersion]);
+  const inputVersion = currentInputs ? 1 : nodeData.inputBindingVersion;
+  const feedAssets = useMemo(() => feedFromFingerprint(fingerprint, inputVersion), [fingerprint, inputVersion]);
   const storedSlotBindings = useMemo(() => {
     const raw = nodeData.slotBindings as SlotBindings | undefined;
+    if (managedVideo) {
+      const operation = opsCatalog?.models?.find(model => model.id === managedVideo.model.id)
+        ?.operations?.find(item => item.id === currentOperationId);
+      return projectVideoSlotBindings(displayedSlotLayout, feedAssets, readVideoOperationDraft(nodeData, operation));
+    }
     if (selectedOperation) return selectedOperation.target.data.slotBindings as SlotBindings | undefined;
     if (!raw) return undefined;
     const standby = (nodeData.slotStandbyEdgeIds ?? []) as string[];
@@ -393,17 +407,17 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
       return undefined;
     }
     return raw;
-  }, [nodeData.slotBindings, nodeData.slotStandbyEdgeIds, displayedSlotLayout.slots, selectedOperation]);
+  }, [nodeData.slotBindings, nodeData.slotStandbyEdgeIds, displayedSlotLayout, selectedOperation, managedVideo, opsCatalog, feedAssets, currentOperationId, nodeData.videoSlotDrafts]);
   const inputDisplay = useMemo(() => effectiveInputDisplay(displayedSlotLayout, feedAssets,
-    storedSlotBindings, (selectedOperation?.target.data.slotConflicts ?? nodeData.slotConflicts ?? []) as SlotConflict[],
-    selectedOperation?.edges ?? canvasEdges.filter((edge) => edge.target === nodeId), (nodeData.slotStandbyEdgeIds ?? []) as string[], nodeData.inputBindingVersion),
-  [storedSlotBindings, displayedSlotLayout, feedAssets, canvasEdges, nodeId, nodeData.slotConflicts, nodeData.slotStandbyEdgeIds, nodeData.inputBindingVersion, selectedOperation]);
+    storedSlotBindings, (managedVideo ? [] : selectedOperation?.target.data.slotConflicts ?? nodeData.slotConflicts ?? []) as SlotConflict[],
+    selectedOperation?.edges ?? canvasEdges.filter((edge) => edge.target === nodeId), (nodeData.slotStandbyEdgeIds ?? []) as string[], inputVersion),
+  [storedSlotBindings, displayedSlotLayout, feedAssets, canvasEdges, nodeId, nodeData.slotConflicts, nodeData.slotStandbyEdgeIds, inputVersion, selectedOperation, managedVideo]);
   const slotBindings = inputDisplay.bindings;
   const slotConflicts = inputDisplay.conflicts;
   const consumedFingerprint = useMemo(() => effectiveSlotFingerprint(
-    fingerprint, displayedSlotLayout, slotBindings, slotConflicts, nodeData.inputBindingVersion,
+    fingerprint, displayedSlotLayout, slotBindings, slotConflicts, inputVersion,
     (nodeData.slotStandbyEdgeIds ?? []) as string[],
-  ), [fingerprint, displayedSlotLayout, slotBindings, slotConflicts, nodeData.inputBindingVersion, nodeData.slotStandbyEdgeIds]);
+  ), [fingerprint, displayedSlotLayout, slotBindings, slotConflicts, inputVersion, nodeData.slotStandbyEdgeIds]);
 
   const textSources = useMemo(() => selectGenerationTextSources(currentInputs ? consumedFingerprint.assets : displayedSlotLayout.acceptsText === false ? [] : fingerprint.assets), [currentInputs, consumedFingerprint, displayedSlotLayout, fingerprint]);
   // V1 slot records already render text occupants inside SlotWells; rendering
@@ -417,11 +431,12 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   const documentSources = useMemo(() => {
     if (displayedSlotLayout.acceptsDocuments === false) return [];
     const standby = new Set((nodeData.slotStandbyEdgeIds ?? []) as string[]);
+    const activeIds = managedVideo ? new Set(inputDisplay.records.map(record => record.occupant.edgeId)) : null;
     return upstreams
       .filter((source) => source.materialType === 'document'
-        && (!source.edgeId || !standby.has(source.edgeId)))
+        && (!source.edgeId || !standby.has(source.edgeId)) && (!activeIds || source.edgeId && activeIds.has(source.edgeId)))
       .map((source) => ({ source, parsed: parseJsonDocumentText(source.documentText) }));
-  }, [upstreams, nodeData.slotStandbyEdgeIds, displayedSlotLayout.acceptsDocuments]);
+  }, [upstreams, nodeData.slotStandbyEdgeIds, displayedSlotLayout.acceptsDocuments, managedVideo, inputDisplay.records]);
   const documentValidationErrors = useMemo(() => {
     const errors: string[] = [];
     for (const { source, parsed } of documentSources) {
@@ -454,7 +469,8 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
 
   // Model eligibility comes from the directory. The selected model reassigns supply.
   const filteredModels = useMemo(
-    () => buildFilteredModelOptions({
+    () => {
+      const candidates = buildFilteredModelOptions({
       catalog: activeCatalog,
       fingerprint: consumedFingerprint,
       outputType: outputTypeForCompat,
@@ -462,8 +478,14 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
       // tool keeps the curated generative whitelist.
       tool: selectedTool,
       allowUnassignedInputs: true,
-    }),
-    [activeCatalog, consumedFingerprint, outputTypeForCompat, selectedTool],
+      });
+      if (materialType !== 'video') return candidates;
+      const options = candidates.options.filter(row => row.executable !== false && row.inputIncompatible !== true
+        && !(managedVideo?.model.id === row.id && row.effectiveVideoVersion === undefined)
+        && (row.effectiveVideoVersion === undefined || row.channelGroups?.some(group => groupMatchesEffectiveVideoVersion(group, row.effectiveVideoVersion!))));
+      return { ...candidates, options, zeroCandidates: options.length === 0 };
+    },
+    [activeCatalog, consumedFingerprint, outputTypeForCompat, selectedTool, materialType, managedVideo],
   );
 
   // ---- 不可执行型号（Issue #4103 / AC7）----
@@ -529,12 +551,14 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
     onUpdateNodeData({ params: transition.params, parameterSelections: transition.parameterSelections,
       ...(userPickedMode ? { autoOperationId: null } : {}) });
   }, [onUpdateNodeData]);
-  const videoSelection = useMemo(() => materialType === 'video' ? buildVideoParameterSelection({
+  const commitManagedVideoSelection = useCallback((next: Record<string, unknown>) =>
+    useCanvasStore.getState().applyCanvasInputMutation({ nodePatches: [{ nodeId, data: { params: next, autoOperationId: null } }] }), [nodeId]);
+  const videoSelection = useMemo(() => materialType === 'video' && !managedVideo ? buildVideoParameterSelection({
     params, parameterSelections, currentModelItem: modelItem, targetModelItem: modelItem,
     catalog: activeCatalog, upstreams: upstreamSnapshots, prompt: localPrompt,
     autoOperationId: nodeData.autoOperationId,
     ignoredEdgeIds: (nodeData.slotStandbyEdgeIds ?? []) as string[],
-  }) : null, [materialType, params, parameterSelections, modelItem, activeCatalog, upstreamSnapshots, localPrompt, nodeData.slotStandbyEdgeIds, nodeData.autoOperationId]);
+  }) : null, [materialType, params, parameterSelections, modelItem, activeCatalog, upstreamSnapshots, localPrompt, nodeData.slotStandbyEdgeIds, nodeData.autoOperationId, managedVideo]);
   const migrationCatalogRef = useRef(new Map<string, CapabilityCatalog>());
   const migrationKey = `${String(nodeData.__workspaceId ?? '')}:${nodeId}`;
   useEffect(() => {
@@ -552,6 +576,13 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
 
   const updateParam = useCallback(
     (key: string, value: unknown) => {
+      if (managedVideo && activeCatalog) {
+        const change = key === 'operation' && typeof value === 'string'
+          ? { operationId: value } : { parameter: { key, value } };
+        const next = transitionEffectiveVideoParams(activeCatalog, managedVideo, params, params.routing, change);
+        if (next) commitManagedVideoSelection(next);
+        return;
+      }
       if (key === 'operation') {
         const nextOpId = typeof value === 'string' ? value : undefined;
         if (materialType === 'video' && modelItem) {
@@ -587,7 +618,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
         }));
       } else onUpdateNodeData({ params: { ...params, ...patch } });
     },
-    [activeCatalog, materialType, modelItem, onUpdateNodeData, params, localPrompt, upstreamSnapshots, parameterSelections, commitVideoSelection, effectiveRuntimeSettings],
+    [activeCatalog, materialType, modelItem, onUpdateNodeData, params, localPrompt, upstreamSnapshots, parameterSelections, commitVideoSelection, effectiveRuntimeSettings, managedVideo, commitManagedVideoSelection],
   );
 
   /**
@@ -639,15 +670,16 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
             params,
             schema,
             modelItem,
-            catalog: activeCatalog,
+            catalog: managedVideo ? opsCatalog : activeCatalog,
             lineConstraints,
+            effectiveVideoGroup: managedVideo ? managedVideo.group ?? null : undefined,
             upstreams: videoDisplayUpstreams.filter((source) => ['image', 'video', 'audio'].includes(source.materialType)),
             parkedUpstreams: parkedVideoUpstreams,
             prompt: consumedFingerprint.prompt,
             autoOperationId: nodeData.autoOperationId,
           })
         : null,
-    [materialType, params, schema, modelItem, activeCatalog, lineConstraints, videoDisplayUpstreams, parkedVideoUpstreams, consumedFingerprint.prompt, nodeData.autoOperationId],
+    [materialType, params, schema, modelItem, activeCatalog, lineConstraints, videoDisplayUpstreams, parkedVideoUpstreams, consumedFingerprint.prompt, nodeData.autoOperationId, managedVideo, opsCatalog],
   );
 
   // Issue #27: a JSON document's duration becomes the effective video duration
@@ -793,6 +825,18 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
             ...(channelSelection.sourceType ? { sourceType: channelSelection.sourceType } : {}),
           }
         : (channelSelection ? null : undefined);
+      const target = materialType === 'video' ? resolveEffectiveVideoGroup(activeCatalog, newModelId, nextRouting) : null;
+      if (target && activeCatalog) {
+        if (!target.group) return;
+        const quotedRouting = { ...nextRouting, videoLineQuote: managedVideoLinePricingFingerprint(target.group) };
+        const next = transitionEffectiveVideoParams(activeCatalog, target, params, quotedRouting);
+        if (!next) return;
+        if (commitManagedVideoSelection(next).status !== 'allowed') return;
+        void rememberGenerationModel(materialType, newModelId).catch((error: unknown) => {
+          console.warn('Unable to save the generation model preference', error);
+        });
+        return;
+      }
       if (materialType === 'video' && newModelItem) {
         const transition = typeof buildVideoParameterSelection !== 'undefined'
           ? buildVideoParameterSelection({
@@ -935,7 +979,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
         toast.error(error instanceof Error ? error.message : t('panel.preferenceSaveFailed'));
       });
     },
-    [filteredModels.options, activeCatalog, materialType, onUpdateNodeData, params, upstreamSnapshots, localPrompt, fingerprint, outputTypeForCompat, preferredOperationId, t, parameterSelections, modelItem, effectiveRuntimeSettings, nodeData.slotBindings, effectiveSlotLayout, displayedSlotLayout],
+    [filteredModels.options, activeCatalog, materialType, onUpdateNodeData, params, upstreamSnapshots, localPrompt, fingerprint, outputTypeForCompat, preferredOperationId, t, parameterSelections, modelItem, effectiveRuntimeSettings, nodeData.slotBindings, effectiveSlotLayout, displayedSlotLayout, commitManagedVideoSelection],
   );
 
   const isMusicOperation = opsState.selectedOperationId === 'text_to_music';
@@ -1108,6 +1152,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
       ...node,
       data: {
         ...node.data,
+        ...(managedVideo ? { inputBindingVersion: 1, slotConflicts: [] } : {}),
         slotBindings: inputDisplay.bindings,
         // Parameters in the store can still be the pre-normalized shape (for
         // example a saved 16:9 on a fixed-adaptive operation). Validate the
@@ -1116,7 +1161,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
         params: {
           ...(params as Record<string, unknown>),
           operation: currentOperationId,
-          ...(materialType === 'video' && videoEffectiveParams ? {
+          ...(!managedVideo && materialType === 'video' && videoEffectiveParams ? {
             ...(videoEffectiveParams.aspectRatio ? { aspectRatio: videoEffectiveParams.aspectRatio } : {}),
             ...(videoEffectiveParams.duration !== '' ? { duration: videoEffectiveParams.duration } : {}),
             ...(videoEffectiveParams.resolution ? { resolution: videoEffectiveParams.resolution } : {}),
@@ -1130,8 +1175,8 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   }, { catalog: activeCatalog }) : undefined;
   const reasonCode = opsState.reasonCode || filteredModels.reasonCode
     || (nodeCompat?.status === 'configuration_error' ? nodeCompat.reasonCodes?.[0] || 'no_compatible_model' : undefined);
-  const legacyOperationBlocked = opsState.blockGenerate || filteredModels.zeroCandidates || nodeCompat?.status === 'configuration_error'
-    || (materialType === 'video' && (!videoCapability?.selectedOperationId || videoCapability.blocked));
+  const legacyOperationBlocked = !managedVideo && (opsState.blockGenerate || filteredModels.zeroCandidates || nodeCompat?.status === 'configuration_error'
+    || (materialType === 'video' && (!videoCapability?.selectedOperationId || videoCapability.blocked)));
   const failure = selectedOperation?.failure;
   const failedSlot = failure?.slot && displayedSlotLayout.slots.find(slot => slot.slot === failure.slot);
   let selectedOperationReason = failure?.message;
@@ -1500,7 +1545,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
         <VideoParamPopover
           triggerRef={videoTriggerRef as React.RefObject<HTMLElement>}
           params={videoEffectiveParams}
-          schema={videoEffectiveParams.schema}
+          schema={videoEffectiveParams.choiceSchema ?? videoEffectiveParams.schema}
           modelItem={modelItem}
           isOpen={videoPopoverOpen}
           onClose={() => setVideoPopoverOpen(false)}

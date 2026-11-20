@@ -1,11 +1,9 @@
 # omnimux-workflow
 
-当前产品方向见[角色生成与视频复刻](../../docs/contracts/product-positioning.md)。本页保留该组件的技术职责与既有实现记录，不证明全部功能当前可用，也不扩展默认产品范围；模型/渠道信息属于内部执行，普通用户的简化入口仍需对应实现证据。
+本页介绍画布插件及其运行入口。模型、分组、生成方式和执行规则见[画布生成契约](../../docs/contracts/canvas-generation.md)。
 
 
-> 运维入口：`cd <omnimux-client 检出目录>/app && yarn omnimux:sync omnimux-workflow`（+ `yarn omnimux:restart`）。原 `scripts/deploy.mjs` 转发器已随旧同步旁路一起删除，勿再加私有同步逻辑。详见仓内 `app/AGENTS.md`。
->
-> **Gxgen 迁移蓝图（代理必读）**：产品树 [`docs/contracts/gxgen-workflow-migration.md`](../../docs/contracts/gxgen-workflow-migration.md) —— 进度矩阵 + Phase0 项目壳优先 + 术语表。动手改画布对齐前先更新/阅读矩阵。
+> 构建、隔离验收和合入后的 Dev 物化入口见[插件开发与交付](../../README.md#本地开发与交付)。
 
 
 DeepSeek Harness（dsh）的工作流无限画布插件：拖拽节点、连线成 DAG、编排多模态生成任务，并允许 dsh 会话里的 **Agent 通过工具查询与执行画布**。画布自身零模型 API 调用——所有生成经 OmniMux 执行中枢的 seam 提交（M4 已接通）；数据 100% 本地文件（`$DSH_HOME/omnimux/workflow/`）。
@@ -29,13 +27,13 @@ dsh 会话里的 Agent 可通过宿主侧工具指挥画布（注册在 cordis `
 | 工具 | 参数 | 行为 |
 |---|---|---|
 | `workflow_list` | `include_executions?: boolean` | 列出工作区（id/name/version/nodeCount/updatedAt，新→旧）；`include_executions=true` 附带最近 5 条执行概览（状态 + 进度） |
-| `workflow_run` | `workspace_id \| workspace_name`、`mode: full\|subset`、`node_ids?`、`wait?`、`timeout_ms?`（默认 120000） | 创建执行。`wait=false`（默认）立即返回 `executionId` + 提示（用户可在画布看实时进度）；`wait=true` 轮询到终态（completed/error/cancelled）返回结果摘要：各节点状态、文本产物摘录（240 字截断）、媒体文件 URL + 本地绝对路径。subset 模式自动补传递上游闭包。画布、工具和无界面执行共用启动检查。能匹配到已受理的失败任务时，按原任务 ID 取回；新任务根据当前模型目录和素材检查后提交 |
-| `workflow_snapshot` | `workspace_id`、`include_nodes?: boolean` | 工作区摘要（节点/边计数、素材类型分布、执行设置）或完整节点/边结构（供 Agent 分析画布 / 给修改建议） |
+| `workflow_run` | `workspace_id \| workspace_name`、`execution_id?`、`mode: full\|subset\|single`、`node_ids?`、`wait?`、`timeout_ms?`（默认 120000） | 创建执行。`subset` 执行指定节点及有效上游，`single` 使用已有输入执行指定节点。`wait=true` 等待终态或超时。传返回的 `executionId` 作为 `execution_id` 查询或等待原执行。分组节点按[执行契约](../../docs/contracts/canvas-generation.md#执行和恢复)校验和恢复。 |
+| `workflow_snapshot` | `workspace_id`、`include_nodes?: boolean`、`node_id?` | 查看画布摘要或完整结构。传入 `node_id` 可查看指定节点的当前分组、方式、参数和目录版本。 |
 | `workflow_node_update` | `workspace_id`、`node_id`、`patch` | 更新属性。更换起始图时，先用 `workflow_snapshot` 的 `include_nodes=true` 读取当前绑定，再单独传入 `patch.swap_reference_images`。`slot` 为有序参考图卡槽名称，`first_edge_id` 和 `second_edge_id` 分别为当前起始图与待交换图片的连线 ID |
 
 更换起始图与画布共用校验和保存逻辑，保留原连线。若起始图已改变或待交换图片不可用，工具返回 `error: "mutation-rejected"` 和 `reasonCode: "input_changed"`，应先重读快照再判断是否仍需换序。
 
-`workflow_connect` 和 `workflow_disconnect` 按画布规则重算自动入槽。自动方式按实际分配的不同素材输出排序。断开自动占用的连线后可依序补位，其余显式槽位保留原角色。`workflow_run` 按画布显示的顺序提交实际入槽素材。
+`workflow_connect` 和 `workflow_disconnect` 按[素材规则](../../docs/contracts/canvas-generation.md#选择和素材)重算入槽。已接入分组能力的节点保持用户选中的方式，已有具名绑定保留原角色。提交时只消费当前有效的槽位。
 
 - 错误统一 `{error, message}` 返回形态（不抛出）：`invalid-args` / `workspace-not-found` / `ambiguous-workspace-name` / `invalid-subgraph` / `empty-graph` / `execution-not-found`
 - 系统提示词：`ctx.systemPrompt.section` 注册 `workflow:ops`（order 60，与 omnimux-assets 的 assets:ops=50 不冲突），说明工具用法和 Agent 与画布的协作方式
@@ -51,7 +49,7 @@ pnpm install       # workspace 根执行亦可：pnpm install --filter omnimux-w
 npm run build      # 显式重建：dist/index.js + lib/client.js + lib/canvas.js（不进 Git）
 ```
 
-三 bundle **不入库**。新 clone 没有 `dist/` / `lib/*.js` 是正常的；`dsh plugin add` 本地目录、`yarn omnimux:sync` / `scripts/sync-to-app.sh` 都会先 build 再拷进 profile。禁止为「跟仓」提交生成物。
+三 bundle **不入库**。新检出需先构建生成 `dist/` 和 `lib/*.js`。桌面 Dev 的同步与运行版本核对见[插件开发与交付](../../README.md#本地开发与交付)。
 
 ### Profile 方式加载（dsh 标准安装形态）
 
@@ -66,7 +64,7 @@ npm run build      # 显式重建：dist/index.js + lib/client.js + lib/canvas.j
 }
 ```
 
-`pnpm install` 后 profile 的 `node_modules/omnimux-workflow` 是指向源码树的 **symlink**——重新 `npm run build` 即生效，无需拷贝。重启 dsh web 加载（见下方运维注意）。
+上述链接适用于手工配置的开发 profile。桌面 Dev 运行已物化的产物，源码构建、物化和运行验收分别核对。
 
 ## 打开画布
 
@@ -88,7 +86,7 @@ npm run build      # 显式重建：dist/index.js + lib/client.js + lib/canvas.j
 
 ## 真实网关（M4：OmniMux 执行中枢接缝）
 
-生成的默认通道是 **OmniMuxSeamClient**（`src/workflow/seam/omnimuxGateway.ts`）：画布插件通过 cordis 依赖注入 `ctx.get('videoGenerate' | 'imageGenerate' | 'textComplete')` 消费执行中枢（hub）能力——**不 import hub 包、不自带 HTTP client、不落任何 provider key**（红线，`docs/contracts/hub.md`）。
+生成的默认通道是 **OmniMuxSeamClient**（`src/workflow/seam/omnimuxGateway.ts`）：画布插件通过 cordis 依赖注入 `ctx.get('videoGenerate' | 'imageGenerate' | 'textComplete')` 消费执行中枢（hub）能力——**不 import hub 包、不自带 HTTP client、不落任何 provider key**（见[中枢边界](../omnimux/AGENTS.md#hard-bounds)）。
 
 ### 装配与降级
 
@@ -122,7 +120,7 @@ npm run build      # 显式重建：dist/index.js + lib/client.js + lib/canvas.j
 
 - 节点级并发：工作区 `settings.maxParallel`（=1 串行，N>1 批量，M3 既有行为，真实网关下不变）
 - **seam 级并发上限**：对 hub 的在途请求数上限，默认保守 **2**，`OMNIMUX_WORKFLOW_MAX_SEAM_CONCURRENCY` 或 `mountWorkflowHost({ seamConcurrency })` 可调——宽 DAG 不容易触发 hub 侧限流
-- 组/子集执行：右键选中多个节点 →「**执行选中节点（含上游）**」；右键单节点 →「**执行此节点（含上游）**」（subset 模式，host 自动补传递上游闭包）
+- 组/子集执行：右键选中多个节点 →「**执行选中节点（含上游）**」；右键单节点 →「**执行此节点（含上游）**」（subset 模式，见[执行范围规则](../../docs/contracts/canvas-generation.md#执行和恢复)）
 
 ### 错误处理
 
@@ -132,7 +130,7 @@ hub 错误（`OmnimuxError`，带 `code`）映射为节点执行错误，格式 
 
 视频生成模式的目录项可包含网关发布的 `modeKind`。中枢根据该字段提供本地化名称，画布菜单与摘要共用这组名称。图片张数等限制读取同一操作的槽位。历史节点与 Agent 工具继续使用 operation ID。
 
-`GET /omnimux-workflow/api/capabilities` 在 seam 可达时返回 hub `modelCatalog.list()`（`source: "omnimux"`，含 `fingerprint` / `defaults` / 四类模型行，按显示名 A–Z）。文本来自 hub `CHAT_MODELS`，图/视/音来自 hub `src/media/catalog.js` SPECS。`OMNIMUX_*_MODEL` env 与 Settings 默认模型字段只覆盖 **defaults**，不收缩列表。画布 ConfigPanel 无生产假回退；已保存但不在目录中的 `params.model` 保留并标 deprecated。hub 不可达 / mock 模式返回 `source: "static-stub"` 夹具。
+`GET /omnimux-workflow/api/capabilities` 在 seam 可达时返回 hub `modelCatalog.list()`（`source: "omnimux"`，含 `fingerprint` / `defaults` / 四类模型行，按显示名 A–Z）。目录由中枢构建，官方模型信息来自网关快照。模型是否可选以及如何消费分组和操作，见[目录和协议](../../docs/contracts/canvas-generation.md#目录和协议)。`OMNIMUX_*_MODEL` env 与 Settings 默认模型字段只覆盖 **defaults**，不收缩列表。画布 ConfigPanel 无生产假回退；已保存但不在目录中的 `params.model` 保留并标 deprecated。hub 不可达 / mock 模式返回 `source: "static-stub"` 夹具。
 
 ## 性能基线（M5）
 
@@ -200,16 +198,16 @@ hub 错误（`OmnimuxError`，带 `code`）映射为节点执行错误，格式 
 ## 运维注意
 
 - **重启要杀净进程**：OmniMux Desktop 的 quit 可能残留旧 Host 进程（「假重启」）——旧进程继续以旧路由/旧 bundle 服务，表现为新前缀/新构建「不生效」。重启后若行为异常，先确认只有一个 Host 进程再排查代码。
-- profile 中 `node_modules/omnimux-workflow` 是指向源码树的 symlink：重新 `npm run build` 即生效；改依赖（package.json）才需要重新 `pnpm install`。
+- **核对物化产物**。候选版本在隔离环境运行，合入后从主分支按[同步流程](../../README.md#本地开发与交付)更新桌面 Dev，核对运行中的版本再验收。
 - 旧会话/书签用的 `/dsh-workflow/*` 前缀长期兼容（in-memory 改写，不重定向），无需迁移。
 
 ## 已知限制
 
-- **视频输入和参数按型号、模式限定**：阶段一七款 APIMart 型号的素材角色、画幅、时长和上限见[视频阶段一合同](../../docs/specs/2026-09-05-video-phase-one-scope.md)。不兼容的输入保留并提示，修正前阻止提交。
+- **视频输入和参数**按[画布生成契约](../../docs/contracts/canvas-generation.md)判断。运行环境的实际分组覆盖以对应版本的测试线路验收为准。
 - **音频生成不可用**：hub 无 `audioGenerate` seam；音频生成节点在真实网关下报 `[omnimux:needs-provider]`，能力目录 audio 列表为空
 - **能力目录不代表真实执行历史**：目录来自 Hub 的本地合同投影；文档确认、适配就绪和真实执行证据分别记录。
 - **跨进程任务恢复优先复核，无法复核才重新提交**：提交成功后 `taskId` / 能力 / 提交时刻 / **归属后端**随节点状态落盘（`nodeStates[<nodeId>].upstreamTask`），进程重启后在途节点仍回置 pending，但执行器先按该引用向 hub 复核——上游已完成则直接下载回填（不重复提交、不重复计费），未完成则在**剩余窗口**内继续等待（deadline 锚定持久化的提交时刻，不因重启重置），上游失败则节点标错。回退重新提交有**三个**条件，任一成立即回投：①「无引用」（#1382 之前的老记录）；② hub 明确不认这个任务（`omnimux-invalid-request`，含 404/410）；③ **引用登记的归属后端是 mock**——mock 的任务不跨进程存活，其 `reconcileTask` 显式报「不可复核」，因此回投，与今天行为一致。第 ③ 条依赖持久化的 `owner`（#1386）：重启后的进程没有提交时的内存任务表，只能靠引用自身说明归属；未记录 `owner` 的旧引用按 hub 处理，老记录行为不变。
-- **Agent 工具为只读 + 触发执行**：不提供画布结构修改工具（防误改用户画布）；Agent 需要改图时给出建议、由用户操作
+- **Agent 修改范围**见[工具清单](../../docs/contracts/plugin-agent-tools-inventory.md#36-omnimux-workflow工作流无限画布)。结构修改和 UI 使用同一校验，破坏性操作按工具的确认字段执行。
 - hub 不可达时的 auto 回退是 mock 网关（模拟生成）——`source: "static-stub"` 目录会明示；要硬保证不跑 mock，用 `OMNIMUX_WORKFLOW_GATEWAY=omnimux`
 - canvas.json 损坏（zod 校验不过）按「工作区不存在」（404）处理——文件仍在磁盘上，可手工修复后恢复
 - 宿主进程内 unmount 时在途执行的后台 loop 可能短暂续跑（监听已摘除，不会污染恢复记录）；进程重启场景无此问题

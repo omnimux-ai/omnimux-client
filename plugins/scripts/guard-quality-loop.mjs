@@ -122,7 +122,11 @@ export function taskSpecs(root) {
     const abs = resolve(root, rel)
     try {
       const st = statSync(abs)
-      if (st.isFile() && st.size > 50) out.push({ path: abs, mtime: st.mtimeMs })
+      if (!st.isFile() || st.size <= 50) continue
+      // A title-level history marker keeps link maintenance from reviving old
+      // acceptance rules or satisfying the active task's source-edit gate.
+      const historical = /^#[^\r\n]+\r?\n\s*> 历史规格。/u.test(readFileSync(abs, 'utf8'))
+      if (!historical) out.push({ path: abs, mtime: st.mtimeMs })
     } catch {}
   }
   return out

@@ -78,6 +78,8 @@ export interface EffectiveVideoParams {
   showModeUi: boolean;
   /** Model schema merged with the selected operation override. */
   schema: ModelParameterSchema;
+  /** Accepted alternative values; selecting one switches the entire verified variant atomically. */
+  choiceSchema?: ModelParameterSchema;
   /** R8: fields that #55 normalization could not fill (required without a default). */
   blocked: Array<{ field: string; message: string; required: boolean }>;
   aspectRatio: string;

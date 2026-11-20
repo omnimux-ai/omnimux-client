@@ -177,3 +177,26 @@ test('repair repeated mounted guarded labels yield fixed catalog unavailable on 
   registerCatalogRoutes({ register(route) { oldRoutes.push(route); return () => {} } }, { list: () => ({ label: 'access_token' }) })
   assert.deepEqual((await dispatch({ routes: oldRoutes }, '/omnimux/model-catalog')).body, { error: 'refused to emit a secret' })
 })
+
+test('account catalog denies foreign requests and marks authorized member prices private', async () => {
+  const routes = []
+  let reads = 0
+  registerCatalogRoutes({ register(route) { routes.push(route); return () => {} } }, {
+    isAccountScoped: () => true,
+    getConnection: () => ({ requestRejection: req => req.headers.cookie ? undefined : 401 }),
+    list: () => { reads++; return { video: [{ id: 'fixture-video' }] } },
+  })
+  const route = routes.find(row => row.path === '/omnimux/model-catalog')
+  for (const [headers, expected] of [[{}, 401], [{ cookie: 'session=fixture', origin: 'https://foreign.invalid' }, 403], [{ cookie: 'session=fixture' }, 200]]) {
+    let status
+    let cacheControl
+    await route.handler({ method: 'GET', url: route.path, headers: { host: '127.0.0.1:12345', ...headers }, socket: {} }, {
+      setHeader(name, value) { if (name === 'Cache-Control') cacheControl = value },
+      writeHead(value) { status = value },
+      end() {},
+    })
+    assert.equal(status, expected)
+    if (expected === 200) assert.equal(cacheControl, 'private, no-store')
+  }
+  assert.equal(reads, 1)
+})

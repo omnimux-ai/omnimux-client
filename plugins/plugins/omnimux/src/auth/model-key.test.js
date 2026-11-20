@@ -21,6 +21,7 @@ function fixture(options = {}) {
   const store = { async resolve() { return account?.token } }
   const service = createAccountModelKeyService({
     store, identity, credentials, siteBaseUrl: 'https://omnimux.ai', env: {},
+    catalogGatewayBaseUrl: options.catalogGatewayBaseUrl,
     async fetcher(url, init) {
       calls.push({ path: new URL(url).pathname, method: init.method, authorization: init.headers.authorization })
       assert.equal(init.headers.authorization, `Bearer ${account.token}`)
@@ -74,6 +75,18 @@ test('normal analysis never creates or reveals credentials and explicit configur
   assert.equal(await h.service.resolve(), 'explicit-user-key')
   assert.equal(await h.service.resolve({ env: { OMNIMUX_TOKEN: 'environment-key' } }), 'environment-key')
   assert.deepEqual(h.writes, [])
+})
+
+test('group pricing uses the validated account key and rejects a different explicit key', async () => {
+  const h = fixture({ catalogGatewayBaseUrl: 'https://gateway.example.test/v1' })
+  await h.service.select(4)
+  const scope = { baseUrl: 'https://gateway.example.test/v1', accountId: '7' }
+  assert.equal(await h.service.resolveCatalogKey(scope), key)
+  assert.equal(await h.service.resolveCatalogKey({ ...scope, apiKey: key }), key)
+  await assert.rejects(() => h.service.resolveCatalogKey({ ...scope, apiKey: 'different-fixture-key' }), { code: 'official-account-key-mismatch' })
+  await assert.rejects(() => h.service.resolveCatalogKey({ ...scope, baseUrl: 'https://foreign.invalid/v1' }), { code: 'official-account-changed' })
+  h.switchAccount({ id: 8, token: 'different-login-only' })
+  await assert.rejects(() => h.service.resolveCatalogKey(scope), { code: 'official-account-changed' })
 })
 
 test('logout and account changes cannot reuse an earlier account key', async () => {

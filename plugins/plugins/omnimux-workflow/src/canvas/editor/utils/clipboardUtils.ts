@@ -142,11 +142,13 @@ function remapClonedBindings(
   const bindings = data.slotBindings as CloneSlotBindings | undefined;
   const standby = data.slotStandbyEdgeIds;
   const conflicts = data.slotConflicts;
-  if (!bindings && !Array.isArray(standby) && !Array.isArray(conflicts)) return node;
+  const drafts = data.videoSlotDrafts;
+  if (!bindings && !Array.isArray(standby) && !Array.isArray(conflicts) && !drafts) return node;
   const next: Record<string, unknown> = { ...data };
-  if (bindings) {
+  const remap = (slots: CloneSlotBindings): CloneSlotBindings => {
     const remapped: CloneSlotBindings = {};
-    for (const [slot, occupants] of Object.entries(bindings)) {
+    for (const [slot, occupants] of Object.entries(slots)) {
+      if (!Array.isArray(occupants)) continue;
       remapped[slot] = (occupants ?? []).flatMap((occupant) => {
         const mappedSource = occupant?.sourceNodeId ? nodeIdMapping.get(occupant.sourceNodeId) : undefined;
         const mappedEdge = occupant?.edgeId ? edgeIdMapping.get(occupant.edgeId) : undefined;
@@ -155,7 +157,12 @@ function remapClonedBindings(
         return [{ ...occupant, sourceNodeId: mappedSource, edgeId: mappedEdge }];
       });
     }
-    next.slotBindings = remapped;
+    return remapped;
+  };
+  if (bindings) next.slotBindings = remap(bindings);
+  if (drafts && typeof drafts === 'object' && !Array.isArray(drafts)) {
+    next.videoSlotDrafts = Object.fromEntries(Object.entries(drafts).flatMap(([mode, slots]) =>
+      slots && typeof slots === 'object' && !Array.isArray(slots) ? [[mode, remap(slots as CloneSlotBindings)]] : []));
   }
   if (Array.isArray(standby)) {
     next.slotStandbyEdgeIds = standby

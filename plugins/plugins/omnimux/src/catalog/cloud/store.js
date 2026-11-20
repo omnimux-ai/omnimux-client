@@ -107,14 +107,16 @@ export function createCloudCatalogStore(home, opts = {}) {
      * membership information, or when the content digest is unchanged.
      *
      * @param {object} snapshot
-     * @param {{ fetchedAt?: string, origin?: string, source?: string, stale?: boolean }} [meta]
+     * @param {{ fetchedAt?: string, origin?: string, source?: string, stale?: boolean, allowEmpty?: boolean }} [meta]
      * @returns {{ accepted: boolean, reason: string, digest?: string }}
      */
     acceptRefresh(snapshot, meta = {}) {
       if (!snapshot || snapshot.schemaVersion !== CLOUD_SNAPSHOT_SCHEMA_VERSION) {
         return { accepted: false, reason: 'schema-mismatch' }
       }
-      if (isSnapshotEmpty(snapshot)) return { accepted: false, reason: 'empty' }
+      if (isSnapshotEmpty(snapshot) && (viewKey === ANONYMOUS_VIEW || meta.allowEmpty !== true)) {
+        return { accepted: false, reason: 'empty' }
+      }
       const digest = snapshotContentDigest(snapshot)
       const previous = readJson(metaPath)
       if (previous && previous.digest === digest) return { accepted: false, reason: 'unchanged', digest }
@@ -149,7 +151,8 @@ export function createCloudCatalogStore(home, opts = {}) {
       const meta = readJson(metaPath)
       if (!meta || !dir) return { updated: false }
       const stamp = typeof at === 'string' && at ? at : new Date().toISOString()
-      writeJson(metaPath, { ...meta, stale: true, staleReason: reason, staleAt: stamp })
+      const staleReason = meta.staleReason === 'access-denied' ? meta.staleReason : reason
+      writeJson(metaPath, { ...meta, stale: true, staleReason, staleAt: stamp })
       return { updated: true }
     },
 
