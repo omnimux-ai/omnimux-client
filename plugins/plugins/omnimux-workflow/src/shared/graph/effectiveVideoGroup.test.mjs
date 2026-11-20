@@ -53,8 +53,12 @@ test('a managed model has exactly one visible group and one complete variant per
   assert.equal(next.duration, 10);
   assert.equal(resolveEffectiveVideoOperation(high, next.operation, next).inputs[0].max, 6);
   const wide = references(6, '720p', 5);
-  const overlapping = { ...low, effectiveOperations: [references(2, '720p', 5), wide] };
+  const narrow = references(2, '720p', 5);
+  const exclusivePair = { ...narrow, inputs: [{ ...narrow.inputs[0], min: 2 }] };
+  const overlapping = { ...low, effectiveOperations: [exclusivePair, narrow, wide] };
   assert.equal(resolveEffectiveVideoOperation(overlapping, old.operation, old), wide);
+  assert.equal(resolveEffectiveVideoOperation({ ...overlapping, effectiveOperations: [exclusivePair, wide] },
+    old.operation, old), wide);
   assert.equal(resolveEffectiveVideoOperation(overlapping, old.operation, { ...old, duration: 10 }), undefined);
 });
 

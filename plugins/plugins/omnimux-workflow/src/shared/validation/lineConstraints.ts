@@ -109,12 +109,12 @@ function hasWiderInputLimits(candidate: OperationContractDto, current: Operation
     || canonicalJson(candidate.output) !== canonicalJson(current.output)) return false;
   let increased = false;
   for (const [index, input] of candidate.inputs.entries()) {
-    const { max, limitSource: _source, ...rule } = input;
-    const { max: oldMax, limitSource: _oldSource, ...oldRule } = current.inputs[index]!;
+    const { min = 0, max, limitSource: _source, ...rule } = input;
+    const { min: oldMin = 0, max: oldMax, limitSource: _oldSource, ...oldRule } = current.inputs[index]!;
     const limit = max ?? Infinity;
     const oldLimit = oldMax ?? Infinity;
-    if (limit < oldLimit || canonicalJson(rule) !== canonicalJson(oldRule)) return false;
-    increased ||= limit > oldLimit;
+    if (min > oldMin || limit < oldLimit || canonicalJson(rule) !== canonicalJson(oldRule)) return false;
+    increased ||= min < oldMin || limit > oldLimit;
   }
   return increased;
 }
