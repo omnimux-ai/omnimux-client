@@ -39,30 +39,27 @@ test('ImageTriggerBar 消费 CfgSummaryBar 与 IMAGE_COLLAPSE_ORDER，槽位契�
   assert.doesNotMatch(triggerSrc, /·/);
 });
 
-test('ImageParamPopover 消费 cfg 控件族，写路径先 assertImageParamWriteKey', () => {
+test('ImageParamPopover 消费 cfg 控件族，写路径先 assertImageParamWriteKey，且不再提供生成方式选择', () => {
   assert.match(popoverSrc, /CfgPopoverShell/);
   assert.match(popoverSrc, /CfgAspectGrid/);
   assert.match(popoverSrc, /CfgSegment/);
-  assert.match(popoverSrc, /CfgChoiceTile/);
-  assert.match(popoverSrc, /resolveControlKind/);
   assert.match(popoverSrc, /assertImageParamWriteKey\(key\)/);
-  assert.match(popoverSrc, /writeParam\('operation', operationId\)/);
   assert.match(popoverSrc, /writeParam\('aspectRatio', v\)/);
   assert.match(popoverSrc, /writeParam\('resolution', v\)/);
   assert.match(popoverSrc, /writeParam\('quality', v\)/);
-  // 分区标题（硬编码中文，与视频一致）
-  assert.match(popoverSrc, /生成方式/);
+  // 分区标题（硬编码中文，与视频一致）；生成方式不再出现
   assert.match(popoverSrc, /比例/);
   assert.match(popoverSrc, /清晰度/);
   assert.match(popoverSrc, /质量/);
+  assert.doesNotMatch(popoverSrc, /生成方式|CfgChoiceTile|buildImageModeOptions|resolveControlKind/);
+  assert.doesNotMatch(popoverSrc, /writeParam\('operation'/);
   // 清晰度在 resolution.options 存在时渲染，质量在 quality.options 存在时渲染
   assert.match(popoverSrc, /resolutionOptions\.length > 0/);
   assert.match(popoverSrc, /qualityOptions\.length > 0/);
   // 无幽灵 Select / 原生 select / JS 主题分支
   assert.doesNotMatch(popoverSrc, /<select/);
   assert.doesNotMatch(popoverSrc, /isDark|theme\s*===|matchMedia/);
-  // mode section 受 showModeUi 门控
-  assert.match(popoverSrc, /showModeUi/);
+  assert.match(popoverSrc, /data-show-mode="false"/);
 });
 
 test('imageParamAdapter 不调用视频过渡与 pending 调整，不回写 nodeData', () => {

@@ -402,15 +402,10 @@ test('changed explicit model starts new work after an old prepared run', t => ch
     return catalog;
   };
 }));
-test('changed explicit operation goes through normal admission after an old prepared run', async t => {
-  const h = harness(t, { source: true });
-  await recordOldSingleNodeExecution(h);
-  h.snapshot.nodes[1].data.params.operation = 'image_to_image';
-  const result = await h.request();
-  assert.equal(result.status, 400);
-  assert.notEqual(result.body.reasonCode, 'previous_task_input_unverified');
-  assert.equal(h.calls.submit, 1);
-  assert.deepEqual(h.calls.collect, []);
+test('a stale image operation without a reference goes through normal admission as text_to_image', async t => {
+  // Image mode is derived from the reference well, so the saved operation is
+  // not a user intent that needs its own resume guard.
+  await checkOldEditedInput(t, h => { h.snapshot.nodes[1].data.params.operation = 'image_to_image'; });
 });
 
 test('unprovable old catalog defaults expose the accepted task without submitting again', async t => {

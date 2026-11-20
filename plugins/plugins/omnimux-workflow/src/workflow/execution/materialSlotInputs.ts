@@ -5,11 +5,12 @@ import { resolveSlotOperation } from '../../shared/graph/feedSlot/resolveSlotOpe
 import { readPreferredOperationId } from '../../shared/validation/operationUi.ts';
 import { resolveGenerationPrompt } from '../../shared/graph/generationPrompt.ts';
 import { parseJsonDocumentText } from '../../shared/jsonDocument.ts';
-import { assembleEffectiveInputsFromSlots, deriveSlotLayout,
+import { assembleEffectiveInputsFromSlots, deriveSlotLayout, deriveImageGenerationLayout, buildImageGenerationCapability,
   type FeedAsset, type SlotBindings, type SlotConflict } from '../../shared/graph/feedSlot/index.ts';
 import { resolveExecutionMediaSource, type ResolveExecutionProjectFile } from './executionMediaSource.ts';
 import { SeamGatewayError } from '../seam/SeamGatewayError.ts';
 import { effectiveInputDisplay } from '../../shared/graph/feedSlot/effectiveInputDisplay.ts';
+import { effectiveSlotFingerprint } from '../../shared/graph/feedSlot/effectiveFingerprint.ts';
 import { narrowCatalogByRouting, resolveEffectiveVideoGroup, resolveEffectiveVideoOperation } from '../../shared/validation/lineConstraints.ts';
 import { isManagedVideoLineChanged } from '../../shared/validation/managedVideoExecution.ts';
 
@@ -89,11 +90,46 @@ export function collectMaterialSlotInputs(data: Record<string, unknown>, ctx: Ex
       url: asset?.url, pathOrUrl: asset?.relativePath || asset?.path, mimeType: asset?.mimeType, sizeBytes: asset?.sizeBytes, durationSec: asset?.durationSec });
     mediaByEdge.set(edgeId, output.mediaAssets);
   }
-  operationId = managed || currentVersion && preferredOperationId
-    ? preferredOperationId
-    : resolveSlotOperation(catalog, model?.id, currentVersion ? preferredOperationId : params.operation, kind,
-      buildUpstreamFingerprint({ prompt: resolveGenerationPrompt(data, texts), localText: resolveGenerationPrompt(data),
-        nodeFields: params, assets: feed }));
+  const boundFingerprint = buildUpstreamFingerprint({
+    prompt: resolveGenerationPrompt(data, texts),
+    localText: resolveGenerationPrompt(data),
+    nodeFields: params,
+    assets: feed,
+  });
+  if (kind === 'image' && model) {
+    const imageLayout = deriveImageGenerationLayout(catalog, model.id, params.operation as string | undefined);
+    if (!imageLayout) {
+      operationId = undefined;
+    } else {
+      const imageDisplay = effectiveInputDisplay(
+        imageLayout,
+        feed,
+        saved,
+        (data.slotConflicts ?? []) as SlotConflict[],
+        [],
+        [...standbyEdgeIds],
+        currentVersion ? 1 : undefined,
+      );
+      const imageFingerprint = effectiveSlotFingerprint(
+        boundFingerprint,
+        imageLayout,
+        imageDisplay.bindings,
+        imageDisplay.conflicts,
+        currentVersion ? 1 : undefined,
+        [...standbyEdgeIds],
+      );
+      operationId = buildImageGenerationCapability({
+        catalog,
+        modelId: model.id,
+        fingerprint: imageFingerprint,
+        ignoredEdgeIds: [...standbyEdgeIds],
+      }).selectedOperationId;
+    }
+  } else {
+    operationId = managed || currentVersion && preferredOperationId
+      ? preferredOperationId
+      : resolveSlotOperation(catalog, model?.id, currentVersion ? preferredOperationId : params.operation, kind, boundFingerprint);
+  }
   if (model && !operationId) throw new SeamGatewayError('operation-required', '请选择生成方式');
   layout = deriveSlotLayout(catalog, model?.id, operationId);
   const plainSpeech = !currentVersion && kind === 'audio' && operationId === 'text_to_speech';

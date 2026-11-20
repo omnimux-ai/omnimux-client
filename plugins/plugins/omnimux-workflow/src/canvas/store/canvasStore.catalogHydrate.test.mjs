@@ -42,6 +42,7 @@ function graph(model = 'img-prompt-only') {
           materialType: 'image',
           nodeKind: 'import',
           selectedTool: 'import',
+          mediaUrl: 'https://fixture.test/source.png',
           mimeType: 'image/png',
           sizeBytes: 1024,
         },

@@ -2,6 +2,12 @@ export type * from './types.ts';
 export { SLOT_LAYOUT_TABLE } from './slotLayoutTable.ts';
 export { deriveSlotLayout } from './deriveSlotLayout.ts';
 export { deriveModelSlotLayout } from './modelMaterialCapability.ts';
+export {
+  buildImageGenerationCapability,
+  deriveImageGenerationLayout,
+  resolveImageGenerationOperation,
+  resolveImageOperationForReferenceCount,
+} from './imageGeneration.ts';
 export { autoFillSlots, swapNamedSlots } from './autoFillSlots.ts';
 export { assembleEffectiveInputs, assembleEffectiveInputsFromSlots, selectSlotOccupants } from './assembleEffectiveInputs.ts';
 export { hydrateSlotBindings } from './hydrateSlotBindings.ts';

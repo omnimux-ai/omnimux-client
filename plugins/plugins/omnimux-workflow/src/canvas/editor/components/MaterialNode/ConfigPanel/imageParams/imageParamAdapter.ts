@@ -19,7 +19,6 @@ import {
   buildEffectiveOpsUiState,
   buildUiUpstreamFingerprint,
   readPreferredOperationId,
-  shouldRenderModeUi,
   type EffectiveOpsUiState,
   type UpstreamMediaSnapshot,
 } from '../../../../../../shared/validation/operationUi.ts';
@@ -135,7 +134,9 @@ export function resolveEffectiveImageParams(
     operation,
     operationLabel: resolveOperationLabel({ id: operation, label: operationOption?.label }),
     effectiveOperations: opsState.effectiveOps,
-    showModeUi: shouldRenderModeUi(opsState),
+    // Picture generation has one derived mode; the reference well is the only
+    // input that decides text_to_image vs the model's reference operation.
+    showModeUi: false,
     schema,
     aspectRatio,
   };

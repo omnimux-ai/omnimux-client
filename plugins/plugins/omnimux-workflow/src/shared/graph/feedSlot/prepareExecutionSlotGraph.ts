@@ -8,6 +8,7 @@ import { resolveNodeKind } from '../materialNode.ts';
 import { materialTools } from '../../specs/nodes/materialNodeSpec.ts';
 import { H3_SLOT_RENAMES, projectCanvasInputSources } from './legacyH3Slots.ts';
 import { deriveSlotLayout } from './deriveSlotLayout.ts';
+import { buildImageGenerationCapability, deriveImageGenerationLayout } from './imageGeneration.ts';
 import { readPreferredOperationId } from '../../validation/operationUi.ts';
 import { effectiveInputDisplay } from './effectiveInputDisplay.ts';
 import type { LegacySlotEdge } from './hydrateSlotBindings.ts';
@@ -15,7 +16,7 @@ import type { FeedAsset, SlotBindings, SlotConflict } from './types.ts';
 import type { CanvasNode } from '../canvasInputMutationGateway.ts';
 import { resolveSlotOperation } from './resolveSlotOperation.ts';
 import { normalizeVideoParamsForSchema } from '../../../canvas/editor/components/MaterialNode/ConfigPanel/videoParams/videoParamNormalization.ts';
-import { feedFromFingerprint } from './effectiveFingerprint.ts';
+import { effectiveSlotFingerprint, feedFromFingerprint } from './effectiveFingerprint.ts';
 import { projectVideoSlotBindings, readVideoSlotDrafts, videoSlotDraftKey } from './videoSlotDrafts.ts';
 
 /** Freeze legacy hydration for dispatch without modifying the persisted graph or topology. */
@@ -93,6 +94,33 @@ export function prepareExecutionSlotGraph<
     nextEdges = projected.edges;
     params.model ??= model?.id;
     const fingerprint = projected.fingerprint;
+    if (kind === 'image' && model) {
+      // Picture nodes derive their operation from consumed reference bindings,
+      // never from a stale saved operation.
+      const layout = deriveImageGenerationLayout(catalog, model.id, typeof params.operation === 'string' ? params.operation : undefined);
+      if (layout) {
+        const version = data.inputBindingVersion === 1 ? 1 : undefined;
+        const incoming = nextEdges.filter((edge) => edge.target === node.id);
+        const standby = (data.slotStandbyEdgeIds ?? []) as string[];
+        const display = effectiveInputDisplay(
+          layout,
+          feedFromFingerprint(fingerprint, version),
+          data.slotBindings as SlotBindings | undefined,
+          (data.slotConflicts ?? []) as SlotConflict[],
+          incoming,
+          standby,
+          version,
+        );
+        const effective = effectiveSlotFingerprint(fingerprint, layout, display.bindings, display.conflicts, version, standby);
+        const capability = buildImageGenerationCapability({
+          catalog,
+          modelId: model.id,
+          fingerprint: effective,
+          ignoredEdgeIds: standby,
+        });
+        if (capability.selectedOperationId) params.operation = capability.selectedOperationId;
+      }
+    }
     if (kind === 'video') {
       // R9: inputCapability decides the operation from the connected media;
       // #55 below only normalizes the values against that operation schema.

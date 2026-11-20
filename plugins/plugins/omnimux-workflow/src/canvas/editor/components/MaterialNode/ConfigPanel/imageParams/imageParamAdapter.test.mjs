@@ -5,7 +5,7 @@
  * - 非法 aspectRatio / resolution 展示回退 schema default，且不回写 params；
  * - resolution 无 options → undefined（摘要与浮层都不渲染该槽）；
  * - quality 仅当无 resolution.options 时占据清晰度槽；
- * - effectiveOps ≤ 1 → showModeUi false / modeText 空；
+ * - 图片生成方式由参考图槽派生，原模式选择不再暴露；
  * - fullText 空格拼接、无中点 `·`；
  * - assertImageParamWriteKey 白名单防御（generationMode / 未知 key 抛错）。
  */
@@ -145,7 +145,7 @@ describe('imageParamAdapter - 读侧清洗回退', () => {
     assert.equal(noResolution.quality, 'hd');
   });
 
-  it('ops ≥ 2 → showModeUi true 且 modeText 来自 operation label；ops ≤ 1 → 无 mode', () => {
+  it('图片生成方式不再作为可切换 UI 暴露，摘要不显示模式文案', () => {
     const twoOps = resolveEffectiveImageParams({
       params: { model: 'img-ref' },
       schema: IMAGE_SCHEMA,
@@ -154,10 +154,9 @@ describe('imageParamAdapter - 读侧清洗回退', () => {
       upstreams: [],
       prompt: '',
     });
-    assert.equal(twoOps.showModeUi, true);
+    assert.equal(twoOps.showModeUi, false);
     assert.ok(twoOps.effectiveOperations.length >= 2);
-    const twoSummary = formatImageSummary(twoOps);
-    assert.ok(twoSummary.modeText.length > 0);
+    assert.equal(formatImageSummary(twoOps).modeText, '');
 
     const oneOp = resolveEffectiveImageParams({
       params: { model: 'img-prompt-only' },

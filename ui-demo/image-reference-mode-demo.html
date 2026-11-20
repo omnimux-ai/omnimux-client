@@ -1,0 +1,678 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>图片节点 · 参考图自动决定文生图/图生图 · 修改前后演示</title>
+<style>
+  :root {
+    --dsw-alias-bg-base: #eef0f3;
+    --dsw-alias-bg-primary: #ffffff;
+    --dsw-alias-bg-secondary: #f6f7f9;
+    --dsw-alias-bg-layer-1: #ffffff;
+    --dsw-alias-bg-layer-2: #f3f4f6;
+    --dsw-alias-bg-elevated: #ffffff;
+    --dsw-alias-bg-control-hover: #f1f2f4;
+    --dsw-alias-bg-mask-1: rgba(31,35,41,.045);
+    --dsw-alias-border-l1: #e3e5e9;
+    --dsw-alias-border-l2: #d8dbe0;
+    --dsw-alias-border-solid: #cfd3d9;
+    --dsw-alias-label-primary: #1f2329;
+    --dsw-alias-label-secondary: #61666f;
+    --dsw-alias-label-tertiary: #9298a2;
+    --dsw-alias-label-accent: #3370ff;
+    --dsw-alias-brand-primary: #c8f135;
+    --dsw-alias-brand-ink: #1d2a00;
+    --dsw-alias-button-primary-fill: #c8f135;
+    --dsw-alias-button-primary-text: #1d2a00;
+    --dsw-alias-danger: #f54a45;
+    --dsw-alias-warning: #c47b00;
+    --dsw-alias-success: #2ea121;
+    --dsw-alias-bg-warning-subtle: #fff6e5;
+    --dsw-alias-bg-danger-subtle: #ffeceb;
+    --dsw-alias-bg-success-subtle: #e9f8e6;
+    --dsw-radius-s: 6px;
+    --dsw-radius-m: 10px;
+    --dsw-radius-l: 14px;
+    --dsw-shadow-pop: 0 12px 38px rgba(31,35,41,.16), 0 2px 6px rgba(31,35,41,.06);
+    --canvas-bg: #e9ebef;
+    --canvas-dot: rgba(31,35,41,.10);
+  }
+  body[data-theme="dark"] {
+    --dsw-alias-bg-base: #141619;
+    --dsw-alias-bg-primary: #1e2125;
+    --dsw-alias-bg-secondary: #191c20;
+    --dsw-alias-bg-layer-1: #23262b;
+    --dsw-alias-bg-layer-2: #262a30;
+    --dsw-alias-bg-elevated: #25282e;
+    --dsw-alias-bg-control-hover: #2c3036;
+    --dsw-alias-bg-mask-1: rgba(255,255,255,.06);
+    --dsw-alias-border-l1: #30343a;
+    --dsw-alias-border-l2: #3a3f46;
+    --dsw-alias-border-solid: #444a52;
+    --dsw-alias-label-primary: #edeff2;
+    --dsw-alias-label-secondary: #b0b4bc;
+    --dsw-alias-label-tertiary: #7c828c;
+    --dsw-alias-label-accent: #7aa2ff;
+    --dsw-alias-brand-primary: #c8f135;
+    --dsw-alias-brand-ink: #1d2a00;
+    --dsw-alias-button-primary-fill: #c8f135;
+    --dsw-alias-button-primary-text: #1d2a00;
+    --dsw-alias-danger: #ff6b66;
+    --dsw-alias-warning: #e2a33c;
+    --dsw-alias-success: #4ec93f;
+    --dsw-alias-bg-warning-subtle: #3c2e18;
+    --dsw-alias-bg-danger-subtle: #3d2323;
+    --dsw-alias-bg-success-subtle: #1f3520;
+    --dsw-shadow-pop: 0 18px 50px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.3);
+    --canvas-bg: #101215;
+    --canvas-dot: rgba(255,255,255,.09);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+    color: var(--dsw-alias-label-primary);
+    background: var(--dsw-alias-bg-base);
+    -webkit-font-smoothing: antialiased;
+    transition: background .2s ease, color .2s ease;
+  }
+  button, textarea { font: inherit; }
+  button { color: inherit; }
+
+  .topbar {
+    position: sticky; top: 0; z-index: 50;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 13px 24px;
+    background: color-mix(in srgb, var(--dsw-alias-bg-primary) 88%, transparent);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--dsw-alias-border-l1);
+  }
+  .topbar h1 { font-size: 15px; margin: 0; font-weight: 650; letter-spacing: .1px; }
+  .topbar .sub { font-size: 12px; color: var(--dsw-alias-label-secondary); margin-top: 2px; }
+  .topbar .spacer { flex: 1; }
+  .theme-toggle, .mode-toggle {
+    display: inline-flex; gap: 2px; padding: 3px;
+    background: var(--dsw-alias-bg-secondary);
+    border: 1px solid var(--dsw-alias-border-l1);
+    border-radius: 999px;
+  }
+  .theme-toggle button, .mode-toggle button {
+    appearance: none; border: 0; cursor: pointer;
+    font-size: 12px; padding: 6px 13px; border-radius: 999px;
+    background: transparent; color: var(--dsw-alias-label-secondary);
+  }
+  .theme-toggle button.active, .mode-toggle button.active {
+    background: var(--dsw-alias-bg-primary); color: var(--dsw-alias-label-primary);
+    box-shadow: 0 1px 3px rgba(0,0,0,.14); font-weight: 600;
+  }
+
+  .page { max-width: 1280px; margin: 0 auto; padding: 26px 24px 72px; }
+  .intro { margin: 0 0 18px; }
+  .intro h2 { margin: 0 0 6px; font-size: 19px; font-weight: 680; letter-spacing: -.2px; }
+  .intro p { margin: 0; font-size: 13px; line-height: 1.7; color: var(--dsw-alias-label-secondary); max-width: 920px; }
+
+  .compare { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+  .panel {
+    background: var(--dsw-alias-bg-primary);
+    border: 1px solid var(--dsw-alias-border-l1);
+    border-radius: var(--dsw-radius-l);
+    overflow: hidden;
+  }
+  .panel-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 13px 16px; border-bottom: 1px solid var(--dsw-alias-border-l1);
+  }
+  .panel-tag {
+    font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px;
+  }
+  .panel.before .panel-tag { color: var(--dsw-alias-danger); background: var(--dsw-alias-bg-danger-subtle); }
+  .panel.after .panel-tag { color: var(--dsw-alias-success); background: var(--dsw-alias-bg-success-subtle); }
+  .panel-head .title { font-size: 13px; font-weight: 650; }
+  .panel-head .desc { margin-left: auto; font-size: 11px; color: var(--dsw-alias-label-tertiary); }
+
+  .canvas {
+    position: relative;
+    min-height: 640px;
+    padding: 34px 28px;
+    background-color: var(--canvas-bg);
+    background-image: radial-gradient(var(--canvas-dot) 1px, transparent 1px);
+    background-size: 18px 18px;
+    display: flex; align-items: flex-start; justify-content: center;
+  }
+  .canvas-label {
+    position: absolute; left: 14px; top: 12px;
+    font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--dsw-alias-label-tertiary);
+  }
+
+  .node { width: 100%; max-width: 500px; position: relative; }
+  .node-card {
+    background: var(--dsw-alias-bg-elevated);
+    border: 1px solid var(--dsw-alias-border-l2);
+    border-radius: var(--dsw-radius-m);
+    box-shadow: 0 10px 30px rgba(0,0,0,.18);
+    overflow: hidden;
+  }
+  .node.selected .node-card { border-color: var(--dsw-alias-brand-primary); box-shadow: 0 0 0 1px var(--dsw-alias-brand-primary), 0 10px 30px rgba(0,0,0,.22); }
+  .node-head { display: flex; align-items: center; gap: 8px; padding: 10px 13px; border-bottom: 1px solid var(--dsw-alias-border-l1); }
+  .node-head .icon { width: 17px; height: 17px; border-radius: 4px; background: linear-gradient(135deg, var(--dsw-alias-brand-primary), #7ea800); }
+  .node-head .name { font-size: 12.5px; font-weight: 650; }
+  .node-head .status { margin-left: auto; font-size: 10.5px; color: var(--dsw-alias-label-tertiary); display: inline-flex; align-items: center; gap: 5px; }
+  .node-head .status i { width: 6px; height: 6px; border-radius: 50%; background: var(--dsw-alias-label-tertiary); display: block; }
+  .node-preview {
+    height: 178px; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 8px;
+    background:
+      linear-gradient(135deg, color-mix(in srgb, var(--dsw-alias-bg-layer-2) 80%, transparent), transparent 60%),
+      radial-gradient(120% 90% at 20% 10%, color-mix(in srgb, var(--dsw-alias-brand-primary) 9%, transparent), transparent 55%);
+    color: var(--dsw-alias-label-tertiary);
+  }
+  .node-preview svg { opacity: .55; }
+  .node-preview .txt { font-size: 11.5px; }
+  .node.has-images .node-preview {
+    height: auto; min-height: 178px; padding: 10px;
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;
+  }
+  .preview-thumb { border-radius: 6px; min-height: 150px; position: relative; overflow: hidden; border: 1px solid var(--dsw-alias-border-l1); }
+  .preview-thumb .cap { position: absolute; left: 7px; bottom: 6px; font-size: 9.5px; color: rgba(255,255,255,.85); background: rgba(0,0,0,.36); padding: 2px 6px; border-radius: 999px; }
+
+  .config {
+    margin-top: 10px;
+    background: var(--dsw-alias-bg-elevated);
+    border: 1px solid var(--dsw-alias-border-l2);
+    border-radius: var(--dsw-radius-m);
+    box-shadow: 0 10px 26px rgba(0,0,0,.14);
+    position: relative;
+  }
+  .prompt-wrap { padding: 11px 12px 0; }
+  .prompt-box {
+    border: 1px solid var(--dsw-alias-border-l1); border-radius: var(--dsw-radius-s);
+    background: var(--dsw-alias-bg-primary); overflow: hidden;
+  }
+  .prompt-box textarea {
+    display: block; width: 100%; resize: none; border: 0; outline: 0; background: transparent;
+    color: var(--dsw-alias-label-primary); padding: 10px 11px; min-height: 62px; line-height: 1.55; font-size: 12px;
+  }
+  .prompt-box textarea::placeholder { color: var(--dsw-alias-label-tertiary); }
+  .slots { display: flex; flex-wrap: wrap; gap: 7px; padding: 9px 12px 11px; }
+  .ref-well {
+    width: 72px; height: 72px; border-radius: var(--dsw-radius-s);
+    border: 1px dashed var(--dsw-alias-border-solid);
+    background: var(--dsw-alias-bg-secondary);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+    cursor: pointer; color: var(--dsw-alias-label-tertiary); font-size: 9.5px; text-align: center;
+    transition: border-color .15s ease, background .15s ease, transform .15s ease;
+    position: relative;
+  }
+  .ref-well:hover { border-color: var(--dsw-alias-label-accent); background: var(--dsw-alias-bg-control-hover); }
+  .ref-well:active { transform: scale(.98); }
+  .ref-well .plus { font-size: 18px; line-height: 1; font-weight: 300; }
+  .ref-well small { font-size: 8px; color: var(--dsw-alias-label-tertiary); }
+  .ref-thumb {
+    width: 72px; height: 72px; border-radius: var(--dsw-radius-s); position: relative; overflow: hidden;
+    border: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-2);
+  }
+  .ref-thumb .rm {
+    position: absolute; right: 4px; top: 4px; width: 17px; height: 17px; border-radius: 50%;
+    border: 0; background: rgba(0,0,0,.58); color: #fff; font-size: 11px; line-height: 1;
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+  }
+  .ref-thumb .tag {
+    position: absolute; left: 4px; bottom: 4px; padding: 1px 5px; border-radius: 999px;
+    background: rgba(0,0,0,.5); color: #fff; font-size: 8.5px;
+  }
+  .slot-hint { align-self: center; font-size: 10.5px; color: var(--dsw-alias-label-tertiary); line-height: 1.5; max-width: 150px; }
+
+  .bottombar { display: flex; align-items: center; gap: 7px; padding: 9px 10px; border-top: 1px solid var(--dsw-alias-border-l1); flex-wrap: wrap; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px; height: 27px; padding: 0 9px;
+    border-radius: var(--dsw-radius-s); border: 1px solid var(--dsw-alias-border-l2);
+    background: var(--dsw-alias-bg-primary); font-size: 10.5px; color: var(--dsw-alias-label-primary);
+    white-space: nowrap;
+  }
+  .pill.model { font-weight: 600; }
+  .pill .caret { font-size: 8px; color: var(--dsw-alias-label-tertiary); }
+  .pill.mode {
+    border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, var(--dsw-alias-border-l2));
+    background: color-mix(in srgb, var(--dsw-alias-brand-primary) 11%, var(--dsw-alias-bg-primary));
+    color: var(--dsw-alias-label-primary); font-weight: 600;
+  }
+  .pill.mode .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--dsw-alias-brand-primary); }
+  .bottombar .spacer { flex: 1; }
+  .generate {
+    height: 29px; padding: 0 14px; border-radius: var(--dsw-radius-s);
+    border: 1px solid var(--dsw-alias-button-primary-fill);
+    background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-button-primary-text);
+    font-size: 11.5px; font-weight: 700; cursor: pointer;
+  }
+  .generate:hover { filter: brightness(1.04); }
+  .generate:disabled { opacity: .45; cursor: not-allowed; filter: none; }
+
+  .mode-popover {
+    position: absolute; right: 0; bottom: 46px; width: 266px; z-index: 8;
+    background: var(--dsw-alias-bg-elevated); border: 1px solid var(--dsw-alias-border-l1);
+    border-radius: var(--dsw-radius-m); box-shadow: var(--dsw-shadow-pop); padding: 11px;
+    transform-origin: bottom right;
+  }
+  .mode-popover::after {
+    content: ""; position: absolute; right: 18px; bottom: -6px; width: 10px; height: 10px;
+    background: var(--dsw-alias-bg-elevated); border-right: 1px solid var(--dsw-alias-border-l1);
+    border-bottom: 1px solid var(--dsw-alias-border-l1); transform: rotate(45deg);
+  }
+  .mode-popover .sec-title { font-size: 10px; color: var(--dsw-alias-label-tertiary); margin: 0 2px 7px; }
+  .mode-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+  .mode-tile {
+    appearance: none; cursor: pointer; text-align: left;
+    border: 1px solid var(--dsw-alias-border-l2); border-radius: var(--dsw-radius-s);
+    background: var(--dsw-alias-bg-primary); padding: 8px 9px;
+  }
+  .mode-tile strong { display: block; font-size: 11.5px; margin-bottom: 2px; }
+  .mode-tile span { display: block; font-size: 9.5px; color: var(--dsw-alias-label-tertiary); line-height: 1.35; }
+  .mode-tile.active { border-color: var(--dsw-alias-label-accent); background: color-mix(in srgb, var(--dsw-alias-label-accent) 8%, var(--dsw-alias-bg-primary)); }
+  .mode-tile.active strong { color: var(--dsw-alias-label-accent); }
+  .popover-divider { border: 0; border-top: 1px solid var(--dsw-alias-border-l1); margin: 10px 0; }
+  .popover-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .mini-chip { font-size: 9.5px; padding: 3px 7px; border-radius: 5px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-secondary); }
+  .mini-chip.on { background: var(--dsw-alias-bg-primary); border: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-primary); }
+
+  .derivation {
+    margin: 0 14px 14px; padding: 10px 12px;
+    border: 1px dashed var(--dsw-alias-border-l2); border-radius: var(--dsw-radius-s);
+    background: color-mix(in srgb, var(--dsw-alias-bg-secondary) 60%, transparent);
+    font-size: 10.5px; line-height: 1.6; color: var(--dsw-alias-label-secondary);
+  }
+  .derivation .row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .derivation .k { color: var(--dsw-alias-label-tertiary); }
+  .derivation code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px;
+    background: var(--dsw-alias-bg-mask-1); padding: 1px 5px; border-radius: 4px; color: var(--dsw-alias-label-primary);
+  }
+  .derivation .state { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .badge-soft {
+    display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 999px; font-size: 9.5px;
+    background: var(--dsw-alias-bg-mask-1); color: var(--dsw-alias-label-secondary);
+  }
+  .badge-soft.ok { background: var(--dsw-alias-bg-success-subtle); color: var(--dsw-alias-success); }
+  .badge-soft.warn { background: var(--dsw-alias-bg-warning-subtle); color: var(--dsw-alias-warning); }
+  .badge-soft.danger { background: var(--dsw-alias-bg-danger-subtle); color: var(--dsw-alias-danger); }
+
+  .notes { margin-top: 14px; display: grid; gap: 9px; }
+  .note {
+    display: flex; gap: 9px; align-items: flex-start;
+    font-size: 11.5px; line-height: 1.6; color: var(--dsw-alias-label-secondary);
+    background: var(--dsw-alias-bg-primary); border: 1px solid var(--dsw-alias-border-l1);
+    border-radius: var(--dsw-radius-m); padding: 10px 12px;
+  }
+  .note .num {
+    flex: 0 0 auto; width: 18px; height: 18px; border-radius: 50%;
+    background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-secondary);
+    display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700;
+  }
+  .note.after-note .num { background: var(--dsw-alias-bg-success-subtle); color: var(--dsw-alias-success); }
+  .note strong { color: var(--dsw-alias-label-primary); font-weight: 650; }
+
+  .foot { margin-top: 26px; font-size: 11px; color: var(--dsw-alias-label-tertiary); text-align: center; line-height: 1.8; }
+  .kbd { font-family: ui-monospace, monospace; font-size: 10px; background: var(--dsw-alias-bg-mask-1); padding: 1px 5px; border-radius: 4px; }
+
+  /* picker */
+  .overlay {
+    position: fixed; inset: 0; z-index: 100; display: none;
+    background: rgba(10,12,15,.52); backdrop-filter: blur(3px);
+    align-items: center; justify-content: center; padding: 24px;
+  }
+  .overlay.open { display: flex; }
+  .picker {
+    width: min(620px, 100%); background: var(--dsw-alias-bg-elevated);
+    border: 1px solid var(--dsw-alias-border-l1); border-radius: var(--dsw-radius-l);
+    box-shadow: 0 26px 80px rgba(0,0,0,.42); overflow: hidden;
+  }
+  .picker-head { display: flex; align-items: center; gap: 10px; padding: 15px 18px; border-bottom: 1px solid var(--dsw-alias-border-l1); }
+  .picker-head h3 { margin: 0; font-size: 13.5px; font-weight: 650; }
+  .picker-head .hint { font-size: 10.5px; color: var(--dsw-alias-label-tertiary); }
+  .picker-head .x { margin-left: auto; border: 0; background: transparent; font-size: 18px; color: var(--dsw-alias-label-tertiary); cursor: pointer; }
+  .picker-body { padding: 18px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .asset {
+    appearance: none; border: 1px solid var(--dsw-alias-border-l1); border-radius: var(--dsw-radius-m);
+    background: var(--dsw-alias-bg-primary); padding: 7px; cursor: pointer; text-align: left;
+  }
+  .asset:hover { border-color: var(--dsw-alias-label-accent); }
+  .asset .thumb { height: 112px; border-radius: 6px; margin-bottom: 7px; position: relative; overflow: hidden; }
+  .asset .name { font-size: 11px; font-weight: 600; }
+  .asset .meta { font-size: 9.5px; color: var(--dsw-alias-label-tertiary); margin-top: 2px; }
+  .picker-foot { padding: 12px 18px; border-top: 1px solid var(--dsw-alias-border-l1); display: flex; justify-content: flex-end; gap: 8px; }
+  .btn-ghost, .btn-primary {
+    font-size: 11.5px; height: 30px; padding: 0 13px; border-radius: var(--dsw-radius-s); cursor: pointer;
+  }
+  .btn-ghost { border: 1px solid var(--dsw-alias-border-solid); background: var(--dsw-alias-bg-primary); }
+  .btn-primary { border: 1px solid var(--dsw-alias-button-primary-fill); background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-button-primary-text); font-weight: 700; }
+  .btn-primary:disabled { opacity: .45; cursor: not-allowed; }
+
+  .art-1 { background: radial-gradient(circle at 68% 30%, #ffd9a8 0 9%, transparent 10%), linear-gradient(145deg, #30435f, #162031 55%, #0a1018); }
+  .art-2 { background: linear-gradient(160deg, #d9e6d2 0 35%, #a8c08d 36% 60%, #6c8258 61% 100%); }
+  .art-3 { background: conic-gradient(from 210deg at 55% 40%, #ff8f70, #ffd166, #6ec6b1, #3f6bc4, #ff8f70); }
+
+  @media (max-width: 1080px) {
+    .compare { grid-template-columns: 1fr; }
+    .canvas { min-height: 0; }
+  }
+  @media (max-width: 640px) {
+    .page { padding: 18px 12px 48px; }
+    .topbar { padding: 11px 14px; }
+    .canvas { padding: 28px 12px; }
+    .node { max-width: 100%; }
+    .bottombar { gap: 5px; }
+    .pill { font-size: 9.5px; padding: 0 7px; }
+    .mode-popover { width: min(266px, calc(100vw - 64px)); }
+    .picker-body { grid-template-columns: 1fr; max-height: 60vh; overflow: auto; }
+    .asset .thumb { height: 96px; }
+  }
+</style>
+</head>
+<body data-theme="dark">
+<div class="topbar">
+  <div>
+    <h1>图片节点 · 参考图自动决定文生图 / 图生图</h1>
+    <div class="sub">高保真交互演示（非产品代码）· 修改前后同屏对照</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="theme-toggle" role="group" aria-label="主题">
+    <button id="theme-dark" class="active" onclick="setTheme('dark')">暗色</button>
+    <button id="theme-light" onclick="setTheme('light')">亮色</button>
+  </div>
+</div>
+
+<main class="page">
+  <div class="intro">
+    <h2>一个参考图槽，决定提交哪条 operation</h2>
+    <p>开始状态两个节点都没有参考图。修改前后都支持「添加参考图」和「移除参考图」，差别是修改前需要先在图片参数浮层里手动切换生成方式；修改后节点只保留参考图入口，提交时按实际消费的参考图数量派生 <code>text_to_image</code> 或 <code>multi_reference</code>。</p>
+  </div>
+
+  <div class="compare">
+    <!-- BEFORE -->
+    <section class="panel before">
+      <div class="panel-head">
+        <span class="panel-tag">修改前</span>
+        <span class="title">先选生成方式，才有参考图槽</span>
+        <span class="desc">多一步切换</span>
+      </div>
+      <div class="canvas">
+        <span class="canvas-label">Canvas</span>
+        <div class="node selected" data-node="before">
+          <div class="node-card">
+            <div class="node-head">
+              <span class="icon"></span><span class="name">图片生成</span>
+              <span class="status"><i></i>待生成</span>
+            </div>
+            <div class="node-preview">
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="m3 16 4.5-4.5 4 4 3-3L21 18"/></svg>
+              <span class="txt">生成的图片会显示在这里</span>
+            </div>
+          </div>
+          <div class="config">
+            <div class="mode-popover" id="before-popover">
+              <p class="sec-title">图像参数</p>
+              <p class="sec-title" style="margin:0 2px 6px;font-weight:600;color:var(--dsw-alias-label-secondary)">生成方式</p>
+              <div class="mode-tiles">
+                <button class="mode-tile active" id="before-text" onclick="setBeforeMode('text')">
+                  <strong>文生图</strong><span>只根据提示词生成</span>
+                </button>
+                <button class="mode-tile" id="before-image" onclick="setBeforeMode('image')">
+                  <strong>图生图</strong><span>使用参考图生成</span>
+                </button>
+              </div>
+              <hr class="popover-divider" />
+              <div class="popover-row"><span class="mini-chip on">16:9</span><span class="mini-chip">1K</span><span class="mini-chip">标准</span></div>
+            </div>
+            <div class="prompt-wrap">
+              <div class="prompt-box">
+                <textarea rows="2" placeholder="描述你想要的画面…">一张产品放在木质桌面上，晨光，极简构图</textarea>
+              </div>
+            </div>
+            <div class="slots" id="before-slots"></div>
+            <div class="bottombar">
+              <span class="pill model">gpt-image-2.5 <span class="caret">▾</span></span>
+              <span class="pill">16:9 · 1K</span>
+              <span class="spacer"></span>
+              <button class="generate" onclick="demoGenerate('before')">生成</button>
+            </div>
+          </div>
+          <div class="derivation">
+            <div class="row"><span class="k">当前生成方式</span><code id="before-op">text_to_image</code></div>
+            <div class="state" id="before-state"></div>
+          </div>
+        </div>
+      </div>
+      <div class="notes">
+        <div class="note"><span class="num">1</span><span>参考图槽默认不存在，必须先在 <strong>图像参数 → 生成方式</strong> 里切到「图生图」。</span></div>
+        <div class="note"><span class="num">2</span><span>模式由用户显式选择；如果切回「文生图」，已选参考图会退出本次请求。</span></div>
+      </div>
+    </section>
+
+    <!-- AFTER -->
+    <section class="panel after">
+      <div class="panel-head">
+        <span class="panel-tag">修改后</span>
+        <span class="title">参考图槽常驻，生成方式自动派生</span>
+        <span class="desc">少一步选择</span>
+      </div>
+      <div class="canvas">
+        <span class="canvas-label">Canvas</span>
+        <div class="node selected" data-node="after">
+          <div class="node-card">
+            <div class="node-head">
+              <span class="icon"></span><span class="name">图片生成</span>
+              <span class="status"><i></i>待生成</span>
+            </div>
+            <div class="node-preview">
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="m3 16 4.5-4.5 4 4 3-3L21 18"/></svg>
+              <span class="txt">生成的图片会显示在这里</span>
+            </div>
+          </div>
+          <div class="config">
+            <div class="prompt-wrap">
+              <div class="prompt-box">
+                <textarea rows="2" placeholder="描述你想要的画面…">一张产品放在木质桌面上，晨光，极简构图</textarea>
+              </div>
+            </div>
+            <div class="slots" id="after-slots"></div>
+            <div class="bottombar">
+              <span class="pill model">gpt-image-2.5 <span class="caret">▾</span></span>
+              <span class="pill">16:9 · 1K</span>
+              <span class="pill mode" id="after-mode"><span class="dot"></span>文生图</span>
+              <span class="spacer"></span>
+              <button class="generate" onclick="demoGenerate('after')">生成</button>
+            </div>
+          </div>
+          <div class="derivation">
+            <div class="row"><span class="k">派生结果</span><code id="after-op">text_to_image</code></div>
+            <div class="state" id="after-state"></div>
+          </div>
+        </div>
+      </div>
+      <div class="notes">
+        <div class="note after-note"><span class="num">1</span><span>空节点也显示 <strong>参考图（可选）</strong>；不选参考图，提交 <code>text_to_image</code>。</span></div>
+        <div class="note after-note"><span class="num">2</span><span>点参考图槽选择图片后，同一次输入变更里切换为 <code>multi_reference</code>；移除最后一张参考图自动回到文生图。</span></div>
+        <div class="note after-note"><span class="num">3</span><span>生成方式不再作为用户选项出现在图片参数浮层里，提交与 UI 使用同一派生结果。</span></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="foot">
+    本页为高保真静态交互演示，非产品代码；用于确认前端交互与文案。<br />
+    行为口径以 <span class="kbd">specs/image-reference-mode.spec.md</span> 为准；未发任何真实模型请求。
+  </div>
+</main>
+
+<div class="overlay" id="picker" role="dialog" aria-modal="true" aria-label="选择参考图">
+  <div class="picker">
+    <div class="picker-head">
+      <h3>选择参考图</h3>
+      <span class="hint">从画布素材或本地上传中选择</span>
+      <button class="x" onclick="closePicker()" aria-label="关闭">×</button>
+    </div>
+    <div class="picker-body" id="picker-body"></div>
+    <div class="picker-foot">
+      <button class="btn-ghost" onclick="closePicker()">取消</button>
+      <button class="btn-primary" id="picker-use" disabled onclick="usePicked()">使用</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const ART = [
+    { id: 'a1', cls: 'art-1', name: '产品主图', meta: '画布素材 · 1254 × 1254' },
+    { id: 'a2', cls: 'art-2', name: '场景参考', meta: '画布素材 · 1024 × 1024' },
+    { id: 'a3', cls: 'art-3', name: '风格参考', meta: '本地上传 · 2048 × 2048' }
+  ];
+  const state = {
+    beforeMode: 'text',   // text | image
+    beforeRefs: [],
+    afterRefs: [],
+    pickerTarget: null,   // before | after
+    picked: null
+  };
+
+  function setTheme(theme) {
+    document.body.dataset.theme = theme;
+    document.getElementById('theme-dark').classList.toggle('active', theme === 'dark');
+    document.getElementById('theme-light').classList.toggle('active', theme === 'light');
+  }
+
+  function setBeforeMode(mode) {
+    state.beforeMode = mode;
+    state.beforeRefs = [];
+    document.getElementById('before-text').classList.toggle('active', mode === 'text');
+    document.getElementById('before-image').classList.toggle('active', mode === 'image');
+    renderBefore();
+  }
+
+  function openPicker(target) {
+    state.pickerTarget = target;
+    state.picked = null;
+    const body = document.getElementById('picker-body');
+    body.innerHTML = ART.map((a, i) => `
+      <button class="asset" data-art="${a.id}" onclick="pickAsset('${a.id}')">
+        <div class="thumb ${a.cls}"></div>
+        <div class="name">${a.name}</div>
+        <div class="meta">${a.meta}</div>
+      </button>`).join('');
+    document.getElementById('picker-use').disabled = true;
+    document.getElementById('picker').classList.add('open');
+  }
+
+  function pickAsset(id) {
+    state.picked = id;
+    document.querySelectorAll('#picker-body .asset').forEach((el) => {
+      el.style.borderColor = el.dataset.art === id ? 'var(--dsw-alias-label-accent)' : '';
+      el.style.boxShadow = el.dataset.art === id ? '0 0 0 1px var(--dsw-alias-label-accent)' : 'none';
+    });
+    document.getElementById('picker-use').disabled = false;
+  }
+
+  function closePicker() {
+    document.getElementById('picker').classList.remove('open');
+    state.pickerTarget = null;
+    state.picked = null;
+  }
+
+  function usePicked() {
+    if (!state.picked || !state.pickerTarget) return;
+    const art = ART.find((a) => a.id === state.picked);
+    if (!art) return;
+    if (state.pickerTarget === 'before') state.beforeRefs = [art];
+    else state.afterRefs = [...state.afterRefs, art].slice(0, 3);
+    closePicker();
+    renderBefore();
+    renderAfter();
+  }
+
+  function removeRef(target, id) {
+    if (target === 'before') state.beforeRefs = state.beforeRefs.filter((a) => a.id !== id);
+    else state.afterRefs = state.afterRefs.filter((a) => a.id !== id);
+    renderBefore();
+    renderAfter();
+  }
+
+  function refThumb(art, target) {
+    return `<div class="ref-thumb ${art.cls}">
+      <button class="rm" title="移除参考图" onclick="event.stopPropagation();removeRef('${target}','${art.id}')">×</button>
+      <span class="tag">参考图</span>
+    </div>`;
+  }
+
+  function renderBefore() {
+    const slots = document.getElementById('before-slots');
+    const isImage = state.beforeMode === 'image';
+    document.getElementById('before-popover').style.display = 'block';
+    if (!isImage) {
+      slots.innerHTML = '';
+    } else if (state.beforeRefs.length === 0) {
+      slots.innerHTML = `<button class="ref-well" onclick="openPicker('before')"><span class="plus">＋</span><span>添加参考图</span></button>
+        <span class="slot-hint">图生图模式必须至少 1 张参考图</span>`;
+    } else {
+      slots.innerHTML = state.beforeRefs.map((a) => refThumb(a, 'before')).join('') +
+        (state.beforeRefs.length < 3 ? `<button class="ref-well" onclick="openPicker('before')"><span class="plus">＋</span><span>继续添加</span></button>` : '');
+    }
+    const op = isImage ? (state.beforeRefs.length ? 'multi_reference' : 'multi_reference（缺参考图）') : 'text_to_image';
+    document.getElementById('before-op').textContent = op;
+    const stateEl = document.getElementById('before-state');
+    if (!isImage) {
+      stateEl.innerHTML = `<span class="badge-soft">参考图槽隐藏</span><span class="badge-soft">用户选择：文生图</span>`;
+    } else if (!state.beforeRefs.length) {
+      stateEl.innerHTML = `<span class="badge-soft warn">缺必需参考图</span><span class="badge-soft">生成不可用</span>`;
+    } else {
+      stateEl.innerHTML = `<span class="badge-soft ok">已选 ${state.beforeRefs.length} 张参考图</span><span class="badge-soft">提交图生图</span>`;
+    }
+    document.querySelector('[data-node="before"] .node-preview').parentElement.classList.toggle('has-images', false);
+  }
+
+  function renderAfter() {
+    const slots = document.getElementById('after-slots');
+    if (state.afterRefs.length === 0) {
+      slots.innerHTML = `<button class="ref-well" onclick="openPicker('after')"><span class="plus">＋</span><span>参考图</span><small>可选</small></button>`;
+    } else {
+      slots.innerHTML = state.afterRefs.map((a) => refThumb(a, 'after')).join('') +
+        (state.afterRefs.length < 3 ? `<button class="ref-well" onclick="openPicker('after')"><span class="plus">＋</span><span>继续添加</span></button>` : '');
+    }
+    const count = state.afterRefs.length;
+    const op = count === 0 ? 'text_to_image' : 'multi_reference';
+    document.getElementById('after-op').textContent = op;
+    const mode = document.getElementById('after-mode');
+    mode.innerHTML = `<span class="dot"></span>${count === 0 ? '文生图' : `图生图${count > 1 ? ` · ${count} 张` : ''}`}`;
+    const stateEl = document.getElementById('after-state');
+    stateEl.innerHTML = count === 0
+      ? `<span class="badge-soft ok">参考图 0 张</span><span class="badge-soft">自动：文生图</span>`
+      : `<span class="badge-soft ok">参考图 ${count} 张</span><span class="badge-soft">自动：图生图</span><span class="badge-soft">op=${op}</span>`;
+  }
+
+  let toastTimer = null;
+  function demoGenerate(which) {
+    const count = which === 'before'
+      ? (state.beforeMode === 'image' ? state.beforeRefs.length : 0)
+      : state.afterRefs.length;
+    const op = which === 'before'
+      ? (state.beforeMode === 'image' ? 'multi_reference' : 'text_to_image')
+      : (count ? 'multi_reference' : 'text_to_image');
+    let el = document.getElementById('demo-toast');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'demo-toast';
+      el.style.cssText = 'position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:200;background:var(--dsw-alias-bg-elevated);border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-primary);padding:9px 15px;border-radius:8px;font-size:11.5px;box-shadow:var(--dsw-shadow-pop);transition:opacity .2s ease';
+      document.body.appendChild(el);
+    }
+    el.textContent = `演示提交：operation = ${op} / 参考图 ${count} 张`;
+    el.style.opacity = '1';
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.style.opacity = '0'; }, 2200);
+  }
+
+  document.getElementById('picker').addEventListener('click', (e) => {
+    if (e.target.id === 'picker') closePicker();
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePicker(); });
+
+  renderBefore();
+  renderAfter();
+</script>
+</body>
+</html>
