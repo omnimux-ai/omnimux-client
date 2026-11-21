@@ -207,7 +207,7 @@ export function createClipDispatcher(deps) {
   const paths = deps.paths
   const fs = deps.fs ?? DEFAULT_FS
   ensureClipDirs(paths)
-  const store = deps.store ?? createProjectStore({ paths, fs })
+  const store = deps.store ?? createProjectStore({ paths, fs: deps.fs })
 
   /**
    * @param {{ method?: string, url?: string, body?: unknown }} req

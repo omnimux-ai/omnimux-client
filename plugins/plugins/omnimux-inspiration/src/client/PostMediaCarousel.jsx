@@ -127,8 +127,8 @@ export function PostMediaCarousel({
     >
       <div className="omnimux-post-carousel-track" ref={track} style={{ transform: `translateX(-${index * 100}%)` }}>
         {assets.map((asset, slide) => <div className="omnimux-post-carousel-slide" key={asset.id} aria-hidden={slide !== index}>
-          {failedImages[asset.id] ? <p role="alert" className="omnimux-inspiration-error-text">{copy('imageUnavailable')}</p> : <button
-            type="button"
+          {failedImages[asset.id] ? <p role="alert" className="omnimux-inspiration-error-text">{copy('imageUnavailable')}</p> : <Button
+            variant="ghost"
             className="omnimux-post-image-open"
             tabIndex={slide === index ? 0 : -1}
             aria-label={`${copy('openImage')} ${asset.label}`}
@@ -148,7 +148,7 @@ export function PostMediaCarousel({
               onError={() => onImageError?.(asset)}
             />
             <span className="omnimux-post-image-caption"><ZoomIn size={14} />{copy('openImage')}</span>
-          </button>}
+          </Button>}
         </div>)}
       </div>
       <IconButton
@@ -167,9 +167,10 @@ export function PostMediaCarousel({
       ><ChevronRight size={18} /></IconButton>
       <span className="omnimux-post-carousel-counter" aria-live="polite">{index + 1} / {assets.length}</span>
       <div className="omnimux-post-carousel-dots" role="tablist" aria-label={copy('carousel')}>
-        {assets.map((asset, dot) => <button
+        {assets.map((asset, dot) => <Button
           key={asset.id}
-          type="button"
+          variant="ghost"
+          size="xs"
           role="tab"
           aria-label={asset.label}
           aria-selected={dot === index}

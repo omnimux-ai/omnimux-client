@@ -365,10 +365,10 @@ test('开发版：Alpha 内测项不挂 DOM，核心常驻项挂回侧栏', asyn
 test('发布渠道过滤：开发版保留全部入口，正式版只过滤 Alpha 测试版', () => {
   const dev = filterExploreItemsForChannel(EXPLORE_MENU_ITEMS, 'development')
   assert.deepEqual(dev.map((item) => item.label), [
-    '应用', '视频剪辑', '发布', '账号', '手机管理', '数据分析', '任务表单', '社交采收',
+    '应用', '图像生成', '视频剪辑', '发布', '账号', '手机管理', '数据分析', '任务表单', '社交采收',
   ])
   const prod = filterExploreItemsForChannel(EXPLORE_MENU_ITEMS, 'production')
-  assert.deepEqual(prod.map((item) => item.label), ['应用', '视频剪辑', '手机管理', '社交采收'])
+  assert.deepEqual(prod.map((item) => item.label), ['应用', '图像生成', '视频剪辑', '手机管理', '社交采收'])
   assert.equal(resolveExploreMenuItems().length, EXPLORE_MENU_ITEMS.length, '开发版默认渠道返回全部入口')
 })
 
@@ -401,7 +401,7 @@ test('正式版渠道：Alpha 行注册不创建元素、不进收敛集合，�
       assert.equal(converged.has(`omnimux-${name}-entry`), false, `正式版 Alpha ${name} 不得进入收敛集合`)
     }
     assert.equal(clipCreated, 1, '非 Alpha 收敛项仍正常创建以进入「更多」菜单')
-    assert.deepEqual(resolveExploreMenuItems().map((item) => item.label), ['应用', '视频剪辑', '手机管理', '社交采收'])
+    assert.deepEqual(resolveExploreMenuItems().map((item) => item.label), ['应用', '图像生成', '视频剪辑', '手机管理', '社交采收'])
   } finally {
     alphaDisposers.forEach((dispose) => dispose())
     disposeClip()
@@ -592,6 +592,25 @@ test('激活委托：命中已注册收敛元素时优先其 click，未注册�
     assert.equal(wbOpenedTab?.title, '数据分析')
   } finally {
     disposeClip()
+    delete window.__omnimuxWorkbench
+  }
+})
+
+test('图像生成入口：菜单项固定指向 omnimux:media-viewer，并走 workbench tabId 兜底', () => {
+  setup()
+  installSidebarGlobal()
+  const item = EXPLORE_MENU_ITEMS.find((entry) => entry.id === 'image-generation')
+  assert.ok(item, '「更多」菜单必须包含图像生成入口')
+  assert.equal(item.label, '图像生成')
+  assert.equal(item.tabId, 'omnimux:media-viewer')
+  assert.match(item.iconSvg, /^<svg[\s\S]*<\/svg>$/, '图标必须是纯矢量 SVG')
+
+  let opened = null
+  window.__omnimuxWorkbench = { open: (opts) => { opened = opts; return true } }
+  try {
+    activateExploreItem(item)
+    assert.deepEqual(opened, { tabId: 'omnimux:media-viewer', title: '图像生成' })
+  } finally {
     delete window.__omnimuxWorkbench
   }
 })

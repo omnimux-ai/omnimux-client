@@ -2596,6 +2596,9 @@ html[data-omnimux-rightbar-open="true"]:not([data-omnimux-rightbar-fullscreen="t
 .omnimux-skills-grid {
   display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:14px;
 }
+.omnimux-skills-grid--spaced {
+  margin-top:16px;
+}
 @media (max-width: 1100px) {
   .omnimux-skills-grid { grid-template-columns:repeat(3, minmax(0, 1fr)); }
 }
@@ -2663,7 +2666,9 @@ html[data-omnimux-rightbar-open="true"]:not([data-omnimux-rightbar-fullscreen="t
   opacity:1;
 }
 .omnimux-skill-card-btn {
+  position:absolute; opacity:0; pointer-events:none;
   display:inline-flex; align-items:center; gap:6px;
+  width:auto; height:auto; min-height:0;
   padding:6px 14px; font-size:12px; font-weight:600; line-height:16px;
   color:var(--dsw-static-neutral-1000); background:var(--dsw-static-neutral-00); border:none; border-radius:999px;
   cursor:pointer; box-shadow:0 4px 16px color-mix(in srgb, var(--dsw-static-neutral-1000) 35%, transparent);

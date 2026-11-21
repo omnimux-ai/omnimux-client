@@ -1955,7 +1955,7 @@ ${AGENT_PRESET_AVATAR_CSS}
 }
 .omx-agent-title {
   margin: 0;
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--dsw-alias-label-primary);
 }
@@ -1990,9 +1990,13 @@ ${AGENT_PRESET_AVATAR_CSS}
 .omx-agent-card {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 14px;
+  width: 100%;
+  height: auto;
   min-height: 78px;
   padding: 14px 16px;
+  white-space: normal;
   border: 1px solid var(--dsw-alias-border-l1, rgba(255, 255, 255, 0.12));
   border-radius: 10px;
   background: transparent;
@@ -2001,6 +2005,9 @@ ${AGENT_PRESET_AVATAR_CSS}
   text-align: left;
   cursor: pointer;
   transition: border-color 0.14s ease, background 0.14s ease;
+}
+.omx-agent-card > span {
+  display: contents;
 }
 .omx-agent-card:hover {
   background: var(--dsw-alias-bg-layer-2, rgba(255, 255, 255, 0.035));
@@ -2020,7 +2027,7 @@ ${AGENT_PRESET_AVATAR_CSS}
 .omx-agent-icon[data-agent-icon="kimi"] { color: #4c8dff; /* exempt-ui03: Kimi 品牌色 */ }
 .omx-agent-icon[data-agent-icon="qwen"] { color: #615ced; /* exempt-ui03: Qwen 品牌色 */ }
 .omx-agent-icon-letter {
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 700;
 }
 .omx-agent-icon {
@@ -2032,7 +2039,7 @@ ${AGENT_PRESET_AVATAR_CSS}
   height: 40px;
   border-radius: 10px;
   background: var(--dsw-alias-bg-layer-3, rgba(255, 255, 255, 0.08));
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 700;
 }
 .omx-agent-card-copy {

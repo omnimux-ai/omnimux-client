@@ -240,8 +240,10 @@ const VideoCompositionNode: React.FC<NodeProps> = ({ id, data, selected }) => {
       const detail = event instanceof CustomEvent ? event.detail : undefined;
       if (!isCloseClipEditorPayload(detail)) return;
       const node = readBoundNode(detail);
-      if (node?.data.status === 'editing') {
-        updateNodeData({ status: node.data.outputVideoUrl ? 'completed' : 'idle' });
+      if (node?.data.status === 'editing' || node?.data.status === 'rendering') {
+        // Progress belongs to the open editor. A saved export can still arrive
+        // on the original binding after exit and replace this resting state.
+        updateNodeData({ status: node.data.outputVideoUrl ? 'completed' : 'idle', renderProgress: undefined });
       }
     };
 

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it, beforeEach, afterEach } from 'node:test'
@@ -122,6 +122,38 @@ describe('clip_* tools', () => {
     const httpMissing = await dispatcher.dispatch({ url: '/projects/clip_node_fresh' })
     assert.equal(httpMissing.status, 404)
     assert.equal(httpMissing.body.error, 'project-not-materialized')
+  })
+
+  it('isolates a directory named like a project file in tools and HTTP', async () => {
+    const nativeId = '3f121f62-4324-455a-b0a0-88757c46f915'
+    writeFileSync(join(ctx.paths.projectsDir, `${nativeId}.json`), JSON.stringify({
+      id: nativeId, timeline: { tracks: [] }, mediaLibrary: { items: [] },
+    }))
+    mkdirSync(join(ctx.paths.projectsDir, 'stale.json'))
+    const registered = []
+    registerClipTools({ tools: { register: (tool) => registered.push(tool) } }, tools)
+
+    const listed = await byName(registered, 'clip_list').execute({})
+    assert.deepEqual(listed.projects.map(({ id }) => id), ['demo'])
+    assert.equal(listed.unavailableCount, 2)
+    assert.deepEqual(listed.unavailableProjects.map(({ id, code }) => [id, code]), [
+      [nativeId, 'openreel-migration-required'], ['stale', 'project-unreadable'],
+    ])
+    await assert.rejects(() => byName(registered, 'clip_get').execute({ projectId: 'stale' }),
+      (error) => error instanceof ClipDomainError && error.code === 'project-unreadable'
+        && error.message.startsWith('[project-unreadable] ') && !error.message.includes(ctx.home))
+    assert.equal((await byName(registered, 'clip_get').execute({ projectId: 'demo' })).projectId, 'demo')
+
+    const dispatcher = createClipDispatcher({ paths: ctx.paths })
+    const httpList = await dispatcher.dispatch({ url: '/projects' })
+    assert.equal(httpList.status, 200)
+    assert.deepEqual(httpList.body.projects.map(({ id }) => id), ['demo'])
+    assert.deepEqual(httpList.body.unavailableProjects, listed.unavailableProjects)
+    const unreadable = await dispatcher.dispatch({ url: '/projects/stale' })
+    assert.equal(unreadable.status, 409)
+    assert.equal(unreadable.body.error, 'project-unreadable')
+    assert.equal(unreadable.body.message, listed.unavailableProjects[1].message)
+    assert.doesNotMatch(unreadable.body.message, /EISDIR/)
   })
 
   it('clip_get returns seconds and respects view=clips', async () => {

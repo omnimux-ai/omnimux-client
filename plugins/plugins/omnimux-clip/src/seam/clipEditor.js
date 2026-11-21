@@ -60,7 +60,7 @@ export function createClipEditorSeam(deps) {
       const src = exportMp4Path(store.paths, projectId)
       if (!fs.existsSync(src)) {
         throw ClipDomainError.exportEncodeFailed(
-          `export file not ready: ${src}. Open the clip overlay and export, or call clip_export first.`,
+          `Export file for project ${projectId} is not ready. Open the project in the right-side clip editor and choose Export.`,
         )
       }
       if (dest && dest !== src) {

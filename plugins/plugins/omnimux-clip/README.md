@@ -2,7 +2,7 @@
 
 「视频剪辑」使用 OpenReel 编辑器和 WebCodecs。独立入口是 `omnimux-clip:studio`，从画布视频合成节点打开时，剪辑 Portal 留在当前工作区。画布打开和返回事件交换 JSON，并用工作区、节点、工程三个 ID 校验归属。
 
-Agent 可用 `clip_list`、`clip_get`、`clip_diagnostics` 查询 Host 的旧档，`clip_create`、`clip_edit` 操作旧格式。待迁移的原生工程在列表单独标出。实时打开、播放、截帧与导出工具返回结构化不可用错误。手工播放和导出在右侧编辑器执行。详见 [工具清单](../../docs/contracts/plugin-agent-tools-inventory.md)、[剪辑契约](../../docs/contracts/clip-live-control.md)和[剪辑技能](skills/clip-craft/SKILL.md)。
+Agent 可用 `clip_list`、`clip_get`、`clip_diagnostics` 查询 Host 的旧档，`clip_create`、`clip_edit` 操作旧格式。列表单独标出待迁移和不可读的工程。实时打开、播放、截帧与导出工具返回结构化不可用错误。手工播放和导出在右侧编辑器执行。在画布中退出编辑后，已开始的导出仍可把成片回写到原节点。详见 [工具清单](../../docs/contracts/plugin-agent-tools-inventory.md)、[剪辑契约](../../docs/contracts/clip-live-control.md)和[剪辑技能](skills/clip-craft/SKILL.md)。
 
 ## 身份
 

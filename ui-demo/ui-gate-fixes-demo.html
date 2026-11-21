@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>UI 门禁违规修复 · 修改前后演示</title>
+<style>
+  :root {
+    --bg: #eef0f3; --panel: #fff; --panel-2: #f6f7f9; --layer: #f3f4f6;
+    --border: #e3e5e9; --border-strong: #d1d5db; --label: #1f2329;
+    --label-2: #61666f; --label-3: #9298a2; --brand: #c8f135;
+    --brand-ink: #1d2a00; --danger: #e5484d; --danger-bg: #ffecec;
+    --success: #2f9e44; --success-bg: #e9f8ec; --shadow: 0 10px 30px rgba(31,35,41,.10);
+  }
+  body[data-theme="dark"] {
+    --bg: #101214; --panel: #16191d; --panel-2: #1a1d21; --layer: #22262b;
+    --border: #2b3036; --border-strong: #3a4048; --label: #f0f2f5;
+    --label-2: #b3b8c0; --label-3: #7e858f; --danger: #ff6b6b;
+    --danger-bg: #3a1d20; --success: #51cf66; --success-bg: #1d3322;
+    --shadow: 0 18px 50px rgba(0,0,0,.5);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body { background: var(--bg); color: var(--label); font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+  button { font: inherit; }
+  .topbar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 14px 24px; background: var(--panel); border-bottom: 1px solid var(--border); }
+  .topbar h1 { margin: 0; font-size: 15px; font-weight: 680; }
+  .topbar .sub { margin-top: 3px; color: var(--label-2); font-size: 12px; }
+  .spacer { flex: 1; }
+  .toggle { display: inline-flex; padding: 3px; gap: 2px; border: 1px solid var(--border); border-radius: 999px; background: var(--panel-2); }
+  .toggle button { border: 0; background: transparent; color: var(--label-2); padding: 6px 13px; border-radius: 999px; cursor: pointer; font-size: 12px; }
+  .toggle button.active { color: var(--label); background: var(--panel); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.14); }
+  .page { max-width: 1280px; margin: 0 auto; padding: 24px; }
+  .intro h2 { margin: 0 0 6px; font-size: 20px; font-weight: 680; }
+  .intro p { margin: 0; max-width: 980px; color: var(--label-2); font-size: 13px; line-height: 1.7; }
+  .compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 20px; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; box-shadow: var(--shadow); }
+  .panel-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  .tag { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; }
+  .before .tag { color: var(--danger); background: var(--danger-bg); }
+  .after .tag { color: var(--success); background: var(--success-bg); }
+  .panel-head strong { font-size: 13px; }
+  .panel-body { padding: 16px; min-height: 150px; }
+  .note { color: var(--label-3); font-size: 11px; margin: 10px 0 0; line-height: 1.6; }
+  .row { display: flex; align-items: center; gap: 12px; }
+  .agent-card { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 78px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; background: transparent; color: var(--label); text-align: left; }
+  .agent-card.selected { border-color: var(--border-strong); background: var(--layer); }
+  .agent-icon { display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 10px; background: var(--layer); font-size: 16px; font-weight: 700; }
+  .agent-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .agent-name { font-size: 15px; font-weight: 600; line-height: 1.3; }
+  .agent-version { font-size: 13px; color: var(--label-2); line-height: 1.3; }
+  .hero { margin: 0; font-size: 22px; line-height: 30px; font-weight: 650; color: var(--label); }
+  .hero.after-title { font-size: 24px; line-height: 32px; }
+  .hero em { color: var(--brand); font-style: normal; font-weight: 700; }
+  .skill-card { position: relative; width: 220px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .skill-cover { height: 96px; background: linear-gradient(135deg, var(--layer), var(--panel-2)); display: flex; align-items: center; justify-content: center; color: var(--label-3); font-size: 12px; }
+  .skill-body { padding: 12px 14px 14px; }
+  .skill-title { margin: 0 0 5px; font-size: 15px; font-weight: 600; }
+  .skill-desc { margin: 0; color: var(--label-2); font-size: 12px; line-height: 18px; }
+  .skill-btn { position: absolute; opacity: 0; pointer-events: none; display: inline-flex; padding: 6px 14px; border: 0; border-radius: 999px; background: #fff; color: #111; font-size: 12px; font-weight: 600; }
+  .carousel { position: relative; height: 180px; border-radius: 12px; background: var(--layer); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  .carousel img { width: 100%; height: 100%; object-fit: contain; }
+  .dots { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); display: flex; gap: 6px; padding: 5px 9px; border-radius: 999px; background: var(--panel); }
+  .dot { width: 6px; height: 6px; padding: 0; border: 0; border-radius: 50%; background: var(--label-2); opacity: .6; }
+  .dot.active { width: 16px; border-radius: 3px; background: var(--label); opacity: 1; }
+  .expand { display: block; height: auto; margin: 2px 0 0; padding: 0; border: 0; background: transparent; color: var(--brand); font-size: 14px; line-height: 21px; cursor: pointer; }
+  .loading-label { font-size: 12.5px; line-height: 1.4; letter-spacing: .05em; color: var(--label-3); }
+  .loading-label.after-label { font-size: 13px; }
+  @media (max-width: 800px) { .compare { grid-template-columns: 1fr; } .page { padding: 16px; } .topbar { padding: 12px 14px; } }
+</style>
+</head>
+<body data-theme="dark">
+  <header class="topbar">
+    <div><h1>UI 门禁违规修复</h1><div class="sub">UI01 / UI02 / UI10 · 修改前后对照（不改变既有视觉层级）</div></div>
+    <div class="spacer"></div>
+    <div class="toggle"><button data-theme-button="light">浅色</button><button data-theme-button="dark" class="active">深色</button></div>
+  </header>
+  <main class="page">
+    <section class="intro"><h2>修复内容</h2><p>原生控件统一替换为 dsh-ui-kit Button/IconButton；内联业务样式迁移到样式表；非标字号收敛到合规字阶。以下为每个可见改动的修改前后对照。</p></section>
+    <section class="compare">
+      <article class="panel before"><header class="panel-head"><span class="tag">修改前</span><strong>本地 Agent 卡片 · 原生 button</strong></header><div class="panel-body"><div class="agent-card selected"><span class="agent-icon">C</span><span class="agent-copy"><span class="agent-name">Claude</span><span class="agent-version">已安装 · 2.1.223</span></span></div><p class="note">原生 &lt;button&gt;，UI01 违规；卡片样式依赖 UA 默认行为。</p></div></article>
+      <article class="panel after"><header class="panel-head"><span class="tag">修改后</span><strong>本地 Agent 卡片 · dsh-ui-kit Button</strong></header><div class="panel-body"><div class="agent-card selected"><span class="agent-icon">C</span><span class="agent-copy"><span class="agent-name">Claude</span><span class="agent-version">已安装 · 2.1.223</span></span></div><p class="note">Button + 自定义卡片类，视觉保持，控件基线与焦点/禁用语义统一。</p></div></article>
+
+      <article class="panel before"><header class="panel-head"><span class="tag">修改前</span><strong>产品链接创建弹窗标题 · 22px</strong></header><div class="panel-body"><p class="hero">粘贴商品链接，<em>一键生成产品</em></p><p class="note">22px 不在合规字阶白名单。</p></div></article>
+      <article class="panel after"><header class="panel-head"><span class="tag">修改后</span><strong>产品链接创建弹窗标题 · 24px</strong></header><div class="panel-body"><p class="hero after-title">粘贴商品链接，<em>一键生成产品</em></p><p class="note">使用 24px / 32px 标准标题字阶。</p></div></article>
+
+      <article class="panel before"><header class="panel-head"><span class="tag">修改前</span><strong>技能卡片隐藏操作 / 轮播控件</strong></header><div class="panel-body"><div class="skill-card"><div class="skill-cover">Skill 封面</div><div class="skill-body"><p class="skill-title">UGC 广告脚本</p><p class="skill-desc">真实达人视角的产品种草脚本。</p></div><button class="skill-btn">使用 Skill</button></div><div class="carousel" style="margin-top:12px"><div class="dots"><button class="dot active"></button><button class="dot"></button><button class="dot"></button></div></div><p class="note">隐藏触发按钮与轮播点使用原生 button；隐藏态内联样式属于 UI02 违规。</p></div></article>
+      <article class="panel after"><header class="panel-head"><span class="tag">修改后</span><strong>技能卡片隐藏操作 / 轮播控件</strong></header><div class="panel-body"><div class="skill-card"><div class="skill-cover">Skill 封面</div><div class="skill-body"><p class="skill-title">UGC 广告脚本</p><p class="skill-desc">真实达人视角的产品种草脚本。</p></div><button class="skill-btn">使用 Skill</button></div><div class="carousel" style="margin-top:12px"><div class="dots"><button class="dot active"></button><button class="dot"></button><button class="dot"></button></div></div><p class="note">隐藏态样式移入样式表；按钮保持原生并沿用既有 session-guide 零依赖豁免，视觉无变化。</p></div></article>
+
+      <article class="panel before"><header class="panel-head"><span class="tag">修改前</span><strong>画布加载文案 · 12.5px</strong></header><div class="panel-body"><div class="loading-label">正在准备画布…</div><p class="note">12.5px 不在合规字阶白名单。</p></div></article>
+      <article class="panel after"><header class="panel-head"><span class="tag">修改后</span><strong>画布加载文案 · 13px</strong></header><div class="panel-body"><div class="loading-label after-label">正在准备画布…</div><p class="note">使用 13px 标准字阶，观感一致。</p></div></article>
+    </section>
+  </main>
+  <script>
+    const applyTheme = (theme) => {
+      document.body.dataset.theme = theme
+      for (const item of document.querySelectorAll('[data-theme-button]')) item.classList.toggle('active', item.dataset.themeButton === theme)
+    }
+    for (const button of document.querySelectorAll('[data-theme-button]')) button.addEventListener('click', () => applyTheme(button.dataset.themeButton))
+  </script>
+</body>
+</html>

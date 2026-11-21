@@ -99,6 +99,10 @@ export class ClipDomainError extends Error {
     return new ClipDomainError('project-not-materialized', `Canvas clip project ${id} is not saved yet. Open its clip node in the canvas to edit it. Live edits in the canvas editor are not available to Host tools.`)
   }
 
+  static projectUnreadable(id) {
+    return new ClipDomainError('project-unreadable', `Project ${id} could not be read. Check that its saved entry is a readable file.`)
+  }
+
   static openReelMigrationRequired(id) {
     return new ClipDomainError('openreel-migration-required', `Project ${id} uses the native OpenReel format. The current Host tools read legacy TimelineSchema projects and require migration support for this project.`)
   }
@@ -132,6 +136,7 @@ export const CLIP_STATUS_BY_CODE = {
   'path-denied': 403,
   'not-found': 404,
   'project-not-materialized': 404,
+  'project-unreadable': 409,
   'openreel-migration-required': 409,
   'invalid-json': 400,
   'invalid-id': 400,

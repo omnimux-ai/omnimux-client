@@ -74,7 +74,7 @@ export function createProjectStore(deps) {
     try {
       raw = fs.readFileSync(file, 'utf8')
     } catch (error) {
-      if (error.code !== 'ENOENT') throw error
+      if (error?.code !== 'ENOENT') throw ClipDomainError.projectUnreadable(id)
       if (id.startsWith('clip_node_')) throw ClipDomainError.projectNotMaterialized(id)
       throw ClipDomainError.notFound(`project not found: ${id}`)
     }

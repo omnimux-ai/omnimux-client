@@ -5,7 +5,14 @@
  *
  * @param {() => { claim: (id: string) => void, release: (id: string) => void, PRODUCT_STAGE_EVENT: string, readBox: () => { top: number, left: number, width: number, height: number } }} getStage
  */
-import { isCanvasClipBinding } from './clip-events.js'
+import {
+  OMNIMUX_CLIP_CLOSE,
+  OMNIMUX_CLIP_PROGRESS,
+  OMNIMUX_CLIP_SAVE,
+  isCanvasClipBinding,
+  isProgressClipEditorPayload,
+  isSaveClipEditorPayload,
+} from './clip-events.js'
 
 const PRODUCT_STAGE_EVENT = 'dsh-product-stage'
 const STAGE_ID = 'omnimux-clip'
@@ -33,6 +40,9 @@ export function createStageStore(getStage) {
   // Legacy asynchronous progress callbacks carry only nodeId. Once a node id
   // has referred to two bindings, those callbacks cannot identify their origin.
   const seenBindings = new Map()
+  // Each native export starts with a rendering/0 callback. Keep only its
+  // original binding so a terminal receipt can outlive the editor Portal.
+  const pendingExports = new Map()
 
   function emit() {
     for (const listener of listeners) listener()
@@ -89,13 +99,30 @@ export function createStageStore(getStage) {
   const store = {
     getSnapshot: () => open,
     getSessionSnapshot: () => activeSession,
-    resolveCanvasReply(payload, { immediate = false } = {}) {
-      const session = activeSession
-      if (!open || session?.source !== 'canvas' || payload?.nodeId !== session.nodeId) return null
-      if (payload.workspaceId !== undefined && payload.workspaceId !== session.workspaceId) return null
-      if (payload.projectId !== undefined && payload.projectId !== session.projectId) return null
-      if (!immediate && !isCanvasClipBinding(payload) && seenBindings.get(session.nodeId) === null) return null
-      return { ...payload, workspaceId: session.workspaceId, projectId: session.projectId }
+    resolveCanvasReply(type, payload) {
+      const isProgress = type === OMNIMUX_CLIP_PROGRESS
+      const isSave = type === OMNIMUX_CLIP_SAVE
+      const terminal = isSave && payload?.output != null
+        || isProgress && ['completed', 'error', 'idle'].includes(payload?.status)
+      const pending = terminal ? pendingExports.get(payload.nodeId) : undefined
+      const session = open && activeSession?.source === 'canvas' ? activeSession : null
+      const binding = pending ?? session
+      if (!isCanvasClipBinding(binding) || payload?.nodeId !== binding.nodeId) return null
+      if (payload.workspaceId !== undefined && payload.workspaceId !== binding.workspaceId) return null
+      if ((pending || payload.projectId !== undefined) && payload.projectId !== binding.projectId) return null
+      if (type !== OMNIMUX_CLIP_CLOSE && !isCanvasClipBinding(payload) && seenBindings.get(binding.nodeId) === null) return null
+
+      const { workspaceId, nodeId, projectId } = binding
+      const detail = { ...payload, workspaceId, nodeId, projectId }
+      if (isSave && !isSaveClipEditorPayload(detail)) return null
+      if (isProgress && !isProgressClipEditorPayload(detail)) return null
+      if (isProgress && detail.status === 'rendering' && detail.renderProgress === 0) {
+        const previous = pendingExports.get(nodeId)
+        if (previous && (previous.workspaceId !== workspaceId || previous.projectId !== projectId)) return null
+        pendingExports.set(nodeId, { workspaceId, nodeId, projectId })
+      }
+      if (pending) pendingExports.delete(nodeId)
+      return detail
     },
     readBox,
     /**
@@ -190,6 +217,7 @@ export function createStageStore(getStage) {
       }
       listeners.clear()
       seenBindings.clear()
+      pendingExports.clear()
       activeSession = null
       open = false
       if (globalActiveStageStore === store) {

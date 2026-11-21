@@ -1615,7 +1615,7 @@ export const INSPIRATION_CSS = `
 .omnimux-post-carousel-nav.is-next { right: 10px; }
 .omnimux-post-carousel-counter { position: absolute; top: 12px; right: 12px; z-index: 3; padding: 4px 9px; border-radius: 999px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font-size: 11px; }
 .omnimux-post-carousel-dots { position: absolute; left: 50%; bottom: 12px; z-index: 3; display: flex; align-items: center; gap: 6px; padding: 5px 9px; border-radius: 999px; background: var(--dsw-alias-bg-layer-1); transform: translateX(-50%); }
-.omnimux-post-carousel-dot { width: 6px; height: 6px; padding: 0; border-radius: 50%; background: var(--dsw-alias-label-secondary); opacity: .6; }
+.omnimux-post-carousel-dot { width: 6px; height: 6px; min-width: 0; min-height: 0; padding: 0; border-radius: 50%; background: var(--dsw-alias-label-secondary); opacity: .6; }
 .omnimux-post-carousel-dot.is-active { width: 16px; border-radius: 3px; background: var(--dsw-alias-label-primary); opacity: 1; }
 .omnimux-post-lightbox-counter { min-width: 34px; text-align: center; color: var(--dsw-alias-label-secondary); font-size: 11px; }
 .omnimux-post-asset-footer { display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 14px 0 4px; font-size: 13px; }

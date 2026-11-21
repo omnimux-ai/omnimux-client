@@ -223,7 +223,7 @@ superseded_by: null
 | 校验工程并报告实时截帧不可用 | 编辑器预览 | `clip_snapshot` | L2 | `Implemented` | 否 |
 | 校验工程并报告实时导出不可用 | 编辑器「导出」 | `clip_export` | L1 | `Implemented` | 阶段 2 按用户明确导出指令 |
 
-查询工具不会自动切页，画布 Portal 打开时剪辑工具保留当前画布。待迁移文件上报 `openreel-migration-required`，未保存的 `clip_node_…` 上报 `project-not-materialized`。实时工具读取旧档成功后抛 `ui-unavailable`。截帧与导出不会生成占位文件。
+查询工具不会自动切页，画布 Portal 打开时剪辑工具保留当前画布。待迁移文件上报 `openreel-migration-required`，未保存的 `clip_node_…` 上报 `project-not-materialized`。单个工程读文件失败时上报 `project-unreadable`，HTTP 单项为 409，列表继续返回其余工程。实时工具读取旧档成功后抛 `ui-unavailable`。截帧与导出不会生成占位文件。
 
 ---
 

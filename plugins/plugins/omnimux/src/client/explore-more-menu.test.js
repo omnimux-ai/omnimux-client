@@ -1,7 +1,7 @@
 /**
  * 官方「更多」菜单（seat `sidebar.panellist.actions`）注册与渲染回归测试（Issue #3774）。
  *
- * 覆盖：注册形状（seat 名 / id / order）、10 行文案与顺序、分组分隔线、
+ * 覆盖：注册形状（seat 名 / id / order）、菜单行文案与顺序、分组分隔线、
  * 点击先关官方菜单再走既有激活委托、老宿主 / 非法 primitives 的 no-op，
  * 以及「不顶层 import 官方 primitives、不复制第二份清单」的依赖注入与单一真源约束。
  *

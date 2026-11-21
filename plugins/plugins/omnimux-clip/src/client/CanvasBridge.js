@@ -65,8 +65,8 @@ export function createAndMountCanvasBridge({ stage, target = window, root = glob
   }
 }
 
-function notifyCanvas(type, payload, targetOrOpts, immediate = false) {
-  const detail = getActiveClipStageStore()?.resolveCanvasReply(payload, { immediate })
+function notifyCanvas(type, payload, targetOrOpts) {
+  const detail = getActiveClipStageStore()?.resolveCanvasReply(type, payload)
   if (!detail) return false
   const opts = targetOrOpts && typeof targetOrOpts.dispatchEvent === 'function'
     ? { target: targetOrOpts }
@@ -106,5 +106,5 @@ export function notifyCanvasProgress(payload, targetOrOpts) {
  */
 export function notifyCanvasClose(payload, targetOrOpts) {
   // The toolbar reads the active session and closes it in the same callback.
-  return notifyCanvas(OMNIMUX_CLIP_CLOSE, payload, targetOrOpts, true)
+  return notifyCanvas(OMNIMUX_CLIP_CLOSE, payload, targetOrOpts)
 }

@@ -6,11 +6,13 @@
 
 画布节点以 `(workspaceId, nodeId, projectId)` 标识剪辑入口。节点打开时透传三个 ID，已有合法 `projectId` 继续使用，空缺时分配并记录 `clip_node_…`。粘贴副本时分配新工程 ID，移除旧 `schema`、成片与预览元数据，从 `idle` 开始。原节点以及已有成片继续使用原引用。
 
-画布 `OPEN`、`PROGRESS`、`SAVE`、`CLOSE` 使用完整三元组。`SAVE` 永远按现有工程归属回写，合法成片继续走 `planClipExportDownstream`。现有手工导出回调由外围桥接补足 ID。异步回调的归属无法唯一确定时丢弃。剪辑桥只接受来自当前可见工作区的 `OPEN`。Portal 挂到对应工作区，通过画布工作台 viewport 提供 `view.extra.clip` 导航提示。Hub 遇到画布剪辑提示时保留画布页，浏览器接到自动切页请求时再次检查当前 Portal。`clip_list`、`clip_get`、`clip_diagnostics` 无条件跳过自动跟随。
+画布 `OPEN`、`PROGRESS`、`SAVE`、`CLOSE` 使用完整三元组。手工导出开始时，外围桥记录当前绑定。退出编辑清除画布的临时渲染状态。已开始的任务收到匹配工程的 `SAVE` 或终态回执时，仍按原绑定投递，消费后移除记录。画布校验现有节点绑定，合法成片继续走 `planClipExportDownstream`。导出归属不明确时丢弃回执。
+
+剪辑桥只接受来自当前可见工作区的 `OPEN`。Portal 挂到对应工作区，通过画布工作台 viewport 提供 `view.extra.clip` 导航提示。Hub 遇到画布剪辑提示时保留画布页，浏览器接到自动切页请求时再次检查当前 Portal。`clip_list`、`clip_get`、`clip_diagnostics` 无条件跳过自动跟随。
 
 - `clip_list` 保留 `projects` 与 `count`，另报 `unavailableProjects: [{ id, code, message }]` 和 `unavailableCount`。两份列表分别受 `limit` 限制，`unavailableCount` 是扫描到的总数。工程列表 HTTP 路由使用同一 Store，`projects` 的描述字段保持现有形状。
 - `clip_get` / `clip_diagnostics` 可查已保存的旧 `TimelineSchema`，`clip_create` / `clip_edit` 写该格式。`clip_edit` 的单步记录属于 Host 旧档历史。
-- 工具和 HTTP 先区分 `invalid-id`、`invalid-json`、`not-found`、`project-not-materialized`（`clip_node_…` 尚无保存文件）及 `openreel-migration-required`（已保存的原生 `Project`）。`clip_open`、`clip_view`、`clip_snapshot`、`clip_export` 读到可用旧档后抛 `ui-unavailable`。用户可在右侧操作播放与手工导出。Host 工具错误为 `ClipDomainError`，注册时将 `[code]` 带进 Harness 可读错误消息。HTTP 工程读取错误在 `error` 字段携带代码。
+- 工具和 HTTP 先区分 `invalid-id`、`invalid-json`、`not-found`、`project-not-materialized`（`clip_node_…` 尚无保存文件）及 `openreel-migration-required`（已保存的原生 `Project`）。无法读取单个文件时返回 `project-unreadable`，对应单项 HTTP 409。列表把该条目记入 `unavailableProjects` 并继续读取其他工程。`clip_open`、`clip_view`、`clip_snapshot`、`clip_export` 读到可用旧档后抛 `ui-unavailable`。用户可在右侧操作播放与手工导出。Host 工具错误为 `ClipDomainError`，注册时将 `[code]` 带进 Harness 可读错误消息。HTTP 工程读取错误在 `error` 字段携带代码。
 
 阶段 1 源码入口为 [画布事件](../../plugins/omnimux-workflow/src/canvas/bridge/clipEvents.ts)、[剪辑事件桥](../../plugins/omnimux-clip/src/client/CanvasBridge.js)、[自动跟随](../../plugins/omnimux/src/workbench/surface-follow.js)、[工程 Store](../../plugins/omnimux-clip/src/store/projectStore.js) 与 [工具注册](../../plugins/omnimux-clip/src/tools.js)。从仓库根运行 `corepack pnpm --filter omnimux-clip test`、`corepack pnpm --filter omnimux-workflow test`、`corepack pnpm --filter omnimux test` 和 `corepack pnpm --dir plugins test:agent-tools`。验收对应 [AC-P1-01 至 AC-P1-06](../../../specs/clip-phase1-160.spec.md#证伪方式)。
 

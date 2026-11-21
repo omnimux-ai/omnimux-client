@@ -269,3 +269,81 @@ test('legacy manual export callbacks are scoped and ambiguous callbacks are drop
     stage.dispose()
   }
 })
+
+test('a started manual export delivers its saved output to the original node after exit', () => {
+  const target = new EventTarget()
+  const stage = createStageStore(() => null)
+  const saved = []
+  target.addEventListener(OMNIMUX_CLIP_SAVE, (event) => saved.push(event.detail))
+  const start = { nodeId: binding.nodeId, status: 'rendering', renderProgress: 0 }
+  const output = { videoPath: '/exports/first.mp4', revision: '12:42' }
+  const save = { nodeId: binding.nodeId, projectId: binding.projectId, createDownstreamNode: true, output }
+  const otherNode = { ...binding, nodeId: 'node_other', projectId: 'clip_node_other' }
+  try {
+    stage.openFromCanvas(binding)
+    assert.equal(notifyCanvasProgress(start, target), true)
+    assert.equal(notifyCanvasProgress({ ...start, renderProgress: 100 }, target), true)
+    stage.close()
+    assert.equal(stage.getSnapshot(), false)
+    assert.equal(getActiveClipSession(), null)
+    assert.equal(notifyCanvasProgress({ ...start, renderProgress: 50 }, target), false)
+    assert.equal(notifyCanvasSave({ ...save, output: { videoPath: '' } }, target), false)
+    for (const wrong of [
+      { projectId: undefined }, { workspaceId: 'ws_other' }, { workspaceId: '../other' },
+      { nodeId: 'node_missing' }, { projectId: 'clip_node_other' },
+    ]) {
+      assert.equal(notifyCanvasSave({ ...save, ...wrong }, target), false)
+    }
+    stage.openFromCanvas(otherNode)
+    assert.equal(notifyCanvasSave(save, target), true)
+    assert.deepEqual(saved, [{ ...save, workspaceId: binding.workspaceId }])
+    assert.equal(getActiveClipSession()?.nodeId, otherNode.nodeId)
+    assert.equal(notifyCanvasSave(save, target), false)
+    assert.equal(saved.length, 1)
+  } finally {
+    stage.dispose()
+  }
+})
+
+test('terminal progress after exit requires the pending export binding and settles it', () => {
+  const target = new EventTarget()
+  const stage = createStageStore(() => null)
+  const progress = []
+  target.addEventListener(OMNIMUX_CLIP_PROGRESS, (event) => progress.push(event.detail))
+  const failure = { ...binding, status: 'error' }
+  try {
+    stage.openFromCanvas(binding)
+    assert.equal(notifyCanvasProgress({ ...binding, status: 'rendering', renderProgress: 0 }, target), true)
+    stage.close()
+    assert.equal(notifyCanvasProgress({ ...failure, projectId: undefined }, target), false)
+    assert.equal(notifyCanvasProgress({ ...failure, workspaceId: 'ws_other' }, target), false)
+    assert.equal(notifyCanvasProgress(failure, target), true)
+    assert.equal(notifyCanvasProgress(failure, target), false)
+    assert.equal(progress.length, 2)
+    assert.deepEqual(progress[1], failure)
+  } finally {
+    stage.dispose()
+  }
+})
+
+test('a pending export cannot borrow the workspace of a newly opened colliding node', () => {
+  const target = new EventTarget()
+  const stage = createStageStore(() => null)
+  const saved = []
+  target.addEventListener(OMNIMUX_CLIP_SAVE, (event) => saved.push(event.detail))
+  const otherBinding = { ...binding, workspaceId: 'ws_other' }
+  const output = { videoPath: '/exports/first.mp4' }
+  try {
+    stage.openFromCanvas(binding)
+    assert.equal(notifyCanvasProgress({ nodeId: binding.nodeId, status: 'rendering', renderProgress: 0 }, target), true)
+    stage.close()
+    stage.openFromCanvas(otherBinding)
+    assert.equal(notifyCanvasSave({ nodeId: binding.nodeId, projectId: binding.projectId, output }, target), false)
+    assert.equal(notifyCanvasSave({ ...otherBinding, output }, target), false)
+    assert.equal(notifyCanvasSave({ ...binding, output }, target), true)
+    assert.deepEqual(saved, [{ ...binding, output }])
+    assert.equal(getActiveClipSession()?.workspaceId, otherBinding.workspaceId)
+  } finally {
+    stage.dispose()
+  }
+})
