@@ -36,13 +36,21 @@ function clipOutputOwner(node: SerializedCanvasNode): string | undefined {
 }
 
 function exportAdvanced(before: SerializedCanvasNode, after: SerializedCanvasNode): boolean {
+  // The Host already ordered these commits. Preserve the full append-only
+  // receipt list, including fields this client does not interpret.
   const previous = Array.isArray(before.data.clipExportReceipts) ? before.data.clipExportReceipts : [];
   const next = after.data.clipExportReceipts;
   return Array.isArray(next) && next.length > previous.length && equal(previous, next.slice(0, previous.length));
 }
 
-/** Verify that the remote advance consists entirely of committed Clip writes. */
-export function planClipWriteRebase(base: Graph, remote: Graph, workspaceId: string): ClipWriteRebase | undefined {
+/** Auto-save accepts only a pure Clip advance. Keep local protects Clip writes inside a mixed advance, too. */
+export function planClipWriteRebase(
+  base: Graph,
+  remote: Graph,
+  workspaceId: string,
+  mode: 'automatic' | 'keep-local' = 'automatic',
+): ClipWriteRebase | undefined {
+  const keepLocal = mode === 'keep-local';
   const baseNodes = new Map(base.nodes.map(node => [node.id, node]));
   const remoteNodes = new Map(remote.nodes.map(node => [node.id, node]));
   const sourceDeltas = new Map<string, Set<string>>();
@@ -67,7 +75,8 @@ export function planClipWriteRebase(base: Graph, remote: Graph, workspaceId: str
     const owner = clipOutputOwner(node);
     if (owner !== undefined && exported.has(owner)) outputOwners.set(node.id, owner);
   }
-  const insertedNodes = remote.nodes.filter(node => !baseNodes.has(node.id) && outputOwners.has(node.id));
+  const outputNodes = remote.nodes.filter(node => outputOwners.has(node.id));
+  const insertedNodes = outputNodes.filter(node => !baseNodes.has(node.id));
   const ownersWithNewOutput = new Set(insertedNodes.map(node => outputOwners.get(node.id)));
   const fieldChanges = (before: SerializedCanvasNode, after: SerializedCanvasNode) => {
     const allowed = sourceDeltas.get(before.id) ?? (outputOwners.has(before.id) ? MATERIAL_EXPORT_FIELDS : undefined);
@@ -92,19 +101,20 @@ export function planClipWriteRebase(base: Graph, remote: Graph, workspaceId: str
   const baseEdges = new Map(base.edges.map(edge => [edge.id, edge]));
   const remoteEdges = new Map(remote.edges.map(edge => [edge.id, edge]));
   const owned = (edge: SerializedCanvasEdge) => outputOwners.get(edge.target) === edge.source;
-  const addedEdges = remote.edges.filter(edge => owned(edge) && isDrawableClipExportEdge(edge)
-    && !equal(baseEdges.get(edge.id), edge));
-  const newEdgeByTarget = new Map(addedEdges.map(edge => [edge.target, edge]));
+  const outputEdges = remote.edges.filter(edge => owned(edge) && isDrawableClipExportEdge(edge));
+  const addedEdges = outputEdges.filter(edge => !equal(baseEdges.get(edge.id), edge));
   const removeIds = new Set(base.edges.filter(edge => owned(edge) && !isDrawableClipExportEdge(edge)
     && !equal(remoteEdges.get(edge.id), edge)).map(edge => edge.id));
 
-  const expectedNodes = base.nodes.map(node => {
-    const delta = changes.get(node.id);
-    return delta ? mergeNode(node, delta.after, delta.fields) : node;
-  }).concat(insertedNodes);
-  const expectedEdges = base.edges.filter(edge => !removeIds.has(edge.id)).concat(addedEdges);
-  if (signatureOf(expectedNodes, expectedEdges, { workspaceId }) !== signatureOf(remote.nodes, remote.edges, { workspaceId })) {
-    return undefined;
+  if (!keepLocal) {
+    const expectedNodes = base.nodes.map(node => {
+      const delta = changes.get(node.id);
+      return delta ? mergeNode(node, delta.after, delta.fields) : node;
+    }).concat(insertedNodes);
+    const expectedEdges = base.edges.filter(edge => !removeIds.has(edge.id)).concat(addedEdges);
+    if (signatureOf(expectedNodes, expectedEdges, { workspaceId }) !== signatureOf(remote.nodes, remote.edges, { workspaceId })) {
+      return undefined;
+    }
   }
 
   function apply(local: Graph, replayingHistory = false): Graph | undefined {
@@ -121,7 +131,8 @@ export function planClipWriteRebase(base: Graph, remote: Graph, workspaceId: str
       const owner = outputOwners.get(outputId);
       return owner !== undefined && hasBinding(owner);
     };
-    if (!replayingHistory) {
+    if (keepLocal && !replayingHistory && [...exported].some(id => !hasBinding(id))) return undefined;
+    if (!keepLocal && !replayingHistory) {
       const sanitizedLocal = new Map(sanitizeNodes(local.nodes, { workspaceId }).map(node => [node.id, node]));
       for (const { before, after, fields } of changes.values()) {
         const current = sanitizedLocal.get(before.id);
@@ -133,7 +144,7 @@ export function planClipWriteRebase(base: Graph, remote: Graph, workspaceId: str
     // If a later export replaces a previously deleted output, frames before
     // that deletion must not revive the obsolete material and its old links.
     const superseded = new Set<string>();
-    if (replayingHistory) {
+    if (replayingHistory || keepLocal) {
       for (const node of local.nodes) {
         const owner = clipOutputOwner(node);
         if (owner !== undefined && ownersWithNewOutput.has(owner) && !outputOwners.has(node.id) && hasBinding(owner)) {
@@ -151,13 +162,25 @@ export function planClipWriteRebase(base: Graph, remote: Graph, workspaceId: str
       if (sourceDeltas.has(node.id) && merged.data.projectId == null) merged.data.projectId = delta.after.data.projectId;
       return merged;
     });
-    for (const node of insertedNodes) {
-      // A snapshot can predate adding the source or follow deleting/rebinding it.
-      // Insertions belong only to frames with the same Clip binding.
-      if (replayingHistory && !ownerMatches(node.id)) continue;
-      if (localNodes.has(node.id)) return undefined;
+    const restoredOutputs = new Set<string>();
+    for (const node of keepLocal ? outputNodes : insertedNodes) {
+      // A frame may predate the binding or follow deletion of its source.
+      if ((replayingHistory || keepLocal) && !ownerMatches(node.id)) continue;
+      const existing = localNodes.get(node.id);
+      if (existing) {
+        if (!baseNodes.has(node.id) || existing.type !== node.type) return undefined;
+        continue;
+      }
       nodes.push(node);
+      restoredOutputs.add(node.id);
     }
+    // Keeping local can restore a refreshed material that was deleted before
+    // the new export was known. Restore its exact Host line with it. A user
+    // who only removed an unchanged line keeps that unlink.
+    const edgesToAdd = keepLocal
+      ? outputEdges.filter(edge => restoredOutputs.has(edge.target) || !equal(baseEdges.get(edge.id), edge))
+      : addedEdges;
+    const newEdgeByTarget = new Map(edgesToAdd.map(edge => [edge.target, edge]));
     const nodeIds = new Set(nodes.map(node => node.id));
     const edges = local.edges.filter(edge => {
       if (superseded.has(edge.source) || superseded.has(edge.target)) return false;
@@ -167,12 +190,11 @@ export function planClipWriteRebase(base: Graph, remote: Graph, workspaceId: str
       if (committed?.source === edge.source && ownerMatches(edge.target) && nodeIds.has(edge.target)
         && (replayingHistory || !before)) return sameEdge(edge, committed);
       return !before || !removeIds.has(edge.id)
-        || (replayingHistory && !ownerMatches(edge.target)) || !sameEdge(edge, before);
+        || ((replayingHistory || keepLocal) && !ownerMatches(edge.target)) || !sameEdge(edge, before);
     });
-    for (const edge of addedEdges) {
-      // Respect deletions in historical frames. Edges unchanged on the Host
-      // are never restored here, so an explicit unlink remains undoable.
-      if (replayingHistory && (!ownerMatches(edge.target) || !nodeIds.has(edge.target))) continue;
+    for (const edge of edgesToAdd) {
+      // A historical frame may have no endpoint for this Host line.
+      if ((replayingHistory || keepLocal) && (!ownerMatches(edge.target) || !nodeIds.has(edge.target))) continue;
       const existing = edges.find(candidate => candidate.id === edge.id);
       if (existing && sameEdge(existing, edge)) continue;
       if (existing || !validateCanvasConnectionStructure(edge, nodes, edges).valid) return undefined;

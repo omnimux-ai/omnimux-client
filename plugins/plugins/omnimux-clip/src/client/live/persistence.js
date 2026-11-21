@@ -5,6 +5,31 @@ import { CLIP_API_PREFIX } from '../host/projectApi.js'
 
 const TIMEOUT_MS = 3500
 const draftKey = (projectId, writerId) => `draft:${projectId}:${writerId}`
+let draftsStore
+
+function clipDraftStore() {
+  return draftsStore ??= createStore('omnimux-clip-projects', 'drafts')
+}
+
+async function projectDrafts(projectId, db, includeBackups = false) {
+  const prefix = draftKey(projectId, '')
+  const backupPrefix = `backup:${projectId}:`
+  const candidates = (await keys(db)).filter(key => typeof key === 'string'
+    && (key.startsWith(prefix) || includeBackups && key.startsWith(backupPrefix)))
+  return candidates.length ? getMany(candidates, db) : []
+}
+
+function sameBinding(left, right) {
+  return left && right
+    ? left.projectId === right.projectId && left.workspaceId === right.workspaceId && left.nodeId === right.nodeId
+    : !left && !right
+}
+
+export async function readConfirmedMediaDrafts(projectId, binding) {
+  const drafts = await projectDrafts(projectId, clipDraftStore(), true)
+  return drafts.filter(draft => draft?.project?.id === projectId && sameBinding(draft.binding, binding)
+    && Number.isSafeInteger(draft.revision) && draft.revision > 0 && draft.revision === draft.localBaseRevision)
+}
 
 export class LiveClipError extends Error {
   constructor(code, message, details) {
@@ -71,7 +96,7 @@ function draftWriter(window) {
 }
 
 export function createClipPersistence(window) {
-  const db = createStore('omnimux-clip-projects', 'drafts')
+  const db = clipDraftStore()
   const writerId = draftWriter(window)
   const projectPath = id => `/projects/${encodeURIComponent(id)}`
   const withWindow = async (path, init) => {
@@ -82,6 +107,7 @@ export function createClipPersistence(window) {
   }
   const studioKey = key => `omnimux-clip:studio:${key}`
   return {
+    writerId,
     studioProject(key) {
       try { return window.sessionStorage.getItem(studioKey(key)) } catch { return null }
     },
@@ -93,10 +119,7 @@ export function createClipPersistence(window) {
     async readLocal(id) {
       const own = await get(draftKey(id, writerId), db)
       if (own) return own
-      const prefix = `draft:${id}:`
-      const candidates = (await keys(db)).filter(key => typeof key === 'string' && key.startsWith(prefix))
-      const pending = (await Promise.all(candidates.map(key => get(key, db))))
-        .filter(value => value && value.revision > value.localBaseRevision)
+      const pending = (await projectDrafts(id, db)).filter(value => value && value.revision > value.localBaseRevision)
       // A cold restart can recover an unambiguous draft. Different editors keep independent versions.
       return pending.length === 1 ? pending[0] : null
     },
@@ -119,9 +142,10 @@ export function createClipPersistence(window) {
     async recoverReceipts(sessionId, cutoff) {
       const receiptKeys = (await keys(db)).filter(key => typeof key === 'string' && key.startsWith('receipt:'))
       const receipts = await getMany(receiptKeys, db)
-      const expired = receiptKeys.filter((_, index) => !(receipts[index]?.createdAt >= cutoff))
+      const eligible = receipt => (receipt?.deadlineAt ?? receipt?.createdAt) >= cutoff
+      const expired = receiptKeys.filter((_, index) => !eligible(receipts[index]))
       if (expired.length) await delMany(expired, db)
-      return receipts.filter(receipt => receipt?.createdAt >= cutoff && receipt.sessionId === sessionId && !receipt.delivered)
+      return receipts.filter(receipt => eligible(receipt) && receipt.sessionId === sessionId && !receipt.delivered)
     },
     readHost: async (id) => {
       try {
@@ -167,11 +191,11 @@ export function fromHost(host, local) {
       || (Number.isSafeInteger(host.revision) && local.revision === host.revision && local.localBaseRevision === host.revision)
     for (const item of host.project.mediaLibrary?.items ?? []) {
       const old = previous.get(item.id)
-      const blob = local.media[item.id]
+      const blob = local.media?.[item.id]
       if (!old || !(blob instanceof Blob) || !blob.size) continue
-      // The loader checks the actual bytes against an explicit digest. Older
-      // records can only reuse bytes from the same confirmed snapshot.
-      if (mediaContentDigest(item) || (sameSnapshot && mediaVersion(old) === mediaVersion(item))) {
+      // Legacy timeline refs have locators, not a confirmed local file. Other
+      // older browser drafts can reuse bytes carried by the selected snapshot.
+      if (mediaContentDigest(item) || (item.sourceRef?.kind !== 'legacy' && sameSnapshot && mediaVersion(old) === mediaVersion(item))) {
         media[item.id] = blob
       }
     }

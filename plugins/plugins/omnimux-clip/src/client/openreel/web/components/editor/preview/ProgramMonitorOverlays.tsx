@@ -6,6 +6,8 @@ import {
   sampleAverageRgb,
   MATTE_VIEW_BYPASS,
 } from "@openreel/core";
+import { useEditorPortalRoot } from "@openreel/ui/lib/portal-root";
+import { isEditorShortcutEvent } from "../../../services/keyboard-shortcuts";
 import { getEffectsBridge } from "../../../bridges/effects-bridge";
 import { useColorMonitorStore } from "../../../stores/color-monitor-store";
 import { useProjectStore } from "../../../stores/project-store";
@@ -77,17 +79,18 @@ function useKeyPickerSync(): void {
 
 const KeyPickerLayer: React.FC = () => {
   const t = useClipT();
+  const shortcutRoot = useEditorPortalRoot();
   const picker = useColorMonitorStore((state) => state.keyPicker);
   const setKeyPicker = useColorMonitorStore((state) => state.setKeyPicker);
 
   useEffect(() => {
     if (!picker) return undefined;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setKeyPicker(null);
+      if (event.key === "Escape" && isEditorShortcutEvent(event, shortcutRoot)) setKeyPicker(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [picker, setKeyPicker]);
+  }, [picker, setKeyPicker, shortcutRoot]);
 
   if (!picker) return null;
 
@@ -417,17 +420,18 @@ const FalseColorToggle: React.FC = () => {
 
 const EyedropperLayer: React.FC = () => {
   const t = useClipT();
+  const shortcutRoot = useEditorPortalRoot();
   const eyedropper = useColorMonitorStore((state) => state.secondary.eyedropper);
   const setSecondaryView = useColorMonitorStore((state) => state.setSecondaryView);
 
   useEffect(() => {
     if (!eyedropper) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setSecondaryView({ eyedropper: null });
+      if (event.key === "Escape" && isEditorShortcutEvent(event, shortcutRoot)) setSecondaryView({ eyedropper: null });
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [eyedropper, setSecondaryView]);
+  }, [eyedropper, setSecondaryView, shortcutRoot]);
 
   if (!eyedropper) return null;
 

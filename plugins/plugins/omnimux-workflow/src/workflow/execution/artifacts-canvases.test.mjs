@@ -3,6 +3,7 @@
  * `.omnimux/canvases/`. Ledger JSON must not contain absolute /Users paths.
  */
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -98,6 +99,8 @@ test('生成物 move 进 artifacts/ 并登记账本；JSON 无绝对路径', asy
     assert.equal(existsSync(tmp), false);
     const dest = join(projectRoot, persisted.relativePath);
     assert.equal(existsSync(dest), true);
+    const digest = createHash('sha256').update(readFileSync(dest)).digest('hex');
+    assert.equal(new URL(persisted.url, 'https://fixture.invalid').searchParams.get('rev'), `sha256:${digest}`);
     const paths = resolveProjectPaths(projectRoot);
     assert.equal(dest.startsWith(paths.artifactsDir), true);
 

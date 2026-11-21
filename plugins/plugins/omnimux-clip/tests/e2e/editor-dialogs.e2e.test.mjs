@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -17,6 +18,8 @@ const clipRequire = createRequire(new URL('../../package.json', import.meta.url)
 const motionRequire = createRequire(clipRequire.resolve('framer-motion'));
 const { chromium } = browserRequire('playwright-core');
 const clipBundle = process.env.CLIP_TEST_BUNDLE ?? fileURLToPath(new URL('../../lib/client.js', import.meta.url));
+const clipSource = readFileSync(clipBundle, 'utf8');
+const clipBuild = { bytes: Buffer.byteLength(clipSource), sha256: createHash('sha256').update(clipSource).digest('hex') };
 const canvasStage = '#canvas .omnimux-clip-stage';
 const studioEditor = '#studio .openreel-studio-root';
 const dialogLayer = '.openreel-studio-root [role=dialog][data-state=open]';
@@ -183,7 +186,13 @@ async function openCanvas(page, beforeClipRequest) {
   await page.goto('http://127.0.0.1/');
   await page.addStyleTag({ content: hostStyles });
   await page.addScriptTag({ content: bindings });
-  await page.addScriptTag({ path: clipBundle });
+  const script = await page.addScriptTag({ content: clipSource });
+  const injectedBuild = await script.evaluate(async element => {
+    const bytes = new TextEncoder().encode(element.textContent);
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+    return { bytes: bytes.length, sha256: Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('') };
+  });
+  assert.deepEqual(injectedBuild, clipBuild);
   await page.evaluate(async (binding) => {
     const canvas = document.createElement('canvas');
     canvas.width = 160;
@@ -493,3 +502,148 @@ test('conflict resolution leaves Undo and playback keys to the host and restores
     await page.close();
   }
 });
+
+async function checkMaskPenConflict(t, { theme, viewport, paneWidth }) {
+  const page = await browser.newPage({ viewport, colorScheme: theme });
+  page.setDefaultTimeout(5000);
+  const resolution = Promise.withResolvers();
+  const projectPath = `${CLIP_API_PREFIX}/projects/${fixture.canvas.projectId}`;
+  const isProjectRequest = (request, method) => request.method() === method && new URL(request.url()).pathname === projectPath;
+  const screenshots = process.env.CLIP_TEST_SCREENSHOT_DIR;
+  let hold = false;
+  try {
+    await page.addInitScript(dark => {
+      document.addEventListener('DOMContentLoaded', () => {
+        document.body.toggleAttribute('data-ds-dark-theme', dark);
+      }, { once: true });
+    }, theme === 'dark');
+    const store = await openCanvas(page, async (url, request) => {
+      if (hold && request.method() === 'GET' && url.pathname === projectPath) await resolution.promise;
+    });
+    const stage = page.locator(canvasStage);
+    const shell = stage.locator('.editor-shell');
+    await page.locator('#canvas').evaluate((pane, width) => { pane.style.width = `${width}px`; }, paneWidth);
+    assert.equal(await stage.locator('.openreel-studio-root').getAttribute('data-theme'), theme);
+    const editor = await shell.elementHandle();
+    const video = stage.getByRole('button', { name: 'Select clip capture.webm', exact: true });
+    assert.equal(await video.getAttribute('data-clip-kind'), 'video');
+    await video.press('Enter');
+    await video.and(page.locator('[aria-pressed="true"]')).waitFor();
+    const clipId = await video.getAttribute('data-timeline-item-id');
+    await stage.getByRole('button', { name: 'Mask pen tool', exact: true }).click();
+    const overlay = stage.getByTestId('mask-pen-overlay');
+    const draft = overlay.getByTestId('mask-pen-draft');
+    const vertices = overlay.getByTestId('mask-draft-vertex');
+    const outline = overlay.getByTestId('mask-pen-outline');
+    await overlay.waitFor();
+    const bounds = await overlay.boundingBox();
+    assert.ok(bounds && bounds.width > 60 && bounds.height > 60);
+    for (const [x, y] of [[.22, .3], [.75, .33], [.45, .75]]) {
+      await overlay.click({ position: { x: bounds.width * x, y: bounds.height * y } });
+    }
+    assert.equal(await vertices.count(), 3);
+    const draftPath = await draft.getAttribute('d');
+    assert.ok(draftPath && !draftPath.endsWith('Z'));
+    assert.equal(await outline.count(), 0);
+
+    const before = store.load(fixture.canvas.projectId);
+    store.save(fixture.canvas.projectId, { ...before.project, name: 'Saved Host title' }, {
+      binding: fixture.canvas, expectedRevision: before.revision, revision: before.revision + 1,
+    });
+    await shell.evaluate(node => { node.tabIndex = -1; node.focus(); });
+    const [conflictSave] = await Promise.all([
+      page.waitForResponse(response => isProjectRequest(response.request(), 'PUT')),
+      page.keyboard.press('m'),
+    ]);
+    assert.equal(conflictSave.status(), 409);
+    const notice = stage.locator('[data-clip-sync=conflict]');
+    await notice.waitFor();
+
+    hold = true;
+    const keepLocal = notice.getByRole('button', { name: 'Keep and save local draft' });
+    await Promise.all([
+      page.waitForRequest(request => isProjectRequest(request, 'GET')),
+      keepLocal.click(),
+    ]);
+    assert.equal(await keepLocal.isDisabled(), true);
+    assert.equal(await editor.evaluate(node => Boolean(node.closest('[inert]'))), true);
+    await page.evaluate(() => {
+      document.activeElement?.blur();
+      window.hostMaskKeys = [];
+      document.addEventListener('keydown', event => {
+        if (['Enter', 'Backspace', 'Escape'].includes(event.key)) {
+          window.hostMaskKeys.push({ key: event.key, prevented: event.defaultPrevented, trusted: event.isTrusted });
+        }
+      });
+    });
+    if (screenshots) await stage.screenshot({ path: join(screenshots, `${theme}-before-key.png`) });
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(selector => window.hostMaskKeys.length > 0
+      || document.querySelector(`${selector} [data-testid="mask-pen-outline"]`), canvasStage);
+    const frozen = {
+      mode: await overlay.getAttribute('data-mask-pen-mode'),
+      outline: await outline.isVisible() ? await outline.getAttribute('d') : null,
+      vertices: await vertices.count(),
+      hostKeys: await page.evaluate(() => window.hostMaskKeys),
+      hostMasks: store.load(fixture.canvas.projectId).project.masks?.length ?? 0,
+    };
+    t.diagnostic(JSON.stringify({ chromium: browser.version(), injectedBuild: clipBuild, theme, viewport, paneWidth, frozen }));
+    if (screenshots) await stage.screenshot({ path: join(screenshots, `${theme}-frozen-after-key.png`) });
+    assert.equal(frozen.outline, null, 'Enter while resolving must not commit a visible mask outline');
+    assert.equal(frozen.mode, 'draw');
+    assert.equal(frozen.vertices, 3);
+    assert.equal(await draft.getAttribute('d'), draftPath);
+    const trustedHostKey = key => ({ key, prevented: false, trusted: true });
+    assert.deepEqual(frozen.hostKeys, [trustedHostKey('Enter')]);
+    assert.equal(frozen.hostMasks, 0);
+    for (const key of ['Backspace', 'Escape']) {
+      await page.keyboard.press(key);
+      assert.equal(await vertices.count(), 3);
+      assert.equal(await draft.getAttribute('d'), draftPath);
+    }
+    const hostKeys = await page.evaluate(() => window.hostMaskKeys);
+    assert.deepEqual(hostKeys, ['Enter', 'Backspace', 'Escape'].map(trustedHostKey));
+
+    const savedResolution = page.waitForResponse(response => isProjectRequest(response.request(), 'PUT'));
+    hold = false;
+    resolution.resolve();
+    assert.equal((await savedResolution).status(), 200);
+    await notice.waitFor({ state: 'hidden' });
+    assert.equal(await shell.evaluate((node, previous) => node === previous && !node.closest('[inert]'), editor), true);
+    assert.equal(store.load(fixture.canvas.projectId).project.masks?.length ?? 0, 0);
+    assert.equal(await draft.getAttribute('d'), draftPath);
+
+    const [savedMask] = await Promise.all([
+      page.waitForResponse(response => isProjectRequest(response.request(), 'PUT')
+        && response.request().postDataJSON()?.project.masks?.some(mask => mask.clipId === clipId)),
+      overlay.press('Enter'),
+      outline.waitFor(),
+    ]);
+    const closedPath = await outline.getAttribute('d');
+    assert.ok(closedPath?.startsWith(`${draftPath} C `) && closedPath.endsWith(' Z'));
+    assert.equal(await overlay.getAttribute('data-mask-pen-mode'), 'edit');
+    assert.equal(await vertices.count(), 0);
+    assert.deepEqual(await page.evaluate(() => window.hostMaskKeys), hostKeys);
+    assert.equal(savedMask.status(), 200);
+    const [mask, ...others] = store.load(fixture.canvas.projectId).project.masks ?? [];
+    assert.equal(others.length, 0);
+    assert.equal(mask?.clipId, clipId);
+    assert.equal(mask?.path.closed, true);
+    assert.equal(mask?.path.points.length, 3);
+    t.diagnostic(JSON.stringify({ releasedKeys: hostKeys, resumed: { mode: 'edit', hostMasks: 1, closedPoints: 3, sameEditor: true } }));
+    if (screenshots) await stage.screenshot({ path: join(screenshots, `${theme}-resumed-after-key.png`) });
+  } finally {
+    resolution.resolve();
+    await page.close();
+  }
+}
+
+test('conflict resolution leaves Mask Pen Enter to the host and preserves the draft in the same editor (light)',
+  { timeout: 25_000 }, t => checkMaskPenConflict(t, {
+    theme: 'light', viewport: { width: 1680, height: 940 }, paneWidth: 1100,
+  }));
+
+test('conflict resolution leaves Mask Pen Enter to the host and preserves the draft in the same editor (dark)',
+  { timeout: 25_000 }, t => checkMaskPenConflict(t, {
+    theme: 'dark', viewport: { width: 900, height: 760 }, paneWidth: 740,
+  }));

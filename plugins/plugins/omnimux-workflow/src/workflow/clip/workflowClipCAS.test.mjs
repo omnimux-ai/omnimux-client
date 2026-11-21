@@ -63,3 +63,25 @@ test('export retry reevaluates both the latest job and the exact node binding', 
   assert.deepEqual(read().nodes, [copy]);
   assert.deepEqual(read().edges, []);
 });
+
+test('export CAS compares generations before revisions and rechecks the same receipt on retry', t => {
+  const { store, read, withRace, exportArgs } = fixture(t);
+  const other = createWorkflowClipService({ store });
+  const original = other.commitExport(exportArgs(9, 5));
+  assert.equal(original.status, 'committed');
+  const { seam, expected } = withRace(() => other.commitExport(exportArgs(10, 6)));
+  const adopted = { ...exportArgs(11, 2), revisionEpoch: 1, exportGeneration: 1 };
+  const result = seam.commitExport(adopted);
+  assert.equal(result.status, 'committed');
+  assert.deepEqual(expected, [2, 3]);
+  const saved = read();
+  assert.equal(saved.nodes[0].data.outputRevision, 'out-11');
+  assert.equal(saved.edges.length, 1);
+  assert.deepEqual(saved.nodes[0].data.clipExportReceipts.map(({ projectRevision, exportGeneration }) =>
+    [projectRevision, exportGeneration]), [[5, undefined], [6, undefined], [2, 1]]);
+  assert.deepEqual(other.commitExport(exportArgs(14, 99)), { status: 'superseded', canvasCommitted: false });
+  assert.deepEqual(other.commitExport({ ...exportArgs(9, 5), revisionEpoch: 0, exportGeneration: 0 }), original);
+  assert.deepEqual(other.commitExport(adopted), result);
+  assert.throws(() => other.commitExport({ ...adopted, revisionEpoch: 2 }), { code: 'clip-export-job-mismatch' });
+  assert.deepEqual(read(), saved);
+});

@@ -45,6 +45,11 @@ function assertWindow(window) {
   }
 }
 
+function viewportDraftWriter(viewport) {
+  const writerId = viewport?.view?.extra?.clip?.draftWriterId
+  return isClipToken(writerId) ? writerId : undefined
+}
+
 function viewportMatches(viewport, target) {
   const clip = viewport?.view?.extra?.clip
   const surface = viewport?.surface
@@ -58,12 +63,22 @@ function viewportMatches(viewport, target) {
     && clip?.mode === target.mode
     && clip.projectId === target.projectId
     && clip.editorInstanceId === target.editorInstanceId
+    && viewportDraftWriter(viewport) === target.draftWriterId
     && (target.mode === 'standalone'
       || (viewport.view.extra.workspaceId === target.binding.workspaceId && sameBinding(clip, target.binding)))
 }
 
 function validRevisionEpoch(epoch) {
   return epoch === undefined || isClipRevision(epoch)
+}
+
+function revisionConflict(lease) {
+  return ClipDomainError.revisionConflict(lease.revision,
+    'The Clip version changed or has not been read. Read the target editor with clip_get before continuing.', lease.revisionEpoch ?? 0)
+}
+
+function editorKey(lease) {
+  return JSON.stringify([lease.sessionId, lease.projectId, lease.tabInstanceId, lease.editorInstanceId, lease.draftWriterId])
 }
 
 function observeViewportRevision(lease, viewport) {
@@ -118,6 +133,7 @@ export function createClipCommandBroker({
   getHubEvents, getWorkflowClip, now = Date.now, leaseTtlMs = 6500, pollMs = 100,
 } = {}) {
   const leases = new Map()
+  const observations = new WeakMap()
   const ledger = new Map()
   const active = new Set()
   const completed = new Set()
@@ -167,7 +183,7 @@ export function createClipCommandBroker({
     const projectId = assertProjectId(body.projectId)
     const target = {
       window, projectId, binding, mode: body.mode, sessionId: viewport?.sessionId,
-      editorInstanceId: body.editorInstanceId, tabInstanceId: body.tabInstanceId,
+      editorInstanceId: body.editorInstanceId, tabInstanceId: body.tabInstanceId, draftWriterId: viewportDraftWriter(viewport),
     }
     if (disposed || !target.sessionId || !viewportMatches(viewport, target)) {
       throw new ClipDomainError('EDITOR_NOT_VISIBLE', 'The Clip editor does not match the visible native tab and project.')
@@ -308,8 +324,7 @@ export function createClipCommandBroker({
   }
 
   function refresh(record) {
-    if (!active.has(record)) return
-    if (checkExport(record)) return
+    if (checkExport(record) || !active.has(record)) return
     const time = now()
     if (time >= record.deadlineAt || (record.state !== 'claimed' && time >= record.claimDeadline)) {
       const cause = record.state === 'opening'
@@ -368,7 +383,7 @@ export function createClipCommandBroker({
     if (typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_:-]{0,127}$/.test(id)) {
       throw ClipDomainError.invalidJson('requestId is not a valid Clip request ID.')
     }
-    const hash = fingerprint([options.operation, options.selector, options.args, options.baseRevision])
+    const hash = fingerprint([options.operation, options.selector, options.args, options.baseRevision, options.baseRevisionEpoch])
     return { id, hash, previous: findExisting(id, options.sessionId, hash) }
   }
 
@@ -403,6 +418,12 @@ export function createClipCommandBroker({
       }
     } else await record.done
     if (record.error) throw record.error
+    if (record.command?.operation === 'clip_get' && isCurrentGeneration(record)) {
+      const { lease } = record
+      let observed = observations.get(lease.window)
+      if (!observed) observations.set(lease.window, observed = new Map())
+      observed.set(editorKey(lease), record.result.revisionEpoch)
+    }
     return record.result
   }
 
@@ -413,8 +434,13 @@ export function createClipCommandBroker({
     if (!current) return null
     if (current.binding) resolveWorkflowBinding(getWorkflowClip?.(), current.binding, current.sessionId)
     const baseRevision = options.baseRevision ?? current.revision
-    if (options.checkRevision && current.revision !== baseRevision) {
-      throw ClipDomainError.revisionConflict(current.revision)
+    if (options.checkRevision) {
+      const planned = options.operation === 'clip_edit' || options.baseRevision !== undefined || options.baseRevisionEpoch !== undefined
+      const observedEpoch = observations.get(current.window)?.get(editorKey(current)) ?? 0
+      if (current.revision !== baseRevision
+        || (planned && (options.baseRevisionEpoch ?? observedEpoch) !== (current.revisionEpoch ?? 0))) {
+        throw revisionConflict(current)
+      }
     }
     const record = recordFor(options, id, hash, 'notified')
     record.lease = current
@@ -427,7 +453,8 @@ export function createClipCommandBroker({
       protocolVersion: 1, requestId: id, operation: options.operation, args: options.args, baseRevision,
       ...(current.revisionEpoch !== undefined ? { revisionEpoch: current.revisionEpoch } : {}),
       projectId: current.projectId, mode: current.mode, ...(current.binding ? { binding: current.binding } : {}),
-      tabInstanceId: current.tabInstanceId, editorInstanceId: current.editorInstanceId, deadlineAt: record.deadlineAt,
+      tabInstanceId: current.tabInstanceId, editorInstanceId: current.editorInstanceId,
+      ...(current.draftWriterId ? { draftWriterId: current.draftWriterId } : {}), deadlineAt: record.deadlineAt,
     }
     monitor(record)
     try {
@@ -483,8 +510,12 @@ export function createClipCommandBroker({
     assertWindow(window)
     sweep()
     if (!isClipToken(body?.requestId) || !isClipToken(body.leaseId)) throw ClipDomainError.invalidJson('requestId and leaseId are required.')
+    const sessionId = window.getViewport()?.sessionId
+    if (receipt && !sessionId) {
+      throw new ClipDomainError('VIEWPORT_NOT_REGISTERED', 'Register the authenticated viewport before retrying this receipt.', { retryable: true })
+    }
     const record = ledger.get(body.requestId)
-    if (!record || record.sessionId !== window.getViewport()?.sessionId) {
+    if (!record || record.sessionId !== sessionId) {
       throw new ClipDomainError('REQUEST_NOT_FOUND', 'No matching Clip request is available to this window.')
     }
     if (record.expired) throw requestError('REQUEST_EXPIRED', 'The original Clip result expired.', body.requestId)
@@ -516,7 +547,11 @@ export function createClipCommandBroker({
       const current = record.lease
       if (current.binding) resolveWorkflowBinding(getWorkflowClip?.(), current.binding, current.sessionId)
       if (record.checkRevision && (current.revision !== record.command.baseRevision || current.revisionResets !== record.revisionResets)) {
-        throw ClipDomainError.revisionConflict(current.revision)
+        throw revisionConflict(current)
+      }
+      if (record.command.operation === 'clip_get') {
+        record.command.revisionEpoch = current.revisionEpoch
+        record.revisionResets = current.revisionResets
       }
       if (record.prepareArgs) record.command.args = record.prepareArgs(record.command.args)
       const job = record.prepare?.(record.command)
@@ -536,10 +571,13 @@ export function createClipCommandBroker({
     }
   }
 
-  function advanceReceiptRevision(record, revision) {
-    // The original result remains retrievable even after an adoption or a move
-    // to another editor. Only its original live revision sequence can advance.
-    if (!isClipRevision(revision) || liveError(record.lease) || record.revisionResets !== record.lease.revisionResets) return
+  function isCurrentGeneration(record) {
+    return !liveError(record.lease) && record.revisionResets === record.lease.revisionResets
+  }
+
+  function advanceReceiptRevision(record, revision, epoch = record.command.revisionEpoch ?? 0) {
+    // Keep late receipts retrievable while only advancing their original revision sequence.
+    if (!isClipRevision(revision) || epoch !== (record.command.revisionEpoch ?? 0) || !isCurrentGeneration(record)) return
     record.lease.revision = Math.max(record.lease.revision, revision)
   }
 
@@ -560,7 +598,9 @@ export function createClipCommandBroker({
     }
     if (body.error !== undefined) {
       const failure = fromEditor(body.error, record.id)
-      if (failure.code === 'REVISION_CONFLICT') advanceReceiptRevision(record, failure.details?.currentRevision)
+      if (failure.code === 'REVISION_CONFLICT') {
+        advanceReceiptRevision(record, failure.details?.currentRevision, failure.details?.currentRevisionEpoch)
+      }
       record.receiptHash = hash
       settle(record, 'failed', { error: failure })
     } else if (record.observe) {
@@ -578,9 +618,11 @@ export function createClipCommandBroker({
         settle(record, 'failed', { error })
         throw error
       }
-      if (['clip_get', 'clip_edit'].includes(record.command.operation)) advanceReceiptRevision(record, result.revision)
+      const operation = record.command.operation
+      if (operation === 'clip_get' || operation === 'clip_edit') advanceReceiptRevision(record, result.revision, result.revisionEpoch)
       record.receiptHash = hash
-      settle(record, 'succeeded', { result: { ...result, requestId: record.id, projectId: record.lease.projectId } })
+      settle(record, 'succeeded', { result: { ...result, requestId: record.id, projectId: record.lease.projectId,
+        ...(operation === 'clip_get' ? { windowInstanceId: record.window.windowInstanceId } : {}) } })
     }
     return statusValue(record)
   }

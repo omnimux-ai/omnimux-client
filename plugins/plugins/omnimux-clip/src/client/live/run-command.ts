@@ -8,6 +8,7 @@ interface Command {
   projectId: string
   args: Record<string, unknown>
   binding?: { workspaceId: string; nodeId: string; projectId: string }
+  revisionEpoch?: number
   exportJobId?: number
   uploadToken?: string
 }
@@ -67,7 +68,7 @@ export async function runNativeCommand(command: Command, run: Execution) {
   if (operation === 'clip_get') {
     const { readNativeSnapshot } = await import('./native-view')
     run.assertCurrent()
-    return readNativeSnapshot({ ...args, binding: command.binding, revision: run.revision() })
+    return { ...readNativeSnapshot({ ...args, binding: command.binding, revision: run.revision() }), revisionEpoch: command.revisionEpoch ?? 0 }
   }
   if (operation === 'clip_edit') {
     const { executeNativeEdit } = await import('./native-edit')

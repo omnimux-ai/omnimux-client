@@ -48,12 +48,12 @@ export function mountWorkbenchContextInjector(ctx, deps) {
     if (step !== 1) return decision
 
     const sessionId = agent?.session?.id
-    const windows = deps.hubEvents?.getWindows(sessionId) ?? []
-    const fresh = await Promise.all(windows.map(window => window.refreshViewport?.(sessionId) ?? null))
+    if (typeof sessionId !== 'string' || !sessionId || sessionId === 'default') return decision
+    const fresh = await (deps.hubEvents?.refreshViewports(sessionId, signal) ?? [])
     if (signal?.aborted) return decision
     const activeView = mailbox.getActiveView(sessionId)
     const clipViews = fresh.filter(viewport => clipContextFromEnvelope(viewport))
-    const clipViewport = clipViews.length === 1 && fresh.every(Boolean) ? clipViews[0] : null
+    const clipViewport = clipViews.length === 1 ? clipViews[0] : null
     if (!activeView?.uiContext && !clipViewport) return decision
 
     const messages = [...(decision.messages || [])]

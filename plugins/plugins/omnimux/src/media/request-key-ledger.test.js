@@ -6,6 +6,7 @@ import { Readable } from 'node:stream'
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import { executeOmnimuxMedia } from './execute.js'
 import { DIRECT_MEDIA_GENERATE_ROUTE, registerDirectMediaRoutes } from './direct-http.js'
+import { flushMediaTaskLog } from './task-log.js'
 import {
   createMediaTaskRecord,
   saveMediaTaskRecord,
@@ -177,7 +178,8 @@ describe('requestKey/taskRef 账本契约 · 真实 execute 行为', () => {
     home = mkdtempSync(join(tmpdir(), 'omx-execute-ledger-'))
     process.env.DSH_HOME = home
   })
-  afterEach(() => {
+  afterEach(async () => {
+    await flushMediaTaskLog()
     if (previousHome === undefined) delete process.env.DSH_HOME
     else process.env.DSH_HOME = previousHome
     rmSync(home, { recursive: true, force: true })

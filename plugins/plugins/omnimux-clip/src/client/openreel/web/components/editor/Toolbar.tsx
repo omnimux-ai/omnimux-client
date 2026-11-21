@@ -333,7 +333,6 @@ export const Toolbar: React.FC<{ canvasMode?: boolean }> = ({ canvasMode: isCanv
           disabled={exportState.isExporting && !exportState.canvasReserved}
           style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
           onClick={() => {
-            if (exportState.savingToCanvas) handleCancelExport();
             if (exitCanvas) { void exitCanvas(); return; }
             if (canvasSession?.nodeId) notifyCanvasClose({ nodeId: canvasSession.nodeId, projectId: canvasSession.projectId });
             getActiveClipStageStore()?.set(false);

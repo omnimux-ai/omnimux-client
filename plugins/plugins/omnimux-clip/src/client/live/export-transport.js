@@ -17,12 +17,14 @@ export async function reserveCanvasExport({ workspaceId, nodeId, projectId }) {
   const body = {
     requestId: crypto.randomUUID(), binding: { workspaceId, nodeId, projectId },
     tabInstanceId, editorInstanceId: clip.editorInstanceId, projectRevision: clip.revision,
+    revisionEpoch: clip.revisionEpoch,
   }
   if (!await events.pushViewport()) throw new LiveClipError('EDITOR_OFFLINE', 'The Clip window is offline.')
   const job = await requestClip('/exports/reserve', {
     method: 'POST', body, fetcher: (path, init) => events.windowFetch(path, init, windowId),
   })
   if (job?.requestId !== body.requestId || job.projectId !== projectId || job.projectRevision !== body.projectRevision
+    || (job.revisionEpoch ?? 0) !== (body.revisionEpoch ?? 0)
     || !Number.isSafeInteger(job.exportJobId) || job.exportJobId < 1 || !/^[A-Za-z0-9_-]{43}$/.test(job.uploadToken)) {
     throw new LiveClipError('INVALID_RECEIPT', 'The Clip export task has no upload authorization.')
   }
@@ -30,9 +32,20 @@ export async function reserveCanvasExport({ workspaceId, nodeId, projectId }) {
 }
 
 /** A reserved task keeps its original upload authorization after editor exit. */
-export function uploadClipExport({ exportJobId, uploadToken, projectId }, blob) {
+export function uploadClipExport({ exportJobId, uploadToken, projectId }, blob, signal) {
   return requestClip(`/exports/${exportJobId}/upload?projectId=${encodeURIComponent(projectId)}`, {
-    method: 'POST', body: blob, timeout: 120_000,
+    method: 'POST', body: blob, timeout: 120_000, signal,
     headers: { 'Content-Type': 'application/octet-stream', 'x-clip-export-proof': uploadToken },
   })
+}
+
+export async function cancelClipExport({ exportJobId, uploadToken, projectId }) {
+  const receipt = await requestClip(`/exports/${exportJobId}/cancel?projectId=${encodeURIComponent(projectId)}`, {
+    method: 'POST', headers: { 'x-clip-export-proof': uploadToken },
+  })
+  if (receipt?.exportJobId !== exportJobId || receipt.projectId !== projectId
+    || (!['cancelled', 'upload-failed', 'expired'].includes(receipt.status) && receipt.fileSaved !== true)) {
+    throw new LiveClipError('INVALID_RECEIPT', 'The Clip Host could not confirm the export status.')
+  }
+  return receipt
 }

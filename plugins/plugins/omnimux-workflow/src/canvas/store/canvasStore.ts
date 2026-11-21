@@ -416,6 +416,7 @@ export const useCanvasStore = create<CanvasState>()(
       if (!previous) return;
       const current = snapshotOf(nodes, edges);
       history.current = previous;
+      if (nodes.length > 0 && previous.nodes.length === 0) noteUserDeletedGraphElements();
       set((state) => ({
         nodes: previous.nodes,
         edges: previous.edges,
@@ -431,6 +432,7 @@ export const useCanvasStore = create<CanvasState>()(
       if (!next) return;
       const current = snapshotOf(nodes, edges);
       history.current = next;
+      if (nodes.length > 0 && next.nodes.length === 0) noteUserDeletedGraphElements();
       set((state) => ({
         nodes: next.nodes,
         edges: next.edges,

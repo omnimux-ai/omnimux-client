@@ -24,7 +24,7 @@ const client = await build({
   define: { 'process.env.NODE_ENV': '"development"' },
 });
 const json = value => JSON.parse(JSON.stringify(value));
-const note = graph => graph.nodes.find(node => node.id === 'note').data.content;
+const note = graph => graph.nodes.find(node => node.id === 'note')?.data.content;
 const source = graph => graph.nodes.find(node => node.id === 'composition');
 const downstream = graph => graph.nodes.filter(node => node.data.origin === 'clip_export'
   && node.data.sourceCompositionNodeId === 'composition');
@@ -44,15 +44,31 @@ async function fixture(t, { priorExport = false, brokenOutputLine = false, unbou
   };
   let binding = seed('ws_first', 'initial', unbound ? null : undefined);
   const workflowClip = createWorkflowClipService({ store: disk });
-  const commit = job => {
+  const submitExport = (job, { projectRevision = job, revisionEpoch, exportGeneration } = {}) => {
     const output = { videoPath: join(workspacesDir, `job-${job}.mp4`), revision: `export-${job}`, durationMs: job * 1000, width: 640, height: 360 };
     // The Workflow seam accepts the output metadata of a file already written by Clip.
-    writeFileSync(output.videoPath, `fixture output ${job}`);
-    const receipt = workflowClip.commitExport({ ...binding, exportJobId: job, projectRevision: job, output });
+    writeFileSync(output.videoPath, `fixture output ${projectRevision}`);
+    const receipt = workflowClip.commitExport({ ...binding, exportJobId: job, projectRevision, revisionEpoch, exportGeneration, output });
+    return { receipt, output };
+  };
+  const saveOnHost = (patch = {}) => {
+    const current = disk.get(binding.workspaceId);
+    return disk.save(binding.workspaceId, { ...patch, expectedVersion: current.version }).snapshot;
+  };
+  const commit = (job, { extraReceiptFields, ...task } = {}) => {
+    const { receipt, output } = submitExport(job, task);
     assert.equal(receipt.canvasCommitted, true);
     const graph = disk.get(binding.workspaceId);
     assert.equal(receipt.workspaceVersion, graph.version);
-    return { graph, output };
+    if (!extraReceiptFields) return { graph, output };
+    const nodes = graph.nodes.map(node => {
+      if (node.id !== 'composition') return node;
+      const receipts = node.data.clipExportReceipts;
+      return { ...node, data: { ...node.data, clipExportReceipts: [
+        ...receipts.slice(0, -1), { ...receipts.at(-1), ...extraReceiptFields },
+      ] } };
+    });
+    return { graph: saveOnHost({ nodes }), output };
   };
   const firstExport = priorExport ? commit(1) : undefined;
   if (brokenOutputLine) {
@@ -87,10 +103,15 @@ async function fixture(t, { priorExport = false, brokenOutputLine = false, unbou
 
   const { tryHandle } = createWorkspaceRoutes(disk);
   const puts = [];
+  const gets = [];
   let deferRead;
+  let beforeWrite;
+  let afterWrite;
   window.fetch = async (url, options) => {
     const body = options.body && JSON.parse(options.body);
     const path = new URL(url, window.location.origin).pathname;
+    const writing = options.method === 'PUT';
+    if (writing) beforeWrite?.(body);
     let result;
     try {
       result = await tryHandle(options.method, path, { url, method: options.method, body });
@@ -99,8 +120,15 @@ async function fixture(t, { priorExport = false, brokenOutputLine = false, unbou
       if (error.code !== 'version_conflict') throw error;
       result = { status: 409, body: { error: error.code, current: error.current } };
     }
-    if (options.method === 'PUT') puts.push({ path, expectedVersion: body.expectedVersion, status: result.status });
-    if (options.method === 'GET' && result.body.workspace && deferRead) await deferRead(result.body.workspace);
+    if (writing) {
+      const put = { path, expectedVersion: body.expectedVersion, status: result.status, content: note(body) };
+      puts.push(put);
+      if (afterWrite) await afterWrite(put);
+    }
+    if (options.method === 'GET' && result.body.workspace) {
+      gets.push(result.body.workspace.version);
+      if (deferRead) result = await deferRead(result.body.workspace) ?? result;
+    }
     return Response.json(result.body, { status: result.status });
   };
   window.eval(client.outputFiles[0].text);
@@ -135,7 +163,7 @@ async function fixture(t, { priorExport = false, brokenOutputLine = false, unbou
     }
   });
   return {
-    state, commit, firstExport, puts, seed, open, flush, autosave,
+    state, commit, submitExport, saveOnHost, firstExport, puts, gets, seed, open, flush, autosave,
     openClip: () => flush(async () => {
       binding = await openCanvasClipNode({
         ...binding,
@@ -152,6 +180,8 @@ async function fixture(t, { priorExport = false, brokenOutputLine = false, unbou
     read: (id = binding.workspaceId) => createWorkspaceStore({ workspacesDir }).get(id),
     poll: () => flush(() => { for (const tick of polls.values()) tick(); }),
     deferRead: handler => { deferRead = handler; },
+    beforeWrite: handler => { beforeWrite = handler; },
+    afterWrite: handler => { afterWrite = handler; },
     tickHistory: () => { now += 400; },
     edit: (content, localEdge = false) => {
       assert.equal(state().applyCanvasInputMutation({ nodePatches: [{ nodeId: 'note', data: { content } }] }).status, 'allowed');
@@ -335,6 +365,288 @@ test('Undo while fetching a 409 recovery does not retry the undone text and keep
   assert.equal(f.puts.at(-1).expectedVersion, latest.graph.version);
   assert.equal(note(f.read()), 'reverted during request');
   assertExport(f.read(), latest);
+});
+
+test('Undo to a still-dirty graph during 409 recovery writes that graph and preserves Redo', async t => {
+  const f = await fixture(t);
+  await f.flush(() => f.edit('first edit'));
+  f.tickHistory();
+  await f.flush(() => f.edit('second edit'));
+  assert.equal(f.state().past.length, 2);
+  const latest = f.commit(1);
+  const release = Promise.withResolvers();
+  f.deferRead(() => release.promise);
+  await f.autosave();
+  assert.deepEqual(f.gets, [latest.graph.version]);
+  assert.equal(f.puts.at(-1).status, 409);
+  await f.flush(() => f.state().undo());
+  assert.equal(note(f.state()), 'first edit');
+  await f.flush(() => release.resolve());
+
+  const saved = f.read();
+  t.diagnostic(JSON.stringify({ puts: f.puts, disk: note(saved), visible: note(f.state()) }));
+  assert.equal(note(saved), 'first edit');
+  assert.deepEqual(f.puts.map(({ expectedVersion, status, content }) => [expectedVersion, status, content]), [
+    [1, 409, 'second edit'], [2, 200, 'first edit'],
+  ]);
+  assertExport(saved, latest);
+  assertExport(f.state(), latest);
+  assert.equal(f.persistence.isDirty, false);
+  assert.equal(f.state().future.length, 1);
+  await f.flush(() => f.state().redo());
+  await f.autosave();
+  assert.equal(note(f.read()), 'second edit');
+  assertExport(f.read(), latest);
+});
+
+async function checkRedoDuringRecovery(t, clipCommit) {
+  const f = await fixture(t);
+  await f.flush(() => f.edit('first edit'));
+  f.tickHistory();
+  await f.flush(() => f.edit('redone edit'));
+  await f.flush(() => f.state().undo());
+  const latest = clipCommit ? f.commit(1) : { graph: f.saveOnHost() };
+  const release = Promise.withResolvers();
+  f.deferRead(() => release.promise);
+  await f.autosave();
+  assert.deepEqual(f.gets, [latest.graph.version]);
+  await f.flush(() => f.state().redo());
+  assert.equal(note(f.state()), 'redone edit');
+  await f.flush(() => release.resolve());
+  assert.deepEqual(f.puts.map(({ status, content }) => [status, content]), [[409, 'first edit'], [200, 'redone edit']]);
+  assert.equal(note(f.read()), 'redone edit');
+  assert.equal(f.state().future.length, 0);
+  assert.equal(f.persistence.isDirty, false);
+  if (clipCommit) assertExport(f.read(), latest);
+}
+
+test('Redo during the 409 GET is included in the version-only retry', t => checkRedoDuringRecovery(t, false));
+test('Redo during the 409 GET is included in the Clip rebase retry', t => checkRedoDuringRecovery(t, true));
+
+test('A queued autosave cannot overwrite the newest edit used by the 409 retry', async t => {
+  const f = await fixture(t);
+  await f.flush(() => f.edit('first edit'));
+  const latest = f.commit(1);
+  const release = Promise.withResolvers();
+  f.deferRead(() => release.promise);
+  await f.autosave();
+  assert.deepEqual(f.gets, [latest.graph.version]);
+  await f.flush(() => f.edit('queued edit'));
+  await f.autosave();
+  await f.flush(() => f.edit('newest edit'));
+  await f.flush(() => release.resolve());
+  assert.deepEqual(f.puts.map(({ status, content }) => [status, content]), [[409, 'first edit'], [200, 'newest edit']]);
+  assert.equal(note(f.read()), 'newest edit');
+  assertExport(f.read(), latest);
+  await f.autosave();
+  assert.equal(f.puts.length, 2);
+});
+
+test('Undo during the retry PUT is saved after the retry response even when it matched the old disk state', async t => {
+  const f = await fixture(t);
+  await f.flush(() => f.edit('undo after retry starts'));
+  const latest = f.commit(1);
+  const release = Promise.withResolvers();
+  f.afterWrite(put => put.status === 200 ? release.promise : undefined);
+  await f.autosave();
+  assert.deepEqual(f.puts.map(({ status }) => status), [409, 200]);
+  await f.flush(() => f.state().undo());
+  assert.equal(note(f.state()), 'initial');
+  await f.flush(() => release.resolve());
+  assert.equal(f.persistence.isDirty, true);
+  await f.autosave();
+  assert.deepEqual(f.puts.map(({ status, content }) => [status, content]), [
+    [409, 'undo after retry starts'], [200, 'undo after retry starts'], [200, 'initial'],
+  ]);
+  assert.equal(note(f.read()), 'initial');
+  assertExport(f.read(), latest);
+  assert.equal(f.state().future.length, 1);
+});
+
+test('Keep local after deleting the old output preserves the newer Host pointer, receipt, material and original line', async t => {
+  const f = await fixture(t, { priorExport: true });
+  const [oldMaterial] = downstream(f.firstExport.graph);
+  const [originalLine] = f.firstExport.graph.edges;
+  await f.flush(() => {
+    f.state().deleteElements([oldMaterial.id], []);
+    f.edit('keep this local edit');
+  });
+  const newest = f.commit(3, {
+    revisionEpoch: 1, exportGeneration: 1,
+    extraReceiptFields: { producer: { kind: 'future', sequence: 4 } },
+  });
+  assert.deepEqual(newest.graph.edges, [originalLine]);
+  assert.deepEqual(f.submitExport(2).receipt, { status: 'superseded', canvasCommitted: false });
+  assert.equal(f.read().version, newest.graph.version);
+  await f.autosave();
+  assert.equal(f.puts.at(-1).status, 409);
+  assert.equal(f.persistence.status, 'conflict');
+  assertExport(f.read(), newest);
+
+  await f.flush(() => f.persistence.resolveConflict());
+  const saved = f.read();
+  t.diagnostic(JSON.stringify({ puts: f.puts, pointer: source(saved).data.outputRevision,
+    receipts: source(saved).data.clipExportReceipts.map(row => row.exportJobId), originalLine: saved.edges[0]?.id }));
+  assert.equal(note(saved), 'keep this local edit');
+  assertExport(saved, newest);
+  const receipt = source(saved).data.clipExportReceipts.at(-1);
+  assert.equal(receipt.revisionEpoch, 1);
+  assert.equal(receipt.exportGeneration, 1);
+  assert.deepEqual(receipt.producer, { kind: 'future', sequence: 4 });
+  assertExport(f.state(), newest);
+  assert.deepEqual(saved.edges, [originalLine]);
+  assert.equal(f.persistence.isDirty, false);
+  await f.flush(() => f.state().undo());
+  await f.autosave();
+  assert.equal(note(f.read()), 'initial');
+  assertExport(f.read(), newest);
+  await f.flush(() => f.state().redo());
+  await f.autosave();
+  assert.equal(note(f.read()), 'keep this local edit');
+  assertExport(f.read(), newest);
+  await f.open(f.read());
+  assert.equal(note(f.state()), 'keep this local edit');
+  assertExport(f.state(), newest);
+
+  // A new explicit deletion, after seeing the new export, is still saved normally.
+  await f.flush(() => f.state().removeEdge(originalLine.id));
+  await f.autosave();
+  assertExport(f.read(), newest, { linked: false });
+  await f.flush(() => f.state().deleteElements([oldMaterial.id], []));
+  await f.autosave();
+  await f.open(f.read());
+  assert.equal(downstream(f.state()).length, 0);
+  assert.equal(f.state().edges.length, 0);
+  assert.equal(source(f.state()).data.outputVideoUrl, source(newest.graph).data.outputVideoUrl);
+  assert.deepEqual(json(source(f.state()).data.clipExportReceipts), source(newest.graph).data.clipExportReceipts);
+});
+
+test('Canvas rebase follows the Host export receipt when a new generation has a lower project revision', async t => {
+  const f = await fixture(t);
+  const previous = f.commit(1, { projectRevision: 5 });
+  await f.poll();
+  await f.flush(() => f.edit('keep through generation change'));
+  const latest = f.commit(2, { projectRevision: 2, revisionEpoch: 1, exportGeneration: 1 });
+  assert.deepEqual(f.submitExport(3, { projectRevision: 6 }).receipt, { status: 'superseded', canvasCommitted: false });
+  assert.equal(f.read().version, latest.graph.version);
+  await f.autosave();
+  assert.deepEqual(f.puts.map(({ expectedVersion, status }) => [expectedVersion, status]), [
+    [previous.graph.version, 409], [latest.graph.version, 200],
+  ]);
+  assert.equal(note(f.read()), 'keep through generation change');
+  assertExport(f.read(), latest);
+  await f.flush(() => f.state().undo());
+  await f.autosave();
+  await f.open(f.read());
+  assertExport(f.state(), latest);
+  assert.deepEqual(json(source(f.state()).data.clipExportReceipts.map(row => [row.exportJobId, row.projectRevision, row.exportGeneration ?? 0])),
+    [[1, 5, 0], [2, 2, 1]]);
+});
+
+test('Keep local resolves a mixed edit and export while retaining an intentional unlink', async t => {
+  const f = await fixture(t, { priorExport: true });
+  const [line] = f.firstExport.graph.edges;
+  await f.flush(() => {
+    f.state().removeEdge(line.id);
+    f.edit('local text');
+  });
+  const latest = f.commit(2);
+  f.saveOnHost({ nodes: latest.graph.nodes.map(node => node.id === 'note'
+    ? { ...node, data: { ...node.data, content: 'other window' } } : node) });
+  await f.autosave();
+  assert.equal(f.persistence.status, 'conflict');
+  await f.flush(() => f.persistence.resolveConflict());
+  const saved = f.read();
+  assert.equal(note(saved), 'local text');
+  assertExport(saved, latest, { linked: false });
+  assert.equal(saved.edges.length, 0);
+});
+
+test('Repeated 409 and an unavailable recovery read require a fresh Keep local decision against the newest export', async t => {
+  const f = await fixture(t);
+  await f.flush(() => f.edit('local before conflict'));
+  const first = f.commit(1);
+  let second;
+  f.beforeWrite(({ expectedVersion }) => {
+    if (expectedVersion === first.graph.version && !second) second = f.commit(2);
+  });
+  await f.autosave();
+  assert.deepEqual(f.puts.map(({ expectedVersion, status }) => [expectedVersion, status]), [[1, 409], [2, 409]]);
+  assert.equal(f.persistence.status, 'conflict');
+  assertExport(f.read(), second);
+  await f.flush(() => f.edit('local after both 409s'));
+  await f.autosave();
+  assert.equal(f.puts.length, 2);
+
+  f.deferRead(() => ({ status: 409, body: { error: 'version_conflict' } }));
+  await f.flush(() => f.persistence.resolveConflict());
+  assert.equal(f.puts.length, 2, 'an unavailable GET must not authorize a PUT');
+  assert.equal(f.persistence.status, 'conflict');
+  const release = Promise.withResolvers();
+  f.deferRead(() => release.promise);
+  // Advance again after the selected recovery read has captured its response.
+  await f.flush(() => { void f.persistence.resolveConflict(); });
+  assert.equal(f.gets.at(-1), second.graph.version);
+  const third = f.commit(3);
+  await f.flush(() => f.edit('text during recovery GET'));
+  await f.flush(() => release.resolve());
+  assert.equal(f.puts.at(-1).status, 409);
+  assert.equal(f.persistence.status, 'conflict');
+  assertExport(f.read(), third);
+  await f.flush(() => f.persistence.resolveConflict());
+  assert.equal(f.puts.at(-1).expectedVersion, third.graph.version);
+  assert.equal(note(f.read()), 'text during recovery GET');
+  assertExport(f.read(), third);
+  assertExport(f.state(), third);
+  t.diagnostic(JSON.stringify({ gets: f.gets, puts: f.puts, finalVersion: f.read().version }));
+});
+
+test('Switch during 409 recovery saves only the last captured graph of the old workspace', async t => {
+  const f = await fixture(t);
+  await f.flush(() => f.edit('first workspace first edit'));
+  f.tickHistory();
+  await f.flush(() => f.edit('first workspace undone edit'));
+  const latest = f.commit(1);
+  const release = Promise.withResolvers();
+  f.deferRead(() => release.promise);
+  await f.autosave();
+  assert.deepEqual(f.gets, [latest.graph.version]);
+  await f.flush(() => f.state().undo());
+  const other = f.seed('ws_second', 'second workspace initial');
+  f.persistence.flushPendingSave();
+  await f.open(f.read(other.workspaceId));
+  await f.flush(() => f.edit('second workspace new edit'));
+  await f.flush(() => release.resolve());
+  await f.autosave();
+  assert.deepEqual(f.puts.map(({ path, status, content }) => [path.split('/').at(-1), status, content]), [
+    ['ws_first', 409, 'first workspace undone edit'],
+    ['ws_first', 200, 'first workspace first edit'],
+    ['ws_second', 200, 'second workspace new edit'],
+  ]);
+  assert.equal(note(f.read()), 'first workspace first edit');
+  assertExport(f.read(), latest);
+  assert.equal(note(f.read(other.workspaceId)), 'second workspace new edit');
+  assert.equal(source(f.state()).data.projectId, other.projectId);
+  assert.equal(source(f.state()).data.outputRevision, undefined);
+  assert.equal(f.state().past.length, 1);
+});
+
+test('Undoing the first saved node of an empty workspace can explicitly save an empty graph', async t => {
+  const f = await fixture(t);
+  await f.open(f.saveOnHost({ nodes: [], edges: [] }));
+  await f.flush(() => f.state().applyCanvasInputMutation({ addNodes: [{
+    id: 'note', type: 'material', position: { x: 0, y: 0 },
+    data: { materialType: 'text', nodeKind: 'import', content: 'first node' },
+  }] }));
+  await f.autosave();
+  assert.equal(note(f.read()), 'first node');
+  await f.flush(() => f.state().undo());
+  await f.autosave();
+  assert.deepEqual(f.read().nodes, []);
+  assert.equal(f.state().future.length, 1);
+  await f.flush(() => f.state().redo());
+  await f.autosave();
+  assert.equal(note(f.read()), 'first node');
 });
 
 test('An explicit material deletion can save and a later export never resurrects its obsolete node during Undo', async t => {

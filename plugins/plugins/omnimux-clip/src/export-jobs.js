@@ -49,6 +49,33 @@ function uploadDigest(token) {
   return createHash('sha256').update(token).digest('hex')
 }
 
+function generationOf(job) {
+  return job.exportGeneration ?? job.revisionEpoch ?? 0
+}
+
+function reserveGeneration(jobs, { projectId, revisionEpoch, draftWriterId, editorInstanceId }) {
+  let generation = 0
+  let previousWriterJob
+  const writer = draftWriterId ?? editorInstanceId
+  for (const job of jobs) {
+    if (job.projectId !== projectId) continue
+    generation = Math.max(generation, generationOf(job))
+    if (writer && (job.draftWriterId ?? job.editorInstanceId) === writer) previousWriterJob = job
+  }
+  // The local epoch follows the persisted draft through editor recreation.
+  // Keep its existing generation until that writer adopts another version.
+  if (revisionEpoch > (previousWriterJob?.revisionEpoch ?? 0)) return generation + 1
+  if (previousWriterJob && revisionEpoch === previousWriterJob.revisionEpoch) return generationOf(previousWriterJob)
+  return generation
+}
+
+function isSuperseded(job, selected) {
+  const generation = generationOf(job)
+  const selectedGeneration = generationOf(selected)
+  return selectedGeneration > generation || (selectedGeneration === generation
+    && (selected.exportJobId > job.exportJobId || selected.projectRevision > job.projectRevision))
+}
+
 function invalidMp4() {
   return new ClipDomainError('invalid-export-media', 'The upload is not a complete MP4 with a video track.')
 }
@@ -157,6 +184,7 @@ export function createExportJobs({ paths, getWorkflowClip }) {
   const versionDir = (id) => join(root, String(id))
   const savedFile = (id) => readJson(join(versionDir(id), 'file.json'))
   const failedPath = (id) => join(root, `${id}.failed.json`)
+  const cancelledPath = (id) => join(root, `${id}.cancelled.json`)
   const canvasPath = (id) => join(versionDir(id), 'canvas.json')
 
   function requireJob(id) {
@@ -167,15 +195,17 @@ export function createExportJobs({ paths, getWorkflowClip }) {
   }
 
   function receipt(job) {
-    const { exportJobId, requestId, projectId, projectRevision, binding, uploadExpiresAt } = job
+    const { exportJobId, requestId, projectId, projectRevision, revisionEpoch, binding, uploadExpiresAt } = job
     const file = savedFile(exportJobId)
     const canvas = file && binding ? readJson(canvasPath(exportJobId)) : null
     const failure = file ? null : readJson(failedPath(exportJobId))
     let status = Date.now() >= uploadExpiresAt ? 'expired' : 'awaiting-upload'
     if (failure) status = 'upload-failed'
+    if (readJson(cancelledPath(exportJobId))) status = 'cancelled'
     if (file) status = canvas?.status ?? (file.superseded ? 'superseded' : 'file-saved')
     return {
       exportJobId, requestId, projectId, projectRevision,
+      ...(revisionEpoch !== undefined ? { revisionEpoch } : {}),
       ...(binding ? { binding } : {}),
       status,
       fileSaved: Boolean(file),
@@ -186,9 +216,12 @@ export function createExportJobs({ paths, getWorkflowClip }) {
     }
   }
 
-  function begin({ requestId, projectId, projectRevision, binding, manualWindowId }) {
+  function begin({ requestId, projectId, projectRevision, revisionEpoch, draftWriterId, editorInstanceId, binding, manualWindowId }) {
     assertProjectId(projectId)
     if (!isClipToken(requestId) || !isClipRevision(projectRevision)
+      || (revisionEpoch !== undefined && !isClipRevision(revisionEpoch))
+      || (draftWriterId !== undefined && !isClipToken(draftWriterId))
+      || (editorInstanceId !== undefined && !isClipToken(editorInstanceId))
       || (manualWindowId !== undefined && !isClipToken(manualWindowId))) {
       throw ClipDomainError.invalidJson('invalid export request identity or project revision')
     }
@@ -199,6 +232,7 @@ export function createExportJobs({ paths, getWorkflowClip }) {
     const existing = jobs.find((job) => job.requestId === requestId)
     if (existing) {
       if (existing.projectId !== projectId || existing.projectRevision !== projectRevision || existing.manualWindowId !== manualWindowId
+        || (existing.revisionEpoch ?? 0) !== (revisionEpoch ?? 0)
         || existing.binding?.workspaceId !== binding?.workspaceId || existing.binding?.nodeId !== binding?.nodeId) {
         throw new ClipDomainError('export-request-mismatch', 'This request already identifies a different export.')
       }
@@ -207,6 +241,10 @@ export function createExportJobs({ paths, getWorkflowClip }) {
     const uploadToken = randomBytes(32).toString('base64url')
     const job = {
       exportJobId: jobs.length + 1, requestId, projectId, projectRevision,
+      ...(revisionEpoch !== undefined ? {
+        revisionEpoch, exportGeneration: reserveGeneration(jobs, { projectId, revisionEpoch, draftWriterId, editorInstanceId }),
+        ...(draftWriterId ? { draftWriterId } : editorInstanceId ? { editorInstanceId } : {}),
+      } : {}),
       ...(binding ? { binding } : {}),
       ...(manualWindowId ? { manualWindowId } : {}),
       uploadDigest: uploadDigest(uploadToken), uploadExpiresAt: Date.now() + UPLOAD_TTL_MS,
@@ -218,18 +256,20 @@ export function createExportJobs({ paths, getWorkflowClip }) {
   // A completed version directory carries both the media and its receipt. The
   // newest selected directory is the project's current export across restarts.
   function latestFor(projectId) {
+    let latest = null
     for (const candidate of readJobs().reverse()) {
-      if (candidate.projectId !== projectId) continue
+      if (candidate.projectId !== projectId || (latest && generationOf(candidate) <= generationOf(latest))) continue
       const file = savedFile(candidate.exportJobId)
-      if (file && !file.superseded) return candidate
+      if (!file || file.superseded) continue
+      latest = candidate
     }
-    return null
+    return latest
   }
 
   async function commitCanvas(job) {
     const current = receipt(job)
     if (!current.fileSaved || !job.binding || current.canvasCommitted || current.status === 'superseded') return current
-    const { exportJobId, projectId, projectRevision, binding } = job
+    const { exportJobId, projectId, projectRevision, revisionEpoch, exportGeneration, binding } = job
     if (latestFor(projectId)?.exportJobId !== exportJobId) {
       writeJson(canvasPath(exportJobId), { status: 'superseded' })
       return receipt(job)
@@ -240,7 +280,10 @@ export function createExportJobs({ paths, getWorkflowClip }) {
       if (!workflow?.commitExport) {
         outcome = { status: 'canvas-failed', error: { code: 'canvas-unavailable', message: 'The canvas service is unavailable.' } }
       } else {
-        const result = await workflow.commitExport({ ...binding, exportJobId, projectRevision, output: current.output })
+        const result = await workflow.commitExport({
+          ...binding, exportJobId, projectRevision, output: current.output,
+          ...(revisionEpoch !== undefined ? { revisionEpoch, exportGeneration } : {}),
+        })
         if (result?.status === 'superseded' && result.canvasCommitted === false) outcome = { status: 'superseded' }
         else if (result?.status === 'committed' && result.canvasCommitted === true) {
           outcome = { status: 'committed', workspaceVersion: result.workspaceVersion }
@@ -258,12 +301,15 @@ export function createExportJobs({ paths, getWorkflowClip }) {
   }
 
   function persistFile(job, source, stat, media) {
-    const { exportJobId, projectId, projectRevision } = job
+    const { exportJobId, projectId } = job
+    // This check and the durable rename form the cancellation boundary. No
+    // asynchronous work may be added between them and the canvas commit call.
+    assertNotCancelled(job)
     const actual = lstatSync(source, { throwIfNoEntry: false })
     if (!actual?.isFile() || actual.dev !== stat.dev || actual.ino !== stat.ino
       || actual.size !== stat.size || actual.mtimeMs !== stat.mtimeMs) throw invalidMp4()
     const latest = latestFor(projectId)
-    const superseded = Boolean(latest && (latest.exportJobId > exportJobId || latest.projectRevision > projectRevision))
+    const superseded = Boolean(latest && isSuperseded(job, latest))
     const finalDir = versionDir(exportJobId)
     const stage = mkdtempSync(join(root, '.upload-'))
     try {
@@ -276,7 +322,7 @@ export function createExportJobs({ paths, getWorkflowClip }) {
     }
   }
 
-  function requireUpload({ exportJobId, uploadToken, projectId }) {
+  function requireUploadProof({ exportJobId, uploadToken, projectId }) {
     const job = requireJob(exportJobId)
     const { uploadDigest: expected, uploadExpiresAt } = job
     if (job.projectId !== projectId || typeof uploadToken !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(uploadToken)
@@ -284,6 +330,27 @@ export function createExportJobs({ paths, getWorkflowClip }) {
       || Date.now() >= uploadExpiresAt) {
       throw ClipDomainError.pathDenied('export upload authorization is invalid or expired')
     }
+    return job
+  }
+
+  function assertNotCancelled(job) {
+    if (readJson(cancelledPath(job.exportJobId))) {
+      throw new ClipDomainError('export-cancelled', 'This manual export was cancelled.')
+    }
+  }
+
+  function cancel(credentials) {
+    const job = requireUploadProof(credentials)
+    if (!job.manualWindowId) throw ClipDomainError.pathDenied('Only a manual export can be cancelled here.')
+    const current = receipt(job)
+    if (current.status !== 'awaiting-upload') return current
+    writeJson(cancelledPath(job.exportJobId), { cancelled: true })
+    return receipt(job)
+  }
+
+  function requireUpload(credentials) {
+    const job = requireUploadProof(credentials)
+    assertNotCancelled(job)
     if (uploadsInFlight.has(versionDir(job.exportJobId)) || savedFile(job.exportJobId) || readJson(failedPath(job.exportJobId))) {
       throw new ClipDomainError('export-upload-used', 'This export upload has already been used. Read the existing job status.')
     }
@@ -315,6 +382,7 @@ export function createExportJobs({ paths, getWorkflowClip }) {
         return commitCanvas(job)
       })
     } catch (error) {
+      assertNotCancelled(job)
       if (error instanceof ClipDomainError && error.code === 'invalid-export-media') {
         writeJson(failedPath(job.exportJobId), { code: error.code, message: error.message })
       }
@@ -334,5 +402,5 @@ export function createExportJobs({ paths, getWorkflowClip }) {
     return serializeProjectWrite(join(root, job.projectId), () => commitCanvas(job))
   }
 
-  return { begin, authorizeUpload, upload, get, retryCanvas }
+  return { begin, authorizeUpload, upload, cancel, get, retryCanvas }
 }

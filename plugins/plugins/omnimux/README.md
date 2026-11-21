@@ -47,7 +47,7 @@ Official Apps rows come from `apps/catalog.json` (floor) plus an optional Host G
 
 ## Workbench and Clip
 
-The existing Hub WebSocket associates each authenticated window with its current conversation and viewport. At the first step of a turn, the Hub refreshes the viewports. A single valid Clip editor in those fresh views adds a compact project, revision, playhead and selection summary to `<ui_context>`. In canvas mode the summary also includes the workspace and node IDs. [Clip context contract](../../docs/contracts/clip-live-control.md#可见入口编辑权和对话上下文)
+The existing Hub WebSocket associates each authenticated window with its current conversation and viewport. At the first step of a turn, the Hub requests fresh authenticated viewports, including when the conversation is still registering its first viewport. The refresh has a 600 ms deadline. A single valid Clip editor for the conversation adds a compact project, revision, playhead and selection summary to `<ui_context>`. In canvas mode the summary also includes the workspace and node IDs. [Clip context contract](../../docs/contracts/clip-live-control.md#可见入口编辑权和对话上下文)
 
 Clip sends live commands through the target window and confirms them through its Host routes. Automatic surface following leaves Clip tools on the current workbench. `clip_open` handles explicit project navigation to the canvas Portal or standalone editor. [Clip command contract](../../docs/contracts/clip-live-control.md#租约命令与失败)
 

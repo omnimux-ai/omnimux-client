@@ -213,7 +213,8 @@ export interface ProjectState {
   importMedia: (file: File, onProgress?: (stage: string) => void, source?: { soundLibraryId?: string; stockSource?: StockMediaSource; recordedTake?: "screen" | "webcam"; omnimuxSource?: MediaItem["omnimuxSource"] }, options?: { signal?: AbortSignal; isCurrent?: () => boolean }) => Promise<ActionResult>;
   deleteMedia: (mediaId: string) => Promise<ActionResult>;
   replaceMediaAsset: (mediaId: string, file: File, sourceFolder?: string, options?: {
-    restorePlaceholder?: boolean; sourcePath?: string; isCurrent?: () => boolean; omnimuxSource?: MediaItem['omnimuxSource'];
+    restorePlaceholder?: boolean; expectedDigest?: string; sourcePath?: string; isCurrent?: () => boolean;
+    omnimuxSource?: MediaItem['omnimuxSource'];
   }) => Promise<ActionResult>;
   renameMedia: (mediaId: string, name: string) => Promise<ActionResult>;
   getMediaItem: (mediaId: string) => MediaItem | undefined;
@@ -1958,11 +1959,12 @@ export const useProjectStore = create<ProjectState>()(
           (item) => item.isPlaceholder && item.sourceFile,
         );
         if (placeholders.length > 0 && "FileSystemFileHandle" in window) {
+          const isCurrent = () => get().project.id === fixedProject.id && get().actionExecutor === newExecutor
+            && !useUIStore.getState().exportState.isExporting && !useTimelineStore.getState().playbackLockedReason;
           void restoreProjectPlaceholders(fixedProject, {
-            isCurrent: () => get().project.id === fixedProject.id && get().actionExecutor === newExecutor
-              && !useUIStore.getState().exportState.isExporting && !useTimelineStore.getState().playbackLockedReason,
+            isCurrent,
             getItem: id => get().project.mediaLibrary.items.find(item => item.id === id),
-            replace: (id, file, folder) => get().replaceMediaAsset(id, file, folder, { restorePlaceholder: true }),
+            replace: (id, file, folder) => get().replaceMediaAsset(id, file, folder, { restorePlaceholder: true, isCurrent }),
           }).catch(error => console.warn("[ProjectStore] Could not restore saved media handles:", error));
         }
       },

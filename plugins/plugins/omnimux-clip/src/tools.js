@@ -50,7 +50,10 @@ const bindingArgs = {
 }
 const viewArgs = { view: choices('summary', 'tracks', 'clips', 'full'), trackId: string(256), clipId: string(256),
   fromSec: seconds, toSec: seconds }
-const baseRevisionArg = { ...integer, description: 'Expected revision from clip_get. Defaults to the active editor lease revision.' }
+const revisionArgs = {
+  baseRevision: { ...integer, description: 'Expected revision from clip_get. Defaults to the active editor lease revision.' },
+  baseRevisionEpoch: { ...integer, description: 'Expected revisionEpoch from a live clip_get for this project and window. For a new epoch, pass it explicitly or read the target editor again.' },
+}
 const range = { fromSec: required(seconds), toSec: required(seconds) }
 const clipId = required(string(256))
 const trackId = required(string(256))
@@ -205,13 +208,13 @@ function readItems(rows, keys, withStyle = false) {
 }
 
 function validateRead(result, command) {
-  const { revision, view } = result
+  const { revision, revisionEpoch = 0, view } = result
   if (result.projectId !== command.projectId || view !== command.args.view || !isClipRevision(revision)
-    || !Number.isFinite(result.durationSec) || !Number.isFinite(result.playheadSec)) {
+    || revisionEpoch !== (command.revisionEpoch ?? 0) || !Number.isFinite(result.durationSec) || !Number.isFinite(result.playheadSec)) {
     throw new ClipDomainError('INVALID_RECEIPT', 'The editor did not return the requested native Clip projection.')
   }
   const snapshot = { ...readFields(result, 'title durationSec fps width height aspectRatio playheadSec isPlaying trackCount clipCount mediaCount missingMediaCount subtitleCount'),
-    view, revision, mode: command.mode, selectedClips: readItems(result.selectedClips, 'id name trackId startSec endSec').slice(0, 3) }
+    view, revision, revisionEpoch, mode: command.mode, selectedClips: readItems(result.selectedClips, 'id name trackId startSec endSec').slice(0, 3) }
   if (Number.isFinite(result.updatedAt)) snapshot.updatedAt = result.updatedAt
   if (command.binding) Object.assign(snapshot, { workspaceId: command.binding.workspaceId, nodeId: command.binding.nodeId })
   if (view === 'summary') return snapshot
@@ -310,8 +313,8 @@ export function createClipTools({ store, broker, exportJobs, getWorkflowClip, ge
     const session = sessionOf(exec)
     if (!session?.id && options.savedFallback && args.projectId && !args.windowInstanceId) return null
     if (!broker) throw new ClipDomainError('EDITOR_OFFLINE', 'The Clip Host cannot reach the live editor.')
-    const { requestId, baseRevision, projectId, windowInstanceId, ...parameters } = args
-    return broker.run({ operation, sessionId: session?.id, signal: exec?.signal, selector: targetFor(args), requestId, baseRevision,
+    const { requestId, baseRevision, baseRevisionEpoch, projectId, windowInstanceId, ...parameters } = args
+    return broker.run({ operation, sessionId: session?.id, signal: exec?.signal, selector: targetFor(args), requestId, baseRevision, baseRevisionEpoch,
       args: parameters, timeoutMs, ...options })
   }
 
@@ -365,7 +368,7 @@ export function createClipTools({ store, broker, exportJobs, getWorkflowClip, ge
           },
         })
       }),
-    tool('clip_get', 'Read a native Clip snapshot. Prefers the visible editor, or reads a saved project by ID. Views: summary, tracks, clips, full. Times are seconds.', 15_000,
+    tool('clip_get', 'Read a native Clip snapshot with revision and revisionEpoch. Prefers the visible editor, or reads a saved project by ID. A live read also returns windowInstanceId. Views: summary, tracks, clips, full. Times are seconds.', 15_000,
       { ...targetArgs, ...viewArgs }, async (args, exec) => {
         if (args.fromSec !== undefined && args.toSec !== undefined && args.toSec < args.fromSec) {
           throw ClipDomainError.invalidJson('toSec must be at least fromSec.')
@@ -373,9 +376,13 @@ export function createClipTools({ store, broker, exportJobs, getWorkflowClip, ge
         targetFor(args)
         const result = await live('clip_get', 10_000, { ...args, view: args.view ?? 'summary' }, exec, { savedFallback: true, validateResult: validateRead })
         return result ?? JSON.parse(JSON.stringify(nativeProjectView(store.load(assertProjectId(args.projectId)), args)))
+      }, {
+        ...jsonOut,
+        schema: { ...jsonOut.schema, properties: { revision: integer, revisionEpoch: integer, windowInstanceId: string() },
+          required: ['revision', 'revisionEpoch'] },
       }),
     tool('clip_edit', 'Apply an atomic OpenReel edit batch with one undo step. All times are seconds. validateOnly checks a batch without saving. Set confirmDestructive only with explicit user intent to delete a populated track or clear the timeline.', 180_000,
-      { ...targetArgs, baseRevision: baseRevisionArg, description: required(string(300)), operations: required(arrayOf(editUnion, 100, 1)),
+      { ...targetArgs, ...revisionArgs, description: required(string(300)), operations: required(arrayOf(editUnion, 100, 1)),
         validateOnly: boolean, confirmDestructive: boolean }, (args, exec) => {
         if (!args.description.trim()) throw ClipDomainError.invalidJson('description is required.')
         const cwd = sessionOf(exec)?.header?.cwd
@@ -411,11 +418,12 @@ export function createClipTools({ store, broker, exportJobs, getWorkflowClip, ge
     tool('clip_diagnostics', 'Diagnose a saved Clip project for black-frame gaps, clip overlaps, missing media and invalid source bounds. Times are seconds.', 10_000,
       { projectId: required(projectIdArg) }, ({ projectId }) => diagnoseNativeProject(store.load(assertProjectId(projectId)))),
     tool('clip_export', 'Render and save an MP4 for the visible Clip project. Set confirm only when the user explicitly asks for an export. Returns the saved file and actual canvas commit status.', 300_000,
-      { ...targetArgs, baseRevision: baseRevisionArg, confirm: required(boolean), resolution: choices('720p', '1080p', '4k'), fps: positive }, (args, exec) => {
+      { ...targetArgs, ...revisionArgs, confirm: required(boolean), resolution: choices('720p', '1080p', '4k'), fps: positive }, (args, exec) => {
         if (args.confirm !== true) throw new ClipDomainError('CONFIRMATION_REQUIRED', 'Clip export requires an explicit request from the user.')
         if (!exportJobs) throw ClipDomainError.exportEncodeFailed('The Clip export service is unavailable.')
         return live('clip_export', 295_000, args, exec, { checkRevision: true,
-          prepare: ({ requestId, projectId, baseRevision, binding }) => exportJobs.begin({ requestId, projectId, projectRevision: baseRevision, binding }),
+          prepare: ({ requestId, projectId, baseRevision, binding, revisionEpoch, editorInstanceId, draftWriterId }) =>
+            exportJobs.begin({ requestId, projectId, projectRevision: baseRevision, binding, revisionEpoch, editorInstanceId, draftWriterId }),
           observe: ({ exportJobId }) => exportResult(exportJobs, exportJobId),
         })
       }),
@@ -445,7 +453,7 @@ export function registerClipTools(ctx, tools) {
   else register()
 }
 
-export const CLIP_PROMPT = `Use OmniMux Clip tools to read or operate the right-side OpenReel editor. Read the latest revision with clip_get before editing. All tool times are seconds.
+export const CLIP_PROMPT = `Use OmniMux Clip tools to read or operate the right-side OpenReel editor. Before editing, read the target with live clip_get and reuse its revision and revisionEpoch as baseRevision and baseRevisionEpoch for the same project and window. All tool times are seconds.
 Use clip_get or clip_diagnostics to read saved projects. When AMBIGUOUS_TARGET lists multiple projects or windows, resolve the target from the user's instruction or ask which one they mean. Use clip_open only when asked to open a specific editor.
 Use clip_edit for the requested changes, optionally with validateOnly first. Set confirmDestructive only with explicit user intent to delete a populated track or clear the timeline. Use clip_export only on an explicit export request, with confirm=true.
 On REVISION_CONFLICT, read the current revision and reconsider the edit. For outcome-unknown, recheck the same request ID. Follow skills/clip-craft/SKILL.md for editing decisions.`

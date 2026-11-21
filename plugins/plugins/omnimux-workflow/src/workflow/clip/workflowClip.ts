@@ -12,16 +12,20 @@ interface SaveDraftInput extends CanvasClipBinding {
   revision: number;
 }
 
-interface CommitExportInput extends CanvasClipBinding {
-  exportJobId: number | string;
+interface ExportRevision {
   projectRevision: number;
+  revisionEpoch?: number;
+  exportGeneration?: number;
+}
+
+interface CommitExportInput extends CanvasClipBinding, ExportRevision {
+  exportJobId: number | string;
   output: { videoPath: string; revision: string; durationMs: number; width: number; height: number };
 }
 
-interface StoredExportReceipt {
+interface StoredExportReceipt extends ExportRevision {
   exportJobId: number;
   fingerprint: string;
-  projectRevision: number;
   workspaceVersion: number;
 }
 
@@ -59,10 +63,17 @@ function titleOf(node: SerializedCanvasNode): string {
   return '视频合成';
 }
 
-function exportIdentity({ exportJobId, projectRevision, output }: CommitExportInput) {
+function exportGenerationOf({ revisionEpoch, exportGeneration }: ExportRevision): number {
+  return exportGeneration ?? revisionEpoch ?? 0;
+}
+
+function exportIdentity(input: CommitExportInput) {
+  const { exportJobId, projectRevision, revisionEpoch, exportGeneration, output } = input;
   const jobId = typeof exportJobId === 'string' && /^[1-9]\d{0,15}$/.test(exportJobId)
     ? Number(exportJobId) : exportJobId;
-  if (!validRevision(jobId) || jobId === 0 || !validRevision(projectRevision) || !output
+  if (!validRevision(jobId) || jobId === 0 || !validRevision(projectRevision)
+    || (revisionEpoch !== undefined && !validRevision(revisionEpoch))
+    || (exportGeneration !== undefined && !validRevision(exportGeneration)) || !output
     || typeof output.videoPath !== 'string' || !looksAbsolutePath(output.videoPath)
     || typeof output.revision !== 'string' || !output.revision.trim() || output.revision.length > 256
     || !Number.isFinite(output.durationMs) || output.durationMs < 0
@@ -71,9 +82,12 @@ function exportIdentity({ exportJobId, projectRevision, output }: CommitExportIn
     throw new WorkflowStoreError('invalid-clip-export', 'The export job, project revision or media metadata is invalid.');
   }
   const { videoPath, revision, durationMs, width, height } = output;
-  const fingerprint = createHash('sha256')
-    .update(JSON.stringify([projectRevision, videoPath, revision, durationMs, width, height])).digest('hex');
-  return { jobId, fingerprint };
+  const identity = [projectRevision, videoPath, revision, durationMs, width, height];
+  const generation = exportGenerationOf(input);
+  // Preserve fingerprints of reservations written before generation tracking.
+  if (revisionEpoch || generation) identity.push(revisionEpoch ?? 0, generation);
+  const fingerprint = createHash('sha256').update(JSON.stringify(identity)).digest('hex');
+  return { jobId, generation, fingerprint };
 }
 
 /** A receipt lives with the source node in the same atomic save as the graph. */
@@ -119,8 +133,8 @@ export function createWorkflowClipService({ store, canAccessWorkspace }: Workflo
 
     commitExport(input: CommitExportInput) {
       assertBinding(input);
-      const { workspaceId, output } = input;
-      const { jobId, fingerprint } = exportIdentity(input);
+      const { workspaceId, output, projectRevision, revisionEpoch, exportGeneration } = input;
+      const { jobId, generation, fingerprint } = exportIdentity(input);
       return retryWorkspaceVersionConflict(() => {
         const snapshot = store.get(workspaceId);
         const source = boundNode(snapshot, input);
@@ -133,7 +147,11 @@ export function createWorkflowClipService({ store, canAccessWorkspace }: Workflo
           }
           return committed(prior.workspaceVersion);
         }
-        if (receipts.some((receipt) => receipt.exportJobId > jobId || receipt.projectRevision > input.projectRevision)) {
+        if (receipts.some((receipt) => {
+          const savedGeneration = exportGenerationOf(receipt);
+          return savedGeneration > generation || (savedGeneration === generation
+            && (receipt.exportJobId > jobId || receipt.projectRevision > projectRevision));
+        })) {
           return { status: 'superseded' as const, canvasCommitted: false as const };
         }
         const downstream = planClipExportDownstream({
@@ -145,7 +163,11 @@ export function createWorkflowClipService({ store, canAccessWorkspace }: Workflo
           currentEdges: snapshot.edges,
           nodeWidth: VIDEO_COMPOSITION_NODE_WIDTH,
         });
-        const receipt = { exportJobId: jobId, fingerprint, projectRevision: input.projectRevision, workspaceVersion: snapshot.version + 1 };
+        const receipt: StoredExportReceipt = {
+          exportJobId: jobId, fingerprint, projectRevision, workspaceVersion: snapshot.version + 1,
+          ...(revisionEpoch !== undefined ? { revisionEpoch } : {}),
+          ...(exportGeneration !== undefined ? { exportGeneration } : {}),
+        };
         const graph = planCanvasInputMutation(snapshot, {
           addNodes: downstream?.addNodes.map(({ data: { realPath: _realPath, ...data }, ...node }) => ({
             ...node, selected: false, data: { ...data, nodeKind: 'import' },

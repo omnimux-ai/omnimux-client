@@ -102,6 +102,66 @@ test('raw upload matches the original project and caller proof, once within its 
   assert.equal(h.jobs.get(expires.exportJobId).status, 'expired')
 })
 
+test('manual cancellation keeps its proof scope and survives the Host restarting', async (t) => {
+  const calls = []
+  const h = setup(t, () => ({ commitExport: (request) => {
+    calls.push(request)
+    return { status: 'committed', canvasCommitted: true, workspaceVersion: 4 }
+  } }))
+  const beginManual = requestId => h.jobs.begin({ requestId, projectId, projectRevision: 1, binding, manualWindowId: 'editor-window' })
+  const job = beginManual('cancel-during-probe')
+  const other = beginManual('saves-before-cancel')
+  const agent = h.begin('agent', 1)
+  assert.throws(() => h.jobs.cancel({ ...job, uploadToken: other.uploadToken }), { code: 'path-denied' })
+  assert.throws(() => h.jobs.cancel({ ...job, projectId: 'another-project' }), { code: 'path-denied' })
+  assert.throws(() => h.jobs.cancel(agent), { code: 'path-denied' })
+
+  const pending = h.upload(job, h.temp('cancel-in-flight'))
+  const cancelled = h.jobs.cancel(job)
+  assert.equal(cancelled.status, 'cancelled')
+  assert.equal(cancelled.fileSaved, false)
+  assert.equal(cancelled.canvasCommitted, false)
+  await assert.rejects(pending, { code: 'export-cancelled' })
+  const restarted = h.open()
+  assert.deepEqual(restarted.get(job.exportJobId), cancelled)
+  assert.deepEqual(restarted.cancel(job), cancelled)
+  assert.deepEqual(await restarted.retryCanvas(job.exportJobId), cancelled)
+  assert.throws(() => restarted.authorizeUpload(job), { code: 'export-cancelled' })
+  assert.equal(calls.length, 0)
+
+  const finished = await h.upload(other, h.temp('already-saved'))
+  assert.equal(finished.status, 'committed')
+  assert.deepEqual(restarted.cancel(other), finished)
+  assert.equal(calls.length, 1)
+})
+
+test('export generation survives Host restart, editor recreation and an old writer making a later reservation', async (t) => {
+  const calls = []
+  const h = setup(t, () => ({ commitExport: (request) => {
+    calls.push(request)
+    return { status: 'committed', canvasCommitted: true, workspaceVersion: calls.length }
+  } }))
+  const reserve = (requestId, projectRevision, draftWriterId, revisionEpoch, editorInstanceId = draftWriterId) =>
+    h.open().begin({ requestId, projectId, projectRevision, revisionEpoch, draftWriterId, editorInstanceId, binding })
+  const older = reserve('discarded-5', 5, 'writer-a', 0)
+  const unseen = reserve('still-old-6', 6, 'writer-b', 0)
+  const adopted = reserve('adopted-2', 2, 'writer-a', 1)
+  const advanced = reserve('advanced-3', 3, 'writer-c', 0)
+  const reopened = reserve('reopened-2', 2, 'writer-a', 1, 'recreated-editor')
+  const late = reserve('still-old-7', 7, 'writer-b', 0)
+  const publish = job => h.open().upload({ ...job, tempPath: h.temp(job.requestId) })
+
+  assert.equal((await publish(older)).status, 'committed')
+  assert.equal((await publish(adopted)).status, 'committed')
+  assert.equal((await publish(advanced)).status, 'committed')
+  for (const dropped of [unseen, reopened, late]) {
+    assert.ok(dropped.exportJobId > older.exportJobId)
+    assert.equal((await publish(dropped)).status, 'superseded')
+  }
+  assert.deepEqual(calls.map(({ projectRevision, revisionEpoch, exportGeneration }) =>
+    [projectRevision, revisionEpoch, exportGeneration]), [[5, 0, 0], [2, 1, 1], [3, 0, 1]])
+})
+
 test('MP4 validation rejects an incomplete structural tail and a fake header', async (t) => {
   const h = setup(t, () => ({ commitExport: () => assert.fail('Malformed bytes reached the canvas') }))
   for (const [name, bytes] of [

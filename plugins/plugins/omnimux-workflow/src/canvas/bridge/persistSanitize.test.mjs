@@ -186,6 +186,39 @@ test('sanitizeNodes 剥 realPath / blob；relativePath 派生 project-file URL',
   assert.equal('mediaAssets' in orphan.data, false);
 });
 
+test('sanitizeNodes preserves a verified project-file revision only for the same workspace and file', () => {
+  const workspaceId = 'ws_abc';
+  const relativePath = 'assets/voice.wav';
+  const url = `/omnimux-workflow/api/workspaces/${workspaceId}/file?rel=assets%2Fvoice.wav`;
+  const verifiedUrl = `${url}&rev=sha256%3A${'a'.repeat(64)}`;
+  const node = {
+    id: 'voice',
+    type: 'material',
+    position: { x: 0, y: 0 },
+    data: { materialType: 'audio', relativePath, mediaUrl: verifiedUrl, mediaAssets: [{ url: verifiedUrl }] },
+  };
+  const sanitize = (workspace, previous) => sanitizeNodes([{
+    ...node,
+    data: { ...node.data, mediaUrl: previous, mediaAssets: [{ url: previous }] },
+  }], { workspaceId: workspace })[0].data;
+
+  const saved = sanitize(workspaceId, verifiedUrl);
+  assert.equal(saved.mediaUrl, verifiedUrl);
+  assert.equal(saved.mediaAssets[0].url, verifiedUrl);
+  assert.notEqual(signatureOf([node], [], { workspaceId }), signatureOf([
+    { ...node, data: { ...node.data, mediaUrl: url, mediaAssets: [{ url }] } },
+  ], [], { workspaceId }));
+
+  const redirected = sanitize(workspaceId, verifiedUrl.replace('voice.wav', 'other.wav'));
+  assert.equal(redirected.mediaUrl, url);
+  assert.equal(redirected.mediaAssets[0].url, url);
+
+  const moved = sanitize('ws_other', verifiedUrl);
+  const movedUrl = url.replace(workspaceId, 'ws_other');
+  assert.equal(moved.mediaUrl, movedUrl);
+  assert.equal(moved.mediaAssets[0].url, movedUrl);
+});
+
 test('仅 nodeHeight / width / height 变化 → 签名不变', () => {
   const base = [
     {

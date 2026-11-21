@@ -2,8 +2,9 @@ import { useEffect } from "react";
 import type { MediaItem } from "@openreel/core";
 import { useProjectStore } from "../openreel/web/stores/project-store";
 import { getTimelineItems } from "../openreel/core/timeline/timeline-items";
-import { canvasWorkspaceMediaUrl, mediaContentDigest, reconnectMediaUrl } from "../../timeline/nativeProjectFields.js";
-import { mediaDigest } from "../live/media-source";
+import { canvasWorkspaceMediaUrl, mediaContentDigest, reconnectMediaUrl, workspaceMediaDigest } from "../../timeline/nativeProjectFields.js";
+import { mediaDigest, verifiedMediaBlob } from "../live/media-source";
+import { createStoredMediaRecovery } from "../live/media-recovery";
 
 const MAX_MEDIA = 20;
 const MAX_CAPTIONS = 120;
@@ -34,7 +35,16 @@ export interface CanvasSession {
   };
 }
 
-function parseMedia(value: string, workspaceId: string | undefined): { url: string; reconnect?: string } | null {
+function localFileReconnect(request: URL): string | undefined {
+  const { hash, pathname, search, searchParams } = request;
+  const path = searchParams.get('path');
+  if (!path || hash || /[\x00-\x1f\x7f]/u.test(path) || !/^(?:\/|[A-Za-z]:[\\/]|\\\\)/u.test(path)) return undefined;
+  const keys = ['path', 'rev', 'v'];
+  if ([...searchParams.keys()].some(key => !keys.includes(key)) || keys.some(key => searchParams.getAll(key).length > 1)) return undefined;
+  return pathname + search;
+}
+
+function parseMedia(value: string, workspaceId: string | undefined): { url: string; reconnect?: string; localFile?: string } | null {
   if (!value || /[\x00-\x1f\x7f]/u.test(value)) return null;
   if (value.startsWith("blob:") || /^data:(?:video|audio|image\/(?!svg))/i.test(value)) return { url: value };
   try {
@@ -43,12 +53,15 @@ function parseMedia(value: string, workspaceId: string | undefined): { url: stri
     const relative = /^\/(?!\/)/.test(value) && request.origin === base;
     const http = /^https?:\/\//i.test(value);
     if (request.username || /^https?:\/\/[^/]*@/i.test(value)) return null;
-    if (WORKSPACE_FILE.test(request.pathname) && (relative || http && request.origin === globalThis.location?.origin)) {
+    const sameOrigin = relative || http && request.origin === globalThis.location?.origin;
+    if (WORKSPACE_FILE.test(request.pathname) && sameOrigin) {
       const url = canvasWorkspaceMediaUrl(relative ? value : request.pathname + request.search + request.hash, workspaceId);
       return url ? { url, reconnect: url } : null;
     }
+    if (request.pathname === LOCAL_FILE && sameOrigin) {
+      return { url: request.pathname + request.search, localFile: localFileReconnect(request) };
+    }
     if (relative) {
-      if (request.pathname === LOCAL_FILE) return { url: request.pathname + request.search };
       if (MEDIA_PATH.test(request.pathname)) {
         const url = request.pathname + request.search;
         return { url, reconnect: reconnectMediaUrl(url, workspaceId) };
@@ -57,7 +70,8 @@ function parseMedia(value: string, workspaceId: string | undefined): { url: stri
     if (http) return { url: request.href };
     if (value.startsWith("//")) return null;
     if (value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value)) {
-      return { url: `${LOCAL_FILE}?path=${encodeURIComponent(value)}` };
+      const url = `${LOCAL_FILE}?path=${encodeURIComponent(value)}`;
+      return { url, localFile: url };
     }
   } catch {
     return null;
@@ -90,54 +104,74 @@ async function readMediaFile(url: string, name: string, type: MediaItem['type'],
   return new File([blob], name, { type: blob.type.startsWith("application/") ? MIME[type] : blob.type || MIME[type] });
 }
 
-function workspaceLocator(url: string) {
-  const query = new URL(url, "https://clip.invalid").searchParams;
-  return { path: query.get("rel"), version: JSON.stringify([query.get("rev"), query.get("v")]) };
+async function connectedMedia(item: ReturnType<typeof importItems>[number], workspaceId: string) {
+  const ref = parseMedia(item.url || item.path, workspaceId);
+  const workspaceUrl = canvasWorkspaceMediaUrl(ref?.reconnect, workspaceId);
+  const url = workspaceUrl ?? ref?.localFile;
+  if (!url) return undefined;
+  const locators = [url];
+  if (workspaceUrl) {
+    // A historical hash-only record must match the complete versioned locator.
+    for (const alias of [item.path, item.url]) {
+      if (alias && parseMedia(alias, workspaceId)?.reconnect === url) locators.push(alias);
+    }
+  } else {
+    const pathOf = (value: string) => new URL(value, 'https://clip.invalid').searchParams.get('path');
+    const path = pathOf(url);
+    if (path) locators.push(path);
+    for (const alias of [item.path, item.url]) {
+      const localUrl = alias && parseMedia(alias, workspaceId)?.localFile;
+      if (localUrl && pathOf(localUrl) === path) locators.push(alias);
+    }
+  }
+  return { type: item.type, url, workspaceUrl, fingerprints: await Promise.all([...new Set(locators)].map(mediaDigest)) };
 }
 
-async function recoverLegacyCanvasMedia(
-  items: readonly MediaItem[], upstream: ReturnType<typeof importItems>, workspaceId: string | undefined,
+async function recoverCanvasMedia(
+  items: readonly MediaItem[], upstream: ReturnType<typeof importItems>, session: CanvasSession,
   signal: AbortSignal, isCurrent: () => boolean,
 ) {
-  const placeholders = items.filter(item => item.sourceRef?.kind === "legacy" && item.isPlaceholder);
-  if (!workspaceId || !placeholders.length) return;
-  const connected = await Promise.all(upstream.map(async item => {
-    const ref = parseMedia(item.url || item.path, workspaceId);
-    const url = canvasWorkspaceMediaUrl(ref?.reconnect, workspaceId);
-    if (!url) return;
-    const locators = [...new Set([item.url, item.path, url].filter((value): value is string => Boolean(value)))];
-    return { item, url, ...workspaceLocator(url), fingerprints: await Promise.all(locators.map(mediaDigest)) };
-  }));
+  const placeholders = items.filter(item => item.isPlaceholder && (item.sourceRef?.kind === 'legacy' || mediaContentDigest(item)));
+  const { workspaceId, nodeId, projectId } = session;
+  if (!workspaceId || !projectId || !placeholders.length) return;
+  const connected = await Promise.all(upstream.map(item => connectedMedia(item, workspaceId)));
+  const readStored = createStoredMediaRecovery(projectId, { workspaceId, nodeId, projectId }, isCurrent);
 
   for (const media of placeholders) {
     if (!isCurrent()) return;
-    const retained = canvasWorkspaceMediaUrl(media.sourceRef?.url, workspaceId);
-    const locator = retained ? workspaceLocator(retained) : undefined;
-    const input = connected.find(source => source && source.item.type === media.type && (locator
-      ? source.path === locator.path && source.version === locator.version
-      : media.sourceRef?.fingerprint && source.fingerprints.includes(media.sourceRef.fingerprint)));
-    const expected = mediaContentDigest(media);
-    // Workflow's file route resolves rel to the current file on disk. A linked
-    // replacement at the same path cannot prove the old bytes without a digest.
-    if (locator && !expected && !input && connected.some(source => source?.path === locator.path)) continue;
-    const url = retained ?? input?.url;
-    if (!url) continue;
+    const legacy = media.sourceRef?.kind === 'legacy';
+    const fingerprint = media.sourceRef?.fingerprint;
+    const upstreamId = legacy ? undefined : media.omnimuxSource?.id;
+    const input = connected.find(source => source && source.type === media.type && (legacy || !source.workspaceUrl)
+      && source.fingerprints.some(value => value === fingerprint || value === upstreamId));
+    const retained = legacy ? canvasWorkspaceMediaUrl(media.sourceRef?.url, workspaceId) : undefined;
+    const url = retained ?? (input ? input.url : undefined);
+    // A mutable URL or an opaque revision label cannot establish the bytes
+    // that the old timeline referred to. A typed SHA must be on the old URL.
+    const digest = mediaContentDigest(media) ?? (legacy ? workspaceMediaDigest(url, workspaceId) : undefined);
+    if (!digest) continue;
     try {
-      const file = await readMediaFile(url, media.name, media.type, AbortSignal.any([signal, AbortSignal.timeout(12_000)]));
+      const stored = await readStored(media, digest);
       if (!isCurrent()) return;
-      const digest = await mediaDigest(file);
-      if (expected && expected !== digest) throw new Error("The legacy media version changed");
-      const id = await mediaDigest(input ? sourceKey(input.item, url) : url);
-      const version = input?.item.sourceVersion ? await mediaDigest(input.item.sourceVersion) : digest;
+      const file = stored ? new File([stored], media.name, { type: stored.type || MIME[media.type] })
+        : url ? await readMediaFile(url, media.name, media.type, AbortSignal.any([signal, AbortSignal.timeout(12_000)])) : undefined;
+      if (!isCurrent()) return;
+      if (!file) continue;
+      if (!stored && !await verifiedMediaBlob(file, digest)) throw new Error('The source media version changed');
+      const sourceId = legacy ? fingerprint ?? (url ? await mediaDigest(url) : undefined) : undefined;
+      const omnimuxSource = sourceId ? {
+        id: sourceId, version: digest, digest,
+        ...(canvasWorkspaceMediaUrl(url, workspaceId) ? { url } : {}),
+      } : media.omnimuxSource;
       const store = useProjectStore.getState();
       if (!isCurrent()) return;
       if (store.getMediaItem(media.id) !== media) continue;
       const restored = await store.replaceMediaAsset(media.id, file, undefined, {
-        restorePlaceholder: true, isCurrent, omnimuxSource: { id, version, url, digest },
+        restorePlaceholder: true, expectedDigest: digest, isCurrent, omnimuxSource,
       });
-      if (!restored.success) throw new Error("Could not restore the legacy media");
+      if (!restored.success) throw new Error('Could not restore the original media');
     } catch (error) {
-      if (isCurrent()) console.warn("[Clip] Legacy canvas media could not be restored.", (error as Error)?.name);
+      if (isCurrent()) console.warn('[Clip] Canvas media could not be restored.', (error as Error)?.name);
     }
   }
 }
@@ -147,16 +181,21 @@ export function useCanvasIngestion(session: CanvasSession | null, token: AbortCo
     if (!session?.projectId || !token || session.source !== "canvas") return;
     const controller = new AbortController();
     const signal = AbortSignal.any([token.signal, controller.signal]);
-    const isCurrent = () => !signal.aborted && owns() && useProjectStore.getState().project.id === session.projectId;
+    const executor = useProjectStore.getState().actionExecutor;
+    const isCurrent = () => {
+      const store = useProjectStore.getState();
+      return !signal.aborted && owns() && store.project.id === session.projectId && store.actionExecutor === executor;
+    };
     const inputs = session.upstreamInputs ?? {};
     const upstream = importItems(inputs);
     const importAll = async () => {
       if (!isCurrent()) return;
       const initial = useProjectStore.getState().project;
       const items = initial.mediaLibrary.items;
+      await recoverCanvasMedia(items, upstream, session, signal, isCurrent);
+      if (!isCurrent()) return;
       if (initial.omnimuxCanvasInitialized || items.some(item => item.sourceRef?.kind === "legacy")
         || session.draftSchema && (items.length || getTimelineItems(initial).length)) {
-        await recoverLegacyCanvasMedia(items, upstream, session.workspaceId, signal, isCurrent);
         if (!initial.omnimuxCanvasInitialized && isCurrent()) {
           useProjectStore.setState(state => ({ project: { ...state.project, omnimuxCanvasInitialized: true } }));
         }
@@ -191,7 +230,10 @@ export function useCanvasIngestion(session: CanvasSession | null, token: AbortCo
             continue;
           }
           const expected = mediaContentDigest(match);
-          if (expected && expected !== digest) throw new Error('The upstream media version changed');
+          const requestedDigest = workspaceMediaDigest(ref.reconnect, session.workspaceId);
+          if ((expected && expected !== digest) || (requestedDigest && requestedDigest !== digest)) {
+            throw new Error('The upstream media version changed');
+          }
           const omnimuxSource = { id, version, ...(ref.reconnect ? { url: ref.reconnect, digest } : {}) };
           const store = useProjectStore.getState();
           const result = match

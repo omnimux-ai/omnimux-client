@@ -5,6 +5,8 @@
  * `/workspaces/:id/assets` is not swallowed by `/workspaces/:id`.
  */
 import { WORKFLOW_ROUTE_PREFIX } from '../../shared/api.ts';
+import { projectFileRevisionDigest } from '../../shared/localMedia.ts';
+import { readMediaContentDigest } from '../../projects/mediaRevision.ts';
 import { assertLocalWrite, jsonBodyProblem } from '../../http/helpers.ts';
 import { audioFileAction, AudioFileActionError, type AudioFileActionDeps } from '../audioFileAction.ts';
 import type {
@@ -105,7 +107,16 @@ export function createProjectAssetsRoutes(
       const fromPath = fileRe.exec(path)?.[1];
       const workspaceId = fromPath || url.searchParams.get('workspace') || '';
       const rel = url.searchParams.get('rel') || '';
+      const revisions = url.searchParams.getAll('rev');
+      const verify = revisions.some(revision => revision.startsWith('sha256:'));
+      const digest = projectFileRevisionDigest(url.searchParams.get('rev'));
+      if (verify && (!digest || revisions.length !== 1 || url.searchParams.getAll('rel').length !== 1)) {
+        return { status: 400, body: { error: 'invalid-media-revision' } };
+      }
       const file = store.resolveProjectFile(workspaceId, rel);
+      if (digest && digest !== await readMediaContentDigest(file).catch(() => undefined)) {
+        return { status: 409, body: { error: 'media-version-mismatch' } };
+      }
       return { status: 200, file };
     }
 

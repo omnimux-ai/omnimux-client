@@ -35,6 +35,21 @@ test('project and legacy local identities resolve through existing serving paths
   assert.equal(source({ materialType: 'image', realPath: '/tmp/a.png' }).output.mediaAssets[0].path, '/tmp/a.png');
 });
 
+test('project media projection retains a verified version for the exact workspace and relative path', () => {
+  const base = '/omnimux-workflow/api/workspaces/workspace/file?rel=assets%2Fa.mp4';
+  const revision = `rev=sha256%3A${'a'.repeat(64)}`;
+  const fixed = `${base}&${revision}`;
+  const projectUrl = (url) => source({ materialType: 'video', relativePath: 'assets/a.mp4', mediaUrl: url }).output.mediaAssets[0].url;
+  assert.equal(projectUrl(fixed), fixed);
+  for (const previous of [
+    `${base}&rev=1234%3A5678`,
+    fixed.replace('workspace/file', 'other/file'),
+    fixed.replace('a.mp4', 'b.mp4'),
+    `${fixed}&rev=other`,
+    `https://foreign.example${fixed}`,
+  ]) assert.equal(projectUrl(previous), base);
+});
+
 test('displayed current media wins over stale aliases and only that result is referenced', () => {
   const result = source({ materialType: 'image', mediaUrl: 'https://example.test/old.png', content: 'filename',
     mediaAssets: [{ type: 'image', url: 'https://example.test/current.png', assetId: 'current' },

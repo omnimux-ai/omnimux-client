@@ -1,4 +1,6 @@
 import { useState, useCallback, useEffect, useSyncExternalStore } from "react";
+import { useEditorPortalRoot } from "@openreel/ui/lib/portal-root";
+import { isEditorShortcutEvent } from "../../../services/keyboard-shortcuts";
 import { MOGRAPH_TOUR_STEPS, MOGRAPH_TOUR_KEY } from "./mograph-tour-steps";
 
 interface MoGraphTourState {
@@ -36,6 +38,7 @@ export function startMoGraphTour() {
 }
 
 export function useMoGraphTour() {
+  const shortcutRoot = useEditorPortalRoot();
   const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
 
@@ -107,6 +110,7 @@ export function useMoGraphTour() {
     if (!state.isActive) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isEditorShortcutEvent(e, shortcutRoot)) return;
       if (e.key === "Escape") {
         skip();
       } else if (e.key === "ArrowRight" || e.key === "Enter") {
@@ -118,7 +122,7 @@ export function useMoGraphTour() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [state.isActive, next, prev, skip]);
+  }, [state.isActive, next, prev, skip, shortcutRoot]);
 
   return {
     isActive: state.isActive,

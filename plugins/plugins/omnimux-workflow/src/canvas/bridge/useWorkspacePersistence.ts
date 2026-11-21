@@ -15,7 +15,8 @@
  * - Best-effort flush on unmount / pagehide.
  *
  * 空图保护（persistPolicy）：
- * - 决定保存的瞬间同步拷贝 {nodes, edges}，await 后只用这份快照。
+ * - 每次 PUT 发送前同步拷贝图。409 恢复在确认仍是同一画布后重新捕获。
+ * - 离开时只保存同步捕获的原画布，不读取下一个画布的 Store。
  * - 未观察到用户删光时，禁止把非空图覆盖成空（reset / flush / autosave）。
  * - hydrate 完成前（enabled=false）不订阅、不 flush。
  */
@@ -31,6 +32,7 @@ import type {
 import {
   decidePersist,
   inferPersistCause,
+  peekGraphReset,
   shouldPersistEmptyGraph,
   snapshotGraph,
   type PersistCause,
@@ -87,8 +89,13 @@ export interface UseWorkspacePersistenceOptions {
   enabled?: boolean;
 }
 
-type ClipWrite = { base: GraphCapture; remote: CanvasWorkspaceSnapshot };
-type ClipRebase = ClipWrite & { retry?: GraphCapture };
+type SaveMode = 'autosave' | 'preflight' | 'flush' | 'keep-local';
+type ClipWrite = { base: GraphCapture; remote: CanvasWorkspaceSnapshot; mode?: 'keep-local' };
+type RemoteReconcile = Exclude<GraphReconcileDecision, 'resave'> | 'unavailable' | {
+  graph: GraphCapture;
+  saved: SavedGraphState;
+  clipWrite?: ClipWrite;
+};
 type SavedGraphState = {
   version: number;
   signature: string;
@@ -105,8 +112,21 @@ interface GraphCapture {
 
 function readStoreCapture(): GraphCapture {
   const { nodes, edges } = useCanvasStore.getState();
-  const snap = snapshotGraph(nodes as SerializedCanvasNode[], edges as SerializedCanvasEdge[]);
-  return { nodes: snap.nodes, edges: snap.edges };
+  return snapshotGraph(nodes as SerializedCanvasNode[], edges as SerializedCanvasEdge[]);
+}
+
+function confirmedSnapshot(snapshot: CanvasWorkspaceSnapshot): SavedGraphState {
+  return {
+    version: snapshot.version,
+    signature: signatureOf(snapshot.nodes, snapshot.edges, { workspaceId: snapshot.id }),
+    nodeCount: snapshot.nodes.length,
+    graph: snapshot,
+  };
+}
+
+function installClipGraph(graph: GraphCapture, plan: NonNullable<ReturnType<typeof planClipWriteRebase>>) {
+  const history = useCanvasStore.getState().rebaseHistory?.(plan.replayHistory);
+  useCanvasStore.setState({ ...graph, ...history });
 }
 
 export function useWorkspacePersistence(
@@ -127,15 +147,11 @@ export function useWorkspacePersistence(
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
   }, []);
-  const isCurrentScope = (scope: typeof scopeRef.current) =>
-    mountedRef.current && scopeRef.current === scope
-    && workspaceRef.current?.id === scope.workspaceId;
   const serverVersionRef = useRef(0);
-  const lastSavedSigRef = useRef('');
-  const lastSavedGraphRef = useRef<GraphCapture>({ nodes: [], edges: [] });
-  const currentSigRef = useRef('');
+  const lastSavedRef = useRef<SavedGraphState>({
+    version: 0, signature: '', nodeCount: 0, graph: { nodes: [], edges: [] },
+  });
   const conflictRef = useRef(false);
-  const lastSavedNodeCountRef = useRef(0);
   const lastInitIdRef = useRef('');
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedBadgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -144,6 +160,15 @@ export function useWorkspacePersistence(
   enabledRef.current = enabled;
   const onSavedRef = useRef(opts.onSaved);
   onSavedRef.current = opts.onSaved;
+
+  const isCurrentScope = (scope: typeof scopeRef.current) =>
+    mountedRef.current && enabledRef.current && scopeRef.current === scope
+    && workspaceRef.current?.id === scope.workspaceId && !peekGraphReset();
+
+  const rememberSaved = useCallback(({ version, signature, nodeCount, graph }: SavedGraphState) => {
+    serverVersionRef.current = version;
+    lastSavedRef.current = { version, signature, nodeCount, graph };
+  }, []);
 
   const graphSig = (
     nodes: SerializedCanvasNode[],
@@ -160,8 +185,10 @@ export function useWorkspacePersistence(
       savingRef.current = null;
       return;
     }
-    serverVersionRef.current = workspace.version;
-    if (lastInitIdRef.current === workspace.id) return;
+    if (lastInitIdRef.current === workspace.id) {
+      serverVersionRef.current = Math.max(serverVersionRef.current, workspace.version);
+      return;
+    }
     lastInitIdRef.current = workspace.id;
     savingRef.current = null;
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -170,10 +197,7 @@ export function useWorkspacePersistence(
     savedBadgeTimerRef.current = null;
     conflictRef.current = false;
     // 以磁盘/服务端快照为 last-saved，不读可能已被 reset 的 store
-    lastSavedGraphRef.current = workspace;
-    lastSavedSigRef.current = graphSig(workspace.nodes, workspace.edges);
-    currentSigRef.current = lastSavedSigRef.current;
-    lastSavedNodeCountRef.current = workspace.nodes.length;
+    rememberSaved(confirmedSnapshot(workspace));
     setIsDirty(false);
     setStatus('idle');
   }, [workspace?.id, workspace?.version]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -182,12 +206,8 @@ export function useWorkspacePersistence(
   useEffect(() => {
     const handleRemoteSaved = (e: Event) => {
       const snap = (e as CustomEvent<CanvasWorkspaceSnapshot>).detail;
-      if (!snap || snap.id !== workspaceRef.current?.id) return;
-      serverVersionRef.current = snap.version;
-      lastSavedGraphRef.current = snap;
-      lastSavedSigRef.current = graphSig(snap.nodes, snap.edges);
-      currentSigRef.current = lastSavedSigRef.current;
-      lastSavedNodeCountRef.current = snap.nodes.length;
+      if (!snap || snap.id !== workspaceRef.current?.id || snap.version < serverVersionRef.current) return;
+      rememberSaved(confirmedSnapshot(snap));
       conflictRef.current = false;
       setIsDirty(false);
       setStatus('idle');
@@ -209,18 +229,22 @@ export function useWorkspacePersistence(
   };
 
   const performSaveRef = useRef<
-    ((capture: GraphCapture, cause: PersistCause, force?: boolean, resolveConflict?: boolean) => Promise<SaveOutcome>) | null
+    ((capture: GraphCapture, cause: PersistCause, mode?: SaveMode) => Promise<SaveOutcome>) | null
   >(null);
 
-  /** 1s 去抖后保存钉死的 capture（冲突期间由 performSave 自己拒绝）。 */
-  const armAutosave = useCallback((capture: GraphCapture, cause: PersistCause = 'autosave') => {
+  const clearAutosaveTimer = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
-    const scheduled: GraphCapture = { nodes: capture.nodes, edges: capture.edges };
+    timerRef.current = null;
+  }, []);
+
+  const armAutosave = useCallback((capture: GraphCapture, cause: PersistCause) => {
+    clearAutosaveTimer();
+    const scope = scopeRef.current;
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
-      void performSaveRef.current?.(scheduled, cause);
+      if (isCurrentScope(scope)) void performSaveRef.current?.(capture, cause);
     }, AUTOSAVE_DEBOUNCE_MS);
-  }, []);
+  }, [clearAutosaveTimer]);
 
   /**
    * 远端 version 超前：先拉快照比签名。
@@ -231,243 +255,227 @@ export function useWorkspacePersistence(
    */
   const resolveRemoteAdvance = useCallback((
     snapshot: CanvasWorkspaceSnapshot,
-    failedCapture?: GraphCapture,
-  ): GraphReconcileDecision | 'unavailable' | ClipRebase => {
+    keepLocal = false,
+  ): RemoteReconcile => {
     const ws = workspaceRef.current;
-    // 版本探测期间自己的保存也可能已完成，丢弃早于本地记录的快照。
+    // A poll or a save response can arrive after a newer snapshot was adopted.
     if (snapshot.id !== ws?.id || snapshot.version < serverVersionRef.current) return 'unavailable';
-    serverVersionRef.current = snapshot.version;
-    // Only the explicit resolution controls may release an existing conflict.
-    if (conflictRef.current) return 'conflict';
+    if (conflictRef.current && !keepLocal) return 'conflict';
     const current = readStoreCapture();
     const currentSignature = graphSig(current.nodes, current.edges);
-    const remoteSignature = graphSig(snapshot.nodes, snapshot.edges);
+    const saved = confirmedSnapshot(snapshot);
     const decision = decideRemoteVersionAdvance({
       localSignature: currentSignature,
-      lastSavedSignature: lastSavedSigRef.current,
-      remoteSignature,
+      lastSavedSignature: lastSavedRef.current.signature,
+      remoteSignature: saved.signature,
     });
-    const base = lastSavedGraphRef.current;
-    const clipWrite = decision === 'conflict' || decision === 'reload'
-      ? planClipWriteRebase(base, snapshot, ws.id) : undefined;
-    const rebased = clipWrite?.apply(current);
-    if (clipWrite && rebased) {
-      lastSavedGraphRef.current = snapshot;
-      lastSavedSigRef.current = remoteSignature;
-      lastSavedNodeCountRef.current = snapshot.nodes.length;
-      currentSigRef.current = graphSig(rebased.nodes, rebased.edges);
-      // A user can undo the pending edit while the first PUT is in flight.
-      // Once the rebased live graph is clean, retrying that capture would put it back on disk.
-      const dirty = currentSigRef.current !== remoteSignature;
-      const retry = dirty && failedCapture ? clipWrite.apply(failedCapture) : undefined;
-      const history = useCanvasStore.getState().rebaseHistory?.(clipWrite.replayHistory);
-      useCanvasStore.setState({ ...rebased, ...history });
-      if (failedCapture && !retry) setStatus(dirty ? 'pending' : 'idle');
-      onSavedRef.current?.(snapshot);
-      return { base, remote: snapshot, retry };
+    const base = lastSavedRef.current.graph;
+    const mode = keepLocal ? 'keep-local' : undefined;
+    const plan = keepLocal || decision === 'conflict' || decision === 'reload'
+      ? planClipWriteRebase(base, snapshot, ws.id, mode) : undefined;
+    const rebased = plan?.apply(current);
+    if (plan && rebased) {
+      rememberSaved(saved);
+      const dirty = graphSig(rebased.nodes, rebased.edges) !== saved.signature;
+      installClipGraph(rebased, plan);
+      setIsDirty(dirty);
+      if (!keepLocal) {
+        setStatus(dirty ? 'pending' : 'idle');
+        onSavedRef.current?.(snapshot);
+      }
+      return { graph: rebased, saved, clipWrite: { base, remote: snapshot, mode } };
     }
-    currentSigRef.current = currentSignature;
-    if (decision === 'conflict') {
+    if (keepLocal && !plan) {
+      rememberSaved(saved);
+      return { graph: current, saved };
+    }
+    if (decision === 'conflict' || keepLocal) {
+      serverVersionRef.current = snapshot.version;
       conflictRef.current = true;
       setIsDirty(true);
       setStatus('conflict');
       return 'conflict';
     }
-    lastSavedGraphRef.current = snapshot;
-    lastSavedSigRef.current = remoteSignature;
-    lastSavedNodeCountRef.current = snapshot.nodes.length;
-    if (decision === 'reload') {
-      useCanvasStore.getState().hydrateGraph(snapshot.nodes, snapshot.edges);
-      setIsDirty(false);
-      setStatus('idle');
-      onSavedRef.current?.(snapshot);
-      return 'reload';
-    }
+    rememberSaved(saved);
     if (decision === 'resave') {
-      // 远端没有本地尚未拥有的内容：本地领先，续存即可，不弹条。
-      // 这里还没有保存成功，不能当成「已保存」广播给宿主。
       setIsDirty(true);
       setStatus((prev) => (prev === 'saving' ? prev : 'pending'));
-      return 'resave';
+      return { graph: current, saved };
     }
+    if (decision === 'reload') useCanvasStore.getState().hydrateGraph(snapshot.nodes, snapshot.edges);
     setIsDirty(false);
     setStatus('idle');
     onSavedRef.current?.(snapshot);
-    return 'adopt';
-  }, []);
+    return decision;
+  }, [rememberSaved]);
 
-  /**
-   * 只用调用瞬间传入的 capture；await 之后禁止再读 store。
-   */
   const performSave = useCallback((
     capture: GraphCapture,
     cause: PersistCause,
-    force = false,
-    resolveConflict = false,
+    mode: SaveMode = 'autosave',
   ): Promise<SaveOutcome> => {
     const ws = workspaceRef.current;
     const scope = scopeRef.current;
     const previous = savingRef.current;
-    const capturedSaved: SavedGraphState = {
-      version: serverVersionRef.current,
-      signature: lastSavedSigRef.current,
-      nodeCount: lastSavedNodeCountRef.current,
-      graph: lastSavedGraphRef.current,
-    };
+    const capturedSaved = lastSavedRef.current;
     const capturedConflict = conflictRef.current;
     const pending = (async (): Promise<SaveOutcome> => {
+      if (!ws || scope.workspaceId !== ws.id) return { error: '画布尚未就绪，请重新打开后再试' };
       const prior = previous ? await previous : null;
       const current = isCurrentScope(scope);
       const priorSaved = prior && 'error' in prior ? prior.saved : prior;
-      const saved: SavedGraphState = current ? {
-        version: serverVersionRef.current,
-        signature: lastSavedSigRef.current,
-        nodeCount: lastSavedNodeCountRef.current,
-        graph: lastSavedGraphRef.current,
-        clipWrites: priorSaved?.clipWrites,
-      } : priorSaved ?? capturedSaved;
-      if (!ws || scope.workspaceId !== ws.id) {
-        return { error: '画布尚未就绪，请重新打开后再试' };
-      }
-      if (!current && prior && 'error' in prior && !prior.skipped) return prior;
-      // A flush captured before leaving still belongs to this workspace. Its
-      // version follows this queue's successful PUT, never the new canvas refs.
-      if ((!current && !force && cause !== 'flush') || (!force && current && !enabledRef.current)) {
-        return { error: '画布已切换，请重新发起生成', skipped: true, saved };
-      }
-      const conflict = current ? conflictRef.current : capturedConflict;
-      if (conflict && !resolveConflict) {
-        return { error: '画布版本冲突，请先保留本地内容或重新加载' };
-      }
-      let clipWrites = saved.clipWrites ?? [];
-      const writesAfterCapture = clipWrites.filter(({ remote }) => remote.version > capturedSaved.version);
-      let graph = capture;
-      // The previous PUT may include local edits as well as a Clip commit. Replay
-      // its actual remote update onto this capture before using that PUT's version.
-      for (const { base, remote } of writesAfterCapture) {
-        const merged = rebaseClipWrite(base, remote, graph, ws.id);
-        if (!merged) {
-          if (current) { conflictRef.current = true; setStatus('conflict'); }
-          return { error: '画布版本冲突，请确认最新内容后重新生成' };
+      let saved = current ? lastSavedRef.current : priorSaved ?? capturedSaved;
+      let clipWrites = priorSaved?.clipWrites ?? [];
+      const skipped = (error: string): SaveOutcome => ({ error, skipped: true, saved: { ...saved, clipWrites } });
+      const switched = () => skipped('画布已切换，请重新发起生成');
+      const conflict = (observedVersion?: number): SaveOutcome => {
+        if (isCurrentScope(scope)) {
+          if (observedVersion !== undefined) {
+            serverVersionRef.current = Math.max(serverVersionRef.current, observedVersion);
+          }
+          conflictRef.current = true;
+          clearAutosaveTimer();
+          setStatus('conflict');
         }
-        graph = merged;
+        return { error: '画布版本冲突，请确认最新内容后重新生成', saved: { ...saved, clipWrites } };
+      };
+      if (!current && mode !== 'flush') return switched();
+      if (!current && prior && 'error' in prior && !prior.skipped) return prior;
+      const keepLocal = mode === 'keep-local';
+      const hasConflict = current ? conflictRef.current : capturedConflict;
+      if (hasConflict && !keepLocal) return conflict();
+      if (keepLocal && !hasConflict) return saved;
+
+      let graph = capture;
+      if (current && mode === 'autosave' && prior) {
+        // A queued debounce can predate a retry that already saved a later edit.
+        graph = readStoreCapture();
+        cause = inferPersistCause(graph.nodes.length);
+      } else if (!keepLocal) {
+        const writesAfterCapture = clipWrites.filter(({ remote }) => remote.version > capturedSaved.version);
+        for (const write of writesAfterCapture) {
+          const plan = planClipWriteRebase(write.base, write.remote, ws.id, write.mode);
+          const merged = plan?.apply(graph);
+          if (!merged) return conflict();
+          graph = merged;
+        }
+        if (!writesAfterCapture.length && saved.version !== capturedSaved.version) {
+          graph = rebaseClipWrite(capturedSaved.graph, saved.graph, capture, ws.id) ?? capture;
+        }
       }
-      if (!writesAfterCapture.length && saved.version !== capturedSaved.version) {
-        graph = rebaseClipWrite(capturedSaved.graph, saved.graph, capture, ws.id) ?? capture;
-      }
-      let signature = signatureOf(graph.nodes, graph.edges, { workspaceId: ws.id });
-      const decision = decidePersist({
+      const decide = (next: GraphCapture, persistCause: PersistCause) => decidePersist({
         lastSavedNodeCount: saved.nodeCount,
-        nextNodes: graph.nodes,
-        nextEdges: graph.edges,
-        cause,
-        lastSavedSignature: resolveConflict && conflict ? '' : saved.signature,
-        nextSignature: signature,
+        nextNodes: next.nodes,
+        nextEdges: next.edges,
+        cause: persistCause,
+        lastSavedSignature: saved.signature,
+        nextSignature: signatureOf(next.nodes, next.edges, { workspaceId: ws.id }),
       });
-      if (!decision.persist || !decision.snapshot) {
-        return decision.reason === 'unchanged'
-          ? saved
-          : { error: '画布内容尚未保存，请重新打开后再试' };
-      }
-      const payloadOf = (value: GraphCapture, expectedVersion: number) => ({
+      const put = (value: GraphCapture) => saveWorkspace(ws.id, {
         name: ws.name,
         nodes: sanitizeNodes(value.nodes, { workspaceId: ws.id }),
         edges: sanitizeEdges(value.edges),
-        expectedVersion,
+        expectedVersion: saved.version,
       });
-      if (current) setStatus('saving');
-      try {
-        let result = await saveWorkspace(ws.id, payloadOf(decision.snapshot, saved.version));
-        if (result.status === 409) {
-          const latest = await getWorkspace(ws.id);
-          const remote = latest.ok ? latest.body.workspace : undefined;
-          let reconcile: ReturnType<typeof resolveRemoteAdvance> = 'unavailable';
-          if (remote?.id === ws.id) {
-            if (isCurrentScope(scope)) {
-              reconcile = resolveRemoteAdvance(remote, decision.snapshot);
-            } else if (remote.version > saved.version) {
-              const retry = rebaseClipWrite(saved.graph, remote, decision.snapshot, ws.id);
-              if (retry) reconcile = { base: saved.graph, remote, retry };
-            }
-          }
-          if (typeof reconcile === 'object') {
-            clipWrites = [...clipWrites, { base: reconcile.base, remote: reconcile.remote }];
-          }
-          if (typeof reconcile === 'object' && reconcile.retry) {
-            const retry = reconcile.retry;
-            signature = signatureOf(retry.nodes, retry.edges, { workspaceId: ws.id });
-            result = await saveWorkspace(ws.id, payloadOf(retry, reconcile.remote.version));
-            if (result.status === 409) {
-              if (isCurrentScope(scope)) { conflictRef.current = true; setStatus('conflict'); }
-              return { error: '画布版本冲突，请确认最新内容后重新生成' };
-            }
-          } else if (!isCurrentScope(scope)) {
-            return { error: '画布版本冲突，未保存离开前的修改' };
-          } else if (typeof reconcile === 'object') {
-            // The rebased graph is already saved or has its own autosave scheduled.
-            return { error: '画布已同步剪辑更新，请确认后重新生成', skipped: true, saved: {
-              version: reconcile.remote.version, signature: lastSavedSigRef.current,
-              nodeCount: reconcile.remote.nodes.length, graph: reconcile.remote, clipWrites,
-            } };
-          } else {
-            if (reconcile === 'adopt') {
-              // 远端已经等于当前本地内容：内容其实已在服务端，不弹冲突条、不重复写；
-              // 但这次点击仍按「未保存成功」阻断（同一张图也不重发提交）。
-              if (isCurrentScope(scope)) {
-                setIsDirty(currentSigRef.current !== lastSavedSigRef.current);
-                setStatus('idle');
-              }
-              return { error: '画布版本冲突，请确认最新内容后重新生成' };
-            }
-            if (reconcile === 'reload') {
-              // 本地相对服务端没有未存内容，已载入远端图；不要让页面停在冲突态。
-              return { error: '画布已被其它会话更新，已载入最新内容，请重新发起生成' };
-            }
-            if (reconcile === 'resave') {
-              // 远端只是落后于本地（不含任何别人的新内容）：带最新版本重试一次，
-              // 不把「自己的保存推进了版本」误报成内容冲突（Issue #3595）。
-              result = await saveWorkspace(ws.id, payloadOf(decision.snapshot, serverVersionRef.current));
-              if (!isCurrentScope(scope)) return { error: '画布已切换，请重新发起生成' };
-              if (result.status === 409) {
-                // 重试前远端又被推进：这才是真的没法自动合并。
-                conflictRef.current = true;
-                setStatus('conflict');
-                return { error: '画布版本冲突，请确认最新内容后重新生成' };
-              }
-            } else {
-              // reconcile === 'conflict'，或快照不可用：交给用户显式选择。
-              conflictRef.current = true;
-              setStatus('conflict');
-              return { error: '画布版本冲突，请确认最新内容后重新生成' };
-            }
-          }
-        }
-        if (!result.ok || !result.body.workspace) {
-          if (isCurrentScope(scope)) setStatus(conflictRef.current ? 'conflict' : 'error');
-          return { error: result.body.message ?? '画布保存失败，请重试' };
-        }
-        const persisted = result.body.workspace;
-        const version = persisted.version;
-        const nextSaved: SavedGraphState = { version, signature, nodeCount: persisted.nodes.length, graph: persisted, clipWrites };
-        if (!isCurrentScope(scope)) return nextSaved;
-        if (resolveConflict) conflictRef.current = false;
-        serverVersionRef.current = version;
-        lastSavedGraphRef.current = persisted;
-        lastSavedSigRef.current = signature;
-        lastSavedNodeCountRef.current = persisted.nodes.length;
-        const dirty = currentSigRef.current !== signature;
+      const readLatest = async (): Promise<CanvasWorkspaceSnapshot | undefined> => {
+        const latest = await getWorkspace(ws.id).catch(() => undefined);
+        const snapshot = latest?.ok ? latest.body.workspace : undefined;
+        return snapshot?.id === ws.id && snapshot.version >= saved.version ? snapshot : undefined;
+      };
+      const reconcile = (result: Extract<RemoteReconcile, object>) => {
+        saved = result.saved;
+        graph = result.graph;
+        if (result.clipWrite) clipWrites = [...clipWrites, result.clipWrite];
+      };
+      const complete = (persisted: CanvasWorkspaceSnapshot): SavedGraphState => {
+        const nextSaved = { ...confirmedSnapshot(persisted), clipWrites };
+        if (!isCurrentScope(scope) || persisted.version < serverVersionRef.current) return nextSaved;
+        conflictRef.current = false;
+        rememberSaved(nextSaved);
+        // Undo can have matched the previous disk state while the PUT was
+        // in flight, clearing its timer. Check against the newly written graph.
+        const local = readStoreCapture();
+        const dirty = graphSig(local.nodes, local.edges) !== nextSaved.signature;
         setIsDirty(dirty);
         setStatus(dirty ? 'pending' : 'saved');
+        if (!dirty) clearAutosaveTimer();
+        else if (!timerRef.current) armAutosave(local, inferPersistCause(local.nodes.length));
         clearSavedBadgeTimer();
         savedBadgeTimerRef.current = setTimeout(() => {
           if (isCurrentScope(scope)) setStatus((prev) => (prev === 'saved' ? 'idle' : prev));
         }, SAVED_BADGE_MS);
-        onSavedRef.current?.(result.body.workspace);
+        onSavedRef.current?.(persisted);
         return nextSaved;
+      };
+
+      try {
+        let resolution: CanvasWorkspaceSnapshot | undefined;
+        if (keepLocal) {
+          setStatus('saving');
+          resolution = await readLatest();
+          if (!isCurrentScope(scope)) return switched();
+          const latest = resolution && resolveRemoteAdvance(resolution, true);
+          if (!latest || typeof latest !== 'object') return conflict();
+          reconcile(latest);
+          cause = inferPersistCause(graph.nodes.length);
+        }
+        const decision = decide(graph, cause);
+        if (!decision.snapshot) {
+          if (decision.reason !== 'unchanged') {
+            return keepLocal ? conflict() : { error: '画布内容尚未保存，请重新打开后再试' };
+          }
+          return resolution ? complete(resolution) : saved;
+        }
+        if (current) setStatus('saving');
+        let result = await put(decision.snapshot);
+        if (result.status === 409) {
+          // One automatic retry. Further contention leaves the conflict
+          // controls available, and Keep local starts from a fresh GET.
+          const observedVersion = result.body.current;
+          if (keepLocal) return conflict(observedVersion);
+          const remote = await readLatest();
+          if (!remote || remote.version <= saved.version || remote.version < (observedVersion ?? 0)) {
+            return conflict(observedVersion);
+          }
+          if (isCurrentScope(scope)) {
+            const latest = resolveRemoteAdvance(remote);
+            if (latest === 'adopt') return { error: '画布版本冲突，请确认最新内容后重新生成' };
+            if (latest === 'reload') return { error: '画布已被其它会话更新，已载入最新内容，请重新发起生成' };
+            if (typeof latest !== 'object') return conflict();
+            reconcile(latest);
+            cause = inferPersistCause(graph.nodes.length);
+          } else {
+            const base = saved.graph;
+            const plan = planClipWriteRebase(base, remote, ws.id);
+            if (!plan) return conflict();
+            if (mode !== 'flush') {
+              // The failed autosave no longer owns a live graph. Pass the Host
+              // advance to the separately captured close flush in this queue.
+              reconcile({ graph, saved: confirmedSnapshot(remote), clipWrite: { base, remote } });
+              return switched();
+            }
+            const rebased = plan.apply(decision.snapshot);
+            if (!rebased) return conflict();
+            reconcile({ graph: rebased, saved: confirmedSnapshot(remote), clipWrite: { base, remote } });
+          }
+          const retry = decide(graph, cause);
+          if (!retry.snapshot) {
+            return retry.reason === 'unchanged'
+              ? skipped('画布已同步剪辑更新，请确认后重新生成') : conflict();
+          }
+          if (isCurrentScope(scope)) setStatus('saving');
+          result = await put(retry.snapshot);
+          if (result.status === 409) return conflict(result.body.current);
+        }
+        if (!result.ok || result.body.workspace?.id !== ws.id) {
+          if (isCurrentScope(scope)) setStatus(conflictRef.current ? 'conflict' : 'error');
+          return { error: result.body.message ?? '画布保存失败，请重试', saved: { ...saved, clipWrites } };
+        }
+        return complete(result.body.workspace);
       } catch {
-        if (!isCurrentScope(scope)) return { error: '画布已切换，请重新发起生成' };
+        if (!isCurrentScope(scope)) return { error: '画布已切换，请重新发起生成', saved: { ...saved, clipWrites } };
         setStatus(conflictRef.current ? 'conflict' : 'error');
-        return { error: '画布保存失败，请重试' };
+        return { error: '画布保存失败，请重试', saved: { ...saved, clipWrites } };
       }
     })();
     savingRef.current = pending;
@@ -475,7 +483,7 @@ export function useWorkspacePersistence(
       if (savingRef.current === pending) savingRef.current = null;
     });
     return pending;
-  }, [resolveRemoteAdvance]);
+  }, [armAutosave, clearAutosaveTimer, rememberSaved, resolveRemoteAdvance]);
   // armAutosave / 冲突恢复都要能在 performSave 之外排程同一份保存逻辑。
   performSaveRef.current = performSave;
 
@@ -483,77 +491,63 @@ export function useWorkspacePersistence(
   // hydrate 完成前不订阅。
   useEffect(() => {
     if (!enabled) return;
-    const evaluate = (cause: PersistCause = 'autosave') => {
-      const ws = workspaceRef.current;
-      if (!ws) return;
-      if (!enabledRef.current) return;
+    const evaluate = () => {
+      if (!workspaceRef.current || !isCurrentScope(scopeRef.current)) return;
       const capture = readStoreCapture();
       const sig = graphSig(capture.nodes, capture.edges);
-      currentSigRef.current = sig;
-      const dirty = sig !== lastSavedSigRef.current;
+      const dirty = sig !== lastSavedRef.current.signature;
       setIsDirty(dirty);
+      if (conflictRef.current) return;
       if (!dirty) {
-        if (timerRef.current) {
-          clearTimeout(timerRef.current);
-          timerRef.current = null;
-        }
+        clearAutosaveTimer();
         setStatus((prev) => (prev === 'pending' ? 'idle' : prev));
         return;
       }
-      const inferred = inferPersistCause(capture.nodes.length, cause);
+      const inferred = inferPersistCause(capture.nodes.length);
       if (
         !shouldPersistEmptyGraph({
-          lastSavedNodeCount: lastSavedNodeCountRef.current,
+          lastSavedNodeCount: lastSavedRef.current.nodeCount,
           nextNodeCount: capture.nodes.length,
           cause: inferred,
         })
       ) {
         // 从有节点跳到 0 但不是 user-delete：跳过，不要 debounce 存空
-        if (timerRef.current) {
-          clearTimeout(timerRef.current);
-          timerRef.current = null;
-        }
+        clearAutosaveTimer();
         setIsDirty(false);
         setStatus((prev) => (prev === 'pending' ? 'idle' : prev));
         return;
       }
       setStatus((prev) => (prev === 'saving' || prev === 'conflict' ? prev : 'pending'));
-      // 决定保存的瞬间钉死 capture；1s 后只用这份，禁止再读 store
-      armAutosave({ nodes: capture.nodes, edges: capture.edges }, inferred);
+      armAutosave(capture, inferred);
     };
 
-    const unsubscribe = useCanvasStore.subscribe(() => {
-      evaluate('autosave');
-    });
+    const unsubscribe = useCanvasStore.subscribe(evaluate);
     return () => {
       unsubscribe();
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
+      clearAutosaveTimer();
     };
-  }, [armAutosave, enabled]);
+  }, [armAutosave, clearAutosaveTimer, enabled]);
 
   // Best-effort flush on unmount / pagehide.
   // 先同步签名+拷贝，再交给 save（禁止 void performSave() 无快照）。
   useEffect(() => {
     if (!enabled) return;
     const flushIfDirty = () => {
-      if (!enabledRef.current) return;
+      if (!enabledRef.current || peekGraphReset()) return;
       const ws = workspaceRef.current;
       if (!ws) return;
       const capture = readStoreCapture();
-      const cause = inferPersistCause(capture.nodes.length, 'flush');
+      const cause = inferPersistCause(capture.nodes.length);
       const decision = decidePersist({
-        lastSavedNodeCount: lastSavedNodeCountRef.current,
+        lastSavedNodeCount: lastSavedRef.current.nodeCount,
         nextNodes: capture.nodes,
         nextEdges: capture.edges,
         cause,
-        lastSavedSignature: lastSavedSigRef.current,
+        lastSavedSignature: savingRef.current ? '' : lastSavedRef.current.signature,
         nextSignature: graphSig(capture.nodes, capture.edges),
       });
-      if (!decision.persist || !decision.snapshot) return;
-      void performSave(decision.snapshot, cause);
+      if (!decision.snapshot) return;
+      void performSave(decision.snapshot, cause, 'flush');
     };
     window.addEventListener('pagehide', flushIfDirty);
     return () => {
@@ -564,19 +558,16 @@ export function useWorkspacePersistence(
   }, [performSave, enabled]);
 
   const saveNow = useCallback(async (): Promise<number> => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
+    clearAutosaveTimer();
     const scope = scopeRef.current;
     const capture = readStoreCapture();
     const signature = graphSig(capture.nodes, capture.edges);
     const assertCurrent = () => {
-      const current = readStoreCapture();
-      if (!enabledRef.current || !isCurrentScope(scope)
-        || graphSig(current.nodes, current.edges) !== signature) {
-        throw new Error('保存期间输入已变化，请确认内容后重新生成');
+      if (isCurrentScope(scope)) {
+        const current = readStoreCapture();
+        if (graphSig(current.nodes, current.edges) === signature) return;
       }
+      throw new Error('保存期间输入已变化，请确认内容后重新生成');
     };
     // An autosave may have captured an older graph. Wait for it before saving
     // this click's snapshot, and never submit if that snapshot has changed.
@@ -585,68 +576,58 @@ export function useWorkspacePersistence(
       if ('error' in previous) throw new Error(previous.error);
     }
     assertCurrent();
-    const result = await performSave(capture, inferPersistCause(capture.nodes.length, 'autosave'));
+    const result = await performSave(capture, inferPersistCause(capture.nodes.length), 'preflight');
     if ('error' in result) throw new Error(result.error);
     assertCurrent();
     return result.version;
-  }, [performSave]);
+  }, [clearAutosaveTimer, performSave]);
 
   /**
    * 必须同步：先读 store 再交给 PUT。调用方保证发生在 resetStore() 之前。
    */
   const flushPendingSave = useCallback(() => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
+    clearAutosaveTimer();
     const ws = workspaceRef.current;
-    if (!ws) return;
+    if (!ws || peekGraphReset()) return;
     const capture = readStoreCapture();
-    const cause: PersistCause = 'flush';
+    const cause = inferPersistCause(capture.nodes.length);
     const decision = decidePersist({
-      lastSavedNodeCount: lastSavedNodeCountRef.current,
+      lastSavedNodeCount: lastSavedRef.current.nodeCount,
       nextNodes: capture.nodes,
       nextEdges: capture.edges,
       cause,
-      lastSavedSignature: lastSavedSigRef.current,
+      // Even a clean capture may undo another graph already in flight.
+      lastSavedSignature: savingRef.current ? '' : lastSavedRef.current.signature,
       nextSignature: graphSig(capture.nodes, capture.edges),
     });
-    if (!decision.persist || !decision.snapshot) return;
-    void performSave(decision.snapshot, cause, true);
-  }, [performSave]);
+    if (!decision.snapshot) return;
+    void performSave(decision.snapshot, cause, 'flush');
+  }, [clearAutosaveTimer, performSave]);
 
   const resolveConflict = useCallback(async () => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
+    clearAutosaveTimer();
     const capture = readStoreCapture();
-    await performSave(capture, inferPersistCause(capture.nodes.length, 'autosave'), false, true);
-  }, [performSave]);
+    await performSave(capture, inferPersistCause(capture.nodes.length), 'keep-local');
+  }, [clearAutosaveTimer, performSave]);
 
   const reloadFromServer = useCallback(async () => {
     const ws = workspaceRef.current;
     const scope = scopeRef.current;
     if (!ws) return;
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
+    clearAutosaveTimer();
     try {
       if (savingRef.current) await savingRef.current;
       if (!isCurrentScope(scope)) return;
       const latest = await getWorkspace(ws.id);
       if (!isCurrentScope(scope)) return;
-      if (!latest.ok || !latest.body.workspace) {
-        setStatus('error');
+      const snapshot = latest.body.workspace;
+      if (!latest.ok || snapshot?.id !== ws.id || snapshot.version < serverVersionRef.current) {
+        setStatus(conflictRef.current ? 'conflict' : 'error');
         return;
       }
-      const snapshot = latest.body.workspace;
       conflictRef.current = false;
-      serverVersionRef.current = snapshot.version;
-      lastSavedGraphRef.current = snapshot;
-      lastSavedSigRef.current = graphSig(snapshot.nodes, snapshot.edges);
-      lastSavedNodeCountRef.current = snapshot.nodes.length;
+      const saved = confirmedSnapshot(snapshot);
+      rememberSaved(saved);
       useCanvasStore.getState().hydrateGraph(snapshot.nodes, snapshot.edges);
       setIsDirty(false);
       setStatus('idle');
@@ -654,7 +635,7 @@ export function useWorkspacePersistence(
     } catch {
       if (isCurrentScope(scope)) setStatus(conflictRef.current ? 'conflict' : 'error');
     }
-  }, []);
+  }, [clearAutosaveTimer, rememberSaved]);
 
   // PR3 external-edit watcher: agent tools bump version without this window
   // noticing. Poll /version while visible; same-graph advances adopt the
@@ -685,11 +666,9 @@ export function useWorkspacePersistence(
           return;
         }
         const decision = resolveRemoteAdvance(latest.body.workspace);
-        // 远端只是落后于本地：立即续存，不弹冲突条（Issue #3595）。
-        // 已有排程时不动它：那笔保存会带更新的本地图，也保留用户删除的 cause。
-        if (decision === 'resave' && !timerRef.current) {
-          const capture = readStoreCapture();
-          armAutosave(capture, inferPersistCause(capture.nodes.length, 'autosave'));
+        // Issue #3595: a version-only advance still needs the local save.
+        if (typeof decision === 'object' && !decision.clipWrite && !timerRef.current) {
+          armAutosave(decision.graph, inferPersistCause(decision.graph.nodes.length));
         }
       } catch {
         // Probe failures are silent — the next tick retries.

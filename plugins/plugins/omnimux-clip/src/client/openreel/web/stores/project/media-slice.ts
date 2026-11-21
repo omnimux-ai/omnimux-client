@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
-import { mediaContentDigest } from "../../../../../timeline/nativeProjectFields.js";
+import { mediaContentDigest, sha256Digest } from "../../../../../timeline/nativeProjectFields.js";
 import { mediaDigest } from "../../../../live/media-source";
 import { backgroundTasks } from "@openreel/core/tasks/task-registry";
 import type { StoreApi } from "zustand";
@@ -403,8 +403,17 @@ export function createMediaSlice(set: Set, get: Get): MediaSlice {
         code: "INVALID_PARAMS" as const,
         message: "The media or project changed while replacing the file. Try again in the current project.",
       } });
+      const mismatchResult = () => ({ success: false, error: {
+        code: "DECODE_ERROR" as const, message: "The file does not match the original media source.",
+      } });
 
       try {
+        const expectedDigest = mediaContentDigest(originalItem) ?? sha256Digest(options?.expectedDigest);
+        const digest = await mediaDigest(file);
+        const sameBytes = digest === expectedDigest;
+        if (!ownsReplacement()) return unavailableResult();
+        if (options?.restorePlaceholder && (expectedDigest ? !sameBytes : originalItem.sourceRef)) return mismatchResult();
+
         const mediaBridge = getMediaBridge();
         if (!mediaBridge.isInitialized()) {
           await initializeMediaBridge();
@@ -468,17 +477,12 @@ export function createMediaSlice(set: Set, get: Get): MediaSlice {
           : processedMedia.metadata.hasAudio
             ? "audio"
             : "image";
-        const digest = await mediaDigest(file);
-        const expectedDigest = mediaContentDigest(originalItem);
-        const sameBytes = digest === expectedDigest;
-        const reconnecting = options?.restorePlaceholder && options.omnimuxSource;
+        const reconnecting = options?.restorePlaceholder && Boolean(expectedDigest || options.omnimuxSource);
         const canDecode = mediaType === "image" || (mediaType === "video"
           ? processedMedia.metadata.canDecodeVideo ?? processedMedia.metadata.canDecode
           : processedMedia.metadata.canDecode);
         if (reconnecting && (!canDecode || processedMedia.blob !== file || originalItem.type !== mediaType
-          || (expectedDigest && !sameBytes) || (reconnecting.digest !== undefined && reconnecting.digest !== digest))) {
-          return { success: false, error: { code: "DECODE_ERROR", message: "The file does not match the original media source." } };
-        }
+          || (options?.omnimuxSource?.digest !== undefined && options.omnimuxSource.digest !== digest))) return mismatchResult();
         if (!ownsReplacement()) return unavailableResult();
 
         if (mediaType === "video" && !thumbnailUrl) {
@@ -511,8 +515,7 @@ export function createMediaSlice(set: Set, get: Get): MediaSlice {
                 .map((key) => [key, originalItem[key]]),
             )
           : {};
-        const originalRef = options?.restorePlaceholder && (sameBytes || (reconnecting && originalItem.sourceRef?.kind === "legacy"))
-          ? originalItem.sourceRef : undefined;
+        const originalRef = options?.restorePlaceholder && sameBytes ? originalItem.sourceRef : undefined;
         const omnimuxSource = options?.omnimuxSource ?? (options?.restorePlaceholder && sameBytes ? originalItem.omnimuxSource : undefined);
         const nativeSource = await nativeSourceOf(file);
         const claimedNative = await claimNativeSource(file).catch(() => null);

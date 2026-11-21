@@ -1,5 +1,5 @@
 import type { MediaItem, Project } from '@openreel/core'
-import { mediaContentDigest, reconnectMediaUrl } from '../../timeline/nativeProjectFields.js'
+import { canvasWorkspaceMediaUrl, mediaContentDigest, reconnectMediaUrl, workspaceMediaDigest } from '../../timeline/nativeProjectFields.js'
 import { nativeProjectView } from '../../timeline/nativeProjectView.js'
 import { calculateProjectDuration } from '../openreel/core/timeline/project-duration'
 import { useProjectStore } from '../openreel/web/stores/project-store'
@@ -8,15 +8,17 @@ import { useUIStore } from '../openreel/web/stores/ui-store'
 import { useEngineStore } from '../openreel/web/stores/engine-store'
 import { loadEngineModules } from '../openreel/web/services/lazy-engines'
 import { getOpenReelRoute, resetOpenReelRouter } from '../openreel/web/hooks/use-router'
-import { loadMediaRecord } from '../openreel/web/services/media-storage'
 import { createMissingMediaItem, restoreMediaItem } from '../openreel/web/utils/media-recovery'
-import { mediaDigest } from './media-source'
+import { mediaDigest, verifiedMediaBlob } from './media-source'
+import { createStoredMediaRecovery } from './media-recovery'
 
 interface LocalSnapshot {
   project: Project
   media: Record<string, Blob>
-  binding?: { workspaceId: string }
+  binding?: { workspaceId: string; nodeId?: string; projectId?: string }
 }
+
+let loadGeneration = 0
 
 function capture(): (LocalSnapshot & { fingerprint: string }) | null {
   const state = useProjectStore.getState()
@@ -52,39 +54,39 @@ function resetView() {
   useTimelineStore.setState({ trackHeights: {} })
 }
 
-async function recoverMedia(item: MediaItem, record: LocalSnapshot, isCurrent: () => boolean) {
-  const expectedDigest = mediaContentDigest(item)
-  const verify = async (candidate: Blob | undefined) => candidate instanceof Blob && candidate.size > 0
-    && (!expectedDigest || await mediaDigest(candidate) === expectedDigest) ? candidate : undefined
-  // Inline bytes travel with the selected draft. The shared cache key is
-  // mutable across drafts, so only a digest can identify its exact version.
-  let blob = await verify(record.media[item.id])
+async function recoverMedia(
+  item: MediaItem, record: LocalSnapshot, isCurrent: () => boolean,
+  readStored: ReturnType<typeof createStoredMediaRecovery>,
+) {
+  const workspaceId = record.binding?.workspaceId
+  const legacyUrl = item.sourceRef?.kind === 'legacy' ? canvasWorkspaceMediaUrl(item.sourceRef.url, workspaceId) : undefined
+  const expectedDigest = mediaContentDigest(item) ?? workspaceMediaDigest(legacyUrl, workspaceId)
+  const inline = record.media?.[item.id]
+  // Only the selected snapshot's own bytes can be reused without a digest.
+  // A migrated legacy timeline never contained inline bytes.
+  let blob = expectedDigest ? await verifiedMediaBlob(inline, expectedDigest)
+    : item.sourceRef?.kind !== 'legacy' && inline instanceof Blob && inline.size > 0 ? inline : undefined
+  if (!blob && expectedDigest) blob = await readStored(item, expectedDigest)
   if (!isCurrent()) return item
-  if (!blob && expectedDigest) {
-    const stored = await loadMediaRecord(item.sourceRef?.key ?? item.id).catch(error => {
-      console.warn('[Clip] Shared media cache could not be read.', (error as Error)?.name)
-      return null
-    })
-    const cacheOwner = item.sourceRef?.projectId ?? record.project.id
-    if (stored?.projectId === cacheOwner) blob = await verify(stored.blob)
+  if (!blob && !expectedDigest && item.sourceRef?.kind !== 'legacy' && item.nativeSource && !item.isPlaceholder) {
+    return { ...item, missing: false }
   }
-  if (!isCurrent()) return item
-  if (!blob && !expectedDigest && item.nativeSource && !item.isPlaceholder) return { ...item, missing: false }
-  const url = !blob && expectedDigest && reconnectMediaUrl(item.omnimuxSource?.url, record.binding?.workspaceId)
-  if (url) {
+  const url = !blob && expectedDigest && reconnectMediaUrl(item.omnimuxSource?.url, workspaceId)
+  if (url && expectedDigest) {
     const response = await fetch(url, {
       redirect: 'error', mode: 'same-origin', credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(12_000),
     })
-    if (response.ok && isCurrent()) {
-      const candidate = await response.blob()
-      if (!/^image\/svg/i.test(candidate.type)) blob = await verify(candidate)
-    }
+    if (response.ok && isCurrent()) blob = await verifiedMediaBlob(await response.blob(), expectedDigest)
   }
   if (!isCurrent()) return item
-  const sourceRef = blob ? {
-    ...item.sourceRef, kind: 'indexeddb' as const, key: item.id, digest: expectedDigest ?? await mediaDigest(blob),
-  } : item.sourceRef
-  const restored = await restoreMediaItem({ ...item, blob: null, sourceRef }, blob)
+  if (!blob) return { ...createMissingMediaItem(item), missing: true }
+  const digest = expectedDigest ?? await mediaDigest(blob)
+  const sourceRef = { ...item.sourceRef, kind: 'indexeddb' as const, key: item.id, digest }
+  const omnimuxSource = item.omnimuxSource ?? (legacyUrl ? {
+    id: item.sourceRef?.fingerprint ?? await mediaDigest(legacyUrl), version: digest, url: legacyUrl, digest,
+  } : undefined)
+  if (!isCurrent()) return item
+  const restored = await restoreMediaItem({ ...item, blob: null, sourceRef, omnimuxSource }, blob)
   return { ...restored, missing: restored.isPlaceholder === true }
 }
 
@@ -117,16 +119,22 @@ export const nativeEditorState = {
     })
     return () => { timeline(); selection(); engine() }
   },
-  async welcome(isCurrent: () => boolean) {
+  async welcome(stillCurrent: () => boolean) {
+    if (!stillCurrent()) return
+    const generation = ++loadGeneration
     await waitForSharedRenderer()
-    if (!isCurrent()) return
+    if (generation !== loadGeneration || !stillCurrent()) return
     suspend()
     useProjectStore.setState({ hasOpenProject: false })
     resetOpenReelRouter()
   },
-  async load(record: LocalSnapshot, isCurrent: () => boolean) {
+  async load(record: LocalSnapshot, stillCurrent: () => boolean) {
+    if (!stillCurrent()) return
+    const generation = ++loadGeneration
+    const isCurrent = () => generation === loadGeneration && stillCurrent()
     await loadEngineModules()
     if (!isCurrent()) return
+    const readStored = createStoredMediaRecovery(record.project.id, record.binding, isCurrent)
     const sourceItems = record.project.mediaLibrary.items
     const items: MediaItem[] = []
     const stagedThumbnails = new Set<string>()
@@ -138,7 +146,7 @@ export const nativeEditorState = {
         const item = sourceItems[index]
         let restored
         try {
-          restored = await recoverMedia(item, record, isCurrent)
+          restored = await recoverMedia(item, record, isCurrent, readStored)
         } catch (error) {
           console.warn('[Clip] Media recovery failed.', (error as Error)?.name)
           restored = { ...createMissingMediaItem(item), missing: true }

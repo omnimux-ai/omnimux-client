@@ -1,5 +1,5 @@
 import { ASPECT_PRESETS, defaultCanvasConfig, defaultTextStyle } from '../client/store/timelineTypes.js'
-import { canvasWorkspaceMediaUrl, finite, isRecord, isReferenceId, items, MEDIA_TYPES, TRACK_TYPES } from '../timeline/nativeProjectFields.js'
+import { canvasWorkspaceMediaUrl, finite, isRecord, isReferenceId, items, mediaContentDigest, MEDIA_TYPES, TRACK_TYPES, workspaceMediaDigest } from '../timeline/nativeProjectFields.js'
 import { contentVersionOf, createNativeProject, nativeTransform, sha256 } from './nativeProject.js'
 
 const TRANSITIONS = {
@@ -48,6 +48,7 @@ function sourceOf(item) {
 
 function legacyMedia(item, id, type, source, contentVersion, workspaceId) {
   const url = canvasWorkspaceMediaUrl(source, workspaceId)
+  const digest = mediaContentDigest(item) ?? workspaceMediaDigest(url, workspaceId)
   return {
     id, type, name: typeof item.name === 'string' && item.name ? item.name : id,
     metadata: {
@@ -58,6 +59,7 @@ function legacyMedia(item, id, type, source, contentVersion, workspaceId) {
       kind: 'legacy',
       ...(source && !/^(?:blob|data):/i.test(source) ? { fingerprint: sha256(source) } : {}),
       ...(contentVersion === undefined ? {} : { contentVersion }),
+      ...(digest ? { digest } : {}),
       ...(url ? { url } : {}),
     },
     omnimuxSource: item.omnimuxSource,

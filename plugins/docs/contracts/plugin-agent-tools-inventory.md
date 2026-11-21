@@ -223,7 +223,7 @@ superseded_by: null
 | 导出版本化 MP4，分别回报成片落盘与画布提交 | WebCodecs / Host 流式上传 / Workflow 版本提交 | `clip_export` | L1 | `Implemented` | 用户明确要求导出并传 `confirm: true` |
 | 播放指针拖拽 (Scrubbing) | 播放控制器 | — | UI-Only | `UI-Only` | 豁免（手工拖动） |
 
-查询和操作都保持当前画布工作面，显式导航用 `clip_open`。未物化节点报告 `project-not-materialized`。按 `AMBIGUOUS_TARGET` 的候选定位，可用 `windowInstanceId` 消歧。同窗保活画布的候选标记 `visible: false`。无认证窗口报告 `EDITOR_OFFLINE`，入口不可见或预览尚未就绪按实际状态返回 `EDITOR_NOT_VISIBLE` 或 `PREVIEW_NOT_READY`。写入使用当前认证入口的版本及 `requestId` 回执。画布手工导出与 `clip_export` 共用 Host 任务顺序，文件落盘与画布回写各有独立状态。[错误与工具参数](clip-live-control.md#租约命令与失败)
+查询和操作都保持当前画布工作面，显式导航用 `clip_open`。未物化节点报告 `project-not-materialized`。按 `AMBIGUOUS_TARGET` 的候选定位，可用 `windowInstanceId` 消歧。同窗保活画布的候选标记 `visible: false`。无认证窗口报告 `EDITOR_OFFLINE`，入口不可见或预览尚未就绪按实际状态返回 `EDITOR_NOT_VISIBLE` 或 `PREVIEW_NOT_READY`。实时 `clip_get` 提供 `revision` 和 `revisionEpoch`，供同目标的 `clip_edit` 或指定版本的 `clip_export` 作为 `baseRevision` 和 `baseRevisionEpoch`。世代变更后，旧规划返回 `REVISION_CONFLICT`，可用原 `requestId` 查已执行请求。画布手工导出和 `clip_export` 共用 Host 的导出世代和任务号，文件落盘与画布回写各有独立状态。[错误与工具参数](clip-live-control.md#租约命令与失败)
 
 ---
 

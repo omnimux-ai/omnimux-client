@@ -5,6 +5,8 @@ import {
 } from "@openreel/core";
 import { X, Copy, Clipboard, Trash2, ChevronLeft, ChevronRight } from "@/icons/lucide-compat";
 import { Button, ScrollArea, Select, SelectTrigger, SelectValue, SelectContent, SelectItem, ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuCheckboxItem, ContextMenuLabel, cn } from "@openreel/ui";
+import { useEditorPortalRoot } from "@openreel/ui/lib/portal-root";
+import { isEditorShortcutEvent } from "../../services/keyboard-shortcuts";
 import { useClipT } from "../../../../i18n/index.js";
 
 const PROPERTY_COLORS: Record<string, string> = {
@@ -233,6 +235,7 @@ export function KeyframeEditorPanel({ clip, disabled = false, playheadTime = 0, 
     });
     return segments;
   }, [mode, activeLayer, selectedIdSet]);
+  const shortcutRoot = useEditorPortalRoot();
   const cancelDrag = useCallback(() => { drag.current = null; setDraft(null); }, []);
   useEffect(cancelDrag, [clip, disabled, graphWidth, mode, cancelDrag]);
   useEffect(() => { setPage(1); }, [clip?.id, activeGroup?.property]);
@@ -253,7 +256,11 @@ export function KeyframeEditorPanel({ clip, disabled = false, playheadTime = 0, 
   }, [clip, disabled, onUpdateKeyframes]);
   useEffect(() => {
     const cancelPointer = (event: PointerEvent) => { if (drag.current?.pointerId === event.pointerId) cancelDrag(); };
-    const escape = (event: KeyboardEvent) => { if (event.key === "Escape" && drag.current) { event.preventDefault(); cancelDrag(); } };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || !drag.current || !isEditorShortcutEvent(event, shortcutRoot)) return;
+      event.preventDefault();
+      cancelDrag();
+    };
     window.addEventListener("pointerup", finishDrag);
     window.addEventListener("pointercancel", cancelPointer);
     window.addEventListener("keydown", escape);
@@ -262,7 +269,7 @@ export function KeyframeEditorPanel({ clip, disabled = false, playheadTime = 0, 
       window.removeEventListener("pointercancel", cancelPointer);
       window.removeEventListener("keydown", escape);
     };
-  }, [finishDrag, cancelDrag]);
+  }, [finishDrag, cancelDrag, shortcutRoot]);
 
   const drawGraph = useCallback(() => {
     const canvas = canvasRef.current, ctx = canvas?.getContext("2d");

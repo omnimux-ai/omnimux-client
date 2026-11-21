@@ -19,8 +19,8 @@ export class ClipDomainError extends Error {
     if (safe) this.details = safe
   }
 
-  static revisionConflict(currentRevision, message = 'The Clip revision changed. Read the latest project before editing.') {
-    return new ClipDomainError('REVISION_CONFLICT', message, { currentRevision })
+  static revisionConflict(currentRevision, message = 'The Clip revision changed. Read the latest project before editing.', currentRevisionEpoch) {
+    return new ClipDomainError('REVISION_CONFLICT', message, { currentRevision, currentRevisionEpoch })
   }
 
   /**
@@ -140,6 +140,7 @@ export const CLIP_STATUS_BY_CODE = {
   EDITOR_LEASE_CONFLICT: 409,
   LEASE_INVALID: 409,
   WINDOW_UNAUTHORIZED: 403,
+  VIEWPORT_NOT_REGISTERED: 409,
   SESSION_REQUIRED: 403,
   REVISION_CONFLICT: 409,
   REQUEST_ID_CONFLICT: 409,
@@ -156,6 +157,7 @@ export const CLIP_STATUS_BY_CODE = {
   'draft-link-failed': 409,
   'export-upload-failed': 500,
   'export-upload-used': 409,
+  'export-cancelled': 409,
   'invalid-export-media': 415,
   'snapshot-save-failed': 500,
   'motion-expression-denied': 403,
@@ -210,6 +212,8 @@ function safeDetails(value) {
   if (!value || typeof value !== 'object') return undefined
   const safe = {}
   if (value.currentRevision === null || isClipRevision(value.currentRevision)) safe.currentRevision = value.currentRevision
+  if (isClipRevision(value.currentRevisionEpoch)) safe.currentRevisionEpoch = value.currentRevisionEpoch
+  if (value.retryable === true) safe.retryable = true
   if (isClipRevision(value.operationIndex)) safe.operationIndex = value.operationIndex
   if (isClipRevision(value.exportJobId) || isClipToken(value.exportJobId)) safe.exportJobId = value.exportJobId
   for (const key of ['requestId', 'reason']) {

@@ -131,6 +131,7 @@ export function nativeProjectView(envelope, opts = {}) {
     ...(binding ? { workspaceId: safeText(binding.workspaceId), nodeId: safeText(binding.nodeId, 256) } : {}),
     title: safeText(project.name) || projectId,
     revision,
+    revisionEpoch: envelope.revisionEpoch ?? 0,
     updatedAt,
     view,
     durationSec: timeline.duration,

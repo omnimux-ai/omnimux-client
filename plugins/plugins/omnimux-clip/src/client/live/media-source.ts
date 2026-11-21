@@ -16,3 +16,12 @@ export function mediaDigest(value: string | Blob): Promise<string> {
   blobDigests.set(value, digest)
   return digest
 }
+
+export async function verifiedMediaBlob(candidate: unknown, digest: string): Promise<Blob | undefined> {
+  if (!(candidate instanceof Blob) || !candidate.size || /^image\/svg/i.test(candidate.type)) return undefined
+  const actual = await mediaDigest(candidate).catch(error => {
+    console.debug('[Clip] Media bytes could not be verified.', (error as Error)?.name)
+    return undefined
+  })
+  return actual === digest ? candidate : undefined
+}

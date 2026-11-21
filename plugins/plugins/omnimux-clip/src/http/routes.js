@@ -19,6 +19,7 @@ export const EXPORT_UPLOAD_PROOF_HEADER = 'x-clip-export-proof'
 const DEFAULT_FS = { createWriteStream, renameSync, rmSync, statSync, writeFileSync }
 const SAVE_EXPORT_PATH = /^\/projects\/[^/]+\/save-export$/
 const EXPORT_UPLOAD_PATH = /^\/exports\/([1-9]\d{0,15})\/upload$/
+const EXPORT_CANCEL_PATH = /^\/exports\/([1-9]\d{0,15})\/cancel$/
 const LIVE_PATH = /^\/live\/(lease|renew|release|claim|receipt)$/
 
 function routeUrl(rawPath) {
@@ -192,8 +193,9 @@ export function createClipDispatcher({ paths, store, fs = DEFAULT_FS, broker, ex
       throw new ClipDomainError('WINDOW_UNAUTHORIZED', 'An authenticated Clip window is required.')
     }
     if (!exportJobs) throw ClipDomainError.exportEncodeFailed('The Clip export service is unavailable.')
-    const { requestId, binding: proposed, editorInstanceId, tabInstanceId, projectRevision } = objectBody(input)
-    if (!isClipToken(requestId) || !isClipToken(editorInstanceId) || !isClipToken(tabInstanceId) || !isClipRevision(projectRevision)) {
+    const { requestId, binding: proposed, editorInstanceId, tabInstanceId, projectRevision, revisionEpoch } = objectBody(input)
+    if (!isClipToken(requestId) || !isClipToken(editorInstanceId) || !isClipToken(tabInstanceId) || !isClipRevision(projectRevision)
+      || (revisionEpoch !== undefined && !isClipRevision(revisionEpoch))) {
       throw ClipDomainError.invalidJson('The export needs a request ID, editor identity and project revision.')
     }
     const binding = readCanvasBinding(proposed?.projectId, proposed)
@@ -211,17 +213,20 @@ export function createClipDispatcher({ paths, store, fs = DEFAULT_FS, broker, ex
     if (!sameBinding(saved.binding, binding)) {
       throw new ClipDomainError('clip-binding-mismatch', 'The saved Clip project belongs to another canvas node.')
     }
-    if (clip.revision !== projectRevision || projectRevision < saved.revision) {
-      throw ClipDomainError.revisionConflict(Math.max(saved.revision, isClipRevision(clip.revision) ? clip.revision : 0))
+    const currentEpoch = isClipRevision(clip.revisionEpoch) ? clip.revisionEpoch : undefined
+    if (clip.revision !== projectRevision || projectRevision < saved.revision || (revisionEpoch ?? 0) !== (currentEpoch ?? 0)) {
+      throw ClipDomainError.revisionConflict(
+        Math.max(saved.revision, isClipRevision(clip.revision) ? clip.revision : 0),
+        'The Clip revision changed. Review the current project before exporting.', currentEpoch)
     }
-    return exportJobs.begin({ requestId, projectId: binding.projectId, projectRevision: clip.revision,
-      binding, manualWindowId: window.windowInstanceId })
+    return exportJobs.begin({ requestId, projectId: binding.projectId, projectRevision: clip.revision, revisionEpoch: currentEpoch,
+      editorInstanceId, draftWriterId: clip.draftWriterId, binding, manualWindowId: window.windowInstanceId })
   }
 
   async function dispatch(req) {
     const method = (req.method || 'GET').toUpperCase()
     try {
-      const { path } = routeUrl(req.url)
+      const { path, searchParams } = routeUrl(req.url)
       if (method === 'OPTIONS') return { status: 204, body: {} }
       if (method === 'GET' && path === '/health') return { status: 200, body: { clip: true, version: CLIP_VERSION } }
       if (method === 'GET' && path === '/projects') return { status: 200, body: store.list() }
@@ -235,6 +240,16 @@ export function createClipDispatcher({ paths, store, fs = DEFAULT_FS, broker, ex
 
       if (path === '/exports/reserve' && method === 'POST') {
         return { status: 200, body: reserveCanvasExport(req.body, req.window) }
+      }
+      const exportCancel = path.match(EXPORT_CANCEL_PATH)
+      if (exportCancel && method === 'POST') {
+        if (!exportJobs || !req.exportProof || !searchParams.has('projectId')) {
+          throw ClipDomainError.pathDenied('Export upload authorization is required.')
+        }
+        const body = exportJobs.cancel({
+          exportJobId: exportCancel[1], uploadToken: req.exportProof, projectId: assertProjectId(searchParams.get('projectId')),
+        })
+        return { status: 200, body }
       }
       const exportUpload = path.match(EXPORT_UPLOAD_PATH)
       if (exportUpload && method === 'POST') {
@@ -305,7 +320,8 @@ export function registerClipRoutes(webServer, dispatcher, deps = {}) {
         const wantsBody = !tempPath && (method === 'POST' || method === 'PUT')
         const body = wantsBody ? await readJsonBody(req, path === '/live/receipt' ? { maxBytes: MAX_RECEIPT_BYTES } : {}) : undefined
         if (wantsBody && body === null) throw ClipDomainError.invalidJson()
-        const result = await dispatcher.dispatch({ method, url: req.url, body, window, tempPath, exportUpload })
+        const result = await dispatcher.dispatch({ method, url: req.url, body, window, tempPath, exportUpload,
+          exportProof: req.headers?.[EXPORT_UPLOAD_PROOF_HEADER] })
         sendJson(res, result.status, result.body)
       } catch (error) {
         const result = errorResponse(error)

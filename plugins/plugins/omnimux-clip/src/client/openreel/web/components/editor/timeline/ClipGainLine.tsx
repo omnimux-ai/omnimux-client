@@ -12,6 +12,8 @@ import {
   type AutomationPoint,
   type Clip,
 } from "@openreel/core";
+import { useEditorPortalRoot } from "@openreel/ui/lib/portal-root";
+import { hasShortcutFocus, isEditorShortcutEvent } from "../../../services/keyboard-shortcuts";
 import { commitClipGainPoints, clipGainPoints } from "../../../services/clip-gain-edit";
 import { dbToFraction, formatGainDb, fractionToDb } from "./clip-gain-geometry";
 import { useClipT } from "../../../../../i18n/index.js";
@@ -91,6 +93,7 @@ function valueOnCurve(vertices: readonly AutomationPoint[], time: number): numbe
 
 function ClipGainLineImpl({ clip, width, height, locked, music = false, onCommit = defaultCommit }: ClipGainLineProps) {
   const clipT = useClipT();
+  const shortcutRoot = useEditorPortalRoot();
   const stored = clipGainPoints(clip);
   const [draft, setDraftState] = useState<AutomationPoint[] | null>(null);
   // The latest preview, readable synchronously when the pointer is released.
@@ -198,7 +201,7 @@ function ClipGainLineImpl({ clip, width, height, locked, music = false, onCommit
       setDraft(null);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
+      if (e.key !== "Escape" || !isEditorShortcutEvent(e, shortcutRoot)) return;
       e.stopPropagation();
       onCancel();
     };
@@ -262,6 +265,7 @@ function ClipGainLineImpl({ clip, width, height, locked, music = false, onCommit
     if (hoverIndex === null || locked) return undefined;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Delete" && e.key !== "Backspace") return;
+      if (!isEditorShortcutEvent(e, shortcutRoot) || !hasShortcutFocus(e)) return;
       e.preventDefault();
       e.stopImmediatePropagation();
       const index = hoverIndex;
@@ -271,7 +275,7 @@ function ClipGainLineImpl({ clip, width, height, locked, music = false, onCommit
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [hoverIndex, locked, finish]);
+  }, [hoverIndex, locked, finish, shortcutRoot]);
 
   const hoverLine = (event: React.PointerEvent) => {
     if (gesture.current) return;

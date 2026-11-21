@@ -69,6 +69,13 @@ export function canvasWorkspaceMediaUrl(value, workspaceId) {
     ? reconnectMediaUrl(value, workspaceId) : undefined
 }
 
+export function workspaceMediaDigest(value, workspaceId) {
+  const url = canvasWorkspaceMediaUrl(value, workspaceId)
+  if (!url) return undefined
+  const revision = new URL(url, 'https://clip.invalid').searchParams.get('rev')
+  return revision?.startsWith('sha256:') ? sha256Digest(revision.slice('sha256:'.length)) : undefined
+}
+
 export function items(value) {
   return Array.isArray(value) ? value : []
 }

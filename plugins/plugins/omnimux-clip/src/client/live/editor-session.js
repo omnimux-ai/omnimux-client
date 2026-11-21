@@ -1,3 +1,4 @@
+import { isClipRevision } from '../../errors.js'
 import { LiveClipError, fromHost, syncDisposition } from './persistence.js'
 
 export const STUDIO_TAB = 'omnimux-clip:studio'
@@ -135,9 +136,25 @@ export function createEditorSession({ storage, native, workbench, document, onEr
     return true
   }
 
-  function scheduleSave(owner) {
+  function needsSave(owner) {
+    return owner.record?.revision > owner.record?.localBaseRevision
+  }
+
+  function cancelSave() {
     clearTimeout(saveTimer)
-    saveTimer = setTimeout(() => void save(owner), debounce)
+    saveTimer = undefined
+  }
+
+  function scheduleSave(owner) {
+    cancelSave()
+    saveTimer = setTimeout(() => {
+      saveTimer = undefined
+      if (owns(owner) && needsSave(owner)) void save(owner)
+    }, debounce)
+  }
+
+  function scheduleRemainingSave(owner) {
+    if (!saveTimer && owns(owner) && needsSave(owner) && !owner.conflict && !owner.retryOnViewport) scheduleSave(owner)
   }
 
   async function flush(owner, receipt, canWrite = () => true) {
@@ -184,13 +201,18 @@ export function createEditorSession({ storage, native, workbench, document, onEr
   }
 
   async function tryFlush(owner, receipt, canWrite) {
+    const revision = owner.record?.revision
+    let saved
     try {
-      return await flush(owner, receipt, canWrite)
+      saved = await flush(owner, receipt, canWrite)
+      return saved
     } catch (error) {
       owner.status = 'saveFailed'
       show(owner)
       onError?.(error)
       return { persisted: false, synchronized: false }
+    } finally {
+      if (saved?.synchronized || owner.record?.revision > revision) scheduleRemainingSave(owner)
     }
   }
 
@@ -208,8 +230,9 @@ export function createEditorSession({ storage, native, workbench, document, onEr
     do {
       const saved = await tryFlush(owner, undefined, canWrite)
       if (!saved.persisted || !saved.synchronized) return false
-    } while (ownedNativeProject(owner) && capture(owner))
-    return owner.record.revision <= owner.record.localBaseRevision
+      if (ownedNativeProject(owner)) capture(owner)
+    } while (needsSave(owner))
+    return true
   }
 
   function ownedNativeProject(owner) {
@@ -279,7 +302,8 @@ export function createEditorSession({ storage, native, workbench, document, onEr
       // Loading can rehydrate local media handles without an editorial change.
       const loaded = native.capture()
       owner.fingerprint = loaded.fingerprint
-      owner.record = { ...owner.record, project: loaded.project, media: loaded.media }
+      owner.revisionEpoch = isClipRevision(local?.revisionEpoch) ? local.revisionEpoch : 0
+      owner.record = { ...owner.record, project: loaded.project, media: loaded.media, revisionEpoch: owner.revisionEpoch }
       owner.ingesting = site.hasUpstream && !loaded.project.omnimuxCanvasInitialized
       pendingNative = pendingNative === opening ? null : pendingNative
       await flush(owner, undefined, stillDesired)
@@ -311,6 +335,7 @@ export function createEditorSession({ storage, native, workbench, document, onEr
     owner.handoffBlocked = false
     rememberCanvas(owner.site)
     show(owner)
+    scheduleRemainingSave(owner)
     onVisibility?.()
     return true
   }
@@ -354,7 +379,7 @@ export function createEditorSession({ storage, native, workbench, document, onEr
     desired = site
     wanted++
     failed = null
-    clearTimeout(saveTimer)
+    cancelSave()
     if (current) {
       if (!matchesAtSite(current.site, site)) freeze(current)
       show(current)
@@ -392,7 +417,7 @@ export function createEditorSession({ storage, native, workbench, document, onEr
     const owner = current
     if (!owner?.conflict || owner.resolving || owner.handingOff || !inConversation(owner)) return false
     if (ownedNativeProject(owner)) capture(owner)
-    clearTimeout(saveTimer)
+    cancelSave()
     owner.resolving = true
     native.suspend()
     show(owner)
@@ -420,7 +445,7 @@ export function createEditorSession({ storage, native, workbench, document, onEr
           if (choice === 'copy') {
             if (owner.copy?.draft !== draft) {
               const project = { ...draft.project, id: crypto.randomUUID() }
-              owner.copy = { draft, record: { ...draft, project, binding: undefined, revision: 1, localBaseRevision: 0 } }
+              owner.copy = { draft, record: { ...draft, project, binding: undefined, revision: 1, localBaseRevision: 0, revisionEpoch: 0 } }
             }
             const copy = owner.copy.record
             await storage.writeLocal(copy)
@@ -435,9 +460,9 @@ export function createEditorSession({ storage, native, workbench, document, onEr
           await native.load(adopted, keepsNativeStore)
           if (!keepsNativeStore()) return false
           const loaded = native.capture()
-          owner.record = { ...adopted, project: loaded.project, media: loaded.media }
-          owner.fingerprint = loaded.fingerprint
           owner.revisionEpoch++
+          owner.record = { ...adopted, project: loaded.project, media: loaded.media, revisionEpoch: owner.revisionEpoch }
+          owner.fingerprint = loaded.fingerprint
           owner.copy = undefined
         }
         owner.conflict = null
@@ -495,7 +520,7 @@ export function createEditorSession({ storage, native, workbench, document, onEr
     }
     if (!owns(owner) || owner.conflict || !bindingMatches(owner.site.binding, binding)) return false
     const stillVisible = () => current === owner && !owner.token.signal.aborted && matchesAtSite(owner.site, readSite())
-    clearTimeout(saveTimer)
+    cancelSave()
     owner.resolving = true
     native.suspend()
     show(owner)
@@ -566,7 +591,7 @@ export function createEditorSession({ storage, native, workbench, document, onEr
       entries.clear()
       retainedCanvas = null
       unsubscribe()
-      clearTimeout(saveTimer)
+      cancelSave()
       listeners.clear()
     },
   }

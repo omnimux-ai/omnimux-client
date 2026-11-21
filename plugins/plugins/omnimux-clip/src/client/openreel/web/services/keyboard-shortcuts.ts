@@ -91,6 +91,7 @@ function isShiftedSymbol(key: string): boolean {
   return key.length === 1 && /[~!@#$%^&*()_+{}|:"<>?]/.test(key);
 }
 
+// An inert editor can still have live window listeners. Check the owner at dispatch time.
 function isShortcutRootActive(root: HTMLElement | null): root is HTMLElement {
   return Boolean(root?.isConnected && !root.closest('[inert], [hidden], [data-visible="false"]'));
 }

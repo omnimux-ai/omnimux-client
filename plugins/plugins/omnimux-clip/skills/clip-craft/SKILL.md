@@ -13,7 +13,7 @@ description: "OmniMux Clip 专业剪辑判断层。用于剪视频、修时间�
 
 1. 用 `<ui_context>` 确认当前是画布 Portal 还是独立剪辑 Tab。用户指向当前唯一可见工程时，可直接调用 `clip_get`。查某个已保存版本时传实际 `projectId`，需要找工程先用 `clip_list`。用户要求新建时用 `clip_create` 创建独立空工程。
 2. `clip_get` 默认给 `summary`，需要精确位置、选段或素材时用 `tracks`、`clips`、`full`。出现 `AMBIGUOUS_TARGET` 时按候选核对用户指向，需要时请用户选工程和窗口。`project-not-materialized` 表示画布节点尚未初始化工程。需要用户打开目标时说明原因，只有用户要求打开才调用 `clip_open`。
-3. 把一次剪辑意图收成一批 `clip_edit`，写清 `description` 并带上 `clip_get` 的 `baseRevision`。复杂变更先用 `validateOnly: true` 预演。真实写入使用稳定的 `requestId`。删除非空整轨或清空时间轴前确认用户明确要求，再传 `confirmDestructive: true`。一批成功的剪辑在编辑器里可一步撤销。
+3. 把一次剪辑意图收成一批 `clip_edit`，写清 `description`，将实时 `clip_get` 的 `revision` 和 `revisionEpoch` 分别传给同一目标的 `baseRevision` 和 `baseRevisionEpoch`。复杂变更先用 `validateOnly: true` 预演。真实写入使用稳定的 `requestId`。删除非空整轨或清空时间轴前确认用户明确要求，再传 `confirmDestructive: true`。一批成功的剪辑在编辑器里可一步撤销。
 4. `REVISION_CONFLICT` 时重读原生快照，按新时间轴重算。`outcome-unknown` 时用原 `requestId` 和相同参数复查。在 `EDITOR_OFFLINE`、`EDITOR_NOT_VISIBLE` 或 `PREVIEW_NOT_READY` 时说明当前阻断。界面恢复后先核对目标和版本。
 5. 编辑后用 `clip_get` 检查最新时间轴。已同步到 Host 后用 `clip_diagnostics` 查黑场、重叠、越界和缺失素材。可见编辑器用 `clip_view` 定位播放头，用 `clip_snapshot` 抽取几个关键点的合成帧检查字幕遮挡和切点。
 6. 用户明确要求成片才调用 `clip_export`，传 `confirm: true`。只有 `fileSaved` 为真才能交付 MP4，画布是否已回写读 `canvasCommitted`。`superseded` 表示该任务已有更新版本，按已确认的最新结果汇报。

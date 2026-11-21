@@ -1,5 +1,5 @@
 import { getActiveClipSession } from "../../../stage-store.js";
-import { reserveCanvasExport, uploadClipExport } from "../../../live/export-transport.js";
+import { cancelClipExport, reserveCanvasExport, uploadClipExport } from "../../../live/export-transport.js";
 import { cloneProjectSnapshot } from "../../core/export/project-snapshot";
 import { useProjectStore } from "../stores/project-store";
 import {
@@ -546,6 +546,13 @@ interface ExportRunnerOptions {
   onExported?: (settings: Partial<VideoExportSettings>) => void;
 }
 
+interface CanvasExportAttempt {
+  controller: AbortController;
+  canReport: () => boolean;
+  reservation?: ReturnType<typeof reserveCanvasExport>;
+  cancellation?: Promise<void>;
+}
+
 interface UseExportRunner {
   state: ExportRunnerState;
   runExport: (
@@ -561,7 +568,7 @@ interface UseExportRunner {
   assertNotCancelled: () => void;
   finishExportSoon: () => void;
   failExport: (error: unknown) => void;
-  cancel: () => void;
+  cancel: () => void | Promise<void>;
   resetError: () => void;
 }
 
@@ -572,7 +579,7 @@ export function useExportRunner(options: ExportRunnerOptions): UseExportRunner {
   const running = useRef(false);
   const cancelled = useRef(false);
   const attached = useRef(true);
-  const reservedCanvasRender = useRef(false);
+  const activeCanvas = useRef<CanvasExportAttempt | null>(null);
   const activeWritable = useRef<FileSystemWritableFileStream | null>(null);
   const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -581,7 +588,7 @@ export function useExportRunner(options: ExportRunnerOptions): UseExportRunner {
   }, []);
 
   const beginExport = useCallback((writable?: FileSystemWritableFileStream) => {
-    if (running.current) {
+    if (running.current || activeCanvas.current) {
       void writable?.abort().catch(() => undefined);
       throw new Error("The previous export is still finishing. Please retry in a moment.");
     }
@@ -652,8 +659,9 @@ export function useExportRunner(options: ExportRunnerOptions): UseExportRunner {
       ext: string,
       writableStream: FileSystemWritableFileStream,
     ): Promise<boolean> => {
-      const releaseCanvasRender = canvasMode && !running.current ? tryLockNativeVideoRender() : undefined;
-      if (running.current || (canvasMode ? !releaseCanvasRender : nativeVideoRender)) {
+      const busy = running.current || activeCanvas.current !== null;
+      const releaseCanvasRender = canvasMode && !busy ? tryLockNativeVideoRender() : undefined;
+      if (busy || (canvasMode ? !releaseCanvasRender : nativeVideoRender)) {
         await writableStream.abort().catch(() => undefined);
         throw new Error("An export is already running");
       }
@@ -670,9 +678,11 @@ export function useExportRunner(options: ExportRunnerOptions): UseExportRunner {
       let generator: ReturnType<typeof engine.exportVideo> | undefined;
       const session = canvasMode ? getActiveClipSession() : null;
       const canvas = session?.source === "canvas" ? session : null;
-      const canReport = () => attached.current && isCurrent() && (!canvas || getActiveClipSession() === canvas);
+      const isVisible = () => attached.current && (!canvas || getActiveClipSession() === canvas);
+      const canReport = () => isVisible() && isCurrent();
+      const attempt: CanvasExportAttempt | null = canvas ? { controller: new AbortController(), canReport: isVisible } : null;
+      activeCanvas.current = attempt;
       const finishEncoding = () => {
-        reservedCanvasRender.current = false;
         releaseRender();
         running.current = false;
         if (activeWritable.current === writableStream) activeWritable.current = null;
@@ -702,12 +712,10 @@ export function useExportRunner(options: ExportRunnerOptions): UseExportRunner {
           throw new Error(clipNow()("Choose MP4 to send a video to the canvas."));
         }
         const exportProject = canvas ? cloneProjectSnapshot(project) : project;
-        const canvasJob = canvas ? await reserveCanvasExport(canvas) : undefined;
+        if (attempt && canvas) attempt.reservation = reserveCanvasExport(canvas);
+        const canvasJob = attempt?.reservation ? await attempt.reservation : undefined;
         checkSource();
-        if (canvasJob) {
-          reservedCanvasRender.current = true;
-          if (canReport()) setState((prev) => ({ ...prev, canvasReserved: true }));
-        }
+        if (canvasJob && canReport()) setState((prev) => ({ ...prev, canvasReserved: true }));
         await engine.initialize();
         checkSource();
         await ensureProjectFonts(exportProject);
@@ -734,10 +742,10 @@ export function useExportRunner(options: ExportRunnerOptions): UseExportRunner {
         generator = undefined;
 
         if (finalResult?.success) {
-          if (canvasJob) {
+          if (canvasJob && attempt) {
             if (!capturedBlob) throw new Error("The canvas export is no longer available");
             // The upload owns the reservation and can finish after the editor exits.
-            const upload = uploadClipExport(canvasJob, capturedBlob);
+            const upload = uploadClipExport(canvasJob, capturedBlob, attempt.controller.signal);
             savingToCanvas = true;
             finishEncoding();
             if (canReport()) setState((prev) => ({ ...prev, savingToCanvas: true }));
@@ -763,13 +771,14 @@ export function useExportRunner(options: ExportRunnerOptions): UseExportRunner {
         }
       } catch (error) {
         if (!savingToCanvas) await writableStream.abort().catch(() => undefined);
-        if (canvas && (!attached.current || getActiveClipSession() !== canvas)) return false;
+        if (attempt?.controller.signal.aborted || (canvas && !isVisible())) return false;
         throw error;
       } finally {
         // Closing a generator runs cleanup if cancellation lands at a yield.
         try { await generator?.return({ success: false }); } catch { /* Preserve the original failure. */ }
         if (!savingToCanvas) finishEncoding();
-        if (canvas && attached.current && isCurrent() && getActiveClipSession() !== canvas) setState(INITIAL_STATE);
+        if (activeCanvas.current === attempt && !attempt?.cancellation) activeCanvas.current = null;
+        if (canvas && attached.current && isCurrent() && !isVisible()) setState(INITIAL_STATE);
       }
     },
     [project, canvasMode, onExported],
@@ -871,20 +880,47 @@ export function useExportRunner(options: ExportRunnerOptions): UseExportRunner {
   );
 
   const cancel = useCallback(() => {
+    const attempt = activeCanvas.current;
+    if (attempt?.cancellation) return attempt.cancellation;
     epoch.current += 1;
     cancelled.current = true;
+    attempt?.controller.abort(new DOMException("Export cancelled", "AbortError"));
     void activeWritable.current?.abort().catch(() => undefined);
     if (running.current) getExportEngine().cancel();
-    setState(INITIAL_STATE);
-  }, []);
+    if (!attempt) {
+      setState(INITIAL_STATE);
+      return;
+    }
+
+    // If the reservation is in flight, wait for its proof so that the Host
+    // can cancel this exact job even when the upload was already buffered.
+    attempt.cancellation = (async () => {
+      const job = await attempt.reservation?.catch(() => undefined);
+      const receipt = job && await cancelClipExport(job);
+      if (!attempt.canReport()) return;
+      if (receipt?.status === "canvas-failed") throw new Error(receipt.error?.message || "Export failed");
+      if (receipt?.fileSaved) {
+        setState({ ...INITIAL_STATE, progress: 100, complete: true, phase: "Saved!" });
+        finishExportSoon();
+      } else {
+        setState(INITIAL_STATE);
+      }
+    })().catch(error => {
+      if (attempt.canReport()) setState({ ...INITIAL_STATE, error: error instanceof Error ? error.message : "Export failed" });
+    }).finally(() => {
+      if (activeCanvas.current === attempt) activeCanvas.current = null;
+    });
+    return attempt.cancellation;
+  }, [finishExportSoon]);
 
   useEffect(() => {
     attached.current = true;
     return () => {
       attached.current = false;
       if (resetTimer.current) clearTimeout(resetTimer.current);
-      if (reservedCanvasRender.current) return;
-      if (running.current || activeWritable.current) cancel();
+      // Leaving the editor does not cancel a canvas reservation or upload.
+      if (activeCanvas.current) return;
+      if (running.current || activeWritable.current) void cancel();
       else epoch.current += 1;
     };
   }, [cancel]);

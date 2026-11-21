@@ -688,7 +688,7 @@ test('dispatches the authenticated viewport revision before renewal and rechecks
   client.editor('demo', null, { revision: 3, revisionEpoch: 0 })
   const claim = await h.post(client, 'claim', { leaseId, requestId })
   assert.equal(claim.status, 409)
-  assert.deepEqual(claim.body.details, { currentRevision: 3 })
+  assert.deepEqual(claim.body.details, { currentRevision: 3, currentRevisionEpoch: 0 })
   assert.equal(claim.body.command, undefined)
   assert.equal((await settlement).error?.code, 'REVISION_CONFLICT')
 })
@@ -711,8 +711,15 @@ test('a lower adopted viewport supersedes a stale heartbeat and a delayed old re
   assert.equal((await h.post(client, 'receipt', {
     ...request, receiptToken: command.receiptToken, result: editResult(8),
   })).body.status, 'succeeded')
-  assert.equal((await delayedSettlement).result?.revision, 8)
-  const newArgs = editArgs('after-adoption', { baseRevision: 3 })
+  const prior = (await delayedSettlement).result
+  assert.equal(prior?.revision, 8)
+  assert.deepEqual(await h.execute('clip_edit', delayedArgs), prior)
+  for (const baseRevision of [7, 3]) {
+    await rejectsCode(h.execute('clip_edit', editArgs(`stale-${baseRevision}`, { baseRevision })), 'REVISION_CONFLICT',
+      error => error.details.currentRevision === 3 && error.details.currentRevisionEpoch === 1)
+  }
+  assert.equal(client.events.length, 1)
+  const newArgs = editArgs('after-adoption', { baseRevision: 3, baseRevisionEpoch: 1 })
   const fresh = h.execute('clip_edit', newArgs)
   const freshSettlement = fresh.then(result => ({ result }), error => ({ error }))
   const freshRequest = { leaseId, requestId: newArgs.requestId }
@@ -734,7 +741,7 @@ test('rechecks baseRevision at claim and protects the latest user edit', async t
   await h.post(client, 'renew', { leaseId, revision: 9 })
   const claim = await h.post(client, 'claim', { leaseId, requestId: 'race-edit' })
   assert.equal(claim.status, 409)
-  assert.deepEqual(claim.body.details, { currentRevision: 9 })
+  assert.deepEqual(claim.body.details, { currentRevision: 9, currentRevisionEpoch: 0 })
   assert.equal(claim.body.command, undefined)
   await failure
 })
@@ -818,6 +825,63 @@ test('clip_get prefers the safe live projection, advances the lease and falls ba
   assert.equal(claimed.body.command.baseRevision, 5)
   await h.post(client, 'receipt', { ...next, receiptToken: claimed.body.command.receiptToken, result: editResult(6) })
   assert.equal((await edit).revision, 6)
+})
+
+test('third review #8 requires an epoch observation for the selected project, conversation and editor', async t => {
+  const h = fixture(t)
+  h.store.create('demo', createNativeProject('demo', 'Saved project'))
+  const a = h.connect('one')
+  const b = h.connect('two')
+  const c = h.connect('separate-chat', 'chat-b')
+  const otherConversation = { session: { id: 'chat-b' } }
+  const version = { revision: 2, revisionEpoch: 1, draftWriterId: 'fixture-writer' }
+  const leaseA = await acquire(h, a, 'demo', undefined, version)
+  const leaseB = await acquire(h, b, 'demo', undefined, version)
+  await acquire(h, c, 'demo', undefined, version)
+
+  async function read(client, leaseId, requestId, projectId = 'demo') {
+    const read = h.execute('clip_get', { projectId, windowInstanceId: client.id, requestId })
+    const ids = { leaseId, requestId }
+    const { command } = (await h.post(client, 'claim', ids)).body
+    await h.post(client, 'receipt', { ...ids, receiptToken: command.receiptToken,
+      result: { projectId, view: 'summary', title: projectId, revision: 2, revisionEpoch: 1, durationSec: 0, playheadSec: 0, selectedClips: [] } })
+    return read
+  }
+
+  const observed = await read(a, leaseA, 'read-a')
+  const wrongWindow = h.execute('clip_edit', editArgs('wrong-window', { windowInstanceId: b.id, baseRevision: 2, validateOnly: true })).catch(error => error)
+  assert.deepEqual(b.events, [])
+  const { code, details } = await wrongWindow
+  assert.deepEqual({ code, details }, { code: 'REVISION_CONFLICT', details: { currentRevision: 2, currentRevisionEpoch: 1 } })
+  await rejectsCode(h.execute('clip_edit', editArgs('wrong-conversation', { baseRevision: 2 }), otherConversation), 'REVISION_CONFLICT')
+  assert.deepEqual(c.events, [])
+
+  a.hide()
+  await rejectsCode(h.execute('clip_edit', editArgs('wrong-implicit-window', { projectId: 'demo', baseRevision: 2 })), 'REVISION_CONFLICT')
+  assert.deepEqual(b.events, [])
+  assert.partialDeepStrictEqual(observed, { windowInstanceId: a.id, revision: 2, revisionEpoch: 1 })
+  assert.equal((await h.execute('clip_get', { projectId: 'demo' }, {})).revisionEpoch, 0)
+  await rejectsCode(h.execute('clip_edit', editArgs('saved-read-is-not-live', { baseRevision: 2 })), 'REVISION_CONFLICT')
+
+  const adopted = await read(b, leaseB, 'read-b')
+  const previewArgs = editArgs('dry-after-read', { baseRevision: adopted.revision, validateOnly: true })
+  const preview = h.execute('clip_edit', previewArgs)
+  const previewIds = { leaseId: leaseB, requestId: previewArgs.requestId }
+  const { command: previewCommand } = (await h.post(b, 'claim', previewIds)).body
+  await h.post(b, 'receipt', { ...previewIds, receiptToken: previewCommand.receiptToken,
+    result: { ...editResult(2), undoStep: false, persisted: false, synchronized: false } })
+  assert.equal((await preview).undoStep, false)
+  assert.deepEqual(await h.execute('clip_edit', previewArgs), await preview)
+  await rejectsCode(h.execute('clip_edit', { ...previewArgs, baseRevisionEpoch: 1 }), 'REQUEST_ID_CONFLICT')
+  await rejectsCode(h.execute('clip_edit', editArgs('explicit-stale-epoch', { baseRevision: 2, baseRevisionEpoch: 0 })), 'REVISION_CONFLICT')
+
+  await h.post(b, 'release', { leaseId: leaseB })
+  const otherProjectLease = await acquire(h, b, 'other', undefined, version)
+  await rejectsCode(h.execute('clip_edit', editArgs('same-editor-wrong-project', { baseRevision: 2 })), 'REVISION_CONFLICT')
+  await read(b, otherProjectLease, 'read-other-project', 'other')
+  await h.post(b, 'release', { leaseId: otherProjectLease })
+  await acquire(h, b, 'demo', undefined, { ...version, editorInstanceId: 'replacement-editor' })
+  await rejectsCode(h.execute('clip_edit', editArgs('same-window-rebuilt-editor', { baseRevision: 2 })), 'REVISION_CONFLICT')
 })
 
 test('clip_open waits for the exact visible canvas lease on the selected window', async t => {
@@ -993,6 +1057,44 @@ test('uses the pinned export job receipt after the source editor switches away',
   assert.deepEqual(await h.execute('clip_export', args), result)
   assert.equal(begins, 1)
   assert.deepEqual(readdirSync(h.paths.tmpDir), [])
+})
+
+test('third review #8 reserves exports with the authenticated editor epoch and writer', async t => {
+  const begins = []
+  const exportJobs = {
+    begin(options) { begins.push(options); return { exportJobId: begins.length, uploadToken: 'fixture-proof' } },
+    get: () => ({ status: 'file-saved', fileSaved: true, output: { durationMs: 1000 } }),
+  }
+  const h = fixture(t, { exportJobs })
+  const client = h.connect('one')
+  const version = { revision: 2, revisionEpoch: 1, draftWriterId: 'trusted-writer' }
+  const leaseId = await acquire(h, client, 'demo', undefined, version)
+
+  const stalePlan = h.execute('clip_export', { confirm: true, baseRevision: 2 }).catch(error => error)
+  assert.deepEqual(client.events, [])
+  assert.equal((await stalePlan).code, 'REVISION_CONFLICT')
+  await rejectsCode(h.execute('clip_export', { confirm: true, baseRevisionEpoch: 0 }), 'REVISION_CONFLICT')
+  assert.deepEqual(begins, [])
+
+  for (const [requestId, plan] of [['export-current', {}], ['export-planned', { baseRevision: 2, baseRevisionEpoch: 1 }]]) {
+    const pending = h.execute('clip_export', { confirm: true, requestId, ...plan })
+    const settlement = pending.then(result => ({ result }), error => ({ error }))
+    const claim = await h.post(client, 'claim', { leaseId, requestId, draftWriterId: 'untrusted-body', revisionEpoch: 91 })
+    assert.equal(claim.status, 200)
+    assert.equal(claim.body.command.revisionEpoch, 1)
+    assert.equal(claim.body.command.draftWriterId, 'trusted-writer')
+    assert.equal((await settlement).result.fileSaved, true)
+    assert.partialDeepStrictEqual(begins.at(-1), { requestId, projectId: 'demo', projectRevision: 2,
+      revisionEpoch: 1, editorInstanceId: 'editor-one', draftWriterId: 'trusted-writer' })
+  }
+
+  const pending = h.execute('clip_export', { confirm: true, requestId: 'export-adopts-before-claim' })
+  const rejected = rejectsCode(pending, 'REVISION_CONFLICT')
+  client.editor('demo', undefined, { ...version, revisionEpoch: 2 })
+  const claim = await h.post(client, 'claim', { leaseId, requestId: 'export-adopts-before-claim' })
+  assert.deepEqual(claim.body.details, { currentRevision: 2, currentRevisionEpoch: 2 })
+  await rejected
+  assert.equal(begins.length, 2)
 })
 
 test('host apply provides the native seam and registers routes through guarded injects', async t => {

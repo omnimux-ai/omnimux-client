@@ -169,9 +169,11 @@ async function makeHarness(t) {
   const deliverUploads = new Map()
   let stopClient
   let resumeEncoding
+  let heldReservation
   server.listen(0, '127.0.0.1')
   t.after(async () => {
     resumeEncoding?.()
+    heldReservation?.allow.resolve()
     for (const { allow } of deliverUploads.values()) allow.resolve()
     stopClient?.()
     broker.dispose()
@@ -197,18 +199,22 @@ async function makeHarness(t) {
   const uploads = []
   const replies = []
   let foreignLegacyEvents = 0
+  let manualRunner
   t.mock.method(globalThis, 'fetch', async (path, init) => {
     if (init?.body instanceof Blob) {
       const bytes = Buffer.from(await init.body.arrayBuffer())
       const order = bytes.equals(olderMedia) ? 'older' : 'newer'
       assert.deepEqual(bytes, order === 'older' ? olderMedia : newerMedia)
       const latch = deliverUploads.get(order)
-      uploads.push({ order, path: localhostPath(path) })
+      uploads.push({ order, path: localhostPath(path), signal: init.signal })
       latch.ready.resolve()
       await latch.allow.promise
       const headers = new Headers(init.headers)
       headers.set('X-Test-Mtime', order === 'older' ? String(oldMtime) : String(newMtime))
-      const response = await send(path, { ...init, headers })
+      // In the cancellation case, the transport has already buffered the
+      // upload. The Host must reject it even if the abort did not reach it.
+      const signal = latch.buffered ? undefined : init.signal
+      const response = await send(path, { ...init, headers, signal })
       replies.push({ order, status: response.status, body: await response.clone().json() })
       return response
     }
@@ -219,10 +225,15 @@ async function makeHarness(t) {
   window.__omnimuxHubEvents = {
     getWindowId: () => hostWindow.windowInstanceId,
     pushViewport: async () => { advertised = structuredClone(viewport); return true },
-    windowFetch: (path, init) => {
+    windowFetch: async (path, init) => {
       const headers = new Headers(init.headers)
       headers.set('X-Window-Proof', sessionProof)
-      return send(path, { ...init, headers })
+      const response = await send(path, { ...init, headers })
+      if (heldReservation && localhostPath(path) === `${prefix}/exports/reserve`) {
+        heldReservation.received.resolve(await response.clone().json())
+        await heldReservation.allow.promise
+      }
+      return response
     },
   }
   fixtureGlobal(t, 'window', window)
@@ -268,17 +279,20 @@ async function makeHarness(t) {
   stopClient = () => { stop(); stage.dispose() }
   const agentExport = createClipTools({ store: { paths }, broker, exportJobs, getWorkflowClip }).find(tool => tool.name === 'clip_export')
   const completed = new Map()
+  async function beginManual(bytes) {
+    fixture.manualBytes = bytes
+    manualRunner = useExportRunner({ project, canvasMode: true })
+    const writable = await manualRunner.showSavePicker('mixed.mp4', 'mp4')
+    manualRunner.beginExport(writable)
+    return { result: manualRunner.runExport({ format: 'mp4' }, 'mp4', writable) }
+  }
   async function start(caller, order) {
     const bytes = order === 'older' ? olderMedia : newerMedia
     const latch = { ready: Promise.withResolvers(), allow: Promise.withResolvers() }
     deliverUploads.set(order, latch)
     let pending
     if (caller === 'manual') {
-      fixture.manualBytes = bytes
-      const runner = useExportRunner({ project, canvasMode: true })
-      const writable = await runner.showSavePicker('mixed.mp4', 'mp4')
-      runner.beginExport(writable)
-      pending = runner.runExport({ format: 'mp4' }, 'mp4', writable)
+      pending = (await beginManual(bytes)).result
     } else {
       fixture.agentBytes = bytes
       const requestId = `agent-${order}`
@@ -287,7 +301,9 @@ async function makeHarness(t) {
       assert.deepEqual(notifications.at(-1), { requestId })
       const claim = await post('/live/claim', { requestId, leaseId: lease.body.leaseId })
       assert.equal(claim.status, 200, JSON.stringify(claim.body))
-      const upload = runNativeCommand(claim.body.command, { assertCurrent() {}, revision: () => 1 })
+      const upload = runNativeCommand(claim.body.command, {
+        assertCurrent() {}, revision: () => viewport.view.extra.clip.revision,
+      })
       pending = Promise.all([upload, result]).then(([, receipt]) => receipt)
     }
     completed.set(order, pending)
@@ -312,8 +328,44 @@ async function makeHarness(t) {
     resumeEncoding = fixture.encoding.allow.resolve
     return { ready: fixture.encoding.ready.promise, resume: resumeEncoding }
   }
+  async function saveHostRevision(revision) {
+    const response = await send(`${prefix}/projects/${binding.projectId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Window-Proof': sessionProof },
+      body: JSON.stringify({ binding, project: materialized.body.project,
+        expectedRevision: materialized.body.revision, revision }),
+    })
+    assert.equal(response.status, 200, await response.clone().text())
+    assert.equal((await response.json()).revision, revision)
+  }
+  function advertiseRevision(revision, revisionEpoch) {
+    Object.assign(viewport.view.extra.clip, { revision, revisionEpoch })
+    advertised = structuredClone(viewport)
+  }
+  async function cancelManualAndDeliver(order) {
+    const upload = uploads.find(entry => entry.order === order)
+    const latch = deliverUploads.get(order)
+    latch.buffered = true
+    await manualRunner.cancel()
+    latch.allow.resolve()
+    const result = await Promise.allSettled([completed.get(order)])
+    const reply = replies.find(entry => entry.order === order)
+    return { signalAborted: upload.signal.aborted, reply, result: result[0] }
+  }
+  async function cancelWhileReserving() {
+    heldReservation = { received: Promise.withResolvers(), allow: Promise.withResolvers() }
+    const { result } = await beginManual(newerMedia)
+    const settled = Promise.allSettled([result])
+    const reservation = await heldReservation.received.promise
+    assert.equal(reservation.status, 'awaiting-upload')
+    const cancellation = manualRunner.cancel()
+    heldReservation.allow.resolve()
+    await cancellation
+    return { reservation, result: (await settled)[0] }
+  }
   return { start, finish, exit, graph, binding, post, send, viewport, uploads, notes, window, exportJobs, pauseEncoding,
-    legacyEventCount: () => foreignLegacyEvents }
+    saveHostRevision, advertiseRevision, cancelManualAndDeliver, cancelWhileReserving, legacyEventCount: () => foreignLegacyEvents,
+  }
 }
 
 function currentOutput(graph, binding, durationMs, media) {
@@ -383,4 +435,60 @@ test('a reserved manual render survives portal exit and releases its lock before
   assert.equal(waitForNativeExportRender(), undefined)
   assert.equal((await h.finish('newer')).receipt.status, 'committed')
   currentOutput(h.graph(), h.binding, 1000, newerMedia)
+})
+
+async function checkAdoptedExport(t, newestFirst) {
+  const h = await makeHarness(t)
+  const canvas = h.viewport.view.extra.clip
+  await h.saveHostRevision(2)
+  h.advertiseRevision(5, 0)
+  await h.start('manual', 'older')
+  h.advertiseRevision(2, 1)
+  await h.start('agent', 'newer')
+
+  const initial = await h.finish(newestFirst ? 'newer' : 'older')
+  const linked = currentOutput(h.graph(), canvas, newestFirst ? 1000 : 2000, newestFirst ? newerMedia : olderMedia)
+  const final = await h.finish(newestFirst ? 'older' : 'newer')
+  const [older, newer] = newestFirst ? [final.receipt, initial.receipt] : [initial.receipt, final.receipt]
+  assert.equal(newer.status, 'committed', `adopted r2 export must beat discarded r5: ${newer.status}`)
+  assert.equal(newer.projectRevision, 2)
+  assert.equal(newer.revisionEpoch, 1)
+  assert.equal(older.status, newestFirst ? 'superseded' : 'committed')
+  assert.equal(older.projectRevision, 5)
+  assert.equal(older.revisionEpoch, 0)
+  assert.equal(currentOutput(h.graph(), canvas, 1000, newerMedia), linked)
+  assert.deepEqual(fs.readFileSync(older.output.videoPath), olderMedia)
+  assert.deepEqual(fs.readFileSync(newer.output.videoPath), newerMedia)
+  const source = h.graph().nodes.find(node => node.id === canvas.nodeId)
+  assert.equal(source.data.clipExportReceipts.at(-1).revisionEpoch, 1)
+}
+
+test('a lower adopted revision wins when the older export uploads first', { timeout: 15_000 }, t => checkAdoptedExport(t, false))
+test('a lower adopted revision wins when the newer export uploads first', { timeout: 15_000 }, t => checkAdoptedExport(t, true))
+
+test('explicit manual cancellation aborts upload and prevents a buffered request from committing', { timeout: 15_000 }, async t => {
+  const h = await makeHarness(t)
+  const before = h.graph()
+  await h.start('manual', 'newer')
+  const { signalAborted, reply } = await h.cancelManualAndDeliver('newer')
+  assert.deepEqual(h.graph(), before, 'the buffered upload must not change the persisted canvas after cancel')
+  assert.equal(signalAborted, true, 'the live upload must receive the abort signal')
+  assert.equal(reply.status, 409)
+  assert.equal(reply.body.error, 'export-cancelled')
+  const jobId = Number(h.uploads[0].path.split('/').at(-2))
+  const record = h.exportJobs.get(jobId)
+  assert.equal(record.status, 'cancelled')
+  assert.equal(record.fileSaved, false)
+  assert.equal(record.canvasCommitted, false)
+})
+
+test('manual cancellation waits for the original reservation proof without encoding or uploading', { timeout: 15_000 }, async t => {
+  const h = await makeHarness(t)
+  const before = h.graph()
+  const { reservation, result } = await h.cancelWhileReserving()
+  assert.equal(h.exportJobs.get(reservation.exportJobId).status, 'cancelled')
+  assert.deepEqual(result, { status: 'fulfilled', value: false })
+  assert.deepEqual(h.uploads, [])
+  assert.deepEqual(h.graph(), before)
+  assert.equal(waitForNativeExportRender(), undefined)
 })

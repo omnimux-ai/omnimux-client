@@ -1,9 +1,11 @@
+import { isClipRevision, isClipToken } from '../../errors.js'
 import { CANVAS_TAB, STUDIO_TAB, assertProjectId } from './editor-session.js'
 import { LiveClipError, liveError, requestClip } from './persistence.js'
 
 const HEARTBEAT_MS = 2000
 const RECEIPT_AGE_MS = 10 * 60_000
-const TERMINAL_RECEIPT_ERRORS = new Set(['REQUEST_NOT_FOUND', 'REQUEST_EXPIRED', 'REQUEST_ID_CONFLICT', 'INVALID_RECEIPT'])
+const TERMINAL_RECEIPT_STATES = new Set(['succeeded', 'failed'])
+const receiptExpired = (receipt, cutoff = Date.now() - RECEIPT_AGE_MS) => (receipt.deadlineAt ?? receipt.createdAt) <= cutoff
 const TOKEN = /^[A-Za-z0-9_:-]{1,180}$/
 
 const bindingMatches = (left, right) => left?.workspaceId === right?.workspaceId
@@ -18,7 +20,9 @@ export function createLiveChannel({ session, storage, native, execute, window })
   let detachViewport
   const activeSessionId = () => window.__omnimuxWorkbench?.getCurrentSessionId?.()
   let renewTask = null
+  let registeredViewport
   let recoveryKey
+  let recovering
   let pulseTimer
   let active = true
 
@@ -43,6 +47,7 @@ export function createLiveChannel({ session, storage, native, execute, window })
       ...owner.site.binding,
       editorInstanceId: owner.site.entry.id,
       revisionEpoch: owner.revisionEpoch,
+      ...(isClipToken(storage.writerId) ? { draftWriterId: storage.writerId } : {}),
       ...(owner.conflict ? { conflict: true } : {}),
     }
     return { view: mode === 'canvas' ? { extra: { clip } } : { kind: 'clip', extra: { clip } } }
@@ -99,24 +104,37 @@ export function createLiveChannel({ session, storage, native, execute, window })
     }
   }
 
+  function isRegistered(windowId, sessionId) {
+    return registeredViewport?.windowInstanceId === windowId && registeredViewport?.sessionId === sessionId
+  }
+
   async function sendReceipt(receipt) {
-    if (!active || receipt.sessionId !== window.__omnimuxWorkbench?.getCurrentSessionId?.()) return
-    if (receipt.createdAt + RECEIPT_AGE_MS < Date.now()) {
-      pending.delete(receipt.requestId)
-      return
-    }
-    if (receipt.sending) return
+    const windowId = events?.getWindowId?.()
+    if (!active || !windowId || events !== window.__omnimuxHubEvents || receipt.sessionId !== activeSessionId()
+      || !isRegistered(windowId, receipt.sessionId) || receipt.delivered || receipt.sending || receiptExpired(receipt)
+      || receipt.missingViewport === registeredViewport) return
+    const viewport = registeredViewport
     receipt.sending = true
     try {
-      await post('receipt', receipt.body)
-      receipt.delivered = true
+      const ack = await post('receipt', receipt.body, windowId)
+      receipt.delivered = TERMINAL_RECEIPT_STATES.has(ack?.status)
     } catch (error) {
-      if (TERMINAL_RECEIPT_ERRORS.has(error.code)) receipt.delivered = true
+      if (registeredViewport === viewport) {
+        if (error.code === 'VIEWPORT_NOT_REGISTERED') registeredViewport = undefined
+        if (error.code === 'REQUEST_NOT_FOUND') {
+          if (receipt.checkedWindowId === windowId) receipt.missingViewport = viewport
+          else {
+            // Confirm the session again before concluding that this Host lost the request ledger.
+            receipt.checkedWindowId = windowId
+            registeredViewport = undefined
+          }
+        }
+      }
+      receipt.delivered = error.code === 'REQUEST_EXPIRED'
     } finally {
       delete receipt.sending
     }
     if (!receipt.delivered) return
-    pending.delete(receipt.requestId)
     if (receipt.durable) {
       try {
         await storage.markReceiptDelivered(receipt.requestId)
@@ -124,21 +142,29 @@ export function createLiveChannel({ session, storage, native, execute, window })
         console.warn('[Clip] Could not mark the command receipt as delivered.', error?.name)
       }
     }
+    pending.delete(receipt.requestId)
   }
 
-  async function recoverReceipts(windowId, sessionId, registerViewport, stillConnected) {
+  async function recoverReceipts(windowId, sessionId, stillConnected) {
     const key = JSON.stringify([windowId, sessionId])
     if (recoveryKey === key) return
+    const liveRequests = new Set(inFlight)
+    recovering = liveRequests
     try {
-      if (!await registerViewport() || !stillConnected()) return
-      const receipts = await storage.recoverReceipts(sessionId, Date.now() - RECEIPT_AGE_MS)
+      const cutoff = Date.now() - RECEIPT_AGE_MS
+      const receipts = await storage.recoverReceipts(sessionId, cutoff)
       if (!stillConnected()) return
+      // In-flight commands publish their own final outcomes, even if IndexedDB already has a provisional receipt.
       for (const receipt of receipts) {
-        if (!pending.has(receipt.requestId)) pending.set(receipt.requestId, receipt)
+        if (!receiptExpired(receipt, cutoff) && !liveRequests.has(receipt.requestId) && !pending.has(receipt.requestId)) {
+          pending.set(receipt.requestId, receipt)
+        }
       }
       recoveryKey = key
     } catch (error) {
       console.warn('[Clip] Could not recover pending command receipts.', error?.name)
+    } finally {
+      recovering = undefined
     }
   }
 
@@ -149,12 +175,15 @@ export function createLiveChannel({ session, storage, native, execute, window })
     if (!lease || !session.owns(owner)) return
     const token = owner.token
     inFlight.add(requestId)
+    recovering?.add(requestId)
     let command
     try {
       const previous = pending.get(requestId) ?? await storage.readReceipt(requestId)
       if (previous) {
-        pending.set(requestId, previous)
-        await sendReceipt(previous)
+        if (!previous.delivered && !receiptExpired(previous)) {
+          pending.set(requestId, previous)
+          await sendReceipt(previous)
+        }
         return
       }
       if (!session.owns(owner) || owner.token !== token || owner.lease?.leaseId !== lease.leaseId) return
@@ -162,8 +191,8 @@ export function createLiveChannel({ session, storage, native, execute, window })
       command = response.command
       if (!command) return
       const receipt = {
-        requestId, sessionId: owner.site.sessionId, createdAt: Date.now(), durable: command.operation === 'clip_edit',
-        body: { requestId, leaseId: lease.leaseId, receiptToken: command.receiptToken },
+        requestId, sessionId: owner.site.sessionId, createdAt: Date.now(), deadlineAt: command.deadlineAt,
+        durable: command.operation === 'clip_edit', body: { requestId, leaseId: lease.leaseId, receiptToken: command.receiptToken },
       }
       const assertCurrent = () => {
         if (!editorReady(owner) || owner.token !== token || owner.lease?.leaseId !== lease.leaseId
@@ -171,12 +200,14 @@ export function createLiveChannel({ session, storage, native, execute, window })
           throw new LiveClipError('EDITOR_NOT_VISIBLE', 'The original Clip editor is no longer active.')
         }
         if (command.deadlineAt <= Date.now()) throw new LiveClipError('REQUEST_EXPIRED', 'The Clip command deadline has passed.')
-        if (['clip_edit', 'clip_export'].includes(command.operation)) {
+        const needsExactRevision = ['clip_edit', 'clip_export'].includes(command.operation)
+        if (needsExactRevision || command.operation === 'clip_get') {
           session.capture(owner)
-          if (owner.record.revision !== command.baseRevision || owner.conflict
-            || command.revisionEpoch !== undefined && command.revisionEpoch !== owner.revisionEpoch) {
-            throw new LiveClipError('REVISION_CONFLICT', 'The timeline version has advanced or needs conflict resolution.', {
-              currentRevision: owner.record.revision,
+          const currentRevisionEpoch = owner.revisionEpoch ?? 0
+          if (owner.conflict || (command.revisionEpoch ?? 0) !== currentRevisionEpoch
+            || (needsExactRevision && owner.record.revision !== command.baseRevision)) {
+            throw new LiveClipError('REVISION_CONFLICT', 'The timeline version has changed. Read the live editor again.', {
+              currentRevision: owner.record.revision, currentRevisionEpoch,
             })
           }
         }
@@ -201,6 +232,9 @@ export function createLiveChannel({ session, storage, native, execute, window })
       } catch (error) {
         delete receipt.body.result
         receipt.body.error = liveError(error)
+        if (isClipRevision(error?.details?.currentRevisionEpoch)) {
+          receipt.body.error.details.currentRevisionEpoch = error.details.currentRevisionEpoch
+        }
       }
       if (receipt.durable) {
         try {
@@ -242,7 +276,7 @@ export function createLiveChannel({ session, storage, native, execute, window })
     for (const stop of detachEvents) stop()
     detachViewport?.()
     events = candidate
-    recoveryKey = undefined
+    registeredViewport = recoveryKey = undefined
     detachViewport = events?.registerViewportContributor?.('clip', ({ sessionId }) => {
       const binding = session.retainedCanvasBinding(sessionId)
       return binding ? { retainedCanvas: binding } : null
@@ -252,9 +286,12 @@ export function createLiveChannel({ session, storage, native, execute, window })
       events.subscribe('omnimux:clip:open', event => void open(event.payload)),
       events.subscribe('omnimux:window-ready', () => changed({ immediate: true })),
       events.subscribe('omnimux:viewport-registered', ({ payload }) => {
-        if (payload?.windowInstanceId === events.getWindowId() && session.needsReconnect?.(payload.sessionId)) void renew()
+        if (!payload?.sessionId || payload.windowInstanceId !== events.getWindowId()) return
+        registeredViewport = payload
+        if (payload.sessionId === activeSessionId()) void renew()
       }),
       events.subscribe('omnimux:disconnected', () => {
+        registeredViewport = recoveryKey = undefined
         const owner = session.getOwner()
         if (owner?.lease) owner.lease = null
       }),
@@ -267,6 +304,10 @@ export function createLiveChannel({ session, storage, native, execute, window })
       connect()
       session.reconcile()
       updateContributors()
+      const cutoff = Date.now() - RECEIPT_AGE_MS
+      for (const [id, receipt] of pending) {
+        if (receiptExpired(receipt, cutoff)) pending.delete(id)
+      }
       const hub = events
       const windowId = hub?.getWindowId?.()
       const sessionId = activeSessionId()
@@ -274,18 +315,27 @@ export function createLiveChannel({ session, storage, native, execute, window })
       const stillConnected = () => active && window.__omnimuxHubEvents === hub
         && hub.getWindowId() === windowId && activeSessionId() === sessionId
       let viewportRequest
-      const registerViewport = () => (viewportRequest ??= Promise.resolve().then(() => hub.pushViewport()).then(
-        registered => Boolean(registered) && stillConnected(), () => false,
-      ))
-      await recoverReceipts(windowId, sessionId, registerViewport, stillConnected)
-      if (stillConnected() && session.needsReconnect?.(sessionId) && await registerViewport()) {
+      const registerViewport = () => (viewportRequest ??= (async () => {
+        const previous = registeredViewport
+        try {
+          if (!await hub.pushViewport() || !stillConnected()) return false
+          if (!isRegistered(windowId, sessionId)) {
+            if (registeredViewport !== previous) return false
+            registeredViewport = { windowInstanceId: windowId, sessionId }
+          }
+          return true
+        } catch {
+          return false
+        }
+      })())
+      if (!isRegistered(windowId, sessionId) && !await registerViewport()) return
+      await recoverReceipts(windowId, sessionId, stillConnected)
+      if (!stillConnected()) return
+      for (const receipt of pending.values()) void sendReceipt(receipt)
+      if (session.needsReconnect?.(sessionId) && await registerViewport()) {
         await session.reconnect(sessionId, stillConnected)
       }
       if (!stillConnected()) return
-      for (const receipt of pending.values()) {
-        if (receipt.createdAt + RECEIPT_AGE_MS < Date.now()) pending.delete(receipt.requestId)
-        else void sendReceipt(receipt)
-      }
       const owner = session.getOwner()
       if (!editorReady(owner) || owner.conflict) return
       if (owner.lease?.windowId !== windowId || owner.lease.expiresAt <= Date.now()) owner.lease = null

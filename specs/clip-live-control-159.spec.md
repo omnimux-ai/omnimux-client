@@ -47,9 +47,22 @@
 
 主路径使用同一份本地带音频的视频。画布以「加字幕并裁掉前 1 秒」串起编辑、截帧、撤销重做、导出和重开。独立页以选段、定位、编辑和导出验证可见租约及首轮上下文。保存竞态用截留真实回执或受控传输夹具重现，以落盘工程与版本为准。更新工具行为时同步复核工具清单和阶段协议。
 
+### 相邻操作顺序
+
+以 `bb37405c601182b5e19c6a9a6d56bd7c37d89c20` 为对照，复测旧稿原路径换版、跨窗缓存覆盖、画布重开缺媒体、认证视口登记前回执、保存途中的快速切回、同数字跨世代编辑、画布冲突期间撤销和新版回写、蒙版冻结期 Enter，以及切会话后的第一条消息。[二轮评审](https://github.com/omnimux-ai/omnimux-client/pull/170#pullrequestreview-6008313178)
+
+- 旧稿没有内容摘要时，须验证已有定位符确实指向原素材版本。仅有路径或无法核验的版本号时保留缺失状态，等待明确重连。保存画布时保留同工作区同路径的 SHA-256 标记，原地替换后文件路由拒绝旧标记的请求。自动恢复只使用经核验的媒体字节，保留原素材 ID 与片段位置。优先校验共享缓存，再校验同工程已确认的持久化记录，最后向仍连接的同源上游取回并校验 SHA-256。
+- 保存响应扣留时断开并重连。新窗口视口登记前的回执返回可重试状态，登记后使用原领取证明完成同一 `requestId`。待同步的后续编辑在旧保存响应到达并快速切回后仍写入 Host。已读的 `revision` 与 `revisionEpoch` 共同保护 Agent 写入。采用同数字不同内容的 Host 版本后，沿用旧世代的写入须冲突，重读或显式携带正确世代后可重新规划。
+- 画布保存冲突后按当前 Store 的编辑和撤销结果重试。选择保留本地时合并并发提交的 Host 成片指针及回执。解决剪辑冲突期间，窗口级撤销、播放、蒙版钢笔 Enter 交回宿主。新会话首轮可在有界刷新中取得首份认证视口，确认会话后才投影剪辑上下文。
+- 两种导出入口分别预约高数字旧版和采用 Host 后的较低数字新版，两种上传顺序均验证新版最终获胜，旧成片保留自己的文件。Host 和 Workflow 先比较持久化导出世代，再保留同世代的版本与任务顺序校验。显式取消中止上传，Host 取消确认后拒绝该任务的迟到写入。只退出 Portal 时，已预约的任务仍可按原绑定完成。混合导出回归随 Clip 默认测试执行。
+
 ## 本地测试证据
 
-使用 CI 同版本 Node `24.18.1`。直接从 `HEAD` Git blob 调用仓库的 `inspectTestStandardChange`，9 个分派文件全部可解析，3 个可直接通过、6 个共需 13 条具名声明，不可声明项为 0。按 CI 的声明收集与匹配函数读入该草稿，13 条均与当前差异匹配，缺失及多余条目均为 0。CI 声明脚本的回归套件 `node --test scripts/verify-test-standard-declarations.test.mjs` 通过 25 项。`corepack pnpm --config.verify-deps-before-run=false --filter omnimux-clip test` 通过全部 202 项，Workflow 带 `--import ./test-setup.mjs` 的定向及画布事件测试通过 88 项，Hub 跟随测试通过 21 项，跳过均为 0。该次为工作树单测和静态审计，真实 CI、实机端到端、真实模型调用和人工视觉验收仍待各自证据。
+初版工作树的 Clip 单测通过 202 项，Workflow 定向测试通过 88 项，Hub 跟随测试通过 21 项。初版隔离桌面记录与首轮评审候选的构建入口已核对。后续候选各自记录验证的提交与构建指纹。
+
+三轮候选使用 Node `24.18.1` 执行 `node plugins/scripts/run-workspace-tests.mjs`，Hub 4,045/4,045、Workflow 3,580/3,580、Clip 258/258。`corepack pnpm --dir plugins run build:all` 构建 11 个插件，Workflow 的 Host、Canvas 与 Director 类型检查使用 Node `22.23.4`。Clip 默认测试含仓级媒体集成 23 项、混合导出 9 项。额外上传与封装回归通过 7 项。
+
+Chromium 编辑器套件通过 6 项，核对了加载中的候选脚本摘要、亮暗主题上的冻结行为和解除冻结后的实际保存。工作台和窗口认证使用测试夹具。媒体集成测试执行实际 HTTP、Store 与磁盘落盘，WAV 由 MediaBunny 解码，两段合成 H.264 MP4 由 FFmpeg 从实际输出路径完整解码。本轮未运行隔离 Electron、共享 Dev、真实模型、网关或独立人工视觉验收。
 
 ## 旧标准变更
 
@@ -81,3 +94,19 @@
   - 旧映射将 `clip_edit` 导向独立页。现从通用映射撤出，按目标租约执行，故预期 `null`。其他工作面工具映射全部保留。
 - `plugins/plugins/omnimux-clip/tests/e2e/canvas-export-upload.e2e.test.js` :: `e2e：旧 base64 JSON 通道对同尺寸导出仍被拒（防止回退到旧传输）`
   - 阶段 2 将合法 JSON 超限区分为 `413 / schema-too-large`，原断言要求通用 `400 / invalid-json`。保留同一个超限请求和导出目录为空的检查，再核对临时目录没有残留。相同字节走原始上传仍核对完整落盘。
+- `plugins/plugins/omnimux-clip/src/client/live-handoff.test.js` :: `adopting a new project at the same revision fences old commands and publishes its epoch`
+  - 原测试允许已经换代的编辑器执行缺少世代的旧命令。现在匹配新世代的命令执行一次，缺世代的旧命令也返回版本冲突。新用例通过真实请求核对同数字换代后的零派发，以及同目标复读和显式匹配后可以写入。
+- `plugins/plugins/omnimux-clip/src/tools.test.js` :: `dispatches the authenticated viewport revision before renewal and rechecks at claim`
+  - 在原 `409`、无可领命令和 `currentRevision: 3` 上，领取冲突附加 `currentRevisionEpoch: 0`。
+- `plugins/plugins/omnimux-clip/src/tools.test.js` :: `a lower adopted viewport supersedes a stale heartbeat and a delayed old receipt on the same lease`
+  - 原迟到回执仍返回自身的 r8。加入原请求复查，断言 r7 和未读新世代的 r3 均不派发。新世代 r3 请求明确携带 `baseRevisionEpoch: 1`，随后仍须通过领取和原结果校验。
+- `plugins/plugins/omnimux-clip/src/tools.test.js` :: `rechecks baseRevision at claim and protects the latest user edit`
+  - 原 `REVISION_CONFLICT`、无可领命令和 `currentRevision: 9` 保留，错误体增加 `currentRevisionEpoch: 0`。
+- `plugins/plugins/omnimux-workflow/src/canvas/bridge/persistPolicy.test.mjs` :: `源码契约：performSave / flush 用决策瞬间快照，reset 不会异步存空`
+  - 原断言要求保存流程始终用首次快照。当前画布遇 409 并取回最新工作区后重新捕获尚未同步的改动。退出时仍同步固定原画布快照。行为回归核对恢复写只包含当前图，切页后只写入原画布一次，新画布的内容和撤销历史独立。
+- `plugins/plugins/omnimux-workflow/src/canvas/bridge/persistPolicy.test.mjs` :: `源码契约：flushPendingSave 同步 capture，boot cleanup 先 beforeReset 再 reset`
+  - 退出归属改由 `flush` 模式标记，空图行为从捕获的图和 Store 操作确定。原有同步捕获及清理顺序保持断言。磁盘回归核对进入空画布、修改与撤销后保存的确为用户选择的空图。
+- `plugins/plugins/omnimux-workflow/src/canvas/bridge/workspaceSaveScope.test.mjs` :: `canvas autosave retries a Clip-only CAS race and the later local edit still saves`
+  - 原断言要求重试时先写旧编辑，再另存最新编辑。现在首个失败请求仍断言原版本和旧编辑，恢复请求直接核对最新编辑及同期成片，且只发两次 PUT。
+- `plugins/plugins/omnimux-workflow/src/canvas/bridge/workspaceSaveScope.test.mjs` :: `a queued close flush retains the Clip graph before and during the CAS recovery read`
+  - 保留读恢复版本前后两个切页时点和首个失败请求的断言。恢复后只写一次退出前捕获的最新原画布，核对同期成片与下游连线，以及目标画布的内容和待保存状态。

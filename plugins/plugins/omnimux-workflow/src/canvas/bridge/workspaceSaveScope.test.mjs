@@ -389,13 +389,13 @@ test('canvas autosave retries a Clip-only CAS race and the later local edit stil
   h.env.save = normalSave;
   pending.resolve({ ok: false, status: 409, body: { current: 4 } }); await settle();
   assert.deepEqual(h.env.calls.map(({ payload }) => payload.expectedVersion), [3, 4]);
-  assert.equal(h.env.calls[1].payload.nodes[0].data.prompt, 'first edit');
+  assert.equal(h.env.calls[0].payload.nodes[0].data.prompt, 'first edit');
+  assert.equal(h.env.calls[1].payload.nodes[0].data.prompt, 'newer edit');
+  assert.equal(h.env.calls[1].payload.nodes[1].data.outputVideoUrl, exportUrl);
   assert.equal(h.state.nodes[0].data.prompt, 'newer edit');
   assert.equal(h.state.nodes[2].data.mediaUrl, exportUrl);
   h.autosave(); await settle();
-  assert.equal(h.env.calls[2].payload.expectedVersion, 5);
-  assert.equal(h.env.calls[2].payload.nodes[0].data.prompt, 'newer edit');
-  assert.equal(h.env.calls[2].payload.nodes[1].data.outputVideoUrl, exportUrl);
+  assert.equal(h.env.calls.length, 2, 'the retry already saved the latest edit');
 });
 
 test('a detached flush rebases a concurrent Clip write without touching the new canvas', async () => {
@@ -434,9 +434,9 @@ test('a queued close flush retains the Clip graph before and during the CAS reco
     pendingRead.resolve({ ok: true, body: { workspace: remote } });
     await settle();
     assert.deepEqual(reads, ['A']);
-    assert.deepEqual(h.env.calls.map(({ wsId, payload }) => [wsId, payload.expectedVersion]), [['A', 3], ['A', 4], ['A', 5]]);
-    assert.equal(h.env.calls[1].payload.nodes[0].data.prompt, 'A older');
-    const final = h.env.calls[2].payload;
+    assert.deepEqual(h.env.calls.map(({ wsId, payload }) => [wsId, payload.expectedVersion]), [['A', 3], ['A', 4]]);
+    assert.equal(h.env.calls[0].payload.nodes[0].data.prompt, 'A older');
+    const final = h.env.calls[1].payload;
     assert.equal(final.nodes[0].data.prompt, 'A latest');
     assert.equal(final.nodes[1].data.draftRevision, 5);
     assert.equal(final.nodes[1].data.outputVideoUrl, exportUrl);
