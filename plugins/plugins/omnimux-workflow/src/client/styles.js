@@ -622,7 +622,7 @@ export const WORKFLOW_CSS = `
   stroke: var(--dsw-alias-brand-purple, #cfc7ff);
 }
 .omnimux-workflow-canvas-loading-label {
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.4;
   letter-spacing: .05em;
   color: var(--dsw-alias-label-tertiary, #9aa0ae);

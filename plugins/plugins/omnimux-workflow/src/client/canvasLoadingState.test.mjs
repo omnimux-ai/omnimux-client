@@ -1,7 +1,7 @@
 /**
  * 加载态视觉契约（AC-1 / AC-2）：
  * 画布中央一道 1.6px 细弧（SVG，viewBox 32x32，r=14，dasharray 24 64）
- * + 下方一行 12.5px 说明文字；单一 1.35s 线性旋转动效 + 280ms 整体淡入。
+ * + 下方一行 13px 说明文字；单一 1.35s 线性旋转动效 + 280ms 整体淡入。
  *
  * 宿主（CanvasBridge / CanvasTab）共用 CanvasLoadingState 组件；画布岛
  * （canvas/App.tsx）用同一套 DOM 结构与 workbench-theme.css 实现——两棵
@@ -88,13 +88,13 @@ describe('宿主加载态：CanvasLoadingState 单一细弧 + 一行说明', () 
     assert.doesNotMatch(hostLoader, /style=\{\{/)
   })
 
-  it('CSS：1.35s 线性无限旋转 + 280ms 淡入 + 12.5px/.05em 说明文字', () => {
+  it('CSS：1.35s 线性无限旋转 + 280ms 淡入 + 13px/.05em 说明文字', () => {
     const spinner = extractRule(WORKFLOW_CSS, '.omnimux-workflow-canvas-loading-spinner')
     assert.match(spinner, /animation:\s*omnimux-workflow-canvas-loading-spin 1\.35s linear infinite/)
     const loading = extractRule(WORKFLOW_CSS, '.omnimux-workflow-canvas-loading')
     assert.match(loading, /animation:\s*omnimux-workflow-canvas-loading-fade 280ms/)
     const label = extractRule(WORKFLOW_CSS, '.omnimux-workflow-canvas-loading-label')
-    assert.match(label, /font-size:\s*12\.5px/)
+    assert.match(label, /font-size:\s*13px/)
     assert.match(label, /letter-spacing:\s*\.05em/)
     assert.match(label, /color:\s*var\(--dsw-alias-label-tertiary,\s*#[0-9a-f]{3,8}\)/)
     const arc = extractRule(WORKFLOW_CSS, '.omnimux-workflow-canvas-loading-arc')

@@ -219,13 +219,14 @@ export function RivalTimelineRow(props) {
             link on its own line; expanding is a local state change, no extra
             fetch. The link sits outside the clamped <p> so it stays visible. */}
         {body && (bodyOverflows || bodyExpanded) ? (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="xs"
             className="omnimux-rival-timeline-expand"
             onClick={(event) => { stop(event); setBodyExpanded((v) => !v) }}
           >
             {t(bodyExpanded ? 'rivalTimeline.body.collapse' : 'rivalTimeline.body.expand')}
-          </button>
+          </Button>
         ) : null}
 
         {hasMediaBlock ? (
