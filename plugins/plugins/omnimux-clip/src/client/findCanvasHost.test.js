@@ -20,6 +20,14 @@ test('findCanvasHost: returns the first visible canvas tab', () => {
   assert.equal(host, shown)
 })
 
+test('findCanvasHost: targets the workspace bound to the Portal', () => {
+  const first = { ...fakeEl(), getAttribute: (name) => name === 'data-canvas-workspace-id' ? 'ws_first' : null }
+  const bound = { ...fakeEl(), getAttribute: (name) => name === 'data-canvas-workspace-id' ? 'ws_bound' : null }
+  const root = { querySelectorAll: () => [first, bound] }
+  assert.equal(findCanvasHost(root, 'ws_bound'), bound)
+  assert.equal(findCanvasHost(root, 'ws_missing'), null)
+})
+
 test('findCanvasHost: skips tiny or hidden nodes and returns null when none fit', () => {
   const tiny = fakeEl({ width: 10, height: 10 })
   const hidden = fakeEl({ visible: false, width: 800, height: 600 })

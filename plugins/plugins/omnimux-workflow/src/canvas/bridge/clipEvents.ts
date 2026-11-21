@@ -5,6 +5,8 @@
  * payload shapes are duplicated here so the island stays decoupled.
  */
 
+import { v4 as uuidv4 } from 'uuid';
+
 export const OMNIMUX_CLIP_OPEN = 'omnimux-clip-open';
 export const OMNIMUX_CLIP_SAVE = 'omnimux-clip-save';
 export const OMNIMUX_CLIP_CLOSE = 'omnimux-clip-close';
@@ -82,13 +84,16 @@ export interface TimelineSchema {
   }>;
 }
 
-export interface OpenClipEditorPayload {
-  source: 'canvas' | 'sidebar' | 'agent';
-  nodeId?: string;
-  workspaceId?: string;
+export interface CanvasClipBinding {
+  workspaceId: string;
+  nodeId: string;
+  projectId: string;
+}
+
+export interface OpenClipEditorPayload extends CanvasClipBinding {
+  source: 'canvas';
   nodeTitle?: string;
   draftSchema?: TimelineSchema;
-  projectId?: string;
   upstreamInputs?: {
     videos: Array<{ path: string; name: string; durationMs?: number; url?: string }>;
     audios: Array<{ path: string; name: string; durationMs?: number; url?: string }>;
@@ -98,10 +103,8 @@ export interface OpenClipEditorPayload {
   canvasConfig?: Partial<CanvasConfig>;
 }
 
-export interface SaveClipEditorPayload {
-  nodeId?: string;
+export interface SaveClipEditorPayload extends CanvasClipBinding {
   schema?: TimelineSchema;
-  projectId?: string;
   createDownstreamNode?: boolean;
   output?: {
     videoPath: string;
@@ -141,32 +144,43 @@ export interface VideoCompositionNodeData {
   errorMessage?: string;
 }
 
-export function isSaveClipEditorPayload(payload: unknown): payload is SaveClipEditorPayload {
+export function newCanvasClipProjectId(): string {
+  return `clip_node_${uuidv4()}`;
+}
+
+export function isClipProjectId(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value);
+}
+
+// Keep this wire guard in sync with omnimux-clip/src/client/clip-events.js.
+export function isCanvasClipBinding(payload: unknown): payload is CanvasClipBinding {
   if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) return false;
-  const value = payload as Record<string, unknown>;
-  if (value.nodeId != null && typeof value.nodeId !== 'string') return false;
-  if (value.projectId != null && typeof value.projectId !== 'string') return false;
+  const { workspaceId, nodeId, projectId } = payload as Record<string, unknown>;
+  return typeof workspaceId === 'string' && /^ws_[A-Za-z0-9_-]{1,128}$/.test(workspaceId)
+    && typeof nodeId === 'string' && /^[^\s/\\\x00-\x1f\x7f]{1,256}$/.test(nodeId)
+    && isClipProjectId(projectId);
+}
+
+export function isSaveClipEditorPayload(payload: unknown): payload is SaveClipEditorPayload {
+  if (!isCanvasClipBinding(payload)) return false;
+  const value = payload as unknown as Record<string, unknown>;
   if (value.schema != null && (typeof value.schema !== 'object' || Array.isArray(value.schema))) return false;
   if (value.output != null) {
-    if (typeof value.output !== 'object' || value.output === null) return false;
-    if (typeof (value.output as { videoPath?: unknown }).videoPath !== 'string') return false;
+    if (typeof value.output !== 'object' || Array.isArray(value.output)) return false;
+    const { videoPath } = value.output as { videoPath?: unknown };
+    if (typeof videoPath !== 'string' || !videoPath.trim()) return false;
   }
   return true;
 }
 
-export function isCloseClipEditorPayload(payload: unknown): payload is { nodeId?: string } {
-  if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) return false;
-  const value = payload as Record<string, unknown>;
-  return value.nodeId == null || typeof value.nodeId === 'string';
-}
+export const isCloseClipEditorPayload = isCanvasClipBinding;
 
 export function isProgressClipEditorPayload(
   payload: unknown,
-): payload is { nodeId?: string; status?: string; renderProgress?: number } {
-  if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) return false;
-  const value = payload as Record<string, unknown>;
-  if (value.nodeId != null && typeof value.nodeId !== 'string') return false;
-  if (value.status != null && typeof value.status !== 'string') return false;
-  if (value.renderProgress != null && typeof value.renderProgress !== 'number') return false;
+): payload is CanvasClipBinding & { status?: VideoCompositionStatus; renderProgress?: number } {
+  if (!isCanvasClipBinding(payload)) return false;
+  const { status, renderProgress } = payload as CanvasClipBinding & { status?: unknown; renderProgress?: unknown };
+  if (status !== undefined && !['idle', 'editing', 'rendering', 'completed', 'error'].some((value) => value === status)) return false;
+  if (renderProgress !== undefined && (typeof renderProgress !== 'number' || !Number.isFinite(renderProgress))) return false;
   return true;
 }

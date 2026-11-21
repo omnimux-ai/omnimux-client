@@ -102,12 +102,9 @@ export async function loadAllPluginSurfaces(rootDir = process.cwd()) {
             const clipTools = mod.createClipTools({
               store: {
                 load: () => ({ schema: { canvasConfig: { durationMs: 5000 }, tracks: [] } }),
-                patchPlayback: () => {},
-                list: () => [],
+                list: () => ({ projects: [], unavailableProjects: [], unavailableCount: 0 }),
                 create: (id, schema) => ({ id, schema, updatedAt: Date.now() }),
-                paths: { snapshotsDir: mockCtx.workspaceDir, exportsDir: mockCtx.workspaceDir },
               },
-              overlayReady: () => false, // 正常模拟未挂载
             });
             for (const t of clipTools) mockCtx.tools.register(t);
             dynamicSuccess = true;

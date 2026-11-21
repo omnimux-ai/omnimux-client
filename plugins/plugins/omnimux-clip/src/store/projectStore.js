@@ -19,6 +19,9 @@ export function unwrapProjectEnvelope(parsed, id) {
     : isTimelineSchema(raw) ? raw
     : null
   if (!schema) {
+    if (isOpenReelProject(raw.schema) || isOpenReelProject(raw)) {
+      throw ClipDomainError.openReelMigrationRequired(id)
+    }
     throw ClipDomainError.invalidJson(`project ${id} is missing a TimelineSchema`)
   }
   const history = raw.history && typeof raw.history === 'object'
@@ -46,6 +49,12 @@ function isTimelineSchema(value) {
   return Array.isArray(rec.tracks)
 }
 
+function isOpenReelProject(value) {
+  return typeof value?.id === 'string'
+    && Array.isArray(value.timeline?.tracks)
+    && Array.isArray(value.mediaLibrary?.items)
+}
+
 /**
  * Host-side project JSON store. One file per project under `projects/`.
  * A `clip_edit` call is one undo step (the previous schema is pushed to `history.past`).
@@ -61,15 +70,19 @@ export function createProjectStore(deps) {
 
   function load(id) {
     const file = projectJsonPath(paths, id)
-    if (!fs.existsSync(file)) {
+    let raw
+    try {
+      raw = fs.readFileSync(file, 'utf8')
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw ClipDomainError.projectUnreadable(id)
+      if (id.startsWith('clip_node_')) throw ClipDomainError.projectNotMaterialized(id)
       throw ClipDomainError.notFound(`project not found: ${id}`)
     }
     let parsed
     try {
-      parsed = JSON.parse(fs.readFileSync(file, 'utf8'))
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      throw ClipDomainError.invalidJson(`project ${id} is not valid JSON: ${message}`)
+      parsed = JSON.parse(raw)
+    } catch {
+      throw ClipDomainError.invalidJson(`project ${id} is not valid JSON`)
     }
     const envelope = unwrapProjectEnvelope(parsed, id)
     if (!envelope.schema.projectId) envelope.schema.projectId = id
@@ -140,57 +153,41 @@ export function createProjectStore(deps) {
   }
 
   /**
-   * Patch playhead / playing flag without creating an undo step.
-   * @param {string} id
-   * @param {{ playheadMs?: number, isPlaying?: boolean }} patch
-   */
-  function patchPlayback(id, patch) {
-    const current = load(id)
-    return save(id, current.schema, {
-      recordUndo: false,
-      playheadMs: patch.playheadMs ?? current.playheadMs,
-      isPlaying: patch.isPlaying ?? current.isPlaying,
-    })
-  }
-
-  /**
-   * List all stored projects sorted by updatedAt desc.
+   * Summarize readable files and report incompatible or invalid entries.
    * @param {{ limit?: number }} [opts]
    */
   function list(opts = {}) {
     const limit = Math.max(1, Math.min(100, opts.limit || 50))
-    if (!fs.existsSync(paths.projectsDir)) return []
-    try {
-      const files = fs.readdirSync(paths.projectsDir)
-      const listItems = []
-      for (const file of files) {
+    const projects = []
+    const unavailableProjects = []
+    if (fs.existsSync(paths.projectsDir)) {
+      for (const file of fs.readdirSync(paths.projectsDir).sort()) {
         if (!file.endsWith('.json')) continue
         const id = file.slice(0, -5)
         try {
           const envelope = load(id)
-          const tracks = Array.isArray(envelope.schema?.tracks) ? envelope.schema.tracks : []
-          let totalClips = 0
-          for (const tr of tracks) {
-            if (Array.isArray(tr.clips)) totalClips += tr.clips.length
-          }
-          listItems.push({
+          const tracks = envelope.schema.tracks
+          projects.push({
             id,
-            projectName: envelope.schema?.name || envelope.schema?.projectId || id,
+            projectName: envelope.schema.name || envelope.schema.projectId || id,
             updatedAt: envelope.updatedAt || 0,
-            durationMs: envelope.schema?.canvasConfig?.durationMs || 0,
-            aspectRatio: envelope.schema?.canvasConfig?.aspectRatio || '16:9',
+            durationMs: envelope.schema.canvasConfig?.durationMs || 0,
+            aspectRatio: envelope.schema.canvasConfig?.aspectRatio || '16:9',
             trackCount: tracks.length,
-            clipCount: totalClips,
+            clipCount: tracks.reduce((count, track) => count + (Array.isArray(track?.clips) ? track.clips.length : 0), 0),
           })
-        } catch {
-          // ignore corrupted files
+        } catch (error) {
+          if (!(error instanceof ClipDomainError)) throw error
+          unavailableProjects.push({ id, code: error.code, message: error.message })
         }
       }
-      return listItems.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, limit)
-    } catch {
-      return []
+    }
+    return {
+      projects: projects.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, limit),
+      unavailableProjects: unavailableProjects.slice(0, limit),
+      unavailableCount: unavailableProjects.length,
     }
   }
 
-  return { load, save, create, exists, patchPlayback, list, paths }
+  return { load, save, create, exists, list, paths }
 }

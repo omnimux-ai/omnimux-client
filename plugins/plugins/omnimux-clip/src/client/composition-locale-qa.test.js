@@ -12,7 +12,7 @@ import { createStageStore } from './stage-store.js'
 const require = createRequire(import.meta.url)
 const hubRequire = createRequire(new URL('../../../omnimux/package.json', import.meta.url))
 const { JSDOM } = hubRequire('jsdom')
-const dom = new JSDOM('<!doctype html><div id="root"></div><div data-omnimux-canvas-tab></div>', { url: 'http://localhost/' })
+const dom = new JSDOM('<!doctype html><div id="root"></div><div data-omnimux-canvas-tab data-canvas-workspace-id="ws_test"></div>', { url: 'http://localhost/' })
 Object.assign(globalThis, { window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, HTMLStyleElement: dom.window.HTMLStyleElement, CustomEvent: dom.window.CustomEvent, IS_REACT_ACT_ENVIRONMENT: true })
 const host = document.querySelector('[data-omnimux-canvas-tab]')
 host.getBoundingClientRect = () => ({ width: 900, height: 600 })
@@ -123,7 +123,7 @@ test('QA: saved hostbar status changes language without saving again', async () 
 test('QA: return clears active session but preserves portal editor and translated reopen', async () => {
   fixture.mounts=0; fixture.unmounts=0; fixture.close=[]
   const stage=createStageStore(()=>({}))
-  stage.openFromCanvas({nodeId:'A'})
+  stage.openFromCanvas({workspaceId:'ws_test',nodeId:'A',projectId:'clip_node_a'})
   const ui=await render(ClipStage,'zh',{stage})
   try {
     const editor=document.querySelector('#editor-state')
@@ -135,7 +135,7 @@ test('QA: return clears active session but preserves portal editor and translate
     assert.equal(document.querySelector('.omnimux-clip-stage').style.display,'none')
     assert.deepEqual(fixture.close,[{nodeId:'A'}])
     await act(async()=>ui.lang.set('en'))
-    await act(async()=>stage.openFromCanvas({nodeId:'A'}))
+    await act(async()=>stage.openFromCanvas({workspaceId:'ws_test',nodeId:'A',projectId:'clip_node_a'}))
     assert.equal(document.querySelector('#editor-state'),editor)
     assert.equal(document.querySelector('.omnimux-clip-stage-close-btn').textContent,'Exit editor')
     assert.equal(fixture.mounts,1)
@@ -233,7 +233,7 @@ test('QA round 2: five canvas return/reopen cycles retain the same portal editor
   fixture.unmounts = 0
   fixture.close = []
   const stage = createStageStore(() => ({}))
-  stage.openFromCanvas({ nodeId: 'repeat' })
+  stage.openFromCanvas({ workspaceId: 'ws_test', nodeId: 'repeat', projectId: 'clip_node_repeat' })
   const ui = await render(ClipStage, 'zh', { stage })
   try {
     const editor = document.querySelector('#editor-state')
@@ -243,7 +243,7 @@ test('QA round 2: five canvas return/reopen cycles retain the same portal editor
       assert.equal(stage.getSnapshot(), false)
       assert.equal(document.querySelector('.omnimux-clip-stage').style.display, 'none')
       await act(async () => ui.lang.set(cycle % 2 ? 'zh' : 'en'))
-      await act(async () => stage.openFromCanvas({ nodeId: 'repeat' }))
+      await act(async () => stage.openFromCanvas({ workspaceId: 'ws_test', nodeId: 'repeat', projectId: 'clip_node_repeat' }))
       assert.equal(document.querySelector('#editor-state'), editor)
       assert.ok(host.contains(editor))
       const button = document.querySelector('.omnimux-clip-stage-close-btn')

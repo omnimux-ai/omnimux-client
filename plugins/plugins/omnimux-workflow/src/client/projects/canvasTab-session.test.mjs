@@ -29,7 +29,7 @@ test('源码契约：画布目标只从 WorkspaceContextStore 解析', () => {
 test('源码契约：注册 Context Contributor 携带目标 canvas workspaceId', () => {
   assert.match(src, /registerContextContributor\(CANVAS_TAB_ID/)
   assert.match(src, /kind:\s*'canvas'/)
-  assert.match(src, /extra:\s*\{\s*workspaceId:\s*targetWorkspaceId\s*\}/)
+  assert.match(src, /extra:\s*\{\s*workspaceId:\s*targetWorkspaceId[,\s}]/)
   assert.match(src, /CANVAS_PAGE_ID/)
 })
 

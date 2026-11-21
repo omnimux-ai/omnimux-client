@@ -118,13 +118,13 @@ describe('Surface follow · 决策', () => {
 })
 
 describe('Surface follow · 宿主挂载', () => {
-  function harness({ settings = null, surface = { panelOpen: true, tabId: 'omnimux:media-viewer' } } = {}) {
+  function harness({ settings = null, view = null, surface = { panelOpen: true, tabId: 'omnimux:media-viewer' } } = {}) {
     const handlers = new Map()
     const ctx = { on: (ev, fn) => { handlers.set(ev, fn); return () => handlers.delete(ev) } }
     const rpcCalls = []
     let current = surface
     const mailbox = {
-      getActiveView: () => ({ ok: true, uiContext: { sessionId: 's1', surface: current } }),
+      getActiveView: () => ({ ok: true, uiContext: { sessionId: 's1', surface: current, view } }),
       sendRpc: async (payload) => { rpcCalls.push(payload); current = { ...current, tabId: payload.tabId }; return { ok: true, applied: true } },
     }
     mountSurfaceFollow(ctx, { mailbox, getSettings: () => settings })
@@ -142,6 +142,34 @@ describe('Surface follow · 宿主挂载', () => {
     assert.equal(h.rpcCalls[0].tabId, 'omnimux-workflow:canvas')
     assert.equal(h.rpcCalls[0].auto, true)
     assert.equal('view' in h.rpcCalls[0], false, '无子视图请求时不带 view 字段')
+  })
+
+  it('剪辑查询与未接通的实时工具在任何工作面都不触发跟随', async () => {
+    const h = harness()
+    for (const name of ['list', 'get', 'diagnostics', 'open', 'view', 'snapshot', 'export']) {
+      await h.run(`default_api:clip_${name}`)
+    }
+    assert.equal(h.rpcCalls.length, 0)
+    await h.run('clip_edit')
+    assert.equal(h.rpcCalls[0]?.tabId, 'omnimux-clip:studio')
+  })
+
+  it('保留已绑定的画布剪辑工作面，未绑定或跨工作区提示仍走独立跟随', async () => {
+    const surface = { panelOpen: true, tabId: 'omnimux-workflow:canvas' }
+    const clip = { mode: 'canvas', workspaceId: 'ws_test', nodeId: 'node_test', projectId: 'clip_node_test' }
+    const view = { kind: 'canvas', extra: { workspaceId: 'ws_test', clip } }
+    const bound = harness({ surface, view })
+    await bound.run('clip_list')
+    await bound.run('clip_get')
+    await bound.run('clip_diagnostics')
+    await bound.run('clip_edit')
+    assert.equal(bound.rpcCalls.length, 0)
+
+    for (const otherView of [null, { ...view, extra: { ...view.extra, workspaceId: 'ws_other' } }]) {
+      const unbound = harness({ surface, view: otherView })
+      await unbound.run('clip_edit')
+      assert.equal(unbound.rpcCalls[0]?.tabId, 'omnimux-clip:studio')
+    }
   })
 
   it('产品库工具自动跟随到资产库，RPC payload 带上产品库过滤', async () => {

@@ -41,6 +41,39 @@ function genNode(id = 'gen1', { pinned = true } = {}) {
 
 const edge = { id: 'e1', source: 'src1', target: 'gen1', selected: false };
 
+test('two pastes give a video composition new projects and preserve the original edit and output', () => {
+  const output = {
+    schema: { id: 'native-original', timeline: { tracks: [] }, mediaLibrary: { items: [] } },
+    outputVideoUrl: '/exports/original.mp4', outputRevision: '12:42',
+    thumbnailUrl: '/exports/thumb.png', outputThumbnailUrl: '/exports/thumb.png',
+    outputDurationMs: 1000, outputWidth: 1280, outputHeight: 720, durationText: '0:01',
+    renderProgress: 100, errorMessage: 'old error',
+  };
+  const composition = {
+    id: 'original', type: 'video_composition', position: { x: 320, y: 0 }, selected: true,
+    data: { projectId: 'clip_node_original', title: 'Original', schemaVersion: '1.0', status: 'completed', ...output },
+  };
+  const original = structuredClone(composition);
+  const input = { id: 'input', source: 'src1', target: 'original' };
+  const clipboard = copyNodesToClipboard([sourceNode(), composition], [input]);
+  const copies = [pasteFromClipboard(clipboard), pasteFromClipboard(clipboard)];
+  const ids = new Set();
+  for (const pasted of copies) {
+    const copy = pasted.nodes.find(({ type }) => type === 'video_composition');
+    assert.notEqual(copy.id, original.id);
+    assert.match(copy.data.projectId, /^clip_node_/);
+    assert.notEqual(copy.data.projectId, original.data.projectId);
+    assert.equal(copy.data.title, original.data.title);
+    assert.equal(copy.data.schemaVersion, original.data.schemaVersion);
+    assert.equal(copy.data.status, 'idle');
+    for (const key of Object.keys(output)) assert.equal(Object.hasOwn(copy.data, key), false, key);
+    assert.equal(pasted.edges[0].target, copy.id);
+    ids.add(copy.data.projectId);
+  }
+  assert.equal(ids.size, 2);
+  assert.deepEqual(composition, original);
+});
+
 test('粘贴把 slotBindings 的 source/edge id 重映射到克隆出的新节点/新边（Issue #4039）', () => {
   const nodes = [sourceNode(), genNode()];
   const clipboard = copyNodesToClipboard(nodes, [edge]);

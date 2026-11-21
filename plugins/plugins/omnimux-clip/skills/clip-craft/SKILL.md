@@ -7,19 +7,15 @@ description: "OmniMux Clip 专业剪辑判断层。用于剪视频、修时间�
 
 本 Skill 只写**剪辑判断**。工具目录以 `clip_*` 为准，不要在回复里复述参数表。
 
-时间约定：工具入参用**秒**；工程真源是毫秒。先 `clip_get` 再动手，不要凭记忆报时长。
+工具时间用秒，当前 Host 旧格式 `TimelineSchema` 内部用毫秒。先用 `clip_get` 核对已保存的时间轴，再按实际时长规划。
 
 ## 工作循环
 
-0. 先拿项目编号：`clip_list` 看已有工程；没有合适的就 `clip_create` 新建。绝不凭记忆编 projectId。
-1. `clip_get`（`view=summary`，必要时 `tracks` / `clips` / `full`）摸清轨道与时长。
-2. 把一次意图收成**一条** `clip_edit`（一个 Undo 步）。`description` 写人话，如「切掉片头 1.2s 静音」。
-3. 大改前 `validateOnly: true` 预演；预演通过后，用户已明确授权的精确操作直接落盘，不重复确认。预演暴露新范围或高风险影响时才追问。
-4. 改完立刻 `clip_diagnostics`。有 `timeline_gap` / `clip_overlap` / `media_missing` 就修，不要先导出。
-5. 编辑器已打开时 `clip_snapshot` 抽 2–3 帧做视觉自检（字幕是否出安全区、花字是否挡脸、切点是否跳）。
-6. 用户要成片再 `clip_export`。不要把预览当交付。
-
-`clip_view` / `clip_snapshot` 在 overlay 未挂载时会抛 `PREVIEW_NOT_READY`。先试一次 `clip_open` 拉起编辑界面；它抛 `ui-unavailable` 时才请用户打开「视频剪辑」侧边栏面板。不要重试空转，也不要把 `{ ok: false }` 当成功。
+1. 从 `clip_list` 或工作流快照取实际 `projectId`。`clip_list` 的 `unavailableProjects` 会标记待迁移或读失败的文件。
+2. `clip_get` 查看已保存的旧档，按需要使用 `summary`、`tracks`、`clips` 或 `full`。仅在用户要求处理旧档时用 `clip_create` 或 `clip_edit`。
+3. 每次 `clip_edit` 对应旧档的一步保存历史。复杂变更先 `validateOnly: true`；成功落盘后用 `clip_diagnostics` 查空洞、重叠或素材缺失。
+4. 用户正在画布 Portal 或独立 Tab 剪辑时，`clip_get` 只能读到已支持的落盘工程。`project-not-materialized` 表示画布工程未保存到 Host，`openreel-migration-required` 表示原生文件待迁移。根据实际错误说明哪一份工程可查。
+5. `clip_open`、`clip_view`、`clip_snapshot`、`clip_export` 目前没有右侧实时通道，读到旧档后返回 `ui-unavailable`。播放、视觉自检和用户明确要求的导出走右侧界面，切 Tab 后重复调用不会建立通道。
 
 ## 时间轴感知
 
@@ -39,7 +35,7 @@ description: "OmniMux Clip 专业剪辑判断层。用于剪视频、修时间�
 - 花字预设走 caption：描边要够，浅底深描边 / 深底浅描边。不要纯白无描边扣在天空上。
 - 竖屏 9:16 字幕放中下，避开平台原生胶囊与进度条（大约底边 12–18%）。
 - 一句一条；单条时长跟口播，不要把整段旁白糊在一条 10s 字幕上。
-- `set_text` / `add_text` / `set_subtitle_style` 改的是 text 轨。改完 snapshot 一眼。
+- `set_text` / `add_text` / `set_subtitle_style` 调整旧档的 text 轨。视觉检查使用右侧预览，核对遮挡与边距。
 
 ## 自动切片策略
 

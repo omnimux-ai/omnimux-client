@@ -207,7 +207,7 @@ export function createClipDispatcher(deps) {
   const paths = deps.paths
   const fs = deps.fs ?? DEFAULT_FS
   ensureClipDirs(paths)
-  const store = deps.store ?? createProjectStore({ paths, fs })
+  const store = deps.store ?? createProjectStore({ paths, fs: deps.fs })
 
   /**
    * @param {{ method?: string, url?: string, body?: unknown }} req
@@ -228,8 +228,7 @@ export function createClipDispatcher(deps) {
       }
 
       if (method === 'GET' && (path === `${CLIP_API_PREFIX}/projects` || path === '/projects')) {
-        const items = store.list()
-        return { status: 200, body: { projects: items } }
+        return { status: 200, body: store.list() }
       }
 
       const projectMatch = path.match(/^(?:\/omnimux-clip\/api)?\/projects\/([^/]+)(?:\/(save-export))?$/)

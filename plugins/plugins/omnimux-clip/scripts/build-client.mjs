@@ -136,6 +136,9 @@ const openreelAliasPlugin = {
 const result = await esbuild.build({
   absWorkingDir: root,
   entryPoints: ['src/client/index.js'],
+  // OpenReel reports save receipts without upload identity. Capture the request
+  // in this bundle's fetch binding and leave the shared window fetch untouched.
+  inject: [join(root, 'src/client/export-canvas-mode.js')],
   bundle: true,
   format: 'cjs',
   platform: 'browser',
