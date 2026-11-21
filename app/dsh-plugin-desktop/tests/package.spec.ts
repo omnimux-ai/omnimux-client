@@ -657,7 +657,7 @@ describe('published package surface', () => {
     expect(complete).toBeGreaterThan(rejectUnhealthy)
     expect(failedStartup).toBeGreaterThan(complete)
     expect(main.slice(complete, failedStartup)).toMatch(
-      /if \(!recoveryModeRequested && !safeModeRequested\) \{\s+setImmediate\(\(\) => \{\s+void desktopAnalytics\.reportLaunch\(installationIdentity,/u,
+      /if \(!recoveryModeRequested && !safeModeRequested\) \{\s+runtime\.reportLaunchWhenVisible\(canReport => desktopAnalytics\.reportLaunch\(installationIdentity,[\s\S]*?\}, canReport\)\)/u,
     )
     expect(main.match(/desktopAnalytics\.reportLaunch\(/gu)).toHaveLength(1)
   })

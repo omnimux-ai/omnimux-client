@@ -138,6 +138,26 @@ describe('DesktopAnalyticsClient', () => {
     expect(request).toHaveBeenCalledTimes(3)
   })
 
+  it.each([false, true])('defers sending after visibility is lost while preparing the first-run claim (claim started: %s)', async claimStarted => {
+    const userDataDir = tempUserData()
+    const identity = await getOrCreateDesktopInstallationIdentity(userDataDir)
+    const marker = join(userDataDir, FIRST_RUN_REPORTED_RELATIVE_PATH)
+    const request = vi.fn(async (_url: string, _init: RequestInit) => new Response(null, { status: 204 }))
+    const client = new DesktopAnalyticsClient({ ...DESTINATION, userDataDir, request })
+    const canReport = vi.fn(() => false).mockReturnValueOnce(true)
+    if (claimStarted) canReport.mockReturnValueOnce(true)
+
+    await expect(client.reportLaunch(identity, LAUNCH, canReport)).resolves.toBe(false)
+    expect(request).not.toHaveBeenCalled()
+    expect(existsSync(marker)).toBe(claimStarted)
+
+    canReport.mockReturnValue(true)
+    await expect(client.reportLaunch(identity, LAUNCH, canReport)).resolves.toBe(true)
+    expect(request).toHaveBeenCalledOnce()
+    expect(readFileSync(marker, 'utf8')).toBe('1\n')
+    expect(JSON.parse(String(request.mock.calls[0]![1].body)).payload.data.is_first_launch).toBe(true)
+  })
+
   it('honors an existing first-run marker even when the old installation ID was missing', async () => {
     const userDataDir = tempUserData()
     const identity = await getOrCreateDesktopInstallationIdentity(userDataDir)
@@ -161,7 +181,7 @@ describe('DesktopAnalyticsClient', () => {
     const logger = { info: vi.fn(), error: vi.fn() }
     const client = new DesktopAnalyticsClient({ ...DESTINATION, userDataDir: unavailableUserDataDir, request, logger })
 
-    await expect(client.reportLaunch(identity, LAUNCH)).resolves.toBeUndefined()
+    await expect(client.reportLaunch(identity, LAUNCH)).resolves.toBe(true)
 
     expect(request).not.toHaveBeenCalled()
     expect(logger.error).toHaveBeenCalledExactlyOnceWith('desktop-analytics: desktop_app_launch failed (reason=first-launch-marker)')
@@ -257,7 +277,7 @@ describe('DesktopAnalyticsClient', () => {
     })
     const client = new DesktopAnalyticsClient({ ...DESTINATION, userDataDir, request, logger })
 
-    await expect(client.reportLaunch(identity, LAUNCH)).resolves.toBeUndefined()
+    await expect(client.reportLaunch(identity, LAUNCH)).resolves.toBe(true)
     await client.reportLaunch(identity, LAUNCH)
     expect(request).toHaveBeenCalledTimes(1)
     expect(markersAtSend).toEqual([true])
@@ -294,7 +314,7 @@ describe('DesktopAnalyticsClient', () => {
     await vi.advanceTimersByTimeAsync(2999)
     expect(signal.aborted).toBe(false)
     await vi.advanceTimersByTimeAsync(1)
-    await expect(completion).resolves.toBeUndefined()
+    await expect(completion).resolves.toBe(true)
     expect(signal.aborted).toBe(true)
     expect(request).toHaveBeenCalledTimes(1)
     expect(logger.error).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('desktop_app_launch failed (reason=timeout'))

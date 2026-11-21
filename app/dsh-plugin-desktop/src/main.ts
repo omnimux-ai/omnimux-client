@@ -2055,13 +2055,11 @@ async function start(): Promise<void> {
     }
     lifecycleRecorder.completeStartup(startupStage, rendererReport)
     if (!recoveryModeRequested && !safeModeRequested) {
-      setImmediate(() => {
-        void desktopAnalytics.reportLaunch(installationIdentity, {
-          appVersion,
-          platform: process.platform,
-          osVersion: process.getSystemVersion(),
-        })
-      })
+      runtime.reportLaunchWhenVisible(canReport => desktopAnalytics.reportLaunch(installationIdentity, {
+        appVersion,
+        platform: process.platform,
+        osVersion: process.getSystemVersion(),
+      }, canReport))
     }
     const startupSummary = lifecycleRecorder.summarize()
     if (startupSummary !== undefined) {

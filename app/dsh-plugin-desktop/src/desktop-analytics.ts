@@ -83,6 +83,8 @@ export class DesktopAnalyticsClient {
   private readonly sessionStartTime: number
   private heartbeatTimer: ReturnType<typeof setInterval> | undefined
   private launchAttempted = false
+  private preparingLaunch = false
+  private firstLaunchClaim: boolean | undefined
   private sessionReported = false
 
   constructor(options: DesktopAnalyticsOptions) {
@@ -110,37 +112,50 @@ export class DesktopAnalyticsClient {
     return { endpoint: url.href, websiteId }
   }
 
-  /** Report once after native mount and healthy renderer boot. */
-  async reportLaunch(identity: DesktopInstallationIdentity, metadata: DesktopLaunchAnalyticsData): Promise<void> {
-    if (this.launchAttempted) return
-    this.launchAttempted = true
+  /** Return false while deferred. Once attempted, the launch is terminal even if sending fails. */
+  async reportLaunch(
+    identity: DesktopInstallationIdentity,
+    metadata: DesktopLaunchAnalyticsData,
+    canReport: () => boolean = () => true,
+  ): Promise<boolean> {
+    if (this.launchAttempted) return true
+    if (this.preparingLaunch || !canReport()) return false
     const deviceId = parseDesktopInstallationId(identity.id)
     if (deviceId === undefined) {
+      this.launchAttempted = true
       this.logger?.error(`desktop-analytics: ${DESKTOP_LAUNCH_EVENT} failed (reason=identity)`)
-      return
+      return true
     }
-    if (this.destination !== undefined) this.logger?.info(`desktop-analytics: ${DESKTOP_LAUNCH_EVENT} window-ready`)
 
-    let isFirstLaunch: boolean
+    this.preparingLaunch = true
     try {
-      // Complete the local claim before sending, even if the collector is unavailable or disabled.
-      isFirstLaunch = identity.isNew && await this.claimFirstLaunch()
+      // Keep the completed claim if the user hides the window during the write.
+      this.firstLaunchClaim ??= identity.isNew ? await this.claimFirstLaunch(canReport) : false
     } catch {
+      this.launchAttempted = true
       this.logger?.error(`desktop-analytics: ${DESKTOP_LAUNCH_EVENT} failed (reason=first-launch-marker)`)
-      return
+      return true
+    } finally {
+      this.preparingLaunch = false
     }
+    if (this.firstLaunchClaim === undefined || !canReport()) return false
+
+    this.launchAttempted = true
+    if (this.destination !== undefined) this.logger?.info(`desktop-analytics: ${DESKTOP_LAUNCH_EVENT} window-ready`)
     await this.sendEvent(DESKTOP_LAUNCH_EVENT, {
-      is_first_launch: isFirstLaunch,
+      is_first_launch: this.firstLaunchClaim,
       app_version: metadata.appVersion,
       os: metadata.platform,
       os_version: metadata.osVersion,
       device_id: deviceId,
     }, DESKTOP_LAUNCH_TIMEOUT_MS)
+    return true
   }
 
-  private async claimFirstLaunch(): Promise<boolean> {
+  private async claimFirstLaunch(canReport: () => boolean): Promise<boolean | undefined> {
     const marker = join(this.userDataDir, FIRST_RUN_REPORTED_RELATIVE_PATH)
     const directory = await lstat(dirname(marker))
+    if (!canReport()) return undefined
     if (!directory.isDirectory()) throw new Error('Desktop identity directory is not an ordinary directory')
     try {
       // Exclusive creation never follows or replaces an existing marker.
