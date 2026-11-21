@@ -22,9 +22,10 @@
  * 的列表区块替换为 `<WorkflowTemplatePanel ... />` 即可，props 见下。
  */
 
-import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { memo, useCallback, useMemo, useState } from 'react';
 import { FileCode, Plus, Search, Trash2 } from 'lucide-react';
 import { useT } from '../../i18n';
+import { useCanvasDismissLayer } from '../utils/canvasDismissLayer.ts';
 import {
   ALL_CATEGORIES_ID,
   categoryHasMatches,
@@ -75,15 +76,13 @@ const WorkflowTemplatePanel: React.FC<WorkflowTemplatePanelProps> = ({
     [list, activeCategory, query],
   );
 
-  // Esc 关闭（点击外部收起由宿主负责，见 ui-design-guidelines §4）。
-  useEffect(() => {
-    if (!onClose) return undefined;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  // Esc 关闭走全局逐层退栈（点击外部收起由宿主 useClickOutside 负责，见 ui-design-guidelines §4）。
+  useCanvasDismissLayer({
+    open: Boolean(onClose),
+    containsTarget: () => true,
+    dismissOnOutsidePointerDown: false,
+    onDismiss: () => onClose?.(),
+  });
 
   // 分类被搜索词清空后仍停留在该分类会显示「没有匹配」——这是真实状态，不自动跳转
   // （自动跳转等于替用户改筛选条件）。

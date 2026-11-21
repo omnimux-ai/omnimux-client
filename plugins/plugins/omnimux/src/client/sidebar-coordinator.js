@@ -25,7 +25,7 @@
  * 3. 其余所有插件（包括所有 Alpha 插件 accounts, publish, analytics, forms, automation 以及垂直插件 video, products, device, clip, social-harvest, apps 等）全部收敛，不再作为独立行渲染在侧边栏；
  * 4. 收敛项的渲染面是官方「更多」菜单（seat `sidebar.panellist.actions`，注册点在 `explore-more-menu.jsx`）：本模块只提供清单真源与激活委托，不再自绘侧栏行或浮动菜单；
  * 5. 清单严格按照产品 Spec 白名单（9项：应用、图像生成、视频剪辑、发布、账号、手机管理、数据分析、任务表单、社交采收），带纯矢量 SVG 图标；自动化已退役、产品库已并入资产库，均不再单列；
- * 6. 入口可见性按发布渠道区分：开发版（development）全部保留；正式版（production）只过滤 `plugin-lifecycle.json` 标为 Alpha 的测试版入口。
+ * 6. 入口可见性按发布渠道区分：开发版（development）全部保留；正式版（production）只过滤 `isAlphaEntry()` 标为 Alpha 的测试版入口（含 `plugin-lifecycle.json` 与仓外内测入口补集）。
  */
 
 import pluginLifecycle from '../plugin-lifecycle.json' with { type: 'json' }
@@ -47,6 +47,19 @@ const ALPHA_STYLES = `
 `
 
 /**
+ * 仓外内测入口补集：尚未迁入 `plugins/plugins/` 的内测插件不能写入
+ * `plugin-lifecycle.json`（桌面预设打包 `stage-preset-profile.ts` 要求
+ * lifecycle 中每个键都对应仓内源码目录），统一在此并入 `isAlphaEntry()`，
+ * 让官方「更多」菜单与插件自注册行（经 `window.__omnimuxSidebar.isAlphaEntry`）
+ * 共享同一套 Alpha 判定与正式版渠道过滤。
+ */
+const EXTERNAL_ALPHA_PLUGINS = new Set([
+  'omnimux-device',
+  'omnimux-social-harvest',
+  'omnimux-avatar',
+])
+
+/**
  * Alpha 判定：入口 id（`omnimux-<plugin>-entry`）或插件 id 都接受。
  * 运行时注册项可以没有 `entryId`，非字符串一律视为非 Alpha，不抛错。
  * @param {unknown} id
@@ -55,7 +68,7 @@ const ALPHA_STYLES = `
 export function isAlphaEntry(id) {
   if (typeof id !== 'string' || id === '') return false
   const pluginId = id.endsWith('-entry') ? id.slice(0, -6) : id
-  return pluginLifecycle[pluginId]?.stage === 'alpha'
+  return pluginLifecycle[pluginId]?.stage === 'alpha' || EXTERNAL_ALPHA_PLUGINS.has(pluginId)
 }
 
 /**
@@ -64,8 +77,7 @@ export function isAlphaEntry(id) {
  * @param {HTMLElement} element
  */
 function markAlphaEntry(id, element) {
-  const pluginId = id.endsWith('-entry') ? id.slice(0, -6) : id
-  if (pluginLifecycle[pluginId]?.stage !== 'alpha') return
+  if (!isAlphaEntry(id)) return
   injectStyles(ALPHA_STYLES, 'omnimux-sidebar-alpha-styles')
   element.dataset.releaseStage = 'alpha'
   element.setAttribute('aria-description', ALPHA_DESCRIPTION)
@@ -294,8 +306,8 @@ function isValidExploreItem(item) {
 }
 
 /**
- * 按发布渠道过滤入口：正式版只过滤 `plugin-lifecycle.json` 标为 Alpha 的
- * 测试版入口，其余（含非 Alpha 垂直插件）保留；开发版全部保留。
+ * 按发布渠道过滤入口：正式版只过滤 `isAlphaEntry()` 标为 Alpha 的
+ * 测试版入口（含 `plugin-lifecycle.json` 与仓外内测入口补集），其余保留；开发版全部保留。
  * 判定复用 `isAlphaEntry()`，不维护第二份 Alpha 名单。
  * @template {{ id?: string, entryId?: string, pluginId?: string }} T
  * @param {T[]} items

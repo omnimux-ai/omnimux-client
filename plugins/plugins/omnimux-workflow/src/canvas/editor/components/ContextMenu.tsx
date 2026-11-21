@@ -19,6 +19,7 @@ import {
   UploadCloud,
 } from 'lucide-react';
 import { useT } from '../../i18n';
+import { useCanvasDismissLayer } from '../utils/canvasDismissLayer.ts';
 import AddNodeMenu from './AddNodeMenu';
 import type { CanvasAddNodeType } from './addNodePalette';
 
@@ -113,24 +114,12 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
     }
   }, [visible]);
 
-  // Close on outside mousedown and on Escape.
-  useEffect(() => {
-    if (!visible) return undefined;
-    const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        onClose();
-      }
-    };
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [visible, onClose]);
+  // Close on outside pointerdown and on Escape without clearing canvas selection.
+  useCanvasDismissLayer({
+    open: visible,
+    containsTarget: (target) => Boolean(menuRef.current?.contains(target)),
+    onDismiss: () => onClose(),
+  });
 
   const items = useMemo((): MenuItemSpec[] => {
     if (context.type === 'node') {

@@ -12,6 +12,7 @@ import type { CSSProperties, ReactElement, ReactNode, RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import type { PopoverPosition } from './types.ts';
 import { calculatePopoverPosition } from './viewportPositioner.ts';
+import { useCanvasDismissLayer } from '../../../../utils/canvasDismissLayer.ts';
 
 /** CfgPopoverShell 属性 */
 export interface CfgPopoverShellProps {
@@ -71,38 +72,15 @@ export function CfgPopoverShell({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, triggerRef]);
 
-  useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-    const handlePointerDown = (e: MouseEvent): void => {
-      const target = e.target as Node | null;
-      if (!target) {
-        return;
-      }
-      if (
-        panelRef.current?.contains(target)
-        || triggerRef.current?.contains(target)
-        || (target instanceof Element && target.closest('.wf-custom-select-dropdown'))
-      ) {
-        return;
-      }
-      onClose();
-    };
-    const handleKeyDown = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-
-    window.addEventListener('mousedown', handlePointerDown, true);
-    window.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      window.removeEventListener('mousedown', handlePointerDown, true);
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [isOpen, onClose, triggerRef]);
+  useCanvasDismissLayer({
+    open: isOpen,
+    containsTarget: (target) => Boolean(
+      panelRef.current?.contains(target) || triggerRef.current?.contains(target),
+    ),
+    excludeSelectors: ['.wf-custom-select-dropdown'],
+    onDismiss: () => onClose(),
+    returnFocusRef: triggerRef,
+  });
 
   if (!isOpen || typeof document === 'undefined') {
     return null;

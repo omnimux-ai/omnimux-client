@@ -40,9 +40,29 @@ export function createStageStore(getStage) {
   // Legacy asynchronous progress callbacks carry only nodeId. Once a node id
   // has referred to two bindings, those callbacks cannot identify their origin.
   const seenBindings = new Map()
-  // Each native export starts with a rendering/0 callback. Keep only its
-  // original binding so a terminal receipt can outlive the editor Portal.
+  // Zero-progress callbacks can repeat. Keep the render binding until the
+  // upload starts, then track each request in its own lifetime.
   const pendingExports = new Map()
+  const pendingUploads = new Set()
+
+  function retireUpload(upload) {
+    pendingUploads.delete(upload)
+    const { nodeId } = upload.binding
+    if (pendingExports.get(nodeId) === upload.binding) pendingExports.delete(nodeId)
+  }
+
+  function settleUpload(upload) {
+    const { workspaceId, nodeId, projectId } = upload.binding
+    // Set iteration is in request order. Once this result is applied, earlier
+    // requests for the same binding can no longer change the canvas.
+    for (const earlier of pendingUploads) {
+      const binding = earlier.binding
+      if (binding.workspaceId === workspaceId && binding.nodeId === nodeId && binding.projectId === projectId) {
+        retireUpload(earlier)
+      }
+      if (earlier === upload) break
+    }
+  }
 
   function emit() {
     for (const listener of listeners) listener()
@@ -99,12 +119,36 @@ export function createStageStore(getStage) {
   const store = {
     getSnapshot: () => open,
     getSessionSnapshot: () => activeSession,
+    beginCanvasExportUpload(projectId) {
+      // The legacy upload names only a project. A reused project ID must not
+      // let the request borrow a different node or workspace's binding.
+      const matches = [...pendingExports.values()].filter((binding) => binding.projectId === projectId)
+      if (matches.length !== 1) return null
+      const upload = { binding: matches[0], receipt: null }
+      pendingUploads.add(upload)
+      return (receipt) => {
+        if (!pendingUploads.has(upload)) return
+        if (receipt?.saved === true && receipt.id === projectId && typeof receipt.path === 'string'
+          && receipt.path && typeof receipt.revision === 'string' && receipt.revision) {
+          upload.receipt = receipt
+        } else {
+          retireUpload(upload)
+        }
+      }
+    },
     resolveCanvasReply(type, payload) {
       const isProgress = type === OMNIMUX_CLIP_PROGRESS
       const isSave = type === OMNIMUX_CLIP_SAVE
-      const terminal = isSave && payload?.output != null
-        || isProgress && ['completed', 'error', 'idle'].includes(payload?.status)
-      const pending = terminal ? pendingExports.get(payload.nodeId) : undefined
+      const output = isSave ? payload?.output : undefined
+      const terminal = output != null || isProgress && ['completed', 'error', 'idle'].includes(payload?.status)
+      // Timeline saves carry the host revision. The legacy motion callback
+      // carries only the path, so it can use a single matching receipt.
+      const uploads = output == null ? [] : [...pendingUploads].filter(({ binding, receipt }) =>
+        receipt && binding.projectId === payload.projectId && receipt.path === output.videoPath
+        && (output.revision === undefined || receipt.revision === output.revision))
+      if (uploads.length > 1 || (output?.revision !== undefined && uploads.length !== 1)) return null
+      const [upload] = uploads
+      const pending = upload?.binding ?? (terminal ? pendingExports.get(payload.nodeId) : undefined)
       const session = open && activeSession?.source === 'canvas' ? activeSession : null
       const binding = pending ?? session
       if (!isCanvasClipBinding(binding) || payload?.nodeId !== binding.nodeId) return null
@@ -121,7 +165,12 @@ export function createStageStore(getStage) {
         if (previous && (previous.workspaceId !== workspaceId || previous.projectId !== projectId)) return null
         pendingExports.set(nodeId, { workspaceId, nodeId, projectId })
       }
-      if (pending) pendingExports.delete(nodeId)
+      if (upload) {
+        detail.output = { ...output, revision: upload.receipt.revision }
+        settleUpload(upload)
+      } else if (pending) {
+        pendingExports.delete(nodeId)
+      }
       return detail
     },
     readBox,
@@ -218,6 +267,7 @@ export function createStageStore(getStage) {
       listeners.clear()
       seenBindings.clear()
       pendingExports.clear()
+      pendingUploads.clear()
       activeSession = null
       open = false
       if (globalActiveStageStore === store) {

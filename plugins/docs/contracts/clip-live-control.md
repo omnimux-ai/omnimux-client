@@ -6,7 +6,9 @@
 
 画布节点以 `(workspaceId, nodeId, projectId)` 标识剪辑入口。节点打开时透传三个 ID，已有合法 `projectId` 继续使用，空缺时分配并记录 `clip_node_…`。粘贴副本时分配新工程 ID，移除旧 `schema`、成片与预览元数据，从 `idle` 开始。原节点以及已有成片继续使用原引用。
 
-画布 `OPEN`、`PROGRESS`、`SAVE`、`CLOSE` 使用完整三元组。手工导出开始时，外围桥记录当前绑定。退出编辑清除画布的临时渲染状态。已开始的任务收到匹配工程的 `SAVE` 或终态回执时，仍按原绑定投递，消费后移除记录。画布校验现有节点绑定，合法成片继续走 `planClipExportDownstream`。导出归属不明确时丢弃回执。
+画布 `OPEN`、`PROGRESS`、`SAVE`、`CLOSE` 使用完整三元组。手工导出开始时，外围桥记录当前绑定。退出编辑清除画布的临时渲染状态，开始过的导出仍可按原绑定投递。
+
+剪辑客户端在每笔 `/save-export` 上传发出时单独绑定原节点，接收 Host 的成片路径与 `revision` 后核对对应的 `SAVE`。较早的回执先到时只结算自己的上传。较新的结果先应用时，同一节点的旧回执失效，重新打开入口也无法再次投递。画布校验现有节点绑定，继续通过 `planClipExportDownstream` 写入版本并创建或复用下游节点。原生编码器和 Host 成片路径沿用现有实现。
 
 剪辑桥只接受来自当前可见工作区的 `OPEN`。Portal 挂到对应工作区，通过画布工作台 viewport 提供 `view.extra.clip` 导航提示。Hub 遇到画布剪辑提示时保留画布页，浏览器接到自动切页请求时再次检查当前 Portal。`clip_list`、`clip_get`、`clip_diagnostics` 无条件跳过自动跟随。
 

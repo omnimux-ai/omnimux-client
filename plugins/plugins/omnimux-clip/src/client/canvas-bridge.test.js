@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createStageStore, getActiveClipSession } from './stage-store.js'
+import { fetch as fetchClip } from './export-canvas-mode.js'
 import {
   createAndMountCanvasBridge,
   notifyCanvasSave,
@@ -247,7 +248,7 @@ test('legacy manual export callbacks are scoped and ambiguous callbacks are drop
   const progress = { nodeId: binding.nodeId, status: 'rendering', renderProgress: 75 }
   const output = {
     videoPath: '/exports/test.mp4', thumbnailPath: 'data:image/jpeg;base64,thumb', durationMs: 1000,
-    width: 1920, height: 1080, revision: '12:42',
+    width: 1920, height: 1080,
   }
   const save = { nodeId: binding.nodeId, projectId: binding.projectId, createDownstreamNode: true, output }
   try {
@@ -270,7 +271,7 @@ test('legacy manual export callbacks are scoped and ambiguous callbacks are drop
   }
 })
 
-test('a started manual export delivers its saved output to the original node after exit', () => {
+test('a started manual export delivers its saved output to the original node after exit', async (t) => {
   const target = new EventTarget()
   const stage = createStageStore(() => null)
   const saved = []
@@ -283,11 +284,22 @@ test('a started manual export delivers its saved output to the original node aft
     stage.openFromCanvas(binding)
     assert.equal(notifyCanvasProgress(start, target), true)
     assert.equal(notifyCanvasProgress({ ...start, renderProgress: 100 }, target), true)
+    t.mock.method(globalThis, 'fetch', async () => Response.json({
+      id: binding.projectId, saved: true, path: output.videoPath, revision: output.revision,
+    }))
+    // The editor can be closed even before the encoded file starts uploading.
     stage.close()
+    await fetchClip(`/omnimux-clip/api/projects/${binding.projectId}/save-export`, {
+      method: 'POST', body: new Blob(['video']),
+    })
     assert.equal(stage.getSnapshot(), false)
     assert.equal(getActiveClipSession(), null)
     assert.equal(notifyCanvasProgress({ ...start, renderProgress: 50 }, target), false)
-    assert.equal(notifyCanvasSave({ ...save, output: { videoPath: '' } }, target), false)
+    for (const wrongOutput of [
+      { ...output, videoPath: '' }, { ...output, videoPath: '/exports/wrong.mp4' }, { ...output, revision: '11:42' },
+    ]) {
+      assert.equal(notifyCanvasSave({ ...save, output: wrongOutput }, target), false)
+    }
     for (const wrong of [
       { projectId: undefined }, { workspaceId: 'ws_other' }, { workspaceId: '../other' },
       { nodeId: 'node_missing' }, { projectId: 'clip_node_other' },
@@ -303,6 +315,60 @@ test('a started manual export delivers its saved output to the original node aft
   } finally {
     stage.dispose()
   }
+})
+
+function startOverlappingCanvasExports(t) {
+  const target = new EventTarget()
+  const stage = createStageStore(() => null)
+  t.after(() => stage.dispose())
+  const saved = []
+  target.addEventListener(OMNIMUX_CLIP_SAVE, (event) => saved.push(event.detail))
+  const path = '/exports/first.mp4'
+  const url = `/omnimux-clip/api/projects/${binding.projectId}/save-export`
+  const upload = { method: 'POST', body: new Blob(['video']) }
+  const replies = []
+  t.mock.method(globalThis, 'fetch', () => new Promise((resolve) => replies.push(resolve)))
+
+  function start(revision) {
+    stage.openFromCanvas(binding)
+    const progress = { nodeId: binding.nodeId, status: 'rendering', renderProgress: 0 }
+    assert.equal(notifyCanvasProgress(progress, target), true)
+    assert.equal(notifyCanvasProgress(progress, target), true) // OpenReel also reports zero while preparing.
+    assert.equal(notifyCanvasProgress({ ...progress, renderProgress: 100 }, target), true)
+    const response = fetchClip(url, upload)
+    const reply = replies.shift()
+    stage.close()
+    assert.equal(getActiveClipSession(), null)
+    return async () => {
+      reply(Response.json({ id: binding.projectId, saved: true, path, revision }))
+      const body = await (await response).json()
+      return notifyCanvasSave({
+        nodeId: binding.nodeId,
+        projectId: binding.projectId,
+        output: { videoPath: body.path, revision: body.revision },
+        createDownstreamNode: true,
+      }, target)
+    }
+  }
+
+  return { stage, saved, releaseA: start('12:42'), releaseB: start('13:42') }
+}
+
+test('same-node cancel and retry keeps the newest saved output (A → B)', async (t) => {
+  const { saved, releaseA, releaseB } = startOverlappingCanvasExports(t)
+  assert.equal(await releaseA(), true)
+  assert.equal(await releaseB(), true, 'A must leave B eligible after exit')
+  assert.deepEqual(saved.map((detail) => detail.output.revision), ['12:42', '13:42'])
+  assert.ok(saved.every((detail) => detail.workspaceId === binding.workspaceId && detail.nodeId === binding.nodeId))
+})
+
+test('same-node cancel and retry keeps the newest saved output (B → A)', async (t) => {
+  const { stage, saved, releaseA, releaseB } = startOverlappingCanvasExports(t)
+  assert.equal(await releaseB(), true)
+  stage.openFromCanvas(binding)
+  assert.equal(await releaseA(), false, 'reopening must not reauthorize the superseded A receipt')
+  assert.deepEqual(saved.map((detail) => detail.output.revision), ['13:42'])
+  assert.ok(saved.every((detail) => detail.workspaceId === binding.workspaceId && detail.nodeId === binding.nodeId))
 })
 
 test('terminal progress after exit requires the pending export binding and settles it', () => {

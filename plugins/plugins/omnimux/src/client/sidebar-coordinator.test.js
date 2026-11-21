@@ -368,7 +368,7 @@ test('发布渠道过滤：开发版保留全部入口，正式版只过滤 Alph
     '应用', '图像生成', '视频剪辑', '发布', '账号', '手机管理', '数据分析', '任务表单', '社交采收',
   ])
   const prod = filterExploreItemsForChannel(EXPLORE_MENU_ITEMS, 'production')
-  assert.deepEqual(prod.map((item) => item.label), ['应用', '图像生成', '视频剪辑', '手机管理', '社交采收'])
+  assert.deepEqual(prod.map((item) => item.label), ['应用', '图像生成', '视频剪辑'])
   assert.equal(resolveExploreMenuItems().length, EXPLORE_MENU_ITEMS.length, '开发版默认渠道返回全部入口')
 })
 
@@ -386,7 +386,8 @@ test('正式版渠道：Alpha 行注册不创建元素、不进收敛集合，�
       return document.createElement('button')
     },
   })
-  const alphaDisposers = ['accounts', 'publish', 'analytics', 'forms'].map(makeRow)
+  const alphaNames = ['accounts', 'publish', 'analytics', 'forms', 'device', 'social-harvest', 'avatar']
+  const alphaDisposers = alphaNames.map(makeRow)
   let clipCreated = 0
   const disposeClip = api.register({
     id: 'omnimux-clip-entry',
@@ -397,11 +398,11 @@ test('正式版渠道：Alpha 行注册不创建元素、不进收敛集合，�
     api.place()
     assert.deepEqual(created, [], '正式版不得为任何 Alpha 行创建元素（删掉守卫该断言会变红）')
     const converged = getConvergedRowsForTests()
-    for (const name of ['accounts', 'publish', 'analytics', 'forms']) {
+    for (const name of alphaNames) {
       assert.equal(converged.has(`omnimux-${name}-entry`), false, `正式版 Alpha ${name} 不得进入收敛集合`)
     }
     assert.equal(clipCreated, 1, '非 Alpha 收敛项仍正常创建以进入「更多」菜单')
-    assert.deepEqual(resolveExploreMenuItems().map((item) => item.label), ['应用', '图像生成', '视频剪辑', '手机管理', '社交采收'])
+    assert.deepEqual(resolveExploreMenuItems().map((item) => item.label), ['应用', '图像生成', '视频剪辑'])
   } finally {
     alphaDisposers.forEach((dispose) => dispose())
     disposeClip()
@@ -415,7 +416,16 @@ test('侧栏全局 seam 暴露 Alpha 判定与统一说明，供插件自注册�
   const api = SIDEBAR_GLOBAL()
   assert.equal(typeof api.isAlphaEntry, 'function', '必须暴露 isAlphaEntry')
   assert.equal(api.isAlphaEntry('omnimux-accounts-entry'), true, 'accounts 已在 lifecycle 列为 Alpha')
+  assert.equal(api.isAlphaEntry('omnimux-device'), true, '手机管理（omnimux-device）已列为 Alpha')
+  assert.equal(api.isAlphaEntry('omnimux-device-entry'), true, '手机管理入口 id 已列为 Alpha')
+  assert.equal(api.isAlphaEntry('omnimux-social-harvest'), true, '社交采收（omnimux-social-harvest）已列为 Alpha')
+  assert.equal(api.isAlphaEntry('omnimux-social-harvest-entry'), true, '社交采收入口 id 已列为 Alpha')
+  assert.equal(api.isAlphaEntry('omnimux-avatar'), true, 'AI 网红工作室（omnimux-avatar）已列为 Alpha')
+  assert.equal(api.isAlphaEntry('omnimux-avatar-entry'), true, 'AI 网红工作室入口 id 已列为 Alpha')
   assert.equal(api.isAlphaEntry('omnimux-workflow-entry'), false, '非 Alpha 项必须返回 false')
+  assert.equal(api.isAlphaEntry('omnimux-apps-entry'), false, '应用不是 Alpha 项')
+  assert.equal(api.isAlphaEntry('image-generation'), false, '图像生成不是 Alpha 项')
+  assert.equal(api.isAlphaEntry('omnimux-clip-entry'), false, '视频剪辑不是 Alpha 项')
   assert.equal(api.alphaDescription, ALPHA_DESCRIPTION, '内测说明与中枢常量逐字一致')
 })
 

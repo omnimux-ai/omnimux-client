@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>模型目录显示契约 · 演示</title>
+<style>
+:root{--bg:#f6f7f9;--panel:#fff;--text:#20242a;--muted:#6b7280;--line:#e5e7eb;--accent:#5b5bd6;--soft:#ececff;--bad:#b42318}
+[data-theme="dark"]{--bg:#15171c;--panel:#1e2128;--text:#f2f4f7;--muted:#9aa3b2;--line:#343945;--accent:#a5a5ff;--soft:#2d2d52;--bad:#fda29b}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1080px;margin:0 auto;padding:26px}header{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:20px}
+h1{font-size:22px;margin:0 0 4px}p{margin:0;color:var(--muted)}button{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:9px;padding:8px 12px;cursor:pointer}button:hover{border-color:var(--accent)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.card h2{font-size:14px;margin:0;padding:13px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between}.tag{font-size:11px;border-radius:999px;padding:3px 8px;background:var(--soft);color:var(--accent)}.tag.bad{color:var(--bad);background:#fff1f0}
+.card-body{padding:16px}.label{font-size:12px;color:var(--muted);margin-bottom:6px}.picker{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;gap:10px;align-items:center}.brand{font-size:12px;border-radius:6px;padding:3px 7px;background:var(--soft);color:var(--accent);font-weight:700}.brand.bad{color:var(--bad);background:#fff1f0}.model{font-weight:700}.id{font:12px ui-monospace,Menlo,monospace;color:var(--muted)}.note{margin-top:12px;border-left:3px solid var(--accent);background:var(--soft);padding:10px;border-radius:6px;font-size:12px}.note.bad{border-color:var(--bad);background:#fff1f0;color:var(--bad)}
+.unavailable{margin-top:16px;background:var(--panel);border:1px dashed var(--line);border-radius:12px;padding:14px;display:none}.unavailable.show{display:block}.row{display:flex;justify-content:space-between;align-items:center;margin-top:8px}.compact main{max-width:650px}.compact .grid{grid-template-columns:1fr}
+</style>
+</head>
+<body>
+<main>
+<header><div><h1>模型目录显示契约</h1><p>快捷选择器的旧回退与 catalog 显示；同一交互在目录不可用时的安全状态。</p></div><div><button data-action="theme">切换主题</button> <button data-action="width">切换窄屏</button> <button data-action="offline">目录不可用</button></div></header>
+<div class="grid">
+<section class="card"><h2>修复前 <span class="tag bad">FALLBACK</span></h2><div class="card-body"><div class="label">快捷选择器 · 图像</div><div class="picker"><span class="brand bad">bytedance</span><span class="model">seedream-5-0-pro</span><span class="id">fallback row</span></div><div class="note bad">本地 DEFAULT_PRESET_MODELS 在接口失败时仍显示已下架模型；未知品牌默认落到 bytedance。</div></div></section>
+<section class="card"><h2>修复后 <span class="tag">CATALOG</span></h2><div class="card-body"><div class="label">快捷选择器 · 图像</div><div class="picker"><span class="brand">Seedream</span><span class="model">Seedream 5.5</span><span class="id">seedream-5-5</span></div><div class="note">row.label / familyLabel 来自 /omnimux/model-catalog；没有旧模型回退，未知品牌按真实 family/id 展示。</div></div></section>
+</div>
+<section class="unavailable" id="offline"><h2 style="padding:0;border:0">模型目录不可用 <span class="tag bad">BLOCKED</span></h2><p class="label" style="margin-top:8px">不列出旧模型，保留可恢复错误态。</p><div class="row"><span class="id">图像：—　视频：—</span><button data-action="retry">重试</button></div></section>
+</main>
+<script>
+const root=document.documentElement;
+document.querySelector('[data-action="theme"]').onclick=()=>root.dataset.theme=root.dataset.theme==='dark'?'light':'dark';
+document.querySelector('[data-action="width"]').onclick=()=>document.body.classList.toggle('compact');
+document.querySelector('[data-action="offline"]').onclick=()=>document.getElementById('offline').classList.toggle('show');
+document.querySelector('[data-action="retry"]').onclick=e=>{e.target.textContent='重试中…';setTimeout(()=>e.target.textContent='重试',700)};
+</script>
+</body>
+</html>

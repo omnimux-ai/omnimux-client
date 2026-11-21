@@ -1,0 +1,592 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>官方「更多」菜单 · 手机管理 / 社交采收 / AI 网红工作室 Alpha 标识 · 修改前后演示</title>
+<style>
+  :root {
+    --dsw-alias-bg-base: #141619;
+    --dsw-alias-bg-primary: #1e2125;
+    --dsw-alias-bg-secondary: #191c20;
+    --dsw-alias-bg-layer-1: #23262b;
+    --dsw-alias-bg-layer-2: #242629;
+    --dsw-alias-interactive-bg-hover: rgba(255, 255, 255, 0.08);
+    --dsw-alias-border-l1: rgba(255, 255, 255, 0.10);
+    --dsw-alias-border-l2: rgba(255, 255, 255, 0.18);
+    --dsw-alias-label-primary: #edeff2;
+    --dsw-alias-label-secondary: #a1a6af;
+    --dsw-alias-label-tertiary: #737882;
+    --dsw-alias-state-error-primary: #ff6b66;
+    --dsw-alias-state-success-primary: #4ec93f;
+    --dsw-alias-bg-mask-1: rgba(0, 0, 0, 0.45);
+    --dsw-radius-m: 12px;
+    --dsw-radius-l: 14px;
+  }
+
+  body[data-theme="light"] {
+    --dsw-alias-bg-base: #eef0f3;
+    --dsw-alias-bg-primary: #ffffff;
+    --dsw-alias-bg-secondary: #f6f7f9;
+    --dsw-alias-bg-layer-1: #ffffff;
+    --dsw-alias-bg-layer-2: #ffffff;
+    --dsw-alias-interactive-bg-hover: rgba(31, 35, 41, 0.06);
+    --dsw-alias-border-l1: #e3e5e9;
+    --dsw-alias-border-l2: #cfd3d9;
+    --dsw-alias-label-primary: #1f2329;
+    --dsw-alias-label-secondary: #61666f;
+    --dsw-alias-label-tertiary: #8c929c;
+    --dsw-alias-state-error-primary: #e04640;
+    --dsw-alias-state-success-primary: #2ea121;
+    --dsw-alias-bg-mask-1: rgba(31, 35, 41, 0.16);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    color: var(--dsw-alias-label-primary);
+    background: var(--dsw-alias-bg-base);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; color: inherit; }
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 14px 24px;
+    background: var(--dsw-alias-bg-primary);
+    border-bottom: 1px solid var(--dsw-alias-border-l1);
+  }
+  .topbar h1 { margin: 0; font-size: 15px; font-weight: 650; }
+  .topbar .sub { color: var(--dsw-alias-label-secondary); font-size: 12px; margin-top: 2px; }
+  .topbar .spacer { flex: 1; min-width: 12px; }
+
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  .toggle {
+    display: inline-flex;
+    padding: 3px;
+    gap: 2px;
+    border: 1px solid var(--dsw-alias-border-l1);
+    border-radius: 999px;
+    background: var(--dsw-alias-bg-secondary);
+  }
+  .toggle button {
+    border: 0;
+    background: transparent;
+    color: var(--dsw-alias-label-secondary);
+    font-size: 12px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .toggle button.active {
+    color: var(--dsw-alias-label-primary);
+    background: var(--dsw-alias-bg-primary);
+    box-shadow: 0 1px 3px var(--dsw-alias-bg-mask-1);
+    font-weight: 600;
+  }
+
+  .page {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 24px 20px 56px;
+  }
+  .intro {
+    margin-bottom: 18px;
+  }
+  .intro h2 {
+    margin: 0 0 6px;
+    font-size: 18px;
+    font-weight: 650;
+  }
+  .intro p {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.65;
+    color: var(--dsw-alias-label-secondary);
+  }
+
+  .compare {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+    align-items: start;
+  }
+  @media (max-width: 720px) {
+    .compare { grid-template-columns: 1fr; }
+  }
+
+  .panel {
+    background: var(--dsw-alias-bg-primary);
+    border: 1px solid var(--dsw-alias-border-l1);
+    border-radius: var(--dsw-radius-l);
+    overflow: hidden;
+  }
+  .panel-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--dsw-alias-border-l1);
+  }
+  .panel-tag {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 9px;
+    border-radius: 999px;
+  }
+  .panel.before .panel-tag {
+    color: var(--dsw-alias-state-error-primary);
+    background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 14%, transparent);
+  }
+  .panel.after .panel-tag {
+    color: var(--dsw-alias-state-success-primary);
+    background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 14%, transparent);
+  }
+  .panel-head .title { font-size: 13px; font-weight: 600; }
+  .panel-head .meta {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--dsw-alias-label-tertiary);
+  }
+
+  .stage {
+    padding: 22px 18px;
+    display: flex;
+    justify-content: center;
+    background: var(--dsw-alias-bg-secondary);
+  }
+
+  /* 官方「更多」弹出菜单容器（复现真实视觉密度与圆角阴影） */
+  .more-menu {
+    width: 260px;
+    max-width: 100%;
+    padding: 6px;
+    border-radius: var(--dsw-radius-m);
+    border: 1px solid var(--dsw-alias-border-l1);
+    background: var(--dsw-alias-bg-layer-2);
+    box-shadow: 0 12px 32px var(--dsw-alias-bg-mask-1);
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    transition: width 160ms ease;
+  }
+  body[data-width="narrow"] .more-menu {
+    width: 188px;
+  }
+
+  .menu-separator {
+    height: 1px;
+    margin: 5px 6px;
+    background: var(--dsw-alias-border-l1);
+  }
+
+  /* 官方 MenuItemButton 行原语 */
+  .menu-row {
+    width: 100%;
+    height: 36px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--dsw-alias-label-primary);
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    cursor: pointer;
+    text-align: left;
+    font-size: 14px;
+    line-height: 20px;
+    position: relative;
+  }
+  .menu-row:hover,
+  .menu-row.is-selected {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
+  .menu-row.is-changed-target::after {
+    content: "";
+    position: absolute;
+    inset: 1px;
+    border-radius: 7px;
+    border: 1px dashed color-mix(in srgb, var(--dsw-alias-state-error-primary) 55%, transparent);
+    pointer-events: none;
+  }
+  .panel.after .menu-row.is-changed-target::after {
+    border-color: color-mix(in srgb, var(--dsw-alias-state-success-primary) 55%, transparent);
+  }
+
+  .omnimux-explore-more-icon,
+  .omnimux-avatar-more-icon {
+    flex: none;
+    display: inline-flex;
+    width: 16px;
+    height: 16px;
+    align-items: center;
+    justify-content: center;
+    color: var(--dsw-alias-label-secondary);
+  }
+  .menu-row-label-slot {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* 严格复刻 plugins/plugins/omnimux/src/client/styles.js:1794-1819 */
+  .omnimux-explore-more-label,
+  .omnimux-avatar-more-label {
+    display: inline-flex;
+    align-items: center;
+    width: 100%;
+    min-width: 0;
+  }
+  .omnimux-explore-more-label-text,
+  .omnimux-avatar-more-label-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .omnimux-explore-more-alpha,
+  .omnimux-avatar-more-alpha {
+    flex: none;
+    margin-inline-start: 6px;
+    padding: 0 5px;
+    border: 1px solid var(--dsw-alias-border-l2);
+    border-radius: 4px;
+    color: var(--dsw-alias-label-secondary);
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 400;
+    white-space: nowrap;
+  }
+
+  .inspector {
+    margin-top: 18px;
+    padding: 14px 16px;
+    border-radius: var(--dsw-radius-m);
+    border: 1px solid var(--dsw-alias-border-l1);
+    background: var(--dsw-alias-bg-primary);
+    font-size: 12px;
+    line-height: 1.65;
+    color: var(--dsw-alias-label-secondary);
+  }
+  .inspector strong {
+    color: var(--dsw-alias-label-primary);
+  }
+  .inspector code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: var(--dsw-alias-bg-secondary);
+    border: 1px solid var(--dsw-alias-border-l1);
+    color: var(--dsw-alias-label-primary);
+  }
+</style>
+</head>
+<body data-theme="dark" data-channel="development" data-width="standard">
+  <header class="topbar">
+    <div>
+      <h1>官方「更多」菜单 · 新增 3 项 Alpha 内测标识</h1>
+      <div class="sub">手机管理（omnimux-device）、社交采收（omnimux-social-harvest）、AI 网红工作室（omnimux-avatar）</div>
+    </div>
+    <div class="spacer"></div>
+    <div class="controls">
+      <div class="toggle" role="group" aria-label="主题切换">
+        <button type="button" data-theme-btn="dark" class="active">暗色</button>
+        <button type="button" data-theme-btn="light">亮色</button>
+      </div>
+      <div class="toggle" role="group" aria-label="渠道切换">
+        <button type="button" data-channel-btn="development" class="active">开发版</button>
+        <button type="button" data-channel-btn="production">正式版</button>
+      </div>
+      <div class="toggle" role="group" aria-label="宽度切换">
+        <button type="button" data-width-btn="standard" class="active">标准 260px</button>
+        <button type="button" data-width-btn="narrow">窄宽 188px</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="page">
+    <section class="intro">
+      <h2>修改前后对比（seat: <code>sidebar.panellist.actions</code>）</h2>
+      <p>
+        虚线高亮标出本次新增 Alpha 判定的 3 个入口：<strong>手机管理</strong>、<strong>社交采收</strong>、<strong>AI网红工作室</strong>。
+        点击任意菜单行可在下方查看其 <code>isAlphaEntry()</code> 判定来源与悬停提示文案；切换「正式版」可验证所有 Alpha 入口自动隐藏。
+      </p>
+    </section>
+
+    <section class="compare">
+      <article class="panel before">
+        <div class="panel-head">
+          <span class="panel-tag">修改前</span>
+          <span class="title" id="before-title">仅 4 项仓内包带 Alpha</span>
+          <span class="meta" id="before-meta"></span>
+        </div>
+        <div class="stage">
+          <div class="more-menu" id="menu-before" role="menu" aria-label="修改前更多菜单"></div>
+        </div>
+      </article>
+
+      <article class="panel after">
+        <div class="panel-head">
+          <span class="panel-tag">修改后</span>
+          <span class="title" id="after-title">共 7 项带统一 Alpha 标识</span>
+          <span class="meta" id="after-meta"></span>
+        </div>
+        <div class="stage">
+          <div class="more-menu" id="menu-after" role="menu" aria-label="修改后更多菜单"></div>
+        </div>
+      </article>
+    </section>
+
+    <section class="inspector" id="inspector" aria-live="polite">
+      点击上方任意菜单行，查看 <code>isAlphaEntry()</code> 判定、来源与 <code>title</code> 内测说明。
+    </section>
+  </main>
+
+<script>
+const ALPHA_DESCRIPTION = 'Alpha · 内测：开发阶段优先完善非 Alpha 功能；正式版不包含此功能。'
+const LIFECYCLE_ALPHA = new Set(['omnimux-accounts', 'omnimux-publish', 'omnimux-analytics', 'omnimux-forms'])
+const EXTERNAL_ALPHA = new Set(['omnimux-device', 'omnimux-social-harvest', 'omnimux-avatar'])
+const CHANGED_IDS = new Set(['omnimux-device', 'omnimux-social-harvest', 'omnimux-avatar'])
+
+const OFFICIAL_PANELS = [
+  {
+    id: 'browse-plugins',
+    label: '浏览更多插件',
+    iconSvg: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M8 2.2v3.2M8 10.6v3.2M2.2 8h3.2M10.6 8h3.2"/><circle cx="8" cy="8" r="2.2"/></svg>',
+    official: true,
+  },
+  {
+    id: 'create-plugin',
+    label: '创建你的插件',
+    iconSvg: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M8 3v10M3 8h10"/></svg>',
+    official: true,
+  },
+  {
+    id: 'schedules',
+    label: '自动化任务',
+    iconSvg: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.75" y="2.25" width="12.5" height="11.5" rx="2"/><path d="M1.75 6.25h12.5"/></svg>',
+    official: true,
+    dividerAfter: true,
+  },
+]
+
+const PRODUCT_ITEMS = [
+  {
+    id: 'apps',
+    pluginId: 'omnimux-apps',
+    label: '应用',
+    iconSvg: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="1.5" width="5" height="5" rx="1"/><rect x="9.5" y="1.5" width="5" height="5" rx="1"/><rect x="1.5" y="9.5" width="5" height="5" rx="1"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/></svg>',
+  },
+  {
+    id: 'image-generation',
+    label: '图像生成',
+    iconSvg: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="1.75" y="2.25" width="12.5" height="11.5" rx="2"/><circle cx="5.5" cy="6" r="1.2"/><path d="m2.5 12 3.8-3.8 2.6 2.6 2.2-2.2 2.4 2.4"/></svg>',
+  },
+  {
+    id: 'clip',
+    pluginId: 'omnimux-clip',
+    label: '视频剪辑',
+    iconSvg: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.75" y="3.25" width="12.5" height="9.5" rx="1.75"/><path d="M6.4 5.6v4.8L10.6 8 6.4 5.6Z" fill="currentColor" stroke="none"/></svg>',
+    dividerAfter: true,
+  },
+  {
+    id: 'publish',
+    pluginId: 'omnimux-publish',
+    label: '发布',
+    iconSvg: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 1.5 7 9M14.5 1.5 10 14.5l-3-4.5-4.5-3 12-5.5z"/></svg>',
+  },
+  {
+    id: 'accounts',
+    pluginId: 'omnimux-accounts',
+    label: '账号',
+    iconSvg: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="5" r="3"/><path d="M2.5 14a5.5 5.5 0 0 1 11 0"/></svg>',
+  },
+  {
+    id: 'device',
+    pluginId: 'omnimux-device',
+    label: '手机管理',
+    iconSvg: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="1.5" width="8" height="13" rx="2"/><circle cx="8" cy="11.5" r="0.75" fill="currentColor" stroke="none"/></svg>',
+    dividerAfter: true,
+  },
+  {
+    id: 'analytics',
+    pluginId: 'omnimux-analytics',
+    label: '数据分析',
+    iconSvg: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 14h12"/><path d="M4 11l3-4 3 2 4-5"/></svg>',
+  },
+  {
+    id: 'forms',
+    pluginId: 'omnimux-forms',
+    label: '任务表单',
+    iconSvg: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="2" width="10" height="12" rx="1.5"/><path d="M6 5.5h4M6 8h4M6 10.5h2.5"/></svg>',
+  },
+  {
+    id: 'social-harvest',
+    pluginId: 'omnimux-social-harvest',
+    label: '社交采收',
+    iconSvg: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="3"/><circle cx="8" cy="8" r="1" fill="currentColor" stroke="none"/></svg>',
+  },
+  {
+    id: 'avatar',
+    pluginId: 'omnimux-avatar',
+    label: 'AI网红工作室',
+    selfRegistered: true,
+    iconSvg: '<svg viewBox="0 0 22 22" width="14" height="14" fill="none"><path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M11 2.75a4.25 4.25 0 1 0 0 8.5 4.25 4.25 0 0 0 0-8.5Zm0 1.8a2.45 2.45 0 1 1 0 4.9 2.45 2.45 0 0 1 0-4.9Z"/><path fill="currentColor" d="M11 13.1c-4.06 0-7.35 2.2-7.35 5.4 0 .55.45 1 1 1h12.7c.55 0 1-.45 1-1 0-3.2-3.29-5.4-7.35-5.4Z"/></svg>',
+  },
+]
+
+let selectedId = 'omnimux-social-harvest'
+
+function isAlpha(pluginId, mode) {
+  if (!pluginId) return false
+  if (LIFECYCLE_ALPHA.has(pluginId)) return true
+  return mode === 'after' && EXTERNAL_ALPHA.has(pluginId)
+}
+
+function renderMenu(container, metaEl, mode, channel) {
+  container.innerHTML = ''
+  const visibleProducts = PRODUCT_ITEMS.filter((item) => {
+    if (channel !== 'production') return true
+    if (item.selfRegistered) return false
+    return !isAlpha(item.pluginId, mode)
+  })
+  const rows = [...OFFICIAL_PANELS, ...visibleProducts]
+  let alphaCount = 0
+
+  rows.forEach((item, index) => {
+    const prev = index > 0 ? rows[index - 1] : null
+    if (prev && prev.dividerAfter) {
+      const sep = document.createElement('div')
+      sep.className = 'menu-separator'
+      sep.setAttribute('role', 'separator')
+      container.append(sep)
+    }
+
+    const alpha = isAlpha(item.pluginId, mode)
+    if (alpha) alphaCount += 1
+
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.className = 'menu-row'
+    btn.setAttribute('role', 'menuitem')
+    if (CHANGED_IDS.has(item.pluginId)) btn.classList.add('is-changed-target')
+    if (item.pluginId && item.pluginId === selectedId) btn.classList.add('is-selected')
+
+    const iconWrap = document.createElement('span')
+    iconWrap.className = item.selfRegistered ? 'omnimux-avatar-more-icon' : 'omnimux-explore-more-icon'
+    iconWrap.setAttribute('aria-hidden', 'true')
+    iconWrap.innerHTML = item.iconSvg
+
+    const labelSlot = document.createElement('span')
+    labelSlot.className = 'menu-row-label-slot'
+
+    if (alpha) {
+      const wrap = document.createElement('span')
+      wrap.className = item.selfRegistered ? 'omnimux-avatar-more-label' : 'omnimux-explore-more-label'
+      const text = document.createElement('span')
+      text.className = item.selfRegistered ? 'omnimux-avatar-more-label-text' : 'omnimux-explore-more-label-text'
+      text.textContent = item.label
+      const badge = document.createElement('span')
+      badge.className = item.selfRegistered ? 'omnimux-avatar-more-alpha' : 'omnimux-explore-more-alpha'
+      badge.textContent = 'Alpha'
+      badge.title = ALPHA_DESCRIPTION
+      wrap.append(text, badge)
+      labelSlot.append(wrap)
+    } else {
+      labelSlot.textContent = item.label
+    }
+
+    btn.append(iconWrap, labelSlot)
+    btn.addEventListener('click', () => {
+      selectedId = item.pluginId || item.id
+      renderAll()
+    })
+    container.append(btn)
+  })
+
+  metaEl.textContent = `${visibleProducts.length} 个产品项 · ${alphaCount} 个 Alpha`
+}
+
+function renderInspector() {
+  const inspector = document.getElementById('inspector')
+  const item = [...OFFICIAL_PANELS, ...PRODUCT_ITEMS].find((entry) => (entry.pluginId || entry.id) === selectedId)
+  if (!item) return
+  const beforeAlpha = isAlpha(item.pluginId, 'before')
+  const afterAlpha = isAlpha(item.pluginId, 'after')
+  let source = '非 Alpha（正式常驻）'
+  if (item.official) source = 'DSH 官方面板白名单'
+  else if (LIFECYCLE_ALPHA.has(item.pluginId)) source = 'plugin-lifecycle.json（仓内 Alpha 包）'
+  else if (EXTERNAL_ALPHA.has(item.pluginId)) source = 'sidebar-coordinator.js EXTERNAL_ALPHA_PLUGINS（仓外内测入口，经 isAlphaEntry 统一暴露）'
+
+  const renderPath = item.selfRegistered
+    ? 'omnimux-avatar 经 window.__omnimuxSidebar.isAlphaEntry("omnimux-avatar") 自渲染 .omnimux-avatar-more-alpha'
+    : item.official
+      ? '官方菜单原样渲染'
+      : 'explore-more-menu.jsx 经 isAlphaEntry() 渲染 .omnimux-explore-more-alpha'
+
+  inspector.innerHTML = `
+    <div><strong>${item.label}</strong> <code>${item.pluginId || item.id}</code></div>
+    <div>判定变化：修改前 <code>isAlphaEntry = ${beforeAlpha}</code> → 修改后 <code>isAlphaEntry = ${afterAlpha}</code></div>
+    <div>真源归属：${source}</div>
+    <div>渲染链路：${renderPath}</div>
+    <div>内测说明（title）：<code>${afterAlpha ? ALPHA_DESCRIPTION : '无'}</code></div>
+  `
+}
+
+function renderAll() {
+  const channel = document.body.dataset.channel
+  document.getElementById('before-title').textContent = channel === 'production'
+    ? '正式版仍露出手机管理与社交采收'
+    : '仅 4 项仓内包带 Alpha'
+  document.getElementById('after-title').textContent = channel === 'production'
+    ? '正式版自动隐藏全部 Alpha 项'
+    : '共 7 项带统一 Alpha 标识'
+  renderMenu(document.getElementById('menu-before'), document.getElementById('before-meta'), 'before', channel)
+  renderMenu(document.getElementById('menu-after'), document.getElementById('after-meta'), 'after', channel)
+  renderInspector()
+}
+
+function syncToggleButtons(attr, value) {
+  document.querySelectorAll(`[data-${attr}-btn]`).forEach((btn) => {
+    btn.classList.toggle('active', btn.getAttribute(`data-${attr}-btn`) === value)
+  })
+}
+
+function setMode(attr, value) {
+  document.body.dataset[attr] = value
+  syncToggleButtons(attr, value)
+  renderAll()
+}
+
+document.querySelectorAll('[data-theme-btn]').forEach((btn) => {
+  btn.addEventListener('click', () => setMode('theme', btn.dataset.themeBtn))
+})
+document.querySelectorAll('[data-channel-btn]').forEach((btn) => {
+  btn.addEventListener('click', () => setMode('channel', btn.dataset.channelBtn))
+})
+document.querySelectorAll('[data-width-btn]').forEach((btn) => {
+  btn.addEventListener('click', () => setMode('width', btn.dataset.widthBtn))
+})
+
+const params = new URLSearchParams(location.search)
+if (params.get('theme') === 'light') setMode('theme', 'light')
+if (params.get('channel') === 'production') setMode('channel', 'production')
+if (params.get('width') === 'narrow') setMode('width', 'narrow')
+renderAll()
+</script>
+</body>
+</html>

@@ -3,7 +3,7 @@
  * Multi-selection floating capsule toolbar displayed when >= 2 nodes are selected.
  */
 
-import React, { memo, useState, useRef, useEffect } from 'react';
+import React, { memo, useState, useRef } from 'react';
 import {
   FolderPlus,
   PackagePlus,
@@ -14,6 +14,7 @@ import {
   Grid,
 } from 'lucide-react';
 import { useT } from '../../i18n';
+import { useCanvasDismissLayer } from '../utils/canvasDismissLayer.ts';
 import { stopToolbarNativeEvent } from './toolbarPointerGuard';
 
 export interface FloatingSelectionToolbarProps {
@@ -37,17 +38,11 @@ export const FloatingSelectionToolbar: React.FC<FloatingSelectionToolbarProps> =
   const [isLayoutMenuOpen, setIsLayoutMenuOpen] = useState(false);
   const layoutDropdownRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (layoutDropdownRef.current && !layoutDropdownRef.current.contains(e.target as Node)) {
-        setIsLayoutMenuOpen(false);
-      }
-    }
-    if (isLayoutMenuOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
-  }, [isLayoutMenuOpen]);
+  useCanvasDismissLayer({
+    open: visible && selectedCount >= 2 && isLayoutMenuOpen,
+    containsTarget: (target) => Boolean(layoutDropdownRef.current?.contains(target)),
+    onDismiss: () => setIsLayoutMenuOpen(false),
+  });
 
   if (!visible || selectedCount < 2) return null;
 

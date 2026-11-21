@@ -21,6 +21,7 @@ import { createPortal } from 'react-dom';
 import { Check, ChevronDown } from 'lucide-react';
 import { ModelBrandIcon } from '../../../../ui/ModelBrandIcon';
 import { useT } from '../../../../i18n/index.ts';
+import { useCanvasDismissLayer } from '../../../utils/canvasDismissLayer.ts';
 import {
   groupPickerCandidates,
   isPickerCandidate,
@@ -674,23 +675,14 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
     };
   }, [isOpen]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const onPointerDown = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (triggerRef.current?.contains(target) || popoverRef.current?.contains(target)) return;
-      setIsOpen(false);
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setIsOpen(false);
-    };
-    window.addEventListener('mousedown', onPointerDown, true);
-    window.addEventListener('keydown', onKeyDown);
-    return () => {
-      window.removeEventListener('mousedown', onPointerDown, true);
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  }, [isOpen]);
+  useCanvasDismissLayer({
+    open: isOpen,
+    containsTarget: (target) => Boolean(
+      triggerRef.current?.contains(target) || popoverRef.current?.contains(target),
+    ),
+    onDismiss: () => setIsOpen(false),
+    returnFocusRef: triggerRef,
+  });
 
   useEffect(() => {
     if (isOpen) return;

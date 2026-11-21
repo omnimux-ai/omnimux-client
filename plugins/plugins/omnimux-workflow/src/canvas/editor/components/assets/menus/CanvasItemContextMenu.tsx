@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   MessageSquarePlus,
@@ -14,6 +14,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { stopToolbarNativeEvent } from '../../toolbarPointerGuard';
+import { useCanvasDismissLayer } from '../../../utils/canvasDismissLayer.ts';
 import type { CanvasNodeItem } from '../types';
 
 export interface CanvasContextMenuActionHandler {
@@ -39,26 +40,11 @@ export const CanvasItemContextMenu: React.FC<CanvasItemContextMenuProps> = ({
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        onClose();
-      }
-    };
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-
-    document.addEventListener('mousedown', handleClickOutside, true);
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside, true);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [isOpen, onClose]);
+  useCanvasDismissLayer({
+    open: Boolean(isOpen && item),
+    containsTarget: (target) => Boolean(menuRef.current?.contains(target)),
+    onDismiss: () => onClose(),
+  });
 
   if (!isOpen || !item) return null;
 

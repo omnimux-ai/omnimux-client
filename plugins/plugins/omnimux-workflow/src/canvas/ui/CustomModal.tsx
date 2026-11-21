@@ -6,6 +6,7 @@
 import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
+import { hasActiveCanvasDismissLayer } from '../editor/utils/canvasDismissLayer.ts';
 
 export interface CustomModalProps {
   open: boolean;
@@ -41,7 +42,7 @@ export const CustomModal: React.FC<CustomModalProps> = ({
      */
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      if (document.querySelector('.wf-custom-select-dropdown')) return;
+      if (document.querySelector('.wf-custom-select-dropdown') || hasActiveCanvasDismissLayer()) return;
       e.stopPropagation();
       onCancel();
     };
