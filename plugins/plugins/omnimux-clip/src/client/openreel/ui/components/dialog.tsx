@@ -1,6 +1,6 @@
 "use client"
 
-import { useEditorPortalRoot } from "@openreel/ui/lib/portal-root"
+import { EditorRadixPortal } from "@openreel/ui/lib/portal-root"
 
 import * as React from "react"
 import * as DialogPrimitive from "@radix-ui/react-dialog"
@@ -11,11 +11,6 @@ import { scheduleStaleBodyPointerLockRelease } from "@openreel/ui/lib/pointer-lo
 import { useClipT } from "../../../i18n/index.js";
 
 const Dialog = DialogPrimitive.Root
-
-function DialogPortal(props: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Portal>) {
-  const container = useEditorPortalRoot()
-  return container ? <DialogPrimitive.Portal {...props} container={container} /> : null
-}
 
 const DialogClose = DialogPrimitive.Close
 
@@ -56,7 +51,7 @@ const DialogContent = React.forwardRef<
 >(({ className, children, hideCloseButton = false, overlayClassName, ...props }, ref) => {
   const t = useClipT();
   return (
-  <DialogPortal>
+  <EditorRadixPortal portal={DialogPrimitive.Portal}>
     <DialogOverlay className={overlayClassName} />
     <DialogPrimitive.Content
       ref={ref}
@@ -75,7 +70,7 @@ const DialogContent = React.forwardRef<
         </DialogPrimitive.Close>
       )}
     </DialogPrimitive.Content>
-  </DialogPortal>
+  </EditorRadixPortal>
 );
 })
 DialogContent.displayName = DialogPrimitive.Content.displayName

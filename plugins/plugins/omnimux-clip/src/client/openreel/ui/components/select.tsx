@@ -1,6 +1,6 @@
 "use client"
 
-import { useEditorPortalRoot } from "@openreel/ui/lib/portal-root"
+import { EditorRadixPortal } from "@openreel/ui/lib/portal-root"
 
 import * as React from "react"
 import * as SelectPrimitive from "@radix-ui/react-select"
@@ -75,7 +75,7 @@ const SelectContent = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>
 >(({ className, children, position = "popper", ...props }, ref) => (
-  <SelectPrimitive.Portal container={useEditorPortalRoot()}>
+  <EditorRadixPortal portal={SelectPrimitive.Portal}>
     <SelectPrimitive.Content
       ref={ref}
       position={position}
@@ -107,7 +107,7 @@ const SelectContent = React.forwardRef<
         <SelectScrollDownButton />
       </motion.div>
     </SelectPrimitive.Content>
-  </SelectPrimitive.Portal>
+  </EditorRadixPortal>
 ))
 SelectContent.displayName = SelectPrimitive.Content.displayName
 

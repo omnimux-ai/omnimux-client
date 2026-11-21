@@ -1,6 +1,6 @@
 "use client"
 
-import { useEditorPortalRoot } from "@openreel/ui/lib/portal-root"
+import { EditorRadixPortal } from "@openreel/ui/lib/portal-root"
 
 import * as React from "react"
 import * as MenubarPrimitive from "@radix-ui/react-menubar"
@@ -94,7 +94,7 @@ const MenubarContent = React.forwardRef<
     { className, align = "start", alignOffset = -4, sideOffset = 8, ...props },
     ref
   ) => (
-    <MenubarPrimitive.Portal container={useEditorPortalRoot()}>
+    <EditorRadixPortal portal={MenubarPrimitive.Portal}>
       <MenubarPrimitive.Content
         ref={ref}
         align={align}
@@ -106,7 +106,7 @@ const MenubarContent = React.forwardRef<
         )}
         {...props}
       />
-    </MenubarPrimitive.Portal>
+    </EditorRadixPortal>
   )
 )
 MenubarContent.displayName = MenubarPrimitive.Content.displayName

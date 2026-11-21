@@ -1,6 +1,6 @@
 "use client"
 
-import { useEditorPortalRoot } from "@openreel/ui/lib/portal-root"
+import { EditorRadixPortal } from "@openreel/ui/lib/portal-root"
 
 import * as React from "react"
 import * as PopoverPrimitive from "@radix-ui/react-popover"
@@ -15,7 +15,7 @@ const PopoverContent = React.forwardRef<
   React.ElementRef<typeof PopoverPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Content>
 >(({ className, align = "center", sideOffset = 4, ...props }, ref) => (
-  <PopoverPrimitive.Portal container={useEditorPortalRoot()}>
+  <EditorRadixPortal portal={PopoverPrimitive.Portal}>
     <PopoverPrimitive.Content
       ref={ref}
       align={align}
@@ -26,7 +26,7 @@ const PopoverContent = React.forwardRef<
       )}
       {...props}
     />
-  </PopoverPrimitive.Portal>
+  </EditorRadixPortal>
 ))
 PopoverContent.displayName = PopoverPrimitive.Content.displayName
 

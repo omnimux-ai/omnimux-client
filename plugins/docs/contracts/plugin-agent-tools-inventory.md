@@ -47,10 +47,10 @@ superseded_by: null
 | 统计指标 | 数值 | 说明 |
 |---|---|---|
 | **体检插件总数** | 13 个 | 覆盖 `plugins/` 下全部生产插件 |
-| **已注册 Agent 工具总数** | 98 个 | 源码中实装并可在会话中调用的工具 (29+4+6+3+9+12+6+15+0+0+4+1+9)。Hub 规划 +2 `workbench_*`（`Planned`，见下文中枢工具清单）落地后改此行。 |
+| **已注册 Agent 工具总数** | 101 个 | 源码中注册的工具 (29+4+6+3+9+12+9+15+0+0+4+1+9)。Hub 规划 +2 `workbench_*`（`Planned`，见下文中枢工具清单）落地后改此行。 |
 | **双面齐备标杆插件 (A+)** | 4 个 | `omnimux-workflow` (12 tools), `omnimux-publish` (9 tools), `omnimux-market` (15 tools), `omnimux-avatar` (9 tools) |
 | **需补齐写操作工具插件 (B)** | 4 个 | `omnimux-assets`, `omnimux-products`, `omnimux-inspiration`, `omnimux-accounts` |
-| **纯后端/纯中枢/纯视图插件** | 5 个 | `omnimux` (中枢 29 tools), `omnimux-video` (4 tools), `omnimux-video-preview` (2 tools), `omnimux-analytics` (0 tools), `omnimux-clip` (6 tools) |
+| **纯后端/纯中枢/纯视图插件** | 5 个 | `omnimux` (中枢 29 tools), `omnimux-video` (4 tools), `omnimux-video-preview` (2 tools), `omnimux-analytics` (0 tools), `omnimux-clip` (9 个注册工具，见下文剪辑限制) |
 
 ---
 
@@ -204,21 +204,27 @@ superseded_by: null
 
 ---
 
-### 3.7 `omnimux-clip`（OpenReel 视频剪辑工坊）
-- **功能域**：基于 OpenReel v1.0.0 的独立剪辑工坊和画布合成编辑器，含多轨时间轴、三栏工作区、转场特效、音频处理和视频导出。[上游引入契约](openreel-vendor-contract.md)
-- **存储**：`$DSH_HOME/omnimux/clip/projects/`。
-- **入口**：独立剪辑工坊在工作台打开。画布合成编辑器通过宿主保存 MP4，并将成片版本传回合成节点。
-- **工具兼容性**：工具仍使用宿主项目接口。OpenReel 原生项目的宿主读回及部分工具的运行态行为由 [#160](https://github.com/omnimux-ai/omnimux-client/issues/160) 跟踪。
+### 3.7 `omnimux-clip`（OpenReel 视频剪辑）
 
-| 业务功能描述 | 对应 UI 交互 / HTTP 路由 | Agent 工具名称 (`Tool Name`) | 分级 | 状态 | 破坏性 confirm |
-|---|---|---|---|---|---|---|
-| 获取指定剪辑项目时间轴与轨道配置 | 侧栏 Tab 打开工程 | `clip_get` | L1 | `Implemented` | 否 |
-| 执行轨道级编辑操作 (增删片段/微调) | 时间轴拖拽、剪切、特效挂载 | `clip_edit` | L1 | `Implemented` | 否 |
-| 获取当前视口渲染数据与布局 | 视口渲染器 | `clip_view` | L1 | `Implemented` | 否 |
-| 获取指定时间戳的帧快照图片 | 视口截图 | `clip_snapshot` | L2 | `Implemented` | 否 |
-| 诊断剪辑工程轨道与物料完整性 | 导出前自动检查 | `clip_diagnostics` | L2 | `Implemented` | 否 |
-| 触发后台视频合成与导出任务 | 顶部「导出」按钮 | `clip_export` | L1 | `Implemented` | 否 |
+- **功能域**为 OpenReel v1.0.0 三栏工作区内的多轨时间轴、素材、字幕、转场、音频处理、播放与 WebCodecs 导出。[上游引入契约](openreel-vendor-contract.md)
+- **归属**为画布节点绑定的 Portal 或独立「视频剪辑」Tab。复制节点分配新工程 ID、清空旧草稿与成片绑定。画布打开和回执按工作区、节点、工程三项校验。手工导出的每笔上传独立结算，退出后仍可回写，新版回写后拒绝迟到的旧回执。
+- **状态**为 9 个注册工具。Host 查档与旧档编辑均使用 `$DSH_HOME/omnimux/clip/projects/` 的 `TimelineSchema`。当前可用的手工编辑和导出由浏览器执行。运行行为与 [阶段 2 计划协议](clip-live-control.md) 见剪辑契约。
+- `Implemented` 标记已注册的 Host 处理器。表中四个实时工具当前仅校验工程并返回错误，实时操作待阶段 2 接入。
+
+| 当前 Agent 行为 | 对应 UI 交互 / HTTP 路由 | Agent 工具名称 (`Tool Name`) | 分级 | 状态 | 破坏性 confirm |
+|---|---|---|---|---|---|
+| 列出已保存工程，显式标记待迁移或不可读项 | `GET /omnimux-clip/api/projects` | `clip_list` | L1 | `Implemented` | 否 |
+| 读取已保存旧格式工程 | `GET /omnimux-clip/api/projects/:id` | `clip_get` | L1 | `Implemented` | 否 |
+| 诊断已保存旧格式工程 | Host 读取工程文件 | `clip_diagnostics` | L2 | `Implemented` | 否 |
+| 新建已保存旧格式工程 | Host 工程 Store | `clip_create` | L1 | `Implemented` | 否 |
+| 批量编辑旧档并记录一步 Host 历史 | Host 工程 Store | `clip_edit` | L1 | `Implemented` | 否 |
+| 校验待打开的工程并报告实时打开不可用 | 打开节点 Portal 或独立 Tab | `clip_open` | L1 | `Implemented` | 否 |
+| 校验工程并报告实时播放控制不可用 | 编辑器播放控制 | `clip_view` | L1 | `Implemented` | 否 |
+| 校验工程并报告实时截帧不可用 | 编辑器预览 | `clip_snapshot` | L2 | `Implemented` | 否 |
+| 校验工程并报告实时导出不可用 | 编辑器「导出」 | `clip_export` | L1 | `Implemented` | 阶段 2 按用户明确导出指令 |
 | 播放指针拖拽 (Scrubbing) 与实时预览 | 播放控制器 | — | UI-Only | `UI-Only` | 豁免 (60fps 实时渲染) |
+
+查询工具不会自动切页，画布 Portal 打开时剪辑工具保留当前画布。待迁移文件上报 `openreel-migration-required`，未保存的 `clip_node_…` 上报 `project-not-materialized`。单个工程读文件失败时上报 `project-unreadable`，HTTP 单项为 409，列表继续返回其余工程。实时工具读取旧档成功后抛 `ui-unavailable`。截帧与导出不会生成占位文件。
 
 ---
 

@@ -3,6 +3,7 @@ import React, {
   Suspense,
   useState,
   useEffect,
+  useLayoutEffect,
   useCallback,
   useMemo,
   useRef,
@@ -73,6 +74,7 @@ import {
   Progress,
   cn,
 } from "@openreel/ui";
+import { useEditorPortalRoot } from "@openreel/ui/lib/portal-root";
 
 import {
   exportPresetsManager,
@@ -423,6 +425,47 @@ const UsePreviewsToggle: React.FC<{
   );
 };
 
+function useVisibleExportPane(enabled: boolean) {
+  const portal = useEditorPortalRoot();
+  const [style, setStyle] = useState<React.CSSProperties>();
+
+  useLayoutEffect(() => {
+    if (!enabled || !portal) return;
+    const measure = () => {
+      // A narrow shell can dock part of the canvas pane outside the window.
+      // Keep the dialog inside the visible part of its own portal.
+      const pane = portal.getBoundingClientRect();
+      const viewport = portal.ownerDocument.documentElement;
+      const left = Math.max(0, pane.left);
+      const top = Math.max(0, pane.top);
+      const width = Math.max(0, Math.min(pane.right, viewport.clientWidth) - left);
+      const height = Math.max(0, Math.min(pane.bottom, viewport.clientHeight) - top);
+      setStyle(width === pane.width && height === pane.height ? undefined : {
+        left: left - pane.left + width / 2,
+        top: top - pane.top + height / 2,
+        width: Math.max(0, width - 32),
+        height: Math.max(0, height - 32),
+      });
+    };
+    measure();
+    const resize = new ResizeObserver(measure);
+    resize.observe(portal);
+    // Sliding the pane across the window edge can clip it without resizing it.
+    const visibility = new IntersectionObserver(measure, {
+      threshold: Array.from({ length: 101 }, (_, step) => step / 100),
+    });
+    visibility.observe(portal);
+    window.addEventListener("resize", measure);
+    return () => {
+      resize.disconnect();
+      visibility.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [enabled, portal]);
+
+  return enabled ? style : undefined;
+}
+
 export const ExportDialog: React.FC<ExportDialogProps> = ({
   isOpen,
   onClose,
@@ -439,6 +482,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
 }) => {
   const t = useClipT();
   const phone = usePhoneEditor() && !canvasMode;
+  const paneStyle = useVisibleExportPane(isOpen && canvasMode);
   const [advanced, setAdvanced] = useState(false);
   useEffect(() => {
     if (!isOpen) setAdvanced(false);
@@ -1186,8 +1230,9 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
     >
       <DialogContent
         hideCloseButton
+        style={paneStyle}
         className={cn(
-          "flex h-[min(820px,calc(100dvh-32px))] w-[1000px] max-w-[calc(100vw-32px)] flex-col gap-0 overflow-hidden rounded-xl border-border bg-bg p-0 text-fg",
+          "clip-export-dialog absolute flex h-[calc(100%-32px)] max-h-[820px] w-[calc(100%-32px)] max-w-[1000px] flex-col gap-0 overflow-hidden rounded-xl border-border bg-bg p-0 text-fg",
           phone && "mobile-export-advanced",
         )}
       >
@@ -1481,7 +1526,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
                   );
                   if (preset) setSelectedPreset(preset);
                 }}
-                className="grid grid-cols-2 gap-3"
+                className="export-preset-grid grid grid-cols-2 gap-3"
               >
                 {filteredPresets.map((preset) => {
                   const PlatformIcon = PLATFORM_ICONS[preset.platform] ?? Globe;
@@ -3018,7 +3063,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
             </Collapsible>
           )}
         </Tabs>
-        <DialogFooter className="export-dialog-footer flex-col items-stretch gap-2 border-t border-border px-5 py-3 sm:flex-col sm:items-stretch sm:space-x-0">
+        <DialogFooter className="export-dialog-footer shrink-0 flex-col items-stretch gap-2 border-t border-border px-5 py-3 sm:flex-col sm:items-stretch sm:space-x-0">
           {!canvasMode && !isDesktop && (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <div className="flex items-center gap-2">

@@ -12,6 +12,8 @@
  * 另：自动跟随不消耗 Agent 的每会话切换配额。
  */
 
+import { isCanvasClipActive } from './contract.js'
+
 /**
  * 工具名前缀/全名 → 工作台页签。顺序敏感：先匹配长前缀。
  * `view` 可选：跟随到该页签时一并带上的子视图请求（当前只有产品库需要过滤）。
@@ -19,7 +21,7 @@
 const SURFACE_RULES = Object.freeze([
   { match: /^canvas_/, tabId: 'omnimux-workflow:canvas' },
   { match: /^workflow_/, tabId: 'omnimux-workflow:canvas' },
-  { match: /^clip_/, tabId: 'omnimux-clip:studio' },
+  { match: /^clip_(create|edit)$/, tabId: 'omnimux-clip:studio' },
   { match: /^products_/, tabId: 'omnimux-assets:library', view: Object.freeze({ filterType: 'product' }) },
   { match: /^inspiration_/, tabId: 'omnimux-inspiration:library' },
   { match: /^omnimux_inspiration_/, tabId: 'omnimux-inspiration:library' },
@@ -73,11 +75,12 @@ export function isAutoFollowEnabled(settings) {
  *   sessionId: string,
  *   activeTabId?: string|null,
  *   panelOpen?: boolean,
+ *   canvasClipActive?: boolean,
  * }} input
  * @returns {{ action: 'switch', tabId: string, view?: object } | { action: 'skip', code: string }}
  */
 export function decideSurfaceFollow(input) {
-  const { follow, toolName, turn, sessionId, activeTabId = null, panelOpen = true } = input || {}
+  const { follow, toolName, turn, sessionId, activeTabId = null, panelOpen = true, canvasClipActive = false } = input || {}
   if (!follow?.enabled) return { action: 'skip', code: 'disabled' }
   if (follow.mutedSessionId && follow.mutedSessionId === sessionId && follow.mutedTurn === turn) {
     return { action: 'skip', code: 'user-took-over' }
@@ -86,6 +89,7 @@ export function decideSurfaceFollow(input) {
   const tabId = rule?.tabId
   if (!tabId) return { action: 'skip', code: 'not-a-surface-tool' }
   if (!panelOpen) return { action: 'skip', code: 'panel-collapsed' }
+  if (canvasClipActive && tabId === 'omnimux-clip:studio') return { action: 'skip', code: 'canvas-clip-active' }
   if (activeTabId === tabId) return { action: 'skip', code: 'already-active' }
   if (follow.followedTabIds?.has(tabId)) return { action: 'skip', code: 'already-followed-this-turn' }
   return rule.view ? { action: 'switch', tabId, view: rule.view } : { action: 'switch', tabId }
@@ -107,7 +111,7 @@ export function isUserTakeover({ lastAutoTabId, activeTabId, targetTabId }) {
  *
  * @param {object} ctx Cordis context
  * @param {{
- *   mailbox: { getActiveView: (sessionId?: string) => { ok: boolean, uiContext?: object }, sendRpc: (payload: object) => Promise<object> },
+ *   mailbox: { getActiveView: (sessionId?: string) => { ok: boolean, stale?: boolean, uiContext?: object }, sendRpc: (payload: object) => Promise<object> },
  *   getSettings?: () => ({ allowAutoSurfaceFollow?: boolean, allowAgentSwitchTab?: boolean } | null),
  * }} deps
  * @returns {() => void} disposer
@@ -165,6 +169,7 @@ export function mountSurfaceFollow(ctx, deps) {
         sessionId,
         activeTabId,
         panelOpen,
+        canvasClipActive: view?.stale !== true && isCanvasClipActive(view?.uiContext),
       })
 
       if (decision.action === 'switch') {

@@ -7,6 +7,8 @@ import {
   isOpenClipEditorPayload,
   isCloseClipEditorPayload,
 } from './clip-events.js'
+import { getActiveClipStageStore } from './stage-store.js'
+import { findCanvasHost } from './findCanvasHost.js'
 
 /**
  * CanvasBridge connects canvas events (from omnimux-workflow)
@@ -14,27 +16,30 @@ import {
  *
  * @param {{
  *   stage: { openFromCanvas: (payload: any) => void, set: (open: boolean) => void, getSessionSnapshot: () => any },
- *   target?: EventTarget
+ *   target?: EventTarget,
+ *   root?: Document
  * }} options
  */
-export function createAndMountCanvasBridge({ stage, target = window }) {
+export function createAndMountCanvasBridge({ stage, target = window, root = globalThis.document }) {
   if (!target || typeof target.addEventListener !== 'function') {
     return () => {}
   }
 
   const handleOpen = (event) => {
     const detail = event instanceof CustomEvent ? event.detail : undefined
-    if (!isOpenClipEditorPayload(detail)) return
-    if (detail.source === 'canvas') {
-      stage.openFromCanvas(detail)
-    }
+    if (!isOpenClipEditorPayload(detail) || detail.source !== 'canvas') return
+    if (!findCanvasHost(root, detail.workspaceId)) return
+    stage.openFromCanvas(detail)
   }
 
   const handleClose = (event) => {
     const detail = event instanceof CustomEvent ? event.detail : undefined
     if (!isCloseClipEditorPayload(detail)) return
     const session = stage.getSessionSnapshot()
-    if (!detail.nodeId || (session && session.nodeId === detail.nodeId)) {
+    if (session?.source === 'canvas'
+      && session.workspaceId === detail.workspaceId
+      && session.nodeId === detail.nodeId
+      && session.projectId === detail.projectId) {
       stage.set(false)
     }
   }
@@ -60,44 +65,46 @@ export function createAndMountCanvasBridge({ stage, target = window }) {
   }
 }
 
+function notifyCanvas(type, payload, targetOrOpts) {
+  const detail = getActiveClipStageStore()?.resolveCanvasReply(type, payload)
+  if (!detail) return false
+  const opts = targetOrOpts && typeof targetOrOpts.dispatchEvent === 'function'
+    ? { target: targetOrOpts }
+    : (targetOrOpts || {})
+  return dispatchClipEvent(type, detail, opts)
+}
+
 /**
  * Helper to emit save event back to canvas.
  * @param {{
- *   nodeId?: string,
+ *   nodeId: string,
+ *   workspaceId?: string,
  *   projectId?: string,
  *   schema?: unknown,
  *   createDownstreamNode?: boolean,
- *   output?: { videoPath: string, thumbnailPath?: string, durationMs?: number, width?: number, height?: number }
+ *   output?: { videoPath: string, thumbnailPath?: string, durationMs?: number, width?: number, height?: number, revision?: string }
  * }} payload
  * @param {EventTarget | { target?: EventTarget }} [targetOrOpts]
  */
 export function notifyCanvasSave(payload, targetOrOpts) {
-  const opts = targetOrOpts && typeof targetOrOpts.addEventListener === 'function'
-    ? { target: targetOrOpts }
-    : (targetOrOpts || {})
-  return dispatchClipEvent(OMNIMUX_CLIP_SAVE, payload, opts)
+  return notifyCanvas(OMNIMUX_CLIP_SAVE, payload, targetOrOpts)
 }
 
 /**
  * Helper to emit progress event back to canvas.
- * @param {{ nodeId?: string, status?: string, renderProgress?: number }} payload
+ * @param {{ nodeId: string, workspaceId?: string, projectId?: string, status?: string, renderProgress?: number }} payload
  * @param {EventTarget | { target?: EventTarget }} [targetOrOpts]
  */
 export function notifyCanvasProgress(payload, targetOrOpts) {
-  const opts = targetOrOpts && typeof targetOrOpts.addEventListener === 'function'
-    ? { target: targetOrOpts }
-    : (targetOrOpts || {})
-  return dispatchClipEvent(OMNIMUX_CLIP_PROGRESS, payload, opts)
+  return notifyCanvas(OMNIMUX_CLIP_PROGRESS, payload, targetOrOpts)
 }
 
 /**
  * Helper to emit close event back to canvas.
- * @param {{ nodeId?: string }} payload
+ * @param {{ nodeId: string, workspaceId?: string, projectId?: string }} payload
  * @param {EventTarget | { target?: EventTarget }} [targetOrOpts]
  */
 export function notifyCanvasClose(payload, targetOrOpts) {
-  const opts = targetOrOpts && typeof targetOrOpts.addEventListener === 'function'
-    ? { target: targetOrOpts }
-    : (targetOrOpts || {})
-  return dispatchClipEvent(OMNIMUX_CLIP_CLOSE, payload, opts)
+  // The toolbar reads the active session and closes it in the same callback.
+  return notifyCanvas(OMNIMUX_CLIP_CLOSE, payload, targetOrOpts)
 }

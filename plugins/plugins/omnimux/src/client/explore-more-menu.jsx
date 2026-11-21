@@ -86,15 +86,15 @@ function panelRowIcon() {
 /**
  * 行内容：Alpha 内测项在文案后带一个标识，其余项保持纯字符串（零变化）。
  *
- * 判定复用 `sidebar-coordinator.isAlphaEntry()`，真源仍是 `plugin-lifecycle.json`，
- * 本模块不维护第二份 Alpha 名单。标识放在官方 `children` 里：`MenuItemButton` 没有
- * 第二个尾部插槽，`children` 渲染进 `.itemLabel` 是唯一可行位置。
+ * 判定复用 `sidebar-coordinator.isAlphaEntry()`（覆盖 `plugin-lifecycle.json`
+ * 与仓外内测入口补集），本模块不维护第二份 Alpha 名单。标识放在官方 `children` 里：
+ * `MenuItemButton` 没有第二个尾部插槽，`children` 渲染进 `.itemLabel` 是唯一可行位置。
  *
- * @param {{ label: string, entryId?: string, pluginId?: string }} item
+ * @param {{ id?: string, label: string, entryId?: string, pluginId?: string }} item
  * @returns {string | import('react').ReactElement}
  */
 function exploreMoreMenuLabel(item) {
-  const isAlpha = isAlphaEntry(item.entryId) || isAlphaEntry(item.pluginId)
+  const isAlpha = isAlphaEntry(item.entryId) || isAlphaEntry(item.pluginId) || isAlphaEntry(item.id)
   if (!isAlpha) return item.label
   return (
     <span className="omnimux-explore-more-label">

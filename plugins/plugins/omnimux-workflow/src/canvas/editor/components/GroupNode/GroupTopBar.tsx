@@ -1,4 +1,4 @@
-import React, { memo, useState, useEffect, useMemo, useRef } from 'react';
+import React, { memo, useState, useMemo, useRef } from 'react';
 import { useViewport } from '@xyflow/react';
 import {
   Play,
@@ -9,6 +9,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useT } from '../../../i18n';
+import { useCanvasDismissLayer } from '../../utils/canvasDismissLayer.ts';
 import { stopToolbarNativeEvent } from '../toolbarPointerGuard';
 import {
   inverseScaleForZoom,
@@ -67,15 +68,11 @@ export const GroupTopBar: React.FC<GroupTopBarProps> = memo(({
   const [isColorOpen, setIsColorOpen] = useState(false);
   const colorRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (colorRef.current && !colorRef.current.contains(e.target as Node)) {
-        setIsColorOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  useCanvasDismissLayer({
+    open: isColorOpen,
+    containsTarget: (target) => Boolean(colorRef.current?.contains(target)),
+    onDismiss: () => setIsColorOpen(false),
+  });
 
   return (
     <div

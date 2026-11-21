@@ -1,4 +1,6 @@
 /** Hub event subscription and bounded workbench heartbeat/RPC delivery. */
+import { isCanvasClipActive } from '../workbench/contract.js'
+
 export const HUB_EVENTS_GLOBAL_KEY = '__omnimuxHubEvents'
 export const WATCHDOG_TIMEOUT_MS = 5000
 export const HEARTBEAT_INTERVAL_MS = 2000
@@ -66,15 +68,20 @@ export function createEventsClient(options = {}) {
     let code = 'no-workbench'
     if (wb && typeof wb.open === 'function') {
       try {
-        applied = Boolean(await wb.open({
-          tabId,
-          path: path || tabId,
-          view,
-          meta,
-          highlightIds,
-          preserveLayout: true,
-        }))
-        code = applied ? 'opened' : 'open-failed'
+        // The Portal can open between the last viewport heartbeat and this RPC.
+        if (payload.auto === true && tabId === 'omnimux-clip:studio' && isCanvasClipActive(wb.getUiContext?.())) {
+          code = 'canvas-clip-active'
+        } else {
+          applied = Boolean(await wb.open({
+            tabId,
+            path: path || tabId,
+            view,
+            meta,
+            highlightIds,
+            preserveLayout: true,
+          }))
+          code = applied ? 'opened' : 'open-failed'
+        }
       } catch (error) {
         console.error('[EventsClient] RPC open failed:', error)
         code = 'error'

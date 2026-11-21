@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import { ClipDomainError } from './errors.js'
 import { ensureClipDirs, resolveClipPaths } from './paths.js'
 import { createProjectStore } from './store/projectStore.js'
-import { createClipTools } from './tools.js'
+import { createClipTools, registerClipTools } from './tools.js'
 import { createEmptySchema } from './client/store/timelineTypes.js'
 import { apply, inject as moduleInject } from './index.js'
+import { createClipDispatcher } from './http/routes.js'
 
 function tempStore() {
   const home = mkdtempSync(join(tmpdir(), 'omnimux-clip-tools-'))
@@ -26,12 +27,10 @@ function byName(tools, name) {
 describe('clip_* tools', () => {
   /** @type {{ home: string, paths: object, store: ReturnType<typeof createProjectStore> }} */
   let ctx
-  let overlay = false
   let tools
 
   beforeEach(() => {
     ctx = tempStore()
-    overlay = false
     ctx.store.create('demo', (() => {
       const schema = createEmptySchema({ projectId: 'demo' })
       schema.tracks[0].clips.push({
@@ -50,10 +49,7 @@ describe('clip_* tools', () => {
       schema.canvasConfig.durationMs = 4000
       return schema
     })())
-    tools = createClipTools({
-      store: ctx.store,
-      overlayReady: () => overlay,
-    })
+    tools = createClipTools({ store: ctx.store })
   })
 
   afterEach(() => {
@@ -101,33 +97,63 @@ describe('clip_* tools', () => {
     await assert.rejects(() => byName(tools, 'clip_list').execute({ limit: -1 }), (e) => e instanceof ClipDomainError)
   })
 
-  it('clip_open validates the project then calls the injected open channel', async () => {
-    const opened = []
-    const openTools = createClipTools({
-      store: ctx.store,
-      overlayReady: () => false,
-      openEditor: (projectId) => { opened.push(projectId); return { channels: ['clip-event'] } },
-    })
-    const result = await byName(openTools, 'clip_open').execute({ projectId: 'demo' })
-    assert.deepEqual(opened, ['demo'])
-    assert.equal(result.opened, true)
-    assert.deepEqual(result.channels, ['clip-event'])
-    assert.equal(result.overlayReady, false)
-    await assert.rejects(
-      () => byName(openTools, 'clip_open').execute({ projectId: 'ghost' }),
-      (e) => e instanceof ClipDomainError && e.code === 'not-found',
-    )
+  it('reports native projects and invalid files alongside readable legacy projects', async () => {
+    const native = (id) => ({ id, timeline: { tracks: [] }, mediaLibrary: { items: [] } })
+    writeFileSync(join(ctx.paths.projectsDir, 'native-envelope.json'), JSON.stringify({ schema: native('native-envelope') }))
+    writeFileSync(join(ctx.paths.projectsDir, 'native-bare.json'), JSON.stringify(native('native-bare')))
+    writeFileSync(join(ctx.paths.projectsDir, 'broken.json'), 'private invalid file content')
+    const listed = await byName(tools, 'clip_list').execute({})
+    assert.deepEqual(listed.projects.map(({ id }) => id), ['demo'])
+    assert.equal(listed.unavailableCount, 3)
+    assert.deepEqual(listed.unavailableProjects.map(({ id, code }) => [id, code]), [
+      ['broken', 'invalid-json'], ['native-bare', 'openreel-migration-required'], ['native-envelope', 'openreel-migration-required'],
+    ])
+    assert.doesNotMatch(listed.unavailableProjects[0].message, /private invalid file content/)
+    const limited = await byName(tools, 'clip_list').execute({ limit: 1 })
+    assert.equal(limited.unavailableProjects.length, 1)
+    assert.equal(limited.unavailableCount, 3)
+    const dispatcher = createClipDispatcher({ paths: ctx.paths, store: ctx.store })
+    const httpList = await dispatcher.dispatch({ url: '/projects' })
+    assert.equal(httpList.status, 200)
+    assert.deepEqual(httpList.body.unavailableProjects, listed.unavailableProjects)
+    const httpNative = await dispatcher.dispatch({ url: '/projects/native-bare' })
+    assert.equal(httpNative.status, 409)
+    assert.equal(httpNative.body.error, 'openreel-migration-required')
+    const httpMissing = await dispatcher.dispatch({ url: '/projects/clip_node_fresh' })
+    assert.equal(httpMissing.status, 404)
+    assert.equal(httpMissing.body.error, 'project-not-materialized')
   })
 
-  it('clip_open surfaces ui-unavailable when no UI channel exists', async () => {
-    const noUiTools = createClipTools({
-      store: ctx.store,
-      openEditor: () => { throw ClipDomainError.uiUnavailable('no DOM in this realm') },
-    })
-    await assert.rejects(
-      () => byName(noUiTools, 'clip_open').execute({ projectId: 'demo' }),
-      (e) => e instanceof ClipDomainError && e.code === 'ui-unavailable',
-    )
+  it('isolates a directory named like a project file in tools and HTTP', async () => {
+    const nativeId = '3f121f62-4324-455a-b0a0-88757c46f915'
+    writeFileSync(join(ctx.paths.projectsDir, `${nativeId}.json`), JSON.stringify({
+      id: nativeId, timeline: { tracks: [] }, mediaLibrary: { items: [] },
+    }))
+    mkdirSync(join(ctx.paths.projectsDir, 'stale.json'))
+    const registered = []
+    registerClipTools({ tools: { register: (tool) => registered.push(tool) } }, tools)
+
+    const listed = await byName(registered, 'clip_list').execute({})
+    assert.deepEqual(listed.projects.map(({ id }) => id), ['demo'])
+    assert.equal(listed.unavailableCount, 2)
+    assert.deepEqual(listed.unavailableProjects.map(({ id, code }) => [id, code]), [
+      [nativeId, 'openreel-migration-required'], ['stale', 'project-unreadable'],
+    ])
+    await assert.rejects(() => byName(registered, 'clip_get').execute({ projectId: 'stale' }),
+      (error) => error instanceof ClipDomainError && error.code === 'project-unreadable'
+        && error.message.startsWith('[project-unreadable] ') && !error.message.includes(ctx.home))
+    assert.equal((await byName(registered, 'clip_get').execute({ projectId: 'demo' })).projectId, 'demo')
+
+    const dispatcher = createClipDispatcher({ paths: ctx.paths })
+    const httpList = await dispatcher.dispatch({ url: '/projects' })
+    assert.equal(httpList.status, 200)
+    assert.deepEqual(httpList.body.projects.map(({ id }) => id), ['demo'])
+    assert.deepEqual(httpList.body.unavailableProjects, listed.unavailableProjects)
+    const unreadable = await dispatcher.dispatch({ url: '/projects/stale' })
+    assert.equal(unreadable.status, 409)
+    assert.equal(unreadable.body.error, 'project-unreadable')
+    assert.equal(unreadable.body.message, listed.unavailableProjects[1].message)
+    assert.doesNotMatch(unreadable.body.message, /EISDIR/)
   })
 
   it('clip_get returns seconds and respects view=clips', async () => {
@@ -163,52 +189,46 @@ describe('clip_* tools', () => {
     assert.equal(after.history.past[0].tracks[0].clips.length, 1)
   })
 
-  it('clip_view / clip_snapshot throw PREVIEW_NOT_READY when overlay is down', async () => {
-    await assert.rejects(
-      () => byName(tools, 'clip_view').execute({ projectId: 'demo', action: 'play' }),
-      (error) => error instanceof ClipDomainError && error.code === 'PREVIEW_NOT_READY',
-    )
-    await assert.rejects(
-      () => byName(tools, 'clip_snapshot').execute({ projectId: 'demo', times: [0] }),
-      (error) => error instanceof ClipDomainError && error.code === 'PREVIEW_NOT_READY',
-    )
+  it('reports saved format and live availability without changing any files', async () => {
+    const nativeId = '9f49d01b-9c0d-4767-beb3-4abcd1eac222'
+    const nativeJson = JSON.stringify({ schema: { id: nativeId, timeline: { tracks: [] }, mediaLibrary: { items: [] } } })
+    const nativePath = join(ctx.paths.projectsDir, `${nativeId}.json`)
+    const legacyPath = join(ctx.paths.projectsDir, 'demo.json')
+    writeFileSync(nativePath, nativeJson)
+    const legacy = readFileSync(legacyPath, 'utf8')
+    const cases = [
+      ['clip_open', {}], ['clip_view', { action: 'seek', toSec: 1.25 }],
+      ['clip_snapshot', { times: [0, 1.25] }], ['clip_export', { resolution: '1080p', fps: 30 }],
+    ]
+    for (const [name, args] of [...cases, ['clip_get', {}], ['clip_diagnostics', {}]]) {
+      const tool = byName(tools, name)
+      for (const [projectId, expected] of [
+        ['clip_node_new', 'project-not-materialized'], [nativeId, 'openreel-migration-required'],
+        ['ghost', 'not-found'], ['../wrong', 'invalid-id'],
+      ]) {
+        await assert.rejects(() => tool.execute({ ...args, projectId }),
+          (error) => error instanceof ClipDomainError && error.code === expected, `${name}: ${projectId}`)
+      }
+    }
+    for (const [name, args] of cases) {
+      await assert.rejects(() => byName(tools, name).execute({ ...args, projectId: 'demo' }),
+        (error) => error instanceof ClipDomainError && error.code === 'ui-unavailable', name)
+    }
+    assert.equal(readFileSync(legacyPath, 'utf8'), legacy)
+    assert.equal(readFileSync(nativePath, 'utf8'), nativeJson)
+    assert.deepEqual(readdirSync(ctx.paths.projectsDir).sort(), [`${nativeId}.json`, 'demo.json'])
+    assert.deepEqual(readdirSync(ctx.paths.snapshotsDir), [])
+    assert.deepEqual(readdirSync(ctx.paths.exportsDir), [])
   })
 
-  it('clip_view seeks in seconds without creating an undo step', async () => {
-    overlay = true
-    const before = ctx.store.load('demo').history.past.length
-    const result = await byName(tools, 'clip_view').execute({
-      projectId: 'demo',
-      action: 'seek',
-      toSec: 1.25,
-    })
-    assert.equal(result.playheadSec, 1.25)
-    assert.equal(result.isPlaying, false)
-    assert.equal(ctx.store.load('demo').history.past.length, before)
-  })
-
-  it('clip_snapshot writes png paths and clip_export queues a job', async () => {
-    overlay = true
-    const snap = await byName(tools, 'clip_snapshot').execute({
-      projectId: 'demo',
-      times: [0, 1.5],
-    })
-    assert.equal(snap.frames.length, 2)
-    assert.equal(existsSync(snap.frames[0].path), true)
-    assert.equal(snap.frames[1].timeSec, 1.5)
-
-    const exported = await byName(tools, 'clip_export').execute({
-      projectId: 'demo',
-      resolution: '1080p',
-      fps: 30,
-    })
-    assert.equal(exported.status, 'queued')
-    assert.equal(exported.mode, 'live')
-    assert.equal(exported.resolution, '1080p')
-    assert.match(exported.dest, /\.mp4$/)
-    const jobFile = exported.dest.replace(/\.mp4$/, '.export.json')
-    const job = JSON.parse(readFileSync(jobFile, 'utf8'))
-    assert.equal(job.projectId, 'demo')
+  it('includes the stable code in the registered tool error shown by the Harness', async () => {
+    const registered = []
+    registerClipTools({ tools: { register: (tool) => registered.push(tool) } }, tools)
+    await assert.rejects(() => byName(registered, 'clip_get').execute({ projectId: 'clip_node_new' }),
+      (error) => error instanceof ClipDomainError && error.code === 'project-not-materialized'
+        && error.message.startsWith('[project-not-materialized] '))
+    await assert.rejects(() => byName(registered, 'clip_open').execute({ projectId: 'demo' }),
+      (error) => error instanceof ClipDomainError && error.message.startsWith('[ui-unavailable] '))
   })
 
   it('clip_diagnostics reports gaps without throwing', async () => {

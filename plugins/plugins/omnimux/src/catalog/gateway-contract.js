@@ -89,11 +89,16 @@ function array(value) {
 
 /** @param {string} id */
 function humanizeId(id) {
-  return id
-    .split(/[-_]/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ')
+  const parts = id.split(/[-_]/).filter(Boolean)
+  let out = ''
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index]
+    const previous = parts[index - 1]
+    const versionSegment = index > 0 && /^\d+$/.test(part) && /^\d+$/.test(previous)
+    const label = part.charAt(0).toUpperCase() + part.slice(1)
+    out += versionSegment ? `.${part}` : `${out ? ' ' : ''}${label}`
+  }
+  return out
 }
 
 /** Infer a display family when the gateway model has no local contract. */

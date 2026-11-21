@@ -30,9 +30,9 @@ const LazyEditorInterface = lazy(() =>
   loadEditorModule().then((m) => ({ default: m.EditorInterface })),
 );
 /** Renders synchronously when the chunk is already loaded (see editor-loader). */
-const EditorInterface: React.FC = () => {
+const EditorInterface: React.FC<{ canvasMode: boolean }> = ({ canvasMode }) => {
   const Loaded = getLoadedEditor();
-  return Loaded ? <Loaded /> : <LazyEditorInterface />;
+  return Loaded ? <Loaded canvasMode={canvasMode} /> : <LazyEditorInterface canvasMode={canvasMode} />;
 };
 // Only shown when crash-recovery saves exist; pulls Collapsible (framer-motion), so keep it off the startup entry.
 const RecoveryDialog = lazy(() =>
@@ -73,14 +73,15 @@ const PRESET_DIMENSIONS: Record<string, SocialMediaCategory> = {
   "1280x720": "youtube-video",
 };
 
-function App() {
+function App({ active = true, canvasMode = false }: { active?: boolean; canvasMode?: boolean } = {}) {
   const [portalRoot, setPortalRoot] = useState<HTMLDivElement | null>(null);
   const compact = useCompactEditorPane(portalRoot);
-  const activeModal = useUIStore((state) => state.activeModal);
+  // Canvas and Studio can keep their editors mounted while only one is visible.
+  const activeModal = useUIStore((state) => active ? state.activeModal : null);
   const closeModal = useUIStore((state) => state.closeModal);
   const skipWelcomeScreen = useUIStore((state) => state.skipWelcomeScreen);
   const openSearchModal = useUIStore((state) => state.openModal);
-  const sceneDetectionClipId = useSceneDetectionDialogStore((state) => state.clipId);
+  const sceneDetectionClipId = useSceneDetectionDialogStore((state) => active ? state.clipId : null);
   const [hasOpenedScriptView, setHasOpenedScriptView] = useState(false);
   const [isRecovering, setIsRecovering] = useState(false);
   const createNewProject = useProjectStore((state) => state.createNewProject);
@@ -260,9 +261,10 @@ function App() {
   );
 
   useEffect(() => {
+    if (!active) return;
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleKeyDown]);
+  }, [active, handleKeyDown]);
 
   const initialTab =
     route === "templates"
@@ -272,7 +274,7 @@ function App() {
         : undefined;
 
   return (
-    <EditorPortalRoot.Provider value={portalRoot}>
+    <EditorPortalRoot.Provider value={active ? portalRoot : null}>
     <CompactEditorContext.Provider value={compact}>
     <div ref={setPortalRoot} className="relative h-full w-full bg-background text-text-primary overflow-hidden">
     <AppProviders>
@@ -290,7 +292,7 @@ function App() {
         />
       ) : (
         <Suspense fallback={<LoadingSpinner message="Loading editor..." />}>
-          <EditorInterface />
+          <EditorInterface canvasMode={canvasMode} />
         </Suspense>
       )}
       <ToastContainer />
@@ -308,7 +310,7 @@ function App() {
           <SearchModal isOpen onClose={closeModal} />
         )}
       </Suspense>
-      {showDialog && availableSaves.length > 0 && (
+      {active && showDialog && availableSaves.length > 0 && (
         <Suspense fallback={null}>
           <RecoveryDialog
             saves={availableSaves}

@@ -369,6 +369,8 @@ export interface CatalogModelDto {
   /** Display-only provenance label (OmniMux Gateway / provider name). */
   sourceLabel?: string;
   family?: string;
+  /** Human-facing family label projected by the hub catalog (e.g. Seedream). */
+  familyLabel?: string;
   badge?: string;
   subtitle?: string;
   /** Runtime/wire model-id aliases normalized to `id`. */
@@ -405,6 +407,8 @@ export interface CapabilityModelItem {
   badge?: string;
   subtitle?: string;
   family?: string;
+  /** Human-facing family label projected by the hub catalog (e.g. Seedream). */
+  familyLabel?: string;
   aliases?: string[];
   inputCapability?: ModelInputCapability;
   parameters?: ModelParameterSchema;

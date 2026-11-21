@@ -3,12 +3,14 @@
  * mount inside it (absolute inset:0) instead of guessing overlay coords.
  *
  * @param {{ querySelectorAll?: Function }} [root]
+ * @param {string} [workspaceId]
  * @returns {HTMLElement | null}
  */
-export function findCanvasHost(root = typeof document !== 'undefined' ? document : null) {
+export function findCanvasHost(root = typeof document !== 'undefined' ? document : null, workspaceId) {
   if (!root || typeof root.querySelectorAll !== 'function') return null
   const nodes = root.querySelectorAll('[data-omnimux-canvas-tab], .omnimux-workflow-canvas-tab')
   for (const el of nodes) {
+    if (workspaceId && el.getAttribute('data-canvas-workspace-id') !== workspaceId) continue
     if (isVisibleCanvasHost(el)) return el
   }
   return null

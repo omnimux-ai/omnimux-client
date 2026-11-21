@@ -16,7 +16,7 @@
   box-sizing: border-box;
   color-scheme: dark;
   --tl-height: 40%;
-  /* 让官方 `position: fixed` / 100vw 相对本 Tab 而不是整个 DSH 窗口 */
+  /* 固定定位的剪辑浮层限制在当前 Tab，视口单位仍取宿主窗口。 */
   transform: translateZ(0);
   contain: layout paint;
   container: clip-stage / inline-size;
@@ -42,6 +42,16 @@
 
 .openreel-studio-root .fixed.inset-0 {
   position: absolute !important;
+}
+
+@container clip-stage (max-width: 720px) {
+  .openreel-studio-root .clip-export-dialog:not(.mobile-export-advanced) .export-platforms {
+    width: clamp(7rem, 28%, 10.25rem);
+  }
+
+  .openreel-studio-root .clip-export-dialog .export-preset-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .openreel-studio-root,

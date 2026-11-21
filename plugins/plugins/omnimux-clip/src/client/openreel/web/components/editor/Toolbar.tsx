@@ -9,6 +9,7 @@ import "./mobile/mobile-editor.css";
 import { DesktopExportButton } from "../../desktop/editor/DesktopExportButton";
 import { WindowControls } from "../../desktop/shell/WindowControls";
 import { Button as ShadcnButton, Input } from "@openreel/ui";
+import { useEditorPortalRoot } from "@openreel/ui/lib/portal-root";
 import { EditorHeaderIcon } from "./EditorHeaderIcon";
 import { EditorExportControl } from "./EditorExportControl";
 import { getQuickExportPresets, type QuickExportPresetId } from "../../services/quick-export-presets";
@@ -43,10 +44,9 @@ const ScreenRecorder = lazy(() => import("./ScreenRecorder").then((m) => ({ defa
 const ProjectPackageDialog = lazy(() => import("./ProjectPackageDialog").then((m) => ({ default: m.ProjectPackageDialog })));
 
 
-export const Toolbar: React.FC = () => {
+export const Toolbar: React.FC<{ canvasMode?: boolean }> = ({ canvasMode: isCanvasMode = false }) => {
   const t = useClipT();
-  const canvasSession = getActiveClipSession();
-  const isCanvasMode = canvasSession?.source === "canvas";
+  const canvasSession = isCanvasMode ? getActiveClipSession() : null;
   const phone = usePhoneEditor() && !isCanvasMode;
   const isDesktop = !isCanvasMode && typeof window !== "undefined" && window.openreel?.platform === "desktop";
   const nativePlatform = /Mac/i.test(navigator.platform) ? "darwin" : /Win/i.test(navigator.platform) ? "win32" : "linux";
@@ -55,7 +55,8 @@ export const Toolbar: React.FC = () => {
   const loopEnd = useTimelineStore((state) => state.loopEnd);
   const renameProject = useProjectStore((state) => state.renameProject);
   const setGlobalExportState = useUIStore((state) => state.setExportState);
-  const activeModal = useUIStore((state) => state.activeModal);
+  const active = useEditorPortalRoot() !== null;
+  const activeModal = useUIStore((state) => active ? state.activeModal : null);
   const closeModal = useUIStore((state) => state.closeModal);
   const isExportDialogOpen = activeModal === "export";
   const [isCompressOpen, setIsCompressOpen] = useState(false);
@@ -70,8 +71,8 @@ export const Toolbar: React.FC = () => {
     [project, exportSequenceId],
   );
   useEffect(() => {
-    if (exportSequenceId && !project.sequences?.some((sequence) => sequence.id === exportSequenceId)) useUIStore.getState().setExportSequenceId(null);
-  }, [project.sequences, exportSequenceId]);
+    if (active && exportSequenceId && !project.sequences?.some((sequence) => sequence.id === exportSequenceId)) useUIStore.getState().setExportSequenceId(null);
+  }, [active, project.sequences, exportSequenceId]);
   const sourceMatch = useMemo(() => deriveSourceExportMatch(exportProject), [exportProject]);
   const projectHasAudio = useMemo(
     () => exportProject.timeline.tracks.some((track) => trackHasAudioItems(exportProject, track.id)),
@@ -91,8 +92,8 @@ export const Toolbar: React.FC = () => {
   }, [isDesktop, checkTimelineForExport]);
   // The chosen sequence only lasts for one export: opening the dialog or switching tabs starts over.
   useEffect(() => {
-    useUIStore.getState().setExportSequenceId(null);
-  }, [project.activeSequenceId, isExportDialogOpen]);
+    if (active) useUIStore.getState().setExportSequenceId(null);
+  }, [active, project.activeSequenceId, isExportDialogOpen]);
   const { track } = useAnalytics();
 
   // Local editable project name (committed onBlur / Enter)
@@ -140,15 +141,16 @@ export const Toolbar: React.FC = () => {
     failExport,
     cancel: handleCancelExport,
     resetError,
-  } = useExportRunner({ project: exportProject, onExported: handleExported });
+  } = useExportRunner({ project: exportProject, canvasMode: isCanvasMode, onExported: handleExported });
 
   useEffect(() => {
+    if (!active) return;
     setGlobalExportState({
       isExporting: exportState.isExporting,
       progress: exportState.progress,
       phase: exportState.phase,
     });
-  }, [exportState.isExporting, exportState.progress, exportState.phase, setGlobalExportState]);
+  }, [active, exportState.isExporting, exportState.progress, exportState.phase, setGlobalExportState]);
 
   const handleQuickExport = useCallback(async (id: QuickExportPresetId) => {
     if (!hasTimelineContent || useUIStore.getState().exportState.isExporting) return;
@@ -166,8 +168,8 @@ export const Toolbar: React.FC = () => {
         await runAudioExport(preset.settings, writable);
         markComplete();
         track(AnalyticsEvents.PROJECT_EXPORTED, { format: preset.extension, duration: project.timeline.duration });
-      } else {
-        await runExport(preset.settings, ext, writable);
+      } else if (!(await runExport(preset.settings, ext, writable))) {
+        return;
       }
       finishExportSoon();
     } catch (error) {
@@ -203,7 +205,7 @@ export const Toolbar: React.FC = () => {
               : undefined,
         };
 
-        await runExport(exportSettings, ext, writable);
+        if (!(await runExport(exportSettings, ext, writable))) return;
 
         track(AnalyticsEvents.PROJECT_EXPORTED, {
           format: settings.format,
@@ -219,8 +221,6 @@ export const Toolbar: React.FC = () => {
         finishExportSoon();
       } catch (error) {
         failExport(error);
-      } finally {
-        useUIStore.getState().setExportSequenceId(null);
       }
     },
     [project, exportProject, exportSequenceId, checkTimelineForExport, isCanvasMode, closeModal, track, runExport, showSavePicker, beginExport, finishExportSoon, failExport],
@@ -325,9 +325,10 @@ export const Toolbar: React.FC = () => {
           type="button"
           variant="ghost"
           className="omnimux-clip-stage-close-btn inline-flex"
-          disabled={exportState.isExporting}
+          disabled={exportState.isExporting && !exportState.savingToCanvas}
           style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
           onClick={() => {
+            if (exportState.savingToCanvas) handleCancelExport();
             if (canvasSession?.nodeId) notifyCanvasClose({ nodeId: canvasSession.nodeId, projectId: canvasSession.projectId });
             getActiveClipStageStore()?.set(false);
           }}

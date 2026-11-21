@@ -28,7 +28,7 @@ test('isCanvasClipExportSession: true only while canvas session is active', () =
   assert.equal(getActiveClipSession(), null)
   assert.equal(isCanvasClipExportSession(), false)
 
-  store.openFromCanvas({ nodeId: 'n1', projectId: 'p1' })
+  store.openFromCanvas({ workspaceId: 'ws_first', nodeId: 'n1', projectId: 'p1' })
   assert.equal(isCanvasClipExportSession(), true)
 
   store.set(false)

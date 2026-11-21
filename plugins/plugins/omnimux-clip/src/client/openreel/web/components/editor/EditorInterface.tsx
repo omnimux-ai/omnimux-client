@@ -157,7 +157,7 @@ const useAutoSave = () => {
  */
 registerSmoothKeyframeRefresh(refreshSmoothKeyframesAfterEdit);
 
-export const EditorInterface: React.FC = () => {
+export const EditorInterface: React.FC<{ canvasMode?: boolean }> = ({ canvasMode }) => {
   const t = useClipT();
   const compact = useCompactEditor();
   const phone = usePhoneEditor();
@@ -478,7 +478,7 @@ export const EditorInterface: React.FC = () => {
       data-platform={phone ? /Android/i.test(navigator.userAgent) ? "android" : "ios" : undefined}
       className={`editor-shell w-full h-full bg-bg text-fg overflow-hidden font-sans select-none relative z-20 flex flex-col ${compact ? "editor-compact" : ""} ${phone ? "editor-phone" : ""}`}
     >
-      <Toolbar />
+      <Toolbar canvasMode={canvasMode} />
       <ProjectLockBanner />
       <MissingFontsBanner />
 

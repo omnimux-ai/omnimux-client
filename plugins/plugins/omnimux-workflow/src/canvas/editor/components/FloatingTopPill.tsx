@@ -17,6 +17,7 @@ import {
   type ToolbarSection,
 } from '../utils/nodeToolbarLogic';
 import { computePillClampShift } from '../utils/pillClamp';
+import { useCanvasDismissLayer } from '../utils/canvasDismissLayer.ts';
 import { stopToolbarNativeEvent } from './toolbarPointerGuard';
 
 export interface FloatingPillAction {
@@ -142,27 +143,26 @@ export const FloatingTopPill: React.FC<FloatingTopPillProps> = ({
   }, [children, list, maxWidth]);
 
   useLayoutEffect(() => {
-    if (!moreOpen) {
+    if (!visible) {
+      setMoreOpen(false);
       setMenuPos(null);
       return;
     }
-    const onPointerDown = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (moreBtnRef.current?.contains(target)) return;
+    if (!moreOpen) {
+      setMenuPos(null);
+    }
+  }, [visible, moreOpen]);
+
+  useCanvasDismissLayer({
+    open: Boolean(visible && moreOpen),
+    containsTarget: (target) => {
+      if (moreBtnRef.current?.contains(target)) return true;
       const menu = document.querySelector('[data-pill-more-menu="true"]');
-      if (menu && menu.contains(target)) return;
-      setMoreOpen(false);
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setMoreOpen(false);
-    };
-    document.addEventListener('mousedown', onPointerDown, true);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown, true);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [moreOpen]);
+      return Boolean(menu?.contains(target));
+    },
+    onDismiss: () => setMoreOpen(false),
+    returnFocusRef: moreBtnRef,
+  });
 
   // 视口上沿保护：胶囊不得被 .react-flow 的 overflow 裁掉（Issue #3604）。
   // 用「未加偏移的 top」反推，避免测量到已下移的位置后反复归零。

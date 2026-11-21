@@ -23,6 +23,7 @@ import { clipNow } from "../../../i18n/index.js";
 
 export interface ExportRunnerState {
   isExporting: boolean;
+  savingToCanvas: boolean;
   progress: number;
   phase: string;
   error: string | null;
@@ -451,10 +452,10 @@ export async function captureProjectThumbnail(
 export async function createDownloadWritable(
   filename: string,
   mime: string,
-  options?: { delivery?: ExportDeliveryMode },
+  options?: { delivery?: ExportDeliveryMode; canvasMode?: boolean },
 ): Promise<FileSystemWritableFileStream> {
   const ext = filename.split(".").pop() || "mp4";
-  if (isCanvasClipExportSession()) {
+  if (options?.canvasMode !== false && isCanvasClipExportSession()) {
     if (ext.toLowerCase() !== "mp4") throw new Error(clipNow()("Choose MP4 to send a video to the canvas."));
     return createSilentCanvasWritable(mime) as unknown as FileSystemWritableFileStream;
   }
@@ -541,6 +542,7 @@ export async function createDownloadWritable(
 
 const INITIAL_STATE: ExportRunnerState = {
   isExporting: false,
+  savingToCanvas: false,
   progress: 0,
   phase: "",
   error: null,
@@ -549,6 +551,7 @@ const INITIAL_STATE: ExportRunnerState = {
 
 interface ExportRunnerOptions {
   project: Project;
+  canvasMode?: boolean;
   onExported?: (settings: Partial<VideoExportSettings>) => void;
 }
 
@@ -558,7 +561,7 @@ interface UseExportRunner {
     videoSettings: Partial<VideoExportSettings>,
     ext: string,
     writableStream: FileSystemWritableFileStream,
-  ) => Promise<void>;
+  ) => Promise<boolean>;
   runAudioExport: (settings: Partial<AudioExportSettings>, writable: FileSystemWritableFileStream) => Promise<void>;
   showSavePicker: (filename: string, ext: string, opts?: { streamToFile?: boolean; delivery?: ExportDeliveryMode }) => Promise<FileSystemWritableFileStream>;
   reportProgress: (progress01: number, phase: string) => void;
@@ -572,7 +575,7 @@ interface UseExportRunner {
 }
 
 export function useExportRunner(options: ExportRunnerOptions): UseExportRunner {
-  const { project, onExported } = options;
+  const { project, canvasMode = false, onExported } = options;
   const [state, setState] = useState<ExportRunnerState>(INITIAL_STATE);
   const epoch = useRef(0);
   const running = useRef(false);
@@ -595,6 +598,7 @@ export function useExportRunner(options: ExportRunnerOptions): UseExportRunner {
     activeWritable.current = writable ?? null;
     setState({
       isExporting: true,
+      savingToCanvas: false,
       progress: 0,
       phase: "Initializing...",
       error: null,
@@ -638,6 +642,7 @@ export function useExportRunner(options: ExportRunnerOptions): UseExportRunner {
     setState((prev) => ({
       ...prev,
       isExporting: false,
+      savingToCanvas: false,
       error: error instanceof Error ? error.message : "Export failed",
     }));
   }, []);
@@ -651,7 +656,7 @@ export function useExportRunner(options: ExportRunnerOptions): UseExportRunner {
       videoSettings: Partial<VideoExportSettings>,
       ext: string,
       writableStream: FileSystemWritableFileStream,
-    ): Promise<void> => {
+    ): Promise<boolean> => {
       if (running.current) {
         await writableStream.abort().catch(() => undefined);
         throw new Error("An export is already running");
@@ -659,24 +664,26 @@ export function useExportRunner(options: ExportRunnerOptions): UseExportRunner {
       const runEpoch = epoch.current;
       running.current = true;
       activeWritable.current = writableStream;
+      const isCurrent = () => epoch.current === runEpoch && !cancelled.current;
       const checkCurrent = () => {
-        if (epoch.current !== runEpoch || cancelled.current) throw new DOMException("Export cancelled", "AbortError");
+        if (!isCurrent()) throw new DOMException("Export cancelled", "AbortError");
       };
       const engine = getExportEngine();
       let generator: ReturnType<typeof engine.exportVideo> | undefined;
-      const session = getActiveClipSession();
+      const session = canvasMode ? getActiveClipSession() : null;
       const canvas = session?.source === "canvas" ? session : null;
+      let savingToCanvas = false;
       let capturedBlob: Blob | null = null;
       const destination = canvas
         ? createCapturingWritable(writableStream, mimeForExt(ext), (blob) => { capturedBlob = blob; })
         : writableStream;
       const reportCanvasProgress = (progress: number) => {
         if (canvas?.nodeId && getActiveClipSession() === canvas) {
-          notifyCanvasProgress({ nodeId: canvas.nodeId, status: "rendering", renderProgress: Math.round(progress * 100) });
+          notifyCanvasProgress({ workspaceId: canvas.workspaceId, nodeId: canvas.nodeId, projectId: canvas.projectId, status: "rendering", renderProgress: Math.round(progress * 100) });
         }
       };
       try {
-        if (canvas && (!canvas.nodeId || !canvas.projectId)) throw new Error("The canvas project is no longer open");
+        if (canvasMode && (!canvas?.workspaceId || !canvas.nodeId || !canvas.projectId)) throw new Error("The canvas project is no longer open");
         reportCanvasProgress(0);
         await engine.initialize();
         checkCurrent();
@@ -699,6 +706,7 @@ export function useExportRunner(options: ExportRunnerOptions): UseExportRunner {
           checkCurrent();
           if (done) {
             finalResult = value;
+            generator = undefined;
             break;
           }
           setState((prev) => ({
@@ -718,17 +726,25 @@ export function useExportRunner(options: ExportRunnerOptions): UseExportRunner {
             const thumbnailPath = await captureProjectThumbnail(project, 320, Math.round(320 * height / width));
             checkCurrent();
             if (getActiveClipSession() !== canvas) throw new DOMException("Export cancelled", "AbortError");
-            const persisted = await persistExportBlobToHost(canvas.projectId, capturedBlob, { durationMs, width, height });
-            checkCurrent();
-            if (!persisted.path) throw new Error("Canvas export was not persisted to the local library");
-            if (getActiveClipSession() !== canvas) throw new DOMException("Export cancelled", "AbortError");
-            notifyCanvasSave({
+            const upload = persistExportBlobToHost(canvas.projectId, capturedBlob, { durationMs, width, height });
+            // The upload now owns the original binding. Releasing the encoder lets
+            // the user leave and start another export while this receipt is pending.
+            savingToCanvas = true;
+            running.current = false;
+            activeWritable.current = null;
+            setState((prev) => ({ ...prev, savingToCanvas: true }));
+
+            const persisted = await upload;
+            const delivered = persisted.path && persisted.revision && notifyCanvasSave({
+              workspaceId: canvas.workspaceId,
               nodeId: canvas.nodeId,
               projectId: canvas.projectId,
               schema: project as unknown as Record<string, unknown>,
               createDownstreamNode: true,
               output: { videoPath: persisted.path, thumbnailPath, durationMs, width, height, revision: persisted.revision },
             });
+            if (!isCurrent() || getActiveClipSession() !== canvas) return false;
+            if (!delivered) throw new Error("Canvas export was not persisted to the local library");
           }
           const smartRender = finalResult.stats?.smartRender;
           const sourceMedia = finalResult.stats?.sourceMedia;
@@ -736,24 +752,29 @@ export function useExportRunner(options: ExportRunnerOptions): UseExportRunner {
           const lightNote = lightLevel ? `Measured from the rendered frames: MaxCLL ${lightLevel.maxCll} nits, MaxFALL ${lightLevel.maxFall} nits.` : "";
           const note = [smartRender?.summary, sourceMedia ? describeExportSource(sourceMedia, window.openreel?.platform === "desktop") : "", lightNote].filter(Boolean).join(" ");
           if (note && !canvas) toast.info(clipNow()("Export finished"), note);
-          activeWritable.current = null;
-          setState((prev) => ({ ...prev, isExporting: false, progress: 100, complete: true, phase: "Saved!" }));
+          setState((prev) => ({ ...prev, isExporting: false, savingToCanvas: false, progress: 100, complete: true, phase: "Saved!" }));
           onExported?.(videoSettings);
+          return true;
         } else {
           if (finalResult?.error?.code === "CANCELLED") throw new DOMException("Export cancelled", "AbortError");
           throw new Error(finalResult?.error?.message || "Export failed");
         }
       } catch (error) {
-        await writableStream.abort().catch(() => undefined);
+        if (savingToCanvas && (!isCurrent() || getActiveClipSession() !== canvas)) return false;
+        if (!savingToCanvas) await writableStream.abort().catch(() => undefined);
         throw error;
       } finally {
         // Closing a generator runs cleanup if cancellation lands at a yield.
         try { await generator?.return({ success: false }); } catch { /* Preserve the original failure. */ }
-        running.current = false;
-        if (activeWritable.current === writableStream) activeWritable.current = null;
+        if (!savingToCanvas) {
+          running.current = false;
+          if (activeWritable.current === writableStream) activeWritable.current = null;
+        } else if (isCurrent() && getActiveClipSession() !== canvas) {
+          setState(INITIAL_STATE);
+        }
       }
     },
-    [project, onExported],
+    [project, canvasMode, onExported],
   );
 
   const runAudioExport = useCallback(async (
@@ -787,7 +808,8 @@ export function useExportRunner(options: ExportRunnerOptions): UseExportRunner {
       opts?: { streamToFile?: boolean; delivery?: ExportDeliveryMode },
     ): Promise<FileSystemWritableFileStream> => {
       const mime = mimeForExt(ext);
-      if (isCanvasClipExportSession()) {
+      if (canvasMode) {
+        if (!isCanvasClipExportSession()) throw new Error("The canvas project is no longer open");
         return createSilentCanvasWritable(mime) as unknown as FileSystemWritableFileStream;
       }
 
@@ -844,23 +866,23 @@ export function useExportRunner(options: ExportRunnerOptions): UseExportRunner {
         } as unknown as FileSystemWritableFileStream;
       }
 
-      return createDownloadWritable(filename, mime, { delivery: opts?.delivery });
+      return createDownloadWritable(filename, mime, { delivery: opts?.delivery, canvasMode: false });
     },
-    [],
+    [canvasMode],
   );
 
   const cancel = useCallback(() => {
     epoch.current += 1;
     cancelled.current = true;
     void activeWritable.current?.abort().catch(() => undefined);
-    const engine = getExportEngine();
-    engine.cancel();
+    if (running.current) getExportEngine().cancel();
     setState(INITIAL_STATE);
   }, []);
 
   useEffect(() => () => {
     if (resetTimer.current) clearTimeout(resetTimer.current);
     if (running.current || activeWritable.current) cancel();
+    else epoch.current += 1;
   }, [cancel]);
 
   return {

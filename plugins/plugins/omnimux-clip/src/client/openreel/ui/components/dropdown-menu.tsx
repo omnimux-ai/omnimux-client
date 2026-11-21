@@ -1,6 +1,6 @@
 "use client"
 
-import { useEditorPortalRoot } from "@openreel/ui/lib/portal-root"
+import { EditorRadixPortal } from "@openreel/ui/lib/portal-root"
 
 import * as React from "react"
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu"
@@ -56,7 +56,7 @@ const DropdownMenuContent = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Content>
 >(({ className, sideOffset = 4, ...props }, ref) => (
-  <DropdownMenuPrimitive.Portal container={useEditorPortalRoot()}>
+  <EditorRadixPortal portal={DropdownMenuPrimitive.Portal}>
     <DropdownMenuPrimitive.Content
       ref={ref}
       sideOffset={sideOffset}
@@ -66,7 +66,7 @@ const DropdownMenuContent = React.forwardRef<
       )}
       {...props}
     />
-  </DropdownMenuPrimitive.Portal>
+  </EditorRadixPortal>
 ))
 DropdownMenuContent.displayName = DropdownMenuPrimitive.Content.displayName
 

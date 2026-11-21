@@ -1,10 +1,9 @@
-import type { ComponentType } from "react";
 import { loadEngineModules } from "./services/lazy-engines";
 
 type EditorModule = typeof import("./components/editor/EditorInterface");
 
 let editorLoad: Promise<EditorModule> | null = null;
-let EditorComponent: ComponentType | null = null;
+let EditorComponent: EditorModule["EditorInterface"] | null = null;
 
 /**
  * Single entry point for loading the (heavy) editor chunk. Every preloader and
@@ -32,6 +31,6 @@ export function loadEditorModule(): Promise<EditorModule> {
 }
 
 /** The editor component if its chunk has finished loading, else null. */
-export function getLoadedEditor(): ComponentType | null {
+export function getLoadedEditor(): EditorModule["EditorInterface"] | null {
   return EditorComponent;
 }

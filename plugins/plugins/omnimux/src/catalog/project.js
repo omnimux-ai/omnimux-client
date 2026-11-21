@@ -21,6 +21,7 @@ import { resolveModelId } from './contract/index.js';
 import { getModelChannelGroups } from './serving/channel-groups.js';
 import { findSnapshotModel, hasUsableGatewayGroups } from './cloud/view.js';
 import { sortCatalogRows } from './sort.js';
+import { familyLabelFor } from './display-labels.js';
 
 export { resolveModelId };
 
@@ -201,7 +202,11 @@ export function projectRow(model, ops, snapshot) {
   };
   if (typeof model.badge === 'string') row.badge = model.badge;
   if (typeof model.subtitle === 'string') row.subtitle = model.subtitle;
-  if (typeof model.family === 'string') row.family = model.family;
+  if (typeof model.family === 'string') {
+    row.family = model.family;
+    const familyLabel = familyLabelFor(model.family);
+    if (familyLabel) row.familyLabel = familyLabel;
+  }
   if (model.executionProfile && typeof model.executionProfile === 'object') {
     row.executionProfile = structuredClone(model.executionProfile);
   }
@@ -374,7 +379,7 @@ export function projectModelDto(model, dispositionsDoc, snapshot) {
     ...(model.providerId ? { providerId: model.providerId } : {}),
     ...(model.sourceLabel ? { sourceLabel: model.sourceLabel } : {}),
     ...(effectiveVersion !== undefined ? { effectiveVideoVersion: effectiveVersion } : {}),
-    ...(typeof model.family === 'string' ? { family: model.family } : {}),
+    ...(typeof model.family === 'string' ? { family: model.family, familyLabel: familyLabelFor(model.family) } : {}),
     ...(typeof model.badge === 'string' ? { badge: model.badge } : {}),
     ...(typeof model.subtitle === 'string' ? { subtitle: model.subtitle } : {}),
     ...(Array.isArray(model.aliases) ? { aliases: [...model.aliases] } : {}),

@@ -199,7 +199,9 @@ export async function testToolExecution(tool) {
       }
 
       // 受控领域错误（比如重名已存在、需要挂载界面、参数校验失败、未装载 hub、缺少具体参数等）属于预期安全行为
-      const isControlled = /not found|unsupported|offline|invalid|failed|error|mock|needs-hub|does not exist|must be|requires|is required|未装载|失败|未提取|already exists|not mounted|非空/i.test(msg);
+      const clipEditorUnavailable = err?.name === 'ClipDomainError' && err.code === 'ui-unavailable'
+        && ['clip_open', 'clip_view', 'clip_snapshot', 'clip_export'].includes(tool.name);
+      const isControlled = clipEditorUnavailable || /not found|unsupported|offline|invalid|failed|error|mock|needs-hub|does not exist|must be|requires|is required|未装载|失败|未提取|already exists|not mounted|非空/i.test(msg);
       if (!isControlled) {
         return {
           ok: false,

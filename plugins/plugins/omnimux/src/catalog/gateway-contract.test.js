@@ -17,6 +17,18 @@ test('Gateway Contract v2 fills text and image buckets without local YAML', () =
   assert.equal(catalog.gateway.missingContract.length, 0)
   assert.deepEqual(catalog.gateway.adapterUnsupported, ['suno-sounds'])
 
+  const seedream = catalog.image.find((row) => row.id === 'seedream-5-5')
+  assert.equal(seedream?.label, 'Seedream 5.5')
+  assert.equal(seedream?.familyLabel, 'Seedream')
+  assert.equal(catalog.image.find((row) => row.id === 'nano-banana-2-1')?.label, 'Nano Banana 2.1')
+  assert.equal(catalog.image.find((row) => row.id === 'muse-image')?.familyLabel, 'Muse')
+
+  const displayNameSnapshot = structuredClone(snapshot)
+  const displayNameRow = displayNameSnapshot.models.find((row) => row.id === 'seedream-5-5')
+  displayNameRow.displayName = 'Seedream 5.5'
+  const displayNameCatalog = buildModelCatalog({ env: {}, snapshot: displayNameSnapshot })
+  assert.equal(displayNameCatalog.image.find((row) => row.id === 'seedream-5-5')?.label, 'Seedream 5.5')
+
   const argon = catalog.models.find((row) => row.id === 'gemini-4-argon')
   assert.equal(argon?.gateway?.schemaVersion, '2.0')
   assert.equal(argon?.gateway?.status, 'partial')

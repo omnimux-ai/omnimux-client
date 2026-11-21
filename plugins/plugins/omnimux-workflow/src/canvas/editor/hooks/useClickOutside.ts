@@ -9,7 +9,8 @@
  * 必须进 excludeSelectors 白名单，否则点选项会误关面板。
  */
 
-import { useEffect, type RefObject } from 'react';
+import type { RefObject } from 'react';
+import { useCanvasDismissLayer } from '../utils/canvasDismissLayer.ts';
 
 /** 浮层默认排除选择器：面板自身由 refs 覆盖，这里列出外部弹出层白名单 */
 export const DEFAULT_FLOATING_LAYER_EXCLUDE_SELECTORS = [
@@ -69,39 +70,17 @@ export function useClickOutside({
   enabled = true,
   deferRegistration = true,
 }: UseClickOutsideOptions): void {
-  useEffect(() => {
-    if (!enabled) return;
-    const refArray = Array.isArray(refs) ? refs : [refs];
-
-    const handleMouseDown = (event: MouseEvent) => {
-      const target = event.target as ClickTargetLike | null;
-      if (isOutsideClickTarget(target, refArray.map((ref) => ref.current), excludeSelectors)) {
-        onClose();
-      }
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-
-    const register = () => {
-      document.addEventListener('mousedown', handleMouseDown);
-      document.addEventListener('keydown', handleKeyDown);
-    };
-
-    let rafId: number | null = null;
-    if (deferRegistration) {
-      rafId = requestAnimationFrame(register);
-    } else {
-      register();
-    }
-
-    return () => {
-      if (rafId !== null) cancelAnimationFrame(rafId);
-      document.removeEventListener('mousedown', handleMouseDown);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [refs, excludeSelectors, onClose, enabled, deferRegistration]);
+  const refArray = Array.isArray(refs) ? refs : [refs];
+  useCanvasDismissLayer({
+    open: enabled,
+    containsTarget: (target) => !isOutsideClickTarget(
+      target as ClickTargetLike | null,
+      refArray.map((ref) => ref.current),
+      excludeSelectors,
+    ),
+    onDismiss: () => onClose(),
+    deferRegistration,
+  });
 }
 
 export default useClickOutside;

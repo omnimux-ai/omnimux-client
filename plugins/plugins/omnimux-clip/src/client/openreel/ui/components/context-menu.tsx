@@ -1,6 +1,6 @@
 "use client"
 
-import { useEditorPortalRoot } from "@openreel/ui/lib/portal-root"
+import { EditorRadixPortal } from "@openreel/ui/lib/portal-root"
 
 import * as React from "react"
 import * as ContextMenuPrimitive from "@radix-ui/react-context-menu"
@@ -84,7 +84,7 @@ const ContextMenuContent = React.forwardRef<
   React.ElementRef<typeof ContextMenuPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof ContextMenuPrimitive.Content>
 >(({ className, ...props }, ref) => (
-  <ContextMenuPrimitive.Portal container={useEditorPortalRoot()}>
+  <EditorRadixPortal portal={ContextMenuPrimitive.Portal}>
     <ContextMenuPrimitive.Content
       ref={ref}
       className={cn(
@@ -93,7 +93,7 @@ const ContextMenuContent = React.forwardRef<
       )}
       {...props}
     />
-  </ContextMenuPrimitive.Portal>
+  </EditorRadixPortal>
 ))
 ContextMenuContent.displayName = ContextMenuPrimitive.Content.displayName
 

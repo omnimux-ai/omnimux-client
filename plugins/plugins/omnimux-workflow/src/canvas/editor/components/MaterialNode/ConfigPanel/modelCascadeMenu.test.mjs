@@ -270,7 +270,7 @@ test('popover height is locked once per open and never follows hover state (Issu
   assert.match(cascadeSrc, /wf-loomi-col--channel" data-cascade-probe-col=""/, 'Probe must cover every model channel column');
 });
 test('preserves viewport anchor, accessibility and dismissal', () => {
-  for (const token of ['wf-cascade-brand-item', 'wf-cascade-model-item', 'wf-cascade-channel-row', 'role="menu"', 'role="menuitemradio"', 'aria-expanded={isOpen}', 'POPOVER_MAX_WIDTH = 814', 'document.body', 'resolvePopoverSurface(triggerRef.current)', "event.key === 'Escape'"]) assert.ok(cascadeSrc.includes(token), token);
+  for (const token of ['wf-cascade-brand-item', 'wf-cascade-model-item', 'wf-cascade-channel-row', 'role="menu"', 'role="menuitemradio"', 'aria-expanded={isOpen}', 'POPOVER_MAX_WIDTH = 814', 'document.body', 'resolvePopoverSurface(triggerRef.current)', 'useCanvasDismissLayer(']) assert.ok(cascadeSrc.includes(token), token);
   assert.doesNotMatch(cascadeSrc, /StabilityDotBar|ModelRoutingModal|--omx-/);
   assert.doesNotMatch(cascadeSrc, /wf-cascade-strategy-btn/, 'strategy buttons must be completely removed');
   assert.doesNotMatch(cascadeSrc, /已选.*个|清空|全选/, 'bulk channel selection footer must be completely removed');

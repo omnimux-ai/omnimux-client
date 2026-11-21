@@ -1,3 +1,4 @@
+import { useEditorPortalRoot } from "@openreel/ui/lib/portal-root";
 import { addClipMarkerAtPlayhead } from "../services/clip-marker-commands";
 import { v4 as uuidv4 } from "uuid";
 import { planRippleTrimToPlayhead } from "@openreel/core";
@@ -93,9 +94,11 @@ import {
 import { clipNow } from "../../../i18n/index.js";
 
 export function useKeyboardShortcuts() {
+  const active = useEditorPortalRoot() !== null;
   const [showShortcutsOverlay, setShowShortcutsOverlay] = useState(false);
 
   useEffect(() => {
+    if (!active) return;
     // Read live state when a command runs. Subscribing this hook to the entire
     // timeline used to rerender the editor and reinstall every handler per frame.
     let editInFlight = false;
@@ -537,7 +540,7 @@ export function useKeyboardShortcuts() {
       unsubscribes.forEach((unsubscribe) => unsubscribe());
       keyboardShortcuts.stopListening();
     };
-  }, []);
+  }, [active]);
 
   return { showShortcutsOverlay, setShowShortcutsOverlay };
 }
