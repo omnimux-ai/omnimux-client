@@ -26,3 +26,16 @@
 - 快捷选择器显示 label；画布型号保持 canonical `id`，`id` 仅用于值和测试标识。
 - `/omnimux/model-catalog` 不可用时不显示旧 `DEFAULT_PRESET_MODELS` 模型。
 - `bundle.lock.json`、workspace check、相关单测通过。
+
+## 旧标准变更
+
+以下既有测试断言因本次 catalog 显示契约调整需要改写；原断言锁定了 raw id / 旧排序行为。
+
+- `plugins/plugins/omnimux-workflow/tests/model-id-labels.e2e.test.mjs` :: `model rows and config options render canonical ids, not marketing labels`
+  - 原断言：`ModelPicker.jsx` 必须硬编码 `const name = rawId;` 和 `const capsuleName = rawId;`。
+  - 必须改的理由：快捷选择器改为优先消费 catalog `label`（缺失时回退 `name`/id），画布型号仍保持 canonical id。
+  - 新期望证据：断言 `const name = typeof row.label === 'string'`，并保留 `capsuleName = name`；画布 `label: row.id` 断言不变。
+- `plugins/plugins/omnimux/src/settings/omitted-model-defaults.test.js` :: `3312: saved defaults pointing at delisted models resolve only to the fixed real published catalog`
+  - 原断言：image bucket 按旧显示排序期待 `nano-banana-2-1` 在 `nano-banana-2-lite` 前。
+  - 必须改的理由：`nano-banana-2-1` 的 label 修正为 `Nano Banana 2.1`，目录按 label 排序后顺序变为 lite 在 2.1 前。
+  - 新期望证据：断言顺序更新为 `nano-banana-2-lite`, `nano-banana-2-1`，模型集合不变。
