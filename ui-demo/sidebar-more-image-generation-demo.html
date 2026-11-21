@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>左侧边栏 · 更多菜单增加图像生成 · 修改前后</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0b0c;
+      --surface: #151517;
+      --surface-elevated: #1c1c1f;
+      --surface-hover: #26262b;
+      --line: #2d2d33;
+      --line-strong: #3f3f46;
+      --text: #f4f4f5;
+      --text-secondary: #a1a1aa;
+      --text-tertiary: #71717a;
+      --accent: #8b5cf6;
+      --accent-soft: rgba(139, 92, 246, 0.16);
+      --success: #34d399;
+      --danger: #f87171;
+      --shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+    }
+    html[data-theme="light"] {
+      color-scheme: light;
+      --bg: #f4f4f5;
+      --surface: #ffffff;
+      --surface-elevated: #ffffff;
+      --surface-hover: #f4f4f5;
+      --line: #e4e4e7;
+      --line-strong: #d4d4d8;
+      --text: #18181b;
+      --text-secondary: #52525b;
+      --text-tertiary: #71717a;
+      --accent: #7c3aed;
+      --accent-soft: rgba(124, 58, 237, 0.1);
+      --success: #059669;
+      --danger: #dc2626;
+      --shadow: 0 18px 50px rgba(24, 24, 27, 0.12);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 34px 30px 52px; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif; }
+    .page { max-width: 1120px; margin: 0 auto; }
+    .head { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; margin-bottom: 24px; }
+    h1 { margin: 0 0 8px; font-size: 24px; letter-spacing: -0.01em; }
+    .lede { margin: 0; color: var(--text-secondary); max-width: 700px; }
+    .toolbar { display: flex; gap: 8px; flex-shrink: 0; }
+    .btn { height: 34px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+    .btn[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+    .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+    .card { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); overflow: hidden; }
+    .card-head { display: flex; justify-content: space-between; align-items: center; padding: 15px 18px; border-bottom: 1px solid var(--line); }
+    .title { display: flex; align-items: center; gap: 8px; font-weight: 650; }
+    .tag { font-size: 11px; font-weight: 600; border-radius: 999px; padding: 3px 8px; }
+    .before { background: rgba(248,113,113,.12); color: var(--danger); }
+    .after { background: rgba(52,211,153,.12); color: var(--success); }
+    .canvas { display: flex; gap: 0; min-height: 460px; }
+    .sidebar { width: 232px; flex: none; border-right: 1px solid var(--line); padding: 16px 10px; background: linear-gradient(180deg, var(--surface-elevated), var(--surface)); }
+    .brand { display: flex; align-items: center; gap: 8px; padding: 0 10px 18px; font-weight: 700; font-size: 13px; }
+    .brand-mark { width: 22px; height: 22px; border-radius: 7px; background: linear-gradient(135deg, #8b5cf6, #5b21b6); display: grid; place-items: center; color: white; font-size: 11px; }
+    .nav { display: flex; flex-direction: column; gap: 2px; }
+    .nav-item, .more-row, .menu-row { display: flex; align-items: center; gap: 10px; border-radius: 9px; padding: 9px 10px; color: var(--text); }
+    .nav-item { font-size: 13px; }
+    .nav-item.active { background: var(--accent-soft); color: var(--accent); }
+    .nav-item svg, .menu-row svg, .more-row svg { width: 15px; height: 15px; flex: none; }
+    .nav-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .more-row { margin-top: 4px; color: var(--text-secondary); font-size: 13px; }
+    .more-wrap { position: relative; }
+    .menu { position: absolute; left: 8px; top: 42px; z-index: 2; width: 208px; padding: 6px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--surface-elevated); box-shadow: var(--shadow); }
+    .menu-title { padding: 4px 10px 7px; color: var(--text-tertiary); font-size: 11px; font-weight: 600; }
+    .menu-row { font-size: 13px; color: var(--text); }
+    .menu-row.new { background: var(--accent-soft); color: var(--accent); }
+    .divider { height: 1px; margin: 5px 8px; background: var(--line); }
+    .preview { flex: 1; padding: 20px; display: flex; flex-direction: column; justify-content: center; gap: 10px; background: radial-gradient(100% 80% at 50% 0%, var(--accent-soft), transparent 66%), var(--surface-elevated); }
+    .preview-card { border: 1px dashed var(--line-strong); border-radius: 14px; height: 210px; display: grid; place-items: center; color: var(--text-tertiary); font-size: 12px; }
+    .note { padding: 12px 18px 16px; color: var(--text-secondary); font-size: 12px; border-top: 1px solid var(--line); }
+    .narrow .compare { grid-template-columns: 1fr; max-width: 430px; margin: 0 auto; }
+    .legend { margin-top: 22px; padding: 13px 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--text-secondary); font-size: 12px; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text); }
+    @media (max-width: 900px) { body { padding: 22px 14px 40px; } .head { flex-direction: column; align-items: flex-start; } .compare { grid-template-columns: 1fr; } .sidebar { width: 200px; } }
+  </style>
+</head>
+<body>
+  <main class="page" id="page">
+    <header class="head">
+      <div>
+        <h1>左侧边栏 · 「更多」菜单增加图像生成</h1>
+        <p class="lede">修改前「更多」菜单只有应用、视频剪辑等功能；修改后新增「图像生成」，点开后进入现有的图像生成工作台 Tab，不改变侧栏常驻行。</p>
+      </div>
+      <div class="toolbar">
+        <button class="btn" id="themeBtn" type="button" aria-pressed="false">切换亮色</button>
+        <button class="btn" id="narrowBtn" type="button" aria-pressed="false">窄屏预览</button>
+      </div>
+    </header>
+
+    <section class="compare" aria-label="修改前后对比">
+      <article class="card">
+        <div class="card-head"><div class="title">修改前 <span class="tag before">无图像生成入口</span></div><span style="color:var(--text-tertiary);font-size:12px">「更多」菜单 8 项</span></div>
+        <div class="canvas">
+          <aside class="sidebar" aria-label="侧边栏">
+            <div class="brand"><span class="brand-mark">O</span> OmniMux</div>
+            <nav class="nav">
+              <div class="nav-item"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 3h10v10H3z"/></svg><span class="nav-label">新对话</span></div>
+              <div class="nav-item"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 4h12M2 8h12M2 12h8"/></svg><span class="nav-label">项目</span></div>
+              <div class="nav-item"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M5 6h6M5 9h4"/></svg><span class="nav-label">资产库</span></div>
+              <div class="nav-item"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="5.5"/><path d="M8 4v8M4 8h8"/></svg><span class="nav-label">灵感社区</span></div>
+              <div class="more-wrap" style="position:relative">
+                <div class="more-row"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="3" cy="8" r="1" fill="currentColor"/><circle cx="8" cy="8" r="1" fill="currentColor"/><circle cx="13" cy="8" r="1" fill="currentColor"/></svg><span class="nav-label">更多</span><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="m4 6 4 4 4-4"/></svg></div>
+                <div class="menu" role="menu" aria-label="更多">
+                  <div class="menu-title">更多功能</div>
+                  <div class="menu-row"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="2" width="5" height="5"/><rect x="9" y="2" width="5" height="5"/><rect x="2" y="9" width="5" height="5"/><rect x="9" y="9" width="5" height="5"/></svg>应用</div>
+                  <div class="menu-row"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.75" y="3.25" width="12.5" height="9.5" rx="1.75"/><path d="M6.4 5.6v4.8L10.6 8 6.4 5.6Z" fill="currentColor"/></svg>视频剪辑</div>
+                  <div class="divider"></div>
+                  <div class="menu-row">发布</div>
+                  <div class="menu-row">账号</div>
+                  <div class="menu-row">手机管理</div>
+                  <div class="divider"></div>
+                  <div class="menu-row">数据分析</div>
+                  <div class="menu-row">任务表单</div>
+                  <div class="menu-row">社交采收</div>
+                </div>
+              </div>
+            </nav>
+          </aside>
+          <div class="preview"><div class="preview-card">打开「更多」菜单</div></div>
+        </div>
+        <div class="note">没有图像生成入口，用户只能从任务流或工具卡进入图像生成。</div>
+      </article>
+
+      <article class="card">
+        <div class="card-head"><div class="title">修改后 <span class="tag after">新增图像生成</span></div><span style="color:var(--text-tertiary);font-size:12px">「更多」菜单 9 项</span></div>
+        <div class="canvas">
+          <aside class="sidebar" aria-label="侧边栏">
+            <div class="brand"><span class="brand-mark">O</span> OmniMux</div>
+            <nav class="nav">
+              <div class="nav-item"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 3h10v10H3z"/></svg><span class="nav-label">新对话</span></div>
+              <div class="nav-item"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 4h12M2 8h12M2 12h8"/></svg><span class="nav-label">项目</span></div>
+              <div class="nav-item"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M5 6h6M5 9h4"/></svg><span class="nav-label">资产库</span></div>
+              <div class="nav-item"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="5.5"/><path d="M8 4v8M4 8h8"/></svg><span class="nav-label">灵感社区</span></div>
+              <div class="more-wrap">
+                <div class="more-row"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="3" cy="8" r="1" fill="currentColor"/><circle cx="8" cy="8" r="1" fill="currentColor"/><circle cx="13" cy="8" r="1" fill="currentColor"/></svg><span class="nav-label">更多</span><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="m4 6 4 4 4-4"/></svg></div>
+                <div class="menu" role="menu" aria-label="更多">
+                  <div class="menu-title">更多功能</div>
+                  <div class="menu-row"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="2" width="5" height="5"/><rect x="9" y="2" width="5" height="5"/><rect x="2" y="9" width="5" height="5"/><rect x="9" y="9" width="5" height="5"/></svg>应用</div>
+                  <div class="menu-row new"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="1.75" y="2.25" width="12.5" height="11.5" rx="2"/><circle cx="5.5" cy="6" r="1.2"/><path d="m2.5 12 3.8-3.8 2.6 2.6 2.2-2.2 2.4 2.4"/></svg>图像生成</div>
+                  <div class="menu-row"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.75" y="3.25" width="12.5" height="9.5" rx="1.75"/><path d="M6.4 5.6v4.8L10.6 8 6.4 5.6Z" fill="currentColor"/></svg>视频剪辑</div>
+                  <div class="divider"></div>
+                  <div class="menu-row">发布</div>
+                  <div class="menu-row">账号</div>
+                  <div class="menu-row">手机管理</div>
+                  <div class="divider"></div>
+                  <div class="menu-row">数据分析</div>
+                  <div class="menu-row">任务表单</div>
+                  <div class="menu-row">社交采收</div>
+                </div>
+              </div>
+            </nav>
+          </aside>
+          <div class="preview"><div class="preview-card">点击「图像生成」→ 打开 `omnimux:media-viewer` 工作台 Tab</div></div>
+        </div>
+        <div class="note">入口遵循菜单单一真源，图标为 14×14 纯矢量；点击走既有 workbench.open，不新增导航状态。</div>
+      </article>
+    </section>
+
+    <div class="legend">交互：点击左侧「更多」展开菜单 → 找到「图像生成」→ 打开后进入现有的图像生成面板。演示覆盖亮/暗主题与窄屏；产品运行时入口顺序为：应用、<code>图像生成</code>、视频剪辑…。</div>
+  </main>
+  <script>
+    const themeBtn = document.getElementById('themeBtn');
+    const narrowBtn = document.getElementById('narrowBtn');
+    const page = document.getElementById('page');
+    themeBtn.addEventListener('click', () => {
+      const light = document.documentElement.dataset.theme === 'light';
+      document.documentElement.dataset.theme = light ? 'dark' : 'light';
+      themeBtn.setAttribute('aria-pressed', String(!light));
+      themeBtn.textContent = light ? '切换亮色' : '切换暗色';
+    });
+    narrowBtn.addEventListener('click', () => {
+      const narrow = page.classList.toggle('narrow');
+      narrowBtn.setAttribute('aria-pressed', String(narrow));
+      narrowBtn.textContent = narrow ? '退出窄屏' : '窄屏预览';
+    });
+  </script>
+</body>
+</html>
