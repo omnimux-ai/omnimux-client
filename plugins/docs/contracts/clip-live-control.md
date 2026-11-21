@@ -50,12 +50,14 @@ Clip 编辑器和 Host 使用同一 OpenReel `Project`。Host 保存含 `project
 
 以 [Host 工具注册](../../plugins/omnimux-clip/src/tools.js) 的 JSON Schema 为准。以下 `?` 表示可选。实时工具共用 `projectId?`、`windowInstanceId?`、`requestId?`，其中 `clip_open` 必须传 `projectId`。`clip_edit` 和 `clip_export` 接收 `baseRevision?` 与 `baseRevisionEpoch?`。编辑前用实时 `clip_get` 读取 `revision` 和 `revisionEpoch`，对同工程和窗口分别传入这两个版本字段。省略数字版本时采用当前租约。省略世代时，编辑和指定版本的导出核对同一会话与目标最后一次实时读取的世代。旧世代即使数字版本相同也返回 `REVISION_CONFLICT`。仅确认导出当前可见工程时可省略两个版本字段。写入与导出宜提供稳定的 `requestId`，供结果不明时复查。
 
+九个工具的输入和输出 schema 均使用 DSH Host 支持的 JSON Schema 子集。Clip 执行时继续校验数值范围、字符串长度、批次数量及窗口身份。
+
 | 工具 | 其他参数与结果 |
 | --- | --- |
 | `clip_list` | `limit?` 为 1–100，默认 50。返回 `projects`、`count`、`unavailableProjects`、`unavailableCount`。已保存列表与异常列表各自截取，异常总数另报。 |
 | `clip_create` | 必填 `name`。`resolution?` 为 `landscape`、`portrait`、`square`，默认 `landscape`。`fps?` 默认 30。生成独立原生空工程并保存，返回 `projectId` 与初始 `revision`。 |
 | `clip_open` | 打开尚未物化的画布工程时同时带 `workspaceId`、`nodeId` 和 `projectId`。已有画布工程可从保存记录解析绑定。只在用户要求打开时调用。 |
-| `clip_get` | `view?` 为 `summary`、`tracks`、`clips`、`full`，默认 `summary`。可带 `trackId`、`clipId`、`fromSec`、`toSec`。实时投影返回 `revision`、`revisionEpoch` 和 `windowInstanceId`。指定 ID 时也可读保存工程。`full` 附轨道、片段、转场、素材与字幕。 |
+| `clip_get` | `view?` 为 `summary`、`tracks`、`clips`、`full`，默认 `summary`。可带 `trackId`、`clipId`、`fromSec`、`toSec`。返回必填整数 `revision` 和 `revisionEpoch`，实时读取另返回可选字符串 `windowInstanceId`。指定 ID 时也可读保存工程。`full` 附轨道、片段、转场、素材与字幕。 |
 | `clip_diagnostics` | 必填 `projectId`，只查 Host 已保存版本。报告 `timeline_gap`（可见视频空档 ≥0.08 秒）、`clip_overlap`、`media_missing` 与 `clip_out_of_bounds` 等。`ok` 表示有无问题，有问题时为 `false`，工具本身失败仍抛领域错误。 |
 | `clip_edit` | 必填可读的 `description` 和 1–100 条 `operations`。`validateOnly: true` 预演。删除非空整轨或清空已有时间轴需明确授权并传 `confirmDestructive: true`。 |
 | `clip_view` | 必填 `action`。`seek` 使用 `toSec`，`play` 可用 `fromSec`，`select_clips` 需 `clipIds`，传空数组清除选段。`pause` 直接暂停。返回原生播放头、播放状态、选段 ID 与版本。 |

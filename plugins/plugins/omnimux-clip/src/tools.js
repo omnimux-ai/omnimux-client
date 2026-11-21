@@ -94,6 +94,22 @@ const EDIT_FIELDS = {
 }
 const editUnion = oneOf(...Object.entries(EDIT_FIELDS).map(([type, fields]) => objectParams({ type: required(choices(type)), ...fields })))
 
+const domainSchemaKeywords = ['minimum', 'maximum', 'exclusiveMinimum', 'minLength', 'maxLength', 'minItems', 'maxItems']
+
+// Project input schemas to the Harness vocabulary. validateValue enforces the domain bounds.
+function toHarnessParameters(schema) {
+  const parameters = { ...schema }
+  for (const keyword of domainSchemaKeywords) delete parameters[keyword]
+  if (schema.properties) {
+    parameters.properties = Object.fromEntries(
+      Object.entries(schema.properties).map(([key, child]) => [key, toHarnessParameters(child)]),
+    )
+  }
+  if (schema.items) parameters.items = toHarnessParameters(schema.items)
+  if (schema.oneOf) parameters.oneOf = schema.oneOf.map(toHarnessParameters)
+  return parameters
+}
+
 function validateValue(value, schema, field) {
   if (schema.oneOf) {
     const operationSchemas = schema.oneOf.filter((option) => option.properties?.type?.enum)
@@ -319,9 +335,9 @@ export function createClipTools({ store, broker, exportJobs, getWorkflowClip, ge
   }
 
   function tool(name, description, timeoutMs, fields, run, output = jsonOut) {
-    const parameters = objectParams(fields)
-    return { name, description, timeoutMs, parameters, output, async execute(args, exec) {
-      validateValue(args, parameters, name)
+    const validationSchema = objectParams(fields)
+    return { name, description, timeoutMs, parameters: toHarnessParameters(validationSchema), output, async execute(args, exec) {
+      validateValue(args, validationSchema, name)
       return run(args, exec)
     } }
   }
@@ -378,8 +394,15 @@ export function createClipTools({ store, broker, exportJobs, getWorkflowClip, ge
         return result ?? JSON.parse(JSON.stringify(nativeProjectView(store.load(assertProjectId(args.projectId)), args)))
       }, {
         ...jsonOut,
-        schema: { ...jsonOut.schema, properties: { revision: integer, revisionEpoch: integer, windowInstanceId: string() },
-          required: ['revision', 'revisionEpoch'] },
+        schema: {
+          ...jsonOut.schema,
+          properties: {
+            revision: { type: 'integer' },
+            revisionEpoch: { type: 'integer' },
+            windowInstanceId: { type: 'string' },
+          },
+          required: ['revision', 'revisionEpoch'],
+        },
       }),
     tool('clip_edit', 'Apply an atomic OpenReel edit batch with one undo step. All times are seconds. validateOnly checks a batch without saving. Set confirmDestructive only with explicit user intent to delete a populated track or clear the timeline.', 180_000,
       { ...targetArgs, ...revisionArgs, description: required(string(300)), operations: required(arrayOf(editUnion, 100, 1)),

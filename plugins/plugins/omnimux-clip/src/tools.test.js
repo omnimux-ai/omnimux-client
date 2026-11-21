@@ -5,6 +5,8 @@ import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { describe, it, test } from 'node:test'
 import { crc32, deflateSync } from 'node:zlib'
+import { Context } from '@deepseek-ai/cordis'
+import { ToolRuntime, assertObjectJsonSchema, assertSupportedJsonSchema, validateJsonSchemaValue } from '@deepseek-ai/dsh-tools'
 import { ClipDomainError } from './errors.js'
 import { createExportJobs } from './export-jobs.js'
 import { createClipDispatcher, registerClipRoutes } from './http/routes.js'
@@ -1095,6 +1097,42 @@ test('third review #8 reserves exports with the authenticated editor epoch and w
   assert.deepEqual(claim.body.details, { currentRevision: 2, currentRevisionEpoch: 2 })
   await rejected
   assert.equal(begins.length, 2)
+})
+
+test('Clip activates with the pinned DSH tool runtime and exposes supported schemas', async t => {
+  const { home, specs, store } = fixture(t)
+  withHostHome(t, home)
+  const context = new Context()
+  t.after(() => context.fiber.dispose())
+  await context.plugin({ apply(ctx) { ctx.provide('systemPrompt', { tools() {}, section() {} }) } })
+  await context.plugin(ToolRuntime)
+  await context.plugin({ inject: moduleInject, apply })
+
+  const runtime = context.get('tools')
+  assert.deepEqual(runtime.wireSchemas().knownNames.sort(), specs.map(({ name }) => name).sort())
+  for (const { name } of specs) {
+    const definition = runtime.get(name)
+    assert.doesNotThrow(() => assertObjectJsonSchema(definition.parameters), `${name} input schema`)
+    assert.doesNotThrow(() => assertSupportedJsonSchema(definition.output.schema), `${name} output schema`)
+  }
+
+  const get = runtime.get('clip_get')
+  const schema = get.output.schema
+  assert.deepEqual(schema.required, ['revision', 'revisionEpoch'])
+  assert.deepEqual(schema.properties, {
+    revision: { type: 'integer' },
+    revisionEpoch: { type: 'integer' },
+    windowInstanceId: { type: 'string' },
+  })
+  store.create('demo', createNativeProject('demo'))
+  const saved = await get.execute({ projectId: 'demo' })
+  assert.equal(Object.hasOwn(saved, 'windowInstanceId'), false)
+  assert.deepEqual(validateJsonSchemaValue(schema, saved), [])
+  assert.ok(validateJsonSchemaValue(schema, { revision: saved.revision }).length > 0)
+  await rejectsCode(get.execute({ projectId: 'demo', windowInstanceId: 'invalid window' }), 'invalid-json',
+    error => error.message.includes('Invalid windowInstanceId'))
+  await rejectsCode(runtime.get('clip_edit').execute(editArgs('empty-batch', { operations: [] })), 'invalid-json',
+    error => error.message.includes('clip_edit.operations'))
 })
 
 test('host apply provides the native seam and registers routes through guarded injects', async t => {
