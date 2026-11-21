@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
+import { getOutgoers } from '@xyflow/react';
 
 // Exercise the real hooks with deterministic effects, stores and transport.
 // No DOM or network is needed for the persistence/submission boundary.
@@ -15,13 +16,14 @@ const bundle = await build({
   },
   bundle: true, write: false, format: 'iife', globalName: 'hooks', platform: 'node',
   plugins: [{ name: 'hook-boundaries', setup(build) {
-    build.onResolve({ filter: /^(react)$|\/canvasStore$|\/executionStore$|\/apiClient$|\/i18n$/ },
+    build.onResolve({ filter: /^(react|@xyflow\/react)$|\/canvasStore$|\/executionStore$|\/apiClient$|\/i18n$/ },
       ({ path }) => ({ path, namespace: 'test' }));
     build.onLoad({ filter: /.*/, namespace: 'test' }, ({ path }) => ({ contents:
       path === 'react' ? `export const useRef = value => ({ current: value });
         export const useState = value => [value, () => {}];
         export const useCallback = callback => callback;
         export const useEffect = effect => { const cleanup = effect(); if (cleanup) env.cleanups.push(cleanup); };`
+      : path === '@xyflow/react' ? 'export const getOutgoers = env.getOutgoers;'
       : path.endsWith('canvasStore') ? 'export const useCanvasStore = env.canvasStore;'
       : path.endsWith('executionStore') ? `export const useExecutionStore = env.executionStore;
         export const LOCAL_RUN_ID = '__local__';
@@ -85,7 +87,7 @@ function setup({ legacy = false, onPreflightError } = {}) {
     setNodeStatus(id, state) { this.nodeStatuses[id] = state; },
     setStartNodeExecution() {},
   };
-  const env = { remote, cleanups: [], saves: [], creates: [],
+  const env = { remote, getOutgoers, cleanups: [], saves: [], creates: [],
     canvasStore: { getState: () => canvas, subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); } },
     executionStore: { getState: () => exec },
     save: async (_id, payload) => {

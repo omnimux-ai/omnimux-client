@@ -26,7 +26,7 @@ const EPS = 1e-6;
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
-function removeClipsById(work: Project, ids: ReadonlySet<string>): Project {
+export function removeClipsById(work: Project, ids: ReadonlySet<string>): Project {
   const next: Mutable<Project> = {
     ...work,
     timeline: {
@@ -187,6 +187,7 @@ export function planRemoveGaps(
   project: Project,
   trackId: string,
   _operationId: string,
+  minGapSec = 0,
 ): TimelineToolPlan {
   const track = project.timeline.tracks.find((t) => t.id === trackId);
   if (!track) throw new Error("The target track no longer exists.");
@@ -197,7 +198,8 @@ export function planRemoveGaps(
   const gaps: { start: number; end: number }[] = [];
   let cursor = 0;
   for (const span of spans) {
-    if (span.start - cursor > EPS) gaps.push({ start: cursor, end: span.start });
+    const length = span.start - cursor;
+    if (length > EPS && length >= minGapSec - EPS) gaps.push({ start: cursor, end: span.start });
     cursor = Math.max(cursor, span.end);
   }
   const followers = syncFollowerTrackIds(project, [trackId]);

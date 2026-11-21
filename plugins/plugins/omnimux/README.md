@@ -1,6 +1,6 @@
 # omnimux
 
-当前产品方向见[角色生成与视频复刻](../../docs/contracts/product-positioning.md)。本页保留该组件的技术职责与既有实现记录，不证明全部功能当前可用，也不扩展默认产品范围；模型/渠道信息属于内部执行，普通用户的简化入口仍需对应实现证据。
+当前产品方向见[OmniMux 插件简介](../../README.md#简介)。本页保留该组件的技术职责与既有实现记录，不证明全部功能当前可用，也不扩展默认产品范围；模型/渠道信息属于内部执行，普通用户的简化入口仍需对应实现证据。
 
 
 Execution hub for landing OmniMux on official dsh. Not a gateway: OmniMux cloud owns HTTP; this package exposes seams and tools. Product chrome, identity, model routes, and media seams live here. Verticals send requests in and take results out. Do not split chrome or identity into a sibling plugin. Third-party compatible media endpoints are configured here. Official-only tools stay here because only OmniMux cloud implements them.
@@ -44,6 +44,12 @@ Two keys, two URLs:
 Startup only describes the stored access token. Settings **个人资料** can start device login (`client_name: omnimux`). **应用** lists official catalog rows from `GET /omnimux/apps` without a login gate.
 
 Official Apps rows come from `apps/catalog.json` (floor) plus an optional Host GET of `{siteBaseUrl}/apps/catalog.json` when `Config.apps.remote` is true. The cache is `$DSH_HOME/omnimux/apps/`. The browser never fetches the site file. Install uses the catalog's pinned `install_spec` through `/omnimux/plugins`. The first official row is `accounts` (`omnimux-accounts@0.1.0`). Connected accounts are listed on Host `GET /omnimux/accounts`. Contract: repo `docs/contracts/apps-catalog.md`.
+
+## Workbench and Clip
+
+The existing Hub WebSocket associates each authenticated window with its current conversation and viewport. At the first step of a turn, the Hub refreshes the viewports. A single valid Clip editor in those fresh views adds a compact project, revision, playhead and selection summary to `<ui_context>`. In canvas mode the summary also includes the workspace and node IDs. [Clip context contract](../../docs/contracts/clip-live-control.md#可见入口编辑权和对话上下文)
+
+Clip sends live commands through the target window and confirms them through its Host routes. Automatic surface following leaves Clip tools on the current workbench. `clip_open` handles explicit project navigation to the canvas Portal or standalone editor. [Clip command contract](../../docs/contracts/clip-live-control.md#租约命令与失败)
 
 ## Product chrome
 

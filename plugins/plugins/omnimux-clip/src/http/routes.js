@@ -1,370 +1,288 @@
-import { requestRejection } from './request-authorization.js'
-import {
-  createWriteStream,
-  existsSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs'
-import { dirname, join } from 'node:path'
-import {
-  CLIP_STATUS_BY_CODE,
-  ClipDomainError,
-  clipErrorStatus,
-} from '../errors.js'
-import {
-  assertInsideClipRoot,
-  ensureClipDirs,
-  exportMp4Path,
-} from '../paths.js'
+import { randomUUID } from 'node:crypto'
+import { once } from 'node:events'
+import { createWriteStream, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
+import { finished } from 'node:stream/promises'
+import { ClipDomainError, clipErrorStatus, clipErrorValue, isClipRevision } from '../errors.js'
+import { readCanvasBinding, resolveWorkflowBinding, sameBinding } from '../live/command-broker.js'
+import { MAX_RECEIPT_BYTES } from '../live/snapshot.js'
+import { assertProjectId, ensureClipDirs, exportMp4Path } from '../paths.js'
 import { createProjectStore } from '../store/projectStore.js'
+import { requestRejection } from './request-authorization.js'
 
 export const CLIP_API_PREFIX = '/omnimux-clip/api'
 export const CLIP_VERSION = '0.1.0'
+export const RAW_EXPORT_CONTENT_TYPE = 'application/octet-stream'
+export const EXPORT_UPLOAD_MAX_BYTES = 2 * 1024 * 1024 * 1024
+export const EXPORT_UPLOAD_PROOF_HEADER = 'x-clip-export-proof'
 
-const DEFAULT_FS = {
-  createWriteStream,
-  existsSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  statSync,
-  writeFileSync,
+const DEFAULT_FS = { createWriteStream, renameSync, rmSync, statSync, writeFileSync }
+const SAVE_EXPORT_PATH = /^\/projects\/[^/]+\/save-export$/
+const EXPORT_UPLOAD_PATH = /^\/exports\/([1-9]\d{0,15})\/upload$/
+const LIVE_PATH = /^\/live\/(lease|renew|release|claim|receipt)$/
+
+function routeUrl(rawPath) {
+  const url = new URL(rawPath || CLIP_API_PREFIX, 'http://localhost')
+  let path = url.pathname.replace(/\/+$/, '')
+  if (path === CLIP_API_PREFIX || path.startsWith(`${CLIP_API_PREFIX}/`)) path = path.slice(CLIP_API_PREFIX.length)
+  return { path: path || '/', searchParams: url.searchParams }
 }
 
-/**
- * 画布导出上传原始编码字节的 Content-Type。
- * 走 JSON + base64 会把体积膨胀 1/3，并撞上 8 MiB 的 JSON body 上限。
- */
-export const RAW_EXPORT_CONTENT_TYPE = 'application/octet-stream'
-/** 单次导出上传硬上限（字节）。 */
-export const EXPORT_UPLOAD_MAX_BYTES = 2 * 1024 * 1024 * 1024
-const SAVE_EXPORT_PATH_RE = /^(?:\/omnimux-clip\/api)?\/projects\/[^/]+\/save-export$/
+function errorResponse(error) {
+  if (error instanceof ClipDomainError) {
+    const { code, message, details } = clipErrorValue(error)
+    return { status: clipErrorStatus(error), body: { error: code, message, ...(details ? { details } : {}) } }
+  }
+  if (error instanceof URIError || error instanceof SyntaxError) {
+    return { status: 400, body: { error: 'invalid-json', message: 'The Clip request is invalid.' } }
+  }
+  return { status: 500, body: { error: 'internal', message: 'The Clip Host could not complete this request.' } }
+}
 
-/**
- * @param {import('node:http').ServerResponse} res
- * @param {number} status
- * @param {unknown} body
- */
 export function sendJson(res, status, body) {
-  const text = JSON.stringify(body)
+  const text = status === 204 ? '' : JSON.stringify(body)
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store',
     'Content-Length': Buffer.byteLength(text),
   })
   res.end(text)
 }
 
-/**
- * Parse a request body as JSON. Empty body = {}. Bad JSON = null.
- * @param {import('node:http').IncomingMessage} req
- * @param {{ maxBytes?: number }} [opts]
- */
-export async function readJsonBody(req, opts = {}) {
-  const maxBytes = opts.maxBytes ?? 8 * 1024 * 1024
+export async function readJsonBody(req, { maxBytes = 8 * 1024 * 1024 } = {}) {
   const chunks = []
   let size = 0
-  for await (const chunk of req) {
+  const input = req.iterator?.({ destroyOnReturn: false }) ?? req
+  for await (const chunk of input) {
     size += chunk.length
-    if (size > maxBytes) return null
+    if (size > maxBytes) {
+      req.resume?.()
+      throw new ClipDomainError('schema-too-large', 'The Clip request exceeds its size limit.')
+    }
     chunks.push(chunk)
   }
-  if (chunks.length === 0) return {}
+  if (!chunks.length) return {}
   try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'))
   } catch {
     return null
   }
 }
 
-/**
- * Decode a video payload that the overlay posted after WebCodecs export.
- * Accepts raw base64, data-URL, or `{ path }` pointing at a tmp file already
- * inside the clip domain.
- * @param {unknown} body
- * @param {ReturnType<typeof import('../paths.js').resolveClipPaths>} paths
- * @param {typeof DEFAULT_FS} fs
- */
-export function decodeExportPayload(body, paths, fs = DEFAULT_FS) {
-  if (!body || typeof body !== 'object') {
-    throw ClipDomainError.invalidJson('export body must be an object')
+export function decodeExportPayload(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw ClipDomainError.invalidJson('The export body must be a JSON object.')
   }
-  const payload = /** @type {Record<string, unknown>} */ (body)
-
-  if (typeof payload.path === 'string' && payload.path.trim()) {
-    const resolved = assertInsideClipRoot(paths.dir, payload.path)
-    if (!fs.existsSync(resolved)) {
-      throw ClipDomainError.notFound(`export temp file not found: ${resolved}`)
-    }
-    return fs.readFileSync(resolved)
-  }
-
-  const raw = typeof payload.base64 === 'string'
-    ? payload.base64
-    : typeof payload.data === 'string'
-      ? payload.data
-      : typeof payload.blob === 'string'
-        ? payload.blob
-        : null
-  if (!raw) {
-    throw ClipDomainError.invalidJson('export body needs base64, data, blob, or path')
-  }
-  const comma = raw.indexOf(',')
-  const b64 = raw.startsWith('data:') && comma >= 0 ? raw.slice(comma + 1) : raw
-  try {
-    return Buffer.from(b64, 'base64')
-  } catch {
-    throw ClipDomainError.invalidJson('export base64 is not valid')
-  }
+  if (body.path !== undefined) throw ClipDomainError.pathDenied('Export requests must upload their video bytes.')
+  const raw = [body.base64, body.data, body.blob].find((value) => typeof value === 'string' && value)
+  if (!raw) throw ClipDomainError.invalidJson('The export body needs base64 video bytes.')
+  const encoded = raw.startsWith('data:') ? raw.slice(raw.indexOf(',') + 1) : raw
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) throw ClipDomainError.invalidJson('Invalid export base64.')
+  return Buffer.from(encoded, 'base64')
 }
 
-/**
- * 把导出字节落到 `<exportsDir>/<id>.mp4`。
- * - `{ path }`（原始上传留下的临时文件）：同卷 rename，零拷贝、零整段内存；
- * - `base64` / `data` / `blob`（兼容旧通道）：解码后写入。
- * @returns {number} 写入字节数
- */
-export function persistExportBytes(body, paths, fs, dest) {
-  const tempPath = body && typeof body.path === 'string' ? body.path.trim() : ''
+function persistExportBytes(body, paths, fs, dest, tempPath) {
   if (tempPath) {
-    const source = assertInsideClipRoot(paths.dir, tempPath)
-    if (!fs.existsSync(source)) {
-      throw ClipDomainError.notFound(`export temp file not found: ${source}`)
-    }
-    fs.renameSync(source, dest)
+    if (dirname(resolve(tempPath)) !== resolve(paths.tmpDir)) throw ClipDomainError.pathDenied()
+    fs.renameSync(tempPath, dest)
     return fs.statSync(dest).size
   }
-  const bytes = decodeExportPayload(body, paths, fs)
+  const bytes = decodeExportPayload(body)
   fs.writeFileSync(dest, bytes, { mode: 0o600 })
   return bytes.length
 }
 
-/**
- * 导出文件的内容身份（`mtimeMs:size`），口径与
- * `omnimux-workflow/src/projects/mediaRevision.ts` 一致。
- *
- * 画布导出原地覆盖同一个 `<projectId>.mp4`，路径不变；下游成片节点必须靠这个版本
- * 串才能让 `<video>` 重新取流，否则浏览器复用旧元素、停在首次加载的失败态。
- * @param {string} file
- * @param {typeof DEFAULT_FS} [fs]
- */
 export function exportFileRevision(file, fs = DEFAULT_FS) {
   const stat = fs.statSync(file)
   return `${stat.mtimeMs}:${stat.size}`
 }
 
-/** 画布导出：POST save-export + application/octet-stream。 */
-function isRawExportUpload(req) {
-  if ((req.method || 'GET').toUpperCase() !== 'POST') return false
-  const contentType = String(req.headers?.['content-type'] || '').toLowerCase()
-  if (!contentType.startsWith(RAW_EXPORT_CONTENT_TYPE)) return false
-  const pathname = String(req.url || '').split('?')[0].replace(/\/+$/, '')
-  return SAVE_EXPORT_PATH_RE.test(pathname)
+function hasRawExportContent(req) {
+  return String(req.headers?.['content-type'] || '').split(';', 1)[0].trim().toLowerCase() === RAW_EXPORT_CONTENT_TYPE
 }
 
-/**
- * 把原始上传体流式写入 clip 临时目录（不整段驻留内存），返回临时文件绝对路径。
- * @returns {Promise<string>}
- */
 async function writeRawUpload(req, tmpDir, fs) {
-  const tempPath = join(
-    tmpDir,
-    `upload-${Date.now()}-${Math.random().toString(36).slice(2, 10)}.bin`,
-  )
-  const out = fs.createWriteStream(tempPath, { mode: 0o600 })
+  const tempPath = join(tmpDir, `upload-${randomUUID()}.bin`)
+  const out = fs.createWriteStream(tempPath, { flags: 'wx', mode: 0o600 })
+  const persisted = finished(out, { cleanup: true })
+  // The stream can fail while the request is still between chunks.
+  void persisted.catch(() => undefined)
   let size = 0
   try {
-    for await (const chunk of req) {
+    const input = req.iterator?.({ destroyOnReturn: false }) ?? req
+    for await (const chunk of input) {
       size += chunk.length
       if (size > EXPORT_UPLOAD_MAX_BYTES) {
-        throw new Error(`export upload exceeds ${EXPORT_UPLOAD_MAX_BYTES} bytes`)
+        req.resume?.()
+        throw new ClipDomainError('schema-too-large', 'The MP4 upload exceeds its size limit.')
       }
-      if (!out.write(chunk)) {
-        await new Promise((resolve, reject) => {
-          out.once('drain', resolve)
-          out.once('error', reject)
-        })
-      }
+      if (out.errored) throw out.errored
+      if (!out.write(chunk)) await once(out, 'drain')
     }
-    await new Promise((resolve, reject) => out.end((err) => (err ? reject(err) : resolve())))
+    out.end()
+    await persisted
   } catch (error) {
     out.destroy()
+    await persisted.catch(() => undefined)
     fs.rmSync(tempPath, { force: true })
-    throw error
+    if (error instanceof ClipDomainError) throw error
+    throw new ClipDomainError('export-upload-failed', 'The Host could not read or stage the export upload.')
   }
   return tempPath
 }
 
-/**
- * @param {{
- *   paths: ReturnType<typeof import('../paths.js').resolveClipPaths>,
- *   fs?: typeof DEFAULT_FS,
- * }} deps
- */
-export function createClipDispatcher(deps) {
-  const paths = deps.paths
-  const fs = deps.fs ?? DEFAULT_FS
+function objectBody(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw ClipDomainError.invalidJson('The Clip request needs a JSON object.')
+  return body
+}
+
+export function createClipDispatcher({ paths, store, fs = DEFAULT_FS, broker, exportJobs, getWorkflowClip }) {
   ensureClipDirs(paths)
-  const store = deps.store ?? createProjectStore({ paths, fs: deps.fs })
+  store ??= createProjectStore({ paths, fs })
 
-  /**
-   * @param {{ method?: string, url?: string, body?: unknown }} req
-   */
-  async function dispatch(req) {
-    const method = (req.method || 'GET').toUpperCase()
-    const rawPath = req.url || CLIP_API_PREFIX
-    const url = new URL(rawPath, 'http://127.0.0.1')
-    const path = url.pathname.replace(/\/+$/, '') || '/'
+  function getWorkflow(binding, sessionId) {
+    if (!sessionId) throw new ClipDomainError('WINDOW_UNAUTHORIZED', 'An authenticated Clip window in the canvas conversation is required.')
+    const workflow = getWorkflowClip?.()
+    const target = resolveWorkflowBinding(workflow, binding, sessionId)
+    if (typeof workflow.saveDraft !== 'function') throw new ClipDomainError('needs-workflow-clip', 'The canvas draft service is unavailable.')
+    return { workflow, target }
+  }
 
+  function updateDraft(workflow, binding, revision) {
+    if (!binding) return
     try {
-      if (method === 'OPTIONS') {
-        return { status: 204, body: {} }
-      }
-
-      if (method === 'GET' && (path === `${CLIP_API_PREFIX}/health` || path === '/health')) {
-        return { status: 200, body: { clip: true, version: CLIP_VERSION } }
-      }
-
-      if (method === 'GET' && (path === `${CLIP_API_PREFIX}/projects` || path === '/projects')) {
-        return { status: 200, body: store.list() }
-      }
-
-      const projectMatch = path.match(/^(?:\/omnimux-clip\/api)?\/projects\/([^/]+)(?:\/(save-export))?$/)
-      if (!projectMatch) {
-        return { status: 404, body: { error: 'not-found', message: 'unknown route' } }
-      }
-
-      const id = decodeURIComponent(projectMatch[1])
-      const action = projectMatch[2] || ''
-
-      if (method === 'GET' && !action) {
-        const envelope = store.load(id)
-        return { status: 200, body: { id, schema: envelope.schema } }
-      }
-
-      if (method === 'PUT' && !action) {
-        if (req.body == null || typeof req.body !== 'object') {
-          throw ClipDomainError.invalidJson('PUT body must be a JSON object')
-        }
-        const incoming = /** @type {Record<string, unknown>} */ (req.body)
-        const schema = incoming.schema ?? incoming
-        const envelope = store.save(id, schema, { recordUndo: false })
-        return { status: 200, body: { id, saved: true, updatedAt: envelope.updatedAt } }
-      }
-
-      if (method === 'POST' && action === 'save-export') {
-        const dest = exportMp4Path(paths, id)
-        const bytes = persistExportBytes(req.body, paths, fs, dest)
-        return {
-          status: 200,
-          body: {
-            id,
-            saved: true,
-            path: dest,
-            bytes,
-            revision: exportFileRevision(dest, fs),
-          },
-        }
-      }
-
-      return { status: 404, body: { error: 'not-found', message: 'unknown route' } }
-    } catch (error) {
-      if (error instanceof ClipDomainError) {
-        return {
-          status: clipErrorStatus(error),
-          body: { error: error.code, message: error.message },
-        }
-      }
-      if (error instanceof SyntaxError) {
-        return {
-          status: CLIP_STATUS_BY_CODE['invalid-json'],
-          body: { error: 'invalid-json', message: error.message },
-        }
-      }
-      const message = error instanceof Error ? error.message : String(error)
-      return { status: 500, body: { error: 'internal', message } }
+      workflow.saveDraft({ ...binding, revision })
+    } catch {
+      throw new ClipDomainError('draft-link-failed', 'The Clip draft was saved. Retry this save to update its canvas node.', { currentRevision: revision })
     }
   }
 
-  return { dispatch, paths }
+  function saveProject(id, input, sessionId) {
+    assertProjectId(id)
+    const { project, expectedRevision, revision, binding: rawBinding, backupCurrent } = objectBody(input)
+    if (!isClipRevision(expectedRevision) || !isClipRevision(revision) || revision <= expectedRevision) {
+      throw ClipDomainError.invalidJson('expectedRevision and a greater revision are required to save a project.')
+    }
+    objectBody(project)
+    if (backupCurrent !== undefined && typeof backupCurrent !== 'boolean') throw ClipDomainError.invalidJson('backupCurrent must be a boolean.')
+    const previous = store.exists(id) ? store.load(id) : undefined
+    const binding = rawBinding === undefined ? previous?.binding : readCanvasBinding(id, rawBinding)
+    if (previous?.binding && !sameBinding(previous.binding, binding)) {
+      throw new ClipDomainError('clip-binding-mismatch', 'The Clip project belongs to another composition node.')
+    }
+    if (!binding && id.startsWith('clip_node_')) throw ClipDomainError.projectNotMaterialized(id)
+    const workflow = binding ? getWorkflow(binding, sessionId).workflow : undefined
+    const envelope = store.save(id, project, { expectedRevision, revision, binding, backupCurrent })
+    updateDraft(workflow, binding, envelope.revision)
+    return envelope
+  }
+
+  function materializeProject(id, input, sessionId) {
+    const { binding: rawBinding, draftSchema, title } = objectBody(input)
+    const binding = readCanvasBinding(id, rawBinding)
+    if (title !== undefined && (typeof title !== 'string' || title.length > 256)) throw ClipDomainError.invalidJson('title must be text up to 256 characters.')
+    const { workflow, target } = getWorkflow(binding, sessionId)
+    const envelope = store.materialize(id, { binding, draftSchema, title: title || target.title })
+    updateDraft(workflow, binding, envelope.revision)
+    return envelope
+  }
+
+  async function dispatch(req) {
+    const method = (req.method || 'GET').toUpperCase()
+    try {
+      const { path } = routeUrl(req.url)
+      if (method === 'OPTIONS') return { status: 204, body: {} }
+      if (method === 'GET' && path === '/health') return { status: 200, body: { clip: true, version: CLIP_VERSION } }
+      if (method === 'GET' && path === '/projects') return { status: 200, body: store.list() }
+
+      const live = path.match(LIVE_PATH)
+      if (live && method === 'POST') {
+        if (!req.window?.isAlive?.()) throw new ClipDomainError('WINDOW_UNAUTHORIZED', 'An authenticated Clip window is required.')
+        if (!broker) throw new ClipDomainError('EDITOR_OFFLINE', 'The Clip Host is offline.')
+        return { status: 200, body: broker[live[1]](req.window, objectBody(req.body)) }
+      }
+
+      const exportUpload = path.match(EXPORT_UPLOAD_PATH)
+      if (exportUpload && method === 'POST') {
+        if (!exportJobs || !req.exportUpload || !req.tempPath) throw ClipDomainError.pathDenied('Export upload authorization is required.')
+        const body = await exportJobs.upload({ ...req.exportUpload, exportJobId: exportUpload[1], tempPath: req.tempPath })
+        return { status: 200, body }
+      }
+
+      const project = path.match(/^\/projects\/([^/]+)(?:\/(save-export|materialize))?$/)
+      if (project) {
+        const id = assertProjectId(decodeURIComponent(project[1]))
+        const action = project[2]
+        const sessionId = req.window?.getViewport()?.sessionId
+        if (!action && method === 'GET') return { status: 200, body: store.load(id) }
+        if (!action && method === 'PUT') return { status: 200, body: saveProject(id, req.body, sessionId) }
+        if (action === 'materialize' && method === 'POST') return { status: 200, body: materializeProject(id, req.body, sessionId) }
+        if (action === 'save-export' && method === 'POST') {
+          const dest = exportMp4Path(paths, id)
+          const bytes = persistExportBytes(req.body, paths, fs, dest, req.tempPath)
+          return { status: 200, body: { id, saved: true, path: dest, bytes, revision: exportFileRevision(dest, fs) } }
+        }
+      }
+      return { status: 404, body: { error: 'not-found', message: 'Unknown Clip route.' } }
+    } catch (error) {
+      return errorResponse(error)
+    }
+  }
+
+  function authorizeExportUpload(exportJobId, uploadToken, projectId) {
+    if (!exportJobs?.authorizeUpload || !projectId || typeof uploadToken !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(uploadToken)) {
+      throw ClipDomainError.pathDenied('Export upload authorization is invalid or expired.')
+    }
+    exportJobs.authorizeUpload({ exportJobId, uploadToken, projectId: assertProjectId(projectId) })
+    return { uploadToken, projectId }
+  }
+
+  return { dispatch, paths, authorizeExportUpload }
 }
 
-/**
- * Mount `/omnimux-clip/api` on the official webServer seat.
- * @param {{ register: (route: { kind: string, path: string, handler: Function }) => () => void }} webServer
- * @param {{ dispatch: (req: object) => Promise<{ status: number, body: unknown }> }} dispatcher
- */
 export function registerClipRoutes(webServer, dispatcher, deps = {}) {
   const paths = deps.paths ?? dispatcher.paths
   const fs = deps.fs ?? DEFAULT_FS
-  const dispose = webServer.register({
+  return webServer.register({
     kind: 'prefix',
     path: CLIP_API_PREFIX,
     async handler(req, res) {
+      let tempPath
       try {
         const rejection = requestRejection(req, deps.getConnection)
         if (rejection !== undefined) return sendJson(res, rejection, { error: 'request-denied' })
-        if ((req.method || 'GET').toUpperCase() === 'OPTIONS') {
-          sendJson(res, 204, {})
-          return
-        }
         const method = (req.method || 'GET').toUpperCase()
-
-        // 画布导出：编码后的视频以原始字节上传，流式落到 clip 临时目录，
-        // 再由 dispatcher 原子改名到 exports/<projectId>.mp4。
-        if (isRawExportUpload(req)) {
-          if (!paths) {
-            sendJson(res, 500, { error: 'internal', message: 'clip paths unavailable' })
-            return
-          }
-          let tempPath
-          try {
-            tempPath = await writeRawUpload(req, paths.tmpDir, fs)
-          } catch (error) {
-            sendJson(res, 413, {
-              error: 'export-upload-failed',
-              message: error instanceof Error ? error.message : 'export upload failed',
-            })
-            return
-          }
-          try {
-            const result = await dispatcher.dispatch({
-              method,
-              url: req.url || CLIP_API_PREFIX,
-              body: { path: tempPath },
-            })
-            sendJson(res, result.status, result.body)
-          } finally {
-            fs.rmSync(tempPath, { force: true })
-          }
-          return
+        const { path, searchParams } = routeUrl(req.url)
+        const window = deps.getHubEvents?.()?.authorizeWindow?.(req)
+        if (path.startsWith('/live/') && !window?.isAlive?.()) {
+          throw new ClipDomainError('WINDOW_UNAUTHORIZED', 'An authenticated Clip window is required.')
         }
-
-        const wantsBody = method === 'POST' || method === 'PUT'
-        const body = wantsBody ? await readJsonBody(req) : undefined
-        if (wantsBody && body === null) {
-          sendJson(res, 400, { error: 'invalid-json', message: 'invalid json' })
-          return
+        const versioned = method === 'POST' && path.match(EXPORT_UPLOAD_PATH)
+        let exportUpload
+        if (versioned) {
+          if (!hasRawExportContent(req)) {
+            return sendJson(res, 415, { error: 'invalid-export-media', message: 'Upload the MP4 as application/octet-stream.' })
+          }
+          exportUpload = dispatcher.authorizeExportUpload(versioned[1], req.headers?.[EXPORT_UPLOAD_PROOF_HEADER], searchParams.get('projectId'))
         }
-        const result = await dispatcher.dispatch({
-          method,
-          url: req.url || CLIP_API_PREFIX,
-          body,
-        })
+        if (versioned || (method === 'POST' && hasRawExportContent(req) && SAVE_EXPORT_PATH.test(path))) {
+          tempPath = await writeRawUpload(req, paths.tmpDir, fs)
+        }
+        const wantsBody = !tempPath && (method === 'POST' || method === 'PUT')
+        const body = wantsBody ? await readJsonBody(req, path === '/live/receipt' ? { maxBytes: MAX_RECEIPT_BYTES } : {}) : undefined
+        if (wantsBody && body === null) throw ClipDomainError.invalidJson()
+        const result = await dispatcher.dispatch({ method, url: req.url, body, window, tempPath, exportUpload })
         sendJson(res, result.status, result.body)
-      } catch {
-        sendJson(res, 500, { error: 'internal', message: 'internal error' })
+      } catch (error) {
+        const result = errorResponse(error)
+        sendJson(res, result.status, result.body)
+      } finally {
+        if (tempPath) fs.rmSync(tempPath, { force: true })
       }
     },
   })
-  return () => {
-    dispose()
-  }
 }
 
-/** Kept for callers that only need the destination dirname. */
 export function clipStorageHint(paths) {
   return dirname(paths.dir)
 }

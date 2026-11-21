@@ -3,6 +3,7 @@
  * Owner of monotonic sequence, replay ring buffer, and subscriber dispatch.
  * Conforms to contract-agent-workbench-sync (L1).
  */
+import { createWindowRegistry } from './windows.js'
 
 export const RING_CAPACITY = 64
 export const RING_TTL_MS = 10000
@@ -84,6 +85,7 @@ export function createHubEventBus(options = {}) {
   }
 
   return {
+    ...createWindowRegistry(),
     emit,
     subscribe,
     getEventsSince,

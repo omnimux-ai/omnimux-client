@@ -1,5 +1,6 @@
 import { getActiveClipSession, getActiveClipStageStore } from "../../../../stage-store.js";
 import { notifyCanvasClose } from "../../../../CanvasBridge.js";
+import { useClipEditorExit } from "../../../../live/EditorSeat.jsx";
 import { useClipT } from "../../../../i18n/index.js";
 import { useLatch } from "./use-latch";
 import { usePhoneEditor } from "../../hooks/usePhoneEditor";
@@ -47,6 +48,7 @@ const ProjectPackageDialog = lazy(() => import("./ProjectPackageDialog").then((m
 export const Toolbar: React.FC<{ canvasMode?: boolean }> = ({ canvasMode: isCanvasMode = false }) => {
   const t = useClipT();
   const canvasSession = isCanvasMode ? getActiveClipSession() : null;
+  const exitCanvas = useClipEditorExit();
   const phone = usePhoneEditor() && !isCanvasMode;
   const isDesktop = !isCanvasMode && typeof window !== "undefined" && window.openreel?.platform === "desktop";
   const nativePlatform = /Mac/i.test(navigator.platform) ? "darwin" : /Win/i.test(navigator.platform) ? "win32" : "linux";
@@ -329,6 +331,7 @@ export const Toolbar: React.FC<{ canvasMode?: boolean }> = ({ canvasMode: isCanv
           style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
           onClick={() => {
             if (exportState.savingToCanvas) handleCancelExport();
+            if (exitCanvas) { void exitCanvas(); return; }
             if (canvasSession?.nodeId) notifyCanvasClose({ nodeId: canvasSession.nodeId, projectId: canvasSession.projectId });
             getActiveClipStageStore()?.set(false);
           }}

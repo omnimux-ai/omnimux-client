@@ -15,17 +15,11 @@ import { NewLocalProjectDialog } from './NewLocalProjectDialog.jsx'
 import { runNewProject } from './newProject.js'
 import { applyProjectCanvasRatio, CANVAS_TAB_ID, getBetterSidebar } from './projectCanvas.js'
 import { resolveWorkspaceContextPage, useWorkspaceContext } from './workspace-context.js'
+import { sameClipBinding } from '../../canvas/bridge/clipEvents.ts'
+import { claimCanvasClipNavigation, readCanvasClipNavigation, visibleClipBinding } from './canvasClipNavigation.js'
 
 /** Stable page id for UI Context Envelope (Agent workspace targeting). */
 export const CANVAS_PAGE_ID = 'workflow-canvas'
-
-function readVisibleClipBinding(host, workspaceId) {
-  if (host?.dataset.visible !== 'true') return undefined
-  const portal = host.querySelector(':scope > [data-clip-mode="canvas"][data-visible="true"]')
-  const { clipWorkspaceId, clipNodeId, clipProjectId } = portal?.dataset ?? {}
-  if (clipWorkspaceId !== workspaceId || !clipNodeId || !clipProjectId) return undefined
-  return { mode: 'canvas', workspaceId, nodeId: clipNodeId, projectId: clipProjectId }
-}
 
 function safeGetService(target, prop) {
   if (!target || typeof target !== 'object') return undefined
@@ -78,7 +72,10 @@ export function CanvasTab({
   const contextForThisSession = context.sessionId === sessionId ? context : null
   const project = contextForThisSession?.project ?? null
   const metaPageId = typeof tab?.meta?.pageId === 'string' ? tab.meta.pageId : undefined
-  const pageId = metaPageId || (typeof scope?.pageId === 'string' ? scope.pageId : undefined)
+  const fallbackPageId = metaPageId || (typeof scope?.pageId === 'string' ? scope.pageId : undefined)
+  const clipRequest = readCanvasClipNavigation(tab?.meta)
+  const requestedPage = project?.pages?.find(page => page.canvasWorkspaceId === clipRequest?.workspaceId)
+  const pageId = requestedPage?.id || fallbackPageId
   const activePage = project ? resolveWorkspaceContextPage(project, pageId) : null
   const scratchWorkspaceId = !project && contextForThisSession?.workspacePath
     ? workspacePathToCanvasId(contextForThisSession.workspacePath)
@@ -98,6 +95,29 @@ export function CanvasTab({
   const [busy, setBusy] = useState(false)
   const [createError, setCreateError] = useState('')
   const [autoPromptedSession, setAutoPromptedSession] = useState(null)
+  const [clipNavigation, setClipNavigation] = useState(null)
+  const requestedNodeId = clipRequest?.nodeId
+  const requestedProjectId = clipRequest?.projectId
+  const requestedWorkspaceId = clipRequest?.workspaceId
+  const resolvedPageId = requestedPage?.id
+  const tabId = tab?.id
+
+  useEffect(() => {
+    if (!visible) {
+      setClipNavigation(null)
+      return
+    }
+    if (!requestedWorkspaceId || requestedWorkspaceId !== targetWorkspaceId || !sessionId || !tabId) return
+    const binding = { workspaceId: requestedWorkspaceId, nodeId: requestedNodeId, projectId: requestedProjectId }
+    const sidebar = propBetterSidebar || getBetterSidebar(ctx)
+    if (!claimCanvasClipNavigation({ sidebar, sessionId, tabId, binding, pageId: resolvedPageId })) return
+    if (!sameClipBinding(visibleClipBinding(hostRef.current), binding)) {
+      setClipNavigation({ ...binding, sessionId })
+    }
+  }, [visible, sessionId, tabId, requestedWorkspaceId, requestedNodeId, requestedProjectId, resolvedPageId, targetWorkspaceId, propBetterSidebar, ctx])
+  const handleClipNavigation = useCallback(operation => {
+    setClipNavigation(current => current === operation ? null : current)
+  }, [])
 
   useEffect(() => {
     if (visible && isUnprojected && autoPromptedSession !== sessionId) {
@@ -121,7 +141,8 @@ export function CanvasTab({
     if (!api || typeof api.registerContextContributor !== 'function') return undefined
     if (!visible || !targetWorkspaceId) return undefined
     const unsub = api.registerContextContributor(CANVAS_TAB_ID, () => {
-      const clip = readVisibleClipBinding(hostRef.current, targetWorkspaceId)
+      const binding = visibleClipBinding(hostRef.current)
+      const clip = binding?.workspaceId === targetWorkspaceId ? { mode: 'canvas', ...binding } : undefined
       return {
         view: {
           kind: 'canvas',
@@ -229,6 +250,9 @@ export function CanvasTab({
             locale={activeLocale}
             workspaceId={targetWorkspaceId}
             focusGroupId={focusGroupId}
+            clipNavigation={visible && clipNavigation && clipNavigation.sessionId === sessionId && clipNavigation.workspaceId === targetWorkspaceId
+              ? clipNavigation : undefined}
+            onClipNavigationHandled={handleClipNavigation}
             onActivePageChange={() => { void workspaceContext?.refresh?.() }}
           />
         ) : (

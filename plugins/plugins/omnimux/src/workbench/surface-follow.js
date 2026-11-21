@@ -21,7 +21,6 @@ import { isCanvasClipActive } from './contract.js'
 const SURFACE_RULES = Object.freeze([
   { match: /^canvas_/, tabId: 'omnimux-workflow:canvas' },
   { match: /^workflow_/, tabId: 'omnimux-workflow:canvas' },
-  { match: /^clip_(create|edit)$/, tabId: 'omnimux-clip:studio' },
   { match: /^products_/, tabId: 'omnimux-assets:library', view: Object.freeze({ filterType: 'product' }) },
   { match: /^inspiration_/, tabId: 'omnimux-inspiration:library' },
   { match: /^omnimux_inspiration_/, tabId: 'omnimux-inspiration:library' },

@@ -104,6 +104,10 @@ export function sanitizeNodes(
     const data = asRecord(raw.data);
     delete data.__catalog;
     delete data.__workspaceId;
+    if (raw.type === 'video_composition' && (data.status === 'editing' || data.status === 'rendering')) {
+      data.status = data.outputVideoUrl ? 'completed' : 'idle';
+      delete data.renderProgress;
+    }
     if (raw.type === 'table') {
       delete data.document;
       delete data.rows;

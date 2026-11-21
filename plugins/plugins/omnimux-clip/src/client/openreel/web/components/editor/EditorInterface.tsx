@@ -157,11 +157,35 @@ const useAutoSave = () => {
  */
 registerSmoothKeyframeRefresh(refreshSmoothKeyframesAfterEdit);
 
-export const EditorInterface: React.FC<{ canvasMode?: boolean }> = ({ canvasMode }) => {
-  const t = useClipT();
+type CompactPanel = "timeline" | "media" | "inspector";
+
+export function EditorInterface({ active = true, canvasMode }: { active?: boolean; canvasMode?: boolean }) {
+  const rootRef = useRef<HTMLDivElement>(null);
   const compact = useCompactEditor();
   const phone = usePhoneEditor();
-  const [compactPanel, setCompactPanel] = useState<"timeline" | "media" | "inspector">("timeline");
+  const [compactPanel, setCompactPanel] = useState<CompactPanel>("timeline");
+  return (
+    <div
+      ref={rootRef}
+      data-compact-panel={compact ? compactPanel : undefined}
+      data-platform={phone ? /Android/i.test(navigator.userAgent) ? "android" : "ios" : undefined}
+      className={`editor-shell w-full h-full bg-bg text-fg overflow-hidden font-sans select-none relative z-20 flex flex-col ${compact ? "editor-compact" : ""} ${phone ? "editor-phone" : ""}`}
+      style={active ? undefined : { display: "none" }}
+    >
+      {active && <EditorWorkspace {...{ canvasMode, rootRef, compact, phone, compactPanel, setCompactPanel }} />}
+    </div>
+  );
+}
+
+function EditorWorkspace({ canvasMode, rootRef, compact, phone, compactPanel, setCompactPanel }: {
+  canvasMode?: boolean;
+  rootRef: React.RefObject<HTMLDivElement | null>;
+  compact: boolean;
+  phone: boolean;
+  compactPanel: CompactPanel;
+  setCompactPanel: (panel: CompactPanel) => void;
+}) {
+  const t = useClipT();
   const { initialized, initializing, initError, initStatus, retry } =
     useEditorInitialization();
 
@@ -319,7 +343,6 @@ export const EditorInterface: React.FC<{ canvasMode?: boolean }> = ({ canvasMode
   useEffect(() => startLinkedCompHost(), []);
 
   // ── Layout state (resizable columns and timeline band) ──────────
-  const rootRef = useRef<HTMLDivElement>(null);
   const dockRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const root = rootRef.current;
@@ -412,8 +435,9 @@ export const EditorInterface: React.FC<{ canvasMode?: boolean }> = ({ canvasMode
     return () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      onUp();
     };
-  }, [setMediaWidth, setInspectorWidth, setTimelineVh]);
+  }, [rootRef, setMediaWidth, setInspectorWidth, setTimelineVh]);
 
   // Reflect resized panel sizes back into CSS variables so child styles
   // (timeline header padding, etc.) can react.
@@ -472,12 +496,7 @@ export const EditorInterface: React.FC<{ canvasMode?: boolean }> = ({ canvasMode
       };
 
   return (
-    <div
-      ref={rootRef}
-      data-compact-panel={compact ? compactPanel : undefined}
-      data-platform={phone ? /Android/i.test(navigator.userAgent) ? "android" : "ios" : undefined}
-      className={`editor-shell w-full h-full bg-bg text-fg overflow-hidden font-sans select-none relative z-20 flex flex-col ${compact ? "editor-compact" : ""} ${phone ? "editor-phone" : ""}`}
-    >
+    <>
       <Toolbar canvasMode={canvasMode} />
       <ProjectLockBanner />
       <MissingFontsBanner />
@@ -675,6 +694,6 @@ export const EditorInterface: React.FC<{ canvasMode?: boolean }> = ({ canvasMode
       <ClipSpeedDialog />
       <SpotlightTour />
       <MoGraphTour />
-    </div>
+    </>
   );
-};
+}

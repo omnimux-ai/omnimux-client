@@ -1,185 +1,277 @@
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import * as nodeFs from 'node:fs'
+import { dirname, join } from 'node:path'
+import { isDeepStrictEqual } from 'node:util'
 import { ClipDomainError } from '../errors.js'
-import { ensureClipDirs, projectJsonPath } from '../paths.js'
-import { createEmptySchema, structuredCloneSafe } from '../client/store/timelineTypes.js'
+import { assertProjectId, ensureClipDirs, projectJsonPath } from '../paths.js'
+import { isCanvasClipBinding } from '../client/clip-events.js'
+import { aspectRatioOf, finite, isRecord, nativeClipsByTrack, projectMode, safeText } from '../timeline/nativeProjectFields.js'
+import { isLegacyTimeline, migrateLegacyTimeline } from './legacyProject.js'
+import { createNativeProject, isNativeProject, normalizeNativeProject, sha256 } from './nativeProject.js'
 
-const DEFAULT_FS = { existsSync, readdirSync, readFileSync, writeFileSync }
-const HISTORY_LIMIT = 80
+const READ_REGULAR_FILE = nodeFs.constants.O_RDONLY | nodeFs.constants.O_NOFOLLOW | nodeFs.constants.O_NONBLOCK
 
-/**
- * @param {unknown} parsed
- * @param {string} id
- */
-export function unwrapProjectEnvelope(parsed, id) {
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw ClipDomainError.invalidJson(`project ${id} is not a JSON object`)
-  }
-  const raw = /** @type {Record<string, unknown>} */ (parsed)
-  const schema = isTimelineSchema(raw.schema) ? raw.schema
-    : isTimelineSchema(raw) ? raw
-    : null
-  if (!schema) {
-    if (isOpenReelProject(raw.schema) || isOpenReelProject(raw)) {
-      throw ClipDomainError.openReelMigrationRequired(id)
-    }
-    throw ClipDomainError.invalidJson(`project ${id} is missing a TimelineSchema`)
-  }
-  const history = raw.history && typeof raw.history === 'object'
-    ? /** @type {{ past?: unknown[], future?: unknown[] }} */ (raw.history)
-    : { past: [], future: [] }
-  return {
-    id,
-    updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : 0,
-    schema: /** @type {Record<string, unknown>} */ (schema),
-    playheadMs: typeof raw.playheadMs === 'number' ? raw.playheadMs : 0,
-    isPlaying: Boolean(raw.isPlaying),
-    history: {
-      past: Array.isArray(history.past) ? history.past : [],
-      future: Array.isArray(history.future) ? history.future : [],
-    },
+function readJson(bytes, id) {
+  try {
+    return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
+  } catch {
+    throw ClipDomainError.invalidJson(`project ${id} is not valid JSON`)
   }
 }
 
-/**
- * @param {unknown} value
- */
-function isTimelineSchema(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
-  const rec = /** @type {Record<string, unknown>} */ (value)
-  return Array.isArray(rec.tracks)
+function encodeJson(data) {
+  return Buffer.from(`${JSON.stringify(data, null, 2)}\n`)
 }
 
-function isOpenReelProject(value) {
-  return typeof value?.id === 'string'
-    && Array.isArray(value.timeline?.tracks)
-    && Array.isArray(value.mediaLibrary?.items)
+function assertRevision(value, field, min = 0) {
+  if (!Number.isSafeInteger(value) || value < min) {
+    throw ClipDomainError.invalidJson(`${field} must be a safe integer of at least ${min}`)
+  }
+  return value
 }
 
-/**
- * Host-side project JSON store. One file per project under `projects/`.
- * A `clip_edit` call is one undo step (the previous schema is pushed to `history.past`).
- *
- * @param {{
- *   paths: ReturnType<typeof import('../paths.js').resolveClipPaths>,
- *   fs?: typeof DEFAULT_FS,
- * }} deps
- */
+function revisionConflict(id, expectedRevision, currentRevision) {
+  return ClipDomainError.revisionConflict(currentRevision,
+    `Project ${id} expected revision ${expectedRevision}, current revision is ${currentRevision}.`)
+}
+
+function normalizeBinding(id, binding) {
+  if (binding === undefined) return undefined
+  if (!isCanvasClipBinding(binding) || binding.projectId !== id) {
+    throw new ClipDomainError('invalid-clip-binding', 'Invalid canvas project binding.')
+  }
+  const { workspaceId, nodeId, projectId } = binding
+  return { workspaceId, nodeId, projectId }
+}
+
+function matchBinding(id, current, requested, { allowAssociate = false } = {}) {
+  if (current?.binding && !isDeepStrictEqual(current.binding, requested)) {
+    throw new ClipDomainError('clip-binding-mismatch', 'Canvas project binding does not match the stored binding.')
+  }
+  if (current && !current.binding && requested && !allowAssociate) {
+    throw new ClipDomainError('clip-binding-mismatch', 'Materialize this project with its canvas binding before saving.')
+  }
+  if (id.startsWith('clip_node_') && !requested) {
+    throw new ClipDomainError('invalid-clip-binding', 'Canvas projects require a binding.')
+  }
+  return requested
+}
+
+function envelopeFor(id, project, revision, updatedAt, binding) {
+  return { id, projectId: id, project, revision, updatedAt, ...(binding ? { binding } : {}) }
+}
+
+function timestampOf(raw, native) {
+  const timestamp = typeof raw.updatedAt === 'string' ? Date.parse(raw.updatedAt) : raw.updatedAt
+  return finite(timestamp, finite(native?.modifiedAt, 0))
+}
+
+function decodeEnvelope(raw, id, { title, allowDraftRekey = false } = {}) {
+  if (!isRecord(raw)) throw ClipDomainError.invalidJson(`project ${id} is not a JSON object`)
+  const bareNative = isNativeProject(raw)
+  const canonical = !bareNative && Object.hasOwn(raw, 'project') && Object.hasOwn(raw, 'revision')
+  if ((!bareNative && raw.id !== undefined && raw.id !== id) || (raw.projectId !== undefined && raw.projectId !== id)) {
+    throw ClipDomainError.invalidId('Saved project identity does not match its project ID.')
+  }
+  if (canonical && raw.projectId !== id) throw ClipDomainError.invalidId('Saved project ID is missing.')
+  const sources = [raw.project, raw.openreel?.project, raw.openreel, raw.schema?.project, raw.schema, raw]
+  const native = canonical ? raw.project : sources.find(isNativeProject)
+  const legacy = !native && !canonical ? sources.find(isLegacyTimeline) : undefined
+  if (!native && !legacy) throw ClipDomainError.invalidJson(`project ${id} is missing an OpenReel project or legacy timeline`)
+  if (legacy?.projectId !== undefined && legacy.projectId !== id) {
+    throw ClipDomainError.invalidId('Legacy timeline identity does not match its project ID.')
+  }
+  const revision = raw.revision === undefined ? 1 : assertRevision(raw.revision, 'revision', 1)
+  const updatedAt = timestampOf(raw, native)
+  const binding = normalizeBinding(id, raw.binding)
+  const project = native ?? migrateLegacyTimeline(legacy, { id, title: raw.title || title, updatedAt, playheadMs: raw.playheadMs })
+  const normalized = normalizeNativeProject(project, id, {
+    allowRekey: !canonical && ((!bareNative && raw.projectId === id) || allowDraftRekey),
+    allowMediaStatus: canonical && !allowDraftRekey,
+  })
+  const envelope = envelopeFor(id, normalized, revision, updatedAt, binding)
+  return { envelope, needsMigration: !canonical || !isDeepStrictEqual(raw, envelope) }
+}
+
+/** Decode persisted versions without rewriting the source or probing its media. */
+export function unwrapProjectEnvelope(raw, id) {
+  return decodeEnvelope(raw, assertProjectId(id)).envelope
+}
+
+/** All compare-and-replace steps run synchronously in the owning Host process. */
 export function createProjectStore(deps) {
-  const paths = ensureClipDirs(deps.paths)
-  const fs = deps.fs ?? DEFAULT_FS
+  const fs = deps.fs ? { ...nodeFs, ...deps.fs } : nodeFs
+  const paths = ensureClipDirs(deps.paths, fs)
+  const backupDir = join(paths.projectsDir, '.backups')
 
-  function load(id) {
-    const file = projectJsonPath(paths, id)
-    let raw
+  function readRegularFile(file) {
+    const descriptor = fs.openSync(file, READ_REGULAR_FILE)
     try {
-      raw = fs.readFileSync(file, 'utf8')
+      if (!fs.fstatSync(descriptor).isFile()) throw new Error('expected a regular file')
+      return fs.readFileSync(descriptor)
+    } finally {
+      fs.closeSync(descriptor)
+    }
+  }
+
+  function readEntry(id, file) {
+    let bytes
+    try {
+      bytes = readRegularFile(file)
     } catch (error) {
-      if (error?.code !== 'ENOENT') throw ClipDomainError.projectUnreadable(id)
+      if (error?.code === 'ENOENT') return null
+      throw ClipDomainError.projectUnreadable(id)
+    }
+    return { bytes, ...decodeEnvelope(readJson(bytes, id), id) }
+  }
+
+  function load(id, { binding } = {}) {
+    const file = projectJsonPath(paths, id)
+    const requested = normalizeBinding(id, binding)
+    const entry = readEntry(id, file)
+    if (!entry) {
       if (id.startsWith('clip_node_')) throw ClipDomainError.projectNotMaterialized(id)
       throw ClipDomainError.notFound(`project not found: ${id}`)
     }
-    let parsed
-    try {
-      parsed = JSON.parse(raw)
-    } catch {
-      throw ClipDomainError.invalidJson(`project ${id} is not valid JSON`)
-    }
-    const envelope = unwrapProjectEnvelope(parsed, id)
-    if (!envelope.schema.projectId) envelope.schema.projectId = id
-    return envelope
+    if (requested) matchBinding(id, entry.envelope, requested)
+    return entry.envelope
   }
 
   function exists(id) {
+    return fs.existsSync(projectJsonPath(paths, id))
+  }
+
+  function writeAtomic(file, bytes, publish) {
+    const temp = join(dirname(file), `.clip-${randomUUID()}.tmp`)
+    // Keep staging in the destination's directory so rename/link is atomic.
+    const descriptor = fs.openSync(temp, 'wx', 0o600)
     try {
-      return fs.existsSync(projectJsonPath(paths, id))
-    } catch (error) {
-      if (error instanceof ClipDomainError) throw error
-      return false
+      try {
+        fs.writeFileSync(descriptor, bytes)
+        fs.fsyncSync(descriptor)
+      } finally {
+        fs.closeSync(descriptor)
+      }
+      publish(temp, file)
+    } finally {
+      fs.rmSync(temp, { force: true })
     }
   }
 
-  /**
-   * Persist an envelope. `recordUndo` snapshots the *current disk* schema
-   * (not the incoming one) so one save = one undo step.
-   * @param {string} id
-   * @param {object} schema
-   * @param {{ recordUndo?: boolean, playheadMs?: number, isPlaying?: boolean }} [opts]
-   */
-  function save(id, schema, opts = {}) {
-    const file = projectJsonPath(paths, id)
-    const nextSchema = structuredCloneSafe(schema)
-    nextSchema.projectId = nextSchema.projectId || id
-    /** @type {ReturnType<typeof unwrapProjectEnvelope>} */
-    let previous
-    if (fs.existsSync(file)) {
-      previous = load(id)
-    } else {
-      previous = {
-        id,
-        updatedAt: 0,
-        schema: createEmptySchema({ projectId: id }),
-        playheadMs: 0,
-        isPlaying: false,
-        history: { past: [], future: [] },
+  function saveBackup(id, type, bytes) {
+    fs.mkdirSync(backupDir, { recursive: true, mode: 0o700 })
+    if (!fs.lstatSync(backupDir).isDirectory()) throw new Error('expected a backup directory')
+    const file = join(backupDir, `${id}.${type}-${sha256(bytes)}.json`)
+    function publish(temp, destination) {
+      try {
+        fs.linkSync(temp, destination)
+      } catch (error) {
+        if (error?.code !== 'EEXIST' || !bytes.equals(readRegularFile(destination))) throw error
       }
     }
-    const past = opts.recordUndo
-      ? [...previous.history.past, structuredCloneSafe(previous.schema)].slice(-HISTORY_LIMIT)
-      : previous.history.past
-    const envelope = {
-      id,
-      updatedAt: Date.now(),
-      schema: nextSchema,
-      playheadMs: opts.playheadMs ?? previous.playheadMs,
-      isPlaying: opts.isPlaying ?? previous.isPlaying,
-      history: {
-        past,
-        future: opts.recordUndo ? [] : previous.history.future,
-      },
+    writeAtomic(file, bytes, publish)
+  }
+
+  function commit(file, envelope, { previous, backUpPrevious = false, draftBytes } = {}) {
+    const { id } = envelope
+    try {
+      if (previous && (previous.needsMigration || backUpPrevious)) {
+        saveBackup(id, previous.needsMigration ? 'original' : `revision-${previous.envelope.revision}`, previous.bytes)
+      }
+      if (draftBytes) saveBackup(id, 'canvas-draft', draftBytes)
+      writeAtomic(file, encodeJson(envelope), (temp, destination) => fs.renameSync(temp, destination))
+    } catch {
+      throw new ClipDomainError('project-unreadable', `Could not persist project ${id}.`)
     }
-    fs.writeFileSync(file, `${JSON.stringify(envelope, null, 2)}\n`, { mode: 0o600 })
     return envelope
   }
 
-  /**
-   * Create a project if missing. Does not clobber an existing file.
-   * @param {string} id
-   * @param {object} [schema]
-   */
-  function create(id, schema) {
+  function save(id, project, opts = {}) {
     const file = projectJsonPath(paths, id)
-    if (fs.existsSync(file)) return load(id)
-    return save(id, schema || createEmptySchema({ projectId: id }), { recordUndo: false })
+    const expectedRevision = assertRevision(opts.expectedRevision, 'expectedRevision')
+    const revision = assertRevision(opts.revision === undefined ? expectedRevision + 1 : opts.revision, 'revision', 1)
+    if (revision <= expectedRevision) throw ClipDomainError.invalidJson('revision must exceed expectedRevision')
+    const requested = normalizeBinding(id, opts.binding)
+    const previous = readEntry(id, file)
+    const current = previous?.envelope
+    const binding = matchBinding(id, current, requested)
+    const currentRevision = current?.revision ?? 0
+    if (expectedRevision !== currentRevision && revision !== currentRevision) {
+      throw revisionConflict(id, expectedRevision, currentRevision)
+    }
+    const normalized = normalizeNativeProject(project, id, { allowMediaStatus: true })
+    if (expectedRevision !== currentRevision) {
+      if (!previous.needsMigration && isDeepStrictEqual(current.project, normalized)) return current
+      throw revisionConflict(id, expectedRevision, currentRevision)
+    }
+    const envelope = envelopeFor(id, normalized, revision, Date.now(), binding)
+    return commit(file, envelope, { previous, backUpPrevious: opts.backupCurrent === true })
   }
 
-  /**
-   * Summarize readable files and report incompatible or invalid entries.
-   * @param {{ limit?: number }} [opts]
-   */
-  function list(opts = {}) {
-    const limit = Math.max(1, Math.min(100, opts.limit || 50))
+  /** Prefer the saved project; attach its first canvas binding and/or migrate once. */
+  function materialize(id, { binding, draftSchema, title } = {}) {
+    const file = projectJsonPath(paths, id)
+    const requested = normalizeBinding(id, binding)
+    const previous = readEntry(id, file)
+    const current = previous?.envelope
+    const bound = matchBinding(id, current, requested, { allowAssociate: true })
+    if (current) {
+      const attaching = bound && !current.binding
+      if (!previous.needsMigration && !attaching) return current
+      const revision = assertRevision(current.revision + (attaching && !previous.needsMigration ? 1 : 0), 'revision', 1)
+      const envelope = envelopeFor(id, current.project, revision, current.updatedAt, bound)
+      return commit(file, envelope, { previous, backUpPrevious: Boolean(attaching) })
+    }
+    if (draftSchema == null) {
+      const now = Date.now()
+      return commit(file, envelopeFor(id, createNativeProject(id, title || id, now), 1, now, bound))
+    }
+    const draftBytes = typeof draftSchema === 'string' ? Buffer.from(draftSchema) : encodeJson(draftSchema)
+    const { envelope: draft } = decodeEnvelope(readJson(draftBytes, id), id, { title, allowDraftRekey: Boolean(bound) })
+    if (draft.binding && !isDeepStrictEqual(draft.binding, bound)) {
+      throw new ClipDomainError('clip-binding-mismatch', 'Draft project binding does not match the requested binding.')
+    }
+    const envelope = envelopeFor(id, draft.project, draft.revision, draft.updatedAt || Date.now(), bound)
+    return commit(file, envelope, { draftBytes })
+  }
+
+  /** Idempotent initialization. Existing projects always win. */
+  function create(id, project, { binding } = {}) {
+    if (project === undefined || isLegacyTimeline(project)) return materialize(id, { binding, draftSchema: project })
+    const file = projectJsonPath(paths, id)
+    const requested = normalizeBinding(id, binding)
+    const entry = readEntry(id, file)
+    const bound = matchBinding(id, entry?.envelope, requested)
+    if (entry) return entry.envelope
+    const normalized = normalizeNativeProject(project, id, { allowMediaStatus: true })
+    return commit(file, envelopeFor(id, normalized, 1, Date.now(), bound))
+  }
+
+  function list({ limit = 50 } = {}) {
+    limit = Math.max(1, Math.min(100, limit || 50))
     const projects = []
     const unavailableProjects = []
-    if (fs.existsSync(paths.projectsDir)) {
-      for (const file of fs.readdirSync(paths.projectsDir).sort()) {
-        if (!file.endsWith('.json')) continue
-        const id = file.slice(0, -5)
-        try {
-          const envelope = load(id)
-          const tracks = envelope.schema.tracks
-          projects.push({
-            id,
-            projectName: envelope.schema.name || envelope.schema.projectId || id,
-            updatedAt: envelope.updatedAt || 0,
-            durationMs: envelope.schema.canvasConfig?.durationMs || 0,
-            aspectRatio: envelope.schema.canvasConfig?.aspectRatio || '16:9',
-            trackCount: tracks.length,
-            clipCount: tracks.reduce((count, track) => count + (Array.isArray(track?.clips) ? track.clips.length : 0), 0),
-          })
-        } catch (error) {
-          if (!(error instanceof ClipDomainError)) throw error
-          unavailableProjects.push({ id, code: error.code, message: error.message })
-        }
+    for (const file of fs.readdirSync(paths.projectsDir).sort()) {
+      if (!file.endsWith('.json')) continue
+      const id = file.slice(0, -5)
+      try {
+        const envelope = load(id)
+        const { timeline, name, settings } = envelope.project
+        const clips = nativeClipsByTrack(envelope.project)
+        projects.push({
+          id,
+          projectName: safeText(name) || id,
+          updatedAt: envelope.updatedAt,
+          durationMs: Math.round(timeline.duration * 1000),
+          aspectRatio: aspectRatioOf(settings),
+          trackCount: timeline.tracks.length,
+          clipCount: [...clips.values()].reduce((count, trackClips) => count + trackClips.length, 0),
+          revision: envelope.revision,
+          mode: projectMode(envelope),
+        })
+      } catch (error) {
+        if (!(error instanceof ClipDomainError)) throw error
+        unavailableProjects.push({ id, code: error.code, message: error.message })
       }
     }
     return {
@@ -189,5 +281,5 @@ export function createProjectStore(deps) {
     }
   }
 
-  return { load, save, create, exists, list, paths }
+  return { load, save, create, materialize, exists, list, paths }
 }

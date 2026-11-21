@@ -20,6 +20,7 @@ const ACTION_DESCRIPTIONS: Record<
   (params: Record<string, unknown>) => string
 > = {
   "timeline/toolEdit": (params) => typeof params.label === "string" ? params.label : "Edit clip timing",
+  "project/applyEditSnapshot": (params) => typeof params.label === "string" ? params.label : "Edit project",
   "media/organize": (params) => typeof params.label === "string" ? params.label : "Organize media",
   "clip/add": () => "Add clip",
   "clip/remove": () => "Delete clip",

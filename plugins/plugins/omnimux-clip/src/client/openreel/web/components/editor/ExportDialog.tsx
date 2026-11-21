@@ -3,7 +3,6 @@ import React, {
   Suspense,
   useState,
   useEffect,
-  useLayoutEffect,
   useCallback,
   useMemo,
   useRef,
@@ -75,6 +74,7 @@ import {
   cn,
 } from "@openreel/ui";
 import { useEditorPortalRoot } from "@openreel/ui/lib/portal-root";
+import { useVisibleEditorPane } from "../../../../hooks/useVisibleEditorPane";
 
 import {
   exportPresetsManager,
@@ -427,43 +427,14 @@ const UsePreviewsToggle: React.FC<{
 
 function useVisibleExportPane(enabled: boolean) {
   const portal = useEditorPortalRoot();
-  const [style, setStyle] = useState<React.CSSProperties>();
-
-  useLayoutEffect(() => {
-    if (!enabled || !portal) return;
-    const measure = () => {
-      // A narrow shell can dock part of the canvas pane outside the window.
-      // Keep the dialog inside the visible part of its own portal.
-      const pane = portal.getBoundingClientRect();
-      const viewport = portal.ownerDocument.documentElement;
-      const left = Math.max(0, pane.left);
-      const top = Math.max(0, pane.top);
-      const width = Math.max(0, Math.min(pane.right, viewport.clientWidth) - left);
-      const height = Math.max(0, Math.min(pane.bottom, viewport.clientHeight) - top);
-      setStyle(width === pane.width && height === pane.height ? undefined : {
-        left: left - pane.left + width / 2,
-        top: top - pane.top + height / 2,
-        width: Math.max(0, width - 32),
-        height: Math.max(0, height - 32),
-      });
-    };
-    measure();
-    const resize = new ResizeObserver(measure);
-    resize.observe(portal);
-    // Sliding the pane across the window edge can clip it without resizing it.
-    const visibility = new IntersectionObserver(measure, {
-      threshold: Array.from({ length: 101 }, (_, step) => step / 100),
-    });
-    visibility.observe(portal);
-    window.addEventListener("resize", measure);
-    return () => {
-      resize.disconnect();
-      visibility.disconnect();
-      window.removeEventListener("resize", measure);
-    };
-  }, [enabled, portal]);
-
-  return enabled ? style : undefined;
+  const pane = useVisibleEditorPane(enabled ? portal : null);
+  if (!pane?.clipped) return undefined;
+  return {
+    left: pane.left + pane.width / 2,
+    top: pane.top + pane.height / 2,
+    width: Math.max(0, pane.width - 32),
+    height: Math.max(0, pane.height - 32),
+  };
 }
 
 export const ExportDialog: React.FC<ExportDialogProps> = ({

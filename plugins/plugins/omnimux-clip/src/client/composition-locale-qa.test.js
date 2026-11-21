@@ -6,6 +6,7 @@ import { build } from 'esbuild'
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createStageStore } from './stage-store.js'
+import { createEditorSession } from './live/editor-session.js'
 
 // Offline component tests: real React/portal lifecycle, mocked media and Host I/O.
 // These do not establish browser layout or native Electron hit-test acceptance.
@@ -53,13 +54,17 @@ export default function App(){
   'engine-store.ts': `export const useEngineStore = {getState:()=>({})};`,
   'theme-store.ts': `export const applyOpenReelTheme = ()=>{};`,
   'use-router.ts': `export const resetOpenReelRouter = ()=>{};`,
-  'projectApi.js': `export const putClipProject = (...args)=>globalThis.__clipQa.save ? globalThis.__clipQa.save(...args) : Promise.resolve({});`,
+  'projectApi.js': `export const CLIP_API_PREFIX='/omnimux-clip/api';`,
+  'dsh-ui-kit': `import React from 'react';
+    export const Button = ({variant, ...props}) => React.createElement('button', props);
+    export const DropdownSelect = ({options, value, onChange, ...props}) => React.createElement('select', { ...props, value, onChange: e=>onChange(e.target.value) }, options.map(({ value, label }) => React.createElement('option', { value, key: value }, label)));`,
   'useCanvasIngestion.ts': `export const useCanvasIngestion = ()=>{};`,
   'CanvasBridge.js': `export const notifyCanvasSave = ()=>{}; export const notifyCanvasClose = p=>globalThis.__clipQa.close.push(p);`,
 }
 async function load(name) {
   const result = await build({ entryPoints: [new URL(name, import.meta.url).pathname], bundle: true, write: false, format: 'cjs', platform: 'node', jsx: 'automatic', plugins: [{ name: 'qa-io', setup(b) {
     b.onResolve({ filter: /^react(?:\/.*)?$|^react-dom(?:\/.*)?$/ }, args => ({ path: require.resolve(args.path), external: true }))
+    b.onResolve({ filter: /^dsh-ui-kit$/ }, () => ({ path: 'dsh-ui-kit', namespace: 'mock' }))
     b.onResolve({ filter: /\.(css|tsx?|js)$/ }, args => {
       const base = args.path.split('/').pop()
       if (args.path.endsWith('.css')) return { path: args.path, namespace: 'empty' }
@@ -85,8 +90,33 @@ async function render(Component, initial, extra = {}) {
   globalThis.__clipQa.stage = extra.stage
   const t = key => dictionaries[lang.snapshot.active][key] || key
   const root = createRoot(document.getElementById('root'))
-  await act(async()=>root.render(React.createElement(Component,{locale:lang,t,...extra})))
-  return {lang,root, async cleanup(){await act(async()=>root.unmount())} }
+  const initialProject = fixture.hasOpenProject ? fixture.project : null
+  let onChange
+  const session = Component === OpenReelStudioTab ? createEditorSession({
+    document: { visibilityState: 'visible' },
+    workbench: () => ({ getActiveSurface: () => ({ tabId: 'omnimux-clip:studio', instanceId: 'tab:1', sessionId: 's1', panelOpen: true }) }),
+    storage: {
+      readHost: async () => initialProject && ({ project: initialProject, revision: 1 }),
+      readLocal: async () => null,
+      writeLocal: async () => {},
+      writeHost: async record => ({ ...await fixture.save?.(), revision: record.revision }),
+    },
+    native: {
+      projectId: () => fixture.project?.id,
+      capture: () => ({ project: fixture.project, fingerprint: JSON.stringify(fixture.project), media: {} }),
+      load: async record => { fixture.project = record.project },
+      welcome() {}, suspend() {},
+      subscribe: callback => { onChange = callback; return () => {} },
+    },
+  }) : null
+  const tab = { id: 'tab:1', meta: initialProject ? { clip: { mode: 'standalone', projectId: initialProject.id } } : undefined }
+  await act(async()=>root.render(React.createElement(Component,{locale:lang,t,tab,runtime:session ? { session } : undefined,...extra})))
+  await act(async () => session?.getWaiting())
+  return {lang,root, edit: () => { fixture.project = { ...fixture.project, changed: true }; onChange() }, async cleanup(){
+    await act(async()=>root.unmount())
+    session?.dispose()
+    await session?.getWaiting()
+  } }
 }
 
 test('QA: non-slot Studio follows initial host, live switch, revision and remount', async () => {
@@ -113,7 +143,10 @@ test('QA: saved hostbar status changes language without saving again', async () 
   fixture.project={id:'qa',name:'QA'}; fixture.hasOpenProject=true
   const ui = await render(OpenReelStudioTab,'zh')
   try {
-    await act(async()=>document.querySelector('.omnimux-clip-stage-save-btn').click())
+    await act(async()=>{
+      ui.edit()
+      document.querySelector('.omnimux-clip-stage-save-btn').click()
+    })
     assert.equal(document.querySelector('.openreel-studio-hostbar-status').textContent,'已保存')
     await act(async()=>ui.lang.set('en'))
     assert.equal(document.querySelector('.openreel-studio-hostbar-status').textContent,'Saved')
@@ -163,70 +196,88 @@ test('QA round 2: preset labels switch both ways without changing selected dimen
   } finally { await ui.cleanup() }
 })
 
-for (const mode of ['manual', 'auto']) {
-  for (const outcome of ['saved', 'saveFailed']) {
-    test(`QA round 2: ${mode} ${outcome} translates pending and settled state without resaving`, async () => {
-      fixture.project = { id: 'qa-counted', name: 'Counted' }
-      fixture.hasOpenProject = true
-      const originalSet = globalThis.setTimeout
-      const originalClear = globalThis.clearTimeout
-      const timers = new Map()
-      let scheduled = 0
-      let calls = 0
-      let settle
-      globalThis.setTimeout = (fn, delay, ...args) => {
-        if (delay !== 1200) return originalSet(fn, delay, ...args)
-        const token = { qaTimer: ++scheduled }
-        timers.set(token, fn)
-        return token
-      }
-      globalThis.clearTimeout = token => {
-        if (token?.qaTimer) timers.delete(token)
-        else originalClear(token)
-      }
-      fixture.save = () => {
-        calls++
-        return new Promise((resolve, reject) => { settle = outcome === 'saved' ? resolve : reject })
-      }
-      let ui
-      try {
-        ui = await render(OpenReelStudioTab, 'zh')
-        const status = () => document.querySelector('.openreel-studio-hostbar-status').textContent
-        assert.equal(status(), '')
-        assert.equal(scheduled, 1)
-        await act(async () => ui.lang.set('en'))
-        assert.equal(calls, 0)
-        assert.equal(scheduled, 1, 'locale must not restart the autosave deadline')
-        await act(async () => {
-          if (mode === 'manual') document.querySelector('.omnimux-clip-stage-save-btn').click()
-          else {
-            const [token, fn] = timers.entries().next().value
-            timers.delete(token)
-            fn()
-          }
-        })
-        assert.equal(calls, 1)
-        assert.equal(status(), 'Saving…')
-        await act(async () => ui.lang.set('zh'))
-        assert.equal(status(), '保存中…')
-        assert.equal(calls, 1)
-        await act(async () => settle(outcome === 'saved' ? {} : new Error('QA save failure')))
-        assert.equal(status(), outcome === 'saved' ? '已保存' : '保存失败')
-        await act(async () => ui.lang.set('en'))
-        assert.equal(status(), outcome === 'saved' ? 'Saved' : 'Save failed')
-        await act(async () => ui.lang.set('en'))
-        assert.equal(calls, 1, 'locale and dictionary revision must not save again')
-        assert.equal(scheduled, 1, 'no extra debounce timer may be scheduled')
-      } finally {
-        if (ui) await ui.cleanup()
-        globalThis.setTimeout = originalSet
-        globalThis.clearTimeout = originalClear
-        delete fixture.save
-      }
-      assert.equal(timers.size, 0, 'unmount clears any pending autosave')
-    })
+function autosaveClock() {
+  const originalSet = globalThis.setTimeout
+  const originalClear = globalThis.clearTimeout
+  const timers = new Map()
+  let scheduled = 0
+  globalThis.setTimeout = (fn, delay) => {
+    if (delay !== 1500) return originalSet(fn, delay)
+    const token = { qaTimer: ++scheduled }
+    timers.set(token, fn)
+    return token
+  }
+  globalThis.clearTimeout = token => {
+    if (token?.qaTimer) timers.delete(token)
+    else originalClear(token)
+  }
+  return {
+    timers,
+    get scheduled() { return scheduled },
+    restore() {
+      globalThis.setTimeout = originalSet
+      globalThis.clearTimeout = originalClear
+    },
   }
 }
+
+test('QA round 2: switching language preserves each pending and settled save', async t => {
+  async function verify(mode, outcome) {
+    fixture.project = { id: 'qa-counted', name: 'Counted' }
+    fixture.hasOpenProject = true
+    const clock = autosaveClock()
+    const { timers } = clock
+    let calls = 0
+    let settle
+    fixture.save = () => {
+      calls++
+      return new Promise((resolve, reject) => { settle = outcome === 'saved' ? resolve : reject })
+    }
+    let ui
+    try {
+      ui = await render(OpenReelStudioTab, 'zh')
+      await act(async () => ui.edit())
+      const status = () => document.querySelector('.openreel-studio-hostbar-status').textContent
+      assert.equal(status(), '')
+      let scheduled = clock.scheduled
+      assert.equal(scheduled, 1)
+      await act(async () => ui.lang.set('en'))
+      assert.equal(calls, 0)
+      scheduled = clock.scheduled
+      assert.equal(scheduled, 1, 'locale must not restart the autosave deadline')
+      await act(async () => {
+        if (mode === 'manual') document.querySelector('.omnimux-clip-stage-save-btn').click()
+        else {
+          const [token, fn] = timers.entries().next().value
+          timers.delete(token)
+          fn()
+        }
+      })
+      assert.equal(calls, 1)
+      assert.equal(status(), 'Saving…')
+      await act(async () => ui.lang.set('zh'))
+      assert.equal(status(), '保存中…')
+      assert.equal(calls, 1)
+      await act(async () => settle(outcome === 'saved' ? {} : new Error('QA save failure')))
+      assert.equal(status(), outcome === 'saved' ? '已保存' : '保存失败')
+      await act(async () => ui.lang.set('en'))
+      assert.equal(status(), outcome === 'saved' ? 'Saved' : 'Save failed')
+      await act(async () => ui.lang.set('en'))
+      assert.equal(calls, 1, 'locale and dictionary revision must not save again')
+      scheduled = clock.scheduled
+      assert.equal(scheduled, 1, 'no extra debounce timer may be scheduled')
+    } finally {
+      settle?.(outcome === 'saved' ? {} : new Error('QA save failure'))
+      delete fixture.save
+      try { if (ui) await ui.cleanup() } finally { clock.restore() }
+    }
+    assert.equal(timers.size, 0, 'unmount clears any pending autosave')
+  }
+  await t.test('manual save succeeds', () => verify('manual', 'saved'))
+  await t.test('manual save fails', () => verify('manual', 'saveFailed'))
+  await t.test('autosave succeeds', () => verify('auto', 'saved'))
+  await t.test('autosave fails', () => verify('auto', 'saveFailed'))
+})
 
 test('QA round 2: five canvas return/reopen cycles retain the same portal editor', async () => {
   fixture.mounts = 0

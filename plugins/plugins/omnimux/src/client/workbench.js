@@ -45,6 +45,7 @@ import {
 } from './workbench/geometry.js'
 import {
   formatCompactContextBlock,
+  getActiveSurface,
   getUiContext,
   registerContextContributor,
   resetWorkbenchContextContributors,
@@ -297,6 +298,7 @@ function createApi() {
     hydrateConversationCollapsed,
     registerContextContributor,
     unregisterContextContributor,
+    getActiveSurface,
     getUiContext,
     formatCompactContextBlock,
   }

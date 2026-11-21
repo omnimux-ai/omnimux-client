@@ -53,7 +53,7 @@ export function createClipSlice(set: Set, get: Get): ClipSlice {
       return result;
     },
 
-    addClipToNewTrack: async (mediaId: string, startTime?: number) => {
+    addClipToNewTrack: async (mediaId, startTime, options) => {
       const { project, actionExecutor } = get();
       const blocked = () => useUIStore.getState().exportState.isExporting || Boolean(useTimelineStore.getState().playbackLockedReason);
       const failure = (message: string): ActionResult => ({ success: false, error: { code: "INVALID_PARAMS", message } });
@@ -70,7 +70,7 @@ export function createClipSlice(set: Set, get: Get): ClipSlice {
       // Membership belongs to this invocation, including an enclosing recipe.
       // Preparing the edit must never open or close another command's group.
       const groupId = history.getCurrentGroupId() ?? `placement-${uuidv4()}`;
-      const owns = () => get().project.id === project.id && get().actionExecutor === actionExecutor && !blocked();
+      const owns = () => get().project.id === project.id && get().actionExecutor === actionExecutor && !blocked() && options?.isCurrent?.() !== false;
       const changed = () => failure("The project or source changed while the clip was being prepared. Try again.");
       // Both core actions only modify their new track. Existing tracks, source
       // Blobs, handles, waveforms and overlay data remain shared read-only data.

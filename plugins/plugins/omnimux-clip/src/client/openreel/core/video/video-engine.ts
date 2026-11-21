@@ -160,6 +160,10 @@ interface FrameRenderOptions {
   textClips?: TextClip[];
   shapeClips?: ShapeClip[];
   realtime?: boolean;
+  /** Capture overlays from the supplied project, even while another frame is queued. */
+  overlaysFromProject?: boolean;
+  /** Check the renderer owner after waiting in the composition queue. */
+  assertCurrent?: () => void;
   /** Export "Timecode burn-in": drawn last, over every track, adjustment layer and caption. */
   timecodeBurnIn?: TimecodeBurnInSettings;
 }
@@ -830,6 +834,7 @@ export class VideoEngine {
     this.frameCompositionTail = new Promise<void>((resolve) => { release = resolve; });
     await previous;
     try {
+      options.assertCurrent?.();
       return await this.composeFrame(project, time, targetWidth, targetHeight, options);
     } finally {
       release();
@@ -907,10 +912,11 @@ export class VideoEngine {
     this.sequencePixelAspect = normalizeSequencePar(settings.pixelAspectRatio);
     this.burnInSource = createBurnInSource(project);
 
-    const activeTextClips = this.getActiveTextClips(timeline, time);
-    const activeShapeClips = this.getActiveShapeClips(timeline, time);
-    const activeSVGClips = this.getActiveSVGClips(timeline, time);
-    const activeStickerClips = this.getActiveStickerClips(timeline, time);
+    const fromProject = options.overlaysFromProject === true;
+    const activeTextClips = this.getActiveTextClips(timeline, time, fromProject ? project.textClips ?? [] : undefined);
+    const activeShapeClips = this.getActiveShapeClips(timeline, time, fromProject ? project.shapeClips ?? [] : undefined);
+    const activeSVGClips = this.getActiveSVGClips(timeline, time, fromProject ? project.svgClips ?? [] : undefined);
+    const activeStickerClips = this.getActiveStickerClips(timeline, time, fromProject ? project.stickerClips ?? [] : undefined);
     const activeSubtitles = this.getActiveSubtitles(timeline, time);
 
 
@@ -2386,8 +2392,7 @@ export class VideoEngine {
     ctx.drawImage(textLayerCanvas, 0, 0, width, height);
   }
 
-  private getActiveTextClips(timeline: Timeline, time: number): TextClip[] {
-    const allTextClips = titleEngine.getAllTextClips();
+  private getActiveTextClips(timeline: Timeline, time: number, allTextClips = titleEngine.getAllTextClips()): TextClip[] {
     const visibleTrackIds = new Set(
       timeline.tracks.filter((track) => !track.hidden).map((track) => track.id),
     );
@@ -2399,8 +2404,7 @@ export class VideoEngine {
     });
   }
 
-  private getActiveShapeClips(timeline: Timeline, time: number): ShapeClip[] {
-    const allShapeClips = graphicsEngine.getAllShapeClips();
+  private getActiveShapeClips(timeline: Timeline, time: number, allShapeClips = graphicsEngine.getAllShapeClips()): ShapeClip[] {
     const visibleTrackIds = new Set(
       timeline.tracks.filter((track) => !track.hidden).map((track) => track.id),
     );
@@ -2415,8 +2419,8 @@ export class VideoEngine {
   private getActiveSVGClips(
     timeline: Timeline,
     time: number,
+    allSVGClips = graphicsEngine.getAllSVGClips(),
   ): import("../graphics/types").SVGClip[] {
-    const allSVGClips = graphicsEngine.getAllSVGClips();
     const visibleTrackIds = new Set(
       timeline.tracks.filter((track) => !track.hidden).map((track) => track.id),
     );
@@ -2431,8 +2435,8 @@ export class VideoEngine {
   private getActiveStickerClips(
     timeline: Timeline,
     time: number,
+    allStickerClips = graphicsEngine.getAllStickerClips(),
   ): import("../graphics/types").StickerClip[] {
-    const allStickerClips = graphicsEngine.getAllStickerClips();
     const visibleTrackIds = new Set(
       timeline.tracks.filter((track) => !track.hidden).map((track) => track.id),
     );

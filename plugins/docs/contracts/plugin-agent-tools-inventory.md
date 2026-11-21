@@ -5,7 +5,7 @@ type: "contract"
 status: "living"
 authority: "L1"
 date: "2026-08-30"
-updated: "2026-10-08"
+updated: "2026-11-22"
 authors: ["qi-huolin", "xu-qingchu", "gao-jianyuan", "lin-shen", "yan-guoguan"]
 subsystem: "global"
 tags: ["agent-tools", "dual-surface", "inventory", "verification", "governance"]
@@ -18,7 +18,7 @@ superseded_by: null
 本页数字、`Implemented` 与“双面就绪”是既有源码注册记录，不是当前上线或真实业务可用证明，不作为正式版宣传数量。发布阶段读[生命周期清单](../../plugins/omnimux/src/plugin-lifecycle.json)，运行可用性需当前版本证据；现行产品范围见[产品说明](../../README.md#工程结构与能力状态)。
 
 > **版本**：v1.0.0 | **权威级别**：L1（工程契约）  
-> **适用范围**：`plugins/` 下全部 12 个插件的 UI 交互与 Agent Tool 注册规范。  
+> **适用范围**：`plugins/` 下插件的 UI 交互与 Agent Tool 注册规范。
 > **持续治理**：由 `scripts/verify-plugin-agent-tools.mjs`（`pnpm verify:tools`）执行静态扫描。CI 拦截注册源码与本清单新增的不一致，已存在的差异作为告警。
 
 ---
@@ -28,12 +28,12 @@ superseded_by: null
 1. **双面交付铁律 (Dual-Delivery Invariant)**：
    在 OmniMux 插件生态中，任何业务功能必须同时具备：
    - **人类交互面 (UI Surface)**：Web Client UI (Stage / Overlay / Tab / Modal / Card)；
-   - **智能体契约面 (Agent Tool Surface)**：Host 侧 `ctx.tools` 注册的标准工具 (JSON Schema 参数与 `{ ok, ... }` 封套)。
-   两者必须共享相同的领域模型与服务层 (Unified Domain Service / Store)，严禁仅供人类操作而对 Agent 黑盒的单边功能。
+   - **智能体契约面 (Agent Tool Surface)**：Host 通过 `ctx.tools` 注册工具，声明 JSON Schema 参数与结果契约。
+   两者共享领域模型与服务层。Clip 工具的业务失败抛 `ClipDomainError`。保存、实时命令和导出回执见[剪辑工具契约](clip-live-control.md#工具入参与编辑行为)。
 2. **单一事实来源 (Single Source of Truth)**：
    HTTP 路由处理函数与 `ctx.tools.register` 的 `execute` 函数必须作为对等薄适配器，直接调用底层同一个 `Dispatcher` / `Store` 方法。
 3. **破坏性操作二次确认守卫 (Destructive Action Guard)**：
-   凡是涉及物理删除、级联清理、覆盖破坏的操作（如 `delete`, `remove`, `drop`, `disconnect`, `clear`），参数中必须强制包含 `confirm: { type: 'boolean', required: true }`，未显式传 `confirm: true` 必须直接拒绝并返回 `{ ok: false, error: 'confirmation-required', message: '...' }`。
+   涉及物理删除、级联清理、覆盖破坏的工具必须声明必填 `confirm` 布尔参数。未传 `confirm: true` 时拒绝执行，结果为 `{ ok: false, error: 'confirmation-required', message: '...' }`。Clip 的批量编辑按实际操作校验，删除非空轨或清空已有时间轴须提供 `confirmDestructive: true`。Clip 导出要求 `confirm: true`。Clip 的确认拒绝抛出结构化领域错误。
 4. **工具分级标准 (L1 / L2 / L3 / UI-Only)**：
    - **L1 (Mandatory Tool)**：核心业务数据流与 CRUD（创建、删除、修改、发布、执行）。必须 100% 暴露 Tool。
    - **L2 (Standard Tool)**：辅助查询、多维搜索、状态拉取、统计聚合、配置探查。必须暴露 Tool。
@@ -42,12 +42,12 @@ superseded_by: null
 
 ---
 
-## 2. 全量 13 插件概览统计看板
+## 2. 历史 13 插件概览统计
 
 | 统计指标 | 数值 | 说明 |
 |---|---|---|
-| **体检插件总数** | 13 个 | 覆盖 `plugins/` 下全部生产插件 |
-| **已注册 Agent 工具总数** | 101 个 | 源码中注册的工具 (29+4+6+3+9+12+9+15+0+0+4+1+9)。Hub 规划 +2 `workbench_*`（`Planned`，见下文中枢工具清单）落地后改此行。 |
+| **体检插件总数** | 13 个 | 当时纳入体检的插件 |
+| **已注册 Agent 工具总数** | 101 个 | 历史源码快照。各插件的工具状态以对应条目和实际注册为准。 |
 | **双面齐备标杆插件 (A+)** | 4 个 | `omnimux-workflow` (12 tools), `omnimux-publish` (9 tools), `omnimux-market` (15 tools), `omnimux-avatar` (9 tools) |
 | **需补齐写操作工具插件 (B)** | 4 个 | `omnimux-assets`, `omnimux-products`, `omnimux-inspiration`, `omnimux-accounts` |
 | **纯后端/纯中枢/纯视图插件** | 5 个 | `omnimux` (中枢 29 tools), `omnimux-video` (4 tools), `omnimux-video-preview` (2 tools), `omnimux-analytics` (0 tools), `omnimux-clip` (9 个注册工具，见下文剪辑限制) |
@@ -58,7 +58,7 @@ superseded_by: null
 
 ### 3.1 `omnimux`（执行中枢 Hub）
 - **功能域**：中枢官方服务、品牌/设置、社媒路由、模型调用、官方 Seams。
-- **状态**：双面就绪 (已实装 29 个核心官方工具 + 规划 2 个工作台视口工具)。
+- 已注册官方工具和工作台工具。中枢通过同一事件 WebSocket 识别已认证窗口。对话首轮采用新鲜且唯一的剪辑视口摘要。剪辑实时指令按窗口定向，`clip_*` 不走工作面自动切换。[实时控制契约](clip-live-control.md#可见入口编辑权和对话上下文)
 
 | 业务功能描述 | 对应 UI 交互 / HTTP 路由 | Agent 工具名称 (`Tool Name`) | 分级 | 状态 | 破坏性 confirm |
 |---|---|---|---|---|---|
@@ -92,8 +92,8 @@ superseded_by: null
 | 抓取网页并解析 Markdown | 灵感/知识库采集 | `omnimux_page_fetch` | L2 | `Implemented` | 否 |
 | 统一多模型文本与结构化生成 | 文本节点与大模型中继 | `omnimux_text_complete` | L2 | `Implemented` | 否 |
 | TypeSafe Jev 结构化决策与量化评估 | 智能体决策路由器与评估门禁 | `omnimux_jev_decision` | L2 | `Implemented` | 否 |
-| 读取当前工作台视口（Tab / Chip / 选中） | 右侧 better-sidebar 快照 | `workbench_get_active_view` | L2 | `Planned` | 否 |
-| 打开或切换 Occupant Tab（可撤销、防打扰） | 左栏 / Tab 条 / 对话内「打开」 | `workbench_open_tab` | L1 | `Planned` | 否（打扰性，走配额+撤销，非 confirm） |
+| 读取右侧工作台的 Tab、视图和选中项 | 右侧工作台视口 | `workbench_get_active_view` | L2 | `Implemented` | 否 |
+| 打开或切换右侧工作台 Tab | 左栏 / Tab 条 / 对话内「打开」 | `workbench_open_tab` | L1 | `Implemented` | 否（受工作台设置、配额及撤销约束） |
 
 ---
 
@@ -182,6 +182,7 @@ superseded_by: null
 - **状态**：双面就绪 (已实装 12 大工具，标杆级画布 Agent 控制)。
 - **视频模式**：画布与 Agent 共用[画布生成契约](canvas-generation.md)。界面按目录中的 `modeKind` 显示名称，`workflow_run` 和节点参数使用原 operation ID。已接入分组能力的节点按有效组合查组、方式、参数和槽位。生产范围以实际验收为准。
 - **生成输入**：节点提交与 `workflow_run` 共用[当前操作和线路的输入投影](canvas-generation.md#选择和素材)。提示词 `@` 的候选菜单属于画布交互。Agent 通过 `workflow_node_update` 修改提示词，通过 `workflow_connect` 和 `workflow_disconnect` 调整连接。
+- 画布剪辑使用下节的 `clip_*` 工具。Workflow 的 Host 服务按工作区、节点和工程核对绑定，用同一画布版本提交草稿指针、成片引用或下游节点和连线。[画布剪辑契约](clip-live-control.md#mp4-与画布提交)
 
 | 业务功能描述 | 对应 UI 交互 / HTTP 路由 | Agent 工具名称 (`Tool Name`) | 分级 | 状态 | 破坏性 confirm |
 |---|---|---|---|---|---|
@@ -190,7 +191,7 @@ superseded_by: null
 | 获取画布快照。用 `node_id` 查询指定节点及其分组生成选项 | 画布加载与节点配置 | `workflow_snapshot` | L1 | `Implemented` | 否 |
 | 创建新工作区与画布 | 新建工作区按钮 | `workflow_create` | L1 | `Implemented` | 否 |
 | 向画布添加物料/AI生成节点 | 左侧物料库拖拽入画布 | `workflow_node_add` | L1 | `Implemented` | 否 |
-| 更新指定节点的参数与配置。网关分组的选择、默认值及参数校验遵循[画布生成契约](canvas-generation.md#选择和素材)。图片节点的生成方式由参考图绑定派生，不在 patch 中单独选择。可用 `patch.swap_reference_images` 交换有序参考图卡槽的起始图 | 节点右侧属性面板及参考图卡槽的起始图设置 | `workflow_node_update` | L1 | `Implemented` | 否 |
+| 更新指定节点的参数与配置。线路分组的选择、默认值及参数校验遵循[画布生成契约](canvas-generation.md#选择和素材)。图片节点的生成方式由参考图绑定派生，不在 patch 中单独选择。可用 `patch.swap_reference_images` 交换有序参考图卡槽的起始图 | 节点右侧属性面板及参考图卡槽的起始图设置 | `workflow_node_update` | L1 | `Implemented` | 否 |
 | 移除画布上的指定节点及其相连边 | 节点选中按 Delete 键 | `workflow_node_remove` | L1 | `Implemented` | 是 (`confirm: true`) |
 | 在两节点端口之间建立连接边并重算入槽，分组能力节点保留用户已选方式 | 鼠标拖拽连线 | `workflow_connect` | L1 | `Implemented` | 否 |
 | 添加同用途的参考素材或向具名角色分配素材。系统对话框与拖入可使用桌面本地文件 | 素材区「添加素材」、角色卡槽及预览「替换」 | — | UI-Only | `UI-Only` | 豁免（桌面文件选择与画布撤销） |
@@ -206,25 +207,23 @@ superseded_by: null
 
 ### 3.7 `omnimux-clip`（OpenReel 视频剪辑）
 
-- **功能域**为 OpenReel v1.0.0 三栏工作区内的多轨时间轴、素材、字幕、转场、音频处理、播放与 WebCodecs 导出。[上游引入契约](openreel-vendor-contract.md)
-- **归属**为画布节点绑定的 Portal 或独立「视频剪辑」Tab。复制节点分配新工程 ID、清空旧草稿与成片绑定。画布打开和回执按工作区、节点、工程三项校验。手工导出的每笔上传独立结算，退出后仍可回写，新版回写后拒绝迟到的旧回执。
-- **状态**为 9 个注册工具。Host 查档与旧档编辑均使用 `$DSH_HOME/omnimux/clip/projects/` 的 `TimelineSchema`。当前可用的手工编辑和导出由浏览器执行。运行行为与 [阶段 2 计划协议](clip-live-control.md) 见剪辑契约。
-- `Implemented` 标记已注册的 Host 处理器。表中四个实时工具当前仅校验工程并返回错误，实时操作待阶段 2 接入。
+- OpenReel v1 的多轨剪辑、播放与 WebCodecs 导出共用原生编辑器。入口为画布节点 Portal 和独立「视频剪辑」Tab。Host 在 `$DSH_HOME/omnimux/clip/projects/` 保存原生工程，兼容识别旧 `TimelineSchema` 与原生 UUID 工程。[阶段 2 实现](clip-live-control.md#阶段-2-实现) · [上游引入契约](openreel-vendor-contract.md)
+- 已注册 9 个工具。实时工具针对本会话的可见租约，查询可读取保存版本。工具时间用秒。完整参数以[实际注册](../../plugins/omnimux-clip/src/tools.js)为准。
 
 | 当前 Agent 行为 | 对应 UI 交互 / HTTP 路由 | Agent 工具名称 (`Tool Name`) | 分级 | 状态 | 破坏性 confirm |
 |---|---|---|---|---|---|
-| 列出已保存工程，显式标记待迁移或不可读项 | `GET /omnimux-clip/api/projects` | `clip_list` | L1 | `Implemented` | 否 |
-| 读取已保存旧格式工程 | `GET /omnimux-clip/api/projects/:id` | `clip_get` | L1 | `Implemented` | 否 |
-| 诊断已保存旧格式工程 | Host 读取工程文件 | `clip_diagnostics` | L2 | `Implemented` | 否 |
-| 新建已保存旧格式工程 | Host 工程 Store | `clip_create` | L1 | `Implemented` | 否 |
-| 批量编辑旧档并记录一步 Host 历史 | Host 工程 Store | `clip_edit` | L1 | `Implemented` | 否 |
-| 校验待打开的工程并报告实时打开不可用 | 打开节点 Portal 或独立 Tab | `clip_open` | L1 | `Implemented` | 否 |
-| 校验工程并报告实时播放控制不可用 | 编辑器播放控制 | `clip_view` | L1 | `Implemented` | 否 |
-| 校验工程并报告实时截帧不可用 | 编辑器预览 | `clip_snapshot` | L2 | `Implemented` | 否 |
-| 校验工程并报告实时导出不可用 | 编辑器「导出」 | `clip_export` | L1 | `Implemented` | 阶段 2 按用户明确导出指令 |
-| 播放指针拖拽 (Scrubbing) 与实时预览 | 播放控制器 | — | UI-Only | `UI-Only` | 豁免 (60fps 实时渲染) |
+| 列出保存工程与无法读取的条目 | `GET /omnimux-clip/api/projects` | `clip_list` | L1 | `Implemented` | 否 |
+| 优先读可见原生投影，亦可按工程 ID 查档 | 编辑器原生快照 / `GET /omnimux-clip/api/projects/:id` | `clip_get` | L1 | `Implemented` | 否 |
+| 诊断保存版本的黑场、重叠、素材缺失和越界 | Host 工程 Store | `clip_diagnostics` | L2 | `Implemented` | 否 |
+| 创建保存的独立原生空工程 | 新建工程 / Host 工程 Store | `clip_create` | L1 | `Implemented` | 否 |
+| 原子执行一批原生剪辑，整批入一次 Undo，可预演 | OpenReel 原生时间轴 / 实时命令 | `clip_edit` | L1 | `Implemented` | 删除非空轨或清空时间轴需 `confirmDestructive: true` |
+| 打开明确指定的工程并等待可见租约 | 画布 Portal 或独立 Tab | `clip_open` | L1 | `Implemented` | 用户要求打开时调用 |
+| 控制播放头、播放和选段 | 编辑器播放控制 / 实时命令 | `clip_view` | L1 | `Implemented` | 否 |
+| 从预览读取并保存最多六帧真实合成 PNG | 编辑器预览 / 实时命令 | `clip_snapshot` | L2 | `Implemented` | 否 |
+| 导出版本化 MP4，分别回报成片落盘与画布提交 | WebCodecs / Host 流式上传 / Workflow 版本提交 | `clip_export` | L1 | `Implemented` | 用户明确要求导出并传 `confirm: true` |
+| 播放指针拖拽 (Scrubbing) | 播放控制器 | — | UI-Only | `UI-Only` | 豁免（手工拖动） |
 
-查询工具不会自动切页，画布 Portal 打开时剪辑工具保留当前画布。待迁移文件上报 `openreel-migration-required`，未保存的 `clip_node_…` 上报 `project-not-materialized`。单个工程读文件失败时上报 `project-unreadable`，HTTP 单项为 409，列表继续返回其余工程。实时工具读取旧档成功后抛 `ui-unavailable`。截帧与导出不会生成占位文件。
+查询和操作都保持当前画布工作面，显式导航用 `clip_open`。未物化节点报告 `project-not-materialized`。多窗口先按 `AMBIGUOUS_TARGET` 的候选定位，可用 `windowInstanceId` 消歧。无认证窗口报告 `EDITOR_OFFLINE`，入口不可见或预览尚未就绪按实际状态返回 `EDITOR_NOT_VISIBLE` 或 `PREVIEW_NOT_READY`。写入使用版本检查及 `requestId` 回执。同一导出结果的文件落盘与画布回写各有独立状态。[错误与工具参数](clip-live-control.md#租约命令与失败)
 
 ---
 

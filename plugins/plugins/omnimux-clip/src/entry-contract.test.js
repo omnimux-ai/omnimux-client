@@ -37,7 +37,7 @@ describe('cordis entry inject contracts', () => {
 
   it('host entry has no direct ctx service reads beyond declared/nested injects', () => {
     const src = readSource('index.js')
-    const declared = new Set(['tools', 'systemPrompt', 'provide', 'effect', 'name'])
+    const declared = new Set(['tools', 'systemPrompt', 'provide', 'effect', 'get', 'name'])
     for (const match of src.matchAll(/ctx\.([a-zA-Z_$][\w$]*)/g)) {
       assert.ok(
         declared.has(match[1]) || match[1] === 'inject',

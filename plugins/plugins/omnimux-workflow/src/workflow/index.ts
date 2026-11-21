@@ -25,6 +25,8 @@ import type { ServerResponse, IncomingMessage } from 'node:http';
 import type { WorkflowPaths } from './paths';
 import { resolveWorkflowPaths } from './paths';
 import { createComfyBackendService } from './comfyBackend/service.ts';
+import { createWorkflowClipService } from './clip/workflowClip.ts';
+import { sessionToWorkspaceId, workspacePathToCanvasId } from '../shared/sessionWorkspaceId.ts';
 import { createWorkspaceStore } from './workspace/WorkspaceStore';
 import { createGenerationPreferencesStore } from './workspace/GenerationPreferencesStore';
 import { createProjectAssetsStore } from './workspace/ProjectAssetsStore';
@@ -65,6 +67,7 @@ type HostContext = AgentSeatContext & {
   inject?: (deps: string[], callback: (inner: { webServer?: WebServer }) => void) => void;
   /** cordis seam lookup — the only legal path to the execution hub. */
   get?: (name: string) => unknown;
+  provide?: (name: string, value: unknown) => unknown;
 };
 
 export interface MountWorkflowHostOptions {
@@ -202,8 +205,19 @@ export function mountWorkflowHost(ctx: HostContext, opts: MountWorkflowHostOptio
   // do not wait on it; recovered executions stream to late SSE subscribers.
   void executionManager.recoverAll();
 
-  if (typeof (ctx as any).provide === 'function') {
-    (ctx as any).provide('omnimux-workflow', headlessSeam);
+  if (typeof ctx.provide === 'function') {
+    ctx.provide('omnimux-workflow', headlessSeam);
+    ctx.provide('workflowClip', createWorkflowClipService({
+      store,
+      canAccessWorkspace(workspaceId, sessionId) {
+        const cwd = readSessionWorkspaceDir(sessionId);
+        if (!cwd) return false;
+        const project = projectStore.findByRoot(cwd);
+        if (project) return project.pages.some((page) => page.canvasWorkspaceId === workspaceId);
+        return !resolveProjectRoot(workspaceId)
+          && (workspaceId === workspacePathToCanvasId(cwd) || workspaceId === sessionToWorkspaceId(sessionId));
+      },
+    }));
   }
   (ctx as Record<string, unknown>)['omnimux-workflow'] = headlessSeam;
 

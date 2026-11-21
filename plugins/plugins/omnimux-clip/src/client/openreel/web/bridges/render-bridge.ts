@@ -212,6 +212,33 @@ export class RenderBridge {
     }
   }
 
+  /** Render a full-resolution program frame without presenting it or moving the playhead. */
+  async captureProjectPng(project: ReturnType<typeof useProjectStore.getState>["project"], time: number, assertCurrent: () => void) {
+    const engine = useEngineStore.getState();
+    if (!engine.initialized || !engine.videoEngine) return null;
+    const verify = () => {
+      assertCurrent();
+      if (useEngineStore.getState().videoEngine !== engine.videoEngine) throw new Error("The preview renderer changed.");
+    };
+    const frame = await engine.videoEngine.renderFrame(project, time, project.settings.width, project.settings.height, {
+      overlaysFromProject: true,
+      assertCurrent: verify,
+    });
+    try {
+      verify();
+      if (frame.width !== project.settings.width || frame.height !== project.settings.height || frame.timestamp !== time) return null;
+      const canvas = new OffscreenCanvas(frame.width, frame.height);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return null;
+      ctx.drawImage(frame.image, 0, 0);
+      const png = await canvas.convertToBlob({ type: "image/png" });
+      verify();
+      return png.type === "image/png" && png.size > 0 ? { timeSec: time, width: frame.width, height: frame.height, png } : null;
+    } finally {
+      frame.image.close();
+    }
+  }
+
   /**
    * Render frame with debouncing for smooth scrubbing
    *

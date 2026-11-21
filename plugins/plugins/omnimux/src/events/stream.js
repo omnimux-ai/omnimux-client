@@ -1,6 +1,7 @@
 import { WebSocket, WebSocketServer } from 'ws'
 import { HEARTBEAT_INTERVAL_MS } from './hub-event-bus.js'
 import { isLocalRequest } from '../workbench/http-routes.js'
+import { WINDOW_HELLO_EVENT } from './windows.js'
 
 export const EVENTS_PATH = '/omnimux/events/stream'
 const MAX_BUFFERED_BYTES = 1024 * 1024
@@ -25,14 +26,21 @@ export function registerHubEventStream(webServer, { hubEvents, connection }) {
       const after = new URL(req.url, 'http://localhost').searchParams.get('after')
       server.handleUpgrade(req, socket, head, (client) => {
         const send = (event) => {
-          if (client.readyState !== WebSocket.OPEN) return
+          if (client.readyState !== WebSocket.OPEN) return false
           if (client.bufferedAmount > MAX_BUFFERED_BYTES) {
             client.terminate()
-            return
+            return false
           }
           client.send(JSON.stringify(event))
+          return true
         }
-        const heartbeat = () => send({ type: 'omnimux:heartbeat', payload: { at: Date.now() } })
+        const isAuthenticated = () => client.readyState === WebSocket.OPEN && connection.requestRejection(req) === undefined
+        const window = hubEvents.attachWindow({ send, isAuthenticated })
+        send({ type: WINDOW_HELLO_EVENT, payload: { windowInstanceId: window.windowInstanceId, proof: window.proof } })
+        const heartbeat = () => {
+          if (!isAuthenticated()) return client.terminate()
+          send({ type: 'omnimux:heartbeat', payload: { at: Date.now() } })
+        }
         for (const event of hubEvents.getEventsSince(after)) send(event)
         const unsubscribe = hubEvents.subscribe(send)
         heartbeat()
@@ -41,6 +49,7 @@ export function registerHubEventStream(webServer, { hubEvents, connection }) {
         const cleanup = () => {
           clearInterval(timer)
           unsubscribe()
+          window.dispose()
           cleanups.delete(cleanup)
         }
         cleanups.add(cleanup)

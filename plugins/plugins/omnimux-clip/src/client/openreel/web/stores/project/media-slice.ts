@@ -86,6 +86,7 @@ export function createMediaSlice(set: Set, get: Get): MediaSlice {
           const rawPath = nativePathForFile(file);
           const newRawItem: MediaItem = {
             ...item,
+            ...(source?.omnimuxSource ? { omnimuxSource: source.omnimuxSource } : {}),
             sourceFile: {
               name: file.name,
               size: file.size,
@@ -217,6 +218,7 @@ export function createMediaSlice(set: Set, get: Get): MediaSlice {
           type: mediaType,
           fileHandle: null,
           blob: file,
+          ...(source?.omnimuxSource ? { omnimuxSource: source.omnimuxSource } : {}),
           metadata: {
             ...(source?.stockSource ? { stockSource: { ...source.stockSource } } : {}),
             ...(mediaType === "audio" && source ? { soundLibraryId: source.soundLibraryId } : {}),
@@ -370,7 +372,7 @@ export function createMediaSlice(set: Set, get: Get): MediaSlice {
       mediaId: string,
       file: File,
       sourceFolder?: string,
-      options?: { restorePlaceholder?: boolean; sourcePath?: string },
+      options?: Parameters<ProjectState['replaceMediaAsset']>[3],
     ) => {
       const { project, actionExecutor } = get();
       const replacementKey = `${project.id}:${mediaId}`;
@@ -383,7 +385,7 @@ export function createMediaSlice(set: Set, get: Get): MediaSlice {
       const createdThumbnails = new Set<string>();
       const ownsReplacement = () => {
         const current = get();
-        return current.project.id === project.id && current.actionExecutor === actionExecutor &&
+        return options?.isCurrent?.() !== false && current.project.id === project.id && current.actionExecutor === actionExecutor &&
           replacementRequests.get(replacementKey) === replacementRequest &&
           current.project.mediaLibrary.items.some(item => item.id === mediaId && item.blob === originalItem.blob &&
             item.sourceFile === originalItem.sourceFile && item.isPlaceholder === originalItem.isPlaceholder && item.type === originalItem.type);
@@ -497,6 +499,7 @@ export function createMediaSlice(set: Set, get: Get): MediaSlice {
           type: mediaType,
           fileHandle: null,
           blob: file,
+          ...(options?.omnimuxSource ? { omnimuxSource: options.omnimuxSource } : {}),
           metadata: {
             duration: processedMedia.metadata.duration || 0,
             width: processedMedia.metadata.width || 0,

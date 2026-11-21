@@ -37,11 +37,21 @@
   },
   {
     "id": "tc_clip_get",
-    "description": "测试视频剪辑轨道详情查询意图诱发",
-    "prompt": "查看当前剪辑项目 demo_proj 的时间线轨道信息与视频片段时长。",
+    "description": "按明确指定的剪辑工程读取轨道与片段",
+    "prompt": "查看剪辑项目 clip_fixture_saved 的时间轴轨道信息与视频片段时长。",
     "expectedTool": "clip_get",
     "expectedArgs": {
-      "projectId": "demo_proj"
+      "projectId": "clip_fixture_saved",
+      "view": "full"
+    }
+  },
+  {
+    "id": "tc_clip_get_active",
+    "description": "读取当前剪辑工程摘要时保留自动目标选择",
+    "prompt": "查看当前剪辑项目的时间轴摘要。",
+    "expectedTool": "clip_get",
+    "expectedArgs": {
+      "view": "summary"
     }
   },
   {

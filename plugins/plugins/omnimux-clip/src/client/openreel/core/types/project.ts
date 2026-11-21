@@ -102,6 +102,8 @@ export interface Project {
   readonly settings: ProjectSettings;
   readonly mediaLibrary: MediaLibrary;
   readonly timeline: Timeline;
+  /** Initial import from the source canvas has completed for this project. */
+  readonly omnimuxCanvasInitialized?: boolean;
   readonly textClips?: TextClip[];
   /** Named text and caption styles (save once, apply to many). */
   readonly savedStyles?: SavedStyleLibrary;
@@ -236,6 +238,9 @@ export interface MediaProxyRef {
 
 export interface MediaItem {
   readonly id: string;
+  readonly omnimuxSource?: { readonly id: string; readonly version: string; readonly url?: string; readonly digest?: string };
+  readonly sourceRef?: { readonly kind: "indexeddb" | "legacy"; readonly key?: string; readonly projectId?: string; readonly fingerprint?: string; readonly contentVersion?: string | number };
+  readonly missing?: boolean;
   readonly name: string;
   readonly type: "video" | "audio" | "image";
   readonly fileHandle: FileSystemFileHandle | null;

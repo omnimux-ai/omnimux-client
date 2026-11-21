@@ -19,7 +19,30 @@ import {
   type ExportResult,
   type Project,
 } from "@openreel/core";
+import { getEncoderBackendFactory, setEncoderBackendFactory } from "@openreel/core/export/encoder-backend";
 import { clipNow } from "../../../i18n/index.js";
+
+let nativeVideoRender = false;
+let manualVideoRenders = 0;
+
+/** Both paths share OpenReel's compositor resources while encoding. */
+export function tryLockNativeVideoRender(): (() => void) | undefined {
+  if (nativeVideoRender || manualVideoRenders > 0) return undefined;
+  nativeVideoRender = true;
+  return () => { nativeVideoRender = false; };
+}
+
+export function startWebCodecsVideoExport(generator: ReturnType<ReturnType<typeof getExportEngine>["exportVideo"]>) {
+  // OpenReel selects the backend synchronously before its first yield. Scope
+  // the browser backend to that step so it cannot alter a manual export.
+  const previous = getEncoderBackendFactory();
+  setEncoderBackendFactory(null);
+  try {
+    return generator.next();
+  } finally {
+    setEncoderBackendFactory(previous);
+  }
+}
 
 export interface ExportRunnerState {
   isExporting: boolean;
@@ -657,7 +680,7 @@ export function useExportRunner(options: ExportRunnerOptions): UseExportRunner {
       ext: string,
       writableStream: FileSystemWritableFileStream,
     ): Promise<boolean> => {
-      if (running.current) {
+      if (running.current || nativeVideoRender) {
         await writableStream.abort().catch(() => undefined);
         throw new Error("An export is already running");
       }
@@ -682,6 +705,7 @@ export function useExportRunner(options: ExportRunnerOptions): UseExportRunner {
           notifyCanvasProgress({ workspaceId: canvas.workspaceId, nodeId: canvas.nodeId, projectId: canvas.projectId, status: "rendering", renderProgress: Math.round(progress * 100) });
         }
       };
+      manualVideoRenders += 1;
       try {
         if (canvasMode && (!canvas?.workspaceId || !canvas.nodeId || !canvas.projectId)) throw new Error("The canvas project is no longer open");
         reportCanvasProgress(0);
@@ -730,6 +754,7 @@ export function useExportRunner(options: ExportRunnerOptions): UseExportRunner {
             // The upload now owns the original binding. Releasing the encoder lets
             // the user leave and start another export while this receipt is pending.
             savingToCanvas = true;
+            manualVideoRenders -= 1;
             running.current = false;
             activeWritable.current = null;
             setState((prev) => ({ ...prev, savingToCanvas: true }));
@@ -767,6 +792,7 @@ export function useExportRunner(options: ExportRunnerOptions): UseExportRunner {
         // Closing a generator runs cleanup if cancellation lands at a yield.
         try { await generator?.return({ success: false }); } catch { /* Preserve the original failure. */ }
         if (!savingToCanvas) {
+          manualVideoRenders -= 1;
           running.current = false;
           if (activeWritable.current === writableStream) activeWritable.current = null;
         } else if (isCurrent() && getActiveClipSession() !== canvas) {

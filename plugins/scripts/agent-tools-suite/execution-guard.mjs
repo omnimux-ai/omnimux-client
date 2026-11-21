@@ -3,7 +3,107 @@
  * @description Layer 2 隔离调用测试器：验证工具在内存沙箱中的执行稳健度、边界处理与输出格式
  */
 
+import assert from 'node:assert/strict';
+import { CLIP_FIXTURE } from './loader.mjs';
 import { createMockToolContext } from './mock-context.mjs';
+
+const { projectId, title, trackId, clipId, mediaId } = CLIP_FIXTURE;
+const clipCases = {
+  clip_list: {
+    args: { limit: 100 }, emptyError: null,
+    check(result) {
+      assert.equal(result.count, result.projects.length);
+      const row = result.projects.find((item) => item.id === projectId);
+      assert.ok(row, 'The saved native project must appear in the list');
+      assert.deepEqual([row.projectName, row.mode, row.revision, row.durationSec], [title, 'standalone', 1, 2.5]);
+      assert.deepEqual(result.unavailableProjects, []);
+      assert.equal(result.unavailableCount, 0);
+    },
+  },
+  clip_create: {
+    args: { name: 'Empty Smoke Project', resolution: 'square', fps: 24 },
+    check(result, tool) {
+      assert.match(result.projectId, /^clip_[0-9a-f-]{36}$/);
+      assert.deepEqual([result.mode, result.revision, result.durationSec, result.aspectRatio, result.fps], ['standalone', 1, 0, '1:1', 24]);
+      const { project, revision } = tool._clipStore.load(result.projectId);
+      assert.equal(revision, result.revision);
+      assert.equal(project.name, 'Empty Smoke Project');
+      assert.deepEqual([project.settings.width, project.settings.height, project.settings.frameRate], [1080, 1080, 24]);
+      assert.equal(project.timeline.duration, 0);
+      assert.deepEqual(project.timeline.tracks.map((track) => [track.type, track.clips.length]), [['video', 0], ['audio', 0], ['text', 0]]);
+    },
+  },
+  clip_get: {
+    args: { projectId, view: 'full' }, emptyError: 'EDITOR_OFFLINE',
+    check(result) {
+      assert.deepEqual([result.projectId, result.mode, result.revision, result.view, result.durationSec], [projectId, 'standalone', 1, 'full', 2.5]);
+      assert.deepEqual(result.tracks.map((track) => track.id), [trackId]);
+      assert.deepEqual(result.clips.map((clip) => [clip.id, clip.trackId, clip.mediaId, clip.startSec, clip.endSec]), [[clipId, trackId, mediaId, 0.25, 2.5]]);
+      assert.deepEqual(result.media.map((item) => [item.mediaId, item.missing]), [[mediaId, true]]);
+    },
+  },
+  clip_diagnostics: {
+    args: { projectId },
+    check(result) {
+      assert.deepEqual([result.projectId, result.revision, result.ok, result.issueCount], [projectId, 1, false, 2]);
+      const [missing, gap] = result.issues;
+      assert.deepEqual([missing.code, missing.clipId, missing.mediaId], ['media_missing', clipId, mediaId]);
+      assert.deepEqual([gap.code, gap.fromSec, gap.toSec], ['timeline_gap', 0, 0.25]);
+    },
+  },
+  clip_open: { args: { projectId }, error: 'EDITOR_OFFLINE' },
+  clip_edit: {
+    args: { projectId, baseRevision: 1, description: 'Add a video track', operations: [{ type: 'add_track', trackType: 'video' }], validateOnly: true },
+    error: 'EDITOR_OFFLINE',
+  },
+  clip_view: { args: { projectId, action: 'seek', toSec: 0.5 }, error: 'EDITOR_OFFLINE' },
+  clip_snapshot: { args: { projectId, times: [0.5] }, emptyError: 'EDITOR_OFFLINE', error: 'EDITOR_OFFLINE' },
+  clip_export: { args: { projectId, baseRevision: 1, confirm: true }, error: 'EDITOR_OFFLINE' },
+};
+
+async function executeWithTimeout(tool, args, ctx) {
+  let timer;
+  try {
+    return await Promise.race([
+      tool.execute(args, ctx),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Tool execution timeout (>3s)')), 3000); }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function testClipExecution(tool, ctx, clipCase) {
+  const execute = (args) => executeWithTimeout(tool, args, ctx);
+  const expectError = (args, code) => assert.rejects(() => execute(args), (error) => {
+    assert.equal(error.name, 'ClipDomainError');
+    assert.equal(error.code, code);
+    assert.ok(error.message.startsWith(`[${code}] `), 'The Host registration must preserve the domain code in the error message');
+    return true;
+  });
+  const expectResult = async (args) => {
+    const result = await execute(args);
+    assert.deepEqual(findUndefinedPaths(result), [], 'Clip must return lossless JSON');
+    clipCase.check(result, tool);
+  };
+  try {
+    if (clipCase.emptyError === null) await expectResult({});
+    else await expectError({}, clipCase.emptyError ?? 'invalid-json');
+
+    if (clipCase.error) await expectError(clipCase.args, clipCase.error);
+    else await expectResult(clipCase.args);
+
+    if (tool.name === 'clip_get') {
+      await expectError({ projectId: 'clip_node_offline_fixture' }, 'project-not-materialized');
+    }
+    if (tool.name === 'clip_export') {
+      await expectError({ projectId, confirm: false }, 'CONFIRMATION_REQUIRED');
+    }
+    return { ok: true, toolName: tool.name, phase: 'passed' };
+  } catch (error) {
+    return { ok: false, toolName: tool.name, phase: 'clip_fixture', error: error.message };
+  }
+}
 
 /**
  * 递归深度扫描值中是否含有 undefined 或数组稀疏空洞 (Non-lossless JSON)
@@ -112,13 +212,14 @@ export async function testToolExecution(tool) {
   const mockCtx = createMockToolContext();
 
   try {
+    if (tool._plugin === 'omnimux-clip' && Object.hasOwn(clipCases, tool.name)) {
+      return await testClipExecution(tool, mockCtx, clipCases[tool.name]);
+    }
+
     // 1. 空参数冒烟测试 (Empty Args Smoke Test)
     let emptyArgsHandled = false;
     try {
-      const emptyResult = await Promise.race([
-        tool.execute({}, mockCtx),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Tool execution timeout (>3s)')), 3000)),
-      ]);
+      const emptyResult = await executeWithTimeout(tool, {}, mockCtx);
       emptyArgsHandled = true;
 
       // 空参执行成功时，强制校验无损 JSON
@@ -147,10 +248,7 @@ export async function testToolExecution(tool) {
     const mockArgs = generateMockArgs(tool.parameters);
     const requiredKeys = tool.parameters?.required || [];
     try {
-      const result = await Promise.race([
-        tool.execute(mockArgs, mockCtx),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Tool execution timeout (>3s)')), 3000)),
-      ]);
+      const result = await executeWithTimeout(tool, mockArgs, mockCtx);
 
       if (result === undefined) {
         return {
@@ -199,9 +297,7 @@ export async function testToolExecution(tool) {
       }
 
       // 受控领域错误（比如重名已存在、需要挂载界面、参数校验失败、未装载 hub、缺少具体参数等）属于预期安全行为
-      const clipEditorUnavailable = err?.name === 'ClipDomainError' && err.code === 'ui-unavailable'
-        && ['clip_open', 'clip_view', 'clip_snapshot', 'clip_export'].includes(tool.name);
-      const isControlled = clipEditorUnavailable || /not found|unsupported|offline|invalid|failed|error|mock|needs-hub|does not exist|must be|requires|is required|未装载|失败|未提取|already exists|not mounted|非空/i.test(msg);
+      const isControlled = /not found|unsupported|offline|invalid|failed|error|mock|needs-hub|does not exist|must be|requires|is required|未装载|失败|未提取|already exists|not mounted|非空/i.test(msg);
       if (!isControlled) {
         return {
           ok: false,

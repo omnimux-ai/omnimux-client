@@ -250,7 +250,23 @@ export function apply(ctx, config = {}) {
       mountHttp(httpCtx)
       const server = httpCtx.webServer ?? httpCtx.get?.('webServer')
       if (server && typeof server.register === 'function') {
-        httpCtx.effect(() => registerWorkbenchHttpRoutes(server, { mailbox, getConnection: () => ctx.get?.('connection') }), 'omnimux: workbench HTTP')
+        httpCtx.effect(() => registerWorkbenchHttpRoutes(server, {
+          mailbox,
+          hubEvents,
+          getConnection: () => ctx.get?.('connection'),
+          async verifySession(id) {
+            const query = httpDeps.sessionQuery ?? ctx.get?.('sessionQuery')
+            let observation
+            try {
+              observation = await query?.observeSession?.(id, { projectionMode: 'none' })
+              return Boolean(observation?.header)
+            } catch {
+              return false
+            } finally {
+              observation?.[Symbol.dispose]?.()
+            }
+          },
+        }), 'omnimux: workbench HTTP')
         httpCtx.effect(() => registerSessionModelRoutes(server, { preference: sessionModelPreference }), 'omnimux: session model HTTP')
         httpCtx.effect(() => registerDirectMediaRoutes(server, {
           executeImage: (req) => executeOmnimuxImage({ ...req, media: hub.media, store, credentials: ctx.get?.('credentials'), runtimeSettings: Object.assign({}, readScenarioSettings(ctx.get?.('settings')), { referenceStorage: readReferenceStorageConfig() }) }),
@@ -481,7 +497,7 @@ export function apply(ctx, config = {}) {
       return s && typeof s.get === 'function' ? s.get('omnimux') : null
     },
   })
-  mountWorkbenchContextInjector(ctx, { mailbox })
+  mountWorkbenchContextInjector(ctx, { mailbox, hubEvents })
   mountSessionModelInjector(ctx, { preference: sessionModelPreference })
   if (typeof ctx.on === 'function') mountCommentInjector(ctx)
   mountContractsPrompt(ctx)
