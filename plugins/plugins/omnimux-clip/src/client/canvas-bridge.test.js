@@ -34,6 +34,7 @@ test('stage-store: openFromCanvas does not claim stage, set(false) does not rele
 
   // 1. openFromCanvas 仅将 open 设为 true 并保留 session，不调用 mockStage.claim
   store.openFromCanvas({
+    workspaceId: 'ws_first',
     nodeId: 'node_123',
     nodeTitle: '测试视频合成',
     projectId: 'proj_456',
@@ -46,6 +47,7 @@ test('stage-store: openFromCanvas does not claim stage, set(false) does not rele
   assert.equal(claimed, null, 'openFromCanvas must NOT claim product stage')
   const session = store.getSessionSnapshot()
   assert.equal(session.source, 'canvas')
+  assert.equal(session.workspaceId, 'ws_first')
   assert.equal(session.nodeId, 'node_123')
   assert.equal(session.nodeTitle, '测试视频合成')
   assert.equal(session.projectId, 'proj_456')
@@ -101,7 +103,9 @@ test('stage-store: external switch to another stage exits canvas mode', () => {
 
   const store = createStageStore(mockGetStage)
   store.openFromCanvas({
+    workspaceId: 'ws_first',
     nodeId: 'node_canvas_1',
+    projectId: 'clip_node_first',
     nodeTitle: 'Canvas Video',
   })
   assert.equal(store.getSnapshot(), true)
@@ -143,54 +147,66 @@ test('stage-store: external switch to omnimux-clip activates standalone mode', (
   store.dispose()
 })
 
-test('CanvasBridge: mounts and routes OMNIMUX_CLIP_OPEN / CLOSE', () => {
+const binding = { workspaceId: 'ws_first', nodeId: 'node_first', projectId: 'clip_node_first' }
+const badBindings = [
+  { ...binding, workspaceId: undefined }, { ...binding, nodeId: undefined }, { ...binding, projectId: undefined },
+  { ...binding, workspaceId: '../other' }, { ...binding, nodeId: ' ' }, { ...binding, projectId: 'x/y' },
+]
+
+test('CanvasBridge opens only fully identified sessions and closes only the matching session', () => {
   const target = new EventTarget()
-  let openedPayload = null
-  let isClosed = false
-
-  const mockStage = {
-    openFromCanvas: (p) => { openedPayload = p },
-    set: (val) => { if (!val) isClosed = true },
-    getSessionSnapshot: () => ({ nodeId: 'target_node_1' }),
-  }
-
-  const cleanup = createAndMountCanvasBridge({ stage: mockStage, target })
-
-  // Dispatch open event
-  target.dispatchEvent(new CustomEvent(OMNIMUX_CLIP_OPEN, {
-    detail: {
-      source: 'canvas',
-      nodeId: 'target_node_1',
-      nodeTitle: 'Canvas Composition',
+  const stage = createStageStore(() => null)
+  const host = {
+    getAttribute(name) {
+      if (name === 'data-visible') return 'true'
+      if (name === 'data-canvas-workspace-id') return binding.workspaceId
+      return null
     },
-  }))
-
-  assert.ok(openedPayload)
-  assert.equal(openedPayload.nodeId, 'target_node_1')
-
-  // Dispatch close event with matching nodeId
-  target.dispatchEvent(new CustomEvent(OMNIMUX_CLIP_CLOSE, {
-    detail: { nodeId: 'target_node_1' },
-  }))
-  assert.equal(isClosed, true)
-
-  cleanup()
+  }
+  const root = { querySelectorAll: () => [host] }
+  const cleanup = createAndMountCanvasBridge({ stage, target, root })
+  const fire = (type, detail) => target.dispatchEvent(new CustomEvent(type, { detail }))
+  try {
+    for (const invalid of badBindings) fire(OMNIMUX_CLIP_OPEN, { ...invalid, source: 'canvas' })
+    assert.equal(stage.getSnapshot(), false)
+    fire(OMNIMUX_CLIP_OPEN, { ...binding, source: 'canvas', nodeTitle: 'Canvas Composition' })
+    assert.equal(stage.getSessionSnapshot().workspaceId, binding.workspaceId)
+    assert.equal(stage.getSessionSnapshot().projectId, binding.projectId)
+    fire(OMNIMUX_CLIP_OPEN, { ...binding, source: 'canvas', workspaceId: 'ws_other', projectId: 'clip_node_other' })
+    assert.equal(stage.getSessionSnapshot().workspaceId, binding.workspaceId)
+    assert.equal(stage.getSessionSnapshot().projectId, binding.projectId)
+    for (const wrong of [...badBindings, { ...binding, workspaceId: 'ws_other' },
+      { ...binding, nodeId: 'node_other' }, { ...binding, projectId: 'clip_node_other' }]) {
+      fire(OMNIMUX_CLIP_CLOSE, wrong)
+      assert.equal(stage.getSnapshot(), true)
+    }
+    notifyCanvasClose({ nodeId: binding.nodeId }, target)
+    assert.equal(stage.getSnapshot(), false)
+  } finally {
+    cleanup()
+    stage.dispose()
+  }
 })
 
-test('clip-events payload validators', () => {
-  assert.equal(isOpenClipEditorPayload({ source: 'canvas', nodeId: 'node_1' }), true)
+test('canvas event guards require valid ids on all canvas events', () => {
+  const accepts = [
+    (detail) => isOpenClipEditorPayload({ ...detail, source: 'canvas' }),
+    (detail) => isSaveClipEditorPayload({ ...detail, output: { videoPath: '/tmp/a.mp4' } }),
+    isCloseClipEditorPayload,
+    (detail) => isProgressClipEditorPayload({ ...detail, renderProgress: 50 }),
+  ]
+  for (const accept of accepts) {
+    assert.equal(accept(binding), true)
+    for (const invalid of badBindings) assert.equal(accept(invalid), false)
+  }
   assert.equal(isOpenClipEditorPayload({ source: 'invalid' }), false)
+  assert.equal(isOpenClipEditorPayload({ source: 'sidebar' }), true)
   assert.equal(isOpenClipEditorPayload('non-object'), false)
-
-  assert.equal(isSaveClipEditorPayload({ nodeId: 'n1', output: { videoPath: '/tmp/a.mp4' } }), true)
-  assert.equal(isSaveClipEditorPayload({ output: { videoPath: 123 } }), false)
   assert.equal(isSaveClipEditorPayload('non-object'), false)
-
-  assert.equal(isCloseClipEditorPayload({ nodeId: 'n1' }), true)
+  assert.equal(isSaveClipEditorPayload({ ...binding, output: { videoPath: 123 } }), false)
   assert.equal(isCloseClipEditorPayload('non-object'), false)
-
-  assert.equal(isProgressClipEditorPayload({ nodeId: 'n1', renderProgress: 50 }), true)
-  assert.equal(isProgressClipEditorPayload({ renderProgress: 'not-number' }), false)
+  assert.equal(isProgressClipEditorPayload({ ...binding, renderProgress: 'not-number' }), false)
+  assert.equal(isProgressClipEditorPayload({ ...binding, renderProgress: NaN }), false)
 })
 
 test('getActiveClipSession: tracks canvas session and clears on dispose', () => {
@@ -205,6 +221,7 @@ test('getActiveClipSession: tracks canvas session and clears on dispose', () => 
   assert.equal(getActiveClipSession(), null)
 
   store.openFromCanvas({
+    workspaceId: 'ws_first',
     nodeId: 'node_test_export',
     projectId: 'proj_export_1',
     nodeTitle: 'Export Composition',
@@ -220,48 +237,35 @@ test('getActiveClipSession: tracks canvas session and clears on dispose', () => 
   assert.equal(getActiveClipSession(), null)
 })
 
-test('notifyCanvasSave & notifyCanvasProgress: deliver correct payloads to canvas listener', () => {
+test('legacy manual export callbacks are scoped and ambiguous callbacks are dropped', () => {
   const target = new EventTarget()
-  let savedEvent = null
-  let progressEvent = null
-
-  target.addEventListener(OMNIMUX_CLIP_SAVE, (e) => {
-    savedEvent = e.detail
-  })
-  target.addEventListener(OMNIMUX_CLIP_PROGRESS, (e) => {
-    progressEvent = e.detail
-  })
-
-  notifyCanvasProgress({
-    nodeId: 'node_comp_1',
-    status: 'rendering',
-    renderProgress: 75,
-  }, target)
-
-  assert.ok(progressEvent)
-  assert.equal(progressEvent.nodeId, 'node_comp_1')
-  assert.equal(progressEvent.status, 'rendering')
-  assert.equal(progressEvent.renderProgress, 75)
-
-  notifyCanvasSave({
-    nodeId: 'node_comp_1',
-    projectId: 'proj_out_1',
-    createDownstreamNode: true,
-    output: {
-      videoPath: '/exports/proj_out_1.mp4',
-      thumbnailPath: 'data:image/jpeg;base64,thumb',
-      durationMs: 15000,
-      width: 1920,
-      height: 1080,
-    },
-  }, target)
-
-  assert.ok(savedEvent)
-  assert.equal(savedEvent.nodeId, 'node_comp_1')
-  assert.equal(savedEvent.createDownstreamNode, true)
-  assert.equal(savedEvent.output.videoPath, '/exports/proj_out_1.mp4')
-  assert.equal(savedEvent.output.thumbnailPath, 'data:image/jpeg;base64,thumb')
-  assert.equal(savedEvent.output.durationMs, 15000)
-  assert.equal(savedEvent.output.width, 1920)
-  assert.equal(savedEvent.output.height, 1080)
+  const stage = createStageStore(() => null)
+  const seen = []
+  for (const type of [OMNIMUX_CLIP_PROGRESS, OMNIMUX_CLIP_SAVE]) {
+    target.addEventListener(type, (event) => seen.push(event.detail))
+  }
+  const progress = { nodeId: binding.nodeId, status: 'rendering', renderProgress: 75 }
+  const output = {
+    videoPath: '/exports/test.mp4', thumbnailPath: 'data:image/jpeg;base64,thumb', durationMs: 1000,
+    width: 1920, height: 1080, revision: '12:42',
+  }
+  const save = { nodeId: binding.nodeId, projectId: binding.projectId, createDownstreamNode: true, output }
+  try {
+    assert.equal(notifyCanvasProgress(progress, target), false)
+    stage.openFromCanvas(binding)
+    assert.equal(notifyCanvasProgress(progress, target), true)
+    assert.equal(notifyCanvasSave(save, target), true)
+    assert.deepEqual(seen, [{ ...binding, ...progress }, { ...binding, ...save }])
+    assert.equal(notifyCanvasSave({ ...save, projectId: 'clip_node_wrong' }, target), false)
+    stage.openFromCanvas({ ...binding, workspaceId: 'ws_other' })
+    assert.equal(notifyCanvasProgress(progress, target), false)
+    assert.equal(notifyCanvasSave(save, target), false)
+    assert.equal(notifyCanvasSave({ ...binding, ...save }, target), false)
+    assert.equal(notifyCanvasSave({ ...save, workspaceId: 'ws_other' }, target), true)
+    stage.set(false)
+    assert.equal(notifyCanvasSave({ ...save, workspaceId: 'ws_other' }, target), false)
+    assert.equal(seen.length, 3)
+  } finally {
+    stage.dispose()
+  }
 })

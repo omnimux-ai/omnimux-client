@@ -6,7 +6,7 @@
  * component only renders it. The old per-session canvas caches and the
  * session-binding side-effect route are intentionally not consulted.
  */
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Button } from 'dsh-ui-kit'
 import { workspacePathToCanvasId } from '../../shared/sessionWorkspaceId.ts'
 import { CanvasBridge, CanvasLoadingState } from '../CanvasBridge.jsx'
@@ -18,6 +18,14 @@ import { resolveWorkspaceContextPage, useWorkspaceContext } from './workspace-co
 
 /** Stable page id for UI Context Envelope (Agent workspace targeting). */
 export const CANVAS_PAGE_ID = 'workflow-canvas'
+
+function readVisibleClipBinding(host, workspaceId) {
+  if (host?.dataset.visible !== 'true') return undefined
+  const portal = host.querySelector(':scope > [data-clip-mode="canvas"][data-visible="true"]')
+  const { clipWorkspaceId, clipNodeId, clipProjectId } = portal?.dataset ?? {}
+  if (clipWorkspaceId !== workspaceId || !clipNodeId || !clipProjectId) return undefined
+  return { mode: 'canvas', workspaceId, nodeId: clipNodeId, projectId: clipProjectId }
+}
 
 function safeGetService(target, prop) {
   if (!target || typeof target !== 'object') return undefined
@@ -85,6 +93,7 @@ export function CanvasTab({
     && (contextForThisSession.status === 'workspace-no-project' || contextForThisSession.status === 'no-workspace'),
   )
   const isLoading = !contextReady || (contextForThisSession?.status === 'loading-project' && !project)
+  const hostRef = useRef(null)
   const [projectDialogOpen, setProjectDialogOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [createError, setCreateError] = useState('')
@@ -110,20 +119,23 @@ export function CanvasTab({
   useEffect(() => {
     const api = typeof window !== 'undefined' ? window.__omnimuxWorkbench : undefined
     if (!api || typeof api.registerContextContributor !== 'function') return undefined
-    if (!targetWorkspaceId) return undefined
-    const unsub = api.registerContextContributor(CANVAS_TAB_ID, () => ({
-      view: {
-        kind: 'canvas',
-        pageId: CANVAS_PAGE_ID,
-        extra: { workspaceId: targetWorkspaceId },
-      },
-      selection: [],
-    }))
+    if (!visible || !targetWorkspaceId) return undefined
+    const unsub = api.registerContextContributor(CANVAS_TAB_ID, () => {
+      const clip = readVisibleClipBinding(hostRef.current, targetWorkspaceId)
+      return {
+        view: {
+          kind: 'canvas',
+          pageId: CANVAS_PAGE_ID,
+          extra: { workspaceId: targetWorkspaceId, ...(clip ? { clip } : {}) },
+        },
+        selection: [],
+      }
+    })
     return () => {
       if (typeof unsub === 'function') unsub()
       else api.unregisterContextContributor?.(CANVAS_TAB_ID)
     }
-  }, [targetWorkspaceId])
+  }, [targetWorkspaceId, visible])
 
   useEffect(() => {
     if (!visible || !sessionId) return undefined
@@ -184,7 +196,9 @@ export function CanvasTab({
 
   return (
     <div
+      ref={hostRef}
       data-omnimux-canvas-tab=""
+      data-canvas-workspace-id={targetWorkspaceId}
       className="omnimux-workflow-canvas-tab"
       data-visible={visible ? 'true' : 'false'}
     >

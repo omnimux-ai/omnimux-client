@@ -140,6 +140,17 @@ function isSafeShortToken(value) {
     && !value.includes('|')
 }
 
+/** Phase 1 navigation hint from the mounted canvas Portal. */
+export function isCanvasClipActive(envelope) {
+  if (envelope?.surface?.tabId !== 'omnimux-workflow:canvas' || envelope.surface.panelOpen !== true) return false
+  const extra = envelope.view?.extra
+  const clip = extra?.clip
+  return clip?.mode === 'canvas'
+    && typeof clip.workspaceId === 'string' && clip.workspaceId === extra.workspaceId
+    && typeof clip.nodeId === 'string' && clip.nodeId.length > 0
+    && typeof clip.projectId === 'string' && clip.projectId.length > 0
+}
+
 /**
  * @param {WorkbenchEnvelope} envelope
  */

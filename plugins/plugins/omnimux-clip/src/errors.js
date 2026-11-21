@@ -39,7 +39,7 @@ export class ClipDomainError extends Error {
   }
 
   /**
-   * No UI channel exists in this realm — clip_open only.
+   * The Host has no connected clip editor executor.
    * @param {string} message
    */
   static uiUnavailable(message = 'clip UI channel is unavailable') {
@@ -95,6 +95,14 @@ export class ClipDomainError extends Error {
     return new ClipDomainError('not-found', message)
   }
 
+  static projectNotMaterialized(id) {
+    return new ClipDomainError('project-not-materialized', `Canvas clip project ${id} is not saved yet. Open its clip node in the canvas to edit it. Live edits in the canvas editor are not available to Host tools.`)
+  }
+
+  static openReelMigrationRequired(id) {
+    return new ClipDomainError('openreel-migration-required', `Project ${id} uses the native OpenReel format. The current Host tools read legacy TimelineSchema projects and require migration support for this project.`)
+  }
+
   /**
    * @param {string} message
    */
@@ -123,6 +131,8 @@ export const CLIP_STATUS_BY_CODE = {
   canceled: 499,
   'path-denied': 403,
   'not-found': 404,
+  'project-not-materialized': 404,
+  'openreel-migration-required': 409,
   'invalid-json': 400,
   'invalid-id': 400,
 }

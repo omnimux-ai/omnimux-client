@@ -126,10 +126,15 @@ export function ClipStage({ t, stage, locale }) {
   useLayoutEffect(() => {
     if (!open) return undefined
 
+    const findBoundCanvasHost = () => findCanvasHost(document, session?.workspaceId)
     const update = () => {
       if (session?.source === 'canvas') {
-        const host = findCanvasHost()
-        setCanvasHost(host)
+        const host = findBoundCanvasHost()
+        setCanvasHost((previous) => {
+          // Switching Tabs can hide the owning canvas while it stays mounted.
+          if (host) return host
+          return previous?.isConnected && previous.dataset.canvasWorkspaceId === session.workspaceId ? previous : null
+        })
         return
       }
       setCanvasHost(null)
@@ -146,12 +151,12 @@ export function ClipStage({ t, stage, locale }) {
     update()
 
     let retryTimer = 0
-    if (session?.source === 'canvas' && !findCanvasHost()) {
+    if (session?.source === 'canvas' && !findBoundCanvasHost()) {
       let attempts = 0
       const retry = () => {
         attempts += 1
         update()
-        if (!findCanvasHost() && attempts < 40) {
+        if (!findBoundCanvasHost() && attempts < 40) {
           retryTimer = window.setTimeout(retry, 50)
         }
       }
@@ -159,8 +164,7 @@ export function ClipStage({ t, stage, locale }) {
     }
 
     const targets = [
-      document.querySelector('[data-omnimux-canvas-tab]'),
-      document.querySelector('.omnimux-workflow-canvas-tab'),
+      ...document.querySelectorAll('[data-omnimux-canvas-tab], .omnimux-workflow-canvas-tab'),
       document.querySelector('[data-conversation-scroll]'),
       document.querySelector('[data-slot="conversation"]')?.parentElement,
       document.querySelector('[data-pane="sidebar"], [class*="sidebarCol"]'),
@@ -171,13 +175,21 @@ export function ClipStage({ t, stage, locale }) {
       observer?.observe(target)
     }
 
+    const canvasObserver = isCanvasMode && typeof MutationObserver === 'function' ? new MutationObserver(update) : null
+    for (const target of targets) {
+      if (target.hasAttribute('data-omnimux-canvas-tab')) {
+        canvasObserver?.observe(target, { attributes: true, attributeFilter: ['data-visible', 'data-canvas-workspace-id'] })
+      }
+    }
+
     window.addEventListener('resize', update)
     return () => {
       if (retryTimer) window.clearTimeout(retryTimer)
       observer?.disconnect()
+      canvasObserver?.disconnect()
       window.removeEventListener('resize', update)
     }
-  }, [open, stage, session])
+  }, [isCanvasMode, open, stage, session])
 
   if (!stage) return null
   if (!open && !everOpened) return null
@@ -194,6 +206,9 @@ export function ClipStage({ t, stage, locale }) {
       className="omnimux-clip-stage"
       data-visible={open ? 'true' : 'false'}
       data-clip-mode={isCanvasMode ? 'canvas' : 'standalone'}
+      data-clip-workspace-id={activeSession?.workspaceId}
+      data-clip-node-id={activeSession?.nodeId}
+      data-clip-project-id={activeSession?.projectId}
       style={isCanvasMode ? {
         display: open ? undefined : 'none',
         '--clip-header-pad-left': `${headerPadLeft}px`,

@@ -11,6 +11,7 @@
 import { type Edge } from '@xyflow/react';
 import { v4 as uuidv4 } from 'uuid';
 import type { CanvasNode } from './canvasInputMutationGateway';
+import { newCanvasClipProjectId } from '../../bridge/clipEvents.ts';
 
 export interface ClipboardData {
   nodes: CanvasNode[];
@@ -95,6 +96,7 @@ export function pasteFromClipboard(
     return {
       ...node,
       id: newId,
+      data: node.type === 'video_composition' ? copyCompositionData(node.data) : node.data,
       position: {
         x: pasteX + (node.position.x - center.x),
         y: pasteY + (node.position.y - center.y),
@@ -126,6 +128,17 @@ export function pasteFromClipboard(
     edges: newEdges,
     newPastePosition: { x: pasteX, y: pasteY },
   };
+}
+
+function copyCompositionData(original: CanvasNode['data']): CanvasNode['data'] {
+  const data = { ...original };
+  for (const key of [
+    'schema', 'outputVideoUrl', 'outputRevision', 'thumbnailUrl', 'outputThumbnailUrl',
+    'outputDurationMs', 'outputWidth', 'outputHeight', 'durationText', 'renderProgress', 'errorMessage',
+  ]) {
+    delete data[key];
+  }
+  return { ...data, projectId: newCanvasClipProjectId(), status: 'idle' };
 }
 
 interface CloneSlotBindings {

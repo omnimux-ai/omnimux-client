@@ -1,12 +1,8 @@
-import { writeFileSync } from 'node:fs'
 import { ClipDomainError } from './errors.js'
-import { exportJobPath, exportMp4Path, snapshotPngPath } from './paths.js'
 import { applyOperations } from './timeline/ops.js'
 import { diagnoseTimeline } from './timeline/diagnostics.js'
 import { projectView } from './timeline/views.js'
-import { optionalSecToMs, secToMs } from './timeline/time.js'
 import { createEmptySchema, uid } from './client/store/timelineTypes.js'
-import { OMNIMUX_CLIP_OPEN, dispatchClipEvent } from './client/clip-events.js'
 
 /** clip_create resolution enum → canvas aspectRatio. */
 const RESOLUTION_TO_ASPECT = { landscape: '16:9', portrait: '9:16', square: '1:1' }
@@ -44,67 +40,27 @@ function requireProjectId(args) {
   return id
 }
 
-function overlayReady() {
-  return typeof globalThis !== 'undefined' && Boolean(globalThis.__omnimuxClipReady)
-}
-
-/**
- * Default clip_open channel: dispatch the agent open event on window and, when
- * the better-sidebar seam is reachable, focus the 视频剪辑 tab. Throws
- * ui-unavailable when this realm has no DOM at all.
- * @param {string} projectId
- * @returns {{ channels: string[] }}
- */
-export function defaultOpenClipEditor(projectId) {
-  const win = typeof window !== 'undefined' ? window : undefined
-  if (!win || typeof CustomEvent !== 'function') {
-    throw ClipDomainError.uiUnavailable(
-      'clip editor UI is not mounted in this realm（当前运行环境没有界面通道），请在右侧边栏手动打开「视频剪辑」。',
-    )
-  }
-  /** @type {string[]} */
-  const channels = []
-  try {
-    dispatchClipEvent(OMNIMUX_CLIP_OPEN, { source: 'agent', projectId }, { target: win })
-    channels.push('clip-event')
-  } catch { /* no event realm */ }
-  try {
-    const sidebar = win.__OMNIMUX_BETTER_SIDEBAR__ || win.__omnimuxBetterSidebar
-    if (sidebar && typeof sidebar.openTab === 'function') {
-      sidebar.openTab({ type: 'omnimux-clip:studio', id: 'omnimux-clip:studio', title: '视频剪辑' })
-      channels.push('sidebar-tab')
-    }
-  } catch { /* sidebar seam unavailable */ }
-  if (channels.length === 0) {
-    throw ClipDomainError.uiUnavailable(
-      'clip editor UI is not mounted: no channel answered（剪辑界面通道不可用），请在右侧边栏手动打开「视频剪辑」。',
-    )
-  }
-  return { channels }
-}
-
 /**
  * Build the nine `clip_*` tool specs. Host-side: persist via projectStore,
  * never return `{ ok: false }` as a successful value.
  *
  * @param {{
  *   store: ReturnType<typeof import('./store/projectStore.js').createProjectStore>,
- *   fs?: { writeFileSync: Function, existsSync?: Function },
- *   overlayReady?: () => boolean,
- *   openEditor?: (projectId: string) => { channels: string[] } | Promise<{ channels: string[] }>,
  * }} deps
  */
 export function createClipTools(deps) {
   const store = deps.store
-  const fs = deps.fs ?? { writeFileSync }
-  const isOverlayReady = deps.overlayReady ?? overlayReady
-  const openEditor = deps.openEditor ?? defaultOpenClipEditor
+  // Validate storage first so missing and incompatible projects keep their own error codes.
+  async function requireConnectedEditor(args) {
+    store.load(requireProjectId(args))
+    throw ClipDomainError.uiUnavailable('The Host has no connection to the right-side clip editor. Use the editor controls for live operations.')
+  }
 
   return [
     {
       name: 'clip_list',
       description:
-        'List existing clip projects (id, projectName, updatedAt, durationSec, aspectRatio, track/clip counts), newest first. Call this to discover a projectId before clip_get/clip_edit, or clip_create to start a new one.',
+        'List readable saved legacy clip projects, newest first. Files that require OpenReel migration or cannot be decoded appear under unavailableProjects.',
       timeoutMs: 10_000,
       parameters: objectParams({
         limit: { type: 'number', description: 'Max projects to return, 1-100. Default 50.' },
@@ -118,7 +74,8 @@ export function createClipTools(deps) {
           }
           limit = Math.floor(args.limit)
         }
-        const items = store.list(limit != null ? { limit } : {}).map((item) => ({
+        const { projects, unavailableProjects, unavailableCount } = store.list({ limit })
+        const items = projects.map((item) => ({
           id: item.id,
           projectName: item.projectName,
           updatedAt: item.updatedAt,
@@ -127,13 +84,13 @@ export function createClipTools(deps) {
           trackCount: item.trackCount,
           clipCount: item.clipCount,
         }))
-        return { count: items.length, projects: items }
+        return { count: items.length, projects: items, unavailableProjects, unavailableCount }
       },
     },
     {
       name: 'clip_create',
       description:
-        'Create and persist a new empty clip project (video/audio/text tracks, black canvas). resolution landscape|portrait|square (default landscape); fps default 30. Returns the projectId for clip_edit/clip_get/clip_open.',
+        'Create and persist a new empty clip project (video/audio/text tracks, black canvas). resolution landscape|portrait|square (default landscape); fps default 30. Returns the id of a saved legacy TimelineSchema project for clip_get and clip_edit.',
       timeoutMs: 15_000,
       parameters: objectParams({
         name: { type: 'string', required: true, description: 'Project name, 1-80 chars after trim' },
@@ -176,29 +133,18 @@ export function createClipTools(deps) {
     },
     {
       name: 'clip_open',
-      description:
-        'Open/focus the 视频剪辑 editor UI for a project so clip_view/clip_snapshot and pixel export can run. Best-effort UI navigation; does not modify the timeline. Throws ui-unavailable when this realm has no UI channel — then ask the user to open the 视频剪辑 sidebar tab manually.',
+      description: 'Validate a saved project for opening. Live editor navigation is currently unavailable from the Host.',
       timeoutMs: 10_000,
       parameters: objectParams({
         projectId: { type: 'string', required: true, description: 'Clip project id' },
       }),
       output: jsonOut,
-      async execute(args) {
-        const id = requireProjectId(args)
-        store.load(id)
-        const result = await openEditor(id)
-        return {
-          projectId: id,
-          opened: true,
-          channels: result?.channels ?? [],
-          overlayReady: isOverlayReady(),
-        }
-      },
+      execute: requireConnectedEditor,
     },
     {
       name: 'clip_get',
       description:
-        'Read an OmniMux clip project timeline. view=summary|tracks|clips|full. Optional trackId/clipId/fromSec/toSec filter. Times in the response are seconds.',
+        'Read a saved legacy OmniMux clip project timeline. view=summary|tracks|clips|full. Optional trackId/clipId/fromSec/toSec filter. Times in the response are seconds.',
       timeoutMs: 15_000,
       parameters: objectParams({
         projectId: { type: 'string', required: true, description: 'Clip project id' },
@@ -228,7 +174,7 @@ export function createClipTools(deps) {
     {
       name: 'clip_edit',
       description:
-        'Apply a batch of atomic timeline operations as one undo step. Types: split_clip, trim_clip, remove_clip, remove_range, move_clip, add_clip, import_media, set_text, set_volume, set_speed, cut_silences (plus add_text / set_subtitle_style / add_transition). Input times are seconds. validateOnly=true checks without writing.',
+        'Apply a batch to a saved legacy TimelineSchema project as one stored undo step. Types: split_clip, trim_clip, remove_clip, remove_range, move_clip, add_clip, import_media, set_text, set_volume, set_speed, cut_silences (plus add_text / set_subtitle_style / add_transition). Input times are seconds. validateOnly=true checks without writing.',
       timeoutMs: 180_000,
       parameters: objectParams({
         projectId: { type: 'string', required: true, description: 'Clip project id' },
@@ -279,8 +225,7 @@ export function createClipTools(deps) {
     },
     {
       name: 'clip_view',
-      description:
-        'Control playback and the playhead. action=seek|play|pause. Does not create an undo step. Overlay must be mounted.',
+      description: 'Validate a saved project for playback. Live seek, play and pause are currently unavailable from the Host.',
       timeoutMs: 5_000,
       parameters: objectParams({
         projectId: { type: 'string', required: true, description: 'Clip project id' },
@@ -294,46 +239,11 @@ export function createClipTools(deps) {
         fromSec: { type: 'number', description: 'Optional range start in seconds' },
       }),
       output: jsonOut,
-      async execute(args) {
-        const id = requireProjectId(args)
-        if (!isOverlayReady()) {
-          throw ClipDomainError.previewNotReady('clip overlay is not mounted; open the editor first')
-        }
-        const action = args.action
-        if (action !== 'seek' && action !== 'play' && action !== 'pause') {
-          throw ClipDomainError.invalidJson('action must be seek|play|pause')
-        }
-        const envelope = store.load(id)
-        const durationMs = envelope.schema.canvasConfig?.durationMs || 0
-        let playheadMs = envelope.playheadMs || 0
-        let isPlaying = envelope.isPlaying
-        if (action === 'seek') {
-          const toMs = optionalSecToMs(args.toSec, 'toSec')
-          const fromMs = optionalSecToMs(args.fromSec, 'fromSec')
-          const target = toMs ?? fromMs
-          if (target == null) throw ClipDomainError.invalidJson('seek requires toSec')
-          playheadMs = Math.max(0, Math.min(durationMs, target))
-          isPlaying = false
-        } else if (action === 'play') {
-          const fromMs = optionalSecToMs(args.fromSec, 'fromSec')
-          if (fromMs != null) playheadMs = Math.max(0, Math.min(durationMs, fromMs))
-          isPlaying = true
-        } else {
-          isPlaying = false
-        }
-        store.patchPlayback(id, { playheadMs, isPlaying })
-        return {
-          projectId: id,
-          action,
-          playheadSec: playheadMs / 1000,
-          isPlaying,
-        }
-      },
+      execute: requireConnectedEditor,
     },
     {
       name: 'clip_snapshot',
-      description:
-        'Capture composed preview frames at given times (seconds) into $DSH_HOME/omnimux/clip/snapshots for visual self-check. Overlay must be mounted. Host records snapshot paths; the overlay fills pixels.',
+      description: 'Validate a saved project for frame capture. Live preview frames are currently unavailable from the Host.',
       timeoutMs: 60_000,
       parameters: objectParams({
         projectId: { type: 'string', required: true, description: 'Clip project id' },
@@ -346,31 +256,12 @@ export function createClipTools(deps) {
         toSec: { type: 'number', description: 'Range end in seconds' },
       }),
       output: jsonOut,
-      async execute(args) {
-        const id = requireProjectId(args)
-        if (!isOverlayReady()) {
-          throw ClipDomainError.previewNotReady('clip overlay is not mounted; open the editor first')
-        }
-        const envelope = store.load(id)
-        const durationMs = envelope.schema.canvasConfig?.durationMs || 0
-        const timesMs = resolveSnapshotTimes(args, durationMs)
-        const frames = []
-        for (const timeMs of timesMs) {
-          const path = snapshotPngPath(store.paths, id, timeMs)
-          const placeholder = Buffer.from(
-            '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c63000100000500010d0a2db40000000049454e44ae426082',
-            'hex',
-          )
-          fs.writeFileSync(path, placeholder, { mode: 0o600 })
-          frames.push({ timeSec: timeMs / 1000, path })
-        }
-        return { projectId: id, frames }
-      },
+      execute: requireConnectedEditor,
     },
     {
       name: 'clip_diagnostics',
       description:
-        'Inspect a clip project for timeline_gap (black-frame holes on video tracks), clip_overlap, and media_missing. Returns the issue list; does not throw on findings.',
+        'Inspect a saved legacy clip project for timeline_gap (black-frame holes on video tracks), clip_overlap, and media_missing. Returns the issue list; does not throw on findings.',
       timeoutMs: 10_000,
       parameters: objectParams({
         projectId: { type: 'string', required: true, description: 'Clip project id' },
@@ -385,8 +276,7 @@ export function createClipTools(deps) {
     },
     {
       name: 'clip_export',
-      description:
-        'Request a composed MP4 export of the clip project. Resolution 720p|1080p|4k. Host records the export job; the overlay WebCodecs pipeline writes the file under $DSH_HOME/omnimux/clip/exports.',
+      description: 'Validate a saved project for export. MP4 export is currently available through the right-side editor controls.',
       timeoutMs: 300_000,
       parameters: objectParams({
         projectId: { type: 'string', required: true, description: 'Clip project id' },
@@ -398,62 +288,9 @@ export function createClipTools(deps) {
         fps: { type: 'number', description: 'Output frame rate. Default project fps.' },
       }),
       output: jsonOut,
-      async execute(args) {
-        const id = requireProjectId(args)
-        const envelope = store.load(id)
-        const resolution = args.resolution || '1080p'
-        if (!['720p', '1080p', '4k'].includes(resolution)) {
-          throw ClipDomainError.invalidJson('resolution must be 720p|1080p|4k')
-        }
-        const fps = typeof args.fps === 'number' && Number.isFinite(args.fps)
-          ? args.fps
-          : envelope.schema.canvasConfig?.fps || 30
-        if (fps <= 0) throw ClipDomainError.invalidJson('fps must be a positive number')
-        const dest = exportMp4Path(store.paths, id)
-        const job = {
-          projectId: id,
-          status: 'queued',
-          resolution,
-          fps,
-          dest,
-          requestedAt: Date.now(),
-        }
-        fs.writeFileSync(exportJobPath(store.paths, id), `${JSON.stringify(job, null, 2)}\n`, { mode: 0o600 })
-        return {
-          projectId: id,
-          status: 'queued',
-          resolution,
-          fps,
-          dest,
-          mode: 'live',
-        }
-      },
+      execute: requireConnectedEditor,
     },
   ]
-}
-
-/**
- * @param {{ times?: unknown, fromSec?: unknown, toSec?: unknown }} args
- * @param {number} durationMs
- */
-function resolveSnapshotTimes(args, durationMs) {
-  const times = []
-  if (Array.isArray(args.times) && args.times.length > 0) {
-    for (const value of args.times) times.push(secToMs(value, 'times[]'))
-  } else {
-    const fromMs = optionalSecToMs(args.fromSec, 'fromSec') ?? 0
-    const toMs = optionalSecToMs(args.toSec, 'toSec') ?? durationMs
-    if (toMs < fromMs) throw ClipDomainError.invalidJson('toSec must be >= fromSec')
-    const span = toMs - fromMs
-    if (span === 0) times.push(fromMs)
-    else {
-      times.push(fromMs, Math.round(fromMs + span / 2), toMs)
-    }
-  }
-  const duration = Math.max(0, durationMs)
-  const unique = [...new Set(times.map((ms) => Math.max(0, Math.min(duration, ms))))]
-  unique.sort((a, b) => a - b)
-  return unique
 }
 
 /**
@@ -469,15 +306,27 @@ function resolveSnapshotTimes(args, durationMs) {
 export function registerClipTools(ctx, tools) {
   if (!ctx.tools || typeof ctx.tools.register !== 'function') return
   const register = () => {
-    for (const tool of tools) ctx.tools.register(tool)
+    for (const tool of tools) {
+      ctx.tools.register({
+        ...tool,
+        async execute(args) {
+          try {
+            return await tool.execute(args)
+          } catch (error) {
+            if (!(error instanceof ClipDomainError)) throw error
+            // The Harness error renderer exposes the message of an ordinary Error.
+            throw new ClipDomainError(error.code, `[${error.code}] ${error.message}`)
+          }
+        },
+      })
+    }
   }
   if (typeof ctx.effect === 'function') ctx.effect(register, 'omnimux-clip: tools')
   else register()
 }
 
-export const CLIP_PROMPT = `This workspace may use OmniMux Clip (omnimux-clip) for local multi-track editing.
-Get a projectId first: clip_list shows existing projects; clip_create starts a new one. Never invent a projectId.
-Call clip_get before stating timeline facts. Mutate the timeline only through clip_edit (one call = one undo step; times in seconds).
-After a batch of edits call clip_diagnostics, then clip_snapshot if the overlay is open. clip_open focuses the 视频剪辑 editor UI for a project; clip_view / clip_snapshot throw PREVIEW_NOT_READY when the editor overlay is not mounted — try clip_open once, otherwise tell the user to open 剪辑工坊 first.
-Do not return { ok: false } as a successful tool value; failures throw ClipDomainError.
+export const CLIP_PROMPT = `OmniMux Clip offers manual multi-track editing in the right-side editor.
+clip_list, clip_get and clip_diagnostics read saved legacy TimelineSchema projects. clip_list also identifies files that need migration. Use the actual projectId and read the saved timeline before stating facts about it.
+clip_create and clip_edit work on saved legacy TimelineSchema only. An edit call records one stored undo step (times in seconds). These tools do not control the visible OpenReel timeline.
+clip_open, clip_view, clip_snapshot and clip_export currently lack a live editor connection. They report storage errors first and otherwise return ui-unavailable. Use the right-side controls for opening, playback and export. Do not retry these tools by switching tabs.
 Follow skills/clip-craft/SKILL.md for pacing, caption size, and black-frame checks.`

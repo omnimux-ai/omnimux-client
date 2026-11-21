@@ -13,7 +13,7 @@
  * ports、executorKey、350×440 尺寸。
  */
 
-import { memo, useCallback, useEffect } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect } from 'react';
 import { type NodeProps } from '@xyflow/react';
 import { Download, Film, Layers, Pencil, MessageSquarePlus } from 'lucide-react';
 import CanvasNodeShell from '../../editor/components/CanvasNodeShell';
@@ -45,9 +45,12 @@ import {
   OMNIMUX_CLIP_OPEN,
   OMNIMUX_CLIP_PROGRESS,
   OMNIMUX_CLIP_SAVE,
+  isCanvasClipBinding,
   isCloseClipEditorPayload,
   isProgressClipEditorPayload,
   isSaveClipEditorPayload,
+  newCanvasClipProjectId,
+  type CanvasClipBinding,
   type OpenClipEditorPayload,
   type VideoCompositionNodeData,
   type VideoCompositionStatus,
@@ -144,12 +147,13 @@ export function createDefaultVideoCompositionData(): VideoCompositionNodeData {
     label: '视频合成',
     status: 'idle',
     schemaVersion: '1.0',
-    projectId: `clip_node_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    projectId: newCanvasClipProjectId(),
   };
 }
 
 const VideoCompositionNode: React.FC<NodeProps> = ({ id, data, selected }) => {
   const nodeData = (isRecord(data) ? data : {}) as VideoCompositionNodeData;
+  const workspaceId = asString(nodeData.__workspaceId);
   const setNodes = useCanvasStore((state) => state.setNodes);
   const applyCanvasInputMutation = useCanvasStore((state) => state.applyCanvasInputMutation);
   const t = useT();
@@ -169,17 +173,24 @@ const VideoCompositionNode: React.FC<NodeProps> = ({ id, data, selected }) => {
     [id, setNodes],
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (typeof window === 'undefined') return undefined;
+
+    function readBoundNode(binding: CanvasClipBinding) {
+      if (binding.workspaceId !== workspaceId || binding.nodeId !== id) return undefined;
+      const node = useCanvasStore.getState().nodes.find((candidate) => candidate.id === id);
+      if (node?.type !== 'video_composition' || node.data.projectId !== binding.projectId) return undefined;
+      return node;
+    }
 
     const onSave = (event: Event) => {
       const detail = event instanceof CustomEvent ? event.detail : undefined;
       if (!isSaveClipEditorPayload(detail)) return;
-      if (detail.nodeId && detail.nodeId !== id) return;
+      const currentNode = readBoundNode(detail);
+      if (!currentNode) return;
       const output = detail.output;
       updateNodeData({
         schema: detail.schema,
-        projectId: detail.projectId || nodeData.projectId,
         outputVideoUrl: output?.videoPath,
         outputRevision: output?.revision,
         thumbnailUrl: output?.thumbnailPath,
@@ -195,11 +206,10 @@ const VideoCompositionNode: React.FC<NodeProps> = ({ id, data, selected }) => {
       // ─── 画布模式：自动创建下游视频素材节点并连线 ───
       if (output?.videoPath && detail.createDownstreamNode) {
         const store = useCanvasStore.getState();
-        const currentNode = store.nodes.find((n) => n.id === id);
         const plan = planClipExportDownstream({
           sourceNodeId: id,
-          sourcePosition: currentNode?.position || { x: 0, y: 0 },
-          sourceLabel: nodeData.title || nodeData.label || t('node.type.video_composition'),
+          sourcePosition: currentNode.position,
+          sourceLabel: asString(currentNode.data.title) || asString(currentNode.data.label) || t('node.type.video_composition'),
           output,
           currentNodes: store.nodes,
           currentEdges: store.edges,
@@ -219,11 +229,9 @@ const VideoCompositionNode: React.FC<NodeProps> = ({ id, data, selected }) => {
 
     const onProgress = (event: Event) => {
       const detail = event instanceof CustomEvent ? event.detail : undefined;
-      if (!isProgressClipEditorPayload(detail)) return;
-      if (detail.nodeId && detail.nodeId !== id) return;
-      const nextStatus = (detail.status as VideoCompositionStatus | undefined) ?? 'rendering';
+      if (!isProgressClipEditorPayload(detail) || !readBoundNode(detail)) return;
       updateNodeData({
-        status: nextStatus,
+        status: detail.status ?? 'rendering',
         renderProgress: detail.renderProgress,
       });
     };
@@ -231,9 +239,9 @@ const VideoCompositionNode: React.FC<NodeProps> = ({ id, data, selected }) => {
     const onClose = (event: Event) => {
       const detail = event instanceof CustomEvent ? event.detail : undefined;
       if (!isCloseClipEditorPayload(detail)) return;
-      if (detail.nodeId && detail.nodeId !== id) return;
-      if (nodeData.status === 'editing') {
-        updateNodeData({ status: hasOutput ? 'completed' : 'idle' });
+      const node = readBoundNode(detail);
+      if (node?.data.status === 'editing') {
+        updateNodeData({ status: node.data.outputVideoUrl ? 'completed' : 'idle' });
       }
     };
 
@@ -245,7 +253,7 @@ const VideoCompositionNode: React.FC<NodeProps> = ({ id, data, selected }) => {
       window.removeEventListener(OMNIMUX_CLIP_PROGRESS, onProgress);
       window.removeEventListener(OMNIMUX_CLIP_CLOSE, onClose);
     };
-  }, [applyCanvasInputMutation, hasOutput, id, nodeData.projectId, nodeData.status, t, updateNodeData]);
+  }, [applyCanvasInputMutation, id, t, updateNodeData, workspaceId]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -292,13 +300,17 @@ const VideoCompositionNode: React.FC<NodeProps> = ({ id, data, selected }) => {
 
   const openEditor = useCallback(() => {
     if (typeof window === 'undefined') return;
-    const projectId = nodeData.projectId || `clip_${id.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 80)}`;
+    const node = useCanvasStore.getState().nodes.find((candidate) => candidate.id === id);
+    if (node?.type !== 'video_composition') return;
+    const data = node.data as VideoCompositionNodeData;
+    const projectId = data.projectId ?? newCanvasClipProjectId();
+    const binding = { workspaceId, nodeId: id, projectId };
+    if (!isCanvasClipBinding(binding)) return;
     const payload: OpenClipEditorPayload = {
+      ...binding,
       source: 'canvas',
-      nodeId: id,
       nodeTitle: title,
-      projectId,
-      draftSchema: nodeData.schema,
+      draftSchema: data.schema,
       upstreamInputs: collectUpstreamInputs(id),
     };
     updateNodeData({ status: 'editing', projectId });
@@ -308,7 +320,7 @@ const VideoCompositionNode: React.FC<NodeProps> = ({ id, data, selected }) => {
         toast.warning(t('clip.needPlugin'));
       }
     }, 400);
-  }, [id, nodeData.projectId, nodeData.schema, t, title, updateNodeData]);
+  }, [id, t, title, updateNodeData, workspaceId]);
 
   const { addToConversation } = useAddToConversation();
 

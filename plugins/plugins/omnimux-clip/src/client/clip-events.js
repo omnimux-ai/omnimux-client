@@ -45,6 +45,15 @@ export function assertJsonPayload(payload) {
   return payload
 }
 
+/** Keep in sync with omnimux-workflow/src/canvas/bridge/clipEvents.ts. */
+export function isCanvasClipBinding(payload) {
+  if (!isPlainObject(payload)) return false
+  const { workspaceId, nodeId, projectId } = payload
+  return typeof workspaceId === 'string' && /^ws_[A-Za-z0-9_-]{1,128}$/.test(workspaceId)
+    && typeof nodeId === 'string' && /^[^\s/\\\x00-\x1f\x7f]{1,256}$/.test(nodeId)
+    && typeof projectId === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(projectId)
+}
+
 /**
  * @param {unknown} payload
  */
@@ -52,21 +61,18 @@ export function isOpenClipEditorPayload(payload) {
   if (!isPlainObject(payload)) return false
   if (!OPEN_SOURCES.has(payload.source)) return false
   if (payload.nodeId != null && typeof payload.nodeId !== 'string') return false
-  if (payload.source === 'canvas' && !payload.nodeId) return false
-  return true
+  return payload.source !== 'canvas' || isCanvasClipBinding(payload)
 }
 
 /**
  * @param {unknown} payload
  */
 export function isSaveClipEditorPayload(payload) {
-  if (!isPlainObject(payload)) return false
-  if (payload.nodeId != null && typeof payload.nodeId !== 'string') return false
-  if (payload.projectId != null && typeof payload.projectId !== 'string') return false
+  if (!isCanvasClipBinding(payload)) return false
   if (payload.schema != null && !isPlainObject(payload.schema)) return false
   if (payload.output != null) {
     if (!isPlainObject(payload.output)) return false
-    if (typeof payload.output.videoPath !== 'string') return false
+    if (typeof payload.output.videoPath !== 'string' || !payload.output.videoPath.trim()) return false
   }
   return true
 }
@@ -74,20 +80,15 @@ export function isSaveClipEditorPayload(payload) {
 /**
  * @param {unknown} payload
  */
-export function isCloseClipEditorPayload(payload) {
-  if (!isPlainObject(payload)) return false
-  if (payload.nodeId != null && typeof payload.nodeId !== 'string') return false
-  return true
-}
+export const isCloseClipEditorPayload = isCanvasClipBinding
 
 /**
  * @param {unknown} payload
  */
 export function isProgressClipEditorPayload(payload) {
-  if (!isPlainObject(payload)) return false
-  if (payload.nodeId != null && typeof payload.nodeId !== 'string') return false
-  if (payload.status != null && typeof payload.status !== 'string') return false
-  if (payload.renderProgress != null && typeof payload.renderProgress !== 'number') return false
+  if (!isCanvasClipBinding(payload)) return false
+  if (payload.status !== undefined && !['idle', 'editing', 'rendering', 'completed', 'error'].includes(payload.status)) return false
+  if (payload.renderProgress !== undefined && !Number.isFinite(payload.renderProgress)) return false
   return true
 }
 

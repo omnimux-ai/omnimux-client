@@ -228,8 +228,7 @@ export function createClipDispatcher(deps) {
       }
 
       if (method === 'GET' && (path === `${CLIP_API_PREFIX}/projects` || path === '/projects')) {
-        const items = store.list()
-        return { status: 200, body: { projects: items } }
+        return { status: 200, body: store.list() }
       }
 
       const projectMatch = path.match(/^(?:\/omnimux-clip\/api)?\/projects\/([^/]+)(?:\/(save-export))?$/)

@@ -45,6 +45,29 @@ describe('EventsClient', () => {
     assert.equal(ackPayload.tabId, 'omnimux-assets:library')
   })
 
+  it('rechecks the Portal before applying an in-flight automatic clip switch', async () => {
+    const opened = []
+    const acks = []
+    const clip = { mode: 'canvas', workspaceId: 'ws_test', nodeId: 'node_test', projectId: 'clip_node_test' }
+    const client = createEventsClient({
+      fetch: async (_url, { body }) => { acks.push(JSON.parse(body)); return { ok: true } },
+      getWorkbench: () => ({
+        open: async ({ tabId }) => { opened.push(tabId); return true },
+        getUiContext: () => ({
+          surface: { tabId: 'omnimux-workflow:canvas', panelOpen: true },
+          view: { kind: 'canvas', extra: { workspaceId: 'ws_test', clip } },
+        }),
+      }),
+    })
+    const payload = { requestId: 'auto_follow', auto: true, tabId: 'omnimux-clip:studio' }
+    await client.notifyMessageForTests({ type: 'omnimux:workbench:rpc', payload })
+    assert.deepEqual(opened, [])
+    assert.deepEqual([acks[0].applied, acks[0].code], [false, 'canvas-clip-active'])
+    await client.notifyMessageForTests({ type: 'omnimux:workbench:rpc', payload: { ...payload, requestId: 'explicit_open', auto: false } })
+    assert.deepEqual(opened, ['omnimux-clip:studio'])
+    assert.equal(acks[1].applied, true)
+  })
+
   it('notifies subscribers on specific and wildcard events', () => {
     const client = createEventsClient()
     const received = []

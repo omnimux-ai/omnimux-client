@@ -5,6 +5,8 @@
  *
  * @param {() => { claim: (id: string) => void, release: (id: string) => void, PRODUCT_STAGE_EVENT: string, readBox: () => { top: number, left: number, width: number, height: number } }} getStage
  */
+import { isCanvasClipBinding } from './clip-events.js'
+
 const PRODUCT_STAGE_EVENT = 'dsh-product-stage'
 const STAGE_ID = 'omnimux-clip'
 const EMPTY_BOX = Object.freeze({ top: 0, left: 0, width: 0, height: 0 })
@@ -24,10 +26,13 @@ export function createStageStore(getStage) {
   // claim from localStorage — that chrome hides `[data-dsh-panel-host]`.
   let open = false
 
-  /** @type {null | { source: 'canvas' | 'sidebar' | 'agent', nodeId?: string, nodeTitle?: string, projectId?: string, draftSchema?: unknown, upstreamInputs?: unknown }} */
+  /** @type {null | { source: 'canvas' | 'sidebar' | 'agent', workspaceId?: string, nodeId?: string, nodeTitle?: string, projectId?: string, draftSchema?: unknown, upstreamInputs?: unknown }} */
   let activeSession = null
 
   const listeners = new Set()
+  // Legacy asynchronous progress callbacks carry only nodeId. Once a node id
+  // has referred to two bindings, those callbacks cannot identify their origin.
+  const seenBindings = new Map()
 
   function emit() {
     for (const listener of listeners) listener()
@@ -84,6 +89,14 @@ export function createStageStore(getStage) {
   const store = {
     getSnapshot: () => open,
     getSessionSnapshot: () => activeSession,
+    resolveCanvasReply(payload, { immediate = false } = {}) {
+      const session = activeSession
+      if (!open || session?.source !== 'canvas' || payload?.nodeId !== session.nodeId) return null
+      if (payload.workspaceId !== undefined && payload.workspaceId !== session.workspaceId) return null
+      if (payload.projectId !== undefined && payload.projectId !== session.projectId) return null
+      if (!immediate && !isCanvasClipBinding(payload) && seenBindings.get(session.nodeId) === null) return null
+      return { ...payload, workspaceId: session.workspaceId, projectId: session.projectId }
+    },
     readBox,
     /**
      * @param {() => void} listener
@@ -123,16 +136,22 @@ export function createStageStore(getStage) {
     },
     /**
      * Open clip editor in canvas mode with node session.
-     * @param {{ nodeId?: string, nodeTitle?: string, projectId?: string, draftSchema?: unknown, upstreamInputs?: unknown }} payload
+     * @param {{ workspaceId: string, nodeId: string, nodeTitle?: string, projectId: string, draftSchema?: unknown, upstreamInputs?: unknown }} payload
      */
     openFromCanvas(payload) {
+      if (!isCanvasClipBinding(payload)) return
+      const { workspaceId, nodeId, projectId, nodeTitle, draftSchema, upstreamInputs } = payload
+      const bindingKey = `${workspaceId}/${projectId}`
+      const previous = seenBindings.get(nodeId)
+      seenBindings.set(nodeId, previous === undefined || previous === bindingKey ? bindingKey : null)
       activeSession = {
         source: 'canvas',
-        nodeId: payload?.nodeId,
-        nodeTitle: payload?.nodeTitle,
-        projectId: payload?.projectId,
-        draftSchema: payload?.draftSchema,
-        upstreamInputs: payload?.upstreamInputs,
+        workspaceId,
+        nodeId,
+        projectId,
+        nodeTitle,
+        draftSchema,
+        upstreamInputs,
       }
       open = true
       emit()
@@ -170,6 +189,7 @@ export function createStageStore(getStage) {
         window.removeEventListener(PRODUCT_STAGE_EVENT, handleStageEvent)
       }
       listeners.clear()
+      seenBindings.clear()
       activeSession = null
       open = false
       if (globalActiveStageStore === store) {
