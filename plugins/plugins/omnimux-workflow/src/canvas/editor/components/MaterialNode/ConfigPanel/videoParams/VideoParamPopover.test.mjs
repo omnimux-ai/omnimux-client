@@ -108,13 +108,9 @@ test('CfgPopoverShell 注册并注销 resize / 捕获 scroll 监听', () => {
   assert.match(cfgShellSrc, /passive:\s*true/);
 });
 
-test('CfgPopoverShell Escape 与外部点击（捕获阶段 mousedown）关闭', () => {
-  assert.match(cfgShellSrc, /addEventListener\('mousedown'/);
-  assert.match(cfgShellSrc, /addEventListener\('keydown'/);
-  assert.match(cfgShellSrc, /e\.key === 'Escape'/);
+test('CfgPopoverShell Escape 与外部点击经由统一 useCanvasDismissLayer 逐层关闭', () => {
+  assert.match(cfgShellSrc, /useCanvasDismissLayer\(/);
   assert.match(cfgShellSrc, /onClose\(\)/);
-  assert.match(cfgShellSrc, /removeEventListener\('mousedown'/);
-  assert.match(cfgShellSrc, /removeEventListener\('keydown'/);
   // 目标在面板或触发器内时不关闭
   assert.match(cfgShellSrc, /panelRef\.current\?\.contains/);
   assert.match(cfgShellSrc, /triggerRef\.current\?\.contains/);

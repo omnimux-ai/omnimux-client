@@ -22,6 +22,7 @@ import {
   type ProjectPageDto,
 } from '../../bridge/apiClient';
 import { stopToolbarNativeEvent } from './toolbarPointerGuard';
+import { useCanvasDismissLayer } from '../utils/canvasDismissLayer.ts';
 
 export interface CanvasPageHeaderProps {
   workspaceId: string | null;
@@ -74,25 +75,18 @@ export const CanvasPageHeader: React.FC<CanvasPageHeaderProps> = memo(({
     }
   }, [editingPageId]);
 
-  // 点击外部自动关闭
-  useEffect(() => {
-    if (!isOpen) return undefined;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (
-        popoverRef.current &&
-        !popoverRef.current.contains(e.target as Node) &&
-        capsuleRef.current &&
-        !capsuleRef.current.contains(e.target as Node)
-      ) {
-        setIsOpen(false);
-        setEditingPageId(null);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside, true);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside, true);
-    };
-  }, [isOpen]);
+  // 点击外部 / Escape 自动关闭（编辑页名时 Escape 先取消重命名，不穿透到画布）
+  useCanvasDismissLayer({
+    open: isOpen,
+    containsTarget: (target) => Boolean(
+      popoverRef.current?.contains(target) || capsuleRef.current?.contains(target),
+    ),
+    shouldHandleEscape: () => editingPageId === null,
+    onDismiss: () => {
+      setIsOpen(false);
+      setEditingPageId(null);
+    },
+  });
 
   const activePage = pages.find((p) => p.id === activePageId) || pages[0];
   const displayTitle = activePage?.title || '创作页 1';

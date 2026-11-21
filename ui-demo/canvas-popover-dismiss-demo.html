@@ -1,0 +1,800 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>画布浮层逐层关闭 · 空白点击与 Escape 交互前后对比演示</title>
+<style>
+  :root {
+    --dsw-alias-bg-base: #eef0f3;
+    --dsw-alias-bg-canvas: #f4f5f8;
+    --dsw-alias-bg-primary: #ffffff;
+    --dsw-alias-bg-secondary: #f6f7f9;
+    --dsw-alias-bg-elevated: #ffffff;
+    --dsw-alias-bg-control-hover: #f1f2f4;
+    --dsw-alias-border-l1: #e3e5e9;
+    --dsw-alias-border-l2: #d3d7de;
+    --dsw-alias-border-solid: #c4c9d2;
+    --dsw-alias-label-primary: #1f2329;
+    --dsw-alias-label-secondary: #5c6370;
+    --dsw-alias-label-tertiary: #8c93a0;
+    --dsw-alias-accent: #3b82f6;
+    --dsw-alias-success: #2ea121;
+    --dsw-alias-bg-success-subtle: #e9f8e6;
+    --dsw-alias-danger: #f54a45;
+    --dsw-alias-bg-danger-subtle: #ffeceb;
+    --dsw-dot-grid: #cfd4de;
+    --dsw-shadow-pop: 0 14px 40px rgba(15, 23, 42, 0.14), 0 2px 6px rgba(15, 23, 42, 0.06);
+    --dsw-shadow-card: 0 8px 24px rgba(15, 23, 42, 0.08);
+    --dsw-group-fill: rgba(59, 130, 246, 0.06);
+  }
+  body[data-theme="dark"] {
+    --dsw-alias-bg-base: #111316;
+    --dsw-alias-bg-canvas: #14161a;
+    --dsw-alias-bg-primary: #1c1f24;
+    --dsw-alias-bg-secondary: #181a1f;
+    --dsw-alias-bg-elevated: #22252b;
+    --dsw-alias-bg-control-hover: #2a2e36;
+    --dsw-alias-border-l1: #2c3038;
+    --dsw-alias-border-l2: #3a3f4a;
+    --dsw-alias-border-solid: #49505e;
+    --dsw-alias-label-primary: #edeff3;
+    --dsw-alias-label-secondary: #a8aeb8;
+    --dsw-alias-label-tertiary: #757c88;
+    --dsw-alias-accent: #60a5fa;
+    --dsw-alias-success: #4ec93f;
+    --dsw-alias-bg-success-subtle: #1d3520;
+    --dsw-alias-danger: #ff6b66;
+    --dsw-alias-bg-danger-subtle: #3d2222;
+    --dsw-dot-grid: #2b303a;
+    --dsw-shadow-pop: 0 20px 52px rgba(0, 0, 0, 0.52), 0 2px 10px rgba(0, 0, 0, 0.34);
+    --dsw-shadow-card: 0 10px 28px rgba(0, 0, 0, 0.42);
+    --dsw-group-fill: rgba(96, 165, 250, 0.07);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    background: var(--dsw-alias-bg-base);
+    color: var(--dsw-alias-label-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, textarea, select { font: inherit; color: inherit; }
+
+  .topbar {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 12px 20px; background: var(--dsw-alias-bg-primary);
+    border-bottom: 1px solid var(--dsw-alias-border-l1);
+  }
+  .topbar h1 { margin: 0; font-size: 15px; font-weight: 680; }
+  .topbar .sub { color: var(--dsw-alias-label-secondary); font-size: 12px; margin-top: 2px; }
+  .topbar .spacer { flex: 1; }
+  .toggle-group {
+    display: inline-flex; padding: 3px; gap: 2px;
+    border: 1px solid var(--dsw-alias-border-l1); border-radius: 999px;
+    background: var(--dsw-alias-bg-secondary);
+  }
+  .toggle-group button {
+    border: 0; background: transparent; color: var(--dsw-alias-label-secondary);
+    font-size: 12px; padding: 5px 11px; border-radius: 999px; cursor: pointer;
+  }
+  .toggle-group button.active {
+    color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-primary);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14); font-weight: 600;
+  }
+
+  .page { max-width: 1320px; margin: 0 auto; padding: 18px 20px 44px; }
+  .guide {
+    display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px;
+    font-size: 12px; color: var(--dsw-alias-label-secondary);
+  }
+  .guide-chip {
+    padding: 5px 10px; border-radius: 8px;
+    background: var(--dsw-alias-bg-primary); border: 1px solid var(--dsw-alias-border-l1);
+  }
+  .guide-chip strong { color: var(--dsw-alias-label-primary); }
+
+  .compare {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px; align-items: start;
+  }
+  @media (max-width: 960px) {
+    .compare { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  .panel {
+    background: var(--dsw-alias-bg-primary);
+    border: 1px solid var(--dsw-alias-border-l1);
+    border-radius: 16px; overflow: hidden;
+  }
+  .panel-head {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 11px 14px; border-bottom: 1px solid var(--dsw-alias-border-l1);
+  }
+  .badge {
+    font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px;
+  }
+  .panel.before .badge { color: var(--dsw-alias-danger); background: var(--dsw-alias-bg-danger-subtle); }
+  .panel.after .badge { color: var(--dsw-alias-success); background: var(--dsw-alias-bg-success-subtle); }
+  .panel-head .title { font-size: 13px; font-weight: 650; }
+  .panel-head .reset-btn {
+    margin-left: auto; border: 1px solid var(--dsw-alias-border-l1);
+    background: var(--dsw-alias-bg-secondary); border-radius: 8px;
+    padding: 4px 10px; font-size: 11px; cursor: pointer;
+  }
+  .panel-head .reset-btn:hover { background: var(--dsw-alias-bg-control-hover); }
+
+  .canvas-stage {
+    position: relative; height: 500px; overflow: hidden; user-select: none;
+    background-color: var(--dsw-alias-bg-canvas);
+    background-image: radial-gradient(circle, var(--dsw-dot-grid) 1.4px, transparent 1.4px);
+    background-size: 28px 28px;
+  }
+  .zoom-pill {
+    position: absolute; top: 10px; right: 10px; z-index: 5;
+    padding: 4px 9px; border-radius: 999px; font-size: 11px; font-weight: 600;
+    background: var(--dsw-alias-bg-primary); border: 1px solid var(--dsw-alias-border-l1);
+    color: var(--dsw-alias-label-secondary); pointer-events: none;
+  }
+  .zoom-pill.warn { color: var(--dsw-alias-danger); border-color: var(--dsw-alias-danger); }
+
+  .canvas-world {
+    position: absolute; inset: 0; transform-origin: center center;
+    transition: transform 0.16s ease;
+  }
+  .react-flow__pane {
+    position: absolute; inset: 0;
+  }
+
+  .wf-group-node {
+    position: absolute; left: 16px; top: 18px; width: calc(100% - 170px); max-width: 430px; height: 420px;
+    border-radius: 14px; border: 1.5px dashed var(--dsw-alias-border-solid);
+    background: var(--dsw-group-fill);
+  }
+  .wf-group-node.selected {
+    border-style: solid; border-color: var(--dsw-alias-accent);
+  }
+  .wf-group-tag {
+    position: absolute; top: 8px; left: 10px; font-size: 11px; font-weight: 600;
+    color: var(--dsw-alias-label-secondary); pointer-events: none;
+  }
+
+  .node-card {
+    position: absolute; border-radius: 12px;
+    background: var(--dsw-alias-bg-primary);
+    border: 1.5px solid var(--dsw-alias-border-l2);
+    box-shadow: var(--dsw-shadow-card);
+    cursor: pointer; transition: border-color 0.14s ease, box-shadow 0.14s ease;
+  }
+  .node-card.selected {
+    border-color: var(--dsw-alias-accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-accent) 26%, transparent), var(--dsw-shadow-card);
+  }
+  .node-a { left: 38px; top: 44px; width: 224px; height: 114px; padding: 11px 12px; }
+  .node-b { right: 14px; top: 68px; width: 122px; height: 88px; padding: 10px; }
+  @media (max-width: 520px) {
+    .wf-group-node { width: calc(100% - 32px); }
+    .node-a { left: 26px; width: 204px; }
+    .node-b { display: none; }
+  }
+  .node-label { font-size: 12px; font-weight: 650; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+  .node-dot { width: 8px; height: 8px; border-radius: 99px; background: #f97316; }
+  .node-dot.img { background: #a855f7; }
+  .node-preview {
+    height: 66px; border-radius: 8px;
+    background: linear-gradient(135deg, rgba(59,130,246,0.18), rgba(168,85,247,0.18));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; color: var(--dsw-alias-label-secondary);
+  }
+  .node-b .node-preview { height: 42px; font-size: 10px; }
+
+  .config-panel {
+    position: absolute; left: 24px; top: 236px; width: min(392px, calc(100% - 48px));
+    border-radius: 14px; background: var(--dsw-alias-bg-elevated);
+    border: 1px solid var(--dsw-alias-border-l2); box-shadow: var(--dsw-shadow-pop);
+    padding: 10px 12px; z-index: 12;
+  }
+  .config-panel.hidden { display: none; }
+  .prompt-box {
+    width: 100%; min-height: 46px; resize: none; border: 0; outline: 0;
+    background: transparent; font-size: 12.5px; line-height: 1.5;
+    color: var(--dsw-alias-label-primary); padding: 2px 0 8px;
+  }
+  .prompt-box:focus {
+    background: color-mix(in srgb, var(--dsw-alias-accent) 6%, transparent);
+    border-radius: 6px; padding: 4px 6px;
+  }
+  .config-bar {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    padding-top: 8px; border-top: 1px solid var(--dsw-alias-border-l1);
+  }
+  .capsule-btn {
+    display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px;
+    border-radius: 999px; border: 1px solid var(--dsw-alias-border-l2);
+    background: var(--dsw-alias-bg-secondary); font-size: 12px; cursor: pointer;
+    white-space: nowrap;
+  }
+  .capsule-btn:hover { background: var(--dsw-alias-bg-control-hover); }
+  .capsule-btn[aria-expanded="true"] {
+    border-color: var(--dsw-alias-accent);
+    background: color-mix(in srgb, var(--dsw-alias-accent) 10%, var(--dsw-alias-bg-secondary));
+  }
+  .brand-m {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 16px; height: 16px; border-radius: 4px; background: #10b981;
+    color: #fff; font-size: 10px; font-weight: 700;
+  }
+  .submit-btn {
+    margin-left: auto; width: 30px; height: 30px; border-radius: 999px;
+    border: 1px solid var(--dsw-alias-border-solid);
+    background: var(--dsw-alias-bg-control-hover); cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; font-weight: 700;
+  }
+
+  /* 3-column Model Cascade Popover (anchors above bottom trigger bar, leaving triggers visible & clickable) */
+  .cascade-popover {
+    position: absolute; left: 24px; bottom: 206px; z-index: 40;
+    display: flex; gap: 8px; max-width: calc(100% - 36px); overflow-x: auto;
+  }
+  .cascade-popover.hidden { display: none; }
+  .cascade-col {
+    min-width: 112px; border-radius: 12px; padding: 8px;
+    background: var(--dsw-alias-bg-elevated);
+    border: 1px solid var(--dsw-alias-border-l2); box-shadow: var(--dsw-shadow-pop);
+  }
+  .cascade-col.wide { min-width: 176px; }
+  .cascade-title { font-size: 11px; color: var(--dsw-alias-label-tertiary); margin-bottom: 6px; padding: 0 4px; }
+  .cascade-item {
+    display: flex; align-items: center; justify-content: space-between; gap: 6px;
+    width: 100%; border: 1px solid transparent; background: transparent;
+    border-radius: 8px; padding: 6px 8px; font-size: 12px; text-align: left; cursor: pointer;
+  }
+  .cascade-item:hover { background: var(--dsw-alias-bg-control-hover); }
+  .cascade-item.active {
+    border-color: var(--dsw-alias-border-solid);
+    background: var(--dsw-alias-bg-control-hover); font-weight: 600;
+  }
+  .check { color: var(--dsw-alias-success); font-weight: 700; }
+
+  /* Video Param Popover */
+  .param-popover {
+    position: absolute; left: 128px; bottom: 206px; z-index: 40;
+    width: min(260px, calc(100% - 40px)); border-radius: 12px; padding: 12px;
+    background: var(--dsw-alias-bg-elevated);
+    border: 1px solid var(--dsw-alias-border-l2); box-shadow: var(--dsw-shadow-pop);
+  }
+  .param-popover.hidden { display: none; }
+  .param-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; font-size: 12px; }
+  .param-row:last-child { margin-bottom: 0; }
+  .seg-btns { display: inline-flex; gap: 4px; }
+  .seg-btns button {
+    border: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-secondary);
+    border-radius: 6px; padding: 3px 8px; font-size: 11px; cursor: pointer;
+  }
+  .seg-btns button.active {
+    border-color: var(--dsw-alias-accent); color: var(--dsw-alias-accent); font-weight: 600;
+  }
+
+  .nested-select-wrap { position: relative; }
+  .nested-dropdown {
+    position: absolute; right: 0; top: calc(100% + 4px); z-index: 50;
+    min-width: 120px; border-radius: 8px; padding: 4px;
+    background: var(--dsw-alias-bg-elevated);
+    border: 1px solid var(--dsw-alias-border-l2); box-shadow: var(--dsw-shadow-pop);
+  }
+  .nested-dropdown.hidden { display: none; }
+
+  /* Status bar outside canvas for reviewer visibility */
+  .status-strip {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 10px 14px; border-top: 1px solid var(--dsw-alias-border-l1);
+    background: var(--dsw-alias-bg-secondary); font-size: 12px;
+  }
+  .pill {
+    padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600;
+    background: var(--dsw-alias-bg-primary); border: 1px solid var(--dsw-alias-border-l1);
+  }
+  .pill.ok { color: var(--dsw-alias-success); border-color: color-mix(in srgb, var(--dsw-alias-success) 45%, transparent); }
+  .pill.bad { color: var(--dsw-alias-danger); border-color: color-mix(in srgb, var(--dsw-alias-danger) 45%, transparent); }
+  .trace-text { color: var(--dsw-alias-label-secondary); flex: 1; min-width: 180px; }
+</style>
+</head>
+<body data-theme="dark">
+  <header class="topbar">
+    <div>
+      <h1>画布浮层逐层关闭 · 交互前后对照演示</h1>
+      <div class="sub">对比「模型面板 / 参数面板 / 嵌套下拉」打开时点击空白画布、编组底板、快点两下与按 Escape 的行为</div>
+    </div>
+    <div class="spacer"></div>
+    <div class="toggle-group" role="group" aria-label="指针模式">
+      <button type="button" class="active" data-mode="select">框选模式 (Select)</button>
+      <button type="button" data-mode="pan">抓手模式 (Pan)</button>
+    </div>
+    <div class="toggle-group" role="group" aria-label="主题切换">
+      <button type="button" data-theme-btn="light">亮色</button>
+      <button type="button" class="active" data-theme-btn="dark">暗色</button>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="guide">
+      <div class="guide-chip"><strong>1. 点画布空白处</strong>：改前立刻隐藏输入框；改后只关浮层、保留输入框，再点一次才取消选中</div>
+      <div class="guide-chip"><strong>2. 快点空白两下</strong>：改后第 1 下关浮层、第 2 下取消选中，且不误触双击放大</div>
+      <div class="guide-chip"><strong>3. 点提示词 / 参数胶囊 / 节点 B</strong>：改后一次直达，无全屏遮罩双点税</div>
+      <div class="guide-chip"><strong>4. 按 Escape</strong>：改后按嵌套栈严格逐层退栈（子下拉 → 参数面板 → 节点选中）</div>
+    </div>
+
+    <section class="compare">
+      <!-- BEFORE -->
+      <article class="panel before" id="sim-before">
+        <div class="panel-head">
+          <span class="badge">改前</span>
+          <span class="title">点击空白 / Escape 透传到画布，输入框直接消失</span>
+          <button type="button" class="reset-btn" data-reset>重置打开态</button>
+        </div>
+        <div class="canvas-stage" data-stage>
+          <div class="zoom-pill" data-zoom>缩放 100%</div>
+          <div class="canvas-world" data-world>
+            <div class="react-flow__pane" data-pane></div>
+            <div class="wf-group-node" data-group>
+              <span class="wf-group-tag">编组空白底板（点此处同样测试）</span>
+            </div>
+            <div class="node-card node-a selected" data-node="A">
+              <div class="node-label"><span class="node-dot"></span>视频节点 A</div>
+              <div class="node-preview">已选中 · 底部挂载输入框面板</div>
+            </div>
+            <div class="node-card node-b" data-node="B">
+              <div class="node-label"><span class="node-dot img"></span>图片 B</div>
+              <div class="node-preview">点此切选</div>
+            </div>
+
+            <div class="config-panel" data-config-panel>
+              <textarea class="prompt-box" data-prompt placeholder="输入提示词…">特写镜头缓缓推进，展示产品光泽质感</textarea>
+              <div class="config-bar">
+                <button type="button" class="capsule-btn" data-model-trigger aria-expanded="true">
+                  <span class="brand-m">M</span>
+                  <span data-model-label>minimax-h3-video</span>
+                  <span>▾</span>
+                </button>
+                <button type="button" class="capsule-btn" data-param-trigger aria-expanded="false">
+                  <span data-param-label>首尾帧 · 768P · 5s</span>
+                  <span>▾</span>
+                </button>
+                <button type="button" class="submit-btn" data-submit title="立即生成">↑</button>
+              </div>
+            </div>
+
+            <div class="cascade-popover" data-model-popover role="menu" aria-label="选择模型">
+              <div class="cascade-col">
+                <div class="cascade-title">品牌</div>
+                <button type="button" class="cascade-item active" data-pick-model="minimax-h3-video"><span>MiniMax</span><span class="check">✓</span></button>
+                <button type="button" class="cascade-item" data-pick-model="seedance-2-0"><span>Seedance</span></button>
+                <button type="button" class="cascade-item" data-pick-model="wan-2-6"><span>Wan</span></button>
+              </div>
+              <div class="cascade-col wide">
+                <div class="cascade-title">渠道</div>
+                <button type="button" class="cascade-item active" data-pick-channel="自动"><span>自动（推荐）</span><span class="check">✓</span></button>
+                <button type="button" class="cascade-item" data-pick-channel="标准版"><span>标准版</span></button>
+                <button type="button" class="cascade-item" data-pick-channel="H3 文生创意"><span>H3 文生创意</span></button>
+              </div>
+            </div>
+
+            <div class="param-popover hidden" data-param-popover role="dialog" aria-label="视频参数">
+              <div class="param-row">
+                <span>清晰度</span>
+                <div class="seg-btns">
+                  <button type="button" data-res="480P">480P</button>
+                  <button type="button" class="active" data-res="768P">768P</button>
+                </div>
+              </div>
+              <div class="param-row">
+                <span>帧率（嵌套下拉）</span>
+                <div class="nested-select-wrap">
+                  <button type="button" class="capsule-btn" style="height:26px;font-size:11px" data-fps-trigger>24 fps ▾</button>
+                  <div class="nested-dropdown hidden" data-fps-menu role="listbox">
+                    <button type="button" class="cascade-item active" data-fps="24 fps">24 fps</button>
+                    <button type="button" class="cascade-item" data-fps="30 fps">30 fps</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="status-strip">
+          <span class="pill ok" data-state-panel>输入框：可见</span>
+          <span class="pill" data-state-layer>浮层：模型面板</span>
+          <span class="trace-text" data-trace>点击空白画布或按 Escape 体验改前问题</span>
+        </div>
+      </article>
+
+      <!-- AFTER -->
+      <article class="panel after" id="sim-after">
+        <div class="panel-head">
+          <span class="badge">改后</span>
+          <span class="title">统一 Dismiss Stack：先关浮层保输入框，非空白一次直达</span>
+          <button type="button" class="reset-btn" data-reset>重置打开态</button>
+        </div>
+        <div class="canvas-stage" data-stage>
+          <div class="zoom-pill" data-zoom>缩放 100%</div>
+          <div class="canvas-world" data-world>
+            <div class="react-flow__pane" data-pane></div>
+            <div class="wf-group-node" data-group>
+              <span class="wf-group-tag">编组空白底板（点此处同样保输入框）</span>
+            </div>
+            <div class="node-card node-a selected" data-node="A">
+              <div class="node-label"><span class="node-dot"></span>视频节点 A</div>
+              <div class="node-preview">已选中 · 底部挂载输入框面板</div>
+            </div>
+            <div class="node-card node-b" data-node="B">
+              <div class="node-label"><span class="node-dot img"></span>图片 B</div>
+              <div class="node-preview">点此一次切选</div>
+            </div>
+
+            <div class="config-panel" data-config-panel>
+              <textarea class="prompt-box" data-prompt placeholder="输入提示词…">特写镜头缓缓推进，展示产品光泽质感</textarea>
+              <div class="config-bar">
+                <button type="button" class="capsule-btn" data-model-trigger aria-expanded="true">
+                  <span class="brand-m">M</span>
+                  <span data-model-label>minimax-h3-video</span>
+                  <span>▾</span>
+                </button>
+                <button type="button" class="capsule-btn" data-param-trigger aria-expanded="false">
+                  <span data-param-label>首尾帧 · 768P · 5s</span>
+                  <span>▾</span>
+                </button>
+                <button type="button" class="submit-btn" data-submit title="立即生成">↑</button>
+              </div>
+            </div>
+
+            <div class="cascade-popover" data-model-popover role="menu" aria-label="选择模型">
+              <div class="cascade-col">
+                <div class="cascade-title">品牌</div>
+                <button type="button" class="cascade-item active" data-pick-model="minimax-h3-video"><span>MiniMax</span><span class="check">✓</span></button>
+                <button type="button" class="cascade-item" data-pick-model="seedance-2-0"><span>Seedance</span></button>
+                <button type="button" class="cascade-item" data-pick-model="wan-2-6"><span>Wan</span></button>
+              </div>
+              <div class="cascade-col wide">
+                <div class="cascade-title">渠道</div>
+                <button type="button" class="cascade-item active" data-pick-channel="自动"><span>自动（推荐）</span><span class="check">✓</span></button>
+                <button type="button" class="cascade-item" data-pick-channel="标准版"><span>标准版</span></button>
+                <button type="button" class="cascade-item" data-pick-channel="H3 文生创意"><span>H3 文生创意</span></button>
+              </div>
+            </div>
+
+            <div class="param-popover hidden" data-param-popover role="dialog" aria-label="视频参数">
+              <div class="param-row">
+                <span>清晰度</span>
+                <div class="seg-btns">
+                  <button type="button" data-res="480P">480P</button>
+                  <button type="button" class="active" data-res="768P">768P</button>
+                </div>
+              </div>
+              <div class="param-row">
+                <span>帧率（嵌套下拉）</span>
+                <div class="nested-select-wrap">
+                  <button type="button" class="capsule-btn" style="height:26px;font-size:11px" data-fps-trigger>24 fps ▾</button>
+                  <div class="nested-dropdown hidden" data-fps-menu role="listbox">
+                    <button type="button" class="cascade-item active" data-fps="24 fps">24 fps</button>
+                    <button type="button" class="cascade-item" data-fps="30 fps">30 fps</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="status-strip">
+          <span class="pill ok" data-state-panel>输入框：可见</span>
+          <span class="pill" data-state-layer>浮层：模型面板</span>
+          <span class="trace-text" data-trace>点击空白画布仅关浮层；再点一次才取消选中</span>
+        </div>
+      </article>
+    </section>
+  </main>
+
+<script>
+  let pointerMode = 'select';
+  let activeSim = null;
+
+  document.querySelectorAll('[data-theme-btn]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.body.dataset.theme = btn.dataset.themeBtn;
+      document.querySelectorAll('[data-theme-btn]').forEach((b) => b.classList.toggle('active', b === btn));
+    });
+  });
+  document.querySelectorAll('[data-mode]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      pointerMode = btn.dataset.mode;
+      document.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('active', b === btn));
+    });
+  });
+
+  function createCanvasSim(root, mode) {
+    const stage = root.querySelector('[data-stage]');
+    const world = root.querySelector('[data-world]');
+    const pane = root.querySelector('[data-pane]');
+    const groupEl = root.querySelector('[data-group]');
+    const nodeA = root.querySelector('[data-node="A"]');
+    const nodeB = root.querySelector('[data-node="B"]');
+    const configPanel = root.querySelector('[data-config-panel]');
+    const promptBox = root.querySelector('[data-prompt]');
+    const modelTrigger = root.querySelector('[data-model-trigger]');
+    const modelLabel = root.querySelector('[data-model-label]');
+    const modelPopover = root.querySelector('[data-model-popover]');
+    const paramTrigger = root.querySelector('[data-param-trigger]');
+    const paramLabel = root.querySelector('[data-param-label]');
+    const paramPopover = root.querySelector('[data-param-popover]');
+    const fpsTrigger = root.querySelector('[data-fps-trigger]');
+    const fpsMenu = root.querySelector('[data-fps-menu]');
+    const submitBtn = root.querySelector('[data-submit]');
+    const zoomPill = root.querySelector('[data-zoom]');
+    const statePanel = root.querySelector('[data-state-panel]');
+    const stateLayer = root.querySelector('[data-state-layer]');
+    const traceEl = root.querySelector('[data-trace]');
+    const resetBtn = root.querySelector('[data-reset]');
+
+    const state = {
+      selected: 'A', // 'A' | 'B' | 'group' | null
+      modelOpen: true,
+      paramOpen: false,
+      fpsOpen: false,
+      res: '768P',
+      fps: '24 fps',
+      zoom: 1,
+      suppressedGesture: false,
+      lastBlankDismissAt: 0,
+    };
+
+    const isBlankSurface = (el) => el === pane || el === groupEl;
+
+    function sync(trace) {
+      nodeA.classList.toggle('selected', state.selected === 'A');
+      nodeB.classList.toggle('selected', state.selected === 'B');
+      groupEl.classList.toggle('selected', state.selected === 'group');
+      const panelVisible = state.selected === 'A';
+      if (!panelVisible) {
+        state.modelOpen = false;
+        state.paramOpen = false;
+        state.fpsOpen = false;
+      }
+      configPanel.classList.toggle('hidden', !panelVisible);
+      modelPopover.classList.toggle('hidden', !state.modelOpen);
+      paramPopover.classList.toggle('hidden', !state.paramOpen);
+      fpsMenu.classList.toggle('hidden', !state.fpsOpen);
+      modelTrigger.setAttribute('aria-expanded', String(state.modelOpen));
+      paramTrigger.setAttribute('aria-expanded', String(state.paramOpen));
+      world.style.transform = `scale(${state.zoom})`;
+      zoomPill.textContent = `缩放 ${Math.round(state.zoom * 100)}%`;
+      zoomPill.classList.toggle('warn', state.zoom > 1);
+
+      statePanel.textContent = panelVisible ? '输入框：可见' : '输入框：已隐藏';
+      statePanel.className = `pill ${panelVisible ? 'ok' : 'bad'}`;
+
+      const layers = [];
+      if (state.modelOpen) layers.push('模型面板');
+      if (state.paramOpen) layers.push('参数面板');
+      if (state.fpsOpen) layers.push('帧率下拉');
+      stateLayer.textContent = `浮层：${layers.length ? layers.join(' > ') : '无'}`;
+      if (trace) traceEl.textContent = trace;
+    }
+
+    function openLayersForOutsideTarget(target) {
+      const toClose = [];
+      if (state.fpsOpen && !fpsMenu.contains(target) && !fpsTrigger.contains(target)) {
+        toClose.push('fps');
+      }
+      if (state.paramOpen && !paramPopover.contains(target) && !paramTrigger.contains(target) && !fpsMenu.contains(target)) {
+        toClose.push('param');
+      }
+      if (state.modelOpen && !modelPopover.contains(target) && !modelTrigger.contains(target)) {
+        toClose.push('model');
+      }
+      return toClose;
+    }
+
+    // Unified capture phase coordinator for AFTER; raw leak for BEFORE
+    stage.addEventListener('pointerdown', (e) => {
+      activeSim = simApi;
+      state.suppressedGesture = false;
+      const toClose = openLayersForOutsideTarget(e.target);
+      if (toClose.length === 0) return;
+
+      if (toClose.includes('fps')) state.fpsOpen = false;
+      if (toClose.includes('param')) state.paramOpen = false;
+      if (toClose.includes('model')) state.modelOpen = false;
+
+      if (mode === 'after' && e.button === 0 && isBlankSurface(e.target)) {
+        state.suppressedGesture = true;
+        state.lastBlankDismissAt = Date.now();
+        e.stopPropagation();
+        sync(`空白点击（${pointerMode}模式）只关闭浮层，节点 A 与输入框保持可见`);
+      } else if (mode === 'after') {
+        sync('关闭浮层并直接透传到目标控件（一次点击生效）');
+      } else {
+        // BEFORE: closes popover without consuming blank canvas gesture
+        sync();
+      }
+    }, true);
+
+    stage.addEventListener('pointerup', (e) => {
+      if (mode === 'after' && state.suppressedGesture && isBlankSurface(e.target)) {
+        e.stopPropagation();
+        return;
+      }
+      if (pointerMode === 'select' && e.button === 0 && e.target === pane) {
+        state.selected = null;
+        sync(mode === 'before'
+          ? '改前问题：pointerup 透传到 Pane → 取消选中，输入框被迫隐藏！'
+          : '无浮层打开 → 正常取消节点选中并隐藏输入框');
+      }
+    }, true);
+
+    stage.addEventListener('click', (e) => {
+      if (mode === 'after' && state.suppressedGesture && isBlankSurface(e.target)) {
+        state.suppressedGesture = false;
+        e.stopPropagation();
+        return;
+      }
+      state.suppressedGesture = false;
+      if (pointerMode === 'pan' && e.target === pane) {
+        state.selected = null;
+        sync(mode === 'before'
+          ? '改前问题：Pan 模式 click 透传到 Pane → 取消选中，输入框消失！'
+          : 'Pan 模式无浮层 → 正常取消节点选中并隐藏输入框');
+      }
+    }, true);
+
+    stage.addEventListener('dblclick', (e) => {
+      if (!isBlankSurface(e.target)) return;
+      if (mode === 'after' && Date.now() - state.lastBlankDismissAt < 500) {
+        state.lastBlankDismissAt = 0;
+        e.stopPropagation();
+        e.preventDefault();
+        sync('快速连点两下：已关闭浮层并取消选中，同时拦截误触双击缩放');
+        return;
+      }
+      state.zoom = state.zoom > 1 ? 1 : 1.35;
+      sync(mode === 'before'
+        ? '三阶问题：快点两下触发了画布双击放大（135%）！'
+        : '正常双击空白画布 → 切换画布缩放');
+    }, true);
+
+    groupEl.addEventListener('click', (e) => {
+      if (e.target !== groupEl) return;
+      state.selected = 'group';
+      sync(mode === 'before'
+        ? '改前问题：点编组空白底板直接切选分组，子节点输入框隐藏！'
+        : '无浮层时点击编组空白底板 → 选中编组');
+    });
+
+    nodeA.addEventListener('click', (e) => {
+      e.stopPropagation();
+      state.selected = 'A';
+      sync('选中视频节点 A，输入框可见');
+    });
+    nodeB.addEventListener('click', (e) => {
+      e.stopPropagation();
+      state.selected = 'B';
+      sync('一次点击直接切换到图片节点 B');
+    });
+    promptBox.addEventListener('focus', () => {
+      sync('提示词输入框已聚焦（一次直达，可直接输入）');
+    });
+    modelTrigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      state.modelOpen = !state.modelOpen;
+      sync(state.modelOpen ? '已打开模型选择面板' : '点击触发器收起模型面板');
+    });
+    paramTrigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      state.paramOpen = !state.paramOpen;
+      if (!state.paramOpen) state.fpsOpen = false;
+      sync(state.paramOpen ? '已打开参数面板（支持一次从模型面板切换）' : '已收起参数面板');
+    });
+    fpsTrigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      state.fpsOpen = !state.fpsOpen;
+      sync(state.fpsOpen ? '已打开嵌套帧率下拉（按 Escape 测试逐层关闭）' : '已收起帧率下拉');
+    });
+    submitBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      sync('生成按钮一次点击直达触发！');
+    });
+
+    modelPopover.querySelectorAll('[data-pick-model]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        modelPopover.querySelectorAll('[data-pick-model]').forEach((b) => b.classList.toggle('active', b === btn));
+        modelLabel.textContent = btn.dataset.pickModel;
+        sync(`已选模型 ${btn.dataset.pickModel}（面板保持打开供继续选渠道）`);
+      });
+    });
+    modelPopover.querySelectorAll('[data-pick-channel]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        modelPopover.querySelectorAll('[data-pick-channel]').forEach((b) => b.classList.toggle('active', b === btn));
+        sync(`已选渠道「${btn.dataset.pickChannel}」，点空白处即可收起面板并继续编辑`);
+      });
+    });
+    paramPopover.querySelectorAll('[data-res]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        state.res = btn.dataset.res;
+        paramPopover.querySelectorAll('[data-res]').forEach((b) => b.classList.toggle('active', b === btn));
+        paramLabel.textContent = `首尾帧 · ${state.res} · 5s`;
+        sync(`清晰度已切换为 ${state.res}`);
+      });
+    });
+    fpsMenu.querySelectorAll('[data-fps]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        state.fps = btn.dataset.fps;
+        fpsTrigger.textContent = `${state.fps} ▾`;
+        state.fpsOpen = false;
+        sync(`帧率已切换为 ${state.fps}，参数面板仍保持打开`);
+      });
+    });
+
+    resetBtn.addEventListener('click', () => {
+      activeSim = simApi;
+      state.selected = 'A';
+      state.modelOpen = true;
+      state.paramOpen = false;
+      state.fpsOpen = false;
+      state.zoom = 1;
+      state.suppressedGesture = false;
+      state.lastBlankDismissAt = 0;
+      sync('已重置为「节点 A 选中 + 模型面板打开」初始态');
+    });
+
+    const simApi = {
+      handleEscape() {
+        if (mode === 'before') {
+          const hadLayer = state.fpsOpen || state.paramOpen || state.modelOpen;
+          state.fpsOpen = false;
+          state.paramOpen = false;
+          state.modelOpen = false;
+          state.selected = null;
+          sync(hadLayer
+            ? '改前问题：Escape 同时关闭浮层并触发画布清空选中，输入框消失！'
+            : 'Escape 清空选中');
+          return;
+        }
+        // AFTER: strict LIFO one layer per Escape
+        if (state.fpsOpen) {
+          state.fpsOpen = false;
+          fpsTrigger.focus();
+          sync('Escape 第 1 次：仅关闭顶层「帧率下拉」，参数面板与输入框保留');
+        } else if (state.paramOpen) {
+          state.paramOpen = false;
+          paramTrigger.focus();
+          sync('Escape：仅关闭「参数面板」，节点与输入框保持可见');
+        } else if (state.modelOpen) {
+          state.modelOpen = false;
+          modelTrigger.focus();
+          sync('Escape：仅关闭「模型面板」，节点与输入框保持可见');
+        } else if (state.selected) {
+          state.selected = null;
+          sync('Escape（无浮层）：正常取消节点选中并隐藏输入框');
+        }
+      },
+    };
+
+    sync();
+    return simApi;
+  }
+
+  const beforeSim = createCanvasSim(document.getElementById('sim-before'), 'before');
+  const afterSim = createCanvasSim(document.getElementById('sim-after'), 'after');
+  activeSim = afterSim;
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (document.activeElement?.tagName === 'TEXTAREA') {
+      document.activeElement.blur();
+      return;
+    }
+    activeSim?.handleEscape();
+  });
+</script>
+</body>
+</html>

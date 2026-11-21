@@ -6,6 +6,7 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Check } from 'lucide-react';
+import { useCanvasDismissLayer } from '../editor/utils/canvasDismissLayer.ts';
 
 export interface SelectOption<T = string | number> {
   value: T;
@@ -98,43 +99,27 @@ export function CustomSelect<T extends string | number = string>({
     updatePosition();
   }, [open, updatePosition]);
 
+  useCanvasDismissLayer({
+    open,
+    containsTarget: (target) => Boolean(
+      triggerRef.current?.contains(target) || menuRef.current?.contains(target),
+    ),
+    onDismiss: () => setOpen(false),
+    returnFocusRef: triggerRef,
+  });
+
   useEffect(() => {
     if (!open) return;
     updatePosition();
-
-    const handlePointerDown = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (
-        triggerRef.current?.contains(target) ||
-        menuRef.current?.contains(target)
-      ) {
-        return;
-      }
-      setOpen(false);
-    };
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Issue #3058 FE-02：菜单自己吃 Escape——capture 阶段关闭并隔离传播，
-      // 宿主弹窗（CustomModal 同级 window 监听已让位）与其他 window 监听
-      // 不再收到本次按键；同一 Escape 只关闭菜单这一层。
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        setOpen(false);
-      }
-    };
 
     const handleScroll = () => {
       updatePosition();
     };
 
-    window.addEventListener('mousedown', handlePointerDown, true);
-    window.addEventListener('keydown', handleKeyDown, true);
     window.addEventListener('scroll', handleScroll, true);
     window.addEventListener('resize', updatePosition);
 
     return () => {
-      window.removeEventListener('mousedown', handlePointerDown, true);
-      window.removeEventListener('keydown', handleKeyDown, true);
       window.removeEventListener('scroll', handleScroll, true);
       window.removeEventListener('resize', updatePosition);
     };

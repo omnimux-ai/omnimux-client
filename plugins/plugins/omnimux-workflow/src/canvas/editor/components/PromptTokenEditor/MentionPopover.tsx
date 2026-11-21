@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { ChevronRight, FileText, ImageIcon, Music, Video } from 'lucide-react';
 import { useT } from '../../../i18n';
 import { rejectReasonKey } from '../../utils/connectionValidator.ts';
+import { useCanvasDismissLayer } from '../../utils/canvasDismissLayer.ts';
 import { calculatePopoverPosition } from '../MaterialNode/ConfigPanel/cfg/viewportPositioner.ts';
 import type { ReferenceCandidate } from './referenceCandidates.ts';
 
@@ -62,11 +63,14 @@ export default function MentionPopover({ open, position, query, current, canvas,
     const rightFits = rect.right + width + 4 <= window.innerWidth - 12;
     setSubStyle({ position: 'fixed', width, left: rightFits ? rect.right + 4 : Math.max(12, rect.left - width - 4), top: Math.max(12, Math.min(rect.top, window.innerHeight - height - 12)), maxHeight: window.innerHeight - 24 });
   }, [category, query, children.length, position]);
+  useCanvasDismissLayer({
+    open: Boolean(open && position),
+    containsTarget: (target) => Boolean(rootRef.current?.contains(target) || subRef.current?.contains(target)),
+    onDismiss: () => onClose(),
+    dismissOnEscape: false,
+  });
   useEffect(() => {
     if (!open) return;
-    const outside = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node) && !subRef.current?.contains(event.target as Node)) onClose();
-    };
     const keydown = (event: KeyboardEvent) => {
       if (event.isComposing || event.keyCode === 229) return;
       if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Enter', 'Tab', 'Escape'].includes(event.key)) return;
@@ -82,10 +86,9 @@ export default function MentionPopover({ open, position, query, current, canvas,
         setCategory(index === references.length ? 'image' : 'text'); setInSubmenu(true); setIndex(0);
       } else if (event.key !== 'ArrowRight') choose(inSubmenu ? children[index] : references[index]);
     };
-    window.addEventListener('mousedown', outside);
     window.addEventListener('keydown', keydown, true);
     window.addEventListener('resize', onClose);
-    return () => { window.removeEventListener('mousedown', outside); window.removeEventListener('keydown', keydown, true); window.removeEventListener('resize', onClose); };
+    return () => { window.removeEventListener('keydown', keydown, true); window.removeEventListener('resize', onClose); };
   }, [open, onClose, onSelect, references, children, rootCount, index, inSubmenu, category]);
   useEffect(() => {
     const root = inSubmenu ? subRef.current : rootRef.current;
