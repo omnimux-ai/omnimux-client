@@ -6,6 +6,7 @@ export interface PickerCandidate {
   label: string;
   subtitle?: string;
   family?: string;
+  familyLabel?: string;
   source?: 'gateway' | 'custom';
   executionStatus?: 'ready' | 'unsupported' | 'unverified';
   executable?: boolean;
