@@ -111,19 +111,24 @@ const browserAssetsPlugin = {
     })
     build.onResolve({ filter: /\?(worker&url|clip-worker)$/ }, ({ path, resolveDir }) => {
       const [moduleId, query] = path.split('?')
-      const filename = moduleId.startsWith('.')
+      const local = moduleId.startsWith('.')
+      const filename = local
         ? resolveVendorFile(resolveDir, moduleId.replace(/\.ts$/, ''))
         : resolvePackage(moduleId)
-      if (!filename) return { errors: [{ text: `Cannot resolve worker ${moduleId}` }] }
-      return { path: filename, namespace: query }
+      if (!filename || (local && !insideVendor(filename))) {
+        return { errors: [{ text: `Cannot resolve worker ${moduleId}` }] }
+      }
+      // esbuild writes virtual module IDs into the client bundle.
+      const workerId = local ? relative(openreel, filename).split(sep).join('/') : moduleId
+      return { path: workerId, namespace: query, pluginData: filename }
     })
     for (const namespace of ['worker&url', 'clip-worker']) {
-      build.onLoad({ filter: /.*/, namespace }, async ({ path }) => {
-        let compiling = workerBundles.get(path)
+      build.onLoad({ filter: /.*/, namespace }, async ({ pluginData: filename }) => {
+        let compiling = workerBundles.get(filename)
         if (!compiling) {
           compiling = esbuild.build({
             absWorkingDir: root,
-            entryPoints: [path],
+            entryPoints: [filename],
             bundle: true,
             platform: 'browser',
             format: 'esm',
@@ -137,7 +142,7 @@ const browserAssetsPlugin = {
             loader: assetLoaders,
             plugins: [openreelAliasPlugin, browserAssetsPlugin],
           })
-          workerBundles.set(path, compiling)
+          workerBundles.set(filename, compiling)
         }
         const { outputFiles: [worker] } = await compiling
         const createURL = `URL.createObjectURL(new Blob([${JSON.stringify(worker.text)}], { type: 'text/javascript' }))`
