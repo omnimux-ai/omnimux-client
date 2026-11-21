@@ -1,4 +1,5 @@
 import type {
+  ColorLibraryBridge,
   EditingHost,
   JobKind,
   JobResult,
@@ -8,6 +9,13 @@ import type {
   ImportedMediaRef,
   RiggingBackendProbe,
   CreateProjectOptions,
+  ImportMediaFromPathOptions,
+  ImportMediaFromPathResult,
+  ProjectFileRef,
+  AppStateSnapshot,
+  ProjectFontReport,
+  ExportOptionsCatalog,
+  LocalFileAccess,
   ModelInspectionReport,
   ModelInspectionRequest,
   HumanoidRigRequest,
@@ -25,11 +33,16 @@ import type {
   ExportMotionSceneResult,
   ExportMotionSceneFormat,
   MotionRenderQueueBridge,
+  RenderCacheBridge,
   MotionRenderQueueAddInput,
   MotionRenderQueueAddResult,
   MotionRenderQueueAddError,
   MotionRenderQueueRunResult,
+  MulticamHostBridge,
+  TimelinePlanBuilder,
 } from "@openreel/agent";
+import { planProjectFonts } from "../font-embedding";
+import { createCustomFontReader } from "../../components/editor/inspector/font-options";
 import type { TextStyle, TextAnimationPreset } from "@openreel/core/text/types";
 import type { ShapeStyle, ShapeType } from "@openreel/core/graphics/types";
 import type { Transform } from "@openreel/core/types/timeline";
@@ -37,9 +50,19 @@ import { CAPABILITY_MANIFEST } from "@openreel/core/capabilities/manifest";
 import type { Action } from "@openreel/core/types/actions";
 import type { Project } from "@openreel/core/types/project";
 import type { CapabilityManifest } from "@openreel/core/capabilities/manifest";
+import type { SequenceEditResult } from "@openreel/core/timeline/sequences";
+import { commitSequenceEdit } from "../sequence-commands";
+import { useGraphicTemplatesStore } from "../../stores/graphic-templates-store";
+import type { GraphicTemplate } from "@openreel/core/graphic-templates/types";
 import { useProjectStore } from "../../stores/project-store";
+import { useUIStore } from "../../stores/ui-store";
+import { useSourceMonitorStore } from "../../stores/source-monitor-store";
+import { openInSourceMonitor, setSourceMarks } from "../source-monitor-commands";
+import { analyzeAudioOffsets } from "../multicam-controller";
+import { useEditorWorkspaceStore } from "../../stores/editor-workspace-store";
+import { getLinkedTimelineSelection } from "../../utils/linked-timeline-selection";
+import { insertTimelineOverlay } from "../../stores/project/insert-timeline-overlay";
 import { checkForRecovery } from "../auto-save";
-import { inspectGltfModel } from "../../motion/model-inspection";
 import {
   exportMotionCompositionScene,
   MOTION_EXPORT_FORMATS,
@@ -52,6 +75,22 @@ import {
   type MotionRenderQueueFormat,
 } from "../../motion/stores/motion-store";
 import { runMotionRenderQueue } from "../../motion/render-queue-runner";
+import { renderCacheService } from "../render-cache-service";
+import { createMulticamHostBridge } from "./multicam-bridge";
+import { useColorLibraryStore } from "../../stores/color-library-store";
+import { downloadCube } from "../color-library-service";
+import { createColorMonitorBridge, createSceneDetectionBridge, createScopesBridge } from "./pro-tools-bridge";
+import { createLoudnessBridge } from "./loudness-bridge";
+import { createMotionTrackBridge } from "./motion-track-bridge";
+import { createProxyBridge } from "./proxy-bridge";
+import { createAudioRepairBridge } from "./audio-repair-bridge";
+import { createStemExportBridge } from "./stem-bridge";
+import { createExportQueueBridge } from "./export-queue-bridge";
+import { createLocalFileAccess } from "./path-access";
+import { importMediaFromPaths, openProjectFileByPath, saveProjectToFile } from "./path-import";
+import { buildAppState, dismissOnboardingForAgent } from "./app-state";
+import { loadExportCatalog } from "./export-options";
+import { projectManager } from "../project-manager";
 
 const MIME_BY_EXT: Record<string, string> = {
   mp4: "video/mp4",
@@ -102,7 +141,7 @@ function projectRef(project: Project): ProjectRef {
   };
 }
 
-export interface LiveEditorHostOptions {
+interface LiveEditorHostOptions {
   readonly jobRunner?: JobRunner;
 }
 
@@ -144,6 +183,21 @@ function normalizeRenderQueueScale(
 export class LiveEditorHost implements EditingHost {
   private jobRunner?: JobRunner;
   private appliedInTxn = 0;
+  readonly multicam: MulticamHostBridge = createMulticamHostBridge((timeMs) =>
+    this.runJob("exportFrame", { time: timeMs / 1_000 }),
+  );
+
+  readonly sceneDetection = createSceneDetectionBridge();
+  readonly scopes = createScopesBridge();
+  readonly colorMonitor = createColorMonitorBridge();
+  readonly loudness = createLoudnessBridge();
+  readonly stems = createStemExportBridge();
+  readonly audioRepair = createAudioRepairBridge();
+  readonly exportQueue = createExportQueueBridge();
+  /** Allowed-roots-checked file access; present on the desktop app only. */
+  readonly files: LocalFileAccess | undefined = createLocalFileAccess();
+  readonly proxies = createProxyBridge();
+  readonly motionTracking = createMotionTrackBridge();
 
   constructor(options: LiveEditorHostOptions = {}) {
     this.jobRunner = options.jobRunner;
@@ -163,6 +217,102 @@ export class LiveEditorHost implements EditingHost {
     const result = await useProjectStore.getState().executeAction(action);
     if (result.success) this.appliedInTxn++;
     return result;
+  }
+
+  /**
+   * Plans against the full project (overlay collections included) and commits
+   * through commitTimelineToolEdit, which also resyncs the effects, overlay and
+   * transition caches. Exactly one history entry.
+   */
+  async commitTimelinePlan(build: TimelinePlanBuilder) {
+    this.requireOpenProject();
+    const store = useProjectStore.getState();
+    try {
+      const plan = build(store.getFullProject());
+      if (!plan.edits.length) return { success: true, plan };
+      const result = store.commitTimelineToolEdit(plan);
+      if (result.success) this.appliedInTxn++;
+      return { ...result, plan };
+    } catch (error) {
+      return {
+        success: false,
+        error: {
+          code: "INVALID_PARAMS" as const,
+          message: error instanceof Error ? error.message : "The edit could not be planned.",
+        },
+      };
+    }
+  }
+
+  /** Same linked-selection logic (and setting) the timeline UI uses. */
+  resolveLinkedClipIds(project: Project, clipIds: readonly string[]): string[] {
+    return getLinkedTimelineSelection(project, clipIds, useEditorWorkspaceStore.getState().linkedSelection);
+  }
+
+  sourceMonitor = {
+    open: (mediaId: string, time?: number): void => {
+      openInSourceMonitor(mediaId, time);
+    },
+    getMarks: (mediaId: string) => ({ ...useSourceMonitorStore.getState().getMarks(mediaId) }),
+    setMarks: (mediaId: string, marks: { in?: number | null; out?: number | null }): void => {
+      setSourceMarks(mediaId, marks);
+    },
+  };
+
+  targeting = {
+    getState: () => {
+      const { targetedTrackIds, targetTracks } = useEditorWorkspaceStore.getState();
+      return {
+        targetedTrackIds: [...targetedTrackIds],
+        sourcePatch: { ...targetTracks },
+      };
+    },
+    setTrackTargeted: (trackId: string, targeted: boolean): void => {
+      useEditorWorkspaceStore.getState().setTrackTargeted(trackId, targeted);
+    },
+    setSourcePatch: (kind: "video" | "audio", trackId: string | null): void => {
+      useEditorWorkspaceStore.getState().setSourcePatch(kind, trackId);
+    },
+  };
+
+  /** Same command path as the sequence tabs: parks In/Out and the playhead when the active sequence changes. */
+  sequenceCommands = {
+    commit: (label: string, build: (project: Project) => SequenceEditResult): Promise<SequenceEditResult> =>
+      commitSequenceEdit(label, build),
+  };
+
+  /** Same audio correlation the Create multi-camera source dialog runs. */
+  multicamSync = {
+    measureAudioOffsets: (mediaIds: readonly string[]) => analyzeAudioOffsets(mediaIds),
+  };
+
+  /** Essential Graphics: saved templates live in the same library the Browse tab shows. */
+  graphicTemplates = {
+    list: () => useGraphicTemplatesStore.getState().userTemplates,
+    save: (template: GraphicTemplate): void => useGraphicTemplatesStore.getState().save(template),
+  };
+
+  /** Per-user LUT library and saved looks (IndexedDB): the same library the Color tab shows. */
+  readonly colorLibrary: ColorLibraryBridge = {
+    listLooks: async () => {
+      await useColorLibraryStore.getState().refresh();
+      return useColorLibraryStore.getState().looks;
+    },
+    saveLook: (look) => useColorLibraryStore.getState().addLook(look),
+    deleteLook: (id) => useColorLibraryStore.getState().removeLook(id),
+    listLuts: async () => {
+      await useColorLibraryStore.getState().refresh();
+      return useColorLibraryStore.getState().luts;
+    },
+    saveLut: (entry) => useColorLibraryStore.getState().addLut(entry),
+    deleteLut: (id) => useColorLibraryStore.getState().removeLut(id),
+    exportCube: async (filename, text) => downloadCube(filename, text),
+  };
+
+  /** Match Frame: select the source media in the library like the UI does. */
+  selectLibraryMedia(mediaId: string): void {
+    useUIStore.getState().select({ type: "clip", id: mediaId });
+    useEditorWorkspaceStore.getState().setSection("media");
   }
 
   beginTransaction(label?: string): TxnHandle {
@@ -223,6 +373,14 @@ export class LiveEditorHost implements EditingHost {
         latest.set(s.projectId, { id: s.id, name: s.projectName, modifiedAt: s.timestamp });
       }
     }
+    // Recent project files on disk (desktop): reopen them with open_project_file.
+    const recents = await projectManager.getRecentProjects().catch(() => []);
+    for (const recent of recents) {
+      const handle = recent.fileHandle as { kind?: string; path?: string } | undefined;
+      if (handle?.kind === "native" && typeof handle.path === "string") {
+        latest.set(`file:${handle.path}`, { id: recent.id, name: recent.name, modifiedAt: recent.lastOpened, path: handle.path });
+      }
+    }
     return [...latest.values()].sort((a, b) => (b.modifiedAt ?? 0) - (a.modifiedAt ?? 0));
   }
 
@@ -237,6 +395,37 @@ export class LiveEditorHost implements EditingHost {
     const store = useProjectStore.getState();
     await store.forceSave();
     return projectRef(store.getFullProject());
+  }
+
+  importMediaFromPath(options: ImportMediaFromPathOptions): Promise<ImportMediaFromPathResult> {
+    this.requireOpenProject();
+    return importMediaFromPaths(this, options);
+  }
+
+  openProjectFile(path: string): Promise<ProjectFileRef> {
+    return openProjectFileByPath(path);
+  }
+
+  saveProjectAs(path: string, options: { overwrite: boolean }): Promise<ProjectFileRef> {
+    return saveProjectToFile(path, options);
+  }
+
+  async getProjectFonts(): Promise<ProjectFontReport> {
+    const reader = await createCustomFontReader();
+    const plan = await planProjectFonts(useProjectStore.getState().getFullProject(), reader.read, { isUserFont: reader.isUserFont });
+    return { fonts: plan.entries };
+  }
+
+  getAppState(): Promise<AppStateSnapshot> {
+    return buildAppState();
+  }
+
+  dismissOnboarding(): Promise<{ status: string; changed: boolean }> {
+    return dismissOnboardingForAgent();
+  }
+
+  exportOptions(): Promise<ExportOptionsCatalog> {
+    return loadExportCatalog(useProjectStore.getState().project);
   }
 
   async importMediaFromUrl(
@@ -325,6 +514,40 @@ export class LiveEditorHost implements EditingHost {
         : {}),
     };
   }
+
+  renderCache: RenderCacheBridge = {
+    renderInToOut: async (options) => {
+      const summary = await renderCacheService.renderInToOut(
+        options?.rangeStart !== undefined && options?.rangeEnd !== undefined
+          ? { start: options.rangeStart, end: options.rangeEnd }
+          : undefined,
+      );
+      if (!summary) {
+        return {
+          status: "failed",
+          framesRendered: 0,
+          framesSkipped: 0,
+          totalFrames: 0,
+          elapsedMs: 0,
+          codec: "",
+          message: "A render is already running, an export is in progress, or there is nothing to render.",
+        };
+      }
+      return {
+        status: summary.status,
+        framesRendered: summary.framesRendered,
+        framesSkipped: summary.framesSkipped,
+        totalFrames: summary.totalFrames,
+        elapsedMs: summary.elapsedMs,
+        codec: summary.codec,
+        message: summary.message,
+      };
+    },
+    deleteRenderFiles: async () => ({
+      removedFrames: await renderCacheService.deleteRenderFiles({ silent: true }),
+    }),
+    getStatus: () => renderCacheService.getStatus(),
+  };
 
   motionRenderQueue: MotionRenderQueueBridge = {
     add: (
@@ -447,6 +670,7 @@ export class LiveEditorHost implements EditingHost {
   }
 
   async inspectModel(options: ModelInspectionRequest): Promise<ModelInspectionReport> {
+    const { inspectGltfModel } = await import("../../motion/model-inspection");
     return inspectGltfModel(options.modelUrl, {
       ...(options.name ? { name: options.name } : {}),
       ...(options.source ? { source: options.source } : {}),
@@ -488,38 +712,21 @@ export class LiveEditorHost implements EditingHost {
 
   async createTextOverlay(options: TextOverlayOptions): Promise<OverlayRef> {
     this.requireOpenProject();
-    const store = useProjectStore.getState();
-    const tracks = store.project.timeline.tracks;
-
-    let trackId = options.trackId;
-    if (!trackId || !tracks.some((t) => t.id === trackId)) {
-      const existing = tracks.find((t) => t.type === "text");
-      if (existing) {
-        trackId = existing.id;
-      } else {
-        await store.executeAction({
-          type: "track/add",
-          id: crypto.randomUUID(),
-          timestamp: Date.now(),
-          params: { trackType: "text" },
-        } as Action);
-        const created = useProjectStore
+    const clip = await insertTimelineOverlay(
+      options.startSec,
+      options.durationSec,
+      (trackId) =>
+        useProjectStore
           .getState()
-          .project.timeline.tracks.find((t) => t.type === "text");
-        if (!created) throw new Error("Failed to create a text track");
-        trackId = created.id;
-      }
-    }
-
-    const clip = useProjectStore
-      .getState()
-      .createTextClip(
-        trackId,
-        options.startSec,
-        options.text,
-        options.durationSec,
-        options.style as Partial<TextStyle> | undefined,
-      );
+          .createTextClip(
+            trackId,
+            options.startSec,
+            options.text,
+            options.durationSec,
+            options.style as Partial<TextStyle> | undefined,
+          ),
+      options.trackId,
+    );
     if (!clip) throw new Error("Failed to create text overlay");
 
     if (options.animation && options.animation !== "none") {
@@ -532,47 +739,35 @@ export class LiveEditorHost implements EditingHost {
           options.animationOutSec ?? 0.25,
         );
     }
-    return { id: clip.id, trackId };
+    return { id: clip.id, trackId: clip.trackId };
   }
 
   async createShapeOverlay(options: ShapeOverlayOptions): Promise<OverlayRef> {
     this.requireOpenProject();
-    const store = useProjectStore.getState();
-    const tracks = store.project.timeline.tracks;
-
-    let trackId = options.trackId;
-    if (!trackId || !tracks.some((t) => t.id === trackId)) {
-      const existing = tracks.find((t) => t.type === "graphics");
-      if (existing) {
-        trackId = existing.id;
-      } else {
-        await store.executeAction({
-          type: "track/add",
-          id: crypto.randomUUID(),
-          timestamp: Date.now(),
-          params: { trackType: "graphics" },
-        } as Action);
-        const created = useProjectStore
-          .getState()
-          .project.timeline.tracks.find((t) => t.type === "graphics");
-        if (!created) throw new Error("Failed to create a graphics track");
-        trackId = created.id;
-      }
-    }
-
     const style: Partial<ShapeStyle> = {
       fill: { type: "solid", color: options.color ?? "#000000", opacity: options.opacity ?? 0.45 },
       stroke: { color: "#000000", width: 0, opacity: 0 },
     };
-    const clip = useProjectStore
-      .getState()
-      .createShapeClip(
-        trackId,
-        options.startSec,
-        (options.shapeType ?? "rectangle") as ShapeType,
-        options.durationSec,
-        style,
-      );
+    const clip = await insertTimelineOverlay(
+      options.startSec,
+      options.durationSec,
+      (trackId) =>
+        useProjectStore
+          .getState()
+          .createShapeClip(
+            trackId,
+            options.startSec,
+            (options.shapeType ?? "rectangle") as ShapeType,
+            options.durationSec,
+            style,
+            {
+              ...(options.points ? { points: options.points.map((p) => ({ x: p.x, y: p.y })) } : {}),
+              ...(options.pathData !== undefined ? { pathData: options.pathData } : {}),
+              ...(options.closed !== undefined ? { closed: options.closed } : {}),
+            },
+          ),
+      options.trackId,
+    );
     if (!clip) throw new Error("Failed to create shape overlay");
 
     if (options.fullFrame) {
@@ -585,23 +780,7 @@ export class LiveEditorHost implements EditingHost {
         opacity: 1,
       });
     }
-    return { id: clip.id, trackId };
-  }
-
-  private async ensureOverlayTrack(
-    type: "text" | "graphics",
-    trackId?: string,
-  ): Promise<string> {
-    const tracks = useProjectStore.getState().project.timeline.tracks;
-    if (trackId && tracks.some((t) => t.id === trackId)) return trackId;
-    const existing = tracks.find((t) => t.type === type);
-    if (existing) return existing.id;
-    await useProjectStore.getState().addTrack(type, 0);
-    const created = useProjectStore
-      .getState()
-      .project.timeline.tracks.find((t) => t.type === type);
-    if (!created) throw new Error(`Failed to create a ${type} track`);
-    return created.id;
+    return { id: clip.id, trackId: clip.trackId };
   }
 
   async updateTextOverlay(
@@ -691,34 +870,40 @@ export class LiveEditorHost implements EditingHost {
     options: StickerOverlayOptions,
   ): Promise<OverlayRef> {
     this.requireOpenProject();
-    const trackId = await this.ensureOverlayTrack("graphics", options.trackId);
     const { stickerLibrary } = await import("@openreel/core");
-    const clip = options.imageUrl
-      ? stickerLibrary.createStickerClip(
-          {
-            id: crypto.randomUUID(),
-            name: options.name ?? "sticker",
-            category: "custom",
-            imageUrl: options.imageUrl,
-          },
-          trackId,
-          options.startSec,
-          options.durationSec,
-        )
-      : stickerLibrary.createEmojiClip(
-          {
-            id: crypto.randomUUID(),
-            emoji: options.emoji ?? "⭐",
-            name: options.name ?? options.emoji ?? "emoji",
-            category: "emojis",
-          },
-          trackId,
-          options.startSec,
-          options.durationSec,
-        );
-    const created = useProjectStore.getState().createStickerClip(clip);
+    const created = await insertTimelineOverlay(
+      options.startSec,
+      options.durationSec,
+      (trackId) => {
+        const clip = options.imageUrl
+          ? stickerLibrary.createStickerClip(
+              {
+                id: crypto.randomUUID(),
+                name: options.name ?? "sticker",
+                category: "custom",
+                imageUrl: options.imageUrl,
+              },
+              trackId,
+              options.startSec,
+              options.durationSec,
+            )
+          : stickerLibrary.createEmojiClip(
+              {
+                id: crypto.randomUUID(),
+                emoji: options.emoji ?? "⭐",
+                name: options.name ?? options.emoji ?? "emoji",
+                category: "emojis",
+              },
+              trackId,
+              options.startSec,
+              options.durationSec,
+            );
+        return useProjectStore.getState().createStickerClip(clip);
+      },
+      options.trackId,
+    );
     if (!created) throw new Error("Failed to create sticker overlay");
-    return { id: created.id, trackId };
+    return { id: created.id, trackId: created.trackId };
   }
 
   async updateStickerOverlay(
@@ -742,12 +927,22 @@ export class LiveEditorHost implements EditingHost {
 
   async createSvgOverlay(options: SvgOverlayOptions): Promise<OverlayRef> {
     this.requireOpenProject();
-    const trackId = await this.ensureOverlayTrack("graphics", options.trackId);
-    const clip = useProjectStore
-      .getState()
-      .importSVG(options.svg, trackId, options.startSec, options.durationSec);
+    const clip = await insertTimelineOverlay(
+      options.startSec,
+      options.durationSec,
+      (trackId) =>
+        useProjectStore
+          .getState()
+          .importSVG(
+            options.svg,
+            trackId,
+            options.startSec,
+            options.durationSec,
+          ),
+      options.trackId,
+    );
     if (!clip) throw new Error("Failed to create SVG overlay");
-    return { id: clip.id, trackId };
+    return { id: clip.id, trackId: clip.trackId };
   }
 
   async updateSvgOverlay(

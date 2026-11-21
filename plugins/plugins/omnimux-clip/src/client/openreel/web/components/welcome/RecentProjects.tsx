@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Clock, Trash2, Film } from "@/icons/lucide-compat";
-import { ToolcraftClickableCard as ClickableCard } from "@openreel/ui";
-import { ToolcraftIconButton as IconButton } from "@openreel/ui";
-import { ToolcraftText as Text } from "@openreel/ui";
+
+import { Button } from "@openreel/ui";
+
 import {
   checkForRecovery,
   type AutoSaveMetadata,
@@ -10,6 +10,9 @@ import {
 import { useProjectStore } from "../../stores/project-store";
 import { useAnalytics, AnalyticsEvents } from "../../hooks/useAnalytics";
 import { useClipT } from "../../../../i18n/index.js";
+
+const isDesktop =
+  typeof window !== "undefined" && window.openreel?.platform === "desktop";
 
 interface RecentProject {
   id: string;
@@ -102,10 +105,10 @@ export const RecentProjects: React.FC<RecentProjectsProps> = ({
       (now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24),
     );
 
-    if (diffDays === 0) return t("Today");
-    if (diffDays === 1) return t("Yesterday");
-    if (diffDays < 7) return `${diffDays} ${t("days ago")}`;
-    if (diffDays < 30) return `${Math.floor(diffDays / 7)} ${t("weeks ago")}`;
+    if (diffDays === 0) return "Today";
+    if (diffDays === 1) return "Yesterday";
+    if (diffDays < 7) return `${diffDays} days ago`;
+    if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
 
     return date.toLocaleDateString();
   };
@@ -114,9 +117,9 @@ export const RecentProjects: React.FC<RecentProjectsProps> = ({
     return (
       <div className="flex flex-col items-center justify-center py-20">
         <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin mb-4" />
-        <Text type="supporting" color="secondary" className="text-sm text-text-secondary">
+        <span className="font-normal text-sm text-text-secondary">
           {t("Loading recent projects...")}
-        </Text>
+        </span>
       </div>
     );
   }
@@ -127,12 +130,12 @@ export const RecentProjects: React.FC<RecentProjectsProps> = ({
         <div className="w-14 h-14 rounded-2xl bg-background-tertiary flex items-center justify-center mb-4">
           <Clock size={24} className="text-text-muted" />
         </div>
-        <Text type="body" color="primary" weight="medium" className="text-base text-text-primary mb-2">
+        <span className="font-medium text-base text-text-primary mb-2">
           {t("No Recent Projects")}
-        </Text>
-        <Text type="supporting" color="secondary" className="text-sm text-text-muted text-center max-w-md">
+        </span>
+        <span className="font-normal text-sm text-text-muted text-center max-w-md">
           {t("Your recently opened projects will appear here. Start a new project or use a template to get started.")}
-        </Text>
+        </span>
       </div>
     );
   }
@@ -140,9 +143,9 @@ export const RecentProjects: React.FC<RecentProjectsProps> = ({
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <Text type="label" color="primary" weight="medium" className="text-sm text-text-primary">
-          {t("Recent Projects")} ({recentProjects.length})
-        </Text>
+        <span className="font-medium text-sm text-text-primary">
+          {t("Recent Projects (")}{recentProjects.length})
+        </span>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -153,14 +156,7 @@ export const RecentProjects: React.FC<RecentProjectsProps> = ({
               key={project.id}
               className="group relative flex flex-col bg-background-tertiary rounded-xl border border-border hover:border-primary/40 hover:bg-background-elevated transition-all overflow-hidden"
             >
-              <ClickableCard
-                label={`${t("Open")} ${project.name}`}
-                onClick={() => handleSelectProject(project)}
-                isDisabled={isLoadingThis}
-                padding={0}
-                variant="muted"
-                className="flex flex-col flex-1 text-left disabled:opacity-70"
-              >
+              <Button variant="ghost" onClick={() => handleSelectProject(project)} type="button" aria-label={t("Open {0}", [project.name])} disabled={(isLoadingThis)} className="group/card h-auto min-w-0 whitespace-normal rounded-[7px] border transition-[background-color,border-color,box-shadow,transform] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed border-transparent bg-bg-2 hover:bg-bg-3 p-0 flex flex-col flex-1 text-left disabled:opacity-70">
                 <div className="aspect-video w-full bg-background flex items-center justify-center border-b border-border">
                   {isLoadingThis ? (
                     <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
@@ -170,34 +166,29 @@ export const RecentProjects: React.FC<RecentProjectsProps> = ({
                 </div>
 
                 <div className="p-3 flex-1">
-                  <Text type="supporting" color="primary" weight="medium" className="text-sm text-text-primary truncate group-hover:text-primary transition-colors">
+                  <span className="font-medium text-sm text-text-primary truncate group-hover:text-primary transition-colors">
                     {project.name}
-                  </Text>
+                  </span>
                   <div className="flex items-center gap-1.5 mt-1.5 text-xs text-text-muted">
                     <Clock size={11} />
                     <span>{formatDate(project.lastModified)}</span>
                   </div>
                 </div>
-              </ClickableCard>
+              </Button>
 
-              <IconButton
-                label={t("Remove from recent")}
-                onClick={(e) => handleRemoveProject(project.id, e)}
-                icon={<Trash2 size={14} aria-hidden />}
-                size="sm"
-                variant="ghost"
-                className="absolute top-2 right-2 p-1.5 text-text-muted hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all rounded-lg bg-background/80 hover:bg-red-500/10 backdrop-blur-sm"
-              />
+              <Button variant="ghost" size="icon-sm" onClick={(e) => handleRemoveProject(project.id, e)} type="button" aria-label={t("Remove from recent")} title={t("Remove from recent")} className="inline-flex shrink-0 items-center justify-center outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-7 w-7 absolute top-2 right-2 p-1.5 text-text-muted hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all rounded-lg bg-background/80 hover:bg-red-500/10 backdrop-blur-sm">
+                {<Trash2 size={14} aria-hidden />}
+              </Button>
             </div>
           );
         })}
       </div>
 
-      <Text type="supporting" color="secondary" className="text-xs text-text-muted text-center">
-        {t("Recent projects are stored locally in your browser")}
-      </Text>
+      <span className="font-normal text-xs text-text-muted text-center">
+        {isDesktop
+          ? t("Recent projects are stored locally on this device")
+          : t("Recent projects are stored locally in your browser")}
+      </span>
     </div>
   );
 };
-
-export default RecentProjects;

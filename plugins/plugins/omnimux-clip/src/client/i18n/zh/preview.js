@@ -92,9 +92,7 @@ export const zhPreview = {
   'Delete': '删除',
   'Failed': '失败',
   'Generating…': '生成中…',
-  'KieAI generation in progress…': 'KieAI 生成中…',
   'Retry generation': '重试生成',
-  'Create with KieAI': '用 KieAI 生成',
   'Unsaved audio discarded': '未保存的音频已丢弃',
   'Save to media or download next time to keep it.': '下次请保存到媒体或下载以保留。',
   'No matches found': '无匹配结果',
@@ -105,7 +103,6 @@ export const zhPreview = {
   'Folder picker not supported': '不支持文件夹选择器',
   'Please relink assets individually using the refresh button on each missing asset.':
     '请使用每个缺失素材上的刷新按钮逐个重新链接。',
-  'Failed to open KieAI': '打开 KieAI 失败',
   'Unknown error': '未知错误',
 
   // Text / graphics sections

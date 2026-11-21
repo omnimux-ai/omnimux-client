@@ -4,6 +4,10 @@ const EMPTY_SNAPSHOT = Object.freeze({ active: 'zh', revision: 0 })
 
 let activeHostLocale = null
 
+export function getHostLocaleSnapshot() {
+  return activeHostLocale?.getSnapshot?.() ?? activeHostLocale?.getLocale?.() ?? EMPTY_SNAPSHOT
+}
+
 /** Subscribe to the host-owned preference and dictionary revisions without a second locale store. */
 export function useHostLocale(locale) {
   if (locale) {

@@ -15,7 +15,21 @@ import type {
 } from "../types/actions";
 import type { Project, MediaItem } from "../types/project";
 import type { Track, Clip, Transition } from "../types/timeline";
+import type { TextClip } from "../text/types";
+import type { ShapeClip, StickerClip, SVGClip } from "../graphics/types";
+import type { AdjustmentLayer } from "../video/adjustment-layer-engine";
+import type { MotionCompositionInstance } from "../motion/types";
 import { getActionHandler } from "./registry";
+import { invertTimelineToolEdits, type TimelineToolItemEdit } from "../editing/timeline-tool-edit";
+import { prepareClipSplit } from "../editing/clip-fragments";
+
+type TrackOwnedProjectItem =
+  | TextClip
+  | ShapeClip
+  | SVGClip
+  | StickerClip
+  | AdjustmentLayer
+  | MotionCompositionInstance;
 
 export class InverseActionGenerator {
   generate(action: Action, projectBefore: Project): Action | null {
@@ -123,6 +137,13 @@ export class InverseActionGenerator {
             time: marker.time,
             label: marker.label,
             color: marker.color,
+            duration: marker.duration,
+            comment: marker.comment,
+            kind: marker.kind,
+            author: marker.author,
+            status: marker.status,
+            replies: marker.replies,
+            createdAt: marker.createdAt,
           },
         });
       }
@@ -155,6 +176,15 @@ export class InverseActionGenerator {
       case "project/updateSettings":
         return this.createInverseAction(action, "project/updateSettings", {
           ...projectBefore.settings,
+          // Optional settings must be named so undo can clear a value the project did not have before.
+          workingColorSpace: projectBefore.settings.workingColorSpace,
+          colorManagement: projectBefore.settings.colorManagement,
+          acesOutput: projectBefore.settings.acesOutput,
+          graphicsWhiteNits: projectBefore.settings.graphicsWhiteNits,
+          channelLayout: projectBefore.settings.channelLayout,
+          startTimecode: projectBefore.settings.startTimecode,
+          pixelAspectRatio: projectBefore.settings.pixelAspectRatio,
+          fieldOrder: projectBefore.settings.fieldOrder,
         });
 
       case "project/setCanvasBackground":
@@ -256,6 +286,26 @@ export class InverseActionGenerator {
         return this.createInverseAction(action, "track/restore", {
           track: this.cloneTrack(removedTrack),
           position,
+          items: {
+            textClips: this.cloneTrackItems(projectBefore.textClips, action.params.trackId),
+            shapeClips: this.cloneTrackItems(
+              projectBefore.shapeClips,
+              action.params.trackId,
+            ),
+            svgClips: this.cloneTrackItems(projectBefore.svgClips, action.params.trackId),
+            stickerClips: this.cloneTrackItems(
+              projectBefore.stickerClips,
+              action.params.trackId,
+            ),
+            adjustmentLayers: this.cloneTrackItems(
+              projectBefore.adjustmentLayers,
+              action.params.trackId,
+            ),
+            motionInstances: this.cloneTrackItems(
+              projectBefore.motionInstances,
+              action.params.trackId,
+            ),
+          },
         });
       }
 
@@ -295,6 +345,18 @@ export class InverseActionGenerator {
         });
       }
 
+      case "track/setSyncLock": {
+        const track = timeline.tracks.find(
+          (t) => t.id === action.params.trackId,
+        );
+        if (!track) return null;
+
+        return this.createInverseAction(action, "track/setSyncLock", {
+          trackId: action.params.trackId,
+          syncLock: track.syncLock !== false,
+        });
+      }
+
       case "track/hide": {
         const track = timeline.tracks.find(
           (t) => t.id === action.params.trackId,
@@ -316,6 +378,18 @@ export class InverseActionGenerator {
         return this.createInverseAction(action, "track/mute", {
           trackId: action.params.trackId,
           muted: track.muted,
+        });
+      }
+
+      case "track/setSoloSafe": {
+        const track = timeline.tracks.find(
+          (t) => t.id === action.params.trackId,
+        );
+        if (!track) return null;
+
+        return this.createInverseAction(action, "track/setSoloSafe", {
+          trackId: action.params.trackId,
+          soloSafe: track.soloSafe === true,
         });
       }
 
@@ -396,15 +470,24 @@ export class InverseActionGenerator {
         });
       }
 
-      case "clip/split": {
-        // To undo split, we need to merge the two clips back
+      case "clip/trimToPlayhead": {
         const clip = this.findClip(timeline, action.params.clipId);
         if (!clip) return null;
-
-        return this.createInverseAction(action, "clip/merge", {
-          clipId: action.params.clipId,
-          originalClip: this.cloneClip(clip),
+        return this.createInverseAction(action, "clip/restoreTiming", {
+          clipId: clip.id,
+          startTime: clip.startTime,
+          duration: clip.duration,
+          inPoint: clip.inPoint,
+          outPoint: clip.outPoint,
         });
+      }
+
+      case "clip/split": {
+        try {
+          const edits = Array.isArray(action.params.splitEdits) ? action.params.splitEdits as TimelineToolItemEdit[]
+            : prepareClipSplit(projectBefore, action.params.clipId, action.params.time, action.id).edits;
+          return this.createInverseAction(action, "timeline/toolEdit", { edits: invertTimelineToolEdits(edits), label: "Undo split clip" });
+        } catch { return null; }
       }
 
       case "clip/rippleDelete": {
@@ -461,7 +544,7 @@ export class InverseActionGenerator {
         return this.createInverseAction(action, "clip/setColorGrading", {
           clipId: action.params.clipId,
           colorGrading: clip.colorGrading
-            ? { ...clip.colorGrading }
+            ? structuredClone(clip.colorGrading)
             : undefined,
         });
       }
@@ -568,7 +651,8 @@ export class InverseActionGenerator {
 
     return this.createInverseAction(action, "transform/update", {
       clipId: action.params.clipId,
-      transform: { ...clip.transform },
+      transform: structuredClone(clip.transform),
+      replace: true,
     });
   }
 
@@ -670,11 +754,9 @@ export class InverseActionGenerator {
         );
         if (!transition) return null;
 
-        return this.createInverseAction(action, "transition/update", {
-          transitionId: action.params.transitionId,
-          type: transition.type,
-          duration: transition.duration,
-          params: { ...transition.params },
+        // A merging update cannot remove keys introduced by the forward edit.
+        return this.createInverseAction(action, "transition/restore", {
+          transition: { ...transition, params: { ...transition.params } },
         });
       }
     }
@@ -695,16 +777,16 @@ export class InverseActionGenerator {
         });
 
       case "audio/setFade":
-        return this.createInverseAction(action, "audio/setFade", {
+      case "audio/restoreFade":
+        return this.createInverseAction(action, "audio/restoreFade", {
           clipId: action.params.clipId,
-          fadeIn: clip.fade?.fadeIn ?? 0,
-          fadeOut: clip.fade?.fadeOut ?? 0,
+          fade: clip.fade ? structuredClone(clip.fade) : null,
         });
 
       case "audio/addAutomation":
         return this.createInverseAction(action, "audio/addAutomation", {
           clipId: action.params.clipId,
-          points: clip.automation?.volume ?? [],
+          points: clip.automation?.volume?.map((point) => ({ ...point })) ?? null,
         });
 
       case "audio/addEffect": {
@@ -729,16 +811,24 @@ export class InverseActionGenerator {
         });
       }
 
+      case "audio/replaceEffect": {
+        const effect = (clip.audioEffects ?? []).find((item) => item.id === action.params.effectId);
+        if (!effect) return null;
+        return this.createInverseAction(action, "audio/replaceEffect", {
+          clipId: action.params.clipId, effectId: effect.id, effect: structuredClone(effect),
+        });
+      }
+
       case "audio/updateEffect": {
         const effect = clip.audioEffects.find(
           (e) => e.id === action.params.effectId,
         );
         if (!effect) return null;
 
-        return this.createInverseAction(action, "audio/updateEffect", {
+        return this.createInverseAction(action, "audio/replaceEffect", {
           clipId: action.params.clipId,
           effectId: action.params.effectId,
-          params: { ...effect.params },
+          effect: structuredClone(effect),
         });
       }
 
@@ -754,6 +844,21 @@ export class InverseActionGenerator {
           enabled: effect.enabled,
         });
       }
+
+      case "audio/setLiveDucking":
+        return this.createInverseAction(action, "audio/setLiveDucking", {
+          clipId: action.params.clipId,
+          config: clip.metadata?.liveDucking ? structuredClone(clip.metadata.liveDucking) : null,
+        });
+
+      case "audio/setEssentialSound":
+        return this.createInverseAction(action, "audio/setEssentialSound", {
+          clipId: action.params.clipId,
+          audioType: clip.audioType ?? null,
+          state: clip.metadata?.essentialSound
+            ? structuredClone(clip.metadata.essentialSound)
+            : null,
+        });
     }
   }
 
@@ -844,17 +949,20 @@ export class InverseActionGenerator {
     };
   }
 
+  private cloneTrackItems<T extends TrackOwnedProjectItem>(
+    items: readonly T[] | undefined,
+    trackId: string,
+  ): T[] {
+    return (items ?? [])
+      .filter((item) => item.trackId === trackId)
+      .map((item) => structuredClone(item));
+  }
+
   private cloneTrack(track: Track): Record<string, unknown> {
     return {
-      id: track.id,
-      type: track.type,
-      name: track.name,
+      ...(track as unknown as Record<string, unknown>),
       clips: track.clips.map((c) => this.cloneClip(c)),
       transitions: track.transitions?.map((t) => ({ ...t })) ?? [],
-      locked: track.locked,
-      hidden: track.hidden,
-      muted: track.muted,
-      solo: track.solo,
     };
   }
 

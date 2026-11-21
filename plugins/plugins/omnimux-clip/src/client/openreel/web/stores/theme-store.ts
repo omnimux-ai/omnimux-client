@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-export type ThemeMode = "light" | "dark" | "auto";
+type ThemeMode = "light" | "dark" | "auto";
 
 interface ThemeState {
   mode: ThemeMode;
@@ -12,6 +12,9 @@ interface ThemeState {
 
 const getSystemTheme = (): "light" | "dark" => {
   if (typeof window === "undefined") return "dark";
+  if (document.querySelector(".openreel-studio-root")) {
+    return document.body.hasAttribute("data-ds-dark-theme") ? "dark" : "light";
+  }
   return window.matchMedia("(prefers-color-scheme: dark)").matches
     ? "dark"
     : "light";
@@ -46,8 +49,8 @@ export function applyOpenReelTheme(isDark: boolean) {
 export const useThemeStore = create<ThemeState>()(
   persist(
     (set, get) => ({
-      mode: "dark",
-      isDark: true,
+      mode: "auto",
+      isDark: calculateIsDark("auto"),
 
       setMode: (mode: ThemeMode) => {
         const isDark = calculateIsDark(mode);
@@ -79,15 +82,17 @@ export const useThemeStore = create<ThemeState>()(
   ),
 );
 
-if (typeof window !== "undefined") {
-  const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-
-  mediaQuery.addEventListener("change", (e) => {
+/** Follow the host in automatic mode while an editor surface is mounted. */
+export function watchOpenReelHostTheme(): () => void {
+  const update = () => {
     const state = useThemeStore.getState();
-    if (state.mode === "auto") {
-      const isDark = e.matches;
-      useThemeStore.setState({ isDark });
-      applyOpenReelTheme(isDark);
-    }
-  });
+    if (state.mode !== "auto") return;
+    const isDark = calculateIsDark(state.mode);
+    if (state.isDark !== isDark) useThemeStore.setState({ isDark });
+    applyOpenReelTheme(isDark);
+  };
+  const observer = new MutationObserver(update);
+  observer.observe(document.body, { attributes: true, attributeFilter: ["data-ds-dark-theme"] });
+  update();
+  return () => observer.disconnect();
 }

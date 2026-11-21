@@ -3,18 +3,13 @@ import { join } from 'node:path';
 
 // Reuses the native import, consent and rendering controls from the verified journey.
 // The caller owns navigation, TaskSpace and cleanup.
-export async function verifyDuplicateApproval(page, { samples, output }) {
-  await page.click('button[aria-label="Project JSON"]');
-  await page.click('button[aria-label="Import"]');
-  await page.setInputFiles('input[type="file"]', [join(samples, 'duplicate-id-hidden-code.json')]);
-  const markerBefore = await page.evaluate(() => window.__clipSecurityMarker);
-  await page.click('button[aria-label="Import Project"]');
-  await page.waitForFunction(() => window.__clipFixtureReadState().project.name === '重复编号仅允许可见代码'
-    && window.__clipFixtureReadState().frame.x === 160);
+export async function verifyDuplicateApproval(page, { output, importSample, renderAt }) {
+  const markerBefore = await importSample('duplicate-id-hidden-code');
+  await page.waitForFunction(() => window.__clipFixtureReadState().project.name === '重复编号仅允许可见代码');
+  assert.equal((await renderAt(160)).marker, markerBefore);
   assert.equal(await page.evaluate(() => document.querySelector('textarea[aria-label="Expression code"]').value), 'value + 80');
   await page.click('button[aria-label="允许运行此表达式"]');
-  await page.click('button[aria-label="Render frame"]');
-  await page.waitForFunction(() => window.__clipFixtureReadState().frame.x === 240);
+  await renderAt(240);
   const read = () => page.evaluate(() => {
     const { frame, marker, project } = window.__clipFixtureReadState();
     return { frame, marker, expressions: project.motionCompositions[0].layers[0].expressions };

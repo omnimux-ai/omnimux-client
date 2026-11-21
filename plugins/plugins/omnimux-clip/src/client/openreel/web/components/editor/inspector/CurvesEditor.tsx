@@ -5,14 +5,14 @@ import React, {
   useMemo,
   useEffect,
 } from "react";
-import { ToolcraftButton as Button } from "@openreel/ui";
-import { ToolcraftClickableCard as ClickableCard } from "@openreel/ui";
-import { ToolcraftText as Text } from "@openreel/ui";
+import { Button } from "@openreel/ui";
+import { cn } from "@openreel/ui";
+
 import { RotateCcw } from "@/icons/lucide-compat";
 import type { CurvesValues, CurvePoint } from "@openreel/core";
 import { useClipT } from "../../../../../i18n/index.js";
 
-export const DEFAULT_CURVES: CurvesValues = {
+const DEFAULT_CURVES: CurvesValues = {
   rgb: [
     { x: 0, y: 0 },
     { x: 1, y: 1 },
@@ -58,22 +58,20 @@ const ChannelTab: React.FC<{
   label: string;
   isActive: boolean;
   onClick: () => void;
-}> = ({ channel, label, isActive, onClick }) => (
-  <ClickableCard
-    label={`Select ${label} curve channel`}
-    onClick={onClick}
-    className={`px-3 py-1 text-[10px] font-medium rounded transition-colors ${
+}> = ({ channel, label, isActive, onClick }) => {
+  const clipT = useClipT();
+  return (
+  <Button variant="ghost" onClick={onClick} style={{
+      borderBottom: isActive ? `2px solid ${CHANNEL_COLORS[channel]}` : "none",
+    }} type="button" aria-label={clipT("Select {0} curve channel", [label])} className={cn("group/card block h-auto min-w-0 whitespace-normal rounded-[7px] border text-left transition-[background-color,border-color,box-shadow,transform] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50", "border-border bg-bg-1 hover:bg-bg-2", "p-3", `px-3 py-1 text-[10px] font-medium rounded transition-colors ${
       isActive
         ? "bg-bg-2 text-fg"
         : "text-fg-3 hover:text-fg-2"
-    }`}
-    style={{
-      borderBottom: isActive ? `2px solid ${CHANNEL_COLORS[channel]}` : "none",
-    }}
-  >
-    {label}
-  </ClickableCard>
+    }`)}>
+    {clipT(label)}
+  </Button>
 );
+};
 
 /**
  * Catmull-Rom spline interpolation for smooth curves
@@ -154,7 +152,7 @@ export const CurvesEditor: React.FC<CurvesEditorProps> = ({
   onChange,
   onReset: _onReset,
 }) => {
-  const t = useClipT();
+  const clipT = useClipT();
   void _onReset;
   const [activeChannel, setActiveChannel] = useState<keyof CurvesValues>("rgb");
   const [selectedPointIndex, setSelectedPointIndex] = useState<number | null>(
@@ -431,25 +429,19 @@ export const CurvesEditor: React.FC<CurvesEditorProps> = ({
 
       {/* Controls */}
       <div className="flex justify-between items-center">
-        <Text type="supporting" color="secondary" className="text-[9px]">
-          {t("Click to add point • Double-click to remove")}
-        </Text>
-        <Button
-          label={t("Reset")}
-          icon={<RotateCcw size={10} />}
-          variant="ghost"
-          size="sm"
-          onClick={handleResetChannel}
-          className="flex items-center gap-1 px-2 py-1 text-[10px] text-fg-3 hover:text-fg transition-colors"
-        />
+        <span className="text-fg-2 font-normal text-[9px]">
+          {clipT("Click to add point • Double-click to remove")}
+        </span>
+        <Button onClick={handleResetChannel} type="button" aria-label={clipT("Reset")} className="min-w-0 justify-center rounded-[7px] font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-7 bg-transparent hover:bg-bg-2 flex items-center gap-1 px-2 py-1 text-[10px] text-fg-3 hover:text-fg transition-colors">
+          <span className="flex h-4 w-4 shrink-0 items-center justify-center">{<RotateCcw size={10} />}</span>
+          <span className="truncate">{clipT("Reset")}</span>
+        </Button>
       </div>
 
       {/* Point count indicator */}
-      <Text type="supporting" color="secondary" className="block text-center text-[9px]">
-        {currentPoints.length} points
-      </Text>
+      <span className="text-fg-2 font-normal block text-center text-[9px]">
+        {currentPoints.length} {clipT("points")}
+      </span>
     </div>
   );
 };
-
-export default CurvesEditor;

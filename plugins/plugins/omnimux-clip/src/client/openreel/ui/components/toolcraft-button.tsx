@@ -1,6 +1,8 @@
 import * as React from "react"
 
 import { cn } from "../lib/utils"
+import { Button } from "./button"
+import { useClipT } from "../../../i18n/index.js";
 
 export interface ToolcraftButtonProps
   extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "disabled"> {
@@ -35,8 +37,9 @@ export const ToolcraftButton = React.forwardRef<HTMLElement, ToolcraftButtonProp
     },
     ref,
   ) => {
-    const Component = as ?? (props.href ? "a" : "button")
-    const isButton = Component === "button"
+  const t = useClipT();
+    const Component = as ?? (props.href ? "a" : Button)
+    const isButton = Component === "button" || Component === Button
     const resolvedDisabled = disabled || isDisabled || isLoading
     const labelText = getReactNodeText(label).trim()
 
@@ -69,7 +72,7 @@ export const ToolcraftButton = React.forwardRef<HTMLElement, ToolcraftButtonProp
               {icon}
             </span>
           ) : null}
-          {label ? <span className="truncate">{label}</span> : null}
+          {label ? <span className="truncate">{t(label)}</span> : null}
           {endContent ? (
             <span className="flex shrink-0 items-center justify-center">
               {endContent}

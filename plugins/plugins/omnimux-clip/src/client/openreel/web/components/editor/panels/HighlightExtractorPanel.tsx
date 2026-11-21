@@ -1,18 +1,18 @@
+import {
+  Input as ShadcnNumericInput,
+  cn as numericCn,
+  Button,
+} from "@openreel/ui";
+import { useNumericDraft } from "../inspector/shell/useNumericDraft";
 import React, { useState, useCallback } from "react";
-import { ToolcraftButton as Button } from "@openreel/ui";
-import { ToolcraftIconButton as IconButton } from "@openreel/ui";
-import { ToolcraftNumberInputControl } from "@openreel/ui";
-import { ToolcraftText as Text } from "@openreel/ui";
+
+
+
+
 import { Sparkles, Play, Check, Loader2 } from "@/icons/lucide-compat";
 import { useProjectStore } from "../../../stores/project-store";
 import { useTimelineStore } from "../../../stores/timeline-store";
 import { applyHighlightRanges } from "../../../services/highlight-apply";
-import {
-  getTranscriptionService,
-  initializeTranscriptionService,
-  type TranscriptWord,
-} from "@openreel/core";
-import { OPENREEL_TRANSCRIBE_URL } from "../../../config/api-endpoints";
 import {
   extractHighlights,
   type HighlightResult,
@@ -56,7 +56,7 @@ export const HighlightExtractorPanel: React.FC<HighlightExtractorPanelProps> = (
 
     const mediaItem = getMediaItem(clip.mediaId);
     if (!mediaItem?.blob) {
-      setError(t("Media not found or not loaded"));
+      setError("Media not found or not loaded");
       return;
     }
 
@@ -65,30 +65,8 @@ export const HighlightExtractorPanel: React.FC<HighlightExtractorPanelProps> = (
     setHighlights([]);
 
     try {
-      setPhase(t("Transcribing audio..."));
-      setProgress(5);
-
-      const transcriptionService = getTranscriptionService() || initializeTranscriptionService({
-        apiEndpoint: `${OPENREEL_TRANSCRIBE_URL}/transcribe`,
-      });
-      const subtitles = await transcriptionService.transcribeClip(
-        clip,
-        mediaItem,
-        (p) => setProgress(Math.round(p.progress * 20)),
-      );
-
-      const transcript: TranscriptWord[] = subtitles.flatMap((sub) =>
-        sub.words
-          ? sub.words.map((w) => ({ text: w.text, start: w.startTime, end: w.endTime }))
-          : [{ text: sub.text, start: sub.startTime, end: sub.endTime }],
-      );
-
-      if (transcript.length === 0) {
-        throw new Error(t("No transcript words found"));
-      }
-
-      setPhase(t("Decoding audio..."));
-      setProgress(25);
+      setPhase("Decoding audio...");
+      setProgress(10);
 
       const arrayBuffer = await mediaItem.blob.arrayBuffer();
       const audioContext = new OfflineAudioContext(1, 44100, 44100);
@@ -96,18 +74,18 @@ export const HighlightExtractorPanel: React.FC<HighlightExtractorPanelProps> = (
 
       const results = await extractHighlights(
         audioBuffer,
-        transcript,
+        [],
         preferences,
         (phaseName, prog) => {
           setPhase(phaseName);
-          setProgress(25 + Math.round(prog * 0.75));
+          setProgress(Math.round(prog));
         },
       );
 
       setHighlights(results);
       setSelected(new Set(results.map((_, i) => i)));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("Analysis failed"));
+      setError(err instanceof Error ? err.message : "Analysis failed");
     } finally {
       setIsProcessing(false);
       setPhase("");
@@ -140,61 +118,62 @@ export const HighlightExtractorPanel: React.FC<HighlightExtractorPanelProps> = (
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
+  const numericField1 = useNumericDraft({value: preferences.maxClipDuration, onChange: (value) =>
+              setPreferences((p) => ({ ...p, maxClipDuration: value || 60 })), min: 1, max: 300, step: 1});
+  const numericField0 = useNumericDraft({value: preferences.targetClipCount, onChange: (value) =>
+              setPreferences((p) => ({ ...p, targetClipCount: value || 5 })), min: 1, max: 20, step: 1});
   return (
     <div className="space-y-3">
       <div className="space-y-2">
         <div className="flex items-center gap-2">
-          <Text type="label" color="secondary" className="text-[10px] text-text-secondary">{t("Clips")}</Text>
-          <ToolcraftNumberInputControl
-            label={t("Clips")}
-            isLabelHidden
-            size="sm"
-            width={48}
+          <span className="font-normal text-[10px] text-text-secondary">{t("Clips")}</span>
+          <ShadcnNumericInput
+            {...numericField0}
+            type="number"
+            inputMode="decimal"
+            aria-label={t("Clips")}
             min={1}
             max={20}
-            value={preferences.targetClipCount}
-            onChange={(value) =>
-              setPreferences((p) => ({ ...p, targetClipCount: value || 5 }))
-            }
-            className="w-12 px-1 py-0.5 text-[10px] bg-background-secondary border border-border rounded text-text-primary"
+            step={1}
+            disabled={false}
+            style={{ width: 48 }}
+            className={numericCn(
+              "h-8 w-full min-w-0 rounded-[7px] border border-border bg-bg-1 px-2.5 py-1.5 font-mono text-[13px] font-medium tabular-nums text-fg-2 md:text-[13px]",
+              "h-7 text-[12px] md:text-[12px]",
+              "w-12 px-1 py-0.5 text-[10px] bg-background-secondary border border-border rounded text-text-primary md:text-[10px]",
+            )}
           />
-          <Text type="label" color="secondary" className="text-[10px] text-text-secondary">{t("Max")}</Text>
-          <ToolcraftNumberInputControl
-            label={t("Max duration")}
-            isLabelHidden
-            size="sm"
-            width={48}
+          <span className="font-normal text-[10px] text-text-secondary">{t("Max")}</span>
+          <ShadcnNumericInput
+            {...numericField1}
+            type="number"
+            inputMode="decimal"
+            aria-label={t("Max duration")}
             min={1}
             max={300}
-            value={preferences.maxClipDuration}
-            onChange={(value) =>
-              setPreferences((p) => ({ ...p, maxClipDuration: value || 60 }))
-            }
-            className="w-12 px-1 py-0.5 text-[10px] bg-background-secondary border border-border rounded text-text-primary"
+            step={1}
+            disabled={false}
+            style={{ width: 48 }}
+            className={numericCn(
+              "h-8 w-full min-w-0 rounded-[7px] border border-border bg-bg-1 px-2.5 py-1.5 font-mono text-[13px] font-medium tabular-nums text-fg-2 md:text-[13px]",
+              "h-7 text-[12px] md:text-[12px]",
+              "w-12 px-1 py-0.5 text-[10px] bg-background-secondary border border-border rounded text-text-primary md:text-[10px]",
+            )}
           />
           <span className="text-[10px] text-text-muted">s</span>
         </div>
 
-        <Button
-          label={
-            isProcessing ? `${phase} (${progress}%)` : t("Find Highlights")
-          }
-          icon={
-            isProcessing ? (
+        <Button onClick={handleAnalyze} type="button" aria-label={(isProcessing ? `${phase} (${progress}%)` : "Find Highlights").trim() || undefined} disabled={(isProcessing)} className="min-w-0 outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none h-8 w-full flex items-center justify-center gap-2 px-3 py-2 bg-primary hover:bg-primary/90 text-white rounded text-[11px] font-medium transition-colors disabled:opacity-50">
+          <span className="flex h-4 w-4 shrink-0 items-center justify-center">{isProcessing ? (
               <Loader2 size={14} className="animate-spin" aria-hidden />
             ) : (
               <Sparkles size={14} aria-hidden />
-            )
-          }
-          variant="primary"
-          size="md"
-          onClick={handleAnalyze}
-          isDisabled={isProcessing}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-primary hover:bg-primary/90 text-white rounded text-[11px] font-medium transition-colors disabled:opacity-50"
-        />
+            )}</span>
+          <span className="truncate">{isProcessing ? `${phase} (${progress}%)` : t("Find Highlights")}</span>
+        </Button>
 
         {error && (
-          <Text type="supporting" className="text-[10px] text-red-400">{error}</Text>
+          <span className="font-normal text-[10px] text-red-400">{error}</span>
         )}
       </div>
 
@@ -224,21 +203,16 @@ export const HighlightExtractorPanel: React.FC<HighlightExtractorPanelProps> = (
                     {highlight.score}
                   </div>
                   <span className="text-[10px] text-text-primary font-medium truncate max-w-[140px]">
-                    {highlight.title}
+                    {t(highlight.title)}
                   </span>
                 </div>
                 <div className="flex items-center gap-1">
-                  <IconButton
-                    label={t("Preview highlight")}
-                    icon={<Play size={10} className="text-text-muted" aria-hidden />}
-                    variant="ghost"
-                    size="sm"
-                    onClick={(e) => {
+                  <Button variant="ghost" size="icon-sm" onClick={(e) => {
                       e.stopPropagation();
                       handlePreview(highlight);
-                    }}
-                    className="p-1 hover:bg-background-secondary rounded"
-                  />
+                    }} type="button" aria-label={t("Preview highlight")} title={t("Preview highlight")} className="inline-flex shrink-0 items-center justify-center outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-7 w-7 bg-transparent text-fg-muted hover:text-fg p-1 hover:bg-background-secondary rounded">
+                    {<Play size={10} className="text-text-muted" aria-hidden />}
+                  </Button>
                   {selected.has(index) && (
                     <Check size={12} className="text-primary" />
                   )}
@@ -255,25 +229,18 @@ export const HighlightExtractorPanel: React.FC<HighlightExtractorPanelProps> = (
             </div>
           ))}
 
-          <Button
-            label={`${t("Apply Highlights")} (${selected.size})`}
-            icon={<Check size={14} aria-hidden />}
-            variant="primary"
-            size="md"
-            onClick={async () => {
+          <Button onClick={async () => {
               const selectedHighlights = highlights.filter((_, i) => selected.has(i));
               await applyHighlightRanges(
                 clipId,
                 selectedHighlights.map((h) => ({ start: h.start, end: h.end })),
               );
-            }}
-            isDisabled={selected.size === 0}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded text-[11px] font-medium transition-colors disabled:opacity-50"
-          />
+            }} type="button" aria-label={(`Apply ${selected.size} Highlight${selected.size !== 1 ? "s" : ""}`).trim() || undefined} disabled={(selected.size === 0)} className="min-w-0 outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none h-8 w-full flex items-center justify-center gap-2 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded text-[11px] font-medium transition-colors disabled:opacity-50">
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center">{<Check size={14} aria-hidden />}</span>
+            <span className="truncate">{t("Apply {0} Highlight{1}", [selected.size, selected.size !== 1 ? "s" : ""])}</span>
+          </Button>
         </div>
       )}
     </div>
   );
 };
-
-export default HighlightExtractorPanel;

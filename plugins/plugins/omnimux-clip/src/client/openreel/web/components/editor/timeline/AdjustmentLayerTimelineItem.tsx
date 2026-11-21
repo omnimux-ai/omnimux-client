@@ -1,13 +1,19 @@
+import { beginTimelineGestureStyle } from "./gesture-style";
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Button } from "@openreel/ui";
+import { useTimelineTouchGesture, listenTimelineGesture } from "./touch-gestures";
+import { TimelineTouchMoveHandle } from "./TimelineTouchMoveHandle";
 import { Layers } from "@/icons/lucide-compat";
 import type { AdjustmentLayer } from "@openreel/core";
 import { useProjectStore } from "../../../stores/project-store";
+import { useClipT } from "../../../../../i18n/index.js";
 
 interface AdjustmentLayerTimelineItemProps {
   layer: AdjustmentLayer;
   pixelsPerSecond: number;
   frameRate: number;
   onSelectOwner: () => void;
+  isSelected?: boolean;
 }
 
 const MIN_FRAMES = 1;
@@ -17,8 +23,12 @@ export const AdjustmentLayerTimelineItem: React.FC<AdjustmentLayerTimelineItemPr
   pixelsPerSecond,
   frameRate,
   onSelectOwner,
+  isSelected = false,
 }) => {
+  const t = useClipT();
+  const touchGesture = useTimelineTouchGesture();
   const [gesture, setGesture] = useState<"move" | "left" | "right" | null>(null);
+  const itemRef = useRef<HTMLDivElement>(null);
   const startRef = useRef({ x: 0, startTime: 0, duration: 0 });
 
   const commitTiming = useCallback((startTime: number, duration: number) => {
@@ -35,7 +45,8 @@ export const AdjustmentLayerTimelineItem: React.FC<AdjustmentLayerTimelineItemPr
   }, [layer.id]);
 
   const startGesture = (event: React.MouseEvent, kind: "move" | "left" | "right") => {
-    if (event.button !== 0) return;
+    if (touchGesture.shouldIgnoreMouse(event) || event.button !== 0) return false;
+    if (useProjectStore.getState().project.timeline.tracks.find((track) => track.id === layer.trackId)?.locked) return false;
     event.preventDefault();
     event.stopPropagation();
     onSelectOwner();
@@ -71,22 +82,23 @@ export const AdjustmentLayerTimelineItem: React.FC<AdjustmentLayerTimelineItemPr
     const handleUp = () => {
       setGesture(null);
       useProjectStore.getState().endHistoryGroup();
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
     };
-    document.body.style.cursor = gesture === "move" ? "grabbing" : "ew-resize";
-    document.body.style.userSelect = "none";
-    window.addEventListener("mousemove", handleMove);
-    window.addEventListener("mouseup", handleUp);
+    const releaseStyle = beginTimelineGestureStyle(itemRef.current, { cursor: gesture === "move" ? "grabbing" : "ew-resize", userSelect: "none" });
+    const stopListening = listenTimelineGesture(touchGesture.pointerId, handleMove, handleUp, handleUp, releaseStyle);
     return () => {
-      window.removeEventListener("mousemove", handleMove);
-      window.removeEventListener("mouseup", handleUp);
+      stopListening();
     };
-  }, [commitTiming, frameRate, gesture, pixelsPerSecond]);
+  }, [commitTiming, frameRate, gesture, pixelsPerSecond, touchGesture]);
 
   return (
     <div
+      ref={itemRef}
       data-testid="adjustment-layer-timeline-item"
+      data-timeline-adjustment
+      data-timeline-clip
+          data-timeline-item-id={layer.id}
+      aria-pressed={isSelected}
+      onPointerDown={touchGesture.bodyPointerDown}
       aria-label={`${layer.name}, adjustment layer`}
       className={`absolute top-1 z-20 flex h-5 min-w-[12px] items-center overflow-hidden rounded border text-[9px] font-semibold shadow-sm ${
         layer.enabled
@@ -98,20 +110,25 @@ export const AdjustmentLayerTimelineItem: React.FC<AdjustmentLayerTimelineItemPr
         width: Math.max(12, layer.duration * pixelsPerSecond),
       }}
       onMouseDown={(event) => startGesture(event, "move")}
-      onClick={(event) => event.stopPropagation()}
+      onClick={(event) => { if (touchGesture.consumeTap()) onSelectOwner(); event.stopPropagation(); }}
     >
-      <button
+      {isSelected && <TimelineTouchMoveHandle label={t("Move {0}", [layer.name])} onPointerDown={(event) => touchGesture.start(event, (e) => startGesture(e, "move"))} />}
+      <Button variant="ghost" size="sm"
+        data-timeline-trim="left"
+        onPointerDown={(event) => touchGesture.start(event, (e) => startGesture(e, "left"))}
         type="button"
-        aria-label={`Trim start of ${layer.name}`}
-        className="h-full w-1.5 shrink-0 cursor-ew-resize bg-white/20 hover:bg-white/50"
+        aria-label={t("Trim start of {0}", [layer.name])}
+        className="h-full w-1.5 shrink-0 rounded-none p-0 cursor-ew-resize bg-white/20 hover:bg-white/50"
         onMouseDown={(event) => startGesture(event, "left")}
       />
       <Layers size={10} className="ml-1 shrink-0" aria-hidden />
-      <span className="truncate px-1">FX · {layer.name}</span>
-      <button
+      <span className="truncate px-1">{t("FX ·")} {layer.name}</span>
+      <Button variant="ghost" size="sm"
+        data-timeline-trim="right"
+        onPointerDown={(event) => touchGesture.start(event, (e) => startGesture(e, "right"))}
         type="button"
-        aria-label={`Trim end of ${layer.name}`}
-        className="ml-auto h-full w-1.5 shrink-0 cursor-ew-resize bg-white/20 hover:bg-white/50"
+        aria-label={t("Trim end of {0}", [layer.name])}
+        className="ml-auto h-full w-1.5 shrink-0 rounded-none p-0 cursor-ew-resize bg-white/20 hover:bg-white/50"
         onMouseDown={(event) => startGesture(event, "right")}
       />
     </div>

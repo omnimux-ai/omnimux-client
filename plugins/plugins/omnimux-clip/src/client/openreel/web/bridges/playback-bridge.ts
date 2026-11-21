@@ -1,9 +1,11 @@
+import { isTrackAudible } from "@openreel/core";
 import type { PlaybackController, PlaybackEvent } from "@openreel/core";
 import { useTimelineStore, type PlaybackState } from "../stores/timeline-store";
 import { useEngineStore } from "../stores/engine-store";
 import { useProjectStore } from "../stores/project-store";
+import { resolvePlaybackLoop, resolvePlaybackStart, type PlaybackLoopRange } from "../utils/playback-loop";
 
-export interface TrackAudibility {
+interface TrackAudibility {
   trackId: string;
   isAudible: boolean;
   isMuted: boolean;
@@ -16,6 +18,11 @@ export class PlaybackBridge {
   private unsubscribePlaybackEvents: (() => void) | null = null;
   private initialized = false;
   private isUpdatingProject = false;
+  private unsubscribeLoopState: (() => void) | null = null;
+  private unsubscribeClock: (() => void) | null = null;
+  private lastClockTime: number | null = null;
+  private lastLoopIteration = 0;
+  private activeLoop: PlaybackLoopRange | null = null;
 
   async initialize(): Promise<void> {
     if (this.initialized) {
@@ -35,6 +42,10 @@ export class PlaybackBridge {
       throw new Error("PlaybackController not available in EngineStore");
     }
 
+    // The Preview draws its own paused frames and nothing reads the controller's, so seek/scrub only move the
+    // clock and audio: rendering a 4K composition per seek cost a keyframe-to-target decode and ~66 MB of bitmaps.
+    this.playbackController.setRenderStillFrames(false);
+
     // Set up the project in the playback controller
     const projectState = useProjectStore.getState();
     this.playbackController.setProject(projectState.project);
@@ -44,8 +55,61 @@ export class PlaybackBridge {
 
     // Subscribe to project changes to update the playback controller
     this.setupProjectSubscription();
+    this.setupLoopSubscription();
 
     this.initialized = true;
+  }
+
+  private syncLoop(): void {
+    const controller = this.playbackController;
+    if (!controller) return;
+    const state = useTimelineStore.getState();
+    const duration = useProjectStore.getState().getTimelineDuration();
+    const loop = resolvePlaybackLoop(state, duration);
+    this.activeLoop = loop;
+    const clock = controller.getMasterClock();
+    const wasPlaying = clock.isPlaying;
+    const currentTime = wasPlaying ? clock.currentTime : state.playheadPosition;
+    clock.setLoop(Boolean(loop), loop?.start ?? 0, loop?.end ?? 0);
+    if (state.playbackState === "playing" && !state.isScrubbing) {
+      const position = loop ? resolvePlaybackStart(currentTime, duration, loop) : currentTime;
+      if (wasPlaying || position !== state.playheadPosition) {
+        // Reanchor the elapsed clock when changing a loop so disabling it
+        // continues from the visible frame rather than the original raw time.
+        this.lastClockTime = position;
+        this.lastLoopIteration = 0;
+        clock.seek(position);
+        controller.getRealtimeAudioGraph().seekTo(position);
+        state.setPlayheadPosition(position);
+      }
+    }
+  }
+
+  private setupLoopSubscription(): void {
+    if (!this.playbackController) return;
+    this.syncLoop();
+    this.unsubscribeLoopState = useTimelineStore.subscribe(
+      (state) => [state.loopEnabled, state.loopStart, state.loopEnd] as const,
+      () => this.syncLoop(),
+      { equalityFn: (left, right) => left.every((value, index) => value === right[index]) },
+    );
+    const controller = this.playbackController;
+    this.unsubscribeClock = controller.getMasterClock().subscribe({
+      onTimeUpdate: (time) => {
+        const state = useTimelineStore.getState();
+        const iteration = controller.getMasterClock().loopIteration;
+        if (this.activeLoop && state.playbackState === "playing" && !state.isScrubbing &&
+            (iteration > this.lastLoopIteration ||
+              (this.lastClockTime !== null && time < this.lastClockTime - 0.001))) {
+          // Audio schedules need a fresh offset when the shared clock wraps.
+          controller.getRealtimeAudioGraph().seekTo(time);
+          state.setPlayheadPosition(time);
+        }
+        this.lastClockTime = time;
+        this.lastLoopIteration = iteration;
+      },
+      onStateChange: () => { this.lastClockTime = null; this.lastLoopIteration = 0; },
+    });
   }
 
   /**
@@ -124,12 +188,18 @@ export class PlaybackBridge {
       (project) => {
         if (this.playbackController) {
           const timelineStore = useTimelineStore.getState();
-          const currentTime = timelineStore.playheadPosition;
           const wasPlaying = timelineStore.playbackState === "playing";
+          const duration = useProjectStore.getState().getTimelineDuration();
+          const currentTime = wasPlaying ? resolvePlaybackStart(
+            timelineStore.playheadPosition,
+            duration,
+            resolvePlaybackLoop(timelineStore, duration),
+          ) : timelineStore.playheadPosition;
 
           this.isUpdatingProject = true;
           this.playbackController.setProject(project);
           this.isUpdatingProject = false;
+          this.syncLoop();
 
           this.playbackController.scrubTo(currentTime);
           // Explicitly restore position — scrubTo may be blocked by isScrubbing
@@ -196,6 +266,11 @@ export class PlaybackBridge {
    */
   async play(): Promise<void> {
     if (this.playbackController) {
+      const state = useTimelineStore.getState();
+      const duration = useProjectStore.getState().getTimelineDuration();
+      const loop = resolvePlaybackLoop(state, duration);
+      const position = resolvePlaybackStart(state.playheadPosition, duration, loop);
+      if (loop && position !== state.playheadPosition) await this.seek(position);
       await this.playbackController.play();
     }
     useTimelineStore.getState().play();
@@ -319,20 +394,11 @@ export class PlaybackBridge {
    * @returns true if the track should be audible
    */
   isTrackAudible(
-    track: { muted: boolean; solo: boolean },
+    track: { muted: boolean; solo: boolean; soloSafe?: boolean },
     hasSoloTracks: boolean,
   ): boolean {
-    // If track is explicitly muted, it's not audible (Requirement 2.5)
-    if (track.muted) {
-      return false;
-    }
-
-    // If any track has solo enabled, only soloed tracks are audible (Requirement 2.6)
-    if (hasSoloTracks && !track.solo) {
-      return false;
-    }
-
-    return true;
+    // Muted never plays (Requirement 2.5); while anything is soloed only soloed or solo-safe tracks do (Requirement 2.6).
+    return isTrackAudible(track, hasSoloTracks);
   }
 
   /**
@@ -347,7 +413,7 @@ export class PlaybackBridge {
    * @returns Array of TrackAudibility objects
    */
   getTrackAudibility(
-    tracks: Array<{ id: string; muted: boolean; solo: boolean }>,
+    tracks: Array<{ id: string; muted: boolean; solo: boolean; soloSafe?: boolean }>,
   ): TrackAudibility[] {
     const hasSoloTracks = tracks.some((t) => t.solo);
 
@@ -436,6 +502,14 @@ export class PlaybackBridge {
    * Dispose of the playback bridge and clean up subscriptions
    */
   dispose(): void {
+    this.unsubscribeLoopState?.();
+    this.unsubscribeLoopState = null;
+    this.unsubscribeClock?.();
+    this.unsubscribeClock = null;
+    this.playbackController?.getMasterClock().setLoop(false);
+    this.lastClockTime = null;
+    this.lastLoopIteration = 0;
+    this.activeLoop = null;
     // Unsubscribe from playback events
     if (this.unsubscribePlaybackEvents) {
       this.unsubscribePlaybackEvents();

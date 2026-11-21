@@ -1,16 +1,16 @@
 import { create } from "zustand";
 import { subscribeWithSelector, persist } from "zustand/middleware";
 import type { PreviewQuality } from "../components/editor/preview/preview-resolution";
+import { MOTION_CREATOR_ENABLED } from "../config/features";
+import { useEditPointStore } from "./edit-point-store";
 
-export type PanelId =
+type PanelId =
   | "mediaLibrary"
   | "inspector"
   | "effects"
   | "audioMixer"
   | "colorGrading"
-  | "subtitles"
-  | "ai"
-  | "agentChat";
+  | "subtitles";
 
 export type SelectionType =
   | "clip"
@@ -24,7 +24,7 @@ export type SelectionType =
   | "transition"
   | "motion-instance";
 
-export type DesktopPage = "edit" | "motion" | "color" | "deliver";
+type DesktopPage = "edit" | "motion" | "color" | "deliver";
 
 export interface SelectionItem {
   type: SelectionType;
@@ -32,7 +32,7 @@ export interface SelectionItem {
   trackId?: string;
 }
 
-export interface SnapSettings {
+interface SnapSettings {
   enabled: boolean;
   snapToGrid: boolean;
   snapToClips: boolean;
@@ -42,14 +42,14 @@ export interface SnapSettings {
   snapThreshold: number;
 }
 
-export interface PanelState {
+interface PanelState {
   visible: boolean;
   width?: number;
   height?: number;
   collapsed?: boolean;
 }
 
-export interface KeyboardShortcuts {
+interface KeyboardShortcuts {
   playPause: string;
   undo: string;
   redo: string;
@@ -74,11 +74,23 @@ export interface UIState {
   shortcuts: KeyboardShortcuts;
   theme: "light" | "dark" | "system";
   showWaveforms: boolean;
+  autoProxy4k: boolean;
+  hardwareAcceleration: boolean;
   showThumbnails: boolean;
   showKeyframes: boolean;
   autoScroll: boolean;
   timelineMaximized: boolean;
   playbackQuality: PreviewQuality;
+  scopesVisible: boolean;
+  scopesKind:
+    | "waveform"
+    | "parade"
+    | "yc"
+    | "vectorscope"
+    | "hls"
+    | "histogram";
+  /** Level axis of the waveforms: IRE percent, or nits for PQ / HLG footage. */
+  scopesScale: "ire" | "pq" | "hlg";
   activeModal: string | null;
   modalData: Record<string, unknown> | null;
   contextMenu: {
@@ -123,11 +135,17 @@ export interface UIState {
   resetShortcuts: () => void;
   setTheme: (theme: "light" | "dark" | "system") => void;
   setShowWaveforms: (show: boolean) => void;
+  setAutoProxy4k: (enabled: boolean) => void;
+  setHardwareAcceleration: (enabled: boolean) => void;
   setShowThumbnails: (show: boolean) => void;
   setShowKeyframes: (show: boolean) => void;
   setAutoScroll: (enabled: boolean) => void;
   setTimelineMaximized: (maximized: boolean) => void;
   setPlaybackQuality: (quality: PreviewQuality) => void;
+  setScopesVisible: (visible: boolean) => void;
+  toggleScopes: () => void;
+  setScopesKind: (kind: UIState["scopesKind"]) => void;
+  setScopesScale: (scale: UIState["scopesScale"]) => void;
   toggleTimelineMaximized: () => void;
   openModal: (modalId: string, data?: Record<string, unknown>) => void;
   closeModal: () => void;
@@ -155,11 +173,14 @@ export interface UIState {
     progress: number;
     phase: string;
   }) => void;
+  /** Sequence the next export renders; null = the active sequence. Not persisted. */
+  exportSequenceId: string | null;
+  setExportSequenceId: (id: string | null) => void;
   startEffectApplication: (clipId: string, label?: string) => void;
   finishEffectApplication: () => void;
 }
 
-export interface ContextMenuItem {
+interface ContextMenuItem {
   id: string;
   label: string;
   icon?: string;
@@ -202,8 +223,6 @@ const DEFAULT_PANELS: Record<PanelId, PanelState> = {
   audioMixer: { visible: false, width: 300 },
   colorGrading: { visible: false, width: 400 },
   subtitles: { visible: false, width: 300 },
-  ai: { visible: false, width: 300 },
-  agentChat: { visible: false, width: 380 },
 };
 
 export const useUIStore = create<UIState>()(
@@ -223,11 +242,17 @@ export const useUIStore = create<UIState>()(
 
         theme: "dark",
         showWaveforms: true,
+        // Native proxies are cheap on desktop, so it starts on there; web keeps it off.
+        autoProxy4k: typeof window !== "undefined" && window.openreel?.platform === "desktop",
+        hardwareAcceleration: true,
         showThumbnails: true,
         showKeyframes: true,
         autoScroll: true,
         timelineMaximized: false,
         playbackQuality: "auto",
+        scopesVisible: false,
+        scopesKind: "waveform",
+        scopesScale: "ire",
 
         activeModal: null,
         modalData: null,
@@ -260,6 +285,8 @@ export const useUIStore = create<UIState>()(
         },
 
         setExportState: (state) => set({ exportState: state }),
+        exportSequenceId: null,
+        setExportSequenceId: (id) => set({ exportSequenceId: id }),
 
         startEffectApplication: (clipId: string, label?: string) => {
           set({
@@ -276,6 +303,8 @@ export const useUIStore = create<UIState>()(
         },
 
         select: (item: SelectionItem, addToSelection = false) => {
+          // Clips and an edit point/gap are never selected together.
+          useEditPointStore.getState().clear();
           const { selectedItems } = get();
           if (addToSelection) {
             // Multi-select mode: only add item if not already selected to prevent duplicates
@@ -289,7 +318,11 @@ export const useUIStore = create<UIState>()(
               });
             }
           } else {
-            // Single-select mode: clear previous selection and select only this item
+            // Single-select mode: clear previous selection and select only this item.
+            // Re-selecting the lone selected item (a mouseup select followed by the click's
+            // select) must not publish a new array: every selection subscriber would re-run.
+            const only = selectedItems.length === 1 ? selectedItems[0] : undefined;
+            if (only && only.id === item.id && only.type === item.type && only.trackId === item.trackId) return;
             set({
               selectedItems: [item],
               lastSelectedItem: item,
@@ -298,6 +331,7 @@ export const useUIStore = create<UIState>()(
         },
 
         selectMultiple: (items: SelectionItem[]) => {
+          if (items.length > 0) useEditPointStore.getState().clear();
           set({
             selectedItems: items,
             lastSelectedItem: items.length > 0 ? items[items.length - 1] : null,
@@ -482,6 +516,8 @@ export const useUIStore = create<UIState>()(
         setShowWaveforms: (show: boolean) => {
           set({ showWaveforms: show });
         },
+        setAutoProxy4k: (autoProxy4k: boolean) => set({autoProxy4k}),
+        setHardwareAcceleration: (hardwareAcceleration: boolean) => set({hardwareAcceleration}),
 
         setShowThumbnails: (show: boolean) => {
           set({ showThumbnails: show });
@@ -506,6 +542,11 @@ export const useUIStore = create<UIState>()(
         setPlaybackQuality: (quality: PreviewQuality) => {
           set({ playbackQuality: quality });
         },
+
+        setScopesVisible: (visible) => set({ scopesVisible: visible }),
+        toggleScopes: () => set((s) => ({ scopesVisible: !s.scopesVisible })),
+        setScopesKind: (kind) => set({ scopesKind: kind }),
+        setScopesScale: (scale) => set({ scopesScale: scale }),
 
         openModal: (modalId: string, data?: Record<string, unknown>) => {
           set({
@@ -579,7 +620,11 @@ export const useUIStore = create<UIState>()(
           set({ inspectorActiveTab: tabId });
         },
 
-        setDesktopPage: (page) => set({ desktopPage: page }),
+        setDesktopPage: (page) =>
+          set({
+            desktopPage:
+              page === "motion" && !MOTION_CREATOR_ENABLED ? "edit" : page,
+          }),
 
         setShowWelcomeScreen: (show: boolean) => {
           set({ showWelcomeScreen: show });
@@ -594,19 +639,17 @@ export const useUIStore = create<UIState>()(
       }),
       {
         name: "openreel-ui-preferences",
-        version: 2,
+        version: 4,
         migrate: (persisted: unknown, version: number) => {
-          const state = persisted as Record<string, unknown>;
+          const state = { ...(persisted as Record<string, unknown> | null) };
           if (version === 0) {
             state.snapSettings = DEFAULT_SNAP_SETTINGS;
           }
-          if (version < 2) {
-            const panels = (state.panels ?? {}) as Record<string, PanelState>;
-            if (!panels.agentChat) {
-              panels.agentChat = DEFAULT_PANELS.agentChat;
-            }
-            state.panels = panels;
+          if (version < 3 && state.desktopPage === "motion") {
+            state.desktopPage = "edit";
           }
+          const panels = (state.panels ?? {}) as Partial<Record<PanelId, PanelState>>;
+          state.panels = Object.fromEntries(Object.entries(DEFAULT_PANELS).map(([id, defaults]) => [id, panels[id as PanelId] ?? defaults]));
           return state;
         },
         partialize: (state) => ({
@@ -615,6 +658,8 @@ export const useUIStore = create<UIState>()(
           shortcuts: state.shortcuts,
           theme: state.theme,
           showWaveforms: state.showWaveforms,
+          autoProxy4k: state.autoProxy4k,
+          hardwareAcceleration: state.hardwareAcceleration,
           showThumbnails: state.showThumbnails,
           showKeyframes: state.showKeyframes,
           autoScroll: state.autoScroll,

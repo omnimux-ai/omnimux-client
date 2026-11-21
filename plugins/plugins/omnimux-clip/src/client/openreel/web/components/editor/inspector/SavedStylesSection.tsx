@@ -1,0 +1,78 @@
+import { useState } from "react";
+import { v4 as uuidv4 } from "uuid";
+import { Button, Input } from "@openreel/ui";
+import { useProjectStore } from "../../../stores/project-store";
+import { toast } from "../../../stores/notification-store";
+import { clipNow } from "../../../../../i18n/index.js";
+import { useClipT } from "../../../../../i18n/index.js";
+
+/**
+ * Save the selected text clip's or caption cue's look under a name and apply
+ * saved looks to it. Every change is an undoable `style/*` action.
+ */
+export function SavedStylesSection({ kind, targetId }: { kind: "text" | "caption"; targetId: string }) {
+  const t = useClipT();
+  const library = useProjectStore((state) => state.project.savedStyles);
+  const list = (kind === "text" ? library?.text : library?.caption) ?? [];
+  const [name, setName] = useState("");
+
+  const run = (type: string, params: Record<string, unknown>) =>
+    useProjectStore.getState().executeAction({ type, id: uuidv4(), timestamp: Date.now(), params });
+
+  const save = async () => {
+    const state = useProjectStore.getState();
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    if (kind === "text") {
+      const clip = state.project.textClips?.find((c) => c.id === targetId) ?? state.getTextClip(targetId);
+      if (!clip) return;
+      await run("style/save", { kind, id: uuidv4(), name: trimmed, style: clip.style, ...(clip.scroll ? { scroll: clip.scroll } : {}) });
+    } else {
+      const cue = state.getSubtitle(targetId);
+      if (!cue) return;
+      await run("style/save", {
+        kind,
+        id: uuidv4(),
+        name: trimmed,
+        style: cue.style ?? { fontFamily: "Inter", fontSize: 24, color: "#ffffff", backgroundColor: "rgba(0, 0, 0, 0.7)", position: "bottom" },
+        ...(cue.cueSettings ? { cueSettings: cue.cueSettings } : {}),
+      });
+    }
+    setName("");
+    toast.success(clipNow()("Style saved"), clipNow()("\"{0}\" is ready to apply.", [trimmed]));
+  };
+
+  const apply = (styleId: string) =>
+    kind === "text"
+      ? run("style/applyText", { clipIds: [targetId], styleId })
+      : run("style/applyCaption", { subtitleIds: [targetId], styleId });
+
+  return (
+    <div className="space-y-2" data-saved-styles={kind}>
+      <div className="flex gap-2">
+        <Input aria-label={t("Name for new {0} style", [kind])} placeholder={t("Style name")} value={name}
+          className="h-7 min-w-0 flex-1 rounded-[5px] bg-bg-2 px-2 py-1 text-xs"
+          onChange={(event) => setName(event.target.value)}
+          onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void save(); } }} />
+        <Button type="button" variant="outline" className="h-7 px-2 text-xs" disabled={!name.trim()} onClick={() => void save()}>{t("Save")}</Button>
+      </div>
+      {list.length === 0 ? (
+        <p className="text-[10px] text-fg-3">{t("No saved")} {kind} {t("styles yet.")}</p>
+      ) : (
+        <ul className="space-y-1">
+          {list.map((entry) => (
+            <li key={entry.id} className="flex items-center justify-between gap-2">
+              <span className="min-w-0 truncate text-xs text-fg">{entry.name}</span>
+              <span className="flex shrink-0 gap-1">
+                <Button type="button" variant="outline" className="h-6 px-2 text-[10px]" aria-label={t("Apply style {0}", [entry.name])}
+                  onClick={() => void apply(entry.id)}>{t("Apply")}</Button>
+                <Button type="button" variant="ghost" className="h-6 px-2 text-[10px]" aria-label={t("Delete style {0}", [entry.name])}
+                  onClick={() => void run("style/delete", { kind, styleId: entry.id })}>Delete</Button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}

@@ -2,7 +2,6 @@ import { Component, useEffect, useLayoutEffect, useRef, useState, useSyncExterna
 import { useHostLocale } from './useHostLocale.js'
 import { createPortal } from 'react-dom'
 import OpenReelApp from './openreel/web/App.tsx'
-import { applyOpenReelTheme } from './openreel/web/stores/theme-store.ts'
 import { resetOpenReelRouter } from './openreel/web/hooks/use-router.ts'
 import { useProjectStore } from './openreel/web/stores/project-store.ts'
 import { injectClipStyles } from './styles.js'
@@ -72,7 +71,6 @@ export function ClipStage({ t, stage, locale }) {
   useHostLocale(locale)
   useEffect(() => {
     injectClipStyles()
-    applyOpenReelTheme(true)
   }, [])
 
   const open = useSyncExternalStore(

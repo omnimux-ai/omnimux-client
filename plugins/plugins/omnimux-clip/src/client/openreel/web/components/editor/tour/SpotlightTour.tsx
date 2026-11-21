@@ -131,5 +131,3 @@ export const SpotlightTour: React.FC = () => {
     </AnimatePresence>
   );
 };
-
-export { useTour } from "./useTour";

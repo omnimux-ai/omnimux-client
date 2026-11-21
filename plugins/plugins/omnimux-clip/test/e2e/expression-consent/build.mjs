@@ -41,7 +41,8 @@ const cssPlugin = {
 const optionalPlugin = {
   name: 'optional-assets-and-telemetry-only',
   setup(build) {
-    build.onResolve({ filter: /\.(wasm|wgsl)$|(?:whisper-worker|person-segmentation-worker)\.ts$/ }, args => ({ path: args.path, namespace: 'qa-optional-asset' }));
+    // This fixture renders local vector layers and never starts media or audio workers.
+    build.onResolve({ filter: /\.(wasm|wgsl)(\?url)?$|\?worker&url$|(?:whisper-worker|person-segmentation-worker)\.ts$/ }, args => ({ path: args.path, namespace: 'qa-optional-asset' }));
     build.onLoad({ filter: /.*/, namespace: 'qa-optional-asset' }, () => ({ contents: 'export default ""', loader: 'js' }));
     build.onResolve({ filter: /^posthog-js/ }, args => ({ path: args.path, namespace: 'qa-telemetry' }));
     build.onLoad({ filter: /.*/, namespace: 'qa-telemetry' }, () => ({ contents: 'export default { init(){}, capture(){}, identify(){} }; export const usePostHog = () => ({ capture(){} });', loader: 'js' }));
@@ -60,7 +61,15 @@ const shared = {
 export async function buildFixture(qaDir) {
   mkdirSync(join(qaDir, 'dist'), { recursive: true });
   mkdirSync(join(qaDir, 'samples'), { recursive: true });
-  await esbuild.build({ ...shared, platform: 'node', format: 'esm', banner: { js: 'globalThis.self ??= {};' }, entryPoints: [join(sourceDir, 'generate-samples.ts')], outfile: join(qaDir, 'dist/generate-samples.mjs'), plugins: [aliasPlugin, optionalPlugin] });
+  await esbuild.build({
+    ...shared,
+    platform: 'node',
+    format: 'esm',
+    banner: { js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url); globalThis.self ??= {};' },
+    entryPoints: [join(sourceDir, 'generate-samples.ts')],
+    outfile: join(qaDir, 'dist/generate-samples.mjs'),
+    plugins: [aliasPlugin, optionalPlugin],
+  });
   await import(pathToFileURL(join(qaDir, 'dist/generate-samples.mjs')).href + `?build=${Date.now()}`);
   const result = await esbuild.build({ ...shared, platform: 'browser', format: 'iife', entryPoints: [join(sourceDir, 'fixture.tsx')], outfile: join(qaDir, 'dist/fixture.js'), metafile: true, plugins: [aliasPlugin, cssPlugin, optionalPlugin] });
   writeFileSync(join(qaDir, 'dist/metafile.json'), JSON.stringify(result.metafile, null, 2));

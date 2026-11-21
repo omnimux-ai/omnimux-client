@@ -1,4 +1,4 @@
-import { useHostLocale } from '../useHostLocale.js'
+import { getHostLocaleSnapshot, useHostLocale } from '../useHostLocale.js'
 import { translateZh, makeClipT } from './translate.js'
 
 export { translateZh, makeClipT }
@@ -20,11 +20,10 @@ export { translateZh, makeClipT }
  * OpenReelStudioTab/ClipStage) and return t(src).
  */
 export function useClipT() {
-  const snapshot = useHostLocale()
-  return makeClipT(snapshot?.active)
+  return makeClipT(useHostLocale())
 }
 
-/** Non-hook lookup for data/config files rendered under a subscribed tree. */
+/** Read the current locale for command handlers that run outside React. */
 export function clipNow() {
-  return translateZh
+  return makeClipT(getHostLocaleSnapshot())
 }

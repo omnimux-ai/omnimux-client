@@ -1,10 +1,12 @@
 import React, { useCallback, useMemo } from "react";
-import { ToolcraftSegmentedControl } from "@openreel/ui";
-import { ToolcraftButton as Button } from "@openreel/ui";
-import { ToolcraftCard as Card } from "@openreel/ui";
-import { ToolcraftNumberInputControl } from "@openreel/ui";
-import { ToolcraftSelectControl as Selector } from "@openreel/ui";
-import { ToolcraftText as Text } from "@openreel/ui";
+import { ToggleGroup, ToggleGroupItem, Label, Input, Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectLabel, SelectItem } from "@openreel/ui";
+import { useShallow } from "zustand/react/shallow";
+import { useNumericDraft } from "./shell/useNumericDraft";
+import { useTimelineStore } from "../../../stores/timeline-store";
+import { useUIStore } from "../../../stores/ui-store";
+import { Button, cn } from "@openreel/ui";
+import { Card } from "@openreel/ui";
+
 import {
   Square,
   Circle,
@@ -39,21 +41,24 @@ const ColorField: React.FC<{
   value: string;
   onChange: (color: string) => void;
   showAlpha?: boolean;
-}> = ({ label, value, onChange, showAlpha = false }) => (
+}> = ({ label, value, onChange, showAlpha = false }) => {
+  const t = useClipT();
+  return (
   <div className="flex items-center justify-between gap-2">
-    <Text type="supporting" color="secondary">
-      {label}
-    </Text>
+    <span className="text-[12px] leading-5 text-fg-2 font-normal">
+      {t(label)}
+    </span>
     <div className="flex max-w-[190px] items-center">
       <ColorSelector
         value={value}
         onChange={onChange}
-        label={`Select ${label.toLowerCase()}`}
+        label={t("Select {0}", [label.toLowerCase()])}
         showAlpha={showAlpha}
       />
     </div>
   </div>
 );
+};
 
 const NumberInput: React.FC<{
   label: string;
@@ -63,19 +68,19 @@ const NumberInput: React.FC<{
   max?: number;
   step?: number;
   unit?: string;
-}> = ({ label, value, onChange, min = 0, max = 1000, step = 1, unit = "" }) => (
-  <ToolcraftNumberInputControl
-    label={label}
-    size="sm"
-    width="100%"
-    value={Number.isFinite(value) ? value : 0}
-    onChange={onChange}
-    min={min}
-    max={max}
-    step={step}
-    units={unit || null}
-  />
-);
+}> = ({ label, value, onChange, min = 0, max = 1000, step = 1, unit = "" }) => {
+  const t = useClipT();
+  const input = useNumericDraft({ value, onChange, min, max, step });
+  return <Label className="flex min-w-0 items-center justify-between gap-3 text-[12px] font-normal text-fg-2">
+    <span>{t(label)}</span>
+    <span className="flex h-[30px] w-[120px] min-w-0 items-center gap-1 rounded-[6px] border border-border bg-bg-1 px-2 focus-within:border-accent">
+      <Input {...input} type="text" inputMode="decimal" role="spinbutton" aria-label={t(label)}
+        aria-valuenow={Number.isFinite(value) ? value : 0} aria-valuemin={min} aria-valuemax={max}
+        className="h-5 min-w-0 border-0 bg-transparent p-0 text-right font-mono text-[11px] shadow-none focus-visible:ring-0" />
+      {unit && <span className="text-[10.5px] text-fg-3">{unit}</span>}
+    </span>
+  </Label>;
+};
 
 const SliderField: React.FC<{
   label: string;
@@ -85,9 +90,11 @@ const SliderField: React.FC<{
   max?: number;
   step?: number;
   unit?: string;
-}> = ({ label, value, onChange, min = 0, max = 100, step = 1, unit = "" }) => (
+}> = ({ label, value, onChange, min = 0, max = 100, step = 1, unit = "" }) => {
+  const t = useClipT();
+  return (
   <PropertySlider
-    label={label}
+    label={t(label)}
     min={min}
     max={max}
     step={step}
@@ -96,6 +103,7 @@ const SliderField: React.FC<{
     formatValue={(nextValue) => `${nextValue}${unit}`}
   />
 );
+};
 
 const StrokeStyleSelector: React.FC<{
   value: number[] | undefined;
@@ -110,23 +118,15 @@ const StrokeStyleSelector: React.FC<{
 
   return (
     <div className="flex items-center justify-between">
-      <Text type="supporting" color="secondary">
+      <span className="text-[12px] leading-5 text-fg-2 font-normal">
         {t("Style")}
-      </Text>
+      </span>
       <div className="flex gap-1">
         {styles.map((style, index) => (
-          <Button
-            key={index}
-            label={style.preview}
-            size="sm"
-            variant={
-              (style.value === undefined && value === undefined) ||
-              (style.value && value && style.value[0] === value[0])
-                ? "primary"
-                : "secondary"
-            }
-            onClick={() => onChange(style.value)}
-          />
+          <Button key={index} onClick={() => onChange(style.value)} type="button" aria-label={`${style.label} stroke`} aria-pressed={(style.value === undefined && value === undefined) || !!(style.value && value && style.value[0] === value[0])} className={cn("inline-flex min-w-0 items-center justify-center gap-1.5 rounded-[7px] font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50", "h-7 px-2.5 text-[12px]", ((style.value === undefined && value === undefined) ||
+              (style.value && value && style.value[0] === value[0]) ? "bg-accent text-accent-fg hover:bg-accent/90" : "border border-border bg-bg-2 text-fg-2 hover:bg-bg-3 hover:text-fg"))}>
+            {(style.preview) ? <span className="truncate">{style.preview}</span> : null}
+          </Button>
         ))}
       </div>
     </div>
@@ -153,12 +153,12 @@ const ShapeTypeDisplay: React.FC<{
         {shapeIcons[shapeType] || <Square size={16} />}
       </div>
       <div className="flex flex-col gap-0.5">
-        <Text type="supporting" color="primary" weight="medium" className="capitalize">
+        <span className="text-[12px] leading-5 text-fg font-medium capitalize">
           {shapeType}
-        </Text>
-        <Text type="supporting" color="secondary" className="text-[9px]">
+        </span>
+        <span className="text-fg-2 font-normal text-[9px]">
           {t("Shape clip")}
-        </Text>
+        </span>
       </div>
     </div>
   );
@@ -174,12 +174,11 @@ interface ShapeSectionProps {
 
 export const ShapeSection: React.FC<ShapeSectionProps> = ({ clipId }) => {
   const t = useClipT();
-  const { getShapeClip, updateShapeStyle, project } = useProjectStore();
+  const { getShapeClip, project } = useProjectStore(useShallow(state => ({ getShapeClip: state.getShapeClip, project: state.project })));
+  const exporting = useUIStore(state => state.exportState.isExporting);
+  const operationLocked = useTimelineStore(state => Boolean(state.playbackLockedReason));
 
-  const shapeClip = useMemo(
-    () => getShapeClip(clipId),
-    [clipId, getShapeClip, project.modifiedAt],
-  );
+  const shapeClip = getShapeClip(clipId);
 
   const defaultFill: FillStyle = {
     type: "solid",
@@ -203,35 +202,41 @@ export const ShapeSection: React.FC<ShapeSectionProps> = ({ clipId }) => {
 
   const handleStyleChange = useCallback(
     (changes: Partial<ShapeStyle>) => {
-      updateShapeStyle(clipId, changes);
+      const state = useProjectStore.getState();
+      const current = state.getShapeClip(clipId);
+      if (state.project.id !== project.id || !current
+        || !state.project.timeline.tracks.some(track => track.id === current.trackId && !track.locked)
+        || useUIStore.getState().exportState.isExporting || useTimelineStore.getState().playbackLockedReason) return;
+      state.updateShapeStyle(clipId, changes);
     },
-    [clipId, updateShapeStyle],
+    [clipId, project.id],
   );
 
   if (!shapeClip) {
     return (
       <div className="p-4 text-center">
         <Square size={24} className="mx-auto mb-2 text-fg-3" />
-        <Text type="supporting" color="secondary">
+        <span className="text-[12px] leading-5 text-fg-2 font-normal">
           {t("No shape clip selected")}
-        </Text>
+        </span>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <fieldset key={`${project.id}:${clipId}`} className="min-w-0 space-y-4 border-0 p-0" disabled={exporting || operationLocked || !project.timeline.tracks.some(track => track.id === shapeClip.trackId && !track.locked)}>
       <ShapeTypeDisplay shapeType={shapeType} />
 
-      <Card variant="muted" padding={3}>
+      <Card className="min-w-0 rounded-[7px] border shadow-none border-transparent bg-bg-2 text-fg p-3">
         <div className="space-y-2">
-          <Text type="supporting" color="primary" weight="medium">
+          <span className="text-[12px] leading-5 text-fg font-medium">
             {t("Fill")}
-          </Text>
-          <ToolcraftSegmentedControl<"solid" | "shader">
-            ariaLabel={t("Fill Type")}
+          </span>
+          <ToggleGroup type="single"
+            aria-label={t("Fill Type")} className="grid grid-cols-2 gap-1"
             value={style.fill?.type === "shader" ? "shader" : "solid"}
-            onChange={(fillType) => {
+            onValueChange={(fillType) => {
+              if (fillType !== "solid" && fillType !== "shader") return;
               if (fillType === "shader") {
                 const shader = createDefaultEditorShader(
                   style.fill?.shader?.shaderId ?? firstShapeShaderFillId(),
@@ -241,7 +246,7 @@ export const ShapeSection: React.FC<ShapeSectionProps> = ({ clipId }) => {
                   fill: {
                     ...style.fill,
                     type: "shader",
-                    opacity: style.fill?.opacity || 1,
+                    opacity: style.fill?.opacity ?? 1,
                     shader,
                   },
                 });
@@ -252,24 +257,24 @@ export const ShapeSection: React.FC<ShapeSectionProps> = ({ clipId }) => {
                   ...style.fill,
                   type: "solid",
                   color: style.fill?.color || "#14b8a6",
-                  opacity: style.fill?.opacity || 1,
+                  opacity: style.fill?.opacity ?? 1,
                 },
               });
             }}
-            options={[
-              { value: "solid", label: "Solid" },
-              { value: "shader", label: "Shader" },
-            ]}
-          />
+          >
+            <ToggleGroupItem value="solid" className="h-[30px] text-xs">{t("Solid")}</ToggleGroupItem>
+            <ToggleGroupItem value="shader" className="h-[30px] text-xs">{t("Shader")}</ToggleGroupItem>
+          </ToggleGroup>
           {style.fill?.type === "shader" && style.fill.shader ? (
             <ShapeShaderFillControls
+              historyKey={`${project.id}:${clipId}`}
               shader={style.fill.shader}
               onChange={(shader) =>
                 handleStyleChange({
                   fill: {
                     ...style.fill,
                     type: "shader",
-                    opacity: style.fill?.opacity || 1,
+                    opacity: style.fill?.opacity ?? 1,
                     shader,
                   },
                 })
@@ -285,7 +290,7 @@ export const ShapeSection: React.FC<ShapeSectionProps> = ({ clipId }) => {
                     ...style.fill,
                     color,
                     type: "solid",
-                    opacity: style.fill?.opacity || 1,
+                    opacity: style.fill?.opacity ?? 1,
                   },
                 })
               }
@@ -293,7 +298,7 @@ export const ShapeSection: React.FC<ShapeSectionProps> = ({ clipId }) => {
           )}
           <SliderField
             label={t("Opacity")}
-            value={(style.fill?.opacity || 1) * 100}
+            value={(style.fill?.opacity ?? 1) * 100}
             onChange={(opacity) =>
               handleStyleChange({
                 fill: {
@@ -310,11 +315,11 @@ export const ShapeSection: React.FC<ShapeSectionProps> = ({ clipId }) => {
         </div>
       </Card>
 
-      <Card variant="muted" padding={3}>
+      <Card className="min-w-0 rounded-[7px] border shadow-none border-transparent bg-bg-2 text-fg p-3">
         <div className="space-y-2">
-          <Text type="supporting" color="primary" weight="medium">
+          <span className="text-[12px] leading-5 text-fg font-medium">
             {t("Stroke")}
-          </Text>
+          </span>
           <ColorField
             label={t("Color")}
             value={style.stroke?.color || "#1d4ed8"}
@@ -323,22 +328,22 @@ export const ShapeSection: React.FC<ShapeSectionProps> = ({ clipId }) => {
                 stroke: {
                   ...style.stroke,
                   color,
-                  width: style.stroke?.width || 2,
-                  opacity: style.stroke?.opacity || 1,
+                  width: style.stroke?.width ?? 2,
+                  opacity: style.stroke?.opacity ?? 1,
                 },
               })
             }
           />
           <NumberInput
             label={t("Width")}
-            value={style.stroke?.width || 0}
+            value={style.stroke?.width ?? 0}
             onChange={(width) =>
               handleStyleChange({
                 stroke: {
                   ...style.stroke,
                   width,
                   color: style.stroke?.color || "#1d4ed8",
-                  opacity: style.stroke?.opacity || 1,
+                  opacity: style.stroke?.opacity ?? 1,
                 },
               })
             }
@@ -354,8 +359,8 @@ export const ShapeSection: React.FC<ShapeSectionProps> = ({ clipId }) => {
                   ...style.stroke,
                   dashArray,
                   color: style.stroke?.color || "#1d4ed8",
-                  width: style.stroke?.width || 2,
-                  opacity: style.stroke?.opacity || 1,
+                  width: style.stroke?.width ?? 2,
+                  opacity: style.stroke?.opacity ?? 1,
                 },
               })
             }
@@ -364,11 +369,11 @@ export const ShapeSection: React.FC<ShapeSectionProps> = ({ clipId }) => {
       </Card>
 
       {shapeType === "rectangle" && (
-        <Card variant="muted" padding={3}>
+        <Card className="min-w-0 rounded-[7px] border shadow-none border-transparent bg-bg-2 text-fg p-3">
           <div className="space-y-2">
-            <Text type="supporting" color="primary" weight="medium">
+            <span className="text-[12px] leading-5 text-fg font-medium">
               {t("Corners")}
-            </Text>
+            </span>
             <SliderField
               label={t("Radius")}
               value={style.cornerRadius || 0}
@@ -381,11 +386,11 @@ export const ShapeSection: React.FC<ShapeSectionProps> = ({ clipId }) => {
         </Card>
       )}
 
-      <Card variant="muted" padding={3}>
+      <Card className="min-w-0 rounded-[7px] border shadow-none border-transparent bg-bg-2 text-fg p-3">
         <div className="space-y-2">
-          <Text type="supporting" color="primary" weight="medium">
+          <span className="text-[12px] leading-5 text-fg font-medium">
             {t("Shadow")}
-          </Text>
+          </span>
           <ColorField
             label={t("Color")}
             value={style.shadow?.color || "#000000"}
@@ -454,18 +459,19 @@ export const ShapeSection: React.FC<ShapeSectionProps> = ({ clipId }) => {
           />
         </div>
       </Card>
-    </div>
+    </fieldset>
   );
 };
 
 const ShapeShaderFillControls: React.FC<{
+  historyKey: string;
   shader: MotionShaderFill;
   onChange: (shader: MotionShaderFill) => void;
-}> = ({ shader, onChange }) => {
+}> = ({ historyKey, shader, onChange }) => {
   const t = useClipT();
   const shaderOptions = useMemo(
-    () => groupShaderDefsByCollection(getMotionShaderFillDefs()),
-    [],
+    () => groupShaderDefsByCollection(getMotionShaderFillDefs(), t),
+    [t],
   );
   const def = getMotionShaderDef(shader.shaderId);
 
@@ -495,17 +501,16 @@ const ShapeShaderFillControls: React.FC<{
 
   return (
     <div className="space-y-2 rounded border border-border/70 bg-bg-2 p-2">
-      <Selector
-        label={t("Shader Fill")}
-        isLabelHidden
-        size="sm"
-        width="100%"
-        value={shader.shaderId}
-        options={shaderOptions as any}
-        onChange={handleShaderSelect}
-      />
+      <Select value={shader.shaderId} onValueChange={handleShaderSelect}>
+        <SelectTrigger aria-label={t("Shader Fill")} className="h-[30px] min-w-0 text-xs"><SelectValue placeholder={shader.shaderId} /></SelectTrigger>
+        <SelectContent>{shaderOptions.map(group => <SelectGroup key={group.title}>
+          <SelectLabel>{group.title}</SelectLabel>
+          {group.options.map(option => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+        </SelectGroup>)}</SelectContent>
+      </Select>
       {def ? (
         <ShaderParamFields
+          historyKey={historyKey}
           def={def}
           params={shader.params}
           onChange={updateParam}
@@ -514,5 +519,3 @@ const ShapeShaderFillControls: React.FC<{
     </div>
   );
 };
-
-export default ShapeSection;

@@ -1,49 +1,25 @@
 import React from "react";
-import { Zap, Captions, Loader2, Upload } from "@/icons/lucide-compat";
-import { ToolcraftButton as Button } from "@openreel/ui";
-import { ToolcraftCard as Card } from "@openreel/ui";
-import { ToolcraftFileDropControl as FileInput } from "@openreel/ui";
-import { ToolcraftProgressBar as ProgressBar } from "@openreel/ui";
-import { ToolcraftSelectControl as Selector } from "@openreel/ui";
-import { ToolcraftText as Text } from "@openreel/ui";
-import {
-  type WhisperTranscriptionProgress,
-  type CaptionAnimationStyle,
-  CAPTION_ANIMATION_STYLES,
-  getAnimationStyleDisplayName,
-} from "@openreel/core";
+import { Zap, Loader2, Upload } from "@/icons/lucide-compat";
+import { Button, cn } from "@openreel/ui";
+import { Card } from "@openreel/ui";
+
+import { Input } from "@openreel/ui";
 import { AutoReframeSection } from "../";
 import { AutoCaptionPanel } from "../AutoCaptionPanel";
 import { CaptionEditorPanel } from "../CaptionEditorPanel";
 import { AutoEditPanel } from "../../panels/AutoEditPanel";
 import { HighlightExtractorPanel } from "../../panels/HighlightExtractorPanel";
 import { InspectorSection } from "../shell/InspectorSection";
-import { AIPanel } from "../../ai-panel/AIPanel";
-import type { ClipMediaType } from "../../ai-panel/ai-kinds.config";
-import { isDesktopGpuAvailable } from "../../../../services/gpu-jobs";
+import { useSceneDetectionDialogStore } from "../../../../stores/scene-detection-dialog-store";
+import { Film } from "@/icons/lucide-compat";
 import { useClipT } from "../../../../../../i18n/index.js";
 
-const GPU_CLIP_MEDIA: readonly ClipMediaType[] = ["video", "image", "audio"];
-
-function asGpuClipMedia(clipType: string | null): ClipMediaType | null {
-  return GPU_CLIP_MEDIA.includes(clipType as ClipMediaType) ? (clipType as ClipMediaType) : null;
-}
-
-export interface AiTabProps {
+interface AiTabProps {
   clipId: string;
   clipType: string | null;
   showVideoControls: boolean;
   showAudioEffects: boolean;
   showVideoEffects: boolean;
-  transcriptionProgress: WhisperTranscriptionProgress | null;
-  isTranscribing: boolean;
-  targetLanguage: string;
-  setTargetLanguage: React.Dispatch<React.SetStateAction<string>>;
-  defaultAnimationStyle: CaptionAnimationStyle;
-  setDefaultAnimationStyle: React.Dispatch<
-    React.SetStateAction<CaptionAnimationStyle>
-  >;
-  handleGenerateSubtitles: () => Promise<void>;
   handleSRTImport: (
     event: React.ChangeEvent<HTMLInputElement>,
   ) => Promise<void>;
@@ -64,13 +40,6 @@ export const AiTab: React.FC<AiTabProps> = ({
   showVideoControls,
   showAudioEffects,
   showVideoEffects,
-  transcriptionProgress,
-  isTranscribing,
-  targetLanguage,
-  setTargetLanguage,
-  defaultAnimationStyle,
-  setDefaultAnimationStyle,
-  handleGenerateSubtitles,
   handleSRTImport,
   srtInputRef,
   handleRemoveBackground,
@@ -83,25 +52,9 @@ export const AiTab: React.FC<AiTabProps> = ({
   onCaptionWordsPerLineChange,
 }) => {
   const t = useClipT();
-  const gpuClipMedia = asGpuClipMedia(clipType);
-  // On desktop the local transcription endpoint (cloud.openreel.video) is
-  // CORS-blocked from app://openreel, so generation is done via the GPU
-  // "Auto Captions" tile in Cloud GPU Tools instead.
-  const isDesktop = isDesktopGpuAvailable();
-
   return (
     <>
-      {gpuClipMedia && (
-        <InspectorSection
-          title={t("Cloud GPU Tools")}
-          sectionId="cloud-gpu-tools"
-          defaultOpen
-        >
-          <AIPanel clipTypeFilter={gpuClipMedia} embedded />
-        </InspectorSection>
-      )}
-
-      {clipType === "video" && (
+      {(clipType === "video" || clipType === "audio") && showAudioEffects && (
         <>
           <InspectorSection
             title={t("Local Auto-Captions")}
@@ -113,129 +66,24 @@ export const AiTab: React.FC<AiTabProps> = ({
                 clipId={clipId}
                 maxWordsPerLine={captionWordsPerLine}
               />
-              <FileInput
+              <Input
                 ref={srtInputRef}
-                label={t("Import SRT or VTT file")}
-                isLabelHidden
-                value={null}
+                type="file"
+                aria-label={t("Import SRT or VTT file")}
                 accept=".srt,.vtt,text/srt,text/vtt,text/plain"
-                onChange={(files) => {
-                  const file = Array.isArray(files) ? files[0] : files;
-                  if (!file) return;
-                  void handleSRTImport({
-                    target: { files: [file] },
-                  } as unknown as React.ChangeEvent<HTMLInputElement>);
-                }}
+                onChange={(event) => { void handleSRTImport(event); }}
                 className="hidden"
               />
-              {isDesktop && (
-                <Text type="supporting" color="secondary" className="text-[11px]">
-                  Use the “Auto Captions” tool in Cloud GPU Tools above to generate captions.
-                </Text>
-              )}
-              {!isDesktop && (
-                <>
-              <div className="space-y-1">
-                <Selector
-                  label={t("Animation Style")}
-                  size="sm"
-                  width="100%"
-                  value={defaultAnimationStyle}
-                  onChange={(v) =>
-                    setDefaultAnimationStyle(v as CaptionAnimationStyle)
-                  }
-                  isDisabled={isTranscribing}
-                  options={CAPTION_ANIMATION_STYLES.map((style) => ({
-                    label: getAnimationStyleDisplayName(style),
-                    value: style,
-                  }))}
-                />
-              </div>
-
-              <div className="space-y-1">
-                <Selector
-                  label={t("Target Language")}
-                  size="sm"
-                  width="100%"
-                  value={targetLanguage}
-                  onChange={setTargetLanguage}
-                  isDisabled={isTranscribing}
-                  options={[
-                    { label: "Original (no translation)", value: "none" },
-                    { label: "English", value: "en" },
-                    { label: "Spanish", value: "es" },
-                    { label: "French", value: "fr" },
-                    { label: "German", value: "de" },
-                    { label: "Portuguese", value: "pt" },
-                    { label: "Italian", value: "it" },
-                    { label: "Dutch", value: "nl" },
-                    { label: "Russian", value: "ru" },
-                    { label: "Chinese", value: "zh" },
-                    { label: "Japanese", value: "ja" },
-                    { label: "Korean", value: "ko" },
-                    { label: "Arabic", value: "ar" },
-                    { label: "Hindi", value: "hi" },
-                    { label: "Turkish", value: "tr" },
-                    { label: "Polish", value: "pl" },
-                    { label: "Swedish", value: "sv" },
-                  ]}
-                />
-              </div>
-
-              {transcriptionProgress ? (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Loader2
-                      size={12}
-                      className="animate-spin text-primary"
-                    />
-                    <Text type="supporting" color="primary" className="text-[10px]">
-                      {transcriptionProgress.message}
-                    </Text>
-                  </div>
-                  <ProgressBar
-                    label={t("Caption generation progress")}
-                    isLabelHidden
-                    value={transcriptionProgress.progress}
-                    max={100}
-                    hasValueLabel={false}
-                    variant={
-                      transcriptionProgress.phase === "error"
-                        ? "error"
-                        : transcriptionProgress.phase === "complete"
-                          ? "success"
-                          : "accent"
-                    }
-                  />
-                </div>
-              ) : (
-                <Button
-                  label={t("Generate Captions")}
-                  onClick={handleGenerateSubtitles}
-                  isDisabled={isTranscribing}
-                  variant="primary"
-                  size="sm"
-                  icon={<Captions size={14} aria-hidden />}
-                  className="w-full justify-center"
-                />
-              )}
-                </>
-              )}
-              <Button
-                label={t("Import SRT / VTT as Text")}
-                onClick={() => srtInputRef.current?.click()}
-                isDisabled={isTranscribing}
-                variant="secondary"
-                size="sm"
-                icon={<Upload size={13} aria-hidden />}
-                className="w-full justify-center"
-              />
+              <Button onClick={() => srtInputRef.current?.click()} type="button" aria-label={t("Import SRT / VTT as Text")} className="inline-flex min-w-0 items-center gap-1.5 rounded-[7px] font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-7 px-2.5 text-[12px] border border-border bg-bg-2 text-fg-2 hover:bg-bg-3 hover:text-fg w-full justify-center">
+                <span className="flex h-4 w-4 shrink-0 items-center justify-center">{<Upload size={13} aria-hidden />}</span>
+                <span className="truncate">{t("Import SRT / VTT as Text")}</span>
+              </Button>
             </div>
           </InspectorSection>
         </>
       )}
 
-      {clipType === "video" && (
+      {(clipType === "video" || clipType === "audio") && showAudioEffects && (
         <InspectorSection
           title={t("Editable Captions")}
           sectionId="editable-captions"
@@ -258,6 +106,29 @@ export const AiTab: React.FC<AiTabProps> = ({
         </InspectorSection>
       )}
 
+      {clipType === "video" && (
+        <InspectorSection
+          title={t("Scene Edit Detection")}
+          sectionId="scene-edit-detection"
+          defaultOpen={false}
+        >
+          <div className="space-y-2">
+            <p className="text-[11px] text-fg-3">
+              {t("Find hard cuts in this clip, then split it or add markers.")}
+            </p>
+            <Button
+              type="button"
+              aria-label={t("Detect Scene Edits")}
+              onClick={() => useSceneDetectionDialogStore.getState().open(clipId)}
+              className="inline-flex h-7 w-full min-w-0 items-center justify-center gap-1.5 rounded-[7px] border border-border bg-bg-2 px-2.5 text-[12px] font-semibold text-fg-2 outline-none transition-colors hover:bg-bg-3 hover:text-fg focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <Film size={13} aria-hidden />
+              <span className="truncate">{t("Detect Scene Edits…")}</span>
+            </Button>
+          </div>
+        </InspectorSection>
+      )}
+
       {showAudioEffects && (
         <InspectorSection
           title={t("Beat-Synced Auto-Edit")}
@@ -270,7 +141,7 @@ export const AiTab: React.FC<AiTabProps> = ({
 
       {showAudioEffects && (
         <InspectorSection
-          title={t("AI Highlights")}
+          title={t("Local Highlights")}
           sectionId="ai-highlights"
           defaultOpen={false}
         >
@@ -279,68 +150,52 @@ export const AiTab: React.FC<AiTabProps> = ({
       )}
 
       {(showVideoControls || showAudioEffects || showVideoEffects) && (
-        <Card
-          variant="green"
-          padding={4}
-          className="relative overflow-hidden border border-primary/30 bg-primary/5"
+        <Card className="min-w-0 rounded-[7px] shadow-none text-fg p-4 relative overflow-hidden border border-primary/30 bg-primary/5"
         >
           <div className="flex items-center gap-2 text-primary mb-3">
             <Zap size={14} />
-            <Text type="supporting" color="active" className="text-xs font-bold">
+            <span className="text-accent text-xs font-bold">
               {t("Quick Actions")}
-            </Text>
+            </span>
           </div>
           <div className="space-y-2">
             {showVideoControls && (
-              <Button
-                label={t("Remove Background")}
-                onClick={handleRemoveBackground}
-                isDisabled={isApplyingSelectedClipEffect}
-                variant="secondary"
-                size="sm"
-                className={`w-full justify-center ${
+              <Button onClick={handleRemoveBackground} type="button" aria-label={t("Remove Background")} disabled={(isApplyingSelectedClipEffect)} className={cn("inline-flex min-w-0 items-center justify-center gap-1.5 rounded-[7px] font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50", "h-7 px-2.5 text-[12px]", "border border-border bg-bg-2 text-fg-2 hover:bg-bg-3 hover:text-fg", `w-full justify-center ${
                   isApplyingSelectedClipEffect
                     ? "bg-bg-2 border-border text-fg-3"
                     : "bg-bg-2 hover:bg-primary hover:text-white border-border hover:border-primary"
-                }`}
-              />
+                }`)}>
+                <span className="truncate">{t("Remove Background")}</span>
+              </Button>
             )}
             {showAudioEffects && (
-              <Button
-                label={
-                  isEnhancingAudio
+              <Button onClick={handleEnhanceAudio} type="button" aria-label={(isEnhancingAudio
                     ? "Cleaning up..."
                     : audioEnhanced
                       ? "Noise Reduced"
-                      : "Quick Dialogue Cleanup"
-                }
-                onClick={handleEnhanceAudio}
-                isDisabled={isEnhancingAudio || isApplyingSelectedClipEffect}
-                variant="secondary"
-                size="sm"
-                icon={isEnhancingAudio ? <Loader2 size={12} className="animate-spin" aria-hidden /> : undefined}
-                className={`w-full justify-center ${
+                      : "Quick Dialogue Cleanup").trim() || undefined} disabled={(isEnhancingAudio || isApplyingSelectedClipEffect)} className={cn("inline-flex min-w-0 items-center justify-center gap-1.5 rounded-[7px] font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50", "h-7 px-2.5 text-[12px]", "border border-border bg-bg-2 text-fg-2 hover:bg-bg-3 hover:text-fg", `w-full justify-center ${
                   audioEnhanced
                     ? "bg-green-500/20 border-green-500 text-green-400"
                     : isEnhancingAudio || isApplyingSelectedClipEffect
                       ? "bg-bg-2 border-border text-fg-3"
                       : "bg-bg-2 hover:bg-primary hover:text-white border-border hover:border-primary"
-                }`}
-              />
+                }`)}>
+                {(isEnhancingAudio ? <Loader2 size={12} className="animate-spin" aria-hidden /> : undefined) ? <span className="flex h-4 w-4 shrink-0 items-center justify-center">{isEnhancingAudio ? <Loader2 size={12} className="animate-spin" aria-hidden /> : undefined}</span> : null}
+                <span className="truncate">{isEnhancingAudio
+                    ? t("Cleaning up...")
+                    : audioEnhanced
+                      ? t("Noise Reduced")
+                      : t("Quick Dialogue Cleanup")}</span>
+              </Button>
             )}
             {showVideoEffects && (
-              <Button
-                label={isApplyingSelectedClipEffect ? t("Applying...") : t("Auto-Color")}
-                onClick={handleAutoColor}
-                isDisabled={isApplyingSelectedClipEffect}
-                variant="secondary"
-                size="sm"
-                className={`w-full justify-center ${
+              <Button onClick={handleAutoColor} type="button" aria-label={(isApplyingSelectedClipEffect ? "Applying..." : "Auto-Color").trim() || undefined} disabled={(isApplyingSelectedClipEffect)} className={cn("inline-flex min-w-0 items-center justify-center gap-1.5 rounded-[7px] font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50", "h-7 px-2.5 text-[12px]", "border border-border bg-bg-2 text-fg-2 hover:bg-bg-3 hover:text-fg", `w-full justify-center ${
                   isApplyingSelectedClipEffect
                     ? "bg-bg-2 border-border text-fg-3"
                     : "bg-bg-2 hover:bg-primary hover:text-white border-border hover:border-primary"
-                }`}
-              />
+                }`)}>
+                <span className="truncate">{isApplyingSelectedClipEffect ? t("Applying...") : t("Auto-Color")}</span>
+              </Button>
             )}
           </div>
         </Card>

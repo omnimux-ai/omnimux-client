@@ -1,4 +1,5 @@
 import React, { useCallback, useState, useEffect, useRef } from "react";
+import { useClipT } from "../../../../../i18n/index.js";
 
 interface ScreenPoint {
   x: number;
@@ -53,6 +54,7 @@ export const MotionPathHandles: React.FC<MotionPathHandlesProps> = ({
   onPointRemove,
   onControlPointMove,
 }) => {
+  const t = useClipT();
   void _canvasWidth;
   void _canvasHeight;
   const [dragState, setDragState] = useState<DragState | null>(null);
@@ -244,7 +246,7 @@ export const MotionPathHandles: React.FC<MotionPathHandlesProps> = ({
                   fontWeight="bold"
                   className="pointer-events-none select-none"
                 >
-                  E
+                  {t("E")}
                 </text>
               )}
             </g>
@@ -254,5 +256,3 @@ export const MotionPathHandles: React.FC<MotionPathHandlesProps> = ({
     </g>
   );
 };
-
-export default MotionPathHandles;

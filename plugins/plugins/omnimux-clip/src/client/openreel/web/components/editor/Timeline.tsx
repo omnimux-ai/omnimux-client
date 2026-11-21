@@ -1,21 +1,28 @@
+import { useEditorWorkspaceStore } from "../../stores/editor-workspace-store";
+import { getPrimarySelectedTrackId } from "./timeline/primary-track";
+import { keyboardShortcuts } from "../../services/keyboard-shortcuts";
+import { Button as ShadcnButton, Input, Slider, Popover as ShadcnPopover, PopoverContent, PopoverTrigger } from "@openreel/ui";
+import { MousePointer2, Bookmark, MoreHorizontal, Columns2, Link2, Hand } from "lucide-react";
 import React, {
+  Fragment,
   useRef,
   useCallback,
   useEffect,
   useMemo,
   useState,
 } from "react";
+import { useShallow } from "zustand/react/shallow";
+import { TimelineRangeActions } from "./timeline/TimelineRange";
+import { EditPointTrimEntry } from "./timeline/EditPointTrimEntry";
+import { RenderCacheControls, RenderStatusBar, RENDER_STATUS_BAR_HEIGHT } from "./timeline/RenderStatusBar";
 import {
   Undo2,
   Redo2,
   Layers,
   Maximize2,
   Minimize2,
-  Film,
   Music,
-  Image,
   Type,
-  Shapes,
   Scissors,
   Copy,
   Delete,
@@ -39,27 +46,25 @@ import {
   VolumeX,
   Pencil,
 } from "@/icons/lucide-compat";
-import { ToolcraftIconButton as IconButton } from "@openreel/ui";
-import {
-  ToolcraftDropdownMenu as DropdownMenu,
-  type ToolcraftDropdownMenuOption as DropdownMenuOption,
-  ToolcraftPopover as Popover,
-  ToolcraftText as Text,
-} from "@openreel/ui";
+import { cn } from "@openreel/ui";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@openreel/ui";
 import { useProjectStore } from "../../stores/project-store";
 import { useTimelineStore, ZOOM_PRESETS } from "../../stores/timeline-store";
+import { useCompactEditor } from "../../hooks/useCompactEditor";
+import { usePhoneEditor } from "../../hooks/usePhoneEditor";
+import { usePhoneTimeline } from "./mobile/usePhoneTimeline";
+import { phoneTrackLayout, phoneKeyframesHeight, phoneDecorationScroll } from "./mobile/mobile-timeline-layout";
+import "./mobile/mobile-timeline.css";
 import { useUIStore } from "../../stores/ui-store";
 import { toast } from "../../stores/notification-store";
 import { useEngineStore } from "../../stores/engine-store";
 import { getPlaybackBridge } from "../../bridges/playback-bridge";
+import { trackHasAudioItems, trackHasVisualItems, graphicMemberClipIds, expectedMemberIds, type GraphicInstance, type Project } from "@openreel/core";
 import {
-  deleteTimelineItem,
-  duplicateTimelineItem,
+
   getTimelineItemRanges,
   getSplittableTimelineItemIds,
   getTimelineMarqueeSelection,
-  splitTimelineItem,
-  trimTimelineItemToPlayhead,
 } from "../../utils/timeline-item-actions";
 import {
   Playhead,
@@ -77,9 +82,20 @@ import {
 import { getTrackDragAutoScrollDelta } from "./timeline/track-drag-auto-scroll";
 import {
   moveLinkedCaptions,
-  trimLinkedCaptions,
 } from "../../utils/linked-caption-edit";
 import { CaptionBatchSelectButton } from "./timeline/CaptionBatchSelectButton";
+import { applyTrackSelect, trackSelectDirection, useTimelineNavTools } from "./timeline/useTimelineNavTools";
+import { editTimelineSelection, moveLinkedTimelineClips, trimLinkedTimelineClips } from "../../services/linked-timeline-edit";
+import { getEditableTimelineSelection, getLinkedTimelineSelection } from "../../utils/linked-timeline-selection";
+import { StereoOutputMeters } from "./timeline/StereoOutputMeters";
+import { MediaLibraryIcon } from "../../icons/media-library";
+import { SequenceTabs } from "./timeline/SequenceTabs";
+import { useScrubAudioStore } from "../../stores/scrub-audio-store";
+import { TrackAutomationHeaderRows, TrackAutomationRows } from "./timeline/TrackAutomationLanes";
+import { AUTOMATION_LANES_HEIGHT } from "./timeline/track-automation-geometry";
+import { placeSequenceOnTimeline } from "../../services/sequence-commands";
+import { addMarkerAtPlayhead, addRangeMarker, editMarker } from "../../services/marker-commands";
+import { clipNow } from "../../../../i18n/index.js";
 import { useClipT } from "../../../../i18n/index.js";
 
 const TRACK_LAYER_FILTERS: readonly {
@@ -95,10 +111,50 @@ const TRACK_LAYER_FILTERS: readonly {
 ];
 
 const ADD_TRACK_ROW_HEIGHT = 36;
+const NO_SELECTED_CLIPS: string[] = [];
+const NO_GRAPHICS: Array<{ instance: GraphicInstance; anchorId: string }> = [];
 const TIMELINE_SCROLLBAR_SIZE = 10;
 
-export const Timeline: React.FC = () => {
-  const t = useClipT();
+// Small, mockup-styled timeline tool button
+const TLTool = ({
+  onClick,
+  disabled,
+  active,
+  title,
+  children,
+  extra,
+}: {
+  onClick?: () => void;
+  disabled?: boolean;
+  active?: boolean;
+  title?: string;
+  children: React.ReactNode;
+  extra?: React.ReactNode;
+}) => {
+  const clipT = useClipT();
+  return (
+  <ShadcnButton
+    type="button" variant="ghost" size="icon-sm"
+    aria-label={clipT(title) ?? clipT("Timeline tool")}
+    aria-pressed={active}
+    onClick={onClick}
+    disabled={disabled}
+    data-tip-bottom={title}
+    className={`relative grid place-items-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+      active ? "text-accent" : "text-fg-muted hover:text-fg-2"
+    }`}
+  >
+    {children}
+    {extra}
+  </ShadcnButton>
+);
+};
+
+export const Timeline: React.FC<{ onOpenMedia?: () => void }> = ({ onOpenMedia }) => {
+  const clipT = useClipT();
+  const compact = useCompactEditor();
+  const phone = usePhoneEditor();
+  const headerWidth = phone ? 0 : compact ? 108 : 169;
   const containerRef = useRef<HTMLDivElement>(null);
   const tracksRef = useRef<HTMLDivElement>(null);
   const trackHeadersRef = useRef<HTMLDivElement>(null);
@@ -118,14 +174,33 @@ export const Timeline: React.FC = () => {
     removeMarker,
     updateMarker,
     updateClipKeyframes,
-    rippleDeleteClip,
     hideTrack,
     lockTrack,
     muteTrack,
     soloTrack,
+    setTrackSoloSafe,
     renameTrack,
     removeTrack,
-  } = useProjectStore();
+  } = useProjectStore(useShallow((state) => ({
+    project: state.project,
+    undo: state.undo,
+    redo: state.redo,
+    canUndo: state.canUndo,
+    canRedo: state.canRedo,
+    addTrack: state.addTrack,
+    duplicateTrack: state.duplicateTrack,
+    reorderTrack: state.reorderTrack,
+    removeMarker: state.removeMarker,
+    updateMarker: state.updateMarker,
+    updateClipKeyframes: state.updateClipKeyframes,
+    hideTrack: state.hideTrack,
+    lockTrack: state.lockTrack,
+    muteTrack: state.muteTrack,
+    soloTrack: state.soloTrack,
+    setTrackSoloSafe: state.setTrackSoloSafe,
+    renameTrack: state.renameTrack,
+    removeTrack: state.removeTrack,
+  })));
   const tracks = project.timeline.tracks;
 
   const [draggedTrackId, setDraggedTrackId] = React.useState<string | null>(
@@ -207,10 +282,8 @@ export const Timeline: React.FC = () => {
   }, [draggedTrackId]);
 
   const {
-    playheadPosition,
-    playbackState,
     pixelsPerSecond,
-    scrollX,
+    scrollX: viewportScrollX,
     scrollY,
     viewportWidth,
     setScrollX,
@@ -220,12 +293,58 @@ export const Timeline: React.FC = () => {
     zoomOut,
     setZoom,
     trackHeight,
+    trackHeights,
     setTrackHeight,
     setTrackHeightById,
-    getTrackHeight,
-  } = useTimelineStore();
+    getTrackHeight: getStoredTrackHeight,
+    expandedTracks,
+    automationLaneTracks,
+  } = useTimelineStore(useShallow(state => ({
+    pixelsPerSecond: state.pixelsPerSecond,
+    scrollX: state.scrollX,
+    scrollY: state.scrollY,
+    viewportWidth: state.viewportWidth,
+    setScrollX: state.setScrollX,
+    setScrollY: state.setScrollY,
+    setViewportDimensions: state.setViewportDimensions,
+    zoomIn: state.zoomIn,
+    zoomOut: state.zoomOut,
+    setZoom: state.setZoom,
+    trackHeight: state.trackHeight,
+    trackHeights: state.trackHeights,
+    setTrackHeight: state.setTrackHeight,
+    setTrackHeightById: state.setTrackHeightById,
+    getTrackHeight: state.getTrackHeight,
+    expandedTracks: state.expandedTracks,
+    automationLaneTracks: state.automationLaneTracks,
+  })));
 
+  const timelineInset = phone ? viewportWidth / 2 : 0;
+  const scrollX = viewportScrollX - timelineInset;
+  const onPhoneScroll = usePhoneTimeline(phone, tracksRef, pixelsPerSecond, viewportWidth);
+  const [phoneTrackScale, setPhoneTrackScale] = useState(1);
+
+  const getTrackHeight = useCallback((id: string, type?: string, name?: string) => {
+    if (phone) {
+      const track = tracks.find(track => track.id === id);
+      return phoneTrackLayout({ type: type as typeof tracks[number]["type"], name: name ?? "" }, phoneTrackScale).row
+        + (track && expandedTracks.has(id) ? phoneKeyframesHeight(track) : 0);
+    }
+    const height = getStoredTrackHeight(id,type,name);
+    return compact ? Math.max(48,height) : height;
+  }, [phone,compact,getStoredTrackHeight,tracks,expandedTracks,phoneTrackScale]);
+
+  // A track with its automation lanes expanded occupies extra rows below its clip lane (not on phones).
+  const getRowHeight = useCallback((id: string, type?: string, name?: string) =>
+    getTrackHeight(id, type, name) + (!phone && automationLaneTracks[id] ? AUTOMATION_LANES_HEIGHT : 0),
+  [getTrackHeight, phone, automationLaneTracks]);
+
+  const scrubAudio = useScrubAudioStore((s) => s.enabled);
+  const toggleScrubAudio = useScrubAudioStore((s) => s.toggle);
+  const tool = useEditorWorkspaceStore(s => s.timelineTool);
+  const navTools = useTimelineNavTools(tracksRef, !phone);
   const [showLayersPanel, setShowLayersPanel] = useState(false);
+  const [phoneOptionsOpen, setPhoneOptionsOpen] = useState(false);
   const [trackLayerQuery, setTrackLayerQuery] = useState("");
   const [trackLayerFilter, setTrackLayerFilter] =
     useState<TrackLayerFilter>("all");
@@ -262,19 +381,43 @@ export const Timeline: React.FC = () => {
     select,
     selectMultiple,
     clearSelection,
-    getSelectedClipIds,
     selectedItems,
     snapSettings,
     toggleSnap,
     timelineMaximized,
     toggleTimelineMaximized,
-  } = useUIStore();
-  const selectedClipIds = getSelectedClipIds();
-  const splittableSelectedClipIds = useMemo(
-    () =>
-      getSplittableTimelineItemIds(project, selectedClipIds, playheadPosition),
-    [playheadPosition, project, selectedClipIds],
+  } = useUIStore(useShallow(state => ({
+    select: state.select,
+    selectMultiple: state.selectMultiple,
+    clearSelection: state.clearSelection,
+    selectedItems: state.selectedItems,
+    snapSettings: state.snapSettings,
+    toggleSnap: state.toggleSnap,
+    timelineMaximized: state.timelineMaximized,
+    toggleTimelineMaximized: state.toggleTimelineMaximized,
+  })));
+  const linkedSelection = useEditorWorkspaceStore((state) => state.linkedSelection);
+  const selectedMarkerId = useEditorWorkspaceStore((state) => state.selectedMarkerId);
+  const setSelectedMarkerId = useEditorWorkspaceStore((state) => state.setSelectedMarkerId);
+  const primarySelectedTrackId = useMemo(
+    () => getPrimarySelectedTrackId(project, selectedItems),
+    [project, selectedItems],
   );
+  const explicitClipIds = useMemo(() => selectedItems
+    .filter((item) => item.type === "clip" || item.type === "text-clip" || item.type === "shape-clip")
+    .map((item) => item.id), [selectedItems]);
+  const selectedClipIds = useMemo(
+    () => getLinkedTimelineSelection(project, explicitClipIds, linkedSelection),
+    [project, explicitClipIds, linkedSelection],
+  );
+  const editableSelection = useMemo(
+    () => getEditableTimelineSelection(project, explicitClipIds, linkedSelection),
+    [project, explicitClipIds, linkedSelection],
+  );
+  const editableClipIds = editableSelection.ids;
+  const splittableSelectedClipIds = useTimelineStore(useShallow(state =>
+    getSplittableTimelineItemIds(project, editableClipIds, state.playheadPosition),
+  ));
   const selectedMediaClipIds = useMemo(
     () =>
       selectedClipIds.filter((clipId) =>
@@ -284,7 +427,7 @@ export const Timeline: React.FC = () => {
   );
   const canRippleDelete =
     selectedMediaClipIds.length > 0 &&
-    selectedMediaClipIds.length === selectedClipIds.length;
+    selectedMediaClipIds.length === selectedClipIds.length && !editableSelection.blocked;
 
   const { getTitleEngine, getGraphicsEngine } = useEngineStore();
   const titleEngine = getTitleEngine();
@@ -292,11 +435,31 @@ export const Timeline: React.FC = () => {
     return titleEngine?.getAllTextClips() ?? [];
   }, [titleEngine, project.modifiedAt]);
 
-  const getTextClipsForTrack = useCallback(
-    (trackId: string) => {
-      return allTextClips.filter((tc) => tc.trackId === trackId);
-    },
-    [allTextClips],
+  // Essential Graphics: a graphic's member layers are drawn as ONE bar per graphic.
+  const graphicInstances = project.graphicInstances;
+  const graphicMemberIds = useMemo(
+    () => graphicMemberClipIds({ graphicInstances, settings: project.settings } as Project),
+    [graphicInstances, project.settings],
+  );
+  const graphicsByTrack = useMemo(() => {
+    const byTrack = new Map<string, Array<{ instance: GraphicInstance; anchorId: string }>>();
+    for (const instance of graphicInstances ?? []) {
+      const [anchorId] = expectedMemberIds(instance, project.settings);
+      if (!anchorId) continue;
+      const list = byTrack.get(instance.trackId);
+      if (list) list.push({ instance, anchorId });
+      else byTrack.set(instance.trackId, [{ instance, anchorId }]);
+    }
+    return byTrack;
+  }, [graphicInstances, project.settings]);
+
+  const textClipsByTrack = useMemo(
+    () =>
+      new Map(tracks.map((track) => [
+        track.id,
+        allTextClips.filter((clip) => clip.trackId === track.id && !graphicMemberIds.has(clip.id)),
+      ])),
+    [allTextClips, tracks, graphicMemberIds],
   );
 
   const graphicsEngine = getGraphicsEngine();
@@ -307,11 +470,13 @@ export const Timeline: React.FC = () => {
     return [...shapes, ...svgs, ...stickers];
   }, [graphicsEngine, project.modifiedAt]);
 
-  const getShapeClipsForTrack = useCallback(
-    (trackId: string) => {
-      return allShapeClips.filter((sc) => sc.trackId === trackId);
-    },
-    [allShapeClips],
+  const shapeClipsByTrack = useMemo(
+    () =>
+      new Map(tracks.map((track) => [
+        track.id,
+        allShapeClips.filter((clip) => clip.trackId === track.id && !graphicMemberIds.has(clip.id)),
+      ])),
+    [allShapeClips, tracks, graphicMemberIds],
   );
   const [isBoxSelecting, setIsBoxSelecting] = React.useState(false);
   const [selectionBox, setSelectionBox] = React.useState<{
@@ -322,6 +487,32 @@ export const Timeline: React.FC = () => {
     additive: boolean;
   } | null>(null);
 
+  // Per-lane selection with stable identities: selecting a clip must only
+  // re-render the lane(s) whose selected set changed, not every TrackLane.
+  const laneSelectionRef = useRef(new Map<string, string[]>());
+  const laneSelectedIds = useMemo(() => {
+    const owner = new Map<string, string>();
+    for (const track of tracks) for (const clip of track.clips) owner.set(clip.id, track.id);
+    for (const clip of allTextClips) owner.set(clip.id, clip.trackId);
+    for (const clip of allShapeClips) owner.set(clip.id, clip.trackId);
+    const next = new Map<string, string[]>();
+    for (const id of selectedClipIds) {
+      const trackId = owner.get(id);
+      if (!trackId) continue;
+      const ids = next.get(trackId);
+      if (ids) ids.push(id);
+      else next.set(trackId, [id]);
+    }
+    const previous = laneSelectionRef.current;
+    for (const [trackId, ids] of next) {
+      const before = previous.get(trackId);
+      if (before && before.length === ids.length && before.every((id, i) => id === ids[i])) {
+        next.set(trackId, before);
+      }
+    }
+    laneSelectionRef.current = next;
+    return next;
+  }, [selectedClipIds, tracks, allTextClips, allShapeClips]);
   const timelineDuration = useMemo(() => {
     let maxEnd = 0;
     for (const track of tracks) {
@@ -354,18 +545,40 @@ export const Timeline: React.FC = () => {
   const totalTracksHeight = useMemo(() => {
     let height = 0;
     for (const track of tracks) {
-      height += getTrackHeight(track.id, track.type);
+      height += getRowHeight(track.id, track.type, track.name);
     }
     return height;
-  }, [tracks, getTrackHeight]);
+  }, [tracks, getRowHeight, trackHeight, trackHeights]);
 
+  // A commit replaces `tracks`, but the heights rarely change: keep the previous Map when every
+  // entry is equal so memoised clips (which receive it as a prop) do not all re-render.
+  const previousTrackHeightsRef = useRef<Map<string, number>>(new Map());
   const trackHeightsMap = useMemo(() => {
     const map = new Map<string, number>();
     for (const track of tracks) {
-      map.set(track.id, getTrackHeight(track.id, track.type));
+      map.set(track.id, getTrackHeight(track.id, track.type, track.name));
     }
+    const previous = previousTrackHeightsRef.current;
+    if (previous.size === map.size && [...map].every(([id, height]) => previous.get(id) === height)) {
+      return previous;
+    }
+    previousTrackHeightsRef.current = map;
     return map;
-  }, [tracks, getTrackHeight]);
+  }, [tracks, getTrackHeight, trackHeight, trackHeights]);
+
+  // Row heights include expanded automation lanes; clip drag maps the pointer to a track with these.
+  // Kept stable across commits like trackHeightsMap, or every memoised clip re-renders on each edit.
+  const previousRowHeightsRef = useRef<Map<string, number>>(new Map());
+  const rowHeightsMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const track of tracks) map.set(track.id, getRowHeight(track.id, track.type, track.name));
+    const previous = previousRowHeightsRef.current;
+    if (previous.size === map.size && [...map].every(([id, height]) => previous.get(id) === height)) {
+      return previous;
+    }
+    previousRowHeightsRef.current = map;
+    return map;
+  }, [tracks, getRowHeight, trackHeight, trackHeights]);
 
   useEffect(() => {
     const el = tracksRef.current;
@@ -377,7 +590,8 @@ export const Timeline: React.FC = () => {
         const pointerX = e.clientX - rect.left;
         const { pixelsPerSecond: pps, setZoom: applyZoom } =
           useTimelineStore.getState();
-        const timeAtCursor = (pointerX + el.scrollLeft) / pps;
+        const inset = phone ? el.clientWidth / 2 : 0;
+        const timeAtCursor = (pointerX + el.scrollLeft - inset) / pps;
         const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
         const next = Math.max(
           ZOOM_PRESETS.MIN,
@@ -386,7 +600,9 @@ export const Timeline: React.FC = () => {
         if (next === pps) return;
         applyZoom(next);
         requestAnimationFrame(() => {
-          el.scrollLeft = Math.max(0, timeAtCursor * next - pointerX);
+          el.scrollLeft = phone
+            ? useTimelineStore.getState().playheadPosition * next
+            : Math.max(0, timeAtCursor * next - pointerX);
         });
       } else if (e.shiftKey && e.deltaY !== 0) {
         e.preventDefault();
@@ -395,7 +611,7 @@ export const Timeline: React.FC = () => {
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, []);
+  }, [phone]);
 
   const handleTrackDragStart = useCallback(
     (e: React.DragEvent, trackId: string) => {
@@ -433,40 +649,31 @@ export const Timeline: React.FC = () => {
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        setViewportDimensions(
-          entry.contentRect.width,
-          entry.contentRect.height,
-        );
-      }
-    });
+    const measure = () => {
+      const element = containerRef.current;
+      if (element && element.clientWidth > 0) setViewportDimensions(Math.max(1,element.clientWidth - headerWidth),element.clientHeight);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
 
     observer.observe(containerRef.current);
     return () => observer.disconnect();
-  }, [setViewportDimensions]);
+  }, [setViewportDimensions,headerWidth]);
 
-  useEffect(() => {
-    if (playbackState !== "playing") return;
-    const el = tracksRef.current;
-    if (!el) return;
-
-    const playheadPixels = playheadPosition * pixelsPerSecond;
-    // Keep the playhead in the left portion of the viewport during playback so
-    // most of the upcoming timeline stays visible. When it crosses near the
-    // right edge (or jumps out of view via a seek/loop), page the view so the
-    // playhead lands back near the left with the rest as lookahead — instead of
-    // pinning it at the end on a long timeline.
-    const leftMargin = Math.min(Math.max(viewportWidth * 0.12, 60), 220);
-    const followThreshold = scrollX + viewportWidth - leftMargin;
-
-    if (playheadPixels > followThreshold || playheadPixels < scrollX) {
-      el.scrollLeft = Math.max(0, playheadPixels - leftMargin);
-    }
-  }, [playheadPosition, playbackState, pixelsPerSecond, scrollX, viewportWidth]);
-
+  // Latest sources for the selection handler, read at click time: depending on `tracks` here would
+  // hand every memoised clip a new `onSelect` on each commit and re-render them all.
+  const selectionSourcesRef = useRef({ tracks, allTextClips, allShapeClips });
+  selectionSourcesRef.current = { tracks, allTextClips, allShapeClips };
   const handleSelectClip = useCallback(
     (clipId: string, addToSelection: boolean) => {
+      // Track Select tools: a click selects a range of the timeline, and
+      // Shift limits it to the clicked track instead of extending the selection.
+      const direction = trackSelectDirection(useEditorWorkspaceStore.getState().timelineTool);
+      if (direction) {
+        applyTrackSelect(clipId, direction, addToSelection);
+        return;
+      }
+      const { tracks, allTextClips, allShapeClips } = selectionSourcesRef.current;
       const isTextClip = allTextClips.some((tc) => tc.id === clipId);
       if (isTextClip) {
         const textClip = allTextClips.find((tc) => tc.id === clipId);
@@ -495,7 +702,7 @@ export const Timeline: React.FC = () => {
       }
       select({ type: "clip", id: clipId, trackId }, addToSelection);
     },
-    [tracks, select, allTextClips, allShapeClips],
+    [select],
   );
 
   const handleSelectTransition = useCallback(
@@ -569,57 +776,24 @@ export const Timeline: React.FC = () => {
   );
 
   const handleSplit = useCallback(async () => {
-    const store = useProjectStore.getState();
-    for (const clipId of splittableSelectedClipIds) {
-      await splitTimelineItem(
-        store,
-        clipId,
-        playheadPosition,
-      );
-    }
-  }, [playheadPosition, splittableSelectedClipIds]);
+    await editTimelineSelection(explicitClipIds, "split", useTimelineStore.getState().playheadPosition);
+  }, [explicitClipIds]);
 
   const handleDelete = useCallback(async () => {
-    if (selectedClipIds.length === 0) return;
-
-    const store = useProjectStore.getState();
-    for (const id of selectedClipIds) {
-      await deleteTimelineItem(store, id);
-    }
-    clearSelection();
-  }, [selectedClipIds, clearSelection]);
+    if (await editTimelineSelection(explicitClipIds, "delete")) clearSelection();
+  }, [explicitClipIds, clearSelection]);
 
   const handleDuplicate = useCallback(async () => {
-    if (selectedClipIds.length === 0) return;
-
-    const store = useProjectStore.getState();
-    for (const id of selectedClipIds) {
-      await duplicateTimelineItem(store, id);
-    }
-  }, [selectedClipIds]);
+    await editTimelineSelection(explicitClipIds, "duplicate");
+  }, [explicitClipIds]);
 
   const handleRippleDelete = useCallback(async () => {
-    if (!canRippleDelete) return;
-    for (const id of selectedMediaClipIds) {
-      await rippleDeleteClip(id);
-    }
-    clearSelection();
-  }, [canRippleDelete, clearSelection, rippleDeleteClip, selectedMediaClipIds]);
+    if (canRippleDelete && await editTimelineSelection(explicitClipIds, "ripple")) clearSelection();
+  }, [canRippleDelete, clearSelection, explicitClipIds]);
 
-  const handleTrimToPlayhead = useCallback(
-    async (trimStart: boolean) => {
-      const store = useProjectStore.getState();
-      for (const id of splittableSelectedClipIds) {
-        await trimTimelineItemToPlayhead(
-          store,
-          id,
-          playheadPosition,
-          trimStart,
-        );
-      }
-    },
-    [playheadPosition, splittableSelectedClipIds],
-  );
+  const handleTrimToPlayhead = useCallback(async (trimStart: boolean) => {
+    await editTimelineSelection(explicitClipIds, trimStart ? "trim-start" : "trim-end", useTimelineStore.getState().playheadPosition);
+  }, [explicitClipIds]);
 
   const handleBackgroundClick = useCallback(() => {
     if (suppressNextBackgroundClickRef.current) {
@@ -632,7 +806,7 @@ export const Timeline: React.FC = () => {
   const handleBoxSelectionStart = useCallback(
     (e: React.MouseEvent) => {
       if (e.button !== 0) return;
-      if ((e.target as HTMLElement).closest(".clip-component")) return;
+      if (phone || (e.target as HTMLElement).closest("[data-timeline-clip]")) return;
 
       const rect = tracksRef.current?.getBoundingClientRect();
       if (!rect) return;
@@ -650,7 +824,7 @@ export const Timeline: React.FC = () => {
         additive: e.shiftKey || e.metaKey || e.ctrlKey,
       });
     },
-    [scrollX, scrollY],
+    [phone, scrollX, scrollY],
   );
 
   const handleBoxSelectionMove = useCallback(
@@ -699,7 +873,7 @@ export const Timeline: React.FC = () => {
         minY: Math.min(selectionBox.startY, selectionBox.currentY),
         maxY: Math.max(selectionBox.startY, selectionBox.currentY),
       },
-      getTrackHeight,
+      getRowHeight,
     );
 
     if (selectionBox.additive) {
@@ -723,7 +897,7 @@ export const Timeline: React.FC = () => {
     selectionBox,
     pixelsPerSecond,
     project,
-    getTrackHeight,
+    getRowHeight,
     selectMultiple,
     selectedItems,
     clearSelection,
@@ -739,42 +913,38 @@ export const Timeline: React.FC = () => {
 
   const handleDropMedia = useCallback(
     async (trackId: string, mediaId: string, startTime: number) => {
-      const { addClip, addClipToNewTrack } = useProjectStore.getState();
-      if (trackId) {
-        await addClip(trackId, mediaId, startTime);
-      } else {
-        await addClipToNewTrack(mediaId, startTime);
-      }
+      await useProjectStore
+        .getState()
+        .placeMediaClip(mediaId, trackId || undefined, startTime);
     },
     [],
   );
 
-  const { moveClip } = useProjectStore();
+  const moveQueue = useRef(Promise.resolve());
   const handleMoveClip = useCallback(
-    async (clipId: string, newStartTime: number, targetTrackId?: string) => {
-      const store = useProjectStore.getState();
-      const isGraphic = Boolean(
-        store.getShapeClip(clipId) ||
-          store.getSVGClip(clipId) ||
-          store.getStickerClip(clipId),
-      );
-      if (isGraphic) {
-        store.updateOverlayClipTiming(clipId, {
-          startTime: newStartTime,
-        });
-      } else {
+    (clipId: string, newStartTime: number, targetTrackId?: string) => {
+      moveQueue.current = moveQueue.current.then(async () => {
+        if (await moveLinkedTimelineClips(clipId, newStartTime, targetTrackId)) return;
+        const store = useProjectStore.getState();
         const sourceClip = store.getClip(clipId);
-        const result = await moveClip(clipId, newStartTime, targetTrackId);
+        const isOverlay = Boolean(
+          store.getTextClip(clipId) || store.getShapeClip(clipId) ||
+          store.getSVGClip(clipId) || store.getStickerClip(clipId),
+        );
+        const result = targetTrackId
+          ? await store.moveTimelineItem(clipId, newStartTime, targetTrackId)
+          : isOverlay
+            ? { success: !!store.updateOverlayClipTiming(clipId, { startTime: newStartTime }) }
+            : await store.moveClip(clipId, newStartTime);
         if (result.success && sourceClip) {
-          moveLinkedCaptions(
-            useProjectStore.getState(),
-            sourceClip,
-            newStartTime,
-          );
+          moveLinkedCaptions(useProjectStore.getState(), sourceClip, newStartTime);
         }
-      }
+      }).catch((error: unknown) => {
+        toast.error(clipNow()("Move failed"), error instanceof Error ? error.message : clipNow()("Please try again."));
+      });
+      return moveQueue.current;
     },
-    [moveClip],
+    [],
   );
 
   const [snapIndicatorTime, setSnapIndicatorTime] = React.useState<
@@ -803,12 +973,10 @@ export const Timeline: React.FC = () => {
   );
 
   const handleMoveTextClip = useCallback(
-    (clipId: string, newStartTime: number) => {
-      useProjectStore.getState().updateOverlayClipTiming(clipId, {
-        startTime: Math.max(0, newStartTime),
-      });
+    async (clipId: string, newStartTime: number, targetTrackId?: string) => {
+      await handleMoveClip(clipId, Math.max(0, newStartTime), targetTrackId);
     },
-    [],
+    [handleMoveClip],
   );
 
   const handleTrimShapeClip = useCallback(
@@ -835,138 +1003,97 @@ export const Timeline: React.FC = () => {
     [],
   );
 
-  const handleTrimClip = useCallback(
-    (clipId: string, edge: "left" | "right", newTime: number) => {
-      const clip = tracks.flatMap((t) => t.clips).find((c) => c.id === clipId);
-      if (!clip) return;
-
-      const oldDuration = clip.duration;
-      const newDuration =
-        edge === "left"
-          ? Math.max(0.1, clip.startTime + clip.duration - newTime)
-          : Math.max(0.1, newTime - clip.startTime);
-
-      const updates =
-        edge === "left"
-          ? {
-              startTime: newTime,
-              duration: newDuration,
-            }
-          : {
-              duration: newDuration,
-            };
-
-      const adjustedKeyframes = clip.keyframes.map((kf) => {
-        if (kf.id.startsWith("kf-exit-")) {
-          const relativeTime = kf.time - oldDuration;
-          return { ...kf, time: newDuration + relativeTime };
-        }
-        return kf;
-      });
-
-      useProjectStore.setState((state) => ({
-        project: {
-          ...state.project,
-          timeline: {
-            ...state.project.timeline,
-            tracks: state.project.timeline.tracks.map((track) => ({
-              ...track,
-              clips: track.clips.map((c) =>
-                c.id === clipId
-                  ? { ...c, ...updates, keyframes: adjustedKeyframes }
-                  : c,
-              ),
-            })),
-          },
-          modifiedAt: Date.now(),
-        },
-      }));
-      const newStartTime = edge === "left" ? newTime : clip.startTime;
-      trimLinkedCaptions(
-        useProjectStore.getState(),
-        clip,
-        newStartTime,
-        newStartTime + newDuration,
-      );
-    },
-    [tracks],
-  );
+  const trimQueue = useRef(Promise.resolve());
+  const handleTrimClip = useCallback((clipId: string, edge: "left" | "right", newTime: number) => {
+    trimQueue.current = trimQueue.current.then(() => trimLinkedTimelineClips(clipId, edge, newTime))
+      .catch((error: unknown) => { toast.error(clipNow()("Trim failed"), error instanceof Error ? error.message : clipNow()("Please try again.")); });
+    return trimQueue.current;
+  }, []);
 
   const visualOrderTracks = useMemo(() => tracks, [tracks]);
-  const addTrackItems: DropdownMenuOption[] = useMemo(
+  // Keep each stored row height intact; its last two pixels form the authored
+  // boundary between visual and audio sections in both synchronized columns.
+  const audioDividerTrackIds = useMemo(() => new Set(tracks.filter((track, index) => track.type !== "audio" && tracks[index + 1]?.type === "audio").map(track => track.id)), [tracks]);
+  const addTrackItems = useMemo(
     () => [
       {
-        label: t("Video Track"),
-        icon: <Film size={16} className="text-clip-video" aria-hidden />,
-        onClick: () => addTrack("video"),
+        label: "Track",
+        icon: <Layers size={16} className="text-foreground" aria-hidden />,
+        onClick: () => addTrack("video", undefined, { mode: "standard" }),
       },
       {
-        label: t("Audio Track"),
+        label: "Dialogue",
         icon: <Music size={16} className="text-clip-audio" aria-hidden />,
-        onClick: () => addTrack("audio"),
+        onClick: () =>
+          addTrack("video", undefined, {
+            mode: "standard",
+            role: "dialogue",
+            name: "Dialogue",
+          }),
       },
-      { type: "divider" },
       {
-        label: t("Image Track"),
-        icon: <Image size={16} className="text-clip-music" aria-hidden />,
-        onClick: () => addTrack("image"),
+        label: "Music",
+        icon: <Music size={16} className="text-clip-audio" aria-hidden />,
+        onClick: () =>
+          addTrack("video", undefined, {
+            mode: "standard",
+            role: "music",
+            name: "Music",
+          }),
       },
       {
-        label: t("Text Track"),
+        label: "Captions",
         icon: <Type size={16} className="text-clip-text" aria-hidden />,
-        onClick: () => addTrack("text"),
-      },
-      {
-        label: t("Graphics Track"),
-        icon: <Shapes size={16} className="text-clip-music" aria-hidden />,
-        onClick: () => addTrack("graphics"),
+        onClick: () =>
+          addTrack("video", undefined, {
+            mode: "standard",
+            role: "captions",
+            name: "Captions",
+          }),
       },
     ],
-    [addTrack, t],
+    [addTrack],
   );
 
-  // Small, mockup-styled timeline tool button
-  const TLTool = ({
-    onClick,
-    disabled,
-    active,
-    title,
-    children,
-    extra,
-  }: {
-    onClick?: () => void;
-    disabled?: boolean;
-    active?: boolean;
-    title?: string;
-    children: React.ReactNode;
-    extra?: React.ReactNode;
-  }) => (
-    <button
-      type="button"
-      aria-label={title ?? t("Timeline tool")}
-      onClick={onClick}
-      disabled={disabled}
-      data-tip-bottom={title}
-      className={`relative grid place-items-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-        active ? "text-accent" : "text-fg-muted hover:text-fg-2"
-      }`}
-    >
-      {children}
-      {extra}
-    </button>
+  const addTrackMenu = addTrackItems.map(item =>
+    <DropdownMenuItem key={item.label} onSelect={() => void item.onClick()}>{item.icon}{clipT(item.label)}</DropdownMenuItem>,
   );
 
-  return (
-    <div
-      data-tour="timeline"
-      className="h-full bg-tl-bg flex flex-col min-h-0 relative overflow-hidden"
-    >
-      {/* ── Timeline toolbar (mock: 48px line-icon tools + emerald zoom slider) ── */}
-      <div className="flex items-center h-12 px-4 gap-4 bg-bg-1 border-b border-border shrink-0 relative z-50">
-        <TLTool onClick={undo} disabled={!canUndo()} title={t("Undo (⌘Z)")}>
+  const timelineToolbar = (
+      <div className="workspace-timeline-toolbar">
+        <TLTool title={clipT("Selection tool (V)")} active={tool === "select"} onClick={() => useEditorWorkspaceStore.getState().setTimelineTool("select")}><MousePointer2 size={17} /></TLTool>
+        <TLTool title={clipT("Blade tool (B)")} active={tool === "blade"} onClick={() => useEditorWorkspaceStore.getState().setTimelineTool("blade")}><Scissors size={16} /></TLTool>
+        <TLTool title={clipT("Ripple trim (R)")} active={tool === "ripple"} onClick={() => useEditorWorkspaceStore.getState().setTimelineTool("ripple")}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 3v18M8 8l-4 4 4 4M16 8l4 4-4 4" /></svg></TLTool>
+        <TLTool title={clipT("Slip (Y)")} active={tool === "slip"} onClick={() => useEditorWorkspaceStore.getState().setTimelineTool("slip")}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M7.5 6h9A1.5 1.5 0 0 1 18 7.5v9a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 16.5v-9A1.5 1.5 0 0 1 7.5 6zM2 12h3M19 12h3" /></svg></TLTool>
+        <TLTool title={clipT("Rolling edit (Shift+N)")} active={tool === "roll"} onClick={() => useEditorWorkspaceStore.getState().setTimelineTool("roll")}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 4v16M8 9l-4 3 4 3M16 9l4 3-4 3M4 12h16" /></svg></TLTool>
+        <TLTool title={clipT("Slide (U)")} active={tool === "slide"} onClick={() => useEditorWorkspaceStore.getState().setTimelineTool("slide")}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M9 7h6v10H9zM3 12h3M18 12h3M4.5 10.5 3 12l1.5 1.5M19.5 10.5 21 12l-1.5 1.5" /></svg></TLTool>
+        <TLTool title={clipT("Rate stretch (Shift+R)")} active={tool === "stretch"} onClick={() => useEditorWorkspaceStore.getState().setTimelineTool("stretch")}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M4 5v14M20 5v14M7 12h10M10 9l-3 3 3 3M14 9l3 3-3 3" /></svg></TLTool>
+        <span className="workspace-toolbar-divider" />
+        <TLTool title={clipT("Track select forward (A)")} active={tool === "trackSelectForward"} onClick={() => useEditorWorkspaceStore.getState().setTimelineTool("trackSelectForward")}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M4 5v14M8 12h12M16 8l4 4-4 4" /></svg></TLTool>
+        <TLTool title={clipT("Track select backward (Shift+A)")} active={tool === "trackSelectBackward"} onClick={() => useEditorWorkspaceStore.getState().setTimelineTool("trackSelectBackward")}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M20 5v14M16 12H4M8 8l-4 4 4 4" /></svg></TLTool>
+        <TLTool title={clipT("Hand tool (H)")} active={tool === "hand"} onClick={() => useEditorWorkspaceStore.getState().setTimelineTool("hand")}><Hand size={16} /></TLTool>
+        <TLTool title={clipT("Zoom tool (Z)")} active={tool === "zoom"} onClick={() => useEditorWorkspaceStore.getState().setTimelineTool("zoom")}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="11" cy="11" r="6.5" /><path d="M20.5 20.5 16 16M11 8.5v5M8.5 11h5" /></svg></TLTool>
+        <span className="workspace-toolbar-divider" />
+        <TLTool title={snapSettings.enabled ? clipT("Snap on (N)") : clipT("Snap off (N)")} active={snapSettings.enabled} onClick={toggleSnap}><Magnet size={16} /></TLTool>
+        <TLTool title={scrubAudio ? clipT("Audio scrubbing on") : clipT("Audio scrubbing off")} active={scrubAudio} onClick={toggleScrubAudio}>{scrubAudio ? <Volume2 size={16} /> : <VolumeX size={16} />}</TLTool>
+        <TLTool title={clipT("Linked selection")} active={linkedSelection} onClick={() => useEditorWorkspaceStore.getState().setLinkedSelection(!linkedSelection)}><Link2 size={16} /></TLTool>
+        <TLTool title={clipT("Add marker (M)")} onClick={() => { void addMarkerAtPlayhead(); }}><Bookmark size={16} /></TLTool>
+        <TLTool title={clipT("Split (S)")} onClick={handleSplit} disabled={splittableSelectedClipIds.length === 0}><Columns2 size={16} /></TLTool>
+        <TLTool title={clipT("Delete (Del)")} onClick={handleDelete} disabled={editableClipIds.length===0}><Trash2 size={16} /></TLTool>
+        <EditPointTrimEntry />
+        <span className="workspace-toolbar-divider" />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild><ShadcnButton variant="ghost" size="sm" className="workspace-timeline-track-trigger"><Plus size={14} aria-hidden />{clipT("Track")}</ShadcnButton></DropdownMenuTrigger>
+          <DropdownMenuContent side="top" align="start" className="w-48">{addTrackMenu}</DropdownMenuContent>
+        </DropdownMenu>
+        <ShadcnPopover>
+          <PopoverTrigger asChild><ShadcnButton variant="ghost" size="icon-sm" aria-label={clipT("More timeline tools")}><MoreHorizontal size={16} /></ShadcnButton></PopoverTrigger>
+          <PopoverContent side="top" align="start" aria-label={clipT("More timeline tools")} className={cn("w-[720px] max-w-[calc(100vw-24px)] p-0", phone && "mobile-timeline-advanced-popover")}>
+          <div className="workspace-timeline-advanced">      <div className="flex items-center h-12 px-4 gap-4 bg-bg-1 border-b border-border shrink-0 relative z-50">
+        <TLTool onClick={undo} disabled={!canUndo()} title={clipT("Undo (⌘Z)")}>
           <Undo2 size={16} aria-hidden />
         </TLTool>
-        <TLTool onClick={redo} disabled={!canRedo()} title={t("Redo (⇧⌘Z)")}>
+        <TLTool onClick={redo} disabled={!canRedo()} title={clipT("Redo (⇧⌘Z)")}>
           <Redo2 size={16} aria-hidden />
         </TLTool>
 
@@ -975,66 +1102,55 @@ export const Timeline: React.FC = () => {
         <TLTool
           onClick={handleSplit}
           disabled={splittableSelectedClipIds.length === 0}
-          title={t("Split (S)")}
+          title={clipT("Split (S)")}
         >
           <Scissors size={16} aria-hidden />
         </TLTool>
         <TLTool
           onClick={() => handleTrimToPlayhead(true)}
           disabled={splittableSelectedClipIds.length === 0}
-          title={t("Trim start to playhead (Q)")}
+          title={clipT("Trim start to playhead (Q)")}
         >
           <CornerDownLeft size={16} aria-hidden />
         </TLTool>
         <TLTool
           onClick={() => handleTrimToPlayhead(false)}
           disabled={splittableSelectedClipIds.length === 0}
-          title={t("Trim end to playhead (W)")}
+          title={clipT("Trim end to playhead (W)")}
         >
           <CornerDownRight size={16} aria-hidden />
         </TLTool>
         <TLTool
           onClick={handleDelete}
-          disabled={selectedClipIds.length === 0}
-          title={t("Delete (Del)")}
+          disabled={editableClipIds.length === 0}
+          title={clipT("Delete (Del)")}
         >
           <Trash2 size={16} aria-hidden />
         </TLTool>
         <TLTool
           onClick={handleDuplicate}
-          disabled={selectedClipIds.length === 0}
-          title={t("Duplicate (⌘D)")}
+          disabled={editableClipIds.length === 0}
+          title={clipT("Duplicate (⌘D)")}
         >
           <Copy size={16} aria-hidden />
         </TLTool>
         <TLTool
           onClick={handleRippleDelete}
           disabled={!canRippleDelete}
-          title={t("Ripple delete (⇧Del)")}
+          title={clipT("Ripple delete (⇧Del)")}
         >
           <Delete size={16} aria-hidden />
         </TLTool>
 
         <div className="w-px h-[18px] bg-border" />
 
-        <DropdownMenu
-          items={addTrackItems}
-          placement="above"
-          menuWidth={192}
-          hasChevron
-          button={{
-            label: t("Add track"),
-            size: "sm",
-            variant: "ghost",
-            icon: <Plus size={16} aria-hidden />,
-            endContent: (
-              <ChevronDownIcon size={9} className="text-fg-muted" aria-hidden />
-            ),
-          }}
-        />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild><ShadcnButton variant="ghost" size="sm"><Plus size={16} aria-hidden />{clipT("Add track")}<ChevronDownIcon size={9} className="text-fg-muted" aria-hidden /></ShadcnButton></DropdownMenuTrigger>
+          <DropdownMenuContent side="top" align="start" className="w-48">{addTrackMenu}</DropdownMenuContent>
+        </DropdownMenu>
 
-        <Popover
-          isOpen={showLayersPanel}
+        <ShadcnPopover
+          open={showLayersPanel}
           onOpenChange={(open) => {
             setShowLayersPanel(open);
             if (!open) {
@@ -1042,14 +1158,13 @@ export const Timeline: React.FC = () => {
               setPendingTrackDeleteId(null);
             }
           }}
-          placement="above"
-          alignment="start"
-          width={340}
-          label={t("Track layers")}
-          content={
-            <>
+        >
+          <PopoverTrigger asChild>
+            <ShadcnButton variant="ghost" size="icon-sm" data-tip-bottom="Track layers" aria-label={clipT("Manage track layers")} title={clipT("Manage track layers")} className={showLayersPanel ? "bg-bg-2 text-fg-2" : "text-fg-muted"}><Layers size={16} aria-hidden /></ShadcnButton>
+          </PopoverTrigger>
+          <PopoverContent side="top" align="start" aria-label={clipT("Track layers")} className={cn("w-[340px] max-w-[calc(100vw-24px)] p-0", phone && "mobile-track-layers-popover")}>
               <div className="flex items-center justify-between px-3 py-2.5 border-b border-border bg-bg-2">
-                <span className="text-xs font-semibold text-fg">{t("Track Layers")}</span>
+                <span className="text-xs font-semibold text-fg">{clipT("Track Layers")}</span>
                 <span className="text-[10px] tabular-nums text-fg-3">
                   {filteredTrackEntries.length}/{tracks.length}
                 </span>
@@ -1057,24 +1172,24 @@ export const Timeline: React.FC = () => {
               {pendingTrackDelete ? (
                 <div
                   role="alertdialog"
-                  aria-label={`${t("Delete")} ${pendingTrackDelete.name}`}
+                  aria-label={clipT("Delete {0}", [pendingTrackDelete.name])}
                   className="border-b border-danger/30 bg-danger/10 px-3 py-2.5"
                 >
                   <p className="text-[11px] font-semibold text-danger">
-                    {t("Delete")} “{pendingTrackDelete.name}”?
+                    {clipT("Delete “")}{pendingTrackDelete.name}”?
                   </p>
                   <p className="mt-0.5 text-[10px] leading-relaxed text-fg-3">
-                    {t("Its clips will be removed. You can undo this action.")}
+                    {clipT("Its clips will be removed. You can undo this action.")}
                   </p>
                   <div className="mt-2 flex justify-end gap-1.5">
-                    <button
+                    <ShadcnButton variant="ghost" size="sm"
                       type="button"
                       onClick={() => setPendingTrackDeleteId(null)}
                       className="h-7 rounded-md border border-border bg-bg-1 px-2.5 text-[10px] font-semibold text-fg-2 hover:bg-hover"
                     >
-                      {t("Cancel")}
-                    </button>
-                    <button
+                      {clipT("Cancel")}
+                    </ShadcnButton>
+                    <ShadcnButton variant="ghost" size="sm"
                       type="button"
                       onClick={() => {
                         void removeTrack(pendingTrackDelete.id);
@@ -1082,24 +1197,24 @@ export const Timeline: React.FC = () => {
                       }}
                       className="h-7 rounded-md bg-danger px-2.5 text-[10px] font-semibold text-white hover:opacity-90"
                     >
-                      {t("Delete track")}
-                    </button>
+                      {clipT("Delete track")}
+                    </ShadcnButton>
                   </div>
                 </div>
               ) : null}
               <div className="space-y-2 border-b border-border px-3 py-2.5">
-                <input
+                <Input
                   type="search"
                   value={trackLayerQuery}
                   onChange={(event) => setTrackLayerQuery(event.currentTarget.value)}
-                  placeholder={t("Search tracks")}
-                  aria-label={t("Search track layers")}
+                  placeholder={clipT("Search tracks")}
+                  aria-label={clipT("Search track layers")}
                   className="h-8 w-full rounded-md border border-border bg-bg-1 px-2.5 text-[11px] text-fg outline-none placeholder:text-fg-muted focus:border-accent"
                 />
                 <div
                   className="flex gap-1 overflow-x-auto pb-0.5"
                   role="group"
-                  aria-label={t("Track layer types")}
+                  aria-label={clipT("Track layer types")}
                 >
                   {TRACK_LAYER_FILTERS.map((filter) => {
                     const count =
@@ -1107,7 +1222,7 @@ export const Timeline: React.FC = () => {
                         ? tracks.length
                         : tracks.filter((track) => track.type === filter.id).length;
                     return (
-                      <button
+                      <ShadcnButton variant="ghost" size="sm"
                         key={filter.id}
                         type="button"
                         aria-pressed={trackLayerFilter === filter.id}
@@ -1118,37 +1233,31 @@ export const Timeline: React.FC = () => {
                             : "border-border bg-bg-2 text-fg-3 hover:border-accent/50 hover:text-fg"
                         }`}
                       >
-                        {t(filter.label)} {count}
-                      </button>
+                        {clipT(filter.label)} {count}
+                      </ShadcnButton>
                     );
                   })}
                 </div>
               </div>
               <div className="p-2 max-h-60 overflow-y-auto">
                 {tracks.length === 0 ? (
-                  <Text type="supporting" color="secondary" className="text-xs text-fg-muted text-center py-6">
-                    {t("No tracks yet")}
-                  </Text>
+                  <span className="font-normal text-xs text-fg-muted text-center py-6">
+                    {clipT("No tracks yet")}
+                  </span>
                 ) : filteredTrackEntries.length === 0 ? (
-                  <Text
-                    type="supporting"
-                    color="secondary"
-                    className="block py-6 text-center text-xs text-fg-muted"
+                  <span className="font-normal block py-6 text-center text-xs text-fg-muted"
                   >
-                    {t("No tracks match your filters")}
-                  </Text>
+                    {clipT("No tracks match your filters")}
+                  </span>
                 ) : (
                   <div className="space-y-0.5">
                     {filteredTrackEntries.map(({ track, index }) => {
                       const info = getTrackInfo(track, index);
                       const name = track.name || info.label;
-                      const isVisual =
-                        track.type === "video" ||
-                        track.type === "image" ||
-                        track.type === "text" ||
-                        track.type === "graphics";
+                      const isVisual = trackHasVisualItems(project, track.id);
+                      const isAudio = trackHasAudioItems(project, track.id);
                       return (
-                        <div
+                        <div data-track-layer
                           key={track.id}
                           className="flex items-center gap-2.5 px-2 py-2 rounded-md hover:bg-hover group transition-colors cursor-default"
                         >
@@ -1158,9 +1267,9 @@ export const Timeline: React.FC = () => {
                             <info.icon size={14} className={info.textColor} aria-hidden />
                           </div>
                           {renamingTrackId === track.id ? (
-                            <input
+                            <Input
                               autoFocus
-                              aria-label={`${t("Rename")} ${name}`}
+                              aria-label={clipT("Rename {0}", [name])}
                               value={trackNameDraft}
                               onChange={(event) =>
                                 setTrackNameDraft(event.currentTarget.value)
@@ -1185,66 +1294,40 @@ export const Timeline: React.FC = () => {
                               {name}
                             </span>
                           )}
-                          <div className="flex gap-0.5 opacity-60 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-                            <IconButton
-                              label={`${t("Rename")} ${name}`}
-                              icon={<Pencil size={12} aria-hidden />}
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => startTrackRename(track.id, name)}
-                            />
-                            {track.type !== "text" &&
-                            track.type !== "graphics" ? (
-                              <IconButton
-                                label={`${t("Duplicate")} ${name}`}
-                                icon={<Copy size={12} aria-hidden />}
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => void duplicateTrack(track.id)}
-                              />
-                            ) : null}
-                            <IconButton
-                              label={`${t("Delete")} ${name}`}
-                              icon={<Trash2 size={12} aria-hidden />}
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => setPendingTrackDeleteId(track.id)}
-                            />
+                          <div data-track-layer-actions className="flex gap-0.5 opacity-60 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                            {phone && track.clips.some(clip => clip.keyframes?.length) && <ShadcnButton variant="ghost" size="icon-sm" aria-pressed={expandedTracks.has(track.id)} onClick={() => useTimelineStore.getState().toggleTrackExpanded(track.id)} type="button" aria-label={clipT(expandedTracks.has(track.id) ? "Collapse keyframes for {0}" : "Expand keyframes for {0}", [name])} title={clipT(expandedTracks.has(track.id) ? "Collapse keyframes for {0}" : "Expand keyframes for {0}", [name])} className="inline-flex shrink-0 items-center justify-center rounded-[7px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-7 w-7 bg-transparent text-fg-muted hover:bg-bg-2 hover:text-fg">
+                              {<ChevronDown size={12} aria-hidden />}
+                            </ShadcnButton>}
+                            <ShadcnButton variant="ghost" size="icon-sm" onClick={() => startTrackRename(track.id, name)} type="button" aria-label={clipT("Rename {0}", [name])} title={clipT("Rename {0}", [name])} className="inline-flex shrink-0 items-center justify-center rounded-[7px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-7 w-7 bg-transparent text-fg-muted hover:bg-bg-2 hover:text-fg">
+                              {<Pencil size={12} aria-hidden />}
+                            </ShadcnButton>
+                            <ShadcnButton variant="ghost" size="icon-sm" onClick={() => void duplicateTrack(track.id)} type="button" aria-label={clipT("Duplicate {0}", [name])} title={clipT("Duplicate {0}", [name])} className="inline-flex shrink-0 items-center justify-center rounded-[7px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-7 w-7 bg-transparent text-fg-muted hover:bg-bg-2 hover:text-fg">
+                              {<Copy size={12} aria-hidden />}
+                            </ShadcnButton>
+                            <ShadcnButton variant="ghost" size="icon-sm" onClick={() => setPendingTrackDeleteId(track.id)} type="button" aria-label={clipT("Delete {0}", [name])} title={clipT("Delete {0}", [name])} className="inline-flex shrink-0 items-center justify-center rounded-[7px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-7 w-7 bg-transparent text-fg-muted hover:bg-bg-2 hover:text-fg">
+                              {<Trash2 size={12} aria-hidden />}
+                            </ShadcnButton>
                             {isVisual ? (
-                              <IconButton
-                                label={track.hidden ? `${t("Show")} ${name}` : `${t("Hide")} ${name}`}
-                                icon={
-                                  track.hidden ? (
+                              <ShadcnButton variant="ghost" size="icon-sm" aria-pressed={track.hidden} onClick={() => void hideTrack(track.id, !track.hidden)} type="button" aria-label={clipT("Hide {0}", [name])} title={clipT("Hide {0}", [name])} className={cn("inline-flex shrink-0 items-center justify-center rounded-[7px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50", "h-7 w-7", (track.hidden ? "border border-border bg-bg-2 text-fg-2 hover:bg-bg-3 hover:text-fg" : "bg-transparent text-fg-muted hover:bg-bg-2 hover:text-fg"))}>
+                                {track.hidden ? (
                                     <EyeOff size={12} aria-hidden />
                                   ) : (
                                     <Eye size={12} aria-hidden />
-                                  )
-                                }
-                                size="sm"
-                                variant={track.hidden ? "secondary" : "ghost"}
-                                aria-pressed={track.hidden}
-                                onClick={() => void hideTrack(track.id, !track.hidden)}
-                              />
+                                  )}
+                              </ShadcnButton>
                             ) : null}
-                            {track.type === "audio" ? (
+                            {isAudio ? (
                               <>
-                                <IconButton
-                                  label={track.muted ? `${t("Unmute")} ${name}` : `${t("Mute")} ${name}`}
-                                  icon={
-                                    track.muted ? (
+                                <ShadcnButton variant="ghost" size="icon-sm" aria-pressed={track.muted} onClick={() => void muteTrack(track.id, !track.muted)} type="button" aria-label={clipT("Mute {0}", [name])} title={clipT("Mute {0}", [name])} className={cn("inline-flex shrink-0 items-center justify-center rounded-[7px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50", "h-7 w-7", (track.muted ? "border border-border bg-bg-2 text-fg-2 hover:bg-bg-3 hover:text-fg" : "bg-transparent text-fg-muted hover:bg-bg-2 hover:text-fg"))}>
+                                  {track.muted ? (
                                       <VolumeX size={12} aria-hidden />
                                     ) : (
                                       <Volume2 size={12} aria-hidden />
-                                    )
-                                  }
-                                  size="sm"
-                                  variant={track.muted ? "secondary" : "ghost"}
-                                  aria-pressed={track.muted}
-                                  onClick={() => void muteTrack(track.id, !track.muted)}
-                                />
-                                <button
+                                    )}
+                                </ShadcnButton>
+                                <ShadcnButton variant="ghost" size="sm"
                                   type="button"
-                                  aria-label={track.solo ? `${t("Clear solo")} ${name}` : `${t("Solo")} ${name}`}
+                                  aria-label={clipT("Solo {0}", [name])}
                                   aria-pressed={track.solo}
                                   onClick={() => void soloTrack(track.id, !track.solo)}
                                   className={`flex h-7 min-w-7 items-center justify-center rounded-md px-1 text-[10px] font-black transition-colors ${
@@ -1254,44 +1337,41 @@ export const Timeline: React.FC = () => {
                                   }`}
                                 >
                                   S
-                                </button>
+                                </ShadcnButton>
+                                <ShadcnButton variant="ghost" size="sm"
+                                  type="button"
+                                  aria-label={clipT("Solo safe {0}", [name])}
+                                  title={clipT("Solo safe: stays audible when other tracks are soloed")}
+                                  aria-pressed={!!track.soloSafe}
+                                  onClick={() => void setTrackSoloSafe(track.id, !track.soloSafe)}
+                                  className={`flex h-7 min-w-7 items-center justify-center rounded-md px-1 text-[10px] font-black transition-colors ${
+                                    track.soloSafe
+                                      ? "bg-accent text-bg hover:bg-accent/90"
+                                      : "text-fg-muted hover:bg-hover hover:text-fg"
+                                  }`}
+                                >
+                                  {clipT("SF")}
+                                </ShadcnButton>
                               </>
                             ) : null}
-                            <IconButton
-                              label={track.locked ? `${t("Unlock")} ${name}` : `${t("Lock")} ${name}`}
-                              icon={
-                                track.locked ? (
+                            <ShadcnButton variant="ghost" size="icon-sm" aria-pressed={track.locked} onClick={() => void lockTrack(track.id, !track.locked)} type="button" aria-label={clipT("Lock {0}", [name])} title={clipT("Lock {0}", [name])} className={cn("inline-flex shrink-0 items-center justify-center rounded-[7px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50", "h-7 w-7", (track.locked ? "border border-border bg-bg-2 text-fg-2 hover:bg-bg-3 hover:text-fg" : "bg-transparent text-fg-muted hover:bg-bg-2 hover:text-fg"))}>
+                              {track.locked ? (
                                   <Unlock size={12} aria-hidden />
                                 ) : (
                                   <Lock size={12} aria-hidden />
-                                )
-                              }
-                              size="sm"
-                              variant={track.locked ? "secondary" : "ghost"}
-                              aria-pressed={track.locked}
-                              onClick={() => void lockTrack(track.id, !track.locked)}
-                            />
-                            <IconButton
-                              label={`${t("Move up")} ${name}`}
-                              icon={<ChevronUp size={12} aria-hidden />}
-                              size="sm"
-                              variant="ghost"
-                              onClick={() =>
+                                )}
+                            </ShadcnButton>
+                            <ShadcnButton variant="ghost" size="icon-sm" onClick={() =>
                                 index > 0 && reorderTrack(track.id, index - 1)
-                              }
-                              isDisabled={index === 0}
-                            />
-                            <IconButton
-                              label={`${t("Move down")} ${name}`}
-                              icon={<ChevronDown size={12} aria-hidden />}
-                              size="sm"
-                              variant="ghost"
-                              onClick={() =>
+                              } type="button" aria-label={clipT("Move {0} up", [name])} title={clipT("Move {0} up", [name])} disabled={(index === 0)} className="inline-flex shrink-0 items-center justify-center rounded-[7px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-7 w-7 bg-transparent text-fg-muted hover:bg-bg-2 hover:text-fg">
+                              {<ChevronUp size={12} aria-hidden />}
+                            </ShadcnButton>
+                            <ShadcnButton variant="ghost" size="icon-sm" onClick={() =>
                                 index < tracks.length - 1 &&
                                 reorderTrack(track.id, index + 1)
-                              }
-                              isDisabled={index === tracks.length - 1}
-                            />
+                              } type="button" aria-label={clipT("Move {0} down", [name])} title={clipT("Move {0} down", [name])} disabled={(index === tracks.length - 1)} className="inline-flex shrink-0 items-center justify-center rounded-[7px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-7 w-7 bg-transparent text-fg-muted hover:bg-bg-2 hover:text-fg">
+                              {<ChevronDown size={12} aria-hidden />}
+                            </ShadcnButton>
                           </div>
                         </div>
                       );
@@ -1299,74 +1379,28 @@ export const Timeline: React.FC = () => {
                   </div>
                 )}
               </div>
-            </>
-          }
-        >
-          <IconButton
-            label={t("Manage track layers")}
-            icon={<Layers size={16} aria-hidden />}
-            size="sm"
-            variant={showLayersPanel ? "secondary" : "ghost"}
-            data-tip-bottom={t("Track layers")}
-          />
-        </Popover>
+          </PopoverContent>
+        </ShadcnPopover>
 
         <CaptionBatchSelectButton />
 
         <div className="ml-auto flex items-center gap-3">
           {/* Zoom control (mock: minus / emerald slider track + knob / plus) */}
           <div className="flex items-center gap-2.5">
-            <TLTool onClick={zoomOut} title={t("Zoom out")}>
+            <TLTool onClick={zoomOut} title={clipT("Zoom out")}>
               <ZoomOut size={16} aria-hidden />
             </TLTool>
-            <div className="relative h-5 w-[150px]">
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute left-0 top-1/2 h-1 w-full -translate-y-1/2 rounded-full bg-bg-2"
-              />
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute left-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-accent"
-                style={{
-                  width: `${Math.max(
-                    0,
-                    Math.min(
-                      100,
-                      ((pixelsPerSecond - ZOOM_PRESETS.MIN) /
-                        (ZOOM_PRESETS.MAX - ZOOM_PRESETS.MIN)) *
-                        100,
-                    ),
-                  )}%`,
-                }}
-              />
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent shadow-sm"
-                style={{
-                  left: `${Math.max(
-                    0,
-                    Math.min(
-                      100,
-                      ((pixelsPerSecond - ZOOM_PRESETS.MIN) /
-                        (ZOOM_PRESETS.MAX - ZOOM_PRESETS.MIN)) *
-                        100,
-                    ),
-                  )}%`,
-                }}
-              />
-              <input
-                type="range"
-                aria-label={t("Timeline zoom")}
-                aria-valuetext={`${Math.round(pixelsPerSecond)} pixels per second`}
-                min={ZOOM_PRESETS.MIN}
-                max={ZOOM_PRESETS.MAX}
-                step={1}
-                value={pixelsPerSecond}
-                onChange={(event) => setZoom(Number(event.currentTarget.value))}
-                className="absolute inset-0 h-full w-full cursor-ew-resize opacity-0"
-              />
-            </div>
-            <TLTool onClick={zoomIn} title={t("Zoom in")}>
+            <Slider
+              aria-label={clipT("Advanced timeline zoom")}
+              aria-valuetext={`${Math.round(pixelsPerSecond)} pixels per second`}
+              min={ZOOM_PRESETS.MIN}
+              max={ZOOM_PRESETS.MAX}
+              step={1}
+              value={[pixelsPerSecond]}
+              onValueChange={([value]) => setZoom(value)}
+              className="workspace-timeline-advanced-zoom"
+            />
+            <TLTool onClick={zoomIn} title={clipT("Zoom in")}>
               <ZoomIn size={16} aria-hidden />
             </TLTool>
           </div>
@@ -1377,28 +1411,37 @@ export const Timeline: React.FC = () => {
             <TLTool
               onClick={toggleSnap}
               active={snapSettings.enabled}
-              title={snapSettings.enabled ? t("Snap on (N)") : t("Snap off (N)")}
+              title={snapSettings.enabled ? clipT("Snap on (N)") : clipT("Snap off (N)")}
             >
               <Magnet size={16} />
+            </TLTool>
+            <TLTool
+              onClick={toggleScrubAudio}
+              active={scrubAudio}
+              title={scrubAudio ? clipT("Audio scrubbing on") : clipT("Audio scrubbing off")}
+            >
+              {scrubAudio ? <Volume2 size={16} /> : <VolumeX size={16} />}
             </TLTool>
 
             <TLTool
               onClick={() => {
+                if (phone) { setPhoneTrackScale(1.35); return; }
                 setTrackHeight(64);
                 useTimelineStore.setState({ trackHeights: {} });
               }}
-              active={trackHeight >= 52}
-              title={t("Large tracks")}
+              active={phone ? phoneTrackScale > 1 : trackHeight >= 52}
+              title={clipT("Large tracks")}
             >
               <Rows3 size={16} />
             </TLTool>
             <TLTool
               onClick={() => {
+                if (phone) { setPhoneTrackScale(1); return; }
                 setTrackHeight(40);
                 useTimelineStore.setState({ trackHeights: {} });
               }}
-              active={trackHeight < 52}
-              title={t("Compact tracks")}
+              active={phone ? phoneTrackScale === 1 : trackHeight < 52}
+              title={clipT("Compact tracks")}
             >
               <Rows2 size={16} />
             </TLTool>
@@ -1408,8 +1451,8 @@ export const Timeline: React.FC = () => {
               active={timelineMaximized}
               title={
                 timelineMaximized
-                  ? t("Restore layout")
-                  : t("Maximize timeline (more room)")
+                  ? clipT("Restore layout")
+                  : clipT("Maximize timeline (more room)")
               }
             >
               {timelineMaximized ? (
@@ -1420,28 +1463,65 @@ export const Timeline: React.FC = () => {
             </TLTool>
           </div>
         </div>
+      </div></div>
+          </PopoverContent>
+        </ShadcnPopover>
+        <RenderCacheControls />
+        <div className="workspace-timeline-summary">{tracks.length} {clipT("tracks ·")} {project.timeline.duration > 0 ? clipT("{0} clips", [tracks.reduce((sum, track) => sum + track.clips.length, 0) + (project.textClips?.length ?? 0) + (project.shapeClips?.length ?? 0) + (project.svgClips?.length ?? 0) + (project.stickerClips?.length ?? 0)]) : clipT("empty")}</div>
+        <Slider aria-label={clipT("Timeline zoom")} className="workspace-timeline-zoom" min={ZOOM_PRESETS.MIN} max={ZOOM_PRESETS.MAX} value={[pixelsPerSecond]} onValueChange={([value]) => setZoom(value)} />
       </div>
+  );
+
+  return (
+    <div
+      data-tour="timeline"
+      data-phone-timeline={phone || undefined}
+      className="h-full bg-tl-bg flex flex-col min-h-0 relative overflow-hidden"
+    >
+      {!phone && <SequenceTabs />}
+      {/* ── Timeline toolbar (mock: 48px line-icon tools + emerald zoom slider) ── */}
+      {phone ? <ShadcnPopover open={phoneOptionsOpen} onOpenChange={setPhoneOptionsOpen}>
+        <PopoverTrigger asChild><ShadcnButton type="button" variant="ghost" size="icon" className="mobile-timeline-add" aria-label={clipT("Add media or open timeline tools")}><Plus size={20} aria-hidden /></ShadcnButton></PopoverTrigger>
+        <PopoverContent side="bottom" align="end" className="mobile-timeline-options">
+          {onOpenMedia && <ShadcnButton type="button" variant="secondary" className="mobile-timeline-import" onClick={() => { setPhoneOptionsOpen(false); useEditorWorkspaceStore.getState().setSection("media"); onOpenMedia(); }}><Plus size={16} aria-hidden />{clipT("Add media")}</ShadcnButton>}
+          <TimelineRangeActions duration={project.timeline.duration} frameRate={project.settings.frameRate} />
+          {timelineToolbar}
+        </PopoverContent>
+      </ShadcnPopover> : timelineToolbar}
 
       <div
         ref={containerRef}
-        className="flex-1 flex flex-col overflow-hidden relative"
+        className="workspace-timeline-content flex-1 flex flex-col overflow-hidden relative"
         onClick={handleBackgroundClick}
       >
-        <div className="flex shrink-0">
-          <div className="w-[170px] h-[34px] bg-bg-1 border-b border-r border-border shrink-0" />
-          <div className="flex-1 overflow-hidden relative bg-bg-1 border-b border-border">
+        <div className="workspace-timeline-ruler-row flex shrink-0">
+          <div hidden={phone} style={{ width: headerWidth, height: (compact ? 44 : 26) + RENDER_STATUS_BAR_HEIGHT, paddingTop: RENDER_STATUS_BAR_HEIGHT }} className="bg-bg-1 border-b border-r border-border shrink-0">
+            <TimelineRangeActions duration={project.timeline.duration} frameRate={project.settings.frameRate} />
+          </div>
+          <div className="flex-1 overflow-hidden relative bg-bg-1">
             <div
               style={{
                 width: `${timelineDuration * pixelsPerSecond}px`,
-                transform: `translateX(-${scrollX}px)`,
+                transform: `translateX(${-scrollX}px)`,
               }}
             >
+              <RenderStatusBar pixelsPerSecond={pixelsPerSecond} width={timelineDuration * pixelsPerSecond} />
               <TimeRuler
                 duration={timelineDuration}
+                phone={phone}
+                rangeDuration={project.timeline.duration}
+                frameRate={project.settings.frameRate}
                 pixelsPerSecond={pixelsPerSecond}
                 scrollX={scrollX}
                 viewportWidth={viewportWidth}
                 snapPoints={playheadSnapPoints}
+                markers={project.timeline.markers}
+                selectedMarkerId={selectedMarkerId}
+                onCreateRangeMarker={(start, end) => { void addRangeMarker(start, end); }}
+                onMarkerSelect={setSelectedMarkerId}
+                onMarkerEdit={editMarker}
+                onMarkerRemove={removeMarker}
+                onMarkerUpdate={updateMarker}
                 onSeek={(time) => {
                   const bridge = getPlaybackBridge();
                   bridge.scrubTo(time);
@@ -1463,7 +1543,9 @@ export const Timeline: React.FC = () => {
           <div
             ref={trackHeadersRef}
             data-testid="timeline-track-headers-scroll"
-            className="w-[170px] bg-bg-1 border-r border-border shrink-0 z-20 overflow-y-auto overflow-x-hidden scrollbar-none overscroll-contain"
+            hidden={phone}
+            style={{ width: headerWidth }}
+            className="bg-bg-1 border-r border-border shrink-0 z-20 overflow-y-auto overflow-x-hidden scrollbar-none overscroll-contain"
             onDragOverCapture={handleTrackDragOver}
             onScroll={(e) => {
               const nextScrollTop = e.currentTarget.scrollTop;
@@ -1487,6 +1569,8 @@ export const Timeline: React.FC = () => {
                   >
                     <TrackHeader
                       track={track}
+                      active={track.id === primarySelectedTrackId}
+                      audioDivider={audioDividerTrackIds.has(track.id)}
                       index={i}
                       onDragStart={handleTrackDragStart}
                       onDragOver={handleTrackDragOver}
@@ -1494,17 +1578,20 @@ export const Timeline: React.FC = () => {
                       onDragEnd={stopTrackDrag}
                       keyframeCount={keyframeCount}
                     />
+                    {!phone && automationLaneTracks[track.id] ? <TrackAutomationHeaderRows track={track} /> : null}
                   </div>
                 );
               })}
-              <button
+              <ShadcnButton variant="ghost" size="sm"
                 type="button"
-                onClick={() => addTrack("video")}
+                onClick={() =>
+                  addTrack("video", undefined, { mode: "standard" })
+                }
                 className="mx-3 my-1 h-7 flex items-center justify-center gap-1.5 rounded-[7px] border border-dashed border-border-strong text-fg-muted hover:text-fg-2 hover:border-fg-3 transition-colors"
-                aria-label={t("Add track")}
+                aria-label={clipT("Add track")}
               >
                 <Plus size={16} aria-hidden />
-              </button>
+              </ShadcnButton>
               <div
                 aria-hidden="true"
                 style={{ height: TIMELINE_SCROLLBAR_SIZE }}
@@ -1515,9 +1602,12 @@ export const Timeline: React.FC = () => {
           <div
             ref={tracksRef}
             data-testid="timeline-tracks-scroll"
-            className="flex-1 bg-background relative overflow-auto custom-scrollbar"
+            data-timeline-tool={tool}
+            {...navTools.handlers}
+            className="workspace-timeline-scroll flex-1 bg-background relative overflow-auto custom-scrollbar"
             onScroll={(e) => {
               setScrollX(e.currentTarget.scrollLeft);
+              onPhoneScroll(e.currentTarget.scrollLeft);
               const nextScrollTop = e.currentTarget.scrollTop;
               const headers = trackHeadersRef.current;
               if (headers && Math.abs(headers.scrollTop - nextScrollTop) > 0.5) {
@@ -1561,7 +1651,8 @@ export const Timeline: React.FC = () => {
 
               const rect = tracksRef.current?.getBoundingClientRect();
               if (!rect) return;
-              const x = e.clientX - rect.left + (tracksRef.current?.scrollLeft ?? 0);
+              const x = e.clientX - rect.left + (tracksRef.current?.scrollLeft ?? 0) - timelineInset;
+              const playheadPosition = useTimelineStore.getState().playheadPosition;
               const rawTime = Math.max(0, x / pixelsPerSecond);
 
               const allClips = getTimelineItemRanges(project);
@@ -1592,7 +1683,7 @@ export const Timeline: React.FC = () => {
 
               // External OS file drop (e.g. from Windows Explorer)
               if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                const { importMedia, addClipToNewTrack } = useProjectStore.getState();
+                const { importMedia, placeMediaClip } = useProjectStore.getState();
                 for (const file of Array.from(e.dataTransfer.files)) {
                   try {
                     const beforeIds = new Set(
@@ -1604,14 +1695,14 @@ export const Timeline: React.FC = () => {
                         .getState()
                         .project.mediaLibrary.items.find(i => !beforeIds.has(i.id));
                       if (newItem) {
-                        await addClipToNewTrack(newItem.id, snappedTime);
+                        await placeMediaClip(newItem.id, undefined, snappedTime);
                         const track = useProjectStore
                           .getState()
                           .project.timeline.tracks.find(t =>
                             t.clips.some(c => c.mediaId === newItem.id)
                           );
                         if (track) {
-                          toast.success(`${t("Added to")} ${track.name}`, file.name);
+                          toast.success(clipNow()("Added to {0}", [track.name]), file.name);
                         }
                       }
                     }
@@ -1627,44 +1718,60 @@ export const Timeline: React.FC = () => {
                 const rawData = e.dataTransfer.getData("application/json");
                 if (!rawData) return;
                 const data = JSON.parse(rawData);
+                if (typeof data?.sequenceId === "string") {
+                  void placeSequenceOnTimeline(data.sequenceId, undefined, snappedTime);
+                  return;
+                }
                 if (!data?.mediaId) return;
+                // Source-monitor drags only land on a track lane.
+                if (data.sourceMonitor === true) return;
                 handleDropMedia("", data.mediaId, snappedTime);
               } catch {
                 // ignore
               }
             }}
           >
+            {project.timeline.duration === 0 && <div className="workspace-timeline-empty" aria-hidden="true"><MediaLibraryIcon name="stock-start" /><strong>{clipT("Drag clips here to start your sequence")}</strong><span>{clipT("Or use + on anything in the media bin · Press")} {keyboardShortcuts.formatShortcut("playback.markLoopStart") || keyboardShortcuts.formatShortcut("file.import")} {clipT("to import")}</span></div>}
             <div
-              style={{ width: `${timelineDuration * pixelsPerSecond}px` }}
-              className="min-w-full"
+              style={{ width: `${timelineDuration * pixelsPerSecond + timelineInset * 2}px`, paddingLeft: timelineInset, paddingRight: timelineInset }}
+              className="workspace-timeline-lanes min-w-full min-h-full relative"
             >
+
+              {navTools.zoomBand ? (
+                <div
+                  data-testid="timeline-zoom-band"
+                  aria-hidden="true"
+                  className="pointer-events-none absolute top-0 bottom-0 z-40 border-x border-accent bg-accent/15"
+                  style={{ left: navTools.zoomBand.left + timelineInset, width: navTools.zoomBand.width }}
+                />
+              ) : null}
               {visualOrderTracks.map((track) => (
+                <Fragment key={track.id}>
                 <TrackLane
-                  key={track.id}
                   track={track}
+                  phone={phone}
+                  audioDivider={audioDividerTrackIds.has(track.id)}
+                  phoneTrackScale={phoneTrackScale}
+                  trackTopInset={phone ? 6 : 0}
                   allTracks={visualOrderTracks}
                   pixelsPerSecond={pixelsPerSecond}
-                  selectedClipIds={selectedClipIds}
-                  textClips={getTextClipsForTrack(track.id)}
-                  shapeClips={getShapeClipsForTrack(track.id)}
+                  selectedClipIds={laneSelectedIds.get(track.id) ?? NO_SELECTED_CLIPS}
+                  textClips={textClipsByTrack.get(track.id)!}
+                  shapeClips={shapeClipsByTrack.get(track.id)!}
+                  graphics={graphicsByTrack.get(track.id) ?? NO_GRAPHICS}
                   trackHeights={trackHeightsMap}
+                  rowHeights={rowHeightsMap}
                   timelineRef={tracksRef}
                   onSelectClip={handleSelectClip}
                   onDropMedia={handleDropMedia}
                   onMoveClip={handleMoveClip}
                   onSnapIndicator={handleSnapIndicator}
-                  onTrimClip={
-                    track.type === "video" ||
-                    track.type === "image" ||
-                    track.type === "audio"
-                      ? handleTrimClip
-                      : undefined
-                  }
+                  onTrimClip={handleTrimClip}
                   onTrimTextClip={handleTrimTextClip}
                   onMoveTextClip={handleMoveTextClip}
                   onTrimShapeClip={handleTrimShapeClip}
-                  scrollX={scrollX}
-                  trackHeight={getTrackHeight(track.id, track.type)}
+                  scrollX={phone ? phoneDecorationScroll(scrollX) : scrollX}
+                  trackHeight={getTrackHeight(track.id, track.type, track.name)}
                   onResizeTrack={setTrackHeightById}
                   onKeyframeSelect={handleKeyframeSelect}
                   onKeyframeMove={handleKeyframeMove}
@@ -1673,6 +1780,10 @@ export const Timeline: React.FC = () => {
                   onSelectTransition={handleSelectTransition}
                   selectedTransitionId={selectedTransitionId}
                 />
+                {!phone && automationLaneTracks[track.id] ? (
+                  <TrackAutomationRows track={track} pixelsPerSecond={pixelsPerSecond} width={Math.max(1, timelineDuration * pixelsPerSecond)} />
+                ) : null}
+                </Fragment>
               ))}
 
               <div
@@ -1685,6 +1796,7 @@ export const Timeline: React.FC = () => {
                 scrollX={scrollX}
                 viewportWidth={viewportWidth}
                 totalHeight={totalTracksHeight}
+                originX={timelineInset}
               />
 
               {project.timeline.markers.map((marker) => (
@@ -1692,11 +1804,15 @@ export const Timeline: React.FC = () => {
                   key={marker.id}
                   marker={marker}
                   pixelsPerSecond={pixelsPerSecond}
-                  scrollX={scrollX}
+                  scrollX={-timelineInset}
+                  selected={selectedMarkerId === marker.id}
+                  frameRate={project.settings.frameRate}
                   onSeek={(time) => {
                     const bridge = getPlaybackBridge();
                     bridge.scrubTo(time);
                   }}
+                  onSelect={setSelectedMarkerId}
+                  onEdit={editMarker}
                   onRemove={removeMarker}
                   onUpdate={updateMarker}
                 />
@@ -1705,7 +1821,7 @@ export const Timeline: React.FC = () => {
               {snapIndicatorTime !== null && (
                 <div
                   className="absolute top-0 bottom-0 w-px bg-yellow-400 z-30 pointer-events-none"
-                  style={{ left: `${snapIndicatorTime * pixelsPerSecond}px` }}
+                  style={{ left: `${snapIndicatorTime * pixelsPerSecond + timelineInset}px` }}
                 >
                   <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-yellow-400 rounded-full" />
                 </div>
@@ -1716,11 +1832,9 @@ export const Timeline: React.FC = () => {
                   className="absolute border-2 border-primary bg-primary/10 pointer-events-none z-40"
                   style={{
                     left:
-                      Math.min(selectionBox.startX, selectionBox.currentX) -
-                      scrollX,
+                      Math.min(selectionBox.startX, selectionBox.currentX) + timelineInset,
                     top:
-                      Math.min(selectionBox.startY, selectionBox.currentY) -
-                      scrollY,
+                      Math.min(selectionBox.startY, selectionBox.currentY),
                     width: Math.abs(
                       selectionBox.currentX - selectionBox.startX,
                     ),
@@ -1735,14 +1849,15 @@ export const Timeline: React.FC = () => {
         </div>
 
         <Playhead
-          position={playheadPosition}
           pixelsPerSecond={pixelsPerSecond}
           scrollX={scrollX}
-          headerOffset={170}
+          headerOffset={headerWidth}
+          phone={phone}
+          phoneHeight={Math.max(166, totalTracksHeight + 6)}
         />
       </div>
+      {phone && project.timeline.duration > 0 && selectedClipIds.length === 0 && <div className="mobile-timeline-hint" style={{ top: Math.max(200, totalTracksHeight + 40) }}>{clipT("Tap a clip to edit it · Pinch to zoom")}</div>}
+      {!compact && <StereoOutputMeters />}
     </div>
   );
 };
-
-export default Timeline;

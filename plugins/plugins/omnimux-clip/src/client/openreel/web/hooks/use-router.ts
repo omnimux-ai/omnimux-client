@@ -1,82 +1,27 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { shareBaseOrigin } from "../services/share-origin";
+import { useSyncExternalStore, useMemo, useCallback } from "react";
+import { MOTION_CREATOR_ENABLED } from "../config/features";
 
-export type AppRoute =
+type AppRoute =
   | "welcome"
   | "editor"
   | "new"
   | "templates"
   | "recent"
-  | "share"
   | "motion";
 
-export interface RouteParams {
+interface RouteParams {
   dimensions?: string;
   preset?: string;
   width?: string;
   height?: string;
   fps?: string;
   tab?: string;
-  shareId?: string;
   compositionId?: string;
 }
 
-export interface RouterState {
+interface RouterState {
   route: AppRoute;
   params: RouteParams;
-}
-
-function parseHash(hash: string): RouterState {
-  const cleanHash = hash.replace(/^#\/?/, "");
-  const [path, queryString] = cleanHash.split("?");
-
-  const params: RouteParams = {};
-  if (queryString) {
-    const searchParams = new URLSearchParams(queryString);
-    searchParams.forEach((value, key) => {
-      params[key as keyof RouteParams] = value;
-    });
-  }
-
-  const pathParts = path.split("/");
-  let route: AppRoute = (pathParts[0] || "welcome") as AppRoute;
-  const validRoutes: AppRoute[] = [
-    "welcome",
-    "editor",
-    "new",
-    "templates",
-    "recent",
-    "share",
-    "motion",
-  ];
-
-  if (route === "share" && pathParts[1]) {
-    params.shareId = pathParts[1];
-  }
-
-  return {
-    route: validRoutes.includes(route) ? route : "welcome",
-    params,
-  };
-}
-
-function buildHash(route: AppRoute, params?: RouteParams): string {
-  let hash = `#/${route}`;
-
-  if (params && Object.keys(params).length > 0) {
-    const searchParams = new URLSearchParams();
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== null) {
-        searchParams.set(key, String(value));
-      }
-    });
-    const queryString = searchParams.toString();
-    if (queryString) {
-      hash += `?${queryString}`;
-    }
-  }
-
-  return hash;
 }
 
 /**
@@ -86,42 +31,38 @@ function buildHash(route: AppRoute, params?: RouteParams): string {
 let memoryState: RouterState = { route: "welcome", params: {} };
 const routerListeners = new Set<() => void>();
 
-function setMemoryState(next: RouterState) {
+function subscribe(listener: () => void) {
+  routerListeners.add(listener);
+  return () => { routerListeners.delete(listener); };
+}
+
+export function getOpenReelRoute(): RouterState {
+  return memoryState;
+}
+
+export function navigateOpenReel(route: AppRoute, params: RouteParams = {}) {
+  const next = route === "motion" && !MOTION_CREATOR_ENABLED ? { route: "editor" as const, params: {} } : { route, params };
   memoryState = next;
-  routerListeners.forEach((listener) => listener());
+  routerListeners.forEach(listener => listener());
 }
 
 export function resetOpenReelRouter(next?: RouterState) {
-  setMemoryState(next ?? { route: "welcome", params: {} });
+  navigateOpenReel(next?.route ?? "welcome", next?.params);
 }
 
 export function useRouter() {
-  const [state, setState] = useState<RouterState>(() => memoryState);
-
-  useEffect(() => {
-    const handleChange = () => setState(memoryState);
-    routerListeners.add(handleChange);
-    return () => {
-      routerListeners.delete(handleChange);
-    };
-  }, []);
-
-  const navigate = useCallback((route: AppRoute, params?: RouteParams) => {
-    setMemoryState({ route, params: params ?? {} });
-  }, []);
+  const state = useSyncExternalStore(subscribe, getOpenReelRoute, getOpenReelRoute);
+  const navigate = navigateOpenReel;
 
   const updateParams = useCallback(
     (newParams: Partial<RouteParams>) => {
-      setMemoryState({
-        route: memoryState.route,
-        params: { ...memoryState.params, ...newParams },
-      });
+      navigateOpenReel(memoryState.route, { ...memoryState.params, ...newParams });
     },
     [],
   );
 
   const clearParams = useCallback(() => {
-    setMemoryState({ route: memoryState.route, params: {} });
+    navigateOpenReel(memoryState.route);
   }, []);
 
   const parsedDimensions = useMemo(() => {
@@ -164,32 +105,4 @@ export function useRouter() {
     parsedDimensions,
     fps,
   };
-}
-
-export function generateShareableLink(
-  route: AppRoute,
-  params?: RouteParams,
-): string {
-  return `${shareBaseOrigin()}${buildHash(route, params)}`;
-}
-
-export function generateNewProjectLink(options: {
-  width?: number;
-  height?: number;
-  preset?: string;
-  fps?: number;
-}): string {
-  const params: RouteParams = {};
-
-  if (options.preset) {
-    params.preset = options.preset;
-  } else if (options.width && options.height) {
-    params.dimensions = `${options.width}x${options.height}`;
-  }
-
-  if (options.fps && options.fps !== 30) {
-    params.fps = String(options.fps);
-  }
-
-  return generateShareableLink("new", params);
 }

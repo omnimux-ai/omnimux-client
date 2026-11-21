@@ -1,0 +1,20 @@
+.clip-recording-countdown {
+  animation: clip-recording-countdown 1s ease-out forwards;
+  text-shadow: 0 0 60px var(--error), 0 0 100px var(--error);
+}
+
+.clip-recording-start {
+  animation: clip-recording-start 0.5s ease-out forwards;
+}
+
+@keyframes clip-recording-countdown {
+  0% { transform: scale(0.5); opacity: 0; }
+  20% { transform: scale(1.2); opacity: 1; }
+  40% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(0.8); opacity: 0; }
+}
+
+@keyframes clip-recording-start {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}

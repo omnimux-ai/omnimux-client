@@ -1,11 +1,25 @@
-import React, { useCallback } from "react";
-import { ToolcraftCard as Card } from "@openreel/ui";
-import { ToolcraftSelectControl as Selector } from "@openreel/ui";
-import { ToolcraftText as Text } from "@openreel/ui";
+import { Button as ShadcnButton, ToggleGroup, ToggleGroupItem } from "@openreel/ui";
+import React, { useCallback, useMemo, useState } from "react";
+import { Card } from "@openreel/ui";
+import { Label, Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@openreel/ui";
+
 import { Type, Clock, Play } from "@/icons/lucide-compat";
 import { PropertySlider } from "./shell/PropertySlider";
 import { useProjectStore } from "../../../stores/project-store";
+import type { TextAnimationSide } from "../../../services/text-animation-phases";
+import { TextAnimationPhaseProvider, useTextAnimationPhaseActions, useTextAnimationSide } from "./text-animation-phase-context";
 import {
+  EffectLivePreview,
+  EffectPreviewProvider,
+  useLivePreviewActivity,
+} from "../panels/effect-previews/EffectLivePreview";
+import {
+  DEFAULT_PREVIEW_TEXT,
+  textPreviewDef,
+  type PreviewTextSource,
+} from "../panels/effect-previews/kind-defs";
+import {
+  DEFAULT_TEXT_STYLE,
   TEXT_ANIMATION_PRESETS,
   type TextAnimationPreset,
   type TextAnimationParams,
@@ -34,9 +48,11 @@ const ParamSlider: React.FC<{
   max: number;
   step: number;
   unit?: string;
-}> = ({ label, value, onChange, min, max, step, unit = "" }) => (
+}> = ({ label, value, onChange, min, max, step, unit = "" }) => {
+  const t = useClipT();
+  return (
   <PropertySlider
-    label={label}
+    label={t(label)}
     value={value}
     onChange={onChange}
     min={min}
@@ -47,73 +63,73 @@ const ParamSlider: React.FC<{
     }
   />
 );
+};
 
 const PresetSelector: React.FC<{
   value: TextAnimationPreset;
   onChange: (preset: TextAnimationPreset) => void;
-}> = ({ value, onChange }) => (
+  source: PreviewTextSource;
+  inDuration: number;
+  outDuration: number;
+}> = ({ value, onChange, source, inDuration, outDuration }) => {
+  const t = useClipT();
+  return (
   <div className="space-y-2">
-    <Selector
-      label={t("Animation Preset")}
-      size="sm"
-      width="100%"
-      value={value}
-      options={ANIMATION_PRESETS.map((preset) => ({
-        label: preset.label,
-        value: preset.value,
-      }))}
-      onChange={(nextValue) => onChange(nextValue as TextAnimationPreset)}
-    />
-    <Text type="supporting" color="secondary" className="text-[9px]">
-      {ANIMATION_PRESETS.find((p) => p.value === value)?.description}
-    </Text>
-    <div className="grid grid-cols-2 gap-2" aria-label={t("Text animation previews")}>
-      {ANIMATION_PRESETS.filter((preset) => preset.value !== "none").map(
-        (preset) => (
-          <TextAnimationPresetCard
-            key={preset.value}
-            preset={preset}
-            selected={preset.value === value}
-            onSelect={() => onChange(preset.value)}
-          />
-        ),
-      )}
-    </div>
+    <Label className="block space-y-1.5 text-xs font-normal text-fg-2">
+      <span>{t("Animation Preset")}</span>
+      <Select value={value} onValueChange={next => onChange(next as TextAnimationPreset)}>
+        <SelectTrigger aria-label={t("Animation Preset")} className="h-[30px] min-w-0 text-xs"><SelectValue /></SelectTrigger>
+        <SelectContent>{ANIMATION_PRESETS.map(preset => <SelectItem key={preset.value} value={preset.value}>{t(preset.label)}</SelectItem>)}</SelectContent>
+      </Select>
+    </Label>
+    <span className="text-fg-2 font-normal text-[9px]">
+      {t(ANIMATION_PRESETS.find((p) => p.value === value)?.description)}
+    </span>
+    <EffectPreviewProvider>
+      <div className="grid grid-cols-2 gap-2" aria-label={t("Text animation previews")}>
+        {ANIMATION_PRESETS.filter((preset) => preset.value !== "none").map(
+          (preset) => (
+            <TextAnimationPresetCard
+              key={preset.value}
+              preset={preset}
+              selected={preset.value === value}
+              onSelect={() => onChange(preset.value)}
+              source={source}
+              inDuration={inDuration}
+              outDuration={outDuration}
+            />
+          ),
+        )}
+      </div>
+    </EffectPreviewProvider>
   </div>
 );
+};
 
 const TextAnimationPresetCard: React.FC<{
   preset: PresetInfo;
   selected: boolean;
   onSelect: () => void;
-}> = ({ preset, selected, onSelect }) => {
-  const [hovered, setHovered] = React.useState(false);
-  const [progress, setProgress] = React.useState(0.62);
-
-  React.useEffect(() => {
-    if (!hovered) {
-      setProgress(0.62);
-      return;
-    }
-    let frame = 0;
-    const startedAt = performance.now();
-    const animate = (now: number) => {
-      setProgress(((now - startedAt) % 1200) / 1200);
-      frame = requestAnimationFrame(animate);
-    };
-    frame = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(frame);
-  }, [hovered]);
+  source: PreviewTextSource;
+  inDuration: number;
+  outDuration: number;
+}> = ({ preset, selected, onSelect, source, inDuration, outDuration }) => {
+  const t = useClipT();
+  const side = useTextAnimationSide();
+  const { active, handlers } = useLivePreviewActivity();
+  const def = useMemo(
+    () => textPreviewDef(source, preset.value, side, inDuration, outDuration),
+    [source, preset.value, side, inDuration, outDuration],
+  );
 
   return (
-    <button
+    <ShadcnButton variant="ghost" size="sm"
       type="button"
-      aria-label={`Preview and apply ${preset.label}`}
+      aria-label={t("Preview and apply {0}", [preset.label])}
       aria-pressed={selected}
       onClick={onSelect}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      className={`overflow-hidden rounded-lg border p-1.5 text-left transition-colors ${
+      {...handlers}
+      className={`block h-auto w-full whitespace-normal overflow-hidden rounded-lg border p-1.5 text-left text-[length:inherit] font-normal leading-[inherit] transition-colors ${
         selected
           ? "border-primary bg-primary/10"
           : "border-border bg-bg-2 hover:border-primary/60"
@@ -123,109 +139,19 @@ const TextAnimationPresetCard: React.FC<{
         data-testid="text-animation-preset-preview"
         data-preset={preset.value}
         aria-hidden="true"
-        className="relative mb-1.5 flex h-11 items-center justify-center overflow-hidden rounded-md bg-[radial-gradient(circle_at_50%_15%,rgba(139,92,246,.22),transparent_55%),#101521]"
+        className="relative mb-1.5 block aspect-video overflow-hidden rounded-md bg-bg-3"
       >
-        <span
-          className="text-[13px] font-black tracking-tight text-white"
-          style={textAnimationPreviewStyle(preset.value, progress)}
-        >
-          OpenReel
-        </span>
+        <EffectLivePreview def={def} active={active} />
       </span>
       <span className="block truncate text-[9px] font-semibold text-fg">
-        {preset.label}
+        {t(preset.label)}
       </span>
       <span className="block truncate text-[8px] text-fg-4">
-        {preset.description}
+        {t(preset.description)}
       </span>
-    </button>
+    </ShadcnButton>
   );
 };
-
-function textAnimationPreviewStyle(
-  preset: TextAnimationPreset,
-  progress: number,
-): React.CSSProperties {
-  const eased = 1 - Math.pow(1 - progress, 3);
-  const wave = Math.sin(progress * Math.PI * 2);
-  switch (preset) {
-    case "typewriter":
-    case "word-by-word":
-      return { clipPath: `inset(0 ${(1 - eased) * 100}% 0 0)` };
-    case "fade":
-      return { opacity: eased };
-    case "slide-left":
-      return { opacity: eased, transform: `translateX(${(1 - eased) * 34}px)` };
-    case "slide-right":
-      return { opacity: eased, transform: `translateX(${(eased - 1) * 34}px)` };
-    case "slide-up":
-      return { opacity: eased, transform: `translateY(${(1 - eased) * 22}px)` };
-    case "slide-down":
-      return { opacity: eased, transform: `translateY(${(eased - 1) * 22}px)` };
-    case "scale":
-      return { opacity: eased, transform: `scale(${0.3 + eased * 0.7})` };
-    case "blur":
-      return { opacity: eased, filter: `blur(${(1 - eased) * 7}px)` };
-    case "bounce":
-      return { transform: `translateY(${-Math.abs(wave) * 12}px)` };
-    case "rotate":
-      return { opacity: eased, transform: `rotate(${(1 - eased) * -120}deg) scale(${0.55 + eased * 0.45})` };
-    case "wave":
-      return { transform: `translateY(${wave * 6}px) rotate(${wave * 2}deg)` };
-    case "shake":
-      return { transform: `translateX(${wave * 5}px)` };
-    case "pop":
-      return { transform: `scale(${0.45 + eased * 0.55 + Math.max(0, wave) * 0.12})` };
-    case "glitch":
-      return { transform: `translateX(${wave * 4}px) skewX(${wave * 6}deg)`, textShadow: `${wave * 3}px 0 #22d3ee, ${wave * -3}px 0 #f43f5e` };
-    case "split":
-      return { letterSpacing: `${(1 - eased) * 10}px`, opacity: eased };
-    case "flip":
-      return { opacity: eased > 0.08 ? 1 : 0, transform: `perspective(100px) rotateY(${(1 - eased) * -90}deg)` };
-    case "rainbow":
-      return { filter: `hue-rotate(${progress * 360}deg)`, color: "#f472b6" };
-    case "rise":
-      return {
-        opacity: eased,
-        transform: `translateY(${(1 - eased) * 20}px) scale(${0.88 + eased * 0.12})`,
-        filter: `blur(${(1 - eased) * 6}px)`,
-      };
-    case "drop": {
-      const landing = 1 - Math.abs(Math.cos(progress * Math.PI * 2.5)) * (1 - progress);
-      return {
-        opacity: progress > 0.02 ? 1 : 0,
-        transform: `translateY(${(landing - 1) * 24}px) rotate(${(1 - landing) * -9}deg)`,
-      };
-    }
-    case "elastic": {
-      const elastic = progress === 1
-        ? 1
-        : 1 - Math.cos(progress * Math.PI * 3.5) * Math.exp(-progress * 5);
-      return { opacity: progress > 0.02 ? 1 : 0, transform: `scale(${Math.max(0.1, elastic)})` };
-    }
-    case "swing":
-      return {
-        opacity: eased,
-        transformOrigin: "50% 0%",
-        transform: `rotate(${Math.cos(progress * Math.PI * 3) * (1 - progress) * 26}deg)`,
-      };
-    case "zoom-blur":
-      return {
-        opacity: eased,
-        transform: `scale(${1.65 - eased * 0.65})`,
-        filter: `blur(${(1 - eased) * 8}px)`,
-      };
-    case "cascade":
-      return {
-        opacity: eased,
-        transform: `translate(${(1 - eased) * -12}px, ${(1 - eased) * 20}px) rotate(${(1 - eased) * -7}deg)`,
-        letterSpacing: `${(1 - eased) * 3}px`,
-      };
-    case "none":
-      return {};
-  }
-  return {};
-}
 
 const EasingSelector: React.FC<{
   value: string;
@@ -241,14 +167,13 @@ const EasingSelector: React.FC<{
 
   return (
     <div className="space-y-1">
-      <Selector
-        label={t("Easing")}
-        size="sm"
-        width="100%"
-        value={value}
-        options={easingOptions}
-        onChange={onChange}
-      />
+      <Label className="block space-y-1.5 text-xs font-normal text-fg-2">
+        <span>{t("Easing")}</span>
+        <Select value={value} onValueChange={onChange}>
+          <SelectTrigger aria-label={t("Easing")} className="h-[30px] min-w-0 text-xs"><SelectValue /></SelectTrigger>
+          <SelectContent>{easingOptions.map(option => <SelectItem key={option.value} value={option.value}>{t(option.label)}</SelectItem>)}</SelectContent>
+        </Select>
+      </Label>
     </div>
   );
 };
@@ -261,10 +186,22 @@ export const TextAnimationSection: React.FC<TextAnimationSectionProps> = ({
   clipId,
 }) => {
   const t = useClipT();
-  const getTextClip = useProjectStore((state) => state.getTextClip);
-  const applyTextAnimationPreset = useProjectStore(
-    (state) => state.applyTextAnimationPreset,
-  );
+  const [side, setSide] = useState<TextAnimationSide>("entry");
+  return <TextAnimationPhaseProvider value={side}>
+    <div className="space-y-4">
+      <ToggleGroup type="single" value={side} aria-label={t("Text animation phase")} className="grid grid-cols-2"
+        onValueChange={value => { if (value === "entry" || value === "exit") setSide(value); }}>
+        <ToggleGroupItem value="entry">{t("Entry")}</ToggleGroupItem>
+        <ToggleGroupItem value="exit">{t("Exit")}</ToggleGroupItem>
+      </ToggleGroup>
+      <TextAnimationEditor key={clipId} clipId={clipId} />
+    </div>
+  </TextAnimationPhaseProvider>;
+};
+
+const TextAnimationEditor: React.FC<TextAnimationSectionProps> = ({ clipId }) => {
+  const t = useClipT();
+  const { getTextClip, applyTextAnimationPreset } = useTextAnimationPhaseActions();
   useProjectStore((state) => state.project);
 
   const textClip = getTextClip(clipId);
@@ -274,6 +211,15 @@ export const TextAnimationSection: React.FC<TextAnimationSectionProps> = ({
   const inDuration = textClip?.animation?.inDuration ?? 0.5;
   const outDuration = textClip?.animation?.outDuration ?? 0.5;
   const easing = textClip?.animation?.params?.easing ?? "ease-out";
+
+  const previewSource = useMemo<PreviewTextSource>(
+    () => ({
+      text: textClip?.text || DEFAULT_PREVIEW_TEXT,
+      style: textClip?.style ?? DEFAULT_TEXT_STYLE,
+      transform: textClip?.transform,
+    }),
+    [textClip?.text, textClip?.style, textClip?.transform],
+  );
 
   const handlePresetChange = useCallback(
     (preset: TextAnimationPreset) => {
@@ -319,25 +265,31 @@ export const TextAnimationSection: React.FC<TextAnimationSectionProps> = ({
     return (
       <div className="p-4 text-center">
         <Type size={24} className="mx-auto mb-2 text-fg-3" />
-        <Text type="supporting" color="secondary" className="text-[10px]">
+        <span className="text-fg-2 font-normal text-[10px]">
           {t("No text clip selected")}
-        </Text>
+        </span>
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      <PresetSelector value={currentPreset} onChange={handlePresetChange} />
+      <PresetSelector
+        value={currentPreset}
+        onChange={handlePresetChange}
+        source={previewSource}
+        inDuration={inDuration}
+        outDuration={outDuration}
+      />
 
       {currentPreset !== "none" && (
         <>
-          <Card variant="muted" padding={3} className="space-y-3">
+          <Card className="min-w-0 rounded-[7px] border shadow-none border-transparent bg-bg-2 text-fg p-3 space-y-3">
             <div className="flex items-center gap-2 mb-2">
               <Clock size={12} className="text-fg-3" />
-              <Text type="supporting" color="secondary" className="text-[10px] font-medium">
+              <span className="text-fg-2 text-[10px] font-medium">
                 {t("Timing")}
-              </Text>
+              </span>
             </div>
 
             <ParamSlider
@@ -361,21 +313,20 @@ export const TextAnimationSection: React.FC<TextAnimationSectionProps> = ({
             />
           </Card>
 
-          <Card variant="muted" padding={3}>
+          <Card className="min-w-0 rounded-[7px] border shadow-none border-transparent bg-bg-2 text-fg p-3">
             <EasingSelector value={easing} onChange={handleEasingChange} />
           </Card>
 
-          <Card variant="muted" padding={3} className="border border-border">
+          <Card className="min-w-0 rounded-[7px] shadow-none bg-bg-2 text-fg p-3 border border-border">
             <div className="flex items-center gap-2 mb-2">
               <Play size={12} className="text-fg-3" />
-              <Text type="supporting" color="secondary" className="text-[10px] font-medium">
+              <span className="text-fg-2 text-[10px] font-medium">
                 {t("Preview")}
-              </Text>
+              </span>
             </div>
-            <Text type="supporting" color="secondary" className="text-[9px]">
-              Animation will play during preview and export. Total animation
-              time: {(inDuration + outDuration).toFixed(1)}s
-            </Text>
+            <span className="text-fg-2 font-normal text-[9px]">
+              {t("Animation will play during preview and export. Total animation time:")} {(inDuration + outDuration).toFixed(1)}s
+            </span>
           </Card>
         </>
       )}
@@ -427,7 +378,7 @@ const FadeParams: React.FC<{
   animation?: { params?: TextAnimationParams };
 }> = ({ clipId, animation }) => {
   const t = useClipT();
-  const { applyTextAnimationPreset, getTextClip } = useProjectStore();
+  const { applyTextAnimationPreset, getTextClip } = useTextAnimationPhaseActions();
   const textClip = getTextClip(clipId);
 
   const startOpacity = animation?.params?.fadeOpacity?.start ?? 0;
@@ -445,10 +396,10 @@ const FadeParams: React.FC<{
   };
 
   return (
-    <Card variant="muted" padding={3} className="space-y-2">
-      <Text type="supporting" color="secondary" className="text-[10px] font-medium">
+    <Card className="min-w-0 rounded-[7px] border shadow-none border-transparent bg-bg-2 text-fg p-3 space-y-2">
+      <span className="text-fg-2 text-[10px] font-medium">
         {t("Fade Settings")}
-      </Text>
+      </span>
       <ParamSlider
         label={t("Start Opacity")}
         value={startOpacity}
@@ -476,7 +427,7 @@ const SlideParams: React.FC<{
   animation?: { params?: TextAnimationParams; preset?: TextAnimationPreset };
 }> = ({ clipId, animation }) => {
   const t = useClipT();
-  const { applyTextAnimationPreset, getTextClip } = useProjectStore();
+  const { applyTextAnimationPreset, getTextClip } = useTextAnimationPhaseActions();
   const textClip = getTextClip(clipId);
 
   const slideDistance = animation?.params?.slideDistance ?? 0.2;
@@ -493,10 +444,10 @@ const SlideParams: React.FC<{
   };
 
   return (
-    <Card variant="muted" padding={3} className="space-y-2">
-      <Text type="supporting" color="secondary" className="text-[10px] font-medium">
+    <Card className="min-w-0 rounded-[7px] border shadow-none border-transparent bg-bg-2 text-fg p-3 space-y-2">
+      <span className="text-fg-2 text-[10px] font-medium">
         {t("Slide Settings")}
-      </Text>
+      </span>
       <ParamSlider
         label={t("Distance")}
         value={slideDistance}
@@ -515,7 +466,7 @@ const ScaleParams: React.FC<{
   animation?: { params?: TextAnimationParams };
 }> = ({ clipId, animation }) => {
   const t = useClipT();
-  const { applyTextAnimationPreset, getTextClip } = useProjectStore();
+  const { applyTextAnimationPreset, getTextClip } = useTextAnimationPhaseActions();
   const textClip = getTextClip(clipId);
 
   const scaleFrom = animation?.params?.scaleFrom ?? 0;
@@ -533,10 +484,10 @@ const ScaleParams: React.FC<{
   };
 
   return (
-    <Card variant="muted" padding={3} className="space-y-2">
-      <Text type="supporting" color="secondary" className="text-[10px] font-medium">
+    <Card className="min-w-0 rounded-[7px] border shadow-none border-transparent bg-bg-2 text-fg p-3 space-y-2">
+      <span className="text-fg-2 text-[10px] font-medium">
         {t("Scale Settings")}
-      </Text>
+      </span>
       <ParamSlider
         label={t("Scale From")}
         value={scaleFrom}
@@ -564,7 +515,7 @@ const BounceParams: React.FC<{
   animation?: { params?: TextAnimationParams };
 }> = ({ clipId, animation }) => {
   const t = useClipT();
-  const { applyTextAnimationPreset, getTextClip } = useProjectStore();
+  const { applyTextAnimationPreset, getTextClip } = useTextAnimationPhaseActions();
   const textClip = getTextClip(clipId);
 
   const bounceHeight = animation?.params?.bounceHeight ?? 0.1;
@@ -582,10 +533,10 @@ const BounceParams: React.FC<{
   };
 
   return (
-    <Card variant="muted" padding={3} className="space-y-2">
-      <Text type="supporting" color="secondary" className="text-[10px] font-medium">
+    <Card className="min-w-0 rounded-[7px] border shadow-none border-transparent bg-bg-2 text-fg p-3 space-y-2">
+      <span className="text-fg-2 text-[10px] font-medium">
         {t("Bounce Settings")}
-      </Text>
+      </span>
       <ParamSlider
         label={t("Height")}
         value={bounceHeight}
@@ -613,7 +564,7 @@ const RotateParams: React.FC<{
   animation?: { params?: TextAnimationParams };
 }> = ({ clipId, animation }) => {
   const t = useClipT();
-  const { applyTextAnimationPreset, getTextClip } = useProjectStore();
+  const { applyTextAnimationPreset, getTextClip } = useTextAnimationPhaseActions();
   const textClip = getTextClip(clipId);
 
   const rotateAngle = animation?.params?.rotateAngle ?? 360;
@@ -630,10 +581,10 @@ const RotateParams: React.FC<{
   };
 
   return (
-    <Card variant="muted" padding={3} className="space-y-2">
-      <Text type="supporting" color="secondary" className="text-[10px] font-medium">
+    <Card className="min-w-0 rounded-[7px] border shadow-none border-transparent bg-bg-2 text-fg p-3 space-y-2">
+      <span className="text-fg-2 text-[10px] font-medium">
         {t("Rotate Settings")}
-      </Text>
+      </span>
       <ParamSlider
         label={t("Angle")}
         value={rotateAngle}
@@ -652,7 +603,7 @@ const WaveParams: React.FC<{
   animation?: { params?: TextAnimationParams };
 }> = ({ clipId, animation }) => {
   const t = useClipT();
-  const { applyTextAnimationPreset, getTextClip } = useProjectStore();
+  const { applyTextAnimationPreset, getTextClip } = useTextAnimationPhaseActions();
   const textClip = getTextClip(clipId);
 
   const waveAmplitude = animation?.params?.waveAmplitude ?? 0.02;
@@ -670,10 +621,10 @@ const WaveParams: React.FC<{
   };
 
   return (
-    <Card variant="muted" padding={3} className="space-y-2">
-      <Text type="supporting" color="secondary" className="text-[10px] font-medium">
+    <Card className="min-w-0 rounded-[7px] border shadow-none border-transparent bg-bg-2 text-fg p-3 space-y-2">
+      <span className="text-fg-2 text-[10px] font-medium">
         {t("Wave Settings")}
-      </Text>
+      </span>
       <ParamSlider
         label={t("Amplitude")}
         value={waveAmplitude}
@@ -701,7 +652,7 @@ const ShakeParams: React.FC<{
   animation?: { params?: TextAnimationParams };
 }> = ({ clipId, animation }) => {
   const t = useClipT();
-  const { applyTextAnimationPreset, getTextClip } = useProjectStore();
+  const { applyTextAnimationPreset, getTextClip } = useTextAnimationPhaseActions();
   const textClip = getTextClip(clipId);
 
   const shakeIntensity = animation?.params?.shakeIntensity ?? 0.01;
@@ -719,10 +670,10 @@ const ShakeParams: React.FC<{
   };
 
   return (
-    <Card variant="muted" padding={3} className="space-y-2">
-      <Text type="supporting" color="secondary" className="text-[10px] font-medium">
+    <Card className="min-w-0 rounded-[7px] border shadow-none border-transparent bg-bg-2 text-fg p-3 space-y-2">
+      <span className="text-fg-2 text-[10px] font-medium">
         {t("Shake Settings")}
-      </Text>
+      </span>
       <ParamSlider
         label={t("Intensity")}
         value={shakeIntensity}
@@ -750,7 +701,7 @@ const PopParams: React.FC<{
   animation?: { params?: TextAnimationParams };
 }> = ({ clipId, animation }) => {
   const t = useClipT();
-  const { applyTextAnimationPreset, getTextClip } = useProjectStore();
+  const { applyTextAnimationPreset, getTextClip } = useTextAnimationPhaseActions();
   const textClip = getTextClip(clipId);
 
   const popOvershoot = animation?.params?.popOvershoot ?? 1.2;
@@ -767,10 +718,10 @@ const PopParams: React.FC<{
   };
 
   return (
-    <Card variant="muted" padding={3} className="space-y-2">
-      <Text type="supporting" color="secondary" className="text-[10px] font-medium">
+    <Card className="min-w-0 rounded-[7px] border shadow-none border-transparent bg-bg-2 text-fg p-3 space-y-2">
+      <span className="text-fg-2 text-[10px] font-medium">
         {t("Pop Settings")}
-      </Text>
+      </span>
       <ParamSlider
         label={t("Overshoot")}
         value={popOvershoot}
@@ -789,7 +740,7 @@ const GlitchParams: React.FC<{
   animation?: { params?: TextAnimationParams };
 }> = ({ clipId, animation }) => {
   const t = useClipT();
-  const { applyTextAnimationPreset, getTextClip } = useProjectStore();
+  const { applyTextAnimationPreset, getTextClip } = useTextAnimationPhaseActions();
   const textClip = getTextClip(clipId);
 
   const glitchIntensity = animation?.params?.glitchIntensity ?? 0.02;
@@ -807,10 +758,10 @@ const GlitchParams: React.FC<{
   };
 
   return (
-    <Card variant="muted" padding={3} className="space-y-2">
-      <Text type="supporting" color="secondary" className="text-[10px] font-medium">
+    <Card className="min-w-0 rounded-[7px] border shadow-none border-transparent bg-bg-2 text-fg p-3 space-y-2">
+      <span className="text-fg-2 text-[10px] font-medium">
         {t("Glitch Settings")}
-      </Text>
+      </span>
       <ParamSlider
         label={t("Intensity")}
         value={glitchIntensity}
@@ -832,5 +783,3 @@ const GlitchParams: React.FC<{
     </Card>
   );
 };
-
-export default TextAnimationSection;

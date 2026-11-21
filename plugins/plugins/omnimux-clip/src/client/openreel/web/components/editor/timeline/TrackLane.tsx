@@ -1,14 +1,25 @@
+import { beginTimelineGestureStyle } from "./gesture-style";
+import { useTimelineToolGesture } from "./useTimelineToolGesture";
+import { TimelineToolGhost } from "./TimelineToolGhost";
 import React, { useRef, useCallback, useEffect, useState, useMemo } from "react";
 import type {
+  GraphicInstance,
   Track,
   TextClip,
   ShapeClip,
   SVGClip,
   StickerClip,
 } from "@openreel/core";
+import {
+  getMediaItemCapabilities,
+  resolveTimelinePlacement,
+} from "@openreel/core";
 import { ClipComponent } from "./ClipComponent";
+import { getVisibleClips } from "./visible-clips";
+import { computeLaneInfos, type ClipLaneInfo } from "./clip-lane-info";
 import { TextClipComponent } from "./TextClipComponent";
 import { ShapeClipComponent } from "./ShapeClipComponent";
+import { GraphicClipComponent } from "./GraphicClipComponent";
 import { KeyframeTrack } from "./KeyframeTrack";
 import { TransitionHandle } from "./TransitionHandle";
 import { AdjustmentLayerTimelineItem } from "./AdjustmentLayerTimelineItem";
@@ -16,19 +27,37 @@ import { resolveTransitionHandles } from "./transition-handles";
 import { calculateSnap } from "./utils";
 import { useTimelineStore } from "../../../stores/timeline-store";
 import { useUIStore } from "../../../stores/ui-store";
+import { useEditorWorkspaceStore } from "../../../stores/editor-workspace-store";
+import { useEditPointStore } from "../../../stores/edit-point-store";
+import { selectGapAt } from "../../../services/edit-point-commands";
 import { useProjectStore } from "../../../stores/project-store";
 import { toast } from "../../../stores/notification-store";
+import { dropSourceRange } from "../../../services/source-monitor-commands";
+import { mediaDisplayDuration } from "@openreel/core";
+import { phoneTrackLayout } from "../mobile/mobile-timeline-layout";
+import { placeSequenceOnTimeline } from "../../../services/sequence-commands";
+import { clipNow } from "../../../../../i18n/index.js";
+import { useClipT } from "../../../../../i18n/index.js";
+
+const CLIP_SCROLL_BUCKET = 96;
 
 type GraphicClipUnion = ShapeClip | SVGClip | StickerClip;
 
 interface TrackLaneProps {
   track: Track;
+  phone?: boolean;
+  audioDivider?: boolean;
+  phoneTrackScale?: number;
+  trackTopInset?: number;
   allTracks: Track[];
   pixelsPerSecond: number;
   selectedClipIds: string[];
   textClips: TextClip[];
   shapeClips: GraphicClipUnion[];
+  /** Essential Graphics on this lane: one bar each; their member layers are not in textClips/shapeClips. */
+  graphics?: Array<{ instance: GraphicInstance; anchorId: string }>;
   trackHeights: Map<string, number>;
+  rowHeights?: Map<string, number>;
   timelineRef: React.RefObject<HTMLDivElement | null>;
   onSelectClip: (clipId: string, addToSelection: boolean) => void;
   onDropMedia: (trackId: string, mediaId: string, startTime: number) => void;
@@ -36,24 +65,28 @@ interface TrackLaneProps {
     clipId: string,
     newStartTime: number,
     targetTrackId?: string,
-  ) => void;
-  onMoveTextClip: (clipId: string, newStartTime: number) => void;
+  ) => void | Promise<void>;
+  onMoveTextClip: (
+    clipId: string,
+    newStartTime: number,
+    targetTrackId?: string,
+  ) => void | Promise<void>;
   onSnapIndicator: (time: number | null) => void;
   onTrimClip?: (
     clipId: string,
     edge: "left" | "right",
     newTime: number,
-  ) => void;
+  ) => void | Promise<void>;
   onTrimTextClip: (
     clipId: string,
     edge: "left" | "right",
     newTime: number,
-  ) => void;
+  ) => void | Promise<void>;
   onTrimShapeClip: (
     clipId: string,
     edge: "left" | "right",
     newTime: number,
-  ) => void;
+  ) => void | Promise<void>;
   scrollX: number;
   trackHeight: number;
   onResizeTrack: (trackId: string, newHeight: number) => void;
@@ -65,14 +98,20 @@ interface TrackLaneProps {
   selectedTransitionId?: string | null;
 }
 
-export const TrackLane: React.FC<TrackLaneProps> = ({
+export const TrackLane: React.FC<TrackLaneProps> = React.memo(function TrackLane({
   track,
+  phone = false,
+  audioDivider = false,
+  phoneTrackScale = 1,
+  trackTopInset = 0,
   allTracks,
   pixelsPerSecond,
   selectedClipIds,
   textClips,
   shapeClips,
+  graphics,
   trackHeights,
+  rowHeights,
   timelineRef,
   onSelectClip,
   onDropMedia,
@@ -91,37 +130,99 @@ export const TrackLane: React.FC<TrackLaneProps> = ({
   selectedKeyframeIds = [],
   onSelectTransition,
   selectedTransitionId = null,
-}) => {
-  const { isTrackExpanded, playheadPosition } = useTimelineStore();
-  const isExpanded = isTrackExpanded(track.id);
-  const { snapSettings } = useUIStore();
+}) {
+  const t = useClipT();
+  const isExpanded = useTimelineStore((state) => state.expandedTracks.has(track.id));
+  const viewportWidth = useTimelineStore((state) => state.viewportWidth);
+  const snapSettings = useUIStore((state) => state.snapSettings);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [dropHint, setDropHint] = useState("Drop to add clip");
   const [isResizing, setIsResizing] = useState(false);
   const laneRef = useRef<HTMLDivElement>(null);
+  // Empty-space click selects the gap under it (Trim mode). Clips stop their
+  // own mouse events, so a mousedown that reaches the lane is on empty space.
+  const gapDownXRef = useRef<number | null>(null);
+  const selectedGap = useEditPointStore((s) =>
+    s.selection?.type === "gap" && s.selection.trackId === track.id
+      ? `${s.selection.start}:${s.selection.end}`
+      : "",
+  );
+  const handleLaneClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const downX = gapDownXRef.current;
+    gapDownXRef.current = null;
+    if (e.button !== 0 || e.target !== e.currentTarget || downX === null) return;
+    if (Math.abs(e.clientX - downX) > 3) return;
+    if (useEditorWorkspaceStore.getState().timelineTool !== "select") return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    selectGapAt(track.id, (e.clientX - rect.left) / pixelsPerSecond);
+  };
   const resizeStartY = useRef<number>(0);
   const resizeStartHeight = useRef<number>(0);
-  const adjustmentLayers = useProjectStore((state) =>
-    (state.project.adjustmentLayers ?? []).filter((layer) => layer.trackId === track.id),
+  const projectAdjustmentLayers = useProjectStore((state) => state.project.adjustmentLayers);
+  const adjustmentLayers = useMemo(
+    () => (projectAdjustmentLayers ?? []).filter((layer) => layer.trackId === track.id),
+    [projectAdjustmentLayers, track.id],
   );
   const frameRate = useProjectStore((state) => state.project.settings.frameRate);
+  const mediaItems = useProjectStore((state) => state.project.mediaLibrary.items);
 
   const clipsWithKeyframes = useMemo(() => {
     return track.clips.filter((clip) => clip.keyframes && clip.keyframes.length > 0);
   }, [track.clips]);
 
   const transitionHandles = useMemo(
-    () => resolveTransitionHandles(track, pixelsPerSecond),
-    [track, pixelsPerSecond],
+    () =>
+      resolveTransitionHandles(track, pixelsPerSecond, (clip) =>
+        getMediaItemCapabilities(
+          mediaItems.find((item) => item.id === clip.mediaId),
+        ).visual,
+      ),
+    [track, pixelsPerSecond, mediaItems],
   );
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "copy";
-    setIsDragOver(true);
-  }, []);
+  const handleDragOver = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+      setIsDragOver(true);
+      try {
+        const payload = JSON.parse(e.dataTransfer.getData("application/json"));
+        const mediaId = typeof payload?.mediaId === "string" ? payload.mediaId : "";
+        const mediaItem = mediaItems.find((item) => item.id === mediaId);
+        const rect = laneRef.current?.getBoundingClientRect();
+        if (!mediaItem || !rect) {
+          setDropHint("Drop to add clip");
+          return;
+        }
+        const startTime = Math.max(
+          0,
+          (e.clientX - rect.left) / pixelsPerSecond,
+        );
+        const mediaLength = mediaDisplayDuration(mediaItem);
+        const duration = mediaLength > 0 ? mediaLength : 5;
+        const project = useProjectStore.getState().project;
+        const placement = resolveTimelinePlacement(project, {
+          targetTrackId: track.id,
+          startTime,
+          duration,
+          policy: "stack-above",
+          newTrackId: "placement-preview",
+        });
+        setDropHint(
+          placement.ok && placement.trackId !== track.id
+            ? "Place above"
+            : "Drop to add clip",
+        );
+      } catch {
+        setDropHint("Drop to add clip");
+      }
+    },
+    [mediaItems, pixelsPerSecond, track.id],
+  );
 
   const handleDragLeave = useCallback(() => {
     setIsDragOver(false);
+    setDropHint("Drop to add clip");
   }, []);
 
   const handleDrop = useCallback(
@@ -129,22 +230,23 @@ export const TrackLane: React.FC<TrackLaneProps> = ({
       e.preventDefault();
       e.stopPropagation();
       setIsDragOver(false);
+      setDropHint("Drop to add clip");
 
       // External OS file drop (e.g. from Windows Explorer)
       if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
         const rect = laneRef.current?.getBoundingClientRect();
         if (!rect) return;
-        const x = e.clientX - rect.left + scrollX;
+        const x = e.clientX - rect.left;
         const rawTime = Math.max(0, x / pixelsPerSecond);
         const snapResult = calculateSnap(
           rawTime,
           "",
           allTracks,
-          playheadPosition,
+          useTimelineStore.getState().playheadPosition,
           snapSettings,
           pixelsPerSecond,
         );
-        const { importMedia, addClip } = useProjectStore.getState();
+        const { importMedia, placeMediaClip } = useProjectStore.getState();
         for (const file of Array.from(e.dataTransfer.files)) {
           try {
             const beforeIds = new Set(
@@ -156,8 +258,8 @@ export const TrackLane: React.FC<TrackLaneProps> = ({
                 .getState()
                 .project.mediaLibrary.items.find(i => !beforeIds.has(i.id));
               if (newItem) {
-                await addClip(track.id, newItem.id, snapResult.time);
-                toast.success(`Added to ${track.name}`, file.name);
+                await placeMediaClip(newItem.id, track.id, snapResult.time);
+                toast.success(clipNow()("Added to {0}", [track.name]), file.name);
               }
             }
           } catch (err) {
@@ -176,31 +278,52 @@ export const TrackLane: React.FC<TrackLaneProps> = ({
         if (
           !data ||
           typeof data !== "object" ||
-          typeof data.mediaId !== "string" ||
-          !data.mediaId.trim()
+          ((typeof data.mediaId !== "string" || !data.mediaId.trim()) &&
+            (typeof data.sequenceId !== "string" || !data.sequenceId.trim()))
         ) {
           return;
         }
 
         const rect = laneRef.current?.getBoundingClientRect();
         if (rect) {
-          const x = e.clientX - rect.left + scrollX;
+          const x = e.clientX - rect.left;
           const rawTime = Math.max(0, x / pixelsPerSecond);
           const snapResult = calculateSnap(
             rawTime,
             "",
             allTracks,
-            playheadPosition,
+            useTimelineStore.getState().playheadPosition,
             snapSettings,
             pixelsPerSecond,
           );
+          if (typeof data.sequenceId === "string") {
+            // A sequence dragged from the Project panel is nested at the drop point.
+            void placeSequenceOnTimeline(data.sequenceId, track.id, snapResult.time);
+            return;
+          }
+          if (data.sourceMonitor === true) {
+            // Dragged from the Source monitor: its marked range, one stream
+            // or both, overwritten at the drop point.
+            const component =
+              data.component === "video" || data.component === "audio" ? data.component : "both";
+            const outcome = dropSourceRange(data.mediaId, track.id, snapResult.time, component);
+            if (!outcome.success) toast.warning(clipNow()("Source drop"), outcome.message);
+            return;
+          }
           onDropMedia(track.id, data.mediaId, snapResult.time);
         }
       } catch {
         // Silently ignore parse errors
       }
     },
-    [track.id, track.name, pixelsPerSecond, scrollX, onDropMedia],
+    [
+      allTracks,
+      onDropMedia,
+      pixelsPerSecond,
+      snapSettings,
+      track.id,
+      track.name,
+    ],
   );
 
   const handleResizeStart = useCallback(
@@ -210,14 +333,13 @@ export const TrackLane: React.FC<TrackLaneProps> = ({
       setIsResizing(true);
       resizeStartY.current = e.clientY;
       resizeStartHeight.current = trackHeight;
-      document.body.style.cursor = "row-resize";
-      document.body.style.userSelect = "none";
     },
     [trackHeight],
   );
 
   useEffect(() => {
     if (!isResizing) return;
+    const releaseStyle = beginTimelineGestureStyle(laneRef.current, { cursor: "row-resize", userSelect: "none" });
 
     const handleMouseMove = (e: MouseEvent) => {
       const deltaY = e.clientY - resizeStartY.current;
@@ -226,47 +348,114 @@ export const TrackLane: React.FC<TrackLaneProps> = ({
     };
 
     const handleMouseUp = () => {
+      releaseStyle();
       setIsResizing(false);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
     };
 
     document.addEventListener("mousemove", handleMouseMove);
     document.addEventListener("mouseup", handleMouseUp);
+    window.addEventListener("blur", handleMouseUp);
 
     return () => {
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("blur", handleMouseUp);
+      releaseStyle();
     };
   }, [isResizing, track.id, onResizeTrack]);
 
+  // Offscreen clips (and their waveform/filmstrip canvases) are not mounted:
+  // a zoomed-out 400-clip project otherwise re-renders every clip per scroll.
+  const visibleClips = useMemo(() => {
+    const overlayIds = new Set<string>();
+    for (const tc of textClips) overlayIds.add(tc.id);
+    for (const sc of shapeClips) overlayIds.add(sc.id);
+    const media = overlayIds.size === 0
+      ? track.clips
+      : track.clips.filter((clip) => !overlayIds.has(clip.id));
+    return getVisibleClips(media, scrollX, viewportWidth, pixelsPerSecond, selectedClipIds);
+  }, [track.clips, textClips, shapeClips, scrollX, viewportWidth, pixelsPerSecond, selectedClipIds]);
+
+  // Clips only use the scroll position to cull thumbnails/waveform bars (120px lookahead).
+  // Quantising it (and widening the viewport by the same amount) keeps that cull a superset
+  // of the real viewport while letting memoised clips skip renders for most scroll ticks.
+  const clipScrollX = Math.floor(scrollX / CLIP_SCROLL_BUCKET) * CLIP_SCROLL_BUCKET;
+  const clipViewportWidth = Math.ceil(viewportWidth / CLIP_SCROLL_BUCKET) * CLIP_SCROLL_BUCKET + CLIP_SCROLL_BUCKET;
+
+  // Cross-clip derived state (linked audio, J/L offsets, neighbour transitions, lane badge) is
+  // folded into primitives once per commit, with identity preserved per clip when unchanged, so
+  // a one-clip move re-renders O(changed) clips rather than every mounted clip.
+  const laneInfoCache = useRef<ReadonlyMap<string, ClipLaneInfo>>(new Map());
+  const laneInfos = useMemo(() => {
+    const mediaById = new Map(mediaItems.map((item) => [item.id, item] as const));
+    const next = computeLaneInfos(
+      visibleClips,
+      {
+        track,
+        allTracks,
+        frameRate,
+        mediaTypeOf: (clip) => (track.type === "audio" ? "audio" : mediaById.get(clip.mediaId)?.type ?? track.type),
+      },
+      laneInfoCache.current,
+    );
+    return next;
+  }, [visibleClips, track, allTracks, frameRate, mediaItems]);
+  laneInfoCache.current = laneInfos;
+
+  // Gesture-time reads (drag snapping, target lane) get the latest tracks through a stable getter.
+  const allTracksRef = useRef(allTracks);
+  allTracksRef.current = allTracks;
+  const getAllTracks = useCallback(() => allTracksRef.current, []);
+
+  const toolGesture = useTimelineToolGesture(laneRef, pixelsPerSecond, onSelectClip);
+
   return (
-    <div className="relative">
+    <div className="relative" data-phone-track={phone ? track.type : undefined} style={phone ? { height: trackHeight } : undefined}>
       <div
         ref={laneRef}
-        style={{ height: trackHeight }}
+        data-track-lane={track.id}
+        data-audio-divider={audioDivider ? "true" : undefined}
+        {...toolGesture}
+        style={{ height: phone ? phoneTrackLayout(track, phoneTrackScale).lane : trackHeight }}
         className={`border-b border-border/50 relative transition-colors ${
           isDragOver
             ? "bg-primary/10 border-primary/30"
             : "bg-background-secondary/20"
         }`}
+        onMouseDown={(e) => { gapDownXRef.current = e.target === e.currentTarget ? e.clientX : null; }}
+        onClick={handleLaneClick}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        {track.clips
-          .filter((clip) => !textClips.some((tc) => tc.id === clip.id))
-          .filter((clip) => !shapeClips.some((sc) => sc.id === clip.id))
+        {selectedGap && (() => {
+          const [start, end] = selectedGap.split(":").map(Number);
+          return (
+            <div
+              data-gap-selected={track.id}
+              aria-label={t("Selected gap")}
+              className="absolute top-0 bottom-0 z-10 pointer-events-none border-x border-amber-400 bg-amber-400/20"
+              style={{ left: start * pixelsPerSecond, width: (end - start) * pixelsPerSecond }}
+            />
+          );
+        })()}
+        <TimelineToolGhost trackId={track.id} pixelsPerSecond={pixelsPerSecond} />
+        {visibleClips
           .map((clip) => (
             <ClipComponent
               key={clip.id}
               clip={clip}
               track={track}
-              allTracks={allTracks}
+              getAllTracks={getAllTracks}
+              laneInfo={laneInfos.get(clip.id)}
               pixelsPerSecond={pixelsPerSecond}
+              scrollX={clipScrollX}
+              viewportWidth={clipViewportWidth}
               isSelected={selectedClipIds.includes(clip.id)}
               trackHeights={trackHeights}
+              rowHeights={rowHeights}
               timelineRef={timelineRef}
+              trackTopInset={trackTopInset}
               onSelect={onSelectClip}
               onMoveClip={onMoveClip}
               onSnapIndicator={onSnapIndicator}
@@ -282,6 +471,11 @@ export const TrackLane: React.FC<TrackLaneProps> = ({
             onSelect={onSelectClip}
             onTrim={onTrimTextClip}
             onMoveClip={onMoveTextClip}
+            allTracks={allTracks}
+            trackHeights={trackHeights}
+              rowHeights={rowHeights}
+            timelineRef={timelineRef}
+            trackTopInset={trackTopInset}
           />
         ))}
         {shapeClips.map((shapeClip) => (
@@ -293,6 +487,22 @@ export const TrackLane: React.FC<TrackLaneProps> = ({
             onSelect={onSelectClip}
             onTrim={onTrimShapeClip}
             onMoveClip={onMoveClip}
+            allTracks={allTracks}
+            trackHeights={trackHeights}
+              rowHeights={rowHeights}
+            timelineRef={timelineRef}
+            trackTopInset={trackTopInset}
+          />
+        ))}
+        {graphics?.map(({ instance, anchorId }) => (
+          <GraphicClipComponent
+            key={instance.id}
+            instance={instance}
+            anchorId={anchorId}
+            pixelsPerSecond={pixelsPerSecond}
+            isSelected={selectedClipIds.includes(anchorId)}
+            onSelect={onSelectClip}
+            allTracks={allTracks}
           />
         ))}
         {adjustmentLayers.map((layer) => {
@@ -307,12 +517,12 @@ export const TrackLane: React.FC<TrackLaneProps> = ({
               layer={layer}
               pixelsPerSecond={pixelsPerSecond}
               frameRate={frameRate}
+              isSelected={Boolean(ownerClip && selectedClipIds.includes(ownerClip.id))}
               onSelectOwner={() => ownerClip && onSelectClip(ownerClip.id, false)}
             />
           );
         })}
-        {track.type === "video" &&
-          transitionHandles.map((handle) => (
+        {transitionHandles.map((handle) => (
             <TransitionHandle
               key={
                 handle.clipB
@@ -332,19 +542,20 @@ export const TrackLane: React.FC<TrackLaneProps> = ({
         {isDragOver && (
           <div className="absolute inset-0 border-2 border-dashed border-primary/50 rounded pointer-events-none flex items-center justify-center">
             <span className="text-xs text-primary bg-background/80 px-2 py-1 rounded">
-              Drop to add clip
+              {dropHint}
             </span>
           </div>
         )}
       </div>
       <div
+        data-timeline-height-resize
         className={`absolute bottom-0 left-0 right-0 h-1 cursor-row-resize hover:bg-primary/50 transition-colors z-10 ${
           isResizing ? "bg-primary" : ""
         }`}
         onMouseDown={handleResizeStart}
       />
       {isExpanded && clipsWithKeyframes.length > 0 && (
-        <div className="absolute left-0 right-0" style={{ top: trackHeight }}>
+        <div className="absolute left-0 right-0" style={{ top: phone ? phoneTrackLayout(track, phoneTrackScale).row : trackHeight }}>
           {clipsWithKeyframes.map((clip) => (
             <div
               key={`keyframes-${clip.id}`}
@@ -365,4 +576,4 @@ export const TrackLane: React.FC<TrackLaneProps> = ({
       )}
     </div>
   );
-};
+});

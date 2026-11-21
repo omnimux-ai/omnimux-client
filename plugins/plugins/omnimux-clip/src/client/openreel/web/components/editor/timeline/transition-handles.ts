@@ -13,10 +13,11 @@ export interface ResolvedTransitionHandle {
 export function resolveTransitionHandles(
   track: Track,
   pixelsPerSecond: number,
+  isEligibleClip: (clip: Clip) => boolean = () => true,
 ): ResolvedTransitionHandle[] {
-  const sorted = [...track.clips].sort(
-    (a, b) => a.startTime - b.startTime || a.id.localeCompare(b.id),
-  );
+  const sorted = track.clips
+    .filter(isEligibleClip)
+    .sort((a, b) => a.startTime - b.startTime || a.id.localeCompare(b.id));
   const handles: ResolvedTransitionHandle[] = [];
 
   for (let i = 0; i < sorted.length - 1; i++) {

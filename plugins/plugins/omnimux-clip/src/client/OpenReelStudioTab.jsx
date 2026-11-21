@@ -3,7 +3,6 @@ import { useHostLocale } from './useHostLocale.js'
 import OpenReelApp from './openreel/web/App.tsx'
 import { useProjectStore } from './openreel/web/stores/project-store.ts'
 import { useEngineStore } from './openreel/web/stores/engine-store.ts'
-import { applyOpenReelTheme } from './openreel/web/stores/theme-store.ts'
 import { resetOpenReelRouter } from './openreel/web/hooks/use-router.ts'
 import { putClipProject } from './host/projectApi.js'
 import './openreel/web/index.css'
@@ -204,7 +203,6 @@ export function OpenReelStudioTab({ t: tProp, store, locale }) {
   const saveTimer = useRef(null)
 
   useEffect(() => {
-    applyOpenReelTheme(true)
     return () => {
       try {
         useEngineStore.getState().dispose?.()

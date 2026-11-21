@@ -32,9 +32,7 @@ export const zhEditorChrome = {
 
   // ── AssetsPanel: media grid / toolbar ────────────────────────────
   "Retry generation": "重新生成",
-  "KieAI generation in progress…": "KieAI 生成中…",
   "Replace asset": "替换素材",
-  "Create with KieAI": "用 KieAI 创作",
   "Add to timeline": "添加到时间线",
   "Generating…": "生成中…",
   "Failed": "失败",
@@ -62,7 +60,6 @@ export const zhEditorChrome = {
   "None of the files in the selected folder matched the missing assets by filename.": "所选文件夹中没有与缺失素材文件名匹配的文件。",
   "Asset not found": "未找到素材",
   "Cannot load the image data for this asset.": "无法加载该素材的图像数据。",
-  "Failed to open KieAI": "打开 KieAI 失败",
   "Unknown error": "未知错误",
 
   // ── AssetsPanel: graphics / SVG / titles ─────────────────────────

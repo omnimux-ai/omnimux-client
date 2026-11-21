@@ -1,14 +1,27 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Eye, EyeOff, Volume2, VolumeX, Lock, Trash2, Pencil, AlignLeft, Link2, Unlink } from "@/icons/lucide-compat";
+import { useShallow } from "zustand/react/shallow";
+import { MoreHorizontal, Trash2, Pencil, AlignLeft, Link2, Unlink, RefreshCw } from "@/icons/lucide-compat";
 import {
-  ToolcraftContextMenu as ContextMenu,
-  type ToolcraftContextMenuOption as ContextMenuOption,
+  Button, Input, ContextMenu, ContextMenuTrigger, ContextMenuContent,
+  ContextMenuItem, ContextMenuCheckboxItem, ContextMenuLabel, ContextMenuSeparator,
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
+  DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator,
 } from "@openreel/ui";
-import { ToolcraftTextInputControl } from "@openreel/ui";
 import type { Track } from "@openreel/core";
+import {
+  getTrackItems,
+  isSyncLocked,
+  trackHasAudioItems,
+  trackHasVisualItems,
+} from "@openreel/core";
 import { useProjectStore } from "../../../stores/project-store";
+import { toast } from "../../../stores/notification-store";
 import { useTimelineStore } from "../../../stores/timeline-store";
+import { useEditorWorkspaceStore } from "../../../stores/editor-workspace-store";
+import { useCompactEditor } from "../../../hooks/useCompactEditor";
 import { getTrackInfo } from "./utils";
+import { getTrackBadge } from "./track-badge";
+import { clipNow } from "../../../../../i18n/index.js";
 import { useClipT } from "../../../../../i18n/index.js";
 
 interface TrackHeaderProps {
@@ -19,53 +32,89 @@ interface TrackHeaderProps {
   onDrop: (e: React.DragEvent, targetTrackId: string) => void;
   onDragEnd: () => void;
   keyframeCount?: number;
+  active?: boolean;
+  audioDivider?: boolean;
 }
 
-export const TrackHeader: React.FC<TrackHeaderProps> = ({
+export const TrackHeader: React.FC<TrackHeaderProps> = React.memo(function TrackHeader({
   track,
   index,
   onDragStart,
   onDragOver,
   onDrop,
   onDragEnd,
-}) => {
+  active = false,
+  audioDivider = false,
+}) {
   const t = useClipT();
+  const compact = useCompactEditor();
   const {
     lockTrack,
     hideTrack,
     muteTrack,
     soloTrack,
+    setTrackSoloSafe,
     removeTrack,
-    renameTrack,
     consolidateTrack,
     groupTracks,
+    setTrackSyncLock,
     project,
-  } = useProjectStore();
-  const { getTrackHeight } = useTimelineStore();
+  } = useProjectStore(useShallow((state) => ({
+    lockTrack: state.lockTrack,
+    hideTrack: state.hideTrack,
+    muteTrack: state.muteTrack,
+    soloTrack: state.soloTrack,
+    setTrackSoloSafe: state.setTrackSoloSafe,
+    removeTrack: state.removeTrack,
+    consolidateTrack: state.consolidateTrack,
+    groupTracks: state.groupTracks,
+    setTrackSyncLock: state.setTrackSyncLock,
+    project: state.project,
+  })));
+  const trackHeight = useTimelineStore((state) => {
+    const height = state.getTrackHeight(track.id, track.type, track.name);
+    return compact ? Math.max(48, height) : height;
+  });
+
+  // Premiere-style source patching: which track Insert/Overwrite place onto.
+  const targetKind = track.type === "audio" ? "audio" : track.type === "video" || track.type === "image" ? "video" : null;
+  const isTarget = useEditorWorkspaceStore((state) => targetKind !== null && state.targetTracks[targetKind] === track.id);
+  const setTargetTrack = useEditorWorkspaceStore((state) => state.setTargetTrack);
+  const toggleTarget = () => { if (targetKind) setTargetTrack(targetKind, isTarget ? null : track.id); };
+  // Premiere track targeting (the V1/A1 toggles): Extract, Lift, Add Edit, Paste
+  // and Match Frame act on the targeted tracks.
+  const isTargeted = useEditorWorkspaceStore((state) => state.targetedTrackIds.includes(track.id));
+  const toggleTrackTargeted = useEditorWorkspaceStore((state) => state.toggleTrackTargeted);
+  const showGainLine = useTimelineStore((state) => state.gainLineTracks[track.id] === true);
+  const setGainLineVisible = useTimelineStore((state) => state.setGainLineVisible);
+  const showAutomationLanes = useTimelineStore((state) => state.automationLaneTracks[track.id] === true);
+  const setAutomationLanesVisible = useTimelineStore((state) => state.setAutomationLanesVisible);
+  const syncLocked = isSyncLocked(track);
+  const toggleSyncLock = () => void setTrackSyncLock(track.id, !syncLocked);
 
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(track.name);
+  const renameSession = useRef<{ projectId: string; name: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Audio Track Mixer routing: a track playing into a bus shows where its signal goes.
+  const outputBus = track.output ? project.timeline.audioBuses?.find((bus) => bus.id === track.output) : undefined;
+  const sendCount = track.sends?.length ?? 0;
+
   const trackInfo = getTrackInfo(track, index);
-  const isVisual =
-    track.type === "video" ||
-    track.type === "image" ||
-    track.type === "text" ||
-    track.type === "graphics";
-  const isAudio = track.type === "audio";
+  const badge = getTrackBadge(project.timeline.tracks, track.id);
+  const isVisual = track.type !== "audio" || trackHasVisualItems(project, track.id);
+  const isAudio = track.type === "audio" || trackHasAudioItems(project, track.id);
   const hasSoloedAudioTrack = project.timeline.tracks.some(
-    (candidate) => candidate.type === "audio" && candidate.solo,
+    (candidate) =>
+      trackHasAudioItems(project, candidate.id) && candidate.solo,
   );
   const effectivelyMuted =
     isAudio && (track.muted || (hasSoloedAudioTrack && !track.solo));
   const groupCandidates = project.timeline.tracks.filter(
     (candidate) =>
       candidate.id !== track.id &&
-      candidate.groupId !== track.groupId &&
-      (track.type === "text"
-        ? candidate.type !== "text" && candidate.type !== "graphics"
-        : candidate.type === "text"),
+      (!track.groupId || candidate.groupId !== track.groupId),
   );
 
   const handleRemoveTrack = async () => {
@@ -73,32 +122,41 @@ export const TrackHeader: React.FC<TrackHeaderProps> = ({
   };
 
   const handleRemoveGaps = async () => {
-    await consolidateTrack(track.id);
+    const result = await consolidateTrack(track.id);
+    if (!result.success) toast.warning(clipNow()("Remove Gaps"), result.error?.message ?? clipNow()("The gaps could not be removed."));
   };
 
   // Only enable "Remove Gaps" if there's actually a gap on this track.
   const hasGaps = React.useMemo(() => {
-    if (track.clips.length === 0) return false;
-    const sorted = [...track.clips].sort((a, b) => a.startTime - b.startTime);
+    const sorted = getTrackItems(project, track.id);
+    if (sorted.length === 0) return false;
     if (sorted[0].startTime > 0.0001) return true;
     for (let i = 1; i < sorted.length; i++) {
       const prevEnd = sorted[i - 1].startTime + sorted[i - 1].duration;
       if (sorted[i].startTime - prevEnd > 0.0001) return true;
     }
     return false;
-  }, [track.clips]);
+  }, [project, track.id]);
 
   const startRename = () => {
+    renameSession.current = { projectId: project.id, name: track.name };
     setRenameValue(track.name);
     setIsRenaming(true);
   };
 
   const commitRename = () => {
-    renameTrack(track.id, renameValue || track.name);
+    const session = renameSession.current;
+    renameSession.current = null;
     setIsRenaming(false);
+    const name = renameValue.trim();
+    const state = useProjectStore.getState();
+    const current = state.project.timeline.tracks.find(item => item.id === track.id);
+    if (session && state.project.id === session.projectId && current?.name === session.name
+      && name && name !== current.name) void state.renameTrack(track.id, name);
   };
 
   const cancelRename = () => {
+    renameSession.current = null;
     setRenameValue(track.name);
     setIsRenaming(false);
   };
@@ -110,73 +168,87 @@ export const TrackHeader: React.FC<TrackHeaderProps> = ({
     }
   }, [isRenaming]);
 
-  const menuItems: ContextMenuOption[] = [
-    {
-      label: t("Rename Track"),
-      icon: <Pencil size={14} aria-hidden />,
-      onClick: startRename,
-    },
-    {
-      label: t("Remove Gaps"),
-      icon: <AlignLeft size={14} aria-hidden />,
-      isDisabled: !hasGaps,
-      onClick: handleRemoveGaps,
-    },
-    ...(track.groupId
-      ? [
-          {
-            label: t("Ungroup Track"),
-            icon: <Unlink size={14} aria-hidden />,
-            onClick: () => groupTracks(track.id),
-          } satisfies ContextMenuOption,
-        ]
-      : []),
-    ...(groupCandidates.length > 0
-      ? [
-          {
-            type: "section" as const,
-            title: t("Move & trim together"),
-            items: groupCandidates.map((candidate) => ({
-              label: `${t("Group with")} ${candidate.name}`,
-              icon: <Link2 size={14} aria-hidden />,
-              onClick: () => groupTracks(track.id, candidate.id),
-            })),
-          } satisfies ContextMenuOption,
-        ]
-      : []),
-    { type: "divider" },
-    {
-      label: t("Delete Track"),
-      icon: <Trash2 size={14} aria-hidden />,
-      onClick: handleRemoveTrack,
-    },
-  ];
+  const trackActions = (kind: "context" | "dropdown") => {
+    const Item = kind === "context" ? ContextMenuItem : DropdownMenuItem;
+    const Label = kind === "context" ? ContextMenuLabel : DropdownMenuLabel;
+    const Separator = kind === "context" ? ContextMenuSeparator : DropdownMenuSeparator;
+    return <>
+      {kind === "context" && isAudio && <>
+        <ContextMenuCheckboxItem checked={track.muted} onCheckedChange={checked => void muteTrack(track.id, checked === true)}>{t("Mute {0}", [track.name])}</ContextMenuCheckboxItem>
+        <ContextMenuCheckboxItem checked={track.solo} onCheckedChange={checked => void soloTrack(track.id, checked === true)}>{t("Solo {0}", [track.name])}</ContextMenuCheckboxItem>
+        <ContextMenuCheckboxItem checked={track.soloSafe === true} onCheckedChange={checked => void setTrackSoloSafe(track.id, checked === true)}>{t("Solo Safe {0}", [track.name])}</ContextMenuCheckboxItem>
+        <Separator />
+      </>}
+      <Item onSelect={startRename}><Pencil size={14} aria-hidden />{t("Rename Track")}</Item>
+      <Item disabled={!hasGaps} onSelect={() => void handleRemoveGaps()}><AlignLeft size={14} aria-hidden />{t("Remove Gaps")}</Item>
+      {track.groupId && <Item onSelect={() => void groupTracks(track.id)}><Unlink size={14} aria-hidden />{t("Ungroup Track")}</Item>}
+      {groupCandidates.length > 0 && <>
+        <Separator /><Label className="text-xs">{t("Move & trim together")}</Label>
+        {groupCandidates.map(candidate => <Item key={candidate.id} onSelect={() => void groupTracks(track.id, candidate.id)}><Link2 size={14} aria-hidden />{t("Group with")} {candidate.name}</Item>)}
+      </>}
+      <Separator />
+      {kind === "context" && <>
+        {targetKind && <ContextMenuCheckboxItem checked={isTargeted} onCheckedChange={() => toggleTrackTargeted(track.id)}>{t("Track Target (Shift+T)")}</ContextMenuCheckboxItem>}
+        <ContextMenuCheckboxItem checked={syncLocked} onCheckedChange={toggleSyncLock}>{t("Sync Lock (Shift+Y)")}</ContextMenuCheckboxItem>
+        <Separator />
+      </>}
+      {isAudio && (kind === "context"
+        ? <ContextMenuCheckboxItem checked={showGainLine} onCheckedChange={() => setGainLineVisible(track.id, !showGainLine)}>{t("Show Clip Keyframes")}</ContextMenuCheckboxItem>
+        : <DropdownMenuItem onSelect={() => setGainLineVisible(track.id, !showGainLine)}>{showGainLine ? t("Hide Clip Keyframes") : t("Show Clip Keyframes")}</DropdownMenuItem>)}
+      {isAudio && (kind === "context"
+        ? <ContextMenuCheckboxItem checked={showAutomationLanes} onCheckedChange={() => setAutomationLanesVisible(track.id, !showAutomationLanes)}>{t("Show Volume and Pan Automation")}</ContextMenuCheckboxItem>
+        : <DropdownMenuItem onSelect={() => setAutomationLanesVisible(track.id, !showAutomationLanes)}>{showAutomationLanes ? t("Hide Volume and Pan Automation") : t("Show Volume and Pan Automation")}</DropdownMenuItem>)}
+      <Item onSelect={() => void handleRemoveTrack()}><Trash2 size={14} aria-hidden />{t("Delete Track")}</Item>
+    </>;
+  };
 
   return (
-    <ContextMenu items={menuItems} menuWidth={180} size="sm">
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
       <div
-        draggable={!isRenaming}
+        data-timeline-track-header
+        role="group"
+        aria-label={`${track.name || trackInfo.label} track`}
+        tabIndex={isRenaming ? -1 : 0}
+        data-header-audio={track.type === "audio" ? "true" : undefined}
+        data-audio-divider={audioDivider ? "true" : undefined}
+        data-active={active ? "true" : undefined}
+        draggable={!compact && !isRenaming}
         onDragStart={(e) => onDragStart(e, track.id)}
         onDragOver={onDragOver}
         onDrop={(e) => onDrop(e, track.id)}
         onDragEnd={onDragEnd}
-        style={{ height: getTrackHeight(track.id, track.type) }}
-        className={`border-b border-border flex items-center gap-2.5 px-4 relative group transition-colors cursor-grab active:cursor-grabbing ${
+        style={{ height: trackHeight }}
+        className={`workspace-track-header border-b border-border flex items-center gap-2.5 px-4 relative group transition-colors cursor-grab active:cursor-grabbing ${
           track.hidden || effectivelyMuted ? "opacity-60" : ""
         } ${
           track.locked ? "bg-bg-2/50" : "bg-bg-1"
         }`}
       >
-          <div className="min-w-0 flex-1">
+          {targetKind ? (
+            <button
+              type="button"
+              className="workspace-track-badge"
+              data-track-targeted={isTargeted ? "true" : undefined}
+              aria-label={t("Track target {0}", [track.name || trackInfo.label])}
+              aria-pressed={isTargeted}
+              title={isTargeted ? t("Track targeted: Extract, Lift, Add Edit and Paste act on it. Click to untarget (Shift+T)") : t("Target this track for Extract, Lift, Add Edit and Paste (Shift+T)")}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleTrackTargeted(track.id);
+              }}
+            >{badge}</button>
+          ) : (
+            <span className="workspace-track-badge">{badge}</span>
+          )}
+          <div className="workspace-track-label min-w-0 flex-1">
             {isRenaming ? (
-              <ToolcraftTextInputControl
+              <Input
                 ref={inputRef}
-                label={t("Track name")}
-                isLabelHidden
-                size="sm"
-                width="100%"
+                aria-label={t("Track name")}
+                className="h-7 w-full text-xs"
                 value={renameValue}
-                onChange={setRenameValue}
+                onChange={event => setRenameValue(event.target.value)}
                 onBlur={commitRename}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") commitRename();
@@ -187,15 +259,40 @@ export const TrackHeader: React.FC<TrackHeaderProps> = ({
               />
             ) : (
               <span
-                className="block truncate text-[13px] font-semibold text-fg-2 cursor-grab active:cursor-grabbing"
+                className="workspace-track-name block truncate cursor-grab active:cursor-grabbing"
                 onDoubleClick={startRename}
               >
-                {track.name || trackInfo.label}
+                {track.name || t(trackInfo.label)}
+              </span>
+            )}
+            {(outputBus || sendCount > 0) && (
+              <span
+                className="block truncate text-[10px] leading-tight text-fg-muted"
+                data-testid={`track-output-badge-${track.id}`}
+                title={t("Output: {0}{1}", [outputBus?.name ?? "Master", sendCount ? `, ${sendCount} send${sendCount === 1 ? "" : "s"}` : ""])}
+              >
+                {"\u2192 "}{outputBus?.name ?? t("Master")}{sendCount ? ` +${sendCount}` : ""}
               </span>
             )}
           </div>
 
-          <div className="flex items-center gap-2.5 shrink-0">
+          {compact && <DropdownMenu>
+            <DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={t("Options for {0}", [track.name || trackInfo.label])}><MoreHorizontal size={18} aria-hidden /></Button></DropdownMenuTrigger>
+            <DropdownMenuContent side="right" align="start" className="w-[220px] [&_[role=menuitem]]:gap-2 [&_[role=menuitem]]:text-xs" onCloseAutoFocus={event => { if (renameSession.current) event.preventDefault(); }}>
+              {targetKind && <DropdownMenuItem onSelect={toggleTarget}>{isTarget ? t("Clear source patch") : t("Patch source to this track")}</DropdownMenuItem>}
+              {targetKind && <DropdownMenuItem onSelect={() => toggleTrackTargeted(track.id)}>{isTargeted ? t("Untarget track") : t("Target track")}</DropdownMenuItem>}
+              <DropdownMenuItem onSelect={toggleSyncLock}>{syncLocked ? t("Turn off Sync Lock") : t("Turn on Sync Lock")}</DropdownMenuItem>
+              {isVisual && <DropdownMenuItem onSelect={() => void hideTrack(track.id, !track.hidden)}>{track.hidden ? t("Show track") : t("Hide track")}</DropdownMenuItem>}
+              {isAudio && <>
+                <DropdownMenuItem onSelect={() => void muteTrack(track.id, !track.muted)}>{track.muted ? t("Unmute track") : t("Mute track")}</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => void soloTrack(track.id, !track.solo)}>{track.solo ? t("Clear solo") : t("Solo track")}</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => void setTrackSoloSafe(track.id, track.soloSafe !== true)}>{track.soloSafe === true ? t("Turn off Solo Safe") : t("Turn on Solo Safe")}</DropdownMenuItem>
+              </>}
+              <DropdownMenuItem onSelect={() => void lockTrack(track.id, !track.locked)}>{track.locked ? t("Unlock track") : t("Lock track")}</DropdownMenuItem>
+              <DropdownMenuSeparator />{trackActions("dropdown")}
+            </DropdownMenuContent>
+          </DropdownMenu>}
+          <div hidden={compact} className="workspace-track-controls flex items-center gap-2.5 shrink-0">
             {track.groupId && (
               <Link2
                 size={13}
@@ -203,31 +300,45 @@ export const TrackHeader: React.FC<TrackHeaderProps> = ({
                 aria-label={t("Track is grouped")}
               />
             )}
+            {targetKind && (
+              <Button variant="ghost" size="sm"
+                type="button"
+                data-track-target={isTarget ? "true" : undefined}
+                aria-label={isTarget ? t("Untarget {0}", [track.name]) : t("Target {0}", [track.name])}
+                aria-pressed={isTarget}
+                title={isTarget ? "Source patch: the Source monitor's " + targetKind + " goes to this track. Click to clear" : "Patch the Source monitor's " + targetKind + " to this track"}
+                className={`flex h-[18px] min-w-[18px] items-center justify-center rounded px-1 py-0 text-[9px] leading-[1.4] font-black transition-colors ${
+                  isTarget ? "bg-accent text-accent-fg" : "text-fg-muted hover:bg-hover hover:text-fg-2"
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleTarget();
+                }}
+              >
+                {targetKind === "audio" ? "A" : "V"}
+              </Button>
+            )}
             {isVisual && (
-              <button
+              <Button variant="ghost" size="sm"
                 type="button"
                 aria-label={track.hidden ? t("Show track") : t("Hide track")}
-                className="text-fg-muted hover:text-fg-2 transition-colors"
+                className="h-auto w-auto p-0 text-xs font-normal leading-[1.4] text-fg-muted hover:text-fg-2 transition-colors [&_svg]:size-[11px]"
                 onClick={(e) => {
                   e.stopPropagation();
                   hideTrack(track.id, !track.hidden);
                 }}
               >
-                {track.hidden ? (
-                  <EyeOff size={15} strokeWidth={1.7} aria-hidden />
-                ) : (
-                  <Eye size={15} strokeWidth={1.7} aria-hidden />
-                )}
-              </button>
+                <span aria-hidden>{track.hidden ? "○" : "◉"}</span>
+              </Button>
             )}
-            {isAudio && (
+            {track.type === "audio" && (
               <>
-                <button
+                <Button variant="ghost" size="sm"
                   type="button"
-                  aria-label={track.muted ? `${t("Unmute")} ${track.name}` : `${t("Mute")} ${track.name}`}
+                  aria-label={track.muted ? t("Unmute {0}", [track.name]) : t("Mute {0}", [track.name])}
                   aria-pressed={track.muted}
                   title={track.muted ? t("Unmute track") : t("Mute track")}
-                  className={`transition-colors ${
+                  className={`h-auto w-auto p-0 text-xs font-normal leading-[1.4] transition-colors ${
                     track.muted ? "text-destructive" : "text-fg-muted hover:text-fg-2"
                   }`}
                   onClick={(e) => {
@@ -235,18 +346,14 @@ export const TrackHeader: React.FC<TrackHeaderProps> = ({
                     muteTrack(track.id, !track.muted);
                   }}
                 >
-                  {track.muted ? (
-                    <VolumeX size={15} strokeWidth={1.7} aria-hidden />
-                  ) : (
-                    <Volume2 size={15} strokeWidth={1.7} aria-hidden />
-                  )}
-                </button>
-                <button
+                  M
+                </Button>
+                <Button variant="ghost" size="sm"
                   type="button"
-                  aria-label={track.solo ? `${t("Clear solo")} ${track.name}` : `${t("Solo")} ${track.name}`}
+                  aria-label={track.solo ? t("Clear solo {0}", [track.name]) : t("Solo {0}", [track.name])}
                   aria-pressed={track.solo}
                   title={track.solo ? t("Clear solo") : t("Solo track")}
-                  className={`flex h-[18px] min-w-[18px] items-center justify-center rounded px-1 text-[9px] font-black transition-colors ${
+                  className={`flex h-[18px] min-w-[18px] items-center justify-center rounded px-1 py-0 text-[9px] leading-[1.4] font-black transition-colors ${
                     track.solo
                       ? "bg-status-warning text-black"
                       : "text-fg-muted hover:bg-hover hover:text-fg-2"
@@ -257,13 +364,29 @@ export const TrackHeader: React.FC<TrackHeaderProps> = ({
                   }}
                 >
                   S
-                </button>
+                </Button>
               </>
             )}
-            <button
+            <Button variant="ghost" size="sm"
+              type="button"
+              data-sync-lock={syncLocked ? "on" : "off"}
+              aria-label={t("Sync lock {0}", [track.name])}
+              aria-pressed={syncLocked}
+              title={syncLocked ? t("Sync Lock on: ripple edits keep this track in sync. Click to turn off (Shift+Y)") : t("Sync Lock off: ripple edits leave this track in place. Click to turn on (Shift+Y)")}
+              className={`h-auto w-auto p-0 text-xs font-normal leading-[1.4] transition-colors ${
+                syncLocked ? "text-accent" : "text-fg-muted opacity-60 hover:text-fg-2"
+              } [&_svg]:size-[11px]`}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleSyncLock();
+              }}
+            >
+              <RefreshCw aria-hidden />
+            </Button>
+            <Button variant="ghost" size="sm"
               type="button"
               aria-label={track.locked ? t("Unlock") : t("Lock")}
-              className={`transition-colors ${
+              className={`h-auto w-auto p-0 text-xs font-normal leading-[1.4] transition-colors ${
                 track.locked ? "text-fg-2" : "text-fg-muted hover:text-fg-2"
               }`}
               onClick={(e) => {
@@ -271,10 +394,16 @@ export const TrackHeader: React.FC<TrackHeaderProps> = ({
                 lockTrack(track.id, !track.locked);
               }}
             >
-              <Lock size={13} strokeWidth={1.8} aria-hidden />
-            </button>
+              <span aria-hidden>L</span>
+            </Button>
           </div>
       </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent className="w-[220px] [&_[role=menuitem]]:gap-2 [&_[role=menuitem]]:text-xs"
+        onCloseAutoFocus={event => { if (renameSession.current) event.preventDefault(); }}
+        onPointerDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()}>
+        {trackActions("context")}
+      </ContextMenuContent>
     </ContextMenu>
   );
-};
+});

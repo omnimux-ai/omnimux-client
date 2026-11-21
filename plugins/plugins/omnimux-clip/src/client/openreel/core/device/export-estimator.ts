@@ -1,5 +1,6 @@
 import type { DeviceProfile, BenchmarkResult } from "./device-capabilities";
 import { saveBenchmarkResult } from "./device-capabilities";
+import { formatMessage } from "../../../i18n/translate.js";
 
 export interface ExportEstimateSettings {
   width: number;
@@ -101,9 +102,9 @@ function getComplexityMultiplier(settings: ExportEstimateSettings): number {
   return multiplier;
 }
 
-function formatTime(seconds: number): string {
+export function formatExportTime(seconds: number, t = formatMessage): string {
   if (seconds < 60) {
-    return `~${Math.round(seconds)} seconds`;
+    return t("~{0} seconds", [Math.round(seconds)]);
   }
 
   const minutes = Math.floor(seconds / 60);
@@ -111,14 +112,14 @@ function formatTime(seconds: number): string {
 
   if (minutes < 60) {
     if (remainingSeconds === 0) {
-      return `~${minutes} minute${minutes > 1 ? "s" : ""}`;
+      return t(minutes === 1 ? "~{0} minute" : "~{0} minutes", [minutes]);
     }
-    return `~${minutes}m ${remainingSeconds}s`;
+    return t("~{0}m {1}s", [minutes, remainingSeconds]);
   }
 
   const hours = Math.floor(minutes / 60);
   const remainingMinutes = minutes % 60;
-  return `~${hours}h ${remainingMinutes}m`;
+  return t("~{0}h {1}m", [hours, remainingMinutes]);
 }
 
 export function estimateExportTime(
@@ -156,7 +157,7 @@ export function estimateExportTime(
 
     return {
       seconds,
-      formatted: formatTime(seconds),
+      formatted: formatExportTime(seconds),
       confidence: "measured",
       breakdown: {
         rendering: seconds * 0.4,
@@ -185,7 +186,7 @@ export function estimateExportTime(
 
   return {
     seconds,
-    formatted: formatTime(seconds),
+    formatted: formatExportTime(seconds),
     confidence: "estimated",
     breakdown: {
       rendering: seconds * 0.4,
@@ -193,39 +194,6 @@ export function estimateExportTime(
       muxing: seconds * 0.05,
     },
   };
-}
-
-export function compareCodecEstimates(
-  profile: DeviceProfile,
-  settings: Omit<ExportEstimateSettings, "codec">
-): Array<{ codec: string; estimate: TimeEstimate; speedLabel: string }> {
-  const codecs: Array<"h264" | "h265" | "vp9" | "av1"> = [
-    "h264",
-    "h265",
-    "vp9",
-    "av1",
-  ];
-
-  const results = codecs
-    .filter((codec) => profile.encoding[codec]?.supported)
-    .map((codec) => {
-      const estimate = estimateExportTime(profile, { ...settings, codec });
-      let speedLabel = "";
-
-      if (estimate.seconds < 60) {
-        speedLabel = "Fast";
-      } else if (estimate.seconds < 300) {
-        speedLabel = "Good";
-      } else if (estimate.seconds < 900) {
-        speedLabel = "Slow";
-      } else {
-        speedLabel = "Very slow";
-      }
-
-      return { codec, estimate, speedLabel };
-    });
-
-  return results.sort((a, b) => a.estimate.seconds - b.estimate.seconds);
 }
 
 export async function runBenchmark(

@@ -1,8 +1,8 @@
 import React, { useState, useCallback, useEffect } from "react";
-import { ToolcraftButton as Button } from "@openreel/ui";
-import { ToolcraftCard as Card } from "@openreel/ui";
-import { ToolcraftClickableCard as ClickableCard } from "@openreel/ui";
-import { ToolcraftText as Text } from "@openreel/ui";
+import { Button, cn } from "@openreel/ui";
+import { Card } from "@openreel/ui";
+
+
 import { PropertySlider } from "./shell/PropertySlider";
 import {
   User,
@@ -22,6 +22,7 @@ import {
 import { toast } from "../../../stores/notification-store";
 import { useProcessingStore } from "../../../services/processing-manager";
 import { ColorSelector } from "../../../motion/components/primitives";
+import { clipNow } from "../../../../../i18n/index.js";
 import { useClipT } from "../../../../../i18n/index.js";
 
 interface BackgroundRemovalSectionProps {
@@ -124,15 +125,15 @@ export const BackgroundRemovalSection: React.FC<
       updateSettings({ enabled: true });
       completeTask(taskId);
       toast.success(
-        "Background Removal Ready",
-        "Effect will be applied during playback",
+        clipNow()("Background Removal Ready"),
+        clipNow()("Effect will be applied during playback"),
       );
     } catch (error) {
       failTask(
         taskId,
         error instanceof Error ? error.message : "Unknown error",
       );
-      toast.error("Processing Failed", "Could not enable background removal");
+      toast.error(clipNow()("Processing Failed"), clipNow()("Could not enable background removal"));
     } finally {
       setIsProcessing(false);
     }
@@ -158,45 +159,36 @@ export const BackgroundRemovalSection: React.FC<
   return (
     <div className="space-y-3">
       <div className="flex justify-end">
-        <Button
-          label={settings.enabled ? t("On") : t("Off")}
-          icon={
-            isInitializing || isProcessing ? (
+        <Button onClick={handleToggleEnabled} type="button" aria-label={(settings.enabled ? "On" : "Off").trim() || undefined} disabled={(isInitializing || isProcessing)} className={cn("inline-flex min-w-0 items-center justify-center gap-1.5 rounded-[7px] font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50", "h-7 px-2.5 text-[12px]", (settings.enabled ? "bg-accent text-accent-fg hover:bg-accent/90" : "border border-border bg-bg-2 text-fg-2 hover:bg-bg-3 hover:text-fg"))}>
+          {(isInitializing || isProcessing ? (
               <Loader2 size={12} className="animate-spin" />
-            ) : undefined
-          }
-          variant={settings.enabled ? "primary" : "secondary"}
-          size="sm"
-          onClick={handleToggleEnabled}
-          isDisabled={isInitializing || isProcessing}
-        />
+            ) : undefined) ? <span className="flex h-4 w-4 shrink-0 items-center justify-center">{isInitializing || isProcessing ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : undefined}</span> : null}
+          <span className="truncate">{settings.enabled ? t("On") : t("Off")}</span>
+        </Button>
       </div>
 
       {settings.enabled && (
-        <Card variant="muted" padding={3} className="space-y-3">
+        <Card className="min-w-0 rounded-[7px] border shadow-none border-transparent bg-bg-2 text-fg p-3 space-y-3">
           <div>
-            <Text type="supporting" color="secondary" className="mb-2 block text-[10px]">
+            <span className="text-fg-2 font-normal mb-2 block text-[10px]">
               {t("Background Mode")}
-            </Text>
+            </span>
             <div className="grid grid-cols-4 gap-1">
               {BACKGROUND_MODES.map((mode) => {
                 const ModeIcon = mode.icon;
                 return (
-                  <ClickableCard
-                    key={mode.value}
-                    label={`${t(mode.label)} background mode`}
-                    onClick={() => updateSettings({ mode: mode.value })}
-                    className={`flex flex-col items-center gap-1 rounded p-2 transition-colors ${
+                  <Button variant="ghost" key={mode.value} onClick={() => updateSettings({ mode: mode.value })} type="button" aria-label={`${mode.label} background mode`} className={cn("group/card block h-auto min-w-0 whitespace-normal rounded-[7px] border text-left transition-[background-color,border-color,box-shadow,transform] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50", "border-border bg-bg-1 hover:bg-bg-2", "p-3", `flex flex-col items-center gap-1 rounded p-2 transition-colors ${
                       settings.mode === mode.value
                         ? "bg-primary/20 border border-primary"
                         : "bg-bg-1 hover:bg-background-primary border border-transparent"
-                    }`}
-                  >
+                    }`)}>
                     <ModeIcon size={14} />
-                    <Text type="supporting" color="primary" className="text-[9px]">
+                    <span className="text-fg font-normal text-[9px]">
                       {t(mode.label)}
-                    </Text>
-                  </ClickableCard>
+                    </span>
+                  </Button>
                 );
               })}
             </div>
@@ -216,22 +208,16 @@ export const BackgroundRemovalSection: React.FC<
 
           {settings.mode === "color" && (
             <div>
-              <Text type="supporting" color="secondary" className="mb-2 block text-[10px]">
+              <span className="text-fg-2 font-normal mb-2 block text-[10px]">
                 {t("Background Color")}
-              </Text>
+              </span>
               <div className="grid grid-cols-8 gap-1 mb-2">
                 {PRESET_COLORS.map((color) => (
-                  <ClickableCard
-                    key={color}
-                    label={`Use ${color} background color`}
-                    onClick={() => updateSettings({ backgroundColor: color })}
-                    className={`w-6 h-6 rounded border-2 transition-all ${
+                  <Button variant="ghost" key={color} onClick={() => updateSettings({ backgroundColor: color })} style={{ backgroundColor: color }} type="button" aria-label={t("Use {0} background color", [color])} className={cn("group/card block h-auto min-w-0 whitespace-normal rounded-[7px] border text-left transition-[background-color,border-color,box-shadow,transform] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50", "border-border bg-bg-1 hover:bg-bg-2", "p-3", `w-6 h-6 rounded border-2 transition-all ${
                       settings.backgroundColor === color
                         ? "border-primary scale-110"
                         : "border-transparent hover:scale-105"
-                    }`}
-                    style={{ backgroundColor: color }}
-                  />
+                    }`)} />
                 ))}
               </div>
               <ColorSelector
@@ -244,15 +230,10 @@ export const BackgroundRemovalSection: React.FC<
 
           {settings.mode === "image" && (
             <div>
-              <Text type="supporting" color="secondary" className="mb-2 block text-[10px]">
+              <span className="text-fg-2 font-normal mb-2 block text-[10px]">
                 {t("Background Image")}
-              </Text>
-              <Button
-                label={t("Choose Image")}
-                icon={<ImageIcon size={14} />}
-                variant="secondary"
-                size="sm"
-                onClick={() => {
+              </span>
+              <Button onClick={() => {
                   const input = document.createElement("input");
                   input.type = "file";
                   input.accept = "image/*";
@@ -268,13 +249,14 @@ export const BackgroundRemovalSection: React.FC<
                     }
                   };
                   input.click();
-                }}
-                className="w-full justify-center"
-              />
+                }} type="button" aria-label={t("Choose Image")} className="inline-flex min-w-0 items-center gap-1.5 rounded-[7px] font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-7 px-2.5 text-[12px] border border-border bg-bg-2 text-fg-2 hover:bg-bg-3 hover:text-fg w-full justify-center">
+                <span className="flex h-4 w-4 shrink-0 items-center justify-center">{<ImageIcon size={14} />}</span>
+                <span className="truncate">{t("Choose Image")}</span>
+              </Button>
               {settings.backgroundImageUrl && (
-                <Text type="supporting" color="secondary" className="mt-2 truncate text-[9px]">
+                <span className="text-fg-2 font-normal mt-2 truncate text-[9px]">
                   {t("Image loaded")}
-                </Text>
+                </span>
               )}
             </div>
           )}
@@ -301,15 +283,12 @@ export const BackgroundRemovalSection: React.FC<
 
           <div className="flex items-start gap-2 p-2 bg-primary/10 rounded border border-primary/20">
             <Info size={14} className="text-primary flex-shrink-0 mt-0.5" />
-            <Text type="supporting" color="secondary" className="text-[9px]">
-              Background removal is processed in real-time. For best results,
-              export your video after previewing.
-            </Text>
+            <span className="text-fg-2 font-normal text-[9px]">
+              {t("Background removal is processed in real-time. For best results, export your video after previewing.")}
+            </span>
           </div>
         </Card>
       )}
     </div>
   );
 };
-
-export default BackgroundRemovalSection;

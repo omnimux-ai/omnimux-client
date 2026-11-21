@@ -1,53 +1,43 @@
-import type { AutomationPoint, Clip, Effect, Timeline, Track } from "../types/timeline";
+import { resolveClipChannelMap, type ChannelPreset, type ClipChannelMap } from "./channel-map";
+import type {
+  AutomationPoint,
+  Clip,
+  Effect,
+  Timeline,
+  Track,
+} from "../types/timeline";
+
+import { applyLiveDuckingToLane } from "./live-ducking";
 
 type TimelineWithTracks = Pick<Timeline, "tracks">;
 
 const LINK_TOLERANCE_SECONDS = 0.01;
 
-const getClipAudioTrackIndex = (clip: Clip): number => clip.audioTrackIndex ?? 0;
+const getClipAudioTrackIndex = (clip: Clip): number => {
+  const sourceTrackIndex = clip.metadata?.sourceAudioTrackIndex;
+  return typeof sourceTrackIndex === "number" &&
+    Number.isFinite(sourceTrackIndex)
+    ? sourceTrackIndex
+    : (clip.audioTrackIndex ?? 0);
+};
 
 const isAlignedLinkedClip = (clip: Clip, candidate: Clip): boolean =>
   candidate.id !== clip.id &&
-  candidate.mediaId === clip.mediaId &&
+  (candidate.mediaId === clip.mediaId ||
+    candidate.metadata?.separatedFromClipId === clip.id ||
+    clip.metadata?.separatedFromClipId === candidate.id ||
+    candidate.metadata?.separatedFromClipId ===
+      (clip.metadata?.splitSourceClipId ?? clip.id) ||
+    clip.metadata?.separatedFromClipId ===
+      (candidate.metadata?.splitSourceClipId ?? candidate.id)) &&
   getClipAudioTrackIndex(candidate) === getClipAudioTrackIndex(clip) &&
   Math.abs(candidate.startTime - clip.startTime) < LINK_TOLERANCE_SECONDS &&
   Math.abs(candidate.inPoint - clip.inPoint) < LINK_TOLERANCE_SECONDS;
-
-const getTrackTypePriority = (
-  currentTrackType: Track["type"] | undefined,
-  candidateTrackType: Track["type"],
-): number => {
-  if (currentTrackType === "audio") {
-    if (candidateTrackType === "video") return 0;
-    if (candidateTrackType === "image") return 1;
-  }
-
-  if (candidateTrackType === "audio") return 0;
-  if (candidateTrackType === "video") return 1;
-  if (candidateTrackType === "image") return 2;
-
-  return 3;
-};
-
-export const findClipTrack = (
-  timeline: TimelineWithTracks,
-  clipId: string,
-): { clip: Clip; track: Track } | null => {
-  for (const track of timeline.tracks) {
-    const clip = track.clips.find((candidate) => candidate.id === clipId);
-    if (clip) {
-      return { clip, track };
-    }
-  }
-
-  return null;
-};
 
 export const getLinkedAudioClips = (
   clip: Clip,
   timeline: TimelineWithTracks,
 ): Array<{ clip: Clip; track: Track }> => {
-  const currentTrack = timeline.tracks.find((track) => track.id === clip.trackId);
   const linkedClips: Array<{ clip: Clip; track: Track }> = [];
 
   for (const track of timeline.tracks) {
@@ -62,11 +52,7 @@ export const getLinkedAudioClips = (
     }
   }
 
-  return linkedClips.sort(
-    (left, right) =>
-      getTrackTypePriority(currentTrack?.type, left.track.type) -
-      getTrackTypePriority(currentTrack?.type, right.track.type),
-  );
+  return linkedClips;
 };
 
 export const resolveClipAudioEffects = (
@@ -85,7 +71,8 @@ export const resolveClipAudioEffects = (
   return linkedClip?.clip.audioEffects ?? [];
 };
 
-export const resolveClipVolumeAutomation = (
+/** The clip's stored volume lane (or its linked clip's), without live ducking. */
+export const resolveClipBaseVolumeAutomation = (
   clip: Clip,
   timeline: TimelineWithTracks,
 ): AutomationPoint[] => {
@@ -101,6 +88,59 @@ export const resolveClipVolumeAutomation = (
   return linkedClip?.clip.automation?.volume ?? [];
 };
 
+/** The clip's pan lane (-1 left .. 1 right), or its linked clip's. */
+export const resolveClipPanAutomation = (
+  clip: Clip,
+  timeline: TimelineWithTracks,
+): AutomationPoint[] => {
+  const direct = clip.automation?.pan ?? [];
+  if (direct.length > 0) return direct;
+  const linked = getLinkedAudioClips(clip, timeline).find(
+    (entry) => (entry.clip.automation?.pan?.length ?? 0) > 0,
+  );
+  return linked?.clip.automation?.pan ?? [];
+};
+
+/** Maintain-audio-pitch flag (default on): the clip's own, else its linked clip's. */
+export const resolveClipPitchCorrection = (
+  clip: Clip,
+  timeline: TimelineWithTracks,
+): boolean => {
+  if (clip.pitchCorrection !== undefined) return clip.pitchCorrection;
+  const linked = getLinkedAudioClips(clip, timeline).find(
+    (entry) => entry.clip.pitchCorrection !== undefined,
+  );
+  return linked?.clip.pitchCorrection ?? true;
+};
+
+/**
+ * Pan lane and maintain-pitch flag for a clip, with linked-clip fallback. Every preview schedule
+ * builder and the export path use this so they cannot drift apart.
+ */
+export const resolveClipPlaybackAudioParams = (
+  clip: Clip,
+  timeline: TimelineWithTracks,
+  media?: { readonly channelPreset?: ChannelPreset; readonly metadata?: { readonly channels?: number } },
+): { panAutomation: AutomationPoint[]; pitchCorrection: boolean; channelMap?: ClipChannelMap } => {
+  const channelMap = resolveClipChannelMap(clip, media);
+  return {
+    panAutomation: resolveClipPanAutomation(clip, timeline),
+    pitchCorrection: resolveClipPitchCorrection(clip, timeline),
+    ...(channelMap ? { channelMap } : {}),
+  };
+};
+
+/** The volume lane that is actually heard: the stored lane with live ducking under dialogue applied. */
+export const resolveClipVolumeAutomation = (
+  clip: Clip,
+  timeline: TimelineWithTracks,
+): AutomationPoint[] =>
+  applyLiveDuckingToLane(
+    clip,
+    timeline,
+    resolveClipBaseVolumeAutomation(clip, timeline),
+  );
+
 export const resolveAudibleAudioTarget = (
   clip: Clip,
   timeline: TimelineWithTracks,
@@ -110,7 +150,7 @@ export const resolveAudibleAudioTarget = (
   }
 
   const linkedAudioClip = getLinkedAudioClips(clip, timeline).find(
-    (entry) => entry.track.type === "audio" && entry.clip.volume > 0,
+    (entry) => entry.clip.volume > 0,
   );
 
   return linkedAudioClip?.clip ?? clip;

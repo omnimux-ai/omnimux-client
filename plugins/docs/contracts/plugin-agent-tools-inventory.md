@@ -205,12 +205,13 @@ superseded_by: null
 ---
 
 ### 3.7 `omnimux-clip`（OpenReel 视频剪辑工坊）
-- **功能域**：官方全套 OpenReel 微应用，多轨时间轴、视口、资源库、转场特效、音频降噪、导出。
+- **功能域**：基于 OpenReel v1.0.0 的独立剪辑工坊和画布合成编辑器，含多轨时间轴、三栏工作区、转场特效、音频处理和视频导出。[上游引入契约](openreel-vendor-contract.md)
 - **存储**：`$DSH_HOME/omnimux/clip/projects/`。
-- **状态**：双面就绪 (已实装 6 个工具)。
+- **入口**：独立剪辑工坊在工作台打开。画布合成编辑器通过宿主保存 MP4，并将成片版本传回合成节点。
+- **工具兼容性**：工具仍使用宿主项目接口。OpenReel 原生项目的宿主读回及部分工具的运行态行为由 [#160](https://github.com/omnimux-ai/omnimux-client/issues/160) 跟踪。
 
 | 业务功能描述 | 对应 UI 交互 / HTTP 路由 | Agent 工具名称 (`Tool Name`) | 分级 | 状态 | 破坏性 confirm |
-|---|---|---|---|---|---|
+|---|---|---|---|---|---|---|
 | 获取指定剪辑项目时间轴与轨道配置 | 侧栏 Tab 打开工程 | `clip_get` | L1 | `Implemented` | 否 |
 | 执行轨道级编辑操作 (增删片段/微调) | 时间轴拖拽、剪切、特效挂载 | `clip_edit` | L1 | `Implemented` | 否 |
 | 获取当前视口渲染数据与布局 | 视口渲染器 | `clip_view` | L1 | `Implemented` | 否 |

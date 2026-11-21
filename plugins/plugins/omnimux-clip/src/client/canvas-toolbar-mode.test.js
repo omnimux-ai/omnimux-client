@@ -1,9 +1,8 @@
 /**
  * 画布/完整双模式顶栏三段显隐契约测试。
  *
- * 契约来源：架构设计（高见远）—— canvas 嵌入模式下顶栏只保留右段（Export / 交付），
- * 左段（WorkspaceModeTabs 模式切换）与中段（项目名称输入框 + 项目切换器）必须隐藏；
- * standalone 完整模式下三段全部保留。
+ * 画布模式只保留右段的导出与退出。完整模式保留应用菜单、项目切换及项目名称。
+ * OpenReel 1.0 的应用菜单和项目切换位于左段，项目名称位于中段。
  *
  * 实现方式：OpenReel 顶栏自身打 `data-toolbar-section="left|center|right"` 段标记
  * （外加 .openreel-toolbar-* 类名双保险），CLIP_CSS 按祖先
@@ -22,7 +21,7 @@ import { CLIP_CSS } from './styles.js'
 const HERE = dirname(fileURLToPath(import.meta.url))
 
 const TOOLBAR_TSX = join(HERE, 'openreel/web/components/editor/Toolbar.tsx')
-const MOTION_TSX = join(HERE, 'openreel/web/motion/MotionCreatorShell.tsx')
+const FEATURES_TS = join(HERE, 'openreel/web/config/features.ts')
 
 // ─── 轻量 CSS 规则解析器 ────────────────────────────────────────────────
 /** 剥掉注释，避免注释文本污染解析结果。 */
@@ -100,7 +99,7 @@ const CANVAS = '.omnimux-clip-stage[data-clip-mode="canvas"]'
 const STANDALONE = '.omnimux-clip-stage[data-clip-mode="standalone"]'
 
 // ─── 维度一：canvas 模式隐藏左段与中段 ──────────────────────────────────
-test('canvas-toolbar-mode: canvas 隐藏左段（模式切换）', () => {
+test('canvas-toolbar-mode: canvas 隐藏左段（菜单与项目切换）', () => {
   const left = rulesFor(`${CANVAS} [data-toolbar-section="left"]`)
   assert.ok(left.length > 0, 'canvas 模式必须有针对左段的规则')
   assert.ok(
@@ -113,7 +112,7 @@ test('canvas-toolbar-mode: canvas 隐藏左段（模式切换）', () => {
   assert.ok(alias.every((r) => r.decls.get('display') === 'none !important'))
 })
 
-test('canvas-toolbar-mode: canvas 隐藏中段（项目名称 + 项目切换器）', () => {
+test('canvas-toolbar-mode: canvas 隐藏中段（项目名称）', () => {
   const center = rulesFor(`${CANVAS} [data-toolbar-section="center"]`)
   assert.ok(center.length > 0, 'canvas 模式必须有针对中段的规则')
   assert.ok(
@@ -148,15 +147,18 @@ test('canvas-toolbar-mode: return action is inlined into toolbar right with non-
   assert.ok(src.includes('WebkitAppRegion: "no-drag"'), '退出编辑按钮必须具有原生 no-drag 拖拽保护')
   assert.ok(src.includes('gap-2.5'), '右段必须使用 gap-2.5 并排布局导出按钮与退出编辑按钮')
 
-  const exportIndex = src.indexOf('openreel-export-btn')
-  const exitBtnIndex = src.indexOf('omnimux-clip-stage-close-btn')
+  const right = src.indexOf('data-toolbar-section="right"')
+  const exportIndex = src.indexOf('<EditorExportControl', right)
+  const exitBtnIndex = src.indexOf('omnimux-clip-stage-close-btn', right)
   assert.ok(exportIndex !== -1, '右段必须包含导出按钮')
   assert.ok(exitBtnIndex !== -1, '右段必须包含退出编辑按钮')
   assert.ok(exportIndex < exitBtnIndex, '退出编辑按钮必须位于 Export 导出按钮的右侧')
 
-  const exitBtnEnd = src.indexOf('</button>', exitBtnIndex)
+  const exitBtnEnd = src.indexOf('</ShadcnButton>', exitBtnIndex)
   const exitBtnSnippet = src.slice(exitBtnIndex, exitBtnEnd)
   assert.ok(!exitBtnSnippet.includes('<svg'), '退出编辑按钮必须为纯文本按钮，不包含 svg 图标')
+  assert.match(exitBtnSnippet, /notifyCanvasClose\(\{ nodeId: canvasSession\.nodeId, projectId: canvasSession\.projectId \}\)/)
+  assert.match(exitBtnSnippet, /getActiveClipStageStore\(\)\?\.set\(false\)/)
   assert.ok(exitBtnSnippet.includes('inline-flex'), '退出编辑按钮必须使用 inline-flex 居中布局')
 })
 
@@ -255,17 +257,13 @@ test('canvas-toolbar-mode: Toolbar.tsx 三段标记齐全', () => {
   )
 })
 
-test('canvas-toolbar-mode: MotionCreatorShell.tsx 三段标记齐全', () => {
-  const markers = readSectionMarkers(MOTION_TSX)
-  assert.deepEqual(
-    [...markers].sort(),
-    ['center', 'left', 'right'],
-    'MotionCreatorShell.tsx 必须同时打上 left / center / right 三段标记',
-  )
+test('canvas-toolbar-mode: OpenReel 1.0 retires the independent Motion workspace', () => {
+  const features = stripComments(readFileSync(FEATURES_TS, 'utf8'))
+  assert.match(features, /MOTION_CREATOR_ENABLED\s*=\s*false/)
 })
 
 test('canvas-toolbar-mode: 段标记双保险类名与属性成对出现', () => {
-  for (const file of [TOOLBAR_TSX, MOTION_TSX]) {
+  for (const file of [TOOLBAR_TSX]) {
     const src = stripComments(readFileSync(file, 'utf8'))
     for (const section of ['left', 'center', 'right']) {
       const attrRe = new RegExp(`data-toolbar-section="${section}"`)
@@ -276,7 +274,7 @@ test('canvas-toolbar-mode: 段标记双保险类名与属性成对出现', () =>
   }
 })
 
-test('canvas-toolbar-mode: 中段标记确实包住项目名称输入与项目切换器', () => {
+test('canvas-toolbar-mode: 中段标记确实包住项目名称输入', () => {
   const src = stripComments(readFileSync(TOOLBAR_TSX, 'utf8'))
   const start = src.indexOf('data-toolbar-section="center"')
   assert.ok(start > -1, 'Toolbar.tsx 缺少中段标记')
@@ -284,19 +282,17 @@ test('canvas-toolbar-mode: 中段标记确实包住项目名称输入与项目�
   const end = src.indexOf('data-toolbar-section="right"')
   assert.ok(end > start, '中段标记必须出现在右段标记之前')
   const segment = src.slice(start, end)
-  assert.ok(segment.includes('ToolcraftTextInputControl'), '中段必须包含项目名称输入框')
-  assert.ok(segment.includes('ProjectSwitcher'), '中段必须包含项目切换器')
+  assert.match(segment, /<Input[^>]+value=\{projectNameDraft\}/, '中段必须包含项目名称输入框')
 })
 
-test('canvas-toolbar-mode: 左段标记确实包住 WorkspaceModeTabs', () => {
+test('canvas-toolbar-mode: 左段标记确实包住应用菜单和项目切换器', () => {
   const src = stripComments(readFileSync(TOOLBAR_TSX, 'utf8'))
   const start = src.indexOf('data-toolbar-section="left"')
   const end = src.indexOf('data-toolbar-section="center"')
   assert.ok(start > -1 && end > start, 'Toolbar.tsx 左段标记位置异常')
-  assert.ok(
-    src.slice(start, end).includes('WorkspaceModeTabs'),
-    '左段必须包含 WorkspaceModeTabs 模式切换',
-  )
+  const segment = src.slice(start, end)
+  assert.ok(segment.includes('<EditorMenuBar'), '左段必须包含应用菜单')
+  assert.ok(segment.includes('<ProjectSwitcher'), '左段必须包含项目切换器')
 })
 
 test('canvas-toolbar-mode: 两段模式选择器都以 data-clip-mode 为条件', () => {

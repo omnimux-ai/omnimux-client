@@ -1,3 +1,4 @@
+import type { ParticleEffect } from "../effects/particle-types";
 import type { ProjectSettings } from "./project";
 import type {
   Transform,
@@ -5,9 +6,16 @@ import type {
   SubtitleStyle,
   Subtitle,
   AutomationPoint,
+  AudioType,
+  EssentialSoundState,
+  LiveDuckingConfig,
   Marker,
+  MarkerKind,
+  ReviewReply,
+  ReviewStatus,
   Effect,
   Clip,
+  Track,
   Keyframe,
   ChromaKeySettings,
   SpeedKeyframe,
@@ -48,7 +56,7 @@ export interface ActionResult {
 }
 
 // Error codes for action validation and execution
-export type ActionErrorCode =
+type ActionErrorCode =
   | "INVALID_PARAMS" // Missing or malformed parameters
   | "CLIP_NOT_FOUND" // Referenced clip doesn't exist
   | "TRACK_NOT_FOUND" // Referenced track doesn't exist
@@ -65,7 +73,8 @@ export type ActionErrorCode =
   | "OUT_OF_BOUNDS" // Time or position outside valid range
   | "CIRCULAR_REFERENCE" // Nested sequence references itself
   | "EFFECT_NOT_FOUND" // Referenced effect doesn't exist
-  | "KEYFRAME_CONFLICT"; // Keyframe already exists at time
+  | "KEYFRAME_CONFLICT" // Keyframe already exists at time
+  | "READ_ONLY"; // Project is open read-only (locked by another window)
 
 // Action error with detailed information
 export interface ActionError {
@@ -127,6 +136,9 @@ export type TrackAction =
         position?: number;
         /** Pre-assigned track ID. When omitted, the executor generates one. */
         trackId?: string;
+        mode?: "standard";
+        role?: Track["role"];
+        name?: string;
       };
     }
   | {
@@ -136,15 +148,20 @@ export type TrackAction =
         position?: number;
         /** Pre-assigned ID enables deterministic history and collaboration. */
         trackId?: string;
+        /** Filled by the executor so redo recreates the same item IDs. */
+        itemIdMap?: Record<string, string>;
+        transitionIdMap?: Record<string, string>;
       };
     }
   | { type: "track/remove"; params: { trackId: string } }
   | { type: "track/rename"; params: { trackId: string; name: string } }
   | { type: "track/reorder"; params: { trackId: string; newPosition: number } }
   | { type: "track/lock"; params: { trackId: string; locked: boolean } }
+  | { type: "track/setSyncLock"; params: { trackId: string; syncLock: boolean } }
   | { type: "track/hide"; params: { trackId: string; hidden: boolean } }
   | { type: "track/mute"; params: { trackId: string; muted: boolean } }
-  | { type: "track/solo"; params: { trackId: string; solo: boolean } };
+  | { type: "track/solo"; params: { trackId: string; solo: boolean } }
+  | { type: "track/setSoloSafe"; params: { trackId: string; soloSafe: boolean } };
 
 // Clip actions
 export type ClipAction =
@@ -155,6 +172,9 @@ export type ClipAction =
         mediaId: string;
         startTime: number;
         sourceClip?: Clip;
+        /** Pre-assigned ID keeps grouped placement deterministic on redo. */
+        clipId?: string;
+        duration?: number;
       };
     }
   | { type: "clip/remove"; params: { clipId: string } }
@@ -208,9 +228,24 @@ export type ClipAction =
       type: "clip/trimToPlayhead";
       params: { clipId: string; playheadTime: number; trimStart: boolean };
     }
+  | {
+      type: "clip/restoreTiming";
+      params: {
+        clipId: string;
+        startTime: number;
+        duration: number;
+        inPoint: number;
+        outPoint: number;
+      };
+    }
   | { type: "clip/closeGapBefore"; params: { clipId: string } }
   | { type: "clip/setSpeed"; params: { clipId: string; speed: number } }
   | { type: "clip/setReverse"; params: { clipId: string; reversed: boolean } }
+  | {
+      type: "clip/setColorInterpretation";
+      /** `undefined` / null clears the override (the footage's own interpretation applies). */
+      params: { clipId: string; colorInterpretation?: import("../color/source-color").FootageColorPreset | null };
+    }
   | {
       type: "clip/setPitchCorrection";
       params: { clipId: string; pitchCorrection: boolean };
@@ -258,6 +293,7 @@ export type EffectAction =
         index?: number;
         /** Preserve disabled state when cloning an authored effect. */
         enabled?: boolean;
+        metadata?: Effect["metadata"];
       };
     }
   | { type: "effect/remove"; params: { clipId: string; effectId: string } }
@@ -281,7 +317,10 @@ export type EffectAction =
   | { type: "effect/setStack"; params: { clipId: string; effects: Effect[] } };
 export type TransformAction = {
   type: "transform/update";
-  params: { clipId: string; transform: Partial<Transform> };
+  params: { clipId: string } & (
+    | { transform: Partial<Transform>; replace?: false }
+    | { transform: Transform; replace: true }
+  );
 };
 
 // Keyframe actions
@@ -293,6 +332,7 @@ export type KeyframeAction =
         property: string;
         time: number;
         value: unknown;
+        easing?: EasingType;
       };
     }
   | {
@@ -345,10 +385,19 @@ export type AudioAction =
       params: { clipId: string; fadeIn?: number; fadeOut?: number };
     }
   | {
+      type: "audio/restoreFade";
+      params: { clipId: string; fade: Clip["fade"] | null };
+    }
+  | {
       type: "audio/addAutomation";
-      params: { clipId: string; points: AutomationPoint[] };
+      /** Replaces the clip's volume lane in one step. `null` (or the legacy `clear: true`) removes the lane, which is how undo restores a clip that had none. */
+      params: { clipId: string; points: AutomationPoint[] | null; clear?: boolean };
     }
   | { type: "audio/addEffect"; params: { clipId: string; effect: Effect } }
+  | {
+      type: "audio/replaceEffect";
+      params: { clipId: string; effectId: string; effect: Effect };
+    }
   | {
       type: "audio/removeEffect";
       params: { clipId: string; effectId: string };
@@ -364,6 +413,20 @@ export type AudioAction =
   | {
       type: "audio/toggleEffect";
       params: { clipId: string; effectId: string; enabled: boolean };
+    }
+  | {
+      /** Tag a clip for the Essential Sound panel and store what it replaced (null clears). */
+      type: "audio/setEssentialSound";
+      params: {
+        clipId: string;
+        audioType: AudioType | null;
+        state: EssentialSoundState | null;
+      };
+    }
+  | {
+      /** Turn live ducking on a clip on (config) or off (null). The dip follows the dialogue clips. */
+      type: "audio/setLiveDucking";
+      params: { clipId: string; config: LiveDuckingConfig | null };
     };
 
 // Subtitle actions
@@ -391,7 +454,18 @@ export type SubtitleAction =
 export type MarkerAction =
   | {
       type: "marker/add";
-      params: { time: number; label: string; color: string };
+      params: {
+        time: number;
+        label: string;
+        color: string;
+        duration?: number;
+        comment?: string;
+        kind?: MarkerKind;
+        author?: string;
+        status?: ReviewStatus;
+        replies?: ReviewReply[];
+        createdAt?: number;
+      };
     }
   | { type: "marker/remove"; params: { markerId: string } }
   | {
@@ -439,7 +513,22 @@ export type MotionAction =
 export type AdjustmentAction =
   | { type: "adjustment/setAll"; params: { layers: AdjustmentLayer[] } }
   | { type: "mask/setAll"; params: { masks: Mask[] } }
+  | { type: "particle/setAll"; params: { effects: ParticleEffect[] } }
   | { type: "multicam/setAll"; params: { groups: MultiCamGroup[] } }
+  | {
+      type: "multicam/applyEdit";
+      params: {
+        outputTrack?: import("./timeline").Track;
+        outputTracks?: import("./timeline").Track[];
+        outputTrackPosition?: number;
+        sourceTrackIds: string[];
+        groups: MultiCamGroup[];
+      };
+    }
+  | {
+      type: "multicam/restoreEdit";
+      params: Record<string, unknown>;
+    }
   | {
       type: "nested/setAll";
       params: {

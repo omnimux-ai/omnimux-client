@@ -1,6 +1,6 @@
-import React from "react";
-import { ToolcraftNumberInputControl } from "@openreel/ui";
-import { ToolcraftText as Text } from "@openreel/ui";
+import React, { useId } from "react";
+import { Input, Label } from "@openreel/ui";
+
 import {
   defaultMotionShaderParams,
   getMotionShaderDef,
@@ -10,9 +10,11 @@ import {
 } from "@openreel/core";
 import { PropertySlider } from "./shell/PropertySlider";
 import { ColorSelector } from "../../../motion/components/primitives";
+import { useNumericDraft } from "./shell/useNumericDraft";
 import { useClipT } from "../../../../../i18n/index.js";
+import { shaderDisplayName } from "../../shaders/shader-labels";
 
-export interface EditorShaderRef {
+interface EditorShaderRef {
   readonly shaderId: string;
   readonly params: Record<string, MotionShaderParamValue>;
 }
@@ -30,6 +32,7 @@ export function createDefaultEditorShader(
 
 export function groupShaderDefsByCollection(
   defs: readonly MotionShaderDef[],
+  t: ReturnType<typeof useClipT>,
   leading: Array<{ value: string; label: string }> = [],
 ): Array<{
   type: "section";
@@ -44,7 +47,7 @@ export function groupShaderDefsByCollection(
     const bucket = buckets.get(title);
     const option = {
       value: def.id,
-      label: def.origin === "generated" ? `${def.name} (AI)` : def.name,
+      label: shaderDisplayName(def, t),
     };
     if (bucket) {
       bucket.push(option);
@@ -56,7 +59,7 @@ export function groupShaderDefsByCollection(
 
   const sections = order.map((title) => ({
     type: "section" as const,
-    title,
+    title: t(title),
     options: buckets.get(title) ?? [],
   }));
 
@@ -64,8 +67,8 @@ export function groupShaderDefsByCollection(
   return [
     {
       type: "section" as const,
-      title: "General",
-      options: leading,
+      title: t("General"),
+      options: leading.map(option => ({ ...option, label: t(option.label) })),
     },
     ...sections,
   ];
@@ -98,26 +101,48 @@ const ShaderColorField: React.FC<{
   label: string;
   value: string;
   onChange: (value: string) => void;
-}> = ({ label, value, onChange }) => (
+}> = ({ label, value, onChange }) => {
+  const t = useClipT();
+  return (
   <div className="flex items-center justify-between gap-2">
-    <Text type="supporting" color="secondary">
+    <span className="text-[12px] leading-5 text-fg-2 font-normal">
       {label}
-    </Text>
+    </span>
     <div className="flex max-w-[190px] items-center">
       <ColorSelector
         value={value}
         onChange={onChange}
-        label={`Select ${label.toLowerCase()}`}
+        label={t("Select {0}", [label])}
       />
     </div>
   </div>
 );
+};
 
-const ShaderNumberField: React.FC<{
+interface ShaderNumberFieldProps {
   param: MotionShaderParamDef;
   value: number;
   onChange: (value: number) => void;
-}> = ({ param, value, onChange }) => {
+}
+
+const ShaderNumberInput: React.FC<ShaderNumberFieldProps> = ({ param, value, onChange }) => {
+  const t = useClipT();
+  const id = useId();
+  const input = useNumericDraft({ value, onChange, min: param.min, max: param.max, step: param.step });
+  return (
+    <div className="min-w-0 space-y-1.5 w-full">
+      <Label htmlFor={id} className="block truncate text-[11px] font-medium leading-[1.4] text-text-secondary">{t(param.label)}</Label>
+      <div className="relative min-w-0">
+        <Input {...input} id={id} type="number" inputMode="decimal" min={param.min} max={param.max} step={param.step}
+          className="flex h-7 w-full min-w-0 rounded-[7px] border border-border bg-bg-1 px-2.5 py-1.5 font-mono text-[12px] font-medium tabular-nums text-fg-2 outline-none transition-colors placeholder:text-fg-muted focus:border-accent disabled:cursor-not-allowed disabled:opacity-50"
+        />
+      </div>
+    </div>
+  );
+};
+
+const ShaderNumberField: React.FC<ShaderNumberFieldProps> = ({ param, value, onChange }) =>
+  {
   const t = useClipT();
   return shaderParamUsesSlider(param) ? (
     <PropertySlider
@@ -134,27 +159,19 @@ const ShaderNumberField: React.FC<{
       }
     />
   ) : (
-    <ToolcraftNumberInputControl
-      label={t(param.label)}
-      size="sm"
-      width="100%"
-      value={value}
-      onChange={onChange}
-      min={param.min}
-      max={param.max}
-      step={param.step}
-    />
+    <ShaderNumberInput param={param} value={value} onChange={onChange} />
   );
 };
 
 export const ShaderParamFields: React.FC<{
+  historyKey: string;
   def: MotionShaderDef;
   params: Record<string, MotionShaderParamValue>;
   onChange: (name: string, value: MotionShaderParamValue) => void;
-}> = ({ def, params, onChange }) => {
+}> = ({ historyKey, def, params, onChange }) => {
   const t = useClipT();
   return (
-    <>
+  <>
     {def.params.map((param) =>
       param.type === "color" ? (
         <ShaderColorField
@@ -165,7 +182,7 @@ export const ShaderParamFields: React.FC<{
         />
       ) : (
         <ShaderNumberField
-          key={param.name}
+          key={`${historyKey}:${def.id}:${param.name}`}
           param={param}
           value={shaderNumberValue(params[param.name], param.default)}
           onChange={(value) => onChange(param.name, value)}

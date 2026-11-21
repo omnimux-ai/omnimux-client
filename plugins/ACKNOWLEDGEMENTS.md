@@ -19,11 +19,11 @@ OmniMux 的诞生与演进离不开全球开源社区与先锋项目的杰出贡
 ---
 
 ### 2. `omnimux-clip` (OpenReel 视频剪辑工坊)
-* **上游原始项目**：[Augani/openreel-video](https://github.com/Augani/openreel-video)
+* **上游原始项目**：[Augani/openreel-video v1.0.0](https://github.com/Augani/openreel-video/tree/v1.0.0)
 * **原始作者 / 维护团队**：Augani 及 OpenReel Contributors
 * **开源许可证**：[MIT License](https://opensource.org/licenses/MIT)
 * **在 OmniMux 中的定位与改造**：
-  * 遵循微应用引入契约（`docs/contracts/openreel-vendor-contract.md`），完整 Vendorize 官方前端全套源码（多轨时间轴、视口、资源库、属性检查器）至 `plugins/omnimux-clip/src/client/openreel/`；
+  * 引入官方编辑器及剪辑引擎，包括三栏工作区、多轨时间轴、属性检查器与素材库。[OpenReel 引入契约](docs/contracts/openreel-vendor-contract.md)
   * 封装 WebCodecs / WebGPU 导出管线，与 OmniMux 工作流画布实现 JSON 事件双向打通；
   * 映射官方 CSS 样式至 DSH `--dsw-*` 原生 Token 体系。
 * **致谢辞**：致敬 Augani 团队在 Web 端非线性视频编辑（NLE）与 WebCodecs 高性能渲染领域的开创性工作！

@@ -1,34 +1,40 @@
-import {
-  MediaImportService,
-  initializeMediaImportService,
-  WaveformGenerator,
-  getWaveformGenerator,
-} from "@openreel/core";
 import type {
+  MediaImportService,
+  WaveformGenerator,
   ProcessedMedia,
   WaveformData,
   MediaTrackInfo,
 } from "@openreel/core";
+import { backgroundTasks, type TrackContext } from "@openreel/core/tasks/task-registry";
 import { useProjectStore } from "../stores/project-store";
+import { loadEngineModules } from "../services/lazy-engines";
+import { toast } from "../stores/notification-store";
+import { thumbnailSizeFor } from "@openreel/core/media/interpretation";
+import { clipNow } from "../../../i18n/index.js";
+// Matches core's CODEC_UNSUPPORTED_WARNING (a value import would pull the core bundle into the initial chunk).
+const CODEC_UNSUPPORTED_PREFIX = "This browser cannot decode this video's codec";
+// Matches core's PRO_MEDIA_PROXY_PREFIX (pro media converted to a browser proxy).
+const PRO_MEDIA_PROXY_PREFIX = "Pro media proxy:";
+
+class ImportTaskFailure extends Error {
+  constructor(readonly result: MediaBridgeImportResult) {
+    super(result.error ?? "Import failed");
+  }
+}
 
 /**
  * Import progress callback type
  */
-export type ImportProgressCallback = (
+type ImportProgressCallback = (
   completed: number,
   total: number,
   currentFile: string,
 ) => void;
 
 /**
- * Waveform progress callback type
- */
-export type WaveformProgressCallback = (progress: number) => void;
-
-/**
  * Import result with additional UI-specific data
  */
-export interface MediaBridgeImportResult {
+interface MediaBridgeImportResult {
   /** Whether the import was successful */
   success: boolean;
   /** The processed media item if successful */
@@ -53,6 +59,7 @@ export class MediaBridge {
     file: File | Blob,
     count = 10,
     width = 160,
+    pixelAspect = 1,
   ): Promise<{ timestamp: number; dataUrl: string }[]> {
     if (typeof document === "undefined") {
       return [];
@@ -102,10 +109,8 @@ export class MediaBridge {
 
       const sourceWidth = video.videoWidth || width;
       const sourceHeight = video.videoHeight || Math.round(width * 9 / 16);
-      const height = Math.max(
-        1,
-        Math.round(width * (sourceHeight / Math.max(1, sourceWidth))),
-      );
+      // Stretch by the pixel aspect so anamorphic footage shows its display shape (PAR 1 = unchanged).
+      const { height } = thumbnailSizeFor(sourceWidth, sourceHeight, pixelAspect, width);
       const duration = Number.isFinite(video.duration) && video.duration > 0
         ? video.duration
         : 0;
@@ -162,8 +167,9 @@ export class MediaBridge {
 
     try {
       // Initialize the media import service
-      this.mediaImportService = await initializeMediaImportService();
-      this.waveformGenerator = getWaveformGenerator();
+      const engines = await loadEngineModules();
+      this.mediaImportService = await engines.initializeMediaImportService();
+      this.waveformGenerator = engines.getWaveformGenerator();
       this.initialized = true;
     } catch (error) {
       const errorMessage =
@@ -189,10 +195,49 @@ export class MediaBridge {
    * @param generateWaveform - Whether to generate waveform data (default: true)
    * @returns Import result with processed media or error
    */
-  async importFile(
+  importFile(
     file: File,
     generateWaveform = true,
     quickMode = false,
+    onProgress?: (stage: string) => void,
+    options: { untracked?: boolean; signal?: AbortSignal } = {},
+  ): Promise<MediaBridgeImportResult> {
+    // Callers that own a wider task (the project store's import action) pass `untracked`.
+    // Otherwise imports are reported to the task registry; a failed result is a failed task, never an exception.
+    const cancelled: MediaBridgeImportResult = { success: false, error: "Import cancelled", hasWaveform: false };
+    const withSignal = (signal: AbortSignal | undefined, stage?: (s: string) => void): Promise<MediaBridgeImportResult> => {
+      if (signal?.aborted) return Promise.resolve(cancelled);
+      const work = this.importFileUntracked(file, generateWaveform, quickMode, stage);
+      if (!signal) return work;
+      // The decode cannot be interrupted, so Cancel detaches from it: its result is discarded, never published.
+      return new Promise((resolve, reject) => {
+        const onAbort = () => resolve(cancelled);
+        signal.addEventListener("abort", onAbort, { once: true });
+        work.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+      });
+    };
+    if (options.untracked) return withSignal(options.signal, onProgress);
+    const run = (ctx: TrackContext): Promise<MediaBridgeImportResult> =>
+      withSignal(ctx.signal, (stage) => {
+        ctx.progress(null, stage);
+        onProgress?.(stage);
+      }).then((result) => {
+        if (!result.success && !ctx.signal.aborted) throw new ImportTaskFailure(result);
+        return result;
+      });
+    return backgroundTasks
+      .track({ kind: "import", source: "import", title: `Import \u00b7 ${file.name}` }, run)
+      .catch((error) => {
+        if (error instanceof ImportTaskFailure) return error.result;
+        throw error;
+      });
+  }
+
+  private async importFileUntracked(
+    file: File,
+    generateWaveform = true,
+    quickMode = false,
+    onProgress?: (stage: string) => void,
   ): Promise<MediaBridgeImportResult> {
     if (!this.initialized || !this.mediaImportService) {
       return {
@@ -213,6 +258,7 @@ export class MediaBridge {
         waveformSamplesPerSecond: 100,
         useFallback: true,
         quickMode,
+        onProgress,
       });
 
       if (!result.success || !result.media) {
@@ -232,6 +278,12 @@ export class MediaBridge {
           hasWaveform: false,
         };
       }
+
+      // No silent failure: say why this clip will not preview here instead of leaving a blank monitor.
+      const codecWarning = result.warnings?.find((warning) => warning.startsWith(CODEC_UNSUPPORTED_PREFIX));
+      if (codecWarning) toast.warning(clipNow()("This video can't be previewed here"), `${file.name}: ${codecWarning}`);
+      const proxyNotice = result.warnings?.find((warning) => warning.startsWith(PRO_MEDIA_PROXY_PREFIX));
+      if (proxyNotice) toast.info(clipNow()("Editing a browser proxy"), `${file.name}: ${proxyNotice.slice(PRO_MEDIA_PROXY_PREFIX.length).trim()}`);
 
       return {
         success: true,
@@ -255,7 +307,13 @@ export class MediaBridge {
   async generateThumbnailsForMedia(
     file: File | Blob,
     mediaType: "video" | "audio" | "image",
+    options: { pixelAspect?: number } = {},
   ): Promise<{ timestamp: number; dataUrl: string }[]> {
+    const pixelAspect = options.pixelAspect ?? 1;
+    if (mediaType === "video" && Math.abs(pixelAspect - 1) > 1e-6) {
+      // The import service draws at the stored aspect; non-square pixels need the stretching path.
+      return await this.generateVideoElementThumbnails(file, 10, 160, pixelAspect);
+    }
     if (!this.initialized || !this.mediaImportService) {
       return [];
     }
@@ -333,6 +391,7 @@ export class MediaBridge {
     file: File | Blob,
     mediaId: string,
     samplesPerSecond = 100,
+    options: { enableCaching?: boolean; signal?: AbortSignal } = {},
   ): Promise<WaveformData | null> {
     if (!this.initialized || !this.waveformGenerator) {
       return null;
@@ -342,7 +401,7 @@ export class MediaBridge {
       const waveformData = await this.waveformGenerator.generateWaveform(
         file,
         mediaId,
-        { samplesPerSecond, enableCaching: true },
+        { samplesPerSecond, enableCaching: true, ...options },
       );
 
       // Validate waveform data
@@ -353,6 +412,7 @@ export class MediaBridge {
 
       return waveformData;
     } catch (error) {
+      if (options.signal?.aborted) return null;
       console.error("MediaBridge: Waveform generation error:", error);
       return null;
     }

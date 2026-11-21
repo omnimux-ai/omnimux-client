@@ -1,4 +1,9 @@
-import React from "react";
+import { PrimaryAudioProperties } from "../PrimaryAudioProperties";
+import { EssentialSoundSection } from "../EssentialSoundSection";
+import { SurroundPanSection } from "../SurroundPanSection";
+import { AudioChannelsSection } from "../AudioChannelsSection";
+import React, { Suspense, lazy } from "react";
+import { getChannelLayout } from "@openreel/core";
 import { useProjectStore } from "../../../../stores/project-store";
 import {
   AutoCutSilenceSection,
@@ -6,12 +11,16 @@ import {
   NoiseReductionSection,
   AudioEffectsSection,
   AudioDuckingSection,
+  RepairSection,
 } from "../";
+import { VoiceOverPanel } from "../VoiceOverPanel";
 import { InspectorSection } from "../shell/InspectorSection";
-import { PropertySlider } from "../shell/PropertySlider";
 import { useClipT } from "../../../../../../i18n/index.js";
 
-export interface AudioTabProps {
+// The spectral editor (spectrogram, selection tools, worker client) loads when its section is first opened, never with the editor shell.
+const SpectralEditor = lazy(() => import("../../../audio-spectral/SpectralEditor"));
+
+interface AudioTabProps {
   clipId: string;
   clipType: string | null;
   showAudioEffects: boolean;
@@ -33,96 +42,100 @@ export const AudioTab: React.FC<AudioTabProps> = ({
       .find((candidate) => candidate.id === clipId),
   );
 
-  const updateAudio = React.useCallback(
-    (type: "audio/setVolume" | "audio/setFade", params: Record<string, unknown>) => {
-      void useProjectStore.getState().executeAction({
-        type,
-        id: crypto.randomUUID(),
-        timestamp: Date.now(),
-        params: { clipId, ...params },
-      });
-    },
-    [clipId],
-  );
+  const surround = useProjectStore((state) => getChannelLayout(state.project.settings) === "5.1");
 
   return (
     <>
       {showAudioEffects && clip && (
-        <InspectorSection title={t("Clip Audio")} sectionId="clip-audio" defaultOpen>
-          <div className="space-y-4">
-            <PropertySlider
-              label={t("Volume")}
-              value={clip.volume * 100}
-              onChange={(value) => updateAudio("audio/setVolume", { volume: value / 100 })}
-              min={0}
-              max={400}
-              step={1}
-              formatValue={(value) => `${Math.round(value)}%`}
-            />
-            <PropertySlider
-              label={t("Fade in")}
-              value={clip.fade?.fadeIn ?? 0}
-              onChange={(fadeIn) => updateAudio("audio/setFade", { fadeIn })}
-              min={0}
-              max={Math.max(0, clip.duration / 2)}
-              step={0.1}
-              formatValue={(value) => `${value.toFixed(1)}s`}
-            />
-            <PropertySlider
-              label={t("Fade out")}
-              value={clip.fade?.fadeOut ?? 0}
-              onChange={(fadeOut) => updateAudio("audio/setFade", { fadeOut })}
-              min={0}
-              max={Math.max(0, clip.duration / 2)}
-              step={0.1}
-              formatValue={(value) => `${value.toFixed(1)}s`}
-            />
-          </div>
+        <InspectorSection title={t("Essential Sound")} sectionId="essential-sound" defaultOpen>
+          <EssentialSoundSection clipIds={[clipId]} />
         </InspectorSection>
       )}
-      {showAudioEffects && (
-        <InspectorSection
-          title={t("Auto Cut Silence")}
-          sectionId="auto-cut-silence"
-          defaultOpen={false}
-        >
-          <AutoCutSilenceSection clipId={clipId} />
+      {showAudioEffects && clip && <PrimaryAudioProperties clipId={clipId} />}
+      {showAudioEffects && clip && (
+        <InspectorSection title={t("Audio channels")} sectionId="audio-channels" defaultOpen>
+          <AudioChannelsSection clipIds={[clipId]} />
         </InspectorSection>
       )}
-      {clipType === "audio" && (
-        <InspectorSection title={t("Beat Sync")} sectionId="beat-sync" defaultOpen={false}>
-          <AudioTextSyncPanel clipId={clipId} />
+      {showAudioEffects && clip && surround && (
+        <InspectorSection title={t("Surround pan")} sectionId="surround-pan" defaultOpen>
+          <SurroundPanSection clipId={clipId} />
         </InspectorSection>
       )}
-      {showAudioEffects && (
-        <InspectorSection
-          title={noiseReductionSectionTitle}
-          sectionId="background-noise-removal"
-          defaultOpen={Boolean(selectedNoiseReductionEffect)}
-        >
-          <NoiseReductionSection clipId={clipId} />
+      {showAudioEffects && clip && (
+        <InspectorSection title={t("Audio repair")} sectionId="audio-repair" defaultOpen>
+          <RepairSection clipId={clipId} />
         </InspectorSection>
       )}
-      {showAudioEffects && (
-        <>
+      {showAudioEffects && clip && (
+        <InspectorSection title={t("Spectral editing")} sectionId="spectral-editing" defaultOpen={false}>
+          <Suspense fallback={<p className="text-[11px] text-fg-muted">{t("Loading spectral editor…")}</p>}>
+            <SpectralEditor clipId={clipId} />
+          </Suspense>
+        </InspectorSection>
+      )}
+      <InspectorSection
+        title={t("Advanced audio tools")}
+        sectionId="advanced-audio"
+        sectionIds={[
+          "voice-over",
+          "auto-cut-silence",
+          "beat-sync",
+          "background-noise-removal",
+          "audio-effects",
+          "audio-ducking",
+        ]}
+        defaultOpen={false}
+      >
+        {showAudioEffects && (
+          <InspectorSection title={t("Voice Over")} sectionId="voice-over" defaultOpen={false}>
+            <VoiceOverPanel />
+          </InspectorSection>
+        )}
+        {showAudioEffects && (
           <InspectorSection
-            title={t("Audio Effects")}
-            sectionId="audio-effects"
+            title={t("Auto Cut Silence")}
+            sectionId="auto-cut-silence"
             defaultOpen={false}
           >
-            <AudioEffectsSection clipId={clipId} />
+            <AutoCutSilenceSection clipId={clipId} />
           </InspectorSection>
-        </>
-      )}
-      {showAudioEffects && (
-        <InspectorSection
-          title={t("Audio Ducking")}
-          sectionId="audio-ducking"
-          defaultOpen={false}
-        >
-          <AudioDuckingSection clipId={clipId} />
-        </InspectorSection>
-      )}
+        )}
+        {clipType === "audio" && (
+          <InspectorSection title={t("Beat Sync")} sectionId="beat-sync" defaultOpen={false}>
+            <AudioTextSyncPanel clipId={clipId} />
+          </InspectorSection>
+        )}
+        {showAudioEffects && (
+          <InspectorSection
+            title={noiseReductionSectionTitle}
+            sectionId="background-noise-removal"
+            defaultOpen={Boolean(selectedNoiseReductionEffect)}
+          >
+            <NoiseReductionSection clipId={clipId} />
+          </InspectorSection>
+        )}
+        {showAudioEffects && (
+          <>
+            <InspectorSection
+              title={t("Audio Effects")}
+              sectionId="audio-effects"
+              defaultOpen={false}
+            >
+              <AudioEffectsSection clipId={clipId} />
+            </InspectorSection>
+          </>
+        )}
+        {showAudioEffects && (
+          <InspectorSection
+            title={t("Audio Ducking")}
+            sectionId="audio-ducking"
+            defaultOpen={false}
+          >
+            <AudioDuckingSection clipId={clipId} />
+          </InspectorSection>
+        )}
+      </InspectorSection>
     </>
   );
 };

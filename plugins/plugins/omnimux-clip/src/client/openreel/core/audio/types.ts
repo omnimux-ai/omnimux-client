@@ -1,12 +1,4 @@
-import type { AutomationPoint, Effect } from "../types/timeline";
-
-export interface AudioWaveformData {
-  readonly peaks: Float32Array;
-  readonly rms: Float32Array;
-  readonly sampleRate: number;
-  readonly samplesPerPixel: number;
-  readonly duration: number;
-}
+import type { AutomationPoint, ClipFade, Effect } from "../types/timeline";
 
 export interface LoudnessMetrics {
   readonly integrated: number; // LUFS
@@ -26,10 +18,13 @@ export interface AudioTrackRenderInfo {
   readonly index: number;
   readonly muted: boolean;
   readonly solo: boolean;
+  /** Solo Safe: stays audible while other tracks are soloed. */
+  readonly soloSafe?: boolean;
   readonly clips: AudioClipRenderInfo[];
 }
 
 export interface AudioClipRenderInfo {
+  readonly compoundClipId?: string;
   readonly clipId: string;
   readonly mediaId: string;
   readonly sourceTime: number;
@@ -40,9 +35,20 @@ export interface AudioClipRenderInfo {
   readonly volume: number;
   readonly volumeAutomation: AutomationPoint[];
   readonly pan: number;
+  /** Time-varying pan lane (clip-relative seconds, -1..1); overrides `pan` once automated. */
+  readonly panAutomation?: AutomationPoint[];
+  /** Maintain audio pitch when `speed` != 1 (default true). */
+  readonly pitchCorrection?: boolean;
+  /** 5.1 sequences only: the clip's resolved surround position (clip, else track). */
+  readonly surroundPan?: import("./surround").SurroundPan;
+  /** Audio Channels mapping (clip, else the media's import preset); applied to the decoded source before anything else. */
+  readonly channelMap?: import("./channel-map").ClipChannelMap;
   readonly effects: Effect[];
   readonly fadeIn?: number;
   readonly fadeOut?: number;
+  readonly fadeOrigin?: ClipFade["origin"];
+  readonly transitionFadeIn?: number;
+  readonly transitionFadeOut?: number;
   readonly speed?: number;
   readonly reversed?: boolean;
   /** Zero-based index of the audio track within the source media file to use. */
@@ -55,14 +61,9 @@ export interface AudioChannelState {
   readonly pan: number;
   readonly muted: boolean;
   readonly solo: boolean;
+  readonly soloSafe?: boolean;
   readonly peakLevel: number;
   readonly rmsLevel: number;
-}
-
-export interface AudioEffectNodeConfig {
-  readonly type: string;
-  readonly params: Record<string, unknown>;
-  readonly enabled: boolean;
 }
 
 export interface RenderedAudio {

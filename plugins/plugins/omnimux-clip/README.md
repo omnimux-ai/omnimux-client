@@ -1,8 +1,8 @@
 # omnimux-clip
 
-OmniMux Clip / 视频剪辑。P1 主座是 `dsh-better-sidebar` Tab（`omnimux-clip:studio`），完整套用官方 OpenReel GUI + WebCodecs 管线（`src/client/openreel/`）。与画布只交换 JSON（Phase 3：`omnimux-clip-*` CustomEvent + Host HTTP `/omnimux-clip/api`）。左侧「新会话」下方入口现网不挂载（隐藏）；画布/Agent 仍可打开 Studio Tab。
+剪辑工坊在工作台标签页 `omnimux-clip:studio` 和画布合成节点内复用 OpenReel 编辑器与 WebCodecs 管线。OpenReel v1.0.0 提供三栏工作区。画布通过 `omnimux-clip-*` 事件交换工程状态，通过宿主 HTTP 保存编码后的 MP4 原始字节。[上游引入契约](../../docs/contracts/openreel-vendor-contract.md)
 
-Agent 面：`clip_get` / `clip_edit` / `clip_view` / `clip_snapshot` / `clip_diagnostics` / `clip_export`。判断层见插件内 `skills/clip-craft/SKILL.md`。失败抛 `ClipDomainError`，禁止 `{ ok: false }` 当成功值。
+Agent 可列出、创建和打开剪辑项目，还可以查询、编辑、预览、截图、诊断和导出。工具失败抛出 `ClipDomainError`。[工具清单](../../docs/contracts/plugin-agent-tools-inventory.md#37-omnimux-clipopenreel-视频剪辑工坊) · [剪辑技能](skills/clip-craft/SKILL.md)
 
 ## 身份
 
@@ -15,10 +15,14 @@ Agent 面：`clip_get` / `clip_edit` / `clip_view` / `clip_snapshot` / `clip_dia
 
 ## 本地验证
 
+从仓库根目录运行：
+
 ```sh
-npm install
-node scripts/build-client.mjs
-node --test src/*.test.js
+corepack pnpm install --frozen-lockfile
+corepack pnpm --dir plugins run build:all
+corepack pnpm --filter omnimux-clip test
+node --test plugins/plugins/omnimux-clip/tests/e2e/*.e2e.test.js
+node scripts/workspace-check.mjs --check
 ```
 
-合入前在隔离 worktree 完成相关自动化/静态检查与独立评审，通过 required CI/MQ；没有合入前独立 App/Host 环境。合入后才从 `main` 经正式同步入口物化 Dev，在 45120 用 ego-browser 与共享 `verify:live` 验收；按需追加 Electron 证据，不默认强杀 App。详见[插件 QA](../../docs/contracts/plugin-qa.md)与[开发环境合同](../../docs/contracts/dev-pipeline.md)。
+工作树浏览器验收使用候选构建，覆盖亮暗主题、展开菜单、窄屏、语言切换、旧工程、首个视频上轨和画布导出。文件写入测试单独验证 MP4 回填与宿主上传。合入后由桌面端按正式入口同步 Dev 并复核运行版本。[插件开发与交付](../../README.md#本地开发与交付)

@@ -6,20 +6,20 @@ import type { ProjectState } from "../project-store";
 type Get = StoreApi<ProjectState>["getState"];
 type Set = StoreApi<ProjectState>["setState"];
 
-export type MarkerSlice = Pick<
+type MarkerSlice = Pick<
   ProjectState,
-  "addMarker" | "removeMarker" | "updateMarker" | "getMarker" | "getMarkers"
+  "addMarker" | "removeMarker" | "updateMarker" | "getMarker" | "getMarkers" | "setClipMarkers"
 >;
 
 export function createMarkerSlice(set: Set, get: Get): MarkerSlice {
   return {
-    addMarker: async (time, label = "Marker", color = "#3b82f6") => {
+    addMarker: async (time, label = "Marker", color = "#3b82f6", extra) => {
       const { project, actionExecutor } = get();
       const action: Action = {
         type: "marker/add",
         id: uuidv4(),
         timestamp: Date.now(),
-        params: { time, label, color },
+        params: { time, label, color, ...extra },
       };
       const result = await actionExecutor.execute(action, project);
       if (result.success) {
@@ -50,6 +50,21 @@ export function createMarkerSlice(set: Set, get: Get): MarkerSlice {
         id: uuidv4(),
         timestamp: Date.now(),
         params: { markerId, updates },
+      };
+      const result = await actionExecutor.execute(action, project);
+      if (result.success) {
+        set({ project: { ...project, modifiedAt: Date.now() } });
+      }
+      return result;
+    },
+
+    setClipMarkers: async (target, markers) => {
+      const { project, actionExecutor } = get();
+      const action: Action = {
+        type: "clipmarker/set",
+        id: uuidv4(),
+        timestamp: Date.now(),
+        params: { ...target, markers },
       };
       const result = await actionExecutor.execute(action, project);
       if (result.success) {

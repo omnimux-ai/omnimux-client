@@ -1,12 +1,18 @@
+import { beginTimelineGestureStyle } from "./gesture-style";
+import { trackIdAtOffset } from "./track-hit-test";
+import { useTimelineTouchGesture, listenTimelineGesture } from "./touch-gestures";
+import { TimelineTouchMoveHandle } from "./TimelineTouchMoveHandle";
 import React, { useRef, useState, useEffect, useCallback } from "react";
-import { ToolcraftContextMenu as ContextMenu } from "@openreel/ui";
+import { flushSync } from "react-dom";
+import { ContextMenu, ContextMenuTrigger } from "@openreel/ui";
 import { Shapes, FileCode, Smile } from "@/icons/lucide-compat";
-import type { ShapeClip, SVGClip, StickerClip } from "@openreel/core";
-import { useGraphicsClipContextMenuItems } from "./GraphicsClipContextMenu";
+import type { ShapeClip, SVGClip, StickerClip, Track } from "@openreel/core";
+import { GraphicsClipContextMenu } from "./GraphicsClipContextMenu";
 import { calculateSnap } from "./utils";
 import { useProjectStore } from "../../../stores/project-store";
 import { useTimelineStore } from "../../../stores/timeline-store";
 import { useUIStore } from "../../../stores/ui-store";
+import { useClipT } from "../../../../../i18n/index.js";
 
 type GraphicClipUnion = ShapeClip | SVGClip | StickerClip;
 
@@ -16,24 +22,44 @@ interface ShapeClipComponentProps {
   isSelected: boolean;
   onSelect: (clipId: string, addToSelection: boolean) => void;
   onTrim: (clipId: string, edge: "left" | "right", newTime: number) => void;
-  onMoveClip: (clipId: string, newStartTime: number) => void;
+  onMoveClip: (
+    clipId: string,
+    newStartTime: number,
+    targetTrackId?: string,
+  ) => void | Promise<void>;
+  allTracks: Track[];
+  trackHeights: Map<string, number>;
+  rowHeights?: Map<string, number>;
+  timelineRef: React.RefObject<HTMLDivElement | null>;
+  trackTopInset?: number;
 }
 
-export const ShapeClipComponent: React.FC<ShapeClipComponentProps> = ({
+const ShapeClipComponentImpl: React.FC<ShapeClipComponentProps> = ({
   shapeClip,
   pixelsPerSecond,
   isSelected,
   onSelect,
   onTrim,
   onMoveClip,
+  allTracks,
+  trackHeights,
+  rowHeights,
+  timelineRef,
+  trackTopInset = 0,
 }) => {
+  const t = useClipT();
   const clipRef = useRef<HTMLDivElement>(null);
+  const touchGesture = useTimelineTouchGesture();
+  const locked = allTracks.find((track) => track.id === shapeClip.trackId)?.locked ?? false;
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState(0);
   const [isTrimming, setIsTrimming] = useState<"left" | "right" | null>(null);
   const historyGroupOpenRef = useRef(false);
-  const { snapSettings } = useUIStore();
-  const { playheadPosition } = useTimelineStore();
+  const moveGestureRef = useRef({ x: 0, y: 0, moved: false });
+  const pendingDropRef = useRef<{ time: number; targetTrackId?: string }>({
+    time: shapeClip.startTime,
+  });
+  const snapSettings = useUIStore((state) => state.snapSettings);
   const trimStartRef = useRef<{
     mouseX: number;
     startTime: number;
@@ -60,28 +86,33 @@ export const ShapeClipComponent: React.FC<ShapeClipComponentProps> = ({
   }, []);
 
   const handleMouseDown = (e: React.MouseEvent) => {
+    if (touchGesture.shouldIgnoreMouse(e) || locked) return false;
     if (e.button !== 0) return;
     if (isTrimming) return;
     e.stopPropagation();
 
-    const rect = clipRef.current?.getBoundingClientRect();
+    const rect = clipRef.current?.parentElement?.getBoundingClientRect();
     if (!rect) return;
 
-    const offsetX = e.clientX - rect.left;
+    const offsetX = e.clientX - rect.left - shapeClip.startTime * pixelsPerSecond;
     setDragOffset(offsetX);
-    setIsDragging(true);
+    moveGestureRef.current = { x: e.clientX, y: e.clientY, moved: false };
+    pendingDropRef.current = { time: shapeClip.startTime };
+    // Install the gesture listener before the first move can arrive.
+    flushSync(() => setIsDragging(true));
     beginTimingGesture("Move graphic clip");
     onSelect(shapeClip.id, e.shiftKey || e.metaKey || e.ctrlKey);
   };
 
   const handleClick = (e: React.MouseEvent) => {
+    if (touchGesture.consumeTap()) onSelect(shapeClip.id, e.shiftKey || e.metaKey || e.ctrlKey);
     // Selection is committed on mouse-down so drag gestures feel immediate.
     // Keep the resulting click from reaching the lane and clearing it.
     e.stopPropagation();
   };
 
   const handleTrimStart = (e: React.MouseEvent, edge: "left" | "right") => {
-    if (e.button !== 0) return;
+    if (touchGesture.shouldIgnoreMouse(e) || locked || e.button !== 0) return false;
     e.stopPropagation();
     e.preventDefault();
     setIsTrimming(edge);
@@ -91,47 +122,85 @@ export const ShapeClipComponent: React.FC<ShapeClipComponentProps> = ({
       startTime: shapeClip.startTime,
       duration: shapeClip.duration,
     };
-    document.body.style.cursor = "ew-resize";
-    document.body.style.userSelect = "none";
   };
 
   useEffect(() => {
     if (!isDragging) return;
 
     const handleMouseMove = (e: MouseEvent) => {
+      const gesture = moveGestureRef.current;
+      if (!gesture.moved && Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) < 3) return;
+      gesture.moved = true;
       const timelineElement = clipRef.current?.parentElement;
       if (!timelineElement) return;
 
       const rect = timelineElement.getBoundingClientRect();
       const x = e.clientX - rect.left - dragOffset;
       const rawTime = Math.max(0, x / pixelsPerSecond);
-      const allTracks = useProjectStore.getState().project.timeline.tracks;
       const dragSnapSettings = { ...snapSettings, snapToPlayhead: false };
       const snapResult = calculateSnap(
         rawTime,
         shapeClip.id,
         allTracks,
-        playheadPosition,
+        useTimelineStore.getState().playheadPosition,
         dragSnapSettings,
         pixelsPerSecond,
         shapeClip.duration,
       );
+      const timelineRect = timelineRef.current?.getBoundingClientRect();
+      const scrollTop = timelineRef.current?.scrollTop ?? 0;
+      let targetTrackId: string | undefined;
+      if (timelineRect) {
+        const mouseY = e.clientY - timelineRect.top + scrollTop - trackTopInset;
+        const hit = trackIdAtOffset(allTracks, rowHeights ?? trackHeights, mouseY);
+        const hovered = allTracks.find((track) => track.id === hit);
+        if (hovered && !hovered.locked && hovered.id !== shapeClip.trackId) targetTrackId = hovered.id;
+      }
+      pendingDropRef.current = { time: snapResult.time, targetTrackId };
       onMoveClip(shapeClip.id, snapResult.time);
     };
 
-    const handleMouseUp = () => {
+    const handleMouseUp = async () => {
+      if (!moveGestureRef.current.moved) {
+        setIsDragging(false);
+        endTimingGesture();
+        return;
+      }
+      const pending = pendingDropRef.current;
+      await onMoveClip(
+        shapeClip.id,
+        pending.time,
+        pending.targetTrackId ?? shapeClip.trackId,
+      );
       setIsDragging(false);
       endTimingGesture();
     };
 
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
+    const stopListening = listenTimelineGesture(touchGesture.pointerId, handleMouseMove, handleMouseUp, () => {
+      setIsDragging(false);
+      endTimingGesture();
+    });
 
     return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
+      stopListening();
     };
-  }, [isDragging, dragOffset, pixelsPerSecond, shapeClip.id, shapeClip.duration, onMoveClip, snapSettings, playheadPosition, endTimingGesture]);
+  }, [
+    isDragging,
+    touchGesture.pointerId,
+    dragOffset,
+    pixelsPerSecond,
+    shapeClip.id,
+    shapeClip.trackId,
+    shapeClip.duration,
+    onMoveClip,
+    snapSettings,
+    endTimingGesture,
+    timelineRef,
+    trackTopInset,
+    allTracks,
+    trackHeights,
+    rowHeights,
+  ]);
 
   useEffect(() => {
     if (!isTrimming) return;
@@ -163,18 +232,15 @@ export const ShapeClipComponent: React.FC<ShapeClipComponentProps> = ({
     const handleMouseUp = () => {
       setIsTrimming(null);
       endTimingGesture();
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
     };
 
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
+    const releaseStyle = beginTimelineGestureStyle(clipRef.current, { cursor: "ew-resize", userSelect: "none" });
+    const stopListening = listenTimelineGesture(touchGesture.pointerId, handleMouseMove, handleMouseUp, handleMouseUp, releaseStyle);
 
     return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
+      stopListening();
     };
-  }, [isTrimming, shapeClip.id, pixelsPerSecond, onTrim, endTimingGesture]);
+  }, [isTrimming, shapeClip.id, pixelsPerSecond, onTrim, endTimingGesture, touchGesture.pointerId]);
 
   const isShape = shapeClip.type === "shape";
   const isSticker = shapeClip.type === "sticker" || shapeClip.type === "emoji";
@@ -192,20 +258,24 @@ export const ShapeClipComponent: React.FC<ShapeClipComponentProps> = ({
 
   const isInteracting = isDragging || isTrimming;
   const clipType = isShape ? "shape" : isSticker ? (shapeClip.type === "emoji" ? "emoji" : "sticker") : "svg";
-  const contextMenuItems = useGraphicsClipContextMenuItems({
-    clip: shapeClip,
-    clipType,
-  });
+  const [contextMenuOpen, setContextMenuOpen] = useState(false);
 
   return (
-    <ContextMenu items={contextMenuItems} menuWidth={200} size="sm">
+    <ContextMenu onOpenChange={setContextMenuOpen}>
+      <ContextMenuTrigger asChild>
         <div
           ref={clipRef}
           role="button"
           tabIndex={0}
-          aria-label={`Select ${shapeLabel} clip`}
+          aria-label={t("Select {0} clip", [shapeLabel])}
           aria-pressed={isSelected}
+          data-locked={locked}
           onClick={handleClick}
+          data-timeline-clip
+          data-timeline-item-id={shapeClip.id}
+          data-clip-kind="graphic"
+          data-timeline-interacting={Boolean(isInteracting)}
+          onPointerDown={touchGesture.bodyPointerDown}
           onMouseDown={handleMouseDown}
           onKeyDown={(event) => {
             if (event.key !== "Enter" && event.key !== " ") return;
@@ -213,7 +283,7 @@ export const ShapeClipComponent: React.FC<ShapeClipComponentProps> = ({
             event.stopPropagation();
             onSelect(shapeClip.id, event.shiftKey || event.metaKey || event.ctrlKey);
           }}
-          className={`absolute top-1 bottom-1 rounded-lg overflow-hidden cursor-grab group ${
+          className={`absolute top-1 bottom-1 rounded-[4px] overflow-hidden cursor-grab group ${
             isDragging ? "cursor-grabbing opacity-75" : ""
           } ${
             isSelected
@@ -222,12 +292,17 @@ export const ShapeClipComponent: React.FC<ShapeClipComponentProps> = ({
           } bg-${colorClass}-500/20 border`}
           style={{
             transform: `translateX(${left}px)`,
-            width: `${Math.max(width, 40)}px`,
+            width: `max(1px, calc(${Math.max(width, 40)}px - var(--timeline-clip-inset, 0px) * 2))`,
+            marginLeft: "var(--timeline-clip-inset, 0px)",
             willChange: isInteracting ? 'transform, width' : 'auto',
             transition: isInteracting ? 'none' : 'opacity 150ms, box-shadow 150ms',
           }}
         >
+          {isSelected && !locked && <TimelineTouchMoveHandle label={t("Move graphic")} onPointerDown={(event) => touchGesture.start(event, handleMouseDown)} />}
           <div
+            data-timeline-trim="left"
+            aria-label={t("Trim start")}
+            onPointerDown={(event) => touchGesture.start(event, (e) => handleTrimStart(e, "left"))}
             className={`absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize z-20 flex items-center justify-center transition-opacity ${
               isSelected ? "opacity-100 bg-green-400" : `opacity-0 group-hover:opacity-100 hover:bg-${colorClass}-400/50`
             }`}
@@ -237,6 +312,9 @@ export const ShapeClipComponent: React.FC<ShapeClipComponentProps> = ({
             {isSelected && <div className="w-0.5 h-3 bg-green-900/60 rounded-full" />}
           </div>
           <div
+            data-timeline-trim="right"
+            aria-label={t("Trim end")}
+            onPointerDown={(event) => touchGesture.start(event, (e) => handleTrimStart(e, "right"))}
             className={`absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize z-20 flex items-center justify-center transition-opacity ${
               isSelected ? "opacity-100 bg-green-400" : `opacity-0 group-hover:opacity-100 hover:bg-${colorClass}-400/50`
             }`}
@@ -256,10 +334,11 @@ export const ShapeClipComponent: React.FC<ShapeClipComponentProps> = ({
               {shapeLabel}
             </span>
           </div>
-          {isSelected && (
-            <div className="absolute inset-0 border-2 border-green-400 rounded-lg pointer-events-none" />
-          )}
         </div>
+      </ContextMenuTrigger>
+      {contextMenuOpen && <GraphicsClipContextMenu clip={shapeClip} clipType={clipType} />}
     </ContextMenu>
   );
 };
+
+export const ShapeClipComponent = React.memo(ShapeClipComponentImpl);
