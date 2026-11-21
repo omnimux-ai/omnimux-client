@@ -646,6 +646,22 @@ describe('published package surface', () => {
     expect(main).toContain('dshVersion: currentDshVersion')
   })
 
+  it('schedules launch analytics after the interactive shell and renderer have completed startup', () => {
+    const main = readFileSync(new URL('src/main.ts', packageRoot), 'utf8')
+    const mount = main.indexOf('runtime.mountScheduled(),')
+    const rejectUnhealthy = main.indexOf("if ('failureReason' in rendererVerdict)", mount)
+    const complete = main.indexOf('lifecycleRecorder.completeStartup(startupStage, rendererReport)', rejectUnhealthy)
+    const failedStartup = main.indexOf('lifecycleRecorder.failStartup(', complete)
+    expect(mount).toBeGreaterThan(-1)
+    expect(rejectUnhealthy).toBeGreaterThan(mount)
+    expect(complete).toBeGreaterThan(rejectUnhealthy)
+    expect(failedStartup).toBeGreaterThan(complete)
+    expect(main.slice(complete, failedStartup)).toMatch(
+      /if \(!recoveryModeRequested && !safeModeRequested\) \{\s+setImmediate\(\(\) => \{\s+void desktopAnalytics\.reportLaunch\(installationIdentity,/u,
+    )
+    expect(main.match(/desktopAnalytics\.reportLaunch\(/gu)).toHaveLength(1)
+  })
+
   it('contributes per-Profile setup to the live official client with restart-safe completion', () => {
     const main = readFileSync(new URL('src/main.ts', packageRoot), 'utf8')
     const prepare = main.indexOf('let prepared = prepareDesktopProfile(')

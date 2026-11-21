@@ -656,13 +656,6 @@ async function start(): Promise<void> {
     userDataDir: app.getPath('userData'),
     logger: electronLogger,
   })
-  if (installationIdentity.isNew) {
-    void desktopAnalytics.reportFirstRun(installationId, {
-      appVersion,
-      platform: process.platform,
-      arch: process.arch,
-    })
-  }
   runtime = new ElectronDesktopRuntime(async target => {
     if (shutdown === undefined) {
       throw new Error('dsh-plugin-desktop: shutdown coordinator is not ready')
@@ -2061,6 +2054,15 @@ async function start(): Promise<void> {
       )
     }
     lifecycleRecorder.completeStartup(startupStage, rendererReport)
+    if (!recoveryModeRequested && !safeModeRequested) {
+      setImmediate(() => {
+        void desktopAnalytics.reportLaunch(installationIdentity, {
+          appVersion,
+          platform: process.platform,
+          osVersion: process.getSystemVersion(),
+        })
+      })
+    }
     const startupSummary = lifecycleRecorder.summarize()
     if (startupSummary !== undefined) {
       void desktopAnalytics.reportStartup(
