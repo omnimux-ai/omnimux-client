@@ -203,6 +203,7 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
   private updateCleanupTask: Promise<void> | undefined
   private rendererHealthGate: DesktopRendererHealthGate | undefined
   private rendererBootHealthy = false
+  private pendingLaunchReport: ((canReport: () => boolean) => Promise<boolean>) | undefined
   private profileCreateWindow: ProfileCreateWindow | undefined
   private restartRequest: Promise<void> | undefined
   private hostStoppedRecovery: Promise<void> | undefined
@@ -346,6 +347,7 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
         abortRendererBootMonitoring: cause => { this.rendererHealthGate?.stop(cause) },
         failRendererBoot: error => { this.failRendererBoot('renderer-failed', error) },
         canRecoverRenderer: () => this.rendererBootHealthy,
+        onLaunchSurfaceChanged: () => { this.scheduleLaunchReport() },
         rendererRecoveryCopy: () => rendererRecoveryCopy[this.currentLocale],
         logError: message => { this.logError(message) },
         mainWindowState: this.mainWindowState,
@@ -392,6 +394,28 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
       })
     }
     return this.mountTask
+  }
+
+  /** Arm the process-wide launch report after startup has completed successfully. */
+  reportLaunchWhenVisible(report: (canReport: () => boolean) => Promise<boolean>): void {
+    this.pendingLaunchReport = report
+    this.scheduleLaunchReport()
+  }
+
+  private scheduleLaunchReport(): void {
+    const report = this.pendingLaunchReport
+    if (report === undefined) return
+    const canReport = (): boolean => !this.quitting && this.rendererBootHealthy
+      && this.generation?.isLaunchSurfaceReady === true
+    setImmediate(() => {
+      if (this.pendingLaunchReport !== report || !canReport()) return
+      void report(canReport).then(attempted => {
+        if (attempted && this.pendingLaunchReport === report) this.pendingLaunchReport = undefined
+      }, () => {
+        if (this.pendingLaunchReport === report) this.pendingLaunchReport = undefined
+        this.logError('desktop-analytics: desktop_app_launch failed (reason=unexpected)')
+      })
+    })
   }
 
   /** @inheritdoc */

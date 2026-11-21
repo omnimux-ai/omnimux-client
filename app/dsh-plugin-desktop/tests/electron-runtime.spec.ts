@@ -1,4 +1,5 @@
-import { readFileSync, unlinkSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, unlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { Readable } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -6,6 +7,8 @@ import type { DesktopShellSpec } from '../src/runtime.ts'
 import { desktopTrayLabel } from '../src/tray-locale.ts'
 import { DESKTOP_FRAME_HEIGHT } from '../src/window-chrome.ts'
 import { DESKTOP_FILE_PICKER_CHANNEL } from '../src/native-file-picker-contract.ts'
+import { DesktopAnalyticsClient, FIRST_RUN_REPORTED_RELATIVE_PATH } from '../src/desktop-analytics.ts'
+import { getOrCreateDesktopInstallationIdentity } from '../src/desktop-installation-id.ts'
 
 const terminal = vi.hoisted(() => ({ open: vi.fn() }))
 const diagnostics = vi.hoisted(() => ({ export: vi.fn() }))
@@ -1867,6 +1870,114 @@ describe('Electron desktop runtime', () => {
     expect(window?.focus).toHaveBeenCalledOnce()
 
     await release()
+  })
+
+  it.each(['hidden', 'visible'] as const)('reports one launch when the healthy main window starts %s', async visibilityAtHealth => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const runtime = new ElectronDesktopRuntime(async () => {})
+    const release = runtime.schedule({ ...spec, mode: 'advanced' })
+    const userDataDir = mkdtempSync(join(tmpdir(), 'desktop-launch-visibility-'))
+    const marker = join(userDataDir, FIRST_RUN_REPORTED_RELATIVE_PATH)
+    const markersAtSend: Array<string | undefined> = []
+    const request = vi.fn(async (_url: string, _init: RequestInit) => {
+      markersAtSend.push(existsSync(marker) ? readFileSync(marker, 'utf8') : undefined)
+      return new Response(null, { status: 204 })
+    })
+    const analytics = new DesktopAnalyticsClient({
+      userDataDir,
+      endpoint: 'http://localhost:8077/api/send',
+      websiteId: '11111111-2222-4333-8444-555555555555',
+      disabled: false,
+      request,
+    })
+    const drain = () => new Promise<void>(resolve => { setImmediate(resolve) })
+
+    try {
+      const identity = await getOrCreateDesktopInstallationIdentity(userDataDir)
+      const boot = runtime.beginRendererBootMonitoring({ commitHealthy: async () => {} })
+      await runtime.mountScheduled()
+      const window = electron.browserWindows[0]!
+      window.isVisible.mockReturnValue(true)
+      window.hide.mockImplementation(() => { window.isVisible.mockReturnValue(false) })
+      window.show.mockImplementation(() => { window.isVisible.mockReturnValue(true) })
+      const close = electron.browserWindowOn.mock.calls.find(([event]) => event === 'close')?.[1]
+      const show = electron.browserWindowOn.mock.calls.find(([event]) => event === 'show')?.[1]
+      const closeEvent = { preventDefault: vi.fn() }
+      if (visibilityAtHealth === 'hidden') close(closeEvent)
+      runtime.reportRendererBoot({ status: 'healthy' })
+      await expect(boot).resolves.toEqual({ report: { status: 'healthy' } })
+      const report = vi.fn((canReport: () => boolean) => analytics.reportLaunch(identity, {
+        appVersion: PRODUCT_VERSION,
+        platform: 'darwin',
+        osVersion: '26.1.0',
+      }, canReport))
+      runtime.reportLaunchWhenVisible(report)
+      expect(report).not.toHaveBeenCalled()
+      await drain()
+
+      if (visibilityAtHealth === 'hidden') {
+        expect(closeEvent.preventDefault).toHaveBeenCalledOnce()
+        expect(window.isVisible()).toBe(false)
+        expect(report).not.toHaveBeenCalled()
+        expect(request).not.toHaveBeenCalled()
+        expect(existsSync(marker)).toBe(false)
+        window.show()
+        show()
+      }
+
+      await vi.waitFor(() => { expect(request).toHaveBeenCalledOnce() })
+      expect(await report.mock.results[0]?.value).toBe(true)
+      expect(markersAtSend).toEqual(['1\n'])
+      expect(JSON.parse(String(request.mock.calls[0]![1].body)).payload.data.is_first_launch).toBe(true)
+      close(closeEvent)
+      runtime.show()
+      show()
+      await drain()
+      expect(window.isVisible()).toBe(true)
+      expect(report).toHaveBeenCalledOnce()
+      expect(request).toHaveBeenCalledOnce()
+    } finally {
+      await release()
+      rmSync(userDataDir, { recursive: true, force: true })
+    }
+  })
+
+  it('waits for a replacement main window to be visible and healthy after the first is destroyed', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const runtime = new ElectronDesktopRuntime(async () => {})
+    const shell = { ...spec, mode: 'advanced' as const }
+    const release = runtime.schedule(shell)
+    const boot = runtime.beginRendererBootMonitoring({ commitHealthy: async () => {} })
+    await runtime.mountScheduled()
+    runtime.reportRendererBoot({ status: 'healthy' })
+    await boot
+
+    const window = electron.browserWindows[0]!
+    window.isVisible.mockReturnValue(true)
+    const report = vi.fn(async (_canReport: () => boolean) => true)
+    const drain = () => new Promise<void>(resolve => { setImmediate(resolve) })
+    runtime.reportLaunchWhenVisible(report)
+    window.isDestroyed.mockReturnValue(true)
+    await drain()
+    expect(report).not.toHaveBeenCalled()
+    await release()
+
+    const releaseReplacement = runtime.schedule(shell)
+    try {
+      await runtime.mountScheduled()
+      electron.browserWindows[1]!.isVisible.mockReturnValue(true)
+      runtime.show()
+      await drain()
+      expect(report).not.toHaveBeenCalled()
+      runtime.reportRendererBoot({ status: 'healthy' })
+      await drain()
+      expect(report).toHaveBeenCalledOnce()
+      expect(report.mock.calls[0]![0]()).toBe(true)
+    } finally {
+      await releaseReplacement()
+    }
   })
 
   it('shows privacy-safe macOS attention only while unfocused and clears it on notification click', async () => {

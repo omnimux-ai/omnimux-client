@@ -1,50 +1,50 @@
-/**
- * Lightweight, asynchronous, non-blocking telemetry client for Desktop lifecycle metrics.
- * Follows Umami wire event protocol against analytics.omnimux.ai.
- */
+/** Asynchronous Desktop lifecycle telemetry for the configured Umami collector. */
 
-import { existsSync } from 'node:fs'
-import { chmod, lstat, mkdir } from 'node:fs/promises'
+import { lstat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { performance } from 'node:perf_hooks'
-import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
+import { parseDesktopInstallationId, type DesktopInstallationIdentity } from './desktop-installation-id.ts'
 import type { DesktopLogger } from './desktop-logger.ts'
 import type { DesktopLifecycleSummary } from './lifecycle-events.ts'
 import { DEFAULT_ANALYTICS_HOSTNAME, DEFAULT_ANALYTICS_URL, DEFAULT_ANALYTICS_USER_AGENT, umamiEventRequest } from './umami-event.ts'
 
 export { DEFAULT_ANALYTICS_HOSTNAME, DEFAULT_ANALYTICS_URL, DEFAULT_ANALYTICS_USER_AGENT } from './umami-event.ts'
 
-export const DEFAULT_ANALYTICS_ENDPOINT = 'https://analytics.omnimux.ai/api/send'
-export const DEFAULT_ANALYTICS_WEBSITE_ID = 'dee7cef3-7da5-4a5b-8cc2-6381418d0303'
+export const DESKTOP_LAUNCH_TIMEOUT_MS = 3_000
 export const DEFAULT_ANALYTICS_TIMEOUT_MS = 5_000
 export const EXIT_ANALYTICS_TIMEOUT_MS = 1_500
 export const DEFAULT_HEARTBEAT_INTERVAL_MS = 60 * 60 * 1000
 
+// Keep the historical filename so an existing first-run marker still counts on upgrade.
 export const FIRST_RUN_REPORTED_RELATIVE_PATH = join('identity', 'first-run-reported')
 
-const PRIVATE_DIRECTORY_MODE = 0o700
+const DESKTOP_LAUNCH_EVENT = 'desktop_app_launch'
 const PRIVATE_FILE_MODE = 0o600
 
-export type AnalyticsFetchRequest = (url: string, init: RequestInit) => Promise<Response>
-
-export interface DesktopAnalyticsLogger {
-  debug?(message: string): void
-  error?(message: string): void
-}
+type AnalyticsFetchRequest = (url: string, init: RequestInit) => Promise<Response>
+type DesktopAnalyticsEvent = typeof DESKTOP_LAUNCH_EVENT | 'app-startup' | 'app-session'
+type DesktopAnalyticsLogger = Pick<DesktopLogger, 'info' | 'error'>
 
 export interface DesktopAnalyticsOptions {
   readonly endpoint?: string
   readonly websiteId?: string
-  readonly hostname?: string
-  readonly url?: string
-  readonly userAgent?: string
   readonly timeoutMs?: number
   readonly disabled?: boolean
   readonly userDataDir: string
-  readonly logger?: DesktopLogger | DesktopAnalyticsLogger
+  readonly logger?: DesktopAnalyticsLogger
   readonly request?: AnalyticsFetchRequest
-  readonly now?: () => Date
   readonly monotonicNow?: () => number
+}
+
+interface AnalyticsDestination {
+  readonly endpoint: string
+  readonly websiteId: string
+}
+
+interface DesktopLaunchAnalyticsData {
+  readonly appVersion: string
+  readonly platform: NodeJS.Platform
+  readonly osVersion: string
 }
 
 export interface DesktopStartupAnalyticsData {
@@ -74,82 +74,96 @@ export interface DesktopSessionAnalyticsData {
 }
 
 export class DesktopAnalyticsClient {
-  private readonly endpoint: string
-  private readonly websiteId: string
-  private readonly hostname: string
-  private readonly url: string
-  private readonly userAgent: string
+  private readonly destination: AnalyticsDestination | undefined
   private readonly defaultTimeoutMs: number
-  private readonly disabled: boolean
   private readonly userDataDir: string
-  private readonly logger: (DesktopLogger | DesktopAnalyticsLogger) | undefined
+  private readonly logger: DesktopAnalyticsLogger | undefined
   private readonly request: AnalyticsFetchRequest
-  private readonly now: () => Date
   private readonly monotonicNow: () => number
   private readonly sessionStartTime: number
   private heartbeatTimer: ReturnType<typeof setInterval> | undefined
+  private launchAttempted = false
+  private preparingLaunch = false
+  private firstLaunchClaim: boolean | undefined
   private sessionReported = false
 
   constructor(options: DesktopAnalyticsOptions) {
-    this.endpoint = options.endpoint
-      ?? process.env.OMNIMUX_ANALYTICS_ENDPOINT
-      ?? DEFAULT_ANALYTICS_ENDPOINT
-    this.websiteId = options.websiteId
-      ?? process.env.OMNIMUX_ANALYTICS_WEBSITE_ID
-      ?? DEFAULT_ANALYTICS_WEBSITE_ID
-    this.hostname = options.hostname ?? DEFAULT_ANALYTICS_HOSTNAME
-    this.url = options.url ?? DEFAULT_ANALYTICS_URL
-    this.userAgent = options.userAgent ?? DEFAULT_ANALYTICS_USER_AGENT
-    this.defaultTimeoutMs = options.timeoutMs ?? DEFAULT_ANALYTICS_TIMEOUT_MS
-    this.disabled = options.disabled
-      ?? (process.env.OMNIMUX_ANALYTICS_DISABLED === '1' || process.env.OMNIMUX_ANALYTICS_DISABLED === 'true')
-    this.userDataDir = options.userDataDir
     this.logger = options.logger
+    this.destination = this.configuredDestination(options)
+    this.defaultTimeoutMs = options.timeoutMs ?? DEFAULT_ANALYTICS_TIMEOUT_MS
+    this.userDataDir = options.userDataDir
     this.request = options.request ?? ((url, init) => globalThis.fetch(url, init))
-    this.now = options.now ?? (() => new Date())
     this.monotonicNow = options.monotonicNow ?? (() => performance.now())
     this.sessionStartTime = this.monotonicNow()
   }
 
-  private logDebug(message: string): void {
-    if (this.logger && 'debug' in this.logger && typeof this.logger.debug === 'function') {
-      this.logger.debug(message)
+  private configuredDestination(options: DesktopAnalyticsOptions): AnalyticsDestination | undefined {
+    const env = process.env
+    const disabled = options.disabled ?? (env.OMNIMUX_ANALYTICS_DISABLED === '1' || env.OMNIMUX_ANALYTICS_DISABLED === 'true')
+    if (disabled) return undefined
+    const endpoint = (options.endpoint ?? env.OMNIMUX_ANALYTICS_ENDPOINT)?.trim()
+    const websiteId = (options.websiteId ?? env.OMNIMUX_ANALYTICS_WEBSITE_ID)?.trim()
+    if (!endpoint && !websiteId) return undefined
+    const url = endpoint ? URL.parse(endpoint) : null
+    if (!websiteId || !url || !['https:', 'http:'].includes(url.protocol) || url.username || url.password) {
+      this.logger?.error('desktop-analytics: collector configuration is incomplete or invalid')
+      return undefined
     }
+    return { endpoint: url.href, websiteId }
   }
 
-  /**
-   * Report an app-first-run event only once per local installation identity.
-   */
-  async reportFirstRun(
-    installationId: string,
-    metadata: { appVersion: string; platform: string; arch: string },
-  ): Promise<void> {
-    if (this.disabled) return
-    const markerPath = join(this.userDataDir, FIRST_RUN_REPORTED_RELATIVE_PATH)
+  /** Return false while deferred. Once attempted, the launch is terminal even if sending fails. */
+  async reportLaunch(
+    identity: DesktopInstallationIdentity,
+    metadata: DesktopLaunchAnalyticsData,
+    canReport: () => boolean = () => true,
+  ): Promise<boolean> {
+    if (this.launchAttempted) return true
+    if (this.preparingLaunch || !canReport()) return false
+    const deviceId = parseDesktopInstallationId(identity.id)
+    if (deviceId === undefined) {
+      this.launchAttempted = true
+      this.logger?.error(`desktop-analytics: ${DESKTOP_LAUNCH_EVENT} failed (reason=identity)`)
+      return true
+    }
+
+    this.preparingLaunch = true
     try {
-      if (existsSync(markerPath)) return
+      // Keep the completed claim if the user hides the window during the write.
+      this.firstLaunchClaim ??= identity.isNew ? await this.claimFirstLaunch(canReport) : false
+    } catch {
+      this.launchAttempted = true
+      this.logger?.error(`desktop-analytics: ${DESKTOP_LAUNCH_EVENT} failed (reason=first-launch-marker)`)
+      return true
+    } finally {
+      this.preparingLaunch = false
+    }
+    if (this.firstLaunchClaim === undefined || !canReport()) return false
 
-      await this.sendEvent('app-first-run', {
-        installationId,
-        appVersion: metadata.appVersion,
-        platform: metadata.platform,
-        arch: metadata.arch,
-      })
+    this.launchAttempted = true
+    if (this.destination !== undefined) this.logger?.info(`desktop-analytics: ${DESKTOP_LAUNCH_EVENT} window-ready`)
+    await this.sendEvent(DESKTOP_LAUNCH_EVENT, {
+      is_first_launch: this.firstLaunchClaim,
+      app_version: metadata.appVersion,
+      os: metadata.platform,
+      os_version: metadata.osVersion,
+      device_id: deviceId,
+    }, DESKTOP_LAUNCH_TIMEOUT_MS)
+    return true
+  }
 
-      const dir = dirname(markerPath)
-      await mkdir(dir, { recursive: true, mode: PRIVATE_DIRECTORY_MODE })
-      await writeFileAtomic(markerPath, `${this.now().toISOString()}\n`, {
-        mode: PRIVATE_FILE_MODE,
-        dirMode: PRIVATE_DIRECTORY_MODE,
-      })
-      try {
-        const dirStat = await lstat(dir)
-        if (dirStat.isDirectory() && !dirStat.isSymbolicLink()) {
-          await chmod(dir, PRIVATE_DIRECTORY_MODE)
-        }
-      } catch {}
-    } catch (cause) {
-      this.logDebug(`desktop-analytics: failed to report app-first-run: ${cause instanceof Error ? cause.message : String(cause)}`)
+  private async claimFirstLaunch(canReport: () => boolean): Promise<boolean | undefined> {
+    const marker = join(this.userDataDir, FIRST_RUN_REPORTED_RELATIVE_PATH)
+    const directory = await lstat(dirname(marker))
+    if (!canReport()) return undefined
+    if (!directory.isDirectory()) throw new Error('Desktop identity directory is not an ordinary directory')
+    try {
+      // Exclusive creation never follows or replaces an existing marker.
+      await writeFile(marker, '1\n', { flag: 'wx', mode: PRIVATE_FILE_MODE })
+      return true
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false
+      throw error
     }
   }
 
@@ -157,52 +171,42 @@ export class DesktopAnalyticsClient {
    * Report application startup metrics (success or failure).
    */
   async reportStartup(data: DesktopStartupAnalyticsData): Promise<void> {
-    if (this.disabled) return
-    try {
-      await this.sendEvent('app-startup', {
-        appVersion: data.appVersion,
-        platform: data.platform,
-        arch: data.arch,
-        ...(data.finalStage ? { finalStage: data.finalStage } : {}),
-        ...(data.rendererStatus ? { rendererStatus: data.rendererStatus } : {}),
-        ...(typeof data.totalDurationMs === 'number' ? { totalDurationMs: data.totalDurationMs } : {}),
-        ...(typeof data.electronReadyMs === 'number' ? { electronReadyMs: data.electronReadyMs } : {}),
-        ...(typeof data.shellEnvironmentMs === 'number' ? { shellEnvironmentMs: data.shellEnvironmentMs } : {}),
-        ...(typeof data.runtimeBootstrapMs === 'number' ? { runtimeBootstrapMs: data.runtimeBootstrapMs } : {}),
-        ...(typeof data.profileSelectionMs === 'number' ? { profileSelectionMs: data.profileSelectionMs } : {}),
-        ...(typeof data.profileCompositionMs === 'number' ? { profileCompositionMs: data.profileCompositionMs } : {}),
-        ...(typeof data.hostBootMs === 'number' ? { hostBootMs: data.hostBootMs } : {}),
-        ...(typeof data.rendererStartupMs === 'number' ? { rendererStartupMs: data.rendererStartupMs } : {}),
-        ...(typeof data.healthCommitMs === 'number' ? { healthCommitMs: data.healthCommitMs } : {}),
-      })
-    } catch (cause) {
-      this.logDebug(`desktop-analytics: failed to report app-startup: ${cause instanceof Error ? cause.message : String(cause)}`)
-    }
+    await this.sendEvent('app-startup', {
+      appVersion: data.appVersion,
+      platform: data.platform,
+      arch: data.arch,
+      ...(data.finalStage ? { finalStage: data.finalStage } : {}),
+      ...(data.rendererStatus ? { rendererStatus: data.rendererStatus } : {}),
+      ...(typeof data.totalDurationMs === 'number' ? { totalDurationMs: data.totalDurationMs } : {}),
+      ...(typeof data.electronReadyMs === 'number' ? { electronReadyMs: data.electronReadyMs } : {}),
+      ...(typeof data.shellEnvironmentMs === 'number' ? { shellEnvironmentMs: data.shellEnvironmentMs } : {}),
+      ...(typeof data.runtimeBootstrapMs === 'number' ? { runtimeBootstrapMs: data.runtimeBootstrapMs } : {}),
+      ...(typeof data.profileSelectionMs === 'number' ? { profileSelectionMs: data.profileSelectionMs } : {}),
+      ...(typeof data.profileCompositionMs === 'number' ? { profileCompositionMs: data.profileCompositionMs } : {}),
+      ...(typeof data.hostBootMs === 'number' ? { hostBootMs: data.hostBootMs } : {}),
+      ...(typeof data.rendererStartupMs === 'number' ? { rendererStartupMs: data.rendererStartupMs } : {}),
+      ...(typeof data.healthCommitMs === 'number' ? { healthCommitMs: data.healthCommitMs } : {}),
+    })
   }
 
   /**
    * Report app session heartbeat or clean exit.
    */
   async reportSession(data: DesktopSessionAnalyticsData, timeoutMs = this.defaultTimeoutMs): Promise<void> {
-    if (this.disabled) return
-    try {
-      await this.sendEvent('app-session', {
-        durationMs: Math.max(0, Math.round(data.durationMs)),
-        cleanExit: data.cleanExit,
-        appVersion: data.appVersion,
-        platform: data.platform,
-        arch: data.arch,
-      }, timeoutMs)
-    } catch (cause) {
-      this.logDebug(`desktop-analytics: failed to report app-session: ${cause instanceof Error ? cause.message : String(cause)}`)
-    }
+    await this.sendEvent('app-session', {
+      durationMs: Math.max(0, Math.round(data.durationMs)),
+      cleanExit: data.cleanExit,
+      appVersion: data.appVersion,
+      platform: data.platform,
+      arch: data.arch,
+    }, timeoutMs)
   }
 
   /**
    * Start periodic session heartbeat.
    */
   startHeartbeat(metadata: { appVersion: string; platform: string; arch: string }, intervalMs = DEFAULT_HEARTBEAT_INTERVAL_MS): void {
-    if (this.disabled || this.heartbeatTimer !== undefined) return
+    if (this.destination === undefined || this.heartbeatTimer !== undefined) return
     this.heartbeatTimer = setInterval(() => {
       const elapsedMs = this.monotonicNow() - this.sessionStartTime
       void this.reportSession({
@@ -232,7 +236,7 @@ export class DesktopAnalyticsClient {
    * Report session exit during application shutdown with bounded timeout.
    */
   async reportSessionExit(metadata: { appVersion: string; platform: string; arch: string }): Promise<void> {
-    if (this.disabled || this.sessionReported) return
+    if (this.destination === undefined || this.sessionReported) return
     this.sessionReported = true
     this.stopHeartbeat()
     const elapsedMs = this.monotonicNow() - this.sessionStartTime
@@ -248,21 +252,35 @@ export class DesktopAnalyticsClient {
   /**
    * Core send logic with Umami headers and payload format.
    */
-  private async sendEvent(name: string, data: Record<string, unknown>, timeoutMs = this.defaultTimeoutMs): Promise<void> {
+  private async sendEvent(name: DesktopAnalyticsEvent, data: Record<string, unknown>, timeoutMs = this.defaultTimeoutMs): Promise<void> {
+    const destination = this.destination
+    if (destination === undefined) return
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeoutMs)
+    timer.unref()
+    const started = this.monotonicNow()
+    const elapsed = () => Math.round(this.monotonicNow() - started)
     try {
-      const response = await this.request(this.endpoint, umamiEventRequest({
-        website: this.websiteId,
-        hostname: this.hostname,
-        url: this.url,
-        name,
-        data,
-      }, this.userAgent, controller.signal))
-
+      const response = await this.request(destination.endpoint, {
+        ...umamiEventRequest({
+          website: destination.websiteId,
+          hostname: DEFAULT_ANALYTICS_HOSTNAME,
+          url: DEFAULT_ANALYTICS_URL,
+          name,
+          data,
+        }, DEFAULT_ANALYTICS_USER_AGENT, controller.signal),
+        credentials: 'omit',
+        redirect: 'manual',
+      })
+      await response.body?.cancel()
       if (!response.ok) {
-        this.logDebug(`desktop-analytics: endpoint responded with status ${response.status}`)
+        this.logger?.error(`desktop-analytics: ${name} failed (reason=http status=${response.status} durationMs=${elapsed()})`)
+      } else if (name === DESKTOP_LAUNCH_EVENT) {
+        this.logger?.info(`desktop-analytics: ${name} sent (status=${response.status} durationMs=${elapsed()})`)
       }
+    } catch {
+      const reason = controller.signal.aborted ? 'timeout' : 'network'
+      this.logger?.error(`desktop-analytics: ${name} failed (reason=${reason} durationMs=${elapsed()})`)
     } finally {
       clearTimeout(timer)
     }
