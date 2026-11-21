@@ -233,7 +233,7 @@ export function SkillsPanel({
       ) : (
         /* 单一分类网格 */
         filteredSkills.length > 0 ? (
-          <div className="omnimux-skills-grid" style={{ marginTop: '16px' }}>
+          <div className="omnimux-skills-grid omnimux-skills-grid--spaced">
             {filteredSkills.map((skill, idx) => (
               <SkillCard
                 key={skill.id}

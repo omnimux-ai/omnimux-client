@@ -193,7 +193,7 @@ export function SkillCard({ skill, t, onSelect, active = false, categoryTitle = 
             </svg>
             <span>{usesText}</span>
           </div>
-          <button /* exempt-ui01: 兼顾外部测试与快捷触发调用 */
+          <button /* exempt-ui01: session-guide 子树保持零 dsh-ui-kit 依赖；该按钮仅供快捷触发与外部测试 */
             type="button"
             className="omnimux-skill-card-btn"
             aria-label={`${t('skills.card.use', '使用 Skill')}：${title}`}
@@ -202,7 +202,6 @@ export function SkillCard({ skill, t, onSelect, active = false, categoryTitle = 
               e.stopPropagation()
               onSelect?.(skill)
             }}
-            style={{ position: 'absolute', opacity: 0, pointerEvents: 'none' }}
           >
             <span>{t('skills.card.use', '使用 Skill')}</span>
           </button>

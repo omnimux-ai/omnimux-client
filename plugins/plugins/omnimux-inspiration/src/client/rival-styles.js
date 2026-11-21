@@ -1220,6 +1220,10 @@ export const RIVAL_CSS = `
 /* 显示更多/收起：与正文同字号的前景色文本链接，X 官方交互形态。 */
 .omnimux-rival-timeline-expand {
   display: block;
+  width: auto;
+  height: auto;
+  min-width: 0;
+  min-height: 0;
   margin: 2px 0 0;
   padding: 0;
   border: 0;
@@ -1228,6 +1232,8 @@ export const RIVAL_CSS = `
   line-height: 21px;
   color: var(--dsw-alias-brand-primary, #1d9bf0);
   cursor: pointer;
+  justify-content: flex-start;
+  white-space: normal;
 }
 .omnimux-rival-timeline-expand:hover {
   text-decoration: underline;

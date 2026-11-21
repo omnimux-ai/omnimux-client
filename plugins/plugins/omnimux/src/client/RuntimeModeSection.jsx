@@ -434,11 +434,12 @@ function AgentPanel({ t, scope, value, busy, setBusy, error, setError, notice, s
         {agents.map((agent) => {
           const isSelected = selectedAgent === agent.id
           return (
-            <button
+            <Button
               key={agent.id}
-              type="button"
+              variant="ghost"
               className={`omx-agent-card ${isSelected ? 'selected' : ''} ${agent.installed ? '' : 'disabled'}`}
               disabled={!agent.installed}
+              aria-pressed={isSelected ? 'true' : 'false'}
               onClick={() => {
                 if (!agent.installed) return
                 setSelectedAgent(agent.id)
@@ -454,7 +455,7 @@ function AgentPanel({ t, scope, value, busy, setBusy, error, setError, notice, s
                   {agentStatusText(t, agent)}
                 </span>
               </span>
-            </button>
+            </Button>
           )
         })}
       </div>

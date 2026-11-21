@@ -15,7 +15,7 @@ const CSS = `
   gap: 22px; padding: 18px 8px 10px; box-sizing: border-box; text-align: center;
 }
 .omx-pcl__title {
-  margin: 8px 0 0; font-size: 22px; line-height: 30px; font-weight: 650;
+  margin: 8px 0 0; font-size: 24px; line-height: 32px; font-weight: 650;
   color: var(--dsw-alias-label-primary); letter-spacing: -0.01em;
   max-width: 520px;
 }
@@ -79,10 +79,12 @@ const CSS = `
 }
 .omx-pcl__manual {
   appearance: none; border: 0; background: transparent; cursor: pointer;
+  width: auto; height: auto; min-height: 0;
   padding: 0; margin: 0;
   font-size: 13px; line-height: 18px;
   color: var(--dsw-alias-label-secondary);
 }
+.omx-pcl__manual > span { display: contents; }
 .omx-pcl__manual:hover { color: var(--dsw-alias-label-primary); }
 .omx-pcl__manual:disabled { opacity: 0.55; cursor: not-allowed; }
 .omx-pcl__manual-em {
@@ -314,15 +316,16 @@ export function ProductCreateLinkModal({
               t('productPicker.create.submit')
             )}
           </Button>
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="sm"
             className="omx-pcl__manual"
             disabled={busy}
             onClick={handleManual}
           >
             {t('productPicker.create.manualBefore')}
             <span className="omx-pcl__manual-em">{t('productPicker.create.manualEm')}</span>
-          </button>
+          </Button>
         </div>
       </div>
     </ModalDialog>
