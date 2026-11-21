@@ -285,14 +285,21 @@ export function voicePreviewCandidateUrls(asset) {
  * the tile on a broken URL forever instead of falling back to its type icon.
  *
  * Empty rungs are dropped, so a catalog without thumbnails simply starts at the
- * original. A row with no cover at all yields an empty ladder and the caller
- * goes straight to its fallback.
+ * original. An image row with no cover still tries its own file through the Host
+ * (`which=media`); a non-image row with no picture at all yields an empty ladder
+ * and the caller goes straight to its clip.
  * @param {any} asset normalized cloud row (see `normalizeCloudAsset`)
  * @param {(id: string, which: 'media' | 'cover') => string} hostRoute
  * @returns {string[]}
  */
 export function coverLadderOf(asset, hostRoute) {
   const id = String(asset?.id ?? '')
+  // A non-image row without a cover has no picture to try: the Host's
+  // `which=cover` route is image-or-nothing and answers 404 for these rows, so
+  // the card would spend one failed request before handing over to its clip.
+  // Return an empty ladder immediately and let the clip be the face.
+  const pictureCover = String(asset?.coverUrl ?? '') !== '' || String(asset?.thumbUrl ?? '') !== ''
+  if (asset?.mediaType !== 'image' && asset?.hasCover !== true && !pictureCover) return []
   const lastRung = asset?.mediaType === 'image'
     ? hostRoute(id, 'media')
     : hostRoute(id, 'cover')

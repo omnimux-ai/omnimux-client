@@ -583,6 +583,11 @@ describe('coverLadderOf · 取图阶梯', () => {
     assert.deepEqual(ladder, ['/omnimux/assets/cloud/media?id=scene-3&which=media'])
     assert.equal(ladder.includes(''), false)
   })
+
+  it('无封面的非图片行不请求 which=cover，直接把画面交给片段', () => {
+    const ladder = coverLadderOf({ id: 'hook-1', mediaType: 'video', hasCover: false, thumbUrl: '', coverUrl: '' }, route)
+    assert.deepEqual(ladder, [])
+  })
 })
 
 describe('nextLadderStep · 失败后落到哪', () => {
@@ -612,6 +617,13 @@ describe('nextLadderStep · 失败后落到哪', () => {
     assert.deepEqual(
       nextLadderStep({ ladder, step: 2, mediaType: 'video', hasClip: false }),
       { kind: 'broken' },
+    )
+  })
+
+  it('空阶梯的无封面视频直接交给片段', () => {
+    assert.deepEqual(
+      nextLadderStep({ ladder: [], step: 0, mediaType: 'video', hasClip: true }),
+      { kind: 'hand-over-to-clip' },
     )
   })
 })

@@ -1287,6 +1287,15 @@ export const ASSETS_CSS = `
    一片空白，要么退化成类型图标，也就是用户看到的「灰底占位符」。有封面的卡片不适用
    这条规则，预览仍旧只在悬停时浮出。 */
 .omnimux-assets-cloud-preview--bare {
+  /* 没有封面的片段就是卡片门面，必须留在文档流里：它自己的宽高比撑开缩略图容器。
+     绝对定位只能覆盖在有图封面上，单独使用时父容器 height:auto + min-height:0 会塌成 0。 */
+  position: static;
+  inset: auto;
+  width: 100%;
+  height: auto;
+  display: block;
+  object-fit: cover;
+  background-color: var(--dsw-alias-bg-module-platform);
   opacity: 1;
 }
 .omnimux-assets-cloud-card:hover .omnimux-assets-cloud-preview,

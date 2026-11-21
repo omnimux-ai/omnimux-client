@@ -305,7 +305,8 @@ describe('Cloud video tile keeps its own frame and plays on hover', () => {
     assert.match(viewJsx, /\{showArt \? <CloudTileMedia asset=\{asset\} broken=\{broken\} onBroken=\{handleBroken\} hovering=\{hovering\} \/> : null\}/)
     // The one effect that turns the pointer state into playback.
     assert.match(viewJsx, /if \(hovering\) \{\n      void element\.play\(\)\.catch/)
-    assert.match(viewJsx, /element\.pause\(\)\n      element\.currentTime = 0\n    \}\n  \}, \[hovering\]\)/)
+    assert.match(viewJsx, /element\.pause\(\)/)
+    assert.match(viewJsx, /element\.currentTime = bareClip \? BARE_CLIP_FIRST_FRAME_SECONDS : 0/)
   })
 
   it('never points the image at a clip', () => {
@@ -322,7 +323,11 @@ describe('Cloud video tile keeps its own frame and plays on hover', () => {
     assert.match(viewJsx, /const bareClip = showClip && imageSrc === ''/)
     assert.match(viewJsx, /className=\{bareClip \? BARE_PREVIEW_CLASS : PREVIEW_CLASS\}/)
     assert.match(viewJsx, /preload=\{bareClip \? 'metadata' : 'none'\}/)
-    assert.match(ruleBody(ASSETS_CSS, '.omnimux-assets-cloud-preview--bare'), /opacity: 1/)
+    assert.match(viewJsx, /onLoadedMetadata=\{handleVideoLoadedMetadata\}/)
+    assert.match(viewJsx, /BARE_CLIP_FIRST_FRAME_SECONDS/)
+    const bareRule = ruleBody(ASSETS_CSS, '.omnimux-assets-cloud-preview--bare')
+    assert.match(bareRule, /position:\s*static/)
+    assert.match(bareRule, /opacity: 1/)
   })
 
   it('falls back to the type icon only when nothing is left to draw', () => {
