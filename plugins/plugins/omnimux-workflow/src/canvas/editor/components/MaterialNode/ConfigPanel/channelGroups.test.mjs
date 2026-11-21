@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   formatBillingLabel,
+  formatChannelGroupLabel,
   formatPriceChip,
   formatPriceLabel,
   directoryChannelGroups,
@@ -165,6 +166,14 @@ describe('Canvas ConfigPanel ChannelGroups', () => {
     assert.deepEqual(rowChannelGroups(rows, 'missing'), []);
     assert.deepEqual(normalizeDirectoryGroups([{ id: 'x', label: '标准版', enabled: true }]).map((g) => g.category), ['official']);
     assert.deepEqual(normalizeDirectoryGroups(undefined), []);
+  });
+
+  it('compacts long gateway channel labels for display without dropping short qualifiers', () => {
+    assert.equal(formatChannelGroupLabel('标准版（主流高品质专线）'), '标准版');
+    assert.equal(formatChannelGroupLabel('H3 文生创意（纯文字描述生成视频；480p/768p，最长 15 秒）'), 'H3 文生创意');
+    assert.equal(formatChannelGroupLabel('H3 数字人口播（人像图 + 口播音频，自动对口型；480p/768p，最长 15 秒）'), 'H3 数字人口播');
+    assert.equal(formatChannelGroupLabel('Claude Max（仅限CC）'), 'Claude Max（仅限CC）');
+    assert.equal(formatChannelGroupLabel(''), '');
   });
 
   it('derives the price chip and label from the real pricing fields', () => {

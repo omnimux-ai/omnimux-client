@@ -30,6 +30,7 @@ import {
 } from './modelPickerCandidates';
 import {
   formatBillingLabel,
+  formatChannelGroupLabel,
   formatPriceChip,
   formatPriceLabel,
   resolveModelChannelGroups,
@@ -166,6 +167,8 @@ const ChannelRow: React.FC<{
   const isAvailable = group.isAvailable !== false && group.enabled !== false;
   const isRowDisabled = disabled || !isAvailable;
   const isByok = isByokGroup(group);
+  const displayLabel = formatChannelGroupLabel(group.label);
+  const fullLabel = group.label && group.label !== displayLabel ? group.label : undefined;
   const mediaCapabilities = resolveGroupMediaCapabilities(group, modelOperations);
   // 价格芯片只在目录真的给了可比数字时出现：表达式/token 计费的线路照实显示目录的说明文字。
   const priceChip = !isByok && typeof group.pricing?.pointsEstimate === 'number'
@@ -193,11 +196,11 @@ const ChannelRow: React.FC<{
       }}
       className={`wf-cascade-row wf-cascade-channel-row ${checked && !isRowDisabled ? 'is-checked' : ''} ${isRowDisabled ? 'is-disabled' : ''}`}
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--wf-cascade-foreground)' }}>{group.label}</span>
+      <div className="wf-cascade-channel-row__content">
+        <div className="wf-cascade-channel-row__title" title={fullLabel} aria-label={fullLabel}>{displayLabel}</div>
+        <div className="wf-cascade-channel-row__meta">
           {priceLabel ? (
-            <span style={{ fontSize: 12, color: 'var(--wf-cascade-muted)' }}>
+            <span className="wf-cascade-channel-row__price">
               {priceLabel}
             </span>
           ) : null}
@@ -209,12 +212,12 @@ const ChannelRow: React.FC<{
           ))}
         </div>
         {group.badge ? (
-          <div style={{ fontSize: 11, color: 'var(--wf-cascade-muted)', lineHeight: 1.4 }}>
+          <div className="wf-cascade-channel-row__caption">
             {group.badge}
           </div>
         ) : null}
         {group.description ? (
-          <div style={{ fontSize: 11, color: 'var(--wf-cascade-muted)', lineHeight: 1.4 }}>
+          <div className="wf-cascade-channel-row__caption">
             {group.description}
           </div>
         ) : null}
@@ -697,9 +700,12 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
 
   const { modelId: triggerModelId } = parseModelAndGroup(activeModelId);
   const managedModelLabel = isManagedActiveModel ? options.find(item => item.id === activeModelId)?.label : undefined;
-  const managedGroupLabel = isManagedActiveModel ? activeChannelGroups.find(group => selectedGroupIds.includes(group.id))?.label : undefined;
+  const managedGroupLabelFull = isManagedActiveModel ? activeChannelGroups.find(group => selectedGroupIds.includes(group.id))?.label : undefined;
+  const managedGroupLabel = formatChannelGroupLabel(managedGroupLabelFull);
   const triggerDisplayText = managedModelLabel
     ? [managedModelLabel, managedGroupLabel].filter(Boolean).join(' · ') : triggerModelId || '待重新选择';
+  const triggerTitle = managedModelLabel
+    ? [managedModelLabel, managedGroupLabelFull].filter(Boolean).join(' · ') : triggerDisplayText;
 
   return (
     <>
@@ -711,7 +717,7 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
         disabled={execBusy}
         aria-haspopup="menu"
         aria-expanded={isOpen}
-        title={triggerDisplayText}
+        title={triggerTitle}
         onClick={() => setIsOpen((prev) => !prev)}
       >
         <ModelBrandIcon modelId={activeModelId} size={15} />

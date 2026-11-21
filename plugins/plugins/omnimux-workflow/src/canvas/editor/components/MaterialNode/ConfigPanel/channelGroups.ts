@@ -187,6 +187,32 @@ export function parseModelAndGroup(input?: string): { modelId: string; group: st
   };
 }
 
+/**
+ * Display-only compact name for a channel row / trigger.
+ *
+ * Gateway `usable_group` labels often append a parenthetical explanation
+ * ("H3 文生创意（纯文字描述生成视频；...）") to a short identity. That
+ * explanation is useful in the data but makes the three-column picker
+ * unreadable. Keep short qualifiers such as "仅限CC" intact; strip only
+ * trailing parenthetical descriptions. The full upstream label remains
+ * available through the row's title/aria surface.
+ */
+export function formatChannelGroupLabel(label?: string | null): string {
+  const text = typeof label === 'string' ? label.trim() : '';
+  if (!text) return '';
+  let compact = text;
+  let previous = '';
+  while (compact !== previous) {
+    previous = compact;
+    compact = compact.replace(/\s*[（(]([^（）()]*)[）)]\s*$/u, (whole, inner: string) => {
+      // Preserve short, meaningful qualifiers (e.g. "Claude Max（仅限CC）").
+      if (inner.trim().length <= 5) return whole;
+      return '';
+    }).trim();
+  }
+  return compact || text;
+}
+
 export interface RuntimeByokChannelSettings {
   runtimeMode?: 'official' | 'agent' | 'key';
   runtimeMediaProvider?: string;
