@@ -190,8 +190,8 @@ test('#3058 FE-02：Escape 先菜单后弹窗，弹窗事件与画布失选隔�
   assert.ok(deferIdx !== -1 && deferIdx < cancelIdx, '菜单让位判定必须先于 onCancel()');
   // 同一弹窗内 overlay 的 React keydown 兜底框内焦点，同样先让位菜单
   assert.match(modalSrc, /onKeyDown=/);
-  // CustomSelect：菜单 Escape 用 capture + stopPropagation，关菜单不连带关弹窗
-  assert.match(selectSrc, /addEventListener\('keydown',\s*handleKeyDown,\s*true\)/);
+  // CustomSelect：接入全局画布逐层关闭协调器（window capture 阶段关闭并阻断传播，关菜单不连带关弹窗或失选节点）
+  assert.match(selectSrc, /useCanvasDismissLayer\(/);
   assert.match(selectSrc, /e\.stopPropagation\(\)/);
   // 焦点恢复：宿主统一 closeVoicePicker 在微任务聚焦真实 trigger
   assert.match(configPanelSrc, /voiceTriggerRef/);

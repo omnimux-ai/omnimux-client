@@ -13,8 +13,8 @@
  * tokens it needs (same pattern as .wf-context-menu / --wcm-*).
  */
 
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode, RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import {
   AudioLines,
@@ -25,6 +25,7 @@ import {
   Type,
   Video,
 } from 'lucide-react';
+import { useCanvasDismissLayer } from '../utils/canvasDismissLayer.ts';
 
 export interface CanvasNodeActionMenuOption {
   key: string;
@@ -42,6 +43,7 @@ interface CanvasNodeActionMenuProps {
   onSelect: (key: string) => void;
   onClose: () => void;
   align?: 'start' | 'end';
+  anchorRef?: RefObject<HTMLElement | null>;
 }
 
 const MENU_WIDTH = 278;
@@ -91,6 +93,7 @@ const CanvasNodeActionMenu: React.FC<CanvasNodeActionMenuProps> = ({
   onSelect,
   onClose,
   align = 'start',
+  anchorRef,
 }) => {
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [position, setPosition] = useState<{ left: number; top: number; maxHeight: number }>({
@@ -114,29 +117,13 @@ const CanvasNodeActionMenu: React.FC<CanvasNodeActionMenuProps> = ({
     });
   }, [align, visible, x, y]);
 
-  useEffect(() => {
-    if (!visible) return;
-
-    const handlePointerDown = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        onClose();
-      }
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        onClose();
-      }
-    };
-
-    document.addEventListener('mousedown', handlePointerDown, true);
-    document.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown, true);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [onClose, visible]);
+  useCanvasDismissLayer({
+    open: visible,
+    containsTarget: (target) => Boolean(
+      menuRef.current?.contains(target) || anchorRef?.current?.contains(target),
+    ),
+    onDismiss: () => onClose(),
+  });
 
   const renderedOptions = useMemo(
     () =>

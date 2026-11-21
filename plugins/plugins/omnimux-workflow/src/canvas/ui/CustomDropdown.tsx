@@ -5,6 +5,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { useCanvasDismissLayer } from '../editor/utils/canvasDismissLayer.ts';
 
 export interface DropdownMenuItem {
   key: string;
@@ -49,34 +50,21 @@ export const CustomDropdown: React.FC<CustomDropdownProps> = ({
     setCoords({ top, bottom, left });
   }, [placement]);
 
+  useCanvasDismissLayer({
+    open,
+    containsTarget: (target) => Boolean(
+      triggerRef.current?.contains(target) || menuRef.current?.contains(target),
+    ),
+    onDismiss: () => setOpen(false),
+  });
+
   useEffect(() => {
     if (!open) return;
     updatePosition();
 
-    const handlePointerDown = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (
-        triggerRef.current?.contains(target) ||
-        menuRef.current?.contains(target)
-      ) {
-        return;
-      }
-      setOpen(false);
-    };
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setOpen(false);
-      }
-    };
-
-    window.addEventListener('mousedown', handlePointerDown, true);
-    window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('resize', updatePosition);
 
     return () => {
-      window.removeEventListener('mousedown', handlePointerDown, true);
-      window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('resize', updatePosition);
     };
   }, [open, updatePosition]);

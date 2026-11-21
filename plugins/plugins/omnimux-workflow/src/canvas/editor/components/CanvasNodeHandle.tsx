@@ -320,6 +320,7 @@ const CanvasNodeHandle: React.FC<CanvasNodeHandleProps> = ({
           options={options}
           onSelect={handleMenuSelect}
           onClose={() => setDropdownOpen(false)}
+          anchorRef={interactionSurfaceRef}
         />
       ) : null}
     </Handle>

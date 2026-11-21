@@ -1,6 +1,7 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { stopToolbarNativeEvent } from '../../toolbarPointerGuard';
+import { useCanvasDismissLayer } from '../../../utils/canvasDismissLayer.ts';
 import type { TagInfo } from '../types';
 import { useT } from '../../../../i18n';
 
@@ -45,26 +46,11 @@ export const TagFilterPopover: React.FC<TagFilterPopoverProps> = ({
     }
   };
 
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleClickOutside = (e: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
-        onClose();
-      }
-    };
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-
-    document.addEventListener('mousedown', handleClickOutside, true);
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside, true);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [isOpen, onClose]);
+  useCanvasDismissLayer({
+    open: Boolean(isOpen && anchorRect),
+    containsTarget: (target) => Boolean(popoverRef.current?.contains(target)),
+    onDismiss: () => onClose(),
+  });
 
   if (!isOpen || !anchorRect) return null;
 
