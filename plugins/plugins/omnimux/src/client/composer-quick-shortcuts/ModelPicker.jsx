@@ -14,6 +14,7 @@ const BRAND_SVGS = {
   google: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="currentColor"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="currentColor"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="currentColor"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="currentColor"/></svg>',
   dreamina: '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M 6.8 2 C 7 7 9 10 14 10.6 L 21 10.6 C 17.5 13 15 15.5 14.2 18.2 C 10 20.5 6.5 21.5 3 22 C 4.5 17 6 12 6.8 2 Z"/></svg>',
   nanobanana: '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 17.5a7.5 7.5 0 1 1 7.5-7.5 7.5 7.5 0 0 1-7.5 7.5zm0-11a3.5 3.5 0 1 0 3.5 3.5A3.5 3.5 0 0 0 12 8.5zm0 5a1.5 1.5 0 1 1 1.5-1.5 1.5 1.5 0 0 1-1.5 1.5z"/></svg>',
+  muse: '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="2" width="20" height="20" rx="4" fill="#8B5CF6"/><text x="12" y="16" text-anchor="middle" fill="white" font-size="10" font-weight="bold">M</text></svg>',
   seedream: '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><rect x="4.5" y="8" width="3.5" height="10" rx="1.75"/><rect x="10.25" y="4" width="3.5" height="16" rx="1.75"/><rect x="16" y="8" width="3.5" height="10" rx="1.75"/></svg>',
   alibaba: '<svg width="24" height="24" viewBox="0 0 24 25" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10.3746 20.1092L5.16567 20.1062C5.04656 20.1039 4.94147 20.0419 4.85439 19.9666L3.4196 17.4835C3.34553 17.3048 3.33903 17.2085 3.41084 17.0267C3.72813 16.3438 4.29864 15.6458 4.59266 14.9689C4.61142 14.9256 4.6427 14.888 4.62468 14.8358L2.04987 10.351C1.95954 10.1332 2.00132 10.0117 2.10016 9.81354C2.50302 9.0051 3.06378 8.21279 3.49091 7.41191C3.588 7.3194 3.70561 7.26697 3.84098 7.26092L6.30019 7.25764L8.95533 2.64194C9.04466 2.57237 9.12649 2.53632 9.24034 2.52598C10.1537 2.4438 11.1886 2.58825 12.1144 2.5285C12.239 2.56455 12.3501 2.63766 12.4245 2.74505L13.6708 4.88929L18.8415 4.89307C18.9691 4.90189 19.0967 4.95786 19.1773 5.05844C19.5929 5.85554 20.1662 6.64381 20.557 7.44595C20.6321 7.59997 20.6796 7.68543 20.6416 7.86718L19.3815 10.1385L21.9971 14.7338L22.0006 14.9778C21.598 15.7376 21.1793 16.5127 20.7322 17.2508C20.5875 17.4896 20.5097 17.7099 20.1914 17.7386C19.4285 17.8074 18.5632 17.6864 17.789 17.7361L17.7157 17.7631L15.0668 22.3473C14.9838 22.4277 14.9062 22.4622 14.7918 22.473C13.8893 22.5585 12.8563 22.406 11.9398 22.4733C11.8124 22.4637 11.6805 22.3863 11.608 22.2787L10.3746 20.109V20.1092ZM9.27862 7.76509L10.6266 5.38514L9.30339 3.03066L6.73458 7.50468L8.22017 10.1032L8.89002 10.1334L18.7864 10.1284L20.1527 7.76509H9.27862ZM6.57894 7.76509H3.87926L9.27862 17.2591H6.55392L5.22898 19.601C5.57454 19.6073 5.9216 19.5937 6.26741 19.6003C6.33297 19.6015 6.39378 19.6265 6.46509 19.6277C7.7565 19.6474 9.05242 19.6252 10.3416 19.6033L10.3806 19.5851L11.8482 17.0161L6.57894 7.76509ZM18.8152 14.8669H21.5024L18.9486 10.3883L15.9524 10.3964L10.6631 19.6013L12.0278 21.9684L17.428 12.4995L18.815 14.8666L18.8152 14.8669Z" fill="currentColor"/></svg>',
   minimax: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2.5" y="2.5" width="19" height="19" rx="4.5" stroke="currentColor" stroke-width="1.8"/><path d="M7 16.5V7.5L12 12.5L17 7.5V16.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
@@ -32,6 +33,7 @@ export function resolveModelBrand(modelId) {
   if (/(^wan|\bwan\b|wanxiang|万相|通义|alibaba)/i.test(id)) return 'alibaba';
   if (/(^minimax|\bminimax\b|hailuo|海螺)/i.test(id)) return 'minimax';
   if (/(^grok|\bgrok\b|xai)/i.test(id)) return 'grok';
+  if (/(^muse|\bmuse\b)/i.test(id)) return 'muse';
   return 'bytedance';
 }
 
@@ -76,55 +78,6 @@ export function publishSessionModel({ sessionId, auto, model }) {
     console.error('[omnimux:model-picker] 请求持久化会话模型失败:', err);
   }
 }
-
-/** 默认离线保底模型目录 */
-const DEFAULT_PRESET_MODELS = {
-  video: [
-    {
-      id: 'seedance-2-5',
-      name: 'seedance-2-5',
-      capsuleName: 'seedance-2-5',
-      subtitle: '',
-      pro: true,
-      icon: 'bytedance',
-    },
-    {
-      id: 'seedance-2-0',
-      name: 'seedance-2-0',
-      capsuleName: 'seedance-2-0',
-      subtitle: '',
-      pro: true,
-      icon: 'bytedance',
-    },
-    {
-      id: 'seedance-2-0-fast',
-      name: 'seedance-2-0-fast',
-      capsuleName: 'seedance-2-0-fast',
-      subtitle: '',
-      pro: true,
-      badge: { text: '高达43%折扣', type: 'purple' },
-      icon: 'bytedance',
-    },
-  ],
-  image: [
-    {
-      id: 'seedream-5-0-pro',
-      name: 'seedream-5-0-pro',
-      capsuleName: 'seedream-5-0-pro',
-      subtitle: '',
-      pro: true,
-      icon: 'seedream',
-    },
-    {
-      id: 'gpt-image-2.5',
-      name: 'gpt-image-2.5',
-      capsuleName: 'gpt-image-2.5',
-      subtitle: '',
-      pro: true,
-      icon: 'openai',
-    },
-  ],
-};
 
 /** 渲染立体三层层级模型图标 */
 export function ModelLayersIcon({ size = 16 }) {
@@ -201,6 +154,8 @@ function ModelPickerPanel({
   auto,
   selectedModel,
   modelsData,
+  catalogLoading,
+  catalogError,
   onToggleAuto,
   onSelectModel,
   onClose,
@@ -403,7 +358,7 @@ function ModelPickerPanel({
           })
         ) : (
           <div className="sh-model-empty" role="status">
-            当前没有可用模型
+            {catalogLoading ? '正在加载模型…' : (catalogError || '当前没有可用模型')}
           </div>
         )}
       </div>
@@ -466,7 +421,9 @@ export function ModelPicker({ sessionId }) {
     return null;
   });
 
-  const [modelsData, setModelsData] = useState(DEFAULT_PRESET_MODELS);
+  const [modelsData, setModelsData] = useState({ video: [], image: [] });
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState('');
 
   // 从中枢加载模型列表
   useEffect(() => {
@@ -476,6 +433,8 @@ export function ModelPicker({ sessionId }) {
         const res = await fetch('/omnimux/model-catalog');
         if (!res.ok) {
           console.error('[omnimux:model-picker] 加载模型目录网络错误:', res.status, res.statusText);
+          setCatalogError(`模型目录加载失败（${res.status}）`);
+          setCatalogLoading(false);
           return;
         }
         const payload = await res.json();
@@ -492,8 +451,10 @@ export function ModelPicker({ sessionId }) {
           if (!rawId || seenIds.has(rawId)) return null;
           seenIds.add(rawId);
 
-          const name = rawId;
-          const capsuleName = rawId;
+          const name = typeof row.label === 'string' && row.label.trim()
+            ? row.label.trim()
+            : (typeof row.name === 'string' && row.name.trim() ? row.name.trim() : rawId);
+          const capsuleName = name;
           return {
             id: rawId,
             name,
@@ -522,12 +483,14 @@ export function ModelPicker({ sessionId }) {
         }
 
         if (video.length > 0 || image.length > 0) {
-          const nextVideo = video.length > 0 ? video : DEFAULT_PRESET_MODELS.video;
-          const nextImage = image.length > 0 ? image : DEFAULT_PRESET_MODELS.image;
+          const nextVideo = video;
+          const nextImage = image;
           setModelsData({
             video: nextVideo,
             image: nextImage,
           });
+          setCatalogError('');
+          setCatalogLoading(false);
 
           // 如果已锁定的模型不再位于刷新后的 Catalog 中，自动重置为自动推荐模式
           setSelectedModel((currentSelected) => {
@@ -546,9 +509,14 @@ export function ModelPicker({ sessionId }) {
             }
             return currentSelected;
           });
+        } else {
+          setCatalogError('当前没有可用模型');
+          setCatalogLoading(false);
         }
       } catch (err) {
         console.error('[omnimux:model-picker] 加载或解析模型目录异常:', err);
+        setCatalogError('模型目录加载失败');
+        setCatalogLoading(false);
       }
     };
 
@@ -650,6 +618,8 @@ export function ModelPicker({ sessionId }) {
         auto={auto}
         selectedModel={selectedModel}
         modelsData={modelsData}
+        catalogLoading={catalogLoading}
+        catalogError={catalogError}
         onToggleAuto={handleToggleAuto}
         onSelectModel={handleSelectModel}
         onClose={() => setOpen(false)}

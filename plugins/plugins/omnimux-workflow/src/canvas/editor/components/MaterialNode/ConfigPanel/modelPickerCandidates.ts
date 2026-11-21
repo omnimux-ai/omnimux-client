@@ -31,6 +31,7 @@ export interface PickerCandidateGroup {
 // Presentation aliases only: these never contribute model candidates.
 const BRANDS: readonly [string, string, readonly string[]][] = [
   ['openai', 'OpenAI', ['openai', 'gpt', 'o1', 'o3', 'o4']],
+  ['seedream', 'Seedream', ['seedream']],
   ['bytedance', 'Seedance', ['bytedance', 'seed']],
   ['minimax', 'MiniMax', ['minimax', 'hailuo']],
   ['muse', 'Muse', ['muse']],
@@ -53,7 +54,7 @@ export function groupPickerCandidates(options: readonly PickerCandidate[]): Pick
   const groups = new Map<string, PickerCandidateGroup>();
   for (const row of options) {
     if (!row.id) continue;
-    const identity = row.family?.trim() || row.id;
+    const identity = row.familyLabel?.trim() || row.family?.trim() || row.id;
     const key = identity.toLowerCase();
     const known = BRANDS.find(([, , aliases]) => aliases.some((alias) => key === alias || key.startsWith(`${alias}-`)));
     const id = known?.[0] ?? identity;
