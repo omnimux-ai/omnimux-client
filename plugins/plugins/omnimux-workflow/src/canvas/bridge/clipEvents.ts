@@ -90,14 +90,23 @@ export interface CanvasClipBinding {
   projectId: string;
 }
 
+interface ClipUpstreamMedia {
+  path: string;
+  name: string;
+  url?: string;
+  sourceId?: string;
+  sourceVersion?: string;
+}
+
 export interface OpenClipEditorPayload extends CanvasClipBinding {
   source: 'canvas';
   nodeTitle?: string;
   draftSchema?: TimelineSchema;
+  draftRevision?: number;
   upstreamInputs?: {
-    videos: Array<{ path: string; name: string; durationMs?: number; url?: string }>;
-    audios: Array<{ path: string; name: string; durationMs?: number; url?: string }>;
-    images: Array<{ path: string; name: string; displayDurationMs?: number; url?: string }>;
+    videos: Array<ClipUpstreamMedia & { durationMs?: number }>;
+    audios: Array<ClipUpstreamMedia & { durationMs?: number }>;
+    images: Array<ClipUpstreamMedia & { displayDurationMs?: number }>;
     captions?: Array<{ text: string; startTimeMs: number; durationMs: number }>;
   };
   canvasConfig?: Partial<CanvasConfig>;
@@ -131,6 +140,8 @@ export interface VideoCompositionNodeData {
   projectId?: string;
   schemaVersion?: '1.0';
   schema?: TimelineSchema;
+  /** Latest Clip Host draft revision persisted for this project. */
+  draftRevision?: number;
   status: VideoCompositionStatus;
   renderProgress?: number;
   outputVideoUrl?: string;
@@ -159,6 +170,10 @@ export function isCanvasClipBinding(payload: unknown): payload is CanvasClipBind
   return typeof workspaceId === 'string' && /^ws_[A-Za-z0-9_-]{1,128}$/.test(workspaceId)
     && typeof nodeId === 'string' && /^[^\s/\\\x00-\x1f\x7f]{1,256}$/.test(nodeId)
     && isClipProjectId(projectId);
+}
+
+export function sameClipBinding(a: CanvasClipBinding | undefined, b: CanvasClipBinding): boolean {
+  return a?.workspaceId === b.workspaceId && a.nodeId === b.nodeId && a.projectId === b.projectId;
 }
 
 export function isSaveClipEditorPayload(payload: unknown): payload is SaveClipEditorPayload {

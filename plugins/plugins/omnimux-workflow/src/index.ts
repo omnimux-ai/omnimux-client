@@ -24,6 +24,7 @@ export const inject = ['tools', 'systemPrompt'];
  *   effect?: (fn: () => unknown, label?: string) => unknown,
  *   inject?: (deps: string[], callback: (inner: object) => void) => void,
  *   get?: (name: string) => unknown,
+ *   provide?: (name: string, value: unknown) => unknown,
  * }} ctx
  */
 export function apply(ctx: {
@@ -33,6 +34,7 @@ export function apply(ctx: {
   effect?: Parameters<typeof mountWorkflowHost>[0]['effect'];
   inject?: Parameters<typeof mountWorkflowHost>[0]['inject'];
   get?: Parameters<typeof mountWorkflowHost>[0]['get'];
+  provide?: Parameters<typeof mountWorkflowHost>[0]['provide'];
 }): void {
   mountWorkflowHost(ctx);
 }

@@ -13,6 +13,7 @@ import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { createClipDispatcher, registerClipRoutes } from './http/routes.js'
 import { ensureClipDirs, resolveClipPaths } from './paths.js'
+import { createNativeProject } from './store/nativeProject.js'
 
 const PROJECT_ID = 'clip_node_regression_1'
 const SAVE_EXPORT_URL = `/omnimux-clip/api/projects/${PROJECT_ID}/save-export`
@@ -141,20 +142,33 @@ test('旧 base64 JSON 通道保持兼容', async () => {
   }
 })
 
-test('原始字节上传仅对 save-export 生效，普通 PUT 仍走 JSON 且不写导出目录', async () => {
+test('普通工程 PUT 解析 JSON 并验证预期版本，导出目录保持空白', async () => {
   const { home, paths, handler } = mountRoutes()
   try {
-    const stream = request(
-      `/omnimux-clip/api/projects/${PROJECT_ID}`,
-      { 'content-type': 'application/octet-stream' },
-      [Buffer.from('{}')],
-    )
-    stream.method = 'PUT'
-    const res = fakeRes()
-    await handler(stream, res)
+    const id = 'clip_upload_regression'
+    const project = createNativeProject(id, 'PUT draft')
+    const put = async bytes => {
+      const stream = request(`/omnimux-clip/api/projects/${id}`, { 'content-type': 'application/octet-stream' }, [bytes])
+      stream.method = 'PUT'
+      const res = fakeRes()
+      await handler(stream, res)
+      return res.state
+    }
 
-    assert.equal(res.state.status, 200)
-    assert.equal(res.state.body.saved, true)
+    const binary = await put(Buffer.alloc(16, 7))
+    assert.equal(binary.status, 400)
+    assert.equal(binary.body.error, 'invalid-json')
+    const unversioned = await put(Buffer.from('{}'))
+    assert.equal(unversioned.status, 400)
+    assert.equal(unversioned.body.error, 'invalid-json')
+    assert.deepEqual(readdirSync(paths.projectsDir), [])
+
+    const saved = await put(Buffer.from(JSON.stringify({ project, expectedRevision: 0, revision: 1 })))
+    assert.equal(saved.status, 200)
+    assert.equal(saved.body.projectId, id)
+    assert.equal(saved.body.project.name, 'PUT draft')
+    assert.equal(saved.body.revision, 1)
+    assert.deepEqual(JSON.parse(readFileSync(join(paths.projectsDir, `${id}.json`), 'utf8')), saved.body)
     assert.deepEqual(readdirSync(paths.exportsDir), [])
     assert.deepEqual(readdirSync(paths.tmpDir), [])
   } finally {

@@ -12,6 +12,10 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { installCanvasClipEvents } from '../../bridge/canvasClipActions.ts';
+import { OMNIMUX_CLIP_SAVE } from '../../bridge/clipEvents.ts';
+import { sanitizeEdges, sanitizeNodes } from '../../bridge/persistSanitize.ts';
+import { planCanvasInputMutation } from '../../../shared/graph/canvasInputMutationGateway.ts';
 import {
   CLIP_EXPORT_ORIGIN,
   CLIP_EXPORT_SOURCE_HANDLE,
@@ -353,6 +357,7 @@ test('planClipExportDownstream：同一版本重复应用返回 null（不脏文
       origin: CLIP_EXPORT_ORIGIN,
       sourceCompositionNodeId: compositionNode.id,
       mediaUrl: revisionedMediaUrl,
+      outputRevision: revisionOne,
       thumbnailUrl: output.thumbnailPath,
       duration: 5,
       size: { width: 1920, height: 1080 },
@@ -396,9 +401,54 @@ test('planClipExportDownstream：携带旧 rev 的成片节点仍按 ?path= 复�
   );
 });
 
-test('videoComposition.tsx 把版本串存进节点数据并回填给 plan（两个 effect 不互相剥离 rev）', () => {
-  const source = readFileSync(sourcePath, 'utf8');
-  assert.match(source, /outputRevision: output\?\.revision/);
-  assert.match(source, /revision: nodeData\.outputRevision/);
-  assert.match(source, /nodeData\.outputRevision,/);
+test('两次手工导出更新同一成片与连线，重载后保留最新版本', () => {
+  const workspaceId = 'ws_export';
+  const projectId = 'clip_node_export';
+  const nodeId = compositionNode.id;
+  const target = new EventTarget();
+  let graph = { nodes: [{ ...compositionNode, data: { ...compositionNode.data, projectId } }], edges: [] };
+  const stop = installCanvasClipEvents({
+    workspaceId, target, defaultTitle: '视频合成', readGraph: () => graph,
+    updateNode(id, data) {
+      graph = { ...graph, nodes: graph.nodes.map(node => node.id === id ? { ...node, data: { ...node.data, ...data } } : node) };
+    },
+    applyMutation(mutation) {
+      const result = planCanvasInputMutation(graph, mutation);
+      assert.equal(result.status, 'allowed');
+      graph = { nodes: result.nodes, edges: result.edges };
+    },
+    onManualExport() {},
+  });
+  const save = (revision) => target.dispatchEvent(new CustomEvent(OMNIMUX_CLIP_SAVE, { detail: {
+    workspaceId, nodeId, projectId, output: { ...output, revision }, createDownstreamNode: true,
+  } }));
+  try {
+    save('100:10');
+    const firstOutput = graph.nodes.find(({ type }) => type === 'material');
+    assert.equal(firstOutput.data.mediaUrl, `${expectedMediaUrl}&rev=100%3A10`);
+    save('200:20');
+    const reopened = JSON.parse(JSON.stringify({
+      nodes: sanitizeNodes(graph.nodes, { workspaceId }), edges: sanitizeEdges(graph.edges),
+    }));
+    const [source, currentOutput] = reopened.nodes;
+    assert.equal(reopened.nodes.length, 2);
+    assert.equal(currentOutput.data.realPath, undefined);
+    assert.equal(source.data.outputRevision, '200:20');
+    assert.equal(source.data.outputVideoUrl, `${expectedMediaUrl}&rev=200%3A20`);
+    assert.equal(currentOutput.id, firstOutput.id);
+    assert.equal(currentOutput.data.outputRevision, source.data.outputRevision);
+    assert.equal(currentOutput.data.mediaUrl, source.data.outputVideoUrl);
+    assert.deepEqual(reopened.edges.map(({ source, target, sourceHandle, targetHandle }) => ({ source, target, sourceHandle, targetHandle })), [
+      drawableEdge(nodeId, currentOutput.id),
+    ]);
+    assert.equal(planWith([currentOutput], reopened.edges, {
+      output: { ...output, videoPath: source.data.outputVideoUrl, revision: source.data.outputRevision },
+      createIfMissing: false,
+    }), null);
+    const sourceCode = readFileSync(sourcePath, 'utf8');
+    assert.match(sourceCode, /revision: nodeData\.outputRevision/);
+    assert.match(sourceCode, /nodeData\.outputRevision,/);
+  } finally {
+    stop();
+  }
 });

@@ -1,8 +1,62 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { createWorkbenchContextMessage, mountWorkbenchContextInjector } from './context-injector.js'
+import { createWindowRegistry } from '../events/windows.js'
 
 describe('Workbench Context Injector', () => {
+  it('refreshes the authenticated Clip viewport before the first step, preserving canvas context on exit', async () => {
+    const windows = createWindowRegistry()
+    let now = 1000
+    let active = true
+    const byMode = mode => ({
+      schemaVersion: 1, sessionId: 's1', ok: true, capturedAt: now,
+      surface: { tabId: mode === 'standalone' ? 'omnimux-clip:studio' : 'omnimux-workflow:canvas', panelOpen: true },
+      view: { extra: { workspaceId: 'ws_fixture', ...(active ? { clip: {
+        mode, workspaceId: 'ws_fixture', nodeId: 'node_a', projectId: 'clip_a',
+        title: 'Timeline', revision: 4, durationSec: 3, playheadSec: 1.25,
+        selectedClips: [{ id: 'clip_1', trackId: 'video_1', name: 'Subtitle', startSec: 1, endSec: 2 }],
+        unlisted: 'file:///private/never-in-context.mp4',
+      } } : {}) } },
+    })
+    let mode = 'canvas'
+    let snapshots = 0
+    const credentials = windows.attachWindow({
+      isAuthenticated: () => true,
+      send(event) {
+        assert.equal(event.type, 'omnimux:viewport:refresh')
+        ++snapshots
+        const update = { ...byMode(mode), refreshId: event.payload.requestId }
+        void windows.updateWindowViewport(request, update)
+        return true
+      },
+    })
+    const request = { headers: { 'x-omnimux-window-proof': credentials.proof } }
+    const stale = byMode(mode)
+    assert.equal(await windows.updateWindowViewport(request, stale, id => id === 's1'), true)
+    let handler
+    mountWorkbenchContextInjector({ on(_event, callback) { handler = callback } }, {
+      mailbox: { getActiveView: () => ({ uiContext: stale }) }, hubEvents: windows,
+    })
+    const start = async () => {
+      ++now
+      const { messages } = await handler({ agent: { session: { id: 's1' } }, step: 1 }, async () => ({ kind: 'enter', messages: [] }))
+      return messages.map(message => message.content[0].text).join('\n')
+    }
+    const first = await start()
+    assert.match(first, /mode: canvas.*projectId: clip_a.*revision: 4.*playheadSec: 1\.25.*workspaceId: ws_fixture.*nodeId: node_a/)
+    assert.match(first, /selectedClips:.*Subtitle/)
+    assert.doesNotMatch(first, /never-in-context/)
+    mode = 'standalone'
+    assert.match(await start(), /mode: standalone.*projectId: clip_a/)
+    mode = 'canvas'
+    active = false
+    const afterExit = await start()
+    assert.match(afterExit, /workspace: ws_fixture/)
+    assert.doesNotMatch(afterExit, /clip_a|selectedClips/)
+    assert.equal(snapshots, 3)
+    credentials.dispose()
+  })
+
   it('creates native DSH context user message with correct snapshot structure', () => {
     const text = '<ui_context schema="1">\ntab: omnimux-assets:library\n</ui_context>'
     const msg = createWorkbenchContextMessage(text)

@@ -15,12 +15,14 @@
  *   so re-exporting refreshes the same node instead of adding a duplicate.
  */
 
+import { looksAbsolutePath, localFileMediaUrl, localFilePathFromUrl } from '../../../shared/localMedia.ts';
+
+export const VIDEO_COMPOSITION_NODE_WIDTH = 350;
 export const CLIP_EXPORT_SOURCE_HANDLE = 'out';
 export const CLIP_EXPORT_TARGET_HANDLE = 'in';
 export const CLIP_EXPORT_DOWNSTREAM_GAP = 80;
 export const CLIP_EXPORT_ORIGIN = 'clip_export';
-
-const LOCAL_FILE_MEDIA_URL = '/omnimux-workflow/api/local-file';
+export const CLIP_EXPORT_COPY_ORIGIN = 'clip_export_copy';
 
 /** Re-point an already-resolved local-file URL at a new content revision. */
 function withMediaRevision(url: string, token: string): string {
@@ -43,22 +45,12 @@ function withMediaRevision(url: string, token: string): string {
 export function clipExportMediaUrl(videoPath: string, revision?: string): string {
   if (!videoPath) return videoPath;
   const token = typeof revision === 'string' ? revision.trim() : '';
-  if (videoPath.includes('/api/local-file')) {
+  if (localFilePathFromUrl(videoPath)) {
     return token ? withMediaRevision(videoPath, token) : videoPath;
   }
-  if (!videoPath.startsWith('/')) return videoPath;
-  const base = `${LOCAL_FILE_MEDIA_URL}?path=${encodeURIComponent(videoPath)}`;
+  if (!looksAbsolutePath(videoPath)) return videoPath;
+  const base = localFileMediaUrl(videoPath);
   return token ? `${base}&rev=${encodeURIComponent(token)}` : base;
-}
-
-/** The `?path=` a local-file media URL points at, or null. */
-function mediaUrlPath(mediaUrl: unknown): string | null {
-  if (typeof mediaUrl !== 'string' || !mediaUrl.includes('/api/local-file')) return null;
-  try {
-    return new URL(mediaUrl, 'http://127.0.0.1').searchParams.get('path');
-  } catch {
-    return null;
-  }
 }
 
 export interface ClipExportOutput {
@@ -141,17 +133,17 @@ function existingDownstreamNode(
   videoPath: string,
   sourceNodeId: string,
 ): ClipExportGraphNode | undefined {
+  const owned = nodes.find(node => node.type === 'material' && node.data?.origin === CLIP_EXPORT_ORIGIN
+    && node.data.sourceCompositionNodeId === sourceNodeId);
+  if (owned) return owned;
   const mediaUrl = clipExportMediaUrl(videoPath);
+  const path = localFilePathFromUrl(videoPath) ?? videoPath;
   return nodes.find((node) => {
     if (node.type !== 'material') return false;
     const data = nodeDataOf(node);
-    if (data.origin === CLIP_EXPORT_ORIGIN && data.sourceCompositionNodeId === sourceNodeId) return true;
-    if (data.realPath === videoPath) return true;
-    // Compare the `?path=` itself, so a node carrying an older `rev` still
-    // resolves to the same file instead of spawning a duplicate 成片 node.
-    return data.mediaUrl === videoPath
-      || data.mediaUrl === mediaUrl
-      || mediaUrlPath(data.mediaUrl) === videoPath;
+    if (data.origin === CLIP_EXPORT_ORIGIN || data.origin === CLIP_EXPORT_COPY_ORIGIN) return false;
+    return data.realPath === path || data.mediaUrl === videoPath || data.mediaUrl === mediaUrl
+      || localFilePathFromUrl(data.mediaUrl) === path;
   });
 }
 
@@ -166,6 +158,7 @@ function desiredData(input: ClipExportDownstreamInput): Record<string, unknown> 
     sourceCompositionNodeId: input.sourceNodeId,
     realPath: videoPath,
     mediaUrl: clipExportMediaUrl(videoPath, input.output.revision),
+    outputRevision: input.output.revision,
     thumbnailUrl: input.output.thumbnailPath,
     duration: input.output.durationMs ? Math.round(input.output.durationMs / 1000) : undefined,
     size: {
@@ -182,7 +175,7 @@ function desiredData(input: ClipExportDownstreamInput): Record<string, unknown> 
  */
 function reuseRefresh(desired: Record<string, unknown>): Record<string, unknown> {
   const refresh: Record<string, unknown> = {};
-  for (const key of ['materialType', 'label', 'status', 'selectedTool', 'origin', 'sourceCompositionNodeId', 'mediaUrl', 'thumbnailUrl', 'duration', 'size']) {
+  for (const key of ['materialType', 'label', 'status', 'selectedTool', 'origin', 'sourceCompositionNodeId', 'mediaUrl', 'outputRevision', 'thumbnailUrl', 'duration', 'size']) {
     if (desired[key] !== undefined) refresh[key] = desired[key];
   }
   return refresh;

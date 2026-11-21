@@ -3,6 +3,7 @@ import { OpenReelStudioTab } from './OpenReelStudioTab.jsx'
 import { createStageStore } from './stage-store.js'
 import { createAndMountCanvasBridge } from './CanvasBridge.js'
 import { ClipStage } from './ClipStage.jsx'
+import { createClipRuntime } from './live/runtime.js'
 
 export const name = 'omnimux-clip'
 export const inject = ['slots', 'locale']
@@ -26,6 +27,14 @@ const zh = {
   'tab.saved': '已保存',
   'tab.saving': '保存中…',
   'tab.saveFailed': '保存失败',
+  'tab.opening': '正在打开剪辑项目…',
+  'tab.openFailed': '无法打开剪辑项目',
+  'tab.retry': '重试',
+  'tab.offline': '本地草稿已暂存（离线）',
+  'tab.conflictTitle': '本地草稿与已保存版本不同',
+  'tab.keepLocal': '保留本地草稿并保存',
+  'tab.useSaved': '采用最新保存版本',
+  'tab.saveCopy': '将本地草稿另存为新工程',
   'tab.saveToNode': '保存草稿至节点',
   'tab.savedToNode': '已保存至节点',
   'tab.canvasMode': '创作画布联动模式',
@@ -51,6 +60,14 @@ const en = {
   'tab.saved': 'Saved',
   'tab.saving': 'Saving…',
   'tab.saveFailed': 'Save failed',
+  'tab.opening': 'Opening clip project…',
+  'tab.openFailed': 'Could not open clip project',
+  'tab.retry': 'Try again',
+  'tab.offline': 'Draft saved locally (offline)',
+  'tab.conflictTitle': 'Your local draft differs from the saved version',
+  'tab.keepLocal': 'Keep and save local draft',
+  'tab.useSaved': 'Use latest saved version',
+  'tab.saveCopy': 'Save local draft as a new project',
   'tab.saveToNode': 'Save draft to node',
   'tab.savedToNode': 'Saved to node',
   'tab.canvasMode': 'Creative Canvas Link Mode',
@@ -115,10 +132,14 @@ export function apply(ctx) {
     : (key) => zh[key] || key
 
   const stage = createStageStore(() => window.__omnimuxStage)
-  const stageFace = () => ({ t, stage, locale: ctx.locale })
+  const runtime = typeof window !== 'undefined' ? createClipRuntime(window, stage) : undefined
+  const stageFace = () => ({ t, stage, runtime, locale: ctx.locale })
 
   if (typeof ctx.effect === 'function') {
-    ctx.effect(() => () => stage.dispose?.(), 'omnimux-clip: stage store')
+    ctx.effect(() => () => {
+      runtime?.dispose()
+      stage.dispose?.()
+    }, 'omnimux-clip: editor session')
   }
 
   // Mount Canvas Bridge to connect canvas workflow with stage
@@ -153,7 +174,7 @@ export function apply(ctx) {
       order: 10,
       hidden: false,
       single: true,
-      component: (props) => createElement(OpenReelStudioTab, { ...props, t, locale: ctx.locale }),
+      component: (props) => createElement(OpenReelStudioTab, { ...props, t, runtime, locale: ctx.locale }),
     })
   }
 

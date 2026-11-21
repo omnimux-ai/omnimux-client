@@ -26,12 +26,20 @@ import { buildAttachedContextBlock } from '../attachments/prompt-assembly.ts'
 
 /** @type {Map<string, () => ({ view?: object, selection?: Array<object> } | null | undefined)>} */
 const contextContributors = new Map()
+const mergedContextContributors = new Map()
 
-export function registerContextContributor(tabId, contributor) {
+export function registerContextContributor(tabId, contributor, { merge = false } = {}) {
   if (!tabId || typeof contributor !== 'function') return () => {}
-  contextContributors.set(tabId, contributor)
+  if (!merge) {
+    contextContributors.set(tabId, contributor)
+    return () => { if (contextContributors.get(tabId) === contributor) contextContributors.delete(tabId) }
+  }
+  const contributions = mergedContextContributors.get(tabId) ?? new Set()
+  mergedContextContributors.set(tabId, contributions)
+  contributions.add(contributor)
   return () => {
-    contextContributors.delete(tabId)
+    contributions.delete(contributor)
+    if (!contributions.size && mergedContextContributors.get(tabId) === contributions) mergedContextContributors.delete(tabId)
   }
 }
 
@@ -41,6 +49,7 @@ export function unregisterContextContributor(tabId) {
 
 export function resetWorkbenchContextContributors() {
   contextContributors.clear()
+  mergedContextContributors.clear()
 }
 
 /**
@@ -65,26 +74,35 @@ export function describeOpenTab(tab) {
   return { id, type, title, kind }
 }
 
-/**
- * @returns {import('../../workbench/contract.js').WorkbenchEnvelope}
- */
-export function getUiContext() {
-  const service = getWorkbenchService()
-  const snap = service?.getSnapshot?.()
+function readActiveSurface() {
+  const snap = getWorkbenchService()?.getSnapshot?.()
   const state = snapshotState(snap)
   const native = getWorkbenchSidebarRight()
   const hasNative = typeof native?.active === 'function' && typeof native?.isExpanded === 'function'
   const current = currentSessionId()
-  // The native controller addresses only the currently mounted session.
   const nativeTab = hasNative && current ? native.active() : null
-  const activeTab = hasNative ? nativeTab?.kind : activeTabId(state)
+  const tabId = hasNative ? nativeTab?.kind : activeTabId(state)
   const panelOpen = hasNative ? Boolean(current && nativeTab && native.isExpanded()) : Boolean(state?.panelOpen)
+  const sessionId = current || (!hasNative && snap?.sessionId) || 'default'
+  return { state, hasNative, nativeTab, tabId, panelOpen, sessionId }
+}
+
+/** Read the official active Tab without calling domain contributors. */
+export function getActiveSurface() {
+  const { nativeTab, tabId, panelOpen, sessionId } = readActiveSurface()
+  return { tabId, instanceId: nativeTab?.id, panelOpen, sessionId }
+}
+
+/**
+ * @returns {import('../../workbench/contract.js').WorkbenchEnvelope}
+ */
+export function getUiContext() {
+  const { state, hasNative, nativeTab, sessionId, tabId: activeTab, panelOpen } = readActiveSurface()
   const focus = getWorkbenchFocus()
   const conversationCollapsed = Boolean(getConversationCollapsed())
   const openedTabs = hasNative
     ? [describeOpenTab(nativeTab && { id: nativeTab.id, type: nativeTab.kind, title: nativeTab.title })].filter(Boolean)
     : listOpenTabs(state).map(describeOpenTab).filter(Boolean)
-  const sessionId = current || (!hasNative && snap?.sessionId) || 'default'
   const activeDesc = hasNative ? openedTabs[0] : openedTabs.find((t) => t.id === activeTab)
     || (activeTab ? describeOpenTab({ id: activeTab, type: activeTab }) : null)
 
@@ -109,14 +127,18 @@ export function getUiContext() {
     reason = 'panel-collapsed'
   } else if (activeTab) {
     reason = 'ok'
-    const contributor = contextContributors.get(activeTab)
-    if (typeof contributor === 'function') {
+    const primary = contextContributors.get(activeTab)
+    const contributors = [primary, ...(mergedContextContributors.get(activeTab) ?? [])].filter(Boolean)
+    for (const contributor of contributors) {
       try {
         const res = contributor()
-        if (res) {
-          view = res.view || null
-          selection = Array.isArray(res.selection) ? res.selection : []
+        if (!res) continue
+        if (res.view) {
+          view = view
+            ? { ...view, ...res.view, extra: { ...view.extra, ...res.view.extra } }
+            : res.view
         }
+        if (Array.isArray(res.selection)) selection = res.selection
       } catch (err) {
         console.error('[workbench] contributor error:', err)
         reason = 'unavailable'

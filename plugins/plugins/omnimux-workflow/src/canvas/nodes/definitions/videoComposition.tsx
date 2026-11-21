@@ -1,19 +1,17 @@
 /**
  * video_composition — canvas Launcher Card for omnimux-clip.
  *
- * The node itself is a 350×440 proxy. Opening the editor dispatches
- * `omnimux-clip-open`; save/progress/close events write back into node data.
+ * The card and workbench navigation share the launcher, and the canvas root owns Clip replies.
  * Canvas MUST NOT import omnimux-clip source (spec §2).
  *
  * 表现层（T4 拉齐 MaterialNode 规范）：
  * - 外置 NodeHeader + StatusBadge（mapVideoCompositionToBadge）；
  * - 主卡片三分支：launcher / rendering / error
  *   （成片预览由下游素材节点承载；本节点导出后仍保持 launcher）；
- * 功能契约 100% 不变：OMNIMUX_CLIP_* 事件桥、collectUpstreamInputs、
- * ports、executorKey、350×440 尺寸。
+ * 节点保留原有 ports、executorKey 和尺寸。
  */
 
-import { memo, useCallback, useEffect, useLayoutEffect } from 'react';
+import { memo, useCallback, useContext, useEffect } from 'react';
 import { type NodeProps } from '@xyflow/react';
 import { Download, Film, Layers, Pencil, MessageSquarePlus } from 'lucide-react';
 import CanvasNodeShell from '../../editor/components/CanvasNodeShell';
@@ -29,116 +27,24 @@ import NodeHeader from '../../editor/components/MaterialNode/NodeHeader';
 import StatusBadge from '../../editor/components/MaterialNode/StatusBadge';
 import GenerationStateContainer from '../../editor/components/GenerationStateContainer';
 import NodeLauncherState from '../../editor/components/NodeEmptyState/NodeLauncherState';
-import { planClipExportDownstream } from './videoCompositionDownstream';
-import { captionSlicesFromText } from '../../editor/utils/srtParser.ts';
+import { VIDEO_COMPOSITION_NODE_WIDTH, planClipExportDownstream } from './videoCompositionDownstream';
+import { openCanvasClipNode } from '../../bridge/canvasClipActions';
+import { CanvasClipLauncher, updateClipNodeData } from '../../bridge/clipLauncher';
 import {
   mapVideoCompositionToBadge,
   mapVideoCompositionToView,
   projectFileName,
 } from './videoCompositionStatus';
 import { useCanvasStore } from '../../store/canvasStore';
-import { toast } from '../../ui';
 import { useT } from '../../i18n';
 import type { NodeDefinition } from '../registry';
-import {
-  OMNIMUX_CLIP_CLOSE,
-  OMNIMUX_CLIP_OPEN,
-  OMNIMUX_CLIP_PROGRESS,
-  OMNIMUX_CLIP_SAVE,
-  isCanvasClipBinding,
-  isCloseClipEditorPayload,
-  isProgressClipEditorPayload,
-  isSaveClipEditorPayload,
-  newCanvasClipProjectId,
-  type CanvasClipBinding,
-  type OpenClipEditorPayload,
-  type VideoCompositionNodeData,
-  type VideoCompositionStatus,
-} from '../../bridge/clipEvents';
+import { newCanvasClipProjectId, type VideoCompositionNodeData, type VideoCompositionStatus } from '../../bridge/clipEvents';
 
-export const VIDEO_COMPOSITION_NODE_WIDTH = 350;
+export { VIDEO_COMPOSITION_NODE_WIDTH } from './videoCompositionDownstream';
 export const VIDEO_COMPOSITION_NODE_HEIGHT = 440;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
 
 function asString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value : undefined;
-}
-
-function asNumber(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
-}
-
-function mediaPathOf(data: Record<string, unknown>): string | undefined {
-  return (
-    asString(data.mediaUrl)
-    || asString(data.outputVideoUrl)
-    || asString(data.path)
-    || asString(data.url)
-    || asString(data.real_path)
-    || asString(data.filePath)
-  );
-}
-
-function collectUpstreamInputs(nodeId: string): OpenClipEditorPayload['upstreamInputs'] {
-  const { nodes, edges } = useCanvasStore.getState();
-  const videos: NonNullable<OpenClipEditorPayload['upstreamInputs']>['videos'] = [];
-  const audios: NonNullable<OpenClipEditorPayload['upstreamInputs']>['audios'] = [];
-  const images: NonNullable<OpenClipEditorPayload['upstreamInputs']>['images'] = [];
-  const captions: NonNullable<OpenClipEditorPayload['upstreamInputs']>['captions'] = [];
-
-  for (const edge of edges) {
-    if (edge.target !== nodeId) continue;
-    const source = nodes.find((node) => node.id === edge.source);
-    if (!source) continue;
-    const data = isRecord(source.data) ? source.data : {};
-    const materialType = asString(data.materialType)
-      || (source.type === 'material' ? undefined : source.type);
-    const name = asString(data.label) || asString(data.title) || source.id;
-    const path = mediaPathOf(data) || '';
-    const durationMs = asNumber(data.duration) ?? asNumber(data.outputDurationMs) ?? asNumber(data.durationMs);
-
-    if (materialType === 'video' || source.type === 'video_composition') {
-      const videoPath = path || asString(data.outputVideoUrl) || '';
-      if (videoPath) videos.push({ path: videoPath, name, durationMs, url: videoPath });
-    } else if (materialType === 'image') {
-      if (path) images.push({ path, name, displayDurationMs: durationMs ?? 3000, url: path });
-    } else if (materialType === 'audio') {
-      if (path) audios.push({ path, name, durationMs, url: path });
-    } else if (materialType === 'text') {
-      const text = asString(data.content) || asString(data.generatedContent) || asString(data.prompt);
-      if (text) {
-        // Issue 744 T05：SRT 字幕文本按原音频时间轴精确展开；
-        // 普通文本保持原有整段 3 秒切片（起点为既有 captions 时长累加）。
-        const slices = captionSlicesFromText({
-          content: text,
-          contentFormat: asString(data.contentFormat),
-          startTimeMs: captions.reduce((sum, item) => sum + item.durationMs, 0),
-          sliceDurationMs: 3000,
-        });
-        for (const slice of slices) {
-          captions.push({
-            text: slice.text,
-            startTimeMs: slice.startTimeMs,
-            durationMs: slice.durationMs,
-          });
-        }
-      }
-    }
-  }
-
-  return { videos, audios, images, captions };
-}
-
-function clipPluginPresent(): boolean {
-  if (typeof document === 'undefined') return false;
-  return Boolean(
-    document.querySelector('[data-plugin="omnimux-clip"]')
-    || document.querySelector('[data-stage="clip-editor"]')
-    || (typeof window !== 'undefined' && (window as { __omnimuxClipReady?: boolean }).__omnimuxClipReady),
-  );
 }
 
 export function createDefaultVideoCompositionData(): VideoCompositionNodeData {
@@ -152,9 +58,9 @@ export function createDefaultVideoCompositionData(): VideoCompositionNodeData {
 }
 
 const VideoCompositionNode: React.FC<NodeProps> = ({ id, data, selected }) => {
-  const nodeData = (isRecord(data) ? data : {}) as VideoCompositionNodeData;
+  const nodeData = data as VideoCompositionNodeData;
   const workspaceId = asString(nodeData.__workspaceId);
-  const setNodes = useCanvasStore((state) => state.setNodes);
+  const launchClip = useContext(CanvasClipLauncher);
   const applyCanvasInputMutation = useCanvasStore((state) => state.applyCanvasInputMutation);
   const t = useT();
 
@@ -164,98 +70,9 @@ const VideoCompositionNode: React.FC<NodeProps> = ({ id, data, selected }) => {
 
   const view = mapVideoCompositionToView(status, hasOutput);
 
-  const updateNodeData = useCallback(
-    (updates: Partial<VideoCompositionNodeData>) => {
-      setNodes((nodes) =>
-        nodes.map((node) => (node.id === id ? { ...node, data: { ...node.data, ...updates } } : node)),
-      );
-    },
-    [id, setNodes],
-  );
-
-  useLayoutEffect(() => {
-    if (typeof window === 'undefined') return undefined;
-
-    function readBoundNode(binding: CanvasClipBinding) {
-      if (binding.workspaceId !== workspaceId || binding.nodeId !== id) return undefined;
-      const node = useCanvasStore.getState().nodes.find((candidate) => candidate.id === id);
-      if (node?.type !== 'video_composition' || node.data.projectId !== binding.projectId) return undefined;
-      return node;
-    }
-
-    const onSave = (event: Event) => {
-      const detail = event instanceof CustomEvent ? event.detail : undefined;
-      if (!isSaveClipEditorPayload(detail)) return;
-      const currentNode = readBoundNode(detail);
-      if (!currentNode) return;
-      const output = detail.output;
-      updateNodeData({
-        schema: detail.schema,
-        outputVideoUrl: output?.videoPath,
-        outputRevision: output?.revision,
-        thumbnailUrl: output?.thumbnailPath,
-        outputThumbnailUrl: output?.thumbnailPath,
-        outputDurationMs: output?.durationMs,
-        outputWidth: output?.width,
-        outputHeight: output?.height,
-        status: output?.videoPath ? 'completed' : 'idle',
-        renderProgress: output?.videoPath ? 100 : undefined,
-        errorMessage: undefined,
-      });
-
-      // ─── 画布模式：自动创建下游视频素材节点并连线 ───
-      if (output?.videoPath && detail.createDownstreamNode) {
-        const store = useCanvasStore.getState();
-        const plan = planClipExportDownstream({
-          sourceNodeId: id,
-          sourcePosition: currentNode.position,
-          sourceLabel: asString(currentNode.data.title) || asString(currentNode.data.label) || t('node.type.video_composition'),
-          output,
-          currentNodes: store.nodes,
-          currentEdges: store.edges,
-          nodeWidth: VIDEO_COMPOSITION_NODE_WIDTH,
-        });
-        if (plan) {
-          applyCanvasInputMutation({
-            addNodes: plan.addNodes.map((node) => ({ ...node, selected: true })),
-            addEdges: plan.addEdges,
-            nodePatches: plan.nodePatches,
-            removeEdgeIds: plan.removeEdgeIds,
-          });
-          toast.success(t('clip.exportedToNode') || '已生成视频节点并连接到画布');
-        }
-      }
-    };
-
-    const onProgress = (event: Event) => {
-      const detail = event instanceof CustomEvent ? event.detail : undefined;
-      if (!isProgressClipEditorPayload(detail) || !readBoundNode(detail)) return;
-      updateNodeData({
-        status: detail.status ?? 'rendering',
-        renderProgress: detail.renderProgress,
-      });
-    };
-
-    const onClose = (event: Event) => {
-      const detail = event instanceof CustomEvent ? event.detail : undefined;
-      if (!isCloseClipEditorPayload(detail)) return;
-      const node = readBoundNode(detail);
-      if (node?.data.status === 'editing' || node?.data.status === 'rendering') {
-        // Progress belongs to the open editor. A saved export can still arrive
-        // on the original binding after exit and replace this resting state.
-        updateNodeData({ status: node.data.outputVideoUrl ? 'completed' : 'idle', renderProgress: undefined });
-      }
-    };
-
-    window.addEventListener(OMNIMUX_CLIP_SAVE, onSave);
-    window.addEventListener(OMNIMUX_CLIP_PROGRESS, onProgress);
-    window.addEventListener(OMNIMUX_CLIP_CLOSE, onClose);
-    return () => {
-      window.removeEventListener(OMNIMUX_CLIP_SAVE, onSave);
-      window.removeEventListener(OMNIMUX_CLIP_PROGRESS, onProgress);
-      window.removeEventListener(OMNIMUX_CLIP_CLOSE, onClose);
-    };
-  }, [applyCanvasInputMutation, id, t, updateNodeData, workspaceId]);
+  const updateNodeData = useCallback((updates: Partial<VideoCompositionNodeData>) => {
+    updateClipNodeData(id, updates);
+  }, [id]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -301,28 +118,13 @@ const VideoCompositionNode: React.FC<NodeProps> = ({ id, data, selected }) => {
   ]);
 
   const openEditor = useCallback(() => {
-    if (typeof window === 'undefined') return;
-    const node = useCanvasStore.getState().nodes.find((candidate) => candidate.id === id);
-    if (node?.type !== 'video_composition') return;
-    const data = node.data as VideoCompositionNodeData;
-    const projectId = data.projectId ?? newCanvasClipProjectId();
-    const binding = { workspaceId, nodeId: id, projectId };
-    if (!isCanvasClipBinding(binding)) return;
-    const payload: OpenClipEditorPayload = {
-      ...binding,
-      source: 'canvas',
-      nodeTitle: title,
-      draftSchema: data.schema,
-      upstreamInputs: collectUpstreamInputs(id),
-    };
-    updateNodeData({ status: 'editing', projectId });
-    window.dispatchEvent(new CustomEvent(OMNIMUX_CLIP_OPEN, { detail: payload, bubbles: true }));
-    window.setTimeout(() => {
-      if (!clipPluginPresent()) {
-        toast.warning(t('clip.needPlugin'));
-      }
-    }, 400);
-  }, [id, t, title, updateNodeData, workspaceId]);
+    if (launchClip) return launchClip(id);
+    // The standalone canvas harness renders CanvasEditor without App.
+    if (workspaceId && typeof window !== 'undefined') void openCanvasClipNode({
+      workspaceId, nodeId: id, defaultTitle: title, target: window,
+      readGraph: useCanvasStore.getState, updateNode: updateClipNodeData, stillCurrent: () => true,
+    });
+  }, [id, title, workspaceId, launchClip]);
 
   const { addToConversation } = useAddToConversation();
 

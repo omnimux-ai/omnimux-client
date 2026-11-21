@@ -72,7 +72,7 @@ import { createHistorySlice } from "./project/history-slice";
 import { createClipSlice } from "./project/clip-slice";
 import { createTimelineItemSlice } from "./project/timeline-item-slice";
 import { v4 as uuidv4 } from "uuid";
-import { editSnapshot } from "@openreel/core/actions/handlers/edit-snapshot";
+import { applyEditSnapshot, cloneEditSnapshot, editSnapshot } from "@openreel/core/actions/handlers/edit-snapshot";
 import type {
   VideoEffect,
   VideoEffectType,
@@ -210,9 +210,11 @@ export interface ProjectState {
   ) => Promise<ActionResult>;
 
   // Media library actions
-  importMedia: (file: File, onProgress?: (stage: string) => void, source?: { soundLibraryId?: string; stockSource?: StockMediaSource; recordedTake?: "screen" | "webcam" }, options?: { signal?: AbortSignal; isCurrent?: () => boolean }) => Promise<ActionResult>;
+  importMedia: (file: File, onProgress?: (stage: string) => void, source?: { soundLibraryId?: string; stockSource?: StockMediaSource; recordedTake?: "screen" | "webcam"; omnimuxSource?: MediaItem["omnimuxSource"] }, options?: { signal?: AbortSignal; isCurrent?: () => boolean }) => Promise<ActionResult>;
   deleteMedia: (mediaId: string) => Promise<ActionResult>;
-  replaceMediaAsset: (mediaId: string, file: File, sourceFolder?: string, options?: { restorePlaceholder?: boolean; sourcePath?: string }) => Promise<ActionResult>;
+  replaceMediaAsset: (mediaId: string, file: File, sourceFolder?: string, options?: {
+    restorePlaceholder?: boolean; sourcePath?: string; isCurrent?: () => boolean; omnimuxSource?: MediaItem['omnimuxSource'];
+  }) => Promise<ActionResult>;
   renameMedia: (mediaId: string, name: string) => Promise<ActionResult>;
   getMediaItem: (mediaId: string) => MediaItem | undefined;
 
@@ -259,6 +261,7 @@ export interface ProjectState {
   addClipToNewTrack: (
     mediaId: string,
     startTime?: number,
+    options?: { isCurrent?: () => boolean },
   ) => Promise<ActionResult>;
   placeMediaClip: (
     mediaId: string,
@@ -706,6 +709,7 @@ export interface ProjectState {
 
   // Execute arbitrary action
   commitTimelineToolEdit: (plan: TimelineToolPlan, options?: TimelineToolCommitOptions) => ActionResult;
+  commitEditSnapshot: (next: Project, label: string) => ActionResult;
   executeAction: (action: Action) => Promise<ActionResult>;
 
   // Computed values
@@ -929,6 +933,19 @@ export const useProjectStore = create<ProjectState>()(
     // merges the saved fields back onto the existing engine clip.
     const helpers = createProjectStoreHelpers(set, get);
     const { applyClipDataSnapshot, syncOverlayEnginesFromProject } = helpers;
+
+    const syncTimelineEdit = (project: Project, previous: Project): void => {
+      try {
+        syncOverlayEnginesFromProject(project);
+        syncProjectEffectsBridge(project, previous);
+        syncProjectTransitionsBridge(project, previous);
+      } catch (error) {
+        syncOverlayEnginesFromProject(previous);
+        syncProjectEffectsBridge(previous, project);
+        syncProjectTransitionsBridge(previous, project);
+        throw error;
+      }
+    };
 
     type OverlayEffectOwner = TextClip | ShapeClip | SVGClip | StickerClip;
     type OverlayEffectLocation = {
@@ -2796,23 +2813,45 @@ export const useProjectStore = create<ProjectState>()(
           // Canonical data and one bounded history entry are published in one stack.
           // No async completion can restore an older project or discard a rename.
           const inverse: Action = { type: "timeline/toolEdit", id: `inverse-${action.id}`, timestamp: action.timestamp, params: { edits: invertTimelineToolEdits(edits), ...(options?.loopRange ? { loopRange: { before: options.loopRange.after, after: options.loopRange.before } } : {}) } };
-          try {
-            syncOverlayEnginesFromProject(project);
-            syncProjectEffectsBridge(project, previous);
-            syncProjectTransitionsBridge(project, previous);
-          } catch (error) {
-            // Restore derived caches before returning a failed, unpublished edit.
-            syncOverlayEnginesFromProject(previous);
-            syncProjectEffectsBridge(previous, project);
-            syncProjectTransitionsBridge(previous, project);
-            throw error;
-          }
+          syncTimelineEdit(project, previous);
           state.actionExecutor.getHistory().push(action, inverse);
           set({ project, redoJournal: [], clipRedoStack: [], templateRedoStack: [] });
           return { success: true, actionId: action.id };
         } catch (error) {
           return { success: false, error: { code: "INVALID_PARAMS", message: error instanceof Error ? error.message : "The timeline edit could not be applied." } };
         }
+      },
+
+      commitEditSnapshot: (next, label) => {
+        const state = get();
+        if (!state.hasOpenProject || next.id !== state.project.id) {
+          return { success: false, error: { code: "INVALID_PARAMS", message: "The project changed before the edit completed." } };
+        }
+        if (useTimelineStore.getState().playbackLockedReason || useUIStore.getState().exportState.isExporting) {
+          return { success: false, error: { code: "INVALID_PARAMS", message: "Editing is unavailable while the timeline is locked." } };
+        }
+        const readOnly = readOnlyReason();
+        if (readOnly) return { success: false, error: { code: "READ_ONLY", message: readOnly } };
+
+        const previous = state.getFullProject();
+        const id = uuidv4();
+        const timestamp = Date.now();
+        let action: Action;
+        let inverse: Action;
+        let project: Project;
+        try {
+          const snapshot = cloneEditSnapshot(editSnapshot(next));
+          action = { type: "project/applyEditSnapshot", id, timestamp, params: { snapshot, label } };
+          inverse = { type: action.type, id: `inverse-${id}`, timestamp, params: { snapshot: cloneEditSnapshot(editSnapshot(previous)) } };
+          project = reconcileMulticamAudio(applyEditSnapshot({ ...previous }, snapshot));
+          syncTimelineEdit(project, previous);
+        } catch (error) {
+          return { success: false, error: { code: "INVALID_PARAMS", message: error instanceof Error ? error.message : "The edit could not be applied." } };
+        }
+        // An Agent batch has its own step even if a manual gesture group is open.
+        state.actionHistory.push(action, inverse, null);
+        set({ project, redoJournal: [], clipRedoStack: [], templateRedoStack: [] });
+        return { success: true, actionId: id };
       },
 
       executeAction: async (action: Action) => {

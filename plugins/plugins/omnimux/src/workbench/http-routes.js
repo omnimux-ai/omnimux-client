@@ -6,6 +6,7 @@
 
 import { requestRejection } from '../host/request-authorization.js'
 import { readJsonBody, sendJson } from '../auth/http-routes.js'
+import { WINDOW_PROOF_HEADER } from '../events/windows.js'
 
 export function isLocalRequest(req) {
   const origin = req.headers?.origin || ''
@@ -55,6 +56,10 @@ export function registerWorkbenchHttpRoutes(webServer, deps) {
         return
       }
 
+      if (req.headers?.[WINDOW_PROOF_HEADER] !== undefined) {
+        const accepted = await deps.hubEvents?.updateWindowViewport(req, body, deps.verifySession)
+        if (!accepted) return sendJson(res, 403, { ok: false, error: 'window-not-authorized' })
+      }
       const result = mailbox.updateViewport(body)
       sendJson(res, result.ok ? 200 : 400, result)
     },

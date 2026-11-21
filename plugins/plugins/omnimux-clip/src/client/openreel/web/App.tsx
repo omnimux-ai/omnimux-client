@@ -1,6 +1,7 @@
 import { EditorPortalRoot } from "@openreel/ui/lib/portal-root";
 import {
   useEffect,
+  useLayoutEffect,
   useCallback,
   useRef,
   useState,
@@ -30,9 +31,9 @@ const LazyEditorInterface = lazy(() =>
   loadEditorModule().then((m) => ({ default: m.EditorInterface })),
 );
 /** Renders synchronously when the chunk is already loaded (see editor-loader). */
-const EditorInterface: React.FC<{ canvasMode: boolean }> = ({ canvasMode }) => {
-  const Loaded = getLoadedEditor();
-  return Loaded ? <Loaded canvasMode={canvasMode} /> : <LazyEditorInterface canvasMode={canvasMode} />;
+const EditorInterface: React.FC<{ active: boolean; canvasMode: boolean }> = (props) => {
+  const Loaded = getLoadedEditor() ?? LazyEditorInterface;
+  return <Loaded {...props} />;
 };
 // Only shown when crash-recovery saves exist; pulls Collapsible (framer-motion), so keep it off the startup entry.
 const RecoveryDialog = lazy(() =>
@@ -73,7 +74,7 @@ const PRESET_DIMENSIONS: Record<string, SocialMediaCategory> = {
   "1280x720": "youtube-video",
 };
 
-function App({ active = true, canvasMode = false }: { active?: boolean; canvasMode?: boolean } = {}) {
+function App({ active = true, canvasMode = false, managed = false }: { active?: boolean; canvasMode?: boolean; managed?: boolean } = {}) {
   const [portalRoot, setPortalRoot] = useState<HTMLDivElement | null>(null);
   const compact = useCompactEditorPane(portalRoot);
   // Canvas and Studio can keep their editors mounted while only one is visible.
@@ -86,10 +87,9 @@ function App({ active = true, canvasMode = false }: { active?: boolean; canvasMo
   const [isRecovering, setIsRecovering] = useState(false);
   const createNewProject = useProjectStore((state) => state.createNewProject);
   const hasOpenProject = useProjectStore((state) => state.hasOpenProject);
-  const { isChecking, showDialog, availableSaves, recover, dismiss, clearAll } =
-    useProjectRecovery();
-
   const { route, params, navigate, parsedDimensions, fps } = useRouter();
+  const { isChecking, showDialog, availableSaves, recover, dismiss, clearAll } =
+    useProjectRecovery(active && !canvasMode && (!managed || route === "welcome" || route === "new"));
   const hasHandledNewRoute = useRef(false);
   const handledNewKey = useRef<string | null>(null);
   const newRequestId = useRef(0);
@@ -100,19 +100,26 @@ function App({ active = true, canvasMode = false }: { active?: boolean; canvasMo
       mounted.current = false;
     };
   }, []);
+  useLayoutEffect(() => () => { newRequestId.current++; }, [active]);
   // Help > "Welcome & Setup" re-opens the welcome screen even when it is skipped on startup.
   const onboardingBandOpen = useOnboardingStore((state) => state.bandOpen === true);
-  const showWelcome =
-    route === "templates" ||
-    route === "recent" ||
-    (route === "welcome" && (!skipWelcomeScreen || onboardingBandOpen));
+  const showWelcome = !canvasMode && (
+    route === "templates" || route === "recent" ||
+    (route === "welcome" && (managed || !skipWelcomeScreen || onboardingBandOpen))
+  );
+  const canRender = !managed || active;
+  const showEditor = canRender && !showWelcome && hasOpenProject;
+  const [editorOpened, setEditorOpened] = useState(false);
+  useEffect(() => {
+    if (showEditor) setEditorOpened(true);
+  }, [showEditor]);
 
   useEffect(() => {
     if (activeModal === "scriptView") setHasOpenedScriptView(true);
   }, [activeModal]);
 
   useEffect(() => {
-    if (route !== "new") {
+    if (!active || canvasMode || route !== "new") {
       hasHandledNewRoute.current = false;
       handledNewKey.current = null;
       newRequestId.current++;
@@ -207,6 +214,8 @@ function App({ active = true, canvasMode = false }: { active?: boolean; canvasMo
       })();
     }
   }, [
+    active,
+    canvasMode,
     route,
     params,
     parsedDimensions,
@@ -222,7 +231,7 @@ function App({ active = true, canvasMode = false }: { active?: boolean; canvasMo
     // Recovery owns the choice until it settles. A bare editor URL still needs
     // a real project for autosave and preview-proxy lifecycle subscriptions.
     if (
-      showWelcome ||
+      !active || canvasMode || managed || showWelcome ||
       route === "new" ||
       isChecking ||
       showDialog ||
@@ -232,6 +241,9 @@ function App({ active = true, canvasMode = false }: { active?: boolean; canvasMo
       return;
     createNewProject("New Project");
   }, [
+    active,
+    canvasMode,
+    managed,
     showWelcome,
     route,
     isChecking,
@@ -277,10 +289,9 @@ function App({ active = true, canvasMode = false }: { active?: boolean; canvasMo
     <EditorPortalRoot.Provider value={active ? portalRoot : null}>
     <CompactEditorContext.Provider value={compact}>
     <div ref={setPortalRoot} className="relative h-full w-full bg-background text-text-primary overflow-hidden">
-    <AppProviders>
-      {showWelcome ? (
-        <WelcomeScreen initialTab={initialTab} />
-      ) : !hasOpenProject ? (
+    <AppProviders active={canRender}>
+      {canRender && showWelcome && <WelcomeScreen initialTab={initialTab} />}
+      {canRender && !showWelcome && !hasOpenProject && (
         <LoadingSpinner
           message={
             isChecking
@@ -290,11 +301,14 @@ function App({ active = true, canvasMode = false }: { active?: boolean; canvasMo
                 : "Opening project..."
           }
         />
-      ) : (
-        <Suspense fallback={<LoadingSpinner message="Loading editor..." />}>
-          <EditorInterface canvasMode={canvasMode} />
+      )}
+      {/* Preserve the editor frame across handoffs. Its workspace owns the native store and dialogs. */}
+      {(showEditor || editorOpened) && (
+        <Suspense fallback={showEditor ? <LoadingSpinner message="Loading editor..." /> : null}>
+          <EditorInterface active={showEditor} canvasMode={canvasMode} />
         </Suspense>
       )}
+      {canRender && <>
       <ToastContainer />
       <Suspense fallback={null}>
         {(hasOpenedScriptView || activeModal === "scriptView") && (
@@ -336,6 +350,7 @@ function App({ active = true, canvasMode = false }: { active?: boolean; canvasMo
           />
         </Suspense>
       )}
+      </>}
     </AppProviders>
     </div>
     </CompactEditorContext.Provider>

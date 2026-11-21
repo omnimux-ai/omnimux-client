@@ -1,205 +1,157 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
+import type { MediaItem } from "@openreel/core";
 import { useProjectStore } from "../openreel/web/stores/project-store";
-import { useUIStore } from "../openreel/web/stores/ui-store";
+import { getTimelineItems } from "../openreel/core/timeline/timeline-items";
+import { reconnectMediaUrl } from "../../timeline/nativeProjectFields.js";
+import { mediaDigest } from "../live/media-source";
 
-/**
- * 单次画布会话最多导入的上游素材条数（视频 + 图片 + 音频合计）。
- * 超出部分告警并截断，防止恶意/异常入参打爆媒体库与内存。
- */
-const MAX_IMPORT_ITEMS = 20;
+const MAX_MEDIA = 20;
+const MAX_CAPTIONS = 120;
+const LOCAL_FILE = "/omnimux-workflow/api/local-file";
+const WORKSPACE_FILE = /^\/omnimux-workflow\/api\/workspaces\/ws_[A-Za-z0-9_-]+\/file$/;
+const MEDIA_PATH = /^\/(?:omnimux-workflow\/)?media\/.+/;
 
-const ALLOWED_PROTOCOLS = ["http:", "https:", "asset:", "file:", "blob:", "data:"];
+interface UpstreamMedia {
+  path: string;
+  name: string;
+  url?: string;
+  sourceId?: string;
+  sourceVersion?: string;
+}
 
 export interface CanvasSession {
   source?: "canvas" | "sidebar" | "agent";
+  workspaceId?: string;
   nodeId?: string;
   nodeTitle?: string;
   projectId?: string;
   draftSchema?: unknown;
   upstreamInputs?: {
-    videos?: Array<{ path: string; name: string; durationMs?: number; url?: string }>;
-    audios?: Array<{ path: string; name: string; durationMs?: number; url?: string }>;
-    images?: Array<{ path: string; name: string; displayDurationMs?: number; url?: string }>;
+    videos?: UpstreamMedia[];
+    audios?: UpstreamMedia[];
+    images?: UpstreamMedia[];
     captions?: Array<{ text: string; startTimeMs: number; durationMs: number }>;
   };
 }
 
-function resolveFetchableUrl(rawUrl: string): string {
-  if (!rawUrl || typeof rawUrl !== "string") return "";
-  const trimmed = rawUrl.trim();
-  if (trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.startsWith("data:") || trimmed.startsWith("blob:") || trimmed.startsWith("/omnimux")) {
-    return trimmed;
-  }
-  if (trimmed.startsWith("/") || trimmed.startsWith("./") || trimmed.startsWith("../")) {
-    return `/omnimux-workflow/api/local-file?path=${encodeURIComponent(trimmed)}`;
-  }
+function parseMedia(value: string): { url: string; reconnect?: string } | null {
+  if (!value || /[\x00-\x1f\x7f]/u.test(value)) return null;
+  if (value.startsWith("blob:") || /^data:(?:video|audio|image\/(?!svg))/i.test(value)) return { url: value };
   try {
-    const parsed = new URL(trimmed, "http://localhost");
-    return ALLOWED_PROTOCOLS.includes(parsed.protocol) ? trimmed : "";
+    const request = new URL(value, 'https://clip.invalid');
+    if (/^https?:\/\/[^/]*@/i.test(value)) return null;
+    if (/^\/(?!\/)/.test(value)) {
+      if (request.pathname === LOCAL_FILE) return { url: request.pathname + request.search };
+      if (WORKSPACE_FILE.test(request.pathname) || MEDIA_PATH.test(request.pathname)) {
+        const url = request.pathname + request.search;
+        return { url, reconnect: reconnectMediaUrl(url) };
+      }
+    }
+    if (/^https?:\/\//i.test(value)) return { url: request.href };
+    if (value.startsWith("//")) return null;
+    if (value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value)) {
+      return { url: `${LOCAL_FILE}?path=${encodeURIComponent(value)}` };
+    }
   } catch {
-    return "";
+    return null;
   }
+  return null;
 }
 
-function isValidUrl(rawUrl: string): boolean {
-  return Boolean(resolveFetchableUrl(rawUrl));
+function importItems(inputs: NonNullable<CanvasSession["upstreamInputs"]>) {
+  return [
+    ...(inputs.videos ?? []).map(item => ({ ...item, mime: "video/mp4", name: item.name || "video.mp4" })),
+    ...(inputs.images ?? []).map(item => ({ ...item, mime: "image/png", name: item.name || "image.png" })),
+    ...(inputs.audios ?? []).map(item => ({ ...item, mime: "audio/mpeg", name: item.name || "audio.mp3" })),
+  ].slice(0, MAX_MEDIA);
 }
 
-function inferMime(path: string, fallback: string): string {
-  const lower = path.toLowerCase();
-  if (lower.endsWith(".mp4")) return "video/mp4";
-  if (lower.endsWith(".webm")) return "video/webm";
-  if (lower.endsWith(".mov")) return "video/quicktime";
-  if (lower.endsWith(".png")) return "image/png";
-  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
-  if (lower.endsWith(".webp")) return "image/webp";
-  if (lower.endsWith(".gif")) return "image/gif";
-  if (lower.endsWith(".mp3")) return "audio/mpeg";
-  if (lower.endsWith(".wav")) return "audio/wav";
-  if (lower.endsWith(".aac")) return "audio/aac";
-  return fallback;
-}
-
-/**
- * useCanvasIngestion handles:
- * 1. Automatic project initialization when opened from canvas (bypassing welcome screen).
- * 2. Automatic async ingestion of upstream videos, images, and audio into OpenReel's media library.
- *
- * 防爆保护：
- * - 协议白名单校验，过滤非安全/未知协议；
- * - 入参最多导入 MAX_IMPORT_ITEMS（20）条素材，超额打印 warn 并截断；
- * - 整条初始化链路（含 store 调用）包在 try/catch 中，任何异常都不会抛出页面。
- */
-export function useCanvasIngestion(session: CanvasSession | null | undefined) {
-  const processedRef = useRef<Set<string>>(new Set());
-  const activeNodeIdRef = useRef<string | null>(null);
-
+export function useCanvasIngestion(session: CanvasSession | null, token: AbortController | undefined, owns: () => boolean, onSaved: () => void) {
   useEffect(() => {
-    if (!session || session.source !== "canvas") {
-      activeNodeIdRef.current = null;
-      return;
-    }
-
-    try {
-      const { nodeId, nodeTitle, upstreamInputs } = session;
-
-      // Reset processed set when switching nodes
-      if (activeNodeIdRef.current !== nodeId) {
-        activeNodeIdRef.current = nodeId || null;
-        processedRef.current.clear();
-      }
-
-      // Bypass welcome screen for canvas sessions
-      const uiStore = useUIStore.getState();
-      if (!uiStore.skipWelcomeScreen) {
-        uiStore.setSkipWelcomeScreen(true);
-      }
-
-      // Ensure a project exists
-      const projectStore = useProjectStore.getState();
-      if (!projectStore.hasOpenProject) {
-        projectStore.createNewProject(nodeTitle || "创作画布视频合成");
-      }
-
-      if (!upstreamInputs) return;
-
-      const itemsToImport: Array<{ url: string; name: string; fallbackMime: string }> = [];
-
-      if (Array.isArray(upstreamInputs.videos)) {
-        for (const v of upstreamInputs.videos) {
-          const raw = v.url || v.path;
-const url = resolveFetchableUrl(raw);
-if (url && !processedRef.current.has(raw)) {
-  itemsToImport.push({ url, name: v.name || "video.mp4", fallbackMime: "video/mp4" });
-}
-        }
-      }
-
-      if (Array.isArray(upstreamInputs.images)) {
-        for (const img of upstreamInputs.images) {
-          const raw = img.url || img.path;
-const url = resolveFetchableUrl(raw);
-if (url && !processedRef.current.has(raw)) {
-  itemsToImport.push({ url, name: img.name || "image.png", fallbackMime: "image/png" });
-}
-        }
-      }
-
-      if (Array.isArray(upstreamInputs.audios)) {
-        for (const a of upstreamInputs.audios) {
-          const raw = a.url || a.path;
-const url = resolveFetchableUrl(raw);
-if (url && !processedRef.current.has(raw)) {
-  itemsToImport.push({ url, name: a.name || "audio.mp3", fallbackMime: "audio/mpeg" });
-}
-        }
-      }
-
-      // 素材防爆：超额告警并截断，只保留前 MAX_IMPORT_ITEMS 条
-      if (itemsToImport.length > MAX_IMPORT_ITEMS) {
-        console.warn(
-          `[omnimux-clip:ingestion] upstream asset count ${itemsToImport.length} exceeds limit ${MAX_IMPORT_ITEMS}; truncating to first ${MAX_IMPORT_ITEMS}`,
-        );
-        itemsToImport.length = MAX_IMPORT_ITEMS;
-      }
-
-      if (itemsToImport.length === 0) return;
-
-      let isMounted = true;
-
-      const importAll = async () => {
-        let firstVideoId: string | null = null;
-        let firstVideoMeta: { width?: number; height?: number } | null = null;
-
-        for (const item of itemsToImport) {
-          if (!isMounted) break;
-          processedRef.current.add(item.url);
-          try {
-            const res = await fetch(item.url);
-            if (!res.ok) continue;
-            const blob = await res.blob();
-            const mime = inferMime(item.name || item.url, item.fallbackMime);
-            const file = new File([blob], item.name, { type: mime });
-            await useProjectStore.getState().importMedia(file);
-
-            const currentItems = useProjectStore.getState().project.mediaLibrary.items;
-            const latest = currentItems[currentItems.length - 1];
-            if (latest && latest.type === "video" && !firstVideoId) {
-              firstVideoId = latest.id;
-              firstVideoMeta = latest.metadata;
-            }
-          } catch (err) {
-            console.warn("[omnimux-clip:ingestion] failed to import upstream asset:", item.url, err);
+    if (!session?.projectId || !token || session.source !== "canvas") return;
+    const controller = new AbortController();
+    const signal = AbortSignal.any([token.signal, controller.signal]);
+    const isCurrent = () => !signal.aborted && owns() && useProjectStore.getState().project.id === session.projectId;
+    const inputs = session.upstreamInputs ?? {};
+    const importAll = async () => {
+      const initial = useProjectStore.getState().project;
+      if (initial.omnimuxCanvasInitialized || session.draftSchema && initial.mediaLibrary.items.length) return;
+      let firstVideo: MediaItem | undefined;
+      let failed = false;
+      for (const item of importItems(inputs)) {
+        if (!isCurrent()) return;
+        const ref = parseMedia(item.url || item.path);
+        if (!ref || /\.svgz?(?:[?#]|$)/iu.test(item.path || item.name)) continue;
+        try {
+          const url = ref.url;
+          const stableSource = item.path && !item.path.startsWith("blob:") ? item.path : (item.sourceId || url);
+          const id = await mediaDigest(stableSource);
+          const requestedVersion = item.sourceVersion ? await mediaDigest(item.sourceVersion) : undefined;
+          if (!isCurrent()) return;
+          const findItem = (version: string) => useProjectStore.getState().project.mediaLibrary.items.find(media =>
+            media.omnimuxSource?.id === id && media.omnimuxSource.version === version);
+          const existing = requestedVersion ? findItem(requestedVersion) : undefined;
+          if (existing && !existing.isPlaceholder) {
+            if (!firstVideo && existing.type === 'video') firstVideo = existing;
+            continue;
           }
-        }
-
-        // 若时间轴为空，自动将首个上游素材加入时间轴并适配比例
-        if (firstVideoId && isMounted) {
-          try {
-            const store = useProjectStore.getState();
-            const hasClips = store.project.timeline.tracks.some((t) => t.clips.length > 0);
-            if (!hasClips) {
-              if (firstVideoMeta?.width && firstVideoMeta?.height) {
-                await store.updateSettings({
-                  width: firstVideoMeta.width,
-                  height: firstVideoMeta.height,
-                });
-              }
-              await store.addClipToNewTrack(firstVideoId, 0);
-            }
-          } catch (e) {
-            console.warn("[omnimux-clip:ingestion] auto-add first video to timeline failed:", e);
+          const response = await fetch(url, { signal, redirect: "error", credentials: "same-origin" });
+          if (!isCurrent()) return;
+          if (!response.ok) throw new Error(`Upstream media returned HTTP ${response.status}`);
+          const blob = await response.blob();
+          if (!isCurrent()) return;
+          if (/^image\/svg/i.test(blob.type)) continue;
+          const digest = !requestedVersion || ref.reconnect ? await mediaDigest(blob) : undefined;
+          const version = requestedVersion ?? digest!;
+          if (!isCurrent()) return;
+          const match = findItem(version);
+          if (match && !match.isPlaceholder) {
+            if (!firstVideo && match.type === 'video') firstVideo = match;
+            continue;
           }
+          if (match?.omnimuxSource?.digest && match.omnimuxSource.digest !== digest) throw new Error('The upstream media version changed');
+          const file = new File([blob], item.name, { type: blob.type.startsWith("application/") ? item.mime : blob.type || item.mime });
+          const omnimuxSource = { id, version, ...(ref.reconnect ? { url: ref.reconnect, digest } : {}) };
+          const store = useProjectStore.getState();
+          const result = match
+            ? await store.replaceMediaAsset(match.id, file, undefined, { restorePlaceholder: true, isCurrent, omnimuxSource })
+            : await store.importMedia(file, undefined, { omnimuxSource }, { signal, isCurrent });
+          if (!isCurrent()) return;
+          if (!result.success || !result.actionId) throw new Error("Could not import the upstream media");
+          const imported = useProjectStore.getState().getMediaItem(match?.id ?? result.actionId);
+          if (!firstVideo && imported?.type === "video") firstVideo = imported;
+        } catch (error) {
+          failed = true;
+          if (isCurrent()) console.warn("[Clip] Upstream media could not be imported.", (error as Error)?.name);
         }
-      };
+      }
 
-      void importAll();
-
-      return () => {
-        isMounted = false;
-      };
-    } catch (err) {
-      console.warn("[omnimux-clip:ingestion] canvas session initialization failed:", err);
-    }
-  }, [session]);
+      if (firstVideo && isCurrent() && getTimelineItems(useProjectStore.getState().project).length === 0) {
+        const { width, height } = firstVideo.metadata;
+        if (width && height) await useProjectStore.getState().updateSettings({ width, height });
+        if (!isCurrent()) return;
+        if (getTimelineItems(useProjectStore.getState().project).length === 0) {
+          await useProjectStore.getState().addClipToNewTrack(firstVideo.id, 0, { isCurrent });
+        }
+      }
+      const cues = (inputs.captions ?? []).filter(cue => cue.text && cue.startTimeMs >= 0 && cue.durationMs > 0).slice(0, MAX_CAPTIONS);
+      if (cues.length && isCurrent()) {
+        const { executeNativeEdit } = await import("../live/native-edit");
+        const current = useProjectStore.getState().project;
+        const existing = new Set([...getTimelineItems(current).map(item => item.id), ...current.timeline.subtitles.map(cue => cue.id)]);
+        const operations = (await Promise.all(cues.map(async (cue) => ({
+          type: "add_text", kind: "subtitle", clipId: `canvas-caption-${await mediaDigest(JSON.stringify(cue))}`,
+          content: cue.text, startSec: cue.startTimeMs / 1000, durationSec: cue.durationMs / 1000,
+        })))).filter(operation => !existing.has(operation.clipId));
+        if (operations.length && isCurrent()) await executeNativeEdit({ operations, description: "Import canvas captions" }, {
+          assertCurrent() { if (!isCurrent()) throw new Error("The canvas binding changed"); },
+        });
+      }
+      if (isCurrent() && !failed) useProjectStore.setState(state => ({ project: { ...state.project, omnimuxCanvasInitialized: true } }));
+    };
+    void importAll().catch(error => {
+      if (isCurrent()) console.warn("[Clip] Canvas source initialization failed.", error?.name);
+    }).finally(() => { if (isCurrent()) onSaved(); });
+    return () => controller.abort();
+  }, [session, token, owns, onSaved]);
 }

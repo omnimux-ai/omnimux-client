@@ -106,42 +106,39 @@ export function createWorkspaceContextStore({
     const workspaceId = workspace.workspaceId !== undefined && workspace.workspaceId !== null
       ? String(workspace.workspaceId)
       : null
-    // Show the workspace immediately; project lookup is async.
-    emit({
-      status: 'loading-project',
+    const scope = {
+      ...EMPTY,
       sessionId,
       workspaceId,
       workspacePath: workspace.path ?? workspacePath,
       workspaceTitle: workspace.title ?? null,
-      project: null,
-      activePage: null,
-      error: null,
-    })
-    let project = null
+    }
+    const sameScope = snapshot.sessionId === sessionId && snapshot.workspaceId === workspaceId
+      && samePath(snapshot.workspacePath, scope.workspacePath)
+    // Sending a message updates the session list. Keep its current project
+    // visible while revalidating the same conversation and workspace.
+    if (!sameScope || !snapshot.project) emit({ ...scope, status: 'loading-project' })
+
+    let result
     try {
-      const result = await fetchProject(workspacePath)
-      if (result?.ok) project = result.body?.project ?? null
-      else if (result?.status !== 404 && result?.body?.error !== 'not-found') {
-        emit({ ...snapshot, status: 'error', error: result?.body?.message || result?.body?.error || 'project lookup failed' })
-        return snapshot
-      }
+      result = await fetchProject(workspacePath)
     } catch (error) {
       if (current === requestId) {
-        emit({ ...snapshot, status: 'error', error: error instanceof Error ? error.message : String(error) })
+        emit({ ...scope, status: 'error', error: error instanceof Error ? error.message : String(error) })
       }
       return snapshot
     }
     if (disposed || current !== requestId) return snapshot
-    const activePage = pickPage(project)
+    if (!result?.ok && result?.status !== 404 && result?.body?.error !== 'not-found') {
+      emit({ ...scope, status: 'error', error: result?.body?.message || result?.body?.error || 'project lookup failed' })
+      return snapshot
+    }
+    const project = result?.ok ? result.body?.project ?? null : null
     emit({
+      ...scope,
       status: project ? 'ready' : 'workspace-no-project',
-      sessionId,
-      workspaceId,
-      workspacePath: workspace.path ?? workspacePath,
-      workspaceTitle: workspace.title ?? null,
       project,
-      activePage,
-      error: null,
+      activePage: pickPage(project),
     })
     return snapshot
   }

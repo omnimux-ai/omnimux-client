@@ -14,7 +14,7 @@ describe('Surface follow · 映射表', () => {
     assert.equal(resolveSurfaceForTool('workflow_create'), 'omnimux-workflow:canvas')
     assert.equal(resolveSurfaceForTool('workflow_node_add'), 'omnimux-workflow:canvas')
     assert.equal(resolveSurfaceForTool('canvas_write_table_node'), 'omnimux-workflow:canvas')
-    assert.equal(resolveSurfaceForTool('clip_edit'), 'omnimux-clip:studio')
+    assert.equal(resolveSurfaceForTool('clip_edit'), null, 'live Clip edits must match the existing active lease')
     assert.equal(resolveSurfaceForTool('products_list'), 'omnimux-assets:library')
     assert.equal(resolveSurfaceForTool('inspiration_get'), 'omnimux-inspiration:library')
     assert.equal(resolveSurfaceForTool('omnimux_inspiration_list'), 'omnimux-inspiration:library')
@@ -144,17 +144,18 @@ describe('Surface follow · 宿主挂载', () => {
     assert.equal('view' in h.rpcCalls[0], false, '无子视图请求时不带 view 字段')
   })
 
-  it('剪辑查询与未接通的实时工具在任何工作面都不触发跟随', async () => {
+  it('剪辑工具在其他工作面和独立剪辑页都不触发通用自动跟随', async () => {
     const h = harness()
-    for (const name of ['list', 'get', 'diagnostics', 'open', 'view', 'snapshot', 'export']) {
-      await h.run(`default_api:clip_${name}`)
+    for (const tabId of ['omnimux:media-viewer', 'omnimux-clip:studio']) {
+      h.setSurface({ panelOpen: true, tabId })
+      for (const name of ['list', 'get', 'diagnostics', 'create', 'open', 'view', 'snapshot', 'export', 'edit']) {
+        await h.run(`default_api:clip_${name}`)
+        assert.equal(h.rpcCalls.length, 0, `${tabId}: ${name}`)
+      }
     }
-    assert.equal(h.rpcCalls.length, 0)
-    await h.run('clip_edit')
-    assert.equal(h.rpcCalls[0]?.tabId, 'omnimux-clip:studio')
   })
 
-  it('保留已绑定的画布剪辑工作面，未绑定或跨工作区提示仍走独立跟随', async () => {
+  it('保留已绑定、未绑定或跨工作区提示的画布工作面', async () => {
     const surface = { panelOpen: true, tabId: 'omnimux-workflow:canvas' }
     const clip = { mode: 'canvas', workspaceId: 'ws_test', nodeId: 'node_test', projectId: 'clip_node_test' }
     const view = { kind: 'canvas', extra: { workspaceId: 'ws_test', clip } }
@@ -168,7 +169,7 @@ describe('Surface follow · 宿主挂载', () => {
     for (const otherView of [null, { ...view, extra: { ...view.extra, workspaceId: 'ws_other' } }]) {
       const unbound = harness({ surface, view: otherView })
       await unbound.run('clip_edit')
-      assert.equal(unbound.rpcCalls[0]?.tabId, 'omnimux-clip:studio')
+      assert.equal(unbound.rpcCalls.length, 0)
     }
   })
 

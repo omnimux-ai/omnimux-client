@@ -12,6 +12,7 @@ import { type Edge } from '@xyflow/react';
 import { v4 as uuidv4 } from 'uuid';
 import type { CanvasNode } from './canvasInputMutationGateway';
 import { newCanvasClipProjectId } from '../../bridge/clipEvents.ts';
+import { CLIP_EXPORT_COPY_ORIGIN, CLIP_EXPORT_ORIGIN } from '../../nodes/definitions/videoCompositionDownstream.ts';
 
 export interface ClipboardData {
   nodes: CanvasNode[];
@@ -96,7 +97,7 @@ export function pasteFromClipboard(
     return {
       ...node,
       id: newId,
-      data: node.type === 'video_composition' ? copyCompositionData(node.data) : node.data,
+      data: copyNodeData(node),
       position: {
         x: pasteX + (node.position.x - center.x),
         y: pasteY + (node.position.y - center.y),
@@ -130,10 +131,15 @@ export function pasteFromClipboard(
   };
 }
 
-function copyCompositionData(original: CanvasNode['data']): CanvasNode['data'] {
-  const data = { ...original };
+function copyNodeData(node: CanvasNode): CanvasNode['data'] {
+  if (node.type === 'material' && node.data.origin === CLIP_EXPORT_ORIGIN) {
+    const { sourceCompositionNodeId: _source, ...data } = node.data;
+    return { ...data, origin: CLIP_EXPORT_COPY_ORIGIN };
+  }
+  if (node.type !== 'video_composition') return node.data;
+  const data = { ...node.data };
   for (const key of [
-    'schema', 'outputVideoUrl', 'outputRevision', 'thumbnailUrl', 'outputThumbnailUrl',
+    'schema', 'draftRevision', 'clipExportReceipts', 'outputVideoUrl', 'outputRevision', 'thumbnailUrl', 'outputThumbnailUrl',
     'outputDurationMs', 'outputWidth', 'outputHeight', 'durationText', 'renderProgress', 'errorMessage',
   ]) {
     delete data[key];

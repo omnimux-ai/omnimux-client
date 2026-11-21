@@ -32,6 +32,21 @@ export function createEventsClient(options = {}) {
   let lastEventAt = 0
   let lastEventId = null
   let healthy = false
+  let windowIdentity = null
+  const proofHeader = 'x-omnimux-window-proof'
+
+  function windowFetch(path, init, windowInstanceId = windowIdentity?.windowInstanceId) {
+    if (!path.startsWith('/omnimux-clip/api/') || !windowIdentity || windowIdentity.windowInstanceId !== windowInstanceId) {
+      throw Object.assign(new Error('The editor window is no longer connected'), { code: 'EDITOR_OFFLINE' })
+    }
+    const url = new URL(path, 'http://localhost')
+    if (url.origin !== 'http://localhost' || !url.pathname.startsWith('/omnimux-clip/api/')) {
+      throw new TypeError('Editor requests must stay on the Clip API')
+    }
+    const headers = new Headers(init?.headers)
+    headers.set(proofHeader, windowIdentity.proof)
+    return fetchImpl(path, { ...init, headers, redirect: 'error' })
+  }
 
   function notifySubscribers(event) {
     for (const list of [subscribers.get(event.type), subscribers.get('*')]) {
@@ -42,14 +57,15 @@ export function createEventsClient(options = {}) {
     }
   }
 
-  async function postJson(url, body) {
+  async function postJson(url, body, proof) {
     const controller = new AbortController()
     requests.add(controller)
     const timeout = setTimeout(() => controller.abort(new Error('request timed out')), REQUEST_TIMEOUT_MS)
     try {
       const response = await fetchImpl(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(proof ? { [proofHeader]: proof } : {}) },
+        ...(proof ? { redirect: 'error' } : {}),
         body: JSON.stringify(body),
         signal: controller.signal,
       })
@@ -98,24 +114,45 @@ export function createEventsClient(options = {}) {
   function handleMessage(event) {
     lastEventAt = Date.now()
     healthy = true
+    if (event.type === 'omnimux:window-ready') {
+      const { windowInstanceId, proof } = event.payload
+      if (typeof windowInstanceId === 'string' && /^[a-f0-9]{64}$/.test(proof)) {
+        windowIdentity = { windowInstanceId, proof }
+        notifySubscribers({ type: event.type, payload: { windowInstanceId } })
+        void pushViewport()
+      }
+      return
+    }
+    if (event.type === 'omnimux:viewport:refresh') {
+      if (windowIdentity && /^[0-9a-f-]{36}$/.test(event.payload.requestId)) void pushViewport(event.payload.requestId)
+      return
+    }
     if (typeof event.id === 'string') lastEventId = event.id
     notifySubscribers(event)
     if (event.type === 'omnimux:workbench:rpc' && event.payload) return handleRpc(event.payload)
   }
 
-  async function sendViewportHeartbeat() {
-    if (heartbeatRequest || !fetchImpl) return
-    const request = { generation }
-    heartbeatRequest = request
-    try {
-      const envelope = getWorkbench()?.getUiContext?.()
-      if (!envelope?.sessionId || envelope.sessionId === 'default') return
-      await postJson(viewportUrl, envelope)
-    } catch (error) {
-      if (generation === request.generation) console.warn('[EventsClient] viewport heartbeat failed:', error)
-    } finally {
-      if (heartbeatRequest === request) heartbeatRequest = null
+  function sendViewportHeartbeat(refreshId) {
+    if (heartbeatRequest || !fetchImpl) return heartbeatRequest
+    const currentGeneration = generation
+    let envelope = getWorkbench()?.getUiContext?.()
+    if (!envelope?.sessionId || envelope.sessionId === 'default') return null
+    if (globalThis.document?.visibilityState === 'hidden') {
+      envelope = { ...envelope, surface: { ...envelope.surface, panelOpen: false }, view: null, selection: [] }
     }
+    const request = postJson(viewportUrl, refreshId ? { ...envelope, refreshId } : envelope, windowIdentity?.proof)
+      .then(() => true, error => {
+        if (generation === currentGeneration) console.warn('[EventsClient] viewport heartbeat failed:', error)
+        return false
+      })
+      .finally(() => { if (heartbeatRequest === request) heartbeatRequest = null })
+    heartbeatRequest = request
+    return request
+  }
+
+  async function pushViewport(refreshId) {
+    while (heartbeatRequest) await heartbeatRequest
+    return sendViewportHeartbeat(refreshId)
   }
 
   function scheduleReconnect() {
@@ -130,6 +167,7 @@ export function createEventsClient(options = {}) {
     if (socket !== current) return
     socket = null
     healthy = false
+    windowIdentity = null
     detachSocketListeners?.()
     detachSocketListeners = null
     if (current.readyState < 2) current.close()
@@ -224,8 +262,9 @@ export function createEventsClient(options = {}) {
     subscribe,
     isHealthy: () => healthy,
     getLastEventAt: () => lastEventAt,
-    /** 立刻推一次 viewport 信封，不等下一个心跳周期（在途请求已去重）。 */
-    pushViewport: () => sendViewportHeartbeat(),
+    pushViewport,
+    getWindowId: () => windowIdentity?.windowInstanceId,
+    windowFetch,
     notifyMessageForTests: handleMessage,
   }
 }
@@ -236,7 +275,9 @@ export function installHubEventsGlobal(client, target = globalThis.window) {
     subscribe: (type, cb) => client.subscribe(type, cb),
     isHealthy: () => client.isHealthy(),
     getLastEventAt: () => client.getLastEventAt(),
-    pushViewport: () => { void client.pushViewport?.() },
+    pushViewport: () => client.pushViewport(),
+    getWindowId: () => client.getWindowId(),
+    windowFetch: (path, init, windowInstanceId) => client.windowFetch(path, init, windowInstanceId),
   }
   target[HUB_EVENTS_GLOBAL_KEY] = facade
   const catalogUpdated = 'omnimux:model-catalog-updated'

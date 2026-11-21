@@ -1,9 +1,10 @@
-import { Component, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { Component, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { Button } from 'dsh-ui-kit'
 import { useHostLocale } from './useHostLocale.js'
 import { createPortal } from 'react-dom'
 import OpenReelApp from './openreel/web/App.tsx'
-import { resetOpenReelRouter } from './openreel/web/hooks/use-router.ts'
-import { useProjectStore } from './openreel/web/stores/project-store.ts'
+import { ClipEditorExit, EditorOpening, EditorSyncNotice, useEditorSeat } from './live/EditorSeat.jsx'
+import { notifyCanvasClose } from './CanvasBridge.js'
 import { injectClipStyles } from './styles.js'
 import { computeHeaderPadLeft, computeStandaloneBox, readHostSidebarInset } from './stage-box.js'
 import { useCanvasIngestion } from './hooks/useCanvasIngestion.ts'
@@ -67,7 +68,7 @@ class ClipErrorBoundary extends Component {
  *   },
  * }} props
  */
-export function ClipStage({ t, stage, locale }) {
+export function ClipStage({ t, stage, locale, runtime }) {
   useHostLocale(locale)
   useEffect(() => {
     injectClipStyles()
@@ -108,19 +109,32 @@ export function ClipStage({ t, stage, locale }) {
     if (open) setEverOpened(true)
   }, [open])
 
-  // Ingest upstream inputs if opened from canvas
-  useCanvasIngestion(session)
+  const stageRef = useRef(null)
+  const visible = open && (!isCanvasMode || canvasHostVisible)
+  const view = useEditorSeat(runtime, {
+    mode: 'canvas', root: stageRef,
+    isVisible: () => Boolean(visible && stageRef.current?.isConnected && stageRef.current.dataset.visible === 'true'
+      && findCanvasHost(document, activeSession?.workspaceId) === stageRef.current.parentElement),
+    canvas: () => stage?.getSessionSnapshot(),
+  })
+  const ownsCanvas = useCallback(() => {
+    const owner = runtime?.session.getOwner()
+    return Boolean(view.token && owner?.token === view.token && runtime.session.owns(owner))
+  }, [runtime, view.token])
+  const saveImported = useCallback(() => {
+    if (ownsCanvas()) void runtime.session.finishIngestion()
+  }, [runtime, ownsCanvas])
+  useCanvasIngestion(activeSession, view.conflict ? undefined : view.token, ownsCanvas, saveImported)
 
-  // 路由同步重置到 editor
-  useEffect(() => {
-    if (open && isCanvasMode) {
-      try {
-        resetOpenReelRouter({ route: 'editor', params: {} })
-      } catch (err) {
-        console.warn('[omnimux-clip] resetOpenReelRouter failed:', err)
-      }
+  const closeCanvas = useCallback(() => {
+    const target = stage?.getSessionSnapshot()
+    if (!target || target.source !== 'canvas') return
+    if (view.phase === 'error') {
+      notifyCanvasClose(target)
+      return
     }
-  }, [open, isCanvasMode])
+    return runtime?.closeCanvas({ workspaceId: target.workspaceId, nodeId: target.nodeId, projectId: target.projectId })
+  }, [stage, runtime, view.phase])
 
   useLayoutEffect(() => {
     if (!open) return undefined
@@ -202,9 +216,10 @@ export function ClipStage({ t, stage, locale }) {
     <div
       role="region"
       aria-label={t ? t('tab.title') : '视频剪辑'}
-      aria-hidden={open ? undefined : 'true'}
+      aria-hidden={visible ? undefined : 'true'}
+      ref={stageRef}
       className="omnimux-clip-stage"
-      data-visible={open ? 'true' : 'false'}
+      data-visible={visible ? 'true' : 'false'}
       data-clip-mode={isCanvasMode ? 'canvas' : 'standalone'}
       data-clip-workspace-id={activeSession?.workspaceId}
       data-clip-node-id={activeSession?.nodeId}
@@ -221,10 +236,20 @@ export function ClipStage({ t, stage, locale }) {
         '--clip-header-pad-left': `${headerPadLeft}px`,
       }}
     >
-      <div className="omnimux-clip-stage-body openreel-studio-root dark" data-theme="dark">
-        <ClipErrorBoundary>
-          <OpenReelApp active={open && (!isCanvasMode || canvasHostVisible)} canvasMode={isCanvasMode} />
-        </ClipErrorBoundary>
+      <div className="omnimux-clip-stage-body openreel-studio-root">
+        {runtime && visible && (view.phase !== 'editing' || view.ingesting) && (
+          <EditorOpening view={view} runtime={runtime} t={t} onExit={closeCanvas} />
+        )}
+        <div style={{ height: '100%', display: runtime && view.phase !== 'editing' ? 'none' : undefined,
+          ...(view.ingesting ? { position: 'absolute', inset: 0, visibility: 'hidden' } : {}),
+        }} inert={view.resolving || view.ingesting || undefined}>
+          <ClipEditorExit onExit={runtime ? closeCanvas : null}>
+            <ClipErrorBoundary>
+              <OpenReelApp active={visible && (!runtime || view.phase === 'editing')} canvasMode={isCanvasMode} managed={Boolean(runtime)} />
+            </ClipErrorBoundary>
+          </ClipEditorExit>
+        </div>
+        {runtime && <EditorSyncNotice t={t} runtime={runtime} view={view} />}
       </div>
     </div>
   )
