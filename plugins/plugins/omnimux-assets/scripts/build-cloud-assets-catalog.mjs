@@ -1503,7 +1503,9 @@ function collectGreenScreen(ctx, add) {
  *
  * Both shelves are `gxgen-index.json` element libraries. The hook-videos shelf
  * is far larger and many of its rows only carry a remote URL, which the row
- * shape already supports.
+ * shape already supports. Most rows also have no poster in the source, so their
+ * catalog rows carry an empty `cover_url` and the client renders the clip's own
+ * first frame as the card face rather than inventing a cover locator.
  */
 function collectHook(ctx, add) {
   const remoteKey = (_row, localMedia) => `elements/hooks/${fileNameOf(localMedia)}`

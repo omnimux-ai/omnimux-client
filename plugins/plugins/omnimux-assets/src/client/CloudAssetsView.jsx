@@ -56,6 +56,15 @@ const NO_IDS = new Set()
 export const HOVER_AUDITION_DELAY_MS = 200
 
 /**
+ * 无封面视频的首帧取帧点。
+ *
+ * `preload="metadata"` 只保证读到时长和尺寸，暂停状态下停在第 0 秒并不保证
+ * 已经解码出一帧；把播放头移到 1ms 会触发一次 seek，浏览器才会把首帧画到
+ * `<video>` 上。0.001s 对正常成片都在第一帧内，观感仍是开头画面。
+ */
+export const BARE_CLIP_FIRST_FRAME_SECONDS = 0.001
+
+/**
  * 首次加载骨架卡张数随列数自适应（3 行，见 pageSizeFor），不再固定 12 张。
  */
 
@@ -119,9 +128,11 @@ export function CloudTileMedia(props) {
       void element.play().catch(() => {})
     } else {
       element.pause()
-      element.currentTime = 0
+      // A bare clip must stay parked on its decoded first frame; 0 would be a
+      // no-op for a paused element and can leave the surface blank again.
+      element.currentTime = bareClip ? BARE_CLIP_FIRST_FRAME_SECONDS : 0
     }
-  }, [hovering])
+  }, [hovering, bareClip])
 
   // A bare clip has to decode the frame it already shows: at mount, and again if
   // the cover request failed after mount. A clip with a poster above it waits for
@@ -159,6 +170,24 @@ export function CloudTileMedia(props) {
     if (bareClip) onBroken()
   }
 
+  const handleVideoLoadedMetadata = () => {
+    const element = videoRef.current
+    if (!element) return
+    const width = Number(element.videoWidth) || 0
+    const height = Number(element.videoHeight) || 0
+    // Adopt the real frame dimensions, then cache their ratio for the masonry
+    // estimator. The card's own layout follows the video's intrinsic ratio
+    // through `height:auto`; the attributes only keep the pre-metadata ratio hint.
+    if (width > 0 && height > 0) {
+      element.setAttribute('width', String(width))
+      element.setAttribute('height', String(height))
+      if (asset?.id) coverRatioCache.set(asset.id, width / height)
+    }
+    if (bareClip && element.currentTime < BARE_CLIP_FIRST_FRAME_SECONDS) {
+      element.currentTime = BARE_CLIP_FIRST_FRAME_SECONDS
+    }
+  }
+
   return (
     <>
       {imageSrc === '' ? null : (
@@ -191,6 +220,9 @@ export function CloudTileMedia(props) {
           loop
           playsInline
           preload={bareClip ? 'metadata' : 'none'}
+          width={bareClip ? 9 : undefined}
+          height={bareClip ? 16 : undefined}
+          onLoadedMetadata={handleVideoLoadedMetadata}
           onError={handleVideoError}
         />
       ) : null}
