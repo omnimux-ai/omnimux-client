@@ -24,7 +24,7 @@
  * 2. 排除技能专家（`omnimux-market`，在底部 footer）；
  * 3. 其余所有插件（包括所有 Alpha 插件 accounts, publish, analytics, forms, automation 以及垂直插件 video, products, device, clip, social-harvest, apps 等）全部收敛，不再作为独立行渲染在侧边栏；
  * 4. 收敛项的渲染面是官方「更多」菜单（seat `sidebar.panellist.actions`，注册点在 `explore-more-menu.jsx`）：本模块只提供清单真源与激活委托，不再自绘侧栏行或浮动菜单；
- * 5. 清单严格按照产品 Spec 白名单（8项：应用、视频剪辑、发布、账号、手机管理、数据分析、任务表单、社交采收），带纯矢量 SVG 图标；自动化已退役、产品库已并入资产库，均不再单列；
+ * 5. 清单严格按照产品 Spec 白名单（9项：应用、图像生成、视频剪辑、发布、账号、手机管理、数据分析、任务表单、社交采收），带纯矢量 SVG 图标；自动化已退役、产品库已并入资产库，均不再单列；
  * 6. 入口可见性按发布渠道区分：开发版（development）全部保留；正式版（production）只过滤 `plugin-lifecycle.json` 标为 Alpha 的测试版入口。
  */
 
@@ -180,10 +180,10 @@ const INLINE_STYLES = `
 `
 
 /**
- * 探索菜单项白名单（8项，逐字锁定）：
- * 应用、视频剪辑、发布、账号、手机管理、数据分析、任务表单、社交采收
+ * 探索菜单项白名单（9项，逐字锁定）：
+ * 应用、图像生成、视频剪辑、发布、账号、手机管理、数据分析、任务表单、社交采收
  * （自动化已退役、产品库已并入资产库，均不再单列）
- * 统一带纯矢量 SVG 图标，严禁 Emoji，零冗余徽章、零副标题、零同义重复。
+ * 统一带纯矢量 SVG 图标，严禁 Emoji、零冗余徽章、零副标题、零同义重复。
  * 产品库已并入资产库（specs/products-into-assets.spec.md），不再单独占一项。
  */
 export const EXPLORE_MENU_ITEMS = [
@@ -205,6 +205,12 @@ export const EXPLORE_MENU_ITEMS = [
       return true
     },
     iconSvg: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="1.5" y="1.5" width="5" height="5" rx="1"/><rect x="9.5" y="1.5" width="5" height="5" rx="1"/><rect x="1.5" y="9.5" width="5" height="5" rx="1"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/></svg>',
+  },
+  {
+    id: 'image-generation',
+    label: '图像生成',
+    tabId: 'omnimux:media-viewer',
+    iconSvg: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1.75" y="2.25" width="12.5" height="11.5" rx="2"/><circle cx="5.5" cy="6" r="1.2"/><path d="m2.5 12 3.8-3.8 2.6 2.6 2.2-2.2 2.4 2.4"/></svg>',
   },
   {
     id: 'clip',
