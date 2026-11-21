@@ -213,6 +213,15 @@ test('channel rows render media-capability chips from group or model operations'
   assert.match(cascadeSrc, /resolveGroupMediaCapabilities\(group, modelOperations\)/);
   assert.match(cascadeSrc, /groupMediaChipText\(capability\)/);
 });
+test('channel rows keep name and metadata on separate lines', () => {
+  assert.match(cascadeSrc, /formatChannelGroupLabel\(group\.label\)/);
+  assert.match(cascadeSrc, /wf-cascade-channel-row__title/);
+  assert.match(cascadeSrc, /wf-cascade-channel-row__meta/);
+  assert.match(cascadeSrc, /wf-cascade-channel-row__price/);
+  const css = readFileSync(new URL('../../../../theme/components.css', import.meta.url), 'utf8');
+  assert.match(css, /\.wf-cascade-channel-row__meta\s*\{[\s\S]*?flex-wrap:\s*wrap/);
+  assert.match(css, /\.wf-cascade-channel-row__meta\s*\{[\s\S]*?margin-top:\s*4px/);
+});
 test('official channel section no longer renders a 官方专线 subheading', () => {
   assert.doesNotMatch(cascadeSrc, /官方专线/);
   assert.match(cascadeSrc, /className="wf-cascade-channel-list"/);

@@ -5527,6 +5527,43 @@ body[data-ds-dark-theme] .wf-canvas-root .wf-edge-disconnect__button:focus-visib
   cursor: default;
 }
 
+.wf-cascade-channel-row__content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.wf-cascade-channel-row__title {
+  color: var(--wf-cascade-foreground);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+/* 价格、计费方式和素材能力统一从第二行开始排，绝不跟在名称尾部。 */
+.wf-cascade-channel-row__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.wf-cascade-channel-row__price {
+  color: var(--wf-cascade-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.wf-cascade-channel-row__caption {
+  color: var(--wf-cascade-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 /* --- 多彩语义标签胶囊（Loomi 1:1 风格） --- */
 .wf-loomi-badge {
   display: inline-flex;
