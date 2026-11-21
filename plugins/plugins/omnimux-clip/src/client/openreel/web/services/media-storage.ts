@@ -2,6 +2,20 @@ import { StorageEngine } from "@openreel/core";
 import type { MediaRecord, MediaMetadata } from "@openreel/core";
 
 const storage = new StorageEngine();
+const mediaWrites = new Map<string, Promise<void>>();
+
+async function writeMedia(mediaId: string, write: () => Promise<void>): Promise<void> {
+  // Native projects publish their exact digest with the Blob before saving it.
+  // Order writes to the legacy mutable cache key within this editor as well.
+  const prior = mediaWrites.get(mediaId);
+  const pending = prior ? prior.then(write, write) : write();
+  mediaWrites.set(mediaId, pending);
+  try {
+    await pending;
+  } finally {
+    if (mediaWrites.get(mediaId) === pending) mediaWrites.delete(mediaId);
+  }
+}
 
 export async function saveMediaBlob(
   projectId: string,
@@ -16,7 +30,7 @@ export async function saveMediaBlob(
     metadata,
   };
 
-  await storage.saveMedia(record);
+  await writeMedia(mediaId, () => storage.saveMedia(record));
 }
 
 export async function loadMediaBlob(mediaId: string): Promise<Blob | null> {
@@ -37,7 +51,7 @@ export async function loadProjectMedia(
 }
 
 export async function deleteMediaBlob(mediaId: string): Promise<void> {
-  await storage.deleteMedia(mediaId);
+  await writeMedia(mediaId, () => storage.deleteMedia(mediaId));
 }
 
 export async function saveFileHandle(name: string, size: number, handle: FileSystemFileHandle): Promise<void> {

@@ -15,6 +15,8 @@ export function createLiveChannel({ session, storage, native, execute, window })
   const handlers = new Map()
   let events
   let detachEvents = []
+  let detachViewport
+  const activeSessionId = () => window.__omnimuxWorkbench?.getCurrentSessionId?.()
   let renewTask = null
   let recoveryKey
   let pulseTimer
@@ -40,6 +42,7 @@ export function createLiveChannel({ session, storage, native, execute, window })
       mode,
       ...owner.site.binding,
       editorInstanceId: owner.site.entry.id,
+      revisionEpoch: owner.revisionEpoch,
       ...(owner.conflict ? { conflict: true } : {}),
     }
     return { view: mode === 'canvas' ? { extra: { clip } } : { kind: 'clip', extra: { clip } } }
@@ -81,7 +84,7 @@ export function createLiveChannel({ session, storage, native, execute, window })
       clearTimeout(pulseTimer)
       pulseTimer = undefined
       updateContributors()
-      void events?.pushViewport?.()
+      if (events?.getWindowId?.()) void events.pushViewport?.()
       void renew()
     } else if (!pulseTimer) {
       pulseTimer = setTimeout(() => {
@@ -89,7 +92,7 @@ export function createLiveChannel({ session, storage, native, execute, window })
         updateContributors()
         const owner = session.getOwner()
         if (owner?.record) {
-          void events?.pushViewport?.()
+          if (events?.getWindowId?.()) void events.pushViewport?.()
           if (!owner.lease) void renew()
         }
       }, 120)
@@ -123,16 +126,13 @@ export function createLiveChannel({ session, storage, native, execute, window })
     }
   }
 
-  async function recoverReceipts(windowId) {
-    const sessionId = window.__omnimuxWorkbench?.getCurrentSessionId?.()
-    if (!sessionId || sessionId === 'default') return
+  async function recoverReceipts(windowId, sessionId, registerViewport, stillConnected) {
     const key = JSON.stringify([windowId, sessionId])
     if (recoveryKey === key) return
     try {
-      const viewport = await events.pushViewport()
-      if (!viewport || events.getWindowId() !== windowId || window.__omnimuxWorkbench?.getCurrentSessionId?.() !== sessionId) return
+      if (!await registerViewport() || !stillConnected()) return
       const receipts = await storage.recoverReceipts(sessionId, Date.now() - RECEIPT_AGE_MS)
-      if (!active) return
+      if (!stillConnected()) return
       for (const receipt of receipts) {
         if (!pending.has(receipt.requestId)) pending.set(receipt.requestId, receipt)
       }
@@ -147,6 +147,7 @@ export function createLiveChannel({ session, storage, native, execute, window })
     const owner = session.getOwner()
     const lease = owner?.lease
     if (!lease || !session.owns(owner)) return
+    const token = owner.token
     inFlight.add(requestId)
     let command
     try {
@@ -156,7 +157,7 @@ export function createLiveChannel({ session, storage, native, execute, window })
         await sendReceipt(previous)
         return
       }
-      if (!session.owns(owner) || owner.lease?.leaseId !== lease.leaseId) return
+      if (!session.owns(owner) || owner.token !== token || owner.lease?.leaseId !== lease.leaseId) return
       const response = await post('claim', { requestId, leaseId: lease.leaseId }, lease.windowId)
       command = response.command
       if (!command) return
@@ -165,14 +166,15 @@ export function createLiveChannel({ session, storage, native, execute, window })
         body: { requestId, leaseId: lease.leaseId, receiptToken: command.receiptToken },
       }
       const assertCurrent = () => {
-        if (!editorReady(owner) || owner.lease?.leaseId !== lease.leaseId
+        if (!editorReady(owner) || owner.token !== token || owner.lease?.leaseId !== lease.leaseId
           || events?.getWindowId?.() !== lease.windowId || owner.lease.expiresAt <= Date.now()) {
           throw new LiveClipError('EDITOR_NOT_VISIBLE', 'The original Clip editor is no longer active.')
         }
         if (command.deadlineAt <= Date.now()) throw new LiveClipError('REQUEST_EXPIRED', 'The Clip command deadline has passed.')
         if (['clip_edit', 'clip_export'].includes(command.operation)) {
           session.capture(owner)
-          if (owner.record.revision !== command.baseRevision || owner.conflict) {
+          if (owner.record.revision !== command.baseRevision || owner.conflict
+            || command.revisionEpoch !== undefined && command.revisionEpoch !== owner.revisionEpoch) {
             throw new LiveClipError('REVISION_CONFLICT', 'The timeline version has advanced or needs conflict resolution.', {
               currentRevision: owner.record.revision,
             })
@@ -187,7 +189,7 @@ export function createLiveChannel({ session, storage, native, execute, window })
         }
         assertCurrent()
         const result = await execute(command, {
-          assertCurrent, revision: () => owner.record.revision, signal: owner.token.signal,
+          assertCurrent, revision: () => owner.record.revision, signal: token.signal,
         })
         receipt.body.result = { ...result, revision: result?.revision ?? owner.record.revision }
         if (command.operation === 'clip_edit' && result.undoStep) {
@@ -238,13 +240,19 @@ export function createLiveChannel({ session, storage, native, execute, window })
     const candidate = window.__omnimuxHubEvents
     if (candidate === events) return
     for (const stop of detachEvents) stop()
+    detachViewport?.()
     events = candidate
+    recoveryKey = undefined
+    detachViewport = events?.registerViewportContributor?.('clip', ({ sessionId }) => {
+      const binding = session.retainedCanvasBinding(sessionId)
+      return binding ? { retainedCanvas: binding } : null
+    })
     detachEvents = !events?.subscribe ? [] : [
       events.subscribe('omnimux:clip:command', event => void receive(event.payload)),
       events.subscribe('omnimux:clip:open', event => void open(event.payload)),
-      events.subscribe('omnimux:window-ready', () => {
-        session.reconnect()
-        changed({ immediate: true })
+      events.subscribe('omnimux:window-ready', () => changed({ immediate: true })),
+      events.subscribe('omnimux:viewport-registered', ({ payload }) => {
+        if (payload?.windowInstanceId === events.getWindowId() && session.needsReconnect?.(payload.sessionId)) void renew()
       }),
       events.subscribe('omnimux:disconnected', () => {
         const owner = session.getOwner()
@@ -259,38 +267,50 @@ export function createLiveChannel({ session, storage, native, execute, window })
       connect()
       session.reconcile()
       updateContributors()
-      const windowId = events?.getWindowId?.()
-      if (!windowId) return
-      await recoverReceipts(windowId)
-      if (!active || events?.getWindowId?.() !== windowId) return
+      const hub = events
+      const windowId = hub?.getWindowId?.()
+      const sessionId = activeSessionId()
+      if (!windowId || !sessionId || sessionId === 'default') return
+      const stillConnected = () => active && window.__omnimuxHubEvents === hub
+        && hub.getWindowId() === windowId && activeSessionId() === sessionId
+      let viewportRequest
+      const registerViewport = () => (viewportRequest ??= Promise.resolve().then(() => hub.pushViewport()).then(
+        registered => Boolean(registered) && stillConnected(), () => false,
+      ))
+      await recoverReceipts(windowId, sessionId, registerViewport, stillConnected)
+      if (stillConnected() && session.needsReconnect?.(sessionId) && await registerViewport()) {
+        await session.reconnect(sessionId, stillConnected)
+      }
+      if (!stillConnected()) return
       for (const receipt of pending.values()) {
         if (receipt.createdAt + RECEIPT_AGE_MS < Date.now()) pending.delete(receipt.requestId)
         else void sendReceipt(receipt)
       }
       const owner = session.getOwner()
-      if (!editorReady(owner)) return
-      if (owner.conflict) {
-        await release(owner)
-        return
-      }
-      if (owner.lease?.windowId !== windowId) owner.lease = null
+      if (!editorReady(owner) || owner.conflict) return
+      if (owner.lease?.windowId !== windowId || owner.lease.expiresAt <= Date.now()) owner.lease = null
+      const previous = owner.lease
       try {
-        if (owner.lease) {
-          const lease = await post('renew', { leaseId: owner.lease.leaseId, revision: owner.record.revision }, windowId)
-          if (session.owns(owner)) owner.lease = { ...lease, windowId }
+        if (previous) {
+          const lease = await post('renew', {
+            leaseId: previous.leaseId, revision: owner.record.revision, revisionEpoch: owner.revisionEpoch,
+          }, windowId)
+          if (stillConnected() && editorReady(owner) && !owner.conflict && owner.lease === previous) {
+            owner.lease = { ...lease, windowId }
+          }
           return
         }
-        await events.pushViewport()
-        if (!session.owns(owner) || events.getWindowId() !== windowId) return
+        if (!await registerViewport() || !editorReady(owner) || owner.conflict) return
         const lease = await post('lease', {
           mode: owner.site.mode, editorInstanceId: owner.site.entry.id, tabInstanceId: owner.site.tabInstanceId,
           projectId: owner.record.project.id, title: owner.record.project.name, revision: owner.record.revision,
-          ...owner.site.binding,
+          revisionEpoch: owner.revisionEpoch, ...owner.site.binding,
         }, windowId)
+        if (hub.getWindowId() !== windowId || window.__omnimuxHubEvents !== hub) return
         owner.lease = { ...lease, windowId }
-        if (!session.owns(owner)) await release(owner)
+        if (!active || session.getOwner() !== owner) await release(owner)
       } catch (error) {
-        owner.lease = null
+        if (owner.lease === previous) owner.lease = null
         if (!['EDITOR_OFFLINE', 'EDITOR_NOT_VISIBLE', 'WINDOW_UNAUTHORIZED', 'LEASE_INVALID', 'EDITOR_LEASE_CONFLICT'].includes(error.code)) {
           console.warn('[Clip] Could not register the active editor.', error.code)
         }
@@ -309,6 +329,7 @@ export function createLiveChannel({ session, storage, native, execute, window })
       clearTimeout(pulseTimer)
       window.clearInterval(interval)
       stopContext()
+      detachViewport?.()
       for (const stop of detachEvents) stop()
       for (const item of handlers.values()) item.detach()
       handlers.clear()

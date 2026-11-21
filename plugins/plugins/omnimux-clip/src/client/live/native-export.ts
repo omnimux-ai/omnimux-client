@@ -26,12 +26,8 @@ interface NativeExportMetadata {
 }
 
 const MP4_MIME = 'video/mp4'
-let activeRender: Promise<void> | undefined
 
-/** Wait before loading a different project into OpenReel's shared processing engines. */
-export function waitForNativeExportRender(): Promise<void> | undefined {
-  return activeRender
-}
+export { waitForNativeExportRender } from '../openreel/web/services/export-runner'
 
 async function readOutputMetadata(blob: Blob): Promise<NativeExportMetadata> {
   const { BlobSource, Input, MP4 } = await import('mediabunny')
@@ -62,12 +58,8 @@ async function renderMp4(
     || useTimelineStore.getState().playbackLockedReason) {
     throw ClipDomainError.exportEncodeFailed('Wait for the current editor operation to finish before exporting.')
   }
-  const release = tryLockNativeVideoRender()
-  if (!release) throw ClipDomainError.exportEncodeFailed('Another video export is encoding.')
   const { engine, dispose } = createIsolatedExportEngine()
   const exporting = { isExporting: true, progress: 0, phase: 'Rendering...' }
-  let rendered!: () => void
-  activeRender = new Promise((resolve) => { rendered = resolve })
   let needsSource = true
   let invalidated: { cause: unknown } | undefined
   const check = () => {
@@ -138,9 +130,6 @@ async function renderMp4(
       })
     } finally {
       if (useUIStore.getState().exportState === exporting) useUIStore.getState().setExportState(previous)
-      release()
-      activeRender = undefined
-      rendered()
     }
   }
 }
@@ -182,7 +171,9 @@ export async function exportNativeProject<T>(
   })
   // The UI lease is needed to freeze the source. From this point, a hidden or
   // unmounted editor can finish if the shared engine still holds this project.
-  const { blob, discard } = await renderMp4(project, settings, assertRenderSource, args.onProgress, signal)
+  const release = tryLockNativeVideoRender()
+  if (!release) throw ClipDomainError.exportEncodeFailed('Another video export is encoding.')
+  const { blob, discard } = await renderMp4(project, settings, assertRenderSource, args.onProgress, signal).finally(release)
   try {
     const metadata = await readOutputMetadata(blob)
     signal?.throwIfAborted()

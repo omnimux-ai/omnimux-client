@@ -48,8 +48,15 @@ export function createWindowRegistry({ now = Date.now } = {}) {
       window,
       update(envelope) {
         if (!isAlive()) return false
-        if (latest && envelope.capturedAt < latest.capturedAt) return false
         const { refreshId, ...viewport } = envelope
+        if (latest && viewport.capturedAt < latest.capturedAt) {
+          // A newer heartbeat may have arrived while this authenticated refresh
+          // was in transit. Its current snapshot satisfies the same-session read.
+          if (refresh && refreshId === refresh.id) {
+            finishRefresh(latest.sessionId === refresh.sessionId && viewport.sessionId === refresh.sessionId ? latest : null)
+          }
+          return false
+        }
         latest = Object.freeze({ ...viewport, receivedAt: now() })
         if (refresh && refreshId === refresh.id) finishRefresh(envelope.sessionId === refresh.sessionId ? latest : null)
         return true

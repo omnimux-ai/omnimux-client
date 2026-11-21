@@ -63,9 +63,9 @@ const MAX_HISTORY_SIZE = 50;
 /** Coalescing window: rapid changes (e.g. node drags) share one snapshot. */
 const HISTORY_DEBOUNCE_MS = 300;
 
-interface HistorySnapshot {
-  nodes: CanvasNode[];
-  edges: Edge[];
+type HistoryGraph = Pick<CanvasState, 'nodes' | 'edges'>;
+
+interface HistorySnapshot extends HistoryGraph {
   /** Graph signature excludes transient React Flow state. */
   sig: string;
 }
@@ -142,6 +142,8 @@ export interface CanvasState {
   redo: () => void;
   /** Drop all history and reseed from the current graph. */
   clearHistory: () => void;
+  /** Prepare history updates for the same store set that applies a committed graph change. */
+  rebaseHistory: (replay: (graph: HistoryGraph) => HistoryGraph | undefined) => Pick<CanvasState, 'past' | 'future'>;
 
   // ===== UI Slice（最小）=====
   selectedElement: { type: SelectedElementType; id: string | null };
@@ -442,6 +444,28 @@ export const useCanvasStore = create<CanvasState>()(
       set({ past: [], future: [] });
       history.current = snapshotOf(nodes, edges);
       history.lastPushAt = 0;
+    },
+
+    rebaseHistory: (replay) => {
+      const { past, future } = get();
+      const rebaseSnapshot = (snapshot: HistorySnapshot) => {
+        const graph = replay(snapshot);
+        if (!graph) return undefined;
+        const sig = graphSignature(graph.nodes, graph.edges);
+        return sig === snapshot.sig ? snapshot : snapshotOf(graph.nodes, graph.edges, sig);
+      };
+      // Rebase the last recorded frame too. A pending renderer effect can then
+      // record a local edit that arrived before this write as its own step.
+      const current = history.current ? rebaseSnapshot(history.current) : undefined;
+      const rebaseStack = (stack: HistorySnapshot[]) => {
+        // Frames with incompatible links cannot be replayed safely. Collapse
+        // adjacent frames if the Host update made their graphs identical.
+        const rebased = stack.map(rebaseSnapshot).filter(frame => frame !== undefined);
+        return rebased.filter((frame, index) => frame.sig !== (rebased[index + 1] ?? current)?.sig);
+      };
+      const updated = { past: rebaseStack(past), future: rebaseStack(future) };
+      history.current = current ?? null;
+      return updated;
     },
 
     // ========================================================================

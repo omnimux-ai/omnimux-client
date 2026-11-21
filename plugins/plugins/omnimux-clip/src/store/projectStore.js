@@ -66,7 +66,7 @@ function timestampOf(raw, native) {
   return finite(timestamp, finite(native?.modifiedAt, 0))
 }
 
-function decodeEnvelope(raw, id, { title, allowDraftRekey = false } = {}) {
+function decodeEnvelope(raw, id, { title, allowDraftRekey = false, requestedBinding } = {}) {
   if (!isRecord(raw)) throw ClipDomainError.invalidJson(`project ${id} is not a JSON object`)
   const bareNative = isNativeProject(raw)
   const canonical = !bareNative && Object.hasOwn(raw, 'project') && Object.hasOwn(raw, 'revision')
@@ -84,10 +84,12 @@ function decodeEnvelope(raw, id, { title, allowDraftRekey = false } = {}) {
   const revision = raw.revision === undefined ? 1 : assertRevision(raw.revision, 'revision', 1)
   const updatedAt = timestampOf(raw, native)
   const binding = normalizeBinding(id, raw.binding)
-  const project = native ?? migrateLegacyTimeline(legacy, { id, title: raw.title || title, updatedAt, playheadMs: raw.playheadMs })
+  const workspaceId = (binding ?? requestedBinding)?.workspaceId
+  const project = native ?? migrateLegacyTimeline(legacy, { id, title: raw.title || title, updatedAt, playheadMs: raw.playheadMs, workspaceId })
   const normalized = normalizeNativeProject(project, id, {
     allowRekey: !canonical && ((!bareNative && raw.projectId === id) || allowDraftRekey),
     allowMediaStatus: canonical && !allowDraftRekey,
+    workspaceId,
   })
   const envelope = envelopeFor(id, normalized, revision, updatedAt, binding)
   return { envelope, needsMigration: !canonical || !isDeepStrictEqual(raw, envelope) }
@@ -114,7 +116,7 @@ export function createProjectStore(deps) {
     }
   }
 
-  function readEntry(id, file) {
+  function readEntry(id, file, options) {
     let bytes
     try {
       bytes = readRegularFile(file)
@@ -122,7 +124,7 @@ export function createProjectStore(deps) {
       if (error?.code === 'ENOENT') return null
       throw ClipDomainError.projectUnreadable(id)
     }
-    return { bytes, ...decodeEnvelope(readJson(bytes, id), id) }
+    return { bytes, ...decodeEnvelope(readJson(bytes, id), id, options) }
   }
 
   function load(id, { binding } = {}) {
@@ -199,7 +201,7 @@ export function createProjectStore(deps) {
     if (expectedRevision !== currentRevision && revision !== currentRevision) {
       throw revisionConflict(id, expectedRevision, currentRevision)
     }
-    const normalized = normalizeNativeProject(project, id, { allowMediaStatus: true })
+    const normalized = normalizeNativeProject(project, id, { allowMediaStatus: true, workspaceId: binding?.workspaceId })
     if (expectedRevision !== currentRevision) {
       if (!previous.needsMigration && isDeepStrictEqual(current.project, normalized)) return current
       throw revisionConflict(id, expectedRevision, currentRevision)
@@ -212,7 +214,7 @@ export function createProjectStore(deps) {
   function materialize(id, { binding, draftSchema, title } = {}) {
     const file = projectJsonPath(paths, id)
     const requested = normalizeBinding(id, binding)
-    const previous = readEntry(id, file)
+    const previous = readEntry(id, file, { requestedBinding: requested })
     const current = previous?.envelope
     const bound = matchBinding(id, current, requested, { allowAssociate: true })
     if (current) {
@@ -227,7 +229,9 @@ export function createProjectStore(deps) {
       return commit(file, envelopeFor(id, createNativeProject(id, title || id, now), 1, now, bound))
     }
     const draftBytes = typeof draftSchema === 'string' ? Buffer.from(draftSchema) : encodeJson(draftSchema)
-    const { envelope: draft } = decodeEnvelope(readJson(draftBytes, id), id, { title, allowDraftRekey: Boolean(bound) })
+    const { envelope: draft } = decodeEnvelope(readJson(draftBytes, id), id, {
+      title, allowDraftRekey: Boolean(bound), requestedBinding: bound,
+    })
     if (draft.binding && !isDeepStrictEqual(draft.binding, bound)) {
       throw new ClipDomainError('clip-binding-mismatch', 'Draft project binding does not match the requested binding.')
     }
@@ -243,7 +247,7 @@ export function createProjectStore(deps) {
     const entry = readEntry(id, file)
     const bound = matchBinding(id, entry?.envelope, requested)
     if (entry) return entry.envelope
-    const normalized = normalizeNativeProject(project, id, { allowMediaStatus: true })
+    const normalized = normalizeNativeProject(project, id, { allowMediaStatus: true, workspaceId: bound?.workspaceId })
     return commit(file, envelopeFor(id, normalized, 1, Date.now(), bound))
   }
 

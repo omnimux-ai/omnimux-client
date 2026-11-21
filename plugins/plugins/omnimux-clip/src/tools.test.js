@@ -84,6 +84,7 @@ function fixture(t, { exportJobs: jobs, workflowClip } = {}) {
         return editor
       },
       hide() { current = { ok: true, sessionId, surface: { tabId: 'other', instanceId: `tab:other-${id}`, panelOpen: true }, view: null } },
+      retainCanvas(value) { current = { ...current, viewportDetails: { clip: { retainedCanvas: value } } } },
       disconnect() { alive = false },
     }
     client.hide()
@@ -642,6 +643,86 @@ test('blocks ambiguous edits and binds claim, receipt and idempotency to exactly
   const fallbackExec = { agent: { session: {} }, session: { id: 'chat-a' } }
   await rejectsCode(h.execute('clip_edit', editArgs('old-fresh-request', { windowInstanceId: 'one', baseRevision: 1 }), fallbackExec),
     'REVISION_CONFLICT', error => error.details.currentRevision === 2)
+})
+
+test('lists a retained canvas project as hidden after its lease is released and Studio takes over', async t => {
+  const h = fixture(t)
+  const client = h.connect('one')
+  const canvasLease = await acquire(h, client, binding.projectId, binding)
+  assert.equal((await h.post(client, 'release', { leaseId: canvasLease })).body.released, true)
+  await acquire(h, client, 'demo')
+  client.retainCanvas(binding)
+
+  const hiddenEdit = requestId => h.execute('clip_edit', editArgs(requestId, { projectId: binding.projectId }))
+  await assert.rejects(hiddenEdit('hidden-canvas'), error => {
+    assert.equal(error.code, 'AMBIGUOUS_TARGET')
+    assert.deepEqual(error.details.candidates, [
+      { projectId: 'demo', mode: 'standalone', title: 'demo', windowInstanceId: 'one', visible: true },
+      { ...binding, mode: 'canvas', title: 'Canvas Clip', windowInstanceId: 'one', visible: false },
+    ])
+    return true
+  })
+  assert.deepEqual(h.workflowCalls.at(-1), { value: binding, sessionId: 'chat-a' })
+
+  for (const hint of [{ ...binding, nodeId: 'other-node' }, null]) {
+    client.retainCanvas(hint)
+    await assert.rejects(hiddenEdit(`retained-${hint?.nodeId ?? 'closed'}`), error => {
+      assert.equal(error.code, 'AMBIGUOUS_TARGET')
+      assert.deepEqual(error.details.candidates.map(candidate => candidate.projectId), ['demo'])
+      return true
+    })
+  }
+  assert.deepEqual(client.events, [])
+})
+
+test('dispatches the authenticated viewport revision before renewal and rechecks at claim', async t => {
+  const h = fixture(t)
+  const client = h.connect('one')
+  const leaseId = await acquire(h, client, 'demo', null, { revisionEpoch: 0 })
+  client.editor('demo', null, { revision: 2, revisionEpoch: 0 })
+  const requestId = 'viewport-before-renew'
+  const pending = h.execute('clip_edit', editArgs(requestId, { baseRevision: 2 }))
+  const settlement = pending.then(result => ({ result }), error => ({ error }))
+
+  assert.deepEqual(client.events, [{ type: 'omnimux:clip:command', payload: { requestId } }])
+  client.editor('demo', null, { revision: 3, revisionEpoch: 0 })
+  const claim = await h.post(client, 'claim', { leaseId, requestId })
+  assert.equal(claim.status, 409)
+  assert.deepEqual(claim.body.details, { currentRevision: 3 })
+  assert.equal(claim.body.command, undefined)
+  assert.equal((await settlement).error?.code, 'REVISION_CONFLICT')
+})
+
+test('a lower adopted viewport supersedes a stale heartbeat and a delayed old receipt on the same lease', async t => {
+  const h = fixture(t)
+  const client = h.connect('one')
+  const leaseId = await acquire(h, client, 'demo', null, { revision: 7, revisionEpoch: 0 })
+  const delayedArgs = editArgs('before-adoption', { baseRevision: 7 })
+  const delayed = h.execute('clip_edit', delayedArgs)
+  const delayedSettlement = delayed.then(result => ({ result }), error => ({ error }))
+  const request = { leaseId, requestId: delayedArgs.requestId }
+  const { command } = (await h.post(client, 'claim', request)).body
+  assert.equal(command.baseRevision, 7)
+
+  client.editor('demo', null, { revision: 3, revisionEpoch: 1 })
+  const staleRenew = await h.post(client, 'renew', { leaseId, revision: 7, revisionEpoch: 0 })
+  assert.equal(staleRenew.body.leaseId, leaseId)
+  assert.equal(staleRenew.body.revision, 3)
+  assert.equal((await h.post(client, 'receipt', {
+    ...request, receiptToken: command.receiptToken, result: editResult(8),
+  })).body.status, 'succeeded')
+  assert.equal((await delayedSettlement).result?.revision, 8)
+  const newArgs = editArgs('after-adoption', { baseRevision: 3 })
+  const fresh = h.execute('clip_edit', newArgs)
+  const freshSettlement = fresh.then(result => ({ result }), error => ({ error }))
+  const freshRequest = { leaseId, requestId: newArgs.requestId }
+  const freshReply = (await h.post(client, 'claim', freshRequest)).body.command
+  assert.equal(freshReply.baseRevision, 3)
+  assert.equal(freshReply.revisionEpoch, 1)
+  assert.equal((await h.post(client, 'receipt', {
+    ...freshRequest, receiptToken: freshReply.receiptToken, result: editResult(4),
+  })).body.status, 'succeeded')
+  assert.equal((await freshSettlement).result?.revision, 4)
 })
 
 test('rechecks baseRevision at claim and protects the latest user edit', async t => {

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { createWorkbenchContextMessage, mountWorkbenchContextInjector } from './context-injector.js'
 import { createWindowRegistry } from '../events/windows.js'
+import { createEventsClient } from '../client/events-client.js'
 
 describe('Workbench Context Injector', () => {
   it('refreshes the authenticated Clip viewport before the first step, preserving canvas context on exit', async () => {
@@ -55,6 +56,66 @@ describe('Workbench Context Injector', () => {
     assert.doesNotMatch(afterExit, /clip_a|selectedClips/)
     assert.equal(snapshots, 3)
     credentials.dispose()
+  })
+
+  it('delivers first-step Clip context while an ordinary heartbeat is still in flight', async t => {
+    const windows = createWindowRegistry()
+    const registered = Promise.withResolvers()
+    const heartbeatStarted = Promise.withResolvers()
+    const releaseHeartbeat = Promise.withResolvers()
+    let revision = 1
+    let holdHeartbeat = false
+    let client
+    const credentials = windows.attachWindow({
+      isAuthenticated: () => true,
+      send(event) { void client.notifyMessageForTests(event); return true },
+    })
+    const envelope = () => ({
+      schemaVersion: 1, ok: true, sessionId: 's1', capturedAt: 1000,
+      surface: { tabId: 'omnimux-clip:studio', instanceId: 'tab:studio', panelOpen: true },
+      view: { extra: { clip: { mode: 'standalone', projectId: 'clip_a', title: 'Timeline', revision, durationSec: 3, playheadSec: 1.25 } } },
+    })
+    const stale = envelope()
+    const submissions = []
+    client = createEventsClient({
+      getWorkbench: () => ({ getUiContext: envelope }),
+      async fetch(_url, options) {
+        const body = JSON.parse(options.body)
+        submissions.push(body)
+        if (holdHeartbeat && !body.refreshId) {
+          heartbeatStarted.resolve()
+          await releaseHeartbeat.promise
+        }
+        const accepted = await windows.updateWindowViewport({ headers: options.headers }, body, id => id === 's1')
+        if (accepted) registered.resolve()
+        return { ok: accepted, status: accepted ? 200 : 403 }
+      },
+    })
+    t.mock.method(console, 'warn', () => {})
+    t.after(() => {
+      client.disconnect()
+      credentials.dispose()
+      releaseHeartbeat.resolve()
+    })
+    void client.notifyMessageForTests({ type: 'omnimux:window-ready', payload: credentials })
+    await registered.promise
+    holdHeartbeat = true
+    const heartbeat = client.pushViewport()
+    await heartbeatStarted.promise
+    revision = 2
+
+    let handler
+    mountWorkbenchContextInjector({ on(_event, callback) { handler = callback } }, {
+      mailbox: { getActiveView: () => ({ uiContext: stale }) }, hubEvents: windows,
+    })
+    const { messages } = await handler({ agent: { session: { id: 's1' } }, step: 1 }, async () => ({ kind: 'enter', messages: [] }))
+    assert.match(messages[0].content[0].text, /clip \| mode: standalone.*revision: 2/)
+    assert.deepEqual(submissions.map(body => body.view.extra.clip.revision), [1, 1, 2])
+    assert.match(submissions[2].refreshId, /^[0-9a-f-]{36}$/)
+
+    releaseHeartbeat.resolve()
+    await heartbeat
+    assert.equal(windows.getWindows('s1')[0].getViewport().view.extra.clip.revision, 2)
   })
 
   it('creates native DSH context user message with correct snapshot structure', () => {

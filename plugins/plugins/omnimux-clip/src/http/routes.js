@@ -3,7 +3,7 @@ import { once } from 'node:events'
 import { createWriteStream, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { finished } from 'node:stream/promises'
-import { ClipDomainError, clipErrorStatus, clipErrorValue, isClipRevision } from '../errors.js'
+import { ClipDomainError, clipErrorStatus, clipErrorValue, isClipRevision, isClipToken } from '../errors.js'
 import { readCanvasBinding, resolveWorkflowBinding, sameBinding } from '../live/command-broker.js'
 import { MAX_RECEIPT_BYTES } from '../live/snapshot.js'
 import { assertProjectId, ensureClipDirs, exportMp4Path } from '../paths.js'
@@ -187,6 +187,37 @@ export function createClipDispatcher({ paths, store, fs = DEFAULT_FS, broker, ex
     return envelope
   }
 
+  function reserveCanvasExport(input, window) {
+    if (!window?.isAlive?.() || !isClipToken(window.windowInstanceId)) {
+      throw new ClipDomainError('WINDOW_UNAUTHORIZED', 'An authenticated Clip window is required.')
+    }
+    if (!exportJobs) throw ClipDomainError.exportEncodeFailed('The Clip export service is unavailable.')
+    const { requestId, binding: proposed, editorInstanceId, tabInstanceId, projectRevision } = objectBody(input)
+    if (!isClipToken(requestId) || !isClipToken(editorInstanceId) || !isClipToken(tabInstanceId) || !isClipRevision(projectRevision)) {
+      throw ClipDomainError.invalidJson('The export needs a request ID, editor identity and project revision.')
+    }
+    const binding = readCanvasBinding(proposed?.projectId, proposed)
+    const viewport = window.getViewport()
+    const clip = viewport?.view?.extra?.clip
+    const surface = viewport?.surface
+    if (viewport?.ok !== true || !viewport.sessionId || viewport.sessionId === 'default' || surface?.panelOpen !== true
+      || surface.tabId !== 'omnimux-workflow:canvas' || surface.instanceId !== tabInstanceId
+      || clip?.mode !== 'canvas' || clip.visible === false || clip.conflict === true || clip.editorInstanceId !== editorInstanceId
+      || viewport.view.extra.workspaceId !== binding.workspaceId || !sameBinding(clip, binding)) {
+      throw new ClipDomainError('EDITOR_NOT_VISIBLE', 'The export must start in the original canvas editor.')
+    }
+    resolveWorkflowBinding(getWorkflowClip?.(), binding, viewport.sessionId)
+    const saved = store.load(binding.projectId)
+    if (!sameBinding(saved.binding, binding)) {
+      throw new ClipDomainError('clip-binding-mismatch', 'The saved Clip project belongs to another canvas node.')
+    }
+    if (clip.revision !== projectRevision || projectRevision < saved.revision) {
+      throw ClipDomainError.revisionConflict(Math.max(saved.revision, isClipRevision(clip.revision) ? clip.revision : 0))
+    }
+    return exportJobs.begin({ requestId, projectId: binding.projectId, projectRevision: clip.revision,
+      binding, manualWindowId: window.windowInstanceId })
+  }
+
   async function dispatch(req) {
     const method = (req.method || 'GET').toUpperCase()
     try {
@@ -202,6 +233,9 @@ export function createClipDispatcher({ paths, store, fs = DEFAULT_FS, broker, ex
         return { status: 200, body: broker[live[1]](req.window, objectBody(req.body)) }
       }
 
+      if (path === '/exports/reserve' && method === 'POST') {
+        return { status: 200, body: reserveCanvasExport(req.body, req.window) }
+      }
       const exportUpload = path.match(EXPORT_UPLOAD_PATH)
       if (exportUpload && method === 'POST') {
         if (!exportJobs || !req.exportUpload || !req.tempPath) throw ClipDomainError.pathDenied('Export upload authorization is required.')

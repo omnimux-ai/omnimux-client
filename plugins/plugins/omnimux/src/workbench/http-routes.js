@@ -60,7 +60,11 @@ export function registerWorkbenchHttpRoutes(webServer, deps) {
         const accepted = await deps.hubEvents?.updateWindowViewport(req, body, deps.verifySession)
         if (!accepted) return sendJson(res, 403, { ok: false, error: 'window-not-authorized' })
       }
-      const result = mailbox.updateViewport(body)
+      // Routing hints belong to the authenticated window registry. The shared
+      // workbench mailbox also backs a model tool and receives only its envelope.
+      const envelope = { ...body }
+      delete envelope.viewportDetails
+      const result = mailbox.updateViewport(envelope)
       sendJson(res, result.ok ? 200 : 400, result)
     },
   }))

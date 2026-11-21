@@ -1,4 +1,4 @@
-/** Hub event subscription and bounded workbench heartbeat/RPC delivery. */
+/** Hub event subscription and bounded workbench viewport/RPC delivery. */
 import { isCanvasClipActive } from '../workbench/contract.js'
 
 export const HUB_EVENTS_GLOBAL_KEY = '__omnimuxHubEvents'
@@ -20,6 +20,7 @@ export function createEventsClient(options = {}) {
   const viewportUrl = options.viewportUrl || '/omnimux/workbench/viewport'
   const rpcAckUrl = options.rpcAckUrl || '/omnimux/workbench/rpc/ack'
   const subscribers = new Map()
+  const viewportContributors = new Map()
   const requests = new Set()
   let socket = null
   let detachSocketListeners = null
@@ -29,6 +30,8 @@ export function createEventsClient(options = {}) {
   let heartbeatTimer = null
   let reconnectTimer = null
   let heartbeatRequest = null
+  let refreshRequest = null
+  let lastViewportCaptureAt = -Infinity
   let lastEventAt = 0
   let lastEventId = null
   let healthy = false
@@ -57,8 +60,7 @@ export function createEventsClient(options = {}) {
     }
   }
 
-  async function postJson(url, body, proof) {
-    const controller = new AbortController()
+  async function postJson(url, body, proof, controller = new AbortController()) {
     requests.add(controller)
     const timeout = setTimeout(() => controller.abort(new Error('request timed out')), REQUEST_TIMEOUT_MS)
     try {
@@ -117,14 +119,17 @@ export function createEventsClient(options = {}) {
     if (event.type === 'omnimux:window-ready') {
       const { windowInstanceId, proof } = event.payload
       if (typeof windowInstanceId === 'string' && /^[a-f0-9]{64}$/.test(proof)) {
-        windowIdentity = { windowInstanceId, proof }
+        if (windowIdentity?.windowInstanceId !== windowInstanceId) {
+          cancelViewportRequests()
+          windowIdentity = { windowInstanceId, proof }
+        }
         notifySubscribers({ type: event.type, payload: { windowInstanceId } })
-        void pushViewport()
+        return pushViewport()
       }
       return
     }
     if (event.type === 'omnimux:viewport:refresh') {
-      if (windowIdentity && /^[0-9a-f-]{36}$/.test(event.payload.requestId)) void pushViewport(event.payload.requestId)
+      if (windowIdentity && /^[0-9a-f-]{36}$/.test(event.payload.requestId)) return pushViewport(event.payload.requestId)
       return
     }
     if (typeof event.id === 'string') lastEventId = event.id
@@ -132,27 +137,90 @@ export function createEventsClient(options = {}) {
     if (event.type === 'omnimux:workbench:rpc' && event.payload) return handleRpc(event.payload)
   }
 
+  function cancelViewportRequests() {
+    heartbeatRequest?.controller.abort()
+    refreshRequest?.controller.abort()
+    heartbeatRequest = refreshRequest = null
+  }
+
+  function registerViewportContributor(key, contribute) {
+    if (typeof key !== 'string' || !/^[a-z][a-z0-9-]{0,63}$/.test(key) || typeof contribute !== 'function') return () => {}
+    viewportContributors.set(key, contribute)
+    return () => {
+      if (viewportContributors.get(key) === contribute) viewportContributors.delete(key)
+    }
+  }
+
+  function viewportDetails(envelope) {
+    const details = Object.create(null)
+    for (const [key, contribute] of viewportContributors) {
+      try {
+        const data = contribute(envelope)
+        if (data && typeof data === 'object') details[key] = data
+      } catch (error) {
+        console.warn('[EventsClient] viewport contributor failed:', error)
+      }
+    }
+    return details
+  }
+
   function sendViewportHeartbeat(refreshId) {
-    if (heartbeatRequest || !fetchImpl) return heartbeatRequest
+    if (!fetchImpl) return null
+    if (!refreshId && (heartbeatRequest || refreshRequest)) return (heartbeatRequest ?? refreshRequest).promise
+    if (refreshId && refreshRequest?.id === refreshId) return refreshRequest.promise
     const currentGeneration = generation
+    const identity = windowIdentity
     let envelope = getWorkbench()?.getUiContext?.()
     if (!envelope?.sessionId || envelope.sessionId === 'default') return null
     if (globalThis.document?.visibilityState === 'hidden') {
       envelope = { ...envelope, surface: { ...envelope.surface, panelOpen: false }, view: null, selection: [] }
     }
-    const request = postJson(viewportUrl, refreshId ? { ...envelope, refreshId } : envelope, windowIdentity?.proof)
-      .then(() => true, error => {
-        if (generation === currentGeneration) console.warn('[EventsClient] viewport heartbeat failed:', error)
+    // A refresh may finish ahead of an older heartbeat, including one captured
+    // in the same millisecond. Keep their capture order explicit for the Host.
+    const capturedAt = Number.isFinite(envelope.capturedAt) ? envelope.capturedAt : Date.now()
+    lastViewportCaptureAt = Math.max(capturedAt, lastViewportCaptureAt + 1)
+    const body = { ...envelope, capturedAt: lastViewportCaptureAt, ...(refreshId ? { refreshId } : {}) }
+    if (identity && viewportContributors.size) body.viewportDetails = viewportDetails(envelope)
+    const request = { id: refreshId, controller: new AbortController(), promise: null }
+    if (refreshId) {
+      refreshRequest?.controller.abort()
+      refreshRequest = request
+    } else {
+      heartbeatRequest = request
+    }
+    request.promise = postJson(viewportUrl, body, identity?.proof, request.controller)
+      .then(() => {
+        if (identity !== windowIdentity || generation !== currentGeneration || request.controller.signal.aborted) return false
+        if (identity && body.capturedAt > (identity.registeredAt ?? -Infinity)) {
+          identity.registeredAt = body.capturedAt
+          if (identity.registeredSessionId !== envelope.sessionId) {
+            identity.registeredSessionId = envelope.sessionId
+            notifySubscribers({ type: 'omnimux:viewport-registered', payload: { windowInstanceId: identity.windowInstanceId, sessionId: envelope.sessionId } })
+          }
+        }
+        return true
+      }, error => {
+        if (generation === currentGeneration && identity === windowIdentity && error?.name !== 'AbortError') {
+          console.warn('[EventsClient] viewport heartbeat failed:', error)
+        }
         return false
       })
-      .finally(() => { if (heartbeatRequest === request) heartbeatRequest = null })
-    heartbeatRequest = request
-    return request
+      .finally(() => {
+        if (heartbeatRequest === request) heartbeatRequest = null
+        if (refreshRequest === request) refreshRequest = null
+      })
+    return request.promise
   }
 
   async function pushViewport(refreshId) {
-    while (heartbeatRequest) await heartbeatRequest
-    return sendViewportHeartbeat(refreshId)
+    if (refreshId) return sendViewportHeartbeat(refreshId)
+    const identity = windowIdentity
+    const currentGeneration = generation
+    while (heartbeatRequest || refreshRequest) {
+      await (heartbeatRequest ?? refreshRequest).promise
+      if (identity !== windowIdentity || generation !== currentGeneration) return false
+    }
+    return sendViewportHeartbeat()
   }
 
   function scheduleReconnect() {
@@ -168,6 +236,7 @@ export function createEventsClient(options = {}) {
     socket = null
     healthy = false
     windowIdentity = null
+    cancelViewportRequests()
     detachSocketListeners?.()
     detachSocketListeners = null
     if (current.readyState < 2) current.close()
@@ -243,9 +312,10 @@ export function createEventsClient(options = {}) {
     clearTimeout(reconnectTimer)
     watchdogTimer = heartbeatTimer = reconnectTimer = null
     if (socket) releaseSocket(socket)
+    cancelViewportRequests()
+    windowIdentity = null
     for (const controller of requests) controller.abort()
     requests.clear()
-    heartbeatRequest = null
     healthy = false
   }
 
@@ -260,6 +330,7 @@ export function createEventsClient(options = {}) {
     connect,
     disconnect,
     subscribe,
+    registerViewportContributor,
     isHealthy: () => healthy,
     getLastEventAt: () => lastEventAt,
     pushViewport,
@@ -273,6 +344,7 @@ export function installHubEventsGlobal(client, target = globalThis.window) {
   if (!target) return () => {}
   const facade = {
     subscribe: (type, cb) => client.subscribe(type, cb),
+    registerViewportContributor: (key, contribute) => client.registerViewportContributor(key, contribute),
     isHealthy: () => client.isHealthy(),
     getLastEventAt: () => client.getLastEventAt(),
     pushViewport: () => client.pushViewport(),

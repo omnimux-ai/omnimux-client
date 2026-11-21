@@ -1,5 +1,5 @@
 import { ASPECT_PRESETS, defaultCanvasConfig, defaultTextStyle } from '../client/store/timelineTypes.js'
-import { finite, isRecord, isReferenceId, items, MEDIA_TYPES, TRACK_TYPES } from '../timeline/nativeProjectFields.js'
+import { canvasWorkspaceMediaUrl, finite, isRecord, isReferenceId, items, MEDIA_TYPES, TRACK_TYPES } from '../timeline/nativeProjectFields.js'
 import { contentVersionOf, createNativeProject, nativeTransform, sha256 } from './nativeProject.js'
 
 const TRANSITIONS = {
@@ -46,7 +46,8 @@ function sourceOf(item) {
   return [item.sourceUrl, item.path, item.url].find((value) => typeof value === 'string' && value.trim())
 }
 
-function legacyMedia(item, id, type, source, contentVersion) {
+function legacyMedia(item, id, type, source, contentVersion, workspaceId) {
+  const url = canvasWorkspaceMediaUrl(source, workspaceId)
   return {
     id, type, name: typeof item.name === 'string' && item.name ? item.name : id,
     metadata: {
@@ -57,6 +58,7 @@ function legacyMedia(item, id, type, source, contentVersion) {
       kind: 'legacy',
       ...(source && !/^(?:blob|data):/i.test(source) ? { fingerprint: sha256(source) } : {}),
       ...(contentVersion === undefined ? {} : { contentVersion }),
+      ...(url ? { url } : {}),
     },
     omnimuxSource: item.omnimuxSource,
     missing: true,
@@ -70,7 +72,7 @@ function allocateId(requested, fallback, used, reserved) {
   return id
 }
 
-function mediaMapper(schema, issues) {
+function mediaMapper(schema, issues, workspaceId) {
   const media = new Map()
   const candidates = new Map()
   const inferred = new Map()
@@ -88,7 +90,7 @@ function mediaMapper(schema, issues) {
     const source = sourceOf(item)
     const version = contentVersionOf(item)
     const id = allocateId(item.id, `legacy-media-${index + 1}`, media, reserved)
-    media.set(id, legacyMedia(item, id, item.type, source, version))
+    media.set(id, legacyMedia(item, id, item.type, source, version, workspaceId))
     if (source) {
       const identity = key(item.type, source)
       const matches = candidates.get(identity) ?? []
@@ -112,7 +114,7 @@ function mediaMapper(schema, issues) {
       const identity = source ? key(type, source, version) : undefined
       if (!explicitId && inferred.has(identity)) return inferred.get(identity)
       const id = allocateId(explicitId, `legacy-media-${sha256(clipId).slice(0, 24)}`, media, reserved)
-      media.set(id, legacyMedia({ name: clip.name }, id, type, source, version))
+      media.set(id, legacyMedia({ name: clip.name }, id, type, source, version, workspaceId))
       if (identity && !explicitId) inferred.set(identity, id)
       return id
     },
@@ -134,13 +136,13 @@ function addTransitions(track, clip, clipId, issues) {
   }
 }
 
-export function migrateLegacyTimeline(schema, { id, title, updatedAt, playheadMs } = {}) {
+export function migrateLegacyTimeline(schema, { id, title, updatedAt, playheadMs, workspaceId } = {}) {
   const project = createNativeProject(id, schema.name || title || id, updatedAt)
   const config = isRecord(schema.canvasConfig) ? schema.canvasConfig : {}
   const aspect = Object.hasOwn(ASPECT_PRESETS, config.aspectRatio) ? config.aspectRatio : '16:9'
   const defaults = defaultCanvasConfig(aspect)
   const issues = []
-  const { media, mediaIdFor } = mediaMapper(schema, issues)
+  const { media, mediaIdFor } = mediaMapper(schema, issues, workspaceId)
   const tracks = schema.tracks.map((track, index) => ({ track, index }))
     // Legacy paints in ascending order. OpenReel stores the front-most track first.
     .sort((a, b) => finite(b.track?.order, 0) - finite(a.track?.order, 0) || b.index - a.index)

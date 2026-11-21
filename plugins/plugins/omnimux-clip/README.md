@@ -4,7 +4,9 @@
 
 Agent 可用 `clip_list` 查档，`clip_create` 创建独立空工程，`clip_get` 读取当前可见工程或按 ID 读取保存版本，`clip_diagnostics` 检查 Host 保存版本。对可见编辑器用 `clip_edit` 执行整批剪辑并生成一步撤销，用 `clip_view` 控制播放或选段，用 `clip_snapshot` 读取真实合成帧。指定入口用 `clip_open`。剪辑工具不会自动切页，实时操作在无窗口或目标不可见时报告领域错误。
 
-用户明确要求成片时，用 `clip_export` 并传 `confirm: true`。Agent 导出将 MP4 保存为独立任务版本。画布结果按原节点绑定回写，成片落盘与画布提交分别以 `fileSaved` 和 `canvasCommitted` 为准。[剪辑契约](../../docs/contracts/clip-live-control.md) · [工具清单](../../docs/contracts/plugin-agent-tools-inventory.md#37-omnimux-clipopenreel-视频剪辑) · [Clip Craft](skills/clip-craft/SKILL.md)
+画布切换入口或退出时，Clip 确认 Host 保存后再交接。保存受阻时保留原草稿供恢复。
+
+用户明确要求成片时，用 `clip_export` 并传 `confirm: true`。Agent 与画布手工导出共享 Host 的任务顺序，各自保存独立版本 MP4。画布按原节点绑定回写较新的成片，成片落盘与画布提交分别以 `fileSaved` 和 `canvasCommitted` 为准。[剪辑契约](../../docs/contracts/clip-live-control.md) · [工具清单](../../docs/contracts/plugin-agent-tools-inventory.md#37-omnimux-clipopenreel-视频剪辑) · [Clip Craft](skills/clip-craft/SKILL.md)
 
 ## 身份
 

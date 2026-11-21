@@ -26,12 +26,22 @@ export function sourceIdentity(value) {
     ? { id: value.id, version: value.version } : undefined
 }
 
+export function sha256Digest(value) {
+  return typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value) ? value : undefined
+}
+
+export function mediaContentDigest(item) {
+  return sha256Digest(item?.sourceRef?.digest) ?? sha256Digest(item?.omnimuxSource?.digest)
+}
+
+const WORKSPACE_MEDIA_PATH = /^\/omnimux-workflow\/api\/workspaces\/(ws_[A-Za-z0-9_-]{1,128})\/file$/u
+
 function isRelativeMediaPath(value) {
   return typeof value === 'string' && value.split('/').every(part => part && part !== '.' && part !== '..'
     && !/[\\:\x00-\x1f\x7f]/u.test(part))
 }
 
-export function reconnectMediaUrl(value) {
+export function reconnectMediaUrl(value, workspaceId) {
   if (typeof value !== 'string' || value.length > 4096 || !/^\/(?!\/)/u.test(value) || /[\\#\x00-\x20\x7f]/u.test(value)) return undefined
   const [pathname] = value.split('?')
   try {
@@ -45,12 +55,18 @@ export function reconnectMediaUrl(value) {
     const media = /^\/(?:omnimux-workflow\/)?media\/(.+)$/.exec(pathname)
     if (media && !searchParams.has('rel') && isRelativeMediaPath(decodeURIComponent(media[1]))) return value
     // The workspace route independently verifies the path against its project root.
-    if (/^\/omnimux-workflow\/api\/workspaces\/ws_[A-Za-z0-9_-]{1,128}\/file$/u.test(pathname)
+    const workspace = WORKSPACE_MEDIA_PATH.exec(pathname)
+    if (workspace && (workspaceId === undefined || workspace[1] === workspaceId)
       && isRelativeMediaPath(searchParams.get('rel'))) return value
   } catch {
     return undefined
   }
   return undefined
+}
+
+export function canvasWorkspaceMediaUrl(value, workspaceId) {
+  return workspaceId && typeof value === 'string' && WORKSPACE_MEDIA_PATH.test(value.split('?')[0])
+    ? reconnectMediaUrl(value, workspaceId) : undefined
 }
 
 export function items(value) {

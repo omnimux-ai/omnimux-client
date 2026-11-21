@@ -1,5 +1,5 @@
 import type { MediaItem, Project } from '@openreel/core'
-import { reconnectMediaUrl } from '../../timeline/nativeProjectFields.js'
+import { mediaContentDigest, reconnectMediaUrl } from '../../timeline/nativeProjectFields.js'
 import { nativeProjectView } from '../../timeline/nativeProjectView.js'
 import { calculateProjectDuration } from '../openreel/core/timeline/project-duration'
 import { useProjectStore } from '../openreel/web/stores/project-store'
@@ -15,6 +15,7 @@ import { mediaDigest } from './media-source'
 interface LocalSnapshot {
   project: Project
   media: Record<string, Blob>
+  binding?: { workspaceId: string }
 }
 
 function capture(): (LocalSnapshot & { fingerprint: string }) | null {
@@ -52,28 +53,38 @@ function resetView() {
 }
 
 async function recoverMedia(item: MediaItem, record: LocalSnapshot, isCurrent: () => boolean) {
-  let blob = record.media[item.id]
-  const expectedSize = item.sourceFile?.size || item.metadata.fileSize
-  const expectedDigest = item.omnimuxSource?.digest
-  if (!blob) {
-    const stored = await loadMediaRecord(item.sourceRef?.key ?? item.id)
-    const legacyOwner = item.sourceRef?.projectId ?? record.project.id
-    if (stored?.projectId === legacyOwner && (!expectedSize || stored.blob.size === expectedSize)
-      && (!expectedDigest || await mediaDigest(stored.blob) === expectedDigest)) blob = stored.blob
+  const expectedDigest = mediaContentDigest(item)
+  const verify = async (candidate: Blob | undefined) => candidate instanceof Blob && candidate.size > 0
+    && (!expectedDigest || await mediaDigest(candidate) === expectedDigest) ? candidate : undefined
+  // Inline bytes travel with the selected draft. The shared cache key is
+  // mutable across drafts, so only a digest can identify its exact version.
+  let blob = await verify(record.media[item.id])
+  if (!isCurrent()) return item
+  if (!blob && expectedDigest) {
+    const stored = await loadMediaRecord(item.sourceRef?.key ?? item.id).catch(error => {
+      console.warn('[Clip] Shared media cache could not be read.', (error as Error)?.name)
+      return null
+    })
+    const cacheOwner = item.sourceRef?.projectId ?? record.project.id
+    if (stored?.projectId === cacheOwner) blob = await verify(stored.blob)
   }
   if (!isCurrent()) return item
-  if (!blob && item.nativeSource) return item
-  const url = !blob && expectedDigest && reconnectMediaUrl(item.omnimuxSource?.url)
+  if (!blob && !expectedDigest && item.nativeSource && !item.isPlaceholder) return { ...item, missing: false }
+  const url = !blob && expectedDigest && reconnectMediaUrl(item.omnimuxSource?.url, record.binding?.workspaceId)
   if (url) {
-    const response = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(12_000) })
+    const response = await fetch(url, {
+      redirect: 'error', mode: 'same-origin', credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(12_000),
+    })
     if (response.ok && isCurrent()) {
       const candidate = await response.blob()
-      if (candidate.size && (!expectedSize || candidate.size === expectedSize)
-        && await mediaDigest(candidate) === expectedDigest) blob = candidate
+      if (!/^image\/svg/i.test(candidate.type)) blob = await verify(candidate)
     }
   }
   if (!isCurrent()) return item
-  const restored = await restoreMediaItem(item, blob)
+  const sourceRef = blob ? {
+    ...item.sourceRef, kind: 'indexeddb' as const, key: item.id, digest: expectedDigest ?? await mediaDigest(blob),
+  } : item.sourceRef
+  const restored = await restoreMediaItem({ ...item, blob: null, sourceRef }, blob)
   return { ...restored, missing: restored.isPlaceholder === true }
 }
 
@@ -130,7 +141,7 @@ export const nativeEditorState = {
           restored = await recoverMedia(item, record, isCurrent)
         } catch (error) {
           console.warn('[Clip] Media recovery failed.', (error as Error)?.name)
-          restored = createMissingMediaItem(item)
+          restored = { ...createMissingMediaItem(item), missing: true }
         }
         const url = restored.thumbnailUrl
         if (url?.startsWith('blob:') && url !== item.thumbnailUrl) stagedThumbnails.add(url)

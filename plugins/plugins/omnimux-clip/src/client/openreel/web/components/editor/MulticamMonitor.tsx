@@ -15,7 +15,8 @@ import { previewProxyCache, usePreviewProxyStore } from "../../stores/preview-pr
 import { useUIStore } from "../../stores/ui-store";
 import { gridColumns, useMulticamStore, type MulticamGrid } from "../../stores/multicam-monitor-store";
 import { useEditorWorkspaceStore } from "../../stores/editor-workspace-store";
-import { hasShortcutFocus } from "../../services/keyboard-shortcuts";
+import { useEditorPortalRoot } from "@openreel/ui/lib/portal-root";
+import { hasShortcutFocus, isEditorShortcutEvent } from "../../services/keyboard-shortcuts";
 import {
   activeAngleId,
   cutToAngle,
@@ -165,6 +166,7 @@ export function MulticamMonitor() {
   const chosenSourceId = useMulticamStore((state) => state.sourceId);
   const setSourceId = useMulticamStore((state) => state.setSourceId);
   const containerRef = useRef<HTMLDivElement>(null);
+  const shortcutRoot = useEditorPortalRoot();
 
   const sources = getMulticamSources(project);
   const under = useMemo(() => multicamClipAtTime(project, playhead), [project, playhead]);
@@ -179,7 +181,7 @@ export function MulticamMonitor() {
     const onKey = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.repeat) return;
       const match = /^(?:Digit|Numpad)([1-9])$/.exec(event.code);
-      if (!match || !hasShortcutFocus(event)) return;
+      if (!match || !isEditorShortcutEvent(event, shortcutRoot) || !hasShortcutFocus(event)) return;
       if (cutToAngleNumber(Number(match[1]))) {
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -187,7 +189,7 @@ export function MulticamMonitor() {
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, []);
+  }, [shortcutRoot]);
 
   // Leaving the monitor mid-pass commits it rather than losing the cuts.
   useEffect(() => () => void stopRecording(), []);

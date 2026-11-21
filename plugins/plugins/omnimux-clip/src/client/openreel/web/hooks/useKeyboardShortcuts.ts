@@ -94,11 +94,11 @@ import {
 import { clipNow } from "../../../i18n/index.js";
 
 export function useKeyboardShortcuts() {
-  const active = useEditorPortalRoot() !== null;
+  const root = useEditorPortalRoot();
   const [showShortcutsOverlay, setShowShortcutsOverlay] = useState(false);
 
   useEffect(() => {
-    if (!active) return;
+    if (!root) return;
     // Read live state when a command runs. Subscribing this hook to the entire
     // timeline used to rerender the editor and reinstall every handler per frame.
     let editInFlight = false;
@@ -531,16 +531,16 @@ export function useKeyboardShortcuts() {
       ["tools.clearAllMarkers", () => { void clearAllMarkers(); }],
     ];
     const unsubscribes = handlers.map(([action, handler]) => keyboardShortcuts.registerHandler(action, handler));
-    keyboardShortcuts.startListening();
+    const stopListening = keyboardShortcuts.startListening(root);
     return () => {
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", releaseK);
       document.removeEventListener("visibilitychange", releaseK);
       cancelDynamicTrim();
       unsubscribes.forEach((unsubscribe) => unsubscribe());
-      keyboardShortcuts.stopListening();
+      stopListening();
     };
-  }, [active]);
+  }, [root]);
 
   return { showShortcutsOverlay, setShowShortcutsOverlay };
 }

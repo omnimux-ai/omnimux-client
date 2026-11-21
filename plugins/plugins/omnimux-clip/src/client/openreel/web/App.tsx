@@ -19,7 +19,7 @@ import { useProjectRecovery } from "./hooks/useProjectRecovery";
 import { SOCIAL_MEDIA_PRESETS, type SocialMediaCategory } from "@openreel/core";
 
 import { getLoadedEditor, loadEditorModule } from "./editor-loader";
-import { keyboardShortcuts } from "./services/keyboard-shortcuts";
+import { isEditorShortcutEvent, keyboardShortcuts } from "./services/keyboard-shortcuts";
 import { createEditorProject } from "./services/project-creation";
 import { toast } from "./stores/notification-store";
 import { useSceneDetectionDialogStore } from "./stores/scene-detection-dialog-store";
@@ -255,7 +255,7 @@ function App({ active = true, canvasMode = false, managed = false }: { active?: 
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      if (e.defaultPrevented) return;
+      if (e.defaultPrevented || !isEditorShortcutEvent(e, portalRoot)) return;
       const controlOwnsEscape =
         e.target instanceof Element &&
         e.target.closest(
@@ -269,7 +269,7 @@ function App({ active = true, canvasMode = false, managed = false }: { active?: 
         openSearchModal("search");
       }
     },
-    [route, navigate, openSearchModal],
+    [route, navigate, openSearchModal, portalRoot],
   );
 
   useEffect(() => {

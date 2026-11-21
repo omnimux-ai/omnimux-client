@@ -2,7 +2,7 @@
  * 画布视频合成导出：上传通道端到端契约。
  *
  * 真实 HTTP 路由 + 真实落盘，不 mock 文件系统。锁定本次缺陷的根因：
- * 旧通道把整段视频 base64 塞进 JSON body，撞上 8 MiB 上限被 400 拒绝，
+ * 旧通道把整段视频 base64 塞进 JSON body，撞上 8 MiB 上限后返回 413，
  * 客户端因此拿不到 path，下游成片节点指向非本次合成的文件。
  *
  * 验收：>8 MiB 的导出必须 2xx 且字节与磁盘一致；旧 JSON 通道在同尺寸下
@@ -58,7 +58,7 @@ function mountRoutes() {
 test('e2e：>8MiB 合成导出经原始字节通道落盘，节点拿到的 path 就是该文件', async () => {
   const { home, paths, handler } = mountRoutes()
   try {
-    // 9 MiB ≈ 一段 30 秒 1080p 成片的量级；旧 JSON 通道在此必然 400。
+    // 9 MiB 约为一段 30 秒 1080p 成片的量级，超过 JSON 通道的上限。
     const payload = Buffer.alloc(9 * 1024 * 1024, 11)
     const res = fakeRes()
     await handler(
@@ -97,9 +97,10 @@ test('e2e：旧 base64 JSON 通道对同尺寸导出仍被拒（防止回退到�
       res,
     )
 
-    assert.equal(res.state.status, 400)
-    assert.equal(res.state.body.error, 'invalid-json')
+    assert.equal(res.state.status, 413)
+    assert.equal(res.state.body.error, 'schema-too-large')
     assert.deepEqual(readdirSync(paths.exportsDir), [])
+    assert.deepEqual(readdirSync(paths.tmpDir), [])
   } finally {
     rmSync(home, { recursive: true, force: true })
   }

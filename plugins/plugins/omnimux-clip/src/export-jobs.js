@@ -186,10 +186,11 @@ export function createExportJobs({ paths, getWorkflowClip }) {
     }
   }
 
-  function begin({ requestId, projectId, projectRevision, binding }) {
+  function begin({ requestId, projectId, projectRevision, binding, manualWindowId }) {
     assertProjectId(projectId)
-    if (!isClipToken(requestId) || !isClipRevision(projectRevision)) {
-      throw ClipDomainError.invalidJson('invalid export request id or project revision')
+    if (!isClipToken(requestId) || !isClipRevision(projectRevision)
+      || (manualWindowId !== undefined && !isClipToken(manualWindowId))) {
+      throw ClipDomainError.invalidJson('invalid export request identity or project revision')
     }
     binding = bindingFor(binding, projectId)
     // The Host owns allocation. Read and atomically replace the index in the
@@ -197,7 +198,7 @@ export function createExportJobs({ paths, getWorkflowClip }) {
     const jobs = readJobs()
     const existing = jobs.find((job) => job.requestId === requestId)
     if (existing) {
-      if (existing.projectId !== projectId || existing.projectRevision !== projectRevision
+      if (existing.projectId !== projectId || existing.projectRevision !== projectRevision || existing.manualWindowId !== manualWindowId
         || existing.binding?.workspaceId !== binding?.workspaceId || existing.binding?.nodeId !== binding?.nodeId) {
         throw new ClipDomainError('export-request-mismatch', 'This request already identifies a different export.')
       }
@@ -207,6 +208,7 @@ export function createExportJobs({ paths, getWorkflowClip }) {
     const job = {
       exportJobId: jobs.length + 1, requestId, projectId, projectRevision,
       ...(binding ? { binding } : {}),
+      ...(manualWindowId ? { manualWindowId } : {}),
       uploadDigest: uploadDigest(uploadToken), uploadExpiresAt: Date.now() + UPLOAD_TTL_MS,
     }
     writeJson(indexPath, [...jobs, job])

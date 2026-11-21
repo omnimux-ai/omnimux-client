@@ -24,7 +24,7 @@ export function createClipRuntime(window, stage) {
     channel.changed({ immediate: true })
   }
   window.document.addEventListener('visibilitychange', refresh)
-  const online = () => session.reconnect()
+  const online = () => channel.changed({ immediate: true })
   window.addEventListener('online', online)
   const stopWorkbench = window.__omnimuxWorkbench?.subscribe?.(session.reconcile)
   void channel.renew()
@@ -32,9 +32,10 @@ export function createClipRuntime(window, stage) {
     session,
     async closeCanvas(binding) {
       return session.closeCanvas(binding, () => {
-        notifyCanvasClose(binding)
         const active = stage.getSessionSnapshot()
-        if (active?.projectId === binding.projectId && active?.workspaceId === binding.workspaceId && active?.nodeId === binding.nodeId) stage.set(false)
+        if (active?.source !== 'canvas' || active.projectId !== binding.projectId
+          || active.workspaceId !== binding.workspaceId || active.nodeId !== binding.nodeId) return false
+        return notifyCanvasClose(binding) && stage.getSessionSnapshot() !== active
       })
     },
     dispose() {

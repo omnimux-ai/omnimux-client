@@ -1,3 +1,13 @@
+---
+title: "OpenReel 剪辑工坊引入契约"
+id: "contract-openreel-vendor"
+type: "contract"
+status: "living"
+authority: "L1"
+date: "2026-11-21"
+updated: "2026-11-22"
+---
+
 # OpenReel 剪辑工坊引入契约
 
 剪辑工坊在 OmniMux 工作台中嵌入 OpenReel 的编辑器和渲染管线。该入口和画布合成节点使用同一套剪辑界面。固定上游版本见 [UPSTREAM_SHA](../../plugins/omnimux-clip/src/client/openreel/UPSTREAM_SHA)，许可与随包素材见 [第三方声明](../../plugins/omnimux-clip/THIRD_PARTY_NOTICES.md)。
@@ -12,7 +22,7 @@
 
 Clip 路由保存在编辑器内部。构建脚本将导入的样式限定在 `.openreel-studio-root`。宿主提供主题和语言，菜单和浮层使用 Clip 内部容器。用户编写的内容和文件格式标准名保留原文。
 
-画布合成采用宿主 `/save-export` 的 MP4 交付契约。编码流保留 seek 和 truncate，上传原始字节，宿主确认落盘并给出内容版本后才通知下游。独立剪辑工坊提供各编码器支持的文件导出选项。
+画布合成通过宿主预约版本化 MP4，用浏览器支持的编码选项保留 seek 和 truncate，再上传原始字节。宿主校验并保存成片后按固定画布绑定提交下游。手工和 Agent 共用任务顺序。旧 `/save-export` 继续服务兼容调用。独立剪辑工坊提供各编码器支持的文件导出选项。[阶段 2 的 MP4 契约](clip-live-control.md#mp4-与画布提交)
 
 供应商请求、密钥和模型路由由执行中心负责。OmniMux 宿主禁用上游浏览器剪辑对话、自备密钥直连、第三方生成提交与轮询，以及外部协作邀请和房间。旧设置迁移移除连接字段，旧生成占位素材按本地媒体恢复，缺少源文件时可重新链接。现有本地编辑、浏览器端媒体处理和宿主 Clip 工具继续通过原入口工作。
 

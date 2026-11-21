@@ -6,7 +6,7 @@
  * `input` / `output` stores an edge that React Flow cannot draw.
  *
  * The exported file lives outside the workspace
- * (`<DSH_HOME>/omnimux/clip/exports/<projectId>.mp4`), so the node carries:
+ * (under `<DSH_HOME>/omnimux/clip/exports/`), so the node carries:
  * - `mediaUrl`: the sanctioned `/omnimux-workflow/api/local-file?path=…` URL
  *   the material node streams from — a bare absolute host path 404s in the
  *   browser because it is resolved against the app origin;
@@ -36,11 +36,9 @@ function withMediaRevision(url: string, token: string): string {
  * Already-resolved URLs (`/api/local-file`, `blob:`, `data:`, `http:`) and
  * relative paths pass through untouched.
  *
- * `revision` is the exported file's content identity (`mtimeMs:size`). Canvas
- * export overwrites `<projectId>.mp4` in place, so without it the URL is
- * byte-identical across exports and React keeps the same `<video>` element —
- * which stays stuck in whatever state the first load left it. Carrying the
- * revision in the URL is what makes the browser fetch the new bytes.
+ * `revision` identifies the exported file contents (`mtimeMs:size`). Older
+ * callers overwrite `<projectId>.mp4`, so their URLs also need a revision to
+ * reload the video after re-exporting. The Host's job ID orders versioned files.
  */
 export function clipExportMediaUrl(videoPath: string, revision?: string): string {
   if (!videoPath) return videoPath;
@@ -229,7 +227,10 @@ export function planClipExportDownstream(
   const existing = existingDownstreamNode(input.currentNodes, videoPath, input.sourceNodeId);
 
   if (existing) {
-    const patch = changedFields(nodeDataOf(existing), reuseRefresh(desired));
+    const current = nodeDataOf(existing);
+    const refresh = reuseRefresh(desired);
+    if (current.mediaUrl !== desired.mediaUrl) refresh.thumbnailUrl = desired.thumbnailUrl;
+    const patch = changedFields(current, refresh);
     const nodePatches: ClipExportDownstreamPatch[] = Object.keys(patch).length > 0
       ? [{ nodeId: existing.id, data: patch }]
       : [];

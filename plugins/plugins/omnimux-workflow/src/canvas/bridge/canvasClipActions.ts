@@ -140,6 +140,9 @@ export function installCanvasClipEvents({ workspaceId, target, readGraph, applyM
     const source = readBound(detail, graph);
     if (!source) return;
     const output = detail.output;
+    // Stage 1 callbacks still carry unversioned output. After a Host receipt,
+    // all changes to the composition output belong to the Host CAS.
+    if (output && Array.isArray(source.data.clipExportReceipts) && source.data.clipExportReceipts.length > 0) return;
     const data = {
       ...(detail.schema ? { schema: detail.schema } : {}),
       ...(output ? {

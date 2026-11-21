@@ -1,6 +1,6 @@
 # 剪辑实时控制与画布回写（#159 阶段 2）
 
-目标和验收以 [#159 PRD v1.0](https://github.com/omnimux-ai/omnimux-client/issues/159#issuecomment-7058694513) 为准。工作树基线为 `b1e9bc12b53344f0639c5cd00d65ab50d7b98044`。这份草稿供合入前审查，端到端验收以最终候选构建的运行记录为准。
+目标和验收以 [#159 PRD v1.0](https://github.com/omnimux-ai/omnimux-client/issues/159#issuecomment-7058694513) 为准。首轮隔离桌面验收使用 `b1e9bc12b53344f0639c5cd00d65ab50d7b98044` 基线上的阶段 2 实现。PR #170 以 `9362034da79c7594471c94d33afef98ed9b128d5` 为基线，首轮评审候选为 `ea566b3c5b2c03bec845c0469f7324c8bb20516c`。后续修复的运行记录绑定各自候选构建。 [首轮评审](https://github.com/omnimux-ai/omnimux-client/pull/170#pullrequestreview-6007734593)
 
 ## 目标与范围
 
@@ -12,7 +12,7 @@
 
 - [#154 的 OpenReel v1 升级](https://github.com/omnimux-ai/omnimux-client/issues/154) 提供两个入口共用的原生工程、时间轴、撤销和渲染。阶段 2 采用同一个原生 Store 执行所有编辑。Host 负责工程版本、验证和落盘。旧时间轴、裸装或包装的原生 UUID、画布草稿均可读为统一的 v1 工程。需要写入迁移时保留原始内容和可用的媒体身份。
 - [#160 的画布归属与实时控制合同](https://github.com/omnimux-ai/omnimux-client/blob/b1e9bc12b53344f0639c5cd00d65ab50d7b98044/plugins/docs/contracts/clip-live-control.md) 已建立工作区、节点和工程的三元组。继续让 Workflow 持有画布身份和版本，并复用下游规划器。运行命令的会话和窗口由现有 Hub WS 与同源 HTTP 证明建立，浏览器实际可见的工作面和项目决定租约是否可用。
-- 保存序列由 `revision` 管理，写入比较前置版本。切换入口先保存本地 IndexedDB 和尝试同步 Host，再释放源租约和加载目标。导出拥有独立的 `exportJobId` 与固定工程版本，按源画布绑定提交。迟到回执和导出文件可分别核对，画布冲突后重读并重新验证绑定。
+- 保存序列由 `revision` 管理，写入比较前置版本。切换和退出先写入 IndexedDB 并确认 Host 同步，再释放源租约。保存失败时保留待同步草稿和源编辑权，处理冲突后继续。导出拥有独立的 `exportJobId` 与固定工程版本，按源画布绑定提交。迟到回执和导出文件可分别核对，画布冲突后重读并重新验证绑定。
 
 ## 交互与工具契约
 
@@ -79,3 +79,5 @@
   - 原用例为 `clip_edit` 单独期待自动打开独立工作面。阶段 2 实时工具由已认证编辑器执行，只有显式 `clip_open` 发定向打开。宿主挂载测试在媒体页、独立剪辑页和画布分别核对适用的无通用 RPC 行为。
 - `plugins/plugins/omnimux/src/workbench/surface-follow.test.js` :: `把各工作面工具解析到对应页签`
   - 旧映射将 `clip_edit` 导向独立页。现从通用映射撤出，按目标租约执行，故预期 `null`。其他工作面工具映射全部保留。
+- `plugins/plugins/omnimux-clip/tests/e2e/canvas-export-upload.e2e.test.js` :: `e2e：旧 base64 JSON 通道对同尺寸导出仍被拒（防止回退到旧传输）`
+  - 阶段 2 将合法 JSON 超限区分为 `413 / schema-too-large`，原断言要求通用 `400 / invalid-json`。保留同一个超限请求和导出目录为空的检查，再核对临时目录没有残留。相同字节走原始上传仍核对完整落盘。

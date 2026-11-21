@@ -1,4 +1,5 @@
-import { LiveClipError, requestClip } from './persistence.js'
+import { uploadClipExport } from './export-transport.js'
+import { LiveClipError } from './persistence.js'
 import { mediaDigest } from './media-source'
 import { useProjectStore } from '../openreel/web/stores/project-store'
 
@@ -93,15 +94,14 @@ export async function runNativeCommand(command: Command, run: Execution) {
     const { exportNativeProject } = await import('./native-export')
     run.assertCurrent()
     const { exportJobId, uploadToken, projectId } = command
-    if (!Number.isSafeInteger(exportJobId) || !uploadToken) throw new LiveClipError('INVALID_RECEIPT', 'The Clip export task has no upload authorization.')
+    if (typeof exportJobId !== 'number' || !Number.isSafeInteger(exportJobId) || !uploadToken) {
+      throw new LiveClipError('INVALID_RECEIPT', 'The Clip export task has no upload authorization.')
+    }
     const project = useProjectStore.getState().getFullProject()
     const { width, height } = project.settings
     return exportNativeProject({ project, settings: exportSettings(args, width, height) }, {
       assertCurrent: run.assertCurrent,
-      upload: blob => requestClip(`/exports/${exportJobId}/upload?projectId=${encodeURIComponent(projectId)}`, {
-        method: 'POST', body: blob, timeout: 120_000,
-        headers: { 'Content-Type': 'application/octet-stream', 'x-clip-export-proof': uploadToken },
-      }),
+      upload: blob => uploadClipExport({ exportJobId, projectId, uploadToken }, blob),
     })
   }
   throw new LiveClipError('invalid-json', 'The Clip command is unsupported.')

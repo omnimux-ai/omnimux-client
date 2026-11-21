@@ -1,5 +1,6 @@
 import { createStore, delMany, get, getMany, keys, set, setMany, update } from 'idb-keyval'
 import { safeClipLabel } from '../../errors.js'
+import { mediaContentDigest } from '../../timeline/nativeProjectFields.js'
 import { CLIP_API_PREFIX } from '../host/projectApi.js'
 
 const TIMEOUT_MS = 3500
@@ -162,10 +163,17 @@ export function fromHost(host, local) {
   const media = Object.create(null)
   if (local?.project.id === host.project.id) {
     const previous = new Map((local.project.mediaLibrary?.items ?? []).map(item => [item.id, item]))
+    const sameSnapshot = local.project === host.project
+      || (Number.isSafeInteger(host.revision) && local.revision === host.revision && local.localBaseRevision === host.revision)
     for (const item of host.project.mediaLibrary?.items ?? []) {
       const old = previous.get(item.id)
       const blob = local.media[item.id]
-      if (old && blob instanceof Blob && blob.size && mediaVersion(old) === mediaVersion(item)) media[item.id] = blob
+      if (!old || !(blob instanceof Blob) || !blob.size) continue
+      // The loader checks the actual bytes against an explicit digest. Older
+      // records can only reuse bytes from the same confirmed snapshot.
+      if (mediaContentDigest(item) || (sameSnapshot && mediaVersion(old) === mediaVersion(item))) {
+        media[item.id] = blob
+      }
     }
   }
   return {

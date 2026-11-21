@@ -12,10 +12,10 @@ import { createProjectStore } from '../../src/store/projectStore.js';
 
 // Exercise the packaged Clip client and Radix in Chromium with a temporary
 // project store. The workbench and authenticated window are fixtures.
-const desktopRequire = createRequire(new URL('../../../../../app/dsh-desktop-next/package.json', import.meta.url));
+const browserRequire = createRequire(new URL('../../../omnimux-browser/package.json', import.meta.url));
 const clipRequire = createRequire(new URL('../../package.json', import.meta.url));
 const motionRequire = createRequire(clipRequire.resolve('framer-motion'));
-const { chromium } = desktopRequire('playwright');
+const { chromium } = browserRequire('playwright-core');
 const clipBundle = process.env.CLIP_TEST_BUNDLE ?? fileURLToPath(new URL('../../lib/client.js', import.meta.url));
 const canvasStage = '#canvas .omnimux-clip-stage';
 const studioEditor = '#studio .openreel-studio-root';
@@ -65,10 +65,16 @@ function registerClip(React, ReactDOM, createRoot, jsx, isPropValid, primitives,
       return () => listeners.delete(listener);
     },
   };
+  let viewportContributor;
+  window.readClipViewport = (sessionId = fixture.sessionId) => viewportContributor?.({ sessionId });
   window.__omnimuxHubEvents = {
     getWindowId: () => fixture.windowId,
     pushViewport: async () => true,
     subscribe: () => () => {},
+    registerViewportContributor(key, contribute) {
+      if (key === 'clip') viewportContributor = contribute;
+      return () => { if (viewportContributor === contribute) viewportContributor = undefined; };
+    },
     windowFetch(path, init, id) {
       return fetch(path, { ...init, headers: { ...init.headers, 'x-test-clip-window': id } });
     },
@@ -143,7 +149,7 @@ after(async () => {
   }
 });
 
-async function openCanvas(page) {
+async function openCanvas(page, beforeClipRequest) {
   const paths = resolveClipPaths({ homeDir: mkdtempSync(join(fixtureHome, 'page-')) });
   const store = createProjectStore({ paths });
   store.materialize(fixture.studioProjectId, { title: 'Studio project' });
@@ -163,6 +169,7 @@ async function openCanvas(page) {
     if (url.origin !== 'http://127.0.0.1') return route.abort();
     if (url.pathname === '/') return route.fulfill({ contentType: 'text/html', body: hostMarkup });
     if (url.pathname.startsWith(`${CLIP_API_PREFIX}/`)) {
+      await beforeClipRequest?.(url, request);
       const result = await clip.dispatch({
         url: url.pathname + url.search, method: request.method(), body: request.postDataJSON(),
         window: request.headers()['x-test-clip-window'] === fixture.windowId ? window : undefined,
@@ -209,6 +216,7 @@ async function openCanvas(page) {
     const button = document.querySelector('#canvas .workspace-export');
     return button && !button.disabled;
   });
+  return store;
 }
 
 async function measureControls(dialog) {
@@ -326,9 +334,11 @@ test('only the active editor owns modals when Canvas and Studio stay mounted', {
     await exportDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     await exportDialog.waitFor({ state: 'detached' });
 
-    // Switching tabs can hide the canvas host without closing its binding.
+    // Switching tabs keeps the mounted Canvas portal available as a hidden candidate.
     await page.evaluate(() => window.setStudioVisible(true));
     await openJson();
+    assert.deepEqual(await page.evaluate(() => window.readClipViewport()), { retainedCanvas: fixture.canvas });
+    assert.equal(await page.evaluate(() => window.readClipViewport('some-other-session')), null);
     await assertSingleLayer();
     assert.equal(await initialEditor.evaluate(el => el.isConnected), true);
     await dialog.getByRole('button', { name: 'Close dialog' }).click();
@@ -336,6 +346,7 @@ test('only the active editor owns modals when Canvas and Studio stay mounted', {
     await page.evaluate(() => window.setStudioVisible(false));
     await exit.click();
     await page.locator(canvasStage).waitFor({ state: 'hidden' });
+    assert.equal(await page.evaluate(() => window.readClipViewport()), null);
     await page.evaluate(() => window.setStudioVisible(true));
 
     await openJson();
@@ -361,6 +372,124 @@ test('only the active editor owns modals when Canvas and Studio stay mounted', {
     await page.locator(studioEditor).getByText('640×360 · 24 fps', { exact: true }).waitFor();
     await page.waitForFunction(() => document.body.style.pointerEvents !== 'none');
   } finally {
+    await page.close();
+  }
+});
+
+test('exit and handoff leave the original conflict choices reachable after a real save conflict', { timeout: 25_000 }, async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 840 } });
+  page.setDefaultTimeout(5000);
+  try {
+    const store = await openCanvas(page);
+    const stage = page.locator(canvasStage);
+    const old = store.load(fixture.canvas.projectId);
+    store.save(fixture.canvas.projectId, { ...old.project, name: 'Saved host cut' }, {
+      binding: fixture.canvas, expectedRevision: old.revision, revision: old.revision + 1,
+    });
+    await page.evaluate(() => {
+      window.clipCloseCount = 0;
+      window.addEventListener('omnimux-clip-close', () => window.clipCloseCount++);
+    });
+    await page.keyboard.press('t');
+    await page.waitForFunction(() => document.querySelector('#canvas .workspace-timeline-summary')?.textContent.endsWith('2 clips'));
+    await stage.locator('.omnimux-clip-stage-close-btn').click();
+    await stage.locator('[data-clip-sync=conflict]').waitFor();
+    assert.equal(await page.evaluate(() => window.clipCloseCount), 0);
+
+    await page.evaluate(() => window.setStudioVisible(true));
+    const studio = page.locator(studioEditor);
+    const conflict = studio.locator('[data-clip-sync=conflict]');
+    await conflict.waitFor();
+    await conflict.getByText(old.project.name, { exact: true }).waitFor();
+    assert.equal(await studio.locator('.editor-workspace').count(), 0);
+    await conflict.getByRole('button', { name: 'Use latest saved version' }).click();
+    await studio.locator('.editor-workspace').waitFor();
+    assert.equal(await studio.getAttribute('data-clip-project-id'), fixture.studioProjectId);
+    assert.equal(await page.evaluate(() => window.clipCloseCount), 0);
+    assert.equal(store.load(fixture.canvas.projectId).project.name, 'Saved host cut');
+  } finally {
+    await page.close();
+  }
+});
+
+test('conflict resolution leaves Undo and playback keys to the host and restores them in the same editor', { timeout: 25_000 }, async t => {
+  const page = await browser.newPage({ viewport: { width: 1680, height: 940 } });
+  page.setDefaultTimeout(5000);
+  const resolution = Promise.withResolvers();
+  const arrived = Promise.withResolvers();
+  let hold = false;
+  try {
+    const store = await openCanvas(page, async (url, request) => {
+      if (hold && request.method() === 'GET' && url.pathname.endsWith(`/${fixture.canvas.projectId}`)) {
+        arrived.resolve();
+        await resolution.promise;
+      }
+    });
+    await page.locator('#canvas').evaluate(pane => { pane.style.width = '1100px'; });
+    const stage = page.locator(canvasStage);
+    const shell = stage.locator('.editor-shell');
+    const summarySelector = `${canvasStage} .workspace-timeline-summary`;
+    const waitForClipCount = count => page.waitForFunction(({ selector, count }) =>
+      document.querySelector(selector)?.textContent.endsWith(`${count} clips`), { selector: summarySelector, count });
+    const focusEditor = () => shell.evaluate(el => { el.tabIndex = -1; el.focus(); });
+    const addText = async () => {
+      await focusEditor();
+      await page.keyboard.press('t');
+      await waitForClipCount(2);
+    };
+    const old = store.load(fixture.canvas.projectId);
+    store.save(fixture.canvas.projectId, { ...old.project, name: 'Saved Host title' }, {
+      binding: fixture.canvas, expectedRevision: old.revision, revision: old.revision + 1,
+    });
+    await addText();
+    const notice = stage.locator('[data-clip-sync=conflict]');
+    await notice.waitFor();
+    hold = true;
+    await notice.getByRole('button', { name: 'Keep and save local draft' }).click();
+    await arrived.promise;
+    assert.equal(await notice.getByRole('button', { name: 'Keep and save local draft' }).isDisabled(), true);
+    await page.evaluate(() => {
+      document.activeElement?.blur();
+      window.hostKeyEvents = [];
+      window.addEventListener('keydown', event => {
+        if (event.key === 'z' || event.key === ' ') window.hostKeyEvents.push({ key: event.key, prevented: event.defaultPrevented });
+      });
+    });
+    await page.keyboard.press('Control+z');
+    await page.keyboard.press('Space');
+    const whileResolving = {
+      summary: await page.locator(summarySelector).textContent(),
+      hostKeys: await page.evaluate(() => window.hostKeyEvents),
+      playButton: await stage.locator('[data-preview-main-play]').getAttribute('aria-label'),
+      inert: await shell.evaluate(node => Boolean(node.closest('[inert]'))),
+    };
+    t.diagnostic(JSON.stringify(whileResolving));
+    assert.match(whileResolving.summary, /\b2 clips$/);
+    assert.deepEqual(whileResolving.hostKeys, [{ key: 'z', prevented: false }, { key: ' ', prevented: false }]);
+    assert.equal(whileResolving.playButton, 'Play');
+    assert.equal(whileResolving.inert, true);
+
+    hold = false;
+    resolution.resolve();
+    await notice.waitFor({ state: 'hidden' });
+    await focusEditor();
+    await page.keyboard.press('Control+z');
+    await waitForClipCount(1);
+    const checkout = await shell.elementHandle();
+    await stage.locator('.omnimux-clip-stage-close-btn').click();
+    await stage.waitFor({ state: 'hidden' });
+    await page.evaluate(() => { window.hostKeyEvents = []; });
+    await page.keyboard.press('Control+z');
+    assert.deepEqual(await page.evaluate(() => window.hostKeyEvents), [{ key: 'z', prevented: false }]);
+    await page.evaluate(() => window.openClipFromCanvas());
+    await waitForClipCount(1);
+    assert.equal(await checkout.evaluate(node => node.isConnected), true);
+    await addText();
+    await focusEditor();
+    await page.keyboard.press('Control+z');
+    await waitForClipCount(1);
+  } finally {
+    resolution.resolve();
     await page.close();
   }
 });

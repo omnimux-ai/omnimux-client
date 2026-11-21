@@ -239,7 +239,17 @@ export interface MediaProxyRef {
 export interface MediaItem {
   readonly id: string;
   readonly omnimuxSource?: { readonly id: string; readonly version: string; readonly url?: string; readonly digest?: string };
-  readonly sourceRef?: { readonly kind: "indexeddb" | "legacy"; readonly key?: string; readonly projectId?: string; readonly fingerprint?: string; readonly contentVersion?: string | number };
+  readonly sourceRef?: {
+    readonly kind: "indexeddb" | "legacy";
+    readonly key?: string;
+    readonly projectId?: string;
+    readonly fingerprint?: string;
+    readonly contentVersion?: string | number;
+    /** SHA-256 of the exact source bytes, independent of the upstream revision label. */
+    readonly digest?: string;
+    /** Same-workspace file locator for a legacy canvas source awaiting recovery. */
+    readonly url?: string;
+  };
   readonly missing?: boolean;
   readonly name: string;
   readonly type: "video" | "audio" | "image";

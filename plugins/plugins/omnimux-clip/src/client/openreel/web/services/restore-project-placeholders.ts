@@ -1,4 +1,6 @@
 import type { ActionResult, MediaItem, Project } from "@openreel/core";
+import { mediaContentDigest } from "../../../../timeline/nativeProjectFields.js";
+import { mediaDigest } from "../../../live/media-source";
 import { loadDirectoryHandle, loadFileHandle } from "./media-storage";
 
 interface PlaceholderRestoreHost {
@@ -9,8 +11,14 @@ interface PlaceholderRestoreHost {
 
 /** Resolve saved handles without allowing late reads to replace a newer project or source. */
 export async function restoreProjectPlaceholders(project: Project, host: PlaceholderRestoreHost): Promise<number> {
-  const placeholders = project.mediaLibrary.items.filter(item => item.isPlaceholder && item.sourceFile);
+  // Only ordinary OpenReel projects without a Clip source ref use name + size.
+  const placeholders = project.mediaLibrary.items.filter(item => item.isPlaceholder && item.sourceFile
+    && (!item.sourceRef || mediaContentDigest(item)));
   const eligible = (item: MediaItem) => host.isCurrent() && host.getItem(item.id) === item && item.isPlaceholder;
+  const matchesContent = async (item: MediaItem, file: File) => {
+    const digest = mediaContentDigest(item);
+    return !digest || await mediaDigest(file) === digest;
+  };
   const stillMissing: MediaItem[] = [];
   let restored = 0;
   for (const item of placeholders) {
@@ -22,6 +30,7 @@ export async function restoreProjectPlaceholders(project: Project, host: Placeho
       if (!eligible(item)) continue;
       if (!handle) { stillMissing.push(item); continue; }
       const file = await handle.getFile();
+      if (!await matchesContent(item, file)) { if (eligible(item)) stillMissing.push(item); continue; }
       if (!eligible(item)) continue;
       const result = await host.replace(item.id, file, item.sourceFile.folder);
       if (result.success) restored++;
@@ -52,8 +61,9 @@ export async function restoreProjectPlaceholders(project: Project, host: Placeho
       if (!eligible(item)) continue;
       const file = files.get(keyFor(item));
       if (!file) continue;
-      try { if ((await host.replace(item.id, file, directory.folderName)).success) restored++; }
-      catch { /* Keep the missing source visible for manual relink. */ }
+      try {
+        if (await matchesContent(item, file) && eligible(item) && (await host.replace(item.id, file, directory.folderName)).success) restored++;
+      } catch { /* Keep the missing source visible for manual relink. */ }
     }
   } catch { /* Folder handles are optional and can expire between sessions. */ }
   return restored;

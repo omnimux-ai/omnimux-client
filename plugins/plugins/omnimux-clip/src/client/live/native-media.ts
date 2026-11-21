@@ -1,8 +1,9 @@
 import { ClipDomainError } from '../../errors.js'
-import { sourceIdentity } from '../../timeline/nativeProjectFields.js'
+import { mediaContentDigest, sourceIdentity } from '../../timeline/nativeProjectFields.js'
 import { getMediaEngine } from '../openreel/core/media/mediabunny-engine'
 import type { MediaItem, Project } from '../openreel/core/types/project'
 import { fields, invalid, referenceId, text, type Fields } from './native-input'
+import { mediaDigest } from './media-source'
 
 export type NativeMediaSource = string | Readonly<Record<string, unknown>>
 export interface ResolvedNativeMedia {
@@ -12,12 +13,7 @@ export interface ResolvedNativeMedia {
 
 interface VerifiedSource {
   versioned: NonNullable<MediaItem['omnimuxSource']>
-  reference: { fingerprint: string; contentVersion: string | number }
-}
-
-async function digest(bytes: BufferSource): Promise<string> {
-  const hash = await crypto.subtle.digest('SHA-256', bytes)
-  return Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, '0')).join('')
+  reference: { fingerprint: string; contentVersion: string | number; digest: string }
 }
 
 async function verifiedSource(resolved: ResolvedNativeMedia): Promise<VerifiedSource> {
@@ -30,14 +26,15 @@ async function verifiedSource(resolved: ResolvedNativeMedia): Promise<VerifiedSo
   if (!providedFingerprint && !(typeof identity === 'string' && identity.trim() && identity.length <= 4096)) {
     throw ClipDomainError.pathDenied('The resolver must return a verified media identity')
   }
-  const fingerprint = providedFingerprint ?? await digest(new TextEncoder().encode(JSON.stringify([sourceFields.kind ?? '', identity])))
+  const fingerprint = providedFingerprint ?? await mediaDigest(JSON.stringify([sourceFields.kind ?? '', identity]))
+  const digest = await mediaDigest(file)
   const sourceVersion = sourceFields.version ?? sourceFields.contentVersion ?? sourceFields.revision
-  const contentVersion = sourceVersion === undefined ? await digest(await file.arrayBuffer())
+  const contentVersion = sourceVersion === undefined ? digest
     : typeof sourceVersion === 'number' && Number.isSafeInteger(sourceVersion) && sourceVersion >= 0 ? sourceVersion
       : referenceId(sourceVersion, 'contentVersion')
   const version = String(contentVersion)
   const versioned = sourceIdentity({ id: sourceFields.id, version }) ?? { id: `source:${fingerprint}`, version }
-  return { versioned, reference: { fingerprint, contentVersion } }
+  return { versioned, reference: { fingerprint, contentVersion, digest } }
 }
 
 export async function stageNativeMedia(
@@ -81,8 +78,13 @@ export async function stageNativeMedia(
   if (requestedId && project.mediaLibrary.items.some(item => item.id === requestedId && item !== existing)) {
     invalid('mediaId is already used by a different source')
   }
+  const expectedDigest = mediaContentDigest(existing)
+  if (expectedDigest && expectedDigest !== reference.digest) invalid('Media bytes changed for the same source version')
   if (existing && !existing.isPlaceholder && (existing.blob || existing.fileHandle)) {
+    const blob = existing.blob ?? await existing.fileHandle?.getFile()
     if (requestedType && requestedType !== existing.type) invalid('mediaType does not match the source')
+    if (blob && await mediaDigest(blob) !== reference.digest) invalid('Media bytes changed for the same source version')
+    assertCurrent()
     return { item: existing, reused: true }
   }
 
@@ -116,6 +118,7 @@ export async function stageNativeMedia(
     blob: file,
     fileHandle: null,
     isPlaceholder: false,
+    missing: false,
     thumbnailUrl: null,
     waveformData: null,
     sourceFile: { name: basename, size: file.size, lastModified: file.lastModified },

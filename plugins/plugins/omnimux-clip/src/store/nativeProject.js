@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { ClipDomainError } from '../errors.js'
-import { finite, isRecord, isReferenceId, items, MEDIA_TYPES, OVERLAY_FIELDS, reconnectMediaUrl, sourceIdentity, TRACK_TYPES } from '../timeline/nativeProjectFields.js'
+import { canvasWorkspaceMediaUrl, finite, isRecord, isReferenceId, items, MEDIA_TYPES, OVERLAY_FIELDS, reconnectMediaUrl, sha256Digest, sourceIdentity, TRACK_TYPES } from '../timeline/nativeProjectFields.js'
 
 const DEFAULT_SETTINGS = { width: 1920, height: 1080, frameRate: 30, sampleRate: 48000, channels: 2 }
 const RUNTIME_FIELDS = new Set(['blob', 'fileHandle', 'waveformData', 'thumbnailUrl', 'filmstripThumbnails'])
@@ -67,30 +67,32 @@ function sourceFingerprint(item) {
   return source ? sha256(source) : undefined
 }
 
-function mediaReference(item, originalProjectId) {
+function mediaReference(item, originalProjectId, workspaceId) {
   const ref = item.sourceRef
-  const fingerprint = typeof ref?.fingerprint === 'string' && /^[a-f0-9]{64}$/.test(ref.fingerprint)
-    ? ref.fingerprint : sourceFingerprint(item)
+  const fingerprint = sha256Digest(ref?.fingerprint) ?? sourceFingerprint(item)
   const contentVersion = contentVersionOf(ref) ?? contentVersionOf(item)
   const projectId = originalProjectId ?? (isReferenceId(ref?.projectId) ? ref.projectId : undefined)
+  const digest = sha256Digest(ref?.digest)
+  const url = ref?.kind === 'legacy' ? canvasWorkspaceMediaUrl(ref.url, workspaceId) : undefined
   return {
     ...(ref?.kind === 'legacy' ? { kind: 'legacy' } : { kind: 'indexeddb', key: item.id }),
     ...(projectId && ref?.kind !== 'legacy' ? { projectId } : {}),
     ...(fingerprint ? { fingerprint } : {}),
     ...(contentVersion === undefined ? {} : { contentVersion }),
+    ...(digest ? { digest } : {}),
+    ...(url ? { url } : {}),
   }
 }
 
-function normalizeMedia(item, { allowMediaStatus, originalProjectId }) {
+function normalizeMedia(item, { allowMediaStatus, originalProjectId, workspaceId }) {
   requireFields(isRecord(item) && isReferenceId(item.id) && MEDIA_TYPES.includes(item.type), 'media item')
   const {
     nativeSource, originalUrl, sourceFile, copiedFrom, proxy, path, url,
     sourceRef, omnimuxSource, blob, fileHandle, thumbnailUrl, waveformData, filmstripThumbnails, ...data
   } = item
   const source = sourceIdentity(omnimuxSource)
-  const safeUrl = source ? reconnectMediaUrl(omnimuxSource.url) : undefined
-  const digest = typeof omnimuxSource?.digest === 'string' && /^[a-f0-9]{64}$/.test(omnimuxSource.digest)
-    ? omnimuxSource.digest : undefined
+  const safeUrl = source ? reconnectMediaUrl(omnimuxSource.url, workspaceId) : undefined
+  const digest = sha256Digest(omnimuxSource?.digest)
   // Availability is confirmed by the active editor for an explicit IDB key.
   // A raw import (including JSON's {} for Blob) cannot attest to local bytes.
   const missing = !(allowMediaStatus && sourceRef?.kind === 'indexeddb' && sourceRef.key === item.id
@@ -107,7 +109,7 @@ function normalizeMedia(item, { allowMediaStatus, originalProjectId }) {
     ...(fileName ? { sourceFile: { name: fileName, size: finite(sourceFile.size, 0), lastModified: finite(sourceFile.lastModified, 0) } } : {}),
     ...(idbProxy ? { proxy: { ...idbProxy, previewPath: undefined } } : {}),
     ...(source ? { omnimuxSource: { ...source, ...(safeUrl ? { url: safeUrl } : {}), ...(digest ? { digest } : {}) } } : {}),
-    sourceRef: mediaReference(item, originalProjectId),
+    sourceRef: mediaReference(item, originalProjectId, workspaceId),
     missing,
     isPlaceholder: missing,
   }
@@ -148,7 +150,7 @@ function normalizeTimeline(timeline) {
   return { ...timeline, tracks, subtitles, markers: items(timeline.markers) }
 }
 
-export function normalizeNativeProject(project, id, { allowRekey = false, allowMediaStatus = false } = {}) {
+export function normalizeNativeProject(project, id, { allowRekey = false, allowMediaStatus = false, workspaceId } = {}) {
   requireFields(isNativeProject(project) && isReferenceId(project.id) && (allowRekey || project.id === id), 'identity')
   requireFields(isRecord(project.settings) && ['width', 'height', 'frameRate'].every((field) => (
     Number.isFinite(project.settings[field]) && project.settings[field] > 0
@@ -174,7 +176,7 @@ export function normalizeNativeProject(project, id, { allowRekey = false, allowM
     settings: { ...DEFAULT_SETTINGS, ...project.settings },
     timeline,
     mediaLibrary: { ...library, items: library.items.map((item) => normalizeMedia(item, {
-      allowMediaStatus, originalProjectId: project.id === id ? undefined : project.id,
+      allowMediaStatus, workspaceId, originalProjectId: project.id === id ? undefined : project.id,
     })) },
     ...(Array.isArray(project.sequences) ? { sequences: project.sequences.map((sequence) => {
       requireFields(isRecord(sequence) && isReferenceId(sequence.id), 'sequence')

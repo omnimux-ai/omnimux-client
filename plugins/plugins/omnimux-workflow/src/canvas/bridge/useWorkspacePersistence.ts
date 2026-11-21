@@ -37,7 +37,7 @@ import {
 } from './persistPolicy';
 import { decideRemoteVersionAdvance, type GraphReconcileDecision } from './persistConflict';
 import { sanitizeEdges, sanitizeNodes, signatureOf } from './persistSanitize';
-import { rebaseClipWrite } from './rebaseClipWrite';
+import { planClipWriteRebase, rebaseClipWrite } from './rebaseClipWrite';
 
 const AUTOSAVE_DEBOUNCE_MS = 1000;
 const SAVED_BADGE_MS = 2500;
@@ -248,16 +248,21 @@ export function useWorkspacePersistence(
       remoteSignature,
     });
     const base = lastSavedGraphRef.current;
-    const rebased = (decision === 'conflict' || decision === 'reload')
-      ? rebaseClipWrite(base, snapshot, current, ws.id) : undefined;
-    if (rebased) {
-      const retry = failedCapture && rebaseClipWrite(base, snapshot, failedCapture, ws.id);
+    const clipWrite = decision === 'conflict' || decision === 'reload'
+      ? planClipWriteRebase(base, snapshot, ws.id) : undefined;
+    const rebased = clipWrite?.apply(current);
+    if (clipWrite && rebased) {
       lastSavedGraphRef.current = snapshot;
       lastSavedSigRef.current = remoteSignature;
       lastSavedNodeCountRef.current = snapshot.nodes.length;
       currentSigRef.current = graphSig(rebased.nodes, rebased.edges);
-      // Change both graph arrays in one notification and keep runtime selection/history.
-      useCanvasStore.setState(rebased);
+      // A user can undo the pending edit while the first PUT is in flight.
+      // Once the rebased live graph is clean, retrying that capture would put it back on disk.
+      const dirty = currentSigRef.current !== remoteSignature;
+      const retry = dirty && failedCapture ? clipWrite.apply(failedCapture) : undefined;
+      const history = useCanvasStore.getState().rebaseHistory?.(clipWrite.replayHistory);
+      useCanvasStore.setState({ ...rebased, ...history });
+      if (failedCapture && !retry) setStatus(dirty ? 'pending' : 'idle');
       onSavedRef.current?.(snapshot);
       return { base, remote: snapshot, retry };
     }
@@ -399,7 +404,7 @@ export function useWorkspacePersistence(
           } else if (!isCurrentScope(scope)) {
             return { error: '画布版本冲突，未保存离开前的修改' };
           } else if (typeof reconcile === 'object') {
-            // A newer local capture has already been armed by the rebase.
+            // The rebased graph is already saved or has its own autosave scheduled.
             return { error: '画布已同步剪辑更新，请确认后重新生成', skipped: true, saved: {
               version: reconcile.remote.version, signature: lastSavedSigRef.current,
               nodeCount: reconcile.remote.nodes.length, graph: reconcile.remote, clipWrites,

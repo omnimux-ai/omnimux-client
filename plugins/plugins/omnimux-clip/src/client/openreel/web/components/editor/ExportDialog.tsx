@@ -179,6 +179,10 @@ function getAspectRatioType(width: number, height: number): AspectRatioType {
   return "square";
 }
 
+function isCanvasExportPreset({ settings }: PlatformExportPreset): boolean {
+  return "width" in settings && settings.format === "mp4" && !exportSettingsRequireNativeEncoder(settings);
+}
+
 function getRecommendedPresetsForAspectRatio(
   presets: PlatformExportPreset[],
   aspectType: AspectRatioType,
@@ -870,7 +874,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
     const refresh = () => {
       const videoPresets = exportPresetsManager
         .getAllPresets()
-        .filter((preset) => "width" in preset.settings && (!canvasMode || extForFormat(preset.settings.format, preset.settings.codec) === "mp4"));
+        .filter((preset) => canvasMode ? isCanvasExportPreset(preset) : "width" in preset.settings);
       setPresets(videoPresets);
       setPlatforms(
         Array.from(new Set(videoPresets.map((preset) => preset.platform))),
@@ -979,7 +983,13 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
       ? [projectPreset, ...recommendedForVideo]
       : selectedPlatform
         ? presets.filter((p) => p.platform === selectedPlatform)
-        : exportPresetsManager.getRecommendedPresets().filter(preset => !canvasMode || preset.settings.format === "mp4");
+        : exportPresetsManager.getRecommendedPresets().filter(preset => !canvasMode || isCanvasExportPreset(preset));
+
+  const selectSavedPreset = (preset: PlatformExportPreset) => {
+    if (canvasMode && !isCanvasExportPreset(preset)) return;
+    setSelectedPlatform(preset.platform);
+    setSelectedPreset(preset);
+  };
 
   const isNativeExportAvailable = isDesktop;
 
@@ -1479,10 +1489,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
               <ExportPresetManager
                 currentSettings={effectiveSettings}
                 selectedPreset={selectedPreset}
-                onSelect={(preset) => {
-                  setSelectedPlatform(preset.platform);
-                  setSelectedPreset(preset);
-                }}
+                onSelect={selectSavedPreset}
                 onDeleted={() => {
                   setSelectedPlatform("recommended");
                   setSelectedPreset(projectPreset);
@@ -1810,10 +1817,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
                 variant="save"
                 currentSettings={effectiveSettings}
                 selectedPreset={selectedPreset}
-                onSelect={(preset) => {
-                  setSelectedPlatform(preset.platform);
-                  setSelectedPreset(preset);
-                }}
+                onSelect={selectSavedPreset}
               />
 
               <section className="rounded-[10px] border border-border bg-bg-1 p-4">

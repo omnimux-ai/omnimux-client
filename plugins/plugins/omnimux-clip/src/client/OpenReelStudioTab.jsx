@@ -4,7 +4,7 @@ import { useHostLocale } from './useHostLocale.js'
 import OpenReelApp from './openreel/web/App.tsx'
 import { useProjectStore } from './openreel/web/stores/project-store.ts'
 import { resetOpenReelRouter } from './openreel/web/hooks/use-router.ts'
-import { EditorOpening, EditorSyncNotice, useEditorSeat } from './live/EditorSeat.jsx'
+import { EditorOpening, EditorSyncNotice, useEditorInert, useEditorSeat } from './live/EditorSeat.jsx'
 import './openreel/web/index.css'
 import './theme/dsw-map.css'
 
@@ -71,6 +71,7 @@ export function OpenReelStudioTab({ t, store, tab, sessionId, locale, runtime, v
     return () => api.detachStore?.(store)
   }, [store])
 
+  const editorRootRef = useEditorInert(view.resolving)
   const editing = view.phase === 'editing'
   const welcome = view.phase === 'welcome'
   const active = visible && (editing || welcome && showWelcome)
@@ -78,8 +79,8 @@ export function OpenReelStudioTab({ t, store, tab, sessionId, locale, runtime, v
     <div className="openreel-studio-root omnimux-clip-studio-entry" aria-hidden={!visible || undefined} ref={root}
       data-visible={visible ? 'true' : 'false'} data-clip-mode="standalone" data-clip-project-id={view.projectId}>
       <div className="openreel-studio-hostbar">
-        <div className="openreel-studio-hostbar-title">{view.title || t('tab.title')}</div>
-        <div className="openreel-studio-hostbar-status" role="status">{view.status ? t(`tab.${view.status}`) : ''}</div>
+        <div className="openreel-studio-hostbar-title">{editing && view.title || t('tab.title')}</div>
+        <div className="openreel-studio-hostbar-status" role="status">{editing && view.status ? t(`tab.${view.status}`) : ''}</div>
         <Button type="button" variant="secondary" className="omnimux-clip-stage-save-btn" disabled={!editing || view.resolving}
           onClick={() => void runtime.session.save()}>{t('tab.save')}</Button>
       </div>
@@ -89,7 +90,7 @@ export function OpenReelStudioTab({ t, store, tab, sessionId, locale, runtime, v
           resetOpenReelRouter({ route: 'welcome', params: {} })
           setShowWelcome(true)
         }} />}
-        <div style={{ height: '100%', display: active ? undefined : 'none' }} inert={view.resolving || undefined}>
+        <div ref={editorRootRef} style={{ height: '100%', display: active ? undefined : 'none' }}>
           <OpenReelApp active={active} managed />
         </div>
         <EditorSyncNotice view={view} runtime={runtime} t={t} showStatus={false} />

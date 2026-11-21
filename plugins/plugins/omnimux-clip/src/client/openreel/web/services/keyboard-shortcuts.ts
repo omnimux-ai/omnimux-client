@@ -91,6 +91,18 @@ function isShiftedSymbol(key: string): boolean {
   return key.length === 1 && /[~!@#$%^&*()_+{}|:"<>?]/.test(key);
 }
 
+function isShortcutRootActive(root: HTMLElement | null): root is HTMLElement {
+  return Boolean(root?.isConnected && !root.closest('[inert], [hidden], [data-visible="false"]'));
+}
+
+export function isEditorShortcutEvent(event: KeyboardEvent, root: HTMLElement | null): boolean {
+  if (!isShortcutRootActive(root)) return false;
+  const path = event.composedPath();
+  const target = path[0] ?? event.target;
+  return !(target instanceof Element) || target === root.ownerDocument.body
+    || target === root.ownerDocument.documentElement || path.includes(root);
+}
+
 export function hasShortcutFocus(event: KeyboardEvent): boolean {
   if (event.defaultPrevented || event.isComposing) return false;
   const target = event.composedPath()[0] ?? event.target;
@@ -1210,7 +1222,7 @@ class KeyboardShortcutsManager {
   private shortcuts: Map<string, ShortcutDefinition> = new Map();
   private handlers: Map<string, Set<ShortcutHandler>> = new Map();
   private activePreset: string = "openreel";
-  private isListening: boolean = false;
+  private root: HTMLElement | null = null;
 
   constructor() {
     this.loadShortcuts();
@@ -1265,20 +1277,18 @@ class KeyboardShortcutsManager {
     } catch { /* Keep the preset active for this session. */ }
   }
 
-  startListening(): void {
-    if (this.isListening) return;
-    this.isListening = true;
+  startListening(root: HTMLElement): () => void {
+    this.root = root;
     window.addEventListener("keydown", this.handleKeyDown);
-  }
-
-  stopListening(): void {
-    if (!this.isListening) return;
-    this.isListening = false;
-    window.removeEventListener("keydown", this.handleKeyDown);
+    return () => {
+      if (this.root !== root) return;
+      this.root = null;
+      window.removeEventListener("keydown", this.handleKeyDown);
+    };
   }
 
   private handleKeyDown = (e: KeyboardEvent): void => {
-    if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
+    if (e.defaultPrevented || e.isComposing || e.keyCode === 229 || !isEditorShortcutEvent(e, this.root)) return;
     const ownsFocus = hasShortcutFocus(e);
     const target = e.composedPath()[0] ?? e.target;
     // A closed shadcn Select retains button focus after applying its value.
@@ -1336,7 +1346,7 @@ class KeyboardShortcutsManager {
 
   /** Invoke the same editing command from a menu or a keyboard shortcut. */
   runCommand(action: string): void {
-    this.executeAction(action, new KeyboardEvent("keydown"));
+    if (isShortcutRootActive(this.root)) this.executeAction(action, new KeyboardEvent("keydown"));
   }
 
   private interceptor: ((action: string, e: KeyboardEvent) => boolean) | null = null;

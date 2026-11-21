@@ -14,7 +14,7 @@ updated: "2026-11-22"
 
 ## 阶段 1 画布绑定与工具结果
 
-阶段 1 已确立的画布边界沿用至今。打开节点时携带 `(workspaceId, nodeId, projectId)`，缺少工程 ID 时生成 `clip_node_…`。复制节点时分配新工程 ID，清除副本的旧草稿、成片和预览引用。手工导出的外围桥按每笔 `/save-export` 上传记录原绑定，接到回执后核对节点归属。同一节点应用新版回执后丢弃迟到的旧回执。
+阶段 1 已确立的画布边界沿用至今。打开节点时携带 `(workspaceId, nodeId, projectId)`，缺少工程 ID 时生成 `clip_node_…`。复制节点时分配新工程 ID，清除副本的旧草稿、成片和预览引用。阶段 1 的手工导出桥按每笔 `/save-export` 上传记录原绑定，接到回执后核对节点归属。同一节点应用新版回执后丢弃迟到的旧回执。
 
 该阶段的工具使用旧 `TimelineSchema` 查档和写档。已保存的原生 UUID 工程报告 `openreel-migration-required`，实时打开、播放、截帧和导出在工程校验通过后抛 `ui-unavailable`。查询不触发自动跟随，截帧与导出停止返回占位结果。历史验收见 [AC-P1-01 至 AC-P1-06](../../../specs/clip-phase1-160.spec.md#证伪方式)。
 
@@ -26,13 +26,13 @@ Clip 编辑器和 Host 使用同一 OpenReel `Project`。Host 保存含 `project
 
 - 裸格式及包装过的原生 UUID 工程保留 ID。旧格式转换轨道、片段、素材引用、源入出点、音量、速度、字幕和可映射的转场。读取可投影已识别的旧档。首次物化或保存时原子写入新格式，并保留转换前的原档。无法映射的旧条目保留在备份中，已识别的缺项可在诊断中查看。[迁移](../../plugins/omnimux-clip/src/store/legacyProject.js)
 - 首次进入 `video_composition` 时，Workflow 先保存节点绑定，再打开 Portal。Clip 以原工程 ID 物化 Host 草稿。已有 Host 工程优先，其次载入节点旧 `schema` 草稿或新建。后续自动保存更新 Workflow 的 `draftRevision`，图里继续保存绑定与成片引用。上游素材按来源和版本复用。首次导入结束并尝试保存后，入口才登记实时租约。切换节点后的迟到导入不得应用到新工程。[画布打开](../../plugins/omnimux-workflow/src/canvas/bridge/canvasClipActions.ts) · [素材导入](../../plugins/omnimux-clip/src/client/hooks/useCanvasIngestion.ts)
-- 浏览器将草稿和媒体字节保存在 IndexedDB。Host 工程保存可序列化的媒体引用，投影以 `mediaId`、`missing` 和安全来源标识表示素材状态。原生文件中失效的媒体引用需要在编辑器重新链接。[原生工程](../../plugins/omnimux-clip/src/store/nativeProject.js) · [快照投影](../../plugins/omnimux-clip/src/timeline/nativeProjectView.js)
+- 浏览器将草稿和媒体字节保存在 IndexedDB。Host 工程保留经过同工作区校验的旧素材地址，旧档仅有来源指纹时可与仍连接的上游对照。恢复填回原 `mediaId`，保留原轨道和片段。共享媒体缓存和按源地址重新读取的字节须匹配所选快照的内容摘要。无法确认字节时保留缺失状态，用户可在编辑器重新链接。工具投影仅返回安全来源标识。[原生工程](../../plugins/omnimux-clip/src/store/nativeProject.js) · [媒体恢复](../../plugins/omnimux-clip/src/client/live/native-state.ts) · [快照投影](../../plugins/omnimux-clip/src/timeline/nativeProjectView.js)
 
 ### 可见入口、编辑权和对话上下文
 
-画布入口是 `omnimux-workflow:canvas` 中的剪辑 Portal，归属由工作区、节点和工程三项确定。独立入口 `omnimux-clip:studio` 只绑定工程。两个入口共用原生 Store。同一渲染进程只保留一个可写入口。切页、收起面板或切换工程时，客户端暂停旧入口，刷入 IndexedDB 并尝试保存到 Host，释放租约后再加载目标工程。切回时重新读取工程和草稿。退出画布编辑时先尝试保存，至少在本地草稿写入成功后再退出。节点有成片时回到 `completed`，否则回到 `idle`。[编辑会话](../../plugins/omnimux-clip/src/client/live/editor-session.js) · [画布事件](../../plugins/omnimux-workflow/src/canvas/bridge/canvasClipActions.ts)
+画布入口是 `omnimux-workflow:canvas` 中的剪辑 Portal，归属由工作区、节点和工程三项确定。独立入口 `omnimux-clip:studio` 只绑定工程。两个入口共用原生 Store。同一渲染进程只保留一个可写入口。切页、收起面板、换工程或退出画布时，客户端先暂停旧入口并写入 IndexedDB，确认 Host 已同步后再释放编辑权。保存离线或遇到版本冲突时保留源草稿和归属，恢复同步后继续交接。退出成功后，节点有成片时回到 `completed`，否则回到 `idle`。切回时重新读取工程和草稿。[编辑会话](../../plugins/omnimux-clip/src/client/live/editor-session.js) · [画布事件](../../plugins/omnimux-workflow/src/canvas/bridge/canvasClipActions.ts)
 
-两个入口使用 `registerContextContributor` 提交剪辑状态。Hub 在每轮第一步从该会话的已认证窗口刷新视口。各窗口视口均成功刷新且其中只有一份有效剪辑视口时，`<ui_context>` 会带上以下字段。[上下文注入](../../plugins/omnimux/src/workbench/context-injector.js)
+两个入口使用 `registerContextContributor` 提交剪辑状态。Hub 在每轮第一步从该会话的已认证窗口定向刷新视口，刷新可以越过尚未完成的普通心跳。Host 按采集顺序接收视口。各窗口视口均成功刷新且其中只有一份有效剪辑视口时，`<ui_context>` 会带上以下字段。[上下文注入](../../plugins/omnimux/src/workbench/context-injector.js)
 
 - 通用字段为 `mode`、`projectId`、`title`、`revision`、`playheadSec`、`durationSec`。有选段时附至多三条 `selectedClips`，每条含 `id`、`name`、`trackId`、`startSec`、`endSec`。
 - 画布模式另带 `workspaceId`、`nodeId`。退出 Portal 或切走后交回普通工作台上下文。剪辑区块按白名单限长和清理字符串，排除本地文件路径、媒体字节、脚本、租约和原始工程 JSON。[上下文格式](../../plugins/omnimux/src/workbench/contract.js)
@@ -42,8 +42,8 @@ Clip 编辑器和 Host 使用同一 OpenReel `Project`。Host 保存含 `project
 ### 租约、命令与失败
 
 1. Hub 在已有事件 WebSocket 上为每个认证窗口分配身份。Clip 通过 `/omnimux-clip/api/live/lease`、`renew`、`release` 管理短期租约。Host 核对连接证明、会话、原生 Tab 实例、编辑器实例、模式、工程、版本和可选画布绑定。客户端每 2 秒续期。隐藏、切页、换工程、断连或租约过期后，旧入口无法领取新命令。[窗口登记](../../plugins/omnimux/src/events/windows.js) · [Clip HTTP 路由](../../plugins/omnimux-clip/src/http/routes.js)
-2. 当前会话唯一匹配且可见的租约可自动命中。有多个匹配项，或实时操作显式目标与可见入口不符时，返回 `AMBIGUOUS_TARGET` 和候选项，包含 `projectId`、`title`、`mode`、`visible`、`windowInstanceId`，画布另有两项绑定 ID。先核对用户意图，再以工程 ID 和必要的 `windowInstanceId` 定位。无认证窗口时返回 `EDITOR_OFFLINE`，已连接但目标未就绪时可能返回 `EDITOR_NOT_VISIBLE`。原生预览不可用时返回 `PREVIEW_NOT_READY`。明确指定保存工程的 `clip_get` 可以离线查档，未物化画布工程返回 `project-not-materialized`。[目标选择](../../plugins/omnimux-clip/src/live/command-broker.js)
-3. 命令以短 WS 通知 `{ requestId }` 发往目标窗口，通知不进入回放缓冲。客户端通过认证 HTTP `claim` 领取，核对身份、可见性、归属、时效和写入版本。`receipt` 携带领取时生成的证明。工具抛 `ClipDomainError` 并在消息保留 `[code]`，HTTP 错误体携带 `error` 代码。写入版本冲突时用 `REVISION_CONFLICT` 和 `currentRevision` 提示重读。回执超时或结果为 `outcome-unknown` 时，用同一 `requestId` 和同样参数复查原调用。已领取的同一请求只执行一次，参数改变会报 `REQUEST_ID_CONFLICT`。Agent 编辑回执可随 IndexedDB 草稿恢复投递，过期请求有 `REQUEST_EXPIRED` 状态。[命令及回执](../../plugins/omnimux-clip/src/live/command-broker.js) · [客户端执行](../../plugins/omnimux-clip/src/client/live/live-channel.js)
+2. 当前会话唯一匹配且可见的租约可自动命中。有多个匹配项，或实时操作显式目标与可见入口不符时，返回 `AMBIGUOUS_TARGET` 和候选项，包含 `projectId`、`title`、`mode`、`visible`、`windowInstanceId`，画布另有两项绑定 ID。同窗保活的画布入口由认证视口上报，Host 复核绑定后以 `visible: false` 列出。先核对用户意图，再以工程 ID 和必要的 `windowInstanceId` 定位。无认证窗口时返回 `EDITOR_OFFLINE`，已连接但目标未就绪时可能返回 `EDITOR_NOT_VISIBLE`。原生预览不可用时返回 `PREVIEW_NOT_READY`。明确指定保存工程的 `clip_get` 可以离线查档，未物化画布工程返回 `project-not-materialized`。[目标选择](../../plugins/omnimux-clip/src/live/command-broker.js)
+3. 命令以短 WS 通知 `{ requestId }` 发往目标窗口，通知不进入回放缓冲。客户端通过认证 HTTP `claim` 领取，核对身份、可见性、归属、时效和写入版本。`receipt` 携带领取时生成的证明。工具抛 `ClipDomainError` 并在消息保留 `[code]`，HTTP 错误体携带 `error` 代码。Host 从匹配会话、Tab 实例、编辑器和工程的认证视口读取已上报版本，无需等待续租。采用 Host 版本时开启新的版本序列，延迟的旧续租和回执不能推进该序列。Host 领取时和编辑器执行前都复核版本。写入版本冲突时用 `REVISION_CONFLICT` 和 `currentRevision` 提示重读。回执超时或结果为 `outcome-unknown` 时，用同一 `requestId` 和同样参数复查原调用。已领取的同一请求只执行一次，参数改变会报 `REQUEST_ID_CONFLICT`。Agent 编辑回执可随 IndexedDB 草稿恢复投递，过期请求有 `REQUEST_EXPIRED` 状态。[命令及回执](../../plugins/omnimux-clip/src/live/command-broker.js) · [客户端执行](../../plugins/omnimux-clip/src/client/live/live-channel.js)
 
 ### 工具入参与编辑行为
 
@@ -67,7 +67,7 @@ Clip 编辑器和 Host 使用同一 OpenReel `Project`。Host 保存含 `project
 
 ### 草稿保存与重连
 
-手工编辑防抖 1.5 秒保存，Agent 批次立即尝试写 IndexedDB，再用 `expectedRevision` 和更高的 `revision` 提交 Host。`persisted` 表示本地草稿写入，`synchronized` 表示 Host 已同步。Host 不可达时继续保留本地草稿。重连按 `localBaseRevision` 比对远端版本，能继续原保存时自动同步。版本分叉时，界面提供三种处理方式。[保存与冲突](../../plugins/omnimux-clip/src/client/live/editor-session.js) · [IndexedDB 草稿](../../plugins/omnimux-clip/src/client/live/persistence.js)
+手工编辑防抖 1.5 秒保存，Agent 批次立即尝试写 IndexedDB，再用 `expectedRevision` 和更高的 `revision` 提交 Host。`persisted` 表示本地草稿写入，`synchronized` 表示 Host 已同步。Host 不可达时继续保留本地草稿。重连后待同步草稿等待当前连接的认证视口登记，再按 `localBaseRevision` 比对远端版本。能继续原保存时自动同步。版本分叉时，界面提供三种处理方式。处理选择期间暂停编辑器快捷键。[保存与冲突](../../plugins/omnimux-clip/src/client/live/editor-session.js) · [IndexedDB 草稿](../../plugins/omnimux-clip/src/client/live/persistence.js)
 
 1. 保留本地并保存，先备份 Host 当前版本。
 2. 采用 Host 最新版本，先备份本地草稿。
@@ -75,9 +75,9 @@ Clip 编辑器和 Host 使用同一 OpenReel `Project`。Host 保存含 `project
 
 ### MP4 与画布提交
 
-版本化的 Agent 导出在领命时绑定原 `requestId`、`exportJobId`、`projectRevision` 和可选画布三元组。右侧按原生快照运行 WebCodecs，经带凭证的 `/omnimux-clip/api/exports/:id/upload` 流式上传。Host 校验 MP4 结构、视频轨、各现有轨道的数据包及尺寸、时长，再原子提交独立任务版本文件。关闭或隐藏 Portal 后，已开始的任务仍可完成原上传与提交。若共享原生编辑器在渲染期间换了工程，渲染会报冲突。迟到的旧任务标记为 `superseded`，保留其独立文件和更新任务的画布指针。[原生导出](../../plugins/omnimux-clip/src/client/live/native-export.ts) · [Host 导出任务](../../plugins/omnimux-clip/src/export-jobs.js)
+Agent 领命时和画布手工导出开始前，从同一 Host 分配单调递增的 `exportJobId`，绑定原 `requestId`、`projectRevision` 和画布三元组（独立工程无画布绑定）。右侧按固定原生快照运行 WebCodecs，经带凭证的 `/omnimux-clip/api/exports/:id/upload` 流式上传。Host 校验 MP4 结构、视频轨、各现有轨道的数据包及尺寸、时长，再原子提交独立任务版本文件。关闭或隐藏 Portal 后，已开始的任务仍按原归属完成上传与提交。若共享原生编辑器在渲染期间换了工程，渲染会报冲突。手工与 Agent 的成片按同一顺序比较，无论先发哪一种，迟到的旧任务都以 `superseded` 保留独立文件，画布继续引用更新任务。[原生导出](../../plugins/omnimux-clip/src/client/live/native-export.ts) · [Host 导出任务](../../plugins/omnimux-clip/src/export-jobs.js)
 
-Workflow 通过 `workflowClip.commitExport` 重核节点绑定，复用 `planClipExportDownstream`，在一次 `WorkspaceStore.expectedVersion` 提交中写入来源节点、下游素材、`out -> in` 连线和任务回执。首次创建下游节点，重导出更新同一节点和版本化 URL。版本冲突后重读工作区、核对归属再试。画布重新打开可从持久化工作区读到提交状态。手工导出保留画布的 `/save-export` 兼容链路。[Workflow 回写](../../plugins/omnimux-workflow/src/workflow/clip/workflowClip.ts) · [下游节点规则](../../plugins/omnimux-workflow/src/canvas/nodes/definitions/videoCompositionDownstream.ts)
+Workflow 通过 `workflowClip.commitExport` 重核节点绑定，复用 `planClipExportDownstream`，在一次 `WorkspaceStore.expectedVersion` 提交中写入来源节点、下游素材、`out -> in` 连线和任务回执。首次创建下游节点，重导出更新同一节点和版本化 URL。版本冲突后重读工作区、核对归属再试。客户端将提交的导出字段和连线同步到适用的撤销历史，撤销普通编辑时保留成片。画布重新打开可从持久化工作区读到提交状态。`/save-export` 继续服务旧调用方。[Workflow 回写](../../plugins/omnimux-workflow/src/workflow/clip/workflowClip.ts) · [画布历史合并](../../plugins/omnimux-workflow/src/canvas/bridge/rebaseClipWrite.ts)
 
 `fileSaved` 和 `canvasCommitted` 分别表示确认落盘与画布提交。独立工程正常状态为 `file-saved`，画布成功为 `committed`。`canvas-failed` 表示 MP4 已保存且画布写入失败，Host 可用同一任务重试图更新。`superseded` 表示有更新的结果占据当前指针。报告成片和画布状态时，分别核对这两个字段。
 
