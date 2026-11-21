@@ -16,12 +16,17 @@
   box-sizing: border-box;
   color-scheme: dark;
   --tl-height: 40%;
-  /* 让官方 `position: fixed` / 100vw 相对本 Tab 而不是整个 DSH 窗口 */
+  /* 固定定位的剪辑浮层限制在当前 Tab，视口单位仍取宿主窗口。 */
   transform: translateZ(0);
   contain: layout paint;
+  container: clip-stage / inline-size;
   background: var(--dsw-alias-bg-base, var(--bg, #111113));
   color: var(--dsw-alias-label-primary, var(--fg, #f3f4f6));
   -webkit-app-region: no-drag;
+}
+
+.openreel-studio-root[data-theme="light"] {
+  color-scheme: light;
 }
 
 .openreel-studio-root .h-screen,
@@ -39,6 +44,16 @@
   position: absolute !important;
 }
 
+@container clip-stage (max-width: 720px) {
+  .openreel-studio-root .clip-export-dialog:not(.mobile-export-advanced) .export-platforms {
+    width: clamp(7rem, 28%, 10.25rem);
+  }
+
+  .openreel-studio-root .clip-export-dialog .export-preset-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .openreel-studio-root,
 .openreel-studio-root[data-theme="dark"],
 .openreel-studio-root.dark {
@@ -49,16 +64,23 @@
      不再写死 border-white/25 —— 浅色主题下白线会消失在浅底上。 */
   --accent-divider: color-mix(in srgb, var(--accent-fg, #ffffff) 28%, transparent);
   --bg: var(--dsw-alias-bg-base, oklch(0.12 0.005 240));
-  --bg-1: var(--dsw-alias-bg-elevated, oklch(0.16 0.006 240));
-  --bg-2: var(--dsw-alias-bg-layer-1, oklch(0.2 0.007 240));
-  --bg-3: var(--dsw-alias-bg-layer-2, oklch(0.24 0.008 240));
-  --bg-elev: var(--dsw-alias-bg-elevated, oklch(0.22 0.007 240));
-  --border: var(--dsw-alias-border, oklch(0.26 0.008 240));
+  --bg-1: var(--dsw-alias-bg-layer-1, var(--bg));
+  --bg-2: var(--dsw-alias-bg-layer-2, var(--bg-1));
+  --bg-3: var(--dsw-alias-interactive-bg-hover, var(--bg-2));
+  --bg-elev: var(--dsw-alias-bg-layer-1, var(--bg));
+  --border: var(--dsw-alias-border-l2, oklch(0.26 0.008 240));
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, var(--bg-1));
+  --selected: var(--dsw-alias-interactive-bg-selected, var(--accent-soft));
+  --track-bg: var(--bg);
+  --tl-bg: var(--bg-1);
+  --control-bg: var(--bg-2);
+  --text-button-bg: var(--bg-2);
   --border-strong: var(--dsw-alias-border-l3, oklch(0.34 0.01 240));
   --fg: var(--dsw-alias-label-primary, oklch(0.97 0.003 240));
   --fg-2: var(--dsw-alias-label-secondary, oklch(0.78 0.008 240));
   --fg-3: var(--dsw-alias-label-tertiary, oklch(0.6 0.012 240));
-  --fg-muted: var(--dsw-alias-label-dimmed, oklch(0.48 0.012 240));
+  /* Preview metadata and timeline labels stay legible in both host themes. */
+  --fg-muted: var(--dsw-alias-label-secondary, var(--fg-2));
   --hover: var(--dsw-alias-interactive-bg-hover, oklch(0.22 0.009 240));
 }
 

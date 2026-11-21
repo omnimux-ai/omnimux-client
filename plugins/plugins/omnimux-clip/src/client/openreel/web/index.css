@@ -8,7 +8,7 @@
    that map to these via tailwind.config.js.
    ============================================================ */
 @layer base {
-  .openreel-studio-root {
+  :root {
     font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
       system-ui, sans-serif;
     line-height: 1.5;
@@ -34,8 +34,8 @@
   }
 
   /* light theme — Claude Design "Editor" mock (emerald brand accent, Inter) */
-  .openreel-studio-root,
-  .openreel-studio-root[data-theme="light"] {
+  :root,
+  [data-theme="light"] {
     --bg: #f4f4f6;            /* window / app background */
     --bg-1: #ffffff;          /* cards & elevated surfaces */
     --bg-2: #f0f0f3;          /* recessed insets, pills, search fields */
@@ -75,8 +75,8 @@
   }
 
   /* dark theme — cinematic, near-black like reference */
-  .openreel-studio-root[data-theme="dark"],
-  .openreel-studio-root.dark {
+  [data-theme="dark"],
+  .dark {
     --bg: oklch(0.12 0.005 240);
     --bg-1: oklch(0.16 0.006 240);
     --bg-2: oklch(0.2 0.007 240);
@@ -108,7 +108,7 @@
     --accent-glow: oklch(0.7 0.15 162 / 0.45);
   }
 
-  .openreel-studio-root[data-density="compact"] {
+  [data-density="compact"] {
     --d-text: 12px;
     --d-text-sm: 10.5px;
     --tl-track: 46px;
@@ -120,8 +120,8 @@
   /* Legacy shadcn/ui hsl tokens — kept so existing primitives
      (DropdownMenu, Tooltip, Dialog, etc.) keep working until they
      migrate to the new tokens. */
-  .openreel-studio-root,
-  .openreel-studio-root[data-theme="light"] {
+  :root,
+  [data-theme="light"] {
     --background: 0 0% 100%;
     --foreground: 240 10% 4%;
     --card: 0 0% 100%;
@@ -143,8 +143,8 @@
     --radius: 0.625rem;
   }
 
-  .openreel-studio-root[data-theme="dark"],
-  .openreel-studio-root.dark {
+  [data-theme="dark"],
+  .dark {
     --background: 220 12% 9%;
     --foreground: 0 0% 95%;
     --card: 220 10% 13%;
@@ -165,17 +165,23 @@
     --ring: 158 64% 52%;
   }
 
-  .openreel-studio-root {
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
     font-family: "Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
     font-size: var(--d-text);
     color: var(--fg);
     background: var(--bg);
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
     letter-spacing: -0.005em;
   }
 
-  .openreel-studio-root button { cursor: pointer; }
+  button { cursor: pointer; }
 }
 
 /* ---------- helper utility classes (small, layout-only) ---------- */
@@ -188,18 +194,19 @@
 }
 
 /* ---------- scrollbar ---------- */
-.openreel-studio-root ::-webkit-scrollbar {
+::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
-.openreel-studio-root ::-webkit-scrollbar-track { background: transparent; }
-.openreel-studio-root ::-webkit-scrollbar-thumb {
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-corner { background: var(--bg-1); }
+::-webkit-scrollbar-thumb {
   background: var(--border-strong);
   border-radius: 99px;
   border: 3px solid transparent;
   background-clip: padding-box;
 }
-.openreel-studio-root ::-webkit-scrollbar-thumb:hover {
+::-webkit-scrollbar-thumb:hover {
   background: var(--fg-muted);
   background-clip: padding-box;
   border: 3px solid transparent;

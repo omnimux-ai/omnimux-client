@@ -1,8 +1,10 @@
+import { Button as ShadcnButton } from "@openreel/ui";
 import React, { useMemo } from "react";
 import { motion } from "framer-motion";
 import { ChevronLeft, ChevronRight, X } from "@/icons/lucide-compat";
-import { ToolcraftIconButton as IconButton } from "@openreel/ui";
+
 import type { TourStep } from "./tour-steps";
+import { useClipT } from "../../../../../i18n/index.js";
 
 interface TourPopoverProps {
   step: TourStep;
@@ -33,6 +35,7 @@ export const TourPopover: React.FC<TourPopoverProps> = ({
   onSkip,
   onGoToStep,
 }) => {
+  const t = useClipT();
   const { position: computedPosition, arrowPosition } = useMemo(() => {
     if (!targetRect || step.position === "center") {
       return { position: { x: 0, y: 0 }, arrowPosition: null };
@@ -149,14 +152,9 @@ export const TourPopover: React.FC<TourPopoverProps> = ({
           />
         )}
 
-        <IconButton
-          label="Skip tour"
-          icon={<X size={14} />}
-          variant="ghost"
-          size="sm"
-          onClick={onSkip}
-          className="absolute top-3 right-3 p-1 rounded hover:bg-background-tertiary text-text-muted hover:text-text-primary transition-colors"
-        />
+        <ShadcnButton variant="ghost" size="icon-sm" onClick={onSkip} type="button" aria-label={t("Skip tour")} title={t("Skip tour")} className="inline-flex shrink-0 items-center justify-center outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-7 w-7 bg-transparent absolute top-3 right-3 p-1 rounded hover:bg-background-tertiary text-text-muted hover:text-text-primary transition-colors">
+          {<X size={14} />}
+        </ShadcnButton>
 
         <div className="p-6">
           <motion.h2
@@ -203,14 +201,14 @@ export const TourPopover: React.FC<TourPopoverProps> = ({
 
           <div className="flex items-center justify-center gap-1.5 mb-4">
             {Array.from({ length: totalSteps }).map((_, index) => (
-              <button
+              <ShadcnButton variant="ghost" size="sm"
                 key={index}
                 type="button"
-                aria-label={`Go to step ${index + 1}`}
+                aria-label={t("Go to step {0}", [index + 1])}
                 onClick={() => onGoToStep(index)}
-                className={`w-2 h-2 rounded-full transition-all ${
+                className={`w-2 h-2 rounded-full p-0 transition-all ${
                   index === currentStep
-                    ? "bg-accent scale-110"
+                    ? "bg-accent scale-110 hover:bg-accent"
                     : "bg-border hover:bg-fg-muted"
                 }`}
               />
@@ -219,35 +217,35 @@ export const TourPopover: React.FC<TourPopoverProps> = ({
         </div>
 
         <div className="grid grid-cols-[88px_1fr_108px] items-center gap-3 px-4 py-3 border-t border-border bg-background-tertiary rounded-b-xl">
-          <button
+          <ShadcnButton variant="ghost" size="sm"
             type="button"
-            aria-label="Back"
+            aria-label={t("Back")}
             onClick={onPrev}
             disabled={isFirstStep}
-            className="inline-flex h-9 min-w-[88px] items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-xs font-medium text-text-secondary transition-colors hover:bg-background-secondary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-30"
+            className="inline-flex h-9 min-w-[88px] items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-xs [&_svg]:size-3.5 font-medium text-text-secondary transition-colors hover:bg-background-secondary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-30"
           >
             <ChevronLeft size={14} className="shrink-0" aria-hidden />
-            <span>Back</span>
-          </button>
+            <span>{t("Back")}</span>
+          </ShadcnButton>
 
-          <button
+          <ShadcnButton variant="ghost" size="sm"
             type="button"
-            aria-label="Skip tour"
+            aria-label={t("Skip tour")}
             onClick={onSkip}
             className="mx-auto inline-flex h-9 items-center justify-center whitespace-nowrap rounded-lg px-3 text-xs font-medium text-text-muted transition-colors hover:bg-background-secondary hover:text-text-secondary"
           >
-            Skip Tour
-          </button>
+            {t("Skip Tour")}
+          </ShadcnButton>
 
-          <button
+          <ShadcnButton variant="ghost" size="sm"
             type="button"
-            aria-label={isLastStep ? "Get Started" : "Next"}
+            aria-label={isLastStep ? t("Get Started") : t("Next")}
             onClick={onNext}
-            className="inline-flex h-9 min-w-[108px] items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-primary px-4 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex h-9 min-w-[108px] items-center justify-center gap-1.5 whitespace-nowrap rounded-lg [&_svg]:size-3.5 bg-primary px-4 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <span>{isLastStep ? "Get Started" : "Next"}</span>
+            <span>{isLastStep ? t("Get Started") : t("Next")}</span>
             {!isLastStep && <ChevronRight size={14} className="shrink-0" aria-hidden />}
-          </button>
+          </ShadcnButton>
         </div>
       </div>
     </motion.div>

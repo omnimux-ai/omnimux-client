@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo } from "react";
-import { ToolcraftText as Text } from "@openreel/ui";
-import { MockSlider } from "./shell/InspectorControls";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@openreel/ui";
+import { InlineSlider } from "./shell/InspectorControls";
 import { useProjectStore } from "../../../stores/project-store";
 import {
   getAvailableBlendModes,
@@ -69,13 +69,10 @@ export const BlendingSection: React.FC<BlendingSectionProps> = ({ clipId }) => {
 
   if (!clip) {
     return (
-      <Text
-        type="supporting"
-        color="secondary"
-        className="py-8 text-center text-xs"
+      <span className="text-fg-2 font-normal py-8 text-center text-xs"
       >
         {t("No clip selected")}
-      </Text>
+      </span>
     );
   }
 
@@ -86,32 +83,17 @@ export const BlendingSection: React.FC<BlendingSectionProps> = ({ clipId }) => {
           {t("Blending")}
         </span>
         <div className="relative flex-1">
-          <select
-            aria-label={t("Blend mode")}
+          <Select
             value={blendMode}
-            onChange={(event) =>
-              handleBlendModeChange(event.target.value as BlendMode)
+            onValueChange={(value) =>
+              handleBlendModeChange(value as BlendMode)
             }
-            className="w-full appearance-none rounded-[7px] border border-border bg-transparent px-[10px] py-[8px] pr-7 text-[13px] font-medium text-fg-2 outline-none focus:border-accent"
           >
-            {availableBlendModes.map((mode) => (
-              <option key={mode} value={mode}>
-                {getBlendModeName(mode)}
-              </option>
-            ))}
-          </select>
-          <svg
-            width="11"
-            height="11"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="var(--fg-muted)"
-            strokeWidth="2.2"
-            aria-hidden
-            className="pointer-events-none absolute right-[10px] top-1/2 -translate-y-1/2"
-          >
-            <path d="M6 9l6 6 6-6" />
-          </svg>
+            <SelectTrigger aria-label={t("Blend mode")} className="h-auto w-full rounded-[7px] border border-border bg-transparent px-[10px] py-[8px] text-[13px] font-medium text-fg-2 outline-none focus:border-accent [&>svg]:size-[11px]"><SelectValue /></SelectTrigger>
+            <SelectContent>{availableBlendModes.map((mode) => (
+              <SelectItem key={mode} value={mode}>{t(getBlendModeName(mode))}</SelectItem>
+            ))}</SelectContent>
+          </Select>
         </div>
       </div>
 
@@ -120,7 +102,8 @@ export const BlendingSection: React.FC<BlendingSectionProps> = ({ clipId }) => {
           <span className="w-[90px] flex-none text-[13px] font-medium text-fg-3">
             {t("Blend Opacity")}
           </span>
-          <MockSlider
+          <InlineSlider
+            ariaLabel={t("Blend Opacity")}
             className="flex-1"
             value={blendOpacity}
             min={0}

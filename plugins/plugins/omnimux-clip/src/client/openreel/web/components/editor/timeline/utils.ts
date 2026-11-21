@@ -112,26 +112,87 @@ export const calculateSnap = (
   return { time: rawTime, snapped: false };
 };
 
-export const generateWaveformPath = (
-  waveformData: Float32Array | number[],
-  width: number,
-): string => {
-  if (!waveformData || waveformData.length === 0) {
-    return "M0,20 L100,20";
+interface ClipWaveformBarOptions {
+  barCount: number;
+  startBar?: number;
+  endBar?: number;
+  mediaDuration: number;
+  inPoint: number;
+  outPoint: number;
+  reversed?: boolean;
+}
+
+/**
+ * Samples the source-media waveform over the range represented by a timeline
+ * clip. Each bar uses the highest peak in its source-time bucket so short
+ * transients remain visible while genuinely silent buckets stay at zero.
+ */
+export const getClipWaveformBarAmplitudes = (
+  waveformData: Float32Array | number[] | null | undefined,
+  options: ClipWaveformBarOptions,
+): number[] => {
+  const barCount = Math.max(0, Math.floor(options.barCount));
+  if (barCount === 0) return [];
+  const startBar = Math.max(0, Math.min(barCount, Math.floor(options.startBar ?? 0)));
+  const endBar = Math.max(startBar, Math.min(barCount, Math.ceil(options.endBar ?? barCount)));
+  const visibleCount = endBar - startBar;
+  if (visibleCount === 0) return [];
+
+  if (
+    !waveformData ||
+    waveformData.length === 0 ||
+    !Number.isFinite(options.mediaDuration) ||
+    options.mediaDuration <= 0
+  ) {
+    return Array.from({ length: visibleCount }, () => 0);
   }
 
-  const samples = Array.from(waveformData);
-  const step = Math.max(1, Math.floor(samples.length / width));
-  const points: string[] = [];
+  const mediaDuration = options.mediaDuration;
+  const sourceStart = Math.max(0, Math.min(mediaDuration, options.inPoint));
+  const sourceEnd = Math.max(
+    sourceStart,
+    Math.min(mediaDuration, options.outPoint),
+  );
+  const sourceDuration = sourceEnd - sourceStart;
 
-  for (let i = 0; i < width; i++) {
-    const sampleIndex = Math.min(i * step, samples.length - 1);
-    const value = Math.abs(samples[sampleIndex] || 0);
-    const y = 20 - value * 18;
-    points.push(`${i === 0 ? "M" : "L"}${i},${y}`);
+  if (sourceDuration <= 0) {
+    return Array.from({ length: visibleCount }, () => 0);
   }
 
-  return points.join(" ");
+  return Array.from({ length: visibleCount }, (_, visibleIndex) => {
+    const barIndex = startBar + visibleIndex;
+    const displayIndex = options.reversed
+      ? barCount - barIndex - 1
+      : barIndex;
+    const bucketStartTime =
+      sourceStart + (displayIndex / barCount) * sourceDuration;
+    const bucketEndTime =
+      sourceStart + ((displayIndex + 1) / barCount) * sourceDuration;
+    const startSample = Math.max(
+      0,
+      Math.min(
+        waveformData.length - 1,
+        Math.floor((bucketStartTime / mediaDuration) * waveformData.length),
+      ),
+    );
+    const endSample = Math.max(
+      startSample + 1,
+      Math.min(
+        waveformData.length,
+        Math.ceil((bucketEndTime / mediaDuration) * waveformData.length),
+      ),
+    );
+
+    let peak = 0;
+    for (let sampleIndex = startSample; sampleIndex < endSample; sampleIndex++) {
+      const sample = Number(waveformData[sampleIndex]);
+      if (Number.isFinite(sample)) {
+        peak = Math.max(peak, Math.abs(sample));
+      }
+    }
+
+    return Math.min(1, peak);
+  });
 };
 
 export const formatTimecode = (
@@ -153,6 +214,15 @@ export const formatTimecode = (
 };
 
 export const getTrackInfo = (track: Track, index: number): TrackInfo => {
+  if (track.mode === "standard") {
+    return {
+      label: `T${index + 1}`,
+      icon: Layers,
+      color: "bg-fg-muted",
+      textColor: "text-fg-2",
+      bgLight: "bg-fg-muted/10",
+    };
+  }
   switch (track.type) {
     case "video":
       return {
@@ -209,28 +279,28 @@ export const getClipStyle = (trackType: string): ClipStyle => {
   switch (trackType) {
     case "video":
       return {
-        bg: "bg-[linear-gradient(160deg,#bcd3e8,#5d7a93)]",
+        bg: "bg-[var(--c-video)]",
         border: "border-transparent",
         text: "text-white",
         selectedText: "text-white",
       };
     case "audio":
       return {
-        bg: "bg-[#e6f4ea]",
-        border: "border-[#cfe8d6]",
-        text: "text-[#4a7a55]",
-        selectedText: "text-[#4a7a55]",
+        bg: "bg-[var(--c-audio)]",
+        border: "border-[#308e71]",
+        text: "text-[#c5eddf]",
+        selectedText: "text-[#c5eddf]",
       };
     case "image":
       return {
-        bg: "bg-[linear-gradient(160deg,#c3b1e8,#6a4aa0)]",
+        bg: "bg-[var(--c-text)]",
         border: "border-transparent",
         text: "text-white",
         selectedText: "text-white",
       };
     default:
       return {
-        bg: "bg-[linear-gradient(160deg,#cdd4e0,#8a93a8)]",
+        bg: "bg-[var(--c-text)]",
         border: "border-transparent",
         text: "text-white",
         selectedText: "text-white",

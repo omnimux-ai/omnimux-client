@@ -1,12 +1,10 @@
-import React, { useCallback, useMemo, useState } from "react";
-import { ToolcraftSegmentedControl } from "@openreel/ui";
-import { ToolcraftCard as Card } from "@openreel/ui";
-import { ToolcraftFileDropControl as FileInput } from "@openreel/ui";
-import { ToolcraftIconButton as IconButton } from "@openreel/ui";
-import { ToolcraftNumberInputControl } from "@openreel/ui";
-import { ToolcraftSelectControl as Selector } from "@openreel/ui";
-import { ToolcraftText as Text } from "@openreel/ui";
-import { ToolcraftTextAreaControl } from "@openreel/ui";
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { ensureFontFamily } from "../../../services/project-fonts";
+import {
+  Button, Card, Input, Label, RadioGroup, RadioGroupItem,
+  Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectLabel, SelectItem,
+  Switch, Textarea, cn,
+} from "@openreel/ui";
 import {
   AlignLeft,
   AlignCenter,
@@ -18,12 +16,15 @@ import {
   Italic,
   Underline,
   Type,
+  UploadCloud,
 } from "@/icons/lucide-compat";
 import { useProjectStore } from "../../../stores/project-store";
+import { DEFAULT_TEXT_SHADER_PROGRESS } from "../panels/effect-previews/kind-defs";
 import type {
   MotionShaderParamValue,
   TextShaderStyle,
   TextStyle,
+  Transform,
   FontWeight,
 } from "@openreel/core";
 import {
@@ -40,14 +41,21 @@ import {
 } from "./font-options";
 import { toast } from "../../../stores/notification-store";
 import { ColorSelector } from "../../../motion/components/primitives";
-import { MockToggle } from "./shell/InspectorControls";
+import { useNumericDraft } from "./shell/useNumericDraft";
 import {
   createDefaultEditorShader,
   groupShaderDefsByCollection,
   ShaderParamFields,
 } from "./ShaderControls";
 import { ShaderPreviewBrowser } from "../../shaders/ShaderPreviewBrowser";
+import { useTextFontEdit } from "./useTextFontEdit";
+import { clipNow } from "../../../../../i18n/index.js";
 import { useClipT } from "../../../../../i18n/index.js";
+
+const textControlClassName = "flex h-8 w-full min-w-0 rounded-[7px] border border-border bg-bg-1 px-2.5 py-1.5 text-[13px] font-medium text-fg-2 outline-none transition-colors placeholder:text-fg-muted focus:border-accent disabled:cursor-not-allowed disabled:opacity-50";
+const textIconButtonClassName = "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50";
+const activeTextButtonClassName = "bg-accent text-accent-fg hover:bg-accent/90";
+const inactiveTextButtonClassName = "border border-border bg-bg-2 text-fg-2 hover:bg-bg-3 hover:text-fg";
 
 const ColorField: React.FC<{
   label: string;
@@ -55,29 +63,34 @@ const ColorField: React.FC<{
   onChange: (color: string) => void;
   showAlpha?: boolean;
   allowTransparent?: boolean;
+  fallback?: string;
 }> = ({
   label,
   value,
   onChange,
   showAlpha = false,
   allowTransparent = false,
-}) => (
+  fallback = "#000000",
+}) => {
+  const t = useClipT();
+  return (
   <div className="flex items-center justify-between gap-2">
-    <Text type="supporting" color="secondary">
-      {label}
-    </Text>
+    <span className="text-[12px] leading-5 text-fg-2 font-normal">
+      {t(label)}
+    </span>
     <div className="flex max-w-[190px] items-center">
       <ColorSelector
         value={value}
         onChange={onChange}
-        label={`Select ${label.toLowerCase()}`}
+        label={t("Select {0}", [t(label).toLowerCase()])}
         allowTransparent={allowTransparent}
-        fallback={label === t("Text Color") ? "#ffffff" : "#000000"}
+        fallback={fallback}
         showAlpha={showAlpha}
       />
     </div>
   </div>
 );
+};
 
 const NumberInput: React.FC<{
   label: string;
@@ -87,38 +100,56 @@ const NumberInput: React.FC<{
   max?: number;
   step?: number;
   unit?: string;
-}> = ({ label, value, onChange, min = 0, max = 1000, step = 1, unit = "" }) => (
-  <ToolcraftNumberInputControl
-    label={label}
-    size="sm"
-    width="100%"
-    value={Number.isFinite(value) ? value : 0}
-    onChange={onChange}
-    min={min}
-    max={max}
-    step={step}
-    units={unit || null}
-  />
-);
+}> = ({ label, value, onChange, min = 0, max = 1000, step = 1, unit = "" }) => {
+  const t = useClipT();
+  const id = useId();
+  const input = useNumericDraft({ value, onChange, min, max, step });
+  return (
+    <div className="min-w-0 space-y-1.5 w-full">
+      <Label htmlFor={id} className="block truncate text-[11px] font-medium leading-[1.4] text-text-secondary">{t(label)}</Label>
+      <div className="relative min-w-0">
+        <Input
+          {...input}
+          id={id}
+          type="number"
+          inputMode="decimal"
+          min={min}
+          max={max}
+          step={step}
+          className={cn(textControlClassName, "font-mono tabular-nums h-7 text-[12px]", unit && "pr-9")}
+        />
+        {unit && <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] font-medium text-fg-muted">{unit}</span>}
+      </div>
+    </div>
+  );
+};
 
 const ToggleButtonGroup: React.FC<{
   options: { value: string; icon: React.ReactElement; label: string }[];
   value: string;
   onChange: (value: string) => void;
-}> = ({ options, value, onChange }) => (
+}> = ({ options, value, onChange }) => {
+  const t = useClipT();
+  return (
   <div className="flex gap-1">
     {options.map((option) => (
-      <IconButton
+      <Button
         key={option.value}
-        label={t(option.label)}
-        icon={option.icon as any}
-        size="sm"
-        variant={value === option.value ? "primary" : "secondary"}
+        type="button"
+        aria-label={t(option.label)}
+        title={t(option.label)}
+        aria-pressed={value === option.value}
+        size="icon-sm"
+        variant="ghost"
+        className={cn(textIconButtonClassName, value === option.value ? activeTextButtonClassName : inactiveTextButtonClassName)}
         onClick={() => onChange(option.value)}
-      />
+      >
+        {option.icon}
+      </Button>
     ))}
   </div>
 );
+};
 
 const FontSelector: React.FC<{
   value: string;
@@ -126,7 +157,7 @@ const FontSelector: React.FC<{
 }> = ({ value, onChange }) => {
   const t = useClipT();
   const customFonts = useCustomFonts();
-  const options = [
+  const options = useMemo(() => [
     ...Object.entries(FONT_CATEGORIES).map(([category, fonts]) => ({
       type: "section" as const,
       title: category,
@@ -147,24 +178,28 @@ const FontSelector: React.FC<{
           },
         ]
       : []),
-  ];
+  ], [customFonts]);
 
   return (
     <div className="flex items-center justify-between">
-      <Text type="supporting" color="secondary">
+      <span className="text-[12px] leading-5 text-fg-2 font-normal">
         {t("Font")}
-      </Text>
-      <Selector
-        label={t("Font")}
-        isLabelHidden
-        size="sm"
-        width={160}
-        value={value}
-        options={options as any}
-        onChange={onChange}
-        hasSearch
-        searchPlaceholder="Search fonts"
-      />
+      </span>
+      <div className="min-w-0 space-y-1.5 w-[160px]">
+        <Select value={value} onValueChange={onChange}>
+          <SelectTrigger aria-label={t("Font")} className={cn(textControlClassName, "h-7 text-[12px]")}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {options.map((section) => (
+              <SelectGroup key={section.title}>
+                <SelectLabel>{t(section.title)}</SelectLabel>
+                {section.options.map((font) => <SelectItem key={font.value} value={font.value}>{t(font.label)}</SelectItem>)}
+              </SelectGroup>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
     </div>
   );
 };
@@ -191,8 +226,15 @@ export const TextSection: React.FC<TextSectionProps> = ({ clipId, clipIds }) => 
     project,
   } = useProjectStore();
   const [fontFile, setFontFile] = useState<File | null>(null);
-  const targetClipIds = clipIds?.length ? clipIds : [clipId];
+  const fontUploadRequest = useRef(0);
+  const [fontDragOver, setFontDragOver] = useState(false);
+  const fontInputRef = useRef<HTMLInputElement>(null);
+  const contentId = useId();
+  const targetClipIds = useMemo(() => clipIds?.length ? clipIds : [clipId], [clipIds, clipId]);
   const isBatch = targetClipIds.length > 1;
+  const numericScope = `${project.id}:${targetClipIds.join("|")}`;
+  const beginFontEdit = useTextFontEdit(project.id, targetClipIds);
+  useEffect(() => { fontUploadRequest.current += 1; setFontFile(null); }, [numericScope]);
 
   const textClips = useMemo(
     () => targetClipIds.flatMap((id) => {
@@ -237,12 +279,20 @@ export const TextSection: React.FC<TextSectionProps> = ({ clipId, clipIds }) => 
   const handleStyleChange = useCallback(
     async (changes: Partial<TextStyle>) => {
       if (changes.fontFamily) {
+        fontUploadRequest.current += 1;
+        setFontFile(null);
+        const edit = beginFontEdit();
         try {
-          const fontSize = style.fontSize || 48;
-          await document.fonts.load(`${fontSize}px "${changes.fontFamily}"`);
-        } catch {
-          // Font load failed, continue anyway - browser will fallback
+          try {
+            await ensureFontFamily(changes.fontFamily, changes.fontWeight ?? style.fontWeight, text);
+          } catch {
+            // Preserve advanced font fallback when the selected face is unavailable.
+          }
+          edit.commit(changes);
+        } finally {
+          edit.cancel();
         }
+        return;
       }
       if (isBatch) beginHistoryGroup("Update selected text properties");
       try {
@@ -251,7 +301,7 @@ export const TextSection: React.FC<TextSectionProps> = ({ clipId, clipIds }) => 
         if (isBatch) endHistoryGroup();
       }
     },
-    [beginHistoryGroup, endHistoryGroup, isBatch, style.fontSize, targetClipIds, updateTextStyle],
+    [beginFontEdit, beginHistoryGroup, endHistoryGroup, isBatch, style.fontWeight, text, targetClipIds, updateTextStyle],
   );
 
   const handleCenterHorizontal = useCallback(() => {
@@ -294,27 +344,40 @@ export const TextSection: React.FC<TextSectionProps> = ({ clipId, clipIds }) => 
       const file = Array.isArray(files) ? files[0] : files;
       setFontFile(file ?? null);
       if (!file) return;
-
-      const result = await registerCustomFont(file);
-      if (!result.success) {
-        toast.error("Font upload failed", result.error ?? "Unknown error.");
-      } else {
-        await handleStyleChange({ fontFamily: result.fontFamily });
-        toast.success("Custom font uploaded", `${result.fontFamily} is ready to use.`);
+      const uploadRequest = ++fontUploadRequest.current;
+      const edit = beginFontEdit();
+      try {
+        const result = await registerCustomFont(file);
+        if (!edit.isCurrent()) return;
+        if (!result.success) {
+          toast.error(clipNow()("Font upload failed"), result.error ?? clipNow()("Unknown error."));
+        } else {
+          await ensureFontFamily(result.fontFamily, style.fontWeight, text);
+          if (!edit.isCurrent()) return;
+          if (edit.commit({ fontFamily: result.fontFamily }))
+            toast.success(clipNow()("Custom font uploaded"), `${result.fontFamily} is ready to use.`);
+        }
+        setFontFile(null);
+      } catch {
+        if (edit.isCurrent()) {
+          setFontFile(null);
+          toast.error(clipNow()("Font upload failed"), clipNow()("The uploaded font could not be loaded."));
+        }
+      } finally {
+        edit.cancel();
+        if (uploadRequest === fontUploadRequest.current) setFontFile(null);
       }
-
-      setFontFile(null);
     },
-    [handleStyleChange],
+    [beginFontEdit, style.fontWeight, text],
   );
 
   if (!textClip) {
     return (
       <div className="p-4 text-center">
         <Type size={24} className="mx-auto mb-2 text-fg-3" />
-        <Text type="supporting" color="secondary">
+        <span className="text-[12px] leading-5 text-fg-2 font-normal">
           {t("No text clip selected")}
-        </Text>
+        </span>
       </div>
     );
   }
@@ -333,41 +396,71 @@ export const TextSection: React.FC<TextSectionProps> = ({ clipId, clipIds }) => 
   return (
     <div className="space-y-4">
       {isBatch ? (
-        <Card variant="green" padding={3}>
-          <Text type="supporting" display="block" className="text-[10px] text-fg-2">
-            Applying the full Text inspector to {textClips.length} selected clips. Caption content and timing stay unchanged.
-          </Text>
+        <Card className="min-w-0 rounded-[7px] border border-status-success/25 bg-status-success/10 p-3 text-fg shadow-none">
+          <span className="font-normal block text-[10px] text-fg-2">
+            {t("Applying the full Text inspector to")} {textClips.length} {t("selected clips. Caption content and timing stay unchanged.")}
+          </span>
         </Card>
       ) : (
-        <ToolcraftTextAreaControl
-          label={t("Text Content")}
-          size="sm"
-          width="100%"
-          rows={4}
-          value={text}
-          onChange={handleTextChange}
-          placeholder={t("Enter text...")}
-          style={{ fontFamily: style.fontFamily }}
-        />
+        <div className="min-w-0 space-y-1.5 w-full">
+          <Label htmlFor={contentId} className="block truncate text-[11px] font-medium leading-[1.4] text-text-secondary">{t("Text Content")}</Label>
+          <Textarea
+            id={contentId}
+            className={cn(textControlClassName, "min-h-[5.75rem] resize-y leading-5 text-[12px]")}
+            rows={4}
+            value={text}
+            onChange={(event) => handleTextChange(event.currentTarget.value)}
+            placeholder={t("Enter text...")}
+            style={{ fontFamily: style.fontFamily }}
+          />
+        </div>
       )}
 
-      <Card variant="muted" padding={3}>
+      <Card className="min-w-0 rounded-[7px] border border-transparent bg-bg-2 p-3 text-fg shadow-none">
         <div className="space-y-2">
           <FontSelector
             value={style.fontFamily}
             onChange={(fontFamily) => handleStyleChange({ fontFamily })}
           />
-          <FileInput
-            label={t("Custom Font")}
-            isLabelHidden
-            width="100%"
-            mode="input"
-            value={fontFile}
-            accept={FONT_FILE_ACCEPT}
-            placeholder={t("Upload custom font")}
-            onChange={handleCustomFontSelect}
-          />
-          <NumberInput
+          <div className="min-w-0 w-full">
+            <Input
+              ref={fontInputRef}
+              type="file"
+              accept={FONT_FILE_ACCEPT}
+              aria-hidden="true"
+              tabIndex={-1}
+              className="hidden"
+              onChange={(event) => {
+                void handleCustomFontSelect(event.currentTarget.files?.[0] ?? null);
+                event.currentTarget.value = "";
+              }}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-label={t("Custom Font")}
+              className={cn(
+                "flex h-8 w-full min-w-0 cursor-pointer items-center justify-center gap-2 whitespace-normal rounded-[7px] border border-solid border-border bg-bg-2 px-2.5 text-center text-[12px] font-semibold leading-[1.4] text-fg-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&_svg]:size-3.5",
+                fontDragOver && "border-accent bg-selected text-accent",
+              )}
+              onClick={() => fontInputRef.current?.click()}
+              onDragEnter={(event) => { event.preventDefault(); setFontDragOver(true); }}
+              onDragOver={(event) => { event.preventDefault(); setFontDragOver(true); }}
+              onDragLeave={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFontDragOver(false);
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                setFontDragOver(false);
+                void handleCustomFontSelect(event.dataTransfer.files[0] ?? null);
+              }}
+            >
+              <span className="flex shrink-0 items-center justify-center text-fg-muted"><UploadCloud size={14} aria-hidden /></span>
+              <span className="min-w-0"><span className="block truncate">{fontFile?.name ?? t("Upload custom font")}</span></span>
+            </Button>
+          </div>
+          <NumberInput key={`${numericScope}:Size`}
             label={t("Size")}
             value={style.fontSize}
             onChange={(fontSize) => handleStyleChange({ fontSize })}
@@ -376,55 +469,56 @@ export const TextSection: React.FC<TextSectionProps> = ({ clipId, clipIds }) => 
             unit="px"
           />
           <div className="flex items-center justify-between">
-            <Text type="supporting" color="secondary">
+            <span className="text-[12px] leading-5 text-fg-2 font-normal">
               {t("Style")}
-            </Text>
+            </span>
             <div className="flex gap-1">
-              <IconButton
-                label={t("Bold")}
-                icon={<Bold size={12} />}
-                size="sm"
-                variant={allBold ? "primary" : "secondary"}
+              <Button
+                type="button" variant="ghost" size="icon-sm"
+                aria-label={t("Bold")} title={t("Bold")} aria-pressed={allBold}
+                className={cn(textIconButtonClassName, allBold ? activeTextButtonClassName : inactiveTextButtonClassName)}
                 onClick={() =>
                   handleStyleChange({
                     fontWeight: allBold ? "normal" : "bold",
                   })
                 }
-              />
-              <IconButton
-                label={t("Italic")}
-                icon={<Italic size={12} />}
-                size="sm"
-                variant={allItalic ? "primary" : "secondary"}
+              >
+                <Bold size={12} />
+              </Button>
+              <Button
+                type="button" variant="ghost" size="icon-sm"
+                aria-label={t("Italic")} title={t("Italic")} aria-pressed={allItalic}
+                className={cn(textIconButtonClassName, allItalic ? activeTextButtonClassName : inactiveTextButtonClassName)}
                 onClick={() =>
                   handleStyleChange({
                     fontStyle: allItalic ? "normal" : "italic",
                   })
                 }
-              />
-              <IconButton
-                label={t("Underline")}
-                icon={<Underline size={12} />}
-                size="sm"
-                variant={
-                  allUnderlined ? "primary" : "secondary"
-                }
+              >
+                <Italic size={12} />
+              </Button>
+              <Button
+                type="button" variant="ghost" size="icon-sm"
+                aria-label={t("Underline")} title={t("Underline")} aria-pressed={allUnderlined}
+                className={cn(textIconButtonClassName, allUnderlined ? activeTextButtonClassName : inactiveTextButtonClassName)}
                 onClick={() =>
                   handleStyleChange({
                     textDecoration:
                       allUnderlined ? "none" : "underline",
                   })
                 }
-              />
+              >
+                <Underline size={12} />
+              </Button>
             </div>
           </div>
         </div>
       </Card>
 
       <div className="flex items-center justify-between">
-        <Text type="supporting" color="secondary">
+        <span className="text-[12px] leading-5 text-fg-2 font-normal">
           {t("Text Align")}
-        </Text>
+        </span>
         <ToggleButtonGroup
           options={[
             { value: "left", icon: <AlignLeft size={12} />, label: "Left" },
@@ -444,51 +538,55 @@ export const TextSection: React.FC<TextSectionProps> = ({ clipId, clipIds }) => 
         />
       </div>
 
-      <Card variant="muted" padding={3}>
+      <Card className="min-w-0 rounded-[7px] border border-transparent bg-bg-2 p-3 text-fg shadow-none">
         <div className="space-y-2">
-          <Text type="supporting" color="primary" weight="medium">
+          <span className="text-[12px] leading-5 text-fg font-medium">
             {t("Position on Canvas")}
-          </Text>
+          </span>
           <div className="flex items-center justify-between">
-            <Text type="supporting" color="secondary">
+            <span className="text-[12px] leading-5 text-fg-2 font-normal">
               {t("Align to Canvas")}
-            </Text>
+            </span>
             <div className="flex gap-1">
-              <IconButton
-                label={t("Center Horizontally")}
-                icon={<AlignHorizontalJustifyCenter size={12} />}
-                size="sm"
-                variant="secondary"
+              <Button
+                type="button" variant="ghost" size="icon-sm"
+                aria-label={t("Center Horizontally")} title={t("Center Horizontally")}
+                className={cn(textIconButtonClassName, inactiveTextButtonClassName)}
                 onClick={handleCenterHorizontal}
-              />
-              <IconButton
-                label={t("Center Vertically")}
-                icon={<AlignVerticalJustifyCenter size={12} />}
-                size="sm"
-                variant="secondary"
+              >
+                <AlignHorizontalJustifyCenter size={12} />
+              </Button>
+              <Button
+                type="button" variant="ghost" size="icon-sm"
+                aria-label={t("Center Vertically")} title={t("Center Vertically")}
+                className={cn(textIconButtonClassName, inactiveTextButtonClassName)}
                 onClick={handleCenterVertical}
-              />
-              <IconButton
-                label={t("Center Both")}
-                icon={<Crosshair size={12} />}
-                size="sm"
-                variant="primary"
+              >
+                <AlignVerticalJustifyCenter size={12} />
+              </Button>
+              <Button
+                type="button" variant="ghost" size="icon-sm"
+                aria-label={t("Center Both")} title={t("Center Both")}
+                className={cn(textIconButtonClassName, activeTextButtonClassName)}
                 onClick={handleCenterBoth}
-              />
+              >
+                <Crosshair size={12} />
+              </Button>
             </div>
           </div>
         </div>
       </Card>
 
-      <Card variant="muted" padding={3}>
+      <Card className="min-w-0 rounded-[7px] border border-transparent bg-bg-2 p-3 text-fg shadow-none">
         <div className="space-y-2">
           <ColorField
-            label={t("Text Color")}
+            label="Text Color"
             value={style.color}
+            fallback="#ffffff"
             onChange={(color) => handleStyleChange({ color })}
           />
           <ColorField
-            label={t("Background")}
+            label="Background"
             value={style.backgroundColor || "transparent"}
             onChange={(backgroundColor) => handleStyleChange({ backgroundColor })}
             showAlpha
@@ -497,17 +595,17 @@ export const TextSection: React.FC<TextSectionProps> = ({ clipId, clipIds }) => 
         </div>
       </Card>
 
-      <Card variant="muted" padding={3}>
+      <Card className="min-w-0 rounded-[7px] border border-transparent bg-bg-2 p-3 text-fg shadow-none">
         <div className="space-y-2">
-          <Text type="supporting" color="primary" weight="medium">
+          <span className="text-[12px] leading-5 text-fg font-medium">
             {t("Stroke")}
-          </Text>
+          </span>
           <ColorField
-            label={t("Color")}
+            label="Color"
             value={style.strokeColor || "#000000"}
             onChange={(strokeColor) => handleStyleChange({ strokeColor })}
           />
-          <NumberInput
+          <NumberInput key={`${numericScope}:Width`}
             label={t("Width")}
             value={style.strokeWidth || 0}
             onChange={(strokeWidth) => handleStyleChange({ strokeWidth })}
@@ -518,18 +616,18 @@ export const TextSection: React.FC<TextSectionProps> = ({ clipId, clipIds }) => 
         </div>
       </Card>
 
-      <Card variant="muted" padding={3}>
+      <Card className="min-w-0 rounded-[7px] border border-transparent bg-bg-2 p-3 text-fg shadow-none">
         <div className="space-y-2">
-          <Text type="supporting" color="primary" weight="medium">
+          <span className="text-[12px] leading-5 text-fg font-medium">
             {t("Shadow")}
-          </Text>
+          </span>
           <ColorField
-            label={t("Color")}
+            label="Color"
             value={style.shadowColor || "#000000"}
             onChange={(shadowColor) => handleStyleChange({ shadowColor })}
             showAlpha
           />
-          <NumberInput
+          <NumberInput key={`${numericScope}:Offset X`}
             label={t("Offset X")}
             value={style.shadowOffsetX || 0}
             onChange={(shadowOffsetX) => handleStyleChange({ shadowOffsetX })}
@@ -537,7 +635,7 @@ export const TextSection: React.FC<TextSectionProps> = ({ clipId, clipIds }) => 
             max={50}
             unit="px"
           />
-          <NumberInput
+          <NumberInput key={`${numericScope}:Offset Y`}
             label={t("Offset Y")}
             value={style.shadowOffsetY || 0}
             onChange={(shadowOffsetY) => handleStyleChange({ shadowOffsetY })}
@@ -545,7 +643,7 @@ export const TextSection: React.FC<TextSectionProps> = ({ clipId, clipIds }) => 
             max={50}
             unit="px"
           />
-          <NumberInput
+          <NumberInput key={`${numericScope}:Blur`}
             label={t("Blur")}
             value={style.shadowBlur || 0}
             onChange={(shadowBlur) => handleStyleChange({ shadowBlur })}
@@ -556,9 +654,9 @@ export const TextSection: React.FC<TextSectionProps> = ({ clipId, clipIds }) => 
         </div>
       </Card>
 
-      <Card variant="muted" padding={3}>
+      <Card className="min-w-0 rounded-[7px] border border-transparent bg-bg-2 p-3 text-fg shadow-none">
         <div className="space-y-2">
-          <NumberInput
+          <NumberInput key={`${numericScope}:Line Height`}
             label={t("Line Height")}
             value={style.lineHeight || 1.2}
             onChange={(lineHeight) => handleStyleChange({ lineHeight })}
@@ -566,7 +664,7 @@ export const TextSection: React.FC<TextSectionProps> = ({ clipId, clipIds }) => 
             max={3}
             step={0.1}
           />
-          <NumberInput
+          <NumberInput key={`${numericScope}:Letter Spacing`}
             label={t("Letter Spacing")}
             value={style.letterSpacing || 0}
             onChange={(letterSpacing) => handleStyleChange({ letterSpacing })}
@@ -578,7 +676,11 @@ export const TextSection: React.FC<TextSectionProps> = ({ clipId, clipIds }) => 
       </Card>
 
       <TextShaderControls
+        historyKey={numericScope}
         shader={style.shader}
+        text={text}
+        previewStyle={style}
+        previewTransform={textClip?.transform}
         onChange={(shader) => handleStyleChange({ shader })}
       />
 
@@ -589,12 +691,15 @@ export const TextSection: React.FC<TextSectionProps> = ({ clipId, clipIds }) => 
 
 // ─── Text shader controls ────────────────────────────────────────
 
-const DEFAULT_TEXT_SHADER_PROGRESS = 0.5;
 
 const TextShaderControls: React.FC<{
+  historyKey: string;
   shader: TextShaderStyle | undefined;
+  text: string;
+  previewStyle: TextStyle;
+  previewTransform: Transform | undefined;
   onChange: (shader: TextShaderStyle | undefined) => void;
-}> = ({ shader, onChange }) => {
+}> = ({ historyKey, shader, text, previewStyle, previewTransform, onChange }) => {
   const t = useClipT();
   const materialDefs = useMemo(
     () => [
@@ -608,9 +713,10 @@ const TextShaderControls: React.FC<{
     () =>
       groupShaderDefsByCollection(
         materialDefs,
+        t,
         [{ value: "", label: "None" }],
       ),
-    [materialDefs],
+    [materialDefs, t],
   );
 
   const def = shader ? getMotionShaderDef(shader.shaderId) : undefined;
@@ -648,30 +754,39 @@ const TextShaderControls: React.FC<{
   );
 
   return (
-    <Card variant="muted" padding={3}>
+    <Card data-inspector-anchor="text-materials" className="min-w-0 rounded-[7px] border border-transparent bg-bg-2 p-3 text-fg shadow-none">
       <div className="space-y-2">
-        <Text type="supporting" color="primary" weight="medium">
+        <span className="text-[12px] leading-5 text-fg font-medium">
           {t("Text Material")}
-        </Text>
-        <Selector
-          label={t("Text Material")}
-          isLabelHidden
-          size="sm"
-          width="100%"
-          value={shader?.shaderId ?? ""}
-          options={shaderOptions as any}
-          onChange={handleShaderSelect}
-        />
+        </span>
+        <div className="min-w-0 space-y-1.5 w-full">
+          <Select value={shader?.shaderId ?? "__no_text_material__"} onValueChange={(value) => handleShaderSelect(value === "__no_text_material__" ? "" : value)}>
+            <SelectTrigger aria-label={t("Text Material")} className={cn(textControlClassName, "h-7 text-[12px]")}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {shaderOptions.map((section) => (
+                <SelectGroup key={section.title}>
+                  <SelectLabel>{section.title}</SelectLabel>
+                  {section.options.map((option) => <SelectItem key={option.value} value={option.value || "__no_text_material__"}>{option.label}</SelectItem>)}
+                </SelectGroup>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <ShaderPreviewBrowser
           defs={materialDefs}
           selectedId={shader?.shaderId}
           onSelect={handleShaderSelect}
           sample="text"
           label={t("Text material previews")}
+          text={text}
+          textStyle={previewStyle}
+          textTransform={previewTransform}
         />
         {shader && def ? (
           <>
-            <NumberInput
+            <NumberInput key={`${historyKey}:Progress`}
               label={t("Progress")}
               value={shader.progress ?? DEFAULT_TEXT_SHADER_PROGRESS}
               onChange={(progress) =>
@@ -685,6 +800,7 @@ const TextShaderControls: React.FC<{
               step={0.01}
             />
             <ShaderParamFields
+              historyKey={historyKey}
               def={def}
               params={shader.params}
               onChange={updateParam}
@@ -727,16 +843,18 @@ const DEFAULT_TEXT_3D: Text3DDefaults = {
 
 const Text3DControls: React.FC<Text3DControlsProps> = ({ clipId, clipIds }) => {
   const t = useClipT();
+  const materialId = useId();
   const {
     getTextClip,
     updateText3D,
     project,
-    updateClipRotate3D,
+    updateTextTransform,
     beginHistoryGroup,
     endHistoryGroup,
   } = useProjectStore();
-  const targetClipIds = clipIds?.length ? clipIds : [clipId];
+  const targetClipIds = useMemo(() => clipIds?.length ? clipIds : [clipId], [clipIds, clipId]);
   const isBatch = targetClipIds.length > 1;
+  const numericScope = `${project.id}:${targetClipIds.join("|")}`;
   const textClip = useMemo(
     () => getTextClip(clipId),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -763,38 +881,38 @@ const Text3DControls: React.FC<Text3DControlsProps> = ({ clipId, clipIds }) => {
 
   const handleEnabledChange = useCallback(
     (nextEnabled: boolean) => {
-      if (!nextEnabled) {
-        apply({ enabled: false });
-        return;
-      }
-
-      apply({ ...DEFAULT_TEXT_3D, enabled: true });
-      for (const targetId of targetClipIds) {
-        const rot = getTextClip(targetId)?.transform.rotate3d ?? { x: 0, y: 0, z: 0 };
-        if (rot.x === 0 && rot.y === 0) {
-          updateClipRotate3D(targetId, { x: -10, y: 18, z: 0 });
+      beginHistoryGroup(nextEnabled ? "Enable 3D text" : "Disable 3D text");
+      try {
+        for (const targetId of targetClipIds) {
+          const current = getTextClip(targetId);
+          if (!current) continue;
+          updateText3D(targetId, { ...(current.text3d ?? DEFAULT_TEXT_3D), enabled: nextEnabled });
+          const rot = current.transform.rotate3d ?? { x: 0, y: 0, z: 0 };
+          if (nextEnabled && rot.x === 0 && rot.y === 0) {
+            updateTextTransform(targetId, { rotate3d: { x: -10, y: 18, z: rot.z } });
+          }
         }
+      } finally {
+        endHistoryGroup();
       }
     },
-    [apply, getTextClip, targetClipIds, updateClipRotate3D],
+    [beginHistoryGroup, endHistoryGroup, getTextClip, targetClipIds, updateText3D, updateTextTransform],
   );
 
   return (
-    <Card variant="muted" padding={3}>
+    <Card className="min-w-0 rounded-[7px] border border-transparent bg-bg-2 p-3 text-fg shadow-none">
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Text type="supporting" color="primary" weight="medium">
-            3D Text
-          </Text>
-          <MockToggle
-            ariaLabel={t("3D Text")}
-            checked={enabled}
-            onChange={handleEnabledChange}
-          />
+          <span className="text-[12px] leading-5 text-fg font-medium">
+            {t("3D Text")}
+          </span>
+          <div className="flex min-w-0 items-center justify-between gap-3 py-1">
+            <Switch aria-label={t("3D Text")} checked={enabled} onCheckedChange={handleEnabledChange} className="workspace-switch flex-none" />
+          </div>
         </div>
         {enabled && (
           <>
-            <NumberInput
+            <NumberInput key={`${numericScope}:Depth`}
               label={t("Depth")}
               value={text3d?.depth ?? DEFAULT_TEXT_3D.depth}
               onChange={(depth) => apply({ depth })}
@@ -803,7 +921,7 @@ const Text3DControls: React.FC<Text3DControlsProps> = ({ clipId, clipIds }) => {
               step={1}
               unit="px"
             />
-            <NumberInput
+            <NumberInput key={`${numericScope}:Bevel Thickness`}
               label={t("Bevel Thickness")}
               value={text3d?.bevelThickness ?? DEFAULT_TEXT_3D.bevelThickness}
               onChange={(bevelThickness) => apply({ bevelThickness })}
@@ -811,7 +929,7 @@ const Text3DControls: React.FC<Text3DControlsProps> = ({ clipId, clipIds }) => {
               max={20}
               step={0.1}
             />
-            <NumberInput
+            <NumberInput key={`${numericScope}:Bevel Size`}
               label={t("Bevel Size")}
               value={text3d?.bevelSize ?? DEFAULT_TEXT_3D.bevelSize}
               onChange={(bevelSize) => apply({ bevelSize })}
@@ -819,7 +937,7 @@ const Text3DControls: React.FC<Text3DControlsProps> = ({ clipId, clipIds }) => {
               max={10}
               step={0.1}
             />
-            <NumberInput
+            <NumberInput key={`${numericScope}:Bevel Segments`}
               label={t("Bevel Segments")}
               value={text3d?.bevelSegments ?? DEFAULT_TEXT_3D.bevelSegments}
               onChange={(bevelSegments) =>
@@ -829,18 +947,45 @@ const Text3DControls: React.FC<Text3DControlsProps> = ({ clipId, clipIds }) => {
               max={8}
               step={1}
             />
-            <ToolcraftSegmentedControl<"basic" | "physical">
-              ariaLabel={t("Material")}
+            <RadioGroup
+              aria-label={t("Material")}
               value={text3d?.material ?? "physical"}
-              onChange={(material) => apply({ material })}
-              options={[
-                { value: "basic", label: "Basic" },
-                { value: "physical", label: "Physical" },
-              ]}
-            />
+              onValueChange={(material) => {
+                if (material === "basic" || material === "physical") apply({ material });
+              }}
+              className="grid min-h-8 min-w-0 grid-cols-2 gap-0 rounded-[7px] border border-border bg-bg-1 p-0.5"
+            >
+              {(["basic", "physical"] as const).map((material) => (
+                <div key={material} className="relative min-w-0">
+                  <RadioGroupItem
+                    id={`${materialId}-${material}`} value={material} className="peer sr-only"
+                    onKeyDown={(event) => {
+                      if (event.altKey || event.ctrlKey || event.metaKey) return;
+                      const next = event.key === "Home" ? "basic" : event.key === "End" ? "physical"
+                        : ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)
+                          ? material === "basic" ? "physical" : "basic" : null;
+                      // Native keyup can precede Radix's deferred focus move.
+                      // Select now; Radix still owns roving focus and wrapping.
+                      if (next && next !== (text3d?.material ?? "physical")) apply({ material: next });
+                    }}
+                  />
+                  <Label
+                    htmlFor={`${materialId}-${material}`}
+                    className={cn(
+                      "inline-flex h-7 w-full min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-[5px] px-2 text-[12px] font-semibold leading-[1.4] text-fg-muted transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-ring",
+                      (text3d?.material ?? "physical") === material
+                        ? "bg-bg-3 text-fg shadow-[0_1px_2px_rgba(0,0,0,0.12)]"
+                        : "hover:bg-bg-2 hover:text-fg-2",
+                    )}
+                  >
+                    <span className="truncate">{material === "basic" ? t("Basic") : t("Physical")}</span>
+                  </Label>
+                </div>
+              ))}
+            </RadioGroup>
             {(text3d?.material ?? "physical") === "physical" && (
               <>
-                <NumberInput
+                <NumberInput key={`${numericScope}:Metalness`}
                   label={t("Metalness")}
                   value={text3d?.metalness ?? DEFAULT_TEXT_3D.metalness}
                   onChange={(metalness) =>
@@ -850,7 +995,7 @@ const Text3DControls: React.FC<Text3DControlsProps> = ({ clipId, clipIds }) => {
                   max={1}
                   step={0.05}
                 />
-                <NumberInput
+                <NumberInput key={`${numericScope}:Roughness`}
                   label={t("Roughness")}
                   value={text3d?.roughness ?? DEFAULT_TEXT_3D.roughness}
                   onChange={(roughness) =>
@@ -868,5 +1013,3 @@ const Text3DControls: React.FC<Text3DControlsProps> = ({ clipId, clipIds }) => {
     </Card>
   );
 };
-
-export default TextSection;

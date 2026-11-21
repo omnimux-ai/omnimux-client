@@ -9,11 +9,13 @@ import type {
   TextLineMetrics,
 } from "./types";
 import { DEFAULT_TEXT_STYLE, DEFAULT_TEXT_TRANSFORM } from "./types";
-import { textAnimationEngine } from "./text-animation";
+import { overlayBlendAlpha } from "../graphics/blend-opacity";
+import { computeScrollAnchor, scrollProgress } from "./text-scroll";
+import { textAnimationEngine, type AnimatedTextState } from "./text-animation";
 import { MotionShaderRenderer } from "../motion/motion-shader-renderer";
 import { getMotionShaderDef } from "../motion/shaders";
 
-export interface CreateTextClipOptions {
+interface CreateTextClipOptions {
   id?: string;
   trackId: string;
   startTime: number;
@@ -25,7 +27,7 @@ export interface CreateTextClipOptions {
   metadata?: ClipMetadata;
 }
 
-export interface UpdateTextClipOptions {
+interface UpdateTextClipOptions {
   text?: string;
   style?: Partial<TextStyle>;
   transform?: Partial<Transform>;
@@ -41,6 +43,24 @@ export interface UpdateTextClipOptions {
   metadata?: ClipMetadata;
   /** Set or unset 3D extrusion settings for the text. */
   text3d?: import("./types").Text3DSettings | undefined;
+}
+
+/** Caption layout uses project pixels, even when the preview renders smaller. */
+export function getCaptionWrapWidth(
+  clip: Pick<TextClip, "metadata" | "transform">,
+  canvasWidth: number,
+  contentScaleX = 1,
+): number | undefined {
+  // Captions wrap at 90% of the frame; template text opts in with a `wrapWidthRatio` (0..1 of the frame width).
+  const ratio =
+    typeof clip.metadata?.captionSource === "string"
+      ? 0.9
+      : typeof clip.metadata?.wrapWidthRatio === "number" && clip.metadata.wrapWidthRatio > 0
+        ? Math.min(1, clip.metadata.wrapWidthRatio)
+        : undefined;
+  if (ratio === undefined) return undefined;
+  const scale = Math.max(0.001, Math.abs(clip.transform.scale.x * contentScaleX));
+  return Math.max(1, canvasWidth * ratio / scale - 20);
 }
 
 export class TitleEngine {
@@ -210,11 +230,35 @@ export class TitleEngine {
     return updatedClip;
   }
 
+  getAnimatedTextState(clip: TextClip, time: number): AnimatedTextState {
+    const animatedState = textAnimationEngine.getAnimatedState(clip, time);
+    if (!clip.emphasisAnimation || clip.emphasisAnimation.type === "none") return animatedState;
+    const emphasis = this.applyEmphasisAnimation(clip.emphasisAnimation, time);
+    const transform = animatedState.transform;
+    return {
+      ...animatedState,
+      opacity: animatedState.opacity * emphasis.opacity,
+      transform: {
+        ...transform,
+        scale: {
+          x: transform.scale.x * emphasis.scale * emphasis.scaleX,
+          y: transform.scale.y * emphasis.scale * emphasis.scaleY,
+        },
+        position: {
+          x: transform.position.x + emphasis.offsetX,
+          y: transform.position.y + emphasis.offsetY,
+        },
+        rotation: transform.rotation + emphasis.rotation,
+      },
+    };
+  }
+
   renderText(
     clip: TextClip,
     width: number,
     height: number,
     time: number = 0,
+    contentScale: { x: number; y: number } = { x: 1, y: 1 },
   ): TextRenderResult {
     let canvas: HTMLCanvasElement | OffscreenCanvas;
     let ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -232,29 +276,9 @@ export class TitleEngine {
 
     ctx.clearRect(0, 0, width, height);
 
-    const animatedState = textAnimationEngine.getAnimatedState(clip, time);
-    let { opacity, transform, style, visibleText, characterStates } =
-      animatedState;
-
-    if (clip.emphasisAnimation && clip.emphasisAnimation.type !== "none") {
-      const emphasisState = this.applyEmphasisAnimation(
-        clip.emphasisAnimation,
-        time,
-      );
-      opacity = opacity * emphasisState.opacity;
-      transform = {
-        ...transform,
-        scale: {
-          x: transform.scale.x * emphasisState.scale * emphasisState.scaleX,
-          y: transform.scale.y * emphasisState.scale * emphasisState.scaleY,
-        },
-        position: {
-          x: transform.position.x + emphasisState.offsetX,
-          y: transform.position.y + emphasisState.offsetY,
-        },
-        rotation: transform.rotation + emphasisState.rotation,
-      };
-    }
+    const { opacity: stateOpacity, transform, style, visibleText, characterStates } =
+      this.getAnimatedTextState(clip, time);
+    const opacity = stateOpacity * overlayBlendAlpha(clip);
 
     if (opacity <= 0 || visibleText.length === 0) {
       return {
@@ -265,21 +289,56 @@ export class TitleEngine {
       };
     }
 
-    const metrics = this.measureText(visibleText, style, width);
+    const captionWrapWidth = getCaptionWrapWidth(
+      { ...clip, transform }, width, contentScale.x,
+    );
+    const metrics = this.measureText(visibleText, style, captionWrapWidth ?? width);
 
     ctx.save();
 
-    const posX = transform.position.x * width;
-    const posY = transform.position.y * height;
+    let posX = transform.position.x * width;
+    let posY = transform.position.y * height;
+
+    if (clip.scroll) {
+      // Roll / crawl: shared by preview and export (both render through here).
+      const sx = Math.abs(transform.scale.x * contentScale.x);
+      const sy = Math.abs(transform.scale.y * contentScale.y);
+      const blockHeight = metrics.lines.length
+        ? metrics.lines.length * style.fontSize * style.lineHeight
+        : style.fontSize * style.lineHeight;
+      const blockWidth = metrics.width + 20;
+      const vAlign = style.verticalAlign;
+      const hAlign = style.textAlign;
+      const anchor = computeScrollAnchor(
+        clip.scroll,
+        scrollProgress(time, clip.duration),
+        { x: posX, y: posY },
+        {
+          canvasWidth: width,
+          canvasHeight: height,
+          above: (vAlign === "top" ? 0 : vAlign === "bottom" ? blockHeight : blockHeight / 2) * sy,
+          below: (vAlign === "top" ? blockHeight : vAlign === "bottom" ? 0 : blockHeight / 2) * sy,
+          left: (hAlign === "left" ? 0 : hAlign === "right" ? blockWidth : blockWidth / 2) * sx,
+          right: (hAlign === "left" ? blockWidth : hAlign === "right" ? 0 : blockWidth / 2) * sx,
+        },
+      );
+      posX = anchor.x;
+      posY = anchor.y;
+    }
 
     ctx.translate(posX, posY);
     ctx.rotate((transform.rotation * Math.PI) / 180);
-    ctx.scale(transform.scale.x, transform.scale.y);
+    ctx.scale(
+      transform.scale.x * contentScale.x,
+      transform.scale.y * contentScale.y,
+    );
     ctx.globalAlpha = opacity;
 
     this.applyTextStyle(ctx, style);
 
-    const lines = visibleText.split("\n");
+    const lines = captionWrapWidth === undefined
+      ? visibleText.split("\n")
+      : metrics.lines.map((line) => line.text);
     const lineHeight = style.fontSize * style.lineHeight;
     const totalHeight = lines.length * lineHeight;
     let startY = -totalHeight / 2 + lineHeight / 2;
@@ -301,6 +360,11 @@ export class TitleEngine {
       let charIdx = 0;
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
+        if (captionWrapWidth !== undefined) {
+          // Wrapping replaces a space with a visual line break. Character
+          // animations still refer to positions in the original caption.
+          charIdx = Math.max(charIdx, visibleText.indexOf(line, charIdx));
+        }
         const y = startY + i * lineHeight;
         let xOffset = 0;
 
@@ -339,7 +403,7 @@ export class TitleEngine {
           }
           charIdx++;
         }
-        charIdx++;
+        if (captionWrapWidth === undefined) charIdx++;
       }
     } else {
       for (let i = 0; i < lines.length; i++) {
@@ -428,6 +492,10 @@ export class TitleEngine {
     const lines: string[] = [];
 
     for (const paragraph of paragraphs) {
+      if (paragraph.length === 0) {
+        lines.push("");
+        continue;
+      }
       const words = paragraph.split(" ");
       let currentLine = "";
 
@@ -437,9 +505,31 @@ export class TitleEngine {
 
         if (metrics.width > maxWidth && currentLine) {
           lines.push(currentLine);
-          currentLine = word;
+          currentLine = "";
+          // An unusually long word must fit too, including URLs and hashtags.
+          for (const character of Array.from(word)) {
+            const next = currentLine + character;
+            if (ctx.measureText(next).width > maxWidth && currentLine) {
+              lines.push(currentLine);
+              currentLine = character;
+            } else {
+              currentLine = next;
+            }
+          }
         } else {
-          currentLine = testLine;
+          if (!currentLine && metrics.width > maxWidth) {
+            for (const character of Array.from(word)) {
+              const next = currentLine + character;
+              if (ctx.measureText(next).width > maxWidth && currentLine) {
+                lines.push(currentLine);
+                currentLine = character;
+              } else {
+                currentLine = next;
+              }
+            }
+          } else {
+            currentLine = testLine;
+          }
         }
       }
 
@@ -475,7 +565,7 @@ export class TitleEngine {
       ctx.shadowOffsetX = 0;
       ctx.shadowOffsetY = 0;
     }
-    if ("letterSpacing" in ctx && style.letterSpacing !== 0) {
+    if ("letterSpacing" in ctx) {
       (ctx as CanvasRenderingContext2D).letterSpacing =
         `${style.letterSpacing}px`;
     }

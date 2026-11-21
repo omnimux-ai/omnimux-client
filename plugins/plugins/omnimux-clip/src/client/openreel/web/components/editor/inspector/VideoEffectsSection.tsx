@@ -1,4 +1,11 @@
-import React, { useCallback, useMemo } from "react";
+import {
+  Button, Card, Input, Popover, PopoverContent, PopoverTrigger,
+  Collapsible, CollapsibleContent, CollapsibleTrigger,
+  Tabs, TabsList, TabsTrigger, TabsContent, cn,
+  Select, SelectTrigger, SelectValue, SelectContent, SelectItem, Switch,
+} from "@openreel/ui";
+import React, { useCallback, useId, useMemo, useSyncExternalStore } from "react";
+import { useShallow } from "zustand/react/shallow";
 import {
   ArrowDown,
   ArrowUp,
@@ -10,13 +17,14 @@ import {
   Copy,
   Search,
 } from "@/icons/lucide-compat";
-import { ToolcraftButton as Button } from "@openreel/ui";
-import { ToolcraftCard as Card } from "@openreel/ui";
-import { ToolcraftIconButton as IconButton } from "@openreel/ui";
-import { ToolcraftPopover as Popover } from "@openreel/ui";
-import { ToolcraftText as Text } from "@openreel/ui";
 import { PropertySlider } from "./shell/PropertySlider";
+import { EffectAnimationControls } from "./EffectAnimationControls";
+import { EffectPresetsPanel } from "./EffectPresetsPanel";
 import { useProjectStore } from "../../../stores/project-store";
+import { useUIStore } from "../../../stores/ui-store";
+import { useTimelineStore } from "../../../stores/timeline-store";
+import { applyEditorEffectToClip } from "../../../services/editor-effect-application";
+import { toast } from "../../../stores/notification-store";
 import type {
   VideoEffect,
   VideoEffectType,
@@ -25,8 +33,28 @@ import {
   getMotionShaderDef,
   getMotionShaderEffectDefs,
   defaultMotionShaderParams,
+  isProEffectType,
+  isBurnInEffectType,
+  BURN_IN_SPECS,
+  resolveBurnInParams,
+  type BurnInEffectType,
+  type BurnInParamSpec,
+  describePluginEffect,
+  getPluginRegistry,
+  isPluginEffectType,
+  pluginIdFromEffectType,
+  resolvePluginParam,
+  PRO_EFFECT_SPECS,
+  PRO_EFFECT_TYPES,
+  resolveProEffectParams,
+  type ProEffectType,
+  type Effect,
+  type Project,
 } from "@openreel/core";
 import { ColorSelector } from "../../../motion/components/primitives";
+import { useInstalledPlugins } from "../../../hooks/use-plugin-registry";
+import { usePluginManagerStore } from "../../../stores/plugin-manager-store";
+import { retryPlugin } from "../../../services/plugin-service";
 import { ShaderPreviewBrowser } from "../../shaders/ShaderPreviewBrowser";
 import {
   EDITOR_EFFECT_CATEGORIES,
@@ -37,7 +65,9 @@ import {
   cloneVideoEffectStackWithFreshIds,
   copyVideoEffectStack,
   hasVideoEffectStackClipboard,
+  subscribeToVideoEffectStackClipboard,
 } from "../../../utils/video-effect-stack-clipboard";
+import { clipNow } from "../../../../../i18n/index.js";
 import { useClipT } from "../../../../../i18n/index.js";
 
 function shaderEffectNumberValue(
@@ -66,20 +96,25 @@ const EffectColorField: React.FC<{
   label: string;
   value: string;
   onChange: (value: string) => void;
-}> = ({ label, value, onChange }) => (
+  disabled?: boolean;
+}> = ({ label, value, onChange, disabled }) => {
+  const t = useClipT();
+  return (
   <div className="flex items-center justify-between gap-2">
-    <Text type="supporting" color="secondary" className="text-[10px]">
-      {label}
-    </Text>
+    <span className="text-fg-2 font-normal text-[10px]">
+      {t(label)}
+    </span>
     <div className="flex max-w-[150px] items-center">
       <ColorSelector
         value={value}
         onChange={onChange}
-        label={`Select ${label.toLowerCase()}`}
+        label={t("Select {0}", [label.toLowerCase()])}
+        disabled={disabled}
       />
     </div>
   </div>
 );
+};
 
 const EffectSlider: React.FC<{
   label: string;
@@ -89,9 +124,13 @@ const EffectSlider: React.FC<{
   max: number;
   step?: number;
   unit?: string;
-}> = ({ label, value, onChange, min, max, step = 1, unit = "" }) => (
+  disabled?: boolean;
+}> = ({ label, value, onChange, min, max, step = 1, unit = "", disabled }) => {
+  const t = useClipT();
+  return (
   <PropertySlider
-    label={label}
+    label={t(label)}
+    isDisabled={disabled}
     value={value}
     onChange={onChange}
     min={min}
@@ -102,11 +141,372 @@ const EffectSlider: React.FC<{
     }
   />
 );
+};
+
+const UltraKeyControls = React.lazy(() =>
+  import("./UltraKeyControls").then((m) => ({ default: m.UltraKeyControls })),
+);
+
+const PRO_EFFECT_LABELS = Object.fromEntries(
+  PRO_EFFECT_TYPES.map((type) => [type, PRO_EFFECT_SPECS[type].label]),
+) as Record<ProEffectType, string>;
+
+const BURN_IN_LABELS: Record<BurnInEffectType, string> = {
+  "burn-in-timecode": BURN_IN_SPECS["burn-in-timecode"].label,
+  "burn-in-name": BURN_IN_SPECS["burn-in-name"].label,
+};
+
+/** A text field that commits on Enter or blur, so typing a label is one undo step, not one per keystroke. */
+const BurnInTextField: React.FC<{
+  spec: Extract<BurnInParamSpec, { kind: "text" }>;
+  value: string;
+  disabled: boolean;
+  onCommit: (value: string) => void;
+}> = ({ spec, value, disabled, onCommit }) => {
+  const t = useClipT();
+  const [draft, setDraft] = React.useState(value);
+  React.useEffect(() => setDraft(value), [value]);
+  const commit = () => {
+    if (draft !== value) onCommit(draft);
+  };
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-fg-2 font-normal text-[10px]">{t(spec.label)}</span>
+      <Input
+        aria-label={t(spec.label)}
+        value={draft}
+        disabled={disabled}
+        maxLength={spec.maxLength}
+        placeholder={t(spec.placeholder)}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") commit();
+        }}
+        className="h-6 max-w-[150px] text-[10px] md:text-[10px]"
+      />
+    </div>
+  );
+};
+
+/**
+ * Inspector controls for the Timecode and Clip Name burn-ins, generated from BURN_IN_SPECS and grouped like
+ * Premiere's panel (source, layout, text, background). The box options only show while the box is on.
+ */
+const BurnInControls: React.FC<{
+  type: BurnInEffectType;
+  params: Record<string, unknown>;
+  onChange: (params: Record<string, unknown>) => void;
+  disabled: boolean;
+}> = ({ type, params, onChange, disabled }) => {
+  const t = useClipT();
+  const values = resolveBurnInParams(type, params);
+  const visible = (spec: BurnInParamSpec): boolean => {
+    if (spec.key === "hideExtension") return values.nameSource === "file";
+    if (spec.key === "boxColor" || spec.key === "boxOpacity" || spec.key === "boxPadding") return values.box === true;
+    return true;
+  };
+  const groups: BurnInParamSpec["group"][] = ["Source", "Layout", "Text", "Background"];
+  return (
+    <div className="space-y-3" data-testid={`burn-in-controls-${type}`}>
+      {groups.map((group) => {
+        const specs = BURN_IN_SPECS[type].params.filter((spec) => spec.group === group && visible(spec));
+        if (specs.length === 0) return null;
+        return (
+          <section key={group} aria-label={`${group} options`} className="space-y-2">
+            <div className="text-[9px] font-bold uppercase tracking-[0.12em] text-fg-muted">{group}</div>
+            {specs.map((spec) => {
+              const value = values[spec.key];
+              switch (spec.kind) {
+                case "toggle":
+                  return (
+                    <div key={spec.key} className="flex items-center justify-between gap-2">
+                      <span className="text-fg-2 font-normal text-[10px]">{t(spec.label)}</span>
+                      <Switch
+                        aria-label={t(spec.label)}
+                        checked={value === true}
+                        disabled={disabled}
+                        onCheckedChange={(checked) => onChange({ [spec.key]: checked })}
+                      />
+                    </div>
+                  );
+                case "select":
+                  return (
+                    <div key={spec.key} className="flex items-center justify-between gap-2">
+                      <span className="text-fg-2 font-normal text-[10px]">{t(spec.label)}</span>
+                      <Select value={String(value)} disabled={disabled} onValueChange={(next) => onChange({ [spec.key]: next })}>
+                        <SelectTrigger aria-label={t(spec.label)} className="h-6 max-w-[150px] text-[10px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {spec.options.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {t(option.label)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  );
+                case "text":
+                  return (
+                    <BurnInTextField
+                      key={spec.key}
+                      spec={spec}
+                      value={String(value)}
+                      disabled={disabled}
+                      onCommit={(next) => onChange({ [spec.key]: next })}
+                    />
+                  );
+                case "color":
+                  return (
+                    <EffectColorField
+                      key={spec.key}
+                      disabled={disabled}
+                      label={t(spec.label)}
+                      value={String(value)}
+                      onChange={(next) => onChange({ [spec.key]: next })}
+                    />
+                  );
+                default:
+                  return (
+                    <EffectSlider
+                      key={spec.key}
+                      disabled={disabled}
+                      label={t(spec.label)}
+                      value={Number(value)}
+                      onChange={(next) => onChange({ [spec.key]: next })}
+                      min={spec.min}
+                      max={spec.max}
+                      step={spec.step}
+                      unit={spec.unit}
+                    />
+                  );
+              }
+            })}
+          </section>
+        );
+      })}
+    </div>
+  );
+};
+
+/** Inspector controls for the pro effects library, generated from PRO_EFFECT_SPECS. */
+const ProEffectControls: React.FC<{
+  type: ProEffectType;
+  params: Record<string, unknown>;
+  onChange: (params: Record<string, unknown>) => void;
+  disabled: boolean;
+}> = ({ type, params, onChange, disabled }) => {
+  const t = useClipT();
+  const values = resolveProEffectParams(type, params);
+  return (
+    <>
+      {PRO_EFFECT_SPECS[type].params.map((spec) => {
+        if (spec.kind === "toggle") {
+          return (
+            <div key={spec.key} className="flex items-center justify-between gap-2">
+              <span className="text-fg-2 font-normal text-[10px]">{t(spec.label)}</span>
+              <Switch
+                aria-label={t(spec.label)}
+                checked={values[spec.key] === true}
+                disabled={disabled}
+                onCheckedChange={(checked) => onChange({ [spec.key]: checked })}
+              />
+            </div>
+          );
+        }
+        if (spec.kind === "select") {
+          return (
+            <div key={spec.key} className="flex items-center justify-between gap-2">
+              <span className="text-fg-2 font-normal text-[10px]">{t(spec.label)}</span>
+              <Select
+                value={String(values[spec.key])}
+                disabled={disabled}
+                onValueChange={(value) => onChange({ [spec.key]: value })}
+              >
+                <SelectTrigger aria-label={t(spec.label)} className="h-6 max-w-[150px] text-[10px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {spec.options?.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {t(option.label)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          );
+        }
+        return (
+          <EffectSlider
+            key={spec.key}
+            disabled={disabled}
+            label={t(spec.label)}
+            value={Number(values[spec.key])}
+            onChange={(v) => onChange({ [spec.key]: v })}
+            min={spec.min ?? 0}
+            max={spec.max ?? 100}
+            step={spec.step}
+            unit={spec.unit}
+          />
+        );
+      })}
+    </>
+  );
+};
+
+/**
+ * Controls for a third-party plugin effect, generated from its manifest.
+ * An effect whose plugin is not installed is a placeholder: its saved
+ * parameters stay in the project and are listed read-only until the plugin is
+ * installed again.
+ */
+const PluginEffectControls: React.FC<{
+  effect: VideoEffect;
+  onChange: (params: Record<string, unknown>) => void;
+  disabled: boolean;
+}> = ({ effect, onChange, disabled }) => {
+  const t = useClipT();
+  useInstalledPlugins();
+  const status = describePluginEffect(effect);
+  if (!status) return null;
+  if (status.kind === "missing") {
+    const shown = Object.entries(effect.params).filter(([key]) => !key.startsWith("__"));
+    return (
+      <div className="space-y-2" data-testid="plugin-missing-placeholder">
+        <p className="text-fg-2 font-normal text-[10px] leading-4">
+          {t("The plugin \"")}{status.id}&quot;{status.storedVersion ? t(" (v{0})", [status.storedVersion]) : ""} {t("is not installed, so this effect is not rendered. Its settings are kept and will apply again once you install it.")}
+        </p>
+        {shown.length > 0 && (
+          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[10px] text-fg-2">
+            {shown.map(([key, value]) => (
+              <React.Fragment key={key}>
+                <dt>{key}</dt>
+                <dd className="truncate text-fg">{typeof value === "object" ? JSON.stringify(value) : String(value)}</dd>
+              </React.Fragment>
+            ))}
+          </dl>
+        )}
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => usePluginManagerStore.getState().setOpen(true)}
+        >
+          {t("Manage plugins")}
+        </Button>
+      </div>
+    );
+  }
+  const { manifest } = status.plugin;
+  const health = getPluginRegistry().getHealth(manifest.id);
+  return (
+    <>
+      {status.kind === "version-mismatch" && (
+        <p className="text-fg-2 font-normal text-[10px] leading-4" data-testid="plugin-version-note">
+          {t("Saved with v")}{status.storedVersion}{t("; v")}{manifest.version} {t("is installed.")}
+        </p>
+      )}
+      {health.state !== "ok" && (
+        <p role="status" data-testid="plugin-effect-error" className="whitespace-pre-wrap text-[10px] leading-4 text-fg-2">
+          {health.state === "failed"
+            ? `${health.tripped ? "Bypassed after repeated failures" : "Last frame failed"}: ${health.error ?? "unknown error"}`
+            : t("Shader error, using the CPU fallback: {0}", [health.gpuError ?? ""])}
+          {health.tripped && (
+            <Button variant="secondary" size="sm" className="ml-2" onClick={() => retryPlugin(manifest.id)}>
+              {t("Retry")}
+            </Button>
+          )}
+        </p>
+      )}
+      {manifest.parameters.map((def) => {
+        const value = resolvePluginParam(def, effect.params[def.key]);
+        switch (def.type) {
+          case "bool":
+            return (
+              <div key={def.key} className="flex items-center justify-between gap-2">
+                <span className="text-fg-2 font-normal text-[10px]">{t(def.label)}</span>
+                <Switch
+                  aria-label={t(def.label)}
+                  checked={value === true}
+                  disabled={disabled}
+                  onCheckedChange={(checked) => onChange({ [def.key]: checked })}
+                />
+              </div>
+            );
+          case "choice":
+            return (
+              <div key={def.key} className="flex items-center justify-between gap-2">
+                <span className="text-fg-2 font-normal text-[10px]">{t(def.label)}</span>
+                <Select value={String(value)} disabled={disabled} onValueChange={(next) => onChange({ [def.key]: next })}>
+                  <SelectTrigger aria-label={t(def.label)} className="h-6 max-w-[150px] text-[10px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {def.choices?.map((choice) => (
+                      <SelectItem key={choice.value} value={choice.value}>
+                        {t(choice.label)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            );
+          case "color":
+            return (
+              <EffectColorField
+                key={def.key}
+                disabled={disabled}
+                label={t(def.label)}
+                value={String(value)}
+                onChange={(next) => onChange({ [def.key]: next })}
+              />
+            );
+          case "point": {
+            const point = value as { x: number; y: number };
+            return (
+              <React.Fragment key={def.key}>
+                {(["x", "y"] as const).map((axis) => (
+                  <EffectSlider
+                    key={axis}
+                    disabled={disabled}
+                    label={`${def.label} ${axis.toUpperCase()}`}
+                    value={point[axis]}
+                    onChange={(next) => onChange({ [def.key]: { ...point, [axis]: next } })}
+                    min={0}
+                    max={1}
+                    step={0.01}
+                  />
+                ))}
+              </React.Fragment>
+            );
+          }
+          default:
+            return (
+              <EffectSlider
+                key={def.key}
+                disabled={disabled}
+                label={t(def.label)}
+                value={Number(value)}
+                onChange={(next) => onChange({ [def.key]: next })}
+                min={def.min ?? 0}
+                max={def.max ?? 1}
+                step={def.step}
+                unit={def.unit}
+              />
+            );
+        }
+      })}
+    </>
+  );
+};
 
 /**
  * Effect Item Component - displays a single effect with controls
  */
 const EffectItem: React.FC<{
+  clipId: string;
   effect: VideoEffect;
   onUpdate: (effectId: string, params: Record<string, unknown>) => void;
   onToggle: (effectId: string, enabled: boolean) => void;
@@ -116,7 +516,9 @@ const EffectItem: React.FC<{
   onDropEffect: (sourceEffectId: string, targetEffectId: string) => void;
   canMoveUp: boolean;
   canMoveDown: boolean;
+  editingDisabled: boolean;
 }> = ({
+  clipId,
   effect,
   onUpdate,
   onToggle,
@@ -126,6 +528,7 @@ const EffectItem: React.FC<{
   onDropEffect,
   canMoveUp,
   canMoveDown,
+  editingDisabled,
 }) => {
   const t = useClipT();
   const [isExpanded, setIsExpanded] = React.useState(true);
@@ -151,6 +554,8 @@ const EffectItem: React.FC<{
     "motion-blur": "Motion Blur",
     "radial-blur": "Radial Blur",
     "chromatic-aberration": "Chromatic Aberration",
+    ...PRO_EFFECT_LABELS,
+    ...BURN_IN_LABELS,
     shader: "Shader",
   };
 
@@ -159,8 +564,10 @@ const EffectItem: React.FC<{
       ? getMotionShaderDef(String(effect.params.shaderId ?? ""))
       : undefined;
 
-  const headerLabel =
-    effect.type === "shader"
+  const pluginId = pluginIdFromEffectType(effect.type);
+  const headerLabel = pluginId
+    ? getPluginRegistry().get(pluginId)?.manifest.name ?? `${pluginId} (plugin missing)`
+    : effect.type === "shader"
       ? shaderDef?.name ?? "Shader"
       : effectLabels[effect.type] || effect.type;
 
@@ -168,9 +575,9 @@ const EffectItem: React.FC<{
     if (effect.type === "shader") {
       if (!shaderDef) {
         return (
-          <Text type="supporting" color="secondary" className="text-[10px]">
+          <span className="text-fg-2 font-normal text-[10px]">
             {t("Unknown shader")}
-          </Text>
+          </span>
         );
       }
       return (
@@ -178,7 +585,7 @@ const EffectItem: React.FC<{
           {shaderDef.params.map((param) => {
             if (param.type === "color") {
               return (
-                <EffectColorField
+                <EffectColorField disabled={editingDisabled}
                   key={param.name}
                   label={t(param.label)}
                   value={shaderEffectColorValue(
@@ -190,7 +597,7 @@ const EffectItem: React.FC<{
               );
             }
             return (
-              <EffectSlider
+              <EffectSlider disabled={editingDisabled}
                 key={param.name}
                 label={t(param.label)}
                 value={shaderEffectNumberValue(
@@ -207,10 +614,59 @@ const EffectItem: React.FC<{
         </>
       );
     }
+    if (isPluginEffectType(effect.type)) {
+      return (
+        <PluginEffectControls
+          effect={effect}
+          disabled={editingDisabled}
+          onChange={(params) => onUpdate(effect.id, params)}
+        />
+      );
+    }
+    if (effect.type === "hsl-secondary") {
+      return (
+        <span className="text-fg-2 font-normal text-[10px]">
+          {t("Edit this secondary in the Color tab, HSL Secondary.")}
+        </span>
+      );
+    }
+    if (isBurnInEffectType(effect.type)) {
+      return (
+        <BurnInControls
+          type={effect.type}
+          params={effect.params}
+          disabled={editingDisabled}
+          onChange={(params) => onUpdate(effect.id, params)}
+        />
+      );
+    }
+    if (effect.type === "ultra-key") {
+      return (
+        <React.Suspense fallback={null}>
+          <UltraKeyControls
+            clipId={clipId}
+            effectId={effect.id}
+            params={effect.params}
+            disabled={editingDisabled}
+            onChange={(params) => onUpdate(effect.id, params)}
+          />
+        </React.Suspense>
+      );
+    }
+    if (isProEffectType(effect.type)) {
+      return (
+        <ProEffectControls
+          type={effect.type}
+          params={effect.params}
+          disabled={editingDisabled}
+          onChange={(params) => onUpdate(effect.id, params)}
+        />
+      );
+    }
     switch (effect.type) {
       case "brightness":
         return (
-          <EffectSlider
+          <EffectSlider disabled={editingDisabled}
             label={t("Value")}
             value={effectNumberValue(effect.params.value, 0)}
             onChange={(v) => onUpdate(effect.id, { value: v })}
@@ -220,7 +676,7 @@ const EffectItem: React.FC<{
         );
       case "contrast":
         return (
-          <EffectSlider
+          <EffectSlider disabled={editingDisabled}
             label={t("Value")}
             value={effectNumberValue(effect.params.value, 1) * 100}
             onChange={(v) => onUpdate(effect.id, { value: v / 100 })}
@@ -231,7 +687,7 @@ const EffectItem: React.FC<{
         );
       case "saturation":
         return (
-          <EffectSlider
+          <EffectSlider disabled={editingDisabled}
             label={t("Value")}
             value={effectNumberValue(effect.params.value, 1) * 100}
             onChange={(v) => onUpdate(effect.id, { value: v / 100 })}
@@ -244,7 +700,7 @@ const EffectItem: React.FC<{
       case "sepia":
       case "invert":
         return (
-          <EffectSlider
+          <EffectSlider disabled={editingDisabled}
             label={t("Amount")}
             value={effectNumberValue(effect.params.amount, 1) * 100}
             onChange={(v) => onUpdate(effect.id, { amount: v / 100 })}
@@ -255,7 +711,7 @@ const EffectItem: React.FC<{
         );
       case "blur":
         return (
-          <EffectSlider
+          <EffectSlider disabled={editingDisabled}
             label={t("Radius")}
             value={effectNumberValue(effect.params.radius, 0)}
             onChange={(v) => onUpdate(effect.id, { radius: v })}
@@ -267,7 +723,7 @@ const EffectItem: React.FC<{
       case "sharpen":
         return (
           <>
-            <EffectSlider
+            <EffectSlider disabled={editingDisabled}
               label={t("Amount")}
               value={effectNumberValue(effect.params.amount, 0)}
               onChange={(v) => onUpdate(effect.id, { amount: v })}
@@ -275,7 +731,7 @@ const EffectItem: React.FC<{
               max={200}
               unit="%"
             />
-            <EffectSlider
+            <EffectSlider disabled={editingDisabled}
               label={t("Radius")}
               value={effectNumberValue(effect.params.radius, 1)}
               onChange={(v) => onUpdate(effect.id, { radius: v })}
@@ -288,14 +744,14 @@ const EffectItem: React.FC<{
       case "vignette":
         return (
           <>
-            <EffectSlider
+            <EffectSlider disabled={editingDisabled}
               label={t("Amount")}
               value={effectNumberValue(effect.params.amount, 0)}
               onChange={(v) => onUpdate(effect.id, { amount: v })}
               min={0}
               max={100}
             />
-            <EffectSlider
+            <EffectSlider disabled={editingDisabled}
               label={t("Midpoint")}
               value={effectNumberValue(effect.params.midpoint, 0.5) * 100}
               onChange={(v) => onUpdate(effect.id, { midpoint: v / 100 })}
@@ -303,7 +759,7 @@ const EffectItem: React.FC<{
               max={100}
               unit="%"
             />
-            <EffectSlider
+            <EffectSlider disabled={editingDisabled}
               label={t("Feather")}
               value={effectNumberValue(effect.params.feather, 0.3) * 100}
               onChange={(v) => onUpdate(effect.id, { feather: v / 100 })}
@@ -316,14 +772,14 @@ const EffectItem: React.FC<{
       case "grain":
         return (
           <>
-            <EffectSlider
+            <EffectSlider disabled={editingDisabled}
               label={t("Amount")}
               value={effectNumberValue(effect.params.amount, 0)}
               onChange={(v) => onUpdate(effect.id, { amount: v })}
               min={0}
               max={100}
             />
-            <EffectSlider
+            <EffectSlider disabled={editingDisabled}
               label={t("Size")}
               value={effectNumberValue(effect.params.size, 1)}
               onChange={(v) => onUpdate(effect.id, { size: v })}
@@ -335,7 +791,7 @@ const EffectItem: React.FC<{
         );
       case "temperature":
         return (
-          <EffectSlider
+          <EffectSlider disabled={editingDisabled}
             label={t("Value")}
             value={effectNumberValue(effect.params.value, 0)}
             onChange={(v) => onUpdate(effect.id, { value: v })}
@@ -345,7 +801,7 @@ const EffectItem: React.FC<{
         );
       case "tint":
         return (
-          <EffectSlider
+          <EffectSlider disabled={editingDisabled}
             label={t("Value")}
             value={effectNumberValue(effect.params.value, 0)}
             onChange={(v) => onUpdate(effect.id, { value: v })}
@@ -356,7 +812,7 @@ const EffectItem: React.FC<{
       case "shadow":
         return (
           <>
-            <EffectSlider
+            <EffectSlider disabled={editingDisabled}
               label={t("Offset X")}
               value={effectNumberValue(effect.params.offsetX, 5)}
               onChange={(v) => onUpdate(effect.id, { offsetX: v })}
@@ -364,7 +820,7 @@ const EffectItem: React.FC<{
               max={100}
               unit="px"
             />
-            <EffectSlider
+            <EffectSlider disabled={editingDisabled}
               label={t("Offset Y")}
               value={effectNumberValue(effect.params.offsetY, 5)}
               onChange={(v) => onUpdate(effect.id, { offsetY: v })}
@@ -372,7 +828,7 @@ const EffectItem: React.FC<{
               max={100}
               unit="px"
             />
-            <EffectSlider
+            <EffectSlider disabled={editingDisabled}
               label={t("Blur")}
               value={effectNumberValue(effect.params.blur, 10)}
               onChange={(v) => onUpdate(effect.id, { blur: v })}
@@ -380,7 +836,7 @@ const EffectItem: React.FC<{
               max={100}
               unit="px"
             />
-            <EffectSlider
+            <EffectSlider disabled={editingDisabled}
               label={t("Opacity")}
               value={effectNumberValue(effect.params.opacity, 0.8) * 100}
               onChange={(v) => onUpdate(effect.id, { opacity: v / 100 })}
@@ -393,7 +849,7 @@ const EffectItem: React.FC<{
       case "glow":
         return (
           <>
-            <EffectSlider
+            <EffectSlider disabled={editingDisabled}
               label={t("Radius")}
               value={effectNumberValue(effect.params.radius, 10)}
               onChange={(v) => onUpdate(effect.id, { radius: v })}
@@ -401,7 +857,7 @@ const EffectItem: React.FC<{
               max={100}
               unit="px"
             />
-            <EffectSlider
+            <EffectSlider disabled={editingDisabled}
               label={t("Intensity")}
               value={effectNumberValue(effect.params.intensity, 1) * 100}
               onChange={(v) => onUpdate(effect.id, { intensity: v / 100 })}
@@ -414,7 +870,7 @@ const EffectItem: React.FC<{
       case "motion-blur":
         return (
           <>
-            <EffectSlider
+            <EffectSlider disabled={editingDisabled}
               label={t("Angle")}
               value={effectNumberValue(effect.params.angle, 0)}
               onChange={(v) => onUpdate(effect.id, { angle: v })}
@@ -422,7 +878,7 @@ const EffectItem: React.FC<{
               max={360}
               unit="°"
             />
-            <EffectSlider
+            <EffectSlider disabled={editingDisabled}
               label={t("Distance")}
               value={effectNumberValue(effect.params.distance, 20)}
               onChange={(v) => onUpdate(effect.id, { distance: v })}
@@ -435,14 +891,14 @@ const EffectItem: React.FC<{
       case "radial-blur":
         return (
           <>
-            <EffectSlider
+            <EffectSlider disabled={editingDisabled}
               label={t("Amount")}
               value={effectNumberValue(effect.params.amount, 20)}
               onChange={(v) => onUpdate(effect.id, { amount: v })}
               min={0}
               max={100}
             />
-            <EffectSlider
+            <EffectSlider disabled={editingDisabled}
               label={t("Center X")}
               value={effectNumberValue(effect.params.centerX, 50)}
               onChange={(v) => onUpdate(effect.id, { centerX: v })}
@@ -450,7 +906,7 @@ const EffectItem: React.FC<{
               max={100}
               unit="%"
             />
-            <EffectSlider
+            <EffectSlider disabled={editingDisabled}
               label={t("Center Y")}
               value={effectNumberValue(effect.params.centerY, 50)}
               onChange={(v) => onUpdate(effect.id, { centerY: v })}
@@ -463,7 +919,7 @@ const EffectItem: React.FC<{
       case "chromatic-aberration":
         return (
           <>
-            <EffectSlider
+            <EffectSlider disabled={editingDisabled}
               label={t("Amount")}
               value={effectNumberValue(effect.params.amount, 5)}
               onChange={(v) => onUpdate(effect.id, { amount: v })}
@@ -472,7 +928,7 @@ const EffectItem: React.FC<{
               step={0.5}
               unit="px"
             />
-            <EffectSlider
+            <EffectSlider disabled={editingDisabled}
               label={t("Angle")}
               value={effectNumberValue(effect.params.angle, 0)}
               onChange={(v) => onUpdate(effect.id, { angle: v })}
@@ -505,16 +961,15 @@ const EffectItem: React.FC<{
         onDropEffect(sourceEffectId, effect.id);
       }}
     >
-      <Card
-        variant="muted"
-        padding={0}
-        className={!effect.enabled ? "opacity-60" : undefined}
+      <Collapsible asChild open={isExpanded} onOpenChange={setIsExpanded}>
+      <Card className={cn("min-w-0 rounded-[7px] border shadow-none", "border-transparent bg-bg-2 text-fg", "p-0", !effect.enabled ? "opacity-60" : undefined)}
       >
-        <div className="flex items-center gap-1 border-b border-border/70 bg-bg-2 px-2 py-2">
-          <button
+        <div className="flex items-center gap-0.5 border-b border-border/70 bg-bg-2 px-1.5 py-1.5">
+          <Button variant="ghost" size="sm"
             type="button"
-            draggable
-            aria-label={`Reorder ${headerLabel}`}
+            draggable={!editingDisabled}
+            disabled={editingDisabled}
+            aria-label={t("Reorder {0}", [headerLabel])}
             title={t("Drag to reorder effect")}
             onDragStart={(event) => {
               event.dataTransfer.effectAllowed = "move";
@@ -532,73 +987,47 @@ const EffectItem: React.FC<{
                 onMove(effect.id, 1);
               }
             }}
-            className="grid h-6 w-5 shrink-0 cursor-grab place-items-center rounded text-fg-3 hover:bg-hover hover:text-fg active:cursor-grabbing"
+            className="grid h-6 w-4 shrink-0 cursor-grab place-items-center rounded p-0 [&_svg]:size-3 text-fg-3 hover:bg-hover hover:text-fg active:cursor-grabbing"
           >
             <GripVertical size={12} aria-hidden />
-          </button>
-          <Button
-            label={headerLabel}
-            variant="ghost"
-            size="sm"
-            onClick={() => setIsExpanded(!isExpanded)}
-            icon={
-              <ChevronDown
+          </Button>
+          <CollapsibleTrigger asChild>
+          <Button variant="ghost" type="button" aria-label={headerLabel.trim() || undefined} title={headerLabel} className="h-6 min-w-0 flex-1 justify-start gap-1 rounded-md px-1.5 text-xs font-semibold text-fg-2 hover:bg-bg-2 [&_svg]:size-3">
+            <span className="flex h-3 w-3 shrink-0 items-center justify-center">{<ChevronDown
                 size={12}
                 className={`transition-transform ${
                   isExpanded ? "" : "-rotate-90"
                 } text-fg-3`}
                 aria-hidden
-              />
-            }
-            className="min-w-0 flex-1 justify-start"
-          />
-          <IconButton
-            label={`Move ${headerLabel} up`}
-            onClick={() => onMove(effect.id, -1)}
-            isDisabled={!canMoveUp}
-            variant="ghost"
-            size="sm"
-            icon={<ArrowUp size={11} aria-hidden />}
-          />
-          <IconButton
-            label={`Move ${headerLabel} down`}
-            onClick={() => onMove(effect.id, 1)}
-            isDisabled={!canMoveDown}
-            variant="ghost"
-            size="sm"
-            icon={<ArrowDown size={11} aria-hidden />}
-          />
-          <IconButton
-            label={effect.enabled ? "Disable effect" : "Enable effect"}
-            onClick={() => onToggle(effect.id, !effect.enabled)}
-            variant="ghost"
-            size="sm"
-            icon={
-              effect.enabled ? (
+              />}</span>
+            {(headerLabel) ? <span className="truncate">{headerLabel}</span> : null}
+          </Button>
+          </CollapsibleTrigger>
+          <Button variant="ghost" size="icon-sm" onClick={() => onMove(effect.id, -1)} type="button" aria-label={t("Move {0} up", [headerLabel])} title={t("Move {0} up", [headerLabel])} disabled={editingDisabled || !canMoveUp} className="inline-flex shrink-0 items-center justify-center rounded-[7px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-6 w-6 bg-transparent text-fg-muted hover:bg-bg-2 hover:text-fg">
+            {<ArrowUp size={11} aria-hidden />}
+          </Button>
+          <Button variant="ghost" size="icon-sm" onClick={() => onMove(effect.id, 1)} type="button" aria-label={t("Move {0} down", [headerLabel])} title={t("Move {0} down", [headerLabel])} disabled={editingDisabled || !canMoveDown} className="inline-flex shrink-0 items-center justify-center rounded-[7px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-6 w-6 bg-transparent text-fg-muted hover:bg-bg-2 hover:text-fg">
+            {<ArrowDown size={11} aria-hidden />}
+          </Button>
+          <Button variant="ghost" size="icon-sm" onClick={() => onToggle(effect.id, !effect.enabled)} disabled={editingDisabled} type="button" aria-label={effect.enabled ? t("Disable effect") : t("Enable effect")} title={effect.enabled ? t("Disable effect") : t("Enable effect")} className="inline-flex shrink-0 items-center justify-center rounded-[7px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-6 w-6 bg-transparent text-fg-muted hover:bg-bg-2 hover:text-fg">
+            {effect.enabled ? (
                 <Eye size={12} className="text-fg-2" aria-hidden />
               ) : (
                 <EyeOff size={12} className="text-fg-3" aria-hidden />
-              )
-            }
-          />
-          <IconButton
-            label={t("Duplicate effect")}
-            onClick={() => onDuplicate(effect.id)}
-            variant="ghost"
-            size="sm"
-            icon={<Copy size={12} aria-hidden />}
-          />
-          <IconButton
-            label={t("Remove effect")}
-            onClick={() => onRemove(effect.id)}
-            variant="ghost"
-            size="sm"
-            icon={<RotateCcw size={12} aria-hidden />}
-            className="text-fg-3 hover:text-red-400"
-          />
+              )}
+          </Button>
+          <Button variant="ghost" size="icon-sm" onClick={() => onDuplicate(effect.id)} disabled={editingDisabled} type="button" aria-label={t("Duplicate effect")} title={t("Duplicate effect")} className="inline-flex shrink-0 items-center justify-center rounded-[7px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-6 w-6 bg-transparent text-fg-muted hover:bg-bg-2 hover:text-fg">
+            {<Copy size={12} aria-hidden />}
+          </Button>
+          <Button variant="ghost" size="icon-sm" onClick={() => onRemove(effect.id)} disabled={editingDisabled} type="button" aria-label={t("Remove effect")} title={t("Remove effect")} className="inline-flex shrink-0 items-center justify-center rounded-[7px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-6 w-6 bg-transparent hover:bg-bg-2 text-fg-3 hover:text-red-400">
+            {<RotateCcw size={12} aria-hidden />}
+          </Button>
         </div>
-        {isExpanded && <div className="p-3 space-y-3">{renderParams()}</div>}
+        <div inert={!isExpanded} aria-hidden={!isExpanded}>
+          <CollapsibleContent><div className="space-y-3 p-3">{renderParams()}<EffectAnimationControls clipId={clipId} effect={effect} disabled={editingDisabled} /></div></CollapsibleContent>
+        </div>
       </Card>
+      </Collapsible>
     </div>
   );
 };
@@ -613,15 +1042,15 @@ function VisualEffectPreview({
   const t = useClipT();
   const effectedStyle = def.previewStyle(0.82);
   return (
-    <button
+    <Button variant="ghost" size="sm"
       type="button"
-      aria-label={`Preview and add ${def.label}`}
+      aria-label={t("Preview and add {0}", [def.label])}
       onClick={() => onSelect(def)}
-      className="group min-w-0 rounded-[9px] border border-border bg-bg-2 p-1.5 text-left transition-colors hover:border-accent/60 hover:bg-bg-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      className="group block h-auto w-full min-w-0 whitespace-normal text-[length:inherit] font-normal leading-[inherit] rounded-[9px] border border-border bg-bg-2 p-1.5 text-left transition-colors hover:border-accent/60 hover:bg-bg-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
     >
       <span className="relative block h-[66px] overflow-hidden rounded-[7px] bg-[linear-gradient(135deg,#22d3ee,#8b5cf6_52%,#fb7185)]">
         <span className="absolute inset-0 grid place-items-center text-lg font-black tracking-tight text-white/95">
-          Aa
+          {t("Aa")}
         </span>
         <span
           className="absolute inset-0 grid place-items-center overflow-hidden border-l border-white/45 bg-[linear-gradient(135deg,#22d3ee,#8b5cf6_52%,#fb7185)] text-lg font-black tracking-tight text-white/95"
@@ -630,7 +1059,7 @@ function VisualEffectPreview({
             clipPath: "inset(0 0 0 50%)",
           }}
         >
-          Aa
+          {t("Aa")}
         </span>
         <span className="absolute bottom-1 left-1 rounded bg-black/45 px-1 py-0.5 text-[8px] font-semibold uppercase text-white/75">
           {t("Before")}
@@ -640,135 +1069,111 @@ function VisualEffectPreview({
         </span>
       </span>
       <span className="mt-1.5 block truncate text-[11px] font-semibold text-fg-2">
-        {def.label}
+        {t(def.label)}
       </span>
       <span className="block truncate text-[9px] text-fg-4">
-        {def.category} · {def.description}
+        {def.category} · {t(def.description)}
       </span>
-    </button>
+    </Button>
   );
 }
 
-const EffectTypeSelector: React.FC<{
+function EffectPickerContent({
+  onSelect,
+  onSelectShader,
+  mediaKind,
+}: {
   onSelect: (def: EditorEffectPreviewDef) => void;
   onSelectShader: (shaderId: string) => void;
-}> = ({ onSelect, onSelectShader }) => {
+  mediaKind: string;
+}) {
   const t = useClipT();
-  const [pickerTab, setPickerTab] = React.useState<"effects" | "shaders">(
-    "effects",
-  );
   const [query, setQuery] = React.useState("");
+  const tabId = useId();
   const shaderDefs = useMemo(() => getMotionShaderEffectDefs(), []);
+  const availableEffects = useMemo(() => EDITOR_EFFECT_PREVIEWS.filter(effect =>
+    effect.type === "stabilize" ? mediaKind === "video"
+      : effect.type === "lut" ? mediaKind === "video" || mediaKind === "image" : true,
+  ), [mediaKind]);
   const visibleEffects = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    if (!normalized) return EDITOR_EFFECT_PREVIEWS;
-    return EDITOR_EFFECT_PREVIEWS.filter((effect) =>
-      `${effect.label} ${effect.description} ${effect.category}`
-        .toLowerCase()
-        .includes(normalized),
-    );
-  }, [query]);
-  return (
-    <Popover
-      placement="below"
-      alignment="end"
-      width={430}
-      label={t("Add video effect")}
-      content={
-        <div className="w-[430px] max-w-[calc(100vw-32px)] space-y-2.5 p-2.5">
-          <div className="flex items-center gap-1 rounded-[8px] bg-bg-2 p-1">
-            {([
-              ["effects", `Effects · ${EDITOR_EFFECT_PREVIEWS.length}`],
-              ["shaders", `Shaders · ${shaderDefs.length}`],
-            ] as const).map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                aria-pressed={pickerTab === id}
-                onClick={() => setPickerTab(id)}
-                className={`h-7 flex-1 rounded-[6px] px-2 text-[11px] font-semibold transition-colors ${
-                  pickerTab === id
-                    ? "bg-bg-1 text-fg shadow-sm"
-                    : "text-fg-3 hover:text-fg"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          {pickerTab === "effects" ? (
-            <>
-              <label className="relative block">
-                <Search
-                  size={13}
-                  aria-hidden
-                  className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-4"
-                />
-                <input
-                  type="search"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder={t("Search visual effects")}
-                  aria-label={t("Search visual effects")}
-                  className="h-8 w-full rounded-[7px] border border-border bg-bg-2 pl-8 pr-2.5 text-xs text-fg outline-none placeholder:text-fg-4 focus:border-accent"
-                />
-              </label>
-              <div className="max-h-[390px] space-y-3 overflow-y-auto pr-1">
-                {EDITOR_EFFECT_CATEGORIES.map((category) => {
-                  const effects = visibleEffects.filter(
-                    (effect) => effect.category === category,
-                  );
-                  if (effects.length === 0) return null;
-                  return (
-                    <section key={category} aria-label={`${category} effects`}>
-                      <div className="mb-1.5 flex items-center justify-between px-0.5">
-                        <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-fg-4">
-                          {category}
-                        </span>
-                        <span className="text-[9px] tabular-nums text-fg-4">
-                          {effects.length}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        {effects.map((effect) => (
-                          <VisualEffectPreview
-                            key={effect.id ?? effect.type}
-                            def={effect}
-                            onSelect={onSelect}
-                          />
-                        ))}
-                      </div>
-                    </section>
-                  );
-                })}
-                {visibleEffects.length === 0 ? (
-                  <div className="rounded-[8px] border border-dashed border-border px-3 py-8 text-center text-[11px] text-fg-4">
-                    No effects match “{query}”.
-                  </div>
-                ) : null}
+    const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    return availableEffects.filter(effect => terms.every(term =>
+      `${effect.label} ${effect.description} ${effect.category}`.toLowerCase().includes(term),
+    ));
+  }, [availableEffects, query]);
+
+  return <Tabs defaultValue="effects" className="min-w-0">
+    <TabsList aria-label={t("Effect picker categories")} layoutId={tabId} className="grid h-8 shrink-0 grid-cols-2 bg-bg-2 p-0.5">
+      <TabsTrigger value="effects" className="h-7 text-[11px]">{t("Effects ·")} {availableEffects.length}</TabsTrigger>
+      <TabsTrigger value="shaders" className="h-7 text-[11px]">{t("Shaders ·")} {shaderDefs.length}</TabsTrigger>
+    </TabsList>
+    <TabsContent value="effects" className="mt-2.5 min-w-0 space-y-2.5">
+      <label className="relative block shrink-0">
+        <Search size={13} aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-muted" />
+        <Input type="search" value={query} onChange={event => setQuery(event.target.value)}
+          placeholder={t("Search visual effects")} aria-label={t("Search visual effects")} autoFocus
+          className="h-8 min-w-0 rounded-md bg-bg-2 py-0 pl-8 pr-2.5 text-xs md:text-xs" />
+      </label>
+      <div className="space-y-3 overflow-y-auto pr-2" style={{ maxHeight: "min(390px, calc(var(--radix-popover-content-available-height) - 110px))" }}>
+          {EDITOR_EFFECT_CATEGORIES.map(category => {
+            const effects = visibleEffects.filter(effect => effect.category === category);
+            if (!effects.length) return null;
+            return <section key={category} aria-label={`${category} effects`}>
+              <div className="mb-1.5 flex items-center justify-between px-0.5 text-[9px] text-fg-muted">
+                <span className="font-bold uppercase tracking-[0.12em]">{category}</span>
+                <span className="tabular-nums">{effects.length}</span>
               </div>
-            </>
-          ) : (
-            <ShaderPreviewBrowser
-              defs={shaderDefs}
-              onSelect={onSelectShader}
-              sample="effect"
-              label={t("Shader effect previews")}
-            />
-          )}
-        </div>
+              <div className="grid grid-cols-2 gap-2">
+                {effects.map(effect => <VisualEffectPreview key={effect.id ?? effect.type} def={effect} onSelect={onSelect} />)}
+              </div>
+            </section>;
+          })}
+          {!visibleEffects.length && <p role="status" className="rounded-md border border-dashed px-3 py-8 text-center text-xs text-fg-muted">{t("No effects match “")}{query}”.</p>}
+      </div>
+    </TabsContent>
+    <TabsContent value="shaders" className="mt-2.5 min-w-0">
+      <ShaderPreviewBrowser defs={shaderDefs} onSelect={onSelectShader} sample="effect" label={t("Shader effect previews")} />
+    </TabsContent>
+  </Tabs>;
+}
+
+function EffectTypeSelector({ onSelect, onSelectShader, disabled, mediaKind }: {
+  onSelect: (def: EditorEffectPreviewDef) => Promise<boolean>;
+  onSelectShader: (shaderId: string) => Promise<boolean>;
+  disabled: boolean;
+  mediaKind: string;
+}) {
+  const t = useClipT();
+  const [open, setOpen] = React.useState(false);
+  const pending = React.useRef(false);
+  const navigated = React.useRef(false);
+  const choose = async (apply: () => Promise<boolean>, navigation = false) => {
+    if (disabled || pending.current) return;
+    pending.current = true;
+    try {
+      if (await apply()) {
+        navigated.current = navigation;
+        setOpen(false);
       }
-    >
-      <Button
-        label={t("Add Effect")}
-        variant="secondary"
-        size="sm"
-        endContent={<ChevronDown size={12} className="text-fg-3" aria-hidden />}
-        className="w-full justify-center border-primary/30 bg-primary/10 text-primary hover:bg-primary/20"
-      />
-    </Popover>
-  );
-};
+    }
+    finally { pending.current = false; }
+  };
+  React.useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
+  return <Popover open={open} onOpenChange={next => { if (next) navigated.current = false; setOpen(next); }}>
+    <PopoverTrigger asChild>
+      <Button variant="outline" type="button" aria-label={t("Add Effect")} disabled={disabled}
+        className="h-7 w-full justify-center gap-1.5 rounded-md border-primary/30 bg-primary/10 px-2.5 text-xs text-primary hover:bg-primary/20">
+        {t("Add Effect")} <ChevronDown size={12} aria-hidden />
+      </Button>
+    </PopoverTrigger>
+    <PopoverContent side="bottom" align="end" collisionPadding={16} aria-label={t("Add video effect")}
+      onCloseAutoFocus={event => { if (navigated.current) event.preventDefault(); }}
+      className="max-h-[min(520px,var(--radix-popover-content-available-height))] w-[430px] max-w-[calc(100vw-32px)] min-w-0 overflow-y-auto rounded-lg bg-bg-1 p-2.5 text-fg">
+      <EffectPickerContent mediaKind={mediaKind} onSelect={def => { void choose(() => onSelect(def), def.type === "stabilize"); }}
+        onSelectShader={id => { void choose(() => onSelectShader(id)); }} />
+    </PopoverContent>
+  </Popover>;
+}
 
 /**
  * VideoEffectsSection Props
@@ -787,187 +1192,156 @@ interface VideoEffectsSectionProps {
  * - 2.3: Vignette effect with amount, midpoint, feather
  * - 2.4: Grain effect with amount and size
  */
-export const VideoEffectsSection: React.FC<VideoEffectsSectionProps> = ({
-  clipId,
-}) => {
+const NO_EFFECTS: readonly Effect[] = [];
+
+function findEffectClip(project: Project, clipId: string) {
+  for (const track of project.timeline.tracks) {
+    const clip = track.clips.find(candidate => candidate.id === clipId);
+    if (clip) return clip;
+  }
+  return project.textClips?.find(clip => clip.id === clipId)
+    ?? project.shapeClips?.find(clip => clip.id === clipId)
+    ?? project.svgClips?.find(clip => clip.id === clipId)
+    ?? project.stickerClips?.find(clip => clip.id === clipId);
+}
+
+function displayEffects(effects: readonly Effect[]): VideoEffect[] {
+  return effects.map((effect, order) => ({
+    ...effect, type: effect.type as VideoEffectType, order,
+  }));
+}
+
+export const VideoEffectsSection: React.FC<VideoEffectsSectionProps> = React.memo(({ clipId }) => {
   const t = useClipT();
-  const {
-    getVideoEffects,
-    addVideoEffect,
-    duplicateVideoEffect,
-    replaceVideoEffects,
-    updateVideoEffect,
-    removeVideoEffect,
-    toggleVideoEffect,
-    reorderVideoEffects,
-  } = useProjectStore();
-
-  // Subscribe to project.modifiedAt to trigger re-renders when effects change
-  const modifiedAt = useProjectStore((state) => state.project.modifiedAt);
-  const [hasStackClipboard, setHasStackClipboard] = React.useState(
-    hasVideoEffectStackClipboard(),
+  const { projectId, authoredEffects, trackLocked, mediaKind } = useProjectStore(useShallow(state => {
+    const clip = findEffectClip(state.project, clipId);
+    const track = state.project.timeline.tracks.find(candidate => candidate.id === clip?.trackId);
+    const media = clip && "mediaId" in clip
+      ? state.project.mediaLibrary.items.find(item => item.id === clip.mediaId) : undefined;
+    return {
+      projectId: state.project.id,
+      authoredEffects: clip?.effects ?? NO_EFFECTS,
+      trackLocked: !clip || !track || track.locked,
+      mediaKind: clip && "mediaId" in clip ? media?.type ?? track?.type ?? "video" : "graphic",
+    };
+  }));
+  const exporting = useUIStore(state => state.exportState.isExporting);
+  const applying = useUIStore(state => state.effectApplicationClipId !== null);
+  const processing = useTimelineStore(state => Boolean(state.playbackLockedReason));
+  const editingDisabled = trackLocked || exporting || applying || processing;
+  const effects = useMemo(() => displayEffects(authoredEffects), [authoredEffects]);
+  const hasStackClipboard = useSyncExternalStore(
+    subscribeToVideoEffectStackClipboard, hasVideoEffectStackClipboard, () => false,
   );
+  const canAct = useCallback((edit = true) => {
+    const state = useProjectStore.getState();
+    const clip = findEffectClip(state.project, clipId);
+    if (state.project.id !== projectId || !clip) return false;
+    return !edit || (state.project.timeline.tracks.some(track => track.id === clip.trackId && !track.locked)
+      && !useUIStore.getState().exportState.isExporting
+      && useUIStore.getState().effectApplicationClipId === null
+      && !useTimelineStore.getState().playbackLockedReason);
+  }, [clipId, projectId]);
+  const currentEffects = useCallback(() =>
+    displayEffects(findEffectClip(useProjectStore.getState().project, clipId)?.effects ?? NO_EFFECTS),
+  [clipId]);
 
-  const effects = useMemo(
-    () => getVideoEffects(clipId),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [clipId, getVideoEffects, modifiedAt],
-  );
-
-  const handleAddEffect = useCallback(
-    (def: EditorEffectPreviewDef) => {
-      addVideoEffect(clipId, def.type, def.params);
-    },
-    [clipId, addVideoEffect],
-  );
-
-  const handleAddShaderEffect = useCallback(
-    (shaderId: string) => {
-      const def = getMotionShaderDef(shaderId);
-      if (!def || def.category !== "effect") return;
-      addVideoEffect(clipId, "shader", {
-        shaderId,
-        ...defaultMotionShaderParams(def),
+  const handleAddEffect = useCallback(async (def: EditorEffectPreviewDef) => {
+    if (!canAct()) return false;
+    try {
+      const applied = await applyEditorEffectToClip(clipId, { effectType: def.type, effectParams: def.params });
+      if (!applied) toast.error(clipNow()("Effect could not be applied"), clipNow()("Select an unlocked compatible layer and try again."));
+      return applied;
+    } catch {
+      toast.error(clipNow()("Effect could not be applied"), clipNow()("The effect could not be saved on this clip."));
+      return false;
+    }
+  }, [clipId, canAct]);
+  const handleAddShaderEffect = useCallback(async (shaderId: string) => {
+    const def = getMotionShaderDef(shaderId);
+    if (!def || def.category !== "effect" || !canAct()) return false;
+    try {
+      return !!await useProjectStore.getState().addVideoEffect(clipId, "shader", {
+        shaderId, ...defaultMotionShaderParams(def),
       });
-    },
-    [clipId, addVideoEffect],
-  );
-
-  const handleUpdateEffect = useCallback(
-    (effectId: string, params: Record<string, unknown>) => {
-      updateVideoEffect(clipId, effectId, params);
-    },
-    [clipId, updateVideoEffect],
-  );
-
-  const handleToggleEffect = useCallback(
-    (effectId: string, enabled: boolean) => {
-      toggleVideoEffect(clipId, effectId, enabled);
-    },
-    [clipId, toggleVideoEffect],
-  );
-
-  const handleRemoveEffect = useCallback(
-    (effectId: string) => {
-      removeVideoEffect(clipId, effectId);
-    },
-    [clipId, removeVideoEffect],
-  );
-
-  const handleDuplicateEffect = useCallback(
-    (effectId: string) => {
-      void duplicateVideoEffect(clipId, effectId);
-    },
-    [clipId, duplicateVideoEffect],
-  );
-
+    } catch {
+      toast.error(clipNow()("Effect could not be applied"), clipNow()("The shader could not be saved on this clip."));
+      return false;
+    }
+  }, [clipId, canAct]);
+  const handleUpdateEffect = useCallback((effectId: string, params: Record<string, unknown>) => {
+    if (canAct()) void useProjectStore.getState().updateVideoEffect(clipId, effectId, params);
+  }, [clipId, canAct]);
+  const handleToggleEffect = useCallback((effectId: string, enabled: boolean) => {
+    if (canAct()) void useProjectStore.getState().toggleVideoEffect(clipId, effectId, enabled);
+  }, [clipId, canAct]);
+  const handleRemoveEffect = useCallback((effectId: string) => {
+    if (canAct()) void useProjectStore.getState().removeVideoEffect(clipId, effectId);
+  }, [clipId, canAct]);
+  const handleDuplicateEffect = useCallback((effectId: string) => {
+    if (canAct()) void useProjectStore.getState().duplicateVideoEffect(clipId, effectId);
+  }, [clipId, canAct]);
   const handleCopyStack = useCallback(() => {
-    copyVideoEffectStack(effects);
-    setHasStackClipboard(true);
-  }, [effects]);
-
-  const handlePasteStack = useCallback(
-    (mode: "append" | "replace") => {
-      const copies = cloneVideoEffectStackWithFreshIds();
-      if (!copies) return;
-      void replaceVideoEffects(
-        clipId,
-        mode === "replace" ? copies : [...effects, ...copies],
-      );
-    },
-    [clipId, effects, replaceVideoEffects],
-  );
-
+    if (canAct(false)) copyVideoEffectStack(currentEffects());
+  }, [canAct, currentEffects]);
+  const handlePasteStack = useCallback((mode: "append" | "replace") => {
+    if (!canAct()) return;
+    const copies = cloneVideoEffectStackWithFreshIds();
+    if (copies) void useProjectStore.getState().replaceVideoEffects(clipId,
+      mode === "replace" ? copies : [...currentEffects(), ...copies]);
+  }, [clipId, canAct, currentEffects]);
   const handleClearStack = useCallback(() => {
-    void replaceVideoEffects(clipId, []);
-  }, [clipId, replaceVideoEffects]);
-
-  const handleMoveEffect = useCallback(
-    (effectId: string, delta: -1 | 1) => {
-      const sourceIndex = effects.findIndex((effect) => effect.id === effectId);
-      const targetIndex = sourceIndex + delta;
-      if (
-        sourceIndex < 0 ||
-        targetIndex < 0 ||
-        targetIndex >= effects.length
-      ) {
-        return;
-      }
-      const nextIds = effects.map((effect) => effect.id);
-      [nextIds[sourceIndex], nextIds[targetIndex]] = [
-        nextIds[targetIndex]!,
-        nextIds[sourceIndex]!,
-      ];
-      reorderVideoEffects(clipId, nextIds);
-    },
-    [clipId, effects, reorderVideoEffects],
-  );
-
-  const handleDropEffect = useCallback(
-    (sourceEffectId: string, targetEffectId: string) => {
-      if (sourceEffectId === targetEffectId) return;
-      const sourceIndex = effects.findIndex(
-        (effect) => effect.id === sourceEffectId,
-      );
-      const targetIndex = effects.findIndex(
-        (effect) => effect.id === targetEffectId,
-      );
-      if (sourceIndex < 0 || targetIndex < 0) return;
-      const nextIds = effects.map((effect) => effect.id);
-      const [moved] = nextIds.splice(sourceIndex, 1);
-      if (!moved) return;
-      nextIds.splice(targetIndex, 0, moved);
-      reorderVideoEffects(clipId, nextIds);
-    },
-    [clipId, effects, reorderVideoEffects],
-  );
+    if (canAct() && currentEffects().length) void useProjectStore.getState().replaceVideoEffects(clipId, []);
+  }, [clipId, canAct, currentEffects]);
+  const handleMoveEffect = useCallback((effectId: string, delta: -1 | 1) => {
+    if (!canAct()) return;
+    const effects = currentEffects();
+    const sourceIndex = effects.findIndex(effect => effect.id === effectId);
+    const targetIndex = sourceIndex + delta;
+    if (sourceIndex < 0 || targetIndex < 0 || targetIndex >= effects.length) return;
+    const nextIds = effects.map(effect => effect.id);
+    [nextIds[sourceIndex], nextIds[targetIndex]] = [nextIds[targetIndex]!, nextIds[sourceIndex]!];
+    void useProjectStore.getState().reorderVideoEffects(clipId, nextIds);
+  }, [clipId, canAct, currentEffects]);
+  const handleDropEffect = useCallback((sourceEffectId: string, targetEffectId: string) => {
+    if (sourceEffectId === targetEffectId || !canAct()) return;
+    const effects = currentEffects();
+    const sourceIndex = effects.findIndex(effect => effect.id === sourceEffectId);
+    const targetIndex = effects.findIndex(effect => effect.id === targetEffectId);
+    if (sourceIndex < 0 || targetIndex < 0) return;
+    const nextIds = effects.map(effect => effect.id);
+    const [moved] = nextIds.splice(sourceIndex, 1);
+    nextIds.splice(targetIndex, 0, moved!);
+    void useProjectStore.getState().reorderVideoEffects(clipId, nextIds);
+  }, [clipId, canAct, currentEffects]);
 
   return (
-    <div className="space-y-3">
+    <div key={`${projectId}:${clipId}`} role="group" aria-label={t("Visual effect stack")} className="space-y-3">
       <div className="grid grid-cols-2 gap-1.5">
-        <Button
-          label={t("Copy effect stack")}
-          variant="secondary"
-          size="sm"
-          isDisabled={effects.length === 0}
-          onClick={handleCopyStack}
-        />
-        <Button
-          label={t("Paste effect stack")}
-          variant="secondary"
-          size="sm"
-          isDisabled={!hasStackClipboard}
-          onClick={() => handlePasteStack("append")}
-        />
-        <Button
-          label={t("Paste and replace effects")}
-          variant="secondary"
-          size="sm"
-          isDisabled={!hasStackClipboard}
-          onClick={() => handlePasteStack("replace")}
-        />
-        <Button
-          label={t("Clear effect stack")}
-          variant="secondary"
-          size="sm"
-          isDisabled={effects.length === 0}
-          onClick={handleClearStack}
-        />
+        <Button onClick={handleCopyStack} type="button" aria-label={t("Copy effect stack")} disabled={(effects.length === 0)} className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-[7px] font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-7 px-2.5 text-[12px] border border-border bg-bg-2 text-fg-2 hover:bg-bg-3 hover:text-fg">
+          <span className="truncate">{t("Copy effect stack")}</span>
+        </Button>
+        <Button onClick={() => handlePasteStack("append")} type="button" aria-label={t("Paste effect stack")} disabled={editingDisabled || !hasStackClipboard} className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-[7px] font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-7 px-2.5 text-[12px] border border-border bg-bg-2 text-fg-2 hover:bg-bg-3 hover:text-fg">
+          <span className="truncate">{t("Paste effect stack")}</span>
+        </Button>
+        <Button onClick={() => handlePasteStack("replace")} type="button" aria-label={t("Paste and replace effects")} disabled={editingDisabled || !hasStackClipboard} className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-[7px] font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-7 px-2.5 text-[12px] border border-border bg-bg-2 text-fg-2 hover:bg-bg-3 hover:text-fg">
+          <span className="truncate">{t("Paste & replace")}</span>
+        </Button>
+        <Button onClick={handleClearStack} type="button" aria-label={t("Clear effect stack")} disabled={editingDisabled || effects.length === 0} className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-[7px] font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-7 px-2.5 text-[12px] border border-border bg-bg-2 text-fg-2 hover:bg-bg-3 hover:text-fg">
+          <span className="truncate">{t("Clear effect stack")}</span>
+        </Button>
       </div>
       {effects.length === 0 ? (
-        <Text
-          type="supporting"
-          color="secondary"
-          display="block"
-          className="py-2 text-center text-[10px]"
+        <span className="text-fg-2 font-normal block py-2 text-center text-[10px]"
         >
           {t("No effects applied")}
-        </Text>
+        </span>
       ) : (
         <div className="space-y-2">
           {effects.map((effect, index) => (
             <EffectItem
               key={effect.id}
+              clipId={clipId}
               effect={effect}
               onUpdate={handleUpdateEffect}
               onToggle={handleToggleEffect}
@@ -975,18 +1349,18 @@ export const VideoEffectsSection: React.FC<VideoEffectsSectionProps> = ({
               onDuplicate={handleDuplicateEffect}
               onMove={handleMoveEffect}
               onDropEffect={handleDropEffect}
+              editingDisabled={editingDisabled}
               canMoveUp={index > 0}
               canMoveDown={index < effects.length - 1}
             />
           ))}
         </div>
       )}
-      <EffectTypeSelector
+      <EffectPresetsPanel clipId={clipId} hasEffects={effects.length > 0} disabled={editingDisabled} />
+      <EffectTypeSelector key={`${projectId}:${clipId}`} disabled={editingDisabled} mediaKind={mediaKind}
         onSelect={handleAddEffect}
         onSelectShader={handleAddShaderEffect}
       />
     </div>
   );
-};
-
-export default VideoEffectsSection;
+});

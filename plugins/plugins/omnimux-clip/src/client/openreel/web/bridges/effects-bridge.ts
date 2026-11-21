@@ -1,29 +1,31 @@
 import {
-  VideoEffectsEngine,
-  ColorGradingEngine,
+  type VideoEffectsEngine,
+  type ColorGradingEngine,
   type Renderer,
-  isWebGPUSupported,
   type ColorWheelValues,
-  type CpuGradingStages,
   type CurvesValues,
   type HSLValues,
   type LUTData,
-  type WaveformScopeData,
-  type VectorscopeData,
-  type HistogramData,
+  type ClipLutJson,
+  lutToJson,
+  lutFromJson,
+  type ToneValues,
+  type VignetteValues,
+  type HueCurvesValues,
+  planColorGrading,
+  whiteBalanceInputGrading,
   DEFAULT_COLOR_WHEELS,
   DEFAULT_CURVES,
   DEFAULT_HSL,
-  isNeutralColorWheels,
-  isNeutralCurves,
-  isNeutralLut,
-  isNeutralHsl,
   isNeutralColorGrading,
+  type ProEffectType,
+  type BurnInEffectType,
 } from "@openreel/core";
 import type { Effect } from "@openreel/core";
 import { v4 as uuidv4 } from "uuid";
+import { getLoadedEngineModules, loadEngineModules } from "../services/lazy-engines";
 
-export type EffectsChangeCallback = (clipId: string, effects: Effect[]) => void;
+type EffectsChangeCallback = (clipId: string, effects: Effect[]) => void;
 
 export type VideoEffectType =
   | "brightness"
@@ -46,7 +48,11 @@ export type VideoEffectType =
   | "motion-blur"
   | "radial-blur"
   | "chromatic-aberration"
-  | "shader";
+  | ProEffectType
+  | BurnInEffectType
+  | "shader"
+  /** Third-party effect plugin: `plugin:<pluginId>` (see packages/core/src/plugins). */
+  | `plugin:${string}`;
 
 /**
  * Video effect with full metadata
@@ -57,6 +63,7 @@ export interface VideoEffect {
   enabled: boolean;
   params: Record<string, unknown>;
   order: number;
+  metadata?: Effect["metadata"];
 }
 
 /**
@@ -66,17 +73,27 @@ export interface ColorGradingSettings {
   colorWheels?: ColorWheelValues;
   curves?: CurvesValues;
   lut?: LUTData;
+  /** Input LUT: applied before every other grading stage. */
+  inputLut?: LUTData;
   hsl?: HSLValues;
   /** Temperature shift in range [-100, 100]. Negative = cool/blue, positive = warm/orange */
   temperature?: number;
   /** Tint shift in range [-100, 100]. Negative = green, positive = magenta */
   tint?: number;
+  /** Basic Correction sliders, each -1..1. Absent means neutral. */
+  tone?: ToneValues;
+  /** Radial vignette. Absent means off. */
+  vignette?: VignetteValues;
+  /** Hue vs Sat / Hue vs Hue / Hue vs Luma / Luma vs Sat curves. Rendered by pipeline version 2 only. */
+  hueCurves?: HueCurvesValues;
+  /** Processing order: absent/1 = classic (unchanged for existing projects), 2 = Premiere order. */
+  pipelineVersion?: 1 | 2;
 }
 
 /**
  * Effect application result
  */
-export interface EffectResult {
+interface EffectResult {
   success: boolean;
   effectId?: string;
   error?: string;
@@ -86,28 +103,30 @@ export interface EffectResult {
 /**
  * Serialized effect data for persistence
  */
-export interface SerializedEffect {
+interface SerializedEffect {
   id: string;
   type: string;
   enabled: boolean;
   params: Record<string, unknown>;
   order: number;
+  metadata?: Effect["metadata"];
 }
 
 /**
  * Serialized color grading data for persistence
  */
-export interface SerializedColorGrading {
+interface SerializedColorGrading {
   colorWheels?: ColorWheelValues;
   curves?: CurvesValues;
-  lut?: {
-    data: number[];
-    size: number;
-    intensity: number;
-  };
+  lut?: ClipLutJson;
+  inputLut?: ClipLutJson;
   hsl?: HSLValues;
   temperature?: number;
   tint?: number;
+  tone?: ToneValues;
+  vignette?: VignetteValues;
+  hueCurves?: HueCurvesValues;
+  pipelineVersion?: 1 | 2;
 }
 
 /**
@@ -121,14 +140,28 @@ export interface SerializedColorGrading {
  * - 11.1: Update effect order in clip's effect list
  * - 11.2: Process effects in new order after reordering
  */
+class EffectsBridgeDisposedError extends Error {
+  constructor() {
+    super("EffectsBridge was disposed during initialization");
+  }
+}
+
 export class EffectsBridge {
   private videoEffectsEngine: VideoEffectsEngine | null = null;
   private colorGradingEngine: ColorGradingEngine | null = null;
   private initialized = false;
+  private initializationPromise: Promise<void> | null = null;
+  private initializationGeneration = 0;
 
   // Store effects per clip
   private clipEffects: Map<string, VideoEffect[]> = new Map();
   private clipColorGrading: Map<string, ColorGradingSettings> = new Map();
+  /**
+   * Preview-only parameter overrides by effect id (the HSL Secondary matte
+   * view). Never serialized and never read by the export pipeline.
+   */
+  private transientEffectParams: Map<string, Record<string, unknown>> = new Map();
+  private whiteBalanceInputClip: string | null = null;
 
   // WebGPU renderer support
   // Note: Actual rendering is delegated to VideoEffectsEngine which handles
@@ -146,25 +179,67 @@ export class EffectsBridge {
    * - 1.1: Use WebGPU for video frame rendering when available
    * - 1.2: Fall back to WebGL2 when WebGPU is not available
    */
-  async initialize(width: number = 1920, height: number = 1080): Promise<void> {
+  initialize(width: number = 1920, height: number = 1080): Promise<void> {
     if (this.initialized) {
-      return;
+      return Promise.resolve();
     }
+    if (this.initializationPromise) return this.initializationPromise;
 
+    const promise = this.initializeEngines(
+      width,
+      height,
+      this.initializationGeneration,
+    );
+    this.initializationPromise = promise;
+    const clearPromise = () => {
+      if (this.initializationPromise === promise) this.initializationPromise = null;
+    };
+    void promise.then(clearPromise, clearPromise);
+    return promise;
+  }
+
+  private async initializeEngines(
+    width: number,
+    height: number,
+    generation: number,
+  ): Promise<void> {
+    let videoEffectsEngine: VideoEffectsEngine | null = null;
+    let colorGradingEngine: ColorGradingEngine | null = null;
     try {
-      this.videoEffectsEngine = new VideoEffectsEngine({
+      // Synchronous when the modules are resolved, so engine creation keeps its timing.
+      const engines = getLoadedEngineModules() ?? (await loadEngineModules());
+      if (generation !== this.initializationGeneration) {
+        throw new EffectsBridgeDisposedError();
+      }
+      videoEffectsEngine = new engines.VideoEffectsEngine({
         width,
         height,
         useGPU: true,
-        preferWebGPU: isWebGPUSupported(),
+        preferWebGPU: engines.isWebGPUSupported(),
       });
-      await this.videoEffectsEngine.initialize();
+      this.videoEffectsEngine = videoEffectsEngine;
+      await videoEffectsEngine.initialize();
 
-      this.colorGradingEngine = new ColorGradingEngine(width, height);
-      this.colorGradingEngine.initialize();
+      if (generation !== this.initializationGeneration) {
+        throw new EffectsBridgeDisposedError();
+      }
+
+      colorGradingEngine = new engines.ColorGradingEngine(width, height);
+      // No initialize(): the engine creates its GL context and compiles the colour wheels program
+      // on the first applyColorWheels call (editor warm-up no longer pays a GPU round trip for it).
+      this.colorGradingEngine = colorGradingEngine;
 
       this.initialized = true;
     } catch (error) {
+      // GPU setup may finish after disposal. Release resources created by the
+      // old operation without touching a replacement initialization's engines.
+      videoEffectsEngine?.dispose();
+      colorGradingEngine?.dispose();
+      if (this.videoEffectsEngine === videoEffectsEngine) {
+        this.videoEffectsEngine = null;
+      }
+      // Keep the disposal type so callers can tell a cancelled init from a failure.
+      if (error instanceof EffectsBridgeDisposedError) throw error;
       const errorMessage =
         error instanceof Error ? error.message : "Unknown initialization error";
       throw new Error(`EffectsBridge initialization failed: ${errorMessage}`);
@@ -330,6 +405,25 @@ export class EffectsBridge {
    * @param clipId - The clip to get effects for
    * @returns Array of effects sorted by order
    */
+  /** Set (or clear with null) a preview-only parameter override for one effect. */
+  setTransientEffectParams(
+    effectId: string,
+    params: Record<string, unknown> | null,
+  ): void {
+    if (params) this.transientEffectParams.set(effectId, params);
+    else this.transientEffectParams.delete(effectId);
+  }
+
+  /** The effect as the preview should render it (stored params + overrides). */
+  withTransientParams<T extends { id: string; params: Record<string, unknown> }>(
+    effect: T,
+  ): T {
+    const override = this.transientEffectParams.get(effect.id);
+    return override
+      ? { ...effect, params: { ...effect.params, ...override } }
+      : effect;
+  }
+
   getEffects(clipId: string): VideoEffect[] {
     const effects = this.clipEffects.get(clipId) || [];
     return [...effects].sort((a, b) => a.order - b.order);
@@ -468,7 +562,7 @@ export class EffectsBridge {
         id: e.id,
         type: e.type,
         enabled: e.enabled,
-        params: e.params,
+        params: this.withTransientParams(e).params,
       }));
 
       const result = await this.videoEffectsEngine.applyEffects(
@@ -504,7 +598,9 @@ export class EffectsBridge {
     effects: readonly Effect[],
   ): Promise<ImageBitmap> {
     if (!this.initialized || !this.videoEffectsEngine) return image;
-    const enabled = effects.filter((effect) => effect.enabled !== false);
+    const enabled = effects
+      .filter((effect) => effect.enabled !== false)
+      .map((effect) => this.withTransientParams(effect));
     if (enabled.length === 0) return image;
     try {
       const result = await this.videoEffectsEngine.applyEffects(image, enabled);
@@ -540,7 +636,7 @@ export class EffectsBridge {
         id: e.id,
         type: e.type,
         enabled: e.enabled,
-        params: e.params,
+        params: this.withTransientParams(e).params,
       }));
 
       const canvas = await this.videoEffectsEngine.applyEffectsToCanvas(
@@ -568,6 +664,10 @@ export class EffectsBridge {
   private getDefaultParams(
     effectType: VideoEffectType,
   ): Record<string, unknown> {
+    // Effects only run after the bridge initialised, which loads the engine modules.
+    const engines = getLoadedEngineModules();
+    const visibleDefaults = engines?.getDefaultEffectParams(effectType);
+    if (visibleDefaults) return visibleDefaults;
     switch (effectType) {
       case "brightness":
         return { value: 0 };
@@ -633,6 +733,9 @@ export class EffectsBridge {
           angle: 0,
         };
       default:
+        if (engines?.isProEffectType(effectType)) {
+          return { ...engines.PRO_EFFECT_DEFAULTS[effectType] };
+        }
         return {};
     }
   }
@@ -759,7 +862,18 @@ export class EffectsBridge {
    * @returns Color grading settings
    */
   getColorGrading(clipId: string): ColorGradingSettings {
-    return this.clipColorGrading.get(clipId) || {};
+    const stored = this.clipColorGrading.get(clipId) || {};
+    // Preview-only: the white balance eyedropper renders the clip as the white balance stage sees it.
+    return clipId === this.whiteBalanceInputClip ? whiteBalanceInputGrading(stored) : stored;
+  }
+
+  /** Preview-only view of `clipId` at the white balance stage input (null restores the full grade). Never stored or exported. */
+  setWhiteBalanceInputView(clipId: string | null): void {
+    this.whiteBalanceInputClip = clipId;
+  }
+
+  whiteBalanceInputView(): string | null {
+    return this.whiteBalanceInputClip;
   }
 
   /**
@@ -794,36 +908,81 @@ export class EffectsBridge {
   async processColorGrading(
     clipId: string,
     image: ImageBitmap,
+    sampled?: Pick<ColorGradingSettings, "tone" | "vignette" | "temperature" | "tint" | "hueCurves">,
   ): Promise<{ image: ImageBitmap; processingTime: number }> {
     if (!this.initialized || !this.colorGradingEngine) {
       return { image, processingTime: 0 };
     }
 
-    const settings = this.getColorGrading(clipId);
+    // Keyframed tone / vignette / white balance arrive as per-frame samples over the stored grade.
+    const settings: ColorGradingSettings = { ...this.getColorGrading(clipId), ...sampled };
     let currentImage = image;
     let totalTime = 0;
 
-    // Apply color wheels
-    if (settings.colorWheels && !isNeutralColorWheels(settings.colorWheels)) {
-      const result = await this.colorGradingEngine.applyColorWheels(
-        currentImage,
-        settings.colorWheels,
-      );
-      currentImage = result.image;
-      totalTime += result.processingTime;
-    }
+    const plan = planColorGrading(settings);
 
-    // Apply fused CPU stages (curves -> LUT -> HSL) in a single readback
-    const cpuStages = this.buildCpuGradingStages(settings);
-    if (cpuStages) {
+    // Input LUT runs before every other stage.
+    if (plan.inputLut) {
       const result = await this.colorGradingEngine.applyCpuGrading(
         currentImage,
-        cpuStages,
+        { lut: plan.inputLut },
       );
       currentImage = result.image;
       totalTime += result.processingTime;
     }
 
+    // Premiere order runs white balance before every other stage.
+    if (plan.whiteBalanceFirst) {
+      const wb = await this.runGradingWhiteBalance(currentImage, settings);
+      currentImage = wb.image;
+      totalTime += wb.processingTime;
+    }
+
+    // Classic order: 8-bit colour wheels pass
+    if (plan.legacyWheels) {
+      const result = await this.colorGradingEngine.applyColorWheels(
+        currentImage,
+        plan.legacyWheels,
+      );
+      currentImage = result.image;
+      totalTime += result.processingTime;
+    }
+
+    // Premiere order: tone -> wheels -> hue curves in one float pass
+    if (plan.fused) {
+      const result = await this.colorGradingEngine.applyFusedGrading(
+        currentImage,
+        plan.fused,
+      );
+      currentImage = result.image;
+      totalTime += result.processingTime;
+    }
+
+    // Apply fused CPU stages in a single readback
+    if (plan.cpu) {
+      const result = await this.colorGradingEngine.applyCpuGrading(
+        currentImage,
+        plan.cpu,
+      );
+      currentImage = result.image;
+      totalTime += result.processingTime;
+    }
+
+    if (!plan.whiteBalanceFirst) {
+      const wb = await this.runGradingWhiteBalance(currentImage, settings);
+      currentImage = wb.image;
+      totalTime += wb.processingTime;
+    }
+
+    return { image: currentImage, processingTime: totalTime };
+  }
+
+  private async runGradingWhiteBalance(
+    image: ImageBitmap,
+    settings: ColorGradingSettings,
+  ): Promise<{ image: ImageBitmap; processingTime: number }> {
+    let currentImage = image;
+    let totalTime = 0;
     // Apply white balance (temperature + tint) via VideoEffectsEngine
     const whiteBalanceEffects: Effect[] = [];
     if (
@@ -872,28 +1031,6 @@ export class EffectsBridge {
     return { image: currentImage, processingTime: totalTime };
   }
 
-  private buildCpuGradingStages(
-    settings: ColorGradingSettings,
-  ): CpuGradingStages | null {
-    const stages: CpuGradingStages = {};
-    let hasStage = false;
-
-    if (settings.curves && !isNeutralCurves(settings.curves)) {
-      stages.curves = settings.curves;
-      hasStage = true;
-    }
-    if (settings.lut && !isNeutralLut(settings.lut)) {
-      stages.lut = settings.lut;
-      hasStage = true;
-    }
-    if (settings.hsl && !isNeutralHsl(settings.hsl)) {
-      stages.hsl = settings.hsl;
-      hasStage = true;
-    }
-
-    return hasStage ? stages : null;
-  }
-
   private isWhiteBalanceActive(settings: ColorGradingSettings): boolean {
     return (
       (settings.temperature !== undefined && settings.temperature !== 0) ||
@@ -907,7 +1044,8 @@ export class EffectsBridge {
     }
     const settings = this.getColorGrading(clipId);
     return (
-      this.buildCpuGradingStages(settings) !== null &&
+      planColorGrading(settings).cpu !== null &&
+      planColorGrading(settings).inputLut === null &&
       !this.isWhiteBalanceActive(settings)
     );
   }
@@ -921,9 +1059,10 @@ export class EffectsBridge {
     }
 
     const settings = this.getColorGrading(clipId);
-    const cpuStages = this.buildCpuGradingStages(settings);
+    const plan = planColorGrading(settings);
+    const cpuStages = plan.cpu;
 
-    if (!cpuStages || this.isWhiteBalanceActive(settings)) {
+    if (!cpuStages || plan.inputLut || this.isWhiteBalanceActive(settings)) {
       return null;
     }
 
@@ -931,10 +1070,17 @@ export class EffectsBridge {
       let currentImage = image;
       let colorWheelsBitmap: ImageBitmap | null = null;
 
-      if (settings.colorWheels && !isNeutralColorWheels(settings.colorWheels)) {
+      if (plan.legacyWheels) {
         const result = await this.colorGradingEngine.applyColorWheels(
           currentImage,
-          settings.colorWheels,
+          plan.legacyWheels,
+        );
+        colorWheelsBitmap = result.image;
+        currentImage = result.image;
+      } else if (plan.fused) {
+        const result = await this.colorGradingEngine.applyFusedGrading(
+          currentImage,
+          plan.fused,
         );
         colorWheelsBitmap = result.image;
         currentImage = result.image;
@@ -962,64 +1108,6 @@ export class EffectsBridge {
   }
 
   // ============================================
-  // Scope Generation Methods
-  // ============================================
-
-  /**
-   * Generate waveform scope data
-   *
-   * Generate waveform showing luminance distribution
-   *
-   * @param image - The image to analyze
-   * @returns Waveform scope data
-   */
-  async generateWaveform(
-    image: ImageBitmap,
-  ): Promise<WaveformScopeData | null> {
-    if (!this.initialized || !this.colorGradingEngine) {
-      return null;
-    }
-
-    return this.colorGradingEngine.generateWaveform(image);
-  }
-
-  /**
-   * Generate vectorscope data
-   *
-   * Generate vectorscope showing color distribution
-   *
-   * @param image - The image to analyze
-   * @param size - Size of the vectorscope (default 256)
-   * @returns Vectorscope data
-   */
-  async generateVectorscope(
-    image: ImageBitmap,
-    size: number = 256,
-  ): Promise<VectorscopeData | null> {
-    if (!this.initialized || !this.colorGradingEngine) {
-      return null;
-    }
-
-    return this.colorGradingEngine.generateVectorscope(image, size);
-  }
-
-  /**
-   * Generate histogram data
-   *
-   * Generate RGB and luminance histograms
-   *
-   * @param image - The image to analyze
-   * @returns Histogram data
-   */
-  async generateHistogram(image: ImageBitmap): Promise<HistogramData | null> {
-    if (!this.initialized || !this.colorGradingEngine) {
-      return null;
-    }
-
-    return this.colorGradingEngine.generateHistogram(image);
-  }
-
-  // ============================================
   // Serialization Methods
   // ============================================
 
@@ -1044,6 +1132,7 @@ export class EffectsBridge {
       enabled: e.enabled,
       params: e.params,
       order: e.order,
+      ...(e.metadata ? { metadata: e.metadata } : {}),
     }));
 
     const serializedColorGrading: SerializedColorGrading = {};
@@ -1057,11 +1146,11 @@ export class EffectsBridge {
     }
 
     if (colorGrading.lut) {
-      serializedColorGrading.lut = {
-        data: Array.from(colorGrading.lut.data),
-        size: colorGrading.lut.size,
-        intensity: colorGrading.lut.intensity,
-      };
+      serializedColorGrading.lut = lutToJson(colorGrading.lut);
+    }
+
+    if (colorGrading.inputLut) {
+      serializedColorGrading.inputLut = lutToJson(colorGrading.inputLut);
     }
 
     if (colorGrading.hsl) {
@@ -1074,6 +1163,22 @@ export class EffectsBridge {
 
     if (colorGrading.tint !== undefined) {
       serializedColorGrading.tint = colorGrading.tint;
+    }
+
+    if (colorGrading.tone) {
+      serializedColorGrading.tone = colorGrading.tone;
+    }
+
+    if (colorGrading.vignette) {
+      serializedColorGrading.vignette = colorGrading.vignette;
+    }
+
+    if (colorGrading.hueCurves) {
+      serializedColorGrading.hueCurves = colorGrading.hueCurves;
+    }
+
+    if (colorGrading.pipelineVersion) {
+      serializedColorGrading.pipelineVersion = colorGrading.pipelineVersion;
     }
 
     return { effects: serializedEffects, colorGrading: serializedColorGrading };
@@ -1106,6 +1211,7 @@ export class EffectsBridge {
       enabled: e.enabled,
       params: e.params,
       order: e.order,
+      ...(e.metadata ? { metadata: e.metadata } : {}),
     }));
     this.clipEffects.set(clipId, effects);
 
@@ -1121,11 +1227,11 @@ export class EffectsBridge {
     }
 
     if (data.colorGrading.lut) {
-      colorGrading.lut = {
-        data: new Uint8Array(data.colorGrading.lut.data),
-        size: data.colorGrading.lut.size,
-        intensity: data.colorGrading.lut.intensity,
-      };
+      colorGrading.lut = lutFromJson(data.colorGrading.lut);
+    }
+
+    if (data.colorGrading.inputLut) {
+      colorGrading.inputLut = lutFromJson(data.colorGrading.inputLut);
     }
 
     if (data.colorGrading.hsl) {
@@ -1138,6 +1244,22 @@ export class EffectsBridge {
 
     if (data.colorGrading.tint !== undefined) {
       colorGrading.tint = data.colorGrading.tint;
+    }
+
+    if (data.colorGrading.tone) {
+      colorGrading.tone = data.colorGrading.tone;
+    }
+
+    if (data.colorGrading.vignette) {
+      colorGrading.vignette = data.colorGrading.vignette;
+    }
+
+    if (data.colorGrading.hueCurves) {
+      colorGrading.hueCurves = data.colorGrading.hueCurves;
+    }
+
+    if (data.colorGrading.pipelineVersion) {
+      colorGrading.pipelineVersion = data.colorGrading.pipelineVersion;
     }
 
     this.clipColorGrading.set(clipId, colorGrading);
@@ -1209,6 +1331,7 @@ export class EffectsBridge {
         type: e.type,
         enabled: e.enabled,
         params: e.params,
+        ...(e.metadata ? { metadata: e.metadata } : {}),
       }));
 
       for (const callback of this.effectsChangeCallbacks) {
@@ -1251,6 +1374,8 @@ export class EffectsBridge {
    * Dispose of the effects bridge and clean up resources
    */
   dispose(): void {
+    this.initializationGeneration++;
+    this.initializationPromise = null;
     // Clear pending re-renders
     for (const timeout of this.pendingReRenders.values()) {
       clearTimeout(timeout);
@@ -1269,6 +1394,7 @@ export class EffectsBridge {
     if (this.colorGradingEngine) {
       this.colorGradingEngine.dispose();
     }
+    this.videoEffectsEngine?.dispose();
 
     this.clipEffects.clear();
     this.clipColorGrading.clear();
@@ -1280,7 +1406,6 @@ export class EffectsBridge {
 
 // Singleton instance
 let effectsBridgeInstance: EffectsBridge | null = null;
-let bridgeInitPromise: Promise<EffectsBridge> | null = null;
 
 // Track initialization dimensions for auto-initialization
 let lastInitWidth = 1920;
@@ -1297,9 +1422,12 @@ export function getEffectsBridge(): EffectsBridge {
   }
 
   if (!effectsBridgeInstance.isInitialized()) {
-    effectsBridgeInstance
+    const bridge = effectsBridgeInstance;
+    bridge
       .initialize(lastInitWidth, lastInitHeight)
       .catch((error) => {
+        // Disposal (project switch, HMR) cancels this init on purpose.
+        if (error instanceof EffectsBridgeDisposedError) return;
         console.error(
           "[EffectsBridge] Background initialization failed:",
           error,
@@ -1314,7 +1442,7 @@ export function getEffectsBridge(): EffectsBridge {
  * Get the shared EffectsBridge instance (async version - preferred)
  * Properly awaits initialization before returning.
  */
-export async function getEffectsBridgeAsync(
+async function getEffectsBridgeAsync(
   width: number = 1920,
   height: number = 1080,
 ): Promise<EffectsBridge> {
@@ -1322,21 +1450,14 @@ export async function getEffectsBridgeAsync(
     return effectsBridgeInstance;
   }
 
-  if (bridgeInitPromise) {
-    return bridgeInitPromise;
+  const bridge = effectsBridgeInstance ?? (effectsBridgeInstance = new EffectsBridge());
+  await bridge.initialize(width, height);
+  if (effectsBridgeInstance !== bridge || !bridge.isInitialized()) {
+    throw new EffectsBridgeDisposedError();
   }
-
-  bridgeInitPromise = (async () => {
-    if (!effectsBridgeInstance) {
-      effectsBridgeInstance = new EffectsBridge();
-    }
-    await effectsBridgeInstance.initialize(width, height);
-    lastInitWidth = width;
-    lastInitHeight = height;
-    return effectsBridgeInstance;
-  })();
-
-  return bridgeInitPromise;
+  lastInitWidth = width;
+  lastInitHeight = height;
+  return bridge;
 }
 
 /**

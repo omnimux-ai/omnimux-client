@@ -6,7 +6,10 @@ import { toCapabilityDoc } from "./registry";
  * Builds the agent system prompt: tool-usage guidance + the current editor state
  * + the capability reference, so the model can plan edits with valid values.
  */
-export function buildSystemPrompt(host: EditingHost): string {
+export function buildSystemPrompt(
+  host: EditingHost,
+  selectedToolNames?: Iterable<string>,
+): string {
   let state = "(no project open)";
   try {
     state = JSON.stringify(serializeEditorState(host.getProject()));
@@ -21,9 +24,13 @@ export function buildSystemPrompt(host: EditingHost): string {
     "- Refer to clips by `clipId` (from list_clips/get_clip). You may also pass `clipIndex` or `atSec` and the tool will resolve the clip.",
     "- Read before you write: use get_editor_state, list_clips, get_clip, and get_capabilities to ground your edits in valid ids and enum values.",
     "- Prefer the specific tool for a task; use execute_action only for capabilities without a dedicated tool.",
+    "- Existing clips on the main editor timeline are fully editable. Use trim_clip/split_clip, set_clip_transform, add_keyframe/set_clip_keyframes, set_clip_speed/set_speed_ramp, add_video_effect, the audio tools, and add_transition as requested. Do not claim that a capability is unavailable when its tool appears below.",
+    "- Do not confuse main-timeline clip animation with Motion Creator. For an existing clip, use the clip transform/keyframe tools; use Motion tools only when the user asks for a Motion composition or motion-graphics layers.",
     "- Use duplicate_track for timeline-backed video/image/audio tracks. For repeated Motion styling, use transfer_motion_effect_stack or transfer_motion_mask_stack so animated parameters, expressions, ordering, and independent ids are preserved across target layers.",
     "- Destructive/expensive tools (delete, remove, export, AI jobs) require user confirmation — explain what you're about to do.",
     "- After making the requested edits, stop and summarize what you changed.",
+    "- Write user-facing responses in concise GitHub-flavored Markdown. Prefer short paragraphs and bullets; use tables only when they improve clarity, and fence code or JSON when you need to show it.",
+    "- Do not expose internal chain-of-thought, tool schemas, or raw tool-result JSON. Summarize actions and errors in plain language.",
     "",
     "Motion Creator (After Effects-style motion graphics):",
     "- The motion model is compositions -> layers -> keyframes. A composition has its own size/duration/frameRate, a stack of layers, plus variables, markers, an optional camera, and lights.",
@@ -54,6 +61,6 @@ export function buildSystemPrompt(host: EditingHost): string {
     "",
     `Current editor state: ${state}`,
     "",
-    toCapabilityDoc(),
+    toCapabilityDoc(selectedToolNames),
   ].join("\n");
 }

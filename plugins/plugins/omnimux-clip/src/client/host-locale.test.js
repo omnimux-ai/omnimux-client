@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { makeClipT } from './i18n/translate.js'
 
 const source = readFileSync(new URL('./useHostLocale.js', import.meta.url), 'utf8')
 // Capture the external-store contract without pretending to render a browser UI.
@@ -52,13 +53,13 @@ test('both Clip surfaces receive and subscribe to host locale without locale-key
   assert.match(stage, /activeSession \?\? lastSession\.current/)
 
   const toolbar = readFileSync(new URL('./openreel/web/components/editor/Toolbar.tsx', import.meta.url), 'utf8')
-  assert.match(toolbar, /useHostLocale\(\)/)
-  assert.match(toolbar, /Exit editor/)
-  assert.match(toolbar, /退出编辑/)
-  assert.match(toolbar, /onClick=\{handleReturnToCanvas\}/)
-  assert.match(toolbar, /notifyCanvasClose\(\{ nodeId: activeSession\.nodeId \}\)/)
-  const exportPos = toolbar.indexOf('openreel-export-btn')
-  const exitPos = toolbar.indexOf('omnimux-clip-stage-close-btn')
-  assert.ok(exportPos > 0 && exitPos > 0, 'toolbar must contain export and exit editor buttons')
-  assert.ok(exportPos < exitPos, 'exit editor button must be on the right side of export button')
+  assert.match(toolbar, /useClipT\(\)/)
+  assert.match(toolbar, /t\("Exit editor"\)/)
+  assert.match(toolbar, /notifyCanvasClose\(\{ nodeId: canvasSession\.nodeId, projectId: canvasSession\.projectId \}\)/)
+  const right = toolbar.indexOf('data-toolbar-section="right"')
+  const exportPos = toolbar.indexOf('<EditorExportControl', right)
+  const exitPos = toolbar.indexOf('omnimux-clip-stage-close-btn', right)
+  assert.ok(right >= 0 && exportPos > right && exitPos > exportPos)
+  assert.equal(makeClipT('zh-CN')('Exit editor'), '退出编辑')
+  assert.equal(makeClipT('en')('Exit editor'), 'Exit editor')
 })

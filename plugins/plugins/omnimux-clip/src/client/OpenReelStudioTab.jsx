@@ -3,7 +3,6 @@ import { useHostLocale } from './useHostLocale.js'
 import OpenReelApp from './openreel/web/App.tsx'
 import { useProjectStore } from './openreel/web/stores/project-store.ts'
 import { useEngineStore } from './openreel/web/stores/engine-store.ts'
-import { applyOpenReelTheme } from './openreel/web/stores/theme-store.ts'
 import { resetOpenReelRouter } from './openreel/web/hooks/use-router.ts'
 import { putClipProject } from './host/projectApi.js'
 import './openreel/web/index.css'
@@ -165,9 +164,9 @@ function StudioCreateForm({ t, onCreated }) {
 /**
  * OmniMux Clip Studio Tab component mounted in dsh-better-sidebar.
  * Wraps OpenReel with an OmniMux top action row (project name + save status + save button).
- * @param {{ t?: (key: string) => string, store?: { reduce?: Function, getSnapshot?: Function } }} props
+ * @param {{ t?: (key: string) => string, store?: { reduce?: Function, getSnapshot?: Function }, visible?: boolean }} props
  */
-export function OpenReelStudioTab({ t: tProp, store, locale }) {
+export function OpenReelStudioTab({ t: tProp, store, locale, visible = true }) {
   useHostLocale(locale)
   const t = (key) => {
     if (typeof tProp === 'function') {
@@ -204,7 +203,6 @@ export function OpenReelStudioTab({ t: tProp, store, locale }) {
   const saveTimer = useRef(null)
 
   useEffect(() => {
-    applyOpenReelTheme(true)
     return () => {
       try {
         useEngineStore.getState().dispose?.()
@@ -444,7 +442,7 @@ export function OpenReelStudioTab({ t: tProp, store, locale }) {
         {showCreate ? (
           <StudioCreateForm t={t} onCreated={() => setForceWelcome(false)} />
         ) : (
-          <OpenReelApp />
+          <OpenReelApp active={visible} />
         )}
       </div>
     </div>

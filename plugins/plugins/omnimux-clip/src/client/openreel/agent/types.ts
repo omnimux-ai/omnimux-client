@@ -20,6 +20,7 @@ export type ToolDomain =
   | "marker"
   | "ai"
   | "export"
+  | "multicam"
   | "raw";
 
 export interface ToolDef {
@@ -42,6 +43,12 @@ export interface ToolCall {
 export interface ToolError {
   readonly code: string;
   readonly message: string;
+  /** What to do next, e.g. "call create_project first". Set by the path / app-state / export tools. */
+  readonly hint?: string;
+  /** A rejected preflight that did not mutate the draft and may be corrected. */
+  readonly recoverable?: boolean;
+  /** The failed tool call to reference explicitly in a corrected retry. */
+  readonly retryOf?: string;
 }
 
 export interface ToolResultImage {
@@ -59,15 +66,11 @@ export interface ToolResult {
   readonly image?: ToolResultImage;
 }
 
-export interface AgentMessage {
-  readonly role: "system" | "user" | "assistant";
-  readonly content: string;
-}
-
 export type AgentEvent =
   | { type: "text_delta"; text: string }
   | { type: "tool_call"; call: ToolCall }
   | { type: "tool_result"; call: ToolCall; result: ToolResult }
+  | { type: "tool_recovered"; callIds: string[]; repairedBy: string }
   | { type: "awaiting_confirmation"; call: ToolCall }
   | { type: "error"; error: ToolError }
   | { type: "turn_complete"; text: string };

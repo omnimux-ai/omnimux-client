@@ -1,5 +1,20 @@
 import "./clip-fx";
+import "./clip-timing";
 import "./bulk-set";
+import "./effect-presets";
 import "./overlay";
+import "./saved-styles";
+import "./speakers";
 import "./motion";
 import "./creation";
+import "./multicam";
+import "./edit-snapshot";
+import "./media-organize";
+
+import "./timeline-tool-edit";
+import "./audio-rack";
+import "./audio-routing";
+import "./track-automation";
+import "./audio-surround";
+import "./clip-markers";
+import "./audio-channels";

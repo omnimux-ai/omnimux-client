@@ -1,3 +1,4 @@
+import type { SourceColorSpace } from "../color/source-color";
 export interface ProcessedMedia {
   id: string;
   name: string;
@@ -22,10 +23,14 @@ export interface MediaTrackInfo {
   hasAudio: boolean;
   rotation: number;
   canDecode: boolean;
+  /** Video-specific capability; audio decode support must not validate a proxy. */
+  canDecodeVideo?: boolean;
   videoBitrate?: number;
   audioBitrate?: number;
   /** Number of audio tracks in the file (may be > 1 for multi-track video/audio files) */
   audioTrackCount?: number;
+  /** Colour space the video track's container tags declare; absent when untagged. */
+  sourceColor?: SourceColorSpace;
 }
 
 export interface ThumbnailResult {
@@ -51,6 +56,8 @@ export interface WaveformData {
 }
 
 export interface ExportSettings {
+  /** Maximum seconds between video keyframes (short intervals improve seeking). */
+  keyFrameInterval?: number;
   format: "mp4" | "webm" | "mov" | "mp3" | "wav" | "aac";
   width?: number;
   height?: number;
@@ -72,19 +79,6 @@ export interface ExportProgress {
   estimatedTimeRemaining: number;
 }
 
-export const QUALITY_PRESETS = {
-  "4k": { width: 3840, height: 2160, videoBitrate: 35_000_000 },
-  "1080p": { width: 1920, height: 1080, videoBitrate: 8_000_000 },
-  "720p": { width: 1280, height: 720, videoBitrate: 5_000_000 },
-  "480p": { width: 854, height: 480, videoBitrate: 2_500_000 },
-} as const;
-
-export const AUDIO_QUALITY_PRESETS = {
-  high: { bitrate: 320_000, sampleRate: 48000 },
-  medium: { bitrate: 192_000, sampleRate: 44100 },
-  low: { bitrate: 128_000, sampleRate: 44100 },
-} as const;
-
 export interface FrameCacheEntry {
   timestamp: number;
   image: ImageBitmap | OffscreenCanvas;
@@ -104,14 +98,4 @@ export interface MediaImportResult {
   media?: ProcessedMedia;
   error?: string;
   warnings?: string[];
-}
-
-export type VideoCodec = "avc" | "hevc" | "vp8" | "vp9" | "av1";
-
-export type AudioCodec = "aac" | "opus" | "mp3" | "flac" | "pcm";
-
-export interface CodecSupport {
-  decode: boolean;
-  encode: boolean;
-  hardwareAccelerated: boolean;
 }

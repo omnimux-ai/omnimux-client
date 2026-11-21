@@ -1,8 +1,39 @@
 import type { ExportProgress } from "../export/types";
+import classWorkerURL from "@ffmpeg/ffmpeg/worker?worker&url";
 
 const FFMPEG_CORE_BASE_URL = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm";
+const FFMPEG_DOWNLOAD_ATTEMPTS = 3;
+
+/**
+ * Downloads one ffmpeg core file. A CDN can answer 200 and then cut the body short (seen on CI: a 26.9 MB wasm
+ * arrived as ~0.3 MB and failed to compile, which broke every ffmpeg-backed feature for that page load), so the
+ * byte count is checked against Content-Length and a short or failed download is retried.
+ */
+async function fetchCoreFile(filename: string, signal: AbortSignal): Promise<ArrayBuffer> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= FFMPEG_DOWNLOAD_ATTEMPTS; attempt++) {
+    try {
+      const response = await fetch(`${FFMPEG_CORE_BASE_URL}/${filename}`, { signal, ...(attempt > 1 ? { cache: "reload" as const } : {}) });
+      if (!response.ok) throw new Error(`FFmpeg download failed (${response.status}): ${filename}`);
+      const bytes = await response.arrayBuffer();
+      const expected = Number(response.headers?.get("content-length"));
+      // Content-Length is the encoded size; only compare when the body was not transparently decompressed.
+      if (!response.headers?.get("content-encoding") && Number.isFinite(expected) && expected > 0 && bytes.byteLength !== expected) {
+        throw new Error(`FFmpeg download truncated (${bytes.byteLength} of ${expected} bytes): ${filename}`);
+      }
+      return bytes;
+    } catch (error) {
+      if (signal.aborted) throw error;
+      lastError = error;
+      if (attempt < FFMPEG_DOWNLOAD_ATTEMPTS) await new Promise((r) => setTimeout(r, 500 * attempt));
+    }
+  }
+  throw lastError;
+}
+
 type FFmpegInstance = {
   load(options?: {
+    classWorkerURL?: string;
     coreURL?: string;
     wasmURL?: string;
     workerURL?: string;
@@ -23,7 +54,7 @@ type FFmpegInstance = {
   terminate(): void;
 };
 
-export interface AudioStreamInfo {
+interface AudioStreamInfo {
   index: number;
   codec: string;
   sampleRate: number;
@@ -31,13 +62,15 @@ export interface AudioStreamInfo {
   channelLayout: string;
 }
 
-export interface AudioProbeResult {
+interface AudioProbeResult {
   audioStreamCount: number;
   streams: AudioStreamInfo[];
 }
 
-export interface AudioExtractionOptions {
+interface AudioExtractionOptions {
   onProgress?: (progress: ExportProgress) => void;
+  /** Output channels (default 2). */
+  channels?: number;
 }
 
 export interface ProxySettings {
@@ -105,6 +138,7 @@ export class FFmpegFallback {
   private ffmpeg: FFmpegInstance | null = null;
   private loaded = false;
   private loading: Promise<void> | null = null;
+  private loadingAbortController: AbortController | null = null;
   private progressCallback:
     | ((data: { progress?: number; time?: number; message?: string; type?: string }) => void)
     | null = null;
@@ -117,34 +151,73 @@ export class FFmpegFallback {
     return `${Math.round(value * 2)}${unit}`;
   }
 
-  async load(): Promise<void> {
+  async load(signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     if (this.loaded) return;
     if (this.loading) return this.loading;
 
-    this.loading = this.doLoad();
+    this.loading = this.doLoad(signal);
     await this.loading;
   }
 
-  private async doLoad(): Promise<void> {
+  private async doLoad(signal?: AbortSignal): Promise<void> {
+    const controller = new AbortController();
+    this.loadingAbortController = controller;
+    const urls: string[] = [];
+    let instance: FFmpegInstance | undefined;
+    let downloadFailure: unknown;
+    const checkAborted = () => {
+      if (controller.signal.aborted) throw new DOMException("Aborted", "AbortError");
+    };
+    const cancel = () => {
+      if (this.loadingAbortController === controller) this.terminate();
+      else controller.abort();
+    };
+    signal?.addEventListener("abort", cancel, { once: true });
+    if (signal?.aborted) cancel();
     try {
       const { FFmpeg } = await import("@ffmpeg/ffmpeg");
-      const { toBlobURL } = await import("@ffmpeg/util");
-
-      this.ffmpeg = new FFmpeg() as unknown as FFmpegInstance;
-
-      const [coreURL, wasmURL] = await Promise.all([
-        toBlobURL(`${FFMPEG_CORE_BASE_URL}/ffmpeg-core.js`, "text/javascript"),
-        toBlobURL(`${FFMPEG_CORE_BASE_URL}/ffmpeg-core.wasm`, "application/wasm"),
+      checkAborted();
+      instance = new FFmpeg() as unknown as FFmpegInstance;
+      this.ffmpeg = instance;
+      const download = async (filename: string, mime: string): Promise<string> => {
+        try {
+          const bytes = await fetchCoreFile(filename, controller.signal);
+          checkAborted();
+          const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
+          urls.push(url);
+          return url;
+        } catch (error) {
+          if (!controller.signal.aborted) {
+            downloadFailure = error;
+            controller.abort();
+          }
+          throw error;
+        }
+      };
+      // Wait for both tasks to settle so no late download can create a URL
+      // after cleanup; a failed download aborts its sibling request.
+      const downloads = await Promise.allSettled([
+        download("ffmpeg-core.js", "text/javascript"),
+        download("ffmpeg-core.wasm", "application/wasm"),
       ]);
+      if (downloadFailure) throw downloadFailure;
+      checkAborted();
+      const [core, wasm] = downloads;
+      if (core.status === "rejected") throw core.reason;
+      if (wasm.status === "rejected") throw wasm.reason;
+      const coreURL = core.value;
+      const wasmURL = wasm.value;
 
-      await this.ffmpeg.load({
-        coreURL,
-        wasmURL,
-      });
-
+      await instance.load({ classWorkerURL, coreURL, wasmURL });
+      checkAborted();
       this.loaded = true;
     } catch (error) {
-      this.loading = null;
+      const aborted = signal?.aborted || (controller.signal.aborted && !downloadFailure);
+      // A cancelled loader must never reset a replacement loader's state.
+      if (this.loadingAbortController === controller) this.terminate();
+      else if (!controller.signal.aborted) instance?.terminate();
+      if (aborted) throw new DOMException("Aborted", "AbortError");
       console.error("[FFmpeg] Load error:", error);
 
       throw new Error(
@@ -152,6 +225,10 @@ export class FFmpegFallback {
           error instanceof Error ? error.message : "Unknown error"
         }`,
       );
+    } finally {
+      signal?.removeEventListener("abort", cancel);
+      for (const url of urls) URL.revokeObjectURL(url);
+      if (this.loadingAbortController === controller) this.loadingAbortController = null;
     }
   }
 
@@ -287,8 +364,11 @@ export class FFmpegFallback {
     await this.load();
     this.ensureLoaded();
 
-    const inputFilename = "input";
-    const outputFilename = "output.wav";
+    // Preview, analysis and separation can share this worker concurrently.
+    // Each extraction must own its input and output bytes.
+    const operationId = crypto.randomUUID();
+    const inputFilename = `audio_${operationId}_input`;
+    const outputFilename = `audio_${operationId}.wav`;
 
     try {
       const inputData = await this.fileToUint8Array(file);
@@ -304,14 +384,17 @@ export class FFmpegFallback {
       args.push(
         "-acodec", "pcm_f32le",
         "-ar", "48000",
-        "-ac", "2",
+        "-ac", String(options.channels ?? 2),
         outputFilename,
       );
 
-      await this.ffmpeg!.exec(args);
+      const exitCode = await this.ffmpeg!.exec(args);
+      if (exitCode !== 0) {
+        throw new Error(`Could not extract audio stream ${streamIndex ?? 0} (FFmpeg exited with ${exitCode})`);
+      }
 
       const data = await this.ffmpeg!.readFile(outputFilename);
-      return new Blob([data.buffer as ArrayBuffer], { type: "audio/wav" });
+      return new Blob([data.slice().buffer as ArrayBuffer], { type: "audio/wav" });
     } finally {
       this.removeProgressTracking();
       await this.cleanupFiles([inputFilename, outputFilename]);
@@ -322,15 +405,23 @@ export class FFmpegFallback {
     file: File | Blob,
     settings: Partial<ProxySettings> = {},
     onProgress?: (progress: ExportProgress) => void,
+    signal?: AbortSignal,
   ): Promise<Blob> {
-    await this.load();
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    await this.load(signal);
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     this.ensureLoaded();
     const opts: ProxySettings = { ...PROXY_PRESETS.medium, ...settings };
     const inputFilename = "input";
     const outputFilename = "proxy.mp4";
+    // Proxy callers use an isolated fallback instance so cancellation cannot
+    // interrupt an unrelated export or media import.
+    const cancel = () => this.terminate();
+    signal?.addEventListener("abort", cancel, { once: true });
 
     try {
       const inputData = await this.fileToUint8Array(file);
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
       await this.ffmpeg!.writeFile(inputFilename, inputData);
       this.setupProgressTracking(onProgress);
       let scaleFilter: string;
@@ -353,6 +444,8 @@ export class FFmpegFallback {
         opts.preset,
         "-crf",
         opts.crf.toString(),
+        "-force_key_frames",
+        "expr:gte(t,n_forced*1)",
         "-c:a",
         "aac",
         "-b:a",
@@ -364,8 +457,13 @@ export class FFmpegFallback {
       ]);
 
       const data = await this.ffmpeg!.readFile(outputFilename);
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
       return new Blob([data.buffer as ArrayBuffer], { type: "video/mp4" });
+    } catch (error) {
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+      throw error;
     } finally {
+      signal?.removeEventListener("abort", cancel);
       this.removeProgressTracking();
       await this.cleanupFiles([inputFilename, outputFilename]);
     }
@@ -625,6 +723,32 @@ export class FFmpegFallback {
       return new Blob([data.buffer as ArrayBuffer], {
         type: mimeTypes[format],
       });
+    } finally {
+      await this.cleanupFiles([inputFilename, outputFilename]);
+    }
+  }
+
+  /**
+   * Encodes a PCM WAV with the given ffmpeg audio options into a raw elementary stream (AC-3 / E-AC-3). The
+   * bundled core carries the `ac3` / `eac3` encoders and the raw `ac3` / `eac3` muxers.
+   */
+  async encodeAudioStream(
+    wav: Uint8Array,
+    encodeArgs: readonly string[],
+    muxer: string,
+    extension: string,
+  ): Promise<Uint8Array> {
+    await this.load();
+    this.ensureLoaded();
+    const operationId = crypto.randomUUID();
+    const inputFilename = `enc_${operationId}.wav`;
+    const outputFilename = `enc_${operationId}.${extension}`;
+    try {
+      await this.ffmpeg!.writeFile(inputFilename, wav);
+      const exitCode = await this.ffmpeg!.exec(["-y", "-i", inputFilename, "-vn", ...encodeArgs, "-f", muxer, outputFilename]);
+      if (exitCode !== 0) throw new Error(`FFmpeg could not encode the audio (exit code ${exitCode})`);
+      const data = await this.ffmpeg!.readFile(outputFilename);
+      return data.slice();
     } finally {
       await this.cleanupFiles([inputFilename, outputFilename]);
     }
@@ -1159,13 +1283,15 @@ export class FFmpegFallback {
   }
 
   terminate(): void {
+    this.loadingAbortController?.abort();
+    this.loadingAbortController = null;
     if (this.ffmpeg) {
       this.removeProgressTracking();
       this.ffmpeg.terminate();
       this.ffmpeg = null;
-      this.loaded = false;
-      this.loading = null;
     }
+    this.loaded = false;
+    this.loading = null;
   }
 }
 let ffmpegInstance: FFmpegFallback | null = null;
@@ -1175,20 +1301,4 @@ export function getFFmpegFallback(): FFmpegFallback {
     ffmpegInstance = new FFmpegFallback();
   }
   return ffmpegInstance;
-}
-
-export function shouldUseProxy(metadata: {
-  width: number;
-  height: number;
-  duration: number;
-  fileSize?: number;
-}): boolean {
-  return getFFmpegFallback().shouldUseProxy(metadata);
-}
-
-export function getRecommendedProxyPreset(metadata: {
-  width: number;
-  height: number;
-}): "low" | "medium" | "high" {
-  return getFFmpegFallback().getRecommendedProxyPreset(metadata);
 }

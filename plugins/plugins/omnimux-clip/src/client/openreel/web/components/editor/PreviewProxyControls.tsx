@@ -1,0 +1,186 @@
+import React, { useState } from "react";
+import {
+  Button,
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+  Progress,
+} from "@openreel/ui";
+import type { MediaItem } from "@openreel/core";
+import type { PreviewProxyPreset } from "../../services/preview-proxy-cache";
+import {
+  previewProxyCache,
+  usePreviewProxyStore,
+} from "../../stores/preview-proxy-store";
+import { useClipT } from "../../../../i18n/index.js";
+
+const labels = {
+  low: "Up to 540p · Faster",
+  medium: "Up to 720p · Balanced",
+  high: "Up to 1080p · Clearer",
+};
+export const PreviewProxyBadge: React.FC<{ mediaId: string }> = ({
+  mediaId,
+}) => {
+  const t = useClipT();
+  const entry = usePreviewProxyStore((state) => state.entries[mediaId]);
+  if (!entry) return null;
+  const label =
+    entry.status === "ready"
+      ? entry.enabled
+        ? "Proxy preview"
+        : "Original preview"
+      : entry.status === "encoding"
+        ? `Proxy ${Math.round(entry.progress * 100)}%`
+        : entry.status === "queued"
+          ? "Proxy queued"
+          : "Original preview";
+  return (
+    <span className="absolute z-10 left-1 top-1 max-w-[calc(100%-8px)] truncate rounded bg-black/75 px-1.5 py-0.5 text-[9px] text-white pointer-events-none">
+      {t(label)}
+    </span>
+  );
+};
+
+export const PreviewProxyControls: React.FC<{ item: MediaItem }> = ({
+  item,
+}) => {
+  const t = useClipT();
+  const entry = usePreviewProxyStore((state) => state.entries[item.id]);
+  const [preset, setPreset] = useState<PreviewProxyPreset>(
+    entry?.preset ?? "medium",
+  );
+  const busy = entry?.status === "queued" || entry?.status === "encoding";
+  const heavy =
+    item.metadata.width >= 3840 ||
+    item.metadata.height >= 2160 ||
+    item.metadata.duration >= 600 ||
+    item.metadata.fileSize >= 500 * 1024 * 1024;
+  if (item.type !== "video" || item.isPlaceholder || item.isPending)
+    return null;
+  return (
+    <section
+      aria-label={t("Preview performance for {0}", [item.name])}
+      className="min-w-0 rounded-lg border border-border bg-bg-2 p-3 space-y-2"
+    >
+      <div className="text-xs font-semibold text-fg-2">
+        {t("Smoother preview")}{" "}
+        {heavy && (
+          <span className="font-normal text-accent">{t("· Recommended")}</span>
+        )}
+      </div>
+      <p className="text-[11px] text-fg-muted leading-relaxed">
+        {t("Create a smaller copy for editing. Exports always use your original video. Cached in this tab, up to 256 MB.")}
+      </p>
+      <label className="block text-[11px] text-fg-muted">
+        {t("Preview quality")}
+        <Select
+          value={preset}
+          onValueChange={(value) => setPreset(value as PreviewProxyPreset)}
+          disabled={busy}
+        >
+          <SelectTrigger
+            aria-label={t("Proxy quality")}
+            className="mt-1 min-h-10 text-xs"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {Object.entries(labels).map(([value, label]) => (
+              <SelectItem key={value} value={value}>
+                {t(label)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </label>
+      {entry?.status === "ready" && entry.width && entry.height && (
+        <p className="text-[11px] text-fg-muted">
+          {t("Proxy ready ·")} {entry.width} × {entry.height} ·{" "}
+          {((entry.blob?.size ?? 0) / 1024 / 1024).toFixed(1)} MB
+        </p>
+      )}
+      {busy ? (
+        <>
+          <div role="status" className="text-[11px] text-fg-muted">
+            {entry.status === "queued"
+              ? t("Queued — one video at a time")
+              : t("Creating proxy · {0}%", [Math.round(entry.progress * 100)])}
+          </div>
+          <Progress
+            aria-label={t("Proxy progress for {0}", [item.name])}
+            value={entry.progress * 100}
+            className="w-full h-1.5"
+          />
+          <Button
+            variant="secondary"
+            type="button"
+            className="min-h-[40px] w-full rounded border border-border text-xs text-fg-2"
+            onClick={() => previewProxyCache.remove(item.id)}
+          >
+            {t("Cancel proxy")}
+          </Button>
+        </>
+      ) : (
+        <>
+          {entry?.status === "ready" && (
+            <div
+              className="flex gap-1"
+              role="group"
+              aria-label={t("Preview source")}
+            >
+              <Button
+                variant="secondary"
+                type="button"
+                aria-pressed={!entry.enabled}
+                onClick={() => previewProxyCache.setEnabled(item.id, false)}
+                className={`min-h-[40px] flex-1 rounded border text-xs ${!entry.enabled ? "border-accent text-accent" : "border-border text-fg-muted"}`}
+              >
+                {t("Original")}
+              </Button>
+              <Button
+                variant="secondary"
+                type="button"
+                aria-pressed={entry.enabled}
+                onClick={() => previewProxyCache.setEnabled(item.id, true)}
+                className={`min-h-[40px] flex-1 rounded border text-xs ${entry.enabled ? "border-accent text-accent" : "border-border text-fg-muted"}`}
+              >
+                {t("Proxy")}
+              </Button>
+            </div>
+          )}
+          {entry?.error && (
+            <p
+              role="status"
+              className="text-[11px] text-status-warning break-words"
+            >
+              {entry.error}
+            </p>
+          )}
+          <Button
+            variant="secondary"
+            type="button"
+            onClick={() => previewProxyCache.request(item, preset)}
+            className="min-h-[40px] w-full rounded border border-accent/40 bg-accent-soft text-xs text-accent"
+          >
+            {entry?.status === "ready"
+              ? t("Recreate proxy")
+              : t("Create preview proxy")}
+          </Button>
+          {entry?.status === "ready" && (
+            <Button
+              variant="secondary"
+              type="button"
+              onClick={() => previewProxyCache.remove(item.id)}
+              className="min-h-[40px] w-full text-[11px] text-fg-muted"
+            >
+              {t("Remove cached proxy")}
+            </Button>
+          )}
+        </>
+      )}
+    </section>
+  );
+};

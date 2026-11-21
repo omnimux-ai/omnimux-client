@@ -304,7 +304,7 @@ it('仅对根级工具脚本跳过产品生命周期检查，保留现行目录�
 
 describe('auto-qa-scan：vendored OpenReel 路径豁免（契约真源 docs/contracts/openreel-vendor-contract.md §3「Vendor 根」）', () => {
   // 契约规定现行 vendor 根是 plugins/omnimux-clip/src/client/openreel/；src/client/engine/openreel/ 是退役过渡路径，保留兼容。
-  const VENDOR_CURRENT = 'plugins/omnimux-clip/src/client/openreel/web/motion/components/MotionTimeline.tsx'
+  const VENDOR_CURRENT = 'plugins/omnimux-clip/src/client/openreel/web/components/editor/Preview.tsx'
   const VENDOR_RETIRED = 'plugins/omnimux-clip/src/client/engine/openreel/render/previewRenderer.tsx'
   const HOST_GLUE = 'plugins/omnimux-clip/src/client/host/InspectorPanel.tsx'
   const RAW_COLOR_LINE = 'const panelBackground = "#1b1d21"\n'
@@ -367,7 +367,7 @@ describe('auto-qa-scan：diff 模式下的 vendored 豁免（本次回归的根�
   // 根因：--all 模式靠 auto-qa-gate.mjs 的 SKIP_DIRS('openreel') 在遍历阶段整树跳过，
   // 而 --diff 模式的文件来自 git、不经过 SKIP_DIRS，vendored 文件会真的进入扫描。
   // 因此 VENDOR_ENGINE_RE 是 diff 模式下唯一的豁免入口；它一旦只认退役路径，diff 必红。
-  const VENDOR_CURRENT = 'plugins/omnimux-clip/src/client/openreel/web/motion/components/MotionTimeline.tsx'
+  const VENDOR_CURRENT = 'plugins/omnimux-clip/src/client/openreel/web/components/editor/Preview.tsx'
   const HOST_GLUE = 'plugins/omnimux-clip/src/client/host/InspectorPanel.tsx'
   const RAW_COLOR_LINE = 'const panelBackground = "#1b1d21"\n'
 

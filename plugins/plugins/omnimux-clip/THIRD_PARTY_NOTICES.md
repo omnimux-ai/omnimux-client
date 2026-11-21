@@ -11,9 +11,17 @@ This plugin (`omnimux-clip`) incorporates and vendorizes components from open-so
 - **Copyright**: (c) 2024-2026 Augustus Otu and Contributors
 - **License Text**: See [`LICENSE.openreel.txt`](./LICENSE.openreel.txt)
 - **Vendorized Location**: `src/client/openreel/`
-- **Upstream SHA**: `2566c34e0f8ea22992a85f3ff16e048307b49365`
-- **Scope & Modifications**:
-  - Vendorized official GUI (`apps/web/src`) plus `@openreel/core` / `@openreel/ui` / `@openreel/agent` / `@openreel/creation-schema`.
-  - In-memory router (no `window.location.hash`); theme class scoped to `.openreel-studio-root`.
-  - Pruned cloud login / S3 / CapCut as unused entry paths; official EditorInterface remains the Tab body.
-  - Host glue: `OpenReelStudioTab` + `betterSidebar.registerTab` (`omnimux-clip:studio`).
+- **Upstream version and SHA**: [`v1.0.0`](https://github.com/Augani/openreel-video/tree/v1.0.0), `c8f33f212c8d39ff9cfabb3302a44423d8dad83d`
+- **Scope and modifications**:
+  - The web editor plus `@openreel/core`, `@openreel/ui`, `@openreel/agent` and `@openreel/creation-schema`.
+  - In-memory editor routes, isolated styles and overlays, and host locale integration.
+  - Canvas import and silent video export, positioned MP4 writes, and explicit approval for custom motion expressions.
+  - The retained legacy engine under `src/client/engine/openreel/` is based on `2566c34e0f8ea22992a85f3ff16e048307b49365`.
+
+## 2. Bundled editor assets
+
+The editor icon, built-in template thumbnails and effect preview sample come from the pinned OpenReel distribution. The following assets retain their upstream licenses and notices.
+
+- JetBrains Mono, SIL Open Font License 1.1. [License](src/client/openreel/assets/fonts/jetbrains-mono-OFL.txt)
+- Inter, copyright 2016 The Inter Project Authors, SIL Open Font License 1.1. [License](src/client/openreel/assets/fonts/inter-OFL.txt)
+- Twemoji artwork, copyright 2020 Twitter, Inc. and other contributors, used for editable emoji stickers. The SVG bytes are unchanged and embedded in the editor bundle. [Artwork notice](src/client/openreel/assets/emoji/LICENSE.txt) · [Source](https://github.com/jdecked/twemoji) · [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)

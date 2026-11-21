@@ -23,7 +23,10 @@ allowBuilds:
   esbuild: true
   koffi: true
   node-pty: true
+  # Clip bundles the browser entry of Transformers and does not use its native backends.
+  onnxruntime-node@1.21.0: false
   protobufjs: false
+  sharp@0.34.5: false
 minimumReleaseAge: 0
 minimumReleaseAgeExclude:
   - aigc-provider-runtime-kit@0.2.0

@@ -60,8 +60,8 @@
         {
           "project": "openreel-video",
           "repo": "https://github.com/Augani/openreel-video",
-          "ref": "2566c34e",
-          "commit": "2566c34e0f8ea22992a85f3ff16e048307b49365",
+          "ref": "v1.0.0",
+          "commit": "c8f33f212c8d39ff9cfabb3302a44423d8dad83d",
           "license": "MIT",
           "copyright": "Copyright (c) 2024-2026 Augustus Otu and Contributors",
           "noticeFile": "LICENSE.openreel.txt",

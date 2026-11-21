@@ -1,10 +1,9 @@
 import React from "react";
 import { Sparkles, Trash2, Zap } from "@/icons/lucide-compat";
-import { ToolcraftButton as Button } from "@openreel/ui";
-import { ToolcraftCard as Card } from "@openreel/ui";
-import { ToolcraftIconButton as IconButton } from "@openreel/ui";
-import { ToolcraftText as Text } from "@openreel/ui";
-import { ToolcraftTextInputControl } from "@openreel/ui";
+import { Button, ColorPicker, cn } from "@openreel/ui";
+import { Card } from "@openreel/ui";
+
+
 import type {
   AppliedEditingTemplate,
   Clip,
@@ -17,13 +16,14 @@ import {
   PiPSection,
   MaskSection,
   MotionTrackingSection,
+  PlanarTrackingSection,
   NestedSequenceSection,
   AdjustmentLayerSection,
   BackgroundRemovalSection,
   BehindSubjectSection,
 } from "../";
 import { InspectorSection } from "../shell/InspectorSection";
-import { MockToggle } from "../shell/InspectorControls";
+import { InspectorToggle } from "../shell/InspectorControls";
 import { PropertySlider } from "../shell/PropertySlider";
 import {
   EditingTemplateControls,
@@ -31,6 +31,7 @@ import {
 } from "../../panels/EditingTemplateControls";
 import { toast } from "../../../../stores/notification-store";
 import { ParticleEffectsSectionWrapper } from "./ParticleEffectsSectionWrapper";
+import { clipNow } from "../../../../../../i18n/index.js";
 import { useClipT } from "../../../../../../i18n/index.js";
 
 interface EffectsTabClip {
@@ -38,7 +39,7 @@ interface EffectsTabClip {
   startTime: number;
 }
 
-export interface EffectsTabProps {
+interface EffectsTabProps {
   clipId: string;
   clipType: string | null;
   selectedClip: EffectsTabClip | null;
@@ -124,7 +125,7 @@ export const EffectsTab: React.FC<EffectsTabProps> = ({
     <>
       {showVideoControls && selectedTimelineClip && (appliedEditingTemplates.length > 0 || (selectedTimelineClip.effects && selectedTimelineClip.effects.length > 0)) && (
         <InspectorSection
-          title={`Applied (${appliedEditingTemplates.length + (selectedTimelineClip.effects?.filter((e: { metadata?: { templateSource?: unknown } }) => !e.metadata?.templateSource).length || 0)})`}
+          title={t("Applied ({0})", [appliedEditingTemplates.length + (selectedTimelineClip.effects?.filter((e: { metadata?: { templateSource?: unknown } }) => !e.metadata?.templateSource).length || 0)])}
           sectionId="applied-effects"
           defaultOpen={true}
         >
@@ -143,55 +144,39 @@ export const EffectsTab: React.FC<EffectsTabProps> = ({
                 : undefined;
 
               return (
-                <Card
-                  key={application.applicationId}
-                  variant="muted"
-                  padding={2}
-                  className="border border-border bg-bg-2/70"
+                <Card key={application.applicationId} className="min-w-0 rounded-[7px] shadow-none text-fg p-2 border border-border bg-bg-2/70"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0 flex-1 flex items-center gap-2">
                       <Sparkles size={11} className="text-primary shrink-0" />
-                      <Text
-                        type="supporting"
-                        color="primary"
-                        className="truncate text-[11px] font-medium"
+                      <span className="text-fg truncate text-[11px] font-medium"
                       >
                         {application.name}
-                      </Text>
-                      <Text
-                        type="supporting"
-                        color="secondary"
-                        className="shrink-0 text-[9px] capitalize"
+                      </span>
+                      <span className="text-fg-2 font-normal shrink-0 text-[9px] capitalize"
                       >
-                        {application.category?.replace(/-/g, " ") || "recipe"}
-                      </Text>
+                        {application.category?.replace(/-/g, " ") || t("recipe")}
+                      </span>
                     </div>
                     <div className="flex shrink-0 gap-1">
                       {canEdit && (
-                        <Button
-                          label={t("Edit")}
-                          onClick={() =>
+                        <Button onClick={() =>
                             handleToggleRecipeControls(
                               application.applicationId,
                               application.templateId,
                               application.controlValues,
                             )
-                          }
-                          variant={isExpanded ? "secondary" : "ghost"}
-                          size="sm"
-                          className={isExpanded ? "bg-primary/15 text-primary" : "text-fg-3"}
-                        />
+                          } type="button" aria-label={t("Edit")} className={cn("inline-flex min-w-0 items-center justify-center gap-1.5 rounded-[7px] font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50", "h-7 px-2.5 text-[12px]", (isExpanded ? "border border-border bg-bg-2 text-fg-2 hover:bg-bg-3 hover:text-fg" : "bg-transparent text-fg-2 hover:bg-bg-2 hover:text-fg"), isExpanded ? "bg-primary/15 text-primary" : "text-fg-3")}>
+                          <span className="truncate">{t("Edit")}</span>
+                        </Button>
                       )}
-                      <IconButton
-                        label={t("Remove recipe")}
-                        onClick={() => {
+                      <Button variant="ghost" size="icon-sm" onClick={() => {
                           const removed = removeEditingTemplateApplication(
                             selectedTimelineClip.id,
                             application.applicationId,
                           );
                           if (!removed) {
-                            toast.error("Could not remove recipe", "The recipe could not be removed from this clip.");
+                            toast.error(clipNow()("Could not remove recipe"), clipNow()("The recipe could not be removed from this clip."));
                             return;
                           }
                           setRecipeControlValues((current) => {
@@ -202,12 +187,9 @@ export const EffectsTab: React.FC<EffectsTabProps> = ({
                           if (expandedRecipeApplicationId === application.applicationId) {
                             setExpandedRecipeApplicationId(null);
                           }
-                        }}
-                        variant="ghost"
-                        size="sm"
-                        icon={<Trash2 size={11} aria-hidden />}
-                        className="text-fg-3 hover:text-red-400"
-                      />
+                        }} type="button" aria-label={t("Remove recipe")} title={t("Remove recipe")} className="inline-flex shrink-0 items-center justify-center rounded-[7px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-7 w-7 bg-transparent hover:bg-bg-2 text-fg-3 hover:text-red-400">
+                        {<Trash2 size={11} aria-hidden />}
+                      </Button>
                     </div>
                   </div>
 
@@ -225,30 +207,24 @@ export const EffectsTab: React.FC<EffectsTabProps> = ({
                         }
                       />
                       <div className="flex justify-end gap-1.5">
-                        <Button
-                          label={t("Reset")}
-                          onClick={() =>
+                        <Button onClick={() =>
                             handleResetRecipeControls(
                               application.applicationId,
                               application.templateId,
                               application.controlValues,
                             )
-                          }
-                          variant="secondary"
-                          size="sm"
-                        />
-                        <Button
-                          label={t("Update")}
-                          onClick={() =>
+                          } type="button" aria-label={t("Reset")} className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-[7px] font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-7 px-2.5 text-[12px] border border-border bg-bg-2 text-fg-2 hover:bg-bg-3 hover:text-fg">
+                          <span className="truncate">{t("Reset")}</span>
+                        </Button>
+                        <Button onClick={() =>
                             handleUpdateRecipeControls(
                               application.applicationId,
                               application.templateId,
                               application.controlValues,
                             )
-                          }
-                          variant="primary"
-                          size="sm"
-                        />
+                          } type="button" aria-label={t("Update")} className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-[7px] font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-7 px-2.5 text-[12px] bg-accent text-accent-fg hover:bg-accent/90">
+                          <span className="truncate">{t("Update")}</span>
+                        </Button>
                       </div>
                     </div>
                   )}
@@ -259,31 +235,21 @@ export const EffectsTab: React.FC<EffectsTabProps> = ({
             {selectedTimelineClip.effects
               ?.filter((e: { metadata?: { templateSource?: unknown } }) => !e.metadata?.templateSource)
               .map((effect: { id: string; type: string; enabled?: boolean }) => (
-                <Card
-                  key={effect.id}
-                  variant="muted"
-                  padding={2}
-                  className="flex items-center justify-between gap-2 border border-border bg-bg-2/70"
+                <Card key={effect.id} className="min-w-0 rounded-[7px] shadow-none text-fg p-2 flex items-center justify-between gap-2 border border-border bg-bg-2/70"
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <Zap size={11} className="text-amber-400 shrink-0" />
-                    <Text
-                      type="supporting"
-                      color="primary"
-                      className="truncate text-[11px] font-medium capitalize"
+                    <span className="text-fg truncate text-[11px] font-medium capitalize"
                     >
                       {effect.type.replace(/-/g, " ")}
-                    </Text>
+                    </span>
                   </div>
-                  <Text
-                    type="supporting"
-                    color={effect.enabled !== false ? "active" : "secondary"}
-                    className={`text-[9px] font-medium ${
+                  <span className={cn("text-[12px] leading-5", (effect.enabled !== false ? "text-accent" : "text-fg-2"), "font-normal", `text-[9px] font-medium ${
                       effect.enabled !== false ? "text-green-400" : ""
-                    }`}
+                    }`)}
                   >
                     {effect.enabled !== false ? t("On") : t("Off")}
-                  </Text>
+                  </span>
                 </Card>
               ))}
           </div>
@@ -319,14 +285,14 @@ export const EffectsTab: React.FC<EffectsTabProps> = ({
 
       {/* Chroma Key - Using ChromaKeyEngine - Only for video/image */}
       {showVideoControls && (
-        <InspectorSection title={t("Chroma Key (Green Screen)")}>
+        <InspectorSection title={t("Chroma Key (Green Screen)")} sectionId="chroma-key">
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <Text type="supporting" color="secondary" className="text-[10px]">
+              <span className="text-fg-2 font-normal text-[10px]">
                 {t("Enable")}
-              </Text>
-              <MockToggle
-                ariaLabel={t("Enable chroma key")}
+              </span>
+              <InspectorToggle
+                ariaLabel="Enable chroma key"
                 checked={chromaKeyEnabled}
                 onChange={handleChromaKeyToggle}
               />
@@ -334,23 +300,14 @@ export const EffectsTab: React.FC<EffectsTabProps> = ({
             {chromaKeyEnabled && (
               <>
                 <div className="flex items-center justify-between">
-                  <Text type="supporting" color="secondary" className="text-[10px]">
+                  <span className="text-fg-2 font-normal text-[10px]">
                     {t("Key Color")}
-                  </Text>
-                  <ToolcraftTextInputControl
+                  </span>
+                  <ColorPicker
                     label={t("Key Color")}
-                    isLabelHidden
-                    size="sm"
-                    width={96}
+                    className="h-[30px] w-32 min-w-0 rounded-md px-2 text-xs"
                     value={keyColor}
                     onChange={handleKeyColorChange}
-                    startIcon={
-                      <span
-                        aria-hidden
-                        className="block h-4 w-4 rounded-sm border border-border"
-                        style={{ backgroundColor: keyColor }}
-                      />
-                    }
                   />
                 </div>
                 <PropertySlider
@@ -371,6 +328,12 @@ export const EffectsTab: React.FC<EffectsTabProps> = ({
       {showVideoControls && (
         <InspectorSection title={t("Motion Tracking")} sectionId="motion-tracking">
           <MotionTrackingSection clipId={clipId} />
+        </InspectorSection>
+      )}
+
+      {showVideoControls && (
+        <InspectorSection title={t("Planar Tracking")} sectionId="planar-tracking">
+          <PlanarTrackingSection clipId={clipId} />
         </InspectorSection>
       )}
 

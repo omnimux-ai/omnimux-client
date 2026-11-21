@@ -6,6 +6,7 @@ import type {
   SVGClip,
   StickerClip,
 } from "@openreel/core";
+import { getTrackItems } from "@openreel/core";
 import type { ProjectState } from "../project-store";
 import type { ProjectStoreHelpers } from "./store-helpers";
 import type {
@@ -13,11 +14,12 @@ import type {
   EditingTemplateApplicationState,
 } from "./index";
 import { useEngineStore } from "../engine-store";
+import { restoreRangeForAction } from "./range-history";
 
 type Get = StoreApi<ProjectState>["getState"];
 type Set = StoreApi<ProjectState>["setState"];
 
-export interface HistoryDeps {
+interface HistoryDeps {
   applyClipDataSnapshot: ProjectStoreHelpers["applyClipDataSnapshot"];
   syncOverlayEnginesFromProject: ProjectStoreHelpers["syncOverlayEnginesFromProject"];
   syncProjectEffectsBridge: (next: Project, prev?: Project) => void;
@@ -36,7 +38,7 @@ export interface HistoryDeps {
   ) => Project | null;
 }
 
-export type HistorySlice = Pick<
+type HistorySlice = Pick<
   ProjectState,
   | "beginHistoryGroup"
   | "endHistoryGroup"
@@ -197,23 +199,7 @@ export function createHistorySlice(
           );
 
           if (track) {
-            let trackHasClips = false;
-            if (track.type === "text") {
-              const textClips =
-                useEngineStore.getState().getTitleEngine()?.getAllTextClips() ||
-                [];
-              trackHasClips = textClips.some((c) => c.trackId === trackId);
-            } else if (track.type === "graphics") {
-              const graphicsEngine = useEngineStore.getState().getGraphicsEngine();
-              const shapeClips = graphicsEngine?.getAllShapeClips() || [];
-              const svgClips = graphicsEngine?.getAllSVGClips() || [];
-              const stickerClips = graphicsEngine?.getAllStickerClips() || [];
-              trackHasClips = [...shapeClips, ...svgClips, ...stickerClips].some(
-                (c) => c.trackId === trackId,
-              );
-            } else {
-              trackHasClips = track.clips.length > 0;
-            }
+            const trackHasClips = getTrackItems(get().project, trackId).length > 0;
 
             if (!trackHasClips) {
               const lastEntry = get().actionHistory.peekUndo();
@@ -230,11 +216,15 @@ export function createHistorySlice(
               const actionTrackType = lastAction?.params?.trackType as
                 | string
                 | undefined;
+              const actionTrackId = lastAction?.params?.trackId as
+                | string
+                | undefined;
 
               if (
                 lastAction &&
                 lastAction.type === "track/add" &&
-                actionTrackType === expectedTrackType
+                (actionTrackId === trackId ||
+                  (!actionTrackId && actionTrackType === expectedTrackType))
               ) {
                 const trackUndoResult = await actionExecutor.undo(get().project);
                 if (trackUndoResult.success) {
@@ -263,15 +253,19 @@ export function createHistorySlice(
         }
       }
 
-      const result = await actionExecutor.undo(project);
+      const targetProject = actionHistory.peekUndo()?.action.type === "project/applyEditSnapshot" ? get().getFullProject() : project;
+      const previousProject = { ...project };
+      const undoneAction = actionHistory.peekUndo()?.action;
+      const result = await actionExecutor.undo(targetProject);
       if (result.success) {
+        restoreRangeForAction(undoneAction, "undo");
+        syncProjectEffectsBridge(targetProject, previousProject);
+        syncProjectTransitionsBridge(targetProject, previousProject);
+        syncOverlayEnginesFromProject(targetProject);
         set({
-          project: { ...project, modifiedAt: Date.now() },
+          project: { ...targetProject, modifiedAt: Date.now() },
           redoJournal: [...get().redoJournal, "action"],
         });
-        syncProjectEffectsBridge(get().project, get().project);
-        syncProjectTransitionsBridge(get().project, get().project);
-        syncOverlayEnginesFromProject();
       }
       return result;
     },
@@ -410,6 +404,9 @@ export function createHistorySlice(
                 width: 200,
                 height: 200,
                 style: shapeData.style,
+                points: shapeData.points,
+                pathData: shapeData.pathData,
+                closed: shapeData.closed,
               },
               targetTrackId,
               shapeData.startTime,
@@ -475,15 +472,19 @@ export function createHistorySlice(
         }
       }
 
-      const result = await actionExecutor.redo(project);
+      const targetProject = actionExecutor.getHistory().peekRedo()?.action.type === "project/applyEditSnapshot" ? get().getFullProject() : project;
+      const previousProject = { ...project };
+      const redoneAction = actionExecutor.getHistory().peekRedo()?.action;
+      const result = await actionExecutor.redo(targetProject);
       if (result.success) {
+        restoreRangeForAction(redoneAction, "redo");
+        syncProjectEffectsBridge(targetProject, previousProject);
+        syncProjectTransitionsBridge(targetProject, previousProject);
+        syncOverlayEnginesFromProject(targetProject);
         set({
-          project: { ...project, modifiedAt: Date.now() },
+          project: { ...targetProject, modifiedAt: Date.now() },
           redoJournal: nextJournal,
         });
-        syncProjectEffectsBridge(get().project, get().project);
-        syncProjectTransitionsBridge(get().project, get().project);
-        syncOverlayEnginesFromProject();
       }
       return result;
     },

@@ -2,7 +2,6 @@ import { Component, useEffect, useLayoutEffect, useRef, useState, useSyncExterna
 import { useHostLocale } from './useHostLocale.js'
 import { createPortal } from 'react-dom'
 import OpenReelApp from './openreel/web/App.tsx'
-import { applyOpenReelTheme } from './openreel/web/stores/theme-store.ts'
 import { resetOpenReelRouter } from './openreel/web/hooks/use-router.ts'
 import { useProjectStore } from './openreel/web/stores/project-store.ts'
 import { injectClipStyles } from './styles.js'
@@ -72,7 +71,6 @@ export function ClipStage({ t, stage, locale }) {
   useHostLocale(locale)
   useEffect(() => {
     injectClipStyles()
-    applyOpenReelTheme(true)
   }, [])
 
   const open = useSyncExternalStore(
@@ -93,6 +91,7 @@ export function ClipStage({ t, stage, locale }) {
 
   const [everOpened, setEverOpened] = useState(false)
   const [canvasHost, setCanvasHost] = useState(null)
+  const [canvasHostVisible, setCanvasHostVisible] = useState(false)
   const [box, setBox] = useState(() => {
     if (typeof window !== 'undefined') {
       return {
@@ -130,6 +129,7 @@ export function ClipStage({ t, stage, locale }) {
     const update = () => {
       if (session?.source === 'canvas') {
         const host = findBoundCanvasHost()
+        setCanvasHostVisible(Boolean(host))
         setCanvasHost((previous) => {
           // Switching Tabs can hide the owning canvas while it stays mounted.
           if (host) return host
@@ -223,7 +223,7 @@ export function ClipStage({ t, stage, locale }) {
     >
       <div className="omnimux-clip-stage-body openreel-studio-root dark" data-theme="dark">
         <ClipErrorBoundary>
-          <OpenReelApp />
+          <OpenReelApp active={open && (!isCanvasMode || canvasHostVisible)} canvasMode={isCanvasMode} />
         </ClipErrorBoundary>
       </div>
     </div>

@@ -34,7 +34,9 @@ export const CLIP_CSS = `
   height: 100%;
   min-width: 0;
   min-height: 0;
-  z-index: 20;
+}
+.omnimux-clip-stage[data-clip-mode="canvas"] .workspace-actions {
+  margin-inline-start: auto;
 }
 .omnimux-clip-stage[data-clip-mode="canvas"][data-visible="true"] {
   display: flex !important;

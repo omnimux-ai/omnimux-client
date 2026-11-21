@@ -2,20 +2,24 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import '@/index.css';
 import { ToolcraftButton } from '@openreel/ui';
+import { EditorPortalRoot } from '@openreel/ui/lib/portal-root';
+import { useHostLocale } from '../../../src/client/useHostLocale.js';
 import { ScriptViewDialog } from '@/components/editor/ScriptViewDialog';
-import { GraphEditorPanel } from '@/motion/components/GraphEditorPanel';
 import { useProjectStore } from '@/stores/project-store';
 import { useMotionStore } from '@/motion/stores/motion-store';
 import { getMotionTransformAtTime, MotionRenderer } from '@openreel/core/motion/motion-renderer';
 import { getMotionLayerPropertyValueAtTime } from '@openreel/core/motion/motion-keyframes';
-import type { MotionComposition } from '@openreel/core/motion/types';
+import { approveMotionExpressionCode } from '@openreel/core/motion/motion-expressions';
+import type { MotionExpression } from '@openreel/core/motion/types';
 
 declare global { interface Window { __clipSecurityMarker: number; __clipFixtureReadState: () => unknown; } }
 window.__clipSecurityMarker = 0;
 const renderer = new MotionRenderer();
+const fixtureLocale = { getLocale: () => 'en' };
 type FrameState = { renderedRequest?: number; status: string; x: number | null; y: number | null; propertyValue: number | null; marker: number; error: string | null; };
 
 function Fixture() {
+  useHostLocale(fixtureLocale);
   const project = useProjectStore(state => state.project);
   const composition = project.motionCompositions?.[0];
   const playhead = useMotionStore(state => state.playhead);
@@ -25,15 +29,19 @@ function Fixture() {
   const [cloneForExport, setCloneForExport] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const layer = composition?.layers[0];
-  useEffect(() => {
-    if (!composition || !layer) return;
-    const state = useMotionStore.getState();
-    if (state.activeCompositionId !== composition.id || state.selectedLayerId !== layer.id) {
-      state.setActiveCompositionId(composition.id);
-      state.selectLayer(layer.id);
-      state.setSelectedProperty('transform.position.x');
-    }
-  }, [composition?.id, layer?.id]);
+  const expression = layer?.expressions?.find(candidate =>
+    candidate.type === 'expression' && candidate.property === 'transform.position.x',
+  );
+  function updateExpression(patch: Partial<MotionExpression>) {
+    if (!composition || !layer || !expression) return;
+    const expressions = layer.expressions?.map(candidate =>
+      candidate === expression ? { ...candidate, ...patch } : candidate,
+    );
+    void useProjectStore.getState().upsertMotionComposition({
+      ...composition,
+      layers: composition.layers.map(candidate => candidate === layer ? { ...layer, expressions } : candidate),
+    });
+  }
   useEffect(() => {
     if (!composition || !layer) return;
     let canceled = false;
@@ -60,7 +68,7 @@ function Fixture() {
     void render();
     return () => { canceled = true; };
   }, [composition, layer, playhead, requestId, cloneForExport]);
-  window.__clipFixtureReadState = () => ({ project: useProjectStore.getState().project, selectedLayerId: useMotionStore.getState().selectedLayerId, frame, marker: window.__clipSecurityMarker });
+  window.__clipFixtureReadState = () => ({ project: useProjectStore.getState().project, frame, marker: window.__clipSecurityMarker });
   return <main style={{ color: 'var(--fg)', background: 'var(--bg)', minHeight: '100vh', padding: 24 }}>
     <header style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 24 }}>
       <h1 style={{ fontSize: 20, fontWeight: 600 }}>剪辑：原生导入与表达式验证</h1>
@@ -74,7 +82,7 @@ function Fixture() {
     </header>
     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(450px,1fr) 460px', gap: 24, alignItems: 'start' }}>
       <section style={{ display: 'grid', gap: 18 }}>
-        <p>本页只挂载原生项目导入窗口、曲线编辑和渲染结果。请先导入任务样本。</p>
+        <p>导入使用项目 JSON 窗口，表达式使用编辑器的渲染引擎。</p>
         <canvas ref={canvasRef} aria-label="Native motion render" width={640} height={360} style={{ width: '100%', aspectRatio: '16 / 9', border: '1px solid var(--border)', background: 'var(--bg-2)' }} />
         <dl id="native-results" style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 8, fontSize: 14 }}>
           <dt>项目</dt><dd data-testid="project-name">{project.name}</dd>
@@ -86,11 +94,22 @@ function Fixture() {
           <dt>渲染错误</dt><dd data-testid="render-error">{frame.error ?? '无'}</dd>
         </dl>
       </section>
-      <section aria-label="Native graph editor" style={{ height: 'calc(100vh - 120px)', minHeight: 680, background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 8 }}>
-        {composition ? <GraphEditorPanel composition={composition as MotionComposition} /> : <p style={{ padding: 24 }}>等待从原生窗口导入项目。</p>}
+      <section aria-label="Expression approval fixture" style={{ display: 'grid', gap: 12, padding: 20, background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 8 }}>
+        <h2>表达式审批测试控件</h2>
+        {expression && <>
+          <textarea aria-label="Expression code" rows={4} value={expression.code ?? ''}
+            onChange={event => updateExpression({ code: event.currentTarget.value })} />
+          <ToolcraftButton label="Enabled" aria-pressed={expression.enabled}
+            onClick={() => updateExpression({ enabled: !expression.enabled })} />
+          <ToolcraftButton label="允许运行此表达式" onClick={() => approveMotionExpressionCode(expression)} />
+        </>}
       </section>
     </div>
     <ScriptViewDialog isOpen={isOpen} onClose={() => setOpen(false)} />
   </main>;
 }
-createRoot(document.getElementById('root')!).render(<Fixture />);
+const portal = document.createElement('div');
+document.body.append(portal);
+createRoot(document.getElementById('root')!).render(
+  <EditorPortalRoot.Provider value={portal}><Fixture /></EditorPortalRoot.Provider>,
+);

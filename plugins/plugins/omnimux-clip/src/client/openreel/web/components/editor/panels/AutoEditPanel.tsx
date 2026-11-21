@@ -1,12 +1,29 @@
+import {
+  Label as RadioLabel,
+  RadioGroup as ShadcnRadioGroup,
+  RadioGroupItem as ShadcnRadioGroupItem,
+  Select as ShadcnSelect,
+  SelectTrigger as ShadcnSelectTrigger,
+  SelectContent as ShadcnSelectContent,
+  SelectValue as ShadcnSelectValue,
+  SelectItem as ShadcnSelectItem,
+  cn as uiCn,
+  Label as ShadcnLabel,
+  Button,
+  Card,
+} from "@openreel/ui";
+
+import { PropertySlider } from "../inspector/shell/PropertySlider";
+
 import React, { useState, useCallback, useMemo } from "react";
 import { Music, Zap, Loader2 } from "@/icons/lucide-compat";
-import { ToolcraftSegmentedControl } from "@openreel/ui";
-import { ToolcraftButton as Button } from "@openreel/ui";
-import { ToolcraftCard as Card } from "@openreel/ui";
-import { ToolcraftEmptyState as EmptyState } from "@openreel/ui";
-import { ToolcraftSelectControl as Selector } from "@openreel/ui";
-import { ToolcraftSliderControl } from "@openreel/ui";
-import { ToolcraftText as Text } from "@openreel/ui";
+
+
+
+
+
+
+
 import { useProjectStore } from "../../../stores/project-store";
 import {
   getBeatDetectionEngine,
@@ -16,6 +33,7 @@ import {
   type CutMode,
   type BeatAnalysisResult,
   type Clip,
+  getMediaItemCapabilities,
 } from "@openreel/core";
 import { useClipT } from "../../../../../i18n/index.js";
 
@@ -36,22 +54,33 @@ export const AutoEditPanel: React.FC<AutoEditPanelProps> = ({ onClose }) => {
   const audioClips = useMemo(() => {
     const clips: Clip[] = [];
     for (const track of project.timeline.tracks) {
-      if (track.type === "audio") {
-        clips.push(...track.clips);
-      }
+      clips.push(
+        ...track.clips.filter((clip) =>
+          getMediaItemCapabilities(
+            project.mediaLibrary.items.find(
+              (mediaItem) => mediaItem.id === clip.mediaId,
+            ),
+          ).audio,
+        ),
+      );
     }
     return clips;
-  }, [project.timeline.tracks]);
+  }, [project]);
 
   const videoClips = useMemo(() => {
     const clips: Clip[] = [];
     for (const track of project.timeline.tracks) {
-      if (track.type === "video") {
-        clips.push(...track.clips);
-      }
+      clips.push(
+        ...track.clips.filter(
+          (clip) =>
+            project.mediaLibrary.items.find(
+              (mediaItem) => mediaItem.id === clip.mediaId,
+            )?.type === "video",
+        ),
+      );
     }
     return clips;
-  }, [project.timeline.tracks]);
+  }, [project]);
 
   const [selectedAudioClipId, setSelectedAudioClipId] = useState<string>(
     audioClips[0]?.id ?? "",
@@ -100,7 +129,7 @@ export const AutoEditPanel: React.FC<AutoEditPanelProps> = ({ onClose }) => {
             (m) => m.id === audioClip.mediaId,
           );
         if (!mediaItem?.blob) {
-          setError(t("Audio file not loaded"));
+          setError("Audio file not loaded");
           setAnalyzing(false);
           return;
         }
@@ -123,7 +152,7 @@ export const AutoEditPanel: React.FC<AutoEditPanelProps> = ({ onClose }) => {
       setPreview(result);
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : t("Failed to analyze audio"),
+        err instanceof Error ? err.message : "Failed to analyze audio",
       );
     } finally {
       setAnalyzing(false);
@@ -142,7 +171,10 @@ export const AutoEditPanel: React.FC<AutoEditPanelProps> = ({ onClose }) => {
     if (!preview || preview.cuts.length === 0) return;
 
     const tracks = [...project.timeline.tracks];
-    const videoTrackIndex = tracks.findIndex((t) => t.type === "video");
+    const sourceClipIds = new Set(videoClips.map((clip) => clip.id));
+    const videoTrackIndex = tracks.findIndex((track) =>
+      track.clips.some((clip) => sourceClipIds.has(clip.id)),
+    );
     if (videoTrackIndex === -1) return;
 
     const newClips: Clip[] = preview.cuts.map((cut, index) => {
@@ -185,140 +217,178 @@ export const AutoEditPanel: React.FC<AutoEditPanelProps> = ({ onClose }) => {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Zap size={14} className="text-primary" aria-hidden />
-          <Text type="label" weight="bold" className="text-[11px]">
+          <span className="text-fg-2 font-bold text-[11px]">
             {t("Beat-Synced Auto-Edit")}
-          </Text>        </div>
+          </span>
+        </div>
       </div>
 
       {audioClips.length === 0 ? (
-        <EmptyState
-          title={t("Add an audio track to use auto-edit")}
-          icon={<Music size={24} className="text-text-muted opacity-50" aria-hidden />}
-          isCompact
-        />
+        <Card className="flex min-w-0 flex-col items-center justify-center gap-2 border-0 bg-transparent px-3 py-5 text-center text-fg-muted shadow-none"><div className="flex items-center justify-center">{<Music size={24} className="text-text-muted opacity-50" aria-hidden />}</div><p className="text-xs font-semibold text-fg-2">{t("Add an audio track to use auto-edit")}</p></Card>
       ) : (
         <>
-          <Selector
-            label={t("Audio Source")}
-            value={selectedAudioClipId}
-            onChange={setSelectedAudioClipId}
-            options={audioClipOptions}
-            size="sm"
-            className="w-full"
-          />
+          <ShadcnLabel className="block min-w-0 space-y-1.5">
+            <span className="block truncate text-[11px] font-medium text-text-secondary">
+              {t("Audio Source")}
+            </span>
+            <ShadcnSelect
+              value={selectedAudioClipId || "__openreel_empty_option__"}
+              disabled={false}
+              onValueChange={(nextValue) =>
+                setSelectedAudioClipId(
+                  (nextValue === "__openreel_empty_option__"
+                    ? ""
+                    : nextValue) as Parameters<typeof setSelectedAudioClipId>[0],
+                )
+              }
+            >
+              <ShadcnSelectTrigger
+                aria-label={t("Audio Source")}
+                className={uiCn(
+                  "flex h-8 w-full min-w-0 rounded-[7px] border border-border bg-bg-1 px-2.5 py-1.5 text-[13px] font-medium text-fg-2 outline-none transition-colors focus:border-accent disabled:cursor-not-allowed disabled:opacity-50",
+                  "h-7 text-[12px]",
+                  "w-full",
+                  undefined,
+                )}
+              >
+                <ShadcnSelectValue placeholder={undefined} />
+              </ShadcnSelectTrigger>
+              <ShadcnSelectContent>
+                {audioClipOptions.map((option) => (
+                  <ShadcnSelectItem
+                    key={option.value}
+                    value={option.value || "__openreel_empty_option__"}
+                    disabled={"disabled" in option && option.disabled === true}
+                  >
+                    {t(option.label)}
+                  </ShadcnSelectItem>
+                ))}
+              </ShadcnSelectContent>
+            </ShadcnSelect>
+          </ShadcnLabel>
 
           <div className="space-y-2">
-            <Text type="supporting" color="secondary" weight="bold" display="block" className="text-[10px]">
+            <span className="text-fg-2 font-bold block text-[10px]">
               {t("Cut Mode")}
-            </Text>
-            <ToolcraftSegmentedControl<CutMode>
-              ariaLabel={t("Cut mode")}
+            </span>
+            <ShadcnRadioGroup
+              aria-label={t("Cut mode")}
               value={cutMode}
-              onChange={setCutMode}
-              options={(["beats", "downbeats", "segments"] as CutMode[]).map(
-                (mode) => ({
+              onValueChange={(next) => {
+                if (next) setCutMode(next as Parameters<typeof setCutMode>[0]);
+              }}
+              className="grid min-h-8 min-w-0 gap-0 rounded-[7px] border border-border bg-bg-1 p-0.5"
+              style={{
+                gridTemplateColumns: `repeat(${
+                  (["beats", "downbeats", "segments"] as CutMode[]).map((mode) => ({
+                    value: mode,
+                    label: mode,
+                  })).length
+                }, minmax(0,1fr))`,
+              }}
+            >
+              {(["beats", "downbeats", "segments"] as CutMode[])
+                .map((mode) => ({
                   value: mode,
                   label: mode,
-                }),
-              )}
-            />
+                }))
+                .map((option) => (
+                  <RadioLabel
+                    key={option.value}
+                    className="flex h-7 min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-[5px] px-2 text-[12px] font-semibold text-fg-muted focus-within:ring-2 focus-within:ring-ring has-[[data-state=checked]]:bg-bg-3 has-[[data-state=checked]]:text-fg"
+                  >
+                    <ShadcnRadioGroupItem data-value={option.value}
+                      value={option.value}
+                      aria-label={t(option.label) ?? option.value}
+                      className="sr-only"
+                    />
+                    {t(option.label)}
+                  </RadioLabel>
+                ))}
+            </ShadcnRadioGroup>
           </div>
 
           <div className="space-y-1.5">
             <div className="flex justify-between">
-              <Text type="supporting" color="secondary" weight="bold" className="text-[10px]">
+              <span className="text-fg-2 font-bold text-[10px]">
                 {t("Sensitivity")}
-              </Text>
-              <Text type="supporting" color="secondary" className="text-[9px]">
+              </span>
+              <span className="text-fg-2 font-normal text-[9px]">
                 {Math.round(sensitivity * 100)}%
-              </Text>
+              </span>
             </div>
-            <ToolcraftSliderControl
-              label={t("Sensitivity")}
-              isLabelHidden
-              min={0}
-              max={1}
-              step={0.05}
-              value={sensitivity}
-              onChange={setSensitivity}
-              valueDisplay="none"
-            />
+            <PropertySlider ariaLabel={"Sensitivity"}
+value={sensitivity}
+min={0}
+max={1}
+step={0.05}
+onChange={setSensitivity}
+isDisabled={false}
+showValueLabel={false} />
           </div>
 
           <div className="space-y-1.5">
             <div className="flex justify-between">
-              <Text type="supporting" color="secondary" weight="bold" className="text-[10px]">
+              <span className="text-fg-2 font-bold text-[10px]">
                 {t("Min Clip Duration")}
-              </Text>
-              <Text type="supporting" color="secondary" className="text-[9px]">
+              </span>
+              <span className="text-fg-2 font-normal text-[9px]">
                 {minClipDuration.toFixed(1)}s
-              </Text>
+              </span>
             </div>
-            <ToolcraftSliderControl
-              label={t("Minimum clip duration")}
-              isLabelHidden
-              min={0.1}
-              max={3}
-              step={0.1}
-              value={minClipDuration}
-              onChange={setMinClipDuration}
-              valueDisplay="none"
-            />
+            <PropertySlider ariaLabel={"Minimum clip duration"}
+value={minClipDuration}
+min={0.1}
+max={3}
+step={0.1}
+onChange={setMinClipDuration}
+isDisabled={false}
+showValueLabel={false} />
           </div>
 
-          <Button
-            label={analyzing ? t("Analyzing beats...") : t("Generate Auto-Edit")}
-            onClick={handleAnalyze}
-            isDisabled={analyzing || videoClips.length === 0}
-            variant="primary"
-            icon={
-              analyzing ? (
+          <Button onClick={handleAnalyze} type="button" aria-label={(analyzing ? "Analyzing beats..." : "Generate Auto-Edit").trim() || undefined} disabled={(analyzing || videoClips.length === 0)} className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-[7px] font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-8 px-3 text-[12px] bg-accent text-accent-fg hover:bg-accent/90 w-full">
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center">{analyzing ? (
                 <Loader2 size={12} className="animate-spin" aria-hidden />
               ) : (
                 <Zap size={12} aria-hidden />
-              )
-            }
-            className="w-full"
-          />
+              )}</span>
+            <span className="truncate">{analyzing ? t("Analyzing beats...") : t("Generate Auto-Edit")}</span>
+          </Button>
 
           {error && (
-            <Card variant="red" padding={2}>
-              <Text type="supporting" className="text-[9px]">
+            <Card className="min-w-0 rounded-[7px] border shadow-none border-status-error/25 bg-status-error/10 text-fg p-2">
+              <span className="text-fg-2 font-normal text-[9px]">
                 {error}
-              </Text>
+              </span>
             </Card>
           )}
 
           {preview && (
-            <Card variant="muted" padding={3} className="space-y-2 border border-border">
-              <Text type="label" weight="bold" display="block" className="text-[10px]">
+            <Card className="min-w-0 rounded-[7px] shadow-none bg-bg-2 text-fg p-3 space-y-2 border border-border">
+              <span className="text-fg-2 font-bold block text-[10px]">
                 {t("Preview")}
-              </Text>
+              </span>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <Text type="supporting" color="secondary" className="text-[9px]">
+                  <span className="text-fg-2 font-normal text-[9px]">
                     {t("Cuts:")}{" "}
-                  </Text>
-                  <Text type="supporting" className="text-[9px]">
+                  </span>
+                  <span className="text-fg-2 font-normal text-[9px]">
                     {preview.cuts.length}
-                  </Text>
+                  </span>
                 </div>
                 <div>
-                  <Text type="supporting" color="secondary" className="text-[9px]">
+                  <span className="text-fg-2 font-normal text-[9px]">
                     {t("Duration:")}{" "}
-                  </Text>
-                  <Text type="supporting" className="text-[9px]">
+                  </span>
+                  <span className="text-fg-2 font-normal text-[9px]">
                     {preview.totalDuration.toFixed(1)}s
-                  </Text>
+                  </span>
                 </div>
               </div>
-              <Button
-                label={t("Apply Auto-Edit")}
-                onClick={handleApply}
-                variant="primary"
-                size="sm"
-                className="w-full"
-              />
+              <Button onClick={handleApply} type="button" aria-label={t("Apply Auto-Edit")} className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-[7px] font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-7 px-2.5 text-[12px] bg-accent text-accent-fg hover:bg-accent/90 w-full">
+                <span className="truncate">{t("Apply Auto-Edit")}</span>
+              </Button>
             </Card>
           )}
         </>

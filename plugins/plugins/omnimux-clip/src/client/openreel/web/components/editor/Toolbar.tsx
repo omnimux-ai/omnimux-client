@@ -1,104 +1,113 @@
-import React, { useCallback, useState, useEffect } from "react";
-import {
-  X,
-  Settings,
-  MoreHorizontal,
-  Video,
-} from "@/icons/lucide-compat";
+import { getActiveClipSession, getActiveClipStageStore } from "../../../../stage-store.js";
+import { notifyCanvasClose } from "../../../../CanvasBridge.js";
+import { useClipT } from "../../../../i18n/index.js";
+import { useLatch } from "./use-latch";
+import { usePhoneEditor } from "../../hooks/usePhoneEditor";
+import { MobileEditorHeader } from "./mobile/MobileEditorHeader";
+import reelIcon from "../../../assets/icons/editor-reel.svg";
+import "./mobile/mobile-editor.css";
+import { DesktopExportButton } from "../../desktop/editor/DesktopExportButton";
+import { WindowControls } from "../../desktop/shell/WindowControls";
+import { Button as ShadcnButton, Input } from "@openreel/ui";
+import { useEditorPortalRoot } from "@openreel/ui/lib/portal-root";
+import { EditorHeaderIcon } from "./EditorHeaderIcon";
+import { EditorExportControl } from "./EditorExportControl";
+import { getQuickExportPresets, type QuickExportPresetId } from "../../services/quick-export-presets";
+import { WorkspaceSaveStatus } from "./WorkspaceSaveStatus";
+import { EditorMenuBar } from "./EditorMenuBar";
+import React, { lazy, Suspense, useCallback, useState, useEffect, useMemo, useRef } from "react";
+import { X } from "@/icons/lucide-compat";
 import { useProjectStore } from "../../stores/project-store";
 import { useUIStore } from "../../stores/ui-store";
-import { useRouter } from "../../hooks/use-router";
+import { useTimelineStore } from "../../stores/timeline-store";
 import {
-  getExportEngine,
-  getDeviceProfile,
-  estimateExportTime,
+  projectForSequence,
+  trackHasAudioItems,
   type VideoExportSettings,
-  type AudioExportSettings,
-  type ExportResult,
-  type DeviceProfile,
-  type TimeEstimate,
 } from "@openreel/core";
-import { ExportDialog } from "./ExportDialog";
-import { CompressDialog } from "./CompressDialog";
+import { ExportQueueButton, ExportQueuePanel } from "./ExportQueuePanel";
+import { addDialogExportToQueue, isExportQueueBusy } from "../../stores/export-queue-store";
+import { getUseExportPreviews } from "../../services/export-queue/export-queue-activity";
 import { deriveSourceExportMatch } from "../../services/export-source-match";
-import { useExportRunner, extForFormat, exportFilename, writeBlobToWritable } from "../../services/export-runner";
-import { ScreenRecorder } from "./ScreenRecorder";
+import { useExportRunner, extForFormat, exportFilename, type ExportDeliveryMode } from "../../services/export-runner";
 import { HistoryPanel } from "./inspector/HistoryPanel";
 import { ProjectSwitcher } from "./ProjectSwitcher";
 import { SettingsDialog } from "./settings/SettingsDialog";
-import {
-  WorkspaceModeTabs,
-  type WorkspaceMode,
-} from "../WorkspaceModeTabs";
-import { Icon } from "@/icons/Icon";
 import { toast } from "../../stores/notification-store";
 import { useAnalytics, AnalyticsEvents } from "../../hooks/useAnalytics";
-import {
-  ToolcraftDropdownMenu as DropdownMenu,
-  ToolcraftDropdownMenuItem as DropdownMenuItem,
-  ToolcraftIconButton,
-  ToolcraftText as Text,
-  ToolcraftTextInputControl,
-} from "@openreel/ui";
-import { useHostLocale } from "../../../../useHostLocale.js";
-import { useClipT } from "../../../../i18n/index.js";
-import { getActiveClipSession, getActiveClipStageStore } from "../../../../stage-store.js";
-import { notifyCanvasClose } from "../../../../CanvasBridge.js";
+import { clipNow } from "../../../../i18n/index.js";
 
-type ExportType =
-  | "mp4"
-  | "prores"
-  | "gif"
-  | "wav"
-  | "4k-master"
-  | "4k-prores"
-  | "4k"
-  | "1080p-high"
-  | "4k-60-master"
-  | "1080p-60"
-  | "project";
+// Dialogs that only open on demand stay out of the editor chunk (bundle-budgets.json).
+const CompressDialog = lazy(() => import("./CompressDialog").then((m) => ({ default: m.CompressDialog })));
+const ExportDialog = lazy(() => import("./ExportDialog").then((m) => ({ default: m.ExportDialog })));
+const ScreenRecorder = lazy(() => import("./ScreenRecorder").then((m) => ({ default: m.ScreenRecorder })));
+const ProjectPackageDialog = lazy(() => import("./ProjectPackageDialog").then((m) => ({ default: m.ProjectPackageDialog })));
 
-export const Toolbar: React.FC = () => {
-  const { project, renameProject } = useProjectStore();
-  const {
-    selectedItems,
-    setExportState: setGlobalExportState,
-    setDesktopPage,
-    activeModal,
-    closeModal,
-  } = useUIStore();
-  const { navigate } = useRouter();
-  const [isExportOpen, setIsExportOpen] = useState(false);
-  const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
-  const [isCompressOpen, setIsCompressOpen] = useState(false);
-  const { importMedia } = useProjectStore();
-  const { track } = useAnalytics();
 
-  const hostLocale = useHostLocale();
+export const Toolbar: React.FC<{ canvasMode?: boolean }> = ({ canvasMode: isCanvasMode = false }) => {
   const t = useClipT();
-  const isEn = hostLocale?.active === "en";
-  const session = getActiveClipSession();
-  const isCanvasMode = session?.source === "canvas";
-  const returnToCanvasText = hostLocale?.active === "en" ? "Exit editor" : "退出编辑";
-
-  const handleReturnToCanvas = useCallback(() => {
-    const activeSession = getActiveClipSession();
-    if (activeSession?.nodeId) {
-      notifyCanvasClose({ nodeId: activeSession.nodeId });
-    }
-    const stageStore = getActiveClipStageStore();
-    if (stageStore && typeof stageStore.set === "function") {
-      stageStore.set(false);
-    }
-  }, []);
+  const canvasSession = isCanvasMode ? getActiveClipSession() : null;
+  const phone = usePhoneEditor() && !isCanvasMode;
+  const isDesktop = !isCanvasMode && typeof window !== "undefined" && window.openreel?.platform === "desktop";
+  const nativePlatform = /Mac/i.test(navigator.platform) ? "darwin" : /Win/i.test(navigator.platform) ? "win32" : "linux";
+  const project = useProjectStore((state) => state.project);
+  const loopStart = useTimelineStore((state) => state.loopStart);
+  const loopEnd = useTimelineStore((state) => state.loopEnd);
+  const renameProject = useProjectStore((state) => state.renameProject);
+  const setGlobalExportState = useUIStore((state) => state.setExportState);
+  const active = useEditorPortalRoot() !== null;
+  const activeModal = useUIStore((state) => active ? state.activeModal : null);
+  const closeModal = useUIStore((state) => state.closeModal);
+  const isExportDialogOpen = activeModal === "export";
+  const [isCompressOpen, setIsCompressOpen] = useState(false);
+  // Dialogs are fetched the first time they open and then stay mounted so their close animation still plays.
+  const compressLatched = useLatch(isCompressOpen);
+  const [isShareOpen, setIsShareOpen] = useState(false);
+  const importMedia = useProjectStore((state) => state.importMedia);
+  // Export renders the chosen sequence (default: the active one) as if it were open.
+  const exportSequenceId = useUIStore((state) => state.exportSequenceId);
+  const exportProject = useMemo(
+    () => (exportSequenceId && exportSequenceId !== project.activeSequenceId ? projectForSequence(project, exportSequenceId) ?? project : project),
+    [project, exportSequenceId],
+  );
+  useEffect(() => {
+    if (active && exportSequenceId && !project.sequences?.some((sequence) => sequence.id === exportSequenceId)) useUIStore.getState().setExportSequenceId(null);
+  }, [active, project.sequences, exportSequenceId]);
+  const sourceMatch = useMemo(() => deriveSourceExportMatch(exportProject), [exportProject]);
+  const projectHasAudio = useMemo(
+    () => exportProject.timeline.tracks.some((track) => trackHasAudioItems(exportProject, track.id)),
+    [exportProject],
+  );
+  const hasTimelineContent = (exportProject.timeline?.duration ?? 0) > 0;
+  const checkTimelineForExport = useCallback(() => {
+    if (hasTimelineContent) return true;
+    const translate = clipNow();
+    toast.warning(translate("Timeline is empty"), translate("Add clips or graphics to the timeline before exporting."));
+    return false;
+  }, [hasTimelineContent]);
+  const openExportDialog = useCallback(() => {
+    if (useUIStore.getState().exportState.isExporting || !checkTimelineForExport()) return;
+    if (isDesktop) window.dispatchEvent(new CustomEvent("openreel:menu:export"));
+    else useUIStore.getState().openModal("export");
+  }, [isDesktop, checkTimelineForExport]);
+  // The chosen sequence only lasts for one export: opening the dialog or switching tabs starts over.
+  useEffect(() => {
+    if (active) useUIStore.getState().setExportSequenceId(null);
+  }, [active, project.activeSequenceId, isExportDialogOpen]);
+  const { track } = useAnalytics();
 
   // Local editable project name (committed onBlur / Enter)
   const [projectNameDraft, setProjectNameDraft] = useState(project.name);
+  const cancelProjectNameCommit = useRef(false);
   useEffect(() => {
     setProjectNameDraft(project.name);
   }, [project.name]);
 
   const commitProjectName = useCallback(() => {
+    if (cancelProjectNameCommit.current) {
+      cancelProjectNameCommit.current = false;
+      return;
+    }
     const next = projectNameDraft.trim();
     if (next && next !== project.name) {
       void renameProject(next);
@@ -106,23 +115,6 @@ export const Toolbar: React.FC = () => {
       setProjectNameDraft(project.name);
     }
   }, [projectNameDraft, project.name, renameProject]);
-
-  const handleWorkspaceModeSelect = useCallback(
-    (mode: WorkspaceMode) => {
-      if (mode === "motion") {
-        setDesktopPage("motion");
-        navigate("motion");
-        return;
-      }
-      setDesktopPage("edit");
-      navigate("editor");
-    },
-    [navigate, setDesktopPage],
-  );
-
-  // selectedItems drives related UX in the editor (e.g. inspector context).
-  // Kept on the destructure list so future tweaks don't have to rewire it.
-  void selectedItems;
 
   const handleExported = useCallback(
     (videoSettings: Partial<VideoExportSettings>) => {
@@ -141,167 +133,69 @@ export const Toolbar: React.FC = () => {
   const {
     state: exportState,
     runExport,
+    runAudioExport,
     showSavePicker,
-    reportProgress,
     markComplete,
     beginExport,
     finishExportSoon,
     failExport,
     cancel: handleCancelExport,
     resetError,
-  } = useExportRunner({ project, onExported: handleExported });
-
-  const [deviceProfile, setDeviceProfile] = useState<DeviceProfile | null>(null);
-  const [exportEstimates, setExportEstimates] = useState<Map<string, TimeEstimate>>(new Map());
+  } = useExportRunner({ project: exportProject, canvasMode: isCanvasMode, onExported: handleExported });
 
   useEffect(() => {
+    if (!active) return;
     setGlobalExportState({
       isExporting: exportState.isExporting,
       progress: exportState.progress,
       phase: exportState.phase,
     });
-  }, [exportState.isExporting, exportState.progress, exportState.phase, setGlobalExportState]);
+  }, [active, exportState.isExporting, exportState.progress, exportState.phase, setGlobalExportState]);
 
-  useEffect(() => {
-    if (isExportOpen && !deviceProfile) {
-      getDeviceProfile().then(setDeviceProfile);
-    }
-  }, [isExportOpen, deviceProfile]);
-
-  useEffect(() => {
-    if (!deviceProfile || !project.timeline?.duration) {
+  const handleQuickExport = useCallback(async (id: QuickExportPresetId) => {
+    if (!hasTimelineContent || useUIStore.getState().exportState.isExporting) return;
+    if (isDesktop) {
+      window.dispatchEvent(new CustomEvent("openreel:menu:quick-export", { detail: { preset: id } }));
       return;
     }
-
-    const duration = project.timeline.duration;
-    const estimates = new Map<string, TimeEstimate>();
-
-    const configs: Array<{ key: string; width: number; height: number; frameRate: number; codec: "h264" | "h265" | "vp9" | "av1" }> = [
-      { key: "mp4", width: project.settings.width, height: project.settings.height, frameRate: 30, codec: "h264" },
-      { key: "4k", width: 3840, height: 2160, frameRate: 30, codec: "h264" },
-      { key: "4k-60-master", width: 3840, height: 2160, frameRate: 60, codec: "h264" },
-      { key: "4k-master", width: 3840, height: 2160, frameRate: 30, codec: "h264" },
-      { key: "1080p-high", width: 1920, height: 1080, frameRate: 30, codec: "h264" },
-      { key: "1080p-60", width: 1920, height: 1080, frameRate: 60, codec: "h264" },
-      { key: "prores", width: project.settings.width, height: project.settings.height, frameRate: 30, codec: "h264" },
-    ];
-
-    for (const config of configs) {
-      const estimate = estimateExportTime(deviceProfile, {
-        width: config.width,
-        height: config.height,
-        frameRate: config.frameRate,
-        duration,
-        codec: config.codec,
-      });
-      estimates.set(config.key, estimate);
-    }
-
-    setExportEstimates(estimates);
-  }, [deviceProfile, project.timeline?.duration, project.settings.width, project.settings.height]);
-
-  const handleExport = useCallback(
-    async (type: ExportType) => {
-      setIsExportOpen(false);
-
-      if (!project.timeline?.duration || project.timeline.duration <= 0 || project.timeline.tracks.every((t) => t.clips.length === 0)) {
-        toast.warning("时间轴无素材", "请先在时间轴上添加视频、音频或图片素材再进行导出");
+    const preset = getQuickExportPresets(exportProject.settings).find(entry => entry.id === id);
+    if (!preset) return;
+    try {
+      const ext = preset.kind === "audio" ? preset.extension : extForFormat(preset.settings.format ?? "mp4", preset.settings.codec);
+      const writable = await showSavePicker(exportFilename(project.name, ext), ext, { delivery: "download" });
+      beginExport(writable);
+      if (preset.kind === "audio") {
+        await runAudioExport(preset.settings, writable);
+        markComplete();
+        track(AnalyticsEvents.PROJECT_EXPORTED, { format: preset.extension, duration: project.timeline.duration });
+      } else if (!(await runExport(preset.settings, ext, writable))) {
         return;
       }
-
-      try {
-        if (type === "wav") {
-          const writable = await showSavePicker(exportFilename(project.name, "wav"), "wav");
-
-          beginExport();
-
-          const engine = getExportEngine();
-          await engine.initialize();
-
-          const audioSettings: Partial<AudioExportSettings> = {
-            format: "wav",
-            sampleRate: 48000,
-            channels: 2,
-            bitDepth: 24,
-          };
-
-          const generator = engine.exportAudio(project, audioSettings);
-          let finalResult: ExportResult | undefined;
-
-          while (true) {
-            const { value, done } = await generator.next();
-            if (done) {
-              finalResult = value;
-              break;
-            }
-            reportProgress(value.progress, value.phase);
-          }
-
-          if (finalResult?.success && finalResult.blob) {
-            await writeBlobToWritable(finalResult.blob, writable);
-            markComplete();
-            track(AnalyticsEvents.PROJECT_EXPORTED, {
-              format: "wav",
-              duration: project.timeline?.duration ?? 0,
-            });
-          } else {
-            try { await writable.abort(); } catch { void 0; }
-            throw new Error(finalResult?.error?.message || t("Export failed"));
-          }
-        } else {
-          const base = {
-            width: project.settings.width,
-            height: project.settings.height,
-            frameRate: project.settings.frameRate,
-          };
-
-          const presets: Record<string, { settings: Partial<VideoExportSettings>; ext: string }> = {
-            mp4: { settings: { ...base, format: "mp4", codec: "h264", bitrate: 12000, quality: 85 }, ext: "mp4" },
-            gif: { settings: { ...base, format: "webm", codec: "vp9", bitrate: 8000 }, ext: "webm" },
-            project: { settings: { ...base, format: "mp4", codec: "h264", bitrate: 12000, quality: 85 }, ext: "mp4" },
-            "4k-60-master": { settings: { ...base, width: 3840, height: 2160, frameRate: 60, format: "mov", codec: "h265", bitrate: 100000, quality: 95 }, ext: "mov" },
-            "4k-master": { settings: { ...base, width: 3840, height: 2160, frameRate: 30, format: "mov", codec: "h265", bitrate: 80000, quality: 95 }, ext: "mov" },
-            "4k-prores": { settings: { ...base, width: 3840, height: 2160, frameRate: 30, format: "mov", codec: "prores", bitrate: 880000, quality: 100 }, ext: "mov" },
-            "4k": { settings: { ...base, width: 3840, height: 2160, frameRate: 30, format: "mp4", codec: "h264", bitrate: 50000, quality: 90 }, ext: "mp4" },
-            "1080p-60": { settings: { ...base, width: 1920, height: 1080, frameRate: 60, format: "mp4", codec: "h264", bitrate: 25000, quality: 95 }, ext: "mp4" },
-            "1080p-high": { settings: { ...base, width: 1920, height: 1080, frameRate: 30, format: "mp4", codec: "h264", bitrate: 20000, quality: 95 }, ext: "mp4" },
-            prores: { settings: { ...base, format: "mov", codec: "prores", bitrate: 220000, quality: 100 }, ext: "mov" },
-          };
-
-          const preset = presets[type] ?? presets.mp4;
-          const writable = await showSavePicker(exportFilename(project.name, preset.ext), preset.ext);
-
-          beginExport();
-
-          await runExport(preset.settings, preset.ext, writable);
-        }
-
-        finishExportSoon();
-      } catch (error) {
-        failExport(error);
-      }
-    },
-    [project, track, runExport, showSavePicker, beginExport, reportProgress, markComplete, finishExportSoon, failExport],
-  );
+      finishExportSoon();
+    } catch (error) {
+      failExport(error);
+    }
+  }, [hasTimelineContent, isDesktop, project, exportProject.settings, showSavePicker, beginExport, runAudioExport, markComplete, track, runExport, finishExportSoon, failExport]);
 
   const handleCustomExport = useCallback(
-    async (settings: VideoExportSettings) => {
-      setIsExportDialogOpen(false);
-
-      if (!project.timeline?.duration || project.timeline.duration <= 0 || project.timeline.tracks.every((t) => t.clips.length === 0)) {
-        toast.warning("时间轴无素材", "请先在时间轴上添加视频、音频或图片素材再进行导出");
+    async (settings: VideoExportSettings, delivery: ExportDeliveryMode = window.openreel?.platform === "desktop" ? "file" : "download") => {
+      closeModal();
+      if (!checkTimelineForExport()) return;
+      // The encoder is busy with a queued job: line this export up behind it.
+      if (!isCanvasMode && isExportQueueBusy()) {
+        addDialogExportToQueue(settings, { presetLabel: "Custom", usePreviews: getUseExportPreviews(), sequenceId: exportSequenceId });
         return;
       }
 
       try {
-        const ext = extForFormat(settings.format);
-        const writable = await showSavePicker(exportFilename(project.name, ext), ext);
+        const ext = extForFormat(settings.format, settings.codec);
+        const writable = await showSavePicker(exportFilename(project.name, ext), ext, { delivery });
 
-        beginExport();
+        beginExport(writable);
 
         const needsUpscaling =
-          settings.width > project.settings.width ||
-          settings.height > project.settings.height;
+          settings.width > exportProject.settings.width ||
+          settings.height > exportProject.settings.height;
 
         const exportSettings: Partial<VideoExportSettings> = {
           ...settings,
@@ -311,7 +205,7 @@ export const Toolbar: React.FC = () => {
               : undefined,
         };
 
-        await runExport(exportSettings, ext, writable);
+        if (!(await runExport(exportSettings, ext, writable))) return;
 
         track(AnalyticsEvents.PROJECT_EXPORTED, {
           format: settings.format,
@@ -329,7 +223,7 @@ export const Toolbar: React.FC = () => {
         failExport(error);
       }
     },
-    [project, track, runExport, showSavePicker, beginExport, finishExportSoon, failExport],
+    [project, exportProject, exportSequenceId, checkTimelineForExport, isCanvasMode, closeModal, track, runExport, showSavePicker, beginExport, finishExportSoon, failExport],
   );
 
 
@@ -337,8 +231,8 @@ export const Toolbar: React.FC = () => {
     async (screenBlob: Blob, webcamBlob?: Blob) => {
       if (!screenBlob || screenBlob.size === 0) {
         toast.error(
-          t("Recording failed"),
-          t("No video data was captured. Please try again."),
+          clipNow()("Recording failed"),
+          clipNow()("No video data was captured. Please try again."),
         );
         return;
       }
@@ -353,12 +247,12 @@ export const Toolbar: React.FC = () => {
       const screenFile = new File([screenBlob], `Screen_${timestamp}.webm`, {
         type: screenBlob.type || "video/webm",
       });
-      const screenResult = await importMedia(screenFile);
+      const screenResult = await importMedia(screenFile, undefined, { recordedTake: "screen" });
       if (screenResult.success) {
         importCount++;
       } else {
         errors.push(
-          screenResult.error?.message || t("Failed to import screen recording"),
+          screenResult.error?.message || "Failed to import screen recording",
         );
       }
 
@@ -366,305 +260,126 @@ export const Toolbar: React.FC = () => {
         const webcamFile = new File([webcamBlob], `Webcam_${timestamp}.webm`, {
           type: webcamBlob.type || "video/webm",
         });
-        const webcamResult = await importMedia(webcamFile);
+        const webcamResult = await importMedia(webcamFile, undefined, { recordedTake: "webcam" });
         if (webcamResult.success) {
           importCount++;
         } else {
           errors.push(
-            webcamResult.error?.message || t("Failed to import webcam recording"),
+            webcamResult.error?.message || "Failed to import webcam recording",
           );
         }
       }
 
       if (importCount > 0) {
         toast.success(
-          isEn
-            ? `${importCount} recording${importCount > 1 ? "s" : ""} imported!`
-            : `已导入 ${importCount} 段录制`,
+          `${importCount} recording${importCount > 1 ? "s" : ""} imported!`,
           webcamBlob && webcamBlob.size > 0
-            ? t("Screen and webcam added to assets. Use the timeline to composite them.")
-            : t("Screen recording added to assets."),
+            ? clipNow()("Screen and webcam added to assets. Use the timeline to composite them.")
+            : clipNow()("Screen recording added to assets."),
         );
       } else if (errors.length > 0) {
-        toast.error(t("Import failed"), errors.join(". "));
+        toast.error(clipNow()("Import failed"), errors.join(". "));
       }
     },
-    [importMedia, isEn, t],
+    [importMedia],
   );
 
-  const projectRes = `${project.settings.width}×${project.settings.height}`;
-  const aspectRatio = project.settings.width / project.settings.height;
-  const isVertical = aspectRatio < 0.9;
-
-  const exportOptions: Array<{
-    label: string;
-    iconName: string;
-    desc: string;
-    type: ExportType;
-    recommended?: boolean;
-    separator?: boolean;
-  }> = [
-    {
-      label: "MP4 Standard",
-      iconName: "bolt",
-      desc: `${projectRes} H.264 - ${t("Web & social")}`,
-      type: "mp4",
-      recommended: true,
-    },
-    {
-      label: "",
-      iconName: "film",
-      desc: "",
-      type: "mp4",
-      separator: true,
-    },
-    ...(isVertical
-      ? []
-      : [
-          {
-            label: "4K Standard",
-            iconName: "film",
-            desc: t("3840×2160 - YouTube 4K"),
-            type: "4k" as ExportType,
-          },
-        ]),
-    {
-      label: "1080p High Quality",
-      iconName: "film",
-      desc: t("1920×1080 30fps - High bitrate"),
-      type: "1080p-high",
-    },
-    {
-      label: "1080p 60fps",
-      iconName: "film",
-      desc: t("1920×1080 - Smooth playback"),
-      type: "1080p-60",
-    },
-    {
-      label: "Audio Only (WAV)",
-      iconName: "music.note",
-      desc: t("Uncompressed audio"),
-      type: "wav",
-    },
-  ];
-
   return (
-    <header className="h-[60px] flex items-center gap-[18px] px-[18px] bg-bg-1 border-b border-border shrink-0 z-30 relative">
-      {/* ─── Left: mode switch ────────────────────────────────── */}
-      {/* data-toolbar-section: 供 CLIP_CSS 按 data-clip-mode 做三段显隐互斥 */}
-      <div
-        data-toolbar-section="left"
-        className="openreel-toolbar-left flex shrink-0 items-center"
-      >
-        <WorkspaceModeTabs
-          activeMode="video"
-          onSelectMode={handleWorkspaceModeSelect}
-          className="shrink-0"
-        />
+    <header className={`${phone ? "mobile-editor-header" : "workspace-topbar flex items-center border-b border-border"} shrink-0 z-30 relative ${isDesktop ? `workspace-native-${nativePlatform}` : ""}`} style={isDesktop ? { WebkitAppRegion: "drag" } as React.CSSProperties : undefined}>
+      {phone ? <MobileEditorHeader
+        onExport={() => { if (exportState.isExporting) handleCancelExport(); else { if (exportState.error) resetError(); openExportDialog(); } }}
+        exportLabel={exportState.isExporting ? `${Math.round(exportState.progress)}%` : exportState.error ? t("Retry") : exportState.complete ? t("Saved") : t("Export")}
+        exportDisabled={exportState.complete}
+        exportControl={isDesktop ? <span className="mobile-native-export"><DesktopExportButton compact /></span> : <EditorExportControl
+          state={exportState} disabled={!hasTimelineContent} compact onOpen={openExportDialog} onCancel={handleCancelExport} onDismissError={resetError} />}
+        menu={<EditorMenuBar onExport={openExportDialog} onQuickExport={handleQuickExport} onCompress={() => setIsCompressOpen(true)}/>}
+      /> : <>
+      <div data-toolbar-section="left" className="openreel-toolbar-left contents">
+      <ProjectSwitcher trigger={<ShadcnButton variant="ghost" className="workspace-brand p-0 h-auto" aria-label={t("Project menu")}>
+        <img src={reelIcon} alt="" />OpenReel
+      </ShadcnButton>} />
+      <EditorMenuBar onExport={openExportDialog} onQuickExport={handleQuickExport} onCompress={() => setIsCompressOpen(true)} />
       </div>
-
-      {/* ─── Center: project name ─────────────────────────────── */}
-      <div
-        data-toolbar-section="center"
-        className="openreel-toolbar-center flex flex-1 min-w-0 items-center justify-center gap-1.5"
-      >
-        <ToolcraftTextInputControl
-          label={t("Project name")}
-          isLabelHidden
-          value={projectNameDraft}
-          onChange={setProjectNameDraft}
+      <div data-toolbar-section="center" className="workspace-project openreel-toolbar-center">
+        <Input aria-label={t("Project name")} value={projectNameDraft} onChange={(e) => setProjectNameDraft(e.target.value)}
           onBlur={commitProjectName}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              (e.currentTarget as HTMLElement).blur();
-            } else if (e.key === "Escape") {
-              setProjectNameDraft(project.name);
-              (e.currentTarget as HTMLElement).blur();
-            }
+          onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); else if (e.key === "Escape") { cancelProjectNameCommit.current = true; setProjectNameDraft(project.name); e.currentTarget.blur(); } }} />
+        <span className="workspace-project-meta">{project.settings.width}×{project.settings.height} · {project.settings.frameRate} fps</span>
+        <WorkspaceSaveStatus />
+      </div>
+      <div className="workspace-actions">
+        <div data-toolbar-section="left" className="openreel-toolbar-left contents">
+        <div className="workspace-history">
+          <ShadcnButton variant="ghost" size="icon" aria-label={t("Undo")} onClick={() => void useProjectStore.getState().undo()}><EditorHeaderIcon kind="undo" /></ShadcnButton>
+          <ShadcnButton variant="ghost" size="icon" aria-label={t("Redo")} onClick={() => void useProjectStore.getState().redo()}><EditorHeaderIcon kind="redo" /></ShadcnButton>
+        </div>
+        <ExportQueueButton className="workspace-queue h-7 w-7 text-fg-2" />
+        <ShadcnButton variant="secondary" className="workspace-share" title={t("Back up or package this project")} aria-label={t("Project backup")} onClick={() => setIsShareOpen(true)}>{t("Backup")}</ShadcnButton>
+        </div>
+        <div data-toolbar-section="right" className="openreel-toolbar-right inline-flex items-center gap-2.5">
+        {isDesktop ? <DesktopExportButton /> : <EditorExportControl
+          state={exportState} disabled={!hasTimelineContent} onOpen={openExportDialog}
+          style={isCanvasMode ? { WebkitAppRegion: "no-drag" } as React.CSSProperties : undefined}
+          onCancel={handleCancelExport} onDismissError={resetError} />}
+        {isCanvasMode && <ShadcnButton
+          type="button"
+          variant="ghost"
+          className="omnimux-clip-stage-close-btn inline-flex"
+          disabled={exportState.isExporting && !exportState.savingToCanvas}
+          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+          onClick={() => {
+            if (exportState.savingToCanvas) handleCancelExport();
+            if (canvasSession?.nodeId) notifyCanvasClose({ nodeId: canvasSession.nodeId, projectId: canvasSession.projectId });
+            getActiveClipStageStore()?.set(false);
           }}
-          width={Math.min(Math.max(projectNameDraft.length, 6) * 8 + 40, 220)}
-          className="max-w-[220px] bg-transparent border-0 text-center font-medium text-[14px] tracking-tight text-fg-2 px-2 py-0.5 rounded-md min-w-[60px] focus:bg-bg-2 focus:outline-none"
-        />
-        <ProjectSwitcher />
+        >{t("Exit editor")}</ShadcnButton>}
+        </div>
       </div>
 
-      {/* ─── Right: actions (export + exit editor) ────────── */}
-      <div
-        data-toolbar-section="right"
-        className="openreel-toolbar-right flex items-center justify-end shrink-0 gap-2.5"
-      >
-        {/* Export */}
-        {exportState.isExporting ? (
-          <button
-            type="button"
-            onClick={handleCancelExport}
-            className="flex items-center gap-1.5 rounded-[8px] bg-bg-3 px-[18px] py-[9px] text-[13px] font-semibold text-fg-2"
-          >
-            <Icon name="square.and.arrow.up" size={13} ariaHidden />
-            {`${Math.round(exportState.progress)}%`}
-            <Icon name="xmark" size={11} ariaHidden />
-          </button>
-        ) : exportState.error ? (
-          <button
-            type="button"
-            onClick={resetError}
-            className="flex max-w-[180px] items-center gap-1.5 truncate rounded-[8px] bg-destructive px-[18px] py-[9px] text-[13px] font-semibold text-destructive-foreground"
-          >
-            <span className="truncate">{exportState.error}</span>
-            <Icon name="xmark" size={11} ariaHidden />
-          </button>
-        ) : exportState.complete ? (
-          <button
-            type="button"
-            disabled
-            className="flex items-center gap-1.5 rounded-[8px] bg-bg-3 px-[18px] py-[9px] text-[13px] font-semibold text-fg-2"
-          >
-            <Icon name="checkmark" size={13} ariaHidden />
-            {t("Saved!")}
-          </button>
-        ) : (
-          <div className="flex items-stretch">
-            <button
-              type="button"
-              onClick={() => handleExport("mp4")}
-              className="openreel-export-btn rounded-l-[8px] rounded-r-none bg-accent px-[18px] py-[9px] text-[13px] font-semibold text-accent-fg"
-            >
-              {t("Export")}
-            </button>
-            <DropdownMenu
-              isMenuOpen={isExportOpen}
-              onOpenChange={setIsExportOpen}
-              hasChevron={false}
-              button={{
-                label: t("Export options"),
-                variant: "primary",
-                size: "sm",
-                isIconOnly: true,
-                icon: (
-                  <svg
-                    width="11"
-                    height="11"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.4"
-                    aria-hidden
-                  >
-                    <path d="M6 9l6 6 6-6" />
-                  </svg>
-                ),
-                className:
-                  "openreel-export-btn-chevron rounded-l-none rounded-r-[8px] border-l border-accent-divider",
-                style: {
-                  background: "var(--accent)",
-                  width: "auto",
-                  height: "auto",
-                  padding: "9px 8px",
-                  borderRadius: "0 8px 8px 0",
-                },
-              }}
-              menuWidth={288}
-            >
-              <div className="space-y-1 max-h-[400px] overflow-y-auto">
-                {exportOptions.map((option, index) =>
-                  option.separator ? (
-                    <div key={`sep-${index}`} className="my-1 border-t border-border" />
-                  ) : (
-                    <DropdownMenuItem
-                      key={option.type + index}
-                      icon={<Icon name={option.iconName} size={18} ariaHidden />}
-                      label={
-                        <div className="flex items-center gap-2">
-                          <Text
-                            type="label"
-                            weight="bold"
-                            className={option.recommended ? "text-accent" : "text-fg"}
-                          >
-                            {t(option.label)}
-                          </Text>
-                          {option.recommended && (
-                            <Text type="supporting" className="rounded bg-accent-soft px-1.5 py-0.5 text-[10px] text-accent">
-                              {t("Best match")}
-                            </Text>
-                          )}
-                        </div>
-                      }
-                      description={
-                        <div>
-                          <Text type="supporting" color="secondary" display="block">
-                            {option.desc}
-                          </Text>
-                          {exportEstimates.get(option.type) && (
-                            <Text type="supporting" color="secondary" display="block" className="text-[10px]">
-                              {t("Est.")} {exportEstimates.get(option.type)?.formatted}
-                            </Text>
-                          )}
-                        </div>
-                      }
-                      className={option.recommended ? "bg-accent-soft" : undefined}
-                      onClick={() => handleExport(option.type)}
-                    />
-                  ),
-                )}
-
-                <div className="my-1 border-t border-border" />
-                <DropdownMenuItem
-                  icon={<Settings size={18} aria-hidden />}
-                  label={t("Custom export...")}
-                  description={t("Full settings with AI upscaling")}
-                  endContent={<MoreHorizontal size={14} className="text-fg-muted" aria-hidden />}
-                  onClick={() => setIsExportDialogOpen(true)}
-                />
-                <DropdownMenuItem
-                  icon={<Video size={18} aria-hidden />}
-                  label={t("Compress video...")}
-                  description={t("Shrink any video to a target size")}
-                  onClick={() => setIsCompressOpen(true)}
-                />
-              </div>
-              <Text type="supporting" color="secondary" display="block" className="border-t border-border bg-bg-2 px-3 py-2.5 text-center text-xs">
-                {project.settings.width}×{project.settings.height} •{" "}
-                {project.settings.frameRate}fps
-              </Text>
-            </DropdownMenu>
-          </div>
-        )}
-        {isCanvasMode && (
-          <button
-            type="button"
-            onClick={handleReturnToCanvas}
-            aria-label={returnToCanvasText}
-            className="omnimux-clip-stage-close-btn inline-flex items-center justify-center h-[36px] px-3.5 py-[8px] rounded-[8px] bg-bg-2 hover:bg-hover border border-border hover:border-border-focus text-fg-2 hover:text-fg text-[13px] font-medium whitespace-nowrap transition-colors select-none shrink-0"
-            style={{ WebkitAppRegion: "no-drag", pointerEvents: "auto" } as React.CSSProperties}
-          >
-            <span className="whitespace-nowrap">{returnToCanvasText}</span>
-          </button>
-        )}
-      </div>
-
+      {isDesktop && <WindowControls platform={nativePlatform} />}
+      </>}
       {/* ─── Auxiliary popups & dialogs ───────────────────────── */}
-      <CompressDialog
-        isOpen={isCompressOpen}
-        onClose={() => setIsCompressOpen(false)}
-      />
+      {compressLatched && (
+        <Suspense fallback={null}>
+          <CompressDialog
+            isOpen={isCompressOpen}
+            onClose={() => setIsCompressOpen(false)}
+          />
+        </Suspense>
+      )}
+      <Suspense fallback={null}>
       <ExportDialog
         isOpen={isExportDialogOpen}
-        onClose={() => setIsExportDialogOpen(false)}
-        onExport={handleCustomExport}
-        duration={project.timeline?.duration ?? 0}
-        projectWidth={project.settings?.width ?? 1920}
-        projectHeight={project.settings?.height ?? 1080}
-        frameRate={project.settings?.frameRate ?? 30}
-        sourceMatch={deriveSourceExportMatch(project)}
-      />
-
-      <ScreenRecorder
-        isOpen={activeModal === "recorder"}
         onClose={closeModal}
-        onRecordingComplete={handleRecordingComplete}
+        onExport={handleCustomExport}
+        canvasMode={isCanvasMode}
+        onAddToQueue={isCanvasMode ? undefined : (settings, meta) => { addDialogExportToQueue(settings, { ...meta, sequenceId: exportSequenceId }); }}
+        duration={exportProject.timeline?.duration ?? 0}
+        projectWidth={exportProject.settings?.width ?? 1920}
+        projectHeight={exportProject.settings?.height ?? 1080}
+        frameRate={exportProject.settings?.frameRate ?? 30}
+        sourceMatch={sourceMatch}
+        hasAudio={projectHasAudio}
+        markedRange={loopEnd > loopStart && exportProject === project ? { startTime: loopStart, endTime: loopEnd } : null}
       />
+      </Suspense>
+
+      <ExportQueuePanel />
+
+      <Suspense fallback={null}>
+        <ScreenRecorder
+          isOpen={activeModal === "recorder"}
+          onClose={closeModal}
+          onRecordingComplete={handleRecordingComplete}
+        />
+      </Suspense>
 
       <SettingsDialog />
+      {isShareOpen && (
+        <Suspense fallback={null}>
+          <ProjectPackageDialog onClose={() => setIsShareOpen(false)} />
+        </Suspense>
+      )}
 
       {activeModal === "history" && (
         <>
@@ -674,17 +389,12 @@ export const Toolbar: React.FC = () => {
           />
           <div className="fixed top-topbar right-0 bottom-0 w-80 bg-bg-1 border-l border-border z-50 shadow-lg animate-in slide-in-from-right duration-200">
             <div className="flex items-center justify-between p-3 border-b border-border">
-              <Text type="body" weight="bold" className="text-sm text-fg">
+              <span className="font-bold text-sm text-fg">
                 {t("Action history")}
-              </Text>
-              <ToolcraftIconButton
-                label={t("Close action history")}
-                icon={<X size={14} aria-hidden />}
-                size="sm"
-                variant="ghost"
-                onClick={closeModal}
-                className="p-1.5 rounded hover:bg-hover text-fg-3 hover:text-fg transition-colors"
-              />
+              </span>
+              <ShadcnButton variant="ghost" size="icon-sm" onClick={closeModal} type="button" aria-label={t("Close action history")} title={t("Close action history")} className="inline-flex shrink-0 items-center justify-center outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-7 w-7 bg-transparent p-1.5 rounded hover:bg-hover text-fg-3 hover:text-fg transition-colors">
+                {<X size={14} aria-hidden />}
+              </ShadcnButton>
             </div>
             <div className="h-[calc(100%-49px)]">
               <HistoryPanel />
@@ -695,5 +405,3 @@ export const Toolbar: React.FC = () => {
     </header>
   );
 };
-
-export default Toolbar;

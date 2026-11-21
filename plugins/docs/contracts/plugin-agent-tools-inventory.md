@@ -206,7 +206,7 @@ superseded_by: null
 
 ### 3.7 `omnimux-clip`（OpenReel 视频剪辑）
 
-- **功能域**为右侧编排多轨时间轴、素材、字幕、转场、播放与 WebCodecs 导出。
+- **功能域**为 OpenReel v1.0.0 三栏工作区内的多轨时间轴、素材、字幕、转场、音频处理、播放与 WebCodecs 导出。[上游引入契约](openreel-vendor-contract.md)
 - **归属**为画布节点绑定的 Portal 或独立「视频剪辑」Tab。复制节点分配新工程 ID、清空旧草稿与成片绑定。画布打开和回执按工作区、节点、工程三项校验。手工导出的每笔上传独立结算，退出后仍可回写，新版回写后拒绝迟到的旧回执。
 - **状态**为 9 个注册工具。Host 查档与旧档编辑均使用 `$DSH_HOME/omnimux/clip/projects/` 的 `TimelineSchema`。当前可用的手工编辑和导出由浏览器执行。运行行为与 [阶段 2 计划协议](clip-live-control.md) 见剪辑契约。
 - `Implemented` 标记已注册的 Host 处理器。表中四个实时工具当前仅校验工程并返回错误，实时操作待阶段 2 接入。
@@ -222,6 +222,7 @@ superseded_by: null
 | 校验工程并报告实时播放控制不可用 | 编辑器播放控制 | `clip_view` | L1 | `Implemented` | 否 |
 | 校验工程并报告实时截帧不可用 | 编辑器预览 | `clip_snapshot` | L2 | `Implemented` | 否 |
 | 校验工程并报告实时导出不可用 | 编辑器「导出」 | `clip_export` | L1 | `Implemented` | 阶段 2 按用户明确导出指令 |
+| 播放指针拖拽 (Scrubbing) 与实时预览 | 播放控制器 | — | UI-Only | `UI-Only` | 豁免 (60fps 实时渲染) |
 
 查询工具不会自动切页，画布 Portal 打开时剪辑工具保留当前画布。待迁移文件上报 `openreel-migration-required`，未保存的 `clip_node_…` 上报 `project-not-materialized`。单个工程读文件失败时上报 `project-unreadable`，HTTP 单项为 409，列表继续返回其余工程。实时工具读取旧档成功后抛 `ui-unavailable`。截帧与导出不会生成占位文件。
 

@@ -1,9 +1,17 @@
+import { restoreLegacyMediaState } from "../services/legacy-media-state";
+import { clearMotionExpressionCodeApprovals } from "@openreel/core";
+import { lutToJson, lutFromJson, applySequenceSettings, applyTimelineToolEdits, reconcileMulticamAudio, validateTimelineToolEdits, invertTimelineToolEdits, type TimelineToolPlan } from "@openreel/core";
+import { readOnlyReason } from "../services/project-lock";
+import { cloneProjectForEdit } from "./project/clone-project-for-edit";
 import { create } from "zustand";
+import { useTimelineStore } from "./timeline-store";
+import { useUIStore } from "./ui-store";
 import { subscribeWithSelector } from "zustand/middleware";
 import type {
   Project,
   ProjectSettings,
   MediaItem,
+  StockMediaSource,
   Track,
   Clip,
   AutomationPoint,
@@ -24,6 +32,8 @@ import type {
   CreateLayerOptions,
   PhotoBlendMode,
   Effect,
+  AudioRack,
+  RoutingPlan,
   Keyframe,
   Transform,
   AppliedEditingTemplate,
@@ -36,19 +46,22 @@ import type {
   MotionCompositionInstance,
 } from "@openreel/core";
 import {
-  ActionExecutor,
   ActionHistory,
-  clearMotionExpressionCodeApprovals,
-  getBuiltInEditingTemplate,
-  getBuiltInEditingTemplates,
-  getMotionPreset,
-  motionEngine,
-  normalizeGeneratedShaders,
-  normalizeProjectMotionFields,
-  reflowMotionAutoLayoutGroups,
-  registerProjectGeneratedShaders,
-  resolveEditingTemplate,
+  ensureSequences,
+  getTrackItems,
+  resolveTimelinePlacement,
+  syncActiveSequence,
+  withUniversalTracksCapability,
 } from "@openreel/core";
+import {
+  LazyActionExecutor,
+  type ActionExecutorLike,
+} from "../services/lazy-action-executor";
+import {
+  getLoadedEngineModules,
+  loadEngineModules,
+  whenEngineModulesLoaded,
+} from "../services/lazy-engines";
 import { createMarkerSlice } from "./project/marker-slice";
 import { createSubtitleSlice } from "./project/subtitle-slice";
 import { createTrackSlice } from "./project/track-slice";
@@ -57,12 +70,16 @@ import { createProjectStoreHelpers } from "./project/store-helpers";
 import { createTextGraphicsSlice } from "./project/text-graphics-slice";
 import { createHistorySlice } from "./project/history-slice";
 import { createClipSlice } from "./project/clip-slice";
+import { createTimelineItemSlice } from "./project/timeline-item-slice";
 import { v4 as uuidv4 } from "uuid";
+import { editSnapshot } from "@openreel/core/actions/handlers/edit-snapshot";
 import type {
   VideoEffect,
   VideoEffectType,
   ColorGradingSettings,
 } from "../bridges/effects-bridge";
+import { getMediaBridge } from "../bridges/media-bridge";
+import { refreshStaleThumbnails } from "../services/thumbnail-interpretation";
 import { getEffectsBridge } from "../bridges/effects-bridge";
 import { getTransitionBridge } from "../bridges/transition-bridge";
 import {
@@ -71,6 +88,8 @@ import {
   type AutoSaveMetadata,
 } from "../services/auto-save";
 import { useEngineStore } from "./engine-store";
+import { useSettingsStore } from "./settings-store";
+import { useNotificationStore } from "./notification-store";
 import {
   createEmptyProject,
   calculateTimelineDuration,
@@ -83,10 +102,12 @@ import {
 import {
   saveMediaBlob,
   loadProjectMedia,
-  loadFileHandle,
-  loadDirectoryHandle,
 } from "../services/media-storage";
-import { restoreMediaItem } from "../utils/media-recovery";
+import { restoreProjectPlaceholders } from "../services/restore-project-placeholders";
+import {
+  createMissingMediaItem,
+  restoreMediaItem,
+} from "../utils/media-recovery";
 import { projectManager } from "../services/project-manager";
 import {
   planCreationObjectEdit,
@@ -97,6 +118,22 @@ import {
   type CreationCameraEditPatch,
 } from "../motion/creation-camera-editing";
 import { planRecoverMotionScene3DLayer } from "../motion/creation-recovery";
+import type { LoopRangeChange } from "./project/range-history";
+
+function requireEngineModules(): NonNullable<ReturnType<typeof getLoadedEngineModules>> {
+  const engines = getLoadedEngineModules();
+  if (!engines) {
+    throw new Error(
+      "Engine modules are not loaded yet; await loadEngineModules() before this edit.",
+    );
+  }
+  return engines;
+}
+
+/** Motion auto-layout reflow; identity until the engine modules resolve. */
+function reflowMotion(composition: MotionComposition): MotionComposition {
+  return getLoadedEngineModules()?.reflowMotionAutoLayoutGroups(composition) ?? composition;
+}
 
 /**
  * ProjectState - Complete state interface for project management
@@ -114,6 +151,16 @@ import { planRecoverMotionScene3DLayer } from "../motion/creation-recovery";
  *
  * All async methods return ActionResult with success status and error details.
  */
+/** Optional path/polygon geometry for a shape clip (pathData wins over points). */
+export type ShapePathGeometry = Pick<ShapeClip, "points" | "pathData" | "closed">;
+
+export interface TimelineToolCommitOptions {
+  /** Pushes tagged with the open history burst's key join its undo group. */
+  burstKey?: string;
+  /** Timeline In/Out range change that undo/redo of this edit restores. */
+  loopRange?: LoopRangeChange;
+}
+
 export interface ProjectState {
   // Project data
   project: Project;
@@ -123,7 +170,7 @@ export interface ProjectState {
   photoProjects: Map<string, PhotoProject>;
 
   // Action system
-  actionExecutor: ActionExecutor;
+  actionExecutor: ActionExecutorLike;
   actionHistory: ActionHistory;
 
   // Clip history for graphics/text clips (outside main timeline)
@@ -142,30 +189,43 @@ export interface ProjectState {
     settings?: Partial<ProjectSettings>,
   ) => void;
   loadProject: (project: Project) => void;
+  /** Rehydrate saved processing after asynchronous bridge initialization. */
+  syncProjectProcessing: () => void;
+  /**
+   * Point the render-side engines (effects, transitions, text/graphics overlays)
+   * at `project` instead of the live project. Used by queued exports so they
+   * render their snapshot; call again with the live project to restore.
+   */
+  syncRenderProcessingFrom: (project: Project) => void;
   renameProject: (name: string) => Promise<ActionResult>;
-  updateSettings: (settings: Partial<ProjectSettings>) => Promise<ActionResult>;
+  /**
+   * Change sequence settings. When the frame size changes the sequence's graphics
+   * (templates, text, shapes, SVG) are rescaled with it unless `scaleGraphics` is
+   * false; the whole change is ONE undo step either way.
+   */
+  updateSettings: (settings: Partial<ProjectSettings>, options?: { scaleGraphics?: boolean }) => Promise<ActionResult>;
   setCanvasBackground: (
     mode: "color" | "blur" | undefined,
     color: string | undefined,
   ) => Promise<ActionResult>;
 
   // Media library actions
-  importMedia: (file: File) => Promise<ActionResult>;
+  importMedia: (file: File, onProgress?: (stage: string) => void, source?: { soundLibraryId?: string; stockSource?: StockMediaSource; recordedTake?: "screen" | "webcam" }, options?: { signal?: AbortSignal; isCurrent?: () => boolean }) => Promise<ActionResult>;
   deleteMedia: (mediaId: string) => Promise<ActionResult>;
-  replaceMediaAsset: (mediaId: string, file: File, sourceFolder?: string) => Promise<ActionResult>;
+  replaceMediaAsset: (mediaId: string, file: File, sourceFolder?: string, options?: { restorePlaceholder?: boolean; sourcePath?: string }) => Promise<ActionResult>;
   renameMedia: (mediaId: string, name: string) => Promise<ActionResult>;
   getMediaItem: (mediaId: string) => MediaItem | undefined;
-  /** Add a pending placeholder for a background KieAI task */
-  addPlaceholderMedia: (item: MediaItem) => void;
-  /** Replace a pending placeholder with the actual result blob */
-  replacePlaceholderMedia: (mediaId: string, blob: Blob, name: string) => Promise<void>;
-  /** Flip isPending / kieaiError flags on a placeholder without full replacement */
-  setKieAIItemState: (mediaId: string, isPending: boolean, kieaiError: boolean) => void;
 
   // Track actions
   addTrack: (
     trackType: "video" | "audio" | "image" | "text" | "graphics",
     position?: number,
+    options?: {
+      mode?: "standard";
+      role?: Track["role"];
+      name?: string;
+      trackId?: string;
+    },
   ) => Promise<ActionResult>;
   duplicateTrack: (trackId: string) => Promise<ActionResult>;
   removeTrack: (trackId: string) => Promise<ActionResult>;
@@ -174,6 +234,18 @@ export interface ProjectState {
   hideTrack: (trackId: string, hidden: boolean) => Promise<ActionResult>;
   muteTrack: (trackId: string, muted: boolean) => Promise<ActionResult>;
   soloTrack: (trackId: string, solo: boolean) => Promise<ActionResult>;
+  /** Solo Safe: keep the track audible while other tracks are soloed (live and in the export mixdown). */
+  setTrackSoloSafe: (trackId: string, soloSafe: boolean) => Promise<ActionResult>;
+  setTrackSyncLock: (trackId: string, syncLock: boolean) => Promise<ActionResult>;
+  /** Replace a track's (or the master bus's, target "master") effect rack: one undo step. */
+  setAudioRack: (target: string, rack: AudioRack | null) => Promise<ActionResult>;
+  /** Commit one routing plan (bus/output/send edit) as ONE undo step. */
+  applyAudioRouting: (plan: RoutingPlan) => Promise<ActionResult>;
+  setTrackAutomation: (
+    trackId: string,
+    lane: "volume" | "pan",
+    points: AutomationPoint[] | null,
+  ) => Promise<ActionResult>;
   groupTracks: (trackId: string, partnerTrackId?: string) => boolean;
   renameTrack: (trackId: string, name: string) => Promise<ActionResult>;
   getTrack: (trackId: string) => Track | undefined;
@@ -187,6 +259,16 @@ export interface ProjectState {
   addClipToNewTrack: (
     mediaId: string,
     startTime?: number,
+  ) => Promise<ActionResult>;
+  placeMediaClip: (
+    mediaId: string,
+    targetTrackId: string | undefined,
+    startTime: number,
+  ) => Promise<ActionResult>;
+  moveTimelineItem: (
+    itemId: string,
+    startTime: number,
+    targetTrackId?: string,
   ) => Promise<ActionResult>;
   removeClip: (clipId: string) => Promise<ActionResult>;
   moveClip: (
@@ -208,6 +290,8 @@ export interface ProjectState {
   ) => Promise<ActionResult>;
   splitClip: (clipId: string, time: number) => Promise<ActionResult>;
   rippleDeleteClip: (clipId: string) => Promise<ActionResult>;
+  /** Ripple delete clips as one undo step; sync-locked tracks follow (see sync-lock.ts). */
+  rippleDeleteClips: (clipIds: readonly string[]) => Promise<ActionResult>;
   slipClip: (clipId: string, delta: number) => Promise<ActionResult>;
   slideClip: (clipId: string, delta: number) => Promise<ActionResult>;
   rollEdit: (
@@ -248,12 +332,12 @@ export interface ProjectState {
   updateClipRotate3D: (
     clipId: string,
     rotate3d: { x: number; y: number; z: number },
-  ) => boolean;
-  updateClipPerspective: (clipId: string, perspective: number) => boolean;
+  ) => Promise<boolean>;
+  updateClipPerspective: (clipId: string, perspective: number) => Promise<boolean>;
   updateClipTransformStyle: (
     clipId: string,
     transformStyle: "flat" | "preserve-3d",
-  ) => boolean;
+  ) => Promise<boolean>;
   updateClipEmphasisAnimation: (
     clipId: string,
     emphasisAnimation: import("@openreel/core").EmphasisAnimation,
@@ -376,7 +460,7 @@ export interface ProjectState {
   addSubtitle: (
     subtitle: import("@openreel/core").Subtitle,
     metadata?: import("@openreel/core").ClipMetadata,
-  ) => Promise<void>;
+  ) => Promise<TextClip | undefined>;
   removeSubtitle: (subtitleId: string) => void;
   updateSubtitle: (
     subtitleId: string,
@@ -398,11 +482,25 @@ export interface ProjectState {
     time: number,
     label?: string,
     color?: string,
+    extra?: {
+      duration?: number;
+      comment?: string;
+      kind?: import("@openreel/core").MarkerKind;
+      author?: string;
+      status?: import("@openreel/core").ReviewStatus;
+      replies?: import("@openreel/core").ReviewReply[];
+      createdAt?: number;
+    },
   ) => Promise<ActionResult>;
   removeMarker: (markerId: string) => Promise<ActionResult>;
   updateMarker: (
     markerId: string,
     updates: Partial<import("@openreel/core").Marker>,
+  ) => Promise<ActionResult>;
+  /** Replace the markers of one clip (`clipId`) or of a media item's master clip (`mediaId`); source-time markers. */
+  setClipMarkers: (
+    target: { clipId: string } | { mediaId: string },
+    markers: import("@openreel/core").Marker[],
   ) => Promise<ActionResult>;
   getMarker: (markerId: string) => import("@openreel/core").Marker | undefined;
   getMarkers: () => import("@openreel/core").Marker[];
@@ -414,6 +512,7 @@ export interface ProjectState {
     shapeType: ShapeType,
     duration?: number,
     style?: Partial<ShapeStyle>,
+    geometry?: ShapePathGeometry,
   ) => ShapeClip | null;
   updateShapeStyle: (
     clipId: string,
@@ -530,6 +629,12 @@ export interface ProjectState {
     clipId: string,
     effects: VideoEffect[],
   ) => Promise<boolean>;
+  /** Replace a clip's effect stack and keyframes in one undo step (presets, animated duplicates). */
+  setClipEffectState: (
+    clipId: string,
+    effects: Effect[],
+    keyframes: Keyframe[],
+  ) => Promise<boolean>;
   updateVideoEffect: (
     clipId: string,
     effectId: string,
@@ -552,6 +657,16 @@ export interface ProjectState {
   ) => Promise<boolean>;
   getColorGrading: (clipId: string) => ColorGradingSettings;
   resetColorGrading: (clipId: string) => Promise<boolean>;
+  /**
+   * Replace the whole grade of several clips (saved looks, library LUTs) as one
+   * undo step. `build` gets each clip's current grade and returns the new one
+   * (undefined clears it). Returns the ids that were changed.
+   */
+  setClipsColorGrading: (
+    clipIds: readonly string[],
+    build: (current: ClipColorGrading | undefined) => ClipColorGrading | undefined,
+    label: string,
+  ) => Promise<string[]>;
 
   // Audio effects actions
   addAudioEffect: (clipId: string, effect: Effect) => Promise<boolean>;
@@ -580,7 +695,8 @@ export interface ProjectState {
   clearClipAudioDucking: (clipId: string) => boolean;
 
   // Keyframe actions
-  updateClipKeyframes: (clipId: string, keyframes: Keyframe[]) => boolean;
+  /** `derived` marks keys already produced by applyKeyframeInterpolation, so smooth sides are not re-derived as if hand-edited. */
+  updateClipKeyframes: (clipId: string, keyframes: Keyframe[], options?: { derived?: boolean }) => boolean;
 
   // Undo/Redo
   undo: () => Promise<ActionResult>;
@@ -589,6 +705,7 @@ export interface ProjectState {
   canRedo: () => boolean;
 
   // Execute arbitrary action
+  commitTimelineToolEdit: (plan: TimelineToolPlan, options?: TimelineToolCommitOptions) => ActionResult;
   executeAction: (action: Action) => Promise<ActionResult>;
 
   // Computed values
@@ -614,14 +731,36 @@ function motionCompositionsEqual(
 // starts the interval) more than once across editor mount/unmount cycles, which
 // would otherwise leak a store subscription and fire markDirty repeatedly.
 let autoSaveInitialized = false;
+let recoveringAutoSave = false;
+let autoSaveInitializationPromise: Promise<void> | null = null;
+let autoSaveNotificationsInitialized = false;
 
 /**
  * Create the project store
  */
+const TITLE_ENGINE_SYNC_ACTIONS = new Set<string>([
+  "text/update",
+  "style/applyText",
+  "style/restoreText",
+  "style/applyCaption",
+]);
+
+/**
+ * Re-derives Auto / Continuous Bezier sides after a keyframe edit. The derivation lives in core and is
+ * registered by the editor chunk (the only place smooth keys can be created), which keeps it out of the
+ * startup entry chunk. Keys without smooth sides never reach it.
+ */
+type SmoothKeyframeRefresh = (prior: readonly Keyframe[] | undefined, next: readonly Keyframe[]) => Keyframe[];
+let smoothKeyframeRefresh: SmoothKeyframeRefresh | null = null;
+export function registerSmoothKeyframeRefresh(refresh: SmoothKeyframeRefresh): void {
+  smoothKeyframeRefresh = refresh;
+}
+const hasSmoothSide = (key: Keyframe): boolean => key.interpolationIn !== undefined || key.interpolationOut !== undefined;
+
 export const useProjectStore = create<ProjectState>()(
   subscribeWithSelector((set, get) => {
     const actionHistory = new ActionHistory();
-    const actionExecutor = new ActionExecutor(actionHistory);
+    const actionExecutor = new LazyActionExecutor(actionHistory);
 
     const getProjectClipIds = (project: Project): string[] => [
       ...project.timeline.tracks.flatMap((track) =>
@@ -640,6 +779,7 @@ export const useProjectStore = create<ProjectState>()(
         enabled: effect.enabled,
         params: effect.params,
         order,
+        ...(effect.metadata ? { metadata: effect.metadata } : {}),
       }));
 
     const updateProjectClip = (
@@ -676,36 +816,6 @@ export const useProjectStore = create<ProjectState>()(
       };
     };
 
-    const buildSerializedColorGrading = (clipId: string): ClipColorGrading => {
-      const effectsBridge = getEffectsBridge();
-      if (!effectsBridge.isInitialized()) {
-        return {};
-      }
-
-      const colorGrading = effectsBridge.getColorGrading(clipId);
-
-      return {
-        ...(colorGrading.colorWheels
-          ? { colorWheels: colorGrading.colorWheels }
-          : {}),
-        ...(colorGrading.curves ? { curves: colorGrading.curves } : {}),
-        ...(colorGrading.lut
-          ? {
-              lut: {
-                data: Array.from(colorGrading.lut.data),
-                size: colorGrading.lut.size,
-                intensity: colorGrading.lut.intensity,
-              },
-            }
-          : {}),
-        ...(colorGrading.hsl ? { hsl: colorGrading.hsl } : {}),
-        ...(colorGrading.temperature !== undefined
-          ? { temperature: colorGrading.temperature }
-          : {}),
-        ...(colorGrading.tint !== undefined ? { tint: colorGrading.tint } : {}),
-      };
-    };
-
     const syncClipEffectsBridge = (project: Project, clipId: string): void => {
       const effectsBridge = getEffectsBridge();
       if (!effectsBridge.isInitialized()) {
@@ -736,6 +846,7 @@ export const useProjectStore = create<ProjectState>()(
           enabled: effect.enabled,
           params: effect.params,
           order: effect.order,
+          ...(effect.metadata ? { metadata: effect.metadata } : {}),
         })),
         // The clip is the source of truth for color grading; pushing it into
         // the bridge here is what makes undo/redo (and project load) restore
@@ -936,35 +1047,24 @@ export const useProjectStore = create<ProjectState>()(
       };
     };
 
+    /**
+     * Template overlays are created straight in the render engines. The preview draws the project's overlay lists,
+     * so they are re-read from the engines whenever a template application changes them.
+     */
+    const withEngineOverlays = (project: Project): Project => {
+      const titleEngine = useEngineStore.getState().getTitleEngine();
+      const graphicsEngine = useEngineStore.getState().getGraphicsEngine();
+      return {
+        ...project,
+        textClips: titleEngine?.getAllTextClips() ?? project.textClips,
+        shapeClips: graphicsEngine?.getAllShapeClips() ?? project.shapeClips,
+        svgClips: graphicsEngine?.getAllSVGClips() ?? project.svgClips,
+        stickerClips: graphicsEngine?.getAllStickerClips() ?? project.stickerClips,
+      };
+    };
+
     const trackHasAnyClips = (project: Project, trackId: string): boolean => {
-      const track = project.timeline.tracks.find((candidate) => candidate.id === trackId);
-      if (!track) {
-        return false;
-      }
-
-      if (track.clips.length > 0) {
-        return true;
-      }
-
-      if (track.type === "text") {
-        const titleEngine = useEngineStore.getState().getTitleEngine();
-        return titleEngine?.getAllTextClips().some((clip) => clip.trackId === trackId) ?? false;
-      }
-
-      if (track.type === "graphics") {
-        const graphicsEngine = useEngineStore.getState().getGraphicsEngine();
-        if (!graphicsEngine) {
-          return false;
-        }
-
-        return [
-          ...graphicsEngine.getAllShapeClips(),
-          ...graphicsEngine.getAllSVGClips(),
-          ...graphicsEngine.getAllStickerClips(),
-        ].some((clip) => clip.trackId === trackId);
-      }
-
-      return false;
+      return getTrackItems(project, trackId).length > 0;
     };
 
     const buildEditingTemplateKeyframes = (
@@ -1067,7 +1167,7 @@ export const useProjectStore = create<ProjectState>()(
           applicationState: EditingTemplateApplicationState;
         }
       | null => {
-      const template = getBuiltInEditingTemplate(templateId);
+      const template = getLoadedEngineModules()?.getBuiltInEditingTemplate(templateId);
       if (!template) {
         return null;
       }
@@ -1081,10 +1181,13 @@ export const useProjectStore = create<ProjectState>()(
         return null;
       }
 
+      const mediaItem = project.mediaLibrary.items.find(
+        (item) => item.id === ownerClip.mediaId,
+      );
       const targetType =
-        track.type === "image"
+        mediaItem?.type === "image"
           ? "image"
-          : track.type === "video"
+          : mediaItem?.type === "video"
             ? "video"
             : null;
 
@@ -1115,9 +1218,6 @@ export const useProjectStore = create<ProjectState>()(
         return null;
       }
 
-      const mediaItem = project.mediaLibrary.items.find(
-        (item) => item.id === ownerClip.mediaId,
-      );
       const assetUrls = project.mediaLibrary.items.reduce<Record<string, string>>(
         (urls, item) => {
           const url = item.originalUrl ?? item.thumbnailUrl ?? undefined;
@@ -1129,7 +1229,7 @@ export const useProjectStore = create<ProjectState>()(
         {},
       );
 
-      const resolvedTemplate = resolveEditingTemplate(
+      const resolvedTemplate = requireEngineModules().resolveEditingTemplate(
         template,
         {
           clip: {
@@ -1175,7 +1275,8 @@ export const useProjectStore = create<ProjectState>()(
         ...resolvedTemplate.effects.flatMap((effect, index) =>
           buildEditingTemplateKeyframes(
             `template-keyframe-${applicationId}-video-${index + 1}`,
-            effect.keyframes,
+            // Key onto the instance just added so existing instance keyframes on the clip never override the template.
+            requireEngineModules().rekeyKeyframesToEffectInstance(addedEffects[index]!, effect.keyframes),
           ),
         ),
         ...resolvedTemplate.audioEffects.flatMap((effect, index) =>
@@ -1281,7 +1382,7 @@ export const useProjectStore = create<ProjectState>()(
 
       return {
         project: {
-          ...updatedProject,
+          ...withEngineOverlays(updatedProject),
           modifiedAt: Date.now(),
         },
         applicationState: {
@@ -1392,7 +1493,14 @@ export const useProjectStore = create<ProjectState>()(
             shapeType: placement.overlay.content.shapeType,
             width: placement.overlay.content.width,
             height: placement.overlay.content.height,
+            extent: {
+              width: placement.overlay.content.width,
+              height: placement.overlay.content.height,
+            },
             style: placement.overlay.content.style,
+            points: placement.overlay.content.points as ShapeClip["points"],
+            pathData: placement.overlay.content.pathData,
+            closed: placement.overlay.content.closed,
             metadata,
           },
           placement.trackId,
@@ -1572,6 +1680,8 @@ export const useProjectStore = create<ProjectState>()(
         }
       }
 
+      updatedProject = withEngineOverlays(updatedProject);
+
       for (const trackId of trackIdsToRemoveIfEmpty) {
         if (!trackHasAnyClips(updatedProject, trackId)) {
           updatedProject = removeTrackFromProjectState(updatedProject, trackId);
@@ -1581,7 +1691,7 @@ export const useProjectStore = create<ProjectState>()(
       syncClipEffectsBridge(updatedProject, ownerClipId);
 
       return {
-        ...updatedProject,
+        ...withEngineOverlays(updatedProject),
         modifiedAt: Date.now(),
       };
     };
@@ -1686,7 +1796,7 @@ export const useProjectStore = create<ProjectState>()(
       syncClipEffectsBridge(updatedProject, applicationState.ownerClipId);
 
       return {
-        ...updatedProject,
+        ...withEngineOverlays(updatedProject),
         modifiedAt: Date.now(),
       };
     };
@@ -1709,21 +1819,40 @@ export const useProjectStore = create<ProjectState>()(
       lastPastedClipIds: [] as string[],
       copiedEffects: [] as Effect[],
 
+      syncProjectProcessing: () => {
+        const project = get().project;
+        syncProjectEffectsBridge(project);
+        syncProjectTransitionsBridge(project);
+      },
+
+      syncRenderProcessingFrom: (project: Project) => {
+        syncOverlayEnginesFromProject(project);
+        syncProjectEffectsBridge(project);
+        syncProjectTransitionsBridge(project);
+      },
+
       createNewProject: (
         name?: string,
         settings?: Partial<ProjectSettings>,
       ) => {
         const newHistory = new ActionHistory();
-        const newExecutor = new ActionExecutor(newHistory);
+        const newExecutor = new LazyActionExecutor(newHistory);
         const previousProject = get().project;
-        const nextProject = createEmptyProject(name, settings);
-
+        const nextProject = createEmptyProject(name, settings, true);
         clearMotionExpressionCodeApprovals();
+        useTimelineStore.setState({ trackHeights: {} });
+
+        useTimelineStore.getState().stop();
+        useTimelineStore.getState().seekToStart();
+        useTimelineStore.getState().clearLoopRange();
+        useTimelineStore.getState().setScrollX(0);
+        useTimelineStore.getState().setScrollY(0);
+        useUIStore.getState().clearSelection();
 
         syncProjectEffectsBridge(nextProject, previousProject);
         syncProjectTransitionsBridge(nextProject, previousProject);
 
-        registerProjectGeneratedShaders(nextProject);
+        whenEngineModulesLoaded((engines) => engines.registerProjectGeneratedShaders(nextProject));
 
         useEngineStore.getState().getTitleEngine()?.loadTextClips([]);
         const graphicsEngine = useEngineStore.getState().getGraphicsEngine();
@@ -1731,6 +1860,7 @@ export const useProjectStore = create<ProjectState>()(
         graphicsEngine?.loadSVGClips([]);
         graphicsEngine?.loadStickerClips([]);
 
+        projectManager.releaseCurrentFileHandle();
         set({
           project: nextProject,
           hasOpenProject: true,
@@ -1747,27 +1877,36 @@ export const useProjectStore = create<ProjectState>()(
       },
 
       loadProject: (incomingProject: Project) => {
-        const motionNormalized = normalizeProjectMotionFields(incomingProject);
-        clearMotionExpressionCodeApprovals();
+        // The schema normalizers live in the lazily loaded engine modules. A
+        // cold start that opens a project before they resolve replays then.
+        const engines = getLoadedEngineModules();
+        if (!engines) {
+          whenEngineModulesLoaded(() => get().loadProject(incomingProject));
+          return;
+        }
+        const {
+          normalizeGeneratedShaders,
+          normalizeProjectMotionFields,
+          normalizeProjectAudioRacks,
+          normalizeProjectIrisAnimations,
+        } = engines;
+        // Projects that already use (or predate) sequences are migrated/repaired here;
+        // a plain single-timeline project stays untouched until its first sequence edit.
+        const sequenced = incomingProject.sequences || incomingProject.compoundClips?.length ? ensureSequences(incomingProject) : incomingProject;
+        const motionNormalized = normalizeProjectAudioRacks(normalizeProjectIrisAnimations(normalizeProjectMotionFields(sequenced)));
         const project: Project = {
           ...motionNormalized,
+          mediaLibrary: {
+            ...motionNormalized.mediaLibrary,
+            items: motionNormalized.mediaLibrary.items.map(restoreLegacyMediaState),
+          },
           generatedShaders: normalizeGeneratedShaders(
             motionNormalized.generatedShaders,
           ),
         };
         const previousProject = get().project;
-        const titleEngine = useEngineStore.getState().getTitleEngine();
-        const graphicsEngine = useEngineStore.getState().getGraphicsEngine();
-
-        titleEngine?.loadTextClips(project.textClips ?? []);
-        if (graphicsEngine) {
-          graphicsEngine.loadShapeClips(project.shapeClips ?? []);
-          graphicsEngine.loadSVGClips(project.svgClips ?? []);
-          graphicsEngine.loadStickerClips(project.stickerClips ?? []);
-        }
-
         const newHistory = new ActionHistory();
-        const newExecutor = new ActionExecutor(newHistory);
+        const newExecutor = new LazyActionExecutor(newHistory);
 
         // Fix legacy projects where timeline.duration was never persisted
         const computedDuration = calculateTimelineDuration(project);
@@ -1775,11 +1914,14 @@ export const useProjectStore = create<ProjectState>()(
           ? { ...project, timeline: { ...project.timeline, duration: computedDuration } }
           : project;
 
+        clearMotionExpressionCodeApprovals();
+        syncOverlayEnginesFromProject(fixedProject);
         syncProjectEffectsBridge(fixedProject, previousProject);
         syncProjectTransitionsBridge(fixedProject, previousProject);
 
-        registerProjectGeneratedShaders(fixedProject);
+        whenEngineModulesLoaded((engines) => engines.registerProjectGeneratedShaders(fixedProject));
 
+        if (fixedProject.id !== previousProject.id) projectManager.releaseCurrentFileHandle();
         set({
           project: fixedProject,
           hasOpenProject: true,
@@ -1799,55 +1941,12 @@ export const useProjectStore = create<ProjectState>()(
           (item) => item.isPlaceholder && item.sourceFile,
         );
         if (placeholders.length > 0 && "FileSystemFileHandle" in window) {
-          (async () => {
-            let restored = 0;
-            const stillMissing: typeof placeholders = [];
-
-            // Tier 1: try individual file handles (follow file across folder moves)
-            for (const item of placeholders) {
-              if (!item.sourceFile) continue;
-              try {
-                const handle = await loadFileHandle(item.sourceFile.name, item.sourceFile.size);
-                if (!handle) { stillMissing.push(item); continue; }
-                const file = await handle.getFile();
-                await get().replaceMediaAsset(item.id, file, item.sourceFile.folder);
-                restored++;
-              } catch {
-                stillMissing.push(item); // stale handle
-              }
-            }
-
-            // Tier 2: scan the stored relink folder for files not found via handle
-            if (stillMissing.length > 0) {
-              try {
-                const dirInfo = await loadDirectoryHandle(fixedProject.id);
-                if (dirInfo) {
-                  const fileMap = new Map<string, { file: File; folder: string }>();
-                  const entries = (dirInfo.handle as unknown as { entries: () => AsyncIterableIterator<[string, FileSystemHandle]> }).entries();
-                  for await (const [, fh] of entries) {
-                    if ((fh as FileSystemHandle).kind === "file") {
-                      const f = await (fh as FileSystemFileHandle).getFile();
-                      fileMap.set(`${f.name.toLowerCase()}:${f.size}`, { file: f, folder: dirInfo.folderName });
-                    }
-                  }
-                  for (const item of stillMissing) {
-                    if (!item.sourceFile) continue;
-                    const entry = fileMap.get(`${item.sourceFile.name.toLowerCase()}:${item.sourceFile.size}`);
-                    if (entry) {
-                      try {
-                        await get().replaceMediaAsset(item.id, entry.file, entry.folder);
-                        restored++;
-                      } catch { /* skip */ }
-                    }
-                  }
-                }
-              } catch { /* dir handle stale or unavailable */ }
-            }
-
-            if (restored > 0) {
-              console.info(`[ProjectStore] Auto-restored ${restored} asset(s) from file handles`);
-            }
-          })();
+          void restoreProjectPlaceholders(fixedProject, {
+            isCurrent: () => get().project.id === fixedProject.id && get().actionExecutor === newExecutor
+              && !useUIStore.getState().exportState.isExporting && !useTimelineStore.getState().playbackLockedReason,
+            getItem: id => get().project.mediaLibrary.items.find(item => item.id === id),
+            replace: (id, file, folder) => get().replaceMediaAsset(id, file, folder, { restorePlaceholder: true }),
+          }).catch(error => console.warn("[ProjectStore] Could not restore saved media handles:", error));
         }
       },
 
@@ -1868,7 +1967,27 @@ export const useProjectStore = create<ProjectState>()(
       },
 
       // Update project settings
-      updateSettings: async (settings: Partial<ProjectSettings>) => {
+      updateSettings: async (settings: Partial<ProjectSettings>, options?: { scaleGraphics?: boolean }) => {
+        const full = get().getFullProject();
+        const frameChanges = (settings.width !== undefined && settings.width !== full.settings.width)
+          || (settings.height !== undefined && settings.height !== full.settings.height);
+        const hasGraphics = (full.textClips?.length ?? 0) + (full.shapeClips?.length ?? 0) + (full.svgClips?.length ?? 0) > 0;
+        if (frameChanges && hasGraphics && options?.scaleGraphics !== false) {
+          const next = applySequenceSettings(full, settings, { scaleGraphics: true });
+          const snapshot = editSnapshot(next);
+          const detached = structuredClone({ ...snapshot, mediaLibrary: undefined });
+          get().beginHistoryGroup("Change frame size");
+          try {
+            return await get().executeAction({
+              type: "project/applyEditSnapshot",
+              id: uuidv4(),
+              timestamp: Date.now(),
+              params: { snapshot: { ...detached, mediaLibrary: snapshot.mediaLibrary } },
+            });
+          } finally {
+            get().endHistoryGroup();
+          }
+        }
         const { project, actionExecutor } = get();
         const action: Action = {
           type: "project/updateSettings",
@@ -1877,8 +1996,12 @@ export const useProjectStore = create<ProjectState>()(
           params: settings,
         };
         const result = await actionExecutor.execute(action, project);
-        if (result.success) {
-          set({ project: { ...project } });
+        const current = get();
+        if (result.success && current.project.id === project.id && current.actionExecutor === actionExecutor) {
+          // Settings apply synchronously inside the executor. Its completion
+          // must publish the current root, retaining intervening edits and
+          // never restoring a replaced or reloaded project.
+          set({ project: { ...current.project } });
         }
         return result;
       },
@@ -1904,119 +2027,12 @@ export const useProjectStore = create<ProjectState>()(
       // Media library actions
       ...createMediaSlice(set, get),
 
-      addPlaceholderMedia: (item: MediaItem) => {
-        const { project } = get();
-        set({
-          project: {
-            ...project,
-            mediaLibrary: {
-              ...project.mediaLibrary,
-              items: [...project.mediaLibrary.items, item],
-            },
-            modifiedAt: Date.now(),
-          },
-        });
-      },
-
-      setKieAIItemState: (mediaId: string, isPending: boolean, kieaiError: boolean) => {
-        const { project } = get();
-        const updatedItems = project.mediaLibrary.items.map((item) =>
-          item.id === mediaId ? { ...item, isPending, kieaiError } : item,
-        );
-        set({
-          project: {
-            ...project,
-            mediaLibrary: { ...project.mediaLibrary, items: updatedItems },
-            modifiedAt: Date.now(),
-          },
-        });
-      },
-
-      replacePlaceholderMedia: async (mediaId: string, blob: Blob, name: string) => {
-        const { project } = get();
-
-        // For images use createImageBitmap (no mediaBridge dependency).
-        // This avoids WASM initialisation races and works immediately in any context.
-        let thumbnailUrl: string | null = null;
-        let width = 0;
-        let height = 0;
-
-        if (blob.size > 0 && blob.type.startsWith("image/")) {
-          try {
-            const bitmap = await createImageBitmap(blob);
-            width = bitmap.width;
-            height = bitmap.height;
-
-            const THUMB_SIZE = 320;
-            const scale = Math.min(THUMB_SIZE / bitmap.width, THUMB_SIZE / bitmap.height, 1);
-            const tw = Math.round(bitmap.width * scale);
-            const th = Math.round(bitmap.height * scale);
-
-            const canvas = new OffscreenCanvas(tw, th);
-            const ctx = canvas.getContext("2d")!;
-            ctx.drawImage(bitmap, 0, 0, tw, th);
-            bitmap.close();
-
-            const thumbBlob = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.75 });
-            thumbnailUrl = await new Promise<string>((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = () => resolve(reader.result as string);
-              reader.onerror = () => reject(reader.error);
-              reader.readAsDataURL(thumbBlob);
-            });
-          } catch (thumbErr) {
-            console.warn("[ProjectStore] KieAI thumbnail generation failed:", thumbErr);
-          }
-        }
-
-        const file = new File([blob], name, { type: blob.type || "image/png" });
-
-        const updatedItem: MediaItem = {
-          id: mediaId,
-          name,
-          type: "image",
-          fileHandle: null,
-          blob: file,
-          metadata: {
-            duration: 0,
-            width,
-            height,
-            frameRate: 0,
-            codec: "",
-            sampleRate: 0,
-            channels: 0,
-            fileSize: file.size,
-          },
-          thumbnailUrl,
-          waveformData: null,
-          isPlaceholder: false,
-          isPending: false,
-        };
-
-        const updatedItems = project.mediaLibrary.items.map((item) =>
-          item.id === mediaId ? updatedItem : item,
-        );
-
-        set({
-          project: {
-            ...project,
-            mediaLibrary: { ...project.mediaLibrary, items: updatedItems },
-            modifiedAt: Date.now(),
-          },
-        });
-
-        try {
-          await saveMediaBlob(project.id, mediaId, file, updatedItem.metadata);
-        } catch (err) {
-          console.error("[ProjectStore] Failed to persist KieAI result blob:", err);
-        }
-      },
-
       // Track actions
       ...createTrackSlice(set, get),
 
       // Clip actions
       ...createClipSlice(set, get),
+      ...createTimelineItemSlice(set, get, helpers),
 
       addClipTransition: async (transition: Transition) => {
         const { project, actionExecutor } = get();
@@ -2035,12 +2051,15 @@ export const useProjectStore = create<ProjectState>()(
           params: { transition },
         };
         const result = await actionExecutor.execute(action, project);
+        // Reloading the same file creates a new executor even when its id is unchanged.
+        // An old action may finish on its private project, but cannot replace this owner.
+        if (get().project.id !== project.id || get().actionExecutor !== actionExecutor) return null;
         if (!result.success) {
           console.error("Failed to add transition:", result.error?.message);
           return null;
         }
 
-        set({ project: { ...project, modifiedAt: Date.now() } });
+        set({ project: { ...get().project, modifiedAt: Date.now() } });
         syncTrackTransitionsBridge(get().project, clip.trackId);
         return transition;
       },
@@ -2188,6 +2207,23 @@ export const useProjectStore = create<ProjectState>()(
         const minStartTime = Math.min(
           ...clipboard.map((item) => item.clip.startTime),
         );
+        // Preserve the source track spacing and remap links within the copy.
+        const projectTracks = get().project.timeline.tracks;
+        const preserveTrackSpacing = clipboard.some((item) => item.kind === "media" && (
+          typeof item.clip.metadata?.separatedFromClipId === "string" ||
+          clipboard.some((other) => other.kind === "media" && other.clip.id !== item.clip.id &&
+            other.clip.mediaId === item.clip.mediaId &&
+            (projectTracks.find((track) => track.id === item.clip.trackId)?.type === "audio") !==
+            (projectTracks.find((track) => track.id === other.clip.trackId)?.type === "audio"))
+        ));
+        const firstTrackIndex = projectTracks.findIndex((track) => track.id === clipboard[0].clip.trackId);
+        const destinationIndex = projectTracks.findIndex((track) => track.id === trackId);
+        const copiedIds = new Map(clipboard.map((item) => [item.clip.id, uuidv4()]));
+        const remapLink = (id: unknown) => {
+          if (typeof id !== "string") return id;
+          if (!copiedIds.has(id)) copiedIds.set(id, uuidv4());
+          return copiedIds.get(id)!;
+        };
         actionExecutor.getHistory().beginGroup("Paste timeline clips");
         try {
           for (const item of clipboard) {
@@ -2199,23 +2235,16 @@ export const useProjectStore = create<ProjectState>()(
             const sourceTrack = currentProject.timeline.tracks.find(
               (track) => track.id === item.clip.trackId,
             );
-            const expectedTrackType =
-              item.kind === "text"
-                ? "text"
-                : item.kind === "media"
-                  ? sourceTrack?.type
-                  : "graphics";
-            const isCompatible = (track: Track) =>
-              !track.locked &&
-              (!expectedTrackType || track.type === expectedTrackType);
+            const sourceIndex = projectTracks.findIndex((track) => track.id === item.clip.trackId);
+            const relativeIndex = preserveTrackSpacing && firstTrackIndex >= 0 && sourceIndex >= 0 && destinationIndex >= 0
+              ? destinationIndex + sourceIndex - firstTrackIndex : destinationIndex;
+            const relativeTrack = projectTracks[relativeIndex];
             const destinationTrack =
-              (sourceTrack && isCompatible(sourceTrack)
-                ? sourceTrack
-                : undefined) ??
               currentProject.timeline.tracks.find(
-                (track) => track.id === trackId && isCompatible(track),
+                (track) => track.id === relativeTrack?.id && !track.locked,
               ) ??
-              currentProject.timeline.tracks.find(isCompatible);
+              (sourceTrack && !sourceTrack.locked ? sourceTrack : undefined) ??
+              currentProject.timeline.tracks.find((track) => !track.locked);
 
             if (!destinationTrack) {
               results.push({
@@ -2228,12 +2257,56 @@ export const useProjectStore = create<ProjectState>()(
               continue;
             }
 
+            const newTrackId = uuidv4();
+            const placement = resolveTimelinePlacement(currentProject, {
+              targetTrackId: destinationTrack.id,
+              startTime: newStartTime,
+              duration: item.clip.duration,
+              policy: "stack-above",
+              newTrackId,
+            });
+            if (!placement.ok) {
+              results.push({
+                success: false,
+                error: {
+                  code:
+                    placement.reason === "track-locked"
+                      ? "TRACK_LOCKED"
+                      : placement.reason === "track-not-found"
+                        ? "TRACK_NOT_FOUND"
+                        : "OVERLAP_DETECTED",
+                  message: `Could not place ${item.kind} clip`,
+                },
+              });
+              continue;
+            }
+            if (placement.createdTrack) {
+              const trackResult = await actionExecutor.execute(
+                {
+                  type: "track/add",
+                  id: uuidv4(),
+                  timestamp: Date.now(),
+                  params: {
+                    trackType: "video",
+                    trackId: placement.createdTrack.id,
+                    position: placement.createdTrack.position,
+                    mode: "standard",
+                  },
+                },
+                currentProject,
+              );
+              if (!trackResult.success) {
+                results.push(trackResult);
+                continue;
+              }
+            }
+
             if (item.kind !== "media") {
               const pasted = get().pasteOverlayClip(
                 item.kind,
                 item.clip,
-                newStartTime,
-                destinationTrack.id,
+                placement.startTime,
+                placement.trackId,
               );
               if (pasted) {
                 results.push({ success: true });
@@ -2250,24 +2323,30 @@ export const useProjectStore = create<ProjectState>()(
               continue;
             }
 
-            const beforeIds = new Set(
-              destinationTrack.clips.map((clip) => clip.id),
+            const placedTrack = currentProject.timeline.tracks.find(
+              (track) => track.id === placement.trackId,
             );
+            const beforeIds = new Set(placedTrack?.clips.map((clip) => clip.id));
             const action: Action = {
               type: "clip/add",
               id: uuidv4(),
               timestamp: Date.now(),
               params: {
-                trackId: destinationTrack.id,
+                clipId: copiedIds.get(item.clip.id)!,
+                trackId: placement.trackId,
                 mediaId: item.clip.mediaId,
-                startTime: newStartTime,
-                sourceClip: item.clip,
+                startTime: placement.startTime,
+                sourceClip: { ...item.clip, metadata: {
+                  ...item.clip.metadata,
+                  ...(item.clip.metadata?.splitSourceClipId ? { splitSourceClipId: remapLink(item.clip.metadata.splitSourceClipId) } : {}),
+                  ...(item.clip.metadata?.separatedFromClipId ? { separatedFromClipId: remapLink(item.clip.metadata.separatedFromClipId) } : {}),
+                } },
               },
             };
             const result = await actionExecutor.execute(action, currentProject);
             results.push(result);
             if (result.success) {
-              const pasted = destinationTrack.clips.find(
+              const pasted = placedTrack?.clips.find(
                 (clip) => !beforeIds.has(clip.id),
               );
               if (pasted) pastedIds.push(pasted.id);
@@ -2278,7 +2357,10 @@ export const useProjectStore = create<ProjectState>()(
         }
 
         set({
-          project: { ...get().project, modifiedAt: Date.now() },
+          project: withUniversalTracksCapability({
+            ...get().project,
+            modifiedAt: Date.now(),
+          }),
           lastPastedClipIds: pastedIds,
         });
         return results;
@@ -2326,7 +2408,7 @@ export const useProjectStore = create<ProjectState>()(
           candidate = other.startTime + other.duration;
         }
 
-        const projectCopy = structuredClone(project);
+        const projectCopy = cloneProjectForEdit(project);
         const action: Action = {
           type: "clip/add",
           id: uuidv4(),
@@ -2444,40 +2526,23 @@ export const useProjectStore = create<ProjectState>()(
           return result;
         }
 
-        // Text clips live in the title engine (not project.timeline); they use
-        // the separate clip-history mechanism, so keep the direct engine update.
-        const titleEngine = useEngineStore.getState().getTitleEngine();
-        if (titleEngine) {
-          const textClip = titleEngine.getTextClip(clipId);
-          if (textClip) {
-            titleEngine.updateTextClip(clipId, {
-              transform: mergeTransform(textClip.transform),
-            });
-            set({ project: { ...project, modifiedAt: Date.now() } });
-            return { success: true };
-          }
-        }
-
-        // Shape / SVG clips live in the graphics engine.
-        const graphicsEngine = useEngineStore.getState().getGraphicsEngine();
-        if (graphicsEngine) {
-          const shapeClip = graphicsEngine.getShapeClip(clipId);
-          if (shapeClip) {
-            graphicsEngine.updateShapeClip(clipId, {
-              transform: mergeTransform(shapeClip.transform),
-            });
-            set({ project: { ...project, modifiedAt: Date.now() } });
-            return { success: true };
-          }
-
-          const svgClip = graphicsEngine.getSVGClip(clipId);
-          if (svgClip) {
-            graphicsEngine.updateSVGClip(clipId, {
-              transform: mergeTransform(svgClip.transform),
-            });
-            set({ project: { ...project, modifiedAt: Date.now() } });
-            return { success: true };
-          }
+        // Overlay setters publish the canonical project snapshot and record
+        // the same action history used by sliders, save/reload and Undo/Redo.
+        const store = get();
+        const textClip = store.getTextClip(clipId);
+        const graphicClip = textClip ? undefined
+          : store.getShapeClip(clipId) ?? store.getSVGClip(clipId) ?? store.getStickerClip(clipId);
+        const overlay = textClip ?? graphicClip;
+        if (overlay) {
+          const track = project.timeline.tracks.find(t => t.id === overlay.trackId);
+          if (track?.locked) return {
+            success: false,
+            error: { code: "INVALID_PARAMS", message: "The clip's track is locked" },
+          };
+          const transform = mergeTransform(overlay.transform);
+          const updated = textClip ? store.updateTextTransform(clipId, transform)
+            : store.updateShapeTransform(clipId, transform);
+          return { success: Boolean(updated) };
         }
 
         return {
@@ -2533,6 +2598,12 @@ export const useProjectStore = create<ProjectState>()(
           const svgClip = graphicsEngine.getSVGClip(clipId);
           if (svgClip) {
             graphicsEngine.updateSVGClip(clipId, { blendMode });
+            set({ project: { ...project, modifiedAt: Date.now() } });
+            return { success: true };
+          }
+          const stickerClip = graphicsEngine.getStickerClip(clipId);
+          if (stickerClip) {
+            graphicsEngine.updateStickerClip(clipId, { blendMode });
             set({ project: { ...project, modifiedAt: Date.now() } });
             return { success: true };
           }
@@ -2599,6 +2670,12 @@ export const useProjectStore = create<ProjectState>()(
           const svgClip = graphicsEngine.getSVGClip(clipId);
           if (svgClip) {
             graphicsEngine.updateSVGClip(clipId, { blendOpacity: opacity });
+            set({ project: { ...project, modifiedAt: Date.now() } });
+            return { success: true };
+          }
+          const stickerClip = graphicsEngine.getStickerClip(clipId);
+          if (stickerClip) {
+            graphicsEngine.updateStickerClip(clipId, { blendOpacity: opacity });
             set({ project: { ...project, modifiedAt: Date.now() } });
             return { success: true };
           }
@@ -2673,213 +2750,19 @@ export const useProjectStore = create<ProjectState>()(
         };
       },
 
-      updateClipRotate3D: (
-        clipId: string,
-        rotate3d: { x: number; y: number; z: number },
-      ) => {
-        const { project } = get();
-
-        let found = false;
-        const newTracks = project.timeline.tracks.map((track) => {
-          const clipIndex = track.clips.findIndex((c) => c.id === clipId);
-          if (clipIndex === -1) return track;
-
-          found = true;
-          const clip = track.clips[clipIndex];
-          const newClips = [...track.clips];
-          newClips[clipIndex] = {
-            ...clip,
-            transform: { ...clip.transform, rotate3d },
-          };
-
-          return { ...track, clips: newClips };
-        });
-
-        if (found) {
-          set({
-            project: {
-              ...project,
-              timeline: { ...project.timeline, tracks: newTracks },
-              modifiedAt: Date.now(),
-            },
-          });
-          return true;
-        }
-
-        const titleEngine = useEngineStore.getState().getTitleEngine();
-        if (titleEngine) {
-          const textClip = titleEngine.getTextClip(clipId);
-          if (textClip) {
-            titleEngine.updateTextClip(clipId, {
-              transform: { ...textClip.transform, rotate3d },
-            });
-            set({ project: { ...project, modifiedAt: Date.now() } });
-            return true;
-          }
-        }
-
-        const graphicsEngine = useEngineStore.getState().getGraphicsEngine();
-        if (graphicsEngine) {
-          const shapeClip = graphicsEngine.getShapeClip(clipId);
-          if (shapeClip) {
-            graphicsEngine.updateShapeClip(clipId, {
-              transform: { ...shapeClip.transform, rotate3d },
-            });
-            set({ project: { ...project, modifiedAt: Date.now() } });
-            return true;
-          }
-
-          const svgClip = graphicsEngine.getSVGClip(clipId);
-          if (svgClip) {
-            graphicsEngine.updateSVGClip(clipId, {
-              transform: { ...svgClip.transform, rotate3d },
-            });
-            set({ project: { ...project, modifiedAt: Date.now() } });
-            return true;
-          }
-        }
-
-        return false;
+      updateClipRotate3D: async (clipId, rotate3d) => {
+        if (![rotate3d.x, rotate3d.y, rotate3d.z].every(Number.isFinite)) return false;
+        return (await get().updateClipTransform(clipId, { rotate3d })).success;
       },
 
-      updateClipPerspective: (clipId: string, perspective: number) => {
-        const { project } = get();
-
-        if (perspective < 0) {
-          console.error("Perspective must be non-negative");
-          return false;
-        }
-
-        let found = false;
-        const newTracks = project.timeline.tracks.map((track) => {
-          const clipIndex = track.clips.findIndex((c) => c.id === clipId);
-          if (clipIndex === -1) return track;
-
-          found = true;
-          const clip = track.clips[clipIndex];
-          const newClips = [...track.clips];
-          newClips[clipIndex] = {
-            ...clip,
-            transform: { ...clip.transform, perspective },
-          };
-
-          return { ...track, clips: newClips };
-        });
-
-        if (found) {
-          set({
-            project: {
-              ...project,
-              timeline: { ...project.timeline, tracks: newTracks },
-              modifiedAt: Date.now(),
-            },
-          });
-          return true;
-        }
-
-        const titleEngine = useEngineStore.getState().getTitleEngine();
-        if (titleEngine) {
-          const textClip = titleEngine.getTextClip(clipId);
-          if (textClip) {
-            titleEngine.updateTextClip(clipId, {
-              transform: { ...textClip.transform, perspective },
-            });
-            set({ project: { ...project, modifiedAt: Date.now() } });
-            return true;
-          }
-        }
-
-        const graphicsEngine = useEngineStore.getState().getGraphicsEngine();
-        if (graphicsEngine) {
-          const shapeClip = graphicsEngine.getShapeClip(clipId);
-          if (shapeClip) {
-            graphicsEngine.updateShapeClip(clipId, {
-              transform: { ...shapeClip.transform, perspective },
-            });
-            set({ project: { ...project, modifiedAt: Date.now() } });
-            return true;
-          }
-
-          const svgClip = graphicsEngine.getSVGClip(clipId);
-          if (svgClip) {
-            graphicsEngine.updateSVGClip(clipId, {
-              transform: { ...svgClip.transform, perspective },
-            });
-            set({ project: { ...project, modifiedAt: Date.now() } });
-            return true;
-          }
-        }
-
-        return false;
+      updateClipPerspective: async (clipId, perspective) => {
+        if (!Number.isFinite(perspective) || perspective < 0) return false;
+        return (await get().updateClipTransform(clipId, { perspective })).success;
       },
 
-      updateClipTransformStyle: (
-        clipId: string,
-        transformStyle: "flat" | "preserve-3d",
-      ) => {
-        const { project } = get();
-
-        let found = false;
-        const newTracks = project.timeline.tracks.map((track) => {
-          const clipIndex = track.clips.findIndex((c) => c.id === clipId);
-          if (clipIndex === -1) return track;
-
-          found = true;
-          const clip = track.clips[clipIndex];
-          const newClips = [...track.clips];
-          newClips[clipIndex] = {
-            ...clip,
-            transform: { ...clip.transform, transformStyle },
-          };
-
-          return { ...track, clips: newClips };
-        });
-
-        if (found) {
-          set({
-            project: {
-              ...project,
-              timeline: { ...project.timeline, tracks: newTracks },
-              modifiedAt: Date.now(),
-            },
-          });
-          return true;
-        }
-
-        const titleEngine = useEngineStore.getState().getTitleEngine();
-        if (titleEngine) {
-          const textClip = titleEngine.getTextClip(clipId);
-          if (textClip) {
-            titleEngine.updateTextClip(clipId, {
-              transform: { ...textClip.transform, transformStyle },
-            });
-            set({ project: { ...project, modifiedAt: Date.now() } });
-            return true;
-          }
-        }
-
-        const graphicsEngine = useEngineStore.getState().getGraphicsEngine();
-        if (graphicsEngine) {
-          const shapeClip = graphicsEngine.getShapeClip(clipId);
-          if (shapeClip) {
-            graphicsEngine.updateShapeClip(clipId, {
-              transform: { ...shapeClip.transform, transformStyle },
-            });
-            set({ project: { ...project, modifiedAt: Date.now() } });
-            return true;
-          }
-
-          const svgClip = graphicsEngine.getSVGClip(clipId);
-          if (svgClip) {
-            graphicsEngine.updateSVGClip(clipId, {
-              transform: { ...svgClip.transform, transformStyle },
-            });
-            set({ project: { ...project, modifiedAt: Date.now() } });
-            return true;
-          }
-        }
-
-        return false;
+      updateClipTransformStyle: async (clipId, transformStyle) => {
+        if (transformStyle !== "flat" && transformStyle !== "preserve-3d") return false;
+        return (await get().updateClipTransform(clipId, { transformStyle })).success;
       },
 
       // Undo/Redo
@@ -2894,6 +2777,44 @@ export const useProjectStore = create<ProjectState>()(
       }),
 
       // Execute arbitrary action
+      commitTimelineToolEdit: (plan: TimelineToolPlan, options?: TimelineToolCommitOptions) => {
+        const state = get();
+        if (!state.hasOpenProject) return { success: false, error: { code: "INVALID_PARAMS", message: "Open a project before editing." } };
+        if (useTimelineStore.getState().playbackLockedReason || useUIStore.getState().exportState.isExporting) return { success: false, error: { code: "INVALID_PARAMS", message: "Editing is unavailable during export." } };
+        // Timeline-tool edits are published here, not through the executor, so honour read-only projects (a view-only invite, a project open in another window) as the executor does.
+        const readOnly = readOnlyReason();
+        if (readOnly) return { success: false, error: { code: "READ_ONLY", message: readOnly, suggestion: "Close the project in the other window, or use Save As to work on a copy." } };
+        if (!plan.edits.length) return { success: true };
+        try {
+          const previous = state.getFullProject();
+          const edits = structuredClone(plan.edits);
+          validateTimelineToolEdits(previous, edits);
+          // Fixed-angle multicam audio is derived from the picture clips: re-derive it with the edit
+          // (the executor does the same for every other action, undo and redo).
+          const project = reconcileMulticamAudio(applyTimelineToolEdits(previous, edits));
+          const action: Action = { type: "timeline/toolEdit", id: uuidv4(), timestamp: Date.now(), params: { edits, label: plan.label, ...(options?.burstKey ? { burstKey: options.burstKey } : {}), ...(options?.loopRange ? { loopRange: structuredClone(options.loopRange) } : {}) } };
+          // Canonical data and one bounded history entry are published in one stack.
+          // No async completion can restore an older project or discard a rename.
+          const inverse: Action = { type: "timeline/toolEdit", id: `inverse-${action.id}`, timestamp: action.timestamp, params: { edits: invertTimelineToolEdits(edits), ...(options?.loopRange ? { loopRange: { before: options.loopRange.after, after: options.loopRange.before } } : {}) } };
+          try {
+            syncOverlayEnginesFromProject(project);
+            syncProjectEffectsBridge(project, previous);
+            syncProjectTransitionsBridge(project, previous);
+          } catch (error) {
+            // Restore derived caches before returning a failed, unpublished edit.
+            syncOverlayEnginesFromProject(previous);
+            syncProjectEffectsBridge(previous, project);
+            syncProjectTransitionsBridge(previous, project);
+            throw error;
+          }
+          state.actionExecutor.getHistory().push(action, inverse);
+          set({ project, redoJournal: [], clipRedoStack: [], templateRedoStack: [] });
+          return { success: true, actionId: action.id };
+        } catch (error) {
+          return { success: false, error: { code: "INVALID_PARAMS", message: error instanceof Error ? error.message : "The timeline edit could not be applied." } };
+        }
+      },
+
       executeAction: async (action: Action) => {
         const { project, actionExecutor, hasOpenProject } = get();
         if (!hasOpenProject) {
@@ -2905,9 +2826,26 @@ export const useProjectStore = create<ProjectState>()(
             },
           };
         }
-        const result = await actionExecutor.execute(action, project);
+        const targetProject = action.type === "project/applyEditSnapshot" ? get().getFullProject() : project;
+        const previousProject = action.type === "project/applyEditSnapshot" || action.type === "clip/split" ? { ...targetProject } : undefined;
+        const result = await actionExecutor.execute(action, targetProject);
+        const currentOwner = get();
+        if (!currentOwner.hasOpenProject || currentOwner.project.id !== project.id || currentOwner.actionExecutor !== actionExecutor) {
+          return { success: false, actionId: action.id, error: { code: "INVALID_PARAMS", message: "The project changed before this action completed." } };
+        }
         if (result.success) {
-          set({ project: { ...project } });
+          const publishedProject = action.type === "clip/split" ? currentOwner.project : targetProject;
+          if (action.type === "project/applyEditSnapshot" || action.type === "clip/split") {
+            syncOverlayEnginesFromProject(publishedProject);
+            syncProjectEffectsBridge(publishedProject, previousProject);
+            syncProjectTransitionsBridge(publishedProject, previousProject);
+          }
+          if (TITLE_ENGINE_SYNC_ACTIONS.has(action.type)) {
+            // Keep the TitleEngine copy of text clips current so later
+            // engine-backed edits do not overwrite scroll / saved styles.
+            syncOverlayEnginesFromProject(publishedProject);
+          }
+          set({ project: { ...publishedProject } });
         }
         return result;
       },
@@ -2921,31 +2859,76 @@ export const useProjectStore = create<ProjectState>()(
       // Auto-save methods
       initializeAutoSave: async () => {
         if (autoSaveInitialized) return;
-        autoSaveInitialized = true;
-        await initializeAutoSave();
-        autoSaveManager.start(() => {
-          const { project } = get();
-          const titleEngine = useEngineStore.getState().getTitleEngine();
-          const graphicsEngine = useEngineStore.getState().getGraphicsEngine();
-
-          return {
-            ...project,
-            textClips: titleEngine?.getAllTextClips() || [],
-            shapeClips: graphicsEngine?.getAllShapeClips() || [],
-            svgClips: graphicsEngine?.getAllSVGClips() || [],
-            stickerClips: graphicsEngine?.getAllStickerClips() || [],
+        if (autoSaveInitializationPromise) return autoSaveInitializationPromise;
+        const initialize = async () => {
+          if (!autoSaveNotificationsInitialized) {
+            autoSaveNotificationsInitialized = true;
+            let failureNotificationId: string | null = null;
+            autoSaveManager.on("error", () => {
+              if (failureNotificationId) return;
+              failureNotificationId = useNotificationStore.getState().addNotification({
+                type: "warning",
+                title: "Automatic saving is unavailable",
+                message: "Your edits are still in this tab. Save a project copy and keep the original media files before closing it.",
+                duration: 0,
+              });
+            });
+            autoSaveManager.on("saved", () => {
+              if (failureNotificationId) {
+                useNotificationStore.getState().removeNotification(failureNotificationId);
+                failureNotificationId = null;
+              }
+            });
+          }
+          await initializeAutoSave();
+          if (!autoSaveManager.isInitialized()) return;
+          const applyAutoSaveSettings = () => {
+            const { autoSave, autoSaveInterval } = useSettingsStore.getState();
+            autoSaveManager.updateConfig({
+              enabled: autoSave,
+              interval: autoSaveInterval * 60_000,
+            });
           };
-        });
+          applyAutoSaveSettings();
+          useSettingsStore.subscribe((state, previous) => {
+            if (
+              state.autoSave !== previous.autoSave ||
+              state.autoSaveInterval !== previous.autoSaveInterval
+            ) {
+              applyAutoSaveSettings();
+            }
+          });
+          autoSaveManager.start(() => {
+            const { project } = get();
+            const titleEngine = useEngineStore.getState().getTitleEngine();
+            const graphicsEngine = useEngineStore.getState().getGraphicsEngine();
 
-        // Subscribe to project state changes to mark as dirty for auto-save
-        // Uses Zustand's subscribeWithSelector middleware to detect changes to project object only
-        // Trigger auto-save when any project field changes (timeline, media, settings, etc.)
-        useProjectStore.subscribe(
-          (state) => state.project,
-          () => {
-            autoSaveManager.markDirty(get().getFullProject());
-          },
-        );
+            return {
+              ...project,
+              textClips: titleEngine?.getAllTextClips() || [],
+              shapeClips: graphicsEngine?.getAllShapeClips() || [],
+              svgClips: graphicsEngine?.getAllSVGClips() || [],
+              stickerClips: graphicsEngine?.getAllStickerClips() || [],
+            };
+          });
+
+          // Subscribe to project state changes to mark as dirty for auto-save
+          // Uses Zustand's subscribeWithSelector middleware to detect changes to project object only
+          // Trigger auto-save when any project field changes (timeline, media, settings, etc.)
+          useProjectStore.subscribe(
+            (state) => state.project,
+            () => {
+              autoSaveManager.markDirty(get().getFullProject());
+            },
+          );
+          autoSaveInitialized = true;
+          // Automatic project versions (Versions panel). Lazy: it imports this store.
+          void import("../services/version-commands").then((module) => module.startAutoVersioning());
+        };
+        autoSaveInitializationPromise = initialize().finally(() => {
+          autoSaveInitializationPromise = null;
+        });
+        return autoSaveInitializationPromise;
       },
 
       checkForRecovery: async () => {
@@ -2954,83 +2937,81 @@ export const useProjectStore = create<ProjectState>()(
       },
 
       recoverFromAutoSave: async (saveId: string) => {
-        const recoveredProject = await autoSaveManager.recover(saveId);
-        if (recoveredProject) {
-          const storedMedia = await loadProjectMedia(recoveredProject.id);
-          const blobMap = new Map(storedMedia.map((m) => [m.id, m.blob]));
+        if (recoveringAutoSave) return false;
+        recoveringAutoSave = true;
+        const previousProjectId = get().project.id;
+        const stagedThumbnails = new Set<string>();
+        let committed = false;
+        try {
+          const recoveredProject = await autoSaveManager.recover(saveId);
+          if (recoveredProject) {
+            const storedMedia = await loadProjectMedia(recoveredProject.id);
+            const blobMap = new Map(storedMedia.map((m) => [m.id, m.blob]));
 
-          const restoredItems = await Promise.all(
-            recoveredProject.mediaLibrary.items.map((item) =>
-              restoreMediaItem(item, blobMap.get(item.id)),
-            ),
-          );
+            const items = recoveredProject.mediaLibrary.items;
+            const restoredItems: MediaItem[] = [];
+            let nextItem = 0;
+            const restoreNext = async () => {
+              while (nextItem < items.length) {
+                // Let in-flight decoders settle before releasing their staged URLs.
+                if (get().project.id !== previousProjectId) return;
+                const index = nextItem++, item = items[index];
+                try {
+                  const restored = await restoreMediaItem(item, blobMap.get(item.id));
+                  if (restored.thumbnailUrl?.startsWith("blob:") && restored.thumbnailUrl !== item.thumbnailUrl) stagedThumbnails.add(restored.thumbnailUrl);
+                  restoredItems[index] = restored;
+                } catch (error) {
+                  console.warn(
+                    `[ProjectStore] Failed to restore media ${item.name}; marking it missing:`,
+                    error,
+                  );
+                  restoredItems[index] = createMissingMediaItem(item);
+                }
+              }
+            };
+            // Each video thumbnail can own a decoder and canvas; bound recovery memory.
+            await Promise.all(Array.from({ length: Math.min(2, items.length) }, restoreNext));
+            if (get().project.id !== previousProjectId) throw new Error("The open project changed before recovery finished. Please try again.");
 
-          const projectWithMedia: Project = {
-            ...recoveredProject,
-            generatedShaders: normalizeGeneratedShaders(
-              recoveredProject.generatedShaders,
-            ),
-            mediaLibrary: {
-              ...recoveredProject.mediaLibrary,
-              items: restoredItems,
-            },
-          };
+            const projectWithMedia: Project = {
+              ...recoveredProject,
+              generatedShaders: (await loadEngineModules()).normalizeGeneratedShaders(
+                recoveredProject.generatedShaders,
+              ),
+              mediaLibrary: {
+                ...recoveredProject.mediaLibrary,
+                items: restoredItems,
+              },
+            };
 
-          const titleEngine = useEngineStore.getState().getTitleEngine();
-          const graphicsEngine = useEngineStore.getState().getGraphicsEngine();
-
-          if (titleEngine && recoveredProject.textClips) {
-            titleEngine.loadTextClips(recoveredProject.textClips);
+            // Media restoration can outlast a save, edit, export or project switch.
+            // Stage everything first, then preserve the newest authoring revision.
+            const { saveCurrentProjectForReplacement } = await import("../services/project-replacement");
+            await saveCurrentProjectForReplacement(previousProjectId);
+            clearMotionExpressionCodeApprovals();
+            get().loadProject(projectWithMedia);
+            committed = true;
+            const timeline = useTimelineStore.getState();
+            timeline.stop(); timeline.seekToStart(); timeline.clearLoopRange();
+            timeline.setScrollX(0); timeline.setScrollY(0);
+            useUIStore.getState().clearSelection();
+            // A recent-list write failure must not report an already-open project as failed.
+            try { await projectManager.addToRecent(get().project); }
+            catch (error) { console.warn("[ProjectStore] Could not update recent projects:", error); }
+            return true;
           }
-          if (graphicsEngine) {
-            if (recoveredProject.shapeClips) {
-              graphicsEngine.loadShapeClips(recoveredProject.shapeClips);
-            }
-            if (recoveredProject.svgClips) {
-              graphicsEngine.loadSVGClips(recoveredProject.svgClips);
-            }
-            if (recoveredProject.stickerClips) {
-              graphicsEngine.loadStickerClips(recoveredProject.stickerClips);
-            }
-          }
-
-          const newHistory = new ActionHistory();
-          const newExecutor = new ActionExecutor(newHistory);
-
-          registerProjectGeneratedShaders(projectWithMedia);
-
-          clearMotionExpressionCodeApprovals();
-          set({
-            project: projectWithMedia,
-            hasOpenProject: true,
-            actionHistory: newHistory,
-            actionExecutor: newExecutor,
-            clipUndoStack: [],
-            clipRedoStack: [],
-            templateUndoStack: [],
-            templateRedoStack: [],
-            error: null,
-          });
-
-          await projectManager.addToRecent(projectWithMedia);
-          return true;
+          return false;
+        } catch (error) {
+          if (get().project.id === previousProjectId) set({ error: error instanceof Error ? error.message : "Could not recover this project. Try again." });
+          return false;
+        } finally {
+          if (!committed) for (const url of stagedThumbnails) URL.revokeObjectURL(url);
+          recoveringAutoSave = false;
         }
-        return false;
       },
 
       forceSave: async () => {
-        const { project } = get();
-        const titleEngine = useEngineStore.getState().getTitleEngine();
-        const graphicsEngine = useEngineStore.getState().getGraphicsEngine();
-
-        const fullProject: Project = {
-          ...project,
-          textClips: titleEngine?.getAllTextClips() || [],
-          shapeClips: graphicsEngine?.getAllShapeClips() || [],
-          svgClips: graphicsEngine?.getAllSVGClips() || [],
-          stickerClips: graphicsEngine?.getAllStickerClips() || [],
-        };
-        await autoSaveManager.forceSave(fullProject);
+        await autoSaveManager.forceSave(get().getFullProject());
       },
 
       getFullProject: (): Project => {
@@ -3038,19 +3019,23 @@ export const useProjectStore = create<ProjectState>()(
         const titleEngine = useEngineStore.getState().getTitleEngine();
         const graphicsEngine = useEngineStore.getState().getGraphicsEngine();
 
-        return {
+        // The stored copy of the active sequence is stale between flushes: every
+        // reader of the full project (save, autosave, agent, export) gets it synced.
+        return syncActiveSequence({
           ...project,
-          textClips: titleEngine?.getAllTextClips() || [],
-          shapeClips: graphicsEngine?.getAllShapeClips() || [],
-          svgClips: graphicsEngine?.getAllSVGClips() || [],
-          stickerClips: graphicsEngine?.getAllStickerClips() || [],
-        };
+          // Optional render engines may still be loading during recovery or a
+          // backup. Retain saved overlays until an engine owns its collection.
+          textClips: titleEngine?.getAllTextClips() ?? project.textClips ?? [],
+          shapeClips: graphicsEngine?.getAllShapeClips() ?? project.shapeClips ?? [],
+          svgClips: graphicsEngine?.getAllSVGClips() ?? project.svgClips ?? [],
+          stickerClips: graphicsEngine?.getAllStickerClips() ?? project.stickerClips ?? [],
+        });
       },
 
-      getEditingTemplates: () => [...getBuiltInEditingTemplates()],
+      getEditingTemplates: () => [...(getLoadedEngineModules()?.getBuiltInEditingTemplates() ?? [])],
 
       getEditingTemplate: (templateId: string) =>
-        getBuiltInEditingTemplate(templateId),
+        getLoadedEngineModules()?.getBuiltInEditingTemplate(templateId),
 
       applyEditingTemplate: (
         templateId: string,
@@ -3186,18 +3171,19 @@ export const useProjectStore = create<ProjectState>()(
       },
 
       createMotionComposition: async (name?: string, presetId?: string) => {
+        const engines = await loadEngineModules();
         const { project, actionExecutor } = get();
-        const preset = presetId ? getMotionPreset(presetId) : undefined;
+        const preset = presetId ? engines.getMotionPreset(presetId) : undefined;
         const composition = preset
           ? { ...preset.create(), name: name ?? preset.name }
-          : motionEngine.createStarterComposition({
+          : engines.motionEngine.createStarterComposition({
               name,
               width: project.settings.width,
               height: project.settings.height,
               frameRate: project.settings.frameRate,
             });
 
-        const projectCopy = structuredClone(project);
+        const projectCopy = cloneProjectForEdit(project);
         const action: Action = {
           type: "motion/createComposition",
           id: uuidv4(),
@@ -3216,8 +3202,8 @@ export const useProjectStore = create<ProjectState>()(
 
       upsertMotionComposition: async (composition: MotionComposition) => {
         const { project, actionExecutor } = get();
-        const projectCopy = structuredClone(project);
-        const reflowed = reflowMotionAutoLayoutGroups(composition);
+        const projectCopy = cloneProjectForEdit(project);
+        const reflowed = reflowMotion(composition);
         const action: Action = {
           type: "motion/upsertComposition",
           id: uuidv4(),
@@ -3236,7 +3222,7 @@ export const useProjectStore = create<ProjectState>()(
           return;
         }
         const { project } = get();
-        const reflowed = reflowMotionAutoLayoutGroups(composition);
+        const reflowed = reflowMotion(composition);
         const previewComposition = { ...reflowed, modifiedAt: Date.now() };
         const existing = project.motionCompositions ?? [];
         const nextCompositions = existing.some(
@@ -3267,13 +3253,13 @@ export const useProjectStore = create<ProjectState>()(
         if (before.id !== after.id) {
           return null;
         }
-        const reflowedBefore = reflowMotionAutoLayoutGroups(before);
-        const reflowedAfter = reflowMotionAutoLayoutGroups(after);
+        const reflowedBefore = reflowMotion(before);
+        const reflowedAfter = reflowMotion(after);
         if (motionCompositionsEqual(reflowedBefore, reflowedAfter)) {
           return null;
         }
         const { project, actionExecutor } = get();
-        const cloned = structuredClone(project);
+        const cloned = cloneProjectForEdit(project);
         const existing = cloned.motionCompositions ?? [];
         const projectBefore: Project = {
           ...cloned,
@@ -3312,7 +3298,7 @@ export const useProjectStore = create<ProjectState>()(
           };
         }
 
-        const projectCopy = structuredClone(project);
+        const projectCopy = cloneProjectForEdit(project);
         for (const operation of plan.operations) {
           const action: Action = {
             type: "creation/applyOperation",
@@ -3353,7 +3339,7 @@ export const useProjectStore = create<ProjectState>()(
           };
         }
 
-        const projectCopy = structuredClone(project);
+        const projectCopy = cloneProjectForEdit(project);
         for (const operation of plan.operations) {
           const action: Action = {
             type: "creation/applyOperation",
@@ -3399,7 +3385,7 @@ export const useProjectStore = create<ProjectState>()(
           };
         }
 
-        const projectCopy = structuredClone(project);
+        const projectCopy = cloneProjectForEdit(project);
         for (const operation of plan.operations) {
           const action: Action = {
             type: "creation/applyOperation",
@@ -3416,6 +3402,7 @@ export const useProjectStore = create<ProjectState>()(
       },
 
       insertMotionInstance: async (compositionId, placement = {}) => {
+        const engines = await loadEngineModules();
         const { project, actionExecutor } = get();
         const composition = (project.motionCompositions ?? []).find(
           (candidate) => candidate.id === compositionId,
@@ -3426,14 +3413,14 @@ export const useProjectStore = create<ProjectState>()(
 
         const startTime =
           placement.startTime ?? calculateTimelineDuration(project);
-        const instance = motionEngine.createInstance(composition, {
+        const instance = engines.motionEngine.createInstance(composition, {
           trackId: placement.trackId,
           startTime,
           duration: placement.duration,
           name: placement.name,
         });
 
-        const projectCopy = structuredClone(project);
+        const projectCopy = cloneProjectForEdit(project);
         const action: Action = {
           type: "motion/insertInstance",
           id: uuidv4(),
@@ -3455,7 +3442,7 @@ export const useProjectStore = create<ProjectState>()(
 
       removeMotionInstance: async (instanceId: string) => {
         const { project, actionExecutor } = get();
-        const projectCopy = structuredClone(project);
+        const projectCopy = cloneProjectForEdit(project);
         const action: Action = {
           type: "motion/removeInstance",
           id: uuidv4(),
@@ -3768,6 +3755,8 @@ export const useProjectStore = create<ProjectState>()(
       ) => {
         const { project, actionExecutor } = get();
         const effectId = `effect-${uuidv4()}`;
+        // Effects stored with {} resolve to neutral (a no-op): seed visible defaults.
+        params = requireEngineModules().withEffectDefaults(effectType, params);
         if (findOverlayEffectOwner(project, clipId)) {
           updateOverlayEffectOwner(clipId, (effects) => [
             ...effects,
@@ -3834,6 +3823,24 @@ export const useProjectStore = create<ProjectState>()(
             enabled: source.enabled,
           },
         };
+        const owner = project.timeline.tracks
+          .flatMap((track) => track.clips)
+          .find((clip) => clip.id === clipId);
+        const copiedKeyframes = owner
+          ? requireEngineModules().cloneEffectInstanceKeyframes(owner.keyframes, sourceEffectId, effectId, () => `keyframe-${uuidv4()}`)
+          : [];
+        if (owner && copiedKeyframes.length > 0) {
+          // Animated source: the copy and its keyframes land in ONE undo step.
+          const { order: _order, ...plainCopy } = copy;
+          const nextEffects: Effect[] = [...owner.effects];
+          nextEffects.splice(sourceIndex + 1, 0, plainCopy as Effect);
+          const applied = await get().setClipEffectState(
+            clipId,
+            nextEffects,
+            [...owner.keyframes, ...copiedKeyframes],
+          );
+          return applied ? get().getVideoEffect(clipId, effectId) ?? null : null;
+        }
         const result = await actionExecutor.execute(action, project);
         if (!result.success) return null;
 
@@ -3842,12 +3849,33 @@ export const useProjectStore = create<ProjectState>()(
         return get().getVideoEffect(clipId, effectId) ?? null;
       },
 
+      setClipEffectState: async (
+        clipId: string,
+        effects: Effect[],
+        keyframes: Keyframe[],
+      ) => {
+        const { project, actionExecutor } = get();
+        const action: Action = {
+          type: "effect/setStackState",
+          id: uuidv4(),
+          timestamp: Date.now(),
+          params: { clipId, effects, keyframes },
+        };
+        const result = await actionExecutor.execute(action, project);
+        if (!result.success) return false;
+        set({ project: { ...project } });
+        syncClipEffectsBridge(get().project, clipId);
+        return true;
+      },
+
       replaceVideoEffects: async (
         clipId: string,
         effects: VideoEffect[],
       ) => {
         const { project, actionExecutor } = get();
-        const nextEffects = structuredClone(effects);
+        // Array position owns authored order. The bridge's derived `order`
+        // field is runtime data; retain all other authored effect metadata.
+        const nextEffects = effects.map(({ order: _order, ...effect }) => structuredClone(effect));
         if (findOverlayEffectOwner(project, clipId)) {
           return Boolean(
             updateOverlayEffectOwner(clipId, () => nextEffects),
@@ -4091,68 +4119,36 @@ export const useProjectStore = create<ProjectState>()(
         settings: Partial<ColorGradingSettings>,
       ): Promise<boolean> => {
         const { project, actionExecutor } = get();
-        const effectsBridge = getEffectsBridge();
-        if (!effectsBridge.isInitialized()) {
-          console.error("EffectsBridge not initialized");
-          return false;
+        const clip = get().getClip(clipId);
+        if (!clip) return false;
+        const { lut, inputLut, ...adjustments } = settings;
+        const colorGrading: ClipColorGrading = {
+          ...clip.colorGrading,
+          ...adjustments,
+        };
+        if ("lut" in settings) {
+          if (lut) colorGrading.lut = lutToJson(lut);
+          else delete colorGrading.lut;
         }
-
-        // Apply each setting type to the live bridge for immediate rendering.
-        if (settings.colorWheels) {
-          const result = effectsBridge.applyColorWheels(
-            clipId,
-            settings.colorWheels,
-          );
-          if (!result.success) {
-            console.error("Failed to apply color wheels:", result.error);
-            return false;
-          }
+        if ("inputLut" in settings) {
+          if (inputLut) colorGrading.inputLut = lutToJson(inputLut);
+          else delete colorGrading.inputLut;
         }
-
-        if (settings.curves) {
-          const result = effectsBridge.applyCurves(clipId, settings.curves);
-          if (!result.success) {
-            console.error("Failed to apply curves:", result.error);
-            return false;
-          }
-        }
-
-        if (settings.lut) {
-          const result = effectsBridge.applyLUT(clipId, settings.lut);
-          if (!result.success) {
-            console.error("Failed to apply LUT:", result.error);
-            return false;
-          }
-        }
-
-        if (settings.hsl) {
-          const result = effectsBridge.applyHSL(clipId, settings.hsl);
-          if (!result.success) {
-            console.error("Failed to apply HSL:", result.error);
-            return false;
-          }
-        }
-
+        // A clip's first grade uses the Premiere-order float pipeline. Clips that already carry a
+        // grade (every project saved before it existed) keep their classic order until the user
+        // opts in from the Color tab, so existing looks never shift.
         if (
-          settings.temperature !== undefined ||
-          settings.tint !== undefined
+          (!clip.colorGrading || Object.keys(clip.colorGrading).length === 0) &&
+          colorGrading.pipelineVersion === undefined
         ) {
-          const result = effectsBridge.applyWhiteBalance(clipId, {
-            temperature: settings.temperature,
-            tint: settings.tint,
-          });
-          if (!result.success) {
-            console.error("Failed to apply white balance:", result.error);
-            return false;
-          }
+          colorGrading.pipelineVersion = 2;
         }
-
-        // Persist the merged result onto the clip so it is undoable + saved.
+        // The saved clip is authoritative even before a GPU bridge is ready.
         const action: Action = {
           type: "clip/setColorGrading",
           id: uuidv4(),
           timestamp: Date.now(),
-          params: { clipId, colorGrading: buildSerializedColorGrading(clipId) },
+          params: { clipId, colorGrading: structuredClone(colorGrading) },
         };
         const actionResult = await actionExecutor.execute(action, project);
         if (!actionResult.success) {
@@ -4163,6 +4159,7 @@ export const useProjectStore = create<ProjectState>()(
           return false;
         }
         set({ project: { ...project, modifiedAt: Date.now() } });
+        syncClipEffectsBridge(get().project, clipId);
         return true;
       },
 
@@ -4170,11 +4167,14 @@ export const useProjectStore = create<ProjectState>()(
        * Get color grading settings for a clip
        */
       getColorGrading: (clipId: string) => {
-        const effectsBridge = getEffectsBridge();
-        if (!effectsBridge.isInitialized()) {
-          return {};
-        }
-        return effectsBridge.getColorGrading(clipId);
+        const stored = get().getClip(clipId)?.colorGrading;
+        if (!stored) return {};
+        const { lut, inputLut, ...adjustments } = stored;
+        return {
+          ...adjustments,
+          ...(lut ? { lut: lutFromJson(lut) } : {}),
+          ...(inputLut ? { inputLut: lutFromJson(inputLut) } : {}),
+        };
       },
 
       /**
@@ -4182,17 +4182,6 @@ export const useProjectStore = create<ProjectState>()(
        */
       resetColorGrading: async (clipId: string): Promise<boolean> => {
         const { project, actionExecutor } = get();
-        const effectsBridge = getEffectsBridge();
-        if (!effectsBridge.isInitialized()) {
-          console.error("EffectsBridge not initialized");
-          return false;
-        }
-
-        const result = effectsBridge.resetColorGrading(clipId);
-        if (!result.success) {
-          console.error("Failed to reset color grading:", result.error);
-          return false;
-        }
 
         const action: Action = {
           type: "clip/setColorGrading",
@@ -4200,7 +4189,13 @@ export const useProjectStore = create<ProjectState>()(
           timestamp: Date.now(),
           params: { clipId, colorGrading: undefined },
         };
-        const actionResult = await actionExecutor.execute(action, project);
+        get().beginHistoryGroup("Reset color grading");
+        let actionResult: ActionResult;
+        try {
+          actionResult = await actionExecutor.execute(action, project);
+        } finally {
+          get().endHistoryGroup();
+        }
         if (!actionResult.success) {
           console.error(
             "Failed to persist color grading reset:",
@@ -4209,7 +4204,48 @@ export const useProjectStore = create<ProjectState>()(
           return false;
         }
         set({ project: { ...project, modifiedAt: Date.now() } });
+        syncClipEffectsBridge(get().project, clipId);
         return true;
+      },
+
+      setClipsColorGrading: async (
+        clipIds: readonly string[],
+        build: (current: ClipColorGrading | undefined) => ClipColorGrading | undefined,
+        label: string,
+      ): Promise<string[]> => {
+        const changed: string[] = [];
+        get().beginHistoryGroup(label);
+        try {
+          for (const clipId of clipIds) {
+            const clip = get().getClip(clipId);
+            if (!clip) continue;
+            const track = get().project.timeline.tracks.find((t) => t.clips.some((c) => c.id === clipId));
+            // Grades only mean something on picture clips; skip audio, text and graphics clips.
+            if (!track || (track.type !== "video" && track.type !== "image")) continue;
+            const next = build(clip.colorGrading);
+            const action: Action = {
+              type: "clip/setColorGrading",
+              id: uuidv4(),
+              timestamp: Date.now(),
+              params: {
+                clipId,
+                colorGrading: next ? structuredClone(next) : undefined,
+              },
+            };
+            const { project, actionExecutor } = get();
+            const result = await actionExecutor.execute(action, project);
+            if (!result.success) {
+              console.error("Failed to set color grading:", result.error?.message);
+              continue;
+            }
+            set({ project: { ...project, modifiedAt: Date.now() } });
+            syncClipEffectsBridge(get().project, clipId);
+            changed.push(clipId);
+          }
+        } finally {
+          get().endHistoryGroup();
+        }
+        return changed;
       },
 
       // Audio effects actions
@@ -4451,7 +4487,8 @@ export const useProjectStore = create<ProjectState>()(
        * Update keyframes for a clip
        * Keyframe animation support
        */
-      updateClipKeyframes: (clipId: string, keyframes: Keyframe[]) => {
+      updateClipKeyframes: (clipId: string, inputKeyframes: Keyframe[], options?: { derived?: boolean }) => {
+        let keyframes = inputKeyframes;
         const { project } = get();
 
         for (const track of project.timeline.tracks) {
@@ -4459,6 +4496,9 @@ export const useProjectStore = create<ProjectState>()(
           if (clipIndex !== -1) {
             const clip = track.clips[clipIndex];
             const priorKeyframes = clip.keyframes;
+            if (!options?.derived && smoothKeyframeRefresh && (keyframes.some(hasSmoothSide) || priorKeyframes?.some(hasSmoothSide))) {
+              keyframes = smoothKeyframeRefresh(priorKeyframes, keyframes);
+            }
             const updatedClip = { ...clip, keyframes };
             const updatedClips = [...track.clips];
             updatedClips[clipIndex] = updatedClip;
@@ -4498,4 +4538,20 @@ export const useProjectStore = create<ProjectState>()(
       },
     };
   }),
+);
+
+// Keep thumbnails/filmstrips at the display aspect: regenerate when a video's effective pixel aspect
+// (Interpret footage, undo/redo, import detection) stops matching the one its frames were stretched for.
+useProjectStore.subscribe(
+  (state) => state.project.mediaLibrary.items,
+  () => {
+    const bridge = getMediaBridge();
+    void refreshStaleThumbnails(
+      {
+        getProject: () => useProjectStore.getState().project,
+        setProject: (project) => useProjectStore.setState({ project }),
+      },
+      bridge,
+    );
+  },
 );

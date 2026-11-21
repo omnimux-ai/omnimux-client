@@ -1,12 +1,15 @@
+import { editSnapshot } from "@openreel/core/actions/handlers/edit-snapshot";
+import { cloneProjectForEdit } from "./clone-project-for-edit";
 import { v4 as uuidv4 } from "uuid";
 import type { StoreApi } from "zustand";
-import type { Action, Project } from "@openreel/core";
+import type { Action, ActionResult, Project } from "@openreel/core";
+import { planRemoveGaps, withUniversalTracksCapability } from "@openreel/core";
 import type { ProjectState } from "../project-store";
 
 type Get = StoreApi<ProjectState>["getState"];
 type Set = StoreApi<ProjectState>["setState"];
 
-export type TrackSlice = Pick<
+type TrackSlice = Pick<
   ProjectState,
   | "addTrack"
   | "duplicateTrack"
@@ -17,21 +20,40 @@ export type TrackSlice = Pick<
   | "hideTrack"
   | "muteTrack"
   | "soloTrack"
+  | "setTrackSyncLock"
+  | "setTrackSoloSafe"
+  | "setAudioRack"
+  | "applyAudioRouting"
+  | "setTrackAutomation"
   | "groupTracks"
   | "getTrack"
   | "consolidateTrack"
 >;
 
 export function createTrackSlice(set: Set, get: Get): TrackSlice {
+  const commitGrouping = (tracks: Project["timeline"]["tracks"]) => {
+    const { project, actionHistory } = get();
+    if (tracks.every((track, index) => track.groupId === project.timeline.tracks[index]?.groupId)) return;
+    const next = { ...project, timeline: { ...project.timeline, tracks }, modifiedAt: Date.now() };
+    // Grouping is synchronous, including caption insertion. Record both sides
+    // at this boundary using the existing portable edit-snapshot action.
+    const action: Action = { type: "project/applyEditSnapshot", id: uuidv4(), timestamp: Date.now(),
+      params: { snapshot: editSnapshot(cloneProjectForEdit(next)) } };
+    const inverse: Action = { type: "project/applyEditSnapshot", id: uuidv4(), timestamp: action.timestamp,
+      params: { snapshot: editSnapshot(cloneProjectForEdit(project)) } };
+    actionHistory.push(action, inverse);
+    set({ project: next });
+  };
   return {
-    addTrack: async (trackType, position) => {
+    addTrack: async (trackType, position, options) => {
       const { project, actionExecutor } = get();
-      const projectCopy = structuredClone(project);
+      const projectCopy = cloneProjectForEdit(project);
+      const trackId = options?.trackId ?? `track-${uuidv4()}`;
       const action: Action = {
         type: "track/add",
         id: uuidv4(),
         timestamp: Date.now(),
-        params: { trackType, position },
+        params: { trackType, position, ...options, trackId },
       };
       const result = await actionExecutor.execute(action, projectCopy);
       if (result.success) {
@@ -39,7 +61,12 @@ export function createTrackSlice(set: Set, get: Get): TrackSlice {
           ...projectCopy,
           modifiedAt: Date.now(),
         };
-        set({ project: finalProject });
+        set({
+          project:
+            options?.mode === "standard"
+              ? withUniversalTracksCapability(finalProject)
+              : finalProject,
+        });
       }
       return result;
     },
@@ -55,7 +82,7 @@ export function createTrackSlice(set: Set, get: Get): TrackSlice {
           error: { code: "TRACK_NOT_FOUND", message: "Track not found" },
         };
       }
-      const projectCopy = structuredClone(project);
+      const projectCopy = cloneProjectForEdit(project);
       const action: Action = {
         type: "track/duplicate",
         id: uuidv4(),
@@ -117,15 +144,16 @@ export function createTrackSlice(set: Set, get: Get): TrackSlice {
 
     reorderTrack: async (trackId, newPosition) => {
       const { project, actionExecutor } = get();
+      const projectCopy = cloneProjectForEdit(project);
       const action: Action = {
         type: "track/reorder",
         id: uuidv4(),
         timestamp: Date.now(),
         params: { trackId, newPosition },
       };
-      const result = await actionExecutor.execute(action, project);
+      const result = await actionExecutor.execute(action, projectCopy);
       if (result.success) {
-        set({ project: { ...project, modifiedAt: Date.now() } });
+        set({ project: { ...projectCopy, modifiedAt: Date.now() } });
       }
       return result;
     },
@@ -137,6 +165,36 @@ export function createTrackSlice(set: Set, get: Get): TrackSlice {
         id: uuidv4(),
         timestamp: Date.now(),
         params: { trackId, locked },
+      };
+      const result = await actionExecutor.execute(action, project);
+      if (result.success) {
+        set({ project: { ...project } });
+      }
+      return result;
+    },
+
+    setTrackSyncLock: async (trackId, syncLock) => {
+      const { project, actionExecutor } = get();
+      const action: Action = {
+        type: "track/setSyncLock",
+        id: uuidv4(),
+        timestamp: Date.now(),
+        params: { trackId, syncLock },
+      };
+      const result = await actionExecutor.execute(action, project);
+      if (result.success) {
+        set({ project: { ...project } });
+      }
+      return result;
+    },
+
+    setTrackSoloSafe: async (trackId, soloSafe) => {
+      const { project, actionExecutor } = get();
+      const action: Action = {
+        type: "track/setSoloSafe",
+        id: uuidv4(),
+        timestamp: Date.now(),
+        params: { trackId, soloSafe },
       };
       const result = await actionExecutor.execute(action, project);
       if (result.success) {
@@ -175,6 +233,54 @@ export function createTrackSlice(set: Set, get: Get): TrackSlice {
       return result;
     },
 
+    setAudioRack: async (target, rack) => {
+      const { project, actionExecutor } = get();
+      const action: Action = {
+        type: "audioRack/set",
+        id: uuidv4(),
+        timestamp: Date.now(),
+        params: { target, rack },
+      };
+      const result = await actionExecutor.execute(action, project);
+      if (result.success) {
+        set({ project: { ...project } });
+      }
+      return result;
+    },
+
+    applyAudioRouting: async (plan) => {
+      if (!plan.ok) {
+        return { success: false, error: { code: "INVALID_PARAMS", message: plan.message } } as ActionResult;
+      }
+      const { project, actionExecutor } = get();
+      const action: Action = {
+        type: "audioRouting/set",
+        id: uuidv4(),
+        timestamp: Date.now(),
+        params: { ...plan.params, label: plan.label } as unknown as Action["params"],
+      };
+      const result = await actionExecutor.execute(action, project);
+      if (result.success) {
+        set({ project: { ...project } });
+      }
+      return result;
+    },
+
+    setTrackAutomation: async (trackId, lane, points) => {
+      const { project, actionExecutor } = get();
+      const action: Action = {
+        type: "trackAutomation/set",
+        id: uuidv4(),
+        timestamp: Date.now(),
+        params: { trackId, lane, points },
+      };
+      const result = await actionExecutor.execute(action, project);
+      if (result.success) {
+        set({ project: { ...project } });
+      }
+      return result;
+    },
+
     soloTrack: async (trackId, solo) => {
       const { project, actionExecutor } = get();
       const action: Action = {
@@ -200,21 +306,10 @@ export function createTrackSlice(set: Set, get: Get): TrackSlice {
         const groupMembers = project.timeline.tracks.filter(
           (track) => track.groupId === source.groupId,
         );
-        set({
-          project: {
-            ...project,
-            timeline: {
-              ...project.timeline,
-              tracks: project.timeline.tracks.map((track) =>
-                track.id === trackId ||
-                (groupMembers.length === 2 && track.groupId === source.groupId)
-                  ? { ...track, groupId: undefined }
-                  : track,
-              ),
-            },
-            modifiedAt: Date.now(),
-          },
-        });
+        commitGrouping(project.timeline.tracks.map((track) =>
+          track.id === trackId || (groupMembers.length === 2 && track.groupId === source.groupId)
+            ? { ...track, groupId: undefined } : track,
+        ));
         return true;
       }
 
@@ -226,22 +321,10 @@ export function createTrackSlice(set: Set, get: Get): TrackSlice {
       const mergedGroupIds = new Set(
         [source.groupId, partner.groupId].filter(Boolean) as string[],
       );
-      set({
-        project: {
-          ...project,
-          timeline: {
-            ...project.timeline,
-            tracks: project.timeline.tracks.map((track) =>
-              track.id === source.id ||
-              track.id === partner.id ||
-              (track.groupId ? mergedGroupIds.has(track.groupId) : false)
-                ? { ...track, groupId }
-                : track,
-            ),
-          },
-          modifiedAt: Date.now(),
-        },
-      });
+      commitGrouping(project.timeline.tracks.map((track) =>
+        track.id === source.id || track.id === partner.id || (track.groupId ? mergedGroupIds.has(track.groupId) : false)
+          ? { ...track, groupId } : track,
+      ));
       return true;
     },
 
@@ -249,18 +332,14 @@ export function createTrackSlice(set: Set, get: Get): TrackSlice {
       get().project.timeline.tracks.find((track) => track.id === trackId),
 
     consolidateTrack: async (trackId) => {
-      const { project, actionExecutor } = get();
-      const action: Action = {
-        type: "track/consolidate",
-        id: uuidv4(),
-        timestamp: Date.now(),
-        params: { trackId },
-      };
-      const result = await actionExecutor.execute(action, project);
-      if (result.success) {
-        set({ project: { ...project } });
+      // Remove Gaps is a ripple-type edit: sync-locked tracks close the same
+      // ranges (or the edit is blocked); one undo step.
+      try {
+        const state = get();
+        return state.commitTimelineToolEdit(planRemoveGaps(state.getFullProject(), trackId, uuidv4()));
+      } catch (error) {
+        return { success: false, error: { code: "INVALID_PARAMS", message: error instanceof Error ? error.message : "The gaps could not be removed." } };
       }
-      return result;
     },
   };
 }

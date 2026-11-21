@@ -4,6 +4,10 @@ export async function generateThumbnailFromBlob(
   blob: Blob,
   type: "video" | "audio" | "image",
 ): Promise<string | null> {
+  if (!(blob instanceof Blob)) {
+    return null;
+  }
+
   if (type === "audio") {
     return null;
   }
@@ -18,9 +22,20 @@ export async function generateThumbnailFromBlob(
     video.playsInline = true;
     video.preload = "metadata";
 
+    const src = URL.createObjectURL(blob);
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    let cleaned = false;
+    // Detach the element before revoking so an in-flight range request is not
+    // left fetching a dead blob: URL (ERR_FILE_NOT_FOUND). Runs at most once.
     const cleanup = () => {
-      URL.revokeObjectURL(video.src);
+      if (cleaned) return;
+      cleaned = true;
+      clearTimeout(timeout);
+      video.onloadeddata = video.onseeked = video.onerror = null;
+      video.removeAttribute("src");
+      video.load();
       video.remove();
+      URL.revokeObjectURL(src);
     };
 
     video.onloadeddata = () => {
@@ -66,35 +81,70 @@ export async function generateThumbnailFromBlob(
       resolve(null);
     };
 
-    setTimeout(() => {
+    timeout = setTimeout(() => {
       cleanup();
       resolve(null);
     }, 5000);
 
-    video.src = URL.createObjectURL(blob);
+    video.src = src;
   });
+}
+
+export function createMissingMediaItem(item: MediaItem): MediaItem {
+  const droppedThumbnail = item.thumbnailUrl?.startsWith("blob:") ?? false;
+  const { thumbnailPixelAspect: _marker, ...rest } = item;
+  return {
+    ...(droppedThumbnail ? rest : item),
+    fileHandle: null,
+    blob: null,
+    thumbnailUrl: droppedThumbnail
+      ? null
+      : item.thumbnailUrl,
+    waveformData: null,
+    filmstripThumbnails: undefined,
+    isPlaceholder: true,
+  };
 }
 
 export async function restoreMediaItem(
   item: MediaItem,
   storedBlob: Blob | undefined,
 ): Promise<MediaItem> {
-  const blob = storedBlob || item.blob;
+  const blob =
+    storedBlob instanceof Blob
+      ? storedBlob
+      : item.blob instanceof Blob
+        ? item.blob
+        : null;
 
   if (!blob) {
-    return item;
+    return createMissingMediaItem(item);
   }
 
   let thumbnailUrl = item.thumbnailUrl;
 
   if (!thumbnailUrl || thumbnailUrl.startsWith("blob:")) {
-    thumbnailUrl = await generateThumbnailFromBlob(blob, item.type);
+    try {
+      thumbnailUrl = await generateThumbnailFromBlob(blob, item.type);
+    } catch (error) {
+      console.warn(
+        `[MediaRecovery] Failed to regenerate thumbnail for ${item.name}:`,
+        error,
+      );
+      thumbnailUrl = null;
+    }
   }
 
+  // A regenerated thumbnail is square: the old marker no longer describes it.
+  const { thumbnailPixelAspect: _marker, ...rest } = item;
+  const regenerated = thumbnailUrl !== item.thumbnailUrl;
   return {
-    ...item,
+    ...(regenerated ? rest : item),
+    fileHandle: null,
     blob,
     thumbnailUrl,
+    waveformData: null,
     filmstripThumbnails: undefined,
+    isPlaceholder: false,
   };
 }

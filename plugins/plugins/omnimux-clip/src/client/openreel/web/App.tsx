@@ -1,36 +1,69 @@
-import { useEffect, useCallback, useRef, lazy, Suspense } from "react";
+import { EditorPortalRoot } from "@openreel/ui/lib/portal-root";
+import {
+  useEffect,
+  useCallback,
+  useRef,
+  useState,
+  lazy,
+  Suspense,
+} from "react";
 import { ToastContainer } from "./components/Toast";
-import { ScriptViewDialog } from "./components/editor/ScriptViewDialog";
-import { SearchModal } from "./components/editor/SearchModal";
 import { WelcomeScreen } from "./components/welcome";
-import { RecoveryDialog } from "./components/welcome/RecoveryDialog";
-import { SharePage } from "./pages/SharePage";
 import { useUIStore } from "./stores/ui-store";
 import { useProjectStore } from "./stores/project-store";
-import { useRouter } from "./hooks/use-router";
+import { useOnboardingStore } from "./stores/onboarding-store";
+import { isDesktopRuntime } from "./components/onboarding/shell/useOnboardingGate";
+import { getOpenReelRoute, useRouter } from "./hooks/use-router";
 import { useProjectRecovery } from "./hooks/useProjectRecovery";
-import { useKieAIPoller } from "./hooks/useKieAIPoller";
-import { useGpuJobPoller } from "./hooks/useGpuJobPoller";
 import { SOCIAL_MEDIA_PRESETS, type SocialMediaCategory } from "@openreel/core";
-import { ToolcraftText as Text } from "@openreel/ui";
 
-const EditorInterface = lazy(() =>
-  import("./components/editor/EditorInterface").then((m) => ({
-    default: m.EditorInterface,
-  }))
-);
-const MotionCreatorApp = lazy(() =>
-  import("./motion/MotionCreatorApp").then((module) => ({
-    default: module.MotionCreatorApp,
-  }))
-);
+import { getLoadedEditor, loadEditorModule } from "./editor-loader";
+import { keyboardShortcuts } from "./services/keyboard-shortcuts";
+import { createEditorProject } from "./services/project-creation";
+import { toast } from "./stores/notification-store";
+import { useSceneDetectionDialogStore } from "./stores/scene-detection-dialog-store";
+import { clipNow, useClipT } from "../../i18n/index.js";
+import { AppProviders } from "./components/AppProviders";
+import { CompactEditorContext, useCompactEditorPane } from "./hooks/useCompactEditor";
 
-const LoadingSpinner: React.FC<{ message: string }> = ({ message }) => (
+const LazyEditorInterface = lazy(() =>
+  loadEditorModule().then((m) => ({ default: m.EditorInterface })),
+);
+/** Renders synchronously when the chunk is already loaded (see editor-loader). */
+const EditorInterface: React.FC<{ canvasMode: boolean }> = ({ canvasMode }) => {
+  const Loaded = getLoadedEditor();
+  return Loaded ? <Loaded canvasMode={canvasMode} /> : <LazyEditorInterface canvasMode={canvasMode} />;
+};
+// Only shown when crash-recovery saves exist; pulls Collapsible (framer-motion), so keep it off the startup entry.
+const RecoveryDialog = lazy(() =>
+  import("./components/welcome/RecoveryDialog").then((m) => ({
+    default: m.RecoveryDialog,
+  })),
+);
+const ScriptViewDialog = lazy(() =>
+  import("./components/editor/ScriptViewDialog").then((m) => ({
+    default: m.ScriptViewDialog,
+  })),
+);
+const SceneDetectionDialog = lazy(() =>
+  import("./components/editor/SceneDetectionDialog").then((m) => ({
+    default: m.SceneDetectionDialog,
+  })),
+);
+const SearchModal = lazy(() =>
+  import("./components/editor/SearchModal").then((m) => ({
+    default: m.SearchModal,
+  })),
+);
+const LoadingSpinner: React.FC<{ message: string }> = ({ message }) => {
+  const t = useClipT();
+  return (
   <div className="h-full w-full bg-background flex flex-col items-center justify-center">
     <div className="w-10 h-10 border-2 border-primary border-t-transparent rounded-full animate-spin mb-3" />
-    <Text type="supporting" color="secondary" className="text-sm text-text-secondary">{message}</Text>
+    <span className="font-normal text-sm text-text-secondary">{t(message)}</span>
   </div>
 );
+};
 
 const PRESET_DIMENSIONS: Record<string, SocialMediaCategory> = {
   "1080x1920": "tiktok",
@@ -40,29 +73,65 @@ const PRESET_DIMENSIONS: Record<string, SocialMediaCategory> = {
   "1280x720": "youtube-video",
 };
 
-function App() {
-  const { activeModal, closeModal, skipWelcomeScreen } = useUIStore();
-  const { openModal: openSearchModal } = useUIStore();
+function App({ active = true, canvasMode = false }: { active?: boolean; canvasMode?: boolean } = {}) {
+  const [portalRoot, setPortalRoot] = useState<HTMLDivElement | null>(null);
+  const compact = useCompactEditorPane(portalRoot);
+  // Canvas and Studio can keep their editors mounted while only one is visible.
+  const activeModal = useUIStore((state) => active ? state.activeModal : null);
+  const closeModal = useUIStore((state) => state.closeModal);
+  const skipWelcomeScreen = useUIStore((state) => state.skipWelcomeScreen);
+  const openSearchModal = useUIStore((state) => state.openModal);
+  const sceneDetectionClipId = useSceneDetectionDialogStore((state) => active ? state.clipId : null);
+  const [hasOpenedScriptView, setHasOpenedScriptView] = useState(false);
+  const [isRecovering, setIsRecovering] = useState(false);
   const createNewProject = useProjectStore((state) => state.createNewProject);
-  const { showDialog, availableSaves, recover, dismiss, clearAll } = useProjectRecovery();
+  const hasOpenProject = useProjectStore((state) => state.hasOpenProject);
+  const { isChecking, showDialog, availableSaves, recover, dismiss, clearAll } =
+    useProjectRecovery();
 
   const { route, params, navigate, parsedDimensions, fps } = useRouter();
-  const hasHandledInitialRoute = useRef(false);
-  const isMotionHost =
-    typeof window !== "undefined" &&
-    window.location.hostname.startsWith("motion.");
-  const isMotionSurface = isMotionHost || route === "motion";
-
-  useKieAIPoller();
-  useGpuJobPoller();
+  const hasHandledNewRoute = useRef(false);
+  const handledNewKey = useRef<string | null>(null);
+  const newRequestId = useRef(0);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  // Help > "Welcome & Setup" re-opens the welcome screen even when it is skipped on startup.
+  const onboardingBandOpen = useOnboardingStore((state) => state.bandOpen === true);
+  const showWelcome =
+    route === "templates" ||
+    route === "recent" ||
+    (route === "welcome" && (!skipWelcomeScreen || onboardingBandOpen));
 
   useEffect(() => {
-    if (hasHandledInitialRoute.current) return;
+    if (activeModal === "scriptView") setHasOpenedScriptView(true);
+  }, [activeModal]);
 
-    if (isMotionSurface) {
-      hasHandledInitialRoute.current = true;
-    } else if (route === "new") {
-      hasHandledInitialRoute.current = true;
+  useEffect(() => {
+    if (route !== "new") {
+      hasHandledNewRoute.current = false;
+      handledNewKey.current = null;
+      newRequestId.current++;
+      return;
+    }
+    const key = JSON.stringify(params);
+    if (
+      (hasHandledNewRoute.current && handledNewKey.current === key) ||
+      isChecking ||
+      showDialog ||
+      isRecovering
+    )
+      return;
+
+    if (route === "new") {
+      hasHandledNewRoute.current = true;
+      handledNewKey.current = key;
+      const request = ++newRequestId.current;
+      const requestedRoute = getOpenReelRoute();
 
       let projectName = "New Project";
       let width = 1920;
@@ -75,7 +144,7 @@ function App() {
         if (preset) {
           width = preset.width;
           height = preset.height;
-          frameRate = preset.frameRate || fps;
+          frameRate = params.fps ? fps : preset.frameRate || fps;
           projectName = `New ${presetKey.charAt(0).toUpperCase() + presetKey.slice(1).replace(/-/g, " ")} Project`;
         }
       } else if (parsedDimensions) {
@@ -86,7 +155,7 @@ function App() {
         const matchingPreset = PRESET_DIMENSIONS[dimensionKey];
         if (matchingPreset) {
           const preset = SOCIAL_MEDIA_PRESETS[matchingPreset];
-          frameRate = preset.frameRate || fps;
+          frameRate = params.fps ? fps : preset.frameRate || fps;
         }
 
         const aspectRatio = width / height;
@@ -99,30 +168,91 @@ function App() {
         }
       }
 
-      createNewProject(projectName, { width, height, frameRate });
-      navigate("editor");
-    } else if (route === "editor" && skipWelcomeScreen) {
-      hasHandledInitialRoute.current = true;
-    } else if (["welcome", "templates", "recent"].includes(route)) {
-      hasHandledInitialRoute.current = true;
+      void (async () => {
+        try {
+          await createEditorProject({
+            name: projectName,
+            settings: { width, height, frameRate },
+            isCurrent: () =>
+              mounted.current &&
+              request === newRequestId.current &&
+              getOpenReelRoute() === requestedRoute,
+          });
+          if (
+            !mounted.current ||
+            request !== newRequestId.current ||
+            getOpenReelRoute() !== requestedRoute
+          )
+            return;
+          // The New project flow finished: retire onboarding now, not before it could be cancelled.
+          if (isDesktopRuntime()) useOnboardingStore.getState().skip("user");
+          navigate("editor");
+        } catch (error) {
+          if (
+            !mounted.current ||
+            request !== newRequestId.current ||
+            getOpenReelRoute() !== requestedRoute
+          )
+            return;
+          toast.error(
+            clipNow()("Could not create project"),
+            error instanceof Error
+              ? error.message
+              : clipNow()("Your current project is still open. Please try again."),
+          );
+          navigate(
+            useProjectStore.getState().hasOpenProject ? "editor" : "welcome",
+          );
+        }
+      })();
     }
   }, [
     route,
-    isMotionSurface,
     params,
     parsedDimensions,
     fps,
     createNewProject,
     navigate,
-    skipWelcomeScreen,
+    isChecking,
+    showDialog,
+    isRecovering,
+  ]);
+
+  useEffect(() => {
+    // Recovery owns the choice until it settles. A bare editor URL still needs
+    // a real project for autosave and preview-proxy lifecycle subscriptions.
+    if (
+      showWelcome ||
+      route === "new" ||
+      isChecking ||
+      showDialog ||
+      isRecovering ||
+      hasOpenProject
+    )
+      return;
+    createNewProject("New Project");
+  }, [
+    showWelcome,
+    route,
+    isChecking,
+    showDialog,
+    isRecovering,
+    hasOpenProject,
+    createNewProject,
   ]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      if (e.key === "Escape" && route !== "editor") {
+      if (e.defaultPrevented) return;
+      const controlOwnsEscape =
+        e.target instanceof Element &&
+        e.target.closest(
+          "input, textarea, select, [contenteditable], [role=dialog], [role=menu], [role=listbox]",
+        );
+      if (e.key === "Escape" && route !== "editor" && !controlOwnsEscape) {
         navigate("editor");
       }
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+      if (keyboardShortcuts.isSearchPaletteEvent(e)) {
         e.preventDefault();
         openSearchModal("search");
       }
@@ -131,54 +261,85 @@ function App() {
   );
 
   useEffect(() => {
+    if (!active) return;
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleKeyDown]);
+  }, [active, handleKeyDown]);
 
-  const showWelcome =
-    ["welcome", "templates", "recent"].includes(route) && !skipWelcomeScreen;
   const initialTab =
     route === "templates"
       ? "templates"
       : route === "recent"
         ? "recent"
         : undefined;
-  const isSharePage = route === "share" && params.shareId;
 
   return (
-    <div className="h-full w-full bg-background text-text-primary overflow-hidden">
-      {/* DSH 侧边栏 Tab 宽度可变，禁用官方 MobileBlocker 以免误拦工作台 */}
-      {isMotionSurface ? (
-        <Suspense fallback={<LoadingSpinner message="Loading Motion Creator..." />}>
-          <MotionCreatorApp embedded />
-        </Suspense>
-      ) : isSharePage ? (
-        <SharePage shareId={params.shareId!} />
-      ) : showWelcome ? (
+    <EditorPortalRoot.Provider value={active ? portalRoot : null}>
+    <CompactEditorContext.Provider value={compact}>
+    <div ref={setPortalRoot} className="relative h-full w-full bg-background text-text-primary overflow-hidden">
+    <AppProviders>
+      {showWelcome ? (
         <WelcomeScreen initialTab={initialTab} />
+      ) : !hasOpenProject ? (
+        <LoadingSpinner
+          message={
+            isChecking
+              ? "Checking for saved projects..."
+              : showDialog
+                ? "Choose a saved project or start fresh..."
+                : "Opening project..."
+          }
+        />
       ) : (
         <Suspense fallback={<LoadingSpinner message="Loading editor..." />}>
-          <EditorInterface />
+          <EditorInterface canvasMode={canvasMode} />
         </Suspense>
       )}
       <ToastContainer />
-      <ScriptViewDialog
-        isOpen={activeModal === "scriptView"}
-        onClose={closeModal}
-      />
-      <SearchModal isOpen={activeModal === "search"} onClose={closeModal} />
-      {showDialog && availableSaves.length > 0 && (
-        <RecoveryDialog
-          saves={availableSaves}
-          onRecover={async (saveId) => {
-            const success = await recover(saveId);
-            if (success) navigate("editor");
-          }}
-          onDismiss={dismiss}
-          onClearAll={clearAll}
-        />
+      <Suspense fallback={null}>
+        {(hasOpenedScriptView || activeModal === "scriptView") && (
+          <ScriptViewDialog
+            isOpen={activeModal === "scriptView"}
+            onClose={closeModal}
+          />
+        )}
+        {hasOpenProject && sceneDetectionClipId !== null && (
+          <SceneDetectionDialog />
+        )}
+        {activeModal === "search" && (
+          <SearchModal isOpen onClose={closeModal} />
+        )}
+      </Suspense>
+      {active && showDialog && availableSaves.length > 0 && (
+        <Suspense fallback={null}>
+          <RecoveryDialog
+            saves={availableSaves}
+            onRecover={async (saveId) => {
+              // Loading a snapshot updates the store before the hash navigation
+              // settles. Claim this /new visit so it cannot replace the snapshot.
+              hasHandledNewRoute.current = true;
+              handledNewKey.current = JSON.stringify(params);
+              newRequestId.current++;
+              setIsRecovering(true);
+              let success = false;
+              try {
+                success = await recover(saveId);
+                if (success) navigate("editor");
+                return success;
+              } finally {
+                if (!success) hasHandledNewRoute.current = false;
+                setIsRecovering(false);
+              }
+            }}
+            onDismiss={dismiss}
+            onClearAll={clearAll}
+          />
+        </Suspense>
       )}
+    </AppProviders>
     </div>
+    </CompactEditorContext.Provider>
+    </EditorPortalRoot.Provider>
   );
 }
 

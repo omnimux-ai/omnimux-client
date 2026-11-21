@@ -1,8 +1,10 @@
+import classWorkerURL from "@ffmpeg/ffmpeg/worker?worker&url";
 import type { StabilizationConfig } from "./types";
 import { DEFAULT_STABILIZATION_CONFIG } from "./types";
 
 type FFmpegInstance = {
   load(options?: {
+    classWorkerURL?: string;
     coreURL?: string;
     wasmURL?: string;
     workerURL?: string;
@@ -32,7 +34,7 @@ export type VidstabProgress = {
   progress: number;
 };
 
-export class VidstabEngine {
+class VidstabEngine {
   private ffmpeg: FFmpegInstance | null = null;
   private loaded = false;
   private loading: Promise<void> | null = null;
@@ -69,7 +71,7 @@ export class VidstabEngine {
 
         onProgress?.({ stage: "downloading", progress: 0.9 });
 
-        await this.ffmpeg.load({ coreURL, wasmURL, workerURL });
+        await this.ffmpeg.load({ classWorkerURL, coreURL, wasmURL, workerURL });
       } else {
         const [coreURL, wasmURL] = await Promise.all([
           toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript"),
@@ -78,7 +80,7 @@ export class VidstabEngine {
 
         onProgress?.({ stage: "downloading", progress: 0.9 });
 
-        await this.ffmpeg.load({ coreURL, wasmURL });
+        await this.ffmpeg.load({ classWorkerURL, coreURL, wasmURL });
       }
 
       onProgress?.({ stage: "downloading", progress: 1 });
@@ -263,9 +265,4 @@ export function getVidstabEngine(): VidstabEngine {
     vidstabEngineInstance = new VidstabEngine();
   }
   return vidstabEngineInstance;
-}
-
-export function disposeVidstabEngine(): void {
-  vidstabEngineInstance?.dispose();
-  vidstabEngineInstance = null;
 }

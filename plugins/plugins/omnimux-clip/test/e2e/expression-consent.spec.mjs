@@ -39,7 +39,7 @@ try {
     child.stdin.end(`const options = ${JSON.stringify(options)};\n${journey}`);
   });
   console.log(result.stdout);
-  await writeFile(join(output, 'result.json'), JSON.stringify({ passed: true, output, browser: 'ego-browser', scope: 'native Clip import, graph editor and render/export-frame; no full host or video encoder' }, null, 2));
+  await writeFile(join(output, 'result.json'), JSON.stringify({ passed: true, output, browser: 'ego-browser', scope: 'Clip JSON import, expression approval engine and rendered frames, including an export snapshot' }, null, 2));
 } catch (error) {
   await writeFile(join(output, 'result.json'), JSON.stringify({ passed: false, message: error.message, stdout: error.stdout, stderr: error.stderr }, null, 2));
   throw error;

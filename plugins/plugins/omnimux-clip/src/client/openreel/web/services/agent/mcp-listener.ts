@@ -3,24 +3,33 @@ import {
   getTool,
   isDestructive,
   isExpensive,
-  toMcpTools,
+  toMcpToolsAnnotated,
   type ToolResult,
 } from "@openreel/agent";
 import type { MotionComposition } from "@openreel/core";
 import { getLiveEditorHost, runExclusive } from "./host-singleton";
+import { withAgentToolCall } from "../../components/onboarding/shell/project-intent";
 import { useSettingsStore } from "../../stores/settings-store";
 import { useMotionStore } from "../../motion/stores/motion-store";
 import { useUIStore } from "../../stores/ui-store";
 import { resolveMotionCreatorPreviewTime } from "../../motion/composition-selection";
 
-export interface McpBridgeRequest {
+interface McpBridgeRequest {
   readonly callId: string;
   readonly kind: "listTools" | "callTool";
   readonly name?: string;
   readonly args?: Record<string, unknown>;
+  /** Set by the main process for watch-folder work; see WATCH_FOLDER_TOOLS. */
+  readonly origin?: "watch-folders";
 }
 
-export interface McpBridgeResponse {
+/**
+ * The tools a watch folder may run without the agent confirmation gate. The folders are configured by
+ * the user in Settings (the folder path comes from a native dialog), so this is the user's own automation.
+ */
+const WATCH_FOLDER_TOOLS: ReadonlySet<string> = new Set(["import_media_from_path", "list_bins", "create_bin", "open_project_file", "queue_export", "list_export_jobs", "cancel_export_job", "relink_media"]);
+
+interface McpBridgeResponse {
   readonly ok: boolean;
   readonly result?: unknown;
   readonly error?: string;
@@ -117,20 +126,6 @@ function getMotionLayerId(result: ToolResult): string | null {
   );
 }
 
-function insertedMotionIntoEditor(
-  name: string,
-  args: Record<string, unknown>,
-  result: ToolResult,
-): boolean {
-  if (name === "insert_motion_into_editor") return true;
-  const data = getResultDataRecord(result);
-  return (
-    optionalString(data?.insertedInstanceId) !== null ||
-    optionalString(data?.insertedClipId) !== null ||
-    (args.insertIntoEditor === true && optionalString(data?.instanceId) !== null)
-  );
-}
-
 function followMcpMotionResult(
   name: string,
   args: Record<string, unknown>,
@@ -140,9 +135,7 @@ function followMcpMotionResult(
   const compositionId = getMotionCompositionId(args, result);
   if (!compositionId) return;
 
-  useUIStore
-    .getState()
-    .setDesktopPage(insertedMotionIntoEditor(name, args, result) ? "edit" : "motion");
+  useUIStore.getState().setDesktopPage("edit");
 
   const motion = useMotionStore.getState();
   const activeChanged = motion.activeCompositionId !== compositionId;
@@ -176,28 +169,28 @@ export async function handleMcpBridgeRequest(
 ): Promise<McpBridgeResponse> {
   try {
     if (req.kind === "listTools") {
-      return { ok: true, result: toMcpTools() };
+      return { ok: true, result: toMcpToolsAnnotated() };
     }
     if (req.kind === "callTool") {
       const name = req.name;
       if (!name) return { ok: false, error: "Missing tool name" };
 
-      const autoAllow = useSettingsStore.getState().mcpAutoAllowTrustedLocal;
+      const autoAllow = useSettingsStore.getState().mcpAutoAllowTrustedLocal || (req.origin === "watch-folders" && WATCH_FOLDER_TOOLS.has(name));
       if (!autoAllow && (isDestructive(name) || isExpensive(name))) {
         const blocked: ToolResult = {
           ok: false,
           summary: "Confirmation required",
           error: {
             code: "CONFIRMATION_REQUIRED",
-            message: `'${name}' is destructive or expensive. Enable "Trusted local — auto-allow" in Settings → MCP to permit it.`,
+            message: `'${name}' is destructive or expensive. Turn on "Allow agents to delete and export without asking" in Settings → MCP to permit it.`,
           },
         };
         return { ok: true, result: blocked };
       }
 
       const args = req.args ?? {};
-      const result = await runExclusive(() =>
-        Promise.resolve(executeTool(name, args, getLiveEditorHost())),
+      const result = await withAgentToolCall(() =>
+        runExclusive(() => Promise.resolve(executeTool(name, args, getLiveEditorHost()))),
       );
       followMcpMotionResult(name, args, result);
       return { ok: true, result };

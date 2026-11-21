@@ -2,12 +2,12 @@ import { v4 as uuidv4 } from "uuid";
 import type { StoreApi } from "zustand";
 import type { ProjectState } from "../project-store";
 import { useEngineStore } from "../engine-store";
-import { splitCaptionIntoSingleLineCues } from "@openreel/core";
+import { loadEngineModules } from "../../services/lazy-engines";
 
 type Get = StoreApi<ProjectState>["getState"];
 type Set = StoreApi<ProjectState>["setState"];
 
-export type SubtitleSlice = Pick<
+type SubtitleSlice = Pick<
   ProjectState,
   | "addSubtitle"
   | "removeSubtitle"
@@ -19,41 +19,34 @@ export type SubtitleSlice = Pick<
   | "getSubtitleStylePresets"
 >;
 
-export function createSubtitleSlice(set: Set, get: Get): SubtitleSlice {
+export function createSubtitleSlice(_set: Set, get: Get): SubtitleSlice {
   return {
     addSubtitle: async (subtitle, metadata) => {
       const { project, addTrack, createTextClip } = get();
 
       let captionsTrack = project.timeline.tracks.find(
-        (t) => t.type === "text" && t.name === "Captions",
+        (track) =>
+            !track.locked && !track.hidden && (track.role === "captions" || track.name === "Captions"),
       );
 
       if (!captionsTrack) {
-        const result = await addTrack("text");
+        const existingTrackIds = new Set(
+          project.timeline.tracks.map((track) => track.id),
+        );
+        // Front-most tracks are stored first. Captions must paint after their
+        // source video in export, just as they do in the editor preview.
+        const result = await addTrack("video", 0, {
+          mode: "standard",
+          role: "captions",
+          name: "Captions",
+        });
         if (!result?.success) return;
 
         const updatedProject = get().project;
-        const newTracks = updatedProject.timeline.tracks.filter(
-          (t) =>
-            t.type === "text" &&
-            !project.timeline.tracks.some((old) => old.id === t.id),
+        captionsTrack = updatedProject.timeline.tracks.find(
+          (track) =>
+            track.role === "captions" && !existingTrackIds.has(track.id),
         );
-        captionsTrack = newTracks[0];
-
-        if (captionsTrack) {
-          set((state) => ({
-            project: {
-              ...state.project,
-              timeline: {
-                ...state.project.timeline,
-                tracks: state.project.timeline.tracks.map((t) =>
-                  t.id === captionsTrack!.id ? { ...t, name: "Captions" } : t,
-                ),
-              },
-            },
-          }));
-          captionsTrack = { ...captionsTrack, name: "Captions" };
-        }
       }
 
       if (!captionsTrack) return;
@@ -61,27 +54,43 @@ export function createSubtitleSlice(set: Set, get: Get): SubtitleSlice {
       const duration = subtitle.endTime - subtitle.startTime;
       const style = subtitle.style;
 
-      createTextClip(
+      const created = createTextClip(
         captionsTrack.id,
         subtitle.startTime,
         subtitle.text,
         duration,
-        style
-          ? {
+        {
+          ...(style ? {
               fontFamily: style.fontFamily,
               fontSize: style.fontSize,
               color: style.color,
               backgroundColor: style.backgroundColor || undefined,
-            }
-          : undefined,
+            } : {}),
+          textAlign: "center",
+        },
         metadata,
       );
+      if (created) {
+        get().updateTextTransform(created.id, { position: { x: 0.5, y: style?.position === "top" ? 0.15 : style?.position === "center" ? 0.5 : 0.85 } });
+        if (subtitle.animationStyle === "word-by-word") {
+          const wordTime = duration / Math.max(1, subtitle.text.trim().split(/\s+/).length);
+          get().updateTextAnimation(created.id, {
+            preset: "pop",
+            unit: "word",
+            stagger: wordTime,
+            inDuration: duration - wordTime + Math.min(0.12, wordTime),
+            outDuration: 0,
+            params: { popOvershoot: 1.12 },
+          });
+        }
+      }
       if (typeof metadata?.captionSourceClipId === "string") {
         const sourceTrack = get().project.timeline.tracks.find((track) =>
           track.clips.some((clip) => clip.id === metadata.captionSourceClipId),
         );
-        if (sourceTrack) get().groupTracks(sourceTrack.id, captionsTrack.id);
+        if (created && sourceTrack) get().groupTracks(sourceTrack.id, captionsTrack.id);
       }
+      return created ?? undefined;
     },
 
     removeSubtitle: (subtitleId) => {
@@ -116,6 +125,7 @@ export function createSubtitleSlice(set: Set, get: Get): SubtitleSlice {
       const subtitleEngine = await useEngineStore
         .getState()
         .getSubtitleEngine();
+      const { splitCaptionIntoSingleLineCues } = await loadEngineModules();
       const { project, addSubtitle } = get();
       const { result } = subtitleEngine.importSRT(project.timeline, srtContent);
       const errorMessages = result.errors.map(
@@ -170,7 +180,10 @@ export function createSubtitleSlice(set: Set, get: Get): SubtitleSlice {
       const { project } = get();
       const captionsTrackIds = new Set(
         project.timeline.tracks
-          .filter((track) => track.type === "text" && track.name === "Captions")
+          .filter(
+            (track) =>
+              track.role === "captions" || track.name === "Captions",
+          )
           .map((track) => track.id),
       );
       const subtitles = get()
@@ -208,7 +221,10 @@ export function createSubtitleSlice(set: Set, get: Get): SubtitleSlice {
       }
       const captionsTrackIds = new Set(
         get().project.timeline.tracks
-          .filter((track) => track.type === "text" && track.name === "Captions")
+          .filter(
+            (track) =>
+              track.role === "captions" || track.name === "Captions",
+          )
           .map((track) => track.id),
       );
       for (const clip of get().getAllTextClips()) {
