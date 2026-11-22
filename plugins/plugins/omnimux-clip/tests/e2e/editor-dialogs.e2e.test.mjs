@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { after, before, test } from 'node:test';
 import { build } from 'esbuild';
+import { HUB_CSS } from '../../../omnimux/src/client/styles.js';
 import { CLIP_API_PREFIX, createClipDispatcher } from '../../src/http/routes.js';
 import { resolveClipPaths } from '../../src/paths.js';
 import { createProjectStore } from '../../src/store/projectStore.js';
@@ -283,6 +284,41 @@ test('canvas export dialog and all four controls fit the local pane and receive 
     assert.ok(shifted.contained && shifted.controls.every(({ hit }) => hit), JSON.stringify(shifted));
     await dialog.getByRole('button', { name: 'Close export dialog' }).click();
     await dialog.waitFor({ state: 'detached' });
+  } finally {
+    await page.close();
+  }
+});
+
+test('AI Edit keeps its keyboard focus outline under the Hub stylesheet', { timeout: 25_000 }, async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 840 } });
+  page.setDefaultTimeout(5000);
+  try {
+    await openCanvas(page);
+    await page.addStyleTag({ content: `
+      :root { --dsw-alias-label-primary: black; --dsw-alias-border-l3: gray; }
+      ${HUB_CSS}
+    ` });
+    await page.locator('#canvas').evaluate(pane => { pane.style.width = '460px'; });
+    const stage = page.locator(canvasStage);
+    const aiEdit = stage.getByRole('button', { name: 'AI Edit', exact: true });
+    const exportButton = stage.locator('[data-editor-export-control]');
+    await exportButton.focus();
+    await page.keyboard.press('Shift+Tab');
+    const ring = await aiEdit.evaluate(button => {
+      const { outlineWidth, outlineStyle, outlineColor, outlineOffset } = getComputedStyle(button);
+      return {
+        keyboardFocused: document.activeElement === button && button.matches(':focus-visible'),
+        outlineWidth, outlineStyle, outlineColor, outlineOffset,
+      };
+    });
+    assert.deepEqual(ring, {
+      keyboardFocused: true, outlineWidth: '2px', outlineStyle: 'solid',
+      outlineColor: 'rgb(0, 0, 0)', outlineOffset: '2px',
+    });
+
+    await page.keyboard.press('Tab');
+    assert.equal(await exportButton.evaluate(button => button.matches(':focus-visible')), true);
+    assert.equal(await exportButton.evaluate(button => getComputedStyle(button).outlineWidth), '1px');
   } finally {
     await page.close();
   }

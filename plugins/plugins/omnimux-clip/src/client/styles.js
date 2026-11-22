@@ -43,6 +43,10 @@ export const CLIP_CSS = `
   padding-inline: 9px;
   font-size: 12px;
 }
+/* Keep the Button ring above the host's important global focus outline. */
+.omnimux-clip-stage .omnimux-clip-ai-edit:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary) !important;
+}
 .omnimux-clip-stage .omnimux-clip-ai-edit-content {
   display: inline-flex;
   align-items: center;
