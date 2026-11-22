@@ -1,9 +1,8 @@
 /**
  * voicePickerTheme.test.mjs
  * #3058 PM_THEME_CORRECTION（附录 T.3）合同测试：
- * 音色弹窗仅局部恢复既有语义颜色 —— 唯一 token 链、只作用于
- * .wf-voice-picker-modal 成员与其活动期 portal 下拉，禁止裸色、
- * --wb-* 残留、新增变量或全局 modal/select 重涂。
+ * 音色弹窗复用 CustomModal 和 CustomSelect 的宿主浮层底色，局部样式保留
+ * 已约定的几何与交互颜色。
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -14,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const componentsCss = readFileSync(join(here, 'components.css'), 'utf8');
 
-const SURFACE_CHAIN = 'var(--dsw-alias-bg-elevated, var(--dsw-alias-bg-layer-1, var(--dsw-alias-bg-base)))';
+const SURFACE_CHAIN = 'var(--dsw-alias-bg-layer-1, var(--dsw-alias-bg-base, Canvas))';
 const BORDER_CHAIN = 'var(--dsw-alias-border, var(--dsw-alias-border-l2))';
 
 function extractRule(src, selector) {
@@ -42,13 +41,12 @@ function extractBlock(src, startNeedle, endNeedle) {
 }
 
 describe('Voice Picker Modal Theme Restoration (Issue #3058, PM92 APPROVED)', () => {
-  it('REQ-WF-VOICE-MODAL-SURFACE: 弹窗表面/外框/正文走附录 T.3 唯一语义链，无裸色', () => {
+  it('REQ-WF-VOICE-MODAL-SURFACE: 弹窗复用实体表面，外框和正文使用宿主语义 token', () => {
     const modal = extractRule(componentsCss, '.wf-voice-picker-modal');
-    assert.match(
-      modal,
-      new RegExp(`background:\\s*${SURFACE_CHAIN.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')};`),
-      '弹窗背景必须是 bg-elevated→layer-1→base 回退链',
-    );
+    const card = extractRule(componentsCss, '.wf-modal-card');
+    assert.ok(card.includes(`background: ${SURFACE_CHAIN};`));
+    assert.doesNotMatch(card, /backdrop-filter|--dsw-alias-bg-(?:elevated|overlay)/);
+    assert.doesNotMatch(modal, /background\s*:|backdrop-filter/);
     assert.match(
       modal,
       new RegExp(`border-color:\\s*${BORDER_CHAIN.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')};`),
@@ -127,15 +125,15 @@ describe('Voice Picker Modal Theme Restoration (Issue #3058, PM92 APPROVED)', ()
     assert.match(triggerHover, /border-color:\s*var\(--dsw-alias-border-l3\);/);
   });
 
-  it('REQ-WF-VOICE-MODAL-PORTAL-SCOPED: portal 下拉仅在音色弹窗活动时重涂，且同色链', () => {
+  it('REQ-WF-VOICE-MODAL-PORTAL-SCOPED: portal 下拉保留 CustomSelect 的实体表面', () => {
     const dropdown = extractRule(
       componentsCss,
       'body:has(.wf-voice-picker-modal) > .wf-custom-select-dropdown',
     );
-    assert.match(
-      dropdown,
-      new RegExp(`background:\\s*${SURFACE_CHAIN.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')};`),
-    );
+    const sharedDropdown = extractRule(componentsCss, '.wf-custom-select-dropdown,\n.wf-custom-dropdown-menu');
+    assert.ok(sharedDropdown.includes(`background: ${SURFACE_CHAIN};`));
+    assert.doesNotMatch(sharedDropdown, /backdrop-filter|--dsw-alias-bg-(?:elevated|overlay)/);
+    assert.doesNotMatch(dropdown, /background\s*:|backdrop-filter/);
     assert.match(
       dropdown,
       new RegExp(`border-color:\\s*${BORDER_CHAIN.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')};`),
@@ -166,7 +164,7 @@ describe('Voice Picker Modal Theme Restoration (Issue #3058, PM92 APPROVED)', ()
     assert.match(overlay, /background:\s*var\(--dsw-alias-bg-mask-1\);/);
   });
 
-  it('REQ-WF-VOICE-MODAL-NO-ESCAPE: 限定区内无裸色/无 --wb-* 残留/不全局重涂 modal 与 select', () => {
+  it('REQ-WF-VOICE-MODAL-NO-ESCAPE: 限定区内只使用宿主语义 token', () => {
     const voiceBlock = extractBlock(
       componentsCss,
       '/* T04：音色选择弹窗',
@@ -181,16 +179,6 @@ describe('Voice Picker Modal Theme Restoration (Issue #3058, PM92 APPROVED)', ()
     // 只允许 var() 消费既有 token；行首自定义属性声明（--foo: ...;）一律禁止
     assert.doesNotMatch(voiceBlock, /^\s+--[a-zA-Z][\w-]*\s*:/m, '限定区禁止声明新变量');
 
-    // 全局规则不得被直接重涂：overlay/card/dropdown/option 通用类规则保持原状
-    assert.doesNotMatch(
-      componentsCss,
-      /^\.wf-modal-card\s*\{[^}]*var\(--dsw-alias-bg-elevated/m,
-      '不得把 .wf-modal-card 全局改为 token（只允许 .wf-voice-picker-modal 限定）',
-    );
-    assert.doesNotMatch(
-      componentsCss,
-      /^\.wf-custom-select-dropdown,?\s*\{[^}]*var\(--dsw-alias-bg-elevated/m,
-      '不得全局重涂 .wf-custom-select-dropdown',
-    );
+    assert.doesNotMatch(voiceBlock, /backdrop-filter|--dsw-alias-bg-(?:elevated|overlay)/);
   });
 });

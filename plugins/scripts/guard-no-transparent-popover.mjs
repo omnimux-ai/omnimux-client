@@ -16,6 +16,8 @@ import { fileURLToPath } from 'node:url'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = join(__dirname, '..')
 const DEFAULT_PLUGINS_DIR = join(REPO_ROOT, 'plugins')
+const CANVAS_SOURCE = /(?:^|\/)omnimux-workflow\/src\/canvas\//
+const normalizePath = (file) => file.replace(/\\/g, '/')
 
 const EXCLUDE_DIRS = new Set([
   'node_modules',
@@ -54,21 +56,75 @@ export function collectSourceFiles(dir, exts = ['.js', '.jsx', '.ts', '.tsx', '.
   return files
 }
 
+// Quoted, escaped and function arguments can contain CSS delimiters as data.
+function* stylesheetDelimiters(source) {
+  let valueDepth = 0
+  const tokens = /"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|\\[\s\S]|[()[\]{};]/g
+  for (const { 0: token, index } of source.matchAll(tokens)) {
+    if (token === '(' || token === '[') {
+      valueDepth++
+    } else if (token === ')' || token === ']') {
+      valueDepth--
+    } else if (valueDepth === 0 && token.length === 1) {
+      yield { token, index }
+    }
+  }
+}
+
+// Keep declarations attached to their own rule even when nested selectors split the body.
+function extractStylesheetBlocks(content, canvas, offset = 0) {
+  const source = blankCssComments(content)
+  // Client stylesheets can have an existing exemption comment on a rule.
+  const declarationSource = canvas ? source : content
+  const blocks = []
+  const openRules = []
+  let start = 0
+  for (const { token, index } of stylesheetDelimiters(source)) {
+    const current = openRules.at(-1)
+    if (token === '{') {
+      const prelude = source.slice(start, index)
+      const selector = prelude.trim()
+      const containerKeys = styleContainerKeys(selector, canvas, current?.containerKeys)
+      const nestedOverride = current?.containerKeys.some((key) => containerKeys.includes(key)) ?? false
+      const startingStyle = Boolean(current?.startingStyle || /^@starting-style(?![\w-])/i.test(selector))
+      // Keep the client's existing flat-rule scope. Inside a floating rule,
+      // evaluate the nested rule against its resolved subject.
+      const scanRule = canvas || Boolean(current?.containerKeys.length || floatingContainerKey(content.slice(start, index)))
+      openRules.push({
+        selector, containerKeys, nestedOverride, startingStyle, scanRule,
+        declarations: [], index: offset + start + prelude.search(/\S/),
+      })
+    } else if (token === ';') {
+      current?.declarations.push(declarationSource.slice(start, index + 1))
+    } else if (current) {
+      const { declarations, scanRule, ...block } = openRules.pop()
+      const body = (declarations.join('') + declarationSource.slice(start, index)).trim()
+      if (scanRule && block.selector && body) blocks.push({ ...block, body })
+    }
+    start = index + 1
+  }
+  return blocks.sort((a, b) => a.index - b.index)
+}
+
+// Blank comments without shifting source offsets or changing quoted values.
+function blankCssComments(source) {
+  return source.replace(/"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|\/\*[\s\S]*?\*\//g,
+    (token) => token.startsWith('/*') ? token.replace(/[^\r\n]/g, ' ') : token)
+}
+
 /**
  * 解析代码中的 CSS 规则块：提取 selector { body }
  */
-export function extractCssRuleBlocks(content) {
+export function extractCssRuleBlocks(content, { canvas = false, stylesheet = true } = {}) {
+  const cssSnippet = /^\s*(?:\/\*[\s\S]*?\*\/\s*)*(?:[.#:\[*@]|(?:html|body)(?![\w-]))/
+  if (stylesheet || cssSnippet.test(content)) return extractStylesheetBlocks(content, canvas)
+
   const blocks = []
-  const blockRegex = /([^{};]+)\{([^}]+)\}/g
-  let match
-  while ((match = blockRegex.exec(content)) !== null) {
-    const selector = match[1].trim()
-    const body = match[2].trim()
-    blocks.push({
-      selector,
-      body,
-      index: match.index,
-    })
+  // Parse embedded styles in their own strings, outside the surrounding JS or JSX braces.
+  const literals = /\/\/[^\r\n]*|\/\*[\s\S]*?\*\/|`(?:\\[\s\S]|[^`\\])*`|"(?:\\[\s\S]|[^"\\\r\n])*"|'(?:\\[\s\S]|[^'\\\r\n])*'/g
+  for (const { 0: literal, index } of content.matchAll(literals)) {
+    if (literal.startsWith('/') || !literal.includes('{')) continue
+    blocks.push(...extractStylesheetBlocks(literal.slice(1, -1), canvas, index + 1))
   }
   return blocks
 }
@@ -91,7 +147,7 @@ export const LEGACY_FLOATING_SURFACE_DEBT = [
 
 /** 该违规是否属于已登记的既有债务。 */
 function isRegisteredDebt(rule, filePath, selector) {
-  const rel = filePath.replace(/\\/g, '/')
+  const rel = normalizePath(filePath)
   return LEGACY_FLOATING_SURFACE_DEBT.some(
     (d) =>
       rel.endsWith(d.file) &&
@@ -103,6 +159,81 @@ function isRegisteredDebt(rule, filePath, selector) {
 const FLOATING_WORDS = [
   'popover', 'menu', 'dropdown', 'dialog', 'modal', 'sheet', 'tooltip', 'flyout',
 ]
+
+// Canvas surfaces with a painted background. The cascade, slot preview and
+// modal backdrop have separate layout or mask elements around these surfaces.
+const CANVAS_CARD_CLASSES = new Set([
+  'wf-cfg-popover',
+  'wf-video-param-popover',
+  'wf-page-dropdown-popover',
+  'wf-custom-dropdown-menu',
+  'wf-custom-select-dropdown',
+  'wf-context-menu',
+  'wf-action-menu',
+  'wf-floating-top-pill__more-menu',
+  'wf-mention-popover',
+  'wf-popover-portal',
+  'wf-context-menu-portal',
+  'wf-hover-inspector-portal',
+  'wf-popover-context-bubble',
+  'wf-attachment-preview-card',
+  'wf-modal-card',
+  'wf-loomi-col',
+  'wf-slot-hover-preview__card',
+  'wf-toast',
+  'wf-cm-search-panel',
+])
+
+const CANVAS_FLOATING_WRAPPERS = new Set(['wf-modal-overlay', 'wf-slot-hover-preview', 'wf-mention-submenu'])
+
+// These group rules can wrap declarations on the enclosing style rule.
+const NESTED_STYLE_GROUP = /^@(?:container|layer|media|scope|starting-style|supports)(?![\w-])/i
+
+// Keep a placeholder for each attribute or predicate so `.menu > [role]`
+// retains its separate subject. Follow subject alternatives in :is() and :where().
+function projectStyleSelector(selector, canvas, parentKeys) {
+  const tokens = /"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|\\[\s\S]|[()[\]]/g
+  let projected = ''
+  let start = 0
+  let argumentStart = 0
+  let depth = 0
+  for (const { 0: token, index } of selector.matchAll(tokens)) {
+    if (token === '(' || token === '[') {
+      if (depth === 0) argumentStart = index
+      depth++
+    } else if (token === ')' || token === ']') {
+      depth--
+      if (depth !== 0) continue
+      const prefix = selector.slice(start, argumentStart)
+      projected += prefix
+      if (token === ')' && /(?<!:):(?:is|where)$/i.test(prefix)) {
+        projected += styleContainerKeys(selector.slice(argumentStart + 1, index), canvas, parentKeys).join('')
+      } else {
+        projected += token === ']' ? '[]' : '()'
+      }
+      start = index + 1
+    }
+  }
+  return (projected + selector.slice(start)).replace(/\\[\s\S]/g, '_')
+}
+
+function styleContainerKeys(selector, canvas, parentKeys = []) {
+  if (selector.startsWith('@')) return NESTED_STYLE_GROUP.test(selector) ? parentKeys : []
+
+  const subjects = projectStyleSelector(selector, canvas, parentKeys)
+    .split(',')
+    .map((part) => part.trim().split(/(?:[\s>+~]|\|\|)+/).at(-1))
+
+  return subjects.flatMap((subject) => {
+    if (subject.includes('::')) return []
+    const names = (subject.match(/\.[\w-]+/g) ?? []).map((key) => key.slice(1).split('--')[0])
+    const keys = names.filter((name) =>
+      isFloatingContainerSelector(`.${name}`) ||
+      (canvas && (CANVAS_CARD_CLASSES.has(name) || CANVAS_FLOATING_WRAPPERS.has(name)))
+    ).map((name) => `.${name}`)
+    return subject.includes('&') ? keys.concat(parentKeys) : keys
+  })
+}
 
 /**
  * 判断选择器是否指向「浮层容器本身」。
@@ -150,28 +281,58 @@ export function isFloatingContainerSelector(selector) {
  */
 export const KNOWN_UNDEFINED_TOKENS = new Set(['--dsw-alias-bg-elevated'])
 
-/**
- * 判断一条 CSS 规则体是否声明了「不透明」背景。
- * 判定规则（确定性、只读文本）：
- *   - background / background-color 必须存在；
- *   - transparent / none / unset / inherit 视为不透明缺失；
- *   - 裸 var(--token)（无回退）视为不透明缺失 —— 令牌缺失时整条声明失效、退化为 transparent；
- *   - var(--token, 回退值) 递归判定回退值；
- *   - rgba()/hsla()/color-mix(... transparent ...)/8 位 hex 且 alpha != ff 视为半透明。
- * @param {string} body CSS 规则体
- * @returns {boolean}
- */
+const SURFACE_DECLARATION = /^\s*(background(?:-color)?|(?:-webkit-)?backdrop-filter|opacity)\s*:\s*([\s\S]*)$/i
+const BARE_BG_ELEVATED = /var\(\s*--dsw-alias-bg-elevated\s*\)/
+const OVERLAY_BG = /--dsw-alias-bg-overlay\b/
+const EXPLICIT_TRANSPARENT_BG = /^(?:transparent|none)\b/i
+const CSS_ALPHA = /^[+-]?(?:\d+|\d*\.\d+)(?:e[+-]?\d+)?(%?)$/i
+
+function parseCssAlpha(value) {
+  const match = value.match(CSS_ALPHA)
+  if (!match) return null
+  return Number.parseFloat(value) / (match[1] ? 100 : 1)
+}
+
+function readSurfaceDeclarations(body) {
+  const source = `${blankCssComments(body)};`
+  const backgrounds = []
+  let hasBackdropFilter = false
+  let hasLowOpacity = false
+  let braceDepth = 0
+  let start = 0
+  for (const { token, index } of stylesheetDelimiters(source)) {
+    if (token === '{') braceDepth++
+    if (token === '}') braceDepth--
+    if (token !== ';' || braceDepth !== 0) continue
+
+    const declaration = source.slice(start, index).match(SURFACE_DECLARATION)
+    start = index + 1
+    if (!declaration) continue
+
+    const property = declaration[1].toLowerCase()
+    const value = declaration[2].replace(/!\s*important\s*$/i, '').trim()
+    if (!value) continue
+    if (property === 'background' || property === 'background-color') {
+      backgrounds.push(value)
+    } else if (property === 'opacity') {
+      hasLowOpacity ||= (parseCssAlpha(value) ?? 1) < 1
+    } else {
+      hasBackdropFilter = true
+    }
+  }
+  return { backgrounds, hasBackdropFilter, hasLowOpacity }
+}
+
+/** 判断规则体中是否有提供不透明底色的 background 或 background-color 声明。 */
 export function hasOpaqueBackdrop(body) {
-  const decls = [...body.matchAll(/background(?:-color)?\s*:\s*([^;]+)/gi)].map((m) => m[1].trim())
-  if (decls.length === 0) return false
-  return decls.some((value) => isOpaqueColorValue(value))
+  return readSurfaceDeclarations(body).backgrounds.some(isOpaqueColorValue)
 }
 
 /** 单个颜色值是否不透明（递归处理 var() 回退）。 */
 function isOpaqueColorValue(value) {
   const v = String(value).trim().toLowerCase()
   if (!v) return false
-  if (/^(transparent|none|unset|inherit|initial|revert)$/.test(v)) return false
+  if (/^(transparent|none|unset|inherit|initial|revert(?:-layer)?)$/.test(v)) return false
   const varMatch = v.match(/^var\(\s*(--[a-z0-9-]+)\s*(?:,\s*([\s\S]+))?\)$/)
   if (varMatch) {
     const token = varMatch[1]
@@ -183,8 +344,12 @@ function isOpaqueColorValue(value) {
   if (/^#[0-9a-f]{8}$/.test(v)) return v.slice(-2) === 'ff'
   if (/^#[0-9a-f]{4}$/.test(v)) return v.slice(-1) === 'f'
   if (/^#[0-9a-f]{3}$|^#[0-9a-f]{6}$/.test(v)) return true
-  if (/^rgba\(|^hsla\(/.test(v)) return false
-  if (/^rgb\(|^hsl\(/.test(v)) return true
+  const modernAlpha = v.match(/^(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\([\s\S]*\/\s*([^\s)]+)\s*\)$/)?.[1]
+  const legacyAlpha = v.match(/^(?:rgba?|hsla?)\([^(),]+,[^(),]+,[^(),]+,\s*([^(),]+)\)$/)?.[1].trim()
+  const alpha = parseCssAlpha(modernAlpha ?? legacyAlpha ?? '')
+  if (alpha !== null) return alpha >= 1
+  if (/^(?:rgba|hsla)\(/.test(v)) return false
+  if (/^(?:rgb|hsl)\(/.test(v)) return true
   if (/color-mix\(/.test(v)) {
     if (/transparent/.test(v)) {
       // color-mix 只有在不含 transparent 时才可能不透明
@@ -204,72 +369,110 @@ function isOpaqueColorValue(value) {
  */
 export function checkContentForTransparencyViolations(content, filePath = 'snippet.css') {
   const violations = []
-  // 2. 通用浮层容器判定（按“类别”而不是按某一个选择器）
-  // 旧实现只认 `.omnimux-*-menu` 前缀，导致任何别的命名空间（例如 .omx-avatar-popover）
-  // 与任何别的浮层词（dropdown / dialog / sheet …）都落在规则之外：新增浮层时门禁恒绿。
-  // 这里改为：选择器里出现浮层关键词即视为浮层，再统一施加四条硬规则。
-  const ruleBlocks = extractCssRuleBlocks(content)
+  // 在客户端和画布中识别不同命名空间下的浮层容器。
+  const canvas = CANVAS_SOURCE.test(normalizePath(filePath))
+  const ruleBlocks = extractCssRuleBlocks(content, { canvas, stylesheet: /\.css$/i.test(filePath) })
 
-  // 先按「基础容器类」聚合：.omnimux-new-menu[hidden] / .x-menu--wide 等变体
-  // 与基础类同组 —— 底色只要在组内声明过一次即可，避免变体规则被逐条误判。
+  // 同组变体可以复用基础底色，改写表面的规则仍须逐块检查。
   const groups = new Map()
   for (const block of ruleBlocks) {
-    const key = floatingContainerKey(block.selector)
-    if (!key) continue
-    if (!groups.has(key)) groups.set(key, [])
-    groups.get(key).push(block)
+    const keys = block.containerKeys
+    if (keys.length === 0) continue
+    const surface = readSurfaceDeclarations(block.body)
+    const checkSurfaceOverride = canvas
+      ? keys.some((key) => !CANVAS_FLOATING_WRAPPERS.has(key.slice(1)))
+      : block.nestedOverride
+    const entry = { ...block, ...surface, checkSurfaceOverride }
+    for (const key of new Set(keys)) {
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key).push(entry)
+    }
   }
 
+  const checkedBlocks = new Set()
   for (const [key, blocks] of groups) {
-    const hasOpaque = blocks.some((b) => hasOpaqueBackdrop(b.body))
+    const hasOpaque = blocks.some((block) => !block.startingStyle && block.backgrounds.some(isOpaqueColorValue))
     const first = blocks[0]
     for (const block of blocks) {
-      const { selector, body, index } = block
+      const {
+        selector, containerKeys, body, index, startingStyle,
+        backgrounds, hasBackdropFilter, hasLowOpacity, checkSurfaceOverride,
+      } = block
       const trimmed = selector.trim()
-      if (/exempt-popover-blur|exempt-bg-overlay|exempt-opaque-bg/.test(body)) continue
+      const selectorLabel = containerKeys?.some((container) => !trimmed.includes(container))
+        ? `${trimmed} → ${containerKeys.join(', ')}`
+        : trimmed
+      if (checkedBlocks.has(index)) continue
+      checkedBlocks.add(index)
+      if (!canvas && /exempt-popover-blur|exempt-bg-overlay|exempt-opaque-bg/.test(body)) continue
       const lineNum = content.slice(0, index).split('\n').length
 
       // 2.1 严禁 backdrop-filter 伪毛玻璃透底
-      if (/backdrop-filter/i.test(body)) {
+      if (hasBackdropFilter) {
         violations.push({
           rule: 'POPOVER_NO_BACKDROP_BLUR',
           file: filePath,
           line: lineNum,
           fatal: !isRegisteredDebt('POPOVER_NO_BACKDROP_BLUR', filePath, trimmed),
-          message: `浮层容器 [${trimmed}] 严禁使用 backdrop-filter 伪毛玻璃滤镜造成透底！必须使用实体不透明背景。`,
+          message: `浮层容器 [${selectorLabel}] 严禁使用 backdrop-filter 伪毛玻璃滤镜造成透底！必须使用实体不透明背景。`,
         })
       }
 
+      // 画布只检查表面声明，客户端保留历史令牌诊断范围。
+      const tokenValues = canvas ? backgrounds.join('\n') : body
       // 2.2 严禁裸写未定义令牌 var(--dsw-alias-bg-elevated)（无回退时计算值退化为 transparent）
-      if (/var\(\s*--dsw-alias-bg-elevated\s*\)/.test(body)) {
+      if (BARE_BG_ELEVATED.test(tokenValues)) {
         const debt = isRegisteredDebt('NO_BARE_BG_ELEVATED', filePath, trimmed)
         violations.push({
           rule: 'NO_BARE_BG_ELEVATED',
           file: filePath,
           line: lineNum,
           fatal: !debt,
-          message: `浮层容器 [${trimmed}] 严禁裸写 var(--dsw-alias-bg-elevated)：该令牌宿主未定义，无回退时整条声明失效、背景退化为 transparent。`,
+          message: `浮层容器 [${selectorLabel}] 严禁裸写 var(--dsw-alias-bg-elevated)：该令牌宿主未定义，无回退时整条声明失效、背景退化为 transparent。`,
         })
       }
 
       // 2.3b 严禁浮层显式声明 transparent / none 底色（把自己的表面打掉）
-      if (/background(?:-color)?\s*:\s*(?:transparent|none)\b/i.test(body)) {
+      if (backgrounds.some((value) => EXPLICIT_TRANSPARENT_BG.test(value))) {
         violations.push({
           rule: 'POPOVER_EXPLICIT_TRANSPARENT_BG',
           file: filePath,
           line: lineNum,
-          message: `浮层容器 [${trimmed}] 严禁显式声明 transparent / none 底色 —— 浮层必须有实体不透明表面。`,
+          message: `浮层容器 [${selectorLabel}] 严禁显式声明 transparent / none 底色 —— 浮层必须有实体不透明表面。`,
           fatal: true,
         })
       }
 
       // 2.3 严禁滥用 --dsw-alias-bg-overlay（深色下为 #61666b 中浅灰）
-      if (/--dsw-alias-bg-overlay\b/.test(body)) {
+      if (OVERLAY_BG.test(tokenValues)) {
         violations.push({
           rule: 'POPOVER_NO_BG_OVERLAY_DISCOLORATION',
           file: filePath,
           line: lineNum,
-          message: `浮层容器 [${trimmed}] 严禁使用 --dsw-alias-bg-overlay（深色下计算值为 #61666b 中浅灰）造成灰度倒挂。`,
+          message: `浮层容器 [${selectorLabel}] 严禁使用 --dsw-alias-bg-overlay（深色下计算值为 #61666b 中浅灰）造成灰度倒挂。`,
+          fatal: true,
+        })
+      }
+
+      if (!checkSurfaceOverride) continue
+      const hasNonOpaqueBackground = backgrounds.some((value) =>
+        !EXPLICIT_TRANSPARENT_BG.test(value) && !BARE_BG_ELEVATED.test(value) && !isOpaqueColorValue(value)
+      )
+      if (hasNonOpaqueBackground) {
+        violations.push({
+          rule: 'POPOVER_NON_OPAQUE_BG',
+          file: filePath,
+          line: lineNum,
+          message: `浮层容器 [${selectorLabel}] 的 background / background-color 声明必须提供实体不透明底色。`,
+          fatal: true,
+        })
+      }
+      if (hasLowOpacity && !startingStyle) {
+        violations.push({
+          rule: 'POPOVER_LOW_OPACITY',
+          file: filePath,
+          line: lineNum,
+          message: `浮层容器 [${selectorLabel}] 的稳态 opacity 不能小于 1。`,
           fatal: true,
         })
       }
@@ -277,15 +480,15 @@ export function checkContentForTransparencyViolations(content, filePath = 'snipp
 
     // 2.4 整组（基础类 + 全部变体）必须至少声明一次不透明底色 —— 这条是本类缺陷的兜底规则：
     //     只要底色是裸 var(...)（不写回退），令牌一旦改名/不存在就会静默变透明。
-    if (!hasOpaque) {
+    if (!hasOpaque && (!canvas || CANVAS_CARD_CLASSES.has(key.slice(1)))) {
       violations.push({
         rule: 'POPOVER_MUST_HAVE_OPAQUE_BG',
         file: filePath,
         line: content.slice(0, first.index).split('\n').length,
-        // 非致命：本仓真实组合里，宿主组件持有表面、遮罩与面板分离、只写修饰符
-        // 都是合法写法；逐个要求自带底色会逼出无意义重构。这里只作可见性提示。
-        fatal: false,
-        message: `浮层容器 [${key}] 未声明不透明背景（提示项，非阻断）。`,
+        // A canvas surface paints its own background. Client component wrappers
+        // can inherit the surface from the host or share it with another rule.
+        fatal: canvas,
+        message: `浮层容器 [${key}] 未声明不透明背景。`,
       })
     }
   }
@@ -298,11 +501,13 @@ export function checkContentForTransparencyViolations(content, filePath = 'snipp
  */
 export function scanPopoverOpacity(options = {}) {
   const rootDir = options.dir || DEFAULT_PLUGINS_DIR
-  const files = collectSourceFiles(rootDir)
+  const files = collectSourceFiles(rootDir).filter((file) => {
+    const path = normalizePath(file)
+    return path.includes('/src/client/') || CANVAS_SOURCE.test(path)
+  })
   const allViolations = []
 
   for (const file of files) {
-    if (!file.includes('/src/client/')) continue
     const content = readFileSync(file, 'utf8')
     const fileViolations = checkContentForTransparencyViolations(content, file)
     allViolations.push(...fileViolations)
@@ -328,10 +533,10 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
       const relPath = relative(REPO_ROOT, v.file).replace(/\\/g, '/')
       console.error(`  [${v.rule}] ${relPath}:${v.line} -> ${v.message}`)
     }
-    console.error('\n🚫 硬门禁阻断：浮层菜单必须为实体深色背景，严禁伪毛玻璃透底滤镜与未定义变量！')
+    console.error('\n🚫 硬门禁阻断：浮层必须使用亮暗主题下均不透明的背景。')
     process.exit(1)
   } else {
-    console.log('✓ 浮层防透底硬门禁检查通过：侧栏与核心菜单均为不透明实体规范背景（0 违规）。')
+    console.log('✓ 浮层防透底硬门禁检查通过：客户端与画布浮层规则通过（0 阻断项）。')
     process.exit(0)
   }
 }
