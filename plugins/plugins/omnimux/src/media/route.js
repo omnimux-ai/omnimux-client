@@ -167,13 +167,9 @@ export function resolveMediaRoute(capability, request, media, env = process.env,
     throw new OmnimuxError('unknown-group', '请选择一条可用的视频线路')
   }
 
-  // A model may pin its own line. Callers such as the canvas cannot name a group
-  // (their request whitelist carries `strategy`/`allowedGroups` only), and the
-  // bare model id would land on the gateway's catch-all pool — where a model
-  // served exclusively by a dedicated group has no channel at all. The pinned
-  // group also bounds the pool, so a default line never fails over into a
-  // differently priced one.
-  const pinned = callerIntent || providerId !== 'omnimux' ? undefined : pinnedChannelGroup(modelId, request)
+  // Pin the selected default to the same snapshot used for route admission.
+  // A default cannot fail over into a differently priced group.
+  const pinned = callerIntent || providerId !== 'omnimux' ? undefined : pinnedChannelGroup(modelId, request, snapshot)
   const pinnedWire = pinned ? (pinned.wireGroup || pinned.id) : undefined
   const group = effectiveGroup ?? requestedGroup ?? pinnedWire
   // This model's lines use incompatible size protocols; an explicitly selected
@@ -219,44 +215,30 @@ export function resolveMediaRoute(capability, request, media, env = process.env,
 }
 
 /**
- * The line a model pins for itself, if its pool declares one.
- *
- * `default: true` is the model's own routing intent, so it applies only when the
- * caller expressed none — a caller-chosen group always wins. Disabled groups are
- * never pinned.
- *
- * @param {string} modelId
- * @returns {{ wireGroup?: string, id: string } | undefined}
- */
-function defaultChannelGroup(modelId) {
-  return getModelChannelGroups(modelId).find((group) => group.default === true && group.enabled !== false)
-}
-
-/**
- * The line a model should use for a legacy (no-group) request.
- *
- * A model's default line is only the right answer while the request carries no
- * parameter that the lines split on. `seedance-2-5` exposes its 480p/720p tiers
- * as separate lines with a fixed resolution constraint; a legacy request that
- * asks for 480p must select the 480p line, otherwise the default 720p line
- * rejects it before transport (2026-10-21 review, #3516).
+ * Pin the catalog default for a legacy request. Keep resolution-based routing
+ * for old callers that specify a resolution without choosing a line.
  *
  * @param {string} modelId
  * @param {{ resolution?: unknown }} request
+ * @param {object} snapshot
  * @returns {{ wireGroup?: string, id: string } | undefined}
  */
-function pinnedChannelGroup(modelId, request) {
-  const groups = getModelChannelGroups(modelId).filter((group) => group.enabled !== false)
+function pinnedChannelGroup(modelId, request, snapshot) {
+  const groups = getModelChannelGroups(modelId, snapshot)
+  const preferred = groups.find((group) => group.default === true)
   const resolution = typeof request?.resolution === 'string' ? request.resolution.trim() : ''
   if (resolution) {
-    const matching = groups.find((group) => {
-      const constraint = group.constraints?.parameters?.resolution
-      if (constraint?.fixed === resolution) return true
-      return Array.isArray(constraint?.only) && constraint.only.includes(resolution)
-    })
+    if (!preferred && Object.hasOwn(findSnapshotModel(snapshot, modelId) ?? {}, 'defaultGroup')) return undefined
+    const matchesResolution = (group) => {
+      const constraint = group?.constraints?.parameters?.resolution
+      return constraint?.fixed === resolution
+        || (Array.isArray(constraint?.only) && constraint.only.includes(resolution))
+    }
+    if (preferred && (!preferred.constraints?.parameters?.resolution || matchesResolution(preferred))) return preferred
+    const matching = groups.find(matchesResolution)
     if (matching) return matching
   }
-  return groups.find((group) => group.default === true)
+  return preferred
 }
 
 /**

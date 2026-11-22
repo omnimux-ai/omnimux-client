@@ -5,6 +5,7 @@ import { clearGatewayUploadCache } from './gateway-upload.js'
 assert.equal(typeof clearGatewayUploadCache, 'function')
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { resolveReadOnlySnapshot, setCurrentSnapshotResolver } from '../catalog/cloud/current.js'
 import { guardSubmit } from '../catalog/contract/submit-guard/guard.js'
 import { executeOmnimuxMedia } from './execute.js'
 import { resolveMediaRoute, parseMediaConfig } from './route.js'
@@ -30,7 +31,6 @@ test('standard and economy are distinct routes and explicit selection cannot wid
     () => resolveMediaRoute('image', { model, group: 'pro' }, parseMediaConfig()),
     { code: 'unknown-group' },
   )
-  assert.deepEqual(resolveMediaRoute('image', { model }, parseMediaConfig()).candidates, [`${model}@default`])
 })
 
 test('per-line remapping keeps public hosted references instead of reintroducing local paths', async (t) => {
@@ -111,7 +111,11 @@ test('canvas empty image prompt reaches the selected gateway and propagates its 
   assert.equal(Object.hasOwn(calls[0], 'deferVisualPrompt'), false)
 })
 
-test('default execute uses beta-compatible request once and stores synchronous result', async (t) => {
+test('gateway default uses the selected line request shape and stores its synchronous result', async (t) => {
+  const snapshot = structuredClone(resolveReadOnlySnapshot().snapshot)
+  snapshot.models.find((row) => row.id === model).defaultGroup = 'default'
+  setCurrentSnapshotResolver(() => ({ snapshot }))
+  t.after(() => setCurrentSnapshotResolver(null))
   const calls = []
   const req = input(t, { aspectRatio: 'auto', fetcher: async (url, init) => {
     calls.push({ method: init.method, group: new Headers(init.headers).get('X-Omnimux-Group'), body: JSON.parse(init.body) })

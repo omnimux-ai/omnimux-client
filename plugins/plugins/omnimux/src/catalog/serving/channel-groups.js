@@ -4,11 +4,9 @@
  * with 'auto', 'stability_first', and 'cost_first' dispatching policies.
  *
  * P1b: which lines a model may use is decided by the gateway snapshot's
- * `enable_groups`, and what a line costs is decided by the snapshot's
- * `group_ratio` + per-model billing. `MODEL_CHANNEL_GROUPS` below is reduced to
- * a *display and ordering override* table (label, badge, SLA, constraints,
- * default line); it no longer grants or withholds a line. There is no local
- * whitelist fallback: a model the snapshot does not sell has no lines at all.
+ * `enable_groups`. Its `group_order` and `default_group` govern the picker.
+ * `group_ratio` and per-model billing determine prices. The local table supplies
+ * labels, badges, SLA and compatibility constraints for lines the snapshot sells.
  */
 
 import { gatewayCandidates, toProductId } from './id-universe.js'
@@ -19,6 +17,7 @@ import {
   autoGroupIndex,
   findSnapshotModel,
   gatewayEnableGroups,
+  gatewayGroupDisplay,
   snapshotGroupLabels,
   snapshotGroupRatio,
 } from '../cloud/view.js'
@@ -64,14 +63,8 @@ export const BYOK_PROVIDER_DISPLAY_MAP = Object.freeze({
 })
 
 /**
- * Per-model display and ordering overrides for the gateway's own lines.
- *
- * P1b: this table no longer decides membership, lines or prices. The gateway
- * snapshot owns `enable_groups` (which lines exist) and `group_ratio` +
- * per-model billing (what they cost); the entries here only rename a line,
- * carry its badge/SLA/constraints, pin the default line and feed the canvas
- * picker mirror. The `pricing` values left in the table are historical and are
- * ignored by the projection — see `snapshotChannelGroups` below.
+ * Per-model labels, badges, SLA and compatibility constraints for gateway lines.
+ * The historical `pricing` entries are ignored by `snapshotChannelGroups`.
  */
 export const MODEL_CHANNEL_GROUPS = Object.freeze({
   "seedance-2-0": [
@@ -89,7 +82,6 @@ export const MODEL_CHANNEL_GROUPS = Object.freeze({
         "avgWaitTimeSec": 90
       },
       "wireGroup": "default",
-      "default": true,
       "enabled": true
     }
   ],
@@ -108,7 +100,6 @@ export const MODEL_CHANNEL_GROUPS = Object.freeze({
         "avgWaitTimeSec": 30
       },
       "wireGroup": "default",
-      "default": true,
       "enabled": true
     }
   ],
@@ -127,7 +118,6 @@ export const MODEL_CHANNEL_GROUPS = Object.freeze({
         "avgWaitTimeSec": 45
       },
       "wireGroup": "default",
-      "default": true,
       "enabled": true
     }
   ],
@@ -168,7 +158,6 @@ export const MODEL_CHANNEL_GROUPS = Object.freeze({
         }
       },
       "wireGroup": "desktop-720p",
-      "default": true,
       "enabled": true
     }
   ],
@@ -196,7 +185,6 @@ export const MODEL_CHANNEL_GROUPS = Object.freeze({
           }
         }
       },
-      "default": true,
       "enabled": true
     },
     {
@@ -227,7 +215,6 @@ export const MODEL_CHANNEL_GROUPS = Object.freeze({
         "avgWaitTimeSec": 8
       },
       "wireGroup": "default",
-      "default": true,
       "enabled": true
     }
   ],
@@ -242,7 +229,6 @@ export const MODEL_CHANNEL_GROUPS = Object.freeze({
         "billingMode": "per_task"
       },
       "wireGroup": "default",
-      "default": true,
       "enabled": true
     }
   ],
@@ -257,7 +243,6 @@ export const MODEL_CHANNEL_GROUPS = Object.freeze({
         "billingMode": "per_task"
       },
       "wireGroup": "default",
-      "default": true,
       "enabled": true
     }
   ]
@@ -375,17 +360,15 @@ export function effectiveVideoRequestedGroup(request) {
 /**
  * Build one model's lines from the gateway snapshot (P1b).
  *
- * `enable_groups` is the only source of "which lines exist": the local override
- * table contributes a display name, badge, SLA, constraints and the default
- * pin, and the snapshot contributes the line's group ratio and price. A line the
- * gateway serves but the override table never listed is projected verbatim with
- * the gateway's own label, so nothing the gateway sells can go missing.
+ * The snapshot supplies membership, order, the default and prices. Labels and
+ * other display metadata may be enriched by the local table.
  *
  * @param {string} modelId canonical product id
  * @param {unknown} snapshot normalized gateway snapshot
+ * @param {Set<string>} [supportedGroups] groups with a client-supported operation
  * @returns {object[]}
  */
-export function snapshotChannelGroups(modelId, snapshot) {
+export function snapshotChannelGroups(modelId, snapshot, supportedGroups) {
   const canonical = toProductId(modelId)
   if (!canonical || !snapshot) return []
   const snapshotModel = findSnapshotModel(snapshot, canonical)
@@ -404,16 +387,19 @@ export function snapshotChannelGroups(modelId, snapshot) {
     if (key && !overrideByWire.has(key)) overrideByWire.set(key, group)
   }
 
-  const permitted = effective
-    ? enableGroups.filter((group) => group.toLowerCase() !== 'auto'
+  const permitted = enableGroups.filter((group) => {
+    if (supportedGroups && !supportedGroups.has(group)) return false
+    if (!effective) return true
+    const ratio = ratios(snapshot, group)
+    return group.toLowerCase() !== 'auto'
       && Object.hasOwn(labels, group)
-      && ratios(snapshot, group) !== null
-      && ratios(snapshot, group) >= 0
+      && ratio !== null && ratio >= 0
       && Object.hasOwn(effective.groups ?? {}, group)
-      && Array.isArray(effective.groups[group]) && effective.groups[group].length > 0)
-    : enableGroups
+      && Array.isArray(effective.groups[group]) && effective.groups[group].length > 0
+  })
+  const { orderedGroups, defaultGroup } = gatewayGroupDisplay(snapshotModel, permitted, snapshot.groups?.usable)
 
-  return permitted.map((wireGroup) => {
+  return orderedGroups.map((wireGroup) => {
     const override = overrideByWire.get(wireGroup)
     const pricing = gatewayPricingBlock(snapshotModel, ratios(snapshot, wireGroup))
     const gatewayLabel = typeof labels[wireGroup] === 'string' && labels[wireGroup].trim() ? labels[wireGroup].trim() : ''
@@ -443,7 +429,7 @@ export function snapshotChannelGroups(modelId, snapshot) {
         : {}),
       ...(override?.sla && typeof override.sla === 'object' ? { sla: structuredClone(override.sla) } : {}),
       enabled: true,
-      ...(override?.default === true ? { default: true } : {}),
+      ...(wireGroup === defaultGroup ? { default: true } : {}),
     }
   })
 }
@@ -457,11 +443,12 @@ export function snapshotChannelGroups(modelId, snapshot) {
  *
  * @param {string} modelId
  * @param {unknown} [snapshot]
+ * @param {Set<string>} [supportedGroups]
  * @returns {object[]}
  */
-export function getModelChannelGroups(modelId, snapshot) {
+export function getModelChannelGroups(modelId, snapshot, supportedGroups) {
   const resolved = snapshot ?? resolveCurrentSnapshot().snapshot
-  return structuredClone(snapshotChannelGroups(modelId, resolved))
+  return structuredClone(snapshotChannelGroups(modelId, resolved, supportedGroups))
 }
 
 /**

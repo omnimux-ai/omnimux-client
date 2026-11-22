@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import { normalizePricingPayload } from '../catalog/cloud/snapshot.js'
 import {
   executeOmnimuxAudio,
   readOmnimuxAudioConfig,
@@ -9,14 +10,15 @@ import { mapOmnimuxInput } from './vendors/omnimux.js'
 
 describe('omnimux audio helpers', () => {
   it('defaults to Suno on the openai-media row', () => {
-    const route = resolveMediaRoute('audio', {}, parseMediaConfig(undefined), {
-      OMNIMUX_API_KEY: 'sk-test',
-    })
+    const { snapshot } = normalizePricingPayload({ data: [{
+      model_name: 'suno', enable_groups: ['fixture-music'], default_group: 'fixture-music',
+    }] })
+    const route = resolveMediaRoute('audio', {}, parseMediaConfig(), {}, snapshot)
     assert.equal(route.providerId, 'omnimux')
     // 2026-10-21 网关对账 #3516：Seed Audio/tts 上游渠道停用，默认音频型号改为在架 suno。
     assert.equal(route.modelId, 'suno')
     assert.equal(route.protocol, 'openai-media')
-    assert.equal(route.group, 'default')
+    assert.equal(route.group, 'fixture-music')
   })
 
   it('resolves tts alias to canonical seed-audio-1.0', () => {
