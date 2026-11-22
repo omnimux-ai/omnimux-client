@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { realpathSync, statSync, type BigIntStats } from 'node:fs';
 import { realpath, stat, type FileHandle } from 'node:fs/promises';
-import { isAbsolute, resolve, sep } from 'node:path';
+import { isAbsolute, join, resolve, sep } from 'node:path';
 import { isAllowedImportedMedia, sniffMimeType } from '../shared/localMedia.ts';
 import { WorkflowStoreError } from '../workflow/workspace/WorkflowStoreError.ts';
 import { findCanvasFile, isCanvasWorkspaceId } from './canvasFiles.ts';
@@ -36,13 +36,14 @@ export function createMediaRevision(mediaDir: string, resolveProjectFile: (works
 export type ResolveCanvasProject = (workspaceId: string, signal?: AbortSignal) => Promise<string | undefined>;
 export type MediaRevision = (source: string, resolveProject: ResolveCanvasProject, signal?: AbortSignal) => Promise<string>;
 
-export function createProjectMediaResolver(workspacesDir: string) {
+export function createProjectMediaResolver(workspacesDir: string, { allowFreeCanvas = false } = {}) {
   return async (id: string, rel: string, resolveProject: ResolveCanvasProject, signal?: AbortSignal) => {
     if (!isCanvasWorkspaceId(id)) throw new WorkflowStoreError('invalid-id', `invalid workspace id ${id}`);
     signal?.throwIfAborted();
-    const root = await resolveProject(id, signal);
-    const canvas = await findCanvasFile(workspacesDir, id, root, signal);
+    const projectRoot = await resolveProject(id, signal);
+    const canvas = await findCanvasFile(workspacesDir, id, projectRoot, signal);
     if (!canvas) throw new WorkflowStoreError('workspace-not-found', `workspace ${id} not found`);
+    const root = projectRoot ?? (allowFreeCanvas ? join(workspacesDir, id) : undefined);
     if (!root) {
       throw new WorkflowStoreError('project-required', `workspace ${id} is not bound to a local project`);
     }

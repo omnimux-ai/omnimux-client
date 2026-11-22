@@ -34,11 +34,13 @@ export interface WorkflowDispatcherDeps {
   /** Injected native picker (tests). Production: hub `nativeFilePicker` seam via `getSeam`. */
   picker?: (kind: string) => Promise<{ path: string | null; paths: string[] }>;
   templates?: TemplateStore;
-  /** Shared with host mount so generate persist and HTTP ingest use one ledger. */
+  /** Caller override whose file resolver is authoritative. */
   assetsStore?: ProjectAssetsStore;
+  /** Host-owned asset ledger with the default project and free-canvas roots. */
+  builtInAssetsStore?: ProjectAssetsStore;
   /** Same ProjectStore as mountWorkflowHost — avoid a second libraryRoot. */
   projectStore?: ProjectStore;
-  /** Project or free-canvas root shared with the injected asset store for media reads and writes. */
+  /** Project root for asset writes and a dispatcher-created store's media reads. */
   resolveAssetsRoot?: (workspaceId: string) => { path: string } | null;
   /**
    * 会话 id → 工作区目录（宿主 `agents` 服务的会话 `header.cwd`）。

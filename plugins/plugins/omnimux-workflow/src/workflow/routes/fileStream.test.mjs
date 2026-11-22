@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import fs from 'node:fs';
 import { mkdtemp, mkdir, open, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
 import { readMediaIntegrity, verifiedMediaBytes } from '../../projects/mediaRevision.ts';
 import { createServer, request } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -87,6 +89,43 @@ test('HTTP media returns exact ranges, HEAD and SVG security headers', { timeout
   assert.equal(head.status, 200);
   assert.equal(head.body.length, 0);
   assert.equal(head.headers['content-length'], String(bytes.length));
+});
+
+test('built-in free canvas media checks canvas existence once with async stat per URL', { timeout: 10000 }, async t => {
+  const { paths, send } = await fixture(t);
+  const ws = 'ws_free_media';
+  assert.equal((await send(`${prefix}/api/workspaces`, { method: 'POST', data: { name: 'Free media', id: ws } })).status, 200);
+  const freeRoot = join(paths.workspacesDir, ws);
+  const canvas = join(freeRoot, 'canvas.json');
+  await writeFile(join(freeRoot, 'recording.txt'), 'free canvas bytes');
+  let syncChecks = 0;
+  let asyncChecks = 0;
+  const existsSync = fs.existsSync;
+  const stat = fs.promises.stat;
+  const syncProbe = t.mock.method(fs, 'existsSync', path => {
+    if (path === canvas) syncChecks++;
+    return existsSync(path);
+  });
+  const asyncProbe = t.mock.method(fs.promises, 'stat', (path, options) => {
+    if (path === canvas) asyncChecks++;
+    return stat(path, options);
+  });
+  syncBuiltinESMExports();
+  try {
+    for (const url of [`${prefix}/api/workspaces/${ws}/file?rel=recording.txt`,
+      `${prefix}/api/project-file?workspace=${ws}&rel=recording.txt`]) {
+      const result = await send(url, { headers: { range: 'bytes=0-3' } });
+      assert.equal(result.status, 206);
+      assert.deepEqual(result.body, Buffer.from('free'));
+    }
+    assert.equal(syncChecks, 0);
+    assert.equal(asyncChecks, 2);
+  } finally {
+    syncProbe.mock.restore();
+    asyncProbe.mock.restore();
+    syncBuiltinESMExports();
+  }
+  assert.deepEqual(JSON.parse((await send(`${prefix}/api/projects`)).body).projects, []);
 });
 
 test('project media validates one content version, concurrent Range and canonical containment', { timeout: 10000 }, async t => {

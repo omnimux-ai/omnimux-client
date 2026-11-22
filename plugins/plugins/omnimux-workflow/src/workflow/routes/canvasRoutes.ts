@@ -145,23 +145,23 @@ export function createWorkflowDispatcher(deps: WorkflowDispatcherDeps) {
   const directorRoutes = createDirectorRoutes(store);
   const libraryHttp = createLibraryServiceClient(() => deps.getSeam?.('assetLibrary'));
   const resolveAssetsRoot = deps.resolveAssetsRoot ?? ((workspaceId: string) => projectStore.findByCanvasWorkspaceId(workspaceId));
-  const assetsStore = deps.assetsStore ?? createProjectAssetsStore({
+  const assetsStore = deps.assetsStore ?? deps.builtInAssetsStore ?? createProjectAssetsStore({
     workspacesDir: store.workspacesDir,
     resolveProjectRoot: resolveAssetsRoot,
     fetchLibraryDetail: libraryHttp.fetchLibraryDetail,
     promoteToLibrary: libraryHttp.promoteToLibrary,
   });
+  const allowFreeCanvas = Boolean(deps.builtInAssetsStore);
+  const readRootOverride = allowFreeCanvas ? undefined : deps.resolveAssetsRoot;
   const resolveProject: ResolveCanvasProject = async (id, signal) => {
     const owner = await projectStore.findCanvasProjectForRead(id, signal);
     signal?.throwIfAborted();
-    return projectStore.withCanvasProject(id, owner, () => resolveAssetsRoot(id)?.path);
+    return readRootOverride ? projectStore.withCanvasProject(id, owner, () => readRootOverride(id)?.path) : owner?.path;
   };
-  // A standalone injected store owns file selection. Host assembly supplies
-  // both the store and its root resolver, which allows asynchronous resolution.
-  const media = !deps.assetsStore || deps.resolveAssetsRoot
-    ? { resolveFile: createProjectMediaResolver(store.workspacesDir), resolveProject }
-    : undefined;
-  const projectDispatcher = createProjectDispatcher({ libraryRoot, projectStore, workspaceStore: store, resolveAssetsRoot,
+  const media = deps.assetsStore ? undefined : {
+    resolveFile: createProjectMediaResolver(store.workspacesDir, { allowFreeCanvas }), resolveProject,
+  };
+  const projectDispatcher = createProjectDispatcher({ libraryRoot, projectStore, workspaceStore: store, resolveAssetsRoot: readRootOverride,
     mediaRevision: createMediaRevision(mediaDir, (workspaceId, relativePath) => assetsStore.resolveProjectFile(workspaceId, relativePath)),
     listMediaRevision: media && createListMediaRevision(mediaDir, media.resolveFile),
     resolveSessionWorkspaceDir: deps.resolveSessionWorkspaceDir,

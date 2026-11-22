@@ -98,9 +98,12 @@ export function createProjectListCoverService(workspacesDir: string, mediaRevisi
 
   async function pageCover(id: string, projectRoot: string | undefined, signal: AbortSignal): Promise<CoverSummary> {
     let previous = memory.get(id);
+    const cacheFile = await resolveSafeProjectPath(join(workspacesDir, id, 'cover-summary.json'), workspacesDir, signal).catch(() => {
+      signal.throwIfAborted();
+      return undefined;
+    });
     try {
-      const cacheFile = await resolveSafeProjectPath(join(workspacesDir, id, 'cover-summary.json'), workspacesDir, signal);
-      if (!previous) {
+      if (cacheFile && !previous) {
         try {
           const raw = await withRegularFile(cacheFile, signal, handle => handle.readFile({ encoding: 'utf8', signal }), true);
           const saved = entrySchema.safeParse(JSON.parse(raw));
@@ -124,6 +127,7 @@ export function createProjectListCoverService(workspacesDir: string, mediaRevisi
       signal.throwIfAborted();
       memory.set(id, entry);
       if (memory.size > 512) memory.delete(memory.keys().next().value!);
+      if (!cacheFile) return entry.cover;
       const tmp = `${cacheFile}.tmp-${randomUUID()}`;
       try {
         await mkdir(dirname(cacheFile), { recursive: true });

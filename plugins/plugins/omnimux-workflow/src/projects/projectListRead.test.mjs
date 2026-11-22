@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readlink, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -97,6 +97,32 @@ test('cover list reuses a canvas across pages and refreshes a cross-project medi
   await rm(coverSource);
   const missing = (await list()).body.projects.find(row => row.id === other.id);
   assert.equal(missing.cover.unavailable, true);
+});
+
+test('a dangling derived cache does not hide a readable canvas cover', async t => {
+  const { root, libraryRoot, workspacesDir, store } = await fixture(t);
+  const id = 'ws_dangling_cover';
+  const project = store.create('Cover project', { canvasWorkspaceIds: [id] });
+  const workspaceStore = createWorkspaceStore({ workspacesDir, resolveProjectRoot: ws => store.findByCanvasWorkspaceId(ws) });
+  workspaceStore.create('Cover canvas', id);
+  const mediaUrl = `/omnimux-workflow/api/workspaces/${id}/file?rel=cover.png`;
+  workspaceStore.save(id, { expectedVersion: 0, nodes: [{ id: 'cover', type: 'material', position: { x: 0, y: 0 },
+    data: { materialType: 'image', mediaUrl } }] });
+  await writeFile(join(project.path, 'cover.png'), 'cover content');
+  const home = join(workspacesDir, id);
+  const cache = join(home, 'cover-summary.json');
+  await symlink('retired-summary.json', cache);
+  const dispatcher = createProjectDispatcher({ libraryRoot, projectStore: store, workspaceStore,
+    listMediaRevision: createListMediaRevision(root, createProjectMediaResolver(workspacesDir)) });
+  const result = await dispatcher.dispatch({ method: 'GET', url: prefix });
+  assert.equal(result.status, 200);
+  const cover = result.body.projects[0].cover;
+  assert.equal(cover.kind, 'image');
+  assert.equal(cover.nodeId, 'cover');
+  assert.equal(cover.mediaUrl, mediaUrl);
+  assert.equal(cover.unavailable, undefined);
+  assert.equal(await readlink(cache), 'retired-summary.json');
+  await assert.rejects(readFile(join(home, 'retired-summary.json')), { code: 'ENOENT' });
 });
 
 test('a shared read outlives one cancelled waiter and stops after its last waiter disconnects', async () => {

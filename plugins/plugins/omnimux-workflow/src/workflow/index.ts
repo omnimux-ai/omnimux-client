@@ -181,7 +181,7 @@ export function mountWorkflowHost(ctx: HostContext, opts: MountWorkflowHostOptio
     headlessSeam,
     templates,
     libraryRoot,
-    assetsStore,
+    builtInAssetsStore: assetsStore,
     projectStore,
     resolveAssetsRoot,
     // Issue #2104：客户端打开创作画布前按会话问「这个工作区属于哪个项目」，
