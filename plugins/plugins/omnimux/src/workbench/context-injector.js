@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { WORKBENCH_SOURCE_KIND } from '../message-source.js'
-import { formatCompactContextBlock } from './contract.js'
+import { clipContextFromEnvelope, formatCompactContextBlock } from './contract.js'
 import { withReferenceNavigation } from './reference-navigation.js'
 
 /**
@@ -48,21 +48,26 @@ export function mountWorkbenchContextInjector(ctx, deps) {
     if (step !== 1) return decision
 
     const sessionId = agent?.session?.id
+    if (typeof sessionId !== 'string' || !sessionId || sessionId === 'default') return decision
+    const fresh = await (deps.hubEvents?.refreshViewports(sessionId, signal) ?? [])
+    if (signal?.aborted) return decision
     const activeView = mailbox.getActiveView(sessionId)
-    if (!activeView?.ok || !activeView.uiContext) return decision
+    const clipViews = fresh.filter(viewport => clipContextFromEnvelope(viewport))
+    const clipViewport = clipViews.length === 1 ? clipViews[0] : null
+    if (!activeView?.uiContext && !clipViewport) return decision
 
     const messages = [...(decision.messages || [])]
 
     // 1. 原生 DSH 方式注入会话附件与场景上下文 (绝不污染用户输入框)
     // 素材自带统一虚拟引用时，把推荐动作一并带上，避免 Agent 在首轮自行摸索工具。
-    if (activeView.uiContext.attachedContextText) {
+    if (activeView?.uiContext?.attachedContextText) {
       messages.push(createWorkbenchContextMessage(withReferenceNavigation(activeView.uiContext.attachedContextText)))
     }
 
     // 2. 注入工作台面板视图快照 (面板展开时)
-    const { surface } = activeView.uiContext
-    if (surface?.panelOpen && surface?.tabId) {
-      const text = formatCompactContextBlock(activeView.uiContext)
+    const viewport = clipViewport ?? activeView?.uiContext
+    if (viewport?.surface?.panelOpen && viewport.surface.tabId) {
+      const text = formatCompactContextBlock(viewport, { includeClip: Boolean(clipViewport) })
       if (text) {
         messages.push(createWorkbenchContextMessage(text))
       }

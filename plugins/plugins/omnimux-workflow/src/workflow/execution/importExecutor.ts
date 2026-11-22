@@ -7,7 +7,7 @@
  * to trigger model generation or overwrite user media assets.
  */
 
-import { localFileMediaUrl, projectFileMediaUrl, readLocalTextFile } from '../../shared/localMedia.ts';
+import { localFileMediaUrl, preserveProjectFileMediaRevision, readLocalTextFile } from '../../shared/localMedia.ts';
 import { parseJsonDocumentText } from '../../shared/jsonDocument.ts';
 import type {
   ExecutionContext,
@@ -71,7 +71,7 @@ export function createImportExecutor(): NodeExecutor {
       const relativePath = readString(data, 'relativePath');
       const assetId = readString(data, 'assetId');
       if (relativePath && ctx.workspaceId) {
-        const url = projectFileMediaUrl(ctx.workspaceId, relativePath);
+        const url = preserveProjectFileMediaRevision(ctx.workspaceId, relativePath, data.mediaUrl);
         return {
           relativePath,
           assetId,

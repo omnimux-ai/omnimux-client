@@ -1,5 +1,6 @@
 import { getActiveClipSession, getActiveClipStageStore } from "../../../../stage-store.js";
 import { notifyCanvasClose } from "../../../../CanvasBridge.js";
+import { useClipEditorExit } from "../../../../live/EditorSeat.jsx";
 import { useClipT } from "../../../../i18n/index.js";
 import { useLatch } from "./use-latch";
 import { usePhoneEditor } from "../../hooks/usePhoneEditor";
@@ -47,6 +48,7 @@ const ProjectPackageDialog = lazy(() => import("./ProjectPackageDialog").then((m
 export const Toolbar: React.FC<{ canvasMode?: boolean }> = ({ canvasMode: isCanvasMode = false }) => {
   const t = useClipT();
   const canvasSession = isCanvasMode ? getActiveClipSession() : null;
+  const exitCanvas = useClipEditorExit();
   const phone = usePhoneEditor() && !isCanvasMode;
   const isDesktop = !isCanvasMode && typeof window !== "undefined" && window.openreel?.platform === "desktop";
   const nativePlatform = /Mac/i.test(navigator.platform) ? "darwin" : /Win/i.test(navigator.platform) ? "win32" : "linux";
@@ -143,14 +145,17 @@ export const Toolbar: React.FC<{ canvasMode?: boolean }> = ({ canvasMode: isCanv
     resetError,
   } = useExportRunner({ project: exportProject, canvasMode: isCanvasMode, onExported: handleExported });
 
+  const renderingExport = exportState.isExporting && !exportState.savingToCanvas;
   useEffect(() => {
-    if (!active) return;
-    setGlobalExportState({
-      isExporting: exportState.isExporting,
-      progress: exportState.progress,
-      phase: exportState.phase,
-    });
-  }, [active, exportState.isExporting, exportState.progress, exportState.phase, setGlobalExportState]);
+    if (!active || !renderingExport) return;
+    const previous = useUIStore.getState().exportState;
+    if (previous.isExporting) return;
+    const renderState = { isExporting: true, progress: exportState.progress, phase: exportState.phase };
+    setGlobalExportState(renderState);
+    return () => {
+      if (useUIStore.getState().exportState === renderState) setGlobalExportState(previous);
+    };
+  }, [active, renderingExport, exportState.progress, exportState.phase, setGlobalExportState]);
 
   const handleQuickExport = useCallback(async (id: QuickExportPresetId) => {
     if (!hasTimelineContent || useUIStore.getState().exportState.isExporting) return;
@@ -159,7 +164,7 @@ export const Toolbar: React.FC<{ canvasMode?: boolean }> = ({ canvasMode: isCanv
       return;
     }
     const preset = getQuickExportPresets(exportProject.settings).find(entry => entry.id === id);
-    if (!preset) return;
+    if (!preset || (isCanvasMode && preset.kind !== "video")) return;
     try {
       const ext = preset.kind === "audio" ? preset.extension : extForFormat(preset.settings.format ?? "mp4", preset.settings.codec);
       const writable = await showSavePicker(exportFilename(project.name, ext), ext, { delivery: "download" });
@@ -175,7 +180,7 @@ export const Toolbar: React.FC<{ canvasMode?: boolean }> = ({ canvasMode: isCanv
     } catch (error) {
       failExport(error);
     }
-  }, [hasTimelineContent, isDesktop, project, exportProject.settings, showSavePicker, beginExport, runAudioExport, markComplete, track, runExport, finishExportSoon, failExport]);
+  }, [hasTimelineContent, isCanvasMode, isDesktop, project, exportProject.settings, showSavePicker, beginExport, runAudioExport, markComplete, track, runExport, finishExportSoon, failExport]);
 
   const handleCustomExport = useCallback(
     async (settings: VideoExportSettings, delivery: ExportDeliveryMode = window.openreel?.platform === "desktop" ? "file" : "download") => {
@@ -325,10 +330,10 @@ export const Toolbar: React.FC<{ canvasMode?: boolean }> = ({ canvasMode: isCanv
           type="button"
           variant="ghost"
           className="omnimux-clip-stage-close-btn inline-flex"
-          disabled={exportState.isExporting && !exportState.savingToCanvas}
+          disabled={exportState.isExporting && !exportState.canvasReserved}
           style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
           onClick={() => {
-            if (exportState.savingToCanvas) handleCancelExport();
+            if (exitCanvas) { void exitCanvas(); return; }
             if (canvasSession?.nodeId) notifyCanvasClose({ nodeId: canvasSession.nodeId, projectId: canvasSession.projectId });
             getActiveClipStageStore()?.set(false);
           }}

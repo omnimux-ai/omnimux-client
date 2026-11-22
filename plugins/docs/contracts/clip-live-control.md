@@ -1,72 +1,93 @@
+---
+title: "画布剪辑归属与实时控制"
+id: "contract-clip-live-control"
+type: "contract"
+status: "living"
+authority: "L1"
+date: "2026-11-21"
+updated: "2026-11-22"
+---
+
 # 画布剪辑归属与实时控制
 
-[阶段 1 #160](https://github.com/omnimux-ai/omnimux-client/issues/160) 收紧画布事件和已注册工具的失败语义。下文的阶段 2 协议按 [PRD v1.0](https://github.com/omnimux-ai/omnimux-client/issues/159#issuecomment-7058694513) 定义，待 [OpenReel v1 升级 #154](https://github.com/omnimux-ai/omnimux-client/issues/154) 合入后实施。阶段 3 的「AI 剪辑」从左侧主对话发出，另见 [#157](https://github.com/omnimux-ai/omnimux-client/issues/157)。
+[阶段 1 #160](https://github.com/omnimux-ai/omnimux-client/issues/160) 定下画布归属与工具错误协议。[阶段 2 #159](https://github.com/omnimux-ai/omnimux-client/issues/159#issuecomment-7058694513) 接通 OpenReel v1 原生编辑器、Host 持久化与 Workflow 回写。本文记录阶段 2 的源码行为。运行验收按对应构建和 PRD 验收项单独记录。
 
 ## 阶段 1 画布绑定与工具结果
 
-画布节点以 `(workspaceId, nodeId, projectId)` 标识剪辑入口。节点打开时透传三个 ID，已有合法 `projectId` 继续使用，空缺时分配并记录 `clip_node_…`。粘贴副本时分配新工程 ID，移除旧 `schema`、成片与预览元数据，从 `idle` 开始。原节点以及已有成片继续使用原引用。
+阶段 1 已确立的画布边界沿用至今。打开节点时携带 `(workspaceId, nodeId, projectId)`，缺少工程 ID 时生成 `clip_node_…`。复制节点时分配新工程 ID，清除副本的旧草稿、成片和预览引用。阶段 1 的手工导出桥按每笔 `/save-export` 上传记录原绑定，接到回执后核对节点归属。同一节点应用新版回执后丢弃迟到的旧回执。
 
-画布 `OPEN`、`PROGRESS`、`SAVE`、`CLOSE` 使用完整三元组。手工导出开始时，外围桥记录当前绑定。退出编辑清除画布的临时渲染状态，开始过的导出仍可按原绑定投递。
+该阶段的工具使用旧 `TimelineSchema` 查档和写档。已保存的原生 UUID 工程报告 `openreel-migration-required`，实时打开、播放、截帧和导出在工程校验通过后抛 `ui-unavailable`。查询不触发自动跟随，截帧与导出停止返回占位结果。历史验收见 [AC-P1-01 至 AC-P1-06](../../../specs/clip-phase1-160.spec.md#证伪方式)。
 
-剪辑客户端在每笔 `/save-export` 上传发出时单独绑定原节点，接收 Host 的成片路径与 `revision` 后核对对应的 `SAVE`。较早的回执先到时只结算自己的上传。较新的结果先应用时，同一节点的旧回执失效，重新打开入口也无法再次投递。画布校验现有节点绑定，继续通过 `planClipExportDownstream` 写入版本并创建或复用下游节点。原生编码器和 Host 成片路径沿用现有实现。
+## 阶段 2 实现
 
-剪辑桥只接受来自当前可见工作区的 `OPEN`。Portal 挂到对应工作区，通过画布工作台 viewport 提供 `view.extra.clip` 导航提示。Hub 遇到画布剪辑提示时保留画布页，浏览器接到自动切页请求时再次检查当前 Portal。`clip_list`、`clip_get`、`clip_diagnostics` 无条件跳过自动跟随。
+### 工程、归属与迁移
 
-- `clip_list` 保留 `projects` 与 `count`，另报 `unavailableProjects: [{ id, code, message }]` 和 `unavailableCount`。两份列表分别受 `limit` 限制，`unavailableCount` 是扫描到的总数。工程列表 HTTP 路由使用同一 Store，`projects` 的描述字段保持现有形状。
-- `clip_get` / `clip_diagnostics` 可查已保存的旧 `TimelineSchema`，`clip_create` / `clip_edit` 写该格式。`clip_edit` 的单步记录属于 Host 旧档历史。
-- 工具和 HTTP 先区分 `invalid-id`、`invalid-json`、`not-found`、`project-not-materialized`（`clip_node_…` 尚无保存文件）及 `openreel-migration-required`（已保存的原生 `Project`）。无法读取单个文件时返回 `project-unreadable`，对应单项 HTTP 409。列表把该条目记入 `unavailableProjects` 并继续读取其他工程。`clip_open`、`clip_view`、`clip_snapshot`、`clip_export` 读到可用旧档后抛 `ui-unavailable`。用户可在右侧操作播放与手工导出。Host 工具错误为 `ClipDomainError`，注册时将 `[code]` 带进 Harness 可读错误消息。HTTP 工程读取错误在 `error` 字段携带代码。
+Clip 编辑器和 Host 使用同一 OpenReel `Project`。Host 保存含 `projectId`、`revision`、`updatedAt` 和可选画布绑定的快照。工具时间统一用秒。旧 `TimelineSchema` 的毫秒在转换时换成秒。画布下游节点的 `outputDurationMs`、兼容导出元数据和 HTTP 工程列表里的 `durationMs` 仍用毫秒。[Host 工程 Store](../../plugins/omnimux-clip/src/store/projectStore.js)
 
-阶段 1 源码入口为 [画布事件](../../plugins/omnimux-workflow/src/canvas/bridge/clipEvents.ts)、[剪辑事件桥](../../plugins/omnimux-clip/src/client/CanvasBridge.js)、[自动跟随](../../plugins/omnimux/src/workbench/surface-follow.js)、[工程 Store](../../plugins/omnimux-clip/src/store/projectStore.js) 与 [工具注册](../../plugins/omnimux-clip/src/tools.js)。从仓库根运行 `corepack pnpm --filter omnimux-clip test`、`corepack pnpm --filter omnimux-workflow test`、`corepack pnpm --filter omnimux test` 和 `corepack pnpm --dir plugins test:agent-tools`。验收对应 [AC-P1-01 至 AC-P1-06](../../../specs/clip-phase1-160.spec.md#证伪方式)。
+- 裸格式及包装过的原生 UUID 工程保留 ID。旧格式转换轨道、片段、素材引用、源入出点、音量、速度、字幕和可映射的转场。读取可投影已识别的旧档。首次物化或保存时原子写入新格式，并保留转换前的原档。无法映射的旧条目保留在备份中，已识别的缺项可在诊断中查看。[迁移](../../plugins/omnimux-clip/src/store/legacyProject.js)
+- 首次进入 `video_composition` 时，Workflow 先保存节点绑定，再打开 Portal。Clip 以原工程 ID 物化 Host 草稿。已有 Host 工程优先，其次载入节点旧 `schema` 草稿或新建。后续自动保存更新 Workflow 的 `draftRevision`，图里继续保存绑定与成片引用。上游素材按来源和版本复用。首次导入结束并尝试保存后，入口才登记实时租约。切换节点后的迟到导入不得应用到新工程。[画布打开](../../plugins/omnimux-workflow/src/canvas/bridge/canvasClipActions.ts) · [素材导入](../../plugins/omnimux-clip/src/client/hooks/useCanvasIngestion.ts)
+- 浏览器将草稿和媒体字节保存在 IndexedDB。自动恢复先校验共享缓存，再查同工程和绑定已由 Host 确认的持久化记录，最后检查可验证的同源地址。画布重开或采用 Host 版本后，如果缺媒体且仍连接原 `/local-file` 上游，也按选中快照的 SHA-256 重新拉取。旧稿须有原内容摘要或可核对的文件版本。例如带 `rev=sha256:…` 的同工作区定位符，Workflow 文件路由会核对其字节。只有路径或不透明版本号时保留缺失，等待用户明确重连。恢复沿用原 `mediaId`、轨道和片段。工具投影仅返回安全来源标识。[旧稿迁移](../../plugins/omnimux-clip/src/store/legacyProject.js) · [媒体恢复](../../plugins/omnimux-clip/src/client/live/native-state.ts) · [画布上游](../../plugins/omnimux-clip/src/client/hooks/useCanvasIngestion.ts)
 
-## 阶段 2 计划协议
+### 可见入口、编辑权和对话上下文
 
-### 工程与迁移
+画布入口是 `omnimux-workflow:canvas` 中的剪辑 Portal，归属由工作区、节点和工程三项确定。独立入口 `omnimux-clip:studio` 只绑定工程。两个入口共用原生 Store。同一渲染进程只保留一个可写入口。切页、收起面板、换工程或退出画布时，客户端先暂停旧入口并写入 IndexedDB，确认 Host 已同步后再释放编辑权。保存离线或遇到版本冲突时保留源草稿和归属，恢复同步后继续交接。退出成功后，节点有成片时回到 `completed`，否则回到 `idle`。切回时重新读取工程和草稿。[编辑会话](../../plugins/omnimux-clip/src/client/live/editor-session.js) · [画布事件](../../plugins/omnimux-workflow/src/canvas/bridge/canvasClipActions.ts)
 
-OpenReel v1 `Project` 是唯一编辑和持久化格式。右侧编辑器执行原生 store、渲染与 WebCodecs。Clip Host 保存带 `projectId`、`revision`、`updatedAt` 及可选画布绑定的工程快照，按预期版本原子替换。Workflow 拥有画布节点、成片引用和下游连线。Agent 与 UI 共用这两处版本校验。
+两个入口使用 `registerContextContributor` 提交剪辑状态。Hub 在每轮第一步定向刷新认证视口。新会话尚未登记首份视口时，现有连接可用同一刷新请求提交当前视口。刷新可以越过尚未完成的普通心跳，按采集顺序和认证会话验收，最长等待 600 毫秒。确认当前会话只有一份有效剪辑视口时，`<ui_context>` 带上以下字段。超时或目标仍有歧义时，对话照常进行。[窗口刷新](../../plugins/omnimux/src/events/windows.js) · [上下文注入](../../plugins/omnimux/src/workbench/context-injector.js)
 
-| 数据来源 | 一次性迁移 |
+- 通用字段为 `mode`、`projectId`、`title`、`revision`、`playheadSec`、`durationSec`。有选段时附至多三条 `selectedClips`，每条含 `id`、`name`、`trackId`、`startSec`、`endSec`。
+- 画布模式另带 `workspaceId`、`nodeId`。退出 Portal 或切走后交回普通工作台上下文。剪辑区块按白名单限长和清理字符串，排除本地文件路径、媒体字节、脚本、租约和原始工程 JSON。[上下文格式](../../plugins/omnimux/src/workbench/contract.js)
+
+剪辑工具不通过 `surface-follow` 切页。需要进入某个工程时，显式调用 `clip_open`。已处于目标入口时直接读取该租约，否则等对应入口报告可见且工程吻合后返回。打开画布工程时聚焦对应工作区和节点 Portal，独立工程打开剪辑 Tab。[工作面跟随](../../plugins/omnimux/src/workbench/surface-follow.js) · [窗口导航](../../plugins/omnimux-clip/src/client/live/live-channel.js)
+
+### 租约、命令与失败
+
+1. Hub 在已有事件 WebSocket 上为每个认证窗口分配身份。Clip 通过 `/omnimux-clip/api/live/lease`、`renew`、`release` 管理短期租约。Host 核对连接证明、会话、原生 Tab 实例、编辑器实例、模式、工程、版本和可选画布绑定。客户端每 2 秒续期。隐藏、切页、换工程、断连或租约过期后，旧入口无法领取新命令。[窗口登记](../../plugins/omnimux/src/events/windows.js) · [Clip HTTP 路由](../../plugins/omnimux-clip/src/http/routes.js)
+2. 当前会话唯一匹配且可见的租约可自动命中。有多个匹配项，或实时操作显式目标与可见入口不符时，返回 `AMBIGUOUS_TARGET` 和候选项，包含 `projectId`、`title`、`mode`、`visible`、`windowInstanceId`，画布另有两项绑定 ID。同窗保活的画布入口由认证视口上报，Host 复核绑定后以 `visible: false` 列出。先核对用户意图，再以工程 ID 和必要的 `windowInstanceId` 定位。无认证窗口时返回 `EDITOR_OFFLINE`，已连接但目标未就绪时可能返回 `EDITOR_NOT_VISIBLE`。原生预览不可用时返回 `PREVIEW_NOT_READY`。明确指定保存工程的 `clip_get` 可以离线查档，未物化画布工程返回 `project-not-materialized`。[目标选择](../../plugins/omnimux-clip/src/live/command-broker.js)
+3. 命令以短 WS 通知 `{ requestId }` 发往目标窗口，通知不进入回放缓冲。客户端通过认证 HTTP `claim` 领取，核对身份、可见性、归属、时效和写入版本。`receipt` 携带原领取时生成的证明。重连先登记新连接的认证视口，再发送挂起回执。Host 以可重试的 `409 / VIEWPORT_NOT_REGISTERED` 回应尚未登记的窗口，客户端继续暂存回执。超时或 `outcome-unknown` 时，用原 `requestId` 和相同参数复查。同一已领取请求只执行一次，参数改变会报 `REQUEST_ID_CONFLICT`。过期请求返回 `REQUEST_EXPIRED`。[命令及回执](../../plugins/omnimux-clip/src/live/command-broker.js) · [客户端执行](../../plugins/omnimux-clip/src/client/live/live-channel.js)
+4. Host 使用同会话、入口、编辑器和工程已认证的视口版本。采用 Host 版本时推进 `revisionEpoch`，迟到的旧续租和回执只属于原世代。Host 派发和领取时复核版本，编辑器执行前再次复核。写入冲突返回 `REVISION_CONFLICT` 和当前的 `currentRevision`、`currentRevisionEpoch`，工具消息保留 `[code]`，HTTP 响应携带 `error` 代码。
+
+### 工具入参与编辑行为
+
+以 [Host 工具注册](../../plugins/omnimux-clip/src/tools.js) 的 JSON Schema 为准。以下 `?` 表示可选。实时工具共用 `projectId?`、`windowInstanceId?`、`requestId?`，其中 `clip_open` 必须传 `projectId`。`clip_edit` 和 `clip_export` 接收 `baseRevision?` 与 `baseRevisionEpoch?`。编辑前用实时 `clip_get` 读取 `revision` 和 `revisionEpoch`，对同工程和窗口分别传入这两个版本字段。省略数字版本时采用当前租约。省略世代时，编辑和指定版本的导出核对同一会话与目标最后一次实时读取的世代。旧世代即使数字版本相同也返回 `REVISION_CONFLICT`。仅确认导出当前可见工程时可省略两个版本字段。写入与导出宜提供稳定的 `requestId`，供结果不明时复查。
+
+九个工具的输入和输出 schema 均使用 DSH Host 支持的 JSON Schema 子集。Clip 执行时继续校验数值范围、字符串长度、批次数量及窗口身份。
+
+| 工具 | 其他参数与结果 |
 | --- | --- |
-| 旧 `TimelineSchema`（裸文件或 `schema` 包装） | 转换轨道、片段、素材、源入出点、音量、速度、字幕和转场。时间在迁移边界由毫秒精确转秒。保留可验证的旧 ID、设置、快照及媒体来源。遇到无法映射的数据，保留原档并报告缺项。 |
-| 已保存的原生 UUID 工程 | 保留 UUID，校验 v1 形状和媒体引用，规范化 Host 包装并补版本。浏览器使用其原有 IndexedDB 媒体键或可验证的映射重连。 |
-| 画布节点 `schema` 草稿 | 首次打开时按 `(workspaceId,nodeId)` 绑定原合法 `clip_node_…`，加载已有原生草稿或转旧格式。没有草稿时，仅按上游输入初始化一次。上游素材按来源与内容版本去重，记录稳定 `mediaId`。载入和写入都核对绑定令牌。 |
+| `clip_list` | `limit?` 为 1–100，默认 50。返回 `projects`、`count`、`unavailableProjects`、`unavailableCount`。已保存列表与异常列表各自截取，异常总数另报。 |
+| `clip_create` | 必填 `name`。`resolution?` 为 `landscape`、`portrait`、`square`，默认 `landscape`。`fps?` 默认 30。生成独立原生空工程并保存，返回 `projectId` 与初始 `revision`。 |
+| `clip_open` | 打开尚未物化的画布工程时同时带 `workspaceId`、`nodeId` 和 `projectId`。已有画布工程可从保存记录解析绑定。只在用户要求打开时调用。 |
+| `clip_get` | `view?` 为 `summary`、`tracks`、`clips`、`full`，默认 `summary`。可带 `trackId`、`clipId`、`fromSec`、`toSec`。返回必填整数 `revision` 和 `revisionEpoch`，实时读取另返回可选字符串 `windowInstanceId`。指定 ID 时也可读保存工程。`full` 附轨道、片段、转场、素材与字幕。 |
+| `clip_diagnostics` | 必填 `projectId`，只查 Host 已保存版本。报告 `timeline_gap`（可见视频空档 ≥0.08 秒）、`clip_overlap`、`media_missing` 与 `clip_out_of_bounds` 等。`ok` 表示有无问题，有问题时为 `false`，工具本身失败仍抛领域错误。 |
+| `clip_edit` | 必填可读的 `description` 和 1–100 条 `operations`。`validateOnly: true` 预演。删除非空整轨或清空已有时间轴需明确授权并传 `confirmDestructive: true`。 |
+| `clip_view` | 必填 `action`。`seek` 使用 `toSec`，`play` 可用 `fromSec`，`select_clips` 需 `clipIds`，传空数组清除选段。`pause` 直接暂停。返回原生播放头、播放状态、选段 ID 与版本。 |
+| `clip_snapshot` | `times` 为 1–6 个时间点，或用 `fromSec`、`toSec` 和可选 `count` 等距采样。区间默认 6 帧。都省略时截当前播放头。Host 校验并保存真实合成 PNG，可附图片附件。 |
+| `clip_export` | 必填 `confirm: true`，仅在用户要求渲染成片时传入。`confirm: false` 会抛 `CONFIRMATION_REQUIRED`。`resolution?` 支持 `720p`、`1080p`、`4k` 并保持画幅，`fps?` 覆盖项目帧率。返回原任务实际落盘和画布提交状态。 |
 
-迁移先保留源文件和映射，再以来源标识、旧版本和目标 `projectId` 去重提交。已有当前版本优先载入，发现分叉交给冲突处理。失败可用原数据恢复或重试，检查 `Project` 成功落盘后才更新画布草稿指针。原生工程中的 Blob 保存在 IndexedDB 或 Host 已验证的媒体库对象。Host 工程只记 `mediaId`、来源、内容版本和缺失状态等可序列化引用。禁止把 Blob 的空 JSON 当作已迁移素材。
+`clip_edit` 的 `operations[].type` 支持 `add_track`、`remove_track`、`set_track_state`、`import_media`、`add_clip`、`trim_clip`、`split_clip`、`move_clip`、`remove_clip`、`remove_range`、`cut_silences`、`set_volume`、`set_speed`、`add_text`、`set_text`、`set_subtitle_style`、`add_transition`、`remove_transition` 和静态参数 `set_clip_effect`。`import_media` 需要恰好一个 `path` 或 `sourceUrl`，Host 校验解析后的文件归属当前会话工作目录及媒体白名单，越界返回 `path-denied`。素材已在项目中时，可用 `add_clip` 的 `mediaId` 和 `trackId` 上轨。普通剪辑按用户给出的范围执行，涉及其他工程先核对目标。[原生批次](../../plugins/omnimux-clip/src/client/live/native-edit.ts)
 
-### 可见页面、编辑权与上下文
+整批在草稿副本上校验，所有操作通过后才以 `description` 为标签入一条原生撤销记录。校验或任一操作失败时保留原时间轴、历史和版本。`validateOnly` 不生成历史或保存。手动编辑、Agent 编辑、撤销和重做共用原生历史。播放和截图走原生预览，均不入历史。Agent 编辑、截帧和导出遵守 Motion 表达式限制，导入或工具不得替用户批准或写入脚本。[原生播放与截帧](../../plugins/omnimux-clip/src/client/live/native-view.ts) · [Motion 边界](../../plugins/omnimux-clip/src/client/live/native-motion.ts)
 
-`ClipStage` 和独立 `OpenReelStudioTab` 共用 `useProjectStore`。同一渲染进程最多有一个可写入口。切换时先刷原工程到 IndexedDB 并按预期版本 PUT Host，再撤销旧租约并挂起旧入口，最后按目标 `projectId` 和最新 `revision` 载入后取得新租约。切回时同样重载。切去其他 Tab 或收起侧栏时先保存，暂停实时命令。画布退出前保存并释放，原节点按是否存在成片恢复 `completed` 或 `idle`。离线交接先保留本地草稿，待 Host 可达后同步。关闭 Tab 注销 contributor。
+### 草稿保存与重连
 
-两个入口均通过 `registerContextContributor` 读当前原生快照。画布 Portal 激活时，`activeTab` 仍为 `omnimux-workflow:canvas`，保留画布信息并叠加 `view.extra.clip`。独立 Tab 为 `omnimux-clip:studio`。在 [`formatCompactContextBlock`](../../plugins/omnimux/src/workbench/contract.js) 白名单新增以下短字段，并在切走或退出时清除剪辑投影。
+手工编辑防抖 1.5 秒保存。Agent 批次立即尝试写 IndexedDB，再用 `expectedRevision` 和更高的 `revision` 提交 Host。`persisted` 表示本地草稿写入，`synchronized` 表示 Host 已同步。Host 不可达时继续保留本地草稿。重连后待同步草稿等待当前连接的认证视口登记，再按 `localBaseRevision` 比对远端版本。旧保存响应晚到或从其他工作面切回时，有待同步改动就恢复排程。版本分叉时，界面提供三种处理方式。处理选择期间暂停编辑器输入，包括窗口级撤销、播放和蒙版钢笔提交键。[保存与冲突](../../plugins/omnimux-clip/src/client/live/editor-session.js) · [IndexedDB 草稿](../../plugins/omnimux-clip/src/client/live/persistence.js)
 
-- 通用 `mode`、`projectId`、`title`、`revision`、`playheadSec`、`durationSec`、`selectedClips`。选段最多三条，每条仅含 `id`、`name`、`trackId`、`startSec`、`endSec`。
-- 画布额外给 `workspaceId`、`nodeId`。对字符串限长并清理控制字符。投影排除本地路径、Blob、素材字节、脚本、租约和大块 JSON。首轮上下文使用最新可见入口，完整轨道和媒体信息通过工具获取。
-
-### 租约、快照和命令
-
-1. **登记和续期。** Hub 通过现有事件 WS 连接与同源认证 HTTP 建立关联。Host 为认证连接签发短期不透明 `leaseId`，绑定可信对话 `sessionId`、本次可信连接的 `windowInstanceId`、原生 Tab 实例、`editorInstanceId`、`mode`、`projectId`、`baseRevision` 与画布绑定。HTTP 使用认证身份并校验租约证明，原生窗口和 Tab 必须与活跃实例相符。共享 owner Peer 不代表单个窗口，客户端自报 ID 或最后到达的 viewport 也不能授予写权。跟随现有 2 秒心跳续期，过期、断连、窗口隐藏、Tab 或工程切换立即使旧租约不再可执行。重连重新登记。
-2. **选择目标。** 可信执行会话下唯一可见且持有租约的工程可自动命中。显式目标与当前入口冲突，或候选多于一项且目标不明确，返回 `AMBIGUOUS_TARGET`，附 `candidates: [{ projectId, title, mode, workspaceId?, nodeId?, visible }]`。只有用户明确选定可见实例才下发命令。没有可见入口时，实时工具返回 `EDITOR_NOT_VISIBLE` / `PREVIEW_NOT_READY`，Host 断连时返回 `EDITOR_OFFLINE`。`clip_open` 只在用户明确要求打开时聚焦指定入口，等该入口回报正确工程和可见状态才成功。查档无需打开页签。
-3. **读快照。** `clip_get` 优先向目标租约取无 Blob 原生快照，包含 `revision`、素材池和缺失标记、轨道、片段区间、播放头和选段。随后按 `summary`、`tracks`、`clips`、`full` 及请求范围投影。无可见入口且有明确 ID 时可读已保存快照。`clip_list` 和 `clip_diagnostics` 保持查询语义，诊断报告黑场、重叠、缺失和越界。
-4. **下发和领取。** Host 记录 `requestId`、命令版本、目标租约和三元组、`baseRevision`、操作名、参数摘要以及截止时间。Hub 仅向绑定的现有 WS 连接发不可回放通知 `{ requestId }`，不进入补发缓冲。客户端凭租约通过认证 HTTP 领取，Host 同时校验同一会话和连接、目标、时效及领取状态。领取返回参数和预期版本。通用工作台打开 RPC 只做导航。
-5. **执行和回执。** 客户端在原生执行入口再次核对租约、三元组、写权、可见性和 `localRevision === baseRevision`。发现本地版本前进时抛 `REVISION_CONFLICT` 并附 `currentRevision`，Agent 重读后重新计划。成功时以 `requestId` 记录操作结果、`revision` 和持久化状态，回执经认证 HTTP 提交。失败携带结构化 `ClipDomainError`。同一 ID 和同一参数只能提交一次，重复领取或回执返回原状态，参数与租约错配拒绝。Host 超时以原 ID 查状态。客户端在租约内保留结果，并与已执行的本地版本一起持久记录。若执行过但确认未到，恢复回执。结果未知时保留 `outcome-unknown`，禁止重新派发可能已发生的变更。
-
-### 编辑、撤销和离线
-
-P0 `clip_edit` 支持轨道增删和状态、导入素材及按 `mediaId` 上轨、裁剪/分割/移位、移除及静音区间裁切、音量/变速、字幕/花字、添加/移除转场。P1 `set_clip_effect` 只改原生静态参数。工具时间用秒，素材只走 Host 安全引用并校验范围，越界返回 `path-denied`。`clip_view` 用原生播放头/选中态执行 `seek`、`play`、`pause`、`select_clips`。`clip_snapshot` 经真实合成渲染桥获取 PNG，每次最多六帧。两个实时预览工具均不修改历史。
-
-整批先验证，再从原生编辑入口应用。`validateOnly` 运行同一校验且零持久副作用。整批成功只入一条 OpenReel Undo 记录，使用 `description` 作标签，手动与 Agent 编辑共用历史。单个 op 失败恢复时间轴、素材、标题/图形引擎状态与历史，`revision` 保持原值。Undo/Redo 完整恢复整批状态并产生新的同步版本。绑定令牌每次切节点时更新，异步导入和导出提交前重新核对。
-
-手动编辑防抖 1.5 秒保存 IndexedDB 并尝试同步 Host。Agent 批次完成立即保存 IndexedDB 和按预期版本 PUT Host，回执标明已同步或待同步。Host 断连时手工编辑继续保存在本地并显示离线暂存状态。重连比对 `localBaseRevision` 与 `serverRevision`，相等时静默补同步，不同则提供非阻塞三选一。界面覆盖中英与亮暗主题。
-
-1. 保留本地并保存，先备份 Host 当前快照。
+1. 保留本地并保存，先备份 Host 当前版本。
 2. 采用 Host 最新版本，先备份本地草稿。
-3. 本地另存新工程，原工程载入 Host 最新版。
+3. 本地草稿另存新工程，原工程载入 Host 最新版。
 
-普通剪辑按用户给出的范围执行。删除非空整轨、清空时间轴、改其他工程需用户明确指令或确认。阶段 2 禁止 Agent 写入、执行、启用 Motion Expression 代码，导入与工具都不能自签 `approved` / `trusted`。手工批准继续由编辑器 UI 审查。编辑器沿用左侧主对话，不恢复浏览器直连外部模型或协作服务。
+### MP4 与画布提交
 
-### 导出文件与画布提交
+Agent 领命时和画布手工导出开始前，从同一 Host 预约递增的 `exportJobId`。任务固定原 `requestId`、`projectRevision`、已认证的 `revisionEpoch` 和可选画布三元组。右侧基于固定快照运行 WebCodecs，经带凭证的 `/omnimux-clip/api/exports/:id/upload` 流式上传。Host 校验 MP4 结构、轨道数据包、尺寸和时长，再原子保存独立版本文件。Host 与 Workflow 先比较与任务一起持久化的导出世代。同世代继续比较 `exportJobId` 和 `projectRevision`。采用 Host 后较低数字版本的新版成片可以胜过旧世代的较高版本。迟到的旧任务保留独立文件，状态为 `superseded`。
 
-仅在用户明确要求成片后创建任务。Host 为每个新任务分配唯一递增 `exportJobId`，绑定 `requestId`、源 `projectRevision`、租约和原画布三元组。浏览器用该固定快照和原生 WebCodecs 编码，按任务流式上传。Host 校验上传归属、媒体格式与写入完整性，在同一文件系统原子提交独立版本文件。返回文件身份、字节、尺寸、时长和版本。超时查询原任务。旧任务晚于新任务提交时标为 `superseded`，历史文件可保留，最新指针保持新任务。
+关闭或隐藏 Portal 后，已预约的任务仍按原绑定完成上传和提交。若渲染过程中共享编辑器切换到另一工程，渲染会报冲突。显式点击「取消导出」会中止浏览器上传，并用同一任务的上传证明通知 Host。Host 记录取消后拒绝已缓冲或随后到达的写入。导出文件已经提交时，Host 返回该任务的实际结果。[原生导出](../../plugins/omnimux-clip/src/client/live/native-export.ts) · [手工上传与取消](../../plugins/omnimux-clip/src/client/live/export-transport.js) · [Host 导出任务](../../plugins/omnimux-clip/src/export-jobs.js)
 
-画布回写由 Workflow 持久化服务执行。用最新 `WorkspaceStore` 快照验证节点绑定，继承 `planClipExportDownstream` 的创建/复用规则。把源节点的成片属性、下游素材节点和边作为一次 `expectedVersion` 更新提交。冲突后重读并重新验证原三元组和最新导出任务，按现有 GraphMutator 的重试语义处理。`exportJobId` 是幂等键，重复回写复用原结果。画布卸载后仍可提交，只要原绑定与版本检查成立。状态分别报告 `fileSaved` 与 `canvasCommitted`，后者失败可重试图更新。只报告实际提交的状态。
+Workflow 通过 `workflowClip.commitExport` 重核节点绑定，复用 `planClipExportDownstream`，在一次 `WorkspaceStore.expectedVersion` 提交中写入来源节点、下游素材、`out -> in` 连线和任务回执。首次创建下游节点，重导出更新同一节点和版本化 URL。版本冲突后重读工作区，按最新画布内容和历史重新生成保存请求。「保留当前画布修改」保留同时在 Host 提交的成片指针和任务回执。客户端将已提交的导出字段和连线同步到适用的撤销历史，撤销普通编辑时保留成片。画布重新打开可从持久化工作区读到提交状态。`/save-export` 继续服务旧调用方。[Workflow 回写](../../plugins/omnimux-workflow/src/workflow/clip/workflowClip.ts) · [画布历史合并](../../plugins/omnimux-workflow/src/canvas/bridge/rebaseClipWrite.ts)
 
-阶段 2 按 PRD 的 AC-P2-01 至 AC-P2-14 独立验收，覆盖原档迁移、双入口首轮注入、用户与 Agent 共用撤销、并发与断连、多窗拒绝和可播放的 MP4。保持桌面壳接口，复用 Hub WS、Host HTTP 和 Workflow 版本存储。
+`fileSaved` 和 `canvasCommitted` 分别表示确认落盘与画布提交。独立工程正常状态为 `file-saved`，画布成功为 `committed`。`canvas-failed` 表示 MP4 已保存且画布写入失败，Host 可用同一任务重试图更新。`superseded` 表示有更新的结果占据当前指针。报告成片和画布状态时，分别核对这两个字段。
+
+从仓库根运行 `corepack pnpm --dir plugins verify:tools`、`corepack pnpm --dir plugins test:agent-tools`，以及 `corepack pnpm --filter omnimux-clip test`、`corepack pnpm --filter omnimux-workflow test`、`corepack pnpm --filter omnimux test`。Clip 默认测试包含走真实 HTTP、Workflow 画布 Store 与磁盘的混合导出。离线工具套件覆盖保存工程和无窗口错误。双入口、原生 Undo/Redo、真实截帧及 MP4 播放证据按 [AC-P2-01 至 AC-P2-14](https://github.com/omnimux-ai/omnimux-client/issues/159#issuecomment-7058694513) 在隔离运行环境验证。
+
+## 阶段 3 规划
+
+顶栏「AI 剪辑 / AI Edit」由 [#157](https://github.com/omnimux-ai/omnimux-client/issues/157) 跟踪。目标是从两个入口聚焦左侧主对话，并预填当前工程、播放头和选段，用户自行发送。

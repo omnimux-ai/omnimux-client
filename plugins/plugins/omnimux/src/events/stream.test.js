@@ -99,6 +99,34 @@ test('hub feed replays, broadcasts, and releases subscribers on Host disposal', 
   assert.equal(upgrades.has(EVENTS_PATH), false)
 })
 
+test('authenticated windows receive directional notices individually and never replay them', async (t) => {
+  const { url, bus } = await host(t)
+  const first = subscribe(url)
+  const second = subscribe(url)
+  const [a, b] = await Promise.all([first.next('omnimux:window-ready'), second.next('omnimux:window-ready')])
+  assert.notEqual(a.payload.windowInstanceId, b.payload.windowInstanceId)
+  assert.notEqual(a.payload.proof, b.payload.proof)
+  assert.equal(bus.authorizeWindow({ headers: { 'x-omnimux-window-proof': a.payload.windowInstanceId } }), null)
+  const firstRequest = { headers: { 'x-omnimux-window-proof': a.payload.proof } }
+  const secondRequest = { headers: { 'x-omnimux-window-proof': b.payload.proof } }
+  const viewport = { schemaVersion: 1, ok: true, capturedAt: Date.now(), sessionId: 'session-verified', surface: { instanceId: 'tab:one' } }
+  assert.equal(await bus.updateWindowViewport(firstRequest, viewport, () => false), false)
+  assert.deepEqual(bus.getWindows(viewport.sessionId), [])
+  assert.equal(await bus.updateWindowViewport(firstRequest, viewport, id => id === viewport.sessionId), true)
+  assert.equal(await bus.updateWindowViewport(secondRequest, { ...viewport, surface: { instanceId: 'tab:two' } }, () => true), true)
+  assert.equal(bus.getWindows(viewport.sessionId).length, 2)
+  assert.equal(bus.authorizeWindow(firstRequest).send('omnimux:clip:command', { requestId: 'unique-id' }), true)
+  assert.deepEqual((await first.next('omnimux:clip:command')).payload, { requestId: 'unique-id' })
+  const broadcast = bus.emit({ type: 'omnimux:assets:changed' })
+  await second.next(broadcast.type)
+  assert.equal(bus.getEventsSince('0').some(event => event.type === 'omnimux:clip:command'), false)
+  const closed = once(first.socket, 'close')
+  first.socket.close()
+  await closed
+  assert.equal(bus.authorizeWindow(firstRequest), null)
+  assert.equal(bus.getWindows(viewport.sessionId).length, 1)
+})
+
 test('the event socket cannot accept commands or retain a disconnected subscriber', async (t) => {
   const { url, bus } = await host(t)
   const feed = subscribe(url)

@@ -1,5 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { GraduationCap, Keyboard, Plug } from "@/icons/lucide-compat";
+import { useEditorPortalRoot } from "@openreel/ui/lib/portal-root";
+import { isEditorShortcutEvent } from "../../../services/keyboard-shortcuts";
 import { useOnboardingStore } from "../../../stores/onboarding-store";
 import { useOnboardingGate } from "./useOnboardingGate";
 import { useClipT } from "../../../../../i18n/index.js";
@@ -85,6 +87,7 @@ export function PathBand() {
 
 function BandContent({ live }: { live: boolean }) {
   const t = useClipT();
+  const shortcutRoot = useEditorPortalRoot();
   const openSheet = useOnboardingStore((s) => s.openSheet);
   const [proOpen, setProOpen] = useState(false);
   const [rover, setRover] = useState(0);
@@ -105,7 +108,7 @@ function BandContent({ live }: { live: boolean }) {
   useEffect(() => {
     if (!live || openSheet) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (e.key !== "Escape" || e.defaultPrevented || !isEditorShortcutEvent(e, shortcutRoot)) return;
       if (e.target instanceof Element && e.target.closest(ESC_OWNERS)) return;
       e.stopPropagation();
       e.preventDefault();
@@ -113,7 +116,7 @@ function BandContent({ live }: { live: boolean }) {
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [live, openSheet, dismiss]);
+  }, [live, openSheet, dismiss, shortcutRoot]);
 
   const select = useCallback((id: Tile["id"]) => {
     const store = useOnboardingStore.getState();

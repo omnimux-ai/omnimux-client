@@ -17,7 +17,7 @@ import type {
   SerializedCanvasEdge,
   SerializedCanvasNode,
 } from '../../shared/canvasTypes';
-import { isBlobUrl, looksAbsolutePath, projectFileMediaUrl } from '../../shared/localMedia.ts';
+import { isBlobUrl, looksAbsolutePath, preserveProjectFileMediaRevision } from '../../shared/localMedia.ts';
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -50,7 +50,7 @@ function sanitizeImportedMedia(data: Record<string, unknown>, workspaceId?: stri
     delete data.realPath;
     delete data.real_path;
     if (workspaceId) {
-      data.mediaUrl = projectFileMediaUrl(workspaceId, relativePath);
+      data.mediaUrl = preserveProjectFileMediaRevision(workspaceId, relativePath, data.mediaUrl);
     } else if (isBlobUrl(data.mediaUrl) || (typeof data.mediaUrl === 'string' && data.mediaUrl.includes('/api/local-file'))) {
       delete data.mediaUrl;
     }
@@ -61,7 +61,7 @@ function sanitizeImportedMedia(data: Record<string, unknown>, workspaceId?: stri
           if (!row) return null;
           row.relativePath = relativePath;
           if (typeof data.assetId === 'string' && data.assetId) row.assetId = data.assetId;
-          if (workspaceId) row.url = projectFileMediaUrl(workspaceId, relativePath);
+          if (workspaceId) row.url = preserveProjectFileMediaRevision(workspaceId, relativePath, row.url);
           if (typeof row.path === 'string' && looksAbsolutePath(row.path)) delete row.path;
           if (isBlobUrl(row.url)) delete row.url;
           return row.url || row.relativePath ? row : null;
@@ -104,6 +104,10 @@ export function sanitizeNodes(
     const data = asRecord(raw.data);
     delete data.__catalog;
     delete data.__workspaceId;
+    if (raw.type === 'video_composition' && (data.status === 'editing' || data.status === 'rendering')) {
+      data.status = data.outputVideoUrl ? 'completed' : 'idle';
+      delete data.renderProgress;
+    }
     if (raw.type === 'table') {
       delete data.document;
       delete data.rows;

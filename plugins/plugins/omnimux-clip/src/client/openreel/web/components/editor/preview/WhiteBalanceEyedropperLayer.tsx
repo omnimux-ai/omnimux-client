@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useEditorPortalRoot } from "@openreel/ui/lib/portal-root";
+import { isEditorShortcutEvent } from "../../../services/keyboard-shortcuts";
 import { useColorMonitorStore } from "../../../stores/color-monitor-store";
 import { getPreviewCanvas } from "../scopes/preview-canvas-registry";
 import { toast } from "../../../stores/notification-store";
@@ -56,6 +58,7 @@ const fmt = (value: number): string => `${value > 0 ? "+" : ""}${Math.round(valu
 
 export const WhiteBalanceEyedropperLayer: React.FC = () => {
   const t = useClipT();
+  const shortcutRoot = useEditorPortalRoot();
   const pick = useColorMonitorStore((state) => state.whiteBalancePick);
   const size = useColorMonitorStore((state) => state.whiteBalanceSize);
   const setPick = useColorMonitorStore((state) => state.setWhiteBalancePick);
@@ -123,7 +126,7 @@ export const WhiteBalanceEyedropperLayer: React.FC = () => {
   useEffect(() => {
     if (!pick) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      if (event.key !== "Escape" || !isEditorShortcutEvent(event, shortcutRoot)) return;
       event.preventDefault();
       event.stopPropagation();
       setPick(null);
@@ -133,7 +136,7 @@ export const WhiteBalanceEyedropperLayer: React.FC = () => {
       window.removeEventListener("keydown", onKey, true);
       cancelAnimationFrame(frame.current);
     };
-  }, [pick, setPick]);
+  }, [pick, setPick, shortcutRoot]);
 
   useEffect(() => {
     if (!pick) setHover(null);

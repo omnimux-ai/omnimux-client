@@ -23,6 +23,8 @@ import {
   type MaskPoint,
 } from "@openreel/core";
 import { useShallow } from "zustand/react/shallow";
+import { useEditorPortalRoot } from "@openreel/ui/lib/portal-root";
+import { hasShortcutFocus, isEditorShortcutEvent } from "../../../services/keyboard-shortcuts";
 import { useMaskPenStore } from "../../../stores/mask-pen-store";
 import { useProjectStore } from "../../../stores/project-store";
 import { useTimelineStore } from "../../../stores/timeline-store";
@@ -83,6 +85,7 @@ export function MaskPenOverlay({ disabled = false }: { disabled?: boolean }) {
 
 function MaskPenOverlayArmed({ disabled = false }: { disabled?: boolean }) {
   const clipT = useClipT();
+  const shortcutRoot = useEditorPortalRoot();
   const { active, clipId, maskId, vertex } = useMaskPenStore(
     useShallow((s) => ({ active: s.active, clipId: s.clipId, maskId: s.maskId, vertex: s.vertex })),
   );
@@ -307,8 +310,7 @@ function MaskPenOverlayArmed({ disabled = false }: { disabled?: boolean }) {
   useEffect(() => {
     if (!active) return;
     const onKey = (e: KeyboardEvent) => {
-      const el = e.target as HTMLElement | null;
-      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      if (!isEditorShortcutEvent(e, shortcutRoot) || !hasShortcutFocus(e)) return;
       if (e.key === "Escape") {
         e.stopPropagation();
         if (draftRef.current.length > 0) setDraftBoth([]);
@@ -333,7 +335,7 @@ function MaskPenOverlayArmed({ disabled = false }: { disabled?: boolean }) {
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [active, disabled, finishDraft, setDraftBoth]);
+  }, [active, disabled, finishDraft, setDraftBoth, shortcutRoot]);
 
   if (!active || !clipId) return null;
 

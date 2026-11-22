@@ -42,8 +42,8 @@ test('absent host has a stable fallback and no independent persistence', () => {
 
 test('both Clip surfaces receive and subscribe to host locale without locale-key remounts', () => {
   const entry = readFileSync(new URL('./index.js', import.meta.url), 'utf8')
-  assert.match(entry, /stageFace = \(\) => \(\{ t, stage, locale: ctx\.locale \}\)/)
-  assert.match(entry, /createElement\(OpenReelStudioTab, \{ \.\.\.props, t, locale: ctx\.locale \}\)/)
+  assert.match(entry, /stageFace = \(\) => \(\{[^}]*\blocale: ctx\.locale\b[^}]*\}\)/)
+  assert.match(entry, /createElement\(OpenReelStudioTab, \{[^}]*\blocale: ctx\.locale\b[^}]*\}\)/)
   for (const path of ['./ClipStage.jsx', './OpenReelStudioTab.jsx']) {
     const component = readFileSync(new URL(path, import.meta.url), 'utf8')
     assert.match(component, /useHostLocale\(locale\)/)

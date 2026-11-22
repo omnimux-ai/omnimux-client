@@ -30,7 +30,7 @@
   "scripts": {
     "build": "node scripts/build-client.mjs",
     "prepare": "npm run build",
-    "test": "node --test src/*.test.js src/timeline/*.test.js src/client/store/timelineStore.test.js src/client/*.test.js",
+    "test": "node --test src/*.test.js src/timeline/*.test.js src/client/store/timelineStore.test.js src/client/*.test.js ../../tests/integration/clip-media-recovery.test.mjs ../../tests/integration/clip-mixed-export.test.mjs",
     "prepack": "node scripts/build-client.mjs",
     "prepublishOnly": "node ../../scripts/verify-publish-source.mjs ."
   },
@@ -105,6 +105,8 @@
     }
   },
   "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.2",
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.3",
     "@huggingface/transformers": "3.8.1",
     "autoprefixer": "^10.4.19",
     "esbuild": "^0.25.0",

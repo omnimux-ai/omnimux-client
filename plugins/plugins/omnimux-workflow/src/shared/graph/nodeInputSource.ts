@@ -1,4 +1,4 @@
-import { localFileMediaUrl, looksAbsolutePath, projectFileMediaUrl, readLocalTextFile } from '../localMedia.ts';
+import { localFileMediaUrl, looksAbsolutePath, preserveProjectFileMediaRevision, readLocalTextFile } from '../localMedia.ts';
 import { resolveNodeOutputType } from './materialNode.ts';
 import { normalizeMediaNumber, normalizeMimeType } from '../mediaMetadata.ts';
 import { parseJsonDocumentText, type JsonDocumentParseResult } from '../jsonDocument.ts';
@@ -62,7 +62,7 @@ function mediaAsset(
   const path = nonempty(fields.path) ?? nonempty(fields.realPath);
   const assetId = nonempty(fields.assetId);
   let url = usableUrl(asset ? asset.url : data.mediaUrl);
-  if (relativePath && workspaceId) url = projectFileMediaUrl(workspaceId, relativePath);
+  if (relativePath && workspaceId) url = preserveProjectFileMediaRevision(workspaceId, relativePath, url);
   else if (path && looksAbsolutePath(path)) url = localFileMediaUrl(path);
   if (!url) return undefined;
   const mimeType = normalizeMimeType(fields.mimeType ?? data.mimeType);

@@ -181,17 +181,14 @@ test('源码契约：performSave / flush 用决策瞬间快照，reset 不会异
     'flushIfDirty 不得 void performSave() 无快照',
   );
   assert.match(persistSrc, /enabledRef/);
-  // 409 必须走 resolveRemoteAdvance（比签名），不得在 performSave 里回读 store
+  // The 409 retry may recapture in the active workspace. The history suite
+  // exercises the switched workspace and asserts the actual saved graphs.
   const performSaveStart = persistSrc.indexOf('const performSave = useCallback');
-  const performSaveEnd = persistSrc.indexOf('}, [resolveRemoteAdvance]);', performSaveStart);
-  assert.ok(performSaveEnd > performSaveStart, 'performSave 必须依赖 resolveRemoteAdvance');
+  const performSaveEnd = persistSrc.indexOf('performSaveRef.current = performSave', performSaveStart);
+  assert.ok(performSaveEnd > performSaveStart);
   const performSaveBlock = persistSrc.slice(performSaveStart, performSaveEnd);
-  assert.equal(
-    performSaveBlock.includes('useCanvasStore.getState()'),
-    false,
-    'performSave 不得在 await 后回读 store',
-  );
-  assert.match(performSaveBlock, /resolveRemoteAdvance\(/);
+  assert.match(performSaveBlock, /if \(isCurrentScope\(scope\)\) \{\s*const latest = resolveRemoteAdvance\(remote\)/);
+  assert.match(performSaveBlock, /plan\.apply\(decision\.snapshot\)/);
 });
 
 test('源码契约：resetStore 标 cause reset；用户删除走 noteUserDeletedGraphElements', () => {
@@ -235,13 +232,13 @@ test('源码契约：flushPendingSave 同步 capture，boot cleanup 先 beforeRe
   assert.match(persistSrc, /flushPendingSave/);
   const flushStart = persistSrc.indexOf('const flushPendingSave = useCallback');
   assert.ok(flushStart >= 0, 'missing flushPendingSave');
-  const flushEnd = persistSrc.indexOf('}, [performSave]);', flushStart);
+  const flushEnd = persistSrc.indexOf('const resolveConflict', flushStart);
   const flushBlock = persistSrc.slice(flushStart, flushEnd);
   const captureIdx = flushBlock.indexOf('readStoreCapture()');
   const putIdx = flushBlock.indexOf('void performSave(');
   assert.ok(captureIdx >= 0, 'flushPendingSave 必须同步 readStoreCapture');
   assert.ok(putIdx > captureIdx, 'PUT 必须用 capture 之后的快照');
-  assert.match(flushBlock, /cause:\s*'flush'|cause: PersistCause = 'flush'/);
+  assert.match(flushBlock, /performSave\(decision\.snapshot, cause, 'flush'\)/);
 
   const cleanupStart = bootSrc.indexOf('return () => {');
   const cleanupBlock = bootSrc.slice(cleanupStart, bootSrc.indexOf('};', cleanupStart));

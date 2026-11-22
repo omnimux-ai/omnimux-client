@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo } from "react";
 import { Button, Card } from "@openreel/ui";
 import { AlertCircle, Mic, Square } from "@/icons/lucide-compat";
+import { useEditorPortalRoot } from "@openreel/ui/lib/portal-root";
+import { isEditorShortcutEvent } from "../../../services/keyboard-shortcuts";
 import { useUIStore } from "../../../stores/ui-store";
 import { useProjectStore } from "../../../stores/project-store";
 import { useTimelineStore } from "../../../stores/timeline-store";
@@ -99,6 +101,7 @@ function timecode(seconds: number): string {
 
 export const VoiceOverPanel: React.FC = () => {
   const t = useClipT();
+  const shortcutRoot = useEditorPortalRoot();
   const phase = useVoiceOverStore((state) => state.phase);
   const countdown = useVoiceOverStore((state) => state.countdown);
   const elapsedMs = useVoiceOverStore((state) => state.elapsedMs);
@@ -141,14 +144,14 @@ export const VoiceOverPanel: React.FC = () => {
   useEffect(() => {
     if (phase !== "countdown" && phase !== "recording") return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && isEditorShortcutEvent(event, shortcutRoot)) {
         event.preventDefault();
         useVoiceOverStore.getState().cancel();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [phase]);
+  }, [phase, shortcutRoot]);
 
   const headline =
     phase === "countdown"

@@ -1,0 +1,83 @@
+.omnimux-clip-opening {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 12px;
+  height: 100%;
+  padding: 16px;
+  text-align: center;
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-bg-base);
+}
+
+.omnimux-clip-opening-actions,
+.omnimux-clip-conflict-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.omnimux-clip-sync-notice {
+  position: absolute;
+  z-index: 30;
+  inset-block-start: 48px;
+  inset-inline-end: 12px;
+  display: grid;
+  gap: 8px;
+  max-inline-size: min(420px, calc(100% - 24px));
+  max-block-size: calc(100% - 60px);
+  overflow: auto;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-specific-menu, var(--dsw-alias-bg-layer-1, var(--dsw-alias-bg-base)));
+  color: var(--dsw-alias-label-primary);
+  box-shadow: 0 4px 16px var(--dsw-alias-bg-mask-1);
+  font-size: 13px;
+  -webkit-app-region: no-drag;
+}
+
+.omnimux-clip-conflict-options > * {
+  max-inline-size: 100%;
+  white-space: normal;
+}
+
+.omnimux-clip-studio-entry .openreel-studio-fallback {
+  max-inline-size: 420px;
+  margin: 0 auto;
+  padding: 24px;
+  display: grid;
+  gap: 16px;
+}
+
+.omnimux-clip-create-fields,
+.omnimux-clip-create-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.omnimux-clip-create-fields > div {
+  flex: 1 1 128px;
+}
+
+.omnimux-clip-create-field {
+  display: grid;
+  gap: 6px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.omnimux-clip-create-field input {
+  min-width: 0;
+  width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.omnimux-clip-studio-entry .openreel-studio-body {
+  position: relative;
+}

@@ -5,9 +5,70 @@
 
 import { readdirSync, existsSync, readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { resolve, join } from 'node:path';
+import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createMockToolContext } from './mock-context.mjs';
+
+const CLIP_PLUGIN = 'omnimux-clip';
+const CLIP_TOOL_NAMES = [
+  'clip_list', 'clip_create', 'clip_open', 'clip_get', 'clip_edit',
+  'clip_view', 'clip_snapshot', 'clip_diagnostics', 'clip_export',
+];
+export const CLIP_FIXTURE = Object.freeze({
+  projectId: 'clip_fixture_saved',
+  title: 'Saved Native Smoke Project',
+  trackId: 'fixture-picture',
+  clipId: 'fixture-shot',
+  mediaId: 'fixture-media',
+});
+
+async function mountClipFixture(pluginDir, ctx) {
+  const disposers = [];
+  const cleanup = () => {
+    try {
+      for (const dispose of disposers.reverse()) dispose();
+    } finally {
+      ctx.cleanup();
+    }
+  };
+  try {
+    const { apply, createProjectStore, resolveClipPaths } = await import(pathToFileURL(join(pluginDir, 'src/index.js')).href);
+    ctx.effect = (factory) => {
+      const dispose = factory();
+      if (typeof dispose === 'function') disposers.push(dispose);
+    };
+    // apply resolves its data directory synchronously. Keep the real registration and
+    // broker, with no connected window in this offline context.
+    const savedHome = process.env.DSH_HOME;
+    process.env.DSH_HOME = ctx.workspaceDir;
+    try {
+      apply(ctx);
+    } finally {
+      if (savedHome === undefined) delete process.env.DSH_HOME;
+      else process.env.DSH_HOME = savedHome;
+    }
+    const missing = CLIP_TOOL_NAMES.filter((name) => !ctx.tools.has(name));
+    if (missing.length) throw new Error(`Clip Host tools missing from registration: ${missing.join(', ')}`);
+
+    const store = createProjectStore({ paths: resolveClipPaths({ homeDir: ctx.workspaceDir }) });
+    const { projectId, title, trackId, clipId, mediaId } = CLIP_FIXTURE;
+    store.create(projectId, {
+      id: projectId, name: title, createdAt: 1, modifiedAt: 1,
+      settings: { width: 1280, height: 720, frameRate: 24, sampleRate: 48000, channels: 2 },
+      timeline: {
+        duration: 2.5, subtitles: [], markers: [],
+        tracks: [{ id: trackId, type: 'video', clips: [{ id: clipId, mediaId, startTime: 0.25, duration: 2.25 }] }],
+      },
+      mediaLibrary: { items: [{ id: mediaId, type: 'video', name: 'Unlinked Fixture Media', metadata: { duration: 3 } }] },
+    });
+    ctx.tools.get('clip_create')._clipStore = store;
+    // The returned handlers still use this directory after discovery completes.
+    process.once('exit', cleanup);
+  } catch (error) {
+    cleanup();
+    throw new Error('Could not load the Clip Host with an isolated native project', { cause: error });
+  }
+}
 
 /**
  * 递归扫描并提取静态声明的工具对象（作为动态加载的保底与补充）
@@ -85,28 +146,19 @@ export async function loadAllPluginSurfaces(rootDir = process.cwd()) {
     const pluginDir = join(pluginsDir, pluginName);
     const mockCtx = createMockToolContext();
 
+    const isClip = pluginName === CLIP_PLUGIN;
     let dynamicSuccess = false;
-
-    // 尝试动态 import 插件入口
-    const candidates = ['src/index.js', 'src/tools.js'];
-    for (const rel of candidates) {
-      const entryFile = join(pluginDir, rel);
-      if (existsSync(entryFile)) {
+    if (isClip) {
+      await mountClipFixture(pluginDir, mockCtx);
+      dynamicSuccess = true;
+    } else {
+      for (const rel of ['src/index.js', 'src/tools.js']) {
+        const entryFile = join(pluginDir, rel);
+        if (!existsSync(entryFile)) continue;
         try {
           const mod = await import(pathToFileURL(entryFile).href);
           if (typeof mod.apply === 'function') {
             await mod.apply(mockCtx);
-            dynamicSuccess = true;
-          }
-          if (typeof mod.createClipTools === 'function') {
-            const clipTools = mod.createClipTools({
-              store: {
-                load: () => ({ schema: { canvasConfig: { durationMs: 5000 }, tracks: [] } }),
-                list: () => ({ projects: [], unavailableProjects: [], unavailableCount: 0 }),
-                create: (id, schema) => ({ id, schema, updatedAt: Date.now() }),
-              },
-            });
-            for (const t of clipTools) mockCtx.tools.register(t);
             dynamicSuccess = true;
           }
         } catch (err) {
@@ -122,12 +174,13 @@ export async function loadAllPluginSurfaces(rootDir = process.cwd()) {
       allTools.set(tool.name, tool);
     }
 
-    // 静态补齐
-    const staticTools = extractStaticTools(pluginDir);
-    for (const st of staticTools) {
-      if (!allTools.has(st.name)) {
-        st._plugin = pluginName;
-        allTools.set(st.name, st);
+    // Clip 必须通过真实 Host 入口注册，其他插件沿用既有静态补齐。
+    if (!isClip) {
+      for (const st of extractStaticTools(pluginDir)) {
+        if (!allTools.has(st.name)) {
+          st._plugin = pluginName;
+          allTools.set(st.name, st);
+        }
       }
     }
 
@@ -136,7 +189,7 @@ export async function loadAllPluginSurfaces(rootDir = process.cwd()) {
     }
     plugins.push({ name: pluginName, dynamic: dynamicSuccess });
 
-    mockCtx.cleanup();
+    if (!isClip) mockCtx.cleanup();
   }
 
   return { tools: allTools, prompts, plugins };

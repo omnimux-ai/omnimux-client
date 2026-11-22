@@ -6,6 +6,7 @@ import { existsSync, openSync, readSync, closeSync } from 'node:fs';
 import { basename } from 'node:path';
 import { projectFileMediaUrl, sniffMediaExtension, sniffMimeType } from '../../shared/localMedia.ts';
 import { resolveProjectPaths } from '../../projects/paths.ts';
+import { readMediaContentDigest } from '../../projects/mediaRevision.ts';
 import { moveFileIntoDir } from '../ingest/IngestionPipeline.ts';
 import { WorkflowStoreError } from '../workspace/WorkflowStoreError.ts';
 import type { RegisterGeneratedAssetPayload } from '../workspace/ProjectAssetsStore.ts';
@@ -97,6 +98,7 @@ export async function persistGeneratedArtifact(
     originalName: artifactFileName(opts.nodeId, opts.tmpAbs, sniffedExt),
     checkMedia: false,
   });
+  const digest = await readMediaContentDigest(copied.destAbs);
   const lineage = {
     generatorNodeId: opts.nodeId,
     generatorNodeType: opts.nodeType,
@@ -127,7 +129,7 @@ export async function persistGeneratedArtifact(
   return {
     relativePath: copied.relativePath,
     assetId,
-    url: projectFileMediaUrl(opts.workspaceId, copied.relativePath),
+    url: projectFileMediaUrl(opts.workspaceId, copied.relativePath, digest),
     destAbs: copied.destAbs,
     name: copied.name,
     mimeType: meta.mimeType,

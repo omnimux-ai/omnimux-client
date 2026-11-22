@@ -14,6 +14,8 @@ const pillSrc = readFileSync(join(here, 'FloatingTopPill.tsx'), 'utf8');
 const headerSrc = readFileSync(join(here, 'MaterialNode/NodeHeader.tsx'), 'utf8');
 const launcherStateSrc = readFileSync(join(here, 'NodeEmptyState/NodeLauncherState.tsx'), 'utf8');
 const videoNodeSrc = readFileSync(join(here, '../../nodes/definitions/videoComposition.tsx'), 'utf8');
+const clipActionsSrc = readFileSync(join(here, '../../bridge/canvasClipActions.ts'), 'utf8');
+const clipPlannerSrc = readFileSync(join(here, '../../nodes/definitions/videoCompositionDownstream.ts'), 'utf8');
 const resultSrc = readFileSync(join(here, '../../nodes/definitions/videoCompositionResult.tsx'), 'utf8');
 const statusModuleSrc = readFileSync(join(here, '../../nodes/definitions/videoCompositionStatus.ts'), 'utf8');
 const cssSrc = readFileSync(join(here, '../../theme/components.css'), 'utf8');
@@ -90,14 +92,15 @@ test('VideoCompositionNode 契约：接入 Shell/Header/Pill/Launcher/GSC 与状
   // 旧私有产物态 DOM / 内联裸色彻底移除
   assert.doesNotMatch(videoNodeSrc, /wf-clip-launcher/);
   assert.doesNotMatch(videoNodeSrc, /rgba\(|#[0-9a-fA-F]{3,8}/);
-  // 功能契约 100% 保留：事件桥、上游收集、executorKey、尺寸
-  assert.match(videoNodeSrc, /OMNIMUX_CLIP_OPEN/);
-  assert.match(videoNodeSrc, /OMNIMUX_CLIP_SAVE/);
-  assert.match(videoNodeSrc, /OMNIMUX_CLIP_PROGRESS/);
-  assert.match(videoNodeSrc, /OMNIMUX_CLIP_CLOSE/);
-  assert.match(videoNodeSrc, /collectUpstreamInputs/);
+  // 节点通过画布 Launcher 打开编辑器，具体事件由画布桥处理。
+  assert.match(videoNodeSrc, /useContext\(CanvasClipLauncher\)/);
+  assert.match(clipActionsSrc, /OMNIMUX_CLIP_OPEN/);
+  assert.match(clipActionsSrc, /OMNIMUX_CLIP_SAVE/);
+  assert.match(clipActionsSrc, /OMNIMUX_CLIP_PROGRESS/);
+  assert.match(clipActionsSrc, /OMNIMUX_CLIP_CLOSE/);
+  assert.match(clipActionsSrc, /collectUpstreamInputs/);
   assert.match(videoNodeSrc, /executorKey: 'video_composition'/);
-  assert.match(videoNodeSrc, /VIDEO_COMPOSITION_NODE_WIDTH = 350/);
+  assert.match(clipPlannerSrc, /VIDEO_COMPOSITION_NODE_WIDTH = 350/);
   assert.match(videoNodeSrc, /VIDEO_COMPOSITION_NODE_HEIGHT = 440/);
 });
 

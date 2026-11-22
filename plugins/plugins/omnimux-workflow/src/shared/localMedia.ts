@@ -260,8 +260,26 @@ export function localFileMediaUrl(realPath: string): string {
   return `${WORKFLOW_ROUTE_PREFIX}/api/local-file?path=${encodeURIComponent(realPath)}`;
 }
 
-export function projectFileMediaUrl(workspaceId: string, relativePath: string): string {
-  return `${WORKFLOW_ROUTE_PREFIX}/api/workspaces/${encodeURIComponent(workspaceId)}/file?rel=${encodeURIComponent(relativePath)}`;
+const SHA256_REVISION_PREFIX = 'sha256:';
+const isSha256 = (value: string) => /^[a-f0-9]{64}$/u.test(value);
+
+export function projectFileRevisionDigest(revision: string | null): string | undefined {
+  if (!revision?.startsWith(SHA256_REVISION_PREFIX)) return undefined;
+  const digest = revision.slice(SHA256_REVISION_PREFIX.length);
+  return isSha256(digest) ? digest : undefined;
+}
+
+export function projectFileMediaUrl(workspaceId: string, relativePath: string, digest?: string): string {
+  const url = `${WORKFLOW_ROUTE_PREFIX}/api/workspaces/${encodeURIComponent(workspaceId)}/file?rel=${encodeURIComponent(relativePath)}`;
+  return digest && isSha256(digest) ? `${url}&rev=${encodeURIComponent(SHA256_REVISION_PREFIX + digest)}` : url;
+}
+
+export function preserveProjectFileMediaRevision(workspaceId: string, relativePath: string, previous: unknown): string {
+  const url = projectFileMediaUrl(workspaceId, relativePath);
+  if (typeof previous !== 'string' || !previous.startsWith(`${url.split('?')[0]}?`)) return url;
+  const { hash, searchParams } = new URL(previous, 'https://workflow.invalid');
+  if (hash || searchParams.size !== 2 || searchParams.get('rel') !== relativePath) return url;
+  return projectFileMediaUrl(workspaceId, relativePath, projectFileRevisionDigest(searchParams.get('rev')));
 }
 
 export function localFilePathFromUrl(url: unknown): string | null {

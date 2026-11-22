@@ -6,6 +6,7 @@
 
 import { requestRejection } from '../host/request-authorization.js'
 import { readJsonBody, sendJson } from '../auth/http-routes.js'
+import { WINDOW_PROOF_HEADER } from '../events/windows.js'
 
 export function isLocalRequest(req) {
   const origin = req.headers?.origin || ''
@@ -55,7 +56,15 @@ export function registerWorkbenchHttpRoutes(webServer, deps) {
         return
       }
 
-      const result = mailbox.updateViewport(body)
+      if (req.headers?.[WINDOW_PROOF_HEADER] !== undefined) {
+        const accepted = await deps.hubEvents?.updateWindowViewport(req, body, deps.verifySession)
+        if (!accepted) return sendJson(res, 403, { ok: false, error: 'window-not-authorized' })
+      }
+      // Routing hints belong to the authenticated window registry. The shared
+      // workbench mailbox also backs a model tool and receives only its envelope.
+      const envelope = { ...body }
+      delete envelope.viewportDetails
+      const result = mailbox.updateViewport(envelope)
       sendJson(res, result.ok ? 200 : 400, result)
     },
   }))

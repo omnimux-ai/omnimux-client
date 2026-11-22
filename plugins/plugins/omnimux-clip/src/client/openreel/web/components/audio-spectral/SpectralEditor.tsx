@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { newSpectralRegionId, DEFAULT_SPECTRAL_ATTENUATION_DB, type SpectralRegion, type SpectralView } from "@openreel/core";
 import { Button, Switch, cn } from "@openreel/ui";
 import { X } from "@/icons/lucide-compat";
+import { useEditorPortalRoot } from "@openreel/ui/lib/portal-root";
+import { isEditorShortcutEvent } from "../../services/keyboard-shortcuts";
 import { useProjectStore } from "../../stores/project-store";
 import {
   commitSpectralRegions,
@@ -127,6 +129,7 @@ const describeRegion = (region: SpectralRegion): string =>
  */
 export const SpectralEditor: React.FC<SpectralEditorProps> = ({ clipId }) => {
   const clipT = useClipT();
+  const shortcutRoot = useEditorPortalRoot();
   const clip = useProjectStore((state) => state.project.timeline.tracks.flatMap((track) => track.clips).find((candidate) => candidate.id === clipId));
   const regions = useMemo(() => regionsOf(clip), [clip]);
   const regionsRef = useRef(regions);
@@ -237,10 +240,12 @@ export const SpectralEditor: React.FC<SpectralEditorProps> = ({ clipId }) => {
 
   useEffect(() => {
     if (!expanded) return;
-    const onKey = (event: KeyboardEvent) => event.key === "Escape" && setExpanded(false);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && isEditorShortcutEvent(event, shortcutRoot)) setExpanded(false);
+    };
     globalThis.addEventListener("keydown", onKey);
     return () => globalThis.removeEventListener("keydown", onKey);
-  }, [expanded]);
+  }, [expanded, shortcutRoot]);
 
   const local = (event: React.PointerEvent): { x: number; y: number } => {
     const box = stageRef.current!.getBoundingClientRect();

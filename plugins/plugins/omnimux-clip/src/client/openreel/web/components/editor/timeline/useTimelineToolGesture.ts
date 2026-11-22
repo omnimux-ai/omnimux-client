@@ -17,6 +17,8 @@ import {
   type TimelineToolMode,
 } from "@openreel/core";
 import { v4 as uuidv4 } from "uuid";
+import { useEditorPortalRoot } from "@openreel/ui/lib/portal-root";
+import { isEditorShortcutEvent } from "../../../services/keyboard-shortcuts";
 import { useProjectStore } from "../../../stores/project-store";
 import { useTimelineStore } from "../../../stores/timeline-store";
 import { useUIStore } from "../../../stores/ui-store";
@@ -40,6 +42,7 @@ export function useTimelineToolGesture(
   pixelsPerSecond: number,
   onSelect: (id: string, additive: boolean) => void,
 ) {
+  const shortcutRoot = useEditorPortalRoot();
   const mode = useEditorWorkspaceStore((state) => state.timelineTool);
   const active = useRef<{ cancel: () => void } | null>(null);
   const suppressClick = useRef(false),
@@ -294,6 +297,7 @@ export function useTimelineToolGesture(
       cleanup();
     };
     const key = (input: globalThis.KeyboardEvent) => {
+      if (!isEditorShortcutEvent(input, shortcutRoot)) return;
       if (
         input.key === "Escape" ||
         ((input.metaKey || input.ctrlKey) && input.key.toLowerCase() === "z")

@@ -1,4 +1,6 @@
 import { useState, useCallback, useEffect, useSyncExternalStore } from "react";
+import { useEditorPortalRoot } from "@openreel/ui/lib/portal-root";
+import { isEditorShortcutEvent } from "../../../services/keyboard-shortcuts";
 import { TOUR_STEPS, ONBOARDING_KEY } from "./tour-steps";
 
 interface TourState {
@@ -63,6 +65,7 @@ export function startTour() {
 }
 
 export function useTour() {
+  const shortcutRoot = useEditorPortalRoot();
   const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
 
@@ -143,6 +146,7 @@ export function useTour() {
     if (!state.isActive) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isEditorShortcutEvent(e, shortcutRoot)) return;
       if (e.key === "Escape") {
         skip();
       } else if (e.key === "ArrowRight" || e.key === "Enter") {
@@ -154,7 +158,7 @@ export function useTour() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [state.isActive, next, prev, skip]);
+  }, [state.isActive, next, prev, skip, shortcutRoot]);
 
   return {
     isActive: state.isActive,

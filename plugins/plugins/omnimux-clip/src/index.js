@@ -1,4 +1,6 @@
+import { createExportJobs } from './export-jobs.js'
 import { createClipDispatcher, registerClipRoutes } from './http/routes.js'
+import { createClipCommandBroker } from './live/command-broker.js'
 import { ensureClipDirs, resolveClipPaths } from './paths.js'
 import { createProjectStore } from './store/projectStore.js'
 import { createClipEditorSeam } from './seam/clipEditor.js'
@@ -30,8 +32,13 @@ export { createProjectStore } from './store/projectStore.js'
 export function apply(ctx) {
   const paths = ensureClipDirs(resolveClipPaths())
   const store = createProjectStore({ paths })
-  const dispatcher = createClipDispatcher({ paths, store })
-  const tools = createClipTools({ store })
+  const getHubEvents = () => ctx.get?.('hubEvents')
+  const getWorkflowClip = () => ctx.get?.('workflowClip')
+  const broker = createClipCommandBroker({ getHubEvents, getWorkflowClip })
+  const exportJobs = createExportJobs({ paths, getWorkflowClip })
+  const dispatcher = createClipDispatcher({ paths, store, broker, exportJobs, getWorkflowClip })
+  const tools = createClipTools({ store, broker, exportJobs, getWorkflowClip, getAttachments: () => ctx.get?.('attachments') })
+  ctx.effect?.(() => broker.dispose, 'omnimux-clip: live commands')
 
   if (typeof ctx.provide === 'function') {
     ctx.provide('clipEditor', createClipEditorSeam({ store }))
@@ -67,6 +74,7 @@ export function apply(ctx) {
     const mount = () => registerClipRoutes(webServer, dispatcher, {
       paths,
       getConnection: () => httpCtx.get?.('connection') ?? httpCtx.connection,
+      getHubEvents,
     })
     if (typeof httpCtx.effect === 'function') httpCtx.effect(mount, 'omnimux-clip: http routes')
     else mount()

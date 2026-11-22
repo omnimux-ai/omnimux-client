@@ -10,20 +10,13 @@
  */
 
 import { createRoot, type Root } from 'react-dom/client';
-import App from './App';
+import App, { type CanvasAppProps } from './App';
 import { injectCanvasStyles } from './injectStyles';
 import { transitionDirectorCanvas } from './bridge/directorLifecycle';
 export { registerDirectorCloseGuard, prepareDirectorClose } from './bridge/directorLifecycle';
 
-export interface CanvasIslandProps {
-  onClose?: () => void;
+export interface CanvasIslandProps extends CanvasAppProps {
   onError?: (error: Error) => void;
-  /** 宿主语言通道（W1 i18n 骨架）：'zh' | 'en'，未知值回退 zh。 */
-  locale?: 'zh' | 'en';
-  /** 专属工作区/画布 ID */
-  workspaceId?: string;
-  /** 「项目」页「AI应用」卡片「编辑」的目标工作流组 id（纯数据 prop）。 */
-  focusGroupId?: string;
 }
 
 interface RootEntry {

@@ -76,28 +76,26 @@ function planAndSave(
   return { ok: true, snapshot: saved.snapshot, nodes: saved.snapshot.nodes, edges: saved.snapshot.edges };
 }
 
+/** Retry one complete read/plan/save when another writer wins the CAS. */
+export function retryWorkspaceVersionConflict<T>(readPlanAndSave: () => T): T {
+  try {
+    return readPlanAndSave();
+  } catch (error) {
+    if (!(error instanceof WorkflowStoreError) || error.code !== 'version_conflict') throw error;
+    return readPlanAndSave();
+  }
+}
+
 export function mutateWorkspaceGraph(
   store: WorkspaceStore,
   workspaceId: string,
   mutation: CanvasInputMutation,
   context?: CanvasMutationRuntimeContext,
 ): GraphMutationResult {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      return planAndSave(store, workspaceId, mutation, context);
-    } catch (error) {
-      if (error instanceof WorkflowStoreError) {
-        // version_conflict: the canvas (or another tool call) moved the doc
-        // — re-read and re-plan the mutation against the fresh snapshot once.
-        if (error.code === 'version_conflict' && attempt === 0) continue;
-        return envelope(error.code, error.message);
-      }
-      return envelope(
-        'mutation-failed',
-        error instanceof Error ? error.message : String(error),
-      );
-    }
+  try {
+    return retryWorkspaceVersionConflict(() => planAndSave(store, workspaceId, mutation, context));
+  } catch (error) {
+    if (error instanceof WorkflowStoreError) return envelope(error.code, error.message);
+    return envelope('mutation-failed', error instanceof Error ? error.message : String(error));
   }
-  // Unreachable (loop returns), but keeps TS happy.
-  return envelope('mutation-failed', 'mutation retry loop exhausted');
 }

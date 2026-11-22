@@ -41,6 +41,12 @@ dsh 会话里的 Agent 可通过宿主侧工具指挥画布（注册在 cordis `
 - 系统提示词：`ctx.systemPrompt.section` 注册 `workflow:ops`（order 60，与 omnimux-assets 的 assets:ops=50 不冲突），说明工具用法和 Agent 与画布的协作方式
 - 生成结果如实上报（含 `[omnimux:<code>]` 节点错误），Agent 不编造产物
 
+## 画布剪辑
+
+打开 `video_composition` 节点时，Workflow 保存工作区、节点和工程的绑定，再打开当前画布内的剪辑 Portal。首次打开由 Clip Host 物化 OpenReel 草稿。复制节点会分配新工程 ID，清除副本的草稿和成片引用。剪辑查询、写入及导出使用 `clip_*` 工具。[剪辑工具参数](../../docs/contracts/clip-live-control.md#工具入参与编辑行为)
+
+Workflow 的 `workflowClip` 服务保存草稿版本。手工与 Agent 导出按导出世代、工程版本和 `exportJobId` 比较，按任务号去重。一次工作区提交保存成片引用、下游视频节点、`out -> in` 连线与回执。普通撤销及冲突后的保留本地操作都保留已提交的新版成片。保存冲突重试以当前画布内容为准。Agent 以 `canvasCommitted` 判断回写结果。[画布回写契约](../../docs/contracts/clip-live-control.md#mp4-与画布提交)
+
 ## 安装
 
 ```bash

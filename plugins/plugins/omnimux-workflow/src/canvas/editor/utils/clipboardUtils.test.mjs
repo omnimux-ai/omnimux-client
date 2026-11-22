@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { copyNodesToClipboard, pasteFromClipboard } from './clipboardUtils.ts';
+import { planClipExportDownstream } from '../../nodes/definitions/videoCompositionDownstream.ts';
 import { recomputeCanvasSlots } from '../../../shared/graph/canvasSlotRecompute.ts';
 
 function catalog() {
@@ -45,6 +46,7 @@ test('two pastes give a video composition new projects and preserve the original
   const output = {
     schema: { id: 'native-original', timeline: { tracks: [] }, mediaLibrary: { items: [] } },
     outputVideoUrl: '/exports/original.mp4', outputRevision: '12:42',
+    draftRevision: 9, clipExportReceipts: [{ exportJobId: 4, workspaceVersion: 12, fingerprint: 'original' }],
     thumbnailUrl: '/exports/thumb.png', outputThumbnailUrl: '/exports/thumb.png',
     outputDurationMs: 1000, outputWidth: 1280, outputHeight: 720, durationText: '0:01',
     renderProgress: 100, errorMessage: 'old error',
@@ -72,6 +74,30 @@ test('two pastes give a video composition new projects and preserve the original
   }
   assert.equal(ids.size, 2);
   assert.deepEqual(composition, original);
+});
+
+test('re-export updates the owned material or adds its replacement while a pasted output retains its original revision', () => {
+  const videoPath = '/exports/original.mp4';
+  const mediaUrl = '/omnimux-workflow/api/local-file?path=%2Fexports%2Foriginal.mp4&rev=old';
+  const original = {
+    id: 'original-output', type: 'material', selected: true, position: { x: 430, y: 0 },
+    data: { materialType: 'video', origin: 'clip_export', sourceCompositionNodeId: 'clip-source', mediaUrl, outputRevision: 'old' },
+  };
+  const [copy] = pasteFromClipboard(copyNodesToClipboard([original], [])).nodes;
+  const originalLink = { id: 'clip-link', source: 'clip-source', target: original.id, sourceHandle: 'out', targetHandle: 'in' };
+  const nextExport = {
+    sourceNodeId: 'clip-source', sourcePosition: { x: 0, y: 0 }, sourceLabel: 'Clip', nodeWidth: 350,
+    output: { videoPath, revision: 'new' }, createNodeId: () => 'new-output',
+  };
+  const withOriginal = planClipExportDownstream({ ...nextExport, currentNodes: [copy, original], currentEdges: [originalLink] });
+  assert.deepEqual(withOriginal.nodePatches.map(patch => patch.nodeId), [original.id]);
+  assert.equal(withOriginal.nodePatches[0].data.outputRevision, 'new');
+  const withoutOriginal = planClipExportDownstream({ ...nextExport, currentNodes: [copy], currentEdges: [] });
+  assert.equal(withoutOriginal.addNodes[0].id, 'new-output');
+  assert.equal(withoutOriginal.addEdges[0].target, 'new-output');
+  assert.equal(copy.data.mediaUrl, mediaUrl);
+  assert.equal(copy.data.outputRevision, 'old');
+  assert.equal(copy.data.sourceCompositionNodeId, undefined);
 });
 
 test('粘贴把 slotBindings 的 source/edge id 重映射到克隆出的新节点/新边（Issue #4039）', () => {

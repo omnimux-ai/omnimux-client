@@ -26,6 +26,9 @@ import { useTablePersistence } from './bridge/useTablePersistence';
 import { prepareDirectorClose } from './bridge/directorLifecycle';
 import { DirectorPanel } from './components/director-panel/DirectorPanel.tsx';
 import type { CanvasWorkspaceSnapshot } from '../shared/canvasTypes';
+import type { CanvasClipBinding } from './bridge/clipEvents';
+import { installCanvasClipEvents, openCanvasClipNode } from './bridge/canvasClipActions';
+import { CanvasClipLauncher, updateClipNodeData } from './bridge/clipLauncher';
 
 export interface CanvasAppProps {
   /** 宿主可传；岛内顶栏已撤，关闭走宿主 tab / overlay。 */
@@ -38,9 +41,13 @@ export interface CanvasAppProps {
   focusGroupId?: string;
   /** 画布内切页/新建页后的通知，由宿主刷新工作区上下文。 */
   onActivePageChange?: (workspaceId: string) => void;
+  clipNavigation?: CanvasClipBinding;
+  onClipNavigationHandled?: (request: CanvasClipBinding) => void;
 }
 
-const App: React.FC<CanvasAppProps> = ({ locale, workspaceId: propWorkspaceId, focusGroupId, onActivePageChange }) => {
+const App: React.FC<CanvasAppProps> = ({
+  locale, workspaceId: propWorkspaceId, focusGroupId, onActivePageChange, clipNavigation, onClipNavigationHandled,
+}) => {
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState(propWorkspaceId);
 
   useEffect(() => {
@@ -84,6 +91,67 @@ const App: React.FC<CanvasAppProps> = ({ locale, workspaceId: propWorkspaceId, f
     onSaved: handleSaved,
     enabled: boot.phase === 'ready',
   });
+
+  const clipOpenSequence = useRef(0);
+  const clipScope = useRef({ workspace, currentWorkspaceId, clipNavigation });
+  clipScope.current = { workspace, currentWorkspaceId, clipNavigation };
+  const handledClipNavigation = useRef<CanvasClipBinding | undefined>(undefined);
+  const readyWorkspaceId = workspace?.id;
+
+  useEffect(() => {
+    if (!readyWorkspaceId) return;
+    const remove = installCanvasClipEvents({
+      workspaceId: readyWorkspaceId,
+      target: window,
+      readGraph: useCanvasStore.getState,
+      applyMutation: (mutation) => useCanvasStore.getState().applyCanvasInputMutation(mutation),
+      updateNode: updateClipNodeData,
+      defaultTitle: t('node.type.video_composition'),
+      onManualExport: () => toast.success(t('clip.exportedToNode')),
+    });
+    return () => { clipOpenSequence.current += 1; remove(); };
+  }, [readyWorkspaceId, t]);
+
+  const openClip = useCallback(async (nodeId: string, navigation?: CanvasClipBinding) => {
+    const workspaceId = clipScope.current.workspace?.id;
+    if (!workspaceId) return;
+    const attempt = ++clipOpenSequence.current;
+    const stillCurrent = () => {
+      const scope = clipScope.current;
+      return clipOpenSequence.current === attempt && scope.workspace?.id === workspaceId
+        && scope.currentWorkspaceId === workspaceId && (!navigation || scope.clipNavigation === navigation);
+    };
+    try {
+      const binding = await openCanvasClipNode({
+        workspaceId,
+        nodeId,
+        expectedProjectId: navigation?.projectId,
+        readGraph: useCanvasStore.getState,
+        updateNode: updateClipNodeData,
+        ensurePersisted: async (target) => {
+          const saved = clipScope.current.workspace?.nodes.find((node) => node.id === nodeId);
+          if (saved?.data.projectId !== target.projectId) await persistence.saveNow();
+        },
+        stillCurrent,
+        target: window,
+        defaultTitle: t('node.type.video_composition'),
+      });
+      if (binding && !navigation) window.setTimeout(() => {
+        if (stillCurrent() && !(window as Window & { __omnimuxClipReady?: boolean }).__omnimuxClipReady) {
+          toast.warning(t('clip.needPlugin'));
+        }
+      }, 400);
+    } catch (error) {
+      if (!navigation && stillCurrent()) toast.error(error instanceof Error ? error.message : t('audio.saveFailed'));
+    }
+  }, [persistence.saveNow, t]);
+
+  useEffect(() => {
+    if (!clipNavigation || handledClipNavigation.current === clipNavigation
+      || readyWorkspaceId !== clipNavigation.workspaceId || readyWorkspaceId !== currentWorkspaceId) return;
+    handledClipNavigation.current = clipNavigation;
+    void openClip(clipNavigation.nodeId, clipNavigation).finally(() => onClipNavigationHandled?.(clipNavigation));
+  }, [clipNavigation, readyWorkspaceId, currentWorkspaceId, openClip, onClipNavigationHandled]);
 
   const tablePersistence = useTablePersistence({
     workspaceId: workspace ? workspace.id : null,
@@ -227,26 +295,28 @@ const App: React.FC<CanvasAppProps> = ({ locale, workspaceId: propWorkspaceId, f
       ) : null}
       <main className="wf-canvas-main">
         <CanvasErrorBoundary>
-          <CanvasEditor
-            catalog={catalog}
-            workspaceId={workspace?.id ?? null}
-            focusGroupId={focusGroupId}
-            onExecuteNodeIds={(nodeIds, meta) => {
-              // M4 组/子集执行入口（右键菜单）：subset 模式自动补传递上游闭包。
-              void execution.startExecution({
-                mode: 'subset',
-                nodeIds,
-                ...(meta?.groupId ? { groupId: meta.groupId } : {}),
-                ...(meta?.graphHash ? { graphHash: meta.graphHash } : {}),
-              });
-            }}
-            onPauseExecution={() => void execution.pause()}
-            onResumeExecution={() => void execution.resume()}
-            onCancelExecution={() => void execution.cancel()}
-            onResetExecution={execution.reset}
-            onSwitchWorkspaceId={handleSwitchWorkspace}
-          />
-          <DirectorPanel workspaceId={workspace?.id ?? null} saveGraph={persistence.saveNow} />
+          <CanvasClipLauncher.Provider value={openClip}>
+            <CanvasEditor
+              catalog={catalog}
+              workspaceId={workspace?.id ?? null}
+              focusGroupId={focusGroupId}
+              onExecuteNodeIds={(nodeIds, meta) => {
+                // M4 组/子集执行入口（右键菜单）：subset 模式自动补传递上游闭包。
+                void execution.startExecution({
+                  mode: 'subset',
+                  nodeIds,
+                  ...(meta?.groupId ? { groupId: meta.groupId } : {}),
+                  ...(meta?.graphHash ? { graphHash: meta.graphHash } : {}),
+                });
+              }}
+              onPauseExecution={() => void execution.pause()}
+              onResumeExecution={() => void execution.resume()}
+              onCancelExecution={() => void execution.cancel()}
+              onResetExecution={execution.reset}
+              onSwitchWorkspaceId={handleSwitchWorkspace}
+            />
+            <DirectorPanel workspaceId={workspace?.id ?? null} saveGraph={persistence.saveNow} />
+          </CanvasClipLauncher.Provider>
         </CanvasErrorBoundary>
       </main>
     </div>

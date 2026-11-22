@@ -20,6 +20,8 @@ import { Switch, Label } from "@openreel/ui";
 import { Button } from "@openreel/ui";
 import { cn } from "@openreel/ui";
 
+import { useEditorPortalRoot } from "@openreel/ui/lib/portal-root";
+import { isEditorShortcutEvent } from "../../services/keyboard-shortcuts";
 import { useProjectStore } from "../../stores/project-store";
 import { createEditorProject } from "../../services/project-creation";
 import { useUIStore } from "../../stores/ui-store";
@@ -269,11 +271,13 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ initialTab }) => {
     }
   }, [skipWelcomeScreen, initialTab, navigate, bandOpen]);
 
+  const shortcutRoot = useEditorPortalRoot();
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (
         phone ||
         e.defaultPrevented ||
+        !isEditorShortcutEvent(e, shortcutRoot) ||
         (e.target instanceof Element &&
           e.target.closest(
             "input, textarea, select, [contenteditable], [role=dialog], [role=menu], [role=listbox]",
@@ -290,7 +294,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ initialTab }) => {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [navigate, viewMode, phone]);
+  }, [navigate, viewMode, phone, shortcutRoot]);
 
   if (phone)
     return (

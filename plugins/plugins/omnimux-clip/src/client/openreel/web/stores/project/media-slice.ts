@@ -1,4 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
+import { mediaContentDigest, sha256Digest } from "../../../../../timeline/nativeProjectFields.js";
+import { mediaDigest } from "../../../../live/media-source";
 import { backgroundTasks } from "@openreel/core/tasks/task-registry";
 import type { StoreApi } from "zustand";
 import { claimNativeSource, probeFootageShape, isRawFileName, type Action, type MediaItem, type SourceColorSpace } from "@openreel/core";
@@ -82,10 +84,13 @@ export function createMediaSlice(set: Set, get: Get): MediaSlice {
         try {
           onProgress?.("Reading camera RAW");
           const { item } = await buildRawMediaItem(file, uuidv4());
+          const digest = await mediaDigest(item.blob as Blob);
           if (!ownsRequest()) return unavailableResult();
           const rawPath = nativePathForFile(file);
           const newRawItem: MediaItem = {
             ...item,
+            ...(source?.omnimuxSource ? { omnimuxSource: source.omnimuxSource } : {}),
+            sourceRef: { kind: "indexeddb", key: item.id, digest },
             sourceFile: {
               name: file.name,
               size: file.size,
@@ -211,12 +216,18 @@ export function createMediaSlice(set: Set, get: Get): MediaSlice {
         const nativeSource = await nativeSourceOf(file);
         const claimedNative = await claimNativeSource(file).catch(() => null);
         const nativeSourceColor = claimedNative?.sourceColor;
+        const id = uuidv4();
+        const digest = await mediaDigest(file);
+        if (!ownsRequest()) return unavailableResult();
         const newMediaItem: MediaItem = {
-          id: uuidv4(),
+          id,
           name: file.name,
           type: mediaType,
           fileHandle: null,
           blob: file,
+          missing: false,
+          sourceRef: { kind: "indexeddb", key: id, digest },
+          ...(source?.omnimuxSource ? { omnimuxSource: source.omnimuxSource } : {}),
           metadata: {
             ...(source?.stockSource ? { stockSource: { ...source.stockSource } } : {}),
             ...(mediaType === "audio" && source ? { soundLibraryId: source.soundLibraryId } : {}),
@@ -370,7 +381,7 @@ export function createMediaSlice(set: Set, get: Get): MediaSlice {
       mediaId: string,
       file: File,
       sourceFolder?: string,
-      options?: { restorePlaceholder?: boolean; sourcePath?: string },
+      options?: Parameters<ProjectState['replaceMediaAsset']>[3],
     ) => {
       const { project, actionExecutor } = get();
       const replacementKey = `${project.id}:${mediaId}`;
@@ -383,7 +394,7 @@ export function createMediaSlice(set: Set, get: Get): MediaSlice {
       const createdThumbnails = new Set<string>();
       const ownsReplacement = () => {
         const current = get();
-        return current.project.id === project.id && current.actionExecutor === actionExecutor &&
+        return options?.isCurrent?.() !== false && current.project.id === project.id && current.actionExecutor === actionExecutor &&
           replacementRequests.get(replacementKey) === replacementRequest &&
           current.project.mediaLibrary.items.some(item => item.id === mediaId && item.blob === originalItem.blob &&
             item.sourceFile === originalItem.sourceFile && item.isPlaceholder === originalItem.isPlaceholder && item.type === originalItem.type);
@@ -392,8 +403,17 @@ export function createMediaSlice(set: Set, get: Get): MediaSlice {
         code: "INVALID_PARAMS" as const,
         message: "The media or project changed while replacing the file. Try again in the current project.",
       } });
+      const mismatchResult = () => ({ success: false, error: {
+        code: "DECODE_ERROR" as const, message: "The file does not match the original media source.",
+      } });
 
       try {
+        const expectedDigest = mediaContentDigest(originalItem) ?? sha256Digest(options?.expectedDigest);
+        const digest = await mediaDigest(file);
+        const sameBytes = digest === expectedDigest;
+        if (!ownsReplacement()) return unavailableResult();
+        if (options?.restorePlaceholder && (expectedDigest ? !sameBytes : originalItem.sourceRef)) return mismatchResult();
+
         const mediaBridge = getMediaBridge();
         if (!mediaBridge.isInitialized()) {
           await initializeMediaBridge();
@@ -457,6 +477,13 @@ export function createMediaSlice(set: Set, get: Get): MediaSlice {
           : processedMedia.metadata.hasAudio
             ? "audio"
             : "image";
+        const reconnecting = options?.restorePlaceholder && Boolean(expectedDigest || options.omnimuxSource);
+        const canDecode = mediaType === "image" || (mediaType === "video"
+          ? processedMedia.metadata.canDecodeVideo ?? processedMedia.metadata.canDecode
+          : processedMedia.metadata.canDecode);
+        if (reconnecting && (!canDecode || processedMedia.blob !== file || originalItem.type !== mediaType
+          || (options?.omnimuxSource?.digest !== undefined && options.omnimuxSource.digest !== digest))) return mismatchResult();
+        if (!ownsReplacement()) return unavailableResult();
 
         if (mediaType === "video" && !thumbnailUrl) {
           try {
@@ -479,24 +506,35 @@ export function createMediaSlice(set: Set, get: Get): MediaSlice {
           }
         }
 
-        // Reconnecting offline media keeps everything the user organised around it (bin, label, notes, proxy, copy provenance).
+        // Reconnecting keeps the editor's organisation. Source-bound fields
+        // carry over only when the original bytes have been verified.
         const preserved: Partial<MediaItem> = options?.restorePlaceholder
           ? Object.fromEntries(
-              (["binId", "label", "comment", "description", "scene", "shot", "take", "goodTake", "importedAt", "proxy", "copiedFrom"] as const)
+              (["binId", "label", "comment", "description", "scene", "shot", "take", "goodTake", "importedAt", "copiedFrom"] as const)
                 .filter((key) => originalItem[key] !== undefined)
                 .map((key) => [key, originalItem[key]]),
             )
           : {};
+        const originalRef = options?.restorePlaceholder && sameBytes ? originalItem.sourceRef : undefined;
+        const omnimuxSource = options?.omnimuxSource ?? (options?.restorePlaceholder && sameBytes ? originalItem.omnimuxSource : undefined);
         const nativeSource = await nativeSourceOf(file);
         const claimedNative = await claimNativeSource(file).catch(() => null);
         const nativeSourceColor = claimedNative?.sourceColor;
         const updatedItem: MediaItem = {
           ...preserved,
           id: mediaId,
-          name: file.name,
+          name: reconnecting || originalRef ? originalItem.name : file.name,
           type: mediaType,
           fileHandle: null,
           blob: file,
+          missing: false,
+          sourceRef: {
+            kind: "indexeddb", key: mediaId, digest,
+            ...(originalRef?.fingerprint ? { fingerprint: originalRef.fingerprint } : {}),
+            ...(originalRef?.contentVersion !== undefined ? { contentVersion: originalRef.contentVersion } : {}),
+          },
+          ...(omnimuxSource ? { omnimuxSource } : {}),
+          ...(options?.restorePlaceholder && sameBytes && originalItem.proxy ? { proxy: originalItem.proxy } : {}),
           metadata: {
             duration: processedMedia.metadata.duration || 0,
             width: processedMedia.metadata.width || 0,

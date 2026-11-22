@@ -255,6 +255,42 @@ describe('event connection lifecycle', () => {
     await idle.pushViewport()
   })
 
+  it('announces an authenticated viewport only after successful admission for its socket and session', async t => {
+    const requests = []
+    const ready = []
+    let sessionId = 's1'
+    let status = 403
+    const client = createEventsClient({
+      getWorkbench: () => ({ getUiContext: () => ({ schemaVersion: 1, sessionId, capturedAt: 1000 }) }),
+      fetch: async (_url, { body, headers }) => {
+        requests.push({ body: JSON.parse(body), authenticated: Object.hasOwn(headers, 'x-omnimux-window-proof') })
+        return { ok: status === 200, status }
+      },
+    })
+    const remove = client.registerViewportContributor('clip', ({ sessionId }) => ({ retainedCanvas: { projectId: `clip_${sessionId}` } }))
+    client.subscribe('omnimux:viewport-registered', event => ready.push(event.payload))
+    t.mock.method(console, 'warn', () => {})
+    t.after(() => client.disconnect())
+    await client.pushViewport()
+    assert.equal(requests[0].authenticated, false)
+    assert.equal(requests[0].body.viewportDetails, undefined)
+
+    await client.notifyMessageForTests({ type: 'omnimux:window-ready', payload: { windowInstanceId: 'one', proof: '1'.repeat(64) } })
+    assert.deepEqual(ready, [])
+    assert.equal(requests[1].authenticated, true)
+    assert.deepEqual(requests[1].body.viewportDetails, { clip: { retainedCanvas: { projectId: 'clip_s1' } } })
+
+    status = 200
+    assert.equal(await client.pushViewport(), true)
+    assert.equal(await client.pushViewport(), true)
+    assert.deepEqual(ready, [{ windowInstanceId: 'one', sessionId: 's1' }])
+    sessionId = 's2'
+    remove()
+    assert.equal(await client.pushViewport(), true)
+    assert.equal(requests.at(-1).body.viewportDetails, undefined)
+    assert.deepEqual(ready, [{ windowInstanceId: 'one', sessionId: 's1' }, { windowInstanceId: 'one', sessionId: 's2' }])
+  })
+
   it('does not acknowledge an old RPC after the owning client disconnects', async () => {
     let resolveOpen
     let posts = 0

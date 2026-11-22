@@ -151,10 +151,48 @@ export function isCanvasClipActive(envelope) {
     && typeof clip.projectId === 'string' && clip.projectId.length > 0
 }
 
+const clipId = value => typeof value === 'string' && /^[\p{L}\p{N}_.:-]{1,256}$/u.test(value)
+  && !/^(?:blob|data|file|javascript|https?):/i.test(value) ? value : null
+const clipTime = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null
+
+function clipLabel(value) {
+  if (typeof value !== 'string' || /[\\/]|(?:^|\s)[a-z]:/i.test(value)) return ''
+  return Array.from(value).filter(char => char.codePointAt(0) >= 32 && !/[\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]/.test(char))
+    .join('').replace(/[|<>]/g, ' ').trim().slice(0, 96)
+}
+
+/** Only the active seat can contribute the compact, path-free Clip projection. */
+export function clipContextFromEnvelope(envelope) {
+  if (envelope?.surface?.panelOpen !== true) return null
+  const clip = envelope.view?.extra?.clip
+  const canvas = isCanvasClipActive(envelope)
+  if (!clip || (!canvas && !(envelope.surface.tabId === 'omnimux-clip:studio' && clip.mode === 'standalone'))) return null
+  const projectId = clipId(clip.projectId)
+  const durationSec = clipTime(clip.durationSec)
+  const playheadSec = clipTime(clip.playheadSec)
+  if (!projectId || !Number.isSafeInteger(clip.revision) || clip.revision < 0 || durationSec === null || playheadSec === null) return null
+  if (canvas && (!isSafeWorkspaceId(clip.workspaceId) || !clipId(clip.nodeId))) return null
+  const selectedClips = []
+  for (const clipRow of Array.isArray(clip.selectedClips) ? clip.selectedClips.slice(0, 3) : []) {
+    const id = clipId(clipRow?.id)
+    const trackId = clipId(clipRow?.trackId)
+    const startSec = clipTime(clipRow?.startSec)
+    const endSec = clipTime(clipRow?.endSec)
+    if (id && trackId && startSec !== null && endSec !== null && endSec >= startSec) {
+      selectedClips.push({ id, trackId, name: clipLabel(clipRow.name), startSec, endSec })
+    }
+  }
+  return {
+    mode: clip.mode, projectId, title: clipLabel(clip.title), revision: clip.revision, playheadSec, durationSec, selectedClips,
+    ...(canvas ? { workspaceId: clip.workspaceId, nodeId: clip.nodeId } : {}),
+  }
+}
+
 /**
  * @param {WorkbenchEnvelope} envelope
+ * @param {{ includeClip?: boolean }} options
  */
-export function formatCompactContextBlock(envelope) {
+export function formatCompactContextBlock(envelope, { includeClip = true } = {}) {
   if (!envelope || !envelope.surface) return ''
   const s = envelope.surface
   const view = envelope.view && typeof envelope.view === 'object' ? envelope.view : null
@@ -202,6 +240,16 @@ export function formatCompactContextBlock(envelope) {
 
   const secondLine = `panel: ${s.panelOpen ? 'open' : 'closed'} | focus: ${s.focus || 'split'}`
   lines.push(secondLine)
+  const clip = includeClip ? clipContextFromEnvelope(envelope) : null
+  if (clip) {
+    const fields = [
+      `mode: ${clip.mode}`, `projectId: ${clip.projectId}`, `title: ${clip.title}`,
+      `revision: ${clip.revision}`, `playheadSec: ${clip.playheadSec}`, `durationSec: ${clip.durationSec}`,
+    ]
+    if (clip.mode === 'canvas') fields.push(`workspaceId: ${clip.workspaceId}`, `nodeId: ${clip.nodeId}`)
+    lines.push(`clip | ${fields.join(' | ')}`)
+    if (clip.selectedClips.length) lines.push(`selectedClips: ${JSON.stringify(clip.selectedClips)}`)
+  }
   if (s.panelOpen && s.tabId === 'omnimux:media-viewer' && view?.kind === 'canvas') {
     lines.push('图像生成页已打开：仅当本轮用户明确要求生成或编辑图片、视频时才调用生图/生视频工具（编辑须用用户指定的原图），普通提问与分析不启动生成；等待调度不等于工具已启动。')
   }

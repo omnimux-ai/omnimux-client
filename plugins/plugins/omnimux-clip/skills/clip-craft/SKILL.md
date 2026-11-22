@@ -7,15 +7,16 @@ description: "OmniMux Clip 专业剪辑判断层。用于剪视频、修时间�
 
 本 Skill 只写**剪辑判断**。工具目录以 `clip_*` 为准，不要在回复里复述参数表。
 
-工具时间用秒，当前 Host 旧格式 `TimelineSchema` 内部用毫秒。先用 `clip_get` 核对已保存的时间轴，再按实际时长规划。
+工具时间用秒。先用 `clip_get` 核对原生工程、轨道和最新版本，再按实际时长剪辑。
 
 ## 工作循环
 
-1. 从 `clip_list` 或工作流快照取实际 `projectId`。`clip_list` 的 `unavailableProjects` 会标记待迁移或读失败的文件。
-2. `clip_get` 查看已保存的旧档，按需要使用 `summary`、`tracks`、`clips` 或 `full`。仅在用户要求处理旧档时用 `clip_create` 或 `clip_edit`。
-3. 每次 `clip_edit` 对应旧档的一步保存历史。复杂变更先 `validateOnly: true`；成功落盘后用 `clip_diagnostics` 查空洞、重叠或素材缺失。
-4. 用户正在画布 Portal 或独立 Tab 剪辑时，`clip_get` 只能读到已支持的落盘工程。`project-not-materialized` 表示画布工程未保存到 Host，`openreel-migration-required` 表示原生文件待迁移。根据实际错误说明哪一份工程可查。
-5. `clip_open`、`clip_view`、`clip_snapshot`、`clip_export` 目前没有右侧实时通道，读到旧档后返回 `ui-unavailable`。播放、视觉自检和用户明确要求的导出走右侧界面，切 Tab 后重复调用不会建立通道。
+1. 用 `<ui_context>` 确认当前是画布 Portal 还是独立剪辑 Tab。用户指向当前唯一可见工程时，可直接调用 `clip_get`。查某个已保存版本时传实际 `projectId`，需要找工程先用 `clip_list`。用户要求新建时用 `clip_create` 创建独立空工程。
+2. `clip_get` 默认给 `summary`，需要精确位置、选段或素材时用 `tracks`、`clips`、`full`。出现 `AMBIGUOUS_TARGET` 时按候选核对用户指向，需要时请用户选工程和窗口。`project-not-materialized` 表示画布节点尚未初始化工程。需要用户打开目标时说明原因，只有用户要求打开才调用 `clip_open`。
+3. 把一次剪辑意图收成一批 `clip_edit`，写清 `description`，将实时 `clip_get` 的 `revision` 和 `revisionEpoch` 分别传给同一目标的 `baseRevision` 和 `baseRevisionEpoch`。复杂变更先用 `validateOnly: true` 预演。真实写入使用稳定的 `requestId`。删除非空整轨或清空时间轴前确认用户明确要求，再传 `confirmDestructive: true`。一批成功的剪辑在编辑器里可一步撤销。
+4. `REVISION_CONFLICT` 时重读原生快照，按新时间轴重算。`outcome-unknown` 时用原 `requestId` 和相同参数复查。在 `EDITOR_OFFLINE`、`EDITOR_NOT_VISIBLE` 或 `PREVIEW_NOT_READY` 时说明当前阻断。界面恢复后先核对目标和版本。
+5. 编辑后用 `clip_get` 检查最新时间轴。已同步到 Host 后用 `clip_diagnostics` 查黑场、重叠、越界和缺失素材。可见编辑器用 `clip_view` 定位播放头，用 `clip_snapshot` 抽取几个关键点的合成帧检查字幕遮挡和切点。
+6. 用户明确要求成片才调用 `clip_export`，传 `confirm: true`。只有 `fileSaved` 为真才能交付 MP4，画布是否已回写读 `canvasCommitted`。`superseded` 表示该任务已有更新版本，按已确认的最新结果汇报。
 
 ## 时间轴感知
 
@@ -35,14 +36,14 @@ description: "OmniMux Clip 专业剪辑判断层。用于剪视频、修时间�
 - 花字预设走 caption：描边要够，浅底深描边 / 深底浅描边。不要纯白无描边扣在天空上。
 - 竖屏 9:16 字幕放中下，避开平台原生胶囊与进度条（大约底边 12–18%）。
 - 一句一条；单条时长跟口播，不要把整段旁白糊在一条 10s 字幕上。
-- `set_text` / `add_text` / `set_subtitle_style` 调整旧档的 text 轨。视觉检查使用右侧预览，核对遮挡与边距。
+- 用 `add_text` 的 `kind` 选择 `subtitle` 或 `title`。用 `set_text` 和 `set_subtitle_style` 调整已有文字。用关键帧截图核对遮挡与边距。
 
 ## 自动切片策略
 
-- 用户说「太拖 / 去停顿 / 剪掉废话」：`cut_silences`。有明确静音区间就传 `silences: [{ fromSec, toSec }]`；否则用 `minSilenceSec`（默认 0.3）收视频/音频轨缝。
-- 用户给时间点：「从 3.2 秒切开」→ `split_clip` + `atSec`。切点离片段两端至少 80ms。
-- 「只要 12–18 秒那句」→ `trim_clip` 或 `remove_range`，不要先整段删再加回来。
-- 导入素材：`import_media`（默认可上轨）。空工程先铺 video / audio，再挂 text。
+- 去停顿用 `cut_silences`。有明确区间时传 `silences: [{ fromSec, toSec }]`。省略区间时按 `minSilenceSec`（默认 0.3 秒）收拢轨道空档。已有片段里停顿的位置需要先确定。
+- 用户要从 3.2 秒切开时，用 `split_clip` 的 `atSec`。切点离片段两端至少 0.08 秒。
+- 只保留 12–18 秒那句时，用 `trim_clip` 保留所需片段，或用 `remove_range` 移除多余区间。
+- 用 `import_media` 导入会话工作目录下的媒体，默认同时上轨。只入素材池时传 `placeOnTimeline: false`，之后用 `mediaId` 安排落点。空工程先铺视频或音频，再补文字。
 - 转场克制：硬切优先。交叉溶解 ≤400ms，黑场 ≤600ms，且只用在段落换场。连续两条都 fade 就是业余。
 
 ## 禁止

@@ -4,14 +4,16 @@ import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
+import { getOutgoers } from '@xyflow/react';
 
 const bundle = await build({
   entryPoints: [fileURLToPath(new URL('./useWorkspacePersistence.ts', import.meta.url))],
   bundle: true, write: false, format: 'iife', globalName: 'hooks', platform: 'node',
   plugins: [{ name: 'boundaries', setup(build) {
-    build.onResolve({ filter: /^react$|\/canvasStore$|\/apiClient$/ }, ({ path }) => ({ path, namespace: 'test' }));
+    build.onResolve({ filter: /^(react|@xyflow\/react)$|\/canvasStore$|\/apiClient$/ }, ({ path }) => ({ path, namespace: 'test' }));
     build.onLoad({ filter: /.*/, namespace: 'test' }, ({ path }) => ({ contents: path === 'react'
       ? 'export const { useRef, useState, useCallback, useEffect } = env.react;'
+      : path === '@xyflow/react' ? 'export const getOutgoers = env.getOutgoers;'
       : path.endsWith('canvasStore') ? 'export const useCanvasStore = env.store;'
       : `export const saveWorkspace = (...args) => env.save(...args);
          export const getWorkspace = (...args) => env.get(...args);
@@ -30,14 +32,14 @@ const workspace = (id, version) => ({ id, name: id, version,
   nodes: [{ id: `${id}-node`, type: 'text', position: { x: 0, y: 0 }, data: { prompt: id } }], edges: [],
 });
 
-function setup() {
+function setup(initial = workspace('A', 3)) {
   const slots = [], effects = [], listeners = new Set(), timers = new Map(), intervals = new Map();
-  let cursor = 0, id = 0, selected = workspace('A', 3), controller;
+  let cursor = 0, id = 0, selected = initial, controller;
   const state = { nodes: selected.nodes, edges: selected.edges,
     hydrateGraph(nodes, edges) { this.nodes = nodes; this.edges = edges; for (const fn of listeners) fn(); },
   };
   const same = (a, b) => a && b && a.length === b.length && a.every((value, i) => value === b[i]);
-  const env = { calls: [], saved: [],
+  const env = { calls: [], saved: [], getOutgoers,
     react: {
       useRef(value) { const index = cursor++; return slots[index] ??= { current: value }; },
       useState(value) {
@@ -55,7 +57,8 @@ function setup() {
         });
       },
     },
-    store: { getState: () => state, subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); } },
+    store: { getState: () => state, setState(graph) { Object.assign(state, graph); for (const fn of listeners) fn(); },
+      subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); } },
     save: async (wsId, payload) => {
       env.calls.push({ wsId, payload });
       return { ok: true, body: { workspace: { ...selected, ...payload, id: wsId, version: payload.expectedVersion + 1 } } };
@@ -332,4 +335,114 @@ test('探测与快照之间继续编辑：按当前图判定，不自撞成冲�
   await settle();
   assert.notEqual(h.render().status, 'conflict', '旧实现拿探测前的快照比当前 store，这里会误报冲突');
   assert.equal(h.render().status, 'pending');
+});
+
+function clipRaceFixture() {
+  const base = workspace('A', 3);
+  base.nodes.push({
+    id: 'clip-source', type: 'video_composition', position: { x: 10, y: 10 },
+    data: { projectId: 'clip_node_a', status: 'idle', draftRevision: 4 },
+  });
+  const exportUrl = '/omnimux-workflow/api/local-file?path=%2Fexports%2Fa.mp4&rev=v2';
+  const remote = {
+    ...base, version: 4, nodes: [base.nodes[0], { ...base.nodes[1], data: {
+      ...base.nodes[1].data, status: 'completed', draftRevision: 5, outputVideoUrl: exportUrl, outputRevision: 'v2',
+      outputWidth: 1280, outputHeight: 720, outputDurationMs: 5000,
+      clipExportReceipts: [{ exportJobId: 2, projectRevision: 5, workspaceVersion: 4, fingerprint: 'v2' }],
+    } }, {
+      id: 'out', type: 'material', position: { x: 440, y: 10 },
+      data: { origin: 'clip_export', sourceCompositionNodeId: 'clip-source', mediaUrl: exportUrl, materialType: 'video', nodeKind: 'import' },
+    }],
+    edges: [{ id: 'new-link', source: 'clip-source', target: 'out', sourceHandle: 'out', targetHandle: 'in' }],
+  };
+  return { base, remote, exportUrl };
+}
+
+test('version probe hot refresh keeps an edit made while the Clip graph was loading', async () => {
+  const { base, remote, exportUrl } = clipRaceFixture();
+  const h = setup(base), pending = deferred();
+  h.env.version = async () => ({ ok: true, body: { version: remote.version } });
+  h.env.get = () => pending.promise;
+  h.poll(); await settle();
+  h.edit('work in progress');
+  pending.resolve({ ok: true, body: { workspace: remote } }); await settle();
+  assert.equal(h.state.nodes[0].data.prompt, 'work in progress');
+  assert.equal(h.state.nodes[1].data.draftRevision, 5);
+  assert.equal(h.state.nodes[2].data.mediaUrl, exportUrl);
+  assert.equal(h.render().isDirty, true);
+  h.autosave(); await settle();
+  const save = h.env.calls.at(-1);
+  assert.equal(save.payload.expectedVersion, 4);
+  assert.equal(save.payload.nodes[0].data.prompt, 'work in progress');
+  assert.equal(save.payload.nodes[1].data.outputVideoUrl, exportUrl);
+  assert.equal(save.payload.edges[0].target, 'out');
+  assert.equal(h.render().isDirty, false);
+});
+
+test('canvas autosave retries a Clip-only CAS race and the later local edit still saves', async () => {
+  const { base, remote, exportUrl } = clipRaceFixture();
+  const h = setup(base), pending = deferred(), normalSave = h.env.save;
+  h.env.save = (id, payload) => { h.env.calls.push({ id, payload }); return pending.promise; };
+  h.edit('first edit'); h.autosave();
+  h.edit('newer edit');
+  h.env.get = async () => ({ ok: true, body: { workspace: remote } });
+  h.env.save = normalSave;
+  pending.resolve({ ok: false, status: 409, body: { current: 4 } }); await settle();
+  assert.deepEqual(h.env.calls.map(({ payload }) => payload.expectedVersion), [3, 4]);
+  assert.equal(h.env.calls[0].payload.nodes[0].data.prompt, 'first edit');
+  assert.equal(h.env.calls[1].payload.nodes[0].data.prompt, 'newer edit');
+  assert.equal(h.env.calls[1].payload.nodes[1].data.outputVideoUrl, exportUrl);
+  assert.equal(h.state.nodes[0].data.prompt, 'newer edit');
+  assert.equal(h.state.nodes[2].data.mediaUrl, exportUrl);
+  h.autosave(); await settle();
+  assert.equal(h.env.calls.length, 2, 'the retry already saved the latest edit');
+});
+
+test('a detached flush rebases a concurrent Clip write without touching the new canvas', async () => {
+  const { base, remote, exportUrl } = clipRaceFixture();
+  const h = setup(base), pending = deferred(), normalSave = h.env.save;
+  h.env.save = (id, payload) => { h.env.calls.push({ wsId: id, payload }); return pending.promise; };
+  h.edit('before close'); h.controller.flushPendingSave();
+  h.switchTo(workspace('B', 20)); h.edit('other canvas');
+  h.env.get = async (id) => { assert.equal(id, 'A'); return { ok: true, body: { workspace: remote } }; };
+  h.env.save = normalSave;
+  pending.resolve({ ok: false, status: 409, body: { current: 4 } }); await settle();
+  assert.deepEqual(h.env.calls.map(({ wsId, payload }) => [wsId, payload.expectedVersion]), [['A', 3], ['A', 4]]);
+  assert.equal(h.env.calls[1].payload.nodes[0].data.prompt, 'before close');
+  assert.equal(h.env.calls[1].payload.nodes[2].data.mediaUrl, exportUrl);
+  assert.equal(h.state.nodes[0].data.prompt, 'other canvas');
+  assert.equal(h.render().isDirty, true);
+});
+
+test('a queued close flush retains the Clip graph before and during the CAS recovery read', async () => {
+  for (const closeDuringRead of [false, true]) {
+    const { base, remote, exportUrl } = clipRaceFixture();
+    const h = setup(base), pendingPut = deferred(), pendingRead = deferred(), normalSave = h.env.save;
+    const reads = [];
+    h.env.save = (wsId, payload) => { h.env.calls.push({ wsId, payload }); return pendingPut.promise; };
+    h.env.get = (wsId) => { reads.push(wsId); return pendingRead.promise; };
+    h.edit('A older'); h.autosave();
+    h.edit('A latest'); h.controller.flushPendingSave();
+    h.env.save = normalSave;
+    if (closeDuringRead) {
+      pendingPut.resolve({ ok: false, status: 409, body: { current: 4 } });
+      await settle();
+      assert.deepEqual(reads, ['A']);
+    }
+    h.switchTo(workspace('B', 20)); h.edit('B local');
+    if (!closeDuringRead) pendingPut.resolve({ ok: false, status: 409, body: { current: 4 } });
+    pendingRead.resolve({ ok: true, body: { workspace: remote } });
+    await settle();
+    assert.deepEqual(reads, ['A']);
+    assert.deepEqual(h.env.calls.map(({ wsId, payload }) => [wsId, payload.expectedVersion]), [['A', 3], ['A', 4]]);
+    assert.equal(h.env.calls[0].payload.nodes[0].data.prompt, 'A older');
+    const final = h.env.calls[1].payload;
+    assert.equal(final.nodes[0].data.prompt, 'A latest');
+    assert.equal(final.nodes[1].data.draftRevision, 5);
+    assert.equal(final.nodes[1].data.outputVideoUrl, exportUrl);
+    assert.equal(final.nodes[2].data.mediaUrl, exportUrl);
+    assert.equal(final.edges[0].target, 'out');
+    assert.equal(h.state.nodes[0].data.prompt, 'B local');
+    assert.equal(h.render().isDirty, true);
+  }
 });

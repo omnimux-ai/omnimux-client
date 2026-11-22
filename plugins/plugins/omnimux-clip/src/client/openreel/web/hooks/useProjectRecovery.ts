@@ -8,7 +8,9 @@ interface RecoveryState {
   showDialog: boolean;
 }
 
-export function useProjectRecovery() {
+const NO_RECOVERY: RecoveryState = { isChecking: false, availableSaves: [], showDialog: false };
+
+export function useProjectRecovery(enabled = true) {
   const [state, setState] = useState<RecoveryState>({
     isChecking: true,
     availableSaves: [],
@@ -18,10 +20,13 @@ export function useProjectRecovery() {
   const recoverFromAutoSave = useProjectStore((s) => s.recoverFromAutoSave);
 
   useEffect(() => {
+    if (!enabled) return;
+    let current = true;
     const checkForRecovery = async () => {
       try {
         await autoSaveManager.initialize();
         const saves = await autoSaveManager.checkForRecovery();
+        if (!current) return;
 
         if (saves.length > 0) {
           setState({
@@ -37,6 +42,7 @@ export function useProjectRecovery() {
           });
         }
       } catch (error) {
+        if (!current) return;
         console.warn("[Recovery] Failed to check for saves:", error);
         setState({
           isChecking: false,
@@ -46,8 +52,9 @@ export function useProjectRecovery() {
       }
     };
 
-    checkForRecovery();
-  }, []);
+    void checkForRecovery();
+    return () => { current = false; };
+  }, [enabled]);
 
   const recover = useCallback(
     async (saveId: string) => {
@@ -70,9 +77,7 @@ export function useProjectRecovery() {
   }, []);
 
   return {
-    isChecking: state.isChecking,
-    availableSaves: state.availableSaves,
-    showDialog: state.showDialog,
+    ...(enabled ? state : NO_RECOVERY),
     recover,
     dismiss,
     clearAll,

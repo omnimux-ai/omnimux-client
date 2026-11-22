@@ -1,20 +1,20 @@
 /**
  * @file eval-runner.mjs
- * @description Layer 3 Agent 意图诱导与调用评测引擎：评测模型能否精准识别用户意图并正确生成 tool_calls
+ * @description Layer 3 正则模拟器的离线路由冒烟
  */
 
 import { readFileSync, existsSync } from 'node:fs';
-import { resolve, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 import { validateJsonSchema } from './schema-lint.mjs';
 
 /**
  * 离线意图与参数匹配器 (Mock Agent Function Calling Simulator)
  * 用于在零 Token 成本下，对 Prompt 与工具 Schema 进行语义绑定与参数合法性审计
- * @param {string} prompt 
- * @param {Array<object>} tools 
+ * @param {string} prompt
  * @returns {{ toolName: string|null, args: object }}
  */
-function mockAgentToolMatcher(prompt, tools) {
+function mockAgentToolMatcher(prompt) {
   // 负向检测：学术/纯概念常识问答不触发工具
   if (/时间复杂度|空间复杂度|什么是|解释一下|排序算法/.test(prompt) && !/插件|生成|创建|删除|搜索|查询/.test(prompt)) {
     return { toolName: null, args: {} };
@@ -53,11 +53,10 @@ function mockAgentToolMatcher(prompt, tools) {
   }
 
   // 5. 视频剪辑
-  if (/剪辑项目|时间线|轨道/i.test(prompt)) {
-    return {
-      toolName: 'clip_get',
-      args: { projectId: 'demo_proj' },
-    };
+  if (/剪辑项目|时间轴|时间线|轨道/.test(prompt)) {
+    const projectId = /剪辑项目\s+([A-Za-z0-9][A-Za-z0-9._-]{0,127})(?=\s|[，。]|$)/.exec(prompt)?.[1];
+    const view = /片段|素材/.test(prompt) ? 'full' : /轨道/.test(prompt) ? 'tracks' : 'summary';
+    return { toolName: 'clip_get', args: { ...(projectId ? { projectId } : {}), view } };
   }
 
   // 6. 工作流
@@ -71,22 +70,39 @@ function mockAgentToolMatcher(prompt, tools) {
   return { toolName: null, args: {} };
 }
 
+function checkClipGetArgs(tool, actual, expected) {
+  if (tool?._source !== 'dynamic' || tool._plugin !== 'omnimux-clip' || !tool.parameters) {
+    return ['clip_get 必须来自真实的 Clip Host 注册'];
+  }
+  const errors = [];
+  if (!isDeepStrictEqual(actual, expected)) errors.push(`Clip 参数不匹配: ${JSON.stringify(actual)}`);
+  const { properties, required = [] } = tool.parameters;
+  for (const key of required) {
+    if (!Object.hasOwn(actual, key)) errors.push(`Clip 参数缺少 ${key}`);
+  }
+  for (const [key, value] of Object.entries(actual)) {
+    const property = properties?.[key];
+    if (!property || typeof value !== property.type || (property.enum && !property.enum.includes(value))) {
+      errors.push(`Clip 参数 ${key} 与实际注册的 schema 不匹配`);
+    }
+  }
+  return errors;
+}
+
 /**
- * 运行 Layer 3 Agent 意图调用评测
+ * 运行 Layer 3 Agent 离线路由冒烟
  * @param {Map<string, object>} allToolsMap 
  * @param {object} [options]
  * @param {string} [options.datasetPath] 
- * @param {boolean} [options.live=false] 是否启用真实在线 LLM 评测
  * @returns {Promise<{ total: number, passed: number, failed: number, results: Array<object> }>}
  */
 export async function runAgentToolEval(allToolsMap, options = {}) {
-  const datasetFile = options.datasetPath || resolve(new URL('./dataset.json', import.meta.url).pathname);
+  const datasetFile = options.datasetPath || fileURLToPath(new URL('./dataset.json', import.meta.url));
   if (!existsSync(datasetFile)) {
     throw new Error(`评测数据集文件未找到: ${datasetFile}`);
   }
 
   const cases = JSON.parse(readFileSync(datasetFile, 'utf-8'));
-  const allToolsList = [...allToolsMap.values()];
 
   const report = {
     total: cases.length,
@@ -96,27 +112,13 @@ export async function runAgentToolEval(allToolsMap, options = {}) {
   };
 
   for (const c of cases) {
-    // 运行评测决策逻辑
-    const decision = mockAgentToolMatcher(c.prompt, allToolsList);
-
-    const isToolMatch = decision.toolName === c.expectedTool;
-
-    let argsValid = true;
-    let schemaErrors = [];
-
-    // 如果命中了工具，验证参数 Schema
-    if (decision.toolName) {
-      const matchedTool = allToolsMap.get(decision.toolName);
-      if (matchedTool && matchedTool.parameters) {
-        const schemaCheck = validateJsonSchema(matchedTool.parameters, 'call.args');
-        if (!schemaCheck.valid) {
-          argsValid = false;
-          schemaErrors = schemaCheck.errors;
-        }
-      }
+    const decision = mockAgentToolMatcher(c.prompt);
+    const matchedTool = allToolsMap.get(decision.toolName);
+    const schemaErrors = matchedTool?.parameters ? validateJsonSchema(matchedTool.parameters, 'call.args').errors : [];
+    if (decision.toolName === 'clip_get') {
+      schemaErrors.push(...checkClipGetArgs(matchedTool, decision.args, c.expectedArgs));
     }
-
-    const pass = isToolMatch && argsValid;
+    const pass = decision.toolName === c.expectedTool && schemaErrors.length === 0;
 
     if (pass) {
       report.passed++;

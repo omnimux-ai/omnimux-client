@@ -25,8 +25,8 @@ function runtimeParams(preset: FilterPreset, intensity: number): Record<string, 
 }
 
 /** The effects `applyFilterPreset` writes to a clip (same units, same order). Look previews render exactly these. */
-export function filterPresetEffectsForPreview(preset: FilterPreset): Array<{ type: string; params: Record<string, unknown> }> {
-  const params = runtimeParams(preset, 100);
+export function filterPresetEffectsForPreview(preset: FilterPreset, intensity = 100): Array<{ type: string; params: Record<string, unknown> }> {
+  const params = runtimeParams(preset, intensity);
   return preset.effects.map((effect, index) => ({ type: effect.type, params: params[index] }));
 }
 

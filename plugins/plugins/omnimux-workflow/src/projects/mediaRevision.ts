@@ -1,4 +1,6 @@
-import { realpathSync, statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { realpathSync, statSync, type BigIntStats } from 'node:fs';
+import { open, stat } from 'node:fs/promises';
 import { isAbsolute, resolve, sep } from 'node:path';
 import { isAllowedImportedMedia } from '../shared/localMedia.ts';
 /** Stats only existing workflow media routes; never fetches arbitrary remote URLs. */
@@ -24,4 +26,39 @@ export function createMediaRevision(mediaDir: string, resolveProjectFile: (works
     if (!stat.isFile()) throw new Error('media-not-file');
     return `${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}`;
   };
+}
+
+const fileDigests = new Map<string, string>();
+const DIGEST_CACHE_CAPACITY = 128;
+
+function fileIdentity(stat: BigIntStats): string {
+  return [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].join(':');
+}
+
+/** Read SHA-256 from the file, sharing it across Range requests only while the physical file is unchanged. */
+export async function readMediaContentDigest(path: string): Promise<string> {
+  const handle = await open(path, 'r');
+  try {
+    const before = await handle.stat({ bigint: true });
+    if (!before.isFile()) throw new Error('media-not-file');
+    const identity = fileIdentity(before);
+    const cached = before.ino ? fileDigests.get(identity) : undefined;
+    const readDigest = async () => {
+      const hash = createHash('sha256');
+      for await (const bytes of handle.createReadStream({ autoClose: false })) hash.update(bytes);
+      return hash.digest('hex');
+    };
+    const digest = cached ?? await readDigest();
+    if (fileIdentity(await stat(path, { bigint: true })) !== identity) throw new Error('media-changed');
+    if (!cached && before.ino) {
+      if (fileDigests.size >= DIGEST_CACHE_CAPACITY) {
+        const oldest = fileDigests.keys().next().value;
+        if (oldest) fileDigests.delete(oldest);
+      }
+      fileDigests.set(identity, digest);
+    }
+    return digest;
+  } finally {
+    await handle.close();
+  }
 }

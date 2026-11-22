@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { existsSync, copyFileSync } from 'node:fs'
 import { ClipDomainError } from '../errors.js'
 import { exportMp4Path } from '../paths.js'
@@ -21,32 +22,23 @@ export function createClipEditorSeam(deps) {
      * @param {import('./types.js').OpenClipEditorPayload | object} payload
      */
     async open(payload = {}) {
-      const projectId = typeof payload.projectId === 'string' && payload.projectId
-        ? payload.projectId
-        : (payload.draftSchema?.projectId || `clip_${Date.now().toString(36)}`)
-      if (payload.draftSchema) {
-        store.save(projectId, payload.draftSchema, { recordUndo: false })
-      } else if (!store.exists(projectId)) {
-        store.create(projectId, createEmptySchema({
-          projectId,
-          canvasConfig: payload.canvasConfig,
-        }))
-      }
+      const projectId = payload.projectId ?? payload.draftSchema?.projectId ?? payload.draftSchema?.id ?? `clip_${randomUUID()}`
+      const binding = payload.binding ?? (payload.source === 'canvas' ? payload : undefined)
+      const draftSchema = payload.draftSchema ?? (payload.canvasConfig
+        ? createEmptySchema({ projectId, canvasConfig: payload.canvasConfig }) : undefined)
+      store.materialize(projectId, { binding, draftSchema, title: payload.nodeTitle ?? payload.title })
       return { projectId }
     },
 
-    async get(projectId) {
-      return store.load(projectId).schema
+    async get(projectId, opts) {
+      return store.load(projectId, opts).project
     },
 
-    /**
-     * @param {{ projectId?: string, schema: object }} payload
-     */
     async save(payload) {
-      const projectId = payload?.projectId || payload?.schema?.projectId
+      const { projectId = payload?.project?.id, project, expectedRevision, revision, binding, backupCurrent } = payload ?? {}
       if (!projectId) throw ClipDomainError.invalidId('save requires projectId')
-      if (!payload.schema) throw ClipDomainError.invalidJson('save requires schema')
-      store.save(projectId, payload.schema, { recordUndo: true })
+      if (!project) throw ClipDomainError.invalidJson('save requires an OpenReel project')
+      return store.save(projectId, project, { expectedRevision, revision, binding, backupCurrent })
     },
 
     /**

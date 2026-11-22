@@ -46,6 +46,8 @@ import { createProjectSerializer, createStorageEngine } from "@openreel/core";
 import type { ValidationResult } from "@openreel/core/storage/schema-types";
 import { saveCurrentProjectForReplacement } from "../../services/project-replacement";
 import { clipNow } from "../../../../i18n/index.js";
+import { useEditorPortalRoot } from "@openreel/ui/lib/portal-root";
+import { useVisibleEditorPane } from "../../../../hooks/useVisibleEditorPane";
 
 SyntaxHighlighter.registerLanguage("json", json);
 
@@ -59,6 +61,8 @@ export const ScriptViewDialog: React.FC<ScriptViewDialogProps> = ({
   onClose,
 }) => {
   const t = useClipT();
+  const portal = useEditorPortalRoot();
+  const pane = useVisibleEditorPane(isOpen ? portal : null);
   const shadcnFileInput0 = useImportInputRef<HTMLInputElement>(null);
 
   const project = useProjectStore((state) => (isOpen ? state.project : null));
@@ -263,12 +267,20 @@ export const ScriptViewDialog: React.FC<ScriptViewDialogProps> = ({
     <ShadcnDialog open={true} onOpenChange={(open) => !open && onClose()}>
       <ShadcnDialogContent
         hideCloseButton
-        className="!p-0 gap-0 overflow-hidden border-border bg-bg-1 text-fg shadow-xl"
-        style={{ maxWidth: 896, width: "calc(100vw - 32px)" }}
+        className={uiCn(
+          "flex max-h-[calc(100%-32px)] w-[calc(100%-32px)] max-w-[896px] flex-col gap-0 overflow-hidden border-border bg-bg-1 !p-0 text-fg shadow-xl",
+          portal && "absolute",
+        )}
+        style={pane?.clipped ? {
+          left: pane.left + pane.width / 2,
+          top: pane.top + pane.height / 2,
+          width: Math.max(0, pane.width - 32),
+          maxHeight: Math.max(0, pane.height - 32),
+        } : undefined}
       >
-        <div className="flex max-h-[90vh] min-h-0 flex-col">
+        <div className="flex min-h-0 flex-col overflow-hidden">
           {
-            <ShadcnDialogHeader className="flex-row items-start gap-3 space-y-0 border-b border-border bg-bg-1 px-5 py-4">
+            <ShadcnDialogHeader className="shrink-0 flex-row items-start gap-3 space-y-0 border-b border-border bg-bg-1 px-5 py-4">
               <span className="mt-0.5 flex shrink-0 items-center justify-center">
                 {<FileCode size={20} className="text-primary" aria-hidden />}
               </span>
