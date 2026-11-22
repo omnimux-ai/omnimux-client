@@ -36,7 +36,9 @@
 - `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/channelGroups.test.mjs` :: `resolves exactly the lines the hub directory publishes for a model`
 - `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/channelGroups.test.mjs` :: `resolves the full spec of the lines the node routes to`
 - `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/modelCascadeMenu.test.mjs` :: `hover remains preview-only and legacy brand clicks select a real model row`
+- `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/modelCascadeMenu.test.mjs` :: `actual model handler preserves routing-only parameters and transitions switches once`
+- `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/modelCascadeMenu.test.mjs` :: `missingRequiredSlots validates against displayedSlotLayout.slots and trims slotBindings for single-image channels`
 
 快照指纹继续忽略模型行和端点的无关排列，并辨认影响显示的线路顺序变化。旧套件从捆绑目录推断了固定默认线路。捆绑目录省略两个新字段，因此测试断言不再标记默认，并继续校验线路、价格和约束。需要运行在默认线路上的音频、视频和图像用例注入明确的网关默认。请求载荷测试继续核对该线路对应的提交协议及参数。显式选择的请求继续锁定选中的线路。
 
-画布用例继续核对中枢给出的可选线路和触发悬停时的只读预览。图像和视频参数继承目录标记的默认线路约束。菜单点击测试改为校验有效默认直接生效、无默认时可以手选单条线路。
+画布用例继续核对中枢给出的可选线路和触发悬停时的只读预览。图像和视频参数继承目录标记的默认线路约束。菜单点击测试改为校验有效默认直接生效、无默认时可以手选单条线路。切换模型或分组时，测试检查已校验的线路和协调后的参数一次写入。冲突或非法的选线被拒绝，槽位校验仍使用实际展示的槽位布局，合法单图线路仍在一次更新内协调槽位和参数。

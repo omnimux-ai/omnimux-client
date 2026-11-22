@@ -188,7 +188,7 @@ superseded_by: null
 | 业务功能描述 | 对应 UI 交互 / HTTP 路由 | Agent 工具名称 (`Tool Name`) | 分级 | 状态 | 破坏性 confirm |
 |---|---|---|---|---|---|
 | 列出全部工作区与执行历史 | 一级 Stage 工作区选择器 | `workflow_list` | L1 | `Implemented` | 否 |
-| 执行工作区或指定节点。已受理任务按原标识恢复；用 `execution_id` 查询或等待已有执行 | 顶部「运行」及节点生成按钮 | `workflow_run` | L1 | `Implemented` | 否 |
+| 执行工作区或指定节点，使用与界面相同的[线路检查](canvas-generation.md#执行和恢复)。已受理任务按原标识恢复。用 `execution_id` 查询或等待已有执行 | 顶部「运行」及节点生成按钮 | `workflow_run` | L1 | `Implemented` | 否 |
 | 获取画布快照。用 `node_id` 查询指定节点及其分组生成选项 | 画布加载与节点配置 | `workflow_snapshot` | L1 | `Implemented` | 否 |
 | 创建新工作区与画布 | 新建工作区按钮 | `workflow_create` | L1 | `Implemented` | 否 |
 | 向画布添加物料/AI生成节点 | 左侧物料库拖拽入画布 | `workflow_node_add` | L1 | `Implemented` | 否 |
