@@ -1099,16 +1099,19 @@ test('third review #8 reserves exports with the authenticated editor epoch and w
   assert.equal(begins.length, 2)
 })
 
-test('Clip activates with the pinned DSH tool runtime and exposes supported schemas', async t => {
-  const { home, specs, store } = fixture(t)
+async function mountClipToolRuntime(t, home) {
   withHostHome(t, home)
   const context = new Context()
   t.after(() => context.fiber.dispose())
   await context.plugin({ apply(ctx) { ctx.provide('systemPrompt', { tools() {}, section() {} }) } })
   await context.plugin(ToolRuntime)
   await context.plugin({ inject: moduleInject, apply })
+  return context.get('tools')
+}
 
-  const runtime = context.get('tools')
+test('Clip activates with the pinned DSH tool runtime and exposes supported schemas', async t => {
+  const { home, specs, store } = fixture(t)
+  const runtime = await mountClipToolRuntime(t, home)
   assert.deepEqual(runtime.wireSchemas().knownNames.sort(), specs.map(({ name }) => name).sort())
   for (const { name } of specs) {
     const definition = runtime.get(name)
@@ -1133,6 +1136,38 @@ test('Clip activates with the pinned DSH tool runtime and exposes supported sche
     error => error.message.includes('Invalid windowInstanceId'))
   await rejectsCode(runtime.get('clip_edit').execute(editArgs('empty-batch', { operations: [] })), 'invalid-json',
     error => error.message.includes('clip_edit.operations'))
+})
+
+test('Clip dispatches clip_get and rejects a result missing revisionEpoch through ToolRuntime', async t => {
+  const { home, store } = fixture(t)
+  const runtime = await mountClipToolRuntime(t, home)
+  store.create('demo', createNativeProject('demo'))
+  const dispatch = (callId) => runtime.execute({
+    callId,
+    name: 'clip_get',
+    arguments: { projectId: 'demo' },
+    signal: new AbortController().signal,
+  })
+
+  const saved = await dispatch('clip-get-saved')
+  assert.equal(saved.isError, false, saved.error?.message)
+  assert.partialDeepStrictEqual(saved.value, { projectId: 'demo', revision: 1, revisionEpoch: 0 })
+  assert.equal(Object.hasOwn(saved.value, 'windowInstanceId'), false)
+
+  const definition = runtime.get('clip_get')
+  const execute = definition.execute
+  t.mock.method(definition, 'execute', async (args, exec) => {
+    const value = await execute(args, exec)
+    const incomplete = { ...value }
+    delete incomplete.revisionEpoch
+    return incomplete
+  })
+
+  const invalid = await dispatch('clip-get-missing-epoch')
+  assert.equal(invalid.isError, true)
+  assert.equal(invalid.error?.info?.code, 'INVALID_TOOL_OUTPUT')
+  assert.match(invalid.error.message, /missing required property "value\.revisionEpoch"/)
+  assert.equal(Object.hasOwn(invalid, 'value'), false)
 })
 
 test('host apply provides the native seam and registers routes through guarded injects', async t => {

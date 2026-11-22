@@ -7,7 +7,7 @@ import './editor-seat.css'
 const HIDDEN = Object.freeze({ phase: 'hidden' })
 const noopSubscribe = () => () => {}
 const hiddenSnapshot = () => HIDDEN
-const EditorExitContext = createContext(null)
+const EditorActionsContext = createContext({})
 
 export function useEditorSeat(runtime, options) {
   const [id] = useState(() => crypto.randomUUID())
@@ -38,12 +38,14 @@ export function useEditorInert(value) {
   }, [value])
 }
 
-export function ClipEditorExit({ onExit, children }) {
-  return <EditorExitContext.Provider value={onExit}>{children}</EditorExitContext.Provider>
+export function ClipEditorActions({ onExit, runtime, view, children }) {
+  const compose = runtime?.compose ? () => runtime.compose(view.id) : undefined
+  const canCompose = view.phase === 'editing' && !view.conflict && !view.ingesting && !view.resolving
+  return <EditorActionsContext.Provider value={{ onExit, compose, canCompose }}>{children}</EditorActionsContext.Provider>
 }
 
-export function useClipEditorExit() {
-  return useContext(EditorExitContext)
+export function useClipEditorActions() {
+  return useContext(EditorActionsContext)
 }
 
 export function EditorOpening({ view, runtime, t, onExit }) {

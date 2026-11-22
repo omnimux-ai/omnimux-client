@@ -366,6 +366,17 @@ export function isMachO(path: string): boolean {
   return head.length === 4 && MACH_O_MAGICS.has(head.toString('hex'))
 }
 
+/** Whether a thin Mach-O has filetype MH_EXECUTE. By default codesign embeds entitlements only in executables. */
+export function isThinMachOExecutable(path: string): boolean {
+  const head = readHead(path, 16)
+  if (head.length < 16) return false
+  switch (head.subarray(0, 4).toString('hex')) {
+    case 'cffaedfe': case 'cefaedfe': return head.readUInt32LE(12) === 2
+    case 'feedfacf': case 'feedface': return head.readUInt32BE(12) === 2
+    default: return false
+  }
+}
+
 /** CPU a Mach-O slice targets; `other` covers CPUs Next does not ship. */
 export type MachOArchitecture = 'arm64' | 'x64' | 'other'
 

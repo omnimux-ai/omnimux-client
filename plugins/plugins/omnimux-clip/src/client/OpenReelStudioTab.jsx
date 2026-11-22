@@ -4,7 +4,7 @@ import { useHostLocale } from './useHostLocale.js'
 import OpenReelApp from './openreel/web/App.tsx'
 import { useProjectStore } from './openreel/web/stores/project-store.ts'
 import { resetOpenReelRouter } from './openreel/web/hooks/use-router.ts'
-import { EditorOpening, EditorSyncNotice, useEditorInert, useEditorSeat } from './live/EditorSeat.jsx'
+import { ClipEditorActions, EditorOpening, EditorSyncNotice, useEditorInert, useEditorSeat } from './live/EditorSeat.jsx'
 import './openreel/web/index.css'
 import './theme/dsw-map.css'
 
@@ -84,14 +84,16 @@ export function OpenReelStudioTab({ t, store, tab, sessionId, locale, runtime, v
         <Button type="button" variant="secondary" className="omnimux-clip-stage-save-btn" disabled={!editing || view.resolving}
           onClick={() => void runtime.session.save()}>{t('tab.save')}</Button>
       </div>
-      <div className="openreel-studio-body">
+      <div className="openreel-studio-body omnimux-clip-stage">
         {visible && (view.phase === 'loading' || view.phase === 'error' || view.phase === 'hidden') && <EditorOpening view={view} t={t} runtime={runtime} />}
         {visible && welcome && !showWelcome && <StudioCreateForm t={t} onCreated={() => setShowWelcome(true)} onWelcome={() => {
           resetOpenReelRouter({ route: 'welcome', params: {} })
           setShowWelcome(true)
         }} />}
         <div ref={editorRootRef} style={{ height: '100%', display: active ? undefined : 'none' }}>
-          <OpenReelApp active={active} managed />
+          <ClipEditorActions runtime={runtime} view={view}>
+            <OpenReelApp active={active} managed />
+          </ClipEditorActions>
         </div>
         <EditorSyncNotice view={view} runtime={runtime} t={t} showStatus={false} />
       </div>

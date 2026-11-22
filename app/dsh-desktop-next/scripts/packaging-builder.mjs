@@ -33,4 +33,10 @@ if (process.env.DSH_DESKTOP_PACKAGING_RUN_DIR !== undefined) {
   measure(archive, 'archive', 'builder:archive-compression')
   measure(NsisTarget.prototype, 'buildAppPackage', 'builder:compress-nsis-payload')
   measure(NsisTarget.prototype, 'executeMakensis', 'builder:makensis')
+  if (process.platform === 'darwin') {
+    const { MacTargetHelper } = require('app-builder-lib/out/mac/MacTargetHelper.js')
+    const { DmgTarget } = require('dmg-builder/out/dmg.js')
+    measure(MacTargetHelper.prototype, 'notarizeIfProvided', 'notary:builder')
+    measure(DmgTarget.prototype, 'build', 'dmg:builder')
+  }
 }

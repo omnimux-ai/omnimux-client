@@ -1,6 +1,6 @@
 /** Next entry points reuse Stable/Beta's native packaging and credential boundaries. */
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -8,19 +8,21 @@ import { packageDirectory } from '../../dsh-plugin-desktop/scripts/package-dir.m
 import { createLinuxPackageOptions, packageLinuxArtifacts } from '../../dsh-plugin-desktop/scripts/package-linux.ts'
 import { releaseMac } from '../../dsh-plugin-desktop/scripts/release-mac.ts'
 import { macReleaseArchitecture } from '../../dsh-plugin-desktop/scripts/release-mac.ts'
-import { adaptMacReleaseEnvironment, assertMacReleaseReady, withoutMacReleaseSecrets } from '../../dsh-plugin-desktop/scripts/release-preflight.ts'
+import { probeMacRelease, type ProbedMacIdentity } from '../../dsh-plugin-desktop/scripts/mac-signing-probe.ts'
+import { withoutMacReleaseSecrets } from '../../dsh-plugin-desktop/scripts/release-preflight.ts'
 import { packageMacSmoke } from '../../dsh-plugin-desktop/scripts/package-mac.ts'
 import { createWindowsPackageOptions, packageWindowsArtifact, packageWindowsInstaller } from '../../dsh-plugin-desktop/scripts/package-win.ts'
 import { prepareNextMacRuntime } from './mac-runtime.ts'
 import { runNextPackagingCommand } from './packaging-command.ts'
-import { expectedNextVersion, nextRuntimeBuildPaths, nextRuntimeTargets, prepareNextRuntime, primaryRuntimeDirectory, reusableNextRuntimeTree, runtimeBuildArch, smokeNextRuntime, verifyNextRuntimeTree } from './prepare-runtime.ts'
-import { signMacRuntime, withMacSigningIdentity } from './sign-runtime.ts'
+import { expectedNextVersion, nextRuntimeBuildPaths, prepareNextRuntime, reusableNextRuntimeTree, runtimeBuildArch, smokeNextRuntime, verifyNextRuntimeTree } from './prepare-runtime.ts'
+import { macSigningEnvironment } from './sign-packaged.ts'
 import { packagingStep, packagingStepSync } from './packaging-step.ts'
 
 const desktopRoot = fileURLToPath(new URL('..', import.meta.url))
 const workspaceRoot = resolve(desktopRoot, '..')
 const require = createRequire(import.meta.url)
-const APP_ID = (JSON.parse(readFileSync(join(desktopRoot, 'package.json'), 'utf8')) as { build: { appId: string } }).build.appId
+const mode = process.argv[2]
+let macSigningIdentity: ProbedMacIdentity | undefined
 
 /**
  * Optional test-only build version for update drills.
@@ -56,18 +58,30 @@ const run = (command: string, args: readonly string[], cwd: string, env: NodeJS.
   // that flag before it calls beforeBuild, and only a beforeBuild answer makes it leave node_modules
   // to the prepared payload, so Next drops the flag: its beforeBuild hook declines the rebuild too.
   const withoutRebuildFlag = isBuilder ? args.filter(arg => arg !== '--config.npmRebuild=false') : args
-  const forwarded = TEST_BUILD_VERSION !== undefined && isBuilder
-    ? [...withoutRebuildFlag, `--config.extraMetadata.version=${TEST_BUILD_VERSION}`, `--config.buildVersion=${TEST_BUILD_VERSION}`]
-    : withoutRebuildFlag
+  const forwarded = [
+    ...withoutRebuildFlag,
+    ...(TEST_BUILD_VERSION !== undefined && isBuilder
+      ? [`--config.extraMetadata.version=${TEST_BUILD_VERSION}`, `--config.buildVersion=${TEST_BUILD_VERSION}`] : []),
+    ...(isBuilder && macSigningIdentity !== undefined ? ['--config.mac.sign=./scripts/sign-packaged.ts'] : []),
+  ]
   if (TEST_BUILD_VERSION !== undefined && isBuilder) console.log(`Packaging with test build version ${TEST_BUILD_VERSION}; source manifests are unchanged.`)
   const isPreflight = (args.includes('run') && args.includes('check')) || args.some(arg => arg.includes('check:win-package') || arg.includes('check:linux-package'))
   const stage = isBuilder ? 'builder:total' : isPreflight ? 'build:package-preflight' : 'package:command'
-  const builderEnv = isBuilder ? { ...env, DSH_NEXT_WINDOWS_FAST_COMPRESSION: '1' } : env
+  const windowsInstaller = isBuilder && mode === 'win'
+  const windowsCompression = env.DSH_WINDOWS_PACKAGE_COMPRESSION
+  const defaultWindowsCompression = windowsInstaller && env.ELECTRON_BUILDER_COMPRESSION_LEVEL === undefined
+    && (windowsCompression === undefined || windowsCompression === '' || windowsCompression === 'normal')
+  const builderEnv = {
+    ...env,
+    ...(windowsInstaller ? { DSH_NEXT_WINDOWS_FAST_COMPRESSION: '1' } : {}),
+    ...(defaultWindowsCompression ? { ELECTRON_BUILDER_COMPRESSION_LEVEL: '3' } : {}),
+    ...(isBuilder && macSigningIdentity !== undefined ? macSigningEnvironment(macSigningIdentity) : {}),
+  }
   if (isBuilder && env.DSH_DESKTOP_PACKAGING_RUN_DIR !== undefined) {
     // `yarn exec electron-builder` cannot receive Node's `--import` flag. Run the
     // resolved Electron Builder CLI through Node so the measurement adapter loads
     // before the CLI, without putting secrets or script paths in the journal.
-    const builderArgs = forwarded[0] === 'exec' && forwarded[1] === 'electron-builder' ? forwarded.slice(2) : forwarded
+    const builderArgs = forwarded[0] === 'exec' && forwarded[1] === 'electron-builder' ? forwarded.slice(2) : forwarded.slice(1)
     const cli = require.resolve('electron-builder/cli.js')
     packagingStepSync(stage, () => runNextPackagingCommand(process.execPath,
       ['--import', new URL('./packaging-builder.mjs', import.meta.url).href, cli, ...builderArgs], cwd, builderEnv, workspaceRoot))
@@ -84,23 +98,20 @@ const listCodeSigningIdentities = (env: NodeJS.ProcessEnv): string => {
 let interpretersVerified = false
 
 /**
- * Prepare every interpreter payload the platform ships, sign them when a release identity is given,
- * then check and execute the final bytes. electron-builder copies the tree as extra resources.
+ * Prepare and verify every interpreter payload the platform ships. Signed macOS builds sign
+ * the assembled copy so the prepared runtime stays reusable and keeps the same cache inputs.
  */
-async function prepareInterpreters(sign?: (runtimeRoot: string) => Promise<void>): Promise<void> {
+async function prepareInterpreters(): Promise<void> {
   const paths = nextRuntimeBuildPaths(desktopRoot, runtimeBuildArch(process.platform))
   const reusable = packagingStepSync('runtime:check-reuse', () => reusableNextRuntimeTree(paths.runtime, process.platform, buildVersion))
-  if (reusable.length > 0 && sign === undefined) {
+  if (reusable.length > 0) {
     console.log(`Reusing prepared primary runtime for ${reusable.map(item => item.arch).join(', ')}`)
-    interpretersVerified = true
-    return
+  } else {
+    const root = await packagingStep('runtime:prepare-primary', () => prepareNextRuntime({ desktopRoot, platform: process.platform, version: buildVersion }))
+    packagingStepSync('runtime:verify-primary', () => verifyNextRuntimeTree(root, process.platform, buildVersion))
+    // The signed build exercises the verified final bytes inside the signing hook.
+    if (macSigningIdentity === undefined) packagingStepSync('runtime:smoke-primary', () => smokeNextRuntime(root, process.platform))
   }
-  const root = reusable.length > 0
-    ? paths.runtime
-    : await packagingStep('runtime:prepare-primary', () => prepareNextRuntime({ desktopRoot, platform: process.platform, version: buildVersion }))
-  if (sign !== undefined) await sign(root)
-  packagingStepSync('runtime:verify-primary', () => verifyNextRuntimeTree(root, process.platform, buildVersion))
-  packagingStepSync('runtime:smoke-primary', () => smokeNextRuntime(root, process.platform))
   interpretersVerified = true
 }
 /**
@@ -130,7 +141,6 @@ const prepareRuntime = (platform: NodeJS.Platform = process.platform): void => {
   }
   preparePayload(platform)
 }
-const mode = process.argv[2]
 const outputDir = process.env.DSH_MAC_RELEASE_OUTPUT === undefined
   ? join(desktopRoot, 'dist', mode === 'mac' ? 'mac-release' : 'mac-smoke')
   : resolve(desktopRoot, process.env.DSH_MAC_RELEASE_OUTPUT)
@@ -142,16 +152,12 @@ if (mode === 'dir') {
   prepareRuntime()
   packageDirectory({ cwd: desktopRoot, electronBuilderCli: require.resolve('electron-builder/cli.js'), electronDistPath: join(dirname(require.resolve('electron/package.json')), 'dist') })
 } else if (mode === 'mac' || mode === 'mac-app') {
-  // The preflight the shared release flow repeats; the payload signatures must carry the identity it selects.
-  const releaseEnvironment = adaptMacReleaseEnvironment(process.env)
-  const ready = assertMacReleaseReady({ env: releaseEnvironment, platform: process.platform,
-    listCodeSigningIdentities: () => listCodeSigningIdentities(withoutMacReleaseSecrets(releaseEnvironment)) })
-  await prepareInterpreters(root => withMacSigningIdentity(releaseEnvironment, ready.identity, async (signer) => {
-    for (const { arch } of nextRuntimeTargets('darwin')) {
-      const signed = await signMacRuntime(primaryRuntimeDirectory(root, arch), APP_ID, signer, arch)
-      console.log(`Signed ${String(signed)} native files of the ${arch} primary runtime as ${ready.identity}`)
-    }
-  }))
+  macSigningIdentity = await packagingStep('sign:probe', () => probeMacRelease())
+  if (process.env.DSH_MAC_RELEASE_COMMON_PREP !== '1') {
+    const repoRoot = resolve(workspaceRoot, '..')
+    packagingStepSync('prepare:plugins', () => runNextPackagingCommand(process.execPath, [join(repoRoot, 'scripts', 'prepare-local-plugins.mjs')], repoRoot, withoutMacReleaseSecrets(process.env), workspaceRoot))
+  }
+  await prepareInterpreters()
   releaseMac({
     ...shared,
     listCodeSigningIdentities,

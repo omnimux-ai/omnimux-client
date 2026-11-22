@@ -3,7 +3,7 @@ import { Button } from 'dsh-ui-kit'
 import { useHostLocale } from './useHostLocale.js'
 import { createPortal } from 'react-dom'
 import OpenReelApp from './openreel/web/App.tsx'
-import { ClipEditorExit, EditorOpening, EditorSyncNotice, useEditorInert, useEditorSeat } from './live/EditorSeat.jsx'
+import { ClipEditorActions, EditorOpening, EditorSyncNotice, useEditorInert, useEditorSeat } from './live/EditorSeat.jsx'
 import { injectClipStyles } from './styles.js'
 import { computeHeaderPadLeft, computeStandaloneBox, readHostSidebarInset } from './stage-box.js'
 import { useCanvasIngestion } from './hooks/useCanvasIngestion.ts'
@@ -249,11 +249,11 @@ export function ClipStage({ t, stage, locale, runtime }) {
         <div ref={editorRootRef} style={{ height: '100%', display: runtime && view.phase !== 'editing' ? 'none' : undefined,
           ...(view.ingesting ? { position: 'absolute', inset: 0, visibility: 'hidden' } : {}),
         }}>
-          <ClipEditorExit onExit={runtime ? closeCanvas : null}>
+          <ClipEditorActions onExit={runtime ? closeCanvas : null} runtime={runtime} view={view}>
             <ClipErrorBoundary>
               <OpenReelApp active={visible && (!runtime || view.phase === 'editing')} canvasMode={isCanvasMode} managed={Boolean(runtime)} />
             </ClipErrorBoundary>
-          </ClipEditorExit>
+          </ClipEditorActions>
         </div>
         {runtime && <EditorSyncNotice t={t} runtime={runtime} view={view} />}
       </div>
