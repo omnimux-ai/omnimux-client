@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(join(here, 'CanvasPageHeader.tsx'), 'utf8');
 const componentsCss = readFileSync(join(here, '../../theme/components.css'), 'utf8');
+const themeCss = readFileSync(join(here, '../../theme/workbench-theme.css'), 'utf8');
 
 describe('CanvasPageHeader Component', () => {
   it('defines props with workspaceId and onSwitchWorkspaceId', () => {
@@ -41,6 +42,14 @@ describe('CanvasPageHeader Component', () => {
     assert.doesNotMatch(popoverRule, /backdrop-filter|--dsw-alias-bg-(?:elevated|overlay)/);
     assert.match(popoverRule, /animation:\s*omnimux-popover-in/);
     assert.match(componentsCss, /@keyframes omnimux-popover-in\s*\{/);
+  });
+
+  it('theme tokens define elevated popover background and alias fallbacks for light and dark themes', () => {
+    const lightTheme = themeCss.match(/^\.wf-canvas-root\s*\{([^}]+)\}/m)?.[1] ?? '';
+    const darkTheme = themeCss.match(/^body\[data-ds-dark-theme\] \.wf-canvas-root\s*\{([^}]+)\}/m)?.[1] ?? '';
+    assert.match(lightTheme, /--wb-surface-elevated:\s*#ffffff;/);
+    assert.match(darkTheme, /--wb-surface-elevated:\s*#1c1c1f;/);
+    assert.ok([lightTheme, darkTheme].every((theme) => /--dsw-alias-bg-elevated:\s*var\(--wb-surface-elevated\);/.test(theme)));
   });
 
   it('supports hovering rename pencil button and inline rename input', () => {

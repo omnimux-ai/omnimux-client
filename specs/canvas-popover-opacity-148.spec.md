@@ -6,14 +6,17 @@
 
 ## 证伪方式
 
-在同一 Chromium 测试页面加载锁定版本的宿主样式。打开参数面板和菜单，分别记录亮暗主题下 `backgroundColor` 的 alpha、`backdropFilter` 和面板边界。新版本任一可见表面的 alpha 低于 1、应用了模糊滤镜或参数面板离开窄视口时，验收失败。向画布样式注入旧令牌和模糊声明，门禁应定位到相应文件和规则。
+在同一 Chromium 测试页面加载锁定版本的宿主样式。打开参数面板和菜单，分别记录亮暗主题下 `backgroundColor` 的 alpha、`backdropFilter` 和面板边界。新版本任一可见表面的 alpha 低于 1、应用了模糊滤镜或参数面板离开窄视口时，验收失败。
+
+- 打开「项目资产 → 创作画布 → 类型」，核对亮暗两种主题下六项选中勾号的实际 `stroke` 和圆底对比度。勾号使用宿主 `--dsw-alias-label-primary-foreground`。取消并恢复一个选项，检查「全部」与各类型的勾选状态。
+- 在含 `& .child` 的画布浮层规则体内注入旧令牌或模糊声明。门禁应定位到父选择器。子控件声明按自己的选择器判断。
 
 ## 旧标准变更
 
 - `plugins/plugins/omnimux-workflow/src/canvas/editor/components/CanvasPageHeader.test.mjs` :: `popover styles specify non-transparent frosted background, backdrop-filter, border and animation`
   - 旧断言固定毛玻璃背景变量和模糊声明。新断言固定不透明宿主背景链，禁止模糊和旧背景令牌，继续核对边框、阴影和动画。
 - `plugins/plugins/omnimux-workflow/src/canvas/editor/components/CanvasPageHeader.test.mjs` :: `theme tokens define elevated popover background and alias fallbacks for light and dark themes`
-  - 旧用例固定页头浮层在画布主题的两组半透明色值。页头浮层改由宿主背景令牌级联，专用半透明变量随引用一起移除。页头样式测试断言完整的宿主回退链，画布门禁扫描其有效规则。
+  - 移除页头专用 `--wb-popover-bg` 的两条亮暗半透明值断言。页头样式测试核对完整的宿主回退链。保留亮暗 `--wb-surface-elevated` 和 `--dsw-alias-bg-elevated` 桥接的三条断言，覆盖仍使用这些令牌的画布内联组件和模型级联。
 - `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/videoParams/VideoParamPopover.test.mjs` :: `components.css popover 根直接消费 DSH 原生浮层 token`
   - 旧断言要求局部 `bg-elevated` 和 `blur(20px)`。新断言要求宿主 `bg-layer-1` 回退链，禁止局部令牌和模糊，保持原来的边框检查。Chromium 核对实际 Portal 的 alpha。
 - `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/videoParams/VideoParamPopover.test.mjs` :: `components.css 新样式块含 overflow-y:auto 与关键设计规格（32px 高度 / 胶囊圆角 999px）`

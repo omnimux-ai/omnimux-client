@@ -117,6 +117,43 @@ test('画布扫描覆盖选择器组、主题覆写和不以 menu 或 popover �
   }
 })
 
+test('画布扫描拦截嵌套父规则在子选择器前后的违规声明', () => {
+  const stylesheet = [
+    '@media (min-width: 0px) {',
+    '  .wf-video-param-popover {',
+    '    background: var(--dsw-alias-bg-elevated);',
+    '    backdrop-filter: blur(20px);',
+    '    & .wf-cfg-popover__section { min-width: 0; }',
+    '  }',
+    '  .wf-custom-select-dropdown {',
+    '    & .wf-popover-item { content: "};{"; }',
+    '    background-color: var(--dsw-alias-bg-overlay)',
+    '  }',
+    '}',
+  ].join('\n')
+  const violations = checkContentForTransparencyViolations(stylesheet, 'omnimux-workflow/src/canvas/theme.css')
+  for (const [rule, line] of [
+    ['NO_BARE_BG_ELEVATED', 2],
+    ['POPOVER_NO_BACKDROP_BLUR', 2],
+    ['POPOVER_NO_BG_OVERLAY_DISCOLORATION', 7],
+  ]) {
+    assert.ok(violations.some((entry) => entry.rule === rule && entry.fatal && entry.line === line), rule)
+  }
+})
+
+test('画布扫描分别判断嵌套父规则和子选择器的表面', () => {
+  const stylesheet = [
+    '.wf-video-param-popover {',
+    '  & .wf-cfg-popover__section {',
+    '    background: var(--dsw-alias-bg-elevated);',
+    '    backdrop-filter: blur(4px);',
+    '  }',
+    '  background: var(--dsw-alias-bg-layer-1);',
+    '}',
+  ].join('\n')
+  assert.deepEqual(checkContentForTransparencyViolations(stylesheet, 'omnimux-workflow/src/canvas/theme.css'), [])
+})
+
 test('画布扫描保留行内控件的作用域令牌、弹窗遮罩及浮层子项样式', () => {
   const stylesheet = [
     '.wf-canvas-root { --dsw-alias-bg-elevated: var(--dsw-alias-bg-layer-1); }',

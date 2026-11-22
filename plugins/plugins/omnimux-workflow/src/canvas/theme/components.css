@@ -4719,7 +4719,6 @@ body[data-ds-dark-theme] .wf-canvas-root .wf-edge-disconnect__button:focus-visib
 .wf-popover-check-circle--checked {
   background: var(--dsw-alias-label-primary);
   border-color: var(--dsw-alias-label-primary);
-  color: #121214;
 }
 
 .wf-popover-tag-dot {

@@ -56,13 +56,50 @@ export function collectSourceFiles(dir, exts = ['.js', '.jsx', '.ts', '.tsx', '.
   return files
 }
 
+// Keep declarations attached to their own rule even when nested selectors split the body.
+function extractCanvasStylesheetBlocks(source) {
+  const blocks = []
+  const openRules = []
+  let start = 0
+  let valueDepth = 0
+  const tokens = /"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|\\[\s\S]|[()[\]{};]/g
+  for (const { 0: token, index } of source.matchAll(tokens)) {
+    if (token === '(' || token === '[') {
+      valueDepth++
+      continue
+    }
+    if (token === ')' || token === ']') {
+      valueDepth--
+      continue
+    }
+    if (valueDepth || token.length !== 1) continue
+
+    const current = openRules.at(-1)
+    const text = source.slice(start, index)
+    if (token === '{') {
+      openRules.push({ selector: text.trim(), declarations: [], index: start + text.search(/\S/) })
+    } else if (token === ';') {
+      current?.declarations.push(`${text};`)
+    } else if (current) {
+      openRules.pop()
+      const body = (current.declarations.join('') + text).trim()
+      if (current.selector && body) blocks.push({ selector: current.selector, body, index: current.index })
+    }
+    start = index + 1
+  }
+  return blocks.sort((a, b) => a.index - b.index)
+}
+
 /**
  * 解析代码中的 CSS 规则块：提取 selector { body }
  */
-export function extractCssRuleBlocks(content, { canvas = false } = {}) {
-  const blocks = []
-  // Blank comments without shifting source offsets, then read leaf rules inside @media etc.
+export function extractCssRuleBlocks(content, { canvas = false, stylesheet = true } = {}) {
+  // Blank comments without shifting source offsets.
   const source = canvas ? content.replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\r\n]/g, ' ')) : content
+  if (canvas && stylesheet) return extractCanvasStylesheetBlocks(source)
+
+  const blocks = []
+  // Embedded CSS in JS and JSX still uses the existing rule matchers.
   const blockRegex = canvas ? /([^{};]+)\{([^{}]+)\}/g : /([^{};]+)\{([^}]+)\}/g
   let match
   while ((match = blockRegex.exec(source)) !== null) {
@@ -258,7 +295,7 @@ export function checkContentForTransparencyViolations(content, filePath = 'snipp
   // 与任何别的浮层词（dropdown / dialog / sheet …）都落在规则之外：新增浮层时门禁恒绿。
   // 这里改为：选择器里出现浮层关键词即视为浮层，再统一施加四条硬规则。
   const canvas = CANVAS_SOURCE.test(normalizePath(filePath))
-  const ruleBlocks = extractCssRuleBlocks(content, { canvas })
+  const ruleBlocks = extractCssRuleBlocks(content, { canvas, stylesheet: /\.css$/i.test(filePath) })
 
   // 先按「基础容器类」聚合：.omnimux-new-menu[hidden] / .x-menu--wide 等变体
   // 与基础类同组 —— 底色只要在组内声明过一次即可，避免变体规则被逐条误判。
