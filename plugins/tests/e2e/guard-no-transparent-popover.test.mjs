@@ -85,6 +85,73 @@ test('硬门禁 3: 故障注入测试 (Fault Injection) - 验证门禁能够确�
   )
 })
 
+const clientTemplate = 'omnimux/src/client/styles.js'
+const clientStylesheet = 'omnimux/src/client/styles.css'
+
+function clientPopoverTemplate(...rules) {
+  return [
+    'export const HUB_CSS = `',
+    '.omnimux-plugins-footer { display: flex; }',
+    '.omnimux-plugins-popover {',
+    '  background: var(--dsw-alias-bg-primary, var(--dsw-bg, #16181d));',
+    ...rules,
+    '}',
+    '`',
+  ].join('\n')
+}
+
+test('客户端模板样式拦截 @media 对浮层底色和滤镜的覆写', () => {
+  const content = clientPopoverTemplate(
+    '  @media (max-width: 390px) {',
+    '    background-color: transparent;',
+    '    backdrop-filter: blur(6px);',
+    '  }',
+  )
+  const violations = checkContentForTransparencyViolations(content, clientTemplate)
+  assert.deepEqual(violations.map(({ rule, line, fatal }) => [rule, line, fatal]), [
+    ['POPOVER_NO_BACKDROP_BLUR', 5, true],
+    ['POPOVER_EXPLICIT_TRANSPARENT_BG', 5, true],
+  ])
+  assert.ok(violations.every(({ message }) => message.includes('.omnimux-plugins-popover')))
+})
+
+test('客户端样式表拦截条件块和自引用对浮层的稳态覆写', () => {
+  const content = [
+    '.omnimux-plugins-popover {',
+    '  background: var(--dsw-alias-bg-primary);',
+    '  @supports (display: grid) {',
+    '    @container (max-width: 390px) {',
+    '      background-color: rgb(22 24 29 / 50%);',
+    '    }',
+    '  }',
+    '  & { opacity: 0.55; }',
+    '  &[data-density="compact, regular"] { -webkit-backdrop-filter: blur(6px); }',
+    '}',
+  ].join('\n')
+  const violations = checkContentForTransparencyViolations(content, clientStylesheet)
+  assert.deepEqual(violations.map(({ rule, line, fatal }) => [rule, line, fatal]), [
+    ['POPOVER_NON_OPAQUE_BG', 4, true],
+    ['POPOVER_LOW_OPACITY', 8, true],
+    ['POPOVER_NO_BACKDROP_BLUR', 9, true],
+  ])
+})
+
+test('客户端模板样式分别判定浮层和嵌套子控件', () => {
+  const content = clientPopoverTemplate(
+    '  @media (max-width: 390px) {',
+    '    & > .omnimux-plugins-menu-item {',
+    '      background: var(--dsw-alias-bg-elevated);',
+    '      opacity: 0.55;',
+    '      backdrop-filter: blur(6px);',
+    '    }',
+    '    & .omnimux-plugins-menu-hint { background-color: transparent; }',
+    '    &::after { background-color: transparent; }',
+    '  }',
+    '  @starting-style { opacity: 0; }',
+  )
+  assert.deepEqual(checkContentForTransparencyViolations(content, clientTemplate), [])
+})
+
 test('画布扫描覆盖选择器组、主题覆写和不以 menu 或 popover 结尾的 Portal 表面', (t) => {
   const dir = fs.mkdtempSync(path.join(tmpdir(), 'omnimux-popover-'))
   t.after(() => fs.rmSync(dir, { recursive: true }))

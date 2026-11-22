@@ -72,24 +72,34 @@ function* stylesheetDelimiters(source) {
 }
 
 // Keep declarations attached to their own rule even when nested selectors split the body.
-function extractCanvasStylesheetBlocks(source) {
+function extractStylesheetBlocks(content, canvas, offset = 0) {
+  const source = blankCssComments(content)
+  // Client stylesheets can have an existing exemption comment on a rule.
+  const declarationSource = canvas ? source : content
   const blocks = []
   const openRules = []
   let start = 0
   for (const { token, index } of stylesheetDelimiters(source)) {
     const current = openRules.at(-1)
-    const text = source.slice(start, index)
     if (token === '{') {
-      const selector = text.trim()
-      const containerKeys = canvasContainerKeys(selector, current?.containerKeys)
+      const prelude = source.slice(start, index)
+      const selector = prelude.trim()
+      const containerKeys = styleContainerKeys(selector, canvas, current?.containerKeys)
+      const nestedOverride = current?.containerKeys.some((key) => containerKeys.includes(key)) ?? false
       const startingStyle = Boolean(current?.startingStyle || /^@starting-style(?![\w-])/i.test(selector))
-      openRules.push({ selector, containerKeys, startingStyle, declarations: [], index: start + text.search(/\S/) })
+      // Keep the client's existing flat-rule scope. Inside a floating rule,
+      // evaluate the nested rule against its resolved subject.
+      const scanRule = canvas || Boolean(current?.containerKeys.length || floatingContainerKey(content.slice(start, index)))
+      openRules.push({
+        selector, containerKeys, nestedOverride, startingStyle, scanRule,
+        declarations: [], index: offset + start + prelude.search(/\S/),
+      })
     } else if (token === ';') {
-      current?.declarations.push(`${text};`)
+      current?.declarations.push(declarationSource.slice(start, index + 1))
     } else if (current) {
-      const { selector, containerKeys, startingStyle, declarations, index } = openRules.pop()
-      const body = (declarations.join('') + text).trim()
-      if (selector && body) blocks.push({ selector, containerKeys, startingStyle, body, index })
+      const { declarations, scanRule, ...block } = openRules.pop()
+      const body = (declarations.join('') + declarationSource.slice(start, index)).trim()
+      if (scanRule && block.selector && body) blocks.push({ ...block, body })
     }
     start = index + 1
   }
@@ -106,21 +116,15 @@ function blankCssComments(source) {
  * 解析代码中的 CSS 规则块：提取 selector { body }
  */
 export function extractCssRuleBlocks(content, { canvas = false, stylesheet = true } = {}) {
-  const source = canvas ? blankCssComments(content) : content
-  if (canvas && stylesheet) return extractCanvasStylesheetBlocks(source)
+  const cssSnippet = /^\s*(?:\/\*[\s\S]*?\*\/\s*)*(?:[.#:\[*@]|(?:html|body)(?![\w-]))/
+  if (stylesheet || cssSnippet.test(content)) return extractStylesheetBlocks(content, canvas)
 
   const blocks = []
-  // Embedded CSS in JS and JSX still uses the existing rule matchers.
-  const blockRegex = canvas ? /([^{};]+)\{([^{}]+)\}/g : /([^{};]+)\{([^}]+)\}/g
-  let match
-  while ((match = blockRegex.exec(source)) !== null) {
-    const selector = match[1].trim()
-    if (!selector) continue
-    blocks.push({
-      selector,
-      body: match[2].trim(),
-      index: match.index + (canvas ? match[1].search(/\S/) : 0),
-    })
+  // Parse embedded styles in their own strings, outside the surrounding JS or JSX braces.
+  const literals = /\/\/[^\r\n]*|\/\*[\s\S]*?\*\/|`(?:\\[\s\S]|[^`\\])*`|"(?:\\[\s\S]|[^"\\\r\n])*"|'(?:\\[\s\S]|[^'\\\r\n])*'/g
+  for (const { 0: literal, index } of content.matchAll(literals)) {
+    if (literal.startsWith('/') || !literal.includes('{')) continue
+    blocks.push(...extractStylesheetBlocks(literal.slice(1, -1), canvas, index + 1))
   }
   return blocks
 }
@@ -187,7 +191,7 @@ const NESTED_STYLE_GROUP = /^@(?:container|layer|media|scope|starting-style|supp
 
 // Keep a placeholder for each attribute or predicate so `.menu > [role]`
 // retains its separate subject. Follow subject alternatives in :is() and :where().
-function projectCanvasSelector(selector, parentKeys) {
+function projectStyleSelector(selector, canvas, parentKeys) {
   const tokens = /"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|\\[\s\S]|[()[\]]/g
   let projected = ''
   let start = 0
@@ -203,7 +207,7 @@ function projectCanvasSelector(selector, parentKeys) {
       const prefix = selector.slice(start, argumentStart)
       projected += prefix
       if (token === ')' && /(?<!:):(?:is|where)$/i.test(prefix)) {
-        projected += canvasContainerKeys(selector.slice(argumentStart + 1, index), parentKeys).join('')
+        projected += styleContainerKeys(selector.slice(argumentStart + 1, index), canvas, parentKeys).join('')
       } else {
         projected += token === ']' ? '[]' : '()'
       }
@@ -213,10 +217,10 @@ function projectCanvasSelector(selector, parentKeys) {
   return (projected + selector.slice(start)).replace(/\\[\s\S]/g, '_')
 }
 
-function canvasContainerKeys(selector, parentKeys = []) {
+function styleContainerKeys(selector, canvas, parentKeys = []) {
   if (selector.startsWith('@')) return NESTED_STYLE_GROUP.test(selector) ? parentKeys : []
 
-  const subjects = projectCanvasSelector(selector, parentKeys)
+  const subjects = projectStyleSelector(selector, canvas, parentKeys)
     .split(',')
     .map((part) => part.trim().split(/(?:[\s>+~]|\|\|)+/).at(-1))
 
@@ -224,7 +228,8 @@ function canvasContainerKeys(selector, parentKeys = []) {
     if (subject.includes('::')) return []
     const names = (subject.match(/\.[\w-]+/g) ?? []).map((key) => key.slice(1).split('--')[0])
     const keys = names.filter((name) =>
-      CANVAS_CARD_CLASSES.has(name) || CANVAS_FLOATING_WRAPPERS.has(name) || isFloatingContainerSelector(`.${name}`)
+      isFloatingContainerSelector(`.${name}`) ||
+      (canvas && (CANVAS_CARD_CLASSES.has(name) || CANVAS_FLOATING_WRAPPERS.has(name)))
     ).map((name) => `.${name}`)
     return subject.includes('&') ? keys.concat(parentKeys) : keys
   })
@@ -371,11 +376,13 @@ export function checkContentForTransparencyViolations(content, filePath = 'snipp
   // 同组变体可以复用基础底色，改写表面的规则仍须逐块检查。
   const groups = new Map()
   for (const block of ruleBlocks) {
-    const keys = canvas ? block.containerKeys ?? canvasContainerKeys(block.selector) : [floatingContainerKey(block.selector)].filter(Boolean)
+    const keys = block.containerKeys
     if (keys.length === 0) continue
     const surface = readSurfaceDeclarations(block.body)
-    const canvasSurface = canvas && keys.some((key) => !CANVAS_FLOATING_WRAPPERS.has(key.slice(1)))
-    const entry = { ...block, ...surface, canvasSurface }
+    const checkSurfaceOverride = canvas
+      ? keys.some((key) => !CANVAS_FLOATING_WRAPPERS.has(key.slice(1)))
+      : block.nestedOverride
+    const entry = { ...block, ...surface, checkSurfaceOverride }
     for (const key of new Set(keys)) {
       if (!groups.has(key)) groups.set(key, [])
       groups.get(key).push(entry)
@@ -389,7 +396,7 @@ export function checkContentForTransparencyViolations(content, filePath = 'snipp
     for (const block of blocks) {
       const {
         selector, containerKeys, body, index, startingStyle,
-        backgrounds, hasBackdropFilter, hasLowOpacity, canvasSurface,
+        backgrounds, hasBackdropFilter, hasLowOpacity, checkSurfaceOverride,
       } = block
       const trimmed = selector.trim()
       const selectorLabel = containerKeys?.some((container) => !trimmed.includes(container))
@@ -447,7 +454,7 @@ export function checkContentForTransparencyViolations(content, filePath = 'snipp
         })
       }
 
-      if (!canvasSurface) continue
+      if (!checkSurfaceOverride) continue
       const hasNonOpaqueBackground = backgrounds.some((value) =>
         !EXPLICIT_TRANSPARENT_BG.test(value) && !BARE_BG_ELEVATED.test(value) && !isOpaqueColorValue(value)
       )
