@@ -117,7 +117,7 @@ export function parseMediaConfig(value) {
 
 /**
  * @param {string} capability
- * @param {{ provider?: string, model?: string }} request
+ * @param {{ provider?: string, model?: string, group?: string, strategy?: string, allowedGroups?: unknown, taskId?: string, taskRef?: string, resolution?: string }} request
  * @param {ReturnType<typeof parseMediaConfig>} media
  * @param {Record<string, string | undefined>} [env]
  * @param {object} [snapshot]
@@ -160,16 +160,27 @@ export function resolveMediaRoute(capability, request, media, env = process.env,
     && (!Array.isArray(request.allowedGroups) || request.allowedGroups.length > 0)
   const allowedGroups = hasAllowedIntent ? request.allowedGroups : undefined
   const callerIntent = Boolean(requestedGroup || hasAllowedIntent || explicitStrategy)
-  const effective = providerId === 'omnimux' && capability === 'video' && !request.taskId && !request.taskRef
-    ? findSnapshotModel(snapshot, modelId)?.effectiveVideo : undefined
+  const catalogModel = providerId === 'omnimux' ? findSnapshotModel(snapshot, modelId) : undefined
+  const isCollect = [request.taskId, request.taskRef].some((id) => typeof id === 'string' && id.trim())
+  const effective = capability === 'video' && !isCollect ? catalogModel?.effectiveVideo : undefined
   const effectiveGroup = effective ? effectiveVideoRequestedGroup(request) : undefined
   if (effective && !effectiveGroup) {
-    throw new OmnimuxError('unknown-group', '请选择一条可用的视频线路')
+    throw new OmnimuxError('unknown-group', '请选择一条可用的视频线路并传入 group')
   }
+
+  const hasPublishedDefault = Object.hasOwn(catalogModel ?? {}, 'defaultGroup')
+  const hasPublishedOrder = Object.hasOwn(catalogModel ?? {}, 'groupOrder')
+  const hasSelectedLine = Boolean(requestedGroup || (Array.isArray(allowedGroups) && allowedGroups.length === 1))
+  // Catalogs predating both fields retain their legacy route compatibility.
+  const needsDefault = !isCollect && (hasPublishedDefault || hasPublishedOrder) && !hasSelectedLine
+  const groups = providerId === 'omnimux' && (!callerIntent || needsDefault) ? getModelChannelGroups(modelId, snapshot) : []
+  const preferred = groups.find((group) => group.default === true)
+  const lineSelectionRequired = needsDefault && groups.length > 0 && !preferred
 
   // Pin the selected default to the same snapshot used for route admission.
   // A default cannot fail over into a differently priced group.
-  const pinned = callerIntent || providerId !== 'omnimux' ? undefined : pinnedChannelGroup(modelId, request, snapshot)
+  const pinned = callerIntent || lineSelectionRequired || (hasPublishedDefault && !preferred)
+    ? undefined : pinnedChannelGroup(groups, preferred, request)
   const pinnedWire = pinned ? (pinned.wireGroup || pinned.id) : undefined
   const group = effectiveGroup ?? requestedGroup ?? pinnedWire
   // This model's lines use incompatible size protocols; an explicitly selected
@@ -179,15 +190,15 @@ export function resolveMediaRoute(capability, request, media, env = process.env,
     ?? (pinnedWire ? [pinnedWire] : undefined)
   const hasRoutingIntent = Boolean(group || hasAllowedIntent || effectiveAllowedGroups || explicitStrategy)
 
-  const plan = providerId === 'omnimux'
+  const plan = providerId === 'omnimux' && !lineSelectionRequired
     ? resolveChannelPlan(catalogModelId, {
       ...(explicitStrategy ? { strategy: request.strategy } : {}),
       group: effectiveGroup ?? fieldGroup ?? pinnedWire,
       allowedGroups: effectiveAllowedGroups,
       snapshot,
     })
-    : { candidates: [modelId], unresolvedGroups: [] }
-  if (hasRoutingIntent && plan.candidates.length === 0) {
+    : { candidates: lineSelectionRequired ? [] : [modelId], unresolvedGroups: [] }
+  if (!lineSelectionRequired && hasRoutingIntent && plan.candidates.length === 0) {
     // Fail closed: an empty plan means every requested channel was excluded or
     // unknown. Falling back to the bare model would silently widen the pool.
     const detail = plan.unresolvedGroups.length > 0 ? plan.unresolvedGroups.join(', ') : 'no enabled channel group'
@@ -210,6 +221,7 @@ export function resolveMediaRoute(capability, request, media, env = process.env,
     candidates: plan.candidates,
     // Channel ids the plan could not resolve (unknown group, or a model with no pool).
     unresolvedGroups: plan.unresolvedGroups,
+    lineSelectionRequired,
     capability,
   }
 }
@@ -218,17 +230,14 @@ export function resolveMediaRoute(capability, request, media, env = process.env,
  * Pin the catalog default for a legacy request. Keep resolution-based routing
  * for old callers that specify a resolution without choosing a line.
  *
- * @param {string} modelId
+ * @param {ReturnType<typeof getModelChannelGroups>} groups
+ * @param {ReturnType<typeof getModelChannelGroups>[number] | undefined} preferred
  * @param {{ resolution?: unknown }} request
- * @param {object} snapshot
  * @returns {{ wireGroup?: string, id: string } | undefined}
  */
-function pinnedChannelGroup(modelId, request, snapshot) {
-  const groups = getModelChannelGroups(modelId, snapshot)
-  const preferred = groups.find((group) => group.default === true)
+function pinnedChannelGroup(groups, preferred, request) {
   const resolution = typeof request?.resolution === 'string' ? request.resolution.trim() : ''
   if (resolution) {
-    if (!preferred && Object.hasOwn(findSnapshotModel(snapshot, modelId) ?? {}, 'defaultGroup')) return undefined
     const matchesResolution = (group) => {
       const constraint = group?.constraints?.parameters?.resolution
       return constraint?.fixed === resolution

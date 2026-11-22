@@ -444,7 +444,7 @@ describe('resolveMediaAuth (dual-track auth)', () => {
     assert.deepEqual(explicit.candidates, ['gpt-image-2.5@gpt-image-2.5-economy'])
   })
 
-  it('keeps an empty or illegal gateway default from pinning an ordered line', () => {
+  it('requires a chosen line when the gateway default is empty or illegal', () => {
     const model = 'seedance-2-5'
     for (const defaultGroup of ['', 'fixture-retired']) {
       const snapshot = normalizePricingPayload({ data: [{
@@ -453,7 +453,8 @@ describe('resolveMediaAuth (dual-track auth)', () => {
       for (const request of [{ model }, { model, resolution: '480p' }]) {
         const route = resolveMediaRoute('video', request, parseMediaConfig(), {}, snapshot)
         assert.equal(route.group, undefined)
-        assert.deepEqual(route.candidates, gatewayCandidates(model))
+        assert.equal(route.lineSelectionRequired, true)
+        assert.deepEqual(route.candidates, [])
       }
     }
   })
