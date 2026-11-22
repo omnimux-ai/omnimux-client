@@ -214,14 +214,18 @@ function oldCanvasDraft(projectId, url = sourceUrl) {
   return { binding: bindingFor(projectId), audios, draftSchema: schemaFromOpenPayload({ projectId, upstreamInputs: { audios } }) }
 }
 
-function runCanvas(t, binding, { draftSchema, audios = [], mediaReturn, sessionId = 'clip-session', refs = [] } = {}, owns = current) {
+function runCanvas(t, binding, { draftSchema, audios = [], mediaReturn, sessionId = 'clip-session', refs = new Map() } = {}, owns = current) {
   const token = new AbortController()
   let result = Promise.withResolvers()
   let cleanup
   let feedback
   let refIndex = 0
   const mount = effect => { cleanup = effect() }
-  mount.ref = value => refs[refIndex++] ??= { current: value }
+  mount.ref = value => {
+    const slot = refIndex++
+    if (!refs.has(slot)) refs.set(slot, { current: value })
+    return refs.get(slot)
+  }
   mount.publish = value => { feedback = value }
   globalThis.mountClipMediaEffect = mount
   try {
@@ -547,7 +551,8 @@ test('a Canvas media return appends a verified new version to the initialized ed
 test('reconnecting a versioned source keeps the media ID from a saved task-version draft', { timeout: 15_000 }, async t => {
   const { home, host } = fixture(t)
   const projectId = 'clip_node_reconnected_audio'
-  const { binding, audios } = oldCanvasDraft(projectId)
+  const binding = bindingFor(projectId)
+  const { audios } = oldCanvasDraft(projectId)
   const http = await workflowHttp(t, home)
   writeFileSync(http.file, winningBytes)
   const read = t.mock.method(globalThis, 'fetch', http.fetch)
@@ -635,7 +640,7 @@ test('reopening retries pending Canvas media only in its original conversation a
   const saved = host.save(projectId, nativeEditorState.capture().project, { expectedRevision: original.revision, binding })
   const audios = [{ path: url, name: 'voice.wav' }]
   const mediaReturn = { requestId: 'reopen-retry', upstreamInputs: { audios } }
-  const refs = []
+  const refs = new Map()
   const returned = runCanvas(t, binding, { audios, mediaReturn, refs })
   await returned.completed
   returned.cancel()
