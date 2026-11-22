@@ -154,6 +154,79 @@ test('画布扫描分别判断嵌套父规则和子选择器的表面', () => {
   assert.deepEqual(checkContentForTransparencyViolations(stylesheet, 'omnimux-workflow/src/canvas/theme.css'), [])
 })
 
+const canvasStylesheet = 'omnimux-workflow/src/canvas/theme.css'
+
+function assertRejectedNestedOverride(prelude) {
+  const stylesheet = [
+    '.wf-video-param-popover {',
+    '  background: var(--dsw-alias-bg-layer-1);',
+    `  ${prelude} {`,
+    '    background: var(--dsw-alias-bg-elevated);',
+    '    backdrop-filter: blur(20px);',
+    '  }',
+    '}',
+  ].join('\n')
+  const violations = checkContentForTransparencyViolations(stylesheet, canvasStylesheet)
+  assert.deepEqual(violations.map(({ rule, line, fatal }) => [rule, line, fatal]), [
+    ['POPOVER_NO_BACKDROP_BLUR', 3, true],
+    ['NO_BARE_BG_ELEVATED', 3, true],
+  ])
+  assert.ok(violations.every(({ message }) => message.includes('.wf-video-param-popover')))
+}
+
+test('画布扫描拦截 @media 对同一浮层的覆写', () => assertRejectedNestedOverride('@media (max-width: 390px)'))
+test('画布扫描拦截 @supports 对同一浮层的覆写', () => assertRejectedNestedOverride('@supports (display: grid)'))
+test('画布扫描拦截 @container 对同一浮层的覆写', () => assertRejectedNestedOverride('@container canvas (max-width: 640px)'))
+test('画布扫描拦截 @layer 对同一浮层的覆写', () => assertRejectedNestedOverride('@layer narrow'))
+test('画布扫描拦截 @scope 对同一浮层的覆写', () => assertRejectedNestedOverride('@scope (&)'))
+test('画布扫描拦截 @starting-style 对同一浮层的覆写', () => assertRejectedNestedOverride('@starting-style'))
+test('画布扫描拦截裸 & 对同一浮层的覆写', () => assertRejectedNestedOverride('&'))
+test('画布扫描拦截带属性选择器的 & 覆写', () => assertRejectedNestedOverride('&[data-density="compact, regular > wide"]'))
+test('画布扫描拦截 &:hover 对同一浮层的覆写', () => assertRejectedNestedOverride('&:hover'))
+test('画布扫描拦截带修饰类的 & 覆写', () => assertRejectedNestedOverride('&.modifier'))
+test('画布扫描拦截 :is 和 :where 里的 & 覆写', () => assertRejectedNestedOverride(':is(.ordinary-card, :where(&))'))
+test('画布扫描拦截同时列出子控件和浮层自身的覆写', () => assertRejectedNestedOverride('& > .child, &:focus-visible'))
+
+test('画布扫描跨多层条件和状态块继承紧邻的浮层选择器', () => {
+  const stylesheet = [
+    '.ordinary-card, .wf-video-param-popover {',
+    '  background: var(--dsw-alias-bg-layer-1);',
+    '  @media (max-width: 390px) {',
+    '    &[data-state="open"] {',
+    '      @supports (display: grid) {',
+    '        background-color: var(--dsw-alias-bg-overlay);',
+    '      }',
+    '    }',
+    '  }',
+    '}',
+  ].join('\n')
+  const violations = checkContentForTransparencyViolations(stylesheet, canvasStylesheet)
+  assert.deepEqual(violations.map(({ rule, line, fatal }) => [rule, line, fatal]), [
+    ['POPOVER_NO_BG_OVERLAY_DISCOLORATION', 5, true],
+  ])
+})
+
+test('画布扫描在后代、子代、兄弟和伪元素规则里独立判定目标', () => {
+  const declarations = 'background: var(--dsw-alias-bg-elevated); backdrop-filter: blur(4px);'
+  const stylesheet = [
+    '.wf-video-param-popover {',
+    '  background: var(--dsw-alias-bg-layer-1);',
+    `  & .wf-cfg-popover__section { @media (max-width: 390px) { ${declarations} } }`,
+    `  @supports (display: grid) { & > .child { ${declarations} } }`,
+    `  & + .sibling, & ~ [data-sibling] { ${declarations} }`,
+    `  & [data-role="a, b > c"] { ${declarations} }`,
+    `  & :is(.ordinary-card, .ordinary-section) { ${declarations} }`,
+    `  &::after { ${declarations} }`,
+    `  & > .wf-custom-select-dropdown { background: white; backdrop-filter: blur(4px); }`,
+    '}',
+  ].join('\n')
+  const violations = checkContentForTransparencyViolations(stylesheet, canvasStylesheet)
+  assert.deepEqual(violations.map(({ rule, line, fatal }) => [rule, line, fatal]), [
+    ['POPOVER_NO_BACKDROP_BLUR', 9, true],
+  ])
+  assert.match(violations[0].message, /\.wf-custom-select-dropdown/)
+})
+
 test('画布扫描保留行内控件的作用域令牌、弹窗遮罩及浮层子项样式', () => {
   const stylesheet = [
     '.wf-canvas-root { --dsw-alias-bg-elevated: var(--dsw-alias-bg-layer-1); }',
