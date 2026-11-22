@@ -3,8 +3,9 @@ import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gunzipSync } from 'node:zlib';
 import { after, before, test } from 'node:test';
 import { build } from 'esbuild';
 import { HUB_CSS } from '../../../omnimux/src/client/styles.js';
@@ -34,6 +35,7 @@ let browser;
 let bindings;
 let hostStyles;
 let fixtureHome;
+let pinnedThemeCss;
 
 const hostMarkup = `<!doctype html>
   <style>
@@ -54,8 +56,17 @@ function registerClip(React, ReactDOM, createRoot, jsx, isPropValid, primitives,
   const studio = document.getElementById('studio');
   const canvas = document.getElementById('canvas');
   const snapshot = { active: 'en', revision: 0 };
-  const studioTab = { id: 'dialog-studio-tab', meta: { clip: { mode: 'standalone', projectId: fixture.studioProjectId } } };
+  const studioProjectMeta = { clip: { mode: 'standalone', projectId: fixture.studioProjectId } };
+  let studioTab = { id: 'dialog-studio-tab', meta: studioProjectMeta };
   const listeners = new Set();
+  const contributors = new Map();
+  const attachedContexts = [];
+  window.readActiveClipContext = () => {
+    const surface = window.__omnimuxWorkbench.getActiveSurface();
+    const clip = contributors.get(surface.tabId)?.()?.view?.extra?.clip;
+    return clip ? { projectId: clip.projectId, mode: clip.mode, editorInstanceId: clip.editorInstanceId } : null;
+  };
+  window.attachedClipContexts = attachedContexts;
   window.__omnimuxWorkbench = {
     getActiveSurface: () => ({
       panelOpen: true, sessionId: fixture.sessionId,
@@ -63,7 +74,14 @@ function registerClip(React, ReactDOM, createRoot, jsx, isPropValid, primitives,
       instanceId: studio.hidden ? 'dialog-canvas-tab' : studioTab.id,
     }),
     getCurrentSessionId: () => fixture.sessionId,
-    registerContextContributor: () => () => {},
+    registerContextContributor(tabId, contribute) {
+      contributors.set(tabId, contribute);
+      return () => { if (contributors.get(tabId) === contribute) contributors.delete(tabId); };
+    },
+    attachClipContext({ sessionId, editorInstanceId, signal }) {
+      const context = window.readActiveClipContext();
+      if (!signal.aborted && context?.editorInstanceId === editorInstanceId) attachedContexts.push({ sessionId, ...context });
+    },
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -85,10 +103,14 @@ function registerClip(React, ReactDOM, createRoot, jsx, isPropValid, primitives,
   };
   let renderStudio;
   let messages;
-  window.setStudioVisible = (visible) => {
+  window.setStudioVisible = (visible, options) => {
+    if (options) {
+      const id = options.instanceId ?? studioTab.id;
+      studioTab = options.newProject ? { id } : { id, meta: studioProjectMeta };
+    }
     studio.hidden = !visible;
     canvas.dataset.visible = String(!visible);
-    renderStudio(visible);
+    renderStudio(visible, studioTab);
     for (const listener of listeners) listener();
   };
   window.__ModuleLoader__ = { load({ factory }) {
@@ -112,7 +134,7 @@ function registerClip(React, ReactDOM, createRoot, jsx, isPropValid, primitives,
         if (!services.includes('betterSidebar')) return;
         register({ betterSidebar: { registerTab({ component }) {
           const root = createRoot(studio);
-          renderStudio = (visible) => root.render(React.createElement(component, { visible, tab: studioTab, sessionId: fixture.sessionId }));
+          renderStudio = (visible, tab) => root.render(React.createElement(component, { key: tab.id, visible, tab, sessionId: fixture.sessionId }));
         } } });
       },
     });
@@ -153,7 +175,18 @@ after(async () => {
   }
 });
 
-async function openCanvas(page, beforeClipRequest) {
+function readPinnedThemeCss() {
+  const repo = new URL('../../../../../', import.meta.url);
+  const { dsh } = JSON.parse(readFileSync(new URL('dsh-version.json', repo), 'utf8'));
+  const archive = new URL(`app/${dirname(dsh.runtimeSource)}/deepseek-ai-dsh-client-ui-theme-${dsh.runtimePackageVersion}.tgz`, repo);
+  // Read the unique CSS literal from the pinned archive without executing its client.
+  const contents = gunzipSync(readFileSync(archive)).toString('utf8');
+  const [css, duplicate] = contents.matchAll(/var design_platform_css_default\s*=\s*("(?:[^"\\]|\\.)*")/g);
+  assert.ok(css && !duplicate, 'The pinned DSH theme archive must carry one design platform CSS literal');
+  return JSON.parse(css[1]);
+}
+
+async function openWorkbench(page, beforeClipRequest, theme) {
   const paths = resolveClipPaths({ homeDir: mkdtempSync(join(fixtureHome, 'page-')) });
   const store = createProjectStore({ paths });
   store.materialize(fixture.studioProjectId, { title: 'Studio project' });
@@ -183,8 +216,14 @@ async function openCanvas(page, beforeClipRequest) {
     return route.fulfill({ json: {} });
   });
   // Start from a returning editor so the first-run overlay cannot race the dialogs.
-  await page.addInitScript(() => localStorage.setItem('openreel-onboarding-complete', 'true'));
+  await page.addInitScript(dark => {
+    localStorage.setItem('openreel-onboarding-complete', 'true');
+    if (dark) document.addEventListener('DOMContentLoaded', () => {
+      document.body.setAttribute('data-ds-dark-theme', '');
+    }, { once: true });
+  }, theme === 'dark');
   await page.goto('http://127.0.0.1/');
+  if (theme) await page.addStyleTag({ content: pinnedThemeCss ??= readPinnedThemeCss() });
   await page.addStyleTag({ content: hostStyles });
   await page.addScriptTag({ content: bindings });
   const script = await page.addScriptTag({ content: clipSource });
@@ -194,6 +233,11 @@ async function openCanvas(page, beforeClipRequest) {
     return { bytes: bytes.length, sha256: Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('') };
   });
   assert.deepEqual(injectedBuild, clipBuild);
+  return store;
+}
+
+async function openCanvas(page, beforeClipRequest, theme) {
+  const store = await openWorkbench(page, beforeClipRequest, theme);
   await page.evaluate(async (binding) => {
     const canvas = document.createElement('canvas');
     canvas.width = 160;
@@ -683,3 +727,321 @@ test('conflict resolution leaves Mask Pen Enter to the host and preserves the dr
   { timeout: 25_000 }, t => checkMaskPenConflict(t, {
     theme: 'dark', viewport: { width: 900, height: 760 }, paneWidth: 740,
   }));
+
+async function openStudioForm(page, instanceId) {
+  await page.evaluate(id => window.setStudioVisible(true, { newProject: true, instanceId: id }), instanceId);
+  const studio = page.locator(studioEditor);
+  await studio.getByText('New clip project', { exact: true }).waitFor();
+  return studio;
+}
+
+async function openStudioWelcome(studio) {
+  await studio.getByRole('button', { name: 'Open official welcome', exact: true }).click();
+  return studio.getByTestId('welcome-scroller');
+}
+
+async function readWelcomeOutcome(studio, welcome) {
+  await studio.page().evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  try {
+    await welcome.waitFor({ timeout: 2500 });
+  } catch (error) {
+    if (error.name !== 'TimeoutError') throw error;
+  }
+  return {
+    welcome: await welcome.isVisible(),
+    openingProject: await studio.getByText('Opening project...', { exact: true }).isVisible(),
+  };
+}
+
+async function captureWelcome(page, name) {
+  const directory = process.env.CLIP_TEST_SCREENSHOT_DIR;
+  if (directory) await page.screenshot({ path: join(directory, `${name}.png`) });
+}
+
+async function pressEscapeInside(control) {
+  await control.focus();
+  assert.equal(await control.evaluate(node => document.activeElement === node && !node.closest(
+    'input, textarea, select, [contenteditable], [role=dialog], [role=menu], [role=listbox]',
+  )), true);
+  await control.evaluate(node => {
+    window.studioEscapeTrusted = false;
+    node.addEventListener('keydown', event => { window.studioEscapeTrusted = event.isTrusted; }, { once: true });
+  });
+  const page = control.page();
+  await page.keyboard.press('Escape');
+  assert.equal(await page.evaluate(() => window.studioEscapeTrusted), true);
+}
+
+async function checkWelcomeAfterAction(t, { theme, viewport, action }) {
+  const page = await browser.newPage({ viewport, colorScheme: theme });
+  page.setDefaultTimeout(5000);
+  try {
+    const store = await openWorkbench(page, undefined, theme);
+    const before = store.list();
+    const studio = await openStudioForm(page);
+    await captureWelcome(page, `${theme}-studio-new-project-form`);
+    const welcome = await openStudioWelcome(studio);
+    await welcome.getByRole('button', { name: 'Create Horizontal project', exact: true }).waitFor();
+    assert.equal(await studio.getAttribute('data-clip-project-id'), null);
+    const openEditor = welcome.getByRole('button', { name: 'Open editor', exact: true });
+    await captureWelcome(page, `${theme}-studio-welcome-initial`);
+    let openEditorDisabled;
+    if (action === 'Escape') {
+      await pressEscapeInside(welcome.getByRole('button', { name: 'Browse templates', exact: true }));
+    } else {
+      openEditorDisabled = await openEditor.isDisabled();
+      // Use the enabled control in an older build to reproduce its actual failure.
+      if (!openEditorDisabled) await openEditor.click();
+    }
+    const state = await readWelcomeOutcome(studio, welcome);
+    t.diagnostic(JSON.stringify({ chromium: browser.version(), injectedBuild: clipBuild, theme, viewport, action, openEditorDisabled, ...state }));
+    await captureWelcome(page, `${theme}-studio-welcome-after-action`);
+    assert.deepEqual(state, { welcome: true, openingProject: false });
+    if (action === 'Open editor') assert.equal(openEditorDisabled, true);
+    if (action === 'Escape') {
+      for (const name of ['Browse templates', 'Recent projects']) {
+        await welcome.getByRole('button', { name, exact: true }).click();
+        await welcome.waitFor({ state: 'hidden' });
+        await pressEscapeInside(studio.getByRole('button', { name: 'Back', exact: true }));
+        await welcome.waitFor();
+      }
+    }
+    assert.equal(await studio.getAttribute('data-clip-project-id'), null);
+    assert.equal(await studio.getByRole('button', { name: 'AI Edit', exact: true }).count(), 0);
+    assert.deepEqual(store.list(), before);
+  } finally {
+    await page.close();
+  }
+}
+
+test('#174 Studio welcome remains available after Escape with no project (light)',
+  { timeout: 20_000 }, t => checkWelcomeAfterAction(t, {
+    theme: 'light', viewport: { width: 1440, height: 920 }, action: 'Escape',
+  }));
+
+test('#174 Studio welcome remains available after Open editor with no project (dark)',
+  { timeout: 20_000 }, t => checkWelcomeAfterAction(t, {
+    theme: 'dark', viewport: { width: 900, height: 760 }, action: 'Open editor',
+  }));
+
+test('#174 an explicit Studio welcome opens even with Skip on startup already saved', { timeout: 25_000 }, async t => {
+  const viewport = { width: 1440, height: 920 };
+  const context = await browser.newContext({ viewport, colorScheme: 'light' });
+  const readSkipPreference = () => JSON.parse(localStorage.getItem('openreel-ui-preferences'))?.state?.skipWelcomeScreen;
+  try {
+    const firstPage = await context.newPage();
+    await openWorkbench(firstPage, undefined, 'light');
+    const firstWelcome = await openStudioWelcome(await openStudioForm(firstPage));
+    const skip = firstWelcome.getByRole('switch', { name: 'Skip on startup' });
+    await skip.click();
+    assert.equal(await firstPage.evaluate(readSkipPreference), true);
+    await firstPage.close();
+
+    const page = await context.newPage();
+    const store = await openWorkbench(page, undefined, 'light');
+    const before = store.list();
+    const studio = await openStudioForm(page);
+    assert.equal(await page.evaluate(readSkipPreference), true);
+    await captureWelcome(page, 'studio-saved-skip-before-open');
+    const welcome = await openStudioWelcome(studio);
+    const state = await readWelcomeOutcome(studio, welcome);
+    t.diagnostic(JSON.stringify({ chromium: browser.version(), injectedBuild: clipBuild, viewport, skipWelcomeScreen: true, ...state }));
+    await captureWelcome(page, 'studio-saved-skip-after-open');
+    assert.deepEqual(state, { welcome: true, openingProject: false });
+    assert.equal(await studio.getAttribute('data-clip-project-id'), null);
+    assert.equal(await page.evaluate(readSkipPreference), true);
+    assert.deepEqual(store.list(), before);
+  } finally {
+    await context.close();
+  }
+});
+
+function isProjectRequest(request, method, projectId) {
+  return request.method() === method && new URL(request.url()).pathname === `${CLIP_API_PREFIX}/projects/${projectId}`;
+}
+
+async function addTimelineText(seat) {
+  // The timeline summary is hidden in compact mode. Use a focusable editor control for the shortcut.
+  await seat.getByRole('button', { name: 'AI Edit', exact: true }).press('t');
+  await seat.getByRole('button', { name: 'Select text clip New Title', exact: true }).waitFor();
+}
+
+async function assertAiAttached(seat, projectId, mode) {
+  const page = seat.page();
+  await page.waitForFunction(id => window.readActiveClipContext()?.projectId === id, projectId);
+  const previous = await page.evaluate(() => window.attachedClipContexts.length);
+  await seat.getByRole('button', { name: 'AI Edit', exact: true }).click();
+  const attachments = await page.evaluate(count => window.attachedClipContexts.slice(count), previous);
+  assert.equal(attachments.length, 1);
+  const [attachment] = attachments;
+  assert.equal(attachment.sessionId, fixture.sessionId);
+  assert.equal(attachment.projectId, projectId);
+  assert.equal(attachment.mode, mode);
+  assert.ok(attachment.editorInstanceId);
+}
+
+async function assertNoActiveEditor(studio) {
+  await studio.getByTestId('welcome-scroller').waitFor();
+  assert.equal(await studio.getAttribute('data-clip-project-id'), null);
+  assert.equal(await studio.getByText('Opening project...', { exact: true }).isVisible(), false);
+  assert.equal(await studio.page().getByRole('button', { name: 'AI Edit', exact: true }).count(), 0);
+  assert.equal(await studio.page().evaluate(() => window.readActiveClipContext()), null);
+}
+
+async function checkCanvasHandoff(t, { timing, theme, viewport }) {
+  const page = await browser.newPage({ viewport, colorScheme: theme });
+  page.setDefaultTimeout(5000);
+  const writeGate = Promise.withResolvers();
+  const readGate = Promise.withResolvers();
+  const projectId = fixture.canvas.projectId;
+  const isWriteWithText = request => isProjectRequest(request, 'PUT', projectId)
+    && request.postDataJSON()?.project?.textClips?.length === 1;
+  let holdCanvasRead = false;
+  try {
+    const store = await openCanvas(page, async (_url, request) => {
+      if (timing === 'pending' && isWriteWithText(request)) await writeGate.promise;
+      if (holdCanvasRead && isProjectRequest(request, 'GET', projectId)) await readGate.promise;
+    }, theme);
+    const stage = page.locator(canvasStage);
+    const studio = page.locator(studioEditor);
+    const video = stage.getByRole('button', { name: 'Select clip capture.webm', exact: true });
+    const videoId = await video.getAttribute('data-timeline-item-id');
+    const canvasShell = await stage.locator('.editor-shell').elementHandle();
+    await assertAiAttached(stage, projectId, 'canvas');
+
+    const [saveRequest] = await Promise.all([page.waitForRequest(isWriteWithText), addTimelineText(stage)]);
+    let savedResponse;
+    if (timing === 'pending') {
+      assert.equal(store.load(projectId).project.textClips?.length ?? 0, 0);
+      await page.evaluate(() => window.setStudioVisible(true, { newProject: true }));
+      await studio.locator('[data-clip-sync=saving]').waitFor();
+      assert.equal(await studio.getByRole('button', { name: 'Open official welcome' }).count(), 0);
+      assert.equal(await page.evaluate(() => window.readActiveClipContext()), null);
+      assert.equal(await page.getByRole('button', { name: 'AI Edit', exact: true }).count(), 0);
+      await captureWelcome(page, 'canvas-pending-save-handoff');
+      const response = page.waitForResponse(result => result.request() === saveRequest);
+      writeGate.resolve();
+      savedResponse = await response;
+    } else {
+      savedResponse = await saveRequest.response();
+    }
+    assert.equal(savedResponse?.status(), 200);
+    const saved = store.load(projectId);
+    assert.deepEqual(saved, { ...saved, binding: fixture.canvas });
+    const [text] = saved.project.textClips;
+    assert.ok(text.id);
+    assert.equal(saved.project.timeline.tracks.flatMap(track => track.clips)[0].id, videoId);
+
+    await openStudioForm(page);
+    const welcome = await openStudioWelcome(studio);
+    await assertNoActiveEditor(studio);
+    await captureWelcome(page, `canvas-${timing}-studio-welcome`);
+    assert.deepEqual(store.load(projectId), saved);
+
+    let delayedReadStatus;
+    if (timing === 'pending') {
+      // Reacquiring Canvas reads the saved project. Leave again while that GET is in flight.
+      holdCanvasRead = true;
+      const [readRequest] = await Promise.all([
+        page.waitForRequest(request => isProjectRequest(request, 'GET', projectId)),
+        page.evaluate(() => window.setStudioVisible(false)),
+      ]);
+      await stage.locator('.omnimux-clip-opening').getByText('Opening clip project…', { exact: true }).waitFor();
+      assert.equal(await stage.getByText('Opening project...', { exact: true }).isVisible(), false);
+      assert.equal(await page.evaluate(() => window.readActiveClipContext()), null);
+      await captureWelcome(page, 'canvas-pending-project-read');
+      await page.evaluate(() => window.setStudioVisible(true));
+      const response = page.waitForResponse(result => result.request() === readRequest);
+      holdCanvasRead = false;
+      readGate.resolve();
+      delayedReadStatus = (await response).status();
+      assert.equal(delayedReadStatus, 200);
+      await welcome.waitFor();
+      await assertNoActiveEditor(studio);
+      await captureWelcome(page, 'canvas-pending-return-to-welcome');
+    }
+
+    await page.evaluate(() => window.setStudioVisible(false));
+    await stage.locator(`[data-timeline-item-id="${text.id}"]`).waitFor();
+    assert.equal(await video.getAttribute('data-timeline-item-id'), videoId);
+    assert.equal(await stage.locator('.editor-shell').evaluate((node, previous) => node === previous, canvasShell), true);
+    await assertAiAttached(stage, projectId, 'canvas');
+    assert.deepEqual(store.load(projectId), saved);
+    t.diagnostic(JSON.stringify({ timing, chromium: browser.version(), injectedBuild: clipBuild, canvasRevision: saved.revision,
+      preservedTextClips: saved.project.textClips.length, retainedCanvasEditor: true, canvasAiAttached: true,
+      canvasSaveStatus: savedResponse.status(), delayedCanvasReadStatus: delayedReadStatus }));
+    await captureWelcome(page, `canvas-${timing}-draft-reopened`);
+  } finally {
+    writeGate.resolve();
+    readGate.resolve();
+    await page.close();
+  }
+}
+
+test('#174 Canvas saved handoff reaches the same-session Studio welcome and preserves the draft',
+  { timeout: 30_000 }, t => checkCanvasHandoff(t, {
+    timing: 'saved', theme: 'light', viewport: { width: 1440, height: 920 },
+  }));
+
+test('#174 Canvas pending handoff reaches the same-session Studio welcome and preserves the draft',
+  { timeout: 30_000 }, t => checkCanvasHandoff(t, {
+    timing: 'pending', theme: 'dark', viewport: { width: 900, height: 760 },
+  }));
+
+async function checkStudioCreation(t, fromWelcome) {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 920 }, colorScheme: 'light' });
+  page.setDefaultTimeout(5000);
+  const projectName = fromWelcome ? 'New Horizontal Video' : 'Studio recovery sample';
+  try {
+    const store = await openWorkbench(page, undefined, 'light');
+    const studio = await openStudioForm(page);
+    if (fromWelcome) {
+      const welcome = await openStudioWelcome(studio);
+      await assertNoActiveEditor(studio);
+      await welcome.getByRole('button', { name: 'Create Horizontal project', exact: true }).click();
+    } else {
+      await studio.getByRole('textbox', { name: 'Project name', exact: true }).fill(projectName);
+      await studio.getByRole('button', { name: 'Create and open editor', exact: true }).click();
+    }
+    await studio.locator('.editor-workspace').waitFor();
+    const projectId = await studio.getAttribute('data-clip-project-id');
+    assert.ok(projectId && projectId !== fixture.canvas.projectId && projectId !== fixture.studioProjectId);
+    assert.equal(store.load(projectId).project.name, projectName);
+    await assertAiAttached(studio, projectId, 'standalone');
+
+    if (!fromWelcome) {
+      const isTextSave = response => isProjectRequest(response.request(), 'PUT', projectId)
+        && response.request().postDataJSON()?.project?.textClips?.length === 1;
+      const [response] = await Promise.all([page.waitForResponse(isTextSave), addTimelineText(studio)]);
+      assert.equal(response.status(), 200);
+      const saved = store.load(projectId);
+      const [text] = saved.project.textClips;
+      await studio.locator('.workspace-saved').getByText('Saved', { exact: true }).waitFor();
+
+      // An unbound Studio tab in the same session can recover the real browser autosave.
+      await page.evaluate(() => window.setStudioVisible(false));
+      await openStudioWelcome(await openStudioForm(page, 'dialog-studio-recovery-tab'));
+      const recovery = studio.getByRole('dialog', { name: 'Recover Your Work', exact: true });
+      const recover = recovery.getByRole('button', { name: `Recover ${projectName}`, exact: true });
+      await recover.waitFor();
+      await assertNoActiveEditor(studio);
+      await captureWelcome(page, 'studio-recovery-dialog');
+      await recover.click();
+      await studio.locator(`[data-timeline-item-id="${text.id}"]`).waitFor();
+      assert.equal(await studio.getAttribute('data-clip-project-id'), projectId);
+      assert.deepEqual(store.load(projectId), saved);
+      await assertAiAttached(studio, projectId, 'standalone');
+      await captureWelcome(page, 'studio-recovered-editor');
+    }
+    t.diagnostic(JSON.stringify({ chromium: browser.version(), injectedBuild: clipBuild, source: fromWelcome ? 'welcome-format' : 'studio-form',
+      projectName, restored: !fromWelcome, standaloneAiAttached: true }));
+  } finally {
+    await page.close();
+  }
+}
+
+test('#174 Studio form creates and the official welcome recovers a project',
+  { timeout: 25_000 }, t => checkStudioCreation(t, false));
+
+test('#174 Studio welcome format creates a project',
+  { timeout: 25_000 }, t => checkStudioCreation(t, true));
