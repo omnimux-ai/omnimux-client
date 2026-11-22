@@ -274,6 +274,45 @@ test('下游放置：折叠组使用收起后的宽高，组内隐藏节点不�
   assert.deepEqual(plan?.addNodes[0]?.position, { x: 470, y: 80 });
 });
 
+test('Host 首次回写：按来源完成态的标题避让', async t => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'workflow-clip-first-export-')));
+  t.after(() => {
+    assert.equal(realpathSync(root), root);
+    rmSync(root, { recursive: true, force: true });
+  });
+  const store = createWorkspaceStore({ workspacesDir: root });
+  const service = createWorkflowClipService({ store });
+  const cases = [['一二三四五', 199], ['一二三四', 80], ['短', 80]];
+  for (const [title, y] of cases) {
+    await t.test(title, () => {
+      const workspaceId = store.create(title).id;
+      const source = { ...compositionNode, data: { title, status: 'idle', projectId: 'clip_node_first_export' } };
+      store.save(workspaceId, { expectedVersion: 0, nodes: [source], edges: [] });
+      const before = store.get(workspaceId);
+      assert.equal(before.nodes[0].data.status, 'idle');
+      assert.equal(before.nodes[0].data.outputVideoUrl, undefined);
+      const receipt = service.commitExport({
+        workspaceId, nodeId: source.id, projectId: source.data.projectId, exportJobId: 1, projectRevision: 1,
+        output: { videoPath: join(root, 'first-export.mp4'), revision: 'export-1', durationMs: 1000, width: 320, height: 180 },
+      });
+      const saved = store.get(workspaceId);
+      assert.deepEqual(receipt, { status: 'committed', canvasCommitted: true, workspaceVersion: before.version + 1 });
+      assert.equal(saved.version, receipt.workspaceVersion);
+      const savedSource = saved.nodes.find(node => node.id === source.id);
+      assert.equal(savedSource.data.status, 'completed');
+      const downstream = saved.nodes.filter(node => node.data.origin === CLIP_EXPORT_ORIGIN
+        && node.data.sourceCompositionNodeId === source.id);
+      assert.equal(downstream.length, 1);
+      const [outputNode] = downstream;
+      assert.equal(outputNode.data.status, 'ready');
+      assert.equal(outputNode.data.mediaUrl, savedSource.data.outputVideoUrl);
+      assert.deepEqual(outputNode.position, { x: 470, y });
+      assert.deepEqual(saved.edges.map(({ source, target, sourceHandle, targetHandle }) => ({ source, target, sourceHandle, targetHandle })),
+        [drawableEdge(savedSource.id, outputNode.id)]);
+    });
+  }
+});
+
 test('Host 顺序回写：第二个来源避让尚未测量的已保存竖版成片', t => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'workflow-clip-layout-')));
   t.after(() => {

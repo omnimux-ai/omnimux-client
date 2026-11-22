@@ -350,7 +350,11 @@ function placeDownstreamNode(
     const parent = node.parentId ? groups.get(node.parentId) : undefined;
     if (parent?.hidden || parent?.data?.isCollapsed) continue;
     const position = parent?.position ? toAbsoluteCoordinates(node.position, parent.position) : node.position;
-    const obstacle = placementBoxes(node, position);
+    // The export write commits the source's completion badge with the new node.
+    const obstacleNode = node.id === input.sourceNodeId && node.type === 'video_composition'
+      ? { ...node, data: { ...node.data, status: 'completed' } }
+      : node;
+    const obstacle = placementBoxes(obstacleNode, position);
     // Keep the existing gutter in the card column. Outside it, titles only
     // block positions where their own boxes can touch another visible part.
     const gap = overlapsColumn(output[0], obstacle[0], DOWNSTREAM_CLEARANCE) ? DOWNSTREAM_CLEARANCE : 0;
