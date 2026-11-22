@@ -1,7 +1,7 @@
 /**
  * W3 测试（计划 §8）：释放菜单三分支 / 选项集派生 / disconnect→mutation plan。
  * 纯逻辑 node:test（无 React 渲染）。
- * Issue #466 B1：拒绝提示链必须携带 catalogRuntime，避免误报 catalog_unavailable。
+ * Issue #88 G1：已有节点上的拒绝提示来自当前图的结构校验。
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,21 +15,21 @@ import {
   getOutputOptionSpecs,
 } from '../utils/connectionMenuOptions.ts';
 import { planCanvasInputMutation } from '../utils/canvasInputMutationGateway.ts';
+import { rejectReasonKey, validateConnectionDetailed } from '../utils/connectionValidator.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const hookSrc = readFileSync(join(here, 'useConnectionMenu.ts'), 'utf8');
 
-test('B1：invalid connection 拒绝提示链 validateConnectionDetailed 携带 catalogRuntime', () => {
-  // 源码契约：onConnectEnd 二次校验必须注入 store catalog，与 CanvasEditor 硬闸一致。
-  // 旧代码只传 connection/nodes/edges 三参，会把 mime_unsupported 等误报为 catalog_unavailable。
-  assert.match(
-    hookSrc,
-    /validateConnectionDetailed\(\s*\{\s*source:\s*fromId,\s*target:\s*toId,[\s\S]*?\},\s*state\.nodes,\s*state\.edges,\s*state\.catalogRuntime\s*,?\s*\)/,
-  );
-  assert.doesNotMatch(
-    hookSrc,
-    /validateConnectionDetailed\(\s*\{\s*source:\s*fromId,\s*target:\s*toId,[\s\S]*?\},\s*state\.nodes,\s*state\.edges\s*\)/,
-  );
+test('G1：invalid connection 使用当前图的结构原因走拒绝提示', () => {
+  const invalidDrop = hookSrc.match(/if \(!connectionState\.isValid && fromId && toId\) \{([\s\S]*?)\n      \}/)?.[1] ?? '';
+  assert.match(invalidDrop, /validateConnectionDetailed\(\s*\{\s*source:\s*fromId,\s*target:\s*toId,[^}]*\},\s*state\.nodes,\s*state\.edges\s*,?\s*\);/);
+  assert.match(invalidDrop, /rejectReason = !detail\.valid \? t\(rejectReasonKey\(detail\.reasonCode\)\) : null;/);
+  assert.doesNotMatch(invalidDrop, /catalogRuntime/);
+  assert.match(hookSrc, /if \(outcome\.type === 'reject'\) \{\s*onRejectRef\.current\?\.\(outcome\.reason\);\s*toast\.warning\(outcome\.reason\);/);
+
+  const result = validateConnectionDetailed({ source: NODE_A.id, target: NODE_B.id }, [NODE_A, NODE_B], [EDGE_AB]);
+  assert.deepEqual(result, { valid: false, blockedBy: 'structure', reasonCode: 'duplicate_edge' });
+  assert.equal(rejectReasonKey(result.reasonCode), 'edge.reject.duplicateEdge');
 });
 
 // ==================== 释放菜单三分支 ====================

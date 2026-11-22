@@ -12,7 +12,7 @@
  */
 
 import { assertProjectWriteSafe } from '../../projects/paths.ts';
-import { relative, resolve } from 'node:path';
+import { isAbsolute, relative, resolve } from 'node:path';
 import type { ExecutionContext } from './ExecutionContext.ts';
 import type {
   ExecutableEdge,
@@ -34,6 +34,7 @@ import { narrowCatalogByRouting, resolveEffectiveVideoGroup } from '../../shared
 import { readExplicitTargetSlot } from '../../shared/validation/compatKernel.ts';
 import { deriveImageGenerationLayout, deriveSlotLayout, type SlotBindings, type SlotConflict } from '../../shared/graph/feedSlot/index.ts';
 import { effectiveInputDisplay } from '../../shared/graph/feedSlot/effectiveInputDisplay.ts';
+import { readPreparedExecutionInputs, type RunSnapshot } from '../../shared/graph/feedSlot/prepareExecutionSlotGraph.ts';
 import type { CapabilityCatalog } from '../../shared/api.ts';
 
 const LOG_TAG = 'nodeExecutors';
@@ -66,6 +67,7 @@ export interface DispatchingExecutorOptions {
   executionId: string;
   workspaceId?: string;
   edges: ExecutableEdge[];
+  runSnapshots?: ReadonlyMap<string, RunSnapshot>;
   /** AbortController shared by the execution (cancel aborts in-flight nodes). */
   abortController: AbortController;
   persistGenerated?: ExecutorContext['persistGenerated'];
@@ -85,6 +87,7 @@ export function createDispatchingNodeExecutor(
 
   /** Absolute artifact path -> /omnimux-workflow/media/executions/<id>/<file>. */
   const toPublicUrl = (absolutePath: string): string => {
+    if (!isAbsolute(absolutePath)) return absolutePath;
     const rel = relative(opts.mediaRoot, resolve(absolutePath));
     const normalized = rel.split('\\').join('/');
     if (normalized.startsWith('..')) {
@@ -102,21 +105,28 @@ export function createDispatchingNodeExecutor(
       throw new Error(`节点类型 ${node.type} 没有注册执行器（registry key: ${executorKey}）`);
     }
 
-    node = structuredClone(node);
-    const edges = structuredClone(opts.edges);
-    const upstreamOutputs = structuredClone(resolveUpstreamOutputs(node, edges, context));
+    const prepared = readPreparedExecutionInputs(node.data);
     const collecting = executorKey === 'material:generate' && Boolean(context.readNodeUpstreamTask?.(node.id));
+    const runSnapshot = collecting ? undefined : opts.runSnapshots?.get(node.id) ?? prepared?.snapshot;
+    if (runSnapshot?.blockingInput) {
+      throw Object.assign(new Error(runSnapshot.blockingInput.message), { code: runSnapshot.blockingInput.reasonCode });
+    }
+    node = structuredClone(node);
+    const inputEdgeIds = runSnapshot && new Set([...runSnapshot.assigned, ...runSnapshot.deferred].map(input => input.edgeId));
+    const edges = structuredClone(inputEdgeIds ? opts.edges.filter(edge => edge.id && inputEdgeIds.has(edge.id)) : opts.edges);
+    const upstreamOutputs = collecting ? new Map<string, NodeOutput>() : structuredClone(resolveUpstreamOutputs(node, edges, context));
     const submission = executorKey === 'material:generate' && !collecting ? await openWorkflowSubmission(opts.gateway) : undefined;
     const catalog = submission?.catalog;
-    const upstreamBindings = collecting ? [] : resolveUpstreamBindings(node, edges, { getNodeOutput: (id) => upstreamOutputs.get(id) }, catalog);
+    const upstreamBindings = collecting ? [] : resolveUpstreamBindings(node, edges, { getNodeOutput: (id) => upstreamOutputs.get(id) }, catalog, runSnapshot);
 
-    if (executorKey === 'material:generate' && !collecting) {
+    if (executorKey === 'material:generate' && !collecting && !runSnapshot) {
       const resolvedInputs = new Map([...upstreamOutputs].map(([id, output]) => {
         const media = (output.mediaAssets ?? []).map((asset) => ({
           nodeId: id, materialType: asset.type,
           // A document with an explicit read/parse error is unusable, not "ready".
           availability: (asset.type === 'document' && output.documentError ? 'unavailable' : 'ready') as 'ready' | 'unavailable',
           ...(asset.type === 'document' && output.documentError ? { availabilityMessage: output.documentError } : {}),
+          outputId: asset.assetId ?? asset.relativePath ?? asset.path ?? asset.url,
           url: asset.url || asset.relativePath || asset.path, mimeType: asset.mimeType, sizeBytes: asset.sizeBytes, durationSec: asset.durationSec,
           // Document slots are prompt/parameter sources: keep the parsed text and
           // raw JSON text on the same snapshot so readiness sees what execution will read.
@@ -145,11 +155,13 @@ export function createDispatchingNodeExecutor(
     const ctx: ExecutorContext = {
       catalog,
       submission,
+      runSnapshot,
       gateway: opts.gateway,
       upstreamOutputs,
       upstreamBindings,
       signal: opts.abortController.signal,
       mediaDir,
+      mediaRoot: opts.mediaRoot,
       workspaceId: opts.workspaceId,
       toPublicUrl,
       persistGenerated: opts.persistGenerated,
@@ -188,7 +200,14 @@ export function resolveUpstreamBindings(
   edges: ExecutableEdge[],
   context: Pick<ExecutionContext, 'getNodeOutput'>,
   catalog?: CapabilityCatalog,
+  snapshot = readPreparedExecutionInputs(node.data)?.snapshot,
 ): NonNullable<ExecutorContext['upstreamBindings']> {
+  if (snapshot) {
+    return [...snapshot.assigned, ...snapshot.deferred].flatMap(({ edgeId, sourceNodeId, ordinal, role, targetSlot }) => {
+      if (!edges.some(edge => edge.target === node.id && edge.id === edgeId && edge.source === sourceNodeId)) return [];
+      return [{ edgeId, sourceNodeId, ordinal, role, targetSlot, output: normalizeOutput(context.getNodeOutput(sourceNodeId)) }];
+    });
+  }
   const bindings: NonNullable<ExecutorContext['upstreamBindings']> = [];
   const saved = node.data?.slotBindings as SlotBindings | undefined;
   if (saved !== undefined && catalog) {

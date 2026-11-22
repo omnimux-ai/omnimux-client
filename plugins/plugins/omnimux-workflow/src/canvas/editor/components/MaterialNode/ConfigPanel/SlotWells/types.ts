@@ -19,8 +19,11 @@ export type { SlotBindings, SlotConflict, SlotLayout };
 /** 唤起 ResourcePicker 的目标卡槽请求。 */
 export interface SlotPickRequest {
   /** 目标 slot 名（内核 SlotSpec.slot）。 */
-  targetSlot?: string;
-  /** 通用参考素材可填入的槽位，按合同声明顺序。 */
+  targetSlot: string;
+  /** 画布提交前用最新契约核对这个入口。 */
+  operationId: string;
+  slotRole: string;
+  /** Legacy callers may still forward this field. Named wells never set it. */
   referenceSlots?: string[];
   /** 该 slot 接受的素材类型（SlotSpec.type 展开）。 */
   acceptedTypes: string[];

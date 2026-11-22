@@ -63,8 +63,10 @@ test('recomputeCanvasSlots self-heals a new image node with all text sources in 
 
 test('recomputeCanvasSlots appends a newly connected text edge instead of replacing the first', () => {
   const saved = targetNode({ prompt: [{ sourceNodeId: 'text-1', edgeId: 'e-text-1', outputId: 'text-1:current', ordinal: 0, pinned: true }] });
-  const nodes = [textNode('text-1', '11111'), textNode('text-2', '22222'), saved];
-  const result = recomputeCanvasSlots(saved, { nodes, edges: [edge('text-1'), edge('text-2')] }, { catalog },
-    saved, new Set(['e-text-2']));
-  assert.deepEqual(result.data.slotBindings.prompt.map((occupant) => occupant.sourceNodeId), ['text-1', 'text-2']);
+  const sources = [textNode('text-1', '11111'), textNode('unused', '未选择的旧文本'), textNode('text-2', '22222')];
+  const edges = sources.map(source => edge(source.id));
+  const result = recomputeCanvasSlots(saved, { nodes: [...sources, saved], edges }, { catalog }, saved, new Set(['e-text-2']));
+  assert.deepEqual(result.data.slotBindings.prompt.map(occupant => occupant.sourceNodeId), ['text-1', 'text-2']);
+  const reopened = recomputeCanvasSlots(result, { nodes: [...sources, result], edges }, { catalog });
+  assert.deepEqual(reopened.data.slotBindings.prompt, result.data.slotBindings.prompt);
 });

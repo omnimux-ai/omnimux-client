@@ -1,12 +1,28 @@
+import { mimeFromFilename } from '../../localMedia.ts';
+import { normalizeMimeType } from '../../mediaMetadata.ts';
 import type { FeedAsset, FillResult, SlotBindings, SlotLayout, SlotOccupant, SlotSpec } from './types.ts';
 
-export function acceptsFeedAsset(slot: SlotSpec, asset: Pick<FeedAsset, 'type' | 'mimeType' | 'sizeBytes' | 'durationSec'>): boolean {
-  if (slot.type !== asset.type || (asset.mimeType && slot.allowedMimes?.length && !slot.allowedMimes.includes(asset.mimeType))) return false;
+export function feedAssetMime(asset: Pick<FeedAsset, 'mimeType' | 'declaredExtension'>): string | undefined {
+  const declared = asset.declaredExtension?.replace(/^\./, '');
+  return (normalizeMimeType(asset.mimeType) ?? (declared ? mimeFromFilename(`file.${declared}`) : undefined))
+    ?.split(';', 1)[0]?.trim().toLowerCase();
+}
+
+export function acceptsFeedAsset(slot: SlotSpec, asset: Pick<FeedAsset, 'type' | 'mimeType' | 'declaredExtension' | 'sizeBytes' | 'durationSec'>): boolean {
+  const mime = feedAssetMime(asset);
+  if (slot.type !== asset.type || (mime && slot.allowedMimes?.length && !slot.allowedMimes.some(value => value.toLowerCase() === mime))) return false;
   if (Number.isFinite(slot.maxSizeMb) && Number.isFinite(asset.sizeBytes)
     && (slot.maxSizeExclusive ? asset.sizeBytes! >= slot.maxSizeMb! * 1024 * 1024 : asset.sizeBytes! > slot.maxSizeMb! * 1024 * 1024)) return false;
   if (Number.isFinite(asset.durationSec) && ((Number.isFinite(slot.minDurationSec) && asset.durationSec! < slot.minDurationSec!)
     || (Number.isFinite(slot.maxDurationSec) && asset.durationSec! > slot.maxDurationSec!))) return false;
   return true;
+}
+
+/** Free space in a slot and in its selected line's aggregate input limit. */
+export function remainingSlotCapacity(layout: SlotLayout, slot: SlotSpec, occupied: number, typeOccupied: number): number {
+  const slotMax = slot.composition ? Infinity : slot.max ?? Infinity;
+  const typeMax = layout.inputMaxByType?.[slot.type] ?? Infinity;
+  return Math.max(0, Math.min(slotMax - occupied, typeMax - typeOccupied));
 }
 
 /** Content eligibility is shared by loading, display and submission. */

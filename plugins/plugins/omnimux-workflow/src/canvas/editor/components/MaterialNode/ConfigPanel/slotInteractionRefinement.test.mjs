@@ -43,14 +43,18 @@ test('empty and full strips preserve model capacity affordances',()=>{
  const full=render({...props,layout:{...props.layout,slots:[{...spec,max:1}]}});
  assert.doesNotMatch(full,/wf-slot-well--append/);
 });
-test('image and audio references share one add control on both canvas versions', () => {
+test('image and audio add controls carry distinct slot identities on both canvas versions', () => {
  const images = {...spec, slot:'reference_images', min:1};
  const audio = {...spec, slot:'reference_audios', type:'audio', labelKey:'panel.slot.reference_audios'};
- const layout = {preset:'strip', slots:[images, audio], addButton:true};
+ const layout = {preset:'strip', operationId:'video_multi_ref', outputType:'video', slots:[images, audio], addButton:true};
  for (const records of [undefined, []]) {
   const html = render({...props, layout, bindings:{}, records});
-  assert.equal((html.match(/data-testid="wf-add-reference"/g) ?? []).length, 1);
-  assert.doesNotMatch(html, /data-slot="reference_images"|data-slot="reference_audios"/);
+  const addButtons = [...html.matchAll(/<button[^>]*data-testid="wf-add-reference" data-slot="([^"]+)" data-slot-role="([^"]+)"[^>]*>/g)];
+  assert.deepEqual(addButtons.map(([, slot, role]) => [slot, role]), [['reference_images', 'reference'], ['reference_audios', 'reference']]);
+  assert.ok(addButtons.every(([button]) => button.includes('aria-label=') && !button.includes('disabled')));
+  const borrowed = render({...props, layout:{...layout, displayOnlyFromOperation:'video_multi_ref'}, bindings:{}, records});
+  assert.doesNotMatch(borrowed, /data-testid="wf-add-reference"/);
+  assert.equal(render({...props, layout:{...layout, operationId:'text_to_video', slots:[]}, records}), '');
  }
 });
 test('mixed reference cards follow the projected input order across types', () => {

@@ -45,7 +45,7 @@ test('the current visual slot projection carries only visible media to the hub e
   inputCatalog.models[0].channelGroups = [{ id: 'single', label: 'One image', enabled: true, constraints: { inputs: { image: { max: 1 } } } }];
   const target = node({
     reference_images: [
-      { ...occupant('overflow'), ordinal: 1 }, { ...occupant('shown'), ordinal: 0 }, { ...occupant('missing'), ordinal: -1 },
+      { ...occupant('overflow'), ordinal: 1 }, { ...occupant('shown'), ordinal: 0 }, { ...occupant('missing'), ordinal: 4 },
       { ...occupant('wrong-type'), ordinal: 2 }, { ...occupant('wrong-mime'), ordinal: 3 },
     ],
     old_audio_role: [occupant('old-role')],
@@ -690,22 +690,33 @@ test('V1 production dispatch follows current text output and consumes only activ
   console.log('V1_DISPATCH_TRANSPORT_CAPTURE', JSON.stringify({ textInputs: requests.map(request => request.textInputs), captures }));
 });
 
-test('V1 dispatch retains both current named roles on one edge and never refills inactive roles', async () => {
+test('V1 dispatch rejects one output selected for two roles and preserves distinct named slots', async () => {
   const target = node({ first_frame: [{ ...occupant('a'), use: 'active', role: 'first_frame', ordinal: 0 }],
     last_frame: [{ ...occupant('a'), use: 'active', role: 'last_frame', ordinal: 1 }] });
-  target.data.inputBindingVersion = 1;
+  Object.assign(target.data, { inputBindingVersion: 1, autoOperationId: null });
   const outputs = { a: media('a'), b: media('b') }; const edges = [edge('a'), edge('b')];
   const gw = gateway(); registerExecutor(createMaterialGatewayExecutor({ gateway: gw }));
-  const before = structuredClone(target);
   const dispatch = createDispatchingNodeExecutor({ gateway: gw, edges, mediaRoot: '/tmp', executionId: '2848-roles',
     abortController: new AbortController() }).executor;
   const ctx = { getNodeOutput: id => outputs[id], reportProgress() {}, addMediaAsset() {} };
-  assert.equal(findExecutionReadinessFailure([target], catalog, { nodes: [target, graphNode('a'), graphNode('b')], edges }), null);
-  await dispatch(target, ctx);
-  assert.deepEqual(gw.requests[0].references.map(ref => [ref.edgeId, ref.sourceNodeId, ref.role]),
-    [['e-a', 'a', 'first_frame'], ['e-a', 'a', 'last_frame']]);
+  const prepare = () => prepareExecutionSlotGraph([target, graphNode('a'), graphNode('b')], edges, catalog).nodes[0];
+  const before = structuredClone(target);
+  const duplicate = prepare();
+  assert.equal(findExecutionReadinessFailure([duplicate], catalog)?.reasonCode, 'role_conflict');
+  await assert.rejects(dispatch(duplicate, ctx), { code: 'role_conflict' });
+  assert.equal(gw.requests.length, 0);
   assert.deepEqual(target, before);
+
+  target.data.slotBindings.last_frame[0] = { ...occupant('b'), use: 'active', role: 'last_frame', ordinal: 1 };
+  const distinct = prepare();
+  assert.equal(findExecutionReadinessFailure([distinct], catalog), null);
+  await dispatch(distinct, ctx);
+  assert.deepEqual(gw.requests[0].references.map(ref => [ref.edgeId, ref.sourceNodeId, ref.role]),
+    [['e-a', 'a', 'first_frame'], ['e-b', 'b', 'last_frame']]);
+
   target.data.slotBindings.last_frame[0].use = 'inactive';
-  assert.notEqual(findExecutionReadinessFailure([target], catalog, { nodes: [target, graphNode('a'), graphNode('b')], edges }), null);
-  await assert.rejects(dispatch(target, ctx)); assert.equal(gw.requests.length, 1);
+  const inactive = prepare();
+  assert.equal(findExecutionReadinessFailure([inactive], catalog)?.reasonCode, 'min_unsatisfied');
+  await assert.rejects(dispatch(inactive, ctx), { code: 'min_unsatisfied' });
+  assert.equal(gw.requests.length, 1);
 });

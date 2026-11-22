@@ -28,7 +28,8 @@ test('new image supply to a model with no image-consuming operation is kept as u
   const plan = planCanvasInputMutation(graph(gen('img-prompt-only', 'text_to_image')), connect, { catalog });
   assert.equal(plan.status, 'allowed');
   assert.equal(plan.edges.length, 1);
-  assert.deepEqual(target(plan).data.slotBindings, {});
+  assert.equal(target(plan).data.slotBindings, undefined);
+  assert.equal(target(plan).data.slotStandbyEdgeIds, undefined);
 });
 test('alias model normalizes without replacement', () => {
   const plan = planCanvasInputMutation(graph(gen('alias-img-wire')), connect, { catalog });
@@ -87,7 +88,14 @@ for (const [model, inputCatalog, reason] of [['unknown', catalog, 'unknown_model
 test('known model selection is allowed with unconsumed feed and does not rewrite preferences', () => {
   const current = planCanvasInputMutation(graph(), connect, { catalog });
   const plan = planCanvasInputMutation(current, { nodePatches: [{ nodeId: 'gen', data: { params: { model: 'img-prompt-only', operation: 'text_to_image' } } }] }, { catalog });
-  assert.equal(plan.status, 'allowed'); assert.equal(plan.edges.length, 1); assert.deepEqual(target(plan).data.slotBindings, {});
+  assert.equal(plan.status, 'allowed'); assert.equal(plan.edges.length, 1);
+  assert.equal(target(plan).data.slotBindings, undefined);
+  const restored = planCanvasInputMutation(plan, {
+    nodePatches: [{ nodeId: 'gen', data: { params: { model: 'alias-img', operation: 'image_to_image' } } }],
+  }, { catalog });
+  assert.equal(restored.status, 'allowed');
+  assert.equal(target(restored).data.slotBindings.reference_images[0].edgeId, 'e');
+  assert.deepEqual(restored.edges.map(edge => edge.id), ['e']);
 });
 test('canvas and host GraphMutator preserve identical soft admission and persisted bindings', () => {
   const dir = mkdtempSync(join(tmpdir(), 'feed-slot-mutation-')); const store = createWorkspaceStore({ workspacesDir: join(dir, 'workspaces') });

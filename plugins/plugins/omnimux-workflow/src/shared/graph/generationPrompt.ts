@@ -12,6 +12,12 @@ export function selectGenerationTextSources<T extends { sourceNodeId: string; ty
   });
 }
 
+/** Project saved mentions against the inputs consumed by this operation. */
+export function retainAssignedPromptReferences(prompt: string, assigned: readonly { sourceNodeId: string }[]): string {
+  const ids = new Set(assigned.map(asset => asset.sourceNodeId));
+  return prompt.replace(/@ref\[([^:]+):[^:]+:[^\]]+\]/g, (token, sourceNodeId: string) => ids.has(sourceNodeId) ? token : '');
+}
+
 /** Compose ordered source content and local instructions without copying into the editor. */
 export function resolveGenerationPrompt(
   data: { prompt?: unknown; content?: unknown; materialType?: unknown },

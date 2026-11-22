@@ -506,6 +506,8 @@ export interface ExecutionRequestMeta {
 
 /** POST /executions request body. */
 export interface StartExecutionPayload {
+  /** Freshness proof for the assignment shown on one node before its submit click. */
+  expectedInput?: import('./graph/feedSlot/prepareExecutionSlotGraph.ts').RunSnapshotProof;
   /** Last successfully saved input version; mismatch returns 409 version_conflict. */
   expectedVersion?: number;
   /** Current client graph snapshot for a submit that must not wait for saveNow. */

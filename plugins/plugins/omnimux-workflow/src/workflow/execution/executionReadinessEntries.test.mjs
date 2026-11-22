@@ -40,7 +40,7 @@ test('HTTP and Agent hydrate the same occupied slots and ignore unused missing m
   assert.equal(http.status, 200); assert.equal(agent.executionId, 'captured');
   assert.deepEqual(captures[0], captures[1]); assert.deepEqual(workspace, before);
   assert.deepEqual(Object.keys(captures[0].initialOutputs), ['a', 'b']);
-  assert.equal(captures[0].edges.length, 3);
+  assert.deepEqual(captures[0].edges.map(edge => edge.id), ['e-a', 'e-b']);
   assert.equal(captures[0].nodes[0].data.slotBindings.start_frame[0].sourceNodeId, 'a');
 });
 

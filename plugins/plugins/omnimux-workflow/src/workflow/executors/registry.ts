@@ -9,6 +9,7 @@
  */
 
 import type { CapabilityCatalog } from '../../shared/api.ts';
+import type { RunSnapshot } from '../../shared/graph/feedSlot/prepareExecutionSlotGraph.ts';
 import type { GenerationGateway, UpstreamTaskRef, WorkflowSubmission } from '../seam/gateway.ts';
 
 /** Upstream-resolved inputs handed to each executor. */
@@ -17,6 +18,8 @@ export interface ExecutionContext {
   catalog?: CapabilityCatalog;
   /** Created only for a new generation, using the same catalog as dispatch readiness. */
   submission?: WorkflowSubmission;
+  /** Runtime-only slot assignment captured at admission for new canvas tasks. */
+  runSnapshot?: RunSnapshot;
   /** Owner used for the entire task lifecycle when multiple managers share the registry. */
   gateway?: GenerationGateway;
   /** Node outputs keyed by upstream node id. */
@@ -36,6 +39,8 @@ export interface ExecutionContext {
   signal: AbortSignal;
   /** Destination dir for artifacts of this execution (absolute path). */
   mediaDir: string;
+  /** Root used for resolving workflow media URLs (defaults to mediaDir for embedding callers). */
+  mediaRoot?: string;
   /** Canvas workspace id — used to build project-file URLs. */
   workspaceId?: string;
   /** Maps an absolute artifact path under mediaDir to a servable URL. */

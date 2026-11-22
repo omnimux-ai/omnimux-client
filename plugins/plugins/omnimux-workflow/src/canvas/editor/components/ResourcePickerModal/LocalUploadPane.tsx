@@ -14,7 +14,7 @@ import {
 } from '../../utils/resourcePickerPolicy.ts';
 import { draftFromRealPath, draftsFromPickedPaths, filterDraftsByTypes, hasDesktopFilePaths, nativePathOf } from '../../utils/localFileDraft.ts';
 import { probePickerDrafts } from '../../utils/probePickerDrafts.ts';
-import { localFileMediaUrl } from '../../../../shared/localMedia.ts';
+import { localFileMediaUrl, type SlotFileFilter } from '../../../../shared/localMedia.ts';
 import PreviewThumb from './PreviewThumb.tsx';
 import { useAsyncInstanceGuard } from '../../hooks/useAsyncInstanceGuard.ts';
 import { reportLocalFilePickerFailure } from '../../utils/reportLocalFilePickerFailure.ts';
@@ -26,7 +26,7 @@ export interface LocalUploadPaneProps {
   onRemove: (id: string) => void;
   /** 卡槽装填会话：仅接受这些素材类型，其余在入口处拦截。 */
   acceptedTypes?: string[];
-  namedSlot?: { extensions: string[]; remaining: number; readDuration: boolean; accepts: (file: LocalFileDraft) => boolean };
+  namedSlot?: { extensions: string[]; filter?: SlotFileFilter; remaining: number; readDuration: boolean; accepts: (file: LocalFileDraft) => boolean };
 }
 
 const LocalUploadPane: React.FC<LocalUploadPaneProps> = ({ files, active, onAddFiles, onRemove, acceptedTypes, namedSlot }) => {
@@ -35,6 +35,7 @@ const LocalUploadPane: React.FC<LocalUploadPaneProps> = ({ files, active, onAddF
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [measured, setMeasured] = useState<Record<string, { width: number; height: number }>>({});
+  const canChoose = !namedSlot || (namedSlot.remaining > 0 && (!namedSlot.filter || namedSlot.extensions.length > 0));
 
   const ingest = useCallback(
     async (drafts: LocalFileDraft[], incomingCount: number) => {
@@ -58,10 +59,11 @@ const LocalUploadPane: React.FC<LocalUploadPaneProps> = ({ files, active, onAddF
   );
 
   const chooseNative = useCallback(async () => {
-    if (!active || (namedSlot && namedSlot.remaining <= 0)) return;
+    if (!active || !canChoose) return;
     const ticket = guard.capture();
     if (!guard.isCurrent(ticket)) return;
-    const result = await pickLocalFiles(namedSlot ? { extensions: namedSlot.extensions, multiple: namedSlot.remaining > 1 } : undefined).catch(() => null);
+    const result = await pickLocalFiles(namedSlot ? { extensions: namedSlot.extensions, slotFilter: namedSlot.filter,
+      multiple: namedSlot.remaining > 1 } : undefined).catch(() => null);
     if (!guard.isCurrent(ticket)) return;
     if (!result || !result.ok) {
       reportLocalFilePickerFailure(result, t);
@@ -70,7 +72,7 @@ const LocalUploadPane: React.FC<LocalUploadPaneProps> = ({ files, active, onAddF
     const paths = result.body.paths ?? [];
     if (paths.length === 0) return;
     await ingest(draftsFromPickedPaths(paths), paths.length);
-  }, [active, guard, ingest, namedSlot, t]);
+  }, [active, canChoose, guard, ingest, namedSlot, t]);
 
   const ingestFiles = useCallback(
     (list: FileList | File[]) => {
@@ -93,19 +95,19 @@ const LocalUploadPane: React.FC<LocalUploadPaneProps> = ({ files, active, onAddF
         }
       }
       void ingest(drafted, incoming.length - missingPath);
-      if (missingPath > 0) toast.warning(t('picker.needPath'));
+      if (missingPath > 0 && !namedSlot?.filter) toast.warning(t('picker.needPath'));
     },
-    [ingest, t],
+    [ingest, namedSlot?.filter, t],
   );
 
   const handleClick = useCallback(() => {
-    if (!active || (namedSlot && namedSlot.remaining <= 0)) return;
+    if (!active || !canChoose) return;
     if (namedSlot && !hasDesktopFilePicker() && hasDesktopFilePaths() && fileInputRef.current) {
       fileInputRef.current.click();
       return;
     }
     void chooseNative();
-  }, [active, chooseNative, namedSlot]);
+  }, [active, canChoose, chooseNative, namedSlot]);
 
   const handleInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -142,7 +144,7 @@ const LocalUploadPane: React.FC<LocalUploadPaneProps> = ({ files, active, onAddF
       />
       <button
         type="button"
-        disabled={Boolean(namedSlot && namedSlot.remaining <= 0)}
+        disabled={!canChoose || !active}
         className={`wf-picker-dropzone ${dragging ? 'wf-picker-dropzone--active' : ''}`}
         onClick={handleClick}
         onDragOver={(e) => {

@@ -112,7 +112,7 @@ npm run build      # 显式重建：dist/index.js、lib/client.js、lib/canvas.j
 
 ### 输入映射（节点 data → seam 请求）
 
-素材入口、上游文本引用及执行范围见[画布生成契约](../../docs/contracts/canvas-generation.md#选择和素材)。
+拖线通过图结构检查后保存为素材供给。卡槽、上游引用和请求由当前模型、线路与方式的实际分配决定。具名槽的添加和替换按当前槽筛选已有素材及本地文件，确认后一次写入，可一次撤销。[素材与执行契约](../../docs/contracts/canvas-generation.md#选择和素材)
 
 | 节点字段 | seam 请求字段 | 说明 |
 |---|---|---|

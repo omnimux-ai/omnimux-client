@@ -10,6 +10,8 @@ import type { Edge } from '@xyflow/react';
 import type { MaterialType } from '../../types/materialNode.ts';
 import { createImportNode } from '../../../shared/graph/nodeFactory.ts';
 import { isNodeConnectionValid } from '../../../shared/graph/connectionConfig.ts';
+import { validateCanvasConnectionStructure } from '../../../shared/graph/canvasConnectionStructure.ts';
+import { resolveNodeKind } from '../../../shared/graph/materialNode.ts';
 import { planCanvasInputMutation, planCanvasInputSelection, validateCanvasInputSelection } from '../../../shared/graph/canvasInputMutationGateway.ts';
 import { readNodeInputSource, type NodeInputSource } from '../../../shared/graph/nodeInputSource.ts';
 import { deriveSlotLayout } from '../../../shared/graph/feedSlot/deriveSlotLayout.ts';
@@ -19,10 +21,16 @@ import { acceptsFeedAsset } from '../../../shared/graph/feedSlot/autoFillSlots.t
 import { resolveSlotOccupantOrdinal, type SlotSelection } from '../../../shared/graph/feedSlot/assembleEffectiveInputs.ts';
 import { effectiveInputDisplay } from '../../../shared/graph/feedSlot/effectiveInputDisplay.ts';
 import { feedFromFingerprint } from '../../../shared/graph/feedSlot/effectiveFingerprint.ts';
-import { projectVideoSlotBindings, readVideoOperationDraft } from '../../../shared/graph/feedSlot/videoSlotDrafts.ts';
+import { projectVideoSlotBindings, readVideoOperationDraft, readVideoSlotDrafts, videoSlotDraftKey } from '../../../shared/graph/feedSlot/videoSlotDrafts.ts';
 import { buildCanvasUpstreamFingerprint, readCanvasParams } from '../../../shared/graph/canvasInputSources.ts';
 import { narrowCatalogByRouting, resolveEffectiveVideoGroup, resolveEffectiveVideoOperation } from '../../../shared/validation/lineConstraints.ts';
-import { isMediaInputType, isOrderedImageReferenceSlot } from '../../../shared/validation/compatKernel.ts';
+import { buildContractView, canonicalJson, isMediaInputType, isOrderedImageReferenceSlot, resolveModelView, type UpstreamAssetFingerprint } from '../../../shared/validation/compatKernel.ts';
+import { projectCanvasInputSources } from '../../../shared/graph/feedSlot/legacyH3Slots.ts';
+import { readPreferredOperationId } from '../../../shared/validation/operationUi.ts';
+import { parseModelAndGroup } from '../../../shared/validation/channelRouting.ts';
+import { readVisualLineSelection } from '../../../shared/validation/executionReadiness.ts';
+import { resolveInputAssignment } from '../../../shared/validation/inputAssignment.ts';
+import { captureSlotIntent, readSlotIntent, validateSlotIntent, type SlotIntent, type SlotIntentState, type SlotIntentTarget } from '../../../shared/validation/slotIntent.ts';
 import type {
   CanvasInputSelectionRequest,
   CanvasInputSelectionVerdict,
@@ -34,7 +42,7 @@ import type {
 } from '../../../shared/graph/canvasInputMutationGateway.ts';
 import type { SlotBindings, SlotConflict, SlotOccupant, SlotSpec } from '../../../shared/graph/feedSlot/index.ts';
 import { resolveMediaPreviewUrl, type MediaAssetLike } from './mediaUrl.ts';
-import { buildImportedMediaData, looksAbsolutePath, mimeFromFilename, projectFileMediaUrl } from '../../../shared/localMedia.ts';
+import { buildImportedMediaData, extensionOf, looksAbsolutePath, materialTypeFromFilename, mimeFromFilename, projectFileMediaUrl } from '../../../shared/localMedia.ts';
 import { buildMediaMetadata } from '../../../shared/mediaMetadata.ts';
 import { forbiddenRelativePathCode } from '../../../shared/projectAssets.ts';
 import { getDefaultNodeHeight, getDefaultNodeWidth } from './nodeSizeConfig.ts';
@@ -95,8 +103,10 @@ export interface LocalFileDraft {
   durationSec?: number | null;
   realPath: string;
   materialType: MaterialType;
-  /** Transient picker-only preview. Must not be persisted. */
+  documentText?: string;
+  /** Transient picker-only metadata. */
   previewUrl?: string;
+  fileRevision?: string;
 }
 
 /** Project assets carry their owning workspace; they never become native disk paths. */
@@ -224,27 +234,9 @@ function asMaterialType(value: unknown): MaterialType | null {
   return null;
 }
 
-function extensionOf(filename: string): string {
-  const base = filename.split(/[/\\]/).pop() ?? filename;
-  const dot = base.lastIndexOf('.');
-  if (dot <= 0 || dot === base.length - 1) return '';
-  return base.slice(dot + 1).toLowerCase();
-}
-
-/** MIME / 扩展名 → 素材类型；无法识别时返回 null。 */
 export function mimeToMaterialType(mime: string, filename = ''): MaterialType | null {
-  const normalized = (mime || '').toLowerCase().trim();
-  if (normalized.startsWith('image/')) return 'image';
-  if (normalized.startsWith('video/')) return 'video';
-  if (normalized.startsWith('audio/')) return 'audio';
-
-  const ext = extensionOf(filename);
-  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif', 'heic'].includes(ext)) {
-    return 'image';
-  }
-  if (['mp4', 'webm', 'mov', 'mkv', 'avi', 'm4v'].includes(ext)) return 'video';
-  if (['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'opus'].includes(ext)) return 'audio';
-  return null;
+  const type = materialTypeFromFilename(filename, mime);
+  return type && MEDIA_TYPES.includes(type) ? type : null;
 }
 
 export function formatFileSize(bytes: number): string {
@@ -382,7 +374,7 @@ function resourcePickerInputs(state: CanvasInputMutationState, targetNodeId: str
   const savedConflicts = managed ? [] : target.data.slotConflicts as SlotConflict[] | undefined;
   const display = effectiveInputDisplay(layout, feed, bindings, savedConflicts, state.edges.filter(edge => edge.target === targetNodeId),
     target.data.slotStandbyEdgeIds as string[] | undefined, version);
-  return { target, layout, display, qualified, managed };
+  return { target, layout, display, qualified, managed, variant };
 }
 
 function occupiesPickerSlot(record: SlotSelection): boolean {
@@ -400,6 +392,188 @@ export function resourcePickerSlot(state: CanvasInputMutationState, targetNodeId
   const remaining = replaceEdgeId ? Number(max > 0 && occupants.filter(item => item.edgeId === replaceEdgeId).length === 1)
     : Math.max(0, max - count);
   return { spec, remaining };
+}
+
+type NamedPickerState = SlotIntentState & {
+  target: CanvasNode;
+  graph: CanvasInputMutationState;
+  supply: ReturnType<typeof buildCanvasUpstreamFingerprint>['assets'];
+  currentRecords: SlotSelection[];
+  saved: SlotBindings | undefined;
+  conflicts: SlotConflict[] | undefined;
+  standby: readonly string[];
+  videoDraftKey?: string;
+};
+
+/** Resolve the saved line and actual operation before looking at a named well. */
+export function namedPickerState(graph: CanvasInputMutationState, targetNodeId: string,
+  { catalog: directory }: CanvasMutationRuntimeContext): NamedPickerState | undefined {
+  const target = graph.nodes.find(node => node.id === targetNodeId);
+  if (!target || target.type !== 'material' || resolveNodeKind(target.data) !== 'generate') return;
+  const params = readCanvasParams(target);
+  const { modelId, group: inlineGroup } = parseModelAndGroup(params.model);
+  if (!modelId) return;
+  const outputType = String(target.data.materialType ?? '');
+  const catalog = narrowCatalogByRouting(directory, params.model, params.routing, params);
+  const model = catalog?.models?.find(row => row.id === modelId || row.aliases?.includes(modelId));
+  if (model?.visible === false || model?.selectable === false) return;
+  const line = readVisualLineSelection(directory, params);
+  if (line?.message) return;
+  const managed = managedPickerGroup(target, { catalog: directory }, params);
+  const variant = managed ? resolveEffectiveVideoOperation(managed.group, params.operation, params) : undefined;
+  if (managed && !variant) return;
+  const projected = projectCanvasInputSources(targetNodeId, target.data, graph.nodes, graph.edges, catalog,
+    resolveModelView(buildContractView(catalog), modelId));
+  const { fingerprint } = projected;
+  const saved = variant ? readVideoOperationDraft(projected.data, variant) : projected.data.slotBindings as SlotBindings | undefined;
+  const conflicts = variant ? undefined : projected.data.slotConflicts as SlotConflict[] | undefined;
+  const standby = (projected.data.slotStandbyEdgeIds ?? []) as string[];
+  const autoOperationId = projected.data.autoOperationId as string | null | undefined;
+  const preferredOperationId = readPreferredOperationId(params, autoOperationId);
+  const args = { catalog, modelId, outputType, fingerprint, params, preferredOperationId, autoOperationId, slotBindings: saved,
+    slotConflicts: conflicts, ignoredEdgeIds: standby, inputBindingVersion: projected.data.inputBindingVersion as number | undefined };
+  const assignment = resolveInputAssignment({ ...args, forceOperationId: variant?.id });
+  if (!assignment.modelId || !assignment.operationId) return;
+  // Image generation has a declared reference well and derives its mode from consumed reference images.
+  const imageLayout = outputType === 'image' && !assignment.layout.slots.some(slot => slot.type === 'image')
+    ? deriveImageGenerationLayout(catalog, assignment.modelId, assignment.operationId) : undefined;
+  const referenceAssignment = imageLayout?.displayOnlyFromOperation
+    ? resolveInputAssignment({ ...args, forceOperationId: imageLayout.displayOnlyFromOperation }) : assignment;
+  const operation = variant ?? model?.operations?.find(row => row.id === assignment.operationId);
+  return { target, graph, supply: fingerprint.assets, saved, conflicts, standby, videoDraftKey: videoSlotDraftKey(variant),
+    context: {
+      targetNodeId, modelId: assignment.modelId, operationId: assignment.operationId,
+      routing: canonicalJson([params.routing, inlineGroup, line?.selected?.id, managed?.group?.id]),
+      mode: canonicalJson([params.operation, operation?.modeKind, params.mode, params.generationType,
+        params.referenceTaskType, params.resolution, params.quality, params.size, target.data.autoOperationId]),
+      contractFingerprint: canonicalJson([assignment.contractFingerprint, referenceAssignment.contractFingerprint,
+        managed?.group?.effectiveVersion, operation?.gatewayProtocol]),
+    },
+    layout: imageLayout ?? assignment.layout, records: referenceAssignment.records, currentRecords: assignment.records,
+  };
+}
+
+export function openNamedPicker(state: NamedPickerState, request: SlotIntentTarget & { operationId?: string }): SlotIntent | undefined {
+  if (request.operationId && request.operationId !== state.context.operationId) return;
+  return captureSlotIntent(state, request);
+}
+
+type NamedPickerSelection = NonNullable<CanvasInputSelectionRequest['selections']>[number];
+type NamedPickerChoice = { candidate: UpstreamAssetFingerprint; file?: LocalFileDraft };
+
+function pickCanvasSource(state: NamedPickerState, intent: SlotIntent, selection: NamedPickerSelection): NamedPickerChoice | { reasonCode: string } {
+  const node = state.graph.nodes.find(item => item.id === selection.sourceNodeId);
+  if (!node) return { reasonCode: 'input_unavailable' };
+  const source = readNodeInputSource(node);
+  if (source.availability !== 'ready') return { reasonCode: source.availability === 'waiting' ? 'input_waiting' : 'input_unavailable' };
+  if (!source.outputId || selection.outputId !== source.outputId) return { reasonCode: 'input_changed' };
+  if (selection.targetSlot && selection.targetSlot !== intent.slot || selection.role && selection.role !== intent.role) {
+    return { reasonCode: 'role_conflict' };
+  }
+  const edge = edgeDraft(node.id, state.target.id);
+  const connected = state.supply.filter(asset => asset.sourceNodeId === node.id);
+  const supportsSlot = (slot?: string, role?: string) => (!slot || slot === intent.slot) && (!role || role === intent.role);
+  const saved = [...Object.entries(state.saved ?? {}).flatMap(([slot, values]) => values.map(occupant => ({ slot, occupant }))),
+    ...(state.conflicts ?? [])].filter(({ occupant }) => occupant.sourceNodeId === node.id && (occupant.pinned || occupant.use === 'inactive'));
+  const existing = connected.find(asset => supportsSlot(asset.targetSlot, asset.role)
+    && saved.filter(({ occupant }) => occupant.edgeId === asset.edgeId).every(({ slot, occupant }) => supportsSlot(slot, occupant.role)));
+  if (!existing && connected.length) return { reasonCode: 'role_conflict' };
+  if (!existing) {
+    const structure = validateCanvasConnectionStructure(edge, state.graph.nodes, state.graph.edges);
+    if (!structure.valid) return { reasonCode: structure.reasonCode ?? 'type_contract' };
+  }
+  const media = source.output.mediaAssets?.[0];
+  const declared = media?.path ?? media?.relativePath ?? media?.url.split(/[?#]/, 1)[0] ?? '';
+  return { candidate: { ...existing, sourceNodeId: source.nodeId, outputId: source.outputId, type: source.materialType,
+    availability: source.availability, ...source.metadata,
+    declaredExtension: source.metadata?.declaredExtension ?? existing?.declaredExtension ?? extensionOf(declared),
+    targetSlot: intent.slot, role: intent.role } };
+}
+
+export function checkNamedPickerSelection(state: NamedPickerState, intent: SlotIntent, selections: readonly NamedPickerSelection[],
+  files: readonly LocalFileDraft[], partial = false): { choices: NamedPickerChoice[]; reasonCode?: never } | { reasonCode: string; choices?: never } {
+  const choices: NamedPickerChoice[] = [];
+  for (const selection of selections) {
+    const choice = pickCanvasSource(state, intent, selection);
+    if ('reasonCode' in choice) return choice;
+    choices.push(choice);
+  }
+  for (const file of files) {
+    if (!looksAbsolutePath(file.realPath) || !IMPORTABLE_TYPES.includes(file.materialType)
+      || file.materialType === 'document' && !file.documentText) return { reasonCode: 'input_unavailable' };
+    choices.push({ file, candidate: {
+      sourceNodeId: `local:${file.fileRevision ?? file.realPath}`, outputId: 'current', type: file.materialType, availability: 'ready',
+      mimeType: file.mime, declaredExtension: extensionOf(file.name), sizeBytes: file.size, durationSec: file.durationSec ?? undefined,
+    } });
+  }
+  const verdict = validateSlotIntent(state, intent, choices.map(choice => choice.candidate), { partial });
+  return verdict.accepted ? { choices } : { reasonCode: verdict.reasonCode };
+}
+
+/** Convert validated intent into one normal graph mutation and verify its real assignment. */
+export function planNamedPickerMutation(state: NamedPickerState, intent: SlotIntent, selections: readonly NamedPickerSelection[],
+  files: readonly LocalFileDraft[], runtime: CanvasMutationRuntimeContext): { mutation?: CanvasInputMutation; reasonCode?: string } {
+  const checked = checkNamedPickerSelection(state, intent, selections, files);
+  if (!checked.choices) return { reasonCode: checked.reasonCode };
+  const slot = readSlotIntent(state, intent);
+  if (!slot.accepted) return { reasonCode: slot.reasonCode };
+  const { graph, target } = state;
+  const addNodes: CanvasNode[] = [];
+  const addEdges: Edge[] = [];
+  const explicit: SlotBindings = { ...state.saved };
+  const standby = new Set(state.standby);
+  const records = state.records.filter(record => record.slot.slot === slot.spec.slot);
+  const savedInSlot = explicit[slot.spec.slot] ?? [];
+  const savedByEdge = new Map(savedInSlot.map(occupant => [occupant.edgeId, occupant]));
+  const ranks = new Map(records.map(record => [record.occupant.edgeId, resolveSlotOccupantOrdinal(record.occupant, record.asset)]));
+  let ordinal = Math.max(-1, ...ranks.values(), ...savedInSlot.map(occupant => occupant.ordinal ?? -1)) + 1;
+  const newBindings: SlotOccupant[] = [];
+  const replacedId = slot.replacement?.occupant.edgeId;
+  for (const { candidate, file } of checked.choices) {
+    const imported = file ? createPickerImportNode(target, addNodes.length, file) : undefined;
+    if (imported) addNodes.push(imported);
+    const newSource = imported ? readNodeInputSource(imported) : undefined;
+    if (newSource && newSource.availability !== 'ready') return { reasonCode: 'input_unavailable' };
+    const sourceNodeId = newSource?.nodeId ?? candidate.sourceNodeId;
+    const outputId = newSource?.outputId ?? candidate.outputId;
+    const newEdge = candidate.edgeId ? undefined : normalizeCanvasEdge(edgeDraft(sourceNodeId, target.id));
+    if (newEdge) addEdges.push(newEdge);
+    const edgeId = candidate.edgeId ?? newEdge!.id;
+    standby.delete(edgeId);
+    const previous = replacedId ?? edgeId;
+    newBindings.push({ sourceNodeId, edgeId, outputId, role: slot.spec.role, pinned: true, use: 'active',
+      ordinal: ranks.get(previous) ?? savedByEdge.get(previous)?.ordinal ?? ordinal++ });
+  }
+  const selectedEdges = new Set(newBindings.map(occupant => occupant.edgeId));
+  explicit[slot.spec.slot] = [...savedInSlot.filter(occupant => occupant.edgeId !== replacedId && !selectedEdges.has(occupant.edgeId)), ...newBindings];
+  const priorConflicts = state.videoDraftKey ? target.data.slotConflicts as SlotConflict[] | undefined : state.conflicts;
+  const data = {
+    slotBindings: explicit, slotStandbyEdgeIds: [...standby],
+    slotConflicts: (priorConflicts ?? []).filter(({ slot, occupant }) => slot !== intent.slot
+      || occupant.edgeId !== replacedId && !selectedEdges.has(occupant.edgeId)),
+    ...(state.videoDraftKey ? { videoSlotDrafts: { ...readVideoSlotDrafts(target.data.videoSlotDrafts), [state.videoDraftKey]: explicit } } : {}),
+  };
+  const mutation: CanvasInputMutation = {
+    addNodes, addEdges,
+    ...(target.data.materialType !== 'image' ? { preserveOperation: { targetNodeId: target.id, operationId: intent.operationId } } : {}),
+    nodePatches: [{ nodeId: target.id, data }],
+  };
+  let plan = planCanvasInputMutation(graph, mutation, runtime);
+  if (plan.status !== 'allowed') return { reasonCode: plan.reasonCode };
+  let updated = namedPickerState(plan, target.id, runtime);
+  // Retain the replaced edge as ordinary supply unless filling would immediately consume it again.
+  if (replacedId && updated?.currentRecords.some(record => record.occupant.edgeId === replacedId && record.state !== 'inactive')) {
+    data.slotStandbyEdgeIds = [...standby, replacedId];
+    plan = planCanvasInputMutation(graph, mutation, runtime);
+    if (plan.status !== 'allowed') return { reasonCode: plan.reasonCode };
+    updated = namedPickerState(plan, target.id, runtime);
+  }
+  if (!updated || updated.context.modelId !== intent.modelId || updated.context.routing !== intent.routing
+    || (target.data.materialType !== 'image' && updated.context.operationId !== intent.operationId)
+    || !newBindings.every(occupant => updated.currentRecords.some(record => record.state === 'ready'
+      && record.slot.slot === slot.spec.slot && record.slot.role === intent.role && record.occupant.edgeId === occupant.edgeId
+      && record.occupant.outputId === occupant.outputId))) return { reasonCode: 'input_changed' };
+  return { mutation };
 }
 
 type ReferencePickerSlot = { spec: SlotSpec; remaining: number };
@@ -475,15 +649,61 @@ export function validatesNamedPickerSelection(input: ResourcePickerCommitInput):
     }));
 }
 
+function toCanvasResourceItem(node: CanvasNode, source: NodeInputSource, type: MaterialType, alreadyConnected: boolean,
+  availability: Pick<CanvasResourceItem, 'inUse' | 'selectable' | 'reasonCode'> = {}): CanvasResourceItem {
+  const data = nodeData(node);
+  const size = dimensionPair(data);
+  return {
+    nodeId: node.id, outputId: source.outputId, textContent: source.output.text,
+    materialType: type, ...canvasResourceDisplayName(node, source), ...availability, alreadyConnected,
+    previewUrl: resolveMediaPreviewUrl(type, data.mediaAssets as MediaAssetLike[] | undefined,
+      typeof data.mediaUrl === 'string' ? data.mediaUrl : undefined),
+    subtitle: type === 'text' ? source.output.text ?? '' : size.width && size.height ? `${size.width} × ${size.height}` : '',
+    ...size,
+  };
+}
+
+function listNamedPickerResources(state: NamedPickerState, intent: SlotIntent,
+  selected: PickerSelections = [], files: LocalFileDraft[] = []): CanvasResourceItem[] {
+  const slot = readSlotIntent(state, intent);
+  if (!slot.accepted) return [];
+  const items: CanvasResourceItem[] = [];
+  for (const node of state.graph.nodes) {
+    if (node.id === state.target.id || node.type !== 'material') continue;
+    const source = readNodeInputSource(node);
+    const type = asMaterialType(source.materialType);
+    if (!source.outputId || !type) continue;
+    const selection = { sourceNodeId: source.nodeId, outputId: source.outputId, targetSlot: intent.slot, role: intent.role };
+    const next = intent.replacement ? [selection] : [...selected.filter(item => item.sourceNodeId !== source.nodeId), selection];
+    const checked = checkNamedPickerSelection(state, intent, next, intent.replacement ? [] : files, true);
+    if (!checked.choices) continue;
+    items.push(toCanvasResourceItem(node, source, type, state.supply.some(asset => asset.sourceNodeId === source.nodeId)));
+  }
+  return items;
+}
+
 export function listCanvasResources(
   nodes: CanvasNode[],
   edges: Edge[],
   targetNodeId: string,
   context: CanvasMutationRuntimeContext = {},
   selectionTarget?: { targetSlot?: string; role?: string; replaceEdgeId?: string; replaceSlot?: string;
-    referenceSlots?: string[]; selections?: PickerSelections; localFiles?: LocalFileDraft[] },
+    referenceSlots?: string[]; selections?: PickerSelections; localFiles?: LocalFileDraft[];
+    named?: { state: NamedPickerState | undefined; intent: SlotIntent } },
 ): CanvasResourceItem[] {
   const graph = { nodes, edges };
+  if (selectionTarget?.named) {
+    const { state, intent } = selectionTarget.named;
+    return state ? listNamedPickerResources(state, intent, selectionTarget.selections, selectionTarget.localFiles) : [];
+  }
+  if (selectionTarget?.targetSlot && !selectionTarget.referenceSlots) {
+    const state = namedPickerState(graph, targetNodeId, context);
+    if (state) {
+      const intent = openNamedPicker(state, { slot: selectionTarget.targetSlot, role: selectionTarget.role,
+        replaceEdgeId: selectionTarget.replaceEdgeId });
+      return intent ? listNamedPickerResources(state, intent, selectionTarget.selections, selectionTarget.localFiles) : [];
+    }
+  }
   const group = selectionTarget?.referenceSlots && resourcePickerReferenceGroup(graph, targetNodeId, context,
     selectionTarget.referenceSlots);
   const picker = selectionTarget?.referenceSlots ? group : resourcePickerInputs(graph, targetNodeId, context);
@@ -522,28 +742,10 @@ export function listCanvasResources(
         : planPickerSelectionMutation(graph, candidateRequest, context)) : undefined;
     const selectable = group ? !referenceRoute?.reasonCode && canConnect(node, group.target)
       : candidate ? candidate.status === 'allowed' && candidate.verdict?.accepts === true : true;
-    const displayName = canvasResourceDisplayName(node, source);
-    const size = dimensionPair(data);
-    items.push({
-      nodeId: node.id,
-      outputId: source.outputId,
-      textContent: source.output.text,
-      inUse,
-      selectable,
-      reasonCode: referenceRoute?.reasonCode ?? candidate?.verdict?.reasonCode
+    items.push(toCanvasResourceItem(node, source, materialType, connected.has(node.id), {
+      inUse, selectable, reasonCode: referenceRoute?.reasonCode ?? candidate?.verdict?.reasonCode
         ?? (candidate && 'reasonCode' in candidate ? candidate.reasonCode : undefined),
-      materialType,
-      ...displayName,
-      previewUrl: resolveMediaPreviewUrl(
-        materialType,
-        data.mediaAssets as MediaAssetLike[] | undefined,
-        typeof data.mediaUrl === 'string' ? data.mediaUrl : undefined,
-      ),
-      alreadyConnected: connected.has(node.id),
-      subtitle: materialType === 'text' ? source.output.text ?? '' : (size.width && size.height ? `${size.width} × ${size.height}` : ''),
-      width: size.width,
-      height: size.height,
-    });
+    }));
   }
   return items;
 }
@@ -633,7 +835,20 @@ export function planPickerSelectionMutation(current: CanvasInputMutationState, r
     return planLegacyReferencePickerMutation(current, group, selections, addNodes, context);
   }
   request = { ...request, selections };
-  const draft = addNodes.length ? { ...current, nodes: [...current.nodes, ...addNodes] } : current;
+  let stagedTarget = target;
+  const draftKey = videoSlotDraftKey(group?.variant);
+  if (group && draftKey && group.display.records.some(record => record.occupant.ordinal === undefined)) {
+    // Historical drafts used feed order until a picker stored explicit positions.
+    const order = new Map(group.display.records.map(record => [record.occupant.edgeId, resolveSlotOccupantOrdinal(record.occupant, record.asset)]));
+    const existing = readVideoOperationDraft(target.data, group.variant);
+    const ranked = Object.fromEntries(Object.entries(existing).map(([slot, occupants]) => [slot,
+      occupants.map(occupant => ({ ...occupant, ordinal: occupant.ordinal ?? order.get(occupant.edgeId) }))]));
+    stagedTarget = { ...target, data: { ...target.data,
+      videoSlotDrafts: { ...readVideoSlotDrafts(target.data.videoSlotDrafts), [draftKey]: ranked },
+    } };
+  }
+  const draft = addNodes.length || stagedTarget !== target
+    ? { ...current, nodes: [...current.nodes.map(node => node === target ? stagedTarget : node), ...addNodes] } : current;
   const plan = planCanvasInputSelection(draft, request, context);
   if (plan.status !== 'allowed') return { status: plan.status, reasonCode: plan.reasonCode };
   // An image selection may switch the node's operation in the same atomic
@@ -648,9 +863,19 @@ export function planPickerSelectionMutation(current: CanvasInputMutationState, r
   // The selection endpoint alone verifies the unique saved binding and reduction.
   // Apply only its binding result, without claiming the remaining graph is ready.
   if (request.setUse?.use === 'inactive' && !request.replaceEdgeId && !(request.selections?.length)) {
-    const target = plan.nodes.find(node => node.id === request.targetNodeId)!;
+    const updated = plan.nodes.find(node => node.id === request.targetNodeId)!;
+    const { slot, edgeId } = request.setUse;
+    const conflicts = (target.data.slotConflicts ?? []) as SlotConflict[];
+    const reduced = ((updated.data.slotConflicts ?? []) as SlotConflict[])
+      .find(conflict => conflict.slot === slot && conflict.occupant.edgeId === edgeId);
+    const keptConflicts = conflicts.filter(conflict => conflict.slot !== slot || conflict.occupant.edgeId !== edgeId);
+    if (reduced) keptConflicts.push(reduced);
     return { status: 'allowed', verdict, mutation: {
-      nodePatches: [{ nodeId: target.id, data: { slotBindings: target.data.slotBindings } }],
+      nodePatches: [{ nodeId: target.id, data: { slotBindings: updated.data.slotBindings,
+        ...(keptConflicts.length ? { slotConflicts: keptConflicts } : {}),
+        ...(updated.data.inputBindingVersion !== target.data.inputBindingVersion
+          ? { inputBindingVersion: updated.data.inputBindingVersion } : {}),
+      } }],
     } };
   }
   if (!verdict.accepts) return { status: 'rejected', reasonCode: verdict.reasonCode, verdict };
@@ -771,14 +996,17 @@ function mediaPatch(file: ImportFileDraft): Record<string, unknown> {
       mediaAssets: [{ type: file.materialType, url, relativePath: file.relativePath, assetId: file.assetId }],
     };
   }
-  return buildImportedMediaData({
-    realPath: file.realPath,
-    name: file.name,
-    materialType: file.materialType,
-    mime: file.mime,
-    size: file.size,
-    durationSec: file.durationSec,
-  });
+  return {
+    ...buildImportedMediaData({
+      realPath: file.realPath,
+      name: file.name,
+      materialType: file.materialType,
+      mime: file.mime,
+      size: file.size,
+      durationSec: file.durationSec,
+    }),
+    ...(file.documentText !== undefined ? { documentText: file.documentText } : {}),
+  };
 }
 
 function placeUpstream(
@@ -1145,7 +1373,7 @@ function planNamedOccupantReplacement(input: ResourcePickerCommitInput): Resourc
   if (!edge) return { hasWork: false, rejected: [{ id: source.id, reason: 'missing' }] };
   const next = occupants.map((item, position) => ({
     ...(position === index ? { sourceNodeId: source.id, edgeId: edge.id } : item),
-    ...(ordered ? { ordinal: resolveSlotOccupantOrdinal(item, ordered.feed.get(item.edgeId)) } : {}),
+    ordinal: ordered ? resolveSlotOccupantOrdinal(item, ordered.feed.get(item.edgeId)) : item.ordinal ?? position,
     pinned: true,
   }));
   return { hasWork: true, rejected: [], addNodes: plan.addNodes, addEdges: newEdges,

@@ -57,7 +57,10 @@ export function compareLegacyExecutionInput(
     .map(edge => [edge.source, record.nodeOutputs[edge.source]]));
   let sources;
   try {
-    sources = buildInitialOutputs({ ...prepared, id: record.workspaceId }, selected, media);
+    // Compare the historical source population. New allocation can omit edges
+    // whose outputs the old runner recorded, even when the draft is unchanged.
+    const nodes = prepared.nodes.map(candidate => candidate.id === nodeId ? savedNode : candidate);
+    sources = buildInitialOutputs({ id: record.workspaceId, nodes, edges: incoming }, selected, media);
   } catch {
     return 'unverified'; // The old selected graph cannot identify missing external files.
   }

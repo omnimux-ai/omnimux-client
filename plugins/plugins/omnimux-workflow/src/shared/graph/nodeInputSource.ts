@@ -1,4 +1,4 @@
-import { localFileMediaUrl, looksAbsolutePath, preserveProjectFileMediaRevision, readLocalTextFile } from '../localMedia.ts';
+import { extensionOf, localFileMediaUrl, localFilePathFromUrl, looksAbsolutePath, preserveProjectFileMediaRevision, readLocalTextFile } from '../localMedia.ts';
 import { resolveNodeOutputType } from './materialNode.ts';
 import { normalizeMediaNumber, normalizeMimeType } from '../mediaMetadata.ts';
 import { parseJsonDocumentText, type JsonDocumentParseResult } from '../jsonDocument.ts';
@@ -23,7 +23,7 @@ export interface NodeInputSource {
   label: string;
   materialType: string;
   outputId?: string;
-  metadata?: Pick<InputMediaAsset, 'mimeType' | 'sizeBytes' | 'durationSec'>;
+  metadata?: Pick<InputMediaAsset, 'mimeType' | 'sizeBytes' | 'durationSec'> & { declaredExtension?: string };
   availability: InputAvailability;
   message?: string;
   output: { text?: string; assetId?: string; mediaAssets?: InputMediaAsset[]; documentText?: string };
@@ -59,11 +59,13 @@ function mediaAsset(
   const asset = current as Record<string, unknown> | undefined;
   const fields = asset ?? data;
   const relativePath = nonempty(fields.relativePath);
-  const path = nonempty(fields.path) ?? nonempty(fields.realPath);
-  const assetId = nonempty(fields.assetId);
   let url = usableUrl(asset ? asset.url : data.mediaUrl);
+  const localPath = localFilePathFromUrl(url);
+  // The persisted graph strips absolute path fields and retains its local media URL.
+  const path = nonempty(fields.path) ?? nonempty(fields.realPath) ?? localPath;
+  const assetId = nonempty(fields.assetId) ?? nonempty(data.assetId);
   if (relativePath && workspaceId) url = preserveProjectFileMediaRevision(workspaceId, relativePath, url);
-  else if (path && looksAbsolutePath(path)) url = localFileMediaUrl(path);
+  else if (path && looksAbsolutePath(path) && path !== localPath) url = localFileMediaUrl(path);
   if (!url) return undefined;
   const mimeType = normalizeMimeType(fields.mimeType ?? data.mimeType);
   const sizeBytes = normalizeMediaNumber(fields.sizeBytes ?? data.sizeBytes ?? data.fileSize);
@@ -93,7 +95,12 @@ export function readNodeInputSource(
     ? data.mediaAssets.find((asset) => asset && typeof asset === 'object' && asset.type === materialType) as Record<string, unknown> | undefined
     : undefined;
   const fields = selected ?? data;
+  const url = nonempty(fields.url ?? data.mediaUrl);
+  const declaredFile = nonempty(fields.path ?? fields.relativePath ?? fields.realPath ?? fields.fileName)
+    ?? nonempty(data.originalName ?? data.fileName) ?? localFilePathFromUrl(url) ?? url?.split(/[?#]/, 1)[0];
+  const declaredExtension = declaredFile && extensionOf(declaredFile);
   const metadata = {
+    ...(declaredExtension ? { declaredExtension } : {}),
     mimeType: normalizeMimeType(fields.mimeType ?? data.mimeType) ?? undefined,
     sizeBytes: normalizeMediaNumber(fields.sizeBytes ?? data.sizeBytes ?? data.fileSize) ?? undefined,
     durationSec: normalizeMediaNumber(fields.durationSec ?? data.durationSec ?? data.duration) ?? undefined,

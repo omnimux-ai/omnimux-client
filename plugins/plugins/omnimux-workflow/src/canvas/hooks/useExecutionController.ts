@@ -25,6 +25,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { WORKFLOW_API_ROUTES } from '../../shared/api';
 import type { ExecutionSnapshotDto, NodeExecutionApiStatus } from '../../shared/api';
+import type { RunSnapshotProof } from '../../shared/graph/feedSlot/prepareExecutionSlotGraph.ts';
 import {
   createExecution,
   executionAction,
@@ -680,7 +681,7 @@ export function useExecutionController(
   }, []);
 
   const startExecution = useCallback(
-    async (opts: { mode?: 'full' | 'subset' | 'single'; nodeIds?: string[]; groupId?: string; graphHash?: string; immediate?: boolean } = {}): Promise<NodeSubmissionResult> => {
+    async (opts: { mode?: 'full' | 'subset' | 'single'; nodeIds?: string[]; groupId?: string; graphHash?: string; immediate?: boolean; expectedInput?: RunSnapshotProof } = {}): Promise<NodeSubmissionResult> => {
       const workspace = workspaceIdRef.current;
       const submitError = (error: string): NodeSubmissionResult => ({ ok: false, error });
       if (!workspace) return submitError(t('error.createExecutionFailed'));
@@ -730,6 +731,7 @@ export function useExecutionController(
           ...(opts.groupId ? { groupId: opts.groupId } : {}),
           ...(opts.graphHash ? { graphHash: opts.graphHash } : {}),
           ...(graphSnapshot ? { graph: graphSnapshot } : {}),
+          ...(opts.expectedInput ? { expectedInput: opts.expectedInput } : {}),
           ...(typeof expectedVersion === 'number' ? { expectedVersion } : {}),
         });
         if (!mountedRef.current || workspaceIdRef.current !== workspace) return submitError('');
@@ -863,7 +865,8 @@ export function useExecutionController(
   // Single-node execution bridge for MaterialNode (in-place generation).
   useEffect(() => {
     const exec = useExecutionStore.getState();
-    exec.setStartNodeExecution((nodeId: string) => startExecution({
+    exec.setStartNodeExecution((nodeId, expectedInput) => startExecution({
+      expectedInput,
       mode: 'single',
       nodeIds: [nodeId],
       immediate: true,

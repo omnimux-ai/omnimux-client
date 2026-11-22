@@ -20,7 +20,6 @@ const root = resolve(here, '../../../../../..');
 const tmp = await mkdtemp(resolve(tmpdir(), 'omnimux-empty-well-'));
 const output = resolve(tmp, 'render.cjs');
 const stubs = {
-  useUpstreamMedia: `export const useUpstreamMedia = () => globalThis.__ewUpstreams ?? []; export const toUpstreamSnapshots = items => items;`,
   useModelParameterSchema: `export const getCachedCatalog = () => null; export const useModelParameterSchema = (kind, id, catalog) => ({ schema: {}, modelItem: catalog?.[kind]?.find(m => m.id === id), aspectRatioOptions: [], defaultAspectRatio: '16:9', isAspectRatioValid: () => true, defaultDuration: 5, isDurationValid: () => true });`,
   canvasStore: `const state = () => ({ nodes: globalThis.__ewNodes ?? [], edges: globalThis.__ewEdges ?? [], catalogRuntime: globalThis.__ewCatalog }); export const useCanvasStore = Object.assign(selector => selector(state()), { getState: state, subscribe: () => () => {} });`,
   generationPreferencesStore: `export const rememberGenerationModel = async () => {};`,
@@ -30,19 +29,20 @@ const stubs = {
 await build({
   absWorkingDir: root,
   stdin: {
-    contents: `import React from 'react'; import { renderToStaticMarkup } from 'react-dom/server'; import ConfigPanel from ${JSON.stringify(resolve(here, 'index.tsx'))};
-export function render(nodeData, catalog, upstreams = [], edges = []) {
+    contents: `import React from 'react'; import { renderToStaticMarkup } from 'react-dom/server'; import { ReactFlowProvider } from '@xyflow/react'; import ConfigPanel from ${JSON.stringify(resolve(here, 'index.tsx'))};
+export function render(nodeData, catalog, sources = [], edges = []) {
+  const nodes = [{ id: 'target', type: 'material', position: { x: 0, y: 0 }, data: nodeData }, ...sources];
   globalThis.__ewCatalog = catalog;
-  globalThis.__ewUpstreams = upstreams;
   globalThis.__ewEdges = edges;
-  globalThis.__ewNodes = [{ id: 'target', type: 'material', position: { x: 0, y: 0 }, data: nodeData }];
-  return renderToStaticMarkup(React.createElement(ConfigPanel, { nodeId: 'target', nodeData, catalog, onUpdateNodeData: () => {}, onGenerate: () => {}, execBusy: false }));
+  globalThis.__ewNodes = nodes;
+  const panel = React.createElement(ConfigPanel, { nodeId: 'target', nodeData, catalog, onUpdateNodeData: () => {}, onGenerate: () => {}, execBusy: false });
+  return renderToStaticMarkup(React.createElement(ReactFlowProvider, { initialNodes: nodes, initialEdges: edges }, panel));
 }`,
     resolveDir: root,
   },
   bundle: true, jsx: 'automatic', platform: 'node', format: 'cjs', outfile: output, logLevel: 'silent',
   plugins: [{ name: 'ew-boundaries', setup(b) {
-    b.onResolve({ filter: /(?:useUpstreamMedia|useModelParameterSchema|\/canvasStore|generationPreferencesStore|\/i18n|\/ui)$/ }, (args) => {
+    b.onResolve({ filter: /(?:useModelParameterSchema|\/canvasStore|generationPreferencesStore|\/i18n|\/ui)$/ }, (args) => {
       const name = args.path.split('/').pop();
       return name in stubs ? { path: name, namespace: 'ew' } : undefined;
     });
@@ -73,6 +73,11 @@ function node(type, { legacy = false, prompt = '', slotBindings = {} } = {}) {
   return data;
 }
 
+const importNode = (id, data) => ({
+  id, type: 'material', position: { x: -200, y: 0 }, data: { nodeKind: 'import', status: 'ready', ...data },
+});
+const inputEdge = (id, source) => ({ id, source, sourceHandle: 'out', target: 'target', targetHandle: 'in' });
+
 // Count empty wells (placeholder or append) — legacy required wells are
 // <div role="button">, newer ones are <button>; both carry the wf-slot-well class.
 const emptyWells = (html) => {
@@ -95,8 +100,9 @@ test('both canvas versions keep image prompt references out of empty media wells
     const filled = render(
       node('image', { legacy, slotBindings: { reference_image: [{ edgeId: 'e-img', sourceNodeId: 'img1', pinned: true }] } }),
       catalogFor('image', [mediaSlot]),
-      [{ edgeId: 'e-img', nodeId: 'img1', label: '图', materialType: 'image', url: 'https://example.test/a.png', mimeType: 'image/png', hasMedia: true, availability: 'ready' }],
-      [{ id: 'e-img', source: 'img1', target: 'target', targetHandle: 'in' }]);
+      [importNode('img1', { label: '图', materialType: 'image', mediaUrl: 'https://example.test/a.png', mimeType: 'image/png' })],
+      [inputEdge('e-img', 'img1')]);
+    assert.match(filled, /data-slot-edge="e-img" data-slot-state="ready"/);
     assert.equal(emptyWellsOf(filled, 'reference_image'), 0, 'a full media slot does not keep an empty well');
   }
 });
@@ -133,12 +139,14 @@ test('new image: a bound prompt slot only renders the upstream text chip', () =>
       slotBindings: { prompt: [{ edgeId: 'e-text', sourceNodeId: 'text1', pinned: true }] },
     }),
     catalogFor('image'),
-    [{ edgeId: 'e-text', nodeId: 'text1', label: '正文', materialType: 'text', textContent: '上游正文内容', hasMedia: true, availability: 'ready' }],
-    [{ id: 'e-text', source: 'text1', target: 'target', targetHandle: 'in' }],
+    [importNode('text1', { label: '正文', materialType: 'text', content: '上游正文内容' })],
+    [inputEdge('e-text', 'text1')],
   );
   assert.equal(totalEmptyWells(html), 0);
   assert.match(html, /data-testid="wf-prompt-references"[\s\S]*data-slot-edge="e-text" data-slot-state="ready"/);
   assert.equal((html.match(/class="wf-prompt-reference nodrag"/g) ?? []).length, 1);
+  assert.doesNotMatch(html, /class="wf-effective-text wf-effective-text--slot"/);
+  assert.match(html, /aria-disabled="false" class="wf-generate-btn__send"/);
 });
 
 test('legacy image: slot with min=2 unbound renders at most 1 empty well (capped at 1 per OCR finding)', () => {

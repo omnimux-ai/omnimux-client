@@ -290,7 +290,8 @@ test('Muse legacy mode changes carry the chosen start image between single and o
   assert.equal(data(single).params.operation, 'first_frame');
   assert.equal(data(single).inputBindingVersion, undefined);
   assert.deepEqual(data(single).slotBindings.first_frame.map(item => item.sourceNodeId), ['img-2']);
-  assert.deepEqual(data(single).slotConflicts, []);
+  assert.deepEqual(data(single).slotConflicts.map(({ slot, occupant, reason }) => [slot, occupant.sourceNodeId, reason]),
+    [['reference_images', 'img-1', 'slot_inactive']]);
 });
 
 test('Muse keeps the start image through a ten-image selection, promotion and restart', async () => {

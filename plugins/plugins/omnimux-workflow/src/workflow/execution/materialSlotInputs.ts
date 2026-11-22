@@ -1,6 +1,11 @@
 import type { CapabilityCatalog } from '../../shared/api.ts';
 import type { ExecutionContext } from '../executors/registry.ts';
-import { buildContractView, buildUpstreamFingerprint, isPromptInput, isVisualGeneration, resolveModelView } from '../../shared/validation/compatKernel.ts';
+import { buildContractView, buildUpstreamFingerprint, isMediaInputType, isPromptInput, isVisualGeneration, resolveModelView } from '../../shared/validation/compatKernel.ts';
+import { localFilePathFromUrl } from '../../shared/localMedia.ts';
+import { acceptsFeedAsset, feedAssetMime } from '../../shared/graph/feedSlot/autoFillSlots.ts';
+import { readPreparedExecutionInputs, resolveExecutionContract, type ReadyRunInput, type RunSnapshot } from '../../shared/graph/feedSlot/prepareExecutionSlotGraph.ts';
+import { checkRunSnapshotContract, EXECUTION_INPUT_CHANGED } from '../../shared/validation/executionReadiness.ts';
+import type { ReferenceAssetPayload, SubmitRequest } from '../seam/gateway.ts';
 import { resolveSlotOperation } from '../../shared/graph/feedSlot/resolveSlotOperation.ts';
 import { readPreferredOperationId } from '../../shared/validation/operationUi.ts';
 import { resolveGenerationPrompt } from '../../shared/graph/generationPrompt.ts';
@@ -17,6 +22,18 @@ import { isManagedVideoLineChanged } from '../../shared/validation/managedVideoE
 
 /** Resolve only occupied media. Standby URLs are never opened, parsed or sent to a provider. */
 export function collectMaterialSlotInputs(data: Record<string, unknown>, ctx: ExecutionContext, inputCatalog: CapabilityCatalog, resolveProjectFile?: ResolveExecutionProjectFile) {
+  const prepared = readPreparedExecutionInputs(data);
+  const snapshot = ctx.runSnapshot ?? prepared?.snapshot;
+  if (snapshot) {
+    const blocked = prepared?.assignment.blocked[0];
+    if (blocked) throw new SeamGatewayError(blocked.code, blocked.message ?? '当前输入尚不满足生成要求');
+    return collectSnapshotInputs(data, ctx, inputCatalog, snapshot, resolveProjectFile);
+  }
+  // Existing records created before slot snapshots still use their persisted bindings.
+  return collectLegacyMaterialSlotInputs(data, ctx, inputCatalog, resolveProjectFile);
+}
+
+function collectLegacyMaterialSlotInputs(data: Record<string, unknown>, ctx: ExecutionContext, inputCatalog: CapabilityCatalog, resolveProjectFile?: ResolveExecutionProjectFile) {
   const params = (data.params ?? {}) as Record<string, unknown>;
   const kind = (data.materialType ?? 'text') as keyof NonNullable<CapabilityCatalog['defaults']>;
   const requestedModel = typeof params.model === 'string' ? params.model : inputCatalog.defaults?.[kind];
@@ -127,9 +144,8 @@ export function collectMaterialSlotInputs(data: Record<string, unknown>, ctx: Ex
       }).selectedOperationId;
     }
   } else {
-    operationId = managed || currentVersion && preferredOperationId
-      ? preferredOperationId
-      : resolveSlotOperation(catalog, model?.id, currentVersion ? preferredOperationId : params.operation, kind, boundFingerprint);
+    const hasSavedOperation = model?.operations.some(op => op.listed && op.id === preferredOperationId);
+    operationId = hasSavedOperation ? preferredOperationId : resolveSlotOperation(catalog, model?.id, params.operation, kind, boundFingerprint);
   }
   if (model && !operationId) throw new SeamGatewayError('operation-required', '请选择生成方式');
   layout = deriveSlotLayout(catalog, model?.id, operationId);
@@ -190,4 +206,93 @@ export function collectMaterialSlotInputs(data: Record<string, unknown>, ctx: Ex
     ...(managed?.group && variant ? { managedGroup: managed.group, variant, effectiveVideoVersion: managed.model.effectiveVideoVersion } : {}),
     ...(documentDuration !== undefined ? { documentDuration } : {}),
     texts: layout.acceptsText === false ? [] : texts, operationId, modelId: model?.id ?? modelId };
+}
+
+function staleInput(): never {
+  throw new SeamGatewayError('input_changed', EXECUTION_INPUT_CHANGED);
+}
+
+function storageIdentityMatches(expected: ReadyRunInput, asset: { assetId?: string; relativePath?: string; path?: string; url: string }): boolean {
+  const id = asset.assetId ?? asset.relativePath;
+  const matchesId = id ? id === expected.outputId : [asset.url, asset.path, localFilePathFromUrl(asset.url)].includes(expected.outputId);
+  if (expected.outputId && !matchesId) return false;
+  if (!expected.url) return true;
+  const path = localFilePathFromUrl(expected.url);
+  if (path && asset.path && path !== asset.path) return false;
+  return asset.url === expected.url || Boolean(path && (asset.path === path || asset.url === path));
+}
+
+/** Resolve and validate the captured edges in their frozen order. No other input can enter a request. */
+function collectSnapshotInputs(data: Record<string, unknown>, ctx: ExecutionContext, sourceCatalog: CapabilityCatalog,
+  snapshot: RunSnapshot, resolveProjectFile?: ResolveExecutionProjectFile) {
+  const changed = checkRunSnapshotContract(data, sourceCatalog, snapshot);
+  if (changed) throw new SeamGatewayError(changed.reasonCode, changed.message);
+  const { catalog, model, managed, variant } = resolveExecutionContract(data, sourceCatalog, snapshot.params);
+  const operation = model?.operations.find(op => op.id === snapshot.operationId);
+  if (!operation) return staleInput();
+  const layout = deriveSlotLayout(catalog, snapshot.modelId, snapshot.operationId);
+  const composition = layout.slots.find(slot => slot.type === 'text' && slot.composition)?.composition;
+  const references: ReferenceAssetPayload[] = [];
+  const textInputs: NonNullable<SubmitRequest['textInputs']> = [];
+  const promptSources: Array<{ ordinal: number; text: string }> = [];
+  let audioTrack: ReferenceAssetPayload | undefined;
+  let documentDuration: number | undefined;
+  const canReadDuration = !managed && Object.hasOwn({ ...model?.parameters, ...operation.parameters }, 'duration');
+  const plan = [...snapshot.assigned, ...snapshot.deferred].sort((left, right) => left.ordinal - right.ordinal);
+  const mediaOptions = { workspaceId: ctx.workspaceId, mediaDir: ctx.mediaRoot ?? ctx.mediaDir, resolveProjectFile };
+  for (const item of plan) {
+    const expected = 'availability' in item ? item as ReadyRunInput : undefined;
+    const bindings = ctx.upstreamBindings?.filter(input => input.edgeId === item.edgeId && input.sourceNodeId === item.sourceNodeId);
+    const output = bindings?.length === 1 ? bindings[0]!.output : undefined;
+    if (!output || output.documentError) return staleInput();
+    const asset = output.mediaAssets?.[0];
+    const type = item.type === 'table' ? 'text' : item.type;
+    const slot = item.targetSlot ? layout.slots.find(slot => slot.slot === item.targetSlot && slot.role === item.role && slot.type === type) : undefined;
+    if (item.targetSlot && !slot) return staleInput();
+    if (expected && (expected.textContent !== output.text || expected.documentText !== output.documentText)) return staleInput();
+    const promptOrdinal = item.promptOrdinal ?? item.ordinal;
+    if (type === 'text') {
+      const text = output.text;
+      if (!text?.trim() || asset || (output.assetId && expected?.outputId && output.assetId !== expected.outputId)) return staleInput();
+      if (!slot || slot.composition) promptSources.push({ ordinal: promptOrdinal, text });
+      if (slot) textInputs.push({ sourceNodeId: item.sourceNodeId, edgeId: item.edgeId,
+        outputId: expected?.outputId ?? output.assetId, role: item.role, targetSlot: slot.slot, textContent: text });
+      continue;
+    }
+    if (asset && (asset.type !== item.type || output.mediaAssets?.length !== 1 || expected && !storageIdentityMatches(expected, asset))) return staleInput();
+    if (item.type === 'document' && !item.targetSlot) {
+      if (!output.documentText) return staleInput();
+      const parsed = parseJsonDocumentText(output.documentText);
+      if (!parsed.ok) return staleInput();
+      if (asset) {
+        try { resolveExecutionMediaSource(asset, mediaOptions); }
+        catch { return staleInput(); }
+      }
+      if (output.text?.trim()) promptSources.push({ ordinal: promptOrdinal, text: output.text });
+      if (canReadDuration) documentDuration ??= parsed.duration;
+      continue;
+    }
+    if (!asset || !slot || !isMediaInputType(item.type)) return staleInput();
+    const mime = feedAssetMime(asset);
+    if (expected && (mime && expected.mimeType && mime !== expected.mimeType
+      || asset.sizeBytes !== undefined && expected.sizeBytes !== undefined && asset.sizeBytes !== expected.sizeBytes
+      || asset.durationSec !== undefined && expected.durationSec !== undefined && asset.durationSec !== expected.durationSec)) return staleInput();
+    const metadata = { mimeType: mime ?? expected?.mimeType,
+      sizeBytes: asset.sizeBytes ?? expected?.sizeBytes, durationSec: asset.durationSec ?? expected?.durationSec };
+    if (!acceptsFeedAsset(slot, { ...metadata, type: item.type })) return staleInput();
+    let pathOrUrl: string;
+    try { pathOrUrl = resolveExecutionMediaSource(asset, mediaOptions); }
+    catch { return staleInput(); }
+    const payload: ReferenceAssetPayload = { type: item.type, role: item.role as ReferenceAssetPayload['role'],
+      pathOrUrl, edgeId: item.edgeId, sourceNodeId: item.sourceNodeId, targetSlot: item.targetSlot, ...metadata };
+    if (item.type === 'audio' && item.role === 'audio_track' && !audioTrack) audioTrack = payload;
+    else references.push(payload);
+  }
+  const texts = promptSources.sort((left, right) => left.ordinal - right.ordinal).map(source => source.text);
+  return {
+    prompt: layout.acceptsText === false ? '' : resolveGenerationPrompt({ prompt: snapshot.localText, materialType: data.materialType }, texts, composition),
+    references, audioTrack, localText: snapshot.localText, textInputs, texts, documentDuration,
+    ...(managed?.group && variant ? { managedGroup: managed.group, variant, effectiveVideoVersion: managed.model.effectiveVideoVersion } : {}),
+    operationId: snapshot.operationId, modelId: snapshot.modelId,
+  };
 }

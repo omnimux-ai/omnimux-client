@@ -53,7 +53,8 @@ export function projectVideoSlotBindings(layout: SlotLayout, feed: FeedAsset[], 
       const roleId = JSON.stringify([asset.sourceNodeId, asset.outputId ?? '', slot.role]);
       if (usedRoles.has(roleId)) continue;
       usedRoles.add(roleId);
-      active.push({ ...occupant, role: slot.role, ...(asset.outputId ? { outputId: asset.outputId } : {}) });
+      active.push({ ...occupant, role: slot.role, ordinal: resolveSlotOccupantOrdinal(occupant, asset),
+        ...(asset.outputId ? { outputId: asset.outputId } : {}) });
     }
     return [slot.slot, active];
   }));

@@ -21,13 +21,17 @@ import { assembleEffectiveInputsFromSlots } from './feedSlot/assembleEffectiveIn
 import { feedFromFingerprint } from './feedSlot/effectiveFingerprint.ts';
 import { buildCanvasUpstreamFingerprint } from './canvasInputSources.ts';
 import { planCanvasInputMutation } from './canvasInputMutationGateway.ts';
+import { reconcileCanvasForCatalog } from './catalogReconcile.ts';
+import { findExecutionReadinessFailure } from '../validation/executionReadiness.ts';
 import { resolveEffectiveVideoParams } from '../../canvas/editor/components/MaterialNode/ConfigPanel/videoParams/videoParamAdapter.ts';
 
 const bundled = JSON.parse(readFileSync(new URL('../../../../omnimux/src/catalog/cloud/bundled/pricing.json', import.meta.url), 'utf8'));
 const catalog = projectCanvasCatalog(buildModelCatalog({ env: {}, snapshot: withFixturePricingDefaults(bundled, { 'seedance-2-5': 'seedance-2-5-720p' }) }));
+const defaultExtensions = new Map([['image', 'png'], ['video', 'mp4'], ['audio', 'wav']]);
 
-const importNode = (id, type) => {
-  const ext = type === 'image' ? 'png' : 'mp4';
+const importNode = (id, type, extension) => {
+  const ext = extension ?? defaultExtensions.get(type);
+  const mimeType = `${type}/${ext === 'mp3' ? 'mpeg' : ext}`;
   const url = `https://example.test/${id}.${ext}`;
   return {
     id,
@@ -37,8 +41,8 @@ const importNode = (id, type) => {
       nodeKind: 'import',
       status: 'ready',
       mediaUrl: url,
-      mediaAssets: [{ type, url, mimeType: type === 'image' ? 'image/png' : 'video/mp4', sizeBytes: 1024 }],
-      mimeType: type === 'image' ? 'image/png' : 'video/mp4',
+      mediaAssets: [{ type, url, mimeType, sizeBytes: 1024 }],
+      mimeType,
       sizeBytes: 1024,
     },
   };
@@ -99,6 +103,108 @@ test('Muse V1 refills a vacated automatic first-frame slot in supply order', () 
 
   const cleared = planCanvasInputMutation(graph, { nodePatches: [{ nodeId: target.id, data: { slotBindings: {} } }] }, { catalog });
   assert.deepEqual(used(planCanvasInputMutation(cleared, { removeEdgeIds: ['e-a'] }, { catalog })), []);
+});
+
+test('A28: reopening an explicit clear and adding a new edge only wakes the new supply', () => {
+  const target = targetNode();
+  target.data.params = { model: 'seedance-2-5', operation: 'video_multi_ref' };
+  target.data.autoOperationId = null;
+  const olderImage = edge('old-image', 'a', 'image');
+  Object.assign(olderImage.data, { targetSlot: 'reference_images', role: 'reference' });
+  const olderAudio = edge('old-audio', 'voice', 'audio');
+  const graph = { nodes: [target, importNode('a', 'image'), importNode('b', 'image'), importNode('voice', 'audio')],
+    edges: [olderImage, olderAudio] };
+  const generated = graph => graph.nodes.find(node => node.id === target.id).data;
+  const open = graph => reconcileCanvasForCatalog({ ...JSON.parse(JSON.stringify(graph)), catalog });
+  const cleared = open(graph);
+  assert.deepEqual(generated(cleared).slotBindings, {});
+  assert.deepEqual(cleared.edges[0].data, olderImage.data);
+
+  const connected = planCanvasInputMutation(cleared, { addEdges: [edge('new-image', 'b', 'image')] }, { catalog });
+  assert.equal(connected.status, 'allowed');
+  const reloaded = open(connected);
+  assert.deepEqual(reloaded.edges.map(item => item.id), ['old-image', 'old-audio', 'new-image']);
+  assert.deepEqual(generated(reloaded).slotStandbyEdgeIds, ['old-image', 'old-audio']);
+  assert.deepEqual(generated(reloaded).slotBindings.reference_images.map(item => item.edgeId), ['new-image']);
+  assert.deepEqual(generated(reloaded).slotBindings.reference_audios, []);
+  const snapshot = prepareExecutionSlotGraph(reloaded.nodes, reloaded.edges, catalog).runSnapshots.get(target.id);
+  assert.deepEqual(snapshot.assigned.map(item => item.edgeId), ['new-image']);
+
+  const unplugged = planCanvasInputMutation(reloaded, { removeEdgeIds: ['new-image', 'old-image'] }, { catalog });
+  assert.deepEqual(generated(unplugged).slotBindings.reference_images ?? [], []);
+  assert.deepEqual(generated(unplugged).slotStandbyEdgeIds, ['old-audio']);
+  const replugged = planCanvasInputMutation(unplugged, { addEdges: [olderImage] }, { catalog });
+  assert.deepEqual(generated(replugged).slotBindings.reference_images.map(item => item.edgeId), ['old-image']);
+  assert.equal(replugged.edges.at(-1).data.targetSlot, 'reference_images');
+  assert.equal(replugged.edges.at(-1).data.role, 'reference');
+});
+
+test('A29/A30: newly connected pending supply is assigned when ready and a pinned choice stays reserved', () => {
+  const target = targetNode();
+  target.data.params = { model: 'muse-video', operation: 'first_frame' };
+  target.data.autoOperationId = null;
+  const ready = importNode('new', 'image');
+  const pending = { ...ready, data: { materialType: 'image', nodeKind: 'generate', status: 'loading' } };
+  const graph = { nodes: [target, importNode('old', 'image'), pending], edges: [edge('old', 'old', 'image')] };
+  const generated = graph => graph.nodes.find(node => node.id === target.id).data;
+  const connected = planCanvasInputMutation(graph, { addEdges: [edge('new', 'new', 'image')] }, { catalog });
+  assert.equal(connected.status, 'allowed');
+  assert.deepEqual(generated(connected).slotBindings.first_frame, []);
+  assert.deepEqual(generated(connected).slotStandbyEdgeIds, ['old']);
+  assert.deepEqual(generated(connected).compat.reasonCodes, ['min_unsatisfied']);
+  const available = planCanvasInputMutation(connected, { nodePatches: [{ nodeId: 'new', data: ready.data }] }, { catalog });
+  assert.equal(available.status, 'allowed');
+  assert.deepEqual(generated(available).slotBindings.first_frame.map(item => item.edgeId), ['new']);
+  assert.equal(generated(available).compat.readyToSubmit, true);
+
+  const pinned = { ...target, data: { ...target.data,
+    slotBindings: { first_frame: [{ sourceNodeId: 'new', edgeId: 'new', pinned: true }] } } };
+  const pinnedGraph = { nodes: [pinned, importNode('old', 'image'), pending], edges: connected.edges };
+  const plan = reconcileCanvasForCatalog({ ...pinnedGraph, catalog });
+  assert.deepEqual(generated(plan).slotBindings.first_frame.map(item => [item.edgeId, item.pinned]), [['new', true]]);
+  assert.equal(generated(plan).compat.readyToSubmit, false);
+  assert.ok(generated(plan).compat.reasonCodes.includes('input_waiting'));
+});
+
+test('A52: changing model reevaluates unused supply from a saved layout without media slots', () => {
+  const target = targetNode();
+  delete target.data.slotBindings;
+  target.data.params = { model: 'muse-video', operation: 'text_to_video' };
+  target.data.autoOperationId = null;
+  const sources = [importNode('a', 'image'), importNode('voice', 'audio'), importNode('flac', 'audio', 'flac')];
+  const edges = sources.map(source => edge(`e-${source.id}`, source.id, source.data.materialType));
+  edges[1].data.slotBinding = { slot: 'reference_audios', role: 'reference', type: 'audio' };
+  const initial = reconcileCanvasForCatalog({ nodes: [...sources, target], edges, catalog });
+  assert.deepEqual(Object.values(initial.nodes.at(-1).data.slotBindings ?? {}).flat(), []);
+  const choose = (graph, model, operation) => planCanvasInputMutation(graph, {
+    nodePatches: [{ nodeId: target.id, data: { params: { model, operation }, autoOperationId: null } }],
+  }, { catalog });
+  const seedance = choose(initial, 'seedance-2-5', 'video_multi_ref');
+  assert.equal(seedance.status, 'allowed');
+  assert.deepEqual(seedance.nodes.at(-1).data.slotBindings.reference_images.map(item => item.edgeId), ['e-a']);
+  assert.deepEqual(seedance.nodes.at(-1).data.slotBindings.reference_audios.map(item => item.edgeId), ['e-voice']);
+  assert.deepEqual(seedance.edges[1].data.slotBinding, edges[1].data.slotBinding);
+  assert.deepEqual(seedance.nodes.at(-1).data.slotConflicts, []);
+  const muse = choose(seedance, 'muse-video', 'first_frame');
+  assert.equal(muse.status, 'allowed');
+  assert.deepEqual(muse.nodes.at(-1).data.slotBindings.first_frame.map(item => item.edgeId), ['e-a']);
+  assert.deepEqual(muse.edges.map(item => item.id), edges.map(item => item.id));
+  assert.deepEqual(muse.edges[1].data.slotBinding, edges[1].data.slotBinding);
+});
+
+test('a qualified slot edit preserves the selected operation and its automatic provenance', () => {
+  const target = targetNode();
+  target.data.params = { model: 'seedance-2-5', operation: 'first_frame' };
+  target.data.autoOperationId = 'first_frame';
+  target.data.slotBindings = { first_frame: [{ edgeId: 'e-a', sourceNodeId: 'a', pinned: true }] };
+  const graph = { nodes: [target, importNode('a', 'image'), importNode('b', 'image')],
+    edges: [edge('e-a', 'a', 'image'), edge('e-b', 'b', 'image')] };
+  const write = recomputeCanvasSlots(target, graph, { catalog }, target, new Set(), new Set(), 'first_frame');
+  assert.equal(write.data.params.operation, 'first_frame');
+  assert.equal(write.data.autoOperationId, 'first_frame');
+  assert.deepEqual(boundKeys(write), ['first_frame']);
+  const automatic = recomputeCanvasSlots(target, graph, { catalog }, target);
+  assert.equal(automatic.data.params.operation, 'first_last_frame');
 });
 
 test('disconnecting a pinned first frame keeps the pinned last frame in its own role', () => {
@@ -247,10 +353,9 @@ test('#62: a legacy audio edge stays a silent candidate and keeps text_to_video 
   assert.equal(effective.effectiveOperations.find((operation) => operation.id === 'text_to_video')?.disabled, false);
 });
 
-test('#62: an unconsumed audio candidate never flips readiness or the request (A/B)', async () => {
+test('#62: an unconsumed audio candidate never flips readiness or the request (A/B)', () => {
   // A/B：同一节点、同一 prompt、同一 seedance text_to_video，唯一差异是 B 多一条历史 audio 边。
   // 两边 readyToSubmit 与执行请求必须一致：未消费候选既不阻断，也不进入 payload。
-  const { findExecutionReadinessFailure } = await import('../validation/executionReadiness.ts');
   const prompt = 'issue-62 A/B contrast: 一艘船在湖面上缓慢航行';
   const audio = {
     id: 'src-1',
@@ -275,6 +380,7 @@ test('#62: an unconsumed audio candidate never flips readiness or the request (A
       status: 'empty',
       prompt,
       params: { model: 'seedance-2-5', operation: 'text_to_video' },
+      autoOperationId: null,
       inputBindingVersion: 1,
       slotBindings: {},
       slotConflicts: [],
@@ -310,59 +416,32 @@ test('#62: an unconsumed audio candidate never flips readiness or the request (A
   assert.deepEqual(recomputed.data.compat.reasonCodes, []);
 });
 
-test('#62: a naturally auto-created video node keeps text_to_video after an audio edge', async () => {
-  // 桌面复验的最小真实路径：planCanvasInputMutation 新建只有 model 的视频节点，
-  // 系统自动得到 operation=autoOperationId=text_to_video；随后普通拖入 ready 音频边。
-  // 这条路径不能要求用户重选同一个模式。
-  const { planCanvasInputMutation } = await import('./canvasInputMutationGateway.ts');
-  const created = planCanvasInputMutation({ nodes: [], edges: [] }, {
-    addNodes: [targetNode()],
-  }, { catalog });
+test('A53: automatic Seedance consumes audio before the required image is connected', () => {
+  const created = planCanvasInputMutation({ nodes: [], edges: [] }, { addNodes: [targetNode()] }, { catalog });
   assert.equal(created.status, 'allowed');
-  const createdNode = created.nodes.find((node) => node.id === 'target');
+  const createdNode = created.nodes.find(node => node.id === 'target');
   assert.equal(createdNode.data.params.operation, 'text_to_video');
   assert.equal(createdNode.data.autoOperationId, 'text_to_video');
 
-  const audio = {
-    id: 'src-1',
-    type: 'material',
-    data: {
-      materialType: 'audio',
-      nodeKind: 'import',
-      status: 'ready',
-      mediaUrl: 'https://example.test/src-1.mp3',
-      mediaAssets: [{ type: 'audio', url: 'https://example.test/src-1.mp3', mimeType: 'audio/mpeg', sizeBytes: 1024 }],
-      mimeType: 'audio/mpeg',
-      sizeBytes: 1024,
-    },
-  };
-  const audioEdge = { id: 'edge-audio', source: 'src-1', target: 'target', targetHandle: 'in', data: { feedType: 'audio' } };
-  const connected = planCanvasInputMutation({
-    nodes: [audio, createdNode],
-    edges: [],
-  }, { addEdges: [audioEdge] }, { catalog });
+  const audio = importNode('voice', 'audio', 'mp3');
+  const connected = planCanvasInputMutation({ nodes: [audio, createdNode], edges: [] },
+    { addEdges: [edge('edge-audio', audio.id, 'audio')] }, { catalog });
   assert.equal(connected.status, 'allowed');
-  const node = connected.nodes.find((item) => item.id === 'target');
-  assert.equal(node.data.params.operation, 'text_to_video');
-  assert.equal(node.data.autoOperationId, 'text_to_video');
-  assert.deepEqual(node.data.slotBindings, {});
-
-  // 就绪与提交：与显式手选 text_to_video 的对照完全一致。
-  const { findExecutionReadinessFailure } = await import('../validation/executionReadiness.ts');
-  const readiness = findExecutionReadinessFailure([audio, node], catalog, { nodes: [audio, node], edges: connected.edges });
-  assert.equal(readiness, null, 'auto-derived text_to_video must be ready with a legacy audio candidate');
-
-  const prepared = prepareExecutionSlotGraph([audio, node], connected.edges, catalog);
-  const preparedTarget = prepared.nodes.find((item) => item.id === 'target');
-  assert.equal(preparedTarget.data.params.operation, 'text_to_video');
-  assert.deepEqual(preparedTarget.data.slotBindings, {});
+  const node = connected.nodes.find(item => item.id === 'target');
+  assert.equal(node.data.params.operation, 'video_multi_ref');
+  assert.equal(node.data.autoOperationId, 'video_multi_ref');
+  assert.deepEqual(node.data.slotBindings.reference_audios.map(item => item.edgeId), ['edge-audio']);
+  assert.deepEqual(node.data.slotBindings.reference_images, []);
+  assert.equal(node.data.compat.readyToSubmit, false);
+  assert.deepEqual(node.data.compat.reasonCodes, ['min_unsatisfied']);
+  assert.equal(findExecutionReadinessFailure([node], catalog, connected)?.slot, 'reference_images');
 
   const explicit = structuredClone(node);
   explicit.data.params = { model: 'seedance-2-5', operation: 'text_to_video' };
   explicit.data.autoOperationId = null;
-  assert.equal(findExecutionReadinessFailure([audio, explicit], catalog, { nodes: [audio, explicit], edges: connected.edges }), null);
-  const explicitPrepared = prepareExecutionSlotGraph([audio, explicit], connected.edges, catalog)
-    .nodes.find((item) => item.id === 'target');
-  assert.equal(explicitPrepared.data.params.operation, 'text_to_video');
-  assert.deepEqual(explicitPrepared.data.slotBindings, preparedTarget.data.slotBindings);
+  const explicitGraph = { nodes: [audio, explicit], edges: connected.edges };
+  assert.equal(findExecutionReadinessFailure([explicit], catalog, explicitGraph), null);
+  const snapshot = prepareExecutionSlotGraph(explicitGraph.nodes, explicitGraph.edges, catalog).runSnapshots.get(explicit.id);
+  assert.equal(snapshot.operationId, 'text_to_video');
+  assert.deepEqual(snapshot.assigned, []);
 });

@@ -38,6 +38,12 @@ export interface LineConstraints {
 
 type AnyRecord = Record<string, unknown>;
 
+const LINE_INPUT_MAX_BY_TYPE = Symbol('lineInputMaxByType');
+
+export function lineInputMaxByType(model: object | undefined): Readonly<Record<string, number>> | undefined {
+  return (model as { [LINE_INPUT_MAX_BY_TYPE]?: Readonly<Record<string, number>> } | undefined)?.[LINE_INPUT_MAX_BY_TYPE];
+}
+
 function asRecord(value: unknown): AnyRecord | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as AnyRecord) : null;
 }
@@ -313,7 +319,12 @@ export function narrowModelByLineConstraints<M>(model: M, modelId: string, const
     ? narrowParameterMap(modelParameters, parameterConstraints)
     : record.parameters;
 
-  return { ...record, operations: nextOperations, parameters: nextModelParameters } as unknown as M;
+  const inputMaxByType = inputConstraints && Object.fromEntries(Object.entries(inputConstraints)
+    .flatMap(([type, constraint]) => typeof constraint?.max === 'number' && Number.isFinite(constraint.max)
+      ? [[type, Math.max(0, Math.floor(constraint.max))]] : []));
+  return { ...record, operations: nextOperations, parameters: nextModelParameters,
+    ...(inputMaxByType && Object.keys(inputMaxByType).length ? { [LINE_INPUT_MAX_BY_TYPE]: inputMaxByType } : {}),
+  } as unknown as M;
 }
 
 /**

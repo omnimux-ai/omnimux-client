@@ -8,6 +8,7 @@
 
 import { requestFilePicker } from 'dsh-ui-kit/native-file-picker';
 import { WORKFLOW_API_ROUTES } from '../../shared/api.ts';
+import { extensionsForSlotFiles, type LocalMediaProbeItem, type SlotFileFilter } from '../../shared/localMedia.ts';
 import type {
   ApiUpstream,
   BuildManifest,
@@ -268,9 +269,20 @@ export function promoteWorkspaceAsset(
 
 type LocalPickResult = { path: string | null; paths: string[] };
 
-export function pickLocalFiles(options?: { extensions?: string[]; multiple?: boolean }): Promise<ApiResult<LocalPickResult>> {
+export function pickLocalFiles(options?: {
+  extensions?: string[];
+  multiple?: boolean;
+  slotFilter?: SlotFileFilter;
+}): Promise<ApiResult<LocalPickResult>> {
+  const { slotFilter, ...nativeOptions } = options ?? {};
+  if (slotFilter) {
+    nativeOptions.extensions = extensionsForSlotFiles(slotFilter, options?.extensions);
+    if (!nativeOptions.extensions.length) {
+      return Promise.resolve({ ok: true, status: 200, body: { path: null, paths: [] } });
+    }
+  }
   return requestFilePicker(
-    { kind: 'file', multiple: true, ...options },
+    { kind: 'file', multiple: true, ...nativeOptions },
     () => request<LocalPickResult>(WORKFLOW_API_ROUTES.pick, {
       method: 'POST',
       body: { kind: 'file', ...options },
@@ -288,14 +300,9 @@ export function pickLocalDirectory(): Promise<ApiResult<LocalPickResult>> {
   );
 }
 
-export function probeLocalFiles(
-  paths: string[],
-  contentMime?: boolean,
-): Promise<ApiResult<{ items: Array<{ path: string; exists: boolean; size?: number; mime?: string; name?: string }> }>> {
-  return request<{ items: Array<{ path: string; exists: boolean; size?: number; mime?: string; name?: string }> }>(
-    WORKFLOW_API_ROUTES.localFileProbe,
-    { method: 'POST', body: { paths, contentMime } },
-  );
+export function probeLocalFiles(paths: string[], contentMime?: boolean, signal?: AbortSignal): Promise<ApiResult<{ items: LocalMediaProbeItem[] }>> {
+  return request<{ items: LocalMediaProbeItem[] }>(WORKFLOW_API_ROUTES.localFileProbe,
+    { method: 'POST', body: { paths, contentMime }, signal });
 }
 
 export function executionAction(

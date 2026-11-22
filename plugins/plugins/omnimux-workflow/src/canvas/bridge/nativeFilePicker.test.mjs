@@ -45,6 +45,20 @@ test('canvas, project and asset drawer imports use the same desktop picker', asy
   assert.equal(web.mock.callCount(), 0);
 });
 
+test('Desktop receives only native options for the named slot MIME constraints', async t => {
+  const calls = [];
+  useDesktop(t, { protocolVersion: 1, filePicker: { version: 1, async open(options) {
+    calls.push(options);
+    return { ok: true, path: null, paths: [] };
+  } } });
+  const slotFilter = { slot: 'reference_audios', materialType: 'audio', allowedMimes: ['audio/mpeg', 'audio/wav'] };
+  await pickLocalFiles({ slotFilter, extensions: ['wav', 'flac'], multiple: false });
+  assert.deepEqual(calls, [{ kind: 'file', extensions: ['wav'], multiple: false }]);
+  const unavailable = await pickLocalFiles({ slotFilter, extensions: ['flac'] });
+  assert.deepEqual(unavailable.body, { path: null, paths: [] });
+  assert.equal(calls.length, 1);
+});
+
 test('old desktop clients return an update prompt without opening the Web host picker', async t => {
   useDesktop(t, { protocolVersion: 1 });
   const web = t.mock.method(globalThis, 'fetch', () => { throw new Error('Old desktop must not reach HTTP'); });

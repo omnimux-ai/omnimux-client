@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
 import { build } from 'esbuild';
+import { namedPickerState, openNamedPicker, planNamedPickerMutation } from '../editor/utils/resourcePickerPolicy.ts';
+import { prepareExecutionSlotGraph, readPreparedExecutionInputs } from '../../shared/graph/feedSlot/prepareExecutionSlotGraph.ts';
+import { catalogFor, operation, slot } from '../../workflow/seam/submissionFixtures.mjs';
 
 const compiled = await build({
   entryPoints: [new URL('./canvasStore.ts', import.meta.url).pathname],
@@ -183,4 +186,58 @@ test('discrete video selection restores each prior line without waiting between 
   assert.deepEqual(findNode('video').data.params, studio);
   state.redo();
   assert.deepEqual(findNode('video').data.params, economy);
+});
+
+test('named first frame replacement reuses the connected edge and undo restores the previous submission', () => {
+  const firstFrame = 'first_frame';
+  const catalog = catalogFor('video', 'fixture', [operation(firstFrame, 'video', [slot('image', firstFrame, 1, 1, firstFrame)])]);
+  const [a, b] = ['a', 'b'].map((id, index) => ({ ...node(id, index * 250), data: {
+    materialType: 'image', nodeKind: 'import', mediaUrl: `https://example.test/${id}.png`,
+  } }));
+  const supply = [a, b].map(source => ({ id: `e-${source.id}`, source: source.id, target: 'target' }));
+  const runtime = { catalog };
+
+  for (const inputBindingVersion of [undefined, 1]) {
+    const target = { ...node('target', 600), data: { materialType: 'video', nodeKind: 'generate', selectedTool: 'video-generation',
+      prompt: 'Describe the shot', autoOperationId: null, inputBindingVersion,
+      params: { model: 'fixture', operation: firstFrame },
+      slotBindings: { first_frame: [{ sourceNodeId: a.id, edgeId: 'e-a', pinned: true }] } } };
+    const state = store.getState();
+    state.resetStore();
+    state.setCatalogRuntime(catalog);
+    state.hydrateGraph([target, a, b], supply);
+    const before = store.getState();
+    const picker = namedPickerState(before, target.id, runtime);
+    const intent = openNamedPicker(picker, { slot: firstFrame, role: firstFrame, operationId: firstFrame, replaceEdgeId: 'e-a' });
+    assert.ok(intent);
+    const detached = namedPickerState({ ...before, edges: [supply[1]] }, target.id, runtime);
+    const selection = [{ sourceNodeId: b.id, outputId: b.data.mediaUrl, targetSlot: firstFrame, role: firstFrame }];
+    const stale = planNamedPickerMutation(detached, intent, selection, [], runtime);
+    assert.equal(stale.reasonCode, 'input_changed');
+    assert.equal(stale.mutation, undefined);
+
+    function assertInputs(expected, overflow) {
+      const live = store.getState();
+      const prepared = prepareExecutionSlotGraph(live.nodes, live.edges, catalog);
+      const preparedTarget = prepared.nodes.find(node => node.id === target.id);
+      const assignment = readPreparedExecutionInputs(preparedTarget.data).assignment;
+      const snapshot = prepared.runSnapshots.get(target.id);
+      assert.deepEqual(assignment.unused.map(asset => [asset.edgeId, asset.unusedReason]), [[overflow, 'capacity']]);
+      assert.deepEqual(snapshot.assigned.map(input => [input.sourceNodeId, input.targetSlot]), [[expected, firstFrame]]);
+      assert.equal(live.nodes[0].data.params.operation, firstFrame);
+      assert.equal(live.nodes[0].data.autoOperationId, null);
+      assert.deepEqual(live.edges.map(edge => edge.id), ['e-a', 'e-b']);
+    }
+
+    assertInputs('a', 'e-b');
+    const planned = planNamedPickerMutation(picker, intent, selection, [], runtime);
+    assert.ok(planned.mutation, planned.reasonCode);
+    assert.deepEqual(planned.mutation.addEdges, []);
+    assert.equal(before.applyCanvasInputMutation(planned.mutation, { undoStep: true }).status, 'allowed');
+    assertInputs('b', 'e-a');
+    assert.equal(store.getState().past.length, 1);
+    state.undo();
+    assertInputs('a', 'e-b');
+    assert.equal(store.getState().past.length, 0);
+  }
 });

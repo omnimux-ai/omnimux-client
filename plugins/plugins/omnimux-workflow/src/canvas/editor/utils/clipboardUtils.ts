@@ -147,8 +147,9 @@ function copyNodeData(node: CanvasNode): CanvasNode['data'] {
   return { ...data, projectId: newCanvasClipProjectId(), status: 'idle' };
 }
 
+type CloneSlotOccupant = Record<string, unknown> & { sourceNodeId?: string; edgeId?: string };
 interface CloneSlotBindings {
-  [slot: string]: Array<Record<string, unknown> & { sourceNodeId?: string; edgeId?: string }>;
+  [slot: string]: CloneSlotOccupant[];
 }
 
 /** Remap a cloned node's slot bindings onto the new node/edge ids produced by this paste. */
@@ -162,22 +163,21 @@ function remapClonedBindings(
   const standby = data.slotStandbyEdgeIds;
   const conflicts = data.slotConflicts;
   const drafts = data.videoSlotDrafts;
-  if (!bindings && !Array.isArray(standby) && !Array.isArray(conflicts) && !drafts) return node;
+  const lipSync = data.parkedLipSyncInputs as { model: string; bindings: CloneSlotBindings; conflicts?: unknown } | undefined;
+  if (!bindings && !Array.isArray(standby) && !Array.isArray(conflicts) && !drafts && !lipSync?.bindings) return node;
   const next: Record<string, unknown> = { ...data };
-  const remap = (slots: CloneSlotBindings): CloneSlotBindings => {
-    const remapped: CloneSlotBindings = {};
-    for (const [slot, occupants] of Object.entries(slots)) {
-      if (!Array.isArray(occupants)) continue;
-      remapped[slot] = (occupants ?? []).flatMap((occupant) => {
-        const mappedSource = occupant?.sourceNodeId ? nodeIdMapping.get(occupant.sourceNodeId) : undefined;
-        const mappedEdge = occupant?.edgeId ? edgeIdMapping.get(occupant.edgeId) : undefined;
-        // A binding survives only when both its source node and its edge were copied too.
-        if (!mappedSource || !mappedEdge) return [];
-        return [{ ...occupant, sourceNodeId: mappedSource, edgeId: mappedEdge }];
-      });
-    }
-    return remapped;
+  const remapOccupant = (occupant: CloneSlotOccupant | undefined): CloneSlotOccupant | undefined => {
+    const mappedSource = occupant?.sourceNodeId ? nodeIdMapping.get(occupant.sourceNodeId) : undefined;
+    const mappedEdge = occupant?.edgeId ? edgeIdMapping.get(occupant.edgeId) : undefined;
+    if (mappedSource && mappedEdge) return { ...occupant, sourceNodeId: mappedSource, edgeId: mappedEdge };
   };
+  const remapConflicts = (items: Array<{ occupant?: CloneSlotOccupant }>) => items.flatMap(conflict => {
+    const occupant = remapOccupant(conflict?.occupant);
+    return occupant ? [{ ...conflict, occupant }] : [];
+  });
+  const remap = (slots: CloneSlotBindings): CloneSlotBindings => Object.fromEntries(Object.entries(slots)
+    .filter(([, occupants]) => Array.isArray(occupants))
+    .map(([slot, occupants]) => [slot, occupants.map(remapOccupant).filter((item): item is CloneSlotOccupant => item !== undefined)]));
   if (bindings) next.slotBindings = remap(bindings);
   if (drafts && typeof drafts === 'object' && !Array.isArray(drafts)) {
     next.videoSlotDrafts = Object.fromEntries(Object.entries(drafts).flatMap(([mode, slots]) =>
@@ -188,7 +188,12 @@ function remapClonedBindings(
       .map((id) => (typeof id === 'string' ? edgeIdMapping.get(id) : undefined))
       .filter((id): id is string => Boolean(id));
   }
-  // Conflicts are derived state; carrying pre-clone identities would resurrect ghosts.
-  if (Array.isArray(conflicts)) next.slotConflicts = [];
+  // Parked role choices belong to the copy only if their connection was copied.
+  if (Array.isArray(conflicts)) next.slotConflicts = remapConflicts(conflicts);
+  if (lipSync?.bindings) next.parkedLipSyncInputs = {
+    ...lipSync,
+    bindings: remap(lipSync.bindings),
+    ...(Array.isArray(lipSync.conflicts) ? { conflicts: remapConflicts(lipSync.conflicts) } : {}),
+  };
   return { ...node, data: next as CanvasNode['data'] };
 }

@@ -15,6 +15,10 @@ import {
   formatFileSize,
   planResourcePickerCommit,
   planPickerSelectionMutation,
+  checkNamedPickerSelection,
+  namedPickerState,
+  openNamedPicker,
+  planNamedPickerMutation,
   resourcePickerContextKey,
   planStandaloneImportNodes,
   planImportNodeFill,
@@ -42,7 +46,7 @@ function materialNode(id, materialType, extras = {}) {
   };
 }
 
-test('named picker hides unsupported audio before selection on both canvas versions', () => {
+test('named picker filters WAV/MP3 and admits audio first from canvas or disk on both canvas versions', () => {
   const source = (name, mimeType, sizeBytes = 256) => ({ id: name, type: 'material', position: { x: 0, y: 0 },
     data: { materialType: 'audio', nodeKind: 'import', mediaUrl: `https://fixtures.invalid/${name}`, mimeType, sizeBytes } });
   const target = { id: 'target', type: 'material', position: { x: 200, y: 0 }, data: {
@@ -53,11 +57,47 @@ test('named picker hides unsupported audio before selection on both canvas versi
       { slot: 'reference_audios', type: 'audio', role: 'reference', source: 'upstream_output', min: 0, max: 2,
         maxSizeMb: 1, allowedMimes: ['audio/wav', 'audio/mpeg'] },
     ] }] }] };
-  const audio = [source('good.wav'), source('good.mp3', 'audio/mpeg'), source('bad.flac', 'audio/flac'),
+  const originalName = source('named-output');
+  originalName.data.originalName = 'source.WAV';
+  const audio = [source('good.wav'), source('good.mp3', 'audio/mpeg'), originalName, source('bad.flac', 'audio/flac'),
     source('renamed.wav', 'audio/flac'), source('too-large.wav', 'audio/wav', 2 ** 20 + 1)];
+  const runtime = { catalog };
+  const file = { id: 'clip', name: 'clip.wav', mime: 'audio/wav', size: 256, durationSec: 2,
+    realPath: '/fixtures/clip.wav', materialType: 'audio', fileRevision: 'transient' };
   for (const node of [target, { ...target, data: { ...target.data, inputBindingVersion: 1, slotBindings: {} } }]) {
-    const items = listCanvasResources([node, ...audio], [], target.id, { catalog }, { targetSlot: 'reference_audios' });
-    assert.deepEqual(items.map(item => item.nodeId), ['good.wav', 'good.mp3']);
+    const graph = { nodes: [node, ...audio], edges: [] };
+    const state = namedPickerState(graph, target.id, runtime);
+    const intent = openNamedPicker(state, { slot: 'reference_audios', role: 'reference', operationId: 'video_multi_ref' });
+    assert.ok(intent);
+    const items = listCanvasResources(graph.nodes, graph.edges, target.id, runtime, { named: { state, intent } });
+    assert.deepEqual(items.map(item => item.nodeId), ['good.wav', 'good.mp3', originalName.id]);
+    const selected = item => ({ sourceNodeId: item.nodeId, outputId: item.outputId, targetSlot: intent.slot, role: intent.role });
+    const rejected = checkNamedPickerSelection(state, intent, [], [{ ...file, mime: 'audio/flac' }]);
+    assert.equal(rejected.reasonCode, 'mime_unsupported');
+    assert.equal(checkNamedPickerSelection(state, intent, [selected(items[0])], [file], true).choices.length, 2);
+    const before = structuredClone(graph);
+    for (const [selections, files] of [[[selected(items[0])], []], [[], [file]]]) {
+      const confirmed = planNamedPickerMutation(state, intent, selections, files, runtime);
+      assert.ok(confirmed.mutation, confirmed.reasonCode);
+      const applied = planCanvasInputMutation(graph, confirmed.mutation, runtime);
+      assert.equal(applied.status, 'allowed');
+      assert.equal(applied.nodes[0].data.params.operation, 'video_multi_ref');
+      assert.equal(applied.nodes[0].data.inputBindingVersion, node.data.inputBindingVersion);
+      assert.equal(applied.edges.length, 1);
+      const assignment = applied.nodes[0].data;
+      assert.equal(assignment.slotBindings.reference_audios.length, 1);
+      assert.deepEqual(assignment.slotBindings.reference_images, []);
+      assert.equal(assignment.compat.readyToSubmit, false);
+      assert.ok(assignment.compat.reasonCodes.includes('min_unsatisfied'));
+      if (files.length) {
+        const imported = applied.nodes.find(item => item.id === applied.edges[0].source);
+        assert.equal(imported.data.mimeType, 'audio/wav');
+        assert.equal(imported.data.sizeBytes, 256);
+        assert.equal(imported.data.durationSec, 2);
+        assert.equal(imported.data.fileRevision, undefined);
+      }
+    }
+    assert.deepEqual(graph, before);
   }
 });
 
@@ -142,7 +182,10 @@ test('a newly chosen reference can fill space vacated by incompatible saved supp
   assert.equal(plan.status, 'allowed', plan.reasonCode);
   const changed = planCanvasInputMutation(graph, plan.mutation, context);
   assert.equal(changed.status, 'allowed');
-  assert.deepEqual(changed.nodes.find(node => node.id === target.id).data.slotBindings.reference_image.map(item => item.sourceNodeId), ['old', 'new']);
+  const data = changed.nodes.find(node => node.id === target.id).data;
+  assert.deepEqual(data.slotBindings.reference_image.map(item => item.sourceNodeId), ['new']);
+  assert.deepEqual(data.slotConflicts.map(({ slot, occupant, reason }) => [slot, occupant.edgeId, reason]),
+    [['reference_image', 'old-edge', 'slot_inactive']]);
   assert.equal(changed.edges.some(edge => edge.id === 'old-edge'), true);
 
   const unexpectedlyChanged = { ...graph, nodes: [target, parked, { ...newImage, data: { ...newImage.data, mimeType: 'image/jpeg' } }] };
@@ -178,6 +221,28 @@ test('managed picker uses the selected variant and projected draft even before i
   const wider = { ...target, data: { ...target.data, params: { ...target.data.params, resolution: '1080p' } } };
   assert.notEqual(resourcePickerContextKey(target, context), resourcePickerContextKey(wider, context));
   const widerGraph = { ...graph, nodes: [wider, existing, additional] };
+  const widerState = namedPickerState(widerGraph, target.id, context);
+  const intent = openNamedPicker(widerState, { slot, role: 'reference', operationId: operation });
+  assert.ok(intent);
+  const latestStates = [
+    namedPickerState(graph, target.id, context),
+    namedPickerState({ ...widerGraph, nodes: [wider, existing, { ...additional,
+      data: { ...additional.data, mediaUrl: 'https://fixtures.invalid/changed.png' } }] }, target.id, context),
+  ];
+  for (const current of latestStates) {
+    const stale = planNamedPickerMutation(current, intent, request.selections, [], context);
+    assert.equal(stale.reasonCode, 'input_changed');
+    assert.equal(stale.mutation, undefined);
+  }
+  const replacement = openNamedPicker(widerState, { slot, operationId: operation, replaceEdgeId: edge.id });
+  const edited = planNamedPickerMutation(widerState, replacement, request.selections, [], context);
+  assert.ok(edited.mutation, edited.reasonCode);
+  const replaced = planCanvasInputMutation(widerGraph, edited.mutation, context);
+  assert.equal(replaced.status, 'allowed');
+  assert.deepEqual(replaced.nodes[0].data.params, wider.data.params);
+  assert.deepEqual(replaced.nodes[0].data.videoSlotDrafts.image_reference.reference_images.map(item => item.sourceNodeId), ['additional']);
+  assert.deepEqual(replaced.edges.map(item => item.source), ['existing', 'additional']);
+
   const plan = planPickerSelectionMutation(widerGraph, request, context, selection);
   assert.equal(plan.status, 'allowed', plan.reasonCode);
   const result = planCanvasInputMutation(widerGraph, plan.mutation, context);
@@ -296,11 +361,15 @@ test('R1 adapter→store allows two invalid intents to be disabled one by one wi
   assert.deepEqual(Object.keys(first.mutation.nodePatches[0].data), ['slotBindings']);
   const stoppedA = planCanvasInputMutation(graph, first.mutation, context);
   assert.equal(stoppedA.status, 'allowed');
-  assert.deepEqual(validateCanvasInputSelection(stoppedA, intent, context).records.map(record => record.state), ['inactive', 'invalid']);
+  const stoppedIds = verdict => verdict.records.map(({ state, occupant }) => [occupant.edgeId, state]);
+  assert.deepEqual(stoppedIds(validateCanvasInputSelection(stoppedA, intent, context)), [['ea', 'inactive'], ['eb', 'invalid']]);
   const second = planPickerSelectionMutation(stoppedA, { ...intent, setUse: { slot: 'prompt', edgeId: 'eb', use: 'inactive' } }, context);
+  assert.equal(second.status, 'allowed');
   const stoppedBoth = planCanvasInputMutation(stoppedA, second.mutation, context);
   assert.equal(stoppedBoth.status, 'allowed');
-  assert.equal(validateCanvasInputSelection(stoppedBoth, intent, context).ready, true);
+  const verdict = validateCanvasInputSelection(stoppedBoth, intent, context);
+  assert.deepEqual(stoppedIds(verdict), [['ea', 'inactive'], ['eb', 'inactive']]);
+  assert.equal(verdict.ready, true);
   assert.deepEqual(graph, original);
   const healthyA = { id: 'a', type: 'material', position: { x: 0, y: 0 }, data: { materialType: 'text', nodeKind: 'import', content: 'Healthy A' } };
   const healthyGraph = { nodes: [healthyA, stoppedA.nodes[0]], edges: [{ id: 'ea', source: 'a', target: 'target' }] };

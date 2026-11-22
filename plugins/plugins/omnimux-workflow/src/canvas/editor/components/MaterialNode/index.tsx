@@ -16,6 +16,7 @@ import type { MaterialNodeData, MaterialType, MaterialTool } from '../../../type
 import { resolveNodeKind } from '../../../types/materialNode';
 import { materialTools } from '../../../../shared/specs/nodes/materialNodeSpec.ts';
 import { readCurrentText } from '../../../../shared/graph/nodeInputSource';
+import type { RunSnapshotProof } from '../../../../shared/graph/feedSlot/prepareExecutionSlotGraph.ts';
 import GenerationStateContainer from '../GenerationStateContainer';
 import NodeHeader from './NodeHeader';
 import StatusBadge from './StatusBadge';
@@ -228,7 +229,7 @@ const MaterialNode: React.FC<NodeProps> = ({ id, data, selected }) => {
 
   const t = useT();
 
-  const handleGenerate = useCallback(() => {
+  const handleGenerate = useCallback((expectedInput?: RunSnapshotProof) => {
     if (submitPendingRef.current) return;
     const start = useExecutionStore.getState().startNodeExecution;
     if (typeof start !== 'function') {
@@ -248,7 +249,7 @@ const MaterialNode: React.FC<NodeProps> = ({ id, data, selected }) => {
     void submitNodeImmediate({
       nodeId: id,
       isPendingRef: submitPendingRef,
-      start: (nodeId) => start(nodeId),
+      start: (nodeId) => start(nodeId, expectedInput),
       ensureQuota: quota && typeof quota.ensureQuota === 'function'
         ? (context) => quota.ensureQuota?.(context)
         : undefined,
@@ -1492,6 +1493,8 @@ const MaterialNode: React.FC<NodeProps> = ({ id, data, selected }) => {
       if (typeof requestOrMode === 'object' && requestOrMode !== null) {
         resourcePicker.openPicker('canvas', {
           slot: requestOrMode.targetSlot,
+          operationId: requestOrMode.operationId,
+          slotRole: requestOrMode.slotRole,
           referenceSlots: requestOrMode.referenceSlots,
           acceptedTypes: requestOrMode.acceptedTypes,
           max: requestOrMode.max,
@@ -1605,7 +1608,7 @@ const MaterialNode: React.FC<NodeProps> = ({ id, data, selected }) => {
                 loadingAspectRatio="auto"
                 errorMessage={executionError ?? errorMessage}
                 taskId={nodeData.taskId}
-                onRetry={handleGenerate}
+                onRetry={() => handleGenerate()}
               >
                 {textBody}
               </GenerationStateContainer>

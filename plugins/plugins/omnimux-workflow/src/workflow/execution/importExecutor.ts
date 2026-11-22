@@ -9,6 +9,7 @@
 
 import { localFileMediaUrl, preserveProjectFileMediaRevision, readLocalTextFile } from '../../shared/localMedia.ts';
 import { parseJsonDocumentText } from '../../shared/jsonDocument.ts';
+import { readNodeInputSource } from '../../shared/graph/nodeInputSource.ts';
 import type {
   ExecutionContext,
   NodeExecutor,
@@ -64,6 +65,12 @@ export function createImportExecutor(): NodeExecutor {
       const data = node.data ?? {};
       const materialType = readMaterialType(data);
       const type = materialType === 'video' ? 'video' : materialType === 'audio' ? 'audio' : materialType === 'document' ? 'document' : 'image';
+      const current = readNodeInputSource(node, ctx.workspaceId);
+      const media = current.output.mediaAssets?.[0];
+      if (current.availability === 'ready') {
+        return { ...(media?.relativePath ? { relativePath: media.relativePath, assetId: media.assetId } : {}),
+          ...(media?.path ? { realPath: media.path } : {}), ...current.output };
+      }
       const document = materialType === 'document' ? documentFields(data) : {};
       const mimeType = readString(data, 'mimeType') ?? (materialType === 'document' ? 'application/json' : undefined);
       const mediaFields = mimeType ? { mimeType } : {};

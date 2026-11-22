@@ -347,13 +347,42 @@ for (const [label, mutate] of [
   assert.deepEqual(h.manager.findRecoverableTasks(options), {});
 });
 
-// Pre-unification Agent/Headless passed the prepared subset and external
-// nodeOutputs to createExecution, without the raw workspace identity.
-async function recordOldSingleNodeExecution(h) {
+test('restart rechecks a paused node against the contract frozen before submission', async t => {
+  const h = harness(t);
   const prepared = prepareExecutionSlotGraph(h.snapshot.nodes, h.snapshot.edges, mockCatalog());
-  const initialOutputs = buildInitialOutputs({ ...prepared, id: h.snapshot.id }, new Set(['target']), { mediaDir: join(h.root, 'media') });
-  const entry = h.manager.createExecution({ workspaceId: h.snapshot.id, nodes: [prepared.nodes.at(-1)],
-    edges: prepared.edges, initialOutputs });
+  const entry = h.manager.createExecution({ workspaceId: h.snapshot.id, nodes: prepared.nodes, edges: prepared.edges,
+    breakpoints: ['target'] });
+  assert.equal(entry.context.status, 'paused');
+  assert.equal(h.calls.submit, 0);
+  h.restart();
+  h.gateway.capabilities = async () => {
+    const catalog = mockCatalog();
+    const operation = catalog.models.find(model => model.id === 'mock-image-1').operations.find(op => op.id === 'text_to_image');
+    operation.parameters = { ...operation.parameters, quality: { options: [{ value: 'high' }] } };
+    return catalog;
+  };
+  const recovered = await h.manager.recoverExecution(entry.context.id);
+  assert.equal(recovered.context.status, 'paused');
+  recovered.context.removeBreakpoint('target');
+  assert.equal((await h.manager.resumeExecution(entry.context.id)).ok, true);
+  const ended = await h.ended(entry.context.id);
+  assert.equal(ended.context.status, 'error');
+  assert.match(ended.context.nodeStates.get('target').error, /\[omnimux:input_changed\]/);
+  assert.equal(h.calls.submit, 0);
+  assert.deepEqual(h.calls.collect, []);
+});
+
+// The old V1 Agent/Headless record had a prepared target and external nodeOutputs.
+// Supply its historical graph shape without applying today's allocator.
+async function recordOldSingleNodeExecution(h) {
+  const target = structuredClone(h.snapshot.nodes.at(-1));
+  target.data.params.model ??= 'mock-image-1';
+  const edges = h.snapshot.edges.map(edge => ({ ...edge,
+    data: { ...edge.data, feedType: h.snapshot.nodes.find(node => node.id === edge.source).data.materialType },
+  }));
+  const initialOutputs = buildInitialOutputs({ id: h.snapshot.id, nodes: [...h.snapshot.nodes.slice(0, -1), target], edges },
+    new Set(['target']), { mediaDir: join(h.root, 'media') });
+  const entry = h.manager.createExecution({ workspaceId: h.snapshot.id, nodes: [target], edges, initialOutputs });
   await h.ended(entry.context.id);
   assert.equal(entry.context.status, 'error');
   const ref = entry.context.readNodeUpstreamTask('target');

@@ -685,7 +685,7 @@ const CanvasEditorContent: React.FC<CanvasEditorProps> = ({
   const isValidConnection = useCallback(
     (connection: Connection | Edge) => {
       const state = useCanvasStore.getState();
-      return validateConnection(connection, state.nodes, state.edges, state.catalogRuntime);
+      return validateConnection(connection, state.nodes, state.edges);
     },
     [],
   );
