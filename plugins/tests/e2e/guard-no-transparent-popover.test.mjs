@@ -239,3 +239,96 @@ test('画布扫描保留行内控件的作用域令牌、弹窗遮罩及浮层�
   ].join('\n')
   assert.deepEqual(checkContentForTransparencyViolations(stylesheet, 'omnimux-workflow/src/canvas/theme.css'), [])
 })
+
+test('画布扫描拦截 @media 半透明底色覆写，即使父规则已有实体底色', () => {
+  const stylesheet = [
+    '.wf-video-param-popover {',
+    '  background: var(--dsw-alias-bg-layer-1);',
+    '  @media (max-width: 390px) {',
+    '    background-color: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 50%, transparent);',
+    '  }',
+    '}',
+  ].join('\n')
+  const violations = checkContentForTransparencyViolations(stylesheet, canvasStylesheet)
+  assert.deepEqual(violations.map(({ rule, line, fatal }) => [rule, line, fatal]), [
+    ['POPOVER_NON_OPAQUE_BG', 3, true],
+  ])
+  assert.match(violations[0].message, /\.wf-video-param-popover/)
+})
+
+test('画布扫描拦截裸 & 内降低浮层稳态 opacity 的覆写', () => {
+  const stylesheet = [
+    '.wf-video-param-popover {',
+    '  background: var(--dsw-alias-bg-layer-1);',
+    '  & { opacity: 0.55; }',
+    '  @media (max-width: 390px) { OPACITY: 55% !important; }',
+    '}',
+  ].join('\n')
+  const violations = checkContentForTransparencyViolations(stylesheet, canvasStylesheet)
+  assert.deepEqual(violations.map(({ rule, line, fatal }) => [rule, line, fatal]), [
+    ['POPOVER_LOW_OPACITY', 3, true],
+    ['POPOVER_LOW_OPACITY', 4, true],
+  ])
+  assert.ok(violations.every(({ message }) => message.includes('.wf-video-param-popover')))
+})
+
+test('画布扫描允许子控件使用定义在浮层上的 CSS 自定义属性', () => {
+  const stylesheet = [
+    '.wf-video-param-popover {',
+    '  background: var(--dsw-alias-bg-layer-1);',
+    '  & {',
+    '    --wf-qa-child-background: transparent;',
+    '    --wf-qa-child-background-color: none;',
+    '    --wf-qa-child-backdrop-filter: blur(20px);',
+    '    --wf-qa-child-webkit-backdrop-filter: blur(20px);',
+    '    --wf-qa-child-opacity: 0.55;',
+    '    --wf-qa-child-label: "note; background-color: transparent; opacity: 0.55;";',
+    '    > button {',
+    '      background: var(--wf-qa-child-background);',
+    '      opacity: var(--wf-qa-child-opacity);',
+    '    }',
+    '  }',
+    '}',
+  ].join('\n')
+  assert.deepEqual(checkContentForTransparencyViolations(stylesheet, canvasStylesheet), [])
+})
+
+test('画布扫描要求实体浮层具有真实背景声明', () => {
+  const stylesheet = '.wf-video-param-popover { --wf-qa-child-background: Canvas; }'
+  const violations = checkContentForTransparencyViolations(stylesheet, canvasStylesheet)
+  assert.deepEqual(violations.map(({ rule, line, fatal }) => [rule, line, fatal]), [
+    ['POPOVER_MUST_HAVE_OPAQUE_BG', 1, true],
+  ])
+})
+
+test('画布扫描区分底色声明中的不透明与半透明 alpha', () => {
+  const stylesheet = [
+    '.wf-video-param-popover {',
+    '  background: var(--dsw-alias-bg-layer-1);',
+    '  &.narrow { background: #1728; }',
+    '  &.wide { background-color: rgb(17 119 34 / 50%) !important; }',
+    '  &.large { background-color: rgba(17, 119, 34, 1); }',
+    '}',
+  ].join('\n')
+  const violations = checkContentForTransparencyViolations(stylesheet, canvasStylesheet)
+  assert.deepEqual(violations.map(({ rule, line, fatal }) => [rule, line, fatal]), [
+    ['POPOVER_NON_OPAQUE_BG', 3, true],
+    ['POPOVER_NON_OPAQUE_BG', 4, true],
+  ])
+})
+
+test('画布扫描允许入场关键帧和过渡起始状态中的瞬时 opacity', () => {
+  const stylesheet = [
+    '.wf-video-param-popover {',
+    '  background: var(--dsw-alias-bg-layer-1);',
+    '  opacity: 100%;',
+    '  animation: wf-cfg-popover-in 150ms ease-out;',
+    '  @starting-style { opacity: 0; }',
+    '}',
+    '@keyframes wf-cfg-popover-in {',
+    '  from { opacity: 0; }',
+    '  to { opacity: 1; }',
+    '}',
+  ].join('\n')
+  assert.deepEqual(checkContentForTransparencyViolations(stylesheet, canvasStylesheet), [])
+})
