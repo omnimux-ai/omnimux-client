@@ -190,6 +190,7 @@ function readUserKeychains(run: RunAppleCommand): string[] {
  */
 export async function withMacSigningIdentity<T>(
   environment: NodeJS.ProcessEnv, identity: string, action: (signer: MacRuntimeSigningIdentity) => Promise<T>, run: RunAppleCommand = execute,
+  options: { readonly probe?: boolean; readonly cleanup?: RunAppleCommand } = {},
 ): Promise<T> {
   const certificate = environment.CSC_LINK
   if (certificate === undefined || certificate === '') return action({ identity })
@@ -216,15 +217,21 @@ export async function withMacSigningIdentity<T>(
     // codesign ignores --keychain unless that file is also on the search list.
     previousKeychains = readUserKeychains(run)
     security(['list-keychains', '-d', 'user', '-s', keychain, ...previousKeychains])
-    const probe = join(directory, 'probe')
-    run('/bin/cp', ['/usr/bin/true', probe])
-    run('/usr/bin/codesign', ['--force', '--sign', identity, '--keychain', keychain, '--timestamp', '--options', 'runtime', probe])
-    run('/usr/bin/codesign', ['--verify', '--strict', probe])
+    if (options.probe !== false) {
+      const probe = join(directory, 'probe')
+      run('/bin/cp', ['/usr/bin/true', probe])
+      run('/usr/bin/codesign', ['--force', '--sign', identity, '--keychain', keychain, '--timestamp', '--options', 'runtime', probe])
+      run('/usr/bin/codesign', ['--verify', '--strict', probe])
+    }
     return await action({ identity, keychain })
   } finally {
+    const cleanup = options.cleanup ?? run
     try {
-      if (previousKeychains !== undefined) security(['list-keychains', '-d', 'user', '-s', ...previousKeychains])
-      if (created) security(['delete-keychain', keychain])
-    } finally { rmSync(directory, { recursive: true, force: true }) }
+      if (previousKeychains !== undefined) cleanup('/usr/bin/security', ['list-keychains', '-d', 'user', '-s', ...previousKeychains])
+    } finally {
+      try {
+        if (created) cleanup('/usr/bin/security', ['delete-keychain', keychain])
+      } finally { rmSync(directory, { recursive: true, force: true }) }
+    }
   }
 }

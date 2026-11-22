@@ -1,8 +1,7 @@
 /** Sign the bundled interpreter payloads before electron-builder signs the enclosing application; ported from upstream Desktop. */
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
-import { createHash, randomBytes } from 'node:crypto'
-import { chmodSync, lstatSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { createHash } from 'node:crypto'
+import { lstatSync, readdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { primaryRuntimePythonAliases, readPrimaryRuntime } from '@deepseek-ai/dsh-tool-workspace-dependencies'
 import { isMachO } from './primary-runtime.ts'
@@ -13,6 +12,7 @@ export const UPSTREAM_DESKTOP_SCRIPTS = resolve(import.meta.dirname, '..', '..',
 /** A Developer ID Application identity as `security find-identity` prints it, and the keychain holding its key when that is not on the login search list. */
 export interface MacRuntimeSigningIdentity {
   readonly identity: string
+  readonly selector?: string
   readonly keychain?: string
 }
 
@@ -20,6 +20,9 @@ export interface MacRuntimeSigningIdentity {
 export type SignRuntimeCode = (file: string, identifier: string, identity: MacRuntimeSigningIdentity, entitlements: string | undefined) => Promise<void>
 /** Verifies one signed file. */
 export type VerifyRuntimeCode = (file: string, identity: MacRuntimeSigningIdentity) => void
+
+type RuntimeSigningTools = { readonly signVerified: SignRuntimeCode }
+  | { readonly sign: SignRuntimeCode; readonly verify: VerifyRuntimeCode; readonly pause?: (attempt: number) => Promise<void> }
 
 /**
  * Entitlements one payload file needs. The standalone Node runs V8 and needs JIT; its x64 build also
@@ -81,36 +84,41 @@ const timestampBackoff = (attempt: number): Promise<void> => new Promise(resolve
  */
 export async function signMacRuntime(
   root: string, appId: string, identity: MacRuntimeSigningIdentity, arch: 'arm64' | 'x64',
-  tools: { readonly sign: SignRuntimeCode; readonly verify: VerifyRuntimeCode; readonly pause?: (attempt: number) => Promise<void> }
-    = { sign: signMacOSRuntimeCode, verify: verifyMacOSRuntimeCode },
+  tools: RuntimeSigningTools = { sign: signMacOSRuntimeCode, verify: verifyMacOSRuntimeCode },
 ): Promise<number> {
   const files = (await listFiles(root)).filter(path => isMachO(join(root, path)))
-  const pause = tools.pause ?? timestampBackoff
+  const signVerified: SignRuntimeCode = 'signVerified' in tools ? tools.signVerified : async (file, identifier, signer, entitlements) => {
+    await withSigningTimestampRetry(() => tools.sign(file, identifier, signer, entitlements), tools.pause)
+    tools.verify(file, signer)
+  }
+  await processSigningFiles(files, path => signVerified(join(root, path),
+    `${appId}.runtime.${createHash('sha256').update(path).digest('hex')}`, identity, runtimeEntitlements(path, arch)))
+  return files.length
+}
+
+/** Retry Apple's secure timestamp request, keeping the normal failure behaviour for other errors. */
+export async function withSigningTimestampRetry(action: () => Promise<void>, pause = timestampBackoff): Promise<void> {
+  for (let attempt = 1; ; attempt++) {
+    try { return await action() } catch (error) {
+      if (attempt >= TIMESTAMP_ATTEMPTS || !isTimestampFailure(error)) throw error
+      await pause(attempt)
+    }
+  }
+}
+
+/** Limit concurrent Apple timestamp requests and let in-flight work settle before unwinding. */
+export async function processSigningFiles(files: readonly string[], sign: (file: string) => Promise<void>): Promise<void> {
   let next = 0
   const workers = Array.from({ length: Math.min(4, files.length) }, async () => {
     for (;;) {
-      const path = files[next++]
-      if (path === undefined) return
-      const file = join(root, path)
-      const identifier = `${appId}.runtime.${createHash('sha256').update(path).digest('hex')}`
-      const entitlements = runtimeEntitlements(path, arch)
-      // The secure timestamp comes from Apple's service on every signature; a request it drops is made again.
-      for (let attempt = 1; ; attempt++) {
-        try {
-          await tools.sign(file, identifier, identity, entitlements)
-          break
-        } catch (error) {
-          if (attempt >= TIMESTAMP_ATTEMPTS || !isTimestampFailure(error)) throw error
-          await pause(attempt)
-        }
-      }
-      tools.verify(file, identity)
+      const file = files[next++]
+      if (file === undefined) return
+      await sign(file)
     }
   })
-  const results = await Promise.allSettled(workers)
-  const errors = results.filter(result => result.status === 'rejected').map(result => result.reason as unknown)
-  if (errors.length > 0) throw new AggregateError(errors, 'Next runtime: native signing failed')
-  return files.length
+  const outcomes = await Promise.allSettled(workers)
+  const errors = outcomes.filter(result => result.status === 'rejected').map(result => result.reason as unknown)
+  if (errors.length > 0) throw new AggregateError(errors, `Next runtime: native signing failed\n${errors.map(error => error instanceof Error ? error.message : String(error)).join('\n')}`)
 }
 
 /** Run codesign and return both streams: `--display` reports on stderr. */
@@ -132,7 +140,7 @@ function runCodesign(args: readonly string[]): string {
  * @returns Resolves after codesign exits successfully.
  */
 export function signMacOSRuntimeCode(file: string, identifier: string, identity: MacRuntimeSigningIdentity, entitlements: string | undefined): Promise<void> {
-  const args = ['--force', '--sign', identity.identity, ...(identity.keychain === undefined ? [] : ['--keychain', identity.keychain]),
+  const args = ['--force', '--sign', identity.selector ?? identity.identity, ...(identity.keychain === undefined ? [] : ['--keychain', identity.keychain]),
     '--identifier', identifier, '--timestamp', '--options', 'runtime', ...(entitlements === undefined ? [] : ['--entitlements', entitlements]), file]
   return new Promise((resolvePromise, reject) => {
     const child = spawn('/usr/bin/codesign', args, { stdio: ['ignore', 'pipe', 'pipe'] })
@@ -185,74 +193,4 @@ export function readSignedEntitlements(file: string): Record<string, unknown> {
   if (result.status !== 0) throw new Error(`Next runtime signing: codesign -d ${result.signal ?? `exited with ${String(result.status)}`}: ${result.stderr.trim()}`)
   if (result.stdout.trim() === '') return {}
   return JSON.parse(execFileSync('/usr/bin/plutil', ['-convert', 'json', '-o', '-', '-'], { input: result.stdout, encoding: 'utf8' })) as Record<string, unknown>
-}
-
-const P12_DATA_PREFIX = 'data:application/x-pkcs12;base64,'
-
-/** Executes one credential-bearing Apple command and returns its standard output. */
-export type RunAppleCommand = (command: string, args: readonly string[]) => string
-
-const execute: RunAppleCommand = (command, args) => {
-  try {
-    return execFileSync(command, args, { stdio: 'pipe', timeout: 120_000, encoding: 'utf8' })
-  } catch {
-    // execFile errors contain the command line, including private-key passwords.
-    throw new Error(`Next runtime signing: ${command} ${args[0] ?? ''} failed; check certificate, password, and signing access`)
-  }
-}
-
-function readUserKeychains(run: RunAppleCommand): string[] {
-  return run('/usr/bin/security', ['list-keychains', '-d', 'user']).split('\n').map(line => line.trim().replace(/^"|"$/gu, '')).filter(path => path !== '')
-}
-
-/**
- * Run signing work with the release identity resolvable by codesign. An identity in the login keychain
- * is used as is. A PKCS#12 certificate supplied through `CSC_LINK` and `CSC_KEY_PASSWORD`, which
- * electron-builder imports into its own temporary keychain later, is imported into a keychain owned by
- * this call, prepended to the user search list for its duration, and deleted afterwards.
- * @param environment - Release environment as the macOS preflight adapted it.
- * @param identity - Developer ID Application identity confirmed by the preflight.
- * @param action - Signing work receiving the identity and keychain to pass to codesign.
- * @param run - Apple command executor.
- * @returns The action's result.
- */
-export async function withMacSigningIdentity<T>(
-  environment: NodeJS.ProcessEnv, identity: string, action: (signer: MacRuntimeSigningIdentity) => Promise<T>, run: RunAppleCommand = execute,
-): Promise<T> {
-  const certificate = environment.CSC_LINK
-  if (certificate === undefined || certificate === '') return action({ identity })
-  const password = environment.CSC_KEY_PASSWORD
-  if (!certificate.startsWith(P12_DATA_PREFIX) || password === undefined) {
-    throw new Error('Next runtime signing: CSC_LINK must carry the PKCS#12 data URL the preflight produced, with CSC_KEY_PASSWORD')
-  }
-  const directory = mkdtempSync(join(tmpdir(), 'dsh-next-signing-'))
-  const keychain = join(directory, 'signing.keychain-db')
-  const keychainPassword = randomBytes(32).toString('base64')
-  const security = (args: readonly string[]): string => run('/usr/bin/security', args)
-  let created = false
-  let previousKeychains: string[] | undefined
-  try {
-    const p12 = join(directory, 'certificate.p12')
-    writeFileSync(p12, Buffer.from(certificate.slice(P12_DATA_PREFIX.length), 'base64'))
-    chmodSync(p12, 0o600)
-    security(['create-keychain', '-p', keychainPassword, keychain])
-    created = true
-    security(['unlock-keychain', '-p', keychainPassword, keychain])
-    security(['set-keychain-settings', keychain])
-    security(['import', p12, '-k', keychain, '-P', password, '-T', '/usr/bin/codesign', '-T', '/usr/bin/productbuild'])
-    security(['set-key-partition-list', '-S', 'apple-tool:,apple:', '-s', '-k', keychainPassword, keychain])
-    // codesign ignores --keychain unless that file is also on the search list.
-    previousKeychains = readUserKeychains(run)
-    security(['list-keychains', '-d', 'user', '-s', keychain, ...previousKeychains])
-    const probe = join(directory, 'probe')
-    run('/bin/cp', ['/usr/bin/true', probe])
-    run('/usr/bin/codesign', ['--force', '--sign', identity, '--keychain', keychain, '--timestamp', '--options', 'runtime', probe])
-    run('/usr/bin/codesign', ['--verify', '--strict', probe])
-    return await action({ identity, keychain })
-  } finally {
-    try {
-      if (previousKeychains !== undefined) security(['list-keychains', '-d', 'user', '-s', ...previousKeychains])
-      if (created) security(['delete-keychain', keychain])
-    } finally { rmSync(directory, { recursive: true, force: true }) }
-  }
 }

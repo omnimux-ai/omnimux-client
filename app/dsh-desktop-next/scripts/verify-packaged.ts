@@ -39,6 +39,7 @@ export default async function afterPack(context: PackContext): Promise<void> {
     return
   }
   const platform = context.electronPlatformName as NodeJS.Platform
+  const target = nextPackagingTarget(platform)
   if (platform === 'darwin') {
     const appPath = join(context.appOutDir, `${context.packager.appInfo.productFilename ?? 'OmniMux'}.app`)
     const info = writeAppBuildInfo(appPath, process.env.DSH_BUILD_CHANNEL ?? 'package-dir', {
@@ -52,7 +53,6 @@ export default async function afterPack(context: PackContext): Promise<void> {
   try {
     packagingStepSync('archive:verify-updater-shim', () => verifyUpdaterManifestShim(resources, source, platform, context.packager.appInfo.version))
     packagingStepSync('archive:verify-dependencies', () => verifyNextPayload(source))
-    const target = nextPackagingTarget(platform)
     const problems = packagingStepSync('archive:audit', () => auditNextPayload(source, target))
     if (problems.length > 0) throw new Error(`Next payload audit failed:\n${problems.join('\n')}`)
     const dir = payloadDir(platform)
@@ -70,8 +70,8 @@ export default async function afterPack(context: PackContext): Promise<void> {
   // Thin any universal (fat) Mach-O binaries to the target architecture.
   // Upstream deps (@trycua, lxml, etc.) ship universal binaries that trigger
   // Gatekeeper's Rosetta warning on Apple Silicon when only arm64 is needed.
-  if (platform === 'darwin') {
-    const targetArch = context.appOutDir.endsWith('-arm64') ? 'arm64' : 'x86_64'
+  if (platform === 'darwin' && target.archs.length === 1) {
+    const targetArch = target.archs[0] === 'arm64' ? 'arm64' : 'x86_64'
     const thinned = packagingStepSync('thin:universal-binaries', () => thinUniversalBinaries(resources, targetArch))
     if (thinned.length > 0) console.log(`Thinned ${thinned.length} universal binary(ies) to ${targetArch}: ${thinned.join(', ')}`)
   }
