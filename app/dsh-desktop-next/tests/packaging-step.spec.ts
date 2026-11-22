@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { packagingStep, packagingStepSync } from '../scripts/packaging-step.ts'
+import { packagingCacheSummary, packagingStep, packagingStepSync, summarizePackagingJournal } from '../scripts/packaging-step.ts'
 
 const directories: string[] = []
 afterEach(() => {
@@ -32,6 +32,16 @@ it('pairs nested synchronous and asynchronous phases across successful and faile
     expect(end).toMatchObject({ stage: start.stage, success: start.stage === 'copy', pid: process.pid })
     expect(end.elapsedMs).toBeGreaterThanOrEqual(0)
   }
+  vi.stubEnv('DSH_PACKAGING_ARCH', 'arm64')
+  packagingCacheSummary('cache:mac-signatures', { hits: 126, misses: 0, rejected: 0, evicted: 0 })
+  expect(summarizePackagingJournal(join(directory, 'events.jsonl'))).toMatchObject({
+    stages: expect.arrayContaining([
+      expect.objectContaining({ stage: 'copy', completed: 1, failed: 0, elapsedMs: expect.any(Number) }),
+      expect.objectContaining({ stage: 'failed', completed: 0, failed: 1, elapsedMs: expect.any(Number) }),
+    ]),
+    caches: [{ stage: 'cache:mac-signatures', arch: 'arm64', hits: 126, misses: 0, rejected: 0, evicted: 0 }],
+    incomplete: [],
+  })
 })
 
 it('preserves return values and thrown failures when measurement is disabled', async () => {
