@@ -18,6 +18,8 @@ import {
   isRuntimeByokChannelSettings,
   isLineConstraintsShape,
   buildChannelSelectionPayload,
+  findDefaultChannelGroup,
+  findSelectedChannelGroup,
   detectModelModality,
   resolveGroupMediaCapabilities,
 } from './channelGroups.ts';
@@ -85,18 +87,18 @@ describe('Canvas ConfigPanel ChannelGroups', () => {
     // 2026-10-21 网关对账 #3516：seedance-2-0 只剩标准版一条官方线路。
     const seedanceLines = directory('seedance-2-0');
     assert.deepEqual(seedanceLines.map((g) => g.id), ['standard']);
-    assert.equal(seedanceLines[0].default, true);
+    assert.equal(findDefaultChannelGroup(seedanceLines), undefined);
     const seedanceGroups = resolveModelChannelGroups('seedance-2-0', seedanceLines);
     assert.deepEqual(seedanceGroups.map((g) => g.id), seedanceLines.map((g) => g.id));
     assert.deepEqual(seedanceGroups.map((g) => g.label), seedanceLines.map((g) => g.label));
     assert.deepEqual(seedanceGroups.map((g) => g.pricing), seedanceLines.map((g) => g.pricing));
     assert.ok(seedanceGroups.every((g) => g.category === 'official' && g.sourceType === 'official' && g.isAvailable === true));
 
-    // 2026-10-25 网关快照（P1b）：seedance-2-5 发布 4 条线路，默认仍是 720p 标准版。
+    // 随包快照保留历史线路顺序，没有发布默认线路。
     const seedance25Groups = resolveModelChannelGroups('seedance-2-5', directory('seedance-2-5'));
     assert.deepEqual(seedance25Groups.map((g) => g.id), ['480p', '720p', 'seedance-2-5-480p', 'seedance-2-5-720p']);
     assert.deepEqual(seedance25Groups.slice(0, 2).map((g) => g.label), ['经济版', '标准版']);
-    assert.deepEqual(seedance25Groups.filter((g) => g.default).map((g) => g.id), ['720p']);
+    assert.equal(findDefaultChannelGroup(seedance25Groups), undefined);
 
     // gpt-image-2.5 发布标准/经济/Nano Banana 经济三条线路（表达式计费，无逐项可比数字）。
     const imageGroups = resolveModelChannelGroups('gpt-image-2.5', directory('gpt-image-2.5'));
@@ -107,6 +109,23 @@ describe('Canvas ConfigPanel ChannelGroups', () => {
     // Claude 已随网关对账整体停用，不得再有任何渠道池。
     assert.deepEqual(directory('claude-opus-4-6'), []);
     assert.deepEqual(resolveModelChannelGroups('claude-opus-4-6', directory('claude-opus-4-6')), []);
+  });
+
+  it('chooses only the marked available official line and retains the persisted selection', () => {
+    const manual = { id: 'manual', wireGroup: 'manual-wire', enabled: true };
+    const preferred = { id: 'preferred', default: true, enabled: true };
+    const disabled = { id: 'disabled', default: true, enabled: false };
+    const byok = { id: 'byok-example', default: true, enabled: true };
+    const groups = [manual, disabled, preferred, byok];
+    assert.equal(findDefaultChannelGroup(groups), preferred);
+    assert.equal(findDefaultChannelGroup([manual]), undefined);
+    assert.equal(findDefaultChannelGroup([disabled, byok]), undefined);
+    assert.equal(findDefaultChannelGroup([preferred, { ...preferred, id: 'duplicate' }]), undefined);
+    assert.equal(findSelectedChannelGroup(groups, { allowedGroups: ['manual-wire'] }), manual);
+    assert.equal(findSelectedChannelGroup(groups, { group: 'disabled' }), undefined);
+    assert.equal(findSelectedChannelGroup(groups, undefined), undefined);
+    assert.equal(findSelectedChannelGroup(groups, { channelGroupId: byok.id, sourceType: 'byok' }), byok);
+    assert.equal(findSelectedChannelGroup(groups, { channelGroupId: 'byok-gone', allowedGroups: ['manual'], sourceType: 'byok' }), undefined);
   });
 
   it('offers no channels for a model the gateway does not sell', () => {
@@ -267,20 +286,23 @@ describe('Canvas ConfigPanel ChannelGroups', () => {
       },
     };
     assert.deepEqual(resolveLineConstraints('gpt-image-2.5', { group: 'standard' }, directory('gpt-image-2.5')), imageConstraints);
-    // 自动路由命中默认线路（standard）时同样落实约束。
-    assert.deepEqual(resolveLineConstraints('gpt-image-2.5', undefined, directory('gpt-image-2.5')), imageConstraints);
-    assert.deepEqual(resolveLineConstraints('gpt-image-2.5', {}, directory('gpt-image-2.5')), imageConstraints);
+    assert.deepEqual(resolveLineConstraints('gpt-image-2.5', undefined, directory('gpt-image-2.5')), {});
+    const imageLinesWithDefault = directory('gpt-image-2.5').map(group => ({ ...group, default: group.id === 'standard' }));
+    assert.deepEqual(resolveLineConstraints('gpt-image-2.5', undefined, imageLinesWithDefault), imageConstraints);
+    assert.deepEqual(resolveLineConstraints('gpt-image-2.5', {}, imageLinesWithDefault), imageConstraints);
     assert.deepEqual(resolveLineConstraints('gpt-image-2.5', { allowedGroups: ['economy'] }, directory('gpt-image-2.5')), {});
     assert.deepEqual(resolveLineConstraints('gpt-image-2.5', { allowedGroups: ['nope'] }, directory('gpt-image-2.5')), {});
-    // 视频现售线路按档位固定清晰度：480p 经济版 / 720p 标准版（默认）。
+    // 视频现售线路按档位固定清晰度：480p 经济版 / 720p 标准版。
     assert.deepEqual(resolveLineConstraints('seedance-2-5', { group: '480p' }, directory('seedance-2-5')),
       { parameters: { resolution: { fixed: '480p' } } });
     assert.deepEqual(resolveLineConstraints('seedance-2-5', { group: '720p' }, directory('seedance-2-5')),
       { parameters: { resolution: { fixed: '720p' } } });
     assert.deepEqual(resolveLineConstraints('seedance-2-5@desktop-480p', { group: 'desktop-480p' }, directory('seedance-2-5@desktop-480p')),
       { parameters: { resolution: { fixed: '480p' } } });
-    // 自动路由只对 gpt-image-2.5 落实默认线路约束；未点名分组的视频路由不额外收紧。
     assert.deepEqual(resolveLineConstraints('seedance-2-5', undefined, directory('seedance-2-5')), {});
+    const videoLinesWithDefault = directory('seedance-2-5').map(group => ({ ...group, default: group.id === '720p' }));
+    assert.deepEqual(resolveLineConstraints('seedance-2-5', undefined, videoLinesWithDefault),
+      { parameters: { resolution: { fixed: '720p' } } });
     assert.deepEqual(resolveLineConstraints('seedance-2-5', { allowedGroups: ['nope'] }, directory('seedance-2-5')), {});
     assert.deepEqual(resolveLineConstraints('seedance-2-0', { allowedGroups: ['standard'] }, directory('seedance-2-0')), {});
   });

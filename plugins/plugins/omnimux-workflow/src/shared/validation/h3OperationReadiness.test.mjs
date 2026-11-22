@@ -1,3 +1,4 @@
+import { withFixturePricingDefaults } from './compatTestCatalog.ts';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -11,7 +12,7 @@ import { buildVideoParameterSelection } from '../../canvas/editor/components/Mat
 import { planCanvasInputMutation } from '../graph/canvasInputMutationGateway.ts';
 
 const snapshot = JSON.parse(readFileSync(new URL('../../../../omnimux/src/catalog/cloud/bundled/pricing.json', import.meta.url)));
-const catalog = buildModelCatalog({ snapshot, env: {} });
+const catalog = buildModelCatalog({ snapshot: withFixturePricingDefaults(snapshot, { 'minimax-h3-video': 'default' }), env: {} });
 const model = 'minimax-h3-video';
 const modelItem = catalog.video.find(item => item.id === model);
 const draft = 'Keep this text for my next scene';

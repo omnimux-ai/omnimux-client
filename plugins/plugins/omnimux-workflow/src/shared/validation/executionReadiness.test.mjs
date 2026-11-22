@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { withFixturePricingDefaults } from './compatTestCatalog.ts';
 import { buildModelCatalog } from '../../../../omnimux/src/catalog/list.js';
 import { projectCanvasCatalog } from '../generationPolicy.ts';
 import { resolveCanvasSubmission, resolveExecutorSubmission } from '../../workflow/seam/submitGuard.ts';
@@ -144,7 +146,9 @@ test('multiple video operations without media default to text_to_video (Epic #63
 // Seedance 2.0 Canvas Readiness & Submission Tests
 // （2026-10-21 网关对账 #3516：MiniMax H3 渠道停用，改用现役 Seedance 2.0 验证真实目录。）
 // ============================================================================
-const realHubCatalog = projectCanvasCatalog(buildModelCatalog({ env: {} }));
+const bundled = JSON.parse(readFileSync(new URL('../../../../omnimux/src/catalog/cloud/bundled/pricing.json', import.meta.url), 'utf8'));
+const snapshot = withFixturePricingDefaults(bundled, { 'seedance-2-0': 'default' });
+const realHubCatalog = projectCanvasCatalog(buildModelCatalog({ snapshot, env: {} }));
 
 test('Seedance 2.0: text_to_video with valid parameters passes execution readiness (returns null)', () => {
   const node = {

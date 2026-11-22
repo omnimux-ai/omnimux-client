@@ -261,7 +261,7 @@ export function mountMedia(ctx, opts) {
       },
       group: {
         type: 'string',
-        description: 'Explicit channel group name (e.g. pro, standard, official, cheap).',
+        description: 'Channel group from the current model catalog. Choose a group if the model has no usable default line.',
       },
       allowed_groups: {
         type: 'array',

@@ -1,3 +1,4 @@
+import { withFixturePricingDefaults } from '../../validation/compatTestCatalog.ts';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -14,8 +15,8 @@ import { reconcileCanvasForCatalog } from '../catalogReconcile.ts';
 import { planCanvasInputMutation } from '../canvasInputMutationGateway.ts';
 
 const snapshot = JSON.parse(readFileSync(new URL('../../../../../omnimux/src/catalog/cloud/bundled/pricing.json', import.meta.url), 'utf8'));
-const historical = buildModelCatalog({ snapshot, gatewayContracts: false, env: {} });
-const current = buildModelCatalog({ snapshot, env: {} });
+const historical = buildModelCatalog({ snapshot: withFixturePricingDefaults(snapshot, { 'minimax-h3-video': 'default' }), gatewayContracts: false, env: {} });
+const current = buildModelCatalog({ snapshot: withFixturePricingDefaults(snapshot, { 'minimax-h3-video': 'default' }), env: {} });
 const modelId = 'minimax-h3-video';
 const operationId = 'digital_human';
 const h3Inputs = (catalog) => catalog.models.find(model => model.id === modelId)

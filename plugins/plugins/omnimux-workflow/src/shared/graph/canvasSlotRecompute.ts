@@ -1,9 +1,13 @@
 import type { Edge } from '@xyflow/react';
+import type { CapabilityCatalog } from '../api.ts';
 import type { CanvasInputMutationState, CanvasMutationRuntimeContext, CanvasNode } from './canvasInputMutationGateway.ts';
 import type { MaterialType } from '../canvasTypes.ts';
 import type { MaterialNodeData } from './materialNode.ts';
-import { readCanvasParams } from './canvasInputSources.ts';
-import { buildContractView, buildUpstreamFingerprint, isMediaInputType, isOrderedImageReferenceSlot, matchOperationInputs, planAutoAdaptation, resolveModelView } from '../validation/compatKernel.ts';
+import { buildCanvasUpstreamFingerprint, readCanvasParams } from './canvasInputSources.ts';
+import { buildContractView, buildUpstreamFingerprint, isMediaInputType, isOrderedImageReferenceSlot, isVisualGeneration, matchOperationInputs, planAutoAdaptation, resolveModelView } from '../validation/compatKernel.ts';
+import { findDeclaredParameterFailure } from '../validation/declaredParameterValidation.ts';
+import { readVisualLineSelection } from '../validation/executionReadiness.ts';
+import { managedVideoLinePricingFingerprint } from '../validation/managedVideoExecution.ts';
 import { buildInputCapability } from '../validation/inputCapability.ts';
 import { autoFillSlots, deriveSlotLayout, deriveImageGenerationLayout, hydrateSlotBindings, type FeedAsset, type SlotBindings, type SlotConflict, type SlotLayout, type SlotOccupant, type SlotSpec } from './feedSlot/index.ts';
 import { acceptsFeedAsset } from './feedSlot/autoFillSlots.ts';
@@ -12,8 +16,75 @@ import { effectiveInputDisplay } from './feedSlot/effectiveInputDisplay.ts';
 import { resolveSlotOccupantOrdinal } from './feedSlot/assembleEffectiveInputs.ts';
 import { projectCanvasInputSources } from './feedSlot/legacyH3Slots.ts';
 import { resolveSlotOperation } from './feedSlot/resolveSlotOperation.ts';
-import { effectiveVideoAssetFields, narrowCatalogByRouting, resolveEffectiveVideoGroup, type EffectiveVideoGroupSelection } from '../validation/lineConstraints.ts';
+import {
+  effectiveVideoAssetFields, narrowCatalogByRouting, narrowModelByLineConstraints, requiredEffectiveVideoParameter,
+  resolveEffectiveVideoGroup, resolveEffectiveVideoOperation, transitionEffectiveVideoParams, type EffectiveVideoGroupSelection,
+} from '../validation/lineConstraints.ts';
 import { mergeVideoSlotDraft, projectVideoSlotBindings, readVideoSlotDrafts, videoSlotDraftKey } from './feedSlot/videoSlotDrafts.ts';
+
+/** Plan a default line and its parameters together. A missing or unusable default leaves the draft alone. */
+export function planDefaultVisualLineParams(catalog: CapabilityCatalog, outputType: MaterialType,
+  params: Record<string, unknown>, migrateRetiredLine: boolean): Record<string, unknown> | undefined {
+  if (!isVisualGeneration(outputType)) return;
+  const line = readVisualLineSelection(catalog, params);
+  if (!line?.defaultGroup || line.selected || (line.hasRequest && (!migrateRetiredLine || line.hasAvailableRequest))) return;
+  const { model, defaultGroup: group } = line;
+  if (!model.operations?.some(op => op.listed === true && op.output?.type === outputType)) return;
+  const routing = { strategy: 'auto', allowedGroups: [group.id] };
+  if (outputType === 'video' && model.effectiveVideoVersion !== undefined) {
+    const quotedRouting = { ...routing, channelGroupId: group.id, sourceType: 'official', videoLineQuote: managedVideoLinePricingFingerprint(group) };
+    const next = transitionEffectiveVideoParams(catalog, { model, group }, { ...params, model: model.id }, quotedRouting);
+    if (!next) return;
+    let operation = resolveEffectiveVideoOperation(group, next.operation, next);
+    if (line.hasRequest && next.operation === params.operation) {
+      // Keep draft values the new line accepts for this mode. Each addition must fit a whole variant.
+      for (const field of Object.keys(operation?.parameters ?? {})) {
+        const value = params[field];
+        if (value === undefined || value === null || value === '') continue;
+        const compatible = resolveEffectiveVideoOperation(group, next.operation, { ...next, [field]: value });
+        if (!compatible) continue;
+        next[field] = value;
+        operation = compatible;
+      }
+    }
+    if (typeof next.operation === 'string' && !operation) return;
+    if (line.hasRequest && (!operation || requiredEffectiveVideoParameter(operation, next))) return;
+    return next;
+  }
+
+  const narrowed = narrowModelByLineConstraints(model, model.id, group.constraints);
+  const operations = (narrowed.operations ?? []).filter(op => op.listed === true && op.output?.type === outputType);
+  const recommended = catalog.defaultOperations?.[outputType];
+  const operation = operations.find(op => op.id === params.operation || op.aliases?.includes(String(params.operation)))
+    ?? (recommended?.modelId === model.id ? operations.find(op => op.id === recommended.operationId) : undefined)
+    ?? (operations.length === 1 ? operations[0] : undefined);
+  if (operations.length === 0 || (params.operation && !operation)) return;
+  const modelParameters: Record<string, unknown> = { ...narrowed.parameters };
+  const definitions = { ...modelParameters, ...operation?.parameters } as Record<string, { defaultValue?: unknown }>;
+  const next: Record<string, unknown> = { ...params, model: model.id, routing, ...(operation && params.operation ? { operation: operation.id } : {}) };
+  for (const [field, rule] of Object.entries(group.constraints?.parameters ?? {})) {
+    if (!rule) continue;
+    if (rule.supported === false) {
+      delete next[field];
+    } else if (rule.fixed !== undefined) {
+      next[field] = rule.fixed;
+    } else if (rule.only && !rule.only.some(value => Object.is(value, next[field]))) {
+      const fallback = rule.only.length === 1 ? rule.only[0] : definitions[field]?.defaultValue;
+      if (fallback === undefined || !rule.only.some(value => Object.is(value, fallback))) return;
+      next[field] = fallback;
+    }
+  }
+  const possibleOperations = operation ? [operation] : operations;
+  if (possibleOperations.some(op => findDeclaredParameterFailure(next, op.parameters, modelParameters))) return;
+  return next;
+}
+
+function keepUnresolvedVisualDraft(catalog: CapabilityCatalog | null | undefined, params: Record<string, unknown>, outputType: unknown): boolean {
+  if (outputType !== 'image' && outputType !== 'video') return false;
+  if (!catalog?.fingerprint && !catalog?.models?.length) return true;
+  const line = readVisualLineSelection(catalog, params);
+  return Boolean(line && !line.selected && (line.hasRequest || line.managed));
+}
 
 function isSingleStartImage(slot: SlotSpec): boolean {
   return slot.type === 'image' && slot.role === 'first_frame' && slot.max === 1;
@@ -129,37 +200,49 @@ function recomputeEffectiveVideoSlots(node: CanvasNode, graph: CanvasInputMutati
 /** Initialize unspecified choices only; supply changes cannot replace a saved creative choice. */
 export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutationState, context: CanvasMutationRuntimeContext,
   previous?: CanvasNode, newEdgeIds: ReadonlySet<string> = new Set(), disconnected: ReadonlySet<string> = new Set()): CanvasNode {
-  const params = { ...readCanvasParams(node) };
-  // A narrow line accepts far less than the contract publishes; narrowing the routed model
-  // once here keeps the slot layout, the operation list and the parameter view aligned.
-  const catalog = narrowCatalogByRouting(context.catalog, params.model, params.routing, params);
+  let params = { ...readCanvasParams(node) };
   const outputType = node.data.materialType as MaterialType;
-  const managed = outputType === 'video' ? resolveEffectiveVideoGroup(context.catalog, params.model, params.routing) : null;
-  if (managed) return recomputeEffectiveVideoSlots(node, graph, context, managed, params, previous, newEdgeIds, disconnected);
-  const currentVersion = node.data.inputBindingVersion === 1;
-  const view = buildContractView(catalog);
-  const savedModel = typeof params.model === 'string' ? resolveModelView(view, params.model) : undefined;
-  const projected = projectCanvasInputSources(node.id, node.data, graph.nodes, graph.edges, catalog, savedModel);
-  if (projected.data !== node.data) node = { ...node, data: projected.data };
-  if (projected.edges !== graph.edges) graph = { ...graph, edges: projected.edges };
-  const raw = projected.fingerprint;
-  if (!params.model && catalog) {
-    const recommended = catalog.defaultOperations?.[outputType];
-    const pick = planAutoAdaptation({ catalog, outputType, preferredModelId: context.preferredModels?.[outputType],
+  const directory = context.catalog;
+  if (isVisualGeneration(outputType) && !directory?.fingerprint && !directory?.models?.length) {
+    // A pending replacement catalog does not change the saved line, slots or draft.
+    if (directory) return node;
+    return { ...node, data: { ...node.data, compat: {
+      status: 'configuration_error', acceptsCurrentInputs: false, readyToSubmit: false,
+      reasonCodes: ['catalog_unavailable'], fingerprint: '', catalogFingerprint: '',
+    } } };
+  }
+  const hadModel = Boolean(params.model);
+  if (!hadModel && directory) {
+    const raw = buildCanvasUpstreamFingerprint(node.id, graph.nodes, graph.edges);
+    const recommended = directory.defaultOperations?.[outputType];
+    const pick = planAutoAdaptation({ catalog: directory, outputType, preferredModelId: context.preferredModels?.[outputType],
       currentOperationId: typeof params.operation === 'string' ? params.operation : undefined,
       fingerprint: buildUpstreamFingerprint({ ...raw, assets: raw.assets.filter((asset) => asset.type === 'text') }) });
     if (pick) {
       params.model = pick.modelId;
       const recommendedId = recommended?.modelId === pick.modelId
-        && resolveModelView(view, pick.modelId)?.operations.some((op) => op.id === recommended.operationId
+        && resolveModelView(buildContractView(directory), pick.modelId)?.operations.some((op) => op.id === recommended.operationId
           && op.listed && op.output.type === outputType)
         ? recommended.operationId : undefined;
       params.operation ??= recommendedId ?? pick.operationId;
     }
   }
-  const defaultManaged = outputType === 'video' ? resolveEffectiveVideoGroup(context.catalog, params.model, params.routing) : null;
-  if (defaultManaged) return recomputeEffectiveVideoSlots(node, graph, context, defaultManaged, params, previous, newEdgeIds, disconnected);
-  const model = savedModel ?? resolveModelView(view, typeof params.model === 'string' ? params.model : undefined);
+  if ((!previous || !hadModel) && directory) params = planDefaultVisualLineParams(directory, outputType, params, false) ?? params;
+  if (keepUnresolvedVisualDraft(directory, params, outputType)) {
+    return hadModel ? node : { ...node, data: { ...node.data, params } };
+  }
+  const managed = outputType === 'video' ? resolveEffectiveVideoGroup(directory, params.model, params.routing) : null;
+  if (managed) return recomputeEffectiveVideoSlots(node, graph, context, managed, params, previous, newEdgeIds, disconnected);
+
+  // Narrow after selecting a model and line so the layout uses the saved choice.
+  const catalog = narrowCatalogByRouting(directory, params.model, params.routing, params);
+  const currentVersion = node.data.inputBindingVersion === 1;
+  const view = buildContractView(catalog);
+  const model = resolveModelView(view, typeof params.model === 'string' ? params.model : undefined);
+  const projected = projectCanvasInputSources(node.id, node.data, graph.nodes, graph.edges, catalog, model);
+  if (projected.data !== node.data) node = { ...node, data: projected.data };
+  if (projected.edges !== graph.edges) graph = { ...graph, edges: projected.edges };
+  const raw = projected.fingerprint;
   if (model) params.model = model.id;
   const modelRecommendation = catalog?.defaultOperations?.[outputType];
   const recommendedId = modelRecommendation?.modelId === model?.id ? modelRecommendation?.operationId : undefined;
@@ -437,6 +520,7 @@ export function recomputeCanvasSlots(node: CanvasNode, graph: CanvasInputMutatio
 /** Best-effort mirror for old readers; a single edge cannot express two roles. */
 export function mirrorCanvasSlots(node: CanvasNode, edges: Edge[], context: CanvasMutationRuntimeContext): Edge[] {
   const params = readCanvasParams(node);
+  if (keepUnresolvedVisualDraft(context.catalog, params, node.data.materialType)) return edges;
   const catalog = narrowCatalogByRouting(context.catalog, params.model, params.routing);
   const layout = node.data.materialType === 'image'
     ? (deriveImageGenerationLayout(catalog, params.model as string | undefined, params.operation as string | undefined)

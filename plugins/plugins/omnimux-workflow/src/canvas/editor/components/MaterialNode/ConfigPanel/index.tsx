@@ -31,6 +31,9 @@ import {
 import { ModelCascadeMenu } from './ModelCascadeMenu';
 import {
   directoryChannelGroups,
+  findDefaultChannelGroup,
+  findSelectedChannelGroup,
+  parseModelAndGroup,
   resolveModelChannelGroups,
   resolveShortModelName,
   resolveLineConstraints,
@@ -102,7 +105,7 @@ import { buildInputCapability } from '../../../../../shared/validation/inputCapa
 import { groupMatchesEffectiveVideoVersion, narrowCatalogByRouting, narrowModelByLineConstraints, resolveEffectiveVideoGroup, transitionEffectiveVideoParams } from '../../../../../shared/validation/lineConstraints.ts';
 import { managedVideoLinePricingFingerprint } from '../../../../../shared/validation/managedVideoExecution.ts';
 import { projectVideoSlotBindings, readVideoOperationDraft } from '../../../../../shared/graph/feedSlot/videoSlotDrafts.ts';
-import { findExecutionReadinessFailure } from '../../../../../shared/validation/executionReadiness.ts';
+import { findExecutionReadinessFailure, visualLineSelectionMessage } from '../../../../../shared/validation/executionReadiness.ts';
 import { prepareExecutionSlotGraph } from '../../../../../shared/graph/feedSlot/prepareExecutionSlotGraph.ts';
 import { resolveUnsupportedModelUi } from '../../../../../shared/validation/modelExecutionUi.ts';
 import {
@@ -199,7 +202,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   }, [runtimeSettings, envSettings]);
 
   const routing = (params.routing && typeof params.routing === 'object')
-    ? (params.routing as { strategy?: 'auto' | 'stability_first' | 'cost_first'; allowedGroups?: string[]; channelGroupId?: string; sourceType?: 'official' | 'byok' })
+    ? (params.routing as { strategy?: 'auto' | 'stability_first' | 'cost_first'; allowedGroups?: string[]; channelGroupId?: string; group?: string; sourceType?: 'official' | 'byok' })
     : undefined;
 
   const slotState = nodeData.slotState as NodeSlotEngineState | undefined;
@@ -268,6 +271,8 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   const outputTypeForCompat = isAsrTool ? 'text' : materialType;
 
   const modelValue = typeof params?.model === 'string' ? params.model.trim() : '';
+  const lineSelectionReason = isVisualGeneration(materialType) ? visualLineSelectionMessage(activeCatalog, params) : undefined;
+  const visualParametersUnavailable = isVisualGeneration(materialType) && Boolean(lineSelectionReason || !activeCatalog?.models?.length);
   const managedVideo = useMemo(() => materialType === 'video'
     ? resolveEffectiveVideoGroup(activeCatalog, modelValue, params.routing) : null,
   [materialType, activeCatalog, modelValue, params.routing]);
@@ -356,27 +361,19 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
     [modelValue, activeCatalog, effectiveRuntimeSettings],
   );
 
+  const officialDefaultGroup = findDefaultChannelGroup(allChannelGroups.filter(group =>
+    managedVideo?.model.effectiveVideoVersion === undefined
+    || groupMatchesEffectiveVideoVersion(group, managedVideo.model.effectiveVideoVersion)));
   const isSingleImageChannel = useMemo(() => {
-    const currentRouting = (params.routing && typeof params.routing === 'object')
-      ? (params.routing as { allowedGroups?: string[]; channelGroupId?: string })
-      : undefined;
-    const allowedGroup = currentRouting?.allowedGroups?.[0];
-    const explicitChannelGroup = currentRouting?.channelGroupId;
-    if (allowedGroup && explicitChannelGroup && allowedGroup !== explicitChannelGroup) {
-      // 瞬态路由冲突安全防御：若 allowedGroups[0] 与 channelGroupId 存在冲突，安全默认返回 false，不盲目回退到首个分组
-      return false;
-    }
-    const currentGroupId = allowedGroup || explicitChannelGroup;
-    const usableGroups = allChannelGroups.filter((group) => group.enabled !== false && group.isAvailable !== false);
-    const matchedGroup = (currentGroupId ? usableGroups.find((g) => g.id === currentGroupId) : null) || usableGroups[0];
+    const { group: inlineGroup } = parseModelAndGroup(modelValue);
+    const hasLine = Boolean(routing?.allowedGroups?.length || routing?.channelGroupId || routing?.group
+      || routing?.sourceType === 'byok' || inlineGroup);
+    const matchedGroup = hasLine
+      ? findSelectedChannelGroup(allChannelGroups, routing, inlineGroup, true) : officialDefaultGroup;
     if (!matchedGroup) return false;
     const contract = buildChannelContract(modelValue, matchedGroup);
     return matchedGroup.constraints?.inputs?.image?.max === 1 || contract.constraints.maxReferenceImages === 1;
-  }, [allChannelGroups, params.routing, modelValue]);
-
-  const availableOfficialGroups = useMemo(() => {
-    return allChannelGroups.filter((g) => !isByokGroup(g) && g.isAvailable !== false);
-  }, [allChannelGroups]);
+  }, [allChannelGroups, routing, modelValue, officialDefaultGroup]);
 
   const displayedSlotLayout = useMemo(() => {
     if (currentInputs || useSelectedOperation || !isSingleImageChannel || !effectiveSlotLayout?.slots || effectiveSlotLayout.slots.length <= 1) {
@@ -579,12 +576,13 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
       { nodePatches: [{ nodeId, data: { params: next, autoOperationId: null } }] },
       { undoStep },
     ), [nodeId]);
-  const videoSelection = useMemo(() => materialType === 'video' && !managedVideo ? buildVideoParameterSelection({
-    params, parameterSelections, currentModelItem: modelItem, targetModelItem: modelItem,
-    catalog: activeCatalog, upstreams: upstreamSnapshots, prompt: localPrompt,
-    autoOperationId: nodeData.autoOperationId,
-    ignoredEdgeIds: (nodeData.slotStandbyEdgeIds ?? []) as string[],
-  }) : null, [materialType, params, parameterSelections, modelItem, activeCatalog, upstreamSnapshots, localPrompt, nodeData.slotStandbyEdgeIds, nodeData.autoOperationId, managedVideo]);
+  const videoSelection = useMemo(() => materialType === 'video' && !managedVideo && !lineSelectionReason
+    && activeCatalog?.models?.length ? buildVideoParameterSelection({
+      params, parameterSelections, currentModelItem: modelItem, targetModelItem: modelItem,
+      catalog: activeCatalog, upstreams: upstreamSnapshots, prompt: localPrompt,
+      autoOperationId: nodeData.autoOperationId,
+      ignoredEdgeIds: (nodeData.slotStandbyEdgeIds ?? []) as string[],
+    }) : null, [materialType, params, parameterSelections, modelItem, activeCatalog, upstreamSnapshots, localPrompt, nodeData.slotStandbyEdgeIds, nodeData.autoOperationId, managedVideo, lineSelectionReason]);
   const migrationCatalogRef = useRef(new Map<string, CapabilityCatalog>());
   const migrationKey = `${String(nodeData.__workspaceId ?? '')}:${nodeId}`;
   useEffect(() => {
@@ -602,6 +600,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
 
   const updateParam = useCallback(
     (key: string, value: unknown) => {
+      if (visualParametersUnavailable) return;
       if (managedVideo && activeCatalog) {
         const change = key === 'operation' && typeof value === 'string'
           ? { operationId: value } : { parameter: { key, value } };
@@ -645,7 +644,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
         }));
       } else onUpdateNodeData({ params: { ...params, ...patch } });
     },
-    [activeCatalog, materialType, modelItem, onUpdateNodeData, params, localPrompt, upstreamSnapshots, parameterSelections, commitVideoSelection, effectiveRuntimeSettings, managedVideo, commitManagedVideoSelection],
+    [activeCatalog, materialType, modelItem, onUpdateNodeData, params, localPrompt, upstreamSnapshots, parameterSelections, commitVideoSelection, effectiveRuntimeSettings, managedVideo, commitManagedVideoSelection, visualParametersUnavailable],
   );
 
   /**
@@ -716,7 +715,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   // when the selected model declares that parameter. The ref prevents a user's
   // later edit from being overwritten by the same document on every render.
   useEffect(() => {
-    if (materialType !== 'video' || !documentDurationTarget || !videoEffectiveParams) return;
+    if (lineSelectionReason || materialType !== 'video' || !documentDurationTarget || !videoEffectiveParams) return;
     const durationSchema = videoEffectiveParams.schema?.duration;
     if (!durationSchema) return;
     const value = documentDurationTarget.parsed.duration;
@@ -731,7 +730,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
     if (appliedDocumentDurationRef.current === key) return;
     appliedDocumentDurationRef.current = key;
     updateParam('duration', value);
-  }, [materialType, documentDurationTarget, videoEffectiveParams, updateParam]);
+  }, [lineSelectionReason, materialType, documentDurationTarget, videoEffectiveParams, updateParam]);
 
   // 图像节点的有效参数（读侧清洗回退，不回写 nodeData）
   const imageEffectiveParams = useMemo(
@@ -806,7 +805,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   );
 
   useEffect(() => {
-    if (!currentInputs) return;
+    if (lineSelectionReason || !currentInputs) return;
     const currentBindings = (nodeData.slotBindings ?? {}) as SlotBindings;
     const activeBindings = inputDisplay.bindings;
     if (!activeBindings || typeof activeBindings !== 'object') return;
@@ -814,11 +813,11 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
     if (missingKeys.length > 0) {
       patchSlotBindings(activeBindings);
     }
-  }, [currentInputs, inputDisplay.bindings, nodeData.slotBindings, patchSlotBindings]);
+  }, [lineSelectionReason, currentInputs, inputDisplay.bindings, nodeData.slotBindings, patchSlotBindings]);
 
   useEffect(() => {
     if (!isSingleImageChannel) return;
-    if (currentInputs) return;
+    if (lineSelectionReason || currentInputs) return;
     const currentBindings = nodeData.slotBindings as SlotBindings | undefined;
     if (!currentBindings || typeof currentBindings !== 'object') return;
     const primarySlotKey = displayedSlotLayout.slots[0]?.slot ?? '0';
@@ -834,7 +833,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
       };
       patchSlotBindings(normalized);
     }
-  }, [isSingleImageChannel, displayedSlotLayout, nodeData.slotBindings, patchSlotBindings]);
+  }, [lineSelectionReason, isSingleImageChannel, currentInputs, displayedSlotLayout, nodeData.slotBindings, patchSlotBindings]);
 
   const handleModelChange = useCallback(
     (newModelId: string, channelSelection?: { strategy: string; allowedGroups?: string[]; channelGroupId?: string; sourceType?: 'official' | 'byok' }) => {
@@ -847,18 +846,24 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
       const modelList = (activeCatalog?.[materialType] ?? []) as CapabilityModelItem[];
       const newModelItem = modelList.find((m) => m.id === newModelId);
       let nextOperation: string | undefined;
-      const nextRouting = channelSelection?.allowedGroups?.length
-        ? {
-            strategy: channelSelection.strategy,
-            allowedGroups: channelSelection.allowedGroups,
-            ...(channelSelection.channelGroupId ? { channelGroupId: channelSelection.channelGroupId } : {}),
-            ...(channelSelection.sourceType ? { sourceType: channelSelection.sourceType } : {}),
-          }
-        : (channelSelection ? null : undefined);
+      const directoryGroups = directoryChannelGroups(activeCatalog, newModelId);
+      const availableGroups = resolveModelChannelGroups(newModelId, directoryGroups, effectiveRuntimeSettings);
+      const matchedGroup = channelSelection?.allowedGroups?.length || channelSelection?.channelGroupId
+        ? findSelectedChannelGroup(availableGroups, channelSelection, null, true)
+        : channelSelection ? findDefaultChannelGroup(availableGroups) : undefined;
+      if (channelSelection && !matchedGroup && (channelSelection.allowedGroups?.length || channelSelection.channelGroupId || availableGroups.length)) return;
+      const nextRouting = matchedGroup ? {
+        strategy: channelSelection?.strategy ?? 'auto',
+        allowedGroups: [matchedGroup.id],
+        ...(isByokGroup(matchedGroup) ? { channelGroupId: matchedGroup.id, sourceType: 'byok' } : {}),
+      } : (channelSelection ? null : undefined);
       const target = materialType === 'video' ? resolveEffectiveVideoGroup(activeCatalog, newModelId, nextRouting) : null;
       if (target && activeCatalog) {
         if (!target.group) return;
-        const quotedRouting = { ...nextRouting, videoLineQuote: managedVideoLinePricingFingerprint(target.group) };
+        const quotedRouting = {
+          ...nextRouting, channelGroupId: target.group.id, sourceType: 'official',
+          videoLineQuote: managedVideoLinePricingFingerprint(target.group),
+        };
         const next = transitionEffectiveVideoParams(activeCatalog, target, params, quotedRouting);
         if (!next) return;
         if (commitManagedVideoSelection(next, true).status !== 'allowed') return;
@@ -909,74 +914,12 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
         }
         nextParams = setParamsOperation({ ...params, model: newModelId }, nextOperation);
       }
-      if (channelSelection) {
-        const { strategy, allowedGroups, channelGroupId, sourceType } = channelSelection;
-        if (allowedGroups?.length) {
-          const isByok = sourceType === 'byok' || isByokGroup(allowedGroups[0]) || isByokGroup(channelGroupId);
-          nextParams.routing = {
-            strategy,
-            allowedGroups,
-            ...(isByok ? { channelGroupId: channelGroupId || allowedGroups[0], sourceType: 'byok' } : {}),
-          };
-        } else {
-          delete nextParams.routing;
-        }
-      }
+      if (nextRouting) nextParams.routing = nextRouting;
+      else if (nextRouting === null) delete nextParams.routing;
 
-      // 执行契约协调（try/catch 严格保护，确保抛错时节点状态不僵死、脏提示不残留）
-      let nextSlotBindings: SlotBindings | undefined = undefined;
+      let nextSlotBindings: SlotBindings | undefined;
       try {
-        const routing = (nextParams.routing && typeof nextParams.routing === 'object')
-          ? (nextParams.routing as { strategy?: 'auto' | 'stability_first' | 'cost_first'; allowedGroups?: string[]; channelGroupId?: string })
-          : undefined;
-        const routingAllowed = routing?.allowedGroups?.[0];
-        const routingChannelGroup = routing?.channelGroupId;
-        const resolvedRoutingGroup = (routingAllowed && routingChannelGroup)
-          ? (routingAllowed === routingChannelGroup ? routingAllowed : undefined)
-          : (routingAllowed || routingChannelGroup);
-
-        const channelSelAllowed = channelSelection?.allowedGroups?.[0];
-        const channelSelGroup = channelSelection?.channelGroupId;
-        const resolvedChannelSelGroup = (channelSelAllowed && channelSelGroup)
-          ? (channelSelAllowed === channelSelGroup ? channelSelAllowed : undefined)
-          : (channelSelAllowed || channelSelGroup);
-
-        const isCrossConflict = Boolean(
-          resolvedChannelSelGroup !== undefined &&
-          resolvedRoutingGroup !== undefined &&
-          resolvedChannelSelGroup !== resolvedRoutingGroup
-        );
-        const targetGroupId = isCrossConflict
-          ? undefined
-          : (resolvedChannelSelGroup !== undefined ? resolvedChannelSelGroup : resolvedRoutingGroup);
-        const availableGroups = resolveModelChannelGroups(
-          newModelId,
-          directoryChannelGroups(activeCatalog, newModelId),
-          effectiveRuntimeSettings,
-        );
-        const isUsableGroup = (group: { enabled?: boolean; isAvailable?: boolean } | undefined) => Boolean(group && group.enabled !== false && group.isAvailable !== false);
-        const fallbackGroup = availableGroups.find(isUsableGroup);
-        const matchedGroup = (targetGroupId
-          ? availableGroups.find((group) => group.id === targetGroupId && isUsableGroup(group))
-          : null) || fallbackGroup;
         if (matchedGroup) {
-          // 当检测到渠道 ID 冲突并降级到默认渠道组时，同步将 nextParams.routing 归一化为安全降级后的渠道信息，杜绝将冲突脏路由写回节点数据
-          if (nextParams.routing && typeof nextParams.routing === 'object') {
-            const hasConflict = Boolean(
-              isCrossConflict ||
-              (routingAllowed && routingChannelGroup && routingAllowed !== routingChannelGroup) ||
-              (channelSelAllowed && channelSelGroup && channelSelAllowed !== channelSelGroup) ||
-              (targetGroupId && !availableGroups.some((g) => g.id === targetGroupId))
-            );
-            if (hasConflict || targetGroupId !== matchedGroup.id) {
-              const isByok = isByokGroup(matchedGroup);
-              nextParams.routing = {
-                strategy: routing?.strategy || 'auto',
-                allowedGroups: [matchedGroup.id],
-                ...(isByok ? { channelGroupId: matchedGroup.id, sourceType: 'byok' } : {}),
-              };
-            }
-          }
           const contract = buildChannelContract(newModelId, matchedGroup);
           if (materialType !== 'video') {
             const { nextParams: reconciledParams } = reconcileParamsWithContract(
@@ -1115,7 +1058,8 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
 
   // 视频节点业务状态机：上游媒体决定可用生成方式（Epic #63 / R3/R6）。
   useEffect(() => {
-    if (materialType !== 'video' || !videoCapability?.selectedOperationId) return;
+    // 待重选的节点保留草稿，打开面板时不自动切换生成方式。
+    if (lineSelectionReason || materialType !== 'video' || !videoCapability?.selectedOperationId) return;
     const savedOperation = readPreferredOperationId(params as Record<string, unknown>);
     if (savedOperation === videoCapability.selectedOperationId) return;
     if (!activeCatalog || !modelItem) return;
@@ -1136,7 +1080,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
       commitVideoSelection(transition);
     }
   }, [
-    materialType, videoCapability?.selectedOperationId, params, parameterSelections,
+    lineSelectionReason, materialType, videoCapability?.selectedOperationId, params, parameterSelections,
     activeCatalog, modelItem, upstreamSnapshots, localPrompt, commitVideoSelection,
   ]);
 
@@ -1238,7 +1182,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
       ? t('panel.slotMissing').replace('{slots}', '参考图')
       : t('panel.reason.model_incompatible'))
     : undefined;
-  const readinessReason = imageBlockedReason
+  const readinessReason = lineSelectionReason || imageBlockedReason
     || (fallbackState?.isFallback ? fallbackState.runBlockedReason || t('notice.submitBlocked') : undefined)
     || (cloneMissingAudio ? '参考音频模式需先连接上游音频输入' : undefined)
     || (audioPromptGate?.exceeded ? `朗读正文不能超过 ${AUDIO_PROMPT_MAX_CHARS} 字符` : undefined)
@@ -1247,9 +1191,21 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   const blockReason = readinessReason || (selectedModelUnsupported ? t('panel.modelUnsupported') : undefined);
 
   const showEmptyModels = modelOptions.length === 0;
+  const showLineRecovery = !showEmptyModels && Boolean(lineSelectionReason || fallbackState?.isFallback);
+  const pickerGroupRef = useRef<HTMLDivElement>(null);
+  const openLinePicker = useCallback(() => {
+    const trigger = pickerGroupRef.current?.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]');
+    if (!trigger || trigger.disabled) return;
+    trigger.focus();
+    if (trigger.getAttribute('aria-expanded') !== 'true') trigger.click();
+  }, []);
 
   // T05：禁用态点击 → 画板 Toast（4s 自动淡出），不再渲染常驻静态错误条。
   const handleDisabledGenerateClick = useCallback(() => {
+    if (lineSelectionReason && showLineRecovery) {
+      openLinePicker();
+      return;
+    }
     if (fallbackState?.isFallback) {
       toast.error(fallbackState.runBlockedReason || '请配置自备 Key 或切换可用渠道');
       return;
@@ -1258,11 +1214,11 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
       kind: 'submit_blocked_click',
       message: blockReason || t('notice.submitBlocked'),
     });
-  }, [fallbackState, blockReason, t]);
+  }, [fallbackState, blockReason, lineSelectionReason, openLinePicker, showLineRecovery, t]);
 
   return (
     <div className="wf-config-panel" data-effective-ops={opsState.count}>
-      {fallbackState?.isFallback ? (
+      {showLineRecovery ? (
         <div
           className="wf-config-panel__fallback-banner"
           style={{
@@ -1280,20 +1236,19 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
           data-testid="wf-channel-fallback-banner"
         >
           <span style={{ fontSize: 12, color: 'var(--dsw-alias-label-secondary)' }}>
-            {fallbackState?.bannerMessage}
+            {lineSelectionReason ?? '自备渠道已不可用，请重选线路'}
           </span>
           <button
             type="button"
+            disabled={execBusy}
             onClick={() => {
-              const targetOfficialGroupId = fallbackState?.recommendedOfficialGroupId || availableOfficialGroups[0]?.id;
-              if (!targetOfficialGroupId) {
-                toast.warning('暂无可用官方渠道，请稍后重试');
+              if (!fallbackState?.isFallback || !officialDefaultGroup) {
+                openLinePicker();
                 return;
               }
               handleModelChange(modelValue, {
                 strategy: 'auto',
-                allowedGroups: [targetOfficialGroupId],
-                channelGroupId: targetOfficialGroupId,
+                allowedGroups: [officialDefaultGroup.id],
                 sourceType: 'official',
               });
             }}
@@ -1309,7 +1264,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
             }}
             data-testid="wf-channel-fallback-action"
           >
-            {fallbackState.actionLabel}
+            {fallbackState?.isFallback && officialDefaultGroup ? '切换为官方默认线路' : '重选线路'}
           </button>
         </div>
       ) : null}
@@ -1487,7 +1442,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
 
       {/* 3. 底部参数与操作底栏 */}
       <div className="wf-config-panel__bottom-bar">
-        <div className="wf-config-panel__params-group">
+        <div ref={pickerGroupRef} className="wf-config-panel__params-group">
           {/* 模型下拉：仅兼容模型；零候选显示空态 */}
           {showEmptyModels ? (
             <div
@@ -1514,6 +1469,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
               execBusy={execBusy}
               runtimeSettings={effectiveRuntimeSettings}
               fallbackState={fallbackState}
+              lineSelectionRequired={Boolean(lineSelectionReason)}
               onSelect={({ modelId, strategy, allowedGroups, channelGroupId, sourceType }) => {
                 handleModelChange(modelId, { strategy, allowedGroups, channelGroupId, sourceType });
               }}
@@ -1566,7 +1522,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
               <ImageTriggerBar
                 params={imageEffectiveParams}
                 isOpen={imagePopoverOpen}
-                disabled={execBusy}
+                disabled={execBusy || visualParametersUnavailable}
                 onToggle={() => setImagePopoverOpen((p) => !p)}
               />
             </div>
@@ -1578,7 +1534,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
               <VideoTriggerBar
                 params={videoEffectiveParams}
                 isOpen={videoPopoverOpen}
-                disabled={execBusy}
+                disabled={execBusy || visualParametersUnavailable}
                 onToggle={() => setVideoPopoverOpen((p) => !p)}
               />
             </div>

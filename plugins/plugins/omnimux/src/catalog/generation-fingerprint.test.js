@@ -8,6 +8,7 @@ import { loadAll } from './contract/load.js'
 import { buildModelCatalog, fingerprintOf } from './list.js'
 import { MODEL_CHANNEL_GROUPS } from './serving/channel-groups.js'
 import { resolveReadOnlySnapshot } from './cloud/current.js'
+import { normalizePricingPayload } from './cloud/snapshot.js'
 
 const fixtureRoot = fileURLToPath(new URL('../../../../.tmp/3250/', import.meta.url))
 
@@ -117,13 +118,10 @@ function withChannelGroups(t) {
   return groups
 }
 
-// 2026-10-21 网关对账 #3516：seedance-2-5 的两个分组（480p/720p）都不再声明 constraints，
-// 且 480p 已带 default:true —— 断言意图是「该字段单独变化时必须失效」，故直接赋值/翻转。
 for (const [field, mutate] of [
   ['constraints', (group) => { group.constraints = { parameters: { duration: { fixed: 20 } } } }],
   ['wireGroup', (group) => { group.wireGroup = 'fixture-wire-group' }],
   ['sla', (group) => { group.sla.avgWaitTimeSec += 1 }],
-  ['default', (group) => { group.default = !group.default }],
 ]) {
   test(`buildModelCatalog invalidates when channelGroups ${field} alone changes`, (t) => {
     const groups = withChannelGroups(t)
@@ -136,6 +134,26 @@ for (const [field, mutate] of [
     assert.notEqual(after.fingerprint, before.catalog.fingerprint, field)
   })
 }
+
+test('buildModelCatalog invalidates for changes to the gateway group order or default', (t) => {
+  const { before } = loadFixture(t)
+  const build = (order, defaultGroup) => buildModelCatalog({
+    contractIndex: before.index,
+    env: {},
+    snapshot: normalizePricingPayload({ data: [{
+      model_name: 'seedance-2-5', enable_groups: ['a', 'b'], group_order: order, default_group: defaultGroup,
+    }] }).snapshot,
+  })
+  const initial = build(['b', 'a'], 'a')
+  const reselected = build(['b', 'a'], 'b')
+  const reordered = build(['a', 'b'], 'a')
+  for (const { models, video, fingerprint } of [reselected, reordered]) {
+    assert.deepEqual(models[0].channelGroups, video[0].channelGroups)
+    assert.notEqual(fingerprint, initial.fingerprint)
+  }
+  assert.deepEqual(reselected.video[0].channelGroups.map(({ id, default: selected }) => [id, selected]), [['b', true], ['a', undefined]])
+  assert.deepEqual(reordered.video[0].channelGroups.map(({ id, default: selected }) => [id, selected]), [['a', true], ['b', undefined]])
+})
 
 // P1b: the local override table no longer decides membership or price, so flipping its
 // `enabled` / `pricing` must NOT move the fingerprint; the gateway snapshot does.

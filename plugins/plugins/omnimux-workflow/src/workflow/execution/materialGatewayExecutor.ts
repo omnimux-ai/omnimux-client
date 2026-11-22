@@ -13,6 +13,9 @@ import type { ResolveExecutionProjectFile } from './executionMediaSource.ts';
 import { collectMaterialSlotInputs } from './materialSlotInputs.ts';
 import { resolveGenerationPrompt } from '../../shared/graph/generationPrompt.ts';
 import { effectiveVideoAssetFields } from '../../shared/validation/lineConstraints.ts';
+import { parseModelAndGroup, readChannelRouting } from '../../shared/validation/channelRouting.ts';
+import { readVisualLineSelection } from '../../shared/validation/executionReadiness.ts';
+import type { CapabilityCatalog } from '../../shared/api.ts';
 import { compileMultimodalPrompt, PROMPT_REF_REGEX } from './multimodalCompiler.ts';
 import type { AwaitTaskResult, GenerationGateway, SubmitRequest } from '../seam/gateway';
 import { SeamGatewayError } from '../seam/SeamGatewayError.ts';
@@ -60,33 +63,17 @@ function readBoolean(source: Record<string, unknown> | undefined, key: string): 
   return typeof value === 'boolean' ? value : undefined;
 }
 
-const ROUTING_STRATEGIES = ['auto', 'stability_first', 'cost_first'] as const;
-
-/**
- * Channel routing stored on the node by the model picker. Only well-formed
- * values travel: an unknown strategy or an empty pool must not reach the hub as
- * a routing request, or it would narrow (or fail) a generation the user never
- * constrained.
- */
-function readRouting(source: Record<string, unknown> | undefined): {
-  strategy?: 'auto' | 'stability_first' | 'cost_first';
-  allowedGroups?: string[];
-} {
-  const routing = source?.routing;
-  if (!routing || typeof routing !== 'object' || Array.isArray(routing)) return {};
-  const row = routing as Record<string, unknown>;
-  const out: { strategy?: 'auto' | 'stability_first' | 'cost_first'; allowedGroups?: string[] } = {};
-  if (typeof row.strategy === 'string'
-    && (ROUTING_STRATEGIES as readonly string[]).includes(row.strategy)) {
-    out.strategy = row.strategy as 'auto' | 'stability_first' | 'cost_first';
-  }
-  if (Array.isArray(row.allowedGroups)) {
-    const groups = row.allowedGroups
-      .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
-      .map((id) => id.trim());
-    if (groups.length > 0) out.allowedGroups = groups;
-  }
-  return out;
+function readRouting(params: Record<string, unknown> | undefined, catalog: CapabilityCatalog,
+  capability: SubmitRequest['capability']): Pick<SubmitRequest, 'strategy' | 'allowedGroups'> {
+  const visual = capability === 'image' || capability === 'video';
+  const model = readString(params, 'model') ?? catalog.defaults?.[capability];
+  const inlineGroup = visual ? parseModelAndGroup(model).group : null;
+  const intent = readChannelRouting(params?.routing, inlineGroup);
+  const line = visual ? readVisualLineSelection(catalog, { ...params, model }) : undefined;
+  if (line?.message) throw new SeamGatewayError('line_selection_required', line.message);
+  const groups = line?.requestGroups ?? (intent.allowedGroups.length ? intent.allowedGroups
+    : visual && intent.pinnedGroup ? [intent.pinnedGroup] : []);
+  return { ...(intent.strategy ? { strategy: intent.strategy } : {}), ...(groups.length ? { allowedGroups: groups } : {}) };
 }
 
 function readMaterialType(nodeData: Record<string, unknown>): 'text' | 'image' | 'video' | 'audio' {
@@ -215,6 +202,7 @@ export function createMaterialGatewayExecutor(opts: {
       const inputs = { ...ctx, upstreamOutputs: structuredClone(ctx.upstreamOutputs), upstreamBindings: structuredClone(ctx.upstreamBindings) };
       const submission = ctx.submission ?? await openWorkflowSubmission(gateway, ctx.catalog);
       const catalog = submission.catalog;
+      const routing = readRouting(params, catalog, capability);
       const upstream = collectMaterialSlotInputs(data, inputs, catalog, opts.resolveProjectFile);
       if (data.inputBindingVersion !== 1 && capability === 'audio' && upstream.texts.length && resolveGenerationPrompt(data).trim()) {
         throw new Error('当前音频任务不能分别表达上游正文和本地要求；请保留一个正文来源并调整音色、语速等参数');
@@ -313,7 +301,7 @@ export function createMaterialGatewayExecutor(opts: {
         ...(managed ? {
           allowedGroups: [managed.wireGroup ?? managed.id],
           effectiveVideoVersion: upstream.effectiveVideoVersion,
-        } : readRouting(params)),
+        } : routing),
         dest,
         signal: ctx.signal,
         mockFail: readMockFail(data),

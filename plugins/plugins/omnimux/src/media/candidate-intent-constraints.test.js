@@ -130,11 +130,10 @@ test('3312: the delisted H3 series exposes no channel groups while the listed mu
     candidates: [], unresolvedGroups: ['standard', 'task'],
   })
   // P1b：线路取自快照 enable_groups（本地覆盖表命名 480p/720p，网关另发布两条专线）。
-  // 720p 标准版仍是默认档，两档各锁定自己的固定分辨率。
+  // 两档各锁定自己的固定分辨率。
   const groups = getModelChannelGroups('seedance-2-5')
   assert.deepEqual(groups.map((group) => group.id), ['480p', '720p', 'seedance-2-5-480p', 'seedance-2-5-720p'])
-  assert.equal(groups[0].default, undefined)
-  assert.equal(groups[1].default, true)
+  assert.equal(groups.some((group) => group.default === true), false)
   assert.deepEqual(groups.map((group) => group.constraints?.parameters?.resolution), [
     { fixed: '480p' }, { fixed: '720p' }, undefined, undefined,
   ])

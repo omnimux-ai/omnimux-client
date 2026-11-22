@@ -1,3 +1,4 @@
+import { withFixturePricingDefaults } from '../../validation/compatTestCatalog.ts';
 /**
  * Epic #63 / Issue #62 — execution-side inputCapability wiring.
  *
@@ -20,7 +21,7 @@ import { createMaterialGatewayExecutor } from '../../../workflow/execution/mater
 import { registerExecutor } from '../../../workflow/executors/registry.ts';
 
 const bundled = JSON.parse(readFileSync(new URL('../../../../../omnimux/src/catalog/cloud/bundled/pricing.json', import.meta.url), 'utf8'));
-const catalog = projectCanvasCatalog(buildModelCatalog({ env: {}, snapshot: bundled }));
+const catalog = projectCanvasCatalog(buildModelCatalog({ env: {}, snapshot: withFixturePricingDefaults(bundled, { 'muse-video': 'pool', 'seedance-2-5': 'seedance-2-5-720p' }) }));
 
 const importNode = (id, type, extra = {}) => ({
   id,

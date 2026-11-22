@@ -48,10 +48,24 @@ function fixture(type, multiple = true) {
 }
 const node = (materialType, extra={}) => ({materialType,kind:'generate',selectedTool:'text-to-text',params:{model:'test-model',operation:'plain'},prompt:'',...extra});
 
+test('retired image line shows a reselect action only until a valid choice is saved', () => {
+  const catalog = fixture('image', false);
+  catalog.models[0].channelGroups = [{ id: 'available', label: '可用线路', enabled: true }];
+  const params = { model: 'test-model', operation: 'plain', routing: { allowedGroups: ['retired'] } };
+  const material = { selectedTool: 'text-to-image', params, prompt: 'Preserved draft' };
+  const blocked = render(node('image', material), catalog);
+  assert.match(blocked, /原线路已下线，请重选/);
+  assert.match(blocked, /data-testid="wf-channel-fallback-action">重选线路<\/button>/);
+  assert.match(blocked, /aria-disabled="true" class="wf-generate-btn__send"/);
+  assert.match(blocked, /Preserved draft/);
+  const chosen = render(node('image', { ...material, params: { ...params, routing: { allowedGroups: ['available'] } } }), catalog);
+  assert.doesNotMatch(chosen, /wf-channel-fallback-banner/);
+});
+
 test('H3 keeps its editor available, names the missing well, and blocks another click while busy', () => {
   const bundled = JSON.parse(readFileSync(resolve(root, '../omnimux/src/catalog/cloud/bundled/pricing.json'), 'utf8'));
   const catalog = buildModelCatalog({ snapshot: bundled, env: {} });
-  const params = { model: 'minimax-h3-video', operation: 'digital_human' };
+  const params = { model: 'minimax-h3-video', operation: 'digital_human', routing: { allowedGroups: ['default'] } };
   const htmlFor = (kinds, draft, busy = false) => {
     const sources = kinds.map(kind => ({ id: kind, type: 'material', data: { materialType: kind, nodeKind: 'import',
       mediaUrl: `https://example.test/${kind}` } }));

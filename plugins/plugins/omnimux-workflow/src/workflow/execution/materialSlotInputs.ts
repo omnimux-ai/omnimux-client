@@ -12,14 +12,16 @@ import { SeamGatewayError } from '../seam/SeamGatewayError.ts';
 import { effectiveInputDisplay } from '../../shared/graph/feedSlot/effectiveInputDisplay.ts';
 import { effectiveSlotFingerprint } from '../../shared/graph/feedSlot/effectiveFingerprint.ts';
 import { narrowCatalogByRouting, resolveEffectiveVideoGroup, resolveEffectiveVideoOperation } from '../../shared/validation/lineConstraints.ts';
+import { parseModelAndGroup } from '../../shared/validation/channelRouting.ts';
 import { isManagedVideoLineChanged } from '../../shared/validation/managedVideoExecution.ts';
 
 /** Resolve only occupied media. Standby URLs are never opened, parsed or sent to a provider. */
 export function collectMaterialSlotInputs(data: Record<string, unknown>, ctx: ExecutionContext, inputCatalog: CapabilityCatalog, resolveProjectFile?: ResolveExecutionProjectFile) {
   const params = (data.params ?? {}) as Record<string, unknown>;
   const kind = (data.materialType ?? 'text') as keyof NonNullable<CapabilityCatalog['defaults']>;
-  const modelId = typeof params.model === 'string' ? params.model : inputCatalog.defaults?.[kind];
-  const managed = kind === 'video' ? resolveEffectiveVideoGroup(inputCatalog, modelId, params.routing) : null;
+  const requestedModel = typeof params.model === 'string' ? params.model : inputCatalog.defaults?.[kind];
+  const modelId = isVisualGeneration(kind) ? parseModelAndGroup(requestedModel).modelId : requestedModel;
+  const managed = kind === 'video' ? resolveEffectiveVideoGroup(inputCatalog, requestedModel, params.routing) : null;
   const reviewed = data.managedVideoGeneration;
   if ((managed || reviewed) && !managed?.group) {
     throw new SeamGatewayError('line_selection_required', '请选择当前可用的生成线路');
@@ -29,9 +31,8 @@ export function collectMaterialSlotInputs(data: Record<string, unknown>, ctx: Ex
   }
   const variant = managed?.group ? resolveEffectiveVideoOperation(managed.group, params.operation, params) : undefined;
   if (managed && !variant) throw new SeamGatewayError('operation-not-allowed', '当前线路不支持所选生成方式或参数，请重新选择');
-  const baseModel = resolveModelView(buildContractView(inputCatalog), modelId);
   const catalog = isVisualGeneration(kind)
-    ? narrowCatalogByRouting(inputCatalog, baseModel?.id, params.routing, params) ?? inputCatalog : inputCatalog;
+    ? narrowCatalogByRouting(inputCatalog, requestedModel, params.routing, params) ?? inputCatalog : inputCatalog;
   const model = resolveModelView(buildContractView(catalog), modelId);
   const autoOperationId = typeof data.autoOperationId === 'string' || data.autoOperationId === null
     ? data.autoOperationId as string | null : undefined;

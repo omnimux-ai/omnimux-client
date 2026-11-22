@@ -17,6 +17,7 @@
  */
 
 import { createHash } from 'node:crypto'
+import { gatewayEnableGroups, gatewayGroupDisplay } from './view.js'
 
 export const CLOUD_SNAPSHOT_SCHEMA_VERSION = 1
 
@@ -170,6 +171,8 @@ export function normalizePricingPayload(payload, opts = {}) {
     return { snapshot: emptySnapshot('pricing', opts, issues), issues }
   }
 
+  const rawUsableGroups = root.usable_group ?? root.usableGroup
+  const usableGroups = rawUsableGroups === undefined ? undefined : keyedObject(rawUsableGroups)
   /** @type {Map<string, object>} */
   const models = new Map()
   for (const raw of rows) {
@@ -189,12 +192,20 @@ export function normalizePricingPayload(payload, opts = {}) {
     if (Object.hasOwn(row, 'effective_video') && !effectiveVersion) {
       issues.push({ code: 'invalid-effective-video', detail: id })
     }
+    const enableGroups = stringList(row.enable_groups ?? row.enableGroups)
+    const hasDefault = Object.hasOwn(row, 'default_group')
+    const defaultGroup = text(row.default_group)
+    if (hasDefault && (typeof row.default_group !== 'string' || (defaultGroup
+      && (!enableGroups.includes(defaultGroup) || (usableGroups && !Object.hasOwn(usableGroups, defaultGroup)))))) {
+      issues.push({ code: 'invalid-default-group', detail: id })
+    }
     models.set(id, {
       id,
       displayName: text(row.model_name) === id ? text(row.display_name) || id : text(row.model_name) || id,
-      // Sorted so the content digest depends on membership, not on upstream
-      // array ordering (the gateway has no usable version field).
-      enableGroups: stringList(row.enable_groups ?? row.enableGroups).sort(),
+      enableGroups,
+      // An explicit empty default is distinct from a legacy response that omitted it.
+      ...(hasDefault ? { defaultGroup } : {}),
+      ...(Array.isArray(row.group_order) ? { groupOrder: stringList(row.group_order) } : {}),
       supportedEndpointTypes: stringList(row.supported_endpoint_types ?? row.supportedEndpointTypes).sort(),
       billing: {
         mode: text(row.billing_mode ?? row.billingMode) || null,
@@ -233,7 +244,7 @@ export function normalizePricingPayload(payload, opts = {}) {
     generatedAt: opts.generatedAt ?? null,
     groups: {
       ratio: keyedObject(root.group_ratio ?? root.groupRatio),
-      usable: keyedObject(root.usable_group ?? root.usableGroup),
+      ...(usableGroups !== undefined ? { usable: usableGroups } : {}),
       auto: stringList(root.auto_groups ?? root.autoGroups),
     },
     ...(root.defaults && typeof root.defaults === 'object' ? { defaults: keyedObject(root.defaults) } : {}),
@@ -392,6 +403,13 @@ export function snapshotContentDigest(snapshot) {
     : {}
   const content = { ...record }
   delete content.generatedAt
+  if (Array.isArray(content.models)) {
+    // With a complete group order, a permutation of the raw membership has no
+    // visible effect. Without one, the raw order can change the picker.
+    content.models = content.models.map((model) => Array.isArray(model?.groupOrder)
+      ? { ...model, enableGroups: gatewayGroupDisplay(model, gatewayEnableGroups(model)).orderedGroups }
+      : model)
+  }
   return createHash('sha256').update(JSON.stringify(sortDeep(content))).digest('hex')
 }
 

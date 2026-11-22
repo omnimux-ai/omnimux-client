@@ -1,3 +1,4 @@
+import { withFixturePricingDefaults } from '../src/shared/validation/compatTestCatalog.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
@@ -72,7 +73,7 @@ function h3Fixture(t, gatewayContracts = true) {
     return { url: 'https://fixture.example/result.mp4', relativePath: 'result.mp4', assetId: 'result' };
   } });
   const snapshot = JSON.parse(readFileSync(new URL('../../omnimux/src/catalog/cloud/bundled/pricing.json', import.meta.url), 'utf8'));
-  const catalog = buildModelCatalog({ snapshot, gatewayContracts, env: {} });
+  const catalog = buildModelCatalog({ snapshot: withFixturePricingDefaults(snapshot, { 'minimax-h3-video': 'default' }), gatewayContracts, env: {} });
   const readCatalog = h.gateway.capabilities;
   h.gateway.capabilities = async () => { await readCatalog(); return catalog; };
   const model = 'minimax-h3-video';

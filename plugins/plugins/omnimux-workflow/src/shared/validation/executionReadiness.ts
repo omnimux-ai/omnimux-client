@@ -1,6 +1,15 @@
 /** Shared input/configuration guard for execution admission and final dispatch. */
 
 import type { CapabilityCatalog, CatalogModelDto } from '../api.ts';
+import {
+  findDefaultChannelGroup,
+  findSelectedChannelGroup,
+  isByokGroup,
+  parseModelAndGroup,
+  readChannelRouting,
+} from './channelRouting.ts';
+// Install the shared constraint lookup for legacy catalog rows.
+import '../../canvas/editor/components/MaterialNode/ConfigPanel/channelGroups.ts';
 import { findDeclaredParameterFailure } from './declaredParameterValidation.ts';
 import { buildEffectiveOpsUiState, buildUiUpstreamFingerprint, readPreferredOperationId } from './operationUi.ts';
 import { readNodeInputSource } from '../graph/nodeInputSource.ts';
@@ -13,7 +22,7 @@ import { deriveSlotLayout, deriveImageGenerationLayout, buildImageGenerationCapa
 import { effectiveSlotFingerprint, feedFromFingerprint } from '../graph/feedSlot/effectiveFingerprint.ts';
 import { resolveSlotOperation } from '../graph/feedSlot/resolveSlotOperation.ts';
 import { effectiveInputDisplay } from '../graph/feedSlot/effectiveInputDisplay.ts';
-import { narrowCatalogByRouting, requiredEffectiveVideoParameter, resolveEffectiveVideoGroup, resolveEffectiveVideoOperation } from './lineConstraints.ts';
+import { groupMatchesEffectiveVideoVersion, narrowCatalogByRouting, requiredEffectiveVideoParameter, resolveEffectiveVideoGroup, resolveEffectiveVideoOperation } from './lineConstraints.ts';
 import { isManagedVideoLineChanged } from './managedVideoExecution.ts';
 import {
   buildContractView,
@@ -80,6 +89,41 @@ function readString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
+/** Resolve the saved official line for the editor, admission and the new task request. */
+export function readVisualLineSelection(catalog: CapabilityCatalog | null | undefined, params: Record<string, unknown>) {
+  const { modelId, group: inlineGroup } = parseModelAndGroup(params.model);
+  const model = Array.isArray(catalog?.models)
+    ? catalog.models.find(row => row.id === modelId || row.aliases?.includes(modelId)) : undefined;
+  if (!model || model.visible === false || model.selectable === false) return;
+  const routing = params.routing;
+  const { requestedGroups, pinnedGroup, sourceType, allowedGroups } = readChannelRouting(routing, inlineGroup);
+  const hasRequest = requestedGroups.length > 0;
+  if (sourceType === 'byok' || (hasRequest && requestedGroups.every(id => isByokGroup(id)))) return;
+
+  const managed = resolveEffectiveVideoGroup(catalog, params.model, routing);
+  const version = model.effectiveVideoVersion;
+  const requiresSingleLine = Boolean(pinnedGroup || managed || allowedGroups.length === 1);
+  const couldConflict = requiresSingleLine && requestedGroups.length > 1;
+  if (!managed && !couldConflict && (!model.channelGroups || (!model.channelGroups.length && !hasRequest))) return;
+  const groups = (model.channelGroups ?? []).filter(group => version === undefined || groupMatchesEffectiveVideoVersion(group, version));
+  const available = findSelectedChannelGroup(groups, routing, inlineGroup);
+  const selected = managed ? managed.group : requiresSingleLine
+    ? findSelectedChannelGroup(groups, routing, inlineGroup, true) : available;
+  const conflict = couldConflict && !selected;
+  const defaultGroup = conflict || (managed && version === undefined) ? undefined : findDefaultChannelGroup(groups);
+  const message = selected ? undefined
+    : conflict ? '请选择当前可用的生成线路'
+      : hasRequest && !available ? '原线路已下线，请重选'
+        : hasRequest || !defaultGroup || managed ? '请选择当前可用的生成线路' : undefined;
+  // An explicit single line uses its stable catalog id. Legacy pools and automatic routing retain their shape.
+  const requestGroups = requiresSingleLine && selected ? [selected.id] : allowedGroups;
+  return { model, managed: Boolean(managed), selected, defaultGroup, hasRequest, hasAvailableRequest: Boolean(available), message, requestGroups };
+}
+
+export function visualLineSelectionMessage(catalog: CapabilityCatalog | null | undefined, params: Record<string, unknown>): string | undefined {
+  return readVisualLineSelection(catalog, params)?.message;
+}
+
 export interface ExecutionReadinessGraph {
   nodes: ExecutionReadinessNode[];
   edges: Array<{ id?: string; source: string; target: string; targetHandle?: string | null; data?: Record<string, unknown> }>;
@@ -139,6 +183,9 @@ function createExecutionReadinessCheck(
     const requestedModel = readString(params.model);
     const outputKind = typeof data.materialType === 'string' ? data.materialType : 'text';
     const defaultModel = inputCatalog?.defaults?.[outputKind as keyof NonNullable<CapabilityCatalog['defaults']>];
+    const lineMessage = isVisualGeneration(outputKind)
+      ? visualLineSelectionMessage(inputCatalog, { ...params, model: requestedModel ?? defaultModel }) : undefined;
+    if (lineMessage) return { nodeId: node.id, reasonCode: 'line_selection_required', message: lineMessage };
     const managed = outputKind === 'video' ? resolveEffectiveVideoGroup(inputCatalog, requestedModel ?? defaultModel, params.routing) : null;
     if (managed && onVisualInputs) return null; // Managed execution already projected the chosen line.
     const reviewed = data.managedVideoGeneration;
@@ -156,12 +203,12 @@ function createExecutionReadinessCheck(
     if (requiredParameter) return {
       nodeId: node.id, reasonCode: 'parameter_required', message: `请选择参数“${requiredParameter}”`,
     };
-    const baseModel = resolveModelView(baseView, requestedModel ?? defaultModel);
+    const modelId = isVisualGeneration(outputKind) ? parseModelAndGroup(requestedModel ?? defaultModel).modelId : requestedModel ?? defaultModel;
     const catalog = isVisualGeneration(outputKind)
-      ? narrowCatalogByRouting(inputCatalog, baseModel?.id, params.routing, params) : inputCatalog;
+      ? narrowCatalogByRouting(inputCatalog, requestedModel ?? defaultModel, params.routing, params) : inputCatalog;
     const view = catalog === inputCatalog ? baseView : buildContractView(catalog);
     if (!view.available) return { nodeId: node.id, reasonCode: 'catalog_unavailable', message: '模型目录不可用，请稍后重试' };
-    const model = resolveModelView(view, requestedModel ?? defaultModel);
+    const model = resolveModelView(view, modelId);
     if (!model) return { nodeId: node.id, reasonCode: 'unknown_model', message: '当前模型不可用，请选择模型后重试' };
     const rawFingerprint = buildUiUpstreamFingerprint({
       materialType: typeof data.materialType === 'string' ? data.materialType : undefined,

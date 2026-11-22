@@ -10,11 +10,8 @@ type Getter = (name: string) => unknown;
 interface CatalogSeam { list(): Partial<CapabilityCatalog> }
 
 /**
- * Keep the hub's own line rows (id / label / badge / wire group / snapshot price /
- * constraints / SLA / enabled / default pin) as they arrive. The canvas must not
- * invent, rename or re-price a line, so anything without a usable id+label is
- * dropped instead of repaired — a malformed row would otherwise render as a
- * channel the hub cannot route to.
+ * Preserve hub order and routing metadata in every canvas catalog view.
+ * An invalid row cannot become a target and a disabled row cannot be a default.
  */
 function channelGroups(value: unknown): CatalogChannelGroupDto[] | undefined {
   if (!Array.isArray(value)) return undefined;
@@ -23,6 +20,7 @@ function channelGroups(value: unknown): CatalogChannelGroupDto[] | undefined {
     const group = row as Record<string, unknown>;
     const id = typeof group.id === 'string' ? group.id.trim() : '';
     if (!id) return [];
+    const enabled = group.enabled !== false;
     return [{
       id,
       label: typeof group.label === 'string' && group.label.trim() ? group.label : id,
@@ -41,8 +39,8 @@ function channelGroups(value: unknown): CatalogChannelGroupDto[] | undefined {
       ...(group.sla && typeof group.sla === 'object'
         ? { sla: group.sla as CatalogChannelGroupDto['sla'] }
         : {}),
-      enabled: group.enabled !== false,
-      ...(group.default === true ? { default: true } : {}),
+      enabled,
+      ...(enabled && group.default === true ? { default: true } : {}),
     }];
   });
   return rows;
@@ -87,7 +85,10 @@ export function readCanvasCatalog(getSeam: Getter): CapabilityCatalog {
   if (!seam || typeof seam.list !== 'function') return { source, text: [], image: [], video: [], audio: [] };
   const body = seam.list();
   const models = Array.isArray(body.models) ? body.models.filter((row): row is CatalogModelDto =>
-    typeof row === 'object' && row !== null && typeof row.id === 'string') : undefined;
+    typeof row === 'object' && row !== null && typeof row.id === 'string').map((row) => {
+      const lines = channelGroups(row.channelGroups);
+      return lines === undefined ? row : { ...row, channelGroups: lines };
+    }) : undefined;
   const defaultsByOperation = body.defaultsByOperation && typeof body.defaultsByOperation === 'object'
     ? Object.fromEntries(Object.entries(body.defaultsByOperation).filter(([, value]) => typeof value === 'string' && value))
     : undefined;

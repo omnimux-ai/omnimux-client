@@ -66,6 +66,23 @@ test('host catalog bridge preserves authoritative default operations and nested 
   assert.ok(canvas.fingerprint.startsWith(`${hub.fingerprint}:canvas:`));
 });
 
+test('canvas catalog views preserve gateway order and only keep usable default markers', () => {
+  const hub = configuredHub();
+  const modelId = 'gpt-image-2.5';
+  const groups = [
+    { id: 'manual', label: 'Manual', enabled: true },
+    { id: 'preferred', label: 'Preferred', enabled: true, default: true },
+    { id: 'disabled', label: 'Disabled', enabled: false, default: true },
+  ];
+  const withGroups = rows => rows.map(row => row.id === modelId ? { ...row, channelGroups: groups } : row);
+  const canvas = bridge({ ...hub, models: withGroups(hub.models), image: withGroups(hub.image) });
+  for (const rows of [canvas.models, canvas.image]) {
+    const actual = rows.find(row => row.id === modelId).channelGroups;
+    assert.deepEqual(actual.map(group => group.id), ['manual', 'preferred', 'disabled']);
+    assert.deepEqual(actual.filter(group => group.default).map(group => group.id), ['preferred']);
+  }
+});
+
 test('readCanvasCatalog passes the hub preview_fingerprint through verbatim (#3058)', () => {
   const hub = buildModelCatalog({ env: {} });
   assert.match(hub.preview_fingerprint, /^[0-9a-f]{64}$/);

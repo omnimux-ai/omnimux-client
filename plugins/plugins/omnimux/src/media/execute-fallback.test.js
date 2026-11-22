@@ -90,10 +90,9 @@ test('successful primary sends one request only', async (t) => {
   assert.equal((await executeOmnimuxMedia('image', input)).mode, 'live'); assert.equal(calls, 1)
 })
 test('the single configured video tier surfaces channel unavailability without alias fallback', async (t) => {
-  const models = [], input = inputFor(t, { model: 'seedance-2-5', operation: 'text_to_video', wait: false,
+  const models = [], input = inputFor(t, { model: 'seedance-2-5', operation: 'text_to_video', group: '720p', wait: false,
     runtime: { execute: async (req) => { models.push(req.input.model); throw channelError() } } })
   await assert.rejects(() => executeOmnimuxMedia('video', input), assertChannel)
-  // #3516：空意图自动钉住 720p 默认档（唯一候选）；失败后没有网关 alias 回退可用。
   assert.deepEqual(models, ['seedance-2-5']); assert.equal(existsSync(input.dest), false)
 })
 test('a model with a single gateway candidate exposes only itself', async (t) => {

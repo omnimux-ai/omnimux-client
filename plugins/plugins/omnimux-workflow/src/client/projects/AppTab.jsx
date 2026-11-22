@@ -12,6 +12,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { injectWorkflowStyles } from '../styles.js'
 import { narrowModelByLineConstraints } from '../../shared/validation/lineConstraints.ts'
+import { findDefaultChannelGroup, isChannelGroupAvailable } from '../../canvas/editor/components/MaterialNode/ConfigPanel/channelGroups.ts'
 import {
   appIdFromTabId,
   forgetOpenAppTab,
@@ -192,13 +193,16 @@ export function normalizeCatalogModels(catalogData, category = 'video', routingB
     })
     .map((rawModel) => {
       const channels = rawModel.channelGroups ?? rawModel.channels
-      const defaultChannel = Array.isArray(channels)
-        ? channels.find((channel) => channel?.default === true)
-        : undefined
+      const availableChannels = Array.isArray(channels)
+        ? channels.filter(channel => channel?.id && isChannelGroupAvailable(channel))
+        : []
       const routing = routingByModel[rawModel.id]
-      const selectedIds = routing?.allowedGroups?.length ? routing.allowedGroups : routing?.group ? [routing.group] : []
-      const selectedChannels = selectedIds.length > 0 && Array.isArray(channels)
-        ? channels.filter(channel => selectedIds.includes(channel.id) || selectedIds.includes(channel.wireGroup))
+      const allowedGroups = Array.isArray(routing?.allowedGroups) ? routing.allowedGroups : []
+      const selectedIds = [routing?.channelGroupId, ...allowedGroups, routing?.group]
+        .flatMap(group => typeof group === 'string' && group.trim() ? [group.trim()] : [])
+      const defaultChannel = findDefaultChannelGroup(availableChannels)
+      const selectedChannels = routing?.sourceType === 'byok' ? [] : selectedIds.length > 0
+        ? availableChannels.filter(channel => selectedIds.includes(channel.id) || selectedIds.includes(channel.wireGroup))
         : defaultChannel ? [defaultChannel] : []
       const constraints = { parameters: Object.assign({}, ...selectedChannels.map(channel => channel.constraints?.parameters || {})) }
       const m = narrowModelByLineConstraints(rawModel, rawModel.id, constraints)
@@ -871,7 +875,7 @@ export function AppTab(props) {
         // 3. 分辨率自愈校验
         else if (isResolutionField(key, prop, mapping)) {
           // Default-line restrictions project options, never rewrite a saved request.
-          if (activeModelObj.id === 'gpt-image-2.5' || (Array.isArray(activeModelObj.channels) && activeModelObj.channels.some((channel) => channel?.default === true && channel.constraints?.parameters?.resolution))) continue
+          if (activeModelObj.defaultParameterConstraints?.resolution) continue
           const currentVal = next[key]
           if (currentVal !== undefined && currentVal !== null && currentVal !== '') {
             const sanitized = sanitizeModelResolution(activeModelObj, currentVal)

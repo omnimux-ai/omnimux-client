@@ -71,6 +71,29 @@ export function gatewayEnableGroups(snapshotModel) {
   return stringList(objectOrEmpty(snapshotModel).enableGroups)
 }
 
+/**
+ * Order the eligible lines and select the published default. Retain lines omitted
+ * from an incomplete order so an existing selection stays available.
+ *
+ * @param {unknown} snapshotModel
+ * @param {string[]} eligibleGroups
+ * @param {Record<string, unknown>} [usableGroups]
+ */
+export function gatewayGroupDisplay(snapshotModel, eligibleGroups, usableGroups) {
+  const model = objectOrEmpty(snapshotModel)
+  const publishedOrder = stringList(model.groupOrder).filter((group) => eligibleGroups.includes(group))
+  const orderedGroups = [...publishedOrder, ...eligibleGroups.filter((group) => !publishedOrder.includes(group))]
+  const canDefault = (group) => usableGroups == null || Object.hasOwn(usableGroups, group)
+  const defaultGroup = Object.hasOwn(model, 'defaultGroup')
+    ? text(model.defaultGroup)
+    : publishedOrder.find(canDefault)
+  return {
+    orderedGroups,
+    defaultGroup: defaultGroup && eligibleGroups.includes(defaultGroup) && canDefault(defaultGroup)
+      ? defaultGroup : undefined,
+  }
+}
+
 /** @param {unknown} snapshotModel */
 export function hasUsableGatewayGroups(snapshotModel) {
   return gatewayEnableGroups(snapshotModel).length > 0

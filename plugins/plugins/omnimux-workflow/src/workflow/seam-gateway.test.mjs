@@ -208,7 +208,11 @@ function makeHarness({ seamHub = null, gatewayMode, seamConcurrency, env } = {})
       return () => {};
     },
   };
-  const ctx = { webServer };
+  const tools = new Map();
+  const ctx = { webServer, tools: { register(tool) {
+    tools.set(tool.name, tool);
+    return () => tools.delete(tool.name);
+  } } };
   if (seamHub) {
     ctx.get = (name) => seamHub.seams[name];
   }
@@ -352,6 +356,8 @@ function makeHarness({ seamHub = null, gatewayMode, seamConcurrency, env } = {})
     waitUntil,
     createGraph,
     materialNode,
+    request: call,
+    runWorkflow: args => tools.get('workflow_run').execute(args),
   };
 }
 
@@ -456,6 +462,91 @@ test('node channel routing: a malformed routing blob never constrains the reques
     assert.ok(sse.satisfied, 'execution should complete');
     assert.equal(hub.state.submitRequests[0].strategy, undefined);
     assert.equal(hub.state.submitRequests[0].allowedGroups, undefined);
+  } finally {
+    h.dispose();
+    rmSync(h.root, { recursive: true, force: true });
+  }
+});
+
+function groupedImageSeam() {
+  const model = {
+    id: 'gpt-image-2.5', label: 'GPT Image 2.5', aliases: ['saved-image-alias'], selectable: true,
+    operations: [operation('text_to_image', 'image')],
+    channelGroups: [
+      { id: 'standard', label: 'Standard', enabled: true },
+      { id: 'economy', wireGroup: 'economy-wire', label: 'Economy', enabled: true },
+    ],
+  };
+  const hub = createFakeSeamHub({ catalogList: () => ({
+    source: 'omnimux', fingerprint: 'grouped-image', models: [model], image: [model], defaults: { image: model.id },
+  }) });
+  return { hub, h: makeHarness({ seamHub: hub }), model };
+}
+
+test('batch HTTP and registered workflow_run submit legacy image line selections to the seam', async () => {
+  const { h, hub, model } = groupedImageSeam();
+  try {
+    const cases = [
+      { routing: { group: ' economy ', strategy: 'cost_first' } },
+      { routing: { channelGroupId: 'economy' } },
+      { routing: { group: 'economy-wire', channelGroupId: 'economy', allowedGroups: ['economy'] } },
+      { routing: { allowedGroups: ['economy'] } },
+      { savedModel: 'saved-image-alias@economy-wire' },
+      { routing: { strategy: 'stability_first', allowedGroups: ['standard', 'economy'] }, groups: ['standard', 'economy'] },
+    ];
+    for (const { savedModel = model.id, routing, groups = ['economy'] } of cases) {
+      const params = { model: savedModel, operation: 'text_to_image', ...(routing ? { routing } : {}) };
+      const { wsId } = await h.createGraph({ nodes: [h.materialNode('image', 'image', { params })] });
+      const path = `/omnimux-workflow/api/workspaces/${wsId}`;
+      const seen = hub.state.submits;
+      const http = await h.request({ method: 'POST', url: `${path}/executions`, body: { mode: 'full' } });
+      assert.equal(http.status, 200, JSON.stringify(http.body));
+      const sse = await h.openSse({ url: `${path}/executions/${http.body.execution.id}/events`,
+        until: raw => raw.includes('event: execution_complete') });
+      assert.ok(sse.satisfied && h.parseSse(sse.raw).some(event => event.event === 'node_complete'));
+      const agent = await h.runWorkflow({ workspace_id: wsId, mode: 'full', wait: true, timeout_ms: 3000 });
+      assert.equal(agent.status, 'completed', JSON.stringify(agent));
+      assert.equal(hub.state.submits, seen + 2);
+      for (const request of hub.state.submitRequests.slice(seen)) {
+        assert.equal(request.capability, 'image');
+        assert.equal(request.model, model.id);
+        assert.deepEqual(request.allowedGroups, groups);
+        assert.equal(request.strategy, routing?.strategy);
+      }
+      const saved = await h.request({ url: path });
+      assert.deepEqual(saved.body.workspace.nodes[0].data.params, params, 'Execution must preserve the saved routing fields');
+    }
+  } finally {
+    h.dispose();
+    rmSync(h.root, { recursive: true, force: true });
+  }
+});
+
+test('batch HTTP and registered workflow_run reject conflicting or absent image lines before any submit', async () => {
+  const { h, hub, model } = groupedImageSeam();
+  try {
+    const cases = [
+      { routing: { group: 'economy', channelGroupId: 'standard' } },
+      { routing: { channelGroupId: 'economy', allowedGroups: ['standard'] } },
+      { routing: { group: 'economy', allowedGroups: ['economy', 'standard'] } },
+      { routing: { channelGroupId: 'retired-a', group: 'retired-b' } },
+      { savedModel: 'gpt-image-2.5@standard', routing: { group: 'economy' } },
+      {},
+    ];
+    for (const { savedModel = model.id, routing } of cases) {
+      const params = { model: savedModel, operation: 'text_to_image', ...(routing ? { routing } : {}) };
+      const { wsId } = await h.createGraph({ nodes: [h.materialNode('image', 'image', { params })] });
+      const path = `/omnimux-workflow/api/workspaces/${wsId}`;
+      const http = await h.request({ method: 'POST', url: `${path}/executions`, body: { mode: 'full' } });
+      const agent = await h.runWorkflow({ workspace_id: wsId, mode: 'full' });
+      assert.equal(http.status, 400);
+      assert.deepEqual(http.body, agent);
+      assert.equal(agent.reasonCode, 'line_selection_required');
+      const saved = await h.request({ url: path });
+      assert.equal(saved.body.workspace.version, 1);
+      assert.deepEqual(saved.body.workspace.nodes[0].data.params, params);
+    }
+    assert.deepEqual(hub.state.submitRequests, []);
   } finally {
     h.dispose();
     rmSync(h.root, { recursive: true, force: true });

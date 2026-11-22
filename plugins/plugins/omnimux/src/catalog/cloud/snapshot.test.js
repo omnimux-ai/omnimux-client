@@ -12,6 +12,7 @@ import {
   readOptionMap,
   readOptionValue,
   serializeSnapshot,
+  snapshotContentDigest,
   snapshotDigest,
 } from './snapshot.js'
 
@@ -72,7 +73,7 @@ describe('normalizePricingPayload', () => {
     assert.equal(snapshot.coverage.models, 1)
   })
 
-  it('is insensitive to upstream array order (digest stability)', () => {
+  it('keeps model and endpoint ordering stable in the digest', () => {
     const first = normalizePricingPayload({
       data: [
         { id: 'm1', enable_groups: ['b', 'a'], supported_endpoint_types: ['y', 'x'] },
@@ -82,10 +83,46 @@ describe('normalizePricingPayload', () => {
     const second = normalizePricingPayload({
       data: [
         { id: 'm2', enable_groups: ['c'] },
-        { id: 'm1', supported_endpoint_types: ['x', 'y'], enable_groups: ['a', 'b'] },
+        { id: 'm1', supported_endpoint_types: ['x', 'y'], enable_groups: ['b', 'a'] },
       ],
     }).snapshot
     assert.equal(snapshotDigest(first), snapshotDigest(second))
+  })
+
+  it('retains the wire order and distinguishes missing, empty and invalid defaults', () => {
+    const { snapshot, issues } = normalizePricingPayload({
+      usable_group: { b: 'B', a: 'A' },
+      data: [
+        { id: 'legacy', enable_groups: ['b', 'a'] },
+        { id: 'cleared', enable_groups: ['b', 'a'], group_order: ['a', 'b'], default_group: '' },
+        { id: 'unknown', enable_groups: ['b', 'a'], group_order: ['a', 'b'], default_group: 'off-sale' },
+        { id: 'forbidden', enable_groups: ['b', 'a', 'restricted'], default_group: 'restricted' },
+      ],
+    })
+    const [cleared, forbidden, legacy, unknown] = snapshot.models
+    assert.deepEqual(legacy.enableGroups, ['b', 'a'])
+    assert.equal(Object.hasOwn(legacy, 'defaultGroup'), false)
+    assert.equal(Object.hasOwn(legacy, 'groupOrder'), false)
+    assert.deepEqual(cleared.enableGroups, ['b', 'a'])
+    assert.deepEqual(cleared.groupOrder, ['a', 'b'])
+    assert.equal(cleared.defaultGroup, '')
+    assert.equal(unknown.defaultGroup, 'off-sale')
+    assert.equal(forbidden.defaultGroup, 'restricted')
+    assert.deepEqual(issues, [
+      { code: 'invalid-default-group', detail: 'unknown' },
+      { code: 'invalid-default-group', detail: 'forbidden' },
+    ])
+  })
+
+  it('tracks changes that affect the displayed groups or default', () => {
+    const digest = (fields) => snapshotContentDigest(normalizePricingPayload({
+      data: [{ id: 'm1', enable_groups: ['b', 'a'], ...fields }],
+    }).snapshot)
+    const ordered = { group_order: ['a', 'b'], default_group: 'b' }
+    assert.equal(digest(ordered), digest({ ...ordered, enable_groups: ['a', 'b'] }))
+    assert.notEqual(digest(ordered), digest({ ...ordered, group_order: ['b', 'a'] }))
+    assert.notEqual(digest(ordered), digest({ ...ordered, default_group: 'a' }))
+    assert.notEqual(digest({}), digest({ enable_groups: ['a', 'b'] }))
   })
 })
 

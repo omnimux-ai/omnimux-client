@@ -471,6 +471,11 @@ export async function executeOmnimuxMedia(capability, input) {
   }
 
   try {
+    // Accepted request keys can still be recovered after the catalog changes.
+    // Stop new submissions before any asset probe, credential use or transport.
+    if (route.lineSelectionRequired) {
+      throw new OmnimuxError('unknown-group', `模型 ${route.modelId} 没有可用的默认线路，请选择可用线路并传入 group`)
+    }
     const prompt = typeof input.prompt === 'string' ? input.prompt : ''
   const deferVisualPrompt = input.deferVisualPrompt === true && (capability === 'image' || capability === 'video')
   const seam = CAPABILITY_SEAM[capability] ?? capability

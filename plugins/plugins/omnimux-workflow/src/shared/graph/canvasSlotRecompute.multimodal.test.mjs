@@ -1,3 +1,4 @@
+import { withFixturePricingDefaults } from '../validation/compatTestCatalog.ts';
 /**
  * Issue #62 AC-3 — 视频节点从 `first_last_frame` 自动切到 `video_multi_ref` 时，
  * 槽位必须跟着新 operation 的 layout 归一：图片进 `reference_images`，视频进
@@ -23,7 +24,7 @@ import { planCanvasInputMutation } from './canvasInputMutationGateway.ts';
 import { resolveEffectiveVideoParams } from '../../canvas/editor/components/MaterialNode/ConfigPanel/videoParams/videoParamAdapter.ts';
 
 const bundled = JSON.parse(readFileSync(new URL('../../../../omnimux/src/catalog/cloud/bundled/pricing.json', import.meta.url), 'utf8'));
-const catalog = projectCanvasCatalog(buildModelCatalog({ env: {}, snapshot: bundled }));
+const catalog = projectCanvasCatalog(buildModelCatalog({ env: {}, snapshot: withFixturePricingDefaults(bundled, { 'seedance-2-5': 'seedance-2-5-720p' }) }));
 
 const importNode = (id, type) => {
   const ext = type === 'image' ? 'png' : 'mp4';
