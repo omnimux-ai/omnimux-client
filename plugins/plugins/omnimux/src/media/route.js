@@ -175,7 +175,7 @@ export function resolveMediaRoute(capability, request, media, env = process.env,
   const needsDefault = !isCollect && (hasPublishedDefault || hasPublishedOrder) && !hasSelectedLine
   const groups = providerId === 'omnimux' && (!callerIntent || needsDefault) ? getModelChannelGroups(modelId, snapshot) : []
   const preferred = groups.find((group) => group.default === true)
-  const lineSelectionRequired = needsDefault && groups.length > 0 && !preferred
+  const lineSelectionRequired = needsDefault && !preferred
 
   // Pin the selected default to the same snapshot used for route admission.
   // A default cannot fail over into a differently priced group.

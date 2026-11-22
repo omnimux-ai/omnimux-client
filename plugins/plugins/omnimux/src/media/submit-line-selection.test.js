@@ -93,6 +93,10 @@ for (const fixture of fixtures) {
       }
     }
 
+    publishCatalog({ enable_groups: [], default_group: '' })
+    await assert.rejects(tool.execute(input, {}), { code: 'unknown-group', message: /请.*线路.*group/ })
+    assert.deepEqual(requests, [])
+
     publishCatalog({ default_group: '' })
     await tool.execute({ ...input, group: fixture.group }, {})
     await tool.execute({ ...input, allowed_groups: [fixture.group] }, {})
