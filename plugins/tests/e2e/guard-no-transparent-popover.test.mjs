@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -82,4 +83,49 @@ test('硬门禁 3: 故障注入测试 (Fault Injection) - 验证门禁能够确�
     violationsC.some((v) => v.rule === 'POPOVER_NO_BG_OVERLAY_DISCOLORATION' && v.fatal),
     '门禁必须精确拦截滥用 --dsw-alias-bg-overlay 造成的浅灰偏色缺陷'
   )
+})
+
+test('画布扫描覆盖选择器组、主题覆写和不以 menu 或 popover 结尾的 Portal 表面', (t) => {
+  const dir = fs.mkdtempSync(path.join(tmpdir(), 'omnimux-popover-'))
+  t.after(() => fs.rmSync(dir, { recursive: true }))
+  const canvas = path.join(dir, 'omnimux-workflow', 'src', 'canvas')
+  const unrelated = path.join(dir, 'other', 'src', 'canvas')
+  fs.mkdirSync(canvas, { recursive: true })
+  fs.mkdirSync(unrelated, { recursive: true })
+  const stylesheet = path.join(canvas, 'theme.css')
+  fs.writeFileSync(stylesheet, [
+    '/* Canvas popover rules */',
+    '.ordinary-card, .wf-video-param-popover { background: var(--dsw-alias-bg-elevated); }',
+    '@media (min-width: 0px) {',
+    '  body[data-ds-dark-theme] > :is(.wf-custom-select-dropdown, .next-dropdown) {',
+    '    background-color: var(--dsw-alias-bg-overlay);',
+    '  }',
+    '}',
+    '.wf-attachment-preview-card { background: white; -webkit-backdrop-filter: blur(4px); }',
+  ].join('\n'))
+  fs.writeFileSync(path.join(unrelated, 'theme.css'), '.irrelevant-menu { backdrop-filter: blur(4px) }')
+
+  const result = scanPopoverOpacity({ dir })
+  assert.equal(result.scannedFiles, 1)
+  assert.ok(result.violations.every((violation) => violation.file === stylesheet))
+  for (const [rule, line] of [
+    ['NO_BARE_BG_ELEVATED', 2],
+    ['POPOVER_NO_BG_OVERLAY_DISCOLORATION', 4],
+    ['POPOVER_NO_BACKDROP_BLUR', 8],
+  ]) {
+    assert.ok(result.violations.some((v) => v.fatal && v.rule === rule && v.line === line), rule)
+  }
+})
+
+test('画布扫描保留行内控件的作用域令牌、弹窗遮罩及浮层子项样式', () => {
+  const stylesheet = [
+    '.wf-canvas-root { --dsw-alias-bg-elevated: var(--dsw-alias-bg-layer-1); }',
+    '.wf-canvas-root .wf-panel-shell__card { background: var(--dsw-alias-bg-elevated); backdrop-filter: blur(4px); }',
+    '.wf-modal-overlay { background: var(--dsw-alias-bg-mask-1); }',
+    '.wf-popover-portal { background: var(--dsw-alias-bg-layer-1); /* backdrop-filter: blur(4px); */ }',
+    '.wf-popover-portal--above { top: 10px; }',
+    '.wf-popover-portal > .wf-popover-item { background: transparent; }',
+    '.wf-attachment-preview-card::after { background: transparent; }',
+  ].join('\n')
+  assert.deepEqual(checkContentForTransparencyViolations(stylesheet, 'omnimux-workflow/src/canvas/theme.css'), [])
 })

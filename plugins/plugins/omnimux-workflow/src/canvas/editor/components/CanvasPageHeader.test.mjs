@@ -7,7 +7,6 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(join(here, 'CanvasPageHeader.tsx'), 'utf8');
 const componentsCss = readFileSync(join(here, '../../theme/components.css'), 'utf8');
-const themeCss = readFileSync(join(here, '../../theme/workbench-theme.css'), 'utf8');
 
 describe('CanvasPageHeader Component', () => {
   it('defines props with workspaceId and onSwitchWorkspaceId', () => {
@@ -34,19 +33,14 @@ describe('CanvasPageHeader Component', () => {
     assert.doesNotMatch(source, /wf-page-dropdown-header/);
   });
 
-  it('popover styles specify non-transparent frosted background, backdrop-filter, border and animation', () => {
-    assert.match(componentsCss, /\.wf-page-dropdown-popover\s*\{[\s\S]*?background:\s*var\(--wb-popover-bg/);
-    assert.match(componentsCss, /\.wf-page-dropdown-popover\s*\{[\s\S]*?backdrop-filter:\s*var\(--wb-dock-blur/);
-    assert.match(componentsCss, /\.wf-page-dropdown-popover\s*\{[\s\S]*?box-shadow:\s*var\(--wb-shadow-pop/);
+  it('uses an opaque host surface while preserving the popover border and animation', () => {
+    const popoverRule = componentsCss.match(/\.wf-page-dropdown-popover\s*\{([^}]+)\}/)?.[1] ?? '';
+    assert.match(popoverRule, /background:\s*var\(--dsw-alias-bg-layer-1, var\(--dsw-alias-bg-base, Canvas\)\);/);
+    assert.match(popoverRule, /border:\s*1px solid var\(--dsw-alias-border-l2\)/);
+    assert.match(popoverRule, /box-shadow:\s*0 12px 32px var\(--dsw-alias-bg-mask-1\)/);
+    assert.doesNotMatch(popoverRule, /backdrop-filter|--dsw-alias-bg-(?:elevated|overlay)/);
+    assert.match(popoverRule, /animation:\s*omnimux-popover-in/);
     assert.match(componentsCss, /@keyframes omnimux-popover-in\s*\{/);
-  });
-
-  it('theme tokens define elevated popover background and alias fallbacks for light and dark themes', () => {
-    assert.match(themeCss, /--wb-surface-elevated:\s*#ffffff/);
-    assert.match(themeCss, /--wb-popover-bg:\s*rgba\(255,\s*255,\s*255,\s*0\.96\)/);
-    assert.match(themeCss, /--dsw-alias-bg-elevated:\s*var\(--wb-surface-elevated\)/);
-    assert.match(themeCss, /body\[data-ds-dark-theme\] \.wf-canvas-root\s*\{[\s\S]*?--wb-surface-elevated:\s*#1c1c1f/);
-    assert.match(themeCss, /body\[data-ds-dark-theme\] \.wf-canvas-root\s*\{[\s\S]*?--wb-popover-bg:\s*rgba\(26,\s*27,\s*30,\s*0\.96\)/);
   });
 
   it('supports hovering rename pencil button and inline rename input', () => {

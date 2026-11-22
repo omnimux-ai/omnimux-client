@@ -220,12 +220,11 @@ test('components.css 新样式块含 overflow-y:auto 与关键设计规格（32p
   // chevron 过渡与 open 态旋转
   assert.match(videoCssBlock, /\.wf-video-trigger-bar__chevron \{[\s\S]*?transition:\s*transform 150ms/);
   assert.match(videoCssBlock, /\.wf-video-trigger-bar--open \.wf-video-trigger-bar__chevron \{[\s\S]*?rotate\(180deg\)/);
-  // 浮层规格：圆角 12px / padding 12px 16px / zIndex 9999 / blur(20px) / 宽夹紧 min(360, 100vw-24)
+  // 浮层规格：圆角 12px / padding 12px 16px / zIndex 9999 / 宽夹紧 min(500, 100vw-24)
   assert.match(videoCssBlock, /\.wf-video-param-popover \{[\s\S]*?border-radius:\s*12px/);
   assert.match(videoCssBlock, /\.wf-video-param-popover \{[\s\S]*?padding:\s*12px\s+16px/);
   assert.match(videoCssBlock, /\.wf-video-param-popover \{[\s\S]*?z-index:\s*9999/);
   assert.match(videoCssBlock, /\.wf-video-param-popover \{[\s\S]*?max-width:\s*calc\(100vw - 24px\)/);
-  assert.match(videoCssBlock, /backdrop-filter:\s*blur\(20px\)/);
   // 入场位移随 placement 同向（top 从下方 4px 长出；keyframes 单处定义于 cfg 名）
   assert.match(videoCssBlock, /wf-cfg-popover-in-top[\s\S]*?translateY\(4px\)/);
   // 分段容器 32px 高、item nowrap、激活 brand 描边
@@ -269,9 +268,9 @@ test('components.css 新样式块含 overflow-y:auto 与关键设计规格（32p
 
 test('components.css popover 根直接消费 DSH 原生浮层 token', () => {
   const rootBlock = extractRuleBlock('.wf-video-param-popover');
-  assert.match(rootBlock, /background:\s*var\(--dsw-alias-bg-elevated\)/);
+  assert.match(rootBlock, /background:\s*var\(--dsw-alias-bg-layer-1, var\(--dsw-alias-bg-base, Canvas\)\);/);
   assert.match(rootBlock, /border:\s*1px solid var\(--dsw-alias-border-l2\)/);
-  assert.match(rootBlock, /backdrop-filter:\s*blur\(20px\)/);
+  assert.doesNotMatch(rootBlock, /backdrop-filter|--dsw-alias-bg-(?:elevated|overlay)/);
 });
 
 test('components.css 视频参数块无私有 token 岛和裸色字面量', () => {

@@ -16,6 +16,8 @@ import { fileURLToPath } from 'node:url'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = join(__dirname, '..')
 const DEFAULT_PLUGINS_DIR = join(REPO_ROOT, 'plugins')
+const CANVAS_SOURCE = /(?:^|\/)omnimux-workflow\/src\/canvas\//
+const normalizePath = (file) => file.replace(/\\/g, '/')
 
 const EXCLUDE_DIRS = new Set([
   'node_modules',
@@ -57,17 +59,19 @@ export function collectSourceFiles(dir, exts = ['.js', '.jsx', '.ts', '.tsx', '.
 /**
  * 解析代码中的 CSS 规则块：提取 selector { body }
  */
-export function extractCssRuleBlocks(content) {
+export function extractCssRuleBlocks(content, { canvas = false } = {}) {
   const blocks = []
-  const blockRegex = /([^{};]+)\{([^}]+)\}/g
+  // Blank comments without shifting source offsets, then read leaf rules inside @media etc.
+  const source = canvas ? content.replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\r\n]/g, ' ')) : content
+  const blockRegex = canvas ? /([^{};]+)\{([^{}]+)\}/g : /([^{};]+)\{([^}]+)\}/g
   let match
-  while ((match = blockRegex.exec(content)) !== null) {
+  while ((match = blockRegex.exec(source)) !== null) {
     const selector = match[1].trim()
-    const body = match[2].trim()
+    if (!selector) continue
     blocks.push({
       selector,
-      body,
-      index: match.index,
+      body: match[2].trim(),
+      index: match.index + (canvas ? match[1].search(/\S/) : 0),
     })
   }
   return blocks
@@ -91,7 +95,7 @@ export const LEGACY_FLOATING_SURFACE_DEBT = [
 
 /** 该违规是否属于已登记的既有债务。 */
 function isRegisteredDebt(rule, filePath, selector) {
-  const rel = filePath.replace(/\\/g, '/')
+  const rel = normalizePath(filePath)
   return LEGACY_FLOATING_SURFACE_DEBT.some(
     (d) =>
       rel.endsWith(d.file) &&
@@ -103,6 +107,51 @@ function isRegisteredDebt(rule, filePath, selector) {
 const FLOATING_WORDS = [
   'popover', 'menu', 'dropdown', 'dialog', 'modal', 'sheet', 'tooltip', 'flyout',
 ]
+
+// Canvas surfaces with a painted background. The cascade, slot preview and
+// modal backdrop have separate layout or mask elements around these surfaces.
+const CANVAS_CARD_CLASSES = new Set([
+  'wf-cfg-popover',
+  'wf-video-param-popover',
+  'wf-page-dropdown-popover',
+  'wf-custom-dropdown-menu',
+  'wf-custom-select-dropdown',
+  'wf-context-menu',
+  'wf-action-menu',
+  'wf-floating-top-pill__more-menu',
+  'wf-mention-popover',
+  'wf-popover-portal',
+  'wf-context-menu-portal',
+  'wf-hover-inspector-portal',
+  'wf-popover-context-bubble',
+  'wf-attachment-preview-card',
+  'wf-modal-card',
+  'wf-loomi-col',
+  'wf-slot-hover-preview__card',
+  'wf-toast',
+  'wf-cm-search-panel',
+])
+
+const CANVAS_FLOATING_WRAPPERS = new Set(['wf-modal-overlay', 'wf-slot-hover-preview', 'wf-mention-submenu'])
+
+function canvasContainerKeys(selector) {
+  // Ignore attributes and predicates on ancestors. A rule on a descendant of
+  // a menu only paints the menu when the descendant is itself a surface.
+  const subjects = selector
+    .replace(/\[[^\]]*\]/g, '')
+    .replace(/:([\w-]+)\(((?:[^()]|\([^()]*\))*)\)/g, (_, name, args) =>
+      name === 'is' || name === 'where' ? canvasContainerKeys(args).join('') : '')
+    .split(',')
+    .map((part) => part.trim().split(/[\s>+~]+/).at(-1))
+
+  return subjects.flatMap((subject) => {
+    if (subject.includes('::')) return []
+    const names = (subject.match(/\.[\w-]+/g) ?? []).map((key) => key.slice(1).split('--')[0])
+    return names.filter((name) =>
+      CANVAS_CARD_CLASSES.has(name) || CANVAS_FLOATING_WRAPPERS.has(name) || isFloatingContainerSelector(`.${name}`)
+    ).map((name) => `.${name}`)
+  })
+}
 
 /**
  * 判断选择器是否指向「浮层容器本身」。
@@ -208,29 +257,37 @@ export function checkContentForTransparencyViolations(content, filePath = 'snipp
   // 旧实现只认 `.omnimux-*-menu` 前缀，导致任何别的命名空间（例如 .omx-avatar-popover）
   // 与任何别的浮层词（dropdown / dialog / sheet …）都落在规则之外：新增浮层时门禁恒绿。
   // 这里改为：选择器里出现浮层关键词即视为浮层，再统一施加四条硬规则。
-  const ruleBlocks = extractCssRuleBlocks(content)
+  const canvas = CANVAS_SOURCE.test(normalizePath(filePath))
+  const ruleBlocks = extractCssRuleBlocks(content, { canvas })
 
   // 先按「基础容器类」聚合：.omnimux-new-menu[hidden] / .x-menu--wide 等变体
   // 与基础类同组 —— 底色只要在组内声明过一次即可，避免变体规则被逐条误判。
   const groups = new Map()
   for (const block of ruleBlocks) {
-    const key = floatingContainerKey(block.selector)
-    if (!key) continue
-    if (!groups.has(key)) groups.set(key, [])
-    groups.get(key).push(block)
+    const keys = canvas ? canvasContainerKeys(block.selector) : [floatingContainerKey(block.selector)].filter(Boolean)
+    for (const key of new Set(keys)) {
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key).push(block)
+    }
   }
 
+  const checkedBlocks = new Set()
   for (const [key, blocks] of groups) {
     const hasOpaque = blocks.some((b) => hasOpaqueBackdrop(b.body))
     const first = blocks[0]
     for (const block of blocks) {
       const { selector, body, index } = block
       const trimmed = selector.trim()
-      if (/exempt-popover-blur|exempt-bg-overlay|exempt-opaque-bg/.test(body)) continue
+      if (checkedBlocks.has(index)) continue
+      checkedBlocks.add(index)
+      if (!canvas && /exempt-popover-blur|exempt-bg-overlay|exempt-opaque-bg/.test(body)) continue
       const lineNum = content.slice(0, index).split('\n').length
 
       // 2.1 严禁 backdrop-filter 伪毛玻璃透底
-      if (/backdrop-filter/i.test(body)) {
+      const hasBackdropFilter = canvas
+        ? /(?:^|;)\s*(?:-webkit-)?backdrop-filter\s*:/i.test(body)
+        : /backdrop-filter/i.test(body)
+      if (hasBackdropFilter) {
         violations.push({
           rule: 'POPOVER_NO_BACKDROP_BLUR',
           file: filePath,
@@ -277,15 +334,15 @@ export function checkContentForTransparencyViolations(content, filePath = 'snipp
 
     // 2.4 整组（基础类 + 全部变体）必须至少声明一次不透明底色 —— 这条是本类缺陷的兜底规则：
     //     只要底色是裸 var(...)（不写回退），令牌一旦改名/不存在就会静默变透明。
-    if (!hasOpaque) {
+    if (!hasOpaque && (!canvas || CANVAS_CARD_CLASSES.has(key.slice(1)))) {
       violations.push({
         rule: 'POPOVER_MUST_HAVE_OPAQUE_BG',
         file: filePath,
         line: content.slice(0, first.index).split('\n').length,
-        // 非致命：本仓真实组合里，宿主组件持有表面、遮罩与面板分离、只写修饰符
-        // 都是合法写法；逐个要求自带底色会逼出无意义重构。这里只作可见性提示。
-        fatal: false,
-        message: `浮层容器 [${key}] 未声明不透明背景（提示项，非阻断）。`,
+        // A canvas surface paints its own background. Client component wrappers
+        // can inherit the surface from the host or share it with another rule.
+        fatal: canvas,
+        message: `浮层容器 [${key}] 未声明不透明背景。`,
       })
     }
   }
@@ -298,11 +355,13 @@ export function checkContentForTransparencyViolations(content, filePath = 'snipp
  */
 export function scanPopoverOpacity(options = {}) {
   const rootDir = options.dir || DEFAULT_PLUGINS_DIR
-  const files = collectSourceFiles(rootDir)
+  const files = collectSourceFiles(rootDir).filter((file) => {
+    const path = normalizePath(file)
+    return path.includes('/src/client/') || CANVAS_SOURCE.test(path)
+  })
   const allViolations = []
 
   for (const file of files) {
-    if (!file.includes('/src/client/')) continue
     const content = readFileSync(file, 'utf8')
     const fileViolations = checkContentForTransparencyViolations(content, file)
     allViolations.push(...fileViolations)
@@ -328,10 +387,10 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
       const relPath = relative(REPO_ROOT, v.file).replace(/\\/g, '/')
       console.error(`  [${v.rule}] ${relPath}:${v.line} -> ${v.message}`)
     }
-    console.error('\n🚫 硬门禁阻断：浮层菜单必须为实体深色背景，严禁伪毛玻璃透底滤镜与未定义变量！')
+    console.error('\n🚫 硬门禁阻断：浮层必须使用亮暗主题下均不透明的背景。')
     process.exit(1)
   } else {
-    console.log('✓ 浮层防透底硬门禁检查通过：侧栏与核心菜单均为不透明实体规范背景（0 违规）。')
+    console.log('✓ 浮层防透底硬门禁检查通过：客户端与画布浮层规则通过（0 阻断项）。')
     process.exit(0)
   }
 }
