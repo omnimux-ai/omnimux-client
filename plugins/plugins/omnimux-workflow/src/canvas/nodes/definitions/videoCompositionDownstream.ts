@@ -17,6 +17,7 @@
 
 import { looksAbsolutePath, localFileMediaUrl, localFilePathFromUrl } from '../../../shared/localMedia.ts';
 import { CANVAS_ZOOM_CONFIG } from '../../../shared/graph/nodeSizeConfig.ts';
+import type { VideoCompositionStatus } from '../../bridge/clipEvents.ts';
 import { resolveComfyCardSize } from '../../editor/utils/comfyPageCard.ts';
 import {
   GROUP_CHROME_INSET,
@@ -25,6 +26,7 @@ import {
   resolveNodeDimensions,
   toAbsoluteCoordinates,
 } from '../../editor/utils/nodeVisualMath.ts';
+import { mapVideoCompositionToBadge } from './videoCompositionStatus.ts';
 
 export const VIDEO_COMPOSITION_NODE_WIDTH = 350;
 export const CLIP_EXPORT_SOURCE_HANDLE = 'out';
@@ -42,6 +44,9 @@ const NODE_TITLE_MAX_LABEL_WIDTH = 180;
 const NODE_TITLE_CHROME_WIDTH = 28; // icon, gap and side padding
 const NODE_TITLE_BADGE_WIDTH = 14; // status dot and gap
 const NODE_TITLE_SIMULATED_BADGE_WIDTH = 16 * 11 + 12 + 6; // longest locale label, padding and gap
+// Snapshot states rendered by MaterialNode's StatusBadge.
+const MATERIAL_EXECUTION_BADGE_STATES = new Set<unknown>(['pending', 'running', 'completed', 'error', 'skipped']);
+const MATERIAL_LOCAL_BADGE_STATES = new Set<unknown>(['generating', 'completed', 'failed', 'offline']);
 const TEXT_NODE_FALLBACK_LABEL_WIDTH = 4 * 14; // the localized text-node name
 const GROUP_TITLE_INSET = 10;
 const GROUP_TITLE_CHROME_WIDTH = 42; // toggle, gap, padding and borders
@@ -278,6 +283,19 @@ function labelWidth(label: unknown, limit: number): number {
     ? Math.min(limit, label.length * 14) : limit;
 }
 
+function titleBadgeWidth(node: PlacementNode): number {
+  const { status, executionStatus, simulated } = node.data ?? {};
+  if (node.type === 'video_composition') {
+    const badge = mapVideoCompositionToBadge((status ?? 'idle') as VideoCompositionStatus);
+    return badge ? NODE_TITLE_BADGE_WIDTH : 0;
+  }
+  if (node.type !== 'material') return 0;
+  if (simulated === true && executionStatus === 'completed') return NODE_TITLE_SIMULATED_BADGE_WIDTH;
+  // Capacity warnings are derived from the live catalog and inputs in MaterialNode.
+  return MATERIAL_EXECUTION_BADGE_STATES.has(executionStatus) || MATERIAL_LOCAL_BADGE_STATES.has(status)
+    ? NODE_TITLE_BADGE_WIDTH : 0;
+}
+
 function placementBoxes(node: PlacementNode, position: { x: number; y: number }): [PlacementBox, ...PlacementBox[]] {
   const { x, y } = position;
   const comfySize = node.type === 'comfy-page' ? resolveComfyCardSize(node.width, node.height) : undefined;
@@ -308,10 +326,7 @@ function placementBoxes(node: PlacementNode, position: { x: number; y: number })
   const labelLimit = isMaterial && data?.materialType === 'text' && !label
     ? TEXT_NODE_FALLBACK_LABEL_WIDTH : NODE_TITLE_MAX_LABEL_WIDTH;
   const textWidth = comfySize ? NODE_TITLE_MAX_LABEL_WIDTH : labelWidth(label, labelLimit);
-  const badge = isMaterial && data?.simulated === true && data.executionStatus === 'completed'
-    ? NODE_TITLE_SIMULATED_BADGE_WIDTH
-    : (isMaterial || node.type === 'video_composition' ? NODE_TITLE_BADGE_WIDTH : 0);
-  const titleWidth = Math.min(width + 8, textWidth + NODE_TITLE_CHROME_WIDTH + badge);
+  const titleWidth = Math.min(width + 8, textWidth + NODE_TITLE_CHROME_WIDTH + titleBadgeWidth(node));
   return [body, {
     left: x, right: x + Math.ceil(titleWidth / minZoom),
     top: y - Math.ceil(titleHeight / minZoom), bottom: y - Math.floor(NODE_TITLE_GAP / maxZoom),

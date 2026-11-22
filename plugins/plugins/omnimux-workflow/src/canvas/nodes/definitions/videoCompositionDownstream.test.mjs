@@ -191,6 +191,46 @@ test('下游放置：成片长标题在最小倍率下避让右侧卡身', () =>
   assert.deepEqual(planWith([alignedTitles], [], { sourceLabel })?.addNodes[0]?.position, { x: 470, y: 502 });
 });
 
+test('下游放置：邻列有空隙时无徽标的短标题成片保留默认坐标', () => {
+  const rightAudio = {
+    id: 'right-audio', type: 'material', position: { x: 880, y: -80 },
+    data: { materialType: 'audio', label: '邻位', status: 'empty', nodeHeight: 300 },
+  };
+  assert.deepEqual(planWith([rightAudio], [], { sourceLabel: '短' })?.addNodes[0]?.position, { x: 470, y: 80 });
+  const longLabel = '带有外置长标题的视频合成结果';
+  assert.deepEqual(planWith([rightAudio], [], { sourceLabel: longLabel })?.addNodes[0]?.position, { x: 470, y: 342 });
+});
+
+test('下游放置：已有素材标题按实际状态点留宽', () => {
+  const material = { id: 'left-material', type: 'material', position: { x: 60, y: 300 },
+    data: { materialType: 'audio', label: '左右相邻', status: 'ready', nodeHeight: 300 } };
+  assert.deepEqual(planWith([material], [])?.addNodes[0]?.position, { x: 470, y: 80 });
+  for (const executionStatus of ['pending', 'running', 'completed', 'error', 'skipped']) {
+    const obstacle = { ...material, data: { ...material.data, executionStatus } };
+    assert.deepEqual(planWith([obstacle], [])?.addNodes[0]?.position, { x: 470, y: 419 }, executionStatus);
+  }
+  for (const status of ['generating', 'completed', 'failed', 'offline']) {
+    const obstacle = { ...material, data: { ...material.data, status } };
+    assert.deepEqual(planWith([obstacle], [])?.addNodes[0]?.position, { x: 470, y: 419 }, status);
+  }
+});
+
+test('下游放置：执行完成的模拟结果按文字徽标留宽', () => {
+  const material = { id: 'left-material', type: 'material', position: { x: 0, y: 300 },
+    data: { materialType: 'audio', label: '左右相邻', status: 'ready', executionStatus: 'completed', nodeHeight: 300 } };
+  assert.deepEqual(planWith([material], [])?.addNodes[0]?.position, { x: 470, y: 80 });
+  const simulated = { ...material, data: { ...material.data, simulated: true } };
+  assert.deepEqual(planWith([simulated], [])?.addNodes[0]?.position, { x: 470, y: 419 });
+});
+
+test('下游放置：已有合成标题只为渲染中、完成和失败的状态点留宽', () => {
+  const composition = { id: 'left-composition', type: 'video_composition', position: { x: 60, y: 300 } };
+  for (const [status, y] of [[undefined, 80], ['idle', 80], ['editing', 80], ['rendering', 419], ['completed', 419], ['error', 419]]) {
+    const obstacle = { ...composition, data: { title: '左右相邻', status } };
+    assert.deepEqual(planWith([obstacle], [])?.addNodes[0]?.position, { x: 470, y }, status);
+  }
+});
+
 test('下游放置：已有卡片的横向长标题也占位', () => {
   const left = { id: 'left', type: 'material', position: { x: -160, y: 300 }, width: 350, height: 300,
     data: { materialType: 'text', label: '已有素材卡片的长标题向右伸出' } };
