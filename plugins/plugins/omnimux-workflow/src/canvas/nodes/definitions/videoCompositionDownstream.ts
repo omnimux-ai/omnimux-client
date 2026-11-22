@@ -17,6 +17,7 @@
 
 import { looksAbsolutePath, localFileMediaUrl, localFilePathFromUrl } from '../../../shared/localMedia.ts';
 import { CANVAS_ZOOM_CONFIG } from '../../../shared/graph/nodeSizeConfig.ts';
+import { resolveComfyCardSize } from '../../editor/utils/comfyPageCard.ts';
 import {
   GROUP_HEADER_EXTERNAL_GAP,
   GROUP_HEADER_HEIGHT,
@@ -32,6 +33,8 @@ export const CLIP_EXPORT_DOWNSTREAM_GAP = 80;
 export const CLIP_EXPORT_ORIGIN = 'clip_export';
 export const CLIP_EXPORT_COPY_ORIGIN = 'clip_export_copy';
 const DOWNSTREAM_CLEARANCE = 40;
+// The director card has a 372px minimum body plus the shell's 1px borders.
+const DIRECTOR_CARD_MIN_HEIGHT = 374;
 
 /** Re-point an already-resolved local-file URL at a new content revision. */
 function withMediaRevision(url: string, token: string): string {
@@ -257,13 +260,20 @@ function placeDownstreamNode(input: ClipExportDownstreamInput): ClipExportDownst
     const parent = node.parentId ? groups.get(node.parentId) : undefined;
     if (parent?.hidden || parent?.data?.isCollapsed) continue;
     const { x, y } = parent?.position ? toAbsoluteCoordinates(node.position, parent.position) : node.position;
-    const dimensions = resolveNodeDimensions({ ...projectGroupDimensions(node), position: node.position });
+    const comfySize = node.type === 'comfy-page' ? resolveComfyCardSize(node.width, node.height) : undefined;
+    const dimensions = resolveNodeDimensions({ ...projectGroupDimensions(node), ...comfySize, position: node.position });
     if (x + dimensions.width + DOWNSTREAM_CLEARANCE <= position.x
       || position.x + width + DOWNSTREAM_CLEARANCE <= x) continue;
-    const header = node.type === 'group' && !node.data?.isCollapsed
-      ? GROUP_HEADER_HEIGHT + GROUP_HEADER_EXTERNAL_GAP
-      : dimensions.headerOffset;
-    obstacles.push({ top: y - Math.ceil(header / minZoom), bottom: y + dimensions.height });
+    const isDirector = node.type === 'director';
+    const isGroup = node.type === 'group';
+    const collapsedGroup = isGroup && Boolean(node.data?.isCollapsed);
+    const header = isGroup
+      ? GROUP_HEADER_HEIGHT + (collapsedGroup ? 0 : GROUP_HEADER_EXTERNAL_GAP)
+      : (comfySize || isDirector ? headerOffset : dimensions.headerOffset);
+    // Folded titles start inside the group but grow upward from their bottom edge.
+    const titleLift = Math.ceil(header / minZoom) - (collapsedGroup ? GROUP_HEADER_HEIGHT : 0);
+    const obstacleHeight = isDirector ? Math.max(dimensions.height, DIRECTOR_CARD_MIN_HEIGHT) : dimensions.height;
+    obstacles.push({ top: y - titleLift, bottom: y + obstacleHeight });
   }
 
   // Move past each blocking card until the next one leaves enough room above it.

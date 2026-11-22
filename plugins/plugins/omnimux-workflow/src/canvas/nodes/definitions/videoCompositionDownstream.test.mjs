@@ -138,6 +138,13 @@ test('下游放置：未测量卡片按素材类型默认宽高避让', () => {
   assert.deepEqual(plan?.addNodes[0]?.position, { x: 470, y: 772 });
 });
 
+test('下游放置：未测量的 ComfyUI 卡片以渲染默认宽高参与连续避让', () => {
+  const first = { id: 'first', type: 'material', position: { x: 470, y: 80 }, width: 350, height: 400 };
+  const comfy = { id: 'comfy', type: 'comfy-page', position: { x: 70, y: 600 } };
+  const plan = planWith([first, comfy], []);
+  assert.deepEqual(plan?.addNodes[0]?.position, { x: 470, y: 1122 });
+});
+
 test('下游放置：缩到最小倍率时成片标题仍有空间', () => {
   const above = { id: 'above', type: 'material', position: { x: 470, y: -230 }, width: 350, height: 200 };
   const plan = planWith([above], []);
@@ -149,6 +156,19 @@ test('下游放置：竖版成片为媒体加载后的卡片高度留空间', ()
   assert.deepEqual(planWith([obstacle], [])?.addNodes[0]?.position, { x: 470, y: 80 });
   const portrait = planWith([obstacle], [], { output: { ...output, width: 1080, height: 1920 } });
   assert.deepEqual(portrait?.addNodes[0]?.position, { x: 470, y: 862 });
+});
+
+test('下游放置：未测量的导演台按实际默认卡身与外置标题避让', () => {
+  const director = { id: 'director', type: 'director', position: { x: 470, y: 480 } };
+  const plan = planWith([director], [], { output: { ...output, width: 1080, height: 1080 } });
+  assert.deepEqual(plan?.addNodes[0]?.position, { x: 470, y: 1016 });
+});
+
+test('下游放置：折叠组的反缩放标题在最小倍率下仍无遮挡', () => {
+  const group = { id: 'group', type: 'group', position: { x: 470, y: 474 }, width: 220, height: 44,
+    data: { isCollapsed: true } };
+  const plan = planWith([group], [], { output: { ...output, width: 1080, height: 1080 } });
+  assert.deepEqual(plan?.addNodes[0]?.position, { x: 470, y: 680 });
 });
 
 test('下游放置：分组子节点按画布坐标判断', () => {
