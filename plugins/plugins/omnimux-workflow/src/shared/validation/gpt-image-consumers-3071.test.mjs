@@ -52,9 +52,9 @@ test('application catalog projection consumes channelGroups defaults and retains
       const noDefault = normalizeCatalogModels([catalogRow], 'image')[0];
       assert.deepEqual(resolveFieldModelOptions({}, noDefault, true, false).map(o => o.value), ['1K', '2K', '4K']);
     }
-    const requested = normalizeCatalogModels([raw], 'image', { [model]: { channelGroupId: 'economy' } })[0];
+    const requested = normalizeCatalogModels([raw], 'image', { 'gpt-image-2.5': { channelGroupId: 'economy' } })[0];
     assert.deepEqual(resolveFieldModelOptions({}, requested, true, false).map(o => o.value), ['1K', '2K', '4K']);
-    const economy = normalizeCatalogModels([raw], 'image', { [model]: { allowedGroups: ['economy'] } })[0];
+    const economy = normalizeCatalogModels([raw], 'image', { 'gpt-image-2.5': { allowedGroups: ['economy'] } })[0];
     assert.deepEqual(resolveFieldModelOptions({}, economy, true, false).map(o => o.value), ['1K', '2K', '4K']);
     assert.equal(raw.parameters.resolution.options.length, 3);
   } finally { rmSync(dir, { recursive: true, force: true }); }

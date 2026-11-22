@@ -1,6 +1,12 @@
 /** Shared input/configuration guard for execution admission and final dispatch. */
 
 import type { CapabilityCatalog, CatalogModelDto } from '../api.ts';
+import {
+  findDefaultChannelGroup,
+  findSelectedChannelGroup,
+  isByokGroup,
+  parseModelAndGroup,
+} from '../../canvas/editor/components/MaterialNode/ConfigPanel/channelGroups.ts';
 import { findDeclaredParameterFailure } from './declaredParameterValidation.ts';
 import { buildEffectiveOpsUiState, buildUiUpstreamFingerprint, readPreferredOperationId } from './operationUi.ts';
 import { readNodeInputSource } from '../graph/nodeInputSource.ts';
@@ -13,7 +19,7 @@ import { deriveSlotLayout, deriveImageGenerationLayout, buildImageGenerationCapa
 import { effectiveSlotFingerprint, feedFromFingerprint } from '../graph/feedSlot/effectiveFingerprint.ts';
 import { resolveSlotOperation } from '../graph/feedSlot/resolveSlotOperation.ts';
 import { effectiveInputDisplay } from '../graph/feedSlot/effectiveInputDisplay.ts';
-import { narrowCatalogByRouting, requiredEffectiveVideoParameter, resolveEffectiveVideoGroup, resolveEffectiveVideoOperation } from './lineConstraints.ts';
+import { groupMatchesEffectiveVideoVersion, narrowCatalogByRouting, requiredEffectiveVideoParameter, resolveEffectiveVideoGroup, resolveEffectiveVideoOperation } from './lineConstraints.ts';
 import { isManagedVideoLineChanged } from './managedVideoExecution.ts';
 import {
   buildContractView,
@@ -80,6 +86,40 @@ function readString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
+/** Read the current official line choice. BYOK and catalogs without line data keep their existing routing. */
+export function readVisualLineSelection(catalog: CapabilityCatalog | null | undefined, params: Record<string, unknown>) {
+  const { modelId, group: inlineGroup } = parseModelAndGroup(readString(params.model));
+  const model = Array.isArray(catalog?.models)
+    ? catalog.models.find(row => row.id === modelId || row.aliases?.includes(modelId)) : undefined;
+  if (!model || model.visible === false || model.selectable === false) return;
+  const routing = params.routing && typeof params.routing === 'object'
+    ? params.routing as Record<string, unknown> : undefined;
+  const allowed = Array.isArray(routing?.allowedGroups) ? routing.allowedGroups : [];
+  const pinned = readString(routing?.channelGroupId) ?? readString(routing?.group) ?? inlineGroup;
+  const requested = [...allowed, routing?.channelGroupId, routing?.group, inlineGroup]
+    .map(readString).filter(id => id && id !== 'auto');
+  if (routing?.sourceType === 'byok' || requested.some(id => isByokGroup(id))) return;
+
+  const managed = resolveEffectiveVideoGroup(catalog, modelId, routing);
+  const version = model.effectiveVideoVersion;
+  if (!managed && (!model.channelGroups || (model.channelGroups.length === 0 && requested.length === 0))) return;
+  const groups = (model.channelGroups ?? []).filter(group => version === undefined || groupMatchesEffectiveVideoVersion(group, version));
+  const available = requested.length > 0 ? findSelectedChannelGroup(groups, routing, inlineGroup) : undefined;
+  const selected = managed ? managed.group : findSelectedChannelGroup(groups, routing, inlineGroup, Boolean(pinned));
+  const defaultGroup = managed && version === undefined ? undefined : findDefaultChannelGroup(groups);
+  return { model, managed: Boolean(managed), selected, defaultGroup, hasRequest: requested.length > 0, hasAvailableRequest: Boolean(available) };
+}
+
+/** The panel and execution admission explain the same unresolved line choice. */
+export function visualLineSelectionMessage(catalog: CapabilityCatalog | null | undefined, params: Record<string, unknown>): string | undefined {
+  const line = readVisualLineSelection(catalog, params);
+  if (!line || line.selected) return;
+  if (line.hasRequest && !line.hasAvailableRequest) return '原线路已下线，请重选';
+  if (line.hasRequest || !line.defaultGroup || line.managed) {
+    return '请选择当前可用的生成线路';
+  }
+}
+
 export interface ExecutionReadinessGraph {
   nodes: ExecutionReadinessNode[];
   edges: Array<{ id?: string; source: string; target: string; targetHandle?: string | null; data?: Record<string, unknown> }>;
@@ -139,6 +179,9 @@ function createExecutionReadinessCheck(
     const requestedModel = readString(params.model);
     const outputKind = typeof data.materialType === 'string' ? data.materialType : 'text';
     const defaultModel = inputCatalog?.defaults?.[outputKind as keyof NonNullable<CapabilityCatalog['defaults']>];
+    const lineMessage = isVisualGeneration(outputKind)
+      ? visualLineSelectionMessage(inputCatalog, { ...params, model: requestedModel ?? defaultModel }) : undefined;
+    if (lineMessage) return { nodeId: node.id, reasonCode: 'line_selection_required', message: lineMessage };
     const managed = outputKind === 'video' ? resolveEffectiveVideoGroup(inputCatalog, requestedModel ?? defaultModel, params.routing) : null;
     if (managed && onVisualInputs) return null; // Managed execution already projected the chosen line.
     const reviewed = data.managedVideoGeneration;

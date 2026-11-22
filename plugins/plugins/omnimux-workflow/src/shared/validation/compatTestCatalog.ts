@@ -65,6 +65,18 @@ function model(
   };
 }
 
+/** Give operation and recovery fixtures an explicit gateway default without changing their line contracts. */
+export function withFixturePricingDefaults<T extends { models: Array<{ id: string; enableGroups?: string[] }> }>(
+  snapshot: T, defaults: Readonly<Record<string, string>>,
+): T {
+  return { ...snapshot, models: snapshot.models.map(model => {
+    const group = defaults[model.id];
+    if (!group) return model;
+    if (!model.enableGroups?.includes(group)) throw new Error(`Fixture line ${group} is not enabled for ${model.id}`);
+    return { ...model, defaultGroup: group };
+  }) };
+}
+
 export function createCompatTestCatalog(): CapabilityCatalog {
   const models: CatalogModelDto[] = [
     // order 0 — alpha family, prompt-only image model (cannot absorb media).

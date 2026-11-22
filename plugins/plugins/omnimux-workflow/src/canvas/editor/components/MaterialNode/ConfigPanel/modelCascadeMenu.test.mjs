@@ -85,8 +85,9 @@ test('actual model handler preserves routing-only parameters and transitions swi
   // 跨模型切换：触发 transition
   assert.match(handlerBody, /buildVideoParameterSelection|buildVideoParamTransition/);
 
-  // 渠道选择更新：原子注入 nextParams.routing
-  assert.match(handlerBody, /nextParams\.routing = \{/);
+  // 先确定可用渠道和唯一载荷，再原子写入节点参数。
+  assert.match(handlerBody, /allowedGroups: \[matchedGroup\.id\]/);
+  assert.match(handlerBody, /if \(nextRouting\) nextParams\.routing = nextRouting;/);
   assert.match(handlerBody, /delete nextParams\.routing;/);
 
   // 契约协调与原子落盘：单一写入点
@@ -326,11 +327,9 @@ test('missingRequiredSlots validates against displayedSlotLayout.slots and trims
     /onUpdateNodeData\(\{[\s\S]*params: nextParams,[\s\S]*slotBindings: nextSlotBindings[\s\S]*\}\);/,
     '修剪后的 slotBindings 必须在渠道切换时与 params 单次原子提交回节点'
   );
-  assert.match(
-    configSrc,
-    /hasConflict \|\| targetGroupId !== matchedGroup\.id/,
-    '检测到渠道冲突或不可用降级时必须归一化 nextParams.routing'
-  );
+  assert.match(configSrc, /findSelectedChannelGroup\(availableGroups, channelSelection, null, true\)/);
+  assert.match(configSrc, /if \(channelSelection && !matchedGroup && \(channelSelection\.allowedGroups\?\.length \|\| channelSelection\.channelGroupId \|\| availableGroups\.length\)\) return;/);
+  assert.doesNotMatch(configSrc, /usableGroups\[0\]|availableOfficialGroups\[0\]/);
 
   // 3. 初始载入已持久化节点状态归一化防御：当 isSingleImageChannel 且 slotBindings 脏数据存在时安全触发修剪
   assert.match(

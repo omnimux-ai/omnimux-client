@@ -124,3 +124,33 @@ test('all entries collect the same paid task after its model leaves the catalog'
     assert.deepEqual(call.nodes, workspace.nodes);
   }
 });
+
+test('batch HTTP and Agent reject stale official image and legacy video lines before creating an execution', async () => {
+  const models = [
+    { id: 'legacy-image', operations: [{ id: 'text_to_image', listed: true, output: { type: 'image' }, inputs: [] }] },
+    { id: 'legacy-video', operations: [{ id: 'text_to_video', listed: true, output: { type: 'video' }, inputs: [] }] },
+  ].map(row => ({ ...row, channelGroups: [{ id: 'available', enabled: true }] }));
+  for (const row of models) {
+    const operation = row.operations[0];
+    const params = { model: row.id, operation: operation.id, routing: { allowedGroups: ['removed'] } };
+    const target = { id: 'target', type: 'material', data: { nodeKind: 'generate', materialType: operation.output.type, params, prompt: 'Saved draft' } };
+    const workspace = { id: 'ws_lines', name: 'lines', version: 1, settings: {}, nodes: [target], edges: [] };
+    let creates = 0;
+    const deps = { store: { get: () => workspace, resolveProjectRoot: () => '/tmp' }, mediaDir: '/tmp', getCatalog: () => ({ models }),
+      executionManager: { createExecution: () => { creates++; return { context: { id: 'accepted', status: 'pending' } }; } } };
+    const runHttp = () => createExecutionRoutes(deps).tryHandle('POST', '/omnimux-workflow/api/workspaces/ws_lines/executions', { body: { mode: 'full' } });
+    const runAgent = () => createWorkflowRunTool(deps).execute({ workspace_id: 'ws_lines', mode: 'full' });
+    const http = await runHttp();
+    const agent = await runAgent();
+    assert.equal(http.status, 400);
+    assert.deepEqual(http.body, agent);
+    assert.equal(agent.reasonCode, 'line_selection_required');
+    assert.match(agent.message, /请重选/);
+    assert.equal(creates, 0);
+    assert.deepEqual(target.data.params.routing.allowedGroups, ['removed']);
+    target.data.params = { ...params, routing: { allowedGroups: ['available'] } };
+    assert.equal((await runHttp()).status, 200);
+    assert.equal((await runAgent()).executionId, 'accepted');
+    assert.equal(creates, 2);
+  }
+});
