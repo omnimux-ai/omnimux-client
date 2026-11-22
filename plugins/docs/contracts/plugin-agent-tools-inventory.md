@@ -226,7 +226,7 @@ superseded_by: null
 
 查询和操作都保持当前画布工作面，显式导航用 `clip_open`。未物化节点报告 `project-not-materialized`。按 `AMBIGUOUS_TARGET` 的候选定位，可用 `windowInstanceId` 消歧。同窗保活画布的候选标记 `visible: false`。无认证窗口报告 `EDITOR_OFFLINE`，入口不可见或预览尚未就绪按实际状态返回 `EDITOR_NOT_VISIBLE` 或 `PREVIEW_NOT_READY`。实时 `clip_get` 提供 `revision` 和 `revisionEpoch`，供同目标的 `clip_edit` 或指定版本的 `clip_export` 作为 `baseRevision` 和 `baseRevisionEpoch`。世代变更后，旧规划返回 `REVISION_CONFLICT`，可用原 `requestId` 查已执行请求。画布手工导出和 `clip_export` 共用 Host 的导出世代和任务号，文件落盘与画布回写各有独立状态。[错误与工具参数](clip-live-control.md#租约命令与失败)
 
-九个工具的 schema 使用 DSH Host 支持的子集。`clip_get` 的 `revision` 和 `revisionEpoch` 是必填整数，实时读取另返回可选字符串 `windowInstanceId`。各工具在执行时校验领域范围和窗口身份。[工具入参与编辑行为](clip-live-control.md#工具入参与编辑行为)
+九个工具的 schema 使用 DSH Host 支持的子集。`clip_get` 的 `revision` 和 `revisionEpoch` 是必填整数，实时读取另返回可选字符串 `windowInstanceId`。实时工具在执行时校验领域范围和窗口身份。[工具入参与编辑行为](clip-live-control.md#工具入参与编辑行为)
 
 ---
 

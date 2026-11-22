@@ -1,5 +1,6 @@
 export const zhChrome = {
   "AI": "AI",
+  "AI Edit": "AI 剪辑",
   "AI Editor chat": "AI 编辑助手",
   "Action history": "操作历史",
   "Animation & effects tour": "动效引导",

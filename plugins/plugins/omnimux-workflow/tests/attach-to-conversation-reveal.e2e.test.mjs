@@ -11,7 +11,7 @@
  * 替身边界（仅两处，均非本次改动的判定对象）：
  *   1. 宿主 workbench（`window.__omnimuxWorkbench`）—— 宿主壳的对外契约面，按规格 §2.1 A1 把折叠位写成
  *      `html[data-omnimux-conversation-collapsed]`，使「会话栏是否露出」成为可观察的 DOM 事实而非调用记录；
- *   2. `dsh-ui-kit` —— 宿主 UI 套件，本链路只用到 `Button`。
+ *   2. 宿主 UI 依赖 —— `dsh-ui-kit` 的按钮和 `dsh-client-ui-primitives` 的图标由测试环境提供。
  *
  * 能力边界（不得据此宣称已验收）：
  *   - JSDOM 无布局引擎：本文件不含几何（width/height 恒为 0）与截图证据，不替代真实浏览器验收；
@@ -36,7 +36,9 @@ const React = requireFromWorkflow('react');
 const { createRoot } = requireFromWorkflow('react-dom/client');
 const act = React.act;
 
-const EXTERNALS = ['react', 'react-dom', 'react-dom/client', 'react/jsx-runtime', 'dsh-ui-kit', 'lucide-react'];
+const HOST_PRIMITIVES = '@deepseek-ai/dsh-client-ui-primitives';
+const EXTERNALS = ['react', 'react-dom', 'react-dom/client', 'react/jsx-runtime', 'dsh-ui-kit', 'lucide-react', HOST_PRIMITIVES];
+const hostPrimitivesStub = { IconSparkleMedium: () => null };
 
 /** 宿主 UI 套件替身：本链路只用到 `Button`，其余按需返回占位组件。 */
 const uiKitStub = new Proxy(
@@ -81,7 +83,11 @@ async function loadSourceModule(rootDir, entry) {
 
   const shim = { exports: {} };
   new Function('require', 'module', 'exports', code)(
-    (name) => (name === 'dsh-ui-kit' ? uiKitStub : requireFromWorkflow(name)),
+    (name) => {
+      if (name === 'dsh-ui-kit') return uiKitStub;
+      if (name === HOST_PRIMITIVES) return hostPrimitivesStub;
+      return requireFromWorkflow(name);
+    },
     shim,
     shim.exports,
   );

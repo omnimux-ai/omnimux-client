@@ -10,7 +10,7 @@ updated: "2026-11-22"
 
 # 画布剪辑归属与实时控制
 
-[阶段 1 #160](https://github.com/omnimux-ai/omnimux-client/issues/160) 定下画布归属与工具错误协议。[阶段 2 #159](https://github.com/omnimux-ai/omnimux-client/issues/159#issuecomment-7058694513) 接通 OpenReel v1 原生编辑器、Host 持久化与 Workflow 回写。本文记录阶段 2 的源码行为。运行验收按对应构建和 PRD 验收项单独记录。
+[阶段 1 #160](https://github.com/omnimux-ai/omnimux-client/issues/160) 定下画布归属与工具错误协议。[阶段 2 #159](https://github.com/omnimux-ai/omnimux-client/issues/159#issuecomment-7058694513) 接通 OpenReel v1 原生编辑器、Host 持久化与 Workflow 回写。[阶段 3 #157](https://github.com/omnimux-ai/omnimux-client/issues/157) 接通剪辑顶栏与主对话。运行验收按对应构建和验收项单独记录。
 
 ## 阶段 1 画布绑定与工具结果
 
@@ -34,7 +34,7 @@ Clip 编辑器和 Host 使用同一 OpenReel `Project`。Host 保存含 `project
 
 两个入口使用 `registerContextContributor` 提交剪辑状态。Hub 在每轮第一步定向刷新认证视口。新会话尚未登记首份视口时，现有连接可用同一刷新请求提交当前视口。刷新可以越过尚未完成的普通心跳，按采集顺序和认证会话验收，最长等待 600 毫秒。确认当前会话只有一份有效剪辑视口时，`<ui_context>` 带上以下字段。超时或目标仍有歧义时，对话照常进行。[窗口刷新](../../plugins/omnimux/src/events/windows.js) · [上下文注入](../../plugins/omnimux/src/workbench/context-injector.js)
 
-- 通用字段为 `mode`、`projectId`、`title`、`revision`、`playheadSec`、`durationSec`。有选段时附至多三条 `selectedClips`，每条含 `id`、`name`、`trackId`、`startSec`、`endSec`。
+- 通用字段为 `mode`、`projectId`、`title`、`revision`、`revisionEpoch`、`playheadSec`、`durationSec`。有选段时附至多三条 `selectedClips`，每条含 `id`、`name`、`trackId`、`startSec`、`endSec`。
 - 画布模式另带 `workspaceId`、`nodeId`。退出 Portal 或切走后交回普通工作台上下文。剪辑区块按白名单限长和清理字符串，排除本地文件路径、媒体字节、脚本、租约和原始工程 JSON。[上下文格式](../../plugins/omnimux/src/workbench/contract.js)
 
 剪辑工具不通过 `surface-follow` 切页。需要进入某个工程时，显式调用 `clip_open`。已处于目标入口时直接读取该租约，否则等对应入口报告可见且工程吻合后返回。打开画布工程时聚焦对应工作区和节点 Portal，独立工程打开剪辑 Tab。[工作面跟随](../../plugins/omnimux/src/workbench/surface-follow.js) · [窗口导航](../../plugins/omnimux-clip/src/client/live/live-channel.js)
@@ -88,6 +88,10 @@ Workflow 通过 `workflowClip.commitExport` 重核节点绑定，复用 `planCli
 
 从仓库根运行 `corepack pnpm --dir plugins verify:tools`、`corepack pnpm --dir plugins test:agent-tools`，以及 `corepack pnpm --filter omnimux-clip test`、`corepack pnpm --filter omnimux-workflow test`、`corepack pnpm --filter omnimux test`。Clip 默认测试包含走真实 HTTP、Workflow 画布 Store 与磁盘的混合导出。离线工具套件覆盖保存工程和无窗口错误。双入口、原生 Undo/Redo、真实截帧及 MP4 播放证据按 [AC-P2-01 至 AC-P2-14](https://github.com/omnimux-ai/omnimux-client/issues/159#issuecomment-7058694513) 在隔离运行环境验证。
 
-## 阶段 3 规划
+## 阶段 3 顶栏与主对话
 
-顶栏「AI 剪辑 / AI Edit」由 [#157](https://github.com/omnimux-ai/omnimux-client/issues/157) 跟踪。目标是从两个入口聚焦左侧主对话，并预填当前工程、播放头和选段，用户自行发送。
+两个入口在导出左侧提供「AI 剪辑 / AI Edit」。剪辑区域小于 560px 时以 30×30 图标呈现，保留可访问名称和悬停标题。无工程或编辑器阻塞时无法唤起。[顶栏](../../plugins/omnimux-clip/src/client/openreel/web/components/editor/Toolbar.tsx)
+
+Clip 先通过 Workbench 展开主对话，再用 `attachClipContext({ sessionId, editorInstanceId, signal })` 请求 Hub 读取当前工作面。Hub 核对会话与编辑器身份，从与 `<ui_context>` 相同的精简投影生成点击时的快照。该快照还包括 `revisionEpoch`。Hub 在当前会话的可见主 Composer 的原生附件区域展示一枚芯片并聚焦输入框。再次点击替换同一枚芯片的数据，关闭芯片后可再次唤起。切换会话或释放该编辑器时清除相应快照。[Clip 请求](../../plugins/omnimux-clip/src/client/live/live-channel.js) · [Composer 接入](../../plugins/omnimux/src/client/attachments/clipComposer.js)
+
+草稿正文由原生 Composer 保管。用户手动发送后，Hub 仍按阶段 2 的认证刷新规则采集发送时的 `<ui_context>`。阶段 3 的浏览器证据按 [AC-P3-01 至 AC-P3-07](../../../specs/clip-ai-entry-157.spec.md#证伪方式) 记录。
