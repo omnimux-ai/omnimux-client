@@ -17,8 +17,8 @@
 4. 在同样的合成目录上对照真实浏览器中的线路下拉顺序、刷新前后的节点值与反馈。离线夹具验证目录投影、路由和迁移。真实网关及模型调用另记录结果。
 5. 目录明确无可用默认，或仅发布顺序却无法取得兼容默认时，已注册的图片、视频和音频工具无选线提交返回 `unknown-group`，模拟传输调用为零。有效默认、显式 `group` 和单项 `allowed_groups` 各自锁定提交线路。两字段均缺的旧目录保留原媒体调用兼容。
 6. 批量 HTTP 与 `workflow_run` 将旧草稿的 `routing.group`、`routing.channelGroupId` 作为同一条已选线路校验并传给执行接缝，冲突选择在提交前被拒绝。
-7. 打开待重选的旧视频节点时参数和历史原样保留，保存 PUT 为零。自动迁移无解且只有一条带默认标记的线路时，重选菜单仍包含可直接点选的线路，写入线路与报价后可填写必需参数。
-8. 真实悬停只预览。点击带有效默认的型号一次写入默认线路。无默认时点型号零写入，显式点选线路一次写入。旧图片节点切换单图线路时，第一笔 store 更新同时写入线路并裁剪槽位。
+7. 打开待重选的旧视频节点时参数和历史原样保留，工作区版本不变，保存 PUT 为零。自动迁移无解且只有一条带默认标记的线路时，重选菜单仍包含可直接点选的线路。第一笔保存同时写入 `channelGroupId`、`allowedGroups` 和 `videoLineQuote`，填写合法时长后恢复生成就绪。
+8. 托管视频型号有两条线路、默认在第二条时，真实悬停只预览，点型号一次写入默认线路。无默认且只剩一条线路时，点型号零写入，显式点选线路一次写入。旧图片节点切换单图线路时，第一笔 store 更新同时写入线路并裁剪多余参考槽。
 
 ## 证伪方式
 
@@ -43,6 +43,7 @@
 - `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/channelGroups.test.mjs` :: `resolves exactly the lines the hub directory publishes for a model`
 - `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/channelGroups.test.mjs` :: `resolves the full spec of the lines the node routes to`
 - `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/modelCascadeMenu.test.mjs` :: `hover remains preview-only and legacy brand clicks select a real model row`
+- `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/modelCascadeMenu.test.mjs` :: `hover only previews and model clicks use the marked default or expose manual line selection`
 - `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/modelCascadeMenu.test.mjs` :: `actual model handler preserves routing-only parameters and transitions switches once`
 - `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/modelCascadeMenu.test.mjs` :: `missingRequiredSlots validates against displayedSlotLayout.slots and trims slotBindings for single-image channels`
 
@@ -51,3 +52,5 @@
 空或非法默认的路由断言继续检查未选中线路。候选集合由原先的裸模型改为空集合，并在图片、视频和音频注册工具处核对零 HTTP 请求。
 
 画布用例继续核对中枢给出的可选线路和触发悬停时的只读预览。图像和视频参数继承目录标记的默认线路约束。菜单点击测试改为校验有效默认直接生效、无默认时可以手选单条线路。切换模型或分组时，测试检查已校验的线路和协调后的参数一次写入。冲突或非法的选线被拒绝，槽位校验仍使用实际展示的槽位布局，合法单图线路仍在一次更新内协调槽位和参数。
+
+菜单测试原先要求单条无默认时显示线路列。新断言也覆盖待重选状态下的单条默认线路，保留单条无默认、悬停只读和模型点击断言。组件交互测试核对实际 store 写入，隔离 Chromium 核对重选控件、首笔保存和参数就绪状态。
