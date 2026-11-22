@@ -1,26 +1,20 @@
 #!/usr/bin/env bash
-# sync-agent-presets.sh — validate the shipped agent-preset roster (no writes).
+# sync-agent-presets.sh — validate the converged OmniMux agent-preset roster (no writes).
 #
 # Since dsh 0.2.1-rc.3 every preset is a Loader declaration carried by the
-# profile, and the shipped roster reaches the app through the packaged preset
-# (`preset/agent-presets`) that `stage-preset-profile.ts` writes. Nothing reads
-# the directories this script used to fill, and the asar header patch it used to
-# apply invalidated the installed app's signature — so the materialization is
-# gone and only the roster check remains.
-#
-# `KEEP` / `LEGACY_ALIASES` stay here on purpose: `presets/README.md` makes this
-# list the registration point of the permanent-legacy-tombstone contract, and
-# `scripts/verify-agent-presets.test.mjs` asserts both lists verbatim.
+# profile. OmniMux ships a single default product preset (`omni-agent`) beside
+# DSH native Creator Mode (`cordis`, declared by `@deepseek-ai/dsh-web-app`).
+# Retired preset IDs are redirected transparently at runtime by
+# `plugins/omnimux/src/host/retired-presets.js` instead of shipping physical
+# tombstone directories that would pollute the preset picker.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="$ROOT/presets"
-KEEP=(cordis omni-agent tiktok-agent instagram-agent x-agent youtube-agent viral-video-agent ad-creative-agent)
-LEGACY_ALIASES=(media-creator marketing-agent daily-work standard marketing-growth-team drama-agent)
-ALL_PRESETS=("${KEEP[@]}" "${LEGACY_ALIASES[@]}")
+KEEP=(omni-agent)
 
-if [ ! -d "$SRC/omni-agent" ] && [ ! -d "$SRC/tiktok-agent" ]; then
-  echo "❌ presets/ 缺少出厂预设 (omni-agent 或 tiktok-agent)" >&2
+if [ ! -d "$SRC/omni-agent" ]; then
+  echo "❌ presets/ 缺少默认出厂预设 (omni-agent)" >&2
   exit 1
 fi
 
@@ -42,8 +36,8 @@ for argument in "$@"; do
 done
 
 missing=()
-for preset in "${ALL_PRESETS[@]}"; do
-  if [ ! -f "$SRC/$preset/preset.yml" ] || [ ! -f "$SRC/$preset/agent.cordis.yml" ]; then
+for preset in "${KEEP[@]}"; do
+  if [ ! -f "$SRC/$preset/preset.yml" ] || [ ! -f "$SRC/$preset/agent.cordis.yml" ] || [ ! -f "$SRC/$preset/Agent.md" ]; then
     missing+=("$preset")
   fi
 done
@@ -56,5 +50,5 @@ if [ "${#TARGET_FLAGS[@]}" -gt 0 ]; then
   echo "· --target 已废弃并被忽略：预设随安装包分发，不再写入目标 home" >&2
 fi
 
-echo "✅ 出厂预设清单校验通过：${#KEEP[@]} 项主力 + ${#LEGACY_ALIASES[@]} 项历史兼容别名。"
+echo "✅ 出厂预设清单校验通过：${#KEEP[@]} 项产品默认预设 (omni-agent) + DSH 原生创造模式 (cordis)。"
 echo "ℹ️ rc.3 起预设由打包期 preset/agent-presets 与壳侧声明承担；本脚本不再写盘。"

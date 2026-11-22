@@ -464,7 +464,7 @@ describe('Desktop Setup Wizard settings document', () => {
     expect(readFileSync(path, 'utf8')).toBe(contents)
   })
 
-  it('atomically migrates the released code preset default to ptc', async () => {
+  it('atomically migrates retired preset defaults to omni-agent', async () => {
     const root = temporaryDirectory()
     const yamlPath = join(root, 'legacy-preset.yaml')
     writeFileSync(yamlPath, [
@@ -482,42 +482,44 @@ describe('Desktop Setup Wizard settings document', () => {
     const migrated = readFileSync(yamlPath, 'utf8')
     expect(migrated).toContain('# preserve preset migration comments')
     expect(parseDocument(migrated).toJS()).toEqual({
-      'agent-presets': { default: 'ptc', future: 'retained' },
+      'agent-presets': { default: 'omni-agent', future: 'retained' },
       unrelated: { keep: true },
     })
 
     const jsonPath = join(root, 'legacy-preset.json')
     writeFileSync(jsonPath, `${JSON.stringify({
-      'agent-presets': { default: 'code', future: 'retained' },
+      'agent-presets': { default: 'tiktok-agent', future: 'retained' },
       unrelated: { keep: true },
     })}\n`)
     await expect(migrateLegacyAgentPresetSettings(jsonPath)).resolves.toBe(true)
     expect(JSON.parse(readFileSync(jsonPath, 'utf8'))).toEqual({
-      'agent-presets': { default: 'ptc', future: 'retained' },
+      'agent-presets': { default: 'omni-agent', future: 'retained' },
       unrelated: { keep: true },
     })
   })
 
-  it('migrates the code preset default under its 0.1.7 registry key too', async () => {
+  it('migrates retired preset defaults under the 0.1.7 registry key too', async () => {
     // Beta's launcher renames `agent-presets.default` to
     // `agent-preset-registry.selectedDefault` before this migration runs.
-    const path = join(temporaryDirectory(), 'registry-preset.yaml')
-    writeFileSync(path, [
-      'agent-preset-registry:',
-      '  selectedDefault: code',
-      '  default: standard',
-      '',
-    ].join('\n'))
+    for (const retired of ['code', 'standard', 'ptc', 'minimal', 'tiktok-agent', 'expert-video']) {
+      const path = join(temporaryDirectory(), `registry-${retired}.yaml`)
+      writeFileSync(path, [
+        'agent-preset-registry:',
+        `  selectedDefault: ${retired}`,
+        '  default: standard',
+        '',
+      ].join('\n'))
 
-    await expect(migrateLegacyAgentPresetSettings(path)).resolves.toBe(true)
-    await expect(migrateLegacyAgentPresetSettings(path)).resolves.toBe(false)
-    expect(parseDocument(readFileSync(path, 'utf8')).toJS()).toEqual({
-      'agent-preset-registry': { selectedDefault: 'ptc', default: 'standard' },
-    })
+      await expect(migrateLegacyAgentPresetSettings(path)).resolves.toBe(true)
+      await expect(migrateLegacyAgentPresetSettings(path)).resolves.toBe(false)
+      expect(parseDocument(readFileSync(path, 'utf8')).toJS()).toEqual({
+        'agent-preset-registry': { selectedDefault: 'omni-agent', default: 'standard' },
+      })
+    }
   })
 
   it('leaves current and user-authored preset defaults untouched', async () => {
-    for (const preset of ['ptc', 'my-local-preset']) {
+    for (const preset of ['omni-agent', 'cordis', 'my-local-preset']) {
       const path = join(temporaryDirectory(), `${preset}.yaml`)
       const contents = `agent-presets:\n  default: ${preset}\n`
       writeFileSync(path, contents)

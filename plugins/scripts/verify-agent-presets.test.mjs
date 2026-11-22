@@ -1,8 +1,6 @@
 import { test } from 'node:test'
 import { ok, equal, deepEqual } from 'node:assert/strict'
-// YAML 解析改用仓库已依赖的 `yaml` 包，去掉对本机 Python/PyYAML 的依赖（见 specs/local-gates-repair.spec.md「旧标准变更」）。
-import { parseAllDocuments } from 'yaml'
-import { readFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { readFileSync, existsSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { build } from 'esbuild'
 import { spawnSync } from 'node:child_process'
@@ -12,47 +10,6 @@ import { fileURLToPath } from 'node:url'
 import { pythonYamlAvailable, personaConfigFromText, rowsFromText } from './lib/preset-yaml.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-
-const CONTENT = [
-  'expert_content_copywriter',
-  'expert_speech',
-  'expert_image',
-  'expert_video',
-  'expert_music',
-  'expert_editing',
-]
-const ENGAGEMENT = [
-  'expert_interaction_automator',
-  'expert_ai_comment',
-  'expert_signal_miner',
-  'expert_brand_monitor',
-]
-const ALL = [...CONTENT, ...ENGAGEMENT]
-
-const MARKETING = [
-  'expert_marketing_strategist',
-  'expert_ad_creative',
-  'expert_conversion_copy',
-  'expert_marketing_visual',
-  'expert_traffic_growth',
-  'expert_data_attribution',
-]
-
-const DRAMA = [
-  'expert_drama_screenwriter',
-  'expert_storyboard_director',
-  'expert_character_stylist',
-  'expert_voice_director',
-  'expert_cinema_editor',
-  'expert_drama_globalization',
-]
-
-const GROWTH = [
-  'expert_cro_specialist',
-  'expert_seo_content_strategist',
-  'expert_growth_engineer',
-  'expert_analytics_revops',
-]
 
 const FORK_END = [
   '    - id: tool-subagent-fork',
@@ -125,172 +82,48 @@ print(len(data))
   return Number(res.stdout.trim())
 }
 
-test('preset fragments exist and list the expected experts', () => {
-  const content = read('presets/fragments/content-experts.cordis.yml')
-  const engagement = read('presets/fragments/engagement-experts.cordis.yml')
-  deepEqual(toolNames(content), CONTENT)
-  deepEqual(toolNames(engagement), ENGAGEMENT)
+test('presets directory is converged to omni-agent only with zero static expert or retired directories', () => {
+  const presetsRoot = join(root, 'presets')
+  const dirs = readdirSync(presetsRoot)
+    .filter((name) => {
+      try {
+        return statSync(join(presetsRoot, name)).isDirectory()
+      } catch {
+        return false
+      }
+    })
+    .sort()
+  deepEqual(dirs, ['omni-agent'], `presets/ must contain only omni-agent/, found: ${dirs.join(', ')}`)
 })
 
-test('omni-agent agent.cordis.yml is structurally valid and mounts all 10 experts', () => {
+test('omni-agent agent.cordis.yml is structurally valid and mounts generic subagent delegation without static experts', () => {
   const rel = 'presets/omni-agent/agent.cordis.yml'
   ok(existsSync(join(root, rel)), rel)
   const text = read(rel)
   ok(!text.includes("name: '@deepseek-ai/dsh-tool-subagent    #"), 'mangled subagent line')
   ok(!text.includes("name: '@deepseek-ai/dsh-tool-s    #"), 'mangled fork line')
   ok(text.includes(FORK_END), 'complete tool-subagent-fork block')
-  deepEqual(toolNames(text), ALL)
+  ok(text.includes('provider: spawn'), 'generic subagent spawn tool must be mounted')
+  ok(text.includes('sampleOverCapGlobResults: false'), 'tool-fs must configure sampleOverCapGlobResults')
+  deepEqual(toolNames(text), [], 'omni-agent must not mount static expert_* subagent rows')
   // Skills ship from the plugin that owns them; rc.3 only installs `preset/skills`.
   ok(existsSync(join(root, 'plugins/omnimux-market/skills/tiktok-growth/SKILL.md')))
   ok(existsSync(join(root, 'plugins/omnimux-market/skills/sopilot-social-agents/SKILL.md')))
+  ok(existsSync(join(root, 'plugins/omnimux/skills/cordis-plugin-development/SKILL.md')))
+  ok(existsSync(join(root, 'plugins/omnimux/skills/editing-cordis-compositions/SKILL.md')))
   const rows = parseWithPython(rel)
   ok(rows >= 8, `omni-agent parsed ${rows} top-level rows`)
 })
 
-test('ad-creative-agent (marketing) agent.cordis.yml is structurally valid and mounts all 6 marketing experts', () => {
-  const rel = 'presets/ad-creative-agent/agent.cordis.yml'
-  ok(existsSync(join(root, rel)), rel)
-  const text = read(rel)
-  ok(text.includes(FORK_END), 'complete tool-subagent-fork block')
-  deepEqual(toolNames(text), MARKETING)
-  ok(text.includes('营销专家') || text.includes('全能营销操盘手') || text.includes('出海广告'))
-  const rows = parseWithPython(rel)
-  ok(rows >= 8, `ad-creative-agent parsed ${rows} top-level rows`)
-})
-
-test('drama-agent in .retired is structurally valid and mounts all 6 drama experts', () => {
-  const rel = 'presets/.retired/drama-agent/agent.cordis.yml'
-  ok(existsSync(join(root, rel)), rel)
-  const text = read(rel)
-  ok(text.includes(FORK_END), 'complete tool-subagent-fork block')
-  deepEqual(toolNames(text), DRAMA)
-  ok(text.includes('短剧专家') || text.includes('全能短剧操盘手'))
-  const rows = parseWithPython(rel)
-  ok(rows >= 8, `drama-agent parsed ${rows} top-level rows`)
-})
-
-test('marketing-growth-team in .retired is structurally valid and mounts all 4 growth experts', () => {
-  const rel = 'presets/.retired/marketing-growth-team/agent.cordis.yml'
-  ok(existsSync(join(root, rel)), rel)
-  const text = read(rel)
-  ok(!text.includes("name: '@deepseek-ai/dsh-tool-subagent    #"), 'mangled subagent line')
-  ok(text.includes(FORK_END), 'complete tool-subagent-fork block')
-  deepEqual(toolNames(text), GROWTH)
-  ok(text.includes('增长专家团'))
-  ok(text.includes('盛全局'), '主理人必须是首席营销策略师盛全局')
-  ok(text.includes('不固定调用整队') || text.includes('不强行委派'))
-  const rows = parseWithPython(rel)
-  ok(rows >= 8, `marketing-growth-team parsed ${rows} top-level rows`)
-})
-
-test('growth-experts fragment lists exactly the 4 growth experts', () => {
-  const fragment = read('presets/fragments/growth-experts.cordis.yml')
-  deepEqual(toolNames(fragment), GROWTH)
-})
-
-test('standard in .retired is structurally valid code development agent', () => {
-  const rel = 'presets/.retired/standard/agent.cordis.yml'
-  ok(existsSync(join(root, rel)), rel)
-  const text = read(rel)
-  deepEqual(toolNames(text), [])
-  ok(text.includes('tool-bash'))
-  ok(text.includes('tool-fs'))
-  ok(text.includes('tool-skill'))
-  ok(text.includes('tool-goal'))
-  ok(text.includes('tool-workflow'))
-  ok(text.includes('代码开发') || text.includes('CodeDev'))
-  const rows = parseWithPython(rel)
-  ok(rows >= 8, `standard parsed ${rows} top-level rows`)
-})
-
-test('daily-work in .retired is structurally valid daily work collaboration agent', () => {
-  const rel = 'presets/.retired/daily-work/agent.cordis.yml'
-  ok(existsSync(join(root, rel)), rel)
-  const text = read(rel)
-  deepEqual(toolNames(text), [])
-  ok(text.includes('tool-bash'))
-  ok(text.includes('tool-fs'))
-  ok(text.includes('tool-skill'))
-  ok(text.includes('tool-goal'))
-  ok(text.includes('tool-todo'))
-  ok(text.includes('tool-web'))
-  ok(text.includes('日常工作') && text.includes('WorkAssistant'))
-  ok(text.includes('工作规划与任务推进'))
-  ok(text.includes('日常文书与方案拟定'))
-  ok(text.includes('信息检索与知识整理'))
-  ok(text.includes('综合事务与沟通辅助'))
-  const rows = parseWithPython(rel)
-  ok(rows >= 8, `daily-work parsed ${rows} top-level rows`)
-})
-
-test('cordis preset exists and includes native cordis capabilities and skills', () => {
-  const rel = 'presets/cordis/agent.cordis.yml'
-  ok(existsSync(join(root, rel)), rel)
-  const rows = parseWithPython(rel)
-  ok(rows >= 8, `cordis parsed ${rows} top-level rows`)
-  ok(existsSync(join(root, 'plugins/omnimux/skills/cordis-plugin-development/SKILL.md')))
-  ok(existsSync(join(root, 'plugins/omnimux/skills/editing-cordis-compositions/SKILL.md')))
-})
-
 test('preset.yml metadata matches requirements for shipped presets', () => {
-  const cordisPreset = read('presets/cordis/preset.yml')
-  ok(cordisPreset.includes('name: 创建Agent'))
-  ok(cordisPreset.includes('order: 1'))
-
   const omniPreset = read('presets/omni-agent/preset.yml')
-  ok(omniPreset.includes('name: 全域社媒操盘手'))
-
-  const tiktokPreset = read('presets/tiktok-agent/preset.yml')
-  ok(tiktokPreset.includes('name: TikTok运营操盘手') || tiktokPreset.includes('name: TikTok 运营操盘手') || tiktokPreset.includes('name: TikTok运营专家团'))
-
-  const igPreset = read('presets/instagram-agent/preset.yml')
-  ok(igPreset.includes('name: Instagram视觉增长专家'))
-
-  const xPreset = read('presets/x-agent/preset.yml')
-  ok(xPreset.includes('name: X (推特) 流量运营专家'))
-
-  const ytPreset = read('presets/youtube-agent/preset.yml')
-  ok(ytPreset.includes('name: YouTube创作增长专家'))
-
-  const viralPreset = read('presets/viral-video-agent/preset.yml')
-  ok(viralPreset.includes('name: 爆款视频复刻操盘手'))
-
-  const adPreset = read('presets/ad-creative-agent/preset.yml')
-  ok(adPreset.includes('name: 出海广告创意投放操盘手'))
+  ok(omniPreset.includes('name: OmniMux'))
+  ok(omniPreset.includes('order: 1'))
 })
 
 test('sync-agent-presets.sh maintains presets in KEEP array', () => {
   const syncScript = read('scripts/sync-agent-presets.sh')
-  ok(syncScript.includes('KEEP=(cordis omni-agent tiktok-agent instagram-agent x-agent youtube-agent viral-video-agent ad-creative-agent)'))
-})
-
-test('all historical and legacy compatibility presets must exist and be structurally mountable', () => {
-  const legacyAliases = [
-    'media-creator',
-    'marketing-agent',
-    'daily-work',
-    'standard',
-    'marketing-growth-team',
-    'drama-agent',
-    'tiktok-agent',
-  ]
-  for (const alias of legacyAliases) {
-    ok(existsSync(join(root, 'presets', alias, 'preset.yml')), `legacy alias preset.yml missing: ${alias}`)
-    ok(existsSync(join(root, 'presets', alias, 'agent.cordis.yml')), `legacy alias agent.cordis.yml missing: ${alias}`)
-    const cordisText = read(`presets/${alias}/agent.cordis.yml`)
-    ok(cordisText.includes('prefix: |'), `${alias} must use persona prefix key`)
-    ok(!/^\s+text: \|/m.test(cordisText), `${alias} must not use retired persona text key`)
-    ok(cordisText.includes('sampleOverCapGlobResults: false'), `${alias} must contain sampleOverCapGlobResults`)
-    ok(cordisText.includes('provider: spawn'), `${alias} must contain provider: spawn for tool-subagent`)
-  }
-})
-
-test('sync-agent-presets.sh synchronizes all legacy aliases to prevent session resume lockup', () => {
-  const syncScript = read('scripts/sync-agent-presets.sh')
-  ok(syncScript.includes('media-creator'), 'sync-agent-presets.sh must include media-creator in legacy aliases')
-  ok(syncScript.includes('marketing-agent'), 'sync-agent-presets.sh must include marketing-agent in legacy aliases')
-  ok(syncScript.includes('daily-work'), 'sync-agent-presets.sh must include daily-work in legacy aliases')
-  ok(syncScript.includes('standard'), 'sync-agent-presets.sh must include standard in legacy aliases')
+  ok(syncScript.includes('KEEP=(omni-agent)'))
 })
 
 test('presets manifest.json defines the single source of truth whitelist for shipped presets', () => {
@@ -298,39 +131,53 @@ test('presets manifest.json defines the single source of truth whitelist for shi
   ok(Array.isArray(manifest.shippedPresets), 'manifest.json must declare shippedPresets array')
   const shippedIds = manifest.shippedPresets.map((p) => p.id)
   deepEqual(shippedIds, [
-    'cordis',
     'omni-agent',
-    'tiktok-agent',
-    'instagram-agent',
-    'x-agent',
-    'youtube-agent',
-    'viral-video-agent',
-    'ad-creative-agent',
+    'cordis',
   ], 'shippedPresets in manifest.json is the single source of truth whitelist')
+  ok(Array.isArray(manifest.retiredPresetRedirects), 'manifest.json must declare retiredPresetRedirects array')
+  for (const retired of ['tiktok-agent', 'instagram-agent', 'marketing-agent', 'drama-agent', 'standard', 'ptc', 'minimal']) {
+    ok(manifest.retiredPresetRedirects.includes(retired), `retiredPresetRedirects must include ${retired}`)
+  }
 })
 
-test('omni-agent persona positions as universal social lead and forbids forced spawn', () => {
-  const text = read('presets/omni-agent/agent.cordis.yml')
-  ok(text.includes('社媒专家') || text.includes('全能社媒操盘手') || text.includes('全域社媒操盘手'))
-  ok(text.includes('不强行委派') || text.includes('禁止为了「显得专业」而 spawn') || text.includes('仅当一个边界清晰的子任务'))
-  ok(text.includes('不要尝试切换会话 preset'))
+test('omnimux cordis.patch.yml disables upstream generic presets and defaults to omni-agent', () => {
+  const patchText = read('plugins/omnimux/cordis.patch.yml')
+  ok(/- id:\s*preset-standard\s*\n\s*disabled:\s*true/.test(patchText), 'preset-standard must be disabled')
+  ok(/- id:\s*preset-ptc\s*\n\s*disabled:\s*true/.test(patchText), 'preset-ptc must be disabled')
+  ok(/- id:\s*preset-minimal\s*\n\s*disabled:\s*true/.test(patchText), 'preset-minimal must be disabled')
+  ok(!/- id:\s*preset-cordis\s*\n\s*disabled:\s*true/.test(patchText), 'native preset-cordis must remain enabled')
+  ok(/- id:\s*agent-preset-registry\s*\n\s*config:\s*\n\s*default:\s*omni-agent/.test(patchText), 'agent-preset-registry default must be omni-agent')
+})
+
+test('omni-agent Agent.md and persona define distilled English content e-commerce rules and boundaries', () => {
+  const agentMd = read('presets/omni-agent/Agent.md')
+  const cordisText = read('presets/omni-agent/agent.cordis.yml')
+  for (const heading of [
+    '# Identity & Responsibility',
+    '# Workspace Object Semantics',
+    '# Product & Content Truth Boundary',
+    '# Collaboration, Confirmation & Authorization',
+    '# Production, Skills & Capability Contracts',
+    '# Delegation & System Boundaries',
+    '# Delivery & Communication',
+  ]) {
+    ok(agentMd.includes(heading), `Agent.md missing section: ${heading}`)
+  }
+  ok(cordisText.includes('You are OmniMux'), 'persona must establish OmniMux content e-commerce identity')
+  ok(cordisText.includes('Minimal delegation'), 'persona must enforce minimal subagent delegation')
+  ok(cordisText.includes('Creator Mode (`cordis`)'), 'persona must declare Creator Mode boundary')
+  ok(!/\/Users\/|\/home\//.test(agentMd), 'Agent.md must not leak host-local absolute paths')
 })
 
 test('build-agent-presets is idempotent', () => {
   const beforeOmni = read('presets/omni-agent/agent.cordis.yml')
-  const beforeTikTok = read('presets/tiktok-agent/agent.cordis.yml')
-  const beforeAd = read('presets/ad-creative-agent/agent.cordis.yml')
   const res = spawnSync('node', [join(root, 'scripts/build-agent-presets.mjs')], {
     cwd: root,
     encoding: 'utf8',
   })
   equal(res.status, 0, res.stderr || res.stdout)
   const afterOmni = read('presets/omni-agent/agent.cordis.yml')
-  const afterTikTok = read('presets/tiktok-agent/agent.cordis.yml')
-  const afterAd = read('presets/ad-creative-agent/agent.cordis.yml')
   equal(afterOmni, beforeOmni)
-  equal(afterTikTok, beforeTikTok)
-  equal(afterAd, beforeAd)
 })
 
 // `@deepseek-ai/dsh-persona` reads its prose from the required `prefix` key.
@@ -340,13 +187,6 @@ test('build-agent-presets is idempotent', () => {
 test('every shipped preset persona row uses the persona plugin key `prefix`, never `text`', () => {
   const shipped = [
     'presets/omni-agent/agent.cordis.yml',
-    'presets/tiktok-agent/agent.cordis.yml',
-    'presets/instagram-agent/agent.cordis.yml',
-    'presets/x-agent/agent.cordis.yml',
-    'presets/youtube-agent/agent.cordis.yml',
-    'presets/viral-video-agent/agent.cordis.yml',
-    'presets/ad-creative-agent/agent.cordis.yml',
-    'presets/cordis/agent.cordis.yml',
   ]
   for (const rel of shipped) {
     const cfg = personaConfig(rel)

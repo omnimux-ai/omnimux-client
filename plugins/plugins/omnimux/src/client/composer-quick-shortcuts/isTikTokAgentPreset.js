@@ -1,13 +1,20 @@
 /**
- * TikTok Agent preset detection and role gating.
+ * Content e-commerce Agent preset detection and role gating.
  *
- * 输入框下方快捷方式（QuickShortcuts）是专属于 TikTok 运营专家的功能入口，
- * 其它角色预设（标准模式、软件开发团队、营销专家等）下必须返回 null 保持零 DOM。
+ * 输入框下方快捷方式（QuickShortcuts）属于内容电商默认 Agent（omni-agent / OmniMux）
+ * 及历史 TikTok 别名会话的功能入口；创造模式（cordis）与其它非内容电商预设下
+ * 必须返回 false 保持零 DOM。
  */
 
 export const AGENT_PRESET_CHANGED_EVENT = 'omnimux:agent-preset-changed';
 
 export const TIKTOK_AGENT_PRESET_WHITELIST = Object.freeze([
+  'omni-agent',
+  'OmniMux',
+  '内容电商助手',
+  '全域社媒操盘手',
+  '全能社媒操盘手',
+  'Social Media Lead',
   'tiktok-agent',
   'tiktokagent',
   'tiktok-ops-team',

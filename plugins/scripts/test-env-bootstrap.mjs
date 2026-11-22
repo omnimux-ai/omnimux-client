@@ -655,8 +655,8 @@ export function agentPresetPatchText(layout, deps = {}) {
   // 读不到就是环境坏了，必须响亮失败，
   // 否则隔离 profile 拿不到任何声明，宿主照常启动、只在建会话时才报
   // agent-preset/not-found（评审指出的静默降级）。
-  if (!probePresetRoot(layout.appRoot)) {
-    throw failure('PRESET_ROOT_MISSING', `宿主缺少 preset/agent-presets 目录：${layout.appRoot}`);
+  if (!probePresetRoot(layout.appRoot, deps.presetRoot)) {
+    throw failure('PRESET_ROOT_MISSING', `宿主缺少 preset/agent-presets 目录：${deps.presetRoot ?? layout.appRoot}`);
   }
   let composition;
   try {
@@ -681,7 +681,7 @@ export function agentPresetPatchText(layout, deps = {}) {
       }
       resolvable = archiveResolvable(tree, nodeResolvable);
     }
-    composition = compose({ appRoot: layout.appRoot, resolvable });
+    composition = compose({ appRoot: layout.appRoot, resolvable, ...(deps.presetRoot ? { presetRoot: deps.presetRoot } : {}) });
   } catch (error) {
     // 已经是本模块的分类错误就原样上抛，别再用一个更模糊的 code 覆盖掉具体原因。
     if (typeof error?.code === 'string' && error.code.startsWith('TEST_ENV_')) throw error;
@@ -790,13 +790,17 @@ async function startFreshTaskRuntime({ options, io, deps }) {
       { id: 'llm-pi-ai', name: '@deepseek-ai/dsh-llm-pi-ai', config: { providers: { omnimux: { displayName: 'QA模拟', apiKeyEnv: 'OMNIMUX_API_KEY', api: 'openai-completions', baseURL: mock.origin, models: [{ id: 'qa-synthetic', name: 'QA模拟', contextWindow: 8192, maxTokens: 2048 }] } } } },
       { id: 'omnimux', config: { siteBaseUrl: mock.origin, official: { accountAvatars: { enabled: false } }, media: { defaultProvider: 'omnimux', providers: { omnimux: { protocol: 'openai-media', baseUrl: `${mock.origin}/v1`, apiKeyEnv: 'OMNIMUX_API_KEY' } } } } },
     ];
+    const worktreePresetRoot = [join(options.root, 'plugins', 'presets'), join(options.root, 'presets')]
+      .find((candidateDir) => io.existsSync(candidateDir));
+    const freshPresetDeps = worktreePresetRoot ? { ...deps, presetRoot: worktreePresetRoot } : deps;
+    const freshPresetPatch = agentPresetPatchText(layout, freshPresetDeps);
     const patchPath = join(installed.installation.profile, 'cordis.patch.yml');
     if (io.existsSync(patchPath)) {
       canonical(io, patchPath, false);
       const initial = parseDocument(io.readFileSync(patchPath, 'utf8')).toJS();
       if (initial !== null && (!Array.isArray(initial) || initial.length)) throw failure('FRESH_PROFILE_CONFIG_UNEXPECTED');
     }
-    io.writeFileSync(patchPath, JSON.stringify(profilePatch) + '\n', { mode: 0o600 });
+    io.writeFileSync(patchPath, `${stringifyStructuredFile(profilePatch).trimEnd()}\n${freshPresetPatch}`, { mode: 0o600 });
     // The only seeded business state is the repository's declared synthetic media workspace.
     const seededWorkspace = 'ws_qa_media';
     const fixtureSource = join(options.root, 'tests/fixtures/qa-workspace-media');

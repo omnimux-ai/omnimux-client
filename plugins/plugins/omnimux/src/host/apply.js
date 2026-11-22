@@ -56,6 +56,7 @@ import { mountPresetsTools } from '../presets/tools.js'
 import { mountTemplatesTools } from '../templates/tools.js'
 import { mountDecisions } from '../decisions/mount.js'
 import { createNativeFilePicker } from './native-picker.js'
+import { mountRetiredPresetRedirect } from './retired-presets.js'
 
 /**
  * How often the process checks whether the gateway snapshot is due. The TTL
@@ -489,6 +490,7 @@ export function apply(ctx, config = {}) {
   })
   mountPresetsTools(ctx)
   mountTemplatesTools(ctx)
+  mountRetiredPresetRedirect(ctx)
   mountCanvasGenerationEvents(ctx, { hubEvents })
   mountSurfaceFollow(ctx, {
     mailbox,

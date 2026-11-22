@@ -83,3 +83,18 @@
 - id: skill-filesystem
   config:
     includeDefaultRoots: false
+
+# 出厂预设收敛：仅保留默认内容电商 Agent (omni-agent) 与 DSH 原生创造模式 (cordis)。
+# 停用上游通用编码预设（standard / ptc / minimal），历史会话经中枢 retired-presets 运行时重定向兼容。
+- id: preset-standard
+  disabled: true
+
+- id: preset-ptc
+  disabled: true
+
+- id: preset-minimal
+  disabled: true
+
+- id: agent-preset-registry
+  config:
+    default: omni-agent

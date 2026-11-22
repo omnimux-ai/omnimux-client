@@ -63,8 +63,12 @@ test('getPresetFallbackCopy returns localized fallback copy for all presets', ()
   assert.equal(enCordis.name, 'Create Agent')
 
   const zhSocial = getPresetFallbackCopy('omni-agent', 'zh')
-  assert.equal(zhSocial.name, '社媒专家')
-  assert.ok(zhSocial.description.includes('矩阵运营增长'))
+  assert.equal(zhSocial.name, 'OmniMux')
+  assert.ok(zhSocial.description.includes('内容电商'))
+
+  const enSocial = getPresetFallbackCopy('omni-agent', 'en')
+  assert.equal(enSocial.name, 'OmniMux')
+  assert.ok(enSocial.description.includes('content e-commerce'))
 
   const zhTikTok = getPresetFallbackCopy('tiktok-agent', 'zh')
   assert.equal(zhTikTok.name, 'TikTok运营专家团')

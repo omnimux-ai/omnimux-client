@@ -54,24 +54,34 @@ test('E2E: 会话预设切换与全局/DOM 探测绝对优先级隔离', async (
       '显式 props.agentPreset="standard" 必须绝对优先，阻断全局与 DOM 穿透',
     )
 
-    // 场景 3: 切换到全能操盘手会话 session.projectionValues.agentPreset = 'omni-agent'
+    // 场景 3: 切换到 DSH 创造模式 session.projectionValues.agentPreset = 'cordis'
+    assert.equal(
+      isTikTokAgentPreset(
+        { projectionValues: { agentPreset: 'cordis' } },
+        {},
+      ),
+      false,
+      '显式 projectionValues="cordis" 必须严格返回 false',
+    )
+
+    // 场景 4: 切换到默认内容电商 Agent session.projectionValues.agentPreset = 'omni-agent'
     assert.equal(
       isTikTokAgentPreset(
         { projectionValues: { agentPreset: 'omni-agent' } },
         {},
       ),
-      false,
-      '显式 projectionValues="omni-agent" 必须严格返回 false',
+      true,
+      '显式 projectionValues="omni-agent" 应返回 true',
     )
 
-    // 场景 4: 切换到营销专家会话 session.agentPreset = 'marketing-agent'
+    // 场景 5: 切换到营销专家会话 session.agentPreset = 'marketing-agent'
     assert.equal(
       isTikTokAgentPreset({ agentPreset: 'marketing-agent' }, {}),
       false,
       '显式 session.agentPreset="marketing-agent" 必须严格返回 false',
     )
 
-    // 场景 5: 显式切换为 TikTok 预设时，正常返回 true
+    // 场景 6: 显式切换为 TikTok 历史别名时，正常返回 true
     assert.equal(
       isTikTokAgentPreset({ agentPreset: 'tiktok-agent' }, {}),
       true,

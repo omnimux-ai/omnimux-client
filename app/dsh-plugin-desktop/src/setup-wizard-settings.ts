@@ -58,8 +58,31 @@ const AGENT_PRESET_DEFAULT_LOCATIONS: readonly (readonly [namespace: string, fie
   Object.freeze([AGENT_PRESETS_NAMESPACE, 'default'] as const),
   Object.freeze(['agent-preset-registry', 'selectedDefault'] as const),
 ])
-const LEGACY_AGENT_PRESET = 'code'
-const CURRENT_AGENT_PRESET = 'ptc'
+const LEGACY_AGENT_PRESETS: ReadonlySet<string> = new Set([
+  'code',
+  'standard',
+  'ptc',
+  'minimal',
+  'tiktok-agent',
+  'instagram-agent',
+  'x-agent',
+  'youtube-agent',
+  'viral-video-agent',
+  'ad-creative-agent',
+  'media-creator',
+  'marketing-agent',
+  'marketing-growth-team',
+  'drama-agent',
+  'daily-work',
+])
+const CURRENT_AGENT_PRESET = 'omni-agent'
+
+function isLegacyAgentPreset(value: unknown): boolean {
+  if (typeof value !== 'string') return false
+  const normalized = value.trim().toLowerCase()
+  if (!normalized || normalized === CURRENT_AGENT_PRESET || normalized === 'cordis') return false
+  return LEGACY_AGENT_PRESETS.has(normalized) || normalized.startsWith('expert-')
+}
 const MAX_DOCUMENT_BYTES = 4 * 1024 * 1024
 const DOCUMENT_FILE_MODE = 0o600
 const DOCUMENT_DIRECTORY_MODE = 0o700
@@ -569,21 +592,21 @@ export async function migrateDesktopWindowMaterialSettings(
 }
 
 /**
- * Replace the released `code` preset default with its current `ptc` id.
- * Session persistence migrates the same historical id, but the global
- * setting is read before a new Session exists and therefore needs its own
- * pre-Host migration. Both the 0.1.6 `agent-presets.default` key and the
+ * Replace retired preset defaults (`code`, `standard`, `ptc`, `minimal`, legacy
+ * social/expert presets) with the converged default `omni-agent` id.
+ * The global setting is read before a new Session exists and therefore needs its
+ * own pre-Host migration. Both the 0.1.6 `agent-presets.default` key and the
  * 0.1.7 `agent-preset-registry.selectedDefault` key it is renamed to are
- * checked, because beta renames the section before this runs. Unknown values
- * remain untouched so user-authored presets keep failing visibly instead of
- * being silently replaced.
+ * checked, because beta renames the section before this runs. `cordis` and
+ * unknown values remain untouched so native Creator Mode and user-authored
+ * presets are never overwritten.
  */
 export async function migrateLegacyAgentPresetSettings(
   documentPath: string,
 ): Promise<boolean> {
   const path = settingsPath(documentPath)
   const legacyLocations = (loaded: LoadedSettingsDocument) => AGENT_PRESET_DEFAULT_LOCATIONS
-    .filter(([namespace, field]) => section(loaded.root, namespace)[field] === LEGACY_AGENT_PRESET)
+    .filter(([namespace, field]) => isLegacyAgentPreset(section(loaded.root, namespace)[field]))
 
   if (legacyLocations(loadSettingsDocument(path)).length === 0) return false
 

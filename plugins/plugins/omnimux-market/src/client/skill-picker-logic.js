@@ -95,8 +95,12 @@ export function getPresetSkillBinding(presetId, mode) {
 
   const isOmniExplicit =
     norm === 'omni-agent' ||
+    norm === 'omnimux' ||
     norm === 'omni' ||
-    norm === 'omni-social-agent'
+    norm === 'omni-social-agent' ||
+    presetId === 'OmniMux' ||
+    presetId === '内容电商助手' ||
+    presetId === '全域社媒操盘手'
 
   const isOmniSocial =
     isTiktokExplicit ||
