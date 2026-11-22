@@ -75,6 +75,24 @@ test('a successful refresh is accepted, held in memory and announced', async (t)
   assert.equal(live.resolve().source, 'remote')
 })
 
+test('an invalid default is logged without rejecting the catalog refresh', async (t) => {
+  const response = payload(['fixture-model'])
+  response.data[0].default_group = 'fixture-delisted'
+  response.data[0].group_order = ['default']
+  const warn = t.mock.method(console, 'warn', () => {})
+  const { live, refresher } = fixture(t, {
+    fetchImpl: async () => ({ ok: true, status: 200, json: async () => response }),
+  })
+
+  const result = await refresher.refreshOnce(true)
+  assert.equal(result.status, 'ok')
+  assert.equal(result.changed, true)
+  assert.deepEqual(live.resolve().snapshot.models[0].groupOrder, ['default'])
+  assert.deepEqual(warn.mock.calls.map(({ arguments: args }) => args), [
+    ['omnimux: invalid-default-group', '["fixture-model"]'],
+  ])
+})
+
 test('an unchanged response is healthy but announces nothing', async (t) => {
   const { refresher, changed } = fixture(t, {
     seed: seedSnapshot(['a-1', 'b-1']),

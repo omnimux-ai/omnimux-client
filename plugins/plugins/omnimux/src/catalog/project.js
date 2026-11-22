@@ -309,12 +309,8 @@ export function projectChatRows(index) {
 /**
  * The channel groups a model can be served on, with their pricing.
  *
- * P1b: `serving/channel-groups.js` derives the lines from the gateway
- * snapshot's `enable_groups` and the prices from the snapshot's
- * `group_ratio` + per-model billing, so this projection is the gateway's own
- * answer. Surfacing it here lets the composer's model picker and any later
- * caller read one authority instead of re-declaring prices, which is how the
- * canvas mirror drifted from the hub before.
+ * The same ordered lines, default and prices serve the picker and routing.
+ * For grouped video, only lines with supported operations enter the picker.
  *
  * Only the fields a caller can act on are projected: the internal record may
  * grow fields that are not part of this contract. The result is always an
@@ -328,14 +324,14 @@ export function projectChatRows(index) {
  */
 export function projectChannelGroups(modelId, snapshot, model) {
   const effectiveVersion = effectiveVideoVersion(model ?? { id: modelId }, snapshot);
-  return getModelChannelGroups(modelId, snapshot).flatMap((group) => {
-    const effectiveOperations = Object.hasOwn(model?.effectiveVideoOperations ?? {}, group.wireGroup || group.id)
-      ? model.effectiveVideoOperations[group.wireGroup || group.id] : [];
-    if (effectiveVersion !== undefined && effectiveOperations.length === 0) return [];
+  const operationsByGroup = model?.effectiveVideoOperations ?? {};
+  const supportedGroups = effectiveVersion === undefined ? undefined
+    : new Set(Object.keys(operationsByGroup).filter((group) => operationsByGroup[group].length > 0));
+  return getModelChannelGroups(modelId, snapshot, supportedGroups).map((group) => {
     const pricing = group.pricing && typeof group.pricing === 'object'
       ? structuredClone(group.pricing)
       : null;
-    return [{
+    return {
       id: group.id,
       label: group.label,
       ...(typeof group.badge === 'string' ? { badge: group.badge } : {}),
@@ -347,8 +343,11 @@ export function projectChannelGroups(modelId, snapshot, model) {
       ...(group.sla && typeof group.sla === 'object' ? { sla: structuredClone(group.sla) } : {}),
       enabled: group.enabled !== false,
       ...(group.default === true ? { default: true } : {}),
-      ...(effectiveVersion !== undefined ? { effectiveVersion, effectiveOperations: structuredClone(effectiveOperations) } : {}),
-    }];
+      ...(effectiveVersion !== undefined ? {
+        effectiveVersion,
+        effectiveOperations: structuredClone(operationsByGroup[group.wireGroup || group.id]),
+      } : {}),
+    };
   });
 }
 

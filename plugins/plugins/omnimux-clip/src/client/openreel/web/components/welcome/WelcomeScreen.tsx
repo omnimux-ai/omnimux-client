@@ -178,12 +178,14 @@ type ViewMode = "home" | "templates" | "recent";
 
 interface WelcomeScreenProps {
   initialTab?: "templates" | "recent";
+  managed?: boolean;
 }
 
-export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ initialTab }) => {
+export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ initialTab, managed = false }) => {
   const t = useClipT();
   const skipId = useId();
   const phone = usePhoneEditor();
+  const canResumeEditor = useProjectStore((state) => !managed || state.hasOpenProject);
   const setSkipWelcomeScreen = useUIStore(
     (state) => state.setSkipWelcomeScreen,
   );
@@ -266,10 +268,11 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ initialTab }) => {
   }, [navigate]);
 
   useEffect(() => {
-    if (skipWelcomeScreen && !initialTab && !bandOpen) {
+    // The host opens this screen explicitly in managed mode.
+    if (!managed && skipWelcomeScreen && !initialTab && !bandOpen) {
       navigate("editor");
     }
-  }, [skipWelcomeScreen, initialTab, navigate, bandOpen]);
+  }, [managed, skipWelcomeScreen, initialTab, navigate, bandOpen]);
 
   const shortcutRoot = useEditorPortalRoot();
   useEffect(() => {
@@ -287,14 +290,14 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ initialTab }) => {
       if (e.key === "Escape") {
         if (viewMode !== "home") {
           setViewMode("home");
-        } else {
+        } else if (canResumeEditor) {
           navigate("editor");
         }
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [navigate, viewMode, phone, shortcutRoot]);
+  }, [navigate, viewMode, phone, shortcutRoot, canResumeEditor]);
 
   if (phone)
     return (
@@ -535,7 +538,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ initialTab }) => {
                 }}
                 type="button"
                 aria-label={t("Open editor")}
-                disabled={creating}
+                disabled={creating || !canResumeEditor}
                 className="inline-flex min-w-0 items-center justify-center gap-1.5 font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-8 px-3 text-[12px] border border-border bg-bg-2 text-fg-2 hover:bg-bg-3 hover:text-fg rounded-xl"
               >
                 <span className="flex h-4 w-4 shrink-0 items-center justify-center">
@@ -572,7 +575,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ initialTab }) => {
               </>
             )}
 
-            {!compact && (
+            {!compact && canResumeEditor && (
               <>
                 <span className="text-text-muted/30">·</span>
 

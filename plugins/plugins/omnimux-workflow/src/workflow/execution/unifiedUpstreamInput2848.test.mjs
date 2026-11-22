@@ -13,86 +13,94 @@ import { findExecutionReadinessFailure } from '../../shared/validation/execution
 
 // 2026-10-21 网关对账 #3516：audio 只剩 Suno text_to_music（单一 prompt 槽，无双角色正文），
 // 单独用下面的专用用例覆盖；其余三类仍走同一条上游正文装配链路。
-const rows = [
-  ['text', 'gemini-3.8-flash', 'chat'],
-  ['image', 'gpt-image-2.5', 'text_to_image'],
-  ['video', 'seedance-2-5', 'text_to_video'],
-];
 const env = { OMNIMUX_API_KEY: 'sk-fixture-offline-only', OMNIMUX_BASE_URL: 'https://fixture.invalid/v1' };
 
-for (const [kind, modelId, operationId] of rows) {
-  test(`production ${kind} contract/executor/gateway/Hub/mapper sends A only and restores once`, async t => {
-    const dir = mkdtempSync(join(tmpdir(), 'omnimux-2848-'));
-    const previousHome = process.env.DSH_HOME;
-    process.env.DSH_HOME = dir;
-    t.after(() => {
-      if (previousHome === undefined) delete process.env.DSH_HOME;
-      else process.env.DSH_HOME = previousHome;
-      rmSync(dir, { recursive: true, force: true });
-    });
-    const bodies = [];
-    const catalog = buildModelCatalog({ env: {} });
-    const op = catalog.models.find(model => model.id === modelId).operations.find(op => op.id === operationId);
-    const textSlot = op.inputs.find(slot => slot.type === 'text' && slot.role === 'prompt');
-    assert.equal(op.listed, true);
-    assert.deepEqual(textSlot.valueSources, ['local_field', 'upstream_output']);
-    assert.equal(textSlot.composition.kind, kind === 'audio' ? 'single_body' : 'content_with_instruction');
-    assert.equal(deriveSlotLayout(catalog, modelId, operationId).addButton, true);
-    const fetcher = async (url, init) => {
-      assert.equal(init.method, 'POST', 'capture stops at the provider transport, not polling');
-      const body = JSON.parse(init.body);
-      bodies.push({ url: String(url), body });
-      if (kind === 'text') return Response.json({ choices: [{ message: { content: 'offline result' } }] });
-      if (kind === 'image') return Response.json({ data: [{ b64_json: 'cG5n' }] });
-      if (kind === 'video') return Response.json({ error: { message: 'offline capture stops before polling' } }, { status: 400 });
-      return new Response(Buffer.from([0x49, 0x44, 0x33, 0, 1]), { headers: { 'content-type': 'audio/mpeg' } });
-    };
-    const seams = {
-      modelCatalog: { list: () => catalog },
-      textComplete: { execute: req => executeOmnimuxText({ ...req, env, fetcher, allowedGroups: ['standard'] }) },
-      imageGenerate: { execute: req => executeOmnimuxMedia('image', { ...req, env, fetcher }) },
-      videoGenerate: { execute: req => executeOmnimuxMedia('video', { ...req, env, fetcher }) },
-      audioGenerate: { execute: req => executeOmnimuxMedia('audio', { ...req, env, fetcher }) },
-    };
-    const gateway = createOmnimuxSeamClient({ getSeam: name => seams[name], env: {} });
-    const executor = createMaterialGatewayExecutor({ gateway });
-    const target = { id: 'target', type: 'material', data: { materialType: kind, nodeKind: 'generate',
-      inputBindingVersion: 1, prompt: '本地正文。', params: { model: modelId, operation: operationId },
-      slotBindings: { [textSlot.slot]: [{ edgeId: 'ea', sourceNodeId: 'a', outputId: 'a:current',
-        pinned: true, ordinal: 0, use: 'active', role: textSlot.role }] } } };
-    const ctx = { mediaDir: dir, signal: new AbortController().signal,
-      upstreamOutputs: new Map([['a', { text: '已选正文。' }], ['b', { text: '未选供给。' }]]),
-      upstreamBindings: [{ edgeId: 'ea', sourceNodeId: 'a', output: { text: '已选正文。' } },
-        { edgeId: 'eb', sourceNodeId: 'b', output: { text: '未选供给。' } }] };
-    const run = async () => {
-      // Video stops after the real submission, before poll/download; other outputs settle offline.
-      if (kind === 'video') {
-        const before = bodies.length;
-        await assert.rejects(executor.execute(target, ctx), /offline capture stops before polling/);
-        assert.equal(bodies.length, before + 1);
-      } else await executor.execute(target, ctx);
-    };
-    const bodyText = capture => kind === 'audio' ? capture.body.input
-      : kind === 'text' ? capture.body.messages[0].content[0].text : capture.body.prompt;
-    await run();
-    assert.equal(bodyText(bodies[0]), kind === 'audio' ? '已选正文。\n\n本地正文。' : '来源 1：\n已选正文。\n\n补充要求：\n本地正文。');
-    assert.equal(bodyText(bodies[0]).split('已选正文。').length - 1, 1);
-    assert.ok(!JSON.stringify(bodies).includes('未选供给。'));
-    target.data.slotBindings[textSlot.slot][0].use = 'inactive';
-    await run();
-    assert.equal(bodyText(bodies[1]), '本地正文。');
-    target.data.slotBindings[textSlot.slot][0].use = 'active';
-    await run();
-    assert.equal(bodyText(bodies[2]), bodyText(bodies[0]));
-    target.data.slotBindings = {};
-    await run();
-    assert.equal(bodyText(bodies[3]), '本地正文。');
-    assert.equal(bodies.length, 4);
-    assert.equal(ctx.upstreamBindings.length, 2);
-    assert.ok(bodies.every(row => row.url.startsWith('https://fixture.invalid/')));
-    console.log('PRODUCTION_TRANSPORT_CAPTURE', JSON.stringify({ modelId, operationId, kind, captures: bodies }));
+async function verifyUpstreamBody(t, kind, modelId, operationId, group) {
+  const dir = mkdtempSync(join(tmpdir(), 'omnimux-2848-'));
+  const previousHome = process.env.DSH_HOME;
+  process.env.DSH_HOME = dir;
+  t.after(() => {
+    if (previousHome === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = previousHome;
+    rmSync(dir, { recursive: true, force: true });
   });
+  const bodies = [];
+  const catalog = buildModelCatalog({ env: {} });
+  const op = catalog.models.find(model => model.id === modelId).operations.find(op => op.id === operationId);
+  const textSlot = op.inputs.find(slot => slot.type === 'text' && slot.role === 'prompt');
+  assert.equal(op.listed, true);
+  assert.deepEqual(textSlot.valueSources, ['local_field', 'upstream_output']);
+  assert.equal(textSlot.composition.kind, kind === 'audio' ? 'single_body' : 'content_with_instruction');
+  assert.equal(deriveSlotLayout(catalog, modelId, operationId).addButton, true);
+  const fetcher = async (url, init) => {
+    assert.equal(init.method, 'POST', 'capture stops at the provider transport, not polling');
+    const body = JSON.parse(init.body);
+    bodies.push({ url: String(url), body });
+    if (kind === 'text') return Response.json({ choices: [{ message: { content: 'offline result' } }] });
+    if (kind === 'image') return Response.json({ data: [{ b64_json: 'cG5n' }] });
+    if (kind === 'video') return Response.json({ error: { message: 'offline capture stops before polling' } }, { status: 400 });
+    return new Response(Buffer.from([0x49, 0x44, 0x33, 0, 1]), { headers: { 'content-type': 'audio/mpeg' } });
+  };
+  const seams = {
+    modelCatalog: { list: () => catalog },
+    textComplete: { execute: req => executeOmnimuxText({ ...req, env, fetcher, allowedGroups: ['standard'] }) },
+    imageGenerate: { execute: req => executeOmnimuxMedia('image', { ...req, env, fetcher }) },
+    videoGenerate: { execute: req => executeOmnimuxMedia('video', { ...req, env, fetcher }) },
+    audioGenerate: { execute: req => executeOmnimuxMedia('audio', { ...req, env, fetcher }) },
+  };
+  const seamRegistry = new Map(Object.entries(seams));
+  const gateway = createOmnimuxSeamClient({ getSeam: name => seamRegistry.get(name), env: {} });
+  const executor = createMaterialGatewayExecutor({ gateway });
+  const selectedOccupant = { edgeId: 'ea', sourceNodeId: 'a', outputId: 'a:current',
+    pinned: true, ordinal: 0, use: 'active', role: textSlot.role };
+  const target = { id: 'target', type: 'material', data: { materialType: kind, nodeKind: 'generate',
+    inputBindingVersion: 1, prompt: '本地正文。',
+    params: { model: modelId, operation: operationId,
+      ...(group ? { routing: { allowedGroups: [group] } } : {}),
+      ...(kind === 'video' ? { resolution: group } : {}) },
+    slotBindings: Object.fromEntries([[textSlot.slot, [selectedOccupant]]]) } };
+  const ctx = { mediaDir: dir, signal: new AbortController().signal,
+    upstreamOutputs: new Map([['a', { text: '已选正文。' }], ['b', { text: '未选供给。' }]]),
+    upstreamBindings: [{ edgeId: 'ea', sourceNodeId: 'a', output: { text: '已选正文。' } },
+      { edgeId: 'eb', sourceNodeId: 'b', output: { text: '未选供给。' } }] };
+  const run = async () => {
+    // Video stops after the real submission, before poll/download; other outputs settle offline.
+    if (kind === 'video') {
+      const before = bodies.length;
+      await assert.rejects(executor.execute(target, ctx), /offline capture stops before polling/);
+      assert.equal(bodies.length, before + 1);
+    } else await executor.execute(target, ctx);
+  };
+  const bodyText = capture => kind === 'audio' ? capture.body.input
+    : kind === 'text' ? capture.body.messages[0].content[0].text : capture.body.prompt;
+  await run();
+  assert.equal(bodyText(bodies[0]), kind === 'audio' ? '已选正文。\n\n本地正文。' : '来源 1：\n已选正文。\n\n补充要求：\n本地正文。');
+  assert.equal(bodyText(bodies[0]).split('已选正文。').length - 1, 1);
+  assert.ok(!JSON.stringify(bodies).includes('未选供给。'));
+  selectedOccupant.use = 'inactive';
+  await run();
+  assert.equal(bodyText(bodies[1]), '本地正文。');
+  selectedOccupant.use = 'active';
+  await run();
+  assert.equal(bodyText(bodies[2]), bodyText(bodies[0]));
+  target.data.slotBindings = {};
+  await run();
+  assert.equal(bodyText(bodies[3]), '本地正文。');
+  assert.equal(bodies.length, 4);
+  assert.equal(ctx.upstreamBindings.length, 2);
+  assert.ok(bodies.every(row => row.url.startsWith('https://fixture.invalid/')));
+  console.log('PRODUCTION_TRANSPORT_CAPTURE', JSON.stringify({ modelId, operationId, kind, captures: bodies }));
 }
+
+test('production text contract/executor/gateway/Hub/mapper sends A only and restores once', async t => {
+  await verifyUpstreamBody(t, 'text', 'gemini-3.8-flash', 'chat');
+});
+test('production image contract/executor/gateway/Hub/mapper sends A only and restores once', async t => {
+  await verifyUpstreamBody(t, 'image', 'gpt-image-2.5', 'text_to_image', 'standard');
+});
+test('production video contract/executor/gateway/Hub/mapper sends A only and restores once', async t => {
+  await verifyUpstreamBody(t, 'video', 'seedance-2-5', 'text_to_video', '720p');
+});
 
 test('A6 production current text identity and body freeze together before catalog await; next request follows edited current output', async t => {
   const { readNodeInputSource } = await import('../../shared/graph/nodeInputSource.ts');

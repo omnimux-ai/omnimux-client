@@ -1,9 +1,17 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import { normalizePricingPayload } from '../catalog/cloud/snapshot.js'
 import { OmnimuxError } from './errors.js'
 import { gatewayCandidates, parseMediaConfig, resolveMediaAuth, resolveMediaRoute, toMediaWireModelId } from './route.js'
 import { mapOmnimuxInput } from './vendors/omnimux.js'
 import { resetTestNetworkAttempts, testNetworkAttempts } from '../../scripts/test-network-guard.mjs'
+
+const seedanceSnapshot = normalizePricingPayload({ data: [{
+  model_name: 'seedance-2-5',
+  enable_groups: ['desktop-480p', 'desktop-720p'],
+  group_order: ['desktop-480p', 'desktop-720p'],
+  default_group: 'desktop-720p',
+}] }).snapshot
 
 describe('media route', () => {
   it('defaults to the OmniMux openai-media video row', () => {
@@ -13,10 +21,8 @@ describe('media route', () => {
     assert.equal(route.protocol, 'openai-media')
     assert.equal(route.baseUrl, 'https://api.omnimux.ai/v1')
     assert.equal(route.modelId, 'seedance-2-5')
-    // 2026-10-21 网关对账 #3516 评审修正：默认档位是 720p 标准版（default:true），
-    // 空意图请求自动钉住该默认线路（不再返回裸候选）。
-    assert.equal(route.group, 'desktop-720p')
-    assert.deepEqual(route.candidates, ['seedance-2-5@desktop-720p'])
+    assert.equal(route.group, undefined)
+    assert.deepEqual(route.candidates, gatewayCandidates(route.modelId))
     assert.equal(route.apiKey, '')
     assert.equal(route.authMode, 'auto')
   })
@@ -25,16 +31,16 @@ describe('media route', () => {
     // 2026-10-21 评审修正（#3516）：seedance-2-5 的 480p/720p 是两条带固定分辨率约束的线路，
     // 无显式分组的请求必须按 resolution 参数选线，否则默认 720p 档会在传输前拒绝 480p。
     const media = parseMediaConfig(undefined)
-    const economy = resolveMediaRoute('video', { model: 'seedance-2-5', resolution: '480p' }, media, {})
+    const economy = resolveMediaRoute('video', { model: 'seedance-2-5', resolution: '480p' }, media, {}, seedanceSnapshot)
     assert.equal(economy.group, 'desktop-480p')
     assert.deepEqual(economy.candidates, ['seedance-2-5@desktop-480p'])
     for (const request of [{ model: 'seedance-2-5', resolution: '720p' }, { model: 'seedance-2-5' }]) {
-      const route = resolveMediaRoute('video', request, media, {})
+      const route = resolveMediaRoute('video', request, media, {}, seedanceSnapshot)
       assert.equal(route.group, 'desktop-720p')
       assert.deepEqual(route.candidates, ['seedance-2-5@desktop-720p'])
     }
     // 显式分组始终优先于参数派生线路。
-    const explicit = resolveMediaRoute('video', { model: 'seedance-2-5', group: '720p', resolution: '480p' }, media, {})
+    const explicit = resolveMediaRoute('video', { model: 'seedance-2-5', group: '720p', resolution: '480p' }, media, {}, seedanceSnapshot)
     assert.equal(explicit.group, '720p')
     assert.deepEqual(explicit.candidates, ['seedance-2-5@desktop-720p'])
   })
@@ -363,8 +369,10 @@ describe('resolveMediaAuth (dual-track auth)', () => {
 
   it('reports no strategy only when no default line can be auto-pinned', () => {
     const media = parseMediaConfig(undefined)
-    const legacy = resolveMediaRoute('video', { model: 'seedance-2-0' }, media)
-    // #3516：seedance-2-0 声明 default 分组 → 空意图自动钉住默认线路，策略记为 auto。
+    const snapshot = normalizePricingPayload({ data: [{
+      model_name: 'seedance-2-0', enable_groups: ['default'], group_order: ['default'],
+    }] }).snapshot
+    const legacy = resolveMediaRoute('video', { model: 'seedance-2-0' }, media, {}, snapshot)
     assert.equal(legacy.strategy, 'auto')
     assert.deepEqual(legacy.unresolvedGroups, [])
     assert.deepEqual(legacy.candidates, ['seedance-2-0@default'])
@@ -399,16 +407,18 @@ describe('resolveMediaAuth (dual-track auth)', () => {
 
   it('auto-pins the default line when a model declares one and the caller gave no intent', () => {
     const media = parseMediaConfig(undefined)
-    const imageRoute = resolveMediaRoute('image', { model: 'gpt-image-2.5' }, media)
-    // 默认分组的 wireGroup 是 `default`（分组 id 为 standard）。
-    assert.equal(imageRoute.group, 'default')
-    // Pool is locked to the single default line so it never fails over into a different price tier.
-    assert.deepEqual(imageRoute.candidates, ['gpt-image-2.5@default'])
+    const model = 'gpt-image-2.5'
+    const snapshot = normalizePricingPayload({ data: [{
+      model_name: model, enable_groups: ['default', 'gpt-image-2.5-economy'],
+      group_order: ['default', 'gpt-image-2.5-economy'], default_group: 'gpt-image-2.5-economy',
+    }] }).snapshot
+    const imageRoute = resolveMediaRoute('image', { model, resolution: '1K' }, media, {}, snapshot)
+    assert.equal(imageRoute.group, 'gpt-image-2.5-economy')
+    assert.deepEqual(imageRoute.candidates, ['gpt-image-2.5@gpt-image-2.5-economy'])
 
-    // 显式选择非默认线路仍只锁定该线路。
-    const economyRoute = resolveMediaRoute('image', { model: 'gpt-image-2.5', group: 'economy' }, media)
-    assert.equal(economyRoute.group, 'economy')
-    assert.deepEqual(economyRoute.candidates, ['gpt-image-2.5@gpt-image-2.5-economy'])
+    const explicit = resolveMediaRoute('image', { model, group: 'standard' }, media, {}, snapshot)
+    assert.equal(explicit.group, 'standard')
+    assert.deepEqual(explicit.candidates, ['gpt-image-2.5@default'])
 
     // #3516：flare / sunburst 的分组表已移除（仅登记不上架），空意图保留裸候选而不钉线路。
     const flareRoute = resolveMediaRoute('image', { model: 'gpt-image-2.5-flare' }, media)
@@ -432,6 +442,21 @@ describe('resolveMediaAuth (dual-track auth)', () => {
     const explicit = resolveMediaRoute('image', { model: 'gpt-image-2.5', group: 'economy' }, media, {})
     assert.equal(explicit.group, 'economy')
     assert.deepEqual(explicit.candidates, ['gpt-image-2.5@gpt-image-2.5-economy'])
+  })
+
+  it('requires a chosen line when the gateway default is empty or illegal', () => {
+    const model = 'seedance-2-5'
+    for (const defaultGroup of ['', 'fixture-retired']) {
+      const snapshot = normalizePricingPayload({ data: [{
+        model_name: model, enable_groups: ['desktop-480p'], group_order: ['desktop-480p'], default_group: defaultGroup,
+      }] }).snapshot
+      for (const request of [{ model }, { model, resolution: '480p' }]) {
+        const route = resolveMediaRoute('video', request, parseMediaConfig(), {}, snapshot)
+        assert.equal(route.group, undefined)
+        assert.equal(route.lineSelectionRequired, true)
+        assert.deepEqual(route.candidates, [])
+      }
+    }
   })
 
   it('models without a pinned default line retain legacy bare candidates under empty intent', () => {

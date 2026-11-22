@@ -18,6 +18,7 @@ import {
   type RuntimeByokChannelSettings,
 } from './channelGroups';
 import type { CatalogChannelGroupDto } from '../../../../../shared/api.ts';
+import type { LineConstraints } from '../../../../../shared/validation/lineConstraints.ts';
 
 /**
  * 渠道输入与输出能力硬约束
@@ -72,6 +73,7 @@ export interface ChannelContract {
 
   /** 输入/输出约束集 (用于驱动 UI 自适应与自愈) */
   constraints: ChannelConstraints;
+  lineParameters?: LineConstraints['parameters'];
 
   /** 计费元数据 (仅展示与核算用) */
   billing?: {
@@ -90,6 +92,26 @@ export interface HealingNote {
 export interface ReconcileResult {
   nextParams: Record<string, unknown>;
   healingNotes: HealingNote[];
+}
+
+/** Apply the selected line's parameter declarations to a saved draft. */
+export function reconcileDeclaredLineParams(
+  currentParams: Record<string, unknown>,
+  lineParameters: LineConstraints['parameters'],
+): Record<string, unknown> {
+  const nextParams = { ...currentParams };
+  for (const [field, rule] of Object.entries(lineParameters ?? {})) {
+    if (!rule) continue;
+    if (rule.supported === false) {
+      delete nextParams[field];
+    } else if (rule.fixed !== undefined) {
+      nextParams[field] = rule.fixed;
+    } else if (Array.isArray(rule.only) && !rule.only.some(value => Object.is(value, nextParams[field]))) {
+      if (rule.only.length === 1) nextParams[field] = rule.only[0];
+      else delete nextParams[field];
+    }
+  }
+  return nextParams;
 }
 
 /**
@@ -196,7 +218,10 @@ export function reconcileParamsWithContract(
     }
   }
 
-  return { nextParams, healingNotes: notes };
+  return {
+    nextParams: newContract.lineParameters ? reconcileDeclaredLineParams(nextParams, newContract.lineParameters) : nextParams,
+    healingNotes: notes,
+  };
 }
 
 export interface ChannelFallbackState {
@@ -578,6 +603,9 @@ export function buildChannelContract(
       timeoutMs: 60000,
     },
     constraints: defaultConstraints,
+    ...(!isByok && !baseConstraints && group.constraints?.parameters
+      ? { lineParameters: group.constraints.parameters }
+      : {}),
     billing: isByok
       ? { type: 'payg' }
       : {

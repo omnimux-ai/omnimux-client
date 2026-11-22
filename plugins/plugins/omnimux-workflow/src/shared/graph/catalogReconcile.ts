@@ -12,6 +12,9 @@
 
 import type { Edge, Node } from '@xyflow/react';
 import type { CapabilityCatalog } from '../api.ts';
+import type { MaterialType } from '../canvasTypes.ts';
+import { readCanvasParams } from './canvasInputSources.ts';
+import { planDefaultVisualLineParams } from './canvasSlotRecompute.ts';
 import { resolveNodeKind } from './materialNode.ts';
 import {
   planCanvasInputMutation,
@@ -74,10 +77,9 @@ export function shouldReconcileCatalog(args: {
 /**
  * Reconcile every generate node against the new catalog.
  *
- * Implementation: issue a no-op structural plan that still runs the soft
- * recompute path by patching each generate node with its current prompt
- * (identity patch). The gateway recomputes Feed-Slot consumption and stamps
- * `data.compat.catalogFingerprint`; supply edges remain intact.
+ * Patch a usable replacement line and its parameters in the same mutation.
+ * An empty data patch still lets the gateway recompute consumption for
+ * other nodes without dropping supply or changing a saved line choice.
  */
 export function reconcileCanvasForCatalog(
   input: CatalogReconcileInput,
@@ -87,7 +89,8 @@ export function reconcileCanvasForCatalog(
   const prevFingerprint =
     typeof input.previousFingerprint === 'string' ? input.previousFingerprint : '';
 
-  if (!shouldReconcileCatalog({
+  // While the runtime is waiting for a replacement directory, keep every saved choice.
+  if ((!nextFingerprint && !catalog?.models?.length) || !shouldReconcileCatalog({
     previousFingerprint: prevFingerprint,
     nextFingerprint,
   })) {
@@ -113,18 +116,11 @@ export function reconcileCanvasForCatalog(
     };
   }
 
-  // Soft recompute trigger: identity prompt patch on every generate node.
-  // The gateway treats prompt patches as soft recomputes (never rejects the
-  // whole mutation), so historical zero-candidate graphs keep their edges.
   const nodePatches = generateNodes.map((node) => {
-    const data = (node.data ?? {}) as Record<string, unknown>;
+    const params = catalog ? planDefaultVisualLineParams(catalog, node.data.materialType as MaterialType, readCanvasParams(node), true) : undefined;
     return {
       nodeId: node.id,
-      data: {
-        // Re-state prompt so the gateway's soft path fires even when the
-        // value is unchanged; empty string is a valid prompt.
-        prompt: typeof data.prompt === 'string' ? data.prompt : '',
-      },
+      data: params ? { params } : {},
     };
   });
 
@@ -134,7 +130,7 @@ export function reconcileCanvasForCatalog(
     { catalog, preferredModels: input.preferredModels },
   );
 
-  // Soft recompute never rejects; if it somehow did, keep the graph intact.
+  // Apply only a complete plan so a rejected edit cannot leave mismatched routing and parameters.
   if (plan.status !== 'allowed') {
     return {
       nodes: input.nodes,

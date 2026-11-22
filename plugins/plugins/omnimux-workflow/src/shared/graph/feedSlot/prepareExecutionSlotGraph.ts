@@ -2,6 +2,7 @@ import type { CapabilityCatalog } from '../../api.ts';
 import { buildContractView, buildUpstreamFingerprint, isVisualGeneration, resolveModelView } from '../../validation/compatKernel.ts';
 import { buildInputCapability } from '../../validation/inputCapability.ts';
 import { narrowCatalogByRouting, resolveEffectiveVideoGroup, resolveEffectiveVideoOperation } from '../../validation/lineConstraints.ts';
+import { parseModelAndGroup } from '../../validation/channelRouting.ts';
 import { managedVideoLineFingerprint } from '../../validation/managedVideoExecution.ts';
 import { readNodeInputSource } from '../nodeInputSource.ts';
 import { resolveNodeKind } from '../materialNode.ts';
@@ -44,12 +45,14 @@ export function prepareExecutionSlotGraph<
     let data = structuredClone(node.data ?? {});
     let params = (data.params ?? {}) as Record<string, unknown>;
     const kind = (data.materialType ?? 'text') as keyof NonNullable<CapabilityCatalog['defaults']>;
-    const modelId = (params.model ?? sourceCatalog?.defaults?.[kind]) as string | undefined;
-    const managed = kind === 'video' ? resolveEffectiveVideoGroup(sourceCatalog, modelId, params.routing) : null;
+    const requestedModel = (params.model ?? sourceCatalog?.defaults?.[kind]) as string | undefined;
+    const inline = isVisualGeneration(kind) ? parseModelAndGroup(requestedModel) : undefined;
+    const modelId = inline?.modelId ?? requestedModel;
+    const managed = kind === 'video' ? resolveEffectiveVideoGroup(sourceCatalog, requestedModel, params.routing) : null;
     if (managed) {
       const variant = resolveEffectiveVideoOperation(managed.group, params.operation, params);
       if (variant) params.operation = variant.id;
-      const effectiveCatalog = narrowCatalogByRouting(sourceCatalog, modelId, params.routing, params);
+      const effectiveCatalog = narrowCatalogByRouting(sourceCatalog, requestedModel, params.routing, params);
       const model = resolveModelView(buildContractView(effectiveCatalog), modelId);
       const projected = projectCanvasInputSources(node.id, data, nodes as unknown as CanvasNode[], nextEdges, effectiveCatalog, model);
       nextEdges = projected.edges;
@@ -73,7 +76,7 @@ export function prepareExecutionSlotGraph<
       const existing = draftKey && Object.hasOwn(drafts, draftKey) ? drafts[draftKey] : data.slotBindings as SlotBindings | undefined;
       const bindings = existing ?? effectiveInputDisplay(layout, feed, undefined, [], incoming, standby,
         data.inputBindingVersion === 1 ? 1 : undefined).bindings;
-      data.params = { ...params, model: model?.id ?? modelId };
+      data.params = { ...params, model: inline?.group ? requestedModel : model?.id ?? modelId };
       data.managedVideoGeneration = managed.group
         ? managedVideoLineFingerprint(managed.group, managed.model.effectiveVideoVersion)
         : true;
@@ -87,7 +90,7 @@ export function prepareExecutionSlotGraph<
       ? data.autoOperationId as string | null
       : undefined;
     const baseModel = resolveModelView(view, modelId);
-    const catalog = isVisualGeneration(kind) ? narrowCatalogByRouting(sourceCatalog, baseModel?.id, params.routing, params) : sourceCatalog;
+    const catalog = isVisualGeneration(kind) ? narrowCatalogByRouting(sourceCatalog, requestedModel, params.routing, params) : sourceCatalog;
     const model = catalog === sourceCatalog ? baseModel : resolveModelView(buildContractView(catalog), baseModel?.id);
     const projected = projectCanvasInputSources(node.id, data, nodes as unknown as CanvasNode[], nextEdges, catalog, model);
     data = projected.data;

@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import { normalizePricingPayload } from '../cloud/snapshot.js'
 import {
   BYOK_PROVIDER_DISPLAY_MAP,
   buildByokChannelGroup,
   getModelChannelGroups,
   inferCapabilityFromModel,
   isOfficialChannelId,
+  MODEL_CHANNEL_GROUPS,
   OFFICIAL_CHANNEL_IDS,
   parseModelAndGroup,
   resolveChannelCandidates,
@@ -64,6 +66,35 @@ describe('OmniMux Model Channel Groups & Routing Strategies', () => {
   })
 
   describe('getModelChannelGroups', () => {
+    it('keeps default declarations out of MODEL_CHANNEL_GROUPS', () => {
+      for (const [model, groups] of Object.entries(MODEL_CHANNEL_GROUPS)) {
+        for (const group of groups) assert.equal(Object.hasOwn(group, 'default'), false, `${model}@${group.id}`)
+      }
+    })
+
+    it('projects legacy and malformed display fields without a local default', () => {
+      for (const { name, fields, order, selected } of [
+        { name: 'both fields missing', fields: {}, order: ['b', 'default', 'a'] },
+        { name: 'order missing', fields: { default_group: 'a' }, order: ['b', 'default', 'a'], selected: 'a' },
+        { name: 'only off-sale groups in order', fields: { group_order: ['retired'] }, order: ['b', 'default', 'a'] },
+        { name: 'incomplete order', fields: { group_order: ['retired', 'a', 'a'] }, order: ['a', 'b', 'default'], selected: 'a' },
+        { name: 'explicit empty default', fields: { group_order: ['a', 'b', 'default'], default_group: '' }, order: ['a', 'b', 'default'] },
+        { name: 'off-sale default', fields: { group_order: ['a', 'b', 'default'], default_group: 'retired' }, order: ['a', 'b', 'default'] },
+        { name: 'default outside the caller grants', fields: { group_order: ['b', 'a', 'default'], default_group: 'b' }, order: ['b', 'a', 'default'] },
+        { name: 'fallback skips groups outside the caller grants', fields: { group_order: ['b', 'a', 'default'] }, order: ['b', 'a', 'default'], selected: 'a' },
+      ]) {
+        const model = 'gpt-image-2.5'
+        const { snapshot } = normalizePricingPayload({
+          data: [{ model_name: model, enable_groups: ['b', 'default', 'a'], ...fields }],
+          usable_group: { a: 'A', default: 'Standard' },
+        })
+        const groups = getModelChannelGroups(model, snapshot)
+        assert.deepEqual(groups.map((group) => group.wireGroup), order, name)
+        assert.deepEqual(groups.filter((group) => group.default === true).map((group) => group.wireGroup),
+          selected ? [selected] : [], name)
+      }
+    })
+
     it('returns defined channel groups for seedance-2-0', () => {
       const groups = getModelChannelGroups('seedance-2-0')
       assert.ok(Array.isArray(groups))
@@ -72,7 +103,7 @@ describe('OmniMux Model Channel Groups & Routing Strategies', () => {
       assert.deepEqual(groups.map((g) => g.id), ['standard'])
       const [standard] = groups
       assert.equal(standard.wireGroup, 'default')
-      assert.equal(standard.default, true)
+      assert.equal(standard.default, undefined)
       assert.equal(standard.enabled, true)
       // P1b：积分改由网关快照单价 × 分组倍率推导（0.0971 × 1 × 5s × 10）。
       assert.equal(standard.pricing?.pointsEstimate, 4.86)
@@ -85,7 +116,7 @@ describe('OmniMux Model Channel Groups & Routing Strategies', () => {
       }
     })
 
-    it('returns the 480p economy and 720p standard(default) lines for seedance-2-5', () => {
+    it('keeps price and resolution constraints for the bundled seedance-2-5 lines', () => {
       const groups = getModelChannelGroups('seedance-2-5')
       assert.ok(Array.isArray(groups))
       // P1b：线路取自快照 enable_groups —— 本地覆盖表命名 480p/720p，网关另发布两条
@@ -99,7 +130,7 @@ describe('OmniMux Model Channel Groups & Routing Strategies', () => {
       assert.equal(gateway720.wireGroup, 'seedance-2-5-720p')
       assert.equal(gateway720.pricing?.pointsEstimate, 28.82)
       assert.equal(gateway720.pricing?.groupRatio, 0.7206)
-      // #3516 评审修正：默认档位是 720p 标准版；480p 是经济版（非默认）。
+      // The bundled snapshot predates per-model defaults.
       assert.equal(p480.label, '经济版')
       assert.equal(p480.wireGroup, 'desktop-480p')
       assert.equal(p480.pricing?.billingMode, 'per_second')
@@ -113,7 +144,7 @@ describe('OmniMux Model Channel Groups & Routing Strategies', () => {
       assert.equal(p720.pricing?.billingMode, 'per_second')
       assert.equal(p720.pricing?.pointsEstimate, 9.6)
       assert.equal(p720.pricing?.discountRate, 0.24)
-      assert.equal(p720.default, true)
+      assert.equal(p720.default, undefined)
       assert.deepEqual(p720.constraints?.parameters?.resolution, { fixed: '720p' })
       // 旧的 task-based pro 线路与特惠线路上游断货，已下架
       assert.equal(groups.some((g) => g.wireGroup === 'seedance-2-5-task-pro'), false)

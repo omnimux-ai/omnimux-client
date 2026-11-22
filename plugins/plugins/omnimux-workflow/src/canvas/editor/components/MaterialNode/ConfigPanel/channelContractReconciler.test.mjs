@@ -470,6 +470,21 @@ describe('Channel Contract and Adaptive Reconciler', () => {
       assert.ok(contract.constraints.supportedAspectRatios.length > 0);
     });
 
+    it('writes fixed line parameters and removes declared unsupported fields while keeping the draft', () => {
+      const group = {
+        id: 'preferred', label: 'Preferred', enabled: true,
+        constraints: { parameters: {
+          resolution: { fixed: '1K' }, quality: { supported: false }, n: { fixed: 1 },
+        } },
+      };
+      const current = { model: 'gpt-image-2.5', resolution: '4K', quality: 'hd', prompt: 'saved', aspectRatio: '1:1' };
+      const contract = buildChannelContract('gpt-image-2.5', group);
+      const result = reconcileParamsWithContract(current, contract);
+      assert.deepEqual(result.nextParams, { model: 'gpt-image-2.5', resolution: '1K', n: 1, prompt: 'saved', aspectRatio: '1:1' });
+      assert.equal(current.quality, 'hd');
+      assert.deepEqual(reconcileParamsWithContract(result.nextParams, contract).nextParams, result.nextParams);
+    });
+
     it('respects baseConstraints override priority over group.constraints', () => {
       const [officialGroup] = resolveModelChannelGroups('seedance-2-0', SEEDANCE_2_0_LINES);
       const groupWithConstraints = {

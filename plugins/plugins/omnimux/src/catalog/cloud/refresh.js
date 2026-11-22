@@ -142,6 +142,10 @@ export function createCatalogRefresher(deps) {
 
       if (deps.isCurrent?.() === false) return { status: 'skipped', changed: false, reason: 'account-changed' }
       const normalized = normalizePricingPayload(payload, { generatedAt: fetchedAt })
+      const invalidDefaults = normalized.issues.filter(({ code }) => code === 'invalid-default-group')
+      if (invalidDefaults.length > 0) {
+        console.warn('omnimux: invalid-default-group', JSON.stringify(invalidDefaults.map(({ detail }) => detail)))
+      }
       const snapshot = normalized.snapshot
       // Authenticated permissions can legitimately shrink to an empty view.
       // Only accept a deliberate, well-formed empty result from that endpoint.

@@ -20,6 +20,20 @@ import {
   setLineConstraintResolver,
   type LineConstraints,
 } from '../../../../../shared/validation/lineConstraints.ts';
+import {
+  findDefaultChannelGroup,
+  isByokGroup,
+  isChannelGroupAvailable,
+  parseModelAndGroup,
+  readChannelRouting,
+} from '../../../../../shared/validation/channelRouting.ts';
+export {
+  findDefaultChannelGroup,
+  findSelectedChannelGroup,
+  isByokGroup,
+  isChannelGroupAvailable,
+  parseModelAndGroup,
+} from '../../../../../shared/validation/channelRouting.ts';
 import type {
   CapabilityCatalog,
   CatalogChannelGroupDto,
@@ -46,7 +60,7 @@ export interface ChannelGroupItem {
   };
   /** Gateway group appended as `model@wireGroup`; falls back to `id`. */
   wireGroup?: string;
-  /** Marks the line pre-selected when the model offers several parameter tiers. */
+  /** Marks the official default projected by the hub. */
   default?: boolean;
   /**
    * Upstream model this line is actually served by, when it differs from the
@@ -172,19 +186,6 @@ export function rowChannelGroups(
   if (!canonical) return [];
   const row = rows.find((candidate) => candidate?.id === canonical);
   return Array.isArray(row?.channelGroups) ? row.channelGroups : [];
-}
-
-export function parseModelAndGroup(input?: string): { modelId: string; group: string | null } {
-  if (!input || typeof input !== 'string') return { modelId: '', group: null };
-  const trimmed = input.trim();
-  const atIndex = trimmed.indexOf('@');
-  if (atIndex < 0) return { modelId: trimmed, group: null };
-  const rawModel = trimmed.slice(0, atIndex).trim();
-  const rawGroup = trimmed.slice(atIndex + 1).trim();
-  return {
-    modelId: rawModel,
-    group: rawGroup || null,
-  };
 }
 
 /**
@@ -484,23 +485,6 @@ export const DEFAULT_BYOK_CONSTRAINTS: LineConstraints = Object.freeze({
 });
 
 /**
- * 判断渠道分组或渠道 ID 是否属于 BYOK（自备渠道）。
- */
-export function isByokGroup(
-  groupOrId?: string | { id?: string; category?: string; sourceType?: string } | null,
-): boolean {
-  if (!groupOrId) return false;
-  if (typeof groupOrId === 'string') {
-    return groupOrId.startsWith('byok-');
-  }
-  return (
-    groupOrId.category === 'byok' ||
-    groupOrId.sourceType === 'byok' ||
-    Boolean(groupOrId.id?.startsWith('byok-'))
-  );
-}
-
-/**
  * 清洗与防御校验 providerKey，过滤非预期特殊字符，避免注入或非法 ID 构造。
  * 若清洗后为空串或入参非法，返回 null，由调用方跳过注入。
  */
@@ -784,25 +768,13 @@ export function resolveShortModelName(modelId?: string, _family?: string): strin
 }
 
 /** Group ids named by a routing intent (`group`, `allowedGroups`); empty means automatic. */
-function selectedGroupIds(routing: unknown, availableGroupIds?: Set<string>): Set<string> {
-  const ids = new Set<string>();
-  if (!routing || typeof routing !== 'object' || Array.isArray(routing)) return ids;
-  const intent = routing as Record<string, unknown>;
-  if (typeof intent.group === 'string' && intent.group.trim()) ids.add(intent.group.trim());
-  if (typeof intent.channelGroupId === 'string' && intent.channelGroupId.trim()) {
-    ids.add(intent.channelGroupId.trim());
-  }
-  if (Array.isArray(intent.allowedGroups)) {
-    for (const candidate of intent.allowedGroups) {
-      if (typeof candidate === 'string' && candidate.trim()) ids.add(candidate.trim());
-    }
-  }
+function selectedGroupIds(routing: unknown, availableGroupIds?: Set<string>): Set<string> | null {
+  const { channelGroupId, requestedGroups, sourceType } = readChannelRouting(routing);
+  const ids = new Set(requestedGroups);
   // 当 channelGroupId 与 allowedGroups[0] 为不同 BYOK ID 时，
   // 仅在 explicitByokId 确实在可用列表（若提供）中有效时，才将其作为权威来源剔除备选的 BYOK 分组；
   // 若 explicitByokId 已陈旧失效，则保留 allowedGroups 中的候选以防约束清空逃逸
-  const explicitByokId = (typeof intent.channelGroupId === 'string' && isByokGroup(intent.channelGroupId.trim()))
-    ? intent.channelGroupId.trim()
-    : null;
+  const explicitByokId = isByokGroup(channelGroupId) ? channelGroupId : undefined;
   const isExplicitValid = explicitByokId && (!availableGroupIds || availableGroupIds.has(explicitByokId));
   if (isExplicitValid) {
     for (const id of Array.from(ids)) {
@@ -814,15 +786,15 @@ function selectedGroupIds(routing: unknown, availableGroupIds?: Set<string>): Se
   const hasByok = Array.from(ids).some((id) => isByokGroup(id));
   const hasOfficial = Array.from(ids).some((id) => !isByokGroup(id));
   if (hasByok && hasOfficial) {
-    if (intent.sourceType === 'byok') {
+    if (sourceType === 'byok') {
       return new Set(Array.from(ids).filter((id) => isByokGroup(id)));
     }
-    if (intent.sourceType === 'official') {
+    if (sourceType === 'official') {
       return new Set(Array.from(ids).filter((id) => !isByokGroup(id)));
     }
-    return new Set<string>();
+    return null;
   }
-  return ids;
+  return sourceType === 'byok' && !hasByok ? null : ids;
 }
 
 /** What several selected lines agree on; a field they declare differently is released. */
@@ -887,8 +859,8 @@ export function injectVideoByokDefaults(raw: LineConstraints = {}): LineConstrai
  *
  * A line may accept far less than the model contract publishes, so the canvas reads
  * the declaration of the directory rows before the contract reaches slot layout,
- * operation lists or parameter controls. Automatic routing applies nothing; several
- * lines apply what they agree on, with the stricter ceiling winning.
+ * operation lists or parameter controls. An unpinned route uses the directory default.
+ * Several explicitly selected lines apply what they agree on.
  *
  * @param modelId Model id (may carry a `@channelGroup` suffix).
  * @param routing Persisted routing intent (`group` and/or `allowedGroups`).
@@ -902,14 +874,15 @@ export function resolveLineConstraints(
   runtimeSettings?: RuntimeByokChannelSettings | null,
 ): LineConstraints {
   const effectiveSettings = runtimeSettings ?? null;
-  const { modelId: id } = parseModelAndGroup(modelId);
-  const groups = resolveModelChannelGroups(id, directoryGroups, effectiveSettings);
+  const { modelId: id, group: inlineGroup } = parseModelAndGroup(modelId);
+  const groups = resolveModelChannelGroups(id, directoryGroups, effectiveSettings).filter(isChannelGroupAvailable);
   const availableGroupIds = new Set(groups.map((g) => g.id));
   const selected = selectedGroupIds(routing, availableGroupIds);
+  if (!selected) return {};
   if (selected.size === 0) {
-    const defaultGroup = groups.find((group) => group.default === true && group.enabled !== false);
-    if (!defaultGroup || id !== 'gpt-image-2.5') return {};
-    selected.add(defaultGroup.id);
+    const group = inlineGroup ?? findDefaultChannelGroup(groups)?.id;
+    if (!group) return {};
+    selected.add(group);
   }
   const declarations = groups
     .filter((group) => selected.has(group.id) || (group.wireGroup ? selected.has(group.wireGroup) : false))
@@ -983,7 +956,7 @@ export function buildChannelSelectionPayload(
   const [primaryGroupId] = groupIds;
   if (!primaryGroupId) return null;
   const matchedGroup = availableGroups.find((g) => g.id === primaryGroupId);
-  if (!matchedGroup || matchedGroup.enabled === false || matchedGroup.isAvailable === false) {
+  if (!matchedGroup || !isChannelGroupAvailable(matchedGroup)) {
     return null;
   }
   const isByok = isByokGroup(matchedGroup);

@@ -59,6 +59,7 @@ superseded_by: null
 ### 3.1 `omnimux`（执行中枢 Hub）
 - **功能域**：中枢官方服务、品牌/设置、社媒路由、模型调用、官方 Seams。
 - 已注册官方工具和工作台工具。中枢通过同一事件 WebSocket 识别已认证窗口。对话首轮采用新鲜且唯一的剪辑视口摘要。剪辑实时指令按窗口定向，`clip_*` 不走工作面自动切换。[实时控制契约](clip-live-control.md#可见入口编辑权和对话上下文)
+- **线路目录**：中枢按网关目录向画布提供官方线路顺序及默认标记。图片、视频和音频工具提交新任务时使用指定线路或目录默认。目录已发布 `default_group` 或 `group_order` 但没有可用默认时，提交方须用 `group` 或单项 `allowed_groups` 选定一条线路。未选线返回 `unknown-group`。[目录和协议](canvas-generation.md#目录和协议)
 
 | 业务功能描述 | 对应 UI 交互 / HTTP 路由 | Agent 工具名称 (`Tool Name`) | 分级 | 状态 | 破坏性 confirm |
 |---|---|---|---|---|---|
@@ -187,7 +188,7 @@ superseded_by: null
 | 业务功能描述 | 对应 UI 交互 / HTTP 路由 | Agent 工具名称 (`Tool Name`) | 分级 | 状态 | 破坏性 confirm |
 |---|---|---|---|---|---|
 | 列出全部工作区与执行历史 | 一级 Stage 工作区选择器 | `workflow_list` | L1 | `Implemented` | 否 |
-| 执行工作区或指定节点。已受理任务按原标识恢复；用 `execution_id` 查询或等待已有执行 | 顶部「运行」及节点生成按钮 | `workflow_run` | L1 | `Implemented` | 否 |
+| 执行工作区或指定节点，使用与界面相同的[线路检查](canvas-generation.md#执行和恢复)。已受理任务按原标识恢复。用 `execution_id` 查询或等待已有执行 | 顶部「运行」及节点生成按钮 | `workflow_run` | L1 | `Implemented` | 否 |
 | 获取画布快照。用 `node_id` 查询指定节点及其分组生成选项 | 画布加载与节点配置 | `workflow_snapshot` | L1 | `Implemented` | 否 |
 | 创建新工作区与画布 | 新建工作区按钮 | `workflow_create` | L1 | `Implemented` | 否 |
 | 向画布添加物料/AI生成节点 | 左侧物料库拖拽入画布 | `workflow_node_add` | L1 | `Implemented` | 否 |
