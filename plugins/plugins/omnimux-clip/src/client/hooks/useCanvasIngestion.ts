@@ -1,10 +1,12 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { MediaItem } from "@openreel/core";
 import { useProjectStore } from "../openreel/web/stores/project-store";
 import { getTimelineItems } from "../openreel/core/timeline/timeline-items";
 import { canvasWorkspaceMediaUrl, mediaContentDigest, reconnectMediaUrl, workspaceMediaDigest } from "../../timeline/nativeProjectFields.js";
 import { mediaDigest, verifiedMediaBlob } from "../live/media-source";
 import { createStoredMediaRecovery } from "../live/media-recovery";
+import { bridgeMediaLocator } from "../live/media-bridge-source.js";
+import { placeFirstVideoInEmptyTimeline } from "../live/bridged-media";
 
 const MAX_MEDIA = 20;
 const MAX_CAPTIONS = 120;
@@ -33,6 +35,7 @@ export interface CanvasSession {
     images?: UpstreamMedia[];
     captions?: Array<{ text: string; startTimeMs: number; durationMs: number }>;
   };
+  mediaReturn?: { requestId: string; upstreamInputs: Pick<NonNullable<CanvasSession['upstreamInputs']>, 'videos' | 'audios' | 'images'> };
 }
 
 function localFileReconnect(request: URL): string | undefined {
@@ -81,12 +84,12 @@ function parseMedia(value: string, workspaceId: string | undefined): { url: stri
 
 const MIME = { video: "video/mp4", image: "image/png", audio: "audio/mpeg" };
 
-function importItems(inputs: NonNullable<CanvasSession["upstreamInputs"]>) {
+function importItems(inputs: NonNullable<CanvasSession["upstreamInputs"]>, limit = MAX_MEDIA) {
   return [
     ...(inputs.videos ?? []).map(item => ({ ...item, type: "video" as const, name: item.name || "video.mp4" })),
     ...(inputs.images ?? []).map(item => ({ ...item, type: "image" as const, name: item.name || "image.png" })),
     ...(inputs.audios ?? []).map(item => ({ ...item, type: "audio" as const, name: item.name || "audio.mp3" })),
-  ].slice(0, MAX_MEDIA);
+  ].slice(0, limit);
 }
 
 function sourceKey(item: UpstreamMedia, url: string) {
@@ -177,6 +180,7 @@ async function recoverCanvasMedia(
 }
 
 export function useCanvasIngestion(session: CanvasSession | null, token: AbortController | undefined, owns: () => boolean, onSaved: () => void) {
+  const finishedReturn = useRef<string>();
   useEffect(() => {
     if (!session?.projectId || !token || session.source !== "canvas") return;
     const controller = new AbortController();
@@ -187,6 +191,7 @@ export function useCanvasIngestion(session: CanvasSession | null, token: AbortCo
       return !signal.aborted && owns() && store.project.id === session.projectId && store.actionExecutor === executor;
     };
     const inputs = session.upstreamInputs ?? {};
+    const returning = session.mediaReturn;
     const upstream = importItems(inputs);
     const importAll = async () => {
       if (!isCurrent()) return;
@@ -194,19 +199,19 @@ export function useCanvasIngestion(session: CanvasSession | null, token: AbortCo
       const items = initial.mediaLibrary.items;
       await recoverCanvasMedia(items, upstream, session, signal, isCurrent);
       if (!isCurrent()) return;
-      if (initial.omnimuxCanvasInitialized || items.some(item => item.sourceRef?.kind === "legacy")
-        || session.draftSchema && (items.length || getTimelineItems(initial).length)) {
-        if (!initial.omnimuxCanvasInitialized && isCurrent()) {
-          useProjectStore.setState(state => ({ project: { ...state.project, omnimuxCanvasInitialized: true } }));
-        }
-        return;
+      const initialized = initial.omnimuxCanvasInitialized || items.some(item => item.sourceRef?.kind === "legacy")
+        || session.draftSchema && (items.length || getTimelineItems(initial).length);
+      if (initialized && !initial.omnimuxCanvasInitialized) {
+        useProjectStore.setState(state => ({ project: { ...state.project, omnimuxCanvasInitialized: true } }));
       }
+      if (returning ? finishedReturn.current === returning.requestId : initialized) return;
+      const candidates = returning ? importItems(returning.upstreamInputs, Infinity) : upstream;
       let firstVideo: MediaItem | undefined;
       let failed = false;
-      for (const item of upstream) {
+      for (const item of candidates) {
         if (!isCurrent()) return;
         const ref = parseMedia(item.url || item.path, session.workspaceId);
-        if (!ref || /\.svgz?(?:[?#]|$)/iu.test(item.path || item.name)) continue;
+        if (!ref || (returning && !bridgeMediaLocator(ref.url)) || /\.svgz?(?:[?#]|$)/iu.test(item.path || item.name)) continue;
         try {
           const url = ref.url;
           const id = await mediaDigest(sourceKey(item, url));
@@ -216,17 +221,19 @@ export function useCanvasIngestion(session: CanvasSession | null, token: AbortCo
             media.omnimuxSource?.id === id && media.omnimuxSource.version === version);
           const existing = requestedVersion ? findItem(requestedVersion) : undefined;
           if (existing && !existing.isPlaceholder) {
-            if (!firstVideo && existing.type === 'video') firstVideo = existing;
+            if (!returning && !firstVideo && existing.type === 'video') firstVideo = existing;
             continue;
           }
-          const file = await readMediaFile(url, item.name, item.type, signal);
+          const file = await readMediaFile(url, item.name, item.type,
+            returning ? AbortSignal.any([signal, AbortSignal.timeout(45_000)]) : signal);
           if (!isCurrent()) return;
+          if (returning && !file.type.startsWith(`${item.type}/`)) throw new Error('The upstream media type changed');
           const digest = await mediaDigest(file);
           const version = requestedVersion ?? digest;
           if (!isCurrent()) return;
           const match = findItem(version);
           if (match && !match.isPlaceholder) {
-            if (!firstVideo && match.type === 'video') firstVideo = match;
+            if (!returning && !firstVideo && match.type === 'video') firstVideo = match;
             continue;
           }
           const expected = mediaContentDigest(match);
@@ -237,8 +244,9 @@ export function useCanvasIngestion(session: CanvasSession | null, token: AbortCo
           const omnimuxSource = { id, version, ...(ref.reconnect ? { url: ref.reconnect, digest } : {}) };
           const store = useProjectStore.getState();
           const result = match
-            ? await store.replaceMediaAsset(match.id, file, undefined, { restorePlaceholder: true, isCurrent, omnimuxSource })
-            : await store.importMedia(file, undefined, { omnimuxSource }, { signal, isCurrent });
+            ? await store.replaceMediaAsset(match.id, file, undefined, { restorePlaceholder: true, isCurrent, omnimuxSource,
+              ...(returning ? { expectedDigest: digest } : {}) })
+            : await store.importMedia(file, undefined, { omnimuxSource }, { signal, isCurrent, expectedType: returning ? item.type : undefined });
           if (!isCurrent()) return;
           if (!result.success || !result.actionId) throw new Error("Could not import the upstream media");
           const imported = useProjectStore.getState().getMediaItem(match?.id ?? result.actionId);
@@ -249,6 +257,11 @@ export function useCanvasIngestion(session: CanvasSession | null, token: AbortCo
         }
       }
 
+      if (returning) {
+        if (firstVideo) await placeFirstVideoInEmptyTimeline(firstVideo, isCurrent);
+        if (isCurrent() && !failed) finishedReturn.current = returning.requestId;
+        return;
+      }
       if (firstVideo && isCurrent() && getTimelineItems(useProjectStore.getState().project).length === 0) {
         const { width, height } = firstVideo.metadata;
         if (width && height) await useProjectStore.getState().updateSettings({ width, height });

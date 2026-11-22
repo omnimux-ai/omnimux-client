@@ -210,7 +210,7 @@ export interface ProjectState {
   ) => Promise<ActionResult>;
 
   // Media library actions
-  importMedia: (file: File, onProgress?: (stage: string) => void, source?: { soundLibraryId?: string; stockSource?: StockMediaSource; recordedTake?: "screen" | "webcam"; omnimuxSource?: MediaItem["omnimuxSource"] }, options?: { signal?: AbortSignal; isCurrent?: () => boolean }) => Promise<ActionResult>;
+  importMedia: (file: File, onProgress?: (stage: string) => void, source?: { soundLibraryId?: string; stockSource?: StockMediaSource; recordedTake?: "screen" | "webcam"; omnimuxSource?: MediaItem["omnimuxSource"] }, options?: { signal?: AbortSignal; isCurrent?: () => boolean; expectedType?: MediaItem["type"] }) => Promise<ActionResult>;
   deleteMedia: (mediaId: string) => Promise<ActionResult>;
   replaceMediaAsset: (mediaId: string, file: File, sourceFolder?: string, options?: {
     restorePlaceholder?: boolean; expectedDigest?: string; sourcePath?: string; isCurrent?: () => boolean;

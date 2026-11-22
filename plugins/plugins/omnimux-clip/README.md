@@ -6,7 +6,9 @@ Agent 可用 `clip_list` 查档，`clip_create` 创建独立空工程，`clip_ge
 
 在独立剪辑或画布 Portal 的顶栏点击「AI 剪辑」，可展开并聚焦主对话。输入框上方显示当前工程、版本、播放头和选段，再次点击更新同一枚芯片。草稿保持原文，由用户手动发送。[顶栏与主对话](../../docs/contracts/clip-live-control.md#阶段-3-顶栏与主对话)
 
-画布切换入口或退出时，Clip 确认 Host 保存后再交接。保存受阻时保留原草稿供恢复。
+媒体面板的「导入」菜单包含本地文件、资产库和画布生成入口。面板足够宽时，搜索栏下方和空素材池也提供两个素材快捷入口。在资产库可按名称和类型查找并多选视频、图片和音频，已入池的文件会标记。导入进度和单项重试显示在素材池内。时间轴为空时，导入的首个视频会按自身分辨率放到时间轴起点。
+
+点击「去画布生成」时，Clip 确认当前草稿的本地存储和 Host 保存后再交接。画布剪辑会回到原合成节点，连入新素材后点击「返回继续剪辑」。独立剪辑进入本会话已有的画布，从顶部入口勾选已生成素材后返回原工程，也可直接取消并返回。保存受阻时保留原草稿供恢复。
 
 实时 `clip_get` 返回 `revision` 和 `revisionEpoch`，编辑时将两者绑定到同一工程和窗口。用户明确要求成片时，用 `clip_export` 并传 `confirm: true`。画布手工与 Agent 导出共享 Host 的导出世代和任务顺序，各自保存独立版本 MP4。画布按原节点绑定回写较新的成片。手工取消会中止上传并通知 Host，退出剪辑后已预约的任务可继续。成片落盘和画布提交分别以 `fileSaved` 和 `canvasCommitted` 为准。[剪辑契约](../../docs/contracts/clip-live-control.md) · [工具清单](../../docs/contracts/plugin-agent-tools-inventory.md#37-omnimux-clipopenreel-视频剪辑) · [Clip Craft](skills/clip-craft/SKILL.md)
 

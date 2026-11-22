@@ -41,7 +41,15 @@ export function useEditorInert(value) {
 export function ClipEditorActions({ onExit, runtime, view, children }) {
   const compose = runtime?.compose ? () => runtime.compose(view.id) : undefined
   const canCompose = view.phase === 'editing' && !view.conflict && !view.ingesting && !view.resolving
-  return <EditorActionsContext.Provider value={{ onExit, compose, canCompose }}>{children}</EditorActionsContext.Provider>
+  const media = runtime?.mediaHandoff
+  const canBridgeMedia = Boolean(media && canCompose)
+  const captureMediaEditor = useCallback(() => media?.captureEditor(view.id), [media, view.id])
+  const openCanvasForMedia = useCallback(() => media?.openCanvas(view.id), [media, view.id])
+  const returnedMedia = useSyncExternalStore(media?.subscribe ?? noopSubscribe,
+    () => media?.getIncoming(view.id, view.mediaReturnId))
+  const acknowledgeReturnedMedia = useCallback(id => media?.acknowledge(view.id, id), [media, view.id])
+  return <EditorActionsContext.Provider value={{ onExit, compose, canCompose, canBridgeMedia,
+    captureMediaEditor, openCanvasForMedia, returnedMedia, acknowledgeReturnedMedia }}>{children}</EditorActionsContext.Provider>
 }
 
 export function useClipEditorActions() {

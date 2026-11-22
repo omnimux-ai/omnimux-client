@@ -143,10 +143,11 @@ export function apply(ctx) {
   }
 
   // Mount Canvas Bridge to connect canvas workflow with stage
+  const mountCanvasBridge = () => createAndMountCanvasBridge({ stage, acceptMediaReturn: runtime?.mediaHandoff.acceptCanvasReturn })
   if (typeof ctx.effect === 'function') {
-    ctx.effect(() => createAndMountCanvasBridge({ stage }), 'omnimux-clip: canvas bridge')
+    ctx.effect(mountCanvasBridge, 'omnimux-clip: canvas bridge')
   } else {
-    createAndMountCanvasBridge({ stage })
+    mountCanvasBridge()
   }
 
   if (ctx.slots && typeof ctx.slots.inject === 'function') {

@@ -45,7 +45,7 @@
       "version": "0.1.2",
       "path": "plugins/plugins/omnimux-clip",
       "spec": "link:../../plugins/plugins/omnimux-clip",
-      "contentHash": "sha256:6f240440de1829e402a382bc577d283324be4d3e73329d4f4ac65a6efcfac1ba"
+      "contentHash": "sha256:13be786c924416babf5c12f570c79abf437a7ab058cb13951389e276b7885653"
     },
     {
       "name": "omnimux-forms",
@@ -94,7 +94,7 @@
       "version": "1.0.0-rc.3",
       "path": "plugins/plugins/omnimux-workflow",
       "spec": "link:../../plugins/plugins/omnimux-workflow",
-      "contentHash": "sha256:f8845662c0b7214a88a56f59abf3eb68d0b9b0ae563420c3396af3ae88a36657"
+      "contentHash": "sha256:ac46cf5901eac7b9fdaf6c0662b3f9597b3f82f1fefa0971416e892b4d992b84"
     }
   ]
 }

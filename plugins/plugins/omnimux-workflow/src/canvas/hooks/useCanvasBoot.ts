@@ -33,6 +33,8 @@ export type BootState =
 export interface UseCanvasBootOptions {
   /** 指定要加载的目标工作区/画布 ID（会话或创作页专属） */
   workspaceId?: string;
+  /** A Clip handoff may open a persisted page even if the graph is not mounted yet. */
+  existingWorkspaceOnly?: boolean;
   /**
    * 卸载硬闸：必须同步读 canvas store（capture），再交给 persist PUT。
    * 调用发生在 `resetStore()` 之前；inline 回调用 ref 承接，避免进 effect deps。
@@ -49,8 +51,11 @@ export function useCanvasBoot(opts: UseCanvasBootOptions = {}) {
   const nodeCount = useCanvasStore((state) => state.nodes.length);
   const beforeResetRef = useRef(opts.beforeReset);
   beforeResetRef.current = opts.beforeReset;
+  const existingOnlyRef = useRef(opts.existingWorkspaceOnly);
+  existingOnlyRef.current = opts.existingWorkspaceOnly;
 
   useEffect(() => {
+    const existingOnly = existingOnlyRef.current;
     let cancelled = false;
     // 重跑时先退出 ready，persistence enabled=false，避免 resetStore 空图被 autosave
     setBoot({ phase: 'loading' });
@@ -139,6 +144,9 @@ export function useCanvasBoot(opts: UseCanvasBootOptions = {}) {
           // 不阻塞首屏；失败也不回退已就绪的画布。
           void probeAndPatchImportedMedia().catch(() => undefined);
           return;
+        }
+        if (existingOnly || existingOnlyRef.current) {
+          throw new Error(t('error.loadWorkspaceFailed'));
         }
         // 专属工作区尚不存在，创建属于该 ID 的纯净新工作区
         const created = await createWorkspace('模板', targetWorkspaceId);

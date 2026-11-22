@@ -224,9 +224,15 @@ export function CanvasLoadingState({ t }) {
  *   onActivePageChange?: (workspaceId: string) => void,
  *   clipNavigation?: object,
  *   onClipNavigationHandled?: (request: object) => void,
+ *   clipMediaFocus?: object,
+ *   existingWorkspaceOnly?: boolean,
+ *   registerMediaReturnCanvas?: Function,
  * }} props
  */
-export function CanvasBridge({ onClose, t, locale, workspaceId, focusGroupId, onActivePageChange, clipNavigation, onClipNavigationHandled }) {
+export function CanvasBridge({
+  onClose, t, locale, workspaceId, focusGroupId, onActivePageChange, clipNavigation, onClipNavigationHandled,
+  clipMediaFocus, existingWorkspaceOnly, registerMediaReturnCanvas,
+}) {
   useEffect(() => { injectWorkflowStyles() }, [])
   const containerRef = useRef(null)
   const lifetimeRef = useRef(null)
@@ -234,7 +240,10 @@ export function CanvasBridge({ onClose, t, locale, workspaceId, focusGroupId, on
   // 最新 props 快照：load 完成挂载与 locale/onClose/workspaceId/focusGroupId live
   // 切换共用（island 边界纯数据 + 回调，一律走 mountCanvas/updateCanvas，
   // 禁止因回调换引用卸岛）。
-  const nextProps = { onClose, locale, workspaceId, focusGroupId, onActivePageChange, clipNavigation, onClipNavigationHandled }
+  const nextProps = {
+    onClose, locale, workspaceId, focusGroupId, onActivePageChange, clipNavigation, onClipNavigationHandled,
+    clipMediaFocus, existingWorkspaceOnly, registerMediaReturnCanvas,
+  }
   const propsRef = useRef(nextProps)
   propsRef.current = nextProps
 
@@ -296,7 +305,8 @@ export function CanvasBridge({ onClose, t, locale, workspaceId, focusGroupId, on
         if (lifetimeRef.current === lifetime && !confirmed) setStatus('error')
       }).catch(error => lifetime.reportError(error))
     }
-  }, [locale, onClose, workspaceId, focusGroupId, onActivePageChange, clipNavigation, onClipNavigationHandled])
+  }, [locale, onClose, workspaceId, focusGroupId, onActivePageChange, clipNavigation, onClipNavigationHandled,
+    clipMediaFocus, existingWorkspaceOnly, registerMediaReturnCanvas])
 
   return (
     <div className="omnimux-workflow-canvas-host">

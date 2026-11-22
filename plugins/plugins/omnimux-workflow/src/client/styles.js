@@ -659,6 +659,61 @@ export const WORKFLOW_CSS = `
 .omnimux-workflow-canvas-tab[data-visible="false"] {
   visibility: hidden;
 }
+.omnimux-workflow-clip-return {
+  flex: none;
+  padding: 8px 12px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-base, Canvas);
+  background-color: rgb(from var(--dsw-specific-menu, var(--dsw-alias-bg-layer-1, var(--dsw-alias-bg-base, Canvas))) r g b / 1);
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  -webkit-app-region: no-drag;
+}
+.omnimux-workflow-clip-return-row,
+.omnimux-workflow-clip-return-actions,
+.omnimux-workflow-clip-return-outputs:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.omnimux-workflow-clip-return-title {
+  flex: 1 1 180px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  font-weight: 600;
+}
+.omnimux-workflow-clip-return-outputs:not([hidden]) {
+  max-height: min(132px, 28vh);
+  overflow-y: auto;
+  padding: 6px 2px 2px;
+  margin-top: 4px;
+}
+.omnimux-workflow-clip-return-output {
+  max-width: 100%;
+}
+.omnimux-workflow-clip-return-output > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.omnimux-workflow-clip-return-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.omnimux-workflow-clip-return-type {
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+.omnimux-workflow-clip-return-error {
+  margin-top: 6px;
+  color: var(--dsw-alias-label-danger);
+  font-size: 12px;
+}
 .omnimux-workflow-canvas-unprojected {
   position: absolute;
   inset: 0;

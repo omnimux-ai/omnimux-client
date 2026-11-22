@@ -2,6 +2,7 @@ import { notifyCanvasClose } from '../CanvasBridge.js'
 import { createClipPersistence } from './persistence.js'
 import { createEditorSession } from './editor-session.js'
 import { createLiveChannel } from './live-channel.js'
+import { createMediaHandoff } from './media-handoff.js'
 import { nativeEditorState } from './native-state.ts'
 import { runNativeCommand } from './run-command.ts'
 
@@ -27,19 +28,21 @@ export function createClipRuntime(window, stage) {
   const online = () => channel.changed({ immediate: true })
   window.addEventListener('online', online)
   const stopWorkbench = window.__omnimuxWorkbench?.subscribe?.(session.reconcile)
+  const closePortal = binding => {
+    const active = stage.getSessionSnapshot()
+    if (active?.source !== 'canvas' || active.projectId !== binding.projectId
+      || active.workspaceId !== binding.workspaceId || active.nodeId !== binding.nodeId) return false
+    return notifyCanvasClose(binding) && stage.getSessionSnapshot() !== active
+  }
+  const mediaHandoff = createMediaHandoff({ window, session, closePortal })
   void channel.renew()
   return {
     session,
+    mediaHandoff,
     compose: editorInstanceId => channel.compose(editorInstanceId),
-    async closeCanvas(binding) {
-      return session.closeCanvas(binding, () => {
-        const active = stage.getSessionSnapshot()
-        if (active?.source !== 'canvas' || active.projectId !== binding.projectId
-          || active.workspaceId !== binding.workspaceId || active.nodeId !== binding.nodeId) return false
-        return notifyCanvasClose(binding) && stage.getSessionSnapshot() !== active
-      })
-    },
+    closeCanvas: binding => session.closeCanvas(binding, () => closePortal(binding)),
     dispose() {
+      mediaHandoff.dispose()
       window.document.removeEventListener('visibilitychange', refresh)
       window.removeEventListener('online', online)
       stopStage()

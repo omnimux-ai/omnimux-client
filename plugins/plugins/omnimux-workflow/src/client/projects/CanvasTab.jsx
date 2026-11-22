@@ -17,6 +17,8 @@ import { applyProjectCanvasRatio, CANVAS_TAB_ID, getBetterSidebar } from './proj
 import { resolveWorkspaceContextPage, useWorkspaceContext } from './workspace-context.js'
 import { sameClipBinding } from '../../canvas/bridge/clipEvents.ts'
 import { claimCanvasClipNavigation, readCanvasClipNavigation, visibleClipBinding } from './canvasClipNavigation.js'
+import { CanvasClipMediaReturnBar } from './CanvasClipMediaReturnBar.jsx'
+import { useCanvasClipMediaReturn } from './useCanvasClipMediaReturn.js'
 
 /** Stable page id for UI Context Envelope (Agent workspace targeting). */
 export const CANVAS_PAGE_ID = 'workflow-canvas'
@@ -59,6 +61,7 @@ export function CanvasTab({
   betterSidebar: propBetterSidebar,
   getSessionNavigation,
   workspaceContext,
+  clipMediaReturn,
   presence,
 }) {
   useEffect(() => { injectWorkflowStyles() }, [])
@@ -101,6 +104,9 @@ export function CanvasTab({
   const requestedWorkspaceId = clipRequest?.workspaceId
   const resolvedPageId = requestedPage?.id
   const tabId = tab?.id
+  const mediaReturn = useCanvasClipMediaReturn({
+    manager: clipMediaReturn, hostRef, sessionId, tab, visible, initialWorkspaceId: targetWorkspaceId, workspaceContext,
+  })
 
   useEffect(() => {
     if (!visible) {
@@ -219,10 +225,12 @@ export function CanvasTab({
     <div
       ref={hostRef}
       data-omnimux-canvas-tab=""
-      data-canvas-workspace-id={targetWorkspaceId}
+      data-canvas-workspace-id={mediaReturn.workspaceId}
       className="omnimux-workflow-canvas-tab"
       data-visible={visible ? 'true' : 'false'}
     >
+      {mediaReturn.record && <CanvasClipMediaReturnBar key={mediaReturn.record.transfer.requestId}
+        manager={clipMediaReturn} state={mediaReturn} t={t} />}
       <div className="omnimux-workflow-canvas-body">
         {isUnprojected ? (
           <div className="omnimux-workflow-canvas-unprojected">
@@ -253,7 +261,10 @@ export function CanvasTab({
             clipNavigation={visible && clipNavigation && clipNavigation.sessionId === sessionId && clipNavigation.workspaceId === targetWorkspaceId
               ? clipNavigation : undefined}
             onClipNavigationHandled={handleClipNavigation}
-            onActivePageChange={() => { void workspaceContext?.refresh?.() }}
+            onActivePageChange={mediaReturn.onActivePageChange}
+            existingWorkspaceOnly={mediaReturn.existingWorkspaceOnly}
+            registerMediaReturnCanvas={mediaReturn.registerMediaReturnCanvas}
+            clipMediaFocus={mediaReturn.clipMediaFocus}
           />
         ) : (
           <CanvasLoadingState t={t} />

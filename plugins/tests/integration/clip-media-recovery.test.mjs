@@ -66,7 +66,10 @@ const built = await build({
     builder.onResolve({ filter: /^\.\/openreel\/web\/App\.tsx$/ }, () => ({ path: 'app', namespace: 'clip-media-test' }))
     builder.onResolve({ filter: /^dsh-ui-kit$/ }, () => ({ path: 'ui-kit', namespace: 'clip-media-test' }))
     const fixtures = new Map(Object.entries({
-      'react-effect': `import { useEffect as reactEffect } from 'react';
+      'react-effect': `import { useEffect as reactEffect, useRef as reactRef } from 'react';
+        export function useRef(value) {
+          return globalThis.mountClipMediaEffect ? { current: value } : reactRef(value);
+        }
         export function useEffect(effect, keys) {
           if (globalThis.mountClipMediaEffect) globalThis.mountClipMediaEffect(effect);
           else reactEffect(effect, keys);
@@ -208,12 +211,12 @@ function oldCanvasDraft(projectId, url = sourceUrl) {
   return { binding: bindingFor(projectId), audios, draftSchema: schemaFromOpenPayload({ projectId, upstreamInputs: { audios } }) }
 }
 
-function runCanvas(t, binding, { draftSchema, audios = [] } = {}, owns = current) {
+function runCanvas(t, binding, { draftSchema, audios = [], mediaReturn } = {}, owns = current) {
   const result = Promise.withResolvers()
   const token = new AbortController()
   let cleanup
   globalThis.mountClipMediaEffect = effect => { cleanup = effect() }
-  useCanvasIngestion({ source: 'canvas', ...binding, draftSchema, upstreamInputs: { audios } }, token, owns, result.resolve)
+  useCanvasIngestion({ source: 'canvas', ...binding, draftSchema, upstreamInputs: { audios }, mediaReturn }, token, owns, result.resolve)
   delete globalThis.mountClipMediaEffect
   t.after(() => { token.abort(); cleanup?.() })
   return { completed: result.promise, cancel: () => { token.abort(); cleanup?.() } }
@@ -489,6 +492,74 @@ test('a fresh canvas still ingests its upstream media once and retains the same 
   await runCanvas(t, binding, { audios }).completed
   assert.deepEqual(projectStore().project.mediaLibrary.items.map(entry => entry.id), [item.id])
   assert.equal(read.mock.callCount(), 1)
+})
+
+test('a Canvas media return appends a verified new version to the initialized editor once', { timeout: 15_000 }, async t => {
+  const { home, host } = fixture(t)
+  const projectId = 'clip_node_media_return'
+  const binding = bindingFor(projectId)
+  const { audios } = oldCanvasDraft(projectId)
+  const http = await workflowHttp(t, home)
+  const read = t.mock.method(globalThis, 'fetch', http.fetch)
+  const first = verifiedUrl(sourceUrl, winningBytes)
+  writeFileSync(http.file, winningBytes)
+  await nativeEditorState.load(fromHost(host.materialize(binding.projectId, { binding })), current)
+  await runCanvas(t, binding, { audios: [{ ...audios[0], path: first, url: first }] }).completed
+  const [original] = projectStore().project.mediaLibrary.items
+  assert.equal(await firstSample(original.blob), 133)
+  assert.equal(projectStore().project.omnimuxCanvasInitialized, true)
+  const timeline = structuredClone(projectStore().project.timeline)
+
+  const next = verifiedUrl(sourceUrl, losingBytes)
+  writeFileSync(http.file, losingBytes)
+  const updated = [{ ...audios[0], path: next, url: next, sourceVersion: 'v2' }]
+  await runCanvas(t, binding, { audios: updated }).completed
+  assert.equal(read.mock.callCount(), 1)
+  const returned = { requestId: 'return-audio', upstreamInputs: { audios: updated } }
+  await runCanvas(t, binding, { audios: updated, mediaReturn: returned }).completed
+  const [kept, imported] = projectStore().project.mediaLibrary.items
+  assert.equal(kept.id, original.id)
+  assert.equal(await firstSample(kept.blob), 133)
+  assert.notEqual(imported?.id, kept.id)
+  assert.equal(await firstSample(imported.blob), -222)
+  assert.deepEqual(projectStore().project.timeline, timeline)
+  await runCanvas(t, binding, { audios: updated, mediaReturn: returned }).completed
+  assert.deepEqual(projectStore().project.mediaLibrary.items.map(item => item.id), [kept.id, imported.id])
+  assert.equal(read.mock.callCount(), 2)
+})
+
+test('a Canvas return cannot add data with the wrong pinned digest or after its seat leaves', { timeout: 15_000 }, async t => {
+  const { host } = fixture(t)
+  const projectId = 'clip_node_late_media_return'
+  const binding = bindingFor(projectId)
+  const { audios } = oldCanvasDraft(projectId)
+  const pending = Promise.withResolvers()
+  const started = Promise.withResolvers()
+  let reads = 0
+  const read = t.mock.method(globalThis, 'fetch', async () => {
+    if (++reads === 1) return mediaResponse(losingBytes)
+    started.resolve()
+    return pending.promise
+  })
+  await nativeEditorState.load(fromHost(host.materialize(binding.projectId, { binding })), current)
+  await runCanvas(t, binding).completed
+  assert.equal(projectStore().project.omnimuxCanvasInitialized, true)
+  const pinned = verifiedUrl(sourceUrl, winningBytes)
+  const mediaReturn = { requestId: 'late-audio', upstreamInputs: { audios: [{ ...audios[0], path: pinned, url: pinned }] } }
+  await runCanvas(t, binding, { mediaReturn }).completed
+  assert.equal(read.mock.callCount(), 1)
+  assert.deepEqual(projectStore().project.mediaLibrary.items, [])
+
+  const old = runCanvas(t, binding, { mediaReturn })
+  await started.promise
+  old.cancel()
+  const next = host.materialize('another-clip-media-draft', { title: 'Another project' })
+  await nativeEditorState.load(fromHost(next), current)
+  pending.resolve(mediaResponse(winningBytes))
+  // Yield beyond the stale fetch continuation before inspecting the new seat.
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(projectStore().project.id, next.projectId)
+  assert.deepEqual(projectStore().project.mediaLibrary.items, [])
 })
 
 test('old drafts do not follow external, local-file, path escape or foreign workspace locators', { timeout: 15_000 }, async t => {

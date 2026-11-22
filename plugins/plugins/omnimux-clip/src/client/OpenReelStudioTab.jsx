@@ -61,7 +61,9 @@ export function OpenReelStudioTab({ t, store, tab, sessionId, locale, runtime, v
   const view = useEditorSeat(runtime, {
     mode: 'standalone', root, sessionId, tabInstanceId: tab?.id,
     isVisible: () => visible && root.current?.isConnected && root.current.dataset.visible === 'true',
-    studioRequest: clip?.mode === 'standalone' ? { projectId: clip.projectId, key: clip.requestId ?? clip.projectId } : undefined,
+    studioRequest: clip?.mode === 'standalone' ? {
+      projectId: clip.projectId, key: clip.requestId ?? clip.projectId, mediaReturn: clip.mediaReturn,
+    } : undefined,
   })
 
   useEffect(() => {

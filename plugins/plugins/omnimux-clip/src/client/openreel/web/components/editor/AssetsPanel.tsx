@@ -56,8 +56,12 @@ import { LabelChip, MediaItemContextMenu, MediaOrganizeItems } from "./project-p
 import { ProjectPanelBar, ProjectPanelDialogs, useMediaSelectionCount } from "./project-panel/ProjectPanelBar";
 import { writeMediaDrag } from "./project-panel/dnd";
 import { Scissors } from "@/icons/lucide-compat";
-import { clipNow } from "../../../../i18n/index.js";
-import { useClipT } from "../../../../i18n/index.js";
+import { clipNow, useClipT } from "../../../../i18n/index.js";
+import { useClipEditorActions } from "../../../../live/EditorSeat.jsx";
+import { AssetLibraryPicker } from "./AssetLibraryPicker";
+import { AssetBridgeFeedback, AssetBridgeShortcuts, MediaImportActions } from "./AssetBridgeControls";
+import { useBridgedMediaImport } from "./useBridgedMediaImport";
+import "./asset-bridge.css";
 
 const panelFallback = <div className="h-full" role="status" aria-label={clipNow()("Loading panel")} />;
 const WorkspaceRecipesPanel = React.lazy(() => import("./panels/WorkspaceRecipesPanel").then((m) => ({ default: m.WorkspaceRecipesPanel })));
@@ -282,6 +286,7 @@ const MediaThumbnail: React.FC<{
   item: MediaItem;
   isSelected: boolean;
   isUsed?: boolean;
+  bridgeHighlighted?: boolean;
   viewMode: MediaViewMode;
   onSelect: (event?: React.MouseEvent | React.KeyboardEvent) => void;
   onDelete: () => void;
@@ -294,6 +299,7 @@ const MediaThumbnail: React.FC<{
   item,
   isSelected,
   isUsed = false,
+  bridgeHighlighted = false,
   viewMode,
   onSelect,
   onDelete,
@@ -466,6 +472,7 @@ const MediaThumbnail: React.FC<{
         }}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
+        data-bridge-imported={bridgeHighlighted || undefined}
         className={`workspace-media-thumbnail bg-bg-2 border relative group cursor-pointer transition-all overflow-hidden ${borderClass}`}
       >
         {/* Thumbnail or placeholder */}
@@ -627,11 +634,13 @@ const MediaThumbnailRow = React.memo(function MediaThumbnailRow({
   item,
   isSelected,
   isUsed,
+  bridgeHighlighted,
   handlers,
 }: {
   item: MediaItem;
   isSelected: boolean;
   isUsed: boolean;
+  bridgeHighlighted: boolean;
   handlers: MediaRowHandlers;
 }) {
   return (
@@ -639,6 +648,7 @@ const MediaThumbnailRow = React.memo(function MediaThumbnailRow({
       item={item}
       isSelected={isSelected}
       isUsed={isUsed}
+      bridgeHighlighted={bridgeHighlighted}
       viewMode="large"
       onSelect={(event) => handlers.select(item.id, event)}
       onDelete={() => handlers.remove(item.id)}
@@ -706,6 +716,72 @@ export const AssetsPanel: React.FC = () => {
     deleteMedia: state.deleteMedia,
     replaceMediaAsset: state.replaceMediaAsset,
   })));
+  const editorActions = useClipEditorActions();
+  const { canBridgeMedia, captureMediaEditor, openCanvasForMedia } = editorActions;
+  const bridgeImport = useBridgedMediaImport({ ...editorActions, projectId, actionExecutor });
+  const importedSourceIds = useMemo(() => new Set(mediaItems.flatMap(item => (
+    item.omnimuxSource?.id && !item.isPlaceholder ? [item.omnimuxSource.id] : []
+  ))), [mediaItems]);
+  const importTrigger = useRef<HTMLButtonElement>(null);
+  const pickerTrigger = useRef<HTMLButtonElement | null>(null);
+  const [pickerSeat, setPickerSeat] = useState<{ signal: AbortSignal; isCurrent: () => boolean } | null>(null);
+  const [canvasIssue, setCanvasIssue] = useState<"save-failed" | "unavailable" | null>(null);
+  const [canvasOpening, setCanvasOpening] = useState(false);
+  const canvasRequest = useRef<symbol | null>(null);
+  const canUseLibrary = Boolean(canBridgeMedia && captureMediaEditor);
+  const insideMedia = activeTab === "media" && mediaSource === "project";
+
+  useEffect(() => {
+    setPickerSeat(null);
+    setCanvasIssue(null);
+    setCanvasOpening(false);
+    return () => { canvasRequest.current = null; };
+  }, [projectId, actionExecutor]);
+
+  useEffect(() => {
+    if (!pickerSeat) return;
+    const close = () => setPickerSeat(null);
+    if (!insideMedia || !canUseLibrary || pickerSeat.signal.aborted || !pickerSeat.isCurrent()) {
+      close();
+      return;
+    }
+    pickerSeat.signal.addEventListener("abort", close, { once: true });
+    return () => pickerSeat.signal.removeEventListener("abort", close);
+  }, [pickerSeat, insideMedia, canUseLibrary]);
+
+  const bridgeActions = {
+    libraryDisabled: !canUseLibrary || bridgeImport.busy || canvasOpening,
+    canvasDisabled: !canUseLibrary || !openCanvasForMedia || bridgeImport.busy || canvasOpening,
+    onLibrary(trigger: HTMLButtonElement | null) {
+      if (!canUseLibrary || bridgeImport.busy || canvasRequest.current) return;
+      const seat = captureMediaEditor?.();
+      if (!seat || seat.signal.aborted || !seat.isCurrent()) return;
+      pickerTrigger.current = trigger;
+      setPickerSeat(seat);
+    },
+    async onCanvas() {
+      if (!canUseLibrary || !openCanvasForMedia || bridgeImport.busy || canvasRequest.current) return;
+      const seat = captureMediaEditor?.();
+      if (!seat || seat.signal.aborted || !seat.isCurrent()) return;
+      const request = Symbol();
+      canvasRequest.current = request;
+      setCanvasIssue(null);
+      setCanvasOpening(true);
+      const current = () => canvasRequest.current === request && !seat.signal.aborted && seat.isCurrent();
+      try {
+        const result = await openCanvasForMedia();
+        if (current() && (result === "save-failed" || result === "unavailable")) setCanvasIssue(result);
+      } catch {
+        if (current()) setCanvasIssue("unavailable");
+      } finally {
+        if (canvasRequest.current === request) {
+          canvasRequest.current = null;
+          setCanvasOpening(false);
+        }
+      }
+    },
+  };
+
   const mediaSizeLabel = useMemo(() => getMediaLibrarySizeLabel(mediaItems), [mediaItems]);
   // Only media-bin selection matters here. A string selector keeps the panel (and its
   // hundreds of thumbnails) out of the render path when a timeline clip is selected.
@@ -1141,7 +1217,7 @@ export const AssetsPanel: React.FC = () => {
       case "media":
         return (
           <div
-            className="workspace-media-panel flex min-h-0 flex-1 flex-col"
+            className="workspace-media-panel clip-asset-media-pane flex min-h-0 flex-1 flex-col"
             data-testid="project-panel"
             onKeyDownCapture={(event) => {
               // Find (Cmd/Ctrl+F) inside the Project panel: focus the search across every metadata column.
@@ -1160,9 +1236,9 @@ export const AssetsPanel: React.FC = () => {
             <div className="workspace-media-browser flex flex-col shrink-0">
               <div className="workspace-media-toolbar flex gap-1.5">
                 <label className="workspace-search"><MediaLibraryIcon name="search" /><Input ref={searchInputRef} aria-label={t("Search media")} placeholder={t("Search media")} value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} /></label>
-                <ShadcnButton variant="secondary" className="h-[30px] shrink-0 px-2.5 text-[13px] gap-1.5" data-media-action="import" aria-label={t("Import media")} onClick={triggerFileInput}><MediaLibraryIcon name="import" />{t("Import")}</ShadcnButton>
-                <ShadcnButton variant="secondary" size="icon" className="h-[30px] w-[30px] shrink-0" data-media-action="record" aria-label={t("Record")} onClick={() => openModal("recorder")}><MediaLibraryIcon name="record" /></ShadcnButton>
+                <MediaImportActions {...bridgeActions} trigger={importTrigger} onLocal={triggerFileInput} onRecord={() => openModal("recorder")} />
               </div>
+              <AssetBridgeShortcuts {...bridgeActions} />
               <div className="workspace-chips">{[["all","All"],["video","Video"],["audio","Audio"],["image","Images"]].map(([value,label]) => <ShadcnButton key={value} variant="ghost" aria-pressed={mediaFilter===value} onClick={() => setMediaFilter(value)}>{t(label)}</ShadcnButton>)}</div>
             </div>
             <ProjectPanelBar data={panelData} selectionCount={mediaSelectionCount} />
@@ -1196,6 +1272,13 @@ export const AssetsPanel: React.FC = () => {
               ) : null}
             />
 
+            <AssetBridgeFeedback
+              progress={bridgeImport.progress}
+              failed={bridgeImport.failed}
+              canvasIssue={canvasIssue}
+              canRetry={canUseLibrary && !bridgeImport.busy && !canvasOpening}
+              retry={item => { bridgeImport.start([item]); }}
+            />
             {panelView === "list" && mediaItems.length > 0 ? (
               <div
                 className={`workspace-media-scroll flex min-h-0 flex-1 flex-col ${isDragOver ? "bg-accent-soft" : ""}`}
@@ -1237,6 +1320,7 @@ export const AssetsPanel: React.FC = () => {
                       item={item}
                       isSelected={selectedMediaIds.has(item.id)}
                       isUsed={usedMediaIds.has(item.id)}
+                      bridgeHighlighted={bridgeImport.highlighted.has(item.id) && !item.isPlaceholder}
                       handlers={mediaRowHandlers}
                     />
                   </MediaItemContextMenu>
@@ -1284,6 +1368,7 @@ export const AssetsPanel: React.FC = () => {
                     </ShadcnButton>
                     {!mediaItems.length && <div className="workspace-other-starts">
                       <h3>{t("OTHER WAYS TO START")}</h3>
+                      <AssetBridgeShortcuts {...bridgeActions} empty />
                       <ShadcnButton variant="secondary" className="workspace-start-link" onClick={() => openModal("recorder")}><span className="workspace-start-icon"><MediaLibraryIcon name="record-start" /></span><span>{t("Record screen or camera")}<small>{t("Webcam, screen, or both")}</small></span></ShadcnButton>
                       <ShadcnButton variant="secondary" className="workspace-start-link" onClick={() => setMediaSource("stock")}><span className="workspace-start-icon"><MediaLibraryIcon name="stock-start" /></span><span>{t("Browse stock footage")}<small>{t("Free clips, music and SFX")}</small></span></ShadcnButton>
                       <ShadcnButton variant="secondary" className="workspace-start-link" onClick={() => setActiveTab("recipes")}><span className="workspace-start-icon"><MediaLibraryIcon name="recipe-start" /></span><span>{t("Start from a recipe")}<small>{t("Podcast clip, montage, explainer")}</small></span></ShadcnButton>
@@ -1409,7 +1494,23 @@ export const AssetsPanel: React.FC = () => {
       </div>
 
       <ProjectPanelDialogs />
-
+      <AssetLibraryPicker
+        open={insideMedia && canUseLibrary && pickerSeat !== null}
+        busy={bridgeImport.busy}
+        importedIds={importedSourceIds}
+        onClose={() => setPickerSeat(null)}
+        onImport={items => {
+          if (!pickerSeat || pickerSeat.signal.aborted || !pickerSeat.isCurrent()) return;
+          if (bridgeImport.start(items.map(({ id, url, name, type }) => ({ id, url, name, type })))) setPickerSeat(null);
+        }}
+        restoreFocus={() => {
+          const usable = (button: HTMLButtonElement | null) => button?.isConnected && !button.disabled
+            && button.getClientRects().length > 0 && !button.closest("[inert]");
+          const button = usable(pickerTrigger.current) ? pickerTrigger.current : importTrigger.current;
+          if (usable(button)) button?.focus({ preventScroll: true });
+          pickerTrigger.current = null;
+        }}
+      />
     </div>
   );
 };

@@ -74,6 +74,7 @@ export function createMediaSlice(set: Set, get: Get): MediaSlice {
         success: false,
         error: { code: "INVALID_PARAMS" as const, message: "The project changed while importing media. Import the file again in the current project." },
       };
+      const mismatchResult = () => ({ success: false, error: { code: "DECODE_ERROR" as const, message: "The file does not match the expected media type." } });
       const createdThumbnails = new Set<string>();
       // Caller-owned remote imports may be cancelled while decoding. Do not
       // publish or persist their result into a closed or superseded session.
@@ -81,6 +82,7 @@ export function createMediaSlice(set: Set, get: Get): MediaSlice {
 
       // Camera RAW (DNG decoded by OpenReel, other formats via macOS ImageIO): its own import path.
       if (isRawFileName(file.name)) {
+        if (options?.expectedType && options.expectedType !== "image") return mismatchResult();
         try {
           onProgress?.("Reading camera RAW");
           const { item } = await buildRawMediaItem(file, uuidv4());
@@ -192,6 +194,7 @@ export function createMediaSlice(set: Set, get: Get): MediaSlice {
           mediaType = "image";
         }
 
+        if (options?.expectedType && mediaType !== options.expectedType) return mismatchResult();
         if (mediaType === "video" && !thumbnailUrl) {
           try {
             const thumbs = await mediaBridge.generateThumbnailsForMedia(

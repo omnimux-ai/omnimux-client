@@ -7,7 +7,8 @@ import { mountSidebarEntry } from './sidebar-entry.js'
 import { ProjectLibraryPage, WORKFLOW_LIBRARY_TAB_ID } from './projects/ProjectLibraryPage.jsx'
 import { CanvasTab } from './projects/CanvasTab.jsx'
 import { AppTab } from './projects/AppTab.jsx'
-import { bindBetterSidebar, CANVAS_TAB_ID, APP_TAB_ID } from './projects/projectCanvas.js'
+import { bindBetterSidebar, getBetterSidebar, CANVAS_TAB_ID, APP_TAB_ID } from './projects/projectCanvas.js'
+import { createClipMediaReturn } from './projects/clipMediaReturn.js'
 import { installWorkflowGlobal } from './projects/workflow-global.js'
 import { createWorkspaceContextStore } from './projects/workspace-context.js'
 import { createCanvasPresence } from './projects/canvas-presence.js'
@@ -61,6 +62,13 @@ export function apply(ctx) {
     getSidebarRight,
   })
   ctx.effect(() => () => workspaceContext.dispose(), 'omnimux-workflow: workspace context')
+  const clipMediaReturn = createClipMediaReturn({
+    workspaceContext,
+    getSidebar: () => getBetterSidebar(ctx),
+    getSidebarRight,
+    t,
+  })
+  ctx.effect(() => () => clipMediaReturn.dispose(), 'omnimux-workflow: Clip media return')
   let canvasPresence = null
 
   // Cross-plugin seam: inspiration (and future callers) create a project
@@ -72,6 +80,7 @@ export function apply(ctx) {
     stage: null,
     getSessionNavigation,
     getSidebarRight,
+    prepareClipMediaReturn: clipMediaReturn.prepare,
     t,
   }
   ctx.effect(
@@ -135,6 +144,7 @@ export function apply(ctx) {
         getSessionNavigation,
         getSidebarRight,
         workspaceContext,
+        clipMediaReturn,
         presence: canvasPresence,
       }),
     })
