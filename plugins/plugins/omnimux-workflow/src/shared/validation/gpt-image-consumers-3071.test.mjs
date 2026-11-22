@@ -47,6 +47,13 @@ test('application catalog projection consumes channelGroups defaults and retains
     const result = normalizeCatalogModels([raw], 'image')[0];
     assert.deepEqual(resolveFieldModelOptions({}, result, true, false).map(o => o.value), ['1K']);
     assert.equal(result.channels.length, 2);
+    const unavailableDefault = { ...raw, channelGroups: [{ ...raw.channelGroups[0], enabled: false }, raw.channelGroups[1]] };
+    for (const catalogRow of [unavailableDefault, { ...raw, channelGroups: [raw.channelGroups[1]] }]) {
+      const noDefault = normalizeCatalogModels([catalogRow], 'image')[0];
+      assert.deepEqual(resolveFieldModelOptions({}, noDefault, true, false).map(o => o.value), ['1K', '2K', '4K']);
+    }
+    const requested = normalizeCatalogModels([raw], 'image', { [model]: { channelGroupId: 'economy' } })[0];
+    assert.deepEqual(resolveFieldModelOptions({}, requested, true, false).map(o => o.value), ['1K', '2K', '4K']);
     const economy = normalizeCatalogModels([raw], 'image', { [model]: { allowedGroups: ['economy'] } })[0];
     assert.deepEqual(resolveFieldModelOptions({}, economy, true, false).map(o => o.value), ['1K', '2K', '4K']);
     assert.equal(raw.parameters.resolution.options.length, 3);

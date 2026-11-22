@@ -13,7 +13,7 @@
  * 2. 悬停即切换子菜单与高亮，不需要点击；**点击才写入节点**（悬停只预览，鼠标扫过不会改配置）。
  * 3. 渐进展开：当前选中链默认显示三级；悬停到非选中品牌时只显示二级（型号），
  *    悬停到某个型号后才显示三级（渠道）——即「选中激活显示三级，悬停激活只显示下级」。
- * 4. 旧目录的预览渠道只读。受管视频的预览渠道可直接选择，只有点击具体渠道才写入型号和分组。
+ * 4. 点击型号时采用目录标记的默认线路。没有默认的型号先展开线路列，等待用户选择。
  */
 
 import React, { useState, useMemo, useCallback, useRef, useEffect, useLayoutEffect } from 'react';
@@ -39,6 +39,9 @@ import {
   parseModelAndGroup,
   isByokGroup,
   buildChannelSelectionPayload,
+  findDefaultChannelGroup,
+  findSelectedChannelGroup,
+  isChannelGroupAvailable,
   resolveGroupMediaCapabilities,
   type ChannelGroupItem,
   type GroupMediaCapability,
@@ -158,6 +161,10 @@ const PROBE_HOST_STYLE: React.CSSProperties = {
 /** 量尺不参与选中，用同一个空数组避免每次渲染换新引用。 */
 const NO_GROUP_IDS: readonly string[] = [];
 
+function hasChannelColumn(groups: readonly ChannelGroupItem[]): boolean {
+  return groups.length > 1 || (groups.length === 1 && !findDefaultChannelGroup(groups));
+}
+
 const ChannelRow: React.FC<{
   group: ChannelGroupItem;
   checked: boolean;
@@ -165,7 +172,7 @@ const ChannelRow: React.FC<{
   onSelect: () => void;
   modelOperations?: readonly OperationContractDto[];
 }> = ({ group, checked, disabled = false, onSelect, modelOperations }) => {
-  const isAvailable = group.isAvailable !== false && group.enabled !== false;
+  const isAvailable = isChannelGroupAvailable(group);
   const isRowDisabled = disabled || !isAvailable;
   const isByok = isByokGroup(group);
   const displayLabel = formatChannelGroupLabel(group.label);
@@ -419,7 +426,7 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
     [options],
   );
   const brandList = useMemo(() => groupPickerCandidates(selectableOptions), [selectableOptions]);
-  const { modelId: canonicalModel } = parseModelAndGroup(modelValue);
+  const { modelId: canonicalModel, group: inlineGroup } = parseModelAndGroup(modelValue);
   const currentModelId = isPickerCandidate(options, canonicalModel) ? canonicalModel : '';
   const activeModelId = currentModelId;
   const activeBrandId = brandList.find((brand) => brand.rows.some((row) => row.id === activeModelId))?.id ?? '';
@@ -432,9 +439,7 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
   const shownBrandId = hoverBrandId ?? (activeBrandId || brandList[0]?.id || '');
   const shownModels = modelsForBrand(shownBrandId);
 
-  // 悬停到非选中品牌时只显示二级；悬停到型号（或没有任何悬停）时才显示三级。
-  // 渠道列（三级菜单）仅在模型有多个可选渠道时（>1）才展示；
-  // 若分组为空（0个）或只有唯一默认渠道（<=1），则直接不显示三级菜单。
+  // 悬停到其他品牌时先显示型号。只有一条线路且无默认时也展示线路列。
   const hoveringOtherBrand = hoverBrandId !== null && hoverBrandId !== activeBrandId;
   const channelModelId = hoverModelId ?? activeModelId;
   const isManagedChannelModel = options.some(item => item.id === channelModelId && item.effectiveVideoVersion !== undefined);
@@ -444,7 +449,7 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
     const version = options.find(item => item.id === modelId)?.effectiveVideoVersion;
     const groups = resolveModelChannelGroups(modelId, version === undefined ? rows
       : rows.filter(group => groupMatchesEffectiveVideoVersion(group, version)), runtimeSettings);
-    return version === undefined ? groups : groups.filter(group => group.enabled !== false && group.isAvailable !== false);
+    return version === undefined ? groups : groups.filter(isChannelGroupAvailable);
   }, [options, runtimeSettings]);
   // 线路只来自上游目录行：不再有本地线路表可读，也不再需要额外的目录查询。
   const channelGroups = useMemo(
@@ -463,73 +468,17 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
     () => options.find((item) => item.id === channelModelId)?.operations,
     [options, channelModelId],
   );
-  const hasMultipleChannels = channelGroups.length > 1;
-  const showChannelColumn = hasMultipleChannels && (hoveringOtherBrand ? hoverModelId !== null : true);
+  const showChannelColumn = hasChannelColumn(channelGroups) && (!hoveringOtherBrand || hoverModelId !== null);
   const isChannelPreview = hoverModelId !== null && hoverModelId !== activeModelId;
-
-  // 渠道单选收敛：仅选择一个分组并锁定契约
-  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>(() => {
-    const rawAllowed = routing?.allowedGroups?.[0];
-    const rawExplicit = routing?.channelGroupId;
-    const normAllowed = typeof rawAllowed === 'string' && rawAllowed.trim() !== '' ? rawAllowed.trim() : undefined;
-    const normExplicit = typeof rawExplicit === 'string' && rawExplicit.trim() !== '' ? rawExplicit.trim() : undefined;
-    let candidate: string | undefined;
-    if (normAllowed && normExplicit && normAllowed !== normExplicit) {
-      if (isManagedActiveModel) return [];
-      // 检测到 normAllowed 与 normExplicit 冲突时优先取 normExplicit（BYOK 权威 ID）或回退至安全首项
-      candidate = activeChannelGroups.some((g) => g.id === normExplicit)
-        ? normExplicit
-        : activeChannelGroups.some((g) => g.id === normAllowed)
-        ? normAllowed
-        : activeChannelGroups.find((group) => group.enabled !== false && group.isAvailable !== false)?.id;
-    } else {
-      candidate = normExplicit ?? normAllowed;
-    }
-    if (candidate && activeChannelGroups.some((g) => g.id === candidate && g.enabled !== false && g.isAvailable !== false)) {
-      return [candidate];
-    }
-    if (isManagedActiveModel) return [];
-    const fallbackGroup = activeChannelGroups.find((group) => group.enabled !== false && group.isAvailable !== false);
-    return fallbackGroup ? [fallbackGroup.id] : [];
-  });
+  const isReadOnlyPreview = isChannelPreview && !isManagedChannelModel && Boolean(findDefaultChannelGroup(channelGroups));
+  const activeGroup = findSelectedChannelGroup(activeChannelGroups, routing, inlineGroup, isManagedActiveModel);
+  const selectedGroupIds = activeGroup ? [activeGroup.id] : NO_GROUP_IDS;
 
   // 外部候选或选择变化后丢弃预览，选中态直接由合法持久值派生。
   useEffect(() => {
     setHoverBrandId(null);
     setHoverModelId(null);
   }, [currentModelId, options]);
-
-  const persistedGroups = routing?.allowedGroups;
-  const persistedGroupId = routing?.channelGroupId;
-  useEffect(() => {
-    const rawAllowed = persistedGroups?.[0];
-    const rawExplicit = persistedGroupId;
-    const normAllowed = typeof rawAllowed === 'string' && rawAllowed.trim() !== '' ? rawAllowed.trim() : undefined;
-    const normExplicit = typeof rawExplicit === 'string' && rawExplicit.trim() !== '' ? rawExplicit.trim() : undefined;
-    let candidate: string | undefined;
-    if (normAllowed && normExplicit && normAllowed !== normExplicit) {
-      if (isManagedActiveModel) {
-        setSelectedGroupIds([]);
-        return;
-      }
-      // 检测到 normAllowed 与 normExplicit 冲突时优先取 normExplicit（BYOK 权威 ID）或回退至安全首项
-      candidate = activeChannelGroups.some((g) => g.id === normExplicit)
-        ? normExplicit
-        : activeChannelGroups.some((g) => g.id === normAllowed)
-        ? normAllowed
-        : activeChannelGroups.find((group) => group.enabled !== false && group.isAvailable !== false)?.id;
-    } else {
-      candidate = normExplicit ?? normAllowed;
-    }
-    if (candidate && activeChannelGroups.some((g) => g.id === candidate && g.enabled !== false && g.isAvailable !== false)) {
-      setSelectedGroupIds([candidate]);
-    } else if (isManagedActiveModel) {
-      setSelectedGroupIds([]);
-    } else {
-      const fallbackGroup = activeChannelGroups.find((group) => group.enabled !== false && group.isAvailable !== false);
-      setSelectedGroupIds(fallbackGroup ? [fallbackGroup.id] : []);
-    }
-  }, [activeChannelGroups, persistedGroups, persistedGroupId, isManagedActiveModel]);
 
   const emit = useCallback((modelId: string, groupIds: string[]) => {
     if (!isPickerCandidate(options, modelId)) return;
@@ -560,19 +509,17 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
   const handleSelectModel = useCallback((modelId: string) => {
     if (!isPickerCandidate(options, modelId)) return;
     const candidate = options.find((item) => item.id === modelId);
-    if (candidate?.executable === false) return;
+    if (candidate?.executable === false || candidate?.inputIncompatible === true) return;
     const groups = groupsForModel(modelId);
-    if (candidate?.effectiveVideoVersion !== undefined && groups.length > 1) {
+    const defaultGroup = findDefaultChannelGroup(groups);
+    if ((modelId === activeModelId && activeGroup) || (groups.length > 0 && !defaultGroup)) {
       setHoverModelId(modelId);
       return;
     }
-    const defaultGroup = groups.find((group) => group.enabled !== false && group.isAvailable !== false)?.id;
-    const nextGroupIds = defaultGroup ? [defaultGroup] : [];
-    setSelectedGroupIds(nextGroupIds);
     setHoverBrandId(null);
     setHoverModelId(null);
-    emit(modelId, nextGroupIds);
-  }, [options, groupsForModel, emit]);
+    emit(modelId, defaultGroup ? [defaultGroup.id] : []);
+  }, [options, groupsForModel, activeModelId, activeGroup, emit]);
 
   const handleBrandClick = useCallback((brandId: string) => {
     const models = modelsForBrand(brandId);
@@ -582,17 +529,14 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
     }
     const targetModelId = models.find((item) => item.executable !== false)?.id;
     if (!targetModelId) return;
+    handleBrandHover(brandId);
     handleSelectModel(targetModelId);
   }, [handleBrandHover, handleSelectModel, modelsForBrand]);
 
   const handleSelectGroup = useCallback((groupId: string) => {
-    const target = isManagedChannelModel ? channelModelId : activeModelId;
-    const groups = isManagedChannelModel ? channelGroups : activeChannelGroups;
-    if (!isPickerCandidate(options, target) || !groups.some((group) => group.id === groupId)) return;
-    const next = [groupId];
-    setSelectedGroupIds(next);
-    emit(target, next);
-  }, [options, activeChannelGroups, activeModelId, channelGroups, channelModelId, isManagedChannelModel, emit]);
+    if (isReadOnlyPreview) return;
+    emit(channelModelId, [groupId]);
+  }, [isReadOnlyPreview, channelModelId, emit]);
 
   const [popoverPos, setPopoverPos] = useState<{ bottom: number; left: number }>({ bottom: 44, left: 16 });
 
@@ -632,7 +576,7 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
       ))}
       {brandList.flatMap((brand) => brand.rows).map((item) => {
         const groups = groupsForModel(item.id);
-        if (groups.length <= 1) return null;
+        if (!hasChannelColumn(groups)) return null;
         return (
           <div key={item.id} className="wf-loomi-col wf-loomi-col--channel" data-cascade-probe-col="">
             <CascadeChannelColumn
@@ -692,12 +636,15 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
 
   const { modelId: triggerModelId } = parseModelAndGroup(activeModelId);
   const managedModelLabel = isManagedActiveModel ? options.find(item => item.id === activeModelId)?.label : undefined;
-  const managedGroupLabelFull = isManagedActiveModel ? activeChannelGroups.find(group => selectedGroupIds.includes(group.id))?.label : undefined;
+  const managedGroupLabelFull = isManagedActiveModel ? activeGroup?.label : undefined;
+  const needsLineSelection = activeChannelGroups.length > 0 && !activeGroup && !findDefaultChannelGroup(activeChannelGroups);
   const managedGroupLabel = formatChannelGroupLabel(managedGroupLabelFull);
-  const triggerDisplayText = managedModelLabel
-    ? [managedModelLabel, managedGroupLabel].filter(Boolean).join(' · ') : triggerModelId || '待重新选择';
-  const triggerTitle = managedModelLabel
-    ? [managedModelLabel, managedGroupLabelFull].filter(Boolean).join(' · ') : triggerDisplayText;
+  const triggerDisplayText = needsLineSelection
+    ? `${managedModelLabel ?? triggerModelId} · 待重新选择`
+    : managedModelLabel
+      ? [managedModelLabel, managedGroupLabel].filter(Boolean).join(' · ')
+      : triggerModelId || '待重新选择';
+  const triggerTitle = managedGroupLabelFull ? `${managedModelLabel} · ${managedGroupLabelFull}` : triggerDisplayText;
 
   return (
     <>
@@ -779,8 +726,8 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
               >
                 <CascadeChannelColumn
                   channelGroups={channelGroups}
-                  checkedIds={isChannelPreview ? (isManagedChannelModel ? [] : [channelGroups[0]?.id ?? '']) : selectedGroupIds}
-                  preview={isChannelPreview && !isManagedChannelModel}
+                  checkedIds={isChannelPreview ? NO_GROUP_IDS : selectedGroupIds}
+                  preview={isReadOnlyPreview}
                   onSelect={handleSelectGroup}
                   runtimeSettings={runtimeSettings}
                   fallbackState={fallbackState}

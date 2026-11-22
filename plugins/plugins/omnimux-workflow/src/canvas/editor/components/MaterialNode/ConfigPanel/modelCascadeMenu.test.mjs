@@ -226,14 +226,16 @@ test('official channel section no longer renders a 官方专线 subheading', () 
   assert.doesNotMatch(cascadeSrc, /官方专线/);
   assert.match(cascadeSrc, /className="wf-cascade-channel-list"/);
 });
-test('hover remains preview-only and legacy brand clicks select a real model row', () => {
+test('hover only previews and model clicks use the marked default or expose manual line selection', () => {
   assert.match(cascadeSrc, /models\.find\(\(item\) => item\.executable !== false\)\?\.id/);
   assert.match(cascadeSrc, /onHover=\{\(\) => handleBrandHover\(brand\.id\)\}/);
   assert.match(cascadeSrc, /onHover=\{\(\) => handleModelHover\(item\.id\)\}/);
   assert.match(cascadeSrc, /onSelect=\{\(\) => handleSelectModel\(item\.id\)\}/);
   assert.doesNotMatch(cascadeSrc, /onMouseEnter=\{\(\) => handleSelectModel/);
-  assert.match(cascadeSrc, /preview=\{isChannelPreview && !isManagedChannelModel\}/);
-  assert.match(cascadeSrc, /if \(candidate\?\.effectiveVideoVersion !== undefined && groups\.length > 1\) \{\s*setHoverModelId\(modelId\);\s*return;/);
+  assert.match(cascadeSrc, /preview=\{isReadOnlyPreview\}/);
+  assert.match(cascadeSrc, /const defaultGroup = findDefaultChannelGroup\(groups\);/);
+  assert.match(cascadeSrc, /emit\(modelId, defaultGroup \? \[defaultGroup\.id\] : \[\]\);/);
+  assert.match(cascadeSrc, /groups\.length === 1 && !findDefaultChannelGroup\(groups\)/);
   assert.match(cascadeSrc, /disabled=\{preview\}/);
 });
 

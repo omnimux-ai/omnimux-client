@@ -46,7 +46,7 @@ export interface ChannelGroupItem {
   };
   /** Gateway group appended as `model@wireGroup`; falls back to `id`. */
   wireGroup?: string;
-  /** Marks the line pre-selected when the model offers several parameter tiers. */
+  /** Marks the official default projected by the hub. */
   default?: boolean;
   /**
    * Upstream model this line is actually served by, when it differs from the
@@ -185,6 +185,48 @@ export function parseModelAndGroup(input?: string): { modelId: string; group: st
     modelId: rawModel,
     group: rawGroup || null,
   };
+}
+
+type ChannelRouteOption = Pick<ChannelGroupItem, 'id' | 'wireGroup' | 'default' | 'category' | 'sourceType' | 'isAvailable'>
+  & { enabled?: boolean };
+
+export function isChannelGroupAvailable(group: Pick<ChannelRouteOption, 'enabled' | 'isAvailable'>): boolean {
+  return group.enabled !== false && group.isAvailable !== false;
+}
+
+/** The hub has already resolved compatibility defaults against the gateway order. */
+export function findDefaultChannelGroup<T extends ChannelRouteOption>(groups: readonly T[]): T | undefined {
+  const defaults = groups.filter(group => group.default === true && isChannelGroupAvailable(group) && !isByokGroup(group));
+  return defaults.length === 1 ? defaults[0] : undefined;
+}
+
+interface PersistedChannelSelection {
+  channelGroupId?: unknown;
+  allowedGroups?: unknown;
+  group?: unknown;
+  sourceType?: unknown;
+}
+
+export function findSelectedChannelGroup<T extends ChannelRouteOption>(
+  groups: readonly T[],
+  routing?: PersistedChannelSelection,
+  inlineGroup?: string | null,
+  requireConsistentSelection = false,
+): T | undefined {
+  const allowed = Array.isArray(routing?.allowedGroups) ? routing.allowedGroups : [];
+  const requested = [routing?.channelGroupId, ...allowed, routing?.group, inlineGroup]
+    .flatMap(id => typeof id === 'string' && id.trim() ? [id.trim()] : []);
+  if (requested.length === 0) return undefined;
+  const available = groups.filter(group => isChannelGroupAvailable(group)
+    && (routing?.sourceType !== 'byok' || isByokGroup(group)));
+  if (requireConsistentSelection) {
+    return available.find(group => requested.every(id => group.id === id || group.wireGroup === id));
+  }
+  for (const id of requested) {
+    const group = available.find(group => group.id === id) ?? available.find(group => group.wireGroup === id);
+    if (group) return group;
+  }
+  return undefined;
 }
 
 /**
@@ -784,7 +826,7 @@ export function resolveShortModelName(modelId?: string, _family?: string): strin
 }
 
 /** Group ids named by a routing intent (`group`, `allowedGroups`); empty means automatic. */
-function selectedGroupIds(routing: unknown, availableGroupIds?: Set<string>): Set<string> {
+function selectedGroupIds(routing: unknown, availableGroupIds?: Set<string>): Set<string> | null {
   const ids = new Set<string>();
   if (!routing || typeof routing !== 'object' || Array.isArray(routing)) return ids;
   const intent = routing as Record<string, unknown>;
@@ -820,9 +862,9 @@ function selectedGroupIds(routing: unknown, availableGroupIds?: Set<string>): Se
     if (intent.sourceType === 'official') {
       return new Set(Array.from(ids).filter((id) => !isByokGroup(id)));
     }
-    return new Set<string>();
+    return null;
   }
-  return ids;
+  return intent.sourceType === 'byok' && !hasByok ? null : ids;
 }
 
 /** What several selected lines agree on; a field they declare differently is released. */
@@ -887,8 +929,8 @@ export function injectVideoByokDefaults(raw: LineConstraints = {}): LineConstrai
  *
  * A line may accept far less than the model contract publishes, so the canvas reads
  * the declaration of the directory rows before the contract reaches slot layout,
- * operation lists or parameter controls. Automatic routing applies nothing; several
- * lines apply what they agree on, with the stricter ceiling winning.
+ * operation lists or parameter controls. An unpinned route uses the directory default.
+ * Several explicitly selected lines apply what they agree on.
  *
  * @param modelId Model id (may carry a `@channelGroup` suffix).
  * @param routing Persisted routing intent (`group` and/or `allowedGroups`).
@@ -902,14 +944,15 @@ export function resolveLineConstraints(
   runtimeSettings?: RuntimeByokChannelSettings | null,
 ): LineConstraints {
   const effectiveSettings = runtimeSettings ?? null;
-  const { modelId: id } = parseModelAndGroup(modelId);
-  const groups = resolveModelChannelGroups(id, directoryGroups, effectiveSettings);
+  const { modelId: id, group: inlineGroup } = parseModelAndGroup(modelId);
+  const groups = resolveModelChannelGroups(id, directoryGroups, effectiveSettings).filter(isChannelGroupAvailable);
   const availableGroupIds = new Set(groups.map((g) => g.id));
   const selected = selectedGroupIds(routing, availableGroupIds);
+  if (!selected) return {};
   if (selected.size === 0) {
-    const defaultGroup = groups.find((group) => group.default === true && group.enabled !== false);
-    if (!defaultGroup || id !== 'gpt-image-2.5') return {};
-    selected.add(defaultGroup.id);
+    const group = inlineGroup ?? findDefaultChannelGroup(groups)?.id;
+    if (!group) return {};
+    selected.add(group);
   }
   const declarations = groups
     .filter((group) => selected.has(group.id) || (group.wireGroup ? selected.has(group.wireGroup) : false))
@@ -983,7 +1026,7 @@ export function buildChannelSelectionPayload(
   const [primaryGroupId] = groupIds;
   if (!primaryGroupId) return null;
   const matchedGroup = availableGroups.find((g) => g.id === primaryGroupId);
-  if (!matchedGroup || matchedGroup.enabled === false || matchedGroup.isAvailable === false) {
+  if (!matchedGroup || !isChannelGroupAvailable(matchedGroup)) {
     return null;
   }
   const isByok = isByokGroup(matchedGroup);
