@@ -19,7 +19,7 @@ import { looksAbsolutePath, localFileMediaUrl, localFilePathFromUrl } from '../.
 import { CANVAS_ZOOM_CONFIG } from '../../../shared/graph/nodeSizeConfig.ts';
 import { resolveComfyCardSize } from '../../editor/utils/comfyPageCard.ts';
 import {
-  GROUP_HEADER_EXTERNAL_GAP,
+  GROUP_CHROME_INSET,
   GROUP_HEADER_HEIGHT,
   projectGroupDimensions,
   resolveNodeDimensions,
@@ -35,6 +35,17 @@ export const CLIP_EXPORT_COPY_ORIGIN = 'clip_export_copy';
 const DOWNSTREAM_CLEARANCE = 40;
 // The director card has a 372px minimum body plus the shell's 1px borders.
 const DIRECTOR_CARD_MIN_HEIGHT = 374;
+const { minZoom, maxZoom } = CANVAS_ZOOM_CONFIG;
+// NodeHeader and its stylesheet define these screen-space sizes.
+const NODE_TITLE_GAP = 4;
+const NODE_TITLE_MAX_LABEL_WIDTH = 180;
+const NODE_TITLE_CHROME_WIDTH = 28; // icon, gap and side padding
+const NODE_TITLE_BADGE_WIDTH = 14; // status dot and gap
+const NODE_TITLE_SIMULATED_BADGE_WIDTH = 16 * 11 + 12 + 6; // longest locale label, padding and gap
+const TEXT_NODE_FALLBACK_LABEL_WIDTH = 4 * 14; // the localized text-node name
+const GROUP_TITLE_INSET = 10;
+const GROUP_TITLE_CHROME_WIDTH = 42; // toggle, gap, padding and borders
+const GROUP_TITLE_MAX_LABEL_WIDTH = 200;
 
 /** Re-point an already-resolved local-file URL at a new content revision. */
 function withMediaRevision(url: string, token: string): string {
@@ -83,6 +94,7 @@ export interface ClipExportGraphNode {
   measured?: { width?: number; height?: number };
   parentId?: string;
   hidden?: boolean;
+  selected?: boolean;
 }
 
 export interface ClipExportGraphEdge {
@@ -234,54 +246,113 @@ function edgeBetween(
   };
 }
 
-function placeDownstreamNode(input: ClipExportDownstreamInput): ClipExportDownstreamNode['position'] {
-  const position = {
-    x: input.sourcePosition.x + input.nodeWidth + CLIP_EXPORT_DOWNSTREAM_GAP,
-    y: input.sourcePosition.y,
-  };
-  const { width, height, headerOffset } = resolveNodeDimensions({
-    type: 'material', position, data: { materialType: 'video' },
-  });
-  const { width: mediaWidth, height: mediaHeight } = input.output;
-  let cardHeight = height;
-  if (mediaWidth && mediaWidth > 0 && Number.isFinite(mediaWidth)
-    && mediaHeight && mediaHeight > 0 && Number.isFinite(mediaHeight)) {
-    // Leave room for both the placeholder and MaterialNode's loaded video preview.
-    cardHeight = Math.max(height, Math.min(800, Math.round(width / (mediaWidth / mediaHeight))));
-  }
+type PlacementBox = { left: number; right: number; top: number; bottom: number };
 
-  // Titles have fixed screen heights, so use their largest canvas-space offset.
-  const minZoom = CANVAS_ZOOM_CONFIG.minZoom;
-  const titleOffset = Math.ceil(headerOffset / minZoom);
+type PlacementNode = Pick<ClipExportGraphNode, 'type' | 'data' | 'width' | 'height' | 'measured' | 'selected'>;
+
+function positiveFinite(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0;
+}
+
+function aspectFromSize(size: unknown): number | undefined {
+  if (!size || typeof size !== 'object') return undefined;
+  const { width, height } = size as { width?: unknown; height?: unknown };
+  if (!positiveFinite(width) || !positiveFinite(height)) return undefined;
+  const aspect = width / height;
+  return positiveFinite(aspect) ? aspect : undefined;
+}
+
+function previewHeight(node: PlacementNode, width: number, fallback: number): number {
+  const data = node.data;
+  if (node.type !== 'material' || (data?.materialType !== 'image' && data?.materialType !== 'video')) return fallback;
+  if ([node.measured?.height, node.height, data.nodeHeight].some(positiveFinite)) return fallback;
+  const aspect = aspectFromSize(data.size) ?? aspectFromSize(data.dimensions) ?? data.aspectRatio;
+  // MaterialNode sets the loaded preview to the rounded aspect height, clamped to 80–800.
+  return positiveFinite(aspect) ? Math.max(fallback, 80, Math.min(800, Math.round(width / aspect))) : fallback;
+}
+
+function labelWidth(label: unknown, limit: number): number {
+  // The workbench title font is 14px. Use full-em advances for short ASCII/CJK
+  // labels and the CSS ellipsis cap for text that needs other font shaping.
+  return typeof label === 'string' && /^[\x20-\x7e\u3400-\u9fff]+$/u.test(label)
+    ? Math.min(limit, label.length * 14) : limit;
+}
+
+function placementBoxes(node: PlacementNode, position: { x: number; y: number }): [PlacementBox, ...PlacementBox[]] {
+  const { x, y } = position;
+  const comfySize = node.type === 'comfy-page' ? resolveComfyCardSize(node.width, node.height) : undefined;
+  const { width, height, headerOffset } = resolveNodeDimensions({ ...projectGroupDimensions(node), ...comfySize, position });
+  const isDirector = node.type === 'director';
+  const cardHeight = isDirector ? Math.max(height, DIRECTOR_CARD_MIN_HEIGHT) : previewHeight(node, width, height);
+  const body = { left: x, right: x + width, top: y, bottom: y + cardHeight };
+  if (node.type === 'group') {
+    const collapsed = Boolean(node.data?.isCollapsed);
+    const left = x + GROUP_CHROME_INSET;
+    const titleWidth = labelWidth(node.data?.title, GROUP_TITLE_MAX_LABEL_WIDTH) + GROUP_TITLE_CHROME_WIDTH
+      + (node.selected ? 24 : 0); // ungroup button and gap
+    return [body, {
+      left, right: left + Math.ceil(titleWidth / minZoom),
+      top: collapsed ? y + GROUP_TITLE_INSET + GROUP_HEADER_HEIGHT - Math.ceil(GROUP_HEADER_HEIGHT / minZoom)
+        : y - Math.ceil((GROUP_HEADER_HEIGHT + GROUP_TITLE_INSET) / minZoom),
+      bottom: collapsed ? y + GROUP_TITLE_INSET + GROUP_HEADER_HEIGHT : y - Math.floor(GROUP_TITLE_INSET / maxZoom),
+    }];
+  }
+  const titleHeight = comfySize || isDirector ? 28 : headerOffset;
+  if (titleHeight === 0) return [body];
+  const data = node.data;
+  const isMaterial = node.type === 'material';
+  let label = data?.title;
+  if (isMaterial) label = data?.label;
+  if (node.type === 'table') label = data?.label || label;
+  if (node.type === 'video_composition') label = label || data?.label;
+  const labelLimit = isMaterial && data?.materialType === 'text' && !label
+    ? TEXT_NODE_FALLBACK_LABEL_WIDTH : NODE_TITLE_MAX_LABEL_WIDTH;
+  const textWidth = comfySize ? NODE_TITLE_MAX_LABEL_WIDTH : labelWidth(label, labelLimit);
+  const badge = isMaterial && data?.simulated === true && data.executionStatus === 'completed'
+    ? NODE_TITLE_SIMULATED_BADGE_WIDTH
+    : (isMaterial || node.type === 'video_composition' ? NODE_TITLE_BADGE_WIDTH : 0);
+  const titleWidth = Math.min(width + 8, textWidth + NODE_TITLE_CHROME_WIDTH + badge);
+  return [body, {
+    left: x, right: x + Math.ceil(titleWidth / minZoom),
+    top: y - Math.ceil(titleHeight / minZoom), bottom: y - Math.floor(NODE_TITLE_GAP / maxZoom),
+  }];
+}
+
+function overlapsColumn(a: PlacementBox, b: PlacementBox, gap: number): boolean {
+  return a.left < b.right + gap && b.left < a.right + gap;
+}
+
+function placeDownstreamNode(
+  input: ClipExportDownstreamInput,
+  data: Record<string, unknown>,
+): ClipExportDownstreamNode['position'] {
+  const x = input.sourcePosition.x + input.nodeWidth + CLIP_EXPORT_DOWNSTREAM_GAP;
+  const output = placementBoxes({ type: 'material', data }, { x, y: 0 });
   const groups = new Map(input.currentNodes.filter(node => node.type === 'group').map(node => [node.id, node]));
-  const obstacles: { top: number; bottom: number }[] = [];
+  const blocked: { start: number; end: number }[] = [];
   for (const node of input.currentNodes) {
     if (node.hidden || !node.position || !Number.isFinite(node.position.x) || !Number.isFinite(node.position.y)) continue;
     const parent = node.parentId ? groups.get(node.parentId) : undefined;
     if (parent?.hidden || parent?.data?.isCollapsed) continue;
-    const { x, y } = parent?.position ? toAbsoluteCoordinates(node.position, parent.position) : node.position;
-    const comfySize = node.type === 'comfy-page' ? resolveComfyCardSize(node.width, node.height) : undefined;
-    const dimensions = resolveNodeDimensions({ ...projectGroupDimensions(node), ...comfySize, position: node.position });
-    if (x + dimensions.width + DOWNSTREAM_CLEARANCE <= position.x
-      || position.x + width + DOWNSTREAM_CLEARANCE <= x) continue;
-    const isDirector = node.type === 'director';
-    const isGroup = node.type === 'group';
-    const collapsedGroup = isGroup && Boolean(node.data?.isCollapsed);
-    const header = isGroup
-      ? GROUP_HEADER_HEIGHT + (collapsedGroup ? 0 : GROUP_HEADER_EXTERNAL_GAP)
-      : (comfySize || isDirector ? headerOffset : dimensions.headerOffset);
-    // Folded titles start inside the group but grow upward from their bottom edge.
-    const titleLift = Math.ceil(header / minZoom) - (collapsedGroup ? GROUP_HEADER_HEIGHT : 0);
-    const obstacleHeight = isDirector ? Math.max(dimensions.height, DIRECTOR_CARD_MIN_HEIGHT) : dimensions.height;
-    obstacles.push({ top: y - titleLift, bottom: y + obstacleHeight });
+    const position = parent?.position ? toAbsoluteCoordinates(node.position, parent.position) : node.position;
+    const obstacle = placementBoxes(node, position);
+    // Keep the existing gutter in the card column. Outside it, titles only
+    // block positions where their own boxes can touch another visible part.
+    const gap = overlapsColumn(output[0], obstacle[0], DOWNSTREAM_CLEARANCE) ? DOWNSTREAM_CLEARANCE : 0;
+    for (const a of output) {
+      for (const b of obstacle) {
+        if (overlapsColumn(a, b, gap)) blocked.push({ start: b.top - a.bottom - gap, end: b.bottom - a.top + gap });
+      }
+    }
   }
 
-  // Move past each blocking card until the next one leaves enough room above it.
-  for (const { top, bottom } of obstacles.sort((a, b) => a.top - b.top)) {
-    if (position.y + cardHeight + DOWNSTREAM_CLEARANCE <= top) break;
-    position.y = Math.max(position.y, bottom + titleOffset + DOWNSTREAM_CLEARANCE);
+  // Each pair defines an open interval of blocked top coordinates at this x.
+  let y = input.sourcePosition.y;
+  for (const { start, end } of blocked.sort((a, b) => a.start - b.start)) {
+    if (y <= start) break;
+    y = Math.max(y, end);
   }
-  return position;
+  return { x, y };
 }
 
 export function planClipExportDownstream(
@@ -329,7 +400,7 @@ export function planClipExportDownstream(
   const newNode: ClipExportDownstreamNode = {
     id: newNodeId,
     type: 'material',
-    position: placeDownstreamNode(input),
+    position: placeDownstreamNode(input, desired),
     selected: true,
     data: desired,
   };

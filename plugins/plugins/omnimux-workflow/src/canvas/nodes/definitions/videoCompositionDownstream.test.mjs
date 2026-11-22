@@ -7,11 +7,14 @@
  * 2. 复用判据含 `origin` + `sourceCompositionNodeId`，重载后（`persistSanitize`
  *    已剥掉 `realPath`）仍复用同一节点，并刷新其数据。
  */
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createWorkflowClipService } from '../../../workflow/clip/workflowClip.ts';
+import { createWorkspaceStore } from '../../../workflow/workspace/WorkspaceStore.ts';
 import { installCanvasClipEvents } from '../../bridge/canvasClipActions.ts';
 import { OMNIMUX_CLIP_SAVE } from '../../bridge/clipEvents.ts';
 import { sanitizeEdges, sanitizeNodes } from '../../bridge/persistSanitize.ts';
@@ -158,6 +161,42 @@ test('下游放置：竖版成片为媒体加载后的卡片高度留空间', ()
   assert.deepEqual(portrait?.addNodes[0]?.position, { x: 470, y: 862 });
 });
 
+test('下游放置：未测量的旧成片按保存的媒体尺寸预留解码高度', () => {
+  const prior = { id: 'prior-export', type: 'material', position: { x: 470, y: -420 }, data: {
+    materialType: 'video', origin: CLIP_EXPORT_ORIGIN, sourceCompositionNodeId: 'prior-source',
+    size: { width: 180, height: 320 },
+  } };
+  assert.deepEqual(planWith([prior], [])?.addNodes[0]?.position, { x: 470, y: 364 });
+  assert.deepEqual(planWith([{ ...prior, data: { ...prior.data, nodeHeight: 400 } }], [])?.addNodes[0]?.position,
+    { x: 470, y: 142 });
+  assert.deepEqual(planWith([{ ...prior, height: 400, measured: { height: 280 } }], [])?.addNodes[0]?.position,
+    { x: 470, y: 80 });
+});
+
+test('下游放置：未测量的图片支持持久化宽高和宽高比', () => {
+  const image = { id: 'image', type: 'material', position: { x: 470, y: -550 }, width: 350 };
+  const dimensions = { ...image, data: { materialType: 'image', dimensions: { width: 180, height: 320 } } };
+  const ratio = { ...image, data: { materialType: 'image', size: { width: 0, height: 320 }, aspectRatio: 180 / 320 } };
+  assert.deepEqual(planWith([dimensions], [])?.addNodes[0]?.position, { x: 470, y: 234 });
+  assert.deepEqual(planWith([ratio], [])?.addNodes[0]?.position, { x: 470, y: 234 });
+});
+
+test('下游放置：成片长标题在最小倍率下避让右侧卡身', () => {
+  const right = { id: 'right', type: 'material', position: { x: 950, y: -80 }, width: 350, height: 300,
+    data: { materialType: 'text', label: '右侧' } };
+  const sourceLabel = '带有外置长标题的视频合成结果';
+  assert.deepEqual(planWith([right], [], { sourceLabel })?.addNodes[0]?.position, { x: 470, y: 342 });
+  assert.deepEqual(planWith([right], [], { sourceLabel: '短' })?.addNodes[0]?.position, { x: 470, y: 80 });
+  const alignedTitles = { ...right, position: { ...right.position, y: 80 } };
+  assert.deepEqual(planWith([alignedTitles], [], { sourceLabel })?.addNodes[0]?.position, { x: 470, y: 502 });
+});
+
+test('下游放置：已有卡片的横向长标题也占位', () => {
+  const left = { id: 'left', type: 'material', position: { x: -160, y: 300 }, width: 350, height: 300,
+    data: { materialType: 'text', label: '已有素材卡片的长标题向右伸出' } };
+  assert.deepEqual(planWith([left], [])?.addNodes[0]?.position, { x: 470, y: 419 });
+});
+
 test('下游放置：未测量的导演台按实际默认卡身与外置标题避让', () => {
   const director = { id: 'director', type: 'director', position: { x: 470, y: 480 } };
   const plan = planWith([director], [], { output: { ...output, width: 1080, height: 1080 } });
@@ -172,20 +211,68 @@ test('下游放置：折叠组的反缩放标题在最小倍率下仍无遮挡',
 });
 
 test('下游放置：分组子节点按画布坐标判断', () => {
-  const group = { id: 'group', type: 'group', position: { x: 930, y: 50 }, width: 500, height: 600 };
-  const grouped = { id: 'grouped', type: 'material', parentId: group.id, position: { x: 32, y: 60 } };
-  const plan = planWith([group, grouped], []);
-  assert.deepEqual(plan?.addNodes[0]?.position, { x: 470, y: 80 });
+  const group = { id: 'group', type: 'group', position: { x: 1350, y: 50 }, width: 560, height: 600 };
+  const child = { id: 'grouped', type: 'material', position: { x: 155, y: 60 }, width: 350, height: 180 };
+  const grouped = { ...child, parentId: group.id };
+  assert.deepEqual(planWith([group, child], [])?.addNodes[0]?.position, { x: 470, y: 402 });
+  assert.deepEqual(planWith([group, grouped], [])?.addNodes[0]?.position, { x: 470, y: 80 });
+});
+
+test('下游放置：不避让挡住目标落点的隐藏卡片', () => {
+  const card = { id: 'obstacle', type: 'material', position: { x: 470, y: 80 }, width: 350, height: 300 };
+  assert.deepEqual(planWith([card], [])?.addNodes[0]?.position, { x: 470, y: 542 });
+  assert.deepEqual(planWith([{ ...card, hidden: true }], [])?.addNodes[0]?.position, { x: 470, y: 80 });
 });
 
 test('下游放置：折叠组使用收起后的宽高，组内隐藏节点不占位', () => {
   const group = {
     id: 'group', type: 'group', position: { x: 180, y: 50 }, width: 220, height: 44,
-    measured: { width: 640, height: 600 }, data: { isCollapsed: true },
+    measured: { width: 640, height: 600 }, data: { isCollapsed: true, title: '组' },
   };
   const child = { id: 'child', type: 'material', parentId: group.id, position: { x: 290, y: 30 } };
   const plan = planWith([group, child], []);
   assert.deepEqual(plan?.addNodes[0]?.position, { x: 470, y: 80 });
+});
+
+test('Host 顺序回写：第二个来源避让尚未测量的已保存竖版成片', t => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'workflow-clip-layout-')));
+  t.after(() => {
+    assert.equal(realpathSync(root), root);
+    rmSync(root, { recursive: true, force: true });
+  });
+  const store = createWorkspaceStore({ workspacesDir: root });
+  const workspaceId = store.create('Clip layout').id;
+  const nodes = [
+    { id: 'portrait', type: 'video_composition', position: { x: 40, y: -420 },
+      data: { title: '竖版', projectId: 'clip_node_portrait' } },
+    { id: 'landscape', type: 'video_composition', position: { x: 40, y: 80 },
+      data: { title: '横版', projectId: 'clip_node_landscape' } },
+  ];
+  store.save(workspaceId, { expectedVersion: 0, nodes });
+  const service = createWorkflowClipService({ store });
+  const commit = (node, exportJobId, width, height) => service.commitExport({
+    workspaceId, nodeId: node.id, projectId: node.data.projectId, exportJobId, projectRevision: 1,
+    output: { videoPath: join(root, `${node.id}.mp4`), revision: `export-${exportJobId}`, durationMs: 1000, width, height },
+  });
+  assert.equal(commit(nodes[0], 1, 180, 320).status, 'committed');
+  const first = store.get(workspaceId);
+  const prior = first.nodes.find(node => node.data.sourceCompositionNodeId === 'portrait');
+  assert.ok(prior);
+  assert.deepEqual(prior.position, { x: 470, y: -420 });
+  assert.deepEqual(prior.data.size, { width: 180, height: 320 });
+  assert.equal(prior.measured, undefined);
+  assert.equal(prior.height, undefined);
+  assert.equal(prior.data.nodeHeight, undefined);
+
+  assert.equal(commit(nodes[1], 2, 320, 180).status, 'committed');
+  const saved = store.get(workspaceId);
+  const next = saved.nodes.find(node => node.data.sourceCompositionNodeId === 'landscape');
+  assert.ok(next);
+  assert.deepEqual(next.position, { x: 470, y: 364 });
+  assert.deepEqual(saved.nodes.find(node => node.id === prior.id), prior);
+  assert.deepEqual(saved.edges.map(({ source, target, sourceHandle, targetHandle }) => ({ source, target, sourceHandle, targetHandle })),
+    [drawableEdge('portrait', prior.id), drawableEdge('landscape', next.id)]);
+  assert.equal(saved.version, first.version + 1);
 });
 
 test('下游放置：二次导出经 mutation gateway 保持用户移动后的成片位置', () => {
