@@ -83,6 +83,21 @@ export function createLiveChannel({ session, storage, native, execute, window })
     }
   }
 
+  function compose(editorInstanceId) {
+    const owner = session.getOwner()
+    if (!active || owner?.site.entry.id !== editorInstanceId || !editorReady(owner) || owner.conflict) return
+    const wb = window.__omnimuxWorkbench
+    if (typeof wb?.ensureConversationVisible === 'function') {
+      wb.ensureConversationVisible()
+    } else {
+      wb?.setConversationCollapsed?.(false)
+      wb?.setFocus?.('split')
+    }
+    if (!editorReady(owner) || owner.conflict) return
+    updateContributors()
+    wb?.attachClipContext?.({ sessionId: owner.site.sessionId, editorInstanceId, signal: owner.token.signal })
+  }
+
   function changed({ immediate = false } = {}) {
     if (!active) return
     if (immediate) {
@@ -373,7 +388,7 @@ export function createLiveChannel({ session, storage, native, execute, window })
   const stopContext = native.subscribeContext(() => changed())
   const interval = window.setInterval(() => void renew(), HEARTBEAT_MS)
   return {
-    changed, release, renew,
+    changed, compose, release, renew,
     dispose() {
       active = false
       clearTimeout(pulseTimer)

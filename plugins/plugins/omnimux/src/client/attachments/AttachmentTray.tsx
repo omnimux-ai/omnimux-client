@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { AttachmentCard } from './AttachmentCard.tsx';
+import { ClipContextChip } from './ClipContextChip.jsx';
+import type { createClipComposer } from './clipComposer.js';
 import { isMediaAttachment, isVideoAttachment } from './media-detector.ts';
 import { Button } from 'dsh-ui-kit';
 import { getGlobalAttachmentStore } from './store.ts';
@@ -44,6 +46,7 @@ export interface AttachmentTrayProps {
   getSessions?: () => any;
   useInput?: (selector: (state: LinkInputState | undefined) => LinkInputState | undefined) => LinkInputState | undefined;
   insertLinkReference?: InsertLinkRequest;
+  clipComposer?: ReturnType<typeof createClipComposer>;
   sessionId?: string;
   session?: { sessionId?: string; id?: string } | null;
   t?: (key: string, vars?: any) => string;
@@ -428,6 +431,8 @@ export const AttachmentTray: React.FC<AttachmentTrayProps> = (props) => {
     <>
       {/* 聚焦仅返回此托盘所属的输入框，不跨会话查找。 */}
       <span ref={composerAnchorRef} hidden aria-hidden="true" data-omx-composer-anchor="true" />
+      {props.clipComposer && <ClipContextChip bridge={props.clipComposer} t={props.t}
+        sessionId={resolveComposerSessionId(props.session, props.sessionId, undefined)} />}
       <DropOverlay active={dragActive} title={dropTitle} description={dropDesc} disabled={!canAcceptDrop} />
       {commentError && <div role="alert">{commentError}<Button onClick={retryComments}>重试评论附件</Button></div>}
       {linkPopover && <VideoLinkPopover

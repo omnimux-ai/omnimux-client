@@ -1,6 +1,7 @@
 import { getActiveClipSession, getActiveClipStageStore } from "../../../../stage-store.js";
 import { notifyCanvasClose } from "../../../../CanvasBridge.js";
-import { useClipEditorExit } from "../../../../live/EditorSeat.jsx";
+import { useClipEditorActions } from "../../../../live/EditorSeat.jsx";
+import { ClipAiEditButton } from "../../../../live/ClipAiEditButton.jsx";
 import { useClipT } from "../../../../i18n/index.js";
 import { useLatch } from "./use-latch";
 import { usePhoneEditor } from "../../hooks/usePhoneEditor";
@@ -48,7 +49,7 @@ const ProjectPackageDialog = lazy(() => import("./ProjectPackageDialog").then((m
 export const Toolbar: React.FC<{ canvasMode?: boolean }> = ({ canvasMode: isCanvasMode = false }) => {
   const t = useClipT();
   const canvasSession = isCanvasMode ? getActiveClipSession() : null;
-  const exitCanvas = useClipEditorExit();
+  const { onExit: exitCanvas } = useClipEditorActions();
   const phone = usePhoneEditor() && !isCanvasMode;
   const isDesktop = !isCanvasMode && typeof window !== "undefined" && window.openreel?.platform === "desktop";
   const nativePlatform = /Mac/i.test(navigator.platform) ? "darwin" : /Win/i.test(navigator.platform) ? "win32" : "linux";
@@ -295,8 +296,11 @@ export const Toolbar: React.FC<{ canvasMode?: boolean }> = ({ canvasMode: isCanv
         onExport={() => { if (exportState.isExporting) handleCancelExport(); else { if (exportState.error) resetError(); openExportDialog(); } }}
         exportLabel={exportState.isExporting ? `${Math.round(exportState.progress)}%` : exportState.error ? t("Retry") : exportState.complete ? t("Saved") : t("Export")}
         exportDisabled={exportState.complete}
-        exportControl={isDesktop ? <span className="mobile-native-export"><DesktopExportButton compact /></span> : <EditorExportControl
-          state={exportState} disabled={!hasTimelineContent} compact onOpen={openExportDialog} onCancel={handleCancelExport} onDismissError={resetError} />}
+        exportControl={<>
+          <ClipAiEditButton />
+          {isDesktop ? <span className="mobile-native-export"><DesktopExportButton compact /></span> : <EditorExportControl
+            state={exportState} disabled={!hasTimelineContent} compact onOpen={openExportDialog} onCancel={handleCancelExport} onDismissError={resetError} />}
+        </>}
         menu={<EditorMenuBar onExport={openExportDialog} onQuickExport={handleQuickExport} onCompress={() => setIsCompressOpen(true)}/>}
       /> : <>
       <div data-toolbar-section="left" className="openreel-toolbar-left contents">
@@ -322,6 +326,7 @@ export const Toolbar: React.FC<{ canvasMode?: boolean }> = ({ canvasMode: isCanv
         <ShadcnButton variant="secondary" className="workspace-share" title={t("Back up or package this project")} aria-label={t("Project backup")} onClick={() => setIsShareOpen(true)}>{t("Backup")}</ShadcnButton>
         </div>
         <div data-toolbar-section="right" className="openreel-toolbar-right inline-flex items-center gap-2.5">
+        <ClipAiEditButton />
         {isDesktop ? <DesktopExportButton /> : <EditorExportControl
           state={exportState} disabled={!hasTimelineContent} onOpen={openExportDialog}
           style={isCanvasMode ? { WebkitAppRegion: "no-drag" } as React.CSSProperties : undefined}
