@@ -527,6 +527,7 @@ test('batch HTTP and registered workflow_run reject conflicting or absent image 
   try {
     const cases = [
       { routing: { group: 'economy', channelGroupId: 'standard' } },
+      { routing: { channelGroupId: 'economy', allowedGroups: ['standard'] } },
       { routing: { group: 'economy', allowedGroups: ['economy', 'standard'] } },
       { routing: { channelGroupId: 'retired-a', group: 'retired-b' } },
       { savedModel: 'gpt-image-2.5@standard', routing: { group: 'economy' } },
