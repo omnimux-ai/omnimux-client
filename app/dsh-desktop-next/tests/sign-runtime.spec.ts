@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { assertMacRuntimeSignature, runtimeEntitlements, signMacRuntime, TIMESTAMP_ATTEMPTS, UPSTREAM_DESKTOP_SCRIPTS, withMacSigningIdentity, type MacRuntimeSigningIdentity } from '../scripts/sign-runtime.ts'
+import { assertMacRuntimeSignature, runtimeEntitlements, signMacRuntime, TIMESTAMP_ATTEMPTS, UPSTREAM_DESKTOP_SCRIPTS, type MacRuntimeSigningIdentity } from '../scripts/sign-runtime.ts'
 
 const roots: string[] = []
 function root(): string {
@@ -158,29 +158,4 @@ it('requires the release authority, team, timestamp and hardened runtime in sign
   expect(() => { assertMacRuntimeSignature(details.replace('Authority=Developer ID Application: Example (TEAMID1234)', 'Authority=Apple Development: Someone'), identity) }).toThrow('Authority=')
   expect(() => { assertMacRuntimeSignature(details.replace('flags=0x10000(runtime)', 'flags=0x0(none)'), identity) }).toThrow('hardened runtime')
   expect(() => { assertMacRuntimeSignature(details.replace(/Timestamp=[^\n]*\n/u, ''), identity) }).toThrow('timestamp')
-})
-
-it('uses a login keychain identity as is and owns a temporary keychain for a PKCS#12 certificate', async () => {
-  const run = vi.fn<(command: string, args: readonly string[]) => string>((command, args) =>
-    command === '/usr/bin/security' && args[0] === 'list-keychains' && args.length === 3 ? '    "/Users/me/Library/Keychains/login.keychain-db"\n' : '')
-  await expect(withMacSigningIdentity({}, identity.identity, async signer => signer, run)).resolves.toEqual({ identity: identity.identity })
-  expect(run).not.toHaveBeenCalled()
-  await expect(withMacSigningIdentity({ CSC_LINK: '/certificates/release.p12', CSC_KEY_PASSWORD: 'secret' }, identity.identity, async signer => signer, run))
-    .rejects.toThrow('PKCS#12 data URL')
-  const environment = { CSC_LINK: `data:application/x-pkcs12;base64,${Buffer.from('0\u0082').toString('base64')}`, CSC_KEY_PASSWORD: 'secret' }
-  const signer = await withMacSigningIdentity(environment, identity.identity, async signer => signer, run)
-  expect(signer.identity).toBe(identity.identity)
-  expect(signer.keychain).toMatch(/signing\.keychain-db$/u)
-  expect(run.mock.calls.map(([command, args]) => [command, args[0]])).toEqual([
-    ['/usr/bin/security', 'create-keychain'], ['/usr/bin/security', 'unlock-keychain'], ['/usr/bin/security', 'set-keychain-settings'],
-    ['/usr/bin/security', 'import'], ['/usr/bin/security', 'set-key-partition-list'], ['/usr/bin/security', 'list-keychains'],
-    ['/usr/bin/security', 'list-keychains'], ['/bin/cp', '/usr/bin/true'], ['/usr/bin/codesign', '--force'], ['/usr/bin/codesign', '--verify'],
-    ['/usr/bin/security', 'list-keychains'], ['/usr/bin/security', 'delete-keychain'],
-  ])
-  const search = run.mock.calls.filter(([, args]) => args[0] === 'list-keychains' && args[3] === '-s').map(([, args]) => [...args])
-  expect(search).toEqual([
-    ['list-keychains', '-d', 'user', '-s', signer.keychain, '/Users/me/Library/Keychains/login.keychain-db'],
-    ['list-keychains', '-d', 'user', '-s', '/Users/me/Library/Keychains/login.keychain-db'],
-  ])
-  expect(run).toHaveBeenCalledWith('/usr/bin/codesign', ['--force', '--sign', identity.identity, '--keychain', signer.keychain, '--timestamp', '--options', 'runtime', expect.stringMatching(/probe$/u)])
 })

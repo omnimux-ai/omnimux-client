@@ -9,6 +9,52 @@ runs:
     - name: Enable Corepack
       shell: bash
       run: corepack enable
+    - name: Locate Windows package caches
+      if: runner.os == 'Windows'
+      id: windows-cache
+      shell: bash
+      working-directory: app
+      run: |
+        set -euo pipefail
+        pnpm_store="$(cd .. && corepack pnpm store path --silent | tr -d '\r')"
+        yarn_cache="$(corepack yarn config get cacheFolder | tr -d '\r')"
+        electron_cache="$(cygpath -m "$LOCALAPPDATA")/electron/Cache"
+        builder_cache="$(cygpath -m "$RUNNER_TEMP")/electron-builder-cache"
+        {
+          echo "pnpm=$pnpm_store"
+          echo "yarn=$yarn_cache"
+          echo "electron=$electron_cache"
+          echo "builder=$builder_cache"
+        } >> "$GITHUB_OUTPUT"
+        echo "ELECTRON_BUILDER_CACHE=$builder_cache" >> "$GITHUB_ENV"
+    - name: Cache pnpm store
+      if: runner.os == 'Windows'
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+      with:
+        path: ${{ steps.windows-cache.outputs.pnpm }}
+        key: desktop-windows-pnpm-v1-${{ runner.arch }}-${{ hashFiles('package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
+    - name: Cache Yarn archives
+      if: runner.os == 'Windows'
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+      with:
+        path: ${{ steps.windows-cache.outputs.yarn }}
+        key: desktop-windows-yarn-v1-${{ runner.arch }}-${{ hashFiles('app/yarn.lock', 'app/.yarnrc.yml') }}
+    - name: Cache verified Electron downloads
+      if: runner.os == 'Windows'
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+      with:
+        path: ${{ steps.windows-cache.outputs.electron }}
+        key: desktop-windows-electron-v1-${{ runner.arch }}-${{ hashFiles('app/yarn.lock') }}
+    - name: Cache Electron Builder toolset archives
+      if: runner.os == 'Windows'
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+      with:
+        # Builder checks the pinned digest when it extracts a restored archive.
+        path: |
+          ${{ steps.windows-cache.outputs.builder }}/*/*.7z
+          ${{ steps.windows-cache.outputs.builder }}/*/*.zip
+          ${{ steps.windows-cache.outputs.builder }}/*/*.tar.gz
+        key: desktop-windows-builder-v1-${{ runner.arch }}-${{ hashFiles('app/yarn.lock', 'app/patches/**', 'app/dsh-desktop-next/package.json') }}
     - name: Verify version consistency
       shell: bash
       working-directory: app

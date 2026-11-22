@@ -164,7 +164,7 @@ corepack yarn release:mac:all
 corepack yarn dist:win:next
 ```
 
-`release:mac:all` 只跑一次共享的 AA / market / check / 插件前置，然后在隔离的 `.desktop-build/targets/<arch>` 目录并行构建 arm64 与 x64，并对两个已签名 `.app` 并行公证。候选构建可用 `DSH_MAC_RELEASE_OUTPUT_ROOT` 指定独立产物目录，避免覆盖已发布产物。
+`release:mac:all` 只运行一次共享的 AA、market、check 和插件准备，再从隔离的 `.desktop-build/targets/<arch>` 目录构建 arm64 与 x64。使用钥匙串现有身份时并行构建。导入 PKCS#12 证书时串行完成应用签名，因为 Electron Builder 会暂时修改钥匙串搜索列表。两个已签名的应用并行公证，各自生成 ULFO（LZFSE）DMG。用 `DSH_MAC_RELEASE_OUTPUT_ROOT` 为候选构建指定独立产物目录。用 `DSH_DESKTOP_PACKAGING_RUN_DIR` 将阶段计时保存在 `events.jsonl`，双架构汇总保存在 `summary.json`。
 
 打包复用 Beta 的目录构建、macOS universal DMG、签名公证预检和 Windows x64 NSIS 流程；Windows 安装包遵循现有未签名构建策略。与上游桌面端一样，应用归档为 `app.asar`；原生模块、可执行文件、嵌套 bundle、随包 pnpm、AA 桥接的 Connector 工程、Node shim 和图标资源解包在归档旁，因为 Electron 的归档视图只服务自己的 `fs` 和 `dlopen`，子进程、shell 和 `nativeImage` 看不到它。Host、终端里的 `dsh` 命令和恢复助手的插件 CLI 都以 Electron 的 Node 模式从归档运行；Host 通过上游的模块钩子把 LibreOffice 引擎解析到解包副本，并通过 Next 自己的钩子把 agent preset 包的清单解析到解包副本，因为创造模式 preset 把该包的 `skills/` 作为 `skill-filesystem` 的自定义根目录挂载，Host 的文件系统服务用 `bigint` stat 列目录，而 Electron 的归档视图对归档内条目给不出 bigint 结果，并通过另一个 Next 钩子把 computer use 驱动的平台包解析到解包副本，因为驱动会把该包里的库路径交给系统加载器，而系统加载器不读取归档，并通过第三个 Next 钩子把徽章技能包解析到解包副本，因为该技能要模型从它宣告的目录取 `dsh-badge.png`，而 shell 和 Host 的文件系统服务都读不到归档内的文件，解包副本发出的模块请求按归档副本解析，所以它的依赖仍是共享实例；AA 桥接通过 Profile 覆盖层拿到解包后的 Connector 与 uv 路径，Profile 不再建立指向应用的文件系统链接，因为链接无法进入归档。打包后的 Host 保留 Electron 的归档视图，所以工作区里名为 `*.asar` 的文件会被当作归档读取，与上游桌面端一致。两个归档 fuse 与上游发布一样保持关闭。有一个文件出于兼容性留在归档之外：`Contents/Resources/app/package.json`，它是归档内清单的逐字节副本，作为 extra resource 复制进包，因为 2.0.14-next 到 2.0.17-next 随包发布的更新器校验下载的磁盘镜像时会在这个归档前的位置读取清单，缺失即拒绝整个镜像。Electron 先装载 `app.asar` 再找 `app`，所以这个副本不会改变启动的应用；`afterPack` 钩子、最终产物检查和 `verify-mac-release.ts` 要求 macOS 包带有它、与归档内清单及本次发布版本一致，且该目录不得再有其他内容。Windows 不带 `app` 目录，因为其更新器只读取安装器的版本资源。所有入口仅构建产物，不发布、不启动 GUI；正式发布仍须先通过 AA 最新构建和仓库检查。
 
@@ -174,7 +174,11 @@ corepack yarn dist:win:next
 
 Host 挂载 `load_workspace_dependencies` 工具，首次使用时把本 CPU 的载荷安装到 `<home>/dsh-runtimes/dsh-next-primary-runtime`（Next 自己的目录，因为 Next 与官方桌面端共用 `~/.dsh`，而该工具会替换清单不同的安装）。本产品线不发 Office 技能、Office 预览、语音输入和 Agents Anywhere 的 Python 运行时：`scripts/runtime-file-policy.ts` 把它们的包列为未用功能，`cordis.patch.yml` 禁用会加载它们的行，`scripts/prepare-payload.ts` 即使官方清单把它们列为必需依赖也会跳过，并逐条打印被跳过的依赖边、记录到载荷旁的 `.desktop-build/payload-skipped-features.json`；目标 OS/CPU 不匹配的必需包仍会让构建失败。
 
-签名的 macOS 发布版在运行 electron-builder 之前先给载荷签名，与上游桌面端一致：每个 Mach-O 文件都获得带 hardened runtime、时间戳和逐文件标识符的 Developer ID 签名，安全时间戳请求失败的签名最多尝试三次；独立 Node 获得 V8 所需的 JIT 权限，x64 的 Node 额外获得 `com.apple.security.cs.allow-unsigned-executable-memory` 以便使用可执行代码页，包括在 Rosetta 下运行时；Python 及其扩展模块不带任何权限。`signIgnore` 阻止 electron-builder 用继承的应用权限重新签名载荷，universal 合并规则则让它们在两个 CPU 构建之间保持一致。没有这一步，Python 的 `.so` 扩展模块会保持未签名，因为 osx-sign 只签无扩展名的二进制、`.dylib` 和 `.node` 文件，而公证会拒绝未签名的 Mach-O 代码。通过 `MAC_CERT_P12_BASE64` 提供的 PKCS#12 证书会在这一步导入临时钥匙串；登录钥匙串中的身份直接使用。`verify-mac-release.ts` 在挂载的镜像中检查签名、权限策略和本机载荷的导入。
+`preflight:mac-signing` 在发布准备前验证实际使用的 Developer ID 私钥。探针对 `/usr/bin/true` 的副本签名并检查叶证书有效期，期间不请求时间戳。发布构建要求使用同一叶证书并取得安全时间戳。应用组装后，先签 `primary-runtime` 中的所有 Mach-O，以及 `app.asar.unpacked` 中独立的单架构 Mach-O。Node 保留 JIT 权限，x64 Node 额外允许未签名的可执行内存。Python 和动态库无附加权限。解包的独立可执行文件沿用 Builder 的继承权限。Builder 只跳过已经预签并验证的解包文件，继续为嵌套 bundle 和应用签名。
+
+已验证的单架构签名缓存在本机，按最近使用时间保留至 1 GiB。缓存键包含原始字节及文件模式、签名策略、叶证书、标识符、权限、工具和脚本摘要及 macOS 版本。命中后先严格校验，再替换组装目录中的文件。用 `DSH_MAC_SIGNATURE_CACHE_DIR` 指定绝对路径的私有目录可隔离缓存。挂载发布 DMG 后仍检查签名、权限、Gatekeeper、公证票据及 GUI 启动。
+
+Windows Next NSIS 安装包默认用 7-Zip 等级 3，沿用安装时的 BCJ 过滤器及未签名策略。发布 CI 缓存 pnpm store、Yarn 归档、Electron ZIP 和 Builder 工具集。Builder 使用锁文件固定版本的 Electron 包自带的校验和清单，让 `@electron/get` 核对新下载和缓存恢复的 ZIP。PR 工作流把实际由 NSIS 安装器解出的文件和打包输入逐一比对。
 
 桌面设置和托盘均可检查更新。安装版启动后延迟检查，之后每 6 小时检查一次；只有用户点击下载才下载。托盘显示字节数或百分比，完成后点击“安装并重启”。安装前先隐藏窗口并停止 Host。macOS 校验 Next 身份、版本和签名团队，将已下载 DMG 中的应用封装为本地 ZIP，交给 Electron 的 Squirrel.Mac 原生更新器验证和替换；不会改写应用目录或降低签名要求。身份和版本校验读取挂载镜像中的 `Contents/Resources/app/package.json`，归档后的发布版正是为这一步保留了归档内清单的副本。Windows 校验 Next 安装器身份和版本，交接给 NSIS 静默更新并重新启动。开发运行只允许检查，不替换源码或 Electron 开发运行时。
 

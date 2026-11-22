@@ -10,6 +10,7 @@ import {
   withoutMacReleaseSecrets,
 } from './release-preflight.ts'
 import { prepareInstalledMacUniversalRuntime } from './mac-universal.ts'
+import { probeMacRelease } from './mac-signing-probe.ts'
 
 /** Architectures the signed macOS release can package. */
 export type MacReleaseArchitecture = 'universal' | 'arm64' | 'x64'
@@ -231,11 +232,7 @@ if (invokedPath !== undefined && resolve(invokedPath) === fileURLToPath(import.m
     const desktopRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
     // The preflight the release flow repeats; the payload signatures must carry the identity it selects.
     const releaseEnvironment = adaptMacReleaseEnvironment(process.env)
-    const ready = assertMacReleaseReady({
-      env: releaseEnvironment,
-      platform: process.platform,
-      listCodeSigningIdentities: () => listCodeSigningIdentities(withoutMacReleaseSecrets(releaseEnvironment)),
-    })
+    const ready = await probeMacRelease(process.env)
     const appId = (JSON.parse(readFileSync(resolve(desktopRoot, 'package.json'), 'utf8')) as { build: { appId: string } }).build.appId
     // Like upstream Desktop, every Mach-O payload file is signed before electron-builder runs; osx-sign would leave the Python extension modules unsigned.
     await prepareDesktopInterpreters({

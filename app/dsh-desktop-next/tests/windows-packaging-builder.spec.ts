@@ -4,6 +4,7 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
+import { applyWindowsElectronChecksums } from '../scripts/prepare-pack.ts'
 
 const require = createRequire(import.meta.url)
 require('app-builder-lib')
@@ -58,6 +59,31 @@ it.each(['normal', 'store'].flatMap(compression => [true, false].map(enabled => 
     expect(args).not.toContain('-ms=off')
   }
   if (compression === 'normal') expect(args).toContain('-mf=BCJ')
+})
+
+it('passes the pinned Electron SHA-256 to the real Builder and uses NSIS-compatible BCJ at level 3', async () => {
+  const { version } = require('electron/package.json') as { version: string }
+  const config = { electronVersion: version, electronDownload: { unsafelyDisableChecksums: true } }
+  applyWindowsElectronChecksums(config)
+  // Pinned Builder consumes these options after beforePack. In ElectronGetOptions mode
+  // @electron/get validates against the supplied table, including cache hits.
+  const modulePath = require.resolve('app-builder-lib/out/util/electronGet.js')
+  const electronGet = createRequire(modulePath)('@electron/get')
+  const directory = mkdtempSync(join(tmpdir(), 'next-electron-download-'))
+  directories.push(directory)
+  const fixture = join(directory, 'archive.zip')
+  writeFileSync(fixture, 'fixture')
+  const download = vi.spyOn(electronGet, 'downloadArtifact').mockResolvedValue(fixture)
+  const { downloadElectronArtifactZip } = require(modulePath)
+  await expect(downloadElectronArtifactZip({ electronDownload: config.electronDownload, platformName: 'win32', arch: 'x64', version, artifactName: 'electron' })).resolves.toBe(fixture)
+  expect(download).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+    unsafelyDisableChecksums: false, checksums: { ...require('electron/checksums.json') },
+  }))
+  expect(() => applyWindowsElectronChecksums({ electronVersion: '0.0.0' })).toThrow('pinned SHA-256')
+  vi.stubEnv('ELECTRON_BUILDER_COMPRESSION_LEVEL', '3')
+  vi.stubEnv('ELECTRON_BUILDER_7Z_FILTER', 'BCJ')
+  expect(archive.compute7zCompressArgs('7z', { installTimeDecodable: true, dictSize: 1, solid: false }))
+    .toEqual(expect.arrayContaining(['-mx=3', '-mf=BCJ', '-md=1m', '-ms=off']))
 })
 
 it('retains long paths, scoped process detection, direct extraction and macOS keychain fixes after rollback', () => {

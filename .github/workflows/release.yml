@@ -101,7 +101,24 @@ jobs:
           }
       - uses: ./.github/actions/prepare-desktop-package
       - name: Build Windows installer (website unsigned)
+        env:
+          DSH_PACKAGING_ARCH: x64
+          DSH_DESKTOP_PACKAGING_RUN_DIR: ${{ runner.temp }}/desktop-packaging
+          DSH_WINDOWS_VERIFY_EXTRACTED: ${{ github.event_name == 'pull_request' && '1' || '0' }}
         run: corepack yarn workspace dsh-desktop-next dist:win
+      - name: Summarize Windows packaging
+        if: always()
+        env:
+          DSH_DESKTOP_PACKAGING_RUN_DIR: ${{ runner.temp }}/desktop-packaging
+        run: node dsh-desktop-next/scripts/summarize-packaging.ts
+      - name: Upload Windows packaging timings
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: windows-packaging-timings
+          path: ${{ runner.temp }}/desktop-packaging/events.jsonl
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Upload Windows installer
         if: ${{ github.event_name == 'workflow_dispatch' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
@@ -141,7 +158,14 @@ jobs:
         env:
           DSH_MAC_RELEASE_ARCH: ${{ matrix.arch }}
           DSH_MAC_SMOKE_ARCH: ${{ matrix.arch }}
+          DSH_PACKAGING_ARCH: ${{ matrix.arch }}
+          DSH_DESKTOP_PACKAGING_RUN_DIR: ${{ runner.temp }}/desktop-packaging
         run: corepack yarn workspace dsh-desktop-next dist:mac-smoke
+      - name: Summarize macOS packaging
+        if: always()
+        env:
+          DSH_DESKTOP_PACKAGING_RUN_DIR: ${{ runner.temp }}/desktop-packaging
+        run: node dsh-desktop-next/scripts/summarize-packaging.ts
 
   publish-win:
     needs: build-win

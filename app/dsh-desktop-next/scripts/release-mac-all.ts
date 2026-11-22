@@ -5,14 +5,11 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdir
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import {
-  adaptMacReleaseEnvironment,
-  assertMacReleaseReady,
-  withoutMacReleaseSecrets,
-} from '../../dsh-plugin-desktop/scripts/release-preflight.ts'
+import { probeMacRelease } from '../../dsh-plugin-desktop/scripts/mac-signing-probe.ts'
+import { adaptMacReleaseEnvironment, withoutMacReleaseSecrets } from '../../dsh-plugin-desktop/scripts/release-preflight.ts'
 import { assertReleaseSource, macReleaseArchitecture } from '../../dsh-plugin-desktop/scripts/release-mac.ts'
 import { expectedNextVersion, type NextRuntimeArch } from './prepare-runtime.ts'
-import { packagingStep, packagingStepSync } from './packaging-step.ts'
+import { packagingStep, packagingStepSync, summarizePackagingJournal } from './packaging-step.ts'
 import { verifyNextMacEntitlements } from './verify-mac-entitlements.ts'
 
 const desktopRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
@@ -85,26 +82,22 @@ function runChild(command: string, args: readonly string[], cwd: string, env: No
 }
 
 
-function listCodeSigningIdentities(env: NodeJS.ProcessEnv): string {
-  const result = spawnSync('security', ['find-identity', '-v', '-p', 'codesigning'], { encoding: 'utf8', env })
-  if (result.error !== undefined) throw result.error
-  if (result.status !== 0) throw new Error(`security find-identity exited with ${String(result.status)}`)
-  return result.stdout
-}
-
 function mergeEvents(runRoot: string): string {
   const files = [join(runRoot, 'events.jsonl'), ...archs.map(arch => join(runRoot, arch, 'events.jsonl'))]
-  const events: Array<Record<string, unknown>> = []
+  const events = new Map<string, Record<string, unknown>>()
   for (const file of files) {
     if (!existsSync(file)) continue
     for (const line of readFileSync(file, 'utf8').split('\n')) {
       if (line.trim() === '') continue
-      try { events.push(JSON.parse(line) as Record<string, unknown>) } catch { /* keep the journal readable */ }
+      try {
+        const event = JSON.parse(line) as Record<string, unknown>
+        events.set(`${String(event.stageId)}:${String(event.type)}`, event)
+      } catch { /* An interrupted worker may leave a partial record. */ }
     }
   }
-  events.sort((left, right) => String(left.time ?? '').localeCompare(String(right.time ?? '')))
+  const journal = [...events.values()].sort((left, right) => String(left.time ?? '').localeCompare(String(right.time ?? '')))
   const output = join(runRoot, 'events.jsonl')
-  writeFileSync(output, `${events.map(event => JSON.stringify(event)).join('\n')}${events.length === 0 ? '' : '\n'}`)
+  writeFileSync(output, `${journal.map(event => JSON.stringify(event)).join('\n')}${journal.length === 0 ? '' : '\n'}`)
   return output
 }
 
@@ -123,23 +116,15 @@ function findDirectories(root: string, suffix: string): string[] {
 async function prepareCommon(runRoot: string): Promise<void> {
   const env = commonEnvironment(runRoot)
   const safeEnv = withoutMacReleaseSecrets(env)
-  packagingStepSync('release:preflight', () => {
-    if (!candidate) assertReleaseSource(repoRoot)
-    const releaseEnv = adaptMacReleaseEnvironment(env)
-    const ready = assertMacReleaseReady({
-      env: releaseEnv,
-      platform: process.platform,
-      listCodeSigningIdentities: () => listCodeSigningIdentities(withoutMacReleaseSecrets(releaseEnv)),
-    })
-    console.log(`macOS release preflight passed: ${ready.identity}; signing via ${ready.signing}; notarization via ${ready.notarization}`)
-  })
+  await packagingStep('sign:probe', () => probeMacRelease(env))
+  if (!candidate) packagingStepSync('release:source-check', () => assertReleaseSource(repoRoot))
   packagingStepSync('prepare:once:aa', () => {
-    runSync('yarn', ['aa:prepare-release'], workspaceRoot, env, 'AA prepare')
-    runSync(process.execPath, ['scripts/prepare-agents-anywhere-release.mjs', '--verify-release'], workspaceRoot, env, 'AA verify')
+    runSync('yarn', ['aa:prepare-release'], workspaceRoot, safeEnv, 'AA prepare')
+    runSync(process.execPath, ['scripts/prepare-agents-anywhere-release.mjs', '--verify-release'], workspaceRoot, safeEnv, 'AA verify')
   })
   packagingStepSync('prepare:once:market', () => {
-    runSync('yarn', ['workspace', 'dsh-community-market', 'build'], workspaceRoot, env, 'market build')
-    runSync(process.execPath, ['scripts/prepare-dsh-market.mjs', '--check'], workspaceRoot, env, 'market check')
+    runSync('yarn', ['workspace', 'dsh-community-market', 'build'], workspaceRoot, safeEnv, 'market build')
+    runSync(process.execPath, ['scripts/prepare-dsh-market.mjs', '--check'], workspaceRoot, safeEnv, 'market check')
   })
   packagingStepSync('prepare:once:plugins', () => {
     runSync(process.execPath, [resolve(repoRoot, 'scripts', 'prepare-local-plugins.mjs')], repoRoot, safeEnv, 'plugin build')
@@ -158,7 +143,7 @@ async function buildApp(arch: NextRuntimeArch, outputRoot: string, runRoot: stri
   const app = findDirectories(outputDir, '.app').find(path => existsSync(join(path, 'Contents', 'MacOS', 'OmniMux')))
   if (app === undefined) throw new Error(`build ${arch} app: no OmniMux.app found below ${outputDir}`)
   const slices = arch === 'arm64' ? ['arm64'] : ['x86_64']
-  await packagingStep(`sign:app:${arch}`, async () => {
+  await packagingStep(`sign:verify-app:${arch}`, async () => {
     runSync('codesign', ['--verify', '--deep', '--strict', '--verbose=2', app], desktopRoot, childEnv, `verify ${arch} signature`)
     verifyNextMacEntitlements(app, undefined, slices)
   })
@@ -180,7 +165,13 @@ async function submitAndWait(arch: NextRuntimeArch, appPath: string, outputDir: 
     throw new Error(`notarize submit ${arch}: unexpected notarytool output: ${submitted.stdout.trim()}`, { cause: error })
   }
   console.log(`Notarization submitted for ${arch}: ${submissionId}`)
-  await packagingStep(`notary:wait:${arch}`, () => runCapture('xcrun', ['notarytool', 'wait', submissionId, '--keychain-profile', notaryProfile], desktopRoot, env, `notarize wait ${arch}`))
+  await packagingStep(`notary:wait:${arch}`, async () => {
+    const result = await runCapture('xcrun', ['notarytool', 'wait', submissionId, '--keychain-profile', notaryProfile,
+      '--output-format', 'json'], desktopRoot, env, `notarize wait ${arch}`)
+    if ((JSON.parse(result.stdout) as { status?: string }).status !== 'Accepted') {
+      throw new Error(`Apple did not accept ${arch} notarization. Inspect notarytool log for submission ${submissionId}.`)
+    }
+  })
   await packagingStep(`notary:staple:${arch}`, async () => {
     runSync('xcrun', ['stapler', 'staple', appPath], desktopRoot, env, `staple ${arch}`)
   })
@@ -208,7 +199,7 @@ async function buildDmg(arch: NextRuntimeArch, appPath: string, outputDir: strin
       runSync('SetFile', ['-a', 'C', mountPoint], desktopRoot, env, `dmg icon flag ${arch}`)
       runSync('hdiutil', ['detach', mountPoint], desktopRoot, env, `dmg detach ${arch}`)
       mounted = false
-      runSync('hdiutil', ['convert', writable, '-format', 'UDZO', '-o', dmg], desktopRoot, env, `dmg convert ${arch}`)
+      packagingStepSync(`dmg:compress:${arch}`, () => runSync('hdiutil', ['convert', writable, '-format', 'ULFO', '-o', dmg], desktopRoot, env, `dmg convert ${arch}`))
     } finally {
       if (mounted) {
         try { runSync('hdiutil', ['detach', mountPoint], desktopRoot, env, `dmg cleanup detach ${arch}`) } catch { /* preserve the original failure */ }
@@ -228,18 +219,15 @@ async function verifyDmg(arch: NextRuntimeArch, outputDir: string, env: NodeJS.P
   await packagingStep(`verify:mac:${arch}`, () => runChild(process.execPath, ['scripts/verify-mac-release.ts', outputDir], desktopRoot, env, `verify ${arch} dmg`))
 }
 
-async function main(): Promise<void> {
-  if (process.platform !== 'darwin') throw new Error('release:mac:all must be built on macOS')
-  const releaseArch = macReleaseArchitecture(process.env)
-  if (releaseArch !== 'universal') throw new Error('release:mac:all uses per-architecture builds; do not set DSH_MAC_RELEASE_ARCH')
-  const runRoot = resolve(desktopRoot, process.env.DSH_DESKTOP_PACKAGING_RUN_DIR ?? join('dist', 'release-runs', `${version}-${new Date().toISOString().replaceAll(/[:.]/gu, '-')}`))
-  const outputRoot = resolve(desktopRoot, process.env.DSH_MAC_RELEASE_OUTPUT_ROOT ?? join('dist', 'release-assets'))
-  mkdirSync(runRoot, { recursive: true })
-  mkdirSync(outputRoot, { recursive: true })
-  process.env.DSH_DESKTOP_PACKAGING_RUN_DIR = runRoot
-  console.log(`release:mac:all ${candidate ? 'candidate' : 'release'} version ${version}; output ${outputRoot}; run ${runRoot}`)
+async function packageArchitectures(outputRoot: string, runRoot: string): Promise<object> {
   await prepareCommon(runRoot)
-  const buildResults = await Promise.allSettled(archs.map(arch => buildApp(arch, outputRoot, runRoot)))
+  const buildResults: PromiseSettledResult<string>[] = []
+  if (adaptMacReleaseEnvironment(process.env).CSC_LINK) {
+    // Builder temporarily updates the user keychain search list when importing a P12.
+    for (const arch of archs) buildResults.push(...await Promise.allSettled([buildApp(arch, outputRoot, runRoot)]))
+  } else {
+    buildResults.push(...await Promise.allSettled(archs.map(arch => buildApp(arch, outputRoot, runRoot))))
+  }
   const buildFailures = buildResults.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
   if (buildFailures.length > 0) {
     throw new AggregateError(buildFailures.map(result => result.reason), 'one or more macOS app builds failed')
@@ -286,18 +274,31 @@ async function main(): Promise<void> {
   if (verifyFailures.length > 0) {
     throw new AggregateError(verifyFailures, 'one or more macOS DMG verifications failed')
   }
-  const events = mergeEvents(runRoot)
-  const summary = {
-    version,
-    candidate,
-    sourceCommit: spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).stdout.trim(),
-    outputRoot,
-    runRoot,
-    events,
-    archs: Object.fromEntries(archs.map(arch => [arch, { app: apps.get(arch), dmg: dmgs.get(arch) }])),
+  return Object.fromEntries(archs.map(arch => [arch, { app: apps.get(arch), dmg: dmgs.get(arch) }]))
+}
+
+async function main(): Promise<void> {
+  if (process.platform !== 'darwin') throw new Error('release:mac:all must be built on macOS')
+  if (macReleaseArchitecture(process.env) !== 'universal') throw new Error('release:mac:all uses per-architecture builds; do not set DSH_MAC_RELEASE_ARCH')
+  const runRoot = resolve(desktopRoot, process.env.DSH_DESKTOP_PACKAGING_RUN_DIR ?? join('dist', 'release-runs', `${version}-${new Date().toISOString().replaceAll(/[:.]/gu, '-')}`))
+  const outputRoot = resolve(desktopRoot, process.env.DSH_MAC_RELEASE_OUTPUT_ROOT ?? join('dist', 'release-assets'))
+  mkdirSync(runRoot, { recursive: true })
+  mkdirSync(outputRoot, { recursive: true })
+  process.env.DSH_DESKTOP_PACKAGING_RUN_DIR = runRoot
+  console.log(`release:mac:all ${candidate ? 'candidate' : 'release'} version ${version}; output ${outputRoot}; run ${runRoot}`)
+  let artifacts: object | undefined
+  try {
+    artifacts = await packageArchitectures(outputRoot, runRoot)
+  } finally {
+    const events = mergeEvents(runRoot)
+    const summary = {
+      version, candidate, success: artifacts !== undefined,
+      sourceCommit: spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).stdout.trim(),
+      outputRoot, runRoot, events, archs: artifacts, timing: summarizePackagingJournal(events),
+    }
+    writeFileSync(join(runRoot, 'summary.json'), `${JSON.stringify(summary, undefined, 2)}\n`)
+    console.log(`release:mac:all timings saved to ${join(runRoot, 'summary.json')}`)
   }
-  writeFileSync(join(runRoot, 'summary.json'), `${JSON.stringify(summary, undefined, 2)}\n`)
-  console.log(`release:mac:all complete: ${JSON.stringify(summary)}`)
 }
 
 try {

@@ -72,4 +72,5 @@ it('archives the application like upstream Desktop while keeping fuses and nativ
   expect(existsSync(new URL('../build/app-icon.icon/icon.json', import.meta.url))).toBe(true)
   expect(next.build.nsis).toMatchObject({ oneClick: false, perMachine: false, allowElevation: true, allowToChangeInstallationDirectory: true })
   expect(next.build.mac.notarize).toBe(true)
+  expect(next.build.dmg.format).toBe('ULFO')
 })
