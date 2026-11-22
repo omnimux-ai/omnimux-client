@@ -178,7 +178,7 @@ Host 挂载 `load_workspace_dependencies` 工具，首次使用时把本 CPU 的
 
 已验证的单架构签名缓存在本机，按最近使用时间保留至 1 GiB。缓存键包含原始字节及文件模式、签名策略、叶证书、标识符、权限、工具和脚本摘要及 macOS 版本。命中后先严格校验，再替换组装目录中的文件。用 `DSH_MAC_SIGNATURE_CACHE_DIR` 指定绝对路径的私有目录可隔离缓存。挂载发布 DMG 后仍检查签名、权限、Gatekeeper、公证票据及 GUI 启动。
 
-Windows Next NSIS 安装包默认用 7-Zip 等级 3，沿用安装时的 BCJ 过滤器及未签名策略。发布 CI 缓存 pnpm store、Yarn 归档、Electron ZIP 和 Builder 工具集。Builder 使用锁文件固定版本的 Electron 包自带的校验和清单，让 `@electron/get` 核对新下载和缓存恢复的 ZIP。PR 工作流把实际由 NSIS 安装器解出的文件和打包输入逐一比对。
+macOS 和 Windows 打包时，Builder 将锁文件固定版本的 Electron 包自带的校验和清单传给 `@electron/get`，校验新下载和缓存恢复的 ZIP。Windows Next NSIS 安装包默认用 7-Zip 等级 3，沿用安装时的 BCJ 过滤器及未签名策略。Windows 发布 CI 缓存 pnpm store、Yarn 归档、Electron ZIP 和 Builder 工具集。PR 工作流把实际由 NSIS 安装器解出的应用文件和打包输入逐一比对，并校验安装器生成的卸载程序及图标。
 
 桌面设置和托盘均可检查更新。安装版启动后延迟检查，之后每 6 小时检查一次；只有用户点击下载才下载。托盘显示字节数或百分比，完成后点击“安装并重启”。安装前先隐藏窗口并停止 Host。macOS 校验 Next 身份、版本和签名团队，将已下载 DMG 中的应用封装为本地 ZIP，交给 Electron 的 Squirrel.Mac 原生更新器验证和替换；不会改写应用目录或降低签名要求。身份和版本校验读取挂载镜像中的 `Contents/Resources/app/package.json`，归档后的发布版正是为这一步保留了归档内清单的副本。Windows 校验 Next 安装器身份和版本，交接给 NSIS 静默更新并重新启动。开发运行只允许检查，不替换源码或 Electron 开发运行时。
 

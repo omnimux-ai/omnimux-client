@@ -1,10 +1,11 @@
 /** Exercise the installed builder so dependency upgrades cannot silently drop Desktop packaging policy. */
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { applyWindowsElectronChecksums } from '../scripts/prepare-pack.ts'
+import { applyElectronChecksums } from '../scripts/prepare-pack.ts'
+import { compareInstalledPayload } from '../scripts/verify-win-installer.ts'
 
 const require = createRequire(import.meta.url)
 require('app-builder-lib')
@@ -64,7 +65,7 @@ it.each(['normal', 'store'].flatMap(compression => [true, false].map(enabled => 
 it('passes the pinned Electron SHA-256 to the real Builder and uses NSIS-compatible BCJ at level 3', async () => {
   const { version } = require('electron/package.json') as { version: string }
   const config = { electronVersion: version, electronDownload: { unsafelyDisableChecksums: true } }
-  applyWindowsElectronChecksums(config)
+  applyElectronChecksums(config, 'win32', ['x64'])
   // Pinned Builder consumes these options after beforePack. In ElectronGetOptions mode
   // @electron/get validates against the supplied table, including cache hits.
   const modulePath = require.resolve('app-builder-lib/out/util/electronGet.js')
@@ -79,11 +80,58 @@ it('passes the pinned Electron SHA-256 to the real Builder and uses NSIS-compati
   expect(download).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
     unsafelyDisableChecksums: false, checksums: { ...require('electron/checksums.json') },
   }))
-  expect(() => applyWindowsElectronChecksums({ electronVersion: '0.0.0' })).toThrow('pinned SHA-256')
+  expect(() => applyElectronChecksums({ electronVersion: '0.0.0' }, 'win32', ['x64'])).toThrow('lockfile-pinned Electron checksum table')
   vi.stubEnv('ELECTRON_BUILDER_COMPRESSION_LEVEL', '3')
   vi.stubEnv('ELECTRON_BUILDER_7Z_FILTER', 'BCJ')
   expect(archive.compute7zCompressArgs('7z', { installTimeDecodable: true, dictSize: 1, solid: false }))
     .toEqual(expect.arrayContaining(['-mx=3', '-mf=BCJ', '-md=1m', '-ms=off']))
+})
+
+it('requires the locked Electron checksums for both macOS ZIPs', () => {
+  const { version } = require('electron/package.json') as { version: string }
+  const config = { electronVersion: version, electronDownload: {} }
+  applyElectronChecksums(config, 'darwin', ['arm64', 'x64'])
+  expect(config.electronDownload).toMatchObject({
+    unsafelyDisableChecksums: false,
+    checksums: {
+      [`electron-v${version}-darwin-arm64.zip`]: expect.stringMatching(/^[a-f0-9]{64}$/u),
+      [`electron-v${version}-darwin-x64.zip`]: expect.stringMatching(/^[a-f0-9]{64}$/u),
+    },
+  })
+  expect(() => applyElectronChecksums(config, 'darwin', ['ia32'])).toThrow('missing the expected pinned SHA-256 checksum')
+})
+
+it('checks NSIS-generated files separately and rejects missing, extra or changed app files', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'next-nsis-payload-'))
+  directories.push(directory)
+  const unpacked = join(directory, 'unpacked')
+  const installed = join(directory, 'installed')
+  const icon = join(directory, 'app-icon.ico')
+  for (const root of [unpacked, installed]) {
+    mkdirSync(join(root, 'resources'), { recursive: true })
+    writeFileSync(join(root, 'resources', 'app.asar'), 'app payload')
+    writeFileSync(join(root, 'resources', 'uninstallerIcon.ico'), 'app resource')
+  }
+  const uninstaller = Buffer.alloc(68)
+  uninstaller.write('MZ')
+  uninstaller.writeUInt32LE(64, 0x3c)
+  uninstaller.write('PE\0\0', 64)
+  writeFileSync(join(installed, 'Uninstall OmniMux.exe'), uninstaller)
+  writeFileSync(join(installed, 'uninstallerIcon.ico'), 'icon')
+  writeFileSync(icon, 'icon')
+  await expect(compareInstalledPayload(unpacked, installed, icon)).resolves.toEqual({
+    fileCount: 2,
+    sha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
+  })
+
+  writeFileSync(join(installed, 'resources', 'uninstallerIcon.ico'), 'changed app resource')
+  await expect(compareInstalledPayload(unpacked, installed, icon)).rejects.toThrow('changed the contents')
+  writeFileSync(join(installed, 'resources', 'uninstallerIcon.ico'), 'app resource')
+  writeFileSync(join(installed, 'uninstallerIcon.ico'), 'changed installer icon')
+  await expect(compareInstalledPayload(unpacked, installed, icon)).rejects.toThrow('does not match the configured icon')
+  rmSync(join(installed, 'resources', 'app.asar'))
+  writeFileSync(join(installed, 'extra.txt'), 'extra file')
+  await expect(compareInstalledPayload(unpacked, installed, icon)).rejects.toThrow(/Missing \(1\).*app\.asar.*Unexpected \(1\).*extra\.txt/u)
 })
 
 it('retains long paths, scoped process detection, direct extraction and macOS keychain fixes after rollback', () => {

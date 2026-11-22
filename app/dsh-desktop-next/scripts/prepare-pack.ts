@@ -21,13 +21,18 @@ interface PackContext {
 }
 
 /** Use the checksums shipped by the lockfile-pinned Electron npm release. */
-export function applyWindowsElectronChecksums(config: PackConfiguration): void {
+export function applyElectronChecksums(config: PackConfiguration, platform: 'darwin' | 'win32', archs: readonly string[]): void {
   const manifest = require.resolve('electron/package.json')
   const { version } = JSON.parse(readFileSync(manifest, 'utf8')) as { version: string }
   const checksums = JSON.parse(readFileSync(join(dirname(manifest), 'checksums.json'), 'utf8')) as Record<string, string>
-  const filename = `electron-v${version}-win32-x64.zip`
-  if (version !== config.electronVersion || !/^[a-f0-9]{64}$/u.test(checksums[filename] ?? '')) {
-    throw new Error('Windows Electron archive is missing the expected pinned SHA-256 checksum')
+  if (version !== config.electronVersion) {
+    throw new Error('Electron Builder version does not match the lockfile-pinned Electron checksum table')
+  }
+  for (const arch of archs) {
+    const filename = `electron-v${version}-${platform}-${arch}.zip`
+    if (!/^[a-f0-9]{64}$/u.test(checksums[filename] ?? '')) {
+      throw new Error(`Electron archive ${filename} is missing the expected pinned SHA-256 checksum`)
+    }
   }
   // The explicit flag selects ElectronGetOptions in the pinned Builder. @electron/get
   // writes its own SHASUMS256.txt from this map and checks fresh and cached archives.
@@ -57,8 +62,10 @@ export default async function beforePack(context: PackContext): Promise<void> {
   const dir = payloadDir(platform)
   const office = applyOfficeUnpack(context.packager.config, join(context.packager.projectDir, ...dir.split('/')), platform)
   if (office.length > 0) console.log(`Next ${context.electronPlatformName} payload unpacks the Office closure: ${String(office.length)} packages`)
+  if (platform === 'darwin' || platform === 'win32') {
+    packagingStepSync('cache:electron:checksums', () => applyElectronChecksums(context.packager.config, platform, nextPackagingTarget(platform).archs))
+  }
   if (platform === 'win32') {
-    packagingStepSync('cache:electron:checksums', () => applyWindowsElectronChecksums(context.packager.config))
     const files = packagingStepSync('builder:prepare-pe-unpack', () => applyWindowsUnpack(context.packager.config,
       context.packager.info.appDir, join(context.packager.projectDir, ...dir.split('/'))))
     console.log(`Next Windows payload unpacks ${String(files.length)} discovered PE files`)

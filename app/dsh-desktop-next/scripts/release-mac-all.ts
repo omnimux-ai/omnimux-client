@@ -132,7 +132,7 @@ async function prepareCommon(runRoot: string): Promise<void> {
   packagingStepSync('prepare:once:check', () => {
     // The packaging gate runs the full workspace check once. Keep Vitest serial so the
     // large temporary Asar fixtures cannot race each other under the release build load.
-    runSync('yarn', ['run', 'check'], workspaceRoot, { ...safeEnv, VITEST_MAX_THREADS: '1' }, 'workspace check')
+    runSync('yarn', ['run', 'check'], workspaceRoot, { ...safeEnv, VITEST_MAX_WORKERS: '1' }, 'workspace check')
   })
 }
 

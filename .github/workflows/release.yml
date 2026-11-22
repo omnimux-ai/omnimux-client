@@ -115,7 +115,7 @@ jobs:
         if: always() && github.event_name == 'pull_request'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
-          name: windows-packaging-timings
+          name: windows-packaging-timings-${{ github.run_attempt }}
           path: ${{ runner.temp }}/desktop-packaging/events.jsonl
           if-no-files-found: ignore
           retention-days: 14
@@ -132,15 +132,18 @@ jobs:
   preflight-mac:
     if: ${{ github.event_name == 'pull_request' }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
+    timeout-minutes: ${{ matrix.timeoutMinutes }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - arch: arm64
             runner: macos-26
+            timeoutMinutes: 45
           - arch: x64
             runner: macos-26-intel
+            # Dependency downloads and the ASAR copy can be slower on hosted Intel runners.
+            timeoutMinutes: 75
     defaults:
       run:
         working-directory: app
