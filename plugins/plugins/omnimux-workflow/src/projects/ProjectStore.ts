@@ -19,15 +19,19 @@ import {
   realpathSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { readdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { basename, dirname, join, resolve } from 'node:path';
+import { fileIdentity, mapConcurrent, SerialFileWork, SharedFileWork, statIfPresent, withRegularFile } from './asyncFiles.ts';
 import { allocateUniqueProjectFolder, sanitizeFolderName } from './folderName.ts';
 import {
   assertProjectInsideLibrary,
   assertProjectWriteSafe,
   isInsideDir,
   resolveProjectPaths,
+  resolveSafeProjectPath,
 } from './paths.ts';
 import {
   MAX_PROJECT_TITLE_LENGTH,
@@ -58,10 +62,22 @@ export class ProjectStoreError extends Error {
 }
 
 export type ProjectRecord = Project & { path: string };
+interface ProjectListEntry {
+  project: ProjectSummary & { path: string };
+  bound: boolean;
+}
+
+interface ProjectListSnapshot {
+  entries: ProjectListEntry[];
+  owners: ReadonlyMap<string, ProjectRecord>;
+}
 
 export interface ProjectStore {
   repairProjectRecord(record: ProjectRecord): ProjectRecord;
   list(): ProjectSummary[];
+  listForRead(signal?: AbortSignal): Promise<ProjectListSnapshot>;
+  findCanvasProjectForRead(workspaceId: string, signal?: AbortSignal): Promise<ProjectRecord | null>;
+  withCanvasProject<T>(workspaceId: string, record: ProjectRecord | null, resolve: () => T): T;
   /**
    * 种子写入。未传 projectRoot 时 Host 在默认库分配唯一文件夹。
    */
@@ -126,6 +142,44 @@ function readJsonFile(filePath: string): unknown {
   }
 }
 
+interface ScannedJson {
+  value?: unknown;
+  /** Undefined when unreadable, null when missing. */
+  stamp?: string | null;
+}
+
+async function readJsonForScan(file: string, signal: AbortSignal): Promise<ScannedJson> {
+  try {
+    return await withRegularFile(file, signal, async (handle, info) => {
+      const raw = await handle.readFile({ encoding: 'utf8', signal });
+      return { value: JSON.parse(raw), stamp: fileIdentity(info) };
+    });
+  } catch (error) {
+    signal.throwIfAborted();
+    return (error as NodeJS.ErrnoException).code === 'ENOENT' ? { stamp: null } : {};
+  }
+}
+
+function compareProjects(a: Project, b: Project): number {
+  if (a.updatedAt !== b.updatedAt) return a.updatedAt < b.updatedAt ? 1 : -1;
+  return a.id < b.id ? 1 : -1;
+}
+
+function compareEntries(a: { project: Project }, b: { project: Project }): number {
+  return compareProjects(a.project, b.project);
+}
+
+function indexCanvasProjects(records: ProjectRecord[]): Map<string, ProjectRecord> {
+  const owners = new Map<string, ProjectRecord>();
+  for (const project of records.sort(compareProjects)) {
+    for (const page of project.pages) {
+      const id = page.canvasWorkspaceId;
+      if (!owners.has(id)) owners.set(id, project);
+    }
+  }
+  return owners;
+}
+
 /** @deprecated 默认说明文档模板（已废弃，新建项目不再自动生成 说明.md） */
 export function defaultReadme(title: string): string {
   return `# ${title}\n\n本地项目不会自动与其他设备或用户共享。\n`;
@@ -142,7 +196,7 @@ export function validateTitle(title: unknown): string {
   return trimmed;
 }
 
-function toSummary(project: Project, path: string): ProjectSummary {
+function toSummary(project: Project, path: string): ProjectListEntry['project'] {
   const existingPages = project.pages && project.pages.length > 0
     ? project.pages
     : [{
@@ -202,17 +256,29 @@ export function createProjectStore(opts: {
     }
   }
 
-  function loadExternalProjectDirs(): string[] {
-    const raw = readJsonFile(externalProjectsFile);
-    if (Array.isArray(raw)) {
-      return raw.filter((item): item is string => typeof item === 'string' && item.trim() !== '');
+  let catalogRevision = 0;
+
+  function directoryList(raw: unknown): string[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((item): item is string => typeof item === 'string' && item.trim() !== '');
+  }
+
+  function workspaceDirs(): string[] {
+    try {
+      return directoryList(opts.workspaceDirs?.());
+    } catch {
+      return [];
     }
-    return [];
+  }
+
+  function loadExternalProjectDirs(): string[] {
+    return directoryList(readJsonFile(externalProjectsFile));
   }
 
   function saveExternalProjectDirs(dirs: string[]): void {
     const unique = Array.from(new Set(dirs.map((d) => resolve(d))));
     atomicWriteJson(externalProjectsFile, unique);
+    catalogRevision++;
   }
 
   function registerExternalProjectDir(dir: string): void {
@@ -249,18 +315,25 @@ export function createProjectStore(opts: {
         if (!project) continue;
         rows.push({ dir, project });
         seenDirs.add(dir);
+        if (realLibraryRoot) seenDirs.add(join(realLibraryRoot, entry.name));
       }
     }
 
     const externalDirs = loadExternalProjectDirs();
-    let externalChanged = false;
-    const validExternalDirs: string[] = [];
+    const discoveredDirs: string[] = [];
+    const missingRecordDirs = new Set<string>();
     for (const extDir of externalDirs) {
       const dir = resolve(extDir);
       if (seenDirs.has(dir)) continue;
       const file = join(dir, '.omnimux', 'project.json');
       if (!existsSync(file)) {
-        externalChanged = true;
+        try {
+          // A missing record in a reachable directory is distinct from a
+          // registry root that itself is unavailable.
+          if (statSync(dir).isDirectory() && statSync(file, { throwIfNoEntry: false }) === undefined) {
+            missingRecordDirs.add(dir);
+          }
+        } catch { /* Leave the entry recoverable on permission or mount errors. */ }
         continue;
       }
       const raw = readJsonFile(file);
@@ -270,58 +343,175 @@ export function createProjectStore(opts: {
         // or unsupported schema). Keep it registered and leave a diagnostic instead of
         // silently dropping a real user project from the registry.
         console.warn(`[project-store] external project at ${dir} has an unreadable .omnimux/project.json; kept in registry for repair`);
-        validExternalDirs.push(dir);
         continue;
       }
+      let physical: string;
+      try { physical = realpathSync(dir); } catch { continue; }
+      if (seenDirs.has(physical)) continue;
       rows.push({ dir, project });
       seenDirs.add(dir);
-      validExternalDirs.push(dir);
+      seenDirs.add(physical);
     }
-    // 有文件补索引：已注册工作区目录若已有合法 project.json 而 registry 漏记，
-    // 以文件为准补索引（文件优先自愈；只登记，不动用户文件）。
-    if (typeof opts.workspaceDirs === 'function') {
-      let candidates: string[] = [];
+    // A workspace with a valid record can rebuild a missing registry entry.
+    for (const candidate of workspaceDirs()) {
+      const lexical = resolve(candidate);
+      let dir: string;
       try {
-        candidates = opts.workspaceDirs() ?? [];
+        dir = realpathSync(lexical);
       } catch {
-        candidates = [];
+        continue;
       }
-      for (const candidate of candidates) {
-        if (typeof candidate !== 'string' || candidate.trim() === '') continue;
+      if (seenDirs.has(dir) || seenDirs.has(lexical)) continue;
+      const project = parseProject(readJsonFile(join(dir, '.omnimux', 'project.json')));
+      if (!project) continue;
+      rows.push({ dir, project });
+      seenDirs.add(dir);
+      seenDirs.add(lexical);
+      if (!isInsideLibrary(dir)) discoveredDirs.push(dir);
+    }
+    if (discoveredDirs.length || missingRecordDirs.size) {
+      saveExternalProjectDirs([...externalDirs.filter(dir => !missingRecordDirs.has(resolve(dir))), ...discoveredDirs]);
+    }
+    return rows.sort(compareEntries);
+  }
+
+  type ScannedProject = { dir: string; project: Project; bound: boolean; file: string; stamp: string };
+  type Scan = { rows: ScannedProject[]; registry: ScannedJson; discovered: string[] };
+  const scans = new SharedFileWork<Scan>();
+  const reconciliations = new SharedFileWork<ProjectListSnapshot>();
+  const externalScans = new SerialFileWork();
+  let knownCanvas: { id: string; record: ProjectRecord | null } | undefined;
+
+  async function readProjectForScan(dir: string, bound: boolean, signal: AbortSignal): Promise<ScannedProject | null> {
+    const file = join(dir, '.omnimux', 'project.json');
+    const { value, stamp } = await readJsonForScan(file, signal);
+    const project = parseProject(value);
+    return project && typeof stamp === 'string' ? { dir, project, bound, file, stamp } : null;
+  }
+
+  async function commitScannedJson(file: string, root: string, value: unknown, stamp: string | null,
+    signal: AbortSignal, canCommit: () => boolean = () => true): Promise<boolean> {
+    await resolveSafeProjectPath(file, root, signal);
+    const target = join(await resolveSafeProjectPath(dirname(file), root, signal), basename(file));
+    signal.throwIfAborted();
+    const tmp = `${target}.tmp-${randomUUID()}`;
+    try {
+      await writeFile(tmp, `${JSON.stringify(value, null, 2)}\n`, { flag: 'wx', signal });
+      signal.throwIfAborted();
+      if (!canCommit()) return false;
+      // Legacy Store writes are synchronous. Compare and rename in the same
+      // turn on this rare repair path so one of those writes cannot interleave.
+      const current = statSync(target, { bigint: true, throwIfNoEntry: false });
+      if ((current ? fileIdentity(current) : null) !== stamp) return false;
+      renameSync(tmp, target);
+      catalogRevision++;
+      return true;
+    } finally {
+      await rm(tmp, { force: true }).catch(() => undefined);
+    }
+  }
+
+  function scanForRead(signal?: AbortSignal): Promise<Scan> {
+    const revision = catalogRevision;
+    return scans.run(String(revision), signal, async (scanSignal) => {
+      const root = resolve(libraryRoot);
+      const realRoot = await realpath(root).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== 'ENOENT') throw error;
+        return root;
+      });
+      scanSignal.throwIfAborted();
+      const entries = await readdir(root, { withFileTypes: true }).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== 'ENOENT') throw error;
+        return [];
+      });
+      const seen = new Set<string>();
+      const localRows = await mapConcurrent(entries.filter(entry => entry.isDirectory()), 3, async (entry) => {
+        seen.add(join(realRoot, entry.name));
+        return readProjectForScan(join(root, entry.name), false, scanSignal);
+      }, scanSignal);
+      const rows = localRows.filter(row => row !== null);
+      const registry = await readJsonForScan(externalProjectsFile, scanSignal);
+      const registered = directoryList(registry.value);
+      const discovered: string[] = [];
+      const readExternal = async (candidate: string, inRegistry: boolean) => {
+        scanSignal.throwIfAborted();
         const lexical = resolve(candidate);
-        let dir: string;
-        try {
-          dir = realpathSync(lexical);
-        } catch {
-          continue;
-        }
-        // 兼容「库路径是 /var/…、realpath 是 /private/var/…」的同一目录去重。
-        if (seenDirs.has(dir) || seenDirs.has(lexical)) continue;
-        const file = join(dir, '.omnimux', 'project.json');
-        if (!existsSync(file)) continue;
-        const project = parseProject(readJsonFile(file));
-        if (!project) continue;
-        rows.push({ dir, project });
-        seenDirs.add(dir);
-        seenDirs.add(lexical);
-        if (!isInsideLibrary(dir) && !validExternalDirs.includes(dir)) {
-          validExternalDirs.push(dir);
-          externalChanged = true;
-        }
+        const physical = await realpath(lexical).catch(() => null);
+        if (!physical || seen.has(physical)) return;
+        seen.add(physical);
+        const dir = inRegistry ? lexical : physical;
+        const bound = !isInsideDir(dir, root) && !isInsideDir(physical, realRoot);
+        const row = await readProjectForScan(dir, bound, scanSignal);
+        if (!row) return;
+        rows.push(row);
+        if (!inRegistry && bound) discovered.push(dir);
+      };
+      // Walk potentially slow mounts after the local library, one at a time.
+      if (registered.length || opts.workspaceDirs) {
+        await externalScans.run(scanSignal, async () => {
+          for (const dir of new Set(registered)) await readExternal(dir, true);
+          for (const dir of new Set(workspaceDirs())) await readExternal(dir, false);
+        });
       }
-    }
-
-    if (externalChanged) {
-      saveExternalProjectDirs(validExternalDirs);
-    }
-
-    rows.sort((a, b) => {
-      if (a.project.updatedAt !== b.project.updatedAt) {
-        return a.project.updatedAt < b.project.updatedAt ? 1 : -1;
-      }
-      return a.project.id < b.project.id ? 1 : -1;
+      return { rows, registry, discovered };
     });
-    return rows;
+  }
+
+  function listForRead(signal?: AbortSignal): Promise<ProjectListSnapshot> {
+    const revision = catalogRevision;
+    return reconciliations.run(String(revision), signal, async scanSignal => {
+      const { rows, registry, discovered } = await scanForRead(scanSignal);
+      const registered = directoryList(registry.value);
+      if (discovered.length && registry.stamp !== undefined && catalogRevision === revision) {
+        const dirs = [...new Set([...registered.map(dir => resolve(dir)), ...discovered])];
+        await commitScannedJson(externalProjectsFile, resolve(libraryRoot), dirs, registry.stamp, scanSignal, () => catalogRevision === revision);
+      }
+      const entries: ProjectListEntry[] = [];
+      const reconciled = new Map<ScannedProject, ProjectRecord>();
+      for (const row of [...rows].sort(compareEntries)) {
+        scanSignal.throwIfAborted();
+        const { dir, project, bound, file, stamp } = row;
+        let record = { ...project, path: dir };
+        const repaired = repairRecord(record);
+        if (repaired !== record) {
+          const { path: _path, ...data } = repaired;
+          if (await commitScannedJson(file, dir, data, stamp, scanSignal)) {
+            record = repaired;
+          } else {
+            const current = await readProjectForScan(dir, bound, scanSignal);
+            if (!current) continue;
+            record = { ...current.project, path: dir };
+            // Only expose a newly allocated canvas ID after it has been saved.
+            if (repairRecord(record) !== record) continue;
+          }
+        }
+        entries.push({ project: toSummary(record, record.path), bound });
+        reconciled.set(row, record);
+      }
+      // Ownership matches a fresh scan after repairs. Equal timestamps and IDs
+      // use the original scan order, which can differ from the display order.
+      const records = rows.map(row => reconciled.get(row)).filter(record => record !== undefined);
+      return { entries, owners: indexCanvasProjects(records) };
+    });
+  }
+
+  async function findCanvasProjectForRead(workspaceId: string, signal?: AbortSignal): Promise<ProjectRecord | null> {
+    const id = workspaceId.trim();
+    if (!id) return null;
+    // Do not admit media from a project removed or replaced during the scan.
+    while (true) {
+      signal?.throwIfAborted();
+      const revision = catalogRevision;
+      const { rows } = await scanForRead(signal);
+      if (revision !== catalogRevision) continue;
+      const row = [...rows].sort(compareEntries).find(({ project }) =>
+        project.pages?.some(page => page.canvasWorkspaceId?.trim() === id));
+      if (!row) return null;
+      const current = await statIfPresent(row.file, signal);
+      if (revision === catalogRevision && current && fileIdentity(current) === row.stamp) {
+        return { ...row.project, path: row.dir };
+      }
+    }
   }
 
   function findById(id: string): { dir: string; project: Project } | null {
@@ -341,6 +531,7 @@ export function createProjectStore(opts: {
     const { path: _path, ...cleanProject } = project as Project & { path?: string };
     // 先写档案、后登记索引：写盘失败时 registry 不会指向「无档案的 root」（评审 F5）。
     atomicWriteJson(paths.projectFile, cleanProject);
+    catalogRevision++;
     if (!insideLibrary) registerExternalProjectDir(paths.projectRoot);
     return { ...cleanProject, path: paths.projectRoot };
   }
@@ -368,8 +559,7 @@ export function createProjectStore(opts: {
     return repairProjectRecord({ ...project, path: root });
   }
 
-  function repairProjectRecord(record: ProjectRecord): ProjectRecord {
-    const dir = record.path;
+  function repairRecord(record: ProjectRecord): ProjectRecord {
     let changed = false;
     let pages: ProjectPage[] = Array.isArray(record.pages) && record.pages.length > 0
       ? [...record.pages]
@@ -406,17 +596,15 @@ export function createProjectStore(opts: {
     }
 
     if (changed) {
-      const { path: _path, ...projectData } = record;
-      const nextProject: Project = {
-        ...projectData,
-        pages,
-        activePageId: nextActivePageId,
-        updatedAt: new Date().toISOString(),
-      };
-      return persistProject(dir, nextProject);
+      return { ...record, pages, activePageId: nextActivePageId, updatedAt: new Date().toISOString() };
     }
 
     return record;
+  }
+
+  function repairProjectRecord(record: ProjectRecord): ProjectRecord {
+    const repaired = repairRecord(record);
+    return repaired === record ? record : persistProject(record.path, repaired);
   }
 
   return {
@@ -429,6 +617,19 @@ export function createProjectStore(opts: {
         const repaired = repairProjectRecord({ ...row.project, path: row.dir });
         return toSummary(repaired, repaired.path);
       });
+    },
+
+    listForRead,
+    findCanvasProjectForRead,
+
+    withCanvasProject(workspaceId, record, resolve) {
+      const previous = knownCanvas;
+      knownCanvas = { id: workspaceId, record };
+      try {
+        return resolve();
+      } finally {
+        knownCanvas = previous;
+      }
     },
 
     findByRoot(projectRoot: string): ProjectRecord | null {
@@ -504,6 +705,7 @@ export function createProjectStore(opts: {
     findByCanvasWorkspaceId(workspaceId: string): ProjectRecord | null {
       if (typeof workspaceId !== 'string' || workspaceId.trim() === '') return null;
       const id = workspaceId.trim();
+      if (knownCanvas?.id === id) return knownCanvas.record;
       for (const row of scanEntries()) {
         const repaired = repairProjectRecord({ ...row.project, path: row.dir });
         if (repaired.pages?.some((page) => page.canvasWorkspaceId === id)) return repaired;
@@ -618,7 +820,8 @@ export function createProjectStore(opts: {
           rmSync(paths.assetsFile, { force: true });
         }
       }
-      unregisterExternalProjectDir(paths.projectRoot);
+      catalogRevision++;
+    unregisterExternalProjectDir(paths.projectRoot);
     },
 
     preflightProject(input: PreflightProjectInput): Promise<PreflightProjectResult> {

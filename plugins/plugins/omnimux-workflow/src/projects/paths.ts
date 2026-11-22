@@ -10,7 +10,8 @@
  * （symlink）双重 containment。
  */
 import { realpathSync, statSync, lstatSync } from 'node:fs';
-import { isAbsolute, join, resolve, sep } from 'node:path';
+import { lstat, realpath } from 'node:fs/promises';
+import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { looksAbsolutePath } from '../shared/localMedia.ts';
 
 /** 结构化错误：路径非法 / 写入越界。路由层据此映射 400/403。 */
@@ -189,4 +190,33 @@ export function assertProjectWriteSafe(target: string, root: string): void {
   if (!isInsideDir(resolveFuture(target), resolveFuture(root))) {
     throw new ProjectPathError('path-denied', 'project path escapes containment root (symlink)');
   }
+}
+
+/** Resolve an existing file or its nearest ancestor without following an escaping symlink. */
+export async function resolveSafeProjectPath(target: string, root: string, signal?: AbortSignal): Promise<string> {
+  if (!isInsideDir(target, root)) {
+    throw new ProjectPathError('path-denied', 'project path escapes containment root');
+  }
+  async function resolveFuture(path: string): Promise<string> {
+    signal?.throwIfAborted();
+    try {
+      await lstat(path);
+    } catch (error) {
+      const parent = dirname(path);
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || parent === path) throw error;
+      return join(await resolveFuture(parent), basename(path));
+    }
+    signal?.throwIfAborted();
+    return realpath(path).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') throw error;
+      throw new ProjectPathError('path-denied', 'dangling path symlink');
+    });
+  }
+  const physicalRoot = await resolveFuture(root);
+  const physicalTarget = await resolveFuture(target);
+  signal?.throwIfAborted();
+  if (!isInsideDir(physicalTarget, physicalRoot)) {
+    throw new ProjectPathError('path-denied', 'project path escapes containment root (symlink)');
+  }
+  return physicalTarget;
 }

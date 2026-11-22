@@ -13,6 +13,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
+import { mkdir } from 'node:fs/promises';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import {
   MAX_JSON_BODY_BYTES,
@@ -25,12 +26,13 @@ import {
 } from '../http/helpers';
 import { defaultProjectLibrary, displayHomePath, ensureLibraryRoot, resolveVideosDir } from './library';
 import { ProjectPathError } from './paths';
-import { createProjectStore, ProjectStoreError, validateTitle } from './ProjectStore';
+import { createProjectStore, ProjectStoreError, validateTitle, type ProjectStore } from './ProjectStore';
 import { isEnsureProjectError, type EnsureProjectMode } from './ensureProject';
 import { ensureWorkspaceProjectBound } from './workspaceProjectBinding';
 import { sessionToWorkspaceId } from '../shared/sessionWorkspaceId';
 import type { WorkspaceStore } from '../workflow/workspace/WorkspaceStore.ts';
-import { createProjectCoverService } from './ProjectCoverService.ts';
+import { createProjectCoverService, createProjectListCoverService } from './ProjectCoverService.ts';
+import type { MediaRevision } from './mediaRevision.ts';
 
 export const PROJECT_ROUTE_PREFIX = '/omnimux-workflow/api/projects';
 export const PROJECT_LIBRARY_PATH = `${PROJECT_ROUTE_PREFIX}/library`;
@@ -75,11 +77,6 @@ export const MAX_PROJECT_JSON_BODY_BYTES = MAX_JSON_BODY_BYTES;
 
 export { sendJson, JsonBodyLimitError, readJsonBody, assertLocalWrite };
 
-function scopedStore(libraryRootOverride?: string) {
-  const libraryRoot = libraryRootOverride ?? ensureLibraryRoot();
-  return { libraryRoot, store: createProjectStore({ libraryRoot }) };
-}
-
 /** 只读 store：解析默认库路径但**不 mkdir**（预检必须零写盘）。 */
 function scopedReadOnlyStore(libraryRootOverride?: string) {
   const libraryRoot = libraryRootOverride ?? defaultProjectLibrary();
@@ -95,6 +92,7 @@ export interface ProjectDispatchRequest {
   host?: string;
   secure?: boolean;
   body?: unknown;
+  signal?: AbortSignal;
 }
 
 export type ProjectDispatchResult = { status: number; body?: unknown };
@@ -106,9 +104,31 @@ export interface ProjectDispatcher {
 }
 
 /** 项目路由无状态：库根由 host 解析，不跟当前会话 cwd。 */
-export function createProjectDispatcher(opts: { libraryRoot?: string; workspaceStore?: WorkspaceStore; mediaRevision?: (url: string) => string; resolveSessionWorkspaceDir?: (sessionId: string) => string | undefined } = {}): ProjectDispatcher {
+export function createProjectDispatcher(opts: {
+  libraryRoot?: string;
+  projectStore?: ProjectStore;
+  workspaceStore?: WorkspaceStore;
+  mediaRevision?: (url: string) => string;
+  listMediaRevision?: MediaRevision;
+  resolveAssetsRoot?: (workspaceId: string) => { path: string } | null;
+  resolveSessionWorkspaceDir?: (sessionId: string) => string | undefined;
+} = {}): ProjectDispatcher {
+  const libraryRoot = opts.libraryRoot ?? defaultProjectLibrary();
+  const store = opts.projectStore ?? createProjectStore({ libraryRoot, ensureLibrary: false });
+  const workspacesDir = opts.workspaceStore?.workspacesDir;
   const coverService = opts.workspaceStore ? createProjectCoverService(opts.workspaceStore, opts.mediaRevision) : undefined;
-  const enrich = <T extends { pages?: Array<{ id: string; canvasWorkspaceId?: string }> }>(project: T) => coverService ? coverService(project) : project;
+  const pointRevision = opts.mediaRevision;
+  const listRevision = opts.listMediaRevision ?? (pointRevision ? async (source: string) => pointRevision(source) : undefined);
+  const listCoverService = workspacesDir ? createProjectListCoverService(workspacesDir, listRevision) : undefined;
+
+  function scopedStore() {
+    if (!opts.projectStore) mkdirSync(libraryRoot, { recursive: true });
+    return { libraryRoot, store };
+  }
+
+  function enrich<T extends { pages?: Array<{ id: string; canvasWorkspaceId?: string }> }>(project: T) {
+    return coverService ? coverService(project) : project;
+  }
   const collectionRe = new RegExp(`^${PROJECT_ROUTE_PREFIX}$`);
   const libraryRe = new RegExp(`^${PROJECT_LIBRARY_PATH}$`);
   const sessionBindingRe = new RegExp(`^${PROJECT_ROUTE_PREFIX}/session-binding$`);
@@ -195,7 +215,7 @@ export function createProjectDispatcher(opts: { libraryRoot?: string; workspaceS
           return { status: 404, body: { error: 'not-found', message: 'unknown route' } };
         }
         const sessionId = (url.searchParams.get('sessionId') ?? '').trim();
-        const { libraryRoot, store } = scopedStore(opts.libraryRoot);
+        const { libraryRoot, store } = scopedStore();
         if (sessionId === '') {
           return { status: 400, body: { error: 'session-required', message: 'sessionId is required' } };
         }
@@ -251,24 +271,26 @@ export function createProjectDispatcher(opts: { libraryRoot?: string; workspaceS
 
       if (collectionRe.exec(path)) {
         if (method === 'GET') {
-          const { store } = scopedStore(opts.libraryRoot);
           const lookupPath = (url.searchParams.get('path') ?? '').trim();
           if (lookupPath !== '') {
             if (!isAbsolute(lookupPath)) {
               return { status: 400, body: { error: 'invalid-project-root', message: 'path must be absolute' } };
             }
+            const { store } = scopedStore();
             const found = store.findByRoot(lookupPath);
             return { status: 200, body: { project: found ? { ...enrich(found), ...bindingOf(store, found) } : null } };
           }
-          return {
-            status: 200,
-            body: {
-              projects: store.list().map((project) => ({
-                ...enrich(project),
-                ...bindingOf(store, project),
-              })),
-            },
-          };
+          req.signal?.throwIfAborted();
+          await mkdir(libraryRoot, { recursive: true });
+          const { entries, owners } = await store.listForRead(req.signal);
+          const summaries = entries.map(({ project, bound }) => ({ ...project, bound, workspaceDir: bound ? project.path : null }));
+          if (!listCoverService) return { status: 200, body: { projects: summaries } };
+          const projects = await listCoverService(summaries, id => owners.get(id)?.path, async id => {
+            const owner = owners.get(id) ?? null;
+            if (!opts.resolveAssetsRoot) return owner?.path;
+            return store.withCanvasProject(id, owner, () => opts.resolveAssetsRoot?.(id)?.path);
+          }, req.signal);
+          return { status: 200, body: { projects } };
         }
         if (method === 'POST') {
           const problem = jsonBodyProblem(req.body);
@@ -284,7 +306,7 @@ export function createProjectDispatcher(opts: { libraryRoot?: string; workspaceS
           if (body.cwd !== undefined) {
             return { status: 400, body: { error: 'invalid-json', message: 'cwd is no longer a project library scope' } };
           }
-          const { store } = scopedStore(opts.libraryRoot);
+          const { store } = scopedStore();
           const title = typeof body.title === 'string' ? body.title : undefined;
           const projectRoot = typeof body.projectRoot === 'string' && body.projectRoot.trim() !== ''
             ? body.projectRoot
@@ -317,7 +339,7 @@ export function createProjectDispatcher(opts: { libraryRoot?: string; workspaceS
       const pagesMatch = pagesRe.exec(path);
       if (pagesMatch) {
         const projectId = pagesMatch[1] ?? '';
-        const { store } = scopedStore(opts.libraryRoot);
+        const { store } = scopedStore();
         if (method === 'POST') {
           const problem = jsonBodyProblem(req.body);
           if (problem) return problem;
@@ -373,7 +395,7 @@ export function createProjectDispatcher(opts: { libraryRoot?: string; workspaceS
       if (pageItemMatch) {
         const projectId = pageItemMatch[1] ?? '';
         const pageId = pageItemMatch[2] ?? '';
-        const { store } = scopedStore(opts.libraryRoot);
+        const { store } = scopedStore();
         if (method === 'PATCH') {
           const problem = jsonBodyProblem(req.body);
           if (problem) return problem;
@@ -397,7 +419,7 @@ export function createProjectDispatcher(opts: { libraryRoot?: string; workspaceS
       if (filesMatch) {
         if (method !== 'GET') return { status: 404, body: { error: 'not-found', message: 'unknown route' } };
         const projectId = filesMatch[1] ?? '';
-        const { store } = scopedStore(opts.libraryRoot);
+        const { store } = scopedStore();
         const project = store.get(projectId);
         const subpath = url.searchParams.get('subpath') || '';
         const targetDir = resolve(project.path, subpath);
@@ -442,7 +464,7 @@ export function createProjectDispatcher(opts: { libraryRoot?: string; workspaceS
       if (mkdirMatch) {
         if (method !== 'POST') return { status: 404, body: { error: 'not-found', message: 'unknown route' } };
         const projectId = mkdirMatch[1] ?? '';
-        const { store } = scopedStore(opts.libraryRoot);
+        const { store } = scopedStore();
         const project = store.get(projectId);
         const problem = jsonBodyProblem(req.body);
         if (problem) return problem;
@@ -464,7 +486,7 @@ export function createProjectDispatcher(opts: { libraryRoot?: string; workspaceS
       if (uploadMatch) {
         if (method !== 'POST') return { status: 404, body: { error: 'not-found', message: 'unknown route' } };
         const projectId = uploadMatch[1] ?? '';
-        const { store } = scopedStore(opts.libraryRoot);
+        const { store } = scopedStore();
         const project = store.get(projectId);
         const problem = jsonBodyProblem(req.body);
         if (problem) return problem;
@@ -511,7 +533,7 @@ export function createProjectDispatcher(opts: { libraryRoot?: string; workspaceS
         if (id === 'library') {
           return { status: 404, body: { error: 'not-found', message: 'unknown route' } };
         }
-        const { store } = scopedStore(opts.libraryRoot);
+        const { store } = scopedStore();
         if (method === 'GET') {
           return { status: 200, body: { project: enrich(store.get(id)) } };
         }

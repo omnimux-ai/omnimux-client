@@ -58,6 +58,27 @@ for (const action of ['instantiate', 'ingest']) {
   });
 }
 
+test('project file routes honor an injected asset store without an explicit root resolver', async t => {
+  const f = fixture();
+  t.after(() => rmSync(f.root, { recursive: true, force: true }));
+  const ws = f.store.create('Read from custom store');
+  const project = f.projectStore.create('Default project', { canvasWorkspaceIds: [ws.id] });
+  writeFileSync(join(project.path, 'hero.png'), 'default-project-image');
+  const assetsStore = { ...f.assetsStore, resolveProjectFile(id, rel) {
+    assert.equal(id, ws.id);
+    assert.equal(rel, 'hero.png');
+    return f.source;
+  } };
+  const dispatcher = host.createWorkflowDispatcher({ store: f.store, projectStore: f.projectStore, assetsStore,
+    libraryRoot: join(f.root, 'library'), mediaDir: join(f.root, 'media'), gateway: {}, executionManager: {} });
+  for (const url of [`/omnimux-workflow/api/workspaces/${ws.id}/file?rel=hero.png`,
+    `/omnimux-workflow/api/project-file?workspace=${ws.id}&rel=hero.png`]) {
+    const result = await dispatcher.dispatch({ method: 'GET', url });
+    assert.equal(result.status, 200);
+    assert.equal(result.file, f.source);
+  }
+});
+
 test('missing canvas, malformed body and foreign requests do not create projects', async () => {
   const f = fixture();
   try {
