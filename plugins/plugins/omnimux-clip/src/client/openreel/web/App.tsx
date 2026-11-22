@@ -87,7 +87,17 @@ function App({ active = true, canvasMode = false, managed = false }: { active?: 
   const [isRecovering, setIsRecovering] = useState(false);
   const createNewProject = useProjectStore((state) => state.createNewProject);
   const hasOpenProject = useProjectStore((state) => state.hasOpenProject);
-  const { route, params, navigate, parsedDimensions, fps } = useRouter();
+  const { route: sharedRoute, params, navigate, parsedDimensions, fps } = useRouter();
+  const needsWelcome = managed && !canvasMode && !hasOpenProject && sharedRoute === "editor";
+  const route = needsWelcome ? "welcome" : sharedRoute;
+  useLayoutEffect(() => {
+    // Only the active Studio can repair the shared route. A handoff may have
+    // loaded a project or issued a newer route since this render.
+    if (active && needsWelcome && getOpenReelRoute().route === "editor"
+      && !useProjectStore.getState().hasOpenProject) {
+      navigate("welcome");
+    }
+  }, [active, needsWelcome, navigate, params]);
   const { isChecking, showDialog, availableSaves, recover, dismiss, clearAll } =
     useProjectRecovery(active && !canvasMode && (!managed || route === "welcome" || route === "new"));
   const hasHandledNewRoute = useRef(false);
@@ -261,15 +271,15 @@ function App({ active = true, canvasMode = false, managed = false }: { active?: 
         e.target.closest(
           "input, textarea, select, [contenteditable], [role=dialog], [role=menu], [role=listbox]",
         );
-      if (e.key === "Escape" && route !== "editor" && !controlOwnsEscape) {
-        navigate("editor");
+      if (e.key === "Escape" && route !== "editor" && !controlOwnsEscape && !(managed && showWelcome)) {
+        navigate(managed && !useProjectStore.getState().hasOpenProject ? "welcome" : "editor");
       }
       if (keyboardShortcuts.isSearchPaletteEvent(e)) {
         e.preventDefault();
         openSearchModal("search");
       }
     },
-    [route, navigate, openSearchModal, portalRoot],
+    [route, navigate, openSearchModal, portalRoot, managed, showWelcome],
   );
 
   useEffect(() => {
@@ -290,7 +300,7 @@ function App({ active = true, canvasMode = false, managed = false }: { active?: 
     <CompactEditorContext.Provider value={compact}>
     <div ref={setPortalRoot} className="relative h-full w-full bg-background text-text-primary overflow-hidden">
     <AppProviders active={canRender}>
-      {canRender && showWelcome && <WelcomeScreen initialTab={initialTab} />}
+      {canRender && showWelcome && <WelcomeScreen initialTab={initialTab} managed={managed} />}
       {canRender && !showWelcome && !hasOpenProject && (
         <LoadingSpinner
           message={
