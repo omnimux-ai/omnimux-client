@@ -1,4 +1,5 @@
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { chmod, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -67,6 +68,53 @@ describe.skipIf(process.platform === 'win32')('macOS signing cache', () => {
     await expect(cache.sign(file, { ...policy, identifier: 'another.tool' }, sign.mockRejectedValueOnce(new Error('TSA unavailable')), verify)).rejects.toThrow('TSA unavailable')
     expect(readFileSync(file, 'utf8')).toBe('input')
     expect(readdirSync(cacheDir)).toHaveLength(1)
+  })
+
+  const inputChanges = [
+    { change: 'bytes', update: (file: string) => writeFile(file, 'replacement'), contents: 'replacement', mode: 0o755 },
+    { change: 'mode', update: (file: string) => chmod(file, 0o644), contents: 'input', mode: 0o644 },
+  ]
+
+  it.each(inputChanges)('preserves changed input $change during cold signing', async ({ update, contents, mode }) => {
+    const { directory, file, cacheDir } = fixture()
+    const cache = new MacSignatureCache(cacheDir)
+    await cache.prepare()
+    writeFileSync(file, 'input', { mode: 0o755 })
+    const sign = vi.fn(async (candidate: string) => {
+      expect(readFileSync(candidate, 'utf8')).toBe('input')
+      expect(statSync(candidate).mode & 0o777).toBe(0o755)
+      await writeFile(candidate, 'signed input')
+      await update(file)
+    })
+
+    await expect(cache.sign(file, policy, sign, async () => {})).rejects.toThrow('input changed during signing')
+    expect(sign).toHaveBeenCalledTimes(1)
+    expect(cache).toMatchObject({ hits: 0, misses: 1 })
+    expect(readFileSync(file, 'utf8')).toBe(contents)
+    expect(statSync(file).mode & 0o777).toBe(mode)
+    expect(readdirSync(directory).sort()).toEqual(['binary', 'cache'])
+  })
+
+  it.each(inputChanges)('preserves changed input $change during cached signature verification', async ({ update, contents, mode }) => {
+    const { directory, file, cacheDir } = fixture()
+    const cache = new MacSignatureCache(cacheDir)
+    await cache.prepare()
+    writeFileSync(file, 'input', { mode: 0o755 })
+    const sign = vi.fn(async (candidate: string) => writeFile(candidate, 'signed input'))
+    await cache.sign(file, policy, sign, async () => {})
+    writeFileSync(file, 'input')
+    const verify = vi.fn(async (candidate: string) => {
+      expect(readFileSync(candidate, 'utf8')).toBe('signed input')
+      await update(file)
+    })
+
+    await expect(cache.sign(file, policy, sign, verify)).rejects.toThrow('input changed during signing')
+    expect(sign).toHaveBeenCalledTimes(1)
+    expect(verify).toHaveBeenCalledTimes(1)
+    expect(cache).toMatchObject({ hits: 1, misses: 1, rejected: 0 })
+    expect(readFileSync(file, 'utf8')).toBe(contents)
+    expect(statSync(file).mode & 0o777).toBe(mode)
+    expect(readdirSync(directory).sort()).toEqual(['binary', 'cache'])
   })
 
   it('touches read entries and evicts the least recently used verified signature', async () => {

@@ -1,7 +1,7 @@
 /** A private cache of verified Developer ID signatures for standalone Mach-O files. */
 import { createHash, randomUUID } from 'node:crypto'
-import { constants } from 'node:fs'
-import { chmod, copyFile, lstat, mkdir, mkdtemp, open, readFile, readdir, rename, rm, unlink, writeFile } from 'node:fs/promises'
+import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, renameSync } from 'node:fs'
+import { chmod, lstat, mkdir, mkdtemp, open, readFile, readdir, rename, rm, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 
 const CACHE_LIMIT_BYTES = 1024 ** 3
@@ -29,6 +29,23 @@ function entryDigest(key: string, body: Buffer): Buffer {
   return createHash('sha256').update(key).update(body).digest()
 }
 
+function readSigningInput(file: string): { bytes: Buffer; sha256: string; mode: number } {
+  const input = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+  try {
+    const opened = fstatSync(input)
+    if (!opened.isFile()) throw new Error('macOS signing cache requires a regular Mach-O file')
+    const bytes = readFileSync(input)
+    const sha256 = createHash('sha256').update(bytes).digest('hex')
+    const current = lstatSync(file)
+    if (current.dev !== opened.dev || current.ino !== opened.ino || current.mode !== opened.mode
+      || current.size !== opened.size || current.size !== bytes.length
+      || current.mtimeMs !== opened.mtimeMs || current.ctimeMs !== opened.ctimeMs) {
+      throw new Error(`macOS signing cache: input changed while reading ${file}`)
+    }
+    return { bytes, sha256, mode: opened.mode & 0o7777 }
+  } finally { closeSync(input) }
+}
+
 export class MacSignatureCache {
   readonly directory: string
   readonly limit: number
@@ -50,13 +67,11 @@ export class MacSignatureCache {
     }
   }
 
-  /** Sign or restore a sibling copy. Replace the bundle file only after verification succeeds. */
+  /** Sign or restore a sibling copy, then replace the input only if it still matches the snapshot. */
   async sign(file: string, policy: MacSignaturePolicy, sign: (candidate: string) => Promise<void>, verify: (candidate: string) => Promise<void>, reusable = true): Promise<void> {
-    const stat = await lstat(file)
-    if (!stat.isFile()) throw new Error('macOS signing cache requires a regular Mach-O file')
-    const mode = stat.mode & 0o7777
-    const key = reusable && stat.size + DIGEST_BYTES <= this.limit
-      ? signatureCacheKey(createHash('sha256').update(await readFile(file)).digest('hex'), mode, policy)
+    const { bytes, sha256, mode } = readSigningInput(file)
+    const key = reusable && bytes.length + DIGEST_BYTES <= this.limit
+      ? signatureCacheKey(sha256, mode, policy)
       : undefined
     const stage = await mkdtemp(join(dirname(file), '.presigned-'))
     const candidate = join(stage, basename(file))
@@ -65,13 +80,18 @@ export class MacSignatureCache {
         this.hits++
       } else {
         this.misses++
-        await copyFile(file, candidate)
+        await writeFile(candidate, bytes, { mode, flag: 'wx' })
         await chmod(candidate, mode)
         await sign(candidate)
         await verify(candidate)
         if (key !== undefined) await this.#store(key, candidate)
       }
-      await rename(candidate, file)
+      // Keep revalidation and replacement in the same synchronous turn as in pinned DSH.
+      const current = readSigningInput(file)
+      if (current.sha256 !== sha256 || current.mode !== mode) {
+        throw new Error(`macOS signing cache: input changed during signing: ${file}`)
+      }
+      renameSync(candidate, file)
     } finally { await rm(stage, { recursive: true, force: true }) }
   }
 
