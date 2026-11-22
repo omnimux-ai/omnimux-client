@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { build } from 'esbuild';
 
 const bundle = await build({ stdin: { contents: [
-  "export { createWorkflowDispatcher } from './src/workflow/routes/canvasRoutes.ts';",
+  "export { createWorkflowDispatcher, registerWorkflowRoutes } from './src/workflow/routes/canvasRoutes.ts';",
   "export { createWorkspaceStore } from './src/workflow/workspace/WorkspaceStore.ts';",
   "export { createProjectAssetsStore } from './src/workflow/workspace/ProjectAssetsStore.ts';",
   "export { createProjectStore } from './src/projects/ProjectStore.ts';",
@@ -57,6 +58,65 @@ for (const action of ['instantiate', 'ingest']) {
     } finally { rmSync(f.root, { recursive: true, force: true }); }
   });
 }
+
+test('project file routes honor an injected asset store without an explicit root resolver', async t => {
+  const f = fixture();
+  t.after(() => rmSync(f.root, { recursive: true, force: true }));
+  const ws = f.store.create('Read from custom store');
+  const project = f.projectStore.create('Default project', { canvasWorkspaceIds: [ws.id] });
+  writeFileSync(join(project.path, 'hero.png'), 'default-project-image');
+  const assetsStore = { ...f.assetsStore, resolveProjectFile(id, rel) {
+    assert.equal(id, ws.id);
+    assert.equal(rel, 'hero.png');
+    return f.source;
+  } };
+  const dispatcher = host.createWorkflowDispatcher({ store: f.store, projectStore: f.projectStore, assetsStore,
+    libraryRoot: join(f.root, 'library'), mediaDir: join(f.root, 'media'), gateway: {}, executionManager: {} });
+  for (const url of [`/omnimux-workflow/api/workspaces/${ws.id}/file?rel=hero.png`,
+    `/omnimux-workflow/api/project-file?workspace=${ws.id}&rel=hero.png`]) {
+    const result = await dispatcher.dispatch({ method: 'GET', url });
+    assert.equal(result.status, 200);
+    assert.equal(result.file, f.source);
+  }
+});
+
+test('both project file URLs use the injected asset store even when an asset root resolver is supplied', { timeout: 10000 }, async t => {
+  const f = fixture();
+  const ws = f.store.create('Custom store');
+  const project = f.projectStore.create('Root resolver project', { canvasWorkspaceIds: [ws.id] });
+  writeFileSync(join(project.path, 'hero.png'), 'root-resolver-image');
+  const calls = [];
+  let rootChecks = 0;
+  const assetsStore = { ...f.assetsStore, resolveProjectFile(id, rel) {
+    calls.push([id, rel]);
+    return f.source;
+  } };
+  const dispatcher = host.createWorkflowDispatcher({ store: f.store, projectStore: f.projectStore, assetsStore,
+    resolveAssetsRoot() { rootChecks++; return { path: project.path }; },
+    libraryRoot: join(f.root, 'library'), mediaDir: join(f.root, 'media'), gateway: {}, executionManager: {} });
+  let handler;
+  const unregister = host.registerWorkflowRoutes({ register(route) {
+    if (route.path === '/omnimux-workflow') handler = route.handler;
+    return () => {};
+  } }, dispatcher);
+  const server = createServer(handler);
+  t.after(async () => {
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+    unregister();
+    rmSync(f.root, { recursive: true, force: true });
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  for (const url of [`/omnimux-workflow/api/workspaces/${ws.id}/file?rel=hero.png`,
+    `/omnimux-workflow/api/project-file?workspace=${ws.id}&rel=hero.png`]) {
+    const result = await fetch(origin + url, { headers: { range: 'bytes=0-3' } });
+    assert.equal(result.status, 206);
+    assert.deepEqual(Buffer.from(await result.arrayBuffer()), Buffer.from('test'));
+  }
+  assert.deepEqual(calls, [[ws.id, 'hero.png'], [ws.id, 'hero.png']]);
+  assert.equal(rootChecks, 0);
+});
 
 test('missing canvas, malformed body and foreign requests do not create projects', async () => {
   const f = fixture();

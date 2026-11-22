@@ -1,22 +1,20 @@
 /**
  * Media static route (traversal- and symlink-guarded).
  */
-import { realpathSync, statSync } from 'node:fs';
-import { join, normalize, resolve, sep } from 'node:path';
+import { realpath } from 'node:fs/promises';
+import { statIfPresent } from '../../projects/asyncFiles.ts';
+import { isInsideDir } from '../../projects/paths.ts';
+import { join, normalize, resolve } from 'node:path';
 import { WORKFLOW_ROUTE_PREFIX } from '../../shared/api';
 import type { RouteTry } from './dispatch';
-
-/** Lexical containment check with a separator boundary (no prefix false-positives). */
-function isInsideDir(target: string, root: string): boolean {
-  return target === root || target.startsWith(root + sep);
-}
 
 export function createMediaRoutes(mediaDir: string): { tryHandle: RouteTry } {
   const mediaRoot = resolve(mediaDir);
   const mediaApiPath = `${WORKFLOW_ROUTE_PREFIX}/media/`;
 
-  const tryHandle: RouteTry = (method, path) => {
+  const tryHandle: RouteTry = async (method, path, req) => {
     if (!((method === 'GET' || method === 'HEAD') && path.startsWith(mediaApiPath))) return null;
+    req.signal?.throwIfAborted();
     const rel = path.slice(mediaApiPath.length);
     // Explicit '..' segment check: attempts to escape -> 403 (the
     // normalize() clamp below additionally prevents silent escapes).
@@ -33,18 +31,20 @@ export function createMediaRoutes(mediaDir: string): { tryHandle: RouteTry } {
     // failure (missing file / broken link) maps to 404.
     let realTarget: string;
     try {
-      const realRoot = realpathSync(mediaRoot);
-      realTarget = realpathSync(target);
+      const realRoot = await realpath(mediaRoot);
+      req.signal?.throwIfAborted();
+      realTarget = await realpath(target);
       if (!isInsideDir(realTarget, realRoot)) {
         return { status: 403, body: { error: 'path-denied', message: 'path escapes media root' } };
       }
     } catch {
       return { status: 404, body: { error: 'not-found', message: 'media file not found' } };
     }
-    if (!statSync(realTarget).isFile()) {
+    req.signal?.throwIfAborted();
+    if (!(await statIfPresent(realTarget, req.signal))?.isFile()) {
       return { status: 404, body: { error: 'not-found', message: 'media file not found' } };
     }
-    return { status: 200, file: realTarget };
+    return { status: 200, file: realTarget, canonical: true };
   };
 
   return { tryHandle };

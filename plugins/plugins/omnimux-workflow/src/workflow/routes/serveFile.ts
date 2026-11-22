@@ -1,9 +1,15 @@
-import { createReadStream, readFileSync, statSync } from 'node:fs';
 import type { ServerResponse } from 'node:http';
 import { extname } from 'node:path';
-import { brotliCompressSync, constants as zlibConstants, gzipSync } from 'node:zlib';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { promisify } from 'node:util';
+import { brotliCompress, constants as zlibConstants, gzip } from 'node:zlib';
+import { SerialFileWork, SharedFileWork, withRegularFile } from '../../projects/asyncFiles.ts';
+import { readMediaIntegrity, verifiedMediaBytes } from '../../projects/mediaRevision.ts';
+import { sendJson } from '../../http/helpers.ts';
+import { detectMimeFromHandle, detectMimeFromHead } from '../../shared/localMedia.ts';
 import { parseByteRange } from '../byteRange';
-import { detectMimeFromFile } from '../../shared/localMedia';
+import type { BundleArtifact } from './staticRoutes';
 
 const MIME_BY_EXT: Record<string, string> = {
   '.js': 'application/javascript; charset=utf-8',
@@ -30,53 +36,87 @@ function securityHeadersFor(mime: string): Record<string, string> {
   return headers;
 }
 
-/** Stream workflow media and static files with MIME and Range support. */
-export function serveFile(res: ServerResponse, filePath: string, fallbackMime: string, rangeHeader?: string): void {
-  const mime = detectMimeFromFile(filePath, MIME_BY_EXT[extname(filePath)] ?? fallbackMime);
-  const securityHeaders = securityHeadersFor(mime);
-  const stat = statSync(filePath);
-  const range = parseByteRange(rangeHeader, stat.size);
-  if (range && 'invalid' in range) {
-    res.writeHead(416, { 'Content-Range': `bytes */${stat.size}`, 'Content-Type': 'text/plain; charset=utf-8' });
-    res.end('Requested Range Not Satisfiable');
-    return;
-  }
-  if (range) {
-    const chunkSize = range.end - range.start + 1;
-    res.writeHead(206, {
-      ...securityHeaders,
-      'Content-Type': mime, 'Content-Length': chunkSize,
-      'Content-Range': `bytes ${range.start}-${range.end}/${stat.size}`,
-      'Accept-Ranges': 'bytes', 'Cache-Control': 'no-cache',
-    });
-    const stream = createReadStream(filePath, { start: range.start, end: range.end });
-    stream.on('error', () => { res.destroy(); });
-    stream.pipe(res);
-    return;
-  }
-  res.writeHead(200, {
-    ...securityHeaders,
-    'Content-Type': mime, 'Content-Length': stat.size,
-    'Accept-Ranges': 'bytes', 'Cache-Control': 'no-cache',
-  });
-  const stream = createReadStream(filePath);
-  stream.on('error', () => { res.destroy(); });
-  stream.pipe(res);
+interface FileOptions {
+  fallbackMime?: string;
+  range?: string;
+  signal?: AbortSignal;
+  head?: boolean;
+  name?: string;
+  canonical?: boolean;
+  mediaDigest?: string;
 }
 
-export interface IslandBundleOptions {
-  /** Strong ETag (quoted build hash) carried by the content-addressed URL. */
-  etag: string;
-  range?: string;
+/** Open, sniff and stream the same file descriptor, including for a Range. */
+export async function serveFile(res: ServerResponse, file: string, response: FileOptions | string, rangeHeader?: string): Promise<void> {
+  const options = typeof response === 'string' ? { fallbackMime: response, range: rangeHeader } : response;
+  const { signal, head, name = file } = options;
+  await withRegularFile(file, signal, async (handle, stat) => {
+    const integrity = options.mediaDigest ? await readMediaIntegrity(file, signal, stat).catch(() => null) : undefined;
+    signal?.throwIfAborted();
+    if (options.mediaDigest && options.mediaDigest !== integrity?.digest) {
+      sendJson(res, 409, { error: 'media-version-mismatch' });
+      return;
+    }
+    const size = Number(stat.size);
+    const range = parseByteRange(options.range, size);
+    if (range && 'invalid' in range) {
+      res.writeHead(416, { 'Content-Range': `bytes */${size}`, 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Requested Range Not Satisfiable');
+      return;
+    }
+    const start = range?.start ?? 0;
+    const end = range?.end ?? size - 1;
+    const verified = integrity && !head && size > 0 ? verifiedMediaBytes(handle, integrity, start, end, signal) : undefined;
+    const fallbackMime = MIME_BY_EXT[extname(name)] ?? options.fallbackMime;
+    const mime = integrity
+      ? integrity.sniffedMime ?? detectMimeFromHead(name, undefined, fallbackMime)
+      : await detectMimeFromHandle(handle, name, fallbackMime, signal);
+    // Verify the first block before committing HTTP headers. Later changes
+    // terminate the transfer without yielding any unverified bytes.
+    const first = await verified?.next().catch(() => null);
+    signal?.throwIfAborted();
+    if (verified && !first?.value) {
+      sendJson(res, 409, { error: 'media-version-mismatch' });
+      return;
+    }
+    res.writeHead(range ? 206 : 200, {
+      ...securityHeadersFor(mime),
+      'Content-Type': mime,
+      'Content-Length': range ? range.end - range.start + 1 : size,
+      ...(range ? { 'Content-Range': `bytes ${range.start}-${range.end}/${size}` } : {}),
+      'Accept-Ranges': 'bytes',
+      'Cache-Control': 'no-cache',
+    });
+    if (head || size === 0) {
+      res.end();
+      return;
+    }
+    async function* fromVerified() {
+      yield first!.value!;
+      yield* verified!;
+    }
+    const stream = verified ? Readable.from(fromVerified(), { objectMode: false }) : handle.createReadStream({ start, end });
+    await pipeline(stream, res, { signal });
+  }, options.canonical);
+}
+
+interface IslandBundleOptions {
+  signal?: AbortSignal;
   acceptEncoding?: string;
   ifNoneMatch?: string;
 }
 
-/** The bundle URL carries `?v=<sha256[:16]>`, so those bytes never change in place. */
 const ISLAND_CACHE_CONTROL = 'public, max-age=31536000, immutable';
+const brotli = promisify(brotliCompress);
+const deflateGzip = promisify(gzip);
 
-/** Compressed bundle bodies, reused until the artifact on disk changes. */
-const compressedBundles = new Map<string, { stamp: string; body: Buffer }>();
+interface CompressedBundle {
+  bodies: Map<string, Buffer>;
+  pending: SharedFileWork<Buffer>;
+}
+const compressedBundles = new WeakMap<BundleArtifact, CompressedBundle>();
+// Keep a cold burst of different representations from monopolizing libuv.
+const compressionQueue = new SerialFileWork();
 
 /** gzip/br negotiation; brotli wins when both are offered, q=0 refuses. */
 function pickBundleEncoding(acceptEncoding: string | undefined): 'br' | 'gzip' | null {
@@ -105,62 +145,51 @@ function etagMatches(ifNoneMatch: string | undefined, etag: string): boolean {
   });
 }
 
-/**
- * Island bundle response for a content-addressed `?v=` URL: immutable caching,
- * strong ETag (304 on If-None-Match), and gzip/br on the wire when accepted.
- * Range requests keep the generic media path; non-addressed files never reach here.
- */
-export function serveIslandBundle(res: ServerResponse, filePath: string, options: IslandBundleOptions): void {
-  if (options.range) {
-    serveFile(res, filePath, 'application/octet-stream', options.range);
-    return;
+async function compressedBody(artifact: BundleArtifact, encoding: 'br' | 'gzip', signal?: AbortSignal) {
+  let bundle = compressedBundles.get(artifact);
+  if (!bundle) {
+    bundle = { bodies: new Map(), pending: new SharedFileWork() };
+    compressedBundles.set(artifact, bundle);
   }
-  const mime = detectMimeFromFile(filePath, MIME_BY_EXT[extname(filePath)] ?? 'application/octet-stream');
+  const { bodies, pending } = bundle;
+  const cached = bodies.get(encoding);
+  if (cached) return cached;
+  return pending.run(encoding, signal, async (compressionSignal) => {
+    const raw = artifact.bytes;
+    const body = await compressionQueue.run(compressionSignal, () => encoding === 'br'
+      ? brotli(raw, { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 5, [zlibConstants.BROTLI_PARAM_SIZE_HINT]: raw.length } })
+      : deflateGzip(raw, { level: 6 }));
+    compressionSignal.throwIfAborted();
+    bodies.set(encoding, body);
+    return body;
+  });
+}
+
+/** Serve bytes captured with the ETag, even if a rebuild replaces the file meanwhile. */
+export async function serveIslandBundle(res: ServerResponse, file: string, artifact: BundleArtifact, options: IslandBundleOptions): Promise<void> {
+  const { signal } = options;
+  signal?.throwIfAborted();
+  const etag = `"${artifact.version}"`;
+  const mime = detectMimeFromHead(file, artifact.bytes, MIME_BY_EXT[extname(file)]);
   const headers = {
     ...securityHeadersFor(mime),
     'Cache-Control': ISLAND_CACHE_CONTROL,
-    ETag: options.etag,
+    ETag: etag,
     Vary: 'Accept-Encoding',
   };
-  if (etagMatches(options.ifNoneMatch, options.etag)) {
+  if (etagMatches(options.ifNoneMatch, etag)) {
     res.writeHead(304, headers);
     res.end();
     return;
   }
-  const stat = statSync(filePath);
   const encoding = pickBundleEncoding(options.acceptEncoding);
-  if (!encoding) {
-    res.writeHead(200, {
-      ...headers,
-      'Content-Type': mime, 'Content-Length': stat.size, 'Accept-Ranges': 'bytes',
-    });
-    const stream = createReadStream(filePath);
-    stream.on('error', () => { res.destroy(); });
-    stream.pipe(res);
-    return;
-  }
-  const stamp = `${stat.mtimeMs}:${stat.size}`;
-  const cacheKey = `${filePath}\u0000${encoding}`;
-  const cached = compressedBundles.get(cacheKey);
-  let body: Buffer;
-  if (cached && cached.stamp === stamp) {
-    body = cached.body;
-  } else {
-    const raw = readFileSync(filePath);
-    body = encoding === 'br'
-      // Quality 5 keeps the 2.6MB canvas bundle at ~53ms; the default 11 takes ~6s.
-      ? brotliCompressSync(raw, {
-          params: {
-            [zlibConstants.BROTLI_PARAM_QUALITY]: 5,
-            [zlibConstants.BROTLI_PARAM_SIZE_HINT]: raw.length,
-          },
-        })
-      : gzipSync(raw, { level: 6 });
-    compressedBundles.set(cacheKey, { stamp, body });
-  }
+  const body = encoding ? await compressedBody(artifact, encoding, signal) : artifact.bytes;
+  signal?.throwIfAborted();
   res.writeHead(200, {
     ...headers,
-    'Content-Type': mime, 'Content-Encoding': encoding, 'Content-Length': body.length,
+    'Content-Type': mime,
+    'Content-Length': body.length,
+    ...(encoding ? { 'Content-Encoding': encoding } : { 'Accept-Ranges': 'bytes' }),
   });
   res.end(body);
 }

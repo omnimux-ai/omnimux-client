@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -147,10 +148,14 @@ test('mounted workflow Host registers the route and resolves ctx.get speechToTex
   const call = async (url, body) => {
     let status;
     let payload;
+    const response = Object.assign(new EventEmitter(), {
+      writeHead(value) { status = value; },
+      end(text) { payload = JSON.parse(text); },
+    });
     await handler({
       method: 'POST', url, headers: { origin: 'http://localhost:45120' },
       async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify(body)); },
-    }, { writeHead(value) { status = value; }, end(text) { payload = JSON.parse(text); } });
+    }, response);
     return { status, body: payload };
   };
   const created = await call('/omnimux-workflow/api/workspaces', { name: 'Host STT' });

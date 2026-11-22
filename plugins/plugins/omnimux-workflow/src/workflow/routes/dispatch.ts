@@ -34,11 +34,13 @@ export interface WorkflowDispatcherDeps {
   /** Injected native picker (tests). Production: hub `nativeFilePicker` seam via `getSeam`. */
   picker?: (kind: string) => Promise<{ path: string | null; paths: string[] }>;
   templates?: TemplateStore;
-  /** Shared with host mount so generate persist and HTTP ingest use one ledger. */
+  /** Caller override whose file resolver is authoritative. */
   assetsStore?: ProjectAssetsStore;
+  /** Host-owned asset ledger with the default project and free-canvas roots. */
+  builtInAssetsStore?: ProjectAssetsStore;
   /** Same ProjectStore as mountWorkflowHost — avoid a second libraryRoot. */
   projectStore?: ProjectStore;
-  /** Project root or user-level free-canvas root for asset/media writes. */
+  /** Project root for asset writes and a dispatcher-created store's media reads. */
   resolveAssetsRoot?: (workspaceId: string) => { path: string } | null;
   /**
    * 会话 id → 工作区目录（宿主 `agents` 服务的会话 `header.cwd`）。
@@ -59,6 +61,9 @@ export interface WorkflowDispatchRequest {
   secure?: boolean;
   body?: unknown;
   range?: string;
+  signal?: AbortSignal;
+  /** The raw HTTP adapter verifies a media revision on the descriptor it streams. */
+  streamFiles?: boolean;
   /** Set only by the authenticated raw HTTP adapter, never an Agent argument. */
   browserOwner?: string;
   directorSession?: import('../director/directorSession.ts').DirectorSessionContext;
@@ -68,7 +73,7 @@ export interface WorkflowDispatchRequest {
 
 export type DispatchResult =
   | { status: number; body?: unknown }
-  | { status: number; file: string }
+  | { status: number; file: string; name?: string; canonical?: boolean; mediaDigest?: string }
   | { status: number; sse: { context: ExecutionContext; eventLog: ExecutionEventLogEntry[] } };
 
 export type RouteTry = (

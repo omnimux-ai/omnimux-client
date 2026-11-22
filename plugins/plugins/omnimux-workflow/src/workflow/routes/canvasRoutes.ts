@@ -53,7 +53,7 @@ import {
 import { WorkflowStoreError } from '../workspace/WorkspaceStore';
 import { ProjectPathError } from '../../projects/paths';
 import { createSSEPublisher } from '../execution/ExecutionSSE';
-import { createMediaRevision } from '../../projects/mediaRevision.ts';
+import { createMediaRevision, createListMediaRevision, createProjectMediaResolver, type ResolveCanvasProject } from '../../projects/mediaRevision.ts';
 import { createProjectDispatcher } from '../../projects/routes';
 import type {
   DispatchResult,
@@ -145,14 +145,25 @@ export function createWorkflowDispatcher(deps: WorkflowDispatcherDeps) {
   const directorRoutes = createDirectorRoutes(store);
   const libraryHttp = createLibraryServiceClient(() => deps.getSeam?.('assetLibrary'));
   const resolveAssetsRoot = deps.resolveAssetsRoot ?? ((workspaceId: string) => projectStore.findByCanvasWorkspaceId(workspaceId));
-  const assetsStore = deps.assetsStore ?? createProjectAssetsStore({
+  const assetsStore = deps.assetsStore ?? deps.builtInAssetsStore ?? createProjectAssetsStore({
     workspacesDir: store.workspacesDir,
     resolveProjectRoot: resolveAssetsRoot,
     fetchLibraryDetail: libraryHttp.fetchLibraryDetail,
     promoteToLibrary: libraryHttp.promoteToLibrary,
   });
-  const projectDispatcher = createProjectDispatcher({ libraryRoot, workspaceStore: store,
+  const allowFreeCanvas = Boolean(deps.builtInAssetsStore);
+  const readRootOverride = allowFreeCanvas ? undefined : deps.resolveAssetsRoot;
+  const resolveProject: ResolveCanvasProject = async (id, signal) => {
+    const owner = await projectStore.findCanvasProjectForRead(id, signal);
+    signal?.throwIfAborted();
+    return readRootOverride ? projectStore.withCanvasProject(id, owner, () => readRootOverride(id)?.path) : owner?.path;
+  };
+  const media = deps.assetsStore ? undefined : {
+    resolveFile: createProjectMediaResolver(store.workspacesDir, { allowFreeCanvas }), resolveProject,
+  };
+  const projectDispatcher = createProjectDispatcher({ libraryRoot, projectStore, workspaceStore: store, resolveAssetsRoot: readRootOverride,
     mediaRevision: createMediaRevision(mediaDir, (workspaceId, relativePath) => assetsStore.resolveProjectFile(workspaceId, relativePath)),
+    listMediaRevision: media && createListMediaRevision(mediaDir, media.resolveFile),
     resolveSessionWorkspaceDir: deps.resolveSessionWorkspaceDir,
   });
   const projectAssetsRoutes = createProjectAssetsRoutes(assetsStore, {}, async (workspaceId) => {
@@ -162,7 +173,7 @@ export function createWorkflowDispatcher(deps: WorkflowDispatcherDeps) {
     if (!deps.resolveAssetsRoot && !projectStore.findByCanvasWorkspaceId(workspaceId)) {
       projectStore.create(snapshot.name, { canvasWorkspaceIds: [workspaceId] });
     }
-  });
+  }, media);
   const directorAssistant = createDirectorAssistantRoutes({ store, assetsStore, getSeam: deps.getSeam });
   const directorOperationRoutes = createDirectorOperationRoutes(deps.directorOperations);
   const appExecutionRoutes = createAppExecutionRoutes({ headlessSeam: deps.headlessSeam });
@@ -248,17 +259,6 @@ export function createWorkflowDispatcher(deps: WorkflowDispatcherDeps) {
       return WORKFLOW_ROUTE_PREFIX + path.slice(LEGACY_WORKFLOW_ROUTE_PREFIX.length);
     }
     return path;
-  }
-
-  /**
-   * Strong ETag for an island bundle request whose `?v=` equals the current
-   * build hash. The URL is then content-addressed, so immutable caching is
-   * safe; absent or stale versions keep the unchanged no-cache path.
-   */
-  function bundleEtag(path: string, requestedVersion: string | null): string | null {
-    if (!requestedVersion) return null;
-    const version = staticRoutes.bundleVersion(path);
-    return version === requestedVersion ? `"${version}"` : null;
   }
 
   async function dispatch(req: WorkflowDispatchRequest): Promise<DispatchResult> {
@@ -379,7 +379,7 @@ export function createWorkflowDispatcher(deps: WorkflowDispatcherDeps) {
     return refreshed?.epoch === session.epoch && deps.directorSessionFactory.isCurrent(session);
   };
   const accountCatalogScoped = () => Boolean((deps.getSeam?.('modelCatalog') as { isAccountScoped?: () => boolean } | undefined)?.isAccountScoped?.());
-  return { dispatch, bundleEtag, authorizeHostRequest, accountCatalogScoped, directorSession, directorSessionCurrent, handleAudioRequest: audioRoutes.handle, handleDirectorRequest: directorBytes.handle };
+  return { dispatch, versionedBundle: staticRoutes.versionedBundle, authorizeHostRequest, accountCatalogScoped, directorSession, directorSessionCurrent, handleAudioRequest: audioRoutes.handle, handleDirectorRequest: directorBytes.handle };
 }
 
 /**
@@ -393,7 +393,11 @@ export function registerWorkflowRoutes(
 ): () => void {
   const makeHandler = () => {
     return async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
+      const lifetime = new AbortController();
+      const onClose = () => { if (!res.writableFinished) lifetime.abort(); };
+      res.once('close', onClose);
       try {
+        if (res.destroyed) return;
         let authenticatedDirectorSession: import('../director/directorSession.ts').DirectorSessionContext | undefined;
         const requestUrl = new URL(req.url || '/', 'http://127.0.0.1');
         const requestPath = decodeURIComponent(requestUrl.pathname);
@@ -433,6 +437,8 @@ export function registerWorkflowRoutes(
           host: header(req, 'host'),
           secure: Boolean((req.socket as { encrypted?: boolean } | undefined)?.encrypted),
           range: header(req, 'range'),
+          signal: lifetime.signal,
+          streamFiles: true,
           body,
           browserOwner: authenticatedDirectorSession?.owner,
           directorSession: authenticatedDirectorSession,
@@ -445,17 +451,21 @@ export function registerWorkflowRoutes(
             return dispatcher.directorSessionCurrent(authenticatedDirectorSession!, req) ? authenticatedDirectorSession!.modelTaskOwner : null;
           } : undefined,
         });
+        if (lifetime.signal.aborted) return;
         if ('file' in result) {
-          const etag = dispatcher.bundleEtag(requestPath, requestUrl.searchParams.get('v'));
-          if (etag) {
-            serveIslandBundle(res, result.file, {
-              etag,
-              range: header(req, 'range'),
+          const range = header(req, 'range');
+          const artifact = range ? null : await dispatcher.versionedBundle(requestPath, requestUrl.searchParams.get('v'), lifetime.signal);
+          if (artifact) {
+            await serveIslandBundle(res, result.file, artifact, {
+              signal: lifetime.signal,
               acceptEncoding: header(req, 'accept-encoding'),
               ifNoneMatch: header(req, 'if-none-match'),
             });
           } else {
-            serveFile(res, result.file, 'application/octet-stream', header(req, 'range'));
+            await serveFile(res, result.file, {
+              range, signal: lifetime.signal, head: method === 'HEAD',
+              name: result.name, canonical: result.canonical, mediaDigest: result.mediaDigest,
+            });
           }
           return;
         }
@@ -468,6 +478,8 @@ export function registerWorkflowRoutes(
         }
         sendJson(res, result.status, result.body ?? {});
       } catch (error) {
+        if (lifetime.signal.aborted || res.destroyed) return;
+        if (res.headersSent) { res.destroy(); return; }
         if (error instanceof JsonBodyLimitError) {
           sendJson(res, STATUS_BY_CODE['body-too-large'] ?? 413, {
             error: 'body-too-large',
@@ -477,6 +489,8 @@ export function registerWorkflowRoutes(
         }
         if ((error as { code?: string }).code === 'not-local') { sendJson(res, 403, { error: 'not-local' }); return; }
         sendJson(res, 500, { error: 'internal', message: 'internal error' });
+      } finally {
+        res.removeListener('close', onClose);
       }
     };
   };

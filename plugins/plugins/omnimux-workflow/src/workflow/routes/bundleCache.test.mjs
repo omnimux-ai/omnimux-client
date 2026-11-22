@@ -8,6 +8,9 @@
  * CI rebuilds the host bundle from src before the plugin suites.
  */
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { mkdtemp, mkdir, rename, rm, writeFile } from 'node:fs/promises';
+import { createStaticRoutes } from './staticRoutes.ts';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -243,4 +246,32 @@ test('用户媒体文件（视频）保持 no-cache、不压缩', async (t) => {
   assert.equal(ranged.status, 206);
   assert.equal(ranged.headers['Cache-Control'], 'no-cache');
   assert.deepEqual(ranged.body, video.subarray(0, 4));
+});
+
+test('manifest and concurrent versioned requests share bytes and refresh after a same-size rebuild', async t => {
+  const pluginRoot = await mkdtemp(join(tmpdir(), 'workflow-dev-bundle-'));
+  t.after(() => rm(pluginRoot, { recursive: true, force: true }));
+  const file = join(pluginRoot, 'lib', 'canvas.js');
+  await mkdir(join(pluginRoot, 'lib'));
+  const oldBytes = Buffer.from('export const first = "a";');
+  const newBytes = Buffer.from('export const first = "b";');
+  const hash = bytes => createHash('sha256').update(bytes).digest('hex').slice(0, 16);
+  await writeFile(file, oldBytes);
+  const routes = createStaticRoutes({ pluginRoot, gateway: {} });
+  const bundle = '/omnimux-workflow/canvas.js';
+  const manifest = '/omnimux-workflow/api/manifest';
+  const request = { method: 'GET', url: manifest };
+  const [initial, first, second] = await Promise.all([
+    routes.tryBundle('GET', manifest, request),
+    routes.versionedBundle(bundle, hash(oldBytes)),
+    routes.versionedBundle(bundle, hash(oldBytes)),
+  ]);
+  assert.equal(initial.body.canvasHash, hash(oldBytes));
+  assert.equal(first, second);
+  assert.deepEqual(first.bytes, oldBytes);
+  await writeFile(`${file}.new`, newBytes);
+  await rename(`${file}.new`, file);
+  assert.equal(await routes.versionedBundle(bundle, hash(oldBytes)), null);
+  assert.deepEqual((await routes.versionedBundle(bundle, hash(newBytes))).bytes, newBytes);
+  assert.deepEqual(first.bytes, oldBytes);
 });

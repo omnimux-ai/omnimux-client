@@ -201,12 +201,23 @@ export function detectMimeFromFile(
   filePath: string,
   fallbackMime = 'application/octet-stream',
 ): string {
-  const head = readFileHead(filePath, SNIFF_HEAD_BYTES);
-  if (head && head.length > 0) {
-    const sniffed = sniffMimeType(head);
-    if (sniffed) return sniffed;
-  }
-  return mimeFromFilename(filePath) ?? MIME_BY_EXT[extensionOf(filePath)] ?? fallbackMime;
+  return detectMimeFromHead(filePath, readFileHead(filePath), fallbackMime);
+}
+
+export function detectMimeFromHead(filePath: string, head?: Uint8Array, fallbackMime = 'application/octet-stream'): string {
+  return (head ? sniffMimeType(head.subarray(0, SNIFF_HEAD_BYTES)) : undefined) ?? mimeFromFilename(filePath) ?? fallbackMime;
+}
+
+/** The positioned probe leaves the stream offset on this handle unchanged. */
+export async function detectMimeFromHandle(handle: {
+  read(buffer: Uint8Array, offset: number, length: number, position: number): Promise<{ bytesRead: number }>;
+}, filePath: string,
+  fallbackMime?: string, signal?: AbortSignal): Promise<string> {
+  signal?.throwIfAborted();
+  const buffer = new Uint8Array(SNIFF_HEAD_BYTES);
+  const read = await handle.read(buffer, 0, buffer.length, 0).catch(() => null);
+  signal?.throwIfAborted();
+  return detectMimeFromHead(filePath, read ? buffer.subarray(0, read.bytesRead) : undefined, fallbackMime);
 }
 
 export function extensionOf(filename: string): string {
