@@ -185,6 +185,7 @@ interface CanvasEditorProps {
    * 画布 hydrate 完成后聚焦该组（组中心 + 单选），组工具条随之可见。
    */
   focusGroupId?: string | null;
+  clipMediaFocus?: { requestId: string; nodeId: string; projectId: string };
 }
 
 const CanvasEditorContent: React.FC<CanvasEditorProps> = ({
@@ -197,6 +198,7 @@ const CanvasEditorContent: React.FC<CanvasEditorProps> = ({
   onResetExecution,
   onSwitchWorkspaceId,
   focusGroupId,
+  clipMediaFocus,
 }) => {
   const t = useT();
   const importGuard = useAsyncInstanceGuard(workspaceId);
@@ -654,6 +656,18 @@ const CanvasEditorContent: React.FC<CanvasEditorProps> = ({
     });
     if (focused) focusedGroupRef.current = targetGroupId;
   }, [focusGroupId, nodes, flowNodes, setCenter, setNodes]);
+
+  const focusedClipReturn = useRef<string | undefined>(undefined);
+  const viewportReady = reactFlowInstance.viewportInitialized;
+  useEffect(() => {
+    if (!clipMediaFocus || !viewportReady || focusedClipReturn.current === clipMediaFocus.requestId) return;
+    const node = nodes.find(item => item.id === clipMediaFocus.nodeId && item.type === 'video_composition'
+      && 'projectId' in item.data && item.data.projectId === clipMediaFocus.projectId && !hiddenNodeIds.has(item.id));
+    if (node && applyFocusCanvasNode({ nodes: flowNodes, nodeId: node.id, setCenter, setNodes })) {
+      focusedClipReturn.current = clipMediaFocus.requestId;
+      setSelectedElement('node', node.id);
+    }
+  }, [clipMediaFocus, viewportReady, flowNodes, setCenter, setNodes, setSelectedElement]);
 
   // 连线入口：store.onConnect 内部经 mutation gateway 校验
   const handleConnect = useCallback(

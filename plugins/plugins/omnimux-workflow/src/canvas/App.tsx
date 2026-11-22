@@ -10,7 +10,7 @@
  * 冲突条仍保留，日常保存态不再占 chrome。
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import CanvasEditor from './editor/CanvasEditor';
 import { CanvasErrorBoundary } from './ui/CanvasErrorBoundary';
 import { useExecutionController } from './hooks/useExecutionController';
@@ -27,8 +27,19 @@ import { prepareDirectorClose } from './bridge/directorLifecycle';
 import { DirectorPanel } from './components/director-panel/DirectorPanel.tsx';
 import type { CanvasWorkspaceSnapshot } from '../shared/canvasTypes';
 import type { CanvasClipBinding } from './bridge/clipEvents';
-import { installCanvasClipEvents, openCanvasClipNode } from './bridge/canvasClipActions';
+import { captureCanvasMediaReturn, installCanvasClipEvents, openCanvasClipNode, type CanvasClipMediaReturn } from './bridge/canvasClipActions';
+import { collectStudioReturnOutputs, sameClipMediaOutput, type CanvasMediaReturnBaseline, type ClipMediaOutput } from './bridge/clipMediaOutputs';
 import { CanvasClipLauncher, updateClipNodeData } from './bridge/clipLauncher';
+
+export interface CanvasMediaReturnAdapter {
+  workspaceId: string;
+  initialWorkspaceId?: string;
+  isReady: () => boolean;
+  captureBaseline: (binding: CanvasClipBinding) => CanvasMediaReturnBaseline | undefined;
+  getOutputs: () => readonly ClipMediaOutput[];
+  subscribeOutputs: (listener: () => void) => () => void;
+  reopen: (binding: CanvasClipBinding, mediaReturn: CanvasClipMediaReturn, isCurrent: () => boolean) => Promise<boolean>;
+}
 
 export interface CanvasAppProps {
   /** 宿主可传；岛内顶栏已撤，关闭走宿主 tab / overlay。 */
@@ -43,10 +54,14 @@ export interface CanvasAppProps {
   onActivePageChange?: (workspaceId: string) => void;
   clipNavigation?: CanvasClipBinding;
   onClipNavigationHandled?: (request: CanvasClipBinding) => void;
+  clipMediaFocus?: CanvasClipBinding & { requestId: string };
+  existingWorkspaceOnly?: boolean;
+  registerMediaReturnCanvas?: (canvas: CanvasMediaReturnAdapter) => () => void;
 }
 
 const App: React.FC<CanvasAppProps> = ({
   locale, workspaceId: propWorkspaceId, focusGroupId, onActivePageChange, clipNavigation, onClipNavigationHandled,
+  clipMediaFocus, existingWorkspaceOnly, registerMediaReturnCanvas,
 }) => {
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState(propWorkspaceId);
 
@@ -61,6 +76,7 @@ const App: React.FC<CanvasAppProps> = ({
   const flushRef = useRef(() => {});
   const { boot, setBoot, catalog } = useCanvasBoot({
     workspaceId: currentWorkspaceId,
+    existingWorkspaceOnly: existingWorkspaceOnly && currentWorkspaceId === propWorkspaceId,
     beforeReset: () => {
       flushRef.current();
     },
@@ -69,6 +85,7 @@ const App: React.FC<CanvasAppProps> = ({
   const handleSwitchWorkspace = useCallback(async (newWorkspaceId: string) => {
     if (!await prepareDirectorClose()) return;
     flushRef.current();
+    clipScope.current.currentWorkspaceId = newWorkspaceId;
     setCurrentWorkspaceId(newWorkspaceId);
     onActivePageChange?.(newWorkspaceId);
   }, [onActivePageChange]);
@@ -112,14 +129,15 @@ const App: React.FC<CanvasAppProps> = ({
     return () => { clipOpenSequence.current += 1; remove(); };
   }, [readyWorkspaceId, t]);
 
-  const openClip = useCallback(async (nodeId: string, navigation?: CanvasClipBinding) => {
+  const openClip = useCallback(async (nodeId: string, navigation?: CanvasClipBinding,
+    mediaReturn?: CanvasClipMediaReturn & { isCurrent: () => boolean }) => {
     const workspaceId = clipScope.current.workspace?.id;
     if (!workspaceId) return;
     const attempt = ++clipOpenSequence.current;
     const stillCurrent = () => {
       const scope = clipScope.current;
-      return clipOpenSequence.current === attempt && scope.workspace?.id === workspaceId
-        && scope.currentWorkspaceId === workspaceId && (!navigation || scope.clipNavigation === navigation);
+      return clipOpenSequence.current === attempt && scope.workspace?.id === workspaceId && scope.currentWorkspaceId === workspaceId
+        && (mediaReturn ? mediaReturn.isCurrent() : !navigation || scope.clipNavigation === navigation);
     };
     try {
       const binding = await openCanvasClipNode({
@@ -130,21 +148,58 @@ const App: React.FC<CanvasAppProps> = ({
         updateNode: updateClipNodeData,
         ensurePersisted: async (target) => {
           const saved = clipScope.current.workspace?.nodes.find((node) => node.id === nodeId);
-          if (saved?.data.projectId !== target.projectId) await persistence.saveNow();
+          if (mediaReturn || saved?.data.projectId !== target.projectId) await persistence.saveNow();
         },
         stillCurrent,
         target: window,
         defaultTitle: t('node.type.video_composition'),
+        mediaReturn,
       });
-      if (binding && !navigation) window.setTimeout(() => {
+      if (binding && !navigation && !mediaReturn) window.setTimeout(() => {
         if (stillCurrent() && !(window as Window & { __omnimuxClipReady?: boolean }).__omnimuxClipReady) {
           toast.warning(t('clip.needPlugin'));
         }
       }, 400);
+      return binding;
     } catch (error) {
-      if (!navigation && stillCurrent()) toast.error(error instanceof Error ? error.message : t('audio.saveFailed'));
+      if (!navigation && !mediaReturn && stillCurrent()) toast.error(error instanceof Error ? error.message : t('audio.saveFailed'));
     }
   }, [persistence.saveNow, t]);
+
+  const openClipRef = useRef(openClip);
+  openClipRef.current = openClip;
+  useLayoutEffect(() => {
+    if (!registerMediaReturnCanvas || !readyWorkspaceId || readyWorkspaceId !== currentWorkspaceId) return;
+    let connected = true;
+    const origin = window.location.origin;
+    const isReady = () => connected && clipScope.current.workspace?.id === readyWorkspaceId
+      && clipScope.current.currentWorkspaceId === readyWorkspaceId;
+    let lastNodes: ReturnType<typeof useCanvasStore.getState>['nodes'] | undefined;
+    let outputs: readonly ClipMediaOutput[] = [];
+    const unregister = registerMediaReturnCanvas({
+      workspaceId: readyWorkspaceId,
+      initialWorkspaceId: propWorkspaceId,
+      isReady,
+      captureBaseline: binding => isReady() && binding.workspaceId === readyWorkspaceId
+        ? captureCanvasMediaReturn(useCanvasStore.getState(), binding, origin) : undefined,
+      getOutputs() {
+        const nodes = useCanvasStore.getState().nodes;
+        if (lastNodes !== nodes && isReady()) {
+          const next = collectStudioReturnOutputs(nodes, readyWorkspaceId, origin);
+          if (outputs.length !== next.length || next.some((row, index) => row.name !== outputs[index]?.name
+            || !sameClipMediaOutput(outputs[index], row))) outputs = next;
+          lastNodes = nodes;
+        }
+        return outputs;
+      },
+      subscribeOutputs: listener => useCanvasStore.subscribe((state, previous) => {
+        if (state.nodes !== previous.nodes && isReady()) listener();
+      }),
+      reopen: async (binding, mediaReturn, isCurrent) => isReady() && binding.workspaceId === readyWorkspaceId
+        && Boolean(await openClipRef.current(binding.nodeId, binding, { ...mediaReturn, origin, isCurrent })),
+    });
+    return () => { connected = false; unregister(); };
+  }, [registerMediaReturnCanvas, readyWorkspaceId, currentWorkspaceId, propWorkspaceId]);
 
   useEffect(() => {
     if (!clipNavigation || handledClipNavigation.current === clipNavigation
@@ -300,6 +355,8 @@ const App: React.FC<CanvasAppProps> = ({
               catalog={catalog}
               workspaceId={workspace?.id ?? null}
               focusGroupId={focusGroupId}
+              clipMediaFocus={clipMediaFocus?.workspaceId === readyWorkspaceId && readyWorkspaceId === currentWorkspaceId
+                ? clipMediaFocus : undefined}
               onExecuteNodeIds={(nodeIds, meta) => {
                 // M4 组/子集执行入口（右键菜单）：subset 模式自动补传递上游闭包。
                 void execution.startExecution({

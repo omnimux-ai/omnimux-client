@@ -92,6 +92,9 @@ export function installWorkflowGlobal(target, deps) {
     startReplicationProject(input) {
       return startReplicationProject(deps, input)
     },
+    prepareClipMediaReturn(request) {
+      return deps?.prepareClipMediaReturn?.(request)
+    },
   }
   target[WORKFLOW_GLOBAL_KEY] = api
   return () => {

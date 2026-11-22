@@ -98,17 +98,29 @@ interface ClipUpstreamMedia {
   sourceVersion?: string;
 }
 
+export interface ClipMediaUpstreamInputs {
+  videos: Array<ClipUpstreamMedia & { durationMs?: number }>;
+  audios: Array<ClipUpstreamMedia & { durationMs?: number }>;
+  images: Array<ClipUpstreamMedia & { displayDurationMs?: number }>;
+}
+
+export interface ClipMediaReturnRow {
+  id: string;
+  name: string;
+  type: Exclude<ClipMediaType, 'text'>;
+  url: string;
+  version?: string;
+}
+
 export interface OpenClipEditorPayload extends CanvasClipBinding {
   source: 'canvas';
   nodeTitle?: string;
   draftSchema?: TimelineSchema;
   draftRevision?: number;
-  upstreamInputs?: {
-    videos: Array<ClipUpstreamMedia & { durationMs?: number }>;
-    audios: Array<ClipUpstreamMedia & { durationMs?: number }>;
-    images: Array<ClipUpstreamMedia & { displayDurationMs?: number }>;
+  upstreamInputs?: ClipMediaUpstreamInputs & {
     captions?: Array<{ text: string; startTimeMs: number; durationMs: number }>;
   };
+  mediaReturn?: { requestId: string; upstreamInputs: ClipMediaUpstreamInputs };
   canvasConfig?: Partial<CanvasConfig>;
 }
 

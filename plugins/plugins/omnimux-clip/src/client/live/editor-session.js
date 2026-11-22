@@ -17,7 +17,7 @@ export function assertProjectId(id) {
 function matchesAtSite(left, right) {
   return Boolean(left && right && left.entry.id === right.entry.id && left.sessionId === right.sessionId
     && left.tabInstanceId === right.tabInstanceId && left.projectId === right.projectId
-    && bindingMatches(left.binding, right.binding))
+    && left.mediaReturnId === right.mediaReturnId && bindingMatches(left.binding, right.binding))
 }
 
 /** Serializes ownership and writes for the two native entry points in this renderer. */
@@ -68,6 +68,7 @@ export function createEditorSession({ storage, native, workbench, document, onEr
       revision: owner.record?.revision,
       token: owner.token,
       status: owner.status,
+      ...(owner.site.mode === 'standalone' && owner.site.mediaReturnId ? { mediaReturnId: owner.site.mediaReturnId } : {}),
       ...(owner.ingesting && !owner.conflict ? { ingesting: true } : {}),
       ...(owner.conflict ? { conflict: true } : {}),
       ...(owner.resolving ? { resolving: true } : {}),
@@ -95,22 +96,24 @@ export function createEditorSession({ storage, native, workbench, document, onEr
         return {
           ...shared, projectId: canvas.projectId, title: canvas.nodeTitle, draftSchema: canvas.draftSchema,
           hasUpstream: Object.values(canvas.upstreamInputs ?? {}).some(items => Array.isArray(items) && items.length > 0),
+          mediaReturnId: canvas.mediaReturn?.requestId,
+          hasReturnedMedia: Object.values(canvas.mediaReturn?.upstreamInputs ?? {}).some(items => Array.isArray(items) && items.length > 0),
           binding: { workspaceId: canvas.workspaceId, nodeId: canvas.nodeId, projectId: canvas.projectId },
         }
       }
       const key = JSON.stringify([sessionId, tabInstanceId])
       const request = entry.getStudioRequest()
       let saved = studioProjects.get(key)
+      if (request?.projectId && ID.test(request.projectId) && (!saved || (request.key && request.key !== saved.requestKey))) {
+        saved = { projectId: request.projectId, requestKey: request.key,
+          mediaReturnId: request.mediaReturn === true && ID.test(request.key) ? request.key : undefined }
+        studioProjects.set(key, saved)
+      }
       if (!saved) {
         saved = { projectId: storage.studioProject?.(key) ?? undefined }
-        if (request?.projectId && ID.test(request.projectId)) { saved.projectId = request.projectId; saved.requestKey = request.key }
         studioProjects.set(key, saved)
       }
-      if (request?.key && request.key !== saved.requestKey && ID.test(request.projectId ?? '')) {
-        saved = { projectId: request.projectId, requestKey: request.key }
-        studioProjects.set(key, saved)
-      }
-      return { ...shared, projectId: saved.projectId, studioKey: key }
+      return { ...shared, projectId: saved.projectId, studioKey: key, mediaReturnId: saved.mediaReturnId }
     }
     return null
   }
@@ -304,7 +307,7 @@ export function createEditorSession({ storage, native, workbench, document, onEr
       owner.fingerprint = loaded.fingerprint
       owner.revisionEpoch = isClipRevision(local?.revisionEpoch) ? local.revisionEpoch : 0
       owner.record = { ...owner.record, project: loaded.project, media: loaded.media, revisionEpoch: owner.revisionEpoch }
-      owner.ingesting = site.hasUpstream && !loaded.project.omnimuxCanvasInitialized
+      owner.ingesting = site.hasReturnedMedia || site.hasUpstream && !loaded.project.omnimuxCanvasInitialized
       pendingNative = pendingNative === opening ? null : pendingNative
       await flush(owner, undefined, stillDesired)
       if (!stillDesired()) return
@@ -509,6 +512,30 @@ export function createEditorSession({ storage, native, workbench, document, onEr
     })
   }
 
+  async function leaveEditor(owner, finish) {
+    const { token } = owner
+    const stillVisible = () => owner.token === token && !token.signal.aborted && ownedNativeProject(owner)
+      && matchesAtSite(owner.site, readSite())
+    cancelSave()
+    owner.resolving = true
+    native.suspend()
+    show(owner)
+    onVisibility?.()
+    try {
+      return await enqueue(async () => {
+        if (!stillVisible() || !await syncBeforeRelease(owner, stillVisible) || !stillVisible()) return false
+        await onRelease?.(owner)
+        if (!stillVisible() || await finish(stillVisible) === false) return false
+        reconcile()
+        return true
+      })
+    } finally {
+      owner.resolving = false
+      show(owner)
+      onVisibility?.()
+    }
+  }
+
   async function closeCanvas(binding, finish) {
     const site = readSite()
     if (!site?.binding || !bindingMatches(site.binding, binding)) return false
@@ -519,25 +546,12 @@ export function createEditorSession({ storage, native, workbench, document, onEr
       return true
     }
     if (!owns(owner) || owner.conflict || !bindingMatches(owner.site.binding, binding)) return false
-    const stillVisible = () => current === owner && !owner.token.signal.aborted && matchesAtSite(owner.site, readSite())
-    cancelSave()
-    owner.resolving = true
-    native.suspend()
-    show(owner)
-    onVisibility?.()
-    try {
-      return await enqueue(async () => {
-        if (!stillVisible() || !await syncBeforeRelease(owner) || !stillVisible()) return false
-        await onRelease?.(owner)
-        if (!stillVisible() || finish() === false) return false
-        reconcile()
-        return true
-      })
-    } finally {
-      owner.resolving = false
-      show(owner)
-      onVisibility?.()
-    }
+    return leaveEditor(owner, finish)
+  }
+
+  async function leaveForMedia(owner, navigate) {
+    if (!owns(owner) || owner.conflict || owner.ingesting) return false
+    return leaveEditor(owner, navigate)
   }
 
   const unsubscribe = native.subscribe(projectChanged)
@@ -573,6 +587,7 @@ export function createEditorSession({ storage, native, workbench, document, onEr
     capture,
     retry,
     closeCanvas,
+    leaveForMedia,
     needsReconnect,
     reconnect,
     retainedCanvasBinding,

@@ -1,10 +1,12 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { MediaItem } from "@openreel/core";
 import { useProjectStore } from "../openreel/web/stores/project-store";
 import { getTimelineItems } from "../openreel/core/timeline/timeline-items";
 import { canvasWorkspaceMediaUrl, mediaContentDigest, reconnectMediaUrl, workspaceMediaDigest } from "../../timeline/nativeProjectFields.js";
 import { mediaDigest, verifiedMediaBlob } from "../live/media-source";
 import { createStoredMediaRecovery } from "../live/media-recovery";
+import { bridgeMediaLocator } from "../live/media-bridge-source.js";
+import { placeFirstVideoInEmptyTimeline } from "../live/bridged-media";
 
 const MAX_MEDIA = 20;
 const MAX_CAPTIONS = 120;
@@ -33,6 +35,7 @@ export interface CanvasSession {
     images?: UpstreamMedia[];
     captions?: Array<{ text: string; startTimeMs: number; durationMs: number }>;
   };
+  mediaReturn?: { requestId: string; upstreamInputs: Pick<NonNullable<CanvasSession['upstreamInputs']>, 'videos' | 'audios' | 'images'> };
 }
 
 function localFileReconnect(request: URL): string | undefined {
@@ -81,12 +84,12 @@ function parseMedia(value: string, workspaceId: string | undefined): { url: stri
 
 const MIME = { video: "video/mp4", image: "image/png", audio: "audio/mpeg" };
 
-function importItems(inputs: NonNullable<CanvasSession["upstreamInputs"]>) {
+function importItems(inputs: NonNullable<CanvasSession["upstreamInputs"]>, limit = MAX_MEDIA) {
   return [
     ...(inputs.videos ?? []).map(item => ({ ...item, type: "video" as const, name: item.name || "video.mp4" })),
     ...(inputs.images ?? []).map(item => ({ ...item, type: "image" as const, name: item.name || "image.png" })),
     ...(inputs.audios ?? []).map(item => ({ ...item, type: "audio" as const, name: item.name || "audio.mp3" })),
-  ].slice(0, MAX_MEDIA);
+  ].slice(0, limit);
 }
 
 function sourceKey(item: UpstreamMedia, url: string) {
@@ -104,7 +107,71 @@ async function readMediaFile(url: string, name: string, type: MediaItem['type'],
   return new File([blob], name, { type: blob.type.startsWith("application/") ? MIME[type] : blob.type || MIME[type] });
 }
 
-async function connectedMedia(item: ReturnType<typeof importItems>[number], workspaceId: string) {
+type CanvasImportItem = ReturnType<typeof importItems>[number];
+
+type CanvasImportScope = {
+  workspaceId?: string;
+  signal: AbortSignal;
+  isCurrent: () => boolean;
+};
+
+async function importCanvasFile(item: CanvasImportItem, { workspaceId, signal, isCurrent }: CanvasImportScope, returning: boolean) {
+  const ref = parseMedia(item.url || item.path, workspaceId);
+  if (!ref || (returning && !bridgeMediaLocator(ref.url)) || /\.svgz?(?:[?#]|$)/iu.test(item.path || item.name)) return;
+  const key = ref.reconnect ?? ref.localFile ?? sourceKey(item, ref.url);
+  const localPath = ref.localFile ? new URL(ref.localFile, 'https://clip.invalid').searchParams.get('path') : undefined;
+  const [id, historicalId, localId, requestedVersion] = await Promise.all([
+    mediaDigest(key), mediaDigest(sourceKey(item, ref.url)), localPath ? mediaDigest(localPath) : undefined,
+    item.sourceVersion ? mediaDigest(item.sourceVersion) : undefined,
+  ]);
+  if (!isCurrent()) return;
+  const pinnedDigest = workspaceMediaDigest(ref.reconnect, workspaceId);
+  const contentOf = (media: MediaItem | undefined) => mediaContentDigest(media)
+    ?? workspaceMediaDigest(media?.omnimuxSource?.url, workspaceId);
+  const findMatch = (digest?: string) => {
+    const candidates = useProjectStore.getState().project.mediaLibrary.items.filter(media => {
+      const source = media.omnimuxSource;
+      return media.type === item.type && source && (source.id === id || source.id === historicalId || source.id === localId
+        || (ref.reconnect && source.url === ref.reconnect));
+    });
+    // Historical drafts can store the task ID where new opens use a file revision.
+    const sameContent = digest ? candidates.filter(media => contentOf(media) === digest) : [];
+    const version = requestedVersion ?? digest;
+    return sameContent.find(media => !media.isPlaceholder) ?? sameContent[0]
+      ?? (version ? candidates.find(media => media.omnimuxSource?.version === version) : undefined);
+  };
+  const existing = findMatch(pinnedDigest);
+  if (existing && !existing.isPlaceholder && (!pinnedDigest || contentOf(existing) === pinnedDigest)) {
+    return returning ? undefined : existing;
+  }
+
+  const file = await readMediaFile(ref.url, item.name, item.type,
+    returning ? AbortSignal.any([signal, AbortSignal.timeout(45_000)]) : signal);
+  if (!isCurrent()) return;
+  if (returning && !file.type.startsWith(`${item.type}/`)) throw new Error('The upstream media type changed');
+  const digest = await mediaDigest(file);
+  if (!isCurrent()) return;
+  const match = findMatch(digest);
+  const expected = contentOf(match);
+  if ((pinnedDigest && pinnedDigest !== digest) || (expected && expected !== digest)) {
+    throw new Error('The upstream media version changed');
+  }
+  if (match && !match.isPlaceholder) return returning ? undefined : match;
+
+  const omnimuxSource = { id: match?.omnimuxSource?.id ?? id,
+    version: match?.omnimuxSource?.version ?? requestedVersion ?? digest, digest, ...(ref.reconnect ? { url: ref.reconnect } : {}) };
+  const store = useProjectStore.getState();
+  const stillAssignable = () => isCurrent() && findMatch(digest) === match;
+  const result = match
+    ? await store.replaceMediaAsset(match.id, file, undefined, { restorePlaceholder: true, isCurrent: stillAssignable, omnimuxSource,
+      ...(returning ? { expectedDigest: digest } : {}) })
+    : await store.importMedia(file, undefined, { omnimuxSource }, { signal, isCurrent: stillAssignable, expectedType: returning ? item.type : undefined });
+  if (!isCurrent()) return;
+  if (!result.success || !result.actionId) throw new Error('Could not import the upstream media');
+  return useProjectStore.getState().getMediaItem(match?.id ?? result.actionId);
+}
+
+async function connectedMedia(item: CanvasImportItem, workspaceId: string) {
   const ref = parseMedia(item.url || item.path, workspaceId);
   const workspaceUrl = canvasWorkspaceMediaUrl(ref?.reconnect, workspaceId);
   const url = workspaceUrl ?? ref?.localFile;
@@ -176,7 +243,21 @@ async function recoverCanvasMedia(
   }
 }
 
-export function useCanvasIngestion(session: CanvasSession | null, token: AbortController | undefined, owns: () => boolean, onSaved: () => void) {
+interface CanvasReturnFeedback {
+  session: CanvasSession;
+  token: AbortController;
+  retrying: boolean;
+  failed: Array<{ id: string; name: string }>;
+  retry: (id: string) => void;
+}
+
+export function useCanvasIngestion(session: CanvasSession | null, token: AbortController | undefined,
+  owns: () => boolean, onSaved: () => void, sessionId?: string,
+) {
+  // ClipStage stays mounted across Portal opens. Keep only unfinished reads for each binding.
+  const pendingReturns = useRef(new Map<string, Map<string, CanvasImportItem>>());
+  const acceptedReturns = useRef(new WeakSet<NonNullable<CanvasSession['mediaReturn']>>());
+  const [feedback, setFeedback] = useState<CanvasReturnFeedback>();
   useEffect(() => {
     if (!session?.projectId || !token || session.source !== "canvas") return;
     const controller = new AbortController();
@@ -186,69 +267,94 @@ export function useCanvasIngestion(session: CanvasSession | null, token: AbortCo
       const store = useProjectStore.getState();
       return !signal.aborted && owns() && store.project.id === session.projectId && store.actionExecutor === executor;
     };
+    if (!isCurrent()) return;
     const inputs = session.upstreamInputs ?? {};
+    const returning = session.mediaReturn;
     const upstream = importItems(inputs);
+    const scope = { workspaceId: session.workspaceId, signal, isCurrent };
+    const scopeKey = sessionId && session.workspaceId && session.nodeId
+      ? JSON.stringify([sessionId, session.workspaceId, session.nodeId, session.projectId]) : undefined;
+    const pending = (scopeKey && pendingReturns.current.get(scopeKey)) || new Map<string, CanvasImportItem>();
+    if (returning && !acceptedReturns.current.has(returning)) {
+      acceptedReturns.current.add(returning);
+      for (const item of importItems(returning.upstreamInputs, Infinity)) {
+        pending.set(JSON.stringify([item.type, item.url || item.path, item.sourceVersion]), item);
+      }
+      if (scopeKey && pending.size) pendingReturns.current.set(scopeKey, pending);
+    }
+    let importing = false;
+
+    const importReturned = async (entries: Iterable<[string, CanvasImportItem]>) => {
+      let firstVideo: MediaItem | undefined;
+      for (const [key, item] of entries) {
+        if (!isCurrent()) return;
+        try {
+          const media = await importCanvasFile(item, scope, true);
+          if (!isCurrent()) return;
+          pending.delete(key);
+          if (!firstVideo && media?.type === 'video') firstVideo = media;
+        } catch (error) {
+          if (isCurrent()) console.warn('[Clip] Returned media could not be imported.', (error as Error)?.name);
+        }
+      }
+      if (firstVideo) await placeFirstVideoInEmptyTimeline(firstVideo, isCurrent);
+    };
+
+    const publish = () => {
+      if (signal.aborted) return;
+      const failed = [...pending].map(([id, item]) => ({ id, name: item.name.split(/[/\\]/u).at(-1) || item.type }));
+      setFeedback(failed.length ? { session, token, retrying: importing, failed, retry } : undefined);
+    };
+
+    const run = async (work: () => Promise<void>) => {
+      importing = true;
+      try {
+        await work();
+      } catch (error) {
+        if (isCurrent()) console.warn('[Clip] Canvas source initialization failed.', (error as Error)?.name);
+      } finally {
+        importing = false;
+        if (scopeKey && !pending.size && pendingReturns.current.get(scopeKey) === pending) pendingReturns.current.delete(scopeKey);
+        publish();
+        if (isCurrent()) onSaved();
+      }
+    };
+
+    function retry(id: string) {
+      const item = pending.get(id);
+      if (!item || importing || !isCurrent()) return;
+      void run(() => importReturned([[id, item]]));
+      publish();
+    }
+
     const importAll = async () => {
       if (!isCurrent()) return;
       const initial = useProjectStore.getState().project;
       const items = initial.mediaLibrary.items;
       await recoverCanvasMedia(items, upstream, session, signal, isCurrent);
       if (!isCurrent()) return;
-      if (initial.omnimuxCanvasInitialized || items.some(item => item.sourceRef?.kind === "legacy")
-        || session.draftSchema && (items.length || getTimelineItems(initial).length)) {
-        if (!initial.omnimuxCanvasInitialized && isCurrent()) {
-          useProjectStore.setState(state => ({ project: { ...state.project, omnimuxCanvasInitialized: true } }));
-        }
+      const initialized = initial.omnimuxCanvasInitialized || items.some(item => item.sourceRef?.kind === "legacy")
+        || session.draftSchema && (items.length || getTimelineItems(initial).length);
+      if (initialized && !initial.omnimuxCanvasInitialized) {
+        useProjectStore.setState(state => ({ project: { ...state.project, omnimuxCanvasInitialized: true } }));
+      }
+      if (returning || pending.size) {
+        await importReturned(pending);
         return;
       }
+      if (initialized) return;
       let firstVideo: MediaItem | undefined;
       let failed = false;
       for (const item of upstream) {
         if (!isCurrent()) return;
-        const ref = parseMedia(item.url || item.path, session.workspaceId);
-        if (!ref || /\.svgz?(?:[?#]|$)/iu.test(item.path || item.name)) continue;
         try {
-          const url = ref.url;
-          const id = await mediaDigest(sourceKey(item, url));
-          const requestedVersion = item.sourceVersion ? await mediaDigest(item.sourceVersion) : undefined;
-          if (!isCurrent()) return;
-          const findItem = (version: string) => useProjectStore.getState().project.mediaLibrary.items.find(media =>
-            media.omnimuxSource?.id === id && media.omnimuxSource.version === version);
-          const existing = requestedVersion ? findItem(requestedVersion) : undefined;
-          if (existing && !existing.isPlaceholder) {
-            if (!firstVideo && existing.type === 'video') firstVideo = existing;
-            continue;
-          }
-          const file = await readMediaFile(url, item.name, item.type, signal);
-          if (!isCurrent()) return;
-          const digest = await mediaDigest(file);
-          const version = requestedVersion ?? digest;
-          if (!isCurrent()) return;
-          const match = findItem(version);
-          if (match && !match.isPlaceholder) {
-            if (!firstVideo && match.type === 'video') firstVideo = match;
-            continue;
-          }
-          const expected = mediaContentDigest(match);
-          const requestedDigest = workspaceMediaDigest(ref.reconnect, session.workspaceId);
-          if ((expected && expected !== digest) || (requestedDigest && requestedDigest !== digest)) {
-            throw new Error('The upstream media version changed');
-          }
-          const omnimuxSource = { id, version, ...(ref.reconnect ? { url: ref.reconnect, digest } : {}) };
-          const store = useProjectStore.getState();
-          const result = match
-            ? await store.replaceMediaAsset(match.id, file, undefined, { restorePlaceholder: true, isCurrent, omnimuxSource })
-            : await store.importMedia(file, undefined, { omnimuxSource }, { signal, isCurrent });
-          if (!isCurrent()) return;
-          if (!result.success || !result.actionId) throw new Error("Could not import the upstream media");
-          const imported = useProjectStore.getState().getMediaItem(match?.id ?? result.actionId);
-          if (!firstVideo && imported?.type === "video") firstVideo = imported;
+          const imported = await importCanvasFile(item, scope, false);
+          if (!firstVideo && imported?.type === 'video') firstVideo = imported;
         } catch (error) {
           failed = true;
-          if (isCurrent()) console.warn("[Clip] Upstream media could not be imported.", (error as Error)?.name);
+          if (isCurrent()) console.warn('[Clip] Upstream media could not be imported.', (error as Error)?.name);
         }
       }
-
       if (firstVideo && isCurrent() && getTimelineItems(useProjectStore.getState().project).length === 0) {
         const { width, height } = firstVideo.metadata;
         if (width && height) await useProjectStore.getState().updateSettings({ width, height });
@@ -272,9 +378,8 @@ export function useCanvasIngestion(session: CanvasSession | null, token: AbortCo
       }
       if (isCurrent() && !failed) useProjectStore.setState(state => ({ project: { ...state.project, omnimuxCanvasInitialized: true } }));
     };
-    void importAll().catch(error => {
-      if (isCurrent()) console.warn("[Clip] Canvas source initialization failed.", error?.name);
-    }).finally(() => { if (isCurrent()) onSaved(); });
+    void run(importAll);
     return () => controller.abort();
-  }, [session, token, owns, onSaved]);
+  }, [session, token, owns, onSaved, sessionId]);
+  return feedback && feedback.session === session && feedback.token === token ? feedback : undefined;
 }

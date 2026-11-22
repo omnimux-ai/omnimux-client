@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { installCanvasClipEvents, openCanvasClipNode } from './canvasClipActions.ts';
+import { captureCanvasMediaReturn, installCanvasClipEvents, openCanvasClipNode } from './canvasClipActions.ts';
 import { OMNIMUX_CLIP_CLOSE, OMNIMUX_CLIP_OPEN, OMNIMUX_CLIP_PROGRESS, OMNIMUX_CLIP_SAVE } from './clipEvents.ts';
 import { planCanvasInputMutation } from '../../shared/graph/canvasInputMutationGateway.ts';
 
@@ -81,6 +81,61 @@ test('first open persists one generated ID and blocks an OPEN after a scope swit
   assert.equal(await openCanvasClipNode({ ...args, expectedProjectId: binding.projectId }), undefined);
   assert.equal((await openCanvasClipNode(args)).projectId, projectId);
   assert.equal(requests.length, 1);
+});
+
+test('a Canvas return preserves the usual OPEN inputs and appends only a changed connected file', async () => {
+  const h = graphFixture();
+  const path = (digest) => `/omnimux-workflow/api/workspaces/${binding.workspaceId}/file?rel=artifacts%2Fvoice.wav&rev=sha256%3A${digest}`;
+  const first = 'a'.repeat(64);
+  const second = 'b'.repeat(64);
+  h.args.updateNode('audio', { mediaUrl: path(first) });
+  const baseline = captureCanvasMediaReturn(h.args.readGraph(), binding);
+  assert.equal(baseline.size, 1);
+  h.args.updateNode('audio', { mediaUrl: path(second) });
+  const requests = [];
+  h.target.addEventListener(OMNIMUX_CLIP_OPEN, event => requests.push(event.detail));
+  let persisted = false;
+  const result = await openCanvasClipNode({ ...h.args, nodeId: binding.nodeId, expectedProjectId: binding.projectId,
+    stillCurrent: () => true, ensurePersisted: async () => { persisted = true; },
+    mediaReturn: { requestId: 'return-audio', baseline, canOpen: () => true, confirmOpened: async confirmed => {
+      assert.equal(persisted, true);
+      assert.equal(requests.length, 1);
+      assert.deepEqual(confirmed, binding);
+      return true;
+    } },
+  });
+  assert.deepEqual(result, binding);
+  const [reopened] = requests;
+  assert.deepEqual(reopened.draftSchema, { tracks: ['old'] });
+  assert.equal(reopened.upstreamInputs.videos.length, 1);
+  assert.equal(reopened.upstreamInputs.captions.length, 1);
+  assert.deepEqual(reopened.mediaReturn, { requestId: 'return-audio', upstreamInputs: { videos: [], images: [], audios: [
+    { path: path(second), url: path(second), name: 'audio', sourceId: 'audio', sourceVersion: `sha256:${second}`, durationMs: 4500 },
+  ] } });
+  assert.equal(h.data().status, 'editing');
+});
+
+test('the first OPEN and a same-file reconnection carry the same verified source version', async () => {
+  const h = graphFixture();
+  const source = 'audio';
+  const version = `sha256:${'c'.repeat(64)}`;
+  const url = `/omnimux-workflow/api/workspaces/${binding.workspaceId}/file?rel=artifacts%2Fvoice.wav&rev=${encodeURIComponent(version)}`;
+  h.args.updateNode(source, { mediaUrl: url });
+  const requests = [];
+  h.target.addEventListener(OMNIMUX_CLIP_OPEN, event => requests.push(event.detail));
+  const open = { ...h.args, nodeId: binding.nodeId, stillCurrent: () => true };
+  await openCanvasClipNode(open);
+  const connected = h.args.readGraph();
+  const disconnected = { ...connected, edges: connected.edges.filter(edge => edge.source !== source) };
+  await openCanvasClipNode({ ...open, mediaReturn: {
+    requestId: 'reconnected-audio', baseline: captureCanvasMediaReturn(disconnected, binding),
+    canOpen: () => true, confirmOpened: async () => true,
+  } });
+
+  const [initial, returned] = requests;
+  const expected = [{ sourceId: source, sourceVersion: version, url, path: url, name: source, durationMs: 4500 }];
+  assert.deepEqual(initial.upstreamInputs.audios, expected);
+  assert.deepEqual(returned.mediaReturn.upstreamInputs.audios, expected);
 });
 
 test('manual SAVE/PROGRESS/CLOSE remain scoped to the mounted graph even without a node component', () => {

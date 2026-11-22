@@ -61,6 +61,16 @@ export function isOpenClipEditorPayload(payload) {
   if (!isPlainObject(payload)) return false
   if (!OPEN_SOURCES.has(payload.source)) return false
   if (payload.nodeId != null && typeof payload.nodeId !== 'string') return false
+  const { mediaReturn } = payload
+  if (mediaReturn !== undefined) {
+    if (payload.source !== 'canvas' || !isPlainObject(mediaReturn) || typeof mediaReturn.requestId !== 'string'
+      || !/^[A-Za-z0-9-]{1,128}$/.test(mediaReturn.requestId) || !isPlainObject(mediaReturn.upstreamInputs)) return false
+    for (const [key, list] of Object.entries(mediaReturn.upstreamInputs)) {
+      if (!['videos', 'images', 'audios'].includes(key) || !Array.isArray(list)) return false
+      if (!list.every(item => isPlainObject(item) && typeof item.path === 'string' && typeof item.name === 'string'
+        && ['url', 'sourceId', 'sourceVersion'].every(field => item[field] === undefined || typeof item[field] === 'string'))) return false
+    }
+  }
   return payload.source !== 'canvas' || isCanvasClipBinding(payload)
 }
 

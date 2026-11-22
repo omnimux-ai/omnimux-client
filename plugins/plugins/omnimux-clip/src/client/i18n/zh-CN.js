@@ -10,6 +10,7 @@ import { zhV1Media } from './zh/v1Media.js'
 import { zhV1Inspector } from './zh/v1Inspector.js'
 import { zhV1Editing } from './zh/v1Editing.js'
 import { zhV1Effects } from './zh/v1Effects.js'
+import { zhAssetBridge } from './zh/assetBridge.js'
 
 /**
  * zh dictionary, keyed by English source literal.
@@ -28,4 +29,5 @@ export const zh = {
   ...zhV1Inspector,
   ...zhV1Editing,
   ...zhV1Effects,
+  ...zhAssetBridge,
 }

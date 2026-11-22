@@ -16,6 +16,7 @@ import type { SerializedCanvasEdge, SerializedCanvasNode } from '../../shared/ca
 import { captionSlicesFromText } from '../editor/utils/srtParser.ts';
 import { VIDEO_COMPOSITION_NODE_WIDTH, clipExportMediaUrl, planClipExportDownstream } from '../nodes/definitions/videoCompositionDownstream.ts';
 import type { CanvasInputMutation } from '../../shared/graph/canvasInputMutationGateway.ts';
+import { changedConnectedInputs, collectConnectedReturnOutputs, connectedClipMediaVersion, type CanvasMediaReturnBaseline } from './clipMediaOutputs.ts';
 
 interface CanvasClipGraph {
   nodes: SerializedCanvasNode[];
@@ -35,7 +36,7 @@ function mediaPathOf(data: Record<string, unknown>): string | undefined {
     || asString(data.url) || asString(data.real_path) || asString(data.filePath);
 }
 
-function collectUpstreamInputs({ nodes, edges }: CanvasClipGraph, nodeId: string) {
+function collectUpstreamInputs({ nodes, edges }: CanvasClipGraph, { nodeId, workspaceId }: CanvasClipBinding, origin?: string) {
   const captions: NonNullable<NonNullable<OpenClipEditorPayload['upstreamInputs']>['captions']> = [];
   const inputs: NonNullable<OpenClipEditorPayload['upstreamInputs']> = { videos: [], audios: [], images: [], captions };
   for (const edge of edges) {
@@ -46,8 +47,7 @@ function collectUpstreamInputs({ nodes, edges }: CanvasClipGraph, nodeId: string
     const materialType = source.type === 'video_composition' ? 'video' : asString(data.materialType) ?? source.type;
     const name = asString(data.label) || asString(data.title) || source.id;
     const path = mediaPathOf(data);
-    const sourceVersion = asString(data.outputRevision) || asString(data.mediaRevision)
-      || asString(data.generationId) || asString(data.taskId);
+    const sourceVersion = connectedClipMediaVersion(data, path, workspaceId, origin);
     const identity = { sourceId: source.id, ...(sourceVersion ? { sourceVersion } : {}) };
     // Imported material duration is in seconds, composition output in milliseconds.
     const duration = asNumber(data.durationSec) ?? asNumber(data.duration);
@@ -78,8 +78,22 @@ function clipNode(graph: CanvasClipGraph, nodeId: string) {
   return node?.type === 'video_composition' ? node : undefined;
 }
 
+export function captureCanvasMediaReturn(graph: CanvasClipGraph, binding: CanvasClipBinding, origin?: string) {
+  if (clipNode(graph, binding.nodeId)?.data.projectId !== binding.projectId) return undefined;
+  const sources = new Set(graph.edges.filter(edge => edge.target === binding.nodeId).map(edge => edge.source));
+  return collectConnectedReturnOutputs(graph.nodes, sources, binding.workspaceId, origin);
+}
+
+export interface CanvasClipMediaReturn {
+  requestId: string;
+  baseline: CanvasMediaReturnBaseline;
+  canOpen: () => boolean;
+  confirmOpened: (binding: CanvasClipBinding) => Promise<boolean>;
+  origin?: string;
+}
+
 export async function openCanvasClipNode({
-  workspaceId, nodeId, expectedProjectId, readGraph, updateNode, ensurePersisted, stillCurrent, target, defaultTitle,
+  workspaceId, nodeId, expectedProjectId, readGraph, updateNode, ensurePersisted, stillCurrent, target, defaultTitle, mediaReturn,
 }: {
   workspaceId: string;
   nodeId: string;
@@ -90,8 +104,9 @@ export async function openCanvasClipNode({
   stillCurrent: () => boolean;
   target: EventTarget;
   defaultTitle: string;
+  mediaReturn?: CanvasClipMediaReturn;
 }): Promise<CanvasClipBinding | undefined> {
-  if (!stillCurrent()) return undefined;
+  if (!stillCurrent() || (mediaReturn && !mediaReturn.canOpen())) return undefined;
   const original = clipNode(readGraph(), nodeId);
   if (!original || (expectedProjectId !== undefined && original.data.projectId !== expectedProjectId)) return undefined;
   const projectId = original.data.projectId ?? newCanvasClipProjectId();
@@ -99,7 +114,7 @@ export async function openCanvasClipNode({
   if (!isCanvasClipBinding(binding)) return undefined;
   if (original.data.projectId == null) updateNode(nodeId, { projectId });
   if (ensurePersisted) await ensurePersisted(binding);
-  if (!stillCurrent()) return undefined;
+  if (!stillCurrent() || (mediaReturn && !mediaReturn.canOpen())) return undefined;
   const graph = readGraph();
   const current = clipNode(graph, nodeId);
   if (current?.data.projectId !== projectId) return undefined;
@@ -110,10 +125,20 @@ export async function openCanvasClipNode({
     nodeTitle: asString(data.title) || asString(data.label) || defaultTitle,
     ...(data.schema ? { draftSchema: data.schema } : {}),
     ...(Number.isSafeInteger(data.draftRevision) ? { draftRevision: data.draftRevision } : {}),
-    upstreamInputs: collectUpstreamInputs(graph, nodeId),
+    upstreamInputs: collectUpstreamInputs(graph, binding, mediaReturn?.origin ?? globalThis.location?.origin),
   };
-  updateNode(nodeId, { status: 'editing' });
-  target.dispatchEvent(new CustomEvent(OMNIMUX_CLIP_OPEN, { detail: payload, bubbles: true }));
+  if (mediaReturn) {
+    const connected = captureCanvasMediaReturn(graph, binding, mediaReturn.origin);
+    if (!connected) return undefined;
+    payload.mediaReturn = { requestId: mediaReturn.requestId, upstreamInputs: changedConnectedInputs(mediaReturn.baseline, connected) };
+    target.dispatchEvent(new CustomEvent(OMNIMUX_CLIP_OPEN, { detail: payload, bubbles: true }));
+    if (!await mediaReturn.confirmOpened(binding) || !stillCurrent()
+      || clipNode(readGraph(), nodeId)?.data.projectId !== projectId) return undefined;
+    updateNode(nodeId, { status: 'editing' });
+  } else {
+    updateNode(nodeId, { status: 'editing' });
+    target.dispatchEvent(new CustomEvent(OMNIMUX_CLIP_OPEN, { detail: payload, bubbles: true }));
+  }
   return binding;
 }
 

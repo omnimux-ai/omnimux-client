@@ -67,7 +67,15 @@ function registerClip(React, ReactDOM, createRoot, jsx, isPropValid, primitives,
     return clip ? { projectId: clip.projectId, mode: clip.mode, editorInstanceId: clip.editorInstanceId } : null;
   };
   window.attachedClipContexts = attachedContexts;
+  window.openedClipTabs = [];
   window.__omnimuxWorkbench = {
+    async open(request) {
+      window.openedClipTabs.push(request);
+      if (request.tabId !== 'omnimux-clip:studio' || request.sessionId !== fixture.sessionId || request.id !== studioTab.id) return false;
+      studioTab = { id: request.id, meta: request.meta };
+      window.setStudioVisible(true);
+      return true;
+    },
     getActiveSurface: () => ({
       panelOpen: true, sessionId: fixture.sessionId,
       tabId: studio.hidden ? 'omnimux-workflow:canvas' : 'omnimux-clip:studio',
@@ -106,7 +114,7 @@ function registerClip(React, ReactDOM, createRoot, jsx, isPropValid, primitives,
   window.setStudioVisible = (visible, options) => {
     if (options) {
       const id = options.instanceId ?? studioTab.id;
-      studioTab = options.newProject ? { id } : { id, meta: studioProjectMeta };
+      studioTab = options.newProject ? { id } : { id, meta: options.meta ?? studioProjectMeta };
     }
     studio.hidden = !visible;
     canvas.dataset.visible = String(!visible);
@@ -186,7 +194,7 @@ function readPinnedThemeCss() {
   return JSON.parse(css[1]);
 }
 
-async function openWorkbench(page, beforeClipRequest, theme) {
+async function openWorkbench(page, beforeClipRequest, theme, routeMedia) {
   const paths = resolveClipPaths({ homeDir: mkdtempSync(join(fixtureHome, 'page-')) });
   const store = createProjectStore({ paths });
   store.materialize(fixture.studioProjectId, { title: 'Studio project' });
@@ -213,7 +221,8 @@ async function openWorkbench(page, beforeClipRequest, theme) {
       });
       return route.fulfill({ status: result.status, json: result.body });
     }
-    return route.fulfill({ json: {} });
+    const media = await routeMedia?.(url, request);
+    return route.fulfill(media ?? { json: {} });
   });
   // Start from a returning editor so the first-run overlay cannot race the dialogs.
   await page.addInitScript(dark => {
@@ -236,40 +245,53 @@ async function openWorkbench(page, beforeClipRequest, theme) {
   return store;
 }
 
-async function openCanvas(page, beforeClipRequest, theme) {
-  const store = await openWorkbench(page, beforeClipRequest, theme);
-  await page.evaluate(async (binding) => {
+async function recordWebm(page, width, height) {
+  return page.evaluate(async ({ width, height }) => {
     const canvas = document.createElement('canvas');
-    canvas.width = 160;
-    canvas.height = 90;
+    canvas.width = width;
+    canvas.height = height;
     const ctx = canvas.getContext('2d');
-    ctx.fillRect(0, 0, 160, 90);
+    ctx.fillRect(0, 0, width, height);
     const stream = canvas.captureStream(24);
     const recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8' });
     const chunks = [];
     recorder.ondataavailable = event => chunks.push(event.data);
     const stopped = new Promise(resolve => recorder.onstop = resolve);
-    recorder.start();
-    for (let i = 0; i < 12; i++) {
-      ctx.clearRect(0, 0, 160, 90);
-      ctx.fillRect(i, 0, 160, 90);
-      await new Promise(resolve => setTimeout(resolve, 42));
+    try {
+      recorder.start();
+      for (let i = 0; i < 12; i++) {
+        ctx.clearRect(0, 0, width, height);
+        ctx.fillRect(i, 0, width, height);
+        await new Promise(resolve => setTimeout(resolve, 42));
+      }
+      recorder.stop();
+      await stopped;
+      return Array.from(new Uint8Array(await new Blob(chunks).arrayBuffer()));
+    } finally {
+      stream.getTracks().forEach(track => track.stop());
     }
-    recorder.stop();
-    await stopped;
-    stream.getTracks().forEach(track => track.stop());
-    const url = URL.createObjectURL(new Blob(chunks, { type: 'video/webm' }));
+  }, { width, height });
+}
+
+async function openCanvas(page, beforeClipRequest, theme, { withVideo = true, paneWidth } = {}) {
+  const store = await openWorkbench(page, beforeClipRequest, theme);
+  if (paneWidth) await page.locator('#canvas').evaluate((pane, width) => { pane.style.width = `${width}px`; }, paneWidth);
+  const bytes = withVideo ? await recordWebm(page, 160, 90) : undefined;
+  await page.evaluate(({ canvasBinding, bytes }) => {
+    const videos = bytes ? [{ url: URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: 'video/webm' })),
+      name: 'capture.webm', sourceId: 'capture', sourceVersion: 'v1' }] : [];
     window.openClipFromCanvas = () => window.dispatchEvent(new CustomEvent('omnimux-clip-open', {
-      detail: { source: 'canvas', ...binding,
-        upstreamInputs: { videos: [{ url, name: 'capture.webm', sourceId: 'capture', sourceVersion: 'v1' }] } },
+      detail: { source: 'canvas', ...canvasBinding, upstreamInputs: { videos } },
     }));
     window.openClipFromCanvas();
-  }, fixture.canvas);
+  }, { canvasBinding: fixture.canvas, bytes });
   await page.locator(`${canvasStage} .editor-shell`).waitFor();
-  await page.waitForFunction(() => {
-    const button = document.querySelector('#canvas .workspace-export');
-    return button && !button.disabled;
-  });
+  if (withVideo) {
+    await page.waitForFunction(() => {
+      const button = document.querySelector('#canvas .workspace-export');
+      return button && !button.disabled;
+    });
+  }
   return store;
 }
 
@@ -1045,3 +1067,351 @@ test('#174 Studio form creates and the official welcome recovers a project',
 
 test('#174 Studio welcome format creates a project',
   { timeout: 25_000 }, t => checkStudioCreation(t, true));
+
+function pcmTone() {
+  const samples = 1600;
+  const bytes = Buffer.alloc(44 + 2 * samples);
+  bytes.write('RIFF');
+  bytes.writeUInt32LE(bytes.length - 8, 4);
+  bytes.write('WAVEfmt ', 8);
+  bytes.writeUInt32LE(16, 16);
+  bytes.writeUInt16LE(1, 20);
+  bytes.writeUInt16LE(1, 22);
+  bytes.writeUInt32LE(8000, 24);
+  bytes.writeUInt32LE(16000, 28);
+  bytes.writeUInt16LE(2, 32);
+  bytes.writeUInt16LE(16, 34);
+  bytes.write('data', 36);
+  bytes.writeUInt32LE(2 * samples, 40);
+  for (let i = 0; i < samples; i++) bytes.writeInt16LE(Math.round(600 * Math.sin(i / 4)), 44 + 2 * i);
+  return bytes;
+}
+
+async function withLibrary(page, releaseImage) {
+  const paths = { video: 'portrait.webm', image: 'poster.png', audio: 'tone.wav' };
+  const mime = new Map([['video', 'video/webm'], ['image', 'image/png'], ['audio', 'audio/wav']]);
+  const bodies = new Map(Object.entries({
+    video: Buffer.from(await recordWebm(page, 96, 160)),
+    image: Buffer.from(await page.evaluate(() => {
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 8;
+      canvas.getContext('2d').fillRect(0, 0, 8, 8);
+      return canvas.toDataURL().split(',')[1];
+    }), 'base64'),
+    audio: pcmTone(),
+  }));
+  const assets = Object.entries(paths).map(([kind, original_name]) => ({
+    id: `asset-${kind}`, name: `Bridge ${kind}`,
+    files: [{ id: `file-${kind}`, original_name, kind, real_path: `/fixtures/${original_name}` }],
+  }));
+  const count = new Map([...bodies.keys()].map(kind => [kind, 0]));
+  await page.route(url => url.pathname === '/omnimux/assets/library', route => route.fulfill({ json: { lrev: 1, assets } }));
+  const mediaRoute = async (route, kind) => {
+    if (route.request().resourceType() === 'fetch') {
+      const reads = count.get(kind) + 1;
+      count.set(kind, reads);
+      if (kind === 'image' && reads === 1 && releaseImage) {
+        await releaseImage.promise;
+        return route.fulfill({ status: 503 });
+      }
+    }
+    return route.fulfill({ contentType: mime.get(kind), body: bodies.get(kind) });
+  };
+  await page.route(url => url.pathname === '/omnimux/assets/library/preview', async route => {
+    const id = new URL(route.request().url()).searchParams.get('file');
+    const kind = id === 'file-video' ? 'video' : id === 'file-image' ? 'image' : undefined;
+    if (!kind) return route.fulfill({ status: 404 });
+    return mediaRoute(route, kind);
+  });
+  await page.route(url => url.pathname === '/omnimux-workflow/api/local-file' && url.searchParams.get('path') === '/fixtures/tone.wav',
+    route => mediaRoute(route, 'audio'));
+  return { paths, bodies, importCounts: () => Object.fromEntries(count) };
+}
+
+async function openAssetPicker(seat) {
+  await seat.getByRole('button', { name: 'Import media', exact: true }).first().click();
+  await seat.getByRole('menuitem', { name: 'Import from Assets…', exact: true }).click();
+  const dialog = seat.getByRole('dialog', { name: 'Import from OmniMux Assets' });
+  await dialog.waitFor();
+  return dialog;
+}
+
+async function checkLibraryImport(t, canvas) {
+  const theme = canvas ? 'dark' : 'light';
+  const page = await browser.newPage({ viewport: { width: 1460, height: 920 }, colorScheme: theme });
+  page.setDefaultTimeout(4000);
+  const releaseImage = canvas ? undefined : Promise.withResolvers();
+  const projectId = canvas ? fixture.canvas.projectId : fixture.studioProjectId;
+  const seat = page.locator(canvas ? canvasStage : studioEditor);
+  try {
+    const store = canvas ? await openCanvas(page, undefined, theme, { withVideo: false, paneWidth: 1120 }) : await openWorkbench(page, undefined, theme);
+    if (!canvas) await page.evaluate(() => window.setStudioVisible(true));
+    await seat.locator('.editor-workspace').waitFor();
+    assert.equal(store.load(projectId).project.timeline.tracks.flatMap(track => track.clips).length, 0);
+    const { paths, bodies, importCounts } = await withLibrary(page, releaseImage);
+    if (canvas) {
+      const shortcuts = seat.getByRole('button', { name: 'From Assets', exact: true });
+      await openAssetPicker(seat);
+      await page.keyboard.press('Escape');
+      await shortcuts.waitFor();
+      await page.setViewportSize({ width: 239, height: 920 });
+      await page.locator('#canvas').evaluate(pane => { pane.style.width = '100%'; });
+      await seat.locator('button[aria-controls="editor-panel-media"]').click();
+      const mediaPanel = seat.getByTestId('project-panel');
+      await mediaPanel.waitFor();
+      const bounds = await mediaPanel.boundingBox();
+      assert.ok(bounds.width > 0 && bounds.width < 240);
+      assert.equal(await shortcuts.isVisible(), false);
+      assert.equal(await mediaPanel.getByRole('button', { name: 'Record', exact: true }).isVisible(), true);
+      const menuTrigger = mediaPanel.getByRole('button', { name: 'Import media', exact: true });
+      await menuTrigger.click();
+      const menu = seat.getByRole('menu');
+      await menu.waitFor();
+      assert.deepEqual(await menu.getByRole('menuitem').allTextContents(), ['Local files…', 'Import from Assets…', 'Generate in Canvas…']);
+      await captureWelcome(page, 'asset-canvas-narrow-import-menu');
+      await page.keyboard.press('Escape');
+      await menu.waitFor({ state: 'hidden' });
+      await page.setViewportSize({ width: 1460, height: 920 });
+      await page.locator('#canvas').evaluate(pane => { pane.style.width = '1120px'; });
+      await shortcuts.waitFor();
+    }
+    const picker = await openAssetPicker(seat);
+    const filters = picker.getByRole('group', { name: 'Asset types' });
+    const search = picker.getByRole('searchbox', { name: 'Search assets' });
+    await picker.getByRole('button', { name: /portrait\.webm/ }).waitFor();
+    await search.fill('missing name');
+    await picker.getByText('No matching assets').waitFor();
+    await search.fill('bridge video');
+    await picker.getByRole('button', { name: /portrait\.webm/ }).click();
+    assert.equal(await picker.getByRole('button', { name: /poster\.png/ }).count(), 0);
+    await search.clear();
+    for (const [filter, file, hidden] of [['Image', 'poster.png', 'tone.wav'], ['Audio', 'tone.wav', 'portrait.webm']]) {
+      await filters.getByRole('button', { name: filter, exact: true }).click();
+      await picker.getByRole('button', { name: new RegExp(file) }).click();
+      assert.equal(await picker.getByRole('button', { name: new RegExp(hidden) }).count(), 0);
+    }
+    await filters.getByRole('button', { name: 'All', exact: true }).click();
+    const mode = canvas ? 'canvas' : 'studio';
+    await captureWelcome(page, `asset-${mode}-picker`);
+    const confirm = picker.getByRole('button', { name: 'Import 3 items', exact: true });
+    const finalSave = page.waitForResponse(result => isProjectRequest(result.request(), 'PUT', projectId)
+      && result.request().postDataJSON()?.project?.mediaLibrary?.items?.length === 3);
+    // Send both click events in one frame, before the dialog paints its closed state.
+    await confirm.evaluate(button => { button.click(); button.click(); });
+    await picker.waitFor({ state: 'hidden' });
+    if (releaseImage) {
+      await seat.getByRole('progressbar', { name: 'Media import progress' }).waitFor();
+      await captureWelcome(page, 'asset-studio-import-progress');
+      releaseImage.resolve();
+      const retry = seat.getByRole('button', { name: 'Retry import of poster.png', exact: true });
+      await retry.waitFor();
+      await seat.getByRole('progressbar', { name: 'Media import progress' }).waitFor({ state: 'hidden' });
+      assert.deepEqual(importCounts(), { video: 1, image: 1, audio: 1 });
+      await captureWelcome(page, 'asset-studio-item-retry');
+      await retry.click();
+      await retry.waitFor({ state: 'hidden' });
+    }
+    assert.equal((await finalSave).status(), 200);
+    assert.deepEqual(importCounts(), { video: 1, image: releaseImage ? 2 : 1, audio: 1 });
+    const { project } = store.load(projectId);
+    assert.equal(project.settings.width, 96);
+    assert.equal(project.settings.height, 160);
+    const media = project.mediaLibrary.items;
+    assert.deepEqual(media.map(item => item.name).sort(), Object.values(paths).sort());
+    for (const [kind, name] of Object.entries(paths)) {
+      const item = media.find(entry => entry.name === name);
+      assert.equal(item.type, kind);
+      assert.equal(item.omnimuxSource.id, `library:asset-${kind}:file-${kind}`);
+      assert.equal(item.sourceRef.digest, createHash('sha256').update(bodies.get(kind)).digest('hex'));
+    }
+    const clips = project.timeline.tracks.flatMap(track => track.clips);
+    assert.equal(clips.length, 1);
+    assert.equal(clips[0].startTime, 0);
+    assert.equal(clips[0].mediaId, media.find(item => item.type === 'video').id);
+    await seat.getByRole('button', { name: 'Select clip portrait.webm', exact: true }).waitFor();
+    await captureWelcome(page, `asset-${mode}-imported`);
+    const reopened = await openAssetPicker(seat);
+    for (const name of Object.values(paths)) {
+      const card = reopened.getByRole('button', { name: new RegExp(name) });
+      await card.getByText('Already imported').waitFor();
+      assert.equal(await card.isDisabled(), true);
+    }
+    await reopened.getByRole('button', { name: 'Cancel', exact: true }).click();
+    t.diagnostic(JSON.stringify({ mode, injectedBuild: clipBuild, imports: importCounts(), frame: [96, 160], persistedMedia: media.length }));
+  } finally {
+    releaseImage?.resolve();
+    await page.close();
+  }
+}
+
+test('#158 Studio imports a filtered multi-selection, prevents repeat reads and retries one failed file',
+  { timeout: 35_000 }, t => checkLibraryImport(t, false));
+
+test('#158 a fresh Canvas Portal imports a filtered multi-selection and matches the first video frame',
+  { timeout: 35_000 }, t => checkLibraryImport(t, true));
+
+test('#158 Canvas closes after saving and adds new media only to the same bound Portal', { timeout: 35_000 }, async t => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 920 }, colorScheme: 'dark' });
+  page.setDefaultTimeout(5000);
+  const binding = fixture.canvas;
+  const seat = page.locator(canvasStage);
+  try {
+    const store = await openCanvas(page, undefined, 'dark', { paneWidth: 1120 });
+    const bytes = pcmTone();
+    const version = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    const path = `/omnimux-workflow/api/workspaces/${binding.workspaceId}/file`;
+    const url = `${path}?${new URLSearchParams({ rel: 'artifacts/voice.wav', rev: version })}`;
+    let reads = 0;
+    await page.route(result => result.pathname + result.search === url, route => {
+      reads++;
+      return route.fulfill({ contentType: 'audio/wav', body: bytes });
+    });
+    await page.evaluate(() => {
+      window.__omnimuxWorkflow = {
+        prepareClipMediaReturn(request) {
+          return { activate() { window.clipCanvasTrip = request; return request.isCurrent(); }, dispose() {} };
+        },
+      };
+      window.returnFromFixtureCanvas = (binding, audios) => {
+        window.dispatchEvent(new CustomEvent('omnimux-clip-open', { detail: { source: 'canvas', ...binding,
+          upstreamInputs: { audios }, mediaReturn: { requestId: window.clipCanvasTrip.id, upstreamInputs: { audios } },
+        } }));
+      };
+    });
+    const previousVideo = await seat.getByRole('button', { name: 'Select clip capture.webm', exact: true }).getAttribute('data-timeline-item-id');
+    await addTimelineText(seat);
+    await seat.getByRole('button', { name: 'In Canvas', exact: true }).click();
+    await seat.waitFor({ state: 'hidden' });
+    const saved = store.load(binding.projectId);
+    const [text] = saved.project.textClips;
+    assert.ok(text.id);
+    assert.partialDeepStrictEqual(saved, { binding });
+    const trip = await page.evaluate(() => window.clipCanvasTrip);
+    assert.equal(trip.mode, 'canvas');
+    assert.equal(trip.sessionId, fixture.sessionId);
+    assert.deepEqual({ workspaceId: trip.workspaceId, nodeId: trip.nodeId, projectId: trip.projectId }, binding);
+
+    const audios = [{ path: url, url, name: 'Returned Canvas audio.wav', sourceId: 'voice-generator', sourceVersion: version }];
+    await page.evaluate(({ canvasBinding, audios }) => window.returnFromFixtureCanvas({ ...canvasBinding, nodeId: 'other-node' }, audios),
+      { canvasBinding: binding, audios });
+    assert.equal(await seat.isVisible(), false);
+    assert.equal(reads, 0);
+    const [result] = await Promise.all([
+      page.waitForResponse(response => isProjectRequest(response.request(), 'PUT', binding.projectId)
+        && response.request().postDataJSON()?.project?.mediaLibrary?.items?.length === 2),
+      page.evaluate(({ canvasBinding, audios }) => window.returnFromFixtureCanvas(canvasBinding, audios), { canvasBinding: binding, audios }),
+    ]);
+    assert.equal(result.status(), 200);
+    await seat.locator(`[data-timeline-item-id="${text.id}"]`).waitFor();
+    assert.equal(await seat.getByRole('button', { name: 'Select clip capture.webm', exact: true }).getAttribute('data-timeline-item-id'), previousVideo);
+    assert.equal(await seat.getAttribute('data-clip-project-id'), binding.projectId);
+    assert.equal(await seat.getAttribute('data-clip-node-id'), binding.nodeId);
+    const adopted = store.load(binding.projectId);
+    assert.deepEqual(adopted.project.timeline, saved.project.timeline);
+    assert.equal(adopted.project.mediaLibrary.items.find(item => item.type === 'audio').sourceRef.digest, version.slice('sha256:'.length));
+    await page.evaluate(({ canvasBinding, audios }) => window.returnFromFixtureCanvas(canvasBinding, audios), { canvasBinding: binding, audios });
+    assert.equal(reads, 1);
+    assert.deepEqual(store.load(binding.projectId), adopted);
+    t.diagnostic(JSON.stringify({ injectedBuild: clipBuild, adoptedRevision: adopted.revision, reads, retainedDraft: true }));
+  } finally {
+    await page.close();
+  }
+});
+
+test('#158 Studio saves before leaving and reloads the original project on return or cancel', { timeout: 35_000 }, async t => {
+  const page = await browser.newPage({ viewport: { width: 1460, height: 920 }, colorScheme: 'light' });
+  page.setDefaultTimeout(4000);
+  const projectId = fixture.studioProjectId;
+  const studio = page.locator(studioEditor);
+  const write = Promise.withResolvers();
+  const started = Promise.withResolvers();
+  let holdWrite = true;
+  let writes = 0;
+  try {
+    const store = await openWorkbench(page, async (_url, request) => {
+      if (!isProjectRequest(request, 'PUT', projectId)) return;
+      writes++;
+      if (!holdWrite) return;
+      started.resolve();
+      await write.promise;
+    }, 'light');
+    const bytes = pcmTone();
+    const version = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    const path = `/omnimux-workflow/api/workspaces/${fixture.canvas.workspaceId}/file`;
+    const url = `${path}?${new URLSearchParams({ rel: 'artifacts/voice.wav', rev: version })}`;
+    let reads = 0;
+    await page.route(result => result.pathname + result.search === url, route => {
+      reads++;
+      return route.fulfill({ contentType: 'audio/wav', body: bytes });
+    });
+    await page.evaluate(() => {
+      window.clipCanvasTrips = [];
+      window.__omnimuxWorkflow = {
+        prepareClipMediaReturn(request) {
+          if (!request.isCurrent()) return undefined;
+          return {
+            activate() {
+              if (!request.isCurrent()) return false;
+              window.clipCanvasTrips.push(request);
+              window.setStudioVisible(false);
+              return true;
+            },
+            dispose() {},
+          };
+        },
+      };
+      window.setStudioVisible(true);
+    });
+    await studio.locator('.editor-workspace').waitFor();
+    await addTimelineText(studio);
+    const openCanvas = studio.getByRole('button', { name: 'In Canvas', exact: true });
+    await openCanvas.click();
+    await started.promise;
+    assert.equal(await page.evaluate(() => window.clipCanvasTrips.length), 0);
+    assert.equal(store.load(projectId).project.textClips?.length ?? 0, 0);
+    holdWrite = false;
+    write.resolve();
+    await page.waitForFunction(() => window.clipCanvasTrips.length === 1);
+    const saved = store.load(projectId);
+    const [text] = saved.project.textClips;
+    assert.ok(text.id);
+    store.save(projectId, { ...saved.project, name: 'Latest saved in Canvas' }, { expectedRevision: saved.revision });
+
+    const returned = [{ id: 'canvas-voice', name: 'Returned audio.wav', type: 'audio', url, version }];
+    const returnSave = page.waitForResponse(result => isProjectRequest(result.request(), 'PUT', projectId)
+      && result.request().postDataJSON()?.project?.mediaLibrary?.items?.length === 1);
+    assert.equal(await page.evaluate(rows => window.clipCanvasTrips.at(-1).returnToStudio(rows), returned), true);
+    await studio.locator(`[data-timeline-item-id="${text.id}"]`).waitFor();
+    await studio.locator('.openreel-studio-hostbar-title').getByText('Latest saved in Canvas', { exact: true }).waitFor();
+    await studio.getByRole('button', { name: 'Select media Returned audio.wav', exact: true }).waitFor();
+    assert.equal((await returnSave).status(), 200);
+    const afterReturn = store.load(projectId);
+    const [item] = afterReturn.project.mediaLibrary.items;
+    assert.equal(item.omnimuxSource.version, version);
+    assert.equal(item.sourceRef.digest, version.slice('sha256:'.length));
+    assert.equal(item.name, 'Returned audio.wav');
+    assert.equal(reads, 1);
+    const beforeCancel = writes;
+    await openCanvas.click();
+    await page.waitForFunction(() => window.clipCanvasTrips.length === 2);
+    assert.equal(await page.evaluate(() => window.clipCanvasTrips.at(-1).returnToStudio([])), true);
+    await studio.locator(`[data-timeline-item-id="${text.id}"]`).waitFor();
+    assert.equal(await studio.getAttribute('data-clip-project-id'), projectId);
+    const tabs = await page.evaluate(() => window.openedClipTabs);
+    assert.equal(tabs.length, 2);
+    for (const tab of tabs) {
+      assert.equal(tab.id, 'dialog-studio-tab');
+      assert.equal(tab.meta.clip.projectId, projectId);
+      assert.equal(tab.sessionId, fixture.sessionId);
+    }
+    assert.notEqual(tabs[0].meta.clip.requestId, tabs[1].meta.clip.requestId);
+    assert.equal(writes, beforeCancel);
+    assert.equal(reads, 1);
+    assert.deepEqual(store.load(projectId), afterReturn);
+    t.diagnostic(JSON.stringify({ injectedBuild: clipBuild, priorRevision: saved.revision, finalRevision: afterReturn.revision,
+      hostWritesOnCancel: writes - beforeCancel, returnedFileReads: reads, studioInstanceId: tabs[0].id }));
+  } finally {
+    write.resolve();
+    await page.close();
+  }
+});

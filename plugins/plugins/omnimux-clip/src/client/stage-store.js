@@ -33,7 +33,7 @@ export function createStageStore(getStage) {
   // claim from localStorage — that chrome hides `[data-dsh-panel-host]`.
   let open = false
 
-  /** @type {null | { source: 'canvas' | 'sidebar' | 'agent', workspaceId?: string, nodeId?: string, nodeTitle?: string, projectId?: string, draftSchema?: unknown, upstreamInputs?: unknown }} */
+  /** @type {null | { source: 'canvas' | 'sidebar' | 'agent', workspaceId?: string, nodeId?: string, nodeTitle?: string, projectId?: string, draftSchema?: unknown, upstreamInputs?: unknown, mediaReturn?: unknown }} */
   let activeSession = null
 
   const listeners = new Set()
@@ -212,11 +212,11 @@ export function createStageStore(getStage) {
     },
     /**
      * Open clip editor in canvas mode with node session.
-     * @param {{ workspaceId: string, nodeId: string, nodeTitle?: string, projectId: string, draftSchema?: unknown, upstreamInputs?: unknown }} payload
+     * @param {{ workspaceId: string, nodeId: string, nodeTitle?: string, projectId: string, draftSchema?: unknown, upstreamInputs?: unknown, mediaReturn?: unknown }} payload
      */
     openFromCanvas(payload) {
       if (!isCanvasClipBinding(payload)) return
-      const { workspaceId, nodeId, projectId, nodeTitle, draftSchema, upstreamInputs } = payload
+      const { workspaceId, nodeId, projectId, nodeTitle, draftSchema, upstreamInputs, mediaReturn } = payload
       const bindingKey = `${workspaceId}/${projectId}`
       const previous = seenBindings.get(nodeId)
       seenBindings.set(nodeId, previous === undefined || previous === bindingKey ? bindingKey : null)
@@ -228,6 +228,7 @@ export function createStageStore(getStage) {
         nodeTitle,
         draftSchema,
         upstreamInputs,
+        ...(mediaReturn ? { mediaReturn } : {}),
       }
       open = true
       emit()

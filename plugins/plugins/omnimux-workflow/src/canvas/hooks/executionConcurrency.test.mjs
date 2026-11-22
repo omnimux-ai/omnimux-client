@@ -25,6 +25,7 @@ buildSync({
     contents: [
       "export { dispatchExecutionEvent, settleInFlightNodes, shouldConvergeInFlightOnReload } from './useExecutionController.ts';",
       "export { useCanvasStore } from '../store/canvasStore.ts';",
+      "export { collectStudioReturnOutputs } from '../bridge/clipMediaOutputs.ts';",
       "export { buildExecutionQueueView } from '../editor/components/executionQueue.ts';",
       "export { useExecutionStore, LOCAL_RUN_ID } from '../store/executionStore.ts';",
     ].join('\n'),
@@ -41,6 +42,7 @@ const {
   settleInFlightNodes,
   shouldConvergeInFlightOnReload,
   useCanvasStore,
+  collectStudioReturnOutputs,
   useExecutionStore,
   LOCAL_RUN_ID,
   buildExecutionQueueView,
@@ -88,6 +90,32 @@ function startRun(executionId, nodeIds) {
     );
   }
 }
+
+test('Studio offers completed execution outputs and excludes the old output during a rerun', () => {
+  const workspaceId = 'ws_clip_completion';
+  const url = `/omnimux-workflow/api/workspaces/${workspaceId}/file?rel=generated%2Fvideo.mp4&rev=sha256%3A${'a'.repeat(64)}`;
+  const completedOutput = { mediaAssets: [{ type: 'video', url }] };
+  arrangeRuns([{ executionId: 'initial', nodeIds: ['current', 'rerun'] }]);
+  useCanvasStore.setState(state => ({ nodes: state.nodes.map(node => ({ ...node, data: {
+    ...node.data, nodeKind: 'generate', materialType: 'video', status: node.id === 'rerun' ? 'completed' : 'empty',
+  } })) }));
+  startRun('initial', ['current', 'rerun']);
+  for (const nodeId of ['current', 'rerun']) {
+    dispatchExecutionEvent('node_complete', JSON.stringify({ executionId: 'initial', nodeId, output: completedOutput }), () => {});
+  }
+  startRun('running-again', ['rerun']);
+  assert.equal(nodeData('current').status, 'empty');
+  assert.equal(nodeData('current').executionStatus, 'completed');
+  assert.equal(nodeData('rerun').status, 'completed');
+  assert.equal(nodeData('rerun').executionStatus, 'running');
+  assert.equal(nodeData('rerun').mediaUrl, url);
+
+  const nodes = useCanvasStore.getState().nodes;
+  const legacy = { ...nodes[0], id: 'legacy', data: { ...nodes[0].data, status: 'completed', executionStatus: undefined } };
+  assert.deepEqual(collectStudioReturnOutputs([...nodes, legacy], workspaceId).map(item => [item.sourceId, item.url]), [
+    ['current', url], ['legacy', url],
+  ]);
+});
 
 test('#2255 两条执行可同时活跃，各自维护自己的节点状态', () => {
   arrangeRuns([

@@ -17,10 +17,11 @@ import { findCanvasHost } from './findCanvasHost.js'
  * @param {{
  *   stage: { openFromCanvas: (payload: any) => void, set: (open: boolean) => void, getSessionSnapshot: () => any },
  *   target?: EventTarget,
- *   root?: Document
+ *   root?: Document,
+ *   acceptMediaReturn?: (payload: any) => boolean
  * }} options
  */
-export function createAndMountCanvasBridge({ stage, target = window, root = globalThis.document }) {
+export function createAndMountCanvasBridge({ stage, target = window, root = globalThis.document, acceptMediaReturn }) {
   if (!target || typeof target.addEventListener !== 'function') {
     return () => {}
   }
@@ -29,6 +30,7 @@ export function createAndMountCanvasBridge({ stage, target = window, root = glob
     const detail = event instanceof CustomEvent ? event.detail : undefined
     if (!isOpenClipEditorPayload(detail) || detail.source !== 'canvas') return
     if (!findCanvasHost(root, detail.workspaceId)) return
+    if (detail.mediaReturn && !acceptMediaReturn?.(detail)) return
     stage.openFromCanvas(detail)
   }
 
