@@ -16,6 +16,14 @@
  */
 
 import { looksAbsolutePath, localFileMediaUrl, localFilePathFromUrl } from '../../../shared/localMedia.ts';
+import { CANVAS_ZOOM_CONFIG } from '../../../shared/graph/nodeSizeConfig.ts';
+import {
+  GROUP_HEADER_EXTERNAL_GAP,
+  GROUP_HEADER_HEIGHT,
+  projectGroupDimensions,
+  resolveNodeDimensions,
+  toAbsoluteCoordinates,
+} from '../../editor/utils/nodeVisualMath.ts';
 
 export const VIDEO_COMPOSITION_NODE_WIDTH = 350;
 export const CLIP_EXPORT_SOURCE_HANDLE = 'out';
@@ -23,6 +31,7 @@ export const CLIP_EXPORT_TARGET_HANDLE = 'in';
 export const CLIP_EXPORT_DOWNSTREAM_GAP = 80;
 export const CLIP_EXPORT_ORIGIN = 'clip_export';
 export const CLIP_EXPORT_COPY_ORIGIN = 'clip_export_copy';
+const DOWNSTREAM_CLEARANCE = 40;
 
 /** Re-point an already-resolved local-file URL at a new content revision. */
 function withMediaRevision(url: string, token: string): string {
@@ -66,6 +75,11 @@ export interface ClipExportGraphNode {
   type?: string;
   data?: Record<string, unknown>;
   position?: { x: number; y: number };
+  width?: number;
+  height?: number;
+  measured?: { width?: number; height?: number };
+  parentId?: string;
+  hidden?: boolean;
 }
 
 export interface ClipExportGraphEdge {
@@ -217,6 +231,49 @@ function edgeBetween(
   };
 }
 
+function placeDownstreamNode(input: ClipExportDownstreamInput): ClipExportDownstreamNode['position'] {
+  const position = {
+    x: input.sourcePosition.x + input.nodeWidth + CLIP_EXPORT_DOWNSTREAM_GAP,
+    y: input.sourcePosition.y,
+  };
+  const { width, height, headerOffset } = resolveNodeDimensions({
+    type: 'material', position, data: { materialType: 'video' },
+  });
+  const { width: mediaWidth, height: mediaHeight } = input.output;
+  let cardHeight = height;
+  if (mediaWidth && mediaWidth > 0 && Number.isFinite(mediaWidth)
+    && mediaHeight && mediaHeight > 0 && Number.isFinite(mediaHeight)) {
+    // Leave room for both the placeholder and MaterialNode's loaded video preview.
+    cardHeight = Math.max(height, Math.min(800, Math.round(width / (mediaWidth / mediaHeight))));
+  }
+
+  // Titles have fixed screen heights, so use their largest canvas-space offset.
+  const minZoom = CANVAS_ZOOM_CONFIG.minZoom;
+  const titleOffset = Math.ceil(headerOffset / minZoom);
+  const groups = new Map(input.currentNodes.filter(node => node.type === 'group').map(node => [node.id, node]));
+  const obstacles: { top: number; bottom: number }[] = [];
+  for (const node of input.currentNodes) {
+    if (node.hidden || !node.position || !Number.isFinite(node.position.x) || !Number.isFinite(node.position.y)) continue;
+    const parent = node.parentId ? groups.get(node.parentId) : undefined;
+    if (parent?.hidden || parent?.data?.isCollapsed) continue;
+    const { x, y } = parent?.position ? toAbsoluteCoordinates(node.position, parent.position) : node.position;
+    const dimensions = resolveNodeDimensions({ ...projectGroupDimensions(node), position: node.position });
+    if (x + dimensions.width + DOWNSTREAM_CLEARANCE <= position.x
+      || position.x + width + DOWNSTREAM_CLEARANCE <= x) continue;
+    const header = node.type === 'group' && !node.data?.isCollapsed
+      ? GROUP_HEADER_HEIGHT + GROUP_HEADER_EXTERNAL_GAP
+      : dimensions.headerOffset;
+    obstacles.push({ top: y - Math.ceil(header / minZoom), bottom: y + dimensions.height });
+  }
+
+  // Move past each blocking card until the next one leaves enough room above it.
+  for (const { top, bottom } of obstacles.sort((a, b) => a.top - b.top)) {
+    if (position.y + cardHeight + DOWNSTREAM_CLEARANCE <= top) break;
+    position.y = Math.max(position.y, bottom + titleOffset + DOWNSTREAM_CLEARANCE);
+  }
+  return position;
+}
+
 export function planClipExportDownstream(
   input: ClipExportDownstreamInput,
 ): ClipExportDownstreamPlan | null {
@@ -262,10 +319,7 @@ export function planClipExportDownstream(
   const newNode: ClipExportDownstreamNode = {
     id: newNodeId,
     type: 'material',
-    position: {
-      x: input.sourcePosition.x + input.nodeWidth + CLIP_EXPORT_DOWNSTREAM_GAP,
-      y: input.sourcePosition.y,
-    },
+    position: placeDownstreamNode(input),
     selected: true,
     data: desired,
   };

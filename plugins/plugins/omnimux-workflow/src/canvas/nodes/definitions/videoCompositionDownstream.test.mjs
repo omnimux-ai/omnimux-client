@@ -104,6 +104,89 @@ test('planClipExportDownstream：新建成片节点并用 out/in 连线', () => 
   assert.equal(CLIP_EXPORT_TARGET_HANDLE, 'in');
 });
 
+test('下游放置：目标列空闲时保留默认坐标', () => {
+  const elsewhere = { id: 'elsewhere', position: { x: 900, y: 80 }, width: 350, height: 500 };
+  const plan = planWith([elsewhere], []);
+  assert.deepEqual(plan?.addNodes[0]?.position, { x: 470, y: 80 });
+});
+
+test('下游放置：按测量宽高避让占位卡片并为标题留距', () => {
+  const obstacle = {
+    id: 'obstacle', type: 'material', position: { x: 330, y: 80 },
+    width: 100, height: 20, measured: { width: 180, height: 390 },
+  };
+  const plan = planWith([obstacle], []);
+  assert.deepEqual(plan?.addNodes[0]?.position, { x: 470, y: 632 });
+});
+
+test('下游放置：同列连续避让并停在首个可容纳成片的空位', () => {
+  const first = { id: 'first', type: 'material', position: { x: 470, y: 80 }, width: 350, height: 200 };
+  const second = { id: 'second', type: 'material', position: { x: 470, y: 490 }, width: 350, height: 120 };
+  const later = { id: 'later', type: 'material', position: { x: 470, y: 1260 }, width: 350, height: 200 };
+  const plan = planWith([later, second, first], []);
+  const reordered = planWith([first, later, second], []);
+  assert.deepEqual(plan?.addNodes[0]?.position, { x: 470, y: 772 });
+  assert.deepEqual(reordered?.addNodes[0]?.position, plan.addNodes[0].position);
+});
+
+test('下游放置：未测量卡片按素材类型默认宽高避让', () => {
+  const unmeasured = {
+    id: 'unmeasured', type: 'material', position: { x: 140, y: 110 },
+    data: { materialType: 'text' },
+  };
+  const plan = planWith([unmeasured], []);
+  assert.deepEqual(plan?.addNodes[0]?.position, { x: 470, y: 772 });
+});
+
+test('下游放置：缩到最小倍率时成片标题仍有空间', () => {
+  const above = { id: 'above', type: 'material', position: { x: 470, y: -230 }, width: 350, height: 200 };
+  const plan = planWith([above], []);
+  assert.deepEqual(plan?.addNodes[0]?.position, { x: 470, y: 132 });
+});
+
+test('下游放置：竖版成片为媒体加载后的卡片高度留空间', () => {
+  const obstacle = { id: 'below', type: 'material', position: { x: 470, y: 550 }, width: 350, height: 150 };
+  assert.deepEqual(planWith([obstacle], [])?.addNodes[0]?.position, { x: 470, y: 80 });
+  const portrait = planWith([obstacle], [], { output: { ...output, width: 1080, height: 1920 } });
+  assert.deepEqual(portrait?.addNodes[0]?.position, { x: 470, y: 862 });
+});
+
+test('下游放置：分组子节点按画布坐标判断', () => {
+  const group = { id: 'group', type: 'group', position: { x: 930, y: 50 }, width: 500, height: 600 };
+  const grouped = { id: 'grouped', type: 'material', parentId: group.id, position: { x: 32, y: 60 } };
+  const plan = planWith([group, grouped], []);
+  assert.deepEqual(plan?.addNodes[0]?.position, { x: 470, y: 80 });
+});
+
+test('下游放置：折叠组使用收起后的宽高，组内隐藏节点不占位', () => {
+  const group = {
+    id: 'group', type: 'group', position: { x: 180, y: 50 }, width: 220, height: 44,
+    measured: { width: 640, height: 600 }, data: { isCollapsed: true },
+  };
+  const child = { id: 'child', type: 'material', parentId: group.id, position: { x: 290, y: 30 } };
+  const plan = planWith([group, child], []);
+  assert.deepEqual(plan?.addNodes[0]?.position, { x: 470, y: 80 });
+});
+
+test('下游放置：二次导出经 mutation gateway 保持用户移动后的成片位置', () => {
+  const position = Object.freeze({ x: -230, y: 420 });
+  const existing = {
+    id: 'moved-export', type: 'material', position,
+    data: { materialType: 'video', origin: CLIP_EXPORT_ORIGIN, sourceCompositionNodeId: compositionNode.id },
+  };
+  const obstacle = { id: 'obstacle', position: { x: 470, y: 80 } };
+  const edges = [drawableEdge(compositionNode.id, existing.id)];
+  const plan = planWith([existing, obstacle], edges, { output: { ...output, revision: '202:10' } });
+  assert.ok(plan);
+  assert.deepEqual(plan.addNodes, []);
+  assert.deepEqual(plan.addEdges, []);
+  const applied = planCanvasInputMutation({ nodes: [compositionNode, existing, obstacle], edges }, plan);
+  assert.equal(applied.status, 'allowed');
+  assert.deepEqual(applied.edges, edges);
+  assert.deepEqual(applied.nodes.find(node => node.id === existing.id)?.position, position);
+  assert.equal(applied.nodes.find(node => node.id === existing.id)?.data.outputRevision, '202:10');
+});
+
 test('新建节点：mediaUrl 是宿主媒体 URL，realPath 才是裸绝对路径', () => {
   const plan = planClipExportDownstream({
     sourceNodeId: compositionNode.id,
