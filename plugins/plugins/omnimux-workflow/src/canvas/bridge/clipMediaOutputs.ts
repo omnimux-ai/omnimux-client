@@ -47,6 +47,15 @@ function returnLocator(value: unknown, workspaceId: string, origin?: string) {
   }
 }
 
+function outputVersion(data: SerializedCanvasNode['data'], locatorVersion?: string) {
+  return locatorVersion ?? [data.outputRevision, data.mediaRevision, data.generationId, data.taskId]
+    .map(referenceId).find(Boolean);
+}
+
+export function connectedClipMediaVersion(data: SerializedCanvasNode['data'], path: string | undefined, workspaceId: string, origin?: string) {
+  return outputVersion(data, returnLocator(path, workspaceId, origin)?.version);
+}
+
 function mediaType(value: unknown): value is ClipMediaReturnRow['type'] {
   return typeof value === 'string' && mediaTypes.has(value);
 }
@@ -78,8 +87,7 @@ function nodeOutputs(node: SerializedCanvasNode, workspaceId: string, origin?: s
     const id = referenceId(`${workspaceId}:${node.id}:${index}`);
     const locator = returnLocator(asset.url, workspaceId, origin);
     if (!id || !locator || !mediaType(asset.type)) return [];
-    const version = locator.version ?? [data.outputRevision, data.mediaRevision, data.generationId, data.taskId]
-      .map(referenceId).find(Boolean);
+    const version = outputVersion(data, locator.version);
     const seconds = asset.durationSec;
     const outputMs = data.outputDurationMs ?? data.durationMs;
     const durationMs = typeof outputMs === 'number' && Number.isFinite(outputMs) ? outputMs
@@ -93,8 +101,10 @@ function nodeOutputs(node: SerializedCanvasNode, workspaceId: string, origin?: s
 export function collectStudioReturnOutputs(nodes: readonly SerializedCanvasNode[], workspaceId: string, origin?: string) {
   return nodes.flatMap(node => {
     const { data } = node;
-    if (data.status !== 'completed' || (node.type !== 'video_composition'
-      && (node.type !== 'material' || resolveNodeKind(data) !== 'generate'))) return [];
+    if (node.type === 'video_composition') {
+      if (data.status !== 'completed') return [];
+    } else if (node.type !== 'material' || resolveNodeKind(data) !== 'generate'
+      || (data.executionStatus ?? data.status) !== 'completed') return [];
     return nodeOutputs(node, workspaceId, origin);
   });
 }

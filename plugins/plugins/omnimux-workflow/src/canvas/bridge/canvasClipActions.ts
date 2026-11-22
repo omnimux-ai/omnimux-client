@@ -16,7 +16,7 @@ import type { SerializedCanvasEdge, SerializedCanvasNode } from '../../shared/ca
 import { captionSlicesFromText } from '../editor/utils/srtParser.ts';
 import { VIDEO_COMPOSITION_NODE_WIDTH, clipExportMediaUrl, planClipExportDownstream } from '../nodes/definitions/videoCompositionDownstream.ts';
 import type { CanvasInputMutation } from '../../shared/graph/canvasInputMutationGateway.ts';
-import { changedConnectedInputs, collectConnectedReturnOutputs, type CanvasMediaReturnBaseline } from './clipMediaOutputs.ts';
+import { changedConnectedInputs, collectConnectedReturnOutputs, connectedClipMediaVersion, type CanvasMediaReturnBaseline } from './clipMediaOutputs.ts';
 
 interface CanvasClipGraph {
   nodes: SerializedCanvasNode[];
@@ -36,7 +36,7 @@ function mediaPathOf(data: Record<string, unknown>): string | undefined {
     || asString(data.url) || asString(data.real_path) || asString(data.filePath);
 }
 
-function collectUpstreamInputs({ nodes, edges }: CanvasClipGraph, nodeId: string) {
+function collectUpstreamInputs({ nodes, edges }: CanvasClipGraph, { nodeId, workspaceId }: CanvasClipBinding, origin?: string) {
   const captions: NonNullable<NonNullable<OpenClipEditorPayload['upstreamInputs']>['captions']> = [];
   const inputs: NonNullable<OpenClipEditorPayload['upstreamInputs']> = { videos: [], audios: [], images: [], captions };
   for (const edge of edges) {
@@ -47,8 +47,7 @@ function collectUpstreamInputs({ nodes, edges }: CanvasClipGraph, nodeId: string
     const materialType = source.type === 'video_composition' ? 'video' : asString(data.materialType) ?? source.type;
     const name = asString(data.label) || asString(data.title) || source.id;
     const path = mediaPathOf(data);
-    const sourceVersion = asString(data.outputRevision) || asString(data.mediaRevision)
-      || asString(data.generationId) || asString(data.taskId);
+    const sourceVersion = connectedClipMediaVersion(data, path, workspaceId, origin);
     const identity = { sourceId: source.id, ...(sourceVersion ? { sourceVersion } : {}) };
     // Imported material duration is in seconds, composition output in milliseconds.
     const duration = asNumber(data.durationSec) ?? asNumber(data.duration);
@@ -126,7 +125,7 @@ export async function openCanvasClipNode({
     nodeTitle: asString(data.title) || asString(data.label) || defaultTitle,
     ...(data.schema ? { draftSchema: data.schema } : {}),
     ...(Number.isSafeInteger(data.draftRevision) ? { draftRevision: data.draftRevision } : {}),
-    upstreamInputs: collectUpstreamInputs(graph, nodeId),
+    upstreamInputs: collectUpstreamInputs(graph, binding, mediaReturn?.origin ?? globalThis.location?.origin),
   };
   if (mediaReturn) {
     const connected = captureCanvasMediaReturn(graph, binding, mediaReturn.origin);

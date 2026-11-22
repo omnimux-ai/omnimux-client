@@ -717,7 +717,7 @@ export const AssetsPanel: React.FC = () => {
     replaceMediaAsset: state.replaceMediaAsset,
   })));
   const editorActions = useClipEditorActions();
-  const { canBridgeMedia, captureMediaEditor, openCanvasForMedia } = editorActions;
+  const { canBridgeMedia, captureMediaEditor, openCanvasForMedia, canvasImport } = editorActions;
   const bridgeImport = useBridgedMediaImport({ ...editorActions, projectId, actionExecutor });
   const importedSourceIds = useMemo(() => new Set(mediaItems.flatMap(item => (
     item.omnimuxSource?.id && !item.isPlaceholder ? [item.omnimuxSource.id] : []
@@ -1274,10 +1274,12 @@ export const AssetsPanel: React.FC = () => {
 
             <AssetBridgeFeedback
               progress={bridgeImport.progress}
-              failed={bridgeImport.failed}
+              failed={[
+                ...Array.from(bridgeImport.failed.values(), item => ({ id: item.id, name: item.name, retry: () => bridgeImport.start([item]) })),
+                ...(canvasImport?.failed.map(item => ({ ...item, retry: () => canvasImport.retry(item.id) })) ?? []),
+              ]}
               canvasIssue={canvasIssue}
-              canRetry={canUseLibrary && !bridgeImport.busy && !canvasOpening}
-              retry={item => { bridgeImport.start([item]); }}
+              canRetry={canUseLibrary && !bridgeImport.busy && !canvasOpening && !canvasImport?.retrying}
             />
             {panelView === "list" && mediaItems.length > 0 ? (
               <div

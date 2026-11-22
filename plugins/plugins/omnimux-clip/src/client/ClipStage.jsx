@@ -134,7 +134,9 @@ export function ClipStage({ t, stage, locale, runtime }) {
   const saveImported = useCallback(() => {
     if (ownsCanvas()) void runtime.session.finishIngestion()
   }, [runtime, ownsCanvas])
-  useCanvasIngestion(activeSession, view.conflict ? undefined : view.token, ownsCanvas, saveImported)
+  const owner = runtime?.session.getOwner()
+  const canvasImport = useCanvasIngestion(activeSession, view.conflict ? undefined : view.token, ownsCanvas, saveImported,
+    owner?.token === view.token ? owner?.site.sessionId : undefined)
 
   const closeCanvas = useCallback(() => {
     const target = stage?.getSessionSnapshot()
@@ -249,7 +251,7 @@ export function ClipStage({ t, stage, locale, runtime }) {
         <div ref={editorRootRef} style={{ height: '100%', display: runtime && view.phase !== 'editing' ? 'none' : undefined,
           ...(view.ingesting ? { position: 'absolute', inset: 0, visibility: 'hidden' } : {}),
         }}>
-          <ClipEditorActions onExit={runtime ? closeCanvas : null} runtime={runtime} view={view}>
+          <ClipEditorActions onExit={runtime ? closeCanvas : null} runtime={runtime} view={view} canvasImport={canvasImport}>
             <ClipErrorBoundary>
               <OpenReelApp active={visible && (!runtime || view.phase === 'editing')} canvasMode={isCanvasMode} managed={Boolean(runtime)} />
             </ClipErrorBoundary>

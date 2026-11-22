@@ -5,7 +5,6 @@ import { useEditorPortalRoot } from "@openreel/ui/lib/portal-root";
 import { ChevronDown, File, FolderOpen, Sparkles } from "@/icons/lucide-compat";
 import { MediaLibraryIcon } from "@/icons/media-library";
 import { useClipT } from "../../../../i18n/index.js";
-import type { MediaBridgeItem } from "../../../../live/bridged-media";
 import type { BridgeImportProgress } from "./useBridgedMediaImport";
 
 interface BridgeActions {
@@ -79,15 +78,14 @@ export function AssetBridgeShortcuts({ empty, ...bridge }: BridgeActions & { emp
   return empty ? buttons : <div className="clip-media-bridge-shortcuts">{buttons}</div>;
 }
 
-export function AssetBridgeFeedback({ progress, failed, canvasIssue, canRetry, retry }: {
+export function AssetBridgeFeedback({ progress, failed, canvasIssue, canRetry }: {
   progress: BridgeImportProgress | null;
-  failed: ReadonlyMap<string, MediaBridgeItem>;
+  failed: ReadonlyArray<{ id: string; name: string; retry: () => void }>;
   canvasIssue: "save-failed" | "unavailable" | null;
   canRetry: boolean;
-  retry: (item: MediaBridgeItem) => void;
 }) {
   const t = useClipT();
-  if (!progress && !failed.size && !canvasIssue) return null;
+  if (!progress && !failed.length && !canvasIssue) return null;
   return (
     <div className="clip-media-bridge-feedback">
       {progress && (
@@ -97,10 +95,10 @@ export function AssetBridgeFeedback({ progress, failed, canvasIssue, canRetry, r
         </div>
       )}
       {canvasIssue && <p role="alert">{t(canvasIssue === "save-failed" ? "Could not save the draft. Try opening Canvas again." : "Canvas is unavailable.")}</p>}
-      {[...failed.values()].map(item => (
+      {failed.map(item => (
         <div className="clip-media-bridge-failure" key={item.id}>
           <span role="alert" title={item.name}>{t("Could not import {0}", [item.name])}</span>
-          <Button size="xs" variant="outline" disabled={!canRetry} aria-label={t("Retry import of {0}", [item.name])} onClick={() => retry(item)}>
+          <Button size="xs" variant="outline" disabled={!canRetry} aria-label={t("Retry import of {0}", [item.name])} onClick={item.retry}>
             {t("Retry")}
           </Button>
         </div>
