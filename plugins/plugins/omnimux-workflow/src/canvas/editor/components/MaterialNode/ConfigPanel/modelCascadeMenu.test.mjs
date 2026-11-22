@@ -236,7 +236,7 @@ test('hover only previews and model clicks use the marked default or expose manu
   assert.match(cascadeSrc, /preview=\{isReadOnlyPreview\}/);
   assert.match(cascadeSrc, /const defaultGroup = findDefaultChannelGroup\(groups\);/);
   assert.match(cascadeSrc, /emit\(modelId, defaultGroup \? \[defaultGroup\.id\] : \[\]\);/);
-  assert.match(cascadeSrc, /groups\.length === 1 && !findDefaultChannelGroup\(groups\)/);
+  assert.match(cascadeSrc, /groups\.length === 1 && \(lineSelectionRequired \|\| !findDefaultChannelGroup\(groups\)\)/);
   assert.match(cascadeSrc, /disabled=\{preview\}/);
 });
 

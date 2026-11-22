@@ -16,6 +16,7 @@
 import type { CapabilityCatalog, CatalogChannelGroupDto, CatalogModelDto, OperationContractDto } from '../api.ts';
 import { canonicalJson } from './compatKernel.ts';
 import { findDeclaredParameterFailure } from './declaredParameterValidation.ts';
+import { findSelectedChannelGroup, isByokGroup, parseModelAndGroup, readChannelRouting } from './channelRouting.ts';
 
 export interface LineParameterConstraint {
   /** Explicitly remove a parameter the selected line does not expose. */
@@ -58,20 +59,17 @@ export function groupMatchesEffectiveVideoVersion(group: CatalogChannelGroupDto,
 /** Null means a legacy route. A managed model without a matching group stays unconfigured. */
 export function resolveEffectiveVideoGroup(catalog: CapabilityCatalog | null | undefined,
   modelId: unknown, routing: unknown): EffectiveVideoGroupSelection | null {
-  if (typeof modelId !== 'string' || !modelId.trim()) return null;
-  const id = modelId.trim();
-  const model = catalog?.models?.find(row => row.id === id || row.aliases?.includes(id));
-  const intent = asRecord(routing);
-  const allowed = Array.isArray(intent?.allowedGroups) ? intent.allowedGroups : [];
-  const requested = [...new Set([intent?.channelGroupId, ...allowed]
-    .filter((value): value is string => typeof value === 'string' && Boolean(value.trim()))
-    .map(value => value.trim()))];
-  if (!model || intent?.sourceType === 'byok'
-    || (requested.length > 0 && requested.every(group => group.startsWith('byok-')))) return null;
-  if (model.effectiveVideoVersion === undefined) return typeof intent?.videoLineQuote === 'string' ? { model } : null;
-  if (!requested.length || requested.includes('auto') || model.visible === false || model.selectable === false) return { model };
-  const group = model.channelGroups?.find(candidate => groupMatchesEffectiveVideoVersion(candidate, model.effectiveVideoVersion!)
-    && requested.every(id => candidate.id === id || candidate.wireGroup === id));
+  const { modelId: id, group: inlineGroup } = parseModelAndGroup(modelId);
+  if (!id) return null;
+  const model = Array.isArray(catalog?.models)
+    ? catalog.models.find(row => row.id === id || row.aliases?.includes(id)) : undefined;
+  const { requestedGroups, sourceType } = readChannelRouting(routing, inlineGroup);
+  if (!model || sourceType === 'byok'
+    || (requestedGroups.length > 0 && requestedGroups.every(group => isByokGroup(group)))) return null;
+  if (model.effectiveVideoVersion === undefined) return typeof asRecord(routing)?.videoLineQuote === 'string' ? { model } : null;
+  if (model.visible === false || model.selectable === false) return { model };
+  const groups = (model.channelGroups ?? []).filter(candidate => groupMatchesEffectiveVideoVersion(candidate, model.effectiveVideoVersion!));
+  const group = findSelectedChannelGroup(groups, routing, inlineGroup, true);
   return group ? { model, group } : { model };
 }
 
@@ -360,9 +358,11 @@ export function narrowCatalogByRouting<C>(
   params: AnyRecord = {},
 ): C | null | undefined {
   if (!catalog || typeof catalog !== 'object') return catalog;
-  if (typeof modelId !== 'string' || !modelId) return catalog;
+  const { modelId: id, group: inlineGroup } = parseModelAndGroup(modelId);
+  if (!id) return catalog;
   const catalogRecord = catalog as unknown as Record<string, unknown>;
-  const models = Array.isArray(catalogRecord.models) ? catalogRecord.models : null;
+  const models = Array.isArray(catalogRecord.models) ? catalogRecord.models as CatalogModelDto[] : null;
+  const row = models?.find(model => model?.id === id || model?.aliases?.includes(id));
   const managed = resolveEffectiveVideoGroup(catalog as unknown as CapabilityCatalog, modelId, routing);
   if (managed) {
     const variants = effectiveVideoOperations(managed.group);
@@ -382,14 +382,11 @@ export function narrowCatalogByRouting<C>(
         asRecord(model)?.id === managed.model.id ? { ...model, parameters: {} } : model) } : {}),
     } as unknown as C;
   }
-  if (!resolver) return catalog;
-  if (!models || !models.some((model) => asRecord(model)?.id === modelId)) return catalog;
-  const constraints = resolver(modelId, routing, catalogRecord);
+  if (!resolver || !models || !row) return catalog;
+  const constraints = resolver(inlineGroup ? `${row.id}@${inlineGroup}` : row.id, routing, catalogRecord);
   if (!constraints || Object.keys(constraints).length === 0) return catalog;
   return {
     ...catalogRecord,
-    models: models.map((model) => (asRecord(model)?.id === modelId
-      ? narrowModelByLineConstraints(model, modelId, constraints)
-      : model)),
+    models: models.map(model => model === row ? narrowModelByLineConstraints(model, row.id, constraints) : model),
   } as unknown as C;
 }

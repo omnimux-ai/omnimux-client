@@ -20,6 +20,20 @@ import {
   setLineConstraintResolver,
   type LineConstraints,
 } from '../../../../../shared/validation/lineConstraints.ts';
+import {
+  findDefaultChannelGroup,
+  isByokGroup,
+  isChannelGroupAvailable,
+  parseModelAndGroup,
+  readChannelRouting,
+} from '../../../../../shared/validation/channelRouting.ts';
+export {
+  findDefaultChannelGroup,
+  findSelectedChannelGroup,
+  isByokGroup,
+  isChannelGroupAvailable,
+  parseModelAndGroup,
+} from '../../../../../shared/validation/channelRouting.ts';
 import type {
   CapabilityCatalog,
   CatalogChannelGroupDto,
@@ -172,61 +186,6 @@ export function rowChannelGroups(
   if (!canonical) return [];
   const row = rows.find((candidate) => candidate?.id === canonical);
   return Array.isArray(row?.channelGroups) ? row.channelGroups : [];
-}
-
-export function parseModelAndGroup(input?: string): { modelId: string; group: string | null } {
-  if (!input || typeof input !== 'string') return { modelId: '', group: null };
-  const trimmed = input.trim();
-  const atIndex = trimmed.indexOf('@');
-  if (atIndex < 0) return { modelId: trimmed, group: null };
-  const rawModel = trimmed.slice(0, atIndex).trim();
-  const rawGroup = trimmed.slice(atIndex + 1).trim();
-  return {
-    modelId: rawModel,
-    group: rawGroup || null,
-  };
-}
-
-type ChannelRouteOption = Pick<ChannelGroupItem, 'id' | 'wireGroup' | 'default' | 'category' | 'sourceType' | 'isAvailable'>
-  & { enabled?: boolean };
-
-export function isChannelGroupAvailable(group: Pick<ChannelRouteOption, 'enabled' | 'isAvailable'>): boolean {
-  return group.enabled !== false && group.isAvailable !== false;
-}
-
-/** The hub has already resolved compatibility defaults against the gateway order. */
-export function findDefaultChannelGroup<T extends ChannelRouteOption>(groups: readonly T[]): T | undefined {
-  const defaults = groups.filter(group => group.default === true && isChannelGroupAvailable(group) && !isByokGroup(group));
-  return defaults.length === 1 ? defaults[0] : undefined;
-}
-
-interface PersistedChannelSelection {
-  channelGroupId?: unknown;
-  allowedGroups?: unknown;
-  group?: unknown;
-  sourceType?: unknown;
-}
-
-export function findSelectedChannelGroup<T extends ChannelRouteOption>(
-  groups: readonly T[],
-  routing?: PersistedChannelSelection,
-  inlineGroup?: string | null,
-  requireConsistentSelection = false,
-): T | undefined {
-  const allowed = Array.isArray(routing?.allowedGroups) ? routing.allowedGroups : [];
-  const requested = [routing?.channelGroupId, ...allowed, routing?.group, inlineGroup]
-    .flatMap(id => typeof id === 'string' && id.trim() ? [id.trim()] : []);
-  if (requested.length === 0) return undefined;
-  const available = groups.filter(group => isChannelGroupAvailable(group)
-    && (routing?.sourceType !== 'byok' || isByokGroup(group)));
-  if (requireConsistentSelection) {
-    return available.find(group => requested.every(id => group.id === id || group.wireGroup === id));
-  }
-  for (const id of requested) {
-    const group = available.find(group => group.id === id) ?? available.find(group => group.wireGroup === id);
-    if (group) return group;
-  }
-  return undefined;
 }
 
 /**
@@ -526,23 +485,6 @@ export const DEFAULT_BYOK_CONSTRAINTS: LineConstraints = Object.freeze({
 });
 
 /**
- * 判断渠道分组或渠道 ID 是否属于 BYOK（自备渠道）。
- */
-export function isByokGroup(
-  groupOrId?: string | { id?: string; category?: string; sourceType?: string } | null,
-): boolean {
-  if (!groupOrId) return false;
-  if (typeof groupOrId === 'string') {
-    return groupOrId.startsWith('byok-');
-  }
-  return (
-    groupOrId.category === 'byok' ||
-    groupOrId.sourceType === 'byok' ||
-    Boolean(groupOrId.id?.startsWith('byok-'))
-  );
-}
-
-/**
  * 清洗与防御校验 providerKey，过滤非预期特殊字符，避免注入或非法 ID 构造。
  * 若清洗后为空串或入参非法，返回 null，由调用方跳过注入。
  */
@@ -827,24 +769,12 @@ export function resolveShortModelName(modelId?: string, _family?: string): strin
 
 /** Group ids named by a routing intent (`group`, `allowedGroups`); empty means automatic. */
 function selectedGroupIds(routing: unknown, availableGroupIds?: Set<string>): Set<string> | null {
-  const ids = new Set<string>();
-  if (!routing || typeof routing !== 'object' || Array.isArray(routing)) return ids;
-  const intent = routing as Record<string, unknown>;
-  if (typeof intent.group === 'string' && intent.group.trim()) ids.add(intent.group.trim());
-  if (typeof intent.channelGroupId === 'string' && intent.channelGroupId.trim()) {
-    ids.add(intent.channelGroupId.trim());
-  }
-  if (Array.isArray(intent.allowedGroups)) {
-    for (const candidate of intent.allowedGroups) {
-      if (typeof candidate === 'string' && candidate.trim()) ids.add(candidate.trim());
-    }
-  }
+  const { channelGroupId, requestedGroups, sourceType } = readChannelRouting(routing);
+  const ids = new Set(requestedGroups);
   // 当 channelGroupId 与 allowedGroups[0] 为不同 BYOK ID 时，
   // 仅在 explicitByokId 确实在可用列表（若提供）中有效时，才将其作为权威来源剔除备选的 BYOK 分组；
   // 若 explicitByokId 已陈旧失效，则保留 allowedGroups 中的候选以防约束清空逃逸
-  const explicitByokId = (typeof intent.channelGroupId === 'string' && isByokGroup(intent.channelGroupId.trim()))
-    ? intent.channelGroupId.trim()
-    : null;
+  const explicitByokId = isByokGroup(channelGroupId) ? channelGroupId : undefined;
   const isExplicitValid = explicitByokId && (!availableGroupIds || availableGroupIds.has(explicitByokId));
   if (isExplicitValid) {
     for (const id of Array.from(ids)) {
@@ -856,15 +786,15 @@ function selectedGroupIds(routing: unknown, availableGroupIds?: Set<string>): Se
   const hasByok = Array.from(ids).some((id) => isByokGroup(id));
   const hasOfficial = Array.from(ids).some((id) => !isByokGroup(id));
   if (hasByok && hasOfficial) {
-    if (intent.sourceType === 'byok') {
+    if (sourceType === 'byok') {
       return new Set(Array.from(ids).filter((id) => isByokGroup(id)));
     }
-    if (intent.sourceType === 'official') {
+    if (sourceType === 'official') {
       return new Set(Array.from(ids).filter((id) => !isByokGroup(id)));
     }
     return null;
   }
-  return intent.sourceType === 'byok' && !hasByok ? null : ids;
+  return sourceType === 'byok' && !hasByok ? null : ids;
 }
 
 /** What several selected lines agree on; a field they declare differently is released. */

@@ -715,7 +715,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   // when the selected model declares that parameter. The ref prevents a user's
   // later edit from being overwritten by the same document on every render.
   useEffect(() => {
-    if (materialType !== 'video' || !documentDurationTarget || !videoEffectiveParams) return;
+    if (lineSelectionReason || materialType !== 'video' || !documentDurationTarget || !videoEffectiveParams) return;
     const durationSchema = videoEffectiveParams.schema?.duration;
     if (!durationSchema) return;
     const value = documentDurationTarget.parsed.duration;
@@ -730,7 +730,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
     if (appliedDocumentDurationRef.current === key) return;
     appliedDocumentDurationRef.current = key;
     updateParam('duration', value);
-  }, [materialType, documentDurationTarget, videoEffectiveParams, updateParam]);
+  }, [lineSelectionReason, materialType, documentDurationTarget, videoEffectiveParams, updateParam]);
 
   // 图像节点的有效参数（读侧清洗回退，不回写 nodeData）
   const imageEffectiveParams = useMemo(
@@ -805,7 +805,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   );
 
   useEffect(() => {
-    if (!currentInputs) return;
+    if (lineSelectionReason || !currentInputs) return;
     const currentBindings = (nodeData.slotBindings ?? {}) as SlotBindings;
     const activeBindings = inputDisplay.bindings;
     if (!activeBindings || typeof activeBindings !== 'object') return;
@@ -813,11 +813,11 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
     if (missingKeys.length > 0) {
       patchSlotBindings(activeBindings);
     }
-  }, [currentInputs, inputDisplay.bindings, nodeData.slotBindings, patchSlotBindings]);
+  }, [lineSelectionReason, currentInputs, inputDisplay.bindings, nodeData.slotBindings, patchSlotBindings]);
 
   useEffect(() => {
     if (!isSingleImageChannel) return;
-    if (currentInputs) return;
+    if (lineSelectionReason || currentInputs) return;
     const currentBindings = nodeData.slotBindings as SlotBindings | undefined;
     if (!currentBindings || typeof currentBindings !== 'object') return;
     const primarySlotKey = displayedSlotLayout.slots[0]?.slot ?? '0';
@@ -833,7 +833,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
       };
       patchSlotBindings(normalized);
     }
-  }, [isSingleImageChannel, displayedSlotLayout, nodeData.slotBindings, patchSlotBindings]);
+  }, [lineSelectionReason, isSingleImageChannel, currentInputs, displayedSlotLayout, nodeData.slotBindings, patchSlotBindings]);
 
   const handleModelChange = useCallback(
     (newModelId: string, channelSelection?: { strategy: string; allowedGroups?: string[]; channelGroupId?: string; sourceType?: 'official' | 'byok' }) => {
@@ -1058,7 +1058,8 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
 
   // 视频节点业务状态机：上游媒体决定可用生成方式（Epic #63 / R3/R6）。
   useEffect(() => {
-    if (materialType !== 'video' || !videoCapability?.selectedOperationId) return;
+    // 待重选的节点保留草稿，打开面板时不自动切换生成方式。
+    if (lineSelectionReason || materialType !== 'video' || !videoCapability?.selectedOperationId) return;
     const savedOperation = readPreferredOperationId(params as Record<string, unknown>);
     if (savedOperation === videoCapability.selectedOperationId) return;
     if (!activeCatalog || !modelItem) return;
@@ -1079,7 +1080,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
       commitVideoSelection(transition);
     }
   }, [
-    materialType, videoCapability?.selectedOperationId, params, parameterSelections,
+    lineSelectionReason, materialType, videoCapability?.selectedOperationId, params, parameterSelections,
     activeCatalog, modelItem, upstreamSnapshots, localPrompt, commitVideoSelection,
   ]);
 
@@ -1468,6 +1469,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
               execBusy={execBusy}
               runtimeSettings={effectiveRuntimeSettings}
               fallbackState={fallbackState}
+              lineSelectionRequired={Boolean(lineSelectionReason)}
               onSelect={({ modelId, strategy, allowedGroups, channelGroupId, sourceType }) => {
                 handleModelChange(modelId, { strategy, allowedGroups, channelGroupId, sourceType });
               }}

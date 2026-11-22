@@ -75,6 +75,7 @@ export interface ModelCascadeMenuProps {
   execBusy?: boolean;
   runtimeSettings?: RuntimeByokChannelSettings | null;
   fallbackState?: ChannelFallbackState | null;
+  lineSelectionRequired?: boolean;
   onSelect: (value: ModelCascadeSelectValue) => void;
 }
 
@@ -161,8 +162,8 @@ const PROBE_HOST_STYLE: React.CSSProperties = {
 /** 量尺不参与选中，用同一个空数组避免每次渲染换新引用。 */
 const NO_GROUP_IDS: readonly string[] = [];
 
-function hasChannelColumn(groups: readonly ChannelGroupItem[]): boolean {
-  return groups.length > 1 || (groups.length === 1 && !findDefaultChannelGroup(groups));
+function hasChannelColumn(groups: readonly ChannelGroupItem[], lineSelectionRequired: boolean): boolean {
+  return groups.length > 1 || (groups.length === 1 && (lineSelectionRequired || !findDefaultChannelGroup(groups)));
 }
 
 const ChannelRow: React.FC<{
@@ -409,6 +410,7 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
   execBusy,
   runtimeSettings,
   fallbackState,
+  lineSelectionRequired = false,
   onSelect,
 }) => {
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -468,10 +470,12 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
     () => options.find((item) => item.id === channelModelId)?.operations,
     [options, channelModelId],
   );
-  const showChannelColumn = hasChannelColumn(channelGroups) && (!hoveringOtherBrand || hoverModelId !== null);
+  const showChannelColumn = hasChannelColumn(channelGroups, lineSelectionRequired && channelModelId === activeModelId)
+    && (!hoveringOtherBrand || hoverModelId !== null);
   const isChannelPreview = hoverModelId !== null && hoverModelId !== activeModelId;
   const isReadOnlyPreview = isChannelPreview && !isManagedChannelModel && Boolean(findDefaultChannelGroup(channelGroups));
-  const activeGroup = findSelectedChannelGroup(activeChannelGroups, routing, inlineGroup, isManagedActiveModel);
+  const activeGroup = lineSelectionRequired ? undefined
+    : findSelectedChannelGroup(activeChannelGroups, routing, inlineGroup, isManagedActiveModel);
   const selectedGroupIds = activeGroup ? [activeGroup.id] : NO_GROUP_IDS;
 
   // 外部候选或选择变化后丢弃预览，选中态直接由合法持久值派生。
@@ -576,7 +580,8 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
       ))}
       {brandList.flatMap((brand) => brand.rows).map((item) => {
         const groups = groupsForModel(item.id);
-        if (!hasChannelColumn(groups)) return null;
+        // The sole default can also become visible when the saved line needs reselection.
+        if (!groups.length) return null;
         return (
           <div key={item.id} className="wf-loomi-col wf-loomi-col--channel" data-cascade-probe-col="">
             <CascadeChannelColumn
@@ -637,7 +642,8 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
   const { modelId: triggerModelId } = parseModelAndGroup(activeModelId);
   const managedModelLabel = isManagedActiveModel ? options.find(item => item.id === activeModelId)?.label : undefined;
   const managedGroupLabelFull = isManagedActiveModel ? activeGroup?.label : undefined;
-  const needsLineSelection = activeChannelGroups.length > 0 && !activeGroup && !findDefaultChannelGroup(activeChannelGroups);
+  const needsLineSelection = lineSelectionRequired
+    || (activeChannelGroups.length > 0 && !activeGroup && !findDefaultChannelGroup(activeChannelGroups));
   const managedGroupLabel = formatChannelGroupLabel(managedGroupLabelFull);
   const triggerDisplayText = needsLineSelection
     ? `${managedModelLabel ?? triggerModelId} · 待重新选择`
