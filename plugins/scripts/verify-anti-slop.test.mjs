@@ -1,9 +1,10 @@
 import { test } from 'node:test'
 import { ok, equal } from 'node:assert'
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const root = process.cwd()
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 /**
  * 递归获取目录下的所有代码文件
@@ -84,14 +85,8 @@ test('Anti-Slop Gate 3: 出厂主力预设必须 100% 严格对齐 presets/manif
   ok(Array.isArray(manifest.shippedPresets), 'manifest.json 必须包含 shippedPresets 数组')
 
   const expectedShippedIds = [
-    'cordis',
     'omni-agent',
-    'tiktok-agent',
-    'instagram-agent',
-    'x-agent',
-    'youtube-agent',
-    'viral-video-agent',
-    'ad-creative-agent',
+    'cordis',
   ]
 
   const actualShippedIds = manifest.shippedPresets.map((p) => p.id)

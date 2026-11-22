@@ -67,8 +67,8 @@ const QUICK_SHORTCUT_SKILLS = [
 describe('出厂预设技能库的四个快捷方式技能', () => {
   it('四条 slug 都在出厂 Agent 预设技能表里，且均为已内置', async () => {
     const { readFileSync } = await import('node:fs')
-    // 出厂 Agent 预设真源（仓库根 presets/），与 Issue #2562 引用的数据一致
-    const raw = JSON.parse(readFileSync(join(HERE, '../../../../presets/tiktok-agent/skills.json'), 'utf8'))
+    // 出厂 Agent 预设真源（仓库根 presets/omni-agent/skills.json），收敛后统一承载内容电商与快捷方式技能
+    const raw = JSON.parse(readFileSync(join(HERE, '../../../../presets/omni-agent/skills.json'), 'utf8'))
     const list = Array.isArray(raw) ? raw : (raw.skills || [])
     for (const { slug } of QUICK_SHORTCUT_SKILLS) {
       const hit = list.find((item) => String(item.slug || item.skill || '') === slug)
@@ -98,7 +98,7 @@ describe('出厂预设技能库的四个快捷方式技能', () => {
 /**
  * 创作视频 / 创作图片两个分类的钉住清单。
  *
- * 13 款恢复技能逐字取自预设真源 `presets/tiktok-agent/skills.json`；
+ * 13 款恢复技能取自历史预设真源（现已收敛至 `presets/omni-agent/skills.json`）；
  * 「商品轮播图」「图文复刻」是 Issue #2609 预装的电商图文技能，真源即
  * `catalog/preset-skills.json` 自身。
  */

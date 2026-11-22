@@ -1055,10 +1055,10 @@ virtualStoreDirMaxLength: 60
     expect(readFileSync(spec.filename, 'utf8')).toBe(both)
   })
 
-  it('still maps the released code preset to ptc after the 0.1.7 section rename', async () => {
+  it('still maps the released code preset to omni-agent after the 0.1.7 section rename', async () => {
     // Launch order in main.ts: prepareDesktopProfile (section + field rename)
     // runs before migrateLegacyAgentPresetSettings, so the latter must find the
-    // legacy id under its new key or the user lands on a preset that no longer exists.
+    // legacy id under its new key and migrate it to the converged omni-agent default.
     const home = temporaryHome()
     writeFileSync(join(home, 'settings.yaml'), ['agent-presets:', '  default: code', ''].join('\n'))
     const spec = resolveDesktopSettingsDocument({ dshHome: home })
@@ -1066,7 +1066,7 @@ virtualStoreDirMaxLength: 60
     expect(migrateDesktopSettingsDocumentSections(spec)).toEqual(['agent-preset-registry'])
     await expect(migrateLegacyAgentPresetSettings(spec.filename)).resolves.toBe(true)
     expect(readFileSync(spec.filename, 'utf8'))
-      .toBe(['agent-preset-registry:', '  selectedDefault: ptc', ''].join('\n'))
+      .toBe(['agent-preset-registry:', '  selectedDefault: omni-agent', ''].join('\n'))
   })
 
   it('leaves the settings document alone when there is nothing safe to migrate', () => {

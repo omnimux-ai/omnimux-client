@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createTestEnvironmentStarter, normalizeTaskPlugins } from './test-env-bootstrap.mjs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { agentPresetPatchText, createTestEnvironmentStarter, normalizeTaskPlugins } from './test-env-bootstrap.mjs';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const WORKTREE_PRESETS = join(HERE, '..', 'presets');
 
 const root = '/repo/.worktrees/task';
 function starter() {
@@ -34,4 +39,18 @@ test('legacy explicit requests retain their non-fresh refusal', async () => {
   const f = starter();
   await assert.rejects(f.start({ root, mode: 'ui', evidenceContext: valid.evidenceContext }), error => error.code === 'TEST_ENV_NOT_USER_FRESH_TASK_UNKNOWN' && error.observations.userFresh === false);
   assert.equal(f.writes(), 0);
+});
+
+test('agentPresetPatchText with worktree presetRoot emits only omni-agent and preserves !!js tags', () => {
+  const patchText = agentPresetPatchText(
+    { appRoot: '/unused-app-root', layout: 'unpacked' },
+    {
+      presetRoot: WORKTREE_PRESETS,
+      createRequire: () => ({ resolve: (name) => name }),
+    },
+  );
+  assert.match(patchText, /id:\s*omnimux-preset-omni-agent\b/);
+  assert.doesNotMatch(patchText, /id:\s*omnimux-preset-(?:tiktok-agent|instagram-agent|drama-agent|standard|ptc|minimal)\b/);
+  assert.match(patchText, /disabled:\s*!!js\s+"?process\.platform === 'win32'"?/);
+  assert.match(patchText, /disabled:\s*!!js\s+"?process\.platform !== 'win32'"?/);
 });

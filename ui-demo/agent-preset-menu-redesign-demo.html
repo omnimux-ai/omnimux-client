@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OmniMux · Agent 预设收敛演示（42 → 2）</title>
+<style>
+  :root,
+  [data-theme="dark"] {
+    --dsw-alias-bg-base: #111214;
+    --dsw-alias-bg-layer-1: #181a1f;
+    --dsw-alias-bg-layer-2: #20232a;
+    --dsw-alias-bg-layer-3: #282c35;
+    --dsw-alias-bg-hover: rgba(255, 255, 255, 0.06);
+    --dsw-alias-border-l1: rgba(255, 255, 255, 0.08);
+    --dsw-alias-border-l2: rgba(255, 255, 255, 0.14);
+    --dsw-alias-text-primary: #f3f5f8;
+    --dsw-alias-text-secondary: #a5adbc;
+    --dsw-alias-text-tertiary: #737b8c;
+    --dsw-specific-accent: #c8ff3d;
+    --dsw-specific-accent-ink: #111408;
+    --dsw-specific-accent-soft: rgba(200, 255, 61, 0.12);
+    --dsw-specific-accent-border: rgba(200, 255, 61, 0.36);
+    --dsw-specific-info: #6cb4ff;
+    --dsw-specific-info-soft: rgba(108, 180, 255, 0.12);
+    --dsw-specific-danger: #ff6b6b;
+    --dsw-specific-danger-soft: rgba(255, 107, 107, 0.12);
+    --dsw-specific-warn: #f7b955;
+    --dsw-specific-warn-soft: rgba(247, 185, 85, 0.12);
+    --dsw-specific-shadow: 0 18px 44px rgba(0, 0, 0, 0.45);
+  }
+
+  [data-theme="light"] {
+    --dsw-alias-bg-base: #f5f6f8;
+    --dsw-alias-bg-layer-1: #ffffff;
+    --dsw-alias-bg-layer-2: #f1f3f6;
+    --dsw-alias-bg-layer-3: #e7ebf0;
+    --dsw-alias-bg-hover: rgba(17, 24, 39, 0.045);
+    --dsw-alias-border-l1: rgba(17, 24, 39, 0.09);
+    --dsw-alias-border-l2: rgba(17, 24, 39, 0.16);
+    --dsw-alias-text-primary: #12151c;
+    --dsw-alias-text-secondary: #4c5566;
+    --dsw-alias-text-tertiary: #6e7787;
+    --dsw-specific-accent: #3d7a00;
+    --dsw-specific-accent-ink: #ffffff;
+    --dsw-specific-accent-soft: rgba(61, 122, 0, 0.10);
+    --dsw-specific-accent-border: rgba(61, 122, 0, 0.34);
+    --dsw-specific-info: #1d64c2;
+    --dsw-specific-info-soft: rgba(29, 100, 194, 0.10);
+    --dsw-specific-danger: #c72c2c;
+    --dsw-specific-danger-soft: rgba(199, 44, 44, 0.10);
+    --dsw-specific-warn: #a66200;
+    --dsw-specific-warn-soft: rgba(166, 98, 0, 0.10);
+    --dsw-specific-shadow: 0 16px 36px rgba(15, 23, 42, 0.10);
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--dsw-alias-bg-base);
+    color: var(--dsw-alias-text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Inter", sans-serif;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 1220px;
+    margin: 0 auto;
+    padding: 24px 20px 48px;
+  }
+
+  /* Header */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--dsw-alias-border-l1);
+    flex-wrap: wrap;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+  }
+  .brand-mark {
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+    background: var(--dsw-specific-accent);
+    color: var(--dsw-specific-accent-ink);
+    font-weight: 800;
+    font-size: 13px;
+    letter-spacing: -0.02em;
+    display: grid;
+    place-items: center;
+    flex: none;
+  }
+  .brand-eyebrow {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--dsw-alias-text-tertiary);
+  }
+  .brand-title {
+    font-size: 15px;
+    font-weight: 650;
+  }
+  .topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    max-width: 100%;
+  }
+  .pill-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    color: var(--dsw-alias-text-secondary);
+    padding: 6px 11px;
+    border-radius: 999px;
+    background: var(--dsw-alias-bg-layer-1);
+    border: 1px solid var(--dsw-alias-border-l1);
+  }
+  .pill-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--dsw-specific-accent);
+  }
+  .theme-switch {
+    display: inline-flex;
+    background: var(--dsw-alias-bg-layer-1);
+    border: 1px solid var(--dsw-alias-border-l1);
+    border-radius: 9px;
+    padding: 3px;
+  }
+  .theme-switch button {
+    border: 0;
+    background: transparent;
+    color: var(--dsw-alias-text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 5px 11px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .theme-switch button[aria-pressed="true"] {
+    background: var(--dsw-alias-bg-layer-3);
+    color: var(--dsw-alias-text-primary);
+  }
+
+  /* Hero */
+  .hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 24px;
+    align-items: end;
+    padding: 26px 0 22px;
+  }
+  .hero h1 {
+    margin: 0 0 8px;
+    font-size: clamp(24px, 3vw, 34px);
+    line-height: 1.18;
+    letter-spacing: -0.025em;
+  }
+  .hero p {
+    margin: 0;
+    color: var(--dsw-alias-text-secondary);
+    font-size: 14px;
+    max-width: 700px;
+  }
+  .kpis {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .kpi {
+    min-width: 108px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: var(--dsw-alias-bg-layer-1);
+    border: 1px solid var(--dsw-alias-border-l1);
+  }
+  .kpi strong {
+    display: block;
+    font-size: 24px;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+  }
+  .kpi.accent {
+    border-color: var(--dsw-specific-accent-border);
+    background: var(--dsw-specific-accent-soft);
+  }
+  .kpi.accent strong { color: var(--dsw-specific-accent); }
+  .kpi span {
+    font-size: 11px;
+    color: var(--dsw-alias-text-tertiary);
+  }
+
+  /* Main split */
+  .grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+    gap: 18px;
+    align-items: start;
+  }
+
+  .panel {
+    background: var(--dsw-alias-bg-layer-1);
+    border: 1px solid var(--dsw-alias-border-l1);
+    border-radius: 16px;
+    overflow: hidden;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .panel.after {
+    border-color: var(--dsw-specific-accent-border);
+  }
+  .panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--dsw-alias-border-l1);
+    background: var(--dsw-alias-bg-layer-2);
+  }
+  .panel-title-wrap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+  .badge {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 6px;
+    flex: none;
+  }
+  .badge.before {
+    background: var(--dsw-specific-danger-soft);
+    color: var(--dsw-specific-danger);
+  }
+  .badge.after {
+    background: var(--dsw-specific-accent);
+    color: var(--dsw-specific-accent-ink);
+  }
+  .panel-title {
+    font-size: 14px;
+    font-weight: 650;
+  }
+  .panel-sub {
+    font-size: 12px;
+    color: var(--dsw-alias-text-tertiary);
+  }
+  .count-chip {
+    font-size: 20px;
+    font-weight: 750;
+    font-variant-numeric: tabular-nums;
+    flex: none;
+  }
+  .count-chip.before { color: var(--dsw-specific-danger); }
+  .count-chip.after { color: var(--dsw-specific-accent); }
+
+  .panel-body { padding: 16px; }
+
+  /* Filter tabs */
+  .filters {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+  .filter-btn {
+    border: 1px solid var(--dsw-alias-border-l1);
+    background: var(--dsw-alias-bg-layer-2);
+    color: var(--dsw-alias-text-secondary);
+    font-size: 12px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .filter-btn[aria-pressed="true"] {
+    background: var(--dsw-alias-text-primary);
+    color: var(--dsw-alias-bg-base);
+    border-color: transparent;
+    font-weight: 600;
+  }
+
+  /* Old list */
+  .old-list {
+    max-height: 410px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-right: 4px;
+  }
+  .old-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 7px 10px;
+    border-radius: 9px;
+    background: var(--dsw-alias-bg-layer-2);
+    border: 1px solid transparent;
+    font-size: 13px;
+    cursor: pointer;
+    text-align: left;
+    color: var(--dsw-alias-text-primary);
+    width: 100%;
+  }
+  .old-row:hover {
+    border-color: var(--dsw-alias-border-l2);
+    background: var(--dsw-alias-bg-layer-3);
+  }
+  .old-row.selected {
+    border-color: var(--dsw-specific-accent-border);
+    background: var(--dsw-specific-accent-soft);
+  }
+  .row-left {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-width: 0;
+  }
+  .avatar {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    flex: none;
+    display: grid;
+    place-items: center;
+    font-size: 10px;
+    font-weight: 700;
+    color: #fff;
+  }
+  .row-name {
+    font-weight: 550;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .row-id {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    color: var(--dsw-alias-text-tertiary);
+    margin-left: 6px;
+  }
+  .tag {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 6px;
+    flex: none;
+  }
+  .tag.main { background: var(--dsw-specific-accent-soft); color: var(--dsw-specific-accent); }
+  .tag.alias { background: var(--dsw-specific-warn-soft); color: var(--dsw-specific-warn); }
+  .tag.sub { background: var(--dsw-specific-danger-soft); color: var(--dsw-specific-danger); }
+  .tag.up { background: var(--dsw-specific-info-soft); color: var(--dsw-specific-info); }
+
+  /* After: real seat + compact popover menu */
+  .composer-mock {
+    background: var(--dsw-alias-bg-layer-2);
+    border: 1px solid var(--dsw-alias-border-l2);
+    border-radius: 14px;
+    padding: 14px;
+  }
+  .composer-input {
+    font-size: 13px;
+    color: var(--dsw-alias-text-tertiary);
+    padding: 6px 2px 16px;
+  }
+  .composer-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .seat-wrap {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+  }
+  .seat-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 11px;
+    border-radius: 999px;
+    border: 1px solid var(--dsw-alias-border-l2);
+    background: var(--dsw-alias-bg-layer-1);
+    color: var(--dsw-alias-text-primary);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .seat-btn:hover { background: var(--dsw-alias-bg-layer-3); }
+  .seat-menu {
+    margin-top: 10px;
+    width: 100%;
+    max-width: 390px;
+    background: var(--dsw-alias-bg-layer-1);
+    border: 1px solid var(--dsw-alias-border-l2);
+    border-radius: 12px;
+    padding: 6px;
+    box-shadow: var(--dsw-specific-shadow);
+  }
+  .menu-item {
+    width: 100%;
+    border: 0;
+    background: transparent;
+    color: var(--dsw-alias-text-primary);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 40px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    text-align: left;
+    overflow: hidden;
+  }
+  .menu-item:hover { background: var(--dsw-alias-bg-hover); }
+  .menu-item[aria-checked="true"] { background: var(--dsw-specific-accent-soft); }
+  .menu-item-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .menu-item-name {
+    font-size: 13px;
+    font-weight: 650;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .menu-item-meta {
+    display: block;
+    font-size: 11px;
+    color: var(--dsw-alias-text-tertiary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .check {
+    color: var(--dsw-specific-accent);
+    font-weight: 800;
+    font-size: 14px;
+    flex: none;
+  }
+
+  /* Quick shortcuts bar preview */
+  .shortcuts-bar {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--dsw-alias-border-l1);
+  }
+  .shortcuts-label {
+    font-size: 11px;
+    color: var(--dsw-alias-text-tertiary);
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .shortcut-chips {
+    display: flex;
+    gap: 7px;
+    flex-wrap: wrap;
+  }
+  .shortcut-chip {
+    font-size: 12px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: var(--dsw-alias-bg-layer-1);
+    border: 1px solid var(--dsw-alias-border-l1);
+    color: var(--dsw-alias-text-primary);
+  }
+  .zero-dom {
+    font-size: 12px;
+    color: var(--dsw-alias-text-tertiary);
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px dashed var(--dsw-alias-border-l2);
+  }
+
+  /* Redirect simulator & Architecture */
+  .card-sub {
+    margin-top: 14px;
+    padding: 13px 14px;
+    border-radius: 12px;
+    background: var(--dsw-alias-bg-layer-2);
+    border: 1px solid var(--dsw-alias-border-l1);
+  }
+  .card-sub h3 {
+    margin: 0 0 6px;
+    font-size: 13px;
+    font-weight: 650;
+  }
+  .card-sub p {
+    margin: 0;
+    font-size: 12px;
+    color: var(--dsw-alias-text-secondary);
+  }
+  .redirect-result {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 9px;
+    background: var(--dsw-alias-bg-layer-1);
+    border: 1px solid var(--dsw-alias-border-l1);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    color: var(--dsw-alias-text-primary);
+    word-break: break-word;
+  }
+  .redirect-arrow { color: var(--dsw-specific-accent); font-weight: 700; }
+
+  /* Footer pillars */
+  .pillars {
+    margin-top: 18px;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+  }
+  .pillar {
+    padding: 15px 16px;
+    border-radius: 14px;
+    background: var(--dsw-alias-bg-layer-1);
+    border: 1px solid var(--dsw-alias-border-l1);
+  }
+  .pillar-num {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--dsw-specific-accent);
+    letter-spacing: 0.05em;
+  }
+  .pillar h4 {
+    margin: 4px 0 6px;
+    font-size: 14px;
+  }
+  .pillar p {
+    margin: 0;
+    font-size: 12.5px;
+    color: var(--dsw-alias-text-secondary);
+  }
+
+  @media (max-width: 860px) {
+    .page { padding: 18px 14px 36px; }
+    .hero { grid-template-columns: minmax(0, 1fr); }
+    .grid { grid-template-columns: minmax(0, 1fr); }
+    .pillars { grid-template-columns: minmax(0, 1fr); }
+    .shortcuts-label { flex-wrap: wrap; gap: 4px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">OM</div>
+      <div>
+        <div class="brand-eyebrow">OMNIMUX · AGENT PRESET CONVERGENCE</div>
+        <div class="brand-title">从 42 项预设膨胀，收敛为 1 默认 Agent + 原生创造模式</div>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <div class="pill-status"><span class="pill-dot"></span><span>omni-agent (English Agent.md) + cordis</span></div>
+      <div class="theme-switch" role="group" aria-label="主题切换">
+        <button type="button" id="btnLight" aria-pressed="false">浅色</button>
+        <button type="button" id="btnDark" aria-pressed="true">深色</button>
+      </div>
+    </div>
+  </header>
+
+  <section class="hero">
+    <div>
+      <h1>把 42 个预设，收敛成 2 个真正清晰的入口。</h1>
+      <p>
+        默认入口统一为内容电商全链路主 Agent <strong>OmniMux (<code>omni-agent</code>)</strong>（英文蒸馏版 <code>Agent.md</code> + 按需加载内容电商 Skills + 通用 <code>subagent</code> 按需委派），保留 DSH 原生创造模式 <strong>创建Agent (<code>cordis</code>)</strong> 负责插件与自定义 Agent 搭建。点选左侧任意历史预设，查看宿主运行时兼容重定向结果。
+      </p>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><strong>42</strong><span>改前选择器项</span></div>
+      <div class="kpi accent"><strong>2</strong><span>改后可见预设</span></div>
+      <div class="kpi"><strong>0</strong><span>静态 expert_* 子代理</span></div>
+    </div>
+  </section>
+
+  <main class="grid">
+    <!-- BEFORE -->
+    <section class="panel" aria-label="改前预设菜单">
+      <div class="panel-head">
+        <div class="panel-title-wrap">
+          <span class="badge before">改前</span>
+          <div>
+            <div class="panel-title">目录全量直出 + 上游 4 预设混排</div>
+            <div class="panel-sub">40 物理目录（7 主预设 + 6 历史别名 + 26 子代理 + 重复 cordis）+ 上游 4 项</div>
+          </div>
+        </div>
+        <div class="count-chip before">42 项</div>
+      </div>
+      <div class="panel-body">
+        <div class="filters" role="group" aria-label="历史项筛选">
+          <button type="button" class="filter-btn" data-filter="all" aria-pressed="true">全部 42</button>
+          <button type="button" class="filter-btn" data-filter="main" aria-pressed="false">旧业务预设 7</button>
+          <button type="button" class="filter-btn" data-filter="alias" aria-pressed="false">历史别名 5</button>
+          <button type="button" class="filter-btn" data-filter="sub" aria-pressed="false">静态子代理 26</button>
+          <button type="button" class="filter-btn" data-filter="up" aria-pressed="false">上游内置 4</button>
+        </div>
+        <div class="old-list" id="oldList"></div>
+      </div>
+    </section>
+
+    <!-- AFTER -->
+    <section class="panel after" aria-label="改后预设菜单与运行时重定向">
+      <div class="panel-head">
+        <div class="panel-title-wrap">
+          <span class="badge after">改后</span>
+          <div>
+            <div class="panel-title">收敛后的选择器：仅 2 项</div>
+            <div class="panel-sub">plugins/presets/ 仅留 omni-agent；cordis 由 DSH 上游原生提供</div>
+          </div>
+        </div>
+        <div class="count-chip after">2 项</div>
+      </div>
+      <div class="panel-body">
+        <div class="composer-mock">
+          <div class="composer-input">描述你的商品、目标市场或发一条参考视频链接，OmniMux 会自动匹配技能与工作流…</div>
+          <div class="composer-bar">
+            <div class="seat-wrap">
+              <button type="button" class="seat-btn" id="seatBtn" aria-expanded="true">
+                <span class="avatar" id="seatAvatar" style="background:#8a2be2;">OM</span>
+                <span id="seatLabel">OmniMux</span>
+                <span style="opacity:.6;">▾</span>
+              </button>
+            </div>
+            <span class="panel-sub" id="modeHint">默认模式 · 内容电商主 Agent</span>
+          </div>
+
+          <div class="seat-menu" role="menu" aria-label="切换 Agent 预设">
+            <button type="button" class="menu-item" data-preset="omni-agent" role="menuitemradio" aria-checked="true">
+              <span class="avatar" style="background:#8a2be2;">OM</span>
+              <span class="menu-item-text">
+                <span class="menu-item-name">OmniMux <span class="tag main">默认</span></span>
+                <span class="menu-item-meta">omni-agent · 内容电商全链路 + 动态 Skills + 通用 Subagent</span>
+              </span>
+              <span class="check" data-check="omni-agent">✓</span>
+            </button>
+            <button type="button" class="menu-item" data-preset="cordis" role="menuitemradio" aria-checked="false">
+              <span class="avatar" style="background:#4f6ef7;">CR</span>
+              <span class="menu-item-text">
+                <span class="menu-item-name">创建Agent <span class="tag up">DSH 原生</span></span>
+                <span class="menu-item-meta">cordis · 插件开发、Cordis 编排与自定义 Agent 搭建</span>
+              </span>
+              <span class="check" data-check="cordis" style="visibility:hidden;">✓</span>
+            </button>
+          </div>
+
+          <div class="shortcuts-bar" id="shortcutsArea"></div>
+        </div>
+
+        <div class="card-sub">
+          <h3>历史会话与退役预设兼容（Host 运行时重定向）</h3>
+          <p>
+            不写前端黑名单、不用 CSS 隐藏。已删除预设的旧会话恢复时，<code>mountRetiredPresetRedirect</code> 捕获 <code>agent-preset/not-found</code> 并透明重定向至 <code>omni-agent</code>；未知自定义 ID 照常报错。点击左侧任意项测试：
+          </p>
+          <div class="redirect-result" id="redirectBox">
+            resolve("tiktok-agent") <span class="redirect-arrow">→</span> fallback "omni-agent" (OmniMux) · 列表仍仅暴露 2 项
+          </div>
+        </div>
+
+        <div class="card-sub">
+          <h3>Agent.md 单源结构（英文蒸馏版 · 7 章节）</h3>
+          <p>
+            <code>plugins/presets/omni-agent/Agent.md</code> 经 <code>build-agent-presets.mjs</code> 幂等同步进 <code>agent.cordis.yml</code>：Identity &amp; Responsibility · Workspace Object Semantics · Product &amp; Content Truth Boundary · Collaboration &amp; Authorization · Production, Skills &amp; Capability Contracts · Delegation &amp; System Boundaries · Delivery &amp; Communication。
+          </p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <section class="pillars" aria-label="核心架构收敛原则">
+    <article class="pillar">
+      <div class="pillar-num">01 · 单一真源</div>
+      <h4>物理目录与注册表对齐</h4>
+      <p>移除 39 个冗余目录、<code>.retired/</code> 与静态 <code>fragments/</code>；<code>omnimux/cordis.patch.yml</code> 停用上游 <code>standard/ptc/minimal</code> 并设默认预设为 <code>omni-agent</code>。</p>
+    </article>
+    <article class="pillar">
+      <div class="pillar-num">02 · 能力分层</div>
+      <h4>Agent 定原则，Skill 定套路</h4>
+      <p>1 个内容电商主 Agent 管事实边界、确认门禁、对象语义和工具纪律；爆款复刻、带货视频、商品图、投流和本土化全部走 Skills 动态加载。</p>
+    </article>
+    <article class="pillar">
+      <div class="pillar-num">03 · 零断链升级</div>
+      <h4>旧设置迁移 + 旧会话重定向</h4>
+      <p>桌面端启动自动将历史默认预设迁移到 <code>omni-agent</code>（保留 <code>cordis</code> 与用户自定义预设）；旧会话读取历史 ID 时由宿主平滑重定向。</p>
+    </article>
+  </section>
+</div>
+
+<script>
+  const OLD_ITEMS = [
+    { id: 'omni-agent', name: '全域社媒操盘手', cat: 'main', label: '旧主预设' },
+    { id: 'tiktok-agent', name: 'TikTok运营专家团', cat: 'main', label: '旧主预设' },
+    { id: 'instagram-agent', name: 'Instagram视觉增长专家', cat: 'main', label: '旧主预设' },
+    { id: 'x-agent', name: 'X (推特) 流量运营专家', cat: 'main', label: '旧主预设' },
+    { id: 'youtube-agent', name: 'YouTube创作增长专家', cat: 'main', label: '旧主预设' },
+    { id: 'viral-video-agent', name: '爆款视频复刻操盘手', cat: 'main', label: '旧主预设' },
+    { id: 'ad-creative-agent', name: '出海广告创意投放操盘手', cat: 'main', label: '旧主预设' },
+    { id: 'drama-agent', name: '短剧专家', cat: 'alias', label: '历史别名' },
+    { id: 'daily-work', name: '日常工作', cat: 'alias', label: '历史别名' },
+    { id: 'marketing-growth-team', name: '增长专家团', cat: 'alias', label: '历史别名' },
+    { id: 'media-creator', name: '媒体创作者', cat: 'alias', label: '历史别名' },
+    { id: 'marketing-agent', name: '营销专家', cat: 'alias', label: '历史别名' },
+    { id: 'standard', name: '标准模式', cat: 'up', label: '上游已停用' },
+    { id: 'ptc', name: 'PTC 模式', cat: 'up', label: '上游已停用' },
+    { id: 'minimal', name: '极简模式', cat: 'up', label: '上游已停用' },
+    { id: 'cordis', name: '创建Agent', cat: 'up', label: '上游保留' },
+    ...Array.from({ length: 26 }, (_, i) => {
+      const names = [
+        ['expert-ad-creative', 'TikTok 广告创意总监'],
+        ['expert-ai-comment', '评论运营专家'],
+        ['expert-analytics-revops', '数据分析与营收运营'],
+        ['expert-brand-monitor', '品牌监控专家'],
+        ['expert-character-stylist', '角色资产美术指导'],
+        ['expert-cinema-editor', '影视剪辑合成师'],
+        ['expert-content-copywriter', '全网社媒文案专员'],
+        ['expert-conversion-copy', '转化文案大师'],
+        ['expert-cro-specialist', '转化率优化师'],
+        ['expert-data-attribution', '数据归因师'],
+        ['expert-drama-globalization', '短剧出海与发行主管'],
+        ['expert-drama-screenwriter', '微短剧金牌编剧'],
+        ['expert-editing', '全域社媒剪辑合成专家'],
+        ['expert-growth-engineer', '增长与获客负责人'],
+        ['expert-image', '全域社媒视觉生图专家'],
+        ['expert-interaction-automator', '自动化互动运营'],
+        ['expert-marketing-strategist', '首席营销策略师'],
+        ['expert-marketing-visual', '广告视觉设计师'],
+        ['expert-music', '短视频配乐与音效师'],
+        ['expert-seo-content-strategist', 'SEO 内容策略师'],
+        ['expert-signal-miner', '社媒信号挖掘师'],
+        ['expert-speech', '口播配音与语音指导'],
+        ['expert-storyboard-director', '分镜导演'],
+        ['expert-traffic-growth', '流量增长专家'],
+        ['expert-video', 'AI 视频生成专家'],
+        ['expert-voice-director', '多角色配音导演'],
+      ];
+      return { id: names[i][0], name: names[i][1], cat: 'sub', label: '已移除子代理' };
+    }),
+  ];
+
+  const listEl = document.getElementById('oldList');
+  const redirectBox = document.getElementById('redirectBox');
+  let activeFilter = 'all';
+  let selectedOldId = 'tiktok-agent';
+
+  function colorFor(cat) {
+    if (cat === 'main') return '#7a3ef2';
+    if (cat === 'alias') return '#c57c16';
+    if (cat === 'up') return '#2e6bd6';
+    return '#c84545';
+  }
+
+  function renderOldList() {
+    listEl.innerHTML = '';
+    const items = activeFilter === 'all' ? OLD_ITEMS : OLD_ITEMS.filter(i => i.cat === activeFilter);
+    for (const item of items) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'old-row' + (item.id === selectedOldId ? ' selected' : '');
+      btn.innerHTML = `
+        <span class="row-left">
+          <span class="avatar" style="background:${colorFor(item.cat)}">${item.id.slice(0,2).toUpperCase()}</span>
+          <span class="row-name">${item.name}<span class="row-id">${item.id}</span></span>
+        </span>
+        <span class="tag ${item.cat}">${item.label}</span>
+      `;
+      btn.addEventListener('click', () => {
+        selectedOldId = item.id;
+        renderOldList();
+        if (item.id === 'cordis') {
+          redirectBox.innerHTML = `resolve("cordis") <span class="redirect-arrow">→</span> native DSH "cordis" (创建Agent) · 原生直出，无需重定向`;
+        } else if (item.id === 'omni-agent') {
+          redirectBox.innerHTML = `resolve("omni-agent") <span class="redirect-arrow">→</span> "omni-agent" (OmniMux) · 唯一默认内容电商 Agent`;
+        } else {
+          redirectBox.innerHTML = `resolve("${item.id}") <span class="redirect-arrow">→</span> catch not-found <span class="redirect-arrow">→</span> redirect "omni-agent" (OmniMux) · 旧会话无缝续跑`;
+        }
+      });
+      listEl.appendChild(btn);
+    }
+  }
+
+  document.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      activeFilter = btn.dataset.filter;
+      document.querySelectorAll('.filter-btn').forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+      renderOldList();
+    });
+  });
+
+  function selectActivePreset(presetId) {
+    const isOmni = presetId === 'omni-agent';
+    document.getElementById('seatLabel').textContent = isOmni ? 'OmniMux' : '创建Agent';
+    document.getElementById('seatAvatar').textContent = isOmni ? 'OM' : 'CR';
+    document.getElementById('seatAvatar').style.background = isOmni ? '#8a2be2' : '#4f6ef7';
+    document.getElementById('modeHint').textContent = isOmni ? '默认模式 · 内容电商主 Agent' : 'DSH 原生 · 创造模式';
+    document.querySelectorAll('.menu-item').forEach(item => {
+      const active = item.dataset.preset === presetId;
+      item.setAttribute('aria-checked', String(active));
+      const check = item.querySelector('.check');
+      if (check) check.style.visibility = active ? 'visible' : 'hidden';
+    });
+    const shortcutsArea = document.getElementById('shortcutsArea');
+    if (isOmni) {
+      shortcutsArea.innerHTML = `
+        <div class="shortcuts-label"><span>输入框快捷指令（仅内容电商模式显示）</span><span>omni-agent / 历史 tiktok-agent</span></div>
+        <div class="shortcut-chips">
+          <span class="shortcut-chip">复刻爆款视频</span>
+          <span class="shortcut-chip">视频拆解</span>
+          <span class="shortcut-chip">创作带货视频</span>
+          <span class="shortcut-chip">反推视频提示词</span>
+        </div>
+      `;
+    } else {
+      shortcutsArea.innerHTML = `
+        <div class="shortcuts-label"><span>输入框快捷指令</span><span>cordis 零 DOM 隔离</span></div>
+        <div class="zero-dom">当前处于 DSH 原生「创建Agent (cordis)」模式，内容电商快捷指令严格隐藏（零 DOM 残留）。</div>
+      `;
+    }
+  }
+
+  document.querySelectorAll('.menu-item').forEach(item => {
+    item.addEventListener('click', () => selectActivePreset(item.dataset.preset));
+  });
+
+  const btnLight = document.getElementById('btnLight');
+  const btnDark = document.getElementById('btnDark');
+  function setTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    btnLight.setAttribute('aria-pressed', String(theme === 'light'));
+    btnDark.setAttribute('aria-pressed', String(theme === 'dark'));
+  }
+  btnLight.addEventListener('click', () => setTheme('light'));
+  btnDark.addEventListener('click', () => setTheme('dark'));
+
+  renderOldList();
+  selectActivePreset('omni-agent');
+</script>
+</body>
+</html>

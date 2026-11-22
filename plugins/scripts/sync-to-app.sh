@@ -578,5 +578,5 @@ EOF
 if [ "$EXPLICIT_PLUGIN_SCOPE" -eq 1 ]; then
   echo "  - 会话预设下拉：本次命名插件同步未更新预设或应用包。"
 else
-  echo "  - 会话预设下拉：已同步为「标准模式 / 社媒内容创作专家团 / 社媒互动增长专家团」，需重启 Host 后生效。"
+  echo "  - 会话预设下拉：已收敛校验为「OmniMux（omni-agent） / 创建Agent（cordis）」，随桌面包分发并需重启 Host 后生效。"
 fi

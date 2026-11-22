@@ -90,13 +90,20 @@ export function getPresetFallbackCopy(presetId, locale = 'zh') {
           : '全链路爆款视频创作、带货选品、互动截流与投流增长。',
     }
   }
-  if (presetId === 'omni-agent' || presetId === '全能社媒操盘手' || presetId === '社媒专家') {
+  if (
+    presetId === 'omni-agent' ||
+    presetId === 'OmniMux' ||
+    presetId === '内容电商助手' ||
+    presetId === '全域社媒操盘手' ||
+    presetId === '全能社媒操盘手' ||
+    presetId === '社媒专家'
+  ) {
     return {
-      name: lang === 'en' ? 'Social Media Lead' : '社媒专家',
+      name: 'OmniMux',
       description:
         lang === 'en'
-          ? 'Cross-platform social media creation and matrix growth.'
-          : '全域社媒爆款创作与矩阵运营增长。',
+          ? 'All-in-one content e-commerce Agent for product research, scripts, media production, and cross-border growth.'
+          : '内容电商全链路默认 Agent——覆盖选品洞察、脚本分镜、素材生产与全域增长。',
     }
   }
   if (presetId === 'marketing-agent' || presetId === 'omni-marketing-agent' || presetId === '全能营销操盘手' || presetId === '营销专家') {

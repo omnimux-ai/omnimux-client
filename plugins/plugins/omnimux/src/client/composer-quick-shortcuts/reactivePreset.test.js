@@ -13,7 +13,7 @@ describe('TikTok Agent 快捷指令响应式预设变动监听契约', () => {
   let originalDocument
 
   beforeEach(() => {
-    dom = new JSDOM('<!DOCTYPE html><html><body><div data-omnimux-preset-seat="omni-agent"><span class="seatLabel">全域社媒操盘手</span></div></body></html>')
+    dom = new JSDOM('<!DOCTYPE html><html><body><div data-omnimux-preset-seat="cordis"><span class="seatLabel">创建Agent</span></div></body></html>')
     originalWindow = globalThis.window
     originalDocument = globalThis.document
     globalThis.window = dom.window
@@ -56,16 +56,20 @@ describe('TikTok Agent 快捷指令响应式预设变动监听契约', () => {
   })
 
   it('角色切换前后 isTikTokAgentPreset 准确响应全局与 DOM 状态', () => {
-    // 初始状态：全域社媒操盘手
-    window.__omnimuxActivePreset = 'omni-agent'
+    // 初始状态：创建Agent (cordis)
+    window.__omnimuxActivePreset = 'cordis'
     assert.equal(isTikTokAgentPreset(null, {}), false)
 
-    // 切换为 TikTok 运营专家团
+    // 切换为默认内容电商 Agent (omni-agent)
+    window.__omnimuxActivePreset = 'omni-agent'
+    assert.equal(isTikTokAgentPreset(null, {}), true)
+
+    // 兼容历史 TikTok 别名
     window.__omnimuxActivePreset = 'tiktok-agent'
     assert.equal(isTikTokAgentPreset(null, {}), true)
 
-    // 再次切换为 Instagram视觉增长专家
-    window.__omnimuxActivePreset = 'instagram-agent'
+    // 切回 cordis 创造模式
+    window.__omnimuxActivePreset = 'cordis'
     assert.equal(isTikTokAgentPreset(null, {}), false)
   })
 })

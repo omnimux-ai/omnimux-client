@@ -85,6 +85,9 @@ export const AGENT_PRESET_AVATARS = Object.freeze({
  * unknown name still gets a deterministic face seeded by its own text.
  */
 export const AGENT_PRESET_NAMES = Object.freeze({
+  OmniMux: 'omni-agent',
+  '内容电商助手': 'omni-agent',
+  '全域社媒操盘手': 'omni-agent',
   '社媒专家': 'omni-agent',
   '全能社媒操盘手': 'omni-agent',
   'Social Media Lead': 'omni-agent',

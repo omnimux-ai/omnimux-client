@@ -14,8 +14,8 @@ test('E2E: TikTok Agent 快捷指令响应式感知预设变动与角色限定�
       <head><title>OmniMux Role Gating</title></head>
       <body>
         <div data-composer-seat>
-          <button type="button" data-omnimux-preset-seat="omni-agent">
-            <span class="seatLabel">全域社媒操盘手</span>
+          <button type="button" data-omnimux-preset-seat="cordis">
+            <span class="seatLabel">创建Agent</span>
           </button>
         </div>
         <div data-slot="conversation.input.dock"></div>
@@ -35,56 +35,56 @@ test('E2E: TikTok Agent 快捷指令响应式感知预设变动与角色限定�
       changeNotifiedCount++
     })
 
-    // 场景 1：初始状态为「全域社媒操盘手」，断言不是 TikTok Agent
-    dom.window.__omnimuxActivePreset = 'omni-agent'
-    assert.equal(isTikTokAgentPreset(null, {}), false, '全域社媒操盘手必须返回 false')
+    // 场景 1：初始状态为「创建Agent」(cordis)，断言不展示内容电商快捷入口
+    dom.window.__omnimuxActivePreset = 'cordis'
+    assert.equal(isTikTokAgentPreset(null, {}), false, 'cordis 创造模式必须返回 false')
 
-    // 场景 2：用户在界面中切换为「TikTok运营专家团」
-    dom.window.__omnimuxActivePreset = 'tiktok-agent'
+    // 场景 2：用户在界面中切换为默认内容电商 Agent「OmniMux」(omni-agent)
+    dom.window.__omnimuxActivePreset = 'omni-agent'
     const seatBtn = dom.window.document.querySelector('[data-omnimux-preset-seat]')
-    seatBtn.setAttribute('data-omnimux-preset-seat', 'tiktok-agent')
+    seatBtn.setAttribute('data-omnimux-preset-seat', 'omni-agent')
     const label = dom.window.document.querySelector('.seatLabel')
-    label.textContent = 'TikTok运营专家团'
+    label.textContent = 'OmniMux'
 
     // 派发切换事件
     dom.window.dispatchEvent(
       new dom.window.CustomEvent(AGENT_PRESET_CHANGED_EVENT, {
-        detail: { id: 'tiktok-agent' },
+        detail: { id: 'omni-agent' },
       })
     )
 
-    assert.equal(changeNotifiedCount, 1, '切换到 TikTok 时应收到 1 次变动通知')
-    assert.equal(isTikTokAgentPreset(null, {}), true, '切换到 TikTok 运营专家团后必须判定为 true')
+    assert.equal(changeNotifiedCount, 1, '切换到 OmniMux 时应收到 1 次变动通知')
+    assert.equal(isTikTokAgentPreset(null, {}), true, '切换到 OmniMux 后必须判定为 true')
 
-    // 场景 3：用户切换为「Instagram视觉增长专家」
-    dom.window.__omnimuxActivePreset = 'Instagram视觉增长专家'
-    seatBtn.setAttribute('data-omnimux-preset-seat', 'Instagram视觉增长专家')
-    label.textContent = 'Instagram视觉增长专家'
+    // 场景 3：用户切换回「创建Agent」(cordis)
+    dom.window.__omnimuxActivePreset = 'cordis'
+    seatBtn.setAttribute('data-omnimux-preset-seat', 'cordis')
+    label.textContent = '创建Agent'
 
     dom.window.dispatchEvent(
       new dom.window.CustomEvent(AGENT_PRESET_CHANGED_EVENT, {
-        detail: { id: 'Instagram视觉增长专家' },
+        detail: { id: 'cordis' },
       })
     )
 
-    assert.equal(changeNotifiedCount, 2, '切换到 Instagram 时应收到第 2 次变动通知')
-    assert.equal(isTikTokAgentPreset(null, {}), false, '切换到 Instagram视觉增长专家后必须返回 false')
+    assert.equal(changeNotifiedCount, 2, '切换到 cordis 时应收到第 2 次变动通知')
+    assert.equal(isTikTokAgentPreset(null, {}), false, '切换到 cordis 后必须返回 false')
 
-    // 场景 4：用户切换为「X (推特) 流量运营专家」
-    dom.window.__omnimuxActivePreset = 'X (推特) 流量运营专家'
-    seatBtn.setAttribute('data-omnimux-preset-seat', 'X (推特) 流量运营专家')
-    label.textContent = 'X (推特) 流量运营专家'
+    // 场景 4：非内容电商预设保持隔离
+    dom.window.__omnimuxActivePreset = 'standard'
+    seatBtn.setAttribute('data-omnimux-preset-seat', 'standard')
+    label.textContent = '标准模式'
 
     dom.window.dispatchEvent(
       new dom.window.CustomEvent(AGENT_PRESET_CHANGED_EVENT, {
-        detail: { id: 'X (推特) 流量运营专家' },
+        detail: { id: 'standard' },
       })
     )
 
-    assert.equal(changeNotifiedCount, 3, '切换到 X (推特) 时应收到第 3 次变动通知')
-    assert.equal(isTikTokAgentPreset(null, {}), false, '切换到 X (推特) 流量运营专家后必须返回 false')
+    assert.equal(changeNotifiedCount, 3, '切换到 standard 时应收到第 3 次变动通知')
+    assert.equal(isTikTokAgentPreset(null, {}), false, '切换到 standard 后必须返回 false')
 
-    // 场景 5：再次切回「TikTok运营专家团」
+    // 场景 5：再次切回「OmniMux」(omni-agent) 或历史「tiktok-agent」
     dom.window.__omnimuxActivePreset = 'tiktok-agent'
     seatBtn.setAttribute('data-omnimux-preset-seat', 'tiktok-agent')
     label.textContent = 'TikTok运营专家团'
@@ -95,8 +95,8 @@ test('E2E: TikTok Agent 快捷指令响应式感知预设变动与角色限定�
       })
     )
 
-    assert.equal(changeNotifiedCount, 4, '再次切回 TikTok 时应收到第 4 次变动通知')
-    assert.equal(isTikTokAgentPreset(null, {}), true, '再次切回 TikTok 运营专家团后必须恢复判定为 true')
+    assert.equal(changeNotifiedCount, 4, '再次切回兼容别名时应收到第 4 次变动通知')
+    assert.equal(isTikTokAgentPreset(null, {}), true, '历史 TikTok 别名后必须恢复判定为 true')
 
     unsubscribe()
   } finally {
