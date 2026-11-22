@@ -68,7 +68,7 @@ for (const fixture of fixtures) {
     const groups = [...fixture.otherGroups, fixture.wireGroup]
     function publishCatalog(fields) {
       const { snapshot } = normalizePricingPayload({ data: [{
-        model_name: fixture.model, enable_groups: groups, group_order: groups, ...fields,
+        model_name: fixture.model, enable_groups: groups, ...fields,
       }] })
       setCurrentSnapshotResolver(() => ({ snapshot }))
     }
@@ -79,7 +79,11 @@ for (const fixture of fixtures) {
 
     const unselected = [{}, { strategy: 'cost_first' }, { task_id: ' ' }]
     if (groups.length > 1) unselected.push({ allowed_groups: groups })
-    for (const fields of [{ default_group: '' }, { default_group: 'fixture-retired' }, { group_order: [] }]) {
+    for (const fields of [
+      { group_order: groups, default_group: '' },
+      { group_order: groups, default_group: 'fixture-retired' },
+      { group_order: [] },
+    ]) {
       publishCatalog(fields)
       for (const intent of unselected) {
         await assert.rejects(tool.execute({ ...input, ...intent }, {}), {
@@ -103,5 +107,10 @@ for (const fixture of fixtures) {
       assert.equal(request.body.model, fixture.model)
       if (fixture.kind === 'image') assert.equal(request.body.size, 'auto')
     }
+
+    publishCatalog({})
+    await tool.execute({ ...input, resolution: undefined }, {})
+    assert.equal(requests.length, 5)
+    assert.equal(requests.at(-1).group, null, 'a legacy catalog with neither field retains its media route')
   })
 }
