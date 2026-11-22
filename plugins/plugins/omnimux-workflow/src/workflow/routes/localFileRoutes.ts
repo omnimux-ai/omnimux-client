@@ -2,11 +2,12 @@
  * Local imported-file routes: native pick + probe + stream by realPath.
  * Never copies the source into the workflow media dir.
  */
-import { existsSync, realpathSync, statSync } from 'node:fs';
+import { realpath, stat } from 'node:fs/promises';
+import { mapConcurrent, withRegularFile } from '../../projects/asyncFiles.ts';
 import { basename, isAbsolute } from 'node:path';
 import { WORKFLOW_ROUTE_PREFIX } from '../../shared/api.ts';
 import {
-  detectMimeFromFile,
+  detectMimeFromHandle,
   isAllowedImportedMedia,
   looksAbsolutePath,
   mimeFromFilename,
@@ -79,9 +80,10 @@ function guardLoopback(req: WorkflowDispatchRequest): ReturnType<typeof jsonErro
   return null;
 }
 
-function resolveReadableFile(rawPath: string):
-  | { ok: true; path: string }
-  | { ok: false; status: number; error: string; message: string } {
+async function resolveReadableFile(rawPath: string, signal?: AbortSignal): Promise<
+  | { ok: true; path: string; size: number }
+  | { ok: false; status: number; error: string; message: string }> {
+  signal?.throwIfAborted();
   if (typeof rawPath !== 'string' || rawPath.trim() === '') {
     return { ok: false, status: 400, error: 'invalid-path', message: 'path is required' };
   }
@@ -93,44 +95,51 @@ function resolveReadableFile(rawPath: string):
   }
   let real: string;
   try {
-    real = realpathSync(rawPath);
+    real = await realpath(rawPath);
   } catch {
     return { ok: false, status: 404, error: 'not-found', message: 'file not found' };
   }
-  let stat;
+  signal?.throwIfAborted();
+  let info;
   try {
-    stat = statSync(real);
+    info = await stat(real);
   } catch {
     return { ok: false, status: 404, error: 'not-found', message: 'file not found' };
   }
-  if (!stat.isFile()) {
+  signal?.throwIfAborted();
+  if (!info.isFile()) {
     return { ok: false, status: 400, error: 'not-a-file', message: 'path is not a regular file' };
   }
   if (!isAllowedImportedMedia(real)) {
     return { ok: false, status: 415, error: 'unsupported-media', message: 'file type is not an imported media' };
   }
-  return { ok: true, path: real };
+  return { ok: true, path: real, size: info.size };
 }
 
-function probeOne(rawPath: string, contentMime: boolean): {
+async function probeOne(rawPath: string, contentMime: boolean, signal?: AbortSignal): Promise<{
   path: string;
   exists: boolean;
   size?: number;
   mime?: string;
   name?: string;
-} {
-  const resolved = resolveReadableFile(rawPath);
+}> {
+  const resolved = await resolveReadableFile(rawPath, signal);
   if (!resolved.ok) {
     return { path: rawPath, exists: false };
   }
   try {
     const declared = mimeFromFilename(resolved.path);
-    const detected = contentMime ? detectMimeFromFile(resolved.path) : declared;
+    const { mime: detected, size } = contentMime
+      ? await withRegularFile(resolved.path, signal, async (handle, info) => ({
+          mime: await detectMimeFromHandle(handle, resolved.path, undefined, signal), size: Number(info.size),
+        }), true)
+      : { mime: declared, size: resolved.size };
     // ISO base media magic is shared by MP4, MOV, M4A and HEIF.
     const mime = detected === 'video/mp4' && declared && /^(video\/quicktime|audio\/mp4|image\/hei[cf])$/.test(declared)
       ? declared : detected;
-    return { path: rawPath, exists: true, size: statSync(resolved.path).size, mime, name: basename(resolved.path) };
+    return { path: rawPath, exists: true, size, mime, name: basename(resolved.path) };
   } catch {
+    signal?.throwIfAborted();
     return { path: rawPath, exists: false };
   }
 }
@@ -213,7 +222,8 @@ export function createLocalFileRoutes(deps: LocalFileRouteDeps = {}): { tryHandl
         return jsonError(400, 'invalid-json', 'paths must be an array');
       }
       const raw = body.paths.filter((row): row is string => typeof row === 'string').slice(0, PROBE_LIMIT);
-      return { status: 200, body: { items: raw.map(path => probeOne(path, body.contentMime === true)) } };
+      const items = await mapConcurrent(raw, 2, path => probeOne(path, body.contentMime === true, req.signal), req.signal);
+      return { status: 200, body: { items } };
     }
 
     if (method === 'GET' && path === filePath) {
@@ -221,15 +231,11 @@ export function createLocalFileRoutes(deps: LocalFileRouteDeps = {}): { tryHandl
       if (denied) return denied;
       const url = new URL(req.url, 'http://127.0.0.1');
       const target = url.searchParams.get('path') ?? '';
-      const resolved = resolveReadableFile(target);
+      const resolved = await resolveReadableFile(target, req.signal);
       if (!resolved.ok) {
         return jsonError(resolved.status, resolved.error, resolved.message);
       }
-      // existsSync after realpath: race with unlink between resolve and serve.
-      if (!existsSync(resolved.path)) {
-        return jsonError(404, 'not-found', 'file not found');
-      }
-      return { status: 200, file: resolved.path };
+      return { status: 200, file: resolved.path, canonical: true };
     }
 
     return null;

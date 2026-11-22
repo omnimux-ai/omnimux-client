@@ -1,14 +1,11 @@
-/**
- * Island bundle + capability catalog + manifest.
- */
+/** Island bundles, capability catalog and manifest. */
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { LEGACY_WORKFLOW_ROUTE_PREFIX, WORKFLOW_ROUTE_PREFIX } from '../../shared/api';
+import { fileIdentity, SharedFileWork, statIfPresent, withRegularFile } from '../../projects/asyncFiles.ts';
+import { LEGACY_WORKFLOW_ROUTE_PREFIX, WORKFLOW_ROUTE_PREFIX } from '../../shared/api.ts';
 import type { GenerationGateway } from '../seam/gateway';
 import type { RouteTry } from './dispatch';
 
-/** Build artifacts addressed by `?v=<sha256[:16]>`; legacy prefix included for the alias mount. */
 const BUILD_ARTIFACTS: Record<string, string> = {
   [`${WORKFLOW_ROUTE_PREFIX}/canvas.js`]: 'canvas.js',
   [`${LEGACY_WORKFLOW_ROUTE_PREFIX}/canvas.js`]: 'canvas.js',
@@ -16,30 +13,46 @@ const BUILD_ARTIFACTS: Record<string, string> = {
   [`${LEGACY_WORKFLOW_ROUTE_PREFIX}/director.js`]: 'director.js',
 };
 
-export function createStaticRoutes(opts: {
-  pluginRoot: string;
-  gateway: GenerationGateway;
-}): { tryBundle: RouteTry; tryCapabilities: RouteTry; bundleVersion: (path: string) => string | null } {
-  const { pluginRoot, gateway } = opts;
+export interface BundleArtifact {
+  version: string;
+  bytes: Buffer;
+}
+
+export function createStaticRoutes({ pluginRoot, gateway }: { pluginRoot: string; gateway: GenerationGateway }) {
   const capabilitiesPath = `${WORKFLOW_ROUTE_PREFIX}/api/capabilities`;
   const manifestPath = `${WORKFLOW_ROUTE_PREFIX}/api/manifest`;
+  const artifacts = new Map<string, { stamp: string; artifact: BundleArtifact }>();
+  const artifactReads = new SharedFileWork<BundleArtifact | null>();
 
-  const artifactHashes = new Map<string, { hash: string; at: number }>();
-  /** Build hash (sha256[:16]) of an artifact; cached briefly so manifest and bundle share one read. */
-  function artifactHash(file: string): string {
-    const now = Date.now();
-    const cached = artifactHashes.get(file);
-    if (cached && now - cached.at < 5_000) return cached.hash;
-    const hash = existsSync(file) ? createHash('sha256').update(readFileSync(file)).digest('hex').slice(0, 16) : 'missing';
-    artifactHashes.set(file, { hash, at: now });
-    return hash;
+  async function readArtifact(name: string, signal?: AbortSignal): Promise<BundleArtifact | null> {
+    signal?.throwIfAborted();
+    const file = join(pluginRoot, 'lib', name);
+    const info = await statIfPresent(file, signal);
+    signal?.throwIfAborted();
+    if (!info?.isFile()) return null;
+    const stamp = fileIdentity(info);
+    const cached = artifacts.get(file);
+    if (cached && info.ino && cached.stamp === stamp) return cached.artifact;
+    return artifactReads.run(`${file}\0${stamp}`, signal, async (readSignal) => {
+      return withRegularFile(file, readSignal, async (handle, opened) => {
+        // A Dev rebuild can replace the artifact while a request is reading.
+        if (fileIdentity(opened) !== stamp) return null;
+        const bytes = await handle.readFile({ signal: readSignal });
+        if (fileIdentity(await handle.stat({ bigint: true })) !== stamp) return null;
+        readSignal.throwIfAborted();
+        const artifact = { bytes, version: createHash('sha256').update(bytes).digest('hex').slice(0, 16) };
+        artifacts.set(file, { stamp, artifact });
+        return artifact;
+      });
+    });
   }
 
-  const tryBundle: RouteTry = (method, path) => {
+  const tryBundle: RouteTry = async (method, path, req) => {
+    if (method !== 'GET') return null;
     const artifact = BUILD_ARTIFACTS[path];
-    if (method === 'GET' && artifact) {
+    if (artifact) {
       const file = join(pluginRoot, 'lib', artifact);
-      if (!existsSync(file)) {
+      if (!(await statIfPresent(file, req.signal))?.isFile()) {
         if (artifact === 'canvas.js') {
           return { status: 404, body: { error: 'not-found', message: 'canvas bundle not built (run npm run build)' } };
         }
@@ -50,37 +63,34 @@ export function createStaticRoutes(opts: {
     const assetName = path.startsWith(`${WORKFLOW_ROUTE_PREFIX}/director-assets/`)
       ? path.slice(`${WORKFLOW_ROUTE_PREFIX}/director-assets/`.length) : '';
     const directorAssets = ['quaternius-standard-male.glb', 'quaternius-standard-female.glb', 'quaternius-standard-male.LICENSE.md', 'quaternius-standard-female.LICENSE.md'];
-    if (method === 'GET' && directorAssets.includes(assetName)) {
+    if (directorAssets.includes(assetName)) {
       const file = join(pluginRoot, 'assets', 'director', 'models', assetName);
-      if (!existsSync(file)) return { status: 404, body: { error: 'director-asset-not-found' } };
+      if (!(await statIfPresent(file, req.signal))?.isFile()) return { status: 404, body: { error: 'director-asset-not-found' } };
       return { status: 200, file };
     }
-    if (method === 'GET' && path.startsWith(`${WORKFLOW_ROUTE_PREFIX}/director-assets/licenses/`)) {
+    if (path.startsWith(`${WORKFLOW_ROUTE_PREFIX}/director-assets/licenses/`)) {
       const licenseName = path.slice(`${WORKFLOW_ROUTE_PREFIX}/director-assets/licenses/`.length);
       const licenses = new Set(['fix-webm-duration-MIT.txt', 'react-three-fiber-MIT.txt', 'cc0-1.0-legalcode.txt']);
       if (!licenses.has(licenseName)) return { status: 404, body: { error: 'director-asset-not-found' } };
       const file = join(pluginRoot, 'assets', 'director', 'licenses', licenseName);
-      if (!existsSync(file)) return { status: 404, body: { error: 'director-asset-not-found' } };
+      if (!(await statIfPresent(file, req.signal))?.isFile()) return { status: 404, body: { error: 'director-asset-not-found' } };
       return { status: 200, file };
     }
-    if (method === 'GET' && path === manifestPath) {
-      const canvasFile = join(pluginRoot, 'lib', 'canvas.js');
-      const directorFile = join(pluginRoot, 'lib', 'director.js');
-      const directorHash = existsSync(directorFile) ? artifactHash(directorFile) : null;
-      return { status: 200, body: { canvasHash: artifactHash(canvasFile), directorHash, directorAbi: 1 } };
+    if (path === manifestPath) {
+      const [canvas, director] = await Promise.all([
+        readArtifact('canvas.js', req.signal), readArtifact('director.js', req.signal),
+      ]);
+      return { status: 200, body: { canvasHash: canvas?.version ?? 'missing', directorHash: director?.version ?? null, directorAbi: 1 } };
     }
     return null;
   };
 
-  /**
-   * Build hash of a `?v=`-versioned island bundle, or null for any other path
-   * (or an unbuilt artifact). Shares the manifest's cached read.
-   */
-  function bundleVersion(path: string): string | null {
-    const artifact = BUILD_ARTIFACTS[path];
-    if (!artifact) return null;
-    const hash = artifactHash(join(pluginRoot, 'lib', artifact));
-    return hash === 'missing' ? null : hash;
+  /** The ETag and all encodings are derived from this immutable byte snapshot. */
+  async function versionedBundle(path: string, requested: string | null, signal?: AbortSignal): Promise<BundleArtifact | null> {
+    const name = BUILD_ARTIFACTS[path];
+    if (!name || !requested) return null;
+    const artifact = await readArtifact(name, signal);
+    return artifact?.version === requested ? artifact : null;
   }
 
   const tryCapabilities: RouteTry = async (method, path) => {
@@ -90,7 +100,5 @@ export function createStaticRoutes(opts: {
     return null;
   };
 
-  return { tryBundle, tryCapabilities, bundleVersion };
+  return { tryBundle, tryCapabilities, versionedBundle };
 }
-
-export type StaticRoutes = ReturnType<typeof createStaticRoutes>;

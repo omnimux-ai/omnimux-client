@@ -6,7 +6,7 @@
  */
 import { WORKFLOW_ROUTE_PREFIX } from '../../shared/api.ts';
 import { projectFileRevisionDigest } from '../../shared/localMedia.ts';
-import { readMediaContentDigest } from '../../projects/mediaRevision.ts';
+import { readMediaContentDigest, type ResolveCanvasProject, type ResolveProjectMedia } from '../../projects/mediaRevision.ts';
 import { assertLocalWrite, jsonBodyProblem } from '../../http/helpers.ts';
 import { audioFileAction, AudioFileActionError, type AudioFileActionDeps } from '../audioFileAction.ts';
 import type {
@@ -23,6 +23,7 @@ export function createProjectAssetsRoutes(
   store: ProjectAssetsStore,
   audioDeps: AudioFileActionDeps = {},
   prepareImport?: (workspaceId: string) => Promise<void>,
+  media?: { resolveFile: ResolveProjectMedia; resolveProject: ResolveCanvasProject },
 ): { tryHandle: RouteTry } {
   const assetsRe = new RegExp(`^${WORKFLOW_ROUTE_PREFIX}/api/workspaces/([^/]+)/assets$`);
   const mkdirRe = new RegExp(`^${WORKFLOW_ROUTE_PREFIX}/api/workspaces/([^/]+)/assets/mkdir$`);
@@ -113,11 +114,12 @@ export function createProjectAssetsRoutes(
       if (verify && (!digest || revisions.length !== 1 || url.searchParams.getAll('rel').length !== 1)) {
         return { status: 400, body: { error: 'invalid-media-revision' } };
       }
-      const file = store.resolveProjectFile(workspaceId, rel);
-      if (digest && digest !== await readMediaContentDigest(file).catch(() => undefined)) {
+      const target = media ? await media.resolveFile(workspaceId, rel, media.resolveProject, req.signal) : undefined;
+      const file = target?.file ?? store.resolveProjectFile(workspaceId, rel);
+      if (digest && !req.streamFiles && digest !== await readMediaContentDigest(file, req.signal, target?.info).catch(() => undefined)) {
         return { status: 409, body: { error: 'media-version-mismatch' } };
       }
-      return { status: 200, file };
+      return { status: 200, file, ...(target ? { name: target.name, canonical: true } : {}), ...(digest ? { mediaDigest: digest } : {}) };
     }
 
     const assetsMatch = assetsRe.exec(path);
