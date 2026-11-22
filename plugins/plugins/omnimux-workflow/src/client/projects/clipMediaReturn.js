@@ -6,6 +6,16 @@ import { CANVAS_SENTINEL_PATH, CANVAS_TAB_ID, collectTabs } from './projectCanva
 const transferKey = (sessionId, workspaceId) => `${sessionId}\u0000${workspaceId}`
 const isCanvasTab = tab => tab?.type === CANVAS_TAB_ID || tab?.id === CANVAS_TAB_ID
 
+function readCanvasTabs(sessionId, sidebar, openTabs) {
+  // Native right-sidebar tabs do not appear in betterSidebar's legacy split tree.
+  const inventory = openTabs?.getSnapshot?.()
+  if (Array.isArray(inventory)) return inventory.filter(row => row.sessionId === sessionId && row.kind === CANVAS_TAB_ID)
+    .map(row => ({ id: row.tabId }))
+  const snapshot = sidebar?.getSnapshot?.()
+  if (snapshot?.sessionId !== sessionId || !snapshot.state) return undefined
+  return [...collectTabs(snapshot.state.splits), ...collectTabs(snapshot.state.bottomSplits)].filter(isCanvasTab)
+}
+
 async function existingCanvas(workspaceId) {
   const result = await workflowRequest(WORKFLOW_API_ROUTES.workspaceVersion(encodeURIComponent(workspaceId)))
   return result.ok && result.body?.id === workspaceId
@@ -18,10 +28,37 @@ export function createClipMediaReturn({ workspaceContext, getSidebar, getSidebar
   const listeners = new Set()
   const seats = new Map()
   const publish = (key, state) => {
+    const previous = transfers.get(key)
     transfers = new Map(transfers)
     if (state) transfers.set(key, state)
-    else transfers.delete(key)
+    else {
+      transfers.delete(key)
+      previous?.transfer.stopTabWatch?.()
+    }
     for (const listener of listeners) listener()
+  }
+
+  function beginTransfer(transfer, { sidebar, sidebarRight, tab }) {
+    const { key, sessionId } = transfer
+    const openTabs = sidebarRight?.openTabs
+    let tabId = tab?.id
+    const reconcileTab = () => {
+      const item = transfers.get(key)
+      if (item?.transfer !== transfer || transfer.tabClosed) return false
+      const tabs = readCanvasTabs(sessionId, sidebar, openTabs)
+      if (!tabId && tabs?.length === 1) tabId = tabs[0].id
+      if (!tabId) return false
+      if (!tabs || tabs.some(row => row.id === tabId)) return true
+      transfer.tabClosed = true
+      if (!item.busy) publish(key, undefined)
+      return false
+    }
+    // Tab membership outlives the render seat. Observe before opening so a
+    // tab closed during navigation cannot leave a pending handoff behind.
+    transfer.stopTabWatch = Array.isArray(openTabs?.getSnapshot?.())
+      ? openTabs.subscribe?.(reconcileTab) : sidebar.subscribeState?.(reconcileTab)
+    publish(key, { transfer })
+    return reconcileTab
   }
 
   function scope(sessionId) {
@@ -33,20 +70,15 @@ export function createClipMediaReturn({ workspaceContext, getSidebar, getSidebar
     const mounted = sidebarRight?.mounted?.getSnapshot?.()
     if (context.status !== 'ready' || context.sessionId !== sessionId || snapshot?.sessionId !== sessionId
       || (mounted !== undefined && mounted !== sessionId)) return undefined
-    return { ...context, sidebar, sidebarRight, state: snapshot.state }
+    return { ...context, sidebar, sidebarRight }
   }
 
   function plan(request) {
     const current = scope(request.sessionId)
     if (!current || !Array.isArray(current.project?.pages)) return undefined
-    // Native right-sidebar tabs do not appear in betterSidebar's legacy split tree.
-    const inventory = current.sidebarRight?.openTabs?.getSnapshot?.()
-    const tabs = Array.isArray(inventory)
-      ? inventory.filter(row => row.sessionId === request.sessionId && row.kind === CANVAS_TAB_ID)
-        .map(row => ({ id: row.tabId }))
-      : [...collectTabs(current.state?.splits), ...collectTabs(current.state?.bottomSplits)].filter(isCanvasTab)
-    if (tabs.length > 1) return undefined
-    const openTab = tabs[0]
+    const tabs = readCanvasTabs(request.sessionId, current.sidebar, current.sidebarRight?.openTabs)
+    if (tabs?.length > 1) return undefined
+    const openTab = tabs?.[0]
     const seat = openTab && seats.get(transferKey(request.sessionId, openTab.id))
     const canvas = seat?.read()
     const tab = canvas?.tab ?? openTab
@@ -101,7 +133,7 @@ export function createClipMediaReturn({ workspaceContext, getSidebar, getSidebar
           const baseline = current.canvas.adapter.captureBaseline(transfer)
           if (!baseline) return false
           transfer.baseline = baseline
-          publish(key, { transfer })
+          beginTransfer(transfer, current)
           return true
         },
         dispose,
@@ -117,9 +149,9 @@ export function createClipMediaReturn({ workspaceContext, getSidebar, getSidebar
           const meta = { ...current.tab?.meta, pageId: transfer.pageId, canvasWorkspaceId: workspaceId, canvasSessionId: transfer.sessionId }
           const scope = { sessionId: transfer.sessionId, cwd: transfer.workspacePath, canvasWorkspaceId: workspaceId }
           const seed = { type: CANVAS_TAB_ID, id: CANVAS_TAB_ID, title: current.tab?.title || t('details.canvasTab'), path: CANVAS_SENTINEL_PATH, meta }
-          publish(key, { transfer })
           try {
-            if (await current.sidebar.openTab(seed, scope) !== false && isBound(transfer)) {
+            const reconcileTab = beginTransfer(transfer, current)
+            if (await current.sidebar.openTab(seed, scope) !== false && reconcileTab() && isBound(transfer)) {
               // Older singleton tabs retain their metadata when openTab focuses them.
               // An already hydrated tab keeps its live page and in-memory graph.
               if (current.tab && !current.canvas?.adapter && current.tab.meta?.pageId !== transfer.pageId) {
@@ -140,7 +172,7 @@ export function createClipMediaReturn({ workspaceContext, getSidebar, getSidebar
 
   function isBound(transfer) {
     const current = scope(transfer.sessionId)
-    return transfers.get(transfer.key)?.transfer === transfer && current?.workspacePath === transfer.workspacePath
+    return !transfer.tabClosed && transfers.get(transfer.key)?.transfer === transfer && current?.workspacePath === transfer.workspacePath
       && current?.project?.id === transfer.workflowProjectId
       && current.project.pages.some(page => page.id === transfer.pageId && page.canvasWorkspaceId === transfer.workspaceId)
   }
@@ -167,10 +199,11 @@ export function createClipMediaReturn({ workspaceContext, getSidebar, getSidebar
       let outcome
       try { outcome = await action() } catch { outcome = 'retry' }
       if (transfers.get(key) !== busy) return
-      publish(key, outcome === true ? undefined : { transfer, error: outcome || 'retry' })
+      publish(key, outcome === true || transfer.tabClosed ? undefined : { transfer, error: outcome || 'retry' })
     },
     dispose() {
       disposed = true
+      for (const { transfer } of transfers.values()) transfer.stopTabWatch?.()
       transfers = new Map()
       seats.clear()
       listeners.clear()
