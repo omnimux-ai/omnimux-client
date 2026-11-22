@@ -23,6 +23,7 @@ import { HeroBrandMark } from './HeroBrandMark.jsx'
 import { installHeroBrandSlot } from './hero-brand.js'
 import { installStatsLineShadow } from './stats-line-shadow.js'
 import { AttachmentTray } from './attachments/AttachmentTray.tsx'
+import { createClipComposer } from './attachments/clipComposer.js'
 import { getGlobalAttachmentStore } from './attachments/store.ts'
 import { registerMaterialMentionSource } from './attachments/materialMentionSource.ts'
 import { createEventsClient, installHubEventsGlobal } from './events-client.js'
@@ -201,7 +202,9 @@ export function apply(ctx) {
     inject: () => ({ t }),
   }, SidebarUpdateAction))
 
-  installWorkbenchGlobal()
+  const workbench = installWorkbenchGlobal()
+  const clipComposer = typeof window !== 'undefined' ? createClipComposer(window, workbench) : undefined
+  if (clipComposer) ctx.effect(() => clipComposer.install(), 'omnimux: Clip Composer context')
   installGlobalReferenceApi()
   let guideSessions = null
   // Reliable Host `sessions` handle for attachment admission + submit-bridge session
@@ -282,6 +285,7 @@ export function apply(ctx) {
     locale: NS,
     inject: (sessionId) => ({
       getSessions: () => hostSessions || guideSessions,
+      clipComposer,
       insertLinkReference: (request) => {
         const scope = sessionId && guideSessions?.scope(sessionId)
         return scope?.bail(scope, 'slash/input-insert-reference', request) === true

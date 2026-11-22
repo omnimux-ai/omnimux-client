@@ -172,6 +172,49 @@ body[data-ds-dark-theme] {
   outline-offset: 0 !important;
 }
 
+[data-composer-card][data-omnimux-clip-focus]:focus-within {
+  outline: 1px solid var(--dsw-alias-brand-primary);
+  outline-offset: 2px;
+}
+[data-composer-card] .omx-clip-context-chip {
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+}
+[data-composer-card] .omx-clip-context-icon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  height: 20px;
+  color: var(--dsw-alias-brand-primary);
+}
+[data-composer-card] .omx-clip-context-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+[data-composer-card] .omx-clip-context-heading,
+[data-composer-card] .omx-clip-context-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 8px;
+  font-size: 12px;
+  line-height: 18px;
+}
+[data-composer-card] .omx-clip-context-heading > span,
+[data-composer-card] .omx-clip-context-meta {
+  color: var(--dsw-alias-label-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── 发送/停止按钮 黑白主题高对比反色重构（根除官方写死白字导致的白底白字失真） ── */
 /* 浅色模式 */
 [class*="InputBar"] [class*="trailing"] button[class*="primary"],

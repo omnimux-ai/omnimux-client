@@ -30,6 +30,7 @@ export function createClipRuntime(window, stage) {
   void channel.renew()
   return {
     session,
+    compose: editorInstanceId => channel.compose(editorInstanceId),
     async closeCanvas(binding) {
       return session.closeCanvas(binding, () => {
         const active = stage.getSessionSnapshot()

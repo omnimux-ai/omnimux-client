@@ -170,7 +170,9 @@ export function clipContextFromEnvelope(envelope) {
   const projectId = clipId(clip.projectId)
   const durationSec = clipTime(clip.durationSec)
   const playheadSec = clipTime(clip.playheadSec)
-  if (!projectId || !Number.isSafeInteger(clip.revision) || clip.revision < 0 || durationSec === null || playheadSec === null) return null
+  const revisionEpoch = clip.revisionEpoch === undefined ? 0 : clip.revisionEpoch
+  if (!projectId || !Number.isSafeInteger(clip.revision) || clip.revision < 0
+    || !Number.isSafeInteger(revisionEpoch) || revisionEpoch < 0 || durationSec === null || playheadSec === null) return null
   if (canvas && (!isSafeWorkspaceId(clip.workspaceId) || !clipId(clip.nodeId))) return null
   const selectedClips = []
   for (const clipRow of Array.isArray(clip.selectedClips) ? clip.selectedClips.slice(0, 3) : []) {
@@ -183,7 +185,7 @@ export function clipContextFromEnvelope(envelope) {
     }
   }
   return {
-    mode: clip.mode, projectId, title: clipLabel(clip.title), revision: clip.revision, playheadSec, durationSec, selectedClips,
+    mode: clip.mode, projectId, title: clipLabel(clip.title), revision: clip.revision, revisionEpoch, playheadSec, durationSec, selectedClips,
     ...(canvas ? { workspaceId: clip.workspaceId, nodeId: clip.nodeId } : {}),
   }
 }
@@ -244,7 +246,7 @@ export function formatCompactContextBlock(envelope, { includeClip = true } = {})
   if (clip) {
     const fields = [
       `mode: ${clip.mode}`, `projectId: ${clip.projectId}`, `title: ${clip.title}`,
-      `revision: ${clip.revision}`, `playheadSec: ${clip.playheadSec}`, `durationSec: ${clip.durationSec}`,
+      `revision: ${clip.revision}`, `revisionEpoch: ${clip.revisionEpoch}`, `playheadSec: ${clip.playheadSec}`, `durationSec: ${clip.durationSec}`,
     ]
     if (clip.mode === 'canvas') fields.push(`workspaceId: ${clip.workspaceId}`, `nodeId: ${clip.nodeId}`)
     lines.push(`clip | ${fields.join(' | ')}`)

@@ -1,7 +1,7 @@
 export const STYLES_ID = 'omnimux-clip-stage-styles'
 
 export const CLIP_CSS = `
-.omnimux-clip-stage {
+.omnimux-clip-stage[data-clip-mode] {
   position: fixed;
   z-index: 250;
   top: var(--stage-top, 0px);
@@ -37,6 +37,58 @@ export const CLIP_CSS = `
 }
 .omnimux-clip-stage[data-clip-mode="canvas"] .workspace-actions {
   margin-inline-start: auto;
+}
+.omnimux-clip-stage .omnimux-clip-ai-edit {
+  height: 30px;
+  padding-inline: 9px;
+  font-size: 12px;
+}
+.omnimux-clip-stage .omnimux-clip-ai-edit-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.omnimux-clip-stage .omnimux-clip-ai-edit-content svg {
+  color: var(--dsw-alias-brand-primary);
+}
+.omnimux-clip-stage .workspace-topbar .workspace-project {
+  container: clip-project / inline-size;
+}
+.omnimux-clip-stage .workspace-project input {
+  min-width: 0;
+}
+.omnimux-clip-stage .workspace-topbar .workspace-saved {
+  display: inline-flex;
+}
+@container clip-project (width < 240px) {
+  .omnimux-clip-stage .workspace-project-meta:not(.workspace-saved) {
+    display: none;
+  }
+}
+/* The existing compact menu leaves room for the project name and save status. */
+@container clip-stage (1100px < width < 1240px) {
+  .omnimux-clip-stage .editor-shell .workspace-topbar .workspace-compact-menu {
+    display: inline-flex;
+  }
+  .omnimux-clip-stage .editor-shell .workspace-topbar .workspace-menu {
+    display: none;
+  }
+}
+@container clip-stage (width < 660px) {
+  .omnimux-clip-stage .workspace-topbar .workspace-share {
+    display: none;
+  }
+}
+@container clip-stage (width < 560px) {
+  .omnimux-clip-stage .editor-shell .omnimux-clip-ai-edit {
+    width: 30px;
+    min-width: 30px;
+    min-height: 30px;
+    padding: 0;
+  }
+  .omnimux-clip-stage .omnimux-clip-ai-edit-label {
+    display: none;
+  }
 }
 .omnimux-clip-stage[data-clip-mode="canvas"][data-visible="true"] {
   display: flex !important;
