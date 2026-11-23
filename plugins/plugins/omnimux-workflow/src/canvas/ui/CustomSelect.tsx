@@ -118,10 +118,12 @@ export function CustomSelect<T extends string | number = string>({
 
     window.addEventListener('scroll', handleScroll, true);
     window.addEventListener('resize', updatePosition);
+    window.addEventListener('omnimux:config-panel-position', updatePosition);
 
     return () => {
       window.removeEventListener('scroll', handleScroll, true);
       window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('omnimux:config-panel-position', updatePosition);
     };
   }, [open, updatePosition]);
 

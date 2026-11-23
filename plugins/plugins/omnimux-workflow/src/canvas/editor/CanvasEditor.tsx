@@ -927,7 +927,14 @@ const CanvasEditorContent: React.FC<CanvasEditorProps> = ({
   );
 
   return (
-    <div className="wf-canvas-editor" style={{ position: 'relative', height: '100%' }}>
+    <div
+      className="wf-canvas-editor"
+      data-pointer-mode={pointerMode}
+      style={{ position: 'relative', height: '100%' }}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) handlePaneClick();
+      }}
+    >
       <ReactFlow
         nodes={flowNodes}
         edges={flowEdges}
