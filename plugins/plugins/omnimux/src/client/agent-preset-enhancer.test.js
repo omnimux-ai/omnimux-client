@@ -204,6 +204,14 @@ describe('agent preset avatars', () => {
       'superpowers-zh',
       'ptc',
       'minimal',
+      'ecom-market-research',
+      'ecom-product-strategy',
+      'ecom-listing-copy',
+      'ecom-visual-studio',
+      'ecom-video-director',
+      'ecom-ads-optimizer',
+      'ecom-review-voc',
+      'ecom-creator-growth',
     ]
     assert.deepEqual(Object.keys(AGENT_PRESET_AVATARS).sort(), [...ids, 'daily-work'].sort())
 

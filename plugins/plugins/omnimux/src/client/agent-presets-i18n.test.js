@@ -77,6 +77,30 @@ test('getPresetFallbackCopy returns localized fallback copy for all presets', ()
   const enTikTok = getPresetFallbackCopy('tiktok-agent', 'en')
   assert.equal(enTikTok.name, 'TikTok Ops Team')
 
+  const sopIds = [
+    'ecom-market-research',
+    'ecom-product-strategy',
+    'ecom-listing-copy',
+    'ecom-visual-studio',
+    'ecom-video-director',
+    'ecom-ads-optimizer',
+    'ecom-review-voc',
+    'ecom-creator-growth',
+  ]
+  for (const id of sopIds) {
+    const zh = getPresetFallbackCopy(id, 'zh')
+    const en = getPresetFallbackCopy(id, 'en')
+    assert.ok(zh?.name && zh?.description, `${id} zh fallback copy`)
+    assert.ok(en?.name && en?.description, `${id} en fallback copy`)
+    assert.doesNotMatch(`${zh.description} ${en.description}`, /topview/i)
+  }
+  // Ensure legacy fallback entries also have zero Topview residue
+  for (const legacyId of ['youtube-creator-expert', 'media-creator']) {
+    const zh = getPresetFallbackCopy(legacyId, 'zh')
+    const en = getPresetFallbackCopy(legacyId, 'en')
+    assert.doesNotMatch(`${zh?.description} ${en?.description}`, /topview/i)
+  }
+
   assert.equal(getPresetFallbackCopy('unknown-preset', 'zh'), null)
 })
 
