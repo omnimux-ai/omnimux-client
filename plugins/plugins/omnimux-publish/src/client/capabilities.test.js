@@ -170,16 +170,16 @@ describe('TikTok draft capabilities & server media limit compatibility (#185)', 
     )
   })
 
-  it('keeps bilingual draft photo copy honest about server config rather than promising 35 images', () => {
-    assert.doesNotMatch(zh['form.draftBanner.imageBody'], /支持\s*1–35\s*张/)
-    assert.doesNotMatch(zh['form.draftBanner.imageRule'], /1–35\s*张/)
-    assert.match(zh['form.draftBanner.imageBody'], /以服务端配置为准/)
+  it('states the 1–35 photo carousel range while keeping server-delivered limits dynamic', () => {
+    assert.match(zh['form.draftBanner.imageBody'], /1–35\s*张/)
+    assert.match(zh['form.draftBanner.imageRule'], /1–35\s*张/)
+    assert.match(en['form.draftBanner.imageBody'], /1–35\s+JPEG/)
+    assert.match(en['form.draftBanner.imageRule'], /1–35\s+JPEG/)
+    // 服务端下发更小上限时改走动态文案与动态校验，协议文案不覆盖服务端上限
+    assert.match(zh['form.draftBanner.imageRuleServer'], /\{count\}/)
+    assert.match(en['form.draftBanner.imageRuleServer'], /\{count\}/)
     assert.match(zh['form.imageLimitProtocol'], /以服务端配置为准/)
-    assert.doesNotMatch(en['form.draftBanner.imageBody'], /1–35\s+JPEG/)
-    assert.doesNotMatch(en['form.draftBanner.imageRule'], /1–35\s+JPEG/)
-    assert.match(en['form.draftBanner.imageBody'], /server config/i)
     assert.match(en['form.imageLimitProtocol'], /server config/i)
     assert.ok(zh['form.imageLimitServer'] && en['form.imageLimitServer'])
-    assert.ok(zh['form.draftBanner.imageRuleServer'] && en['form.draftBanner.imageRuleServer'])
   })
 })

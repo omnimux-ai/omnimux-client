@@ -9,7 +9,7 @@
 3. **`omnimux-publish` 草稿模式与收件箱送达态**：
    - 关闭无效的 `tiktok.supports_schedule`，新增独立聚合/展示态 `sent_to_inbox`（「已送达草稿箱」），避免滞留「发布中」同时保留手动「同步平台状态」；
    - `draft_only` 账号零 `creator-info` 请求，隐藏 Direct Post 表单，视频剥离直发选项，图文仅允许 JPEG/WebP、禁混发并透传 `title` / `description` / `photo_cover_index` / `is_aigc`；
-   - 兼容网关默认媒体张数上限（不硬承诺 35 张，优先遵循服务端能力上限并在被拒收时完整透传服务端原始报错）。
+   - 图文轮播按 1–35 张（TikTok 图文草稿协议上限）校验并清晰展示该区间；托管网关默认 35 张，服务端经能力下发更小上限时按服务端上限动态收敛展示与拦截，被拒收时完整透传服务端原始报错。
 
 ## 旧标准变更
 
