@@ -1,4 +1,4 @@
-<!-- reviewed-through: 2242fc73eec889072473eda2fb174c1c044dee9b (2026-11-23) -->
+<!-- reviewed-through: 8d58f0c806e0c6fdb41d5faea7d70a54e1d57d24 (2026-11-23) -->
 # Lessons from merged work
 
 改动源码或评审 PR 前先读本页活跃条目。本页只留可公开的工程反模式与正反例，**严禁写入密钥、内部地址、本机绝对路径或未公开信息**。
@@ -14,6 +14,11 @@
   - 为什么：只写文件不接 CI 链或只测上层 helper，回归时不会拦截真实故障。
   - 反例：#24（新测试初版未接入 `app` check 链）、#26（未登记 `governance-manifest.json` 致 CI 连红）、#31 初版 `cd4c0dc`（漏掉导入 → 槽位 → readiness 链路）。
   - 正例：#31 `3b642a8`（补端到端 `jsonDocumentExecution.test.mjs`，旧 head 5 fail → 新 head 5 pass）。
+
+- **样式与布局回归探针不得在夹具层注入宿主不存在的全局 CSS 重置，须还原宿主真实默认盒模型**（`seen 1` · 最近 `2026-11-23`）
+  - 为什么：测试夹具全局注入 `* { box-sizing: border-box }` 会在离线探针中静默抹平容器自身漏设 `border-box` 引发的溢出裁切，使缺陷逃过自动化检查直到真实宿主宽视口暴露。
+  - 反例：`plugins/scripts/test-fixtures/style-dom-probe.mjs:134` 全局注入 `* { box-sizing: border-box; margin: 0; padding: 0; }`，掩盖了 `.sh-mkt` 只写 `.sh-mkt *` 漏写自身导致的 `+40px` 右侧溢出。
+  - 正例：#224 `8d58f0c8`（补 `.sh-mkt { box-sizing: border-box }`，并在 `skills-expert-overflow.e2e.test.js` 用 `:where(...) { box-sizing: content-box }` 显式还原宿主默认盒模型完成双向证伪）。
 
 ### 契约与运行时边界
 
@@ -38,6 +43,11 @@
   - 为什么：以发布快照或未跑绿 WIP 当开发基线会把隐藏回归带入主干；悬空 commit 指纹会导致审计与复现失败。
   - 反例：#1（以精简发布导出作开发基线致测试缺失）、#13（直接搬运未跑绿 WIP 暴露 4 条回归）、#14 初版（`PROVENANCE.json` 保留旧仓 commit）。
   - 正例：#4（恢复完整开发基线）、#14 `45aa422`（用 `git cat-file -t` 核对本仓真实提交）。
+
+- **内核与运行时基线切换须同步核对公开文档中的硬编码版本声明，避免并行合入即刻漂移**（`seen 1` · 最近 `2026-11-23`）
+  - 为什么：文档 PR 与内核升级 PR 并行合入且缺少跨文件版本一致性校验时，主干公开说明会立即落后于锁定真源 `dsh-version.json` / `app/upstream.json`。
+  - 反例：#221 `77fe4b17` 在 `README.md`、`docs/README.zh-CN.md` 与 `app/docs/architecture.{md,en.md}` 写入 `0.2.1-rc.3`，28 分钟后 #208 `57c3b9bd` 将 `dsh-version.json` 与 `app/upstream.json` 切至 `next`（`0.2.2-rc.5`），导致主干文档版本滞后。
+  - 正例：内核升级合入前/后按 `dsh-version.json` 检索全仓硬编码版本同步收口，或纳入 `workspace-check` 机检。
 
 ## 已毕业（已转规则或门禁）
 
