@@ -10,7 +10,8 @@
  * 5. 校验 files 中声明的条目，防止书写不存在的死路径。
  */
 
-import { readFileSync, readdirSync, existsSync } from 'node:fs'
+import { readFileSync, readdirSync, existsSync, realpathSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { resolve, join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -185,6 +186,20 @@ export function verifyPluginDisplayMeta(root = repoRoot) {
       errors.push('[' + pluginName + '] package.json.exports 缺少 "./package.json": "./package.json"')
     }
 
+    const pkgRequire = typeof pkg.name === 'string' && pkg.name.trim() !== ''
+      ? createRequire(pkgPath)
+      : null
+    if (pkgRequire && exportsField && exportsField['./package.json'] === './package.json') {
+      try {
+        const resolvedPkg = pkgRequire.resolve(pkg.name + '/package.json')
+        if (realpathSync(resolvedPkg) !== realpathSync(pkgPath)) {
+          errors.push('[' + pluginName + '] Node 自引用导出 "' + pkg.name + '/package.json" 解析路径不匹配')
+        }
+      } catch (err) {
+        errors.push('[' + pluginName + '] Node 自引用导出 "' + pkg.name + '/package.json" 无法解析: ' + err.message)
+      }
+    }
+
     const hasFilesField = Array.isArray(pkg.files)
     const isLocaleCovered = (rel) => {
       if (!hasFilesField) return true
@@ -214,6 +229,16 @@ export function verifyPluginDisplayMeta(root = repoRoot) {
       }
       if (!isLocaleCovered(rel)) {
         errors.push('[' + pluginName + '] "' + rel + '" 未被 package.json files 白名单覆盖（请在 files 中声明 "locale"）')
+      }
+      if (pkgRequire && exportsField && exportsField['./locale/*.json'] === './locale/*.json') {
+        try {
+          const resolvedLocale = pkgRequire.resolve(pkg.name + '/' + rel)
+          if (realpathSync(resolvedLocale) !== realpathSync(abs)) {
+            errors.push('[' + pluginName + '] Node 自引用导出 "' + pkg.name + '/' + rel + '" 解析路径不匹配')
+          }
+        } catch (err) {
+          errors.push('[' + pluginName + '] Node 自引用导出 "' + pkg.name + '/' + rel + '" 无法解析: ' + err.message)
+        }
       }
       let doc
       try {

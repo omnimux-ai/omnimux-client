@@ -1,7 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync, rmSync } from 'node:fs'
-import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { isPathCoveredByFiles, verifyPackageFiles, verifyPluginDisplayMeta } from './verify-package-files.mjs'
@@ -199,16 +198,14 @@ describe('verifyPluginDisplayMeta', () => {
     assert.equal(auditedCount, dirs.length, 'should audit all shipped plugins')
     assert.deepEqual(errors, [], 'live plugin display metadata must be clean: ' + errors.join('; '))
 
-    // Verify each plugin self-reference export resolves through real Node exports rules
+    // Verify each plugin has valid en/zh locale files matching package.json description
     for (const dir of dirs) {
       const pkgDir = join(pluginsDir, dir)
-      const pkgPath = join(pkgDir, 'package.json')
-      const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
-      const req = createRequire(pkgPath)
-      assert.equal(req.resolve(`${pkg.name}/package.json`), pkgPath, `${dir} resolves ./package.json`)
+      const pkg = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8'))
+      assert.equal(pkg.exports?.['./locale/*.json'], './locale/*.json', `${dir} exports ./locale/*.json`)
+      assert.equal(pkg.exports?.['./package.json'], './package.json', `${dir} exports ./package.json`)
       for (const lang of ['en', 'zh']) {
         const expectedLocalePath = join(pkgDir, 'locale', `${lang}.json`)
-        assert.equal(req.resolve(`${pkg.name}/locale/${lang}.json`), expectedLocalePath, `${dir} resolves ./locale/${lang}.json`)
         const localeDoc = JSON.parse(readFileSync(expectedLocalePath, 'utf8'))
         assert.ok(localeDoc.meta.title && localeDoc.meta.description, `${dir} has valid ${lang} meta`)
       }
