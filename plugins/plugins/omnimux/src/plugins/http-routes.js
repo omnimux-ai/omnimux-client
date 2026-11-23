@@ -144,6 +144,7 @@ export function registerPluginRoutes(webServer, dispatcher) {
     webServer.register({
     kind: 'prefix',
     path: '/omnimux/plugins',
+    auth: 'required',
     async handler(req, res) {
       try {
         const body = req.method === 'POST' ? await readJsonBody(req, 1024 * 1024) : undefined

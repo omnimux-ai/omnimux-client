@@ -17,10 +17,16 @@ export function registerHubEventStream(webServer, { hubEvents, connection }) {
   const cleanups = new Set()
   const unregister = webServer.registerUpgrade({
     path: EVENTS_PATH,
-    handler(req, socket, head) {
-      const rejection = connection.requestRejection(req) ?? (isLocalRequest(req) ? undefined : 403)
+    auth: 'required',
+    handler(req, socket, head, peer) {
+      const admittedPeer = peer !== undefined && peer !== null && typeof peer === 'object'
+      const legacyRejection = typeof connection?.requestRejection === 'function'
+        ? connection.requestRejection(req)
+        : (admittedPeer ? undefined : 503)
+      const rejection = legacyRejection ?? (isLocalRequest(req) ? undefined : 403)
       if (rejection !== undefined) {
-        socket.end(`HTTP/1.1 ${rejection} ${rejection === 401 ? 'Unauthorized' : 'Forbidden'}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`)
+        const reason = rejection === 401 ? 'Unauthorized' : rejection === 503 ? 'Service Unavailable' : 'Forbidden'
+        socket.end(`HTTP/1.1 ${rejection} ${reason}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`)
         return
       }
       const after = new URL(req.url, 'http://localhost').searchParams.get('after')
@@ -34,7 +40,11 @@ export function registerHubEventStream(webServer, { hubEvents, connection }) {
           client.send(JSON.stringify(event))
           return true
         }
-        const isAuthenticated = () => client.readyState === WebSocket.OPEN && connection.requestRejection(req) === undefined
+        const isAuthenticated = () => client.readyState === WebSocket.OPEN && (
+          typeof connection?.requestRejection === 'function'
+            ? connection.requestRejection(req) === undefined
+            : (admittedPeer && peer.signal?.aborted !== true)
+        )
         const window = hubEvents.attachWindow({ send, isAuthenticated })
         send({ type: WINDOW_HELLO_EVENT, payload: { windowInstanceId: window.windowInstanceId, proof: window.proof } })
         const heartbeat = () => {

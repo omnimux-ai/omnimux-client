@@ -120,6 +120,7 @@ export function registerAnalyticsRoutes(webServer, dispatcher) {
   return webServer.register({
     kind: 'exact',
     path: ANALYTICS_INGEST_PATH,
+    auth: 'required',
     handler: dispatcher,
   })
 }

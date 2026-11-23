@@ -53,6 +53,7 @@ export function registerTemplatesRoutes(webServer, dispatcher) {
   const dispose = webServer.register({
     kind: 'prefix',
     path: TEMPLATES_ROUTE_PREFIX,
+    auth: 'required',
     async handler(req, res) {
       try {
         const result = dispatcher.dispatch({

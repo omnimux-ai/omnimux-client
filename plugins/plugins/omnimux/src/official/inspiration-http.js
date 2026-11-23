@@ -296,6 +296,7 @@ export function registerInspirationRoutes(webServer, dispatcher) {
   const dispose = webServer.register({
     kind: 'prefix',
     path: PREFIX,
+    auth: 'required',
     async handler(req, res) {
       const method = (req.method || 'GET').toUpperCase()
       const sendResponse = sendJson

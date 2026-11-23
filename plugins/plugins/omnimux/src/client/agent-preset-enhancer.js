@@ -938,14 +938,15 @@ export const AGENT_PRESET_AVATAR_CSS = `
   display: none !important;
 }
 
-/* The row itself. Production ships hashed class names, so the row is matched by
-   the marker this module writes; the unhashed name is kept for a build that
-   renders it, with :not() guards so the prefixed name/label/description
-   children never inherit the row's padding.
+/* The row itself. Production ships hashed class names (both _<local>_<hash> and
+   <hash>_<local>), so the row is matched by the marker this module writes plus
+   scoped attribute/local-name selectors; the unhashed name is kept for legacy
+   builds, with :not() guards so child elements never inherit the row's padding.
    Height and width carry !important because the host styles this row too: an
    equal-or-higher-specificity host rule would otherwise win on source order and
    the picker would drift back to a tall, wide panel. */
 [class*="AgentPresetSeat_item"]:not([class*="AgentPresetSeat_itemName"]):not([class*="AgentPresetSeat_itemDesc"]):not([class*="AgentPresetSeat_itemLabel"]),
+[data-omnimux-preset-menu] [class*="_item"]:not([class*="itemName"]):not([class*="itemDesc"]):not([class*="itemLabel"]),
 [data-omnimux-preset-item] {
   display: flex !important;
   flex-direction: row !important;

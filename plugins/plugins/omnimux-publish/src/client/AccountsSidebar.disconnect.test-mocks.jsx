@@ -4,9 +4,9 @@ export function Button({ children, leadingIcon, loading, ...props }) {
   return <button type="button" {...props}>{leadingIcon}{children}</button>
 }
 
-export function IconButton({ children, ...props }) {
-  return <button type="button" {...props}>{children}</button>
-}
+export const IconButton = React.forwardRef(function IconButton({ children, ...props }, ref) {
+  return <button ref={ref} type="button" {...props}>{children}</button>
+})
 
 export function ModalDialog({ open, title, children, onClose }) {
   if (!open) return null

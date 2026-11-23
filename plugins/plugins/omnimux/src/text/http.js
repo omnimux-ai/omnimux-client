@@ -28,8 +28,9 @@ export function registerTextCompleteRoutes(webServer, deps = {}) {
   return webServer.register({
     kind: 'exact',
     path: '/omnimux/text/complete',
-    async handler(req, res) {
-      const rejection = requestRejection(req, deps.getConnection)
+    auth: 'required',
+    async handler(req, res, peer) {
+      const rejection = requestRejection(req, deps.getConnection, peer)
       if (rejection !== undefined) return sendJsonResponse(res, rejection, { ok: false, error: 'request-denied' })
       if (req.method === 'OPTIONS') { res.writeHead(204); return res.end() }
 

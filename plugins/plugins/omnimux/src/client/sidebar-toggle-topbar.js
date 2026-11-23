@@ -1406,7 +1406,7 @@ const RIGHTBAR_CHROME_STYLES_ID = 'omnimux-rightbar-chrome-styles'
 const RIGHTBAR_CHROME_STYLES = `
 /* 1. 修复创作画布等 Tab 标题文字被关闭按钮“x”遮挡及官方 mask-image 遮罩虚化截断 */
 [data-dockkit-strip] [data-dockkit-tab-title],
-[class*="_tabTitle_"] {
+[class*="_tabTitle"] {
   width: auto !important;
   min-width: max-content !important;
   max-width: 200px !important;
@@ -1420,7 +1420,8 @@ const RIGHTBAR_CHROME_STYLES = `
 
 /* 2. 确保 Tab 容器留足右侧关闭按钮空间与最小呼吸留白 */
 [data-dockkit-tab],
-[class*="_tab_17p4l"] {
+[data-dockkit-strip] [role="tab"],
+[class*="_tab_"] {
   min-width: max-content !important;
   padding-right: 28px !important;
   position: relative !important;
@@ -1428,7 +1429,7 @@ const RIGHTBAR_CHROME_STYLES = `
 
 /* 3. 关闭按钮绝对定位居右并垂直居中，绝不压在标题字上 */
 [data-dockkit-tab-close],
-[class*="_tabClose_"] {
+[class*="_tabClose"] {
   position: absolute !important;
   right: 6px !important;
   top: 50% !important;
@@ -1452,7 +1453,7 @@ button[data-sidebar-right-expand] {
 /* 5. 修复右侧栏顶栏 strip 在 border-box 盒模型下高度塌陷（28px）导致 Tab 选项卡被下方内容页面遮挡：
    明确高度为 40px 并居中对齐，为选项卡胶囊提供上下各 6px 的正常呼吸间距，确保底部圆角完整展现且与内容保持优雅间距 */
 [data-dockkit-strip],
-[class*="_tabStrip_"] {
+[class*="_tabStrip"] {
   height: 40px !important;
   box-sizing: border-box !important;
   padding: 6px 6px 6px 10px !important;
@@ -1517,28 +1518,34 @@ html[data-omnimux-left-collapsed] [class*="_panel"][data-sidebar-right-panel="fu
 /* 5.4 桌面端在全屏且左侧收起时，给顶栏 strip 预留避让操作按钮组（自适应对接 --omnimux-topbar-toggle-end，macOS 下基准避让交通灯及两按钮共 164px） */
 body[data-dsh-desktop-platform="darwin"] html[data-omnimux-left-collapsed] [data-sidebar-right-panel="fullscreen"] [data-dockkit-strip],
 html[data-omnimux-left-collapsed] body[data-dsh-desktop-platform="darwin"] [data-sidebar-right-panel="fullscreen"] [data-dockkit-strip],
-body[data-dsh-desktop-platform="darwin"] html[data-omnimux-left-collapsed] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip_"],
-html[data-omnimux-left-collapsed] body[data-dsh-desktop-platform="darwin"] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip_"],
+body[data-dsh-desktop-platform="darwin"] html[data-omnimux-left-collapsed] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"],
+html[data-omnimux-left-collapsed] body[data-dsh-desktop-platform="darwin"] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"],
 body[data-dsh-desktop-platform="darwin"] .dshDesktopFrame[data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"] [data-dockkit-strip],
-body[data-dsh-desktop-platform="darwin"] .dshDesktopFrame[data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip_"] {
+body[data-dsh-desktop-platform="darwin"] .dshDesktopFrame[data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"] {
   padding-left: var(--omnimux-topbar-toggle-end, 164px) !important;
 }
 html[data-omnimux-left-collapsed] [data-sidebar-right-panel="fullscreen"] [data-dockkit-strip],
-html[data-omnimux-left-collapsed] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip_"],
+html[data-omnimux-left-collapsed] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"],
 .dshDesktopFrame[data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"] [data-dockkit-strip],
-.dshDesktopFrame[data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip_"] {
+.dshDesktopFrame[data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"] {
   padding-left: var(--omnimux-topbar-toggle-end, 88px) !important;
 }
 }
 `
 
 function ensureRightbarChromeStyles(doc) {
-  if (!doc || doc.getElementById(RIGHTBAR_CHROME_STYLES_ID)) return
-  const style = doc.createElement('style')
-  style.id = RIGHTBAR_CHROME_STYLES_ID
-  style.textContent = RIGHTBAR_CHROME_STYLES
-  const target = doc.head || doc.documentElement
-  if (target) target.appendChild(style)
+  if (!doc) return
+  let style = doc.getElementById(RIGHTBAR_CHROME_STYLES_ID)
+  if (!style) {
+    style = doc.createElement('style')
+    style.id = RIGHTBAR_CHROME_STYLES_ID
+    const target = doc.head || doc.documentElement
+    if (!target) return
+    target.appendChild(style)
+  }
+  if (style.textContent !== RIGHTBAR_CHROME_STYLES) {
+    style.textContent = RIGHTBAR_CHROME_STYLES
+  }
 }
 
 /**

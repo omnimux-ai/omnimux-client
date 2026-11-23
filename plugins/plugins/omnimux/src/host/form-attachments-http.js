@@ -6,12 +6,15 @@ import { createFormAttachmentService, MAX_FORM_FILE_BYTES } from './form-attachm
 
 export function registerFormAttachmentRoutes(webServer, deps) {
   const service = createFormAttachmentService({ root: join(deps.homeDir, 'omnimux', 'form-attachments'), ...deps })
-  return webServer.register({ kind: 'prefix', path: '/omnimux/forms/attachments', async handler(req, res) {
+  return webServer.register({ kind: 'prefix', path: '/omnimux/forms/attachments', auth: 'required', async handler(req, res, peer) {
     try {
-      const connection = deps.getConnection?.()
-      if (!connection?.requestRejection) return sendJson(res, 503, { error: 'auth-unavailable' })
-      const rejection = connection.requestRejection(req)
-      if (rejection !== undefined) return sendJson(res, rejection, { error: 'unauthorized' })
+      const admittedPeer = peer !== undefined && peer !== null && typeof peer === 'object'
+      if (!admittedPeer) {
+        const connection = deps.getConnection?.()
+        if (!connection?.requestRejection) return sendJson(res, 503, { error: 'auth-unavailable' })
+        const rejection = connection.requestRejection(req)
+        if (rejection !== undefined) return sendJson(res, rejection, { error: 'unauthorized' })
+      }
       const url = new URL(req.url, 'http://localhost')
       if (req.method === 'GET') {
         const { record, path } = await service.resolveFile(url.searchParams.get('workspaceId'), url.searchParams.get('assetId'))

@@ -20,13 +20,16 @@ export class RequestGuard {
     constructor(authorization) {
         this.authorization = authorization;
     }
-    async authorizeHeaders(req, operation) {
+    async authorizeHeaders(req, operation, peer) {
         const { connection, trustedOrigin, authorizeRead } = this.authorization;
-        if (!connection || typeof connection.requestRejection !== 'function')
-            throw new WorkshopReadError('AUTH_REQUIRED', 401);
-        const rejection = connection.requestRejection(req);
-        if (rejection)
-            throw new WorkshopReadError(rejection.status === 401 ? 'AUTH_REQUIRED' : 'FORBIDDEN_OPERATION', rejection.status === 401 ? 401 : 403);
+        const admittedPeer = peer !== undefined && peer !== null && typeof peer === 'object';
+        if (!admittedPeer) {
+            if (!connection || typeof connection.requestRejection !== 'function')
+                throw new WorkshopReadError('AUTH_REQUIRED', 401);
+            const rejection = connection.requestRejection(req);
+            if (rejection)
+                throw new WorkshopReadError(rejection.status === 401 ? 'AUTH_REQUIRED' : 'FORBIDDEN_OPERATION', rejection.status === 401 ? 401 : 403);
+        }
         const expected = canonicalWorkshopOrigin(trustedOrigin);
         if (!expected)
             throw new WorkshopReadError('ORIGIN_UNVERIFIED', 503);

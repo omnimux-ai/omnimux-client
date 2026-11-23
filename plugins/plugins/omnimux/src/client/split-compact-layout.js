@@ -51,6 +51,8 @@ export const RIGHT_SIDEBAR_SELECTORS = Object.freeze([
   '[class*="rightbarSurface"]',
   '[data-dockkit-strip-chrome="true"]',
   '[class*="stripChrome"]',
+  '[data-sidebar-right-panel]',
+  '[data-dsh-panel-host] > [class*="_panel"]',
   '[class*="_panel_"]',
 ])
 

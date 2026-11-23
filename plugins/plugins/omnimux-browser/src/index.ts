@@ -461,8 +461,9 @@ function mountBridge(
     setModelMode,
   })
 
-  const route: WebUpgradeRoute = {
+  const route: WebUpgradeRoute & { auth: 'anonymous' } = {
     path: BRIDGE_PATH,
+    auth: 'anonymous',
     handler: (req, socket, head) => { server.handleUpgrade(req, socket, head) },
   }
   ctx.effect(() => ctx.webServer.registerUpgrade(route), 'bridge-browser: /ext/bridge upgrade route')
@@ -473,9 +474,10 @@ function mountBridge(
   // bridge WebSocket URL without any manual configuration. The URL carries no
   // secret (loopback connections skip the token); non-loopback deployments
   // keep requiring the token on the WS itself.
-  const configRoute: WebRoute = {
+  const configRoute: WebRoute & { auth: 'anonymous' } = {
     kind: 'exact',
     path: BRIDGE_CONFIG_PATH,
+    auth: 'anonymous',
     handler: (req, res) => {
       res.writeHead(200, {
         'content-type': 'application/json',

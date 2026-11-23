@@ -13,7 +13,18 @@ window.__ModuleLoader__.load({
     const BRIDGE_PATH = '/ext/bridge'
     const BRIDGE_CONFIG_PATH = '/ext/bridge-config'
     const LOCALE_NS = 'bridge-browser'
-    const STYLE_ID = 'omnimux-browser/BridgeAddressRow'
+    const STYLE_PATH = 'src/client/BridgeAddressRow.css'
+    const STYLE_DOM_ID = 'omnimux-browser-bridge-address-style'
+    const STYLE_TEXT = [
+      '.dshBridgeAddressRow{border-bottom:1px solid var(--dsw-alias-border-l2);display:flex;flex-direction:column;gap:8px;padding:16px 0}',
+      '.dshBridgeAddressTitle{color:var(--dsw-alias-label-primary);font-size:14px;font-weight:400;line-height:22px}',
+      '.dshBridgeAddressHelp{color:var(--dsw-alias-label-tertiary);font-size:12px;font-weight:400;line-height:18px}',
+      '.dshBridgeAddressBody{display:flex;align-items:center;gap:8px;min-width:0}',
+      '.dshBridgeAddressValue{flex:1;min-width:0;margin:0;padding:8px 12px;border-radius:10px;background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-primary);font:400 12px/18px ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;user-select:all;-webkit-user-select:all;overflow-x:auto;white-space:nowrap}',
+      '.dshBridgeAddressCopy{flex:none;height:32px;padding:0 12px;border:none;border-radius:16px;background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:18px;cursor:pointer}',
+      '.dshBridgeAddressCopy:hover{background:var(--dsw-alias-interactive-bg-hover)}',
+      '.dshBridgeAddressCopy:disabled{cursor:default;opacity:0.6}',
+    ].join('')
     const inject = ['slots', 'locale']
 
     const dictionaries = {
@@ -62,24 +73,23 @@ window.__ModuleLoader__.load({
 
     function installStyle() {
       if (typeof document === 'undefined') return () => {}
-      if (document.querySelector(`style[data-plugin-css=${JSON.stringify(STYLE_ID)}]`) !== null) {
-        return () => {}
+      let style = document.getElementById(STYLE_DOM_ID)
+        ?? document.querySelector(`style[data-plugin="omnimux-browser"][data-path=${JSON.stringify(STYLE_PATH)}]`)
+      let owned = false
+      if (style === null) {
+        style = document.createElement('style')
+        style.id = STYLE_DOM_ID
+        style.dataset.plugin = 'omnimux-browser'
+        style.dataset.path = STYLE_PATH
+        document.head.append(style)
+        owned = true
       }
-      const style = document.createElement('style')
-      style.dataset.plugin = 'omnimux-browser'
-      style.dataset.pluginCss = STYLE_ID
-      style.textContent = [
-        '.dshBridgeAddressRow{border-bottom:1px solid var(--dsw-alias-border-l2);display:flex;flex-direction:column;gap:8px;padding:16px 0}',
-        '.dshBridgeAddressTitle{color:var(--dsw-alias-label-primary);font-size:14px;font-weight:400;line-height:22px}',
-        '.dshBridgeAddressHelp{color:var(--dsw-alias-label-tertiary);font-size:12px;font-weight:400;line-height:18px}',
-        '.dshBridgeAddressBody{display:flex;align-items:center;gap:8px;min-width:0}',
-        '.dshBridgeAddressValue{flex:1;min-width:0;margin:0;padding:8px 12px;border-radius:10px;background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-primary);font:400 12px/18px ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;user-select:all;-webkit-user-select:all;overflow-x:auto;white-space:nowrap}',
-        '.dshBridgeAddressCopy{flex:none;height:32px;padding:0 12px;border:none;border-radius:16px;background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:18px;cursor:pointer}',
-        '.dshBridgeAddressCopy:hover{background:var(--dsw-alias-interactive-bg-hover)}',
-        '.dshBridgeAddressCopy:disabled{cursor:default;opacity:0.6}',
-      ].join('')
-      document.head.append(style)
-      return () => style.remove()
+      if (style.textContent !== STYLE_TEXT) {
+        style.textContent = STYLE_TEXT
+      }
+      return () => {
+        if (owned) style.remove()
+      }
     }
 
     function BridgeAddressRow({ t }) {

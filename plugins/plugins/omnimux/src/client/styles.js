@@ -1793,6 +1793,7 @@ body[data-ds-dark-theme] [data-composer-card] [class*="trailing"] button[class*=
    保留旧哈希选择器作兼容。 */
 [class*="StatsLine_root"],
 .FJxK0a_root,
+[data-slot="conversation.composer.dock"] > [class*="_root"],
 [data-slot="conversation.composer.dock"] [class*="_anchor"] {
   display: none !important;
 }
@@ -1807,6 +1808,8 @@ html body [class*="ContextMeter_root"],
 [class*="ContextMeter_root"] {
   display: none !important;
 }
+[data-composer-card] [class*="trailing"] [data-context-meter],
+[data-composer-card] [class*="trailing"] > [class*="_root"]:has(svg circle),
 [data-composer-card] [class*="trailing"] > span:has(button[aria-label*="上下文已用"]),
 [data-composer-card] [class*="trailing"] > span:has(button[aria-label*="context used"]),
 [data-composer-card] [class*="trailing"] > span:has(svg circle[class*="fill"]),
@@ -2252,9 +2255,13 @@ ${AGENT_PRESET_AVATAR_CSS}
 
 export function injectHubStyles() {
   if (typeof document === 'undefined') return
-  if (document.getElementById(STYLES_ID)) return
-  const styleNode = document.createElement('style')
-  styleNode.id = STYLES_ID
-  styleNode.textContent = HUB_CSS
-  document.head.appendChild(styleNode)
+  let styleNode = document.getElementById(STYLES_ID)
+  if (!styleNode) {
+    styleNode = document.createElement('style')
+    styleNode.id = STYLES_ID
+    document.head.appendChild(styleNode)
+  }
+  if (styleNode.textContent !== HUB_CSS) {
+    styleNode.textContent = HUB_CSS
+  }
 }
