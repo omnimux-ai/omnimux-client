@@ -310,6 +310,15 @@ test('corrupted installed-experts.json degrades cleanly to empty ledger without 
   assert.deepEqual(ledger.disabled, [])
 })
 
+test('buildMarketExpertPresetDefinition emits persona.prefix (never retired text key) for all 8 SOP experts', () => {
+  for (const exp of DEFAULT_MARKET_EXPERTS) {
+    const def = buildMarketExpertPresetDefinition(exp)
+    const personaRow = def.plugins.find((r) => r.id === 'persona')
+    assert.ok(personaRow && typeof (personaRow.config as any)?.prefix === 'string' && (personaRow.config as any).prefix.length > 50, `${exp.id} must emit rich persona.prefix`)
+    assert.ok(!('text' in ((personaRow?.config as Record<string, unknown>) ?? {})), `${exp.id} must not emit retired persona.text key`)
+  }
+})
+
 test('buildMarketExpertPresetDefinition prunes unresolvable optional rows while keeping persona', () => {
   const exp = DEFAULT_MARKET_EXPERTS[0]
   const def = buildMarketExpertPresetDefinition(exp, {

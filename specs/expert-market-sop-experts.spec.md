@@ -44,3 +44,21 @@
    - `plugins/plugins/omnimux-market/skills/omnimux-ecom-{platform-rules,market-research,pricing-strategy,listing-copy,visual-qa,video-script,ads-diagnosis,review-voc}/`；
    - 同步 `plugins/plugins/omnimux-market/dsh.manifest.json` 与 `plugins/plugins.registry.json`。
 6. **测试与门禁验收**：更新及新增单测、E2E、Python `unittest`、Skill 契约校验，跑通全部门禁并在隔离真实浏览器验收。
+
+## 旧标准变更
+
+由于本次任务将专家市场由旧版「5 位按平台拆分（含 4 位硬编码 `enabled` 及 Topview 文案残留）」升级为「8 位按跨境电商 SOP 闭环分工（全部默认 `available`，以官方 `ctx.agentPresets.list()` 为唯一真源）」，以下既有 E2E 用例名称及断言随新产品契约更新：
+
+- `plugins/plugins/omnimux-market/tests/e2e/expert-market-avatars.spec.js` :: `E2E 专家市场卡片头像渲染：精简后的 5 位出海专家均以确定性像素小人展示且与卡片渲染 1:1 一致`
+  - 原断言：校验旧 5 位平台专家列表长度与像素头像渲染。
+  - 变更理由：旧 5 位含 Topview 残留且按平台冗余拆分的专家已替换为 8 位跨境电商 SOP 专家，且默认状态由硬编码 `enabled` 收敛为 `available`。
+  - 新期望证据：同文件新用例 `E2E 专家市场卡片头像渲染：8 位 SOP 电商专家均以确定性像素小人展示、无 Topview 残留且默认可聘用` 覆盖全部 8 位专家像素头像、零 Topview 残留、默认 `available` 与 SOP 阶段标签渲染，已通过 `pnpm --filter omnimux-market test`。
+- `plugins/plugins/omnimux-market/tests/e2e/unify-agent-presets-market.spec.js` :: `E2E 旅程一：出海专精专家收敛为 5 位，彻底杜绝 HTML 生成器与双胞胎冗余`
+  - 原断言：断言 `DEFAULT_MARKET_EXPERTS.length === 5` 及旧 5 位平台专家 ID。
+  - 变更理由：市场内置专家库升级为 8 位跨境电商 SOP 角色并新增 SOP 阶段筛选。
+  - 新期望证据：同文件新用例 `E2E 旅程一：跨境电商 SOP 专家库包含 8 位角色，全部默认可聘用且支持按 SOP 阶段筛选` 验证 8 位 ID、阶段筛选（research 2 / production 3 / growth 3）与检索过滤，已通过 `pnpm --filter omnimux-market test`。
+- `plugins/plugins/omnimux-market/tests/e2e/unify-agent-presets-market.spec.js` :: `E2E 旅程二：官方系统团队与用户自建 Agent 动态聚合至专家市场全息视图`
+  - 原断言：断言旧系统预设（`standard`/`tiktok-agent`/`drama-agent`）聚合后 `status === 'enabled'`。
+  - 变更理由：系统预置与用户自建在市场中标为 `enabled` 会误显「禁用」按钮；现收敛为 `omni-agent`/`cordis` 标 `status: 'system'`、用户自建标 `status: 'custom'`，均不渲染禁用按钮。
+  - 新期望证据：同文件新用例 `E2E 旅程二：官方系统预置、已入职市场专家与用户自建 Agent 真源聚合，系统预置不渲染禁用按钮` 与 `E2E 旅程三：安装失败时前端回滚卡片状态并记录可恢复错误信息`，已通过 `pnpm --filter omnimux-market test`。
+
