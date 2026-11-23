@@ -21,8 +21,8 @@
 </p>
 
 <p align="center">
-  <a href="https://discord.gg/omnimux"><img src="https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=flat&logo=discord&logoColor=white" alt="Discord"></a>
-  <a href="https://x.com/omnimux_ai"><img src="https://img.shields.io/badge/X-@omnimux__ai-000000?style=flat&logo=x&logoColor=white" alt="X"></a>
+  <a href="https://discord.gg/uNPBDz3WNC"><img src="https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=flat&logo=discord&logoColor=white" alt="Discord"></a>
+  <a href="https://x.com/OmniMuxai"><img src="https://img.shields.io/badge/X-@OmniMuxai-000000?style=flat&logo=x&logoColor=white" alt="X"></a>
   <a href="#community"><img src="https://img.shields.io/badge/WeChat-开发者交流群-07C160?style=flat&logo=wechat&logoColor=white" alt="微信交流群"></a>
   <a href="https://github.com/omnimux-ai/omnimux-client/discussions"><img src="https://img.shields.io/badge/GitHub-Discussions-0969DA?style=flat&logo=github&logoColor=white" alt="GitHub Discussions"></a>
 </p>
@@ -380,7 +380,7 @@ cd app && corepack yarn install --immutable && corepack yarn dev
 
 - **GitHub Discussions** — 使用问答、成片工作流分享与开放讨论：[进入 Discussions](https://github.com/omnimux-ai/omnimux-client/discussions)
 - **GitHub Issues** — 缺陷报告、功能建议与技能/插件提案：[选择模板提交 Issue](https://github.com/omnimux-ai/omnimux-client/issues/new/choose)
-- **Discord 与 X** — 全球社区交流与版本动态：[Discord](https://discord.gg/omnimux) · [@omnimux_ai](https://x.com/omnimux_ai)
+- **Discord 与 X** — 全球社区交流与版本动态：[Discord](https://discord.gg/uNPBDz3WNC) · [@OmniMuxai](https://x.com/OmniMuxai)
 - **安全与商业授权** — 私密安全漏洞通报（[SECURITY.md](../SECURITY.md)）及商业合作：`hello@omnimux.ai`
 
 <table>
@@ -397,8 +397,8 @@ cd app && corepack yarn install --immutable && corepack yarn dev
         <sub>微信或企业微信扫码加入 <strong>OmniMux 交流群</strong></sub>
       </td>
       <td align="center" valign="middle">
-        <p><a href="https://discord.gg/omnimux"><img src="https://img.shields.io/badge/Discord-Join%20OmniMux-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a></p>
-        <p><a href="https://x.com/omnimux_ai"><img src="https://img.shields.io/badge/X-Follow%20@omnimux__ai-000000?style=for-the-badge&logo=x&logoColor=white" alt="X"></a></p>
+        <p><a href="https://discord.gg/uNPBDz3WNC"><img src="https://img.shields.io/badge/Discord-Join%20OmniMux-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a></p>
+        <p><a href="https://x.com/OmniMuxai"><img src="https://img.shields.io/badge/X-Follow%20@OmniMuxai-000000?style=for-the-badge&logo=x&logoColor=white" alt="X"></a></p>
         <p><a href="https://github.com/omnimux-ai/omnimux-client/discussions"><img src="https://img.shields.io/badge/GitHub-Discussions-0969DA?style=for-the-badge&logo=github&logoColor=white" alt="GitHub Discussions"></a></p>
         <sub>社区规范：<a href="../CONTRIBUTING.md">贡献指南</a> · <a href="../CODE_OF_CONDUCT.md">行为准则</a> · <a href="../SECURITY.md">安全策略</a></sub>
       </td>

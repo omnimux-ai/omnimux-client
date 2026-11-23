@@ -104,10 +104,10 @@ OmniMux 自行编写的插件代码采用 **[AGPL-3.0](LICENSE)**，另附 [NOTI
       </td>
       <td align="center" valign="middle">
         <p>
-          <a href="https://discord.gg/omnimux"><img src="https://img.shields.io/badge/Discord-Join%20OmniMux-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
+          <a href="https://discord.gg/uNPBDz3WNC"><img src="https://img.shields.io/badge/Discord-Join%20OmniMux-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
         </p>
         <p>
-          <a href="https://x.com/omnimux_ai"><img src="https://img.shields.io/badge/X%20(Twitter)-Follow%20@omnimux__ai-black?style=for-the-badge&logo=x&logoColor=white" alt="Twitter"></a>
+          <a href="https://x.com/OmniMuxai"><img src="https://img.shields.io/badge/X%20(Twitter)-Follow%20@OmniMuxai-black?style=for-the-badge&logo=x&logoColor=white" alt="Twitter"></a>
         </p>
         <p>
           <a href="https://github.com/omnimux-ai/omnimux-client/discussions"><img src="https://img.shields.io/badge/GitHub-Discussions-0969DA?style=for-the-badge&logo=github&logoColor=white" alt="GitHub Discussions"></a>
