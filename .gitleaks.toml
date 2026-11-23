@@ -130,3 +130,20 @@ paths = [
   '''plugins/plugins/omnimux/src/settings/schema\.test\.js$''',
   '''plugins/plugins/omnimux-workflow/src/http/helpers\.test\.mjs$''',
 ]
+
+# desktop: the surplus-session test seeds obviously fake session cookies whose
+# payloads decode to the sentinels "not-json" / "null" (base64url). They exercise
+# the unknown-format branch and are not credentials.
+[[allowlists]]
+description = "desktop surplus-session cookie fixtures"
+targetRules = ["generic-api-key"]
+paths = ['''app/dsh-desktop-next/tests/browser-sessions\.spec\.ts$''']
+regexes = ['''dsh-auth-(json|null)=v1\.(bm90LWpzb24|bnVsbA)\.signature''']
+
+# desktop: the vendored ui-conversation patch carries minified source where
+# `i.focus.key` is a property path, not a credential.
+[[allowlists]]
+description = "vendored ui-conversation patch property path"
+targetRules = ["generic-api-key"]
+paths = ['''app/patches/dsh-client-ui-conversation@0\.2\.2-rc\.5\.patch$''']
+regexes = ['''r=i\.focus\.key''']
