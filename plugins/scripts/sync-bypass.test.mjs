@@ -134,6 +134,7 @@ test('monorepo evidence and archive paths pass while untracked plugin source sta
     'plugins/docs/evidence/dev-smoke-report.json',
     'plugins/.agent-reports/task-demo/browser-evidence.md',
     '.tmp/worktree-archive/task/spec.md',
+    'ui-demo/preview-demo.png',
   ]) {
     mkdirSync(dirname(join(f.repo, draft)), { recursive: true })
     writeFileSync(join(f.repo, draft), 'evidence\n')
@@ -174,9 +175,11 @@ test('drifted or dirty git submodule does not block plugin sync-main while super
 
   // 让子模块指针漂移并产生脏文件，验证不影响插件物化门禁。
   const subDir = join(f.repo, 'app/deepseek-harness')
+  gitIn(subDir, 'config', 'user.name', 'Test Agent')
+  gitIn(subDir, 'config', 'user.email', 'agent@omnimux.test')
   writeFileSync(join(subDir, 'README.md'), 'v2\n')
   gitIn(subDir, 'add', 'README.md')
-  gitIn(subDir, 'commit', '-m', 'sub v2')
+  gitIn(subDir, '-c', 'commit.gpgsign=false', 'commit', '-m', 'sub v2')
   writeFileSync(join(subDir, 'untracked-in-sub.txt'), 'dirty\n')
 
   const allowed = spawnSync('bash', [join(here, 'sync-main.sh'), f.repo], { encoding: 'utf8', env: f.gitEnv })
