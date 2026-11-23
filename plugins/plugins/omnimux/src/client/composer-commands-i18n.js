@@ -406,6 +406,16 @@ export function syncMenuIcons(root) {
       patched++
     }
   }
+
+  // 「指令」分组标题对加号菜单是冗余的（菜单里只有命令这一组，标题与内容重复）。
+  // 优先按 data-source="command" 隐藏，并用可见文案兜底，跨 DSH 版本类名/属性变动也能生效。
+  for (const title of Array.from(doc.querySelectorAll('[class*="groupTitle"]'))) {
+    const source = title.getAttribute?.('data-source')
+    const text = (title.textContent || '').trim()
+    if (source === 'command' || text === '指令' || text === 'Commands') {
+      if (title.style.display !== 'none') title.style.display = 'none'
+    }
+  }
   return patched
 }
 
@@ -477,6 +487,14 @@ export function ensurePlacementStyles(doc) {
     [data-composer-card] button[aria-label*="附件"] {
       display: none !important;
     }
+    /* 移除加号命令菜单首行冗余的分组标题「指令」。
+       该标题由原生菜单按分组渲染（class 含 groupTitle，data-source="command"），
+       加号菜单里只有命令这一组，标题纯属重复，直接隐藏。 */
+    [data-trigger-menu] [class*="groupTitle"][data-source="command"],
+    [data-composer-card] [class*="overlayAnchor"] [class*="groupTitle"][data-source="command"],
+    [class*="groupTitle"][data-source="command"] {
+      display: none !important;
+    }
   `
   if (style.textContent !== cssText) style.textContent = cssText
 }
@@ -524,9 +542,16 @@ export function isPlusMenuContext(card, menu) {
  * Determine whether the plus menu should open below the input box.
  * Rule:
  * 1. Slash / skill suggestions stay above the input box.
- * 2. The plus menu follows the input box: below when the box sits in the
- *    upper half of the page, above when it sits in the lower half.
- * 3. If the side that follows the box has less than 160px, use the other side.
+ * 2. The plus menu opens below whenever the composer still has room below it
+ *    (the default/hero composer at the top of a page), and only stays above
+ *    once the composer is docked near the bottom with too little room below.
+ * 3. If less than 160px is available below, fall back to above.
+ *
+ * The decision keys off the space BELOW the composer, not the viewport
+ * midpoint: a vertically centred hero composer sits exactly on the midpoint,
+ * so a half-screen split flipped it back above and made the menu always open
+ * upward. Space below is the same signal whether the composer is top-docked
+ * (hero) or bottom-docked (session).
  * @param {HTMLElement|null} card - The [data-composer-card] element
  * @param {HTMLElement|null} menu - The candidate menu element
  * @param {Window} [windowObj]
@@ -541,11 +566,10 @@ export function shouldPlaceMenuBelow(card, menu, windowObj = (typeof window !== 
 
   const viewportHeight = windowObj.innerHeight || windowObj.document?.documentElement?.clientHeight || 800
   const spaceBelow = viewportHeight - cardRect.bottom
-  const spaceAbove = cardRect.top
-  const composerAtTop = cardRect.top + cardRect.height / 2 < viewportHeight / 2
 
-  if (composerAtTop) return spaceBelow >= 160
-  return spaceAbove < 160 && spaceBelow >= 160
+  // 以「输入框下方是否还有足够空间」为准：顶部/默认 hero 输入框下方空间充足 →
+  // 向下展开；输入框贴到页面底部、下方不足 160px → 保持向上展开。
+  return spaceBelow >= 160
 }
 
 /**
