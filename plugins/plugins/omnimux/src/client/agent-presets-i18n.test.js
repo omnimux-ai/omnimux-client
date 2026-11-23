@@ -77,21 +77,22 @@ test('getPresetFallbackCopy returns localized fallback copy for all presets', ()
   const enTikTok = getPresetFallbackCopy('tiktok-agent', 'en')
   assert.equal(enTikTok.name, 'TikTok Ops Team')
 
-  const sopIds = [
-    'ecom-market-research',
-    'ecom-product-strategy',
-    'ecom-listing-copy',
-    'ecom-visual-studio',
-    'ecom-video-director',
-    'ecom-ads-optimizer',
-    'ecom-review-voc',
-    'ecom-creator-growth',
+  const sopExpected = [
+    ['ecom-market-research', '选品专家', 'Market Analyst'],
+    ['ecom-product-strategy', '定价专家', 'Pricing Strategist'],
+    ['ecom-listing-copy', '文案专家', 'Listing Copywriter'],
+    ['ecom-visual-studio', '视觉专家', 'Visual Designer'],
+    ['ecom-video-director', '视频导演', 'Video Director'],
+    ['ecom-ads-optimizer', '广告专家', 'Ads Optimizer'],
+    ['ecom-review-voc', '评论运营', 'Review Analyst'],
+    ['ecom-creator-growth', '达人运营', 'Creator Manager'],
   ]
-  for (const id of sopIds) {
+  for (const [id, expectedZh, expectedEn] of sopExpected) {
     const zh = getPresetFallbackCopy(id, 'zh')
     const en = getPresetFallbackCopy(id, 'en')
-    assert.ok(zh?.name && zh?.description, `${id} zh fallback copy`)
-    assert.ok(en?.name && en?.description, `${id} en fallback copy`)
+    assert.equal(zh?.name, expectedZh, `${id} zh simplified name`)
+    assert.equal(en?.name, expectedEn, `${id} en simplified name`)
+    assert.ok(zh?.description && en?.description, `${id} bilingual descriptions`)
     assert.doesNotMatch(`${zh.description} ${en.description}`, /topview/i)
   }
   // Ensure legacy fallback entries also have zero Topview residue

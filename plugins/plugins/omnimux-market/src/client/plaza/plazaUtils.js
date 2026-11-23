@@ -161,17 +161,17 @@ export function suiteCompositionText(item, tr) {
 
 export const EXPERT_STAGE_OPTIONS = [
   { id: 'all', labelKey: 'expertMarket.stageAll', defaultZh: '全部', defaultEn: 'All' },
-  { id: 'research', labelKey: 'expertMarket.stageResearch', defaultZh: '选品与策略', defaultEn: 'Research & Strategy' },
-  { id: 'production', labelKey: 'expertMarket.stageProduction', defaultZh: '货架与内容生产', defaultEn: 'Listing & Creative' },
-  { id: 'growth', labelKey: 'expertMarket.stageGrowth', defaultZh: '投放与复盘闭环', defaultEn: 'Ads & Feedback Loop' },
-  { id: 'system', labelKey: 'expertMarket.stageSystem', defaultZh: '系统与自建', defaultEn: 'System & Custom' },
+  { id: 'research', labelKey: 'expertMarket.stageResearch', defaultZh: '选品', defaultEn: 'Research' },
+  { id: 'production', labelKey: 'expertMarket.stageProduction', defaultZh: '内容', defaultEn: 'Content' },
+  { id: 'growth', labelKey: 'expertMarket.stageGrowth', defaultZh: '运营', defaultEn: 'Operations' },
+  { id: 'system', labelKey: 'expertMarket.stageSystem', defaultZh: '系统', defaultEn: 'System' },
 ];
 
 export const DEFAULT_MARKET_EXPERTS = [
   {
     id: 'ecom-market-research',
-    name: '市场选品与竞品调研专家',
-    nameEn: 'Market Research & Competitor Analyst',
+    name: '选品专家',
+    nameEn: 'Market Analyst',
     description: '类目容量/CR10/价格带波谷测算、社媒痛点挖掘与竞品拆解，用脚本计算替代心算，输出可验证选品结论。',
     descriptionEn: 'Category size, CR10, price-band gaps, social pain-point mining, and competitor teardown powered by deterministic scripts.',
     avatar: generatePixelAvatarDataUrl('ecom-market-research', { size: 96 }),
@@ -181,8 +181,8 @@ export const DEFAULT_MARKET_EXPERTS = [
   },
   {
     id: 'ecom-product-strategy',
-    name: '产品定位与定价策略专家',
-    nameEn: 'Product Strategy & Pricing Expert',
+    name: '定价专家',
+    nameEn: 'Pricing Strategist',
     description: '提炼唯一核心卖点、规划 SKU 角色矩阵、精算含税净利率/盈亏价/券余量，并沉淀进商品库作为全链路真源。',
     descriptionEn: 'Distills a single core selling point, SKU role matrix, tax-aware margin/break-even/coupon headroom, and syncs truth to Products.',
     avatar: generatePixelAvatarDataUrl('ecom-product-strategy', { size: 96 }),
@@ -192,8 +192,8 @@ export const DEFAULT_MARKET_EXPERTS = [
   },
   {
     id: 'ecom-listing-copy',
-    name: '跨境 Listing 与合规文案专家',
-    nameEn: 'Listing Copy & Compliance Specialist',
+    name: '文案专家',
+    nameEn: 'Listing Copywriter',
     description: '读取商品库参数真源，产出关键词分层、多语母语 Listing 标题与七段式商详，并通过字数、禁用词与参数溯源校验。',
     descriptionEn: 'Turns verified product specs into tiered keywords, native multilingual titles and 7-part listings with length, ban-word & spec checks.',
     avatar: generatePixelAvatarDataUrl('ecom-listing-copy', { size: 96 }),
@@ -203,8 +203,8 @@ export const DEFAULT_MARKET_EXPERTS = [
   },
   {
     id: 'ecom-visual-studio',
-    name: '电商主图与商详视觉专家',
-    nameEn: 'E-commerce Main Image & Visual Designer',
+    name: '视觉专家',
+    nameEn: 'Visual Designer',
     description: '锁定商品实拍外观与色值，规划 9 图视觉矩阵与商详排版，驱动创作画布批量出图并执行白底/主体占比像素质检。',
     descriptionEn: 'Plans 9-image visual stacks and A+ layouts locked to real product photos, drives Canvas generation, and runs pixel compliance checks.',
     avatar: generatePixelAvatarDataUrl('ecom-visual-studio', { size: 96 }),
@@ -214,8 +214,8 @@ export const DEFAULT_MARKET_EXPERTS = [
   },
   {
     id: 'ecom-video-director',
-    name: '带货短视频与爆款复刻导演',
-    nameEn: 'Shoppable Video & Viral Replication Director',
+    name: '视频导演',
+    nameEn: 'Video Director',
     description: '串联灵感 5D 拆解、资产与数字人、画布分镜生片与视频剪辑工坊，把控 3 秒 Hook、口播时长与参数溯源校验。',
     descriptionEn: 'Connects 5D inspiration breakdowns, assets/avatars, Canvas storyboards, and Clip timeline with 3s hook, duration & spec checks.',
     avatar: generatePixelAvatarDataUrl('ecom-video-director', { size: 96 }),
@@ -225,8 +225,8 @@ export const DEFAULT_MARKET_EXPERTS = [
   },
   {
     id: 'ecom-ads-optimizer',
-    name: '跨境广告诊断与买量优化专家',
-    nameEn: 'Cross-Border Ads & Growth Diagnostics Expert',
+    name: '广告专家',
+    nameEn: 'Ads Optimizer',
     description: '测算盈亏线 ROAS 与可承受 CPC，按五层转化漏斗定位点击/加购/转化瓶颈，输出分级调优清单并定向回流素材优化。',
     descriptionEn: 'Computes break-even ROAS & max CPC, diagnoses 5-stage ad funnels, outputs P0/P1/P2 action checklists and targeted creative feedback.',
     avatar: generatePixelAvatarDataUrl('ecom-ads-optimizer', { size: 96 }),
@@ -236,8 +236,8 @@ export const DEFAULT_MARKET_EXPERTS = [
   },
   {
     id: 'ecom-review-voc',
-    name: '评论 VOC 与售后话术专家',
-    nameEn: 'Review VOC & Customer Care Specialist',
+    name: '评论运营',
+    nameEn: 'Review Analyst',
     description: '差评 8 类归因与误解型差评识别、好评卖点提炼，输出商详防误解补丁、包装提示图需求与多语合规售后回复话术。',
     descriptionEn: 'Classifies negative reviews across 8 root causes to isolate fixable misunderstandings, emitting listing patches and compliant replies.',
     avatar: generatePixelAvatarDataUrl('ecom-review-voc', { size: 96 }),
@@ -247,8 +247,8 @@ export const DEFAULT_MARKET_EXPERTS = [
   },
   {
     id: 'ecom-creator-growth',
-    name: '达人建联与社媒增长专家',
-    nameEn: 'Creator Partnerships & Social Growth Expert',
+    name: '达人运营',
+    nameEn: 'Creator Manager',
     description: '基于公开社媒数据评估 TikTok/YouTube/IG 达人与爆款信号，输出建联 Brief、内容排期与增长复盘。',
     descriptionEn: 'Evaluates TikTok/YouTube/IG creators & viral outliers from public data, drafting outreach briefs, schedules, and growth recaps.',
     avatar: generatePixelAvatarDataUrl('ecom-creator-growth', { size: 96 }),
