@@ -123,3 +123,14 @@ test('E2E-3 解析器英文环境核验：skillTitle 与 skillDesc 在 en 环境
     assert.ok(desc && englishRegex.test(desc), `技能 ${s.id} 在英文环境下描述必须包含英文，得到: ${desc}`);
   });
 });
+
+test('E2E-4 规范化 slug i18n 对齐：replicate-viral-video 具备中英文描述键且不留存旧别名 viral-video-replication (#234)', () => {
+  const i18nSrc = readFileSync(join(root, 'src/client/i18n.js'), 'utf8');
+  const matches = i18nSrc.match(/"skill\.desc\.replicate-viral-video":/g) || [];
+  assert.equal(matches.length, 2, 'i18n.js 中英文词典均须包含 skill.desc.replicate-viral-video');
+  assert.equal(
+    i18nSrc.includes('"skill.desc.viral-video-replication"'),
+    false,
+    'i18n.js 不得残留已收敛的旧别名 skill.desc.viral-video-replication',
+  );
+});

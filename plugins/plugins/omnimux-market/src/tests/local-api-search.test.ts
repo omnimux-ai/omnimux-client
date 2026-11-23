@@ -130,7 +130,7 @@ test('skillContent and exploreFile alias resolve bundled catalog skill and retur
       method: 'POST',
       url: '/omnimux-market',
       [Symbol.asyncIterator]: async function* () {
-        yield Buffer.from(JSON.stringify({ method, slug: 'esc-demo-note' }))
+        yield Buffer.from(JSON.stringify({ method, slug: 'replicate-carousel' }))
       },
     } as unknown as IncomingMessage
     const res = mockRes()
