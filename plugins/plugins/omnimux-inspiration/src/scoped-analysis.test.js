@@ -516,11 +516,18 @@ describe('body translation and retained contracts', () => {
     assert.equal(after.analysis_results.body.result.summary, '重试后成功结果')
   })
 
-  it('enforces inputFingerprint 409 and deleted-item 404 guards on script translation', async () => {
+  it('enforces inputFingerprint 409 and deleted-item 404 guards on body and script translation (including verifyFingerprint)', async () => {
+    const enforceVerify = (req) => {
+      if (typeof req.verifyFingerprint === 'function' && !req.verifyFingerprint()) {
+        throw Object.assign(new Error('stale input'), { code: 'headless-skill-stale-input' })
+      }
+    }
+
     const wStale = world(async (req) => {
       assert.ok(req.inputFingerprint, 'script translation must supply inputFingerprint')
       assert.equal(typeof req.verifyFingerprint, 'function')
       wStale.store.update(wStale.row.id, { deconstruction: { segments: [{ id: 'seg_1', text: '被修改的新台词' }] } })
+      enforceVerify(req)
       return { mode: 'live', jobId: 'j1', skillName: req.skillName, model: 'm', data: { text: 'Old', segments: [{ id: 'seg_1', text: 'Old' }] } }
     })
     wStale.store.update(wStale.row.id, { deconstruction: { segments: [{ id: 'seg_1', text: '原始台词' }] } })
@@ -528,12 +535,51 @@ describe('body translation and retained contracts', () => {
     assert.equal(staleRes.status, 409)
     assert.equal(wStale.store.get(wStale.row.id).script_translation, undefined)
 
-    const wDeleted = world(async (req) => {
-      wDeleted.store.delete(wDeleted.row.id)
+    const wDeletedScript = world(async (req) => {
+      wDeletedScript.store.delete(wDeletedScript.row.id)
+      enforceVerify(req)
       return { mode: 'live', jobId: 'j2', skillName: req.skillName, model: 'm', data: { text: 'Translated', segments: [] } }
     })
-    const delRes = await wDeleted.send('translate', { lang: 'en' })
-    assert.equal(delRes.status, 404)
+    const delScriptRes = await wDeletedScript.send('translate', { lang: 'en' })
+    assert.equal(delScriptRes.status, 404)
+
+    const wDeletedBody = world(async (req) => {
+      wDeletedBody.store.delete(wDeletedBody.row.id)
+      enforceVerify(req)
+      return { mode: 'live', jobId: 'j3', skillName: req.skillName, model: 'm', data: { text: 'Body translated' } }
+    })
+    const delBodyRes = await wDeletedBody.send('translate-body', { lang: 'zh' })
+    assert.equal(delBodyRes.status, 404)
+  })
+
+  it('ignores finished historical job_id on POST /analyze/cancel so newer active run on same scope is untouched', async () => {
+    let releaseRun2
+    const run2Gate = new Promise((resolve) => { releaseRun2 = resolve })
+    let run2Started
+    const run2Ready = new Promise((resolve) => { run2Started = resolve })
+    const w = world(async (req) => {
+      run2Started()
+      await run2Gate
+      return { mode: 'live', jobId: 'job-active-2', skillName: req.skillName, model: 'm', data: { summary: '新任务顺利完成', sections: [], shots: [] } }
+    })
+    w.headlessSkill.getJob = (jobId) => {
+      if (jobId === 'job-done-old') {
+        return { jobId, ownerPlugin: 'omnimux-inspiration', targetId: `${w.row.id}:body`, status: 'done' }
+      }
+      return null
+    }
+
+    const activePending = w.send('analyze', { scope: 'body' })
+    await run2Ready
+    const cancelOld = await w.send('analyze/cancel', { job_id: 'job-done-old', scope: 'body' })
+    assert.equal(cancelOld.status, 200)
+    assert.deepEqual(cancelOld.body.cancelled, [], 'finished job_id must not cancel or settle active run')
+    assert.deepEqual(w.cancelledJobIds, [])
+
+    releaseRun2()
+    const activeRes = await activePending
+    assert.equal(activeRes.status, 200)
+    assert.equal(activeRes.body.data.analysis_results.body.status, 'done')
   })
 
   it('maps headless-skill-transport-exceeded to HTTP 422 with localized message', async () => {

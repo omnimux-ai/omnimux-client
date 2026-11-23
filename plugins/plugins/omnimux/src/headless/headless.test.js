@@ -532,4 +532,58 @@ describe('prepareHeadlessTransport and Hub video preparation', () => {
       assert.equal(existsSync(source), true, `${outcome} must keep original video`)
     }
   })
+
+  it('releases inflightByDedup immediately on cancel so instant retry succeeds while prior run unwinds', async () => {
+    let callCount = 0
+    let markRun1Started
+    const run1Started = new Promise((resolve) => { markRun1Started = resolve })
+    let releaseRun1Unwind
+    const run1UnwindGate = new Promise((resolve) => { releaseRun1Unwind = resolve })
+
+    const env = createMockEnv({
+      skills: { 'test-breakdown': { name: 'test-breakdown', content: 'Return JSON summary and tags.' } },
+      onExecute: async (_req, exec) => {
+        callCount += 1
+        if (callCount === 1) {
+          markRun1Started()
+          await run1UnwindGate
+          assert.equal(exec.signal.aborted, true, 'first run must see aborted signal')
+          throw Object.assign(new Error('first run aborted'), { name: 'AbortError' })
+        }
+        return {
+          mode: 'live',
+          model: 'test-model',
+          text: JSON.stringify({ hook: 'retry succeeded', structure: 'hook -> body', shots: [] }),
+        }
+      },
+    })
+    const api = mountHeadlessSkill(env.ctx)
+    const baseReq = {
+      skillName: 'test-breakdown',
+      input: 'Same post input',
+      outputSchema: BREAKDOWN_SCHEMA,
+      ownerPlugin: 'omnimux-inspiration',
+      targetId: 'insp-retry:body',
+      inputFingerprint: 'fp-same-1',
+    }
+
+    const firstPromise = api.run(baseReq)
+    await run1Started
+    const activeJobs = api.listJobs({ ownerPlugin: 'omnimux-inspiration', status: 'running' })
+    assert.equal(activeJobs.length, 1)
+    assert.equal(api.cancel(activeJobs[0].jobId), true)
+
+    // Retry immediately BEFORE Run 1 finishes unwinding, using the exact same dedupKey.
+    const retryResult = await api.run(baseReq)
+    assert.equal(retryResult.mode, 'live')
+    assert.equal(retryResult.data.hook, 'retry succeeded')
+    assert.notEqual(retryResult.jobId, activeJobs[0].jobId)
+    assert.equal(callCount, 2, 'retry must start a second execution instead of joining aborted run 1')
+
+    releaseRun1Unwind()
+    await assert.rejects(
+      () => firstPromise,
+      (err) => err instanceof OmnimuxError && err.code === 'headless-skill-cancelled',
+    )
+  })
 })

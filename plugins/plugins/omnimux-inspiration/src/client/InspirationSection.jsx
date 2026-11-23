@@ -1029,7 +1029,7 @@ export function InspirationSection({ t, active }) {
 
             {selectedItem && !expandedModal ? (
               <InspirationDetailSidebar
-                key={String(selectedItem.id)}
+                key={String(selectedItem.source_url || selectedItem.id)}
                 row={selectedItem}
                 t={t}
                 onClose={() => setSelectedItem(null)}

@@ -402,17 +402,21 @@ export async function handleCancelAnalysis(ctx) {
     if (!job || !ownedByPlugin || !belongsToTarget) {
       return fail(403, '无权取消非当前灵感的分析任务')
     }
-    if (typeof headlessSkill?.cancel === 'function' && headlessSkill.cancel(requestedJobId)) {
-      cancelledTargets.push(requestedJobId)
+    // Only cancel and settle if the named job is still active; a finished historical job_id
+    // must not abort a newer run on the same scope.
+    if (ACTIVE_JOB_STATUSES.has(job.status)) {
+      if (typeof headlessSkill?.cancel === 'function' && headlessSkill.cancel(requestedJobId)) {
+        cancelledTargets.push(requestedJobId)
+      }
+      if (runs?.has(jobTargetId)) {
+        const handle = runs.get(jobTargetId)
+        runs.delete(jobTargetId)
+        handle.controller.abort(Object.assign(new Error('分析已取消'), { name: 'AbortError', code: 'ABORT_ERR' }))
+        cancelledTargets.push(jobTargetId)
+      }
+      const scopeKey = jobTargetId.slice(`${ctx.id}:`.length)
+      if (scopeKey && !scopeKey.startsWith('translate:')) settledKeys.add(scopeKey)
     }
-    if (runs?.has(jobTargetId)) {
-      const handle = runs.get(jobTargetId)
-      runs.delete(jobTargetId)
-      handle.controller.abort(Object.assign(new Error('分析已取消'), { name: 'AbortError', code: 'ABORT_ERR' }))
-      cancelledTargets.push(jobTargetId)
-    }
-    const scopeKey = jobTargetId.slice(`${ctx.id}:`.length)
-    if (scopeKey && !scopeKey.startsWith('translate:')) settledKeys.add(scopeKey)
   } else {
     if (runs) {
       for (const [lock, handle] of [...runs.entries()]) {
@@ -591,6 +595,7 @@ export async function handleBodyTranslation(ctx) {
     return { status: 200, body: { data: row } }
   } catch (error) {
     if (error?.code === 'headless-skill-stale-input') {
+      if (!ctx.store.get(ctx.id)) return fail(404, '灵感已删除')
       return fail(409, '正文已变更，请重新翻译')
     }
     cancelled(ctx.signal)
@@ -671,6 +676,7 @@ export async function handleScriptTranslation(ctx) {
     return { status: 200, body: { data: updated } }
   } catch (error) {
     if (error?.code === 'headless-skill-stale-input') {
+      if (!ctx.store.get(ctx.id)) return fail(404, '灵感已删除')
       return fail(409, '脚本内容已变更，请重新翻译')
     }
     cancelled(ctx.signal)

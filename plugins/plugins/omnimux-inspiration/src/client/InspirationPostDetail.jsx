@@ -361,11 +361,17 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
           // Prefer localized persisted cancel status rather than raw HTTP 499 text.
           setAnalysisErrors(current => ({ ...current, [key]: '' }))
           if (!response.body?.data && local.savedRow?.id) {
+            const readVersion = analysisReadVersion.current
             getLocalInspiration(local.savedRow.id).then((latest) => {
-              if (requestIdentity.current === identity && latest?.ok && latest.body?.data) {
+              if (
+                requestIdentity.current === identity
+                && readVersion === analysisReadVersion.current
+                && latest?.ok
+                && latest.body?.data
+              ) {
                 onItemUpdated?.(latest.body.data)
               }
-            }).catch(() => {})
+            }).catch(() => null)
           }
         } else {
           setAnalysisErrors(current => ({ ...current, [key]: response.body?.error || copy('analysisFailed') }))

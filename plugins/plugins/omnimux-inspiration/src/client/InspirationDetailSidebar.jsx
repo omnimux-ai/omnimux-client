@@ -40,14 +40,31 @@ export function InspirationDetailSidebar({
   const shareTriggerRef = useRef(null)
   const sharePopoverRef = useRef(null)
   const applyItemRef = useRef(() => {})
-  const currentItemKeyRef = useRef('')
+  const currentItemRef = useRef({ id: '', isLocal: true, sourceUrl: '' })
 
   useEffect(() => {
     setItem(row)
   }, [row])
 
   const itemKey = item?.id == null ? '' : String(item.id)
-  currentItemKeyRef.current = itemKey
+  currentItemRef.current = {
+    id: itemKey,
+    isLocal: item?.is_local !== false,
+    sourceUrl: String(item?.source_url || ''),
+  }
+
+  const isCurrentOrPromoted = (next) => {
+    if (!next || typeof next !== 'object') return false
+    const current = currentItemRef.current
+    if (!current.id) return true
+    if (next.id != null && String(next.id) === current.id) return true
+    // Allow cloud-to-local promotion for the same post (id changes from cloud id to local insp_* id).
+    if (current.isLocal === false && next.is_local !== false) {
+      const nextUrl = String(next.source_url || '')
+      if (!current.sourceUrl || !nextUrl || nextUrl === current.sourceUrl) return true
+    }
+    return false
+  }
 
   useEffect(() => {
     setShowSharePopover(false)
@@ -106,10 +123,22 @@ export function InspirationDetailSidebar({
     return () => sharePoller.dispose()
   }, [sharePoller])
 
+  const commitItem = (next) => {
+    if (!isCurrentOrPromoted(next)) return
+    currentItemRef.current = {
+      id: next.id == null ? '' : String(next.id),
+      isLocal: next.is_local !== false,
+      sourceUrl: String(next.source_url || currentItemRef.current.sourceUrl || ''),
+    }
+    setItem(next)
+    onItemUpdated?.(next)
+  }
+
   useEffect(() => {
     applyItemRef.current = (next) => {
       if (!next || typeof next !== 'object') return
-      if (next.id != null && currentItemKeyRef.current && String(next.id) !== currentItemKeyRef.current) return
+      // Share polling only applies to the exact local item id that initiated it.
+      if (next.id != null && currentItemRef.current.id && String(next.id) !== currentItemRef.current.id) return
       setItem(next)
       onItemUpdated?.(next)
     }
@@ -130,11 +159,7 @@ export function InspirationDetailSidebar({
   const importing = isImportingRow(item)
   const failed = isFailedRow(item)
   const settledNotice = importSettledNotice(item, t)
-  const applyItem = (next) => {
-    if (next?.id != null && currentItemKeyRef.current && String(next.id) !== currentItemKeyRef.current) return
-    setItem(next)
-    onItemUpdated?.(next)
-  }
+  const applyItem = commitItem
 
   const handleCreateShare = async () => {
     if (sharing || !data.safeItem.id) return
@@ -143,7 +168,7 @@ export function InspirationDetailSidebar({
     setShareError(null)
     try {
       const response = await createShareLink(data.safeItem.id, shareRequestPayload(data.safeItem))
-      if (currentItemKeyRef.current !== requestItemId) return
+      if (currentItemRef.current.id !== requestItemId) return
       const next = response.body?.data
       if (!response.ok) {
         setShareError(response.body?.error || t('modal.share.failed') || '创建失败')
@@ -154,10 +179,10 @@ export function InspirationDetailSidebar({
         if (isShareRunning(next)) sharePoller.track(next.id)
       }
     } catch (error) {
-      if (currentItemKeyRef.current !== requestItemId) return
+      if (currentItemRef.current.id !== requestItemId) return
       setShareError(String(error?.message || error))
     } finally {
-      if (currentItemKeyRef.current === requestItemId) setSharing(false)
+      if (currentItemRef.current.id === requestItemId) setSharing(false)
     }
   }
 

@@ -2163,7 +2163,7 @@ dialog.omnimux-inspiration-preview-layer::backdrop { background: transparent; ba
   margin-bottom: 14px;
 }
 .omnimux-post-detail.is-sidebar .omnimux-post-media + .omnimux-post-media {
-  border-top: 1px solid var(--dsw-alias-border-l2, #242424);
+  border-top: 1px solid var(--dsw-alias-border-l2);
   padding-top: 14px;
 }
 .omnimux-post-detail.is-sidebar .omnimux-post-media-viewer {
@@ -2174,14 +2174,14 @@ dialog.omnimux-inspiration-preview-layer::backdrop { background: transparent; ba
 .omnimux-post-detail.is-sidebar.is-variant-text .omnimux-post-original {
   padding: 12px 14px;
   border-radius: 10px;
-  background: var(--dsw-alias-bg-base, var(--dsw-bg, #111215));
-  border: 1px solid var(--dsw-alias-border-l2, #242424);
+  background: var(--dsw-alias-bg-base, var(--dsw-alias-bg-layer-1));
+  border: 1px solid var(--dsw-alias-border-l2);
 }
 .omnimux-post-detail.is-sidebar .omnimux-post-original .omnimux-post-actions {
   margin: 10px 0 4px;
 }
 .omnimux-post-detail.is-sidebar .omnimux-post-analysis {
-  border-top: 1px solid var(--dsw-alias-border-l2, #242424);
+  border-top: 1px solid var(--dsw-alias-border-l2);
 }
 .omnimux-post-detail.is-sidebar .omnimux-post-analysis-header {
   padding: 14px 16px 10px;
@@ -2208,7 +2208,7 @@ dialog.omnimux-inspiration-preview-layer::backdrop { background: transparent; ba
   min-height: 54px;
   padding: 10px 14px;
   gap: 10px;
-  background: var(--dsw-alias-bg-base, var(--dsw-bg, #111215));
+  background: var(--dsw-alias-bg-base, var(--dsw-alias-bg-layer-1));
 }
 
 /* Detail metadata spacing (no middle dots) & live headless stage status */
@@ -2221,10 +2221,10 @@ dialog.omnimux-inspiration-preview-layer::backdrop { background: transparent; ba
 .omnimux-post-model-tag {
   padding: 1px 6px;
   border-radius: 6px;
-  background: var(--dsw-alias-bg-base, var(--dsw-bg, #111215));
-  border: 1px solid var(--dsw-alias-border-l2, #242424);
+  background: var(--dsw-alias-bg-base, var(--dsw-alias-bg-layer-1));
+  border: 1px solid var(--dsw-alias-border-l2);
   font-size: 11px;
-  color: var(--dsw-alias-label-secondary, #a1a1aa);
+  color: var(--dsw-alias-label-secondary);
 }
 .omnimux-post-analyze-actions {
   display: flex;
@@ -2239,9 +2239,9 @@ dialog.omnimux-inspiration-preview-layer::backdrop { background: transparent; ba
   margin-top: 10px;
   padding: 5px 10px;
   border-radius: 8px;
-  border: 1px solid var(--dsw-alias-border-l2, #242424);
-  background: var(--dsw-alias-bg-base, var(--dsw-bg, #111215));
-  color: var(--dsw-alias-label-secondary, #a1a1aa);
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base, var(--dsw-alias-bg-layer-1));
+  color: var(--dsw-alias-label-secondary);
   font-size: 12px;
   line-height: 1.4;
 }

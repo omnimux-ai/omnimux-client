@@ -10,11 +10,13 @@ import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { zh } from './locales.js'
 import { detectPostVariant, headlessStageLocaleKey, matchHeadlessSkillEvent } from './post-detail.js'
+import { analysisInputFingerprint } from '../analysis-input.js'
 import { IMPORT_POLL_INTERVAL_MS } from './import-status.js'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const sectionEntry = join(here, 'InspirationSection.jsx')
 const detailEntry = join(here, 'InspirationPostDetail.jsx')
+const sidebarEntry = join(here, 'InspirationDetailSidebar.jsx')
 const shimEntry = join(here, '../../tests/fixtures', 'ui-kit-shim.mjs')
 const cacheDir = join(here, '.esbuild-cache', 'sidebar-views')
 
@@ -496,6 +498,124 @@ describe('InspirationPostDetail hubEvents live stage & cancel (#211)', () => {
       globalThis.fetch = prev.fetch
       globalThis.setTimeout = prev.setTimeout
       globalThis.clearTimeout = prev.clearTimeout
+      globalThis.IS_REACT_ACT_ENVIRONMENT = prev.act
+    }
+  })
+
+  it('preserves cloud-to-local promotion during Analyze in InspirationDetailSidebar without dropping results', async () => {
+    const mod = await import(`${await bundleEntry(sidebarEntry, 'sidebar')}?m=${bundleSeq}`)
+    const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>', { url: 'http://127.0.0.1:4199/' })
+    const prev = {
+      window: globalThis.window,
+      document: globalThis.document,
+      fetch: globalThis.fetch,
+      act: globalThis.IS_REACT_ACT_ENVIRONMENT,
+    }
+    globalThis.window = dom.window
+    globalThis.document = dom.window.document
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true
+
+    let currentRow = {
+      id: '2789',
+      is_local: false,
+      title: '云端精选爆款帖',
+      content: '这是一条来自爆款趋势的云端正文',
+      source_url: 'https://x.com/demo/status/2789',
+      source_platform: 'x',
+      media_files: [],
+    }
+    const promotedRow = {
+      ...currentRow,
+      id: 'insp_promoted_2789',
+      is_local: true,
+      import_status: 'ready',
+    }
+    const analyzedRow = {
+      ...promotedRow,
+      analysis_results: {
+        post: {
+          scope: 'post',
+          directions: ['content', 'expression', 'creative'],
+          input_fingerprint: analysisInputFingerprint(promotedRow, { scope: 'post', directions: ['content', 'expression', 'creative'] }),
+          status: 'done',
+          source: 'live',
+          model: 'test-llm',
+          result: {
+            summary: '云端转本地后分析成功',
+            sections: [{ key: 'content', title: '内容理解', summary: '云端转本地后分析成功', points: ['核心卖点清晰'] }],
+            shots: [],
+          },
+        },
+      },
+    }
+
+    let importCalls = 0
+    let analyzeCalls = 0
+    globalThis.fetch = async (url, init = {}) => {
+      const text = String(url)
+      if (text.includes('/omnimux/analysis/service')) {
+        return { ok: true, status: 200, json: async () => ({ channel: 'official', configured: true, imageToolConfigured: true, revision: 1 }) }
+      }
+      if (text.endsWith('/omnimux/inspiration/local/import-url') && init.method === 'POST') {
+        importCalls += 1
+        return { ok: true, status: 200, json: async () => ({ data: promotedRow }) }
+      }
+      if (text.endsWith(`/omnimux/inspiration/local/${promotedRow.id}/analyze`) && init.method === 'POST') {
+        analyzeCalls += 1
+        return { ok: true, status: 200, json: async () => ({ data: analyzedRow, analysis_key: 'post' }) }
+      }
+      if (text.endsWith(`/omnimux/inspiration/local/${promotedRow.id}`)) {
+        return { ok: true, status: 200, json: async () => ({ data: analyzeCalls > 0 ? analyzedRow : promotedRow }) }
+      }
+      return { ok: true, status: 200, json: async () => ({ data: currentRow }) }
+    }
+
+    const container = dom.window.document.getElementById('host')
+    const root = createRoot(container)
+    const t = (key) => zh[key] || key
+    const updatedRows = []
+    const renderSidebar = () => {
+      root.render(React.createElement(mod.InspirationDetailSidebar, {
+        key: String(currentRow.source_url || currentRow.id),
+        row: currentRow,
+        t,
+        onClose: () => {},
+        onExpandModal: () => {},
+        onItemUpdated: (next) => {
+          updatedRows.push(next)
+          currentRow = next
+          renderSidebar()
+        },
+      }))
+    }
+
+    try {
+      await act(async () => {
+        renderSidebar()
+        await new Promise((r) => setTimeout(r, 10))
+      })
+
+      const analyzeBtn = [...container.querySelectorAll('.omnimux-post-analysis button')]
+        .find((node) => node.textContent.trim() === zh['post.analyzeTarget'])
+      assert.ok(analyzeBtn, 'start analysis button must render for cloud item')
+
+      await act(async () => {
+        analyzeBtn.click()
+        await new Promise((r) => setTimeout(r, 30))
+      })
+
+      assert.equal(importCalls, 1, 'cloud item must be promoted via import-url once')
+      assert.equal(analyzeCalls, 1, 'promoted local item must trigger /analyze')
+      assert.equal(currentRow.id, promotedRow.id, 'parent selectedItem must update to promoted local id')
+      assert.equal(currentRow.is_local, true)
+      assert.ok(updatedRows.some((r) => r.analysis_results?.post?.status === 'done'), 'analysis result must propagate out of sidebar')
+      assert.match(container.textContent, /云端转本地后分析成功/, 'sidebar must render completed analysis summary after promotion')
+    } finally {
+      await act(async () => { root.unmount() })
+      dom.window.close()
+      globalThis.window = prev.window
+      globalThis.document = prev.document
+      globalThis.fetch = prev.fetch
       globalThis.IS_REACT_ACT_ENVIRONMENT = prev.act
     }
   })
