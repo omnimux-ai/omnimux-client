@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, ConfirmModal, Divider, DropdownSelect, EmptyState, FilterBar, SearchField, Tabs } from 'dsh-ui-kit'
+import { Button, ConfirmModal, Divider, DropdownSelect, EmptyState, FilterBar, IconButton, SearchField, Tabs } from 'dsh-ui-kit'
+import { LayoutGrid, List } from 'lucide-react'
 import { CollectionHeader } from './CollectionHeader.jsx'
 import { InspirationCollectionCard, toCollectionCardRow } from './InspirationCollectionCard.jsx'
 import { InspirationCollectionDialog } from './InspirationCollectionDialog.jsx'
 import { InspirationCollectionMenu } from './InspirationCollectionMenu.jsx'
 import { InspirationCardMenu } from './InspirationCardMenu.jsx'
+import { InspirationDetailSidebar } from './InspirationDetailSidebar.jsx'
+import { InspirationListView } from './InspirationListView.jsx'
 import { buildCardMenuItems } from './card-actions.js'
 import { addCardToSession } from './card-to-chat.js'
 import { addCollectionToSession } from './collection-to-chat.js'
@@ -48,6 +51,25 @@ const TOAST_FADE_MS = 180
  */
 const BROWSER_UPDATE_WAIT_MS = 150_000
 const BROWSER_UPDATE_POLL_MS = 3_000
+const VIEW_MODE_STORAGE_KEY = 'omnimux-inspiration:view-mode'
+
+function readSavedViewMode() {
+  try {
+    const raw = typeof window !== 'undefined' ? window.localStorage?.getItem(VIEW_MODE_STORAGE_KEY) : null
+    return raw === 'list' ? 'list' : 'gallery'
+  } catch (err) {
+    console.debug?.('[omnimux-inspiration] readSavedViewMode fallback', err)
+    return 'gallery'
+  }
+}
+
+function saveViewMode(mode) {
+  try {
+    if (typeof window !== 'undefined') window.localStorage?.setItem(VIEW_MODE_STORAGE_KEY, mode)
+  } catch (err) {
+    console.debug?.('[omnimux-inspiration] saveViewMode skipped', err)
+  }
+}
 
 /**
  * 账号导入成功的提示文案：账号带 handle 就点名，没带就退回一句通用话术 ——
@@ -484,16 +506,76 @@ export function InspirationSection({ t, active }) {
     injectCollectionStyles()
   }, [])
 
+  const rootRef = useRef(null)
   const toolbarRef = useRef(null)
+  const workspaceRef = useRef(null)
+  const [viewMode, setViewMode] = useState(readSavedViewMode)
+  const [expandedModal, setExpandedModal] = useState(false)
 
-  // 一级分类切换后回到页面顶部。
+  const handleViewModeChange = useCallback((nextMode) => {
+    const normalized = nextMode === 'list' ? 'list' : 'gallery'
+    setViewMode(normalized)
+    saveViewMode(normalized)
+  }, [])
+
+  // 一级分类切换后回到页面顶部并收起宽屏弹层。
   useEffect(() => {
     const stage = toolbarRef.current?.closest?.('.omx-stage-scroll')
     if (stage) stage.scrollTop = 0
-  }, [tab])
+    setExpandedModal(false)
+    if (tab === 'rivals') setSelectedItem(null)
+  }, [tab, setSelectedItem])
+
+  // 当选中项清空时，重置宽屏弹层开关。
+  useEffect(() => {
+    if (!selectedItem) setExpandedModal(false)
+  }, [selectedItem])
+
+  // 同步吸附工具栏、工作区可视顶距与整页滚动容器高度给右侧停靠详情栏，保证在任意滚动位置与窗口尺寸下贴顶吸附不越界。
+  useEffect(() => {
+    const rootNode = rootRef.current
+    const toolbarNode = toolbarRef.current
+    if (!rootNode || !toolbarNode) return undefined
+    const stage = toolbarNode.closest?.('.omx-stage-scroll')
+    let rafId = 0
+    const syncGeometry = () => {
+      rafId = 0
+      const stickyH = Math.round(toolbarNode.getBoundingClientRect().height || 0)
+      if (stickyH > 0) rootNode.style.setProperty('--omnimux-inspiration-sticky-h', `${stickyH}px`)
+      const scrollH = stage ? Math.round(stage.clientHeight || 0) : 0
+      if (scrollH > 0) rootNode.style.setProperty('--omnimux-inspiration-scroll-h', `${scrollH}px`)
+      const workspaceNode = workspaceRef.current
+      if (stage && workspaceNode) {
+        const stageTop = stage.getBoundingClientRect().top
+        const wsTop = workspaceNode.getBoundingClientRect().top
+        const visibleTop = Math.max(stickyH + 8, Math.round(wsTop - stageTop))
+        if (Number.isFinite(visibleTop) && visibleTop > 0) {
+          rootNode.style.setProperty('--omnimux-inspiration-sidebar-top', `${visibleTop}px`)
+        }
+      }
+    }
+    const scheduleSync = () => {
+      if (rafId) return
+      if (typeof requestAnimationFrame === 'function') rafId = requestAnimationFrame(syncGeometry)
+      else syncGeometry()
+    }
+    syncGeometry()
+    if (stage) stage.addEventListener('scroll', scheduleSync, { passive: true })
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(scheduleSync) : null
+    if (observer) {
+      observer.observe(toolbarNode)
+      if (stage) observer.observe(stage)
+      if (workspaceRef.current) observer.observe(workspaceRef.current)
+    }
+    return () => {
+      if (rafId && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(rafId)
+      if (stage) stage.removeEventListener('scroll', scheduleSync)
+      observer?.disconnect()
+    }
+  }, [tab, selecting, Boolean(selectedItem), viewMode, collectionId, Boolean(libraryCollections.selectedSource)])
 
   return (
-    <div className="omnimux-inspiration-root">
+    <div ref={rootRef} className="omnimux-inspiration-root">
       <div className="omnimux-inspiration-action-row">
         <Button
           variant="primary"
@@ -607,6 +689,30 @@ export function InspirationSection({ t, active }) {
                 { value: '1', label: t('favorite.on') },
               ]}
             />
+            <div className="omnimux-inspiration-view-toggle" role="group" aria-label={t('feedView.switch')}>
+              <IconButton
+                size="sm"
+                variant="ghost"
+                className={`omnimux-inspiration-view-btn ${viewMode === 'gallery' ? 'is-active' : ''}`}
+                aria-label={t('feedView.gallery')}
+                aria-pressed={viewMode === 'gallery'}
+                title={t('feedView.gallery')}
+                onClick={() => handleViewModeChange('gallery')}
+              >
+                <LayoutGrid size={15} />
+              </IconButton>
+              <IconButton
+                size="sm"
+                variant="ghost"
+                className={`omnimux-inspiration-view-btn ${viewMode === 'list' ? 'is-active' : ''}`}
+                aria-label={t('feedView.list')}
+                aria-pressed={viewMode === 'list'}
+                title={t('feedView.list')}
+                onClick={() => handleViewModeChange('list')}
+              >
+                <List size={15} />
+              </IconButton>
+            </div>
           </>
         )}
       />
@@ -730,7 +836,7 @@ export function InspirationSection({ t, active }) {
       ) : null}
       {tab === 'local' && libraryCollections.selectedSource ? (
         <div className="omnimux-inspiration-collection-selection" role="status">
-          <span>{t('collection.chooseTarget')} · {libraryCollections.selectedSource.title}</span>
+          <span>{t('collection.chooseTarget')}：{libraryCollections.selectedSource.title}</span>
           <Button variant="ghost" onClick={libraryCollections.cancelSelection}>{t('collection.cancel')}</Button>
         </div>
       ) : null}
@@ -807,96 +913,142 @@ export function InspirationSection({ t, active }) {
             collectionId ? <EmptyState title={t('collection.empty')} /> : <InspirationEmptyState t={t} onOpenAdd={() => setImportOpen(true)} />
           ) : null}
 
-          {gridCards.length > 0 ? (
-            <>
-              <div className="omnimux-inspiration-collection-surface" {...drag}>
-              <RivalMasonry
-                className={`omnimux-inspiration-grid ${selecting ? 'selecting' : ''}`}
-                cards={gridCards}
-                t={t}
-                renderCard={({ card: descriptor, style, column }) => descriptor.card_type === 'collection' ? (
-                  <InspirationCollectionCard collection={descriptor.collection} t={t} style={style} column={column}
-                    onOpen={selectCollection}
-                    onView={() => libraryCollections.open(descriptor.collection)}
-                    onAddToSession={handleAddCollectionToSession}
-                    addToSessionBusy={addingCollectionId === String(descriptor.collection.id)}
-                    menuNode={<InspirationCollectionMenu t={t} disabled={libraryCollections.busy} onRename={() => libraryCollections.rename(descriptor.collection)} />}
-                  />
-                ) : (
-                  <InspirationCoverCard
-                    descriptor={descriptor}
-                    style={style}
-                    column={column}
-                    actionsNode={(
-                      <InspirationCardMenu
+          <div ref={workspaceRef} className={`omnimux-inspiration-workspace ${selectedItem && !expandedModal ? 'has-sidebar' : ''}`} data-view-mode={viewMode}>
+            <div className="omnimux-inspiration-feed-pane">
+              {gridCards.length > 0 ? (
+                <>
+                  <div className="omnimux-inspiration-collection-surface" {...(viewMode === 'gallery' ? drag : {})}>
+                    {viewMode === 'list' ? (
+                      <InspirationListView
+                        cards={gridCards}
                         t={t}
-                        disabled={libraryCollections.busy}
-                        items={buildCardMenuItems({
-                          t,
-                          local: tab === 'local',
-                          inCollection: Boolean(collectionId),
-                          onAddToConversation: () => handleAddCardToSession(descriptor),
-                          onMerge: () => libraryCollections.selectSource(descriptor.source_row),
-                          onRemove: () => libraryCollections.remove(descriptor.source_row),
-                          onDelete: () => setPendingRemove({ ids: [descriptor.source_row.id], count: 1 }),
-                        })}
+                        tab={tab}
+                        collectionId={collectionId}
+                        activeId={selectedItem ? String(selectedItem.id) : ''}
+                        selectedIds={selectedIds}
+                        selecting={selecting}
+                        replicateBusy={replicateBusy}
+                        addingCollectionId={addingCollectionId}
+                        collectionBusy={libraryCollections.busy}
+                        onOpenCollection={selectCollection}
+                        onAddCollectionToSession={handleAddCollectionToSession}
+                        onRenameCollection={(collection) => libraryCollections.rename(collection)}
+                        onToggleSelect={toggleSelect}
+                        onSelect={selectItem}
+                        onReplicate={handleReplicate}
+                        onAddCardToSession={handleAddCardToSession}
+                        onMergeCard={(row) => libraryCollections.selectSource(row)}
+                        onRemoveFromCollection={(row) => libraryCollections.remove(row)}
+                        onDeleteCard={(row) => setPendingRemove({ ids: [row.id], count: 1 })}
+                      />
+                    ) : (
+                      <RivalMasonry
+                        className={`omnimux-inspiration-grid ${selecting ? 'selecting' : ''}`}
+                        cards={gridCards}
+                        t={t}
+                        renderCard={({ card: descriptor, style, column }) => descriptor.card_type === 'collection' ? (
+                          <InspirationCollectionCard collection={descriptor.collection} t={t} style={style} column={column}
+                            onOpen={selectCollection}
+                            onView={() => libraryCollections.open(descriptor.collection)}
+                            onAddToSession={handleAddCollectionToSession}
+                            addToSessionBusy={addingCollectionId === String(descriptor.collection.id)}
+                            menuNode={<InspirationCollectionMenu t={t} disabled={libraryCollections.busy} onRename={() => libraryCollections.rename(descriptor.collection)} />}
+                          />
+                        ) : (
+                          <InspirationCoverCard
+                            descriptor={descriptor}
+                            style={style}
+                            column={column}
+                            actionsNode={(
+                              <InspirationCardMenu
+                                t={t}
+                                disabled={libraryCollections.busy}
+                                items={buildCardMenuItems({
+                                  t,
+                                  local: tab === 'local',
+                                  inCollection: Boolean(collectionId),
+                                  onAddToConversation: () => handleAddCardToSession(descriptor),
+                                  onMerge: () => libraryCollections.selectSource(descriptor.source_row),
+                                  onRemove: () => libraryCollections.remove(descriptor.source_row),
+                                  onDelete: () => setPendingRemove({ ids: [descriptor.source_row.id], count: 1 }),
+                                })}
+                              />
+                            )}
+                            card={{
+                              row: descriptor.source_row,
+                              t,
+                              selected: selectedIds.has(descriptor.source_row.id),
+                              active: selectedItem != null && String(selectedItem.id) === String(descriptor.source_row.id),
+                              selecting,
+                              replicateBusy,
+                              onToggleSelect: toggleSelect,
+                              onSelect: selectItem,
+                              onReplicate: handleReplicate,
+                            }}
+                          />
+                        )}
                       />
                     )}
-                    card={{
-                      row: descriptor.source_row,
-                      t,
-                      selected: selectedIds.has(descriptor.source_row.id),
-                      selecting,
-                      replicateBusy,
-                      onToggleSelect: toggleSelect,
-                      onSelect: selectItem,
-                      onReplicate: handleReplicate,
-                    }}
-                  />
-                )}
-              />
-              </div>
-              {loadingMore ? <div className="omnimux-inspiration-skeleton omnimux-rival-loadmore">
-                {Array.from({ length: 10 }).map((_, i) => (
-                  <div key={`skel_more_${i}`} className="omnimux-inspiration-skel" aria-hidden="true" />
-                ))}
-              </div> : null}
-            </>
-          ) : null}
+                  </div>
+                  {loadingMore ? <div className="omnimux-inspiration-skeleton omnimux-rival-loadmore">
+                    {Array.from({ length: 10 }).map((_, i) => (
+                      <div key={`skel_more_${i}`} className="omnimux-inspiration-skel" aria-hidden="true" />
+                    ))}
+                  </div> : null}
+                </>
+              ) : null}
 
-          <div
-            className="omnimux-inspiration-cta-status"
-            id="omnimux-inspiration-cta-status"
-            aria-live="polite"
-            role="status"
-          >
-            {ctaStatus ? t(ctaStatus) : ''}
+              <div
+                className="omnimux-inspiration-cta-status"
+                id="omnimux-inspiration-cta-status"
+                aria-live="polite"
+                role="status"
+              >
+                {ctaStatus ? t(ctaStatus) : ''}
+              </div>
+
+              {/* 后台导入结算通知：降级、失败或 AI 拆解失败时告知结果，点击即清除。
+                  每段文案各自包一层 <p>：样式表只给 `.omnimux-inspiration-import-notice p`
+                  设了外边距，裸文本会继承浏览器的默认 margin 而与相邻提示错位。 */}
+              {importFailed ? (
+                <div
+                  className="omnimux-inspiration-import-notice"
+                  role="status"
+                  onClick={() => clearImportFailed?.(null)}
+                >
+                  <p>
+                    {t(importFailed.key)}
+                    {importFailed.detail ? `：${importFailed.detail}` : ''}
+                  </p>
+                  {importFailed.retryable ? <p>{t('add.retryHint')}</p> : null}
+                </div>
+              ) : null}
+
+              <div ref={sentinelRef} />
+            </div>
+
+            {selectedItem && !expandedModal ? (
+              <InspirationDetailSidebar
+                key={String(selectedItem.source_url || selectedItem.id)}
+                row={selectedItem}
+                t={t}
+                onClose={() => setSelectedItem(null)}
+                onExpandModal={() => setExpandedModal(true)}
+                onItemUpdated={handleItemUpdated}
+                onReplicate={handleReplicate}
+                replicateBusy={replicateBusy}
+              />
+            ) : null}
           </div>
 
-          {/* 后台导入结算通知：降级、失败或 AI 拆解失败时告知结果，点击即清除。
-              每段文案各自包一层 <p>：样式表只给 `.omnimux-inspiration-import-notice p`
-              设了外边距，裸文本会继承浏览器的默认 margin 而与相邻提示错位。 */}
-          {importFailed ? (
-            <div
-              className="omnimux-inspiration-import-notice"
-              role="status"
-              onClick={() => clearImportFailed?.(null)}
-            >
-              <p>
-                {t(importFailed.key)}
-                {importFailed.detail ? `：${importFailed.detail}` : ''}
-              </p>
-              {importFailed.retryable ? <p>{t('add.retryHint')}</p> : null}
-            </div>
-          ) : null}
-
-          <div ref={sentinelRef} />
-
-          {selectedItem ? (
+          {selectedItem && expandedModal ? (
             <InspirationPreviewModal
               row={selectedItem}
               t={t}
-              onClose={() => setSelectedItem(null)}
+              onClose={() => {
+                setExpandedModal(false)
+                setSelectedItem(null)
+              }}
               onItemUpdated={handleItemUpdated}
               onReplicate={handleReplicate}
               replicateBusy={replicateBusy}

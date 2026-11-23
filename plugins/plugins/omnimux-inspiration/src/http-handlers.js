@@ -4,7 +4,16 @@ import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { alignMediaExtension, downloadMedia, isKnownUnrenderableCover } from './downloader.js'
 import { analyzeInspirationVideo } from './analyzer.js'
-import { handleScopedAnalysis, handleBodyTranslation, prepareAnalysis, recoverInterruptedAnalyses } from './scoped-analysis.js'
+import {
+  handleBodyTranslation,
+  handleCancelAnalysis,
+  handleScopedAnalysis,
+  handleScriptTranslation,
+  prepareAnalysis,
+  recoverInterruptedAnalyses,
+  runHeadlessVideoDeconstruct,
+} from './scoped-analysis.js'
+export { handleCancelAnalysis } from './scoped-analysis.js'
 import { analysisMediaItems } from './analysis-input.js'
 import { EXPORT_KIND, exportMediaFile, resolveDownloadsDir } from './media-export.js'
 import {
@@ -41,11 +50,9 @@ import { extractVideoPoster } from './media-export.js'
 import { isDownloadableHttpUrl, isPublicHttpUrl } from './url-policy.js'
 import { localMediaPaths } from './local-store.js'
 import {
-  buildTranslatePrompt,
   extractScriptStructure,
   parseDurationSeconds,
   parsePublishedAt,
-  parseTranslateJson,
 } from './structure-script.js'
 
 /** Module-level singleton — never construct per request. */
@@ -1711,11 +1718,32 @@ async function maybeAnalyze(args, media, meta) {
   if (args.signal?.aborted) throw createAbortError()
   if (!args.autoAnalyze || !media.localVideoPath) return { deconstruction: null, error: '' }
   await reportStage(args, IMPORT_STAGES.ANALYZING)
-  // `args.analyzeInspiration` is undefined in production, so the real analyzer
-  // runs. The dispatcher forwards an injected one for tests, which is the only
-  // seam that reaches the failure branch below: the analyzer degrades to a local
-  // breakdown rather than reporting failure, so no other input can produce a
-  // failed analysis.
+  // Prefer Hub `headlessSkill` whenever mounted (all production runs). Fall back
+  // to `args.analyzeInspiration` (test seam) or legacy `videoAnalyzeTool` only
+  // in isolated unit tests that do not supply `headlessSkill`.
+  if (!args.analyzeInspiration) {
+    const headlessSkill = typeof args.headlessSkill === 'function' ? args.headlessSkill() : args.headlessSkill
+    if (headlessSkill && typeof headlessSkill.run === 'function') {
+      const videoIndex = Math.max(0, (media.mediaItems || []).findIndex((entry) => entry.type === 'video'))
+      return runHeadlessVideoDeconstruct({
+        headlessSkill,
+        item: {
+          id: args.upgradeId || args.rawUrl || 'import',
+          title: meta.title || args.rawUrl,
+          content: meta.text || '',
+          tags: args.customTags,
+          source_platform: args.platform,
+          type: 'video',
+          content_shape: 'video',
+        },
+        videoPath: media.localVideoPath,
+        mediaIndex: videoIndex,
+        targetId: `${args.upgradeId || args.rawUrl || 'import'}:media:${videoIndex}`,
+        signal: args.signal,
+        formatErrorMessage: args.formatErrorMessage,
+      })
+    }
+  }
   const analyze = args.analyzeInspiration || analyzeInspirationVideo
   const analysisResult = await analyze({
     videoPath: media.localVideoPath,
@@ -2075,6 +2103,10 @@ async function persistAnalysis(ctx, item, videoPath) {
     if (!media_items.length) media_items.push({ type: 'video', url: localUrl })
     ctx.store.update(ctx.id, { local_paths: { ...(item.local_paths || {}), video: videoPath }, media_items, media_urls: media_items.filter((asset) => asset.type === 'video').map((asset) => asset.url) })
   }
+  const headlessSkill = typeof ctx.headlessSkill === 'function' ? ctx.headlessSkill() : ctx.headlessSkill
+  if (headlessSkill && typeof headlessSkill.run === 'function') {
+    return handleScopedAnalysis({ ...ctx, req: { ...ctx.req, body: { scope: 'media', media_index: index } } }, { mirrorLegacy: true })
+  }
   return handleScopedAnalysis({ ...ctx, req: { ...ctx.req, body: { scope: 'media', media_index: index } } }, {
     mirrorLegacy: true,
     async execute() {
@@ -2096,40 +2128,7 @@ async function persistAnalysis(ctx, item, videoPath) {
 
 export async function handleTranslate(ctx) {
   if (ctx.req.body?.scope === 'body') return handleBodyTranslation(ctx)
-  const item = ctx.store.get(ctx.id)
-  if (!item) return fail(404, 'not found')
-  const lang = String(ctx.req.body?.lang || ctx.req.body?.target || 'zh').trim() || 'zh'
-  const analysis = item.deconstruction && typeof item.deconstruction === 'object' ? item.deconstruction : {}
-  const segments = Array.isArray(analysis.segments) ? analysis.segments : []
-  const source = segments.length
-    ? segments.map((row) => row.text).filter(Boolean).join('\n')
-    : (item.content || '')
-  if (!source.trim()) return fail(422, '暂无脚本文案可翻译')
-  if (!ctx.textComplete || typeof ctx.textComplete.execute !== 'function') {
-    return fail(503, '文本翻译能力未就绪')
-  }
-  try {
-    const result = await ctx.textComplete.execute({
-      reason: 'inspiration-script-translate',
-      prompt: buildTranslatePrompt({
-        lang,
-        source,
-        segmentIds: segments.map((row) => row.id),
-      }),
-      maxTokens: 1800,
-    })
-    const parsed = parseTranslateJson(result?.text || result, source)
-    const updated = ctx.store.update(ctx.id, {
-      script_translation: {
-        lang,
-        text: parsed.text,
-        segments: parsed.segments,
-      },
-    })
-    return { status: 200, body: { data: updated } }
-  } catch (error) {
-    return fail(502, error instanceof Error ? error.message : String(error))
-  }
+  return handleScriptTranslation(ctx)
 }
 
 async function resolveAnalyzeVideo(args) {
@@ -2178,7 +2177,7 @@ export async function handleBatchDelete({ req, store }) {
   return { status: 200, body: { data: result } }
 }
 
-export function handleGetItem({ id, store }) {
+export function handleGetItem({ id, store, headlessSkill }) {
   // Single-row reads are what the client polls, so they carry the sweep too:
   // otherwise a row whose job died would answer `importing` forever to a client
   // that never lists.
@@ -2191,7 +2190,8 @@ export function handleGetItem({ id, store }) {
   const failed = sweepStaleImports(store)
   if (snapshot && !failed) store.cacheReadSnapshot?.(snapshot)
   const rawItem = store.get(id, snapshot ?? undefined)
-  const recovered = rawItem ? recoverInterruptedAnalyses(store, rawItem) : rawItem
+  const resolvedHeadless = typeof headlessSkill === 'function' ? headlessSkill() : headlessSkill
+  const recovered = rawItem ? recoverInterruptedAnalyses(store, rawItem, resolvedHeadless) : rawItem
   // A recovery writes a raw row; reread only changed rows for the authoritative view.
   const current = recovered !== rawItem ? store.get(id) : recovered
   const item = current ? maybeEnsureVideoCover(current, store, store?.paths) : current

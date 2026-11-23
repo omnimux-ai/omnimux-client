@@ -1,8 +1,12 @@
-import { describe, it } from 'node:test'
+import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { existsSync, mkdtempSync, realpathSync, rmSync, truncateSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { mountHeadlessSkill } from './mount.js'
 import { HEADLESS_SKILL_EVENT_TYPE } from './queue.js'
 import { extractJsonPayload, validateAgainstSchema } from './schema.js'
+import { INLINE_REQUEST_BYTES, prepareHeadlessTransport } from './transport.js'
 import { OmnimuxError } from '../media/errors.js'
 
 const BREAKDOWN_SCHEMA = {
@@ -322,5 +326,264 @@ describe('mountHeadlessSkill', () => {
     )
     releaseFirst()
     await p1
+  })
+})
+
+describe('prepareHeadlessTransport and Hub video preparation', () => {
+  const dirs = []
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+  })
+
+  function tempAsset(size, name = 'source.mp4') {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'headless-transport-')))
+    dirs.push(dir)
+    const file = join(dir, name)
+    writeFileSync(file, 'original')
+    truncateSync(file, size)
+    return file
+  }
+
+  it('compresses a 98MB video via videoProcess, preserves timeline/audio, and cleans up after execution', async () => {
+    const source = tempAsset(98_376_196)
+    let preparedDest = ''
+    let seenRef = ''
+    let preparedExistedDuringExec = false
+
+    const env = createMockEnv({
+      skills: { 'video-skill': { name: 'video-skill', content: 'Analyze video' } },
+      onExecute: async (req) => {
+        seenRef = req.references?.[0]?.pathOrUrl || ''
+        preparedExistedDuringExec = existsSync(seenRef)
+        return {
+          mode: 'live',
+          model: 'gemini-2.5-pro',
+          text: JSON.stringify({ hook: 'h', structure: 's', shots: [] }),
+        }
+      },
+    })
+
+    const api = mountHeadlessSkill(env.ctx, {
+      videoProcess: {
+        async execute(req) {
+          assert.equal(req.capability, 'video_inline_analysis_prepare')
+          assert.equal(req.input.videoUrl, source)
+          assert.equal(req.input.preserveTimeline, true)
+          assert.equal(req.input.keepAudio, true)
+          assert.ok(req.input.maxRequestBytes < INLINE_REQUEST_BYTES)
+          preparedDest = req.dest
+          writeFileSync(preparedDest, 'prepared whole video')
+          return { mode: 'live', files: [{ path: preparedDest, kind: 'video', meta: { preserveTimeline: true, keepAudio: true } }] }
+        },
+      },
+    })
+
+    const result = await api.run({
+      skillName: 'video-skill',
+      input: 'Analyze this large clip',
+      references: [{ type: 'video', pathOrUrl: source }],
+      outputSchema: BREAKDOWN_SCHEMA,
+    })
+
+    assert.equal(result.mode, 'live')
+    assert.equal(seenRef, preparedDest)
+    assert.equal(preparedExistedDuringExec, true)
+    assert.equal(existsSync(preparedDest), false, 'temporary prepared file must be cleaned after execution')
+    assert.equal(existsSync(source), true, 'original source must stay untouched')
+    assert.ok(env.events.some((e) => e.payload?.stage === 'preparing-media'))
+  })
+
+  it('shares remaining inline budget across multiple oversized videos and rejects oversized images', async () => {
+    const sources = [tempAsset(98_376_196, 'v1.mp4'), tempAsset(50_000_000, 'v2.mp4'), tempAsset(500, 'v3.mp4')]
+    const calls = []
+    const prepared = await prepareHeadlessTransport(
+      { prompt: 'body', references: sources.map((pathOrUrl) => ({ type: 'video', pathOrUrl })) },
+      {
+        videoProcess: {
+          async execute(req) {
+            calls.push(req)
+            writeFileSync(req.dest, 'compressed')
+            truncateSync(req.dest, req.input.maxRequestBytes)
+            return { mode: 'live', files: [{ path: req.dest, kind: 'video', meta: { preserveTimeline: true, keepAudio: true } }] }
+          },
+        },
+      },
+    )
+    assert.equal(calls.length, 2)
+    assert.equal(calls[0].input.maxRequestBytes, calls[1].input.maxRequestBytes)
+    assert.deepEqual(prepared.references.map((r) => r.pathOrUrl), [calls[0].dest, calls[1].dest, sources[2]])
+    await prepared.cleanup()
+    assert.equal(existsSync(calls[0].dest), false)
+
+    const bigPhoto = tempAsset(8 * 1024 * 1024, 'photo.jpg')
+    await assert.rejects(
+      () => prepareHeadlessTransport({ prompt: 'body', references: [{ type: 'image', pathOrUrl: bigPhoto }] }),
+      (err) => err instanceof OmnimuxError && err.code === 'headless-skill-transport-exceeded',
+    )
+  })
+
+  it('cleans up temporary files across all videoProcess failure modes and updates transcoded mime to video/mp4', async () => {
+    const source = tempAsset(98_376_196, 'clip.mov')
+    await assert.rejects(
+      () => prepareHeadlessTransport({ prompt: 'body', references: [{ type: 'video', pathOrUrl: source, mime: 'video/quicktime' }] }),
+      (err) => err instanceof OmnimuxError && err.code === 'headless-skill-transport-unavailable',
+    )
+
+    // Verify all 5 failure modes: error (VideoError), overshoot, cancel, fake (non-live), old-engine
+    for (const mode of ['error', 'overshoot', 'cancel', 'fake', 'old-engine']) {
+      let created = ''
+      const controller = new AbortController()
+      await assert.rejects(
+        () => prepareHeadlessTransport(
+          { prompt: 'body', references: [{ type: 'video', pathOrUrl: source, mime: 'video/quicktime' }] },
+          {
+            signal: controller.signal,
+            videoProcess: {
+              async execute(req) {
+                created = req.dest
+                writeFileSync(created, 'partial')
+                if (mode === 'error') {
+                  throw Object.assign(new Error('budget too small'), { name: 'VideoError', code: 'video-invalid-input' })
+                }
+                if (mode === 'cancel') controller.abort()
+                return {
+                  mode: mode === 'fake' ? 'mock' : 'live',
+                  files: [{
+                    path: created,
+                    kind: 'video',
+                    meta: {
+                      overshoot: mode === 'overshoot',
+                      preserveTimeline: mode !== 'old-engine',
+                      keepAudio: mode !== 'old-engine',
+                    },
+                  }],
+                }
+              },
+            },
+          },
+        ),
+        (err) => err instanceof OmnimuxError && err.code === (mode === 'cancel' ? 'headless-skill-cancelled' : 'headless-skill-transport-exceeded'),
+      )
+      assert.equal(existsSync(created), false, `${mode} must clean up temporary prepared video`)
+      assert.equal(existsSync(source), true, `${mode} must never remove original source`)
+    }
+
+    // Transcoded MP4 must overwrite stale source mime (video/quicktime -> video/mp4)
+    const okPrepared = await prepareHeadlessTransport(
+      { system: 'sys', prompt: 'body', references: [{ type: 'video', pathOrUrl: source, mime: 'video/quicktime' }] },
+      {
+        videoProcess: {
+          async execute(req) {
+            writeFileSync(req.dest, 'mp4-bytes')
+            return { mode: 'live', files: [{ path: req.dest, kind: 'video', meta: { preserveTimeline: true, keepAudio: true } }] }
+          },
+        },
+      },
+    )
+    assert.equal(okPrepared.references[0].mime, 'video/mp4')
+    await okPrepared.cleanup()
+
+    // Exhausted budget via data: URI + system prompt reports transport-exceeded even without videoProcess
+    const oversizedDataUri = `data:image/jpeg;base64,${'A'.repeat(INLINE_REQUEST_BYTES)}`
+    await assert.rejects(
+      () => prepareHeadlessTransport({
+        system: 'sys',
+        prompt: 'body',
+        references: [{ type: 'image', pathOrUrl: oversizedDataUri }, { type: 'video', pathOrUrl: source }],
+      }),
+      (err) => err instanceof OmnimuxError && err.code === 'headless-skill-transport-exceeded',
+    )
+  })
+
+  it('cleans up temporary prepared video when textComplete fails or is cancelled', async () => {
+    for (const outcome of ['failed', 'cancel']) {
+      const source = tempAsset(98_376_196)
+      let preparedDest = ''
+      const controller = new AbortController()
+      const env = createMockEnv({
+        skills: { 'video-skill': { name: 'video-skill', content: 'Analyze video' } },
+        onExecute: async (req) => {
+          assert.equal(req.references?.[0]?.pathOrUrl, preparedDest)
+          assert.equal(existsSync(preparedDest), true)
+          if (outcome === 'cancel') {
+            controller.abort()
+            throw Object.assign(new Error('aborted'), { name: 'AbortError' })
+          }
+          throw new Error('upstream provider failed')
+        },
+      })
+      const api = mountHeadlessSkill(env.ctx, {
+        videoProcess: {
+          async execute(req) {
+            preparedDest = req.dest
+            writeFileSync(preparedDest, 'prepared whole video')
+            return { mode: 'live', files: [{ path: preparedDest, kind: 'video', meta: { preserveTimeline: true, keepAudio: true } }] }
+          },
+        },
+      })
+      await assert.rejects(() => api.run({
+        skillName: 'video-skill',
+        input: 'Analyze clip',
+        references: [{ type: 'video', pathOrUrl: source }],
+        outputSchema: BREAKDOWN_SCHEMA,
+        signal: controller.signal,
+      }))
+      assert.equal(existsSync(preparedDest), false, `${outcome} must clean temporary video`)
+      assert.equal(existsSync(source), true, `${outcome} must keep original video`)
+    }
+  })
+
+  it('releases inflightByDedup immediately on cancel so instant retry succeeds while prior run unwinds', async () => {
+    let callCount = 0
+    let markRun1Started
+    const run1Started = new Promise((resolve) => { markRun1Started = resolve })
+    let releaseRun1Unwind
+    const run1UnwindGate = new Promise((resolve) => { releaseRun1Unwind = resolve })
+
+    const env = createMockEnv({
+      skills: { 'test-breakdown': { name: 'test-breakdown', content: 'Return JSON summary and tags.' } },
+      onExecute: async (_req, exec) => {
+        callCount += 1
+        if (callCount === 1) {
+          markRun1Started()
+          await run1UnwindGate
+          assert.equal(exec.signal.aborted, true, 'first run must see aborted signal')
+          throw Object.assign(new Error('first run aborted'), { name: 'AbortError' })
+        }
+        return {
+          mode: 'live',
+          model: 'test-model',
+          text: JSON.stringify({ hook: 'retry succeeded', structure: 'hook -> body', shots: [] }),
+        }
+      },
+    })
+    const api = mountHeadlessSkill(env.ctx)
+    const baseReq = {
+      skillName: 'test-breakdown',
+      input: 'Same post input',
+      outputSchema: BREAKDOWN_SCHEMA,
+      ownerPlugin: 'omnimux-inspiration',
+      targetId: 'insp-retry:body',
+      inputFingerprint: 'fp-same-1',
+    }
+
+    const firstPromise = api.run(baseReq)
+    await run1Started
+    const activeJobs = api.listJobs({ ownerPlugin: 'omnimux-inspiration', status: 'running' })
+    assert.equal(activeJobs.length, 1)
+    assert.equal(api.cancel(activeJobs[0].jobId), true)
+
+    // Retry immediately BEFORE Run 1 finishes unwinding, using the exact same dedupKey.
+    const retryResult = await api.run(baseReq)
+    assert.equal(retryResult.mode, 'live')
+    assert.equal(retryResult.data.hook, 'retry succeeded')
+    assert.notEqual(retryResult.jobId, activeJobs[0].jobId)
+    assert.equal(callCount, 2, 'retry must start a second execution instead of joining aborted run 1')
+
+    releaseRun1Unwind()
+    await assert.rejects(
+      () => firstPromise,
+      (err) => err instanceof OmnimuxError && err.code === 'headless-skill-cancelled',
+    )
   })
 })
