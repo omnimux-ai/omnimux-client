@@ -1,9 +1,9 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync, rmSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { pathToFileURL } from 'node:url'
 import { isPathCoveredByFiles, verifyPackageFiles, verifyPluginDisplayMeta } from './verify-package-files.mjs'
 
 describe('isPathCoveredByFiles', () => {
@@ -164,14 +164,35 @@ describe('verifyPluginDisplayMeta', () => {
     }
   })
 
-  it('passes on all 13 live plugins and verifies Node exports resolve locale/{en,zh}.json', async () => {
+  it('rejects empty files array, negated locale entry, and embedded newlines', () => {
+    const root = mkdtempSync(join(tmpdir(), 'pkg-meta-edge-'))
+    try {
+      writeLocalizedPlugin(root, 'custom-plugin', {
+        name: '@scope/custom-plugin',
+        description: 'Line one\nLine two.',
+        exports: { '.': './src/index.js', './package.json': './package.json', './locale/*.json': './locale/*.json' },
+        files: [],
+      }, {
+        en: { meta: { title: '@scope/custom-plugin', description: 'Line one\nLine two.' } },
+        zh: { meta: { title: '自定义插件', description: '单行描述。' } },
+      })
+      const { errors } = verifyPluginDisplayMeta(root)
+      assert.ok(errors.some(e => e.includes('files 白名单')), 'must reject explicit empty files array')
+      assert.ok(errors.some(e => e.includes('换行符')), 'must reject embedded newlines')
+      assert.ok(errors.some(e => e.includes('包名 slug')), 'must reject package name as title')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('passes on all 13 live plugins and verifies Node exports resolve locale/{en,zh}.json', () => {
     const here = new URL('.', import.meta.url).pathname
     const liveRoot = join(here, '..')
     const { errors, auditedCount } = verifyPluginDisplayMeta(liveRoot)
     assert.equal(auditedCount, 13, 'should audit all 13 shipped plugins')
     assert.deepEqual(errors, [], 'live plugin display metadata must be clean: ' + errors.join('; '))
 
-    // Verify each plugin self-reference export resolves through real Node ESM exports rules
+    // Verify each plugin self-reference export resolves through real Node exports rules
     const pluginsDir = join(liveRoot, 'plugins')
     const dirs = readdirSync(pluginsDir, { withFileTypes: true })
       .filter(e => e.isDirectory() && !e.name.startsWith('.'))
@@ -180,14 +201,16 @@ describe('verifyPluginDisplayMeta', () => {
     assert.equal(dirs.length, 13)
     for (const dir of dirs) {
       const pkgDir = join(pluginsDir, dir)
-      const pkg = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8'))
-      const en = JSON.parse(readFileSync(join(pkgDir, 'locale', 'en.json'), 'utf8'))
-      const zh = JSON.parse(readFileSync(join(pkgDir, 'locale', 'zh.json'), 'utf8'))
-      assert.equal(pkg.exports['./locale/*.json'], './locale/*.json', `${dir} exports ./locale/*.json`)
-      assert.equal(pkg.exports['./package.json'], './package.json', `${dir} exports ./package.json`)
-      assert.ok(en.meta.title && zh.meta.title, `${dir} has en/zh titles`)
-      assert.ok(en.meta.description && zh.meta.description, `${dir} has en/zh descriptions`)
-      assert.equal(typeof pathToFileURL(join(pkgDir, 'locale', 'en.json')).href, 'string')
+      const pkgPath = join(pkgDir, 'package.json')
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
+      const req = createRequire(pkgPath)
+      assert.equal(req.resolve(`${pkg.name}/package.json`), pkgPath, `${dir} resolves ./package.json`)
+      for (const lang of ['en', 'zh']) {
+        const expectedLocalePath = join(pkgDir, 'locale', `${lang}.json`)
+        assert.equal(req.resolve(`${pkg.name}/locale/${lang}.json`), expectedLocalePath, `${dir} resolves ./locale/${lang}.json`)
+        const localeDoc = JSON.parse(readFileSync(expectedLocalePath, 'utf8'))
+        assert.ok(localeDoc.meta.title && localeDoc.meta.description, `${dir} has valid ${lang} meta`)
+      }
     }
   })
 })

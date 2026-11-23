@@ -185,7 +185,24 @@ export function verifyPluginDisplayMeta(root = repoRoot) {
       errors.push('[' + pluginName + '] package.json.exports 缺少 "./package.json": "./package.json"')
     }
 
-    const files = Array.isArray(pkg.files) ? pkg.files : []
+    const hasFilesField = Array.isArray(pkg.files)
+    const isLocaleCovered = (rel) => {
+      if (!hasFilesField) return true
+      if (pkg.files.length === 0) return false
+      const normalizedTarget = normalizeRelPath(rel)
+      const negated = pkg.files.some(p => {
+        if (typeof p !== 'string' || !p.startsWith('!')) return false
+        const neg = normalizeRelPath(p.slice(1))
+        return neg === normalizedTarget || normalizedTarget.startsWith(neg + '/')
+      })
+      if (negated) return false
+      if (isPathCoveredByFiles(rel, pkg.files)) return true
+      return pkg.files.some(p =>
+        typeof p === 'string' && !p.startsWith('!') &&
+        normalizeRelPath(p) === 'locale/*.json' &&
+        /^locale\/[^/]+\.json$/u.test(normalizedTarget)
+      )
+    }
     const parsedLocales = {}
 
     for (const lang of REQUIRED_DISPLAY_LOCALES) {
@@ -195,7 +212,7 @@ export function verifyPluginDisplayMeta(root = repoRoot) {
         errors.push('[' + pluginName + '] 缺少多语言元信息文件 "' + rel + '"')
         continue
       }
-      if (!isPathCoveredByFiles(rel, files)) {
+      if (!isLocaleCovered(rel)) {
         errors.push('[' + pluginName + '] "' + rel + '" 未被 package.json files 白名单覆盖（请在 files 中声明 "locale"）')
       }
       let doc
@@ -219,12 +236,22 @@ export function verifyPluginDisplayMeta(root = repoRoot) {
         if (val !== val.trim()) {
           errors.push('[' + pluginName + '] "' + rel + '" meta.' + field + ' 包含首尾空白')
         }
+        if (/[\r\n]/u.test(val)) {
+          errors.push('[' + pluginName + '] "' + rel + '" meta.' + field + ' 不得包含换行符')
+        }
         if (val.includes('·')) {
           errors.push('[' + pluginName + '] "' + rel + '" meta.' + field + ' 禁止使用中点 "·" 分隔符')
         }
       }
-      if (typeof meta.title === 'string' && /^omnimux(?:-[a-z0-9]+)*$/u.test(meta.title.trim())) {
-        errors.push('[' + pluginName + '] "' + rel + '" meta.title 不得直接使用包名 slug: ' + meta.title)
+      if (typeof meta.title === 'string') {
+        const trimmedTitle = meta.title.trim()
+        if (
+          trimmedTitle === pkg.name ||
+          trimmedTitle === pluginName ||
+          /^omnimux(?:-[a-z0-9]+)*$/u.test(trimmedTitle)
+        ) {
+          errors.push('[' + pluginName + '] "' + rel + '" meta.title 不得直接使用包名 slug: ' + meta.title)
+        }
       }
       parsedLocales[lang] = meta
     }
