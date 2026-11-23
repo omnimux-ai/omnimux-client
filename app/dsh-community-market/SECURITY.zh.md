@@ -34,6 +34,6 @@
 
 ## 报告安全问题
 
-请通过 [t4wefan@qq.com](mailto:t4wefan@qq.com) 私下报告可能的安全问题，并提供受影响版本或 commit、操作系统、复现步骤、预期影响，以及可安全分享的最小 proof of concept。
+请通过 [GitHub Security Advisories](https://github.com/omnimux-ai/omnimux-client/security/advisories/new) 或发送邮件至 [hello@omnimux.ai](mailto:hello@omnimux.ai) 私下报告可能的安全问题（全仓安全策略见根目录 [`SECURITY.md`](../../SECURITY.md)），并提供受影响版本或 commit、操作系统、复现步骤、预期影响，以及可安全分享的最小 proof of concept。
 
 不要发送 secret 或个人数据，也不要为未修复漏洞创建公开 issue。普通 bug、目录修正和功能建议可以使用公开 issue tracker。

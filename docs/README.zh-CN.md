@@ -74,6 +74,8 @@
 | **macOS（Intel）** | [下载 `OmniMux-x64.dmg`](https://dl.omnimux.ai/releases/latest/OmniMux-x64.dmg) | 打开 DMG，拖入 `Applications` |
 | **Windows（x64）** | [下载 `OmniMux-Setup.exe`](https://dl.omnimux.ai/releases/latest/OmniMux-Setup.exe) | 运行安装程序并按向导完成安装 |
 
+> **自带运行时与数据隔离**：桌面安装包已内置固定版本的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 运行时（`0.2.1-rc.3`），无需预先安装 DSH 或 Node.js。OmniMux 默认将 Profile、会话、产品库与资产保存在本机 `~/.omnimux`，不会读取或修改你已有的 `~/.dsh` 目录。
+>
 > 历史版本与校验信息同步发布于 [GitHub Releases](https://github.com/omnimux-ai/omnimux-client/releases)，最新动态见 [omnimux.ai](https://omnimux.ai)。
 
 ### 2. 3 分钟跑通第一条商品带货视频
@@ -318,6 +320,8 @@ OmniMux 基于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harnes
 
 OmniMux 将原生桌面壳（`app/`）与产品插件工作区（`plugins/`）放在同一单仓协同开发与发布。所有业务插件不直接持有供应商密钥或发起外部模型请求，统一经由执行中枢完成路由与状态管理。
 
+**上游分层与职责边界**：OmniMux 运行固定且未修改的上游 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 运行时（`0.2.1-rc.3`，由 `app/deepseek-harness` 锁定），复用其 Agent 循环、会话与 [Cordis](https://github.com/cordiverse/cordis) 插件宿主；原生桌面壳基于 [DSH Desktop](https://github.com/anywhere-labs/deepseek-harness-desktop) 构建；OmniMux 自身负责内容电商工作台插件套件、执行中枢、资产体系与独立打包分发（数据目录 `~/.omnimux`）。
+
 <p align="center">
   <img src="readme/architecture.zh-CN.svg" width="100%" alt="OmniMux 客户端系统分层架构图：桌面客户端、人机双面工作台、执行中枢、多模态模型通道与本地优先存储">
 </p>
@@ -346,7 +350,7 @@ OmniMux 将原生桌面壳（`app/`）与产品插件工作区（`plugins/`）�
 +------------------+---------------------------------+------------------+
                    |                                 |
                    v                                 v
-      官方通道 / BYOK 自定义端点            本地优先工作区存储（$DSH_HOME）
+      官方通道 / BYOK 自定义端点            本地优先工作区存储（~/.omnimux）
    (文本 · 图像 · 视频 · 音乐 · 语音)     (products · assets · workflow · clip)
 ```
 
@@ -384,7 +388,7 @@ cd app && corepack yarn install --immutable && corepack yarn dev
 
 | 角色 | 文档入口 |
 | --- | --- |
-| **终端用户** | [使用手册](../app/docs/user-guide.md) · [常见问题 FAQ](../app/docs/faq.md) · [隐私说明](../app/PRIVACY.md) |
+| **终端用户** | [使用手册](../app/docs/user-guide.md) · [常见问题 FAQ](../app/docs/faq.md) · [隐私政策](PRIVACY.zh-CN.md) |
 | **桌面与插件开发者** | [桌面端文档](../app/README.md) · [插件工作区文档](../plugins/README.md) · [桌面架构说明](../app/docs/architecture.md) · [插件开发文档](../app/docs/plugin-development.md) |
 | **契约与工程规范** | [Agent 工具契约清单](../plugins/docs/contracts/plugin-agent-tools-inventory.md) · [画布生成契约](../plugins/docs/contracts/canvas-generation.md) · [画布剪辑联动契约](../plugins/docs/contracts/clip-live-control.md) · [子系统索引](subsystems.md) |
 
@@ -461,8 +465,33 @@ OmniMux 自研代码采用 **[AGPL-3.0](../LICENSE)** 许可（附 [NOTICE](../N
 | 移除 `Powered by OmniMux` 署名或白标化定制发布 | ❌ | ✅ |
 
 - 商业授权咨询：`hello@omnimux.ai`。
-- 本仓库包含的第三方开源组件保留其原始许可证与版权声明，详见 [NOTICE](../NOTICE)、[`app/LICENSE`](../app/LICENSE) 与 [`plugins/ACKNOWLEDGEMENTS.md`](../plugins/ACKNOWLEDGEMENTS.md)。
+- 本仓库包含的第三方开源组件保留其原始许可证与版权声明，详见 [NOTICE](../NOTICE)、[`app/LICENSE`](../app/LICENSE)、[`plugins/ACKNOWLEDGEMENTS.md`](../plugins/ACKNOWLEDGEMENTS.md) 与 [`app/dsh-plugin-desktop/THIRD_PARTY_NOTICES.md`](../app/dsh-plugin-desktop/THIRD_PARTY_NOTICES.md)。
 - 配套服务端开源仓库：[`omnimux-ai/omnimux-gateway`](https://github.com/omnimux-ai/omnimux-gateway)。
+
+---
+
+<a id="acknowledgments"></a>
+
+## 🙏 致谢
+
+OmniMux 的构建离不开全球开源社区的卓越工作。我们在保留原作者署名与原始开源许可证的前提下，基于以下核心开源基座与项目构建 OmniMux：
+
+- **底层运行时与插件基座**：感谢 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DeepSeek AI 团队，MIT）提供核心 Agent 运行时、会话循环与工具宿主，以及 [Cordis](https://github.com/cordiverse/cordis)（MIT）与 [Koishi.js](https://koishi.chat/) 社区在插件化架构上的长期积累。OmniMux 内置固定版本的上游 DeepSeek Harness 运行时（`0.2.1-rc.3`），不修改其核心源码。
+- **桌面壳与核心工作台模块**：特别感谢 [Anywhere Labs / DSH Desktop](https://github.com/anywhere-labs/deepseek-harness-desktop)（桌面端底座，MIT）、[Augani / OpenReel Video](https://github.com/Augani/openreel-video)（多轨时间轴剪辑内核，MIT）、[@cocofhu / SkillHub](https://github.com/cocofhu/skillhub)（插件与技能市场底座，MIT）、[Yuxiang Lin / dsh-browser](https://github.com/omdsh-dev/dsh-browser)（浏览器伴侣，MIT）、[BeefTV Director](https://github.com/glanderness/BeefTV)（MIT 锁定基线 `5e2ad602`）、[Quaternius](https://quaternius.itch.io/universal-base-characters)（CC0 1.0 3D 角色模型），以及 [Crosery / dsh-viewer](https://github.com/Crosery/dsh-viewer)（媒体渲染器历史归属，MIT）。
+- **核心开源库与社区贡献**：感谢 [React Flow](https://github.com/xyflow/xyflow)、[Dagre](https://github.com/dagrejs/dagre)、[Umami](https://github.com/umami-software/umami) 等开源项目，以及所有参与测试、反馈、贡献技能和代码的社区成员。
+
+完整的第三方组件清单、上游锁定版本与原始许可证文本见 [NOTICE](../NOTICE)、[`plugins/ACKNOWLEDGEMENTS.md`](../plugins/ACKNOWLEDGEMENTS.md) 及 [`app/dsh-plugin-desktop/THIRD_PARTY_NOTICES.md`](../app/dsh-plugin-desktop/THIRD_PARTY_NOTICES.md)。
+
+---
+
+<a id="disclaimer"></a>
+
+## ⚖️ 免责声明
+
+- **独立项目与商标声明**：OmniMux 是独立的开源项目，**并非 DeepSeek 官方产品**，与 DeepSeek、Anywhere Labs 以及文档中提及的第三方模型提供商或社交媒体平台均不存在隶属、合作、授权或背书关系。仓库历史中出现的上游贡献者来自所集成上游项目的提交记录，不代表相关人员参与本项目的维护或治理。文中出现的所有第三方产品名称、徽标与商标均归其各自权利人所有，仅用于说明底层依赖与兼容关系。
+- **AI 生成内容与知识产权责任**：OmniMux 是本地优先的创作与编排工具，不保证第三方或官方模型输出结果（文案、图像、音频、数字人及视频）的准确性、合法性或商业适用性。你在发布或商用任何 AI 生成内容前，须自行核验商品宣称真实性、广告法规合规性，以及肖像权、声音权、著作权与商标权。
+- **外部平台与数据采集边界**：使用商品页解析、灵感库导入、浏览器伴侣采集、BYOK 自定义端点及海外社媒排期发布能力时，你应自行遵守目标网站与平台的服务条款及适用法律法规。OmniMux 当前不提供国内平台（抖音/小红书/视频号/快手/B站）自动分发，亦不对流量曝光、带货转化或第三方账号状态作任何承诺。
+- **按“现状”提供**：本软件依据 [AGPL-3.0](../LICENSE) 协议按“现状（AS IS）”提供，不附带任何明示或默示担保；在适用法律允许的范围内，项目作者与贡献者不对因使用或无法使用本软件所产生的任何直接或间接损失承担责任。隐私、版权、署名或合规相关问询请参见 [隐私政策](PRIVACY.zh-CN.md) 或联系 `hello@omnimux.ai`。
 
 ---
 

@@ -1,14 +1,14 @@
-# Contributing
+# Contributing (Desktop Subtree)
 
-Thank you for wanting to contribute to DSH Desktop. This is a community project — whether you are a regular user, a plugin author, or a developer, there is a way to contribute that fits you.
+Thank you for wanting to contribute to **OmniMux Desktop** (for the full-repository guide, see the root [`CONTRIBUTING.md`](../CONTRIBUTING.md)). Whether you are a regular user, a plugin author, or a developer, there is a way to contribute that fits you.
 
 ## Regular users: use, report, and spread the word
 
-- Report problems or odd behavior in an [issue](https://github.com/anywhere-labs/deepseek-harness-desktop/issues): include your operating system (macOS / Windows), application version, and reproduction steps.
-- Feature ideas and improvement suggestions are welcome as issues too.
-- Join the [community channels](README.en.md#community) (WeChat group, QQ group, Discord) and help other users.
+- Report problems or odd behavior in an [issue](https://github.com/omnimux-ai/omnimux-client/issues): include your operating system (macOS / Windows), application version, and reproduction steps.
+- Feature ideas and improvement suggestions are welcome in issues or [GitHub Discussions](https://github.com/omnimux-ai/omnimux-client/discussions).
+- Join the [community channels](../README.md#community) (Discord, WeChat group, GitHub Discussions) and help other users.
 - Write tutorials or experience posts, or help improve and translate the documentation.
-- Suggest ecosystem projects for the [related links](README.en.md#friendly-links) section.
+- Suggest ecosystem projects for the [friendly links](README.en.md#friendly-links-deepseek-harness-ecosystem) section.
 
 ## Plugin authors: extend the ecosystem
 
@@ -46,9 +46,9 @@ corepack yarn dev     # launch the application when a graphical session is avail
 - Documentation changes should stay bilingual and update the `README.i18n.yaml` hash record.
 - Describe the change, its motivation, and how it was verified in the PR; merge after CI passes.
 
-## Join the technical team
+## Contact
 
-If you would like to join our technical team, contact us at [t4wefan@qq.com](mailto:t4wefan@qq.com).
+If you would like to join the team or discuss technical collaboration, contact us at [hello@omnimux.ai](mailto:hello@omnimux.ai).
 
 ## Code of conduct
 

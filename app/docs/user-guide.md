@@ -80,7 +80,7 @@ dsh plugin update
 
 ## 更新
 
-打包后的 macOS/Windows 应用会在后台检查 `https://updates.omnimux.local/api/desktop/version`。后台检查不阻塞启动；网络错误、非 200、非法版本或服务端版本不新时保持静默。发现新版本时，应用会更新托盘并且每个版本只发送一次非阻塞系统通知，不会自动弹出下载确认；点击通知会显示 Desktop。
+打包后的 macOS/Windows 应用会在后台检查 `https://dl.omnimux.ai/api/desktop/version-stable.json`。后台检查不阻塞启动；网络错误、非 200、非法版本或服务端版本不新时保持静默。发现新版本时，应用会更新托盘并且每个版本只发送一次非阻塞系统通知，不会自动弹出下载确认；点击通知会显示 Desktop。
 
 托盘中的 **Check for Updates…** 手动检查稳定版更新。即使已是当前版本，也会显示结果；检查失败时提示稍后重试。取消操作不会开始下载。
 

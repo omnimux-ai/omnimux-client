@@ -1,14 +1,14 @@
-# 参与贡献
+# 参与贡献（桌面壳子树）
 
-感谢你愿意参与 DSH Desktop。这是一个社区项目，无论你是普通用户、插件作者还是开发者，都有适合你的贡献方式。
+感谢你愿意参与 **OmniMux Desktop**（全仓贡献指南见根目录 [`CONTRIBUTING.md`](../CONTRIBUTING.md)）。无论你是普通用户、插件作者还是开发者，都有适合你的贡献方式。
 
 ## 普通用户：使用、反馈与传播
 
-- 遇到问题或异常，[提 issue](https://github.com/anywhere-labs/deepseek-harness-desktop/issues)：说明操作系统（macOS / Windows）、应用版本和复现步骤。
-- 有功能想法或改进建议，也欢迎提 issue 讨论。
-- 参与[社区交流](README.md#社区交流)（微信群、QQ 群、Discord），帮助其他用户解决问题。
+- 遇到问题或异常，[提 issue](https://github.com/omnimux-ai/omnimux-client/issues)：说明操作系统（macOS / Windows）、应用版本和复现步骤。
+- 有功能想法或改进建议，也欢迎提 issue 或在 [GitHub Discussions](https://github.com/omnimux-ai/omnimux-client/discussions) 讨论。
+- 参与[社区交流](../docs/README.zh-CN.md#community)（微信群、Discord、GitHub Discussions），帮助其他用户解决问题。
 - 写使用教程、体验文章，或帮助完善和翻译文档。
-- 在[友情链接](README.md#友情链接)中收录生态项目。
+- 在[友情链接](README.md#友情链接deepseek-harness-生态)中收录生态项目。
 
 ## 插件作者：扩展生态
 
@@ -50,9 +50,9 @@ corepack yarn dev     # 有图形环境时启动应用
 - 文档改动请中英同步，并更新 `README.i18n.yaml` 的双语 hash 记录。
 - PR 描述说明改动内容、动机和验证方式；CI 通过后再合并。
 
-## 加入技术团队
+## 联系与合作
 
-如果你希望加入我们的技术团队，欢迎通过 [t4wefan@qq.com](mailto:t4wefan@qq.com) 联系我们。
+如果你希望加入我们或咨询技术合作，欢迎通过 [hello@omnimux.ai](mailto:hello@omnimux.ai) 联系 OmniMux 团队。
 
 ## 行为准则
 

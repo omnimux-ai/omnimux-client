@@ -30,7 +30,7 @@ OmniMux 的诞生与演进离不开全球开源社区与先锋项目的杰出贡
 
 ---
 
-### 3. `omnimux-desktop-fork` (桌面客户端底座)
+### 3. `app/` (OmniMux Desktop 桌面客户端底座)
 * **上游原始项目**：[anywhere-labs/deepseek-harness-desktop](https://github.com/anywhere-labs/deepseek-harness-desktop)
 * **原始作者 / 维护团队**：Anywhere Labs
 * **开源许可证**：[MIT License](https://opensource.org/licenses/MIT)
@@ -41,14 +41,13 @@ OmniMux 的诞生与演进离不开全球开源社区与先锋项目的杰出贡
 
 ---
 
-### 4. `omnimux-viewer` (全能媒体渲染与视频播放器插件)
+### 4. `omnimux-viewer` (全能媒体渲染与视频播放器插件，历史归属)
 * **上游原始项目**：[Crosery/dsh-viewer](https://github.com/Crosery/dsh-viewer)
 * **原始作者 / 维护团队**：Crosery
 * **开源许可证**：[MIT License](https://opensource.org/licenses/MIT)
-* **在 OmniMux 中的定位与改造**：
-  * 为 OmniMux 提供涵盖 36 种媒体格式（MP4/WebM 视频、MP3/WAV 音频、高精度图片、PDF、Office 文档）的就地渲染能力；
-  * 彻底颠覆了传统 AI 生成仅返回一串文件名和字节数的糟糕体验，为用户提供原生内置播放器、画中画与灯箱缩放交互；
-  * 深度适配 OmniMux 主题 Token 与画布成果即时回放链路。
+* **在 OmniMux 中的定位与状态**：
+  * 历史归属说明：`omnimux-viewer` 曾作为全能媒体渲染器插件来源，当前不在本仓 `plugins/plugins/` 内构建或内置；
+  * 为 OmniMux 早期媒体渲染与画布成果即时回放交互奠定了重要基础。
 * **致谢辞**：致敬 Crosery 为 DSH 生态贡献的开箱即用、极度丝滑的全能媒体渲染底座！
 
 ---
@@ -65,16 +64,34 @@ OmniMux 的诞生与演进离不开全球开源社区与先锋项目的杰出贡
 
 ---
 
+### 6. `omnimux-workflow` 中的导演台组件 (BeefTV Director & Quaternius 3D 模型)
+* **上游原始项目**：[glanderness/BeefTV](https://github.com/glanderness/BeefTV)（锁定 MIT 提交 `5e2ad6022addd387001d08a478e3316ee2266524`）及 [Quaternius Universal Base Characters — Standard](https://quaternius.itch.io/universal-base-characters)
+* **原始作者 / 维护团队**：@beefnoode、BeefTV Contributors（代码）与 Quaternius（3D 角色模型）
+* **开源许可证**：[MIT License](https://opensource.org/licenses/MIT)（BeefTV `5e2ad602` 及之前提交）；[CC0 1.0 Universal](https://creativecommons.org/publicdomain/zero/1.0/)（Quaternius Standard 免费基础模型）
+* **在 OmniMux 中的定位与合规边界**：
+  * 仅适配 BeefTV `5e2ad602`（2026-10-13，MIT）版本中的导演台组件与场景交互能力，以及 Quaternius CC0 免费基础人物模型，完整声明与路径范围见 [`plugins/omnimux-workflow/THIRD-PARTY-NOTICES-director.md`](plugins/omnimux-workflow/THIRD-PARTY-NOTICES-director.md)；
+  * **严格禁止同步 BeefTV 自 `6b30abfe`（2026-10-19 UTC）起改为 Source Available 许可的后续提交**，除非另行取得权利人书面商业授权。
+* **致谢辞**：感谢 BeefTV 团队与 Quaternius 在开源 3D 导演台交互与 CC0 基础角色资产上的贡献！
+
+---
+
 ## 二、底层宿主与核心基础设施 (Core Host & Infrastructure)
 
-### 4. DeepSeek Harness (DSH)
+### 1. DeepSeek Harness (DSH)
 * **官方项目**：[deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)
 * **出品方**：DeepSeek AI 团队
 * **开源许可证**：[MIT License](https://opensource.org/licenses/MIT)
 * **在 OmniMux 中的定位**：
-  * OmniMux 的核心插件运行底座与 Agent 工具调用宿主；
-  * OmniMux 严格遵循 DSH 插件规范开发，不 fork harness 核心，全量复用其强大的沙箱与上下文调度能力。
+  * OmniMux 的核心插件运行底座与 Agent 工具调用宿主（当前锁定 `0.2.1-rc.3`）；
+  * OmniMux 严格遵循 DSH 插件规范开发，不修改 harness 核心源码，全量复用其沙箱、会话与上下文调度能力。
 * **致谢辞**：向 DeepSeek 团队开源如此卓越的 Agent 运行时与 Harness 架构致以崇高敬意！
+
+### 2. Cordis & Koishi.js 生态
+* **官方项目**：[cordiverse/cordis](https://github.com/cordiverse/cordis) · [Koishi.js](https://koishi.chat/)
+* **开源许可证**：[MIT License](https://opensource.org/licenses/MIT)
+* **在 OmniMux 中的定位**：
+  * 为 DeepSeek Harness 与 OmniMux 桌面插件体系提供依赖注入、服务缝位（Seam）与热插拔组合能力。
+* **致谢辞**：感谢 Cordis 与 Koishi.js 社区在插件化架构与生态工程实践上的长期贡献！
 
 ---
 

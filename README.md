@@ -74,6 +74,8 @@
 | **macOS (Intel)** | [Download `OmniMux-x64.dmg`](https://dl.omnimux.ai/releases/latest/OmniMux-x64.dmg) | Open DMG and drag **OmniMux** into `Applications` |
 | **Windows (x64)** | [Download `OmniMux-Setup.exe`](https://dl.omnimux.ai/releases/latest/OmniMux-Setup.exe) | Run the installer and follow the setup wizard |
 
+> **Zero-setup runtime & data isolation:** The desktop installers bundle a pinned upstream [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) runtime (`0.2.1-rc.3`) — no prior DSH or Node.js installation is required. OmniMux stores its profiles, sessions, products, and assets locally under `~/.omnimux` and never reads or modifies your existing `~/.dsh` directory.
+>
 > All release builds and checksums are also published on [GitHub Releases](https://github.com/omnimux-ai/omnimux-client/releases). Visit [omnimux.ai](https://omnimux.ai) for release highlights.
 
 ### 2. Produce Your First Product Video in 3 Minutes
@@ -318,6 +320,8 @@ The **OmniMux Execution Hub (`omnimux`)** centralizes auth, local credential sto
 
 OmniMux develops and ships its Electron desktop shell (`app/`) and product plugin suite (`plugins/`) in one monorepo. Domain plugins never hold provider credentials or call upstream APIs directly — all model execution flows through the Execution Hub.
 
+**Upstream layering & boundaries:** OmniMux runs a pinned, unmodified upstream [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) runtime (`0.2.1-rc.3`, tracked as `app/deepseek-harness`) for core Agent loops, sessions, and the [Cordis](https://github.com/cordiverse/cordis) plugin host; builds its native desktop shell on [DSH Desktop](https://github.com/anywhere-labs/deepseek-harness-desktop); and owns the content commerce workbench plugins, Execution Hub, asset catalog, and standalone packaging (`~/.omnimux` data root).
+
 <p align="center">
   <img src="docs/readme/architecture.svg" width="100%" alt="OmniMux Client System Architecture: Electron Desktop Shell, Dual-Surface Workbench, Execution Hub, Multimodal Model Channels, and Local-First Workspace Storage">
 </p>
@@ -346,7 +350,7 @@ OmniMux develops and ships its Electron desktop shell (`app/`) and product plugi
 +------------------+---------------------------------+------------------+
                    |                                 |
                    v                                 v
-      Official Route / BYOK Endpoints     Local-First Storage ($DSH_HOME)
+      Official Route / BYOK Endpoints     Local-First Storage (~/.omnimux)
      (Text · Image · Video · Music · TTS) (products · assets · workflow · clip)
 ```
 
@@ -384,7 +388,7 @@ cd app && corepack yarn install --immutable && corepack yarn dev
 
 | Audience | Links |
 | --- | --- |
-| **Users** | [User Guide](app/docs/user-guide.en.md) · [FAQ](app/docs/faq.en.md) · [Privacy Policy](app/PRIVACY.md) |
+| **Users** | [User Guide](app/docs/user-guide.en.md) · [FAQ](app/docs/faq.en.md) · [Privacy Policy](PRIVACY.md) |
 | **Desktop & Plugin Developers** | [Desktop Subtree README](app/README.en.md) · [Plugins Subtree README](plugins/README.md) · [Desktop Architecture](app/docs/architecture.en.md) · [Plugin Development](app/docs/plugin-development.en.md) |
 | **Contracts & Specs** | [Agent Tool Inventory](plugins/docs/contracts/plugin-agent-tools-inventory.md) · [Canvas Generation Contract](plugins/docs/contracts/canvas-generation.md) · [Clip Live Control Contract](plugins/docs/contracts/clip-live-control.md) · [Subsystem Index](docs/subsystems.md) |
 
@@ -461,8 +465,33 @@ Code authored by the OmniMux project is licensed under **[AGPL-3.0](LICENSE)** w
 | Remove `Powered by OmniMux` attribution or ship under a white-label brand | ❌ | ✅ |
 
 - Commercial licensing inquiries: `hello@omnimux.ai`.
-- Third-party open-source components retain their original licenses and copyright notices; see [NOTICE](NOTICE), [`app/LICENSE`](app/LICENSE), and [`plugins/ACKNOWLEDGEMENTS.md`](plugins/ACKNOWLEDGEMENTS.md).
+- Third-party open-source components retain their original licenses and copyright notices; see [NOTICE](NOTICE), [`app/LICENSE`](app/LICENSE), [`plugins/ACKNOWLEDGEMENTS.md`](plugins/ACKNOWLEDGEMENTS.md), and [`app/dsh-plugin-desktop/THIRD_PARTY_NOTICES.md`](app/dsh-plugin-desktop/THIRD_PARTY_NOTICES.md).
 - Companion server repository: [`omnimux-ai/omnimux-gateway`](https://github.com/omnimux-ai/omnimux-gateway).
+
+---
+
+<a id="acknowledgments"></a>
+
+## 🙏 Acknowledgments
+
+OmniMux is built with the help of the global open-source community. Every third-party component retains its original license and copyright notices:
+
+- **Core Runtime & Plugin Foundation**: [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (MIT, by the DeepSeek AI team) for the Agent runtime, session loop, and tool host, alongside [Cordis](https://github.com/cordiverse/cordis) (MIT) and the [Koishi.js](https://koishi.chat/) community. OmniMux bundles a pinned upstream DeepSeek Harness runtime (`0.2.1-rc.3`) unmodified.
+- **Desktop Shell & Workbench Subsystems**: [Anywhere Labs / DSH Desktop](https://github.com/anywhere-labs/deepseek-harness-desktop) (desktop shell foundation, MIT), [Augani / OpenReel Video](https://github.com/Augani/openreel-video) (multi-track NLE engine, MIT), [@cocofhu / SkillHub](https://github.com/cocofhu/skillhub) (plugin & skill market base, MIT), [Yuxiang Lin / dsh-browser](https://github.com/omdsh-dev/dsh-browser) (browser companion, MIT), [BeefTV Director](https://github.com/glanderness/BeefTV) (pinned MIT revision `5e2ad602`), [Quaternius](https://quaternius.itch.io/universal-base-characters) (CC0 1.0 3D actor models), and [Crosery / dsh-viewer](https://github.com/Crosery/dsh-viewer) (historical media-renderer attribution, MIT).
+- **Key Open-Source Libraries**: [React Flow](https://github.com/xyflow/xyflow), [Dagre](https://github.com/dagrejs/dagre), [Umami](https://github.com/umami-software/umami), and every community contributor who builds skills, reports bugs, or improves OmniMux.
+
+For full provenance, pinned revisions, and third-party license texts, see [NOTICE](NOTICE), [`plugins/ACKNOWLEDGEMENTS.md`](plugins/ACKNOWLEDGEMENTS.md), and [`app/dsh-plugin-desktop/THIRD_PARTY_NOTICES.md`](app/dsh-plugin-desktop/THIRD_PARTY_NOTICES.md).
+
+---
+
+<a id="disclaimer"></a>
+
+## ⚖️ Disclaimer
+
+- **Independent Project & Trademarks**: OmniMux is an independent open-source project and is **not affiliated with, authorized by, or endorsed by DeepSeek**, Anywhere Labs, or any third-party model provider or social media platform mentioned in this repository. Upstream contributors appearing in Git history come from inherited upstream commits and do not imply their participation in or endorsement of OmniMux. All third-party product names, logos, and trademarks belong to their respective owners and are used solely to identify dependencies and compatibility.
+- **AI-Generated Content & IP Responsibility**: OmniMux is a local-first authoring and orchestration workbench. Output produced by third-party or official AI models (copy, images, audio, digital humans, and video) may be inaccurate or require review before publication. You are solely responsible for verifying product claims, advertising compliance, and copyright, trademark, portrait, and voice rights before publishing or commercializing generated media.
+- **Third-Party Services & Platform Terms**: When using landing-page parsing, inspiration import, the browser companion, BYOK endpoints, or international social scheduling, you are responsible for complying with the terms of service of target websites/platforms and applicable laws. OmniMux does not provide automated publishing to domestic Chinese social platforms (Douyin, Xiaohongshu, WeChat Channels, Kuaishou, Bilibili) and makes no guarantees regarding reach, conversions, or account standing.
+- **As-Is Warranty Disclaimer**: This software is provided "AS IS" without warranty of any kind under [AGPL-3.0](LICENSE). To the maximum extent permitted by applicable law, the authors and contributors are not liable for any claim, damages, or other liability arising from use of this software. For privacy, copyright, attribution, or compliance inquiries, see [PRIVACY.md](PRIVACY.md) or contact `hello@omnimux.ai`.
 
 ---
 
