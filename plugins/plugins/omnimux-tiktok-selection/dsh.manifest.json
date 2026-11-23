@@ -31,7 +31,6 @@
     "seamsProvided": [],
     "seamsConsumed": [
       "socialData",
-      "tiktok",
       "headlessSkill",
       "imageGenerate",
       "videoGenerate",

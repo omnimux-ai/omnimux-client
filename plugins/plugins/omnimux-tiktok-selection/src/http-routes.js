@@ -2,7 +2,10 @@ import { SelectionError, httpStatusForError } from './errors.js'
 
 export const ROUTE_PREFIX = '/omnimux/tiktok-selection'
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1'])
-const SECRET_PATTERN = /access_token|sk-[A-Za-z0-9_-]{16,}/
+// Only block actual secret-looking values, not the mere presence of a field
+// name like "access_token" in a legitimate payload.
+const SECRET_PATTERN =
+  /sk-[A-Za-z0-9_-]{16,}|(?:access_token|refresh_token|api[_-]?key|client_secret|authorization)\s*["']?\s*[:=]\s*["']?[A-Za-z0-9._-]{16,}/i
 
 function isLocalOrigin(raw) {
   if (!raw) return true

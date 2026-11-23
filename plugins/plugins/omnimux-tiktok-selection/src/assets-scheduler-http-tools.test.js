@@ -10,6 +10,7 @@ import { assertLocalWrite, createHttpHandler, ROUTE_PREFIX } from './http-routes
 import { apply, TIKTOK_SELECTION_TOOL_NAMES } from './index.js'
 import { createSelectionScheduler } from './scheduler.js'
 import { createSelectionStore } from './store.js'
+import { resolveSelectionPaths, resolveWithin, safePathSegment } from './paths.js'
 import { createThreeGateEngine } from './three-gate.js'
 
 function makeStack(services = {}, externalTools = {}) {
@@ -281,6 +282,58 @@ describe('Scheduler, HTTP routes, local-write guard & 18 Cordis Agent tools', ()
       assert.equal(denied.error, 'confirmation-required')
     } finally {
       for (const d of disposers) d()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('Asset path sanitization (untrusted productId must not escape assetsDir)', () => {
+  it('safePathSegment collapses traversal and separators into one safe segment', () => {
+    assert.equal(safePathSegment('../../etc/passwd'), 'etc_passwd')
+    assert.equal(safePathSegment('a/b\\c'), 'a_b_c')
+    assert.equal(safePathSegment('..'), 'unknown')
+    assert.equal(safePathSegment(''), 'unknown')
+    assert.equal(safePathSegment(null, 'fb'), 'fb')
+    for (const evil of ['../x', 'a/../../b', '/abs/path', 'x/../../..']) {
+      const seg = safePathSegment(evil)
+      assert.ok(!seg.includes('/') && !seg.includes('\\') && !seg.includes('..'), `unsafe segment: ${seg}`)
+    }
+  })
+
+  it('resolveWithin rejects any path that escapes the base directory', () => {
+    const base = '/tmp/assets-root'
+    assert.equal(resolveWithin(base, 'ok-product'), '/tmp/assets-root/ok-product')
+    assert.throws(() => resolveWithin(base, '../escape'), (err) => err.code === 'invalid-request')
+    assert.throws(() => resolveWithin(base, '..'), (err) => err.code === 'invalid-request')
+  })
+
+  it('generates media only inside assetsDir even for a malicious snapshot productId', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'omnimux-ttsel-traversal-'))
+    const store = createSelectionStore({ rootDir: dir })
+    const assetsDir = store.paths.assetsDir
+    const pipeline = createAssetsPipeline({
+      store,
+      dataSource: createDataSourceAdapter({ store, getService: () => null }),
+      getService: (name) =>
+        ({
+          imageGenerate: { execute: async ({ dest }) => ({ localPath: dest }) },
+          modelCatalog: { list: () => ({ defaults: { image: 'stub/image' } }) },
+        })[name] || null,
+      getTool: () => null,
+    })
+    try {
+      const { added } = store.ingestProducts([
+        { productId: '../../../PWNED_DIR/evil', region: 'US', title: 'Traversal Probe Product' },
+      ])
+      assert.equal(added.length, 1)
+      const res = await pipeline.generateImages({ productIds: [added[0].id], countPerProduct: 1 })
+      assert.equal(res.results[0].created, 1)
+      const slotPath = res.results[0].slots[0].path
+      assert.ok(slotPath.startsWith(assetsDir + '/'), `generated path escaped assetsDir: ${slotPath}`)
+      assert.ok(!slotPath.includes('..'), `traversal segment leaked into path: ${slotPath}`)
+      const rel = slotPath.slice(assetsDir.length + 1)
+      assert.equal(rel.split('/').length, 2, `expected <safeSegment>/<file>, got: ${rel}`)
+    } finally {
       rmSync(dir, { recursive: true, force: true })
     }
   })

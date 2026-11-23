@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedAt": "2026-11-23T15:08:36.478Z",
+  "updatedAt": "2026-11-23T16:15:10.477Z",
   "topology": {
     "tiers": [
       {
@@ -1050,7 +1050,6 @@
         "seamsProvided": [],
         "seamsConsumed": [
           "socialData",
-          "tiktok",
           "headlessSkill",
           "imageGenerate",
           "videoGenerate",

@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync, existsSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import { homedir } from 'node:os'
 import { randomBytes } from 'node:crypto'
 import { SelectionError } from './errors.js'
@@ -9,9 +9,12 @@ import { SelectionError } from './errors.js'
  * @param {{ home?: string, rootDir?: string }} [opts]
  */
 export function resolveSelectionPaths(opts = {}) {
+  const hostHome = opts.home || process.env.DSH_HOME
   const rootDir = opts.rootDir
     ? String(opts.rootDir)
-    : join(opts.home || process.env.DSH_HOME || join(homedir(), '.omnimux'), 'omnimux', 'tiktok-selection')
+    : hostHome
+      ? join(hostHome, 'omnimux', 'tiktok-selection')
+      : join(homedir(), '.omnimux', 'tiktok-selection')
   return {
     rootDir,
     libraryFile: join(rootDir, 'library.json'),
@@ -28,6 +31,42 @@ export function resolveSelectionPaths(opts = {}) {
 
 export function ensureDir(dir) {
   mkdirSync(dir, { recursive: true })
+}
+
+/**
+ * Sanitize an untrusted identifier (e.g. productId from an imported CSV/JSON
+ * snapshot) into a single safe path segment. Strips path separators, `..`
+ * sequences and characters outside `[A-Za-z0-9._-]`, so it can never escape
+ * a containing directory.
+ * @param {unknown} value
+ * @param {string} [fallback]
+ * @returns {string}
+ */
+export function safePathSegment(value, fallback = 'unknown') {
+  const raw = String(value == null ? '' : value).trim()
+  const cleaned = raw
+    .replace(/[^A-Za-z0-9._-]+/g, '_')
+    .replace(/\.{2,}/g, '_')
+    .replace(/_{2,}/g, '_')
+    .replace(/^[._]+/, '')
+    .replace(/[._]+$/, '')
+  if (!cleaned || cleaned === '.' || cleaned === '..') return fallback
+  return cleaned.slice(0, 120)
+}
+
+/**
+ * Resolve `segments` under `baseDir` and assert the result cannot escape it.
+ * @param {string} baseDir
+ * @param {...string} segments
+ * @returns {string}
+ */
+export function resolveWithin(baseDir, ...segments) {
+  const base = resolve(baseDir)
+  const target = resolve(base, ...segments)
+  if (target !== base && !target.startsWith(base + sep)) {
+    throw new SelectionError('invalid-request', 'Resolved path escapes the assets directory')
+  }
+  return target
 }
 
 export function readJsonFile(filePath, fallback) {

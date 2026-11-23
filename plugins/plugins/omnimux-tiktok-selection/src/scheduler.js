@@ -5,8 +5,21 @@ import { SelectionError } from './errors.js'
  */
 export function createSelectionScheduler({ store, dataSource, threeGate, assetsPipeline, logger }) {
   let timer = null
+  const inFlight = new Set()
 
   async function runScheduleNow(scheduleId, trigger = 'manual') {
+    if (inFlight.has(scheduleId)) {
+      throw new SelectionError('conflict', `定时任务 ${scheduleId} 正在执行中，请稍后重试`)
+    }
+    inFlight.add(scheduleId)
+    try {
+      return await runScheduleNowInner(scheduleId, trigger)
+    } finally {
+      inFlight.delete(scheduleId)
+    }
+  }
+
+  async function runScheduleNowInner(scheduleId, trigger = 'manual') {
     const schedule = store.getSchedule(scheduleId)
     if (!schedule) throw new SelectionError('not-found', `Schedule ${scheduleId} not found`)
     const startedAt = new Date().toISOString()
@@ -152,7 +165,7 @@ export function createSelectionScheduler({ store, dataSource, threeGate, assetsP
   }
 
   async function tick(now = new Date()) {
-    const due = store.listSchedules().filter((s) => isScheduleDue(s, now))
+    const due = store.listSchedules().filter((s) => isScheduleDue(s, now) && !inFlight.has(s.id))
     const runs = []
     for (const s of due) {
       const run = await runScheduleNow(s.id, 'scheduled')

@@ -2,7 +2,7 @@ import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { OPERATIONAL_LIMITS, VIDEO_SCRIPT_OUTPUT_SCHEMA } from './constants.js'
 import { SelectionError } from './errors.js'
-import { ensureDir } from './paths.js'
+import { ensureDir, resolveWithin, safePathSegment } from './paths.js'
 
 function makeSlotId(prefix) {
   return `${prefix}_${Date.now().toString(36)}_${randomBytes(2).toString('hex')}`
@@ -134,7 +134,10 @@ export function createAssetsPipeline({ store, dataSource, getService, getTool, l
 
     const results = []
     for (const entry of plan) {
-      const prodDir = join(store.paths.assetsDir, entry.item.productId)
+      const prodDir = resolveWithin(
+        store.paths.assetsDir,
+        safePathSegment(entry.item.productId, safePathSegment(entry.item.id, 'product'))
+      )
       ensureDir(prodDir)
       const createdSlots = []
       for (let i = 0; i < entry.count; i += 1) {
@@ -235,7 +238,10 @@ export function createAssetsPipeline({ store, dataSource, getService, getTool, l
 
     const results = []
     for (const entry of plan) {
-      const prodDir = join(store.paths.assetsDir, entry.item.productId)
+      const prodDir = resolveWithin(
+        store.paths.assetsDir,
+        safePathSegment(entry.item.productId, safePathSegment(entry.item.id, 'product'))
+      )
       ensureDir(prodDir)
       const effectivePrompt =
         (useExistingScript && entry.item.videoScript?.videoPromptEn) ||

@@ -167,7 +167,6 @@ export function ThreeGatePanel({ overview, t, onNotify, onLibraryChanged }) {
       if (res.task) setActiveTask(res.task)
       await refreshTasks(res.task?.id || taskId)
       onLibraryChanged?.()
-      onNotify(`已执行操作：${action}`)
     } catch (err) {
       onNotify(err?.message || '操作失败', true)
     }

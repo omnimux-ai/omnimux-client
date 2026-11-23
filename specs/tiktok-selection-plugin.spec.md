@@ -31,7 +31,7 @@
 ## 二、架构边界与硬约束
 
 - **Hub 单一集成层**：本插件不直接访问 `ctx.llm`、不内置第三方 HTTP 客户端、不读写凭据或密钥；所有外部数据、模型推理与媒体生成均通过 `ctx.get('socialData')`、`ctx.get('headlessSkill')`、`ctx.get('imageGenerate')`、`ctx.get('videoGenerate')`、`ctx.get('modelCatalog')`、`ctx.get('hubEvents')` 与 `ctx.tools.get('products_create')` 接缝调用。
-- **双面同源与破坏性守卫**：HTTP 路由（`/omnimux-tiktok-selection/api/*`）与 18 个 `tiktok_selection_*` Agent 工具共享同一 `Dispatcher` 与本地原子 `Store`。删除商品、删除定时任务、删除风险词、删除闸口记录等破坏性操作强制要求 `confirm: true`。
+- **双面同源与破坏性守卫**：HTTP 路由（`/omnimux/tiktok-selection/*`）与 18 个 `tiktok_selection_*` Agent 工具共享同一 `Dispatcher` 与本地原子 `Store`。删除商品、删除定时任务、删除风险词、删除闸口记录等破坏性操作强制要求 `confirm: true`。
 - **视觉与滚动契约**：Client UI 100% 消费 `dsh-ui-kit` 与官方 `--dsw-alias-*` / `--dsw-specific-*` 语义 Token，遵循 `.omx-stage-scroll` / `.omx-stage-sticky` 滚动契约，浮层容器使用实体背景变量禁止透底，文案不使用中点分隔符与冗余说明。
 
 ## 三、假设与证伪方式
