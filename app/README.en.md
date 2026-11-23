@@ -1,25 +1,25 @@
 <p align="center">
-  <a href="https://omnimux.ai"><img src="assets/desktop-hero-en.png" alt="OmniMux Desktop: Your Content Commerce Team" width="100%"></a>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../docs/readme/omnimux-wordmark-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="../docs/readme/omnimux-wordmark-light.svg">
+    <img src="../docs/readme/omnimux-wordmark-light.svg" width="240" alt="OmniMux">
+  </picture>
 </p>
 
-<h1 align="center">OmniMux Desktop</h1>
+<h1 align="center">OmniMux Desktop (Desktop Subtree)</h1>
 
 <p align="center">
-  <strong>Your Content Commerce Team — One content commerce system that carries your product's selling points through every video. Use the Agents you already know to create ads, shoppable videos, and product reviews—all in one place.</strong>
+  <strong>Your Local AI Content Commerce Team — Keep your product selling points and visual assets consistent across every video.</strong>
 </p>
-
-<h3 align="center"><a href="https://omnimux.ai">One-click download, ready to use out of the box.</a></h3>
 
 <p align="center">
-  Hand your products and creative ideas to desktop Agents and run the full <strong>Benchmark → Deconstruct → Produce → Publish → Review</strong> loop in one local workspace.<br>
-  Everything is a plugin — the desktop itself is a plugin.
+  For the main project overview, see the <a href="../README.md"><strong>OmniMux README</strong></a> · <a href="../docs/README.zh-CN.md"><strong>简体中文</strong></a><br>
+  This page documents the <code>app/</code> desktop shell subtree (<a href="README.md">中文</a> · English)
 </p>
 
-<p align="center"><sub>An independent open-source desktop project, not affiliated with, authorized by, or endorsed by DeepSeek.<br>No DeepSeek employee or official upstream DeepSeek Harness team member currently participates in this repository; upstream contributors shown by GitHub are inherited from synchronized fork history.<br><a href="README.md">中文</a> · English</sub></p>
+<h3 align="center"><a href="https://dl.omnimux.ai">One-click download, ready to use out of the box.</a></h3>
 
-<p align="center">
-  <img src="assets/desktop-chat-en.png" alt="OmniMux Desktop chat and creative workspace in English" width="100%">
-</p>
+<p align="center"><sub>An independent open-source desktop project, not affiliated with, authorized by, or endorsed by DeepSeek.<br>No DeepSeek employee or official upstream DeepSeek Harness team member currently participates in this repository; upstream contributors shown by GitHub come from upstream commit history.</sub></p>
 
 <p align="center">
   <a href="https://omnimux.ai"><img src="https://img.shields.io/badge/website-omnimux.ai-4D6BFE?style=flat" alt="Website"></a>
@@ -46,7 +46,7 @@ Hand your products and creative direction to desktop Agents and run the full **B
 | Repository | Role |
 | --- | --- |
 | [`omnimux-ai/omnimux-client`](https://github.com/omnimux-ai/omnimux-client) | **Desktop app and product plugins in one repository (this repo)**: `app/` desktop shell and `plugins/` product plugins are developed and released together |
-| [`omnimux-ai/omnimux-gateway`](https://github.com/omnimux-ai/omnimux-gateway) | **Server gateway** (Go, new-api fork, AGPL-3.0), published only to satisfy AGPL obligations |
+| [`omnimux-ai/omnimux-gateway`](https://github.com/omnimux-ai/omnimux-gateway) | **Server repository** (Go, AGPL-3.0): official unified model API and account services |
 
 <a id="run"></a>
 

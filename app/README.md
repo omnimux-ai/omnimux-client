@@ -1,25 +1,25 @@
 <p align="center">
-  <a href="https://omnimux.ai"><img src="assets/desktop-hero-zh.png" alt="OmniMux Desktop：属于你的内容电商团队" width="100%"></a>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../docs/readme/omnimux-wordmark-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="../docs/readme/omnimux-wordmark-light.svg">
+    <img src="../docs/readme/omnimux-wordmark-light.svg" width="240" alt="OmniMux">
+  </picture>
 </p>
 
-<h1 align="center">OmniMux Desktop</h1>
+<h1 align="center">OmniMux Desktop（桌面客户端子树）</h1>
 
 <p align="center">
-  <strong>属于你的内容电商团队 — 一套内容电商系统，让商品卖点贯穿每一次出片。用你熟悉的 Agent，一站式搞定广告、电商与种草视频。</strong>
+  <strong>属于你的本地 AI 内容电商团队 — 让商品卖点与视觉资产贯穿每一次出片。</strong>
 </p>
-
-<h3 align="center"><a href="https://omnimux.ai">一键下载，开箱即用。</a></h3>
 
 <p align="center">
-  把商品和创意交给桌面端 Agent，在一个本地工作区跑通「对标 → 拆解 → 制作 → 发布 → 复盘」内容电商全链路。<br>
-  万物皆「插件」，桌面本身也是「插件」。
+  仓库完整介绍请见 <a href="../README.md"><strong>OmniMux README（English）</strong></a> · <a href="../docs/README.zh-CN.md"><strong>简体中文</strong></a><br>
+  本页为 <code>app/</code> 桌面壳子树的详细说明与开发文档（中文 · <a href="README.en.md">English</a>）
 </p>
 
-<p align="center"><sub>独立的开源桌面项目，与深度求索（DeepSeek）不存在隶属、合作、授权或背书关系。<br>本仓库目前无深度求索员工或 DeepSeek Harness 上游官方团队成员参与；GitHub Contributors 中显示的上游贡献者来自 fork 继承和同步的提交历史。<br>中文 · <a href="README.en.md">English</a></sub></p>
+<h3 align="center"><a href="https://dl.omnimux.ai">一键下载，开箱即用。</a></h3>
 
-<p align="center">
-  <img src="assets/desktop-chat-zh.png" alt="OmniMux Desktop 中文对话与创作界面" width="100%">
-</p>
+<p align="center"><sub>独立的开源桌面项目，与深度求索（DeepSeek）不存在隶属、合作、授权或背书关系。<br>本仓库目前无深度求索员工或 DeepSeek Harness 上游官方团队成员参与；GitHub Contributors 中显示的上游贡献者来自上游提交历史。</sub></p>
 
 <p align="center">
   <a href="https://omnimux.ai"><img src="https://img.shields.io/badge/website-omnimux.ai-4D6BFE?style=flat" alt="Website"></a>
@@ -46,7 +46,7 @@
 | 仓库 | 定位 |
 | --- | --- |
 | [`omnimux-ai/omnimux-client`](https://github.com/omnimux-ai/omnimux-client) | **桌面端 + 产品插件单一代码仓（本仓）**：`app/` 桌面壳与 `plugins/` 产品插件一起开发、一起发布 |
-| [`omnimux-ai/omnimux-gateway`](https://github.com/omnimux-ai/omnimux-gateway) | **服务端网关**（Go，new-api fork，AGPL-3.0），仅因 AGPL 义务公开 |
+| [`omnimux-ai/omnimux-gateway`](https://github.com/omnimux-ai/omnimux-gateway) | **服务端仓库**（Go，AGPL-3.0）：提供官方统一模型接口与账户服务 |
 
 <a id="run"></a>
 
