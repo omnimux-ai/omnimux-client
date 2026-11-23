@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { chmodSync, copyFileSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { SOCIAL_DATA_CATALOG } from '../plugins/omnimux/src/official/social-data.js'
 
@@ -60,13 +60,16 @@ test('product plugins never duplicate upstream DSH Creator-mode Cordis skills (#
     }
     const manifestPath = join(pluginsRoot, entry.name, 'dsh.manifest.json')
     if (!existsSync(manifestPath)) continue
+    const pluginRoot = join(pluginsRoot, entry.name)
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
     const declared = Array.isArray(manifest.skills) ? manifest.skills : []
-    for (const id of upstreamCreatorSkills) {
+    for (const rel of declared) {
+      const resolved = resolve(pluginRoot, String(rel))
+      const slug = basename(dirname(resolved))
       assert.equal(
-        declared.some((rel) => rel === `skills/${id}/SKILL.md`),
+        upstreamCreatorSkills.includes(slug),
         false,
-        `${entry.name}/dsh.manifest.json must not declare duplicate upstream skill ${id}`,
+        `${entry.name}/dsh.manifest.json must not declare duplicate upstream skill ${slug} (${rel})`,
       )
     }
   }
