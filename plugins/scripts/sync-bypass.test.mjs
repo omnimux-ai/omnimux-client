@@ -127,3 +127,64 @@ test('rollback wrapper does not accept the obsolete unmerged flag instead of mer
   assert.equal(result.status, 1)
   assert.match(result.stderr, /OMNIMUX_MERGE_CONFIRMED/)
 })
+
+test('monorepo evidence and archive paths pass while untracked plugin source stays blocked', t => {
+  const f = fixture(t)
+  for (const draft of [
+    'plugins/docs/evidence/dev-smoke-report.json',
+    'plugins/.agent-reports/task-demo/browser-evidence.md',
+    '.tmp/worktree-archive/task/spec.md',
+  ]) {
+    mkdirSync(dirname(join(f.repo, draft)), { recursive: true })
+    writeFileSync(join(f.repo, draft), 'evidence\n')
+  }
+  const passGate = spawnSync('bash', [join(here, 'sync-main.sh'), f.repo], { encoding: 'utf8', env: f.gitEnv })
+  assert.equal(passGate.status, 0, passGate.stderr)
+  assert.doesNotMatch(passGate.stderr, /拒绝物化/)
+
+  // 实际插件源码目录下的未跟踪文件仍必须拦截，不能因放行 plugins/docs/evidence 而放宽。
+  const strayPluginFile = 'plugins/plugins/omnimux/stray.js'
+  mkdirSync(dirname(join(f.repo, strayPluginFile)), { recursive: true })
+  writeFileSync(join(f.repo, strayPluginFile), 'export const stray = 1\n')
+  const blocked = spawnSync('bash', [join(here, 'sync-main.sh'), f.repo], { encoding: 'utf8', env: f.gitEnv })
+  assert.equal(blocked.status, 1)
+  assert.match(blocked.stderr, /会进入物化产物的未跟踪文件/)
+  assert.match(blocked.stderr, /plugins\/plugins\/omnimux\/stray\.js/)
+})
+
+test('drifted or dirty git submodule does not block plugin sync-main while superproject tracked edits still fail', t => {
+  const f = fixture(t)
+  const subSrc = join(f.home, 'sub-src')
+  mkdirSync(subSrc, { recursive: true })
+  const gitIn = (cwd, ...args) => {
+    const res = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: f.gitEnv })
+    assert.equal(res.status, 0, `${args.join(' ')}: ${res.stderr}`)
+    return res.stdout.trim()
+  }
+  gitIn(subSrc, 'init', '-b', 'main')
+  gitIn(subSrc, 'config', 'user.name', 'Test Agent')
+  gitIn(subSrc, 'config', 'user.email', 'agent@omnimux.test')
+  writeFileSync(join(subSrc, 'README.md'), 'v1\n')
+  gitIn(subSrc, 'add', '.')
+  gitIn(subSrc, 'commit', '-m', 'sub v1')
+
+  gitIn(f.repo, '-c', 'protocol.file.allow=always', 'submodule', 'add', subSrc, 'app/deepseek-harness')
+  gitIn(f.repo, 'commit', '-m', 'add submodule')
+  gitIn(f.repo, 'push', 'origin', 'main')
+
+  // 让子模块指针漂移并产生脏文件，验证不影响插件物化门禁。
+  const subDir = join(f.repo, 'app/deepseek-harness')
+  writeFileSync(join(subDir, 'README.md'), 'v2\n')
+  gitIn(subDir, 'add', 'README.md')
+  gitIn(subDir, 'commit', '-m', 'sub v2')
+  writeFileSync(join(subDir, 'untracked-in-sub.txt'), 'dirty\n')
+
+  const allowed = spawnSync('bash', [join(here, 'sync-main.sh'), f.repo], { encoding: 'utf8', env: f.gitEnv })
+  assert.equal(allowed.status, 0, allowed.stderr)
+
+  // 主仓已跟踪源码改动仍必须严格拒绝。
+  writeFileSync(join(f.repo, 'scripts/sync-main.sh'), readFileSync(join(f.repo, 'scripts/sync-main.sh'), 'utf8') + '\n')
+  const blocked = spawnSync('bash', [join(here, 'sync-main.sh'), f.repo], { encoding: 'utf8', env: f.gitEnv })
+  assert.equal(blocked.status, 1)
+  assert.match(blocked.stderr, /已跟踪文件的未提交改动/)
+})

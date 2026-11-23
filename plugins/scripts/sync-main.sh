@@ -20,10 +20,11 @@ assert_omnimux_sync_main() (
     fi
   fi
   # 只拦截「会影响物化产物」的未提交改动：
-  #   - 已跟踪文件的任何改动：必然属于源码 → 一律拦截；
-  #   - 未跟踪文件：仅当落在会进入产物的路径时才拦截；规格/调查/记录等草稿目录放行，
-  #     避免与「规格门禁」互相打架（草稿不会进入产物，与产物是否干净无因果关系）。
-  tracked=$(git -C "$root" status --porcelain --untracked-files=no 2>/dev/null) || {
+  #   - 已跟踪文件的任何改动：必然属于源码 → 一律拦截（忽略无关 git submodule 如 app/deepseek-harness，
+  #     子模块一致性由 scripts/dsh-version.mjs 与 app/ 检查独立守护）；
+  #   - 未跟踪文件：仅当落在会进入产物的路径时才拦截；规格/调查/记录/归档等草稿目录放行，
+  #     包含单仓下 plugins/docs/evidence/ 与 plugins/.agent-reports/，避免与「规格门禁」和冒烟脚本打架。
+  tracked=$(git -C "$root" status --porcelain --untracked-files=no --ignore-submodules=all 2>/dev/null) || {
     echo '❌ sync: 无法读取工作区状态，拒绝物化。' >&2; return 1;
   }
   if [ -n "$tracked" ]; then
@@ -35,7 +36,7 @@ assert_omnimux_sync_main() (
     echo '❌ sync: 无法读取未跟踪文件清单，拒绝物化。' >&2; return 1;
   }
   if [ -n "$untracked" ]; then
-    blocking=$(printf '%s\n' "$untracked" | grep -Ev '^(specs|docs|tmp|\.workbuddy|\.agent-backups|\.worktrees|\.agent-reports)/' || true)
+    blocking=$(printf '%s\n' "$untracked" | grep -Ev '^(specs|docs|tmp|\.tmp|\.workbuddy|\.agent-backups|\.worktrees|\.agent-reports|plugins/(docs/evidence|\.agent-reports))/' || true)
     if [ -n "$blocking" ]; then
       echo '❌ sync: 工作区存在会进入物化产物的未跟踪文件，拒绝物化。' >&2
       printf '%s\n' "$blocking" >&2

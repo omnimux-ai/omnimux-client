@@ -4,10 +4,10 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createDevSmoke, finiteNonNegative } from './dev-smoke.mjs';
+import { createDevSmoke, finiteNonNegative, resolveDefaultEvidenceRoot } from './dev-smoke.mjs';
 
 function fakeIo(dir) {
   const files = new Map();
@@ -54,8 +54,9 @@ test('页面健康 + 插件 mtime 早于进程 → status=pass，写截图与报
     assert.equal(r.status, 'pass');
     assert.equal(r.needsRestart, false);
     assert.ok(r.screenshot);
-    const report = JSON.parse(io.files.get(join(dir, 'docs', 'evidence', 'dev-smoke-report.json')));
+    const report = JSON.parse(io.files.get(join(dir, '.workbuddy', 'evidence', 'dev-smoke', 'dev-smoke-report.json')));
     assert.equal(report.status, 'pass');
+    assert.equal(io.files.has(join(dir, 'docs', 'evidence', 'dev-smoke-report.json')), false);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -195,4 +196,27 @@ test('page-health：非 JSON 载荷 → 立即 FAIL（kind=decode）', async () 
   assert.equal(health.pass, false);
   assert.equal(health.detail.kind, 'decode');
   assert.equal(r.status, 'fail');
+});
+
+test('resolveDefaultEvidenceRoot：单仓 plugins/ 子目录解析到仓根，避免污染 plugins/docs/evidence', () => {
+  const base = mkdtempSync(join(tmpdir(), 'smoke-root-'));
+  try {
+    const monorepo = join(base, 'monorepo');
+    const pluginsDir = join(monorepo, 'plugins');
+    mkdirSync(join(monorepo, '.git'), { recursive: true });
+    mkdirSync(pluginsDir, { recursive: true });
+    assert.equal(resolveDefaultEvidenceRoot(pluginsDir), monorepo);
+
+    const linkedWorktree = join(base, 'wt');
+    const wtPluginsDir = join(linkedWorktree, 'plugins');
+    mkdirSync(wtPluginsDir, { recursive: true });
+    writeFileSync(join(linkedWorktree, '.git'), 'gitdir: ../monorepo/.git/worktrees/wt\n');
+    assert.equal(resolveDefaultEvidenceRoot(wtPluginsDir), linkedWorktree);
+
+    const standalone = join(base, 'standalone');
+    mkdirSync(standalone, { recursive: true });
+    assert.equal(resolveDefaultEvidenceRoot(standalone), standalone);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
 });

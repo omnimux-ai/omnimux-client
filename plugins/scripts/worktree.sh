@@ -667,7 +667,7 @@ auto_materialize_and_reload() {
       local plugins_csv
       plugins_csv="$(IFS=,; echo "${changed_plugins[*]}")"
       if ! node "${SCRIPT_DIR}/dev-smoke.mjs" --plugins "${plugins_csv}" ${needs_restart:+--expect-restart}; then
-        say "⚠️ dev-smoke 未通过：请查看 ${ROOT}/docs/evidence/dev-smoke-report.json"
+        say "⚠️ dev-smoke 未通过：请查看 ${ROOT}/.workbuddy/evidence/dev-smoke/dev-smoke-report.json"
       fi
     fi
   else
