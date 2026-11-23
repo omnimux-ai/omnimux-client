@@ -225,6 +225,7 @@ export class BridgeServer {
   private current: ReadyConnection | null = null
   private readonly pendingTools = new Map<string, PendingTool>()
   private readonly orderedSessionRpcs = new Map<string, Promise<void>>()
+  private readonly connectionListeners = new Set<(connected: boolean) => void>()
   private readonly produced: ProducedRegistry
   private closed = false
 
@@ -329,6 +330,7 @@ export class BridgeServer {
     this.replaceConnection()
     for (const socket of this.wss.clients) socket.terminate()
     this.current = null
+    this.connectionListeners.clear()
     await new Promise<void>((resolve, reject) => {
       this.wss.close((error) => {
         /* v8 ignore next -- acceptor close cannot fail: close() is idempotent
@@ -344,6 +346,29 @@ export class BridgeServer {
   /** @returns whether an authenticated extension is currently connected. */
   hasConnection(): boolean {
     return this.current !== null
+  }
+
+  /**
+   * Subscribe to bridge connection-state changes. The listener receives the
+   * new state synchronously; connection replacement (one extension replacing
+   * another) does not produce a disconnected transition.
+   * @param listener - called with the new connected state.
+   * @returns unsubscribe function; safe to call more than once.
+   */
+  onConnectionChange(listener: (connected: boolean) => void): () => void {
+    this.connectionListeners.add(listener)
+    return () => { this.connectionListeners.delete(listener) }
+  }
+
+  private notifyConnectionChange(connected: boolean): void {
+    for (const listener of [...this.connectionListeners]) {
+      try {
+        listener(connected)
+      } catch (error) {
+        // A subscriber must never break the bridge's handshake or teardown.
+        console.warn('[bridge-browser] connection listener failed:', error)
+      }
+    }
   }
 
   private attach(ws: WebSocket, remoteAddress: string | undefined): void {
@@ -387,7 +412,9 @@ export class BridgeServer {
 
   /** Promote an authenticated socket to the single active slot. */
   private promote(ws: WebSocket, remoteAddress: string | undefined): void {
-    this.replaceConnection()
+    // Replacing one live extension with another is still connected: suppress
+    // the transient disconnect so tool registration stays stable.
+    this.replaceConnection(false)
     const abort = new AbortController()
     const ping = setInterval(() => { sendFrame(ws, { t: 'ping' }) }, this.deps.pingIntervalMs ?? PING_INTERVAL_MS)
     const pump = (async () => {
@@ -411,6 +438,7 @@ export class BridgeServer {
     })()
     this.current = { ws, remoteAddress, abort, pump, ping }
     sendFrame(ws, { t: 'hello.ok', caps: this.deps.caps })
+    this.notifyConnectionChange(true)
     ws.once('close', () => {
       clearInterval(ping)
       abort.abort()
@@ -808,7 +836,7 @@ export class BridgeServer {
   }
 
   /** Close the current connection (if any) and settle its in-flight calls. */
-  private replaceConnection(): void {
+  private replaceConnection(notifyChange = true): void {
     const conn = this.current
     if (conn === null) return
     this.current = null
@@ -822,6 +850,7 @@ export class BridgeServer {
       this.pendingTools.delete(id)
       pending.reject(new BridgeToolError('bridge-closed', 'the extension connection was replaced'))
     }
+    if (notifyChange) this.notifyConnectionChange(false)
   }
 }
 
