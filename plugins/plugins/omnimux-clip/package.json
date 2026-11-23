@@ -105,8 +105,8 @@
     }
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "4.0.2",
-    "@deepseek-ai/dsh-tools": "0.2.1-rc.3",
+    "@deepseek-ai/cordis": "4.1.0",
+    "@deepseek-ai/dsh-tools": "0.2.2-rc.5",
     "@huggingface/transformers": "3.8.1",
     "autoprefixer": "^10.4.19",
     "esbuild": "^0.25.0",
