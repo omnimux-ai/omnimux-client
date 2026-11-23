@@ -77,9 +77,11 @@ const workspaceManifest = JSON.parse(readFileSync(new URL('package.json', worksp
 const ciWorkflow = readFileSync(new URL('.github/workflows/ci.yml', workspaceRoot), 'utf8')
 const main = readFileSync(new URL('src/main.ts', packageRoot), 'utf8')
 const runtimeVersion = String(manifest.dependencies?.['@deepseek-ai/dsh'])
-// OmniMux keeps a single shell line: the second identity slot maps this repo's
-// Dev edition of the same package, so both slots share one runtime family.
-const betaRuntimeVersion = runtimeVersion
+const nextManifest = JSON.parse(readFileSync(new URL('dsh-desktop-next/package.json', workspaceRoot), 'utf8')) as {
+  dependencies?: Record<string, unknown>
+}
+// Stable (dsh-plugin-desktop) and Next (dsh-desktop-next) each pin their own recorded runtime family.
+const betaRuntimeVersion = String(nextManifest.dependencies?.['@deepseek-ai/dsh'])
 const dshResolution = (name: string): unknown =>
   workspaceManifest.resolutions?.[`${name}@npm:${runtimeVersion}`]
 
@@ -344,19 +346,14 @@ describe('published package surface', () => {
 
   it('keeps the canonical web profile configurable while Desktop disables browser opening', () => {
     const patchPath = `./patches/dsh-web-app@${runtimeVersion}.patch`
-    const openPatchPath = './patches/open@11.0.1.patch'
-    const openPatchResolution = `patch:open@npm%3A11.0.1#${openPatchPath}`
-    // dsh 0.2.1-alpha.2 requires open ^11.0.2, which Stable's 11.0.1 pin cannot satisfy.
+    // Both stable and next unify onto open@11.0.4 with the windowsHide patch.
     const currentOpenPatchPath = './patches/open@11.0.4.patch'
     const currentOpenPatchResolution = `patch:open@npm%3A11.0.4#${currentOpenPatchPath}`
     expect(dshResolution('@deepseek-ai/dsh-web-app')).toContain(patchPath)
     expect(workspaceManifest.resolutions).toMatchObject({
-      'open@npm:11.0.1': openPatchResolution,
-      'open@npm:^11.0.0': openPatchResolution,
       'open@npm:^11.0.2': currentOpenPatchResolution,
     })
     const patch = readFileSync(new URL(patchPath, workspaceRoot), 'utf8')
-    const openPatch = readFileSync(new URL(openPatchPath, workspaceRoot), 'utf8')
     const currentOpenPatch = readFileSync(new URL(currentOpenPatchPath, workspaceRoot), 'utf8')
     const lockfile = readFileSync(new URL('yarn.lock', workspaceRoot), 'utf8')
     const installedWebApp = readFileSync(new URL(
@@ -380,9 +377,7 @@ describe('published package surface', () => {
     expect(installedWebApp).toMatch(
       /function spawnBrowserLauncher\(url\) \{\s+return spawn\(process\.execPath, \[[\s\S]*?\], \{\s+windowsHide: true,\s+env:/u,
     )
-    expect(lockfile).toContain('open@patch:open@npm%3A11.0.1#./patches/open@11.0.1.patch')
     expect(lockfile).toContain('open@patch:open@npm%3A11.0.4#./patches/open@11.0.4.patch')
-    expect(openPatch).toContain('+\t\t\tchildProcessOptions.windowsHide = true;')
     expect(currentOpenPatch).toContain('+\t\t\tchildProcessOptions.windowsHide = true;')
     expect(installedOpen).toMatch(
       /if \(!isWsl\) \{\s+childProcessOptions\.windowsVerbatimArguments = true;\s+childProcessOptions\.windowsHide = true;\s+\}/u,
@@ -1297,10 +1292,12 @@ describe('published package surface', () => {
       '@earendil-works/pi-ai@npm:^1.1.0': patchResolution,
       '@earendil-works/pi-telemetry@npm:^1.1.0': '1.1.0',
     })
-    // The only npm resolution is the source the patch applies to, so no range escapes it.
+    // Every resolved pi-ai version across both channels (1.1.0 for stable, 1.3.0 for next) is patched.
+    const nextPatchResolution = 'patch:@earendil-works/pi-ai@npm%3A1.3.0#./patches/pi-ai@1.3.0.patch'
     expect([...lockfile.matchAll(/resolution: "@earendil-works\/pi-ai@npm:([^"]+)"/gu)].map(match => match[1]))
-      .toEqual(['1.1.0'])
+      .toEqual(['1.1.0', '1.3.0'])
     expect(lockfile).toContain(`"@earendil-works/pi-ai@${patchResolution}::`)
+    expect(lockfile).toContain(`"@earendil-works/pi-ai@${nextPatchResolution}::`)
     expect(lockfile).toContain('resolution: "@earendil-works/pi-telemetry@npm:1.1.0"')
     expect(installedPiAi.version).toBe('1.1.0')
 

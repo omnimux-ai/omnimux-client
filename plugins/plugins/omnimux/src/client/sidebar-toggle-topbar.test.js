@@ -2225,6 +2225,41 @@ describe('topbar anchor visibility (#67 AC-4)', () => {
       stop()
     }
   })
+
+  it('stays anchored to body and expands cleanly when explicitLeftCollapseIntent holds collapse after shell auto-expands', () => {
+    const doc = setup(`<!doctype html><html><body>
+      <div class="vcssFG_frame">
+        <div class="vcssFG_sidebarCol">
+          <div class="OgAdAW_topStrip"><button type="button" aria-label="收起侧边栏">T</button></div>
+        </div>
+      </div>
+    </body></html>`)
+    mockRect(doc.body, rect(0, 0, 1280, 840))
+    const topStrip = doc.querySelector('.OgAdAW_topStrip')
+    mockRect(topStrip, rect(0, 0, 280, 52))
+    const official = doc.querySelector('button[aria-label="收起侧边栏"]')
+    let officialClicks = 0
+    official.addEventListener('click', () => { officialClicks += 1 })
+
+    try {
+      setExplicitLeftCollapseIntent(true)
+      const btn = ensureSidebarToggleTopbar(doc, { allowBodyFallback: true })
+      assert.ok(btn, '显式折叠意图下按钮必须成功注入')
+      assert.equal(doc.documentElement.hasAttribute(LEFT_COLLAPSED_HTML_ATTR), true)
+      assert.equal(doc.documentElement.hasAttribute(SIDEBAR_TOGGLE_TOPBAR_HTML_ATTR), true)
+      assert.equal(findTopbarAnchor(doc, { skipCollapsedSidebarAnchors: true }), null, '折叠态不得选中会被 CSS 隐藏的 sidebarCol topStrip')
+      assert.equal(btn.parentElement, doc.body, '折叠态必须挂到 body 避免 60fps 显隐震荡')
+
+      // 点击展开按钮：宿主已经未折叠，不得反点原生按钮把它折回去，应直接清除折叠态并迁回 topStrip
+      btn.click()
+      assert.equal(officialClicks, 0, '宿主已展开时不得反向触发原生按钮')
+      assert.equal(getExplicitLeftCollapseIntent(), false)
+      assert.equal(doc.documentElement.hasAttribute(LEFT_COLLAPSED_HTML_ATTR), false)
+      assert.equal(btn.parentElement, topStrip, '展开后按钮必须迁回可见 topStrip')
+    } finally {
+      setExplicitLeftCollapseIntent(null)
+    }
+  })
 })
 
 async function waitFor(predicate, timeoutMs = 500) {

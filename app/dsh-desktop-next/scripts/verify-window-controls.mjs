@@ -1,6 +1,6 @@
 /** Official Desktop boot in headless Chromium; simulated IPC/platform, no native window or user profile. */
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { DesktopHostProcess } from '../lib/host-process.js'
 import { desktopKeybindings } from '../lib/keybindings.js'
-import { NextProfiles } from '../lib/profiles.js'
+import { NextProfiles, OMNIMUX_PRODUCT_BUNDLES } from '../lib/profiles.js'
 import { authenticateWebHost, serveWebDocument } from '../lib/web-document.js'
 import { browserFixture, verifySidebarBrowser, verifyWebBrowserFallback } from './verify-sidebar-browser-ui.mjs'
 
@@ -23,6 +23,20 @@ const screenshots = join(root, '.desktop-next', 'verification')
 const manager = new NextProfiles(home)
 manager.ensure('desktop')
 manager.setFeatures('desktop', { market: true, remoteControl: false })
+// This harness verifies the base dsh-desktop-next official shell controls (official
+// [data-shell-leading] opener, dockkit right sidebar, sidebar browser, settings, market).
+// Strip OmniMux product bundles here because omnimux (DP-004 Route B) intentionally hides
+// [data-shell-leading] and dsh-better-sidebar replaces the official right sidebar, and
+// re-enable official client-hmr in this temp profile so live optional-plugin toggles
+// push their client modules without the omnimux WebSocket HMR hub.
+{
+  const profileDir = manager.directory('desktop')
+  const manifestPath = join(profileDir, 'package.json')
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+  manifest.dsh.profile.bundles = manifest.dsh.profile.bundles.filter(name => !OMNIMUX_PRODUCT_BUNDLES.includes(name))
+  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf8')
+  writeFileSync(join(profileDir, 'cordis.patch.yml'), '- id: client-hmr\n  disabled: false\n', 'utf8')
+}
 // A running Desktop hands its sampled LAN addresses to the Host as trusted authorities,
 // and upstream's adaptive directory-picker row then mounts the in-app browsing panel for
 // every browser it serves. Declare one here so the Host resolves `browse` on every

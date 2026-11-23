@@ -354,6 +354,19 @@ export function syncLeftCollapsedHtmlAttr(doc) {
 }
 
 /**
+ * True when the left sidebar is effectively collapsed — either natively by the
+ * shell or held collapsed via `explicitLeftCollapseIntent` (`html[data-omnimux-left-collapsed]`).
+ * @param {Document | null | undefined} doc
+ * @returns {boolean}
+ */
+function isEffectivelyLeftCollapsed(doc) {
+  return Boolean(
+    isLeftSidebarCollapsed(doc)
+    || doc?.documentElement?.hasAttribute?.(LEFT_COLLAPSED_HTML_ATTR),
+  )
+}
+
+/**
  * Visible right workbench panel (not the hidden off-screen clone, not the
  * bottom drawer, not panelBody/Resize). Used to dock tab labels to overlap
  * with the topbar toggle instead of a collapsed-boolean padding hack.
@@ -1209,7 +1222,12 @@ function runTopbarGeometryHook(doc) {
  * @param {Document | null | undefined} doc
  * @returns {Element | null}
  */
-export function findTopbarAnchor(doc) {
+/**
+ * @param {Document | null | undefined} doc
+ * @param {{ skipCollapsedSidebarAnchors?: boolean }} [options]
+ * @returns {Element | null}
+ */
+export function findTopbarAnchor(doc, options = {}) {
   if (!doc || typeof doc.querySelector !== 'function') return null
   // 只认可见锚点（#67 AC-4）：
   // 1) 可见 workbench panel 的 tabBar；
@@ -1226,9 +1244,14 @@ export function findTopbarAnchor(doc) {
   for (const bar of doc.querySelectorAll('[class*="tabBar"]:not([class*="Plus"])')) {
     if (bar instanceof HTMLElement && isTopbarElementVisible(bar, doc)) return bar
   }
-  for (const selector of ['[class*="sidebarCol"] [class*="topStrip"]', '[class*="topStrip"]', '[class*="logoRow"]']) {
-    for (const el of doc.querySelectorAll(selector)) {
-      if (el instanceof HTMLElement && isTopbarElementVisible(el, doc)) return el
+  // 左栏折叠态且允许 body fallback 时，跳过 sidebarCol 内的 topStrip/logoRow：
+  // 挂上 html[data-omnimux-sidebar-toggle-topbar] 后 CSS 会立刻 display:none 隐藏
+  // sidebarCol，选它作锚点会在「可见→挂标→隐藏→摘标」间 60fps 震荡。
+  if (!(options.skipCollapsedSidebarAnchors === true && isEffectivelyLeftCollapsed(doc))) {
+    for (const selector of ['[class*="sidebarCol"] [class*="topStrip"]', '[class*="topStrip"]', '[class*="logoRow"]']) {
+      for (const el of doc.querySelectorAll(selector)) {
+        if (el instanceof HTMLElement && isTopbarElementVisible(el, doc)) return el
+      }
     }
   }
   return null
@@ -1287,7 +1310,8 @@ export function injectTopbarToggleButton(doc, options = {}) {
     removeInjectedTopbarControls(doc)
     return null
   }
-  const anchor = findTopbarAnchor(doc) || resolveBodyFallbackAnchor(doc, options.allowBodyFallback === true)
+  const anchor = findTopbarAnchor(doc, { skipCollapsedSidebarAnchors: options.allowBodyFallback === true })
+    || resolveBodyFallbackAnchor(doc, options.allowBodyFallback === true)
   if (!anchor) return null
   let btn = doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`)
   if (!btn) {
@@ -1299,13 +1323,22 @@ export function injectTopbarToggleButton(doc, options = {}) {
     btn.addEventListener('click', (event) => {
       safeDom(() => event.preventDefault())
       safeDom(() => event.stopPropagation())
-      const willCollapse = !isLeftSidebarCollapsed(doc)
+      const shellCollapsed = isLeftSidebarCollapsed(doc)
+      const effectiveCollapsed = shellCollapsed || Boolean(doc.documentElement?.hasAttribute?.(LEFT_COLLAPSED_HTML_ATTR))
+      const willCollapse = !effectiveCollapsed
       setExplicitLeftCollapseIntent(willCollapse)
-      // 优先点我们自己标记的那一个原生 trigger（它才是当前可见侧栏的按钮；
-      // 注入后它被 display:none 隐藏，所以不能只按可见性找）。
-      const marked = doc.querySelector(`[${SIDEBAR_ORIGINAL_TOGGLE_ATTR}="1"]`)
-      const official = marked || findVisibleOfficialSidebarToggle(doc) || findOfficialSidebarToggle(doc)
-      if (official) triggerClick(official)
+      // 仅在宿主当前折叠态与目标态不一致时才触发原生按钮；若窗口从 <1024px 拉宽到 >=1024px
+      // 时宿主已自动展开、仅由 explicitLeftCollapseIntent 保持折叠，则直接重同步展开即可，
+      // 避免反向点击原生按钮又把宿主折回去。
+      if (shellCollapsed !== willCollapse) {
+        // 优先点我们自己标记的那一个原生 trigger（它才是当前可见侧栏的按钮；
+        // 注入后它被 display:none 隐藏，所以不能只按可见性找）。
+        const marked = doc.querySelector(`[${SIDEBAR_ORIGINAL_TOGGLE_ATTR}="1"]`)
+        const official = marked || findVisibleOfficialSidebarToggle(doc) || findOfficialSidebarToggle(doc)
+        if (official) triggerClick(official)
+      } else {
+        ensureSidebarToggleTopbar(doc)
+      }
     })
     anchor.appendChild(btn)
   } else if (btn.parentElement !== anchor && typeof anchor.appendChild === 'function') {
@@ -1336,7 +1369,8 @@ export function injectTopbarNewSessionButton(doc, collapsed, options = {}) {
     }
     return null
   }
-  const anchor = findTopbarAnchor(doc) || resolveBodyFallbackAnchor(doc, options.allowBodyFallback === true)
+  const anchor = findTopbarAnchor(doc, { skipCollapsedSidebarAnchors: options.allowBodyFallback === true })
+    || resolveBodyFallbackAnchor(doc, options.allowBodyFallback === true)
   if (!anchor) return null
   if (!btn) {
     btn = doc.createElement('button')
@@ -1716,7 +1750,7 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
         // 展开态等可见锚点重试窗口耗尽后同样放行，避免外壳晚挂载时无限等不到控件。
         const retryExhausted = topbarRetryTimer === null
           && topbarRetryAttempt >= TOPBAR_RETRY_BACKOFF_MS.length
-        const allowBodyFallback = isLeftSidebarCollapsed(doc) || retryExhausted
+        const allowBodyFallback = isEffectivelyLeftCollapsed(doc) || retryExhausted
         ensureSidebarToggleTopbar(doc, { allowBodyFallback })
         ensureObserveTargets()
         rebindHostObservers()
@@ -1774,7 +1808,7 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
     // 存在但不可见（例如落在隐藏 bottomPanel tabBar 里）同样算缺失，继续自愈。
     const toggle = doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`)
     if (!toggle || !isInjectedControlVisible(toggle, doc)) return true
-    if (!isLeftSidebarCollapsed(doc)) return false
+    if (!isEffectivelyLeftCollapsed(doc)) return false
     const newSession = doc.querySelector(`[${TOPBAR_NEW_SESSION_ATTR}="1"]`)
     return !newSession || !isInjectedControlVisible(newSession, doc)
   }
