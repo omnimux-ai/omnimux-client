@@ -11,13 +11,16 @@ export function apply(ctx) {
   const store = createDraftStore(join(process.env.DSH_HOME, 'omnimux', 'forms'))
   const examples = resolve(dirname(fileURLToPath(import.meta.url)), '../assets/examples')
   const webServer = ctx.webServer ?? ctx.get?.('webServer')
-  const dispose = webServer.register({ kind: 'prefix', path: PREFIX, async handler(req, res) {
+  const dispose = webServer.register({ kind: 'prefix', path: PREFIX, auth: 'required', async handler(req, res, peer) {
     const send = (status, body) => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(body)) }
     try {
-      const connection = ctx.get?.('connection') ?? ctx.connection
-      if (typeof connection?.requestRejection !== 'function') return send(503, { error: 'Host connection authentication is unavailable' })
-      const rejection = connection.requestRejection(req)
-      if (rejection !== undefined) return send(rejection, { error: 'Host connection authentication refused the request' })
+      const admittedPeer = peer !== undefined && peer !== null && typeof peer === 'object'
+      if (!admittedPeer) {
+        const connection = ctx.get?.('connection') ?? ctx.connection
+        if (typeof connection?.requestRejection !== 'function') return send(503, { error: 'Host connection authentication is unavailable' })
+        const rejection = connection.requestRejection(req)
+        if (rejection !== undefined) return send(rejection, { error: 'Host connection authentication refused the request' })
+      }
       const url = new URL(req.url, 'http://localhost')
       if (req.method === 'GET' && url.pathname.startsWith(`${PREFIX}/examples/`)) {
         const filename = url.pathname.slice(`${PREFIX}/examples/`.length)

@@ -12,10 +12,10 @@ export function registerGenerationProductRoutes(webServer, deps) {
   /** Existing serializer refusal is a fixed V1 failure, not a field filter or qualification check. */
   const respond = (res, status, body) => SECRET_PATTERN.test(JSON.stringify(body))
     ? sendJson(res, 503, failure('catalog_unavailable')) : sendJson(res, status, body)
-  const disposers = paths.map((path, index) => webServer.register({ kind: 'exact', path, async handler(req, res) {
+  const disposers = paths.map((path, index) => webServer.register({ kind: 'exact', path, auth: 'required', async handler(req, res, peer) {
     const method = (req.method || 'GET').toUpperCase()
     if (method !== (index === 0 ? 'GET' : 'POST')) return sendJson(res, 404, { error: 'not found' })
-    const rejection = requestRejection(req, deps.getConnection)
+    const rejection = requestRejection(req, deps.getConnection, peer)
     if (rejection !== undefined) return sendJson(res, rejection, { error: 'request-denied' })
     try {
       if (!deps.products) return sendJson(res, 503, failure('catalog_unavailable'))
@@ -52,7 +52,8 @@ export function registerCatalogRoutes(webServer, deps) {
   const stopCatalog = webServer.register({
     kind: 'exact',
     path: '/omnimux/model-catalog',
-    async handler(req, res) {
+    auth: 'required',
+    async handler(req, res, peer) {
       const method = (req.method || 'GET').toUpperCase()
       if (method !== 'GET') {
         sendJson(res, 404, { error: 'not found' })
@@ -60,7 +61,7 @@ export function registerCatalogRoutes(webServer, deps) {
       }
       try {
         if (deps.isAccountScoped?.()) {
-          const rejection = requestRejection(req, deps.getConnection)
+          const rejection = requestRejection(req, deps.getConnection, peer)
           if (rejection !== undefined) return sendJson(res, rejection, { error: 'request-denied' })
           res.setHeader('Cache-Control', 'private, no-store')
         }
@@ -80,13 +81,14 @@ export function registerCatalogRoutes(webServer, deps) {
   const stopRefresh = webServer.register({
     kind: 'exact',
     path: '/omnimux/model-catalog/refresh',
-    async handler(req, res) {
+    auth: 'required',
+    async handler(req, res, peer) {
       const method = (req.method || 'POST').toUpperCase()
       if (method !== 'POST') {
         sendJson(res, 404, { error: 'not found' })
         return
       }
-      const rejection = requestRejection(req, deps.getConnection)
+      const rejection = requestRejection(req, deps.getConnection, peer)
       if (rejection !== undefined) {
         sendJson(res, rejection, { error: 'request-denied' })
         return

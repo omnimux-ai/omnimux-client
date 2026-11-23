@@ -118,8 +118,10 @@ export function triggerClick(el) {
 
 const TOGGLE_ARIA_LABELS = Object.freeze([
   '打开侧边栏',
+  '展开侧边栏',
   '收起侧边栏',
   'Open sidebar',
+  'Expand sidebar',
   'Collapse sidebar',
 ])
 
@@ -167,7 +169,7 @@ function collectOfficialSidebarToggleCandidates(doc) {
   }
   for (const el of doc.querySelectorAll(`button.x-Wl6W_toggle${notInjected}, .x-Wl6W_toggle${notInjected}`)) push(el)
   for (const el of doc.querySelectorAll(
-    `[class*="sidebarCol"] [class*="logoRow"] [class*="toggle"]${notInjected}, [class*="sidebarCol"] [class*="logoRow"] button[class*="toggle"]${notInjected}`,
+    `[class*="sidebarCol"] [class*="logoRow"] [class*="toggle"]${notInjected}, [class*="sidebarCol"] [class*="logoRow"] button[class*="toggle"]${notInjected}, [data-shell-leading] [class*="toggle"]${notInjected}, [data-shell-leading] button[class*="toggle"]${notInjected}`,
   )) push(el)
   return out
 }
@@ -1017,7 +1019,17 @@ export function computeChromeLayout(doc) {
       : (readShellRailWidthPx(doc) ?? (lastGoodLeftRailW || 0))
     if (leftRailW >= LEFT_RAIL_MIN_PX) lastGoodLeftRailW = leftRailW
   }
-  const leftInset = doc?.body?.matches?.('[data-dsh-desktop-mode][data-dsh-desktop-platform="darwin"]')
+  const isDarwinDesktop = Boolean(
+    doc?.body?.matches?.('[data-dsh-desktop-mode][data-dsh-desktop-platform="darwin"]'),
+  )
+  const isFullscreen = doc?.documentElement?.hasAttribute?.('data-fullscreen') === true
+  // macOS native fullscreen hides traffic lights (html[data-fullscreen]) and
+  // 0.2.2-rc.5 AppFrame lowers --dsh-frame-leading-clearance from 160px to 84px
+  // (ConversationRoot title starts at 20 + 140 = 160px windowed, 20 + 64 = 84px
+  // fullscreen). Dropping the traffic-light inset in fullscreen keeps the
+  // collapsed two-button cluster right edge within both official clearances
+  // (84 + 32 + 8 + 32 = 156 <= 160px; 8 + 32 + 8 + 32 = 80 <= 84px).
+  const leftInset = isDarwinDesktop && !isFullscreen
     ? TOPBAR_MACOS_INSET_PX
     : TOPBAR_TOGGLE_LEFT_PX
   const toggleLeft = collapsed
@@ -1406,7 +1418,7 @@ const RIGHTBAR_CHROME_STYLES_ID = 'omnimux-rightbar-chrome-styles'
 const RIGHTBAR_CHROME_STYLES = `
 /* 1. 修复创作画布等 Tab 标题文字被关闭按钮“x”遮挡及官方 mask-image 遮罩虚化截断 */
 [data-dockkit-strip] [data-dockkit-tab-title],
-[class*="_tabTitle_"] {
+[class*="_tabTitle"] {
   width: auto !important;
   min-width: max-content !important;
   max-width: 200px !important;
@@ -1420,7 +1432,8 @@ const RIGHTBAR_CHROME_STYLES = `
 
 /* 2. 确保 Tab 容器留足右侧关闭按钮空间与最小呼吸留白 */
 [data-dockkit-tab],
-[class*="_tab_17p4l"] {
+[data-dockkit-strip] [role="tab"],
+[class*="_tab_"] {
   min-width: max-content !important;
   padding-right: 28px !important;
   position: relative !important;
@@ -1428,7 +1441,7 @@ const RIGHTBAR_CHROME_STYLES = `
 
 /* 3. 关闭按钮绝对定位居右并垂直居中，绝不压在标题字上 */
 [data-dockkit-tab-close],
-[class*="_tabClose_"] {
+[class*="_tabClose"] {
   position: absolute !important;
   right: 6px !important;
   top: 50% !important;
@@ -1452,7 +1465,7 @@ button[data-sidebar-right-expand] {
 /* 5. 修复右侧栏顶栏 strip 在 border-box 盒模型下高度塌陷（28px）导致 Tab 选项卡被下方内容页面遮挡：
    明确高度为 40px 并居中对齐，为选项卡胶囊提供上下各 6px 的正常呼吸间距，确保底部圆角完整展现且与内容保持优雅间距 */
 [data-dockkit-strip],
-[class*="_tabStrip_"] {
+[class*="_tabStrip"] {
   height: 40px !important;
   box-sizing: border-box !important;
   padding: 6px 6px 6px 10px !important;
@@ -1517,28 +1530,40 @@ html[data-omnimux-left-collapsed] [class*="_panel"][data-sidebar-right-panel="fu
 /* 5.4 桌面端在全屏且左侧收起时，给顶栏 strip 预留避让操作按钮组（自适应对接 --omnimux-topbar-toggle-end，macOS 下基准避让交通灯及两按钮共 164px） */
 body[data-dsh-desktop-platform="darwin"] html[data-omnimux-left-collapsed] [data-sidebar-right-panel="fullscreen"] [data-dockkit-strip],
 html[data-omnimux-left-collapsed] body[data-dsh-desktop-platform="darwin"] [data-sidebar-right-panel="fullscreen"] [data-dockkit-strip],
-body[data-dsh-desktop-platform="darwin"] html[data-omnimux-left-collapsed] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip_"],
-html[data-omnimux-left-collapsed] body[data-dsh-desktop-platform="darwin"] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip_"],
+body[data-dsh-desktop-platform="darwin"] html[data-omnimux-left-collapsed] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"],
+html[data-omnimux-left-collapsed] body[data-dsh-desktop-platform="darwin"] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"],
 body[data-dsh-desktop-platform="darwin"] .dshDesktopFrame[data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"] [data-dockkit-strip],
-body[data-dsh-desktop-platform="darwin"] .dshDesktopFrame[data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip_"] {
+body[data-dsh-desktop-platform="darwin"] .dshDesktopFrame[data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"] {
   padding-left: var(--omnimux-topbar-toggle-end, 164px) !important;
 }
 html[data-omnimux-left-collapsed] [data-sidebar-right-panel="fullscreen"] [data-dockkit-strip],
-html[data-omnimux-left-collapsed] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip_"],
+html[data-omnimux-left-collapsed] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"],
 .dshDesktopFrame[data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"] [data-dockkit-strip],
-.dshDesktopFrame[data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip_"] {
+.dshDesktopFrame[data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"] {
   padding-left: var(--omnimux-topbar-toggle-end, 88px) !important;
 }
+
+/* 5.5 desktop-patch:DP-004 — 隐藏 0.2.2-rc.5 官方根级 [data-shell-leading]，避免与注入顶栏
+   两按钮重叠双显；作用域限定在 html[data-omnimux-sidebar-toggle-topbar]，引导页/卸载摘标后自动恢复。 */
+html[data-omnimux-sidebar-toggle-topbar] [data-shell-leading] {
+  display: none !important;
+  pointer-events: none !important;
 }
 `
 
 function ensureRightbarChromeStyles(doc) {
-  if (!doc || doc.getElementById(RIGHTBAR_CHROME_STYLES_ID)) return
-  const style = doc.createElement('style')
-  style.id = RIGHTBAR_CHROME_STYLES_ID
-  style.textContent = RIGHTBAR_CHROME_STYLES
-  const target = doc.head || doc.documentElement
-  if (target) target.appendChild(style)
+  if (!doc) return
+  let style = doc.getElementById(RIGHTBAR_CHROME_STYLES_ID)
+  if (!style) {
+    style = doc.createElement('style')
+    style.id = RIGHTBAR_CHROME_STYLES_ID
+    const target = doc.head || doc.documentElement
+    if (!target) return
+    target.appendChild(style)
+  }
+  if (style.textContent !== RIGHTBAR_CHROME_STYLES) {
+    style.textContent = RIGHTBAR_CHROME_STYLES
+  }
 }
 
 /**
@@ -1897,18 +1922,19 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
     desktopObserver = new ObserverClass(() => {
       scheduleSync()
     })
-    const filter = ['data-dsh-desktop-mode', 'data-dsh-desktop-platform']
+    const rootFilter = ['data-dsh-desktop-mode', 'data-dsh-desktop-platform', 'data-fullscreen']
+    const bodyFilter = ['data-dsh-desktop-mode', 'data-dsh-desktop-platform']
     if (doc.documentElement) {
       desktopObserver.observe(doc.documentElement, {
         attributes: true,
-        attributeFilter: filter,
+        attributeFilter: rootFilter,
         subtree: false,
       })
     }
     if (doc.body) {
       desktopObserver.observe(doc.body, {
         attributes: true,
-        attributeFilter: filter,
+        attributeFilter: bodyFilter,
         subtree: false,
       })
     }

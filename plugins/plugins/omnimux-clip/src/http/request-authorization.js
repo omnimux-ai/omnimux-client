@@ -1,5 +1,5 @@
 /** Host authentication plus exact browser-origin admission. Native authenticated clients have no browser headers. */
-export function requestRejection(req, getConnection) {
+export function requestRejection(req, getConnection, peer) {
   try {
     const headers = req.headers || {}
     if (headers['sec-fetch-site'] === 'cross-site' || headers['sec-fetch-site'] === 'same-site') return 403
@@ -17,6 +17,8 @@ export function requestRejection(req, getConnection) {
   } catch {
     return 403
   }
+  // When WebServer enforces route-level auth (DSH 0.2.3+), the admitted Peer is passed directly.
+  if (peer !== undefined && peer !== null && typeof peer === 'object') return undefined
   try {
     const connection = getConnection?.()
     if (typeof connection?.requestRejection !== 'function') return 503

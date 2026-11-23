@@ -140,7 +140,7 @@ export function registerPublishRoutes(webServer, dispatcher) {
       sendJson(res, 500, { error: 'internal', message: messageOf(error) })
     }
   }
-  const disposePrimary = webServer.register({ kind: 'prefix', path: '/omnimux/publish', handler })
-  const disposeLegacy = webServer.register({ kind: 'prefix', path: '/dsh-publish', handler })
+  const disposePrimary = webServer.register({ kind: 'prefix', path: '/omnimux/publish', auth: 'required', handler })
+  const disposeLegacy = webServer.register({ kind: 'prefix', path: '/dsh-publish', auth: 'required', handler })
   return () => { disposePrimary?.(); disposeLegacy?.() }
 }

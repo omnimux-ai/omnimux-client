@@ -672,6 +672,7 @@ export function registerProductsRoutes(webServer, dispatcher) {
   const dispose = webServer.register({
     kind: 'prefix',
     path: PREFIX,
+    auth: 'required',
     async handler(req, res) {
       try {
         const method = (req.method || 'GET').toUpperCase()

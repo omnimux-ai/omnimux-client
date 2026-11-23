@@ -147,6 +147,7 @@ export function registerAppsRoutes(webServer, dispatcher) {
   const dispose = webServer.register({
     kind: 'prefix',
     path: '/omnimux/apps',
+    auth: 'required',
     async handler(req, res) {
       try {
         let body

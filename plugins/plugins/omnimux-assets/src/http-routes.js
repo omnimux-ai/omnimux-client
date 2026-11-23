@@ -812,6 +812,7 @@ export function registerAssetsRoutes(webServer, dispatcher) {
   const dispose = webServer.register({
     kind: 'prefix',
     path: '/omnimux/assets',
+    auth: 'required',
     async handler(req, res) {
       try {
         const method = (req.method || 'GET').toUpperCase()

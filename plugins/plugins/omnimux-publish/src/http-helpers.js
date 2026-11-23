@@ -1,6 +1,6 @@
 import { PublishError } from './publish-error.js'
 /** @typedef {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => Promise<void>} RouteHandler */
-/** @typedef {{ register: (route: { kind: 'prefix', path: string, handler: RouteHandler }) => () => void }} WebServer */
+/** @typedef {{ register: (route: { kind: 'prefix', path: string, auth?: 'anonymous' | 'required' | 'deny', handler: RouteHandler }) => () => void }} WebServer */
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1'])
 /** @type {Record<string, number>} */
 export const STATUS_BY_CODE = {

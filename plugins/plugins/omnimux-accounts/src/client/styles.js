@@ -1151,9 +1151,11 @@ const STYLE_ELEMENT_ID = 'omnimux-accounts-styles'
  */
 export function injectAccountsStyles() {
   if (typeof document === 'undefined') return
-  if (document.getElementById(STYLE_ELEMENT_ID)) return
-  const style = document.createElement('style')
-  style.id = STYLE_ELEMENT_ID
-  style.textContent = STYLES
-  document.head.append(style)
+  let style = document.getElementById(STYLE_ELEMENT_ID)
+  if (!style) {
+    style = document.createElement('style')
+    style.id = STYLE_ELEMENT_ID
+    document.head.append(style)
+  }
+  if (style.textContent !== STYLES) style.textContent = STYLES
 }

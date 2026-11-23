@@ -24,9 +24,9 @@ import { RequestGuard, WORKSHOP_READ_METHODS } from './workshop-request-guard.js
 import { WorkshopReadError } from './workshop-store.js';
 import { WorkshopQueryError } from './workshop-query.js';
 /** Fixed, GET-only methods: authentication and scope checks precede payload decoding. */
-export async function handleWorkshopApi(req, res, method, host, authorization) {
+export async function handleWorkshopApi(req, res, method, host, authorization, peer) {
     try {
-        await new RequestGuard(authorization).authorizeHeaders(req, method);
+        await new RequestGuard(authorization).authorizeHeaders(req, method, peer);
         if (!WORKSHOP_READ_METHODS.includes(method))
             throw new WorkshopReadError('INVALID_REQUEST', 400);
         const url = new URL(req.url || '/', 'http://127.0.0.1');
@@ -40,7 +40,7 @@ export async function handleWorkshopApi(req, res, method, host, authorization) {
         if (method === 'workshopCapabilities' || method === 'workshopInventory') {
             if (raw !== null)
                 throw new WorkshopReadError('INVALID_REQUEST', 400);
-            result = await host[method](req);
+            result = await host[method](req, peer);
         }
         else {
             if (!raw)
@@ -54,8 +54,8 @@ export async function handleWorkshopApi(req, res, method, host, authorization) {
             }
             result =
                 method === 'workshopQuery'
-                    ? await host.workshopQuery(req, input)
-                    : await host.workshopDetail(req, input);
+                    ? await host.workshopQuery(req, input, peer)
+                    : await host.workshopDetail(req, input, peer);
         }
         res.setHeader('cache-control', 'no-store');
         return sendJson(res, 200, { ok: true, ...result });

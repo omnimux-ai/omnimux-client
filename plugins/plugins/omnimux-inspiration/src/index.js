@@ -399,6 +399,9 @@ export function apply(ctx) {
     const dispose = webServer.register({
       kind: 'prefix',
       path: '/omnimux/inspiration/local',
+      // Browser extension calls this prefix via loopbackFetch (credentials: 'omit');
+      // assertLocalWrite and corsOriginFor enforce same-origin / extension-only admission.
+      auth: 'anonymous',
       async handler(req, res) {
         // The promise must be returned: this handler is what the host awaits
         // before it treats the request as served, so a fire-and-forget call

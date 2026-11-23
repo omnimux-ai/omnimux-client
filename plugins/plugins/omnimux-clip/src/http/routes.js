@@ -295,10 +295,11 @@ export function registerClipRoutes(webServer, dispatcher, deps = {}) {
   return webServer.register({
     kind: 'prefix',
     path: CLIP_API_PREFIX,
-    async handler(req, res) {
+    auth: 'required',
+    async handler(req, res, peer) {
       let tempPath
       try {
-        const rejection = requestRejection(req, deps.getConnection)
+        const rejection = requestRejection(req, deps.getConnection, peer)
         if (rejection !== undefined) return sendJson(res, rejection, { error: 'request-denied' })
         const method = (req.method || 'GET').toUpperCase()
         const { path, searchParams } = routeUrl(req.url)

@@ -115,6 +115,7 @@ export function registerAgentRoutes(webServer, deps = {}) {
   const stopScan = webServer.register({
     kind: 'exact',
     path: '/omnimux/agents',
+    auth: 'required',
     async handler(req, res) {
       if (methodNotAllowed(req, res, 'GET')) return
       // A scan reveals what lives on this machine; same-origin only.
@@ -132,6 +133,7 @@ export function registerAgentRoutes(webServer, deps = {}) {
   const stopUpdates = webServer.register({
     kind: 'exact',
     path: '/omnimux/agents/updates',
+    auth: 'required',
     async handler(req, res) {
       if (methodNotAllowed(req, res, 'GET')) return
       if (!assertLocal(req, res)) return
@@ -152,6 +154,7 @@ export function registerAgentRoutes(webServer, deps = {}) {
   const stopLogin = webServer.register({
     kind: 'exact',
     path: '/omnimux/agents/login',
+    auth: 'required',
     async handler(req, res) {
       if (methodNotAllowed(req, res, 'POST')) return
       try {
@@ -177,6 +180,7 @@ export function registerAgentRoutes(webServer, deps = {}) {
   const stopUpdate = webServer.register({
     kind: 'exact',
     path: '/omnimux/agents/update',
+    auth: 'required',
     async handler(req, res) {
       if (methodNotAllowed(req, res, 'POST')) return
       try {
@@ -213,6 +217,7 @@ export function registerAgentRoutes(webServer, deps = {}) {
   const stopSelect = webServer.register({
     kind: 'exact',
     path: '/omnimux/agents/select',
+    auth: 'required',
     async handler(req, res) {
       const method = (req.method || 'GET').toUpperCase()
       if (method === 'OPTIONS') {

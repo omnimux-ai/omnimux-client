@@ -33,26 +33,26 @@ export function createWorkshopReadHost(cfg, options = {}) {
     const query = new QueryService(options.sources || createWorkshopSources(cfg), inventory);
     const guard = new RequestGuard({ connection: options.connection, trustedOrigin: options.trustedOrigin,
         authorizeRead: options.authorizeRead || ((_req, method) => method === 'workshopCapabilities') });
-    const authorize = (req, method) => guard.authorizeHeaders(req, method);
+    const authorize = (req, method, peer) => guard.authorizeHeaders(req, method, peer);
     return {
-        async workshopCapabilities(req) {
-            await authorize(req, 'workshopCapabilities');
+        async workshopCapabilities(req, peer) {
+            await authorize(req, 'workshopCapabilities', peer);
             return { scopeKey: scope?.scopeKey || null, scopeLabel: scope?.label || '未核实', scopeVerified: scope?.complete === true,
                 connectionAuth: !!options.connection, exactOrigin: canonicalWorkshopOrigin(options.trustedOrigin) !== null,
                 operationAuth: false, registryVerify: false, unifiedPolicy: false, commitBarrier: false, writable: false,
                 reasons: [...(scope?.reasons || ['SCOPE_UNVERIFIED']), 'OPERATION_AUTH_UNVERIFIED', 'REGISTRY_VERIFY_UNAVAILABLE', 'COMMIT_BARRIER_UNAVAILABLE'] };
         },
-        async workshopInventory(req) {
-            await authorize(req, 'workshopInventory');
+        async workshopInventory(req, peer) {
+            await authorize(req, 'workshopInventory', peer);
             return inventory.reconcile();
         },
-        async workshopQuery(req, request) {
-            await authorize(req, 'workshopQuery');
+        async workshopQuery(req, request, peer) {
+            await authorize(req, 'workshopQuery', peer);
             assertWorkshopFields(request, ['view', 'query', 'domain', 'source', 'uninstalledOnly', 'queryRevision', 'cursor']);
             return query.query(request);
         },
-        async workshopDetail(req, request) {
-            await authorize(req, 'workshopDetail');
+        async workshopDetail(req, request, peer) {
+            await authorize(req, 'workshopDetail', peer);
             assertWorkshopFields(request, ['skillKey', 'sourceRef', 'installId']);
             return query.detail(request);
         },
@@ -384,12 +384,14 @@ export function apply(ctx, config) {
     });
     ctx.inject(['webServer'], (c) => {
         const server = c.webServer;
-        server.register({ kind: 'exact', path: '/omnimux-market', handler: (req, res) => handleApi(req, res, cfg) });
-        server.register({ kind: 'exact', path: '/omnimux-market/icon', handler: (req, res) => handleIcon(req, res, cfg) });
+        server.register({ kind: 'exact', path: '/omnimux-market', auth: 'required', handler: (req, res) => handleApi(req, res, cfg) });
+        server.register({ kind: 'exact', path: '/omnimux-market/icon', auth: 'required', handler: (req, res) => handleIcon(req, res, cfg) });
         const connection = {
             requestRejection(req) {
                 const service = c.get('connection');
-                return service?.requestRejection(req) ?? (service ? undefined : { status: 401 });
+                if (typeof service?.requestRejection === 'function')
+                    return service.requestRejection(req);
+                return { status: 401 };
             },
         };
         // cfg.skillsDir alone does not prove all effective provider roots or read authorization.
@@ -397,8 +399,8 @@ export function apply(ctx, config) {
             authorizeRead: (_req, method) => method === 'workshopCapabilities' };
         const workshop = createWorkshopReadHost(cfg, authorization);
         for (const method of WORKSHOP_READ_METHODS) {
-            server.register({ kind: 'exact', path: `/omnimux-market/workshop/${method}`,
-                handler: (req, res) => handleWorkshopApi(req, res, method, workshop, authorization) });
+            server.register({ kind: 'exact', path: `/omnimux-market/workshop/${method}`, auth: 'required',
+                handler: (req, res, peer) => handleWorkshopApi(req, res, method, workshop, authorization, peer) });
         }
     });
     // 插件配置页按 Host settings 命名空间分发 settings.plugin.item。

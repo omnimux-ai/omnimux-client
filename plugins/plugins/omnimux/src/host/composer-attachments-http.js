@@ -95,6 +95,7 @@ export function registerComposerAttachmentRoutes(webServer, dispatcher) {
   return webServer.register({
     kind: 'prefix',
     path: '/omnimux/composer/attachments',
+    auth: 'required',
     async handler(req, res) {
       try {
         const body = req.method === 'POST' ? await readJsonBody(req) : undefined

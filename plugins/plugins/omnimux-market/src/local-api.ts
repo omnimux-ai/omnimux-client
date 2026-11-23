@@ -34,10 +34,10 @@ import { WorkshopQueryError } from './workshop-query.js'
 import type { WorkshopDetailRequest } from './workshop-sources.js'
 
 export interface WorkshopApiHost {
-  workshopCapabilities(req: IncomingMessage): Promise<unknown>
-  workshopInventory(req: IncomingMessage): Promise<unknown>
-  workshopQuery(req: IncomingMessage, request: WorkshopQueryRequest): Promise<unknown>
-  workshopDetail(req: IncomingMessage, request: WorkshopDetailRequest): Promise<unknown>
+  workshopCapabilities(req: IncomingMessage, peer?: unknown): Promise<unknown>
+  workshopInventory(req: IncomingMessage, peer?: unknown): Promise<unknown>
+  workshopQuery(req: IncomingMessage, request: WorkshopQueryRequest, peer?: unknown): Promise<unknown>
+  workshopDetail(req: IncomingMessage, request: WorkshopDetailRequest, peer?: unknown): Promise<unknown>
 }
 
 /** Fixed, GET-only methods: authentication and scope checks precede payload decoding. */
@@ -47,9 +47,10 @@ export async function handleWorkshopApi(
   method: WorkshopReadMethod,
   host: WorkshopApiHost,
   authorization: WorkshopReadAuthorization,
+  peer?: unknown,
 ): Promise<void> {
   try {
-    await new RequestGuard(authorization).authorizeHeaders(req, method)
+    await new RequestGuard(authorization).authorizeHeaders(req, method, peer)
     if (!WORKSHOP_READ_METHODS.includes(method)) throw new WorkshopReadError('INVALID_REQUEST', 400)
     const url = new URL(req.url || '/', 'http://127.0.0.1')
     if (
@@ -64,7 +65,7 @@ export async function handleWorkshopApi(
     let result: unknown
     if (method === 'workshopCapabilities' || method === 'workshopInventory') {
       if (raw !== null) throw new WorkshopReadError('INVALID_REQUEST', 400)
-      result = await host[method](req)
+      result = await host[method](req, peer)
     } else {
       if (!raw) throw new WorkshopReadError('INVALID_REQUEST', 400)
       let input: unknown
@@ -75,8 +76,8 @@ export async function handleWorkshopApi(
       }
       result =
         method === 'workshopQuery'
-          ? await host.workshopQuery(req, input as WorkshopQueryRequest)
-          : await host.workshopDetail(req, input as WorkshopDetailRequest)
+          ? await host.workshopQuery(req, input as WorkshopQueryRequest, peer)
+          : await host.workshopDetail(req, input as WorkshopDetailRequest, peer)
     }
     res.setHeader('cache-control', 'no-store')
     return sendJson(res, 200, { ok: true, ...(result as object) })

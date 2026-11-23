@@ -115,9 +115,9 @@
     "test:agents-skills": "node --test scripts/verify-agents-skills-symlinks.test.mjs"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-client-store": "0.2.1-rc.3",
-    "@deepseek-ai/dsh-util-code-language": "0.2.1-rc.3",
-    "@deepseek-ai/dsh-util-workspace-path": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-client-store": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-util-code-language": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-util-workspace-path": "0.2.2-rc.5",
     "@shikijs/langs": "4.4.3",
     "acorn": "8.15.0",
     "anser": "2.3.5",
