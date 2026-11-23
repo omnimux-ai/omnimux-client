@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs'
 import { PublishError } from './publish-error.js'
 import { ACCOUNT_SOURCE_MESSAGE, isPublishingAccount } from './account-policy.js'
 import { isObject } from './shared/values.js'
-/** @typedef {Record<string, unknown> & { id: string, platform: 'tiktok', provider: 'tiktok_direct', status: 'active' | 'expiring' | 'expired' | 'error' }} AccountRow */
+import { accountPublishMode, pickAccountCapabilities } from './shared/tiktok-capabilities.js'
+/** @typedef {Record<string, unknown> & { id: string, platform: 'tiktok', provider: 'tiktok_direct', status: 'active' | 'expiring' | 'expired' | 'error', capabilities?: import('./shared/tiktok-capabilities.js').AccountCapabilities }} AccountRow */
 const DEFAULT_FS = { readFileSync }
 const ACCOUNT_KEYS = Object.freeze([
   'id', 'platform', 'provider', 'display_name', 'username', 'name', 'group', 'status', 'expires_at', 'connected_at',
@@ -21,6 +22,8 @@ export function pickAccount(raw) {
   }
   if (typeof row.id === 'number') out.id = String(row.id)
   if (typeof row.avatar_url === 'string' && /^https:\/\//i.test(row.avatar_url)) out.avatar_url = row.avatar_url
+  const capabilities = pickAccountCapabilities(row.capabilities)
+  if (capabilities) out.capabilities = capabilities
   return out
 }
 
@@ -73,6 +76,9 @@ export function accountAvailability(row) {
   if (status === 'expired') return { ok: false, reason: 'account token expired' }
   if (status === 'error') return { ok: false, reason: `account status error${typeof row.status === 'string' ? ` (${row.status})` : ''}` }
   if (row.agent_usable === false) return { ok: false, reason: 'agent_usable is false' }
+  if (accountPublishMode(row) === 'no_publish_scope') {
+    return { ok: false, reason: 'missing TikTok publish scope (video.upload or video.publish); reconnect account' }
+  }
   return { ok: true, reason: '' }
 }
 

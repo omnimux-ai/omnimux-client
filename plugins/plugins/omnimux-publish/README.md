@@ -74,11 +74,19 @@ curl -X POST "$B/omnimux/publish/media?filename=a.png" -H "Origin: http://127.0.
 | 字段 | 默认 | 说明 |
 |---|---|---|
 | `dataDir` | `$DSH_HOME/omnimux/publish` | 数据目录覆盖 |
-| `platforms` | 内置矩阵 | 平台能力矩阵深合并覆盖（media_types/supports_cover/supports_schedule/max_images/声明槽位） |
-| `statusMap` | 内置映射 | hub get 平台原始状态 → submitted/reviewing/published/failed（见 hub-tool-contracts.md §4） |
+| `platforms` | 内置矩阵 | 平台能力矩阵深合并覆盖（media_types/supports_cover/supports_schedule/max_images/声明槽位；TikTok 协议上限 35 张且仅支持 JPEG/WebP，实际单次上限以服务端配置为准） |
+| `statusMap` | 内置映射 | hub get 平台原始状态 → `submitted` / `reviewing` / `sent_to_inbox`（兼容 `SEND_TO_USER_INBOX` / `send_to_user_inbox` / `sent_to_inbox`）/ `published` / `failed` |
 | `maxMediaMb` | 512 | 单媒体入库上限 |
 | `submitTimeoutSeconds` | 120 | 单账号 create 超时 |
 | `accountsOverlayPath` | `$DSH_HOME/omnimux/accounts.json` | overlay 只读路径 |
+
+## TikTok 草稿箱上传与直发能力路由
+
+- 账号列表从 hub 透传 `capabilities: { upload_draft, publish_direct, max_media_items?, max_images? }`：
+  - **仅草稿上传（`upload_draft: true, publish_direct: false`）**：全部已选 TikTok 账号均为草稿模式时，Composer 切换为草稿箱上传态（零 `creator-info` 请求，隐藏 Direct Post 隐私/互动/商业披露选项）；单视频提交仅送 `video_url` 并剥离全部 Direct Post 选项；图文轮播仅允许 JPEG/WebP、禁混发，本地防错优先遵循服务端能力上限并兜底 TikTok 协议上限 35 张（文案不硬承诺 35 张，超服务端配置被拒时完整透传服务端原始报错），仅透传 `title` / `description` / `photo_cover_index` / `is_aigc`。送达后落为独立展示态 `sent_to_inbox`（「已送达草稿箱」），不触发直发审核隐私提示、不自动轮询，详情页展示草稿箱完成引导并支持手动点击「同步平台状态」追踪最终发布。
+  - **支持直发（`publish_direct: true`）**：保留 Direct Post 选项面板与 `creator-info` 拉取。
+  - **无发布权限（`upload_draft: false && publish_direct: false`）**：前后端同源 fail-closed 拦截提交，并引导重新授权 TikTok。
+  - **旧网关兼容（缺失 `capabilities`）**：默认折叠高级直发选项且零 `creator-info` 请求，展开时按需拉取且不阻断提交。
 
 ## 版本观察
 

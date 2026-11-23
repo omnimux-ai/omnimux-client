@@ -36,6 +36,29 @@ export function computeStatus(row, now = Date.now()) {
 }
 
 /**
+ * Whitelist-copy account publishing capabilities (`upload_draft`, `publish_direct`,
+ * and optional server-supplied `max_media_items` / `max_images` caps).
+ * Missing or malformed input returns undefined so callers can distinguish legacy responses.
+ * @param {unknown} raw
+ * @returns {{ upload_draft?: boolean, publish_direct?: boolean, max_media_items?: number, max_images?: number } | undefined}
+ */
+export function pickCapabilities(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const src = /** @type {Record<string, unknown>} */ (raw)
+  /** @type {{ upload_draft?: boolean, publish_direct?: boolean, max_media_items?: number, max_images?: number }} */
+  const out = {}
+  if (typeof src.upload_draft === 'boolean') out.upload_draft = src.upload_draft
+  if (typeof src.publish_direct === 'boolean') out.publish_direct = src.publish_direct
+  if (typeof src.max_media_items === 'number' && Number.isInteger(src.max_media_items) && src.max_media_items > 0) {
+    out.max_media_items = src.max_media_items
+  }
+  if (typeof src.max_images === 'number' && Number.isInteger(src.max_images) && src.max_images > 0) {
+    out.max_images = src.max_images
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+/**
  * @param {unknown} raw
  */
 export function pickAccount(raw) {
@@ -54,6 +77,8 @@ export function pickAccount(raw) {
   if (typeof row.id === 'number') out.id = String(row.id)
   const avatar = row.avatar_url
   if (typeof avatar === 'string' && isAllowedAvatarUrl(avatar, out.id)) out.avatar_url = avatar
+  const capabilities = pickCapabilities(row.capabilities)
+  if (capabilities) out.capabilities = capabilities
   return out
 }
 

@@ -484,3 +484,264 @@ describe('TikTok publish options', () => {
     assert.equal(tools.calls.filter((call) => call.name === 'omnimux_publish_presign').length, 0)
   })
 })
+
+describe('TikTok draft_only mode, SEND_TO_USER_INBOX, and gateway media-limit passthrough (#185)', () => {
+  it('strips Direct Post tiktok_options on draft_only video upload and forwards MEDIA_UPLOAD fields on photo draft', async () => {
+    freshService({
+      omnimux_accounts_list: () => ({
+        success: true,
+        data: {
+          accounts: [
+            {
+              id: 'draft-acc',
+              provider: 'tiktok_direct',
+              platform: 'tiktok',
+              username: 'creator_draft',
+              status: 'active',
+              capabilities: { upload_draft: true, publish_direct: false },
+            },
+          ],
+        },
+      }),
+    })
+
+    // 1. Video draft strips tiktok_options completely
+    const vid = media.putBuffer(Buffer.from('mp4-bytes'), { filename: 'clip.mp4', contentType: 'video/mp4' })
+    const videoDraft = store.createDraft({
+      type: 'video',
+      title: 'Video Draft',
+      description: 'desc',
+      media_ids: [vid.id],
+      settings: { publish_mode: 'draft', tiktok_options: { privacy_level: 'PUBLIC_TO_EVERYONE', allow_comment: false } },
+    })
+    store.assignAccounts(videoDraft.id, ['draft-acc'])
+    await service.run(videoDraft.id)
+    const videoCreate = tools.calls.filter((c) => c.name === 'omnimux_publish_create').at(-1)
+    assert.equal(Object.hasOwn(videoCreate.arguments, 'tiktok_options'), false)
+    assert.equal(Object.hasOwn(videoCreate.arguments, 'photo_cover_index'), false)
+
+    // 2. Photo draft omits tiktok_options and forwards title/description/photo_cover_index/is_aigc + content_type
+    const img1 = media.putBuffer(Buffer.from('jpg-1'), { filename: 'p1.jpg', contentType: 'image/jpeg' })
+    const img2 = media.putBuffer(Buffer.from('webp-2'), { filename: 'p2.webp', contentType: 'image/webp' })
+    const photoDraft = store.createDraft({
+      type: 'image',
+      title: 'Photo Carousel',
+      description: 'Photo body',
+      topics: ['omnimux'],
+      media_ids: [img1.id, img2.id],
+      settings: { publish_mode: 'draft', photo_cover_index: 1, is_aigc: true, tiktok_options: { privacy_level: 'SELF_ONLY' } },
+    })
+    store.assignAccounts(photoDraft.id, ['draft-acc'])
+    await service.run(photoDraft.id)
+    const photoCreate = tools.calls.filter((c) => c.name === 'omnimux_publish_create').at(-1)
+    assert.equal(Object.hasOwn(photoCreate.arguments, 'tiktok_options'), false)
+    assert.equal(photoCreate.arguments.title, 'Photo Carousel')
+    assert.equal(photoCreate.arguments.description, 'Photo body\n#omnimux')
+    assert.equal(photoCreate.arguments.photo_cover_index, 1)
+    assert.equal(photoCreate.arguments.is_aigc, true)
+    assert.deepEqual(photoCreate.arguments.media_items, [
+      { url: 'https://pub/p1.jpg', content_type: 'image/jpeg' },
+      { url: 'https://pub/p2.webp', content_type: 'image/webp' },
+    ])
+  })
+
+  it('maps SEND_TO_USER_INBOX to sent_to_inbox and still allows manual refresh to published', async () => {
+    let phase = 'inbox'
+    freshService({
+      omnimux_accounts_list: () => ({
+        success: true,
+        data: {
+          accounts: [
+            {
+              id: 'draft-acc',
+              provider: 'tiktok_direct',
+              platform: 'tiktok',
+              username: 'creator_draft',
+              status: 'active',
+              capabilities: { upload_draft: true, publish_direct: false },
+            },
+          ],
+        },
+      }),
+      omnimux_publish_get: () => (phase === 'inbox'
+        ? { success: true, data: { id: 1, status: 'sent_to_inbox', result: { status: 'SEND_TO_USER_INBOX' } } }
+        : { success: true, data: { id: 1, status: 'published', result: { status: 'PUBLISH_COMPLETE' } } }),
+    })
+    const vid = media.putBuffer(Buffer.from('mp4-bytes'), { filename: 'clip.mp4', contentType: 'video/mp4' })
+    const draft = store.createDraft({ type: 'video', title: 'Inbox clip', media_ids: [vid.id] })
+    store.assignAccounts(draft.id, ['draft-acc'])
+    await service.run(draft.id)
+
+    const first = await service.refresh(draft.id)
+    assert.equal(first.record.subtasks[0].status, 'sent_to_inbox')
+    assert.equal(first.record.subtasks[0].raw_status, 'SEND_TO_USER_INBOX')
+    assert.equal(first.record.aggregate, 'sent_to_inbox')
+
+    phase = 'published'
+    const second = await service.refresh(draft.id)
+    assert.equal(second.record.subtasks[0].status, 'published')
+    assert.equal(second.record.aggregate, 'published')
+  })
+
+  it('preserves exact gateway SOCIAL_OPS_MAX_MEDIA_ITEMS rejection message on submit and retry without overwriting to 35', async () => {
+    const serverMsg = 'invalid media: too many media_items: max 10'
+    freshService({
+      omnimux_accounts_list: () => ({
+        success: true,
+        data: {
+          accounts: [
+            {
+              id: 'draft-acc',
+              provider: 'tiktok_direct',
+              platform: 'tiktok',
+              username: 'creator_draft',
+              status: 'active',
+              capabilities: { upload_draft: true, publish_direct: false },
+            },
+          ],
+        },
+      }),
+      omnimux_publish_create: () => {
+        throw new Error(serverMsg)
+      },
+    })
+    const mediaIds = Array.from({ length: 12 }, (_, idx) => (
+      media.putBuffer(Buffer.from(`img-${idx}`), { filename: `p${idx}.jpg`, contentType: 'image/jpeg' }).id
+    ))
+    const draft = store.createDraft({ type: 'image', title: '12 photos', media_ids: mediaIds })
+    store.assignAccounts(draft.id, ['draft-acc'])
+
+    const view = await service.run(draft.id)
+    assert.equal(view.aggregate, 'failed')
+    assert.equal(view.subtasks[0].status, 'failed')
+    assert.match(view.subtasks[0].error, /too many media_items: max 10/)
+    assert.doesNotMatch(view.subtasks[0].error, /35/)
+
+    await assert.rejects(
+      () => service.retryTask(view.subtasks[0].id),
+      (err) => err instanceof PublishError && err.code === 'hub-tool-error' && /too many media_items: max 10/.test(err.message),
+    )
+  })
+})
+
+describe('TikTok draft upload (video.upload / sent_to_inbox) (#185)', () => {
+  it('strips Direct Post tiktok_options for draft_only video accounts and tags publish_mode=draft', async () => {
+    freshService({
+      omnimux_accounts_list: () => ({
+        success: true,
+        data: {
+          accounts: [
+            { id: 'acc-draft', provider: 'tiktok_direct', platform: 'tiktok', status: 'active', capabilities: { upload_draft: true, publish_direct: false } },
+          ],
+        },
+      }),
+    })
+    const { media: vid } = media.importBuffer(Buffer.from('mp4-bytes'), { filename: 'demo.mp4', content_type: 'video/mp4' })
+    const draft = store.create({
+      type: 'video',
+      title: 'Video title',
+      description: 'Video desc',
+      media_ids: [vid.id],
+      account_ids: ['acc-draft'],
+      settings: { tiktok_options: { privacy_level: 'PUBLIC_TO_EVERYONE', allow_comment: false } },
+    })
+    const view = await service.run(draft.id)
+    assert.equal(view.subtasks[0].publish_mode, 'draft')
+    const create = tools.calls.find((call) => call.name === 'omnimux_publish_create')
+    assert.equal(Object.hasOwn(create.arguments, 'tiktok_options'), false)
+    assert.equal(Object.hasOwn(create.arguments, 'title'), false)
+    assert.equal(Object.hasOwn(create.arguments, 'photo_cover_index'), false)
+    assert.deepEqual(create.arguments.media_items, [{ url: 'https://pub/demo.mp4' }])
+  })
+
+  it('forwards photo carousel draft metadata and strips tiktok_options for draft_only image accounts', async () => {
+    freshService({
+      omnimux_accounts_list: () => ({
+        success: true,
+        data: {
+          accounts: [
+            { id: 'acc-draft', provider: 'tiktok_direct', platform: 'tiktok', status: 'active', capabilities: { upload_draft: true, publish_direct: false } },
+          ],
+        },
+      }),
+    })
+    const { media: img1 } = media.importBuffer(Buffer.from('jpg-1'), { filename: 'one.jpg', content_type: 'image/jpeg' })
+    const { media: img2 } = media.importBuffer(Buffer.from('webp-2'), { filename: 'two.webp', content_type: 'image/webp' })
+    const draft = store.create({
+      type: 'image',
+      title: 'Lookbook',
+      description: 'Autumn drop',
+      topics: ['fashion', '#tiktok'],
+      media_ids: [img1.id, img2.id],
+      account_ids: ['acc-draft'],
+      settings: {
+        photo_cover_index: 1,
+        is_aigc: true,
+        tiktok_options: { privacy_level: 'PUBLIC_TO_EVERYONE', allow_comment: true },
+      },
+    })
+    await service.run(draft.id)
+    const create = tools.calls.find((call) => call.name === 'omnimux_publish_create')
+    assert.equal(Object.hasOwn(create.arguments, 'tiktok_options'), false)
+    assert.equal(create.arguments.title, 'Lookbook')
+    assert.equal(create.arguments.description, 'Autumn drop\n#fashion #tiktok')
+    assert.equal(create.arguments.photo_cover_index, 1)
+    assert.equal(create.arguments.is_aigc, true)
+    assert.deepEqual(create.arguments.media_items, [
+      { url: 'https://pub/one.jpg', content_type: 'image/jpeg' },
+      { url: 'https://pub/two.webp', content_type: 'image/webp' },
+    ])
+  })
+
+  it('blocks no_publish_scope accounts fail-closed before any presign or create call', async () => {
+    freshService({
+      omnimux_accounts_list: () => ({
+        success: true,
+        data: {
+          accounts: [
+            { id: 'acc-noscope', provider: 'tiktok_direct', platform: 'tiktok', status: 'active', capabilities: { upload_draft: false, publish_direct: false } },
+          ],
+        },
+      }),
+    })
+    const { media: vid } = media.importBuffer(Buffer.from('mp4-bytes'), { filename: 'demo.mp4', content_type: 'video/mp4' })
+    const draft = store.create({ type: 'video', description: 'demo', media_ids: [vid.id], account_ids: ['acc-noscope'] })
+    await assert.rejects(() => service.run(draft.id), (error) => error.code === 'validation-failed'
+      && error.details.errors.some((item) => item.code === 'account-unavailable'))
+    assert.equal(tools.calls.filter((call) => call.name === 'omnimux_publish_presign').length, 0)
+    assert.equal(tools.calls.filter((call) => call.name === 'omnimux_publish_create').length, 0)
+  })
+
+  it('maps SEND_TO_USER_INBOX to sent_to_inbox and allows later manual refresh to published', async () => {
+    let stage = 'inbox'
+    freshService({
+      omnimux_accounts_list: () => ({
+        success: true,
+        data: {
+          accounts: [
+            { id: 'acc-draft', provider: 'tiktok_direct', platform: 'tiktok', status: 'active', capabilities: { upload_draft: true, publish_direct: false } },
+          ],
+        },
+      }),
+      omnimux_publish_get: () => (stage === 'inbox'
+        ? { success: true, data: { id: 1, status: 'published', result: { status: 'SEND_TO_USER_INBOX' } } }
+        : { success: true, data: { id: 1, status: 'published', result: { status: 'PUBLISH_COMPLETE' } } }),
+    })
+    const { media: vid } = media.importBuffer(Buffer.from('mp4-bytes'), { filename: 'demo.mp4', content_type: 'video/mp4' })
+    const draft = store.create({ type: 'video', description: 'demo', media_ids: [vid.id], account_ids: ['acc-draft'] })
+    await service.run(draft.id)
+
+    const inboxView = await service.refresh(draft.id)
+    assert.equal(inboxView.record.subtasks[0].status, 'sent_to_inbox')
+    assert.equal(inboxView.record.subtasks[0].raw_status, 'SEND_TO_USER_INBOX')
+    assert.equal(inboxView.record.subtasks[0].settled_at, null)
+    assert.equal(inboxView.record.aggregate, 'sent_to_inbox')
+
+    stage = 'published'
+    const finalView = await service.refresh(draft.id)
+    assert.equal(finalView.record.subtasks[0].status, 'published')
+    assert.equal(finalView.record.subtasks[0].raw_status, 'PUBLISH_COMPLETE')
+    assert.ok(finalView.record.subtasks[0].settled_at != null)
+    assert.equal(finalView.record.aggregate, 'published')
+  })
+})

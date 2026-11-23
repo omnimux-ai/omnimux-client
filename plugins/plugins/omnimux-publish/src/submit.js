@@ -6,10 +6,12 @@ import { requirePublishingAccounts } from './accounts.js'
 import { ACCOUNT_SOURCE_MESSAGE, PUBLISH_PROVIDER } from './account-policy.js'
 import { createSubmitMedia, composeContent } from './submit-media.js'
 import { buildCreateTikTokOptions } from './shared/tiktok-options.js'
+import { accountPublishMode } from './shared/tiktok-capabilities.js'
+import { isObject } from './shared/values.js'
 export { composeContent } from './submit-media.js'
 /** @typedef {import('./submit-media.js').ExecutionOptions} ExecutionOptions */
 
-const INFLIGHT_TASK_STATUSES = new Set(['submitted', 'reviewing'])
+const REFRESHABLE_TASK_STATUSES = new Set(['submitted', 'reviewing', 'sent_to_inbox'])
 const TERMINAL_TASK_STATUSES = new Set(['published', 'failed'])
 
 /**
@@ -74,6 +76,65 @@ export function createSubmitService(deps) {
     return store.getView(recordId)
   }
 
+  /**
+   * Build gateway createPost payload aligned with account capabilities:
+   * - draft_only + video: strip all Direct Post tiktok_options (gateway sends video_url only)
+   * - draft_only + image (MEDIA_UPLOAD): omit Direct Post options, forward only title / description / photo_cover_index / is_aigc
+   * - direct / legacy_unknown: preserve buildCreateTikTokOptions and optional photo metadata
+   * @param {import('./record-types.js').PublishRecord} record
+   * @param {Record<string, unknown> | undefined} accountRow
+   * @param {string} accountId
+   * @param {Record<string, string>} uploads
+   */
+  function buildPostPayload(record, accountRow, accountId, uploads) {
+    const content = composeContent(record)
+    const mode = accountPublishMode(accountRow)
+    const includeContentType = mode === 'draft_only' && record.type === 'image'
+    const mediaItems = record.media_ids.map((mediaId) => {
+      const meta = includeContentType ? media.get(mediaId) : null
+      /** @type {Record<string, unknown>} */
+      const item = { url: uploads[mediaId] }
+      if (meta && typeof meta.content_type === 'string' && meta.content_type !== '') {
+        item.content_type = meta.content_type
+      }
+      return item
+    })
+    const settings = isObject(record.settings) ? record.settings : {}
+    /** @type {Parameters<typeof channel.createPost>[0]} */
+    const payload = {
+      account_ids: [accountId],
+      content,
+      media_items: mediaItems,
+    }
+    if (mode === 'draft_only') {
+      if (record.type === 'image') {
+        const title = typeof record.title === 'string' ? record.title.trim() : ''
+        const descParts = []
+        if (typeof record.description === 'string' && record.description.trim() !== '') descParts.push(record.description.trim())
+        if (Array.isArray(record.topics) && record.topics.length > 0) {
+          descParts.push(record.topics.map((t) => `#${String(t).replace(/^#/, '')}`).join(' '))
+        }
+        const description = descParts.join('\n')
+        if (title !== '') payload.title = title
+        if (description !== '') payload.description = description
+        if (typeof settings.photo_cover_index === 'number' && Number.isInteger(settings.photo_cover_index)) {
+          payload.photo_cover_index = settings.photo_cover_index
+        }
+        if (typeof settings.is_aigc === 'boolean') payload.is_aigc = settings.is_aigc
+      }
+      return payload
+    }
+    const tiktokOptions = buildCreateTikTokOptions(settings.tiktok_options)
+    if (tiktokOptions) payload.tiktok_options = tiktokOptions
+    if (record.type === 'image') {
+      if (typeof settings.photo_cover_index === 'number' && Number.isInteger(settings.photo_cover_index)) {
+        payload.photo_cover_index = settings.photo_cover_index
+      }
+      if (typeof settings.is_aigc === 'boolean') payload.is_aigc = settings.is_aigc
+    }
+    return payload
+  }
+
   /** Upload once per media; isolate per-account create failures. @param {string} recordId @param {ExecutionOptions} [opts] */
   async function dispatchNow(recordId, opts = {}) {
     const record = store.get(recordId)
@@ -82,7 +143,8 @@ export function createSubmitService(deps) {
     if (tasks.length === 0 || tasks.some((task) => task.provider !== PUBLISH_PROVIDER)) {
       throw new PublishError('post-provider-mismatch', ACCOUNT_SOURCE_MESSAGE)
     }
-    await requirePublishingAccounts(accounts, tasks.map((task) => task.account_id))
+    const verifiedAccounts = await requirePublishingAccounts(accounts, tasks.map((task) => task.account_id))
+    const accountsById = new Map(verifiedAccounts.map((row) => [String(row.id), row]))
     let uploads
     try {
       uploads = await ensureUploaded(record, opts)
@@ -93,16 +155,11 @@ export function createSubmitService(deps) {
       }
       return store.getView(recordId)
     }
-    const content = composeContent(record)
-    const mediaItems = record.media_ids.map((mediaId) => ({ url: uploads[mediaId] }))
-    const tiktokOptions = buildCreateTikTokOptions(record.settings?.tiktok_options)
     for (const task of tasks) {
       const perTask = execOpts(opts)
       try {
-        const data = await channel.createPost({
-          account_ids: [task.account_id], content, media_items: mediaItems,
-          ...(tiktokOptions ? { tiktok_options: tiktokOptions } : {}),
-        }, perTask)
+        const payload = buildPostPayload(record, accountsById.get(String(task.account_id)), task.account_id, uploads)
+        const data = await channel.createPost(payload, perTask)
         const postId = extractPostId(data, 'omnimux_publish_create')
         store.updateTask(task.id, { status: 'submitted', post_id: postId, error: null, submitted_at: now() })
       } catch (error) {
@@ -138,19 +195,27 @@ export function createSubmitService(deps) {
     /** @type {Array<{ task_id: string, error: string }>} */
     const syncErrors = []
     for (const task of record.subtasks) {
-      if (!task.post_id || !INFLIGHT_TASK_STATUSES.has(task.status)) continue
+      if (!task.post_id || !REFRESHABLE_TASK_STATUSES.has(task.status)) continue
       try {
         if (task.provider !== PUBLISH_PROVIDER) throw new PublishError('post-provider-mismatch', ACCOUNT_SOURCE_MESSAGE)
         await requirePublishingAccounts(accounts, [task.account_id])
         const data = await channel.getPost(task.post_id, opts)
         const raw = extractRawStatus(data)
-        if (raw == null) {
+        const resultObj = isObject(data.result) ? data.result : null
+        const upstreamRaw = resultObj && typeof resultObj.status === 'string' && resultObj.status.trim() !== ''
+          ? resultObj.status.trim()
+          : null
+        if (raw == null && upstreamRaw == null) {
           syncErrors.push({ task_id: task.id, error: `get response missing status: ${JSON.stringify(data).slice(0, 200)}` })
           continue
         }
-        const mapped = config.statusMap[String(raw).toLowerCase()]
+        const rawKey = String(raw || upstreamRaw).toLowerCase()
+        const upstreamKey = upstreamRaw ? upstreamRaw.toLowerCase() : ''
+        const mapped = (upstreamKey === 'send_to_user_inbox' ? config.statusMap[upstreamKey] : undefined)
+          ?? config.statusMap[rawKey]
+          ?? (upstreamKey ? config.statusMap[upstreamKey] : undefined)
         /** @type {import('./record-types.js').TaskPatch} */
-        const patch = { raw_status: raw }
+        const patch = { raw_status: upstreamRaw || raw }
         if (mapped && mapped !== task.status) {
           patch.status = mapped
           if (TERMINAL_TASK_STATUSES.has(mapped)) patch.settled_at = now()
@@ -171,7 +236,7 @@ export function createSubmitService(deps) {
       throw new PublishError('task-not-retryable', `task ${taskId} 状态为 ${rawTask.status}，只有 failed 子任务可以重试`)
     }
     if (rawTask.provider !== PUBLISH_PROVIDER) throw new PublishError('post-provider-mismatch', ACCOUNT_SOURCE_MESSAGE)
-    await requirePublishingAccounts(accounts, [rawTask.account_id])
+    const verified = await requirePublishingAccounts(accounts, [rawTask.account_id])
     store.updateTask(taskId, { status: 'submitting', error: null, settled_at: null, attempts: (rawTask.attempts || 0) + 1 })
     let uploads
     try {
@@ -181,14 +246,9 @@ export function createSubmitService(deps) {
       store.updateTask(taskId, { status: 'failed', error: `media upload failed: ${message}`, settled_at: now() })
       throw new PublishError('upload-failed', `retry of ${taskId} failed during media upload: ${message}`)
     }
-    const content = composeContent(rawRecord)
-    const mediaItems = rawRecord.media_ids.map((mediaId) => ({ url: uploads[mediaId] }))
-    const tiktokOptions = buildCreateTikTokOptions(rawRecord.settings?.tiktok_options)
+    const payload = buildPostPayload(rawRecord, verified[0], rawTask.account_id, uploads)
     try {
-      const data = await channel.createPost({
-        account_ids: [rawTask.account_id], content, media_items: mediaItems,
-        ...(tiktokOptions ? { tiktok_options: tiktokOptions } : {}),
-      }, execOpts(opts))
+      const data = await channel.createPost(payload, execOpts(opts))
       const postId = extractPostId(data, 'omnimux_publish_create')
       const task = store.updateTask(taskId, { status: 'submitted', post_id: postId, error: null, submitted_at: now(), raw_status: null })
       return { record: store.getView(rawRecord.id), task }

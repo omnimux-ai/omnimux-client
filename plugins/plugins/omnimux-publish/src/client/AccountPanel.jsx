@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Button } from 'dsh-ui-kit'
 import { listHubAccounts } from './api.js'
 import { groupAccountsByPlatform } from './capabilities.js'
+import { accountPublishMode } from '../shared/tiktok-capabilities.js'
 
 /**
  * M5 账号选择面板：平台 → 账号两级勾选（发布页左侧）。
@@ -15,7 +16,7 @@ import { groupAccountsByPlatform } from './capabilities.js'
  *   onChange: (accountIds: string[], selectedRows: Array<Record<string, unknown>>) => void,
  * }} props
  */
-export function AccountPanel({ t, selectedIds, onManageAccounts, onChange }) {
+export function AccountPanel({ t, selectedIds, onManageAccounts, onRowsLoaded, onChange }) {
   const [phase, setPhase] = useState('loading')
   const [rows, setRows] = useState([])
   const [error, setError] = useState('')
@@ -26,6 +27,7 @@ export function AccountPanel({ t, selectedIds, onManageAccounts, onChange }) {
       if (disposed) return
       if (result.ok && result.body && Array.isArray(result.body.accounts)) {
         setRows(result.body.accounts)
+        onRowsLoaded?.(result.body.accounts)
         setPhase('ready')
         setError('')
         return
@@ -151,6 +153,7 @@ export function AccountPanel({ t, selectedIds, onManageAccounts, onChange }) {
                       t={t}
                       account={account}
                       checked={selected.has(String(account.id))}
+                      onManageAccounts={onManageAccounts}
                       onToggle={(checked) => { toggleAccount(String(account.id), checked) }}
                     />
                   ))}
@@ -167,33 +170,56 @@ export function AccountPanel({ t, selectedIds, onManageAccounts, onChange }) {
   )
 }
 
+function capabilityBadge(t, account) {
+  const mode = accountPublishMode(account)
+  if (mode === 'draft_only') return { label: t('accounts.cap.draft'), tone: 'draft' }
+  if (mode === 'direct') return { label: t('accounts.cap.direct'), tone: 'direct' }
+  if (mode === 'no_publish_scope') return { label: t('accounts.cap.noScope'), tone: 'warn' }
+  return null
+}
+
 /**
  * @param {{
  *   t: (key: string, vars?: Record<string, unknown>) => string,
- *   account: Record<string, unknown> & { usable: boolean, unusableReason: 'expired' | 'error' | 'agentOff' | '' },
+ *   account: Record<string, unknown> & { usable: boolean, unusableReason: 'expired' | 'error' | 'agentOff' | 'noPublishScope' | '' },
  *   checked: boolean,
+ *   onManageAccounts?: () => void,
  *   onToggle: (checked: boolean) => void,
  * }} props
  */
-function AccountRow({ t, account, checked, onToggle }) {
+function AccountRow({ t, account, checked, onManageAccounts, onToggle }) {
   const name = String(account.display_name || account.username || account.name || account.id)
   const rowClass = account.usable
     ? 'omnimux-publish-accounts-row'
     : 'omnimux-publish-accounts-row is-disabled'
+  const cap = capabilityBadge(t, account)
+  const isNoScope = !account.usable && account.unusableReason === 'noPublishScope'
   return (
-    <label className={rowClass}>
-      <input
-        type="checkbox"
-        checked={checked}
-        disabled={!account.usable}
-        onChange={(event) => { onToggle(event.currentTarget.checked) }}
-      />
-      <span className="omnimux-publish-accounts-name">{name}</span>
-      {account.usable ? null : (
-        <span className="omnimux-publish-accounts-unavail">
-          {t('accounts.unavailable', { reason: t(`accounts.reason.${account.unusableReason}`) })}
-        </span>
-      )}
-    </label>
+    <div className="omnimux-publish-accounts-row-wrap">
+      <label className={rowClass}>
+        <input
+          type="checkbox"
+          checked={checked}
+          disabled={!account.usable}
+          onChange={(event) => { onToggle(event.currentTarget.checked) }}
+        />
+        <span className="omnimux-publish-accounts-name">{name}</span>
+        {(account.usable || isNoScope) && cap ? (
+          <span className={`omnimux-publish-cap-badge ${cap.tone}`}>{cap.label}</span>
+        ) : null}
+        {account.usable ? null : (
+          <span className="omnimux-publish-accounts-unavail">
+            {t('accounts.unavailable', { reason: t(`accounts.reason.${account.unusableReason}`) })}
+          </span>
+        )}
+      </label>
+      {isNoScope && typeof onManageAccounts === 'function' ? (
+        <div className="omnimux-publish-accounts-row-action">
+          <Button type="button" size="xs" variant="outline" onClick={onManageAccounts}>
+            {t('form.scopeMissing.action')}
+          </Button>
+        </div>
+      ) : null}
+    </div>
   )
 }

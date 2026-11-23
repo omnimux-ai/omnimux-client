@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Button, IconChevronLeftOutline14, IconRefreshOutline16 } from 'dsh-ui-kit'
-import { recordDetail, refreshRecord, retryTask } from './api.js'
+import { errorText, recordDetail, refreshRecord, retryTask } from './api.js'
 import { isPublishingAccount, isRetryablePublishingTask } from '../account-policy.js'
-import { showsPrivateNotice } from './detail-notice.js'
+import { showsInboxDraftNotice, showsPrivateNotice } from './detail-notice.js'
 
 /**
  * A6/M8 记录详情：per-account 子任务状态展开 + 手动刷新（POST /records/refresh）
@@ -26,7 +26,7 @@ export function RecordDetail({ t, recordId, onBack, onChanged }) {
         setRecord(result.body.record)
         setError('')
       } else {
-        setError(String(result.body?.error || `HTTP ${result.status}`))
+        setError(errorText(result.body, result.status))
       }
       setBusy('')
       return true
@@ -48,7 +48,7 @@ export function RecordDetail({ t, recordId, onBack, onChanged }) {
         const syncErrors = Array.isArray(result.body.sync_errors) ? result.body.sync_errors : []
         setError(syncErrors.length > 0 ? t('detail.syncError', { reason: syncErrors[0].error }) : '')
       } else {
-        setError(String(result.body?.error || `HTTP ${result.status}`))
+        setError(errorText(result.body, result.status))
       }
       setBusy('')
       onChanged()
@@ -60,7 +60,7 @@ export function RecordDetail({ t, recordId, onBack, onChanged }) {
     })
   }, [recordId, t, onChanged])
 
-  /** 单账号重试：失败子任务回 submitted（新 post_id）。 */
+  /** 单账号重试：失败子任务回 submitted（新 post_id）；失败时完整透传服务端错误并回刷子任务错误态。 */
   const retry = useCallback((taskId) => {
     setBusy(taskId)
     return retryTask(taskId).then((result) => {
@@ -68,7 +68,10 @@ export function RecordDetail({ t, recordId, onBack, onChanged }) {
         setRecord(result.body.record)
         setError('')
       } else {
-        setError(String(result.body?.error || `HTTP ${result.status}`))
+        setError(errorText(result.body, result.status))
+        void recordDetail(recordId).then((latest) => {
+          if (latest.ok && latest.body && latest.body.record) setRecord(latest.body.record)
+        }).catch(() => {})
       }
       setBusy('')
       onChanged()
@@ -78,7 +81,7 @@ export function RecordDetail({ t, recordId, onBack, onChanged }) {
       setBusy('')
       return false
     })
-  }, [onChanged])
+  }, [onChanged, recordId])
 
   if (!record) {
     return (
@@ -106,7 +109,7 @@ export function RecordDetail({ t, recordId, onBack, onChanged }) {
           size="sm"
           leadingIcon={<IconRefreshOutline16 />}
           loading={busy === 'refresh'}
-          disabled={!tasks.some((task) => isPublishingAccount(task) && task.post_id && ['submitted', 'reviewing', 'submitting'].includes(task.status))}
+          disabled={!tasks.some((task) => isPublishingAccount(task) && task.post_id && ['submitted', 'reviewing', 'submitting', 'sent_to_inbox'].includes(task.status))}
           onClick={() => { void refresh() }}
         >
           {t('detail.refresh')}
@@ -116,6 +119,17 @@ export function RecordDetail({ t, recordId, onBack, onChanged }) {
       {error ? <div role="alert" className="omnimux-publish-alert warn">{error}</div> : null}
       {record.error ? (
         <div role="alert" className="omnimux-publish-alert banner">{String(record.error)}</div>
+      ) : null}
+      {showsInboxDraftNotice(tasks) ? (
+        <div role="status" className="omnimux-publish-alert inbox" data-testid="inbox-draft-notice">
+          <div className="omnimux-publish-inbox-title">{t('detail.inboxNotice.title')}</div>
+          <div className="omnimux-publish-inbox-body">{t('detail.inboxNotice.body')}</div>
+          <ol className="omnimux-publish-inbox-steps">
+            <li>{t('detail.inboxNotice.step1')}</li>
+            <li>{t('detail.inboxNotice.step2')}</li>
+            <li>{t('detail.inboxNotice.step3')}</li>
+          </ol>
+        </div>
       ) : null}
       {showsPrivateNotice(tasks, record) ? (
         <div className="omnimux-publish-alert banner">{t('detail.privateNotice')}</div>

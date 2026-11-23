@@ -21,8 +21,8 @@ const modalJsx = readFileSync(join(here, '../../src/client/ConnectModal.jsx'), '
 describe('ConnectModal E2E & Visual Hierarchy Flow', () => {
   it('renders 3-column grid for primary supported platforms without single-item blank', () => {
     assert.match(STYLES, /\.omnimux-accounts-platform-grid\s*\{[^}]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\);/)
-    assert.equal(SUPPORTED_PLATFORMS.length, 3, 'exactly 3 primary supported platforms')
-    assert.deepEqual([...SUPPORTED_PLATFORMS], ['tiktok', 'instagram', 'youtube'])
+    assert.equal(SUPPORTED_PLATFORMS.length, 1, 'only official tiktok_direct platform is currently supported')
+    assert.deepEqual([...SUPPORTED_PLATFORMS], ['tiktok'])
   })
 
   it('renders dedicated coming channels strip for secondary channels', () => {
@@ -31,8 +31,8 @@ describe('ConnectModal E2E & Visual Hierarchy Flow', () => {
     assert.match(modalJsx, /omnimux-accounts-coming-icons/)
     assert.match(modalJsx, /omnimux-accounts-mini-icon/)
     assert.match(STYLES, /\.omnimux-accounts-coming-strip\s*\{/)
-    assert.equal(COMING_PLATFORMS.length, 2, 'exactly 2 coming platforms')
-    assert.deepEqual([...COMING_PLATFORMS], ['x', 'facebook'])
+    assert.equal(COMING_PLATFORMS.length, 4, 'instagram, youtube, x and facebook are listed as coming soon')
+    assert.deepEqual([...COMING_PLATFORMS], ['instagram', 'youtube', 'x', 'facebook'])
   })
 
   it('ensures platform button cards preserve direct horizontal row layout without inner wrappers', () => {
@@ -44,8 +44,8 @@ describe('ConnectModal E2E & Visual Hierarchy Flow', () => {
   })
 
   it('provides bilingual strings for coming channels hint and platform descriptions', () => {
-    assert.equal(zh['connect.comingChannels'], 'X (推特)、Facebook (脸书) 等官方渠道接入中')
-    assert.equal(en['connect.comingChannels'], 'X (Twitter), Facebook and more official channels are coming soon')
+    assert.equal(zh['connect.comingChannels'], 'Instagram、YouTube、X (推特)、Facebook 等官方渠道接入中')
+    assert.equal(en['connect.comingChannels'], 'Instagram, YouTube, X (Twitter), Facebook and more official channels are coming soon')
 
     for (const p of [...SUPPORTED_PLATFORMS, ...COMING_PLATFORMS]) {
       assert.ok(zh[`platform.desc.${p}`], `missing zh description for ${p}`)

@@ -29,6 +29,23 @@ const jsonOut = {
   render: (_args, value) => [{ type: 'text', text: JSON.stringify(value, null, 2) }],
 }
 
+const ACCOUNTS_PROVIDER = 'tiktok_direct'
+
+/**
+ * Whitelist-copy account publishing capabilities (`upload_draft`, `publish_direct`).
+ * @param {unknown} raw
+ * @returns {{ upload_draft?: boolean, publish_direct?: boolean } | undefined}
+ */
+function pickCapabilities(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const src = /** @type {Record<string, unknown>} */ (raw)
+  /** @type {{ upload_draft?: boolean, publish_direct?: boolean }} */
+  const out = {}
+  if (typeof src.upload_draft === 'boolean') out.upload_draft = src.upload_draft
+  if (typeof src.publish_direct === 'boolean') out.publish_direct = src.publish_direct
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
 /**
  * @param {{
  *   tools: { register: (tool: object) => unknown, get?: (name: string) => any },
@@ -39,14 +56,14 @@ export function apply(ctx) {
   const homeDir = process.env.DSH_HOME || process.env.HOME || '.'
   const metaStore = createAccountMetaStore({ home: homeDir })
 
-  async function listZernioAccounts() {
+  async function listDirectAccounts() {
     const tool = ctx.tools.get?.('omnimux_accounts_list')
     if (!tool || typeof tool.execute !== 'function') throw new Error('needs-hub: install the OmniMux execution hub')
-    const res = await tool.execute({ provider: 'zernio' })
+    const res = await tool.execute({ provider: ACCOUNTS_PROVIDER })
     if (res?.success === false) throw new Error(res.error?.message || res.message || 'account list failed')
     const rows = Array.isArray(res?.accounts) ? res.accounts : res?.data?.accounts
     if (!Array.isArray(rows)) throw new Error('invalid account list response')
-    return rows.filter((acc) => acc?.provider === 'zernio')
+    return rows.filter((acc) => acc?.provider === ACCOUNTS_PROVIDER)
   }
 
   ctx.tools.register({
@@ -59,20 +76,22 @@ export function apply(ctx) {
     }),
     output: jsonOut,
     async execute(args) {
-      const rawAccounts = await listZernioAccounts()
+      const rawAccounts = await listDirectAccounts()
       const meta = metaStore.read()
       let accounts = rawAccounts.map((acc) => {
         const id = String(acc.id || '')
         const overlaid = meta[id] ? mergeMeta(acc, meta[id]) : { ...acc }
+        const capabilities = pickCapabilities(acc.capabilities)
         return {
           id,
           platform: overlaid.platform,
           provider: overlaid.provider,
-          account_name: overlaid.account_name || overlaid.name || id,
+          account_name: overlaid.account_name || overlaid.display_name || overlaid.name || id,
           avatar_url: overlaid.avatar_url,
           group: overlaid.group || null,
           agent_usable: overlaid.agent_usable !== false,
           status: overlaid.status || 'active',
+          ...(capabilities ? { capabilities } : {}),
         }
       })
 
@@ -103,9 +122,9 @@ export function apply(ctx) {
     async execute(args) {
       if (Object.hasOwn(args, 'agent_usable')) throw new Error('account-permission-owner-only: change permissions in account settings')
       const id = String(args.id)
-      const rows = await listZernioAccounts()
+      const rows = await listDirectAccounts()
       if (!rows.some((acc) => String(acc.id) === id)) {
-        throw new Error('account-provider-mismatch: account does not belong to Zernio')
+        throw new Error('account-provider-mismatch: account does not belong to tiktok_direct')
       }
       const patch = {}
       if (args.group !== undefined) patch.group = args.group === '' ? null : String(args.group)

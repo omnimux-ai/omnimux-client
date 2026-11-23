@@ -10,11 +10,12 @@ export { aggregateStatus, displayStatus } from '../shared/record-status.js'
 /** @typedef {import('../shared/record-status.js').AggregateStatus} AggregateStatus */
 /** @typedef {import('../shared/record-status.js').DisplayStatus} DisplayStatus */
 
-/** 六态中文单真源对照字典 @type {Record<string, string>} */
+/** 聚合与展示态中文单真源对照字典 @type {Record<string, string>} */
 export const STATUS_LABEL = {
   draft: '草稿',
   publishing: '发布中',
   reviewing: '审核中',
+  sent_to_inbox: '已送达草稿箱',
   published: '已发布',
   partial_failed: '部分失败',
   failed: '失败',

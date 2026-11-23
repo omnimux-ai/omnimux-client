@@ -23,7 +23,12 @@ export function createSubmitMedia({ store, media, channel }) {
     return (record.media_ids || []).map((id) => {
       const row = media.get(id)
       if (!row) throw new PublishError('media-not-found', `media ${id} not found（草稿引用的媒体已被移出媒体仓）`)
-      return { id: row.id, kind: row.kind }
+      return {
+        id: row.id,
+        kind: row.kind,
+        filename: row.filename,
+        content_type: row.content_type,
+      }
     })
   }
 
