@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { SOCIAL_DATA_CATALOG } from '../plugins/omnimux/src/official/social-data.js'
 
 /**
  * Gate for the preset skill surface after rc.3.
@@ -80,4 +81,110 @@ test('sync-agent-presets.sh never writes preset skills into the target skill roo
     assert.equal(existsSync(join(home, 'skills', id, 'SKILL.md')), false, `${id} must not be written in rc.3`)
   }
   assert.equal(readFileSync(join(owned, 'SKILL.md'), 'utf8'), 'user-owned\n', 'an existing skill was overwritten')
+})
+
+/**
+ * Collect concrete Agent tool names from authoritative registration sites across
+ * `plugins/*` (dsh.manifest.json tools, `ctx.tools.register(...)`, `tool('...')`,
+ * and `STT_TOOL_NAME`) while skipping client UI directories so arbitrary object
+ * `name:` properties cannot create false-passes.
+ */
+function collectWorkspaceRegisteredTools(pluginsDir) {
+  const names = new Set()
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (['node_modules', 'dist', 'lib', '.git', 'tests', 'skills', 'catalog', 'client', 'scripts'].includes(entry.name)) continue
+      const full = join(dir, entry.name)
+      if (entry.isDirectory()) {
+        walk(full)
+        continue
+      }
+      if (!entry.isFile()) continue
+      if (entry.name === 'dsh.manifest.json') {
+        const manifest = JSON.parse(readFileSync(full, 'utf8'))
+        for (const item of manifest.capabilities?.tools ?? []) {
+          if (typeof item?.name === 'string') names.add(item.name)
+        }
+        continue
+      }
+      if (!/\.(js|mjs|ts)$/.test(entry.name) || /\.(test|spec)\.(js|mjs|ts)$/.test(entry.name)) continue
+      const text = readFileSync(full, 'utf8')
+      for (const re of [
+        /\btool\(\s*['"]([a-z][a-z0-9_]+)['"]/g,
+        /\btools\.register\(\s*\{[\s\S]{0,160}?\bname:\s*['"]([a-z][a-z0-9_]+)['"]/g,
+        /\bSTT_TOOL_NAME\s*=\s*['"]([a-z][a-z0-9_]+)['"]/g,
+      ]) {
+        for (const match of text.matchAll(re)) names.add(match[1])
+      }
+    }
+  }
+  walk(pluginsDir)
+  return names
+}
+
+test('social research preset skills only reference live registered OmniMux runtime tools, valid social-data capabilities, and synced registry entries', () => {
+  const pluginsDir = join(root, 'plugins')
+  const registered = collectWorkspaceRegisteredTools(pluginsDir)
+  assert.ok(registered.size >= 40 && registered.size <= 250, `unexpected registered tool set size: ${registered.size}`)
+
+  const marketSkillsDir = join(pluginsDir, 'omnimux-market', 'skills')
+  const skillIds = [
+    'omnimux-social-data',
+    'omnimux-outlier-post-finder',
+    'omnimux-creator-teardown',
+    'omnimux-transcript-intelligence',
+    'omnimux-trend-discovery',
+    'omnimux-competitor-research',
+    'omnimux-social-listening',
+    'omnimux-product-demand',
+    'omnimux-content-repurposing',
+  ]
+  const files = [
+    ...skillIds.map((id) => join(marketSkillsDir, id, 'SKILL.md')),
+    join(marketSkillsDir, 'omnimux-social-data', 'references', 'README.md'),
+    join(marketSkillsDir, 'omnimux-social-data', 'references', 'TRIGGER-MATRIX.md'),
+  ]
+
+  // Match both backticked and plain concrete tool names across all OmniMux tool prefixes
+  // while skipping wildcard shorthand such as `omnimux_tiktok_shop_*`.
+  const concreteToolRe = /\b((?:omnimux|harvest|video|analytics|inspiration|publish|assets|products|workflow|clip|browser|accounts|skillhub|plaza|plugin|connector)_[a-z0-9_]+)\b/g
+  // Non-tool identifiers that share a prefix (parameter names & video_process capability names).
+  const nonToolIdentifiers = new Set(['video_id', 'video_inline_analysis_prepare'])
+  const unknownTools = []
+
+  // Validate every explicit omnimux_social_data capability listed in skills against SOCIAL_DATA_CATALOG.
+  const validCapabilities = new Set(Object.values(SOCIAL_DATA_CATALOG).flatMap((group) => Object.keys(group)))
+  const capRe = /\b((?:shop|creator)_[a-z0-9_]+)\b/g
+  const unknownCapabilities = []
+
+  for (const file of files) {
+    assert.equal(existsSync(file), true, `missing ${file}`)
+    const text = readFileSync(file, 'utf8')
+    const rel = file.slice(root.length + 1)
+    for (const match of text.matchAll(concreteToolRe)) {
+      const toolName = match[1]
+      if (toolName.endsWith('_') && text.charAt(match.index + toolName.length) === '*') continue
+      if (nonToolIdentifiers.has(toolName)) continue
+      if (!registered.has(toolName)) {
+        unknownTools.push(`${rel}: ${toolName}`)
+      }
+    }
+    for (const match of text.matchAll(capRe)) {
+      const cap = match[1]
+      if (cap.endsWith('_') && text.charAt(match.index + cap.length) === '*') continue
+      if (!validCapabilities.has(cap)) {
+        unknownCapabilities.push(`${rel}: ${cap}`)
+      }
+    }
+  }
+
+  assert.deepEqual(unknownTools, [], `social research skills reference unregistered tools:\n${unknownTools.join('\n')}`)
+  assert.deepEqual(unknownCapabilities, [], `social research skills reference unknown social-data capabilities:\n${unknownCapabilities.join('\n')}`)
+
+  // Ensure plugins.registry.json matches omnimux-market/dsh.manifest.json skills exactly.
+  const manifest = JSON.parse(readFileSync(join(pluginsDir, 'omnimux-market', 'dsh.manifest.json'), 'utf8'))
+  const registry = JSON.parse(readFileSync(join(root, 'plugins.registry.json'), 'utf8'))
+  const marketEntry = registry.plugins.find((entry) => entry.id === 'omnimux-market')
+  assert.ok(marketEntry, 'plugins.registry.json missing omnimux-market entry')
+  assert.deepEqual(marketEntry.skills, manifest.skills, 'plugins.registry.json omnimux-market.skills out of sync with dsh.manifest.json')
 })
