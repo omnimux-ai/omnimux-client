@@ -34,6 +34,32 @@ const CSS = `
   padding-top: 16px;
   border-top: 0.5px solid var(--dsw-alias-border-l2);
 }
+/* The official SegmentedTabs at the Plugins page's width rules; a label that cannot fit ends in an ellipsis. */
+.dshDesktopSettingsTabs {
+  align-self: flex-start;
+  box-sizing: border-box;
+  width: fit-content;
+  min-width: 240px;
+  max-width: 100%;
+}
+.dshDesktopSettingsTabs [role="tab"] { min-width: 0; }
+.dshDesktopSettingsTabLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dshDesktopSettingsTabPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+}
+.dshDesktopSettingsTabPanel[hidden] { display: none; }
+.dshDesktopSettingsTabPanel > .dshDesktopSettingsGroup:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
 .dshDesktopSettingsList { display: grid; gap: 8px; }
 .dshDesktopSettingsChoice {
   display: flex;
@@ -94,6 +120,25 @@ const CSS = `
   box-shadow: 0 0 0 1px var(--dsw-alias-brand-primary);
 }
 .dshDesktopSettingsChoice[aria-disabled="true"]:not([data-selected="true"]) { opacity: .58; }
+/* Inside Desktop settings, choice cards such as the Profiles use the official settings card material
+   (docs/ui-radius.md#settings-cards). A selected card takes the platform fill and the selected border,
+   as the default Agent preset does. */
+.dshDesktopSettings .dshDesktopSettingsChoice {
+  padding: 14px 16px;
+  border: 0.5px solid var(--dsw-alias-settings-card-stroke);
+  border-radius: var(--dsw-radius-xl);
+  background: var(--dsw-alias-settings-card-fill);
+  transition: border-color .16s, background .16s;
+}
+.dshDesktopSettings .dshDesktopSettingsChoice[data-selected="true"] {
+  border-color: var(--dsw-alias-border-selected);
+  box-shadow: none;
+  background: var(--dsw-alias-bg-module-platform);
+}
+.dshDesktopSettings .dshDesktopSettingsChoice:focus-visible {
+  outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: -2px;
+}
 .dshDesktopSettingsChoiceCopy { display: block; flex: 1; min-width: 0; }
 .dshDesktopSettingsToggleCopy {
   display: flex;
@@ -232,9 +277,31 @@ button.dshDesktopSettingsButton {
   min-width: 0;
   padding: 0 12px;
 }
+.dshDesktopSettingsDataPath {
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 18px;
+  user-select: text;
+}
+.dshDesktopSettingsRowActions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+.dshDesktopSettingsRowActions .dshDesktopSettingsButton {
+  min-width: 0;
+  padding: 0 12px;
+}
 .dshDesktopSettingsButton:hover:not(:disabled),
 button.dshDesktopSettingsButton:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover);
+}
+a.dshDesktopSettingsButton,
+a.dshDesktopSettingsButton:hover {
+  color: var(--dsw-alias-label-primary);
+  text-decoration: none;
 }
 .dshDesktopSettingsButtonSecondary,
 button.dshDesktopSettingsButtonSecondary {
@@ -316,6 +383,39 @@ button.dshDesktopSettingsButton:disabled {
   font-size: 11px;
   line-height: 1.4;
 }
+.dshDesktopSettingsIconChoices { display: flex; flex: 0 0 auto; gap: 8px; }
+.dshDesktopSettingsIconChoice,
+button.dshDesktopSettingsIconChoice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  box-sizing: border-box;
+  width: 72px;
+  padding: 8px 6px 6px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+}
+.dshDesktopSettingsIconChoice :is(picture, img) { display: block; }
+.dshDesktopSettingsIconChoice img { width: 40px; height: 40px; }
+.dshDesktopSettingsIconChoice:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.dshDesktopSettingsIconChoice:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 2px;
+}
+.dshDesktopSettingsIconChoice[aria-checked="true"] {
+  border-color: var(--dsw-alias-brand-primary);
+  box-shadow: 0 0 0 1px var(--dsw-alias-brand-primary);
+  color: var(--dsw-alias-label-primary);
+}
+.dshDesktopSettingsIconChoice:disabled { cursor: not-allowed; }
+.dshDesktopSettingsIconChoice:disabled:not([aria-checked="true"]) { opacity: .58; }
 .dshDesktopSettingsMaterialCopy { min-width: 0; }
 .dshDesktopSettingsSelect,
 button.dshDesktopSettingsSelect {

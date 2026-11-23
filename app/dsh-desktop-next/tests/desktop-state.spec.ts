@@ -6,7 +6,7 @@ import { DEFAULT_PREFERENCES, type DesktopState } from '../src/desktop-contract.
 import { DesktopPreferenceStore, portsChanged, parsePreferences } from '../src/desktop-preferences.ts'
 import { DesktopDiagnostics } from '../src/diagnostics.ts'
 import { NextProfiles, WEB_BUNDLES } from '../src/profiles.ts'
-import { NextRecovery } from '../src/recovery.ts'
+import { NextRecovery, REPAIR_UNDO_WINDOW } from '../src/recovery.ts'
 
 const homes: string[] = []
 const logs: DesktopDiagnostics[] = []
@@ -33,6 +33,59 @@ it('keeps desktop preferences separate from the Host and validates all IPC-contr
   expect(portsChanged({ ...DEFAULT_PREFERENCES }, { ...DEFAULT_PREFERENCES, port: 3210 })).toBe(true)
 })
 
+it('keeps the Host startup limit out of the file released builds validate, and reads its own file leniently', () => {
+  const { home } = environment()
+  const warnings: string[] = []
+  const store = new DesktopPreferenceStore(home, message => { warnings.push(message) })
+  expect(parsePreferences({ hostStartupTimeout: 180 }).hostStartupTimeout).toBe(180)
+  expect(parsePreferences({ hostStartupTimeout: 'none' }).hostStartupTimeout).toBe('none')
+  for (const hostStartupTimeout of [59, 601, 90.5, '180', null, 'unlimited']) expect(() => parsePreferences({ hostStartupTimeout })).toThrow('hostStartupTimeout')
+  store.write({ ...DEFAULT_PREFERENCES, closeToTray: false, hostStartupTimeout: 300 })
+  // 2.0.22 and earlier reject any unknown key in desktop-preferences.json, so a downgrade must find none there.
+  const main = JSON.parse(readFileSync(store.file, 'utf8')) as Record<string, unknown>
+  expect(Object.keys(main).sort()).toEqual(Object.keys(DEFAULT_PREFERENCES).filter(key => key !== 'hostStartupTimeout' && key !== 'appIcon').sort())
+  expect(JSON.parse(readFileSync(store.extraFile, 'utf8'))).toEqual({ hostStartupTimeout: 300, appIcon: 'default' })
+  expect(new DesktopPreferenceStore(home).read()).toMatchObject({ closeToTray: false, hostStartupTimeout: 300 })
+  // A later release's keys survive, and an invalid value falls back to the default instead of opening recovery.
+  writeFileSync(store.extraFile, JSON.stringify({ hostStartupTimeout: 5, laterPreference: 'kept' }))
+  expect(store.read().hostStartupTimeout).toBe(60)
+  expect(warnings).toEqual([`Ignored an invalid hostStartupTimeout in ${store.extraFile}`])
+  store.writeExtra({ hostStartupTimeout: 'none' })
+  expect(JSON.parse(readFileSync(store.extraFile, 'utf8'))).toEqual({ hostStartupTimeout: 'none', laterPreference: 'kept' })
+  expect(() => store.writeExtra({ hostStartupTimeout: 30 })).toThrow('hostStartupTimeout')
+  for (const text of ['{broken', '[]', 'null']) {
+    writeFileSync(store.extraFile, text)
+    expect(store.readExtra()).toEqual({ hostStartupTimeout: 60, appIcon: 'default' })
+  }
+  // Only the extra file changes: an unreadable main file is never replaced by defaults.
+  writeFileSync(store.file, '{broken preferences')
+  store.writeExtra({ hostStartupTimeout: 120 })
+  expect(readFileSync(store.file, 'utf8')).toBe('{broken preferences')
+  expect(store.readExtra()).toEqual({ hostStartupTimeout: 120, appIcon: 'default' })
+  expect(() => store.read()).toThrow()
+})
+
+it('keeps the app icon beside the startup limit, out of the file released builds validate', () => {
+  const { home } = environment()
+  const warnings: string[] = []
+  const store = new DesktopPreferenceStore(home, message => { warnings.push(message) })
+  expect(parsePreferences({ appIcon: 'classic' }).appIcon).toBe('classic')
+  for (const appIcon of ['whale-tail', '', null, 1]) expect(() => parsePreferences({ appIcon })).toThrow('appIcon')
+  store.write({ ...DEFAULT_PREFERENCES, appIcon: 'classic' })
+  expect(JSON.parse(readFileSync(store.file, 'utf8'))).not.toHaveProperty('appIcon')
+  expect(JSON.parse(readFileSync(store.extraFile, 'utf8'))).toEqual({ hostStartupTimeout: 60, appIcon: 'classic' })
+  expect(new DesktopPreferenceStore(home).read().appIcon).toBe('classic')
+  // Setup saves the icon alone; a 2.0.23 extra file without it reads as the default.
+  writeFileSync(store.extraFile, JSON.stringify({ hostStartupTimeout: 300 }))
+  expect(store.readExtra()).toEqual({ hostStartupTimeout: 300, appIcon: 'default' })
+  store.writeExtra({ appIcon: 'classic' })
+  expect(JSON.parse(readFileSync(store.extraFile, 'utf8'))).toEqual({ hostStartupTimeout: 300, appIcon: 'classic' })
+  expect(() => store.writeExtra({ appIcon: 'neon' as 'classic' })).toThrow('appIcon')
+  writeFileSync(store.extraFile, JSON.stringify({ appIcon: 'neon' }))
+  expect(store.read().appIcon).toBe('default')
+  expect(warnings).toEqual([`Ignored an invalid appIcon in ${store.extraFile}`])
+})
+
 it('backs up a malformed manifest, repairs without deleting data, and restores the last working config', async () => {
   const { profiles, recovery, home } = environment()
   const dir = profiles.directory('desktop')
@@ -48,7 +101,9 @@ it('backs up a malformed manifest, repairs without deleting data, and restores t
   writeFileSync(join(home, 'credentials.json'), 'do not change')
   writeFileSync(join(home, 'cordis.patch.yml'), 'global broken')
   const backup = await profiles.recover('desktop')
-  expect(readFileSync(backup!, 'utf8')).toBe('[broken: yaml')
+  expect(readFileSync(join(backup, 'package.json'), 'utf8')).toBe('{ broken JSON')
+  expect(readFileSync(join(backup, 'cordis.patch.yml'), 'utf8')).toBe('[broken: yaml')
+  expect(recovery.repairBackup('desktop')?.directory).toBe(backup)
   expect(readFileSync(join(checkpoint.directory, 'package.json'), 'utf8')).toBe(original)
   expect(JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).dsh.profile.bundles).toEqual(WEB_BUNDLES)
   expect(profiles.features('desktop')).toEqual({ market: false, remoteControl: false })
@@ -60,6 +115,46 @@ it('backs up a malformed manifest, repairs without deleting data, and restores t
   expect(profiles.features('desktop')).toEqual({ market: true, remoteControl: true })
   recovery.repairGlobalPatch()
   expect(readFileSync(join(home, 'cordis.patch.yml'), 'utf8')).toBe('[]\n')
+})
+
+it('offers the latest repair backup as a restore target until a restore replaces the repaired configuration', async () => {
+  const { profiles, recovery } = environment()
+  const dir = profiles.directory('desktop')
+  // Backups sort by their millisecond names, so each step starts in a later millisecond.
+  const later = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 5))
+  profiles.setFeatures('desktop', { market: true, remoteControl: true })
+  profiles.finishOnboarding('desktop')
+  const original = readFileSync(join(dir, 'package.json'), 'utf8')
+  recovery.checkpoint('desktop')
+  expect(recovery.repairBackup('desktop')).toBeNull()
+  await later()
+  const backup = await profiles.recover('desktop')
+  await later()
+  // The repaired Profile starts successfully before the user undoes the repair.
+  recovery.checkpoint('desktop')
+  const repair = recovery.repairBackup('desktop')!
+  expect(repair).toMatchObject({ directory: backup })
+  expect(recovery.checkpoints('desktop').map(item => item.id)).not.toContain(repair.id)
+  expect(recovery.find('desktop', repair.id)).toEqual(repair)
+  expect(recovery.find('desktop', 'missing')).toBeUndefined()
+  expect(profiles.onboardingRequired('desktop')).toBe(true)
+  await later()
+  await recovery.restore('desktop', repair.id)
+  expect(readFileSync(join(dir, 'package.json'), 'utf8')).toBe(original)
+  expect(profiles.features('desktop')).toEqual({ market: true, remoteControl: true })
+  expect(profiles.onboardingRequired('desktop')).toBe(false)
+  expect(recovery.repairBackup('desktop')).toBeNull()
+})
+
+it('stops offering to undo a repair once the Profile has more recent backups than it reads', async () => {
+  const { profiles, recovery } = environment()
+  await profiles.recover('desktop')
+  // Backups sort by their millisecond names; the later ones must not share the repair's millisecond.
+  await new Promise(resolve => setTimeout(resolve, 5))
+  for (let index = 1; index < REPAIR_UNDO_WINDOW; index++) recovery.backup('desktop', 'before-plugin-disable')
+  expect(recovery.repairBackup('desktop')).not.toBeNull()
+  recovery.backup('desktop', 'before-plugin-enable')
+  expect(recovery.repairBackup('desktop')).toBeNull()
 })
 
 it('refuses corrupt backups and linked configuration before modifying original files', async () => {

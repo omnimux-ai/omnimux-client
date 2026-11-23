@@ -1,15 +1,17 @@
-const injected = new Set<string>();
-
 /**
- * Insert a kit stylesheet once per id. Safe to call from every CSS-module
- * import; a no-op in non-DOM environments (typecheck / SSR).
+ * Insert or update a kit stylesheet in place by id. Reuses existing DOM nodes
+ * across HMR reloads and sibling plugin bundles; a no-op in non-DOM environments.
  */
 export function injectCss(id: string, css: string): void {
   if (typeof document === "undefined") return;
-  if (injected.has(id)) return;
-  injected.add(id);
-  const style = document.createElement("style");
-  style.setAttribute("data-dsh-ui-kit", id);
-  style.textContent = css;
-  document.head.appendChild(style);
+  const selector = `style[data-dsh-ui-kit=${JSON.stringify(id)}]`;
+  let style = document.querySelector(selector);
+  if (!style) {
+    style = document.createElement("style");
+    style.setAttribute("data-dsh-ui-kit", id);
+    document.head.appendChild(style);
+  }
+  if (style.textContent !== css) {
+    style.textContent = css;
+  }
 }

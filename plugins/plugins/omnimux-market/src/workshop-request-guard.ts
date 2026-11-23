@@ -30,11 +30,14 @@ export function canonicalWorkshopOrigin(value: unknown): string | null {
 export class RequestGuard {
   constructor(private readonly authorization: WorkshopReadAuthorization) {}
 
-  async authorizeHeaders(req: IncomingMessage, operation: WorkshopReadMethod): Promise<void> {
+  async authorizeHeaders(req: IncomingMessage, operation: WorkshopReadMethod, peer?: unknown): Promise<void> {
     const { connection, trustedOrigin, authorizeRead } = this.authorization
-    if (!connection || typeof connection.requestRejection !== 'function') throw new WorkshopReadError('AUTH_REQUIRED', 401)
-    const rejection = connection.requestRejection(req)
-    if (rejection) throw new WorkshopReadError(rejection.status === 401 ? 'AUTH_REQUIRED' : 'FORBIDDEN_OPERATION', rejection.status === 401 ? 401 : 403)
+    const admittedPeer = peer !== undefined && peer !== null && typeof peer === 'object'
+    if (!admittedPeer) {
+      if (!connection || typeof connection.requestRejection !== 'function') throw new WorkshopReadError('AUTH_REQUIRED', 401)
+      const rejection = connection.requestRejection(req)
+      if (rejection) throw new WorkshopReadError(rejection.status === 401 ? 'AUTH_REQUIRED' : 'FORBIDDEN_OPERATION', rejection.status === 401 ? 401 : 403)
+    }
     const expected = canonicalWorkshopOrigin(trustedOrigin)
     if (!expected) throw new WorkshopReadError('ORIGIN_UNVERIFIED', 503)
     const count = req.rawHeaders?.filter((name, index) => index % 2 === 0 && name.toLowerCase() === 'origin').length ?? 0

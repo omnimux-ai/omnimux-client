@@ -416,11 +416,13 @@ export function syncMenuIcons(root) {
 export function ensurePlacementStyles(doc) {
   if (!doc || !doc.head) return
   const STYLE_ID = 'dsh-omnimux-menu-placement'
-  if (doc.getElementById(STYLE_ID)) return
-
-  const style = doc.createElement('style')
-  style.id = STYLE_ID
-  style.textContent = `
+  let style = doc.getElementById(STYLE_ID)
+  if (!style) {
+    style = doc.createElement('style')
+    style.id = STYLE_ID
+    doc.head.appendChild(style)
+  }
+  const cssText = `
     /* OmniMux Adaptive Composer Menu Placement */
     [data-menu-placement="bottom"] [class*="overlayAnchor"],
     [data-composer-card][data-menu-placement="bottom"] [class*="overlayAnchor"],
@@ -430,8 +432,10 @@ export function ensurePlacementStyles(doc) {
       pointer-events: none !important;
     }
     /* 仅底选弹窗菜单（如+号命令卡片）在特定条件下方展开 */
-    [data-menu-placement="bottom"] [class*="_1q_ULW_card"],
-    [class*="_1q_ULW_card"][data-placement="bottom"] {
+    [data-menu-placement="bottom"] [class*="overlayAnchor"] > [class*="_card"],
+    [data-menu-placement="bottom"] [class*="overlayAnchor"] > [role="listbox"],
+    [data-composer-card] [class*="overlayAnchor"] > [class*="_card"][data-placement="bottom"],
+    [data-composer-card] [class*="overlayAnchor"] > [role="listbox"][data-placement="bottom"] {
       top: calc(100% + 4px) !important;
       bottom: auto !important;
       pointer-events: auto !important;
@@ -440,18 +444,17 @@ export function ensurePlacementStyles(doc) {
     /* 默认（斜杠联想、输入框在底部）贴在输入框上方。
        输入框在页面顶部且加号处于展开时，同一菜单改到输入框下方，避免被顶出可视区域。 */
     [data-composer-card] [data-trigger-menu],
-    [data-composer-card] [class*="iRJKyq_menu"],
-    [data-trigger-menu],
-    [class*="iRJKyq_menu"] {
+    [data-composer-card] [class*="overlayAnchor"] > [class*="_menu"],
+    [data-trigger-menu] {
       top: auto !important;
       bottom: calc(100% + 4px) !important;
       pointer-events: auto !important;
       z-index: 1000 !important;
     }
     [data-composer-card]:has(button[aria-haspopup="listbox"][aria-expanded="true"])[data-menu-placement="bottom"] [data-trigger-menu],
-    [data-composer-card]:has(button[aria-haspopup="listbox"][aria-expanded="true"])[data-menu-placement="bottom"] [class*="iRJKyq_menu"],
+    [data-composer-card]:has(button[aria-haspopup="listbox"][aria-expanded="true"])[data-menu-placement="bottom"] [class*="overlayAnchor"] > [class*="_menu"],
     [data-trigger-menu][data-placement="bottom"],
-    [class*="iRJKyq_menu"][data-placement="bottom"] {
+    [data-composer-card] [class*="overlayAnchor"] > [class*="_menu"][data-placement="bottom"] {
       position: absolute !important;
       left: 0 !important;
       right: 0 !important;
@@ -460,11 +463,10 @@ export function ensurePlacementStyles(doc) {
     }
     /* 所有输入框菜单均赋予最高层级（z-index: 1000），彻底杜绝被页面内胶囊栏（120）或卡片遮挡 */
     [data-composer-card] [data-trigger-menu],
-    [data-composer-card] [class*="iRJKyq_menu"],
-    [data-composer-card] [class*="_1q_ULW_card"],
-    [data-trigger-menu],
-    [class*="iRJKyq_menu"],
-    [class*="_1q_ULW_card"] {
+    [data-composer-card] [class*="overlayAnchor"] > [class*="_menu"],
+    [data-composer-card] [class*="overlayAnchor"] > [class*="_card"],
+    [data-composer-card] [class*="overlayAnchor"] > [role="listbox"],
+    [data-trigger-menu] {
       pointer-events: auto !important;
       z-index: 1000 !important;
     }
@@ -476,7 +478,7 @@ export function ensurePlacementStyles(doc) {
       display: none !important;
     }
   `
-  doc.head.appendChild(style)
+  if (style.textContent !== cssText) style.textContent = cssText
 }
 
 /** 加号按钮：aria-haspopup=listbox。斜杠联想没有这个按钮展开态。 */
@@ -629,7 +631,7 @@ export function syncAllComposerMenus(doc = (typeof document !== 'undefined' ? do
   ensurePlacementStyles(doc)
   const patchedIcons = syncMenuIcons(doc)
 
-  const menus = Array.from(doc.querySelectorAll('[data-trigger-menu], [class*="iRJKyq_menu"], [class*="_1q_ULW_card"]'))
+  const menus = Array.from(doc.querySelectorAll('[data-trigger-menu], [data-composer-card] [class*="overlayAnchor"] > [role="listbox"], [data-composer-card] [class*="overlayAnchor"] > [class*="_menu"], [data-composer-card] [class*="overlayAnchor"] > [class*="_card"]'))
   let placedBelowCount = 0
   for (const menu of menus) {
     if (syncMenuPlacement(menu, doc)) {
@@ -716,7 +718,7 @@ export function installMenuAutoSync(doc = (typeof document !== 'undefined' ? doc
     if (!target) return
 
     // 1. 如果点击的是加号按钮，通知关闭其它互斥浮层（如技能面板、模型选择器）
-    if (target.closest?.('button[aria-label="指令"], button[class*="add"], [class*="Q7WfXG_add"]')) {
+    if (target.closest?.('button[aria-haspopup="listbox"], button[aria-label="指令"], button[class*="_add"], button[class*="add"]')) {
       if (win && typeof win.dispatchEvent === 'function') {
         try {
           const Evt = win.CustomEvent || CustomEvent

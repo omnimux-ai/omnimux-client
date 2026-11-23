@@ -1,4 +1,8 @@
 /** General renderer state omits credentials; browser login links use a separate native operation. */
+import type { DesktopFailureStage } from '../../dsh-plugin-desktop/src/recovery-copy.ts'
+import type { DesktopAppIcon } from './app-icon.ts'
+import type { DesktopHostExit } from './exit-code.ts'
+import { DEFAULT_HOST_STARTUP_TIMEOUT, type DesktopStartupTimeoutFailure, type HostStartupTimeout } from './host-startup-limit.ts'
 import type { Features, OnboardingChoices } from './profiles.ts'
 import type { DesktopLanHttpsRuntimeSnapshot } from './lan-https-runtime.ts'
 import type { DesktopPermissions } from './permissions.ts'
@@ -36,13 +40,17 @@ export interface DesktopPreferences {
   jobFailed: boolean
   scheduleCompleted: boolean
   scheduleFailed: boolean
+  /** How long a Host start may take before recovery opens; stored apart, see desktop-preferences.ts. */
+  hostStartupTimeout: HostStartupTimeout
+  /** The artwork in the Dock, window frames and tray; stored apart, see desktop-preferences.ts. */
+  appIcon: DesktopAppIcon
 }
 
 export const DEFAULT_PREFERENCES: Readonly<DesktopPreferences> = Object.freeze({
   closeToTray: true, macosMaterial: 'transparent', windowsMaterial: 'off', linuxMaterial: 'off',
   browserAccess: false, networkExposure: 'loopback', port: defaultDesktopWebPort(), lanPort: 0, logLevel: 'info', developerLogging: false,
   sidebarFooterCompat: true, sidebarFooterBalanced: true, notifications: true, turnCompleted: true, turnFailed: true, jobCompleted: false, jobFailed: false,
-  scheduleCompleted: true, scheduleFailed: true,
+  scheduleCompleted: true, scheduleFailed: true, hostStartupTimeout: DEFAULT_HOST_STARTUP_TIMEOUT, appIcon: 'default',
 })
 
 /** Fixed startup defaults matching Beta's disposable Safe Mode settings. */
@@ -50,8 +58,11 @@ export const SAFE_MODE_PREFERENCES: Readonly<DesktopPreferences> = Object.freeze
   ...DEFAULT_PREFERENCES, macosMaterial: 'off', windowsMaterial: 'off', linuxMaterial: 'off',
   browserAccess: false, networkExposure: 'loopback', port: 0, lanPort: 0, logLevel: 'info', developerLogging: false,
   sidebarFooterCompat: true, sidebarFooterBalanced: true, notifications: false, turnCompleted: false, turnFailed: false, jobCompleted: false, jobFailed: false,
-  scheduleCompleted: false, scheduleFailed: false,
+  scheduleCompleted: false, scheduleFailed: false, hostStartupTimeout: DEFAULT_HOST_STARTUP_TIMEOUT,
 })
+
+/** A failure report being written, saved to `file`, or not written. */
+export type DesktopFailureReport = { status: 'pending' } | { status: 'saved'; file: string } | { status: 'failed' }
 
 export interface DesktopState {
   selected: string
@@ -62,12 +73,30 @@ export interface DesktopState {
   phase: 'starting' | 'ready' | 'error' | 'recovery'
   busy: boolean
   failure: string
+  /** Where `failure` stopped the Desktop: a startup stage, or the part that failed while running. */
+  failureStage?: DesktopFailureStage
+  /** How the Host ended, when its exit is the failure. */
+  failureExit?: DesktopHostExit
+  /** The limit a Host start exceeded and what it was still loading, when that is the failure. */
+  failureTimeout?: DesktopStartupTimeoutFailure
+  /** The port another program holds, when the Host could not listen on it. */
+  portConflict?: import('./port-conflict.ts').DesktopPortConflict
+  /** The report saved in the logs directory when `failure` opened recovery. */
+  failureReport?: DesktopFailureReport
+  /** Frozen, masked failure context, including the original error and this run’s log. */
+  failureContext?: string
+  /** A Desktop action that failed after `failure`; shown beside it, never replacing it. */
+  actionFailure?: string
   safeMode: boolean
+  /** The Host startup limit saved for the original environment, which Safe Mode does not apply. */
+  hostStartupTimeout?: HostStartupTimeout
   /** The selected Profile needs Desktop setup in the running official client. */
   onboarding?: boolean
   /** Initial saved choice for setup; live state belongs to pluginManager. */
   onboardingComputerUse?: boolean
   home: string
+  /** How `home` was chosen: in the app (wins), by `DSH_DESKTOP_NEXT_HOME`, or by default. */
+  dataDirectory?: { source: 'desktop' | 'environment' | 'default'; environmentHome: string | null }
   platform: string
   version: string
   updates?: import('./update-state.ts').NextUpdateState
@@ -78,6 +107,8 @@ export interface DesktopState {
   recovery?: {
     bundles: { bundleId: string; packageName: string; status: 'active' | 'disabled'; owner: 'core' | 'profile'; action: 'uninstall' | null; toggle: 'disable' | 'enable' | null }[]
     checkpoints: { id: string; created: string; fileCount: number; totalBytes: number }[]
+    /** The backup made by the latest Profile repair, while a restore can still undo that repair. */
+    repairBackup?: { id: string; created: string; fileCount: number; totalBytes: number }
     error?: string
     profileDirectory: string
     usingDefaultDirectory: boolean
@@ -100,12 +131,15 @@ export type DesktopCommand =
   | ({ type: 'onboarding-complete'; profile: string; browserAccess?: boolean; networkExposure?: 'loopback' | 'lan' } & OnboardingChoices)
   | { type: 'onboarding-skip'; profile: string }
   | { type: 'confirm-lan' }
+  /** Save and show an app icon at once; Safe Mode keeps the default. */
+  | { type: 'app-icon'; appIcon: DesktopAppIcon }
   | { type: 'open-browser-url' | 'copy-browser-url'; url: string }
   | { type: 'create' | 'switch' | 'delete'; name: string }
   | { type: 'features'; features: Features }
   | { type: 'preferences'; preferences: DesktopPreferences }
   | { type: 'controls'; page?: 'general' | 'profiles' | 'create-profile' | 'tools' | 'recovery' | 'permissions' }
   | { type: 'restart-app' | 'restart-recovery' | 'restart-onboarding' | 'close-controls' }
+  | { type: 'change-data-directory' | 'backup-data-directory' }
   | { type: 'restart' | 'recover' | 'safe-mode' | 'normal-mode' | 'rollback' | 'repair-global'
     | 'reload' | 'devtools' | 'terminal' | 'open-home' | 'open-profile' | 'open-logs' | 'open-backups'
     | 'diagnostics' | 'open-browser' | 'open-lan' | 'copy-browser' | 'copy-lan' | 'export-ca' | 'quit' }
@@ -124,6 +158,8 @@ export interface DesktopBridge {
 export interface DesktopRendererBridge {
   profile(): string
   report(status: import('./renderer-recovery.ts').DesktopRendererStatus): Promise<void>
+  /** A client failure for the Desktop log; delivered without an answer, and dropped for an earlier document. */
+  diagnostic?(report: import('./client-diagnostic.ts').ClientDiagnostic): void
 }
 
 declare global { interface Window { desktopNext?: DesktopBridge } }

@@ -45,7 +45,11 @@ export function installWebSocketHmr(ctx, events, document, options = {}) {
       delete entry.fiber
     }
     for (const style of document.querySelectorAll('style[data-plugin]')) {
-      if (style.getAttribute('data-plugin') === id) style.remove()
+      // Preserve renderer-owned meta.stylesheets nodes (data-path) while cleaning factory-injected styles.
+      const managedByRenderer = typeof style.hasAttribute === 'function'
+        ? style.hasAttribute('data-path')
+        : (typeof style.getAttribute === 'function' && style.getAttribute('data-path') != null && style.getAttribute('data-path') !== id)
+      if (style.getAttribute('data-plugin') === id && !managedByRenderer) style.remove()
     }
     await entry.refresh()
     if (!entry.fiber) throw new Error(`HMR entry failed to materialize: ${id}`)

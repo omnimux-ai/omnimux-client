@@ -21,6 +21,7 @@ export function registerSessionModelRoutes(webServer, deps) {
   return webServer.register({
     kind: 'exact',
     path: SESSION_MODEL_ROUTE,
+    auth: 'required',
     async handler(req, res) {
       const { readJsonBody, sendJson } = await import('../auth/http-routes.js')
       const method = (req.method || 'GET').toUpperCase()

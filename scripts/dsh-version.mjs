@@ -3,7 +3,9 @@
  * Generate or verify `dsh-version.json`: the DSH line this client ships.
  *
  * Sources of truth:
- *   app/upstream.json   stable channel pin (commit + sourceVersion)
+ *   app/upstream.json   active channel pin (commit + sourceVersion); `activeChannel`
+ *                       selects it, so a next-channel branch does not have to lie
+ *                       about the stable pin to keep this file fresh
  *   PROVENANCE.json     gitlink pin for the app/deepseek-harness submodule
  *   git ls-tree         the commit actually recorded by the repository
  *
@@ -37,8 +39,9 @@ function git(args, cwd = repoRoot) {
 }
 
 const upstream = readJson(join(repoRoot, 'app', 'upstream.json'))
-const stable = upstream.channels?.stable
-if (stable === undefined) fail('app/upstream.json has no stable channel')
+const channelName = typeof upstream.activeChannel === 'string' ? upstream.activeChannel : 'stable'
+const channel = upstream.channels?.[channelName]
+if (channel === undefined) fail(`app/upstream.json has no ${channelName} channel`)
 const provenance = readJson(join(repoRoot, 'PROVENANCE.json'))
 const provenanceCommit = provenance.sources?.app?.submodules?.[submodulePath]
 if (typeof provenanceCommit !== 'string') fail(`PROVENANCE.json has no ${submodulePath} pin`)
@@ -51,12 +54,12 @@ const gitlinkCommit = gitlinkMatch[1]
 const expected = {
   schemaVersion: 1,
   dsh: {
-    channel: 'stable',
+    channel: channelName,
     repository: upstream.repository,
-    commit: stable.commit,
-    sourceVersion: stable.sourceVersion,
-    runtimePackageVersion: stable.runtimePackageVersion,
-    runtimeSource: stable.runtimeSource,
+    commit: channel.commit,
+    sourceVersion: channel.sourceVersion,
+    runtimePackageVersion: channel.runtimePackageVersion,
+    runtimeSource: channel.runtimeSource,
   },
   submodule: {
     path: submodulePath,
@@ -75,7 +78,7 @@ function liveSubmodule() {
 
 const live = liveSubmodule()
 const problems = []
-if (stable.commit !== gitlinkCommit) problems.push(`app/upstream.json commit ${stable.commit} != gitlink ${gitlinkCommit}`)
+if (channel.commit !== gitlinkCommit) problems.push(`app/upstream.json ${channelName} commit ${channel.commit} != gitlink ${gitlinkCommit}`)
 if (provenanceCommit !== gitlinkCommit) problems.push(`PROVENANCE.json pin ${provenanceCommit} != gitlink ${gitlinkCommit}`)
 if (live.initialized && live.head !== gitlinkCommit) problems.push(`submodule HEAD ${live.head} != gitlink ${gitlinkCommit}`)
 if (live.initialized && live.dirty) problems.push('submodule working tree is dirty')
@@ -91,8 +94,8 @@ if (check) {
   if (!existsSync(outputPath)) fail('dsh-version.json is missing; run node scripts/dsh-version.mjs')
   const actual = readFileSync(outputPath, 'utf8')
   if (actual !== serialized) fail('dsh-version.json is stale; run node scripts/dsh-version.mjs')
-  console.log(`dsh-version: OK — ${stable.commit.slice(0, 12)} (${stable.sourceVersion}), submodule ${live.initialized ? (live.dirty ? 'dirty' : 'clean') : 'not initialized'}`)
+  console.log(`dsh-version: OK — ${channelName} ${channel.commit.slice(0, 12)} (${channel.sourceVersion}), submodule ${live.initialized ? (live.dirty ? 'dirty' : 'clean') : 'not initialized'}`)
 } else {
   writeFileSync(outputPath, serialized)
-  console.log(`dsh-version: wrote ${relative(repoRoot, outputPath)} (${stable.commit.slice(0, 12)})`)
+  console.log(`dsh-version: wrote ${relative(repoRoot, outputPath)} (${channelName} ${channel.commit.slice(0, 12)})`)
 }

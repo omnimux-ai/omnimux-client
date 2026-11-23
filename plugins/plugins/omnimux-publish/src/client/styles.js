@@ -1665,11 +1665,13 @@ th[style*="--pub-min-w"] { min-width: var(--pub-min-w); }
 
 export function ensureCss() {
   if (typeof document === 'undefined') return
-  if (document.getElementById(CSS_ID)) return
-  const style = document.createElement('style')
-  style.id = CSS_ID
-  style.textContent = CSS
-  document.head.appendChild(style)
+  let style = document.getElementById(CSS_ID)
+  if (!style) {
+    style = document.createElement('style')
+    style.id = CSS_ID
+    document.head.appendChild(style)
+  }
+  if (style.textContent !== CSS) style.textContent = CSS
 }
 
 /** Stage-contract alias: PublishStage must call inject*Styles() at top level

@@ -25,7 +25,8 @@ import WebServer from '@deepseek-ai/dsh-host-webserver'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRegistry from '@deepseek-ai/dsh-tools'
+import ToolRegistry, { projectToolSchema } from '@deepseek-ai/dsh-tools'
+import { ToolExecutionPipeline, executeToolBatch } from '@deepseek-ai/dsh-tools/pipeline'
 import LlmService, { createUserMessage, type GenerateOptions } from '@deepseek-ai/dsh-llm'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
@@ -175,6 +176,12 @@ async function loadComposition(): Promise<{ ctx: Context; configPath: string; po
     config: { path: pathToFileURL(configPath).href },
   })
   await context.loader.await()
+  const tools = context.get('tools') as ToolRegistry
+  const pipeline = new ToolExecutionPipeline(context)
+  tools.setExecutor({
+    describe: (definitions) => ({ schemas: definitions.map(definition => projectToolSchema(definition, false)) }),
+    execute: (input) => executeToolBatch(input, pipeline, () => 10),
+  })
   const web = context.get('webServer') as typeof WebServer.prototype
   return { ctx: context, configPath, port: web.port }
 }

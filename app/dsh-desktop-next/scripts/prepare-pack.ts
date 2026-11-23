@@ -2,9 +2,11 @@
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
-import { nextPackagingTarget, payloadDir } from './packaged-payload.ts'
+import { nextPackagingTarget, payloadDir, preparedPackagingTarget } from './packaged-payload.ts'
+import type { NextPackagingTarget } from './runtime-file-policy.ts'
 import { officeUnpackPatterns } from './office-packages.ts'
 import { applyWindowsUnpack } from './windows-asar-unpack.ts'
+import { installWindowsDirectoryInstaller } from './windows-directory-installer.ts'
 import { packagingStepSync } from './packaging-step.ts'
 
 const require = createRequire(import.meta.url)
@@ -46,13 +48,13 @@ export function applyElectronChecksums(config: PackConfiguration, platform: 'dar
  * start with `**`, so they match below the prepared directory electron-builder archives.
  * @param config - electron-builder configuration being packed.
  * @param payloadRoot - Prepared payload directory.
- * @param platform - Electron platform being packaged.
+ * @param target - Platform and CPUs of the prepared payload.
  * @returns The patterns this call added.
  */
-export function applyOfficeUnpack(config: { asarUnpack?: unknown }, payloadRoot: string, platform: NodeJS.Platform): string[] {
+export function applyOfficeUnpack(config: { asarUnpack?: unknown }, payloadRoot: string, target: NextPackagingTarget): string[] {
   const existing = config.asarUnpack
   const patterns = typeof existing === 'string' ? [existing] : Array.isArray(existing) ? existing.filter((value): value is string => typeof value === 'string') : []
-  const added = officeUnpackPatterns(payloadRoot, platform, nextPackagingTarget(platform).archs).filter(pattern => !patterns.includes(pattern))
+  const added = officeUnpackPatterns(payloadRoot, target.platform, target.archs).filter(pattern => !patterns.includes(pattern))
   config.asarUnpack = [...patterns, ...added]
   return added
 }
@@ -60,7 +62,9 @@ export function applyOfficeUnpack(config: { asarUnpack?: unknown }, payloadRoot:
 export default async function beforePack(context: PackContext): Promise<void> {
   const platform = context.electronPlatformName as NodeJS.Platform
   const dir = payloadDir(platform)
-  const office = applyOfficeUnpack(context.packager.config, join(context.packager.projectDir, ...dir.split('/')), platform)
+  const target = preparedPackagingTarget(context.packager.projectDir, platform)
+  if (target.platform !== platform) throw new Error(`Next payload was prepared for ${target.platform}, not for the ${platform} package being built`)
+  const office = applyOfficeUnpack(context.packager.config, join(context.packager.projectDir, ...dir.split('/')), target)
   if (office.length > 0) console.log(`Next ${context.electronPlatformName} payload unpacks the Office closure: ${String(office.length)} packages`)
   if (platform === 'darwin' || platform === 'win32') {
     packagingStepSync('cache:electron:checksums', () => applyElectronChecksums(context.packager.config, platform, nextPackagingTarget(platform).archs))
@@ -69,6 +73,8 @@ export default async function beforePack(context: PackContext): Promise<void> {
     const files = packagingStepSync('builder:prepare-pe-unpack', () => applyWindowsUnpack(context.packager.config,
       context.packager.info.appDir, join(context.packager.projectDir, ...dir.split('/'))))
     console.log(`Next Windows payload unpacks ${String(files.length)} discovered PE files`)
+    // The NSIS installer replaces the installation through staged directories.
+    installWindowsDirectoryInstaller()
   }
   await Promise.resolve()
 }

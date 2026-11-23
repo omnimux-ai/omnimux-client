@@ -6,8 +6,11 @@ import { Switch } from '../../../dsh-plugin-desktop/src/native-ui/components/ui/
 import { RadioGroup, RadioGroupItem } from '../../../dsh-plugin-desktop/src/native-ui/components/ui/radio-group.tsx'
 import { Alert, AlertDescription } from '../../../dsh-plugin-desktop/src/native-ui/components/ui/alert.tsx'
 import { DesktopFrame } from '../../../dsh-plugin-desktop/src/native-ui/shared/DesktopFrame.tsx'
+import { appIconLabel, DESKTOP_APP_ICONS, isDesktopAppIcon, type DesktopAppIcon } from '../app-icon.ts'
 import type { DesktopBridge, DesktopPreferences, DesktopState } from '../desktop-contract.ts'
+import { AppIconPreview } from '../client/app-icon-previews.tsx'
 import { installPluginControlsStyles } from '../client/plugin-controls-styles.ts'
+import { OFFICIAL_PLUGIN_INDEX } from '../upstream-family-labels.ts'
 import './onboarding.css'
 import brandLogo from './assets/omnimux-logo.svg'
 import brandWordmark from './assets/omnimux-wordmark.webp'
@@ -18,7 +21,7 @@ type Market = 'community' | 'dsh'
 // Keep official dialog dependencies out of recovery and the earlier setup pages.
 const DesktopPermissionsButton = lazy(() => import('../client/permissions.tsx').then(module => ({ default: module.DesktopPermissionsButton })))
 
-export function Onboarding({ state, locale, bridge }: { state: Pick<DesktopState, 'selected' | 'features' | 'onboardingComputerUse'> & { platform?: string; preferences?: Pick<DesktopPreferences, 'browserAccess' | 'networkExposure'> & Partial<Pick<DesktopPreferences, 'macosMaterial'>> }; locale: 'zh' | 'en'; bridge: Pick<DesktopBridge, 'command' | 'permissions'> }) {
+export function Onboarding({ state, locale, bridge }: { state: Pick<DesktopState, 'selected' | 'features' | 'onboardingComputerUse'> & { platform?: string; preferences?: Pick<DesktopPreferences, 'browserAccess' | 'networkExposure'> & Partial<Pick<DesktopPreferences, 'macosMaterial' | 'appIcon'>> }; locale: 'zh' | 'en'; bridge: Pick<DesktopBridge, 'command' | 'permissions'> }) {
   const t = (zh: string, en: string) => locale === 'zh' ? zh : en
   const platform = state.platform ?? document.documentElement.dataset.platform ?? new URLSearchParams(location.search).get('platform') ?? undefined
   const material = platform === 'darwin' ? (state.preferences?.macosMaterial ?? (document.documentElement.dataset.material === 'off' ? 'off' : 'transparent')) : 'off'
@@ -34,6 +37,8 @@ export function Onboarding({ state, locale, bridge }: { state: Pick<DesktopState
   const [computerUse, setComputerUse] = useState(state.onboardingComputerUse ?? false)
   const [browserAccess, setBrowserAccess] = useState(state.preferences?.browserAccess ?? false)
   const [networkExposure, setNetworkExposure] = useState<'loopback' | 'lan'>(state.preferences?.browserAccess && state.preferences?.networkExposure === 'lan' ? 'lan' : 'loopback')
+  const [appIcon, setAppIcon] = useState<DesktopAppIcon>(state.preferences?.appIcon ?? 'default')
+  const appIconRequest = useRef(0)
   const confirmingLan = useRef(false)
   const slide = useRef<HTMLDivElement>(null)
   const navigationLock = useRef(false)
@@ -41,12 +46,12 @@ export function Onboarding({ state, locale, bridge }: { state: Pick<DesktopState
   const mounted = useRef(true)
   const animation = useRef<Animation | undefined>(undefined)
   const disabled = busy || transitioning
-  const steps = [t('欢迎', 'Welcome'), t('插件市场', 'Plugin market'), t('远程控制', 'Remote control'), 'Computer Use', t('浏览器访问', 'Browser access'), t('恢复模式', 'Recovery')]
+  const steps = [t('欢迎', 'Welcome'), t('插件市场', 'Plugin market'), t('远程控制', 'Remote control'), t('Computer Use（Next）', 'Computer Use (Next)'), t('浏览器访问', 'Browser access'), t('恢复模式', 'Recovery')]
   const lastPage = steps.length - 1
   const titles = [t('欢迎使用\nOmniMux', 'Welcome to\nOmniMux'), t('用插件，\n拓展更多可能。', 'Make room\nfor more possibilities.'), t('离开电脑，\n也能继续。', 'Keep going.\nAway from your desk.'), t('让 AI 帮你\n操作电脑。', 'Let AI work\non your desktop.'), t('在浏览器中，\n也能打开。', 'Open in a browser,\nwhen you need to.'), t('遇到问题，\n从这里恢复。', 'A way back,\nwhen you need it.')]
   const descriptions = [
     t(`为 Profile「${state.selected}」选好常用功能。\n几步设置，就可以开始。`, `Set up the essentials for Profile “${state.selected}”.\nA few choices, then you’re ready to go.`),
-    t('选择一个插件市场，浏览和安装社区插件；\n或配置自定义插件市场。\n也可以暂不开启，以后在插件页面调整。', 'Choose a market to browse and install community plugins,\nor configure the custom plugin market.\nYou can also leave it off and decide later in Plugins.'),
+    t(`选择一个插件市场，浏览和安装社区插件；\n或配置${OFFICIAL_PLUGIN_INDEX.title.zh}。\n也可以暂不开启，以后在插件页面调整。`, `Choose a market to browse and install community plugins,\nor configure "${OFFICIAL_PLUGIN_INDEX.title.en}".\nYou can also leave it off and decide later in Plugins.`),
     t('通过 Agents Anywhere，在手机、平板或其他电脑上，\n继续与你的 Agent 对话。', 'Use Agents Anywhere on your phone, tablet or another computer\nto keep the conversation going.'),
     t('查看屏幕内容，操作鼠标和键盘。\n理解截图需要支持图片输入的模型。', 'View the screen and control the mouse and keyboard.\nUnderstanding screenshots requires a model with image input.'),
     t('允许在浏览器中打开当前 Profile，\n并选择可访问的设备范围。', 'Allow browser access to the current Profile,\nand choose which devices can reach it.'),
@@ -76,6 +81,19 @@ export function Onboarding({ state, locale, bridge }: { state: Pick<DesktopState
     if (!mounted.current) return
     setDirection(nextDirection); setPage(next); setTransitioning(false)
     navigationLock.current = false
+  }
+
+  // Unlike the other choices, the icon is saved and shown at once, so skipping setup keeps it.
+  function chooseAppIcon(value: string) {
+    if (!isDesktopAppIcon(value) || value === appIcon || disabled) return
+    const previous = appIcon
+    const request = ++appIconRequest.current
+    setAppIcon(value); setFailure('')
+    void bridge.command({ type: 'app-icon', appIcon: value }).catch(error => {
+      if (!mounted.current || request !== appIconRequest.current) return
+      setAppIcon(previous)
+      setFailure(error instanceof Error ? error.message : String(error))
+    })
   }
 
   async function finish(skip: boolean) {
@@ -114,6 +132,17 @@ export function Onboarding({ state, locale, bridge }: { state: Pick<DesktopState
           {page > 0 && <p className="next-onboarding-eyebrow">{steps[page]}</p>}
           <h1 id="onboarding-title" tabIndex={-1}>{titles[page]!.split('\n').map((line, i) => <span className="next-onboarding-reveal" key={i} style={{ animationDelay: `${80 + i * 130}ms` }}>{line}</span>)}</h1>
           <p className="next-onboarding-description next-onboarding-reveal">{descriptions[page]}</p>
+          {page === 0 && <div className="next-onboarding-option next-onboarding-reveal">
+            <div className="next-onboarding-toggle"><span id="onboarding-app-icon">{t('应用图标', 'App icon')}</span></div>
+            <RadioGroup aria-labelledby="onboarding-app-icon" className="next-onboarding-icon-choices" value={appIcon} disabled={disabled} onValueChange={value => { chooseAppIcon(String(value)) }}>
+              {DESKTOP_APP_ICONS.map(icon => <label className="next-onboarding-choice next-onboarding-icon-choice" data-selected={appIcon === icon} key={icon}>
+                <AppIconPreview icon={icon} size={36} />
+                <span className="next-onboarding-choice-copy"><strong id={`app-icon-${icon}`}>{appIconLabel(icon, locale === 'zh')}</strong></span>
+                <RadioGroupItem value={icon} aria-labelledby={`app-icon-${icon}`} />
+              </label>)}
+            </RadioGroup>
+            <p>{t('以后也可以在桌面设置中切换。', 'You can also switch icons later in Desktop settings.')}</p>
+          </div>}
           {page === 1 && <div className="next-onboarding-option next-onboarding-reveal">
             <div className="next-onboarding-toggle"><label htmlFor="onboarding-market">{t('启用插件市场', 'Enable plugin market')}</label><Switch id="onboarding-market" checked={marketEnabled} disabled={disabled} onCheckedChange={setMarketEnabled} /></div>
             <p>{t('以后也可以在插件页面开启或调整。', 'You can also enable or change this later in Plugins.')}</p>
@@ -124,7 +153,7 @@ export function Onboarding({ state, locale, bridge }: { state: Pick<DesktopState
           </div>}
           {page === 3 && <div className="next-onboarding-option next-onboarding-reveal">
             <div className="next-onboarding-toggle">
-              <label htmlFor="onboarding-computer-use">{t('启用 Computer Use', 'Enable Computer Use')}</label>
+              <label htmlFor="onboarding-computer-use">{t('启用 Computer Use（Next）', 'Enable Computer Use (Next)')}</label>
               <div className="next-onboarding-option-actions">
                 <Suspense fallback={<span className="next-onboarding-permissions-loading" aria-hidden="true"><LoaderCircle className="animate-spin" /></span>}>
                   <DesktopPermissionsButton service={bridge.permissions} language={locale} label={t('权限设置', 'Permission settings')} disabled={disabled} />
@@ -150,9 +179,9 @@ export function Onboarding({ state, locale, bridge }: { state: Pick<DesktopState
                 <RadioGroupItem value={option.value} aria-labelledby={`market-${option.value}`} />
               </label>)}
             </RadioGroup>
-            <RadioGroup aria-label={t('自定义插件市场', 'Custom plugin markets')} value={officialMarket ? 'official' : ''} disabled={disabled}>
+            <RadioGroup aria-label={t(OFFICIAL_PLUGIN_INDEX.title.zh, OFFICIAL_PLUGIN_INDEX.title.en)} value={officialMarket ? 'official' : ''} disabled={disabled}>
               <label className="next-onboarding-choice" data-selected={officialMarket} onClick={event => { event.preventDefault(); if (!disabled) setOfficialMarket(current => !current) }}>
-                <span className="next-onboarding-choice-copy"><strong><span id="market-official">{t('自定义插件市场', 'Custom plugin markets')}</span><small>{t('实验性', 'Experimental')}</small></strong><span>{t('开启官方插件市场，并预置 dsh-market 索引源。', 'Enable the official market with the dsh-market source preconfigured.')}</span></span>
+                <span className="next-onboarding-choice-copy"><strong><span id="market-official">{t(OFFICIAL_PLUGIN_INDEX.title.zh, OFFICIAL_PLUGIN_INDEX.title.en)}</span><small>{t('实验性', 'Experimental')}</small></strong><span>{t('开启这个官方插件，并预置 dsh-market 索引源。', 'Enable this official plugin with the dsh-market index source preconfigured.')}</span></span>
                 <RadioGroupItem value="official" aria-labelledby="market-official" />
               </label>
             </RadioGroup>
@@ -198,7 +227,7 @@ export function Onboarding({ state, locale, bridge }: { state: Pick<DesktopState
           {page === 5 && <div className="next-onboarding-recovery">
             <h2 className="next-onboarding-recovery-title"><LifeBuoy aria-hidden="true" />{t('恢复助手', 'Recovery Assistant')}</h2>
             <ol>
-              <li><strong>{t('打开恢复助手', 'Open the recovery assistant')}</strong><p>{t('托盘菜单 → 恢复助手。也可以在设置的“重启”菜单中选择进入恢复模式，或在桌面设置最底部快速进入。', 'Choose Recovery Assistant in the tray menu, restart into recovery from the Restart menu in Settings, or open it from the bottom of Desktop settings.')}</p></li>
+              <li><strong>{t('打开恢复助手', 'Open the recovery assistant')}</strong><p>{t('托盘菜单 → 恢复助手。也可以在设置的“重启”菜单中选择进入恢复模式，或在桌面设置的“诊断与恢复”中打开。', 'Choose Recovery Assistant in the tray menu, restart into recovery from the Restart menu in Settings, or open it from Diagnostics in Desktop settings.')}</p></li>
               <li><strong>{t('选择恢复方式', 'Choose a recovery option')}</strong><p>{t('尝试临时安全模式、修复 Profile，或回滚到最近成功启动的配置。', 'Try temporary safe mode, repair the Profile, or restore its last successful-start configuration.')}</p></li>
               <li><strong>{t('回到工作中', 'Get back to work')}</strong><p>{t('完成后点击“启动或重试”。仍有问题时，可以导出诊断信息。', 'Choose “Start or retry” when ready. If the issue remains, export diagnostics for help.')}</p></li>
             </ol>

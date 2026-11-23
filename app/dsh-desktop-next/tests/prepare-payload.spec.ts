@@ -1,6 +1,7 @@
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, expect, it, vi } from 'vitest'
 import beforeBuild from '../scripts/before-build.ts'
 import { nextPackagingTarget, PAYLOAD_DIR, payloadDir, verifyNextPayload } from '../scripts/packaged-payload.ts'
@@ -26,7 +27,7 @@ function workspace(): { root: string; desktop: string; market: string } {
   completeApplication(desktop)
   const modules = join(desktop, 'node_modules')
   for (const path of ['src/main.ts', 'tests/main.spec.ts', 'README.md', '.desktop-next/home/desktop-next.json', 'build/app-icon.icns',
-    'lib/main.js.map', 'lib/main.d.ts', 'assets/.DS_Store']) {
+    'build/classic/app-icon.icns', 'build/classic/app-icon-preview.png', 'build/app-icon-preview-dark.png', 'lib/main.js.map', 'lib/main.d.ts', 'assets/.DS_Store']) {
     mkdirSync(join(desktop, path, '..'), { recursive: true })
     writeFileSync(join(desktop, path), `dev:${path}\n`)
   }
@@ -88,6 +89,30 @@ it('places the production closure like an installer and copies one version once'
   expect(closure.map(pkg => pkg.name)).toContain('peer-user')
 })
 
+it('resolves the peers of a workspace package to the application copies instead of its development copies', () => {
+  const { desktop, market } = workspace()
+  const modules = join(desktop, 'node_modules')
+  const application = JSON.parse(readFileSync(join(desktop, 'package.json'), 'utf8')) as { dependencies: Record<string, string> }
+  application.dependencies['@deepseek-ai/dsh-jobs'] = '1.0.0'
+  writeFileSync(join(desktop, 'package.json'), JSON.stringify(application) + '\n')
+  writePackage(modules, '@deepseek-ai/dsh-jobs', { version: '1.0.0' })
+  // The market accepts either release as a peer and tests against the other one, whose own
+  // dependency only that release's tree would install.
+  const manifest = JSON.parse(readFileSync(join(market, 'package.json'), 'utf8')) as { devDependencies: Record<string, string> }
+  writeFileSync(join(market, 'package.json'), JSON.stringify({ ...manifest, peerDependencies: { '@deepseek-ai/dsh-jobs': '1.0.0 || 2.0.0' },
+    devDependencies: { ...manifest.devDependencies, '@deepseek-ai/dsh-jobs': '2.0.0' } }) + '\n')
+  writePackage(join(market, 'node_modules'), '@deepseek-ai/dsh-jobs', { version: '2.0.0', dependencies: { '@deepseek-ai/dsh-scope': '2.0.0' } })
+  const placed = Object.fromEntries(collectProductionClosure(desktop).map(pkg => [pkg.destination, pkg]))
+  expect(placed['@deepseek-ai/dsh-jobs']).toMatchObject({ version: '1.0.0', source: realpathSync(join(modules, '@deepseek-ai', 'dsh-jobs')) })
+  expect(placed['dsh-community-market/node_modules/@deepseek-ai/dsh-jobs']).toBeUndefined()
+  expect(Object.values(placed).map(pkg => pkg.name)).not.toContain('@deepseek-ai/dsh-scope')
+})
+
+it('collects a complete production closure from the installed application for this platform', () => {
+  // Packaging runs natively, and an install only carries this platform's conditional packages.
+  expect(collectProductionClosure(fileURLToPath(new URL('..', import.meta.url)), target).length).toBeGreaterThan(0)
+})
+
 it('materializes, cleans and seals the payload the archive is later checked against', async () => {
   const { root, desktop } = workspace()
   const output = join(root, 'payload')
@@ -95,7 +120,8 @@ it('materializes, cleans and seals the payload the archive is later checked agai
   const descriptor = await preparePayload({ desktopRoot: desktop, output, target, electronVersion: '44.0.0',
     extraMetadata: { version: '2.0.1-next' }, log: message => log.push(message) })
   expect(readdirSync(output).sort()).toEqual(['assets', 'build', 'cordis.patch.yml', DESKTOP_RUNTIME_FILE, 'host.cordis.patch.yml', 'lib', 'node_modules', 'package.json', 'scripts'])
-  for (const absent of ['src', 'tests', 'README.md', '.desktop-next', 'build/app-icon.icns', 'lib/main.js.map', 'lib/main.d.ts', 'assets/.DS_Store',
+  for (const absent of ['src', 'tests', 'README.md', '.desktop-next', 'build/app-icon.icns', 'build/classic/app-icon.icns', 'build/classic/app-icon-preview.png', 'build/app-icon-preview-dark.png',
+    'lib/main.js.map', 'lib/main.d.ts', 'assets/.DS_Store',
     'node_modules/dev-only', 'node_modules/.yarn-state.yml', 'node_modules/conflict/.DS_Store',
     'node_modules/@deepseek-ai/dsh/index.js.map', 'node_modules/@deepseek-ai/dsh/index.d.ts',
     'node_modules/dsh-community-market/src', 'node_modules/dsh-community-market/tests', 'node_modules/dsh-community-market/tsconfig.json',
@@ -104,6 +130,7 @@ it('materializes, cleans and seals the payload the archive is later checked agai
     expect(existsSync(join(output, ...absent.split('/'))), absent).toBe(false)
   }
   for (const present of ['lib/main.js', 'lib/native-ui/index.html', 'build/app-icon.png', 'scripts/node-bin/node', 'assets/tray-icon-blue.png',
+    'build/app-icon-dark.ico', 'build/app-icon-dark.png', 'build/classic/app-icon.ico', 'build/classic/app-icon.png', 'build/classic/app-icon-mac.png', 'assets/classic/tray-iconTemplate.png',
     'node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html', 'node_modules/nested-user/node_modules/conflict/index.js',
     'node_modules/dsh-community-market/lib/index.js', 'node_modules/dsh-community-market/README.md', 'node_modules/dsh-community-market/LICENSE',
     'node_modules/dsh-community-market/cordis.patch.yml', 'node_modules/dsh-community-market/node_modules/conflict/index.js', 'node_modules/only-here/index.js']) {

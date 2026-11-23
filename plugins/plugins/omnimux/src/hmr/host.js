@@ -17,11 +17,20 @@ export function mountWebSocketHmr(ctx, hubEvents, applyWatcher) {
     throw new Error('WebSocket HMR requires the official client-hmr row to be disabled')
   }
   const epoch = randomUUID()
+  const authorizeRequest = (req, peer) => {
+    const admittedPeer = peer !== undefined && peer !== null && typeof peer === 'object'
+    const connection = ctx.get?.('connection') ?? ctx.connection
+    const legacyRejection = typeof connection?.requestRejection === 'function'
+      ? connection.requestRejection(req)
+      : (admittedPeer ? undefined : 503)
+    return legacyRejection ?? (isLocalRequest(req) ? undefined : 403)
+  }
   ctx.effect(() => ctx.webServer.register({
     kind: 'exact',
     path: SNAPSHOT_PATH,
-    handler(req, res) {
-      const rejection = ctx.connection.requestRejection(req) ?? (isLocalRequest(req) ? undefined : 403)
+    auth: 'required',
+    handler(req, res, peer) {
+      const rejection = authorizeRequest(req, peer)
       if (rejection !== undefined) {
         res.writeHead(rejection)
         res.end()
@@ -40,6 +49,8 @@ export function mountWebSocketHmr(ctx, hubEvents, applyWatcher) {
     hubEvents.emit({ type: REBUILT_EVENT, payload: { id, rev } })
   }), 'omnimux: HMR notifications')
   // Defaults are explicit because direct apply does not run Cordis Config parsing.
+  // DSH 0.2.1-rc.3 / 0.2.2-rc.5 official watcher still registers /plugins/events SSE;
+  // DSH 0.2.3+ removes it in favor of pluginEvents/follow (making this intercept a no-op).
   const webServer = ctx.webServer
   const watcherContext = ctx.extend({
     webServer: {
@@ -47,8 +58,9 @@ export function mountWebSocketHmr(ctx, hubEvents, applyWatcher) {
         if (route.kind !== 'exact' || route.path !== LEGACY_EVENTS_PATH) return webServer.register(route)
         return webServer.register({
           ...route,
-          handler(req, res) {
-            const rejection = ctx.connection.requestRejection(req) ?? (isLocalRequest(req) ? undefined : 403)
+          auth: 'required',
+          handler(req, res, peer) {
+            const rejection = authorizeRequest(req, peer)
             if (rejection !== undefined) {
               res.writeHead(rejection)
             } else if (req.method !== 'GET' && req.method !== 'HEAD') {

@@ -1,17 +1,24 @@
 /** Main-process update ownership survives a stopped or broken Profile Host. */
-import { mkdtemp, readdir, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { checkForDesktopUpdate, type UpdateCheckResult, type UpdateRequest } from '../../dsh-plugin-desktop/src/update-checker.ts'
 import { desktopUpdateFilename, downloadDesktopUpdate, type UpdateArtifactRequest } from '../../dsh-plugin-desktop/src/update-download.ts'
 import { getOrCreateDesktopInstallationId } from '../../dsh-plugin-desktop/src/desktop-installation-id.ts'
 import { atomicJson, privateDirectory, readPrivateFile } from './private-files.ts'
+import { withUpdateArch, type UpdateArch } from './update-arch.ts'
 import type { NextUpdateState } from './update-state.ts'
 
 export interface NextUpdateOptions {
   version: string
   platform: string
   packaged: boolean
+  /** A Windows copy run from the portable ZIP: Setup cannot replace it, so its updates are downloaded by hand. */
+  portable?: boolean
   userData: string
+  /** Directory for downloaded installers; defaults to the update state directory in userData. */
+  downloads?: string
+  /** CPU of this Mac. The version check and the download name it, so the service answers with that CPU's installer. */
+  arch?: UpdateArch
   /** Fetch adapter for the version check. */
   request: UpdateRequest
   /** Installer transport; it owns redirect following and its per-hop HTTPS check. */
@@ -34,9 +41,12 @@ export class NextUpdates {
   private cacheReady?: Promise<void>
   private disposed = false
   constructor(private readonly options: NextUpdateOptions) {
-    this.state = { phase: 'idle', installable: options.packaged && ['darwin', 'win32'].includes(options.platform) }
+    const portable = options.portable === true
+    this.state = { phase: 'idle', installable: options.packaged && ['darwin', 'win32'].includes(options.platform) && !portable,
+      ...(portable ? { portable } : {}) }
   }
   snapshot(): NextUpdateState { return { ...this.state } }
+  private get downloads(): string { return this.options.downloads ?? join(this.options.userData, 'next-updates') }
   private initializeCache(): Promise<void> {
     return this.cacheReady ??= (async () => {
       const cache = join(this.options.userData, 'next-updates')
@@ -46,11 +56,18 @@ export class NextUpdates {
         const parsed = text ? JSON.parse(text) as { notifiedVersion?: unknown } : undefined
         if (typeof parsed?.notifiedVersion === 'string') this.notifiedVersion = parsed.notifiedVersion
       } catch (error) { this.options.log(error) }
-      // One primary process owns this userData tree. Clean our previous process's
-      // completed installers/partial files; never delete arbitrary files in userData.
-      for (const entry of await readdir(cache, { withFileTypes: true })) {
-        if (entry.isDirectory() && /^download-[A-Za-z0-9]+$/.test(entry.name)) {
-          await rm(join(cache, entry.name), { recursive: true, force: true }).catch(this.options.log)
+      // One primary process owns this userData tree and the download directory. Clean our previous process's
+      // completed installers/partial files; never delete arbitrary files there. Earlier releases downloaded
+      // beside the update state, so clean that directory as well.
+      for (const directory of new Set([cache, this.downloads])) {
+        const entries = await readdir(directory, { withFileTypes: true }).catch((error: unknown) => {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+          throw error
+        })
+        for (const entry of entries) {
+          if (entry.isDirectory() && /^download-[A-Za-z0-9]+$/.test(entry.name)) {
+            await rm(join(directory, entry.name), { recursive: true, force: true }).catch(this.options.log)
+          }
         }
       }
     })()
@@ -66,7 +83,8 @@ export class NextUpdates {
     this.options.changed()
   }
   start(): void {
-    if (!this.options.packaged || !['darwin', 'win32'].includes(this.options.platform) || this.timer || this.disposed) return
+    // Linux checks too, although its packages are downloaded from the release page rather than installed here.
+    if (!this.options.packaged || !['darwin', 'win32', 'linux'].includes(this.options.platform) || this.timer || this.disposed) return
     void this.initializeCache().catch(this.options.log)
     const poll = (): void => {
       if (this.disposed) return
@@ -86,13 +104,19 @@ export class NextUpdates {
     })().finally(() => { this.operation = undefined; this.controller = undefined })
     return this.operation
   }
+  /** Request options naming this Mac's CPU; unchanged where the platform names none. */
+  private withArch(init: RequestInit): RequestInit {
+    return this.options.arch === undefined ? init : withUpdateArch(init, this.options.arch)
+  }
   private async query(signal: AbortSignal): Promise<UpdateCheckResult | null> {
     let installationId
-    if (this.options.packaged) {
+    // The privacy policy names packaged macOS and Windows builds, portable copies included, as the ones that send the
+    // installation UUID, so Linux checks without it.
+    if (this.options.packaged && ['darwin', 'win32'].includes(this.options.platform)) {
       try { installationId = await getOrCreateDesktopInstallationId(this.options.userData) } catch (error) { this.options.log(error) }
     }
     return checkForDesktopUpdate({ currentVersion: this.options.version, channel: 'next', installationId,
-      request: this.options.request, signal: AbortSignal.any([signal, AbortSignal.timeout(20_000)]) })
+      request: (url, init) => this.options.request(url, this.withArch(init)), signal: AbortSignal.any([signal, AbortSignal.timeout(20_000)]) })
   }
   check(background = false): Promise<void> {
     if (this.state.phase === 'ready' || this.state.phase === 'installing') return Promise.resolve()
@@ -103,7 +127,7 @@ export class NextUpdates {
         if (!this.result) { this.set({ phase: 'error', error: 'service', version: undefined }); return }
         this.set({ phase: this.result.status === 'update-available' ? 'available' : 'current', version: this.result.latestVersion })
         if (this.result.status === 'update-available') {
-          if (background && this.state.installable && this.result.latestVersion !== this.notifiedVersion) {
+          if (background && this.result.latestVersion !== this.notifiedVersion) {
             this.recordNotifiedVersion(this.result.latestVersion)
             if (!this.disposed) this.options.available?.(this.result.latestVersion)
           } else if (!background && this.result.latestVersion !== this.notifiedVersion) {
@@ -129,14 +153,14 @@ export class NextUpdates {
         if (result.status !== 'update-available') { this.set({ phase: 'current', version: result.latestVersion }); return }
         if (result.latestVersion !== this.notifiedVersion) this.recordNotifiedVersion(result.latestVersion)
         const platform = this.options.platform as 'darwin' | 'win32'
-        const cache = join(this.options.userData, 'next-updates'); privateDirectory(cache)
+        const downloads = this.downloads; await mkdir(downloads, { recursive: true, mode: 0o700 })
         if (this.directory) await rm(this.directory, { recursive: true, force: true })
-        const directory = this.directory = await mkdtemp(join(cache, 'download-'))
+        const directory = this.directory = await mkdtemp(join(downloads, 'download-'))
         this.set({ phase: 'downloading', version: result.latestVersion, received: 0, total: undefined })
         let lastProgress = 0
         const path = await downloadDesktopUpdate({ platform, version: result.latestVersion, channel: 'next',
           destinationPath: join(directory, desktopUpdateFilename(platform, result.latestVersion, 'next')),
-          request: this.options.artifactRequest, expectedSha256: result.installerSha256?.[platform],
+          request: (url, init) => this.options.artifactRequest(url, this.withArch(init)), expectedSha256: result.installerSha256?.[platform],
           signal: AbortSignal.any([signal, AbortSignal.timeout(60 * 60_000)]), onProgress: (received, total) => {
             if (Date.now() - lastProgress < 250 && received !== total) return
             lastProgress = Date.now(); this.set({ received, total })

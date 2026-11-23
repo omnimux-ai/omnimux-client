@@ -132,6 +132,15 @@ export function apply(ctx) {
     locale: NS,
     inject: () => ({ t }),
   }, ({ t: translate, subject }) => omnimuxSubject(subject) ? createElement(ReferenceStorageSection, { t: translate }) : null))
+  // DSH 0.2.3+ retires settings.plugins.tab; also expose DshPluginsSection on the
+  // omnimux bundle detail page so the read-only inventory stays reachable across versions.
+  ctx.slots.inject('plugins.detail.section', () => ctx.slots.register({
+    name: 'plugins.detail.section',
+    id: 'omnimux-dsh-plugins-detail',
+    order: 110,
+    locale: NS,
+    inject: () => ({ t }),
+  }, ({ t: translate, subject }) => omnimuxSubject(subject) ? createElement(DshPluginsSection, { t: translate }) : null))
   // Task-model pickers and reference storage both need the `omnimux` config
   // scope, which only exists inside `ctx.inject(['configForms'], …)` — so both
   // their plugins.item card and their plugins.detail.section contribution are

@@ -1,22 +1,51 @@
 /** Narrow Host capabilities consumed by the existing plugin markets. */
 import { installComputerUseCommand } from './host/computer-use-command.ts'
+import { installLaunchPresets } from './host/launch-presets.ts'
 import { installHostLogging } from './host/logging.ts'
 import { spawn } from 'node:child_process'
-import { createRequire } from 'node:module'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ProfilePnpmInvocation } from '@deepseek-ai/dsh-app-boot'
+import type {} from '@deepseek-ai/dsh-host-webserver'
 import { installNotifications } from './notifications.ts'
 import { HostPermissions } from './host-permissions.ts'
+import type { LaunchPresetBundle } from './launch-presets.ts'
 import { NEXT_PACKAGE, profileName } from './profiles.ts'
 import { PNPM_IGNORE_MINIMUM_RELEASE_AGE } from './pnpm-policy.ts'
-import { unpackedPath } from './asar-archive-policy.ts'
+import { recordPluginCommands } from './upstream-family.ts'
+import { OFFICIAL_OAR_SUBAGENTS } from './upstream-family-labels.ts'
+
+// scripts/verify-host.mjs reads the entry through the built extensions module.
+export { bundledPnpmEntry } from './bundled-pnpm.ts'
+
+/** OAR subagents' launch choices, when the followed release ships the provider. */
+const OAR_LAUNCH_PRESETS: LaunchPresetBundle | undefined = OFFICIAL_OAR_SUBAGENTS
+
+/** Upstream default feedback form URL published by @deepseek-ai/dsh-client-ui-settings-account. */
+const UPSTREAM_DEFAULT_CONTACT_FORM_URL =
+  'https://trtgsjkv6r.feishu.cn/share/base/form/shrcnlCoGElW7MQznGy9r3YYXcg?hide_uid=1&hide_device_info=1&hide_harness_version=1'
+/** OmniMux public user-feedback questionnaire URL (survives user profile patches on ui-settings-account). */
+const OMNIMUX_CONTACT_FORM_URL =
+  'https://acnas9f21yqe.feishu.cn/share/base/form/shrcnSvp2rkKjQ1qVmy1zohciKf'
 
 export const name = 'desktop-next-capabilities'
 export const inject = ['profileContext']
 
 export function apply(ctx: Context): void {
   installHostLogging(ctx)
+  // User profile patches (e.g. onboarding step/completion persisted on ui-settings-account)
+  // replace the row's entire config object in cordis-plugin-include, wiping cordis.patch.yml's
+  // contactFormUrl back to upstream's default. Rewrite only the untouched upstream default here
+  // so OmniMux's feedback form stays active without patching dsh-client-ui-settings-account.
+  ctx.on('webserver/index-inject', table => {
+    for (const entry of table) {
+      if (entry.kind === 'global' && entry.name === '__DSH_CONTACT_CONFIG__'
+        && typeof entry.value === 'object' && entry.value !== null
+        && (entry.value as { contactFormUrl?: unknown }).contactFormUrl === UPSTREAM_DEFAULT_CONTACT_FORM_URL) {
+        (entry.value as { contactFormUrl: string }).contactFormUrl = OMNIMUX_CONTACT_FORM_URL
+      }
+    }
+  })
   if (process.send) {
     const permissions = new HostPermissions(process)
     ctx.provide('desktopPermissions', permissions)
@@ -33,8 +62,10 @@ export function apply(ctx: Context): void {
   // packages through the official pluginManager service and needs no Desktop
   // inventory or restart capability.
   ctx.provide('desktopProfiles', { current: { name: profile.name, dir: profile.dir } })
-  ctx.provide('desktopPnpm', runner)
+  // Plugin commands bypass the plugin manager, so failure reports learn of them from this runner.
+  ctx.provide('desktopPnpm', recordPluginCommands?.(ctx, runner) ?? runner)
   installComputerUseCommand(ctx, profile.dir)
+  if (OAR_LAUNCH_PRESETS !== undefined) installLaunchPresets(ctx, OAR_LAUNCH_PRESETS)
   if (process.send) ctx.provide('desktopActions', {
     ...(process.platform === 'darwin' || process.platform === 'win32' ? { openTerminal: () => {
       if (!process.connected || !process.send) throw new Error('Next shell is unavailable')
@@ -113,15 +144,4 @@ export function createPackageRunner(invocation: ProfilePnpmInvocation, directory
       await current?.done.catch(() => {})
     },
   }
-}
-
-/**
- * Entry of the pnpm this installation carries. Electron runs it as a separate Node-mode process
- * with its own workers, so a packaged Next uses the copy unpacked beside app.asar.
- * @param anchor - Manifest the installation resolves packages from.
- * @returns Absolute physical path of `pnpm.mjs`.
- */
-export function bundledPnpmEntry(anchor: string): string {
-  const require = createRequire(anchor)
-  return unpackedPath(join(dirname(require.resolve('pnpm')), 'bin', 'pnpm.mjs'))
 }

@@ -91,3 +91,30 @@ test('dual native and WebSocket HMR activation fails before mounting effects', (
   const ctx = { clientModules: { graph: () => ({ entries: [{ id: '@deepseek-ai/dsh-client-hmr' }] }) } }
   assert.throws(() => mountWebSocketHmr(ctx, {}, () => {}), /must|requires/)
 })
+
+test('HMR routes declare auth required and admit webServer peer when requestRejection is absent', () => {
+  const bus = createHubEventBus()
+  const routes = []
+  const rows = [{ id: 'omnimux', rev: 'v3' }]
+  const ctx = {
+    effect(factory) { factory() },
+    extend(properties) { return Object.assign(Object.create(this), properties) },
+    clientModules: { graph: () => ({ entries: rows }), onRebuilt: () => () => {} },
+    webServer: { register(route) { routes.push(route); return () => {} } },
+    connection: {},
+  }
+  mountWebSocketHmr(ctx, bus, () => {})
+  const route = routes.find(row => row.path === SNAPSHOT_PATH)
+  assert.equal(route.auth, 'required')
+  const denied = {}
+  route.handler({ headers: { origin: 'http://127.0.0.1' }, method: 'GET' }, { writeHead(s) { denied.status = s }, end() {} })
+  assert.equal(denied.status, 503)
+  const allowed = {}
+  route.handler(
+    { headers: { origin: 'http://127.0.0.1' }, method: 'GET' },
+    { writeHead(s) { allowed.status = s }, end(b) { allowed.body = b } },
+    { id: 'peer-1' },
+  )
+  assert.equal(allowed.status, 200)
+  assert.deepEqual(JSON.parse(allowed.body).entries, rows)
+})

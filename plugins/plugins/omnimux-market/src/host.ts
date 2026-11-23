@@ -61,26 +61,26 @@ export function createWorkshopReadHost(cfg: PluginConfig, options: WorkshopReadH
   const query = new QueryService(options.sources || createWorkshopSources(cfg), inventory)
   const guard = new RequestGuard({ connection: options.connection, trustedOrigin: options.trustedOrigin,
     authorizeRead: options.authorizeRead || ((_req, method) => method === 'workshopCapabilities') })
-  const authorize = (req: IncomingMessage, method: WorkshopReadMethod) => guard.authorizeHeaders(req, method)
+  const authorize = (req: IncomingMessage, method: WorkshopReadMethod, peer?: unknown) => guard.authorizeHeaders(req, method, peer)
   return {
-    async workshopCapabilities(req: IncomingMessage): Promise<CapabilityResult> {
-      await authorize(req, 'workshopCapabilities')
+    async workshopCapabilities(req: IncomingMessage, peer?: unknown): Promise<CapabilityResult> {
+      await authorize(req, 'workshopCapabilities', peer)
       return { scopeKey: scope?.scopeKey || null, scopeLabel: scope?.label || '未核实', scopeVerified: scope?.complete === true,
         connectionAuth: !!options.connection, exactOrigin: canonicalWorkshopOrigin(options.trustedOrigin) !== null,
         operationAuth: false, registryVerify: false, unifiedPolicy: false, commitBarrier: false, writable: false,
         reasons: [...(scope?.reasons || ['SCOPE_UNVERIFIED']), 'OPERATION_AUTH_UNVERIFIED', 'REGISTRY_VERIFY_UNAVAILABLE', 'COMMIT_BARRIER_UNAVAILABLE'] }
     },
-    async workshopInventory(req: IncomingMessage): Promise<WorkshopInventoryResult> {
-      await authorize(req, 'workshopInventory')
+    async workshopInventory(req: IncomingMessage, peer?: unknown): Promise<WorkshopInventoryResult> {
+      await authorize(req, 'workshopInventory', peer)
       return inventory.reconcile()
     },
-    async workshopQuery(req: IncomingMessage, request: WorkshopQueryRequest) {
-      await authorize(req, 'workshopQuery')
+    async workshopQuery(req: IncomingMessage, request: WorkshopQueryRequest, peer?: unknown) {
+      await authorize(req, 'workshopQuery', peer)
       assertWorkshopFields(request, ['view', 'query', 'domain', 'source', 'uninstalledOnly', 'queryRevision', 'cursor'])
       return query.query(request)
     },
-    async workshopDetail(req: IncomingMessage, request: WorkshopDetailRequest) {
-      await authorize(req, 'workshopDetail')
+    async workshopDetail(req: IncomingMessage, request: WorkshopDetailRequest, peer?: unknown) {
+      await authorize(req, 'workshopDetail', peer)
       assertWorkshopFields(request, ['skillKey', 'sourceRef', 'installId'])
       return query.detail(request)
     },
@@ -431,13 +431,14 @@ export function apply(ctx: Context, config: Config): void {
   })
 
   ctx.inject(['webServer'], (c) => {
-    const server = (c as unknown as { webServer: { register: (route: { kind: string; path: string; handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void> }) => void } }).webServer
-    server.register({ kind: 'exact', path: '/omnimux-market', handler: (req, res) => handleApi(req, res, cfg) })
-    server.register({ kind: 'exact', path: '/omnimux-market/icon', handler: (req, res) => handleIcon(req, res, cfg) })
+    const server = (c as unknown as { webServer: { register: (route: { kind: string; path: string; auth?: 'anonymous' | 'required' | 'deny'; handler: (req: IncomingMessage, res: ServerResponse, peer?: unknown) => void | Promise<void> }) => void } }).webServer
+    server.register({ kind: 'exact', path: '/omnimux-market', auth: 'required', handler: (req, res) => handleApi(req, res, cfg) })
+    server.register({ kind: 'exact', path: '/omnimux-market/icon', auth: 'required', handler: (req, res) => handleIcon(req, res, cfg) })
     const connection: WorkshopConnection = {
       requestRejection(req) {
-        const service = (c as unknown as { get(name: string): unknown }).get('connection') as WorkshopConnection | undefined
-        return service?.requestRejection(req) ?? (service ? undefined : { status: 401 })
+        const service = (c as unknown as { get(name: string): unknown }).get('connection') as Partial<WorkshopConnection> | undefined
+        if (typeof service?.requestRejection === 'function') return service.requestRejection(req)
+        return { status: 401 }
       },
     }
     // cfg.skillsDir alone does not prove all effective provider roots or read authorization.
@@ -445,8 +446,8 @@ export function apply(ctx: Context, config: Config): void {
       authorizeRead: (_req, method) => method === 'workshopCapabilities' }
     const workshop = createWorkshopReadHost(cfg, authorization)
     for (const method of WORKSHOP_READ_METHODS) {
-      server.register({ kind: 'exact', path: `/omnimux-market/workshop/${method}`,
-        handler: (req, res) => handleWorkshopApi(req, res, method, workshop, authorization) })
+      server.register({ kind: 'exact', path: `/omnimux-market/workshop/${method}`, auth: 'required',
+        handler: (req, res, peer) => handleWorkshopApi(req, res, method, workshop, authorization, peer) })
     }
   })
 

@@ -1895,9 +1895,11 @@ export const ASSETS_CSS = `
 
 export function injectAssetsStyles() {
   if (typeof document === 'undefined') return
-  if (document.getElementById(STYLES_ID)) return
-  const styleNode = document.createElement('style')
-  styleNode.id = STYLES_ID
-  styleNode.textContent = ASSETS_CSS
-  document.head.appendChild(styleNode)
+  let styleNode = document.getElementById(STYLES_ID)
+  if (!styleNode) {
+    styleNode = document.createElement('style')
+    styleNode.id = STYLES_ID
+    document.head.appendChild(styleNode)
+  }
+  if (styleNode.textContent !== ASSETS_CSS) styleNode.textContent = ASSETS_CSS
 }

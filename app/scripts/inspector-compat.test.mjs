@@ -29,7 +29,9 @@ function nodes(file, predicate) {
   return matches
 }
 
-for (const workspace of ['dsh-plugin-desktop', 'dsh-plugin-desktop-beta', 'dsh-desktop-next']) {
+// Only the stable-channel workspace is frozen at this runtime; the next-channel
+// shell is covered by its own channel-driven compat suite in stage 3B.
+for (const workspace of ['dsh-plugin-desktop']) {
   test(`${workspace}: official Reload DevTools completes through the hosted embedder callback`, { skip }, () => {
     const require = createRequire(resolve(workspace, 'package.json'))
     const manifest = require.resolve('@deepseek-ai/dsh-experimental-inspector/package.json')

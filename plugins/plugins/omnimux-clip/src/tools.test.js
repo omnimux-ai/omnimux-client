@@ -6,7 +6,8 @@ import { Readable } from 'node:stream'
 import { describe, it, test } from 'node:test'
 import { crc32, deflateSync } from 'node:zlib'
 import { Context } from '@deepseek-ai/cordis'
-import { ToolRuntime, assertObjectJsonSchema, assertSupportedJsonSchema, validateJsonSchemaValue } from '@deepseek-ai/dsh-tools'
+import { ToolRuntime, assertObjectJsonSchema, assertSupportedJsonSchema, projectToolSchema, validateJsonSchemaValue } from '@deepseek-ai/dsh-tools'
+import { ToolExecutionPipeline, executeToolBatch } from '@deepseek-ai/dsh-tools/pipeline'
 import { ClipDomainError } from './errors.js'
 import { createExportJobs } from './export-jobs.js'
 import { createClipDispatcher, registerClipRoutes } from './http/routes.js'
@@ -1105,6 +1106,16 @@ async function mountClipToolRuntime(t, home) {
   t.after(() => context.fiber.dispose())
   await context.plugin({ apply(ctx) { ctx.provide('systemPrompt', { tools() {}, section() {} }) } })
   await context.plugin(ToolRuntime)
+  await context.plugin({
+    inject: ['tools'],
+    apply(ctx) {
+      const pipeline = new ToolExecutionPipeline(ctx)
+      ctx.tools.setExecutor({
+        describe: (tools) => ({ schemas: tools.map(definition => projectToolSchema(definition, false)) }),
+        execute: (input) => executeToolBatch(input, pipeline, () => 10),
+      })
+    },
+  })
   await context.plugin({ inject: moduleInject, apply })
   return context.get('tools')
 }
@@ -1112,7 +1123,7 @@ async function mountClipToolRuntime(t, home) {
 test('Clip activates with the pinned DSH tool runtime and exposes supported schemas', async t => {
   const { home, specs, store } = fixture(t)
   const runtime = await mountClipToolRuntime(t, home)
-  assert.deepEqual(runtime.wireSchemas().knownNames.sort(), specs.map(({ name }) => name).sort())
+  assert.deepEqual(runtime.schemas().map(({ name }) => name).sort(), specs.map(({ name }) => name).sort())
   for (const { name } of specs) {
     const definition = runtime.get(name)
     assert.doesNotThrow(() => assertObjectJsonSchema(definition.parameters), `${name} input schema`)
@@ -1142,12 +1153,13 @@ test('Clip dispatches clip_get and rejects a result missing revisionEpoch throug
   const { home, store } = fixture(t)
   const runtime = await mountClipToolRuntime(t, home)
   store.create('demo', createNativeProject('demo'))
-  const dispatch = (callId) => runtime.execute({
-    callId,
-    name: 'clip_get',
-    arguments: { projectId: 'demo' },
-    signal: new AbortController().signal,
-  })
+  const dispatch = async (callId) => {
+    const batch = await runtime.execute({
+      calls: [{ type: 'tool-call', id: callId, name: 'clip_get', arguments: JSON.stringify({ projectId: 'demo' }) }],
+      signal: new AbortController().signal,
+    })
+    return batch.results[0].result
+  }
 
   const saved = await dispatch('clip-get-saved')
   assert.equal(saved.isError, false, saved.error?.message)

@@ -1,3 +1,4 @@
+import { prepareCuaNative } from './upstream-family.ts'
 /** Materialize the Next payload independently of Electron Builder, then seal it. */
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -6,12 +7,19 @@ import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { nextRuntimeFileExclusion, nextRuntimePackageExclusion, nextRuntimeUnusedFeatureExclusion, type NextPackagingTarget, type RuntimePackageConstraints } from './runtime-file-policy.ts'
 import { nextPackagingTarget, nextPayloadRelease, payloadDir, verifyNextPayload } from './packaged-payload.ts'
+import type { MacPackageArch } from './mac-runtime.ts'
 import { DESKTOP_RUNTIME_FILE, physicalPayload, sealPayloadAsync, type DesktopRuntimeDescriptor } from '../src/runtime-tree.ts'
 import { packagingStep, packagingStepSync } from './packaging-step.ts'
 import { windowsCodePayload, writeWindowsCodeFiles } from './windows-asar-unpack.ts'
 
-/** Shell entries copied beside the dependency tree; `package.json` is written separately. */
+/**
+ * Shell entries copied beside the dependency tree; `package.json` is written separately. Windows and Linux show the
+ * Dark rendition while the system theme is dark, and the classic icon set is the artwork users can switch the app
+ * to; `assets` carries its tray images. Shortcuts and the Linux desktop entry name these files too.
+ */
 const SHELL_ENTRIES = ['lib', 'assets', 'build/app-icon.ico', 'build/app-icon.png', 'build/app-icon-mac.png',
+  'build/app-icon-dark.ico', 'build/app-icon-dark.png',
+  'build/classic/app-icon.ico', 'build/classic/app-icon.png', 'build/classic/app-icon-mac.png',
   'cordis.patch.yml', 'host.cordis.patch.yml', 'scripts/node-bin'] as const
 
 /** Report of the unused-feature packages one preparation skipped, written beside the payload directory. */
@@ -102,12 +110,13 @@ export interface ProductionClosureReport {
  * Packages inside the application's own `node_modules` keep their installed nesting. A
  * workspace package, and dependencies installed beside one, are placed the way an installer
  * hoists them: at the payload root unless the root already holds another version of the same
- * name, in which case they nest under their dependent. One version is copied once.
+ * name, in which case they nest under their dependent. One version is copied once. The peers of
+ * a workspace package resolve to the root copies, as they will in the payload, rather than to the
+ * development copies its own tree installs for its tests.
  *
  * A package from the unused-feature table is skipped with its whole subtree even when an edge
  * requires it: the Next profile disables the cordis rows that would load it, so the edge is
  * never followed at runtime. Each such required edge is reported rather than dropped silently.
- * A required package that is wrong for the target OS or CPU still stops the build.
  * @param desktopRoot - Application package directory.
  * @param target - Release platform and architectures used to select optional native packages.
  * @returns Packages sorted by destination, and the skipped unused-feature packages.
@@ -121,6 +130,8 @@ export function collectProductionClosureReport(desktopRoot: string, target = nex
   }
   const placed = new Map<string, ClosurePackage>()
   const skipped = new Map<string, { reason: string; requiredBy: Set<string> }>()
+  // The copy Node finds from a package at the payload root: one placed there, else the application's.
+  const rootPackageDir = (name: string): string | undefined => placed.get(name)?.source ?? resolvePackageDir(name, root)
   const visited = new Set<string>()
   const queue: { real: string; destination: string | undefined }[] = [{ real: root, destination: undefined }]
   while (queue.length > 0) {
@@ -133,9 +144,11 @@ export function collectProductionClosureReport(desktopRoot: string, target = nex
     const optional = Object.keys(manifest.optionalDependencies ?? {})
     const required = [...Object.keys(manifest.dependencies ?? {}).filter(name => !optional.includes(name)),
       ...Object.keys(manifest.peerDependencies ?? {}).filter(name => optionalPeers[name]?.optional !== true)]
+    // A workspace package sits at the payload root, away from the tree that holds its development peers.
+    const rootPeers = dependentDestination !== undefined && !dependentDestination.includes('/node_modules/') && installedPlacement(real) === undefined
+      ? Object.keys(manifest.peerDependencies ?? {}).filter(name => manifest.dependencies?.[name] === undefined)
+      : []
     for (const name of new Set([...required, ...optional])) {
-      // A feature this line does not ship is dropped before resolution and the OS/CPU check:
-      // the manifest would pass that check and still be dead weight, and its profile row is disabled.
       const unused = nextRuntimeUnusedFeatureExclusion(name)
       if (unused !== undefined) {
         if (required.includes(name)) {
@@ -145,7 +158,7 @@ export function collectProductionClosureReport(desktopRoot: string, target = nex
         }
         continue
       }
-      const installed = resolvePackageDir(name, real)
+      const installed = (rootPeers.includes(name) ? rootPackageDir(name) : undefined) ?? resolvePackageDir(name, real)
       if (installed === undefined) {
         if (required.includes(name)) throw new Error(`Next payload: dependency ${name} required by ${dependent} is not installed`)
         continue
@@ -374,6 +387,12 @@ export async function preparePayload(options: PreparePayloadOptions): Promise<De
   const transformMain = createTransformer(output, {}, options.extraMetadata)
   const mainManifest = await packagingStep('payload:transform-main-manifest', async () => transformMain(join(output, 'package.json')))
   if (mainManifest != null) writeFileSync(join(output, 'package.json'), mainManifest)
+  if (target.platform === 'darwin') {
+    packagingStepSync('payload:prepare-cua', () => prepareCuaNative(desktopRoot, target.archs.map((arch) => {
+      if (arch !== 'arm64' && arch !== 'x64') throw new Error(`Unsupported macOS CUA architecture: ${arch}`)
+      return arch
+    })))
+  }
   const { packages: closure, skipped } = packagingStepSync('payload:collect-dependencies', () => collectProductionClosureReport(desktopRoot, target))
   for (const entry of skipped) log(`Skipped unused feature ${entry.name} (required by ${entry.requiredBy.join(', ')}): ${entry.reason}`)
   // Beside the payload rather than inside it: the sealed tree admits only the application's own root entries.
@@ -420,11 +439,15 @@ function electronVersion(desktopRoot: string): string {
 }
 
 if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
-  const { values } = parseArgs({ options: { platform: { type: 'string' }, version: { type: 'string' } }, allowPositionals: false })
+  const { values } = parseArgs({ options: { platform: { type: 'string' }, arch: { type: 'string' }, version: { type: 'string' } }, allowPositionals: false })
   const desktopRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+  const platform = (values.platform ?? process.platform) as NodeJS.Platform
+  if (values.arch !== undefined && (platform !== 'darwin' || !['arm64', 'x64', 'universal'].includes(values.arch))) {
+    throw new Error(`Next payload: --arch selects arm64, x64 or universal for a macOS package; received ${values.arch} for ${platform}`)
+  }
   await preparePayload({
     desktopRoot, output: join(desktopRoot, ...payloadDir((values.platform ?? process.platform) as NodeJS.Platform).split('/')),
-    target: nextPackagingTarget((values.platform ?? process.platform) as NodeJS.Platform),
+    target: nextPackagingTarget((values.platform ?? process.platform) as NodeJS.Platform, process.arch, (values.arch as MacPackageArch | undefined) ?? process.env),
     electronVersion: electronVersion(desktopRoot),
     ...(values.version === undefined ? {} : { extraMetadata: { version: values.version } }),
     log: message => console.log(message),

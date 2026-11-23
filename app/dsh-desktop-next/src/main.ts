@@ -2,32 +2,40 @@
 import { installDesktopShortcuts } from './keyboard.ts'
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { readFileSync } from 'node:fs'
-import { writeFile } from 'node:fs/promises'
+import { readFileSync, rmSync } from 'node:fs'
+import { access, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
+import { freemem, totalmem } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, net, Notification, protocol, safeStorage, session, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from 'electron'
+import { app, BrowserWindow, clipboard, crashReporter, dialog, ipcMain, Menu, nativeTheme, net, Notification, protocol, safeStorage, screen, session, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type OpenDialogOptions } from 'electron'
 import { appRequestHeaders, forwardWebRequest, serveWebDocument } from './web-document.ts'
 import { installAppDownloads } from './app-downloads.ts'
+import { installDesktopFileDrag, installFileActions, liveshareOwnerLogin } from './upstream-family.ts'
 import { claimDesktopSingleInstance } from './single-instance.ts'
-import { NEXT_PACKAGE, parseFeatures, profileName } from './profiles.ts'
-import { DESKTOP_PRODUCT_NAME, DESKTOP_USER_DATA_DIRECTORY_NAME } from './product-identity.ts'
+import { NEXT_PACKAGE, NextProfiles, parseFeatures, profileName } from './profiles.ts'
 import { APP_URL, IPC, SHELL_URL } from './ipc.ts'
+import { clientDiagnosticRecord, parseClientDiagnostic } from './client-diagnostic.ts'
 import { WINDOWS_TITLEBAR_HEIGHT } from './windows-layout.ts'
-import { preferredDesktopLocale, resolveDesktopLocale } from './menu-locale.ts'
+import { preferredDesktopLocale, resolveDesktopLocale, roleApplicationMenuTemplate } from './menu-locale.ts'
 import { NativeLocaleStore } from './native-locale.ts'
 import { NextDesktopRuntime } from './desktop-runtime.ts'
 import { probeSystemProxy, type DesktopSystemProxyProbe } from './system-proxy.ts'
-import { resolveDesktopShellEnvironment } from './shell-environment.ts'
+import { readSystemProxyConfiguration } from './system-proxy-configuration.ts'
+import { resolveDesktopShellEnvironment, type DesktopShellEnvironmentResolution } from './shell-environment.ts'
 import { ensureUtf8Locale } from './shell-locale.ts'
+import type { DesktopAppIcon } from './app-icon.ts'
 import { DEFAULT_PROFILE, NATIVE_ACCESS_HEADER, type DesktopCommand, type DesktopState, type DesktopSettingsPage } from './desktop-contract.ts'
 import { portsChanged, parsePreferences } from './desktop-preferences.ts'
-import { NativeDesktop, applyWindowMaterial } from './native-desktop.ts'
+import { hostStartupLimitTitle, hostStartupTimeoutFromId, hostStartupTimeoutLabel } from './host-startup-limit.ts'
+import { NativeDesktop, appWindowIcon, applyWindowMaterial } from './native-desktop.ts'
+import { syncLinuxDesktopEntry, syncWindowsShortcuts, windowsShortcutDirectories } from './installed-app-icon.ts'
 import { desktopLanAddresses } from './lan-addresses.ts'
 import { createLanHttpsCertificate, lanHttpsCertificateDiagnostic } from './lan-https-certificate.ts'
 import { desktopTerminalStateDirectory, openDesktopTerminal } from './desktop-terminal.ts'
-import { bundledPnpmEntry, createPackageRunner } from './extensions.ts'
-import { applyDesktopPackageAgePolicy } from './pnpm-policy.ts'
+import { dshCommandArguments, dshCommandInvocation } from './dsh-command.ts'
+import { createPackageRunner } from './extensions.ts'
+import { bundledPnpmEntry } from './bundled-pnpm.ts'
+import { applyDesktopPackageManagerPolicy } from './pnpm-policy.ts'
 import { auxiliaryWindowChromeOptions, auxiliaryWindowHasCustomFrame } from '../../dsh-plugin-desktop/src/auxiliary-window-options.ts'
 import { cleanupDisposableTree } from '../../dsh-plugin-desktop/src/disposable-tree.ts'
 import { installEditingContextMenu } from '../../dsh-plugin-desktop/src/context-menu.ts'
@@ -35,41 +43,72 @@ import { createNativeFilePicker } from '../../dsh-plugin-desktop/src/native-file
 import { DESKTOP_FILE_PICKER_CHANNEL } from '../../dsh-plugin-desktop/src/native-file-picker-contract.ts'
 import { atomicJson, privateDirectory } from './private-files.ts'
 import { windowMaterial } from './window-material.ts'
-import { ONBOARDING_ARGUMENT, RECOVERY_ARGUMENT, SAFE_ARGUMENT, relaunchApp, relaunchArguments } from './relaunch.ts'
+import { captureMainWindowState, FileMainWindowStateStore, fitMainWindowBounds, sameMainWindowState, type MainWindowState } from './main-window-state.ts'
+import { DE_ELEVATED_ARGUMENT, ONBOARDING_ARGUMENT, RECOVERY_ARGUMENT, SAFE_ARGUMENT, relaunchApp, relaunchArguments } from './relaunch.ts'
 import { DESKTOP_RUNTIME_FILE, readInstalledPackageVersion, verifyPackagedRuntimeIdentity } from './runtime-tree.ts'
-import { unpackedPath } from './asar-archive-policy.ts'
 import { createNativePermissions, installMediaPermissions } from './electron-permissions.ts'
-import { defaultDataDirectory, readDataDirectory, validateDataDirectory } from './data-directory.ts'
+import { DATA_DIRECTORY_VARIABLE, dataDirectoryChange, dataDirectoryLocationFile, dataDirectoryLocationRoot, readDataDirectory, rememberDataDirectory, sameDirectory, validateDataDirectory } from './data-directory.ts'
+import { assertBackupLocation, backupDirectoryName, copyDataDirectory } from './data-backup.ts'
 import { maskSecrets } from './mask-secrets.ts'
 import { DesktopBrowserGuests } from './browser-guests.ts'
 import { PlatformLoginWindow } from './platform-login-window.ts'
+import { DesktopPlatformView, platformBounds } from './platform-view.ts'
+import { PLATFORM_IPC } from './platform-ipc.ts'
 import { NextUpdates } from './updates.ts'
+import { updateDownloadDirectory } from './update-downloads.ts'
+import { isWindowsPortableCopy } from './update-portable.ts'
 import { createArtifactRequest } from './update-transport.ts'
 import { NextUpdateInstaller } from './update-installer.ts'
-import { updateLabel } from './update-state.ts'
+import { macUpdateArch } from './update-arch.ts'
+import { manualUpdate, manualUpdateHint, releaseNotesUrl, updateLabel } from './update-state.ts'
 import { DESKTOP_SHUTDOWN_TIMEOUT_MS } from '../../dsh-plugin-desktop/src/shutdown.ts'
-import { isDesktopRendererStatus, NextRendererRecovery } from './renderer-recovery.ts'
+import { isDesktopRendererStatus, NextRendererRecovery, type DesktopNavigationCause } from './renderer-recovery.ts'
 import { DesktopLaunchAnalytics } from './desktop-launch-analytics.ts'
+import { DESKTOP_PRODUCT_NAME, DESKTOP_USER_DATA_DIRECTORY_NAME } from './product-identity.ts'
+import { collectRendererDiagnostics, rendererDiagnosticsFields } from './renderer-diagnostics.ts'
+import { RollingRendererEvidence } from './renderer-evidence.ts'
+import { deElevateAtStartup, lowIntegrityAtStartup, windowsElevation } from './windows-elevation.ts'
+import { createSandboxLaunchReporter, gpuLaunchFailure, lowIntegrityLaunchDialog, rendererLaunchFailure } from './sandbox-launch.ts'
+import { pickOutsideProgramDirectory, programDirectory, programDirectoryRefusal, refusedProgramDirectoryOverlap, type ProgramDirectoryOverlap, type ProgramDirectoryPurpose } from './program-directory.ts'
+import { startCrashReporting } from './crash-reporting.ts'
+
+// Below Medium integrity Chromium cannot start its GPU process and ends the launch without a word (#1564).
+const lowIntegrity = lowIntegrityAtStartup({ platform: process.platform, argv: process.argv, executable: process.execPath })
+if (lowIntegrity) {
+  const text = lowIntegrityLaunchDialog(lowIntegrity, preferredDesktopLocale(app.getPreferredSystemLanguages()))
+  dialog.showErrorBox(text.title, `${text.message}\n\n${text.detail}`)
+  app.exit(1)
+}
+// An elevated Windows launch restarts with the user's normal token before Chromium starts any child (#1487).
+const startupElevation = deElevateAtStartup({ platform: process.platform, packaged: app.isPackaged, argv: process.argv, executable: process.execPath })
+if (startupElevation.relaunched) app.exit(0)
+const startupElevationState = startupElevation.relaunched ? {} : startupElevation.state
 
 // Inherit the package policy across the Host and every runtime child process.
-applyDesktopPackageAgePolicy(process.env)
+applyDesktopPackageManagerPolicy(process.env)
 
 const root = dirname(NEXT_PACKAGE)
-const defaultHome = resolve(process.env.DSH_DESKTOP_NEXT_HOME ?? defaultDataDirectory())
-// The location preference stays at its former Next-owned anchor so previously
-// chosen custom directories survive a change to the default home.
-const locationRoot = process.env.DSH_DESKTOP_NEXT_HOME ? defaultHome
-  : app.isPackaged ? join(app.getPath('appData'), DESKTOP_USER_DATA_DIRECTORY_NAME, 'home') : join(root, '.desktop-next', 'home')
-const locationFile = join(locationRoot, 'desktop-next-location.json')
-const dataLocation = readDataDirectory(defaultHome, locationRoot)
+// Workspace and data directory choices stay out of the installation (#1564).
+const program = programDirectory(process.platform, process.execPath)
+// Read once: an in-app relaunch inherits this process's environment, not later user variables.
+const environmentHome = process.env[DATA_DIRECTORY_VARIABLE] || undefined
+// The in-app choice keeps its former Next-owned anchor, whatever the variable says.
+const locationRoot = dataDirectoryLocationRoot(app.isPackaged, () => app.getPath('appData'), root)
+const locationFile = dataDirectoryLocationFile(locationRoot)
+const dataLocation = readDataDirectory(locationRoot, environmentHome)
 const home = dataLocation.home
+let dataSource = dataLocation.source
+// Linux has no tray terminal; `<app> dsh …` is its `dsh` command and never opens the desktop (#1568).
+const dshArguments = dshCommandArguments(process.argv, process.platform, process.defaultApp === true)
+if (dshArguments !== undefined) execDshCommand(dshArguments)
 const normalElectronData = join(home, 'electron-user-data')
 privateDirectory(normalElectronData)
 app.setName(DESKTOP_PRODUCT_NAME)
 // Keep one application owner across normal and safe launches, before switching
 // Chromium storage to the disposable environment.
 app.setPath('userData', normalElectronData)
-const ownsInstance = claimDesktopSingleInstance(app, openMain)
+// app.exit() before the message loop exits at once; never let the replaced launch own the instance regardless.
+const ownsInstance = !startupElevation.relaunched && claimDesktopSingleInstance(app, openMain)
 const safeModeRequested = process.argv.includes(SAFE_ARGUMENT)
 const safeElectronData = join(normalElectronData, 'safe-mode')
 if (ownsInstance) {
@@ -83,18 +122,30 @@ if (ownsInstance) {
 }
 const electronData = ownsInstance && safeModeRequested ? safeElectronData : normalElectronData
 const nativeLocale = new NativeLocaleStore(safeModeRequested ? electronData : home)
+const mainWindowState = new FileMainWindowStateStore(safeModeRequested ? electronData : home)
 app.setPath('userData', electronData)
 app.setPath('sessionData', electronData)
 protocol.registerSchemesAsPrivileged([{ scheme: 'dsh-app', privileges: {
-  standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true,
+  // As upstream Desktop registers it: `codeCache` lets V8 reuse compiled application scripts across launches.
+  standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true, codeCache: true,
 } }])
 
 let mainWindow: BrowserWindow | undefined
 let rendererRecovery: NextRendererRecovery | undefined
 let rendererDocumentId = ''
 let launchAnalytics: DesktopLaunchAnalytics | undefined
+/** The main-window load the Desktop started, until its navigation begins or the load settles; any other main-frame navigation came from the page. */
+let pendingNavigation: { readonly owner: BrowserWindow; readonly cause: Exclude<DesktopNavigationCause, 'page'> } | undefined
+/** The main window's interface has mounted at least once, so a later renderer failure stops a running Desktop. */
+let rendererHealthy = false
+/** The main-window document whose Next client reports its own failures, and the newest client logger message recorded from it. */
+let clientReports: { readonly document: string; sn: number } | undefined
+/** Console copies of what the Next client reports itself: slot crashes, and errors and rejections nothing caught. */
+const CLIENT_REPORTED = /^(?:slot entry crashed in '|slot factory occurrence crashed in '|Uncaught )/u
 // Storage partitions outlive individual windows, so the guest owner is process-scoped.
 let desktopShortcuts: ReturnType<typeof installDesktopShortcuts> | undefined
+/** Removes the native file drag's temporary exports, where the followed DSH release drags files natively. */
+let disposeFileDrag: (() => Promise<void>) | undefined
 const browserGuests = new DesktopBrowserGuests(() => runtime.auth ? [new URL(runtime.auth.url).origin] : [])
 let shellWindow: BrowserWindow | undefined
 let recoveryRunner: ReturnType<typeof createPackageRunner> | undefined
@@ -110,21 +161,59 @@ let onboardingSurfaceActive = false
 let onboardingComputerUse = false
 let relaunch: string[] | undefined
 let installingUpdate = false
+/** A later launch must not open a window on the data directory the startup prompt may reject. */
+let confirmingDataDirectory = false
 let systemProxy: DesktopSystemProxyProbe = {}
 let hostEnvironmentReady: Promise<void> | undefined
 let windowsLanguage = 'en'
 const require = createRequire(NEXT_PACKAGE)
 const webRoot = dirname(require.resolve('@deepseek-ai/dsh-web-frontend/dist/index.html'))
-const version = (JSON.parse(readFileSync(NEXT_PACKAGE, 'utf8')) as { version: string }).version
+const manifest = JSON.parse(readFileSync(NEXT_PACKAGE, 'utf8')) as { version: string; desktopName?: string }
+const version = manifest.version
 /** The dsh runtime beside this shell; a development tree may hoist it elsewhere, and the packaged check then reports it. */
 let dshVersion: string | undefined
 try { dshVersion = readInstalledPackageVersion(root, '@deepseek-ai/dsh') } catch { /* Not installed beside the shell; only diagnostics lose the field. */ }
-const t = (zh: string, en: string): string => windowsLanguage.toLowerCase().startsWith('zh') ? zh : en
+// Local-only Crashpad, started before any child process exists, so renderers, the GPU process and the
+// Node-mode Host inherit its handler. Dumps stay beside the normal launch, never in Safe Mode's
+// disposable state.
+const crashDumps = join(normalElectronData, 'Crashpad')
+if (ownsInstance) {
+  try {
+    app.setPath('crashDumps', crashDumps)
+    startCrashReporting(crashReporter, { productName: DESKTOP_PRODUCT_NAME, version, dsh: dshVersion })
+  } catch (error) { console.error('Local crash reporting is unavailable', error) }
+}
+// Finder and Dock launches carry no login-shell exports. Reading them takes one login shell's startup
+// and no Electron API, so it overlaps Electron's own startup; the Host still waits for the result.
+const shellEnvironment = ownsInstance ? readShellEnvironment() : undefined
+const language = (): 'zh' | 'en' => windowsLanguage.toLowerCase().startsWith('zh') ? 'zh' : 'en'
+const t = (zh: string, en: string): string => language() === 'zh' ? zh : en
+/** The official account plugin's embedded Platform page; the Host supplies its grant and the application renderer asks for pages. */
+const platformView = new DesktopPlatformView(join(root, 'lib', 'preload-platform-account.cjs'),
+  () => language() === 'zh' ? 'zh_CN' : 'en_US', process.platform === 'darwin' || process.platform === 'win32' ? process.platform : null, dshVersion)
 /** The bundled interpreter payload of this CPU: beside the archive when packaged, prepared by `prepare:runtime` in development. */
 const primaryRuntime = join(app.isPackaged ? join(process.resourcesPath, 'runtime') : join(root, '.desktop-build', 'runtime'), process.arch, 'primary-runtime')
+/**
+ * The last sample of a page that still answered. A failure report written after a renderer crash or
+ * a hang has nothing to ask, so it falls back to this instead of saying only "unavailable".
+ */
+const rendererEvidence = new RollingRendererEvidence(() => mainWindow?.webContents)
 const runtime = new NextDesktopRuntime({
   home, root, primaryRuntime, executable: process.execPath, addresses: () => [...desktopLanAddresses()], systemProxy: () => systemProxy,
   prepareEnvironment: () => prepareHostEnvironment(),
+  memoryProbe: {
+    appMetrics: () => app.getAppMetrics(),
+    system: () => {
+      // On Windows, Chromium reports GlobalMemoryStatusEx's page-file figures as swap: the commit
+      // limit and the commit still available, which run out before physical memory does (#1511).
+      const memory = process.platform === 'win32' ? process.getSystemMemoryInfo() : undefined
+      return { total: totalmem(), free: freemem(),
+        ...(memory === undefined ? {} : { commitLimit: memory.swapTotal * 1024, commitFree: memory.swapFree * 1024 }) }
+    },
+  },
+  // Read lazily: the window exists only after the runtime starts.
+  renderer: () => mainWindow?.webContents,
+  rendererEvidence: () => rendererEvidence.last(),
   ...(safeModeRequested ? { stateHome: electronData } : {}),
   certificate: async addresses => {
     try {
@@ -147,6 +236,8 @@ const runtime = new NextDesktopRuntime({
   onRestart: () => run({ type: 'restart' }),
   onTerminal: () => run({ type: 'terminal' }),
   onNotification: notification => native.notify(notification),
+  onStartupSlow: notice => quitting || !app.isReady() ? () => {} : native.notifyStartupSlow(notice),
+  onPlatformSession: session => platformView.setSession(session),
   onPlatformLogin: (request) => {
     if (quitting || !app.isReady()) return
     if (request.action === 'close') {
@@ -173,6 +264,7 @@ const runtime = new NextDesktopRuntime({
     return snapshot
   },
 })
+if (ownsInstance) runtime.diagnostics.crashDumps = crashDumps
 const platformLogin = new PlatformLoginWindow({
   BrowserWindow, session: partition => session.fromPartition(partition), host: () => runtime.auth,
   // Product sign-in is the OmniMux account; only the model-credential flow can still reach this window.
@@ -180,12 +272,17 @@ const platformLogin = new PlatformLoginWindow({
   warn: error => runtime.diagnostics.append(String(error), 'warn'),
 })
 const native = new NativeDesktop({ root, language: () => windowsLanguage, state, window: () => mainWindow,
-  show: openMain, run, warn: error => runtime.diagnostics.append(String(error), 'warn') })
+  show: openMain, run, warn: error => runtime.diagnostics.append(String(error), 'warn'),
+  appIcon: (): DesktopAppIcon => runtime.preferences.appIcon, dark: systemDark, packaged: app.isPackaged,
+  windows: () => BrowserWindow.getAllWindows(), dock: () => app.dock, installed: applyInstalledAppIcon })
 const permissions = createNativePermissions()
 const updateInstaller = new NextUpdateInstaller({ platform: process.platform, executable: process.execPath,
   language: () => windowsLanguage,
   log: error => runtime.diagnostics.append(String(error), 'warn') })
 const updates = new NextUpdates({ version, platform: process.platform, packaged: app.isPackaged, userData: electronData,
+  portable: isWindowsPortableCopy(process.platform, app.isPackaged, process.execPath),
+  downloads: updateDownloadDirectory(process.platform),
+  arch: process.platform === 'darwin' ? macUpdateArch(process.arch, app.runningUnderARM64Translation) : undefined,
   request: (url, init) => net.fetch(url, { ...init, credentials: 'omit' }),
   artifactRequest: createArtifactRequest(),
   changed: () => { if (app.isReady() && !quitting) native.refresh() },
@@ -207,18 +304,67 @@ const updates = new NextUpdates({ version, platform: process.platform, packaged:
   },
 })
 
-function state(): DesktopState {
+/**
+ * Whether Windows and Linux show the Dark rendition of the app icon, as macOS does with the bundle's layered icon:
+ * on Windows while the taskbar and Start menu are dark, whatever theme apps use; on Linux while the theme the app
+ * follows is dark, which is the system's unless the app has a theme of its own. macOS needs no help.
+ */
+function systemDark(): boolean {
+  if (process.platform === 'win32') return nativeTheme.shouldUseDarkColorsForSystemIntegratedUI
+  return process.platform === 'linux' && nativeTheme.shouldUseDarkColors
+}
+
+/**
+ * Show the app icon in what the installed package shows outside the running app: the Windows shortcuts and the Linux
+ * desktop entry, which no signature covers. The default whale tail in a light theme is what the package installed,
+ * the program's own icon and the package's desktop entry. Development runs leave the installed app alone, and Safe
+ * Mode leaves the saved choice in place. It runs after the current event, so reading shortcuts never holds up a window.
+ * @param icon - The saved choice.
+ * @param dark - Whether the system theme is dark.
+ */
+function applyInstalledAppIcon(icon: DesktopAppIcon, dark: boolean): void {
+  if (!app.isPackaged || runtime.safeMode || (process.platform !== 'win32' && process.platform !== 'linux')) return
+  const platform = process.platform
+  const packaged = icon === 'default' && !dark
+  const label = icon === 'classic' ? 'classic' : dark ? 'dark' : 'default'
+  setImmediate(() => {
+    if (quitting) return
+    try {
+      const result = platform === 'win32'
+        ? syncWindowsShortcuts({ icon: packaged ? process.execPath : appWindowIcon(root, platform, icon, dark)!,
+          ours: [appWindowIcon(root, platform, 'default', true)!, appWindowIcon(root, platform, 'classic')!], execPath: process.execPath, name: DESKTOP_PRODUCT_NAME,
+          directories: windowsShortcutDirectories({ desktop: app.getPath('desktop'), appData: app.getPath('appData') }, process.env), shell })
+        : manifest.desktopName === undefined ? { changed: [], failed: [] }
+          : syncLinuxDesktopEntry({ image: packaged ? undefined : appWindowIcon(root, platform, icon, dark), label, execPath: process.execPath,
+            desktopId: manifest.desktopName, home: app.getPath('home'), env: process.env })
+      for (const path of result.changed) runtime.diagnostics.append(`App icon ${label}: updated ${path}`)
+      for (const path of result.failed) runtime.diagnostics.append(`App icon ${label}: could not update ${path}`, 'warn')
+    } catch (error) { runtime.diagnostics.append(`App icon ${label}: ${String(error)}`, 'warn') }
+  })
+}
+
+/**
+ * The complete Desktop state.
+ * @param withLogs - Include the masked recent log, which only the recovery assistant in the shell window shows;
+ *   the main window's settings poll this state every two seconds and would otherwise pay for a 128 KiB snapshot.
+ */
+function state(withLogs = false): DesktopState {
+  // A broken in-app choice is still a choice that "Restore default" can remove.
+  const usingDefaultDirectory = dataSource !== 'desktop' && !dataLocation.error
   let recovery: DesktopState['recovery']
   try {
+    const repair = runtime.recovery.repairBackup(runtime.selected)
     recovery = { bundles: [], checkpoints: runtime.recovery.checkpoints(runtime.selected),
-      profileDirectory: runtime.profiles.directory(runtime.selected), usingDefaultDirectory: home === defaultHome, diagnosticsFile, notice: recoveryNotice }
+      ...(repair === null ? {} : { repairBackup: { id: repair.id, created: repair.created, fileCount: repair.fileCount, totalBytes: repair.totalBytes } }),
+      profileDirectory: runtime.profiles.directory(runtime.selected), usingDefaultDirectory, diagnosticsFile, notice: recoveryNotice }
     try { recovery.bundles = runtime.recovery.bundles(runtime.selected) } catch (error) { recovery.error = String(error) }
   } catch (error) {
     recovery = { bundles: [], checkpoints: [], profileDirectory: join(home, 'profiles', runtime.selected),
-      usingDefaultDirectory: home === defaultHome, error: String(error), diagnosticsFile, notice: recoveryNotice }
+      usingDefaultDirectory, error: String(error), diagnosticsFile, notice: recoveryNotice }
   }
-  return { ...runtime.state(), recovery, onboarding, ...(onboarding ? { onboardingComputerUse } : {}), platform: process.platform, version,
-    ...(['darwin', 'win32'].includes(process.platform) ? { updates: updates.snapshot() } : {}),
+  return { ...runtime.state(), logs: withLogs ? runtime.diagnostics.snapshot() : '', recovery, dataDirectory: { source: dataSource, environmentHome: environmentHome === undefined ? null : resolve(environmentHome) },
+    onboarding, ...(onboarding ? { onboardingComputerUse } : {}), platform: process.platform, version,
+    ...(['darwin', 'win32', 'linux'].includes(process.platform) ? { updates: updates.snapshot() } : {}),
     trayAvailable: native.available, notificationsAvailable: Notification.isSupported() }
 }
 function run(value: DesktopCommand): void { void command(value, 'native').catch(error => runtime.report(error)) }
@@ -264,12 +410,59 @@ function reportDesktopLaunch(window: BrowserWindow | undefined): void {
  */
 const WINDOWS_CAPTION_FILL = '#00000000'
 
+const MAIN_WINDOW_WIDTH = 1280
+const MAIN_WINDOW_HEIGHT = 840
+const MAIN_WINDOW_MIN_WIDTH = 800
+const MAIN_WINDOW_MIN_HEIGHT = 580
+/** Moves, resizes and zoom animations settle for this long before the main window is captured. */
+const MAIN_WINDOW_STATE_DELAY_MS = 250
+let settledMainWindowState: MainWindowState | undefined
+let storedMainWindowState: MainWindowState | undefined
+let mainWindowStateTimer: ReturnType<typeof setTimeout> | undefined
+
+function restoreMainWindowState(): MainWindowState | undefined {
+  try {
+    storedMainWindowState = mainWindowState.read()
+    if (storedMainWindowState === undefined) return undefined
+    const { bounds, maximized } = storedMainWindowState
+    const workArea = screen.getDisplayMatching(bounds).workArea
+    return { bounds: fitMainWindowBounds(bounds, workArea, { width: MAIN_WINDOW_MIN_WIDTH, height: MAIN_WINDOW_MIN_HEIGHT }), maximized }
+  } catch (error) {
+    runtime.diagnostics.append(`failed to restore main-window state: ${error instanceof Error ? error.message : String(error)}`, 'warn')
+    return undefined
+  }
+}
+
+function persistMainWindowState(window: BrowserWindow): void {
+  if (mainWindowStateTimer !== undefined) { clearTimeout(mainWindowStateTimer); mainWindowStateTimer = undefined }
+  const state = captureMainWindowState(window, settledMainWindowState, process.platform)
+  settledMainWindowState = state
+  if (state === undefined || (storedMainWindowState !== undefined && sameMainWindowState(state, storedMainWindowState))) return
+  try {
+    mainWindowState.write(state)
+    storedMainWindowState = state
+  } catch (error) {
+    runtime.diagnostics.append(`failed to save main-window state: ${error instanceof Error ? error.message : String(error)}`, 'warn')
+  }
+}
+
+function scheduleMainWindowState(window: BrowserWindow): void {
+  if (mainWindowStateTimer !== undefined) clearTimeout(mainWindowStateTimer)
+  mainWindowStateTimer = setTimeout(() => persistMainWindowState(window), MAIN_WINDOW_STATE_DELAY_MS)
+  mainWindowStateTimer.unref()
+}
+
 function createWindow(preload: string, primary = false): BrowserWindow {
-  const window = new BrowserWindow({ width: 1280, height: 840, minWidth: 800, minHeight: 580,
+  const restored = primary ? restoreMainWindowState() : undefined
+  if (primary) settledMainWindowState = restored
+  const window = new BrowserWindow({ width: MAIN_WINDOW_WIDTH, height: MAIN_WINDOW_HEIGHT, minWidth: MAIN_WINDOW_MIN_WIDTH, minHeight: MAIN_WINDOW_MIN_HEIGHT,
+    ...(restored?.bounds ?? {}),
     show: false, title: 'OmniMux',
-    ...(process.platform !== 'darwin' ? { icon: unpackedPath(join(root, 'build', process.platform === 'win32' ? 'app-icon.ico' : 'app-icon.png')) } : {}),
+    ...(process.platform !== 'darwin' ? { icon: appWindowIcon(root, process.platform, runtime.preferences.appIcon, systemDark()) } : {}),
     ...(!primary ? auxiliaryWindowChromeOptions() : {}),
     ...(process.platform === 'win32' && primary ? {
+      // Match the official initial canvas before the renderer paints its theme.
+      backgroundColor: nativeTheme.shouldUseDarkColors ? '#1b1b1c' : '#f9fafb',
       titleBarStyle: 'hidden' as const,
       titleBarOverlay: { height: WINDOWS_TITLEBAR_HEIGHT, color: WINDOWS_CAPTION_FILL,
         symbolColor: nativeTheme.shouldUseDarkColors ? '#f9fafb' : '#0f1115' },
@@ -283,43 +476,71 @@ function createWindow(preload: string, primary = false): BrowserWindow {
     // `DesktopBrowserGuests` issued the lease, and the guest itself never gets the tag.
     webPreferences: { preload: join(root, 'lib', preload), contextIsolation: true, sandbox: true, nodeIntegration: false, webviewTag: primary },
   })
+  // Keep the primitive ID: late console events can arrive after the native window is destroyed.
+  const consoleWebContentsId = window.webContents.id
   let intervalStart = Date.now()
   let count = 0
   let failureCount = 0
   // The Host log otherwise misses client slot failures: the renderer can retire
   // an entry (and its portalled dialog) without crashing the Electron process.
-  window.webContents.on('console-message', (event, _level, legacyMessage) => {
-    // Electron versions differ: older runtimes pass the message as the third
-    // argument, newer ones put it on the event. Never assume either exists.
-    const message = typeof legacyMessage === 'string' ? legacyMessage : event?.message
+  window.webContents.on('console-message', (event) => {
+    // Electron puts the message, its level and its source on the event; never assume the text exists.
+    const { message, level, sourceId, lineNumber } = event
     if (typeof message !== 'string') return
-    const level = typeof event?.level === 'string' ? event.level : _level
-    const failure = level === 'error' || level === 3 || message.includes('[next-ui-error]') || message.includes('slot entry crashed') || message.includes('slot factory occurrence crashed')
-    if (!failure && !runtime.preferences.developerLogging) return
+    // The Next client reports slot crashes and uncaught errors with their plugin and stack; the main frame's
+    // console copies would only repeat those records.
+    if (window === mainWindow && clientReports?.document === rendererDocumentId && event.frame?.parent === null && CLIENT_REPORTED.test(message)) return
+    const failure = level === 'error'
+    const bootWarning = message.startsWith('web boot: warning')
+    const important = failure || bootWarning
+    if (!important && !runtime.preferences.developerLogging) return
     if (Date.now() - intervalStart >= 1000) { intervalStart = Date.now(); count = 0; failureCount = 0 }
-    const currentCount = failure ? ++failureCount : ++count
+    const currentCount = important ? ++failureCount : ++count
     if (currentCount > 100) {
       if (currentCount === 101) runtime.diagnostics.record({ source: 'renderer', event: 'console.rate-limited', level: 'warn' })
       return
     }
-    runtime.diagnostics.record({ source: 'renderer', event: 'console', level: failure ? 'error' : level === 'warning' || level === 2 ? 'warn' : 'info',
-      message: message.slice(0, 8192), developer: !failure, fields: { webContentsId: window.webContents.id } })
+    runtime.diagnostics.record({ source: 'renderer', event: 'console', level: failure ? 'error' : bootWarning || level === 'warning' ? 'warn' : 'info',
+      message: message.slice(0, 8192), developer: !important, fields: { webContentsId: consoleWebContentsId,
+        ...(typeof sourceId === 'string' ? { sourceId: sourceId.slice(0, 2048) } : {}),
+        ...(Number.isFinite(lineNumber) ? { lineNumber } : {}) } })
   })
-  window.once('ready-to-show', () => show(window))
+  window.once('ready-to-show', () => {
+    const maximize = restored?.maximized === true && !quitting && !window.isDestroyed()
+    // Windows and Linux show a hidden window maximized at once. A macOS zoom of a hidden window
+    // leaves it beside the Stage Manager strip instead, so macOS zooms after the first show.
+    if (maximize && process.platform !== 'darwin') window.maximize()
+    show(window)
+    if (maximize && process.platform === 'darwin') window.maximize()
+  })
   applyWindowMaterial(window, runtime.preferences)
   if (primary) {
     window.webContents.on('before-input-event', (event, input) => {
       if (input.type === 'keyDown' && input.key === ',' && (input.control || input.meta) && !input.alt) { event.preventDefault(); openControls() }
     })
     window.on('close', event => {
+      persistMainWindowState(window)
       if (!quitting && runtime.preferences.closeToTray && native.available) { event.preventDefault(); window.hide() }
       else if (!quitting) { event.preventDefault(); app.quit() }
     })
+    const schedule = (): void => scheduleMainWindowState(window)
+    window.on('move', schedule).on('resize', schedule).on('maximize', schedule).on('unmaximize', schedule)
   }
   const openExternal = (url: string): void => {
     try { if (['https:', 'http:', 'mailto:'].includes(new URL(url).protocol)) void shell.openExternal(url).catch(error => runtime.report(error)) } catch { /* Ignore malformed external links. */ }
   }
-  window.webContents.setWindowOpenHandler(({ url }) => { openExternal(url); return { action: 'deny' } })
+  // Pages open their windows in the system browser, except the Relay sign-in popup the LiveShare owner page opens.
+  const ownerLogin = primary ? liveshareOwnerLogin : undefined
+  window.webContents.setWindowOpenHandler((details) => {
+    if (ownerLogin?.accepts(details)) return { action: 'allow', overrideBrowserWindowOptions: ownerLogin.windowOptions(window) }
+    openExternal(details.url)
+    return { action: 'deny' }
+  })
+  if (ownerLogin !== undefined) {
+    window.webContents.on('did-create-window', (child) => {
+      ownerLogin.guard(child.webContents, { hostOrigin: () => runtime.auth === undefined ? undefined : new URL(runtime.auth.url).origin, openExternal })
+    })
+  }
   window.webContents.on('will-navigate', (event, url) => {
     if (!url.startsWith(primary ? APP_URL : SHELL_URL)) { event.preventDefault(); openExternal(url) }
   })
@@ -385,12 +606,13 @@ function openControls(page: 'general' | 'profiles' | 'create-profile' | 'tools' 
   void shellWindow.loadURL(url).catch(error => runtime.diagnostics.append(String(error), 'error'))
 }
 function openMain(): void {
-  if (quitting) return
+  if (quitting || confirmingDataDirectory) return
   if (runtime.recoveryMode || runtime.state().phase === 'error') { openControls('recovery'); return }
   if (onboarding) { openControls('onboarding'); return }
   if (mainWindow && !mainWindow.isDestroyed()) { show(mainWindow); return }
   mainWindow = createWindow('preload-app.cjs', true)
   const owner = mainWindow
+  rendererHealthy = false
   // The guest owner installs its own navigation, crash and destruction release paths.
   browserGuests.bind(owner, (guest, name) => desktopShortcuts!.attachGuest(owner, guest, name))
   desktopShortcuts!.attach(owner)
@@ -400,10 +622,15 @@ function openMain(): void {
     rendererRecovery?.stop()
     mainWindow = undefined; onboardingSurfaceActive = false
   })
-  mainWindow.webContents.on('did-start-navigation', (_event, _url, inPlace, isMain) => {
+  mainWindow.webContents.on('did-start-navigation', (details, _url, inPlace, isMain) => {
     if (!isMain || inPlace || mainWindow !== owner) return
+    const pending = pendingNavigation?.owner === owner ? pendingNavigation : undefined
+    if (pending) pendingNavigation = undefined
+    const cause = pending?.cause ?? 'page'
     rendererDocumentId = randomUUID()
-    rendererRecovery?.navigating()
+    // Every document records who started it, so a reload without recovery records is still attributable.
+    runtime.diagnostics.record({ source: 'renderer', event: 'renderer.navigation', fields: { cause, initiator: details.initiator ? 'frame' : 'none' } })
+    rendererRecovery?.navigating(cause)
   })
   mainWindow.webContents.on('did-finish-load', () => {
     if (mainWindow !== owner) return
@@ -415,13 +642,15 @@ function openMain(): void {
     if (quitting || mainWindow !== owner || owner.isDestroyed() || runtime.recoveryMode) return
     // Preserve the native exit code even when automatic recovery succeeds.
     runtime.diagnostics.record({ source: 'renderer', event: 'process-gone', level: 'error', fields: { reason: details.reason, exitCode: details.exitCode } })
-    if (details.reason !== 'clean-exit') failRenderer(owner, new Error(`Renderer: ${details.reason}`))
+    if (details.reason === 'clean-exit') return
+    runtime.memory.incident({ process: 'renderer', reason: details.reason, exitCode: details.exitCode })
+    failRenderer(owner, new Error(`Renderer: ${details.reason}`))
   })
   mainWindow.webContents.on('preload-error', (_event, _path, error) => failRenderer(owner, error))
   mainWindow.webContents.on('did-fail-load', (_event, code, message, _url, isMain) => {
     if (isMain && code !== -3) failRenderer(owner, new Error(message))
   })
-  void loadMainDocument(owner).catch(error => failRenderer(owner, error))
+  void loadMainDocument(owner, 'open').catch(error => failRenderer(owner, error))
 }
 
 function resetRendererRecovery(owner: BrowserWindow): void {
@@ -429,9 +658,16 @@ function resetRendererRecovery(owner: BrowserWindow): void {
   rendererDocumentId = randomUUID()
   rendererRecovery = new NextRendererRecovery({
     available: () => !quitting && !runtime.recoveryMode && mainWindow === owner && !owner.isDestroyed() && runtime.backend.state.phase !== 'error',
-    reload: () => loadMainDocument(owner),
-    exhausted: detail => runtime.report(new Error(`Renderer recovery exhausted: ${detail}`)),
-    record: (event, fields) => runtime.diagnostics.record({ source: 'renderer', event, fields }),
+    reload: () => loadMainDocument(owner, 'recovery'),
+    exhausted: detail => runtime.report(new Error(`Renderer recovery exhausted: ${detail}`), rendererHealthy ? 'renderer-runtime' : 'renderer-startup'),
+    healthy: () => { rendererHealthy = true },
+    record: (event, fields) => {
+      // A scheduled or exhausted recovery means the page failed; the report it leads to records the failure itself.
+      const level = event === 'renderer.recovery.scheduled' || event === 'renderer.recovery.exhausted' ? 'warn' : 'info'
+      runtime.diagnostics.record({ source: 'renderer', event, level, fields })
+      // A freshly mounted interface is the sample worth keeping until the next periodic one.
+      if (event === 'renderer.ready') void rendererEvidence.refresh()
+    },
   })
 }
 
@@ -440,12 +676,17 @@ function failRenderer(owner: BrowserWindow, error: unknown): void {
   rendererRecovery?.fail(error instanceof Error ? error.message : String(error))
 }
 /** Cancelled or retired window navigations are not Host failures. */
-async function loadMainDocument(owner: BrowserWindow): Promise<void> {
+async function loadMainDocument(owner: BrowserWindow, cause: Exclude<DesktopNavigationCause, 'page'>): Promise<void> {
+  const pending = { owner, cause }
+  pendingNavigation = pending
   try { await owner.loadURL(APP_URL) } catch (error) {
     if (quitting || owner.isDestroyed() || mainWindow !== owner) return
     const failure = error as { code?: string; errno?: number }
     if (failure?.code === 'ERR_ABORTED' || failure?.errno === -3) return
     throw error
+  } finally {
+    // A load that settles before its navigation starts must not claim the page's next navigation.
+    if (pendingNavigation === pending) pendingNavigation = undefined
   }
 }
 
@@ -456,7 +697,7 @@ async function reloadMain(): Promise<void> {
   // A newly created window already started its first navigation in openMain().
   if (existing && existing === mainWindow && !existing.isDestroyed()) {
     resetRendererRecovery(existing)
-    await loadMainDocument(existing).catch(error => failRenderer(existing, error))
+    await loadMainDocument(existing, 'reload').catch(error => failRenderer(existing, error))
   }
 }
 
@@ -496,28 +737,53 @@ async function confirmed(message: string, detail = t('将停止当前 Host，正
   const result = await (owner === undefined ? dialog.showMessageBox(options) : dialog.showMessageBox(owner, options))
   return result.response === 0 && !quitting
 }
+/** Explain a folder choice that overlaps the installation; true opens the folder dialog again. */
+async function chooseAgain(purpose: ProgramDirectoryPurpose, overlap: ProgramDirectoryOverlap, owner: BrowserWindow | undefined): Promise<boolean> {
+  const text = programDirectoryRefusal(purpose, overlap, program, language())
+  const options = { type: 'warning' as const, title: text.title, message: text.message, detail: text.detail,
+    buttons: [...text.buttons], defaultId: 0, cancelId: 1, noLink: true }
+  const result = await (owner === undefined ? dialog.showMessageBox(options) : dialog.showMessageBox(owner, options))
+  return result.response === 0 && !quitting
+}
+/** Say where Profile repair saved the previous configuration before the relaunch opens Desktop setup. */
+async function announceRepair(backup: string): Promise<void> {
+  const owner = raiseDialogOwner()
+  const options = { type: 'info' as const, title: 'OmniMux', message: t('Profile 已修复', 'Profile repaired'),
+    detail: t(`修复前的配置已备份到：\n${backup}\n\n应用将重启并打开设置向导，请重新选择插件市场、远程控制等功能。如需撤销修复，可在恢复助手的“快速恢复”页恢复修复前的配置。`,
+      `The previous configuration was backed up to:\n${backup}\n\nThe app will restart and open the setup wizard, where you can choose Market, remote control and other features again. To undo the repair, restore the previous configuration from Quick recovery in the recovery assistant.`),
+    buttons: [t('重启', 'Restart'), t('在文件夹中显示', 'Show in Folder')], defaultId: 0, cancelId: 0 }
+  const result = await (owner === undefined ? dialog.showMessageBox(options) : dialog.showMessageBox(owner, options))
+  if (result.response === 1) shell.showItemInFolder(backup)
+}
 function confirmLanAccess(): Promise<boolean> {
   return confirmed(
     t('允许局域网 HTTPS 访问？', 'Allow LAN access over HTTPS?'),
     t('同一网络中的设备可以连接。请仅向可信设备分享登录链接，并在设备上核对和信任 CA 证书。', 'Devices on your local network can connect. Share login links only with trusted devices, and verify and trust the CA certificate on each device.'),
   )
 }
+/** Linux packages and portable Windows copies are not installed in the app: open the release page, which carries every package format. */
+function openUpdateDownload(version: string | undefined): void {
+  void shell.openExternal(releaseNotesUrl(version)).catch(error => runtime.diagnostics.append(String(error), 'warn'))
+}
 async function promptAvailableUpdate(): Promise<void> {
   if (quitting || runtime.busy) return
   const snapshot = updates.snapshot()
-  if (snapshot.phase !== 'available' || !snapshot.installable) return
+  const manual = manualUpdate(snapshot, process.platform)
+  if (snapshot.phase !== 'available' || !snapshot.installable && !manual) return
   const owner = raiseDialogOwner()
   const options = {
     type: 'info' as const,
     title: 'OmniMux',
     message: updateLabel(snapshot, windowsLanguage),
-    buttons: [t('下载更新', 'Download update'), t('稍后', 'Later')],
+    buttons: [manual ? t('前往下载', 'Open download page') : t('下载更新', 'Download update'), t('稍后', 'Later')],
     defaultId: 0,
     cancelId: 1,
-    detail: t('下载完成后可一键安装并重启。', 'When the download finishes, choose Install and restart.'),
+    detail: manual ? manualUpdateHint(windowsLanguage, snapshot.portable) : t('下载完成后可一键安装并重启。', 'When the download finishes, choose Install and restart.'),
   }
   const choice = await (owner === undefined ? dialog.showMessageBox(options) : dialog.showMessageBox(owner, options))
-  if (choice.response === 0 && !quitting && !runtime.busy) void updates.download()
+  if (choice.response !== 0 || quitting) return
+  if (manual) openUpdateDownload(snapshot.version)
+  else if (!runtime.busy) void updates.download()
 }
 async function openPath(path: string): Promise<void> { const error = await shell.openPath(path); if (error) throw new Error(error) }
 
@@ -540,12 +806,16 @@ async function command(value: unknown, source: 'app' | 'shell' | 'native' = 'app
 }
 
 async function loggedCommand(input: Record<string, unknown>, type: string, source: 'app' | 'shell' | 'native'): Promise<boolean | void> {
+  // Each action replaces the previous action's failure notice; the failure recovery shows stays.
+  runtime.actionFailure = ''
   const end = runtime.diagnostics.operation('electron.commands', type, { caller: source }, true)
   try { const result = await performCommand(input, type, source); end(); return result } catch (error) { end(error); throw error }
 }
 
 async function performCommand(input: Record<string, unknown>, type: string, source: 'app' | 'shell' | 'native'): Promise<boolean | void> {
   if (type === 'confirm-lan') return confirmLanAccess()
+  // Setup offers the choice before the Host starts; the change notification shows the icon at once.
+  if (type === 'app-icon') { runtime.saveAppIcon(input.appIcon); return }
   if (type === 'controls') {
     if (input.page !== undefined && (typeof input.page !== 'string' || !['general', 'profiles', 'create-profile', 'tools', 'recovery', 'permissions'].includes(input.page))) throw new Error('Invalid controls page')
     openControls(input.page as Parameters<typeof openControls>[0]); return
@@ -553,20 +823,23 @@ async function performCommand(input: Record<string, unknown>, type: string, sour
   if (type === 'close-controls') { shellWindow?.close(); return }
   if (type === 'quit') { app.quit(); return }
   if (['check-updates', 'download-update', 'install-update'].includes(type)) {
-    if (!['darwin', 'win32'].includes(process.platform) || quitting || runtime.busy) return
+    if (!['darwin', 'win32', 'linux'].includes(process.platform) || quitting || runtime.busy) return
     if (type === 'check-updates') {
       void updates.check().then(async () => {
         if (source !== 'native' || quitting) return
         const snapshot = updates.snapshot()
-        if (snapshot.phase === 'available' && snapshot.installable) await promptAvailableUpdate()
+        if (snapshot.phase === 'available' && (snapshot.installable || manualUpdate(snapshot, process.platform))) await promptAvailableUpdate()
         else {
           const owner = raiseDialogOwner()
           const options = { type: 'info' as const, title: 'OmniMux', message: updateLabel(snapshot, windowsLanguage) }
           await (owner === undefined ? dialog.showMessageBox(options) : dialog.showMessageBox(owner, options))
         }
       }).catch(error => runtime.diagnostics.append(String(error), 'warn'))
-    } else if (type === 'download-update') void updates.download()
-    else {
+    } else if (type === 'download-update') {
+      const snapshot = updates.snapshot()
+      if (manualUpdate(snapshot, process.platform)) openUpdateDownload(snapshot.version)
+      else void updates.download()
+    } else {
       if (updates.snapshot().phase !== 'ready') return
       void updates.install()
     }
@@ -642,8 +915,14 @@ async function performCommand(input: Record<string, unknown>, type: string, sour
     }
     if (type === 'open-home') { await openPath(home); return }
     if (type === 'open-profile') { await openPath(runtime.profiles.directory(runtime.selected)); return }
-    if (type === 'open-logs') { runtime.diagnostics.flush(); await openPath(dirname(runtime.diagnostics.file)); return }
+    if (type === 'open-logs') { runtime.diagnostics.flush(true); await openPath(dirname(runtime.diagnostics.file)); return }
     if (type === 'open-backups') { privateDirectory(runtime.recovery.directory); await openPath(runtime.recovery.directory); return }
+    if (type === 'change-data-directory' || type === 'backup-data-directory') {
+      if (runtime.safeMode || runtime.recoveryMode) throw new Error(t('安全模式和恢复模式下请使用恢复助手。', 'In Safe Mode or recovery mode, use the recovery assistant.'))
+      if (type === 'change-data-directory') await changeDataDirectory(false)
+      else await backupDataDirectory()
+      return
+    }
     if (type === 'open-browser' || type === 'open-lan') { await shell.openExternal(runtime.browserLink(type === 'open-lan')); return }
     if (type === 'copy-browser' || type === 'copy-lan') { clipboard.writeText(runtime.browserLink(type === 'copy-lan')); return }
     if (type === 'open-browser-url' || type === 'copy-browser-url') {
@@ -655,16 +934,28 @@ async function performCommand(input: Record<string, unknown>, type: string, sour
     if (type === 'export-ca' || type === 'diagnostics') {
       const certificate = runtime.lan?.caCertificate
       if (type === 'export-ca' && !certificate) throw new Error('LAN certificate is unavailable')
+      // Sample the page while the save dialog is open: the renderer is the only part of the
+      // export that has to be asked, and the dialog covers its sampling second.
+      const sampling = type === 'diagnostics' ? collectRendererDiagnostics(mainWindow?.webContents) : undefined
       const owner = raiseDialogOwner()
       const options = { title: type === 'export-ca' ? t('导出局域网 CA 证书', 'Export LAN CA certificate') : t('导出诊断（分享前请检查内容）', 'Export diagnostics (review before sharing)'),
         defaultPath: type === 'export-ca' ? 'dsh-desktop-next-ca.crt' : `dsh-desktop-next-diagnostics-${Date.now()}.json`,
         filters: [{ name: type === 'export-ca' ? 'CA certificate' : 'Diagnostics', extensions: [type === 'export-ca' ? 'crt' : 'json'] }] }
       const result = await (owner === undefined ? dialog.showSaveDialog(options) : dialog.showSaveDialog(owner, options))
-      if (!result.canceled && result.filePath && !quitting) {
-        if (type === 'export-ca') await writeFile(result.filePath, certificate!, { mode: 0o600 })
-        else await runtime.diagnostics.exportTo(result.filePath, state())
-        if (type === 'diagnostics') diagnosticsFile = result.filePath
+      if (result.canceled || !result.filePath || quitting) {
+        // A cancelled export drops the sample; observe it so a future failure cannot surface
+        // as an unhandled rejection in the fail-loud main process.
+        void sampling?.catch(() => {})
+        return
       }
+      if (type === 'export-ca') await writeFile(result.filePath, certificate!, { mode: 0o600 })
+      else {
+        // Sampling never fails the export; an unsampled renderer is itself diagnostic.
+        const renderer = await sampling!
+        runtime.diagnostics.record({ source: 'renderer', event: 'export.snapshot', fields: rendererDiagnosticsFields(renderer) })
+        await runtime.diagnostics.exportTo(result.filePath, state(), renderer)
+      }
+      if (type === 'diagnostics') diagnosticsFile = result.filePath
       return
     }
     if (type === 'preferences') {
@@ -696,7 +987,7 @@ async function performCommand(input: Record<string, unknown>, type: string, sour
     if (type === 'rollback' && !runtime.recovery.latest(next)) throw new Error(t('尚无成功启动的配置备份。', 'No successful-start configuration is available.'))
     const messages: Record<string, string> = {
       switch: t(`切换到 Profile「${next}」并重启应用？`, `Switch to Profile “${next}” and restart the application?`),
-      recover: t('备份并修复当前 Profile？将禁用第三方插件、远控和市场。', 'Back up and repair this Profile? Third-party plugins, remote control and Market will be disabled.'),
+      recover: t('备份并修复当前 Profile？只保留内置插件，其他插件（包括官方可选插件）、远控和市场都会停用，Profile 补丁中的设置会恢复默认。完成后应用将重启并打开设置向导。', 'Back up and repair this Profile? Only built-in plugins stay enabled: other plugins, official optional ones included, remote control and Market are turned off, and settings in the Profile patch return to their defaults. The app then restarts and opens the setup wizard.'),
       'repair-global': t('备份并停用全局补丁？这会影响所有 Next Profile。', 'Back up and disable the global patch? This affects every Next Profile.'),
       rollback: t('恢复最近成功启动的 Profile 配置？当前配置会先备份。', 'Restore the last successful-start Profile configuration? The current configuration will be backed up first.'),
       'safe-mode': t('在独立的临时环境中进入安全模式？原有数据和配置会保留。', 'Enter safe mode in a separate temporary environment? Existing data and configuration are preserved.'),
@@ -724,8 +1015,18 @@ async function performCommand(input: Record<string, unknown>, type: string, sour
     rendererRecovery?.stop()
     onboarding = false
     await recoveryStopping
+    if (type === 'recover') {
+      // Repair resets what Desktop setup chose, so the relaunched app runs setup before its Host starts;
+      // the official onboarding follows, as its saved progress was in the Profile patch.
+      await runtime.backend.stop()
+      const backup = await runtime.profiles.recover(next)
+      runtime.diagnostics.append(`Repaired Profile ${next}; its previous configuration is in ${backup}`)
+      await announceRepair(backup)
+      relaunch = relaunchArguments(process.argv.slice(1), false, false)
+      app.quit()
+      return
+    }
     const change = async (): Promise<void> => {
-      if (type === 'recover') await runtime.profiles.recover(next)
       if (type === 'rollback') await restoreCheckpoint()
       if (type === 'repair-global') runtime.recovery.repairGlobalPatch()
       if (features) runtime.profiles.setFeatures(next, features)
@@ -741,7 +1042,8 @@ async function performCommand(input: Record<string, unknown>, type: string, sour
     await reloadMain()
     if (!runtime.safeMode && mainWindow) shellWindow?.close()
   } catch (error) {
-    if (type === 'recovery-action' || onboarding && (type === 'onboarding-complete' || type === 'onboarding-skip')) runtime.diagnostics.append(String(error), 'error')
+    // A refused directory or a full disk is shown where the user acted; it is not a Host failure.
+    if (['recovery-action', 'change-data-directory', 'backup-data-directory'].includes(type) || onboarding && (type === 'onboarding-complete' || type === 'onboarding-skip')) runtime.diagnostics.append(String(error), 'error')
     else runtime.report(error)
     throw error
   } finally { runtime.busy = false; native.refresh() }
@@ -794,6 +1096,26 @@ async function recoveryAction(input: Record<string, unknown>): Promise<void> {
     app.quit()
     return
   }
+  if (action === 'host-startup-timeout') {
+    // The original environment's limit; Safe Mode keeps its own fixed one.
+    const limit = hostStartupTimeoutFromId(input.id)
+    runtime.saveStartupTimeout(limit)
+    runtime.diagnostics.record({ source: 'desktop', event: 'host.start-limit.saved', fields: { limit, safeMode: runtime.safeMode } })
+    const zh = language() === 'zh'
+    const restart = runtime.safeMode ? t('退出安全模式并重启', 'Exit Safe Mode and Restart') : t('退出并重启', 'Quit and restart')
+    recoveryNotice = { tone: 'success', title: hostStartupLimitTitle(zh),
+      body: t(`已改为${limit === 'none' ? '' : ' '}${hostStartupTimeoutLabel(limit, zh)}。请点击“${restart}”使其生效。`,
+        `${limit === 'none' ? 'The startup limit is removed' : `The startup limit is now ${String(limit)} seconds`}. Choose “${restart}” to apply it.`) }
+    return
+  }
+  if (action === 'automatic-port') {
+    // Safe Mode's settings are fixed and always let the Host choose its port.
+    runtime.writePreferences({ ...runtime.preferences, port: 0 })
+    runtime.diagnostics.record({ source: 'desktop', event: 'host.port.automatic' })
+    recoveryNotice = { tone: 'success', title: t('已改用自动端口', 'Automatic port set'),
+      body: t('插件服务下次启动时会选一个空闲端口。请点击“退出并重启”使其生效。', 'The plugin service picks a free port the next time it starts. Choose “Quit and restart” to apply it.') }
+    return
+  }
   const directory = runtime.profiles.directory(runtime.selected)
   const files: Record<string, string> = {
     'open-settings-document': join(home, 'settings.yaml'),
@@ -806,12 +1128,20 @@ async function recoveryAction(input: Record<string, unknown>): Promise<void> {
     if (!diagnosticsFile) throw new Error('No exported diagnostics')
     shell.showItemInFolder(diagnosticsFile); return
   }
+  if (action === 'show-failure-report') {
+    const file = await runtime.failureReportFile()
+    if (file === undefined) throw new Error(t('诊断报告未能保存，请改为导出诊断信息。', 'The diagnostic report could not be saved. Export diagnostics instead.'))
+    try { await access(file) } catch { throw new Error(t(`找不到诊断报告：${file}`, `The diagnostic report is no longer available: ${file}`)) }
+    shell.showItemInFolder(file); return
+  }
   if (action === 'open-checkpoint' || action === 'preview-checkpoint') {
-    const checkpoint = runtime.recovery.checkpoints(runtime.selected).find(item => item.id === input.id)
+    const checkpoint = typeof input.id === 'string' ? runtime.recovery.find(runtime.selected, input.id) : undefined
     if (!checkpoint) throw new Error('Recovery checkpoint is no longer available')
     if (action === 'open-checkpoint') { await openPath(checkpoint.directory); return }
-    if (!await confirmed(t('还原所选配置备份？', 'Restore the selected configuration backup?'),
-      t(`备份时间：${checkpoint.created}。当前配置会先备份，然后恢复配置并安装所需插件依赖。共享数据不会回滚。`, `Saved: ${checkpoint.created}. Current configuration will be backed up, then the saved configuration and required plugin dependencies will be restored. Shared data is not rolled back.`))) return
+    const undo = runtime.recovery.repairBackup(runtime.selected)?.id === checkpoint.id
+    if (!await confirmed(undo ? t('撤销修复，恢复修复前的配置？', 'Undo the repair and restore the previous configuration?') : t('还原所选配置备份？', 'Restore the selected configuration backup?'),
+      undo ? t(`修复时间：${checkpoint.created}。当前配置会先备份，然后恢复修复前的配置并安装所需插件依赖；导致故障的插件可能随之恢复。共享数据不会回滚。`, `Repaired: ${checkpoint.created}. Current configuration will be backed up, then the configuration from before the repair and its required plugin dependencies will be restored; a plugin that caused the failure may return with it. Shared data is not rolled back.`)
+        : t(`备份时间：${checkpoint.created}。当前配置会先备份，然后恢复配置并安装所需插件依赖。共享数据不会回滚。`, `Saved: ${checkpoint.created}. Current configuration will be backed up, then the saved configuration and required plugin dependencies will be restored. Shared data is not rolled back.`))) return
     await recoveryStopping
     if (!runtime.safeMode) await runtime.backend.stop()
     await restoreCheckpoint(checkpoint.id)
@@ -843,21 +1173,8 @@ async function recoveryAction(input: Record<string, unknown>): Promise<void> {
     return
   }
   if (action === 'begin-change-data-directory' || action === 'restore-default-data-directory') {
-    const owner = action === 'begin-change-data-directory' ? raiseDialogOwner() : undefined
-    const choice = action !== 'begin-change-data-directory' ? undefined
-      : await (owner === undefined
-        ? dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })
-        : dialog.showOpenDialog(owner, { properties: ['openDirectory', 'createDirectory'] }))
-    if (choice?.canceled) return
-    const target = action === 'restore-default-data-directory' ? defaultHome : choice?.filePaths[0]
-    if (!target || !isAbsolute(target)) return
-    const destination = validateDataDirectory(target, home, defaultHome)
-    if (destination === home) return
-    if (!await confirmed(t('切换数据目录并重启？', 'Change data directory and restart?'),
-      t(`新目录：${destination}。原目录的数据会保留，不会自动迁移。`, `New directory: ${destination}. Existing data remains in its original directory and is not moved.`))) return
-    atomicJson(locationFile, { home: destination })
-    relaunch = relaunchArguments(process.argv.slice(1), false, false)
-    app.quit(); return
+    await changeDataDirectory(action === 'restore-default-data-directory')
+    return
   }
   if (action === 'factory-reset') {
     if (!await confirmed(t('重置当前数据目录并重启？', 'Reset the current data directory and restart?'),
@@ -873,29 +1190,169 @@ async function recoveryAction(input: Record<string, unknown>): Promise<void> {
 }
 
 /**
+ * Replace this process with the packaged CLI on this launch's data directory and selected Profile.
+ * An unreadable data directory choice sends the desktop into recovery, so no command runs on the fallback.
+ */
+function execDshCommand(args: readonly string[]): never {
+  if (dataLocation.error) {
+    console.error(`dsh-desktop-next: the data directory choice cannot be read; open DSH NEXT to repair it: ${dataLocation.error}`)
+    return process.exit(1)
+  }
+  let profile: string | undefined
+  try { profile = new NextProfiles(home).active } catch (error) {
+    console.error(`dsh-desktop-next: the selected Profile cannot be read; name one with --profile: ${String(error)}`)
+  }
+  const command = dshCommandInvocation({ executable: process.execPath, root, args, home, profile, environment: process.env })
+  return process.execve!(command.file, command.args, command.env)
+}
+
+function rememberLaunchDirectory(directory: string): void {
+  try { rememberDataDirectory(locationRoot, directory) } catch (error) { runtime.diagnostics.append(`Data directory record: ${String(error)}`, 'warn') }
+}
+
+/**
+ * Ask before a launch sets up another data directory than the last one used. An in-app relaunch
+ * inherits the environment of the process that started it, and a removed choice falls back to the
+ * variable or the default, so either could otherwise start over in a new directory silently.
+ * @returns false when this process ends to reopen the last directory or to quit.
+ */
+async function confirmDataDirectory(): Promise<boolean> {
+  if (safeModeRequested || dataLocation.error) return true
+  const change = dataDirectoryChange(locationRoot, home, environmentHome)
+  if (change === undefined) { rememberLaunchDirectory(home); return true }
+  const { previous, reachable } = change
+  const source = { desktop: t('应用内选择', 'chosen in the app'), environment: DATA_DIRECTORY_VARIABLE, default: t('默认目录', 'default') }[dataSource]
+  // No window exists yet; a relaunched macOS app is not activated on its own.
+  if (process.platform === 'darwin') app.focus({ steal: true })
+  confirmingDataDirectory = true
+  const { response } = await dialog.showMessageBox({ type: 'warning', title: 'OmniMux', noLink: true,
+    message: t('数据目录与上次不同', 'The data directory differs from the last launch'),
+    detail: [
+      t(`本次：${home}（${source}）`, `This launch: ${home} (${source})`),
+      t(`上次：${previous}${reachable ? '' : '（当前无法访问）'}`, `Last launch: ${previous}${reachable ? '' : ' (unavailable now)'}`),
+      '',
+      t('继续使用本次目录不会移动或删除上次目录中的数据。', 'Continuing does not move or delete data in the last directory.'),
+      ...reachable ? [] : [t('上次的目录如在移动硬盘或网络位置上，请先连接，再选择“改用上次的目录”。', 'If the last directory is on a removable or network drive, connect it before choosing “Use the last directory”.')],
+      t(`如果刚修改了 ${DATA_DIRECTORY_VARIABLE}：应用内重启会沿用修改前的环境变量，请完全退出后再重新打开。`,
+        `If you just changed ${DATA_DIRECTORY_VARIABLE}: an in-app restart keeps the previous environment, so quit completely and open the app again.`),
+    ].join('\n'),
+    buttons: [t('改用上次的目录', 'Use the last directory'), t('继续使用本次目录', 'Continue with this directory'), t('退出', 'Quit')], defaultId: 0, cancelId: 2 })
+    .finally(() => { confirmingDataDirectory = false })
+  if (response === 1) { rememberLaunchDirectory(home); return true }
+  if (response === 0) {
+    // An in-app choice no longer depends on the inherited environment.
+    atomicJson(locationFile, { home: previous })
+    rememberLaunchDirectory(previous)
+    relaunchApp(app, process.argv.slice(1))
+  }
+  runtime.diagnostics.end(true)
+  app.exit(0)
+  return false
+}
+
+/** Choose another data directory, or forget the in-app choice, for the next launch. No data moves. */
+async function changeDataDirectory(restoreDefault: boolean): Promise<void> {
+  let target = dataLocation.fallback
+  if (!restoreDefault) {
+    const owner = raiseDialogOwner()
+    const options: OpenDialogOptions = { properties: ['openDirectory', 'createDirectory'] }
+    const selected = await pickOutsideProgramDirectory(async () => {
+      const choice = await (owner === undefined ? dialog.showOpenDialog(options) : dialog.showOpenDialog(owner, options))
+      return choice.canceled ? undefined : choice.filePaths[0]
+    }, choice => refusedProgramDirectoryOverlap('data', choice, program), overlap => chooseAgain('data', overlap, owner))
+    if (!selected || !isAbsolute(selected)) return
+    target = selected
+  }
+  const destination = validateDataDirectory(target, home, dataLocation.fallback)
+  // A broken choice is replaced through a restart, which also leaves recovery.
+  if (sameDirectory(destination, home) && !dataLocation.error) {
+    // The directory stays; restoring the default only forgets how it was chosen.
+    if (restoreDefault && dataSource === 'desktop') { rmSync(locationFile, { force: true }); dataSource = environmentHome ? 'environment' : 'default' }
+    return
+  }
+  if (!await confirmed(t('切换数据目录并重启？', 'Change data directory and restart?'),
+    t(`新目录：${destination}。原目录的数据会保留，不会自动迁移。`, `New directory: ${destination}. Existing data remains in its original directory and is not moved.`))) return
+  // Forgetting the choice lets DSH_DESKTOP_NEXT_HOME or the default apply again.
+  if (restoreDefault) rmSync(locationFile, { force: true })
+  else atomicJson(locationFile, { home: destination })
+  rememberLaunchDirectory(destination)
+  relaunch = relaunchArguments(process.argv.slice(1), false, false)
+  app.quit()
+}
+
+/** Copy the data directory while the Host is stopped; the Host starts again even when copying fails. */
+async function backupDataDirectory(): Promise<void> {
+  const owner = raiseDialogOwner()
+  const options: OpenDialogOptions = { title: t('选择备份保存位置', 'Choose where to save the backup'), properties: ['openDirectory', 'createDirectory'] }
+  const choice = await (owner === undefined ? dialog.showOpenDialog(options) : dialog.showOpenDialog(owner, options))
+  const parent = choice.canceled ? undefined : choice.filePaths[0]
+  if (!parent || !isAbsolute(parent)) return
+  const destination = join(parent, backupDirectoryName(home))
+  try { assertBackupLocation(home, destination) } catch { throw new Error(t('请选择当前数据目录以外的位置。', 'Choose a location outside the current data directory.')) }
+  if (!await confirmed(t('备份当前数据目录？', 'Back up the current data directory?'),
+    t(`备份位置：${destination}\n复制期间工作环境会暂停，正在运行的任务会中断，完成后自动恢复。electron-user-data 中的窗口和浏览器缓存不会备份。`,
+      `Backup location: ${destination}\nThe environment pauses while copying, interrupting running tasks, and resumes afterwards. Window and browser caches in electron-user-data are not included.`))) return
+  rendererRecovery?.stop()
+  await recoveryStopping
+  let failure: Error | undefined
+  // The taskbar or Dock shows the copy is running while the Host, and with it the window content, is down.
+  const progress = (value: number): void => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setProgressBar(value) }
+  progress(2)
+  try {
+    await runtime.restart(async () => {
+      try { await copyDataDirectory(home, destination) } catch (error) { failure = error instanceof Error ? error : new Error(String(error)) }
+    })
+  } finally { progress(-1) }
+  await reloadMain()
+  if (failure) throw new Error(t('备份未完成：', 'Backup failed: ') + failure.message)
+  runtime.diagnostics.append(`Backed up the data directory to ${destination}`)
+  const done = raiseDialogOwner()
+  const notice = { type: 'info' as const, title: 'OmniMux', message: t('数据目录已备份', 'Data directory backed up'), detail: destination,
+    buttons: [t('在文件夹中显示', 'Show in folder'), t('完成', 'Done')], defaultId: 1, cancelId: 1, noLink: true }
+  void (done === undefined ? dialog.showMessageBox(notice) : dialog.showMessageBox(done, notice))
+    .then(result => { if (result.response === 0) shell.showItemInFolder(destination) })
+    .catch(error => runtime.diagnostics.append(String(error), 'warn'))
+}
+
+/**
  * Finder and Dock launches carry no login-shell exports, so the Host, its terminals and tool subprocesses
  * would run with the minimal system PATH and no locale. Recover the exports the Desktop variants
  * recover, then make sure a UTF-8 locale is set, as Terminal.app does for the shells it opens.
  * Probe the system proxy in parallel: a proxy client's "system proxy" switch sets no environment
- * variable, and only Chromium can evaluate it (PAC/WPAD included).
+ * variable, and only Chromium can evaluate it (PAC/WPAD included). The Host starts only after both,
+ * so the startup record carries how long each took.
  */
 function prepareHostEnvironment(): Promise<void> {
   return hostEnvironmentReady ??= (async () => {
-    const [shellEnvironment, resolvedProxy] = await Promise.all([
-      resolveDesktopShellEnvironment({ environment: process.env, home: app.getPath('home'), isPackaged: app.isPackaged, platform: process.platform }),
-      probeSystemProxy(session.defaultSession),
+    const configuration = readSystemProxyConfiguration(process.platform)
+    const [shell, proxy, proxyConfiguration] = await Promise.all([
+      shellEnvironment ?? readShellEnvironment(),
+      timed(probeSystemProxy(session.defaultSession, undefined, configuration)),
+      configuration,
     ])
-    for (const [name, value] of Object.entries(shellEnvironment.updates)) process.env[name] = value
+    for (const [name, value] of Object.entries(shell.value.updates)) process.env[name] = value
     const fallbackLocale = ensureUtf8Locale(process.env, process.platform, app.getPreferredSystemLanguages())
-    systemProxy = resolvedProxy
-    runtime.diagnostics.record({ source: 'desktop', event: 'shell-environment.resolved', fields: { source: shellEnvironment.source,
-      fallbackReason: shellEnvironment.fallbackReason ?? null, recovered: Object.keys(shellEnvironment.updates).join(' ') || null, fallbackLocale: fallbackLocale ?? null } })
+    systemProxy = proxy.value
+    runtime.diagnostics.record({ source: 'desktop', event: 'shell-environment.resolved', fields: { source: shell.value.source,
+      fallbackReason: shell.value.fallbackReason ?? null, recovered: Object.keys(shell.value.updates).join(' ') || null, fallbackLocale: fallbackLocale ?? null,
+      shellMs: shell.ms, systemProxyMs: proxy.ms, systemProxyConfiguration: proxyConfiguration } })
   })()
+}
+
+function readShellEnvironment(): Promise<Timed<DesktopShellEnvironmentResolution>> {
+  return timed(resolveDesktopShellEnvironment({ environment: process.env, home: app.getPath('home'), isPackaged: app.isPackaged, platform: process.platform }))
+}
+
+interface Timed<T> { readonly value: T; readonly ms: number }
+function timed<T>(operation: Promise<T>): Promise<Timed<T>> {
+  const started = performance.now()
+  return operation.then(value => ({ value, ms: Math.round(performance.now() - started) }))
 }
 
 async function main(): Promise<void> {
   await app.whenReady()
   if (quitting) return
+  rendererEvidence.start()
   let inputRevision = 0
   let inputBlocked = false
   desktopShortcuts = installDesktopShortcuts(() => mainWindow, app.getPath('userData'),
@@ -906,8 +1363,12 @@ async function main(): Promise<void> {
     })
   app.once('will-quit', () => { desktopShortcuts?.dispose() })
   if (process.platform === 'darwin' && !app.isPackaged) app.dock?.setIcon(join(root, 'build', 'app-icon-mac.png'))
+  // The sign-in window and page popups take the chosen frame icon too.
+  app.on('browser-window-created', (_event, window) => native.decorateWindow(window))
   // Recovery can open without a Host; Chromium's app locale may differ from the OS language.
   windowsLanguage = preferredDesktopLocale([...app.getPreferredSystemLanguages(), app.getLocale()])
+  // Before any Profile is read or set up in a directory this launch may give up.
+  if (!await confirmDataDirectory()) return
   protocol.handle('dsh-app', async request => {
     const url = new URL(request.url)
     if (url.hostname === 'shell') {
@@ -940,13 +1401,32 @@ async function main(): Promise<void> {
     rendererRecovery?.report(status)
     reportDesktopLaunch(mainWindow)
   })
+  // Sent without an answer, so a rejected sender or report is dropped here rather than thrown.
+  ipcMain.on(IPC.rendererDiagnostic, (event, documentId: unknown, value: unknown) => {
+    try { assertSender(event, mainWindow, APP_URL) } catch { return }
+    if (!documentId || documentId !== rendererDocumentId) return
+    const report = parseClientDiagnostic(value)
+    if (report === undefined) return
+    if (report.kind === 'ready') {
+      // A client plugin reloaded in place announces itself again; what this document recorded stays recorded.
+      if (clientReports?.document !== rendererDocumentId) clientReports = { document: rendererDocumentId, sn: -1 }
+      return
+    }
+    if (report.kind === 'log') {
+      // The reloaded plugin replays the logger's buffer; this document's messages are recorded once.
+      if (clientReports?.document !== rendererDocumentId || report.sn <= clientReports.sn) return
+      clientReports.sn = report.sn
+    }
+    const record = clientDiagnosticRecord(report)
+    if (record !== undefined) runtime.diagnostics.record(record)
+  })
   ipcMain.handle(IPC.failed, (event, message: unknown, documentId: unknown) => {
     assertSender(event, mainWindow, APP_URL)
     if (typeof message !== 'string') throw new Error('Invalid boot error')
     if (documentId !== undefined && documentId !== rendererDocumentId) return
     failRenderer(mainWindow!, new Error(message.slice(0, 4096)))
   })
-  ipcMain.handle(IPC.state, event => { assertDesktopSender(event); return state() })
+  ipcMain.handle(IPC.state, event => { assertDesktopSender(event); return state(event.sender !== mainWindow?.webContents) })
   ipcMain.handle('dsh-desktop:setup-onboarding', async (event, request: unknown) => {
     assertSender(event, mainWindow, APP_URL)
     if (!request || typeof request !== 'object' || Array.isArray(request)) throw new Error('Invalid setup request')
@@ -993,6 +1473,20 @@ async function main(): Promise<void> {
     assertSender(event, mainWindow, APP_URL)
     return browserGuests.release(event.sender, lease)
   })
+  // The Platform page's own preload asks for its credentials synchronously; bootstrap answers only that view's main frame.
+  ipcMain.on(PLATFORM_IPC.bootstrap, (event) => {
+    try { event.returnValue = platformView.bootstrap(event) } catch { event.returnValue = null }
+  })
+  ipcMain.handle(PLATFORM_IPC.open, (event, page: unknown, bounds: unknown) => {
+    assertSender(event, mainWindow, APP_URL)
+    if (page !== 'usage' && page !== 'top-up') throw new Error('Invalid Platform page')
+    return platformView.open(mainWindow!, page, platformBounds(bounds))
+  })
+  ipcMain.handle(PLATFORM_IPC.bounds, (event, bounds: unknown) => {
+    assertSender(event, mainWindow, APP_URL)
+    platformView.setBounds(platformBounds(bounds))
+  })
+  ipcMain.handle(PLATFORM_IPC.close, (event) => { assertSender(event, mainWindow, APP_URL); platformView.close() })
   ipcMain.handle(IPC.permissionQuery, (event, permission: unknown) => { assertDesktopSender(event); return permissions.query(permission) })
   const permissionGesture = async (event: IpcMainInvokeEvent): Promise<void> => {
     assertDesktopSender(event)
@@ -1020,6 +1514,14 @@ async function main(): Promise<void> {
       return forwardWebRequest(new Request(url, { headers: { [NATIVE_ACCESS_HEADER]: auth.token } }), auth.url, auth.cookie, auth.token)
     },
   })
+  installFileActions?.({ app, ipcMain, net, session }, (event) => {
+    assertSender(event, mainWindow, APP_URL)
+    return mainWindow!
+  }, () => runtime.auth?.url)
+  disposeFileDrag = installDesktopFileDrag?.({ app, ipcMain }, (event) => {
+    assertSender(event, mainWindow, APP_URL)
+    return mainWindow!
+  }, (address, signal) => runtime.dragResource(address, signal))
   ipcMain.handle(IPC.material, event => { assertSender(event, mainWindow, APP_URL); return windowMaterial(runtime.preferences) })
   ipcMain.handle(IPC.command, (event, value: unknown) => { assertDesktopSender(event); return command(value, event.sender === shellWindow?.webContents ? 'shell' : 'app') })
   let picking: Promise<string | null> | undefined
@@ -1027,8 +1529,10 @@ async function main(): Promise<void> {
     assertSender(event, mainWindow, APP_URL)
     const window = mainWindow!
     show(window)
-    picking ??= dialog.showOpenDialog(window, { properties: ['openDirectory', 'createDirectory'] })
-      .then(result => result.canceled ? null : result.filePaths[0] ?? null).finally(() => { picking = undefined })
+    picking ??= pickOutsideProgramDirectory(
+      () => dialog.showOpenDialog(window, { properties: ['openDirectory', 'createDirectory'] }).then(result => result.canceled ? undefined : result.filePaths[0]),
+      choice => refusedProgramDirectoryOverlap('workspace', choice, program), overlap => chooseAgain('workspace', overlap, window))
+      .then(path => path ?? null).finally(() => { picking = undefined })
     return picking
   })
   const openNativeFilePicker = createNativeFilePicker((owner, options) => dialog.showOpenDialog(owner, options))
@@ -1073,6 +1577,7 @@ async function main(): Promise<void> {
     }
     if (language === windowsLanguage) return
     windowsLanguage = language
+    platformView.notifyLocaleChanged()
     native.refresh()
   })
   ipcMain.handle(IPC.localeRead, event => {
@@ -1083,16 +1588,18 @@ async function main(): Promise<void> {
     for (const window of [mainWindow, shellWindow]) {
       if (window && !window.isDestroyed()) applyWindowMaterial(window, runtime.preferences)
     }
+    native.appearanceChanged()
   })
   runtime.safeMode = safeModeRequested
   runtime.recoveryMode = process.argv.includes(RECOVERY_ARGUMENT)
   runtime.initialize()
+  runtime.memory.start()
   void prepareHostEnvironment()
-  if (dataLocation.error && !runtime.safeMode) { runtime.recoveryMode = true; runtime.report(dataLocation.error) }
+  if (dataLocation.error && !runtime.safeMode) { runtime.recoveryMode = true; runtime.report(dataLocation.error, 'runtime-bootstrap') }
   if (app.isPackaged) {
     // Packaging sealed the payload with the shell, dsh, platform and architectures it was released for.
     try { verifyPackagedRuntimeIdentity(join(root, DESKTOP_RUNTIME_FILE), { version, dshVersion: readInstalledPackageVersion(root, '@deepseek-ai/dsh'), platform: process.platform, arch: process.arch }) }
-    catch (error) { runtime.recoveryMode = true; runtime.report(error) }
+    catch (error) { runtime.recoveryMode = true; runtime.report(error, 'runtime-bootstrap') }
   }
   if (!runtime.safeMode && !runtime.recoveryMode) {
     try {
@@ -1102,14 +1609,14 @@ async function main(): Promise<void> {
     } catch (error) {
       onboarding = false
       runtime.recoveryMode = true
-      runtime.report(error)
+      runtime.report(error, 'profile-composition')
     }
   }
   native.createTray()
   updates.start()
-  Menu.setApplicationMenu(process.platform === 'win32' ? null : Menu.buildFromTemplate([
-    { label: 'OmniMux', submenu: native.items() }, { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' },
-  ]))
+  Menu.setApplicationMenu(process.platform === 'win32' ? null : Menu.buildFromTemplate(
+    roleApplicationMenuTemplate(native.items(), windowsLanguage),
+  ))
   if (process.platform === 'win32') {
     ipcMain.handle(IPC.windowsMenu, (event, name: unknown, x: unknown, y: unknown) => {
       assertSender(event, mainWindow, APP_URL)
@@ -1153,6 +1660,9 @@ app.on('before-quit', event => {
   event.preventDefault()
   quitting = true
   rendererRecovery?.stop()
+  rendererEvidence.stop()
+  // Pending evidence lands now; a Host that dies of OOM while stopping is written at once.
+  runtime.memory.stop()
   runtime.diagnostics.record({ source: 'electron', event: 'shutdown.start' })
   runtime.diagnostics.flush()
   // Bound the whole shutdown, including cleanup before Host termination starts.
@@ -1190,6 +1700,8 @@ app.on('before-quit', event => {
     if (relaunch) relaunchApp(app, relaunch)
     app.quit()
   }
+  // Capture the main window while it is still visible: hidden windows keep their last state.
+  if (mainWindow && !mainWindow.isDestroyed()) persistMainWindowState(mainWindow)
   // Keep disconnection/reconnection chrome out of the quit/relaunch transition.
   for (const window of [mainWindow, shellWindow]) {
     if (window && !window.isDestroyed()) window.hide()
@@ -1198,7 +1710,13 @@ app.on('before-quit', event => {
   platformLogin.close()
   const updatesDone = runtime.diagnostics.operation('electron', 'updates.dispose')
   const recoveryDone = runtime.diagnostics.operation('electron', 'recovery.dispose')
-  void Promise.all([updates.dispose(installingUpdate).then(() => updatesDone(), error => { updatesDone(error); throw error }), (async () => { try { await recoveryRunner?.dispose(); recoveryDone() } catch (error) { recoveryDone(error); throw error }; await runtime.close() })()]).then(async () => {
+  // Clears the Platform page's sign-in before exit or an installer handoff; a failed cleanup is recorded,
+  // not a failed shutdown, and the next page open clears that storage again.
+  const platformDone = runtime.diagnostics.operation('electron', 'platform.dispose')
+  void Promise.all([updates.dispose(installingUpdate).then(() => updatesDone(), error => { updatesDone(error); throw error }), (async () => { try { await recoveryRunner?.dispose(); recoveryDone() } catch (error) { recoveryDone(error); throw error }; await runtime.close() })(),
+    platformView.dispose().then(() => platformDone(), error => platformDone(error)),
+    // A temporary drag export that cannot be removed is recorded, not a failed shutdown.
+    disposeFileDrag?.().catch(error => runtime.diagnostics.append(`File drag cleanup: ${String(error)}`, 'warn'))]).then(async () => {
     if (!finish()) return
     // A staged installer must survive until handoff; the next boot removes it.
     if (safeModeRequested && !installingUpdate) {
@@ -1213,22 +1731,48 @@ app.on('before-quit', event => {
 if (ownsInstance) {
   process.on('uncaughtExceptionMonitor', (error, origin) => {
     runtime.diagnostics.record({ source: 'electron', event: 'uncaught-exception', level: 'error', error, fields: { origin } })
+    runtime.memory.settle()
     runtime.diagnostics.end(false)
   })
-  app.on('child-process-gone', (_event, details) => runtime.diagnostics.record({ source: 'electron', event: 'child-process-gone', level: 'error',
-    fields: { type: details.type, reason: details.reason, exitCode: details.exitCode, service: details.serviceName ?? null } }))
-  app.once('will-quit', () => runtime.diagnostics.flush())
+  // Chromium ends the process once no GPU process can launch, leaving nothing on screen; explain it natively first.
+  const reportSandboxLaunchFailure = createSandboxLaunchReporter({
+    elevation: windowsElevation,
+    context: () => ({ startup: startupElevationState, argv: process.argv, executable: process.execPath,
+      language: preferredDesktopLocale([...app.getPreferredSystemLanguages(), app.getLocale()]) }),
+    record: (failure, elevation) => runtime.diagnostics.record({ source: 'electron', event: 'sandbox.launch-failed', level: 'error',
+      fields: { process: failure.process, code: failure.code, elevated: elevation?.elevated ?? null, elevationType: elevation?.type ?? null } }),
+    show: text => { dialog.showMessageBoxSync({ type: 'error', title: text.title, message: text.message, detail: text.detail, buttons: [text.button], defaultId: 0, noLink: true }) },
+    exit: () => { runtime.memory.stop(); runtime.diagnostics.end(false); app.exit(1) },
+  })
+  app.on('child-process-gone', (_event, details) => {
+    runtime.diagnostics.record({ source: 'electron', event: 'child-process-gone', level: 'error',
+      fields: { type: details.type, reason: details.reason, exitCode: details.exitCode, service: details.serviceName ?? null } })
+    // A utility process may end normally, and quitting ends every child; only a crash, kill or failed
+    // launch while running is memory evidence.
+    if (details.reason !== 'clean-exit' && !quitting) runtime.memory.incident({ process: 'child', type: details.type, reason: details.reason, exitCode: details.exitCode })
+    const failure = gpuLaunchFailure(process.platform, details)
+    if (failure && !quitting) reportSandboxLaunchFailure(failure)
+  })
+  app.on('render-process-gone', (_event, contents, details) => {
+    const failure = rendererLaunchFailure(process.platform, details)
+    if (failure && !quitting && [mainWindow, shellWindow].some(window => window !== undefined && !window.isDestroyed() && window.webContents === contents)) {
+      reportSandboxLaunchFailure(failure)
+    }
+  })
+  // Every way out leaves a current readable copy, not one up to five seconds old.
+  app.once('will-quit', () => runtime.diagnostics.flush(true))
+  const { elevation, kept, error, win32Code } = startupElevationState
   const hadPreviousRun = runtime.diagnostics.begin({ version, platform: process.platform, electron: process.versions.electron ?? '', node: process.version, safeMode: safeModeRequested,
-    ...(dshVersion === undefined ? {} : { dsh: dshVersion }) })
+    ...(dshVersion === undefined ? {} : { dsh: dshVersion }),
+    ...(elevation === undefined ? {} : { elevated: elevation.elevated, elevationType: elevation.type }),
+    ...(process.argv.includes(DE_ELEVATED_ARGUMENT) ? { deElevated: true } : {}) })
   if (!safeModeRequested && !process.argv.includes(RECOVERY_ARGUMENT)) {
     const previousUserData = [normalElectronData]
     if (app.isPackaged && !process.env.DSH_DESKTOP_NEXT_HOME) {
       previousUserData.push(join(app.getPath('appData'), DESKTOP_USER_DATA_DIRECTORY_NAME))
     }
     launchAnalytics = new DesktopLaunchAnalytics({
-      // Keep the install identity outside Profile state, including when a Dev
-      // home doubles as the configuration root and is reset in place.
-      identityDirectory: join(locationRoot, 'electron-user-data', 'launch-analytics'),
+      identityDirectory: join(normalElectronData, 'launch-analytics'),
       previousUserData,
       hadPreviousRun,
       appVersion: version,
@@ -1239,5 +1783,9 @@ if (ownsInstance) {
       record: input => runtime.diagnostics.record(input),
     })
   }
-  void main().catch(error => runtime.report(error))
+  if (kept !== undefined || error !== undefined) {
+    runtime.diagnostics.record({ source: 'electron', event: elevation === undefined ? 'elevation.unknown' : 'elevation.kept', level: 'warn',
+      ...(error === undefined ? {} : { message: error }), fields: { reason: kept ?? null, win32Code: win32Code ?? null } })
+  }
+  void main().catch(error => runtime.report(error, 'electron-ready'))
 }

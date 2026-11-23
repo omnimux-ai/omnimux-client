@@ -165,6 +165,10 @@ body:has(.next-onboarding) .dshNativeFrame {
 .next-onboarding-permissions-loading { display: grid; place-items: center; width: 28px; height: 28px; }
 .next-onboarding-permissions-loading svg { width: 16px; height: 16px; }
 .next-onboarding-option p { color: var(--muted-foreground); font-size: 12px; line-height: 1.85; margin-top: 10px; }
+.next-onboarding-icon-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.next-onboarding-choice.next-onboarding-icon-choice { gap: 12px; padding: 9px 16px 9px 9px; border-radius: 14px; }
+.next-onboarding-icon-choice :is(picture, img) { display: block; flex-shrink: 0; }
+.next-onboarding-icon-choice img { width: 36px; height: 36px; }
 .next-onboarding-devices { display: grid; grid-template-columns: repeat(20, minmax(0, 1fr)); align-items: end; width: 100%; margin: 0; }
 .next-onboarding-devices img { grid-row: 1; width: 100%; height: auto; filter: drop-shadow(0 18px 22px color-mix(in srgb, var(--foreground) 8%, transparent)); }
 .next-onboarding-tablet { grid-column: 4 / 21; }
@@ -202,11 +206,11 @@ body:has(.next-onboarding) .dshNativeFrame {
 .next-onboarding-progress li[aria-current="step"] { width: 22px; background: var(--foreground); }
 @keyframes next-onboarding-enter { from { opacity: 0; transform: translateX(var(--entry-x, 22px)); } to { opacity: 1; transform: none; } }
 @keyframes next-onboarding-reveal { from { opacity: 0; filter: blur(3px); transform: translateY(8px); } to { opacity: 1; filter: none; transform: none; } }
+@keyframes next-onboarding-swap { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: none; } }
 @media (max-width: 760px) {
   .next-onboarding-slide { grid-template-columns: 1fr; grid-template-areas: "copy" "panel" "actions"; row-gap: 26px; max-width: 500px; }
   .next-onboarding-main { padding: 20px 32px; }
-  .next-onboarding-logo { width: 104px; height: 104px; }
-  .next-onboarding-brand { width: 180px; }
+  .next-onboarding-whale { width: 112px; height: 88px; }
   .next-onboarding-slide[data-page="0"] { grid-template-areas: "panel" "copy" "actions"; }
   .next-onboarding-description { margin-bottom: 0; }
   .next-onboarding-option { margin: 26px 0 0; }

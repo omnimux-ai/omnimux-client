@@ -118,3 +118,13 @@ test('API and public method each enforce auth, cannot bypass by calling Host dir
   assert.equal(capture.res.statusCode, 403)
   await assert.rejects(host.workshopInventory(req), /FORBIDDEN_OPERATION/)
 })
+test('RequestGuard admits webServer peer when connection.requestRejection is removed', async () => {
+  const auth = authorization({ connection: undefined })
+  const guard = new RequestGuard(auth)
+  await assert.rejects(guard.authorizeHeaders(request(), 'workshopInventory'), /AUTH_REQUIRED/)
+  await guard.authorizeHeaders(request(), 'workshopInventory', { id: 'peer-1' })
+  const host = createWorkshopReadHost(withDefaults({}), auth)
+  const req = request(), capture = response(req)
+  await handleWorkshopApi(req, capture.res, 'workshopCapabilities', host, auth, { id: 'peer-1' })
+  assert.equal(capture.res.statusCode, 200)
+})

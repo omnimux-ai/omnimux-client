@@ -47,7 +47,7 @@ function statusLabel(t, row) {
 function AccountItem({ t, row, onDisconnect }) {
   const [avatarFailed, setAvatarFailed] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
-  const [anchorEl, setAnchorEl] = useState(null)
+  const anchorRef = useRef(null)
   const avatarUrl = typeof row.avatar_url === 'string' ? row.avatar_url : ''
   const tone = row.agent_usable === false ? 'muted' : accountStatusTone(row)
   const name = accountDisplayName(row)
@@ -56,7 +56,6 @@ function AccountItem({ t, row, onDisconnect }) {
 
   const handleMenuToggle = (event) => {
     event.stopPropagation()
-    setAnchorEl(event.currentTarget)
     setMenuOpen((open) => !open)
   }
 
@@ -96,6 +95,7 @@ function AccountItem({ t, row, onDisconnect }) {
       </span>
       <div className="omnimux-publish-accounts-item-menu" onClick={(event) => event.stopPropagation()}>
         <IconButton
+          ref={anchorRef}
           variant="ghost"
           size="sm"
           aria-label={t('acct.more', { name })}
@@ -105,12 +105,12 @@ function AccountItem({ t, row, onDisconnect }) {
         >
           <IconEllipsisOutline16 />
         </IconButton>
-        {menuOpen && anchorEl ? (
+        {menuOpen ? (
           <Menu
             open={menuOpen}
             portal
             anchor={null}
-            getAnchorRect={() => anchorEl.getBoundingClientRect()}
+            anchorRef={anchorRef}
             align="end"
             dense
             items={[{

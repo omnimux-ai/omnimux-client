@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createPackageWithOptions } from '@electron/asar'
 import { afterEach, expect, it } from 'vitest'
-import { archivedPayload, auditNextPayload, nextPackagingTarget, nextPayloadRelease, universalMergeRewrite, UPDATER_MANIFEST_SHIM_MAX_BYTES, verifyArchiveAgainstPrepared, verifyNextPayload, verifyNextRuntime, verifyUpdaterManifestShim } from '../scripts/packaged-payload.ts'
+import { archivedPayload, auditNextPayload, nextPackagingTarget, nextPayloadRelease, PAYLOAD_DIR, preparedPackagingTarget, universalMergeRewrite, UPDATER_MANIFEST_SHIM_MAX_BYTES, verifyArchiveAgainstPrepared, verifyNextPayload, verifyNextRuntime, verifyUpdaterManifestShim } from '../scripts/packaged-payload.ts'
 import { DESKTOP_RUNTIME_FILE, physicalPayload, readDesktopRuntime, sealPayload } from '../src/runtime-tree.ts'
 import { completeApplication, FIXTURE_RELEASE, FIXTURE_SHARED, writeApplication, writePackage } from './runtime-fixture.ts'
 
@@ -50,12 +50,28 @@ async function assembled(extra: (app: string) => void = () => {}, seal = true): 
 
 it('describes the architectures each release target carries', () => {
   expect(nextPackagingTarget('darwin', 'arm64', {})).toEqual({ platform: 'darwin', archs: ['arm64', 'x64'] })
+  expect(nextPackagingTarget('darwin', 'arm64', 'universal')).toEqual({ platform: 'darwin', archs: ['arm64', 'x64'] })
+  expect(nextPackagingTarget('darwin', 'x64', 'arm64')).toEqual({ platform: 'darwin', archs: ['arm64'] })
+  expect(nextPackagingTarget('darwin', 'arm64', 'x64')).toEqual({ platform: 'darwin', archs: ['x64'] })
   expect(nextPackagingTarget('darwin', 'arm64', { DSH_MAC_RELEASE_ARCH: 'arm64' })).toEqual({ platform: 'darwin', archs: ['arm64'] })
   expect(nextPackagingTarget('darwin', 'arm64', { DSH_MAC_RELEASE_ARCH: 'x64' })).toEqual({ platform: 'darwin', archs: ['x64'] })
   expect(nextPackagingTarget('darwin', 'arm64', { DSH_MAC_SMOKE_ARCH: 'arm64' })).toEqual({ platform: 'darwin', archs: ['arm64'] })
   expect(nextPackagingTarget('darwin', 'arm64', { DSH_MAC_SMOKE_ARCH: 'x64' })).toEqual({ platform: 'darwin', archs: ['x64'] })
   expect(nextPackagingTarget('win32')).toEqual({ platform: 'win32', archs: ['x64'] })
   expect(nextPackagingTarget('linux', 'arm64')).toEqual({ platform: 'linux', archs: ['arm64'] })
+})
+
+it('reads the target the packaging hooks follow from the descriptor sealed into the prepared payload', () => {
+  const project = mkdtempSync(join(tmpdir(), 'desktop-prepared-target-'))
+  roots.push(project)
+  const app = join(project, ...PAYLOAD_DIR.split('/'))
+  writeApplication(app)
+  completeApplication(app)
+  const manifest = JSON.parse(readFileSync(join(app, 'package.json'), 'utf8')) as { dependencies: Record<string, string> }
+  sealPayload(physicalPayload(app), join(app, DESKTOP_RUNTIME_FILE), FIXTURE_RELEASE, Object.keys(manifest.dependencies), { platform: 'darwin', archs: ['arm64'] })
+  expect(preparedPackagingTarget(project)).toEqual({ platform: 'darwin', archs: ['arm64'] })
+  rmSync(join(app, DESKTOP_RUNTIME_FILE))
+  expect(() => preparedPackagingTarget(project)).toThrow()
 })
 
 it('reads archive entries from their offsets, unpacked entries from the physical sibling and the embedded descriptor', async () => {
@@ -115,6 +131,23 @@ it('reports stray root entries, policy leftovers, packed native code and packed 
       'node_modules/native-pkg/helper: native code is packed inside app.asar',
     ])
   } finally { source.close() }
+})
+
+it('requires every sharp of a Linux package to find the WebAssembly build of its own release', async () => {
+  const audit = async (packageTarget: ReturnType<typeof nextPackagingTarget>, wasmVersion?: string): Promise<string[]> => {
+    const { resources } = await assembled((app) => {
+      writePackage(join(app, 'node_modules'), 'sharp', { version: '0.35.5' })
+      if (wasmVersion !== undefined) writePackage(join(app, 'node_modules'), '@img/sharp-wasm32', { version: wasmVersion })
+    })
+    const source = archivedPayload(resources)
+    try { return auditNextPayload(source, packageTarget) } finally { source.close() }
+  }
+  const linux = nextPackagingTarget('linux', 'x64')
+  expect(await audit(linux, '0.35.5')).toEqual([])
+  expect(await audit(linux)).toEqual(['node_modules/sharp/package.json: sharp 0.35.5 has no packaged @img/sharp-wasm32 to run on Linux'])
+  expect(await audit(linux, '0.35.4')).toEqual(['node_modules/@img/sharp-wasm32/package.json: 0.35.4 does not match sharp 0.35.5 at node_modules/sharp/package.json'])
+  // Elsewhere sharp runs its native backends, and the WebAssembly build is not packaged at all.
+  expect(await audit(nextPackagingTarget('darwin'))).toEqual([])
 })
 
 it('rejects an archive missing a declared dependency or a shell-owned file', async () => {

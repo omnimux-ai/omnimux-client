@@ -1,3 +1,4 @@
+import { OFFICE_SKILL_UNPACKED, OFFICIAL_CUA_UNPACKED } from './upstream-family.ts'
 /** Read, audit and verify the archived Next payload after Electron Builder assembled it from the prepared tree. */
 import { createHash } from 'node:crypto'
 import { closeSync, existsSync, lstatSync, openSync, readdirSync, readFileSync, readSync } from 'node:fs'
@@ -8,33 +9,28 @@ import { getRawHeader } from '@electron/asar'
 import { macSmokeArchitecture } from '../../dsh-plugin-desktop/scripts/mac-universal.ts'
 import { macReleaseArchitecture } from '../../dsh-plugin-desktop/scripts/release-mac.ts'
 import { nextRuntimeFileExclusion, nextRuntimePackageExclusion, nextRuntimeUnusedFeatureExclusion, type NextPackagingTarget, type RuntimePackageConstraints } from './runtime-file-policy.ts'
-import { DESKTOP_RUNTIME_FILE, parseDesktopRuntime, verifyPayload, type DesktopRuntimeDescriptor, type DesktopRuntimeFile, type NextRelease, type PayloadEntry, type PayloadSource, type VerifyPayloadOptions } from '../src/runtime-tree.ts'
+import { macPackageCpus, type MacPackageArch } from './mac-runtime.ts'
+import { DESKTOP_RUNTIME_FILE, parseDesktopRuntime, readDesktopRuntime, verifyPayload, type DesktopRuntimeDescriptor, type DesktopRuntimeFile, type NextRelease, type PayloadEntry, type PayloadSource, type VerifyPayloadOptions } from '../src/runtime-tree.ts'
 
 /** Legacy application-relative directory holding the prepared payload. */
 export const PAYLOAD_DIR = '.desktop-build/payload'
 
 /**
  * Architectures whose native dependencies one Next package carries.
- * macOS universal builds carry both Darwin CPU variants, while single-architecture release or smoke
- * builds (`DSH_MAC_RELEASE_ARCH` / `DSH_MAC_SMOKE_ARCH` = `arm64` or `x64`) prune the opposite CPU's
- * native modules; Windows releases are x64 only.
- * @param platform - Electron platform being packaged.
- * @param hostArch - Build host architecture, used for platforms without a release target.
- * @param env - Process environment inspected for single-architecture selection.
- * @returns Platform and architectures recorded in the payload descriptor.
+ * A macOS package carries one CPU or, as the universal application, both; Windows releases are x64 only.
+ * Accepts either an explicit `MacPackageArch` or an environment map inspecting `DSH_MAC_SMOKE_ARCH`/`DSH_MAC_RELEASE_ARCH`.
  */
 export function nextPackagingTarget(
   platform: NodeJS.Platform,
   hostArch: string = process.arch,
-  env: NodeJS.ProcessEnv = process.env,
+  macArchOrEnv: MacPackageArch | NodeJS.ProcessEnv = process.env,
 ): NextPackagingTarget {
   if (platform === 'darwin') {
-    const smokeArch = macSmokeArchitecture(env)
-    const releaseArch = macReleaseArchitecture(env)
+    if (typeof macArchOrEnv === 'string') return { platform, archs: macPackageCpus(macArchOrEnv) }
+    const smokeArch = macSmokeArchitecture(macArchOrEnv)
+    const releaseArch = macReleaseArchitecture(macArchOrEnv)
     const arch = smokeArch !== 'universal' ? smokeArch : releaseArch
-    if (arch === 'arm64') return { platform, archs: ['arm64'] }
-    if (arch === 'x64') return { platform, archs: ['x64'] }
-    return { platform, archs: ['arm64', 'x64'] }
+    return { platform, archs: macPackageCpus(arch) }
   }
   if (platform === 'win32') return { platform, archs: ['x64'] }
   return { platform, archs: [hostArch] }
@@ -42,12 +38,6 @@ export function nextPackagingTarget(
 
 /**
  * Application-relative directory of the prepared payload for the selected target.
- * Single-architecture Darwin builds use `.desktop-build/targets/<arch>/payload`; universal
- * macOS and the other platforms keep the legacy shared path, so their existing build
- * contracts and Windows/Linux extraResources stay unchanged.
- * @param platform - Electron platform being packaged.
- * @param env - Process environment inspected for the selected architecture.
- * @returns The prepared payload directory.
  */
 export function payloadDir(platform: NodeJS.Platform = process.platform, env: NodeJS.ProcessEnv = process.env): string {
   const explicit = env.DSH_NEXT_PAYLOAD_DIR
@@ -57,6 +47,14 @@ export function payloadDir(platform: NodeJS.Platform = process.platform, env: No
     if (target.archs.length === 1) return `.desktop-build/targets/${target.archs[0]}/payload`
   }
   return PAYLOAD_DIR
+}
+
+/**
+ * Target of the payload prepared for the package being built, as its sealed descriptor records it.
+ */
+export function preparedPackagingTarget(projectDir: string, platform: NodeJS.Platform = process.platform): NextPackagingTarget {
+  const { platform: recordedPlatform, archs } = readDesktopRuntime(join(projectDir, ...payloadDir(platform).split('/'), DESKTOP_RUNTIME_FILE))
+  return { platform: recordedPlatform, archs }
 }
 
 interface AsarFile { readonly size: number; readonly offset?: string; readonly executable?: boolean; readonly unpacked?: boolean }
@@ -203,6 +201,8 @@ function isNativeImage(head: Buffer): boolean {
  * the Connector project. All of them need physical files.
  */
 const REQUIRED_UNPACKED = [
+  ...OFFICIAL_CUA_UNPACKED === undefined ? [] : [OFFICIAL_CUA_UNPACKED],
+  ...OFFICE_SKILL_UNPACKED === undefined ? [] : [OFFICE_SKILL_UNPACKED],
   /^scripts\/node-bin\//u, /^assets\//u, /^build\//u, /^node_modules\/pnpm\//u,
   /^node_modules\/@agents-anywhere\/dsh-bridge-next\/lib\/bundled-connector\//u,
   // The Creator preset mounts this package's skills through the Host's filesystem service, which stats with bigint
@@ -229,9 +229,6 @@ const ALLOWED_ROOT_ENTRIES = new Set(['assets', 'build', 'cordis.patch.yml', DES
 
 /**
  * Whether a package's own `files` list explicitly publishes this type declaration.
- * @param source - Assembled payload.
- * @param path - `node_modules/...` path being audited.
- * @returns True when a nested extension glob in the package manifest declares it.
  */
 function declaredTypeDeclaration(source: PayloadSource, path: string): boolean {
   const parts = path.split('/')
@@ -254,10 +251,30 @@ function declaredTypeDeclaration(source: PayloadSource, path: string): boolean {
   })
 }
 
+function packagedManifest(source: PayloadSource, fromManifest: string, name: string): string | undefined {
+  let parent = posixDirname(fromManifest)
+  while (true) {
+    const candidate = `${parent === '.' ? '' : `${parent}/`}` + `node_modules/${name}/package.json`
+    if (source.entry(candidate) !== undefined) return candidate
+    if (parent === '.') return undefined
+    parent = posixDirname(parent)
+  }
+}
+
+function linuxSharpProblems(source: PayloadSource, sharpManifests: readonly string[]): string[] {
+  const version = (path: string): string => String((JSON.parse(source.entry(path)!.read().toString('utf8')) as { version?: unknown }).version)
+  return sharpManifests.flatMap((manifest) => {
+    const backend = packagedManifest(source, manifest, '@img/sharp-wasm32')
+    if (backend === undefined) return [`${manifest}: sharp ${version(manifest)} has no packaged @img/sharp-wasm32 to run on Linux`]
+    return version(backend) === version(manifest) ? [] : [`${backend}: ${version(backend)} does not match sharp ${version(manifest)} at ${manifest}`]
+  })
+}
+
 /**
  * Audit an assembled payload: only the declared root entries may exist, nothing the Desktop file
- * policy omits may be present, and native code and shell-executed files must be unpacked, because
- * Electron's archive view serves only its own `fs` and `dlopen`, not child processes.
+ * policy omits may be present, native code and shell-executed files must be unpacked, because
+ * Electron's archive view serves only its own `fs` and `dlopen`, not child processes, and every sharp
+ * of a Linux package must find the WebAssembly build of its own release.
  * @param source - Assembled payload.
  * @param target - Platform and architectures of the package.
  * @returns Problems, one line each; empty when the payload passes.
@@ -267,9 +284,11 @@ export function auditNextPayload(source: PayloadSource, target: NextPackagingTar
   const strayRoots = new Set<string>()
   const requiredUnpacked = source.entry('node_modules/@deepseek-ai/libreoffice-kit/package.json') === undefined
     ? REQUIRED_UNPACKED : [...REQUIRED_UNPACKED, ...OFFICE_REQUIRED_UNPACKED]
+  const sharpManifests: string[] = []
   for (const entry of source.list()) {
     const root = entry.path.split('/')[0] ?? ''
     if (!ALLOWED_ROOT_ENTRIES.has(root)) { strayRoots.add(root); continue }
+    if (target.platform === 'linux' && /(?:^|\/)node_modules\/sharp\/package\.json$/u.test(entry.path)) sharpManifests.push(entry.path)
     if (entry.path.startsWith('node_modules/')) {
       const baseReason = nextRuntimeFileExclusion(entry.path.slice('node_modules/'.length), target)
       const reason = baseReason === 'TypeScript declaration' && declaredTypeDeclaration(source, entry.path)
@@ -290,6 +309,7 @@ export function auditNextPayload(source: PayloadSource, target: NextPackagingTar
     if (requiredUnpacked.some(pattern => pattern.test(entry.path))) problems.push(`${entry.path}: must be unpacked beside app.asar`)
     else if (isNativeImage(entry.readHeader ? entry.readHeader(4) : entry.read().subarray(0, 4))) problems.push(`${entry.path}: native code is packed inside app.asar`)
   }
+  problems.push(...linuxSharpProblems(source, sharpManifests))
   return [...[...strayRoots].sort().map(root => `${root}: outside the declared application files`), ...problems]
 }
 
@@ -300,13 +320,13 @@ export function auditNextPayload(source: PayloadSource, target: NextPackagingTar
  */
 export function verifyNextPayload(source: PayloadSource): void {
   // `host.cordis.patch.yml` and `scripts/node-bin` are read from the packaged application by the
-  // Host: the overlay swaps the official webserver for Next's private loopback one, and the shims
-  // put a `node` on the package manager's PATH. Both are invisible to a `yarn start` run, which
-  // resolves them in the source tree, so only this check keeps them in the payload.
-  for (const path of ['lib/main.js', 'lib/host.js', 'lib/client.js', 'lib/preload-app.cjs', 'lib/preload-shell.cjs',
-    'lib/native-ui/index.html', 'cordis.patch.yml', 'host.cordis.patch.yml',
+  // Host: the overlay swaps the official webserver for Next's private loopback one and mounts the
+  // startup-entries row, and the shims put a `node` on the package manager's PATH. All are invisible
+  // to a `yarn start` run, which resolves them in the source tree, so only this check keeps them in the payload.
+  for (const path of ['lib/main.js', 'lib/host.js', 'lib/client.js', 'lib/preload-app.cjs', 'lib/preload-shell.cjs', 'lib/preload-platform-account.cjs',
+    'lib/native-ui/index.html', 'lib/startup-entries.js', 'cordis.patch.yml', 'host.cordis.patch.yml',
     'scripts/node-bin/node', 'scripts/node-bin/node.cmd',
-    'assets/tray-iconTemplate.png', 'assets/tray-icon-blue.png']) {
+    'assets/tray-iconTemplate.png', 'assets/tray-icon-blue.png', 'assets/classic/tray-iconTemplate.png', 'assets/classic/tray-icon-blue.png']) {
     if (source.entry(path) === undefined) throw new Error(`Missing Next payload: ${path}`)
   }
   const queued = ['package.json']
@@ -327,14 +347,7 @@ export function verifyNextPayload(source: PayloadSource): void {
     const required = [...Object.keys(data.dependencies ?? {}),
       ...Object.keys(data.peerDependencies ?? {}).filter(name => optionalPeers[name]?.optional !== true)]
     for (const name of required) {
-      let parent = posixDirname(manifestPath)
-      let found: string | undefined
-      while (true) {
-        const candidate = `${parent === '.' ? '' : `${parent}/`}node_modules/${name}/package.json`
-        if (source.entry(candidate) !== undefined) { found = candidate; break }
-        if (parent === '.') break
-        parent = posixDirname(parent)
-      }
+      const found = packagedManifest(source, manifestPath, name)
       if (found === undefined) {
         if (Object.hasOwn(data.optionalDependencies ?? {}, name)) continue
         // Left out on purpose: the profile disables the rows that would load it (see runtime-file-policy.ts).
