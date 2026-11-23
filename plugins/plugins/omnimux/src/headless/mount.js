@@ -40,6 +40,7 @@ export function mountHeadlessSkill(ctx, deps = {}) {
         {
           skills: deps.skills ?? ctx.get?.('skills'),
           textComplete: deps.textComplete ?? ctx.get?.('textComplete'),
+          videoProcess: deps.videoProcess ?? (() => ctx.get?.('videoProcess')),
           manager,
           defaultTimeoutMs: deps.defaultTimeoutMs,
         },

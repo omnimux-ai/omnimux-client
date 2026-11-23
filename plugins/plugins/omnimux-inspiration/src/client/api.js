@@ -285,6 +285,19 @@ export function triggerAnalyzeInspiration(id, selection) {
   }), { capability: 'inspiration-analyze', userInitiated: true })()
 }
 
+/**
+ * Cancel an active scoped analysis job for a local inspiration item.
+ * @param {string} id
+ * @param {{ scope?: string, media_index?: number, job_id?: string }} [selection]
+ */
+export function cancelAnalyzeInspiration(id, selection = {}) {
+  invalidateInspirationCache()
+  return inspirationRequest(`/omnimux/inspiration/local/${encodeURIComponent(id)}/analyze/cancel`, {
+    method: 'POST',
+    body: selection,
+  })
+}
+
 /** The hub owns service choices; a library never writes model settings itself. */
 export function getAnalysisService() {
   return inspirationRequest('/omnimux/analysis/service')

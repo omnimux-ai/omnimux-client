@@ -38,7 +38,7 @@ function isolateInnerCardKey(e) {
 }
 
 export function InspirationCoverCard({ card, descriptor, style, column, actionsNode }) {
-  const { row, t, onSelect, onReplicate, selected, onToggleSelect, selecting, replicateBusy, revealed } = card
+  const { row, t, onSelect, onReplicate, selected, active, onToggleSelect, selecting, replicateBusy, revealed } = card
   const title = String(row.title || row.source_url || row.id)
   const contentCard = descriptor || toInspirationCardRow(row, t)
   const cover = contentCard.cover_key || pickCoverSrc(row)
@@ -129,16 +129,10 @@ export function InspirationCoverCard({ card, descriptor, style, column, actionsN
     <div className="omnimux-inspiration-card-meta">
       <span className="omnimux-inspiration-card-meta-source">{platform}</span>
       {viewsText ? (
-        <>
-          <span className="omnimux-inspiration-card-meta-sep" aria-hidden="true">·</span>
-          <span className="omnimux-inspiration-card-meta-views">{viewsText}</span>
-        </>
+        <span className="omnimux-inspiration-card-meta-views">{viewsText}</span>
       ) : null}
       {createdText ? (
-        <>
-          <span className="omnimux-inspiration-card-meta-sep" aria-hidden="true">·</span>
-          <span className="omnimux-inspiration-card-meta-time">{createdText}</span>
-        </>
+        <span className="omnimux-inspiration-card-meta-time">{createdText}</span>
       ) : null}
     </div>
   ) : null
@@ -341,7 +335,7 @@ export function InspirationCoverCard({ card, descriptor, style, column, actionsN
     <RivalPostCard
       card={contentCard}
       t={t}
-      className={`omnimux-inspiration-card-pure ${importing ? 'is-importing' : ''}`}
+      className={`omnimux-inspiration-card-pure ${importing ? 'is-importing' : ''} ${active ? 'is-inspected' : ''}`.trim()}
       selected={Boolean(selected)}
       bodyClassName={inlineNotice ? (contentCard.notice_kind === 'error' ? `omnimux-inspiration-card-error is-inline ${failed ? 'is-failed' : ''}` : 'omnimux-inspiration-card-state-text') : ''}
       bodyLabel={!coverFirst && failed ? t('add.status.failed') : ''}

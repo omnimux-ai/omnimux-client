@@ -1,8 +1,12 @@
-import { describe, it } from 'node:test'
+import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { existsSync, mkdtempSync, realpathSync, rmSync, truncateSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { mountHeadlessSkill } from './mount.js'
 import { HEADLESS_SKILL_EVENT_TYPE } from './queue.js'
 import { extractJsonPayload, validateAgainstSchema } from './schema.js'
+import { INLINE_REQUEST_BYTES, prepareHeadlessTransport } from './transport.js'
 import { OmnimuxError } from '../media/errors.js'
 
 const BREAKDOWN_SCHEMA = {
@@ -322,5 +326,126 @@ describe('mountHeadlessSkill', () => {
     )
     releaseFirst()
     await p1
+  })
+})
+
+describe('prepareHeadlessTransport and Hub video preparation', () => {
+  const dirs = []
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+  })
+
+  function tempAsset(size, name = 'source.mp4') {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'headless-transport-')))
+    dirs.push(dir)
+    const file = join(dir, name)
+    writeFileSync(file, 'original')
+    truncateSync(file, size)
+    return file
+  }
+
+  it('compresses a 98MB video via videoProcess, preserves timeline/audio, and cleans up after execution', async () => {
+    const source = tempAsset(98_376_196)
+    let preparedDest = ''
+    let seenRef = ''
+    let preparedExistedDuringExec = false
+
+    const env = createMockEnv({
+      skills: { 'video-skill': { name: 'video-skill', content: 'Analyze video' } },
+      onExecute: async (req) => {
+        seenRef = req.references?.[0]?.pathOrUrl || ''
+        preparedExistedDuringExec = existsSync(seenRef)
+        return {
+          mode: 'live',
+          model: 'gemini-2.5-pro',
+          text: JSON.stringify({ hook: 'h', structure: 's', shots: [] }),
+        }
+      },
+    })
+
+    const api = mountHeadlessSkill(env.ctx, {
+      videoProcess: {
+        async execute(req) {
+          assert.equal(req.capability, 'video_inline_analysis_prepare')
+          assert.equal(req.input.videoUrl, source)
+          assert.equal(req.input.preserveTimeline, true)
+          assert.equal(req.input.keepAudio, true)
+          assert.ok(req.input.maxRequestBytes < INLINE_REQUEST_BYTES)
+          preparedDest = req.dest
+          writeFileSync(preparedDest, 'prepared whole video')
+          return { mode: 'live', files: [{ path: preparedDest, kind: 'video', meta: { preserveTimeline: true, keepAudio: true } }] }
+        },
+      },
+    })
+
+    const result = await api.run({
+      skillName: 'video-skill',
+      input: 'Analyze this large clip',
+      references: [{ type: 'video', pathOrUrl: source }],
+      outputSchema: BREAKDOWN_SCHEMA,
+    })
+
+    assert.equal(result.mode, 'live')
+    assert.equal(seenRef, preparedDest)
+    assert.equal(preparedExistedDuringExec, true)
+    assert.equal(existsSync(preparedDest), false, 'temporary prepared file must be cleaned after execution')
+    assert.equal(existsSync(source), true, 'original source must stay untouched')
+    assert.ok(env.events.some((e) => e.payload?.stage === 'preparing-media'))
+  })
+
+  it('shares remaining inline budget across multiple oversized videos and rejects oversized images', async () => {
+    const sources = [tempAsset(98_376_196, 'v1.mp4'), tempAsset(50_000_000, 'v2.mp4'), tempAsset(500, 'v3.mp4')]
+    const calls = []
+    const prepared = await prepareHeadlessTransport(
+      { prompt: 'body', references: sources.map((pathOrUrl) => ({ type: 'video', pathOrUrl })) },
+      {
+        videoProcess: {
+          async execute(req) {
+            calls.push(req)
+            writeFileSync(req.dest, 'compressed')
+            truncateSync(req.dest, req.input.maxRequestBytes)
+            return { mode: 'live', files: [{ path: req.dest, kind: 'video', meta: { preserveTimeline: true, keepAudio: true } }] }
+          },
+        },
+      },
+    )
+    assert.equal(calls.length, 2)
+    assert.equal(calls[0].input.maxRequestBytes, calls[1].input.maxRequestBytes)
+    assert.deepEqual(prepared.references.map((r) => r.pathOrUrl), [calls[0].dest, calls[1].dest, sources[2]])
+    await prepared.cleanup()
+    assert.equal(existsSync(calls[0].dest), false)
+
+    const bigPhoto = tempAsset(8 * 1024 * 1024, 'photo.jpg')
+    await assert.rejects(
+      () => prepareHeadlessTransport({ prompt: 'body', references: [{ type: 'image', pathOrUrl: bigPhoto }] }),
+      (err) => err instanceof OmnimuxError && err.code === 'headless-skill-transport-exceeded',
+    )
+  })
+
+  it('cleans up temporary files when videoProcess fails or omits required guarantees', async () => {
+    const source = tempAsset(98_376_196)
+    await assert.rejects(
+      () => prepareHeadlessTransport({ prompt: 'body', references: [{ type: 'video', pathOrUrl: source }] }),
+      (err) => err instanceof OmnimuxError && err.code === 'headless-skill-transport-unavailable',
+    )
+
+    let created = ''
+    await assert.rejects(
+      () => prepareHeadlessTransport(
+        { prompt: 'body', references: [{ type: 'video', pathOrUrl: source }] },
+        {
+          videoProcess: {
+            async execute(req) {
+              created = req.dest
+              writeFileSync(created, 'partial')
+              return { mode: 'live', files: [{ path: created, kind: 'video', meta: { preserveTimeline: false, keepAudio: true } }] }
+            },
+          },
+        },
+      ),
+      (err) => err instanceof OmnimuxError && err.code === 'headless-skill-transport-exceeded',
+    )
+    assert.equal(existsSync(created), false)
+    assert.equal(existsSync(source), true)
   })
 })

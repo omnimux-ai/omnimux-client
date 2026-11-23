@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import {
   handleAnalyze,
   handleBatchDelete,
+  handleCancelAnalysis,
   handleCreate,
   handleDeleteItem,
   handleFetchMedia,
@@ -33,6 +34,13 @@ const EXTENSION_PROTOCOLS = new Set(['chrome-extension:', 'moz-extension:', 'saf
 
 const CODE_MESSAGES = {
   'needs-omnimux': '需要登录 OmniMux 账号，请在 设置 → 个人资料 中登录',
+  'needs-provider': '分析服务尚未就绪，请在设置中确认已配置的模型服务',
+  'headless-skill-unavailable': '无头技能执行引擎尚未就绪，请检查 omnimux 执行中枢插件',
+  'headless-skill-not-found': '灵感分析技能未加载，请重启应用或重新同步插件',
+  'headless-skill-schema-invalid': '模型输出格式异常，经自动修复仍未满足结构要求，请重试',
+  'headless-skill-timeout': '分析超时，请检查网络或切换模型后重试',
+  'headless-skill-cancelled': '分析已取消，可重新分析',
+  'headless-skill-stale-input': '分析期间原始内容已变更，请重新分析',
 }
 
 const MEDIA_TYPES = {
@@ -56,6 +64,7 @@ const ROUTE_HANDLERS = {
   'capture-media-chunk': handleCaptureMediaChunk,
   'capture-commit': handleCaptureCommit,
   analyze: handleAnalyze,
+  'analyze-cancel': handleCancelAnalysis,
   translate: handleTranslate,
   'creation-draft': handleSaveCreationDraft,
   'creation-reference': handlePrepareCreationReferences,
@@ -248,6 +257,8 @@ function matchAnalyze(method, path) {
     const id = parseActionId(path, name)
     if (id) return { name, id }
   }
+  const cancelAnalyzeId = parseActionId(path, 'analyze/cancel')
+  if (cancelAnalyzeId) return { name: 'analyze-cancel', id: cancelAnalyzeId }
   const analyzeId = parseActionId(path, 'analyze')
   if (analyzeId) return { name: 'analyze', id: analyzeId }
   const translateId = parseActionId(path, 'translate')
@@ -401,6 +412,7 @@ function pipeRange(opts) {
  *   socialFetcher?: Function,
  *   videoAnalyzeTool?: any,
  *   textComplete?: any,
+ *   headlessSkill?: (() => { run: Function, listJobs?: Function, getJob?: Function, cancel?: Function } | undefined) | { run: Function, listJobs?: Function, getJob?: Function, cancel?: Function },
  *   videoProcess?: (() => {execute: Function} | undefined) | {execute: Function},
  *   composerAttachments?: (() => object | undefined) | object,
  *   fetcher?: typeof fetch,
@@ -420,6 +432,7 @@ export function createLocalInspirationDispatcher(deps) {
     socialFetcher: deps.socialFetcher,
     videoAnalyzeTool: deps.videoAnalyzeTool,
     textComplete: deps.textComplete,
+    headlessSkill: deps.headlessSkill,
     videoProcess: deps.videoProcess,
     composerAttachments: deps.composerAttachments,
     fetcher,
