@@ -80,7 +80,7 @@
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.5",
-    "dsh-ui-kit": "file:../../packages/dsh-ui-kit"
+    "dsh-ui-kit": "^0.1.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.2",

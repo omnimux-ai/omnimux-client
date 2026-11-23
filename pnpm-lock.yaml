@@ -789,8 +789,8 @@ importers:
         specifier: ^3.18.5
         version: 3.19.0
       dsh-ui-kit:
-        specifier: file:../../packages/dsh-ui-kit
-        version: file:plugins/packages/dsh-ui-kit(@deepseek-ai/dsh-client-ui-primitives@0.2.2-rc.5(@deepseek-ai/cordis@4.1.0))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+        specifier: ^0.1.0
+        version: link:../../packages/dsh-ui-kit
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: ^4.0.2
@@ -4762,14 +4762,6 @@ packages:
 
   draco3d@1.5.9:
     resolution: {integrity: sha512-MqC0eAfW5gPATGY3GABIyFWpHwdDGAyewTdek5R/e+mhI9ZDUMKb2mTDkTMUW0+Vm7an+ThEMUop3+svS72Uug==}
-
-  dsh-ui-kit@file:plugins/packages/dsh-ui-kit:
-    resolution: {directory: plugins/packages/dsh-ui-kit, type: directory}
-    engines: {node: '>=22.19.0'}
-    peerDependencies:
-      '@deepseek-ai/dsh-client-ui-primitives': '>=0.1.0-rc.6 || >=0.2.1-rc.3 <0.3.0-0 || >=0.2.2-rc.5 <0.3.0-0'
-      react: '>=18.2.0'
-      react-dom: '>=18.2.0'
 
   dts-resolver@3.0.0:
     resolution: {integrity: sha512-1T1f+z+4tl9XD+m+0HBgWoL/nm0bOIffyWaUuUSBlFg/86IWvfx+wjNaO/ybU0AJzG9/Mi5hBUgGV6zCmWEN7Q==}
@@ -10455,12 +10447,6 @@ snapshots:
       '@types/trusted-types': 2.0.7
 
   draco3d@1.5.9: {}
-
-  dsh-ui-kit@file:plugins/packages/dsh-ui-kit(@deepseek-ai/dsh-client-ui-primitives@0.2.2-rc.5(@deepseek-ai/cordis@4.1.0))(react-dom@19.2.8(react@19.2.8))(react@19.2.8):
-    dependencies:
-      '@deepseek-ai/dsh-client-ui-primitives': 0.2.2-rc.5(@deepseek-ai/cordis@4.1.0)
-      react: 19.2.8
-      react-dom: 19.2.8(react@19.2.8)
 
   dts-resolver@3.0.0: {}
 

@@ -94,7 +94,7 @@
       "version": "0.1.0",
       "path": "plugins/plugins/omnimux-viewer",
       "spec": "link:../../plugins/plugins/omnimux-viewer",
-      "contentHash": "sha256:f60e2df7e7291d9211c2497eb379059d1ea1a67dc6091ce43463f071c8b2b3c7"
+      "contentHash": "sha256:5e0d2fe0a27c2a200b30f390594649e33512617bfe54c5d7b85160e49d65e8ff"
     },
     {
       "name": "omnimux-workflow",
