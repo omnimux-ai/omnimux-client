@@ -429,3 +429,83 @@ test('全局一致性契约：所有画布瞬态浮层均接入统一协调器�
   );
   assert.doesNotMatch(hoverSrc, /useCanvasDismissLayer\(/);
 });
+
+test('停靠态空白边距：无浮层时一次点击 .wf-canvas-editor 透传失选；有浮层时首击仅关浮层、次击失选', async () => {
+  const { build } = workflowRequire('esbuild');
+  const compiled = await build({
+    entryPoints: [fileURLToPath(new URL('../../store/canvasStore.ts', import.meta.url))],
+    bundle: true,
+    write: false,
+    platform: 'node',
+    format: 'cjs',
+    packages: 'external',
+  });
+  const mod = { exports: {} };
+  new Function('require', 'module', 'exports', compiled.outputFiles[0].text)(
+    createRequire(import.meta.url),
+    mod,
+    mod.exports,
+  );
+  const { useCanvasStore } = mod.exports;
+  const env = createDomEnv();
+  useCanvasStore.getState().resetStore();
+  try {
+    const editor = env.document.querySelector('.wf-canvas-editor');
+    const modelPopover = env.el('model-popover');
+    const modelTrigger = env.el('model-trigger');
+    assert.ok(editor);
+
+    const seedSelection = () => {
+      const store = useCanvasStore.getState();
+      store.hydrateGraph(
+        [{ id: 'n-dock', type: 'material', position: { x: 0, y: 0 }, selected: true, data: { materialType: 'video' } }],
+        [{ id: 'e-dock', source: 'n-src', target: 'n-dock', selected: true }],
+      );
+      store.setSelectedElement('node', 'n-dock');
+    };
+
+    let backdropClears = 0;
+    editor.addEventListener('click', (event) => {
+      if (event.target !== event.currentTarget) return;
+      useCanvasStore.getState().clearSelection();
+      backdropClears += 1;
+    });
+
+    // (1) 无浮层打开时，一次点击停靠空白边距直接清除节点/连线选中与 selectedElement
+    seedSelection();
+    env.fullClick(editor);
+    assert.equal(backdropClears, 1);
+    assert.equal(useCanvasStore.getState().nodes[0].selected, false);
+    assert.equal(useCanvasStore.getState().edges[0].selected, false);
+    assert.deepEqual(useCanvasStore.getState().selectedElement, { type: 'none', id: null });
+
+    // (2) 打开浮层时，首击仅关浮层并保留选中；次击正常透传清除选中
+    seedSelection();
+    let popoverOpen = true;
+    let unregister = null;
+    unregister = env.coordinator.register(() => ({
+      containsTarget: (target) => modelPopover.contains(target) || modelTrigger.contains(target),
+      onDismiss: () => {
+        popoverOpen = false;
+        unregister?.();
+        unregister = null;
+      },
+    }));
+
+    env.fullClick(editor);
+    assert.equal(popoverOpen, false, '首击停靠空白边距应先关闭打开的浮层');
+    assert.equal(backdropClears, 1, '首击不得透传到 .wf-canvas-editor 失选');
+    assert.equal(useCanvasStore.getState().nodes[0].selected, true, '首击后节点保持选中');
+    assert.deepEqual(useCanvasStore.getState().selectedElement, { type: 'node', id: 'n-dock' });
+
+    env.advance(120);
+    env.fullClick(editor);
+    assert.equal(backdropClears, 2, '次击停靠空白边距应正常透传并取消选中');
+    assert.equal(useCanvasStore.getState().nodes[0].selected, false);
+    assert.equal(useCanvasStore.getState().edges[0].selected, false);
+    assert.deepEqual(useCanvasStore.getState().selectedElement, { type: 'none', id: null });
+  } finally {
+    useCanvasStore.getState().resetStore();
+    env.cleanup();
+  }
+});

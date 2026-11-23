@@ -1,9 +1,29 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { build } from 'esbuild';
 import { isCanvasBlankSurface } from '../utils/canvasDismissLayer.ts';
+
+async function loadCanvasStore() {
+  const compiled = await build({
+    entryPoints: [fileURLToPath(new URL('../../store/canvasStore.ts', import.meta.url))],
+    bundle: true,
+    write: false,
+    platform: 'node',
+    format: 'cjs',
+    packages: 'external',
+  });
+  const mod = { exports: {} };
+  new Function('require', 'module', 'exports', compiled.outputFiles[0].text)(
+    createRequire(import.meta.url),
+    mod,
+    mod.exports,
+  );
+  return mod.exports.useCanvasStore;
+}
 
 const here = dirname(fileURLToPath(import.meta.url));
 const toolbarSrc = readFileSync(join(here, 'Toolbar.tsx'), 'utf8');
@@ -82,5 +102,39 @@ describe('Issue #111: P1 / P2 / P3 contract tests', () => {
       closest: () => null,
     };
     assert.equal(isCanvasBlankSurface(fakeEditor), true);
+    assert.match(
+      canvasEditorSrc,
+      /handleEditorBackdropClick[\s\S]*?event\.target !== event\.currentTarget[\s\S]*?clearSelection\(\)[\s\S]*?handlePaneClick\(\)/,
+    );
+    assert.match(canvasEditorSrc, /onClick=\{handleEditorBackdropClick\}/);
+  });
+
+  it('P3: useCanvasStore.clearSelection atomically clears node, edge, and selectedElement states without pushing undo history', async () => {
+    const useCanvasStore = await loadCanvasStore();
+    const store = useCanvasStore.getState();
+    store.resetStore();
+    try {
+      store.hydrateGraph(
+        [
+          { id: 'n1', type: 'material', position: { x: 0, y: 0 }, selected: true, data: { materialType: 'video' } },
+          { id: 'n2', type: 'material', position: { x: 240, y: 0 }, selected: false, data: { materialType: 'image' } },
+        ],
+        [
+          { id: 'e1', source: 'n2', target: 'n1', selected: true },
+        ],
+      );
+      store.setSelectedElement('node', 'n1');
+      const pastBefore = useCanvasStore.getState().past.length;
+
+      useCanvasStore.getState().clearSelection();
+
+      const after = useCanvasStore.getState();
+      assert.equal(after.nodes.every((n) => n.selected === false), true);
+      assert.equal(after.edges.every((e) => e.selected === false), true);
+      assert.deepEqual(after.selectedElement, { type: 'none', id: null });
+      assert.equal(after.past.length, pastBefore, 'clearing selection must not push an undo snapshot');
+    } finally {
+      useCanvasStore.getState().resetStore();
+    }
   });
 });

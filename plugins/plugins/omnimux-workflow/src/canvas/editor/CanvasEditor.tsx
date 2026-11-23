@@ -880,6 +880,15 @@ const CanvasEditorContent: React.FC<CanvasEditorProps> = ({
     closeMenu();
   }, [setSelectedElement, closeMenu]);
 
+  const handleEditorBackdropClick = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      if (event.target !== event.currentTarget) return;
+      useCanvasStore.getState().clearSelection();
+      handlePaneClick();
+    },
+    [handlePaneClick],
+  );
+
   // 整理对齐节点
   const handleAlignGrid = useCallback(() => {
     setNodes((current) =>
@@ -931,9 +940,7 @@ const CanvasEditorContent: React.FC<CanvasEditorProps> = ({
       className="wf-canvas-editor"
       data-pointer-mode={pointerMode}
       style={{ position: 'relative', height: '100%' }}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) handlePaneClick();
-      }}
+      onClick={handleEditorBackdropClick}
     >
       <ReactFlow
         nodes={flowNodes}
