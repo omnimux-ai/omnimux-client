@@ -240,7 +240,10 @@ test('T2 routes：GET library + 无 cwd list/create + 跨源写拒绝', async ()
   const harness = tmpDir('omnimux-route-');
   host.mountWorkflowHost(
     { webServer },
-    { paths: { root: harness, workspacesDir: join(harness, 'w'), executionsDir: join(harness, 'e'), mediaDir: join(harness, 'm') } },
+    {
+      paths: { root: harness, workspacesDir: join(harness, 'w'), executionsDir: join(harness, 'e'), mediaDir: join(harness, 'm') },
+      libraryRoot: join(videosRoot, 'OmniMux', 'Projects'),
+    },
   );
   const workflowRoute = registered.find((r) => r.path === '/omnimux-workflow');
   assert.ok(workflowRoute, 'workflow prefix route registered');
