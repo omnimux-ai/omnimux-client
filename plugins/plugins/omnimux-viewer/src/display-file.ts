@@ -27,7 +27,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { GenericCallView, ToolExecution, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type { FsTarget } from '@deepseek-ai/dsh-fs'
 import {
-  DISPLAY_TOOL, classifyPath, formatDisplayOutput, modelImageMediaTypeForPath,
+  classifyPath, formatDisplayOutput, modelImageMediaTypeForPath,
   type DisplayValue, type ModelImage, type ModelImageMediaType,
 } from './contract.ts'
 import './message-source.ts'
@@ -169,7 +169,7 @@ async function commitImage(
  */
 export function applyDisplayTool(ctx: Context, options: DisplayToolOptions): () => void {
   return ctx.tools.register(defineTool({
-    name: DISPLAY_TOOL,
+    name: 'display_file',
     description: 'Display a file to the user in the web UI: images (PNG/JPEG/WebP/GIF/SVG/AVIF/BMP), video (MP4/WebM/MOV/OGV), audio (MP3/WAV/FLAC/OGG/M4A/Opus), PDF, and HTML all render inline with a real player. Use this whenever the user should SEE or HEAR a file — the read tool decodes UTF-8 text and cannot show any of them. On a model route that accepts image input a PNG/JPEG/WebP/GIF also enters your own context; everything else is shown to the user only.',
     parameters: {
       file_path: { type: 'string', required: true, description: 'Path to the file, resolved by the filesystem backend.' },
