@@ -105,6 +105,23 @@
       "license": "SEE LICENSE IN LICENSE",
       "upstream": []
     },
+    "omnimux-viewer": {
+      "class": "fork",
+      "license": "MIT",
+      "upstream": [
+        {
+          "project": "dsh-viewer",
+          "repo": "https://github.com/Crosery/dsh-viewer",
+          "ref": "4a913a4",
+          "commit": "4a913a476f8a7554de90e9382b4e7adb354831fa",
+          "license": "MIT",
+          "copyright": "Copyright (c) 2026 Crosery",
+          "noticeFile": "LICENSE",
+          "textFile": "LICENSE",
+          "note": "上游基准为 Crosery/dsh-viewer 4a913a476f8a7554de90e9382b4e7adb354831fa（2026-08-31，Merge pull request #1 from Crosery/docs/conventions）；fork 以源码原样迁入本仓 plugins/plugins/omnimux-viewer，二次开发约定见该目录 VENDOR.md。"
+        }
+      ]
+    },
     "omnimux-workflow": {
       "class": "vendor",
       "license": "SEE LICENSE IN LICENSE",

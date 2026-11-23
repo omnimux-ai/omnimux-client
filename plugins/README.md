@@ -135,7 +135,7 @@ OmniMux 的构建与演进站在了开源巨人的肩膀上，我们对以下直
 
 * **[@cocofhu/skillhub](https://github.com/cocofhu/skillhub)** (MIT License, by [@cocofhu](https://github.com/cocofhu))：`omnimux-market` 插件市场（技能/插件/专家/连接器四 Tab 架构）的 Fork 二开真源。
 * **[Augani/openreel-video](https://github.com/Augani/openreel-video)** (MIT License, by Augani)：`omnimux-clip` 剪辑工坊全套 WebCodecs/WebGPU 时间轴与微应用 Vendorize 真源。
-* **[Crosery/dsh-viewer](https://github.com/Crosery/dsh-viewer)** (MIT License, by Crosery)：历史归属说明：`omnimux-viewer` 曾作为全能媒体渲染器插件来源，当前不在本仓 `plugins/` 内构建或内置。
+* **[Crosery/dsh-viewer](https://github.com/Crosery/dsh-viewer)** (MIT License, by Crosery)：`omnimux-viewer` 全能媒体渲染器插件的 Fork 来源；源码已迁入本仓 `plugins/plugins/omnimux-viewer/`，随产品一起构建与发布（二次开发约定见该目录 `VENDOR.md`）。
 * **[omdsh-dev/dsh-browser](https://github.com/omdsh-dev/dsh-browser)** (MIT License, by Yuxiang Lin)：`omnimux-browser` 浏览器伴侣插件与 Chrome 扩展的来源；源码已迁入本仓 `plugins/plugins/omnimux-browser/`，随产品一起构建与发布。
 * **[glanderness/BeefTV](https://github.com/glanderness/BeefTV)** (MIT License，锁定基线 `5e2ad602`，by @beefnoode & BeefTV Contributors) 与 **[Quaternius](https://quaternius.itch.io/universal-base-characters)** (CC0 1.0)：`omnimux-workflow` 导演台组件与免费基础 3D 角色模型来源；严格不同步 `6b30abfe` 及之后的 Source Available 提交，详见 [`THIRD-PARTY-NOTICES-director.md`](plugins/omnimux-workflow/THIRD-PARTY-NOTICES-director.md)。
 * **[deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)** (MIT License, by DeepSeek AI)：官方核心 Agent 运行底座与 Harness 插件规范。

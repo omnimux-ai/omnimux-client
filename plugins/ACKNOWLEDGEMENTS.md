@@ -41,13 +41,13 @@ OmniMux 的诞生与演进离不开全球开源社区与先锋项目的杰出贡
 
 ---
 
-### 4. `omnimux-viewer` (全能媒体渲染与视频播放器插件，历史归属)
+### 4. `omnimux-viewer` (全能媒体渲染与视频播放器插件)
 * **上游原始项目**：[Crosery/dsh-viewer](https://github.com/Crosery/dsh-viewer)
 * **原始作者 / 维护团队**：Crosery
 * **开源许可证**：[MIT License](https://opensource.org/licenses/MIT)
 * **在 OmniMux 中的定位与状态**：
-  * 历史归属说明：`omnimux-viewer` 曾作为全能媒体渲染器插件来源，当前不在本仓 `plugins/plugins/` 内构建或内置；
-  * 为 OmniMux 早期媒体渲染与画布成果即时回放交互奠定了重要基础。
+  * `omnimux-viewer` 的源码已迁入本仓 `plugins/plugins/omnimux-viewer/`，随产品一起构建与发布；上游基准与二次开发约定见该目录 `VENDOR.md`；
+  * 为 OmniMux 媒体渲染与画布成果即时回放交互奠定了重要基础。
 * **致谢辞**：致敬 Crosery 为 DSH 生态贡献的开箱即用、极度丝滑的全能媒体渲染底座！
 
 ---

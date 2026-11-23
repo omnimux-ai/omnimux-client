@@ -62,6 +62,7 @@ const PRODUCT_PLUGINS = [
   'omnimux-publish',
   'omnimux-forms',
   'omnimux-browser',
+  'omnimux-viewer',
 ] as const
 const ALPHA_PLUGINS = [
   'omnimux-accounts',
@@ -166,7 +167,7 @@ describe('stagePresetProfile', () => {
       )
 
       sidebarFixture.path = sidebar
-      expect(stagePresetProfile({ pluginsRoot, presetDir, releaseChannel: 'development' })).toBe(17)
+      expect(stagePresetProfile({ pluginsRoot, presetDir, releaseChannel: 'development' })).toBe(18)
       const stagedPresets = join(presetDir, 'agent-presets')
       expect(readdirSync(stagedPresets).sort()).toEqual(['cordis', 'daily-work', 'standard', 'tiktok-agent'])
       expect(readFileSync(join(stagedPresets, 'cordis', 'preset.yml'), 'utf8')).toBe('name: cordis\n')
@@ -317,7 +318,7 @@ describe('stagePresetProfile', () => {
       })
 
       sidebarFixture.path = sidebar
-      expect(stagePresetProfile({ pluginsRoot, presetDir, releaseChannel: 'development' })).toBe(14)
+      expect(stagePresetProfile({ pluginsRoot, presetDir, releaseChannel: 'development' })).toBe(15)
       expect(listPackageNames(join(presetDir, 'plugins'))).not.toContain('@fixture/excluded')
       expect(readJson(join(presetDir, 'owned-packages.json'))).not.toContain('@fixture/excluded')
     } finally {
@@ -384,7 +385,7 @@ describe('stagePresetProfile', () => {
       createProductPlugins(pluginsRoot)
       createPresetSkeleton(presetDir)
 
-      expect(stagePresetProfile({ pluginsRoot, presetDir })).toBe(10)
+      expect(stagePresetProfile({ pluginsRoot, presetDir })).toBe(11)
 
       const output = join(presetDir, 'plugins')
       const owned = readJson(join(presetDir, 'owned-packages.json')) as unknown as string[]
@@ -418,7 +419,7 @@ describe('stagePresetProfile', () => {
       createProductPlugins(pluginsRoot)
       createPresetSkeleton(presetDir)
 
-      expect(stagePresetProfile({ pluginsRoot, presetDir, releaseChannel: 'development' })).toBe(14)
+      expect(stagePresetProfile({ pluginsRoot, presetDir, releaseChannel: 'development' })).toBe(15)
 
       const output = join(presetDir, 'plugins')
       const owned = readJson(join(presetDir, 'owned-packages.json')) as unknown as string[]
@@ -450,7 +451,7 @@ describe('stagePresetProfile', () => {
       const options = { pluginsRoot, presetDir, freshPresetDir, releaseChannel: 'development' as const }
 
       expect(() => stagePresetProfile({ pluginsRoot, presetDir, freshPresetDir })).toThrow('requires the development channel')
-      expect(stagePresetProfile(options)).toBe(14)
+      expect(stagePresetProfile(options)).toBe(15)
       expect(readFileSync(sourceManifest)).toEqual(before)
       expect(readdirSync(presetDir)).toEqual(entries)
       expect(readdirSync(freshPresetDir).some(name => name.startsWith('.preset-backup-'))).toBe(false)
