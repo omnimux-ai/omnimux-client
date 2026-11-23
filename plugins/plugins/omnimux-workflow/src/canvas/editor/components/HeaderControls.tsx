@@ -257,6 +257,8 @@ const HeaderControls: React.FC<HeaderControlsProps> = ({
           className={`wf-header-capsule__btn ${isMinimapOpen ? 'wf-header-capsule__btn--active' : ''}`}
           onClick={onToggleMinimap}
           title={t('header.minimap')}
+          aria-pressed={isMinimapOpen}
+          aria-expanded={isMinimapOpen}
         >
           <Map size={15} />
         </button>

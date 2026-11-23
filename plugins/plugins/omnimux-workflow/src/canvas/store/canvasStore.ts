@@ -148,6 +148,8 @@ export interface CanvasState {
   // ===== UI Slice（最小）=====
   selectedElement: { type: SelectedElementType; id: string | null };
   setSelectedElement: (type: SelectedElementType, id: string | null) => void;
+  /** Synchronously clear ReactFlow node/edge selection and UI selectedElement. */
+  clearSelection: () => void;
 
   // ===== Store Reset =====
   resetStore: () => void;
@@ -477,6 +479,25 @@ export const useCanvasStore = create<CanvasState>()(
 
     setSelectedElement: (type: SelectedElementType, id: string | null) => {
       set({ selectedElement: { type, id } });
+    },
+
+    clearSelection: () => {
+      const { nodes, edges, onNodesChange, onEdgesChange, selectedElement } = get();
+      const nodeDeselects = nodes
+        .filter((node) => node.selected)
+        .map((node) => ({ id: node.id, type: 'select' as const, selected: false }));
+      if (nodeDeselects.length > 0) {
+        onNodesChange(nodeDeselects);
+      }
+      const edgeDeselects = edges
+        .filter((edge) => edge.selected)
+        .map((edge) => ({ id: edge.id, type: 'select' as const, selected: false }));
+      if (edgeDeselects.length > 0) {
+        onEdgesChange(edgeDeselects);
+      }
+      if (selectedElement.type !== 'none' || selectedElement.id !== null) {
+        set({ selectedElement: { type: 'none', id: null } });
+      }
     },
 
     // ========================================================================

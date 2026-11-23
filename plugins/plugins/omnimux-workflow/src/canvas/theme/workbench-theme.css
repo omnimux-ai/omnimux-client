@@ -439,25 +439,63 @@ body[data-ds-dark-theme] .wf-canvas-root {
   color: var(--wb-text-primary);
 }
 
+.wf-canvas-toolbar__item:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary, var(--wb-beam-start));
+  outline-offset: 2px;
+}
+
 .wf-canvas-toolbar__item--active {
   background: var(--wb-dock-item-hover);
   color: var(--wb-text-primary);
   font-weight: 500;
 }
 
-/* 主「+（添加节点）」按钮：保留深色白底 / 浅色黑底的高对比，
-   形状统一为圆角方形（squircle），与 --wb-pill-radius 同档，不再是纯圆。 */
+/* 主「+（添加节点）」按钮：保留深色白底 / 浅色黑底的高对比，原位清晰呈现标签。 */
 .wf-canvas-toolbar__item--primary-add {
   background: #18191c;
   color: #ffffff;
-  width: 36px;
+  width: auto;
+  min-width: 98px;
   height: 36px;
-  padding: 0;
+  padding: 0 12px 0 9px;
+  gap: 5px;
   border-radius: var(--wb-pill-radius, 12px);
   display: flex;
   align-items: center;
   justify-content: center;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.wf-canvas-toolbar__add-text {
+  font-size: var(--wb-fs-body);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.wf-canvas-toolbar__mode-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 2px;
+}
+
+.wf-canvas-toolbar__mode-btn {
+  height: 34px;
+  padding: 0 9px;
+  gap: 5px;
+  border-radius: var(--wb-pill-radius);
+  white-space: nowrap;
+}
+
+.wf-canvas-toolbar__mode-label {
+  font-size: var(--wb-fs-body);
+  white-space: nowrap;
+}
+
+.wf-canvas-toolbar__mode-btn[aria-pressed='true'] {
+  background: var(--wb-pill-hover);
+  color: var(--wb-text-primary);
+  font-weight: 600;
 }
 
 .wf-canvas-toolbar__item--primary-add:hover {
