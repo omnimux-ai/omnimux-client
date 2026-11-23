@@ -5,7 +5,7 @@
  *
  * 全域版本控制守卫 (Universal Version-Control Guard):
  * 严禁在主 checkout 直接对任何已加入 Git 版本管理（Tracked）的文件/文件夹执行 edit/write 操作。
- * 强制所有改动走独立 Worktree 工作区 (./scripts/git-wt.sh) 进行物理隔离，防止主干污染、冲突覆盖与成果丢弃。
+ * 强制所有改动走独立 Worktree 工作区 (plugins/scripts/git-wt.sh) 进行物理隔离，防止主干污染、冲突覆盖与成果丢弃。
  * 同时拦截对未推送提交具有毁灭性覆盖风险的 `git reset --hard` 操作。
  *
  * 豁免清单 (允许在主仓操作):
@@ -20,7 +20,7 @@ import { lstatSync, realpathSync, readFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 
-const MAIN_PLUGINS_MARK = `${sep}omnimux-dsh${sep}plugins${sep}`
+const MAIN_PLUGINS_MARK = `${sep}omnimux-client${sep}plugins${sep}`
 
 const EPHEMERAL_DIR_NAMES = new Set([
   'node_modules',
@@ -138,7 +138,7 @@ export function isMainRepoPluginPath(fullPath) {
   if (isWorktreePath(fullPath)) return false
   if (fullPath.includes(MAIN_PLUGINS_MARK)) return true
   const normalized = fullPath.replace(/\\/g, '/')
-  return normalized.includes('/omnimux-dsh/plugins/') || normalized.startsWith('plugins/') || normalized.includes('/plugins/')
+  return normalized.includes('/omnimux-client/plugins/') || normalized.startsWith('plugins/') || normalized.includes('/plugins/')
 }
 
 export function isEphemeralPath(fullPath) {
@@ -173,7 +173,7 @@ export function isProtectedScope(fullPath, cwd) {
   if (insideRepo) {
     relative = normalizedFullReal.slice(normalizedRoot.length + 1)
   } else if (normalizedFullReal.startsWith('/')) {
-    const marker = '/omnimux-dsh/'
+    const marker = '/omnimux-client/'
     const idx = normalizedFullReal.lastIndexOf(marker)
     if (idx !== -1) {
       relative = normalizedFullReal.slice(idx + marker.length)
@@ -818,7 +818,7 @@ export function setOwnerRepoRoot(root) {
 }
 
 /**
- * Repository that owns this guard script (the omnimux-dsh checkout that installed it).
+ * Repository that owns this guard script (the omnimux-client checkout that installed it).
  * For a linked worktree the script lives at <repo>/.worktrees/<task>/scripts/, so the
  * owning root is still the directory two levels above the script. Returns null when the
  * script is not inside a Git work tree — the main-branch gate then protects nothing.
@@ -900,7 +900,7 @@ export function decideMainBranchGitOp(command, cwd, options = {}) {
     const target = rawTarget || resolveGitTargetPath(seg, effectiveCwd) || effectiveCwd
     if (isWorktreePath(target)) continue
 
-    // 只保护本脚本所属仓库：目标目录不属于 omnimux-dsh 时不拦截外部仓的 main 操作。
+    // 只保护本脚本所属仓库：目标目录不属于 omnimux-client 时不拦截外部仓的 main 操作。
     const targetRoot = commandTargetRepoRoot(target)
     if (!ownerRoot || targetRoot !== ownerRoot) continue
 
