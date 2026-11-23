@@ -22,7 +22,7 @@ description: "OmniMux 社媒公开数据采集路由层。把「查账号/拉作
 | 单帖/单视频详情 | TikTok / Instagram / YouTube / X | `omnimux_tiktok_video` / `omnimux_instagram_post` / `omnimux_youtube_video` / `omnimux_x_tweet` |
 | 关键词搜索 | TikTok / Instagram / YouTube / X | `omnimux_tiktok_search` / `omnimux_instagram_search` / `omnimux_youtube_search` / `omnimux_x_search` |
 | 商品与评价 | TikTok Shop | `omnimux_tiktok_shop_search` / `omnimux_tiktok_shop_product` / `omnimux_social_data`（`shop_reviews` / `shop_reviews_v2`） |
-| 视频转写与画面理解 | TikTok / Instagram / YouTube / X（先取直链） | `omnimux_speech_to_text`；若环境已启用 `omnimux-video`，可用 `video_process` / `video_analyze` |
+| 视频转写与画面理解 | TikTok / Instagram / YouTube / X（转写先取直链；画面理解需本地文件） | `omnimux_speech_to_text`；若环境已启用 `omnimux-video`，可用 `video_process`（支持直链/本地）与 `video_analyze`（仅本地文件/`@inspiration/`） |
 | 自有已连接账号分析 | 已连接账号（仅在分析工具启用时） | `omnimux_analytics_daily_metrics` / `omnimux_analytics_posts` / `omnimux_analytics_follower_stats` / `omnimux_analytics_best_time` / `omnimux_analytics_frequency` / `omnimux_analytics_content_decay` / `omnimux_analytics_sync_external` / `omnimux_analytics_inbox` / `analytics_query_metrics` |
 | 本地已监控对标缓存（可选） | 已录入灵感库的对标账号 | `inspiration_rival_accounts` / `inspiration_rival_posts` / `inspiration_rival_post` / `inspiration_rival_refresh` |
 
@@ -60,7 +60,7 @@ description: "OmniMux 社媒公开数据采集路由层。把「查账号/拉作
 
 ### 搜索与聚合入口
 - 平台直调搜索：`omnimux_tiktok_search(query)`、`omnimux_instagram_search(query)`、`omnimux_youtube_search(query)`、`omnimux_x_search(query)`。
-- 统一聚合入口：`omnimux_social_data(platform, capability, url?, id?, query?, region?, author_id?)`，其中 `platform` ∈ `tiktok | instagram | youtube | x`，`capability` 覆盖 `video | user | post | posts | tweet | search` 以及 TikTok Shop / Creator 扩展能力（如 `shop_reviews`、`shop_reviews_v2`、`shop_categories`、`shop_category_products`、`shop_seller_products`、`creator_search_insights`、`creator_search_trend`、`creator_search_videos`）。
+- 统一聚合入口：`omnimux_social_data(platform, capability, url?, id?, query?, region?, author_id?)`，其中 `platform` ∈ `tiktok | instagram | youtube | x`，`capability` 覆盖 `video | user | post | posts | tweet | search` 以及 TikTok Shop / Creator 扩展能力（如 `shop_reviews`、`shop_reviews_v2`、`shop_categories`、`shop_category_products`、`shop_seller_products`；关键词查 `creator_search_insights` / `creator_search_videos` 传 `query`，拿到 `query_id_str` 后再查 `creator_search_trend` / `creator_search_detail` 传 `id`）。
 
 ### TikTok Shop
 - 商品搜索：`omnimux_tiktok_shop_search(query, region?)`（`region` 默认 `SG`，支持 `US` / `GB` / `ID` / `MY` / `TH` / `VN` / `PH` 等两位国家码）。
@@ -70,7 +70,7 @@ description: "OmniMux 社媒公开数据采集路由层。把「查账号/拉作
 ### 转写与视频理解
 1. 先用单帖/单视频详情工具拿视频或音频直链（多数 `omnimux_tiktok_video` / `omnimux_instagram_post` / `omnimux_youtube_video` / `omnimux_x_tweet` 响应含媒体直链）。
 2. 调用 `omnimux_speech_to_text(audio=<直链或本地绝对路径>, language?, response_format?)` 获取逐字稿（需要时间戳时传 `response_format="srt"` 或 `"vtt"`）。
-3. 若长视频需先抽音轨或需画面/分镜理解，且当前会话已挂载 `omnimux-video` 插件，再调用 `video_process` / `video_analyze`；未挂载时明确说明并基于转写与文案继续。
+3. 若长视频需先抽音轨或需画面/分镜理解，且当前会话已挂载 `omnimux-video` 插件：先用 `video_process`（支持 `http(s)` 直链与本地路径，如抽音轨或 `video_inline_analysis_prepare` 生成本地视频文件）；`video_analyze` **不接受 `http(s)` 直链**，须传本地绝对路径、`data:video/` URI 或 `@inspiration/` 引用；未挂载 `omnimux-video` 时明确说明并基于转写与文案继续。
 
 ## 三、参数与合规约定
 - `region`：2 位国家码，用于 TikTok Shop 站点/区域，不等于按地区过滤社媒内容。

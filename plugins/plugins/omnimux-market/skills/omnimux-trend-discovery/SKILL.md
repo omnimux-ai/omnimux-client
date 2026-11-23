@@ -14,7 +14,7 @@ description: "在一个细分赛道里找正在起量的选题、格式与钩子
 - 需要一个带证据的趋势 brief
 
 ## Data Sources
-- 关键词搜索：`omnimux_tiktok_search` / `omnimux_instagram_search` / `omnimux_youtube_search` / `omnimux_x_search`（TikTok 赛道洞察也可按需补充 `omnimux_social_data(platform="tiktok", capability="creator_search_insights"|"creator_search_trend"|"creator_search_videos", query=...)`）
+- 关键词搜索：`omnimux_tiktok_search` / `omnimux_instagram_search` / `omnimux_youtube_search` / `omnimux_x_search`（TikTok 赛道洞察也可按需补充 `omnimux_social_data(platform="tiktok", capability="creator_search_insights"|"creator_search_videos", query=<关键词>)`，拿到 `query_id_str` 后再查 `omnimux_social_data(platform="tiktok", capability="creator_search_trend", id=<query_id_str>)`）
 - 排序与佐证：对候选拉 `omnimux_tiktok_video` / `omnimux_instagram_post` / `omnimux_youtube_video` / `omnimux_x_tweet` 取指标
 - 可选：抓 1–3 个头部账号近期 `omnimux_*_posts` 看发布频率
 

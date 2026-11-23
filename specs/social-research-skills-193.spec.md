@@ -29,5 +29,5 @@
 1. 新增 9 个预设技能：`plugins/plugins/omnimux-market/skills/omnimux-{social-data,outlier-post-finder,creator-teardown,transcript-intelligence,trend-discovery,competitor-research,social-listening,product-demand,content-repurposing}/SKILL.md`。
 2. 随包入库说明与触发矩阵：`plugins/plugins/omnimux-market/skills/omnimux-social-data/references/README.md` 与 `TRIGGER-MATRIX.md`（公开仓合规，无本机路径或私有仓引用）。
 3. 更新声明与注册表：`plugins/plugins/omnimux-market/dsh.manifest.json`、`plugins/plugins/omnimux-market/package.json`（`files` 增加 `"skills"`）、`plugins/plugins.registry.json`。
-4. 新增自动化契约测试：`plugins/plugins/omnimux-market/src/tests/social-research-skills.test.ts`（校验 9 技能清单、frontmatter、中文触发词、六段式结构、README/TRIGGER-MATRIX 覆盖、零失效工具名反漂移）。
+4. 新增自动化契约测试：`plugins/plugins/omnimux-market/src/presets/social-research-skills.test.js`（校验 9 技能清单、YAML frontmatter、中文触发词、六段式结构、README/TRIGGER-MATRIX 覆盖、零失效工具名）与 `plugins/scripts/verify-preset-skills-materialization.test.mjs`（跨插件运行时工具与 `SOCIAL_DATA_CATALOG` capability 真源反漂移、以及 `plugins.registry.json` 一致性校验）。
 5. 本地隔离 staging/seeding 验证 + 真实公开账号端到端验证（`omnimux-outlier-post-finder` + `omnimux-creator-teardown` + 无数据场景拒绝）。

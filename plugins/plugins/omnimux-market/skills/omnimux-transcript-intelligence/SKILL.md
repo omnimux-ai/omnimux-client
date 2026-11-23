@@ -16,8 +16,8 @@ description: "把社媒视频的转写拆成 hook/setup/claim/evidence/payoff/CT
 
 ## Data Sources
 1. 单帖/视频详情：`omnimux_tiktok_video` / `omnimux_instagram_post` / `omnimux_youtube_video` / `omnimux_x_tweet` 取视频直链（多数响应含 media url）
-2. 语音转写：`omnimux_speech_to_text(audio=直链或本地路径, language?, response_format?)` 得逐字稿（需时间戳可传 `response_format="srt"` 或 `"vtt"`）；若已启用 `omnimux-video`，长视频可先用 `video_process` 抽音轨
-3. 画面/结构理解（可选）：若已启用 `omnimux-video`，可用 `video_analyze` 补充镜头与画面拆解
+2. 语音转写：`omnimux_speech_to_text(audio=直链或本地路径, language?, response_format?)` 得逐字稿（需时间戳可传 `response_format="srt"` 或 `"vtt"`）；若已启用 `omnimux-video`，长视频可先用 `video_process`（支持直链或本地路径）抽音轨
+3. 画面/结构理解（可选）：若已启用 `omnimux-video`，须先落地为本地文件（如用 `video_process` 的 `video_inline_analysis_prepare`）或使用 `@inspiration/` 引用，再调 `video_analyze` 补充镜头与画面拆解（`video_analyze` 不接受 `http(s)` 直链）
 4. 按账号选片：先用对应平台 `omnimux_tiktok_posts` / `omnimux_instagram_posts` / `omnimux_youtube_posts` / `omnimux_x_posts` 选片，再逐条取转写
 
 ## Workflow

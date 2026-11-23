@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { parse as parseYaml } from 'yaml'
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
@@ -31,17 +32,9 @@ const REQUIRED_WORKFLOW_SECTIONS = [
 function parseFrontmatter(markdown, label) {
   const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(markdown)
   assert.ok(match, `${label}: missing YAML frontmatter`)
-  const fields = {}
-  for (const line of match[1].split(/\r?\n/)) {
-    const kv = /^([a-zA-Z0-9_-]+):\s*(.*)$/.exec(line)
-    if (!kv) continue
-    let value = kv[2].trim()
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1)
-    }
-    fields[kv[1]] = value
-  }
-  return fields
+  const parsed = parseYaml(match[1])
+  assert.ok(parsed && typeof parsed === 'object' && !Array.isArray(parsed), `${label}: frontmatter must parse as a YAML mapping`)
+  return parsed
 }
 
 test('all 9 social research preset skills are declared in dsh.manifest.json and packaged via package.json files', () => {
