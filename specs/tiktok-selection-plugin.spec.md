@@ -48,3 +48,10 @@
 - [ ] `corepack pnpm --dir plugins run build:all` 构建成功并产出 `lib/client.js`。
 - [ ] 全仓门禁通过：`check:boundaries`、`verify:product-baseline`、`verify:silent-catch`、`check:package-files`、`verify:licenses`、`verify:tools`、`test:agent-tools`、`verify:stages`、`verify:stage-scroll`、`verify:stage-inset`、`guard:popover`、`registry:verify`。
 - [ ] 真实浏览器端到端验证通过（覆盖发现导入、三闸试拉与任务漏斗、选品库状态与素材弹窗、定时任务、风险词与配置，含亮/暗双主题与窄屏）。
+
+## 旧标准变更
+
+- `plugins/scripts/verify-license-consistency.test.mjs` :: `真实仓库：14 个插件全部登记且通过`
+  原断言：真实仓库磁盘插件目录数固定为 14，许可类别计数为 `{ original: 9, fork: 3, vendor: 2 }`。
+  必须改的理由：本 PR 新增原创插件 `omnimux-tiktok-selection`（`class: original`），全仓插件目录数变为 15，original 计数变为 10；该用例是「与真实仓库一致」的快照断言，必须随插件集合更新。
+  新期望证据：`verify:licenses` 与 `test:licenses` 全绿，`verifyLicenseConsistency` 返回 `errors=[]`、`warnings=[]`、`counts={ original: 10, fork: 3, vendor: 2 }`，且注册表键集合与磁盘目录集合完全一致。

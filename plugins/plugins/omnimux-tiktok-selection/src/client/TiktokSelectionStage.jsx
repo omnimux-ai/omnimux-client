@@ -27,6 +27,12 @@ export function TiktokSelectionStage({ t, stage, store, visible = true }) {
   const [refreshing, setRefreshing] = useState(false)
   const [libraryToken, setLibraryToken] = useState(0)
   const [toast, setToast] = useState(null)
+  // Keep-alive: once opened, stay mounted and hide in place instead of
+  // unmounting, so panel state (filters, task progress) survives tab switches.
+  const [everOpened, setEverOpened] = useState(visible)
+  useEffect(() => {
+    if (visible) setEverOpened(true)
+  }, [visible])
 
   const notify = useCallback((message, isError = false) => {
     setToast({ message, isError })
@@ -78,6 +84,7 @@ export function TiktokSelectionStage({ t, stage, store, visible = true }) {
       aria-hidden={visible ? undefined : 'true'}
       className="omnimux-ttsel-stage"
       data-visible={visible ? 'true' : 'false'}
+      style={everOpened && !visible ? { display: 'none' } : undefined}
     >
       <div className="omnimux-ttsel-stage-body omx-stage-scroll">
         <PageHeader
