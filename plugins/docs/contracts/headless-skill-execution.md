@@ -99,6 +99,8 @@ interface HeadlessSkillRunResult<T = Record<string, unknown>> {
 - `headless-skill-stale-input`：任务完成时 `verifyFingerprint()` 返回 `false`，拒绝写入陈旧结果
 - `headless-skill-cancelled`：任务被 `cancel(jobId)` 或调用方 `AbortSignal` 取消
 - `headless-skill-timeout`：超过单次任务时间上限
+- `headless-skill-transport-exceeded`：本地图片或压缩后的视频仍超过内联传输容量，拒绝提交不完整素材
+- `headless-skill-transport-unavailable`：本地超大视频需通过 `videoProcess` 能力（`video_inline_analysis_prepare`）准备完整视频，但接缝不可用
 - `needs-provider` / `needs-omnimux`：沿用 Hub 原生渠道与登录前置错误码，禁止包装为 500 或静默吞错
 
 ### 事件契约
@@ -115,7 +117,7 @@ Hub 通过 `hubEvents.emit({ type: 'omnimux:headless-skill', payload })` 推送�
 
 在全仓审计中发现以下既有实现不符合本契约，已建立独立 Issue 分阶段迁入 `headlessSkill`，期间禁止在旧路径上继续复制同款模式：
 
-- [#211](https://github.com/omnimux-ai/omnimux-client/issues/211)：`omnimux-inspiration`（硬编码提示词、9MB 视频预处理、Markdown 正则解析、私有内存锁与前端轮询）
+- [#211](https://github.com/omnimux-ai/omnimux-client/issues/211)：`omnimux-inspiration` — **已迁移**（Skill 真源 `inspiration-deconstruct` / `inspiration-translate` + JSON Schema + Hub `transport.js` 视频准备 + `hubEvents` 实时推送与取消；旧 `analyzer.js` 仅保留历史数据只读兼容）
 - [#212](https://github.com/omnimux-ai/omnimux-client/issues/212)：`omnimux-products`（硬编码提示词与 `yaml-mini.js` 文本解析）
 - [#213](https://github.com/omnimux-ai/omnimux-client/issues/213)：`omnimux-video`（私有提示词文件加载与非结构化 Markdown 输出）
 - [#214](https://github.com/omnimux-ai/omnimux-client/issues/214)：`omnimux-workflow`（重复视频预处理、重复 Markdown 表格解析与导演助手硬编码提示词）

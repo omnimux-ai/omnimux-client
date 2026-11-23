@@ -79,7 +79,17 @@ function renderFireSvg() {
 
 // 分类图标
 function renderCatIcon(category) {
-  const cat = String(category || '').toLowerCase();
+  const alias = {
+    'scene-seeding': 'ugc',
+    'scene-brand': 'story',
+    'scene-product': 'product',
+    'scene-performance': 'video',
+    'scene-app': 'image',
+    'scene-local': 'product',
+    'scene-repurpose': 'story',
+    'scene-tools': 'meme',
+  };
+  const cat = alias[String(category || '').toLowerCase()] || String(category || '').toLowerCase();
   if (cat.includes('ugc')) {
     return h('svg', { width: 12, height: 12, viewBox: '0 0 24 24' },
       h('path', { d: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2' }),
@@ -126,6 +136,14 @@ const CATEGORY_NAMES_ZH = {
   'product-showcase': '产品展示',
   'meme-native': '模因与原生',
   'other': '其它营销分类',
+  'scene-seeding': '内容种草',
+  'scene-brand': '品牌宣传',
+  'scene-product': '商品展示',
+  'scene-performance': '效果广告',
+  'scene-app': '应用推广',
+  'scene-local': '本地生活',
+  'scene-repurpose': '内容再制',
+  'scene-tools': '通用工具',
 };
 
 const CATEGORY_NAMES_EN = {
@@ -136,6 +154,14 @@ const CATEGORY_NAMES_EN = {
   'product-showcase': 'Product Showcase',
   'meme-native': 'Meme & Native',
   'other': 'Other',
+  'scene-seeding': 'Content Seeding',
+  'scene-brand': 'Brand Story',
+  'scene-product': 'Product Showcase',
+  'scene-performance': 'Performance Ads',
+  'scene-app': 'App Promotion',
+  'scene-local': 'Local Services',
+  'scene-repurpose': 'Content Repurposing',
+  'scene-tools': 'General Tools',
 };
 
 function resolveCategoryLabel(category, isEn, tr) {
@@ -183,7 +209,7 @@ export function renderFeaturedCard(item, opts, onOpenArg, onPinArg, onTryArg) {
 
   const isHot = Boolean(item.isHot || item.tags?.includes('热门精选'));
   const isNew = Boolean(item.isNew || item.tags?.includes('新品上市'));
-  const categoryLabel = resolveCategoryLabel(item.category, isEn, tr);
+  const categoryLabel = resolveCategoryLabel(item.scenario || item.category, isEn, tr);
   const usesText = item.downloads
     ? safeTr('workshop.uses', { n: item.downloads }, `${item.downloads} ${isEn ? 'uses' : '次使用'}`)
     : safeTr('workshop.usesDefault', undefined, isEn ? '100+ uses' : '100+ 次使用');

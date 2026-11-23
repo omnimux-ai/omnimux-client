@@ -108,7 +108,7 @@ test('featured-skills-data: 快照文件格式与约束', () => {
   assert.ok(Array.isArray(snapshot.skills))
   assert.ok(Array.isArray(snapshot.categories))
   assert.equal(snapshot.skills.length, 113, '精选技能必须有 113 条（全量营销技能库入库）')
-  assert.equal(snapshot.categories.length, 7, '在册细分类必须为 7 个')
+  assert.equal(snapshot.categories.length, 8, '在册场景分类必须为 8 个')
   for (const s of snapshot.skills) {
     assert.ok(s.id && s.title, '技能条目必须包含 id 与 title')
     assert.ok(s.titleZh, `条目 ${s.id} 必须包含 titleZh`)
@@ -236,7 +236,7 @@ test('TrendingReplicateSection: 头部渲染「创作灵感 / Skill」双 Tab �
 
     // 3. 验证分类胶囊
     const chips = host.querySelectorAll('.omnimux-skills-chip')
-    assert.equal(chips.length, 8, '应有 1 个全选「全部」+ 7 个业务分类胶囊')
+    assert.equal(chips.length, 9, '应有 1 个全选「全部」+ 8 个场景分类胶囊')
     assert.equal(chips[0].getAttribute('aria-pressed'), 'true', '默认全部分类按下')
 
     // 4. 验证技能卡片渲染与图 2 规范对齐
@@ -264,7 +264,7 @@ test('TrendingReplicateSection: 头部渲染「创作灵感 / Skill」双 Tab �
     assert.equal(host.textContent.includes('MiniMax'), false, '技能面板不得出现 MiniMax 字样')
 
     // 5. 点击分类胶囊筛选
-    await click(chips[1]) // 第一个业务分类（UGC 和用户评价）
+    await click(chips[1]) // 第一个场景分类（内容种草）
     await flush()
     const filteredCards = host.querySelectorAll('.omnimux-skill-card')
     assert.ok(filteredCards.length > 0 && filteredCards.length < snapshot.skills.length, '点击分类胶囊后数量减少')

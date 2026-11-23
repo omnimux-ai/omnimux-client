@@ -85,7 +85,7 @@ export function filterSkillsByCategory(skills, categoryId) {
   if (!Array.isArray(skills)) return []
   const cat = String(categoryId || '').trim()
   if (!cat || cat === 'all') return skills
-  return skills.filter((item) => item && item.category === cat)
+  return skills.filter((item) => item && (item.scenario || item.category) === cat)
 }
 
 /**

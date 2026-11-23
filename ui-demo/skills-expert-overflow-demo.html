@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>技能专家页 · 右侧溢出修复（修改前 / 修改后）</title>
+<style>
+  :root,
+  [data-theme="dark"] {
+    color-scheme: dark;
+    --dsw-alias-bg-base: #111215;
+    --dsw-alias-bg-layer-3: #1b1d21;
+    --dsw-alias-interactive-bg-hover: rgba(255,255,255,.08);
+    --dsw-alias-interactive-bg-active: rgba(255,255,255,.16);
+    --dsw-alias-border-l2: rgba(255,255,255,.08);
+    --dsw-alias-border-l3: rgba(255,255,255,.22);
+    --dsw-alias-label-primary: #f3f4f6;
+    --dsw-alias-label-primary-foreground: #111317;
+    --dsw-alias-label-secondary: #a1a1aa;
+    --dsw-alias-label-tertiary: #7b8088;
+    --dsw-alias-label-caption: #676d7a;
+    --demo-page: #0b0b0c;
+    --demo-frame: #151517;
+    --demo-line: #2a2a2f;
+    --demo-muted: #9b9ba4;
+  }
+  [data-theme="light"] {
+    color-scheme: light;
+    --dsw-alias-bg-base: #ffffff;
+    --dsw-alias-bg-layer-3: #f2f4f7;
+    --dsw-alias-interactive-bg-hover: rgba(17,24,39,.06);
+    --dsw-alias-interactive-bg-active: rgba(17,24,39,.10);
+    --dsw-alias-border-l2: rgba(17,24,39,.09);
+    --dsw-alias-border-l3: rgba(17,24,39,.20);
+    --dsw-alias-label-primary: #17191c;
+    --dsw-alias-label-primary-foreground: #ffffff;
+    --dsw-alias-label-secondary: #4b5563;
+    --dsw-alias-label-tertiary: #6b7280;
+    --dsw-alias-label-caption: #9ca3af;
+    --demo-page: #f3f3f5;
+    --demo-frame: #ffffff;
+    --demo-line: #e6e6ea;
+    --demo-muted: #61616b;
+  }
+
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--demo-page);
+    color: var(--dsw-alias-label-primary);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input { font: inherit; }
+
+  .demo-bar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 24px;
+    background: var(--demo-frame);
+    border-bottom: 1px solid var(--demo-line);
+  }
+  .demo-brand { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+  .demo-brand strong { font-size: 14px; font-weight: 650; }
+  .demo-brand span { color: var(--demo-muted); font-size: 12px; }
+  .demo-controls { display: flex; align-items: center; gap: 8px; }
+  .seg { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--demo-line); border-radius: 9px; background: var(--dsw-alias-bg-layer-3); }
+  .seg button {
+    border: 0; border-radius: 6px; padding: 5px 11px; cursor: pointer;
+    background: transparent; color: var(--dsw-alias-label-secondary); font-size: 12px;
+  }
+  .seg button[aria-pressed="true"] { background: var(--dsw-alias-label-primary); color: var(--dsw-alias-label-primary-foreground); font-weight: 600; }
+
+  .demo-wrap { max-width: 1600px; margin: 0 auto; padding: 22px 24px 48px; }
+  .demo-intro { margin: 0 0 16px; color: var(--demo-muted); font-size: 12px; line-height: 18px; }
+  .compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; }
+  @media (max-width: 980px) { .compare { grid-template-columns: 1fr; } }
+
+  .frame {
+    box-sizing: border-box;
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid var(--demo-line);
+    border-radius: 14px;
+    background: var(--demo-frame);
+    box-shadow: 0 18px 48px rgba(0,0,0,.26);
+  }
+  .frame-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 14px; border-bottom: 1px solid var(--demo-line); }
+  .frame-title { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 650; }
+  .tag { border-radius: 999px; padding: 2px 8px; font-size: 11px; font-weight: 650; }
+  .tag.before { color: #f87171; background: rgba(248,113,113,.13); }
+  .tag.after { color: #34d399; background: rgba(52,211,153,.13); }
+  .metric { color: var(--demo-muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  .stage {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1600 / 900;
+    overflow: hidden;
+    background: var(--dsw-alias-bg-base);
+  }
+  .stage .app {
+    display: flex;
+    width: 1600px;
+    height: 900px;
+    transform-origin: top left;
+    background: var(--dsw-alias-bg-base);
+    color: var(--dsw-alias-label-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
+  }
+
+  /* Shell reproduction */
+  .demo-sidebar { width: 280px; flex: none; padding: 16px 12px; background: color-mix(in srgb, var(--dsw-alias-bg-base) 88%, var(--dsw-alias-label-primary)); border-right: 1px solid var(--dsw-alias-border-l2); box-sizing: border-box; }
+  .demo-logo { height: 26px; display: flex; align-items: center; gap: 9px; margin: 0 8px 18px; font-size: 14px; font-weight: 650; }
+  .demo-logo-mark { width: 20px; height: 20px; border-radius: 6px; background: linear-gradient(135deg, #8ea0ff, #6f59ff); box-shadow: 0 0 0 1px rgba(255,255,255,.08) inset; }
+  .demo-new-chat { box-sizing: border-box; height: 40px; margin: 0 4px 22px; padding: 0 12px; display: flex; align-items: center; gap: 9px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; color: var(--dsw-alias-label-primary); font-size: 13px; font-weight: 600; }
+  .demo-nav-item { height: 38px; margin-bottom: 4px; padding: 0 10px; display: flex; align-items: center; gap: 9px; border-radius: 9px; color: var(--dsw-alias-label-secondary); font-size: 13px; }
+  .demo-nav-item.active { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-interactive-bg-active); }
+  .demo-nav-item svg { width: 16px; height: 16px; flex: none; opacity: .9; }
+  .demo-group { margin: 24px 10px 8px; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
+  .demo-thread { padding: 7px 10px; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 17px; border-radius: 7px; }
+  .demo-thread.active { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+  .demo-user { position: absolute; left: 16px; bottom: 18px; display: flex; align-items: center; gap: 8px; color: var(--dsw-alias-label-secondary); font-size: 12px; }
+  .demo-avatar { width: 22px; height: 22px; border-radius: 50%; background: linear-gradient(135deg, #5865f2, #9a6bff); }
+
+  .demo-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .demo-appbar { height: 56px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 18px; border-bottom: 1px solid var(--dsw-alias-border-l2); box-sizing: border-box; }
+  .demo-app-tab { height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-radius: 7px 7px 0 0; color: var(--dsw-alias-label-secondary); font-size: 12px; }
+  .demo-app-tab.active { background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); box-shadow: 0 -1px 0 var(--dsw-alias-border-l2) inset; }
+  .demo-app-tab .close { color: var(--dsw-alias-label-tertiary); font-size: 14px; }
+
+  /* Real page structure and spacing from omnimux-market/css.js */
+  .sh-plaza-page { position: relative; box-sizing: border-box; display: flex; flex-direction: column; min-height: 0; overflow: hidden; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); width: 100%; height: 100%; }
+  .sh-plaza-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+  .sh-mkt { display: flex; flex-direction: column; gap: 0; width: 100%; max-width: 760px; padding-bottom: 24px; color: var(--dsw-alias-label-primary); font-family: inherit; min-width: 0; container-type: inline-size; }
+  .sh-mkt * { box-sizing: border-box; }
+  .sh-plaza-body .sh-mkt { max-width: none; width: 100%; padding: 12px 20px 32px; }
+  .stage-before .sh-mkt { box-sizing: content-box; }
+  .stage-after .sh-mkt { box-sizing: border-box; }
+
+  .workshop-intro { padding-bottom: 20px; margin-bottom: 20px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
+  .workshop-heading { margin: 0 0 6px; font-size: 20px; line-height: 28px; font-weight: 600; color: var(--dsw-alias-label-primary); }
+  .workshop-description { margin: 0 0 16px; color: var(--dsw-alias-label-secondary); font-size: 13px; line-height: 18px; }
+  .action-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .btn-create, .btn-install { height: 32px; padding: 0 14px; display: inline-flex; align-items: center; gap: 6px; border-radius: 8px; font-size: 13px; font-weight: 500; }
+  .btn-create { border: 0; background: var(--dsw-alias-label-primary); color: var(--dsw-alias-label-primary-foreground); }
+  .btn-install { border: 1px solid var(--dsw-alias-border-l3); background: transparent; color: var(--dsw-alias-label-primary); }
+
+  .nav-bar { display: flex; flex-wrap: nowrap; align-items: center; justify-content: space-between; margin-bottom: 14px; gap: 16px; min-width: 0; padding-bottom: 2px; }
+  .nav-tabs { display: flex; align-items: center; gap: 24px; flex: none; white-space: nowrap; }
+  .nav-tab { position: relative; display: inline-flex; align-items: center; gap: 6px; padding: 6px 0 10px; border: 0; background: transparent; color: var(--dsw-alias-label-secondary); font-size: 14px; }
+  .nav-tab.active { color: var(--dsw-alias-label-primary); font-weight: 600; }
+  .nav-tab.active::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; border-radius: 1px; background: var(--dsw-alias-label-primary); }
+  .search-box { position: relative; flex: 1 1 200px; min-width: 140px; max-width: 260px; display: flex; align-items: center; justify-content: flex-end; }
+  .search-box input { width: 100%; height: 32px; padding: 0 12px 0 32px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; outline: none; background: var(--dsw-alias-bg-layer-3); color: var(--dsw-alias-label-primary); font-size: 13px; }
+  .search-box input::placeholder { color: var(--dsw-alias-label-caption); }
+  .search-icon { position: absolute; left: 10px; top: 50%; width: 13px; height: 13px; transform: translateY(-50%); color: var(--dsw-alias-label-caption); }
+
+  .category-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 20px; overflow: hidden; padding-bottom: 2px; }
+  .cat-btn { height: 28px; padding: 0 14px; border: 1px solid transparent; border-radius: 999px; background: transparent; color: var(--dsw-alias-label-secondary); font-size: 13px; white-space: nowrap; }
+  .cat-btn.active { border-color: var(--dsw-alias-border-l3); background: var(--dsw-alias-interactive-bg-active); color: var(--dsw-alias-label-primary); font-weight: 700; }
+
+  .regular-header { margin-bottom: 14px; }
+  .regular-title-row { display: flex; align-items: baseline; gap: 2px; color: var(--dsw-alias-label-primary); }
+  .regular-title-row > span:first-child { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--dsw-alias-label-caption); }
+  .regular-title-count { color: var(--dsw-alias-label-caption); font-size: 11px; }
+  .featured-grid.cards-grid { display: grid !important; grid-template-columns: repeat(5, minmax(0, 1fr)) !important; gap: 16px !important; }
+  @media (max-width: 1440px) { .featured-grid.cards-grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; } }
+  @media (max-width: 1100px) { .featured-grid.cards-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; } }
+
+  .omnimux-creatify-card { position: relative; width: 100%; aspect-ratio: 3 / 2; overflow: hidden; border: 1px solid var(--dsw-alias-border-l2); border-radius: 16px; background: #131414; }
+  .omnimux-creatify-dot-overlay { position: absolute; inset: 0; background-image: radial-gradient(circle, rgba(255,255,255,.24) 1.2px, transparent 1.2px); background-size: 14px 14px; mix-blend-mode: overlay; opacity: .9; }
+  .omnimux-creatify-center { position: absolute; inset: 0; display: grid; place-items: center; padding: 18px; text-align: center; }
+  .omnimux-creatify-center-title { color: #fff; font-size: 22px; font-weight: 700; line-height: 1.25; text-shadow: 0 1px 10px rgba(0,0,0,.32); }
+  .omnimux-creatify-card-grad-0 { background: linear-gradient(135deg, #103b22 0%, #1e6b3f 38%, #5ec278 100%); }
+  .omnimux-creatify-card-grad-1 { background: linear-gradient(135deg, #451b03 0%, #854d0e 40%, #fbbf24 100%); }
+  .omnimux-creatify-card-grad-2 { background: linear-gradient(135deg, #2e1065 0%, #581c87 38%, #a855f7 100%); }
+  .omnimux-creatify-card-grad-3 { background: linear-gradient(135deg, #4c0519 0%, #9f1239 40%, #f43f5e 100%); }
+  .omnimux-creatify-card-grad-4 { background: linear-gradient(135deg, #0c2b5e 0%, #1d4ed8 40%, #38bdf8 100%); }
+  .omnimux-creatify-card-grad-5 { background: linear-gradient(135deg, #3b0764 0%, #701a75 38%, #ec4899 100%); }
+  .omnimux-creatify-card-grad-6 { background: linear-gradient(135deg, #431407 0%, #c2410c 45%, #fb923c 100%); }
+  .omnimux-creatify-card-grad-7 { background: linear-gradient(135deg, #052e2b 0%, #0f766e 42%, #2dd4bf 100%); }
+
+  .clip-zone { position: absolute; top: 56px; right: 0; bottom: 0; width: 40px; z-index: 5; pointer-events: none; border-left: 1px dashed rgba(248,113,113,.75); background: repeating-linear-gradient(135deg, rgba(248,113,113,.12) 0 7px, rgba(248,113,113,.03) 7px 14px); }
+  .clip-zone span { position: absolute; top: 12px; right: 10px; padding: 4px 7px; border-radius: 6px; background: rgba(127,29,29,.92); color: #fecaca; font-size: 10px; font-weight: 650; white-space: nowrap; }
+  .gutter-guide { position: absolute; top: 56px; right: 20px; bottom: 0; z-index: 5; border-left: 1px dashed rgba(52,211,153,.55); pointer-events: none; }
+  .gutter-guide span { position: absolute; top: 12px; right: 8px; padding: 4px 7px; border-radius: 6px; background: rgba(6,78,59,.9); color: #a7f3d0; font-size: 10px; font-weight: 650; white-space: nowrap; }
+</style>
+</head>
+<body>
+  <header class="demo-bar">
+    <div class="demo-brand">
+      <strong>技能专家页 · 右侧溢出</strong>
+      <span>修改前 / 修改后同一视口对照</span>
+    </div>
+    <div class="demo-controls">
+      <div class="seg" role="group" aria-label="主题">
+        <button type="button" data-theme-option="dark" aria-pressed="true">暗色</button>
+        <button type="button" data-theme-option="light" aria-pressed="false">亮色</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="demo-wrap">
+    <p class="demo-intro">同一 1600px 应用宽度下，页面内容区按 5 列排版。修复前内容盒宽 1360px（1320px 内容 + 40px 左右内边距）导致整体右移 40px；修复后宽度回到容器内，右侧保留 20px 留白。</p>
+    <section class="compare" aria-label="修改前后对照">
+      <article class="frame">
+        <header class="frame-head">
+          <div class="frame-title"><span class="tag before">修改前</span> 内容越界</div>
+          <span class="metric" data-metric="before">测量中</span>
+        </header>
+        <div class="stage stage-before" data-stage="before">
+          <div class="app" data-app>
+            <aside class="demo-sidebar">
+              <div class="demo-logo"><span class="demo-logo-mark"></span>OmniMux</div>
+              <div class="demo-new-chat">新对话</div>
+              <div class="demo-nav-item active"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>技能专家</div>
+              <div class="demo-nav-item"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 4h12M2 8h12M2 12h8"/></svg>项目</div>
+              <div class="demo-nav-item"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M5 8h6M8 5v6"/></svg>资产库</div>
+              <div class="demo-nav-item"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 12l4-8 3 5 2-3 3 6H2z"/></svg>灵感社区</div>
+              <div class="demo-group">工作区</div>
+              <div class="demo-thread active">OmniMux 运营</div>
+              <div class="demo-thread">研究社交媒体研究技能实现...</div>
+              <div class="demo-thread">参考项目风格复刻短片</div>
+              <div class="demo-user"><span class="demo-avatar"></span>Root User</div>
+            </aside>
+            <div class="demo-main">
+              <div class="demo-appbar">
+                <div class="demo-app-tab">资产库</div>
+                <div class="demo-app-tab active">技能专家 <span class="close">×</span></div>
+              </div>
+              <div class="sh-plaza-page">
+                <div class="sh-plaza-body">
+                  <div class="sh-mkt">
+                    <section class="workshop-intro">
+                      <div class="workshop-heading" role="heading" aria-level="1">技能专家</div>
+                      <p class="workshop-description">发现、安装并管理 Skill，扩展 OmniMux 的创作能力</p>
+                      <div class="action-row"><button class="btn-create" type="button">创建 Skill</button><button class="btn-install" type="button">安装 Skill</button></div>
+                    </section>
+                    <div class="nav-bar">
+                      <div class="nav-tabs"><button class="nav-tab active" type="button">Skill</button><button class="nav-tab" type="button">我的 Skill</button><button class="nav-tab" type="button">专家市场</button><button class="nav-tab" type="button">插件专栏</button></div>
+                      <div class="search-box"><svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input placeholder="搜索全部 Skill" /></div>
+                    </div>
+                    <div class="category-bar"><button class="cat-btn active" type="button">全部</button><button class="cat-btn" type="button">UGC 和用户评价</button><button class="cat-btn" type="button">故事讲述和剧本</button><button class="cat-btn" type="button">图片和静态广告</button><button class="cat-btn" type="button">视频广告</button><button class="cat-btn" type="button">产品展示</button></div>
+                    <section class="regular-section">
+                      <div class="regular-header"><div class="regular-title-row"><span>探索更多</span><span class="regular-title-count"> · 128</span></div></div>
+                      <div class="featured-grid cards-grid">
+                        <div class="omnimux-creatify-card omnimux-creatify-card-grad-0"><div class="omnimux-creatify-dot-overlay"></div><div class="omnimux-creatify-center"><div class="omnimux-creatify-center-title">复刻爆款视频</div></div></div>
+                        <div class="omnimux-creatify-card omnimux-creatify-card-grad-1"><div class="omnimux-creatify-dot-overlay"></div><div class="omnimux-creatify-center"><div class="omnimux-creatify-center-title">创作带货视频</div></div></div>
+                        <div class="omnimux-creatify-card omnimux-creatify-card-grad-4"><div class="omnimux-creatify-dot-overlay"></div><div class="omnimux-creatify-center"><div class="omnimux-creatify-center-title">视频拆解</div></div></div>
+                        <div class="omnimux-creatify-card omnimux-creatify-card-grad-5"><div class="omnimux-creatify-dot-overlay"></div><div class="omnimux-creatify-center"><div class="omnimux-creatify-center-title">视频脚本创作</div></div></div>
+                        <div class="omnimux-creatify-card omnimux-creatify-card-grad-2"><div class="omnimux-creatify-dot-overlay"></div><div class="omnimux-creatify-center"><div class="omnimux-creatify-center-title">视频提示词生成</div></div></div>
+                        <div class="omnimux-creatify-card omnimux-creatify-card-grad-3"><div class="omnimux-creatify-dot-overlay"></div><div class="omnimux-creatify-center"><div class="omnimux-creatify-center-title">视频生成</div></div></div>
+                        <div class="omnimux-creatify-card omnimux-creatify-card-grad-7"><div class="omnimux-creatify-dot-overlay"></div><div class="omnimux-creatify-center"><div class="omnimux-creatify-center-title">反推视频提示词</div></div></div>
+                        <div class="omnimux-creatify-card omnimux-creatify-card-grad-6"><div class="omnimux-creatify-dot-overlay"></div><div class="omnimux-creatify-center"><div class="omnimux-creatify-center-title">视频分镜图</div></div></div>
+                        <div class="omnimux-creatify-card omnimux-creatify-card-grad-0"><div class="omnimux-creatify-dot-overlay"></div><div class="omnimux-creatify-center"><div class="omnimux-creatify-center-title">商品套图</div></div></div>
+                        <div class="omnimux-creatify-card omnimux-creatify-card-grad-1"><div class="omnimux-creatify-dot-overlay"></div><div class="omnimux-creatify-center"><div class="omnimux-creatify-center-title">A+ 内容</div></div></div>
+                      </div>
+                    </section>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="clip-zone"><span>40px 溢出</span></div>
+        </div>
+      </article>
+
+      <article class="frame">
+        <header class="frame-head">
+          <div class="frame-title"><span class="tag after">修改后</span> 内容收进容器</div>
+          <span class="metric" data-metric="after">测量中</span>
+        </header>
+        <div class="stage stage-after" data-stage="after">
+          <div class="app" data-app>
+            <aside class="demo-sidebar">
+              <div class="demo-logo"><span class="demo-logo-mark"></span>OmniMux</div>
+              <div class="demo-new-chat">新对话</div>
+              <div class="demo-nav-item active"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>技能专家</div>
+              <div class="demo-nav-item"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 4h12M2 8h12M2 12h8"/></svg>项目</div>
+              <div class="demo-nav-item"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M5 8h6M8 5v6"/></svg>资产库</div>
+              <div class="demo-nav-item"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 12l4-8 3 5 2-3 3 6H2z"/></svg>灵感社区</div>
+              <div class="demo-group">工作区</div>
+              <div class="demo-thread active">OmniMux 运营</div>
+              <div class="demo-thread">研究社交媒体研究技能实现...</div>
+              <div class="demo-thread">参考项目风格复刻短片</div>
+              <div class="demo-user"><span class="demo-avatar"></span>Root User</div>
+            </aside>
+            <div class="demo-main">
+              <div class="demo-appbar">
+                <div class="demo-app-tab">资产库</div>
+                <div class="demo-app-tab active">技能专家 <span class="close">×</span></div>
+              </div>
+              <div class="sh-plaza-page">
+                <div class="sh-plaza-body">
+                  <div class="sh-mkt">
+                    <section class="workshop-intro">
+                      <div class="workshop-heading" role="heading" aria-level="1">技能专家</div>
+                      <p class="workshop-description">发现、安装并管理 Skill，扩展 OmniMux 的创作能力</p>
+                      <div class="action-row"><button class="btn-create" type="button">创建 Skill</button><button class="btn-install" type="button">安装 Skill</button></div>
+                    </section>
+                    <div class="nav-bar">
+                      <div class="nav-tabs"><button class="nav-tab active" type="button">Skill</button><button class="nav-tab" type="button">我的 Skill</button><button class="nav-tab" type="button">专家市场</button><button class="nav-tab" type="button">插件专栏</button></div>
+                      <div class="search-box"><svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input placeholder="搜索全部 Skill" /></div>
+                    </div>
+                    <div class="category-bar"><button class="cat-btn active" type="button">全部</button><button class="cat-btn" type="button">UGC 和用户评价</button><button class="cat-btn" type="button">故事讲述和剧本</button><button class="cat-btn" type="button">图片和静态广告</button><button class="cat-btn" type="button">视频广告</button><button class="cat-btn" type="button">产品展示</button></div>
+                    <section class="regular-section">
+                      <div class="regular-header"><div class="regular-title-row"><span>探索更多</span><span class="regular-title-count"> · 128</span></div></div>
+                      <div class="featured-grid cards-grid">
+                        <div class="omnimux-creatify-card omnimux-creatify-card-grad-0"><div class="omnimux-creatify-dot-overlay"></div><div class="omnimux-creatify-center"><div class="omnimux-creatify-center-title">复刻爆款视频</div></div></div>
+                        <div class="omnimux-creatify-card omnimux-creatify-card-grad-1"><div class="omnimux-creatify-dot-overlay"></div><div class="omnimux-creatify-center"><div class="omnimux-creatify-center-title">创作带货视频</div></div></div>
+                        <div class="omnimux-creatify-card omnimux-creatify-card-grad-4"><div class="omnimux-creatify-dot-overlay"></div><div class="omnimux-creatify-center"><div class="omnimux-creatify-center-title">视频拆解</div></div></div>
+                        <div class="omnimux-creatify-card omnimux-creatify-card-grad-5"><div class="omnimux-creatify-dot-overlay"></div><div class="omnimux-creatify-center"><div class="omnimux-creatify-center-title">视频脚本创作</div></div></div>
+                        <div class="omnimux-creatify-card omnimux-creatify-card-grad-2"><div class="omnimux-creatify-dot-overlay"></div><div class="omnimux-creatify-center"><div class="omnimux-creatify-center-title">视频提示词生成</div></div></div>
+                        <div class="omnimux-creatify-card omnimux-creatify-card-grad-3"><div class="omnimux-creatify-dot-overlay"></div><div class="omnimux-creatify-center"><div class="omnimux-creatify-center-title">视频生成</div></div></div>
+                        <div class="omnimux-creatify-card omnimux-creatify-card-grad-7"><div class="omnimux-creatify-dot-overlay"></div><div class="omnimux-creatify-center"><div class="omnimux-creatify-center-title">反推视频提示词</div></div></div>
+                        <div class="omnimux-creatify-card omnimux-creatify-card-grad-6"><div class="omnimux-creatify-dot-overlay"></div><div class="omnimux-creatify-center"><div class="omnimux-creatify-center-title">视频分镜图</div></div></div>
+                        <div class="omnimux-creatify-card omnimux-creatify-card-grad-0"><div class="omnimux-creatify-dot-overlay"></div><div class="omnimux-creatify-center"><div class="omnimux-creatify-center-title">商品套图</div></div></div>
+                        <div class="omnimux-creatify-card omnimux-creatify-card-grad-1"><div class="omnimux-creatify-dot-overlay"></div><div class="omnimux-creatify-center"><div class="omnimux-creatify-center-title">A+ 内容</div></div></div>
+                      </div>
+                    </section>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="gutter-guide"><span>20px 留白</span></div>
+        </div>
+      </article>
+    </section>
+  </main>
+
+<script>
+  const THEME_KEY = 'omnimux-skill-overflow-demo-theme';
+  const root = document.documentElement;
+
+  function applyTheme(theme) {
+    root.dataset.theme = theme;
+    for (const button of document.querySelectorAll('[data-theme-option]')) {
+      button.setAttribute('aria-pressed', String(button.dataset.themeOption === theme));
+    }
+    try { localStorage.setItem(THEME_KEY, theme); } catch {}
+  }
+
+  for (const button of document.querySelectorAll('[data-theme-option]')) {
+    button.addEventListener('click', () => applyTheme(button.dataset.themeOption));
+  }
+  const requestedTheme = new URLSearchParams(location.search).get('theme');
+  if (requestedTheme === 'light' || requestedTheme === 'dark') {
+    applyTheme(requestedTheme);
+  } else {
+    try {
+      const saved = localStorage.getItem(THEME_KEY);
+      if (saved === 'light' || saved === 'dark') applyTheme(saved);
+    } catch {}
+  }
+
+  function fitStages() {
+    for (const stage of document.querySelectorAll('[data-stage]')) {
+      const app = stage.querySelector('[data-app]');
+      const scale = stage.clientWidth / 1600;
+      app.style.transform = `scale(${scale})`;
+    }
+    measure();
+  }
+
+  function measure() {
+    for (const stage of document.querySelectorAll('[data-stage]')) {
+      const mode = stage.dataset.stage;
+      const body = stage.querySelector('.sh-plaza-body');
+      const grid = stage.querySelector('.cards-grid');
+      const lastCard = grid.children[4];
+      const bodyRect = body.getBoundingClientRect();
+      const lastRect = lastCard.getBoundingClientRect();
+      const scale = stage.clientWidth / 1600;
+      const overflow = Math.round(body.scrollWidth - body.clientWidth);
+      const gap = Math.round((bodyRect.right - lastRect.right) / scale);
+      const metric = document.querySelector(`[data-metric="${mode}"]`);
+      metric.textContent = mode === 'before'
+        ? `scrollWidth +${overflow}px · 第五列被裁切`
+        : `scrollWidth 0px 溢出 · 右侧 ${gap}px 留白`;
+    }
+  }
+
+  window.addEventListener('resize', fitStages);
+  if (typeof ResizeObserver === 'function') new ResizeObserver(fitStages).observe(document.querySelector('.compare'));
+  fitStages();
+</script>
+</body>
+</html>

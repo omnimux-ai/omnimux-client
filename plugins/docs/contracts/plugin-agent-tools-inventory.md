@@ -324,7 +324,18 @@ superseded_by: null
 
 ---
 
-### 3.14 `omnimux-tiktok-selection`（TikTok 跟爆选品工作台）
+### 3.14 `omnimux-viewer`（全能媒体渲染与文件预览）
+
+- **功能域**：在对话流与「图像生成」Tab 内联渲染图片、视频、音频、PDF、Office 与 HTML 文件（上游 Crosery/dsh-viewer 的 OmniMux fork，见该插件 `VENDOR.md`）。
+- **双面交付**：UI 面为工作台 `omnimux:media-viewer` Tab 与 `display_file` 工具卡片；Agent 面为 Host `ctx.tools.register('display_file')`。
+
+| 业务功能描述 | 对应 UI 交互 / HTTP 路由 | Agent 工具名称 (`Tool Name`) | 分级 | 状态 | 破坏性 confirm |
+|---|---|---|---|---|---|
+| 在 Web 界面就地渲染一个文件（图片/视频/音频/PDF/Office/HTML） | 图像生成 Tab / `display_file` 工具卡片 / `/omnimux-viewer/asset` | `display_file` | L2 | `Implemented` | 否 |
+
+---
+
+### 3.15 `omnimux-tiktok-selection`（TikTok 跟爆选品工作台）
 
 - **功能域**：多源选品发现（热销榜 / 关键词检索 / 外部 CSV·JSON 快照导入）、商品详情与 Top-10 带货参考视频、三闸批量选品漏斗（G1 量化增速初筛 → G2 商品卡占比核验 → G3 本地风险词 + 排除品类 + Hub `headlessSkill` 合规审计）、选品库沉淀与状态流转、爆款脚本/3:4 图片/9:16 视频素材生成与一键同步至 `omnimux-products`、定时自动选品与执行审计、品牌词/敏感词治理及运行配置。
 - **存储**：`$DSH_HOME/omnimux/tiktok-selection/`。

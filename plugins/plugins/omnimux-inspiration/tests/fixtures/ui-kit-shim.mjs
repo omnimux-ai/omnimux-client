@@ -123,17 +123,18 @@ export const Badge = ({ children, variant, ...rest }) => h('span', { 'data-varia
 // 生产 IconButton 同样把 children 包在 <span class="slot" aria-hidden> 里
 //（loading 时换成 spinner）——裸 children 会让「按钮内部 slot」结构断言
 //（如 .omnimux-rival-filter-jump 的图标承载）在装置里不可见（R9-⑥）。
-export const IconButton = ({ children, disabled, loading, ...rest }) => h(
+export const IconButton = React.forwardRef(function IconButton({ children, disabled, loading, ...rest }, ref) { return h(
   'button',
   {
     type: 'button',
+    ref,
     disabled: Boolean(disabled) || Boolean(loading),
     'aria-busy': Boolean(loading) || undefined,
     'aria-disabled': (Boolean(disabled) || Boolean(loading)) || undefined,
     ...rest,
   },
   h('span', { className: 'slot', 'aria-hidden': 'true' }, loading ? null : children),
-)
+) })
 
 export const MediaCard = ({ children, coverNode, ...rest }) => h('div', rest, coverNode, children)
 

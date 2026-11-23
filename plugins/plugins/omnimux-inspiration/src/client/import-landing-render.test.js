@@ -60,7 +60,7 @@ const cacheDir = join(here, '.esbuild-cache', 'landing')
 const IMPORT_URL_PATH = '/omnimux/inspiration/local/import-url'
 const RIVAL_PREFIX = '/omnimux/inspiration/local/rival-accounts'
 
-const PREVIEW_MODAL_SELECTOR = '.omnimux-inspiration-modal-backdrop'
+const PREVIEW_MODAL_SELECTOR = ':is(.omnimux-inspiration-detail-sidebar, .omnimux-inspiration-modal-backdrop)'
 
 /** Requests one mount may make before the gate calls it a loop (see `fetch` stub). */
 const REQUEST_BUDGET = 60

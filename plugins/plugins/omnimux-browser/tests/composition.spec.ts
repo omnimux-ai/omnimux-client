@@ -307,15 +307,13 @@ describe('real Loader composition', () => {
   it('boots the bridge, authenticates over a real socket, and drives real gateway RPCs', { timeout: 60_000 }, async () => {
     const { ctx, port } = await loadComposition()
 
-    // The bridge plugin mounted the browser tool set on the real registry.
+    // Before an extension connects, the browser tools are not exposed at all.
     const tools = ctx.get('tools') as ToolRegistry
-    expect(tools.get('browser_snapshot')).toBeDefined()
-
-    const browserPrompt = (await ctx.systemPrompt.assemble()).sections
+    expect(tools.get('browser_snapshot')).toBeUndefined()
+    expect(tools.get('browser_click')).toBeUndefined()
+    const disconnectedPrompt = (await ctx.systemPrompt.assemble()).sections
       .find((section) => section.name === 'tool:bridge-browser')?.text
-    expect(browserPrompt).toContain('page content you have not snapshotted')
-    expect(browserPrompt).toContain('Reuse that injected snapshot')
-    expect(browserPrompt).not.toMatch(/\p{Script=Han}/u)
+    expect(disconnectedPrompt ?? '').toBe('')
 
     // Zero-config discovery endpoint answers with the bridge WebSocket URL.
     const configResponse = await fetch(`http://127.0.0.1:${port}/ext/bridge-config`)
@@ -326,8 +324,6 @@ describe('real Loader composition', () => {
     // The extension prefers an instance's own identity over its port table.
     expect(['dev', 'prod']).toContain(config.channel)
     expect(typeof config.name).toBe('string')
-    expect(tools.get('browser_click')).toBeDefined()
-    expect(tools.get('browser_navigate')).toBeDefined()
 
     // The real Loader composition authenticates using its configured token.
     const client = await connectReady(port)
@@ -335,6 +331,16 @@ describe('real Loader composition', () => {
       t: 'hello.ok',
       caps: { textOnly: true, snapshotMaxChars: 32_000, maxInteractiveItems: 60, locale: 'zh', imageAssetSave: true },
     })
+
+    // Connected: the full browser tool set and the connected prompt appear.
+    expect(tools.get('browser_snapshot')).toBeDefined()
+    expect(tools.get('browser_click')).toBeDefined()
+    expect(tools.get('browser_navigate')).toBeDefined()
+    const browserPrompt = (await ctx.systemPrompt.assemble()).sections
+      .find((section) => section.name === 'tool:bridge-browser')?.text
+    expect(browserPrompt).toContain('page content you have not snapshotted')
+    expect(browserPrompt).toContain('Reuse that injected snapshot')
+    expect(browserPrompt).not.toMatch(/\p{Script=Han}/u)
 
     // Gateway RPC round-trip against the real session store.
     send(client.ws, { t: 'rpc', id: 'c-1', method: 'session.create', payload: { cwd: root } })
@@ -355,17 +361,48 @@ describe('real Loader composition', () => {
   })
 
   it('unregisters the browser tools when the bridge fiber disposes (HMR safety)', { timeout: 60_000 }, async () => {
-    const { ctx, configPath } = await loadComposition()
+    const { ctx, configPath, port } = await loadComposition()
     const tools = ctx.get('tools') as ToolRegistry
+    expect(tools.get('browser_snapshot')).toBeUndefined()
+
+    // The tools only exist after an extension authenticates; dispose must
+    // still release them through the same HMR-safe effect.
+    const client = await connectReady(port)
     expect(tools.get('browser_snapshot')).toBeDefined()
 
     const bridgeEntry = [...ctx.loader.entries()].find((entry) => entry.options.name === BRIDGE)!
     await bridgeEntry.fiber!.dispose()
     expect(tools.get('browser_snapshot')).toBeUndefined()
     expect(tools.get('browser_click')).toBeUndefined()
+    client.ws.close()
     // Self-disposing an include-tree entry persists `disabled: true`; await
     // that debounced write so it cannot race the temp-dir removal.
     await expect.poll(async () => (await readFile(configPath, 'utf8')).includes('disabled: true')).toBe(true)
+  })
+
+  it('keeps browser tool visibility and prompt text aligned across disconnect and reconnect', { timeout: 60_000 }, async () => {
+    const { ctx, port } = await loadComposition()
+    const tools = ctx.get('tools') as ToolRegistry
+    const promptText = async (): Promise<string | undefined> =>
+      (await ctx.systemPrompt.assemble()).sections.find(section => section.name === 'tool:bridge-browser')?.text
+
+    expect(tools.get('browser_snapshot')).toBeUndefined()
+    expect(await promptText() ?? '').toBe('')
+
+    const first = await connectReady(port)
+    expect(tools.get('browser_snapshot')).toBeDefined()
+    expect(await promptText()).toContain('browser_snapshot')
+
+    first.ws.close()
+    await expect.poll(() => tools.get('browser_snapshot') === undefined).toBe(true)
+    expect(await promptText() ?? '').toBe('')
+
+    const second = await connectReady(port)
+    expect(tools.get('browser_snapshot')).toBeDefined()
+    expect(tools.get('browser_navigate')).toBeDefined()
+    expect(await promptText()).toContain('browser_snapshot')
+    second.ws.close()
+    await expect.poll(() => tools.get('browser_snapshot') === undefined).toBe(true)
   })
 })
 

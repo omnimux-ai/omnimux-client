@@ -344,11 +344,30 @@ test('ensurePlacementStyles injects idempotent placement CSS stylesheet into doc
   assert.ok(style1)
   assert.ok(style1.textContent.includes('data-menu-placement="bottom"'))
   assert.ok(style1.textContent.includes('z-index: 1000'))
+  // 首行「指令」分组标题必须被隐藏（class 含 groupTitle + data-source="command"）
+  assert.match(style1.textContent, /\[class\*="groupTitle"\]\[data-source="command"\]/)
 
   // Second run is idempotent
   ensurePlacementStyles(doc)
   const styles = doc.querySelectorAll('#dsh-omnimux-menu-placement')
   assert.equal(styles.length, 1)
+})
+
+test('syncMenuIcons hides the redundant「指令」group title but keeps other groups', () => {
+  const dom = new JSDOM(`<!DOCTYPE html><html><body>
+    <div data-trigger-menu class="iRJKyq_menu">
+      <div class="iRJKyq_groupTitle" role="presentation" data-source="command">指令</div>
+      <div class="iRJKyq_groupTitle" role="presentation" data-source="skill">技能</div>
+      <div class="iRJKyq_groupTitle" role="presentation">指令</div>
+      <button role="option"><span class="iRJKyq_itemName">从资产库选择</span></button>
+    </div>
+  </body></html>`)
+  const doc = dom.window.document
+  syncMenuIcons(doc)
+  const titles = Array.from(doc.querySelectorAll('[class*="groupTitle"]'))
+  assert.equal(titles[0].style.display, 'none', '命令组标题（data-source=command）必须隐藏')
+  assert.equal(titles[1].style.display, '', '技能组标题保留')
+  assert.equal(titles[2].style.display, 'none', '无 data-source 时按「指令」文案兜底隐藏')
 })
 
 const PLUS_OPEN = '<button aria-haspopup="listbox" aria-expanded="true" aria-label="指令"></button>'
@@ -373,6 +392,11 @@ test('shouldPlaceMenuBelow follows composer position only while the plus menu is
   // 输入框在页面下半部：加号菜单保持在上方
   bottomCard.getBoundingClientRect = () => ({ top: 850, bottom: 950, height: 100 })
   assert.equal(shouldPlaceMenuBelow(bottomCard, null, win), false)
+
+  // 回归：输入框位于下半部但并未贴底、下方仍有充足空间时，加号菜单应在下方展开。
+  // 旧实现用「是否在屏幕上半部」判断，会在这里错误地翻回上方（用户报告的“永远在上方”）。
+  bottomCard.getBoundingClientRect = () => ({ top: 600, bottom: 720, height: 120 })
+  assert.equal(shouldPlaceMenuBelow(bottomCard, null, win), true)
 
   // 没有加号展开态（斜杠联想）：即使输入框在顶部也保持在上方
   slashCard.getBoundingClientRect = () => ({ top: 80, bottom: 200, height: 120 })

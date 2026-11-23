@@ -21,17 +21,7 @@
       "license": "SEE LICENSE IN LICENSE",
       "upstream": []
     },
-    "omnimux-apps": {
-      "class": "original",
-      "license": "SEE LICENSE IN LICENSE",
-      "upstream": []
-    },
     "omnimux-assets": {
-      "class": "original",
-      "license": "SEE LICENSE IN LICENSE",
-      "upstream": []
-    },
-    "omnimux-avatar": {
       "class": "original",
       "license": "SEE LICENSE IN LICENSE",
       "upstream": []
@@ -43,13 +33,13 @@
         {
           "project": "dsh-browser",
           "repo": "https://github.com/omdsh-dev/dsh-browser",
-          "ref": null,
-          "commit": null,
+          "ref": "0.1.4",
+          "commit": "ab6d8837b11a4e30dd5ce8c3d955339407df1a83",
           "license": "MIT",
           "copyright": "Copyright (c) 2026 Yuxiang Lin",
           "noticeFile": "LICENSE",
           "textFile": "LICENSE",
-          "note": "上游基线 commit 未记录；fork 首提交为本仓 cf4e27e07（2026-09-12）。补记上游 SHA 后再填 commit。"
+          "note": "上游基线已通过双边 Git Blob SHA-1 与版本比对锁定为 omdsh-dev/dsh-browser ab6d8837b11a4e30dd5ce8c3d955339407df1a83（2026-09-11，0.1.4 升版，早于 2026-09-13 PR #86）；fork 首提交为历史仓 cf4e27e07（2026-09-12）。"
         }
       ]
     },
@@ -74,22 +64,12 @@
         }
       ]
     },
-    "omnimux-device": {
-      "class": "original",
-      "license": "SEE LICENSE IN LICENSE",
-      "upstream": []
-    },
     "omnimux-forms": {
       "class": "original",
       "license": "SEE LICENSE IN LICENSE",
       "upstream": []
     },
     "omnimux-inspiration": {
-      "class": "original",
-      "license": "SEE LICENSE IN LICENSE",
-      "upstream": []
-    },
-    "omnimux-intercept": {
       "class": "original",
       "license": "SEE LICENSE IN LICENSE",
       "upstream": []
@@ -120,27 +100,12 @@
       "license": "SEE LICENSE IN LICENSE",
       "upstream": []
     },
-    "omnimux-social-harvest": {
-      "class": "original",
-      "license": "SEE LICENSE IN LICENSE",
-      "upstream": []
-    },
-    "omnimux-studio": {
-      "class": "original",
-      "license": "SEE LICENSE IN LICENSE",
-      "upstream": []
-    },
     "omnimux-tiktok-selection": {
       "class": "original",
       "license": "SEE LICENSE IN LICENSE",
       "upstream": []
     },
     "omnimux-video": {
-      "class": "original",
-      "license": "SEE LICENSE IN LICENSE",
-      "upstream": []
-    },
-    "omnimux-video-preview": {
       "class": "original",
       "license": "SEE LICENSE IN LICENSE",
       "upstream": []
@@ -153,11 +118,12 @@
           "project": "dsh-viewer",
           "repo": "https://github.com/Crosery/dsh-viewer",
           "ref": "4a913a4",
-          "commit": "4a913a4",
+          "commit": "4a913a476f8a7554de90e9382b4e7adb354831fa",
           "license": "MIT",
           "copyright": "Copyright (c) 2026 Crosery",
           "noticeFile": "LICENSE",
-          "textFile": "LICENSE"
+          "textFile": "LICENSE",
+          "note": "上游基准为 Crosery/dsh-viewer 4a913a476f8a7554de90e9382b4e7adb354831fa（2026-08-31，Merge pull request #1 from Crosery/docs/conventions）；fork 以源码原样迁入本仓 plugins/plugins/omnimux-viewer，二次开发约定见该目录 VENDOR.md。"
         }
       ]
     },

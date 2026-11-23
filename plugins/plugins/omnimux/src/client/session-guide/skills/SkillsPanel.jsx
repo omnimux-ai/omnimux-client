@@ -5,7 +5,17 @@ import { filterSkillsByCategory } from './featured-skills-data.js'
 
 // 分类矢量图标
 function CategoryTabIcon({ id }) {
-  const cat = String(id || '').toLowerCase()
+  const alias = {
+    'scene-seeding': 'ugc',
+    'scene-brand': 'story',
+    'scene-product': 'product',
+    'scene-performance': 'video',
+    'scene-app': 'image',
+    'scene-local': 'product',
+    'scene-repurpose': 'story',
+    'scene-tools': 'meme',
+  }
+  const cat = alias[String(id || '').toLowerCase()] || String(id || '').toLowerCase()
   if (cat.includes('ugc')) {
     return (
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -135,6 +145,7 @@ export function SkillsPanel({
         >
           <CategoryTabIcon id={cat.id} />
           <span>{t(`skills.category.${cat.id}`, cat.title)}</span>
+          {Number.isFinite(cat.count) ? <span className="omnimux-skills-chip-count">{cat.count}</span> : null}
         </button>
       ))}
     </div>
@@ -162,7 +173,7 @@ export function SkillsPanel({
                     key={skill.id}
                     skill={skill}
                     index={idx}
-                    categoryTitle={categoryMap.get(skill.category) || ''}
+                    categoryTitle={categoryMap.get(skill.scenario || skill.category) || ''}
                     t={t}
                     active={activeSkillId === skill.id}
                     onSelect={onSelectSkill}
@@ -196,7 +207,7 @@ export function SkillsPanel({
                     key={skill.id}
                     skill={skill}
                     index={idx + 3}
-                    categoryTitle={categoryMap.get(skill.category) || ''}
+                    categoryTitle={categoryMap.get(skill.scenario || skill.category) || ''}
                     t={t}
                     active={activeSkillId === skill.id}
                     onSelect={onSelectSkill}
@@ -220,7 +231,7 @@ export function SkillsPanel({
                     key={skill.id}
                     skill={skill}
                     index={idx + 9}
-                    categoryTitle={categoryMap.get(skill.category) || ''}
+                    categoryTitle={categoryMap.get(skill.scenario || skill.category) || ''}
                     t={t}
                     active={activeSkillId === skill.id}
                     onSelect={onSelectSkill}
@@ -239,7 +250,7 @@ export function SkillsPanel({
                 key={skill.id}
                 skill={skill}
                 index={idx}
-                categoryTitle={categoryMap.get(skill.category) || ''}
+                categoryTitle={categoryMap.get(skill.scenario || skill.category) || ''}
                 t={t}
                 active={activeSkillId === skill.id}
                 onSelect={onSelectSkill}

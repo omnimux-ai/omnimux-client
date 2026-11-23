@@ -12,6 +12,7 @@ import { createRivalAccountsService } from './rival/rival-accounts-service.js'
 import { createRivalDispatcher } from './rival/rival-routes.js'
 import { registerRivalTools, RIVAL_TOOL_NAMES } from './rival/rival-agent-tools.js'
 import { RIVAL_MEDIA_DIR_NAME } from './rival/constants.js'
+import { registerInspirationSkills } from './inspiration-skills.js'
 
 export const name = 'omnimux-inspiration'
 export const inject = ['tools']
@@ -206,6 +207,7 @@ export function apply(ctx) {
   const paths = resolveInspirationPaths()
   const store = createLocalStore({ paths })
   void RIVAL_MEDIA_DIR_NAME
+  registerInspirationSkills(ctx)
 
   const getTool = (toolName) => {
     const toolsService = ctx.tools ?? (typeof ctx.get === 'function' ? /** @type {any} */ (ctx.get('tools')) : undefined)
@@ -285,6 +287,7 @@ export function apply(ctx) {
     socialFetcher,
     videoAnalyzeTool,
     textComplete,
+    headlessSkill: () => (typeof ctx.get === 'function' ? ctx.get('headlessSkill') : undefined),
     rivalDispatcher,
     videoProcess: () => (typeof ctx.get === 'function' ? ctx.get('videoProcess') : undefined),
     composerAttachments: () => (typeof ctx.get === 'function' ? ctx.get('composerAttachments') : undefined),

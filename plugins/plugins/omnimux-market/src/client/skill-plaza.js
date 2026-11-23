@@ -204,12 +204,16 @@
       const { category, setCategory, setMineCategory, setPage, workshopCategories, tr } = opts;
       const isZh = tr("locale") === "zh";
       return h("div", { className: "category-bar", "aria-label": tr("workshop.category") },
+        h("span", { className: "category-label" }, tr("workshop.scenarioLabel") || "场景分类"),
         workshopCategories.map((c) => {
           const isDrama = c.id === "短剧漫剧" && isZh;
           const label = isDrama ? "短剧/漫剧" : c.label;
           const onCatClick = () => { setCategory(c.id); setMineCategory(""); setPage(1); };
           // exempt-ui01 category selector button
-          return h("button", { key: c.id, type: "button", className: "cat-btn" + (category === c.id ? " active" : ""), "aria-pressed": category === c.id, onClick: onCatClick }, label);
+          return h("button", { key: c.id, type: "button", className: "cat-btn" + (category === c.id ? " active" : ""), "aria-pressed": category === c.id, onClick: onCatClick },
+            label,
+            Number.isFinite(c.count) ? h("span", { className: "cat-count" }, String(c.count)) : null,
+          );
         }),
       );
     }

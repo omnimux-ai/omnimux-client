@@ -147,8 +147,20 @@ export function createHeadlessJobManager(options = {}) {
     }
 
     const dedupKey = buildDedupKey(meta)
-    if (dedupKey && inflightByDedup.has(dedupKey)) {
-      return inflightByDedup.get(dedupKey)
+    if (dedupKey) {
+      const existing = inflightByDedup.get(dedupKey)
+      const terminal = existing && (
+        existing.controller.signal.aborted
+        || existing.entry.status === 'done'
+        || existing.entry.status === 'failed'
+        || existing.entry.status === 'cancelled'
+      )
+      if (existing && !terminal) {
+        return existing.promise
+      }
+      if (existing && terminal) {
+        inflightByDedup.delete(dedupKey)
+      }
     }
 
     const jobId = `hs_${randomUUID().slice(0, 12)}`
@@ -171,6 +183,7 @@ export function createHeadlessJobManager(options = {}) {
       error: null,
       controller,
       cancelQueue: null,
+      dedupKey,
     }
 
     jobs.set(jobId, entry)
@@ -245,7 +258,7 @@ export function createHeadlessJobManager(options = {}) {
           .finally(() => {
             runningCount[meta.modality] = Math.max(0, runningCount[meta.modality] - 1)
             meta.signal?.removeEventListener('abort', onExternalAbort)
-            if (dedupKey && inflightByDedup.get(dedupKey) === promise) {
+            if (dedupKey && inflightByDedup.get(dedupKey)?.entry === entry) {
               inflightByDedup.delete(dedupKey)
             }
             pump(meta.modality)
@@ -263,7 +276,7 @@ export function createHeadlessJobManager(options = {}) {
         entry.error = reason || 'Task cancelled'
         emitJob(entry)
         meta.signal?.removeEventListener('abort', onExternalAbort)
-        if (dedupKey && inflightByDedup.get(dedupKey) === promise) {
+        if (dedupKey && inflightByDedup.get(dedupKey)?.entry === entry) {
           inflightByDedup.delete(dedupKey)
         }
         reject(new OmnimuxError('headless-skill-cancelled', entry.error))
@@ -274,7 +287,7 @@ export function createHeadlessJobManager(options = {}) {
     })
 
     if (dedupKey) {
-      inflightByDedup.set(dedupKey, promise)
+      inflightByDedup.set(dedupKey, { promise, controller, entry })
     }
     return promise
   }
@@ -293,6 +306,10 @@ export function createHeadlessJobManager(options = {}) {
     if (typeof entry.cancelQueue === 'function') {
       entry.cancelQueue(reason)
       return true
+    }
+    // Release dedup slot immediately so an instant retry does not join an already-aborting Promise.
+    if (entry.dedupKey && inflightByDedup.get(entry.dedupKey)?.entry === entry) {
+      inflightByDedup.delete(entry.dedupKey)
     }
     if (!entry.controller.signal.aborted) {
       entry.controller.abort(new OmnimuxError('headless-skill-cancelled', reason))
