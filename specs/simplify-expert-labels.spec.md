@@ -60,6 +60,19 @@ PR #209 合入后，专家市场新增了 8 位跨境电商 SOP 内置专家与�
 
 以下既有断言因本次显式简化分类与专家名称需求同步更新：
 
-- `plugins/plugins/omnimux-market/src/tests/experts-market.test.ts`：阶段字典正则断言从旧 5–7 字分类文案更新为简化后的 2 字分类（`选品`、`内容`、`运营`、`系统`），且校验 8 位新名称。
-- `plugins/plugins/omnimux/src/client/agent-market-avatar-convergence.test.js`：8 位市场专家名称用例更新为简化后的 4 字新名称（同时补充保留旧名称别名兼容校验）。
-- `plugins/plugins/omnimux-market/tests/e2e/unify-agent-presets-market.spec.js`：测试样例中模拟官方注册与卡片渲染所使用的市场专家显示名同步为新简化名称，并校验卡片分类徽标文本为 2 字简化分类。
+- `plugins/plugins/omnimux/src/client/agent-market-avatar-convergence.test.js` :: `市场垂直专家在输入框与专家市场全部统一收敛至确定性像素艺术头像`
+  - 原断言：仅校验旧版 11–15 字完整名称（如 `市场选品与竞品调研专家`）映射到对应像素头像。
+  - 变更理由：本次按用户要求将 8 位内置专家名简化为 4 字角色名与 2 词英文名，需同时覆盖新中英文简称并保留旧名称别名兼容。
+  - 新期望证据：同用例改为循环校验 `[新中文简称, 新英文简称, 旧中文全称]` 三组别名 100% 收敛至同一 `ecom-*` 确定性像素头像，已通过 `node --test plugins/plugins/omnimux/src/client/agent-market-avatar-convergence.test.js`。
+- `plugins/plugins/omnimux/src/client/agent-presets-i18n.test.js` :: `getPresetFallbackCopy returns localized fallback copy for all presets`
+  - 原断言：仅以 `assert.ok(zh?.name)` 弱校验 8 位 SOP 专家兜底名称非空。
+  - 变更理由：本次简化 8 位专家中英文名称后，强化断言逐条锁定中英文简化名称（如 `选品专家` / `Market Analyst`）。
+  - 新期望证据：同用例改为 `assert.equal` 精确校验全部 8 位 SOP 专家的中英简化名称与双语描述非空且无 Topview 残留，已通过 `node --test plugins/plugins/omnimux/src/client/agent-presets-i18n.test.js`。
+- `plugins/plugins/omnimux-market/src/tests/experts-market.test.ts` :: `*`
+  - 原断言：阶段字典正则匹配旧 5–7 字分类文案（`选品与策略` / `货架与内容生产` / `投放与复盘闭环`）。
+  - 变更理由：专家分类标签按需求简化为 2 字中文与单词英文。
+  - 新期望证据：同文件同步断言 4 个中文简化分类（`选品` / `内容` / `运营` / `系统`）与 4 个英文简化分类（`Research` / `Content` / `Operations` / `System`），已通过 `pnpm --filter omnimux-market test`。
+- `plugins/plugins/omnimux-market/tests/e2e/unify-agent-presets-market.spec.js` :: `E2E 旅程二：官方系统预置、已入职市场专家与用户自建 Agent 真源聚合，系统预置不渲染禁用按钮`
+  - 原断言：样例数据使用旧全称 `跨境 Listing 与合规文案专家`，未校验卡片分类徽标文本。
+  - 变更理由：随本次名称与分类简化，样例数据更新为 `文案专家` 并新增卡片 2 字分类徽标断言。
+  - 新期望证据：同用例校验 `文案专家`、`选品专家` 与卡片 `expert-card-stage` 文本为 `选品`，已通过 `pnpm --filter omnimux-market test`。
