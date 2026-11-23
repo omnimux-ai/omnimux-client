@@ -185,20 +185,21 @@ describe('verifyPluginDisplayMeta', () => {
     }
   })
 
-  it('passes on all 13 live plugins and verifies Node exports resolve locale/{en,zh}.json', () => {
+  it('passes on all live plugins and verifies Node exports resolve locale/{en,zh}.json', () => {
     const here = new URL('.', import.meta.url).pathname
     const liveRoot = join(here, '..')
-    const { errors, auditedCount } = verifyPluginDisplayMeta(liveRoot)
-    assert.equal(auditedCount, 13, 'should audit all 13 shipped plugins')
-    assert.deepEqual(errors, [], 'live plugin display metadata must be clean: ' + errors.join('; '))
-
-    // Verify each plugin self-reference export resolves through real Node exports rules
     const pluginsDir = join(liveRoot, 'plugins')
     const dirs = readdirSync(pluginsDir, { withFileTypes: true })
       .filter(e => e.isDirectory() && !e.name.startsWith('.'))
       .map(e => e.name)
       .sort()
-    assert.equal(dirs.length, 13)
+    assert.ok(dirs.length >= 14, `expected at least 14 shipped plugins, got ${dirs.length}`)
+
+    const { errors, auditedCount } = verifyPluginDisplayMeta(liveRoot)
+    assert.equal(auditedCount, dirs.length, 'should audit all shipped plugins')
+    assert.deepEqual(errors, [], 'live plugin display metadata must be clean: ' + errors.join('; '))
+
+    // Verify each plugin self-reference export resolves through real Node exports rules
     for (const dir of dirs) {
       const pkgDir = join(pluginsDir, dir)
       const pkgPath = join(pkgDir, 'package.json')

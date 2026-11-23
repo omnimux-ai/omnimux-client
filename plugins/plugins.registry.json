@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedAt": "2026-11-24T01:23:11.426Z",
+  "updatedAt": "2026-11-24T01:23:12.721Z",
   "topology": {
     "tiers": [
       {
@@ -1092,7 +1092,7 @@
       "tier": "tier-1-app",
       "entrypoint": "lib/index.js",
       "status": "active",
-      "description": "OmniMux 内联文件预览：把图片、视频、音频、PDF、Office 与 HTML 渲染进对话流（上游 @crosery/dsh-viewer 的 OmniMux fork，见 VENDOR.md）。",
+      "description": "在对话中直接预览图片、音视频、PDF、Office 和 HTML 文件。",
       "tags": [
         "viewer",
         "preview",
