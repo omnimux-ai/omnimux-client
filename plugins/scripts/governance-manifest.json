@@ -435,6 +435,8 @@
     "verify-task-rail-qa.mjs",
     "verify-test-standard-declarations.mjs",
     "verify-test-standard-declarations.test.mjs",
+    "verify-fix-regression-test.mjs",
+    "verify-fix-regression-test.test.mjs",
     "verify-triptych-workbench.mjs",
     "verify-twitter-copilot-inactive.mjs",
     "verify-video-cdn-fix.mjs",

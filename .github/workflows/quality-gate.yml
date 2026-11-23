@@ -98,6 +98,7 @@ jobs:
           node --check scripts/generate-featured-skills.mjs
           node --check scripts/report-blocker.mjs
           node --check scripts/lib/silent-catch-delta.mjs
+          node --check scripts/verify-fix-regression-test.mjs
           node scripts/verify-plugin-agent-tools.mjs
 
       # 三分栏收起布局契约门禁：列宽胜负取决于 CSS 层叠（重要性→特异性→顺序），
@@ -140,6 +141,16 @@ jobs:
           node --test scripts/verify-test-standard-declarations.test.mjs
           node scripts/verify-test-standard-declarations.mjs . "$QA_BASE"
           node --test scripts/catalog-snapshot-preserve.test.mjs
+
+      # 一坑一测试门禁：fix 类改动修改产品源码或运行脚本时，必须附带实质新增代码行的回归测试
+      # （或在已提交 specs/*.md 新增「## 无回归测试声明」/ 提交正文带 No-Regression-Test:）。
+      - name: Fix regression test gate (one-pitfall-one-test)
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title || '' }}
+          PR_LABELS: ${{ github.event.pull_request && toJSON(github.event.pull_request.labels.*.name) || '[]' }}
+        run: |
+          node --test scripts/verify-fix-regression-test.test.mjs
+          node scripts/verify-fix-regression-test.mjs . "$QA_BASE"
 
       # 侧栏契约门禁：真实装配 8 个 Stage + market 全生命周期（JSDOM + 真实
       # dsh-ui-kit 缝位）。file: 依赖在全仓 install 下可解析、kit lib 产物已
