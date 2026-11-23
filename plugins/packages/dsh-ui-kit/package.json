@@ -38,12 +38,12 @@
     "prepublishOnly": "node ../../scripts/verify-publish-source.mjs ."
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-client-ui-primitives": ">=0.1.0-rc.6 || >=0.2.1-rc.3 <0.3.0-0",
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.1.0-rc.6 || >=0.2.1-rc.3 <0.3.0-0 || >=0.2.2-rc.5 <0.3.0-0",
     "react": ">=18.2.0",
     "react-dom": ">=18.2.0"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-client-ui-primitives": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.2.2-rc.5",
     "@types/react": "^18.3.27",
     "@types/react-dom": "^18.3.7",
     "react": "^18.3.1",

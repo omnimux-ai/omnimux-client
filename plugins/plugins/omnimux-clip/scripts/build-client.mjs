@@ -80,7 +80,9 @@ const tailwindPlugin = {
       const injected = `(() => {
   if (typeof document === "undefined") return;
   const id = ${JSON.stringify('omnimux-clip-css:' + stylesheet)};
-  if (document.getElementById(id)) return;
+  if (document.getElementById(id)) {
+    try { document.getElementById(id).remove(); } catch {}
+  }
   const style = document.createElement("style");
   style.id = id;
   style.textContent = ${JSON.stringify(result.css)};

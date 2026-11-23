@@ -93,14 +93,11 @@ describe('PRODUCT_STAGE_CHROME', () => {
     assert.match(PRODUCT_STAGE_CHROME, /data-omnimux-left-collapsed/)
     assert.match(PRODUCT_STAGE_CHROME, /\[data-sidebar-collapsed\] \[class\*="sidebarCol"\]/)
     assert.match(PRODUCT_STAGE_CHROME, /padding-left:var\(--omnimux-tabbar-pad-left/)
-    assert.match(PRODUCT_STAGE_CHROME, /padding-left:var\(--omnimux-topbar-toggle-end/)
-    assert.match(
+    // DP-003 retired under 0.2.2-rc.5 Route B: official --dsh-frame-leading-clearance
+    // owns collapsed conversation header padding.
+    assert.doesNotMatch(
       PRODUCT_STAGE_CHROME,
-      /data-omnimux-left-collapsed\] \[data-slot="conversation\.header"\] > header/,
-    )
-    assert.match(
-      PRODUCT_STAGE_CHROME,
-      /data-omnimux-left-collapsed\] \[data-slot="conversation\.header"\] header/,
+      /data-omnimux-left-collapsed\] \[data-slot="conversation\.header"\]/,
     )
     assert.match(PRODUCT_STAGE_CHROME, /data-omnimux-topbar-new-session/)
     assert.match(PRODUCT_STAGE_CHROME, /--omnimux-topbar-new-session-left/)

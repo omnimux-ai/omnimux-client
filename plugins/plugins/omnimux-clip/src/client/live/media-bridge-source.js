@@ -1,11 +1,26 @@
 import { isReferenceId, reconnectMediaUrl } from '../../timeline/nativeProjectFields.js'
 
 const LIBRARY_PREVIEW = '/omnimux/assets/library/preview'
-const CANVAS_FILE = '/omnimux-workflow/api/local-file'
+export const LOCAL_FILE_MEDIA_ROUTE = '/omnimux-workflow/api/local-file'
 const ABSOLUTE_FILE = /^(?:\/[^/]|[A-Za-z]:[\\/]|\\\\[^\\])/u
 
 function hasOnly(params, keys) {
   return [...params].every(([key, value]) => keys.includes(key) && value && params.getAll(key).length === 1)
+}
+
+export function localFileLocator(value) {
+  if (typeof value !== 'string' || value.length > 8192 || !/^\/(?!\/)/u.test(value)
+    || /[\\#\x00-\x20\x7f]/u.test(value)) return undefined
+  try {
+    const { pathname, searchParams } = new URL(value, 'https://clip.invalid')
+    if (pathname !== value.split('?')[0] || pathname !== LOCAL_FILE_MEDIA_ROUTE) return undefined
+    if (!hasOnly(searchParams, ['path', 'rev', 'v'])) return undefined
+    const path = searchParams.get('path')
+    const safeVersion = ['rev', 'v'].every(key => !searchParams.has(key) || isReferenceId(searchParams.get(key)))
+    return path && ABSOLUTE_FILE.test(path) && !/[\x00-\x1f\x7f]/u.test(path) && safeVersion ? value : undefined
+  } catch {
+    return undefined
+  }
 }
 
 export function bridgeMediaLocator(value) {
@@ -17,11 +32,8 @@ export function bridgeMediaLocator(value) {
     if (pathname !== value.split('?')[0]) return undefined
     if (pathname === LIBRARY_PREVIEW && hasOnly(searchParams, ['id', 'file'])
       && isReferenceId(searchParams.get('id')) && isReferenceId(searchParams.get('file'))) return value
-    if (pathname === CANVAS_FILE && hasOnly(searchParams, ['path', 'rev', 'v'])) {
-      const path = searchParams.get('path')
-      const safeVersion = ['rev', 'v'].every(key => !searchParams.has(key) || isReferenceId(searchParams.get(key)))
-      if (path && ABSOLUTE_FILE.test(path) && !/[\x00-\x1f\x7f]/u.test(path) && safeVersion) return value
-    }
+    const localFile = localFileLocator(value)
+    if (localFile) return localFile
     return reconnectMediaUrl(value)
   } catch {
     return undefined

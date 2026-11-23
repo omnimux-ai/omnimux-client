@@ -10,6 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { basename, join, relative, resolve } from 'node:path'
+import { retiredRuntimePaths } from './retired-runtime-versions.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const upstreamPath = join(root, 'upstream.json')
@@ -17,9 +18,10 @@ const workspacePath = join(root, 'package.json')
 const mode = process.argv[2]
 const channelFlag = process.argv.indexOf('--channel')
 const requestedChannel = channelFlag === -1 ? undefined : process.argv[channelFlag + 1]
+const CHANNELS = ['stable', 'next']
 
 if (mode !== '--write' && mode !== '--check') {
-  throw new Error('usage: node scripts/sync-vendored-runtime.mjs <--write|--check> [--channel stable|beta]')
+  throw new Error('usage: node scripts/sync-vendored-runtime.mjs <--write|--check> [--channel stable|beta|next]')
 }
 
 const readJson = path => JSON.parse(readFileSync(path, 'utf8'))
@@ -29,19 +31,32 @@ const isDshPackage = name => name === '@deepseek-ai/dsh' || name.startsWith('@de
 const isDshResolution = selector => selector === '@deepseek-ai/dsh'
   || selector.startsWith('@deepseek-ai/dsh@')
   || selector.startsWith('@deepseek-ai/dsh-')
+const isSafeVersion = value => typeof value === 'string' && /^[0-9A-Za-z][0-9A-Za-z.-]*$/u.test(value)
 const fail = message => { throw new Error(`sync-vendored-runtime: ${message}`) }
 
 const upstreamDocument = readJson(upstreamPath)
 const channel = requestedChannel ?? upstreamDocument.activeChannel
-if (channel !== 'stable') fail(`unknown release channel ${JSON.stringify(channel)}`)
+if (!CHANNELS.includes(channel)) fail(`unknown release channel ${JSON.stringify(channel)}`)
 const upstream = upstreamDocument.channels?.[channel]
 if (upstream === undefined || typeof upstream !== 'object') fail(`missing upstream metadata for ${channel}`)
+const channelVersions = CHANNELS.map((name) => {
+  const sourceVersion = upstreamDocument.channels?.[name]?.sourceVersion
+  if (!isSafeVersion(sourceVersion)) fail(`unsafe ${name} source version ${JSON.stringify(sourceVersion)}`)
+  return sourceVersion
+})
+const otherVersions = CHANNELS.flatMap((name, index) => name === channel ? [] : [channelVersions[index]])
+const marketPath = join(root, 'dsh-community-market', 'package.json')
 const pluginPaths = [
   join(root, upstream.package, 'package.json'),
-  join(root, 'dsh-community-market', 'package.json'),
+  ...(channel === 'next' ? [marketPath] : []),
 ]
+// Every channel loads the market bundle, and dsh 0.2 refuses a bundle whose
+// dsh peers exclude the running runtime, so its peers accept every channel's
+// version while its build dependencies follow Beta.
+const marketPeerRange = [...new Set(channelVersions)].join(' || ')
+const expectedRange = (path, field) => path === marketPath && field === 'peerDependencies' ? marketPeerRange : version
 const version = upstream.sourceVersion
-if (typeof version !== 'string' || !/^[0-9A-Za-z][0-9A-Za-z.-]*$/u.test(version)) {
+if (!isSafeVersion(version)) {
   fail(`unsafe source version ${JSON.stringify(version)}`)
 }
 
@@ -51,6 +66,8 @@ const manifestPath = join(vendorDirectory, 'manifest.json')
 const resolutionSelector = (name, range = version) => `${name}@npm:${range}`
 const isChannelResolution = selector => selector.endsWith(`@npm:${version}`)
   || selector.endsWith(`@npm:^${version}`)
+const isOtherChannelResolution = selector => otherVersions.some(otherVersion => selector.endsWith(`@npm:${otherVersion}`)
+  || selector.endsWith(`@npm:^${otherVersion}`))
 
 function packageName(filename) {
   const suffix = `-${version}.tgz`
@@ -123,7 +140,7 @@ function writeVendor() {
 
   const workspace = readJson(workspacePath)
   const resolutions = Object.fromEntries(Object.entries(workspace.resolutions ?? {})
-    .filter(([selector]) => !isDshResolution(selector)))
+    .filter(([selector]) => !isDshResolution(selector) || isOtherChannelResolution(selector)))
   for (const entry of packages) {
     resolutions[resolutionSelector(entry.name)] = expectedResolution(entry)
     resolutions[resolutionSelector(entry.name, `^${version}`)] = expectedResolution(entry)
@@ -136,7 +153,7 @@ function writeVendor() {
     const plugin = readJson(path)
     for (const field of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies']) {
       for (const name of Object.keys(plugin[field] ?? {})) {
-        if (isDshPackage(name) && packageNames.has(name)) plugin[field][name] = version
+        if (isDshPackage(name) && packageNames.has(name)) plugin[field][name] = expectedRange(path, field)
       }
     }
     writeJson(path, plugin)
@@ -194,10 +211,14 @@ function checkVendor() {
       for (const [name, range] of Object.entries(plugin[field] ?? {})) {
         if (!isDshPackage(name)) continue
         if (!names.has(name)) fail(`${relative(root, path)} references absent runtime package ${name}`)
-        if (range !== version) fail(`${relative(root, path)} ${field}.${name} must use ${version}`)
+        const expected = expectedRange(path, field)
+        if (range !== expected) fail(`${relative(root, path)} ${field}.${name} must use ${expected}`)
       }
     }
   }
+  const retired = retiredRuntimePaths(channelVersions, readdirSync(join(root, 'vendor', 'dsh-runtime')),
+    readdirSync(join(root, 'patches')))
+  if (retired.length > 0) fail(`no upstream.json channel uses ${retired.join(', ')}; delete them`)
   process.stdout.write(
     `sync-vendored-runtime: ${channel} ${String(manifest.packages.length)} packages from ${manifest.commit.slice(0, 10)} are verified\n`,
   )

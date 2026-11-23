@@ -41,10 +41,22 @@ type MarketRoute = (request: object, response: object) => void | Promise<void>
 
 const { registryFetch } = vi.hoisted(() => ({ registryFetch: vi.fn<typeof fetch>() }))
 // Market uses undici's fetch with its own dispatcher, bypassing global fetch.
-// Mock that transport so version lookups cannot escape to the live registry.
+// Mock both hoisted undici and dshmarket's nested undici/net transport (dshmarket@1.73.21
+// bundles its own undici v7 alongside root undici v8) so version lookups cannot escape
+// to the live registry.
 vi.mock('undici', async importOriginal => ({
   ...await importOriginal<Record<string, unknown>>(),
   fetch: registryFetch,
+}))
+const dshMarketManifest = createRequire(import.meta.url).resolve('dshmarket/package.json')
+const dshMarketUndici = createRequire(dshMarketManifest).resolve('undici')
+vi.doMock(dshMarketUndici, async () => ({
+  ...await vi.importActual<Record<string, unknown>>(dshMarketUndici),
+  fetch: registryFetch,
+}))
+vi.doMock(join(dirname(dshMarketManifest), 'lib', 'net.js'), async () => ({
+  ...await vi.importActual<Record<string, unknown>>(join(dirname(dshMarketManifest), 'lib', 'net.js')),
+  marketFetch: registryFetch,
 }))
 const temporaryProfiles: string[] = []
 
@@ -169,7 +181,7 @@ describe('dsh-market Desktop install compatibility', () => {
     const loaded = await import(routesUrl) as {
       mountMarketRoutes: (
         host: object,
-        config: { profile: string; profileDirectory: string; allowRestart: boolean },
+        config: { profile: string; profileDirectory: string; allowRestart: boolean; region?: string },
       ) => () => void
     }
     const routes = new Map<string, (request: object, response: object) => void | Promise<void>>()
@@ -182,7 +194,7 @@ describe('dsh-market Desktop install compatibility', () => {
       },
       loader: { entries: () => [] },
       plugin: () => ({ await: async () => undefined, dispose: () => undefined }),
-    }, { profile: 'desktop', profileDirectory: profileDir, allowRestart: false })
+    }, { profile: 'desktop', profileDirectory: profileDir, allowRestart: false, region: 'global' })
 
     let status = 0
     let body = ''

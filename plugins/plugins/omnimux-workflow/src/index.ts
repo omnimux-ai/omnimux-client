@@ -18,7 +18,7 @@ export const inject = ['tools', 'systemPrompt'];
 
 /**
  * @param {{
- *   webServer?: { register: (route: { kind: string, path: string, handler: (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => Promise<void> }) => () => void },
+ *   webServer?: { register: (route: { kind: string, path: string, auth?: 'required' | 'anonymous', handler: (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse, peer?: unknown) => Promise<void> }) => () => void },
  *   tools?: { register: (tool: object) => unknown },
  *   systemPrompt?: { section: (spec: object) => unknown },
  *   effect?: (fn: () => unknown, label?: string) => unknown,

@@ -67,7 +67,22 @@ async function renderStageMarkup() {
   const moduleObj = { exports: {} }
   const fn = new Function('require', 'module', 'exports', built.outputFiles[0].text)
   fn(require, moduleObj, moduleObj.exports)
-  return moduleObj.exports.render((key) => zh[key] ?? key)
+  const hadDocument = Object.hasOwn(globalThis, 'document')
+  const prevDocument = globalThis.document
+  if (!hadDocument) {
+    globalThis.document = {
+      documentElement: { clientWidth: 1280, clientHeight: 800 },
+      body: { appendChild() {}, removeChild() {} },
+      addEventListener() {},
+      removeEventListener() {},
+    }
+  }
+  try {
+    return moduleObj.exports.render((key) => zh[key] ?? key)
+  } finally {
+    if (!hadDocument) delete globalThis.document
+    else globalThis.document = prevDocument
+  }
 }
 
 const html = await renderStageMarkup()

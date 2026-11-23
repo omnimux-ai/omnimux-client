@@ -22,7 +22,7 @@ await build({
 
 test('native row menu opens, selects actions, closes and respects record status', async () => {
   const dom = new JSDOM('<!doctype html><div id="root"></div>', { pretendToBeVisual: true })
-  const keys = ['window', 'document', 'Node', 'HTMLElement', 'Element', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'IS_REACT_ACT_ENVIRONMENT']
+  const keys = ['window', 'document', 'Node', 'HTMLElement', 'HTMLButtonElement', 'HTMLIFrameElement', 'Element', 'MutationObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'IS_REACT_ACT_ENVIRONMENT']
   const saved = new Map(keys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]))
   for (const key of keys) Object.defineProperty(globalThis, key, { configurable: true, writable: true, value: key === 'IS_REACT_ACT_ENVIRONMENT' ? true : dom.window[key] })
   const { RowActionMenu } = await import(bundle.href)

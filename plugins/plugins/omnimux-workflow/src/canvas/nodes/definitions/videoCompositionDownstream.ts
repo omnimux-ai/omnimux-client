@@ -15,6 +15,7 @@
  *   so re-exporting refreshes the same node instead of adding a duplicate.
  */
 
+import { WORKFLOW_ROUTE_PREFIX } from '../../../shared/api.ts';
 import { looksAbsolutePath, localFileMediaUrl, localFilePathFromUrl } from '../../../shared/localMedia.ts';
 import { CANVAS_ZOOM_CONFIG } from '../../../shared/graph/nodeSizeConfig.ts';
 import type { VideoCompositionStatus } from '../../bridge/clipEvents.ts';
@@ -74,6 +75,7 @@ export function clipExportMediaUrl(videoPath: string, revision?: string): string
   if (localFilePathFromUrl(videoPath)) {
     return token ? withMediaRevision(videoPath, token) : videoPath;
   }
+  if (videoPath.startsWith(`${WORKFLOW_ROUTE_PREFIX}/`)) return videoPath;
   if (!looksAbsolutePath(videoPath)) return videoPath;
   const base = localFileMediaUrl(videoPath);
   return token ? `${base}&rev=${encodeURIComponent(token)}` : base;
@@ -87,6 +89,23 @@ export interface ClipExportOutput {
   height?: number;
   /** Content identity of the written file; see `clipExportMediaUrl`. */
   revision?: string;
+  /** Authoritative workspace media URL (`rev=sha256:...`) when materialized into `<ProjectRoot>/artifacts/`. */
+  mediaUrl?: string;
+  /** Project-relative POSIX path (`artifacts/...`) for project-bound exports. */
+  relativePath?: string;
+  /** Registered asset id in `.omnimux/assets.json`. */
+  assetId?: string;
+  /** Verified SHA-256 content digest of the exported MP4. */
+  sha256?: string;
+  /** Canonical v1 `project-asset` media handle for secondary composition reuse. */
+  mediaHandle?: {
+    v: 1;
+    scope: 'project-asset';
+    workspaceId: string;
+    assetId?: string;
+    rel: string;
+    sha256?: string;
+  };
 }
 
 export interface ClipExportGraphNode {
@@ -164,6 +183,7 @@ function existingDownstreamNode(
   nodes: ClipExportGraphNode[],
   videoPath: string,
   sourceNodeId: string,
+  preferredMediaUrl?: string,
 ): ClipExportGraphNode | undefined {
   const owned = nodes.find(node => node.type === 'material' && node.data?.origin === CLIP_EXPORT_ORIGIN
     && node.data.sourceCompositionNodeId === sourceNodeId);
@@ -175,12 +195,14 @@ function existingDownstreamNode(
     const data = nodeDataOf(node);
     if (data.origin === CLIP_EXPORT_ORIGIN || data.origin === CLIP_EXPORT_COPY_ORIGIN) return false;
     return data.realPath === path || data.mediaUrl === videoPath || data.mediaUrl === mediaUrl
+      || (preferredMediaUrl && data.mediaUrl === preferredMediaUrl)
       || localFilePathFromUrl(data.mediaUrl) === path;
   });
 }
 
 function desiredData(input: ClipExportDownstreamInput): Record<string, unknown> {
   const videoPath = input.output.videoPath;
+  const mediaUrl = input.output.mediaUrl || clipExportMediaUrl(videoPath, input.output.revision);
   return {
     materialType: 'video',
     label: `${input.sourceLabel}_成片`,
@@ -188,8 +210,11 @@ function desiredData(input: ClipExportDownstreamInput): Record<string, unknown> 
     selectedTool: 'import',
     origin: CLIP_EXPORT_ORIGIN,
     sourceCompositionNodeId: input.sourceNodeId,
-    realPath: videoPath,
-    mediaUrl: clipExportMediaUrl(videoPath, input.output.revision),
+    ...(input.output.relativePath ? {} : { realPath: videoPath }),
+    mediaUrl,
+    ...(input.output.relativePath ? { relativePath: input.output.relativePath } : {}),
+    ...(input.output.assetId ? { assetId: input.output.assetId } : {}),
+    ...(input.output.mediaHandle ? { mediaHandle: input.output.mediaHandle } : {}),
     outputRevision: input.output.revision,
     thumbnailUrl: input.output.thumbnailPath,
     duration: input.output.durationMs ? Math.round(input.output.durationMs / 1000) : undefined,
@@ -207,7 +232,10 @@ function desiredData(input: ClipExportDownstreamInput): Record<string, unknown> 
  */
 function reuseRefresh(desired: Record<string, unknown>): Record<string, unknown> {
   const refresh: Record<string, unknown> = {};
-  for (const key of ['materialType', 'label', 'status', 'selectedTool', 'origin', 'sourceCompositionNodeId', 'mediaUrl', 'outputRevision', 'thumbnailUrl', 'duration', 'size']) {
+  for (const key of [
+    'materialType', 'label', 'status', 'selectedTool', 'origin', 'sourceCompositionNodeId',
+    'mediaUrl', 'relativePath', 'assetId', 'mediaHandle', 'outputRevision', 'thumbnailUrl', 'duration', 'size',
+  ]) {
     if (desired[key] !== undefined) refresh[key] = desired[key];
   }
   return refresh;
@@ -381,7 +409,7 @@ export function planClipExportDownstream(
   if (!videoPath) return null;
 
   const desired = desiredData(input);
-  const existing = existingDownstreamNode(input.currentNodes, videoPath, input.sourceNodeId);
+  const existing = existingDownstreamNode(input.currentNodes, videoPath, input.sourceNodeId, input.output.mediaUrl);
 
   if (existing) {
     const current = nodeDataOf(existing);

@@ -63,19 +63,22 @@ function sendText(res: ServerResponse, status: number, body: string): void {
   res.end(body)
 }
 
+export type PairingWebRoute = WebRoute & { auth: 'anonymous' }
+
 /**
  * Build the pairing routes.
  *
  * @param deps - host port, token source, and the loopback predicate.
  * @returns the routes to register on the host web server.
  */
-export function createPairingRoutes(deps: PairingRouteDeps): WebRoute[] {
+export function createPairingRoutes(deps: PairingRouteDeps): PairingWebRoute[] {
   const requests = new PairingRequests()
 
   /** The page the user approves from, and the extension-side request handshake. */
-  const pageRoute: WebRoute = {
+  const pageRoute: PairingWebRoute = {
     kind: 'exact',
     path: BRIDGE_PAIR_PATH,
+    auth: 'anonymous',
     handler: (req, res) => {
       if (!pairingRequestAllowed(req.socket.remoteAddress, req.headers.origin, deps.isLoopback)) {
         sendText(res, 403, 'forbidden')
@@ -94,9 +97,10 @@ export function createPairingRoutes(deps: PairingRouteDeps): WebRoute[] {
     },
   }
 
-  const requestRoute: WebRoute = {
+  const requestRoute: PairingWebRoute = {
     kind: 'exact',
     path: BRIDGE_PAIR_REQUEST_PATH,
+    auth: 'anonymous',
     handler: (req, res) => {
       if (!pairingRequestAllowed(req.socket.remoteAddress, req.headers.origin, deps.isLoopback)) {
         sendText(res, 403, 'forbidden')
@@ -115,9 +119,10 @@ export function createPairingRoutes(deps: PairingRouteDeps): WebRoute[] {
     },
   }
 
-  const approveRoute: WebRoute = {
+  const approveRoute: PairingWebRoute = {
     kind: 'exact',
     path: BRIDGE_PAIR_APPROVE_PATH,
+    auth: 'anonymous',
     handler: (req, res) => {
       // Only the host's own page may approve: its Origin is the host's loopback
       // origin, which no other site can claim.
@@ -140,9 +145,10 @@ export function createPairingRoutes(deps: PairingRouteDeps): WebRoute[] {
     },
   }
 
-  const cancelRoute: WebRoute = {
+  const cancelRoute: PairingWebRoute = {
     kind: 'exact',
     path: BRIDGE_PAIR_CANCEL_PATH,
+    auth: 'anonymous',
     handler: (req, res) => {
       if (!pairingApprovalAllowed(req.socket.remoteAddress, req.headers.origin, deps.port(), deps.isLoopback)) {
         sendText(res, 403, 'forbidden')
@@ -163,9 +169,10 @@ export function createPairingRoutes(deps: PairingRouteDeps): WebRoute[] {
     },
   }
 
-  const statusRoute: WebRoute = {
+  const statusRoute: PairingWebRoute = {
     kind: 'exact',
     path: BRIDGE_PAIR_STATUS_PATH,
+    auth: 'anonymous',
     handler: (req, res) => {
       if (!pairingRequestAllowed(req.socket.remoteAddress, req.headers.origin, deps.isLoopback)) {
         sendText(res, 403, 'forbidden')

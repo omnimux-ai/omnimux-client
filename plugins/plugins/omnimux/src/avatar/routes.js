@@ -125,6 +125,7 @@ export function registerAvatarRoutes(webServer, dispatcher) {
   return webServer.register({
     kind: 'exact',
     path: '/omnimux/avatar',
+    auth: 'required',
     async handler(req, res) {
       try {
         const body = req.method === 'PATCH' ? await readJsonBody(req) : undefined

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -194,7 +195,12 @@ test('canvas failure preserves the MP4 and retries the original binding without 
   assert.equal(failed.canvasCommitted, false)
   assert.equal(failed.bytes, MP4.length)
   assert.deepEqual(failed.output, {
-    videoPath: failed.output.videoPath, revision: failed.output.revision, durationMs: 1000, width: 16, height: 16,
+    videoPath: failed.output.videoPath,
+    revision: failed.output.revision,
+    sha256: createHash('sha256').update(MP4).digest('hex'),
+    durationMs: 1000,
+    width: 16,
+    height: 16,
   })
   assert.deepEqual(readFileSync(failed.output.videoPath), MP4)
   const rebooted = h.open()
@@ -250,4 +256,41 @@ test('a newer committed upload also supersedes a prior failed canvas retry', asy
   assert.equal(retry.fileSaved, true)
   assert.equal(retry.canvasCommitted, false)
   assert.deepEqual(calls, [first.exportJobId, second.exportJobId])
+})
+
+test('reclaims staging MP4 after workflow materializes project artifact and updates receipt videoPath', async (t) => {
+  const artifactRoot = realpathSync(mkdtempSync(join(tmpdir(), 'clip-export-artifact-')))
+  t.after(() => rmSync(artifactRoot, { recursive: true, force: true }))
+  const artifactPath = join(artifactRoot, 'rendered.mp4')
+  const expectedSha = createHash('sha256').update(MP4).digest('hex')
+  let stagedPath
+  const h = setup(t, () => ({
+    commitExport: (request) => {
+      stagedPath = request.output.videoPath
+      assert.equal(request.output.sha256, expectedSha)
+      writeFileSync(artifactPath, readFileSync(stagedPath))
+      return {
+        status: 'committed',
+        canvasCommitted: true,
+        workspaceVersion: 9,
+        artifactCommitted: true,
+        artifactPath,
+        relativePath: 'artifacts/rendered.mp4',
+        assetId: 'ast_1',
+        mediaUrl: `/omnimux-workflow/api/workspaces/ws_canvas/file?path=artifacts%2Frendered.mp4&rev=sha256%3A${expectedSha}`,
+        mediaHandle: { v: 1, scope: 'project-asset', workspaceId: 'ws_canvas', assetId: 'ast_1', rel: 'artifacts/rendered.mp4', sha256: expectedSha },
+      }
+    },
+  }))
+  const job = h.begin('artifact-reclaim', 3)
+  const receipt = await h.upload(job, h.temp('artifact'))
+  assert.equal(receipt.status, 'committed')
+  assert.equal(receipt.canvasCommitted, true)
+  assert.equal(receipt.output.videoPath, artifactPath)
+  assert.equal(receipt.output.relativePath, 'artifacts/rendered.mp4')
+  assert.equal(receipt.output.assetId, 'ast_1')
+  assert.equal(receipt.output.sha256, expectedSha)
+  assert.equal(existsSync(stagedPath), false)
+  assert.deepEqual(readFileSync(artifactPath), MP4)
+  assert.deepEqual(h.open().get(job.exportJobId), receipt)
 })

@@ -878,9 +878,11 @@ export const PRODUCTS_CSS = `
 
 export function injectProductsStyles() {
   if (typeof document === 'undefined') return
-  if (document.getElementById(STYLES_ID)) return
-  const styleNode = document.createElement('style')
-  styleNode.id = STYLES_ID
-  styleNode.textContent = PRODUCTS_CSS
-  document.head.appendChild(styleNode)
+  let styleNode = document.getElementById(STYLES_ID)
+  if (!styleNode) {
+    styleNode = document.createElement('style')
+    styleNode.id = STYLES_ID
+    document.head.appendChild(styleNode)
+  }
+  if (styleNode.textContent !== PRODUCTS_CSS) styleNode.textContent = PRODUCTS_CSS
 }

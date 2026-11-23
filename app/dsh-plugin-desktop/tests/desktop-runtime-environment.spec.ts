@@ -717,12 +717,18 @@ describe("RunAsNode scope", () => {
     const upstream = JSON.parse(readFileSync(new URL('../../upstream.json', import.meta.url), 'utf8')) as {
       channels: Record<string, { runtimePackageVersion: string }>
     }
-    for (const channel of new Set(Object.values(upstream.channels).map(value => value.runtimePackageVersion))) {
-      const patch = readFileSync(new URL(`../../patches/dsh-subprocess-local@${channel}.patch`, import.meta.url), "utf8")
-      // Electron hosts launch the private runner through process.execPath, so the
-      // flag is required on every platform, not only on the Windows selector.
-      expect(patch).toContain(`env.ELECTRON_RUN_AS_NODE = "1";`)
-      expect(patch).toMatch(/process\.versions\.electron !== void 0 && \(process\.platform !== "win32"/u)
-    }
+    // Stable (0.2.1-rc.3) hosts DSH in-process in Electron main and requires the
+    // dsh-subprocess-local patch to scope ELECTRON_RUN_AS_NODE to the runner child.
+    const stableVersion = upstream.channels.stable?.runtimePackageVersion
+    expect(stableVersion).toBeTruthy()
+    const patch = readFileSync(new URL(`../../patches/dsh-subprocess-local@${stableVersion}.patch`, import.meta.url), "utf8")
+    // Electron hosts launch the private runner through process.execPath, so the
+    // flag is required on every platform, not only on the Windows selector.
+    expect(patch).toContain(`env.ELECTRON_RUN_AS_NODE = "1";`)
+    expect(patch).toMatch(/process\.versions\.electron !== void 0 && \(process\.platform !== "win32"/u)
+    // Next (0.2.2-rc.5) spawns the Host out-of-process with ELECTRON_RUN_AS_NODE=1
+    // via desktopNodeEnvironment, which child runner spawns inherit through scrubbedParentEnv.
+    const nextNodeEnv = readFileSync(new URL('../../dsh-desktop-next/src/node-environment.ts', import.meta.url), 'utf8')
+    expect(nextNodeEnv).toContain("ELECTRON_RUN_AS_NODE: '1'")
   })
 })

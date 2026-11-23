@@ -54,9 +54,14 @@ export const FOLDER_STYLES = `
 .omnimux-cover-content--empty { background: color-mix(in srgb, var(--dsw-alias-bg-overlay) 90%, var(--dsw-alias-brand-primary)); }
 `
 export function injectFolderStyles() {
-  if (typeof document === 'undefined' || document.getElementById('omnimux-folder-styles')) return
-  const style = document.createElement('style')
-  style.id = 'omnimux-folder-styles'
-  style.textContent = FOLDER_STYLES
-  document.head.appendChild(style)
+  if (typeof document === 'undefined') return
+  let style = document.getElementById('omnimux-folder-styles')
+  if (!style) {
+    style = document.createElement('style')
+    style.id = 'omnimux-folder-styles'
+    document.head.appendChild(style)
+  }
+  if (style.textContent !== FOLDER_STYLES) {
+    style.textContent = FOLDER_STYLES
+  }
 }

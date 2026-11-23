@@ -1,4 +1,4 @@
-/** Next-owned surfaces; window dragging belongs to the official frontend. */
+/** Next-owned surfaces, plus corrections to the official frontend's macOS window drag. */
 const STYLES = `
 .dshNextSafeModeNotice{position:absolute;right:16px;bottom:16px;max-width:300px;padding:12px;border:1px solid var(--dsw-alias-border-l3);border-radius:10px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font:12px/1.5 system-ui,sans-serif;pointer-events:auto;-webkit-app-region:no-drag}
 .dshNextSafeModeNotice p{margin:5px 0 8px}.dshNextSafeModeNotice button{font:inherit;border:1px solid currentColor;border-radius:5px;padding:4px 8px;background:transparent;color:inherit;cursor:pointer}
@@ -14,7 +14,9 @@ html[data-next-material='off'][data-platform='darwin'] :has(> [data-shell-overla
    strip instead of leaving that strip empty above it. The strip stays the
    window-drag surface and keeps the collapse toggle on its right; only its empty
    area stops intercepting pointer events so the lifted brand row stays reachable.
-   Full screen hides the traffic lights, so the brand returns to the left edge;
+   Full screen hides the traffic lights and moves the official collapse toggle to
+   the left edge (justify-content: flex-start in 0.2.2-rc.5), so the lifted brand
+   clears that left toggle with 44px leading padding and reclaims the right edge;
    the collapsed rail keeps its official layout. */
 html[data-platform='darwin'] [class*='_topStrip'] {
   pointer-events: none;
@@ -32,9 +34,9 @@ html[data-platform='darwin']:not([data-fullscreen]) [class*='_root']:not([class*
 html[data-platform='darwin'][data-fullscreen] [class*='_root']:not([class*='_collapsed']) > [class*='_topStrip'] + [class*='_logoRow'] {
   height: 52px;
   margin-top: -52px;
-  margin-right: 44px;
+  margin-right: 0;
   margin-bottom: 0;
-  padding-left: 4px;
+  padding-left: 44px;
 }
 
 /* Keep Settings nav items at their 40x164 geometry and scroll with the official l2 gutter. */
@@ -54,6 +56,17 @@ body [data-shortcut-modal='settings'] > nav > :last-child {
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+}
+
+/* rc.2 scopes interactive no-drag regions to chrome rows; use the official scrolling behavior. */
+/* The collapsed Plugins head keeps its resting box but paints only its top part, and the content
+   below that part is visible, so only the painted part drags. */
+html[data-platform='darwin'] [data-plugin-bar][data-natural] [data-window-drag]::after {
+  content: '';
+  position: absolute;
+  inset: var(--plugin-header-paint-height) 0 0;
+  pointer-events: none;
+  -webkit-app-region: no-drag;
 }
 `
 

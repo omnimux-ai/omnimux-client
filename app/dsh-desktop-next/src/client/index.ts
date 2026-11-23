@@ -12,19 +12,22 @@ import { installSidebarFooterStyles, setSidebarFooterBalanced, setSidebarFooterC
 import { NextSettingsAdapter } from './settings-adapter.ts'
 import { NextDesktopSettings, NextDesktopActions } from './settings.tsx'
 import { installWindowStyles } from './styles.ts'
-import { registerDesktopOnboarding } from '../../../dsh-plugin-desktop/src/client/onboarding.tsx'
-import '../../../dsh-plugin-desktop/src/client/onboarding.css'
+import { registerDesktopOnboarding } from './onboarding.tsx'
+import './onboarding.css'
 import { registerPluginControls } from './plugin-controls.tsx'
 import { installPluginControlsStyles } from './plugin-controls-styles.ts'
 import { registerComputerUseCommandUi } from './computer-use-command-ui.tsx'
+import { installOfficialComputerUseStyles, registerDesktopSettingsIcon } from './upstream-family.ts'
 import { desktopDirectoryPicker, registerDesktopDirectoryPicker } from './directory-picker.ts'
 import { SettingsRequests } from './settings-requests.tsx'
 import type { DesktopSettingsLocaleKey } from '../../../dsh-plugin-desktop/src/client/desktop-settings-locales.ts'
 import { installRendererRecovery } from './renderer-recovery.ts'
+import { installClientDiagnostics } from './client-diagnostics.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     'desktop.settings': DesktopSettingsLocaleKey | 'sidebarFooterCompat' | 'sidebarFooterCompatBody' | 'sidebarFooterBalanced' | 'sidebarFooterBalancedBody'
+      | 'tabs' | 'tabGeneral' | 'tabProfiles' | 'tabAccess' | 'tabDiagnostics'
     'desktop-next': 'settings' | 'language' | 'safeMode' | 'safeModeDetail' | 'recovery' | 'dismiss'
   }
 }
@@ -33,12 +36,16 @@ export const inject = ['slots', 'layout', 'locale']
 
 export function apply(ctx: Context): void {
   ctx.effect(installUiDiagnostics, 'AA and Plugins client lifecycle diagnostics')
+  // Only the Desktop main window has the channel; an ordinary browser keeps its console.
+  const diagnostic = window.desktopNext?.renderer?.diagnostic
+  if (diagnostic) ctx.effect(() => installClientDiagnostics(ctx, diagnostic), 'Client failure reports')
   ctx.effect(() => ctx.locale.register('desktop-next', {
     zh: { settings: '桌面设置', language: 'zh', safeMode: '安全模式', safeModeDetail: '当前使用临时环境。退出安全模式并重启后返回原 Profile，临时数据不会保留。', dismiss: '关闭提示', recovery: '打开恢复助手' },
     en: { settings: 'Desktop settings', language: 'en', safeMode: 'Safe mode', safeModeDetail: 'You are using a temporary environment. Exiting Safe Mode and restarting returns to the original Profile and removes the temporary data.', dismiss: 'Dismiss notice', recovery: 'Open recovery assistant' },
   }), 'Next settings and recovery labels')
   ctx.effect(() => installDesktopSettingsStyles('dsh-desktop-next'), 'Shared Desktop settings styles')
   ctx.effect(installPluginControlsStyles, 'Plugin controls and permission dialog styles')
+  if (installOfficialComputerUseStyles) ctx.effect(installOfficialComputerUseStyles, 'Official Computer Use row styles')
   registerPluginControls(ctx)
   registerComputerUseCommandUi(ctx)
   // The Desktop window adds workspaces through the system folder dialog like upstream
@@ -68,11 +75,13 @@ export function apply(ctx: Context): void {
       return adapter.desktopSettings.subscribe(syncSidebarFooterCompat)
     }, 'Sync Desktop sidebar footer compatibility setting')
     const t = ctx.locale.bind('desktop-next')
-    // The shared settings shell maps the legacy section ID to our display icon.
+    // The settings shell shows our display icon for this section ID: through its icon slot where the release
+    // offers one, otherwise through the shell's Yarn patch, which maps the ID itself.
     ctx.slots.inject('settings.section', () => ctx.slots.register({
       name: 'settings.section', id: 'desktop', order: 100, locale: 'desktop-next', label: () => t('settings'),
       inject: () => ({ adapter, openPlugins: () => ctx.layout.selectPanel('plugins' as MainPanelId) }),
     }, DesktopSettings))
+    registerDesktopSettingsIcon?.(ctx, 'desktop')
     ctx.slots.inject('settings.action', () => ctx.slots.register({
       name: 'settings.action', id: 'desktop-native-actions', order: 1, locale: 'desktop-next', inject: () => ({ adapter }),
     }, SettingsActions))
@@ -108,10 +117,6 @@ function installUiDiagnostics(): () => void {
       plugins: document.querySelector('[data-next-plugin-controls]') !== null,
     }
   }
-  const onError = (event: ErrorEvent): void => { console.error(`[next-ui-error] ${String(event.error?.stack ?? event.message).slice(0, 8192)}`) }
-  const onRejection = (event: PromiseRejectionEvent): void => { console.error(`[next-ui-error] ${String(event.reason?.stack ?? event.reason).slice(0, 8192)}`) }
-  window.addEventListener('error', onError)
-  window.addEventListener('unhandledrejection', onRejection)
   let previous = read()
   let lastInput = 'none'
   const trace = (message: string): void => { console.warn(`[next-ui-diagnostic] ${message}`) }
@@ -143,8 +148,6 @@ function installUiDiagnostics(): () => void {
   document.addEventListener('pointerdown', onPointerDown, true)
   document.addEventListener('keydown', onKeyDown, true)
   return () => {
-    window.removeEventListener('error', onError)
-    window.removeEventListener('unhandledrejection', onRejection)
     observer.disconnect()
     document.removeEventListener('pointerdown', onPointerDown, true)
     document.removeEventListener('keydown', onKeyDown, true)

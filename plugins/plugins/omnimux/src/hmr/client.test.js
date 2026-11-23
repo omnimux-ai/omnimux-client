@@ -198,3 +198,24 @@ test('failed prefetch remains retryable and malformed notices are reported', asy
   assert.equal(f.trace.filter(x => x === 'invalidate:v2').length, 2)
   assert.ok(f.errors.some(error => String(error).includes('invalid HMR notification')))
 })
+
+test('preserves renderer-owned data-path stylesheets while removing factory-injected plugin styles', async t => {
+  const f = fixture(t)
+  f.document.querySelectorAll = () => [
+    {
+      getAttribute: (name) => name === 'data-plugin' ? 'omnimux' : null,
+      hasAttribute: (name) => name === 'data-plugin',
+      remove: () => f.trace.push('remove-legacy-style'),
+    },
+    {
+      getAttribute: (name) => name === 'data-plugin' ? 'omnimux' : name === 'data-path' ? 'src/client/App.module.css' : null,
+      hasAttribute: (name) => name === 'data-plugin' || name === 'data-path',
+      remove: () => { throw new Error('removed renderer-owned stylesheet') },
+    },
+  ]
+  f.mount()
+  f.rebuilt('v2')
+  await settle()
+  assert.deepEqual(f.trace, ['invalidate:v2', 'prefetch', 'unregister', 'remove-legacy-style', 'refresh'])
+  assert.deepEqual(f.errors, [])
+})

@@ -36,15 +36,16 @@ export function registerDirectMediaRoutes(webServer, deps) {
   return webServer.register({
     kind: 'exact',
     path: DIRECT_MEDIA_GENERATE_ROUTE,
-    async handler(req, res) {
+    auth: 'required',
+    async handler(req, res, peer) {
       const method = (req.method || 'GET').toUpperCase()
       if (method !== 'POST') {
         sendJson(res, 405, { ok: false, error: 'method-not-allowed' })
         return
       }
 
-      if (deps.getConnection) {
-        const rejected = requestRejection(req, deps.getConnection)
+      if (deps.getConnection || peer !== undefined) {
+        const rejected = requestRejection(req, deps.getConnection, peer)
         if (rejected) { sendJson(res, rejected, { ok: false, error: 'request-not-authorized' }); return }
       }
       let body

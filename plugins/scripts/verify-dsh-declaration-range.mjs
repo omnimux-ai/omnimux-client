@@ -3,8 +3,12 @@
  * DSH 宿主兼容声明校验（#3688 宿主兼容半边 / #3737 扫描面加固）。
  *
  * 校验对象是**宿主装配面**，不是本地开发 pin。五条断言：
- *  1. 每个 `@deepseek-ai/dsh-*` peer 容纳新宿主 `0.2.1-rc.3`；cordis 容纳 `4.0.5`、
- *     schemastery 容纳 `3.18.5`。
+ *  1. 每个 `@deepseek-ai/dsh-*` peer 容纳新宿主；cordis 容纳新宿主的 cordis、
+ *     schemastery 容纳新宿主的 schemastery。三个目标版本从仓库的出货元数据解析：
+ *     `dsh-version.json`（`dsh.runtimePackageVersion`）与
+ *     `app/dsh-desktop-next/package.json`（cordis / schemastery 声明）；没有这些元数据的
+ *     合成夹具回落到常量 `0.2.1-rc.3` / `4.0.5` / `3.18.5`。这样升级 RC 时门禁自动跟随，
+ *     不会因为常量没改就把「新宿主装不进去」放过去。
  *  2. **不得收窄**：每个 dsh-* peer 仍须容纳至少一个旧世代代表版本（见 OLD_GENERATION_PROBES），
  *     否则就是把旧宿主踢出范围——「加分支」变成了「换范围」。
  *  3. `REMOVED_PACKAGES`（底座已整体删除的包）不得再出现在四处：`dsh.client.inject`、
@@ -25,9 +29,71 @@ import { dirname, join, resolve, extname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import semver from 'semver'
 
-const NEW_HOST = '0.2.1-rc.3'
-const NEW_CORDIS = '4.0.5'
-const NEW_SCHEMASTERY = '3.18.5'
+/**
+ * 合成夹具（临时目录、只有 plugins/ 与 packages/）没有出货元数据，用这一代宿主做回落。
+ * 真实仓库永远带 `dsh-version.json`，因此回落只在夹具里生效。
+ */
+const FALLBACK_TARGETS = Object.freeze({ host: '0.2.1-rc.3', cordis: '4.0.5', schemastery: '3.18.5' })
+
+/** 取声明里的最低版本：`"4.1.0"`、`"^3.19.0"` 都归一成一个可比版本。 */
+function declaredVersion(range) {
+  if (typeof range !== 'string') return null
+  const minimum = semver.minVersion(range)
+  return minimum === null ? null : minimum.version
+}
+
+/**
+ * 从仓库出货元数据解析本次要校验的宿主代际。
+ * 读不到就逐项回落并在 `notes` 里说明原因，绝不静默用旧代际通过。
+ * @returns {{ host: string, cordis: string, schemastery: string, source: 'pinned' | 'fallback', notes: string[] }}
+ */
+export function resolveTargets(root) {
+  const notes = []
+  // 扫描根是本目录（`plugins/`）；出货元数据在仓库根，因此两处都看。
+  const metaRoot = [root, resolve(root, '..')].find((dir) => existsSync(join(dir, 'dsh-version.json'))
+    || existsSync(join(dir, 'app', 'dsh-desktop-next', 'package.json'))) ?? root
+  const host = (() => {
+    const file = join(metaRoot, 'dsh-version.json')
+    if (!existsSync(file)) { notes.push('dsh-version.json 缺失'); return null }
+    try {
+      const json = JSON.parse(readFileSync(file, 'utf8'))
+      const value = json?.dsh?.runtimePackageVersion ?? json?.dsh?.sourceVersion
+      if (typeof value === 'string' && semver.valid(value) !== null) return value
+      notes.push(`dsh-version.json 的 dsh.runtimePackageVersion 不是精确版本：${String(value)}`)
+      return null
+    } catch (error) {
+      notes.push(`dsh-version.json 无法解析：${error.message}`)
+      return null
+    }
+  })()
+  const desktop = (() => {
+    const file = join(metaRoot, 'app', 'dsh-desktop-next', 'package.json')
+    if (!existsSync(file)) { notes.push('app/dsh-desktop-next/package.json 缺失'); return null }
+    try {
+      return JSON.parse(readFileSync(file, 'utf8'))
+    } catch (error) {
+      notes.push(`app/dsh-desktop-next/package.json 无法解析：${error.message}`)
+      return null
+    }
+  })()
+  const fromDesktop = (name) => {
+    if (!desktop) return null
+    for (const field of DEPENDENCY_FIELDS) {
+      const range = desktop[field]?.[name]
+      const version = declaredVersion(range)
+      if (version !== null) return version
+    }
+    notes.push(`app/dsh-desktop-next/package.json 未声明 ${name}`)
+    return null
+  }
+  const targets = {
+    host: host ?? FALLBACK_TARGETS.host,
+    cordis: fromDesktop('@deepseek-ai/cordis') ?? FALLBACK_TARGETS.cordis,
+    schemastery: fromDesktop('@deepseek-ai/schemastery') ?? FALLBACK_TARGETS.schemastery,
+  }
+  const pinned = host !== null && targets.cordis !== FALLBACK_TARGETS.cordis && targets.schemastery !== FALLBACK_TARGETS.schemastery
+  return { ...targets, source: pinned ? 'pinned' : 'fallback', notes }
+}
 
 /** 底座已整体删除的包。新增删除项时在此登记（`since` 记录出处）。 */
 export const REMOVED_PACKAGES = [
@@ -116,10 +182,12 @@ function readManifestPackages(manifestPath) {
 /**
  * 收集校验失败项。
  * @param {string} root 仓库根目录。
- * @param {{ manifestPath?: string | null }} [options] 可选的底座清单路径。
- * @returns {{ failures: string[], peersChecked: number, injectChecked: number, referencedNames: Set<string>, manifestStatus: string, manifestMissing: string[] }}
+ * @param {{ manifestPath?: string | null, targets?: { host: string, cordis: string, schemastery: string } }} [options]
+ *   可选的底座清单路径与宿主代际覆盖（测试夹具用；缺省从仓库元数据解析）。
+ * @returns {{ failures: string[], peersChecked: number, injectChecked: number, referencedNames: Set<string>, manifestStatus: string, manifestMissing: string[], targets: object }}
  */
 export function collectFailures(root, options = {}) {
+  const targets = options.targets ?? resolveTargets(root)
   const failures = []
   let peersChecked = 0
   let injectChecked = 0
@@ -132,9 +200,9 @@ export function collectFailures(root, options = {}) {
 
     for (const [name, range] of Object.entries(pkg.peerDependencies ?? {})) {
       let target = null
-      if (name.startsWith('@deepseek-ai/dsh-')) target = NEW_HOST
-      else if (name === '@deepseek-ai/cordis') target = NEW_CORDIS
-      else if (name === '@deepseek-ai/schemastery') target = NEW_SCHEMASTERY
+      if (name.startsWith('@deepseek-ai/dsh-')) target = targets.host
+      else if (name === '@deepseek-ai/cordis') target = targets.cordis
+      else if (name === '@deepseek-ai/schemastery') target = targets.schemastery
       if (!target) continue
       peersChecked += 1
       if (!semver.satisfies(target, range)) {
@@ -225,22 +293,24 @@ export function collectFailures(root, options = {}) {
     manifestStatus = 'missing'
   }
 
-  // 预发布陷阱本身也要钉住：单分支范围必须判为不满足 0.2.1-rc.3，
+  // 预发布陷阱本身也要钉住：单分支范围必须判为不满足目标宿主，
   // 否则本校验赖以成立的前提（npm 不开 includePrerelease）已经不成立。
-  if (semver.satisfies(NEW_HOST, '>=0.1.5-rc.3 <0.3.0-0')) {
-    failures.push('semver 语义异常：单分支范围意外容纳了 0.2.1-rc.3，本校验的前提不再成立')
+  if (semver.satisfies(targets.host, '>=0.1.5-rc.3 <0.3.0-0')) {
+    failures.push(`semver 语义异常：单分支范围意外容纳了 ${targets.host}，本校验的前提不再成立`)
   }
 
   if (peersChecked === 0 || injectChecked === 0) {
     failures.push(`校验范围可疑：peer=${peersChecked}、inject=${injectChecked}`)
   }
 
-  return { failures, peersChecked, injectChecked, referencedNames, manifestStatus, manifestMissing, manifestChecked }
+  return { failures, peersChecked, injectChecked, referencedNames, manifestStatus, manifestMissing, manifestChecked, targets }
 }
 
 function main() {
   const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
   const result = collectFailures(repoRoot)
+  console.log(`宿主代际：dsh ${result.targets.host} / cordis ${result.targets.cordis} / schemastery ${result.targets.schemastery}（${result.targets.source === 'pinned' ? '来自 dsh-version.json + dsh-desktop-next/package.json' : '夹具回落常量'}）`)
+  for (const note of result.targets.notes ?? []) console.log(`  · 回落原因：${note}`)
 
   if (result.manifestStatus === 'skipped') {
     console.log('⏭ 底座清单差集未运行：未设置 OMNIMUX_VENDOR_MANIFEST（只跑已删包登记表与静态扫描面）')
@@ -260,7 +330,7 @@ function main() {
     process.exit(1)
   }
 
-  console.log(`✅ DSH 宿主兼容声明校验通过（peer ${result.peersChecked} 条容纳新宿主且未收窄旧世代；已删包登记 ${REMOVED_PACKAGES.length} 项在 inject / external / 依赖声明 / 源码四处均无残留；底座清单差集 ${result.manifestStatus}）`)
+  console.log(`✅ DSH 宿主兼容声明校验通过（peer ${result.peersChecked} 条容纳 dsh ${result.targets.host} 且未收窄旧世代；已删包登记 ${REMOVED_PACKAGES.length} 项在 inject / external / 依赖声明 / 源码四处均无残留；底座清单差集 ${result.manifestStatus}）`)
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main()

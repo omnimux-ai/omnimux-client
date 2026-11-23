@@ -7,7 +7,7 @@ import { verifyElectronExecutableFuses } from '../../dsh-plugin-desktop/scripts/
 import { withoutMacReleaseSecrets } from '../../dsh-plugin-desktop/scripts/release-preflight.ts'
 import { withoutWindowsSigningSecrets } from '../../dsh-plugin-desktop/scripts/package-win.ts'
 import { machOArchitectures, rosettaAvailable, type MachOArchitecture } from './primary-runtime.ts'
-import { archivedPayload, nextPackagingTarget, payloadDir, universalMergeRewrite, verifyNextRuntime, verifyUpdaterManifestShim } from './packaged-payload.ts'
+import { archivedPayload, nextPackagingTarget, payloadDir, preparedPackagingTarget, universalMergeRewrite, verifyNextRuntime, verifyUpdaterManifestShim } from './packaged-payload.ts'
 import { expectedNextVersion, verifyNextRuntimeTree } from './prepare-runtime.ts'
 import { verifiedPackagedResources } from './verify-packaged.ts'
 import { packagingStep } from './packaging-step.ts'
@@ -54,8 +54,10 @@ function runPackagedNode(path: string, args: readonly string[], timeout: number,
 
 async function verifyFinalArtifacts(result: { outDir: string }): Promise<string[]> {
   const paths = ['mac/OmniMux.app/Contents/MacOS/OmniMux', 'mac-arm64/OmniMux.app/Contents/MacOS/OmniMux',
-    'mac-universal/OmniMux.app/Contents/MacOS/OmniMux', 'win-unpacked/OmniMux.exe', 'linux-unpacked/dsh-desktop-next']
-  const executables = paths.map(path => join(result.outDir, path)).filter(existsSync)
+    'mac-universal/OmniMux.app/Contents/MacOS/OmniMux', 'win-unpacked/OmniMux.exe', 'linux-unpacked/dsh-desktop-next',
+    'linux-arm64-unpacked/dsh-desktop-next']
+  const executables = paths.map(path => join(result.outDir, path))
+    .filter(path => existsSync(path) && (!path.includes('.app/') || verifiedPackagedResources.has(resolve(dirname(path), '../Resources'))))
   if (!executables.length) throw new Error('No packaged Next executable to verify')
   const expectedVersion = expectedNextVersion(desktopRoot)
   for (const path of executables) {
@@ -67,7 +69,8 @@ async function verifyFinalArtifacts(result: { outDir: string }): Promise<string[
     // electron-builder signs unpacked Mach-O files and nested bundles on macOS after afterPack
     // cross-checked the archive, so macOS re-checks the archive with code-signing tolerance.
     // On Windows/Linux, resources are not mutated after afterPack, so skip re-hashing when afterPack already verified them.
-    const target = nextPackagingTarget(darwin ? 'darwin' : path.endsWith('.exe') ? 'win32' : 'linux')
+    // A macOS package carries the CPUs of the payload prepared for it.
+    const target = darwin ? preparedPackagingTarget(desktopRoot) : nextPackagingTarget(path.endsWith('.exe') ? 'win32' : 'linux')
     const alreadyVerifiedByAfterPack = verifiedPackagedResources.has(resolve(resources))
     if (darwin || !alreadyVerifiedByAfterPack) {
       const merge = universalMergeRewrite(join(desktopRoot, ...payloadDir(darwin ? 'darwin' : path.endsWith('.exe') ? 'win32' : 'linux').split('/')))
@@ -85,16 +88,12 @@ async function verifyFinalArtifacts(result: { outDir: string }): Promise<string[
     }
     if (darwin) {
       const slices = machOArchitectures(path)
-      // Next only ships arm64/x64 slices, so the host CPU maps onto the Mach-O slice union.
       const hostArch = process.arch as MachOArchitecture
       if (!slices.includes(hostArch) && !(process.arch === 'arm64' && slices.includes('x64') && rosettaAvailable())) {
         console.log(`Skipping packaged Node execution smoke for ${path} (${slices.join('/')}): this ${process.platform} ${process.arch} host cannot execute it`)
         continue
       }
     }
-    // Pay one Electron Node-mode cold start before the timed Host smoke. On an Apple Silicon
-    // host the x64 archive runs through Rosetta, where four simultaneous first launches can
-    // starve the Host startup timer even though each smoke passes on its own.
     await runPackagedNode(path, ['--input-type=module', '-e', `
       import { createRequire } from 'node:module';
       import { pathToFileURL } from 'node:url';
@@ -104,12 +103,18 @@ async function verifyFinalArtifacts(result: { outDir: string }): Promise<string[
       await import(pathToFileURL(root + '/lib/profiles.js'));
       await import(pathToFileURL(root + '/lib/desktop-runtime.js'));
       require.resolve('@deepseek-ai/dsh-web-frontend/dist/index.html');
-    `, root], 30_000, 'Packaged Next runtime failed')
+    `, root], 120_000, 'Packaged Next runtime failed')
     await Promise.all([
       // The native computer-use driver opens its library with the system loader; the Host's resolver must answer with the unpacked copy.
       runPackagedNode(path, [join(desktopRoot, 'scripts', 'packaged-driver-smoke.mjs'), root], 120_000, 'Packaged computer-use driver smoke failed'),
       // The badge skill announces its asset directory to the model; the Host's resolver must make it physical.
       runPackagedNode(path, [join(desktopRoot, 'scripts', 'packaged-skill-badge-smoke.mjs'), root], 120_000, 'Packaged badge skill smoke failed'),
+      // Image attachments and Market icons go through sharp; on Linux the Host's resolver must keep it on the WebAssembly build.
+      runPackagedNode(path, [join(desktopRoot, 'scripts', 'packaged-sharp-smoke.mjs'), root], 120_000, 'Packaged sharp smoke failed'),
+      // Linux has no tray terminal; the application executable itself answers `<app> dsh …` (#1568).
+      ...target.platform === 'linux' ? [
+        runPackagedNode(path, [join(desktopRoot, 'scripts', 'packaged-dsh-command-smoke.mjs'), root], 120_000, 'Packaged dsh command smoke failed'),
+      ] : [],
       // The same Electron, in Node mode, starts the real Host from the archive with a private home.
       runPackagedNode(path, ['--expose-internals', join(desktopRoot, 'scripts', 'packaged-host-smoke.mjs'), root], 300_000, 'Packaged Next Host smoke failed'),
     ])

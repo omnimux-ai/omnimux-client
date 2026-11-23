@@ -48,7 +48,9 @@ function functionDeclaration(file, name) {
 // throws inside the conversation view and renders the whole Session empty.
 const invalidDrafts = [undefined, null, 42, true, [], {}, { text: 7, references: [] }, { references: [] }]
 
-for (const workspace of ['dsh-plugin-desktop', 'dsh-plugin-desktop-beta', 'dsh-desktop-next']) {
+// Only the stable-channel workspace is frozen at this runtime; the next-channel
+// shell is covered by its own channel-driven compat suite in stage 3B.
+for (const workspace of ['dsh-plugin-desktop']) {
   test(`${workspace}: the installed conversation client tolerates non-string drafts`, { skip }, () => {
     const require = createRequire(resolve(workspace, 'package.json'))
     const manifest = require.resolve('@deepseek-ai/dsh-client-ui-conversation/package.json')

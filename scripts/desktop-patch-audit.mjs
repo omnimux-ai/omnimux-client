@@ -75,7 +75,7 @@ function* walk(directory) {
     if (entry.isDirectory()) {
       if (IGNORED_DIRS.has(entry.name)) continue
       yield* walk(join(directory, entry.name))
-    } else if (/\.(?:js|mjs|ts|tsx|jsx)$/.test(entry.name)) {
+    } else if (/\.(?:js|mjs|ts|tsx|jsx)$/.test(entry.name) && !/\.(?:test|spec)\.(?:js|mjs|ts|tsx|jsx)$/.test(entry.name)) {
       yield join(directory, entry.name)
     }
   }

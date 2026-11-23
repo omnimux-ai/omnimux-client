@@ -9,7 +9,7 @@ function account(states: Attempt[]): PlatformLoginAccount & { signals: AbortSign
     signals,
     async *watch(signal) {
       signals.push(signal)
-      for (const attempt of states) yield { attempt }
+      for (const attempt of states) yield { type: 'snapshot', state: { attempt } }
     },
   }
 }
@@ -57,4 +57,16 @@ it('passes its lifetime to the account stream', async () => {
   const lifetime = new AbortController()
   await watchPlatformLogin(source, () => {}, lifetime.signal)
   expect(source.signals).toEqual([lifetime.signal])
+})
+
+
+it('opens and closes login using rc.2 snapshot and credentials-changed envelopes', async () => {
+  const seen: PlatformLoginRequest[] = []
+  const source: PlatformLoginAccount = { async *watch() {
+    yield { type: 'snapshot', state: { attempt: null } }
+    yield { type: 'snapshot', state: { attempt: { id: 'rc2', phase: 'waiting-browser', authorizeUrl: URL_A } } }
+    yield { type: 'credentials-changed', state: { attempt: { id: 'rc2', phase: 'succeeded' } } }
+  } }
+  await watchPlatformLogin(source, value => seen.push(value), new AbortController().signal)
+  expect(seen).toEqual([{ action: 'open', url: URL_A }, { action: 'close', focus: false }])
 })

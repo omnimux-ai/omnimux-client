@@ -1,6 +1,10 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { OPTIONAL_BUNDLES } from '@deepseek-ai/dsh-app-boot'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { OPTIONAL_BUNDLES } from '../src/upstream-family.ts'
+import { PACKAGED_RUNTIME_DIR } from '../scripts/mac-runtime.ts'
 import { expect, it } from 'vitest'
 const read = (path: string) => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'))
 it('declares every official optional bundle as a discoverable, version-aligned installation dependency', () => {
@@ -30,7 +34,8 @@ it('archives the application like upstream Desktop while keeping fuses and nativ
     '**/@deepseek-ai/node-addon-system-*/bin/landlock-run', '**/@vscode/ripgrep-*/bin/rg', '**/@dataiku/uv-*/bin/uv', '**/meshcall-router-*/bin/*',
     '**/node_modules/@deepseek-ai/libreoffice-kit-*/**/*', '**/node_modules/pnpm/**/*',
     '**/node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**/*', '**/node_modules/@deepseek-ai/dsh-agent-preset/**/*',
-    '**/node_modules/@deepseek-ai/dsh-skill-badge/**/*']))
+    '**/node_modules/@deepseek-ai/dsh-skill-badge/**/*', '**/node_modules/@deepseek-ai/dsh-skill-office/**/*',
+    '**/node_modules/@deepseek-ai/dsh-experimental-cua-macos/**/*']))
   // The prepared tree is archived verbatim, as upstream archives its prepared dsh tree: one file set for the
   // shell files and one for the dependency tree, because electron-builder leaves out a file set's root node_modules.
   expect(next.build.files).toEqual([{ from: '${env.DSH_NEXT_PAYLOAD_DIR}', filter: ['**/*'] },
@@ -47,14 +52,8 @@ it('archives the application like upstream Desktop while keeping fuses and nativ
   expect(next.build.afterPack).toBe('./scripts/verify-packaged.ts')
   expect(next.build.afterAllArtifactBuild).toBe('./scripts/verify-fuses.ts')
   expect(next.build.electronFuses).toEqual(stable.build.electronFuses)
-  // Release builds one architecture per artifact (arm64 and x64 jobs), so the
-  // archive name carries the CPU it was built for. Nobody declares a per-CPU
-  // file split for a universal merge that never runs, so `x64ArchFiles` must be
-  // absent — leaving it in place would describe a merge that never runs.
   expect(next.build.mac.artifactName).toBe('OmniMux-${version}-${arch}.${ext}')
   expect(next.build.mac.x64ArchFiles).toBeUndefined()
-  // Both CPU payloads ride beside the archive as extra resources; electron-builder must not re-sign the pre-signed payloads.
-  // macOS also carries the manifest copy the updaters shipped in 2.0.14-next through 2.0.17-next read beside the archive.
   expect(next.build.mac.extraResources).toEqual([{ from: '${env.DSH_NEXT_RUNTIME_DIR}', to: 'runtime' }, { from: '${env.DSH_NEXT_PAYLOAD_DIR}/package.json', to: 'app/package.json' }])
   expect(next.build.win.extraResources).toEqual([{ from: '.desktop-build/runtime', to: 'runtime' }])
   expect(next.build.linux.extraResources).toEqual([{ from: '.desktop-build/runtime', to: 'runtime' }])
@@ -73,4 +72,37 @@ it('archives the application like upstream Desktop while keeping fuses and nativ
   expect(next.build.nsis).toMatchObject({ oneClick: false, perMachine: false, allowElevation: true, allowToChangeInstallationDirectory: true })
   expect(next.build.mac.notarize).toBe(true)
   expect(next.build.dmg.format).toBe('ULFO')
+})
+
+it('gives the Linux packages a hicolor icon for every theme size up to 512 pixels', async () => {
+  const next = read('../package.json')
+  expect(next.build.linux.icon).toBe('build/icons')
+  // Resolve the icon as electron-builder's Linux targets do; the Debian package and the AppImage install each result
+  // under hicolor/<size>x<size>/apps. A single PNG resolves to its own 1024x1024, which the hicolor theme does not declare.
+  const require = createRequire(new URL('../package.json', import.meta.url))
+  const { convertIcon } = require('app-builder-lib/out/util/iconConverter.js')
+  const project = fileURLToPath(new URL('..', import.meta.url))
+  const outDir = mkdtempSync(join(tmpdir(), 'dsh-linux-icons-'))
+  try {
+    const { icons, isFallback } = await convertIcon({ sources: [next.build.linux.icon], fallbackSources: [], roots: [join(project, 'build'), project], format: 'set', outDir })
+    expect(isFallback).toBe(false)
+    expect(icons.map((icon: { size: number }) => icon.size)).toEqual([16, 22, 24, 32, 48, 64, 128, 256, 512])
+    for (const { file, size } of icons) {
+      const png = readFileSync(file)
+      expect([png.readUInt32BE(16), png.readUInt32BE(20)], file).toEqual([size, size])
+    }
+  } finally {
+    rmSync(outDir, { recursive: true, force: true })
+  }
+})
+
+it('makes the Debian package depend on the GBM and ALSA libraries the executable links', () => {
+  const next = read('../package.json')
+  // A depends list replaces electron-builder's default Depends, so it keeps every default and appends what the executable
+  // also links: none of the defaults pulls in libgbm.so.1 or libasound.so.2, and on minimal Debian and Ubuntu systems the
+  // installed application then cannot start. Since the 64-bit time_t transition libasound2 is a virtual package, and
+  // OSS4's ALSA emulation provides it without a version; the version bound leaves only the real ALSA library to apt.
+  const require = createRequire(new URL('../package.json', import.meta.url))
+  const { default: FpmTarget } = require('app-builder-lib/out/targets/FpmTarget.js')
+  expect(next.build.deb.depends).toEqual([...FpmTarget.prototype.getDefaultDepends.call(undefined, 'deb'), 'libgbm1', 'libasound2 (>= 1.0.17)'])
 })

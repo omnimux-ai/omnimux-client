@@ -1,16 +1,18 @@
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { closeSync, createReadStream, mkdtempSync, openSync, readFileSync, readSync, readdirSync, rmSync } from 'node:fs'
+import { closeSync, createReadStream, existsSync, mkdtempSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assertAppImage, assertDebArchive, assertElfExecutable } from '../../dsh-plugin-desktop/scripts/verify-linux-artifacts.ts'
 import { assertPortableExecutable } from '../../dsh-plugin-desktop/scripts/verify-win-installer.ts'
 import { packagingStep } from './packaging-step.ts'
+import { linuxPackageTargets } from './package-targets.ts'
 
-// Pinned Builder's installer.nsh and installSection.nsh emit these at the installation root.
 const uninstallExecutable = 'Uninstall OmniMux.exe'
 const uninstallIcon = 'uninstallerIcon.ico'
+const sevenZipLicenses = ['7zip-installer-COPYING.txt', '7zip-installer-LICENSE.txt'] as const
+const installerGeneratedFiles = new Set<string>([uninstallExecutable, uninstallIcon, ...sevenZipLicenses])
 
 async function fileHash(file: string): Promise<string> {
   const hash = createHash('sha256')
@@ -23,19 +25,23 @@ function payloadFiles(directory: string): string[] {
     .map(entry => relative(directory, join(entry.parentPath, entry.name))).sort()
 }
 
-/** Cross-check all installed app files and the two NSIS files added at install time. */
 export async function compareInstalledPayload(unpacked: string, installed: string, sourceIcon: string): Promise<{ fileCount: number; sha256: string }> {
   const expected = new Set(payloadFiles(unpacked))
-  const actual = new Set(payloadFiles(installed).filter(file => file !== uninstallExecutable && file !== uninstallIcon))
+  const actual = new Set(payloadFiles(installed).filter(file => !installerGeneratedFiles.has(file)))
   const missing = [...expected].filter(file => !actual.has(file))
   const extra = [...actual].filter(file => !expected.has(file))
   if (missing.length > 0 || extra.length > 0) {
     throw new Error(`Next NSIS extracted file list differs from win-unpacked. Missing (${missing.length}): ${JSON.stringify(missing.slice(0, 8))}. Unexpected (${extra.length}): ${JSON.stringify(extra.slice(0, 8))}.`)
   }
-
   assertPortableExecutable(join(installed, uninstallExecutable), 'Next NSIS uninstaller')
   if (await fileHash(join(installed, uninstallIcon)) !== await fileHash(sourceIcon)) {
     throw new Error('Next NSIS uninstaller icon does not match the configured icon')
+  }
+  for (const license of sevenZipLicenses) {
+    const file = join(installed, license)
+    if (existsSync(file) && statSync(file).size === 0) {
+      throw new Error(`Next NSIS emitted an empty 7-Zip license file: ${license}`)
+    }
   }
   const payload = createHash('sha256')
   for (const path of expected) {
@@ -77,9 +83,11 @@ async function verifyArtifacts(): Promise<void> {
     if (!header.equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]))) throw new Error(`Next portable archive is not a ZIP archive: ${archivePath}`)
     assertPortableExecutable(join(root, 'dist', 'win-unpacked', 'OmniMux.exe'), 'Next application')
   } else if (verifyMode === 'linux') {
-    assertAppImage(join(root, 'dist', `OmniMux-${version}-x86_64.AppImage`), 'Next AppImage')
-    assertDebArchive(join(root, 'dist', `OmniMux-${version}-amd64.deb`), 'Next Debian package')
-    assertElfExecutable(join(root, 'dist', 'linux-unpacked', 'dsh-desktop-next'), 'Next Linux application')
+    const arm64 = process.arch === 'arm64'
+    const targets = linuxPackageTargets(process.env)
+    if (targets.includes('AppImage')) assertAppImage(join(root, 'dist', `OmniMux-${version}-${arm64 ? 'arm64' : 'x86_64'}.AppImage`), 'Next AppImage')
+    if (targets.includes('deb')) assertDebArchive(join(root, 'dist', `OmniMux-${version}-${arm64 ? 'arm64' : 'amd64'}.deb`), 'Next Debian package')
+    assertElfExecutable(join(root, 'dist', arm64 ? 'linux-arm64-unpacked' : 'linux-unpacked', 'dsh-desktop-next'), 'Next Linux application')
   } else {
     const installer = join(root, 'dist', `OmniMux-${version}-x64-Setup.exe`)
     const unpacked = join(root, 'dist', 'win-unpacked')

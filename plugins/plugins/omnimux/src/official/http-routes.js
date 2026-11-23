@@ -440,12 +440,12 @@ export function registerOfficialRoutes(webServer, dispatcher, deps = {}) {
    * @param {import('node:http').ServerResponse} res
    * @returns {boolean}
    */
-  function rejectProtected(req, res) {
-    if (getConnection === undefined) {
+  function rejectProtected(req, res, peer) {
+    if (getConnection === undefined && (peer === undefined || peer === null || typeof peer !== 'object')) {
       sendJson(res, 503, { error: 'auth-unavailable', message: 'Host connection authentication is unavailable' })
       return true
     }
-    const rejection = requestRejection(req, getConnection)
+    const rejection = requestRejection(req, getConnection, peer)
     if (rejection === undefined) return false
     sendJson(res, rejection, { error: 'request-denied', message: 'Request not authorized' })
     return true
@@ -454,9 +454,10 @@ export function registerOfficialRoutes(webServer, dispatcher, deps = {}) {
   const disposeAccounts = webServer.register({
     kind: 'prefix',
     path: '/omnimux/accounts',
-    async handler(req, res) {
+    auth: 'required',
+    async handler(req, res, peer) {
       try {
-        if (rejectProtected(req, res)) return
+        if (rejectProtected(req, res, peer)) return
         const wantsBody = req.method === 'POST' || req.method === 'PATCH'
         const body = wantsBody ? await readJsonBody(req) : undefined
         if (wantsBody && body === null) {
@@ -488,9 +489,10 @@ export function registerOfficialRoutes(webServer, dispatcher, deps = {}) {
   const disposeAnalytics = webServer.register({
     kind: 'prefix',
     path: '/omnimux/analytics',
-    async handler(req, res) {
+    auth: 'required',
+    async handler(req, res, peer) {
       try {
-        if (rejectProtected(req, res)) return
+        if (rejectProtected(req, res, peer)) return
         const wantsBody = req.method === 'POST' || req.method === 'PATCH'
         const body = wantsBody ? await readJsonBody(req) : undefined
         if (wantsBody && body === null) {

@@ -2492,9 +2492,11 @@ dialog.omnimux-inspiration-preview-layer::backdrop { background: transparent; ba
  */
 export function injectInspirationStyles() {
   if (typeof document === 'undefined') return
-  if (document.getElementById(INSPIRATION_STYLES_ID)) return
-  const styleNode = document.createElement('style')
-  styleNode.id = INSPIRATION_STYLES_ID
-  styleNode.textContent = INSPIRATION_CSS
-  document.head.appendChild(styleNode)
+  let styleNode = document.getElementById(INSPIRATION_STYLES_ID)
+  if (!styleNode) {
+    styleNode = document.createElement('style')
+    styleNode.id = INSPIRATION_STYLES_ID
+    document.head.appendChild(styleNode)
+  }
+  if (styleNode.textContent !== INSPIRATION_CSS) styleNode.textContent = INSPIRATION_CSS
 }

@@ -1,5 +1,5 @@
 import type { MediaItem, Project } from '@openreel/core'
-import { canvasWorkspaceMediaUrl, mediaContentDigest, reconnectMediaUrl, workspaceMediaDigest } from '../../timeline/nativeProjectFields.js'
+import { canvasWorkspaceMediaUrl, mediaContentDigest, normalizeMediaHandle, reconnectMediaUrl, workspaceMediaDigest } from '../../timeline/nativeProjectFields.js'
 import { nativeProjectView } from '../../timeline/nativeProjectView.js'
 import { calculateProjectDuration } from '../openreel/core/timeline/project-duration'
 import { useProjectStore } from '../openreel/web/stores/project-store'
@@ -7,8 +7,10 @@ import { useTimelineStore } from '../openreel/web/stores/timeline-store'
 import { useUIStore } from '../openreel/web/stores/ui-store'
 import { useEngineStore } from '../openreel/web/stores/engine-store'
 import { loadEngineModules } from '../openreel/web/services/lazy-engines'
+import { saveMediaBlob } from '../openreel/web/services/media-storage'
 import { getOpenReelRoute, resetOpenReelRouter } from '../openreel/web/hooks/use-router'
 import { createMissingMediaItem, restoreMediaItem } from '../openreel/web/utils/media-recovery'
+import { fetchHostMediaBlob, hasAuthenticatedClipHost } from './host-media'
 import { mediaDigest, verifiedMediaBlob } from './media-source'
 import { createStoredMediaRecovery } from './media-recovery'
 
@@ -60,6 +62,7 @@ async function recoverMedia(
 ) {
   const workspaceId = record.binding?.workspaceId
   const legacyUrl = item.sourceRef?.kind === 'legacy' ? canvasWorkspaceMediaUrl(item.sourceRef.url, workspaceId) : undefined
+  const handle = normalizeMediaHandle(item.omnimuxSource?.handle, workspaceId)
   const expectedDigest = mediaContentDigest(item) ?? workspaceMediaDigest(legacyUrl, workspaceId)
   const inline = record.media?.[item.id]
   // Only the selected snapshot's own bytes can be reused without a digest.
@@ -71,6 +74,29 @@ async function recoverMedia(
   if (!blob && !expectedDigest && item.sourceRef?.kind !== 'legacy' && item.nativeSource && !item.isPlaceholder) {
     return { ...item, missing: false }
   }
+  let resolvedDigest = expectedDigest
+  const canUseHostStream = Boolean(
+    handle && expectedDigest
+    && (handle.scope === 'library-file' || handle.scope === 'clip-vault' || hasAuthenticatedClipHost()),
+  )
+  if (!blob && canUseHostStream) {
+    try {
+      const fetched = await fetchHostMediaBlob(record.project.id, item.id, { expectedDigest, timeoutMs: 30_000 })
+      if (!isCurrent()) return item
+      if (fetched.ok && fetched.blob) {
+        blob = fetched.blob
+        resolvedDigest = fetched.digest ?? expectedDigest
+        void saveMediaBlob(record.project.id, item.id, blob, item.metadata).catch((error: unknown) => {
+          console.debug('[Clip] Could not backfill L1 media cache.', (error as Error)?.name)
+        })
+      } else if (fetched.status === 409) {
+        // Disk bytes drifted from expected SHA-256: never silently substitute.
+        return { ...createMissingMediaItem(item), missing: true }
+      }
+    } catch (error) {
+      console.warn('[Clip] Host media stream recovery failed.', (error as Error)?.name)
+    }
+  }
   const url = !blob && expectedDigest && reconnectMediaUrl(item.omnimuxSource?.url, workspaceId)
   if (url && expectedDigest) {
     const response = await fetch(url, {
@@ -80,11 +106,14 @@ async function recoverMedia(
   }
   if (!isCurrent()) return item
   if (!blob) return { ...createMissingMediaItem(item), missing: true }
-  const digest = expectedDigest ?? await mediaDigest(blob)
+  const digest = resolvedDigest ?? await mediaDigest(blob)
   const sourceRef = { ...item.sourceRef, kind: 'indexeddb' as const, key: item.id, digest }
-  const omnimuxSource = item.omnimuxSource ?? (legacyUrl ? {
-    id: item.sourceRef?.fingerprint ?? await mediaDigest(legacyUrl), version: digest, url: legacyUrl, digest,
-  } : undefined)
+  const omnimuxSource = item.omnimuxSource
+    ? { ...item.omnimuxSource, digest, ...(handle ? { handle: { ...handle, sha256: digest } } : {}) }
+    : (legacyUrl ? {
+      id: item.sourceRef?.fingerprint ?? await mediaDigest(legacyUrl), version: digest, url: legacyUrl, digest,
+      ...(handle ? { handle: { ...handle, sha256: digest } } : {}),
+    } : undefined)
   if (!isCurrent()) return item
   const restored = await restoreMediaItem({ ...item, blob: null, sourceRef, omnimuxSource }, blob)
   return { ...restored, missing: restored.isPlaceholder === true }
@@ -98,6 +127,25 @@ async function waitForSharedRenderer() {
 export const nativeEditorState = {
   capture,
   suspend,
+  attachMediaHandle(projectId: string, mediaId: string, omnimuxSource: NonNullable<MediaItem['omnimuxSource']>) {
+    const state = useProjectStore.getState()
+    if (!state.hasOpenProject || state.project.id !== projectId) return false
+    const target = state.project.mediaLibrary.items.find(item => item.id === mediaId)
+    if (!target || target.omnimuxSource?.handle) return false
+    const digest = omnimuxSource.digest ?? target.sourceRef?.digest
+    useProjectStore.setState(current => {
+      if (!current.hasOpenProject || current.project.id !== projectId) return current
+      const items = current.project.mediaLibrary.items.map(item => item.id === mediaId && !item.omnimuxSource?.handle
+        ? {
+          ...item,
+          omnimuxSource,
+          sourceRef: { ...item.sourceRef, kind: 'indexeddb' as const, key: item.id, ...(digest ? { digest } : {}) },
+        }
+        : item)
+      return { project: { ...current.project, mediaLibrary: { ...current.project.mediaLibrary, items } } }
+    })
+    return true
+  },
   projectId: () => {
     const state = useProjectStore.getState()
     return state.hasOpenProject ? state.project.id : null

@@ -761,23 +761,17 @@ describe('chrome CSS contracts (conversation-box PRODUCT_STAGE_CHROME)', () => {
       PRODUCT_STAGE_CHROME,
       /data-omnimux-left-collapsed\] \[class\*="tabBar"\]/,
     )
-    // Collapsed: session title shares the top row with traffic lights + toggle.
-    // Real advanced-shell DOM: [data-slot="conversation.header"] > header >
-    // [data-slot="conversation.session.header"] (inner anchor, not an ancestor).
-    assert.match(
+    // DP-003 retired under 0.2.2-rc.5 Route B: official ConversationRoot owns
+    // collapsed header clearance via --dsh-frame-leading-clearance.
+    assert.doesNotMatch(
       PRODUCT_STAGE_CHROME,
-      /data-omnimux-left-collapsed\] \[data-slot="conversation\.header"\] > header/,
-    )
-    assert.match(
-      PRODUCT_STAGE_CHROME,
-      /data-omnimux-left-collapsed\] \[data-slot="conversation\.header"\] header/,
+      /data-omnimux-left-collapsed\] \[data-slot="conversation\.header"\]/,
     )
     assert.doesNotMatch(
       PRODUCT_STAGE_CHROME,
       /data-omnimux-left-collapsed\] \[data-slot="conversation\.session\.header"\] header/,
     )
-    assert.match(PRODUCT_STAGE_CHROME, /padding-left:\s*var\(--omnimux-topbar-toggle-end,\s*164px\)/)
-    assert.match(PRODUCT_STAGE_CHROME, /padding-top:\s*var\(--omnimux-topbar-toggle-top,\s*4px\)/)
+    assert.doesNotMatch(PRODUCT_STAGE_CHROME, /desktop-patch:DP-003/)
     assert.match(PRODUCT_STAGE_CHROME, /data-omnimux-topbar-new-session/)
     assert.match(PRODUCT_STAGE_CHROME, /--omnimux-topbar-new-session-left/)
     assert.match(PRODUCT_STAGE_CHROME, /::after/)
@@ -831,6 +825,168 @@ describe('chrome CSS contracts (conversation-box PRODUCT_STAGE_CHROME)', () => {
     // 5. macOS traffic lights & button cluster safe inset when collapsed + fullscreen
     assert.match(css, /padding-left:\s*var\(--omnimux-topbar-toggle-end,\s*164px\)\s*!important/)
     assert.match(css, /padding-left:\s*var\(--omnimux-topbar-toggle-end,\s*88px\)\s*!important/)
+
+    // 6. DP-004 hides 0.2.2-rc.5 root-level [data-shell-leading] while topbar toggle is active
+    assert.match(css, /html\[data-omnimux-sidebar-toggle-topbar\]\s+\[data-shell-leading\]/)
+  })
+
+  it('hides 0.2.2-rc.5 [data-shell-leading] while topbar toggle is active and restores on cleanup', () => {
+    const doc = setup(`<!doctype html><html><body>
+      <div class="frame_abc" data-sidebar-collapsed>
+        <div class="sidebarCol_x"></div>
+        <div class="leadingSeat_x" data-shell-leading>
+          <button id="leading-toggle" type="button" aria-label="展开侧边栏">T</button>
+          <button id="leading-new" type="button" aria-label="新建会话">N</button>
+        </div>
+      </div>
+      <div class="tabBar_n" data-dsh-better-sidebar><div class="tabList_m"></div></div>
+    </body></html>`)
+    const leading = doc.querySelector('[data-shell-leading]')
+    const leadingToggle = doc.getElementById('leading-toggle')
+    let clicked = 0
+    leadingToggle.addEventListener('click', () => { clicked += 1 })
+
+    const cleanup = installSidebarToggleTopbar(doc)
+    assert.equal(doc.documentElement.hasAttribute(SIDEBAR_TOGGLE_TOPBAR_HTML_ATTR), true)
+    assert.equal(doc.defaultView.getComputedStyle(leading).display, 'none')
+    assert.equal(doc.defaultView.getComputedStyle(leading).pointerEvents, 'none')
+
+    // Injected topbar toggle still delegates clicks to the hidden official button in [data-shell-leading].
+    const injected = doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`)
+    assert.ok(injected)
+    injected.click()
+    assert.equal(clicked, 1)
+
+    cleanup()
+    assert.equal(doc.documentElement.hasAttribute(SIDEBAR_TOGGLE_TOPBAR_HTML_ATTR), false)
+    assert.notEqual(doc.defaultView.getComputedStyle(leading).display, 'none')
+  })
+
+  it('drops macOS traffic-light inset in html[data-fullscreen] to fit official 84px clearance and tracks transitions', async () => {
+    const doc = setup()
+    doc.body.setAttribute('data-dsh-desktop-mode', 'extended')
+    doc.body.setAttribute('data-dsh-desktop-platform', 'darwin')
+    const cleanup = installSidebarToggleTopbar(doc)
+
+    // Windowed macOS: 84 + 32 + 8 + 32 = 156 <= 160px (ConversationRoot 20 + 140)
+    const windowed = computeChromeLayout(doc)
+    assert.equal(windowed.toggleLeft, TOPBAR_MACOS_INSET_PX)
+    assert.equal(windowed.newSessionLeft, 124)
+    assert.equal(windowed.newSessionLeft + TOPBAR_TOGGLE_SIZE_PX, 156)
+    assert.equal(windowed.toggleEnd, 164)
+    assert.equal(doc.documentElement.style.getPropertyValue('--omnimux-topbar-toggle-left'), '84px')
+
+    // Native fullscreen macOS: traffic lights hidden -> 8 + 32 + 8 + 32 = 80 <= 84px (ConversationRoot 20 + 64)
+    doc.documentElement.setAttribute('data-fullscreen', '')
+    await new Promise(resolve => setTimeout(resolve, 20))
+    const fs = computeChromeLayout(doc)
+    assert.equal(fs.toggleLeft, TOPBAR_TOGGLE_LEFT_PX)
+    assert.equal(fs.newSessionLeft, 48)
+    assert.equal(fs.newSessionLeft + TOPBAR_TOGGLE_SIZE_PX, 80)
+    assert.equal(fs.toggleEnd, 88)
+    assert.equal(doc.documentElement.style.getPropertyValue('--omnimux-topbar-toggle-left'), '8px')
+    assert.equal(doc.documentElement.style.getPropertyValue('--omnimux-topbar-new-session-left'), '48px')
+    assert.equal(doc.documentElement.style.getPropertyValue('--omnimux-topbar-toggle-end'), '88px')
+
+    // Exit fullscreen -> restores 84px traffic-light inset
+    doc.documentElement.removeAttribute('data-fullscreen')
+    await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal(doc.documentElement.style.getPropertyValue('--omnimux-topbar-toggle-left'), '84px')
+    assert.equal(doc.documentElement.style.getPropertyValue('--omnimux-topbar-toggle-end'), '164px')
+
+    cleanup()
+  })
+
+  it('recognizes Next shell html[data-platform="darwin"] without legacy body desktop markers', async () => {
+    const doc = setup()
+    // dsh-desktop-next sets html[data-platform="darwin"] via preload-platform.ts and never sets body[data-dsh-desktop-mode].
+    doc.documentElement.setAttribute('data-platform', 'darwin')
+    const cleanup = installSidebarToggleTopbar(doc)
+
+    const windowed = computeChromeLayout(doc)
+    assert.equal(windowed.toggleLeft, TOPBAR_MACOS_INSET_PX)
+    assert.equal(windowed.newSessionLeft, 124)
+    assert.equal(windowed.newSessionLeft + TOPBAR_TOGGLE_SIZE_PX, 156)
+    assert.equal(doc.documentElement.style.getPropertyValue('--omnimux-topbar-toggle-left'), '84px')
+
+    doc.documentElement.setAttribute('data-fullscreen', '')
+    await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal(computeChromeLayout(doc).toggleLeft, TOPBAR_TOGGLE_LEFT_PX)
+    assert.equal(doc.documentElement.style.getPropertyValue('--omnimux-topbar-toggle-left'), '8px')
+
+    doc.documentElement.removeAttribute('data-fullscreen')
+    await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal(doc.documentElement.style.getPropertyValue('--omnimux-topbar-toggle-left'), '84px')
+
+    cleanup()
+  })
+
+  it('retires the DP-003 header override and keeps official 20px/10px padding with Route B clearance', () => {
+    assert.doesNotMatch(PRODUCT_STAGE_CHROME, /desktop-patch:DP-003/)
+    assert.doesNotMatch(
+      PRODUCT_STAGE_CHROME,
+      /data-omnimux-left-collapsed\]\s*\[data-slot="conversation\.header"\]/,
+    )
+    const intersects = (a, b) => Boolean(a && b) && a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+    const officialCss = `
+      .uPhUma_header { height: 50.5px; padding: 10px 28px 0 20px; box-sizing: border-box; }
+      .uPhUma_titleRow { height: 30px; }
+      .uPhUma_titleCluster { width: 260.5px; height: 28px; }
+    `
+    for (const [state, clearance] of [['expanded', 0], ['collapsed', 160], ['fullscreen', 84]]) {
+      const htmlAttrs = ['data-omnimux-sidebar-toggle-topbar', 'data-platform="darwin"']
+      if (state !== 'expanded') htmlAttrs.push('data-omnimux-left-collapsed')
+      if (state === 'fullscreen') htmlAttrs.push('data-fullscreen')
+      const rowPad = Math.max(0, clearance - 20)
+      for (const width of [980, 1280, 1800]) {
+        const doc = setup(`<!doctype html><html ${htmlAttrs.join(' ')}><body data-dsh-desktop-mode="extended" data-dsh-desktop-platform="darwin">
+          <div class="dshDesktopFrame"${state === 'expanded' ? '' : ' data-sidebar-collapsed="true"'} style="width:${width}px;grid-template-columns:${state === 'expanded' ? 280 : 0}px 1fr;--dsh-frame-leading-clearance:${clearance}px">
+            <div data-slot="conversation.header" style="display: contents">
+              <header class="uPhUma_header">
+                <div class="uPhUma_titleRow" style="padding-inline-start:${rowPad}px">
+                  <div class="uPhUma_titleCluster">会话标题</div>
+                </div>
+              </header>
+            </div>
+            <div class="tabBar_n" data-dsh-better-sidebar><div class="tabList_m"></div></div>
+          </div>
+        </body></html>`)
+        const style = doc.createElement('style')
+        style.textContent = `${officialCss}\n${PRODUCT_STAGE_CHROME}`
+        doc.head.append(style)
+        const headerStyle = doc.defaultView.getComputedStyle(doc.querySelector('.uPhUma_header'))
+        assert.equal(headerStyle.paddingLeft, '20px', 'DP-003 must not override official 20px header padding-left')
+        assert.equal(headerStyle.paddingTop, '10px', 'DP-003 must not override official 10px header padding-top')
+        const chrome = computeChromeLayout(doc)
+        const title = { x: (state === 'expanded' ? 280 : 0) + 20 + rowPad, y: 10, width: 260.5, height: 28 }
+        const toggle = { x: chrome.toggleLeft, y: 4, width: TOPBAR_TOGGLE_SIZE_PX, height: TOPBAR_TOGGLE_SIZE_PX }
+        if (state === 'expanded') {
+          assert.equal(chrome.newSessionLeft, null)
+          assert.equal(title.x, 300)
+        } else if (state === 'fullscreen') {
+          assert.equal(rowPad, 64)
+          assert.equal(title.x, 84)
+          assert.equal(toggle.x, TOPBAR_TOGGLE_LEFT_PX)
+          assert.equal(chrome.newSessionLeft, 48)
+          assert.ok(chrome.newSessionLeft + TOPBAR_TOGGLE_SIZE_PX <= title.x, 'collapsed fullscreen cluster right edge (80px) must fit inside 84px official clearance')
+        } else {
+          assert.equal(rowPad, 140)
+          assert.equal(title.x, 160)
+          assert.equal(toggle.x, TOPBAR_MACOS_INSET_PX)
+          assert.equal(chrome.newSessionLeft, 124)
+          assert.ok(chrome.newSessionLeft + TOPBAR_TOGGLE_SIZE_PX <= title.x, 'collapsed windowed cluster right edge (156px) must fit inside 160px official clearance')
+        }
+        const newSession = chrome.newSessionLeft === null
+          ? null
+          : { x: chrome.newSessionLeft, y: 4, width: TOPBAR_TOGGLE_SIZE_PX, height: TOPBAR_TOGGLE_SIZE_PX }
+        assert.equal(intersects(title, toggle), false, 'title must not intersect the open-sidebar control')
+        assert.equal(intersects(title, newSession), false, 'title must not intersect the new-session control')
+      }
+    }
+    // Reverse proof: keeping the 84px traffic-light inset in fullscreen collides with official 84px clearance.
+    const staleTitle = { x: 84, y: 10, width: 260.5, height: 28 }
+    const staleNewSession = { x: 124, y: 4, width: TOPBAR_TOGGLE_SIZE_PX, height: TOPBAR_TOGGLE_SIZE_PX }
+    assert.equal(intersects(staleTitle, staleNewSession), true)
   })
 
   it('syncNativeRightbarControls preserves native mode and split control order', () => {
@@ -2067,6 +2223,41 @@ describe('topbar anchor visibility (#67 AC-4)', () => {
       assert.equal(doc.documentElement.hasAttribute(SIDEBAR_TOGGLE_TOPBAR_HTML_ATTR), false)
     } finally {
       stop()
+    }
+  })
+
+  it('stays anchored to body and expands cleanly when explicitLeftCollapseIntent holds collapse after shell auto-expands', () => {
+    const doc = setup(`<!doctype html><html><body>
+      <div class="vcssFG_frame">
+        <div class="vcssFG_sidebarCol">
+          <div class="OgAdAW_topStrip"><button type="button" aria-label="收起侧边栏">T</button></div>
+        </div>
+      </div>
+    </body></html>`)
+    mockRect(doc.body, rect(0, 0, 1280, 840))
+    const topStrip = doc.querySelector('.OgAdAW_topStrip')
+    mockRect(topStrip, rect(0, 0, 280, 52))
+    const official = doc.querySelector('button[aria-label="收起侧边栏"]')
+    let officialClicks = 0
+    official.addEventListener('click', () => { officialClicks += 1 })
+
+    try {
+      setExplicitLeftCollapseIntent(true)
+      const btn = ensureSidebarToggleTopbar(doc, { allowBodyFallback: true })
+      assert.ok(btn, '显式折叠意图下按钮必须成功注入')
+      assert.equal(doc.documentElement.hasAttribute(LEFT_COLLAPSED_HTML_ATTR), true)
+      assert.equal(doc.documentElement.hasAttribute(SIDEBAR_TOGGLE_TOPBAR_HTML_ATTR), true)
+      assert.equal(findTopbarAnchor(doc, { skipCollapsedSidebarAnchors: true }), null, '折叠态不得选中会被 CSS 隐藏的 sidebarCol topStrip')
+      assert.equal(btn.parentElement, doc.body, '折叠态必须挂到 body 避免 60fps 显隐震荡')
+
+      // 点击展开按钮：宿主已经未折叠，不得反点原生按钮把它折回去，应直接清除折叠态并迁回 topStrip
+      btn.click()
+      assert.equal(officialClicks, 0, '宿主已展开时不得反向触发原生按钮')
+      assert.equal(getExplicitLeftCollapseIntent(), false)
+      assert.equal(doc.documentElement.hasAttribute(LEFT_COLLAPSED_HTML_ATTR), false)
+      assert.equal(btn.parentElement, topStrip, '展开后按钮必须迁回可见 topStrip')
+    } finally {
+      setExplicitLeftCollapseIntent(null)
     }
   })
 })

@@ -25,12 +25,13 @@ export function resolveClipPaths(opts = {}) {
     projectsDir: join(dir, 'projects'),
     exportsDir: join(dir, 'exports'),
     snapshotsDir: join(dir, 'snapshots'),
+    blobsDir: join(dir, 'blobs'),
     tmpDir: join(dir, 'tmp'),
   }
 }
 
 /**
- * Ensure `{projects,exports,snapshots,tmp}/` exist. Safe to call on every
+ * Ensure `{projects,exports,snapshots,blobs,tmp}/` exist. Safe to call on every
  * plugin apply — mkdir is recursive and idempotent.
  * @param {ReturnType<typeof resolveClipPaths>} paths
  * @param {{ mkdirSync?: typeof mkdirSync }} [fs]
@@ -40,6 +41,7 @@ export function ensureClipDirs(paths, fs = { mkdirSync }) {
   fs.mkdirSync(paths.projectsDir, { recursive: true, mode: 0o700 })
   fs.mkdirSync(paths.exportsDir, { recursive: true, mode: 0o700 })
   fs.mkdirSync(paths.snapshotsDir, { recursive: true, mode: 0o700 })
+  if (paths.blobsDir) fs.mkdirSync(paths.blobsDir, { recursive: true, mode: 0o700 })
   fs.mkdirSync(paths.tmpDir, { recursive: true, mode: 0o700 })
   return paths
 }

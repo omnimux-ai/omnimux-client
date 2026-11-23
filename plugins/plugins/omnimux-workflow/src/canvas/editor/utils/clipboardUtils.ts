@@ -139,7 +139,7 @@ function copyNodeData(node: CanvasNode): CanvasNode['data'] {
   if (node.type !== 'video_composition') return node.data;
   const data = { ...node.data };
   for (const key of [
-    'schema', 'draftRevision', 'clipExportReceipts', 'outputVideoUrl', 'outputRevision', 'thumbnailUrl', 'outputThumbnailUrl',
+    'schema', 'draftRevision', 'clipExportReceipts', 'outputVideoUrl', 'outputMediaHandle', 'outputRevision', 'thumbnailUrl', 'outputThumbnailUrl',
     'outputDurationMs', 'outputWidth', 'outputHeight', 'durationText', 'renderProgress', 'errorMessage',
   ]) {
     delete data[key];

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { ClipDomainError } from '../errors.js'
-import { canvasWorkspaceMediaUrl, finite, isRecord, isReferenceId, items, MEDIA_TYPES, OVERLAY_FIELDS, reconnectMediaUrl, sha256Digest, sourceIdentity, TRACK_TYPES } from '../timeline/nativeProjectFields.js'
+import { canvasWorkspaceMediaUrl, finite, isRecord, isReferenceId, items, MEDIA_TYPES, normalizeMediaHandle, OVERLAY_FIELDS, reconnectMediaUrl, sha256Digest, sourceIdentity, TRACK_TYPES } from '../timeline/nativeProjectFields.js'
 
 const DEFAULT_SETTINGS = { width: 1920, height: 1080, frameRate: 30, sampleRate: 48000, channels: 2 }
 const RUNTIME_FIELDS = new Set(['blob', 'fileHandle', 'waveformData', 'thumbnailUrl', 'filmstripThumbnails'])
@@ -92,7 +92,8 @@ function normalizeMedia(item, { allowMediaStatus, originalProjectId, workspaceId
   } = item
   const source = sourceIdentity(omnimuxSource)
   const safeUrl = source ? reconnectMediaUrl(omnimuxSource.url, workspaceId) : undefined
-  const digest = sha256Digest(omnimuxSource?.digest)
+  const handle = source ? normalizeMediaHandle(omnimuxSource.handle, workspaceId) : undefined
+  const digest = sha256Digest(omnimuxSource?.digest) ?? sha256Digest(handle?.sha256)
   // Availability is confirmed by the active editor for an explicit IDB key.
   // A raw import (including JSON's {} for Blob) cannot attest to local bytes.
   const missing = !(allowMediaStatus && sourceRef?.kind === 'indexeddb' && sourceRef.key === item.id
@@ -108,7 +109,7 @@ function normalizeMedia(item, { allowMediaStatus, originalProjectId, workspaceId
     },
     ...(fileName ? { sourceFile: { name: fileName, size: finite(sourceFile.size, 0), lastModified: finite(sourceFile.lastModified, 0) } } : {}),
     ...(idbProxy ? { proxy: { ...idbProxy, previewPath: undefined } } : {}),
-    ...(source ? { omnimuxSource: { ...source, ...(safeUrl ? { url: safeUrl } : {}), ...(digest ? { digest } : {}) } } : {}),
+    ...(source ? { omnimuxSource: { ...source, ...(safeUrl ? { url: safeUrl } : {}), ...(digest ? { digest } : {}), ...(handle ? { handle } : {}) } } : {}),
     sourceRef: mediaReference(item, originalProjectId, workspaceId),
     missing,
     isPlaceholder: missing,

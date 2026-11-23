@@ -4,11 +4,11 @@ import { readReferenceStorage, saveReferenceStorage } from './config.js'
 
 /** Private same-origin settings face. Values cross into credentials only, never out. */
 export function registerReferenceStorageRoutes(server, deps) {
-  return server.register({ kind: 'exact', path: '/omnimux/reference-storage/config', async handler(req, res) {
+  return server.register({ kind: 'exact', path: '/omnimux/reference-storage/config', auth: 'required', async handler(req, res, peer) {
     const method = (req.method || 'GET').toUpperCase()
     res.setHeader('Cache-Control', 'private, no-store')
     res.setHeader('X-Content-Type-Options', 'nosniff')
-    const rejected = requestRejection(req, deps.getConnection)
+    const rejected = requestRejection(req, deps.getConnection, peer)
     if (rejected !== undefined) return sendJson(res, rejected, { error: '访问未获授权', code: 'request-denied' })
     if (!['GET', 'PUT'].includes(method)) return sendJson(res, 405, { error: '不支持此操作', code: 'method-not-allowed' })
     try {

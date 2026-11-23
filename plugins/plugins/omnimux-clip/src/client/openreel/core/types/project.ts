@@ -236,9 +236,15 @@ export interface MediaProxyRef {
   readonly createdAt: number;
 }
 
+export type OmnimuxMediaHandle =
+  | { readonly v: 1; readonly scope: "project-asset"; readonly workspaceId: string; readonly assetId?: string; readonly rel: string; readonly sha256?: string }
+  | { readonly v: 1; readonly scope: "library-file"; readonly libraryAssetId: string; readonly fileId: string; readonly sha256?: string }
+  | { readonly v: 1; readonly scope: "clip-vault"; readonly sha256: string; readonly mimeType: string; readonly size: number }
+  | { readonly v: 1; readonly scope: "canvas-node"; readonly workspaceId: string; readonly nodeId: string; readonly outputIndex: number; readonly sha256?: string };
+
 export interface MediaItem {
   readonly id: string;
-  readonly omnimuxSource?: { readonly id: string; readonly version: string; readonly url?: string; readonly digest?: string };
+  readonly omnimuxSource?: { readonly id: string; readonly version: string; readonly url?: string; readonly digest?: string; readonly handle?: OmnimuxMediaHandle };
   readonly sourceRef?: {
     readonly kind: "indexeddb" | "legacy";
     readonly key?: string;

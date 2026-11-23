@@ -586,9 +586,11 @@ export const ANALYTICS_CSS = `
 
 export function injectAnalyticsStyles() {
   if (typeof document === 'undefined') return
-  if (document.getElementById(STYLES_ID)) return
-  const styleNode = document.createElement('style')
-  styleNode.id = STYLES_ID
-  styleNode.textContent = ANALYTICS_CSS
-  document.head.appendChild(styleNode)
+  let styleNode = document.getElementById(STYLES_ID)
+  if (!styleNode) {
+    styleNode = document.createElement('style')
+    styleNode.id = STYLES_ID
+    document.head.appendChild(styleNode)
+  }
+  if (styleNode.textContent !== ANALYTICS_CSS) styleNode.textContent = ANALYTICS_CSS
 }

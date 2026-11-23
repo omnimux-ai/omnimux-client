@@ -187,6 +187,7 @@
     "catalog-snapshot-preserve.test.mjs",
     "check-plugin-files.mjs",
     "check-plugin-files.test.mjs",
+    "clip-media-unification-qa.mjs",
     "composer-inline-bootstrap.mjs",
     "composer-inline-bootstrap.test.mjs",
     "composer-inline-e2e.mjs",

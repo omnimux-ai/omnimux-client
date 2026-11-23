@@ -2293,9 +2293,13 @@ export const WORKFLOW_CSS = `
 
 export function injectWorkflowStyles() {
   if (typeof document === 'undefined') return
-  if (document.getElementById(STYLES_ID)) return
-  const styleNode = document.createElement('style')
-  styleNode.id = STYLES_ID
-  styleNode.textContent = WORKFLOW_CSS
-  document.head.appendChild(styleNode)
+  let styleNode = document.getElementById(STYLES_ID)
+  if (!styleNode) {
+    styleNode = document.createElement('style')
+    styleNode.id = STYLES_ID
+    document.head.appendChild(styleNode)
+  }
+  if (styleNode.textContent !== WORKFLOW_CSS) {
+    styleNode.textContent = WORKFLOW_CSS
+  }
 }

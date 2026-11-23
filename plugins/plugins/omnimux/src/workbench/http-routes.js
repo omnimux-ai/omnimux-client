@@ -41,13 +41,14 @@ export function registerWorkbenchHttpRoutes(webServer, deps) {
   disposers.push(webServer.register({
     kind: 'exact',
     path: '/omnimux/workbench/viewport',
-    handler: async (req, res) => {
+    auth: 'required',
+    handler: async (req, res, peer) => {
       if (req.method !== 'POST') {
         sendJson(res, 405, { ok: false, error: 'method-not-allowed' })
         return
       }
 
-      const rejection = requestRejection(req, deps.getConnection)
+      const rejection = requestRejection(req, deps.getConnection, peer)
       if (rejection !== undefined) return sendJson(res, rejection, { ok: false, error: 'request-denied' })
 
       const body = await readJsonBody(req)
@@ -73,13 +74,14 @@ export function registerWorkbenchHttpRoutes(webServer, deps) {
   disposers.push(webServer.register({
     kind: 'exact',
     path: '/omnimux/workbench/rpc/ack',
-    handler: async (req, res) => {
+    auth: 'required',
+    handler: async (req, res, peer) => {
       if (req.method !== 'POST') {
         sendJson(res, 405, { ok: false, error: 'method-not-allowed' })
         return
       }
 
-      const rejection = requestRejection(req, deps.getConnection)
+      const rejection = requestRejection(req, deps.getConnection, peer)
       if (rejection !== undefined) return sendJson(res, rejection, { ok: false, error: 'request-denied' })
 
       const body = await readJsonBody(req)

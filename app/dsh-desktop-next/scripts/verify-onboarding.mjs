@@ -1,6 +1,6 @@
 /** Exercise Desktop continuation in the actual official frontend and Loader, in a temporary home. */
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -9,6 +9,8 @@ import { chromium } from 'playwright'
 import { DesktopHostProcess } from '../lib/host-process.js'
 import { NextProfiles } from '../lib/profiles.js'
 import { authenticateWebHost, serveWebDocument } from '../lib/web-document.js'
+import { ONBOARDING_STYLE_ATTRIBUTE } from '../src/client/onboarding-style-scope.ts'
+import { OFFICIAL_PLUGIN_INDEX } from '../src/upstream-family-labels.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const require = createRequire(import.meta.url)
@@ -118,6 +120,17 @@ try {
   assert.notEqual(await shell.evaluate(element => getComputedStyle(element).getPropertyValue('--spacing').trim()), '')
   assert.match(await shell.locator('h1').innerText(), /OmniMux/)
   await page.screenshot({ path: join(screenshots, 'onboarding-official-welcome.png') })
+  await shell.getByText('经典', { exact: true }).click()
+  await shell.getByRole('radio', { name: '经典', exact: true, checked: true }).waitFor()
+  assert.match(await whale(), /DeepSeek/)
+  assert.deepEqual(standaloneCommands.splice(0), [{ type: 'app-icon', appIcon: 'classic' }])
+  await page.evaluate(async () => {
+    await Promise.all(document.getAnimations().map(animation => animation.finished.catch(() => {})))
+  })
+  await page.screenshot({ path: join(screenshots, 'onboarding-official-welcome-classic.png') })
+  await shell.getByText('默认', { exact: true }).click()
+  await shell.getByRole('radio', { name: '默认', exact: true, checked: true }).waitFor()
+  assert.deepEqual(standaloneCommands.splice(0), [{ type: 'app-icon', appIcon: 'default' }])
   await next()
   const backBounds = await shell.getByRole('button', { name: /^(上一步|Back)$/ }).boundingBox()
   const progressBounds = await shell.locator('.next-onboarding-progress').boundingBox()
@@ -132,16 +145,16 @@ try {
   await shell.getByRole('switch').uncheck()
   assert.equal(await shell.getByRole('radio', { name: 'dsh-community-market', exact: true }).isDisabled(), true)
   assert.equal(await shell.getByRole('radio', { name: 'dsh-market', exact: true }).isDisabled(), true)
-  assert.equal(await shell.getByRole('radio', { name: '自定义插件市场', exact: true }).isDisabled(), false)
-  await shell.getByText('自定义插件市场', { exact: true }).click()
-  assert.equal(await shell.getByRole('radio', { name: '自定义插件市场', exact: true }).isChecked(), true)
+  assert.equal(await shell.getByRole('radio', { name: OFFICIAL_PLUGIN_INDEX.title.zh, exact: true }).isDisabled(), false)
+  await shell.getByText(OFFICIAL_PLUGIN_INDEX.title.zh, { exact: true }).click()
+  assert.equal(await shell.getByRole('radio', { name: OFFICIAL_PLUGIN_INDEX.title.zh, exact: true }).isChecked(), true)
   await shell.getByRole('switch').check()
   await shell.getByText('dsh-market', { exact: true }).click()
   assert.equal(await shell.getByRole('radio', { name: 'dsh-market', exact: true }).isChecked(), true)
-  assert.equal(await shell.getByRole('radio', { name: '自定义插件市场', exact: true }).isChecked(), true)
+  assert.equal(await shell.getByRole('radio', { name: OFFICIAL_PLUGIN_INDEX.title.zh, exact: true }).isChecked(), true)
   assert.equal(await shell.getByRole('radio', { name: 'dsh-community-market', exact: true }).isChecked(), false)
-  await shell.getByText('自定义插件市场', { exact: true }).click()
-  assert.equal(await shell.getByRole('radio', { name: '自定义插件市场', exact: true }).isChecked(), false)
+  await shell.getByText(OFFICIAL_PLUGIN_INDEX.title.zh, { exact: true }).click()
+  assert.equal(await shell.getByRole('radio', { name: OFFICIAL_PLUGIN_INDEX.title.zh, exact: true }).isChecked(), false)
   assert.equal(await shell.getByRole('radio', { name: 'dsh-market', exact: true }).isChecked(), true)
   await page.screenshot({ path: join(screenshots, 'onboarding-official-market-macos.png') })
   await next()
@@ -187,7 +200,7 @@ try {
   await shell.getByRole('radio', { name: '局域网', exact: true, checked: true }).waitFor()
   await page.screenshot({ path: join(screenshots, 'onboarding-official-browser-access.png') })
   await next()
-  assert.match(await shell.locator('.next-onboarding-recovery').innerText(), /桌面设置最底部/)
+  assert.match(await shell.locator('.next-onboarding-recovery').innerText(), /桌面设置的“诊断与恢复”中打开/)
   rejectSave = true
   await finish()
   await shell.getByRole('alert').filter({ hasText: 'could not save Profile' }).waitFor()
@@ -207,6 +220,13 @@ try {
   await surface.getByRole('button', { name: /^(重试|Retry)$/ }).first().click()
   await surface.getByRole('heading', { name: '桌面设置已完成' }).waitFor()
   assert.equal(await page.locator('#root').evaluate(element => element.inert), true)
+  // The onboarding-only sheet follows the Desktop surface through a root mark. A :root:has() scope
+  // would restyle the whole document after every DOM change, including streamed replies.
+  const onboardingStyled = () => page.evaluate(attribute => document.documentElement.hasAttribute(attribute), ONBOARDING_STYLE_ATTRIBUTE)
+  assert.equal(await onboardingStyled(), true)
+  assert.equal(await surface.locator('.dshDesktopAccountSetup').evaluate(node => getComputedStyle(node).paddingTop), '64px')
+  assert.equal(await page.evaluate(plugin => [...document.styleSheets].some(sheet => sheet.ownerNode?.dataset?.plugin === plugin
+    && [...sheet.cssRules].some(rule => rule.cssText.includes(':root:has('))), JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).name), false)
   await captureAccount('onboarding-official-account-choice.png')
   await surface.getByRole('button', { name: '登录 DeepSeek' }).click()
   await surface.getByRole('alert').filter({ hasText: 'account choice save failed' }).waitFor()
@@ -216,6 +236,7 @@ try {
   await login.waitFor()
   await surface.waitFor({ state: 'hidden' })
   assert.equal(await surface.count(), 0)
+  assert.equal(await onboardingStyled(), false)
   await captureAccount('onboarding-official-account-login.png')
   await login.getByRole('button', { name: '添加 API Key', exact: true }).click()
   await login.waitFor({ state: 'hidden' })
@@ -241,7 +262,7 @@ try {
   await next(); await shell.getByRole('switch').check(); await skip()
   assert.deepEqual(standaloneCommands.at(-1), { type: 'onboarding-skip', profile: 'desktop' })
   assert.deepEqual(errors, [])
-  console.log(`Next onboarding passed in standalone pre-Host shell and official account continuation: independent native eligibility, official progress ${officialPending ? 'unfinished' : 'completed'}, state-read and save retries, six pages, artwork, back navigation, choices, skip, completion, inert cleanup, and no repeat.`)
+  console.log(`Next onboarding passed in standalone pre-Host shell and official account continuation: independent native eligibility, official progress ${officialPending ? 'unfinished' : 'completed'}, state-read and save retries, six pages, artwork, the app icon choice, back navigation, choices, skip, completion, inert cleanup, and no repeat.`)
 } catch (error) {
   console.error(errors)
   if (page) { console.error(await page.locator('body').innerText()); await page.screenshot({ path: join(screenshots, 'onboarding-failure.png') }).catch(() => {}) }
