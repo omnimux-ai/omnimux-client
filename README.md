@@ -30,6 +30,7 @@
 <p align="center">
   <a href="#quick-start">Quick Start</a> ·
   <a href="#showcase">Showcase</a> ·
+  <a href="#cloud-assets">Cloud Assets</a> ·
   <a href="#capabilities">Interface &amp; Capabilities</a> ·
   <a href="#ecosystem">Skills &amp; Ecosystem</a> ·
   <a href="#models">Models</a> ·
@@ -51,9 +52,10 @@
 
 ---
 
-**OmniMux** solves the biggest headache in AI product video production: scattered prompts, inconsistent characters/products, and one-off web tools that lock your files in the cloud. It brings your **Product & Asset Libraries, Inspiration Teardown, Infinite Multimodal Canvas, and Multi-Track Clip Studio** into one local-first desktop app built on [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), where humans and AI Agents edit the exact same live workspace.
+**OmniMux** solves the biggest headache in AI product video production: scattered prompts, inconsistent characters/products, and one-off web tools that lock your files in the cloud. It brings your **Product Library, 6,380+ Built-in Cloud & Local Assets, Inspiration Teardown, Infinite Multimodal Canvas, and Multi-Track Clip Studio** into one local-first desktop app built on [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), where humans and AI Agents edit the exact same live workspace.
 
 - 🛍️ **Stop re-briefing your product every prompt** — Paste a landing page to extract selling points and local media refs, save reusable characters/scenes/styles, and mention `@Product` in any chat or canvas.
+- ☁️ **6,380+ built-in cloud assets ready out of the box** — Browse 350+ multi-filter digital humans, 3,390+ real-world scenes, 940 product props, 700+ first-3-second viral hooks, 150+ visual style packs, and 610+ voiceover/BGM tracks inside the Asset Center—audition live, save locally in one click, or attach straight into chat and workflows.
 - 🔍 **Turn reference videos into production briefs** — Capture posts via the Chrome companion, keep original copy & translations, break down hooks clip-by-clip, and send selected segments straight into a new session.
 - 🧩 **Co-edit workflows and timelines with your Agent** — Wire image, video, lip-sync, voiceover, and music nodes on a DAG canvas, then refine timing in the built-in multi-track timeline and export MP4 locally.
 - 🔑 **Zero-CLI desktop app with local-first storage & BYOK** — Native macOS and Windows installers bundle the runtime and plugins. Use the unified OmniMux route or bring your own API keys (BYOK) locally.
@@ -195,6 +197,45 @@ Real vertical e-commerce video formats built around product briefs, reusable vis
 
 ---
 
+<a id="cloud-assets"></a>
+
+## ☁️ 6,380+ Built-in Cloud Assets
+
+OmniMux ships with a **6,382-item built-in public cloud asset catalog** directly inside **Asset Center → Public** (`omnimux-assets`). Creators and Agents can search, filter across multi-dimensional attributes, audition clips and voices live, save any item to the local Asset Library in one click, or attach it straight into chat and Workflow Canvas nodes without sourcing materials from scratch.
+
+| Category | Built-in Items | Sub-Categories & Key Highlights |
+| --- | :---: | --- |
+| **Characters & Digital Humans** | **423** | **353 Digital Humans** filterable across **9 dimensions** (Type, Gender, Age, Figure, Name, Industry, Scene, Pose, Outfit Style), plus Meme (25), Fantasy (25), and Animal (20) characters |
+| **Real-World Scenes** | **3,396** | Leisure (1,051), Nature (538), City Streets (511), Travel & Car (504), Indoor Living (449), and Workplace (343) environments |
+| **Product & Commerce Props** | **940** | Books & Stationery (488), 3C Digital (172), Food & Drinks (124), Beauty & Care (114), and Instruments & Toys (42) |
+| **Hooks & Video Materials** | **855** | **705 First-3-Second Viral Hooks** and **150 Dynamic Green-Screen Clips** ready for drop-in openings |
+| **Audio, Voices & BGM** | **617** | **509 Voiceovers**, **103 BGM Tracks**, and **5 SFX** with instant hover audition |
+| **Visual Style Packs** | **151** | Live Action (35), 2D Anime (35), 3D Render (35), Mood & Tone (35), Photography (7), and Traditional Art (4) |
+
+<p align="center">
+  <img src="docs/readme/ui/omnimux-cloud-digital-humans.jpg" width="100%" alt="OmniMux Built-in Cloud Digital Humans — 353+ digital humans with 9-dimension filters, live video audition, one-click save to local, and attach to chat">
+</p>
+<p align="center">
+  <sub><strong>Built-in Digital Humans (Public → Characters):</strong> Filter 353+ realistic speaking avatars across 9 attributes, audition on hover, save to local library, or send straight to Agent chat.</sub>
+</p>
+
+<table width="100%">
+  <tr>
+    <td width="50%" align="center" valign="top">
+      <img src="docs/readme/ui/omnimux-cloud-assets-overview.jpg" width="100%" alt="OmniMux Public Cloud Asset Center Overview — Characters, Scenes, Props, Material, Styles, and Audio"><br>
+      <strong>Public Cloud Asset Center Overview</strong><br>
+      <sub>Browse all six curated asset categories directly inside the desktop app with instant search and category tabs</sub>
+    </td>
+    <td width="50%" align="center" valign="top">
+      <img src="docs/readme/ui/omnimux-cloud-scenes-props.jpg" width="100%" alt="OmniMux Built-in Real-World Scenes and Physical E-Commerce Props"><br>
+      <strong>3,396 Real-World Scenes &amp; 940 Commerce Props</strong><br>
+      <sub>Ready-to-use urban, indoor, lifestyle, and tabletop backdrops plus physical product display props</sub>
+    </td>
+  </tr>
+</table>
+
+---
+
 <a id="capabilities"></a>
 <a id="interface"></a>
 
@@ -205,7 +246,7 @@ Every core OmniMux module ships with a **dual surface**: a visual interface for 
 | Module | What you can do directly | How your Agent collaborates |
 | --- | --- | --- |
 | **Product Library** (`omnimux-products`) | Paste landing pages to parse selling points, audience & pricing; preview desktop/mobile captures; bind local media via read-only path refs (never moves or deletes originals) | Read structured product profiles via `@Product` so hooks, scripts, and visual prompts stay factually consistent |
-| **Creative Asset Library** (`omnimux-assets`) | Manage reusable **Characters, Scenes, Style Packs, Props, Knowledge Packs, and Custom** assets with multi-angle refs, plus browse cloud asset catalogs | Search, inspect, and inject pinned character/style references into storyboards and generation nodes |
+| **Creative Asset Center** (`omnimux-assets`) | Browse **6,380+ built-in cloud assets** (Digital Humans, Scenes, Props, Hooks, Styles, Audio) with one-click local save, and organize your own local **Characters, Scenes, Style Packs, Props, Knowledge Packs, and Custom** refs | Search both cloud and local libraries, save selected cloud assets locally, and inject pinned `@Asset` references into storyboards and generation nodes |
 | **Inspiration & Browser Companion** (`omnimux-inspiration`, `omnimux-browser`) | Hover-capture media with the Chrome MV3 extension over a local authenticated WebSocket bridge; organize local collections with original copy + translations | Break down whole posts, copy, or single clips into structured hooks and attach selected segments into a new session |
 | **Infinite Workflow Canvas** (`omnimux-workflow`) | Drag and wire prompt, reference image, first/last-frame video, lip-sync, and music nodes on a DAG canvas; run full graphs, subgraphs, or single nodes with checkpoint recovery | Inspect live canvas snapshots, add/update/connect nodes, switch verified model lines, and monitor long-running jobs |
 | **Clip Studio** (`omnimux-clip`) | Edit on a three-pane multi-track timeline, inspect real composited frames, and export MP4 locally via WebCodecs/WebGPU | Receive active project, revision, playhead, and selection via **AI Edit**; apply batched timeline edits with single-step undo and explicit export confirmation |
@@ -361,7 +402,7 @@ Release maturity is tracked directly in [`app/config/plugin-tiers.json`](app/con
 | --- | --- | --- |
 | **Native Desktop App** | `Released` | macOS (Apple Silicon & Intel) and Windows (x64) installers, Setup Wizard, auto-updates, and mobile remote control |
 | **Execution Hub & Model Routing** | `Preview` | Account login, official route & BYOK endpoints, unified multimodal generation, and timeout recovery |
-| **Product & Creative Asset Libraries** | `Preview` | Landing-page parsing, `@Product` mentions, six local asset types, and cloud asset browsing |
+| **Product & Creative Asset Libraries** | `Preview` | Landing-page parsing, `@Product` mentions, six local asset types, and 6,380+ built-in cloud assets (digital humans, scenes, props, hooks, styles & audio) |
 | **Inspiration Library & Browser Companion** | `Preview` | Post import, original copy & translation preservation, per-object breakdown, local collections, and Chrome hover capture |
 | **Infinite Canvas & Clip Studio** | `Preview` | Visual DAG orchestration, subgraph/checkpoint execution, multi-track timeline editing, AI Edit bridge, and local MP4 export |
 | **Plugin & Skill Market** | `Preview` | 120+ built-in skills, 100+ experts, plugins, and 12 MCP connectors |
