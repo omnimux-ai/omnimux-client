@@ -205,10 +205,16 @@ export function filterPresetSkills(skills = [], tabId = 'all', query = '') {
         if (!item)
             return false;
         if (tabId && tabId !== 'all') {
-            const cat = String(item.category || item.categoryLabel || '').trim();
-            const tags = Array.isArray(item.tags) ? item.tags.map(String) : [];
-            if (cat !== tabId && !tags.includes(tabId))
-                return false;
+            if (isScenarioTag(tabId)) {
+                if (!matchesScenarioTag(item, tabId))
+                    return false;
+            }
+            else {
+                const cat = String(item.category || item.categoryLabel || '').trim();
+                const tags = Array.isArray(item.tags) ? item.tags.map(String) : [];
+                if (cat !== tabId && !tags.includes(tabId))
+                    return false;
+            }
         }
         if (q) {
             const hay = [
@@ -335,6 +341,8 @@ export function plazaDiscoverySections(items = [], { category = '', query = '', 
     const matches = item => {
         if (!category || category === 'featured')
             return true;
+        if (isScenarioTag(category))
+            return matchesScenarioTag(item, category);
         if (presetBinding && Array.isArray(presetBinding.skills)) {
             const cat = String(item.category || item.categoryLabel || '').trim();
             const tags = Array.isArray(item.tags) ? item.tags.map(String) : [];
@@ -458,6 +466,96 @@ export const SKILL_SHELF_TAXONOMY = Object.freeze([
     { id: SUITE_SHELF_TAG, labelKey: 'picker.tab.suite', keywords: Object.freeze([SUITE_SHELF_TAG]) },
 ]);
 export const SKILL_SHELF_TAGS = Object.freeze(SKILL_SHELF_TAXONOMY.map((row) => row.id));
+/**
+ * 场景分类法（Skill 货架一级分类）唯一真源。
+ * 与 SKILL_SHELF_TAXONOMY（选择器/我的 Skill 的领域分类）相互独立：
+ * 场景回答「用户要完成什么营销任务」，领域回答「技能属于什么内容域」。
+ * 目录条目以 `scenario` 字段显式归属；旧条目按 `category` 做兼容映射。
+ */
+export const SKILL_SCENARIOS = Object.freeze((Array.isArray(catalog.skillScenarios) ? catalog.skillScenarios : [])
+    .filter((row) => row && row.id)
+    .map((row) => Object.freeze({
+    id: String(row.id),
+    title: String(row.title || row.titleZh || row.id),
+    titleZh: String(row.titleZh || row.title || row.id),
+    titleEn: String(row.titleEn || row.title || row.id),
+    labelKey: 'cat.' + String(row.id),
+})));
+export const SKILL_SCENARIO_TAGS = Object.freeze(SKILL_SCENARIOS.map((row) => row.id));
+const LEGACY_CATEGORY_SCENARIO = Object.freeze({
+    'ugc-testimonial': 'scene-seeding',
+    'storytelling-script': 'scene-brand',
+    'image-static': 'scene-performance',
+    'video-ads': 'scene-performance',
+    'product-showcase': 'scene-product',
+    'meme-native': 'scene-seeding',
+    other: 'scene-tools',
+});
+const SCENARIO_KEYWORDS = Object.freeze({
+    'scene-seeding': Object.freeze(['ugc', '种草', '测评', '开箱', '口碑', '真人', '自述', '采访', '试用', '晒单', '穿搭']),
+    'scene-brand': Object.freeze(['品牌', '形象片', '宣传片', '企业', 'b2b', '大片', '品牌故事', 'brand']),
+    'scene-product': Object.freeze(['商品', '产品', '主图', '详情页', '商详', '影棚', 'product']),
+    'scene-performance': Object.freeze(['广告', '投放', '信息流', '轮播', '海报', '落地页', 'cta', '促销', 'ad']),
+    'scene-app': Object.freeze(['app', '应用', '软件', 'saas', 'ui', '界面', '录屏', '商店']),
+    'scene-local': Object.freeze(['本地', '门店', '家政', '房产', '餐饮', '同城', '诊所']),
+    'scene-repurpose': Object.freeze(['复刻', '切片', '转短', '改编', '多画幅', '再制', 'repurpose']),
+    'scene-tools': Object.freeze(['音频', '配音', '脚本转', '分镜', '色彩', '工具', '流程']),
+});
+export function isScenarioTag(tag) {
+    return SKILL_SCENARIO_TAGS.includes(String(tag || '').trim());
+}
+function catalogScenarioForSlug(slug) {
+    const key = String(slug || '').replace(/^\//, '').trim();
+    if (!key)
+        return '';
+    const row = (Array.isArray(catalog.items) ? catalog.items : []).find((item) => item && item.kind === 'skill' && (item.skill === key || item.id === key));
+    return row && row.scenario ? String(row.scenario) : '';
+}
+/** 解析条目的场景：显式 scenario -> 目录同 slug 条目 -> 旧 category 兼容映射。 */
+export function scenarioForItem(item) {
+    if (!item)
+        return '';
+    const direct = String(item.scenario || '').trim();
+    if (direct)
+        return direct;
+    const byCatalog = catalogScenarioForSlug(item.skill || item.slug || item.catalogId || '');
+    if (byCatalog)
+        return byCatalog;
+    const legacy = LEGACY_CATEGORY_SCENARIO[String(item.category || item.categoryLabel || '').trim()];
+    return legacy || '';
+}
+export function matchesScenarioTag(item, tag) {
+    if (!item || !tag)
+        return true;
+    if (item.kind === 'suite')
+        return false;
+    const scenario = scenarioForItem(item);
+    if (scenario)
+        return scenario === tag;
+    const label = SKILL_SCENARIOS.find((row) => row.id === tag);
+    const tags = Array.isArray(item.tags) ? item.tags.map(String) : [];
+    if (label && tags.includes(label.titleZh))
+        return true;
+    const hay = [
+        item.category, item.categoryLabel, item.name, item.title, item.description, item.summary, tags.join(' '),
+    ].map((value) => String(value || '')).join(' ').toLowerCase();
+    return (SCENARIO_KEYWORDS[tag] || []).some((keyword) => hay.includes(String(keyword).toLowerCase()));
+}
+/** 场景计数：全部（技能条目）+ 各场景成员数。 */
+export function skillScenarioCounts() {
+    const counts = { total: 0, byId: {} };
+    for (const row of SKILL_SCENARIOS)
+        counts.byId[row.id] = 0;
+    for (const item of Array.isArray(catalog.items) ? catalog.items : []) {
+        if (!item || item.kind !== 'skill')
+            continue;
+        counts.total += 1;
+        const scenario = scenarioForItem(item);
+        if (scenario && Object.hasOwn(counts.byId, scenario))
+            counts.byId[scenario] += 1;
+    }
+    return counts;
+}
 export const PICKER_TABS = Object.freeze([
     { id: 'all', kind: 'all', labelKey: 'picker.tab.all' },
     { id: 'mine', kind: 'mine', labelKey: 'picker.tab.mine' },
@@ -535,6 +633,9 @@ export function keywordsForTag(tag) {
 export function matchesDomainTag(item, tag) {
     if (!item || !tag)
         return true;
+    // 场景分类走独立判定；套件不参与技能场景。
+    if (isScenarioTag(tag))
+        return matchesScenarioTag(item, tag);
     // 套件是独立条目形态：只落「套件」分类，且绝不混入任何技能领域分类。
     if (isLocalOnlyShelfTag(tag))
         return item.kind === 'suite';

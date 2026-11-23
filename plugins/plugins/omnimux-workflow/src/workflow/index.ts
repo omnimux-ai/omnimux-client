@@ -94,7 +94,10 @@ export function mountWorkflowHost(ctx: HostContext, opts: MountWorkflowHostOptio
   mkdirSync(paths.executionsDir, { recursive: true });
   mkdirSync(templatesDir, { recursive: true });
 
-  const libraryRoot = opts.libraryRoot ?? ensureLibraryRoot();
+  // Injected `paths` always means an isolated embedding/test harness: keep the
+  // project library under that root instead of touching the user's shared
+  // ~/Movies/OmniMux/Projects (and its .external-projects.json).
+  const libraryRoot = opts.libraryRoot ?? (opts.paths ? join(paths.root, 'library') : ensureLibraryRoot());
   const projectStore = createProjectStore({ libraryRoot });
   /**
    * 会话 id → 工作区目录（会话 `header.cwd`）。宿主 `agents` 服务缺失、会话已结束时

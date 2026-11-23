@@ -127,25 +127,67 @@ function atomicWriteJson(filePath: string, value: unknown): void {
   renameSync(tmp, filePath);
 }
 
-function readJsonFile(filePath: string): unknown {
-  if (!existsSync(filePath)) return undefined;
+type ProjectReadIssueKind = 'permission' | 'invalid-json' | 'invalid-schema' | 'read-error';
+
+interface ProjectReadIssue {
+  kind: ProjectReadIssueKind;
+  /** OS error code when the issue came from a file-system call. */
+  code?: string;
+}
+
+type JsonReadResult =
+  | { status: 'ok'; value: unknown }
+  | { status: 'missing' }
+  | { status: 'error'; failure: Exclude<ProjectReadIssueKind, 'invalid-schema'>; code?: string };
+
+function isPermissionCode(code: string | undefined): boolean {
+  return code === 'EPERM' || code === 'EACCES';
+}
+
+function isMissingCode(code: string | undefined): boolean {
+  return code === 'ENOENT' || code === 'ENOTDIR';
+}
+
+/** 读取 JSON 文件并保留失败类别；权限不足不得与文件损坏混为一谈。 */
+function readJsonFileResult(filePath: string): JsonReadResult {
   let raw: string;
   try {
     raw = readFileSync(filePath, 'utf8');
-  } catch {
-    return undefined;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (isMissingCode(code)) return { status: 'missing' };
+    return {
+      status: 'error',
+      failure: isPermissionCode(code) ? 'permission' : 'read-error',
+      ...(code ? { code } : {}),
+    };
   }
   try {
-    return JSON.parse(raw);
+    return { status: 'ok', value: JSON.parse(raw) };
   } catch {
-    return undefined;
+    return { status: 'error', failure: 'invalid-json' };
   }
+}
+
+function readJsonFile(filePath: string): unknown {
+  const result = readJsonFileResult(filePath);
+  return result.status === 'ok' ? result.value : undefined;
+}
+
+function issueFromError(error: unknown): ProjectReadIssue | null {
+  const code = (error as NodeJS.ErrnoException)?.code;
+  if (isMissingCode(code)) return null;
+  if (isPermissionCode(code)) return { kind: 'permission', code };
+  if (error instanceof SyntaxError) return { kind: 'invalid-json' };
+  return { kind: 'read-error', ...(code ? { code } : {}) };
 }
 
 interface ScannedJson {
   value?: unknown;
   /** Undefined when unreadable, null when missing. */
   stamp?: string | null;
+  /** Present when the path exists but could not be read or parsed. */
+  issue?: ProjectReadIssue;
 }
 
 async function readJsonForScan(file: string, signal: AbortSignal): Promise<ScannedJson> {
@@ -156,7 +198,8 @@ async function readJsonForScan(file: string, signal: AbortSignal): Promise<Scann
     });
   } catch (error) {
     signal.throwIfAborted();
-    return (error as NodeJS.ErrnoException).code === 'ENOENT' ? { stamp: null } : {};
+    const issue = issueFromError(error);
+    return issue ? { issue } : { stamp: null };
   }
 }
 
@@ -258,6 +301,62 @@ export function createProjectStore(opts: {
 
   let catalogRevision = 0;
 
+  // 每个 Store 实例各自记忆「目录 + 错误类别」的告警状态：同一外部目录在同一
+  // 不可读状态下多次列表只留 1 条 warn；恢复可读或从注册表移除后清除。
+  const externalIssueMemory = new Map<string, ProjectReadIssueKind>();
+  let registryIssueMemory: ProjectReadIssueKind | null = null;
+
+  function externalIssueMessage(dir: string, issue: ProjectReadIssue): string {
+    switch (issue.kind) {
+      case 'permission':
+        return `[project-store] external project at ${dir} is not readable (${issue.code ?? 'EACCES'}: permission denied); kept in registry. Grant access to this folder or remove the registration when it is unavailable`;
+      case 'invalid-json':
+        return `[project-store] external project at ${dir} has an invalid .omnimux/project.json (malformed JSON); kept in registry for repair`;
+      case 'invalid-schema':
+        return `[project-store] external project at ${dir} has an invalid .omnimux/project.json (schema validation failed); kept in registry for repair`;
+      default:
+        return `[project-store] external project at ${dir} could not be read (${issue.code ?? 'read error'}); kept in registry for repair`;
+    }
+  }
+
+  function reportExternalIssue(dir: string, issue: ProjectReadIssue): void {
+    if (externalIssueMemory.get(dir) === issue.kind) return;
+    externalIssueMemory.set(dir, issue.kind);
+    console.warn(externalIssueMessage(dir, issue));
+  }
+
+  function clearExternalIssue(dir: string): void {
+    externalIssueMemory.delete(dir);
+  }
+
+  function pruneExternalIssues(registeredDirs: readonly string[]): void {
+    const registered = new Set(registeredDirs.map((dir) => resolve(dir)));
+    for (const dir of externalIssueMemory.keys()) {
+      if (!registered.has(dir)) externalIssueMemory.delete(dir);
+    }
+  }
+
+  function registryIssueMessage(issue: ProjectReadIssue): string {
+    switch (issue.kind) {
+      case 'permission':
+        return `[project-store] external project registry at ${externalProjectsFile} is not readable (${issue.code ?? 'EACCES'}: permission denied); treating it as empty until access is restored`;
+      case 'invalid-json':
+        return `[project-store] external project registry at ${externalProjectsFile} has invalid JSON; treating it as empty until it is repaired`;
+      default:
+        return `[project-store] external project registry at ${externalProjectsFile} could not be read (${issue.code ?? 'read error'}); treating it as empty`;
+    }
+  }
+
+  function reportRegistryIssue(issue: ProjectReadIssue): void {
+    if (registryIssueMemory === issue.kind) return;
+    registryIssueMemory = issue.kind;
+    console.warn(registryIssueMessage(issue));
+  }
+
+  function clearRegistryIssue(): void {
+    registryIssueMemory = null;
+  }
+
   function directoryList(raw: unknown): string[] {
     if (!Array.isArray(raw)) return [];
     return raw.filter((item): item is string => typeof item === 'string' && item.trim() !== '');
@@ -272,7 +371,16 @@ export function createProjectStore(opts: {
   }
 
   function loadExternalProjectDirs(): string[] {
-    return directoryList(readJsonFile(externalProjectsFile));
+    const result = readJsonFileResult(externalProjectsFile);
+    if (result.status === 'error') {
+      reportRegistryIssue({
+        kind: result.failure === 'invalid-json' ? 'invalid-json' : result.failure,
+        ...(result.code ? { code: result.code } : {}),
+      });
+      return [];
+    }
+    clearRegistryIssue();
+    return result.status === 'ok' ? directoryList(result.value) : [];
   }
 
   function saveExternalProjectDirs(dirs: string[]): void {
@@ -324,34 +432,60 @@ export function createProjectStore(opts: {
     const missingRecordDirs = new Set<string>();
     for (const extDir of externalDirs) {
       const dir = resolve(extDir);
-      if (seenDirs.has(dir)) continue;
+      if (seenDirs.has(dir)) {
+        clearExternalIssue(dir);
+        continue;
+      }
       const file = join(dir, '.omnimux', 'project.json');
-      if (!existsSync(file)) {
+      const read = readJsonFileResult(file);
+      if (read.status === 'missing') {
         try {
           // A missing record in a reachable directory is distinct from a
           // registry root that itself is unavailable.
           if (statSync(dir).isDirectory() && statSync(file, { throwIfNoEntry: false }) === undefined) {
             missingRecordDirs.add(dir);
           }
-        } catch { /* Leave the entry recoverable on permission or mount errors. */ }
+          clearExternalIssue(dir);
+        } catch (error) {
+          // Keep the entry recoverable on mount errors; permission failures are
+          // diagnosable and must not be reported as a corrupt project file.
+          const issue = issueFromError(error);
+          if (issue) reportExternalIssue(dir, issue);
+          else clearExternalIssue(dir);
+        }
         continue;
       }
-      const raw = readJsonFile(file);
-      const project = parseProject(raw);
+      if (read.status === 'error') {
+        reportExternalIssue(dir, {
+          kind: read.failure === 'invalid-json' ? 'invalid-json' : read.failure,
+          ...(read.code ? { code: read.code } : {}),
+        });
+        continue;
+      }
+      const project = parseProject(read.value);
       if (!project) {
         // Registered external dir exists but its project.json is unreadable (corrupt
         // or unsupported schema). Keep it registered and leave a diagnostic instead of
         // silently dropping a real user project from the registry.
-        console.warn(`[project-store] external project at ${dir} has an unreadable .omnimux/project.json; kept in registry for repair`);
+        reportExternalIssue(dir, { kind: 'invalid-schema' });
         continue;
       }
       let physical: string;
-      try { physical = realpathSync(dir); } catch { continue; }
+      try {
+        physical = realpathSync(dir);
+      } catch (error) {
+        const issue = issueFromError(error);
+        if (issue) reportExternalIssue(dir, issue);
+        else clearExternalIssue(dir);
+        continue;
+      }
+      clearExternalIssue(dir);
       if (seenDirs.has(physical)) continue;
       rows.push({ dir, project });
       seenDirs.add(dir);
       seenDirs.add(physical);
     }
+    pruneExternalIssues(externalDirs);
     // A workspace with a valid record can rebuild a missing registry entry.
     for (const candidate of workspaceDirs()) {
       const lexical = resolve(candidate);
@@ -376,17 +510,25 @@ export function createProjectStore(opts: {
   }
 
   type ScannedProject = { dir: string; project: Project; bound: boolean; file: string; stamp: string };
+  type ProjectScanRead =
+    | { status: 'ok'; row: ScannedProject }
+    | { status: 'missing' }
+    | { status: 'issue'; issue: ProjectReadIssue };
   type Scan = { rows: ScannedProject[]; registry: ScannedJson; discovered: string[] };
   const scans = new SharedFileWork<Scan>();
   const reconciliations = new SharedFileWork<ProjectListSnapshot>();
   const externalScans = new SerialFileWork();
   let knownCanvas: { id: string; record: ProjectRecord | null } | undefined;
 
-  async function readProjectForScan(dir: string, bound: boolean, signal: AbortSignal): Promise<ScannedProject | null> {
+  async function readProjectForScan(dir: string, bound: boolean, signal: AbortSignal): Promise<ProjectScanRead> {
     const file = join(dir, '.omnimux', 'project.json');
-    const { value, stamp } = await readJsonForScan(file, signal);
-    const project = parseProject(value);
-    return project && typeof stamp === 'string' ? { dir, project, bound, file, stamp } : null;
+    const read = await readJsonForScan(file, signal);
+    if (read.issue) return { status: 'issue', issue: read.issue };
+    if (read.stamp === null) return { status: 'missing' };
+    const project = parseProject(read.value);
+    if (!project) return { status: 'issue', issue: { kind: 'invalid-schema' } };
+    if (typeof read.stamp !== 'string') return { status: 'issue', issue: { kind: 'read-error' } };
+    return { status: 'ok', row: { dir, project, bound, file, stamp: read.stamp } };
   }
 
   async function commitScannedJson(file: string, root: string, value: unknown, stamp: string | null,
@@ -429,21 +571,42 @@ export function createProjectStore(opts: {
         seen.add(join(realRoot, entry.name));
         return readProjectForScan(join(root, entry.name), false, scanSignal);
       }, scanSignal);
-      const rows = localRows.filter(row => row !== null);
+      const rows = localRows.flatMap(result => result.status === 'ok' ? [result.row] : []);
       const registry = await readJsonForScan(externalProjectsFile, scanSignal);
+      if (registry.issue) reportRegistryIssue(registry.issue);
+      else clearRegistryIssue();
       const registered = directoryList(registry.value);
       const discovered: string[] = [];
       const readExternal = async (candidate: string, inRegistry: boolean) => {
         scanSignal.throwIfAborted();
         const lexical = resolve(candidate);
-        const physical = await realpath(lexical).catch(() => null);
-        if (!physical || seen.has(physical)) return;
+        let physical: string;
+        try {
+          physical = await realpath(lexical);
+        } catch (error) {
+          const issue = issueFromError(error);
+          if (inRegistry && issue) reportExternalIssue(lexical, issue);
+          else if (inRegistry) clearExternalIssue(lexical);
+          return;
+        }
+        if (seen.has(physical)) {
+          if (inRegistry) clearExternalIssue(lexical);
+          return;
+        }
         seen.add(physical);
         const dir = inRegistry ? lexical : physical;
         const bound = !isInsideDir(dir, root) && !isInsideDir(physical, realRoot);
-        const row = await readProjectForScan(dir, bound, scanSignal);
-        if (!row) return;
-        rows.push(row);
+        const read = await readProjectForScan(dir, bound, scanSignal);
+        if (read.status === 'issue') {
+          if (inRegistry) reportExternalIssue(dir, read.issue);
+          return;
+        }
+        if (read.status === 'missing') {
+          if (inRegistry) clearExternalIssue(dir);
+          return;
+        }
+        if (inRegistry) clearExternalIssue(dir);
+        rows.push(read.row);
         if (!inRegistry && bound) discovered.push(dir);
       };
       // Walk potentially slow mounts after the local library, one at a time.
@@ -453,6 +616,7 @@ export function createProjectStore(opts: {
           for (const dir of new Set(workspaceDirs())) await readExternal(dir, false);
         });
       }
+      pruneExternalIssues(registered);
       return { rows, registry, discovered };
     });
   }
@@ -479,8 +643,8 @@ export function createProjectStore(opts: {
             record = repaired;
           } else {
             const current = await readProjectForScan(dir, bound, scanSignal);
-            if (!current) continue;
-            record = { ...current.project, path: dir };
+            if (current.status !== 'ok') continue;
+            record = { ...current.row.project, path: dir };
             // Only expose a newly allocated canvas ID after it has been saved.
             if (repairRecord(record) !== record) continue;
           }

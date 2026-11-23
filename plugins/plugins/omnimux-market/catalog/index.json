@@ -58,38 +58,43 @@
       "tab": "connectors"
     },
     {
-      "id": "ugc-testimonial",
-      "title": "UGC 和用户评价",
+      "id": "scene-seeding",
+      "title": "内容种草",
       "tab": "skills"
     },
     {
-      "id": "storytelling-script",
-      "title": "故事讲述和脚本",
+      "id": "scene-brand",
+      "title": "品牌宣传",
       "tab": "skills"
     },
     {
-      "id": "image-static",
-      "title": "图片和静态广告",
+      "id": "scene-product",
+      "title": "商品展示",
       "tab": "skills"
     },
     {
-      "id": "video-ads",
-      "title": "视频广告",
+      "id": "scene-performance",
+      "title": "效果广告",
       "tab": "skills"
     },
     {
-      "id": "product-showcase",
-      "title": "产品展示",
+      "id": "scene-app",
+      "title": "应用推广",
       "tab": "skills"
     },
     {
-      "id": "meme-native",
-      "title": "模因与原生",
+      "id": "scene-local",
+      "title": "本地生活",
       "tab": "skills"
     },
     {
-      "id": "other",
-      "title": "其它营销分类",
+      "id": "scene-repurpose",
+      "title": "内容再制",
+      "tab": "skills"
+    },
+    {
+      "id": "scene-tools",
+      "title": "通用工具",
       "tab": "skills"
     }
   ],
@@ -143,7 +148,8 @@
         "alt": "UGC 告白"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-seeding"
     },
     {
       "id": "sk-omx-cinematic",
@@ -184,7 +190,8 @@
         "alt": "电影级"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-brand"
     },
     {
       "id": "sk-omx-ugc-showcase",
@@ -225,7 +232,8 @@
         "alt": "UGC展示"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-product"
     },
     {
       "id": "sk-omx-ecommerce",
@@ -266,7 +274,8 @@
         "alt": "电子商务"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-performance"
     },
     {
       "id": "sk-omx-static-image",
@@ -307,7 +316,8 @@
         "alt": "静态图片"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-performance"
     },
     {
       "id": "sk-omx-carousel",
@@ -348,7 +358,8 @@
         "alt": "轮播"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-performance"
     },
     {
       "id": "sk-omx-course-to-short-video",
@@ -389,7 +400,8 @@
         "alt": "课程转短视频"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-repurpose"
     },
     {
       "id": "sk-omx-ugc-fit-check",
@@ -430,7 +442,8 @@
         "alt": "UGC穿搭检查"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-seeding"
     },
     {
       "id": "sk-omx-youth-sports-hype-reel",
@@ -470,7 +483,8 @@
         "alt": "青少年体育宣传片"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-brand"
     },
     {
       "id": "sk-omx-script-to-video",
@@ -511,7 +525,8 @@
         "alt": "脚本转视频"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-tools"
     },
     {
       "id": "sk-omx-service",
@@ -551,7 +566,8 @@
         "alt": "本地生活服务广告"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-local"
     },
     {
       "id": "sk-omx-ugc-unwrap",
@@ -591,7 +607,8 @@
         "alt": "UGC 开箱"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-seeding"
     },
     {
       "id": "sk-omx-animated-storymode",
@@ -631,7 +648,8 @@
         "alt": "动画故事模式"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-brand"
     },
     {
       "id": "sk-omx-ugc-walkthrough",
@@ -671,7 +689,8 @@
         "alt": "UGC 演练演示"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-seeding"
     },
     {
       "id": "sk-omx-games",
@@ -711,7 +730,8 @@
         "alt": "手游与电竞广告"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-brand"
     },
     {
       "id": "sk-omx-ctv",
@@ -751,7 +771,8 @@
         "alt": "联网电视大屏广告"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-performance"
     },
     {
       "id": "sk-omx-street-interview",
@@ -791,7 +812,8 @@
         "alt": "街头随机采访"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-seeding"
     },
     {
       "id": "sk-omx-podcast",
@@ -831,7 +853,8 @@
         "alt": "播客精彩切片"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-repurpose"
     },
     {
       "id": "sk-omx-audio-generation",
@@ -871,7 +894,8 @@
         "alt": "音频与音效生成"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-tools"
     },
     {
       "id": "sk-omx-meme",
@@ -911,7 +935,8 @@
         "alt": "网络模因与梗图广告"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-seeding"
     },
     {
       "id": "sk-omx-amazon-product-listing",
@@ -951,7 +976,8 @@
         "alt": "亚马逊商详图设计"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-product"
     },
     {
       "id": "sk-omx-ads-static-image-from-reference",
@@ -991,7 +1017,8 @@
         "alt": "参考图生成静态广告"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-performance"
     },
     {
       "id": "sk-omx-cinematic-dark-luxury-food-reveal",
@@ -1031,7 +1058,8 @@
         "alt": "电影感暗调奢华美食"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-brand"
     },
     {
       "id": "sk-omx-mobile-app-chaos-to-calm-confessional",
@@ -1071,7 +1099,8 @@
         "alt": "从混乱到宁静App告白"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-app"
     },
     {
       "id": "sk-omx-cinematic-home-services-multicity-arc",
@@ -1111,7 +1140,8 @@
         "alt": "家政服务多城市电影叙事"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-local"
     },
     {
       "id": "sk-omx-curated-lifestyle-brand-video",
@@ -1151,7 +1181,8 @@
         "alt": "格调生活品牌宣传片"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-brand"
     },
     {
       "id": "sk-omx-b2b-saas-dark-cinematic-exec-arc",
@@ -1191,7 +1222,8 @@
         "alt": "B2B高管暗黑商业短片"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-brand"
     },
     {
       "id": "sk-omx-ugc-script-planner",
@@ -1232,7 +1264,8 @@
         "alt": "UGC 脚本全流程策划"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-seeding"
     },
     {
       "id": "sk-omx-motion-design-flow",
@@ -1272,7 +1305,8 @@
         "alt": "动态图形运镜设计"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-tools"
     },
     {
       "id": "sk-omx-animated-character-ad-plan",
@@ -1312,7 +1346,8 @@
         "alt": "动画IP角色广告企划"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-brand"
     },
     {
       "id": "sk-omx-cinematic-anime-episodic-serial-hook",
@@ -1352,7 +1387,8 @@
         "alt": "日漫连载黄金开头Hook"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-brand"
     },
     {
       "id": "sk-omx-dark-saas-ui-hero",
@@ -1392,7 +1428,8 @@
         "alt": "暗色软件UI主图演示"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-app"
     },
     {
       "id": "sk-omx-fashion-mood-video-skill",
@@ -1432,7 +1469,8 @@
         "alt": "时尚情绪氛围短片"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-brand"
     },
     {
       "id": "sk-omx-meme-merch-multi-format-tiktok",
@@ -1472,7 +1510,8 @@
         "alt": "梗图文创多格式短视频"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-seeding"
     },
     {
       "id": "sk-omx-ugc-inherited-burden-testimonial",
@@ -1512,7 +1551,8 @@
         "alt": "痛点共鸣用户真实自述"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-seeding"
     },
     {
       "id": "sk-omx-video-recreate-skill",
@@ -1552,7 +1592,8 @@
         "alt": "爆款视频智能复刻"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-repurpose"
     },
     {
       "id": "sk-omx-animated-mascot-problem-solution",
@@ -1592,7 +1633,8 @@
         "alt": "吉祥物问题解决型广告"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-brand"
     },
     {
       "id": "sk-omx-cartoon-mascot-narrator-shorts",
@@ -1632,7 +1674,8 @@
         "alt": "卡通吉祥物旁白短视频"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-brand"
     },
     {
       "id": "sk-omx-casino-streamer-split-screen-reaction",
@@ -1672,7 +1715,8 @@
         "alt": "双屏互动实时反应广告"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-performance"
     },
     {
       "id": "sk-omx-cinematic-dual-persona-dark-luxury-ad",
@@ -1712,7 +1756,8 @@
         "alt": "双重人格暗调轻奢大片"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-brand"
     },
     {
       "id": "sk-omx-cinematic-editorial-luxury-reveal",
@@ -1752,7 +1797,8 @@
         "alt": "杂志级奢品震撼登场"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-product"
     },
     {
       "id": "sk-omx-cinematic-led-product-reveal",
@@ -1792,7 +1838,8 @@
         "alt": "光影科技产品高光亮相"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-product"
     },
     {
       "id": "sk-omx-dtc-multi-format-ad-playbook",
@@ -1832,7 +1879,8 @@
         "alt": "DTC出海多渠道投放宝典"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-performance"
     },
     {
       "id": "sk-omx-ugc-avatar-broll-splice-ad",
@@ -1872,7 +1920,8 @@
         "alt": "数字人与空镜拼接广告"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-seeding"
     },
     {
       "id": "sk-omx-ugc-curiosity-hook",
@@ -1912,7 +1961,8 @@
         "alt": "好奇心驱动神级开场"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-seeding"
     },
     {
       "id": "sk-omx-ugc-voiceover-app-screen-showcase",
@@ -1952,7 +2002,8 @@
         "alt": "画外音旁白App录屏展示"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-app"
     },
     {
       "id": "sk-omx-ad-layout-mirror-image",
@@ -1992,7 +2043,8 @@
         "alt": "镜像构图广告排版"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-performance"
     },
     {
       "id": "sk-omx-bridal-macro-editorial-hook",
@@ -2032,7 +2084,8 @@
         "alt": "婚纱微距高级感Hook"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-product"
     },
     {
       "id": "sk-omx-cinematic-service-brand-reveal",
@@ -2072,7 +2125,8 @@
         "alt": "高端服务品牌视觉大片"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-brand"
     },
     {
       "id": "sk-omx-clinical-ugc-3d-tech-insert-arc",
@@ -2112,7 +2166,8 @@
         "alt": "医疗科技3D透视叙事"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-seeding"
     },
     {
       "id": "sk-omx-comedy-character-bookend-saas-demo",
@@ -2152,7 +2207,8 @@
         "alt": "喜剧角色首尾呼应演示"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-app"
     },
     {
       "id": "sk-omx-editorial-apparel-static",
@@ -2192,7 +2248,8 @@
         "alt": "高定时装静态画报"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-performance"
     },
     {
       "id": "sk-omx-editorial-magazine-lifestyle-ad",
@@ -2232,7 +2289,8 @@
         "alt": "生活方式杂志画报广告"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-performance"
     },
     {
       "id": "sk-omx-luxury-product-reveal",
@@ -2272,7 +2330,8 @@
         "alt": "奢侈品级高定登场"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-product"
     },
     {
       "id": "sk-omx-product-photoshoot",
@@ -2312,7 +2371,8 @@
         "alt": "影棚级商业产品静物摄影"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-product"
     },
     {
       "id": "sk-omx-street-interview-blind-test-ad",
@@ -2352,7 +2412,8 @@
         "alt": "街头盲测对比实测广告"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-seeding"
     },
     {
       "id": "sk-omx-ugc-mom-discovery-hook-kids-product",
@@ -2392,7 +2453,8 @@
         "alt": "宝妈育儿好物发现Hook"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-seeding"
     },
     {
       "id": "sk-omx-ugc-skeptic-convert",
@@ -2432,7 +2494,8 @@
         "alt": "从质疑到真香心路历程"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-seeding"
     },
     {
       "id": "sk-omx-ugc-two-character-comedy-skit-hook",
@@ -2472,7 +2535,8 @@
         "alt": "双人爆笑短剧冲突开场"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-seeding"
     },
     {
       "id": "sk-omx-vox-paper-cutout-explainer",
@@ -2512,7 +2576,8 @@
         "alt": "Vox拼贴剪纸深度解说"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-brand"
     },
     {
       "id": "sk-omx-anthropomorphic-dark-comedy-telenovela",
@@ -2552,7 +2617,8 @@
         "alt": "Anthropomorphic Dark Comedy Telenovela"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-brand"
     },
     {
       "id": "sk-omx-cinematic-dual-persona-cultural-identity-arc",
@@ -2592,7 +2658,8 @@
         "alt": "Cinematic Dual Persona Cultural Identity Arc"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-brand"
     },
     {
       "id": "sk-omx-cinematic-pharma-parody-arc",
@@ -2632,7 +2699,8 @@
         "alt": "Cinematic Pharma Parody Arc"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-brand"
     },
     {
       "id": "sk-omx-cinematic-saas-character-arc",
@@ -2672,7 +2740,8 @@
         "alt": "Cinematic Saas Character Arc"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-app"
     },
     {
       "id": "sk-omx-cinematic-stat-shock-local-pride",
@@ -2712,7 +2781,8 @@
         "alt": "Cinematic Stat Shock Local Pride"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-brand"
     },
     {
       "id": "sk-omx-cinematic-thriller-book-multi-format-campaign",
@@ -2752,7 +2822,8 @@
         "alt": "Cinematic Thriller Book Multi Format Campaign"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-brand"
     },
     {
       "id": "sk-omx-cinematic-warmtodark-safety-arc",
@@ -2792,7 +2863,8 @@
         "alt": "Cinematic Warmtodark Safety Arc"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-brand"
     },
     {
       "id": "sk-omx-client-process-guide-builder",
@@ -2832,7 +2904,8 @@
         "alt": "Client Process Guide Builder"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-tools"
     },
     {
       "id": "sk-omx-color-spec-sheet",
@@ -2872,7 +2945,8 @@
         "alt": "Color Spec Sheet"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-tools"
     },
     {
       "id": "sk-omx-dark-athletic-carousel",
@@ -2912,7 +2986,8 @@
         "alt": "Dark Athletic Carousel"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-performance"
     },
     {
       "id": "sk-omx-editorial-luxury-ig-carousel",
@@ -2952,7 +3027,8 @@
         "alt": "Editorial Luxury Ig Carousel"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-performance"
     },
     {
       "id": "sk-omx-educational-deficiency-carousel",
@@ -2992,7 +3068,8 @@
         "alt": "Educational Deficiency Carousel"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-performance"
     },
     {
       "id": "sk-omx-fashion-silent-multishot-showcase",
@@ -3032,7 +3109,8 @@
         "alt": "Fashion Silent Multishot Showcase"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-seeding"
     },
     {
       "id": "sk-omx-gulf-recruitment-cinematic-arc",
@@ -3072,7 +3150,8 @@
         "alt": "Gulf Recruitment Cinematic Arc"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-brand"
     },
     {
       "id": "sk-omx-guofeng-palace-drama-single-call",
@@ -3112,7 +3191,8 @@
         "alt": "Guofeng Palace Drama Single Call"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-brand"
     },
     {
       "id": "sk-omx-hinglish-before-after-saas-hook",
@@ -3152,7 +3232,8 @@
         "alt": "Hinglish Before After Saas Hook"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-app"
     },
     {
       "id": "sk-omx-home-service-lead-gen-static-meta",
@@ -3192,7 +3273,8 @@
         "alt": "Home Service Lead Gen Static Meta"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-local"
     },
     {
       "id": "sk-omx-illustrated-world-map-builder",
@@ -3232,7 +3314,8 @@
         "alt": "Illustrated World Map Builder"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-brand"
     },
     {
       "id": "sk-omx-kannada-bus-poster-dark-gold",
@@ -3272,7 +3355,8 @@
         "alt": "Kannada Bus Poster Dark Gold"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-performance"
     },
     {
       "id": "sk-omx-kit-produto-mecanismo-reveal-ptbr",
@@ -3312,7 +3396,8 @@
         "alt": "Kit Produto Mecanismo Reveal Ptbr"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-product"
     },
     {
       "id": "sk-omx-landing-page-dr-skill",
@@ -3352,7 +3437,8 @@
         "alt": "Landing Page Dr"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-performance"
     },
     {
       "id": "sk-omx-latam-marketplace-mixed-ugc-skill",
@@ -3392,7 +3478,8 @@
         "alt": "Latam Marketplace Mixed UGC"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-seeding"
     },
     {
       "id": "sk-omx-listing-cinematic-silent-spec-reveal",
@@ -3432,7 +3519,8 @@
         "alt": "Listing Cinematic Silent Spec Reveal"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-product"
     },
     {
       "id": "sk-omx-local-service-static-batch-blitz",
@@ -3472,7 +3560,8 @@
         "alt": "Local Service Static Batch Blitz"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-local"
     },
     {
       "id": "sk-omx-luxury-brand-photo-reel",
@@ -3512,7 +3601,8 @@
         "alt": "Luxury Brand Photo Reel"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-product"
     },
     {
       "id": "sk-omx-luxury-dark-carousel-5slide",
@@ -3552,7 +3642,8 @@
         "alt": "Luxury Dark Carousel 5slide"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-performance"
     },
     {
       "id": "sk-omx-luxury-editorial-app-reveal",
@@ -3592,7 +3683,8 @@
         "alt": "Luxury Editorial App Reveal"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-app"
     },
     {
       "id": "sk-omx-mirror-tryon-haul-beat-cut",
@@ -3632,7 +3724,8 @@
         "alt": "Mirror Tryon Haul Beat Cut"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-product"
     },
     {
       "id": "sk-omx-motif-mirror-product-reel",
@@ -3672,7 +3765,8 @@
         "alt": "Motif Mirror Product Reel"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-product"
     },
     {
       "id": "sk-omx-paperfold-diorama-journey-arc",
@@ -3712,7 +3806,8 @@
         "alt": "Paperfold Diorama Journey Arc"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-brand"
     },
     {
       "id": "sk-omx-pedestal-product-hero",
@@ -3752,7 +3847,8 @@
         "alt": "Pedestal Product Hero"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-product"
     },
     {
       "id": "sk-omx-phone-mockup-page",
@@ -3792,7 +3888,8 @@
         "alt": "Phone Mockup Page"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-app"
     },
     {
       "id": "sk-omx-pil-print-flyer-photo-grid",
@@ -3832,7 +3929,8 @@
         "alt": "Pil Print Flyer Photo Grid"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-performance"
     },
     {
       "id": "sk-omx-playstore-ui-anchored-promo",
@@ -3872,7 +3970,8 @@
         "alt": "Playstore Ui Anchored Promo"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-app"
     },
     {
       "id": "sk-omx-pregnancy-subscription-warmblush-static-ad",
@@ -3912,7 +4011,8 @@
         "alt": "Pregnancy Subscription Warmblush Static Ad"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-performance"
     },
     {
       "id": "sk-omx-real-estate-multiformat-static-ad",
@@ -3952,7 +4052,8 @@
         "alt": "Real Estate Multiformat Static Ad"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-local"
     },
     {
       "id": "sk-omx-refurb-tech-product-reel",
@@ -3992,7 +4093,8 @@
         "alt": "Refurb Tech Product Reel"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-product"
     },
     {
       "id": "sk-omx-regulated-claims-static-ad-matrix",
@@ -4032,7 +4134,8 @@
         "alt": "Regulated Claims Static Ad Matrix"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-performance"
     },
     {
       "id": "sk-omx-retail-multi-variant-carousel-sale",
@@ -4072,7 +4175,8 @@
         "alt": "Retail Multi Variant Carousel Sale"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-performance"
     },
     {
       "id": "sk-omx-revenue-transformation-arc",
@@ -4112,7 +4216,8 @@
         "alt": "Revenue Transformation Arc"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-brand"
     },
     {
       "id": "sk-omx-spanish-ugc-community-spokesperson-hook",
@@ -4152,7 +4257,8 @@
         "alt": "Spanish UGC Community Spokesperson Hook"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-seeding"
     },
     {
       "id": "sk-omx-split-screen-dialogue",
@@ -4192,7 +4298,8 @@
         "alt": "Split Screen Dialogue"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-seeding"
     },
     {
       "id": "sk-omx-two-mascot-comedy-commercial",
@@ -4232,7 +4339,8 @@
         "alt": "Two Mascot Comedy Commercial"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-brand"
     },
     {
       "id": "sk-omx-ugc-advisor-numbered-points-reel",
@@ -4272,7 +4380,8 @@
         "alt": "UGC Advisor Numbered Points Reel"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-seeding"
     },
     {
       "id": "sk-omx-ugc-diaspora-direct-address-hook",
@@ -4312,7 +4421,8 @@
         "alt": "UGC Diaspora Direct Address Hook"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-seeding"
     },
     {
       "id": "sk-omx-ugc-female-creator-product-confession-arc",
@@ -4352,7 +4462,8 @@
         "alt": "UGC Female Creator Product Confession Arc"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-seeding"
     },
     {
       "id": "sk-omx-ugc-homeowner-testimonial-problem-payoff",
@@ -4392,7 +4503,8 @@
         "alt": "UGC Homeowner Testimonial Problem Payoff"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-seeding"
     },
     {
       "id": "sk-omx-ugc-personal-reveal-ad",
@@ -4432,7 +4544,8 @@
         "alt": "UGC Personal Reveal Ad"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-seeding"
     },
     {
       "id": "sk-omx-ugc-street-interview-nightlife-hook",
@@ -4472,7 +4585,8 @@
         "alt": "UGC Street Interview Nightlife Hook"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-seeding"
     },
     {
       "id": "sk-omx-video-adapt",
@@ -4512,7 +4626,8 @@
         "alt": "多画幅跨平台自适应"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-repurpose"
     },
     {
       "id": "sk-omx-white-bg-feature-callout-product-overview",
@@ -4552,7 +4667,8 @@
         "alt": "纯白背景卖点标注展示"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-product"
     },
     {
       "id": "sk-omx-wise-elder-ugc-kids-product",
@@ -4592,7 +4708,8 @@
         "alt": "Wise Elder UGC Kids Product"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-seeding"
     },
     {
       "id": "sk-omx-shoppable-carousel",
@@ -4633,7 +4750,8 @@
         "alt": "商品轮播图"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-product"
     },
     {
       "id": "sk-omx-replicate-carousel",
@@ -4674,7 +4792,8 @@
         "alt": "图文复刻"
       },
       "author": "Official",
-      "installType": "marketplace"
+      "installType": "marketplace",
+      "scenario": "scene-repurpose"
     },
     {
       "id": "exp-ad-creative-strategist",
@@ -8341,46 +8460,102 @@
       "titleEn": "All"
     },
     {
-      "id": "ugc-testimonial",
-      "title": "UGC 和用户评价",
-      "titleZh": "UGC 和用户评价",
-      "titleEn": "UGC & Testimonial"
+      "id": "scene-seeding",
+      "title": "内容种草",
+      "titleZh": "内容种草",
+      "titleEn": "Content Seeding"
     },
     {
-      "id": "storytelling-script",
-      "title": "故事讲述和脚本",
-      "titleZh": "故事讲述和脚本",
-      "titleEn": "Storytelling & Script"
+      "id": "scene-brand",
+      "title": "品牌宣传",
+      "titleZh": "品牌宣传",
+      "titleEn": "Brand Story"
     },
     {
-      "id": "image-static",
-      "title": "图片和静态广告",
-      "titleZh": "图片和静态广告",
-      "titleEn": "Image & Static Ads"
-    },
-    {
-      "id": "video-ads",
-      "title": "视频广告",
-      "titleZh": "视频广告",
-      "titleEn": "Video Ads"
-    },
-    {
-      "id": "product-showcase",
-      "title": "产品展示",
-      "titleZh": "产品展示",
+      "id": "scene-product",
+      "title": "商品展示",
+      "titleZh": "商品展示",
       "titleEn": "Product Showcase"
     },
     {
-      "id": "meme-native",
-      "title": "模因与原生",
-      "titleZh": "模因与原生",
-      "titleEn": "Meme & Native"
+      "id": "scene-performance",
+      "title": "效果广告",
+      "titleZh": "效果广告",
+      "titleEn": "Performance Ads"
     },
     {
-      "id": "other",
-      "title": "其它营销分类",
-      "titleZh": "其它营销分类",
-      "titleEn": "Other"
+      "id": "scene-app",
+      "title": "应用推广",
+      "titleZh": "应用推广",
+      "titleEn": "App Promotion"
+    },
+    {
+      "id": "scene-local",
+      "title": "本地生活",
+      "titleZh": "本地生活",
+      "titleEn": "Local Services"
+    },
+    {
+      "id": "scene-repurpose",
+      "title": "内容再制",
+      "titleZh": "内容再制",
+      "titleEn": "Content Repurposing"
+    },
+    {
+      "id": "scene-tools",
+      "title": "通用工具",
+      "titleZh": "通用工具",
+      "titleEn": "General Tools"
+    }
+  ],
+  "skillScenarios": [
+    {
+      "id": "scene-seeding",
+      "title": "内容种草",
+      "titleZh": "内容种草",
+      "titleEn": "Content Seeding"
+    },
+    {
+      "id": "scene-brand",
+      "title": "品牌宣传",
+      "titleZh": "品牌宣传",
+      "titleEn": "Brand Story"
+    },
+    {
+      "id": "scene-product",
+      "title": "商品展示",
+      "titleZh": "商品展示",
+      "titleEn": "Product Showcase"
+    },
+    {
+      "id": "scene-performance",
+      "title": "效果广告",
+      "titleZh": "效果广告",
+      "titleEn": "Performance Ads"
+    },
+    {
+      "id": "scene-app",
+      "title": "应用推广",
+      "titleZh": "应用推广",
+      "titleEn": "App Promotion"
+    },
+    {
+      "id": "scene-local",
+      "title": "本地生活",
+      "titleZh": "本地生活",
+      "titleEn": "Local Services"
+    },
+    {
+      "id": "scene-repurpose",
+      "title": "内容再制",
+      "titleZh": "内容再制",
+      "titleEn": "Content Repurposing"
+    },
+    {
+      "id": "scene-tools",
+      "title": "通用工具",
+      "titleZh": "通用工具",
+      "titleEn": "General Tools"
     }
   ]
 }
