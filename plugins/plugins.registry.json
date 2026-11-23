@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedAt": "2026-11-23T10:33:42.132Z",
+  "updatedAt": "2026-11-23T11:50:54.168Z",
   "topology": {
     "tiers": [
       {
@@ -25,7 +25,7 @@
     "summary": {
       "totalPlugins": 13,
       "totalTools": 85,
-      "totalSeams": 6
+      "totalSeams": 7
     }
   },
   "plugins": [
@@ -78,6 +78,10 @@
           {
             "name": "textComplete",
             "interfaceDoc": "ctx.get('textComplete').generate(params)"
+          },
+          {
+            "name": "headlessSkill",
+            "interfaceDoc": "ctx.get('headlessSkill').run({ skillName, input, outputSchema, references?, ownerPlugin?, targetId?, inputFingerprint? }) / .listJobs() / .getJob() / .cancel()"
           },
           {
             "name": "modelCatalog",

@@ -35,6 +35,7 @@ import { mountSpeechToText } from '../media/stt-mount.js'
 import { mountAudioVoices } from '../media/voices-mount.js'
 import { executeOmnimuxSpeechToText } from '../media/stt.js'
 import { mountTextComplete } from '../text/mount.js'
+import { mountHeadlessSkill } from '../headless/mount.js'
 import { buildModelCatalog } from '../catalog/list.js'
 import { createAccountCatalog } from '../catalog/cloud/account-view.js'
 import { setCurrentSnapshotResolver } from '../catalog/cloud/current.js'
@@ -453,7 +454,10 @@ export function apply(ctx, config = {}) {
   mountMedia(ctx, { kind: 'audio', execute: executeOmnimuxAudio, ...mediaDeps })
   mountAudioVoices(ctx, { gate: hub.gate, jsonOut })
   mountSpeechToText(ctx, { execute: executeOmnimuxSpeechToText, media: hub.media, gate: hub.gate, store, jsonOut })
-  mountTextComplete(ctx, hub, jsonOut, rethrow, { resolveOfficialApiKey: (env) => modelKeys.resolve({ env }) })
+  const textCompleteApi = mountTextComplete(ctx, hub, jsonOut, rethrow, { resolveOfficialApiKey: (env) => modelKeys.resolve({ env }) })
+  if (textCompleteApi) {
+    mountHeadlessSkill(ctx, { hubEvents, textComplete: textCompleteApi })
+  }
   mountOfficial(ctx, {
     accountMetaStore,
     hub,

@@ -16,6 +16,7 @@
     "seamsProvided": [
       { "name": "identity", "interfaceDoc": "ctx.get('identity').status / .require() / .getSnapshot()" },
       { "name": "textComplete", "interfaceDoc": "ctx.get('textComplete').generate(params)" },
+      { "name": "headlessSkill", "interfaceDoc": "ctx.get('headlessSkill').run({ skillName, input, outputSchema, references?, ownerPlugin?, targetId?, inputFingerprint? }) / .listJobs() / .getJob() / .cancel()" },
       { "name": "modelCatalog", "interfaceDoc": "ctx.get('modelCatalog').list() → { source, fingerprint, defaults, text, image, video, audio }" },
       { "name": "decisions", "interfaceDoc": "ctx.get('decisions').evaluate(params)" }
     ],

@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { gitBlobHash } from './verify-bilingual-docs.mjs'
+import { checkSourceFileBoundaries } from './verify-plugin-boundaries.mjs'
 import { walkAgentNoteTree } from './lib/agent-note-tree.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -58,6 +59,50 @@ test('verify-plugin-boundaries passes on codebase', () => {
     encoding: 'utf8',
   })
   strictEqual(res.status, 0, `boundary verification failed: ${res.stderr}`)
+})
+
+test('verify-plugin-boundaries blocks non-Hub direct ctx.llm and llm.stream calls', () => {
+  const directStream = checkSourceFileBoundaries({
+    rel: 'plugins/omnimux-inspiration/src/private-ai.js',
+    plugin: 'omnimux-inspiration',
+    content: 'export async function run(ctx) { return ctx.llm.stream({ model: "x" }) }',
+  })
+  ok(directStream.some((msg) => msg.includes('headless-skill-execution.md')))
+
+  const directGet = checkSourceFileBoundaries({
+    rel: 'plugins/omnimux-products/src/private-ai.js',
+    plugin: 'omnimux-products',
+    content: "export function run(ctx) { const llm = ctx.get('llm'); return llm.listModels() }",
+  })
+  ok(directGet.some((msg) => msg.includes('headless-skill-execution.md')))
+
+  const hubAllowed = checkSourceFileBoundaries({
+    rel: 'plugins/omnimux/src/text/execute.js',
+    plugin: 'omnimux',
+    content: "export function run(ctx) { const llm = ctx.get('llm'); return llm.stream({}) }",
+  })
+  strictEqual(hubAllowed.length, 0)
+
+  const allowlistedReadOnly = checkSourceFileBoundaries({
+    rel: 'plugins/omnimux-browser/src/text-session-model.ts',
+    plugin: 'omnimux-browser',
+    content: "export async function bind(ctx) { const llm = ctx.get('llm'); return llm.listModels() }",
+  })
+  strictEqual(allowlistedReadOnly.length, 0)
+
+  const allowlistedStreamBlocked = checkSourceFileBoundaries({
+    rel: 'plugins/omnimux-browser/src/text-session-model.ts',
+    plugin: 'omnimux-browser',
+    content: "export async function bind(ctx) { const llm = ctx.get('llm'); return llm.stream({}) }",
+  })
+  ok(allowlistedStreamBlocked.some((msg) => msg.includes('llm.stream')))
+
+  const commentOnlyAllowed = checkSourceFileBoundaries({
+    rel: 'plugins/omnimux-inspiration/src/notes.js',
+    plugin: 'omnimux-inspiration',
+    content: '// Hub textComplete delegates to ctx.llm.stream internally\nexport const ok = true\n',
+  })
+  strictEqual(commentOnlyAllowed.length, 0)
 })
 
 test('verify-stage-contracts passes on all first-level Stage and StageStore files', () => {
