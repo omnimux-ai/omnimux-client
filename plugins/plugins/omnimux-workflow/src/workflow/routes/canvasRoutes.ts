@@ -364,7 +364,11 @@ export function createWorkflowDispatcher(deps: WorkflowDispatcherDeps) {
 
   const audioRoutes = createAudioBytesRoutes(assetsStore, () => deps.getSeam?.('connection'));
   const directorBytes = createDirectorBytesRoutes({ store, assetsStore, getSeam: deps.getSeam });
-  const authorizeHostRequest = (request: IncomingMessage): number | undefined => {
+  const authorizeHostRequest = (request: IncomingMessage, peer?: unknown): number | undefined => {
+    // When WebServer enforces route-level auth (DSH 0.2.3+), the admitted Peer is passed directly.
+    if (peer !== undefined && peer !== null && typeof peer === 'object') {
+      return (peer as { signal?: { aborted?: boolean } }).signal?.aborted === true ? 401 : undefined;
+    }
     const connection = deps.getSeam?.('connection') as { requestRejection?: (request: IncomingMessage) => number | undefined } | undefined;
     return typeof connection?.requestRejection === 'function' ? connection.requestRejection(request) : 503;
   };
@@ -388,11 +392,18 @@ export function createWorkflowDispatcher(deps: WorkflowDispatcherDeps) {
  * results stream from disk.
  */
 export function registerWorkflowRoutes(
-  webServer: { register: (route: { kind: string; path: string; handler: (req: IncomingMessage, res: ServerResponse) => Promise<void> }) => () => void },
+  webServer: {
+    register: (route: {
+      kind: string;
+      path: string;
+      auth?: 'required' | 'anonymous';
+      handler: (req: IncomingMessage, res: ServerResponse, peer?: unknown) => Promise<void>;
+    }) => () => void;
+  },
   dispatcher: ReturnType<typeof createWorkflowDispatcher>,
 ): () => void {
   const makeHandler = () => {
-    return async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    return async function handler(req: IncomingMessage, res: ServerResponse, peer?: unknown): Promise<void> {
       const lifetime = new AbortController();
       const onClose = () => { if (!res.writableFinished) lifetime.abort(); };
       res.once('close', onClose);
@@ -402,7 +413,7 @@ export function registerWorkflowRoutes(
         const requestUrl = new URL(req.url || '/', 'http://127.0.0.1');
         const requestPath = decodeURIComponent(requestUrl.pathname);
         if (req.method === 'GET' && /^\/(?:omnimux-workflow|dsh-workflow)\/api\/capabilities$/.test(requestPath) && dispatcher.accountCatalogScoped()) {
-          const rejection = dispatcher.authorizeHostRequest(req);
+          const rejection = dispatcher.authorizeHostRequest(req, peer);
           if (rejection !== undefined) { sendJson(res, rejection, { error: 'unauthorized' }); return; }
           try {
             assertLocalWrite({ origin: header(req, 'origin'), referer: header(req, 'referer'), secFetchSite: header(req, 'sec-fetch-site'), host: header(req, 'host'), secure: Boolean((req.socket as { encrypted?: boolean } | undefined)?.encrypted) });
@@ -413,13 +424,13 @@ export function registerWorkflowRoutes(
           res.setHeader('Cache-Control', 'private, no-store');
         }
         if (/^\/(?:omnimux-workflow|dsh-workflow)\/api\/workspaces\/[^/]+\/director(?:-operations)?\//.test(requestPath) || /^\/(?:omnimux-workflow|dsh-workflow)\/api\/workspaces\/[^/]+\/director-operations$/.test(requestPath) || /^\/(?:omnimux-workflow|dsh-workflow)\/api\/workspaces\/[^/]+\/director\/[^/]+$/.test(requestPath)) {
-          const rejection = dispatcher.authorizeHostRequest(req);
+          const rejection = dispatcher.authorizeHostRequest(req, peer);
           if (rejection !== undefined) { sendJson(res, rejection, { error: rejection === 503 ? 'auth-unavailable' : 'unauthorized' }); return; }
           assertAudioRequestOrigin(req);
           authenticatedDirectorSession = dispatcher.directorSession(req);
         }
-        if (await dispatcher.handleDirectorRequest(req, res)) return;
-        if (await dispatcher.handleAudioRequest(req, res)) return;
+        if (await dispatcher.handleDirectorRequest(req, res, peer)) return;
+        if (await dispatcher.handleAudioRequest(req, res, peer)) return;
         const method = (req.method || 'GET').toUpperCase();
         let body: unknown;
         if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
@@ -443,11 +454,11 @@ export function registerWorkflowRoutes(
           browserOwner: authenticatedDirectorSession?.owner,
           directorSession: authenticatedDirectorSession,
           directorTaskScope: authenticatedDirectorSession ? () => {
-            if (dispatcher.authorizeHostRequest(req) !== undefined) return null;
+            if (dispatcher.authorizeHostRequest(req, peer) !== undefined) return null;
             return dispatcher.directorSessionCurrent(authenticatedDirectorSession!, req) ? authenticatedDirectorSession!.modelTaskScope : null;
           } : undefined,
           directorTaskOwner: authenticatedDirectorSession ? () => {
-            if (dispatcher.authorizeHostRequest(req) !== undefined) return null;
+            if (dispatcher.authorizeHostRequest(req, peer) !== undefined) return null;
             return dispatcher.directorSessionCurrent(authenticatedDirectorSession!, req) ? authenticatedDirectorSession!.modelTaskOwner : null;
           } : undefined,
         });
@@ -500,8 +511,8 @@ export function registerWorkflowRoutes(
   // OmniMux restart is required for prefix changes to take effect — quit can
   // leave an old Host process behind, which serves stale routes.
   const disposers = [
-    webServer.register({ kind: 'prefix', path: WORKFLOW_ROUTE_PREFIX, handler: makeHandler() }),
-    webServer.register({ kind: 'prefix', path: LEGACY_WORKFLOW_ROUTE_PREFIX, handler: makeHandler() }),
+    webServer.register({ kind: 'prefix', path: WORKFLOW_ROUTE_PREFIX, auth: 'required', handler: makeHandler() }),
+    webServer.register({ kind: 'prefix', path: LEGACY_WORKFLOW_ROUTE_PREFIX, auth: 'required', handler: makeHandler() }),
   ];
   return () => {
     for (const dispose of disposers) dispose();

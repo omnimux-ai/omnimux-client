@@ -4,7 +4,9 @@
 import { JSDOM } from 'jsdom'
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { pretendToBeVisual: true })
-const globals = ['requestAnimationFrame', 'cancelAnimationFrame', 'HTMLElement', 'SVGElement', 'Element', 'Node', 'getComputedStyle', 'MutationObserver', 'ResizeObserver', 'IntersectionObserver', 'CustomEvent', 'Event', 'MouseEvent', 'KeyboardEvent', 'PointerEvent']
+// 0.2.2-rc.5 primitives (Menu) also branch on these constructors; expose them from the
+// same shared jsdom so test realms see a defined binding instead of a ReferenceError.
+const globals = ['requestAnimationFrame', 'cancelAnimationFrame', 'HTMLElement', 'SVGElement', 'Element', 'Node', 'HTMLButtonElement', 'HTMLIFrameElement', 'getComputedStyle', 'MutationObserver', 'ResizeObserver', 'IntersectionObserver', 'CustomEvent', 'Event', 'MouseEvent', 'KeyboardEvent', 'PointerEvent']
 for (const name of globals) {
   if (dom.window[name] !== undefined && globalThis[name] === undefined) {
     Object.defineProperty(globalThis, name, {

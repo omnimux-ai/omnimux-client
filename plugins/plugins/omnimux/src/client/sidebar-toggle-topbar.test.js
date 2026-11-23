@@ -921,6 +921,74 @@ describe('chrome CSS contracts (conversation-box PRODUCT_STAGE_CHROME)', () => {
     cleanup()
   })
 
+  it('retires the DP-003 header override and keeps official 20px/10px padding with Route B clearance', () => {
+    assert.doesNotMatch(PRODUCT_STAGE_CHROME, /desktop-patch:DP-003/)
+    assert.doesNotMatch(
+      PRODUCT_STAGE_CHROME,
+      /data-omnimux-left-collapsed\]\s*\[data-slot="conversation\.header"\]/,
+    )
+    const intersects = (a, b) => Boolean(a && b) && a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+    const officialCss = `
+      .uPhUma_header { height: 50.5px; padding: 10px 28px 0 20px; box-sizing: border-box; }
+      .uPhUma_titleRow { height: 30px; }
+      .uPhUma_titleCluster { width: 260.5px; height: 28px; }
+    `
+    for (const [state, clearance] of [['expanded', 0], ['collapsed', 160], ['fullscreen', 84]]) {
+      const htmlAttrs = ['data-omnimux-sidebar-toggle-topbar', 'data-platform="darwin"']
+      if (state !== 'expanded') htmlAttrs.push('data-omnimux-left-collapsed')
+      if (state === 'fullscreen') htmlAttrs.push('data-fullscreen')
+      const rowPad = Math.max(0, clearance - 20)
+      for (const width of [980, 1280, 1800]) {
+        const doc = setup(`<!doctype html><html ${htmlAttrs.join(' ')}><body data-dsh-desktop-mode="extended" data-dsh-desktop-platform="darwin">
+          <div class="dshDesktopFrame"${state === 'expanded' ? '' : ' data-sidebar-collapsed="true"'} style="width:${width}px;grid-template-columns:${state === 'expanded' ? 280 : 0}px 1fr;--dsh-frame-leading-clearance:${clearance}px">
+            <div data-slot="conversation.header" style="display: contents">
+              <header class="uPhUma_header">
+                <div class="uPhUma_titleRow" style="padding-inline-start:${rowPad}px">
+                  <div class="uPhUma_titleCluster">会话标题</div>
+                </div>
+              </header>
+            </div>
+            <div class="tabBar_n" data-dsh-better-sidebar><div class="tabList_m"></div></div>
+          </div>
+        </body></html>`)
+        const style = doc.createElement('style')
+        style.textContent = `${officialCss}\n${PRODUCT_STAGE_CHROME}`
+        doc.head.append(style)
+        const headerStyle = doc.defaultView.getComputedStyle(doc.querySelector('.uPhUma_header'))
+        assert.equal(headerStyle.paddingLeft, '20px', 'DP-003 must not override official 20px header padding-left')
+        assert.equal(headerStyle.paddingTop, '10px', 'DP-003 must not override official 10px header padding-top')
+        const chrome = computeChromeLayout(doc)
+        const title = { x: (state === 'expanded' ? 280 : 0) + 20 + rowPad, y: 10, width: 260.5, height: 28 }
+        const toggle = { x: chrome.toggleLeft, y: 4, width: TOPBAR_TOGGLE_SIZE_PX, height: TOPBAR_TOGGLE_SIZE_PX }
+        if (state === 'expanded') {
+          assert.equal(chrome.newSessionLeft, null)
+          assert.equal(title.x, 300)
+        } else if (state === 'fullscreen') {
+          assert.equal(rowPad, 64)
+          assert.equal(title.x, 84)
+          assert.equal(toggle.x, TOPBAR_TOGGLE_LEFT_PX)
+          assert.equal(chrome.newSessionLeft, 48)
+          assert.ok(chrome.newSessionLeft + TOPBAR_TOGGLE_SIZE_PX <= title.x, 'collapsed fullscreen cluster right edge (80px) must fit inside 84px official clearance')
+        } else {
+          assert.equal(rowPad, 140)
+          assert.equal(title.x, 160)
+          assert.equal(toggle.x, TOPBAR_MACOS_INSET_PX)
+          assert.equal(chrome.newSessionLeft, 124)
+          assert.ok(chrome.newSessionLeft + TOPBAR_TOGGLE_SIZE_PX <= title.x, 'collapsed windowed cluster right edge (156px) must fit inside 160px official clearance')
+        }
+        const newSession = chrome.newSessionLeft === null
+          ? null
+          : { x: chrome.newSessionLeft, y: 4, width: TOPBAR_TOGGLE_SIZE_PX, height: TOPBAR_TOGGLE_SIZE_PX }
+        assert.equal(intersects(title, toggle), false, 'title must not intersect the open-sidebar control')
+        assert.equal(intersects(title, newSession), false, 'title must not intersect the new-session control')
+      }
+    }
+    // Reverse proof: keeping the 84px traffic-light inset in fullscreen collides with official 84px clearance.
+    const staleTitle = { x: 84, y: 10, width: 260.5, height: 28 }
+    const staleNewSession = { x: 124, y: 4, width: TOPBAR_TOGGLE_SIZE_PX, height: TOPBAR_TOGGLE_SIZE_PX }
+    assert.equal(intersects(staleTitle, staleNewSession), true)
+  })
+
   it('syncNativeRightbarControls preserves native mode and split control order', () => {
     const doc = setup(`<!doctype html><html><body>
       <div data-dockkit-strip-chrome="true">

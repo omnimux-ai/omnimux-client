@@ -58,7 +58,8 @@ type WebServer = {
   register: (route: {
     kind: string;
     path: string;
-    handler: (req: IncomingMessage, res: ServerResponse) => Promise<void>;
+    auth?: 'required' | 'anonymous';
+    handler: (req: IncomingMessage, res: ServerResponse, peer?: unknown) => Promise<void>;
   }) => () => void;
 };
 

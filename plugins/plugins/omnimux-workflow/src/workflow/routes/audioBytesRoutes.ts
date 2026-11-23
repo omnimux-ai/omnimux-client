@@ -34,7 +34,7 @@ let importing = false;
 
 export function createAudioBytesRoutes(store: ProjectAssetsStore, getConnection: () => unknown) {
   /** True means the raw request was handled; false continues the existing JSON adapter. */
-  async function handle(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
+  async function handle(req: IncomingMessage, res: ServerResponse, peer?: unknown): Promise<boolean> {
     const url = new URL(req.url || '/', 'http://127.0.0.1');
     const path = decodeURIComponent(url.pathname).replace(/^\/dsh-workflow(?=\/)/, '/omnimux-workflow');
     const match = /^\/omnimux-workflow\/api\/workspaces\/([^/]+)\/(assets\/audio-bytes|audio-file-action)$/.exec(path);
@@ -46,10 +46,18 @@ export function createAudioBytesRoutes(store: ProjectAssetsStore, getConnection:
     const abort = (): void => controller.abort();
     try {
       if (req.method !== 'POST') throw new AudioFileActionError('method-not-allowed', 405);
-      const connection = getConnection() as ConnectionSeat | undefined;
-      if (typeof connection?.requestRejection !== 'function') throw new AudioFileActionError('auth-unavailable', 503);
-      const rejection = connection.requestRejection(req);
-      if (rejection !== undefined) throw new AudioFileActionError('unauthorized', rejection === 401 ? 401 : 403);
+      // When WebServer enforces route-level auth (DSH 0.2.3+), the admitted Peer is passed directly.
+      const hasPeer = peer !== undefined && peer !== null && typeof peer === 'object';
+      if (hasPeer) {
+        if ((peer as { signal?: { aborted?: boolean } }).signal?.aborted === true) {
+          throw new AudioFileActionError('unauthorized', 401);
+        }
+      } else {
+        const connection = getConnection() as ConnectionSeat | undefined;
+        if (typeof connection?.requestRejection !== 'function') throw new AudioFileActionError('auth-unavailable', 503);
+        const rejection = connection.requestRejection(req);
+        if (rejection !== undefined) throw new AudioFileActionError('unauthorized', rejection === 401 ? 401 : 403);
+      }
       assertAudioRequestOrigin(req);
       if (url.search) throw new AudioFileActionError('audio-bytes-invalid', 400);
       store.get(match[1]); // Validate workspace existence and binding before reading any body.

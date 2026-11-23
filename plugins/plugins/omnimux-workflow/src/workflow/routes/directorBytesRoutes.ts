@@ -10,7 +10,7 @@ import type { ProjectAssetsStore } from '../workspace/ProjectAssetsStore.ts';
 export function createDirectorBytesRoutes(input: { store: WorkspaceStore; assetsStore: ProjectAssetsStore; getSeam?: (name: string) => unknown }) {
   const host = createDirectorHost({ store: input.store });
   const active = new Set<string>();
-  async function handle(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
+  async function handle(request: IncomingMessage, response: ServerResponse, peer?: unknown): Promise<boolean> {
     const url = new URL(request.url || '/', 'http://127.0.0.1');
     const path = url.pathname.replace(/^\/dsh-workflow(?=\/)/, '/omnimux-workflow');
     const match = /^\/omnimux-workflow\/api\/workspaces\/([A-Za-z0-9_-]+)\/director\/([A-Za-z0-9_-]+)\/(model|media\/(?:image|video))$/.exec(path);
@@ -23,10 +23,19 @@ export function createDirectorBytesRoutes(input: { store: WorkspaceStore; assets
     const timer = setTimeout(() => { controller.abort(); request.destroy(new Error('director-upload-timeout')); }, 60000);
     try {
       if (request.method !== 'POST') throw Object.assign(new Error('method-not-allowed'), { code: 'method-not-allowed' });
-      const connection = input.getSeam?.('connection') as { requestRejection?: (req: IncomingMessage) => number | undefined } | undefined;
-      if (typeof connection?.requestRejection !== 'function') throw Object.assign(new Error('auth-unavailable'), { code: 'auth-unavailable' });
-      const rejection = connection.requestRejection(request);
-      if (rejection !== undefined) { sendJson(response, rejection, { error: 'unauthorized' }); return true; }
+      // When WebServer enforces route-level auth (DSH 0.2.3+), the admitted Peer is passed directly.
+      const hasPeer = peer !== undefined && peer !== null && typeof peer === 'object';
+      if (hasPeer) {
+        if ((peer as { signal?: { aborted?: boolean } }).signal?.aborted === true) {
+          sendJson(response, 401, { error: 'unauthorized' });
+          return true;
+        }
+      } else {
+        const connection = input.getSeam?.('connection') as { requestRejection?: (req: IncomingMessage) => number | undefined } | undefined;
+        if (typeof connection?.requestRejection !== 'function') throw Object.assign(new Error('auth-unavailable'), { code: 'auth-unavailable' });
+        const rejection = connection.requestRejection(request);
+        if (rejection !== undefined) { sendJson(response, rejection, { error: 'unauthorized' }); return true; }
+      }
       assertAudioRequestOrigin(request);
       if (url.search || header(request, 'content-type') !== 'application/octet-stream' || header(request, 'content-encoding')) throw Object.assign(new Error('director-media-invalid'), { code: 'director-media-invalid' });
       const rawRevision = header(request, 'x-director-revision');
