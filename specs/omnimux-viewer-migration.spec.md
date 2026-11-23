@@ -60,6 +60,26 @@
   - 原断言：forks 精确等于 `['omnimux-browser', 'omnimux-market']`。
   - 必须改的理由：`omnimux-viewer` 是 MIT fork，必须出现在 fork 清单中。
   - 新期望证据：forks 精确等于 `['omnimux-browser', 'omnimux-market', 'omnimux-viewer']`，测试通过。
+- `app/dsh-plugin-desktop/tests/stage-preset-profile.spec.ts` :: `materializes a local file dependency closure from paths containing spaces`
+  - 原断言：`stagePresetProfile(...)` 返回 `17`。
+  - 必须改的理由：`plugin-tiers.json` 新增 `omnimux-viewer`，staged package 数增加 1。
+  - 新期望证据：返回值 `18`，测试通过。
+- `app/dsh-plugin-desktop/tests/stage-preset-profile.spec.ts` :: `keeps an incompatible optional-only local package out of the staged output`
+  - 原断言：返回 `14`。
+  - 必须改的理由：同上，product plugin 数增加 1。
+  - 新期望证据：返回值 `15`，测试通过。
+- `app/dsh-plugin-desktop/tests/stage-preset-profile.spec.ts` :: `defaults to a production preset that excludes every lifecycle Alpha plugin`
+  - 原断言：返回 `10`。
+  - 必须改的理由：正式版仍包含非 Alpha 的 `omnimux-viewer`，staged package 数增加 1。
+  - 新期望证据：返回值 `11`，测试通过。
+- `app/dsh-plugin-desktop/tests/stage-preset-profile.spec.ts` :: `keeps every lifecycle Alpha plugin only for an explicit development stage`
+  - 原断言：返回 `14`。
+  - 必须改的理由：开发版新增 `omnimux-viewer`，staged package 数增加 1。
+  - 新期望证据：返回值 `15`，测试通过。
+- `app/dsh-plugin-desktop/tests/stage-preset-profile.spec.ts` :: `stages a fresh development preset without replacing or backing up the input`
+  - 原断言：返回 `14`。
+  - 必须改的理由：开发版新增 `omnimux-viewer`，staged package 数增加 1。
+  - 新期望证据：返回值 `15`，测试通过。
 
 ## 文档影响
 
