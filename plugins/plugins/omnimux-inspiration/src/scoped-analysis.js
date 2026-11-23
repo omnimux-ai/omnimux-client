@@ -278,6 +278,9 @@ export async function handleScopedAnalysis(ctx, options = {}) {
       jobId = runResult.jobId || null
     }
 
+    if (runs.get(lock)?.token !== runToken) {
+      throw Object.assign(new Error('分析已取消'), { name: 'AbortError', code: 'ABORT_ERR' })
+    }
     const current = ctx.store.get(ctx.id)
     if (!current) return fail(404, '灵感已删除')
     if (prepareAnalysis(current, selection, ctx.paths).input_fingerprint !== prepared.input_fingerprint) {
@@ -312,9 +315,13 @@ export async function handleScopedAnalysis(ctx, options = {}) {
       },
     }
   } catch (error) {
+    const stillOwner = runs.get(lock)?.token === runToken
     if (error?.code === 'headless-skill-stale-input') {
       const current = ctx.store.get(ctx.id)
       if (!current) return fail(404, '灵感已删除')
+      if (!stillOwner) {
+        throw Object.assign(new Error('分析已取消'), { name: 'AbortError', code: 'ABORT_ERR' })
+      }
       const row = ctx.store.updateAnalysis(ctx.id, key, {
         ...entry,
         status: 'partial',
@@ -329,16 +336,15 @@ export async function handleScopedAnalysis(ctx, options = {}) {
       || error?.name === 'AbortError'
       || error?.code === 'ABORT_ERR'
       || error?.code === 'headless-skill-cancelled'
-    const stillOwner = runs.get(lock)?.token === runToken
     const current = ctx.store.get(ctx.id)
     const errorCode = aborted ? 'analysis-cancelled' : (typeof error?.code === 'string' ? error.code : null)
     const message = aborted
       ? '分析已取消，可重新分析'
       : (ctx.formatErrorMessage?.(error) || error?.message || String(error))
-    // Only write failure state if this run still owns the lock (or no newer run replaced it).
-    const currentEntry = current?.analysis_results?.[key]
-    const superseded = !stillOwner && Boolean(runs.get(lock) || (currentEntry && currentEntry.started_at !== entry.started_at))
-    const row = current && !superseded
+    // Only write failure state if this run still owns the lock. If handleCancelAnalysis
+    // already released the lock, it synchronously settled the cancelled entry and a newer
+    // run may already have started or finished (even within the same millisecond).
+    const row = current && stillOwner
       ? ctx.store.updateAnalysis(ctx.id, key, {
         ...entry,
         status: 'failed',

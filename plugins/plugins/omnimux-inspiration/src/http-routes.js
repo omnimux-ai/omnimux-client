@@ -309,7 +309,7 @@ async function dispatchRequest(ctx, req) {
     return await runRoute(route.name, args)
   } catch (error) {
     if (error?.name === 'AbortError' || error?.code === 'ABORT_ERR') {
-      return { status: 499, body: { error: error?.message || '已取消', code: 'analysis-cancelled' } }
+      return { status: 499, body: { error: 'aborted' } }
     }
     const status = error.status || 500
     const message = error.message || String(error)
