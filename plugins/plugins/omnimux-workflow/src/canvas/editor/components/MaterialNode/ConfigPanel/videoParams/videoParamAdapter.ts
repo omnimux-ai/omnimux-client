@@ -25,6 +25,7 @@ import {
   type UpstreamMediaSnapshot,
 } from '../../../../../../shared/validation/operationUi.ts';
 import { findDeclaredParameterFailure } from '../../../../../../shared/validation/declaredParameterValidation.ts';
+import type { InputAssignment } from '../../../../../../shared/validation/inputAssignment.ts';
 import { buildInputCapability } from '../../../../../../shared/validation/inputCapability.ts';
 import { resolveGenerationPrompt } from '../../../../../../shared/graph/generationPrompt.ts';
 import { mergeVideoParameterSchema, normalizeVideoParamsForSchema } from './videoParamNormalization.ts';
@@ -56,6 +57,8 @@ export interface ResolveEffectiveVideoParamsArgs {
   lineConstraints?: LineConstraints | null;
   /** Undefined uses the legacy catalog. Null denotes a managed video with no selected group. */
   effectiveVideoGroup?: CatalogChannelGroupDto | null;
+  opsState?: EffectiveOpsUiState;
+  assignment?: InputAssignment;
   upstreams?: UpstreamMediaSnapshot[];
   /** Released named pins are considered only when displaying alternate mode options. */
   parkedUpstreams?: UpstreamMediaSnapshot[];
@@ -184,12 +187,8 @@ export function resolveEffectiveVideoParams(
   const managed = args.effectiveVideoGroup !== undefined;
   const model = args.modelItem?.id
     ?? (typeof params?.model === 'string' ? params.model : '');
-  const opsState = buildOpsState(args);
+  const opsState = args.opsState ?? buildOpsState(args);
   const preferredOperation = readPreferredOperationId((params ?? {}) as Record<string, unknown>, managed ? undefined : args.autoOperationId);
-  const fingerprint = buildUiUpstreamFingerprint({
-    prompt: args.prompt,
-    upstreams: args.upstreams,
-  });
   const capabilityArgs = {
     catalog: args.catalog ?? null,
     modelId: model,
@@ -198,13 +197,15 @@ export function resolveEffectiveVideoParams(
     autoOperationId: args.autoOperationId,
     params: (params ?? {}) as Record<string, unknown>,
   };
-  const capability = managed ? undefined : buildInputCapability({ ...capabilityArgs, fingerprint });
-  const modeOptions = !managed && args.parkedUpstreams?.length
+  const capability = managed || args.assignment ? undefined : buildInputCapability({ ...capabilityArgs,
+    fingerprint: buildUiUpstreamFingerprint({ prompt: args.prompt, upstreams: args.upstreams }),
+  });
+  const modeOptions = args.assignment?.operationStates ?? (!managed && args.parkedUpstreams?.length
     ? buildInputCapability({ ...capabilityArgs, fingerprint: buildUiUpstreamFingerprint({
       prompt: args.prompt, upstreams: [...(args.upstreams ?? []), ...args.parkedUpstreams],
     }) }).operationStates
-    : capability?.operationStates ?? [];
-  const selectedOperationId = capability?.selectedOperationId ?? preferredOperation ?? '';
+    : capability?.operationStates ?? []);
+  const selectedOperationId = args.assignment?.operationId ?? capability?.selectedOperationId ?? preferredOperation ?? '';
   const effectiveOperations = opsState.effectiveOps.map((operation) => {
     const state = modeOptions.find(item => item.id === operation.id);
     return { ...operation, disabled: !managed && !state };
@@ -221,8 +222,8 @@ export function resolveEffectiveVideoParams(
   const normalized = managed ? {
     params: (params ?? {}) as Record<string, unknown>,
     blocked: missing ? [{ field: missing, message: `请设置参数「${missing}」`, required: true }] : [],
-  } : normalizeVideoParamsForSchema({
-    params: (capability?.paramsProjection?.params ?? params ?? {}) as Record<string, unknown>,
+  } : args.assignment?.videoNormalization ?? normalizeVideoParamsForSchema({
+    params: (args.assignment?.paramsProjection?.params ?? capability?.paramsProjection?.params ?? params ?? {}) as Record<string, unknown>,
     modelItem: args.modelItem,
     operationId: requestedOperation || undefined,
     catalog: args.catalog ?? null,

@@ -15,6 +15,7 @@ import { resolveGenerationPrompt } from '../../shared/graph/generationPrompt.ts'
 import { effectiveVideoAssetFields } from '../../shared/validation/lineConstraints.ts';
 import { parseModelAndGroup, readChannelRouting } from '../../shared/validation/channelRouting.ts';
 import { readVisualLineSelection } from '../../shared/validation/executionReadiness.ts';
+import { readPreparedExecutionInputs } from '../../shared/graph/feedSlot/prepareExecutionSlotGraph.ts';
 import type { CapabilityCatalog } from '../../shared/api.ts';
 import { compileMultimodalPrompt, PROMPT_REF_REGEX } from './multimodalCompiler.ts';
 import type { AwaitTaskResult, GenerationGateway, SubmitRequest } from '../seam/gateway';
@@ -97,8 +98,10 @@ export function createMaterialGatewayExecutor(opts: {
     key: 'material:generate',
     async execute(node, ctx): Promise<NodeOutput> {
       const gateway = ctx.gateway ?? opts.gateway;
+      const prepared = readPreparedExecutionInputs(node.data);
+      const runSnapshot = ctx.runSnapshot ?? prepared?.snapshot;
       const data = structuredClone(node.data ?? {});
-      const params = data.params as Record<string, unknown> | undefined;
+      const params = runSnapshot?.params ?? data.params as Record<string, unknown> | undefined;
       // A persisted task belongs to the hub; collecting it needs no source or catalog.
       const capability = readMaterialType(data);
       const fileId = createHash('sha256').update(node.id).digest('hex');
@@ -199,20 +202,24 @@ export function createMaterialGatewayExecutor(opts: {
         throw new Error('原生成任务无法取回；请重新确认完整输入后创建新的生成任务');
       }
 
-      const inputs = { ...ctx, upstreamOutputs: structuredClone(ctx.upstreamOutputs), upstreamBindings: structuredClone(ctx.upstreamBindings) };
+      const blocked = prepared?.assignment.blocked[0];
+      if (blocked) throw new SeamGatewayError(blocked.code, blocked.message ?? '当前输入尚不满足生成要求');
+      const inputs = { ...ctx, runSnapshot, upstreamOutputs: structuredClone(ctx.upstreamOutputs), upstreamBindings: structuredClone(ctx.upstreamBindings) };
       const submission = ctx.submission ?? await openWorkflowSubmission(gateway, ctx.catalog);
       const catalog = submission.catalog;
-      const routing = readRouting(params, catalog, capability);
       const upstream = collectMaterialSlotInputs(data, inputs, catalog, opts.resolveProjectFile);
-      if (data.inputBindingVersion !== 1 && capability === 'audio' && upstream.texts.length && resolveGenerationPrompt(data).trim()) {
+      const routing = readRouting(params, catalog, capability);
+      if (!runSnapshot && data.inputBindingVersion !== 1 && capability === 'audio' && upstream.texts.length && resolveGenerationPrompt(data).trim()) {
         throw new Error('当前音频任务不能分别表达上游正文和本地要求；请保留一个正文来源并调整音色、语速等参数');
       }
       // Upstream reference mapping (multi-modal references + audioTrack + backward compatibility)
       const references = [...upstream.references];
       const managed = upstream.managedGroup;
-      const activePromptSources = new Set([...references, ...(upstream.textInputs ?? []), ...(upstream.audioTrack ? [upstream.audioTrack] : [])]
-        .map(item => item.sourceNodeId));
-      const projectPrompt = (prompt: string | undefined) => managed ? prompt?.replace(PROMPT_REF_REGEX, (token, sourceId) =>
+      const inputReferences = [...references, ...(upstream.audioTrack ? [upstream.audioTrack] : [])];
+      const activePromptSources = new Set((runSnapshot
+        ? [...runSnapshot.assigned, ...runSnapshot.deferred]
+        : [...inputReferences, ...(upstream.textInputs ?? [])]).map(item => item.sourceNodeId));
+      const projectPrompt = (prompt: string | undefined) => runSnapshot || managed ? prompt?.replace(PROMPT_REF_REGEX, (token, sourceId) =>
         activePromptSources.has(sourceId) ? token : '') : prompt;
       const rawPrompt = projectPrompt(upstream.prompt) ?? '';
 
@@ -224,31 +231,14 @@ export function createMaterialGatewayExecutor(opts: {
         (!managed && params?.supportsInterleaved)
       );
 
-      const upstreamOutputsObj: Record<string, { mediaUrl?: string; text?: string; mimeType?: string }> = {};
-      for (const [sourceId, out] of ctx.upstreamOutputs.entries()) {
-        const firstAsset = out.mediaAssets?.[0];
-        const mediaUrl = upstream.references.find((reference) => reference.sourceNodeId === sourceId)?.pathOrUrl;
-        upstreamOutputsObj[sourceId] = {
-          mediaUrl,
-          text: out.text,
-          mimeType: firstAsset?.mimeType,
-        };
-      }
-      for (const ref of upstream.references) {
-        if (ref.sourceNodeId) {
-          upstreamOutputsObj[ref.sourceNodeId] = {
-            ...upstreamOutputsObj[ref.sourceNodeId],
-            mediaUrl: ref.pathOrUrl,
-            mimeType: ref.mimeType || upstreamOutputsObj[ref.sourceNodeId]?.mimeType,
-          };
-        }
-      }
+      const upstreamOutputs = new Map(inputReferences.flatMap(ref => ref.sourceNodeId
+        ? [[ref.sourceNodeId, { mediaUrl: ref.pathOrUrl, mimeType: ref.mimeType }] as const] : []));
 
       const compiled = compileMultimodalPrompt({
         rawPrompt,
         // The resolved Slot population alone authorizes media consumption, not legacy caches.
         slotState: undefined,
-        upstreamOutputs: upstreamOutputsObj,
+        upstreamOutputs,
         modelContract: {
           supportsInterleaved,
           category: capability,
@@ -266,7 +256,7 @@ export function createMaterialGatewayExecutor(opts: {
       const request: SubmitRequest = {
         capability,
         prompt,
-        ...(data.inputBindingVersion === 1 ? {
+        ...(runSnapshot || data.inputBindingVersion === 1 ? {
           localText: projectPrompt(upstream.localText),
           textInputs: upstream.textInputs?.map(input => ({ ...input, textContent: projectPrompt(input.textContent) ?? '' })),
         } : {}),
@@ -276,7 +266,8 @@ export function createMaterialGatewayExecutor(opts: {
         ...(managed ? {} : { image, audio }),
         references: references.length > 0 ? references : undefined,
         audioTrack,
-        duration: managed ? readNumber(params, 'duration') : upstream.documentDuration ?? readDuration(data),
+        duration: managed ? readNumber(params, 'duration')
+          : upstream.documentDuration ?? (runSnapshot ? readNumber(params, 'duration') : readDuration(data)),
         operation: upstream.operationId,
         model: upstream.modelId,
         resolution: readString(params, 'resolution'),

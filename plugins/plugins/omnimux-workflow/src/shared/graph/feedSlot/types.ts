@@ -11,6 +11,7 @@ export interface FeedAsset {
   type: string;
   availability: 'ready' | 'waiting' | 'unavailable';
   mimeType?: string;
+  declaredExtension?: string;
   sizeBytes?: number;
   durationSec?: number;
   ordinal: number;
@@ -55,6 +56,10 @@ export interface SlotSpec {
   maxSizeExclusive?: boolean;
   minDurationSec?: number;
   maxDurationSec?: number;
+  totalMinDurationSec?: number;
+  totalMaxDurationSec?: number;
+  totalMinExclusive?: boolean;
+  totalMaxExclusive?: boolean;
 }
 export interface SlotLayout {
   /** True only when the selected operation declares a text/prompt input. */
@@ -73,6 +78,8 @@ export interface SlotLayout {
   displayOnlyFromOperation?: string;
   preset: SlotLayoutPreset;
   slots: SlotSpec[];
+  /** A legacy line may limit the total across several slots of the same type. */
+  inputMaxByType?: Readonly<Record<string, number>>;
   swap: boolean;
   addButton: boolean;
   implementationGaps: string[];

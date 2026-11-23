@@ -54,12 +54,12 @@ describe('image generation derived mode', () => {
     assert.equal(resolveImageOperationForReferenceCount(catalog, 'nano-banana-2-lite', 1), 'image_to_image');
   });
 
-  it('models without a reference operation do not pretend to accept one', () => {
+  it('models without a reference operation keep text generation and expose no image well', () => {
     for (const modelId of ['muse-image', 'nano-banana-2-1', 'seedream-5-5']) {
       const layout = deriveImageGenerationLayout(catalog, modelId);
       assert.equal(layout?.slots.some((slot) => slot.type === 'image') ?? false, false, modelId);
       assert.equal(resolveImageOperationForReferenceCount(catalog, modelId, 1), undefined, modelId);
-      assert.equal(buildImageGenerationCapability({ catalog, modelId, fingerprint: fingerprint(['image']) }).selectedOperationId, undefined, modelId);
+      assert.equal(buildImageGenerationCapability({ catalog, modelId, fingerprint: fingerprint(['image']) }).selectedOperationId, 'text_to_image', modelId);
     }
   });
 });

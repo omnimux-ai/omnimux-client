@@ -61,6 +61,7 @@ const EXT_BY_MIME: Record<string, string> = {
 };
 
 const SNIFF_HEAD_BYTES = 512;
+export const LOCAL_FILE_PROBE_LIMIT = 64;
 
 interface NodeFsSync {
   openSync(path: string, flags: string): number;
@@ -121,18 +122,34 @@ export function sniffMimeType(buf: Uint8Array): string | undefined {
   // WAV: RIFF....WAVE
   if (asciiEq(bytes, 0, 'RIFF') && asciiEq(bytes, 8, 'WAVE')) return 'audio/wav';
   if (asciiEq(bytes, 0, 'fLaC')) return 'audio/flac';
-  // MP4: offset 4 is "ftyp"
-  if (asciiEq(bytes, 4, 'ftyp')) return 'video/mp4';
-  // WebM: 1A 45 DF A3 (EBML)
-  if (bytesEq(bytes, 0, [0x1a, 0x45, 0xdf, 0xa3])) return 'video/webm';
-  // MP3: "ID3" or MPEG frame sync FF E0–FF
-  if (asciiEq(bytes, 0, 'ID3')) return 'audio/mpeg';
-  if (bytes.length >= 2 && bytes[0] === 0xff && ((bytes[1] ?? 0) & 0xe0) === 0xe0) {
-    return 'audio/mpeg';
+  if (bytesEq(bytes, 0, [0x49, 0x49, 0x2a, 0]) || bytesEq(bytes, 0, [0x4d, 0x4d, 0, 0x2a])) return 'image/tiff';
+  if (asciiEq(bytes, 0, 'BM')) return 'image/bmp';
+  if (asciiEq(bytes, 0, 'RIFF') && asciiEq(bytes, 8, 'AVI ')) return 'video/x-msvideo';
+  // The ftyp brand distinguishes containers that share the same file header.
+  if (asciiEq(bytes, 4, 'ftyp')) {
+    if (asciiEq(bytes, 8, 'qt  ')) return 'video/quicktime';
+    if (asciiEq(bytes, 8, 'M4A ') || asciiEq(bytes, 8, 'M4B ')) return 'audio/mp4';
+    if (asciiEq(bytes, 8, 'avif') || asciiEq(bytes, 8, 'avis')) return 'image/avif';
+    if (asciiEq(bytes, 8, 'heic') || asciiEq(bytes, 8, 'heix')) return 'image/heic';
+    if (asciiEq(bytes, 8, 'mif1') || asciiEq(bytes, 8, 'msf1')) {
+      const boxLength = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(0);
+      for (let offset = 16; offset + 4 <= Math.min(boxLength, bytes.length); offset += 4) {
+        if (asciiEq(bytes, offset, 'avif') || asciiEq(bytes, offset, 'avis')) return 'image/avif';
+        if (asciiEq(bytes, offset, 'heic') || asciiEq(bytes, offset, 'heix')) return 'image/heic';
+      }
+      return 'image/heif';
+    }
+    return 'video/mp4';
   }
-  // SVG: first 512 bytes contain "<svg" or "<?xml"
-  const head = latin1Head(bytes, SNIFF_HEAD_BYTES).toLowerCase();
-  if (head.includes('<svg') || head.includes('<?xml')) return 'image/svg+xml';
+  if (bytesEq(bytes, 0, [0x1a, 0x45, 0xdf, 0xa3])) {
+    // EBML DocType appears in the header before the media data.
+    return latin1Head(bytes).includes('matroska') ? 'video/x-matroska' : 'video/webm';
+  }
+  if (asciiEq(bytes, 0, 'OggS')) return latin1Head(bytes).includes('OpusHead') ? 'audio/opus' : 'audio/ogg';
+  if (bytes[0] === 0xff && ((bytes[1] ?? 0) & 0xf6) === 0xf0) return 'audio/aac';
+  if (asciiEq(bytes, 0, 'ID3') || (bytes[0] === 0xff && ((bytes[1] ?? 0) & 0xe0) === 0xe0)) return 'audio/mpeg';
+  const markup = latin1Head(bytes).replace(/^\u00ef\u00bb\u00bf/, '');
+  if (/^\s*(?:(?:<\?xml[^>]*\?>|<!--[\s\S]*?-->|<!DOCTYPE svg[^>]*>)\s*)*<svg(?:\s|\/?>)/i.test(markup)) return 'image/svg+xml';
 
   return undefined;
 }
@@ -232,11 +249,25 @@ export function mimeFromFilename(filename: string): string | undefined {
 }
 
 export function extensionsForMimes(mimes: readonly string[]): string[] {
-  return Object.entries(MIME_BY_EXT).filter(([, mime]) => mimes.includes(mime)).map(([extension]) => extension);
+  const allowed = new Set(mimes.map(mime => mime.trim().toLowerCase()));
+  return Object.entries(MIME_BY_EXT).filter(([, mime]) => allowed.has(mime)).map(([extension]) => extension);
 }
 
 export function extensionsForMaterialType(type: MaterialType): string[] {
   return [...IMPORT_EXTENSIONS[type]];
+}
+
+/** Workflow's file chooser maps a named slot's MIME allowlist onto native extensions. */
+export interface SlotFileFilter {
+  slot: string;
+  materialType: MaterialType;
+  allowedMimes?: readonly string[];
+}
+
+export function extensionsForSlotFiles({ materialType, allowedMimes }: SlotFileFilter, requested?: readonly string[]): string[] {
+  const allowed = allowedMimes?.length ? extensionsForMimes(allowedMimes) : undefined;
+  return extensionsForMaterialType(materialType).filter(extension =>
+    (!allowed || allowed.includes(extension)) && (!requested || requested.includes(extension)));
 }
 
 export function materialTypeFromFilename(filename: string, mime = ''): MaterialType | null {
@@ -404,6 +435,8 @@ export interface LocalMediaProbeItem {
   size?: number;
   mime?: string;
   name?: string;
+  /** A transient version of the file that supplied the content metadata. */
+  revision?: string;
 }
 
 export function applyLocalMediaProbe<T extends { data?: Record<string, unknown> }>(

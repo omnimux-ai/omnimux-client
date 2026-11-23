@@ -37,13 +37,13 @@ function stateOf(result, id) {
   return result.operationStates.find((state) => state.id === id);
 }
 
-function selected(modelId, types, outputType = 'video', preferredOperationId) {
+function selected(modelId, types, outputType = 'video', preferredOperationId, autoOperationId = null) {
   return buildInputCapability({
     catalog,
     modelId,
     outputType,
     fingerprint: fingerprint(types),
-    ...(preferredOperationId ? { preferredOperationId } : {}),
+    ...(preferredOperationId ? { preferredOperationId, autoOperationId } : {}),
   });
 }
 
@@ -56,7 +56,7 @@ describe('R1/R2/R2b/R3 video matrix (real catalog)', () => {
 
     const one = selected('muse-video', ['image']);
     assert.equal(one.selectedOperationId, 'first_frame');
-    assert.equal(stateOf(one, 'text_to_video')?.usable, false);
+    assert.equal(stateOf(one, 'text_to_video')?.usable, true);
     assert.equal(stateOf(one, 'first_frame')?.usable, true);
   });
 
@@ -68,7 +68,7 @@ describe('R1/R2/R2b/R3 video matrix (real catalog)', () => {
     // #88 A17: explicit first_frame with two images is a valid choice; the
     // second image is unused:capacity, not an operation-level failure.
     assert.equal(stateOf(result, 'first_frame')?.usable, true);
-    assert.equal(stateOf(result, 'text_to_video')?.usable, false);
+    assert.equal(stateOf(result, 'text_to_video')?.usable, true);
   });
 
   it('R3 prefers the mode that consumes more distinct references across all slots', () => {
@@ -118,7 +118,7 @@ describe('R1/R2/R2b/R3 video matrix (real catalog)', () => {
     const image = selected('minimax-h3-video', ['image']);
     assert.equal(image.selectedOperationId, 'video_multi_ref');
     assert.equal(stateOf(image, 'digital_human')?.usable, false);
-    assert.equal(stateOf(image, 'text_to_video')?.usable, false);
+    assert.equal(stateOf(image, 'text_to_video')?.usable, true);
 
     const both = selected('minimax-h3-video', ['image', 'audio']);
     assert.equal(both.selectedOperationId, 'digital_human');
@@ -159,7 +159,7 @@ describe('R1/R2/R2b/R3 video matrix (real catalog)', () => {
     assert.equal(result.selectedOperationId, 'first_frame');
     assert.equal(stateOf(result, 'first_frame')?.potentialHits, 1);
     assert.equal(stateOf(result, 'first_last_frame')?.usable, true);
-    assert.equal(stateOf(result, 'text_to_video')?.usable, false);
+    assert.equal(stateOf(result, 'text_to_video')?.usable, true);
   });
 
   it('R3 ignores a system-derived operation but keeps an explicit user choice', () => {
@@ -188,8 +188,8 @@ describe('R1/R2/R2b/R3 video matrix (real catalog)', () => {
     assert.equal(stateOf(result, 'video_multi_ref')?.usable, true);
   });
 
-  it('R6 no media falls back to the family default operation', () => {
-    const result = selected('seedance-2-5', [], 'video', 'first_frame');
+  it('R6 an automatically selected mode falls back to the family default without media', () => {
+    const result = selected('seedance-2-5', [], 'video', 'first_frame', 'first_frame');
     assert.equal(result.selectedOperationId, 'text_to_video');
     assert.equal(stateOf(result, 'first_frame')?.usable, false);
   });
@@ -201,22 +201,23 @@ describe('image / audio / text matrices (real catalog)', () => {
     assert.equal(none.selectedOperationId, 'text_to_image');
     const one = selected('gpt-image-2.5', ['image'], 'image');
     assert.equal(one.selectedOperationId, 'multi_reference');
-    assert.equal(stateOf(one, 'text_to_image')?.usable, false);
+    assert.equal(stateOf(one, 'text_to_image')?.usable, true);
   });
 
   it('nano-banana-2-lite: no media → text_to_image; 1 image → image_to_image', () => {
     assert.equal(selected('nano-banana-2-lite', [], 'image').selectedOperationId, 'text_to_image');
     const one = selected('nano-banana-2-lite', ['image'], 'image');
     assert.equal(one.selectedOperationId, 'image_to_image');
-    assert.equal(stateOf(one, 'text_to_image')?.usable, false);
+    assert.equal(stateOf(one, 'text_to_image')?.usable, true);
   });
 
-  it('image models without any image-consuming operation cannot consume an image (R5/R10)', () => {
+  it('image models without a reference slot still support their text operation with image supply', () => {
     for (const modelId of ['muse-image', 'nano-banana-2-1', 'seedream-5-5']) {
       assert.equal(modelCanConsumeMediaType({ catalog, modelId, outputType: 'image', mediaType: 'image' }), false);
       const result = selected(modelId, ['image'], 'image');
-      assert.equal(result.blocked, true);
-      assert.equal(result.selectedOperationId, undefined);
+      assert.equal(result.blocked, false);
+      assert.equal(result.selectedOperationId, 'text_to_image');
+      assert.equal(result.hasMedia, false);
     }
   });
 
@@ -230,32 +231,42 @@ describe('image / audio / text matrices (real catalog)', () => {
     assert.equal(stateOf(audio, 'voice_clone')?.usable, true);
   });
 
-  it('suno / suno-sounds reject audio input (no media slot)', () => {
-    for (const modelId of ['suno', 'suno-sounds']) {
-      assert.equal(modelCanConsumeMediaType({ catalog, modelId, outputType: 'audio', mediaType: 'audio' }), false);
-      assert.equal(selected(modelId, ['audio'], 'audio').blocked, true);
+  it('suno keeps its text operation and suno-sounds stays unlisted with or without audio', () => {
+    for (const supply of [[], ['audio']]) {
+      const suno = selected('suno', supply, 'audio');
+      assert.equal(suno.selectedOperationId, 'text_to_music');
+      assert.equal(suno.blocked, false);
+      assert.equal(suno.hasMedia, false);
+
+      const sounds = selected('suno-sounds', supply, 'audio');
+      assert.equal(sounds.selectedOperationId, undefined);
+      assert.equal(sounds.blocked, true);
+      assert.equal(sounds.reasonCode, 'not_listed');
     }
   });
 
-  it('gemini-3.8-flash absorbs text/image/video/audio/pdf; gemini-4-argon rejects audio', () => {
+  it('gemini-3.8-flash absorbs text/image/video/audio/pdf; gemini-4-argon leaves audio out', () => {
     const gemini = selected('gemini-3.8-flash', ['image', 'video', 'audio', 'document'], 'text');
     assert.equal(gemini.selectedOperationId, 'chat');
     assert.equal(stateOf(gemini, 'chat')?.usable, true);
     assert.equal(modelCanConsumeMediaType({ catalog, modelId: 'gemini-4-argon', outputType: 'text', mediaType: 'audio' }), false);
-    assert.equal(selected('gemini-4-argon', ['audio'], 'text').blocked, true);
+    const argon = selected('gemini-4-argon', ['audio'], 'text');
+    assert.equal(argon.selectedOperationId, 'chat');
+    assert.equal(argon.blocked, false);
+    assert.equal(argon.hasMedia, false);
   });
 
-  it('R10 keeps media-incompatible models in the picker as grey options', () => {
+  it('A55 keeps models selectable with media their operations leave unused', () => {
     const imageModels = buildFilteredModelOptions({
       catalog,
       fingerprint: fingerprint(['image']),
       outputType: 'image',
-      includeInputIncompatible: true,
+      allowUnassignedInputs: true,
     });
     const imageOptions = new Map(imageModels.options.map((option) => [option.id, option]));
-    assert.equal(imageOptions.get('muse-image')?.inputIncompatible, true);
-    assert.equal(imageOptions.get('nano-banana-2-1')?.inputIncompatible, true);
-    assert.equal(imageOptions.get('seedream-5-5')?.inputIncompatible, true);
+    assert.equal(imageOptions.get('muse-image')?.executable, true);
+    assert.equal(imageOptions.get('nano-banana-2-1')?.executable, true);
+    assert.equal(imageOptions.get('seedream-5-5')?.executable, true);
     assert.equal(imageOptions.get('gpt-image-2.5')?.inputIncompatible, undefined);
     assert.equal(imageOptions.get('nano-banana-2-lite')?.inputIncompatible, undefined);
 
@@ -263,7 +274,7 @@ describe('image / audio / text matrices (real catalog)', () => {
       catalog,
       fingerprint: fingerprint(['audio']),
       outputType: 'video',
-      includeInputIncompatible: true,
+      allowUnassignedInputs: true,
     });
     const videoOptions = new Map(videoModels.options.map((option) => [option.id, option]));
     // #88: an audio candidate has no Muse slot and must not grey Muse.

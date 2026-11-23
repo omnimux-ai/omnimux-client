@@ -53,6 +53,7 @@ export type CompatReasonCode =
   | 'execution_unavailable'
   | 'input_waiting'
   | 'input_unavailable'
+  | 'parameter_unsupported'
   | 'text_role_required';
 
 export interface CompatRejection {
@@ -167,6 +168,8 @@ export interface UpstreamAssetFingerprint {
   /** Material type of the upstream node ('image' | 'video' | 'audio' | 'text' | …). */
   type: string;
   mimeType?: string;
+  declaredExtension?: string;
+  ordinal?: number;
   sizeBytes?: number;
   durationSec?: number;
   /** Explicit role request (from edge data / handle semantics). */
@@ -713,75 +716,8 @@ export function matchOperationInputs(
 
   const accepts = rejections.length === 0;
 
-  // readyToSubmit: every slot min satisfied + required prompt present.
-  const pending: CompatRejection[] = [];
-  const deferPrompt = options.deferVisualPrompt && isVisualGeneration(op.output.type);
-  if (accepts) {
-    if (!op.inputs.some(slot => slot.composition) && op.output.type === 'audio' && fingerprint.localText?.trim()
-      && fingerprint.assets.some((asset) => asset.type === 'text' && asset.textContent?.trim())) {
-      pending.push(rejection('text_role_required', '当前音频任务不能分别表达上游正文和本地要求；请将正文保留在一个来源，并用已支持的音色、语速等参数调整表达', { operationId: op.id }));
-    }
-    for (const asset of fingerprint.assets) {
-      if (!asset.availability || asset.availability === 'ready') continue;
-      pending.push(rejection(asset.availability === 'waiting' ? 'input_waiting' : 'input_unavailable',
-        asset.availabilityMessage ?? `来源 ${asset.sourceNodeId} 尚未就绪，请补齐内容或移除引用`, {
-          operationId: op.id, meta: { sourceNodeId: asset.sourceNodeId, sourceLabel: asset.sourceLabel ?? asset.sourceNodeId, edgeId: asset.edgeId },
-        }));
-    }
-    for (const state of assignments.values()) {
-      const localValue = state.slot.slot === 'prompt' || state.slot.role === 'prompt'
-        ? fingerprint.localText ?? fingerprint.prompt : readNodeField(state.slot, fingerprint);
-      const localPresent = state.slot.valueSources?.includes('local_field') && Boolean(String(localValue ?? '').trim());
-      const composition = state.slot.composition;
-      if (composition && localPresent && !(composition.kind === 'single_body' && composition.localRole === 'body')
-        && !(composition.kind === 'content_with_instruction' && composition.localRole === 'instruction')) {
-        pending.push(rejection('text_role_required', '当前方式不支持该文本角色', { operationId: op.id, slot: state.slot.slot }));
-      }
-      const count = state.slot.type === 'text' && composition
-        ? Number(localPresent
-          || (state.slot.valueSources?.includes('upstream_output') && state.assets.some(asset => asset.textContent?.trim())))
-        : state.assets.length;
-      if (count < state.slot.min && state.slot.type === 'text' && composition && state.slot.valueSources?.includes('local_field')) {
-        // Typing locally would satisfy this slot, so the missing item is the body text itself.
-        if (!deferPrompt || !isPromptInput(state.slot)) {
-          pending.push(rejection('prompt_required', '请提供正文或补充要求，也可连接已有文本', { operationId: op.id, slot: state.slot.slot }));
-        }
-      } else if (count < state.slot.min) {
-        pending.push(rejection('min_unsatisfied', `槽位 ${state.slot.slot} 需要至少 ${state.slot.min} 个输入（当前 ${state.assets.length}）`, {
-          operationId: op.id,
-          slot: state.slot.slot,
-          meta: { min: state.slot.min, current: state.assets.length },
-        }));
-      }
-    }
-    for (const group of op.inputGroups) {
-      const count = group.slots.reduce(
-        (sum, slotName) => sum + (assignments.get(slots.find((slot) => slot.slot === slotName)!)?.assets.length ?? 0),
-        0,
-      );
-      if (count < group.min) {
-        pending.push(rejection('min_unsatisfied', group.hint || `输入组至少需要 ${group.min} 个素材（当前 ${count}）`, {
-          operationId: op.id,
-          meta: { slots: [...group.slots], min: group.min, current: count },
-        }));
-      }
-    }
-    const promptRequired = op.inputs.some(
-      (slot) => (slot.role === 'prompt' || slot.slot === 'prompt') && slot.min >= 1,
-    );
-    if (!deferPrompt && promptRequired && !fingerprint.prompt.trim() && !pending.some((item) => item.code === 'prompt_required')) {
-      pending.push(rejection('prompt_required', '请提供正文或补充要求，也可连接已有文本', { operationId: op.id }));
-    }
-    for (const slot of op.inputs) {
-      if (slot.source !== 'node_field' || slot.min < 1 || slot.role === 'prompt' || slot.slot === 'prompt') continue;
-      if (isRequiredNodeFieldPresent(slot, readNodeField(slot, fingerprint))) continue;
-      const name = slot.slot.endsWith('_url') ? '有效 URL' : '非空值';
-      pending.push(rejection('metadata_required', `槽位 ${slot.slot} 需要${name}`, {
-        operationId: op.id,
-        slot: slot.slot,
-      }));
-    }
-  }
+  const pending = accepts ? checkAssignedInputReadiness(op, fingerprint,
+    new Map([...assignments.values()].map(state => [state.slot.slot, state.assets])), options.deferVisualPrompt) : [];
 
   return {
     operationId: op.id,
@@ -792,6 +728,83 @@ export function matchOperationInputs(
     rejections,
     pending,
   };
+}
+
+/** Check slot minima and node fields against an already selected input set. */
+export function checkAssignedInputReadiness(
+  op: ContractOperationView,
+  fingerprint: UpstreamFingerprint,
+  assigned: ReadonlyMap<string, readonly UpstreamAssetFingerprint[]>,
+  deferVisualPrompt?: boolean,
+): CompatRejection[] {
+  const pending: CompatRejection[] = [];
+  const deferPrompt = deferVisualPrompt && isVisualGeneration(op.output.type);
+  if (!op.inputs.some(slot => slot.composition) && op.output.type === 'audio' && fingerprint.localText?.trim()
+    && fingerprint.assets.some((asset) => asset.type === 'text' && asset.textContent?.trim())) {
+    pending.push(rejection('text_role_required', '当前音频任务不能分别表达上游正文和本地要求；请将正文保留在一个来源，并用已支持的音色、语速等参数调整表达', { operationId: op.id }));
+  }
+  for (const asset of fingerprint.assets) {
+    if (!asset.availability || asset.availability === 'ready') continue;
+    pending.push(rejection(asset.availability === 'waiting' ? 'input_waiting' : 'input_unavailable',
+      asset.availabilityMessage ?? `来源 ${asset.sourceNodeId} 尚未就绪，请补齐内容或移除引用`, {
+        operationId: op.id, meta: { sourceNodeId: asset.sourceNodeId, sourceLabel: asset.sourceLabel ?? asset.sourceNodeId, edgeId: asset.edgeId },
+      }));
+  }
+  for (const slot of bindableSlots(op)) {
+    const state = { slot, assets: assigned.get(slot.slot) ?? [] };
+    const localValue = state.slot.slot === 'prompt' || state.slot.role === 'prompt'
+      ? fingerprint.localText ?? fingerprint.prompt : readNodeField(state.slot, fingerprint);
+    const localPresent = state.slot.valueSources?.includes('local_field') && Boolean(String(localValue ?? '').trim());
+    const composition = state.slot.composition;
+    if (composition && localPresent && !(composition.kind === 'single_body' && composition.localRole === 'body')
+      && !(composition.kind === 'content_with_instruction' && composition.localRole === 'instruction')) {
+      pending.push(rejection('text_role_required', '当前方式不支持该文本角色', { operationId: op.id, slot: state.slot.slot }));
+    }
+    const count = state.slot.type === 'text' && composition
+      ? Number(localPresent
+        || (state.slot.valueSources?.includes('upstream_output') && state.assets.some(asset => asset.textContent?.trim())))
+      : state.assets.length;
+    if (count < state.slot.min && state.slot.type === 'text' && composition && state.slot.valueSources?.includes('local_field')) {
+      // Typing locally would satisfy this slot, so the missing item is the body text itself.
+      if (!deferPrompt || !isPromptInput(state.slot)) {
+        pending.push(rejection('prompt_required', '请提供正文或补充要求，也可连接已有文本', { operationId: op.id, slot: state.slot.slot }));
+      }
+    } else if (count < state.slot.min) {
+      pending.push(rejection('min_unsatisfied', `槽位 ${state.slot.slot} 需要至少 ${state.slot.min} 个输入（当前 ${state.assets.length}）`, {
+        operationId: op.id,
+        slot: state.slot.slot,
+        meta: { min: state.slot.min, current: state.assets.length },
+      }));
+    }
+  }
+  for (const group of op.inputGroups) {
+    const count = group.slots.reduce(
+      (sum, slotName) => sum + (assigned.get(slotName)?.length ?? 0),
+      0,
+    );
+    if (count < group.min) {
+      pending.push(rejection('min_unsatisfied', group.hint || `输入组至少需要 ${group.min} 个素材（当前 ${count}）`, {
+        operationId: op.id,
+        meta: { slots: [...group.slots], min: group.min, current: count },
+      }));
+    }
+  }
+  const promptRequired = op.inputs.some(
+    (slot) => (slot.role === 'prompt' || slot.slot === 'prompt') && slot.min >= 1,
+  );
+  if (!deferPrompt && promptRequired && !fingerprint.prompt.trim() && !pending.some((item) => item.code === 'prompt_required')) {
+    pending.push(rejection('prompt_required', '请提供正文或补充要求，也可连接已有文本', { operationId: op.id }));
+  }
+  for (const slot of op.inputs) {
+    if (slot.source !== 'node_field' || slot.min < 1 || slot.role === 'prompt' || slot.slot === 'prompt') continue;
+    if (isRequiredNodeFieldPresent(slot, readNodeField(slot, fingerprint))) continue;
+    const name = slot.slot.endsWith('_url') ? '有效 URL' : '非空值';
+    pending.push(rejection('metadata_required', `槽位 ${slot.slot} 需要${name}`, {
+      operationId: op.id,
+      slot: slot.slot,
+    }));
+  }
+  return pending;
 }
 
 // ============================================================================

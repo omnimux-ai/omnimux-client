@@ -23,6 +23,8 @@ export interface UpstreamMediaItem {
   documentText?: string;
   /** Canonical MIME; undefined when unknown (never invent). */
   mimeType?: string;
+  declaredExtension?: string;
+  ordinal?: number;
   /** Canonical byte size; undefined when unknown. */
   sizeBytes?: number;
   /** Canonical duration seconds; undefined when unknown. */
@@ -41,7 +43,7 @@ export function useUpstreamMedia(nodeId: string): UpstreamMediaItem[] {
   return useMemo<UpstreamMediaItem[]>(() => {
     if (!nodeId || !edges || !nodes) return [];
     const inbound = edges.filter((edge) => edge.target === nodeId);
-    return inbound.flatMap((edge) => {
+    return inbound.flatMap((edge, ordinal) => {
       const node = nodes.find((n) => n.id === edge.source);
       if (!node) return [];
       const data = (node.data || {}) as unknown as MaterialNodeData;
@@ -52,12 +54,11 @@ export function useUpstreamMedia(nodeId: string): UpstreamMediaItem[] {
       const documentText = source.output.documentText;
       const hasMedia = source.availability === 'ready';
       const displayName = canvasResourceDisplayName(node, source);
-      const { mimeType, sizeBytes, durationSec } = source.metadata ?? {};
+      const { mimeType, declaredExtension, sizeBytes, durationSec } = source.metadata ?? {};
       const edgeData = (edge.data ?? {}) as Record<string, unknown>;
-      const role =
-        typeof edgeData.role === 'string' && edgeData.role.trim()
-          ? edgeData.role.trim()
-          : undefined;
+      const binding = edgeData.slotBinding as { role?: string; mirror?: boolean } | undefined;
+      const role = typeof edgeData.role === 'string' ? edgeData.role.trim()
+        : binding?.mirror === true ? undefined : binding?.role;
       const targetSlot = readExplicitTargetSlot(edgeData, edge.targetHandle);
 
       return [
@@ -68,12 +69,14 @@ export function useUpstreamMedia(nodeId: string): UpstreamMediaItem[] {
           outputId: source.outputId,
           label: ['text', 'image', 'video', 'audio', 'document'].includes(source.materialType)
             ? (displayName.titleKey ? t(displayName.titleKey) : displayName.title) : data.label || node.id,
-          materialType: data.materialType || (node.type === 'table' ? 'table' : 'image'),
+          materialType: source.materialType as UpstreamMediaItem['materialType'],
           url,
           hasMedia,
           textContent,
           ...(documentText !== undefined ? { documentText } : {}),
           ...(mimeType ? { mimeType } : {}),
+          ...(declaredExtension ? { declaredExtension } : {}),
+          ordinal,
           ...(sizeBytes !== undefined ? { sizeBytes } : {}),
           ...(durationSec !== undefined ? { durationSec } : {}),
           edgeId: edge.id,
@@ -98,6 +101,8 @@ export function toUpstreamSnapshots(items: UpstreamMediaItem[]): UpstreamMediaSn
     ...(item.textContent ? { textContent: item.textContent } : {}),
     ...(item.documentText !== undefined ? { documentText: item.documentText } : {}),
     ...(item.mimeType ? { mimeType: item.mimeType } : {}),
+    ...(item.declaredExtension ? { declaredExtension: item.declaredExtension } : {}),
+    ...(item.ordinal !== undefined ? { ordinal: item.ordinal } : {}),
     ...(item.sizeBytes !== undefined ? { sizeBytes: item.sizeBytes } : {}),
     ...(item.durationSec !== undefined ? { durationSec: item.durationSec } : {}),
     ...(item.edgeId ? { edgeId: item.edgeId } : {}),

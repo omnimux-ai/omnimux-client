@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { autoFillSlots, deriveSlotLayout, hydrateSlotBindings, assembleEffectiveInputsFromSlots, swapNamedSlots, feedFromFingerprint } from './index.ts';
 import { effectiveInputDisplay } from './effectiveInputDisplay.ts';
 import { buildUpstreamFingerprint } from '../../validation/compatKernel.ts';
+import { resolveInputAssignment } from '../../validation/inputAssignment.ts';
 import { effectiveSlotFingerprint } from './effectiveFingerprint.ts';
 import { createMaterialNode } from '../nodeFactory.ts';
 import { planCanvasInputMutation, planCanvasInputSelection, validateCanvasInputSelection } from '../canvasInputMutationGateway.ts';
@@ -166,7 +167,7 @@ for (const kind of ['text', 'image', 'video', 'audio']) {
   });
 }
 
-test('new-version node and supply mutation preserve explicitly empty bindings and do not compose supply text', () => {
+test('new text supply fills the prompt while a saved explicit clear suppresses existing supply', () => {
   const qualified = { source: 'omnimux', text: [], image: [], video: [], audio: [], models: [{ id: 'qualified', label: 'Qualified', operations: [{
     id: 'generate', listed: true, output: { type: 'text' }, inputs: [{ slot: 'prompt', type: 'text', role: 'prompt', source: 'node_field', min: 1, max: 1,
       valueSources: ['local_field', 'upstream_output'], composition: { kind: 'content_with_instruction', localRole: 'instruction' } }],
@@ -177,12 +178,13 @@ test('new-version node and supply mutation preserve explicitly empty bindings an
   const source = { id: 'a', type: 'material', position: { x: 0, y: 0 }, data: { nodeKind: 'import', materialType: 'text', content: '供给。' } };
   const changed = planCanvasInputMutation({ nodes: [source, target], edges: [] }, { addEdges: [{ id: 'ea', source: 'a', target: target.id }] }, { catalog: qualified });
   assert.equal(changed.status, 'allowed');
-  assert.deepEqual(changed.nodes.find(node => node.id === target.id).data.slotBindings, {});
-  const l = deriveSlotLayout(qualified, 'qualified', 'generate');
+  assert.deepEqual(changed.nodes.find(node => node.id === target.id).data.slotBindings.prompt.map(item => item.edgeId), ['ea']);
   const raw = buildUpstreamFingerprint({ prompt: '供给。', localText: '本地。', assets: [{ edgeId: 'ea', sourceNodeId: 'a', type: 'text', textContent: '供给。', availability: 'ready' }] });
-  const selected = effectiveSlotFingerprint(raw, l, {}, [], 1);
-  assert.equal(selected.prompt, '本地。');
-  assert.deepEqual(selected.assets, []);
+  const args = { catalog: qualified, modelId: 'qualified', outputType: 'text', fingerprint: raw, inputBindingVersion: 1 };
+  assert.deepEqual(resolveInputAssignment(args).assigned.map(asset => asset.edgeId), ['ea']);
+  const selected = resolveInputAssignment({ ...args, slotBindings: {} });
+  assert.equal(selected.effectiveFingerprint.prompt, '本地。');
+  assert.deepEqual(selected.assigned, []);
 });
 
 for (const [id, preset] of [['text_to_video', 'none'], ['first_frame', 'named'], ['end_frame', 'named'], ['first_last_frame', 'pair'], ['video_multi_ref', 'strip'], ['digital_human', 'named']]) {

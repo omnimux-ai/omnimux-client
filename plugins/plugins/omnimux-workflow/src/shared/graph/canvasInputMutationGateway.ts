@@ -46,6 +46,7 @@ export interface CanvasInputSelectionVerdict {
 export interface CanvasInputMutation {
   strictConsumption?: CanvasStrictConsumptionIntent;
   strictAssignments?: readonly { slot: string; edgeId: string }[];
+  preserveOperation?: { targetNodeId: string; operationId: string };
   orderedSlotSwap?: { targetNodeId: string; slot: string; firstEdgeId: string; secondEdgeId: string };
   addNodes?: CanvasNode[];
   addEdges?: CanvasConnectionLike[];
@@ -278,7 +279,7 @@ export function validateCanvasInputSelection(graph: CanvasInputMutationState, in
 
 export function planCanvasInputMutation(current: CanvasInputMutationState, mutation: CanvasInputMutation, context?: CanvasMutationRuntimeContext): CanvasInputMutationPlan {
   if (mutation.orderedSlotSwap) {
-    if (mutation.strictConsumption || mutation.addNodes?.length || mutation.addEdges?.length
+    if (mutation.strictConsumption || mutation.preserveOperation || mutation.addNodes?.length || mutation.addEdges?.length
       || mutation.removeNodeIds?.length || mutation.removeEdgeIds?.length || mutation.nodePatches?.length) {
       return rejectMutation(current, 'invalid_selection');
     }
@@ -377,7 +378,10 @@ export function planCanvasInputMutation(current: CanvasInputMutationState, mutat
   for (const id of targets) {
     const node = nodes.find((item) => item.id === id);
     if (!isGenerate(node)) continue;
-    const next = recomputeCanvasSlots(node, { nodes, edges }, context, current.nodes.find((item) => item.id === id), newEdgeIds, disconnected);
+    const preservedOperation = mutation.preserveOperation?.targetNodeId === id ? mutation.preserveOperation.operationId : undefined;
+    const next = recomputeCanvasSlots(node, { nodes, edges }, context, current.nodes.find((item) => item.id === id),
+      newEdgeIds, disconnected, preservedOperation);
+    if (preservedOperation && readCanvasParams(next).operation !== preservedOperation) return rejectMutation(current, 'input_changed');
     nodes = nodes.map((item) => item.id === id ? next : item);
     edges = mirrorCanvasSlots(next, edges, context);
   }

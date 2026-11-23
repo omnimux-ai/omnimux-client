@@ -11,6 +11,7 @@ import { describe, it } from 'node:test';
 import { recomputeCanvasSlots } from './canvasSlotRecompute.ts';
 import { deriveSlotLayout, selectSlotOccupants } from './feedSlot/index.ts';
 import { effectiveInputDisplay } from './feedSlot/effectiveInputDisplay.ts';
+import { prepareExecutionSlotGraph } from './feedSlot/prepareExecutionSlotGraph.ts';
 
 function imageCatalog() {
   return {
@@ -161,6 +162,22 @@ describe('Issue #3128 · 显示已装填 ⇒ 提交必含该 reference', () => {
     const persisted = result.data.slotBindings ?? {};
     assert.equal((persisted.reference_image ?? []).length, 1, 'pinned 用户选择不得被静默清理');
     assert.equal(persisted.reference_image[0].edgeId, 'e-dead');
+    assert.equal(persisted.reference_image[0].outputId, 'asset-x');
+    assert.equal(result.data.compat.readyToSubmit, false);
+    assert.ok(result.data.compat.reasonCodes.includes('input_unavailable'));
+  });
+
+  it('保留已固定的保存身份，同时提交读取同一连线的当前输出', () => {
+    const catalog = imageCatalog();
+    const node = targetNode({ slotBindings: { reference_image: [
+      { sourceNodeId: 'upstream', edgeId: edge.id, outputId: 'older-output', pinned: true },
+    ] } });
+    const graph = { nodes: [upstreamImage, node], edges: [edge] };
+    const result = recomputeCanvasSlots(node, graph, { catalog });
+    assert.equal(result.data.slotBindings.reference_image[0].outputId, 'older-output');
+    const snapshot = prepareExecutionSlotGraph([upstreamImage, result], graph.edges, catalog).runSnapshots.get(node.id);
+    assert.deepEqual(snapshot.assigned.map(({ edgeId, outputId }) => [edgeId, outputId]),
+      [[edge.id, upstreamImage.data.mediaAssets[0].url]]);
   });
 
   it('仅边缺失（源节点仍在）同样清理；边 source 与占位源不一致也不算存活（Issue #4032 评审）', () => {

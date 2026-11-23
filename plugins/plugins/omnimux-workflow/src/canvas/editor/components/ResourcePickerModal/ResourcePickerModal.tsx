@@ -3,13 +3,14 @@ import { X } from 'lucide-react';
 import { CustomModal, toast } from '../../../ui';
 import { useT } from '../../../i18n';
 import { useCanvasStore } from '../../../store/canvasStore';
-import { acceptsPickerFile, listCanvasResources, planPickerSelectionMutation, pickerReasonKey, resourcePickerContextKey,
-  resourcePickerReferenceGroup, resourcePickerSlot, routePickerReferences, updatePickerLocalDrafts, usesQualifiedResourcePicker,
-  type LocalFileDraft, type ResourcePickerTab, type ResourcePickerMode } from '../../utils/resourcePickerPolicy.ts';
-import type { ResourcePickerSlotTarget } from '../../hooks/useResourcePicker.ts';
+import { acceptsPickerFile, checkNamedPickerSelection, listCanvasResources, namedPickerState, planPickerSelectionMutation,
+  pickerReasonKey, resourcePickerContextKey, resourcePickerReferenceGroup, resourcePickerSlot, routePickerReferences,
+  updatePickerLocalDrafts, usesQualifiedResourcePicker, type LocalFileDraft, type ResourcePickerTab, type ResourcePickerMode,
+} from '../../utils/resourcePickerPolicy.ts';
+import type { ResourcePickerCommitPayload, ResourcePickerSlotTarget } from '../../hooks/useResourcePicker.ts';
 import type { NodeSlotEngineState } from '../../../../shared/graph/slotContractTypes.ts';
-import type { CanvasInputSelectionRequest } from '../../../../shared/graph/canvasInputMutationGateway.ts';
-import { extensionsForMaterialType, extensionsForMimes } from '../../../../shared/localMedia.ts';
+import { extensionsForMaterialType, extensionsForMimes, extensionsForSlotFiles, type SlotFileFilter } from '../../../../shared/localMedia.ts';
+import { readSlotIntent, slotIntentNeedsDuration } from '../../../../shared/validation/slotIntent.ts';
 import { isMediaInputType } from '../../../../shared/validation/compatKernel.ts';
 import { useAsyncInstanceGuard } from '../../hooks/useAsyncInstanceGuard.ts';
 import { probePickerDrafts } from '../../utils/probePickerDrafts.ts';
@@ -26,14 +27,7 @@ export interface ResourcePickerModalProps {
   targetSlotIndex?: number;
   slotState?: NodeSlotEngineState;
   onCancel: () => void;
-  onCommit: (payload: {
-    selectedCanvasNodeIds: string[];
-    selections?: NonNullable<CanvasInputSelectionRequest['selections']>;
-    chosenOperationId?: string;
-    localFiles: LocalFileDraft[];
-    mode?: ResourcePickerMode;
-    targetSlotIndex?: number;
-  }) => boolean;
+  onCommit: (payload: ResourcePickerCommitPayload) => boolean | Promise<boolean>;
 }
 
 const ModalCloseButton: React.FC<{ onClose: () => void; placement?: string; ariaLabel?: string }> = ({
@@ -74,41 +68,58 @@ const ResourcePickerModal: React.FC<ResourcePickerModalProps> = ({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedOutputs, setSelectedOutputs] = useState<Record<string, string>>({});
   const [localFiles, setLocalFiles] = useState<LocalFileDraft[]>([]);
-  const confirmation = useAsyncInstanceGuard(JSON.stringify([open, tab, slotTarget?.contextKey]));
+  const intent = slotTarget?.intent;
+  const named = useMemo(() => open && intent ? namedPickerState({ nodes, edges }, nodeId, { catalog }) : undefined,
+    [open, intent, nodes, edges, nodeId, catalog]);
+  const available = named && intent ? readSlotIntent(named, intent) : undefined;
+  const confirmation = useAsyncInstanceGuard(slotTarget);
   const [confirming, setConfirming] = useState(false);
   const confirmingRef = useRef(false);
-  const selections = useMemo(() => selectedIds.flatMap(id => {
-    return selectedOutputs[id] ? [{ sourceNodeId: id, outputId: selectedOutputs[id]!, targetSlot: slotTarget?.slot }] : [];
-  }), [selectedIds, selectedOutputs, slotTarget?.slot]);
+  const selections = useMemo(() => selectedIds.flatMap(id => selectedOutputs[id] ? [{
+    sourceNodeId: id, outputId: selectedOutputs[id]!, targetSlot: slotTarget?.slot, role: intent?.role,
+  }] : []), [selectedIds, selectedOutputs, slotTarget?.slot, intent?.role]);
   const canvasItems = useMemo(() => listCanvasResources(nodes, edges, nodeId, { catalog }, {
     targetSlot: slotTarget?.slot, replaceEdgeId: slotTarget?.replaceEdgeId, replaceSlot: slotTarget?.slot,
     referenceSlots: slotTarget?.referenceSlots, selections: mode === 'replace' ? [] : selections, localFiles,
-  }), [nodes, edges, nodeId, catalog, slotTarget, mode, selections, localFiles]);
+    ...(intent ? { named: { state: named, intent } } : {}),
+  }), [nodes, edges, nodeId, catalog, slotTarget, mode, selections, localFiles, intent, named]);
   const selectedCount = selections.length + localFiles.length;
-  const stale = Boolean(slotTarget?.contextKey && slotTarget.contextKey !== resourcePickerContextKey(target, { catalog }));
-  const slot = useMemo(() => slotTarget?.slot && !stale
+  const stale = intent ? !available?.accepted
+    : Boolean(slotTarget?.contextKey && slotTarget.contextKey !== resourcePickerContextKey(target, { catalog }));
+  const slot = useMemo(() => !intent && slotTarget?.slot && !stale
     ? resourcePickerSlot({ nodes, edges }, nodeId, { catalog }, slotTarget.slot, slotTarget.replaceEdgeId) : undefined,
-  [nodes, edges, nodeId, catalog, slotTarget, stale]);
-  const group = useMemo(() => slotTarget?.referenceSlots && !stale
+  [nodes, edges, nodeId, catalog, slotTarget, stale, intent]);
+  const group = useMemo(() => !intent && slotTarget?.referenceSlots && !stale
     ? resourcePickerReferenceGroup({ nodes, edges }, nodeId, { catalog }, slotTarget.referenceSlots) : undefined,
-  [nodes, edges, nodeId, catalog, slotTarget, stale]);
-  const limit = slotTarget?.referenceSlots
+  [nodes, edges, nodeId, catalog, slotTarget, stale, intent]);
+  const limit = intent ? available?.accepted ? available.remaining : 0 : slotTarget?.referenceSlots
     ? (group?.slots.reduce((remaining, item) => remaining + item.remaining, 0) ?? 0)
     : slotTarget?.slot ? Math.min(slot?.remaining ?? 0, slotTarget.max ?? Infinity) : Infinity;
   const localSlots = (group?.slots ?? (slot ? [slot] : [])).filter(item => item.remaining > 0);
-  const readDuration = localSlots.some(({ spec }) => Number.isFinite(spec.minDurationSec) || Number.isFinite(spec.maxDurationSec));
-  const extensions = [...new Set(localSlots.flatMap(({ spec }) => spec.allowedMimes?.length
+  const spec = available?.accepted ? available.spec : undefined;
+  const filter: SlotFileFilter | undefined = spec && isMediaInputType(spec.type)
+    ? { slot: spec.slot, materialType: spec.type, allowedMimes: spec.allowedMimes } : undefined;
+  const readDuration = spec ? slotIntentNeedsDuration(spec) : localSlots.some(item => slotIntentNeedsDuration(item.spec));
+  const extensions = filter ? extensionsForSlotFiles(filter) : [...new Set(localSlots.flatMap(({ spec }) => spec.allowedMimes?.length
     ? extensionsForMimes(spec.allowedMimes)
     : group && isMediaInputType(spec.type) ? extensionsForMaterialType(spec.type) : []))];
-  const validatedPicker = current || Boolean(slotTarget?.referenceSlots);
+  const validatedPicker = !intent && (current || Boolean(slotTarget?.referenceSlots));
   const prepared = useMemo(() => validatedPicker && !stale && selectedCount > 0 ? planPickerSelectionMutation({ nodes, edges }, {
     targetNodeId: nodeId, chosenOperationId: operationId,
     selections, replaceEdgeId: slotTarget?.replaceEdgeId, replaceSlot: slotTarget?.replaceEdgeId ? slotTarget.slot : undefined,
   }, { catalog }, { files: localFiles, targetSlot: slotTarget?.slot, referenceSlots: slotTarget?.referenceSlots }) : null,
   [validatedPicker, stale, selectedCount, nodes, edges, nodeId, operationId, slotTarget, selections, catalog, localFiles]);
-  const accepts = !stale && selectedCount <= limit && (!validatedPicker || prepared?.status === 'allowed');
+  const namedCheck = named && intent && selectedCount > 0 ? checkNamedPickerSelection(named, intent, selections, localFiles) : undefined;
+  const accepts = !stale && selectedCount <= limit && (intent ? Boolean(namedCheck?.choices) : !validatedPicker || prepared?.status === 'allowed');
   const reason = selectedCount > 0 && !accepts
-    ? t(pickerReasonKey(stale ? 'input_changed' : prepared?.reasonCode)) : undefined;
+    ? t(pickerReasonKey(stale ? 'input_changed' : namedCheck?.reasonCode ?? prepared?.reasonCode)) : undefined;
+
+  useEffect(() => {
+    if (open && intent && stale) {
+      confirmation.deactivate();
+      cancelRef.current();
+    }
+  }, [open, intent, stale, confirmation]);
 
   useEffect(() => {
     if (!open) return;
@@ -240,7 +251,7 @@ const ResourcePickerModal: React.FC<ResourcePickerModalProps> = ({
 
   const handleCancel = useCallback(() => { confirmation.deactivate(); setLocalFiles([]); onCancel(); }, [confirmation, onCancel]);
   const handleToggle = useCallback((id: string, inUse: boolean, disabled?: boolean) => {
-    if (disabled || inUse) return;
+    if (disabled || inUse || confirmingRef.current) return;
     const outputId = canvasItems.find(item => item.nodeId === id)?.outputId;
     if (!outputId) return;
     setSelectedOutputs(previous => ({ ...previous, [id]: outputId }));
@@ -252,22 +263,19 @@ const ResourcePickerModal: React.FC<ResourcePickerModalProps> = ({
     if (selectedCount === 0 || !accepts || confirmingRef.current) return;
     const ticket = confirmation.capture();
     if (!confirmation.isCurrent(ticket)) return;
-    let files = localFiles;
-    if ((slotTarget?.slot || slotTarget?.referenceSlots) && localFiles.length > 0) {
-      confirmingRef.current = true;
-      setConfirming(true);
-      try {
-        files = await probePickerDrafts(localFiles, readDuration);
-      } catch {
-        files = [];
-      } finally {
-        confirmingRef.current = false;
-        setConfirming(false);
-      }
+    confirmingRef.current = true;
+    setConfirming(true);
+    try {
+      const files = !intent && (slotTarget?.slot || slotTarget?.referenceSlots) && localFiles.length > 0
+        ? await probePickerDrafts(localFiles, readDuration).catch(() => []) : localFiles;
       if (!confirmation.isCurrent(ticket)) return;
       if (files.length !== localFiles.length) { toast.error(t(pickerReasonKey('input_unavailable'))); return; }
+      await onCommit({ selectedCanvasNodeIds: selectedIds, selections,
+        chosenOperationId: intent?.operationId ?? operationId, localFiles: files, mode, targetSlotIndex });
+    } finally {
+      confirmingRef.current = false;
+      if (confirmation.isCurrent(ticket)) setConfirming(false);
     }
-    onCommit({ selectedCanvasNodeIds: selectedIds, selections, chosenOperationId: operationId, localFiles: files, mode, targetSlotIndex });
   };
   const modalTitle =
     title || t('picker.title');
@@ -278,10 +286,10 @@ const ResourcePickerModal: React.FC<ResourcePickerModalProps> = ({
   </div>;
   const changeTab = (next: ResourcePickerTab) => {
     setTab(next);
-    if (!slotTarget?.referenceSlots) { setSelectedIds([]); setLocalFiles([]); }
+    if (!intent && !slotTarget?.referenceSlots) { setSelectedIds([]); setLocalFiles([]); }
   };
-  const groupFiles = useRef({ group, nodes, selections, localFiles, stale });
-  groupFiles.current = { group, nodes, selections, localFiles, stale };
+  const filesAtIntake = useRef({ group, named, nodes, selections, localFiles, stale });
+  filesAtIntake.current = { group, named, nodes, selections, localFiles, stale };
   return <CustomModal open={open} onCancel={handleCancel} title={<span id={titleId}>{modalTitle}</span>}
     width="min(88vw, 760px)" className="wf-picker-modal" bodyClassName="wf-picker-modal__body" footer={footer}>
     <ModalCloseButton onClose={handleCancel} placement="external" ariaLabel={t('app.close') || 'Close'} />
@@ -300,8 +308,29 @@ const ResourcePickerModal: React.FC<ResourcePickerModalProps> = ({
           acceptedTypes={slotTarget?.acceptedTypes} allowConnectedSelection={current || Boolean(slotTarget)} />
           : <LocalUploadPane active={open && !confirming} files={localFiles} onAddFiles={incoming => {
             if (confirmingRef.current || limit <= 0) return;
+            const snapshot = filesAtIntake.current;
+            if (intent) {
+              const picker = snapshot.named;
+              if (!picker || snapshot.stale) return;
+              if (mode === 'replace') {
+                const file = [...incoming].reverse().find(item => checkNamedPickerSelection(picker, intent, [], [item], true).choices);
+                if (!file) return;
+                snapshot.localFiles = [file];
+                setLocalFiles(snapshot.localFiles);
+                setSelectedIds([]);
+                setSelectedOutputs({});
+              } else {
+                const drafts = [...snapshot.localFiles];
+                for (const file of incoming) {
+                  if (checkNamedPickerSelection(picker, intent, snapshot.selections, [...drafts, file], true).choices) drafts.push(file);
+                }
+                if (drafts.length === snapshot.localFiles.length) return;
+                snapshot.localFiles = drafts;
+                setLocalFiles(drafts);
+              }
+              return;
+            }
             if (slotTarget?.referenceSlots) {
-              const snapshot = groupFiles.current;
               if (!snapshot.group || snapshot.stale) return;
               const drafts = [...snapshot.localFiles, ...incoming];
               const result = routePickerReferences(snapshot.group.slots, snapshot.nodes, snapshot.group.inUse, snapshot.selections, drafts);
@@ -316,10 +345,11 @@ const ResourcePickerModal: React.FC<ResourcePickerModalProps> = ({
           }}
             onRemove={id => { if (!confirmingRef.current) setLocalFiles(previous => previous.filter(file => file.id !== id)); }}
             acceptedTypes={slotTarget?.acceptedTypes} namedSlot={slotTarget?.slot || slotTarget?.referenceSlots ? {
-              extensions,
-              remaining: Math.max(0, limit - (mode === 'add' ? selectedCount : 0)),
+              extensions, filter,
+              remaining: intent && !filter ? 0 : Math.max(0, limit - (mode === 'add' ? selectedCount : 0)),
               readDuration,
-              accepts: file => localSlots.some(({ spec }) => acceptsPickerFile(spec, file)),
+              accepts: file => intent && named ? Boolean(checkNamedPickerSelection(named, intent, [], [file], true).choices)
+                : localSlots.some(({ spec }) => acceptsPickerFile(spec, file)),
             } : undefined} />}
       </div>
       {reason ? <div id={reasonId} className="wf-picker-reason" role="status">{reason}</div> : null}

@@ -23,6 +23,7 @@ import {
 import { createDispatchingNodeExecutor } from './nodeExecutors';
 import { persistDagState, persistRecord } from './executionTimers';
 import type { GenerationGateway } from '../seam/gateway';
+import type { RunSnapshot } from '../../shared/graph/feedSlot/prepareExecutionSlotGraph.ts';
 import { createWorkflowLogger } from './logger';
 
 const logger = createWorkflowLogger('ExecutionRecovery');
@@ -217,6 +218,7 @@ export async function recoverExecution(
     executionId: record.id,
     workspaceId: record.workspaceId,
     edges: record.edges,
+    runSnapshots: new Map(Object.entries(context.get('executionRunSnapshots') as Record<string, RunSnapshot> | undefined ?? {})),
     abortController,
     persistGenerated,
   });

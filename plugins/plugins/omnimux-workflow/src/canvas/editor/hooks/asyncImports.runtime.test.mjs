@@ -87,7 +87,7 @@ function setup(t) {
   win.fixture = {
     toasts,
     state: { nodes: [{ id: 'target', type: 'material', position: { x: 0, y: 0 }, data: { materialType: 'image', nodeKind: 'import' } }], edges: [],
-      applyCanvasInputMutation: plan => { writes.push(plan); return { status: 'allowed' }; } },
+      applyCanvasInputMutation: (plan, options) => { writes.push(plan); win.fixture.mutationOptions = options; return { status: 'allowed' }; } },
     pick: options => { const pending = deferred(); picks.push({ ...pending, options }); return pending.promise; },
     probe: () => { throw new Error('Unexpected local file probe in the async import fixture'); },
     libraryPick: () => { const pending = deferred(); picks.push(pending); return pending.promise; },
@@ -282,6 +282,60 @@ test('close and reopen retires pending native selection and retained canvas comm
   assert.equal(f.writes.length, 0); assert.equal(f.toasts.length, 0);
 });
 
+test('named local confirmation rechecks the file and live slot before one undoable write', async t => {
+  const f = setup(t);
+  const { state } = f.win.fixture;
+  const firstFrame = 'first_frame';
+  const textMode = 'text_to_video';
+  const model = 'test-local-media';
+  const first = { model, operation: firstFrame };
+  const target = { ...state.nodes[0], data: { materialType: 'video', nodeKind: 'generate', autoOperationId: null, params: first } };
+  state.nodes = [target];
+  state.catalogRuntime = { models: [{ id: model, operations: [
+    { id: firstFrame, listed: true, output: { type: 'video' }, inputs: [{ slot: firstFrame, type: 'image', role: firstFrame,
+      source: 'upstream_output', min: 1, max: 1, allowedMimes: ['image/png'] }] },
+    { id: textMode, listed: true, output: { type: 'video' }, inputs: [] },
+  ] }] };
+  const file = { ...draftFromRealPath('/fixtures/selected.png', { size: 32 }), fileRevision: 'original' };
+  const payload = { selectedCanvasNodeIds: [], selections: [], localFiles: [file], chosenOperationId: firstFrame };
+  const response = (revision = file.fileRevision) => ({ ok: true, body: { items: [
+    { path: file.realPath, exists: true, mime: 'image/png', size: 32, revision },
+  ] } });
+  await f.hooks('A');
+  await f.flush(() => f.win.currentPicker.openPicker('local', {
+    slot: firstFrame, slotRole: firstFrame, operationId: firstFrame, acceptedTypes: ['image'], max: 1,
+  }));
+  assert.equal(f.win.currentPicker.open, true);
+  assert.equal(f.win.currentPicker.slotTarget.intent.slot, firstFrame);
+
+  f.win.fixture.probe = async () => response('edited');
+  let result;
+  await f.flush(() => { result = f.win.currentPicker.commit(payload); });
+  assert.equal(await result, false);
+  assert.equal(f.writes.length, 0);
+  assert.equal(f.toasts.at(-1).message, 'input.reason.unavailable');
+
+  const next = deferred();
+  f.win.fixture.probe = () => next.promise;
+  await f.flush(() => { result = f.win.currentPicker.commit(payload); });
+  target.data.params = { model, operation: textMode };
+  await f.flush(() => next.resolve(response()));
+  assert.equal(await result, false);
+  assert.equal(f.writes.length, 0);
+  assert.equal(target.data.params.operation, textMode);
+
+  target.data.params = first;
+  f.win.fixture.probe = async () => response();
+  await f.flush(() => { result = f.win.currentPicker.commit(payload); });
+  assert.equal(await result, true);
+  assert.equal(f.writes.length, 1);
+  assert.equal(f.writes[0].addNodes.length, 1);
+  assert.equal(f.writes[0].addEdges.length, 1);
+  assert.equal(f.writes[0].addNodes[0].data.mimeType, 'image/png');
+  assert.equal(f.win.fixture.mutationOptions.undoStep, true);
+  assert.equal(f.win.currentPicker.open, false);
+});
+
 for (const method of ['indexPaths', 'mkdir', 'instantiateSubject', 'persist']) {
   test(`${method}: prior workspace response cannot adopt a document or error`, async t => {
     const f = setup(t); await f.hooks('A');
@@ -366,9 +420,11 @@ test('named slot uses the shared picker with its extensions, count and metadata 
   f.win.__DSH_HOST_PATHS__ = { pathFor: () => '' };
   f.win.fixture.probe = async (paths, contentMime) => {
     probed.push({ paths: Array.from(paths), contentMime });
-    return { ok: true, body: { items: paths.map(path => ({ path, exists: true, mime: 'audio/mpeg', size: 42 })) } };
+    return { ok: true, body: { items: paths.map(path => ({ path, exists: true,
+      mime: path.endsWith('/renamed.wav') ? 'audio/flac' : 'audio/mpeg', size: 42 })) } };
   };
-  const namedSlot = { extensions: ['mp3', 'wav'], remaining: 1, readDuration: false, accepts: file => file.mime === 'audio/mpeg' };
+  const filter = { slot: 'reference_audios', materialType: 'audio', allowedMimes: ['audio/mpeg', 'audio/wav'] };
+  const namedSlot = { filter, extensions: ['mp3', 'wav'], remaining: 1, readDuration: false, accepts: file => file.mime === 'audio/mpeg' };
   const props = {
     files: [], active: true, onRemove() {},
     onAddFiles(files) {
@@ -382,11 +438,20 @@ test('named slot uses the shared picker with its extensions, count and metadata 
   await f.flush(openPicker);
   assert.equal(inputOpens, 0);
   assert.deepEqual(f.picks[0].options.extensions, ['mp3', 'wav']);
+  assert.equal(f.picks[0].options.slotFilter, filter);
   assert.equal(f.picks[0].options.multiple, false);
   await f.flush(() => f.picks[0].resolve(picked('/音频 文件.mp3')));
   assert.deepEqual(probed, [{ paths: ['/音频 文件.mp3'], contentMime: true }]);
   assert.equal(added[0].realPath, '/音频 文件.mp3');
   assert.equal(added[0].size, 42);
+  const renamed = new f.win.File(['fLaC'], 'renamed.wav', { type: 'audio/wav' });
+  renamed.path = '/fixtures/renamed.wav';
+  const drop = new f.win.Event('drop', { bubbles: true, cancelable: true });
+  drop.dataTransfer = { files: [renamed] };
+  await f.flush(() => f.win.document.querySelector('.wf-picker-dropzone').dispatchEvent(drop));
+  assert.deepEqual(probed.at(-1), { paths: ['/fixtures/renamed.wav'], contentMime: true });
+  assert.equal(added.length, 1);
+  assert.equal(f.toasts.length, 0);
   await f.render(f.api.LocalUploadPane, { ...props, namedSlot: { ...namedSlot, remaining: 2 } });
   await f.flush(openPicker);
   assert.equal(f.picks[1].options.multiple, true);

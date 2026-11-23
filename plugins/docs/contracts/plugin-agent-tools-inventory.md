@@ -182,7 +182,7 @@ superseded_by: null
 - **存储**：`$DSH_HOME/omnimux/workflow/` + Canvas JSON。
 - **状态**：双面就绪 (已实装 12 大工具，标杆级画布 Agent 控制)。
 - **视频模式**：画布与 Agent 共用[画布生成契约](canvas-generation.md)。界面按目录中的 `modeKind` 显示名称，`workflow_run` 和节点参数使用原 operation ID。已接入分组能力的节点按有效组合查组、方式、参数和槽位。生产范围以实际验收为准。
-- **生成输入**：节点提交与 `workflow_run` 共用[当前操作和线路的输入投影](canvas-generation.md#选择和素材)。提示词 `@` 的候选菜单属于画布交互。Agent 通过 `workflow_node_update` 修改提示词，通过 `workflow_connect` 和 `workflow_disconnect` 调整连接。
+- **生成输入**：节点提交与 `workflow_run` 共用[当前方式和线路的素材分配](canvas-generation.md#选择和素材)，按当次分配的素材、角色和顺序执行。Agent 通过 `workflow_node_update` 修改提示词，通过 `workflow_connect` 和 `workflow_disconnect` 调整供给边。
 - 画布剪辑使用下节的 `clip_*` 工具。Workflow 的 Host 服务按工作区、节点和工程核对绑定，用同一画布版本提交草稿指针、成片引用或下游节点和连线。[画布剪辑契约](clip-live-control.md#mp4-与画布提交)
 
 | 业务功能描述 | 对应 UI 交互 / HTTP 路由 | Agent 工具名称 (`Tool Name`) | 分级 | 状态 | 破坏性 confirm |
@@ -194,10 +194,10 @@ superseded_by: null
 | 向画布添加物料/AI生成节点 | 左侧物料库拖拽入画布 | `workflow_node_add` | L1 | `Implemented` | 否 |
 | 更新指定节点的参数与配置。线路分组的选择、默认值及参数校验遵循[画布生成契约](canvas-generation.md#选择和素材)。图片节点的生成方式由参考图绑定派生，不在 patch 中单独选择。可用 `patch.swap_reference_images` 交换有序参考图卡槽的起始图 | 节点右侧属性面板及参考图卡槽的起始图设置 | `workflow_node_update` | L1 | `Implemented` | 否 |
 | 移除画布上的指定节点及其相连边 | 节点选中按 Delete 键 | `workflow_node_remove` | L1 | `Implemented` | 是 (`confirm: true`) |
-| 在两节点端口之间建立连接边并重算入槽，分组能力节点保留用户已选方式 | 鼠标拖拽连线 | `workflow_connect` | L1 | `Implemented` | 否 |
-| 添加同用途的参考素材或向具名角色分配素材。系统对话框与拖入可使用桌面本地文件 | 素材区「添加素材」、角色卡槽及预览「替换」 | — | UI-Only | `UI-Only` | 豁免（桌面文件选择与画布撤销） |
-| 从画布选取提示词参考。已绑定上游文本以卡片展示 | 提示词 `@` 菜单。`inputBindingVersion: 1` 节点选中候选后打开素材选择器。已绑定卡片提供预览和操作 | — | UI-Only | `UI-Only` | 豁免（界面交互。连线操作见 `workflow_connect` 和 `workflow_disconnect`） |
-| 断开指定两节点之间的连线边，按连线次序补自动卡槽并保留其余具名绑定 | 边右键删除 | `workflow_disconnect` | L1 | `Implemented` | 是 (`confirm: true`) |
+| 通过自连、重复边、节点存在、环及固定端口校验后保存供给边，重算当前槽位 | 鼠标拖拽连线 | `workflow_connect` | L1 | `Implemented` | 否 |
+| 按当前具名槽筛选并绑定已有素材或桌面本地文件，添加和替换各写入一次 | 具名卡槽「添加」、预览「替换」、系统文件选择或拖入 | — | UI-Only | `UI-Only` | 豁免（桌面文件选择与画布撤销） |
+| 引用本次分配的提示词素材。已绑定上游文本以卡片展示 | 提示词 `@` 菜单和预览卡片 | — | UI-Only | `UI-Only` | 豁免（界面交互。连线操作见 `workflow_connect` 和 `workflow_disconnect`） |
+| 断开指定两节点之间的供给边，按稳定顺序补自动卡槽并保留其余具名绑定 | 边右键删除 | `workflow_disconnect` | L1 | `Implemented` | 是 (`confirm: true`) |
 | 暂停、恢复或取消正在运行的流程 | 控制台暂停/中止按钮 | `workflow_execution_control` | L2 | `Implemented` | 否 |
 | 写入 TableNode 数据表格单元格 | 表格节点全屏编辑器 | `canvas_write_table_node` | L2 | `Implemented` | 否 |
 | 读取 TableNode 数据表格内容 | 表格节点渲染面板 | `canvas_get_table_node` | L2 | `Implemented` | 否 |

@@ -138,26 +138,32 @@ test('只粘贴生成节点时，源/边不在范围内的绑定被丢弃为空�
   assert.deepEqual(newGen.data.slotStandbyEdgeIds, [], '无法映射的待命边应过滤');
 });
 
-test('paste remaps retained video mode drafts without retaining unselected upstream references', () => {
+test('paste remaps parked roles and mode drafts belonging to copied connections', () => {
   const target = genNode();
-  target.data.videoSlotDrafts = {
-    image_reference: { reference_images: [
-      { sourceNodeId: 'src1', edgeId: 'e1', role: 'reference', ordinal: 3, pinned: true },
-      { sourceNodeId: 'src-away', edgeId: 'away', role: 'reference', ordinal: 4, pinned: true },
-    ] },
-  };
+  const kept = { sourceNodeId: 'src1', edgeId: 'e1', role: 'reference', ordinal: 3, pinned: true };
+  const excluded = { sourceNodeId: 'src-away', edgeId: 'away', role: 'reference', ordinal: 4, pinned: true };
+  target.data.videoSlotDrafts = { image_reference: { reference_images: [kept, excluded] } };
+  const conflicts = [kept, excluded].map(occupant => ({ slot: 'reference_images', reason: 'slot_inactive', occupant }));
+  target.data.slotConflicts = conflicts;
+  target.data.parkedLipSyncInputs = { model: 'test-fixture', bindings: { reference_image: [kept, excluded] }, conflicts };
   const result = pasteFromClipboard(copyNodesToClipboard([sourceNode(), target], [edge]));
   assert.ok(result);
   const cloned = result.nodes.find(node => node.data.label === 'gen');
-  assert.deepEqual(cloned.data.videoSlotDrafts.image_reference.reference_images, [{
-    sourceNodeId: result.edges[0].source, edgeId: result.edges[0].id, role: 'reference', ordinal: 3, pinned: true,
-  }]);
-  assert.equal(target.data.videoSlotDrafts.image_reference.reference_images.length, 2);
+  const remapped = { ...kept, sourceNodeId: result.edges[0].source, edgeId: result.edges[0].id };
+  assert.deepEqual(cloned.data.videoSlotDrafts.image_reference.reference_images, [remapped]);
+  assert.deepEqual(cloned.data.slotConflicts, [{ ...conflicts[0], occupant: remapped }]);
+  assert.deepEqual(cloned.data.parkedLipSyncInputs, { model: 'test-fixture', bindings: { reference_image: [remapped] },
+    conflicts: [{ ...conflicts[0], occupant: remapped }] });
+  assert.deepEqual(target.data.videoSlotDrafts.image_reference.reference_images, [kept, excluded]);
 });
 
 test('重映射后的绑定在克隆图上重算仍存活（不会被 #4032 的存活校验清除）', () => {
-  // 未固定(pinned=false)占位者：base 下会被 #4032 清除；重映射到新 id 后应存活。
-  const nodes = [sourceNode(), genNode('gen1', { pinned: false })];
+  // A live copied edge remains eligible for the new graph's automatic assignment.
+  const source = sourceNode();
+  source.data.mediaUrl = 'https://fixture.test/reference.png';
+  const generate = genNode('gen1', { pinned: false });
+  delete generate.data.slotStandbyEdgeIds;
+  const nodes = [source, generate];
   const result = pasteFromClipboard(copyNodesToClipboard(nodes, [edge]));
   assert.ok(result);
   const newGen = result.nodes.find((n) => n.data.label === 'gen');

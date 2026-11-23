@@ -16,6 +16,7 @@ import { readUpstreamTaskRef } from './upstreamTask.ts';
 import { lacksPriorProjectDigest, matchesWithPreviousNodePrompt } from './executionIdentity.ts';
 import { resolveExecutorKey } from './nodeExecutors.ts';
 import { canonicalJson } from '../../shared/validation/compatKernel.ts';
+import { readPreparedExecutionInputs, type RunSnapshot } from '../../shared/graph/feedSlot/prepareExecutionSlotGraph.ts';
 import { compareLegacyExecutionInput, UnverifiedLegacyTask } from './legacyExecutionInput.ts';
 import type { UpstreamTaskRef } from '../seam/gateway.ts';
 import { createDispatchingNodeExecutor } from './nodeExecutors';
@@ -250,9 +251,20 @@ function createExecutionInstance(
   entries: Map<string, ExecutionEntry>,
   opts: CreateExecutionOptions,
 ): ExecutionEntry {
+  const runSnapshots = new Map<string, RunSnapshot>();
+  const nodes = opts.nodes.map(node => {
+    const prepared = readPreparedExecutionInputs(node.data);
+    if (!prepared?.snapshot) return structuredClone(node);
+    runSnapshots.set(node.id, prepared.snapshot);
+    // Retain the normal graph fields alongside the private execution snapshot.
+    return structuredClone({ ...node, data: { ...node.data, slotBindings: prepared.assignment.bindings,
+      slotStandbyEdgeIds: [...new Set([...(node.data?.slotStandbyEdgeIds as string[] | undefined ?? []), ...prepared.snapshot.unusedEdgeIds])],
+      autoOperationId: null,
+    } });
+  });
   opts = {
     ...opts,
-    nodes: structuredClone(opts.nodes),
+    nodes,
     edges: structuredClone(opts.edges),
     initialOutputs: structuredClone(opts.initialOutputs),
     sourceIdentities: opts.sourceIdentities ?? executionSourceIdentities(opts, undefined, { workspaceId: opts.workspaceId, resolveProjectFile: deps.resolveProjectFile }),
@@ -270,6 +282,7 @@ function createExecutionInstance(
   if (opts.inputSignatures) context.set('executionInputSignatureScope', 'workspace');
   context.set('executionInputsChanged', recovery.inputsChanged);
   context.set('executionSourceIdentities', opts.sourceIdentities);
+  if (runSnapshots.size) context.set('executionRunSnapshots', Object.fromEntries(runSnapshots));
   for (const [nodeId, upstreamTask] of Object.entries(recovery.tasks)) {
     context.nodeStates.set(nodeId, { status: 'pending', startedAt: null, completedAt: null, error: null, upstreamTask });
   }
@@ -290,6 +303,7 @@ function createExecutionInstance(
     executionId: context.id,
     workspaceId: opts.workspaceId,
     edges: opts.edges,
+    runSnapshots,
     abortController,
     persistGenerated,
   });

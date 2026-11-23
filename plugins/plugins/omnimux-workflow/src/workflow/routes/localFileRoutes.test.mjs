@@ -78,6 +78,23 @@ test('file-picker extensions and single selection are forwarded only for file re
   assert.equal(calls.length, 1);
 });
 
+test('native file options for a named slot match the MIME and filename filters', async () => {
+  const calls = [];
+  const routes = createLocalFileRoutes({ picker: async (...args) => {
+    calls.push(args);
+    return { path: null, paths: [] };
+  } });
+  const pick = body => routes.tryHandle('POST', '/omnimux-workflow/api/pick', { ...local, body });
+  const slotFilter = { slot: 'reference_audios', materialType: 'audio', allowedMimes: ['audio/wav', 'audio/mpeg'] };
+  assert.equal((await pick({ kind: 'file', multiple: true, slotFilter })).status, 200);
+  assert.deepEqual(calls, [['file', { extensions: ['mp3', 'wav'], multiple: true }]]);
+  assert.equal((await pick({ kind: 'file', extensions: ['wav', 'flac'], multiple: false, slotFilter })).status, 200);
+  assert.deepEqual(calls[1], ['file', { extensions: ['wav'], multiple: false }]);
+  assert.deepEqual(await pick({ kind: 'file', extensions: ['flac'], slotFilter }), { status: 200, body: { path: null, paths: [] } });
+  assert.equal((await pick({ kind: 'directory', slotFilter })).status, 400);
+  assert.equal(calls.length, 2);
+});
+
 test('named picker probe distinguishes FLAC data from a WAV filename', async t => {
   const dir = mkdtempSync(join(tmpdir(), 'wf-probe-mime-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -87,8 +104,18 @@ test('named picker probe distinguishes FLAC data from a WAV filename', async t =
   const probe = contentMime => routes.tryHandle('POST', '/omnimux-workflow/api/local-file/probe', {
     ...local, body: { paths: [file], contentMime },
   });
-  assert.equal((await probe(false)).body.items[0].mime, 'audio/wav');
-  assert.equal((await probe(true)).body.items[0].mime, 'audio/flac');
+  const declared = (await probe(false)).body.items[0];
+  assert.equal(declared.mime, 'audio/wav');
+  assert.equal(declared.revision, undefined);
+  const inspected = (await probe(true)).body.items[0];
+  assert.equal(inspected.mime, 'audio/flac');
+  assert.equal(inspected.size, 4);
+  assert.ok(inspected.revision);
+  assert.equal((await probe(true)).body.items[0].revision, inspected.revision);
+  writeFileSync(file, 'RIFF1111WAVE');
+  const edited = (await probe(true)).body.items[0];
+  assert.equal(edited.mime, 'audio/wav');
+  assert.notEqual(edited.revision, inspected.revision);
 });
 
 test('POST /api/pick 注入 picker：取消 / 多选 / invalid-kind / unsupported', async () => {

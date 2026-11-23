@@ -113,7 +113,7 @@ test('graph atomically assigns new-node preference; manual choice never changes 
 test('supply changes preserve the current model, operation and stored preference', () => {
   const view=projectCanvasCatalog(catalog());
   const prefs={text:GEMINI};
-  const asset={...node('asset'),data:{nodeKind:'import',materialType:'video'}};
+  const asset={...node('asset'),data:{nodeKind:'import',materialType:'video',mediaUrl:'https://fixture.test/video.mp4'}};
   const result=planCanvasInputMutation({nodes:[node('n',GEMINI),asset],edges:[]},{addEdges:[{source:'asset',target:'n'}]},{catalog:view,preferredModels:prefs});
   assert.equal(result.status,'allowed');
   assert.equal(result.edges.length,1);

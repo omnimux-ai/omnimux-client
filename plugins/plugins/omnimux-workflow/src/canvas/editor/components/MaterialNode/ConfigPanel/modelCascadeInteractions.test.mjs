@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 import React from 'react';
 import { createRoot, dom, MaterialNode, ReactFlow, useCanvasStore } from './fixtures/clickablePanel.mjs';
+import { prepareExecutionSlotGraph } from '../../../../../shared/graph/feedSlot/prepareExecutionSlotGraph.ts';
 
 const { document, MouseEvent } = dom.window;
 const { act, createElement, useMemo } = React;
@@ -26,7 +27,7 @@ function imageModel(id, channelGroups) {
   return {
     id, label: id, family: 'openai', channelGroups, selectable: true, operations: [
       { id: 'text_to_image', listed: true, output: { type: 'image' }, inputs: [prompt] },
-      { id: 'image_to_image', listed: true, output: { type: 'image' }, inputs: [prompt, reference, { ...reference, slot: 'extra' }] },
+      { id: 'image_to_image', listed: true, output: { type: 'image' }, inputs: [prompt, { ...reference, max: 1 }, { ...reference, slot: 'extra' }] },
     ],
   };
 }
@@ -53,21 +54,24 @@ const click = element => act(async () => element.click());
 const hover = element => act(async () => element.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })));
 const draftId = 'saved-draft';
 
-async function mountPanel(t, { materialType, models, params, slotBindings, parameterSelections, selected = true }) {
+async function mountPanel(t, { materialType, models, params, media = [], parameterSelections, selected = true }) {
   const catalog = { source: 'omnimux', models,
     image: materialType === 'image' ? models : [], video: materialType === 'video' ? models : [] };
-  const media = slotBindings ? [{ source: 'source-a', id: 'primary' }, { source: 'source-b', id: 'secondary' }] : [];
   const nodes = media.map(({ source }, index) => ({
-    id: source, type: 'default', position: { x: 0, y: index * 100 }, width: 160, height: 80,
-    data: { nodeKind: 'import', materialType: 'image', mediaUrl: `https://example.test/${source}.png`, status: 'ready' },
+    id: source, type: 'material', position: { x: 0, y: index * 100 }, width: 160, height: 80,
+    data: { nodeKind: 'import', selectedTool: 'import', materialType: 'image',
+      mediaUrl: `https://example.test/${source}.png`, mimeType: 'image/png', status: 'ready' },
   }));
   nodes.push({ id: draftId, type: 'material', selected, position: { x: 260, y: 100 }, width: 240, height: 160,
     data: { materialType, nodeKind: 'generate', selectedTool: materialType === 'video' ? 'video-generation' : 'text-to-image',
       status: 'ready', label: 'Draft', prompt: 'Keep the saved draft.', params,
-      ...(slotBindings ? { slotBindings } : {}), ...(parameterSelections ? { parameterSelections } : {}) } });
-  const edges = media.map(edge => ({ ...edge, target: draftId }));
-  useCanvasStore.setState({ nodes, edges, catalogRuntime: catalog, past: [], future: [],
+      ...(parameterSelections ? { parameterSelections } : {}) } });
+  useCanvasStore.setState({ nodes, edges: [], catalogRuntime: catalog, past: [], future: [],
     selectedElement: selected ? { type: 'node', id: draftId } : { type: 'none', id: null } });
+  if (media.length) {
+    const addEdges = media.map(edge => ({ ...edge, sourceHandle: 'out', target: draftId, targetHandle: 'in' }));
+    assert.equal(useCanvasStore.getState().applyCanvasInputMutation({ addEdges }).status, 'allowed');
+  }
 
   const writes = [];
   const readDraft = (state = useCanvasStore.getState()) => state.nodes.find(node => node.id === draftId).data;
@@ -197,21 +201,51 @@ test('opening a retired-line legacy video panel preserves parameters and history
   assert.deepEqual(readDraft().parameterSelections, original.parameterSelections);
 });
 
-test('clicking a single-image line includes trimmed reference bindings in the first node write', async t => {
+test('routing to a single-image line projects one reference and preserves both supply edges', async t => {
   const model = imageModel('current-image', [wide, single]);
-  const primary = { edgeId: 'primary', sourceNodeId: 'source-a', role: 'reference' };
-  const extra = { edgeId: 'secondary', sourceNodeId: 'source-b', role: 'reference' };
-  const { writes } = await mountPanel(t, {
-    materialType: 'image', models: [model],
+  const media = [{ id: 'primary', source: 'source-a' }, { id: 'secondary', source: 'source-b' }];
+  const { writes, readDraft } = await mountPanel(t, {
+    materialType: 'image', models: [model], media,
     params: { model: model.id, operation: 'image_to_image', routing: { allowedGroups: [wide.id] } },
-    slotBindings: { reference: [primary], extra: [extra] },
   });
-  await openModelPicker(writes);
-  const row = channelRow(single.label);
-  assert.equal(row.getAttribute('aria-checked'), 'false');
-  await click(row);
-  assert.ok(writes.length > 0, 'Selecting the line must update the store');
-  assert.deepEqual(writes[0].params.routing, { strategy: 'auto', allowedGroups: [single.id] });
-  assert.deepEqual(writes[0].slotBindings, { reference: [primary] }, 'The first routing write must already have one reference');
-  assert.equal(writes.length, 1, 'Selecting the line must commit one node edit');
+  const renderedReferences = () => Array.from(document.querySelectorAll('[data-testid="wf-slot-wells"] [data-slot-edge]'),
+    card => [card.dataset.slot, card.dataset.slotEdge, card.dataset.slotState]);
+  const supply = () => useCanvasStore.getState().edges.map(({ id, source, target }) => ({ id, source, target }));
+  const bothEdges = media.map(edge => ({ ...edge, target: draftId }));
+  const bothReferences = [['reference', 'primary', 'ready'], ['extra', 'secondary', 'ready']];
+  assert.deepEqual(renderedReferences(), bothReferences);
+  assert.deepEqual(supply(), bothEdges);
+  assert.deepEqual(writes, [], 'Opening the panel leaves the graph untouched');
+
+  async function routeTo(groupId, writeCount) {
+    const routing = { strategy: 'auto', allowedGroups: [groupId] };
+    await act(async () => {
+      const plan = useCanvasStore.getState().applyCanvasInputMutation({
+        nodePatches: [{ nodeId: draftId, data: { params: { ...readDraft().params, routing } } }],
+      });
+      assert.equal(plan.status, 'allowed');
+    });
+    assert.equal(writes.length, writeCount, 'A routing change is one node edit');
+    assert.deepEqual(writes.at(-1).params.routing, routing);
+    assert.deepEqual(supply(), bothEdges, 'Routing leaves both supply edges connected and in order');
+    assert.equal(control('.wf-generate-btn__send').getAttribute('aria-disabled'), 'false');
+  }
+
+  await routeTo(single.id, 1);
+  const { nodes, edges, catalogRuntime } = useCanvasStore.getState();
+  const snapshot = prepareExecutionSlotGraph(nodes, edges, catalogRuntime).runSnapshots.get(draftId);
+  const narrowed = {
+    wells: renderedReferences(),
+    addActions: document.querySelectorAll('[data-testid="wf-add-reference"]').length,
+    runReferences: snapshot.assigned.map(asset => [asset.targetSlot, asset.edgeId]),
+    unusedEdges: snapshot.unusedEdgeIds,
+  };
+  await routeTo(wide.id, 2);
+  assert.deepEqual(renderedReferences(), bothReferences, 'Switching back restores both references in order without reconnecting');
+  assert.deepEqual(narrowed, {
+    wells: [['reference', 'primary', 'ready']],
+    addActions: 0,
+    runReferences: [['reference', 'primary']],
+    unusedEdges: ['secondary'],
+  }, 'The line limit applies across its image slots in the editor and run snapshot');
 });

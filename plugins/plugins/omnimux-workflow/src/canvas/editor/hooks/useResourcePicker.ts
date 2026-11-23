@@ -11,13 +11,15 @@ import { useT } from '../../i18n';
 import { pickLocalFiles } from '../../bridge/apiClient.ts';
 import { reportLocalFilePickerFailure } from '../utils/reportLocalFilePickerFailure.ts';
 import {
+  namedPickerState,
+  openNamedPicker,
+  planNamedPickerMutation,
   planImportNodeFill,
   planResourcePickerCommit,
   planPickerSelectionMutation,
   pickerReasonKey,
   resourcePickerContextKey,
   usesQualifiedResourcePicker,
-  validatesNamedPickerSelection,
   type LocalFileDraft,
   type ResourcePickerTab,
   type ResourcePickerMode,
@@ -27,6 +29,9 @@ import { buildImportedMediaData, extensionOf, extensionsForMaterialType } from '
 import { readNodeInputSource } from '../../../shared/graph/nodeInputSource.ts';
 import { MATERIAL_TYPES, type MaterialType } from '../../../shared/graph/materialNode.ts';
 import type { NodeSlotEngineState } from '../../../shared/graph/slotContractTypes.ts';
+import { feedAssetMime } from '../../../shared/graph/feedSlot/autoFillSlots.ts';
+import { readSlotIntent, slotIntentNeedsDuration, type SlotIntent } from '../../../shared/validation/slotIntent.ts';
+import { probePickerDrafts } from '../utils/probePickerDrafts.ts';
 
 export interface ResourcePickerSlotTarget {
   /** 目标 slot 名（内核 SlotSpec.slot）。 */
@@ -38,9 +43,23 @@ export interface ResourcePickerSlotTarget {
   /** 槽位上限；null 表示官方未公布上限。 */
   max: number | null;
   replaceEdgeId?: string;
+  /** Operation and role rendered by the opening well. The hook rechecks them against the live graph. */
+  operationId?: string;
+  slotRole?: string;
+  intent?: SlotIntent;
   contextKey?: string;
   openerAnchor?: HTMLElement;
   onReturnFocus?: (anchor: HTMLElement) => void;
+}
+
+export interface ResourcePickerCommitPayload {
+  selections?: Array<{ sourceNodeId: string; outputId: string; targetSlot?: string; role?: string }>;
+  chosenOperationId?: string;
+  chosenRouteId?: string;
+  selectedCanvasNodeIds: string[];
+  localFiles: LocalFileDraft[];
+  mode?: ResourcePickerMode;
+  targetSlotIndex?: number;
 }
 
 export interface UseResourcePickerResult {
@@ -59,15 +78,7 @@ export interface UseResourcePickerResult {
   importLocalFiles: () => Promise<boolean>;
   fillImportNode: () => Promise<boolean>;
   relinkLocalFile: (materialType: MaterialType) => Promise<boolean>;
-  commit: (payload: {
-    selections?: Array<{ sourceNodeId: string; outputId: string; targetSlot?: string; role?: string }>;
-    chosenOperationId?: string;
-    chosenRouteId?: string;
-    selectedCanvasNodeIds: string[];
-    localFiles: LocalFileDraft[];
-    mode?: ResourcePickerMode;
-    targetSlotIndex?: number;
-  }) => boolean;
+  commit: (payload: ResourcePickerCommitPayload) => boolean | Promise<boolean>;
 }
 
 export function useResourcePicker(nodeId: string, workspaceId?: string | null): UseResourcePickerResult {
@@ -86,22 +97,26 @@ export function useResourcePicker(nodeId: string, workspaceId?: string | null): 
       target: ResourcePickerSlotTarget | null | ResourcePickerMode = null,
       slotIdx?: number,
     ) => {
-      guard.deactivate();
-      setSessionId((id) => id + 1);
-      setInitialTab(tab);
-      if (typeof target === 'string') {
-        setMode(target as ResourcePickerMode);
-        setSlotTarget(null);
-        setTargetSlotIndex(slotIdx);
-      } else {
+      let namedTarget: ResourcePickerSlotTarget | null = null;
+      if (target && typeof target !== 'string') {
         const state = useCanvasStore.getState();
-        setMode(target?.replaceEdgeId ? 'replace' : 'add');
-        setSlotTarget(target ? {
-          ...target,
-          contextKey: resourcePickerContextKey(state.nodes.find(node => node.id === nodeId), { catalog: state.catalogRuntime }),
-        } : null);
-        setTargetSlotIndex(slotIdx);
+        const runtime = { catalog: state.catalogRuntime };
+        if (target.slot) {
+          const picker = namedPickerState(state, nodeId, runtime);
+          const intent = picker && openNamedPicker(picker, { slot: target.slot, role: target.slotRole,
+            operationId: target.operationId, replaceEdgeId: target.replaceEdgeId });
+          if (!intent) return;
+          namedTarget = { ...target, intent };
+        } else {
+          namedTarget = { ...target, contextKey: resourcePickerContextKey(state.nodes.find(node => node.id === nodeId), runtime) };
+        }
       }
+      guard.deactivate();
+      setSessionId(id => id + 1);
+      setInitialTab(tab);
+      setMode(typeof target === 'string' ? target : target?.replaceEdgeId ? 'replace' : 'add');
+      setSlotTarget(namedTarget);
+      setTargetSlotIndex(slotIdx);
       setOpen(true);
     },
     [guard, nodeId],
@@ -116,16 +131,64 @@ export function useResourcePicker(nodeId: string, workspaceId?: string | null): 
     setTargetSlotIndex(undefined);
   }, [guard]);
 
+  const commitNamed = useCallback(async (intent: SlotIntent, payload: ResourcePickerCommitPayload) => {
+    const ticket = guard.capture();
+    if (!guard.isCurrent(ticket)) return false;
+    const before = useCanvasStore.getState();
+    const picker = namedPickerState(before, nodeId, { catalog: before.catalogRuntime });
+    const slot = picker && readSlotIntent(picker, intent);
+    if (!slot?.accepted) return false;
+    const selections = payload.selections ?? [];
+    if (selections.length !== payload.selectedCanvasNodeIds.length || payload.chosenRouteId !== undefined
+      || payload.chosenOperationId !== undefined && payload.chosenOperationId !== intent.operationId) return false;
+    const readDuration = slotIntentNeedsDuration(slot.spec);
+    const nativeSources = selections.flatMap(selection => {
+      const node = before.nodes.find(item => item.id === selection.sourceNodeId);
+      const source = node && readNodeInputSource(node);
+      const path = source?.output.mediaAssets?.[0]?.path;
+      const draft = path && draftFromRealPath(path);
+      return source && draft ? [{ source, draft }] : [];
+    });
+    const verification = await Promise.all([
+      probePickerDrafts(payload.localFiles, readDuration),
+      probePickerDrafts(nativeSources.map(({ draft }) => draft), readDuration),
+    ]).catch(() => undefined);
+    if (!guard.isCurrent(ticket)) return false;
+    const [files, refreshed] = verification ?? [[], []];
+    const unchanged = verification && files.length === payload.localFiles.length
+      && refreshed.length === nativeSources.length && nativeSources.every(({ source }, index) => {
+        const file = refreshed[index]!;
+        const metadata = source.metadata;
+        const mime = feedAssetMime({ mimeType: metadata?.mimeType, declaredExtension: extensionOf(file.name) });
+        return file.materialType === source.materialType && (!mime || feedAssetMime({ mimeType: file.mime }) === mime)
+          && (metadata?.sizeBytes === undefined || metadata.sizeBytes === file.size)
+          && (!readDuration || metadata?.durationSec === file.durationSec)
+          && (source.materialType !== 'document' || source.output.documentText === file.documentText);
+      });
+    if (!unchanged) {
+      toast.error(t(pickerReasonKey('input_unavailable')));
+      return false;
+    }
+    const live = useCanvasStore.getState();
+    const runtime = { catalog: live.catalogRuntime };
+    const current = namedPickerState(live, nodeId, runtime);
+    const plan = current ? planNamedPickerMutation(current, intent, selections, files, runtime) : undefined;
+    if (!plan?.mutation) {
+      toast.error(t(pickerReasonKey(plan?.reasonCode ?? 'input_changed')));
+      return false;
+    }
+    const applied = live.applyCanvasInputMutation(plan.mutation, { undoStep: true });
+    if (applied.status !== 'allowed') {
+      toast.error(t(pickerReasonKey(applied.reasonCode)));
+      return false;
+    }
+    closePicker();
+    return true;
+  }, [closePicker, guard, nodeId, t]);
+
   const commit = useCallback(
-    (payload: {
-      selections?: Array<{ sourceNodeId: string; outputId: string; targetSlot?: string; role?: string }>;
-    chosenOperationId?: string;
-    chosenRouteId?: string;
-    selectedCanvasNodeIds: string[];
-      localFiles: LocalFileDraft[];
-      mode?: ResourcePickerMode;
-      targetSlotIndex?: number;
-    }) => {
+    (payload: ResourcePickerCommitPayload) => {
+      if (slotTarget?.intent) return commitNamed(slotTarget.intent, payload);
       if (!guard.isCurrent(guard.capture())) return false;
       const state = useCanvasStore.getState();
       const commitMode = payload.mode ?? mode;
@@ -143,13 +206,6 @@ export function useResourcePicker(nodeId: string, workspaceId?: string | null): 
         targetSlot: slotTarget?.slot, acceptedTypes: slotTarget?.acceptedTypes, slotMax: slotTarget?.max,
         replaceEdgeId: slotTarget?.replaceEdgeId, mode: commitMode, targetSlotIndex: commitSlotIndex, slotState,
       };
-      if (!validatesNamedPickerSelection(pickerInput) || (slotTarget?.slot && payload.selections?.some(selection => {
-        const source = state.nodes.find(node => node.id === selection.sourceNodeId);
-        return !source || readNodeInputSource(source).outputId !== selection.outputId;
-      }))) {
-        toast.error(t(pickerReasonKey('input_changed')));
-        return false;
-      }
       if (usesQualifiedResourcePicker(targetNode, context) || slotTarget?.referenceSlots) {
         const params = targetNode?.data.params as Record<string, unknown> | undefined;
         if (!payload.localFiles.length && !payload.selections?.length) return false;
@@ -165,13 +221,11 @@ export function useResourcePicker(nodeId: string, workspaceId?: string | null): 
           toast.error(t(pickerReasonKey(prepared.reasonCode)));
           return false;
         }
-        state.pushHistory();
-        const applied = state.applyCanvasInputMutation(prepared.mutation);
+        const applied = state.applyCanvasInputMutation(prepared.mutation, { undoStep: true });
         if (applied.status !== 'allowed') {
           toast.error(t(pickerReasonKey(applied.reasonCode)));
           return false;
         }
-        state.pushHistory(true);
         closePicker();
         return true;
       }
@@ -203,7 +257,7 @@ export function useResourcePicker(nodeId: string, workspaceId?: string | null): 
       closePicker();
       return true;
     },
-    [closePicker, guard, mode, nodeId, slotTarget, t, targetSlotIndex],
+    [closePicker, commitNamed, guard, mode, nodeId, slotTarget, t, targetSlotIndex],
   );
 
   const fillImportNode = useCallback(async () => {

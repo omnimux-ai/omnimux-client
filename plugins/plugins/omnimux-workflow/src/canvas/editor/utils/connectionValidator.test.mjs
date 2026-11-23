@@ -1,18 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validateConnection, validateConnectionDetailed, validateDynamicModelCapacity, rejectReasonKey } from './connectionValidator.ts';
+import { validateConnection, validateConnectionDetailed, rejectReasonKey } from './connectionValidator.ts';
 import { createCompatTestCatalog } from '../../../shared/validation/compatTestCatalog.ts';
 import zh from '../../i18n/dict.zh.ts';
 import en from '../../i18n/dict.en.ts';
 const catalog = createCompatTestCatalog();
 const target = { id: 'target', type: 'material', data: { materialType: 'image', nodeKind: 'generate', selectedTool: 'image-to-image', params: { model: 'alias-img', operation: 'image_to_image' } } };
 const source = (id, type = 'image', data = {}) => ({ id, type: 'material', data: { materialType: type, nodeKind: 'import', selectedTool: 'import', mimeType: `${type}/png`, ...data } });
-test('fifth edge beyond max four is accepted with unused supply advisory', () => {
+test('fifth edge beyond max four is accepted without a capacity verdict', () => {
   const images = Array.from({ length: 5 }, (_, i) => source(`i${i}`));
   const edges = images.slice(0, 4).map((node) => ({ id: node.id, source: node.id, target: target.id }));
   const connection = { source: 'i4', target: target.id };
   const result = validateConnectionDetailed(connection, [target, ...images], edges, catalog);
-  assert.equal(result.valid, true); assert.equal(result.advisory.unusedWouldRemain, true);
+  assert.deepEqual(result, { valid: true });
   assert.equal(result.reasonCode, undefined); assert.equal(validateConnection(connection, [target, ...images], edges, catalog), true);
 });
 for (const [name, inputCatalog, data] of [['no catalog', null, {}], ['undefined catalog', undefined, {}], ['unknown model', catalog, {}], ['MIME unsupported', catalog, { mimeType: 'image/gif' }], ['oversized', catalog, { fileSize: 100e6 }]]) {
@@ -57,8 +57,7 @@ test('JSON document cannot connect to a text-to-text node', () => {
   assert.equal(detail.reasonCode, 'type_contract');
 });
 
-test('Stage 2 does not gate import targets and prompt-only input', () => {
-  assert.equal(validateDynamicModelCapacity({ source: 'source', target: 'target' }, [source('target'), source('source')], [], null).valid, true);
+test('a prompt edge is structurally valid', () => {
   assert.equal(validateConnectionDetailed({ source: 'source', target: 'target' }, [target, source('source', 'text')], [], null).valid, true);
 });
 test('capacity and operation failures are not edge rejection messages', () => {

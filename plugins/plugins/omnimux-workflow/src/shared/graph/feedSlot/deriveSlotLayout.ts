@@ -1,5 +1,7 @@
 import type { CapabilityCatalog } from '../../api.ts';
-import { bindableSlots, buildContractView, operationAcceptsDocuments, operationAcceptsText, resolveModelView } from '../../validation/compatKernel.ts';
+import { bindableSlots, buildContractView, operationAcceptsDocuments, operationAcceptsText, resolveModelView,
+  type ContractModelView, type ContractOperationView } from '../../validation/compatKernel.ts';
+import { lineInputMaxByType } from '../../validation/lineConstraints.ts';
 import { SLOT_LAYOUT_TABLE, SLOT_NAME_ALIASES } from './slotLayoutTable.ts';
 import type { SlotLayout } from './types.ts';
 
@@ -10,16 +12,26 @@ export function deriveSlotLayout(
   operationId: string | undefined,
   _outputTypeOrOptions?: string | { outputType?: string },
 ): SlotLayout {
-  const layout: SlotLayout = {
-    operationId: operationId ?? '', preset: 'none', slots: [], swap: false,
-    addButton: false, implementationGaps: [],
-  };
   const model = resolveModelView(buildContractView(catalog), modelId);
   const operation = model?.operations.find((op) => op.id === operationId && op.listed);
-  if (!model || !operation) return { ...layout, acceptsText: false, implementationGaps: ['operation_unlisted'] };
+  return model && operation ? slotLayoutForOperation(catalog, model, operation) : {
+    operationId: operationId ?? '', preset: 'none', slots: [], swap: false,
+    addButton: false, acceptsText: false, implementationGaps: ['operation_unlisted'],
+  };
+}
+
+export function slotLayoutForOperation(catalog: CapabilityCatalog | null | undefined,
+  model: ContractModelView, operation: ContractOperationView): SlotLayout {
+  const layout: SlotLayout = {
+    operationId: operation.id, preset: 'none', slots: [], swap: false,
+    addButton: false, implementationGaps: [],
+  };
+  const catalogModel = catalog?.models?.find(row => row.id === model.id);
+  const inputMaxByType = lineInputMaxByType(catalogModel);
+  if (inputMaxByType) layout.inputMaxByType = inputMaxByType;
   layout.outputType = operation.output.type;
   layout.acceptsText = operationAcceptsText(model, operation);
-  if (catalog?.models?.find(row => row.id === model.id)?.effectiveVideoProjection) {
+  if (catalogModel?.effectiveVideoProjection) {
     layout.requireBoundDocuments = true;
     layout.acceptsDocuments = bindableSlots(operation).some(input => input.type === 'document');
   } else {
@@ -50,6 +62,8 @@ export function deriveSlotLayout(
     labelKey: `panel.slot.${roleLabels[input.type] ?? input.slot}`,
     maxSizeMb: input.maxSizeMb, maxSizeExclusive: input.maxSizeExclusive,
     minDurationSec: input.minDurationSec, maxDurationSec: input.maxDurationSec,
+    totalMinDurationSec: input.totalMinDurationSec, totalMaxDurationSec: input.totalMaxDurationSec,
+    totalMinExclusive: input.totalMinExclusive, totalMaxExclusive: input.totalMaxExclusive,
     ...(input.valueSources ? { valueSources: [...input.valueSources] } : {}),
     ...(input.composition ? { composition: { ...input.composition } } : {}),
     ...(input.allowedMimes ? { allowedMimes: [...input.allowedMimes] } : {}),

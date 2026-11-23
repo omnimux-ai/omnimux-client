@@ -15,12 +15,15 @@
 
 import { create } from 'zustand';
 import type { NodeExecutionApiStatus } from '../../shared/api';
+import type { RunSnapshotProof } from '../../shared/graph/feedSlot/prepareExecutionSlotGraph.ts';
 
 /** Result returned by a single-node submit; the click site must be able to recover on failure. */
 export interface NodeSubmissionResult {
   ok: boolean;
   error?: string;
 }
+
+type StartNodeExecution = (nodeId: string, expectedInput?: RunSnapshotProof) => NodeSubmissionResult | Promise<NodeSubmissionResult>;
 
 export type ExecutionUiStatus =
   | 'idle'
@@ -316,9 +319,9 @@ export interface ExecutionState extends ExecutionProjection {
   focusExecutionId: string | null;
 
   /** Bridge set by the controller hook: single-node (subset) execution. */
-  startNodeExecution: ((nodeId: string) => NodeSubmissionResult | Promise<NodeSubmissionResult>) | null;
+  startNodeExecution: StartNodeExecution | null;
 
-  setStartNodeExecution: (fn: ((nodeId: string) => NodeSubmissionResult | Promise<NodeSubmissionResult>) | null) => void;
+  setStartNodeExecution: (fn: StartNodeExecution | null) => void;
 
   /** Create a run. Recovery uses host creation order to avoid refocusing a newer submission. */
   ensureRun: (executionId: string, options?: { createdAt?: string; restored?: boolean }) => void;

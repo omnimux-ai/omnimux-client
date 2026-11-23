@@ -1,4 +1,5 @@
 /** Canvas picker presentation derived from the shared compatibility kernel. */
+import type { InputAssignment } from './inputAssignment.ts';
 
 import { resolveGenerationPrompt, selectGenerationTextSources } from '../graph/generationPrompt.ts';
 import {
@@ -148,6 +149,8 @@ export interface UpstreamMediaSnapshot {
   /** Raw JSON document text (Issue #27); only for document inputs. */
   documentText?: string;
   mimeType?: string | null;
+  declaredExtension?: string;
+  ordinal?: number;
   /** Prefer sizeBytes; fileSize is a legacy alias. Unknown → omit (never invent 0). */
   sizeBytes?: number | null;
   fileSize?: number | null;
@@ -211,6 +214,8 @@ export function assetFromUpstreamSnapshot(snap: UpstreamMediaSnapshot): Upstream
     type: snap.materialType || 'text',
     ...(edgeId ? { edgeId } : {}),
     ...(mimeType ? { mimeType } : {}),
+    ...(snap.declaredExtension ? { declaredExtension: snap.declaredExtension } : {}),
+    ...(snap.ordinal !== undefined ? { ordinal: snap.ordinal } : {}),
     ...(sizeBytes !== undefined ? { sizeBytes } : {}),
     ...(durationSec !== undefined ? { durationSec } : {}),
     ...(role ? { role } : {}),
@@ -293,7 +298,24 @@ export function buildEffectiveOpsUiState(args: {
   preferredOperationId?: string;
   outputType?: string;
   deferVisualPrompt?: boolean;
+  assignment?: InputAssignment;
 }): EffectiveOpsUiState {
+  if (args.assignment) {
+    const assignment = args.assignment;
+    const model = resolveModelView(buildContractView(args.catalog), assignment.modelId);
+    const effectiveOps = [...assignment.operationMatches.values()].map(match => matchToOption(match, model));
+    const selected = effectiveOps.find(op => op.id === assignment.operationId);
+    const reason = assignment.blocked[0];
+    return {
+      effectiveOps, count: effectiveOps.length,
+      visibility: effectiveOps.length > 1 && args.outputType !== 'text' ? 'selector' : 'hidden',
+      ...(effectiveOps.length === 1 && selected ? { implicitOperationId: selected.id } : {}),
+      selectedOperationId: selected?.id,
+      blockGenerate: !assignment.ready,
+      reasonCode: !args.modelId ? 'model_unselected' : assignment.reasonCode,
+      ...(reason ? { reasonMessage: reason.message, reason } : {}),
+    };
+  }
   const catalog = args.catalog;
   const modelId = typeof args.modelId === 'string' ? args.modelId.trim() : '';
   if (!catalog) {
@@ -578,7 +600,7 @@ function findAuthoritativeItem(
  */
 export function buildFilteredModelOptions(args: {
   catalog: CapabilityCatalog | null | undefined;
-  fingerprint: UpstreamFingerprint;
+  fingerprint?: UpstreamFingerprint;
   /** Output material type of the generate node (filters by operation.output.type). */
   outputType?: string;
   /**
@@ -615,9 +637,10 @@ export function buildFilteredModelOptions(args: {
     return !isCanvasCapabilityModel(catalog, modelId);
   };
 
-  const evaluation = evaluateCatalogCompat(catalog, args.fingerprint, {
-    ...(args.outputType ? { outputType: args.outputType } : {}),
-  });
+  const fingerprint = !args.allowUnassignedInputs && args.fingerprint ? args.fingerprint : buildUpstreamFingerprint({});
+  const evaluation = evaluateCatalogCompat(catalog, fingerprint, {
+      ...(args.outputType ? { outputType: args.outputType } : {}),
+    });
   if (!evaluation.catalogAvailable) {
     return {
       options: [],
@@ -645,7 +668,7 @@ export function buildFilteredModelOptions(args: {
           catalog,
           modelId: verdict.modelId,
           outputType: args.outputType,
-          fingerprint: args.fingerprint,
+          fingerprint,
         })
       : false;
     const label = auth?.label || bucket?.label || verdict.modelId;

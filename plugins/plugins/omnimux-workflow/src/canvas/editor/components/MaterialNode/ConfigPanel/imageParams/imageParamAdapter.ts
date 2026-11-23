@@ -56,6 +56,7 @@ export interface ResolveEffectiveImageParamsArgs {
   schema: ModelParameterSchema | undefined;
   modelItem: CapabilityModelItem | undefined;
   catalog?: CapabilityCatalog | null;
+  opsState?: EffectiveOpsUiState;
   upstreams?: UpstreamMediaSnapshot[];
   prompt?: string;
 }
@@ -98,8 +99,8 @@ export function resolveEffectiveImageParams(
   const params = args.params;
   const model = args.modelItem?.id
     ?? (typeof params?.model === 'string' ? params.model : '');
-  const opsState = buildOpsState(args);
-  const preferredOperation = readPreferredOperationId((params ?? {}) as Record<string, unknown>);
+  const opsState = args.opsState ?? buildOpsState(args);
+  const preferredOperation = args.opsState?.selectedOperationId ?? readPreferredOperationId(params);
   const selectedId = opsState.selectedOperationId ?? opsState.implicitOperationId;
   const operationOption = preferredOperation
     ? opsState.effectiveOps.find((option) => option.id === preferredOperation)

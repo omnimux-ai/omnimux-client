@@ -3,6 +3,7 @@
  */
 import { WORKFLOW_ROUTE_PREFIX } from '../../shared/api';
 import type { ResolveExecutionProjectFile } from '../execution/executionMediaSource.ts';
+import type { RunSnapshotProof } from '../../shared/graph/feedSlot/prepareExecutionSlotGraph.ts';
 import { buildInitialOutputs } from '../execution/executionInputs.ts';
 import { prepareExecutionAdmission } from '../execution/prepareExecutionAdmission.ts';
 import { jsonBodyProblem, messageOf } from '../../http/helpers';
@@ -19,6 +20,12 @@ import {
 } from '../execution/subgraph';
 import { notFound, type RouteTry, type WorkflowDispatchRequest } from './dispatch';
 import type { CapabilityCatalog } from '../../shared/api';
+
+function isRunSnapshotProof(value: unknown): value is RunSnapshotProof {
+  if (!value || typeof value !== 'object') return false;
+  const { fingerprint, contractFingerprint } = value as Partial<RunSnapshotProof>;
+  return [fingerprint, contractFingerprint].every(hash => typeof hash === 'string' && /^[a-f0-9]{16,128}$/.test(hash));
+}
 
 const STATUS_BY_CODE: Record<string, number> = {
   'invalid-json': 400,
@@ -100,7 +107,8 @@ export function createExecutionRoutes(opts: {
       if (method === 'POST') {
         const problem = jsonBodyProblem(req.body);
         if (problem) return problem;
-        const body = req.body as { mode?: unknown; nodeIds?: unknown; expectedVersion?: unknown; groupId?: unknown; graphHash?: unknown; graph?: unknown };
+        const body = req.body as { mode?: unknown; nodeIds?: unknown; expectedVersion?: unknown; groupId?: unknown; graphHash?: unknown;
+          graph?: unknown; expectedInput?: unknown };
         if (body.expectedVersion !== undefined && (!Number.isSafeInteger(body.expectedVersion) || (body.expectedVersion as number) < 0)) {
           return { status: 400, body: { error: 'invalid-version', message: 'expectedVersion 必须是非负整数' } };
         }
@@ -113,6 +121,11 @@ export function createExecutionRoutes(opts: {
           mode = toExecutionMode(body.mode);
         } catch (error) {
           return { status: 400, body: { error: 'invalid-mode', message: messageOf(error) } };
+        }
+        const requestedNodeIds = normalizeNodeIds(body.nodeIds);
+        const expectedInput = isRunSnapshotProof(body.expectedInput) ? body.expectedInput : undefined;
+        if (body.expectedInput !== undefined && (!expectedInput || mode !== 'single' || requestedNodeIds.length !== 1)) {
+          return { status: 400, body: { error: 'invalid-input-snapshot', message: 'expectedInput 必须对应一个单节点执行' } };
         }
         const groupId = typeof body.groupId === 'string' && body.groupId.trim() ? body.groupId.trim() : undefined;
         const graphHash = typeof body.graphHash === 'string' && body.graphHash.trim() ? body.graphHash.trim() : undefined;
@@ -143,10 +156,10 @@ export function createExecutionRoutes(opts: {
         }
         try {
           const rawSubgraph = resolveExecutionSubgraph({
-            nodes: snapshot.nodes, edges: snapshot.edges, executionMode: mode, nodeIds: normalizeNodeIds(body.nodeIds),
+            nodes: snapshot.nodes, edges: snapshot.edges, executionMode: mode, nodeIds: requestedNodeIds,
           });
           const { subgraph, readiness, sourceGraph, recovery } = await prepareExecutionAdmission(
-            workspaceId, snapshot, rawSubgraph, mode, executionManager, getCatalog, opts.resolveProjectFile,
+            workspaceId, snapshot, rawSubgraph, mode, executionManager, getCatalog, opts.resolveProjectFile, expectedInput,
           );
           if (readiness) {
             return {

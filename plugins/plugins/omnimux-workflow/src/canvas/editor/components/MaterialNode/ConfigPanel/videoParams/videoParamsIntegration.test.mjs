@@ -1,8 +1,7 @@
 /**
  * 集成契约测试 — ConfigPanel 全模态接线（2026-09-07 全模态收敛 / T06 更新；Issue #763 更新）
  *
- * 以源码契约风格（readFileSync + node:test）锁定 ConfigPanel 与三材质
- * 组件群的集成边界：
+ * 通过源码接线、共享分配和组件渲染覆盖 ConfigPanel 与三材质的集成边界：
  *  - ConfigPanel 消费 VideoTriggerBar / VideoParamPopover / 参数解析与回退适配器；
  *  - 图像分支废除 wf-param-pill--video-summary 幽灵 Select，改挂
  *    ImageTriggerBar / ImageParamPopover；
@@ -17,11 +16,12 @@
  * 不引入 panel.*Param* key，避免半中半典。
  */
 import assert from 'node:assert/strict';
-import { deriveSlotLayout, autoFillSlots, effectiveSlotFingerprint, feedFromFingerprint } from '../../../../../../shared/graph/feedSlot/index.ts';
-import { resolveSlotOperation } from '../../../../../../shared/graph/feedSlot/resolveSlotOperation.ts';
-import { buildUiUpstreamFingerprint, buildEffectiveOpsUiState, shouldRenderModeUi } from '../../../../../../shared/validation/operationUi.ts';
+import { after, test } from 'node:test';
+import React from 'react';
+import { createRoot, dom, MaterialNode, ReactFlow, useCanvasStore } from '../fixtures/clickablePanel.mjs';
+import { resolveInputAssignment } from '../../../../../../shared/validation/inputAssignment.ts';
+import { buildUiUpstreamFingerprint, buildEffectiveOpsUiState, readPreferredOperationId, shouldRenderModeUi } from '../../../../../../shared/validation/operationUi.ts';
 import { resolveEffectiveVideoParams, validateVideoParamsForUi } from './videoParamAdapter.ts';
-import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -69,64 +69,95 @@ test('model cascade delegates one atomic model/routing/history update without st
   assert.match(source, /parameterSelections: transition.parameterSelections/);
 });
 
-const imageSlot = slot => ({slot,type:'image',role:'reference',source:'upstream_edge',min:1,max:1});
-const videoCatalog = {models:[{id:'video-test',operations:[
-  {id:'text_to_video',listed:true,output:{type:'video'},inputs:[]},
-  {id:'first_frame',listed:true,output:{type:'video'},inputs:[imageSlot('first_frame')]},
-  {id:'first_last_frame',listed:true,output:{type:'video'},inputs:[imageSlot('first_frame'),imageSlot('last_frame')]},
-  {id:'video_multi_ref',listed:true,output:{type:'video'},inputs:[{...imageSlot('reference_images'),max:3}]},
-]}]};
-
-test('video raw supply keeps modes discoverable while the selected first-frame gate consumes one image', () => {
-  const raw = buildUiUpstreamFingerprint({prompt:'1dog',upstreams:[{nodeId:'image-0',edgeId:'edge-0',materialType:'image',hasMedia:true,availability:'ready',url:'https://example.test/0.png',mimeType:'image/png'}]});
-  const operation = resolveSlotOperation(videoCatalog, 'video-test', 'first_frame', 'video', raw);
-  assert.equal(operation, 'first_frame');
-  const layout = deriveSlotLayout(videoCatalog, 'video-test', operation, 'video');
-  assert.deepEqual(layout.slots.map(s => s.slot), ['first_frame']);
-  const fill = autoFillSlots(feedFromFingerprint(raw), layout);
-  const consumed = effectiveSlotFingerprint(raw, layout, fill.bindings, []);
-  assert.equal(consumed.assets.filter(a => a.type === 'image').length, 1);
-  const args = {catalog:videoCatalog,modelId:'video-test',preferredOperationId:operation,outputType:'video'};
-  const available = buildEffectiveOpsUiState({...args,fingerprint:raw});
-  assert.equal(shouldRenderModeUi(available), true);
-  assert.deepEqual(available.effectiveOps.map(op => op.id), ['text_to_video','first_frame','first_last_frame','video_multi_ref']);
-  const current = buildEffectiveOpsUiState({...args,fingerprint:consumed});
-  assert.equal(current.selectedOperationId, 'first_frame');
-  assert.equal(current.blockGenerate, false);
-  const disconnected = buildUiUpstreamFingerprint({prompt:'1dog',upstreams:[]});
-  assert.equal(resolveSlotOperation(videoCatalog, 'video-test', 'first_frame', 'video', disconnected), 'text_to_video');
-  const missing = buildEffectiveOpsUiState({...args,fingerprint:disconnected});
-  assert.equal(missing.blockGenerate, true);
+const imageSlot = (slot, role = slot) => ({ slot, type: 'image', role, source: 'upstream_edge', min: 1, max: 1 });
+const videoModel = { id: 'video-test', label: 'Video test', selectable: true, operations: [
+  { id: 'text_to_video', listed: true, output: { type: 'video' }, inputs: [] },
+  { id: 'first_frame', listed: true, output: { type: 'video' }, inputs: [imageSlot('first_frame')] },
+  { id: 'first_last_frame', listed: true, output: { type: 'video' }, inputs: [imageSlot('first_frame'), imageSlot('last_frame')] },
+  { id: 'video_multi_ref', listed: true, output: { type: 'video' }, inputs: [{ ...imageSlot('reference_images', 'reference'), max: 3 }] },
+] };
+const catalogFor = model => ({ source: 'omnimux', models: [model], video: [model] });
+const imageUpstream = index => ({
+  nodeId: `image-${index}`, edgeId: `edge-${index}`, materialType: 'image',
+  availability: 'ready', url: `https://example.test/${index}.png`, mimeType: 'image/png',
 });
 
-test('R4: standby image cannot erase a single-operation duration schema or its validation', () => {
-  const duration = {options:[{value:5}],defaultValue:5};
-  const catalog = {models:[{id:'single-frame',operations:[{id:'first_frame',listed:true,output:{type:'video'},inputs:[{slot:'prompt',type:'text',role:'prompt',source:'node_field',min:0,max:1},imageSlot('first_frame')],parameters:{duration}}]}]};
-  const upstreams = [0,1].map(i => ({nodeId:`image-${i}`,edgeId:`edge-${i}`,materialType:'image',hasMedia:true,availability:'ready',url:`https://example.test/${i}.png`,mimeType:'image/png'}));
-  upstreams.push({nodeId:'table',edgeId:'table-edge',materialType:'table',textContent:'table-body-unique',availability:'ready'});
-  const raw = buildUiUpstreamFingerprint({prompt:'1dog',upstreams});
-  const layout = deriveSlotLayout(catalog, 'single-frame', 'first_frame', 'video');
-  const bindings = {first_frame:[{edgeId:'edge-0',sourceNodeId:'image-0'}]};
-  const consumed = effectiveSlotFingerprint(raw, layout, bindings, []);
-  const consumedEdgeIds = new Set(consumed.assets.map(asset => asset.edgeId));
-  const consumedUpstreams = upstreams.filter(item => consumedEdgeIds.has(item.edgeId) && ['image', 'video', 'audio'].includes(item.materialType));
-  assert.equal(upstreams.filter(item => item.materialType === 'image').length, 2);
-  assert.equal(consumed.prompt.split('table-body-unique').length - 1, 1);
-  const adapterFingerprint = buildUiUpstreamFingerprint({prompt:consumed.prompt,upstreams:consumedUpstreams});
-  assert.equal(adapterFingerprint.prompt, consumed.prompt, '适配器重算不得再次拼接table正文');
-  assert.deepEqual(consumedUpstreams.map(item => item.edgeId), ['edge-0']);
-  const rawParams = {model:'single-frame',operation:'first_frame',duration:10};
-  const effective = resolveEffectiveVideoParams({params:rawParams,schema:{},modelItem:catalog.models[0],catalog,upstreams:consumedUpstreams,prompt:consumed.prompt});
+function resolveVideoPanel(catalog, params, upstreams, autoOperationId) {
+  const modelId = params.model;
+  const outputType = 'video';
+  const fingerprint = buildUiUpstreamFingerprint({ materialType: outputType, prompt: '1dog', nodeFields: params, upstreams });
+  const assignment = resolveInputAssignment({
+    catalog, modelId, outputType, params, fingerprint, autoOperationId,
+    preferredOperationId: readPreferredOperationId(params, autoOperationId),
+  });
+  const consumed = assignment.effectiveFingerprint;
+  const opsState = buildEffectiveOpsUiState({ catalog, modelId, outputType, fingerprint: consumed, assignment });
+  const effective = resolveEffectiveVideoParams({
+    params, schema: {}, modelItem: catalog.models.find(model => model.id === modelId),
+    catalog, opsState, assignment, prompt: consumed.prompt,
+  });
+  return { assignment, opsState, effective };
+}
+
+test('video supply keeps alternative modes discoverable while explicit first frame consumes one image', () => {
+  const catalog = catalogFor(videoModel);
+  const params = { model: videoModel.id, operation: 'first_frame' };
+  const { assignment, opsState, effective } = resolveVideoPanel(catalog, params, [imageUpstream(0), imageUpstream(1)], null);
+  assert.deepEqual(assignment.layout.slots.map(slot => slot.slot), ['first_frame']);
+  assert.deepEqual(assignment.assigned.map(asset => asset.edgeId), ['edge-0']);
+  assert.deepEqual(assignment.unused.map(asset => [asset.edgeId, asset.unusedReason]), [['edge-1', 'capacity']]);
+  assert.equal(shouldRenderModeUi(opsState), true);
+  assert.deepEqual(effective.effectiveOperations.map(op => op.id), ['text_to_video', 'first_frame', 'first_last_frame', 'video_multi_ref']);
+  const pair = effective.effectiveOperations.find(op => op.id === 'first_last_frame');
+  assert.equal(pair.ready, true);
+  assert.equal(pair.disabled, false);
+  assert.deepEqual(pair.bindings.map(binding => [binding.slot, binding.edgeId]), [['first_frame', 'edge-0'], ['last_frame', 'edge-1']]);
+  assert.equal(opsState.selectedOperationId, 'first_frame');
+  assert.equal(opsState.blockGenerate, false);
+
+  const manual = resolveVideoPanel(catalog, params, [], null);
+  assert.equal(manual.opsState.selectedOperationId, 'first_frame');
+  assert.equal(manual.opsState.blockGenerate, true);
+  assert.ok(manual.assignment.blocked.some(issue => issue.code === 'min_unsatisfied' && issue.slot === 'first_frame'));
+  const automatic = resolveVideoPanel(catalog, params, [], 'first_frame');
+  assert.equal(automatic.opsState.selectedOperationId, 'text_to_video');
+  assert.equal(automatic.opsState.blockGenerate, false);
+});
+
+test('R4: overflow keeps a single-operation duration schema and its validation intact', () => {
+  const duration = { options: [{ value: 5 }], defaultValue: 5, required: true };
+  const firstFrame = {
+    ...videoModel.operations[1],
+    parameters: { duration, prompt: { maxLength: 40 } },
+  };
+  const catalog = catalogFor({ ...videoModel, operations: [firstFrame] });
+  const upstreams = [imageUpstream(0), imageUpstream(1), {
+    nodeId: 'table', edgeId: 'table-edge', materialType: 'table', textContent: 'table-body-unique', availability: 'ready',
+  }];
+  const rawParams = { model: videoModel.id, operation: 'first_frame', duration: 10 };
+  const { assignment, opsState, effective } = resolveVideoPanel(catalog, rawParams, upstreams, null);
+  assert.deepEqual(assignment.effectiveFingerprint.assets.map(asset => asset.edgeId), ['edge-0', 'table-edge']);
+  const prompt = assignment.effectiveFingerprint.prompt;
+  assert.match(prompt, /1dog/);
+  assert.equal(prompt.split('table-body-unique').length - 1, 1);
+  assert.equal(opsState.blockGenerate, false);
   assert.deepEqual(effective.schema.duration, duration);
-  assert.equal(effective.duration, 5, '非法保存值在读侧按当前契约归一化，不能带入执行');
-  const errors = validateVideoParamsForUi({prompt:consumed.prompt,rawParams,params:effective,upstreams:consumedUpstreams});
-  assert.deepEqual(errors, []);
-  const validRaw = {...rawParams,duration:5};
-  const valid = resolveEffectiveVideoParams({params:validRaw,schema:{},modelItem:catalog.models[0],catalog,upstreams:consumedUpstreams,prompt:consumed.prompt});
-  assert.deepEqual(validateVideoParamsForUi({prompt:consumed.prompt,rawParams:validRaw,params:valid,upstreams:consumedUpstreams}), []);
-  const panelResolution = source.slice(source.indexOf('const videoEffectiveParams ='), source.indexOf('const videoEffectiveParams =') + 1000);
-  assert.match(panelResolution, /upstreams: videoDisplayUpstreams\.filter\(\(source\) => \['image', 'video', 'audio'\]\.includes\(source\.materialType\)\)/);
-  assert.match(panelResolution, /prompt: consumedFingerprint\.prompt/);
+  assert.equal(effective.duration, 5, 'Normalize the stale saved value against the selected operation');
+  assert.deepEqual(validateVideoParamsForUi({ prompt, rawParams, params: effective }), []);
+
+  const validRaw = { ...rawParams, duration: 5 };
+  const valid = resolveVideoPanel(catalog, validRaw, upstreams, null);
+  assert.equal(valid.effective.duration, 5);
+  assert.deepEqual(validateVideoParamsForUi({ prompt, rawParams: validRaw, params: valid.effective }), []);
+
+  const strictDuration = { options: [{ value: 5 }, { value: 6 }], required: true };
+  const strictCatalog = catalogFor({ ...videoModel, operations: [{ ...firstFrame, parameters: { duration: strictDuration } }] });
+  const invalid = resolveVideoPanel(strictCatalog, rawParams, upstreams, null);
+  assert.deepEqual(invalid.effective.schema.duration, strictDuration);
+  assert.equal(invalid.opsState.blockGenerate, true);
+  assert.ok(invalid.assignment.blocked.some(issue => issue.code === 'parameter_unsupported' && issue.meta?.field === 'duration'));
+  assert.equal(invalid.effective.duration, '');
+  assert.deepEqual(invalid.effective.blocked.map(issue => issue.field), ['duration']);
 });
 
 test('ConfigPanel 导入并消费 VideoTriggerBar / VideoParamPopover', () => {
@@ -177,13 +208,12 @@ test('videoPopoverOpen 状态与 setVideoPopoverOpen 接线存在', () => {
   assert.ok(source.includes('videoTriggerRef'));
 });
 
-test('视频有效参数经 resolveEffectiveVideoParams 解析（消费 catalog/upstreams）', () => {
-  assert.ok(
-    source.includes('resolveEffectiveVideoParams({'),
-    '应通过 resolveEffectiveVideoParams 对象参数解析有效视频参数',
-  );
-  assert.ok(source.includes('catalog: activeCatalog') || source.includes('catalog,'), '应传入 catalog');
-  assert.ok(source.includes('videoEffectiveParams'));
+test('视频参数适配器接收共享分配和已合成的提示词', () => {
+  const args = source.match(/\? resolveEffectiveVideoParams\(\{([\s\S]*?)\}\)/)?.[1] ?? '';
+  assert.match(args, /\bcatalog:/);
+  assert.match(args, /^\s*assignment,\s*$/m);
+  assert.match(args, /prompt: consumedFingerprint\.prompt/);
+  assert.doesNotMatch(args, /\bupstreams:/, '不重复读取上游并拼接正文');
 });
 
 test('图像分支废除幽灵 CustomSelect，改挂 ImageTriggerBar / ImageParamPopover', () => {
@@ -246,36 +276,85 @@ test('不应存在待确认视频参数调整提示与确认/保留原值动作�
   assert.ok(!source.includes('Boolean(pendingVideoParamAdjustment)'));
 });
 
-test('Issue #986：ConfigPanel 为视频节点提供基于模型能力的卡槽驱动与素材模式双向流转', () => {
-  assert.match(
-    source,
-    /materialType === 'video'/,
-    '视频节点应支持基于模型能力的卡槽逻辑',
-  );
-  assert.match(source, /resolveSlotOperation\(activeCatalog, modelValue, preferredOperationId, outputTypeForCompat, fingerprint\)/);
-  assert.match(source, /const currentOperationId = managedVideo \? \(typeof params\.operation === 'string' \? params\.operation : undefined\)/,
-    '受管视频只用保存的模式，素材变化不推断模式');
-  assert.match(source, /deriveSlotLayout\(opsCatalog, modelValue, currentOperationId\)/,
-    '卡槽按当前所选线路和模式投影');
-  assert.doesNotMatch(source, /deriveModelSlotLayout\(activeCatalog, modelValue, currentOperationId\)/, '当前模式不借用其它模式的可点击槽位');
-  assert.match(source, /fingerprint: consumedFingerprint/);
-  assert.doesNotMatch(source, /updateParam\('operation', 'text_to_video'\)/, '断开供给不能重置已选模式');
+const { act, createElement, useMemo } = React;
+const { document } = dom.window;
+const nodeTypes = { material: MaterialNode };
+const draftId = 'video-draft';
+after(() => dom.window.close());
+
+async function mountManagedVideo(t) {
+  const version = 'video-line-fixture';
+  const line = { id: 'frames', label: 'Frames', enabled: true, effectiveVersion: version,
+    effectiveOperations: videoModel.operations.slice(0, 3).map(op => ({ ...op, modeKind: op.id, gatewayProtocol: 'video_generations' })) };
+  const catalog = catalogFor({ ...videoModel, effectiveVideoVersion: version, channelGroups: [line] });
+  const sources = [0, 1].map(index => {
+    const upstream = imageUpstream(index);
+    return { id: upstream.nodeId, type: 'material', position: { x: 0, y: index * 100 }, width: 160, height: 80,
+      data: { materialType: 'image', nodeKind: 'import', selectedTool: 'import', status: 'ready', mediaUrl: upstream.url, mimeType: upstream.mimeType } };
+  });
+  const draft = { id: draftId, type: 'material', selected: true, position: { x: 260, y: 100 }, width: 240, height: 160,
+    data: { materialType: 'video', nodeKind: 'generate', selectedTool: 'video-generation', status: 'ready',
+      prompt: 'Animate the subject', autoOperationId: null,
+      params: { model: videoModel.id, operation: 'first_frame', routing: { allowedGroups: [line.id] } } } };
+  useCanvasStore.setState({ nodes: [...sources, draft], edges: [], catalogRuntime: catalog, past: [], future: [],
+    selectedElement: { type: 'node', id: draftId } });
+  const addEdges = sources.map(({ id }, index) => ({
+    id: `edge-${index}`, source: id, sourceHandle: 'out', target: draftId, targetHandle: 'in',
+  }));
+  assert.equal(useCanvasStore.getState().applyCanvasInputMutation({ addEdges }).status, 'allowed');
+
+  function Canvas() {
+    const nodes = useCanvasStore(state => state.nodes);
+    const edges = useCanvasStore(state => state.edges);
+    const onNodesChange = useCanvasStore(state => state.onNodesChange);
+    const flowNodes = useMemo(() => nodes.map(node => ({ ...node, data: { ...node.data, __catalog: catalog } })), [nodes]);
+    return createElement(ReactFlow, { nodes: flowNodes, edges, nodeTypes, onNodesChange, width: 1024, height: 720 });
+  }
+  const container = document.createElement('div');
+  document.body.append(container);
+  const root = createRoot(container);
+  t.after(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+  });
+  await act(async () => root.render(createElement(Canvas)));
+}
+
+const wells = () => Array.from(document.querySelectorAll('[data-testid="wf-slot-wells"] .wf-slot-well[data-slot]'),
+  well => [well.dataset.slot, well.dataset.slotEdge, well.dataset.slotState]);
+const savedOperation = () => useCanvasStore.getState().nodes.find(node => node.id === draftId).data.params.operation;
+const generationDisabled = () => document.querySelector('.wf-generate-btn__send')?.getAttribute('aria-disabled');
+
+test('Issue #986: managed video keeps the selected mode and only renders its active wells as supply changes', async t => {
+  await mountManagedVideo(t);
+  assert.equal(savedOperation(), 'first_frame');
+  assert.deepEqual(wells(), [['first_frame', 'edge-0', 'ready']]);
+  assert.equal(generationDisabled(), 'false');
+
+  for (const removeEdgeIds of [['edge-0'], ['edge-1']]) {
+    await act(async () => {
+      assert.equal(useCanvasStore.getState().applyCanvasInputMutation({ removeEdgeIds }).status, 'allowed');
+    });
+    assert.equal(savedOperation(), 'first_frame');
+    const remaining = removeEdgeIds.includes('edge-0');
+    assert.deepEqual(wells(), [remaining ? ['first_frame', 'edge-1', 'ready'] : ['first_frame', undefined, 'empty']]);
+    assert.equal(generationDisabled(), remaining ? 'false' : 'true');
+  }
 });
 
-test('Issue #1007：视频节点生成模式防退化长效保障，连线素材下生成模式选择器与底栏文字不可被误杀隐藏', () => {
-  assert.match(
-    source,
-    /VideoTriggerBar/,
-    '视频节点必须引入 VideoTriggerBar 作为四段式模式底栏',
-  );
-  assert.match(
-    source,
-    /VideoParamPopover/,
-    '视频节点必须挂载 VideoParamPopover 支持多模式切换',
-  );
-  assert.match(
-    source,
-    /shouldRenderModeUi\(availableOpsState\)/,
-    '模式发现使用原始供给，当前提交门禁使用消费投影',
-  );
+test('Issue #1007: connected images keep the bottom mode label and line-specific choices usable', async t => {
+  await mountManagedVideo(t);
+  const trigger = document.querySelector('button.wf-video-trigger-bar');
+  assert.equal(trigger?.getAttribute('data-show-mode'), 'true');
+  assert.equal(trigger.querySelector('.wf-video-trigger-bar__mode')?.textContent, '首帧');
+  await act(async () => trigger.click());
+  const choices = Array.from(document.querySelectorAll('[data-testid="wf-operation-mode-section"] [role="radio"]'));
+  assert.deepEqual(choices.map(choice => [choice.dataset.operationId, choice.getAttribute('aria-checked'), choice.disabled]), [
+    ['text_to_video', 'false', false], ['first_frame', 'true', false], ['first_last_frame', 'false', false],
+  ]);
+  await act(async () => choices[2].click());
+  assert.equal(savedOperation(), 'first_last_frame');
+  assert.deepEqual(wells(), [['first_frame', 'edge-0', 'ready'], ['last_frame', 'edge-1', 'ready']]);
+  assert.equal(generationDisabled(), 'false');
+  assert.equal(document.querySelector('.wf-video-trigger-bar__mode')?.textContent, '首尾帧');
 });

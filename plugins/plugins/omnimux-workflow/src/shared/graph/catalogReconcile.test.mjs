@@ -106,7 +106,7 @@ describe('reconcileCanvasForCatalog', () => {
     const gen = result.nodes.find((n) => n.id === 'g1');
     assert.equal(gen.data.compat.status, 'ok');
     assert.equal(gen.data.compat.acceptsCurrentInputs, true);
-    assert.deepEqual(gen.data.slotBindings, {});
+    assert.equal(gen.data.slotBindings, undefined, 'a slotless operation does not record a user clear');
     assert.equal(gen.data.compat.readyToSubmit, false, 'the task still needs prompt');
   });
 

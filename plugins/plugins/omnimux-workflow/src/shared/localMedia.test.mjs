@@ -142,6 +142,17 @@ test('sniffMimeType 识别常见媒体魔数', () => {
   assert.equal(sniffMimeType(Buffer.from('hello world')), undefined);
 });
 
+test('container MIME detection distinguishes declared formats with related headers', () => {
+  const ftyp = brand => Buffer.from(`\0\0\0\x18ftyp${brand}\0\0\0\0isom`);
+  assert.equal(sniffMimeType(ftyp('qt  ')), 'video/quicktime');
+  assert.equal(sniffMimeType(ftyp('M4A ')), 'audio/mp4');
+  assert.equal(sniffMimeType(ftyp('avif')), 'image/avif');
+  assert.equal(sniffMimeType(u8(0x49, 0x49, 0x2a, 0)), 'image/tiff');
+  assert.equal(sniffMimeType(u8(0xff, 0xf1, 0x50, 0x80)), 'audio/aac');
+  assert.equal(sniffMimeType(Buffer.from('{"example":"<svg/>"}')), undefined);
+  assert.equal(sniffMimeType(Buffer.from('<?xml version="1.0"?><other />')), undefined);
+});
+
 test('sniffMediaExtension 返回对应扩展名', () => {
   assert.equal(sniffMediaExtension(u8(0x89, 0x50, 0x4e, 0x47)), 'png');
   assert.equal(sniffMediaExtension(u8(0xff, 0xd8, 0xff)), 'jpg');

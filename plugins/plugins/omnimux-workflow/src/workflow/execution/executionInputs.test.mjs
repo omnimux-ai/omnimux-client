@@ -150,7 +150,7 @@ test('subset generation schedules only the upstream text used by the selected vi
     params: { model: 'caption-fixture', operation: 'chat' },
   } });
   const target = { id: 'target', type: 'material', data: {
-    nodeKind: 'generate', materialType: 'video', inputBindingVersion: 1, prompt: '',
+    nodeKind: 'generate', materialType: 'video', inputBindingVersion: 1, prompt: '', autoOperationId: null,
     params: { model: 'minimax-h3-video', operation: lipSync.id },
     slotBindings: {
       reference_image: [{ sourceNodeId: 'portrait', edgeId: 'p', pinned: true }],

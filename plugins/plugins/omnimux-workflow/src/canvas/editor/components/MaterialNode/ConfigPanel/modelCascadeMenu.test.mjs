@@ -8,6 +8,8 @@ import { buildSync } from 'esbuild';
 import { groupPickerCandidates, isPickerCandidate } from './modelPickerCandidates.ts';
 import { isByokGroup, buildChannelSelectionPayload } from './channelGroups.ts';
 import { buildVideoParamTransition } from './videoParams/videoParamAdapter.ts';
+import { planCanvasInputMutation } from '../../../../../shared/graph/canvasInputMutationGateway.ts';
+import { prepareExecutionSlotGraph, readPreparedExecutionInputs } from '../../../../../shared/graph/feedSlot/prepareExecutionSlotGraph.ts';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const bundlePath = join(mkdtempSync(join(tmpdir(), 'omnimux-cascade-reconciler-')), 'runtime.mjs');
@@ -303,38 +305,59 @@ test('cascade menu columns have adaptive height with 160px min and 400px max (Is
   assert.doesNotMatch(cssSrc, /\.wf-loomi-col--channel\s*\{[^}]*height:\s*480px;/s, 'Channel column must not lock fixed 480px');
 });
 
-test('missingRequiredSlots validates against displayedSlotLayout.slots and trims slotBindings for single-image channels', () => {
-  // 1. missingRequiredSlots 必须基于 displayedSlotLayout.slots 校验，杜绝第二槽位未填锁死生成按钮
-  assert.match(
-    configSrc,
-    /const missingRequiredSlots = useMemo\(\s*\(\) => displayedSlotLayout\.slots\.filter\(/,
-    'missingRequiredSlots 必须基于 displayedSlotLayout.slots 校验'
-  );
-  assert.doesNotMatch(
-    configSrc,
-    /const missingRequiredSlots = useMemo\(\s*\(\) => effectiveSlotLayout\.slots\.filter\(/,
-    '禁止基于包含收起槽位的 effectiveSlotLayout.slots 校验必填槽位'
-  );
-
-  // 2. 单参考图渠道自适应修剪 slotBindings 脏数据并收敛于 onUpdateNodeData 原子提交
-  assert.doesNotMatch(
-    configSrc,
-    /patchSlotBindings\(trimmed\);/,
-    '严禁通过 patchSlotBindings 进行异步二次提交'
-  );
-  assert.match(
-    configSrc,
-    /onUpdateNodeData\(\{[\s\S]*params: nextParams,[\s\S]*slotBindings: nextSlotBindings[\s\S]*\}\);/,
-    '修剪后的 slotBindings 必须在渠道切换时与 params 单次原子提交回节点'
-  );
+test('selecting an unavailable channel cannot fall back to a different group', () => {
   assert.match(configSrc, /findSelectedChannelGroup\(availableGroups, channelSelection, null, true\)/);
   assert.match(configSrc, /if \(channelSelection && !matchedGroup && \(channelSelection\.allowedGroups\?\.length \|\| channelSelection\.channelGroupId \|\| availableGroups\.length\)\) return;/);
   assert.doesNotMatch(configSrc, /usableGroups\[0\]|availableOfficialGroups\[0\]/);
+});
 
-  // 3. 初始载入已持久化节点状态归一化防御：当 isSingleImageChannel 且 slotBindings 脏数据存在时安全触发修剪
-  assert.match(
-    configSrc,
-    /if \(!isSingleImageChannel\) return;[\s\S]*if \(hasExtra \|\| hasOverflownPrimary\) \{[\s\S]*patchSlotBindings\(normalized\);/,
-    '已持久化单图渠道节点在初始化挂载时必须防御性修剪多余或溢出槽位'
-  );
+test('G2: a single-image line shares its required and consumed supply with run preparation', () => {
+  const model = {
+    id: 'image-test', label: 'Image test', selectable: true,
+    channelGroups: [{ id: 'single', label: 'Single image', enabled: true, constraints: { inputs: { image: { max: 1 } } } }],
+    operations: [{ id: 'image_to_image', listed: true, output: { type: 'image' }, inputs: [
+      { slot: 'prompt', type: 'text', role: 'prompt', source: 'node_field', min: 1, max: 1 },
+      { slot: 'reference_images', type: 'image', role: 'reference', source: 'upstream_edge', min: 1, max: 3, allowedMimes: ['image/png'] },
+    ] }],
+  };
+  const catalog = { source: 'omnimux', models: [model], image: [model] };
+  const target = { id: 'target', type: 'material', position: { x: 0, y: 0 }, data: {
+    materialType: 'image', nodeKind: 'generate', selectedTool: 'text-to-image', prompt: 'Rework the reference',
+    params: { model: model.id, operation: 'image_to_image', routing: { allowedGroups: ['single'] } },
+  } };
+  const sources = [['wrong-format', 'jpeg'], ['a', 'png'], ['b', 'png']].map(([id, format]) => ({
+    id, type: 'material', position: { x: -200, y: 0 }, data: {
+      materialType: 'image', nodeKind: 'import', selectedTool: 'import', status: 'ready',
+      mimeType: `image/${format}`, mediaUrl: `https://example.test/${id}.${format}`,
+    },
+  }));
+  const edge = source => ({ id: `edge-${source}`, source, sourceHandle: 'out', target: target.id, targetHandle: 'in' });
+  const readTarget = graph => graph.nodes.find(node => node.id === target.id).data;
+  const prepare = graph => prepareExecutionSlotGraph(graph.nodes, graph.edges, catalog);
+
+  const missing = planCanvasInputMutation({ nodes: [target, ...sources], edges: [] }, { addEdges: [edge('wrong-format')] }, { catalog });
+  assert.equal(missing.status, 'allowed');
+  assert.deepEqual(missing.edges.map(item => item.id), ['edge-wrong-format']);
+  assert.equal(readTarget(missing).compat.readyToSubmit, false);
+  const missingAssignment = readPreparedExecutionInputs(readTarget(prepare(missing))).assignment;
+  assert.equal(missingAssignment.ready, false);
+  assert.ok(missingAssignment.blocked.some(issue => issue.code === 'min_unsatisfied' && issue.slot === 'reference_images'));
+
+  const supplied = planCanvasInputMutation(missing, { addEdges: [edge('a'), edge('b')] }, { catalog });
+  assert.equal(supplied.status, 'allowed');
+  assert.deepEqual(supplied.edges.map(item => item.id), ['edge-wrong-format', 'edge-a', 'edge-b']);
+  assert.equal(readTarget(supplied).compat.readyToSubmit, true);
+  assert.deepEqual(readTarget(supplied).slotBindings.reference_images.map(item => item.edgeId), ['edge-a']);
+  const prepared = prepare(supplied);
+  const { assignment } = readPreparedExecutionInputs(readTarget(prepared));
+  const snapshot = prepared.runSnapshots.get(target.id);
+  assert.equal(assignment.ready, true);
+  assert.deepEqual(assignment.unused.map(item => [item.edgeId, item.unusedReason]), [['edge-wrong-format', 'format'], ['edge-b', 'capacity']]);
+  assert.deepEqual(snapshot.assigned.map(item => [item.edgeId, item.targetSlot]), [['edge-a', 'reference_images']]);
+  assert.deepEqual(snapshot.unusedEdgeIds, ['edge-wrong-format', 'edge-b']);
+
+  const afterDisconnect = planCanvasInputMutation(supplied, { removeEdgeIds: ['edge-a'] }, { catalog });
+  assert.equal(afterDisconnect.status, 'allowed');
+  assert.deepEqual(afterDisconnect.edges.map(item => item.id), ['edge-wrong-format', 'edge-b']);
+  assert.deepEqual(prepare(afterDisconnect).runSnapshots.get(target.id).assigned.map(item => item.edgeId), ['edge-b']);
 });
