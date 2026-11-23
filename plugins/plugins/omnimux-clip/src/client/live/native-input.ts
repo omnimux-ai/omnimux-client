@@ -47,11 +47,12 @@ export function onlyKeys(input: Fields, allowed: readonly string[], name: string
   if (Object.keys(input).some(key => !allowed.includes(key))) invalid(`${name} contains an unsupported field`)
 }
 
-const sourceFields = new Set(['path', 'sourceurl', 'url', 'source', 'sourceref', 'assetid', 'mediaref', 'assetref', 'file', 'filehandle', 'blob', 'nativesource', 'sourcefile', 'originalurl'])
+const sourceFields = new Set(['path', 'sourceurl', 'url', 'source', 'sourceref', 'assetid', 'mediaref', 'assetref', 'resolvedmedia', 'file', 'filehandle', 'blob', 'nativesource', 'sourcefile', 'originalurl'])
 const motionFields = new Set(['expression', 'expressions', 'code', 'sourcecode', 'script', 'approved', 'trusted', 'shader', 'shaderid', 'motioncompositions', 'motioninstances'])
 
 export function assertSafeFields(operation: Fields): void {
   const mayResolveMedia = operation.type === 'import_media'
+    || operation.type === 'relink_media'
     || (operation.type === 'add_clip' && operation.mediaId === undefined && operation.mediaType !== 'text')
   // Even nested input is data. Only the resolver receives an explicit media
   // reference, and none of the supplied objects are merged into a project.

@@ -345,6 +345,51 @@ export function createWorkflowClipService({ store, assetsStore, resolveProjectRo
       return { workspaceId, nodeId, projectId, sources };
     },
 
+    resolveProjectAsset(
+      workspaceId: string,
+      assetId: string,
+      sessionId?: string,
+    ): {
+      assetId: string;
+      relativePath: string;
+      name: string;
+      sha256?: string;
+      handle: {
+        v: 1;
+        scope: 'project-asset';
+        workspaceId: string;
+        assetId: string;
+        rel: string;
+        sha256?: string;
+      };
+    } | null {
+      if (typeof workspaceId !== 'string' || !/^ws_[A-Za-z0-9_-]{1,128}$/u.test(workspaceId)
+        || typeof assetId !== 'string' || !assetId.trim() || assetId.length > 256) {
+        return null;
+      }
+      if (canAccessWorkspace && (typeof sessionId !== 'string' || !sessionId || !canAccessWorkspace(workspaceId, sessionId))) {
+        throw new WorkflowStoreError('outside-project-boundary', 'The canvas does not belong to the requested session workspace.');
+      }
+      if (!assetsStore) return null;
+      const item = assetsStore.get(workspaceId).items.find((entry) => entry.id === assetId);
+      if (!item || typeof item.relative_path !== 'string' || !item.relative_path) return null;
+      const sha256 = typeof item.sha256 === 'string' && SHA256_RE.test(item.sha256) ? item.sha256 : undefined;
+      return {
+        assetId: item.id,
+        relativePath: item.relative_path,
+        name: item.name,
+        ...(sha256 ? { sha256 } : {}),
+        handle: {
+          v: 1,
+          scope: 'project-asset',
+          workspaceId,
+          assetId: item.id,
+          rel: item.relative_path,
+          ...(sha256 ? { sha256 } : {}),
+        },
+      };
+    },
+
     async ingestClipMedia(
       input: CanvasClipBinding,
       media: IngestClipMediaInput,

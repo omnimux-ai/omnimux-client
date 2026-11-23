@@ -26,6 +26,15 @@ export function sourceIdentity(value) {
     ? { id: value.id, version: value.version } : undefined
 }
 
+export function sourceProjection(value) {
+  const base = sourceIdentity(value)
+  if (!base) return undefined
+  const scope = MEDIA_HANDLE_SCOPES.includes(value.handle?.scope)
+    ? value.handle.scope
+    : (MEDIA_HANDLE_SCOPES.includes(value.scope) ? value.scope : undefined)
+  return scope ? { ...base, scope } : base
+}
+
 export function sha256Digest(value) {
   return typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value) ? value : undefined
 }

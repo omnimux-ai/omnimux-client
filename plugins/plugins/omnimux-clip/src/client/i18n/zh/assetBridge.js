@@ -29,6 +29,7 @@ export const zhAssetBridge = {
   "Updated {0}": "上游已更新 {0}",
   "Needs choice {0}": "待手动选择 {0}",
   "New upstream {0}": "未导入上游 {0}",
+  "Refresh": "刷新",
   "Auto-recover ({0})": "一键自动恢复 ({0})",
   "Restoring…": "正在恢复…",
   "Updating…": "正在更新…",

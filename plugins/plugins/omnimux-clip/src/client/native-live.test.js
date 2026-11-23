@@ -302,3 +302,89 @@ test('Motion approval, custom code and raw file paths cannot enter edits', async
   assert.equal(store().project, original)
   assert.equal(undoCount(), 0)
 })
+
+test('relink_media updates handle atomically with undo/redo, guards version drift, and clamps shortened clip trims', async (t) => {
+  const engine = getMediaEngine()
+  t.mock.method(engine, 'initialize', async () => {})
+  let nextDuration = 6
+  t.mock.method(engine, 'extractMetadata', async () => ({ ...mediaMetadata, duration: nextDuration, canDecode: true }))
+
+  const originalDigest = '1'.repeat(64)
+  const driftedDigest = '2'.repeat(64)
+  const libraryHandle = {
+    v: 1,
+    scope: 'library-file',
+    libraryAssetId: 'ast_lib_1',
+    fileId: 'file_1',
+    sha256: originalDigest,
+  }
+  const canvasHandle = {
+    v: 1,
+    scope: 'project-asset',
+    workspaceId: 'ws_demo',
+    assetId: 'ast_proj_1',
+    rel: 'artifacts/new_v2.mp4',
+    sha256: driftedDigest,
+  }
+
+  // Place a 6s clip referencing media 'source', then simulate offline placeholder state with originalDigest
+  await edit([{ type: 'add_track', trackType: 'video', trackId: 'v1' }, clipOn('v1', 'c1', 0, 6)])
+  useProjectStore.setState({
+    project: {
+      ...store().project,
+      mediaLibrary: {
+        items: store().project.mediaLibrary.items.map(item => item.id === 'source'
+          ? { ...item, blob: null, isPlaceholder: true, missing: true, omnimuxSource: { id: 'legacy-1', version: `sha256:${originalDigest}`, digest: originalDigest } }
+          : item),
+      },
+    },
+  })
+
+  // 1) Relink with drifted digest WITHOUT allowVersionUpdate -> rejected with media-version-mismatch
+  const driftedFile = new File([new Uint8Array(64).fill(9)], 'new_v2.mp4', { type: 'video/mp4' })
+  await assert.rejects(
+    edit([{ type: 'relink_media', mediaId: 'source', resolvedMedia: { transferUrl: '/omnimux-clip/api/media-transfer/tok' } }], {}, {
+      resolveMedia: () => ({ file: driftedFile, source: { id: 'project:ws_demo:ast_proj_1', version: `sha256:${driftedDigest}`, digest: driftedDigest, handle: canvasHandle } }),
+    }),
+    { code: 'media-version-mismatch' },
+  )
+  assert.equal(state().mediaLibrary.items[0].isPlaceholder, true)
+
+  // 2) Relink with matching digest succeeds with allowVersionUpdate=false and attaches library-file handle
+  const exactRes = await edit([{ type: 'relink_media', mediaId: 'source', resolvedMedia: { transferUrl: '/omnimux-clip/api/media-transfer/tok' } }], {}, {
+    resolveMedia: () => ({ file: mediaFile, source: { id: 'library:ast_lib_1:file_1', version: `sha256:${originalDigest}`, digest: originalDigest, handle: libraryHandle } }),
+  })
+  assert.equal(exactRes.results[0].relinked, true)
+  assert.equal(exactRes.results[0].versionUpdated, false)
+  assert.equal(exactRes.results[0].scope, 'library-file')
+  assert.deepEqual(exactRes.results[0].omnimuxSource, { id: 'library:ast_lib_1:file_1', version: `sha256:${originalDigest}`, scope: 'library-file' })
+  assert.equal(state().mediaLibrary.items[0].isPlaceholder, false)
+  assert.deepEqual(state().mediaLibrary.items[0].omnimuxSource.handle, libraryHandle)
+
+  // Undo rolls back relink completely
+  await store().undo()
+  assert.equal(state().mediaLibrary.items[0].isPlaceholder, true)
+  await store().redo()
+  assert.equal(state().mediaLibrary.items[0].isPlaceholder, false)
+
+  // 3) Relink with shorter drifted video + allowVersionUpdate=true clamps clip outPoint/duration and reports adjustedClips
+  nextDuration = 3.5
+  const updatedRes = await edit([{ type: 'relink_media', mediaId: 'source', allowVersionUpdate: true, resolvedMedia: { transferUrl: '/omnimux-clip/api/media-transfer/tok2' } }], {}, {
+    resolveMedia: () => ({ file: driftedFile, source: { id: 'project:ws_demo:ast_proj_1', version: `sha256:${driftedDigest}`, digest: driftedDigest, handle: canvasHandle } }),
+  })
+  assert.equal(updatedRes.results[0].relinked, true)
+  assert.equal(updatedRes.results[0].versionUpdated, true)
+  assert.equal(updatedRes.results[0].clampedClipCount, 1)
+  assert.equal(updatedRes.results[0].adjustedClips[0].clipId, 'c1')
+  assert.equal(updatedRes.results[0].adjustedClips[0].outSec, 3.5)
+  assert.equal(updatedRes.results[0].adjustedClips[0].durationSec, 3.5)
+  assert.equal(track('v1').clips[0].outPoint, 3.5)
+  assert.equal(track('v1').clips[0].duration, 3.5)
+  assert.deepEqual(state().mediaLibrary.items[0].omnimuxSource.handle, canvasHandle)
+
+  // Undo restores previous 6s trim and library handle atomically
+  await store().undo()
+  assert.equal(track('v1').clips[0].outPoint, 6)
+  assert.equal(track('v1').clips[0].duration, 6)
+  assert.deepEqual(state().mediaLibrary.items[0].omnimuxSource.handle, libraryHandle)
+})

@@ -28,6 +28,7 @@ const EXPORT_UPLOAD_PATH = /^\/exports\/([1-9]\d{0,15})\/upload$/
 const EXPORT_CANCEL_PATH = /^\/exports\/([1-9]\d{0,15})\/cancel$/
 const MEDIA_BYTES_PATH = /^\/projects\/([^/]+)\/media\/([^/]+)\/bytes$/
 const MEDIA_RECONCILE_PATH = /^\/projects\/([^/]+)\/media\/reconcile$/
+const MEDIA_TRANSFER_PATH = /^\/media-transfer\/([A-Za-z0-9_-]{32,128})$/
 const LIVE_PATH = /^\/live\/(lease|renew|release|claim|receipt)$/
 
 function parseByteRange(header, size) {
@@ -176,7 +177,7 @@ function objectBody(body) {
   return body
 }
 
-export function createClipDispatcher({ paths, store, fs = DEFAULT_FS, broker, exportJobs, getWorkflowClip, getMediaResolver }) {
+export function createClipDispatcher({ paths, store, fs = DEFAULT_FS, broker, exportJobs, getWorkflowClip, getMediaResolver, mediaTransfers }) {
   ensureClipDirs(paths)
   store ??= createProjectStore({ paths, fs })
 
@@ -274,7 +275,54 @@ export function createClipDispatcher({ paths, store, fs = DEFAULT_FS, broker, ex
       if (live && method === 'POST') {
         if (!req.window?.isAlive?.()) throw new ClipDomainError('WINDOW_UNAUTHORIZED', 'An authenticated Clip window is required.')
         if (!broker) throw new ClipDomainError('EDITOR_OFFLINE', 'The Clip Host is offline.')
-        return { status: 200, body: broker[live[1]](req.window, objectBody(req.body)) }
+        return { status: 200, body: await broker[live[1]](req.window, objectBody(req.body)) }
+      }
+
+      const mediaTransfer = path.match(MEDIA_TRANSFER_PATH)
+      if (mediaTransfer && (method === 'GET' || method === 'HEAD')) {
+        if (!req.window?.isAlive?.()) throw new ClipDomainError('WINDOW_UNAUTHORIZED', 'An authenticated Clip window is required.')
+        if (!mediaTransfers) throw new ClipDomainError('media-resolver-unavailable', 'Host media transfer service is unavailable.')
+        const sessionId = req.window.getViewport()?.sessionId
+        const ticket = mediaTransfers.resolve({ token: mediaTransfer[1], sessionId })
+        const resolver = getMediaResolver?.()
+        if (!resolver || typeof resolver.open !== 'function') {
+          throw new ClipDomainError('media-resolver-unavailable', 'Host media resolver is unavailable.')
+        }
+        const stream = await resolver.open(ticket.handle, { sessionId, projectBinding: ticket.binding }, req.signal)
+        const baseHeaders = {
+          'Content-Type': stream.mimeType,
+          'Accept-Ranges': 'bytes',
+          ETag: `"${stream.sha256}"`,
+          'X-Content-SHA256': stream.sha256,
+          'X-Content-Type-Options': 'nosniff',
+          'Cache-Control': 'private, no-cache',
+        }
+        if (etagMatches(req.headers?.['if-none-match'], stream.sha256)) {
+          return { status: 304, headers: baseHeaders }
+        }
+        const range = parseByteRange(req.headers?.range, stream.size)
+        if (range.kind === 'unsatisfiable') {
+          return { status: 416, headers: { ...baseHeaders, 'Content-Range': `bytes */${stream.size}`, 'Content-Length': '0' } }
+        }
+        const length = stream.size > 0 ? range.end - range.start + 1 : 0
+        const headers = {
+          ...baseHeaders,
+          'Content-Length': String(length),
+          ...(range.kind === 'partial' ? { 'Content-Range': `bytes ${range.start}-${range.end}/${stream.size}` } : {}),
+        }
+        return {
+          status: range.kind === 'partial' ? 206 : 200,
+          headers,
+          mediaStream: {
+            openRange: stream.openRange,
+            start: range.start,
+            end: range.end,
+            size: stream.size,
+            sha256: stream.sha256,
+            mimeType: stream.mimeType,
+            method,
+          },
+        }
       }
 
       if (path === '/exports/reserve' && method === 'POST') {

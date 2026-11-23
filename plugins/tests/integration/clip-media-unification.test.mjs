@@ -17,9 +17,12 @@ import { createWorkflowClipService } from '../../plugins/omnimux-workflow/src/wo
 import { createEditorSession } from '../../plugins/omnimux-clip/src/client/live/editor-session.js'
 import { createExportJobs } from '../../plugins/omnimux-clip/src/export-jobs.js'
 import { createClipDispatcher, registerClipRoutes } from '../../plugins/omnimux-clip/src/http/routes.js'
+import { createClipCommandBroker } from '../../plugins/omnimux-clip/src/live/command-broker.js'
 import { createClipVaultMediaProvider } from '../../plugins/omnimux-clip/src/media/clipVault.js'
+import { createMediaTransferRegistry } from '../../plugins/omnimux-clip/src/media/mediaTransfer.js'
 import { ensureClipDirs, resolveClipPaths } from '../../plugins/omnimux-clip/src/paths.js'
 import { createProjectStore as createClipProjectStore } from '../../plugins/omnimux-clip/src/store/projectStore.js'
+import { createClipTools } from '../../plugins/omnimux-clip/src/tools.js'
 
 const temps = []
 const servers = []
@@ -787,5 +790,423 @@ EYoAAjFxwABDyjgACAXgAAAABUGaIBKl
     assert.equal(stream2.status, 200)
     assert.equal(stream2.headers.get('x-content-sha256'), validMp4Sha)
     assert.deepEqual(Buffer.from(await stream2.arrayBuffer()), validMp4)
+  })
+
+  it('AC-CMU-08: Agent clip_diagnostics reports structured Host reasons, clip_edit imports/relinks library/canvas/project handles via transfer stream without leaking paths, and blocks cross-workspace handles', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'clip-agent-tools-unification-'))
+    temps.push(home)
+
+    const mediaResolver = createMediaResolver()
+
+    // 1) Asset library fixture
+    const assetsRoot = join(home, 'assets-home')
+    const assetsPaths = resolveAssetsPaths({ homeDir: assetsRoot })
+    const library = createLibraryStore({ paths: assetsPaths })
+    const libVideoBytes = Buffer.from('\x00\x00\x00\x18ftypmp42-lib-agent-clip')
+    const libVideoSha = sha256(libVideoBytes)
+    const stagedLibFile = join(home, 'agent-lib-clip.mp4')
+    writeFileSync(stagedLibFile, libVideoBytes)
+    const libAsset = await library.add({
+      name: 'Agent Library Clip',
+      type: 'scene',
+      files: [stagedLibFile],
+    })
+    mediaResolver.registerProvider(createLibraryMediaProvider({ library }))
+
+    // 2) Workflow workspace + project assets fixture
+    const projectsRoot = join(home, 'projects')
+    const workspacesDir = join(home, 'workspaces')
+    const mediaDir = join(home, 'workflow-media')
+    mkdirSync(projectsRoot, { recursive: true })
+    mkdirSync(workspacesDir, { recursive: true })
+    mkdirSync(mediaDir, { recursive: true })
+    const wfProjectStore = createWorkflowProjectStore({ libraryRoot: projectsRoot })
+    const wfProject = wfProjectStore.create('Agent Tools Project', { canvasWorkspaceIds: ['ws_agent_ac8'] })
+    const wsId = wfProject.pages[0].canvasWorkspaceId
+    const resolveProjectRoot = (id) => wfProjectStore.findByCanvasWorkspaceId(id)
+    const wsStore = createWorkspaceStore({ workspacesDir, resolveProjectRoot })
+    const assetsStore = createProjectAssetsStore({ workspacesDir: wsStore.workspacesDir, resolveProjectRoot })
+    const ws = wsStore.create('Agent Canvas', wsId)
+
+    mkdirSync(join(wfProject.path, 'artifacts'), { recursive: true })
+    const onlineBytes = Buffer.from('\x00\x00\x00\x18ftypmp42-online-shot')
+    const onlineSha = sha256(onlineBytes)
+    writeFileSync(join(wfProject.path, 'artifacts', 'online.mp4'), onlineBytes)
+    const onlineAssetDoc = assetsStore.registerGenerated(wsId, {
+      relative_path: 'artifacts/online.mp4',
+      name: 'online.mp4',
+      type: 'video',
+      size: onlineBytes.length,
+      mimeType: 'video/mp4',
+      sha256: onlineSha,
+    })
+    const onlineAssetId = onlineAssetDoc.items.find(row => row.relative_path === 'artifacts/online.mp4').id
+
+    const legacyBytes = Buffer.from('\x00\x00\x00\x18ftypmp42-legacy-shot')
+    const legacySha = sha256(legacyBytes)
+    writeFileSync(join(wfProject.path, 'artifacts', 'legacy.mp4'), legacyBytes)
+
+    const driftedOldBytes = Buffer.from('\x00\x00\x00\x18ftypmp42-drifted-v1')
+    const driftedOldSha = sha256(driftedOldBytes)
+    const driftedNewBytes = Buffer.from('\x00\x00\x00\x18ftypmp42-drifted-v2-updated')
+    const driftedNewSha = sha256(driftedNewBytes)
+    writeFileSync(join(wfProject.path, 'artifacts', 'drifted.mp4'), driftedNewBytes)
+
+    const compNodeId = 'node_comp_agent'
+    const clipProjectId = 'clip_node_agent_ac8'
+    wsStore.save(ws.id, {
+      expectedVersion: ws.version,
+      nodes: [
+        {
+          id: 'node_legacy_src',
+          type: 'material',
+          position: { x: 0, y: 0 },
+          data: {
+            materialType: 'video',
+            label: 'legacy.mp4',
+            relativePath: 'artifacts/legacy.mp4',
+            mediaUrl: `/omnimux-workflow/api/workspaces/${wsId}/file?rel=artifacts%2Flegacy.mp4`,
+          },
+        },
+        {
+          id: 'node_drifted_src',
+          type: 'material',
+          position: { x: 0, y: 150 },
+          data: {
+            materialType: 'video',
+            label: 'drifted.mp4',
+            relativePath: 'artifacts/drifted.mp4',
+            mediaUrl: `/omnimux-workflow/api/workspaces/${wsId}/file?rel=artifacts%2Fdrifted.mp4&rev=sha256%3A${driftedNewSha}`,
+          },
+        },
+        {
+          id: compNodeId,
+          type: 'video_composition',
+          position: { x: 320, y: 80 },
+          data: { title: '合成节点', projectId: clipProjectId, status: 'idle' },
+        },
+      ],
+      edges: [
+        { id: 'e-leg', source: 'node_legacy_src', target: compNodeId, sourceHandle: 'out', targetHandle: 'in' },
+        { id: 'e-drf', source: 'node_drifted_src', target: compNodeId, sourceHandle: 'out', targetHandle: 'in' },
+      ],
+    })
+    const binding = { workspaceId: ws.id, nodeId: compNodeId, projectId: clipProjectId }
+
+    const canAccessWorkspace = (id, sid) => id === ws.id && sid === 'sess-agent'
+    const mediaSupport = createWorkflowMediaSupport({
+      store: wsStore,
+      assetsStore,
+      resolveAssetsRoot: resolveProjectRoot,
+      mediaDir,
+      canAccessWorkspace,
+    })
+    mediaResolver.registerProvider(mediaSupport.projectAssetProvider)
+    mediaResolver.registerProvider(mediaSupport.canvasNodeProvider)
+
+    const workflowClip = createWorkflowClipService({
+      store: wsStore,
+      assetsStore,
+      resolveProjectRoot,
+      canAccessWorkspace,
+      resolveNodeSources: mediaSupport.resolveNodeSources,
+    })
+
+    // 3) Clip Host store, broker, transfers, routes, and tools
+    const clipPaths = ensureClipDirs(resolveClipPaths({ homeDir: home }))
+    const clipStore = createClipProjectStore({ paths: clipPaths })
+    const mediaTransfers = createMediaTransferRegistry()
+    let activeWindowSession = 'sess-agent'
+    const makeWindow = (winId, sid) => ({
+      windowInstanceId: winId,
+      isAlive: () => true,
+      send: () => true,
+      getViewport: () => ({
+        ok: true,
+        sessionId: sid,
+        surface: { panelOpen: true, tabId: 'omnimux-workflow:canvas', instanceId: 'tab-1' },
+        view: {
+          extra: {
+            workspaceId: ws.id,
+            clip: {
+              visible: true,
+              conflict: false,
+              mode: 'canvas',
+              projectId: clipProjectId,
+              workspaceId: ws.id,
+              nodeId: compNodeId,
+              editorInstanceId: 'ed-1',
+              draftWriterId: 'writer-1',
+              revision: 2,
+              revisionEpoch: 0,
+            },
+          },
+        },
+      }),
+    })
+    const editorWindow = makeWindow('win-agent', 'sess-agent')
+    const foreignWindow = makeWindow('win-foreign', 'sess-other')
+
+    const broker = createClipCommandBroker({
+      getHubEvents: () => ({
+        getWindows: (sid) => (sid === 'sess-agent' ? [editorWindow] : []),
+        authorizeWindow: () => (activeWindowSession === 'sess-agent' ? editorWindow : foreignWindow),
+      }),
+      getWorkflowClip: () => workflowClip,
+    })
+    const dispatcher = createClipDispatcher({
+      store: clipStore,
+      paths: clipPaths,
+      broker,
+      getWorkflowClip: () => workflowClip,
+      getMediaResolver: () => mediaResolver,
+      mediaTransfers,
+    })
+    const tools = createClipTools({
+      store: clipStore,
+      broker,
+      getWorkflowClip: () => workflowClip,
+      getMediaResolver: () => mediaResolver,
+      getAssetLibrary: () => ({ getAsset: (id) => library.getView(id) }),
+      mediaTransfers,
+    })
+    const toolByName = (name) => tools.find((entry) => entry.name === name)
+
+    // Save project containing all 4 diagnostic states
+    clipStore.materialize(clipProjectId, { binding, title: 'Agent Diagnostics' })
+    const loaded = clipStore.load(clipProjectId)
+    clipStore.save(clipProjectId, {
+      ...loaded.project,
+      mediaLibrary: {
+        items: [
+          {
+            id: 'm-online',
+            name: 'online.mp4',
+            type: 'video',
+            metadata: { duration: 4, width: 1920, height: 1080 },
+            omnimuxSource: {
+              id: `project:${ws.id}:${onlineAssetId}`,
+              version: `sha256:${onlineSha}`,
+              digest: onlineSha,
+              handle: { v: 1, scope: 'project-asset', workspaceId: ws.id, assetId: onlineAssetId, rel: 'artifacts/online.mp4', sha256: onlineSha },
+            },
+            missing: true,
+            isPlaceholder: true,
+          },
+          {
+            id: 'm-legacy',
+            name: 'legacy.mp4',
+            type: 'video',
+            metadata: { duration: 0, width: 1920, height: 1080 },
+            omnimuxSource: { id: 'old-legacy-id', version: 'v1' },
+            missing: true,
+            isPlaceholder: true,
+          },
+          {
+            id: 'm-drifted',
+            name: 'drifted.mp4',
+            type: 'video',
+            metadata: { duration: 5, width: 1920, height: 1080 },
+            omnimuxSource: {
+              id: 'drifted-id',
+              version: `sha256:${driftedOldSha}`,
+              digest: driftedOldSha,
+              handle: { v: 1, scope: 'project-asset', workspaceId: ws.id, rel: 'artifacts/drifted.mp4', sha256: driftedOldSha },
+            },
+            missing: true,
+            isPlaceholder: true,
+          },
+          {
+            id: 'm-unlinked',
+            name: 'deleted.mp4',
+            type: 'video',
+            metadata: { duration: 2, width: 1920, height: 1080 },
+            omnimuxSource: {
+              id: 'deleted-id',
+              version: `sha256:${'f'.repeat(64)}`,
+              digest: 'f'.repeat(64),
+              handle: { v: 1, scope: 'project-asset', workspaceId: ws.id, rel: 'artifacts/nonexistent.mp4', sha256: 'f'.repeat(64) },
+            },
+            missing: true,
+            isPlaceholder: true,
+          },
+        ],
+      },
+    }, { expectedRevision: loaded.revision, binding })
+
+    // A) clip_diagnostics returns structured reasons and zero host absolute paths
+    const diag = await toolByName('clip_diagnostics').execute({ projectId: clipProjectId }, { session: { id: 'sess-agent' } })
+    assert.equal(diag.ok, false)
+    assert.doesNotMatch(JSON.stringify(diag), new RegExp(home.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+    const byId = new Map(diag.issues.filter(i => i.code === 'media_missing').map(i => [i.mediaId, i]))
+    assert.equal(byId.get('m-online').reason, 'cache_miss_recoverable')
+    assert.equal(byId.get('m-online').recoverable, true)
+    assert.equal(byId.get('m-online').scope, 'project-asset')
+    assert.equal(byId.get('m-legacy').reason, 'legacy_unsigned_exact')
+    assert.equal(byId.get('m-legacy').recoverable, true)
+    assert.equal(byId.get('m-legacy').suggestedSourceNodeId, 'node_legacy_src')
+    assert.equal(byId.get('m-drifted').reason, 'source_drifted')
+    assert.equal(byId.get('m-drifted').recoverable, true)
+    assert.equal(byId.get('m-unlinked').reason, 'missing_unlinked')
+    assert.equal(byId.get('m-unlinked').recoverable, false)
+
+    // Cross-session clip_diagnostics on canvas-bound project is denied
+    await assert.rejects(
+      toolByName('clip_diagnostics').execute({ projectId: clipProjectId }, { session: { id: 'sess-other' } }),
+      { code: 'outside-project-boundary' },
+    )
+
+    // B) Mount HTTP routes and acquire live lease for clip_edit
+    let routeHandler
+    const webServer = { register(def) { routeHandler = def.handler; return () => {} } }
+    registerClipRoutes(webServer, dispatcher, {
+      paths: clipPaths,
+      getConnection: () => ({ requestRejection: () => undefined }),
+      getHubEvents: () => ({
+        authorizeWindow: () => (activeWindowSession === 'sess-agent' ? editorWindow : foreignWindow),
+      }),
+    })
+    const server = createServer((req, res) => routeHandler(req, res))
+    servers.push(server)
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const base = `http://127.0.0.1:${server.address().port}`
+
+    const postLive = async (action, payload) => {
+      const res = await fetch(`${base}/omnimux-clip/api/live/${action}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      return { status: res.status, body: await res.json() }
+    }
+    const leaseRes = await postLive('lease', {
+      ...binding,
+      mode: 'canvas',
+      tabInstanceId: 'tab-1',
+      editorInstanceId: 'ed-1',
+      draftWriterId: 'writer-1',
+      title: 'Agent Diagnostics',
+      revision: 2,
+      revisionEpoch: 0,
+    })
+    assert.equal(leaseRes.status, 200)
+    const { leaseId } = leaseRes.body
+
+    // C) clip_edit: import_media({ libraryAssetId }) + import_media({ projectAssetId }) + relink_media({ canvasNodeId, allowVersionUpdate: true })
+    const reqId = 'req-ac8-handles'
+    const editPromise = toolByName('clip_edit').execute({
+      projectId: clipProjectId,
+      requestId: reqId,
+      baseRevision: 2,
+      baseRevisionEpoch: 0,
+      description: 'Import library & project assets and relink drifted shot',
+      operations: [
+        { type: 'import_media', libraryAssetId: libAsset.id, placeOnTimeline: false },
+        { type: 'import_media', projectAssetId: onlineAssetId, placeOnTimeline: false },
+        { type: 'relink_media', mediaId: 'm-drifted', source: { canvasNodeId: 'node_drifted_src' }, allowVersionUpdate: true },
+      ],
+    }, { session: { id: 'sess-agent', header: { cwd: home } } })
+
+    const claimed = await postLive('claim', { leaseId, requestId: reqId })
+    assert.equal(claimed.status, 200)
+    const [libOp, projOp, relinkOp] = claimed.body.command.args.operations
+
+    // Verify claimed command contains NO host absolute paths and provides opaque transfer URLs
+    assert.doesNotMatch(JSON.stringify(claimed.body.command), new RegExp(home.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+    assert.equal(libOp.resolvedMedia.handle.scope, 'library-file')
+    assert.equal(libOp.resolvedMedia.sha256, libVideoSha)
+    assert.equal(projOp.resolvedMedia.handle.scope, 'project-asset')
+    assert.equal(projOp.resolvedMedia.sha256, onlineSha)
+    assert.equal(relinkOp.resolvedMedia.handle.scope, 'project-asset')
+    assert.equal(relinkOp.resolvedMedia.sha256, driftedNewSha)
+
+    // Verify GET /media-transfer/:token streams verified bytes for authorized session
+    const libStream = await fetch(`${base}${libOp.resolvedMedia.transferUrl}`)
+    assert.equal(libStream.status, 200)
+    assert.equal(libStream.headers.get('x-content-sha256'), libVideoSha)
+    assert.deepEqual(Buffer.from(await libStream.arrayBuffer()), libVideoBytes)
+
+    const relinkStream = await fetch(`${base}${relinkOp.resolvedMedia.transferUrl}`)
+    assert.equal(relinkStream.status, 200)
+    assert.equal(relinkStream.headers.get('x-content-sha256'), driftedNewSha)
+    assert.deepEqual(Buffer.from(await relinkStream.arrayBuffer()), driftedNewBytes)
+
+    // Foreign session window cannot stream another session's transfer ticket
+    activeWindowSession = 'sess-other'
+    const foreignStream = await fetch(`${base}${libOp.resolvedMedia.transferUrl}`)
+    assert.equal(foreignStream.status, 403)
+    activeWindowSession = 'sess-agent'
+
+    // Return receipt & verify safe projection with ZERO host paths
+    const receiptRes = await postLive('receipt', {
+      leaseId,
+      requestId: reqId,
+      receiptToken: claimed.body.command.receiptToken,
+      result: {
+        projectId: clipProjectId,
+        revision: 3,
+        description: 'Import library & project assets and relink drifted shot',
+        durationSec: 10,
+        undoStep: true,
+        persisted: true,
+        synchronized: true,
+        results: [
+          {
+            type: 'import_media',
+            mediaId: 'm-lib-new',
+            reused: false,
+            scope: 'library-file',
+            omnimuxSource: { id: libOp.resolvedMedia.sourceId, version: `sha256:${libVideoSha}`, scope: 'library-file' },
+            path: stagedLibFile, // deliberately injected raw path -> must be stripped by projectEditResult
+          },
+          {
+            type: 'import_media',
+            mediaId: 'm-proj-new',
+            reused: false,
+            scope: 'project-asset',
+            omnimuxSource: { id: projOp.resolvedMedia.sourceId, version: `sha256:${onlineSha}`, scope: 'project-asset' },
+          },
+          {
+            type: 'relink_media',
+            mediaId: 'm-drifted',
+            relinked: true,
+            versionUpdated: true,
+            clampedClipCount: 0,
+            scope: 'project-asset',
+            omnimuxSource: { id: relinkOp.resolvedMedia.sourceId, version: `sha256:${driftedNewSha}`, scope: 'project-asset' },
+          },
+        ],
+      },
+    })
+    assert.equal(receiptRes.status, 200)
+    const editResult = await editPromise
+    assert.doesNotMatch(JSON.stringify(editResult), new RegExp(home.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+    assert.equal(editResult.results[0].scope, 'library-file')
+    assert.equal(editResult.results[0].omnimuxSource.scope, 'library-file')
+    assert.equal('path' in editResult.results[0], false)
+    assert.equal(editResult.results[2].relinked, true)
+    assert.equal(editResult.results[2].versionUpdated, true)
+
+    // D) Cross-workspace handle attempts are rejected with path-denied
+    for (const [badReqId, badOp] of [
+      ['req-xws-proj', { type: 'import_media', projectAssetId: onlineAssetId, workspaceId: 'ws_unauthorized' }],
+      ['req-xws-canvas', { type: 'relink_media', mediaId: 'm-drifted', source: { canvasNodeId: 'node_drifted_src', workspaceId: 'ws_unauthorized' } }],
+    ]) {
+      const pending = toolByName('clip_edit').execute({
+        projectId: clipProjectId,
+        requestId: badReqId,
+        baseRevision: 3,
+        baseRevisionEpoch: 0,
+        description: 'Cross-workspace attempt',
+        operations: [badOp],
+      }, { session: { id: 'sess-agent', header: { cwd: home } } })
+      const rejected = assert.rejects(pending, { code: 'path-denied' })
+      const claimRes = await postLive('claim', { leaseId, requestId: badReqId })
+      assert.equal(claimRes.status, 403)
+      await rejected
+    }
+
+    broker.dispose()
+    mediaTransfers.clear()
   })
 })

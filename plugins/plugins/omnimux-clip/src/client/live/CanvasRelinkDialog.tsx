@@ -129,6 +129,10 @@ export function CanvasRelinkDialog({
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
   const [selectedCandidates, setSelectedCandidates] = useState<Record<string, string>>({});
   const abortRef = useRef<AbortController | null>(null);
+  const inspectRef = useRef(inspectMediaReconcile);
+  inspectRef.current = inspectMediaReconcile;
+  const tRef = useRef(t);
+  tRef.current = t;
 
   const style = pane?.clipped
     ? {
@@ -145,14 +149,15 @@ export function CanvasRelinkDialog({
   }, [open, projectId, actionExecutor]);
 
   const loadReport = useCallback(async () => {
-    if (!open || !inspectMediaReconcile || !canRelinkMedia) return;
+    const inspect = inspectRef.current;
+    if (!open || !inspect || !canRelinkMedia) return;
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
     setLoadState({ status: "loading" });
     setRowErrors({});
     try {
-      const report = await inspectMediaReconcile();
+      const report = await inspect();
       if (controller.signal.aborted) return;
       setLoadState({ status: "ready", report });
       setSelectedCandidates((prev) => {
@@ -173,10 +178,10 @@ export function CanvasRelinkDialog({
       if (controller.signal.aborted) return;
       setLoadState({
         status: "error",
-        message: error instanceof Error ? error.message : t("Could not inspect canvas media sources."),
+        message: error instanceof Error ? error.message : tRef.current("Could not inspect canvas media sources."),
       });
     }
-  }, [open, inspectMediaReconcile, canRelinkMedia, t]);
+  }, [open, canRelinkMedia]);
 
   useEffect(() => {
     if (!open) {

@@ -1,6 +1,6 @@
 import { CLIP_API_PREFIX } from '../host/projectApi.js'
 import { sha256Digest } from '../../timeline/nativeProjectFields.js'
-import { verifiedMediaBlob } from './media-source'
+import { mediaDigest } from './media-source'
 
 export interface HostMediaFetchResult {
   ok: boolean
@@ -46,8 +46,29 @@ export async function fetchHostMediaBlob(
   mediaId: string,
   options: { expectedDigest?: string; signal?: AbortSignal; timeoutMs?: number } = {},
 ): Promise<HostMediaFetchResult> {
-  const { expectedDigest, signal, timeoutMs = 45_000 } = options
   const url = `${CLIP_API_PREFIX}/projects/${encodeURIComponent(projectId)}/media/${encodeURIComponent(mediaId)}/bytes`
+  return fetchVerifiedClipStream(url, options)
+}
+
+/**
+ * Fetch verified media bytes for an Agent `clip_edit` transfer ticket
+ * (`/omnimux-clip/api/media-transfer/:token`).
+ */
+export async function fetchMediaTransferBlob(
+  transferUrl: string,
+  options: { expectedDigest?: string; signal?: AbortSignal; timeoutMs?: number } = {},
+): Promise<HostMediaFetchResult> {
+  if (!transferUrl.startsWith(`${CLIP_API_PREFIX}/media-transfer/`)) {
+    return { ok: false, status: 403, code: 'path-denied' }
+  }
+  return fetchVerifiedClipStream(transferUrl, options)
+}
+
+async function fetchVerifiedClipStream(
+  url: string,
+  options: { expectedDigest?: string; signal?: AbortSignal; timeoutMs?: number } = {},
+): Promise<HostMediaFetchResult> {
+  const { expectedDigest, signal, timeoutMs = 45_000 } = options
   const timeoutSignal = AbortSignal.timeout(timeoutMs)
   const combined = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal
   const response = await sameOriginFetch(url, {
@@ -79,8 +100,8 @@ export async function fetchHostMediaBlob(
     return { ok: false, status: 415, code: 'unsupported-media' }
   }
   if (expectedDigest && !headerDigest) {
-    const verified = await verifiedMediaBlob(blob, expectedDigest)
-    if (!verified) return { ok: false, status: 409, code: 'media-version-mismatch' }
+    const actualDigest = await mediaDigest(blob)
+    if (actualDigest !== expectedDigest) return { ok: false, status: 409, code: 'media-version-mismatch' }
   }
   return {
     ok: true,
