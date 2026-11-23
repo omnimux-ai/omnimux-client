@@ -240,7 +240,7 @@
     function renderExpertsTab(opts) {
       const { displayedExperts, expertStage, setExpertStage, expertMarketError, onDismissExpertError, tr, isEn, expertMarketToggling, onToggleExpert } = opts;
       const emptyMsg = isEn ? "No matching experts" : "没有匹配的专家";
-      const stageBar = h("div", { className: "expert-stage-bar", role: "group", "aria-label": tr("expertMarket.stageFilter") || (isEn ? "Expert Stage" : "专家阶段筛选") },
+      const stageBar = h("div", { className: "expert-stage-bar", role: "group", "aria-label": tr("expertMarket.stageFilter") || (isEn ? "Expert Category" : "专家分类") },
         EXPERT_STAGE_OPTIONS.map((opt) => {
           const active = (expertStage || "all") === opt.id;
           const label = getExpertStageLabel(opt.id, tr, isEn);

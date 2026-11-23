@@ -16,6 +16,7 @@
     "agent-tools-suite/mock-context.mjs",
     "agent-tools-suite/schema-lint.mjs",
     "agent-tools-suite/security-guard.mjs",
+    "analyze-lessons-signals.mjs",
     "app-restart.mjs",
     "authorization.mjs",
     "authorization.test.mjs",
@@ -140,6 +141,7 @@
     "verify-dev-cdp.mjs",
     "verify-dev-smoke.mjs",
     "verify-dsh-lockfile-uniform.mjs",
+    "verify-fix-regression-test.mjs",
     "verify-license-consistency.mjs",
     "verify-license-consistency.test.mjs",
     "verify-modality-matrix.mjs",
@@ -173,6 +175,7 @@
     "worktree.sh"
   ],
   "manual": [
+    "analyze-lessons-signals.test.mjs",
     "app-restart.test.mjs",
     "auto-pipeline-docs.test.mjs",
     "backup-shared.qa.test.py",
@@ -435,7 +438,6 @@
     "verify-task-rail-qa.mjs",
     "verify-test-standard-declarations.mjs",
     "verify-test-standard-declarations.test.mjs",
-    "verify-fix-regression-test.mjs",
     "verify-fix-regression-test.test.mjs",
     "verify-triptych-workbench.mjs",
     "verify-twitter-copilot-inactive.mjs",
