@@ -26,3 +26,24 @@
 - 图像生成视图右侧不再渲染 `.omx-mv-history` / `.omx-mv-history-toggle` / `.omx-mv-history-scrim`，根节点无 `data-history-*`。
 - 左侧缩略图栏仍可点击切换素材，↑/↓ 切换保留，成本预估 `.omx-mv-cost` 仍按图像/视频模式显示或隐藏。
 - `omnimux-viewer` 包测试 `node scripts/run-tests.mjs` 全绿。
+
+## 旧标准变更
+
+移除右侧历史栏后，原先专门断言历史栏的测试用例已不再适用（历史栏被整体删除，功能由左侧缩略图承担）。以下用例被删除或重命名，原断言均围绕 `.omx-mv-history*` / 历史抽屉 / 历史卡操作，新期望由 `右侧历史栏已移除，左侧缩略图栏仍保留` 与保留的成本/切换用例覆盖。
+
+- `plugins/plugins/omnimux-viewer/src/media-viewer/flow-alignment.dom.test.js` :: `历史栏渲染分组卡片、当前项与提示词快照`
+- `plugins/plugins/omnimux-viewer/src/media-viewer/flow-alignment.dom.test.js` :: `点击历史卡切换舞台素材`
+- `plugins/plugins/omnimux-viewer/src/media-viewer/flow-alignment.dom.test.js` :: `复用提示只写入 composer 预填队列，不提交生成`
+- `plugins/plugins/omnimux-viewer/src/media-viewer/flow-alignment.dom.test.js` :: `视频记录的历史缩略图使用 video 元素`
+- `plugins/plugins/omnimux-viewer/src/media-viewer/flow-alignment.dom.test.js` :: `批量中的非 primary 项选中时卡片仍高亮`
+- `plugins/plugins/omnimux-viewer/src/media-viewer/flow-alignment.dom.test.js` :: `空会话显示历史空态且不聚合其他会话`
+- `plugins/plugins/omnimux-viewer/src/media-viewer/flow-alignment.dom.test.js` :: `无会话时不聚合其他会话的历史`
+- `plugins/plugins/omnimux-viewer/src/media-viewer/flow-alignment.dom.test.js` :: `抽屉打开时方向键不切换背后舞台，关闭按钮可收起`
+- `plugins/plugins/omnimux-viewer/src/media-viewer/flow-alignment.dom.test.js` :: `下载历史卡触发对应素材的 anchor 且使用记录标题`
+- `plugins/plugins/omnimux-viewer/src/media-viewer/flow-alignment.dom.test.js` :: `抽屉状态与 Esc 关闭`
+- `plugins/plugins/omnimux-viewer/src/media-viewer/flow-alignment.dom.test.js` :: `↑/↓ 在单图模式切换历史素材，输入框聚焦时不拦截`
+- `plugins/plugins/omnimux-viewer/src/media-viewer/flow-alignment.e2e.test.js` :: `*`
+
+原断言：右侧历史栏渲染分组卡片/当前项/提示词、点击历史卡切换舞台、历史卡复用提示词与下载、历史抽屉打开与 Esc 关闭、↑/↓ 切换历史素材、空态文案「暂无历史」。
+必须改的理由：右侧历史栏被产品决定整体移除，相关 DOM（`.omx-mv-history*`、`omx-mv-history-toggle`）不再存在，这些用例无法也不应继续通过。
+新期望证据：`flow-alignment.dom.test.js` 新增 `右侧历史栏已移除，左侧缩略图栏仍保留`（断言无历史 DOM、无 data-history-*、缩略图 6 项），并保留成本预估与 ↑/↓ 切换（用例名改为 `↑/↓ 在单图模式切换素材，输入框聚焦时不拦截`）。
