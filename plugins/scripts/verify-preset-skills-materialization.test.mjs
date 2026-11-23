@@ -81,3 +81,80 @@ test('sync-agent-presets.sh never writes preset skills into the target skill roo
   }
   assert.equal(readFileSync(join(owned, 'SKILL.md'), 'utf8'), 'user-owned\n', 'an existing skill was overwritten')
 })
+
+/**
+ * Collect every concrete Agent tool name registered across `plugins/*` so preset
+ * skills cannot drift onto retired or nonexistent tool identifiers.
+ */
+function collectWorkspaceRegisteredTools(pluginsDir) {
+  const names = new Set()
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (['node_modules', 'dist', 'lib', '.git', 'tests', 'skills', 'catalog'].includes(entry.name)) continue
+      const full = join(dir, entry.name)
+      if (entry.isDirectory()) {
+        walk(full)
+        continue
+      }
+      if (!entry.isFile()) continue
+      if (entry.name === 'dsh.manifest.json') {
+        const manifest = JSON.parse(readFileSync(full, 'utf8'))
+        for (const item of manifest.capabilities?.tools ?? []) {
+          if (typeof item?.name === 'string') names.add(item.name)
+        }
+        continue
+      }
+      if (!/\.(js|mjs|ts)$/.test(entry.name) || /\.(test|spec)\.(js|mjs|ts)$/.test(entry.name)) continue
+      const text = readFileSync(full, 'utf8')
+      for (const re of [
+        /\btool\(\s*['"]([a-z][a-z0-9_]+)['"]/g,
+        /\bname:\s*['"]([a-z][a-z0-9_]+)['"]/g,
+        /\bSTT_TOOL_NAME\s*=\s*['"]([a-z][a-z0-9_]+)['"]/g,
+      ]) {
+        for (const match of text.matchAll(re)) names.add(match[1])
+      }
+    }
+  }
+  walk(pluginsDir)
+  return names
+}
+
+test('social research preset skills only reference live registered OmniMux runtime tools', () => {
+  const pluginsDir = join(root, 'plugins')
+  const registered = collectWorkspaceRegisteredTools(pluginsDir)
+  const marketSkillsDir = join(pluginsDir, 'omnimux-market', 'skills')
+  const skillIds = [
+    'omnimux-social-data',
+    'omnimux-outlier-post-finder',
+    'omnimux-creator-teardown',
+    'omnimux-transcript-intelligence',
+    'omnimux-trend-discovery',
+    'omnimux-competitor-research',
+    'omnimux-social-listening',
+    'omnimux-product-demand',
+    'omnimux-content-repurposing',
+  ]
+  const files = [
+    ...skillIds.map((id) => join(marketSkillsDir, id, 'SKILL.md')),
+    join(marketSkillsDir, 'omnimux-social-data', 'references', 'README.md'),
+    join(marketSkillsDir, 'omnimux-social-data', 'references', 'TRIGGER-MATRIX.md'),
+  ]
+  const concreteToolRe = /`((?:omnimux|harvest|video|analytics|inspiration)_[a-z0-9_]+)(?:\(|`)/g
+  // Parameter names that happen to share a tool prefix (e.g. YouTube `video_id`).
+  const nonToolIdentifiers = new Set(['video_id'])
+  const unknown = []
+
+  for (const file of files) {
+    assert.equal(existsSync(file), true, `missing ${file}`)
+    const text = readFileSync(file, 'utf8')
+    for (const match of text.matchAll(concreteToolRe)) {
+      const toolName = match[1]
+      if (nonToolIdentifiers.has(toolName)) continue
+      if (!registered.has(toolName)) {
+        unknown.push(`${file.slice(root.length + 1)}: ${toolName}`)
+      }
+    }
+  }
+
+  assert.deepEqual(unknown, [], `social research skills reference unregistered tools:\n${unknown.join('\n')}`)
+})
