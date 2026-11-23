@@ -118,8 +118,10 @@ export function triggerClick(el) {
 
 const TOGGLE_ARIA_LABELS = Object.freeze([
   '打开侧边栏',
+  '展开侧边栏',
   '收起侧边栏',
   'Open sidebar',
+  'Expand sidebar',
   'Collapse sidebar',
 ])
 
@@ -167,7 +169,7 @@ function collectOfficialSidebarToggleCandidates(doc) {
   }
   for (const el of doc.querySelectorAll(`button.x-Wl6W_toggle${notInjected}, .x-Wl6W_toggle${notInjected}`)) push(el)
   for (const el of doc.querySelectorAll(
-    `[class*="sidebarCol"] [class*="logoRow"] [class*="toggle"]${notInjected}, [class*="sidebarCol"] [class*="logoRow"] button[class*="toggle"]${notInjected}`,
+    `[class*="sidebarCol"] [class*="logoRow"] [class*="toggle"]${notInjected}, [class*="sidebarCol"] [class*="logoRow"] button[class*="toggle"]${notInjected}, [data-shell-leading] [class*="toggle"]${notInjected}, [data-shell-leading] button[class*="toggle"]${notInjected}`,
   )) push(el)
   return out
 }
@@ -1017,7 +1019,17 @@ export function computeChromeLayout(doc) {
       : (readShellRailWidthPx(doc) ?? (lastGoodLeftRailW || 0))
     if (leftRailW >= LEFT_RAIL_MIN_PX) lastGoodLeftRailW = leftRailW
   }
-  const leftInset = doc?.body?.matches?.('[data-dsh-desktop-mode][data-dsh-desktop-platform="darwin"]')
+  const isDarwinDesktop = Boolean(
+    doc?.body?.matches?.('[data-dsh-desktop-mode][data-dsh-desktop-platform="darwin"]'),
+  )
+  const isFullscreen = doc?.documentElement?.hasAttribute?.('data-fullscreen') === true
+  // macOS native fullscreen hides traffic lights (html[data-fullscreen]) and
+  // 0.2.2-rc.5 AppFrame lowers --dsh-frame-leading-clearance from 160px to 84px
+  // (ConversationRoot title starts at 20 + 140 = 160px windowed, 20 + 64 = 84px
+  // fullscreen). Dropping the traffic-light inset in fullscreen keeps the
+  // collapsed two-button cluster right edge within both official clearances
+  // (84 + 32 + 8 + 32 = 156 <= 160px; 8 + 32 + 8 + 32 = 80 <= 84px).
+  const leftInset = isDarwinDesktop && !isFullscreen
     ? TOPBAR_MACOS_INSET_PX
     : TOPBAR_TOGGLE_LEFT_PX
   const toggleLeft = collapsed
@@ -1530,6 +1542,12 @@ html[data-omnimux-left-collapsed] [data-sidebar-right-panel="fullscreen"] [class
 .dshDesktopFrame[data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"] {
   padding-left: var(--omnimux-topbar-toggle-end, 88px) !important;
 }
+
+/* 5.5 desktop-patch:DP-004 — 隐藏 0.2.2-rc.5 官方根级 [data-shell-leading]，避免与注入顶栏
+   两按钮重叠双显；作用域限定在 html[data-omnimux-sidebar-toggle-topbar]，引导页/卸载摘标后自动恢复。 */
+html[data-omnimux-sidebar-toggle-topbar] [data-shell-leading] {
+  display: none !important;
+  pointer-events: none !important;
 }
 `
 
@@ -1904,18 +1922,19 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
     desktopObserver = new ObserverClass(() => {
       scheduleSync()
     })
-    const filter = ['data-dsh-desktop-mode', 'data-dsh-desktop-platform']
+    const rootFilter = ['data-dsh-desktop-mode', 'data-dsh-desktop-platform', 'data-fullscreen']
+    const bodyFilter = ['data-dsh-desktop-mode', 'data-dsh-desktop-platform']
     if (doc.documentElement) {
       desktopObserver.observe(doc.documentElement, {
         attributes: true,
-        attributeFilter: filter,
+        attributeFilter: rootFilter,
         subtree: false,
       })
     }
     if (doc.body) {
       desktopObserver.observe(doc.body, {
         attributes: true,
-        attributeFilter: filter,
+        attributeFilter: bodyFilter,
         subtree: false,
       })
     }
