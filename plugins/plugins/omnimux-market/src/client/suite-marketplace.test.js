@@ -146,13 +146,14 @@ const suiteCard = (item) => ({
   installed: false,
 })
 
-test('A1 分类栏：013fcb898 后收敛为「全部」+ 7 个营销分类', () => {
+test('A1 分类栏：按场景收敛为「全部」+ 8 个场景', () => {
+  const SCENARIOS = ['', 'scene-seeding', 'scene-brand', 'scene-product', 'scene-performance', 'scene-app', 'scene-local', 'scene-repurpose', 'scene-tools']
   const categories = buildWorkshopCategories(null, tr)
-  assert.equal(categories.length, 8)
-  assert.deepEqual(categories.map((c) => c.id), ['', 'ugc-testimonial', 'storytelling-script', 'image-static', 'video-ads', 'product-showcase', 'meme-native', 'other'])
-  // 013fcb898 后分类栏固定为 Creatify 8 项，预设绑定不再注入套件/自定义分类
-  assert.deepEqual(buildWorkshopCategories({ categories: [{ id: '选品', name: '选品' }] }, tr).map((c) => c.id),
-    ['', 'ugc-testimonial', 'storytelling-script', 'image-static', 'video-ads', 'product-showcase', 'meme-native', 'other'])
+  assert.equal(categories.length, 9)
+  assert.deepEqual(categories.map((c) => c.id), SCENARIOS)
+  assert.ok(categories.slice(1).every((c) => c.count > 0), '每个场景必须有目录成员')
+  // 分类栏固定为场景目录，预设绑定不再注入套件/自定义分类
+  assert.deepEqual(buildWorkshopCategories({ categories: [{ id: '选品', name: '选品' }] }, tr).map((c) => c.id), SCENARIOS)
   // 「套件」仍保留在 taxonomy 真源中，供 matchesDomainTag 判定套件条目
   const taxonomy = SkillShelf.SKILL_SHELF_TAXONOMY.find((row) => row.id === '套件')
   assert.equal(taxonomy.labelKey, 'picker.tab.suite')

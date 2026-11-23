@@ -63,7 +63,7 @@ test('Issue #2609：两款电商图文技能预装进创作图片分类，且为
   }
 })
 
-test('Issue #2609：两款技能同时上架技能货架（catalog/index.json），属于 image-static 分类', async () => {
+test('Issue #2609：两款技能同时上架技能货架（catalog/index.json），保留 image-static 形式并归属场景分类', async () => {
   const { readFileSync, existsSync } = await import('node:fs')
   const { join, dirname } = await import('node:path')
   const { fileURLToPath } = await import('node:url')
@@ -82,6 +82,7 @@ test('Issue #2609：两款技能同时上架技能货架（catalog/index.json）
     assert.equal(item.skill, skill)
     assert.equal(item.titleZh, titleZh)
     assert.equal(item.category, 'image-static')
+    assert.equal(item.scenario, id === 'sk-omx-shoppable-carousel' ? 'scene-product' : 'scene-repurpose')
     assert.ok(Array.isArray(item.tags) && item.tags.includes('图片和静态广告'))
     assert.equal(item.source?.type, 'bundled')
     const skillPath = join(here, '../../', item.source.path, 'SKILL.md')
