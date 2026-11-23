@@ -137,10 +137,116 @@ export function verifyPackageFiles(root = repoRoot) {
   return { errors, auditedCount, warnings }
 }
 
+const REQUIRED_DISPLAY_LOCALES = ['en', 'zh']
+
+/**
+ * 校验所有插件是否符合 DSH 插件展示元信息（locale/*.json）与国际化规范：
+ * 1. locale/en.json 与 locale/zh.json 必须存在且包含非空字符串 meta.title / meta.description；
+ * 2. package.json.exports 必须声明 "./locale/*.json" 与 "./package.json"；
+ * 3. package.json.files 必须覆盖 locale/en.json 与 locale/zh.json；
+ * 4. package.json.description 必须与 locale/en.json 的 meta.description 一致；
+ * 5. 标题不得退化为原始包名 slug（omnimux-*），文案不得使用中点 "·" 作为分隔符。
+ * @param {string} root 项目根目录
+ * @returns {{ errors: string[], auditedCount: number }}
+ */
+export function verifyPluginDisplayMeta(root = repoRoot) {
+  const pluginsDir = resolve(root, 'plugins')
+  const errors = []
+  let auditedCount = 0
+
+  if (!existsSync(pluginsDir)) {
+    return { errors: ['plugins directory not found: ' + pluginsDir], auditedCount: 0 }
+  }
+
+  const entries = readdirSync(pluginsDir, { withFileTypes: true })
+    .filter(e => e.isDirectory() && !e.name.startsWith('.'))
+    .map(e => e.name)
+    .sort()
+
+  for (const pluginName of entries) {
+    const pluginDir = join(pluginsDir, pluginName)
+    const pkgPath = join(pluginDir, 'package.json')
+    if (!existsSync(pkgPath)) continue
+
+    auditedCount++
+    let pkg
+    try {
+      pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
+    } catch (err) {
+      errors.push('[' + pluginName + '] package.json 解析失败: ' + err.message)
+      continue
+    }
+
+    const exportsField = pkg.exports && typeof pkg.exports === 'object' ? pkg.exports : null
+    if (!exportsField || exportsField['./locale/*.json'] !== './locale/*.json') {
+      errors.push('[' + pluginName + '] package.json.exports 缺少 "./locale/*.json": "./locale/*.json"')
+    }
+    if (!exportsField || exportsField['./package.json'] !== './package.json') {
+      errors.push('[' + pluginName + '] package.json.exports 缺少 "./package.json": "./package.json"')
+    }
+
+    const files = Array.isArray(pkg.files) ? pkg.files : []
+    const parsedLocales = {}
+
+    for (const lang of REQUIRED_DISPLAY_LOCALES) {
+      const rel = 'locale/' + lang + '.json'
+      const abs = join(pluginDir, rel)
+      if (!existsSync(abs)) {
+        errors.push('[' + pluginName + '] 缺少多语言元信息文件 "' + rel + '"')
+        continue
+      }
+      if (!isPathCoveredByFiles(rel, files)) {
+        errors.push('[' + pluginName + '] "' + rel + '" 未被 package.json files 白名单覆盖（请在 files 中声明 "locale"）')
+      }
+      let doc
+      try {
+        doc = JSON.parse(readFileSync(abs, 'utf8'))
+      } catch (err) {
+        errors.push('[' + pluginName + '] "' + rel + '" JSON 解析失败: ' + err.message)
+        continue
+      }
+      const meta = doc?.meta
+      if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
+        errors.push('[' + pluginName + '] "' + rel + '" 缺少 meta 对象')
+        continue
+      }
+      for (const field of ['title', 'description']) {
+        const val = meta[field]
+        if (typeof val !== 'string' || val.trim() === '') {
+          errors.push('[' + pluginName + '] "' + rel + '" 缺少非空字符串 meta.' + field)
+          continue
+        }
+        if (val !== val.trim()) {
+          errors.push('[' + pluginName + '] "' + rel + '" meta.' + field + ' 包含首尾空白')
+        }
+        if (val.includes('·')) {
+          errors.push('[' + pluginName + '] "' + rel + '" meta.' + field + ' 禁止使用中点 "·" 分隔符')
+        }
+      }
+      if (typeof meta.title === 'string' && /^omnimux(?:-[a-z0-9]+)*$/u.test(meta.title.trim())) {
+        errors.push('[' + pluginName + '] "' + rel + '" meta.title 不得直接使用包名 slug: ' + meta.title)
+      }
+      parsedLocales[lang] = meta
+    }
+
+    if (parsedLocales.en && typeof parsedLocales.en.description === 'string') {
+      if (typeof pkg.description !== 'string' || pkg.description.trim() === '') {
+        errors.push('[' + pluginName + '] package.json 缺少 description')
+      } else if (pkg.description !== parsedLocales.en.description) {
+        errors.push('[' + pluginName + '] package.json.description 与 locale/en.json meta.description 不一致')
+      }
+    }
+  }
+
+  return { errors, auditedCount }
+}
+
 // CLI 执行入口
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
-  console.log('== 正在执行插件打包清单 (package.json files) 完整性巡检... ==')
-  const { errors, auditedCount, warnings } = verifyPackageFiles(repoRoot)
+  console.log('== 正在执行插件打包清单 (package.json files) 与展示元信息 (locale/*.json) 完整性巡检... ==')
+  const { errors: fileErrors, auditedCount, warnings } = verifyPackageFiles(repoRoot)
+  const { errors: metaErrors } = verifyPluginDisplayMeta(repoRoot)
+  const errors = [...fileErrors, ...metaErrors]
 
   for (const w of warnings) {
     console.warn('⚠ ' + w)
@@ -148,14 +254,14 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
 
   if (errors.length > 0) {
     console.error('')
-    console.error('❌ 发现 ' + errors.length + ' 项包打包清单违规：')
+    console.error('❌ 发现 ' + errors.length + ' 项插件打包清单/展示元信息违规：')
     for (const err of errors) {
       console.error('  - ' + err)
     }
     console.error('')
-    console.error('请参照工程规范：凡使用 src 作为运行时的插件，必须在 package.json 的 files 中声明 "src"，以确保新增模块完整物化。')
+    console.error('请参照工程规范：确保 files 覆盖 src/locale 等运行时目录，且所有插件提供合规的 locale/{en,zh}.json 展示元信息。')
     process.exit(1)
   }
 
-  console.log('✓ 全量 ' + auditedCount + ' 个插件的 package.json files 规则全部合规闭环，无漏项。')
+  console.log('✓ 全量 ' + auditedCount + ' 个插件的 package.json files 与多语言展示元信息规则全部合规闭环，无漏项。')
 }

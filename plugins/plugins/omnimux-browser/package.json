@@ -1,6 +1,6 @@
 {
   "name": "omnimux-browser",
-  "description": "OmniMux 浏览器伴侣插件与扩展套件：基于 WebSocket 桥接与文本化 DOM 编号的浏览器自动化感知与侧边栏对话",
+  "description": "Connect the Chrome extension to read, operate, and chat on authorized tabs.",
   "version": "0.1.0",
   "author": "OmniMux Team (Forked from Lum1104/dsh-browser by Yuxiang Lin)",
   "license": "MIT",
@@ -20,13 +20,15 @@
     "./client": "./lib/client.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./src/*": "./src/*",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
   },
   "files": [
     "lib/index.js",
     "lib/protocol.js",
     "lib/client.js",
     "lib/types/**/*.d.ts",
+    "locale",
     "cordis.patch.yml",
     "src",
     "extension",

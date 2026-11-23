@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.js",
     "./client": "./lib/client.js",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
   },
   "files": [
     "src",
@@ -22,6 +23,7 @@
     "scripts/catalog-diff.mjs",
     "scripts/catalog-snapshot.mjs",
     "scripts/export-voice-previews.mjs",
+    "locale",
     "cordis.patch.yml",
     "LICENSE",
     "NOTICE"
@@ -107,5 +109,5 @@
     "url": "git+https://github.com/omnimux-ai/omnimux-client.git",
     "directory": "plugins/plugins/omnimux"
   },
-  "description": "OmniMux execution hub for DeepSeek Harness: product chrome, identity, model routes, and video jobs."
+  "description": "Provide sign-in, model routing, media generation, and web reading."
 }

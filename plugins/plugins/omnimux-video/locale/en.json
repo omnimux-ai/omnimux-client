@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Local Video Processing",
+    "description": "Process videos, extract depth maps, and analyze content locally with FFmpeg."
+  }
+}

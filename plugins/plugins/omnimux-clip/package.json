@@ -11,7 +11,8 @@
   "exports": {
     ".": "./src/index.js",
     "./client": "./lib/client.js",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
   },
   "files": [
     "src",
@@ -20,6 +21,7 @@
     "scripts/scope-openreel-css.mjs",
     "tailwind.openreel.config.js",
     "skills",
+    "locale",
     "cordis.patch.yml",
     "LICENSE",
     "NOTICE",
@@ -118,5 +120,5 @@
     "typescript": "^5.9.3"
   },
   "license": "SEE LICENSE IN LICENSE",
-  "description": "OmniMux Clip: official OpenReel GUI + pipeline as a DSH better-sidebar Tab."
+  "description": "Edit multi-track timelines, subtitles, and export videos."
 }

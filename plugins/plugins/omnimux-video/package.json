@@ -10,12 +10,14 @@
   "main": "src/index.js",
   "exports": {
     ".": "./src/index.js",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
   },
   "files": [
     "src",
     "scripts",
     "prompts",
+    "locale",
     "cordis.patch.yml",
     "README.md",
     "LICENSE",
@@ -31,5 +33,5 @@
     }
   },
   "license": "SEE LICENSE IN LICENSE",
-  "description": "Local ffmpeg video processing + depth map (Depth Anything V2) + hub-backed video understanding for OmniMux."
+  "description": "Process videos, extract depth maps, and analyze content locally with FFmpeg."
 }

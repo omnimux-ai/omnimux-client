@@ -5,7 +5,7 @@
   "tier": "tier-1-app",
   "entrypoint": "src/index.js",
   "status": "active",
-  "description": "OmniMux 官方应用：爆款灵感素材库、热点视频切片与创意提取",
+  "description": "收集、整理并分析热门内容与参考素材，辅助选题创作。",
   "tags": ["inspiration", "trends", "ideas", "creative", "workbench"],
   "capabilities": {
     "tools": [

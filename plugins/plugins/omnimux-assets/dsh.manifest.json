@@ -5,7 +5,7 @@
   "tier": "tier-1-app",
   "entrypoint": "src/index.js",
   "status": "active",
-  "description": "OmniMux 创作资产库：角色、场景、风格包、道具、知识包与 Prompt 资产纳管",
+  "description": "管理角色、场景、风格等可复用素材与生成结果。",
   "tags": ["assets", "library", "characters", "scenes", "props", "knowledge", "artifacts"],
   "capabilities": {
     "tools": [
