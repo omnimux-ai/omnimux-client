@@ -222,4 +222,19 @@ test('preset generators emit the persona `prefix` key, never `text`', async (t) 
   ok(cordisRaw.includes('sampleOverCapGlobResults: false'), 'market preset must configure sampleOverCapGlobResults')
   ok(cordisRaw.includes('provider: spawn'), 'market preset tool-subagent must configure provider: spawn')
   ok(cordisRaw.includes('provider: fork'), 'market preset tool-subagent-fork must configure provider: fork')
+
+  // Also verify live dynamic PresetDefinition builder emits `prefix` (never `text`) for all 8 SOP experts
+  const runtimeBuild = await build({
+    entryPoints: [join(root, 'plugins/omnimux-market/src/expert-runtime.ts')],
+    bundle: true, platform: 'node', format: 'esm', write: false,
+  })
+  const { buildMarketExpertPresetDefinition } = await import(`data:text/javascript;base64,${Buffer.from(runtimeBuild.outputFiles[0].text).toString('base64')}`)
+  const { DEFAULT_MARKET_EXPERTS } = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`)
+  equal(DEFAULT_MARKET_EXPERTS.length, 8, 'must define 8 built-in SOP market experts')
+  for (const exp of DEFAULT_MARKET_EXPERTS) {
+    const def = buildMarketExpertPresetDefinition(exp)
+    const personaRow = def.plugins.find((r) => r.id === 'persona')
+    ok(personaRow && typeof personaRow.config?.prefix === 'string' && personaRow.config.prefix.length > 50, `${exp.id} dynamic preset must set rich persona.prefix`)
+    ok(!('text' in (personaRow?.config ?? {})), `${exp.id} dynamic preset must not use retired persona.text key`)
+  }
 })
