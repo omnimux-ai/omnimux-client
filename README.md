@@ -21,8 +21,8 @@
 </p>
 
 <p align="center">
-  <a href="https://discord.gg/omnimux"><img src="https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=flat&logo=discord&logoColor=white" alt="Discord"></a>
-  <a href="https://x.com/omnimux_ai"><img src="https://img.shields.io/badge/X-@omnimux__ai-000000?style=flat&logo=x&logoColor=white" alt="X"></a>
+  <a href="https://discord.gg/uNPBDz3WNC"><img src="https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=flat&logo=discord&logoColor=white" alt="Discord"></a>
+  <a href="https://x.com/OmniMuxai"><img src="https://img.shields.io/badge/X-@OmniMuxai-000000?style=flat&logo=x&logoColor=white" alt="X"></a>
   <a href="#community"><img src="https://img.shields.io/badge/WeChat-Community%20Group-07C160?style=flat&logo=wechat&logoColor=white" alt="WeChat"></a>
   <a href="https://github.com/omnimux-ai/omnimux-client/discussions"><img src="https://img.shields.io/badge/GitHub-Discussions-0969DA?style=flat&logo=github&logoColor=white" alt="Discussions"></a>
 </p>
@@ -380,7 +380,7 @@ PRs, bug reports, workflow templates, and new `SKILL.md` skills are welcome — 
 
 - **GitHub Discussions** — Q&A, workflow showcase, and open-ended ideas: [Join Discussions](https://github.com/omnimux-ai/omnimux-client/discussions)
 - **GitHub Issues** — Bug reports, feature requests, and skill/plugin proposals: [Open an Issue](https://github.com/omnimux-ai/omnimux-client/issues/new/choose)
-- **Discord & X** — Real-time community chat and release announcements: [Discord](https://discord.gg/omnimux) · [@omnimux_ai](https://x.com/omnimux_ai)
+- **Discord & X** — Real-time community chat and release announcements: [Discord](https://discord.gg/uNPBDz3WNC) · [@OmniMuxai](https://x.com/OmniMuxai)
 - **Security & Commercial** — Private vulnerability reports ([SECURITY.md](SECURITY.md)) and licensing inquiries: `hello@omnimux.ai`
 
 <table>
@@ -397,8 +397,8 @@ PRs, bug reports, workflow templates, and new `SKILL.md` skills are welcome — 
         <sub>Scan with WeChat or WeCom to join the <strong>OmniMux Community Group</strong></sub>
       </td>
       <td align="center" valign="middle">
-        <p><a href="https://discord.gg/omnimux"><img src="https://img.shields.io/badge/Discord-Join%20OmniMux-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a></p>
-        <p><a href="https://x.com/omnimux_ai"><img src="https://img.shields.io/badge/X-Follow%20@omnimux__ai-000000?style=for-the-badge&logo=x&logoColor=white" alt="X"></a></p>
+        <p><a href="https://discord.gg/uNPBDz3WNC"><img src="https://img.shields.io/badge/Discord-Join%20OmniMux-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a></p>
+        <p><a href="https://x.com/OmniMuxai"><img src="https://img.shields.io/badge/X-Follow%20@OmniMuxai-000000?style=for-the-badge&logo=x&logoColor=white" alt="X"></a></p>
         <p><a href="https://github.com/omnimux-ai/omnimux-client/discussions"><img src="https://img.shields.io/badge/GitHub-Discussions-0969DA?style=for-the-badge&logo=github&logoColor=white" alt="GitHub Discussions"></a></p>
         <sub>Guidelines: <a href="CONTRIBUTING.md">Contributing</a> · <a href="CODE_OF_CONDUCT.md">Code of Conduct</a> · <a href="SECURITY.md">Security</a></sub>
       </td>
