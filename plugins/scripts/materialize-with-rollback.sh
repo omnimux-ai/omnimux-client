@@ -7,7 +7,7 @@
 #   docs/contracts/ops-entry.md
 #
 # Default target is the Dev App home (~/.omnimux-dev), matching sync-to-app.sh.
-# Pass --prod / --dsh / --all to retarget; PROFILE verification must match the
+# Pass --prod / --all to retarget; PROFILE verification must match the
 # same home(s) that sync-to-app writes.
 set -euo pipefail
 
@@ -30,9 +30,8 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --dsh)
-      PROFILE_HOME="${HOME}/.dsh"
-      SYNC_TARGET_FLAGS=(--dsh)
-      shift
+      echo "❌ materialize-with-rollback: --dsh 同步目标已退役；可用目标：--dev | --prod | --all" >&2
+      exit 2
       ;;
     --all)
       # Snapshot/verify against prod by default when broadcasting; sync still

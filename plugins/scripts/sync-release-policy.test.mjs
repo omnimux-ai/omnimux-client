@@ -214,18 +214,21 @@ describe('Alpha release materialization policy', { concurrency: false }, () => {
     assert.equal(readFileSync(markerPath(fixtureRoot, '.omnimux-dev'), 'utf8'), devMarkerBefore)
   })
 
-  it('keeps Alpha in non-production profiles during a mixed-target sync', () => {
+  it('keeps Alpha in non-production profiles during a mixed-target sync and excludes retired ~/.dsh', () => {
+    const dshManifestBefore = readFileSync(manifestPath(fixtureRoot, '.dsh'), 'utf8')
+    const dshMarkerBefore = readFileSync(markerPath(fixtureRoot, '.dsh'), 'utf8')
     const result = run(fixtureRoot, ['--all', 'omnimux-accounts'])
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
-    for (const target of ['.omnimux-dev', '.dsh']) {
-      const manifest = readManifest(fixtureRoot, target)
-      assert.ok(manifest.dependencies['omnimux-accounts'])
-      assert.ok(manifest.dsh.profile.bundles.includes('omnimux-accounts'))
-    }
+    const devManifest = readManifest(fixtureRoot, '.omnimux-dev')
+    assert.ok(devManifest.dependencies['omnimux-accounts'])
+    assert.ok(devManifest.dsh.profile.bundles.includes('omnimux-accounts'))
     const prodManifest = readManifest(fixtureRoot, '.omnimux')
     assert.equal(prodManifest.dependencies['omnimux-accounts'], undefined)
     assert.equal(readChannel(fixtureRoot, '.omnimux'), 'production')
     assert.equal(readChannel(fixtureRoot, '.omnimux-dev'), 'development')
+    assert.doesNotMatch(result.stdout, /\.dsh\/profiles\/omnimux/)
+    assert.equal(readFileSync(manifestPath(fixtureRoot, '.dsh'), 'utf8'), dshManifestBefore)
+    assert.equal(readFileSync(markerPath(fixtureRoot, '.dsh'), 'utf8'), dshMarkerBefore)
   })
 
   it('applies production policy to equivalent paths through both sync entrypoints', () => {

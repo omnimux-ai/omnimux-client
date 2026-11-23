@@ -85,7 +85,7 @@ describe('OmniMux Profile Target Selection Matrix', () => {
     } catch {}
   })
 
-  it('sync-to-app.sh help shows target parameter options', () => {
+  it('sync-to-app.sh help shows managed target parameter options without retired --dsh', () => {
     const res = spawnSync('bash', [
       syncToAppScript,
       '--help'
@@ -96,7 +96,7 @@ describe('OmniMux Profile Target Selection Matrix', () => {
     assert.equal(res.status, 1)
     assert.match(res.stdout, /默认：构建并同步全部清单插件到 ~\/\.omnimux-dev/)
     assert.match(res.stdout, /--prod/)
-    assert.match(res.stdout, /--dsh/)
+    assert.doesNotMatch(res.stdout, /--dsh/)
     assert.match(res.stdout, /--all/)
   })
 
@@ -131,23 +131,37 @@ describe('OmniMux Profile Target Selection Matrix', () => {
     assert.doesNotMatch(res.stdout, new RegExp(fakeHome + '/\\.dsh/profiles'))
   })
 
-  it('sync-stable.sh targets ~/.dsh when --dsh is passed', () => {
-    const res = spawnSync('bash', [
-      syncStableScript,
-      '--dsh',
-      'omnimux-video'
-    ], {
+  it('sync entrypoints fail loudly when retired --dsh / dsh target is requested', () => {
+    const dshManifestPath = join(fakeHome, '.dsh', 'profiles', 'omnimux', 'package.json')
+    const dshManifestBefore = readFileSync(dshManifestPath, 'utf8')
+    const cases = [
+      [syncStableScript, ['--dsh', 'omnimux-video']],
+      [syncStableScript, ['--target=dsh', 'omnimux-video']],
+      [syncStableScript, ['--target=dsh-desktop', 'omnimux-video']],
+      [syncToAppScript, ['--dsh', 'omnimux-video']],
+      [syncToAppScript, ['--target=dsh', 'omnimux-video']],
+      [join(root, 'scripts/materialize-with-rollback.sh'), ['--dsh', 'omnimux-video']],
+    ]
+    for (const [script, args] of cases) {
+      const res = spawnSync('bash', [script, ...args], {
+        cwd: root,
+        env: syncEnv(),
+        encoding: 'utf8',
+      })
+      assert.notEqual(res.status, 0, `expected non-zero exit for ${script} ${args.join(' ')}`)
+      assert.match(res.stderr, /已退役/, `expected retirement message for ${script} ${args.join(' ')}: ${res.stderr}`)
+    }
+    const envRes = spawnSync('bash', [syncStableScript, 'omnimux-video'], {
       cwd: root,
-      env: syncEnv(),
+      env: syncEnv({ OMNIMUX_SYNC_TARGETS: 'dsh' }),
       encoding: 'utf8',
     })
-    assert.equal(res.status, 0)
-    assert.match(res.stdout, /\.dsh\/profiles\/omnimux/)
-    assert.doesNotMatch(res.stdout, new RegExp(fakeHome + '/\\.omnimux-dev/profiles'))
-    assert.doesNotMatch(res.stdout, new RegExp(fakeHome + '/\\.omnimux/profiles'))
+    assert.notEqual(envRes.status, 0)
+    assert.match(envRes.stderr, /已退役/)
+    assert.equal(readFileSync(dshManifestPath, 'utf8'), dshManifestBefore)
   })
 
-  it('sync-stable.sh broadcasts to all profiles when --all is passed', () => {
+  it('sync-stable.sh broadcasts to managed profiles (~/.omnimux-dev and ~/.omnimux) when --all is passed, excluding ~/.dsh', () => {
     const res = spawnSync('bash', [
       syncStableScript,
       '--all',
@@ -160,7 +174,7 @@ describe('OmniMux Profile Target Selection Matrix', () => {
     assert.equal(res.status, 0, res.stdout + res.stderr)
     assert.match(res.stdout, /\.omnimux-dev\/profiles\/omnimux/)
     assert.match(res.stdout, /\.omnimux\/profiles\/omnimux/)
-    assert.match(res.stdout, /\.dsh\/profiles\/omnimux/)
+    assert.doesNotMatch(res.stdout, new RegExp(fakeHome + '/\\.dsh/profiles'))
   })
 
   it('sync-stable.sh supports --target=dev,prod multi-selection', () => {
@@ -800,17 +814,16 @@ describe('OmniMux Profile Target Selection Matrix', () => {
     assert.doesNotMatch(res.stdout, /\.agent-presets/)
   })
 
-  it('sync-agent-presets.sh --dsh skips desktop/web and never retires user presets', () => {
+  it('sync-agent-presets.sh --prod skips disk writes and never retires user presets', () => {
     const userRoot = join(fakeHome, '.dsh', '.agent-presets')
     mkdirSync(join(userRoot, 'dsh-plugin-team'), { recursive: true })
     writeFileSync(join(userRoot, 'dsh-plugin-team', 'preset.yml'), 'name: keep-me\n')
     mkdirSync(join(fakeHome, '.dsh', 'profiles', 'desktop'), { recursive: true })
     mkdirSync(join(fakeHome, '.dsh', 'profiles', 'web'), { recursive: true })
-    mkdirSync(join(fakeHome, '.dsh', 'profiles', 'omnimux'), { recursive: true })
 
     const res = spawnSync('bash', [
       syncPresetsScript,
-      '--dsh',
+      '--prod',
     ], {
       cwd: root,
       env: {
@@ -820,7 +833,7 @@ describe('OmniMux Profile Target Selection Matrix', () => {
       encoding: 'utf8',
     })
     assert.equal(res.status, 0)
-    // rc.3: no disk materialization; every --dsh/--all path short-circuits here.
+    // rc.3: no disk materialization; every --prod/--all path short-circuits here.
     assert.match(res.stdout, /本脚本不再写盘/)
     assert.doesNotMatch(res.stdout, /==> 物化 Agent Presets → .*DSH Desktop/)
     assert.doesNotMatch(res.stdout, /清理旧用户预设/)
