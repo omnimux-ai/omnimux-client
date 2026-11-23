@@ -721,3 +721,50 @@ test('两次手工导出更新同一成片与连线，重载后保留最新版�
     stop();
   }
 });
+
+test('clipExportMediaUrl 与 planClipExportDownstream：已入库的项目文件 URL 原样保留，不被包裹进 /api/local-file', () => {
+  const digest = 'a'.repeat(64);
+  const artifactUrl = `/omnimux-workflow/api/workspaces/ws-art/file?rel=artifacts%2Fout_${digest.slice(0, 12)}.mp4&rev=sha256%3A${digest}`;
+  assert.equal(clipExportMediaUrl(artifactUrl, '1700000:4096'), artifactUrl);
+
+  const mediaHandle = {
+    v: 1,
+    scope: 'project-asset',
+    workspaceId: 'ws-art',
+    assetId: 'ast_export_1',
+    rel: `artifacts/out_${digest.slice(0, 12)}.mp4`,
+    sha256: digest,
+  };
+  const existing = {
+    id: 'node_mat_export',
+    type: 'material',
+    position: { x: 640, y: 200 },
+    data: {
+      materialType: 'video',
+      label: '视频合成_成片',
+      status: 'ready',
+      selectedTool: 'import',
+      origin: 'clip_export',
+      sourceCompositionNodeId: 'node_comp_1',
+      mediaUrl: artifactUrl,
+      relativePath: mediaHandle.rel,
+      assetId: mediaHandle.assetId,
+      mediaHandle,
+      outputRevision: '1700000:4096',
+      duration: 12,
+      size: { width: 1920, height: 1080 },
+    },
+  };
+  // Simulates VideoCompositionNode mount effect passing outputVideoUrl + outputRevision.
+  const mountPlan = planWith([existing], [drawableEdge('node_comp_1', existing.id)], {
+    output: {
+      videoPath: artifactUrl,
+      revision: '1700000:4096',
+      durationMs: 12000,
+      width: 1920,
+      height: 1080,
+    },
+    createIfMissing: false,
+  });
+  assert.equal(mountPlan, null);
+});

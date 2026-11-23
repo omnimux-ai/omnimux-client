@@ -215,9 +215,9 @@ superseded_by: null
 |---|---|---|---|---|---|
 | 列出保存工程与无法读取的条目 | `GET /omnimux-clip/api/projects` | `clip_list` | L1 | `Implemented` | 否 |
 | 优先读可见原生投影，亦可按工程 ID 查档 | 编辑器原生快照 / `GET /omnimux-clip/api/projects/:id` | `clip_get` | L1 | `Implemented` | 否 |
-| 诊断保存版本的黑场、重叠、素材缺失和越界 | Host 工程 Store | `clip_diagnostics` | L2 | `Implemented` | 否 |
+| 诊断保存版本的黑场、重叠、素材缺失（含 Host 恢复归因）和越界 | Host 工程 Store / `POST /omnimux-clip/api/projects/:id/media/reconcile` | `clip_diagnostics` | L2 | `Implemented` | 否 |
 | 创建保存的独立原生空工程 | 新建工程 / Host 工程 Store | `clip_create` | L1 | `Implemented` | 否 |
-| 原子执行一批原生剪辑，整批入一次 Undo，可预演 | OpenReel 原生时间轴 / 实时命令 | `clip_edit` | L1 | `Implemented` | 删除非空轨或清空时间轴需 `confirmDestructive: true` |
+| 原子执行一批原生剪辑（含多源句柄导入 `import_media` 与 `relink_media`），整批入一次 Undo，可预演 | OpenReel 原生时间轴 / 实时命令 / `GET /omnimux-clip/api/media-transfer/:token` | `clip_edit` | L1 | `Implemented` | 删除非空轨或清空时间轴需 `confirmDestructive: true`；版本漂移重连需 `allowVersionUpdate: true` |
 | 打开明确指定的工程并等待可见租约 | 画布 Portal 或独立 Tab | `clip_open` | L1 | `Implemented` | 用户要求打开时调用 |
 | 控制播放头、播放和选段 | 编辑器播放控制 / 实时命令 | `clip_view` | L1 | `Implemented` | 否 |
 | 从预览读取并保存最多六帧真实合成 PNG | 编辑器预览 / 实时命令 | `clip_snapshot` | L2 | `Implemented` | 否 |

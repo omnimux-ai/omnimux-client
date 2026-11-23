@@ -1,4 +1,6 @@
+import { normalizeMediaHandle, sha256Digest } from '../../timeline/nativeProjectFields.js'
 import { uploadClipExport } from './export-transport.js'
+import { fetchMediaTransferBlob } from './host-media'
 import { LiveClipError } from './persistence.js'
 import { mediaDigest } from './media-source'
 import { useProjectStore } from '../openreel/web/stores/project-store'
@@ -33,7 +35,39 @@ async function base64Png(png: Blob): Promise<string> {
   })
 }
 
-async function resolveMedia(op: Record<string, unknown>, run: Execution) {
+async function resolveMedia(op: Record<string, unknown>, run: Execution, binding?: Command['binding']) {
+  const resolvedMedia = op.resolvedMedia as Record<string, unknown> | undefined
+  if (resolvedMedia && typeof resolvedMedia === 'object' && !Array.isArray(resolvedMedia)) {
+    const transferUrl = typeof resolvedMedia.transferUrl === 'string' ? resolvedMedia.transferUrl : ''
+    const expectedDigest = sha256Digest(resolvedMedia.sha256)
+    const handle = normalizeMediaHandle(resolvedMedia.handle, binding?.workspaceId)
+    if (!transferUrl.startsWith('/omnimux-clip/api/media-transfer/') || !expectedDigest || !handle) {
+      throw new LiveClipError('path-denied', 'The media handle transfer reference is invalid.')
+    }
+    const fetched = await fetchMediaTransferBlob(transferUrl, { expectedDigest, signal: run.signal })
+    run.assertCurrent()
+    if (!fetched.ok || !fetched.blob) {
+      const code = fetched.status === 403 ? 'path-denied'
+        : fetched.status === 409 ? 'media-version-mismatch'
+          : fetched.status === 415 ? 'unsupported-media'
+            : (fetched.code || 'media_missing')
+      throw new LiveClipError(code, 'The Host could not stream the authorized media handle.')
+    }
+    const digest = fetched.digest ?? expectedDigest
+    const rawName = typeof resolvedMedia.name === 'string' ? resolvedMedia.name.split(/[/\\]/u).at(-1)?.trim() : ''
+    const filename = rawName || 'media'
+    const mimeType = fetched.blob.type || (typeof resolvedMedia.mimeType === 'string' ? resolvedMedia.mimeType : '')
+    const sourceId = typeof resolvedMedia.sourceId === 'string' && resolvedMedia.sourceId ? resolvedMedia.sourceId : undefined
+    return {
+      file: new File([fetched.blob], filename, { type: mimeType }),
+      source: {
+        ...(sourceId ? { id: sourceId } : {}),
+        version: `sha256:${digest}`,
+        digest,
+        handle: { ...handle, sha256: digest },
+      },
+    }
+  }
   if (typeof op.sourceUrl !== 'string' || !op.sourceUrl.startsWith(`${HOST_MEDIA_PATH}?`)) {
     throw new LiveClipError('path-denied', 'The media must use the authorized Host reference.')
   }
@@ -72,7 +106,7 @@ export async function runNativeCommand(command: Command, run: Execution) {
   }
   if (operation === 'clip_edit') {
     const { executeNativeEdit } = await import('./native-edit')
-    return executeNativeEdit(args, { assertCurrent: run.assertCurrent, resolveMedia: op => resolveMedia(op, run) })
+    return executeNativeEdit(args, { assertCurrent: run.assertCurrent, resolveMedia: op => resolveMedia(op, run, command.binding) })
   }
   if (operation === 'clip_view') {
     const { executeNativeView } = await import('./native-view')

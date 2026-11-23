@@ -2,7 +2,7 @@ import { useRef, type RefObject } from "react";
 import { Button, IconButton } from "dsh-ui-kit";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@openreel/ui";
 import { useEditorPortalRoot } from "@openreel/ui/lib/portal-root";
-import { ChevronDown, File, FolderOpen, Sparkles } from "@/icons/lucide-compat";
+import { ChevronDown, File, FolderOpen, RefreshCw, Sparkles } from "@/icons/lucide-compat";
 import { MediaLibraryIcon } from "@/icons/media-library";
 import { useClipT } from "../../../../i18n/index.js";
 import type { BridgeImportProgress } from "./useBridgedMediaImport";
@@ -10,8 +10,10 @@ import type { BridgeImportProgress } from "./useBridgedMediaImport";
 interface BridgeActions {
   libraryDisabled: boolean;
   canvasDisabled: boolean;
+  relinkDisabled?: boolean;
   onLibrary: (trigger: HTMLButtonElement | null) => void;
   onCanvas: () => void;
+  onRelink?: (trigger: HTMLButtonElement | null) => void;
 }
 
 export function MediaImportActions({ trigger, onLocal, onRecord, ...bridge }: BridgeActions & {
@@ -52,6 +54,14 @@ export function MediaImportActions({ trigger, onLocal, onRecord, ...bridge }: Br
           <DropdownMenuItem disabled={bridge.canvasDisabled} onSelect={bridge.onCanvas}>
             <Sparkles size={14} />{t("Generate in Canvas…")}
           </DropdownMenuItem>
+          {bridge.onRelink && (
+            <DropdownMenuItem disabled={bridge.relinkDisabled} onSelect={() => {
+              handoffToPicker.current = true;
+              bridge.onRelink?.(trigger.current);
+            }}>
+              <RefreshCw size={14} />{t("Sync & Relink from Canvas…")}
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
       <IconButton size="sm" variant="secondary" data-media-action="record" aria-label={t("Record")} onClick={onRecord}>

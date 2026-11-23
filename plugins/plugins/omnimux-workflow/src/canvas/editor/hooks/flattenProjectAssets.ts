@@ -18,7 +18,7 @@ function folderToAsset(folder: ProjectAssetsFolder, itemCount: number): AssetIte
 }
 
 function itemPreviewUrl(item: ProjectAssetsItem, workspaceId?: string | null): string | undefined {
-  if (item.relative_path) return workspaceId ? projectFileMediaUrl(workspaceId, item.relative_path) : undefined;
+  if (item.relative_path) return workspaceId ? projectFileMediaUrl(workspaceId, item.relative_path, item.sha256 ?? undefined) : undefined;
   if (item.real_path && looksAbsolutePath(item.real_path)) return localFileMediaUrl(item.real_path);
   return undefined;
 }
@@ -36,6 +36,7 @@ function itemToAsset(item: ProjectAssetsItem, workspaceId?: string | null): Asse
     mimeType: item.mimeType,
     sizeBytes: item.sizeBytes ?? item.size,
     durationSec: item.durationSec,
+    ...(item.sha256 ? { sha256: item.sha256 } : {}),
     updatedAt: item.updatedAt,
     previewUrl: itemPreviewUrl(item, workspaceId),
   };

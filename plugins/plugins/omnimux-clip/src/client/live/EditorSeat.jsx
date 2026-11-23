@@ -43,12 +43,16 @@ export function ClipEditorActions({ onExit, runtime, view, canvasImport, childre
   const canCompose = view.phase === 'editing' && !view.conflict && !view.ingesting && !view.resolving
   const media = runtime?.mediaHandoff
   const canBridgeMedia = Boolean(media && canCompose)
+  const canRelinkMedia = Boolean(runtime?.session?.inspectMediaReconcile && canCompose)
+  const inspectMediaReconcile = useCallback(() => runtime?.session?.inspectMediaReconcile?.(), [runtime])
+  const applyMediaReconcile = useCallback(actions => runtime?.session?.applyMediaReconcile?.(actions), [runtime])
   const captureMediaEditor = useCallback(() => media?.captureEditor(view.id), [media, view.id])
   const openCanvasForMedia = useCallback(() => media?.openCanvas(view.id), [media, view.id])
   const returnedMedia = useSyncExternalStore(media?.subscribe ?? noopSubscribe,
     () => media?.getIncoming(view.id, view.mediaReturnId))
   const acknowledgeReturnedMedia = useCallback(id => media?.acknowledge(view.id, id), [media, view.id])
-  return <EditorActionsContext.Provider value={{ onExit, compose, canCompose, canBridgeMedia,
+  return <EditorActionsContext.Provider value={{ onExit, compose, canCompose, canBridgeMedia, canRelinkMedia,
+    inspectMediaReconcile, applyMediaReconcile,
     captureMediaEditor, openCanvasForMedia, returnedMedia, acknowledgeReturnedMedia, canvasImport }}>{children}</EditorActionsContext.Provider>
 }
 

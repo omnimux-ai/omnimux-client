@@ -1,6 +1,8 @@
 import { createExportJobs } from './export-jobs.js'
 import { createClipDispatcher, registerClipRoutes } from './http/routes.js'
 import { createClipCommandBroker } from './live/command-broker.js'
+import { createClipVaultMediaProvider } from './media/clipVault.js'
+import { createMediaTransferRegistry } from './media/mediaTransfer.js'
 import { ensureClipDirs, resolveClipPaths } from './paths.js'
 import { createProjectStore } from './store/projectStore.js'
 import { createClipEditorSeam } from './seam/clipEditor.js'
@@ -34,11 +36,23 @@ export function apply(ctx) {
   const store = createProjectStore({ paths })
   const getHubEvents = () => ctx.get?.('hubEvents')
   const getWorkflowClip = () => ctx.get?.('workflowClip')
+  const getMediaResolver = () => ctx.get?.('mediaResolver')
+  const getAssetLibrary = () => ctx.get?.('assetLibrary')
+  const mediaTransfers = createMediaTransferRegistry()
   const broker = createClipCommandBroker({ getHubEvents, getWorkflowClip })
   const exportJobs = createExportJobs({ paths, getWorkflowClip })
-  const dispatcher = createClipDispatcher({ paths, store, broker, exportJobs, getWorkflowClip })
-  const tools = createClipTools({ store, broker, exportJobs, getWorkflowClip, getAttachments: () => ctx.get?.('attachments') })
-  ctx.effect?.(() => broker.dispose, 'omnimux-clip: live commands')
+  const dispatcher = createClipDispatcher({ paths, store, broker, exportJobs, getWorkflowClip, getMediaResolver, mediaTransfers })
+  const tools = createClipTools({
+    store,
+    broker,
+    exportJobs,
+    getWorkflowClip,
+    getMediaResolver,
+    getAssetLibrary,
+    mediaTransfers,
+    getAttachments: () => ctx.get?.('attachments'),
+  })
+  ctx.effect?.(() => () => { broker.dispose(); mediaTransfers.clear() }, 'omnimux-clip: live commands')
 
   if (typeof ctx.provide === 'function') {
     ctx.provide('clipEditor', createClipEditorSeam({ store }))
@@ -81,4 +95,15 @@ export function apply(ctx) {
   }
   if (typeof ctx.inject === 'function') ctx.inject(['webServer', 'connection'], mountHttp)
   else mountHttp(ctx)
+
+  const mountVaultProvider = (mediaCtx) => {
+    const resolver = mediaCtx.mediaResolver ?? mediaCtx.get?.('mediaResolver')
+    if (!resolver || typeof resolver.registerProvider !== 'function') return
+    const provider = createClipVaultMediaProvider({ paths })
+    const mount = () => resolver.registerProvider(provider)
+    if (typeof mediaCtx.effect === 'function') mediaCtx.effect(mount, 'omnimux-clip: clip-vault media provider')
+    else mount()
+  }
+  if (typeof ctx.inject === 'function') ctx.inject(['mediaResolver'], mountVaultProvider)
+  else mountVaultProvider(ctx)
 }

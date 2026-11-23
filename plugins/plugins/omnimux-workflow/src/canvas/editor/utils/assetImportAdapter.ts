@@ -58,6 +58,7 @@ export function classifyAssetImport(asset: unknown, workspaceId?: string | null)
     const metadata = buildMediaMetadata({ ...asset, name, path: relativePath });
     const materialType = materialTypeFromFilename(name, metadata.mimeType || '');
     if (!materialType) return { ok: false, reason: 'unsupported' };
+    const sha256 = typeof asset.sha256 === 'string' && /^[a-f0-9]{64}$/u.test(asset.sha256) ? asset.sha256 : undefined;
     return {
       ok: true,
       draft: {
@@ -70,7 +71,8 @@ export function classifyAssetImport(asset: unknown, workspaceId?: string | null)
         relativePath,
         workspaceId: sourceWorkspaceId,
         assetId: asPath(asset.id) || undefined,
-        previewUrl: projectFileMediaUrl(sourceWorkspaceId, relativePath),
+        ...(sha256 ? { sha256 } : {}),
+        previewUrl: projectFileMediaUrl(sourceWorkspaceId, relativePath, sha256),
       },
     };
   }

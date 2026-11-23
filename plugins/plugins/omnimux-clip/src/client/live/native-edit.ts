@@ -7,8 +7,9 @@ import { readOnlyReason } from '../openreel/web/services/project-lock'
 import { loadEngineModules } from '../openreel/web/services/lazy-engines'
 import { calculateProjectDuration } from '../openreel/core/timeline/project-duration'
 import { reconcileMulticamAudio } from '../openreel/core/multicam/fixed-audio'
+import { sourceProjection } from '../../timeline/nativeProjectFields.js'
 import { assertSafeFields, boolean, fields, invalid, referenceId, text, type Fields } from './native-input'
-import { stageNativeMedia, type ResolvedNativeMedia } from './native-media'
+import { relinkNativeMedia, stageNativeMedia, type ResolvedNativeMedia } from './native-media'
 import { editText, setClipEffect } from './native-overlays'
 import { NativeDraft, addMediaClip, addTrack, addTransition, cutSilences, moveClip, removeClip, removeRange, removeTrack,
   removeTransition, requireClearConfirmation, setSpeed, setTrackState, setVolume, splitClip, trimClip } from './native-timeline'
@@ -65,7 +66,20 @@ async function planMedia(draft: NativeDraft, op: Fields, options: NativeEditOpti
   }
   const place = op.type === 'add_clip' || boolean(op.placeOnTimeline, 'placeOnTimeline') !== false
   const placement = place ? await addMediaClip(draft, op, item, op.type === 'import_media') : undefined
-  return { mediaId: item.id, reused, ...placement }
+  const projectedSource = sourceProjection(item.omnimuxSource)
+  return {
+    mediaId: item.id,
+    reused,
+    ...(projectedSource ? { omnimuxSource: projectedSource } : {}),
+    ...(item.omnimuxSource?.handle?.scope ? { scope: item.omnimuxSource.handle.scope } : {}),
+    ...placement,
+  }
+}
+
+async function planRelinkMedia(draft: NativeDraft, op: Fields, options: NativeEditOptions) {
+  const { project, result } = await relinkNativeMedia(draft.project, op, options.resolveMedia, options.assertCurrent)
+  draft.replace(project)
+  return result
 }
 
 /** Plan the entire batch off-store; the last synchronous step publishes one native history action. */
@@ -80,7 +94,7 @@ export async function executeNativeEdit(args: unknown, options: NativeEditOption
     try {
       const op = fields(operation, `operations[${index}]`)
       if (op.projectId !== undefined) invalid('Target the project on the command, not an individual operation')
-      if (typeof op.type !== 'string' || (!Object.hasOwn(edits, op.type) && op.type !== 'add_clip' && op.type !== 'import_media')) {
+      if (typeof op.type !== 'string' || (!Object.hasOwn(edits, op.type) && op.type !== 'add_clip' && op.type !== 'import_media' && op.type !== 'relink_media')) {
         invalid(`operations[${index}].type is unsupported`)
       }
       assertSafeFields(op)
@@ -110,9 +124,11 @@ export async function executeNativeEdit(args: unknown, options: NativeEditOption
   for (const [operationIndex, op] of operations.entries()) {
     const type = op.type as string
     try {
-      const result = type === 'add_clip' || type === 'import_media'
-        ? await planMedia(draft, op, { ...options, assertCurrent: current })
-        : await edits[type as keyof typeof edits](draft, op)
+      const result = type === 'relink_media'
+        ? await planRelinkMedia(draft, op, { ...options, assertCurrent: current })
+        : type === 'add_clip' || type === 'import_media'
+          ? await planMedia(draft, op, { ...options, assertCurrent: current })
+          : await edits[type as keyof typeof edits](draft, op)
       results.push({ type, ...result })
     } catch (error) {
       throw operationError(error, operationIndex)

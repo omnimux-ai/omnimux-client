@@ -1,7 +1,7 @@
 import { ClipDomainError } from '../errors.js'
-import { aspectRatioOf, finite, isReferenceId, items, mediaIsMissing, nativeClipsByTrack, projectMode, safeText, sourceIdentity } from './nativeProjectFields.js'
+import { aspectRatioOf, finite, isReferenceId, items, mediaIsMissing, nativeClipsByTrack, projectMode, safeText, sourceProjection } from './nativeProjectFields.js'
 
-export { diagnoseNativeProject } from './nativeProjectDiagnostics.js'
+export { diagnoseNativeProject, enrichDiagnosticsWithReconcile } from './nativeProjectDiagnostics.js'
 
 const VIEWS = ['summary', 'tracks', 'clips', 'full']
 
@@ -34,7 +34,7 @@ function mediaView(item) {
     mediaId: item.id,
     name: safeText(item.name) || item.id,
     type: item.type,
-    omnimuxSource: sourceIdentity(item.omnimuxSource),
+    omnimuxSource: sourceProjection(item.omnimuxSource),
     missing: mediaIsMissing(item),
     durationSec: finite(item.metadata?.duration),
     width: finite(item.metadata?.width),

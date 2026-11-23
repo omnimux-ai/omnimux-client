@@ -1,18 +1,17 @@
 import { randomUUID } from 'node:crypto'
-import { realpathSync, statSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
-import { basename, isAbsolute, relative, resolve, sep } from 'node:path'
+import { basename } from 'node:path'
 import { ClipDomainError, clipErrorValue, isClipRevision, isClipToken, safeClipLabel } from './errors.js'
 import { readCanvasBinding, resolveWorkflowBinding, sameBinding } from './live/command-broker.js'
 import { MAX_SNAPSHOT_FRAMES, persistSnapshot } from './live/snapshot.js'
+import { authorizeClipEditOperations } from './media/authorizeToolMedia.js'
+import { reconcileProjectMedia } from './media/reconcile.js'
 import { assertProjectId } from './paths.js'
 import { createNativeProject } from './store/nativeProject.js'
-import { TRACK_TYPES, isRecord, isReferenceId, safeText, sourceIdentity } from './timeline/nativeProjectFields.js'
-import { diagnoseNativeProject, nativeProjectView } from './timeline/nativeProjectView.js'
+import { MEDIA_HANDLE_SCOPES, TRACK_TYPES, isRecord, isReferenceId, safeText, sourceProjection } from './timeline/nativeProjectFields.js'
+import { diagnoseNativeProject, enrichDiagnosticsWithReconcile, nativeProjectView } from './timeline/nativeProjectView.js'
 
 const DIMENSIONS = { landscape: [1920, 1080, '16:9'], portrait: [1080, 1920, '9:16'], square: [1080, 1080, '1:1'] }
-const LOCAL_MEDIA_ROUTE = '/omnimux-workflow/api/local-file'
-const MEDIA_FILE = /\.(?:mp4|m4v|mov|webm|mkv|avi|mp3|m4a|aac|wav|flac|ogg|opus|png|jpe?g|webp|gif|avif|bmp)$/i
 
 const jsonOut = {
   schema: { type: 'object', additionalProperties: true },
@@ -68,13 +67,24 @@ const textFields = {
   ...textStyleFields, textStyle: objectParams(textStyleFields), content: { type: 'string', maxLength: 8192 },
   startSec: seconds, endSec: seconds, durationSec: positive,
 }
+const mediaSourceFields = {
+  path: string(4096),
+  sourceUrl: string(4096),
+  libraryAssetId: string(256),
+  fileId: string(256),
+  canvasNodeId: string(256),
+  outputIndex: integer,
+  projectAssetId: string(256),
+  workspaceId: string(131),
+}
 const transformFields = { opacity: { ...seconds, maximum: 1 }, position: point, scale: oneOf(positive, point), rotation: { type: 'number' } }
 const EDIT_FIELDS = {
   add_track: { trackType: required(choices(...TRACK_TYPES)), name: string(256), trackId: string(256), position: integer },
   remove_track: { trackId },
   set_track_state: { trackId, muted: boolean, locked: boolean, hidden: boolean, visible: boolean, name: string(256) },
-  import_media: { path: string(4096), sourceUrl: string(4096), mediaId: string(256), name: string(256),
+  import_media: { ...mediaSourceFields, mediaId: string(256), name: string(256),
     mediaType: choices('video', 'audio', 'image'), trackId: string(256), placeOnTimeline: boolean, append: boolean, ...timing },
+  relink_media: { mediaId: required(string(256)), source: required(objectParams(mediaSourceFields)), allowVersionUpdate: boolean },
   add_clip: { trackId, mediaId: required(string(256)), clipId: string(256), append: boolean, ...timing },
   trim_clip: { clipId, ...timing },
   split_clip: { clipId, atSec: required(seconds) },
@@ -165,38 +175,6 @@ function sessionOf(exec) {
   return exec?.agent?.session?.id != null ? exec.agent.session : exec?.session
 }
 
-function workflowMediaUrl(source, cwd) {
-  if (!cwd || typeof source !== 'string' || source.includes('\0')) throw ClipDomainError.pathDenied('Select a file from the conversation workspace.')
-  let target = source
-  if (source.startsWith(`${LOCAL_MEDIA_ROUTE}?`)) {
-    target = new URL(source, 'http://localhost').searchParams.get('path')
-  } else if (/^(?:[a-z][a-z\d+.-]*:\/\/|\/\/|(?:blob|data|file|javascript):)/i.test(source)) {
-    throw ClipDomainError.pathDenied('Clip tools accept local workspace media references.')
-  }
-  if (!target) throw ClipDomainError.pathDenied('Select a file from the conversation workspace.')
-  try {
-    const root = realpathSync(cwd)
-    const path = realpathSync(resolve(root, target))
-    const tail = relative(root, path)
-    if (!tail || tail === '..' || tail.startsWith(`..${sep}`) || isAbsolute(tail) || !MEDIA_FILE.test(path)) throw new Error('Media is outside the workspace allowlist')
-    const stat = statSync(path)
-    if (!stat.isFile() || stat.size <= 0) throw new Error('Media is not a readable file')
-    return `${LOCAL_MEDIA_ROUTE}?${new URLSearchParams({ path, rev: `${stat.mtimeMs}:${stat.size}` })}`
-  } catch {
-    throw ClipDomainError.pathDenied('The media file is outside the conversation workspace or unsupported.')
-  }
-}
-
-function authorizeEditMedia(args, cwd) {
-  const operations = args.operations.map((op) => {
-    if (op.type !== 'import_media') return op
-    const { path, sourceUrl, ...fields } = op
-    if ((path === undefined) === (sourceUrl === undefined)) throw ClipDomainError.invalidJson('import_media needs exactly one path or sourceUrl.')
-    return { ...fields, sourceUrl: workflowMediaUrl(path ?? sourceUrl, cwd) }
-  })
-  return { ...args, operations }
-}
-
 const TRACK_FIELDS = 'id index name type locked syncLock hidden muted solo soloSafe clipCount'
 const CLIP_FIELDS = 'id name trackId trackIndex trackType kind startSec endSec durationSec mediaId mediaType sourceInSec sourceOutSec speed volume text hasEffects hasColorGrading'
 const STYLE_FIELDS = 'fontFamily fontSize fontWeight color backgroundColor strokeColor strokeWidth textAlign position'
@@ -242,7 +220,7 @@ function validateRead(result, command) {
     transitions: readItems(result.tracks[index].transitions ?? [], 'id clipAId clipBId edge type durationSec'),
   }))
   const media = readItems(result.media, 'id mediaId name type missing durationSec width height').map((item, index) => {
-    const source = sourceIdentity(result.media[index].omnimuxSource)
+    const source = sourceProjection(result.media[index].omnimuxSource)
     return source ? { ...item, omnimuxSource: source } : item
   })
   return { ...snapshot, tracks, clips, media, subtitles: readItems(result.subtitles, 'id trackId text startSec endSec hidden', true) }
@@ -258,14 +236,22 @@ function validateView(result, command) {
   return { action, durationSec, playheadSec, isPlaying, selectedClipIds, revision }
 }
 
-const EDIT_RESULT_FIELDS = 'type trackId clipId mediaId rightClipId transitionId startSec durationSec sourceInSec sourceOutSec atSec fromSec toSec created reused speed volume muted mode count closed minSilenceSec'
+const EDIT_RESULT_FIELDS = 'type trackId clipId mediaId rightClipId transitionId startSec durationSec sourceInSec sourceOutSec atSec fromSec toSec created reused relinked versionUpdated clampedClipCount speed volume muted mode count closed minSilenceSec'
 
 function projectEditResult(row) {
   const result = readFields(row, EDIT_RESULT_FIELDS)
   for (const key of ['createdClipIds', 'removedClipIds']) {
     if (Array.isArray(row[key])) result[key] = row[key].filter(isReferenceId)
   }
+  if (MEDIA_HANDLE_SCOPES.includes(row.scope)) result.scope = row.scope
+  const source = sourceProjection(row.omnimuxSource)
+  if (source) result.omnimuxSource = source
   if (isRecord(row.transition)) result.transition = readFields(row.transition, 'type durationSec')
+  if (Array.isArray(row.adjustedClips)) {
+    result.adjustedClips = row.adjustedClips
+      .filter(isRecord)
+      .map((entry) => readFields(entry, 'clipId trackId previousOutSec outSec previousDurationSec durationSec'))
+  }
   if (Array.isArray(row.removed)) {
     result.removed = row.removed.filter(isRecord).map((range) => ({
       ...readFields(range, 'fromSec toSec'),
@@ -301,7 +287,16 @@ function exportResult(jobs, id) {
   return { ...result, output: { ...output, durationSec: durationMs / 1000 } }
 }
 
-export function createClipTools({ store, broker, exportJobs, getWorkflowClip, getAttachments }) {
+export function createClipTools({
+  store,
+  broker,
+  exportJobs,
+  getWorkflowClip,
+  getMediaResolver,
+  getAssetLibrary,
+  mediaTransfers,
+  getAttachments,
+}) {
   const snapshotsWithAttachments = new WeakMap()
   function withAttachments(value) {
     if (!snapshotsWithAttachments.has(value)) {
@@ -412,7 +407,16 @@ export function createClipTools({ store, broker, exportJobs, getWorkflowClip, ge
         return live('clip_edit', 175_000, { ...args, description: args.description.trim(), validateOnly: args.validateOnly === true,
           confirmDestructive: args.confirmDestructive === true }, exec, {
           checkRevision: true, validateResult: validateEdit,
-          prepareArgs: (input) => authorizeEditMedia(input, cwd),
+          prepareArgs: (input, command, sessionId) => authorizeClipEditOperations(input, {
+            command,
+            sessionId,
+            cwd,
+            getMediaResolver,
+            getWorkflowClip,
+            getAssetLibrary,
+            mediaTransfers,
+            signal: exec?.signal,
+          }),
         })
       }),
     tool('clip_view', 'Control playback and selection in the visible editor. seek uses toSec and select_clips uses clipIds.', 12_000,
@@ -438,8 +442,20 @@ export function createClipTools({ store, broker, exportJobs, getWorkflowClip, ge
           `[${frame.timeSec}s · ${frame.width}×${frame.height} PNG](<${frame.path}>)`).join('\n') }, ...value.frames.flatMap(({ attachment }) =>
           attachment ? [{ type: 'image', attachment }] : [])],
       }),
-    tool('clip_diagnostics', 'Diagnose a saved Clip project for black-frame gaps, clip overlaps, missing media and invalid source bounds. Times are seconds.', 10_000,
-      { projectId: required(projectIdArg) }, ({ projectId }) => diagnoseNativeProject(store.load(assertProjectId(projectId)))),
+    tool('clip_diagnostics', 'Diagnose a saved Clip project for black-frame gaps, clip overlaps, missing media (with structured Host recovery reasons) and invalid source bounds. Times are seconds.', 10_000,
+      { projectId: required(projectIdArg) }, async ({ projectId }, exec) => {
+        const envelope = store.load(assertProjectId(projectId))
+        const base = diagnoseNativeProject(envelope)
+        const resolver = getMediaResolver?.()
+        if (!resolver || typeof resolver.stat !== 'function') return base
+        const sessionId = sessionOf(exec)?.id
+        if (envelope.binding && !sessionId) return base
+        const reconciled = await reconcileProjectMedia(
+          { store, getMediaResolver, getWorkflowClip },
+          { projectId: envelope.projectId, mode: 'inspect', binding: envelope.binding, sessionId, signal: exec?.signal },
+        )
+        return enrichDiagnosticsWithReconcile(base, reconciled)
+      }),
     tool('clip_export', 'Render and save an MP4 for the visible Clip project. Set confirm only when the user explicitly asks for an export. Returns the saved file and actual canvas commit status.', 300_000,
       { ...targetArgs, ...revisionArgs, confirm: required(boolean), resolution: choices('720p', '1080p', '4k'), fps: positive }, (args, exec) => {
         if (args.confirm !== true) throw new ClipDomainError('CONFIRMATION_REQUIRED', 'Clip export requires an explicit request from the user.')
@@ -477,6 +493,6 @@ export function registerClipTools(ctx, tools) {
 }
 
 export const CLIP_PROMPT = `Use OmniMux Clip tools to read or operate the right-side OpenReel editor. Before editing, read the target with live clip_get and reuse its revision and revisionEpoch as baseRevision and baseRevisionEpoch for the same project and window. All tool times are seconds.
-Use clip_get or clip_diagnostics to read saved projects. When AMBIGUOUS_TARGET lists multiple projects or windows, resolve the target from the user's instruction or ask which one they mean. Use clip_open only when asked to open a specific editor.
-Use clip_edit for the requested changes, optionally with validateOnly first. Set confirmDestructive only with explicit user intent to delete a populated track or clear the timeline. Use clip_export only on an explicit export request, with confirm=true.
+Use clip_get or clip_diagnostics to read saved projects and diagnose offline/drifted media reasons. When AMBIGUOUS_TARGET lists multiple projects or windows, resolve the target from the user's instruction or ask which one they mean. Use clip_open only when asked to open a specific editor.
+Use clip_edit for the requested changes (including import_media from workspace path, libraryAssetId, canvasNodeId, or projectAssetId, and relink_media to rebind offline or drifted media with optional allowVersionUpdate), optionally with validateOnly first. Set confirmDestructive only with explicit user intent to delete a populated track or clear the timeline. Use clip_export only on an explicit export request, with confirm=true.
 On REVISION_CONFLICT, read the current revision and reconsider the edit. For outcome-unknown, recheck the same request ID. Follow skills/clip-craft/SKILL.md for editing decisions.`

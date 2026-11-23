@@ -15,7 +15,7 @@ description: "OmniMux Clip 专业剪辑判断层。用于剪视频、修时间�
 2. `clip_get` 默认给 `summary`，需要精确位置、选段或素材时用 `tracks`、`clips`、`full`。出现 `AMBIGUOUS_TARGET` 时按候选核对用户指向，需要时请用户选工程和窗口。`project-not-materialized` 表示画布节点尚未初始化工程。需要用户打开目标时说明原因，只有用户要求打开才调用 `clip_open`。
 3. 把一次剪辑意图收成一批 `clip_edit`，写清 `description`，将实时 `clip_get` 的 `revision` 和 `revisionEpoch` 分别传给同一目标的 `baseRevision` 和 `baseRevisionEpoch`。复杂变更先用 `validateOnly: true` 预演。真实写入使用稳定的 `requestId`。删除非空整轨或清空时间轴前确认用户明确要求，再传 `confirmDestructive: true`。一批成功的剪辑在编辑器里可一步撤销。
 4. `REVISION_CONFLICT` 时重读原生快照，按新时间轴重算。`outcome-unknown` 时用原 `requestId` 和相同参数复查。在 `EDITOR_OFFLINE`、`EDITOR_NOT_VISIBLE` 或 `PREVIEW_NOT_READY` 时说明当前阻断。界面恢复后先核对目标和版本。
-5. 编辑后用 `clip_get` 检查最新时间轴。已同步到 Host 后用 `clip_diagnostics` 查黑场、重叠、越界和缺失素材。可见编辑器用 `clip_view` 定位播放头，用 `clip_snapshot` 抽取几个关键点的合成帧检查字幕遮挡和切点。
+5. 编辑后用 `clip_get` 检查最新时间轴。已同步到 Host 后用 `clip_diagnostics` 查黑场、重叠、越界和缺失素材（按 `reason` 与 `recoverable` 区分缓存可自愈、存量升级、源漂移或真离线；需重连时用 `clip_edit(relink_media)`，源已更新时显式传 `allowVersionUpdate: true`）。可见编辑器用 `clip_view` 定位播放头，用 `clip_snapshot` 抽取几个关键点的合成帧检查字幕遮挡和切点。
 6. 用户明确要求成片才调用 `clip_export`，传 `confirm: true`。只有 `fileSaved` 为真才能交付 MP4，画布是否已回写读 `canvasCommitted`。`superseded` 表示该任务已有更新版本，按已确认的最新结果汇报。
 
 ## 时间轴感知
@@ -43,7 +43,7 @@ description: "OmniMux Clip 专业剪辑判断层。用于剪视频、修时间�
 - 去停顿用 `cut_silences`。有明确区间时传 `silences: [{ fromSec, toSec }]`。省略区间时按 `minSilenceSec`（默认 0.3 秒）收拢轨道空档。已有片段里停顿的位置需要先确定。
 - 用户要从 3.2 秒切开时，用 `split_clip` 的 `atSec`。切点离片段两端至少 0.08 秒。
 - 只保留 12–18 秒那句时，用 `trim_clip` 保留所需片段，或用 `remove_range` 移除多余区间。
-- 用 `import_media` 导入会话工作目录下的媒体，默认同时上轨。只入素材池时传 `placeOnTimeline: false`，之后用 `mediaId` 安排落点。空工程先铺视频或音频，再补文字。
+- 用 `import_media` 导入媒体（支持会话工作区 `path`、全局资产库 `libraryAssetId`、画布上游 `canvasNodeId` 或项目资产 `projectAssetId`），默认同时上轨。只入素材池时传 `placeOnTimeline: false`，之后用 `mediaId` 安排落点。空工程先铺视频或音频，再补文字。
 - 转场克制：硬切优先。交叉溶解 ≤400ms，黑场 ≤600ms，且只用在段落换场。连续两条都 fade 就是业余。
 
 ## 禁止
