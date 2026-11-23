@@ -280,7 +280,7 @@ test('真实临时仓库集成：检测回滚、跨游标返修、无测试 fix 
     ].join('\n'))
     commitAt(root, '2026-11-19T12:00:00Z', 'fix(demo): spec waived (#6)')
 
-    // 5. Revert 提交
+    // 5. Revert 提交（计入 reverts，不在 untestedFixes 重复计入）
     writeRel(root, 'plugins/plugins/demo/src/app.js', 'export const v = 2\n')
     commitAt(root, '2026-11-20T10:00:00Z', 'Revert "fix(demo): quick hotfix without test (#3)" (#7)')
 
@@ -289,8 +289,8 @@ test('真实临时仓库集成：检测回滚、跨游标返修、无测试 fix 
     assert.equal(report.summary.revertCount, 1)
     assert.equal(report.summary.reworkChainCount, 2)
     assert.equal(report.summary.tightReworkCount, 1)
-    assert.equal(report.summary.untestedFixCount, 5)
-    assert.equal(report.summary.unwaivedUntestedFixCount, 3)
+    assert.equal(report.summary.untestedFixCount, 4)
+    assert.equal(report.summary.unwaivedUntestedFixCount, 2)
 
     const byPr = new Map(report.signals.untestedFixes.map(item => [item.pr, item]))
     assert.equal(byPr.get(3).waived, false)
@@ -299,6 +299,7 @@ test('真实临时仓库集成：检测回滚、跨游标返修、无测试 fix 
     assert.equal(byPr.get(5).waived, false)
     assert.equal(byPr.get(6).hasSpecWaiver, true)
     assert.equal(byPr.get(6).waived, true)
+    assert.equal(byPr.has(7), false)
 
     assert.equal(report.signals.multiDayHotspots.length, 1)
     assert.equal(report.signals.multiDayHotspots[0].file, 'plugins/plugins/demo/src/app.js')
@@ -357,16 +358,132 @@ test('无信号仓库返回 actionable=false 且 CLI --fail-on-signals 退出码
   })
 })
 
-test('parseCliArgs 校验未知参数与缺值参数', () => {
-  const parsed = parseCliArgs(['.', '--since', 'abc1234', '--window-hours', '48', '--json', '--fail-on-signals'])
+test('分叉游标、超前游标与非法 --as-of 必须显式报错，不可静默返回假干净结果', () => {
+  withFixtureRepo(root => {
+    writeRel(root, 'plugins/plugins/demo/src/app.js', 'export const v = 1\n')
+    const baseSha = commitAt(root, '2026-11-10T10:00:00Z', 'feat(demo): base (#1)')
+
+    // 分叉侧支提交
+    git(root, ['checkout', '-q', '-b', 'side'])
+    writeRel(root, 'plugins/plugins/demo/src/app.js', 'export const v = 99\n')
+    const sideSha = commitAt(root, '2026-11-18T10:00:00Z', 'feat(demo): diverged side commit (#2)')
+
+    // 回到主干前进
+    git(root, ['checkout', '-q', 'main'])
+    writeRel(root, 'LESSONS.md', [
+      `<!-- reviewed-through: ${baseSha} (2026-11-10) -->`,
+      '# Lessons',
+      '',
+      '## 活跃规则',
+      '- **规则 1**（`seen 1` · 最近 `2026-11-10`）',
+      '',
+    ].join('\n'))
+    const mainSha = commitAt(root, '2026-11-19T10:00:00Z', 'chore(lessons): track cursor')
+
+    // 1. 分叉游标 -> 抛错
+    assert.throws(
+      () => analyzeRepository({ root, since: sideSha, head: mainSha, asOfDate: '2026-11-20' }),
+      /not an ancestor/,
+    )
+
+    // 2. head 落后于 since（未来游标）-> 抛错
+    assert.throws(
+      () => analyzeRepository({ root, since: mainSha, head: baseSha, asOfDate: '2026-11-20' }),
+      /not an ancestor/,
+    )
+
+    // 3. 非法日期 --as-of -> 抛错
+    assert.throws(
+      () => analyzeRepository({ root, since: baseSha, head: mainSha, asOfDate: '2026-02-30' }),
+      /Invalid asOfDate/,
+    )
+    assert.throws(
+      () => analyzeRepository({ root, since: baseSha, head: mainSha, asOfDate: 'not-a-date' }),
+      /Invalid asOfDate/,
+    )
+  })
+})
+
+test('与 verify-fix-regression-test 同口径：删测试、只加注释、重命名旧豁免 spec 无法逃过无测试 fix 检测', () => {
+  withFixtureRepo(root => {
+    writeRel(root, 'plugins/plugins/demo/src/a.js', 'export const a = 1\n')
+    writeRel(root, 'plugins/plugins/demo/src/a.test.js', 'import assert from "node:assert/strict"\nassert.equal(1, 1)\n')
+    writeRel(root, 'plugins/plugins/demo/src/b.js', 'export const b = 1\n')
+    writeRel(root, 'plugins/plugins/demo/src/b.test.js', 'import assert from "node:assert/strict"\nassert.equal(2, 2)\n')
+    writeRel(root, 'plugins/plugins/demo/src/c.js', 'export const c = 1\n')
+    writeRel(root, 'specs/old-waiver.spec.md', [
+      '# Old Spec',
+      '',
+      '## 无回归测试声明',
+      '这是一段早已提交的旧豁免说明，后续仅仅重命名文件不应被再次当作新豁免使用。',
+      '',
+    ].join('\n'))
+    const baseSha = commitAt(root, '2026-11-10T08:00:00Z', 'feat(demo): initial (#1)')
+
+    writeRel(root, 'LESSONS.md', [
+      `<!-- reviewed-through: ${baseSha} (2026-11-10) -->`,
+      '# Lessons',
+      '',
+      '## 活跃规则',
+      '- **规则 1**（`seen 1` · 最近 `2026-11-10`）',
+      '',
+    ].join('\n'))
+    const cursorSha = commitAt(root, '2026-11-10T09:00:00Z', 'chore(lessons): init')
+    writeRel(root, 'LESSONS.md', [
+      `<!-- reviewed-through: ${cursorSha} (2026-11-10) -->`,
+      '# Lessons',
+      '',
+      '## 活跃规则',
+      '- **规则 1**（`seen 1` · 最近 `2026-11-10`）',
+      '',
+    ].join('\n'))
+    commitAt(root, '2026-11-10T10:00:00Z', 'chore(lessons): set cursor')
+
+    // 1. 删除测试文件（status === 'D'）-> 仍应判为无测试 fix
+    writeRel(root, 'plugins/plugins/demo/src/a.js', 'export const a = 2\n')
+    rmSync(join(root, 'plugins/plugins/demo/src/a.test.js'))
+    commitAt(root, '2026-11-18T10:00:00Z', 'fix(demo): delete test file instead of testing (#10)')
+
+    // 2. 只在测试文件加空行和注释 -> 仍应判为无测试 fix
+    writeRel(root, 'plugins/plugins/demo/src/b.js', 'export const b = 2\n')
+    writeRel(root, 'plugins/plugins/demo/src/b.test.js', 'import assert from "node:assert/strict"\n// 仅注释\n\nassert.equal(2, 2)\n')
+    commitAt(root, '2026-11-19T10:00:00Z', 'fix(demo): comment-only test touch (#11)')
+
+    // 3. 仅重命名含旧豁免声明的 spec（内容不变）-> 不应被误判为新豁免
+    writeRel(root, 'plugins/plugins/demo/src/c.js', 'export const c = 2\n')
+    git(root, ['mv', 'specs/old-waiver.spec.md', 'specs/renamed-waiver.spec.md'])
+    commitAt(root, '2026-11-20T10:00:00Z', 'fix(demo): rename existing waiver spec (#12)')
+
+    const report = analyzeRepository({ root, asOfDate: '2026-11-20' })
+    assert.equal(report.summary.untestedFixCount, 3)
+    assert.equal(report.summary.unwaivedUntestedFixCount, 3)
+    const prs = report.signals.untestedFixes.map(item => item.pr).sort((x, y) => x - y)
+    assert.deepEqual(prs, [10, 11, 12])
+    assert.equal(report.signals.untestedFixes.every(item => item.waived === false), true)
+  })
+})
+
+test('parseCliArgs 校验未知参数、缺值参数与 --markdown-output', () => {
+  const parsed = parseCliArgs([
+    '.',
+    '--since', 'abc1234',
+    '--window-hours', '48',
+    '--json',
+    '--output', '/tmp/out.json',
+    '--markdown-output', '/tmp/out.md',
+    '--fail-on-signals',
+  ])
   assert.equal(parsed.root, '.')
   assert.equal(parsed.since, 'abc1234')
   assert.equal(parsed.windowHours, 48)
   assert.equal(parsed.json, true)
+  assert.equal(parsed.output, '/tmp/out.json')
+  assert.equal(parsed.markdownOutput, '/tmp/out.md')
   assert.equal(parsed.failOnSignals, true)
 
   assert.throws(() => parseCliArgs(['--unknown']), /Unknown option/)
   assert.throws(() => parseCliArgs(['--since']), /Missing value/)
+  assert.throws(() => parseCliArgs(['--markdown-output']), /Missing value/)
 })
 
 test('工作流元门禁：quality-gate.yml 与 lessons-review-digest.yml 真实接入信号脚本与单测', () => {
@@ -378,6 +495,8 @@ test('工作流元门禁：quality-gate.yml 与 lessons-review-digest.yml 真实
   assert.match(digest, /schedule:/)
   assert.match(digest, /workflow_dispatch:/)
   assert.match(digest, /node plugins\/scripts\/analyze-lessons-signals\.mjs/)
+  assert.match(digest, /--as-of/)
+  assert.match(digest, /--markdown-output/)
   assert.match(digest, /steps\.analyze\.outputs\.actionable == 'true'/)
   assert.match(digest, /lessons-review/)
 })

@@ -14,10 +14,11 @@
  *
  * 用法：
  *   node scripts/analyze-lessons-signals.mjs [root] [--since <sha>] [--head <ref>] [--window-hours <N>]
- *     [--as-of <YYYY-MM-DD>] [--lessons <path>] [--json] [--markdown] [--output <file>] [--fail-on-signals]
+ *     [--as-of <YYYY-MM-DD>] [--lessons <path>] [--json] [--markdown] [--output <file>]
+ *     [--markdown-output <file>] [--fail-on-signals]
  */
 
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -27,6 +28,7 @@ import {
   NO_REGRESSION_TEST_TRAILER,
   extractCommitWaivers,
   extractSpecSection,
+  hasMeaningfulAddedCode,
   isFixSubject,
   isProductCodePath,
   isTestFilePath,
@@ -66,6 +68,18 @@ export function extractPrNumber(subject) {
   const matches = [...String(subject ?? '').matchAll(PR_REF_RE)]
   if (!matches.length) return null
   return Number(matches[matches.length - 1][1])
+}
+
+function isValidIsoDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value ?? ''))) return false
+  const ms = Date.parse(`${value}T00:00:00Z`)
+  return Number.isFinite(ms) && new Date(ms).toISOString().slice(0, 10) === value
+}
+
+function assertValidIsoDate(value, label = 'asOfDate') {
+  if (!isValidIsoDate(value)) {
+    throw new Error(`Invalid ${label} (expected YYYY-MM-DD): ${value}`)
+  }
 }
 
 function daysBetweenIsoDates(fromDate, toDate) {
@@ -172,6 +186,9 @@ export function detectLessonsSignals(commits, options = {}) {
       files,
       productFiles: files.filter(isProductCodePath),
       testFiles: files.filter(isTestFilePath),
+      hasEffectiveTest: typeof commit.hasEffectiveTest === 'boolean'
+        ? commit.hasEffectiveTest
+        : files.some(isTestFilePath),
       hasSpecWaiver: Boolean(commit.hasSpecWaiver),
     }
   })
@@ -204,7 +221,7 @@ export function detectLessonsSignals(commits, options = {}) {
 
     if (commit.productFiles.length === 0) continue
 
-    if (commit.testFiles.length === 0) {
+    if (!revert && !commit.hasEffectiveTest) {
       const hasTrailer = hasWaiverTrailer(commit)
       const hasSpecWaiver = Boolean(commit.hasSpecWaiver)
       untestedFixes.push({
@@ -236,8 +253,7 @@ export function detectLessonsSignals(commits, options = {}) {
     for (let j = idx - 1; j >= 0; j--) {
       const prev = normalized[j]
       const deltaSec = commit.timestampSec - prev.timestampSec
-      if (deltaSec < 0) continue
-      if (deltaSec > windowSec) break
+      if (deltaSec < 0 || deltaSec > windowSec) continue
       const overlappingFiles = prev.productFiles.filter(file => productSet.has(file))
       if (overlappingFiles.length > 0) {
         predecessors.push({
@@ -307,6 +323,27 @@ function runGit(repoRoot, args, extraOptions = {}) {
   })
 }
 
+function isAncestor(repoRoot, ancestorSha, descendantSha) {
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')))
+  const res = spawnSync('git', ['--no-optional-locks', 'merge-base', '--is-ancestor', ancestorSha, descendantSha], {
+    cwd: repoRoot,
+    env: { ...env, GIT_OPTIONAL_LOCKS: '0' },
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  if (res.status === 0) return true
+  if (res.status === 1) return false
+  throw new Error(`git merge-base --is-ancestor failed: ${(res.stderr || '').trim()}`)
+}
+
+function resolveCommitSha(repoRoot, ref, label) {
+  const text = String(ref ?? '').trim()
+  if (!text || text.startsWith('-')) {
+    throw new Error(`Invalid ${label} ref: ${ref}`)
+  }
+  return runGit(repoRoot, ['rev-parse', '--verify', `${text}^{commit}`]).trim()
+}
+
 function readGitBlob(repoRoot, revSpec) {
   try {
     return runGit(repoRoot, ['show', revSpec], { stdio: ['ignore', 'pipe', 'pipe'] })
@@ -315,15 +352,59 @@ function readGitBlob(repoRoot, revSpec) {
   }
 }
 
-function commitHasSpecWaiver(repoRoot, commit) {
-  const specFiles = (commit.files || []).filter(isSpecDocPath)
-  if (!specFiles.length) return false
-  for (const rel of specFiles) {
-    const afterText = readGitBlob(repoRoot, `${commit.sha}:${rel}`)
+function loadCommitDiffEntries(repoRoot, sha) {
+  const raw = runGit(repoRoot, [
+    'diff-tree',
+    '--no-commit-id',
+    '-r',
+    '--name-status',
+    '-z',
+    '--find-renames',
+    '--first-parent',
+    '--root',
+    sha,
+  ])
+  const tokens = String(raw ?? '').split('\0')
+  const entries = []
+  for (let i = 0; i < tokens.length; ) {
+    const status = tokens[i++]
+    if (!status) continue
+    if (status.startsWith('R') || status.startsWith('C')) {
+      const oldPath = tokens[i++]
+      const newPath = tokens[i++]
+      if (newPath) entries.push({ status, oldPath: oldPath || null, newPath })
+    } else {
+      const path = tokens[i++]
+      if (path) entries.push({ status, oldPath: path, newPath: path })
+    }
+  }
+  return entries
+}
+
+function commitHasEffectiveTest(repoRoot, sha, diffEntries) {
+  for (const entry of diffEntries) {
+    if (entry.status === 'D') continue
+    if (!isTestFilePath(entry.newPath)) continue
+    const diff = runGit(
+      repoRoot,
+      ['show', '--first-parent', '--format=', '-U0', sha, '--', entry.newPath],
+      { stdio: ['ignore', 'pipe', 'pipe'] },
+    )
+    if (hasMeaningfulAddedCode(diff)) return true
+  }
+  return false
+}
+
+function commitHasSpecWaiver(repoRoot, commit, diffEntries) {
+  const specEntries = (diffEntries || []).filter(entry => entry.status !== 'D' && isSpecDocPath(entry.newPath))
+  if (!specEntries.length) return false
+  for (const entry of specEntries) {
+    const afterText = readGitBlob(repoRoot, `${commit.sha}:${entry.newPath}`)
     if (!afterText) continue
     const afterSection = extractSpecSection(afterText, NO_REGRESSION_TEST_SECTION)
     if (nonWhitespaceLength(afterSection) < MIN_WAIVER_CHARS) continue
-    const beforeText = readGitBlob(repoRoot, `${commit.sha}^:${rel}`)
+    const beforePath = entry.oldPath || entry.newPath
+    const beforeText = readGitBlob(repoRoot, `${commit.sha}^:${beforePath}`)
     const beforeSection = beforeText ? extractSpecSection(beforeText, NO_REGRESSION_TEST_SECTION) : ''
     if (afterSection !== beforeSection) return true
   }
@@ -335,6 +416,7 @@ function loadFirstParentCommits(repoRoot, revRange, extraArgs = []) {
   const stdout = runGit(repoRoot, [
     'log',
     '--first-parent',
+    '--diff-merges=first-parent',
     '--reverse',
     '--name-only',
     `-z`,
@@ -382,9 +464,10 @@ export function analyzeRepository(options = {}) {
   }
 
   const headRef = options.head || 'HEAD'
-  const headSha = runGit(repoRoot, ['rev-parse', '--verify', `${headRef}^{commit}`]).trim()
+  const headSha = resolveCommitSha(repoRoot, headRef, 'head')
   const headDate = runGit(repoRoot, ['show', '-s', '--format=%cs', headSha]).trim()
   const asOfDate = options.asOfDate || headDate
+  assertValidIsoDate(asOfDate, 'asOfDate')
 
   const lessonsRel = options.lessonsPath || 'LESSONS.md'
   const lessonsFull = resolve(repoRoot, lessonsRel)
@@ -397,12 +480,19 @@ export function analyzeRepository(options = {}) {
   if (!sinceRef) {
     throw new Error(`Missing --since and no reviewed-through cursor in ${lessonsRel}`)
   }
-  const sinceSha = runGit(repoRoot, ['rev-parse', '--verify', `${sinceRef}^{commit}`]).trim()
+  const sinceSha = resolveCommitSha(repoRoot, sinceRef, 'since')
+  if (!isAncestor(repoRoot, sinceSha, headSha)) {
+    throw new Error(`Cursor ${sinceSha.slice(0, 8)} is not an ancestor of ${headSha.slice(0, 8)}`)
+  }
 
   const inWindowCommits = loadFirstParentCommits(repoRoot, `${sinceSha}..${headSha}`)
   for (const commit of inWindowCommits) {
-    if (isFixLikeSubject(commit.subject) && commit.files.some(isProductCodePath) && !commit.files.some(isTestFilePath)) {
-      commit.hasSpecWaiver = commitHasSpecWaiver(repoRoot, commit)
+    if (isFixLikeSubject(commit.subject) && !isRevertSubject(commit.subject) && commit.files.some(isProductCodePath)) {
+      const diffEntries = loadCommitDiffEntries(repoRoot, commit.sha)
+      commit.hasEffectiveTest = commitHasEffectiveTest(repoRoot, commit.sha, diffEntries)
+      if (!commit.hasEffectiveTest) {
+        commit.hasSpecWaiver = commitHasSpecWaiver(repoRoot, commit, diffEntries)
+      }
     }
   }
 
@@ -505,8 +595,11 @@ export function formatMarkdownReport(report) {
   if (signals.reverts.length > 0) {
     out.push('')
     out.push('### 1. 回滚提交（优先核查「本不该合」）')
-    for (const item of signals.reverts) {
+    for (const item of signals.reverts.slice(0, 15)) {
       out.push(`- ${formatCommitRef(item)}${item.productFiles.length ? ` — ${formatFilePreview(item.productFiles)}` : ''}`)
+    }
+    if (signals.reverts.length > 15) {
+      out.push(`- 其余 ${signals.reverts.length - 15} 条回滚提交已省略（可用 \`--json\` 查看全量）`)
     }
   }
 
@@ -532,13 +625,16 @@ export function formatMarkdownReport(report) {
   if (signals.untestedFixes.length > 0) {
     out.push('')
     out.push('### 3. 无回归测试的 `fix:` 提交')
-    for (const item of signals.untestedFixes) {
+    for (const item of signals.untestedFixes.slice(0, 20)) {
       const waiver = item.hasWaiverTrailer
         ? `（含 \`${NO_REGRESSION_TEST_TRAILER}:\` trailer）`
         : item.hasSpecWaiver
           ? `（含 \`specs/*.md\`「${NO_REGRESSION_TEST_SECTION}」）`
           : '（未见有效豁免声明）'
       out.push(`- ${formatCommitRef(item)} ${waiver} — ${formatFilePreview(item.productFiles)}`)
+    }
+    if (signals.untestedFixes.length > 20) {
+      out.push(`- 其余 ${signals.untestedFixes.length - 20} 条无回归测试提交已省略（可用 \`--json\` 查看全量）`)
     }
   }
 
@@ -588,6 +684,7 @@ export function parseCliArgs(argv) {
     json: false,
     markdown: false,
     output: null,
+    markdownOutput: null,
     failOnSignals: false,
   }
   const takeValue = (flag, index) => {
@@ -606,6 +703,7 @@ export function parseCliArgs(argv) {
     else if (arg === '--json') opts.json = true
     else if (arg === '--markdown') opts.markdown = true
     else if (arg === '--output') opts.output = takeValue(arg, i++)
+    else if (arg === '--markdown-output') opts.markdownOutput = takeValue(arg, i++)
     else if (arg === '--fail-on-signals') opts.failOnSignals = true
     else if (arg.startsWith('-')) throw new Error(`Unknown option: ${arg}`)
     else positional.push(arg)
@@ -618,14 +716,20 @@ function main() {
   try {
     const opts = parseCliArgs(process.argv.slice(2))
     const report = analyzeRepository(opts)
+    const markdownText = formatMarkdownReport(report)
     const rendered = opts.json
       ? `${JSON.stringify(report, null, 2)}\n`
-      : formatMarkdownReport(report)
+      : markdownText
 
     if (opts.output) {
       const target = resolve(opts.output)
       mkdirSync(dirname(target), { recursive: true })
       writeFileSync(target, rendered, 'utf8')
+    }
+    if (opts.markdownOutput) {
+      const target = resolve(opts.markdownOutput)
+      mkdirSync(dirname(target), { recursive: true })
+      writeFileSync(target, markdownText, 'utf8')
     }
     process.stdout.write(rendered)
 

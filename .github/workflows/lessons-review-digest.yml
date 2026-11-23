@@ -45,14 +45,13 @@ jobs:
         env:
           WINDOW_HOURS: ${{ inputs.window_hours || '72' }}
         run: |
+          AS_OF_DATE="$(date -u +%F)"
           node plugins/scripts/analyze-lessons-signals.mjs . \
             --window-hours "$WINDOW_HOURS" \
+            --as-of "$AS_OF_DATE" \
             --json \
-            --output "$RUNNER_TEMP/lessons-signals.json" > /dev/null
-          node plugins/scripts/analyze-lessons-signals.mjs . \
-            --window-hours "$WINDOW_HOURS" \
-            --markdown \
-            --output "$RUNNER_TEMP/lessons-signals.md" > /dev/null
+            --output "$RUNNER_TEMP/lessons-signals.json" \
+            --markdown-output "$RUNNER_TEMP/lessons-signals.md" > /dev/null
           cat "$RUNNER_TEMP/lessons-signals.md" >> "$GITHUB_STEP_SUMMARY"
           node --input-type=module - <<'JS'
           import { appendFileSync, readFileSync } from 'node:fs'
