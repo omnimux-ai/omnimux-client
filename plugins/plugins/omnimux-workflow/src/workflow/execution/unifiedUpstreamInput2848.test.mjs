@@ -15,7 +15,7 @@ import { findExecutionReadinessFailure } from '../../shared/validation/execution
 // 单独用下面的专用用例覆盖；其余三类仍走同一条上游正文装配链路。
 const env = { OMNIMUX_API_KEY: 'sk-fixture-offline-only', OMNIMUX_BASE_URL: 'https://fixture.invalid/v1' };
 
-async function verifyUpstreamBody(t, kind, modelId, operationId, group) {
+async function verifyUpstreamBody(t, kind, modelId, operationId, group, extraParams = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'omnimux-2848-'));
   const previousHome = process.env.DSH_HOME;
   process.env.DSH_HOME = dir;
@@ -57,7 +57,7 @@ async function verifyUpstreamBody(t, kind, modelId, operationId, group) {
     inputBindingVersion: 1, prompt: '本地正文。',
     params: { model: modelId, operation: operationId,
       ...(group ? { routing: { allowedGroups: [group] } } : {}),
-      ...(kind === 'video' ? { resolution: group } : {}) },
+      ...extraParams },
     slotBindings: Object.fromEntries([[textSlot.slot, [selectedOccupant]]]) } };
   const ctx = { mediaDir: dir, signal: new AbortController().signal,
     upstreamOutputs: new Map([['a', { text: '已选正文。' }], ['b', { text: '未选供给。' }]]),
@@ -99,7 +99,7 @@ test('production image contract/executor/gateway/Hub/mapper sends A only and res
   await verifyUpstreamBody(t, 'image', 'gpt-image-2.5', 'text_to_image', 'standard');
 });
 test('production video contract/executor/gateway/Hub/mapper sends A only and restores once', async t => {
-  await verifyUpstreamBody(t, 'video', 'seedance-2-5', 'text_to_video', '720p');
+  await verifyUpstreamBody(t, 'video', 'seedance-2-5', 'text_to_video', 'seedance-2-5-720p', { resolution: '720p' });
 });
 
 test('A6 production current text identity and body freeze together before catalog await; next request follows edited current output', async t => {

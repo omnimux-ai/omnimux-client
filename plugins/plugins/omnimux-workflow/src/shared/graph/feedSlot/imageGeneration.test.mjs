@@ -54,8 +54,13 @@ describe('image generation derived mode', () => {
     assert.equal(resolveImageOperationForReferenceCount(catalog, 'nano-banana-2-lite', 1), 'image_to_image');
   });
 
+  it('muse-image derives image_to_image for a reference after gateway contract update', () => {
+    assert.equal(resolveImageOperationForReferenceCount(catalog, 'muse-image', 0), 'text_to_image');
+    assert.equal(resolveImageOperationForReferenceCount(catalog, 'muse-image', 1), 'image_to_image');
+  });
+
   it('models without a reference operation keep text generation and expose no image well', () => {
-    for (const modelId of ['muse-image', 'nano-banana-2-1', 'seedream-5-5']) {
+    for (const modelId of ['nano-banana-2-1', 'seedream-5-5']) {
       const layout = deriveImageGenerationLayout(catalog, modelId);
       assert.equal(layout?.slots.some((slot) => slot.type === 'image') ?? false, false, modelId);
       assert.equal(resolveImageOperationForReferenceCount(catalog, modelId, 1), undefined, modelId);

@@ -84,25 +84,29 @@ describe('Canvas ConfigPanel ChannelGroups', () => {
   });
 
   it('resolves exactly the lines the hub directory publishes for a model', () => {
-    // 2026-10-21 网关对账 #3516：seedance-2-0 只剩标准版一条官方线路。
+    // 网关快照（#58）：seedance-2-0 只剩标准版一条官方线路且标记为默认。
     const seedanceLines = directory('seedance-2-0');
     assert.deepEqual(seedanceLines.map((g) => g.id), ['standard']);
-    assert.equal(findDefaultChannelGroup(seedanceLines), undefined);
+    assert.equal(findDefaultChannelGroup(seedanceLines)?.id, 'standard');
     const seedanceGroups = resolveModelChannelGroups('seedance-2-0', seedanceLines);
     assert.deepEqual(seedanceGroups.map((g) => g.id), seedanceLines.map((g) => g.id));
     assert.deepEqual(seedanceGroups.map((g) => g.label), seedanceLines.map((g) => g.label));
     assert.deepEqual(seedanceGroups.map((g) => g.pricing), seedanceLines.map((g) => g.pricing));
     assert.ok(seedanceGroups.every((g) => g.category === 'official' && g.sourceType === 'official' && g.isAvailable === true));
 
-    // 随包快照保留历史线路顺序，没有发布默认线路。
+    // 随包快照按网关 v1 顺序与默认档发布（720p 标准版默认）。
     const seedance25Groups = resolveModelChannelGroups('seedance-2-5', directory('seedance-2-5'));
-    assert.deepEqual(seedance25Groups.map((g) => g.id), ['480p', '720p', 'seedance-2-5-480p', 'seedance-2-5-720p']);
-    assert.deepEqual(seedance25Groups.slice(0, 2).map((g) => g.label), ['经济版', '标准版']);
-    assert.equal(findDefaultChannelGroup(seedance25Groups), undefined);
+    assert.deepEqual(
+      seedance25Groups.map((g) => g.id),
+      ['seedance-2-5-720p', 'seedance-2-5-480p', 'seedance-2-5-720p-pro', 'seedance-2-5-480p-pro'],
+    );
+    assert.deepEqual(seedance25Groups.map((g) => g.label), ['标准版', '经济版', '旗舰版', '优选版']);
+    assert.equal(findDefaultChannelGroup(seedance25Groups)?.id, 'seedance-2-5-720p');
 
-    // gpt-image-2.5 发布标准/经济/Nano Banana 经济三条线路（表达式计费，无逐项可比数字）。
+    // gpt-image-2.5 发布标准/经济两条线路（nanobanana-economy 已下架；表达式计费无逐项可比数字）。
     const imageGroups = resolveModelChannelGroups('gpt-image-2.5', directory('gpt-image-2.5'));
-    assert.deepEqual(imageGroups.map((g) => g.id), ['standard', 'economy', 'nanobanana-economy']);
+    assert.deepEqual(imageGroups.map((g) => g.id), ['standard', 'economy']);
+    assert.equal(findDefaultChannelGroup(imageGroups)?.id, 'standard');
     assert.equal(imageGroups[0].pricing?.pointsEstimate, null);
     assert.match(String(imageGroups[0].pricing?.pointsNote), /无法逐项比对/);
 
@@ -181,7 +185,10 @@ describe('Canvas ConfigPanel ChannelGroups', () => {
     assert.deepEqual(directoryChannelGroups(null, 'seedance-2-5'), []);
     // 菜单读的是上游候选行本身，而不是任何第二份表。
     const rows = [{ id: 'seedance-2-5', channelGroups: directory('seedance-2-5') }];
-    assert.deepEqual(rowChannelGroups(rows, 'seedance-2-5@480p').map((g) => g.id), ['480p', '720p', 'seedance-2-5-480p', 'seedance-2-5-720p']);
+    assert.deepEqual(
+      rowChannelGroups(rows, 'seedance-2-5@seedance-2-5-480p').map((g) => g.id),
+      ['seedance-2-5-720p', 'seedance-2-5-480p', 'seedance-2-5-720p-pro', 'seedance-2-5-480p-pro'],
+    );
     assert.deepEqual(rowChannelGroups(rows, 'missing'), []);
     assert.deepEqual(normalizeDirectoryGroups([{ id: 'x', label: '标准版', enabled: true }]).map((g) => g.category), ['official']);
     assert.deepEqual(normalizeDirectoryGroups(undefined), []);
@@ -285,25 +292,27 @@ describe('Canvas ConfigPanel ChannelGroups', () => {
         n: { fixed: 1 },
       },
     };
-    assert.deepEqual(resolveLineConstraints('gpt-image-2.5', { group: 'standard' }, directory('gpt-image-2.5')), imageConstraints);
-    assert.deepEqual(resolveLineConstraints('gpt-image-2.5', undefined, directory('gpt-image-2.5')), {});
-    const imageLinesWithDefault = directory('gpt-image-2.5').map(group => ({ ...group, default: group.id === 'standard' }));
-    assert.deepEqual(resolveLineConstraints('gpt-image-2.5', undefined, imageLinesWithDefault), imageConstraints);
-    assert.deepEqual(resolveLineConstraints('gpt-image-2.5', {}, imageLinesWithDefault), imageConstraints);
-    assert.deepEqual(resolveLineConstraints('gpt-image-2.5', { allowedGroups: ['economy'] }, directory('gpt-image-2.5')), {});
-    assert.deepEqual(resolveLineConstraints('gpt-image-2.5', { allowedGroups: ['nope'] }, directory('gpt-image-2.5')), {});
-    // 视频现售线路按档位固定清晰度：480p 经济版 / 720p 标准版。
-    assert.deepEqual(resolveLineConstraints('seedance-2-5', { group: '480p' }, directory('seedance-2-5')),
+    const imageLines = directory('gpt-image-2.5');
+    const imageLinesWithoutDefault = imageLines.map(({ default: _default, ...group }) => group);
+    assert.deepEqual(resolveLineConstraints('gpt-image-2.5', { group: 'standard' }, imageLines), imageConstraints);
+    assert.deepEqual(resolveLineConstraints('gpt-image-2.5', undefined, imageLines), imageConstraints);
+    assert.deepEqual(resolveLineConstraints('gpt-image-2.5', {}, imageLines), imageConstraints);
+    assert.deepEqual(resolveLineConstraints('gpt-image-2.5', undefined, imageLinesWithoutDefault), {});
+    assert.deepEqual(resolveLineConstraints('gpt-image-2.5', { allowedGroups: ['economy'] }, imageLines), {});
+    assert.deepEqual(resolveLineConstraints('gpt-image-2.5', { allowedGroups: ['nope'] }, imageLines), {});
+    // 视频现售线路按档位固定清晰度：480p 经济/优选版、720p 标准/旗舰版；默认档为 seedance-2-5-720p。
+    const videoLines = directory('seedance-2-5');
+    const videoLinesWithoutDefault = videoLines.map(({ default: _default, ...group }) => group);
+    assert.deepEqual(resolveLineConstraints('seedance-2-5', { group: 'seedance-2-5-480p' }, videoLines),
       { parameters: { resolution: { fixed: '480p' } } });
-    assert.deepEqual(resolveLineConstraints('seedance-2-5', { group: '720p' }, directory('seedance-2-5')),
+    assert.deepEqual(resolveLineConstraints('seedance-2-5', { group: 'seedance-2-5-720p' }, videoLines),
       { parameters: { resolution: { fixed: '720p' } } });
-    assert.deepEqual(resolveLineConstraints('seedance-2-5@desktop-480p', { group: 'desktop-480p' }, directory('seedance-2-5@desktop-480p')),
+    assert.deepEqual(resolveLineConstraints('seedance-2-5@seedance-2-5-480p-pro', { group: 'seedance-2-5-480p-pro' }, directory('seedance-2-5@seedance-2-5-480p-pro')),
       { parameters: { resolution: { fixed: '480p' } } });
-    assert.deepEqual(resolveLineConstraints('seedance-2-5', undefined, directory('seedance-2-5')), {});
-    const videoLinesWithDefault = directory('seedance-2-5').map(group => ({ ...group, default: group.id === '720p' }));
-    assert.deepEqual(resolveLineConstraints('seedance-2-5', undefined, videoLinesWithDefault),
+    assert.deepEqual(resolveLineConstraints('seedance-2-5', undefined, videoLines),
       { parameters: { resolution: { fixed: '720p' } } });
-    assert.deepEqual(resolveLineConstraints('seedance-2-5', { allowedGroups: ['nope'] }, directory('seedance-2-5')), {});
+    assert.deepEqual(resolveLineConstraints('seedance-2-5', undefined, videoLinesWithoutDefault), {});
+    assert.deepEqual(resolveLineConstraints('seedance-2-5', { allowedGroups: ['nope'] }, videoLines), {});
     assert.deepEqual(resolveLineConstraints('seedance-2-0', { allowedGroups: ['standard'] }, directory('seedance-2-0')), {});
   });
 

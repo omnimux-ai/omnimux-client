@@ -193,14 +193,7 @@ test('3312: an omitted resolution cannot carry the head default of 720p into a f
   assert.equal(Object.hasOwn(input, 'resolution'), false)
 }))
 
-test('3312: the default 720p tier keeps a legal submission with the original logical intent and accepted task record', async (t) => isolated(async (home) => {
-  const snapshot = readBundledSnapshot().snapshot
-  const model = snapshot.models.find((row) => row.id === 'seedance-2-5')
-  model.defaultGroup = 'seedance-2-5-720p-pro'
-  model.groupOrder = ['seedance-2-5-480p', 'seedance-2-5-720p', 'seedance-2-5-480p-pro', 'seedance-2-5-720p-pro']
-  setCurrentSnapshotResolver(() => ({ snapshot }))
-  t.after(resetCurrentSnapshotResolver)
-
+test('3312: the default 720p tier keeps a legal submission with the original logical intent and accepted task record', async () => isolated(async (home) => {
   const calls = []
   const input = videoInput(home, 'legal-default-tier')
   delete input.allowedGroups
@@ -218,7 +211,7 @@ test('3312: the default 720p tier keeps a legal submission with the original log
   const record = getMediaTaskRecord(result.taskRef)
   assert.equal(record.model, 'seedance-2-5')
   assert.equal(record.wireModel, 'seedance-2-5')
-  assert.equal(record.group, 'seedance-2-5-720p-pro')
+  assert.equal(record.group, 'seedance-2-5-720p')
   assert.equal(record.status, 'submitted')
   assert.equal(record.upstreamTaskId, result.taskId)
 }))

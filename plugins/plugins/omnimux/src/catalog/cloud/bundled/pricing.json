@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "source": "pricing",
-  "generatedAt": "2026-11-22T10:08:47.382Z",
+  "generatedAt": "2026-11-23T05:06:30.445Z",
   "groups": {
     "ratio": {
       "cheap": 0.5,
@@ -379,13 +379,13 @@
       "id": "gpt-image-2.5",
       "displayName": "gpt-image-2.5",
       "enableGroups": [
-        "gpt-image-2.5-economy",
-        "default"
+        "default",
+        "gpt-image-2.5-economy"
       ],
       "defaultGroup": "default",
       "groupOrder": [
-        "gpt-image-2.5-economy",
-        "default"
+        "default",
+        "gpt-image-2.5-economy"
       ],
       "supportedEndpointTypes": [
         "image-generation",
@@ -668,8 +668,8 @@
       ],
       "defaultGroup": "default",
       "groupOrder": [
-        "auto",
-        "default"
+        "default",
+        "auto"
       ],
       "supportedEndpointTypes": [
         "openai"
@@ -822,26 +822,26 @@
       "id": "minimax-h3-video",
       "displayName": "minimax-h3-video",
       "enableGroups": [
+        "auto",
+        "default",
         "minimax-h3-video-creative",
         "minimax-h3-video-digital-human",
         "minimax-h3-video-fast",
         "minimax-h3-video-first-last-frame",
         "minimax-h3-video-pro",
         "minimax-h3-video-short-drama",
-        "auto",
-        "default",
         "minimax-h3-video-short-drama-av"
       ],
       "defaultGroup": "default",
       "groupOrder": [
-        "minimax-h3-video-creative",
-        "minimax-h3-video-digital-human",
-        "minimax-h3-video-fast",
-        "minimax-h3-video-first-last-frame",
-        "minimax-h3-video-pro",
-        "minimax-h3-video-short-drama",
-        "auto",
         "default",
+        "auto",
+        "minimax-h3-video-fast",
+        "minimax-h3-video-pro",
+        "minimax-h3-video-creative",
+        "minimax-h3-video-first-last-frame",
+        "minimax-h3-video-digital-human",
+        "minimax-h3-video-short-drama",
         "minimax-h3-video-short-drama-av"
       ],
       "supportedEndpointTypes": [
@@ -2408,17 +2408,17 @@
       "id": "seedance-2-5",
       "displayName": "seedance-2-5",
       "enableGroups": [
-        "seedance-2-5-720p-pro",
         "seedance-2-5-480p",
         "seedance-2-5-480p-pro",
-        "seedance-2-5-720p"
+        "seedance-2-5-720p",
+        "seedance-2-5-720p-pro"
       ],
-      "defaultGroup": "seedance-2-5-720p-pro",
+      "defaultGroup": "seedance-2-5-720p",
       "groupOrder": [
-        "seedance-2-5-720p-pro",
+        "seedance-2-5-720p",
         "seedance-2-5-480p",
-        "seedance-2-5-480p-pro",
-        "seedance-2-5-720p"
+        "seedance-2-5-720p-pro",
+        "seedance-2-5-480p-pro"
       ],
       "supportedEndpointTypes": [
         "openai"
@@ -3296,12 +3296,12 @@
         "wan-3.0-prime",
         "wan-3.0-standard"
       ],
-      "defaultGroup": "wan-3.0-1080p",
+      "defaultGroup": "wan-3.0-720p",
       "groupOrder": [
-        "wan-3.0-1080p",
         "wan-3.0-720p",
-        "wan-3.0-prime",
-        "wan-3.0-standard"
+        "wan-3.0-1080p",
+        "wan-3.0-standard",
+        "wan-3.0-prime"
       ],
       "supportedEndpointTypes": [
         "openai"
