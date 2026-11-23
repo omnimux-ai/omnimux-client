@@ -95,7 +95,9 @@ test('external project permission errors warn once per directory until access re
     for (let index = 0; index < 2; index++) await store.listForRead();
     const messages = warningsOf(warn);
     assert.equal(messages.length, 1, `one warning for repeated reads, got: ${messages.join(' | ')}`);
-    assert.match(messages[0], /permission denied|EACCES|EPERM/i);
+    assert.match(messages[0], /permission denied/i);
+    assert.match(messages[0], /\b(?:EACCES|EPERM)\b/);
+    assert.doesNotMatch(messages[0], /for repair/i);
     assert.doesNotMatch(messages[0], /malformed JSON|schema validation failed/i);
     assert.equal(
       (await store.listForRead()).entries.some(entry => entry.project.id === 'external-project'),
@@ -178,7 +180,8 @@ test('an unreadable external registry warns once as a registry permission issue'
     const messages = warningsOf(warn);
     assert.equal(messages.length, 1, `one registry warning for repeated reads, got: ${messages.join(' | ')}`);
     assert.match(messages[0], /external project registry/i);
-    assert.match(messages[0], /permission denied|EACCES|EPERM/i);
+    assert.match(messages[0], /permission denied/i);
+    assert.match(messages[0], /\b(?:EACCES|EPERM)\b/);
     assert.doesNotMatch(messages[0], /external project at /i);
   } finally {
     chmodSync(registry, 0o644);
