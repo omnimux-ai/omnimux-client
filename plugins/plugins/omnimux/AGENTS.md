@@ -10,8 +10,8 @@ The hub is the only place OmniMux talks to providers. Root [AGENTS.md](../../AGE
 | Hub owns | Hub never owns |
 | --- | --- |
 | Product chrome, sign-in, credentials and `OMNIMUX_*` secrets | Any domain plugin's store (`series/`, 货盘, `library.json`, …) |
-| Provider HTTP, polling, downloads, model routes (`src/media`, `src/text`, `src/catalog`) | Domain workflow logic or domain UI |
-| Neutral seams (`ctx.provide`) and `omnimux_*` official-only tools | A second chat tool; chat stays on the `llm-pi-ai` `omnimux` route |
+| Provider HTTP, polling, downloads, model routes (`src/media`, `src/text`, `src/headless`, `src/catalog`) | Domain workflow logic or domain UI |
+| Neutral seams (`ctx.provide`, incl. `headlessSkill`) and `omnimux_*` official-only tools | A second chat tool; chat stays on the `llm-pi-ai` `omnimux` route |
 | The composer model list (`cordis.patch.yml`) and canvas model catalog | Vendor-specific fields on a seam |
 
 ## Hard bounds
@@ -24,6 +24,7 @@ The hub is the only place OmniMux talks to providers. Root [AGENTS.md](../../AGE
 - Resolve each call against permitted channels. For a new task with an explicit group, use that group only. A capability is independent of the chat model or a global mode.
 - Propagate upstream auth/capability errors with their real cause; no empty `catch {}`.
 - Hub events go through the single event WebSocket (workbench sync); domain plugins emit via `ctx.get('hubEvents')`, never a private socket.
+- Background headless AI execution follows [headless-skill-execution.md](../../docs/contracts/headless-skill-execution.md): resolve prompts via `ctx.skills`, validate JSON Schema with at most one repair attempt, enforce per-modality concurrency, and emit `omnimux:headless-skill` via `hubEvents`.
 - The gateway publishes official model and group eligibility. Select the protocol from the effective contract and verify the consumer end to end with a previously unseen model ID. Onboarding a model on a supported protocol requires no client allowlist or model-specific adapter. Use [the cross-repo checks](../../docs/contracts/canvas-generation.md#跨仓验证与交接).
 
 ## Verify

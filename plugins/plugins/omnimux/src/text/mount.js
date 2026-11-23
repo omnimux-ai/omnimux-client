@@ -162,4 +162,6 @@ export function mountTextComplete(ctx, hub, jsonOut, onError, deps = {}) {
       }
     },
   })
+
+  return api
 }
