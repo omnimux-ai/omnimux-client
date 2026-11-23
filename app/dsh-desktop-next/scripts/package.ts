@@ -140,12 +140,12 @@ const preparePayload = (platform: NodeJS.Platform, macArch?: MacPackageArch): vo
  * @param platform - Platform being packaged; the shared flows package the host platform.
  * @param macArch - The macOS package: a release names each in turn, other builds follow `DSH_MAC_SMOKE_ARCH`.
  */
-const prepareRuntime = (platform: NodeJS.Platform = process.platform, macArch: MacPackageArch = macSmokeArchitecture(process.env)): void => {
+const prepareRuntime = (platform: NodeJS.Platform = process.platform, macArch: MacPackageArch = runtimeBuildArch('darwin') ?? 'universal'): void => {
   const cpus = macPackageCpus(macArch)
-  const runtime = nextRuntimeBuildPaths(desktopRoot).runtime
+  const runtime = nextRuntimeBuildPaths(desktopRoot, runtimeBuildArch(platform)).runtime
   if (platform === 'darwin') prepareNextMacRuntime(desktopRoot, cpus)
   if (!interpretersVerified || platform !== process.platform) {
-    verifyNextRuntimeTree(nextRuntimeBuildPaths(desktopRoot, runtimeBuildArch(platform)).runtime, platform, buildVersion)
+    verifyNextRuntimeTree(runtime, platform, buildVersion)
   }
   if (platform === 'darwin') {
     packagingStepSync('runtime:stage-package', () => verifyPackagedNextRuntime(stagePackagedRuntime(desktopRoot, runtime, cpus), platform, buildVersion, cpus))
