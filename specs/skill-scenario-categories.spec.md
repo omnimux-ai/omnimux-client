@@ -49,6 +49,27 @@
 
 以下既有断言因本次显式改变一级分类需求同步更新：
 
-- `plugins/plugins/omnimux-market/src/client/skill-header.test.js`、`suite-marketplace.test.js`、`tests/e2e/market-creatify-cards.spec.js`、`tests/e2e/aigc-category.spec.js`：原断言固定旧 7 个营销分类，改为断言 `skillScenarios` 的 8 个场景与数量。
-- `plugins/scripts/generate-featured-skills.test.mjs`、`plugins/plugins/omnimux-inspiration/src/explore/skills/skills-tab.test.js`：原断言 7 个分类，改为 8 个场景分类。
-- `plugins/plugins/omnimux-market/src/client/skill-linkage.test.js`：原断言商品轮播图/图文复刻属于 `image-static`，改为断言场景字段（商品轮播图 `scene-product`、图文复刻 `scene-repurpose`），`category` 断言保持向后兼容。
+- `plugins/plugins/omnimux-inspiration/src/explore/skills/skills-tab.test.js` :: `TrendingReplicateSection: 头部渲染「创作灵感 / Skill」双 Tab 并支持平滑切换`
+  - 原断言：技能分类胶囊为 1 个全部 + 7 个细分类。新期望：1 个全部 + 8 个场景分类，并且点击第一个场景「内容种草」后卡片数减少。证据：`node --test plugins/omnimux-inspiration/src/explore/skills/skills-tab.test.js`。
+- `plugins/plugins/omnimux-inspiration/src/explore/skills/skills-tab.test.js` :: `featured-skills-data: 快照文件格式与约束`
+  - 原断言：快照 categories 长度为 7。新期望：场景 categories 长度为 8，且每个技能带 scenario。证据同上。
+- `plugins/plugins/omnimux-market/src/client/skill-header.test.js` :: `install action opens existing modal and category row precedes content`
+  - 原断言：分类栏固定 8 个旧营销分类按钮。新期望：分类栏含「场景分类」标签 + 9 个按钮（全部 + 8 场景），顺序由 SKILL_SCENARIOS 固定。证据：`node --test plugins/plugins/omnimux-market/src/client/skill-header.test.js`。
+- `plugins/plugins/omnimux-market/src/client/skill-linkage.test.js` :: `Issue #2609：两款技能同时上架技能货架（catalog/index.json），属于 image-static 分类`
+  - 原断言：商品轮播图与图文复刻均只断言 category=image-static。新期望：保留 category 兼容断言，并新增商品轮播图 scenario=scene-product、图文复刻 scenario=scene-repurpose。证据：`node --test plugins/plugins/omnimux-market/src/client/skill-linkage.test.js`。
+- `plugins/plugins/omnimux-market/src/client/suite-marketplace.test.js` :: `A1 分类栏：013fcb898 后收敛为「全部」+ 7 个营销分类`
+  - 原断言：8 个旧营销分类。新期望：9 项「全部 + 8 场景」，且每个场景 count > 0。证据：`node --test plugins/plugins/omnimux-market/src/client/suite-marketplace.test.js`。
+- `plugins/plugins/omnimux-market/tests/e2e/aigc-category.spec.js` :: `E2E 分类栏：中英文界面与目录声明的营销分类一致`
+  - 原断言：buildWorkshopCategories 与 catalog.categories 的 7 个营销分类一致。新期望：与 catalog.skillScenarios 的 8 个场景一致，中英文标签均存在。证据：`node --test plugins/plugins/omnimux-market/tests/e2e/aigc-category.spec.js`。
+- `plugins/plugins/omnimux-market/tests/e2e/aigc-category.spec.js` :: `E2E 目录数据：每个营销分类都真实拥有技能成员`
+  - 原断言：每个 category 都有成员且无 orphans。新期望：每个 scenario 都有成员，且 114 个技能都有已声明 scenario。证据同上。
+- `plugins/plugins/omnimux-market/tests/e2e/aigc-category.spec.js` :: `E2E 安装源：营销技能全部为内置 bundled 源`
+  - 原断言：营销技能全部为 bundled。新期望：场景技能仍全部为 bundled，source.path 以 catalog/skills/ 开头。证据同上。
+- `plugins/plugins/omnimux-market/tests/e2e/market-creatify-cards.spec.js` :: `buildWorkshopCategories() 返回全新 7 大分类，默认全部`
+  - 原断言：1 个全部 + 7 个业务分类。新期望：1 个全部 + 8 个场景分类且 count > 0。证据：`node --test plugins/plugins/omnimux-market/tests/e2e/market-creatify-cards.spec.js`。
+- `plugins/plugins/omnimux-market/tests/e2e/market-creatify-cards.spec.js` :: `多语言原生适配：在中文与英文环境下独立呈现原生文案，彻底消除斜杠双语拼接`
+  - 原断言：分类栏首项为 UGC 和用户评价。新期望：首项为内容种草 / Content Seeding，商品展示为第三项。证据同上。
+- `plugins/plugins/omnimux/tests/e2e/creatify-skills-library-refactor.e2e.test.mjs` :: `默认呈现全部技能，置顶热门精选(3)、新品上市(6)与探索更多(103)分区`
+  - 原断言：SkillsPanel 有 1 个全部 + 7 个分类胶囊。新期望：1 个全部 + 8 个场景分类胶囊（其余旧快照数量断言不在本次范围，保持原状）。证据：`node --test plugins/plugins/omnimux/tests/e2e/creatify-skills-library-refactor.e2e.test.mjs`。
+- `plugins/scripts/generate-featured-skills.test.mjs` :: `GEN-04：真实目录生成的快照仍是 113 条精选 / 7 个分类，且与磁盘快照逐字节一致`
+  - 原断言：快照 113 条 / 7 个分类。新期望：113 条 / 8 个场景分类，且与磁盘快照逐字节一致。证据：`node --test plugins/scripts/generate-featured-skills.test.mjs`。
