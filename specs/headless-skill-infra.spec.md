@@ -35,3 +35,20 @@
 - `node --test plugins/scripts/verify-agents-md.test.mjs`
 - `pnpm --dir plugins verify:product-baseline`
 - `pnpm --dir plugins verify:plugin-load`
+
+## 旧标准变更
+
+由于本次在 Hub（`omnimux`）新增共享接缝 `headlessSkill`（与 `textComplete` 同步门控挂载），Hub 默认暴露的接缝总数由 20 个增加为 21 个，顺序列表在 `textComplete` 后新增 `headlessSkill`，因此同步更新 `apply.test.js` 的三个接缝清单断言：
+
+- `plugins/plugins/omnimux/src/host/apply.test.js` :: `registers media, text, identity, attachments, and catalog seams in a stable order`
+  - 原断言：断言 `official.mount: false` 时 `provided` 为 14 个接缝，不含 `headlessSkill`。
+  - 变更理由：Hub 在 `mountTextComplete` 后挂载 `headlessSkill` 接缝（见 `plugins/plugins/omnimux/src/host/apply.js`），原列表未包含该新增接缝。
+  - 新期望证据：`provided` 在 `textComplete` 后包含 `headlessSkill`，`pnpm --filter omnimux test` 全量通过。
+- `plugins/plugins/omnimux/src/host/apply.test.js` :: `registers all 55 tools and 20 seams by default`
+  - 原断言：用例标题与 `provided` 断言为默认注册 55 个工具和 20 个接缝。
+  - 变更理由：新增 `headlessSkill` 共享接缝后默认接缝数变更为 21 个，同步更新用例名与 `provided` 数组断言。
+  - 新期望证据：用例更名为 `registers all 55 tools and 21 seams by default`，`provided` 精确断言 21 个接缝（含 `headlessSkill`），`gate.enabled: false` 用例同步验证停用时不包含 `headlessSkill`。
+- `plugins/plugins/omnimux/src/host/apply.test.js` :: `fine-grained disables media, text models, and official tools via gate`
+  - 原断言：细粒度仅禁用视频与单工具时 `provided` 为 19 个接缝，不含 `headlessSkill`。
+  - 变更理由：该场景下 `textComplete` 仍处于启用态，因此 `headlessSkill` 同步挂载，接缝列表包含 `headlessSkill`。
+  - 新期望证据：`provided` 在 `textComplete` 后精确断言包含 `headlessSkill`，且 `apply.test.js` 全部用例通过。
