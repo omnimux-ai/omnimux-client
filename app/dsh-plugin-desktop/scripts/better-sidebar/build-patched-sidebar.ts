@@ -1,4 +1,4 @@
-// Canonical implementation lives in app/scripts/better-sidebar/build-patched-sidebar.ts.
+// Canonical implementation lives in app/scripts/better-sidebar/build-patched-sidebar.mts.
 // Retained as a thin re-export while legacy dsh-plugin-desktop remains frozen.
 export {
   BETTER_SIDEBAR_COMMIT,
@@ -9,4 +9,4 @@ export {
   buildPatchedBetterSidebar,
   verifyInstalledBetterSidebar,
   type BuiltBetterSidebar,
-} from '../../../scripts/better-sidebar/build-patched-sidebar.ts'
+} from '../../../scripts/better-sidebar/build-patched-sidebar.mts'

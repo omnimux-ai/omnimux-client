@@ -58,3 +58,8 @@
 - id: agents-anywhere-bridge
   name: '@agents-anywhere/dsh-bridge-next'
   disabled: true
+# OmniMux public user-feedback questionnaire URL injected into
+# globalThis.__DSH_CONTACT_CONFIG__ by @deepseek-ai/dsh-client-ui-settings-account.
+- id: ui-settings-account
+  config:
+    contactFormUrl: 'https://acnas9f21yqe.feishu.cn/share/base/form/shrcnSvp2rkKjQ1qVmy1zohciKf'
