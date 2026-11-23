@@ -1,0 +1,940 @@
+import React, { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { getGlobalMediaViewerStore } from '../../../omnimux/src/client/media-viewer/media-viewer-store.js';
+import { OrganicShimmerOverlay } from './OrganicShimmerOverlay.jsx';
+import { GeneratingStateCard } from './GeneratingStateCard.jsx';
+import { GenerationTasks } from './GenerationTasks.jsx';
+import { MediaViewerComposer } from './MediaViewerComposer.jsx';
+import { currentSessionId } from '../../../omnimux/src/client/workbench/host-adapter.js';
+import { injectMediaViewerStyles } from '../../../omnimux/src/client/media-viewer/styles.js';
+import { syncImageCanvasStage } from '../../../omnimux/src/client/media-viewer/image-canvas-stage.js';
+import { registerContextContributor } from '../../../omnimux/src/client/workbench/context.js';
+
+import { serializeReferenceAssets, isAllowedReferenceUrl } from './media-slot.js';
+import { runGenerationTask, resumePendingGenerations, canRetryGeneration } from './generation-runner.js';
+import { describeGenerationFailure } from './generation-failure.js';
+import { isElementShown } from './prefill-claim.js';
+import { HistoryPanel } from './HistoryPanel.jsx';
+import { buildHistoryEntries } from './generation-history.js';
+import { injectFlowAlignmentStyles } from './flow-alignment-styles.js';
+import { flowAlignmentText } from './flow-alignment-copy.js';
+import { queueComposerPrefill } from '../../../omnimux/src/client/media-viewer/composer-prefill.js';
+
+export const MEDIA_VIEWER_TAB_ID = 'omnimux:media-viewer';
+export { serializeReferenceAssets, isAllowedReferenceUrl };
+
+/**
+ * 本地 File 预物化：对包含本地 file 且 url 为 blob: 或空的素材，使用 FileReader 异步转换为标准 Base64 Data URL 后再提交，
+ * 确保经过 serializeReferenceAssets 时不被静默 drop，后端可稳定接收有效素材数据
+ * @param {object} asset
+ * @returns {Promise<object>}
+ */
+const MAX_MATERIALIZE_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+
+export async function materializeAssetFile(asset) {
+  if (!asset || typeof asset !== 'object') return asset;
+  const isBlobOrEmpty = !asset.url ||
+    (typeof asset.url === 'string' && asset.url.startsWith('blob:')) ||
+    (typeof asset.path === 'string' && asset.path.startsWith('blob:'));
+  // 仅对图片（asset.type === 'image'）且文件体积在合理阈值（≤5MB）内的素材执行 Base64 转换
+  const isEligible = asset.type === 'image' &&
+    (!asset.file?.size || asset.file.size <= MAX_MATERIALIZE_FILE_SIZE);
+  if (asset.file && isBlobOrEmpty && asset.type === 'image' && !isEligible) {
+    throw new Error('本地图片超过 5MB，请压缩后重试或先上传到资产库');
+  }
+  if (asset.file && isBlobOrEmpty && isEligible) {
+    try {
+      if (typeof FileReader !== 'undefined') {
+        const fileObj = (typeof Blob !== 'undefined' && asset.file instanceof Blob)
+          ? asset.file
+          : asset.file;
+        const dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = (err) => reject(err);
+          reader.readAsDataURL(fileObj);
+        });
+        if (typeof dataUrl === 'string' && isAllowedReferenceUrl(dataUrl)) {
+          return {
+            ...asset,
+            url: dataUrl,
+            path: dataUrl,
+          };
+        }
+        throw new Error('本地图片格式暂不支持，请转换为 PNG/JPEG/WebP/GIF/BMP 后重试');
+      } else {
+        throw new Error('当前运行环境不支持本地图片解析，请先上传到资产库');
+      }
+    } catch (err) {
+      console.warn('[MediaViewerTab] Failed to materialize local file to base64 Data URL:', err);
+      if (err?.message === '本地图片格式暂不支持，请转换为 PNG/JPEG/WebP/GIF/BMP 后重试') {
+        throw err;
+      }
+      if (err?.message === '当前运行环境不支持本地图片解析，请先上传到资产库') {
+        throw err;
+      }
+      throw new Error('本地图片读取失败，请重试或先上传到资产库');
+    }
+  }
+  const urlStr = String(asset.url || asset.path || '');
+  const isLocalOriginUrl = urlStr.startsWith('/') ||
+    (typeof window !== 'undefined' && urlStr.startsWith(window.location?.origin || 'http://127.0.0.1:45120')) ||
+    urlStr.includes('/omnimux/assets/library/preview');
+
+  // 若为站内同源相对地址或本地预览地址，由前端浏览器直接 fetch 其二进制 Blob 并通过 FileReader 转为标准的 Base64 Data URL，彻底规避后端 Node 进程未重启导致的老网关上传报错
+  if (asset.type === 'image' && isLocalOriginUrl && !urlStr.startsWith('data:') && !urlStr.startsWith('blob:')) {
+    try {
+      if (typeof fetch === 'function' && typeof FileReader !== 'undefined') {
+        const resp = await fetch(urlStr);
+        if (!resp.ok) throw new Error('参考图片读取失败，请重新选择素材');
+        if (resp.ok) {
+          const blob = await resp.blob();
+          if (blob.size > MAX_MATERIALIZE_FILE_SIZE) throw new Error('本地图片超过 5MB，请压缩后重试或先上传到资产库');
+          if (blob.size <= MAX_MATERIALIZE_FILE_SIZE) {
+            const dataUrl = await new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result);
+              reader.onerror = (err) => reject(err);
+              reader.readAsDataURL(blob);
+            });
+            if (typeof dataUrl === 'string' && isAllowedReferenceUrl(dataUrl)) {
+              return {
+                ...asset,
+                url: dataUrl,
+                path: dataUrl,
+              };
+            }
+          }
+        }
+      }
+      throw new Error('参考图片读取失败，请重新选择素材');
+    } catch (err) {
+      console.warn('[MediaViewerTab] Failed to materialize local asset URL to base64 Data URL:', err);
+      throw err;
+    }
+  }
+
+  return asset;
+}
+
+const noSubscription = () => () => {};
+
+/**
+ * 失败任务卡（Issue #3011 文案白名单）：
+ * 仅含一行原因（≤2 行省略，title 全文）+ 可选「重试」按钮；
+ * 无标题、无图标、无错误码、无其它按钮。
+ */
+function FailureCard({ item, retryingIds, onRetry }) {
+  const reason = item?.failure?.reason || '生成失败，请稍后重试';
+  const retryable = canRetryGeneration(item);
+  return (
+    <div className="omx-mv-failure-card">
+      <p className="omx-mv-failure-card__reason" title={reason}>{reason}</p>
+      {retryable ? (
+        <button
+          type="button"
+          className="omx-mv-failure-card__retry"
+          disabled={retryingIds?.has(item.id)}
+          onClick={(e) => {
+            e.stopPropagation();
+            onRetry?.(item);
+          }}
+        >
+          重试
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+export function MediaViewerTab({ scope, sessions, imageUrl, readFile, t }) {
+  const getSessionSnapshot = () => sessions?.list?.getSnapshot().current || currentSessionId();
+  const sessionId = useSyncExternalStore(sessions?.list?.subscribe || noSubscription, getSessionSnapshot, getSessionSnapshot);
+  useEffect(() => {
+    injectMediaViewerStyles();
+    injectFlowAlignmentStyles();
+  }, []);
+
+  const store = getGlobalMediaViewerStore();
+  const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+
+  const { mediaList, activeId, layoutMode, zoom, isAnnotating } = state;
+
+  const sessionMediaList = React.useMemo(() => {
+    if (!sessionId) return mediaList;
+    return mediaList.filter((m) => m.sessionId === sessionId);
+  }, [mediaList, sessionId]);
+
+  // 左侧缩略图栏专用列表：按时间倒序排列（最新生成的任务或成品优先置于顶部开头第一位）
+  const thumbnailsList = React.useMemo(() => {
+    const list = (sessionMediaList || mediaList).filter(
+      (item) => item && (item.url || item.status === 'generating' || item.status === 'failed')
+    );
+    return [...list].sort((a, b) => {
+      const tb = b.timestamp ?? 0;
+      const ta = a.timestamp ?? 0;
+      if (tb !== ta) return tb - ta;
+      return list.indexOf(b) - list.indexOf(a);
+    });
+  }, [sessionMediaList, mediaList]);
+
+  // 默认选中缩略图栏首项（最新项），回退为 session 列表首项
+  const activeItem = sessionMediaList.find((m) => m.id === activeId) || thumbnailsList[0] || sessionMediaList[0];
+  const toolbarRef = useRef(null);
+  const historyToggleRef = useRef(null);
+
+  // 生成历史：数据全部来自既有 mediaList 的提交快照，不新增 store。
+  // 有会话时按会话过滤；无会话时保持空态，避免把其他会话的提示词聚合进来。
+  const historyEntries = React.useMemo(
+    () => (sessionId ? buildHistoryEntries(sessionMediaList, sessionId) : []),
+    [sessionMediaList, sessionId]
+  );
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [containerWidth, setContainerWidth] = useState(null);
+  const historyId = React.useId();
+
+  // 用 ResizeObserver 而不是 CSS container-type：container-type 的 layout containment
+  // 会改变 fixed 浮层（如 .omx-slot-notice）的包含块，属于既有布局回归风险。
+  useLayoutEffect(() => {
+    const node = viewerRootRef.current;
+    const width = node?.getBoundingClientRect?.().width;
+    if (Number.isFinite(width) && width > 0) setContainerWidth(width);
+  }, []);
+  useEffect(() => {
+    const node = viewerRootRef.current;
+    if (!node || typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect?.width;
+      if (Number.isFinite(width) && width > 0) setContainerWidth(width);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+  const wideLayout = containerWidth === null ? true : containerWidth >= 900;
+  const compactLayout = containerWidth !== null && containerWidth < 520;
+
+  // 会话切换、退出单图或切到宽档时，历史抽屉都必须收起。
+  useEffect(() => {
+    if (wideLayout) setHistoryOpen(false);
+  }, [sessionId, wideLayout]);
+
+  // The drawer marks itself aria-modal, so the toolbar outside the scrim must
+  // stop being focusable/clickable while it is open.
+  useEffect(() => {
+    const toolbar = toolbarRef.current;
+    if (!toolbar || !historyOpen) return undefined;
+    toolbar.setAttribute('inert', '');
+    return () => {
+      toolbar.removeAttribute('inert');
+      const toggle = historyToggleRef.current;
+      if (!toggle) return;
+      const schedule = typeof requestAnimationFrame === 'function'
+        ? requestAnimationFrame
+        : (callback) => setTimeout(callback, 0);
+      schedule(() => {
+        if (toggle.isConnected && isElementShown(toggle)) toggle.focus();
+      });
+    };
+  }, [historyOpen]);
+
+  // 会话切换时，若当前 activeId 不属于当前会话的媒体列表，自动联动选中该会话最新的一张素材
+  useEffect(() => {
+    if (!sessionId || sessionMediaList.length === 0) return;
+    const exists = sessionMediaList.some((m) => m.id === activeId);
+    if (!exists) {
+      const defaultTarget = thumbnailsList[0] || sessionMediaList[0];
+      if (defaultTarget) {
+        store.setActiveId(defaultTarget.id);
+      }
+    }
+  }, [sessionId, sessionMediaList, activeId, thumbnailsList]);
+
+  const imageRef = useRef(null);
+  const viewerRootRef = useRef(null);
+  const stageRef = useRef(null);
+  const [draftText, setDraftText] = useState('');
+
+  // 重试中的失败任务集合：按钮提交返回前保持 disabled（文字不变）
+  const [retryingIds, setRetryingIds] = useState(() => new Set());
+
+  const handleRetryFailure = (item) => {
+    if (!item?.id || !canRetryGeneration(item)) return;
+    if (retryingIds.has(item.id)) return;
+    setRetryingIds((prev) => new Set(prev).add(item.id));
+    // 提交被接受后该项回到 generating，失败卡（含按钮）随之消失；
+    // 提交被拒则保持 failed，按钮恢复可用。
+    Promise.resolve(runGenerationTask(item.id, { store })).finally(() => {
+      setRetryingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
+    });
+  };
+
+  // 组件挂载时续传仍在生成中的任务（Issue #3011）。store 是全局单例，查看器关开重挂载时
+  // 本页内仍在跑的任务由在途登记跳过，不会被重复取回或误标中断。
+  useEffect(() => {
+    resumePendingGenerations({ store });
+    // 仅挂载时执行一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleDirectSubmit = async ({ prompt, kind, operation, activeOperation, model, channel, params, assets, annotations, onAccepted, onRejected }) => {
+    // 张数（仅图像）：一次提交产出 batchCount 条同组任务记录与独立请求；
+    // 同 groupId 让时间线/缩略图栏把它们归并为同一批次。
+    const batchCount = kind === 'image'
+      ? Math.max(1, Math.min(4, Number.parseInt(params?.batch, 10) || 1))
+      : 1;
+    const groupId = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const taskIds = Array.from({ length: batchCount }, (_, i) => `${groupId}:${i}`);
+
+    try {
+      const materializedAssets = Array.isArray(assets)
+        ? await Promise.all(assets.map(materializeAssetFile))
+        : assets;
+      // 传入 activeOperation：serializeReferenceAssets 会按当前契约 inputs 自愈真实槽位名，
+      // 消除 reference_image 与 reference_images 这类单复数不匹配导致的槽位错绑。
+      const serializedReferences = serializeReferenceAssets(materializedAssets, activeOperation);
+
+      // 提交所需参数随 media 项持久化，供失败重试与刷新续传复用
+      const request = {
+        prompt,
+        kind,
+        operation,
+        model,
+        channel,
+        aspectRatio: params?.aspectRatio,
+        resolution: params?.resolution,
+        duration: params?.duration,
+        sound: params?.hasSound,
+        sessionId,
+        references: serializedReferences,
+        annotations,
+      };
+
+      for (const taskId of taskIds) {
+        store.addMedia({
+          id: taskId,
+          sessionId,
+          groupId,
+          status: 'generating',
+          type: kind === 'video' ? 'video' : 'image',
+          prompt,
+          aspectRatio: params?.aspectRatio || '1:1',
+          title: prompt.slice(0, 30),
+          timestamp: Date.now(),
+          requestKey: taskId,
+          request,
+        });
+      }
+      store.setActiveId(taskIds[0]);
+      store.setGenerating(true, { prompt, model, status: 'running' });
+      onAccepted?.();
+
+      // 渠道选择与容灾唯一拥有者在服务端（resolveExecutionPlan + execute 分组容灾）；
+      // 客户端透传用户选择的渠道，不自行换道或按错误文本正则重试。
+      // 失败任务留在原位（status:'failed' + failure），不切走 activeId、不弹 toast。
+      await Promise.allSettled(taskIds.map((taskId) => runGenerationTask(taskId, { store })));
+    } catch (err) {
+      // 素材预物化等提交前置步骤失败：所有任务原位标失败，不切走不弹 toast
+      onRejected?.();
+      console.error('[MediaViewer] Direct generate failed:', err);
+      for (const taskId of taskIds) {
+        const item = (store.getSnapshot().mediaList || []).find((m) => m.id === taskId);
+        const failure = { ...describeGenerationFailure({ error: err?.message }), retryable: false };
+        if (!item) {
+          // 原素材仍在输入框：复用既有失败出口，不以缺素材的请求重放。
+          store.addMedia({
+            id: taskId, sessionId, groupId, status: 'failed',
+            type: kind === 'video' ? 'video' : 'image',
+            prompt, title: prompt.slice(0, 30),
+            aspectRatio: params?.aspectRatio || '1:1',
+            requestReplayable: false, failure,
+          });
+        } else if (item.status === 'generating') {
+          store.updateMedia(taskId, { status: 'failed', resuming: false, failure });
+        }
+      }
+      store.setActiveId(taskIds[0]);
+    } finally {
+      // 安全并发任务管理：仅当当前会话中没有其他正在生成的任务时才复位生成状态
+      const currentList = store.getSnapshot().mediaList || [];
+      if (!currentList.some((m) => m.status === 'generating')) {
+        store.setGenerating(false);
+      }
+    }
+  };
+
+  // 缩放平移与跨图记忆锁定引擎
+  const [zoomScale, setZoomScale] = useState(1.0);
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef({ startX: 0, startY: 0 });
+
+  const annotations = store.getAnnotations(activeItem?.id);
+  const savedAnnotations = annotations.filter((a) => a.status === 'saved');
+
+  // 鼠标滚轮与触控板/手写板双指捏合无级平滑缩放
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const handleWheel = (e) => {
+      // 缩略图栏自身的上下滚动优先：栏内滚轮不再被画布缩放拦截
+      if (e.target.closest && e.target.closest('.omx-mv-thumbnails-rail')) return;
+      e.preventDefault();
+      const zoomFactor = e.ctrlKey ? 0.04 : 0.0015;
+      const delta = -e.deltaY * zoomFactor;
+      setZoomScale((prev) => {
+        const next = Math.min(Math.max(prev * (1 + delta), 0.15), 5.0);
+        store.setZoom(Math.round(next * 100));
+        return next;
+      });
+    };
+    stage.addEventListener('wheel', handleWheel, { passive: false });
+    return () => stage.removeEventListener('wheel', handleWheel);
+  }, []);
+
+  // 全局鼠标拖拽释放兜底
+  useEffect(() => {
+    const handleGlobalMouseUp = () => setIsDragging(false);
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
+  }, []);
+
+  // 画布身份投影：单图浏览 = 图像画布。hub 侧的原生输入框投射规则以该标识为键，
+  // 只有画布 + 右侧栏全屏才把输入框悬浮到画布底端（Issue #1821）。
+  useLayoutEffect(() => {
+    const root = viewerRootRef.current;
+    if (!root) return undefined;
+    let alive = true;
+    const sync = () => {
+      if (alive) syncImageCanvasStage(root, { hasActiveMedia: Boolean(activeItem?.id) });
+    };
+    sync();
+    // 标签页前后切换会改变舞台可见性：同步前台标识，避免后台标签仍声明画布在前台。
+    if (typeof ResizeObserver === 'function') {
+      const observer = new ResizeObserver(sync);
+      observer.observe(root);
+      return () => {
+        alive = false;
+        observer.disconnect();
+      };
+    }
+    return () => {
+      alive = false;
+    };
+  }, [activeItem?.id]);
+
+  // Register workbench Agent UI context for canvas and active annotations
+  useEffect(() => {
+    return registerContextContributor(MEDIA_VIEWER_TAB_ID, () => {
+      const currentAnnotations = store.getAnnotations(activeItem?.id);
+      const saved = currentAnnotations.filter((a) => a.status === 'saved');
+      return {
+        view: {
+          kind: 'canvas',
+          activeMediaId: activeItem?.id,
+          annotationsCount: saved.length,
+        },
+        selection: [],
+      };
+    });
+  }, [activeItem?.id]);
+
+  // Esc 优先关闭历史抽屉，其次退出打点；↑/↓ 切换历史素材。
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        if (historyOpen) {
+          e.preventDefault();
+          setHistoryOpen(false);
+          return;
+        }
+        if (isAnnotating) {
+          store.cancelDraftAnnotation(activeItem?.id);
+          store.setAnnotating(false);
+          setDraftText('');
+        }
+        return;
+      }
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      if (historyOpen || !isElementShown(viewerRootRef.current)) return;
+      const target = e.target;
+      const tagName = target?.tagName;
+      if (tagName === 'INPUT' || tagName === 'TEXTAREA' || target?.isContentEditable) return;
+      if (target?.closest?.('button, a, select, [role="button"], [role="dialog"], [role="menu"]')) return;
+      if (thumbnailsList.length === 0) return;
+      const currentIndex = thumbnailsList.findIndex((item) => item.id === activeItem?.id);
+      const delta = e.key === 'ArrowDown' ? 1 : -1;
+      const nextIndex = currentIndex < 0
+        ? 0
+        : Math.min(Math.max(currentIndex + delta, 0), thumbnailsList.length - 1);
+      if (nextIndex === currentIndex) return;
+      e.preventDefault();
+      store.setActiveId(thumbnailsList[nextIndex].id);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [historyOpen, isAnnotating, activeItem?.id, thumbnailsList, store]);
+
+  // 切换图片：严格保持当前缩放比例不变（跨图锁定）
+  const handleSelectMedia = (item) => {
+    store.setActiveId(item.id);
+  };
+
+  const handleResetZoom = () => {
+    setZoomScale(1.0);
+    setPanOffset({ x: 0, y: 0 });
+    store.setZoom(100);
+  };
+
+  const handleMouseDown = (e) => {
+    if (e.button !== 0 || isAnnotating) return;
+    if (e.target.closest('.omx-mv-thumbnails-rail') || e.target.closest('.omx-mv-annotation-popover') || e.target.closest('.omx-mv-annotation-pin')) {
+      return;
+    }
+    setIsDragging(true);
+    dragStartRef.current = {
+      startX: e.clientX - panOffset.x,
+      startY: e.clientY - panOffset.y,
+    };
+  };
+
+  const handleMouseMove = (e) => {
+    if (!isDragging) return;
+    setPanOffset({
+      x: e.clientX - dragStartRef.current.startX,
+      y: e.clientY - dragStartRef.current.startY,
+    });
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  const handleDoubleClick = (e) => {
+    if (isAnnotating) return;
+    if (e.target.closest('.omx-mv-thumbnails-rail') || e.target.closest('.omx-mv-annotation-popover') || e.target.closest('.omx-mv-annotation-pin')) {
+      return;
+    }
+    if (Math.abs(zoomScale - 1.0) < 0.08) {
+      setZoomScale(1.5);
+      store.setZoom(150);
+    } else {
+      handleResetZoom();
+    }
+  };
+
+  const downloadMediaItem = (item) => {
+    if (!item?.url) return;
+    const a = document.createElement('a');
+    a.href = item.url;
+    a.download = item.title || (item.type === 'video' ? 'media_export.mp4' : 'media_export.jpg');
+    a.click();
+  };
+
+  const handleDownload = () => downloadMediaItem(activeItem);
+
+  const handleSelectHistory = (entry) => {
+    const primary = entry?.primary || entry?.items?.[0];
+    if (!primary) return;
+    handleSelectMedia(primary);
+    setHistoryOpen(false);
+  };
+
+  const handleReuseHistoryPrompt = (entry) => {
+    if (!entry?.prompt?.trim()) return;
+    queueComposerPrefill({
+      prompt: entry.prompt,
+      kind: entry.kind === 'video' ? 'video' : 'image',
+    });
+    setHistoryOpen(false);
+  };
+
+  const handleImageClick = (e) => {
+    if (!isAnnotating || !activeItem?.id) return;
+    if (e.target.closest('.omx-mv-annotation-popover') || e.target.closest('.omx-mv-annotation-pin')) {
+      return;
+    }
+    const img = imageRef.current;
+    if (!img) return;
+    const rect = img.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    if (x < 0 || x > 100 || y < 0 || y > 100) return;
+    store.addDraftAnnotation(activeItem.id, { xPercent: x, yPercent: y });
+    setDraftText('');
+  };
+
+  return (
+    <div
+      className="omx-media-viewer"
+      ref={viewerRootRef}
+      data-layout-mode={layoutMode}
+      data-history-width={wideLayout ? 'wide' : 'narrow'}
+      data-layout-compact={compactLayout ? 'true' : 'false'}
+      data-history-open={historyOpen ? 'true' : 'false'}
+    >
+      {/* 顶部工具栏 */}
+      <div className="omx-mv-toolbar" ref={toolbarRef}>
+        <div className="omx-mv-toolbar__center">
+          {savedAnnotations.length > 0 ? (
+              <div className="omx-mv-toolbar-comments-bar">
+                <span className="omx-mv-toolbar-comments-bar__count">已标记 {savedAnnotations.length} 处</span>
+                <button // exempt-ui01: 评论清空按钮
+                  type="button"
+                  className="omx-mv-toolbar-comments-bar__btn-close"
+                  title="清空当前所有评论"
+                  aria-label="清空当前所有评论"
+                  onClick={() => store.clearAnnotations(activeItem?.id)}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
+            ) : (
+              <button // exempt-ui01: 添加评论按钮
+                type="button"
+                className={`omx-mv-btn--comment ${isAnnotating ? 'active' : ''}`}
+                title={isAnnotating ? '点击画面标记评论（按 Esc 退出）' : '点击在画面上添加评论标记'}
+                onClick={() => store.setAnnotating(!isAnnotating)}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="9" />
+                  <line x1="12" y1="8" x2="12" y2="16" />
+                  <line x1="8" y1="12" x2="16" y2="12" />
+                </svg>
+                <span>添加评论</span>
+              </button>
+            )}
+        </div>
+
+        <div className="omx-mv-toolbar__right">
+          <button // exempt-ui01: 历史抽屉触发器（窄容器显示，宽容器由 CSS 隐藏）
+              type="button"
+              className="omx-mv-btn omx-mv-history-toggle"
+              ref={historyToggleRef}
+              title={flowAlignmentText(t, 'mediaViewer.history.toggle')}
+              aria-label={flowAlignmentText(t, 'mediaViewer.history.toggle')}
+              aria-expanded={historyOpen}
+              aria-controls={historyId}
+              onClick={() => setHistoryOpen((open) => !open)}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <line x1="8" y1="6" x2="21" y2="6" />
+                <line x1="8" y1="12" x2="21" y2="12" />
+                <line x1="8" y1="18" x2="21" y2="18" />
+                <line x1="3" y1="6" x2="3.01" y2="6" />
+                <line x1="3" y1="12" x2="3.01" y2="12" />
+                <line x1="3" y1="18" x2="3.01" y2="18" />
+              </svg>
+              <span>{flowAlignmentText(t, 'mediaViewer.history.toggle')}</span>
+            </button>
+          <button // exempt-ui01: 变焦缩放按钮
+                type="button"
+                className="omx-mv-btn"
+                onClick={() => {
+                  const levels = [0.5, 0.7, 1.0, 1.5, 2.0];
+                  let idx = levels.indexOf(Math.round(zoomScale * 10) / 10);
+                  idx = (idx + 1) % levels.length;
+                  const next = levels[idx];
+                  setZoomScale(next);
+                  setPanOffset({ x: 0, y: 0 });
+                  store.setZoom(Math.round(next * 100));
+                }}
+                title="调整缩放比例 (滚轮/手势可无级缩放，双击画面快速复位)"
+              >
+                <span>{Math.round(zoomScale * 100)}%</span>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </button>
+              {Math.abs(zoomScale - 1.0) >= 0.05 ? (
+                <button // exempt-ui01: 适应窗口按钮
+                  type="button"
+                  className="omx-mv-btn"
+                  onClick={handleResetZoom}
+                  title="恢复适合窗口大小"
+                >
+                  适应窗口
+                </button>
+              ) : null}
+              <button // exempt-ui01: 外部打开按钮
+                type="button"
+                className="omx-mv-btn omx-mv-btn--icon"
+                title="在默认看图软件中打开"
+                aria-label="在默认看图软件中打开"
+                onClick={() => window.open(activeItem?.url, '_blank')}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                  <polyline points="15 3 21 3 21 9" />
+                  <line x1="10" y1="14" x2="21" y2="3" />
+                </svg>
+              </button>
+              <button // exempt-ui01: 下载按钮
+                type="button"
+                className="omx-mv-btn omx-mv-btn--icon"
+                title="下载原图"
+                aria-label="下载原图"
+                onClick={handleDownload}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+              </button>
+        </div>
+      </div>
+
+      {/* 主舞台区 */}
+      <div className="omx-mv-stage-wrapper">
+        {/* 视口展示区 */}
+        <div
+          className="omx-mv-viewport"
+          data-has-generation={state.generationTasks.some((task) => task.sessionId === sessionId && task.media?.length > 0) || undefined}
+        >
+          <GenerationTasks tasks={state.generationTasks.filter((task) => task.sessionId === sessionId)} imageUrl={imageUrl} readFile={readFile} />
+          {/* 单图大画布展示区与左上角 1:1 居中微型缩略图悬浮栏 */}
+            <div
+              className="omx-mv-single-stage"
+              ref={stageRef}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onDoubleClick={handleDoubleClick}
+            >
+              {/* 左上角候选多图纵向微型 1:1 居中滚动切换栏 (对标参考图) */}
+              {/* 防裂图基线检查契约保留: .filter((item) => item && (item.url || item.status === 'generating')) */}
+              {thumbnailsList.length > 1 ? (
+                <div className="omx-mv-thumbnails-rail" title="点击切换图片 (保持当前缩放比例)">
+                  {thumbnailsList.map((item) => {
+                    const isSelected = item.id === activeItem?.id;
+                    if (item.status === 'generating') {
+                      return (
+                        <div
+                          key={item.id}
+                          className={`omx-thumb-task-slot ${isSelected ? 'active' : ''}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSelectMedia(item);
+                          }}
+                          role="button"
+                          tabIndex={0}
+                          title={item.resuming ? '正在恢复任务' : '正在生成任务'}
+                        >
+                          <OrganicShimmerOverlay />
+                        </div>
+                      );
+                    }
+                    if (item.status === 'failed') {
+                      return (
+                        <div
+                          key={item.id}
+                          className={`omx-thumb-task-slot omx-thumb-task-slot--failed ${isSelected ? 'active' : ''}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSelectMedia(item);
+                          }}
+                          role="button"
+                          tabIndex={0}
+                          title="生成失败"
+                        />
+                      );
+                    }
+                    return (
+                      <div
+                        key={item.id}
+                        className={`omx-mv-thumbnails-rail__item ${isSelected ? 'active' : 'inactive'}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSelectMedia(item);
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        title={item.title || '切换图片'}
+                      >
+                        {item.type === 'video' ? (
+                          <>
+                            <video
+                              src={item.url ? `${item.url}#t=0.001` : ''}
+                              className="omx-mv-thumbnails-rail__img"
+                              muted
+                              preload="metadata"
+                              playsInline
+                            />
+                            <div className="omx-mv-thumbnails-rail__play-icon" title="视频素材">
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                                <polygon points="6 3 20 12 6 21 6 3" />
+                              </svg>
+                            </div>
+                          </>
+                        ) : (
+                          <img
+                            src={item.url}
+                            alt={item.title || '缩略图'}
+                            className="omx-mv-thumbnails-rail__img"
+                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                          />
+                        )}
+                        {item.type === 'video' && item.duration ? (
+                          <div className="omx-mv-thumbnails-rail__badge">{item.duration}</div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+
+              <div
+                className={`omx-mv-display ${isAnnotating ? 'is-annotating' : ''}`}
+                onClick={handleImageClick}
+                style={{
+                  transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomScale})`,
+                  cursor: isDragging ? 'grabbing' : (zoomScale > 1.05 ? 'grab' : 'default'),
+                }}
+              >
+                {activeItem?.status === 'generating' ? (
+                  <div
+                    className="omx-media-slot"
+                    data-ratio={activeItem?.aspectRatio || '1:1'}
+                  >
+                    <div className="omx-media-slot__shimmer-wrap omx-mv-generating-overlay" data-card="GeneratingStateCard">
+                      <GeneratingStateCard />
+                    </div>
+                  </div>
+                ) : activeItem?.status === 'failed' ? (
+                  <div
+                    className="omx-media-slot"
+                    data-ratio={activeItem?.aspectRatio || '1:1'}
+                  >
+                    <FailureCard item={activeItem} retryingIds={retryingIds} onRetry={handleRetryFailure} />
+                  </div>
+                ) : activeItem?.type === 'video' ? (
+                  <div
+                    className="omx-media-slot"
+                    data-ratio={activeItem?.aspectRatio || '1:1'}
+                  >
+                    <div className="omx-media-result active">
+                      <video src={activeItem.url} controls playsInline />
+                    </div>
+                  </div>
+                ) : activeItem?.url ? (
+                  <div
+                    className="omx-media-slot"
+                    data-ratio={activeItem?.aspectRatio || '1:1'}
+                  >
+                    <div className="omx-media-result active">
+                      <img
+                        ref={imageRef}
+                        src={activeItem?.url}
+                        alt={activeItem?.title || '预览'}
+                      />
+                    </div>
+                  </div>
+                ) : !state.generationTasks.some((task) => task.sessionId === sessionId && task.media?.length > 0) ? (
+                  <div className="omx-mv-empty-state">
+                    <svg className="omx-mv-empty-state__icon" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
+                      <circle cx="9" cy="9" r="2"/>
+                      <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
+                    </svg>
+                    <span className="omx-mv-empty-state__text">当前会话暂无生成的图片或视频</span>
+                  </div>
+                ) : null}
+
+                {/* 局部打点与气泡输入框层 */}
+                {annotations.map((item) => {
+                  if (item.status === 'draft') {
+                    const isNearRight = item.xPercent > 65;
+                    return (
+                      <div
+                        key={item.id}
+                        className="omx-mv-annotation-popover"
+                        style={{
+                          left: `${item.xPercent}%`,
+                          top: `${item.yPercent}%`,
+                          transform: isNearRight ? 'translate(-85%, -115%)' : 'translate(-15%, -115%)',
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="omx-mv-annotation-popover__badge">{item.index}</div>
+                        <input
+                          className="omx-mv-annotation-popover__input"
+                          autoFocus
+                          placeholder="添加评论..."
+                          value={draftText}
+                          onChange={(e) => setDraftText(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              store.commitAnnotation(activeItem?.id, item.id, draftText);
+                              setDraftText('');
+                            } else if (e.key === 'Escape') {
+                              store.cancelDraftAnnotation(activeItem?.id, item.id);
+                              setDraftText('');
+                            }
+                          }}
+                        />
+                        {draftText.trim() ? (
+                          <button // exempt-ui01: 评论提交按钮
+                            type="button"
+                            className="omx-mv-annotation-popover__submit"
+                            title="提交评论 (Enter)"
+                            onClick={() => {
+                              store.commitAnnotation(activeItem?.id, item.id, draftText);
+                              setDraftText('');
+                            }}
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                              <line x1="12" y1="19" x2="12" y2="5" />
+                              <polyline points="5 12 12 5 19 12" />
+                            </svg>
+                          </button>
+                        ) : null}
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div
+                      key={item.id}
+                      className="omx-mv-annotation-pin"
+                      style={{ left: `${item.xPercent}%`, top: `${item.yPercent}%` }}
+                      title={`标记 ${item.index}: ${item.text}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                      }}
+                    >
+                      {item.index}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          <MediaViewerComposer onDirectSubmit={handleDirectSubmit} disabled={false} t={t} />
+        </div>
+        <div
+          className="omx-mv-history-scrim"
+          aria-hidden="true"
+          onClick={() => setHistoryOpen(false)}
+        />
+        <HistoryPanel
+          id={historyId}
+          entries={historyEntries}
+          activeId={activeItem?.id}
+          open={historyOpen}
+          onSelect={handleSelectHistory}
+          onReusePrompt={handleReuseHistoryPrompt}
+          onDownload={downloadMediaItem}
+          onClose={() => setHistoryOpen(false)}
+          t={t}
+        />
+      </div>
+
+    </div>
+  );
+}

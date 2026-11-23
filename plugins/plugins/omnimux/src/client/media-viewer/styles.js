@@ -307,6 +307,14 @@ export const MEDIA_VIEWER_CSS = `
   border-color: var(--dsw-alias-border-l3);
 }
 
+/* 图标专用按钮：与缩放按钮同高，方形、只在中间放图标 */
+.omx-mv-btn--icon {
+  width: 28px;
+  padding: 0;
+  justify-content: center;
+  gap: 0;
+}
+
 .omx-mv-stage-wrapper {
   flex: 1;
   display: flex;

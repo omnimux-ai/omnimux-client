@@ -25,6 +25,9 @@ const pluginsDir = resolve(repoRoot, 'plugins')
  */
 export const DIRECT_LLM_ACCESS_ALLOWLIST = new Set([
   'plugins/omnimux-browser/src/text-session-model.ts',
+  // Reads model input capabilities (`resolveModelInfo`) to decide whether an image may also
+  // enter model context; never starts a model call.
+  'plugins/omnimux-viewer/src/display-file.ts',
 ])
 
 const DIRECT_LLM_STREAM_RE = /\b(?:ctx\s*\??\.\s*|subCtx\s*\??\.\s*)?llm\s*\??\.\s*stream\s*\(/
