@@ -65,7 +65,7 @@ Launcher 私有的 `desktopRuntime`、`desktopPnpmBootstrap`、Electron executab
 
 发布包使用 Electron Builder 和 `app.asar`，但需要物理 unpack 的依赖（例如 pnpm、node-pty、Windows ACL/native 文件）会放在 `app.asar.unpacked`。Packaged runtime gate 会检查 ASAR 入口和物理运行时入口，profile fallback 不能把符号链接指向无法被 Node 解析的虚拟 ASAR 路径。
 
-根 workspace 使用 Yarn；固定的 `deepseek-harness/` 子模块保持上游自己的 pnpm workspace。OmniMux 只交付 `dsh-plugin-desktop` 一条稳定线，DSH `0.1.2-rc.1` 固定在 `upstream.json` 中。
+根 workspace 使用 Yarn；固定的 `deepseek-harness/` 子模块保持上游自己的 pnpm workspace。OmniMux 只交付 `dsh-plugin-desktop` 一条稳定线，DSH `0.2.1-rc.3` 固定在 `upstream.json` 中。
 
 物理运行时包含 `lib`、`node_modules`、包元数据和产品 preset；CLI 与 Worker 共用这套路径。Unsigned directory build 禁止签名和发布；最终产物校验检查 Electron Fuse，并执行包内 CLI 和诊断 Worker。
 

@@ -80,7 +80,7 @@ The welcome text shows the application version, active profile, profile director
 
 ## Updates
 
-Packaged macOS and Windows applications check `https://updates.omnimux.local/api/desktop/version` in the background. Startup is not blocked; network errors, non-200 responses, invalid versions, and a server version that is not newer remain silent in the background. A newer version updates the tray and raises one non-blocking system notification per version instead of opening a download confirmation automatically; clicking the notification reveals Desktop.
+Packaged macOS and Windows applications check `https://dl.omnimux.ai/api/desktop/version-stable.json` in the background. Startup is not blocked; network errors, non-200 responses, invalid versions, and a server version that is not newer remain silent in the background. A newer version updates the tray and raises one non-blocking system notification per version instead of opening a download confirmation automatically; clicking the notification reveals Desktop.
 
 **Check for Updates…** in the tray checks stable releases. It shows the result even when the installed version is current and reports a retry message when the check fails. Cancelling does not start a download.
 

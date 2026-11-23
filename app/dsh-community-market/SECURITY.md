@@ -34,6 +34,6 @@ Exactly one source is selected for browsing. Source failure never silently selec
 
 ## Reporting a vulnerability
 
-Report suspected vulnerabilities privately to [t4wefan@qq.com](mailto:t4wefan@qq.com). Include the affected version or commit, operating system, reproduction steps, expected impact, and a minimal proof of concept that can be shared safely.
+Report suspected vulnerabilities privately via [GitHub Security Advisories](https://github.com/omnimux-ai/omnimux-client/security/advisories/new) or by email to [hello@omnimux.ai](mailto:hello@omnimux.ai) (see also the repository-root [`SECURITY.md`](../../SECURITY.md)). Include the affected version or commit, operating system, reproduction steps, expected impact, and a minimal proof of concept that can be shared safely.
 
 Do not include secrets or personal data, and do not open a public issue for an unpatched vulnerability. Ordinary bugs, catalog corrections, and feature requests may use the public issue tracker.

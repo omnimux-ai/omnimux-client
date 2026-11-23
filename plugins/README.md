@@ -137,6 +137,7 @@ OmniMux 的构建与演进站在了开源巨人的肩膀上，我们对以下直
 * **[Augani/openreel-video](https://github.com/Augani/openreel-video)** (MIT License, by Augani)：`omnimux-clip` 剪辑工坊全套 WebCodecs/WebGPU 时间轴与微应用 Vendorize 真源。
 * **[Crosery/dsh-viewer](https://github.com/Crosery/dsh-viewer)** (MIT License, by Crosery)：历史归属说明：`omnimux-viewer` 曾作为全能媒体渲染器插件来源，当前不在本仓 `plugins/` 内构建或内置。
 * **[omdsh-dev/dsh-browser](https://github.com/omdsh-dev/dsh-browser)** (MIT License, by Yuxiang Lin)：`omnimux-browser` 浏览器伴侣插件与 Chrome 扩展的来源；源码已迁入本仓 `plugins/plugins/omnimux-browser/`，随产品一起构建与发布。
+* **[glanderness/BeefTV](https://github.com/glanderness/BeefTV)** (MIT License，锁定基线 `5e2ad602`，by @beefnoode & BeefTV Contributors) 与 **[Quaternius](https://quaternius.itch.io/universal-base-characters)** (CC0 1.0)：`omnimux-workflow` 导演台组件与免费基础 3D 角色模型来源；严格不同步 `6b30abfe` 及之后的 Source Available 提交，详见 [`THIRD-PARTY-NOTICES-director.md`](plugins/omnimux-workflow/THIRD-PARTY-NOTICES-director.md)。
 * **[deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)** (MIT License, by DeepSeek AI)：官方核心 Agent 运行底座与 Harness 插件规范。
 * **[anywhere-labs/deepseek-harness-desktop](https://github.com/anywhere-labs/deepseek-harness-desktop)** (MIT License, by Anywhere Labs)：OmniMux 桌面端 Electron Shell 的 Fork 底座。
 * **[@xyflow/react (React Flow)](https://github.com/xyflow/xyflow)** (MIT License, by xyflow)：`omnimux-workflow` 无限画布 DAG 节点连接与编排引擎。
