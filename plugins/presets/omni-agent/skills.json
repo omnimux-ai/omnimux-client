@@ -24,10 +24,6 @@
       "name": "创作视频"
     },
     {
-      "id": "爆款解构SOP",
-      "name": "爆款解构SOP"
-    },
-    {
       "id": "分镜与提示词",
       "name": "分镜与提示词"
     },
@@ -224,17 +220,6 @@
       "category": "创作视频",
       "description": "上传TK视频链接，自动反推出该视频背后，可用于AI视频生成的高质量提示词。",
       "summary": "上传TK视频链接，自动反推出该视频背后，可用于AI视频生成的高质量提示词。",
-      "installed": true
-    },
-    {
-      "id": "sk-viral-sop",
-      "slug": "viral-video-replication",
-      "skill": "viral-video-replication",
-      "name": "爆款视频复刻标准作业程序 (SOP)",
-      "title": "爆款视频复刻标准作业程序 (SOP)",
-      "category": "爆款解构SOP",
-      "description": "基于爆款参考视频，执行原片深度解构、黄金Hook提炼、字词级语义对齐与画布节点协同。",
-      "summary": "基于爆款参考视频，执行原片深度解构、黄金Hook提炼、字词级语义对齐与画布节点协同。",
       "installed": true
     },
     {

@@ -8,14 +8,15 @@ import { fileURLToPath } from 'node:url'
 import { SOCIAL_DATA_CATALOG } from '../plugins/omnimux/src/official/social-data.js'
 
 /**
- * Gate for the preset skill surface after rc.3.
+ * Gate for the preset skill surface after rc.3 (updated for #234).
  *
  * rc.3 carries presets through packaged declarations (`preset/agent-presets`
  * plus shell declarations); `sync-agent-presets.sh` no longer materialises
  * preset skills into a consumer home. These tests therefore check:
  *  - no shipped preset registers its own skill directory (`customSkillDirs`);
- *  - the composition-authoring skills ship with the owning hub package
- *    (`plugins/omnimux/skills/<id>`), not a `presets/cordis/skills` copy;
+ *  - product plugins NEVER duplicate upstream DSH Creator-mode skills owned by
+ *    `@deepseek-ai/dsh-agent-preset/skills/` (`cordis-plugin-development`,
+ *    `editing-cordis-compositions`, `agent-experience`, `cordis-composition-reference`);
  *  - `sync-agent-presets.sh` writes nothing into the target skill root and
  *    never clobbers an existing user-owned skill.
  */
@@ -39,13 +40,35 @@ test('no shipped preset registers its own skill directory', () => {
   assert.deepEqual(offenders, [], `these presets still register a skill root the packaged copy cannot list: ${offenders.join(', ')}`)
 })
 
-test('the cordis composition-authoring skills ship with the hub package', () => {
-  // [client-port] The skills ship from the owning hub package, not a
-  // presets/cordis/skills copy (rc.3 carries presets via packaged declarations).
-  for (const id of ['editing-cordis-compositions', 'cordis-plugin-development']) {
-    const skill = join(root, 'plugins', 'omnimux', 'skills', id, 'SKILL.md')
-    assert.equal(existsSync(skill), true, `missing ${skill}`)
-    assert.match(readFileSync(skill, 'utf8'), new RegExp(`name:\\s*${id}`), `${id}/SKILL.md must declare its own name`)
+test('product plugins never duplicate upstream DSH Creator-mode Cordis skills (#234)', () => {
+  // Upstream `@deepseek-ai/dsh-agent-preset/skills/` owns these Creator-mode
+  // skills and scopes them exclusively to the `cordis` preset. Shipping stale
+  // copies inside `plugins/omnimux/skills/` pollutes global `$DSH_HOME/skills/`
+  // and conflicts with upstream versions.
+  const upstreamCreatorSkills = [
+    'agent-experience',
+    'cordis-composition-reference',
+    'cordis-plugin-development',
+    'editing-cordis-compositions',
+  ]
+  const pluginsRoot = join(root, 'plugins')
+  for (const entry of readdirSync(pluginsRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    for (const id of upstreamCreatorSkills) {
+      const skill = join(pluginsRoot, entry.name, 'skills', id, 'SKILL.md')
+      assert.equal(existsSync(skill), false, `${entry.name} must not ship duplicate upstream skill ${id}`)
+    }
+    const manifestPath = join(pluginsRoot, entry.name, 'dsh.manifest.json')
+    if (!existsSync(manifestPath)) continue
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+    const declared = Array.isArray(manifest.skills) ? manifest.skills : []
+    for (const id of upstreamCreatorSkills) {
+      assert.equal(
+        declared.some((rel) => rel === `skills/${id}/SKILL.md`),
+        false,
+        `${entry.name}/dsh.manifest.json must not declare duplicate upstream skill ${id}`,
+      )
+    }
   }
 })
 

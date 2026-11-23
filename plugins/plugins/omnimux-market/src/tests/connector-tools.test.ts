@@ -6,7 +6,7 @@ import test from 'node:test'
 import { createConnectorTools, type ConnectorToolDeps } from '../connector-tools.js'
 import { findItem, installItem, removeMcpRow, withConnectorPatchLock } from '../expert/install.js'
 
-const PACKAGE_ROOT = join(import.meta.dirname, '..', '..')
+const DEMO_SKILL_MD = '---\nname: esc-demo-note\ndescription: Test fixture expert skill\n---\n\n# Demo Fixture\n'
 
 function item(partial: Record<string, unknown>): Record<string, unknown> {
   return {
@@ -30,8 +30,11 @@ function catalog(items: Record<string, unknown>[]) {
 function roots() {
   const home = mkdtempSync(join(tmpdir(), 'omx-cn-'))
   const profileDir = join(home, 'profiles', 'omnimux')
+  const packageRoot = join(home, 'fixture-pkg')
   mkdirSync(profileDir, { recursive: true })
-  return { home, profileDir, packageRoot: PACKAGE_ROOT }
+  mkdirSync(join(packageRoot, 'catalog', 'skills', 'esc-demo-note'), { recursive: true })
+  writeFileSync(join(packageRoot, 'catalog', 'skills', 'esc-demo-note', 'SKILL.md'), DEMO_SKILL_MD, 'utf8')
+  return { home, profileDir, packageRoot }
 }
 
 function makeTools(opts: {

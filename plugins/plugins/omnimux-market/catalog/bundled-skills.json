@@ -1,0 +1,84 @@
+{
+  "$schema": "omnimux.market.bundled-skills/v1",
+  "description": "Explicit ownership registry for complete bundled skills stored under catalog/skills/ that are intentionally outside catalog/index.json marketplace cards (e.g. preset shelf, session guide, suite members, or internal library). Every directory under catalog/skills/ must be claimed by either catalog/index.json or this file, with zero overlap.",
+  "skills": [
+    {
+      "slug": "ad-creative",
+      "role": "preset-shelf",
+      "owner": "omnimux-market",
+      "notes": "Referenced by preset shelf, social-content-team suite, and product-photoshoot references."
+    },
+    {
+      "slug": "bggg-data-amazon",
+      "role": "session-guide",
+      "owner": "omnimux-market",
+      "notes": "Amazon review scraping skill referenced by session-guide catalog with LICENSE and PROVENANCE."
+    },
+    {
+      "slug": "character-scene-storyboard",
+      "role": "internal-library",
+      "owner": "omnimux-market",
+      "notes": "Complete first-party character/scene storyboard skill; pending marketplace listing or Phase 2 shelf promotion."
+    },
+    {
+      "slug": "cinematic-motion-language",
+      "role": "preset-shelf",
+      "owner": "omnimux-market",
+      "notes": "Referenced by omni-agent and preset-skills shelves."
+    },
+    {
+      "slug": "clip-export",
+      "role": "preset-shelf",
+      "owner": "omnimux-market",
+      "notes": "Referenced by preset-skills, omni-agent, and session-guide catalog."
+    },
+    {
+      "slug": "content-strategy",
+      "role": "preset-shelf",
+      "owner": "omnimux-market",
+      "notes": "Referenced by preset-skills, omni-agent, and social-content-team."
+    },
+    {
+      "slug": "dynamic-poster",
+      "role": "internal-library",
+      "owner": "omnimux-market",
+      "notes": "Complete first-party dynamic poster skill with scripts/references; pending marketplace listing."
+    },
+    {
+      "slug": "ecommerce-image",
+      "role": "preset-shelf",
+      "owner": "omnimux-market",
+      "notes": "Referenced by preset-skills, omni-agent, and session-guide catalog."
+    },
+    {
+      "slug": "hypit-setup",
+      "role": "session-guide",
+      "owner": "omnimux-market",
+      "notes": "Session-guide external tool onboarding flow covered by hypit-setup-guide e2e tests."
+    },
+    {
+      "slug": "kling-global-ad-localizer",
+      "role": "preset-shelf",
+      "owner": "omnimux-market",
+      "notes": "Referenced by preset-skills, omni-agent, and kling-ad-localizer-bundled e2e tests."
+    },
+    {
+      "slug": "replicate-viral-video",
+      "role": "preset-shelf",
+      "owner": "omnimux-market",
+      "notes": "Canonical viral video replication skill backing the #1 composer quick shortcut and preset shelf."
+    },
+    {
+      "slug": "social-caption",
+      "role": "preset-shelf",
+      "owner": "omnimux-market",
+      "notes": "Referenced by preset-skills, omni-agent, and social-content-team."
+    },
+    {
+      "slug": "stickman-video-director",
+      "role": "internal-library",
+      "owner": "omnimux-market",
+      "notes": "Complete first-party stickman explainer video director skill; pending marketplace listing."
+    }
+  ]
+}

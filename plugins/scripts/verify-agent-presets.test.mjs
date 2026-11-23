@@ -106,11 +106,12 @@ test('omni-agent agent.cordis.yml is structurally valid and mounts generic subag
   ok(text.includes('provider: spawn'), 'generic subagent spawn tool must be mounted')
   ok(text.includes('sampleOverCapGlobResults: false'), 'tool-fs must configure sampleOverCapGlobResults')
   deepEqual(toolNames(text), [], 'omni-agent must not mount static expert_* subagent rows')
-  // Skills ship from the plugin that owns them; rc.3 only installs `preset/skills`.
+  // Skills ship from the plugin that owns them; Creator-mode Cordis skills are
+  // owned exclusively by upstream `@deepseek-ai/dsh-agent-preset/skills/` (#234).
   ok(existsSync(join(root, 'plugins/omnimux-market/skills/tiktok-growth/SKILL.md')))
   ok(existsSync(join(root, 'plugins/omnimux-market/skills/sopilot-social-agents/SKILL.md')))
-  ok(existsSync(join(root, 'plugins/omnimux/skills/cordis-plugin-development/SKILL.md')))
-  ok(existsSync(join(root, 'plugins/omnimux/skills/editing-cordis-compositions/SKILL.md')))
+  ok(!existsSync(join(root, 'plugins/omnimux/skills/cordis-plugin-development/SKILL.md')))
+  ok(!existsSync(join(root, 'plugins/omnimux/skills/editing-cordis-compositions/SKILL.md')))
   const rows = parseWithPython(rel)
   ok(rows >= 8, `omni-agent parsed ${rows} top-level rows`)
 })

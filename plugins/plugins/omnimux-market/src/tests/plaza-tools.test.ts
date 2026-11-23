@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import { createPlazaTools, listPlazaLocal, PLAZA_PROMPT_LINES, renderPlazaSearch, tokenizePlazaQuery } from '../plaza-tools.js'
 
-const PACKAGE_ROOT = join(import.meta.dirname, '..', '..')
+const DEMO_SKILL_MD = '---\nname: esc-demo-note\ndescription: Test fixture expert skill\n---\n\n# Demo Fixture\n'
 
 type Item = Record<string, unknown>
 
@@ -32,9 +32,12 @@ function catalog(items: Item[]) {
 function roots() {
   const home = mkdtempSync(join(tmpdir(), 'omx-plaza-'))
   const profileDir = join(home, 'profiles', 'omnimux')
+  const packageRoot = join(home, 'fixture-pkg')
   mkdirSync(profileDir, { recursive: true })
   mkdirSync(join(home, 'skills'), { recursive: true })
-  return { home, profileDir, packageRoot: PACKAGE_ROOT }
+  mkdirSync(join(packageRoot, 'catalog', 'skills', 'esc-demo-note'), { recursive: true })
+  writeFileSync(join(packageRoot, 'catalog', 'skills', 'esc-demo-note', 'SKILL.md'), DEMO_SKILL_MD, 'utf8')
+  return { home, profileDir, packageRoot }
 }
 
 function toolsFor(items: Item[], env = roots()) {
