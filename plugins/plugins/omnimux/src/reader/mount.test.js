@@ -62,6 +62,65 @@ describe('mountReader', () => {
       else process.env.OMNIMUX_TOKEN = previousToken
     }
   })
+
+  it('execute sends X-Omnimux-Group data-reader and propagates classified OmnimuxError codes', async () => {
+    const cases = [
+      {
+        status: 402,
+        body: { error: { message: 'Insufficient balance' } },
+        expectedCode: 'quota-exceeded',
+        expectedRetryable: false,
+      },
+      {
+        status: 403,
+        body: { error: { code: 'insufficient_user_quota', message: 'quota exhausted' } },
+        expectedCode: 'quota-exceeded',
+        expectedRetryable: false,
+      },
+      {
+        status: 403,
+        body: { error: { message: 'forbidden for group data-reader' } },
+        expectedCode: 'needs-omnimux',
+        expectedRetryable: false,
+        expectedMessage: 'forbidden for group data-reader',
+      },
+      {
+        status: 503,
+        body: { error: { message: '当前分组 data-reader 下模型 jina-reader-v1 无可用渠道 (distributor)' } },
+        expectedCode: 'CHANNEL_UNAVAILABLE',
+        expectedRetryable: true,
+      },
+    ]
+
+    for (const tc of cases) {
+      let pageFetchTool = null
+      let seenGroup = ''
+      mountReader(
+        { tools: { register(tool) { pageFetchTool = tool } } },
+        {
+          hub: { official: { mount: true }, gate: parseGateConfig(undefined) },
+          env: { OMNIMUX_API_KEY: 'sk-test' },
+          fetcher: async (_url, init) => {
+            seenGroup = String(init?.headers?.['X-Omnimux-Group'] || '')
+            return { ok: false, status: tc.status, text: async () => JSON.stringify(tc.body) }
+          },
+          objectParams,
+          jsonOut: JSON_TOOL_OUTPUT,
+          rethrow,
+        },
+      )
+      assert.equal(pageFetchTool?.name, 'omnimux_page_fetch')
+      await assert.rejects(
+        () => pageFetchTool.execute({ url: 'https://example.com' }),
+        (error) => error instanceof OmnimuxError
+          && error.code === tc.expectedCode
+          && error.status === tc.status
+          && error.retryable === tc.expectedRetryable
+          && (!tc.expectedMessage || error.message.includes(tc.expectedMessage)),
+      )
+      assert.equal(seenGroup, 'data-reader')
+    }
+  })
 })
 
 describe('apply registers reader with official tools', () => {
@@ -97,6 +156,7 @@ describe('apply registers reader with official tools', () => {
       const originalFetch = globalThis.fetch
       globalThis.fetch = async (_url, init) => {
         assert.match(String(init.headers.authorization), /^Bearer sk-yaml$/)
+        assert.equal(init.headers['X-Omnimux-Group'], 'data-reader')
         return { ok: true, status: 200, text: async () => markdown, json: async () => { throw new Error('no json') } }
       }
       try {

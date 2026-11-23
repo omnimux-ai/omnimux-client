@@ -21,7 +21,7 @@ The task window and the workflow's 30-minute whole-run timeout (Issue #1386) are
 
 `ctx.provide('textComplete')` then `api.execute({ prompt, model?, image?, … })` runs one `ctx.llm.stream` call on an enabled `Config.text.models` row. Tool: `omnimux_text_complete`. Not a second chat: no parent messages, no tools, image stays on that request. A text-only call must name `model`. An image call may omit it and uses `grok-4.6` (`OMNIMUX_VISION_MODEL`). The eleven chat-directory models start enabled.
 
-Official-only page fetch: `omnimux_page_fetch({ url })` POSTs `/v1/reader` with locked model `jina-reader-v1` (`OMNIMUX_API_KEY`). Success is `text/plain` markdown parsed to `{ mode, model, url, title, pageContent }`. Do not reuse the JSON `withSk` client. Verticals must not open this HTTP themselves.
+Official-only page fetch: `omnimux_page_fetch({ url })` POSTs `/v1/reader` with locked model `jina-reader-v1` and header `X-Omnimux-Group: data-reader` (`OMNIMUX_API_KEY`). Success is `text/plain` markdown parsed to `{ mode, model, url, title, pageContent }`; upstream errors classify via `classifyQuotaFailure` / `classifyChannelFailure` (`401` or non-quota `403` → `needs-omnimux`, `402` or quota-evidence errors → `quota-exceeded`, channel-unavailable evidence such as distributor `503` → retryable `CHANNEL_UNAVAILABLE`, remaining failures → `omnimux-invalid-request` / `omnimux-request-failed`). Do not reuse the JSON `withSk` client. Verticals must not open this HTTP themselves.
 
 ## Identity (settings)
 
