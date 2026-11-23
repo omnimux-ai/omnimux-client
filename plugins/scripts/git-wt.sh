@@ -161,7 +161,7 @@ cmd_start() {
     fi
   fi
 
-  local wt_dir="$(cd "$REPO_ROOT/.." && pwd)/omnimux-dsh-wt-${wt_suffix}"
+  local wt_dir="$(cd "$REPO_ROOT/.." && pwd)/omnimux-client-wt-${wt_suffix}"
 
   if [ -d "$wt_dir" ]; then
     echo "⚠️  Worktree 目录已存在: $wt_dir"
@@ -236,17 +236,17 @@ cmd_finish() {
     fi
   fi
 
-  local wt_dir="$(cd "$REPO_ROOT/.." && pwd)/omnimux-dsh-wt-${wt_suffix}"
+  local wt_dir="$(cd "$REPO_ROOT/.." && pwd)/omnimux-client-wt-${wt_suffix}"
   if [ ! -d "$wt_dir" ]; then
-    if [ -n "$clean_issue" ] && [ -d "$(cd "$REPO_ROOT/.." && pwd)/omnimux-dsh-wt-${topic}" ]; then
-      wt_dir="$(cd "$REPO_ROOT/.." && pwd)/omnimux-dsh-wt-${topic}"
+    if [ -n "$clean_issue" ] && [ -d "$(cd "$REPO_ROOT/.." && pwd)/omnimux-client-wt-${topic}" ]; then
+      wt_dir="$(cd "$REPO_ROOT/.." && pwd)/omnimux-client-wt-${topic}"
       wt_suffix="${topic}"
     else
       local matched_dir
-      matched_dir=$(ls -d "$(cd "$REPO_ROOT/.." && pwd)/omnimux-dsh-wt-${topic}"* 2>/dev/null | head -1 || true)
+      matched_dir=$(ls -d "$(cd "$REPO_ROOT/.." && pwd)/omnimux-client-wt-${topic}"* 2>/dev/null | head -1 || true)
       if [ -n "$matched_dir" ] && [ -d "$matched_dir" ]; then
         wt_dir="$matched_dir"
-        wt_suffix=$(basename "$wt_dir" | sed 's/^omnimux-dsh-wt-//')
+        wt_suffix=$(basename "$wt_dir" | sed 's/^omnimux-client-wt-//')
       else
         echo "❌ 错误: 未找到 Worktree 目录: $wt_dir" >&2
         echo "当前活跃的 Worktree 清单:" >&2
@@ -544,14 +544,14 @@ cmd_clean() {
     fi
   fi
 
-  local wt_dir="$(cd "$REPO_ROOT/.." && pwd)/omnimux-dsh-wt-${wt_suffix}"
+  local wt_dir="$(cd "$REPO_ROOT/.." && pwd)/omnimux-client-wt-${wt_suffix}"
   if [ ! -d "$wt_dir" ]; then
-    # 前缀匹配：clean <topic>（不带 issue）时也能找到 omnimux-dsh-wt-<topic>-<issue>
+    # 前缀匹配：clean <topic>（不带 issue）时也能找到 omnimux-client-wt-<topic>-<issue>
     local matched_dir
-    matched_dir=$(ls -d "$(cd "$REPO_ROOT/.." && pwd)/omnimux-dsh-wt-${topic}"* 2>/dev/null | head -1 || true)
+    matched_dir=$(ls -d "$(cd "$REPO_ROOT/.." && pwd)/omnimux-client-wt-${topic}"* 2>/dev/null | head -1 || true)
     if [ -n "$matched_dir" ] && [ -d "$matched_dir" ]; then
       wt_dir="$matched_dir"
-      wt_suffix=$(basename "$wt_dir" | sed 's/^omnimux-dsh-wt-//')
+      wt_suffix=$(basename "$wt_dir" | sed 's/^omnimux-client-wt-//')
     fi
   fi
 

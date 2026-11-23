@@ -20,7 +20,7 @@ import { lstatSync, realpathSync, readFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 
-const MAIN_PLUGINS_MARK = `${sep}omnimux-dsh${sep}plugins${sep}`
+const MAIN_PLUGINS_MARK = `${sep}omnimux-client${sep}plugins${sep}`
 
 const EPHEMERAL_DIR_NAMES = new Set([
   'node_modules',
@@ -138,7 +138,7 @@ export function isMainRepoPluginPath(fullPath) {
   if (isWorktreePath(fullPath)) return false
   if (fullPath.includes(MAIN_PLUGINS_MARK)) return true
   const normalized = fullPath.replace(/\\/g, '/')
-  return normalized.includes('/omnimux-dsh/plugins/') || normalized.startsWith('plugins/') || normalized.includes('/plugins/')
+  return normalized.includes('/omnimux-client/plugins/') || normalized.startsWith('plugins/') || normalized.includes('/plugins/')
 }
 
 export function isEphemeralPath(fullPath) {
@@ -173,7 +173,7 @@ export function isProtectedScope(fullPath, cwd) {
   if (insideRepo) {
     relative = normalizedFullReal.slice(normalizedRoot.length + 1)
   } else if (normalizedFullReal.startsWith('/')) {
-    const marker = '/omnimux-dsh/'
+    const marker = '/omnimux-client/'
     const idx = normalizedFullReal.lastIndexOf(marker)
     if (idx !== -1) {
       relative = normalizedFullReal.slice(idx + marker.length)
@@ -818,7 +818,7 @@ export function setOwnerRepoRoot(root) {
 }
 
 /**
- * Repository that owns this guard script (the omnimux-dsh checkout that installed it).
+ * Repository that owns this guard script (the omnimux-client checkout that installed it).
  * For a linked worktree the script lives at <repo>/.worktrees/<task>/scripts/, so the
  * owning root is still the directory two levels above the script. Returns null when the
  * script is not inside a Git work tree — the main-branch gate then protects nothing.
@@ -900,7 +900,7 @@ export function decideMainBranchGitOp(command, cwd, options = {}) {
     const target = rawTarget || resolveGitTargetPath(seg, effectiveCwd) || effectiveCwd
     if (isWorktreePath(target)) continue
 
-    // 只保护本脚本所属仓库：目标目录不属于 omnimux-dsh 时不拦截外部仓的 main 操作。
+    // 只保护本脚本所属仓库：目标目录不属于 omnimux-client 时不拦截外部仓的 main 操作。
     const targetRoot = commandTargetRepoRoot(target)
     if (!ownerRoot || targetRoot !== ownerRoot) continue
 
@@ -1082,7 +1082,7 @@ export function decideWorktreeAddCommand(command, cwd) {
 
 /**
  * Roots whose unbounded recursive traversal stalls a session: the observed
- * incident `find /Users/x -name "*insp_ad704927*"` ran to the 60s tool timeout
+ * incident `find "$HOME" -name "*insp_ad704927*"` ran to the 60s tool timeout
  * before being killed, and the preceding `glob` on the same root failed outright.
  */
 const UNBOUNDED_SCAN_ROOTS = Object.freeze([
@@ -1129,7 +1129,7 @@ export function normalizeScanTarget(rawPath, homeDir = homedirValue()) {
 /**
  * True when a path names a traversal root broad enough to stall the session:
  * the filesystem root, a top-level system directory, or the user's home.
- * Paths inside a project (`/Users/example/.../plugins`) stay allowed.
+ * Paths inside a project (`$HOME/Project/example/plugins`) stay allowed.
  */
 export function isUnboundedScanRoot(rawPath, homeDir = homedirValue()) {
   const target = normalizeScanTarget(rawPath, homeDir)
@@ -1399,7 +1399,7 @@ function decisionJson(hookEventName, decision, reason, extra = {}) {
       output.permissionDecisionReason = [
         '🚫【OmniMux 仓库 Hook】严禁以用户家目录或系统根目录为起点做无界递归扫描！',
         `🎯 被拦截的目标：${extra.target || '未知路径'}${extra.binary ? `（${extra.binary}）` : ''}`,
-        '📌 事故背景：对 /Users/x 或 / 的全盘遍历会持续数十秒直至触发 60 秒工具超时被杀，界面表现为长时间“深度求索中”假死。',
+        '📌 事故背景：对 $HOME 或 / 的全盘遍历会持续数十秒直至触发 60 秒工具超时被杀，界面表现为长时间“深度求索中”假死。',
         '👉 正确做法：',
         '  1. 灵感 / 资产引用：@inspiration/、@asset/ 是虚拟实体指针，原样传给 video_breakdown_analyze、video_analyze 等工具即可被中枢解析，不需要在本地磁盘查找物理文件；',
         '  2. 查找本地文件：把范围收敛到当前项目工作区内的具体子目录，不要从家目录或根目录起扫；',

@@ -5,7 +5,7 @@
  * `@inspiration/insp_xxx.mp4`, the agent still has to work out which tool
  * consumes them. The observed cost was the whole opening of a session: the
  * agent searched the disk for a physical file, the glob failed, and a
- * `find /Users/x` sweep ran to its 60s timeout before the reference was
+ * `find "$HOME"` sweep ran to its 60s timeout before the reference was
  * finally passed to `video_breakdown_analyze` at step 11.
  *
  * This module derives a short navigation block from that same text so the

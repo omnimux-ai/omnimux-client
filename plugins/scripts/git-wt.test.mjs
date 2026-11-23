@@ -15,7 +15,7 @@ describe('scripts/git-wt.sh worktree helper', () => {
     const content = readFileSync(scriptPath, 'utf8')
     assert.ok(content.startsWith('#!/usr/bin/env bash'), 'must have bash shebang')
     assert.ok(content.includes('agent/${plugin}-${topic}'), 'follows branch naming contract')
-    assert.ok(content.includes('omnimux-dsh-wt-'), 'follows sibling directory naming contract')
+    assert.ok(content.includes('omnimux-client-wt-'), 'follows sibling directory naming contract')
     assert.ok(content.includes('clean_issue'), 'supports Issue ID binding')
     assert.ok(content.includes('cmd_finish'), 'includes finish command implementation')
   })
@@ -84,7 +84,7 @@ describe('scripts/git-wt.sh finish lifecycle in isolated environment', () => {
     const runId = Math.random().toString(36).substring(2, 9)
     testRoot = join(tmpdir(), `omnimux-wt-test-${runId}`)
     remoteRepo = join(testRoot, 'origin-remote.git')
-    mainRepo = join(testRoot, 'omnimux-dsh')
+    mainRepo = join(testRoot, 'omnimux-client')
 
     mkdirSync(testRoot, { recursive: true })
 
@@ -108,7 +108,7 @@ describe('scripts/git-wt.sh finish lifecycle in isolated environment', () => {
 
     // 创建 package.json
     writeFileSync(join(mainRepo, 'package.json'), JSON.stringify({
-      name: 'omnimux-dsh',
+      name: 'omnimux-client',
       private: true,
       scripts: {
         wt: 'bash scripts/git-wt.sh',
@@ -160,7 +160,7 @@ describe('scripts/git-wt.sh finish lifecycle in isolated environment', () => {
       })
       assert.ok(startOut.includes('Worktree 已就绪'))
 
-      const wtDir = join(testRoot, 'omnimux-dsh-wt-demo-node-101')
+      const wtDir = join(testRoot, 'omnimux-client-wt-demo-node-101')
       assert.ok(existsSync(wtDir), 'Worktree directory must exist')
 
       // 2. 在 worktree 中写入未暂存/未提交文件
@@ -194,7 +194,7 @@ describe('scripts/git-wt.sh finish lifecycle in isolated environment', () => {
         cwd: mainRepo,
         stdio: 'ignore'
       })
-      const wtDir = join(testRoot, 'omnimux-dsh-wt-failing-gate-102')
+      const wtDir = join(testRoot, 'omnimux-client-wt-failing-gate-102')
 
       // 2. 在 worktree 中引入一个会令单测失败的改动
       const failPkgJson = {
@@ -239,7 +239,7 @@ describe('scripts/git-wt.sh finish lifecycle in isolated environment', () => {
       })
       assert.ok(startOut.includes('Worktree 已就绪'))
 
-      const wtDir = join(testRoot, 'omnimux-dsh-wt-table-action-103')
+      const wtDir = join(testRoot, 'omnimux-client-wt-table-action-103')
       assert.ok(existsSync(wtDir))
 
       writeFileSync(join(wtDir, 'plugins', 'omnimux-workflow', 'table-feature.js'), 'export const action = "done";')
@@ -282,7 +282,7 @@ describe('scripts/git-wt.sh finish lifecycle in isolated environment', () => {
         cwd: mainRepo,
         stdio: 'ignore'
       })
-      const wtDir = join(testRoot, 'omnimux-dsh-wt-quick-fix-104')
+      const wtDir = join(testRoot, 'omnimux-client-wt-quick-fix-104')
 
       writeFileSync(join(wtDir, 'quick-fix.txt'), 'fixed')
       execSync(`git -C "${wtDir}" add .`, { stdio: 'ignore' })
@@ -307,7 +307,7 @@ describe('scripts/git-wt.sh finish lifecycle in isolated environment', () => {
     setupSandbox()
     try {
       execSync(`bash "${scriptCopy}" start workflow merged-task 864`, { cwd: mainRepo, stdio: 'ignore' })
-      const wtDir = join(testRoot, 'omnimux-dsh-wt-merged-task-864')
+      const wtDir = join(testRoot, 'omnimux-client-wt-merged-task-864')
       writeFileSync(join(wtDir, 'feature.txt'), 'needs Dev acceptance')
       execSync(`git -C "${wtDir}" add . && git -C "${wtDir}" commit -m feature`, { stdio: 'ignore' })
       // The fixture remote has already merged the change; no real remote is used.
@@ -334,7 +334,7 @@ describe('scripts/git-wt.sh finish lifecycle in isolated environment', () => {
         cwd: mainRepo,
         stdio: 'ignore'
       })
-      const wtDir = join(testRoot, 'omnimux-dsh-wt-cleanforce-108')
+      const wtDir = join(testRoot, 'omnimux-client-wt-cleanforce-108')
       writeFileSync(join(wtDir, 'clean-force.txt'), 'remove me')
       execSync(`git -C "${wtDir}" add .`, { stdio: 'ignore' })
       execSync(`git -C "${wtDir}" commit -m "feat(common): clean force test"`, { stdio: 'ignore' })
