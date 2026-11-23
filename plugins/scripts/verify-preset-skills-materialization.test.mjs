@@ -93,7 +93,7 @@ function collectWorkspaceRegisteredTools(pluginsDir) {
   const names = new Set()
   const walk = (dir) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      if (['node_modules', 'dist', 'lib', '.git', 'tests', 'skills', 'catalog', 'client'].includes(entry.name)) continue
+      if (['node_modules', 'dist', 'lib', '.git', 'tests', 'skills', 'catalog', 'client', 'scripts'].includes(entry.name)) continue
       const full = join(dir, entry.name)
       if (entry.isDirectory()) {
         walk(full)
@@ -163,7 +163,7 @@ test('social research preset skills only reference live registered OmniMux runti
     const rel = file.slice(root.length + 1)
     for (const match of text.matchAll(concreteToolRe)) {
       const toolName = match[1]
-      if (toolName.endsWith('_') && text[match.index + toolName.length] === '*') continue
+      if (toolName.endsWith('_') && text.charAt(match.index + toolName.length) === '*') continue
       if (nonToolIdentifiers.has(toolName)) continue
       if (!registered.has(toolName)) {
         unknownTools.push(`${rel}: ${toolName}`)
@@ -171,7 +171,7 @@ test('social research preset skills only reference live registered OmniMux runti
     }
     for (const match of text.matchAll(capRe)) {
       const cap = match[1]
-      if (cap.endsWith('_') && text[match.index + cap.length] === '*') continue
+      if (cap.endsWith('_') && text.charAt(match.index + cap.length) === '*') continue
       if (!validCapabilities.has(cap)) {
         unknownCapabilities.push(`${rel}: ${cap}`)
       }
