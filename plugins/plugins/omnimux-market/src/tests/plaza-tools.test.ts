@@ -47,7 +47,8 @@ function toolsFor(items: Item[], env = roots()) {
 test('PLAZA_PROMPT_LINES require composer chips and persist attachment', () => {
   const text = PLAZA_PROMPT_LINES.join(' ')
   assert.match(text, /plaza_search/)
-  assert.match(text, /same user message/)
+  assert.match(text, /SKILL REQUEST FIRST/)
+  assert.doesNotMatch(text, /Do not call plaza_search and skillhub_search in the same user message/)
   assert.match(text, /ask_user_question/)
   assert.match(text, /id · /)
   assert.match(text, /skip · 不用专家/)

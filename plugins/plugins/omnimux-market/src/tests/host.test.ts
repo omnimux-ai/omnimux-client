@@ -12,6 +12,7 @@ import {
   renderPluginSearch,
   renderPluginUninstall,
   renderSearch,
+  SKILLHUB_PROMPT_LINES,
 } from '../host.js'
 import { CONNECTOR_PROMPT_LINES } from '../connector-tools.js'
 import { PLAZA_PROMPT_LINES } from '../plaza-tools.js'
@@ -96,13 +97,23 @@ test('renderInstall does not print install commands', () => {
   assert.doesNotMatch(text, /skillhub install|curl/)
 })
 
-test('plaza-experts prompt forbids dual search and silent summon', () => {
+test('plaza-experts prompt resolves explicit skill requests without dual-search MUST conflict', () => {
   const text = PLAZA_PROMPT_LINES.join(' ')
   assert.match(text, /plaza_search FIRST/)
-  assert.match(text, /same user message/)
+  assert.match(text, /SKILL REQUEST FIRST/)
+  assert.doesNotMatch(text, /Do not call plaza_search and skillhub_search in the same user message/)
   assert.match(text, /ask_user_question/)
   assert.match(text, /plaza_summon\(\{ id \}\)/)
   assert.match(text, /persists the expert/)
+})
+
+test('skillhub prompt scopes the one-sentence reply to browse-only requests', () => {
+  const text = SKILLHUB_PROMPT_LINES.join(' ')
+  assert.match(text, /SKILL REQUEST FIRST/)
+  assert.match(text, /ONLY asks to find, recommend, or browse skills/)
+  assert.match(text, /continue that task normally/)
+  assert.match(text, /the one-sentence limit does not apply/)
+  assert.doesNotMatch(text, /Do not call plaza_search and skillhub_search in the same user message/)
 })
 
 test('renderList handles empty and versioned skills', () => {
