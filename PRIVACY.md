@@ -18,7 +18,7 @@ For privacy questions, data inquiries, or rights requests, email [hello@omnimux.
 This policy applies to:
 
 - Official OmniMux desktop installers and client packages distributed through [`omnimux-ai/omnimux-client`](https://github.com/omnimux-ai/omnimux-client), `https://omnimux.ai`, and `https://dl.omnimux.ai`;
-- Official OmniMux update-check, plugin-index, download, and signed-in official-route services operated under `omnimux.ai`; and
+- Official OmniMux update-check, plugin-index, download, and signed-in official-route services operated under `omnimux.ai` and `dl.omnimux.ai`; and
 - Privacy requests, support emails, or feedback you voluntarily send to `hello@omnimux.ai`.
 
 This policy does not govern third-party forks, modified builds, third-party distributors, BYOK model providers, third-party plugins, external MCP servers, community market catalogs, or third-party social/e-commerce platforms you connect to. Those services process data under their own terms and privacy policies.
@@ -28,7 +28,7 @@ This policy does not govern third-party forks, modified builds, third-party dist
 ## 2. Summary
 
 - **Local-first by default:** Your product library, local creative assets, inspiration collections, workflow canvases, clip timelines, profiles, settings, sessions, logs, and crash files stay on your device under `~/.omnimux` (and OS application data under `OmniMux`). OmniMux does not read or write your existing `~/.dsh` directory.
-- **Version checks:** Packaged macOS and Windows builds check `https://dl.omnimux.ai/api/desktop/version-stable.json` for updates and send a locally generated, pseudonymous random installation UUID (`X-DSH-Desktop-Installation-Id`) and the installed version (`X-DSH-Desktop-Version`). Version checks require no account and do not attach prompts, files, workspace paths, sessions, or API keys.
+- **Version checks:** Packaged macOS and Windows builds check `https://dl.omnimux.ai/api/desktop/version-stable.json` for updates and send a locally generated, pseudonymous random installation UUID (`X-DSH-Desktop-Installation-Id`), the installed version (`X-DSH-Desktop-Version`), and the release channel (`X-DSH-Desktop-Channel`). Version checks require no account and do not attach prompts, files, workspace paths, sessions, or API keys.
 - **Downloads:** Installer downloads from `https://dl.omnimux.ai` or GitHub Releases do not include the desktop installation UUID, though standard network metadata (such as IP address and request timestamp) is received by hosting/CDN infrastructure.
 - **Diagnostic exports:** Diagnostic ZIP archives are generated locally only when you explicitly invoke **Export Diagnostics…** and are never uploaded automatically.
 - **External AI & platform services:** Cloud model requests (Official Route or BYOK), built-in cloud asset fetches, browser companion capture, plugin installations, and international social publishing send data only to the services you sign in to, configure, or explicitly invoke.
@@ -54,6 +54,7 @@ The client explicitly sets:
 - `Accept: application/json`
 - `X-DSH-Desktop-Installation-Id: <random UUID v4>`
 - `X-DSH-Desktop-Version: <canonical installed stable version>`
+- `X-DSH-Desktop-Channel: <release channel, e.g. stable>`
 
 No query parameters or request body are added. As with any HTTPS request, the distribution CDN and network infrastructure also receive standard connection metadata (IP address, request time, TLS metadata, and standard request headers). The version checker does not intentionally send prompts, model responses, file contents, workspace paths, profile names, session history, credentials, MAC addresses, or hardware serial numbers.
 
@@ -105,13 +106,13 @@ Upstream DeepSeek Harness also maintains a separate `.anonymous-user-id` in its 
 
 ### 5.4 Plugin market and package services
 
-- Opening the plugin market or checking updates may fetch the official plugin catalog index (`https://dl.omnimux.ai/plugins/dsh-index.json`) and, if you explicitly add or select third-party catalog sources, those configured catalog endpoints.
+- Opening the plugin market or checking updates may fetch the official plugin catalog index (`https://dl.omnimux.ai/plugins/dsh-index.json`), the built-in community fallback index (`https://cdn.jsdelivr.net/gh/realguan/dsh-plugin-market@dist/dsh-index.json`), and any additional catalog sources you explicitly add or select.
 - Previewing or installing plugins after your explicit confirmation may contact `registry.npmjs.org`, GitHub, or your configured package registry to retrieve package manifests and tarballs.
 - Installed third-party plugins execute locally with your user permissions; catalog listing is not a privacy or security audit.
 
-### 5.5 Optional launch analytics and upstream telemetry
+### 5.5 Optional desktop analytics and upstream telemetry
 
-- **Optional OmniMux launch analytics:** Only when both `OMNIMUX_ANALYTICS_ENDPOINT` and `OMNIMUX_ANALYTICS_WEBSITE_ID` are configured in the launch environment, OmniMux Desktop sends a launch event (first-launch flag, app version, OS, OS version, and local pseudonymous installation UUID) to the configured Umami site. Set `OMNIMUX_ANALYTICS_DISABLED=1` (or `true`) to disable it.
+- **Optional OmniMux desktop analytics:** Only when both `OMNIMUX_ANALYTICS_ENDPOINT` and `OMNIMUX_ANALYTICS_WEBSITE_ID` are configured in the launch environment, OmniMux Desktop sends telemetry events to the configured Umami site using a local pseudonymous installation UUID: launch events (`desktop_app_launch`: first-launch flag, app version, OS, and OS version), and in the shipped `dsh-plugin-desktop` shell, startup diagnostics (`app-startup`: app version, platform, arch, final stage, renderer status, and startup stage durations) and session lifecycle events (`app-session`: hourly heartbeat and clean-exit duration, app version, platform, and arch). Set `OMNIMUX_ANALYTICS_DISABLED=1` (or `true`) to disable all of these events.
 - **Optional upstream DSH telemetry:** Upstream DeepSeek Harness session telemetry keeps its default `FEEDBACK_ONLY` mode — ordinary usage uploads no session content; a session log is sent to the configured upstream telemetry endpoint only if you explicitly submit session feedback. Set `DSH_TELEMETRY_DISABLED=1` to disable it completely. Upstream desktop product analytics (`product-analytics` and `desktop-product-telemetry`) are turned off at startup.
 
 ---

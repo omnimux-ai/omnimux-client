@@ -8,7 +8,7 @@ Thank you for wanting to contribute to **OmniMux Desktop** (for the full-reposit
 - Feature ideas and improvement suggestions are welcome in issues or [GitHub Discussions](https://github.com/omnimux-ai/omnimux-client/discussions).
 - Join the [community channels](../README.md#community) (Discord, WeChat group, GitHub Discussions) and help other users.
 - Write tutorials or experience posts, or help improve and translate the documentation.
-- Suggest ecosystem projects for the [friendly links](README.en.md#friendly-links-deepseek-harness-ecosystem) section.
+- Suggest ecosystem projects for the [related links](README.en.md#related-links-deepseek-harness-ecosystem) section.
 
 ## Plugin authors: extend the ecosystem
 

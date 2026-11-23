@@ -28,7 +28,7 @@ OmniMux 是一个本地优先的开源 AI 内容电商桌面工作台。本政�
 ## 2. 核心摘要
 
 - **默认本地优先：** 你的产品库、本地创作资产、灵感合集、工作流画布、多轨剪辑工程、Profile、设置、会话、日志和崩溃文件默认保存在本机 `~/.omnimux` 目录（以及系统应用数据目录 `OmniMux`）中。OmniMux 不会读取或修改你本机已有的 `~/.dsh` 目录。
-- **版本更新检查：** 打包后的 macOS 和 Windows 客户端会检查 `https://dl.omnimux.ai/api/desktop/version-stable.json`，并携带本地随机生成的伪匿名安装 UUID（`X-DSH-Desktop-Installation-Id`）与当前版本号（`X-DSH-Desktop-Version`）。版本检查无需登录，不会主动附带提示词、文件内容、工作区路径、会话内容或 API Key。
+- **版本更新检查：** 打包后的 macOS 和 Windows 客户端会检查 `https://dl.omnimux.ai/api/desktop/version-stable.json`，并携带本地随机生成的伪匿名安装 UUID（`X-DSH-Desktop-Installation-Id`）、当前版本号（`X-DSH-Desktop-Version`）与发布通道（`X-DSH-Desktop-Channel`）。版本检查无需登录，不会主动附带提示词、文件内容、工作区路径、会话内容或 API Key。
 - **安装包下载：** 从 `https://dl.omnimux.ai` 或 GitHub Releases 下载安装包时，客户端不会附带上述安装 UUID，但下载承载方与 CDN 基础设施仍会收到常规网络元数据（如 IP 地址与请求时间）。
 - **诊断包导出：** 诊断 ZIP 仅在你主动点击 **导出诊断信息…** 时于本地生成，绝不会由应用自动上传。
 - **外部 AI 与平台服务：** 云端模型调用（官方通道或 BYOK）、内置云端资产浏览下载、浏览器伴侣采集、插件安装及海外社媒发布，仅在你登录、配置或主动触发时向对应目标服务发送请求。
@@ -39,7 +39,7 @@ OmniMux 是一个本地优先的开源 AI 内容电商桌面工作台。本政�
 
 ### 3.1 何时触发版本检查
 
-打包后的 macOS 与 Windows 应用会在启动约 60 秒后检查稳定版更新，此后约每 6 小时检查一次；你也可以随时手动点击 **Check for Updates…（检查更新）**：
+打包后的 macOS 与 Windows 应用会在启动约 60 秒后检查稳定版更新，此后约每 6 小时检查一次；你也可以随时手动点击 **检查更新…**：
 
 ```text
 GET https://dl.omnimux.ai/api/desktop/version-stable.json
@@ -54,6 +54,7 @@ GET https://dl.omnimux.ai/api/desktop/version-stable.json
 - `Accept: application/json`
 - `X-DSH-Desktop-Installation-Id: <随机 UUID v4>`
 - `X-DSH-Desktop-Version: <当前已安装的规范稳定版本号>`
+- `X-DSH-Desktop-Channel: <发布通道，如 stable>`
 
 请求不附带查询参数或请求体。与所有 HTTPS 网络请求一样，分发 CDN 与网络基础设施还会接收到常规连接元数据（IP 地址、请求时间、TLS 握手信息与标准请求头）。版本检查代码不会主动发送提示词、模型回复、文件内容、工作区路径、Profile 名称、会话历史、凭据、MAC 地址或硬件序列号。
 
@@ -105,13 +106,13 @@ GET https://dl.omnimux.ai/api/desktop/version-stable.json
 
 ### 5.4 插件市场与软件包服务
 
-- 打开插件市场或检查更新时，应用可能请求官方插件索引（`https://dl.omnimux.ai/plugins/dsh-index.json`）；若你主动添加或选择了第三方目录源，则会请求你配置的目录端点。
+- 打开插件市场或检查更新时，应用可能请求官方插件索引（`https://dl.omnimux.ai/plugins/dsh-index.json`）、内置社区回退索引（`https://cdn.jsdelivr.net/gh/realguan/dsh-plugin-market@dist/dsh-index.json`），以及你主动添加或选择的其他目录端点。
 - 当你预览或明确确认安装插件时，内置包管理器可能访问 `registry.npmjs.org`、GitHub 或你配置的软件源，以获取包清单与压缩包。
 - 已安装的第三方插件会以当前系统用户权限在本地运行；目录收录不构成隐私或安全审计。
 
-### 5.5 可选启动统计与上游遥测
+### 5.5 可选桌面统计与上游遥测
 
-- **可选 OmniMux 桌面启动统计：** 仅当启动环境中同时配置了 `OMNIMUX_ANALYTICS_ENDPOINT` 与 `OMNIMUX_ANALYTICS_WEBSITE_ID` 时，OmniMux 桌面端才会向配置的 Umami 站点发送一条启动事件（首次启动标记、应用版本、操作系统及版本、本地伪匿名安装 UUID）。在启动环境中设置 `OMNIMUX_ANALYTICS_DISABLED=1`（或 `true`）即可禁用。
+- **可选 OmniMux 桌面统计：** 仅当启动环境中同时配置了 `OMNIMUX_ANALYTICS_ENDPOINT` 与 `OMNIMUX_ANALYTICS_WEBSITE_ID` 时，OmniMux 桌面端才会使用本地伪匿名安装 UUID 向配置的 Umami 站点发送事件，包括启动事件（`desktop_app_launch`：首次启动标记、应用版本、操作系统及版本），以及当前交付的 `dsh-plugin-desktop` 壳中的启动阶段耗时事件（`app-startup`：应用版本、平台、架构、最终阶段、渲染进程状态与各阶段耗时）和会话生命周期事件（`app-session`：每小时心跳与正常退出时长、应用版本、平台与架构）。在启动环境中设置 `OMNIMUX_ANALYTICS_DISABLED=1`（或 `true`）即可全部关闭。
 - **可选上游 DSH 遥测：** 上游 DeepSeek Harness 会话遥测保持默认 `FEEDBACK_ONLY` 模式——日常使用不会上传会话内容，仅在你主动提交会话反馈时才会将该会话日志发送至上游配置的遥测端点；设置 `DSH_TELEMETRY_DISABLED=1` 可完全关闭。上游桌面产品分析（`product-analytics` 与 `desktop-product-telemetry`）已在启动时关闭。
 
 ---
