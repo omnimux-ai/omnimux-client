@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import { readBundledSnapshot } from './cloud/bundled.js';
 import { normalizePricingPayload } from './cloud/snapshot.js';
 import { parseMediaConfig, resolveMediaRoute } from '../media/route.js';
 import { getModelChannelGroups } from './serving/channel-groups.js';
@@ -31,6 +32,66 @@ describe('catalog channel-group projection', () => {
       const explicit = resolveMediaRoute(kind, { model: id, group: 'fixture-a' }, parseMediaConfig(), {}, snapshot);
       assert.deepEqual(explicit.candidates, [`${id}@fixture-a`]);
     }
+  });
+
+  it('projects every bundled order and default with the refreshed line quotes', () => {
+    const { snapshot } = readBundledSnapshot()
+    for (const model of snapshot.models) {
+      const projected = projectChannelGroups(model.id, snapshot)
+      assert.deepEqual(projected.map((group) => group.wireGroup), model.groupOrder, model.id)
+      assert.ok(model.groupOrder.includes(model.defaultGroup), model.id)
+      assert.deepEqual(projected.filter((group) => group.default).map((group) => group.wireGroup), [model.defaultGroup], model.id)
+    }
+
+    const expectedV1 = {
+      'gpt-image-2.5': {
+        defaultGroup: 'default',
+        groupOrder: ['default', 'gpt-image-2.5-economy'],
+      },
+      'seedance-2-5': {
+        defaultGroup: 'seedance-2-5-720p',
+        groupOrder: ['seedance-2-5-720p', 'seedance-2-5-480p', 'seedance-2-5-720p-pro', 'seedance-2-5-480p-pro'],
+      },
+      'wan-3.0': {
+        defaultGroup: 'wan-3.0-720p',
+        groupOrder: ['wan-3.0-720p', 'wan-3.0-1080p', 'wan-3.0-standard', 'wan-3.0-prime'],
+      },
+      'minimax-h3-video': {
+        defaultGroup: 'default',
+        groupOrder: [
+          'default',
+          'auto',
+          'minimax-h3-video-fast',
+          'minimax-h3-video-pro',
+          'minimax-h3-video-creative',
+          'minimax-h3-video-first-last-frame',
+          'minimax-h3-video-digital-human',
+          'minimax-h3-video-short-drama',
+          'minimax-h3-video-short-drama-av',
+        ],
+      },
+      'indextts-2': {
+        defaultGroup: 'default',
+        groupOrder: ['default', 'auto'],
+      },
+    }
+    for (const [id, expected] of Object.entries(expectedV1)) {
+      const model = snapshot.models.find((entry) => entry.id === id)
+      assert.equal(model.defaultGroup, expected.defaultGroup, `${id} defaultGroup`)
+      assert.deepEqual(model.groupOrder, expected.groupOrder, `${id} groupOrder`)
+      const projected = projectChannelGroups(id, snapshot)
+      assert.deepEqual(projected.map((group) => group.wireGroup), expected.groupOrder, `${id} projected order`)
+      assert.deepEqual(projected.filter((group) => group.default).map((group) => group.wireGroup), [expected.defaultGroup], `${id} projected default`)
+    }
+
+    const wan = projectChannelGroups('wan-3.0', snapshot)
+    assert.equal(wan.find((group) => group.id === 'wan-3.0-prime').pricing.pointsEstimate, 13.24)
+    assert.equal(wan.find((group) => group.id === 'wan-3.0-standard').pricing.pointsEstimate, 8.82)
+    const h3 = projectChannelGroups('minimax-h3-video', snapshot)
+    for (const suffix of ['creative', 'digital-human', 'first-last-frame', 'short-drama', 'short-drama-av']) {
+      assert.equal(h3.find((group) => group.id === `minimax-h3-video-${suffix}`).pricing.pointsEstimate, 1.25)
+    }
+    assert.equal(h3.find((group) => group.id === 'auto').pricing.pointsEstimate, null)
   });
 
   it('projects the hub pool for a model that has one', () => {

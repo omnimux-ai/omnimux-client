@@ -123,42 +123,28 @@ export const MODEL_CHANNEL_GROUPS = Object.freeze({
   ],
   "seedance-2-5": [
     {
-      "id": "480p",
+      "id": "seedance-2-5-480p",
       "label": "经济版",
-      "badge": "480p 档 · 经济走量",
-      "pricing": {
-        "pointsEstimate": 6.8,
-        "discountRate": 0.17,
-        "billingMode": "per_second"
-      },
-      "sla": {
-        "stability24h": 100,
-        "avgWaitTimeSec": 60
-      },
-      "constraints": {
-        "parameters": {
-          "resolution": { "fixed": "480p" }
-        }
-      },
-      "wireGroup": "desktop-480p",
-      "enabled": true
+      "badge": "480p",
+      "constraints": { "parameters": { "resolution": { "fixed": "480p" } } }
     },
     {
-      "id": "720p",
+      "id": "seedance-2-5-480p-pro",
+      "label": "优选版",
+      "badge": "480p",
+      "constraints": { "parameters": { "resolution": { "fixed": "480p" } } }
+    },
+    {
+      "id": "seedance-2-5-720p",
       "label": "标准版",
-      "badge": "720p 档 · 稳定满血",
-      "pricing": {
-        "pointsEstimate": 9.6,
-        "discountRate": 0.24,
-        "billingMode": "per_second"
-      },
-      "constraints": {
-        "parameters": {
-          "resolution": { "fixed": "720p" }
-        }
-      },
-      "wireGroup": "desktop-720p",
-      "enabled": true
+      "badge": "720p",
+      "constraints": { "parameters": { "resolution": { "fixed": "720p" } } }
+    },
+    {
+      "id": "seedance-2-5-720p-pro",
+      "label": "旗舰版",
+      "badge": "720p",
+      "constraints": { "parameters": { "resolution": { "fixed": "720p" } } }
     }
   ],
   "gpt-image-2.5": [

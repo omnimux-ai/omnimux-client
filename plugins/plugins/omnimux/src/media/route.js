@@ -177,9 +177,9 @@ export function resolveMediaRoute(capability, request, media, env = process.env,
   const preferred = groups.find((group) => group.default === true)
   const lineSelectionRequired = needsDefault && !preferred
 
-  // Pin the selected default to the same snapshot used for route admission.
-  // A default cannot fail over into a differently priced group.
-  const pinned = callerIntent || lineSelectionRequired || (hasPublishedDefault && !preferred)
+  // Pin new submissions to the admitted line so they cannot fail over to a different price.
+  // Task-ID lookups without a stored or explicit group leave the group unset.
+  const pinned = isCollect || callerIntent || lineSelectionRequired || (hasPublishedDefault && !preferred)
     ? undefined : pinnedChannelGroup(groups, preferred, request)
   const pinnedWire = pinned ? (pinned.wireGroup || pinned.id) : undefined
   const group = effectiveGroup ?? requestedGroup ?? pinnedWire

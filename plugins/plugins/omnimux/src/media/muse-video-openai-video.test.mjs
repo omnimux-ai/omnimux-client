@@ -12,6 +12,7 @@ import { createServer, request as httpRequest } from 'node:http'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { after, before, describe, it } from 'node:test'
+import { resetCurrentSnapshotResolver, resolveReadOnlySnapshot, setCurrentSnapshotResolver } from '../catalog/cloud/current.js'
 import { guardSubmit } from '../catalog/contract/submit-guard/index.js'
 import { getRuntimeContractIndex } from '../catalog/runtime-index.js'
 import { executeOmnimuxVideo, pollVideoTask } from './video.js'
@@ -310,10 +311,8 @@ describe('muse-video openai_video submit contract', () => {
     assert.equal(taskPathFor('video', 'wan-3.0'), 'video/generations')
   })
 
-  it('real client media entry submits first_frame via /v1/videos without a group header', async () => {
-    reset()
-    const tool = mountVideoEntry()
-    const result = await tool.execute({
+  function submitFirstFrame() {
+    return mountVideoEntry().execute({
       prompt: 'a cat on a wall',
       dest: join(tmpdir(), `muse-video-entry-${Date.now()}.mp4`),
       model: 'muse-video',
@@ -323,6 +322,17 @@ describe('muse-video openai_video submit contract', () => {
       aspectRatio: 'adaptive',
       wait: false,
     }, {})
+  }
+
+  it('real client media entry submits first_frame via /v1/videos without a group header', async (t) => {
+    reset()
+    const snapshot = structuredClone(resolveReadOnlySnapshot().snapshot)
+    const model = snapshot.models.find(({ id }) => id === 'muse-video')
+    delete model.defaultGroup
+    delete model.groupOrder
+    setCurrentSnapshotResolver(() => ({ snapshot }))
+    t.after(resetCurrentSnapshotResolver)
+    const result = await submitFirstFrame()
     assert.equal(result.mode, 'submitted')
     assert.equal(result.taskId, 'task-mock-1')
     assert.equal(findMediaTaskByUpstreamId('task-mock-1')?.taskPath, 'videos')
@@ -338,6 +348,17 @@ describe('muse-video openai_video submit contract', () => {
       output_format: 'mp4',
       model: 'muse-video',
     })
+  })
+
+  it('real client media entry uses the bundled pool default on /v1/videos', async () => {
+    reset()
+    const result = await submitFirstFrame()
+    assert.equal(result.mode, 'submitted')
+    const posts = requests.filter(({ method }) => method === 'POST')
+    assert.equal(posts.length, 1)
+    assert.equal(posts[0].path, '/v1/videos')
+    assert.equal(posts[0].headers['x-omnimux-group'], 'pool')
+    assert.equal(posts[0].body.operation, 'first_frame')
   })
 
   it('real client media entry keeps explicit group routing on /v1/videos', async () => {

@@ -115,6 +115,7 @@ function withChannelGroups(t) {
   const groups = MODEL_CHANNEL_GROUPS['seedance-2-5']
   const saved = structuredClone(groups)
   t.after(() => groups.splice(0, groups.length, ...saved))
+  groups[0].sla ??= { stability24h: 95, avgWaitTimeSec: 30 }
   return groups
 }
 
@@ -160,15 +161,20 @@ test('buildModelCatalog invalidates for changes to the gateway group order or de
 test('buildModelCatalog ignores local enabled/pricing overrides and follows the snapshot', (t) => {
   const groups = withChannelGroups(t)
   const { before } = loadFixture(t)
+  const wire = groups[0].wireGroup ?? groups[0].id
   groups[0].enabled = !groups[0].enabled
-  groups[0].pricing.pointsEstimate += 1
+  groups[0].pricing = { pointsEstimate: 100 }
   const after = buildModelCatalog({ contractIndex: before.index, env: {} })
   assert.deepEqual(after.models[0].channelGroups, before.catalog.models[0].channelGroups)
   assert.equal(after.fingerprint, before.catalog.fingerprint)
 
   const snapshot = structuredClone(resolveReadOnlySnapshot().snapshot)
-  snapshot.groups.ratio['desktop-480p'] = (snapshot.groups.ratio['desktop-480p'] ?? 1) + 1
-  const repriced = buildModelCatalog({ contractIndex: before.index, env: {}, snapshot })
+  snapshot.groups.ratio['seedance-2-5-480p'] += 1
+  const repriced = buildModelCatalog({ contractIndex: before.index, env: {}, snapshot, snapshotSource: 'bundled' })
+  const repricedGroup = repriced.models[0].channelGroups.find((group) => group.wireGroup === wire)
+  const originalGroup = before.catalog.models[0].channelGroups.find((group) => group.wireGroup === wire)
+  assert.equal(repricedGroup.pricing.groupRatio, originalGroup.pricing.groupRatio + 1)
+  assert.notEqual(repricedGroup.pricing.pointsEstimate, originalGroup.pricing.pointsEstimate)
   assert.notEqual(repriced.fingerprint, before.catalog.fingerprint, 'a snapshot price change must invalidate the catalog')
 })
 
@@ -216,12 +222,17 @@ test('loadAll and buildModelCatalog preserve semantic operation candidate order'
 
 test('buildModelCatalog preserves semantic channel candidate order', (t) => {
   const { before } = loadFixture(t)
-  // P1b: the snapshot's enable_groups order is the order the catalog serves.
   const snapshot = structuredClone(resolveReadOnlySnapshot().snapshot)
   const snapshotModel = snapshot.models.find((row) => row.id === 'seedance-2-5')
+  const build = () => buildModelCatalog({ contractIndex: before.index, env: {}, snapshot, snapshotSource: 'bundled' })
   snapshotModel.enableGroups.reverse()
-  const after = buildModelCatalog({ contractIndex: before.index, env: {}, snapshot })
-  assert.deepEqual(after.models[0].channelGroups.map((group) => group.wireGroup), snapshotModel.enableGroups)
+  const reorderedMembership = build()
+  assert.deepEqual(reorderedMembership.models[0].channelGroups, before.catalog.models[0].channelGroups)
+  assert.equal(reorderedMembership.fingerprint, before.catalog.fingerprint)
+
+  snapshotModel.groupOrder.reverse()
+  const after = build()
+  assert.deepEqual(after.models[0].channelGroups.map((group) => group.wireGroup), snapshotModel.groupOrder)
   assert.equal(after.contractFingerprint, before.catalog.contractFingerprint)
   assert.notEqual(after.fingerprint, before.catalog.fingerprint)
 })
