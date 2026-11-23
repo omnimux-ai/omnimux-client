@@ -7,6 +7,8 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+GIT_ROOT="$(git -C "$REPO_ROOT" rev-parse --show-toplevel 2>/dev/null || echo "$REPO_ROOT")"
+worktree_dir() { printf '%s/.worktrees/%s' "$GIT_ROOT" "$1"; }
 
 usage() {
   cat <<'EOF'
@@ -161,7 +163,7 @@ cmd_start() {
     fi
   fi
 
-  local wt_dir="$(cd "$REPO_ROOT/.." && pwd)/omnimux-dsh-wt-${wt_suffix}"
+  local wt_dir="$(worktree_dir "$wt_suffix")"
 
   if [ -d "$wt_dir" ]; then
     echo "⚠️  Worktree 目录已存在: $wt_dir"
@@ -236,17 +238,17 @@ cmd_finish() {
     fi
   fi
 
-  local wt_dir="$(cd "$REPO_ROOT/.." && pwd)/omnimux-dsh-wt-${wt_suffix}"
+  local wt_dir="$(worktree_dir "$wt_suffix")"
   if [ ! -d "$wt_dir" ]; then
-    if [ -n "$clean_issue" ] && [ -d "$(cd "$REPO_ROOT/.." && pwd)/omnimux-dsh-wt-${topic}" ]; then
-      wt_dir="$(cd "$REPO_ROOT/.." && pwd)/omnimux-dsh-wt-${topic}"
+    if [ -n "$clean_issue" ] && [ -d "$(worktree_dir "$topic")" ]; then
+      wt_dir="$(worktree_dir "$topic")"
       wt_suffix="${topic}"
     else
       local matched_dir
-      matched_dir=$(ls -d "$(cd "$REPO_ROOT/.." && pwd)/omnimux-dsh-wt-${topic}"* 2>/dev/null | head -1 || true)
+      matched_dir=$(ls -d "$(worktree_dir "$topic")"* 2>/dev/null | head -1 || true)
       if [ -n "$matched_dir" ] && [ -d "$matched_dir" ]; then
         wt_dir="$matched_dir"
-        wt_suffix=$(basename "$wt_dir" | sed 's/^omnimux-dsh-wt-//')
+        wt_suffix=$(basename "$wt_dir")
       else
         echo "❌ 错误: 未找到 Worktree 目录: $wt_dir" >&2
         echo "当前活跃的 Worktree 清单:" >&2
@@ -544,14 +546,14 @@ cmd_clean() {
     fi
   fi
 
-  local wt_dir="$(cd "$REPO_ROOT/.." && pwd)/omnimux-dsh-wt-${wt_suffix}"
+  local wt_dir="$(worktree_dir "$wt_suffix")"
   if [ ! -d "$wt_dir" ]; then
-    # 前缀匹配：clean <topic>（不带 issue）时也能找到 omnimux-dsh-wt-<topic>-<issue>
+    # 前缀匹配：clean <topic>（不带 issue）时也能找到 .worktrees/<topic>-<issue>
     local matched_dir
-    matched_dir=$(ls -d "$(cd "$REPO_ROOT/.." && pwd)/omnimux-dsh-wt-${topic}"* 2>/dev/null | head -1 || true)
+    matched_dir=$(ls -d "$(worktree_dir "$topic")"* 2>/dev/null | head -1 || true)
     if [ -n "$matched_dir" ] && [ -d "$matched_dir" ]; then
       wt_dir="$matched_dir"
-      wt_suffix=$(basename "$wt_dir" | sed 's/^omnimux-dsh-wt-//')
+      wt_suffix=$(basename "$wt_dir")
     fi
   fi
 
