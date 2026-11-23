@@ -49,6 +49,20 @@ function uploadDigest(token) {
   return createHash('sha256').update(token).digest('hex')
 }
 
+async function hashOpenFile(file, size) {
+  const hash = createHash('sha256')
+  const buffer = Buffer.allocUnsafe(256 * 1024)
+  let offset = 0
+  while (offset < size) {
+    const toRead = Math.min(buffer.length, size - offset)
+    const { bytesRead } = await file.read(buffer, 0, toRead, offset)
+    if (!bytesRead) throw invalidMp4()
+    hash.update(buffer.subarray(0, bytesRead))
+    offset += bytesRead
+  }
+  return hash.digest('hex')
+}
+
 function generationOf(job) {
   return job.exportGeneration ?? job.revisionEpoch ?? 0
 }
@@ -203,6 +217,14 @@ export function createExportJobs({ paths, getWorkflowClip }) {
     if (failure) status = 'upload-failed'
     if (readJson(cancelledPath(exportJobId))) status = 'cancelled'
     if (file) status = canvas?.status ?? (file.superseded ? 'superseded' : 'file-saved')
+    const output = file ? {
+      ...file.output,
+      ...(canvas?.artifactCommitted && typeof canvas.artifactPath === 'string' ? { videoPath: canvas.artifactPath } : {}),
+      ...(typeof canvas?.mediaUrl === 'string' ? { mediaUrl: canvas.mediaUrl } : {}),
+      ...(canvas?.mediaHandle ? { mediaHandle: canvas.mediaHandle } : {}),
+      ...(typeof canvas?.relativePath === 'string' ? { relativePath: canvas.relativePath } : {}),
+      ...(typeof canvas?.assetId === 'string' ? { assetId: canvas.assetId } : {}),
+    } : undefined
     return {
       exportJobId, requestId, projectId, projectRevision,
       ...(revisionEpoch !== undefined ? { revisionEpoch } : {}),
@@ -210,7 +232,7 @@ export function createExportJobs({ paths, getWorkflowClip }) {
       status,
       fileSaved: Boolean(file),
       canvasCommitted: canvas?.status === 'committed',
-      ...(file ? { bytes: file.bytes, output: file.output } : {}),
+      ...(file ? { bytes: file.bytes, output } : {}),
       ...(canvas?.workspaceVersion !== undefined ? { workspaceVersion: canvas.workspaceVersion } : {}),
       ...(failure || canvas?.error ? { error: failure ?? canvas.error } : {}),
     }
@@ -286,7 +308,16 @@ export function createExportJobs({ paths, getWorkflowClip }) {
         })
         if (result?.status === 'superseded' && result.canvasCommitted === false) outcome = { status: 'superseded' }
         else if (result?.status === 'committed' && result.canvasCommitted === true) {
-          outcome = { status: 'committed', workspaceVersion: result.workspaceVersion }
+          outcome = {
+            status: 'committed',
+            workspaceVersion: result.workspaceVersion,
+            ...(result.artifactCommitted ? { artifactCommitted: true } : {}),
+            ...(typeof result.artifactPath === 'string' ? { artifactPath: result.artifactPath } : {}),
+            ...(typeof result.relativePath === 'string' ? { relativePath: result.relativePath } : {}),
+            ...(typeof result.assetId === 'string' ? { assetId: result.assetId } : {}),
+            ...(typeof result.mediaUrl === 'string' ? { mediaUrl: result.mediaUrl } : {}),
+            ...(result.mediaHandle ? { mediaHandle: result.mediaHandle } : {}),
+          }
         }
       }
     } catch (error) {
@@ -294,13 +325,22 @@ export function createExportJobs({ paths, getWorkflowClip }) {
         outcome = { status: 'canvas-failed', error: { code: 'clip-binding-mismatch', message: 'The clip project no longer matches its original canvas node.' } }
       }
     }
-    writeJson(canvasPath(exportJobId), outcome ?? {
+    const persisted = outcome ?? {
       status: 'canvas-failed', error: { code: 'canvas-commit-failed', message: 'The MP4 was saved. Retry the canvas commit using the same export job.' },
-    })
+    }
+    writeJson(canvasPath(exportJobId), persisted)
+    // Reclaim the duplicate staging MP4 only after the project artifact exists on disk
+    // and the canvas graph commit receipt has been durably persisted.
+    if (persisted.status === 'committed' && persisted.artifactCommitted === true
+      && typeof persisted.artifactPath === 'string'
+      && persisted.artifactPath !== current.output.videoPath
+      && lstatSync(persisted.artifactPath, { throwIfNoEntry: false })?.isFile()) {
+      rmSync(current.output.videoPath, { force: true })
+    }
     return receipt(job)
   }
 
-  function persistFile(job, source, stat, media) {
+  function persistFile(job, source, stat, media, sha256) {
     const { exportJobId, projectId } = job
     // This check and the durable rename form the cancellation boundary. No
     // asynchronous work may be added between them and the canvas commit call.
@@ -313,7 +353,12 @@ export function createExportJobs({ paths, getWorkflowClip }) {
     const finalDir = versionDir(exportJobId)
     const stage = mkdtempSync(join(root, '.upload-'))
     try {
-      const output = { videoPath: join(finalDir, 'video.mp4'), revision: `${stat.mtimeMs}:${stat.size}`, ...media }
+      const output = {
+        videoPath: join(finalDir, 'video.mp4'),
+        revision: `${stat.mtimeMs}:${stat.size}`,
+        ...(sha256 ? { sha256 } : {}),
+        ...media,
+      }
       writeJson(join(stage, 'file.json'), { bytes: stat.size, output, superseded })
       renameSync(source, join(stage, 'video.mp4'))
       renameSync(stage, finalDir)
@@ -370,15 +415,17 @@ export function createExportJobs({ paths, getWorkflowClip }) {
       const file = await open(source, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
       let stat
       let media
+      let sha256
       try {
         stat = await file.stat()
         if (!stat.isFile()) throw invalidMp4()
         media = await probeMp4(file, stat.size)
+        sha256 = await hashOpenFile(file, stat.size)
       } finally {
         await file.close()
       }
       return await serializeProjectWrite(join(root, projectId), async () => {
-        persistFile(job, source, stat, media)
+        persistFile(job, source, stat, media, sha256)
         return commitCanvas(job)
       })
     } catch (error) {

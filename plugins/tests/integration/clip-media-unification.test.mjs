@@ -15,9 +15,10 @@ import { createProjectAssetsStore } from '../../plugins/omnimux-workflow/src/wor
 import { createWorkflowMediaSupport } from '../../plugins/omnimux-workflow/src/workflow/media/workflowMediaProviders.ts'
 import { createWorkflowClipService } from '../../plugins/omnimux-workflow/src/workflow/clip/workflowClip.ts'
 import { createEditorSession } from '../../plugins/omnimux-clip/src/client/live/editor-session.js'
+import { createExportJobs } from '../../plugins/omnimux-clip/src/export-jobs.js'
 import { createClipDispatcher, registerClipRoutes } from '../../plugins/omnimux-clip/src/http/routes.js'
 import { createClipVaultMediaProvider } from '../../plugins/omnimux-clip/src/media/clipVault.js'
-import { resolveClipPaths } from '../../plugins/omnimux-clip/src/paths.js'
+import { ensureClipDirs, resolveClipPaths } from '../../plugins/omnimux-clip/src/paths.js'
 import { createProjectStore as createClipProjectStore } from '../../plugins/omnimux-clip/src/store/projectStore.js'
 
 const temps = []
@@ -581,5 +582,210 @@ describe('4-plugin cross-seam media unification (omnimux + assets + workflow + c
     assert.equal(hostRecord.project.mediaLibrary.items[0].omnimuxSource.handle.sha256, expectedSha)
     assert.equal(currentProject.mediaLibrary.items[0].omnimuxSource.handle.scope, 'clip-vault')
     session.dispose()
+  })
+
+  it('AC-CMU-06 & AC-CMU-07: canvas export lands in ProjectRoot/artifacts with clip_export lineage, reclaims staging MP4, supports secondary composition, idempotent retryCanvas, and legacy /api/local-file in-place upgrade', async () => {
+    const validMp4 = Buffer.from(`
+AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAMobW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAA+gAAQAA
+AQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAgAAAlN0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAA+gAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAA
+AAAAAAABAAAAAAAAAAAAAAAAAABAAAAAABAAAAAQAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAPoAAAAAAABAAAAAAHL
+bWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAABAAAAAQABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRl
+b0hhbmRsZXIAAAABdm1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAA
+AQAAATZzdGJsAAAAtnN0c2QAAAAAAAAAAQAAAKZhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAABAAEABIAAAASAAAAAAA
+AAABFExhdmM2My4xLjEwMiBsaWJ4MjY0AAAAAAAAAAAAAAAAGP//AAAALGF2Y0MBQsAK/+EAFWdCwAraewEQAAADABAAAAMA
+SPEiagEABGjOD8gAAAAQcGFzcAAAAAEAAAABAAAAFGJ0cnQAAAAAAAABAAAAAAAAAAAYc3R0cwAAAAAAAAABAAAAAgAAIAAA
+AAAUc3RzcwAAAAAAAAABAAAAAQAAABxzdHNjAAAAAAAAAAEAAAABAAAAAgAAAAEAAAAcc3RzegAAAAAAAAAAAAAAAgAAABcA
+AAAJAAAAFHN0Y28AAAAAAAAAAQAAA1gAAABhdWR0YQAAAFltZXRhAAAAAAAAACFoZGxyAAAAAAAAAABtZGlyYXBwbAAAAAAA
+AAAAAAAAACxpbHN0AAAAJKl0b28AAAAcZGF0YQAAAAEAAAAATGF2ZjYzLjEuMTAyAAAACGZyZWUAAAAobWRhdAAAABNliIQ6
+EYoAAjFxwABDyjgACAXgAAAABUGaIBKl
+`, 'base64')
+    const validMp4Sha = sha256(validMp4)
+    const home = mkdtempSync(join(tmpdir(), 'clip-export-unification-'))
+    temps.push(home)
+
+    const mediaResolver = createMediaResolver({ logger: { warn: () => {} } })
+    const projectsRoot = join(home, 'projects')
+    const workspacesDir = join(home, 'workspaces')
+    const mediaDir = join(home, 'workflow-media')
+    mkdirSync(projectsRoot, { recursive: true })
+    mkdirSync(workspacesDir, { recursive: true })
+    mkdirSync(mediaDir, { recursive: true })
+
+    const wfProjects = createWorkflowProjectStore({ libraryRoot: projectsRoot })
+    const wfProject = wfProjects.create('导出闭环项目', { canvasWorkspaceIds: ['ws_export_ac67'] })
+    const wsId = wfProject.pages[0].canvasWorkspaceId
+    const resolveProjectRoot = (id) => wfProjects.findByCanvasWorkspaceId(id)
+    const rawStore = createWorkspaceStore({ workspacesDir, resolveProjectRoot })
+    const assetsStore = createProjectAssetsStore({ workspacesDir: rawStore.workspacesDir, resolveProjectRoot })
+    const ws = rawStore.create('导出画布', wsId)
+
+    // Seed a legacy /api/local-file downstream node with custom user-dragged coordinates to verify AC-CMU-07 in-place upgrade
+    const comp1Id = 'node_comp_1'
+    const comp1ClipId = 'clip_node_export_1'
+    const comp2Id = 'node_comp_2'
+    const comp2ClipId = 'clip_node_export_2'
+    const legacyDownstreamId = 'node_mat_legacy_out'
+    const draggedPos = { x: 777, y: 333 }
+    rawStore.save(ws.id, {
+      expectedVersion: 0,
+      nodes: [
+        { id: comp1Id, type: 'video_composition', position: { x: 100, y: 100 }, data: { title: '一级合成', projectId: comp1ClipId } },
+        {
+          id: legacyDownstreamId,
+          type: 'material',
+          position: draggedPos,
+          data: {
+            materialType: 'video',
+            label: '一级合成_成片',
+            origin: 'clip_export',
+            sourceCompositionNodeId: comp1Id,
+            mediaUrl: '/omnimux-workflow/api/local-file?path=%2Flegacy%2Fold-export.mp4',
+          },
+        },
+        { id: comp2Id, type: 'video_composition', position: { x: 1200, y: 333 }, data: { title: '二级合成', projectId: comp2ClipId } },
+      ],
+      edges: [
+        { id: 'edge_c1_out', source: comp1Id, target: legacyDownstreamId, sourceHandle: 'out', targetHandle: 'in' },
+        { id: 'edge_out_c2', source: legacyDownstreamId, target: comp2Id, sourceHandle: 'out', targetHandle: 'in' },
+      ],
+    })
+
+    // Wrap WorkspaceStore.save to inject one failure on first export commit (AC-CMU-07)
+    let failNextSave = true
+    const store = {
+      get: (id) => rawStore.get(id),
+      save: (id, patch) => {
+        if (failNextSave) {
+          failNextSave = false
+          throw new Error('injected-workspace-save-failure')
+        }
+        return rawStore.save(id, patch)
+      },
+    }
+
+    const mediaSupport = createWorkflowMediaSupport({
+      store: rawStore,
+      assetsStore,
+      resolveAssetsRoot: resolveProjectRoot,
+      mediaDir,
+      canAccessWorkspace: (wsId, sid) => wsId === ws.id && sid === 'sess-export',
+    })
+    mediaResolver.registerProvider(mediaSupport.projectAssetProvider)
+    mediaResolver.registerProvider(mediaSupport.canvasNodeProvider)
+
+    const workflowClip = createWorkflowClipService({
+      store,
+      assetsStore,
+      resolveProjectRoot,
+      canAccessWorkspace: (wsId, sid) => wsId === ws.id && sid === 'sess-export',
+      resolveNodeSources: mediaSupport.resolveNodeSources,
+    })
+
+    const clipPaths = ensureClipDirs(resolveClipPaths({ homeDir: home }))
+    const exportJobs = createExportJobs({ paths: clipPaths, getWorkflowClip: () => workflowClip })
+    const binding1 = { workspaceId: ws.id, nodeId: comp1Id, projectId: comp1ClipId }
+    const begun = exportJobs.begin({
+      requestId: 'req-export-ac67',
+      projectId: comp1ClipId,
+      projectRevision: 1,
+      binding: binding1,
+    })
+    const tempUpload = join(clipPaths.tmpDir, 'export-upload.mp4')
+    writeFileSync(tempUpload, validMp4)
+    const stagingPath = join(clipPaths.exportsDir, 'jobs', String(begun.exportJobId), 'video.mp4')
+
+    // First attempt fails WorkspaceStore.save -> canvas-failed, staging MP4 MUST be retained
+    const firstReceipt = await exportJobs.upload({
+      exportJobId: begun.exportJobId,
+      uploadToken: begun.uploadToken,
+      projectId: comp1ClipId,
+      tempPath: tempUpload,
+    })
+    assert.equal(firstReceipt.status, 'canvas-failed')
+    assert.equal(firstReceipt.canvasCommitted, false)
+    assert.equal(existsSync(stagingPath), true, 'staging MP4 must stay on disk when canvas commit fails')
+
+    // Retry commit -> succeeds idempotently with NO duplicate artifacts or assets.json entries, and reclaims staging MP4
+    const retried = await exportJobs.retryCanvas(begun.exportJobId)
+    assert.equal(retried.status, 'committed')
+    assert.equal(retried.canvasCommitted, true)
+    assert.equal(existsSync(stagingPath), false, 'duplicate staging MP4 must be reclaimed after artifact commit')
+    assert.ok(retried.output.relativePath.startsWith('artifacts/'))
+    assert.equal(retried.output.sha256, validMp4Sha)
+    assert.equal(retried.output.mediaHandle.scope, 'project-asset')
+    assert.equal(retried.output.mediaHandle.sha256, validMp4Sha)
+    assert.match(retried.output.mediaUrl, new RegExp(`/omnimux-workflow/api/workspaces/${ws.id}/file\\?.*rev=sha256%3A${validMp4Sha}`))
+
+    // Verify single artifact file on disk & single assets.json entry with clip_export lineage
+    const artifactFiles = readdirSync(join(wfProject.path, 'artifacts'))
+    assert.equal(artifactFiles.length, 1, 'retryCanvas must not create duplicate artifact files')
+    assert.deepEqual(readFileSync(join(wfProject.path, retried.output.relativePath)), validMp4)
+    const assetsDoc = assetsStore.get(ws.id)
+    const clipExportEntries = assetsDoc.items.filter(item => item.sha256 === validMp4Sha)
+    assert.equal(clipExportEntries.length, 1, 'retryCanvas must not create duplicate assets.json entries')
+    assert.equal(clipExportEntries[0].lineage.kind, 'clip_export')
+    assert.equal(clipExportEntries[0].lineage.sourceCompositionNodeId, comp1Id)
+
+    // Verify legacy /api/local-file downstream node was upgraded in-place preserving dragged position & ID
+    const graphAfter = rawStore.get(ws.id)
+    const downstream = graphAfter.nodes.find(n => n.id === legacyDownstreamId)
+    assert.ok(downstream, 'legacy downstream node ID must be preserved')
+    assert.deepEqual(downstream.position, draggedPos, 'user-dragged coordinates must be preserved')
+    assert.equal(downstream.data.mediaUrl, retried.output.mediaUrl)
+    assert.equal(downstream.data.relativePath, retried.output.relativePath)
+    assert.deepEqual(downstream.data.mediaHandle, retried.output.mediaHandle)
+    assert.equal('realPath' in downstream.data, false)
+
+    // Secondary composition (AC-CMU-06): comp2 connects to downstream成片 -> reconcile imports & streams verified bytes
+    const clipStore = createClipProjectStore({ paths: clipPaths })
+    const binding2 = { workspaceId: ws.id, nodeId: comp2Id, projectId: comp2ClipId }
+    clipStore.materialize(comp2ClipId, { binding: binding2, title: '二级合成' })
+    const dispatcher = createClipDispatcher({
+      store: clipStore,
+      paths: clipPaths,
+      getWorkflowClip: () => workflowClip,
+      getMediaResolver: () => mediaResolver,
+    })
+    let routeHandler
+    const webServer = { register(def) { routeHandler = def.handler; return () => {} } }
+    registerClipRoutes(webServer, dispatcher, {
+      paths: clipPaths,
+      getConnection: () => ({ requestRejection: () => undefined }),
+      getHubEvents: () => ({
+        authorizeWindow: () => ({ windowInstanceId: 'win-exp', isAlive: () => true, getViewport: () => ({ ok: true, sessionId: 'sess-export' }) }),
+      }),
+    })
+    const server = createServer((req, res) => routeHandler(req, res))
+    servers.push(server)
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const base = `http://127.0.0.1:${server.address().port}`
+
+    const inspect2 = await fetch(`${base}/omnimux-clip/api/projects/${comp2ClipId}/media/reconcile`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'inspect', binding: binding2 }),
+    })
+    assert.equal(inspect2.status, 200)
+    const inspectBody = await inspect2.json()
+    assert.equal(inspectBody.unimportedUpstreams.length, 1)
+    assert.equal(inspectBody.unimportedUpstreams[0].sourceNodeId, legacyDownstreamId)
+    assert.equal(inspectBody.unimportedUpstreams[0].canonicalHandle.scope, 'project-asset')
+
+    const import2 = await fetch(`${base}/omnimux-clip/api/projects/${comp2ClipId}/media/reconcile`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'apply',
+        binding: binding2,
+        actions: [{ action: 'import_upstream', sourceNodeId: legacyDownstreamId, outputIndex: 0 }],
+      }),
+    })
+    assert.equal(import2.status, 200)
+    const importedId = (await import2.json()).importedMediaIds[0]
+    const stream2 = await fetch(`${base}/omnimux-clip/api/projects/${comp2ClipId}/media/${importedId}/bytes`)
+    assert.equal(stream2.status, 200)
+    assert.equal(stream2.headers.get('x-content-sha256'), validMp4Sha)
+    assert.deepEqual(Buffer.from(await stream2.arrayBuffer()), validMp4)
   })
 })
