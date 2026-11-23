@@ -74,7 +74,7 @@ test('E2E 旅程二：官方系统预置、已入职市场专家与用户自建 
     const mockOfficialPresets = [
       { id: 'omni-agent', trust: 'system', name: 'OmniMux' },
       { id: 'cordis', trust: 'system', name: 'cordis' },
-      { id: 'ecom-listing-copy', name: '跨境 Listing 与合规文案专家' },
+      { id: 'ecom-listing-copy', name: '文案专家' },
       { id: 'user-custom-marketer', trust: 'user', name: '出海营销助理', description: '自建私有营销 Agent' },
     ]
 
@@ -92,9 +92,11 @@ test('E2E 旅程二：官方系统预置、已入职市场专家与用户自建 
 
     const hired = reconciled.find((it) => it.id === 'ecom-listing-copy')
     assert.equal(hired?.status, 'enabled')
+    assert.equal(hired?.name, '文案专家')
 
     const unhired = reconciled.find((it) => it.id === 'ecom-market-research')
     assert.equal(unhired?.status, 'available')
+    assert.equal(unhired?.name, '选品专家')
 
     const customAgent = reconciled.find((it) => it.id === 'user-custom-marketer')
     assert.equal(customAgent?.group, 'custom')
@@ -108,6 +110,10 @@ test('E2E 旅程二：官方系统预置、已入职市场专家与用户自建 
       'expertMarket.available': '可聘用',
       'expertMarket.install': '安装',
       'expertMarket.disable': '禁用',
+      'expertMarket.stageResearch': '选品',
+      'expertMarket.stageProduction': '内容',
+      'expertMarket.stageGrowth': '运营',
+      'expertMarket.stageSystem': '系统',
     }
     const renderOpts = {
       tr: (k) => trMap[k] || '',
@@ -129,8 +135,11 @@ test('E2E 旅程二：官方系统预置、已入职市场专家与用户自建 
     assert.equal(customStatusNode?.children?.[0], '[ 用户自建 ]')
     assert.equal(customVNode.children.find((c) => c?.props?.className?.includes('expert-card-action')), undefined)
 
-    // 未安装市场专家：显示 [ 可聘用 ] + 安装按钮
+    // 未安装市场专家：显示 [ 可聘用 ] + 简化 2 字分类胶囊 + 安装按钮
     const availVNode = renderCard(unhired, renderOpts)
+    const availStatusNode = availVNode.children.find((c) => c?.props?.className?.includes('expert-card-status'))
+    const availStageNode = availStatusNode?.children?.find((c) => c?.props?.className === 'expert-card-stage')
+    assert.equal(availStageNode?.children?.[0], '选品')
     const availAction = availVNode.children.find((c) => c?.props?.className?.includes('expert-card-action'))
     assert.ok(availAction, '可聘用专家必须渲染安装按钮')
   } finally {
@@ -139,7 +148,7 @@ test('E2E 旅程二：官方系统预置、已入职市场专家与用户自建 
 })
 
 test('E2E 旅程三：安装失败时前端回滚卡片状态并记录可恢复错误信息', async () => {
-  let current = [{ id: 'ecom-visual-studio', name: '电商主图与商详视觉专家', status: 'available' }]
+  let current = [{ id: 'ecom-visual-studio', name: '视觉专家', status: 'available' }]
   let toggling = ''
   let lastError = ''
   const state = {

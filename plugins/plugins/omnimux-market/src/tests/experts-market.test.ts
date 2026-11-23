@@ -340,8 +340,8 @@ test('reconcileMarketExperts aggregates system presets, custom agents, and hides
   const official: DiscoveredPresetRef[] = [
     { id: 'omni-agent', trust: 'system', name: 'OmniMux' },
     { id: 'cordis', trust: 'system', name: 'cordis' },
-    { id: 'ecom-listing-copy', name: '跨境 Listing 与合规文案专家' },
-    { id: 'ecom-ads-optimizer', name: '跨境广告诊断与买量优化专家', broken: 'missing plugin' },
+    { id: 'ecom-listing-copy', name: '文案专家' },
+    { id: 'ecom-ads-optimizer', name: '广告专家', broken: 'missing plugin' },
     { id: 'my-custom-agent', trust: 'user', name: '我的私有助手', description: '专属定制助手' },
   ]
   const items = reconcileMarketExperts(tempHome, official)
@@ -373,9 +373,15 @@ test('healInstalledAgentPresets & healAgentPresetCordis keep backward compatibil
 test('i18n, UI, and host source contracts align with DSH 0.1.7+ agent-preset-registry', () => {
   const i18n = readFileSync(new URL('../../src/client/i18n.js', import.meta.url), 'utf8')
   assert.match(i18n, /"expertMarket\.title": "专家市场"/)
-  assert.match(i18n, /"expertMarket\.stageResearch": "选品与策略"/)
-  assert.match(i18n, /"expertMarket\.stageProduction": "货架与内容生产"/)
-  assert.match(i18n, /"expertMarket\.stageGrowth": "投放与复盘闭环"/)
+  assert.match(i18n, /"expertMarket\.stageFilter": "专家分类"/)
+  assert.match(i18n, /"expertMarket\.stageResearch": "选品"/)
+  assert.match(i18n, /"expertMarket\.stageProduction": "内容"/)
+  assert.match(i18n, /"expertMarket\.stageGrowth": "运营"/)
+  assert.match(i18n, /"expertMarket\.stageSystem": "系统"/)
+  assert.match(i18n, /"expertMarket\.stageResearch": "Research"/)
+  assert.match(i18n, /"expertMarket\.stageProduction": "Content"/)
+  assert.match(i18n, /"expertMarket\.stageGrowth": "Operations"/)
+  assert.match(i18n, /"expertMarket\.stageSystem": "System"/)
 
   const host = readFileSync(new URL('../../src/host.ts', import.meta.url), 'utf8')
   assert.match(host, /new ExpertPresetRuntime\(/, 'host must wire ExpertPresetRuntime')

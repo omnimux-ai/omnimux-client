@@ -61,23 +61,25 @@ describe('Agent 输入框与专家市场头像收敛一致性契约', () => {
 
   it('市场垂直专家在输入框与专家市场全部统一收敛至确定性像素艺术头像', () => {
     const marketHiredExperts = [
-      { name: '市场选品与竞品调研专家', id: 'ecom-market-research' },
-      { name: '产品定位与定价策略专家', id: 'ecom-product-strategy' },
-      { name: '跨境 Listing 与合规文案专家', id: 'ecom-listing-copy' },
-      { name: '电商主图与商详视觉专家', id: 'ecom-visual-studio' },
-      { name: '带货短视频与爆款复刻导演', id: 'ecom-video-director' },
-      { name: '跨境广告诊断与买量优化专家', id: 'ecom-ads-optimizer' },
-      { name: '评论 VOC 与售后话术专家', id: 'ecom-review-voc' },
-      { name: '达人建联与社媒增长专家', id: 'ecom-creator-growth' },
+      { name: '选品专家', nameEn: 'Market Analyst', legacyName: '市场选品与竞品调研专家', id: 'ecom-market-research' },
+      { name: '定价专家', nameEn: 'Pricing Strategist', legacyName: '产品定位与定价策略专家', id: 'ecom-product-strategy' },
+      { name: '文案专家', nameEn: 'Listing Copywriter', legacyName: '跨境 Listing 与合规文案专家', id: 'ecom-listing-copy' },
+      { name: '视觉专家', nameEn: 'Visual Designer', legacyName: '电商主图与商详视觉专家', id: 'ecom-visual-studio' },
+      { name: '视频导演', nameEn: 'Video Director', legacyName: '带货短视频与爆款复刻导演', id: 'ecom-video-director' },
+      { name: '广告专家', nameEn: 'Ads Optimizer', legacyName: '跨境广告诊断与买量优化专家', id: 'ecom-ads-optimizer' },
+      { name: '评论运营', nameEn: 'Review Analyst', legacyName: '评论 VOC 与售后话术专家', id: 'ecom-review-voc' },
+      { name: '达人运营', nameEn: 'Creator Manager', legacyName: '达人建联与社媒增长专家', id: 'ecom-creator-growth' },
     ]
 
     for (const exp of marketHiredExperts) {
-      const resolved = resolveAgentPresetAvatar(exp.name, { size: 20 })
       const expectedDataUrl = generatePixelAvatarDataUrl(exp.id, { size: 20 })
-      assert.ok(resolved, `市场专家「${exp.name}」应能被输入框识别`)
-      assert.equal(resolved.id, exp.id)
-      assert.equal(resolved.src, expectedDataUrl, `输入框中「${exp.name}」必须展示确定性像素头像`)
-      assert.doesNotMatch(resolved.src, /\.png$/, '严禁回退或读取写实人物封面图片')
+      for (const alias of [exp.name, exp.nameEn, exp.legacyName]) {
+        const resolved = resolveAgentPresetAvatar(alias, { size: 20 })
+        assert.ok(resolved, `市场专家「${alias}」应能被输入框识别`)
+        assert.equal(resolved.id, exp.id)
+        assert.equal(resolved.src, expectedDataUrl, `输入框中「${alias}」必须展示确定性像素头像`)
+        assert.doesNotMatch(resolved.src, /\.png$/, '严禁回退或读取写实人物封面图片')
+      }
     }
   })
 
