@@ -25,3 +25,14 @@
   - 原断言：sibling worktree 目录命名必须包含旧仓名前缀。
   - 必须改的理由：`plugins/scripts/git-wt.sh` 的旧仓名 marker 已统一为本仓 `omnimux-client`，测试必须跟随新命名契约。
   - 新期望证据：`content.includes('omnimux-client-wt-') === true`，并且同一测试仍校验 shebang、分支命名、Issue 绑定与 finish 子命令。
+
+- `app/dsh-plugin-desktop/tests/package.spec.ts` :: `runs platform package gates before reusing native packaging outputs`
+  - 原断言：从 `app/.github/workflows/ci.yml` 读取并断言历史 `desktop-windows: / desktop-macos: / macos-universal:` 三个 job。
+  - 必须改的理由：该嵌套历史目录按 Issue #242 删除，GitHub Actions 从未读取它；当前发布 workflow 是根 `.github/workflows/release.yml`，只构建 `dsh-desktop-next`。
+  - 新期望证据：从根 release workflow 读取 `build-win:` / `preflight-mac:`，断言 `corepack yarn workspace dsh-desktop-next dist:win`、`dist:mac-smoke`、`DSH_MAC_SMOKE_ARCH: ${{ matrix.arch }}`，且无 `desktop-linux:` job。
+
+- `app/dsh-plugin-desktop/tests/package.spec.ts` :: `gates packaging on product changes and always runs the baseline check`
+  - 原断言：额外从已删除的历史 workflow 读取 `classify-ci-changes` 调用与 `check:` job。
+  - 必须改的理由：同样依赖已删除的 `app/.github/workflows/ci.yml`；当前根 workflow 不含该历史 job 结构，保留会永久 ENOENT。
+  - 新期望证据：`classify-ci-changes.mjs` 的产品/打包分类断言全部保留，并新增当前 `release.yml` 的 Windows/macOS 构建步骤断言。
+
