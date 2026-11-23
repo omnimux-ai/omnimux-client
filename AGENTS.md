@@ -18,7 +18,8 @@ plugins/    产品插件；仓库根单一 pnpm workspace；含共享包（如 p
 ```
 
 - 仓库根是插件工作区的唯一 pnpm workspace 根（单一 `pnpm-lock.yaml`）；`app/` 保持独立的 Yarn 4 工作区。桌面依赖通过 `link:` 指向本仓 `plugins/plugins/*`，插件构建产物是打包输入，因此 CI 与打包前置必须先安装/构建插件。不要再添加嵌套的 `plugins/pnpm-workspace.yaml` 或 `plugins/pnpm-lock.yaml`。
-- **指令单一权威源**：本文件为全仓总则权威源；子树规则分别由 [app/AGENTS.md](app/AGENTS.md) 与 [plugins/AGENTS.md](plugins/AGENTS.md) 维护，子树不重复声明根规则。各层级 `CLAUDE.md`（如 [app/CLAUDE.md](app/CLAUDE.md)、[plugins/CLAUDE.md](plugins/CLAUDE.md)）仅作为指向或对齐对应 `AGENTS.md` 的入口；更新规则时改 `AGENTS.md` 并同步验证链接。
+- **指令单一权威源**：本文件为全仓总则权威源；子树规则分别由 [app/AGENTS.md](app/AGENTS.md) 与 [plugins/AGENTS.md](plugins/AGENTS.md) 维护，子树不重复声明根规则。各层级 `CLAUDE.md`（[CLAUDE.md](CLAUDE.md)、[app/CLAUDE.md](app/CLAUDE.md)、[plugins/CLAUDE.md](plugins/CLAUDE.md)）仅作为指向或对齐对应 `AGENTS.md` 的入口；更新规则时改 `AGENTS.md` 并同步验证链接。
+- **活跃事故账本**：改动源码或评审 PR 前先读 [LESSONS.md](LESSONS.md)（只留活跃高信号反模式与正反例，硬限 ≤ 200 行）。能写成自动门禁的教训优先转代码守卫并迁出活跃区；无法机检的规则跨天命中 `seen ≥ 3` 后晋升本文件或[子系统文档](docs/subsystems.md)。
 - **Skill 边界**：根 `.agents/skills/` 仅用于本仓开发/发版协同，不随客户端或插件安装包分发；随产品分发的技能位于 `plugins/plugins/*/skills/` 与 `plugins/plugins/omnimux-market/catalog/skills/`，两者严格隔离。
 
 ## 从需求到方案
@@ -53,6 +54,14 @@ plugins/    产品插件；仓库根单一 pnpm workspace；含共享包（如 p
 | `app/` 打包（仅打包/发版边界） | `cd app && corepack yarn workspace dsh-desktop-next dist:mac`（前置需按 [app/AGENTS.md](app/AGENTS.md) staging） |
 
 报告只写真正跑过的命令与真实输出；CI 负责全量矩阵。
+
+### 一坑一测试
+
+`fix` 类改动（修改产品源码或运行脚本）必须附带可判别的回归测试，由 [verify-fix-regression-test.mjs](plugins/scripts/verify-fix-regression-test.mjs) 在 CI 校验存在性：
+
+- **真实输入与双向证伪**：夹具取自真实生产形态（经 normalize/adapter 后的对象或真实故障字节）；回退核心修复后新增/强化的用例必须真实断言失败，恢复后全绿，并在 PR 验收区写明失败表现。
+- **兄弟路径排查**：修一个点前 grep 同类兄弟路径（其他面板、协议、分支或命令），同根因一并修复并加测。
+- **显式豁免**：确属无法自动测试的修复（如纯签名环境、硬件驱动或仅靠真机截图验收的视觉微调），必须在已提交的 `specs/*.md` 新增 `## 无回归测试声明`（≥ 20 非空白字符），或在提交正文写 `No-Regression-Test: <原因与替代验收>`，交评审确认。
 
 <a name="release-preflight"></a>
 

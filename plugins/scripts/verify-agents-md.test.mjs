@@ -142,3 +142,35 @@ test('canvas generation rules are discoverable without local skills or task hist
     assert.ok(historical.includes(`(../plugins/${contract})`), `${spec} must point readers to the active canvas contract`)
   }
 })
+
+const repoRoot = resolve(root, '..')
+const LESSONS_MAX_LINES = 200
+const LESSONS_MAX_BYTES = 16_000
+
+test('root AGENTS.md links LESSONS.md and its relative links resolve', () => {
+  const rootAgents = readFileSync(join(repoRoot, 'AGENTS.md'), 'utf8')
+  assert.ok(rootAgents.includes('(LESSONS.md)'), 'root AGENTS.md must link LESSONS.md so every session reads active lessons')
+  assert.deepEqual(brokenLinks(rootAgents, repoRoot), [])
+})
+
+test('root CLAUDE.md stays a short pointer to AGENTS.md and LESSONS.md', () => {
+  const rootClaudePath = join(repoRoot, 'CLAUDE.md')
+  assert.ok(existsSync(rootClaudePath), 'root CLAUDE.md pointer must exist')
+  const rootClaude = readFileSync(rootClaudePath, 'utf8')
+  assert.match(rootClaude, /\(AGENTS\.md\)/)
+  assert.match(rootClaude, /\(LESSONS\.md\)/)
+  assert.ok(rootClaude.split('\n').length <= 10, 'root CLAUDE.md must stay a short pointer, not a second rule set')
+  assert.deepEqual(brokenLinks(rootClaude, repoRoot), [])
+})
+
+test('LESSONS.md stays within its active-rules budget and its links resolve', () => {
+  const lessonsPath = join(repoRoot, 'LESSONS.md')
+  assert.ok(existsSync(lessonsPath), 'LESSONS.md must be tracked at repository root')
+  const lessons = readFileSync(lessonsPath, 'utf8')
+  const lines = lessons.split('\n').length
+  const bytes = Buffer.byteLength(lessons, 'utf8')
+  assert.match(lessons, /^<!--\s*reviewed-through:\s*[0-9a-f]{7,40}\s*\(\d{4}-\d{2}-\d{2}\)\s*-->/, 'LESSONS.md must start with a reviewed-through cursor comment')
+  assert.ok(lines <= LESSONS_MAX_LINES, `LESSONS.md has ${lines} lines (max ${LESSONS_MAX_LINES}); graduate mechanical checks to CI gates or prune stale entries`)
+  assert.ok(bytes <= LESSONS_MAX_BYTES, `LESSONS.md has ${bytes} bytes (max ${LESSONS_MAX_BYTES}); keep daily review logs in PR descriptions`)
+  assert.deepEqual(brokenLinks(lessons, repoRoot), [])
+})
