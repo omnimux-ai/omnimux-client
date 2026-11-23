@@ -31,3 +31,10 @@
 3. 消除符号链接 `catalog/skills/replicate-viral-video`，将其收敛为规范物理目录（`name: replicate-viral-video`），清理 `presets/omni-agent/skills.json` 与 `catalog/preset-skills.json` 中的 `viral-video-replication` 重复项并对齐 `i18n.js`。
 4. 新增 `plugins/plugins/omnimux-market/catalog/bundled-skills.json` 登记 13 个非市场随包技能。
 5. 更新 `plugins/scripts/verify-preset-skills-materialization.test.mjs` 与 `plugins/scripts/verify-agent-presets.test.mjs`；新增 `plugins/scripts/verify-skill-hygiene.mjs` 与 `plugins/scripts/verify-skill-hygiene.test.mjs`，登记至 `plugins/scripts/governance-manifest.json` 并接入 `plugins/package.json` 的 `test:gates`。
+
+## 旧标准变更
+
+- `plugins/scripts/verify-preset-skills-materialization.test.mjs` :: `the cordis composition-authoring skills ship with the hub package`
+  - 原断言：要求 `plugins/plugins/omnimux/skills/{editing-cordis-compositions,cordis-plugin-development}/SKILL.md` 随 hub 包分发。
+  - 变更理由：Issue #234 移除产品插件对 DSH 上游 `@deepseek-ai/dsh-agent-preset/skills/` 的旧版重复拷贝，Creator 模式技能改由上游原版独占管理，避免污染全局 `$DSH_HOME/skills/` 与普通电商会话。
+  - 新期望证据：同名测试反转为 `product plugins never duplicate upstream DSH Creator-mode Cordis skills (#234)`，并叠加 `plugins/scripts/verify-skill-hygiene.mjs` 与 `verify-skill-hygiene.test.mjs` 双向证伪门禁。
