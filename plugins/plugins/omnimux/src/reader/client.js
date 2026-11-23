@@ -1,6 +1,8 @@
+import { classifyQuotaFailure } from '../errors/quota-classifier.js'
 import { OmnimuxError } from '../media/errors.js'
 
 export const READER_MODEL = 'jina-reader-v1'
+export const READER_GROUP = 'data-reader'
 export const DEFAULT_READER_BASE = 'https://api.omnimux.ai/v1'
 const USER_AGENT = 'OmniMuxHub/0.1.2 (omnimux_page_fetch; +https://omnimux.ai)'
 
@@ -45,21 +47,36 @@ export async function postReader(deps, args) {
       'content-type': 'application/json',
       authorization: `Bearer ${key}`,
       'user-agent': USER_AGENT,
+      'X-Omnimux-Group': READER_GROUP,
     },
     body: JSON.stringify({ model: READER_MODEL, url: args.url }),
   })
 
   const raw = await readBodyText(response)
-  if (response.status === 401 || response.status === 403) {
-    throw new OmnimuxError('needs-omnimux', `official request unauthorized (HTTP ${response.status})`)
-  }
   if (!response.ok) {
     const json = tryJson(raw)
-    const message = pickErrorMessage(json) || `official request failed (HTTP ${response.status})`
+    const detail = pickErrorMessage(json) || pickPlainErrorText(raw)
+    const classified = classifyQuotaFailure({
+      status: response.status,
+      body: json ?? raw,
+      message: detail,
+    })
+    if (classified.kind === 'needs-omnimux' || classified.kind === 'quota-exceeded' || classified.kind === 'channel-unavailable') {
+      throw new OmnimuxError(classified.code, classified.message, {
+        status: response.status,
+        retryable: classified.retryable,
+      })
+    }
+    if (response.status === 403) {
+      throw new OmnimuxError(
+        'needs-omnimux',
+        detail || `official request unauthorized (HTTP ${response.status})`,
+        { status: response.status, retryable: false },
+      )
+    }
+    const message = detail || `official request failed (HTTP ${response.status})`
     const code = isInvalidRequest(json, message) ? 'omnimux-invalid-request' : 'omnimux-request-failed'
-    const error = new OmnimuxError(code, message)
-    error.status = response.status
-    throw error
+    throw new OmnimuxError(code, message, { status: response.status })
   }
   if (!String(raw || '').trim()) {
     throw new OmnimuxError('omnimux-invalid-response', 'reader returned empty markdown')
@@ -126,4 +143,15 @@ function pickErrorMessage(json) {
   }
   const data = row.data && typeof row.data === 'object' ? /** @type {Record<string, unknown>} */ (row.data) : {}
   return String(row.message || data.error || data.message || '').trim()
+}
+
+/**
+ * @param {string} raw
+ */
+function pickPlainErrorText(raw) {
+  const text = String(raw || '').trim()
+  if (!text || text.length > 240 || text.startsWith('<') || text.startsWith('{') || text.startsWith('[')) {
+    return ''
+  }
+  return text
 }

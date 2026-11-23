@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { OmnimuxError } from '../media/errors.js'
-import { resolveReaderBaseUrl } from './client.js'
+import { READER_GROUP, resolveReaderBaseUrl } from './client.js'
 import { clipPageContent, fetchPage, normalizePageUrl } from './fetch.js'
 
 describe('normalizePageUrl', () => {
@@ -78,6 +78,8 @@ describe('fetchPage', () => {
     )
     assert.equal(seen.url, 'https://api.omnimux.ai/v1/reader')
     assert.equal(seen.init.method, 'POST')
+    assert.equal(READER_GROUP, 'data-reader')
+    assert.equal(seen.init.headers['X-Omnimux-Group'], 'data-reader')
     assert.equal(JSON.parse(String(seen.init.body)).model, 'jina-reader-v1')
     assert.equal(JSON.parse(String(seen.init.body)).url, 'https://example.com/')
     assert.match(String(seen.init.headers.authorization), /^Bearer sk-test$/)
@@ -121,6 +123,123 @@ describe('fetchPage', () => {
         { url: 'https://example.com' },
       ),
       (error) => error instanceof OmnimuxError && error.code === 'needs-omnimux',
+    )
+  })
+
+  it('sets status 401 and retryable false on 401 needs-omnimux', async () => {
+    await assert.rejects(
+      () => fetchPage(
+        {
+          env: { OMNIMUX_API_KEY: 'sk-test' },
+          fetcher: async () => ({
+            ok: false,
+            status: 401,
+            text: async () => JSON.stringify({ error: { message: 'Invalid token', type: 'invalid_request' } }),
+          }),
+        },
+        { url: 'https://example.com' },
+      ),
+      (error) => error instanceof OmnimuxError && error.code === 'needs-omnimux' && error.status === 401 && error.retryable === false,
+    )
+  })
+
+  it('maps 402 to quota-exceeded', async () => {
+    await assert.rejects(
+      () => fetchPage(
+        {
+          env: { OMNIMUX_API_KEY: 'sk-test' },
+          fetcher: async () => ({
+            ok: false,
+            status: 402,
+            text: async () => JSON.stringify({ error: { message: 'Payment required' } }),
+          }),
+        },
+        { url: 'https://example.com' },
+      ),
+      (error) => error instanceof OmnimuxError && error.code === 'quota-exceeded' && error.status === 402 && error.retryable === false,
+    )
+  })
+
+  it('maps 403 with quota evidence to quota-exceeded', async () => {
+    await assert.rejects(
+      () => fetchPage(
+        {
+          env: { OMNIMUX_API_KEY: 'sk-test' },
+          fetcher: async () => ({
+            ok: false,
+            status: 403,
+            text: async () => JSON.stringify({ error: { code: 'insufficient_user_quota', message: '预扣费额度失败' } }),
+          }),
+        },
+        { url: 'https://example.com' },
+      ),
+      (error) => error instanceof OmnimuxError && error.code === 'quota-exceeded' && error.status === 403 && error.retryable === false,
+    )
+  })
+
+  it('maps non-quota 403 to needs-omnimux while preserving diagnostic message', async () => {
+    await assert.rejects(
+      () => fetchPage(
+        {
+          env: { OMNIMUX_API_KEY: 'sk-test' },
+          fetcher: async () => ({
+            ok: false,
+            status: 403,
+            text: async () => JSON.stringify({ error: { message: '当前令牌无权访问分组 data-reader' } }),
+          }),
+        },
+        { url: 'https://example.com' },
+      ),
+      (error) => error instanceof OmnimuxError
+        && error.code === 'needs-omnimux'
+        && error.status === 403
+        && error.retryable === false
+        && error.message.includes('无权访问分组 data-reader'),
+    )
+  })
+
+  it('maps 503 distributor no-channel evidence to retryable CHANNEL_UNAVAILABLE', async () => {
+    await assert.rejects(
+      () => fetchPage(
+        {
+          env: { OMNIMUX_API_KEY: 'sk-test' },
+          fetcher: async () => ({
+            ok: false,
+            status: 503,
+            text: async () => JSON.stringify({
+              error: {
+                message: '当前分组 data-reader 下对于模型 jina-reader-v1 无可用渠道 (distributor)',
+                type: 'new_api_error',
+              },
+            }),
+          }),
+        },
+        { url: 'https://example.com' },
+      ),
+      (error) => error instanceof OmnimuxError
+        && error.code === 'CHANNEL_UNAVAILABLE'
+        && error.status === 503
+        && error.retryable === true,
+    )
+  })
+
+  it('keeps generic 503 without channel evidence as omnimux-request-failed', async () => {
+    await assert.rejects(
+      () => fetchPage(
+        {
+          env: { OMNIMUX_API_KEY: 'sk-test' },
+          fetcher: async () => ({
+            ok: false,
+            status: 503,
+            text: async () => JSON.stringify({ error: { message: 'upstream gateway timeout' } }),
+          }),
+        },
+        { url: 'https://example.com' },
+      ),
+      (error) => error instanceof OmnimuxError
+        && error.code === 'omnimux-request-failed'
+        && error.status === 503
+        && error.message === 'upstream gateway timeout',
     )
   })
 })
