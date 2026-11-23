@@ -17,11 +17,29 @@ export const CATEGORY_NAMES = {
   'product-showcase': '产品展示',
   'meme-native': '模因与原生',
   'other': '其它营销分类',
+  'scene-seeding': '内容种草',
+  'scene-brand': '品牌宣传',
+  'scene-product': '商品展示',
+  'scene-performance': '效果广告',
+  'scene-app': '应用推广',
+  'scene-local': '本地生活',
+  'scene-repurpose': '内容再制',
+  'scene-tools': '通用工具',
 }
 
 // 分类矢量图标
 export function CategoryIcon({ category }) {
-  const cat = String(category || '').toLowerCase()
+  const alias = {
+    'scene-seeding': 'ugc',
+    'scene-brand': 'story',
+    'scene-product': 'product',
+    'scene-performance': 'video',
+    'scene-app': 'image',
+    'scene-local': 'product',
+    'scene-repurpose': 'story',
+    'scene-tools': 'meme',
+  }
+  const cat = alias[String(category || '').toLowerCase()] || String(category || '').toLowerCase()
   if (cat.includes('ugc')) {
     return (
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">

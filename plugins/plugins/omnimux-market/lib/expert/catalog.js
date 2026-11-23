@@ -169,7 +169,8 @@ function parseItem(raw) {
     throw new Error(`catalog: item ${id} missing serverName`)
   }
   const hub = parseHub(row.hub)
-  const item = { id, tab, kind, title, subtitle, summary, category, tags, avatar, skill, serverName, source, hub }
+  const scenario = typeof row.scenario === 'string' && ID.test(row.scenario) ? row.scenario : undefined
+  const item = { id, tab, kind, title, subtitle, summary, category, scenario, tags, avatar, skill, serverName, source, hub }
   if (typeof row.preinstalled === 'boolean') item.preinstalled = row.preinstalled
   if (kind === 'suite') item.suite = parseSuiteManifest(row.suite, id)
   // Skill-only metadata; expert/team fields and top-level featured retain their contract.

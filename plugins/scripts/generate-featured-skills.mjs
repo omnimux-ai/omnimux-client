@@ -84,6 +84,7 @@ export function buildSnapshot(catalog) {
         summaryZh: String(item.summaryZh || ''),
         summaryEn: String(item.summaryEn || ''),
         category: String(item.category || ''),
+        scenario: String(item.scenario || ''),
         tags: Array.isArray(item.tags) ? item.tags.filter((tag) => typeof tag === 'string' && tag !== '') : [],
         cover: coverAsset,
         avatar: avatarAsset,
@@ -107,13 +108,19 @@ export function buildSnapshot(catalog) {
       return a.id.localeCompare(b.id)
     })
 
-  const categories = (Array.isArray(catalog?.categories) ? catalog.categories : [])
-    .filter((category) => category && category.tab === 'skills' && category.id && category.title)
+  const scenarioRows = Array.isArray(catalog?.skillScenarios) ? catalog.skillScenarios : []
+  const categories = (scenarioRows.length ? scenarioRows : (Array.isArray(catalog?.categories) ? catalog.categories : []))
+    .filter((category) => category && category.id && category.title)
     .map((category) => ({ id: String(category.id), title: String(category.title) }))
 
-  // 只保留真的出现在精选里的分类，避免出现点了必然空的 chip
-  const used = new Set(skills.map((skill) => skill.category).filter(Boolean))
-  const usedCategories = categories.filter((category) => used.has(category.id))
+  // 只保留真的出现在精选里的分类，避免出现点了必然空的 chip；count 为该场景的精选条目数
+  const used = new Set(skills.map((skill) => skill.scenario || skill.category).filter(Boolean))
+  const usedCategories = categories
+    .filter((category) => used.has(category.id))
+    .map((category) => ({
+      ...category,
+      count: skills.filter((skill) => (skill.scenario || skill.category) === category.id).length,
+    }))
 
   return {
     schema: SNAPSHOT_SCHEMA,
