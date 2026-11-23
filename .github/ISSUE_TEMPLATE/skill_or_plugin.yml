@@ -1,0 +1,46 @@
+name: Skill or Plugin Proposal
+description: Request or contribute a new content commerce skill, workflow template, or plugin
+title: "[Skill/Plugin]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form to propose a new **Agent Skill**, **Expert preset**, or **Plugin** for the OmniMux ecosystem.
+        If you plan to submit a PR, check [CONTRIBUTING.md](https://github.com/omnimux-ai/omnimux-client/blob/main/CONTRIBUTING.md) first.
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Proposal Type
+      options:
+        - Content Commerce / Video Agent Skill (SKILL.md)
+        - Domain Plugin
+        - MCP Connector / Integration
+        - Workflow Canvas Template
+    validations:
+      required: true
+
+  - type: textarea
+    id: scenario
+    attributes:
+      label: Target scenario & audience
+      description: Who is this for (e.g. UGC ads, product showcase, script breakdown), and what input/output does it handle?
+    validations:
+      required: true
+
+  - type: textarea
+    id: details
+    attributes:
+      label: Key steps, dependencies, or examples
+      description: Outline the workflow steps, required tools/models, or link to an example repository or demo.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contribution
+      options:
+        - label: I would like to help implement or submit a PR for this skill/plugin.
+          required: false
