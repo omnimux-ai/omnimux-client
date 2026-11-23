@@ -39,6 +39,8 @@ export interface ProjectAssetsItem {
   mimeType?: string | null;
   /** Duration in seconds for AV; null/omit when unknown. */
   durationSec?: number | null;
+  /** Content SHA-256 hex digest (64 lowercase hex chars) when measured. */
+  sha256?: string | null;
   /** Alias of size for readers that still look at sizeBytes. */
   sizeBytes?: number | null;
   lineage?: unknown;

@@ -7,6 +7,7 @@ import { resolveAssetsPaths } from './paths.js'
 import { formatAssetUri, isAssetUri, parseAssetUri, resolveAssetUri, toAssetUri } from './protocol.js'
 import { mountGenerationIngest } from './generation-ingest.js'
 import { createImageIngest } from './image-ingest.js'
+import { createLibraryMediaProvider } from './media-provider.js'
 
 export { formatAssetUri, isAssetUri, parseAssetUri, resolveAssetUri, toAssetUri, createFallbackDefineTool }
 
@@ -239,6 +240,17 @@ export function apply(ctx, config) {
   }
   if (typeof ctx.inject === 'function') ctx.inject(['webServer'], mountHttp)
   else mountHttp(ctx)
+
+  const mountMediaProvider = (mediaCtx) => {
+    const resolver = mediaCtx.mediaResolver ?? mediaCtx.get?.('mediaResolver')
+    if (!resolver || typeof resolver.registerProvider !== 'function') return
+    const provider = createLibraryMediaProvider({ library })
+    const mount = () => resolver.registerProvider(provider)
+    if (typeof mediaCtx.effect === 'function') mediaCtx.effect(mount, 'omnimux-assets: media resolver provider')
+    else mount()
+  }
+  if (typeof ctx.inject === 'function') ctx.inject(['mediaResolver'], mountMediaProvider)
+  else mountMediaProvider(ctx)
 
   if (ctx.systemPrompt && typeof ctx.systemPrompt.section === 'function') {
     const registerPrompt = () => ctx.systemPrompt.section({

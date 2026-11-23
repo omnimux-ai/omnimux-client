@@ -2,17 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import type { MediaItem } from "@openreel/core";
 import { useProjectStore } from "../openreel/web/stores/project-store";
 import { getTimelineItems } from "../openreel/core/timeline/timeline-items";
-import { canvasWorkspaceMediaUrl, mediaContentDigest, reconnectMediaUrl, workspaceMediaDigest } from "../../timeline/nativeProjectFields.js";
+import { canvasWorkspaceMediaUrl, mediaContentDigest, mediaHandleFromLocator, mediaHandleOf, normalizeMediaHandle, reconnectMediaUrl, workspaceMediaDigest } from "../../timeline/nativeProjectFields.js";
+import { fetchHostMediaBlob, hasAuthenticatedClipHost } from "../live/host-media";
 import { mediaDigest, verifiedMediaBlob } from "../live/media-source";
 import { createStoredMediaRecovery } from "../live/media-recovery";
-import { bridgeMediaLocator } from "../live/media-bridge-source.js";
+import { bridgeMediaLocator, LOCAL_FILE_MEDIA_ROUTE, localFileLocator } from "../live/media-bridge-source.js";
 import { placeFirstVideoInEmptyTimeline } from "../live/bridged-media";
 
 const MAX_MEDIA = 20;
 const MAX_CAPTIONS = 120;
-const LOCAL_FILE = "/omnimux-workflow/api/local-file";
-const WORKSPACE_FILE = /^\/omnimux-workflow\/api\/workspaces\/ws_[A-Za-z0-9_-]+\/file$/;
-const MEDIA_PATH = /^\/(?:omnimux-workflow\/)?media\/.+/;
 
 interface UpstreamMedia {
   path: string;
@@ -38,15 +36,6 @@ export interface CanvasSession {
   mediaReturn?: { requestId: string; upstreamInputs: Pick<NonNullable<CanvasSession['upstreamInputs']>, 'videos' | 'audios' | 'images'> };
 }
 
-function localFileReconnect(request: URL): string | undefined {
-  const { hash, pathname, search, searchParams } = request;
-  const path = searchParams.get('path');
-  if (!path || hash || /[\x00-\x1f\x7f]/u.test(path) || !/^(?:\/|[A-Za-z]:[\\/]|\\\\)/u.test(path)) return undefined;
-  const keys = ['path', 'rev', 'v'];
-  if ([...searchParams.keys()].some(key => !keys.includes(key)) || keys.some(key => searchParams.getAll(key).length > 1)) return undefined;
-  return pathname + search;
-}
-
 function parseMedia(value: string, workspaceId: string | undefined): { url: string; reconnect?: string; localFile?: string } | null {
   if (!value || /[\x00-\x1f\x7f]/u.test(value)) return null;
   if (value.startsWith("blob:") || /^data:(?:video|audio|image\/(?!svg))/i.test(value)) return { url: value };
@@ -57,23 +46,22 @@ function parseMedia(value: string, workspaceId: string | undefined): { url: stri
     const http = /^https?:\/\//i.test(value);
     if (request.username || /^https?:\/\/[^/]*@/i.test(value)) return null;
     const sameOrigin = relative || http && request.origin === globalThis.location?.origin;
-    if (WORKSPACE_FILE.test(request.pathname) && sameOrigin) {
-      const url = canvasWorkspaceMediaUrl(relative ? value : request.pathname + request.search + request.hash, workspaceId);
+    const candidate = relative ? value : request.pathname + request.search + request.hash;
+    if (sameOrigin && request.pathname.startsWith('/omnimux-workflow/api/workspaces/') && request.pathname.endsWith('/file')) {
+      const url = canvasWorkspaceMediaUrl(candidate, workspaceId);
       return url ? { url, reconnect: url } : null;
     }
-    if (request.pathname === LOCAL_FILE && sameOrigin) {
-      return { url: request.pathname + request.search, localFile: localFileReconnect(request) };
+    if (sameOrigin && request.pathname === LOCAL_FILE_MEDIA_ROUTE) {
+      return { url: request.pathname + request.search, localFile: localFileLocator(candidate) };
     }
     if (relative) {
-      if (MEDIA_PATH.test(request.pathname)) {
-        const url = request.pathname + request.search;
-        return { url, reconnect: reconnectMediaUrl(url, workspaceId) };
-      }
+      const reconnect = reconnectMediaUrl(candidate, workspaceId);
+      if (reconnect) return { url: request.pathname + request.search, reconnect };
     }
     if (http) return { url: request.href };
     if (value.startsWith("//")) return null;
     if (value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value)) {
-      const url = `${LOCAL_FILE}?path=${encodeURIComponent(value)}`;
+      const url = `${LOCAL_FILE_MEDIA_ROUTE}?path=${encodeURIComponent(value)}`;
       return { url, localFile: url };
     }
   } catch {
@@ -114,6 +102,22 @@ type CanvasImportScope = {
   signal: AbortSignal;
   isCurrent: () => boolean;
 };
+
+function deriveCanvasImportHandle(
+  item: UpstreamMedia,
+  locator: string | undefined,
+  workspaceId: string | undefined,
+  digest: string,
+) {
+  const fromUrl = mediaHandleFromLocator(locator, workspaceId, digest);
+  if (fromUrl) return fromUrl;
+  if (!workspaceId || !item.sourceId) return undefined;
+  const parts = item.sourceId.split(':');
+  const nodeId = parts[0];
+  const parsedIndex = parts.length > 1 ? Number(parts[1]) : 0;
+  const outputIndex = Number.isSafeInteger(parsedIndex) && parsedIndex >= 0 ? parsedIndex : 0;
+  return normalizeMediaHandle({ v: 1, scope: 'canvas-node', workspaceId, nodeId, outputIndex, sha256: digest }, workspaceId);
+}
 
 async function importCanvasFile(item: CanvasImportItem, { workspaceId, signal, isCurrent }: CanvasImportScope, returning: boolean) {
   const ref = parseMedia(item.url || item.path, workspaceId);
@@ -158,8 +162,14 @@ async function importCanvasFile(item: CanvasImportItem, { workspaceId, signal, i
   }
   if (match && !match.isPlaceholder) return returning ? undefined : match;
 
-  const omnimuxSource = { id: match?.omnimuxSource?.id ?? id,
-    version: match?.omnimuxSource?.version ?? requestedVersion ?? digest, digest, ...(ref.reconnect ? { url: ref.reconnect } : {}) };
+  const handle = deriveCanvasImportHandle(item, ref.reconnect ?? ref.url, workspaceId, digest);
+  const omnimuxSource = {
+    id: match?.omnimuxSource?.id ?? id,
+    version: match?.omnimuxSource?.version ?? requestedVersion ?? digest,
+    digest,
+    ...(ref.reconnect ? { url: ref.reconnect } : {}),
+    ...(handle ? { handle } : {}),
+  };
   const store = useProjectStore.getState();
   const stillAssignable = () => isCurrent() && findMatch(digest) === match;
   const result = match
@@ -220,15 +230,29 @@ async function recoverCanvasMedia(
     try {
       const stored = await readStored(media, digest);
       if (!isCurrent()) return;
+      let hostBlob: Blob | undefined;
+      let verifiedOnHost = false;
+      if (!stored && hasAuthenticatedClipHost() && mediaHandleOf(media, workspaceId)) {
+        const fetched = await fetchHostMediaBlob(projectId, media.id, { expectedDigest: digest, signal, timeoutMs: 12_000 });
+        if (!isCurrent()) return;
+        if (fetched.status === 409) throw new Error('The source media version changed');
+        if (fetched.ok && fetched.blob) {
+          hostBlob = fetched.blob;
+          verifiedOnHost = true;
+        }
+      }
       const file = stored ? new File([stored], media.name, { type: stored.type || MIME[media.type] })
-        : url ? await readMediaFile(url, media.name, media.type, AbortSignal.any([signal, AbortSignal.timeout(12_000)])) : undefined;
+        : hostBlob ? new File([hostBlob], media.name, { type: hostBlob.type || MIME[media.type] })
+          : url ? await readMediaFile(url, media.name, media.type, AbortSignal.any([signal, AbortSignal.timeout(12_000)])) : undefined;
       if (!isCurrent()) return;
       if (!file) continue;
-      if (!stored && !await verifiedMediaBlob(file, digest)) throw new Error('The source media version changed');
+      if (!stored && !verifiedOnHost && !await verifiedMediaBlob(file, digest)) throw new Error('The source media version changed');
       const sourceId = legacy ? fingerprint ?? (url ? await mediaDigest(url) : undefined) : undefined;
+      const recoveredHandle = mediaHandleFromLocator(url, workspaceId, digest);
       const omnimuxSource = sourceId ? {
         id: sourceId, version: digest, digest,
         ...(canvasWorkspaceMediaUrl(url, workspaceId) ? { url } : {}),
+        ...(recoveredHandle ? { handle: recoveredHandle } : {}),
       } : media.omnimuxSource;
       const store = useProjectStore.getState();
       if (!isCurrent()) return;

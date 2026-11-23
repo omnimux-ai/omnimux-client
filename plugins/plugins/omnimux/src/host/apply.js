@@ -57,6 +57,7 @@ import { mountPresetsTools } from '../presets/tools.js'
 import { mountTemplatesTools } from '../templates/tools.js'
 import { mountDecisions } from '../decisions/mount.js'
 import { createNativeFilePicker } from './native-picker.js'
+import { createMediaResolver } from './media-resolver.js'
 import { mountRetiredPresetRedirect } from './retired-presets.js'
 
 /**
@@ -514,6 +515,8 @@ export function apply(ctx, config = {}) {
     // Shared macOS file/folder chooser: assets, products and workflow consume
     // this seam instead of shipping three copies of the JXA script.
     ctx.provide('nativeFilePicker', createNativeFilePicker())
+    // Federated cross-plugin media handle registry; domain plugins own bytes & ACLs.
+    ctx.provide('mediaResolver', createMediaResolver())
   }
 
   /**

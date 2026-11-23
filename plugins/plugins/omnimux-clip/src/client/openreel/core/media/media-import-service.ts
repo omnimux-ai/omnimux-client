@@ -87,9 +87,21 @@ const DEFAULT_OPTIONS: Required<MediaImportOptions> = {
  */
 export const FFMPEG_AUDIO_PROBE_MAX_BYTES = 64 * 1024 * 1024;
 
-/** Whether the second-opinion ffmpeg audio-stream probe is worth reading the file for. */
-export function shouldProbeAudioStreamsWithFfmpeg(audioTrackCount: number | undefined, fileSize: number): boolean {
+/**
+ * Whether the second-opinion ffmpeg audio-stream probe is worth reading the file for.
+ * When mediabunny already read a positive track count from the container index and no local/loaded
+ * probe is available (`hasFastProbe === false`), skip cold-downloading ffmpeg-core.wasm from CDN
+ * during import/relink so offline or CDN-throttled sessions never stall on an optional recount.
+ */
+export function shouldProbeAudioStreamsWithFfmpeg(
+  audioTrackCount: number | undefined,
+  fileSize: number,
+  options?: { hasFastProbe?: boolean },
+): boolean {
   if (audioTrackCount !== undefined && audioTrackCount > 1) return false;
+  if (audioTrackCount !== undefined && audioTrackCount >= 1 && options?.hasFastProbe === false) {
+    return false;
+  }
   return audioTrackCount === undefined || fileSize <= FFMPEG_AUDIO_PROBE_MAX_BYTES;
 }
 
@@ -170,7 +182,8 @@ export class MediaImportService {
         };
       }
 
-      if (metadata.hasAudio && shouldProbeAudioStreamsWithFfmpeg(metadata.audioTrackCount, file.size)) {
+      const hasFastAudioProbe = nativeMediaAvailable() || this.ffmpegFallback.isLoaded();
+      if (metadata.hasAudio && shouldProbeAudioStreamsWithFfmpeg(metadata.audioTrackCount, file.size, { hasFastProbe: hasFastAudioProbe })) {
         try {
           opts.onProgress?.("Checking audio tracks");
           const probeResult = await this.probeAudioStreamsCompat(file);
@@ -401,7 +414,8 @@ export class MediaImportService {
     const mediaType = inferMediaType(compatibleFile.type) || "video";
 
     // Probe original file for audio tracks since WebM transcode may lose them
-    if (shouldProbeAudioStreamsWithFfmpeg(metadata.audioTrackCount, file.size)) {
+    const hasFastAudioProbe = nativeMediaAvailable() || this.ffmpegFallback.isLoaded();
+    if (shouldProbeAudioStreamsWithFfmpeg(metadata.audioTrackCount, file.size, { hasFastProbe: hasFastAudioProbe })) {
       try {
         const probeResult = await this.probeAudioStreamsCompat(file);
         if (probeResult.audioStreamCount > 1) {

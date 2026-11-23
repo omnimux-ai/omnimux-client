@@ -114,6 +114,7 @@ export interface ProjectFileDraft extends Omit<LocalFileDraft, 'realPath' | 'siz
   relativePath: string;
   workspaceId: string;
   assetId?: string;
+  sha256?: string | null;
   size: number | null;
   durationSec?: number | null;
 }
@@ -983,7 +984,7 @@ function canConnect(source: CanvasNode, target: CanvasNode): boolean {
 
 function mediaPatch(file: ImportFileDraft): Record<string, unknown> {
   if ('relativePath' in file) {
-    const url = projectFileMediaUrl(file.workspaceId, file.relativePath);
+    const url = projectFileMediaUrl(file.workspaceId, file.relativePath, file.sha256 ?? undefined);
     return {
       ...buildMediaMetadata({ mime: file.mime, size: file.size, durationSec: file.durationSec, name: file.name }),
       relativePath: file.relativePath,

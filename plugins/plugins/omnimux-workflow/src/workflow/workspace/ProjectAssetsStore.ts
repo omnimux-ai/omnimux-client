@@ -43,6 +43,7 @@ import {
   resolveProjectPaths,
   resolveProjectRelPath,
 } from '../../projects/paths.ts';
+import { readMediaContentDigest } from '../../projects/mediaRevision.ts';
 import { copyFileIntoImported, copyPathIntoDir } from '../ingest/IngestionPipeline.ts';
 import { WorkflowStoreError } from './WorkflowStoreError.ts';
 import { canvasExistsOnDisk } from './WorkspaceStore.ts';
@@ -99,6 +100,8 @@ export interface RegisterGeneratedAssetPayload {
   mimeType?: string | null;
   /** Duration seconds for AV; null/omit when unknown. */
   durationSec?: number | null;
+  /** Content SHA-256 hex digest when measured. */
+  sha256?: string | null;
   lineage?: unknown;
 }
 
@@ -131,6 +134,12 @@ function fileTypeOf(name: string): ProjectAssetFileType {
   return 'doc';
 }
 
+const SHA256_HEX_RE = /^[a-f0-9]{64}$/u;
+
+function normalizeSha256(value: unknown): string | undefined {
+  return typeof value === 'string' && SHA256_HEX_RE.test(value) ? value : undefined;
+}
+
 function persistableItem(item: ProjectAssetsItem): ProjectAssetsItem {
   const next: ProjectAssetsItem = {
     id: item.id,
@@ -144,6 +153,8 @@ function persistableItem(item: ProjectAssetsItem): ProjectAssetsItem {
   if (typeof item.mimeType === 'string' || item.mimeType === null) next.mimeType = item.mimeType;
   if (typeof item.durationSec === 'number' || item.durationSec === null) next.durationSec = item.durationSec;
   if (typeof item.sizeBytes === 'number' || item.sizeBytes === null) next.sizeBytes = item.sizeBytes;
+  const sha256 = normalizeSha256(item.sha256);
+  if (sha256) next.sha256 = sha256;
   if (item.lineage != null) next.lineage = item.lineage;
   if (item.snapshot?.globalSubjectId) next.snapshot = { globalSubjectId: item.snapshot.globalSubjectId };
   return next;
@@ -206,6 +217,8 @@ function hydrateItem(row: unknown): ProjectAssetsItem | null {
   } else if (rec.durationSec === null) {
     item.durationSec = null;
   }
+  const sha256 = normalizeSha256(rec.sha256);
+  if (sha256) item.sha256 = sha256;
   if (rec.lineage != null) item.lineage = rec.lineage;
   if (rec.snapshot && typeof rec.snapshot === 'object' && !Array.isArray(rec.snapshot)) {
     const snap = rec.snapshot as Record<string, unknown>;
@@ -446,6 +459,10 @@ export function createProjectAssetsStore(opts: {
       const copied = await copyFileIntoImported({ projectRoot, sourceAbs: raw });
       if (seenRelative.has(copied.relativePath)) continue;
       seenRelative.add(copied.relativePath);
+      const sha256 = await readMediaContentDigest(copied.destAbs).catch((error: unknown) => {
+        console.warn('[ProjectAssetsStore] Could not compute sha256 on ingest.', (error as Error)?.message ?? String(error));
+        return undefined;
+      });
       stagedItems.push({
         id: newItemId(),
         name: copied.name,
@@ -453,6 +470,7 @@ export function createProjectAssetsStore(opts: {
         parentId,
         relative_path: copied.relativePath,
         size: copied.size,
+        ...(sha256 ? { sha256 } : {}),
         updatedAt: now,
       });
     }
@@ -560,7 +578,9 @@ export function createProjectAssetsStore(opts: {
           const item: ProjectAssetsItem = {
             id: newItemId(), name: audio.name, type: 'audio', parentId: null,
             relative_path: audio.relativePath, size: audio.size, sizeBytes: audio.size,
-            mimeType: audio.mimeType, durationSec: null, updatedAt: Date.now(),
+            mimeType: audio.mimeType, durationSec: null,
+            ...(normalizeSha256(audio.sha256) ? { sha256: audio.sha256 } : {}),
+            updatedAt: Date.now(),
           };
           const document = persist(filePath, current, { folders: current.folders, items: [...current.items, item] });
           return { item, rev: document.rev };
@@ -621,6 +641,12 @@ export function createProjectAssetsStore(opts: {
           destDir,
           sourceAbs,
         });
+        const sha256 = statSync(copied.destAbs).isFile()
+          ? await readMediaContentDigest(copied.destAbs).catch((error: unknown) => {
+              console.warn('[ProjectAssetsStore] Could not compute sha256 on instantiate.', (error as Error)?.message ?? String(error));
+              return undefined;
+            })
+          : undefined;
         items.push({
           id: newItemId(),
           name: copied.name,
@@ -628,6 +654,7 @@ export function createProjectAssetsStore(opts: {
           parentId,
           relative_path: copied.relativePath,
           size: copied.size,
+          ...(sha256 ? { sha256 } : {}),
           snapshot: { globalSubjectId: subjectId },
           updatedAt: now,
         });
@@ -682,6 +709,7 @@ export function createProjectAssetsStore(opts: {
               : payload.durationSec === null
                 ? null
                 : item.durationSec;
+          const sha256 = normalizeSha256(payload.sha256) ?? item.sha256;
           return {
             ...item,
             name,
@@ -690,6 +718,7 @@ export function createProjectAssetsStore(opts: {
             sizeBytes: size ?? null,
             mimeType: mimeType ?? null,
             durationSec: durationSec ?? null,
+            ...(sha256 ? { sha256 } : {}),
             lineage: payload.lineage ?? item.lineage,
             updatedAt: Date.now(),
           };
@@ -709,6 +738,7 @@ export function createProjectAssetsStore(opts: {
         typeof payload.durationSec === 'number' && Number.isFinite(payload.durationSec)
           ? payload.durationSec
           : null;
+      const sha256 = normalizeSha256(payload.sha256);
       const items = [
         ...current.items,
         {
@@ -721,6 +751,7 @@ export function createProjectAssetsStore(opts: {
           sizeBytes: size,
           mimeType,
           durationSec,
+          ...(sha256 ? { sha256 } : {}),
           lineage: payload.lineage,
           updatedAt: Date.now(),
         },

@@ -176,9 +176,83 @@ export function createEditorSession({ storage, native, workbench, document, onEr
     owner.status = 'saving'
     owner.retryOnViewport = false
     show(owner)
+    let outgoing = snapshot
+    if (typeof storage.uploadMediaBytes === 'function') {
+      const pendingItems = (snapshot.project?.mediaLibrary?.items ?? []).filter(item => {
+        if (item.omnimuxSource?.handle || item.omnimuxSource?.url || item.missing || item.isPlaceholder) return false
+        const blob = snapshot.media?.[item.id]
+        return blob instanceof Blob && blob.size > 0
+      })
+      if (pendingItems.length > 0) {
+        const uploadedSources = new Map()
+        try {
+          for (const item of pendingItems) {
+            if (!canWrite()) return { persisted: true, synchronized: false }
+            const blob = snapshot.media[item.id]
+            const uploaded = await storage.uploadMediaBytes(snapshot.project.id, item.id, blob, {
+              name: item.sourceFile?.name || item.name,
+              mimeType: blob.type,
+              binding: snapshot.binding,
+            })
+            if (uploaded?.handle && uploaded.sha256) {
+              const handle = uploaded.handle
+              const stableId = item.omnimuxSource?.id
+                ?? (handle.scope === 'project-asset' ? `project:${handle.workspaceId}:${handle.assetId ?? handle.rel}` : `vault:${uploaded.sha256}`)
+              uploadedSources.set(item.id, {
+                id: stableId,
+                version: `sha256:${uploaded.sha256}`,
+                digest: uploaded.sha256,
+                handle,
+                ...(uploaded.url ? { url: uploaded.url } : {}),
+              })
+            }
+          }
+        } catch (error) {
+          owner.retryOnViewport = awaitingConnection(error.code)
+          owner.status = owner.retryOnViewport ? 'offline' : 'saveFailed'
+          show(owner)
+          return { persisted: true, synchronized: false }
+        }
+        if (uploadedSources.size > 0) {
+          const patchItems = items => items.map(item => {
+            const nextSource = uploadedSources.get(item.id)
+            if (!nextSource || item.omnimuxSource?.handle) return item
+            return {
+              ...item,
+              omnimuxSource: nextSource,
+              sourceRef: { ...item.sourceRef, kind: 'indexeddb', key: item.id, digest: nextSource.digest },
+            }
+          })
+          outgoing = {
+            ...snapshot,
+            project: {
+              ...snapshot.project,
+              mediaLibrary: { ...snapshot.project.mediaLibrary, items: patchItems(snapshot.project.mediaLibrary.items) },
+            },
+          }
+          for (const [mediaId, nextSource] of uploadedSources.entries()) {
+            native.attachMediaHandle?.(snapshot.project.id, mediaId, nextSource)
+          }
+          if (owner.record === snapshot) {
+            const refreshed = native.capture?.()
+            if (refreshed?.project?.id === snapshot.project.id) owner.fingerprint = refreshed.fingerprint
+            owner.record = outgoing
+          } else if (owner.record?.project?.id === snapshot.project.id) {
+            owner.record = {
+              ...owner.record,
+              project: {
+                ...owner.record.project,
+                mediaLibrary: { ...owner.record.project.mediaLibrary, items: patchItems(owner.record.project.mediaLibrary.items) },
+              },
+            }
+          }
+          await storage.writeLocal(outgoing, receipt)
+        }
+      }
+    }
     let result
     try {
-      result = await storage.writeHost(snapshot)
+      result = await storage.writeHost(outgoing)
     } catch (error) {
       if (error.code === 'REVISION_CONFLICT' || error.code === 'revision-conflict') {
         try {
@@ -297,7 +371,22 @@ export function createEditorSession({ storage, native, workbench, document, onEr
       const disposition = owner.status === 'offline' ? 'offline' : syncDisposition(local, host)
       if (disposition === 'conflict') owner.conflict = host ?? { revision: 0 }
       if (['offline', 'push', 'retry', 'conflict'].includes(disposition)) owner.record = local ?? opening
-      else if (host) owner.record = fromHost(host, local)
+      else if (host) {
+        const needsReconcile = typeof storage.reconcileMedia === 'function'
+          && (host.project?.mediaLibrary?.items ?? []).some(item => !item.omnimuxSource?.handle || item.missing || item.isPlaceholder)
+        if (needsReconcile) {
+          try {
+            const reconciled = await storage.reconcileMedia(site.projectId, { mode: 'apply', binding: site.binding })
+            if (!stillDesired()) return
+            if (reconciled?.upgradedMediaIds?.length && reconciled.project && isClipRevision(reconciled.revision)) {
+              host = { ...host, revision: reconciled.revision, project: reconciled.project }
+            }
+          } catch (error) {
+            console.warn('[Clip] Host media reconcile before load failed.', error?.code ?? error?.name)
+          }
+        }
+        owner.record = fromHost(host, local)
+      }
       else owner.record = opening ?? local
       if (!owner.record) throw new LiveClipError('not-found', 'The Clip project does not exist.')
       await native.load(owner.record, stillDesired)
@@ -554,6 +643,60 @@ export function createEditorSession({ storage, native, workbench, document, onEr
     return leaveEditor(owner, navigate)
   }
 
+  function inspectMediaReconcile() {
+    const owner = current
+    if (!owns(owner) || !owner.record?.project?.id || typeof storage.reconcileMedia !== 'function') {
+      return Promise.reject(new LiveClipError('EDITOR_NOT_VISIBLE', 'The Clip editor is not active.'))
+    }
+    return enqueue(async () => {
+      if (!owns(owner) || !owner.record?.project?.id) {
+        throw new LiveClipError('EDITOR_NOT_VISIBLE', 'The Clip editor is not active.')
+      }
+      if (!owner.conflict && ownedNativeProject(owner) && !owner.resolving) {
+        capture(owner)
+        if (needsSave(owner)) await tryFlush(owner)
+      }
+      return storage.reconcileMedia(owner.record.project.id, {
+        mode: 'inspect',
+        binding: owner.site.binding,
+      })
+    })
+  }
+
+  function applyMediaReconcile(actions) {
+    const owner = current
+    if (!owns(owner) || !owner.record?.project?.id || typeof storage.reconcileMedia !== 'function') {
+      return Promise.reject(new LiveClipError('EDITOR_NOT_VISIBLE', 'The Clip editor is not active.'))
+    }
+    return enqueue(async () => {
+      if (!owns(owner) || owner.conflict || !owner.record?.project?.id) {
+        throw new LiveClipError('EDITOR_NOT_VISIBLE', 'The Clip editor is not active.')
+      }
+      if (ownedNativeProject(owner) && !owner.resolving) capture(owner)
+      if (needsSave(owner)) {
+        const flushed = await tryFlush(owner)
+        if (!flushed.synchronized) {
+          throw new LiveClipError('REVISION_CONFLICT', 'Could not sync pending edits before relinking media.')
+        }
+      }
+      const projectId = owner.record.project.id
+      const result = await storage.reconcileMedia(projectId, {
+        mode: 'apply',
+        binding: owner.site.binding,
+        actions,
+      })
+      if (owns(owner) && owner.record?.project?.id === projectId && isClipRevision(result?.revision)) {
+        owner.record = {
+          ...owner.record,
+          revision: Math.max(owner.record.revision, result.revision),
+          localBaseRevision: Math.max(owner.record.localBaseRevision, result.revision),
+        }
+        await storage.writeLocal(owner.record)
+      }
+      return { projectId, binding: owner.site.binding, result }
+    })
+  }
+
   const unsubscribe = native.subscribe(projectChanged)
   return {
     add(entry) {
@@ -573,6 +716,8 @@ export function createEditorSession({ storage, native, workbench, document, onEr
     getWaiting: () => work,
     reconcile,
     save,
+    inspectMediaReconcile,
+    applyMediaReconcile,
     async finishIngestion() {
       const owner = current
       if (!owns(owner)) return

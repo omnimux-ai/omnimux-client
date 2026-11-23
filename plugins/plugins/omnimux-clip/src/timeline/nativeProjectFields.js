@@ -26,12 +26,111 @@ export function sourceIdentity(value) {
     ? { id: value.id, version: value.version } : undefined
 }
 
+export function sourceProjection(value) {
+  const base = sourceIdentity(value)
+  if (!base) return undefined
+  const scope = MEDIA_HANDLE_SCOPES.includes(value.handle?.scope)
+    ? value.handle.scope
+    : (MEDIA_HANDLE_SCOPES.includes(value.scope) ? value.scope : undefined)
+  return scope ? { ...base, scope } : base
+}
+
 export function sha256Digest(value) {
   return typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value) ? value : undefined
 }
 
+export const MEDIA_HANDLE_SCOPES = ['project-asset', 'library-file', 'clip-vault', 'canvas-node']
+
+const HANDLE_WORKSPACE_RE = /^ws_[A-Za-z0-9_-]{1,128}$/u
+const HANDLE_MIME_RE = /^(?:video|audio|image)\/[a-z0-9.+-]+$/iu
+const LIBRARY_PREVIEW_PATH = '/omnimux/assets/library/preview'
+
+export function normalizeMediaHandle(value, workspaceId) {
+  if (!isRecord(value) || value.v !== 1 || !MEDIA_HANDLE_SCOPES.includes(value.scope)) return undefined
+  const sha256 = value.sha256 === undefined ? undefined : sha256Digest(value.sha256)
+  if (value.sha256 !== undefined && !sha256) return undefined
+  if (value.scope === 'project-asset') {
+    if (typeof value.workspaceId !== 'string' || !HANDLE_WORKSPACE_RE.test(value.workspaceId)) return undefined
+    if (workspaceId !== undefined && value.workspaceId !== workspaceId) return undefined
+    if (!isRelativeMediaPath(value.rel) || value.rel.length > 2048) return undefined
+    if (value.assetId !== undefined && !isReferenceId(value.assetId)) return undefined
+    return {
+      v: 1,
+      scope: 'project-asset',
+      workspaceId: value.workspaceId,
+      ...(value.assetId !== undefined ? { assetId: value.assetId } : {}),
+      rel: value.rel,
+      ...(sha256 ? { sha256 } : {}),
+    }
+  }
+  if (value.scope === 'library-file') {
+    if (!isReferenceId(value.libraryAssetId) || !isReferenceId(value.fileId)) return undefined
+    return {
+      v: 1,
+      scope: 'library-file',
+      libraryAssetId: value.libraryAssetId,
+      fileId: value.fileId,
+      ...(sha256 ? { sha256 } : {}),
+    }
+  }
+  if (value.scope === 'clip-vault') {
+    if (!sha256 || typeof value.mimeType !== 'string' || !HANDLE_MIME_RE.test(value.mimeType)
+      || /^image\/svg/iu.test(value.mimeType) || !Number.isSafeInteger(value.size) || value.size <= 0) {
+      return undefined
+    }
+    return { v: 1, scope: 'clip-vault', sha256, mimeType: value.mimeType.toLowerCase(), size: value.size }
+  }
+  if (typeof value.workspaceId !== 'string' || !HANDLE_WORKSPACE_RE.test(value.workspaceId)) return undefined
+  if (workspaceId !== undefined && value.workspaceId !== workspaceId) return undefined
+  if (!isReferenceId(value.nodeId)) return undefined
+  const outputIndex = value.outputIndex === undefined ? 0 : value.outputIndex
+  if (!Number.isSafeInteger(outputIndex) || outputIndex < 0 || outputIndex > 256) return undefined
+  return {
+    v: 1,
+    scope: 'canvas-node',
+    workspaceId: value.workspaceId,
+    nodeId: value.nodeId,
+    outputIndex,
+    ...(sha256 ? { sha256 } : {}),
+  }
+}
+
+export function mediaHandleFromLocator(url, workspaceId, sha256) {
+  if (typeof url !== 'string' || !/^\/(?!\/)/u.test(url) || /[\\#\x00-\x20\x7f]/u.test(url)) return undefined
+  if (typeof URL.canParse === 'function' && !URL.canParse(url, 'https://clip.invalid')) return undefined
+  const parsed = new URL(url, 'https://clip.invalid')
+  const digest = sha256Digest(sha256)
+  if (parsed.pathname === LIBRARY_PREVIEW_PATH) {
+    const libraryAssetId = parsed.searchParams.get('id')
+    const fileId = parsed.searchParams.get('file')
+    return normalizeMediaHandle({ v: 1, scope: 'library-file', libraryAssetId, fileId, ...(digest ? { sha256: digest } : {}) })
+  }
+  const wsMatch = WORKSPACE_MEDIA_PATH.exec(parsed.pathname)
+  if (wsMatch) {
+    const wsId = wsMatch[1]
+    const rel = parsed.searchParams.get('rel')
+    const rev = parsed.searchParams.get('rev')
+    const revDigest = rev?.startsWith('sha256:') ? sha256Digest(rev.slice('sha256:'.length)) : undefined
+    return normalizeMediaHandle(
+      { v: 1, scope: 'project-asset', workspaceId: wsId, rel, ...(digest ?? revDigest ? { sha256: digest ?? revDigest } : {}) },
+      workspaceId,
+    )
+  }
+  return undefined
+}
+
+export function mediaHandleOf(item, workspaceId) {
+  const explicit = normalizeMediaHandle(item?.omnimuxSource?.handle, workspaceId)
+  if (explicit) return explicit
+  const digest = mediaContentDigest(item)
+  return mediaHandleFromLocator(item?.omnimuxSource?.url, workspaceId, digest)
+    ?? mediaHandleFromLocator(item?.sourceRef?.url, workspaceId, digest)
+}
+
 export function mediaContentDigest(item) {
-  return sha256Digest(item?.sourceRef?.digest) ?? sha256Digest(item?.omnimuxSource?.digest)
+  return sha256Digest(item?.sourceRef?.digest)
+    ?? sha256Digest(item?.omnimuxSource?.digest)
+    ?? sha256Digest(item?.omnimuxSource?.handle?.sha256)
 }
 
 const WORKSPACE_MEDIA_PATH = /^\/omnimux-workflow\/api\/workspaces\/(ws_[A-Za-z0-9_-]{1,128})\/file$/u

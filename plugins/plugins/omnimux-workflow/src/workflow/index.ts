@@ -26,6 +26,7 @@ import type { WorkflowPaths } from './paths';
 import { resolveWorkflowPaths } from './paths';
 import { createComfyBackendService } from './comfyBackend/service.ts';
 import { createWorkflowClipService } from './clip/workflowClip.ts';
+import { createWorkflowMediaSupport } from './media/workflowMediaProviders.ts';
 import { sessionToWorkspaceId, workspacePathToCanvasId } from '../shared/sessionWorkspaceId.ts';
 import { createWorkspaceStore } from './workspace/WorkspaceStore';
 import { createGenerationPreferencesStore } from './workspace/GenerationPreferencesStore';
@@ -209,23 +210,62 @@ export function mountWorkflowHost(ctx: HostContext, opts: MountWorkflowHostOptio
   // do not wait on it; recovered executions stream to late SSE subscribers.
   void executionManager.recoverAll();
 
+  const canAccessWorkspace = (workspaceId: string, sessionId: string): boolean => {
+    const cwd = readSessionWorkspaceDir(sessionId);
+    if (!cwd) return false;
+    const project = projectStore.findByRoot(cwd);
+    if (project) return project.pages.some((page) => page.canvasWorkspaceId === workspaceId);
+    return !resolveProjectRoot(workspaceId)
+      && (workspaceId === workspacePathToCanvasId(cwd) || workspaceId === sessionToWorkspaceId(sessionId));
+  };
+  const workflowMedia = createWorkflowMediaSupport({
+    store,
+    assetsStore,
+    resolveAssetsRoot,
+    mediaDir: paths.mediaDir,
+    canAccessWorkspace,
+  });
+
   if (typeof ctx.provide === 'function') {
     ctx.provide('omnimux-workflow', headlessSeam);
     ctx.provide('workflowClip', createWorkflowClipService({
       store,
-      canAccessWorkspace(workspaceId, sessionId) {
-        const cwd = readSessionWorkspaceDir(sessionId);
-        if (!cwd) return false;
-        const project = projectStore.findByRoot(cwd);
-        if (project) return project.pages.some((page) => page.canvasWorkspaceId === workspaceId);
-        return !resolveProjectRoot(workspaceId)
-          && (workspaceId === workspacePathToCanvasId(cwd) || workspaceId === sessionToWorkspaceId(sessionId));
-      },
+      assetsStore,
+      resolveProjectRoot,
+      canAccessWorkspace,
+      resolveNodeSources: workflowMedia.resolveNodeSources,
     }));
   }
   (ctx as Record<string, unknown>)['omnimux-workflow'] = headlessSeam;
 
   const disposers: Array<() => void> = [];
+
+  const mountMediaProviders = (mediaCtx: { mediaResolver?: unknown; get?: (name: string) => unknown; effect?: (fn: () => () => void, label?: string) => void }) => {
+    const resolver = (mediaCtx.mediaResolver ?? mediaCtx.get?.('mediaResolver')) as
+      | { registerProvider?: (provider: unknown) => () => void }
+      | undefined;
+    if (!resolver || typeof resolver.registerProvider !== 'function') return;
+    const mount = () => {
+      const registered = workflowMedia.providers.map((provider) => resolver.registerProvider!(provider));
+      const cleanup = () => {
+        for (const dispose of registered) dispose();
+      };
+      disposers.push(cleanup);
+      return cleanup;
+    };
+    if (typeof mediaCtx.effect === 'function') {
+      mediaCtx.effect(mount, 'omnimux-workflow: media resolver providers');
+    } else if (typeof ctx.effect === 'function') {
+      ctx.effect(mount, 'omnimux-workflow: media resolver providers');
+    } else {
+      mount();
+    }
+  };
+  if (typeof ctx.inject === 'function') {
+    ctx.inject(['mediaResolver'], (inner) => mountMediaProviders(inner as Parameters<typeof mountMediaProviders>[0]));
+  } else {
+    mountMediaProviders(ctx as Parameters<typeof mountMediaProviders>[0]);
+  }
 
   const mountHttp = (httpCtx: { webServer?: WebServer }) => {
     const webServer = httpCtx.webServer;
