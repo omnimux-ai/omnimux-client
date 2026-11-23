@@ -70,3 +70,86 @@ export function getBodyTranslation(item) {
   return translation?.source_fingerprint === sourceFingerprint(getPostBody(item)) && typeof translation.text === 'string'
     ? translation : null
 }
+
+/**
+ * Classify a post into its polymorphic detail presentation mode.
+ * @param {Record<string, any> | null | undefined} item
+ * @param {Array<{ type: string }>} [media]
+ * @param {string} [body]
+ * @returns {'video' | 'carousel' | 'image' | 'text' | 'empty'}
+ */
+export function detectPostVariant(item, media = getPostMedia(item), body = getPostBody(item)) {
+  const assets = Array.isArray(media) ? media : []
+  if (assets.some((asset) => asset?.type === 'video')) return 'video'
+  if (assets.length > 1 && assets.every((asset) => asset?.type === 'image')) return 'carousel'
+  if (assets.length >= 1) return 'image'
+  const rawType = String(item?.type || item?.content_shape || item?.media_kind || '').toLowerCase()
+  if (rawType === 'video' && typeof item?.source_url === 'string' && /tiktok\.com/i.test(item.source_url)) {
+    return 'video'
+  }
+  if (String(body || '').trim()) return 'text'
+  return 'empty'
+}
+
+const STAGE_LOCALE_KEYS = Object.freeze({
+  queued: 'post.stage.queued',
+  'resolving-skill': 'post.stage.resolving-skill',
+  'preparing-media': 'post.stage.preparing-media',
+  executing: 'post.stage.executing',
+  validating: 'post.stage.validating',
+  'repairing-schema': 'post.stage.repairing-schema',
+  done: 'post.stage.done',
+  cancelled: 'post.stage.cancelled',
+  failed: 'post.stage.failed',
+})
+
+/**
+ * Map a Hub headlessSkill stage/status pair to its localized key.
+ * @param {string | null | undefined} stage
+ * @param {string | null | undefined} [status]
+ * @returns {string}
+ */
+export function headlessStageLocaleKey(stage, status) {
+  if (stage && STAGE_LOCALE_KEYS[stage]) return STAGE_LOCALE_KEYS[stage]
+  if (status && STAGE_LOCALE_KEYS[status]) return STAGE_LOCALE_KEYS[status]
+  return 'post.running'
+}
+
+/**
+ * Filter a Hub event stream entry for one inspiration item's headless analysis job.
+ * @param {{ type?: string, payload?: Record<string, any> } | null | undefined} event
+ * @param {string | number | null | undefined} itemId
+ * @returns {{
+ *   targetKey: string,
+ *   status: string,
+ *   stage: string,
+ *   jobId: string,
+ *   model: string,
+ *   error: string,
+ *   errorCode: string,
+ *   terminal: boolean,
+ * } | null}
+ */
+export function matchHeadlessSkillEvent(event, itemId) {
+  if (!event || event.type !== 'omnimux:headless-skill') return null
+  const payload = event.payload
+  if (!payload || typeof payload !== 'object') return null
+  if (payload.ownerPlugin !== 'omnimux-inspiration') return null
+  const id = itemId == null ? '' : String(itemId)
+  const targetId = typeof payload.targetId === 'string' ? payload.targetId : ''
+  if (!id || !targetId.startsWith(`${id}:`)) return null
+  const targetKey = targetId.slice(id.length + 1)
+  if (!targetKey || targetKey.startsWith('translate:')) return null
+  const status = typeof payload.status === 'string' ? payload.status : ''
+  const stage = typeof payload.stage === 'string' ? payload.stage : status
+  return {
+    targetKey,
+    status,
+    stage,
+    jobId: typeof payload.jobId === 'string' ? payload.jobId : '',
+    model: typeof payload.model === 'string' ? payload.model : '',
+    error: typeof payload.error === 'string' ? payload.error : '',
+    errorCode: typeof payload.errorCode === 'string' ? payload.errorCode : '',
+    terminal: status === 'done' || status === 'failed' || status === 'cancelled',
+  }
+}

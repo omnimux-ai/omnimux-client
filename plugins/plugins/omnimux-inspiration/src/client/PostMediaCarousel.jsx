@@ -108,10 +108,10 @@ export function PostMediaCarousel({
 
   return <article className="omnimux-post-media omnimux-post-carousel" data-media-count={assets.length}>
     <div className="omnimux-post-carousel-head">
-      <span className="omnimux-post-carousel-chip">{copy('carousel')} · {assets.length}</span>
+      <span className="omnimux-post-carousel-chip">{copy('carousel')} {assets.length}</span>
       {someFailed
-        ? <span className="omnimux-post-carousel-warning">{copy('carouselPartial')} · {failedCount}</span>
-        : <span className="omnimux-post-carousel-hint">{copy('carouselHint')}</span>}
+        ? <span className="omnimux-post-carousel-warning">{copy('carouselPartial')} {failedCount}</span>
+        : null}
     </div>
     <div
       className="omnimux-post-carousel-viewport"
