@@ -110,6 +110,7 @@ function mapPresetCategory(c) {
 }
 
 export function buildWorkshopCategories(presetBinding, tr) {
+  const shelf = getSkillShelf();
   const isZh = !tr || tr('locale') === 'zh' || tr('locale') !== 'en';
   const getCatLabel = (id, fallbackZh, fallbackEn) => {
     if (typeof tr === 'function') {
@@ -122,15 +123,17 @@ export function buildWorkshopCategories(presetBinding, tr) {
     ? tr('workshop.catAll')
     : (isZh ? '全部' : 'All');
 
+  const rows = shelf && Array.isArray(shelf.SKILL_SCENARIOS) ? shelf.SKILL_SCENARIOS : [];
+  const counts = shelf && typeof shelf.skillScenarioCounts === 'function'
+    ? shelf.skillScenarioCounts()
+    : { total: 0, byId: {} };
   return [
-    { id: '', label: allLabel },
-    { id: 'ugc-testimonial', label: getCatLabel('ugc-testimonial', 'UGC 和用户评价', 'UGC & Testimonial') },
-    { id: 'storytelling-script', label: getCatLabel('storytelling-script', '故事讲述和脚本', 'Storytelling & Script') },
-    { id: 'image-static', label: getCatLabel('image-static', '图片和静态广告', 'Image & Static Ads') },
-    { id: 'video-ads', label: getCatLabel('video-ads', '视频广告', 'Video Ads') },
-    { id: 'product-showcase', label: getCatLabel('product-showcase', '产品展示', 'Product Showcase') },
-    { id: 'meme-native', label: getCatLabel('meme-native', '模因与原生', 'Meme & Native') },
-    { id: 'other', label: getCatLabel('other', '其它营销分类', 'Other') }
+    { id: '', label: allLabel, count: counts.total || 0 },
+    ...rows.map((row) => ({
+      id: row.id,
+      label: getCatLabel(row.id, row.titleZh || row.title, row.titleEn || row.title),
+      count: counts.byId[row.id] || 0,
+    })),
   ];
 }
 
@@ -184,7 +187,9 @@ function matchesFilterCategory(it, filterCat) {
 }
 
 export function applyPlazaSearchData(d, mode, category, state) {
-  const filterCat = category === 'featured' ? '' : category;
+  const shelf = getSkillShelf();
+  const isScenario = shelf && typeof shelf.isScenarioTag === 'function' && shelf.isScenarioTag(category);
+  const filterCat = category === 'featured' || isScenario ? '' : category;
   const next = (d.items || []).filter((it) => matchesFilterCategory(it, filterCat));
   const isFallback = Boolean(d.fallback);
   state.setFallback(isFallback);
@@ -261,8 +266,11 @@ export function usePlazaSearchEffect(state, deps) {
       state.setStatus('ready');
       return () => { liveRef.live = false; };
     }
-    const queryCat = category === 'featured' ? '' : category;
     const shelf = getSkillShelf();
+    // 场景是本地货架维度，不把 scene-* 当作远端搜索词；仅保留内容形式/预设分类的查询词。
+    const queryCat = category === 'featured' || (shelf && typeof shelf.isScenarioTag === 'function' && shelf.isScenarioTag(category))
+      ? ''
+      : category;
     const payload = shelf
       ? shelf.buildPlazaSearchPayload(submitted, queryCat, page, pageSize)
       : { query: submitted, page, limit: pageSize };
