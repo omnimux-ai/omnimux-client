@@ -1,5 +1,5 @@
 /** Bounded bytes-only import. No HTTP client and no caller-controlled disk paths. */
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { closeSync, fstatSync, linkSync, lstatSync, mkdirSync, openSync, readSync, unlinkSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Readable } from 'node:stream';
@@ -14,6 +14,7 @@ export interface ImportedAudio {
   name: string;
   size: number;
   mimeType: string;
+  sha256: string;
 }
 
 /** Reject links before creating children, including dangling links. */
@@ -61,14 +62,17 @@ export async function ingestAudioBytes<T>(options: {
     fd = openSync(tmp, 'wx+', 0o600);
     identity = fstatSync(fd);
     let size = 0;
+    const hash = createHash('sha256');
     for await (const chunk of source) {
       signal.throwIfAborted();
       if (!Buffer.isBuffer(chunk)) throw new AudioFileActionError('audio-bytes-invalid', 400);
       size += chunk.length;
       if (size > AUDIO_SAVE_LIMITS.bytes) throw new AudioFileActionError('audio-save-budget', 413);
+      hash.update(chunk);
       let offset = 0;
       while (offset < chunk.length) offset += writeSync(fd, chunk, offset, chunk.length - offset);
     }
+    const sha256 = hash.digest('hex');
     signal.throwIfAborted();
     const head = Buffer.alloc(Math.min(size, 4096));
     readSync(fd, head, 0, head.length, 0);
@@ -89,7 +93,7 @@ export async function ingestAudioBytes<T>(options: {
     dest = join(paths.importedDir, name);
     assertProjectWriteSafe(dest, projectRoot);
     linkSync(tmp, dest); // Atomic exclusive publish: never overwrite an existing target.
-    const result = register({ relativePath: toProjectRelativePath(projectRoot, dest), name, size, mimeType: format.mimeType });
+    const result = register({ relativePath: toProjectRelativePath(projectRoot, dest), name, size, mimeType: format.mimeType, sha256 });
     registered = true;
     return result;
   } finally {

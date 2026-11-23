@@ -161,6 +161,15 @@ export function createClipPersistence(window) {
         fetcher: withWindow, method: 'POST', body: { binding: target.binding, draftSchema: target.draftSchema, title: target.title },
       })
     },
+    async reconcileMedia(id, payload = {}) {
+      if (payload.binding) await window.__omnimuxHubEvents?.pushViewport?.()
+      return requestClip(`${projectPath(id)}/media/reconcile`, {
+        ...(payload.binding ? { fetcher: withWindow } : {}),
+        method: 'POST',
+        timeout: 15_000,
+        body: payload,
+      })
+    },
     writeHost: (record, options = {}) => requestClip(projectPath(record.project.id), {
       ...(record.binding ? { fetcher: withWindow } : {}),
       method: 'PUT',

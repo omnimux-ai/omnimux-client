@@ -297,7 +297,22 @@ export function createEditorSession({ storage, native, workbench, document, onEr
       const disposition = owner.status === 'offline' ? 'offline' : syncDisposition(local, host)
       if (disposition === 'conflict') owner.conflict = host ?? { revision: 0 }
       if (['offline', 'push', 'retry', 'conflict'].includes(disposition)) owner.record = local ?? opening
-      else if (host) owner.record = fromHost(host, local)
+      else if (host) {
+        const needsReconcile = typeof storage.reconcileMedia === 'function'
+          && (host.project?.mediaLibrary?.items ?? []).some(item => !item.omnimuxSource?.handle || item.missing || item.isPlaceholder)
+        if (needsReconcile) {
+          try {
+            const reconciled = await storage.reconcileMedia(site.projectId, { mode: 'apply', binding: site.binding })
+            if (!stillDesired()) return
+            if (reconciled?.upgradedMediaIds?.length && reconciled.project && isClipRevision(reconciled.revision)) {
+              host = { ...host, revision: reconciled.revision, project: reconciled.project }
+            }
+          } catch (error) {
+            console.warn('[Clip] Host media reconcile before load failed.', error?.code ?? error?.name)
+          }
+        }
+        owner.record = fromHost(host, local)
+      }
       else owner.record = opening ?? local
       if (!owner.record) throw new LiveClipError('not-found', 'The Clip project does not exist.')
       await native.load(owner.record, stillDesired)

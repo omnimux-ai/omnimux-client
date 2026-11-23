@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { MediaItem } from "@openreel/core";
 import { useProjectStore } from "../openreel/web/stores/project-store";
 import { getTimelineItems } from "../openreel/core/timeline/timeline-items";
-import { canvasWorkspaceMediaUrl, mediaContentDigest, reconnectMediaUrl, workspaceMediaDigest } from "../../timeline/nativeProjectFields.js";
+import { canvasWorkspaceMediaUrl, mediaContentDigest, mediaHandleFromLocator, normalizeMediaHandle, reconnectMediaUrl, workspaceMediaDigest } from "../../timeline/nativeProjectFields.js";
 import { mediaDigest, verifiedMediaBlob } from "../live/media-source";
 import { createStoredMediaRecovery } from "../live/media-recovery";
 import { bridgeMediaLocator } from "../live/media-bridge-source.js";
@@ -115,6 +115,22 @@ type CanvasImportScope = {
   isCurrent: () => boolean;
 };
 
+function deriveCanvasImportHandle(
+  item: UpstreamMedia,
+  locator: string | undefined,
+  workspaceId: string | undefined,
+  digest: string,
+) {
+  const fromUrl = mediaHandleFromLocator(locator, workspaceId, digest);
+  if (fromUrl) return fromUrl;
+  if (!workspaceId || !item.sourceId) return undefined;
+  const parts = item.sourceId.split(':');
+  const nodeId = parts[0];
+  const parsedIndex = parts.length > 1 ? Number(parts[1]) : 0;
+  const outputIndex = Number.isSafeInteger(parsedIndex) && parsedIndex >= 0 ? parsedIndex : 0;
+  return normalizeMediaHandle({ v: 1, scope: 'canvas-node', workspaceId, nodeId, outputIndex, sha256: digest }, workspaceId);
+}
+
 async function importCanvasFile(item: CanvasImportItem, { workspaceId, signal, isCurrent }: CanvasImportScope, returning: boolean) {
   const ref = parseMedia(item.url || item.path, workspaceId);
   if (!ref || (returning && !bridgeMediaLocator(ref.url)) || /\.svgz?(?:[?#]|$)/iu.test(item.path || item.name)) return;
@@ -158,8 +174,14 @@ async function importCanvasFile(item: CanvasImportItem, { workspaceId, signal, i
   }
   if (match && !match.isPlaceholder) return returning ? undefined : match;
 
-  const omnimuxSource = { id: match?.omnimuxSource?.id ?? id,
-    version: match?.omnimuxSource?.version ?? requestedVersion ?? digest, digest, ...(ref.reconnect ? { url: ref.reconnect } : {}) };
+  const handle = deriveCanvasImportHandle(item, ref.reconnect ?? ref.url, workspaceId, digest);
+  const omnimuxSource = {
+    id: match?.omnimuxSource?.id ?? id,
+    version: match?.omnimuxSource?.version ?? requestedVersion ?? digest,
+    digest,
+    ...(ref.reconnect ? { url: ref.reconnect } : {}),
+    ...(handle ? { handle } : {}),
+  };
   const store = useProjectStore.getState();
   const stillAssignable = () => isCurrent() && findMatch(digest) === match;
   const result = match
@@ -226,9 +248,11 @@ async function recoverCanvasMedia(
       if (!file) continue;
       if (!stored && !await verifiedMediaBlob(file, digest)) throw new Error('The source media version changed');
       const sourceId = legacy ? fingerprint ?? (url ? await mediaDigest(url) : undefined) : undefined;
+      const recoveredHandle = mediaHandleFromLocator(url, workspaceId, digest);
       const omnimuxSource = sourceId ? {
         id: sourceId, version: digest, digest,
         ...(canvasWorkspaceMediaUrl(url, workspaceId) ? { url } : {}),
+        ...(recoveredHandle ? { handle: recoveredHandle } : {}),
       } : media.omnimuxSource;
       const store = useProjectStore.getState();
       if (!isCurrent()) return;

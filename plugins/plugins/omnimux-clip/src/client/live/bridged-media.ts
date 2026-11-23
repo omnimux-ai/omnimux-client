@@ -1,4 +1,4 @@
-import { isReferenceId, mediaContentDigest, workspaceMediaDigest } from '../../timeline/nativeProjectFields.js';
+import { isReferenceId, mediaContentDigest, mediaHandleFromLocator, workspaceMediaDigest } from '../../timeline/nativeProjectFields.js';
 import { getTimelineItems } from '../openreel/core/timeline/timeline-items';
 import { interpretedDisplaySize, type MediaItem } from '../openreel/core';
 import { useProjectStore } from '../openreel/web/stores/project-store';
@@ -94,7 +94,14 @@ export async function importBridgedMedia(items: readonly MediaBridgeItem[], opti
         throw new Error('The source media version changed');
       }
       const current = useProjectStore.getState();
-      const omnimuxSource = { id: item.id, version: item.version ?? digest, digest, ...(expectedVersion ? { url } : {}) };
+      const handle = mediaHandleFromLocator(url, workspaceId, digest);
+      const omnimuxSource = {
+        id: item.id,
+        version: item.version ?? digest,
+        digest,
+        ...(expectedVersion ? { url } : {}),
+        ...(handle ? { handle } : {}),
+      };
       const stillAssignable = () => isCurrent() && find() === existing;
       const result = existing
         ? await current.replaceMediaAsset(existing.id, file, undefined, { restorePlaceholder: true, isCurrent: stillAssignable, expectedDigest: digest, omnimuxSource })

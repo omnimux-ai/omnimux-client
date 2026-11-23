@@ -7,6 +7,7 @@ import { looksAbsolutePath } from '../../shared/localMedia.ts';
 import { retryWorkspaceVersionConflict } from '../graph/GraphMutator.ts';
 import type { WorkspaceStore } from '../workspace/WorkspaceStore.ts';
 import { WorkflowStoreError } from '../workspace/WorkflowStoreError.ts';
+import type { ResolvedUpstreamNodeSource } from '../media/workflowMediaProviders.ts';
 
 interface SaveDraftInput extends CanvasClipBinding {
   revision: number;
@@ -32,6 +33,12 @@ interface StoredExportReceipt extends ExportRevision {
 interface WorkflowClipOptions {
   store: Pick<WorkspaceStore, 'get' | 'save'>;
   canAccessWorkspace?: (workspaceId: string, sessionId: string) => boolean;
+  resolveNodeSources?: (
+    workspaceId: string,
+    node: SerializedCanvasNode,
+    auth: { sessionId?: string },
+    signal?: AbortSignal,
+  ) => Promise<ResolvedUpstreamNodeSource[]>;
 }
 
 function validRevision(value: unknown): value is number {
@@ -95,7 +102,7 @@ function committed(workspaceVersion: number) {
   return { status: 'committed' as const, canvasCommitted: true as const, workspaceVersion };
 }
 
-export function createWorkflowClipService({ store, canAccessWorkspace }: WorkflowClipOptions) {
+export function createWorkflowClipService({ store, canAccessWorkspace, resolveNodeSources }: WorkflowClipOptions) {
   return {
     resolveBinding(input: CanvasClipBinding, sessionId?: string) {
       assertBinding(input);
@@ -109,6 +116,37 @@ export function createWorkflowClipService({ store, canAccessWorkspace }: Workflo
         workspaceId, nodeId, projectId, title: titleOf(node),
         ...(validRevision(node.data.draftRevision) ? { draftRevision: node.data.draftRevision } : {}),
       };
+    },
+
+    async listUpstreamSources(input: CanvasClipBinding, sessionId?: string, signal?: AbortSignal): Promise<{
+      workspaceId: string;
+      nodeId: string;
+      projectId: string;
+      sources: ResolvedUpstreamNodeSource[];
+    }> {
+      assertBinding(input);
+      const { workspaceId, nodeId, projectId } = input;
+      if (sessionId !== undefined && (typeof sessionId !== 'string' || !sessionId
+        || !canAccessWorkspace?.(workspaceId, sessionId))) {
+        throw new WorkflowStoreError('outside-project-boundary', 'The canvas does not belong to the requested session workspace.');
+      }
+      const snapshot = store.get(workspaceId);
+      boundNode(snapshot, input);
+      if (!resolveNodeSources) {
+        return { workspaceId, nodeId, projectId, sources: [] };
+      }
+      const sourceIds = new Set<string>();
+      for (const edge of snapshot.edges) {
+        if (edge.target === nodeId) sourceIds.add(edge.source);
+      }
+      const sources: ResolvedUpstreamNodeSource[] = [];
+      for (const candidate of snapshot.nodes) {
+        if (!sourceIds.has(candidate.id)) continue;
+        signal?.throwIfAborted();
+        const resolved = await resolveNodeSources(workspaceId, candidate, { sessionId }, signal);
+        sources.push(...resolved);
+      }
+      return { workspaceId, nodeId, projectId, sources };
     },
 
     saveDraft(input: SaveDraftInput) {

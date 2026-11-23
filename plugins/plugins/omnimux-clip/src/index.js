@@ -34,9 +34,10 @@ export function apply(ctx) {
   const store = createProjectStore({ paths })
   const getHubEvents = () => ctx.get?.('hubEvents')
   const getWorkflowClip = () => ctx.get?.('workflowClip')
+  const getMediaResolver = () => ctx.get?.('mediaResolver')
   const broker = createClipCommandBroker({ getHubEvents, getWorkflowClip })
   const exportJobs = createExportJobs({ paths, getWorkflowClip })
-  const dispatcher = createClipDispatcher({ paths, store, broker, exportJobs, getWorkflowClip })
+  const dispatcher = createClipDispatcher({ paths, store, broker, exportJobs, getWorkflowClip, getMediaResolver })
   const tools = createClipTools({ store, broker, exportJobs, getWorkflowClip, getAttachments: () => ctx.get?.('attachments') })
   ctx.effect?.(() => broker.dispose, 'omnimux-clip: live commands')
 

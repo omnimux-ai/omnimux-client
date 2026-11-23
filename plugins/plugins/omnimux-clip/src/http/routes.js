@@ -7,6 +7,7 @@ import { ClipDomainError, clipErrorStatus, clipErrorValue, isClipRevision, isCli
 import { readCanvasBinding, resolveWorkflowBinding, sameBinding } from '../live/command-broker.js'
 import { MAX_RECEIPT_BYTES } from '../live/snapshot.js'
 import { assertProjectId, ensureClipDirs, exportMp4Path } from '../paths.js'
+import { reconcileProjectMedia, resolveProjectMediaStream } from '../media/reconcile.js'
 import { createProjectStore } from '../store/projectStore.js'
 import { requestRejection } from './request-authorization.js'
 
@@ -20,7 +21,40 @@ const DEFAULT_FS = { createWriteStream, renameSync, rmSync, statSync, writeFileS
 const SAVE_EXPORT_PATH = /^\/projects\/[^/]+\/save-export$/
 const EXPORT_UPLOAD_PATH = /^\/exports\/([1-9]\d{0,15})\/upload$/
 const EXPORT_CANCEL_PATH = /^\/exports\/([1-9]\d{0,15})\/cancel$/
+const MEDIA_BYTES_PATH = /^\/projects\/([^/]+)\/media\/([^/]+)\/bytes$/
+const MEDIA_RECONCILE_PATH = /^\/projects\/([^/]+)\/media\/reconcile$/
 const LIVE_PATH = /^\/live\/(lease|renew|release|claim|receipt)$/
+
+function parseByteRange(header, size) {
+  if (!header || typeof header !== 'string') return { kind: 'full', start: 0, end: Math.max(0, size - 1) }
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(header.trim())
+  if (!match || (match[1] === '' && match[2] === '')) return { kind: 'unsatisfiable' }
+  if (size <= 0) return { kind: 'unsatisfiable' }
+  let start
+  let end
+  if (match[1] === '') {
+    const suffix = Number(match[2])
+    if (!Number.isSafeInteger(suffix) || suffix <= 0) return { kind: 'unsatisfiable' }
+    start = Math.max(0, size - suffix)
+    end = size - 1
+  } else {
+    start = Number(match[1])
+    end = match[2] === '' ? size - 1 : Math.min(Number(match[2]), size - 1)
+  }
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start >= size || end < start) {
+    return { kind: 'unsatisfiable' }
+  }
+  return { kind: 'partial', start, end }
+}
+
+function etagMatches(ifNoneMatch, sha256) {
+  if (typeof ifNoneMatch !== 'string' || !sha256) return false
+  const target = `"${sha256}"`
+  return ifNoneMatch.split(',').some((token) => {
+    const cleaned = token.trim().replace(/^W\//i, '')
+    return cleaned === '*' || cleaned === target
+  })
+}
 
 function routeUrl(rawPath) {
   const url = new URL(rawPath || CLIP_API_PREFIX, 'http://localhost')
@@ -137,7 +171,7 @@ function objectBody(body) {
   return body
 }
 
-export function createClipDispatcher({ paths, store, fs = DEFAULT_FS, broker, exportJobs, getWorkflowClip }) {
+export function createClipDispatcher({ paths, store, fs = DEFAULT_FS, broker, exportJobs, getWorkflowClip, getMediaResolver }) {
   ensureClipDirs(paths)
   store ??= createProjectStore({ paths, fs })
 
@@ -258,6 +292,62 @@ export function createClipDispatcher({ paths, store, fs = DEFAULT_FS, broker, ex
         return { status: 200, body }
       }
 
+      const mediaBytes = path.match(MEDIA_BYTES_PATH)
+      if (mediaBytes && (method === 'GET' || method === 'HEAD')) {
+        const id = assertProjectId(decodeURIComponent(mediaBytes[1]))
+        const mediaId = decodeURIComponent(mediaBytes[2])
+        const sessionId = req.window?.getViewport()?.sessionId
+        const { stream } = await resolveProjectMediaStream(
+          { store, getMediaResolver, getWorkflowClip },
+          { projectId: id, mediaId, sessionId, signal: req.signal },
+        )
+        const baseHeaders = {
+          'Content-Type': stream.mimeType,
+          'Accept-Ranges': 'bytes',
+          ETag: `"${stream.sha256}"`,
+          'X-Content-SHA256': stream.sha256,
+          'X-Content-Type-Options': 'nosniff',
+          'Cache-Control': 'private, no-cache',
+        }
+        if (etagMatches(req.headers?.['if-none-match'], stream.sha256)) {
+          return { status: 304, headers: baseHeaders }
+        }
+        const range = parseByteRange(req.headers?.range, stream.size)
+        if (range.kind === 'unsatisfiable') {
+          return { status: 416, headers: { ...baseHeaders, 'Content-Range': `bytes */${stream.size}`, 'Content-Length': '0' } }
+        }
+        const length = stream.size > 0 ? range.end - range.start + 1 : 0
+        const headers = {
+          ...baseHeaders,
+          'Content-Length': String(length),
+          ...(range.kind === 'partial' ? { 'Content-Range': `bytes ${range.start}-${range.end}/${stream.size}` } : {}),
+        }
+        return {
+          status: range.kind === 'partial' ? 206 : 200,
+          headers,
+          mediaStream: {
+            openRange: stream.openRange,
+            start: range.start,
+            end: range.end,
+            size: stream.size,
+            sha256: stream.sha256,
+            mimeType: stream.mimeType,
+            method,
+          },
+        }
+      }
+
+      const mediaReconcile = path.match(MEDIA_RECONCILE_PATH)
+      if (mediaReconcile && method === 'POST') {
+        const id = assertProjectId(decodeURIComponent(mediaReconcile[1]))
+        const sessionId = req.window?.getViewport()?.sessionId
+        const body = await reconcileProjectMedia(
+          { store, getMediaResolver, getWorkflowClip },
+          { projectId: id, ...objectBody(req.body), sessionId, signal: req.signal },
+        )
+        return { status: 200, body }
+      }
+
       const project = path.match(/^\/projects\/([^/]+)(?:\/(save-export|materialize))?$/)
       if (project) {
         const id = assertProjectId(decodeURIComponent(project[1]))
@@ -298,6 +388,9 @@ export function registerClipRoutes(webServer, dispatcher, deps = {}) {
     auth: 'required',
     async handler(req, res, peer) {
       let tempPath
+      const abort = new AbortController()
+      const onClose = () => { if (!res.writableEnded) abort.abort() }
+      res.on?.('close', onClose)
       try {
         const rejection = requestRejection(req, deps.getConnection, peer)
         if (rejection !== undefined) return sendJson(res, rejection, { error: 'request-denied' })
@@ -321,13 +414,39 @@ export function registerClipRoutes(webServer, dispatcher, deps = {}) {
         const wantsBody = !tempPath && (method === 'POST' || method === 'PUT')
         const body = wantsBody ? await readJsonBody(req, path === '/live/receipt' ? { maxBytes: MAX_RECEIPT_BYTES } : {}) : undefined
         if (wantsBody && body === null) throw ClipDomainError.invalidJson()
-        const result = await dispatcher.dispatch({ method, url: req.url, body, window, tempPath, exportUpload,
-          exportProof: req.headers?.[EXPORT_UPLOAD_PROOF_HEADER] })
+        const result = await dispatcher.dispatch({
+          method, url: req.url, body, window, tempPath, exportUpload,
+          headers: req.headers, signal: abort.signal,
+          exportProof: req.headers?.[EXPORT_UPLOAD_PROOF_HEADER],
+        })
+        if (result.mediaStream) {
+          res.writeHead(result.status, result.headers)
+          if (method === 'HEAD') {
+            res.end()
+            return
+          }
+          for await (const chunk of result.mediaStream.openRange(result.mediaStream.start, result.mediaStream.end, abort.signal)) {
+            if (abort.signal.aborted) break
+            if (!res.write(chunk)) await once(res, 'drain')
+          }
+          if (!res.writableEnded) res.end()
+          return
+        }
+        if ((result.status === 304 || result.status === 416) && result.headers) {
+          res.writeHead(result.status, result.headers)
+          res.end()
+          return
+        }
         sendJson(res, result.status, result.body)
       } catch (error) {
+        if (res.headersSent) {
+          res.destroy?.()
+          return
+        }
         const result = errorResponse(error)
         sendJson(res, result.status, result.body)
       } finally {
+        res.off?.('close', onClose)
         if (tempPath) fs.rmSync(tempPath, { force: true })
       }
     },

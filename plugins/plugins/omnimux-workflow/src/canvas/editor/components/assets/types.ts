@@ -40,6 +40,7 @@ export interface AssetItem {
   mimeType?: string | null;
   sizeBytes?: number | null;
   durationSec?: number | null;
+  sha256?: string | null;
   parentId?: string | null;
   itemCount?: number; // For folders
 }
