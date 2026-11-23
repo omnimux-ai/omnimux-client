@@ -260,8 +260,8 @@ export function CanvasRelinkDialog({
       setItemError(item.mediaId, null);
       try {
         let updatedReportItem: ReconcileItemReport = item;
-        if (item.reconcileState === "legacy_unsigned_exact") {
-          const applied = await applyMediaReconcile([{ mediaId: item.mediaId, action: "upgrade_legacy" }]);
+        if (item.reconcileState === "legacy_unsigned_exact" || item.reconcileState === "online_exact") {
+          const applied = await applyMediaReconcile([{ mediaId: item.mediaId, action: "auto_upgrade_legacy" }]);
           const found = applied.result.items?.find((row) => row.mediaId === item.mediaId);
           if (found) updatedReportItem = found;
         }
@@ -298,8 +298,12 @@ export function CanvasRelinkDialog({
     setRowErrors({});
     try {
       const legacyActions = classified.autoRecoverable
-        .filter((item) => item.reconcileState === "legacy_unsigned_exact")
-        .map((item) => ({ mediaId: item.mediaId, action: "upgrade_legacy" }));
+        .filter(
+          (item) =>
+            item.reconcileState === "legacy_unsigned_exact" ||
+            item.reconcileState === "online_exact",
+        )
+        .map((item) => ({ mediaId: item.mediaId, action: "auto_upgrade_legacy" }));
       let latestItems = report.items;
       if (legacyActions.length > 0) {
         const applied = await applyMediaReconcile(legacyActions);
@@ -337,15 +341,31 @@ export function CanvasRelinkDialog({
   }, [applyMediaReconcile, report, classified.autoRecoverable, isCurrentSession, setItemError, t]);
 
   const runBindUpstream = useCallback(
-    async (item: ReconcileItemReport, action: "accept_drift" | "rebind_upstream", nodeKey?: string) => {
+    async (item: ReconcileItemReport, intent: "accept_drift" | "rebind_upstream", nodeKey?: string) => {
       if (!applyMediaReconcile || !report) return;
       const controller = abortRef.current ?? new AbortController();
       setBusyKey(item.mediaId);
       setItemError(item.mediaId, null);
       try {
         let payload: Record<string, unknown>;
-        if (action === "accept_drift") {
-          payload = { mediaId: item.mediaId, action: "accept_drift" };
+        if (intent === "accept_drift") {
+          if (item.suggestedSourceNodeId) {
+            payload = {
+              mediaId: item.mediaId,
+              action: "sync_from_upstream",
+              sourceNodeId: item.suggestedSourceNodeId,
+              outputIndex: item.suggestedOutputIndex ?? 0,
+            };
+          } else if (item.canonicalHandle) {
+            payload = {
+              mediaId: item.mediaId,
+              action: "rebind_handle",
+              handle: item.canonicalHandle,
+            };
+          } else {
+            setItemError(item.mediaId, t("Could not bind the selected upstream media."));
+            return;
+          }
         } else {
           const chosen = nodeKey ?? selectedCandidates[item.mediaId];
           if (!chosen) {
@@ -355,7 +375,7 @@ export function CanvasRelinkDialog({
           const sep = chosen.lastIndexOf(":");
           const sourceNodeId = sep >= 0 ? chosen.slice(0, sep) : chosen;
           const outputIndex = sep >= 0 ? Number(chosen.slice(sep + 1)) || 0 : 0;
-          payload = { mediaId: item.mediaId, action: "rebind_upstream", sourceNodeId, outputIndex };
+          payload = { mediaId: item.mediaId, action: "sync_from_upstream", sourceNodeId, outputIndex };
         }
         const applied = await applyMediaReconcile([payload]);
         const updatedReportItem = applied.result.items?.find((row) => row.mediaId === item.mediaId) ?? item;

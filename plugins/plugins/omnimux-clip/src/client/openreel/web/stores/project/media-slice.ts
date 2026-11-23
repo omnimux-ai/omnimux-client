@@ -586,11 +586,12 @@ export function createMediaSlice(set: Set, get: Get): MediaSlice {
           const nextTracks = tracks.map((track) => {
             let trackChanged = false;
             const nextClips = track.clips.map((clip) => {
-              if (clip.mediaId !== mediaId || clip.outPoint <= clampDuration + 0.01) return clip;
-              const outPoint = Math.max(0.05, clampDuration);
-              const inPoint = Math.min(Math.max(0, clip.inPoint), Math.max(0, outPoint - 0.05));
+              if (clip.mediaId !== mediaId || clip.outPoint <= clampDuration) return clip;
+              const outPoint = clampDuration;
+              const minWindow = Math.min(0.05, outPoint);
+              const inPoint = Math.min(Math.max(0, clip.inPoint), Math.max(0, outPoint - minWindow));
               const rate = Math.abs(clip.speed ?? 1) || 1;
-              const duration = Math.max(0.05, (outPoint - inPoint) / rate);
+              const duration = Math.max(0.001, (outPoint - inPoint) / rate);
               trackChanged = true;
               changed = true;
               return { ...clip, inPoint, outPoint, duration };

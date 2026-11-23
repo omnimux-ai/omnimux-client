@@ -395,6 +395,19 @@ describe('4-plugin cross-seam media unification (omnimux + assets + workflow + c
     assert.equal(boundDup.status, 200)
     assert.equal((await boundDup.json()).handle.rel, boundBody.handle.rel)
 
+    // If the previously deduplicated disk file was removed, re-uploading re-materializes bytes rather than returning a dangling handle
+    rmSync(join(wfProject.path, boundBody.handle.rel))
+    assert.equal(existsSync(join(wfProject.path, boundBody.handle.rel)), false)
+    const boundReupload = await fetch(`${base}/omnimux-clip/api/projects/${boundClipId}/media/m_local3/bytes`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/octet-stream', 'x-clip-media-name': 'restored.mp4', 'x-session': 'sess-cmu04' },
+      body: localVideoBytes,
+    })
+    assert.equal(boundReupload.status, 200)
+    const reuploadBody = await boundReupload.json()
+    assert.equal(existsSync(join(wfProject.path, reuploadBody.handle.rel)), true)
+    boundBody.handle = reuploadBody.handle
+
     // Save handle on Host project, then verify GET .../bytes streams exact bytes (surviving IDB clear)
     clipStore.save(boundClipId, {
       id: boundClipId,

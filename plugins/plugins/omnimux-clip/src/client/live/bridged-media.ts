@@ -196,10 +196,10 @@ export interface HostMediaHydrateInput {
   isCurrent: () => boolean;
 }
 
-function projectAssetUrlFromHandle(handle?: HostReconcileHandle): string | undefined {
+export function projectAssetUrlFromHandle(handle?: HostReconcileHandle): string | undefined {
   if (!handle || handle.scope !== 'project-asset' || !handle.workspaceId || !handle.rel) return undefined;
   const rev = sha256Digest(handle.sha256);
-  const query = new URLSearchParams({ path: handle.rel, ...(rev ? { rev: `sha256:${rev}` } : {}) });
+  const query = new URLSearchParams({ rel: handle.rel, ...(rev ? { rev: `sha256:${rev}` } : {}) });
   return `/omnimux-workflow/api/workspaces/${encodeURIComponent(handle.workspaceId)}/file?${query.toString()}`;
 }
 

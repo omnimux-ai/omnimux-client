@@ -364,6 +364,14 @@ describe('Clip Host media reconcile and verified HTTP byte streaming (AC-CMU-01 
     assert.equal(res.status, 200)
     assert.deepEqual(res.body.upgradedMediaIds, [])
     assert.equal(res.body.items[0].reconcileState, 'legacy_ambiguous')
+    assert.equal(Array.isArray(res.body.items[0].candidates), true)
+    assert.equal(res.body.items[0].candidates.length, 1)
+    assert.equal(res.body.items[0].candidates[0].sourceNodeId, 'node_a')
+    assert.equal(res.body.items[0].candidates[0].outputIndex, 0)
+    assert.equal(res.body.items[0].candidates[0].materialType, 'video')
+    assert.equal(res.body.items[0].candidates[0].name, 'Shot A')
+    assert.equal(res.body.items[0].candidates[0].durationMs, 5000)
+    assert.equal(res.body.items[0].candidates[0].currentSha256, digest)
   })
 
   it('editor-session reconciles missing host media before load and preserves CAS baseRevision parity', async () => {
@@ -516,5 +524,180 @@ describe('Clip Host media reconcile and verified HTTP byte streaming (AC-CMU-01 
     assert.equal(bytesRes.headers.get('x-content-sha256'), videoDigest)
     const streamed = Buffer.from(await bytesRes.arrayBuffer())
     assert.deepEqual(streamed, videoBytes)
+  })
+
+  it('supports sync_from_upstream (with outputIndex), rebind_handle for non-upstream drift, and CanvasRelinkDialog action contract', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'clip-reconcile-actions-'))
+    temps.push(dir)
+    const workspaceId = 'ws_actions'
+    const nodeId = 'node_comp'
+    const projectId = 'clip_actions'
+    const binding = { workspaceId, nodeId, projectId }
+
+    const out1File = join(dir, 'out1.mp4')
+    const out1Bytes = Buffer.from('multi-output-index-1-video-bytes')
+    writeFileSync(out1File, out1Bytes)
+    const out1Digest = sha256(out1Bytes)
+
+    const assetFile = join(dir, 'standalone_asset.mp4')
+    const assetOldBytes = Buffer.from('standalone-asset-v1-bytes')
+    const assetOldDigest = sha256(assetOldBytes)
+    const assetNewBytes = Buffer.from('standalone-asset-v2-drifted-bytes')
+    writeFileSync(assetFile, assetNewBytes)
+    const assetNewDigest = sha256(assetNewBytes)
+
+    const out1Handle = { v: 1, scope: 'canvas-node', workspaceId, nodeId: 'node_multi', outputIndex: 1, sha256: out1Digest }
+    const assetOldHandle = { v: 1, scope: 'project-asset', workspaceId, rel: 'assets/standalone.mp4', sha256: assetOldDigest }
+    const registry = new Map([
+      [JSON.stringify(['canvas-node', workspaceId, '', '', '', 'node_multi', 1]), { filePath: out1File, mimeType: 'video/mp4', name: 'Multi Out 1' }],
+      [JSON.stringify(['project-asset', workspaceId, 'assets/standalone.mp4', '', '', '', 0]), { filePath: assetFile, mimeType: 'video/mp4', name: 'Standalone' }],
+    ])
+
+    const paths = resolveClipPaths({ homeDir: dir })
+    const store = createProjectStore({ paths })
+    store.materialize(projectId, { binding, title: 'Actions' })
+    const initial = store.load(projectId)
+    store.save(projectId, {
+      ...initial.project,
+      mediaLibrary: {
+        items: [
+          {
+            id: 'm_ambig',
+            name: 'Ambiguous Multi',
+            type: 'video',
+            metadata: { duration: 12, width: 720, height: 1280, frameRate: 30, codec: '', sampleRate: 0, channels: 0, fileSize: 10 },
+            sourceRef: { kind: 'legacy' },
+            missing: true,
+            isPlaceholder: true,
+          },
+          {
+            id: 'm_drifted_asset',
+            name: 'Standalone',
+            type: 'video',
+            metadata: { duration: 5, width: 720, height: 1280, frameRate: 30, codec: '', sampleRate: 0, channels: 0, fileSize: assetOldBytes.length },
+            omnimuxSource: { id: 'proj:standalone', version: `sha256:${assetOldDigest}`, digest: assetOldDigest, handle: assetOldHandle },
+            sourceRef: { kind: 'indexeddb', key: 'm_drifted_asset', digest: assetOldDigest },
+            missing: true,
+            isPlaceholder: true,
+          },
+        ],
+      },
+    }, { expectedRevision: initial.revision, revision: initial.revision + 1, binding })
+
+    const workflowClip = {
+      resolveBinding: (b) => ({ ...b, title: 'Actions' }),
+      saveDraft: ({ revision }) => ({ revision, workspaceVersion: 2 }),
+      listUpstreamSources: async () => ({
+        workspaceId,
+        nodeId,
+        projectId,
+        sources: [{
+          sourceNodeId: 'node_multi',
+          outputIndex: 1,
+          name: 'Ambiguous Multi',
+          materialType: 'video',
+          durationMs: 4000,
+          currentSha256: out1Digest,
+          canonicalHandle: out1Handle,
+          size: out1Bytes.length,
+          mimeType: 'video/mp4',
+          legacyFingerprints: ['node_multi:1'],
+        }],
+      }),
+    }
+    const dispatcher = createClipDispatcher({
+      paths,
+      store,
+      getMediaResolver: () => createDiskMediaResolver(registry),
+      getWorkflowClip: () => workflowClip,
+    })
+    const baseUrl = await mountTestServer({ dispatcher })
+
+    const inspectRes = await fetch(`${baseUrl}/omnimux-clip/api/projects/${projectId}/media/reconcile`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-test-window': 'win-1' },
+      body: JSON.stringify({ mode: 'inspect', binding }),
+    })
+    assert.equal(inspectRes.status, 200)
+    const inspected = await inspectRes.json()
+    const ambig = inspected.items.find((r) => r.mediaId === 'm_ambig')
+    assert.equal(ambig.reconcileState, 'legacy_ambiguous')
+    assert.equal(ambig.candidates[0].sourceNodeId, 'node_multi')
+    assert.equal(ambig.candidates[0].outputIndex, 1)
+    assert.equal(ambig.candidates[0].materialType, 'video')
+
+    const drifted = inspected.items.find((r) => r.mediaId === 'm_drifted_asset')
+    assert.equal(drifted.reconcileState, 'source_drifted')
+    assert.equal(drifted.suggestedSourceNodeId, undefined)
+    assert.equal(drifted.canonicalHandle.sha256, assetNewDigest)
+
+    // Apply sync_from_upstream (outputIndex: 1) and rebind_handle (using drifted canonicalHandle)
+    const applyRes = await fetch(`${baseUrl}/omnimux-clip/api/projects/${projectId}/media/reconcile`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-test-window': 'win-1' },
+      body: JSON.stringify({
+        mode: 'apply',
+        binding,
+        actions: [
+          { mediaId: 'm_ambig', action: 'sync_from_upstream', sourceNodeId: 'node_multi', outputIndex: 1 },
+          { mediaId: 'm_drifted_asset', action: 'rebind_handle', handle: drifted.canonicalHandle },
+        ],
+      }),
+    })
+    assert.equal(applyRes.status, 200)
+    const applied = await applyRes.json()
+    assert.deepEqual(applied.upgradedMediaIds.sort(), ['m_ambig', 'm_drifted_asset'])
+    assert.equal(applied.items.every((r) => r.reconcileState === 'online_exact'), true)
+
+    // Contract guard: CanvasRelinkDialog must only dispatch wire actions supported by Host reconcile.js.
+    const dialogSrc = readFileSync(new URL('../client/live/CanvasRelinkDialog.tsx', import.meta.url), 'utf8')
+    const wireActions = [...dialogSrc.matchAll(/action:\s*["']([^"']+)["']/g)].map((m) => m[1])
+    assert.ok(wireActions.length >= 4)
+    const supported = new Set(['auto_upgrade_legacy', 'sync_from_upstream', 'rebind_handle', 'import_upstream'])
+    for (const act of wireActions) {
+      assert.ok(supported.has(act), `CanvasRelinkDialog sent unsupported reconcile action: ${act}`)
+    }
+  })
+
+  it('maps mediaResolver.open errors on GET /media-transfer/:token to domain HTTP statuses instead of 500', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'clip-transfer-err-'))
+    temps.push(dir)
+    const paths = resolveClipPaths({ homeDir: dir })
+    const store = createProjectStore({ paths })
+    let openError = null
+    const mediaTransfers = {
+      resolve({ token, sessionId }) {
+        if (token !== 'a'.repeat(40) || sessionId !== 'sess-1') return null
+        return {
+          handle: { v: 1, scope: 'library-file', libraryAssetId: 'ast_1', fileId: 'f_1', sha256: '1'.repeat(64) },
+          binding: undefined,
+        }
+      },
+    }
+    const dispatcher = createClipDispatcher({
+      paths,
+      store,
+      mediaTransfers,
+      getMediaResolver: () => ({
+        async open() {
+          throw openError
+        },
+      }),
+    })
+    const baseUrl = await mountTestServer({ dispatcher })
+    for (const [code, expectedStatus] of [
+      ['media-version-mismatch', 409],
+      ['media-changed', 409],
+      ['media-not-found', 404],
+      ['access-denied', 403],
+    ]) {
+      openError = Object.assign(new Error(`boom:${code}`), { code })
+      const res = await fetch(`${baseUrl}/omnimux-clip/api/media-transfer/${'a'.repeat(40)}`, {
+        headers: { 'x-test-window': 'win-1' },
+      })
+      assert.equal(res.status, expectedStatus, `expected HTTP ${expectedStatus} for ${code}`)
+      const body = await res.json()
+      assert.equal(body.error, code)
+    }
   })
 })

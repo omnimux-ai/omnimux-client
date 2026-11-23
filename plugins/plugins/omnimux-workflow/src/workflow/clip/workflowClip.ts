@@ -410,8 +410,10 @@ export function createWorkflowClipService({ store, assetsStore, resolveProjectRo
       const expectedDigest = typeof media.sha256 === 'string' && /^[a-f0-9]{64}$/u.test(media.sha256)
         ? media.sha256
         : await readMediaContentDigest(media.tempPath, signal);
-      // Reuse an existing identical project asset if already stored under the project root.
-      const existing = assetsStore.get(workspaceId).items.find((item) => item.sha256 === expectedDigest && item.relative_path);
+      // Reuse an existing identical project asset only when the file still exists on disk.
+      const existing = assetsStore.get(workspaceId).items.find(
+        (item) => item.sha256 === expectedDigest && item.relative_path && existsSync(join(paths.projectRoot, item.relative_path)),
+      );
       if (existing) {
         const url = projectFileMediaUrl(workspaceId, existing.relative_path, expectedDigest);
         return {

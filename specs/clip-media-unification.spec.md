@@ -433,3 +433,33 @@ export interface MediaResolverSeam {
 - `corepack pnpm --filter omnimux-workflow test`
 - `corepack pnpm --filter omnimux-clip test`
 - Phase 1/2/3 涉及 UI 或跨端流程时：按 `AGENTS.md` 执行高保真 HTML 演示评审 + Worktree 真实浏览器 E2E 验收（覆盖亮/暗双主题与窄屏）。
+
+### 实现模块落点对齐
+- 原 §4.4.D 草案提及的客户端适配与上传持久化最终收敛落点为：`plugins/plugins/omnimux-clip/src/client/live/host-media.ts`（Host 字节拉取/上传、L1 IDB 回填与摘要校验）+ `plugins/plugins/omnimux-clip/src/client/live/bridged-media.ts`（`hydrateProjectMediaFromHost`）+ `plugins/plugins/omnimux-clip/src/client/live/editor-session.js`（草稿保存屏障前统一上传缺失句柄的本地素材，避免直接侵入 `project-store.ts` 新增 `onLocalMediaImported`）。
+- 工程 JSON `sourceRef.kind` 保持既有 `'indexeddb'` 兼容契约，统一句柄与内容版本落盘在 `omnimuxSource.handle`（`MediaHandleV1`）与 `omnimuxSource.digest` / `sourceRef.digest`。
+- `plugins/plugins/omnimux-clip/src/media/clipVault.js` 已导出并单测验证 `collectUnreferencedBlobs`，后续按独立维护任务接入定时/启动期 GC 调度。
+
+## 旧标准变更
+
+以下既有测试因本架构规格新增了中枢 `mediaResolver` Seam 与导出回执 `sha256` 摘要契约而同步更新（均为新增字段/能力断言，未削弱原有不变量）：
+
+- `plugins/plugins/omnimux-clip/src/export-jobs.test.js` :: `canvas failure preserves the MP4 and retries the original binding without uploading or encoding`
+  - 原断言：`failed.output` 仅精确匹配 `{ videoPath, revision, durationMs, width, height }`。
+  - 变更理由：Phase 2 规定 `export-jobs.js` 在 `probeMp4` 阶段同步计算并持久化 `output.sha256` 以支撑硬链接落盘、幂等重连与下游 `rev=sha256:` 校验。
+  - 新期望证据：保留全部原有字段精确断言并新增 `sha256: createHash('sha256').update(MP4).digest('hex')`，另新增用例验证物化后回收临时 MP4。
+- `plugins/plugins/omnimux/src/host/apply.test.js` :: `registers media, text, identity, attachments, and catalog seams in a stable order`
+  - 原断言：`provided` Seam 列表末尾截止于 `'nativeFilePicker'`。
+  - 变更理由：Phase 0 在执行中枢新增无状态联邦媒体解析 Seam `'mediaResolver'`。
+  - 新期望证据：保持全部既有 Seam 顺序断言不变，末尾追加 `'mediaResolver'` 并由 `media-resolver.test.js` 覆盖其行为。
+- `plugins/plugins/omnimux/src/host/apply.test.js` :: `registers all 55 tools and 21 seams by default`
+  - 原断言：用例标题及 `provided` 列表计数为 21 个 Seam（末尾为 `'headlessSkill'`）。
+  - 变更理由：Phase 0 新增第 22 个中枢 Seam `'mediaResolver'`，原用例名与列表随之更新为 `registers all 55 tools and 22 seams by default`。
+  - 新期望证据：55 个工具与既有 21 个 Seam 顺序断言全部保留，新增校验第 22 个 Seam `'mediaResolver'`。
+- `plugins/plugins/omnimux/src/host/apply.test.js` :: `disables all gated capabilities when gate.enabled is false`
+  - 原断言：关闭门控能力后 `provided` Seam 列表末尾截止于 `'nativeFilePicker'`。
+  - 变更理由：`'mediaResolver'` 属于本地无外网能力 Seam，门控关闭时仍需向插件提供。
+  - 新期望证据：保留 `names.length === 5` 及既有本地 Seam 列表断言，末尾追加 `'mediaResolver'`。
+- `plugins/plugins/omnimux/src/host/apply.test.js` :: `fine-grained disables media, text models, and official tools via gate`
+  - 原断言：细粒度门控关闭后 `provided` Seam 列表末尾截止于 `'nativeFilePicker'`。
+  - 变更理由：同上，`'mediaResolver'` 不受外部门控开关禁用。
+  - 新期望证据：保留全部门控过滤断言与既有 Seam 顺序，末尾追加 `'mediaResolver'`。

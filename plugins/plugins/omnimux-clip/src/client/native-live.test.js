@@ -16,7 +16,9 @@ const built = await build({
       export { useUIStore } from './openreel/web/stores/ui-store';
       export { useEngineStore } from './openreel/web/stores/engine-store';
       export { getMediaEngine } from './openreel/core/media/mediabunny-engine';
-      export { EffectsBridge } from './openreel/web/bridges/effects-bridge';`,
+      export { EffectsBridge } from './openreel/web/bridges/effects-bridge';
+      export { getMediaBridge } from './openreel/web/bridges/media-bridge';
+      export { projectAssetUrlFromHandle } from './live/bridged-media';`,
     resolveDir: directory,
     loader: 'ts',
   },
@@ -55,7 +57,7 @@ globalThis.self = {}
 const module = { exports: {} }
 new Function('require', 'module', 'exports', built.outputFiles[0].text)(require, module, module.exports)
 const { executeNativeEdit, captureNativeFrames, executeNativeView, readNativeSnapshot, useProjectStore,
-  useTimelineStore, useUIStore, useEngineStore, getMediaEngine, EffectsBridge } = module.exports
+  useTimelineStore, useUIStore, useEngineStore, getMediaEngine, EffectsBridge, getMediaBridge, projectAssetUrlFromHandle } = module.exports
 mock.method(EffectsBridge.prototype, 'initialize', async () => {})
 const store = () => useProjectStore.getState()
 const timeline = () => useTimelineStore.getState()
@@ -387,4 +389,88 @@ test('relink_media updates handle atomically with undo/redo, guards version drif
   assert.equal(track('v1').clips[0].outPoint, 6)
   assert.equal(track('v1').clips[0].duration, 6)
   assert.deepEqual(state().mediaLibrary.items[0].omnimuxSource.handle, libraryHandle)
+})
+
+test('relink_media clears stale handle/url across workspace path & cross-scope relink, and projectAssetUrlFromHandle uses ?rel=', async (t) => {
+  const engine = getMediaEngine()
+  t.mock.method(engine, 'initialize', async () => {})
+  let nextDuration = 4
+  t.mock.method(engine, 'extractMetadata', async () => ({ ...mediaMetadata, duration: nextDuration, canDecode: true }))
+
+  const digestV1 = 'a'.repeat(64)
+  const digestV2 = 'b'.repeat(64)
+  const digestV3 = 'c'.repeat(64)
+  const projectHandle = {
+    v: 1,
+    scope: 'project-asset',
+    workspaceId: 'ws_demo',
+    assetId: 'ast_1',
+    rel: 'assets/imported/clip.mp4',
+    sha256: digestV1,
+  }
+  const builtUrl = projectAssetUrlFromHandle(projectHandle)
+  assert.equal(
+    builtUrl,
+    `/omnimux-workflow/api/workspaces/ws_demo/file?rel=assets%2Fimported%2Fclip.mp4&rev=sha256%3A${digestV1}`,
+  )
+  assert.equal(new URL(builtUrl, 'http://localhost').searchParams.get('path'), null)
+
+  // Seed a project-asset item with handle + url and a clip with outPoint = 4
+  await edit([{ type: 'add_track', trackType: 'video', trackId: 'v1' }, clipOn('v1', 'c1', 0, 4)])
+  useProjectStore.setState({
+    project: {
+      ...store().project,
+      mediaLibrary: {
+        items: store().project.mediaLibrary.items.map(item => item.id === 'source'
+          ? {
+              ...item,
+              omnimuxSource: {
+                id: 'project:ws_demo:ast_1',
+                version: `sha256:${digestV1}`,
+                digest: digestV1,
+                handle: projectHandle,
+                url: builtUrl,
+              },
+            }
+          : item),
+      },
+    },
+  })
+
+  // 1) Relink to library-file (cross-scope) must NOT leak old project-asset url
+  const libHandle = { v: 1, scope: 'library-file', libraryAssetId: 'ast_lib', fileId: 'f_lib', sha256: digestV2 }
+  const v2File = new File([new Uint8Array(32).fill(2)], 'lib.mp4', { type: 'video/mp4' })
+  await edit([{ type: 'relink_media', mediaId: 'source', allowVersionUpdate: true, resolvedMedia: { transferUrl: '/omnimux-clip/api/media-transfer/t1' } }], {}, {
+    resolveMedia: () => ({ file: v2File, source: { id: 'library:ast_lib:f_lib', version: `sha256:${digestV2}`, digest: digestV2, handle: libHandle } }),
+  })
+  assert.deepEqual(state().mediaLibrary.items[0].omnimuxSource.handle, libHandle)
+  assert.equal(state().mediaLibrary.items[0].omnimuxSource.url, undefined)
+
+  // 2) Relink to workspace path (no handle/url) must NOT leak stale library-file handle
+  const v3File = new File([new Uint8Array(48).fill(3)], 'local.mp4', { type: 'video/mp4' })
+  await edit([{ type: 'relink_media', mediaId: 'source', allowVersionUpdate: true, sourceUrl: '/omnimux-clip/api/host-media?path=local.mp4&rev=v3' }], {}, {
+    resolveMedia: () => ({ file: v3File, source: { id: 'workspace-path-hash', version: 'workspace-rev-hash' } }),
+  })
+  assert.equal(state().mediaLibrary.items[0].omnimuxSource.handle, undefined)
+  assert.equal(state().mediaLibrary.items[0].omnimuxSource.url, undefined)
+  assert.equal(state().mediaLibrary.items[0].omnimuxSource.id, 'workspace-path-hash')
+
+  // 3) replaceMediaAsset clamps clips cleanly when replacement duration is shorter by 0.005s or < 0.05s
+  const mediaBridge = getMediaBridge()
+  t.mock.method(mediaBridge, 'isInitialized', () => true)
+  t.mock.method(mediaBridge, 'importFile', async () => ({
+    success: true,
+    media: { metadata: { ...mediaMetadata, duration: nextDuration, canDecode: true }, thumbnails: [] },
+  }))
+  const ultraShortFile = new File([new Uint8Array(16).fill(4)], 'tiny.mp4', { type: 'video/mp4' })
+  nextDuration = 3.995
+  const r1 = await store().replaceMediaAsset('source', ultraShortFile)
+  assert.equal(r1.success, true)
+  assert.equal(track('v1').clips[0].outPoint, 3.995)
+
+  nextDuration = 0.03
+  const r2 = await store().replaceMediaAsset('source', ultraShortFile)
+  assert.equal(r2.success, true)
+  assert.equal(track('v1').clips[0].outPoint, 0.03)
+  assert.ok(track('v1').clips[0].inPoint <= 0.03)
 })

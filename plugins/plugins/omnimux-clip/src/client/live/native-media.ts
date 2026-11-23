@@ -254,7 +254,6 @@ export async function relinkNativeMedia(
 
   const basename = file.name.split(/[/\\]/u).at(-1) || existing.name || existing.id
   const nextSource: NonNullable<MediaItem['omnimuxSource']> = {
-    ...existing.omnimuxSource,
     ...versioned,
     digest: reference.digest,
   }

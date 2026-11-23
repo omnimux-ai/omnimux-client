@@ -8,7 +8,7 @@ import { readCanvasBinding, resolveWorkflowBinding, sameBinding } from '../live/
 import { MAX_RECEIPT_BYTES } from '../live/snapshot.js'
 import { assertProjectId, ensureClipDirs, exportMp4Path } from '../paths.js'
 import { inspectStagedMedia, persistToClipVault } from '../media/clipVault.js'
-import { reconcileProjectMedia, resolveProjectMediaStream } from '../media/reconcile.js'
+import { mapResolverError, reconcileProjectMedia, resolveProjectMediaStream } from '../media/reconcile.js'
 import { isReferenceId } from '../timeline/nativeProjectFields.js'
 import { createProjectStore } from '../store/projectStore.js'
 import { requestRejection } from './request-authorization.js'
@@ -288,7 +288,12 @@ export function createClipDispatcher({ paths, store, fs = DEFAULT_FS, broker, ex
         if (!resolver || typeof resolver.open !== 'function') {
           throw new ClipDomainError('media-resolver-unavailable', 'Host media resolver is unavailable.')
         }
-        const stream = await resolver.open(ticket.handle, { sessionId, projectBinding: ticket.binding }, req.signal)
+        let stream
+        try {
+          stream = await resolver.open(ticket.handle, { sessionId, projectBinding: ticket.binding }, req.signal)
+        } catch (error) {
+          throw mapResolverError(error)
+        }
         const baseHeaders = {
           'Content-Type': stream.mimeType,
           'Accept-Ranges': 'bytes',

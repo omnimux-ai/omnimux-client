@@ -25,7 +25,7 @@ import {
 
 const DURATION_TOLERANCE_SEC = 0.15
 
-function mapResolverError(error) {
+export function mapResolverError(error) {
   if (error instanceof ClipDomainError) return error
   const code = error?.code
   if (code === 'needs-provider') {
@@ -244,6 +244,15 @@ export async function reconcileProjectMedia(
 
   const matchedUpstreamKeys = new Set()
   const upstreamKeyOf = (source) => `${source.sourceNodeId}:${source.outputIndex}`
+  const summarizeUpstream = (source) => ({
+    sourceNodeId: source.sourceNodeId,
+    outputIndex: source.outputIndex,
+    materialType: source.materialType,
+    name: source.name,
+    ...(source.durationMs !== undefined ? { durationMs: source.durationMs } : {}),
+    canonicalHandle: source.canonicalHandle,
+    currentSha256: source.currentSha256,
+  })
   const reportItems = []
   const upgradeProposals = new Map()
 
@@ -269,7 +278,7 @@ export async function reconcileProjectMedia(
             recoverable: true,
             currentSha256: st.currentSha256,
             canonicalHandle: st.canonicalHandle,
-            ...(matchedSource ? { suggestedSourceNodeId: matchedSource.sourceNodeId } : {}),
+            ...(matchedSource ? { suggestedSourceNodeId: matchedSource.sourceNodeId, suggestedOutputIndex: matchedSource.outputIndex } : {}),
           }
           if (!explicitHandle || !sameHandle(explicitHandle, st.canonicalHandle)) {
             upgradeProposals.set(item.id, {
@@ -289,7 +298,7 @@ export async function reconcileProjectMedia(
             recoverable: true,
             currentSha256: st.currentSha256,
             canonicalHandle: st.canonicalHandle,
-            ...(matchedSource ? { suggestedSourceNodeId: matchedSource.sourceNodeId } : {}),
+            ...(matchedSource ? { suggestedSourceNodeId: matchedSource.sourceNodeId, suggestedOutputIndex: matchedSource.outputIndex } : {}),
           }
           upgradeProposals.set(item.id, {
             reason: 'legacy_unsigned_exact',
@@ -305,7 +314,7 @@ export async function reconcileProjectMedia(
             type: item.type,
             reconcileState: 'legacy_ambiguous',
             recoverable: false,
-            candidates: matchedSource ? [matchedSource.sourceNodeId] : [],
+            candidates: matchedSource ? [summarizeUpstream(matchedSource)] : [],
           }
         }
       } else if (st.status === 'digest_mismatch' && st.currentSha256) {
@@ -320,7 +329,7 @@ export async function reconcileProjectMedia(
           expectedSha256: expectedDigest,
           currentSha256: st.currentSha256,
           canonicalHandle: st.canonicalHandle,
-          ...(matchedSource ? { suggestedSourceNodeId: matchedSource.sourceNodeId } : {}),
+          ...(matchedSource ? { suggestedSourceNodeId: matchedSource.sourceNodeId, suggestedOutputIndex: matchedSource.outputIndex } : {}),
         }
       }
     }
@@ -341,6 +350,7 @@ export async function reconcileProjectMedia(
               currentSha256: match.currentSha256,
               canonicalHandle: match.canonicalHandle,
               suggestedSourceNodeId: match.sourceNodeId,
+              suggestedOutputIndex: match.outputIndex,
             }
             upgradeProposals.set(item.id, {
               reason: 'persist_handle',
@@ -360,6 +370,7 @@ export async function reconcileProjectMedia(
               currentSha256: match.currentSha256,
               canonicalHandle: match.canonicalHandle,
               suggestedSourceNodeId: match.sourceNodeId,
+              suggestedOutputIndex: match.outputIndex,
             }
           }
         } else if (durationCompatible(item, match)) {
@@ -372,6 +383,7 @@ export async function reconcileProjectMedia(
             currentSha256: match.currentSha256,
             canonicalHandle: match.canonicalHandle,
             suggestedSourceNodeId: match.sourceNodeId,
+            suggestedOutputIndex: match.outputIndex,
           }
           upgradeProposals.set(item.id, {
             reason: 'legacy_unsigned_exact',
@@ -387,7 +399,7 @@ export async function reconcileProjectMedia(
             type: item.type,
             reconcileState: 'legacy_ambiguous',
             recoverable: false,
-            candidates: [match.sourceNodeId],
+            candidates: [summarizeUpstream(match)],
           }
         }
       } else if (candidates.length > 1) {
@@ -397,7 +409,7 @@ export async function reconcileProjectMedia(
           type: item.type,
           reconcileState: 'legacy_ambiguous',
           recoverable: false,
-          candidates: candidates.map((c) => c.sourceNodeId),
+          candidates: candidates.map(summarizeUpstream),
         }
       }
     }
@@ -414,15 +426,6 @@ export async function reconcileProjectMedia(
     reportItems.push(report)
   }
 
-  const summarizeUpstream = (source) => ({
-    sourceNodeId: source.sourceNodeId,
-    outputIndex: source.outputIndex,
-    materialType: source.materialType,
-    name: source.name,
-    ...(source.durationMs !== undefined ? { durationMs: source.durationMs } : {}),
-    canonicalHandle: source.canonicalHandle,
-    currentSha256: source.currentSha256,
-  })
   const upstreamSummaries = upstreamSources.map(summarizeUpstream)
   const unimportedUpstreams = upstreamSources
     .filter((source) => !matchedUpstreamKeys.has(upstreamKeyOf(source)))
@@ -504,6 +507,7 @@ export async function reconcileProjectMedia(
             currentSha256: source.currentSha256,
             canonicalHandle: source.canonicalHandle,
             suggestedSourceNodeId: source.sourceNodeId,
+            suggestedOutputIndex: source.outputIndex,
             imported: true,
           },
         })
