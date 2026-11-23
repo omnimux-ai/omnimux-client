@@ -324,6 +324,17 @@ superseded_by: null
 
 ---
 
+### 3.14 `omnimux-viewer`（全能媒体渲染与文件预览）
+
+- **功能域**：在对话流与「图像生成」Tab 内联渲染图片、视频、音频、PDF、Office 与 HTML 文件（上游 Crosery/dsh-viewer 的 OmniMux fork，见该插件 `VENDOR.md`）。
+- **双面交付**：UI 面为工作台 `omnimux:media-viewer` Tab 与 `display_file` 工具卡片；Agent 面为 Host `ctx.tools.register('display_file')`。
+
+| 业务功能描述 | 对应 UI 交互 / HTTP 路由 | Agent 工具名称 (`Tool Name`) | 分级 | 状态 | 破坏性 confirm |
+|---|---|---|---|---|---|
+| 在 Web 界面就地渲染一个文件（图片/视频/音频/PDF/Office/HTML） | 图像生成 Tab / `display_file` 工具卡片 / `/omnimux-viewer/asset` | `display_file` | L2 | `Implemented` | 否 |
+
+---
+
 ## 4. 长效治理 SOP：新功能注册与全链路开发规范
 
 当开发团队需要为任何插件开发新功能时，必须遵循以下 **SOP 5 步闭环**，实现「方案自制定、代码双面写、工具自动查」：

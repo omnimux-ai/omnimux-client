@@ -239,21 +239,21 @@ test('通过：fork 类（上游 MIT）不要求 NOTICE', () => {
   rmSync(root, { recursive: true, force: true })
 })
 
-test('真实仓库：13 个插件全部登记且通过', () => {
+test('真实仓库：14 个插件全部登记且通过', () => {
   const registry = readRegistry(repoRoot)
   const onDisk = listPluginDirs(repoRoot)
-  assert.equal(onDisk.length, 13)
+  assert.equal(onDisk.length, 14)
   assert.deepEqual(Object.keys(registry.packages).sort(), onDisk)
   const result = verifyLicenseConsistency(repoRoot)
   assert.deepEqual(result.errors, [])
   assert.deepEqual(result.warnings, [])
-  assert.deepEqual(result.counts, { original: 9, fork: 2, vendor: 2 })
+  assert.deepEqual(result.counts, { original: 9, fork: 3, vendor: 2 })
 })
 
 test('真实仓库：fork 类保持 MIT，原创类不残留 MIT', () => {
   const registry = readRegistry(repoRoot)
   const forks = Object.entries(registry.packages).filter(([, v]) => v.class === 'fork').map(([k]) => k).sort()
-  assert.deepEqual(forks, ['omnimux-browser', 'omnimux-market'])
+  assert.deepEqual(forks, ['omnimux-browser', 'omnimux-market', 'omnimux-viewer'])
   for (const [name, entry] of Object.entries(registry.packages)) {
     if (entry.class === 'fork') assert.equal(entry.license, 'MIT', name + ' 必须保持上游 MIT')
     else assert.notEqual(entry.license, 'MIT', name + ' 不得声明 MIT')
