@@ -62,7 +62,6 @@ const APP_PROVIDED = /^@deepseek-ai\//
 const TARGET_APP_BY_HOME_NAME = new Map([
   ['.omnimux-dev', '/Applications/OmniMux Dev.app'],
   ['.omnimux', '/Applications/OmniMux.app'],
-  ['.dsh', '/Applications/DSH Desktop.app'],
 ])
 const TARGET_APP_ENV = 'OMNIMUX_PREFLIGHT_TARGET_APP'
 

@@ -3,10 +3,10 @@
 #
 # ⚠ 日常请勿直调本脚本。统一入口：
 #   cd <omnimux-client 检出目录>/app
-#   yarn omnimux:sync [插件...] [--prod|--dsh|--all]   # 会先 build 再调本脚本
+#   yarn omnimux:sync [插件...] [--prod|--all]        # 会先 build 再调本脚本
 #   yarn omnimux:restart dev                          # 需要时再重启 App
 #
-# 默认行为：仅物化到 ~/.omnimux-dev；可通过 --prod / --dsh / --all 参数扩展到其他环境。
+# 默认行为：仅物化到 ~/.omnimux-dev；可通过 --prod / --all 参数扩展到正式版环境。
 # 本脚本只做 rsync 物化 + file: 依赖声明 + dsh.profile.bundles 幂等入名单 + pnpm install，**不 build**。
 # 物化源固定在 profile 的 .materialize-snapshots/plugins/；node_modules 只由 pnpm 管理。
 # 直调容易把陈旧 lib/client.js 推进生产（已踩过坑）。禁止手动 rsync/cp 进 profile。
@@ -15,7 +15,7 @@
 set -euo pipefail
 
 if [ "${OMNIMUX_SYNC_VIA:-}" != "sync-to-app" ] && [ "${OMNIMUX_SYNC_VIA:-}" != "internal" ]; then
-  echo "⚠ sync-stable.sh 是内部实现。日常请用：yarn omnimux:sync [插件...] [--prod|--dsh|--all]" >&2
+  echo "⚠ sync-stable.sh 是内部实现。日常请用：yarn omnimux:sync [插件...] [--prod|--all]" >&2
   echo "  （若你确认已手动 build 且只要物化，可设 OMNIMUX_SYNC_VIA=internal 消掉本提示）" >&2
 fi
 
@@ -92,8 +92,8 @@ while [ $# -gt 0 ]; do
       TARGET_SELECTION+=("prod")
       shift ;;
     --dsh)
-      TARGET_SELECTION+=("dsh")
-      shift ;;
+      echo "❌ --dsh 同步目标已退役（官方 DSH ~/.dsh 不再走本地受管快照物化）。可用目标：dev (~/.omnimux-dev) | prod (~/.omnimux) | all。" >&2
+      exit 1 ;;
     --all|--broadcast|--all-profiles)
       TARGET_SELECTION+=("all")
       shift ;;
@@ -138,7 +138,6 @@ else
       all|broadcast)
         add_target_home "$HOME/.omnimux-dev"
         add_target_home "$HOME/.omnimux"
-        add_target_home "$HOME/.dsh"
         ;;
       dev|omnimux-dev)
         add_target_home "$HOME/.omnimux-dev"
@@ -147,7 +146,8 @@ else
         add_target_home "$HOME/.omnimux"
         ;;
       dsh|dsh-desktop)
-        add_target_home "$HOME/.dsh"
+        echo "❌ 同步目标 [$item] 已退役（官方 DSH ~/.dsh 不再走本地受管快照物化）。可用目标：dev | prod | all。" >&2
+        exit 1
         ;;
       /*|"~"|"~/"*)
         expanded_path=$(expand_omnimux_sync_target_home "$item") || exit 1

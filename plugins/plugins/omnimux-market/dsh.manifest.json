@@ -31,7 +31,7 @@
       { "target": "sidebar.extra", "componentPath": "src/client/portal.js" },
       { "target": "shell.overlay", "componentPath": "src/client/plaza-shell.js" }
     ],
-    "storageDomains": ["$DSH_HOME/skills/", "$DSH_HOME/omnimux-market/sessions/", "$DSH_HOME/omnimux-market-home-order.json"]
+    "storageDomains": ["$DSH_HOME/skills/", "$DSH_HOME/omnimux-market/sessions/", "$DSH_HOME/omnimux-market/installed-experts.json", "$DSH_HOME/omnimux-market-home-order.json"]
   },
   "skills": [
     "skills/sopilot-social-agents/SKILL.md",
@@ -44,7 +44,15 @@
     "skills/omnimux-competitor-research/SKILL.md",
     "skills/omnimux-social-listening/SKILL.md",
     "skills/omnimux-product-demand/SKILL.md",
-    "skills/omnimux-content-repurposing/SKILL.md"
+    "skills/omnimux-content-repurposing/SKILL.md",
+    "skills/omnimux-ecom-platform-rules/SKILL.md",
+    "skills/omnimux-ecom-market-research/SKILL.md",
+    "skills/omnimux-ecom-pricing-strategy/SKILL.md",
+    "skills/omnimux-ecom-listing-copy/SKILL.md",
+    "skills/omnimux-ecom-visual-qa/SKILL.md",
+    "skills/omnimux-ecom-video-script/SKILL.md",
+    "skills/omnimux-ecom-ads-diagnosis/SKILL.md",
+    "skills/omnimux-ecom-review-voc/SKILL.md"
   ],
   "dependencies": {
     "requiredPlugins": ["omnimux"],

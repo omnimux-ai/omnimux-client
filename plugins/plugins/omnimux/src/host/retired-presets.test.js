@@ -153,6 +153,24 @@ describe('retired-presets runtime redirect', () => {
     }
   })
 
+  it('honors a registered market ecom-* preset untouched, and redirects disabled/retired market presets to omni-agent', async () => {
+    const registry = createFakeRegistry(['omni-agent', 'cordis', 'ecom-market-research'])
+    const dispose = installRetiredPresetRedirect(registry)
+    try {
+      // Installed ecom-* expert runs directly with zero interception
+      assert.deepEqual(await registry.resolve('ecom-market-research'), { id: 'ecom-market-research' })
+      // Disabled ecom-* expert falls back cleanly on historical session reopen
+      assert.deepEqual(await registry.resolve('ecom-listing-copy'), { id: DEFAULT_PRODUCT_PRESET_ID })
+      assert.deepEqual(await registry.acquireScope('ecom-ads-optimizer'), { key: DEFAULT_PRODUCT_PRESET_ID })
+      // Legacy retired market platform experts fall back cleanly
+      for (const legacyId of ['shopee-ops-expert', 'youtube-creator-expert', 'amazon-operations-expert', 'tiktok-ecommerce-expert', 'media-creator']) {
+        assert.deepEqual(await registry.resolve(legacyId), { id: DEFAULT_PRODUCT_PRESET_ID })
+      }
+    } finally {
+      dispose()
+    }
+  })
+
   it('honors a registered preset if explicitly present and restores original methods on dispose', async () => {
     const registry = createFakeRegistry(['omni-agent', 'cordis', 'standard'])
     const originalResolve = registry.resolve

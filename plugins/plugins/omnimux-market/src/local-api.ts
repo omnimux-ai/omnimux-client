@@ -120,13 +120,37 @@ export const MUTATING_METHODS = new Set([
 import {
   type MarketExpertItem,
   type DiscoveredPresetRef,
+  type ExpertStage,
+  type ExpertStatus,
   DEFAULT_MARKET_EXPERTS,
+  SYSTEM_PRESET_METADATA,
+  findMarketExpertById,
+  isMarketExpertId,
+  resolveExpertPersonaText,
   getMarketExpertStatus,
   installMarketExpertPreset,
   disableMarketExpertPreset,
   materializeEnabledMarketExperts,
   reconcileMarketExperts,
 } from './expert-market.js'
+
+import {
+  type ExpertInstallLedger,
+  expertLedgerPath,
+  readExpertLedger,
+  writeExpertLedger,
+  markExpertInstalled,
+  markExpertDisabled,
+} from './expert-ledger.js'
+
+import {
+  type AgentPresetRegistryLike,
+  type DynamicPresetDefinition,
+  type DynamicPresetRow,
+  ExpertPresetRuntime,
+  buildMarketExpertPluginRows,
+  buildMarketExpertPresetDefinition,
+} from './expert-runtime.js'
 
 import {
   agentPresetCordis,
@@ -138,12 +162,30 @@ import {
 export {
   type MarketExpertItem,
   type DiscoveredPresetRef,
+  type ExpertStage,
+  type ExpertStatus,
+  type ExpertInstallLedger,
+  type AgentPresetRegistryLike,
+  type DynamicPresetDefinition,
+  type DynamicPresetRow,
   DEFAULT_MARKET_EXPERTS,
+  SYSTEM_PRESET_METADATA,
+  findMarketExpertById,
+  isMarketExpertId,
+  resolveExpertPersonaText,
   getMarketExpertStatus,
   installMarketExpertPreset,
   disableMarketExpertPreset,
   materializeEnabledMarketExperts,
   reconcileMarketExperts,
+  expertLedgerPath,
+  readExpertLedger,
+  writeExpertLedger,
+  markExpertInstalled,
+  markExpertDisabled,
+  ExpertPresetRuntime,
+  buildMarketExpertPluginRows,
+  buildMarketExpertPresetDefinition,
   agentPresetCordis,
   healAgentPresetCordis,
   healInstalledAgentPresets,
@@ -151,10 +193,9 @@ export {
 }
 
 /**
- * 官方 `@deepseek-ai/dsh-client-ui-agent-preset` 的 seat 控制器只在收到
- * `settings/document-updated`（命名空间 agent-presets）时重读列表，
- * 市场安装/禁用/启动物化后由 host 注入此钩子广播一次，免重启即时可见。
- * 同 setModelCatalogResolver 的模块级注入先例。
+ * 官方 `@deepseek-ai/dsh-client-ui-agent-preset` 的 seat 控制器在收到
+ * `settings/document-updated`（命名空间 `agent-preset-registry`）时重读列表，
+ * 市场安装/禁用/启动恢复后由 host 注入此钩子广播一次，免重启即时可见。
  */
 let agentPresetsNotify: (() => void) | null = null
 
@@ -165,17 +206,28 @@ export function setAgentPresetsNotify(fn: (() => void) | null): void {
 function notifyAgentPresetsChanged(): void {
   try {
     agentPresetsNotify?.()
-  } catch {}
+  } catch (err) {
+    console.warn(`[omnimux-market] agentPresetsNotify failed: ${err instanceof Error ? err.message : String(err)}`)
+  }
 }
 
 /**
- * 官方 `@deepseek-ai/dsh-agent-presets` 发现服务注入点。
- * 专家市场以官方发现的列表为真实全量数据源。
+ * 官方 `ctx.agentPresets.list()` 发现服务注入点。
+ * 专家市场以官方动态注册表为唯一运行态权威数据源。
  */
 let agentPresetsProvider: (() => Promise<DiscoveredPresetRef[] | unknown[]>) | null = null
 
 export function setAgentPresetsProvider(fn: (() => Promise<DiscoveredPresetRef[] | unknown[]>) | null): void {
   agentPresetsProvider = typeof fn === 'function' ? fn : null
+}
+
+/**
+ * 动态专家注册运行时注入点（host 侧注入 `ExpertPresetRuntime`）。
+ */
+let expertPresetRuntime: ExpertPresetRuntime | null = null
+
+export function setExpertPresetRuntime(runtime: ExpertPresetRuntime | null): void {
+  expertPresetRuntime = runtime ?? null
 }
 
 interface ApiContext {
@@ -586,37 +638,56 @@ function handleHomeCustomOrder(ctx: ApiContext): void {
 
 async function handleExpertMarketList(ctx: ApiContext): Promise<void> {
   const home = expertRoots().home
-  let official: any[] = []
-  if (typeof agentPresetsProvider === 'function') {
-    try {
+  let official: DiscoveredPresetRef[] = []
+  try {
+    if (expertPresetRuntime) {
+      official = await expertPresetRuntime.listOfficial()
+    } else if (typeof agentPresetsProvider === 'function') {
       const res = await agentPresetsProvider()
-      if (Array.isArray(res)) official = res
-    } catch {}
+      if (Array.isArray(res)) official = res as DiscoveredPresetRef[]
+    }
+  } catch (err) {
+    console.warn(`[omnimux-market] failed to query official agentPresets.list(): ${errorText(err)}`)
   }
   const items = reconcileMarketExperts(home, official)
   return sendJson(ctx.res, 200, { ok: true, items })
 }
 
-function handleExpertMarketInstall(ctx: ApiContext): void {
+async function handleExpertMarketInstall(ctx: ApiContext): Promise<void> {
   const { body, url, res } = ctx
   const id = String(body.id || url.searchParams.get('id') || '').trim()
   if (!id) return sendJson(res, 400, { ok: false, error: '缺少 id' })
-  const home = expertRoots().home
-  const exp = DEFAULT_MARKET_EXPERTS.find((it) => it.id === id)
+  const exp = findMarketExpertById(id)
   if (!exp) return sendJson(res, 400, { ok: false, error: `unknown expert ${id}` })
-  installMarketExpertPreset(home, exp)
-  notifyAgentPresetsChanged()
-  return sendJson(res, 200, { ok: true, id, status: 'enabled' })
+  if (!expertPresetRuntime) {
+    return sendJson(res, 503, { ok: false, error: '当前运行环境未接入 Agent 预设注册服务，无法安装专家' })
+  }
+  try {
+    const result = await expertPresetRuntime.install(exp, { notify: false })
+    notifyAgentPresetsChanged()
+    return sendJson(res, 200, { ok: true, id: result.id, status: result.status, ...(result.already ? { already: true } : {}) })
+  } catch (err) {
+    return sendJson(res, 500, { ok: false, error: errorText(err) })
+  }
 }
 
-function handleExpertMarketDisable(ctx: ApiContext): void {
+async function handleExpertMarketDisable(ctx: ApiContext): Promise<void> {
   const { body, url, res } = ctx
   const id = String(body.id || url.searchParams.get('id') || '').trim()
   if (!id) return sendJson(res, 400, { ok: false, error: '缺少 id' })
-  const home = expertRoots().home
-  disableMarketExpertPreset(home, id)
-  notifyAgentPresetsChanged()
-  return sendJson(res, 200, { ok: true, id, status: 'disabled' })
+  if (!isMarketExpertId(id)) {
+    return sendJson(res, 400, { ok: false, error: `preset ${id} cannot be disabled via expert market` })
+  }
+  if (!expertPresetRuntime) {
+    return sendJson(res, 503, { ok: false, error: '当前运行环境未接入 Agent 预设注册服务，无法禁用专家' })
+  }
+  try {
+    const result = await expertPresetRuntime.disable(id, { notify: false })
+    notifyAgentPresetsChanged()
+    return sendJson(res, 200, { ok: true, id: result.id, status: result.status })
+  } catch (err) {
+    return sendJson(res, 500, { ok: false, error: errorText(err) })
+  }
 }
 
 function handleExperts(ctx: ApiContext): void {

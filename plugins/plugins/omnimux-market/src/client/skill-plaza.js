@@ -38,7 +38,9 @@
       safeTrySkillInSession,
       WORKSHOP_DOMAIN_ORDER,
       DEFAULT_MARKET_EXPERTS,
+      EXPERT_STAGE_OPTIONS,
       EXPERT_STATUS_CONFIG,
+      getExpertStageLabel,
       resolveIntroTexts,
       extractItemSourceKey,
       resolveProjectDir,
@@ -236,10 +238,38 @@
     }
 
     function renderExpertsTab(opts) {
-      const { displayedExperts, tr, isEn, expertMarketToggling, onToggleExpert } = opts;
+      const { displayedExperts, expertStage, setExpertStage, expertMarketError, onDismissExpertError, tr, isEn, expertMarketToggling, onToggleExpert } = opts;
       const emptyMsg = isEn ? "No matching experts" : "没有匹配的专家";
-      if (displayedExperts.length === 0) return h("div", { className: "sh-mkt-empty" }, tr("expert.empty") || emptyMsg);
-      return h("div", { className: "expert-market-grid" }, displayedExperts.map((it) => renderExpertCard(it, { tr, isEn, expertMarketToggling, onToggle: onToggleExpert, h })));
+      const stageBar = h("div", { className: "expert-stage-bar", role: "group", "aria-label": tr("expertMarket.stageFilter") || (isEn ? "Expert Stage" : "专家阶段筛选") },
+        EXPERT_STAGE_OPTIONS.map((opt) => {
+          const active = (expertStage || "all") === opt.id;
+          const label = getExpertStageLabel(opt.id, tr, isEn);
+          // exempt-ui01 expert stage filter pill
+          return h("button", {
+            key: opt.id,
+            type: "button",
+            className: "cat-btn" + (active ? " active" : ""),
+            "aria-pressed": active,
+            onClick: () => setExpertStage && setExpertStage(opt.id),
+          }, label);
+        }),
+      );
+      const errorToast = expertMarketError
+        ? h("div", { className: "expert-error-toast", role: "alert" },
+            h("span", { className: "expert-error-dot", "aria-hidden": "true" }),
+            h("span", { className: "expert-error-msg" }, expertMarketError),
+            // exempt-ui01 dismiss error toast button
+            h("button", { type: "button", className: "expert-error-close", "aria-label": isEn ? "Dismiss" : "关闭", onClick: onDismissExpertError },
+              h("svg", { width: 14, height: 14, viewBox: "0 0 16 16", fill: "none", "aria-hidden": "true" },
+                h("path", { d: "M4 4l8 8M12 4l-8 8", stroke: "currentColor", strokeWidth: "1.6", strokeLinecap: "round" }),
+              ),
+            ),
+          )
+        : null;
+      const body = displayedExperts.length === 0
+        ? h("div", { className: "sh-mkt-empty" }, tr("expert.empty") || emptyMsg)
+        : h("div", { className: "expert-market-grid" }, displayedExperts.map((it) => renderExpertCard(it, { tr, isEn, expertMarketToggling, onToggle: onToggleExpert, h })));
+      return h("div", { className: "expert-market-container" }, stageBar, body, errorToast);
     }
 
     function renderMineCardsList(filteredMine, opts) {
@@ -300,14 +330,18 @@
       const isPluginsTab = state.mainTab === "plugins";
       const isDiscoverTab = state.mainTab === "discover";
       const { introHeading, introSubtitle, placeholderText } = resolveIntroTexts(state, tr, isEn, isExpertTab, isPluginsTab);
-      const displayedExperts = filterDisplayedExperts(state.expertMarketItems, isExpertTab, state.searchQuery);
+      const displayedExperts = filterDisplayedExperts(state.expertMarketItems, isExpertTab, state.searchQuery, state.expertStage);
       const filteredMine = filterMineItems(state.installedItems, { category: state.category, presetBinding, mineCategory: state.mineCategory, mineSource: state.mineSource, searchQuery: state.searchQuery });
       const availableSources = Array.from(new Set(state.installedItems.map(extractItemSourceKey).filter(Boolean)));
       const workshopCategories = buildWorkshopCategories(presetBinding, tr);
       const onOpenInstall = () => state.setOpenInstallModal(true);
       const onSearchSubmit = () => { state.setSubmitted(state.searchQuery); state.setPage(1); };
+      const onDismissExpertError = () => { if (typeof state.setExpertMarketError === "function") state.setExpertMarketError(""); };
       const tabContentOpts = {
-        isExpertTab, isPluginsTab, searchQuery: state.searchQuery, displayedExperts, tr, isEn, expertMarketToggling: state.expertMarketToggling, onToggleExpert: onToggleExp,
+        isExpertTab, isPluginsTab, searchQuery: state.searchQuery, displayedExperts,
+        expertStage: state.expertStage, setExpertStage: state.setExpertStage,
+        expertMarketError: state.expertMarketError, onDismissExpertError,
+        tr, isEn, expertMarketToggling: state.expertMarketToggling, onToggleExpert: onToggleExp,
         mainTab: state.mainTab, filteredMine, setOpen: state.setOpen, handleSwitchToggle: onToggleSwitch, category: state.category, hasQuery, hasMore: state.hasMore,
         onMore: () => state.setPage(state.page + 1),
         featuredItems,
@@ -329,10 +363,18 @@
       useEffect(() => {
         if (state.mainTab !== "experts-market") return;
         const onListSuccess = (d) => {
-          if (d && Array.isArray(d.items)) state.setExpertMarketItems(d.items);
+          if (d && Array.isArray(d.items)) {
+            state.setExpertMarketItems(d.items);
+            if (typeof state.setExpertMarketError === "function") state.setExpertMarketError("");
+          }
         };
-        api("expertMarketList").then(onListSuccess).catch(() => {});
-      }, [state.mainTab, state.setExpertMarketItems]);
+        const onListError = (err) => {
+          const message = err instanceof Error ? err.message : String(err || "加载专家列表失败");
+          console.warn(`[omnimux-market] expertMarketList failed: ${message}`);
+          if (typeof state.setExpertMarketError === "function") state.setExpertMarketError(message);
+        };
+        api("expertMarketList").then(onListSuccess).catch(onListError);
+      }, [state.mainTab, state.setExpertMarketItems, state.setExpertMarketError]);
     }
 
     function mapInstalledRow(it) {

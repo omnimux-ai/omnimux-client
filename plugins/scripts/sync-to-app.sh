@@ -1,21 +1,20 @@
 #!/bin/bash
 # sync-to-app.sh — 合并后同步：先构建产物，再物化进目标 profile。
 #
-# 默认行为：仅物化到开发版 ~/.omnimux-dev（安全隔离，避免污染生产/官方环境）。
-# 可选参数：可通过 --prod / --dsh / --all 或 --target 指定同步到其他环境。
+# 默认行为：仅物化到开发版 ~/.omnimux-dev（安全隔离，避免污染生产环境）。
+# 可选参数：可通过 --prod / --all 或 --target 指定同步到其他受管环境。
 # 规范：docs/contracts/dev-pipeline.md
 #
 # 用法：
 #   plugins/scripts/sync-to-app.sh                     # 默认：构建并同步全部清单插件到 ~/.omnimux-dev
 #   plugins/scripts/sync-to-app.sh omnimux-assets       # 默认：只同步一个插件到 ~/.omnimux-dev
 #   plugins/scripts/sync-to-app.sh --prod               # 同步到正式版 ~/.omnimux
-#   plugins/scripts/sync-to-app.sh --dsh                # 同步到官方底座 ~/.dsh
-#   plugins/scripts/sync-to-app.sh --all                # 广播同步到全部 Profile (~/.omnimux-dev, ~/.omnimux, ~/.dsh)
+#   plugins/scripts/sync-to-app.sh --all                # 广播同步到全部受管 Profile (~/.omnimux-dev, ~/.omnimux)
 #   plugins/scripts/sync-to-app.sh --target=dev,prod    # 自定义多目标同步
 #   plugins/scripts/sync-to-app.sh --skip-build omnimux-assets
 #
 # 主入口（推荐）：在仓根运行
-#   cd plugins && pnpm sync [插件...] [--prod|--dsh|--all]
+#   cd plugins && pnpm sync [插件...] [--prod|--all]
 set -euo pipefail
 
 SCRIPT_ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -63,7 +62,7 @@ is_alpha_plugin() {
 }
 
 usage() {
-  sed -n '2,16p' "$0"
+  sed -n '2,17p' "$0"
   exit 1
 }
 
@@ -93,11 +92,6 @@ parse_target_value() {
   done
 }
 
-usage() {
-  sed -n '2,16p' "$0"
-  exit 1
-}
-
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) usage ;;
@@ -111,9 +105,8 @@ while [ $# -gt 0 ]; do
       TARGET_FLAGS+=("$1")
       shift ;;
     --dsh)
-      TARGET_SELECTION+=("dsh")
-      TARGET_FLAGS+=("$1")
-      shift ;;
+      echo "❌ --dsh 同步目标已退役（官方 DSH ~/.dsh 不再走本地受管快照物化）。可用目标：dev (~/.omnimux-dev) | prod (~/.omnimux) | all。" >&2
+      exit 1 ;;
     --all|--broadcast|--all-profiles)
       TARGET_SELECTION+=("all")
       TARGET_FLAGS+=("$1")
@@ -125,7 +118,7 @@ while [ $# -gt 0 ]; do
       shift ;;
     --target|--profile)
       if [ $# -lt 2 ]; then
-        echo "❌ $1 需要提供参数值 (dev | prod | dsh | all)" >&2
+        echo "❌ $1 需要提供参数值 (dev | prod | all)" >&2
         exit 1
       fi
       parse_target_value "$2"
@@ -160,7 +153,6 @@ else
       all|broadcast)
         add_target_home "$HOME/.omnimux-dev"
         add_target_home "$HOME/.omnimux"
-        add_target_home "$HOME/.dsh"
         ;;
       dev|omnimux-dev)
         add_target_home "$HOME/.omnimux-dev"
@@ -169,14 +161,15 @@ else
         add_target_home "$HOME/.omnimux"
         ;;
       dsh|dsh-desktop)
-        add_target_home "$HOME/.dsh"
+        echo "❌ 同步目标 [$item] 已退役（官方 DSH ~/.dsh 不再走本地受管快照物化）。可用目标：dev | prod | all。" >&2
+        exit 1
         ;;
       /*|"~"|"~/"*)
         expanded_path=$(expand_omnimux_sync_target_home "$item") || exit 1
         add_target_home "$expanded_path"
         ;;
       *)
-        echo "⚠ 未知同步目标 [$item]，忽略。可选值: dev | prod | dsh | all" >&2
+        echo "⚠ 未知同步目标 [$item]，忽略。可选值: dev | prod | all" >&2
         ;;
     esac
   done
@@ -567,7 +560,6 @@ cat <<EOF
   【发布策略】: Dev 保留 Alpha；正式版自动剔除 Alpha (${ALPHA_PLUGINS_LABEL})
   【提示】默认仅同步开发版 (~/.omnimux-dev)。指定其他目标可用参数：
     - 同步正式版: ./scripts/sync-to-app.sh --prod
-    - 同步底座版: ./scripts/sync-to-app.sh --dsh
     - 广播全同步: ./scripts/sync-to-app.sh --all
   【多 Agent 并发与生效规则】
   - 前端 Client 修改：在浏览器或已打开的客户端窗口中刷新（Cmd+R）即可加载最新 bundle。

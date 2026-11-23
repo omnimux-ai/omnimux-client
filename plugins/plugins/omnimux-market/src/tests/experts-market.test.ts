@@ -1,34 +1,96 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test, { beforeEach, afterEach } from 'node:test'
 import { Readable } from 'node:stream'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { dshHome, withDefaults } from '../config-store.js'
-import { handleApi, DEFAULT_MARKET_EXPERTS, materializeEnabledMarketExperts, healAgentPresetCordis, healInstalledAgentPresets, setAgentPresetsNotify, reconcileMarketExperts } from '../local-api.js'
+import { withDefaults } from '../config-store.js'
+import {
+  handleApi,
+  DEFAULT_MARKET_EXPERTS,
+  ExpertPresetRuntime,
+  buildMarketExpertPresetDefinition,
+  expertLedgerPath,
+  readExpertLedger,
+  materializeEnabledMarketExperts,
+  healAgentPresetCordis,
+  healInstalledAgentPresets,
+  setAgentPresetsNotify,
+  setAgentPresetsProvider,
+  setExpertPresetRuntime,
+  reconcileMarketExperts,
+  type AgentPresetRegistryLike,
+  type DiscoveredPresetRef,
+  type DynamicPresetDefinition,
+} from '../local-api.js'
 
-function cleanRetiredTestExperts() {
-  const home = dshHome()
-  const retired = join(home, '.agent-presets', '.retired')
-  if (existsSync(retired)) {
-    try {
-      const files = readdirSync(retired)
-      for (const f of files) {
-        if (DEFAULT_MARKET_EXPERTS.some((exp) => f === exp.id || f.startsWith(`${exp.id}-`))) {
-          rmSync(join(retired, f), { recursive: true, force: true })
-        }
+let savedDshHome: string | undefined
+let tempHome: string
+
+function createFakeOfficialRegistry(initial: DiscoveredPresetRef[] = [
+  { id: 'omni-agent', name: 'OmniMux', order: 1, trust: 'system' },
+  { id: 'cordis', name: 'cordis', order: 2, trust: 'system' },
+], opts: { brokenIds?: Set<string> } = {}) {
+  const registered = new Map<string, DiscoveredPresetRef>(initial.map((p) => [p.id, { ...p }]))
+  const definitions = new Map<string, DynamicPresetDefinition>()
+  let registerCount = 0
+  let unregisterCount = 0
+
+  const registry: AgentPresetRegistryLike = {
+    async list() {
+      return [...registered.values()].map((p) => ({ ...p }))
+    },
+    async register(def: DynamicPresetDefinition) {
+      if (registered.has(def.id)) {
+        throw new Error(`Duplicate agent preset: ${def.id}`)
       }
-    } catch {}
+      registerCount += 1
+      definitions.set(def.id, def)
+      const broken = opts.brokenIds?.has(def.id) ? 'mock broken plugin row' : undefined
+      registered.set(def.id, {
+        id: def.id,
+        name: def.name,
+        description: def.description,
+        order: def.order,
+        ...(broken ? { broken } : {}),
+      })
+      let disposed = false
+      return async () => {
+        if (disposed) return
+        disposed = true
+        unregisterCount += 1
+        registered.delete(def.id)
+        definitions.delete(def.id)
+      }
+    },
+  }
+
+  return {
+    registry,
+    registered,
+    definitions,
+    get registerCount() { return registerCount },
+    get unregisterCount() { return unregisterCount },
   }
 }
 
 beforeEach(() => {
-  cleanRetiredTestExperts()
+  savedDshHome = process.env.DSH_HOME
+  tempHome = mkdtempSync(join(tmpdir(), 'omx-expert-market-test-'))
+  process.env.DSH_HOME = tempHome
+  setExpertPresetRuntime(null)
+  setAgentPresetsProvider(null)
+  setAgentPresetsNotify(null)
 })
 
 afterEach(() => {
-  cleanRetiredTestExperts()
+  setExpertPresetRuntime(null)
+  setAgentPresetsProvider(null)
+  setAgentPresetsNotify(null)
+  if (savedDshHome === undefined) delete process.env.DSH_HOME
+  else process.env.DSH_HOME = savedDshHome
+  rmSync(tempHome, { recursive: true, force: true })
 })
 
 function mockReq(method: string, url: string, headers: Record<string, string> = {}, body?: unknown): IncomingMessage {
@@ -68,350 +130,255 @@ function mockRes(): ServerResponse & { _status: number, _body: string, _json: an
   return res as unknown as ServerResponse & { _status: number, _body: string, _json: any }
 }
 
-test('DEFAULT_MARKET_EXPERTS defines 5 streamlined ecommerce experts', () => {
-  assert.equal(DEFAULT_MARKET_EXPERTS.length, 5)
-  const ids = DEFAULT_MARKET_EXPERTS.map(e => e.id)
+const SAME_ORIGIN_HEADERS = {
+  origin: 'http://127.0.0.1:3080',
+  'sec-fetch-site': 'same-origin',
+}
+
+test('DEFAULT_MARKET_EXPERTS defines 8 SOP cross-border experts, all default available with zero Topview residue', () => {
+  assert.equal(DEFAULT_MARKET_EXPERTS.length, 8)
+  const ids = DEFAULT_MARKET_EXPERTS.map((e) => e.id)
   assert.deepEqual(ids, [
-    'shopee-ops-expert',
-    'youtube-creator-expert',
-    'amazon-operations-expert',
-    'tiktok-ecommerce-expert',
-    'media-creator',
+    'ecom-market-research',
+    'ecom-product-strategy',
+    'ecom-listing-copy',
+    'ecom-visual-studio',
+    'ecom-video-director',
+    'ecom-ads-optimizer',
+    'ecom-review-voc',
+    'ecom-creator-growth',
   ])
   for (const exp of DEFAULT_MARKET_EXPERTS) {
-    assert.ok(exp.name, `${exp.id} has name`)
-    assert.ok(exp.nameEn, `${exp.id} has nameEn`)
-    assert.ok(exp.description, `${exp.id} has description`)
-    assert.ok(exp.avatar, `${exp.id} has avatar`)
+    assert.equal(exp.initialStatus, 'available', `${exp.id} must default to available (never fake enabled)`)
+    assert.ok(exp.name && exp.nameEn, `${exp.id} has bilingual names`)
+    assert.ok(exp.description && exp.descriptionEn, `${exp.id} has bilingual descriptions`)
+    assert.ok(['research', 'production', 'growth'].includes(exp.stage), `${exp.id} has valid SOP stage`)
+    assert.ok(Array.isArray(exp.skills) && exp.skills.length >= 2, `${exp.id} links bundled SOP skills`)
+    assert.match(exp.avatar, /^data:image\/svg\+xml/, `${exp.id} uses crisp pixel SVG avatar`)
+    assert.match(decodeURIComponent(exp.avatar), /shape-rendering="crispEdges"/)
+    assert.doesNotMatch(`${exp.name} ${exp.description} ${exp.descriptionEn}`, /topview/i, `${exp.id} has zero Topview residue`)
   }
 })
 
-test('expertMarketList returns streamlined items with status', async () => {
+test('truthful state: fresh env & stale .agent-presets dir never show fake enabled; system presets show [system]', async () => {
+  // Simulate legacy stale files under $DSH_HOME/.agent-presets/
+  const staleDir = join(tempHome, '.agent-presets', 'ecom-market-research')
+  mkdirSync(staleDir, { recursive: true })
+  writeFileSync(join(staleDir, 'preset.yml'), 'name: stale\n', 'utf8')
+  const staleOldDir = join(tempHome, '.agent-presets', 'media-creator')
+  mkdirSync(staleOldDir, { recursive: true })
+  writeFileSync(join(staleOldDir, 'preset.yml'), 'name: media-creator\n', 'utf8')
+
+  const fake = createFakeOfficialRegistry()
+  const runtime = new ExpertPresetRuntime({ home: () => tempHome, registry: fake.registry })
+  setExpertPresetRuntime(runtime)
+
   const cfg = withDefaults({})
-  const req = mockReq('POST', '/api', {
-    origin: 'http://127.0.0.1:3080',
-    'sec-fetch-site': 'same-origin',
-  }, { method: 'expertMarketList' })
   const res = mockRes()
-  await handleApi(req, res, cfg)
+  await handleApi(mockReq('POST', '/api', SAME_ORIGIN_HEADERS, { method: 'expertMarketList' }), res, cfg)
 
   assert.equal(res._status, 200)
   assert.equal(res._json?.ok, true)
-  assert.ok(res._json?.items?.length >= 5)
-  const items = res._json.items
-  const shopee = items.find((it: any) => it.id === 'shopee-ops-expert')
-  assert.ok(shopee)
-  assert.equal(shopee.status, 'enabled')
-  const amazonOps = items.find((it: any) => it.id === 'amazon-operations-expert')
-  assert.ok(amazonOps)
-  assert.equal(amazonOps.status, 'enabled')
-  const tiktokEcom = items.find((it: any) => it.id === 'tiktok-ecommerce-expert')
-  assert.ok(tiktokEcom)
-  assert.equal(tiktokEcom.status, 'enabled')
-  const mediaCreator = items.find((it: any) => it.id === 'media-creator')
-  assert.ok(mediaCreator)
-  assert.equal(mediaCreator.status, 'available')
-  assert.ok(!items.some((it: any) => it.id === 'html-generator'), 'html-generator must be removed')
+  const items = res._json.items as any[]
+  assert.equal(items.length, 10, '2 system presets + 8 SOP market experts')
+
+  const omni = items.find((it) => it.id === 'omni-agent')
+  assert.equal(omni?.status, 'system')
+  assert.equal(omni?.name, 'OmniMux')
+
+  const cordis = items.find((it) => it.id === 'cordis')
+  assert.equal(cordis?.status, 'system')
+  assert.equal(cordis?.name, '创建Agent')
+  assert.ok(cordis?.description?.length > 10, 'cordis must have rich localized description')
+
+  for (const exp of DEFAULT_MARKET_EXPERTS) {
+    const row = items.find((it) => it.id === exp.id)
+    assert.equal(row?.status, 'available', `${exp.id} must be available even if stale .agent-presets/ exists`)
+  }
 })
 
-test('amazon-operations-expert and tiktok-ecommerce-expert install with specialized presets', async () => {
+test('live install -> official register -> disable -> unregister -> restart restore lifecycle', async () => {
+  const fake = createFakeOfficialRegistry()
+  let notifyCalls = 0
+  setAgentPresetsNotify(() => { notifyCalls += 1 })
+  const runtime = new ExpertPresetRuntime({
+    home: () => tempHome,
+    registry: fake.registry,
+    onChanged: () => { notifyCalls += 1 },
+  })
+  setExpertPresetRuntime(runtime)
+
   const cfg = withDefaults({})
-  const req = mockReq('POST', '/api', {
-    origin: 'http://127.0.0.1:3080',
-    'sec-fetch-site': 'same-origin',
-  }, { method: 'expertMarketInstall', id: 'amazon-operations-expert' })
-  const res = mockRes()
-  await handleApi(req, res, cfg)
-  assert.equal(res._status, 200)
-  assert.equal(res._json?.status, 'enabled')
+  const targetId = 'ecom-market-research'
 
-  // Clean up
-  const reqDis = mockReq('POST', '/api', {
-    origin: 'http://127.0.0.1:3080',
-    'sec-fetch-site': 'same-origin',
-  }, { method: 'expertMarketDisable', id: 'amazon-operations-expert' })
-  const resDis = mockRes()
-  await handleApi(reqDis, resDis, cfg)
-  assert.equal(resDis._json?.status, 'disabled')
-})
-
-test('expertMarketInstall and expertMarketDisable toggle preset lifecycle with media-creator', async () => {
-  const cfg = withDefaults({})
-  const testId = 'media-creator'
-
-  // Install
-  const reqInstall = mockReq('POST', '/api', {
-    origin: 'http://127.0.0.1:3080',
-    'sec-fetch-site': 'same-origin',
-  }, { method: 'expertMarketInstall', id: testId })
+  // 1. Install
   const resInstall = mockRes()
-  await handleApi(reqInstall, resInstall, cfg)
+  await handleApi(mockReq('POST', '/api', SAME_ORIGIN_HEADERS, { method: 'expertMarketInstall', id: targetId }), resInstall, cfg)
   assert.equal(resInstall._status, 200)
   assert.equal(resInstall._json?.ok, true)
   assert.equal(resInstall._json?.status, 'enabled')
+  assert.equal(fake.registerCount, 1)
+  assert.equal(notifyCalls, 1, 'install emits exactly one settings/document-updated notification')
 
-  // Verify list reflects enabled
-  const reqList1 = mockReq('POST', '/api', {
-    origin: 'http://127.0.0.1:3080',
-    'sec-fetch-site': 'same-origin',
-  }, { method: 'expertMarketList' })
+  // Verify mounted preset definition has full Agent-plane stack
+  const mountedDef = fake.definitions.get(targetId)
+  assert.ok(mountedDef, 'definition passed to ctx.agentPresets.register')
+  const pluginNames = mountedDef.plugins.map((r) => r.name)
+  assert.ok(pluginNames.includes('@deepseek-ai/dsh-persona'))
+  assert.ok(pluginNames.includes('@deepseek-ai/dsh-skill-filesystem'))
+  assert.ok(pluginNames.includes('@deepseek-ai/dsh-tool-skill'))
+  const personaRow = mountedDef.plugins.find((r) => r.id === 'persona')
+  assert.ok(typeof (personaRow?.config as any)?.prefix === 'string' && (personaRow?.config as any).prefix.includes('omnimux-ecom-market-research'))
+
+  // Verify ledger persisted installed expert
+  assert.deepEqual(readExpertLedger(tempHome).installed, [targetId])
+
+  // Verify list now shows enabled
   const resList1 = mockRes()
-  await handleApi(reqList1, resList1, cfg)
-  const itemAfterInstall = resList1._json?.items?.find((it: any) => it.id === testId)
-  assert.equal(itemAfterInstall?.status, 'enabled')
+  await handleApi(mockReq('POST', '/api', SAME_ORIGIN_HEADERS, { method: 'expertMarketList' }), resList1, cfg)
+  assert.equal(resList1._json.items.find((it: any) => it.id === targetId)?.status, 'enabled')
 
-  // Disable
-  const reqDisable = mockReq('POST', '/api', {
-    origin: 'http://127.0.0.1:3080',
-    'sec-fetch-site': 'same-origin',
-  }, { method: 'expertMarketDisable', id: testId })
+  // 2. Simulate Host restart with fresh registry + restoreInstalled()
+  const fakeAfterRestart = createFakeOfficialRegistry()
+  const runtime2 = new ExpertPresetRuntime({
+    home: () => tempHome,
+    registry: fakeAfterRestart.registry,
+    onChanged: () => { notifyCalls += 1 },
+  })
+  const restored = await runtime2.restoreInstalled()
+  assert.deepEqual(restored.restored, [targetId])
+  assert.deepEqual(restored.failed, [])
+  assert.ok(fakeAfterRestart.registered.has(targetId), 'installed expert restored on boot')
+  assert.equal(fakeAfterRestart.registered.size, 3, 'uninstalled experts are NOT materialized on boot')
+
+  // 3. Disable
+  setExpertPresetRuntime(runtime2)
   const resDisable = mockRes()
-  await handleApi(reqDisable, resDisable, cfg)
+  await handleApi(mockReq('POST', '/api', SAME_ORIGIN_HEADERS, { method: 'expertMarketDisable', id: targetId }), resDisable, cfg)
   assert.equal(resDisable._status, 200)
-  assert.equal(resDisable._json?.ok, true)
   assert.equal(resDisable._json?.status, 'disabled')
+  assert.equal(fakeAfterRestart.unregisterCount, 1)
+  assert.ok(!fakeAfterRestart.registered.has(targetId))
+  assert.deepEqual(readExpertLedger(tempHome).installed, [])
+  assert.deepEqual(readExpertLedger(tempHome).disabled, [targetId])
 
-  // Verify list reflects disabled (已离职)
-  const reqList2 = mockReq('POST', '/api', {
-    origin: 'http://127.0.0.1:3080',
-    'sec-fetch-site': 'same-origin',
-  }, { method: 'expertMarketList' })
   const resList2 = mockRes()
-  await handleApi(reqList2, resList2, cfg)
-  const itemAfterDisable = resList2._json?.items?.find((it: any) => it.id === testId)
-  assert.equal(itemAfterDisable?.status, 'disabled')
+  await handleApi(mockReq('POST', '/api', SAME_ORIGIN_HEADERS, { method: 'expertMarketList' }), resList2, cfg)
+  assert.equal(resList2._json.items.find((it: any) => it.id === targetId)?.status, 'disabled')
 
-  // Re-install after disabled
-  const reqReinstall = mockReq('POST', '/api', {
-    origin: 'http://127.0.0.1:3080',
-    'sec-fetch-site': 'same-origin',
-  }, { method: 'expertMarketInstall', id: testId })
-  const resReinstall = mockRes()
-  await handleApi(reqReinstall, resReinstall, cfg)
-  assert.equal(resReinstall._status, 200)
-  assert.equal(resReinstall._json?.status, 'enabled')
-})
-
-test('i18n and UI contracts for 技能/专家 and 专家市场', () => {
-  const i18n = readFileSync(new URL('../../src/client/i18n.js', import.meta.url), 'utf8')
-  assert.match(i18n, /"plaza\.title": "技能\/专家"/)
-  assert.match(i18n, /"plaza\.title": "Skills (&|\/) Experts"/)
-  assert.match(i18n, /"workshop\.tabExpertsMarket": "专家市场"/)
-  assert.match(i18n, /"workshop\.tabExpertsMarket": "Experts Market"/)
-  assert.match(i18n, /"expertMarket\.title": "专家市场"/)
-  assert.match(i18n, /"expertMarket\.title": "Experts Market"/)
-  assert.match(i18n, /"expertMarket\.searchPlaceholder": "搜索全部专家"/)
-  assert.match(i18n, /"expertMarket\.searchPlaceholder": "Search all experts\.\.\."/)
-  assert.match(i18n, /"expertMarket\.createExpert": "创建专家"/)
-  assert.match(i18n, /"expertMarket\.createExpert": "Create Expert"/)
-  assert.match(i18n, /"expertMarket\.enabled": "已入职"/)
-  assert.match(i18n, /"expertMarket\.enabled": "Employed"/)
-  assert.match(i18n, /"expertMarket\.available": "可聘用"/)
-  assert.match(i18n, /"expertMarket\.available": "Hireable"/)
-  assert.match(i18n, /"expertMarket\.disabled": "已离职"/)
-  assert.match(i18n, /"expertMarket\.disabled": "Resigned"/)
-  assert.match(i18n, /"workshop\.title": "技能\/专家"/)
-  assert.match(i18n, /"workshop\.title": "Skills (&|\/) Experts"/)
-
-  const plaza = readFileSync(new URL('../../src/client/skill-plaza.js', import.meta.url), 'utf8')
-  assert.match(plaza, /mainTab === "experts-market"/)
-  assert.match(plaza, /introHeading/)
-  assert.match(plaza, /workshop-intro/)
-  assert.match(plaza, /btn-create/)
-  assert.match(plaza, /expertMarket\.createExpert/)
-  assert.match(plaza, /expert-market-grid/)
-  assert.match(plaza, /expert-card/)
-  assert.match(plaza, /expert-pill-btn/)
-  assert.match(plaza, /expertMarket\.disabled/)
-
-  const css = readFileSync(new URL('../../src/client/css.js', import.meta.url), 'utf8')
-  assert.match(css, /\.expert-market-grid/)
-  assert.match(css, /\.expert-card/)
-  assert.match(css, /\.expert-card-avatar-wrap/)
-  assert.match(css, /\.expert-pill-btn/)
-  assert.match(css, /\.expert-card-status\.disabled/)
-
-  const apply = readFileSync(new URL('../../src/client/apply.js', import.meta.url), 'utf8')
-  assert.doesNotMatch(apply, /plazaRemote\s*=\s*ctx\.remote/, 'must not synchronously access ctx.remote without inject')
-  assert.match(apply, /ctx\.inject\(\["remote"\],/, 'must safely inject remote service')
-})
-
-test('all 8 experts define crisp deterministic pixel avatars', () => {
-  for (const exp of DEFAULT_MARKET_EXPERTS) {
-    assert.ok(exp.avatar, `${exp.id} has avatar`)
-    assert.match(exp.avatar, /^data:image\/svg\+xml/, `${exp.id} avatar is svg data uri`)
-    assert.match(decodeURIComponent(exp.avatar), /shape-rendering="crispEdges"/, `${exp.id} has pixel art rendering tag`)
-    assert.match(decodeURIComponent(exp.avatar), /viewBox="0 0 16 16"/, `${exp.id} is 16x16 pixel grid`)
+  // 4. Reject disabling system or custom presets
+  for (const forbidden of ['omni-agent', 'cordis', 'user-custom-agent']) {
+    const resDeny = mockRes()
+    await handleApi(mockReq('POST', '/api', SAME_ORIGIN_HEADERS, { method: 'expertMarketDisable', id: forbidden }), resDeny, cfg)
+    assert.equal(resDeny._status, 400, `${forbidden} must not be disableable via expert market`)
+    assert.equal(resDeny._json?.ok, false)
   }
 })
 
-test('materializeEnabledMarketExperts 启动物化：enabled 初值专家幂等落盘', () => {
-  const home = mkdtempSync(join(tmpdir(), 'omx-expert-materialize-'))
-  try {
-    const first = materializeEnabledMarketExperts(home)
-    assert.deepEqual(first.sort(), [
-      'amazon-operations-expert',
-      'shopee-ops-expert',
-      'tiktok-ecommerce-expert',
-      'youtube-creator-expert',
-    ])
-    for (const id of first) {
-      assert.ok(existsSync(join(home, '.agent-presets', id, 'preset.yml')), `${id} preset.yml 落盘`)
-      assert.ok(existsSync(join(home, '.agent-presets', id, 'agent.cordis.yml')), `${id} agent.cordis.yml 落盘`)
-      const cordis = readFileSync(join(home, '.agent-presets', id, 'agent.cordis.yml'), 'utf8')
-      assert.ok(cordis.includes('sampleOverCapGlobResults: false'), `${id} tool-fs-search 必须包含 sampleOverCapGlobResults`)
-      assert.ok(cordis.includes('provider: spawn'), `${id} tool-subagent 必须包含 provider: spawn`)
-      assert.ok(cordis.includes('provider: fork'), `${id} tool-subagent-fork 必须包含 provider: fork`)
-    }
-    // initialStatus 为 available 的专家不被物化
-    assert.ok(!existsSync(join(home, '.agent-presets', 'media-creator')))
-    assert.ok(!existsSync(join(home, '.agent-presets', 'html-generator')))
-    // 幂等：第二次物化无新增
-    assert.deepEqual(materializeEnabledMarketExperts(home), [])
-  } finally {
-    rmSync(home, { recursive: true, force: true })
-  }
-})
+test('broken preset mount rolls back unregister and does NOT mark enabled in ledger', async () => {
+  const targetId = 'ecom-visual-studio'
+  const fake = createFakeOfficialRegistry(undefined, { brokenIds: new Set([targetId]) })
+  const runtime = new ExpertPresetRuntime({ home: () => tempHome, registry: fake.registry })
+  setExpertPresetRuntime(runtime)
 
-test('healInstalledAgentPresets 自动修复缺失 sampleOverCapGlobResults 和 provider 的存量预设', () => {
-  const home = mkdtempSync(join(tmpdir(), 'omx-expert-heal-'))
-  try {
-    const dir = join(home, '.agent-presets', 'media-creator')
-    mkdirSync(dir, { recursive: true })
-    const legacy = `# media-creator Agent Preset
-- id: persona
-  name: '@deepseek-ai/dsh-persona'
-- id: tool-fs
-  name: '@deepseek-ai/dsh-tool-fs'
-- id: tool-fs-search
-  name: '@deepseek-ai/dsh-tool-fs-search'
-- id: tool-subagent
-  name: '@deepseek-ai/dsh-tool-subagent'
-- id: tool-subagent-fork
-  name: '@deepseek-ai/dsh-tool-subagent'
-  config:
-    provider: fork
-    toolName: subagent_fork
-    backgroundMode: continuable
-`
-    writeFileSync(join(dir, 'agent.cordis.yml'), legacy, 'utf8')
-    const healed = healInstalledAgentPresets(home)
-    assert.equal(healed.length, 1)
-    const fixed = readFileSync(join(dir, 'agent.cordis.yml'), 'utf8')
-    assert.ok(fixed.includes('sampleOverCapGlobResults: false'))
-    assert.ok(fixed.includes('provider: spawn'))
-    assert.ok(fixed.includes('provider: fork'))
-    // 再次自愈幂等
-    assert.deepEqual(healInstalledAgentPresets(home), [])
-  } finally {
-    rmSync(home, { recursive: true, force: true })
-  }
-})
-
-test('healAgentPresetCordis 支持 CRLF 跨平台换行与已有部分 config 字段自愈合并', () => {
-  // 1. CRLF 格式且已有部分 config（但缺少必填字段）
-  const legacyCrlf = [
-    '# media-creator Agent Preset',
-    '- id: persona',
-    '  name: \'@deepseek-ai/dsh-persona\'',
-    '- id: tool-fs-search',
-    '  name: \'@deepseek-ai/dsh-tool-fs-search\'',
-    '  config:',
-    '    timeoutMs: 5000',
-    '- id: tool-subagent',
-    '  name: \'@deepseek-ai/dsh-tool-subagent\'',
-    '  config:',
-    '    customHeader: true',
-  ].join('\r\n')
-
-  const healed = healAgentPresetCordis(legacyCrlf)
-  assert.ok(healed.includes('\r\n'), '输出必须保留 CRLF 换行')
-  assert.ok(healed.includes('sampleOverCapGlobResults: false'), 'tool-fs-search 在已有 config 下成功插入缺失必填字段')
-  assert.ok(healed.includes('timeoutMs: 5000'), '保留已有 config 内容')
-  assert.ok(healed.includes('provider: spawn'), 'tool-subagent 在已有 config 下成功插入 provider: spawn')
-  assert.ok(healed.includes('customHeader: true'), '保留已有 subagent config')
-
-  // 幂等自愈
-  assert.equal(healAgentPresetCordis(healed), healed, '已自愈内容再次调用保持完全一致')
-})
-
-test('materializeEnabledMarketExperts 尊重用户禁用：.retired 标记不复活', () => {
-  const home = mkdtempSync(join(tmpdir(), 'omx-expert-materialize-retired-'))
-  try {
-    mkdirSync(join(home, '.agent-presets', '.retired'), { recursive: true })
-    writeFileSync(join(home, '.agent-presets', '.retired', `shopee-ops-expert-${Date.now()}`), '', 'utf8')
-    const installed = materializeEnabledMarketExperts(home)
-    assert.equal(installed.length, 3)
-    assert.ok(!installed.includes('shopee-ops-expert'))
-    assert.ok(!existsSync(join(home, '.agent-presets', 'shopee-ops-expert')))
-  } finally {
-    rmSync(home, { recursive: true, force: true })
-  }
-})
-
-test('expertMarketInstall/Disable 触发 Agent 预设列表变更广播钩子', async () => {
   const cfg = withDefaults({})
-  let calls = 0
-  setAgentPresetsNotify(() => { calls += 1 })
-  try {
-    const reqInstall = mockReq('POST', '/api', {
-      origin: 'http://127.0.0.1:3080',
-      'sec-fetch-site': 'same-origin',
-    }, { method: 'expertMarketInstall', id: 'media-creator' })
-    const resInstall = mockRes()
-    await handleApi(reqInstall, resInstall, cfg)
-    assert.equal(resInstall._json?.ok, true)
-    assert.equal(calls, 1)
+  const res = mockRes()
+  await handleApi(mockReq('POST', '/api', SAME_ORIGIN_HEADERS, { method: 'expertMarketInstall', id: targetId }), res, cfg)
 
-    const reqDisable = mockReq('POST', '/api', {
-      origin: 'http://127.0.0.1:3080',
-      'sec-fetch-site': 'same-origin',
-    }, { method: 'expertMarketDisable', id: 'media-creator' })
-    const resDisable = mockRes()
-    await handleApi(reqDisable, resDisable, cfg)
-    assert.equal(resDisable._json?.ok, true)
-    assert.equal(calls, 2)
-  } finally {
-    setAgentPresetsNotify(null)
+  assert.equal(res._status, 500)
+  assert.equal(res._json?.ok, false)
+  assert.match(res._json?.error || '', /挂载失败|mock broken plugin row/)
+  assert.equal(fake.unregisterCount, 1, 'broken mount must immediately unregister')
+  assert.ok(!fake.registered.has(targetId))
+  assert.deepEqual(readExpertLedger(tempHome).installed, [], 'broken mount must not pollute installed ledger')
+})
+
+test('missing ExpertPresetRuntime returns 503 instead of faking success', async () => {
+  const cfg = withDefaults({})
+  const res = mockRes()
+  await handleApi(mockReq('POST', '/api', SAME_ORIGIN_HEADERS, { method: 'expertMarketInstall', id: 'ecom-listing-copy' }), res, cfg)
+  assert.equal(res._status, 503)
+  assert.equal(res._json?.ok, false)
+})
+
+test('corrupted installed-experts.json degrades cleanly to empty ledger without throwing', () => {
+  const p = expertLedgerPath(tempHome)
+  mkdirSync(join(tempHome, 'omnimux-market'), { recursive: true })
+  writeFileSync(p, '{corrupted json', 'utf8')
+  const ledger = readExpertLedger(tempHome)
+  assert.deepEqual(ledger.installed, [])
+  assert.deepEqual(ledger.disabled, [])
+})
+
+test('buildMarketExpertPresetDefinition emits persona.prefix (never retired text key) for all 8 SOP experts', () => {
+  for (const exp of DEFAULT_MARKET_EXPERTS) {
+    const def = buildMarketExpertPresetDefinition(exp)
+    const personaRow = def.plugins.find((r) => r.id === 'persona')
+    assert.ok(personaRow && typeof (personaRow.config as any)?.prefix === 'string' && (personaRow.config as any).prefix.length > 50, `${exp.id} must emit rich persona.prefix`)
+    assert.ok(!('text' in ((personaRow?.config as Record<string, unknown>) ?? {})), `${exp.id} must not emit retired persona.text key`)
   }
 })
 
-test('reconcileMarketExperts aggregates official system presets and custom agents', () => {
-  const home = mkdtempSync(join(tmpdir(), 'omx-expert-reconcile-'))
-  try {
-    const officialMocks = [
-      { id: 'standard', trust: 'system', name: '代码开发' },
-      { id: 'tiktok-agent', trust: 'system', name: 'TikTok运营专家团' },
-      { id: 'my-custom-agent', trust: 'user', name: '我的私有助手', description: '专属定制助手' },
-    ]
-    const items = reconcileMarketExperts(home, officialMocks as any)
-    assert.ok(items.length >= 8)
-    const standard = items.find((it: any) => it.id === 'standard')
-    assert.ok(standard)
-    assert.equal(standard.group, 'system')
-    assert.equal(standard.status, 'enabled')
-
-    const custom = items.find((it: any) => it.id === 'my-custom-agent')
-    assert.ok(custom)
-    assert.equal(custom.group, 'custom')
-    assert.equal(custom.name, '我的私有助手')
-    assert.equal(custom.status, 'enabled')
-
-    // 出海专精专家必须存在
-    const tkEcom = items.find((it: any) => it.id === 'tiktok-ecommerce-expert')
-    assert.ok(tkEcom)
-    assert.equal(tkEcom.group, 'ecommerce')
-
-    // 绝对不存在 html-generator
-    assert.ok(!items.some((it: any) => it.id === 'html-generator'))
-  } finally {
-    rmSync(home, { recursive: true, force: true })
-  }
+test('buildMarketExpertPresetDefinition prunes unresolvable optional rows while keeping persona', () => {
+  const exp = DEFAULT_MARKET_EXPERTS[0]
+  const def = buildMarketExpertPresetDefinition(exp, {
+    platform: 'darwin',
+    isPackageResolvable: (pkg) => pkg !== '@deepseek-ai/dsh-tool-ralph',
+  })
+  const delegation = def.plugins.find((r) => r.id === 'delegation')
+  assert.ok(Array.isArray(delegation?.config))
+  assert.ok(!(delegation?.config as any[]).some((r) => r.name === '@deepseek-ai/dsh-tool-ralph'))
+  assert.ok(def.plugins.some((r) => r.id === 'persona'))
 })
 
-test('host apply 接入启动物化与预设列表广播（源码契约）', () => {
+test('materializeEnabledMarketExperts is retired no-op (never writes legacy .agent-presets)', () => {
+  assert.deepEqual(materializeEnabledMarketExperts(tempHome), [])
+  assert.equal(existsSync(join(tempHome, '.agent-presets')), false)
+})
+
+test('reconcileMarketExperts aggregates system presets, custom agents, and hides broken market rows from enabled', () => {
+  const official: DiscoveredPresetRef[] = [
+    { id: 'omni-agent', trust: 'system', name: 'OmniMux' },
+    { id: 'cordis', trust: 'system', name: 'cordis' },
+    { id: 'ecom-listing-copy', name: '跨境 Listing 与合规文案专家' },
+    { id: 'ecom-ads-optimizer', name: '跨境广告诊断与买量优化专家', broken: 'missing plugin' },
+    { id: 'my-custom-agent', trust: 'user', name: '我的私有助手', description: '专属定制助手' },
+  ]
+  const items = reconcileMarketExperts(tempHome, official)
+  assert.equal(items.find((it) => it.id === 'omni-agent')?.status, 'system')
+  assert.equal(items.find((it) => it.id === 'cordis')?.status, 'system')
+  assert.equal(items.find((it) => it.id === 'my-custom-agent')?.status, 'custom')
+  assert.equal(items.find((it) => it.id === 'ecom-listing-copy')?.status, 'enabled')
+  assert.equal(items.find((it) => it.id === 'ecom-ads-optimizer')?.status, 'available', 'broken preset must never show enabled')
+  assert.ok(!items.some((it) => it.id === 'html-generator'))
+})
+
+test('healInstalledAgentPresets & healAgentPresetCordis keep backward compatibility for suite presets', () => {
+  const dir = join(tempHome, '.agent-presets', 'suite-sample')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'agent.cordis.yml'), [
+    '- id: tool-fs-search',
+    "  name: '@deepseek-ai/dsh-tool-fs-search'",
+    '- id: tool-subagent',
+    "  name: '@deepseek-ai/dsh-tool-subagent'",
+  ].join('\n'), 'utf8')
+  const healed = healInstalledAgentPresets(tempHome)
+  assert.equal(healed.length, 1)
+  const content = readFileSync(join(dir, 'agent.cordis.yml'), 'utf8')
+  assert.ok(content.includes('sampleOverCapGlobResults: false'))
+  assert.ok(content.includes('provider: spawn'))
+  assert.equal(healAgentPresetCordis(content), content)
+})
+
+test('i18n, UI, and host source contracts align with DSH 0.1.7+ agent-preset-registry', () => {
+  const i18n = readFileSync(new URL('../../src/client/i18n.js', import.meta.url), 'utf8')
+  assert.match(i18n, /"expertMarket\.title": "专家市场"/)
+  assert.match(i18n, /"expertMarket\.stageResearch": "选品与策略"/)
+  assert.match(i18n, /"expertMarket\.stageProduction": "货架与内容生产"/)
+  assert.match(i18n, /"expertMarket\.stageGrowth": "投放与复盘闭环"/)
+
   const host = readFileSync(new URL('../../src/host.ts', import.meta.url), 'utf8')
-  assert.match(host, /materializeEnabledMarketExperts\(dshHome\(\)\)/, '激活时必须启动物化已入职专家')
-  assert.match(host, /setAgentPresetsNotify\(/, '激活时必须注入预设列表广播钩子')
-  assert.match(host, /ctx\.emit\('settings\/document-updated' as any, 'agent-presets'/, '广播必须复用官方转发白名单事件')
+  assert.match(host, /new ExpertPresetRuntime\(/, 'host must wire ExpertPresetRuntime')
+  assert.match(host, /AGENT_PRESET_SETTINGS_NS\s*=\s*'agent-preset-registry'/, 'must broadcast official agent-preset-registry namespace')
+  assert.doesNotMatch(host, /materializeEnabledMarketExperts/, 'host must not auto-materialize retired .agent-presets/')
 })

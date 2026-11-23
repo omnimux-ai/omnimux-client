@@ -26,7 +26,7 @@ for argument in "$@"; do
     --target=*|--target)
       TARGET_FLAGS+=("$argument")
       ;;
-    --prod|--all|--dsh|--skip-build)
+    --prod|--all|--skip-build)
       # Accepted from sync-to-app.sh; this script no longer writes anywhere.
       ;;
     *)
