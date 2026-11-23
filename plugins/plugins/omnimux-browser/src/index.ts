@@ -32,7 +32,7 @@ import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { BridgeServer, isLoopbackAddress } from './server.ts'
 import { BrowserContextInjector } from './browser-context.ts'
 import { DRAFT_FORMAT_INSTRUCTIONS } from './draft.ts'
-import { registerBrowserTools } from './tools.ts'
+import { createBrowserToolRegistrar } from './tools.ts'
 import {
   BRIDGE_CONFIG_PATH,
   BRIDGE_PATH,
@@ -254,6 +254,29 @@ export function unpinTextGenerationSession(
   }
 }
 
+
+/** Connected-state prompt contribution; kept as a section-shaped constant so the shared draft instructions stay single-sourced. */
+const BROWSER_PROMPT_CONNECTED = {
+  text: 'A browser extension is connected. To read or operate the user\'s active browser page, call browser_snapshot '
+    + '(text-only; numbered items are the click/type targets), unless the current turn already includes a plugin-provided '
+    + 'followed-page browser_snapshot. Reuse that injected snapshot and its indices directly. Never assume page content you have not snapshotted.'
+    + DRAFT_FORMAT_INSTRUCTIONS,
+} as const
+
+/**
+ * System-prompt contribution for the browser bridge. Returns an empty string
+ * while no extension is connected: the browser tools are not registered in
+ * that state, and any prompt that suggests calling them would only produce a
+ * guaranteed-failure turn. The text is evaluated per assembly, so a connect or
+ * disconnect is reflected on the next model request without re-registering
+ * the section.
+ *
+ * @param connected - whether an authenticated extension is connected.
+ * @returns the model-facing browser guidance, or `''` when disconnected.
+ */
+export function browserBridgePrompt(connected: boolean): string {
+  return connected ? BROWSER_PROMPT_CONNECTED.text : ''
+}
 
 /**
  * Mount the bridge: resolve the token, register the upgrade route, the tool
@@ -522,26 +545,29 @@ function mountBridge(
   }
 
 
-  ctx.effect(() => {
-    const disposers = registerBrowserTools(ctx, server, {
-      toolTimeoutMs: resolved.toolTimeoutMs,
-      snapshotMaxChars: resolved.snapshotMaxChars,
-      maxInteractiveItems: resolved.maxInteractiveItems,
-    })
-    return () => { for (const dispose of disposers.values()) dispose() }
+  const browserTools = createBrowserToolRegistrar(ctx, server, {
+    toolTimeoutMs: resolved.toolTimeoutMs,
+    snapshotMaxChars: resolved.snapshotMaxChars,
+    maxInteractiveItems: resolved.maxInteractiveItems,
+  })
+  const syncBrowserTools = (connected: boolean): void => { browserTools.sync(connected) }
+  const stopBrowserToolSync = server.onConnectionChange(syncBrowserTools)
+  syncBrowserTools(server.hasConnection())
+  ctx.effect(() => () => {
+    stopBrowserToolSync()
+    browserTools.dispose()
   }, 'bridge-browser: browser tools')
 
   // Optional system-prompt contribution: a one-line hint only — the model is
-  // told to fetch snapshots on demand instead of hoarding page text.
+  // told to fetch snapshots on demand instead of hoarding page text. The text
+  // is a provider evaluated per assembly so it follows the live connection
+  // state; when disconnected it renders empty and the tools above are absent.
   const systemPrompt = ctx.get('systemPrompt')
   if (systemPrompt !== undefined) {
     ctx.effect(() => systemPrompt.section({
       name: 'tool:bridge-browser',
       order: 107,
-      text: 'A browser bridge may be connected. To read or operate the user\'s active browser page, call browser_snapshot '
-        + '(text-only; numbered items are the click/type targets), unless the current turn already includes a plugin-provided '
-        + 'followed-page browser_snapshot. Reuse that injected snapshot and its indices directly. Never assume page content you have not snapshotted.'
-        + DRAFT_FORMAT_INSTRUCTIONS,
+      text: () => browserBridgePrompt(server.hasConnection()),
     }), 'bridge-browser: system prompt section')
   }
 

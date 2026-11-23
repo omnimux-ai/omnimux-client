@@ -666,6 +666,37 @@ describe('BridgeServer', () => {
     await expect.poll(() => h.bridge.hasConnection()).toBe(false)
   })
 
+  it('emits connection lifecycle changes, treats replacement as still connected, and honors unsubscribe', async () => {
+    const h = await startBridge()
+    harnesses.push(h)
+    const states: boolean[] = []
+    const unsubscribe = h.bridge.onConnectionChange(connected => { states.push(connected) })
+
+    const first = await connect(h.url)
+    send(first.ws, { t: 'hello', token: TOKEN, caps: CAPS })
+    await waitFor(() => first.frames.some(f => f.t === 'hello.ok'))
+    expect(states).toEqual([true])
+
+    const second = await connect(h.url)
+    send(second.ws, { t: 'hello', token: TOKEN, caps: CAPS })
+    await waitFor(() => second.frames.some(f => f.t === 'hello.ok'))
+    expect(states).toEqual([true, true])
+    expect(h.bridge.hasConnection()).toBe(true)
+
+    second.ws.close()
+    await second.done
+    await expect.poll(() => h.bridge.hasConnection()).toBe(false)
+    expect(states).toEqual([true, true, false])
+
+    unsubscribe()
+    unsubscribe()
+    const third = await connect(h.url)
+    send(third.ws, { t: 'hello', token: TOKEN, caps: CAPS })
+    await waitFor(() => third.frames.some(f => f.t === 'hello.ok'))
+    third.ws.close()
+    expect(states).toEqual([true, true, false])
+  })
+
   it('closes sockets on unparseable frames and ignores client-only frames when ready', async () => {
     const h = await startBridge()
     harnesses.push(h)

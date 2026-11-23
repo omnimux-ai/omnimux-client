@@ -100,6 +100,53 @@ export function registerBrowserTools(
   return disposers
 }
 
+/** Dynamic browser-tool registration state for one bridge instance. */
+export interface BrowserToolRegistrar {
+  /** Register or dispose the full browser tool set to match the connection state. Idempotent. */
+  sync(connected: boolean): void
+  /** Release any currently registered browser tools. Idempotent. */
+  dispose(): void
+}
+
+/**
+ * Keep the model-facing browser tool surface aligned with the bridge's live
+ * connection state. Before an extension connects the 15 browser tools are not
+ * registered at all, so they consume no tool-schema budget and cannot produce
+ * guaranteed-failure calls. Disconnecting releases them immediately; a later
+ * reconnect registers the same set again.
+ *
+ * @param ctx - Cordis context with the tools service.
+ * @param bridge - the authenticated bridge server.
+ * @param options - resolved tool budgets.
+ * @returns a registrar owned by the caller's effect scope.
+ */
+export function createBrowserToolRegistrar(
+  ctx: Context,
+  bridge: BridgeServer,
+  options: BrowserToolsOptions,
+): BrowserToolRegistrar {
+  let disposers: Map<string, () => void> | null = null
+
+  const release = (): void => {
+    if (disposers === null) return
+    const active = disposers
+    disposers = null
+    for (const dispose of active.values()) dispose()
+  }
+
+  return {
+    sync(connected: boolean): void {
+      if (!connected) {
+        release()
+        return
+      }
+      if (disposers !== null) return
+      disposers = registerBrowserTools(ctx, bridge, options)
+    },
+    dispose: release,
+  }
+}
+
 /** Normalize the extension's result payload to the canonical `{ text }` shape. */
 function normalizeTextResult(result: unknown, name: string): TextResult {
   if (typeof result === 'object' && result !== null && typeof (result as { text?: unknown }).text === 'string') {
