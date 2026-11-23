@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
   "source": "pricing",
-  "generatedAt": "2026-11-17T06:55:17.941Z",
+  "generatedAt": "2026-11-23T05:06:30.445Z",
   "groups": {
     "ratio": {
       "cheap": 0.5,
       "default": 1,
       "gemini-4-argon-multimodal": 1,
       "gemini-cheap": 1.12,
-      "gpt-image-2.5-economy": 0.0049,
+      "gpt-image-2.5-economy": 0.337571,
       "minimax-h3-video-creative": 1,
       "minimax-h3-video-digital-human": 1,
       "minimax-h3-video-fast": 0.9,
@@ -18,18 +18,15 @@
       "minimax-h3-video-short-drama-av": 1,
       "nano-banana-2-pro": 1.714286,
       "pool": 0.285714,
-      "seedance-2-5-480p": 0.524,
+      "seedance-2-5-480p": 0.16912,
       "seedance-2-5-480p-pro": 0.28125,
-      "seedance-2-5-720p": 0.7206,
+      "seedance-2-5-720p": 0.17014,
       "seedance-2-5-720p-pro": 0.28166,
       "seedance-standard": 1.178,
       "wan-3.0-1080p": 1.5,
       "wan-3.0-720p": 0.5,
       "wan-3.0-prime": 1.5,
-      "wan-3.0-standard": 1,
-      "nanobanana-economy": 1,
-      "desktop-480p": 0.17,
-      "desktop-720p": 0.24
+      "wan-3.0-standard": 1
     },
     "usable": {
       "Omni-Beta": "Omni 专属（仅 tokens-flow omni 模型）",
@@ -44,7 +41,7 @@
       "default": "标准版（主流高品质专线）",
       "gemini-4-argon-multimodal": "Gemini 4 Argon（多模态文本）",
       "gemini-cheap": "Gemini 特惠版（经济走量）",
-      "gpt-image-2.5-economy": "GPT Image 2.5 特惠档（¥0.01/张）",
+      "gpt-image-2.5-economy": "GPT Image 2.5 特惠档（¥0.03/张）",
       "grok-cheap": "Grok 特惠版（轻量走量）",
       "grok-enterprise": "Grok 企业版",
       "grok-standard": "Grok 标准版（主流专线）",
@@ -65,9 +62,9 @@
       "official": "官转版（官方原厂直签 / 极稳高画质）",
       "pool": "畅享版（自建账号池 / 随心用）",
       "pro": "进阶版（企业独享 / 私有专线）",
-      "seedance-2-5-480p": "Seedance 2.5 480p 档（¥2.85/秒）",
+      "seedance-2-5-480p": "Seedance 2.5 480p 经济档（¥0.92/秒）",
       "seedance-2-5-480p-pro": "Seedance 2.5 480p 旗舰档（¥1.53/秒）",
-      "seedance-2-5-720p": "Seedance 2.5 720p 档（¥3.92/秒）",
+      "seedance-2-5-720p": "Seedance 2.5 720p 经济档（¥1.19/秒）",
       "seedance-2-5-720p-pro": "Seedance 2.5 720p 旗舰档（¥1.97/秒）",
       "seedance-pro": "即梦 Seedance 进阶版",
       "seedance-standard": "即梦 Seedance 标准版",
@@ -76,10 +73,7 @@
       "wan-3.0-720p": "Wan 3.0 720p 档（¥0.60/秒）",
       "wan-3.0-prime": "Wan 3.0 Prime 优速档（480P/720P/1080P 按档计价）",
       "wan-3.0-standard": "Wan 3.0 标准档（480P/720P/1080P 按档计价）",
-      "zhipu-official": "智谱 Zhipu（官方满血）",
-      "nanobanana-economy": "Nano Banana 2 Lite 低价版（经济跑量）",
-      "desktop-480p": "桌面端 480p 档（¥0.92/秒）",
-      "desktop-720p": "桌面端 720p 档（¥1.31/秒）"
+      "zhipu-official": "智谱 Zhipu（官方满血）"
     },
     "auto": [
       "pool",
@@ -116,6 +110,10 @@
       "enableGroups": [
         "default"
       ],
+      "defaultGroup": "default",
+      "groupOrder": [
+        "default"
+      ],
       "supportedEndpointTypes": [
         "openai"
       ],
@@ -129,7 +127,8 @@
       "contract": {
         "model_id": "gemini-3.8-flash",
         "schemaVersion": "2.0",
-        "contractVersion": "09b581aa43e2db8a",
+        "contractVersion": "fa417e0e596d457f",
+        "execution_status": "live",
         "family": "llm",
         "status": "documented",
         "operation_ids": [
@@ -233,6 +232,12 @@
         },
         "context_window_tokens": 1048576,
         "max_output_tokens": 65536,
+        "reasoning_efforts": {
+          "high": "high",
+          "low": "low",
+          "medium": "medium"
+        },
+        "default_reasoning_effort": "medium",
         "billing": {
           "unit": "per_token",
           "unit_label": {
@@ -246,13 +251,7 @@
             "en": "Charged by reported token usage; price is USD per 1M tokens",
             "zh": "按上游返回的词元用量计费，单价为每百万词元美元价"
           }
-        },
-        "reasoning_efforts": {
-          "high": "high",
-          "low": "low",
-          "medium": "medium"
-        },
-        "default_reasoning_effort": "medium"
+        }
       },
       "contractPresent": true
     },
@@ -260,6 +259,10 @@
       "id": "gemini-4-argon",
       "displayName": "gemini-4-argon",
       "enableGroups": [
+        "gemini-4-argon-multimodal"
+      ],
+      "defaultGroup": "gemini-4-argon-multimodal",
+      "groupOrder": [
         "gemini-4-argon-multimodal"
       ],
       "supportedEndpointTypes": [
@@ -280,7 +283,8 @@
       "contract": {
         "model_id": "gemini-4-argon",
         "schemaVersion": "2.0",
-        "contractVersion": "0ecfb573bfdcee3f",
+        "contractVersion": "df8ab751122c7086",
+        "execution_status": "live",
         "family": "llm",
         "status": "partial",
         "basis": "line_restricted",
@@ -349,6 +353,12 @@
             "video/mp4"
           ]
         },
+        "reasoning_efforts": {
+          "high": "high",
+          "low": "low",
+          "medium": "medium"
+        },
+        "default_reasoning_effort": "medium",
         "billing": {
           "unit": "per_token",
           "unit_label": {
@@ -361,13 +371,7 @@
             "en": "Charges use reported usage: USD 1.7 per 1M input tokens, USD 8.5 per 1M output tokens and USD 0.086 per 1M cached input tokens, with a USD 0.01/68 minimum per request rounded to the gateway billing unit. The official input anchor is USD 4 per 1M tokens; model-specific billing rules determine the effective selling price. Input includes reported tool-use input; output includes reported thinking. Cached tokens are an input subset, counted once.",
             "zh": "按实际报告用量结算，每百万词元输入 1.7 美元、输出 8.5 美元、缓存读取 0.086 美元；每次最低 0.01/68 美元，按本站最小计费单位取整。官方输入基准为每百万词元 4 美元，实际售价由模型专属计费规则确定。输入包含已报告的工具输入，输出包含已报告的思考；缓存是输入子集，各计一次。"
           }
-        },
-        "reasoning_efforts": {
-          "high": "high",
-          "low": "low",
-          "medium": "medium"
-        },
-        "default_reasoning_effort": "medium"
+        }
       },
       "contractPresent": true
     },
@@ -376,8 +380,12 @@
       "displayName": "gpt-image-2.5",
       "enableGroups": [
         "default",
-        "gpt-image-2.5-economy",
-        "nanobanana-economy"
+        "gpt-image-2.5-economy"
+      ],
+      "defaultGroup": "default",
+      "groupOrder": [
+        "default",
+        "gpt-image-2.5-economy"
       ],
       "supportedEndpointTypes": [
         "image-generation",
@@ -385,15 +393,16 @@
       ],
       "billing": {
         "mode": "tiered_expr",
-        "modelPrice": 0.3,
+        "modelPrice": 0.013072,
         "modelRatio": 0,
         "quotaType": 1,
-        "expr": "tier(\"image\", fixed(0.3)) * image_count"
+        "expr": "tier(\"image\", fixed(0.013072)) * image_count"
       },
       "contract": {
         "model_id": "gpt-image-2.5",
         "schemaVersion": "2.0",
-        "contractVersion": "a5cc7f2fbe69646a",
+        "contractVersion": "dc8457c7bc99e828",
+        "execution_status": "live",
         "family": "image",
         "status": "documented",
         "basis": "line_restricted",
@@ -641,11 +650,10 @@
             "en": "per image",
             "zh": "每张"
           },
-          "unit_price_usd": 0.3,
           "pricing_basis": "image_count",
           "notes": {
-            "en": "Charged per image. This amount is the per-image service base (3 OmniMux points); the final quote includes the dedicated group and membership multipliers; use the platform quote before submission.",
-            "zh": "按图片张数计费。此金额为每张的服务基准价（对应 3 积分）；实际每张费用受专属分组和会员倍率影响，以平台提交前报价为准。"
+            "en": "Charged per image. The actual per-image price is determined by the live quote from /api/pricing, the applicable group and membership multipliers, and the platform quote shown before submission; no static unit price is declared here, avoiding drift after future price changes.",
+            "zh": "按图片张数计费。实际每张费用由 /api/pricing 实时报价、适用分组与会员倍率确定，以平台提交前报价为准；此处不声明静态单价，避免后续调价产生漂移。"
           }
         }
       },
@@ -657,6 +665,11 @@
       "enableGroups": [
         "auto",
         "default"
+      ],
+      "defaultGroup": "default",
+      "groupOrder": [
+        "default",
+        "auto"
       ],
       "supportedEndpointTypes": [
         "openai"
@@ -671,7 +684,8 @@
       "contract": {
         "model_id": "indextts-2",
         "schemaVersion": "2.0",
-        "contractVersion": "ee42f866f94217d7",
+        "contractVersion": "3fbc00d4730bf51a",
+        "execution_status": "live",
         "family": "audio",
         "status": "documented",
         "operation_ids": [
@@ -810,8 +824,25 @@
       "enableGroups": [
         "auto",
         "default",
+        "minimax-h3-video-creative",
+        "minimax-h3-video-digital-human",
         "minimax-h3-video-fast",
-        "minimax-h3-video-pro"
+        "minimax-h3-video-first-last-frame",
+        "minimax-h3-video-pro",
+        "minimax-h3-video-short-drama",
+        "minimax-h3-video-short-drama-av"
+      ],
+      "defaultGroup": "default",
+      "groupOrder": [
+        "default",
+        "auto",
+        "minimax-h3-video-fast",
+        "minimax-h3-video-pro",
+        "minimax-h3-video-creative",
+        "minimax-h3-video-first-last-frame",
+        "minimax-h3-video-digital-human",
+        "minimax-h3-video-short-drama",
+        "minimax-h3-video-short-drama-av"
       ],
       "supportedEndpointTypes": [
         "openai"
@@ -826,7 +857,8 @@
       "contract": {
         "model_id": "minimax-h3-video",
         "schemaVersion": "2.0",
-        "contractVersion": "22bdd7f2cb55646b",
+        "contractVersion": "7a5bbd1bf6ab65a0",
+        "execution_status": "live",
         "family": "video",
         "status": "documented",
         "basis": "line_restricted",
@@ -1102,6 +1134,10 @@
       "enableGroups": [
         "pool"
       ],
+      "defaultGroup": "pool",
+      "groupOrder": [
+        "pool"
+      ],
       "supportedEndpointTypes": [
         "openai"
       ],
@@ -1115,13 +1151,14 @@
       "contract": {
         "model_id": "muse-image",
         "schemaVersion": "2.0",
-        "contractVersion": "afba2016ce7608bc",
+        "contractVersion": "b20197a892915a81",
         "execution_status": "live",
         "family": "image",
         "status": "partial",
         "basis": "line_restricted",
         "operation_ids": [
-          "text_to_image"
+          "text_to_image",
+          "image_to_image"
         ],
         "operations": [
           {
@@ -1206,16 +1243,128 @@
             "output": {
               "type": "image"
             }
+          },
+          {
+            "id": "image_to_image",
+            "executable": true,
+            "inputs": [
+              {
+                "slot": "prompt",
+                "type": "text",
+                "required": true
+              },
+              {
+                "slot": "reference_image",
+                "type": "image",
+                "role": "reference",
+                "required": false,
+                "min": 0,
+                "max": 10,
+                "allowedMimes": [
+                  "image/jpeg",
+                  "image/png",
+                  "image/gif",
+                  "image/webp",
+                  "image/heic",
+                  "image/heif",
+                  "image/avif"
+                ],
+                "maxSizeMb": 40
+              }
+            ],
+            "parameters": [
+              {
+                "name": "seed",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647,
+                "step": 1,
+                "default": 0,
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "平台既有参数表；上游未公布取值范围"
+                }
+              },
+              {
+                "name": "n",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4,
+                "default": 1,
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "本服务 muse2api 的 ImageGenerationRequest 限制 n 为 1–4"
+                }
+              },
+              {
+                "name": "quality",
+                "type": "enum",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "default": "medium",
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "前端既有参数表；上游未公布枚举"
+                }
+              },
+              {
+                "name": "background",
+                "type": "enum",
+                "enum": [
+                  "opaque",
+                  "transparent"
+                ],
+                "default": "opaque",
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "前端既有参数表；上游未公布枚举"
+                }
+              },
+              {
+                "name": "aspect_ratio",
+                "type": "enum",
+                "enum": [
+                  "auto",
+                  "1:1",
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4"
+                ],
+                "default": "1:1",
+                "limitSource": {
+                  "kind": "policy_conservative",
+                  "note": "本服务以 size 字段接收画幅比例；上游未公布完整枚举，采用前端既有画幅集合"
+                }
+              }
+            ],
+            "output": {
+              "type": "image"
+            }
           }
         ],
         "unknowns": [
           "prompt_max_chars",
-          "reference_images",
-          "reference_images.max",
-          "reference_images.max_bytes_each",
           "output_sizes",
           "output_formats"
         ],
+        "reference_images": {
+          "min": 0,
+          "max": 10,
+          "formats": [
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/webp",
+            "image/heic",
+            "image/heif",
+            "image/avif"
+          ],
+          "max_bytes_each": 41943040
+        },
         "billing": {
           "unit": "per_image",
           "unit_label": {
@@ -1238,6 +1387,10 @@
       "enableGroups": [
         "pool"
       ],
+      "defaultGroup": "pool",
+      "groupOrder": [
+        "pool"
+      ],
       "supportedEndpointTypes": [
         "openai"
       ],
@@ -1251,7 +1404,7 @@
       "contract": {
         "model_id": "muse-video",
         "schemaVersion": "2.0",
-        "contractVersion": "209975d764ec0be5",
+        "contractVersion": "1bc98d8b0a3565eb",
         "execution_status": "live",
         "family": "video",
         "status": "partial",
@@ -1265,6 +1418,7 @@
         "operations": [
           {
             "id": "text_to_video",
+            "modeKind": "text_to_video",
             "executable": true,
             "inputs": [
               {
@@ -1308,6 +1462,7 @@
           },
           {
             "id": "first_frame",
+            "modeKind": "first_frame",
             "executable": true,
             "inputs": [
               {
@@ -1364,6 +1519,7 @@
           },
           {
             "id": "video_multi_ref",
+            "modeKind": "image_reference",
             "executable": true,
             "inputs": [
               {
@@ -1378,7 +1534,7 @@
                 "firstItemRole": "first_frame",
                 "required": true,
                 "min": 2,
-                "max": 2,
+                "max": 10,
                 "allowedMimes": [
                   "image/jpeg",
                   "image/png",
@@ -1443,7 +1599,7 @@
         ],
         "reference_images": {
           "min": 2,
-          "max": 2,
+          "max": 10,
           "formats": [
             "image/jpeg",
             "image/png",
@@ -1470,6 +1626,10 @@
       "id": "nano-banana-2-1",
       "displayName": "nano-banana-2-1",
       "enableGroups": [
+        "default"
+      ],
+      "defaultGroup": "default",
+      "groupOrder": [
         "default"
       ],
       "supportedEndpointTypes": [
@@ -1634,6 +1794,10 @@
       "id": "nano-banana-2-lite",
       "displayName": "nano-banana-2-lite",
       "enableGroups": [
+        "default"
+      ],
+      "defaultGroup": "default",
+      "groupOrder": [
         "default"
       ],
       "supportedEndpointTypes": [
@@ -1843,6 +2007,10 @@
       "enableGroups": [
         "default"
       ],
+      "defaultGroup": "default",
+      "groupOrder": [
+        "default"
+      ],
       "supportedEndpointTypes": [
         "openai"
       ],
@@ -1912,6 +2080,10 @@
       "enableGroups": [
         "default"
       ],
+      "defaultGroup": "default",
+      "groupOrder": [
+        "default"
+      ],
       "supportedEndpointTypes": [
         "openai"
       ],
@@ -1925,7 +2097,8 @@
       "contract": {
         "model_id": "seedance-2-0",
         "schemaVersion": "2.0",
-        "contractVersion": "010c1093caa5370b",
+        "contractVersion": "094a1775ba021b2e",
+        "execution_status": "live",
         "family": "video",
         "status": "documented",
         "operation_ids": [
@@ -2235,10 +2408,17 @@
       "id": "seedance-2-5",
       "displayName": "seedance-2-5",
       "enableGroups": [
-        "desktop-480p",
-        "desktop-720p",
         "seedance-2-5-480p",
-        "seedance-2-5-720p"
+        "seedance-2-5-480p-pro",
+        "seedance-2-5-720p",
+        "seedance-2-5-720p-pro"
+      ],
+      "defaultGroup": "seedance-2-5-720p",
+      "groupOrder": [
+        "seedance-2-5-720p",
+        "seedance-2-5-480p",
+        "seedance-2-5-720p-pro",
+        "seedance-2-5-480p-pro"
       ],
       "supportedEndpointTypes": [
         "openai"
@@ -2253,7 +2433,8 @@
       "contract": {
         "model_id": "seedance-2-5",
         "schemaVersion": "2.0",
-        "contractVersion": "cecb4da4fe4d9ddb",
+        "contractVersion": "7bd90e0916f978da",
+        "execution_status": "live",
         "family": "video",
         "status": "documented",
         "operation_ids": [
@@ -2267,6 +2448,7 @@
         "operations": [
           {
             "id": "text_to_video",
+            "modeKind": "text_to_video",
             "executable": true,
             "inputs": [
               {
@@ -2306,17 +2488,30 @@
                 ]
               },
               {
+                "name": "output_format",
+                "type": "enum",
+                "enum": [
+                  "mp4",
+                  "mov"
+                ]
+              },
+              {
                 "name": "generate_audio",
                 "type": "boolean",
                 "default": false
               }
             ],
             "output": {
-              "type": "video"
+              "type": "video",
+              "formats": [
+                "mp4",
+                "mov"
+              ]
             }
           },
           {
             "id": "first_frame",
+            "modeKind": "first_frame",
             "executable": true,
             "inputs": [
               {
@@ -2371,17 +2566,30 @@
                 "fixed": "adaptive"
               },
               {
+                "name": "output_format",
+                "type": "enum",
+                "enum": [
+                  "mp4",
+                  "mov"
+                ]
+              },
+              {
                 "name": "generate_audio",
                 "type": "boolean",
                 "default": false
               }
             ],
             "output": {
-              "type": "video"
+              "type": "video",
+              "formats": [
+                "mp4",
+                "mov"
+              ]
             }
           },
           {
             "id": "first_last_frame",
+            "modeKind": "first_last_frame",
             "executable": true,
             "inputs": [
               {
@@ -2455,17 +2663,30 @@
                 "fixed": "adaptive"
               },
               {
+                "name": "output_format",
+                "type": "enum",
+                "enum": [
+                  "mp4",
+                  "mov"
+                ]
+              },
+              {
                 "name": "generate_audio",
                 "type": "boolean",
                 "default": false
               }
             ],
             "output": {
-              "type": "video"
+              "type": "video",
+              "formats": [
+                "mp4",
+                "mov"
+              ]
             }
           },
           {
             "id": "video_multi_ref",
+            "modeKind": "multimodal_reference",
             "executable": true,
             "inputs": [
               {
@@ -2550,17 +2771,30 @@
                 ]
               },
               {
+                "name": "output_format",
+                "type": "enum",
+                "enum": [
+                  "mp4",
+                  "mov"
+                ]
+              },
+              {
                 "name": "generate_audio",
                 "type": "boolean",
                 "default": false
               }
             ],
             "output": {
-              "type": "video"
+              "type": "video",
+              "formats": [
+                "mp4",
+                "mov"
+              ]
             }
           },
           {
             "id": "video_edit",
+            "modeKind": "video_edit",
             "executable": true,
             "inputs": [
               {
@@ -2610,17 +2844,30 @@
                 "fixed": "adaptive"
               },
               {
+                "name": "output_format",
+                "type": "enum",
+                "enum": [
+                  "mp4",
+                  "mov"
+                ]
+              },
+              {
                 "name": "generate_audio",
                 "type": "boolean",
                 "default": false
               }
             ],
             "output": {
-              "type": "video"
+              "type": "video",
+              "formats": [
+                "mp4",
+                "mov"
+              ]
             }
           },
           {
             "id": "video_extend",
+            "modeKind": "video_extend",
             "executable": true,
             "inputs": [
               {
@@ -2669,13 +2916,25 @@
                 "fixed": "adaptive"
               },
               {
+                "name": "output_format",
+                "type": "enum",
+                "enum": [
+                  "mp4",
+                  "mov"
+                ]
+              },
+              {
                 "name": "generate_audio",
                 "type": "boolean",
                 "default": false
               }
             ],
             "output": {
-              "type": "video"
+              "type": "video",
+              "formats": [
+                "mp4",
+                "mov"
+              ]
             }
           }
         ],
@@ -2701,6 +2960,10 @@
           "adaptive"
         ],
         "audio_supported": true,
+        "output_formats": [
+          "mp4",
+          "mov"
+        ],
         "reference_images": {
           "min": 1,
           "max": 30,
@@ -2754,6 +3017,10 @@
       "id": "seedream-5-5",
       "displayName": "seedream-5-5",
       "enableGroups": [
+        "default"
+      ],
+      "defaultGroup": "default",
+      "groupOrder": [
         "default"
       ],
       "supportedEndpointTypes": [
@@ -2893,6 +3160,10 @@
       "enableGroups": [
         "default"
       ],
+      "defaultGroup": "default",
+      "groupOrder": [
+        "default"
+      ],
       "supportedEndpointTypes": [
         "openai"
       ],
@@ -2906,7 +3177,8 @@
       "contract": {
         "model_id": "suno",
         "schemaVersion": "2.0",
-        "contractVersion": "9b9651e36a9893f7",
+        "contractVersion": "b6aa6196e9046ff6",
+        "execution_status": "live",
         "family": "audio",
         "status": "documented",
         "operation_ids": [
@@ -2956,6 +3228,10 @@
       "enableGroups": [
         "default"
       ],
+      "defaultGroup": "default",
+      "groupOrder": [
+        "default"
+      ],
       "supportedEndpointTypes": [
         "openai"
       ],
@@ -2969,7 +3245,8 @@
       "contract": {
         "model_id": "suno-sounds",
         "schemaVersion": "2.0",
-        "contractVersion": "90650875299f9fc7",
+        "contractVersion": "6ac863606c36699b",
+        "execution_status": "live",
         "family": "audio",
         "status": "documented",
         "operation_ids": [
@@ -3015,7 +3292,16 @@
       "displayName": "wan-3.0",
       "enableGroups": [
         "wan-3.0-1080p",
-        "wan-3.0-720p"
+        "wan-3.0-720p",
+        "wan-3.0-prime",
+        "wan-3.0-standard"
+      ],
+      "defaultGroup": "wan-3.0-720p",
+      "groupOrder": [
+        "wan-3.0-720p",
+        "wan-3.0-1080p",
+        "wan-3.0-standard",
+        "wan-3.0-prime"
       ],
       "supportedEndpointTypes": [
         "openai"
@@ -3030,7 +3316,8 @@
       "contract": {
         "model_id": "wan-3.0",
         "schemaVersion": "2.0",
-        "contractVersion": "b1205e4730034634",
+        "contractVersion": "e2ff354fe51d7c1d",
+        "execution_status": "live",
         "family": "video",
         "status": "documented",
         "operation_ids": [
@@ -3484,8 +3771,8 @@
           "unit_price_usd": 0.176471,
           "pricing_basis": "duration_seconds",
           "notes": {
-            "en": "Charged by the requested video duration. This amount is the per-second service base: 0.176471 USD/s = official wan3.0-video (standard) 1080P list price ¥1.20/s ÷ 6.8 (canonical FX). The final per-second price includes the group ratio: wan-3.0-720p ×0.5 = 0.0882355 USD/s = ¥0.60/s; wan-3.0-1080p ×1.5 = 0.2647065 USD/s = ¥1.80/s; use the platform quote before submission. Official list prices: standard https://help.aliyun.com/zh/model-studio/wan3-0-video (480P/720P/1080P = 0.3/0.6/1.2 CNY/s) and prime https://help.aliyun.com/zh/model-studio/wan3-0-video-prime (480P/720P/1080P = 0.45/0.9/1.8 CNY/s), cn-beijing list price excluding limited-time discounts.",
-            "zh": "按请求的视频时长计费，此金额为每秒钟的服务基准价：0.176471 USD/秒 = 官方 wan3.0-video（标准版）1080P 原价 ¥1.20/秒 ÷ 6.8（canonical FX）。实际每秒费用受分组倍率影响：wan-3.0-720p 档 ×0.5 = 0.0882355 USD/秒 = ¥0.60/秒；wan-3.0-1080p 档 ×1.5 = 0.2647065 USD/秒 = ¥1.80/秒；以平台提交前报价为准。【官方价格来源】标准版 https://help.aliyun.com/zh/model-studio/wan3-0-video（480P/720P/1080P = 0.3/0.6/1.2 元/秒）、高速版 https://help.aliyun.com/zh/model-studio/wan3-0-video-prime（480P/720P/1080P = 0.45/0.9/1.8 元/秒），均为华北2（北京）官方原价、不含限时优惠。"
+            "en": "Charged by the requested video duration. This amount is the per-second service base: 0.176471 USD/s = official wan3.0-video (standard) 1080P list price ¥1.20/s ÷ 6.8 (canonical FX). The final per-second price includes the group ratio: wan-3.0-720p ×0.5 = 0.0882355 USD/s = ¥0.60/s; wan-3.0-1080p ×1.5 = 0.2647065 USD/s = ¥1.80/s; Standard group wan-3.0-standard (×1.0) and Prime group wan-3.0-prime (×1.5) use the official 480P/720P/1080P ratios 0.25/0.5/1.0; use the platform quote before submission. Official list prices: standard https://help.aliyun.com/zh/model-studio/wan3-0-video (480P/720P/1080P = 0.3/0.6/1.2 CNY/s) and prime https://help.aliyun.com/zh/model-studio/wan3-0-video-prime (480P/720P/1080P = 0.45/0.9/1.8 CNY/s), cn-beijing list price excluding limited-time discounts.",
+            "zh": "按请求的视频时长计费，此金额为每秒钟的服务基准价：0.176471 USD/秒 = 官方 wan3.0-video（标准版）1080P 原价 ¥1.20/秒 ÷ 6.8（canonical FX）。实际每秒费用受分组倍率影响：wan-3.0-720p 档 ×0.5 = 0.0882355 USD/秒 = ¥0.60/秒；wan-3.0-1080p 档 ×1.5 = 0.2647065 USD/秒 = ¥1.80/秒；标准档 wan-3.0-standard（×1.0）与优速档 wan-3.0-prime（×1.5）按 480P/720P/1080P 官方档位比例 0.25/0.5/1.0 计费；以平台提交前报价为准。【官方价格来源】标准版 https://help.aliyun.com/zh/model-studio/wan3-0-video（480P/720P/1080P = 0.3/0.6/1.2 元/秒）、高速版 https://help.aliyun.com/zh/model-studio/wan3-0-video-prime（480P/720P/1080P = 0.45/0.9/1.8 元/秒），均为华北2（北京）官方原价、不含限时优惠。"
           }
         }
       },

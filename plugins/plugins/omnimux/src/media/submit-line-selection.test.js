@@ -17,7 +17,7 @@ const fixtures = [
   },
   {
     kind: 'video', model: 'seedance-2-5', operation: 'text_to_video',
-    otherGroups: ['desktop-720p'], wireGroup: 'desktop-480p', group: '480p',
+    otherGroups: ['seedance-2-5-720p-pro'], wireGroup: 'seedance-2-5-480p', group: 'seedance-2-5-480p',
     path: '/video/generations', extension: 'mp4', parameters: { duration: 4, resolution: '480p', aspectRatio: '16:9' },
   },
   {

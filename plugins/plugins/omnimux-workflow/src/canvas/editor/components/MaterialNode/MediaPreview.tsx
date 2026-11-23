@@ -130,6 +130,7 @@ const MediaPreview: React.FC<MediaPreviewProps> = ({
         <img
           src={url}
           alt={label ?? ''}
+          draggable={false}
           className="wf-media-preview__media wf-media-preview__media--image"
           onLoad={handleImageLoad}
         />

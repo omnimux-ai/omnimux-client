@@ -1,0 +1,49 @@
+name: Feature Request
+description: Propose a new capability or improvement for OmniMux
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea that would make OmniMux better for content commerce, video workflows, or plugin development? Share it below.
+        For open-ended brainstorming or Q&A, consider starting a thread in [GitHub Discussions](https://github.com/omnimux-ai/omnimux-client/discussions).
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Desktop App / UX
+        - Execution Hub / Model Routing / BYOK
+        - Workflow Canvas
+        - Clip Studio
+        - Product & Asset Libraries
+        - Inspiration & Browser Companion
+        - Skill & Plugin Market
+        - Documentation / Developer Experience
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or workflow gap
+      description: What task are you trying to accomplish, and what is currently missing or difficult?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe how you would like this to work (UI, Agent tools, or both).
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or context (optional)
+      description: Any workarounds, reference tools, or screenshots that illustrate the request.

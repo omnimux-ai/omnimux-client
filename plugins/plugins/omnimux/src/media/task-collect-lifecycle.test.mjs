@@ -1,10 +1,12 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, existsSync } from 'node:fs'
+import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { resetCurrentSnapshotResolver, setCurrentSnapshotResolver } from '../catalog/cloud/current.js'
+import { normalizePricingPayload } from '../catalog/cloud/snapshot.js'
 import { executeOmnimuxMedia } from './execute.js'
-import { createMediaTaskRecord, saveMediaTaskRecord } from './task-store.js'
+import { createMediaTaskRecord, findMediaTaskByUpstreamId, saveMediaTaskRecord } from './task-store.js'
 
 describe('媒体任务生命周期收取与误判消除测试', () => {
   let tempHomeDir
@@ -119,6 +121,53 @@ describe('媒体任务生命周期收取与误判消除测试', () => {
         '本机助手只承接文字，图片、视频和音频需要配置媒体生成提供商或改用官方',
         '旧版仅传 taskId 也必须免除 agent 误判'
       )
+    }
+  })
+
+  it('recovers unrecorded task IDs without adding the published default group to GET', async (t) => {
+    const baseUrl = 'https://gateway.example.test/v1'
+    const taskId = 'task-from-another-install'
+    const models = ['seedance-2-5', 'muse-video', 'gpt-image-2.5']
+    const { snapshot } = normalizePricingPayload({ data: models.map(model => ({
+      model_name: model, enable_groups: ['default'], group_order: ['default'], default_group: 'default',
+    })) })
+    setCurrentSnapshotResolver(() => ({ snapshot }))
+    t.after(resetCurrentSnapshotResolver)
+
+    for (const { capability, model, path, taskPath } of [
+      { capability: 'video', model: 'seedance-2-5', path: 'video/generations' },
+      { capability: 'video', model: 'muse-video', path: 'videos' },
+      { capability: 'image', model: 'gpt-image-2.5', path: 'images/generations' },
+      { capability: 'image', model: 'gpt-image-2.5', path: 'images/tasks', taskPath: 'images/tasks' },
+    ]) {
+      const pollUrl = `${baseUrl}/${path}/${taskId}`
+      const extension = capability === 'video' ? 'mp4' : 'png'
+      const assetUrl = `https://assets.example.test/result.${extension}`
+      const dest = join(tempHomeDir, `result.${extension}`)
+      const calls = []
+      const result = await executeOmnimuxMedia(capability, {
+        taskId, dest, taskPath,
+        env: { OMNIMUX_API_KEY: 'sk-test', OMNIMUX_BASE_URL: baseUrl, OMNIMUX_IMAGE_MODEL: model, OMNIMUX_VIDEO_MODEL: model },
+        fetcher: async (url, init) => {
+          const headers = new Headers(init.headers)
+          const group = headers.get('X-Omnimux-Group')
+          calls.push({ path: String(url), method: init.method ?? 'GET', group })
+          if (url === pollUrl) {
+            if (headers.get('Authorization') !== 'Bearer sk-test') return new Response(null, { status: 401 })
+            if (group !== null) return Response.json({ error: { message: 'fixture group forbidden' } }, { status: 403 })
+            return Response.json({ status: 'completed', url: assetUrl })
+          }
+          if (url === assetUrl) return new Response('fixture artifact', { headers: { 'content-type': `${capability}/${extension}` } })
+          return new Response(null, { status: 400 })
+        },
+      })
+      assert.deepEqual(result, { mode: 'live', taskId, url: assetUrl })
+      assert.deepEqual(calls, [
+        { path: pollUrl, method: 'GET', group: null },
+        { path: assetUrl, method: 'GET', group: null },
+      ])
+      assert.equal(readFileSync(dest, 'utf8'), 'fixture artifact')
+      assert.equal(findMediaTaskByUpstreamId(taskId), null)
     }
   })
 

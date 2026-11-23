@@ -88,10 +88,9 @@ describe('OmniMux Pricing Calculator Engine', () => {
       base * 2,
     )
 
-    // 快照给 480p 专线的倍率是 0.17，线路价格必须按它算。
-    const block = gatewayPricingBlock(model, 0.17)
-    assert.equal(block.groupRatio, 0.17)
-    assert.equal(block.pointsEstimate, 6.8)
+    const block = gatewayPricingBlock(model, snapshot.groups.ratio['seedance-2-5-480p'])
+    assert.equal(block.groupRatio, 0.16912)
+    assert.equal(block.pointsEstimate, 6.76)
     assert.equal(block.unitPriceUsd, 0.8)
     assert.equal(block.pointsNote, undefined)
   })
@@ -103,9 +102,9 @@ describe('OmniMux Pricing Calculator Engine', () => {
     assert.match(perSecond, /4\.86 积分\/5秒/)
 
     // 线路写法优先用该线路的倍率。
-    const discounted = describeModelBilling('seedance-2-5@desktop-480p')
-    assert.match(discounted, /desktop-480p/)
-    assert.match(discounted, /6\.8 积分\/5秒/)
+    const discounted = describeModelBilling('seedance-2-5@seedance-2-5-480p')
+    assert.match(discounted, /seedance-2-5-480p/)
+    assert.match(discounted, /6\.76 积分\/5秒/)
 
     const perTask = describeModelBilling('suno')
     assert.match(perTask, /按次计费/)
@@ -126,7 +125,8 @@ describe('OmniMux Pricing Calculator Engine', () => {
     const image = modelOf('gpt-image-2.5')
     const block = gatewayPricingBlock(image, 1)
     assert.equal(block.billingMode, 'per_task')
-    assert.equal(block.unitPriceUsd, 0.3)
+    assert.equal(block.unitPriceUsd, 0.013072)
+    assert.equal(image.billing.expr, 'tier("image", fixed(0.013072)) * image_count')
     assert.equal(block.pointsEstimate, null)
     assert.equal(block.pointsNote, PRICE_COMPARISON_UNAVAILABLE.EXPR)
 

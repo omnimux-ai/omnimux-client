@@ -211,8 +211,15 @@ describe('image / audio / text matrices (real catalog)', () => {
     assert.equal(stateOf(one, 'text_to_image')?.usable, true);
   });
 
+  it('muse-image: no media → text_to_image; 1 image → image_to_image', () => {
+    assert.equal(selected('muse-image', [], 'image').selectedOperationId, 'text_to_image');
+    const one = selected('muse-image', ['image'], 'image');
+    assert.equal(one.selectedOperationId, 'image_to_image');
+    assert.equal(stateOf(one, 'text_to_image')?.usable, true);
+  });
+
   it('image models without a reference slot still support their text operation with image supply', () => {
-    for (const modelId of ['muse-image', 'nano-banana-2-1', 'seedream-5-5']) {
+    for (const modelId of ['nano-banana-2-1', 'seedream-5-5']) {
       assert.equal(modelCanConsumeMediaType({ catalog, modelId, outputType: 'image', mediaType: 'image' }), false);
       const result = selected(modelId, ['image'], 'image');
       assert.equal(result.blocked, false);

@@ -22,6 +22,7 @@
     "cordis.patch.yml",
     "README.md",
     "LICENSE",
+    "skills",
     "catalog",
     "!catalog/covers",
     "THIRD_PARTY_NOTICES.md"

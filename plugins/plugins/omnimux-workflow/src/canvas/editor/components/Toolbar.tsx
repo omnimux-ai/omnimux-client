@@ -17,11 +17,9 @@ import {
   Hand,
   FolderOpen,
   HelpCircle,
-  ChevronUp,
   FileCode,
 } from 'lucide-react';
 import { useT } from '../../i18n';
-import { CustomDropdown, type DropdownMenuItem } from '../../ui';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { COMFY_PAGE_TEMPLATE_EVENT } from '../../nodes/definitions/comfyPage';
 import {
@@ -124,28 +122,13 @@ const Toolbar: React.FC<ToolbarProps> = ({
     enabled: isTemplateMenuOpen,
   });
 
-  const pointerMenuItems: DropdownMenuItem[] = [
-    {
-      key: 'select',
-      icon: <MousePointer size={18} />,
-      label: t('toolbar.selectMode'),
-      onClick: () => onPointerModeChange?.('select'),
-    },
-    {
-      key: 'pan',
-      icon: <Hand size={18} />,
-      label: t('toolbar.panMode'),
-      onClick: () => onPointerModeChange?.('pan'),
-    },
-  ];
-
   return (
     <div
       className="wf-canvas-toolbar nodrag nopan"
       onPointerDown={stopToolbarNativeEvent}
       onMouseDown={stopToolbarNativeEvent}
     >
-      {/* 核心 (+) 按钮与浮层菜单 */}
+      {/* 核心添加节点按钮与浮层菜单 */}
       <div ref={addMenuRef} style={{ position: 'relative' }}>
         <button
           type="button"
@@ -153,10 +136,13 @@ const Toolbar: React.FC<ToolbarProps> = ({
           onClick={toggleAdd}
           onContextMenu={preventToolbarAddContextMenu}
           title={t('toolbar.addNode')}
+          aria-expanded={isAddOpen}
+          aria-haspopup="menu"
         >
           <span className="wf-canvas-toolbar__icon">
-            <Plus size={24} />
+            <Plus size={18} />
           </span>
+          <span className="wf-canvas-toolbar__add-text">{t('menu.addNode')}</span>
         </button>
 
         {isAddOpen ? (
@@ -195,23 +181,43 @@ const Toolbar: React.FC<ToolbarProps> = ({
         </div>
       )}
 
-      {/* 指针模式选择 (V/H) */}
-      <CustomDropdown
-        items={pointerMenuItems}
-        selectedKeys={[pointerMode]}
-        placement="topCenter"
+      {/* 指针模式直点切换：选择 (V) / 抓手 (H) */}
+      <div
+        className="wf-canvas-toolbar__mode-group"
+        role="group"
+        aria-label={t('toolbar.pointerModeGroup')}
       >
         <button
           type="button"
-          className="wf-canvas-toolbar__item"
-          title={pointerMode === 'select' ? t('toolbar.selectMode') : t('toolbar.panMode')}
+          className={`wf-canvas-toolbar__item wf-canvas-toolbar__mode-btn ${pointerMode === 'select' ? 'wf-canvas-toolbar__item--active' : ''}`}
+          data-mode="select"
+          title={t('toolbar.selectMode')}
+          aria-label={t('toolbar.selectMode')}
+          aria-keyshortcuts="V"
+          aria-pressed={pointerMode === 'select'}
+          onClick={() => onPointerModeChange?.('select')}
         >
           <span className="wf-canvas-toolbar__icon">
-            {pointerMode === 'select' ? <MousePointer size={20} /> : <Hand size={20} />}
+            <MousePointer size={18} />
           </span>
-          <ChevronUp size={14} style={{ opacity: 0.6, marginLeft: 2 }} />
+          <span className="wf-canvas-toolbar__mode-label">{t('toolbar.selectShort')}</span>
         </button>
-      </CustomDropdown>
+        <button
+          type="button"
+          className={`wf-canvas-toolbar__item wf-canvas-toolbar__mode-btn ${pointerMode === 'pan' ? 'wf-canvas-toolbar__item--active' : ''}`}
+          data-mode="pan"
+          title={t('toolbar.panMode')}
+          aria-label={t('toolbar.panMode')}
+          aria-keyshortcuts="H"
+          aria-pressed={pointerMode === 'pan'}
+          onClick={() => onPointerModeChange?.('pan')}
+        >
+          <span className="wf-canvas-toolbar__icon">
+            <Hand size={18} />
+          </span>
+          <span className="wf-canvas-toolbar__mode-label">{t('toolbar.panShort')}</span>
+        </button>
+      </div>
 
       {/* 项目资产库入口 */}
       <button

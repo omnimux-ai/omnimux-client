@@ -96,7 +96,7 @@ function toElement(target: EventTarget | null | undefined): Element | null {
 export function isCanvasBlankSurface(target: EventTarget | null | undefined): boolean {
   const el = toElement(target);
   if (!el) return false;
-  if (el.classList?.contains('react-flow__pane')) return true;
+  if (el.classList?.contains('react-flow__pane') || el.classList?.contains('wf-canvas-editor')) return true;
   if (typeof el.closest === 'function' && el.closest('.react-flow__background')) return true;
   if (
     el.classList?.contains('wf-group-node')

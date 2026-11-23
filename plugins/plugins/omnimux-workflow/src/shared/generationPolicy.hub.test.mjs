@@ -279,7 +279,12 @@ test('operation recommendations cannot impersonate a model preference or overrid
     explicit.data.inputBindingVersion = 1;
     const result = planCanvasInputMutation({ nodes: [], edges: [] }, { addNodes: [explicit] }, { catalog });
     assert.equal(result.status, 'allowed');
-    assert.deepEqual(result.nodes[0].data.params, { model: row.selected, operation: row.operation }, row.kind);
+    const expectedExplicit = row.kind === 'image'
+      ? { model: row.selected, operation: row.operation, routing: { strategy: 'auto', allowedGroups: ['standard'] }, resolution: '1K', n: 1 }
+      : row.kind === 'video'
+        ? { model: row.selected, operation: row.operation, routing: { strategy: 'auto', allowedGroups: ['standard'] } }
+        : { model: row.selected, operation: row.operation };
+    assert.deepEqual(result.nodes[0].data.params, expectedExplicit, row.kind);
     assert.deepEqual(catalog, before);
   }
 });
@@ -363,7 +368,12 @@ test('catalog hydration preserves saved models, operations, results and original
       const result = reconcileCanvasForCatalog({ nodes, edges, catalog, preferredModels: preferences, previousFingerprint: 'previous-catalog' });
       const after = result.nodes.find(candidate => candidate.id === 'saved');
       assert.equal(result.skipped, false);
-      assert.deepEqual(after.data.params, saved.data.params, `${row.kind}: ${modelId} configuration`);
+      const expectedSaved = modelId === 'gpt-image-2.5'
+        ? { ...saved.data.params, routing: { strategy: 'auto', allowedGroups: ['standard'] }, resolution: '1K', n: 1 }
+        : modelId === 'seedance-2-5'
+          ? { ...saved.data.params, routing: { strategy: 'auto', allowedGroups: ['seedance-2-5-720p'] }, resolution: '720p' }
+          : saved.data.params;
+      assert.deepEqual(after.data.params, expectedSaved, `${row.kind}: ${modelId} configuration`);
       assert.deepEqual(after.data.results, saved.data.results);
       assert.equal(after.data.content, saved.data.content);
       assert.deepEqual(after.data.customData, saved.data.customData);

@@ -135,7 +135,7 @@ function attachVideoSourceToNodes(items: any[], videoPath: string, workspaceId: 
 
 // ==================== 主组件 ====================
 
-const MaterialNode: React.FC<NodeProps> = ({ id, data, selected }) => {
+const MaterialNode: React.FC<NodeProps> = ({ id, data, selected, dragging }) => {
   const nodeData = data as unknown as MaterialNodeData;
   const {
     materialType,
@@ -1518,7 +1518,7 @@ const MaterialNode: React.FC<NodeProps> = ({ id, data, selected }) => {
 
   return (
     <div
-      className={`wf-material-node ${materialType === 'audio' ? 'wf-material-node--audio' : ''} ${selected ? 'wf-material-node--selected' : ''}`}
+      className={`wf-material-node ${materialType === 'audio' ? 'wf-material-node--audio' : ''} ${selected ? 'wf-material-node--selected' : ''} ${dragging ? 'wf-material-node--dragging' : ''}`}
       style={{ width: nodeWidth }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}

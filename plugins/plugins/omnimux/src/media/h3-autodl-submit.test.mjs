@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { resetCurrentSnapshotResolver, resolveReadOnlySnapshot, setCurrentSnapshotResolver } from '../catalog/cloud/current.js'
 import { executeOmnimuxVideo } from './video.js'
 import { mapOmnimuxInput } from './vendors/omnimux.js'
 
@@ -77,24 +78,48 @@ const expectedLipSync = {
   audio_urls: [AUDIO],
 }
 
-for (const group of [null, 'default', 'minimax-h3-video-fast', 'minimax-h3-video-pro']) {
-  test('H3 submits lip-sync with both media slots on ' + (group ?? 'automatic routing'), async (t) => {
-    const { execute, submissions } = fixture(t)
-    const result = await execute(group ? {
-      allowedGroups: [group],
-      prompt: 'stale node text must not affect the gateway workflow',
-      references: LEGACY_SLOTS,
-    } : {})
-    assert.equal(result.mode, 'submitted')
-    assert.match(result.taskId, /^task-h3-/)
-    assert.deepEqual(submissions(), [{
-      address: BASE + '/tasks/autodl',
-      method: 'POST',
-      group,
-      body: expectedLipSync,
-    }])
-  })
+async function assertLipSyncSubmission(t, group, explicitGroup = group) {
+  const { execute, submissions } = fixture(t)
+  const result = await execute(explicitGroup ? {
+    allowedGroups: [explicitGroup],
+    prompt: 'stale node text must not affect the gateway workflow',
+    references: LEGACY_SLOTS,
+  } : {})
+  assert.equal(result.mode, 'submitted')
+  assert.match(result.taskId, /^task-h3-/)
+  assert.deepEqual(submissions(), [{
+    address: BASE + '/tasks/autodl',
+    method: 'POST',
+    group,
+    body: expectedLipSync,
+  }])
 }
+
+test('H3 submits lip-sync with both media slots on automatic routing', async (t) => {
+  const snapshot = structuredClone(resolveReadOnlySnapshot().snapshot)
+  const model = snapshot.models.find(({ id }) => id === MODEL)
+  delete model.defaultGroup
+  delete model.groupOrder
+  setCurrentSnapshotResolver(() => ({ snapshot }))
+  t.after(resetCurrentSnapshotResolver)
+  await assertLipSyncSubmission(t, null)
+})
+
+test('H3 submits lip-sync with both media slots on the bundled default', async (t) => {
+  await assertLipSyncSubmission(t, 'default', null)
+})
+
+test('H3 submits lip-sync with both media slots on default', async (t) => {
+  await assertLipSyncSubmission(t, 'default')
+})
+
+test('H3 submits lip-sync with both media slots on minimax-h3-video-fast', async (t) => {
+  await assertLipSyncSubmission(t, 'minimax-h3-video-fast')
+})
+
+test('H3 submits lip-sync with both media slots on minimax-h3-video-pro', async (t) => {
+  await assertLipSyncSubmission(t, 'minimax-h3-video-pro')
+})
 
 test('H3 can infer lip-sync from the original saved slot IDs', async (t) => {
   const { execute, submissions } = fixture(t)

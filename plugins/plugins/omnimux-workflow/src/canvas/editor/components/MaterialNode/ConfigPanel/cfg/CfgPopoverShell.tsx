@@ -12,6 +12,7 @@ import type { CSSProperties, ReactElement, ReactNode, RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import type { PopoverPosition } from './types.ts';
 import { calculatePopoverPosition } from './viewportPositioner.ts';
+import { CONFIG_PANEL_POSITION_EVENT } from '../configPanelPlacement.ts';
 import { useCanvasDismissLayer } from '../../../../utils/canvasDismissLayer.ts';
 
 /** CfgPopoverShell 属性 */
@@ -64,10 +65,12 @@ export function CfgPopoverShell({
 
     window.addEventListener('resize', handleResize);
     window.addEventListener('scroll', handleScroll, { capture: true, passive: true });
+    window.addEventListener(CONFIG_PANEL_POSITION_EVENT, handleResize);
 
     return () => {
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('scroll', handleScroll, { capture: true } as EventListenerOptions);
+      window.removeEventListener(CONFIG_PANEL_POSITION_EVENT, handleResize);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, triggerRef]);
