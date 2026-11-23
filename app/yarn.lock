@@ -18617,6 +18617,7 @@ __metadata:
     omnimux-products: "link:../../plugins/plugins/omnimux-products"
     omnimux-publish: "link:../../plugins/plugins/omnimux-publish"
     omnimux-video: "link:../../plugins/plugins/omnimux-video"
+    omnimux-viewer: "link:../../plugins/plugins/omnimux-viewer"
     omnimux-workflow: "link:../../plugins/plugins/omnimux-workflow"
     papaparse: "npm:^5.5.0"
     playwright: "npm:1.63.0"
@@ -22798,6 +22799,12 @@ __metadata:
 "omnimux-video@link:../../plugins/plugins/omnimux-video::locator=dsh-desktop-next%40workspace%3Adsh-desktop-next":
   version: 0.0.0-use.local
   resolution: "omnimux-video@link:../../plugins/plugins/omnimux-video::locator=dsh-desktop-next%40workspace%3Adsh-desktop-next"
+  languageName: node
+  linkType: soft
+
+"omnimux-viewer@link:../../plugins/plugins/omnimux-viewer::locator=dsh-desktop-next%40workspace%3Adsh-desktop-next":
+  version: 0.0.0-use.local
+  resolution: "omnimux-viewer@link:../../plugins/plugins/omnimux-viewer::locator=dsh-desktop-next%40workspace%3Adsh-desktop-next"
   languageName: node
   linkType: soft
 

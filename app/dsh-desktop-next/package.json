@@ -256,6 +256,7 @@
     "omnimux-products": "link:../../plugins/plugins/omnimux-products",
     "omnimux-publish": "link:../../plugins/plugins/omnimux-publish",
     "omnimux-video": "link:../../plugins/plugins/omnimux-video",
+    "omnimux-viewer": "link:../../plugins/plugins/omnimux-viewer",
     "omnimux-workflow": "link:../../plugins/plugins/omnimux-workflow",
     "pnpm": "11.28.5",
     "react": "18.3.1",

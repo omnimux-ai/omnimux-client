@@ -1,0 +1,357 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { PRESET_REFERENCE_ASSETS, REFERENCE_TABS } from './reference-constants.js';
+import { readDuration } from './MediaSlotGroup.jsx';
+import { assetForSlot, mapArtifactAsset, mapCloudAsset, mapLocalAsset, mapProductAsset } from './picker-asset-mime.js';
+import {
+  ensureReferenceTab,
+  peekReferenceTab,
+  subscribeReferenceAssets,
+} from './reference-asset-cache.js';
+
+
+/** 首次加载骨架卡数量：铺满两行可视格 */
+const SKELETON_COUNT = 8;
+
+/**
+ * 素材缩略图：加载完成前保留骨架底色，onLoad 后约 200ms 淡入。
+ */
+function ReferenceAssetThumb({ url, square }) {
+  const [loadedUrl, setLoadedUrl] = useState('');
+  const loaded = loadedUrl === url;
+  return (
+    <div className={`omx-ref-picker-asset-thumb ${square ? 'is-ratio-square' : 'is-ratio-natural'}`}>
+      <img
+        src={url}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        ref={(img) => {
+          if (img && img.complete && !loaded) setLoadedUrl(url);
+        }}
+        className={loaded ? 'is-loaded' : ''}
+        onLoad={() => setLoadedUrl(url)}
+      />
+    </div>
+  );
+}
+
+/**
+ * 图 3「选择参考面板」
+ * 位于输入框正上方 8px 弹出，包含 4 个 Tab（上传资产、AI 生成、数字人、商品）与「只看我的」，
+ * 首格固定「从本地上传」，点击卡片填入目标卡槽并关闭面板。
+ */
+export function ReferencePickerPopover({
+  open = false,
+  onClose,
+  onSelectAsset,
+  targetSlot,
+  onError,
+}) {
+  const [activeTab, setActiveTab] = useState('local');
+  const [onlyMine, setOnlyMine] = useState(false);
+  const [, setCacheTick] = useState(0);
+  const fileInputRef = useRef(null);
+  const panelRef = useRef(null);
+  const gridRef = useRef(null);
+  const pendingBlobUrlRef = useRef(null);
+  const selectingRef = useRef(false);
+
+  useEffect(() => {
+    return () => {
+      if (pendingBlobUrlRef.current) {
+        URL.revokeObjectURL(pendingBlobUrlRef.current);
+        pendingBlobUrlRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const handleKeyDown = (e) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      e.preventDefault();
+      e.stopPropagation();
+      onClose?.();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [open, onClose]);
+
+  // 缓存数据变化时触发重渲染（数据未变的静默刷新不会通知）
+  useEffect(() => subscribeReferenceAssets(() => {
+    setCacheTick((t) => t + 1);
+  }), []);
+
+  // 切换 Tab 时网格滚动位置回到顶部；同一 Tab 的静默刷新不重置滚动
+  useEffect(() => {
+    if (gridRef.current) gridRef.current.scrollTop = 0;
+  }, [activeTab]);
+
+  // 动态加载对应分类的资产库真实数据
+  const fetchTabAssets = async (tab) => {
+    try {
+      if (tab === 'local') {
+        const res = await fetch('/omnimux/assets/state');
+        if (res.ok) {
+          const data = await res.json();
+          const items = (data.assets || []).map(mapLocalAsset).filter((item) => item.url);
+          return items;
+        }
+        return null;
+      }
+      if (tab === 'cloud') {
+        const res = await fetch('/omnimux/assets/cloud/search?q=&limit=24');
+        if (res.ok) {
+          const data = await res.json();
+          const items = (data.items || []).map(mapCloudAsset).filter((item) => item.url);
+          return items;
+        }
+        return null;
+      }
+      if (tab === 'product') {
+        const res = await fetch('/omnimux/products/state');
+        if (res.ok) {
+          const data = await res.json();
+          const items = (data.products || []).map(mapProductAsset).filter((item) => item.url);
+          return items;
+        }
+        return null;
+      }
+      if (tab === 'generations') {
+        const res = await fetch('/omnimux/assets/artifacts');
+        if (res.ok) {
+          const data = await res.json();
+          const items = (data.artifacts || []).map(mapArtifactAsset).filter((item) => item.url);
+          return items;
+        }
+        return null;
+      }
+      return null;
+    } catch (err) {
+      console.warn?.('[ReferencePickerPopover] loadData failed:', tab, err);
+      return null;
+    }
+  };
+
+  // 首次加载走 loading；已有缓存的 Tab 在后台静默刷新（stale-while-revalidate）
+  useEffect(() => {
+    if (!open) return undefined;
+    ensureReferenceTab(activeTab, fetchTabAssets);
+    return undefined;
+  }, [open, activeTab]);
+
+  if (!open) return null;
+
+  const tabSnapshot = peekReferenceTab(activeTab);
+  const hasItems = tabSnapshot.items !== null && tabSnapshot.items !== undefined;
+  const usePresetFallback = !hasItems && tabSnapshot.status === 'error';
+  const showSkeleton = !hasItems && !usePresetFallback;
+  const currentList = hasItems ? tabSnapshot.items : (usePresetFallback ? (PRESET_REFERENCE_ASSETS[activeTab] || PRESET_REFERENCE_ASSETS.upload || []) : []);
+  const displayList = onlyMine ? currentList.filter((item) => item.isMine ?? true) : currentList;
+  const isSquareRatio = activeTab === 'local' || activeTab === 'generations';
+
+  const handleLocalUpload = async (e) => {
+    if (selectingRef.current) return;
+    selectingRef.current = true;
+    let blobUrl = null;
+    let accepted = false;
+    try {
+      const files = e.target?.files;
+      if (files && files[0]) {
+        const file = files[0];
+        blobUrl = URL.createObjectURL(file);
+        pendingBlobUrlRef.current = blobUrl;
+        const isVideo = file.type.startsWith('video/');
+        const isAudio = file.type.startsWith('audio/');
+        let duration;
+        if (isVideo || isAudio) {
+          duration = await readDuration(file);
+        }
+
+        const localId = `local_${Date.now()}`;
+        const asset = {
+          id: localId,
+          name: file.name,
+          title: file.name,
+          url: blobUrl,
+          file,
+          type: isVideo ? 'video' : (isAudio ? 'audio' : 'image'),
+          duration: Number.isFinite(duration) ? duration : undefined,
+          isMine: true,
+        };
+        const result = onSelectAsset ? onSelectAsset(asset, targetSlot) : false;
+        accepted = result instanceof Promise ? await result : result;
+        if (accepted === true) {
+          // 本地上传 Object URL 所有权完全移交给卡槽状态机托管，本地清除引用
+          blobUrl = null;
+          pendingBlobUrlRef.current = null;
+          onClose?.();
+        } else {
+          // 明确拒绝或入槽失败时由本地释放
+          if (blobUrl) {
+            URL.revokeObjectURL(blobUrl);
+            blobUrl = null;
+          }
+          pendingBlobUrlRef.current = null;
+        }
+      }
+    } catch (err) {
+      if (blobUrl) {
+        URL.revokeObjectURL(blobUrl);
+        blobUrl = null;
+      }
+      pendingBlobUrlRef.current = null;
+      onError?.('本地素材上传失败，请重试或选择其他文件');
+      console.warn?.('[ReferencePickerPopover] handleLocalUpload failed:', err);
+    } finally {
+      selectingRef.current = false;
+      if (accepted !== true && blobUrl) {
+        URL.revokeObjectURL(blobUrl);
+        blobUrl = null;
+        pendingBlobUrlRef.current = null;
+      }
+      if (e?.target) {
+        e.target.value = '';
+      }
+    }
+  };
+
+  const handlePresetSelect = async (asset) => {
+    if (selectingRef.current) return;
+    selectingRef.current = true;
+    try {
+      const selected = assetForSlot(asset, targetSlot?.type);
+      const result = onSelectAsset ? onSelectAsset(selected, targetSlot) : false;
+      const accepted = result instanceof Promise ? await result : result;
+      if (accepted === true) {
+        onClose?.();
+      }
+    } catch (err) {
+      onError?.('素材入槽失败，请重试');
+      console.warn?.('[ReferencePickerPopover] preset asset selection failed:', err);
+    } finally {
+      selectingRef.current = false;
+    }
+  };
+
+  return (
+    <div className="omx-ref-picker-popover" ref={panelRef} role="dialog" aria-label="选择参考素材" tabIndex={-1}>
+      {/* 顶栏：Tab 选项卡 + 右侧「只看我的」与关闭按钮 */}
+      <div className="omx-ref-picker-header">
+        <div className="omx-ref-picker-tabs" role="tablist">
+          {REFERENCE_TABS.map((tab) => (
+            <button // exempt-ui01: 浮层内的分类 Tab
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              className={`omx-ref-picker-tab${activeTab === tab.id ? ' is-active' : ''}`}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="omx-ref-picker-actions">
+          <div className="omx-ref-picker-filter-mine">
+            <span
+              id="omx-ref-picker-filter-mine-label"
+              className="omx-ref-picker-filter-text"
+            >
+              只看我的
+            </span>
+            <button // exempt-ui01: 极简开关组件
+              type="button"
+              role="switch"
+              aria-checked={onlyMine}
+              aria-labelledby="omx-ref-picker-filter-mine-label"
+              className={`omx-ref-picker-switch${onlyMine ? ' is-checked' : ''}`}
+              onClick={() => setOnlyMine(!onlyMine)}
+            >
+              <span className="omx-ref-picker-switch-thumb" />
+            </button>
+          </div>
+
+          <button // exempt-ui01: 浮层关闭按钮
+            type="button"
+            className="omx-ref-picker-close-btn"
+            title="关闭面板 (Esc)"
+            aria-label="关闭"
+            onClick={onClose}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {/* 内容区：本地 Tab 左侧固定「从本地上传」，右侧网格独立纵向滚动（两行可视高度） */}
+      <div className="omx-ref-picker-body">
+        {/* 左侧固定：从本地上传（仅本地 Tab 呈现，脱离网格不随其滚动） */}
+        {activeTab === 'local' ? (
+          <button // exempt-ui01: 上传素材触发卡片
+            type="button"
+            className="omx-ref-picker-upload-card"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <div className="omx-ref-picker-upload-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" y1="3" x2="12" y2="15" />
+              </svg>
+            </div>
+            <span className="omx-ref-picker-upload-text">从本地上传</span>
+          </button>
+        ) : null}
+
+        <div className="omx-ref-picker-grid" ref={gridRef}>
+          {/* 首次加载且无缓存：骨架卡铺满两行可视格 */}
+          {showSkeleton
+            ? Array.from({ length: SKELETON_COUNT }, (_, i) => (
+              <div key={`skeleton-${i}`} className="omx-ref-picker-asset-card" aria-hidden="true">
+                <div className="omx-ref-picker-asset-thumb is-skeleton" />
+              </div>
+            ))
+            : displayList.map((asset) => (
+              <div
+                key={asset.id}
+                className="omx-ref-picker-asset-card"
+                role="button"
+                tabIndex={0}
+                aria-label={asset.title}
+                title={asset.title}
+                onClick={() => handlePresetSelect(asset)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handlePresetSelect(asset);
+                  }
+                }}
+              >
+                <ReferenceAssetThumb url={asset.thumbUrl || asset.url} square={isSquareRatio} />
+              </div>
+            ))}
+
+          {!showSkeleton && displayList.length === 0 && activeTab !== 'local' && (
+            <div className="omx-ref-picker-empty-tip">暂无可用素材</div>
+          )}
+        </div>
+      </div>
+
+      {/* 隐藏的本地文件上传 input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        style={{ display: 'none' }}
+        accept={targetSlot?.type === 'video' ? 'video/*' : targetSlot?.type === 'audio' ? 'audio/*' : 'image/*'}
+        onChange={handleLocalUpload}
+      />
+    </div>
+  );
+}
+
+export default ReferencePickerPopover;
