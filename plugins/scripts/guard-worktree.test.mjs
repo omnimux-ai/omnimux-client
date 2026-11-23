@@ -244,7 +244,7 @@ describe('registered worktree boundaries', () => {
     assert.equal(decision(join(externalRepoRoot, 'scripts/new.js')), 'deny')
   })
   it('rejects misleading names and copied gitdir pointers', () => {
-    const fake = join(mainRepoRoot, 'omnimux-dsh-wt-fake')
+    const fake = join(mainRepoRoot, 'omnimux-client-wt-fake')
     mkdirSync(fake)
     assert.equal(isWorktreePath(join(fake, 'scripts/file.js')), false)
     assert.equal(decision(join(fake, 'scripts/file.js')), 'deny')
@@ -268,7 +268,7 @@ describe('registered worktree boundaries', () => {
     const detached = join(externalRepoRoot, '.worktrees', 'detached task')
     gitCommand(externalRepoRoot, 'worktree', 'add', '--detach', detached)
     assert.equal(decision(join(detached, 'scripts/new.js')), 'allow')
-    const legacy = join(fixture, 'omnimux-dsh-wt-real')
+    const legacy = join(fixture, 'omnimux-client-wt-real')
     gitCommand(externalRepoRoot, 'worktree', 'add', '-b', 'legacy', legacy)
     assert.equal(decision(join(legacy, 'package.json')), 'allow')
     symlinkSync(worktreeRoot, join(fixture, 'linked-alias'), 'dir')
