@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
 import { Readable } from 'node:stream'
 import { test } from 'node:test'
+import { readBundledSnapshot } from '../catalog/cloud/bundled.js'
+import { resetCurrentSnapshotResolver, setCurrentSnapshotResolver } from '../catalog/cloud/current.js'
 import { getModelChannelGroups, resolveChannelPlan } from '../catalog/serving/channel-groups.js'
 import { executeOmnimuxMedia } from './execute.js'
 import { resolveExecutionPlan } from './execution-plan.js'
@@ -41,12 +43,10 @@ async function isolated(run) {
 }
 
 function videoInput(home, requestKey) {
-  // 2026-10-21 网关对账 #3516 评审修正：seedance-2-5 两档各自锁定固定分辨率，
-  // 默认档是 720p 标准版（480p 经济版非默认）；H3 分组退场后用它保留
-  // 「候选池 + 每档约束」的通用断言。
+  // Most cases select a known 720p line explicitly to exercise its fixed resolution.
   return {
     model: 'seedance-2-5', operation: 'text_to_video', prompt: 'synthetic running horse',
-    allowedGroups: ['720p'], duration: 5, resolution: '720p',
+    allowedGroups: ['seedance-2-5-720p'], duration: 5, resolution: '720p',
     dest: join(home, requestKey + '.mp4'), requestKey, wait: false,
     env: { OMNIMUX_API_KEY: 'sk-synthetic-candidate-fixture' },
     fetcher: async () => { throw new Error('Unexpected HTTP in the runtime fixture') },
@@ -129,19 +129,22 @@ test('3312: the delisted H3 series exposes no channel groups while the listed mu
   assert.deepEqual(resolveChannelPlan('minimax-h3@standard', { allowedGroups: ['standard', 'task'] }), {
     candidates: [], unresolvedGroups: ['standard', 'task'],
   })
-  // P1b：线路取自快照 enable_groups（本地覆盖表命名 480p/720p，网关另发布两条专线）。
-  // 两档各锁定自己的固定分辨率。
-  const groups = getModelChannelGroups('seedance-2-5')
-  assert.deepEqual(groups.map((group) => group.id), ['480p', '720p', 'seedance-2-5-480p', 'seedance-2-5-720p'])
-  assert.equal(groups.some((group) => group.default === true), false)
-  assert.deepEqual(groups.map((group) => group.constraints?.parameters?.resolution), [
-    { fixed: '480p' }, { fixed: '720p' }, undefined, undefined,
-  ])
-  assert.deepEqual(resolveChannelPlan('seedance-2-5@720p', { allowedGroups: ['480p', '720p'] }).candidates,
-    ['seedance-2-5@desktop-720p', 'seedance-2-5@desktop-480p'])
+  const snapshot = readBundledSnapshot().snapshot
+  const model = snapshot.models.find((row) => row.id === 'seedance-2-5')
+  const groups = getModelChannelGroups('seedance-2-5', snapshot)
+  assert.deepEqual(groups.map((group) => group.id), model.groupOrder)
+  assert.deepEqual(groups.filter((group) => group.default === true).map((group) => group.id), [model.defaultGroup])
+  assert.deepEqual(Object.fromEntries(groups.map((group) => [group.id, group.constraints?.parameters?.resolution])), {
+    'seedance-2-5-480p': { fixed: '480p' },
+    'seedance-2-5-480p-pro': { fixed: '480p' },
+    'seedance-2-5-720p': { fixed: '720p' },
+    'seedance-2-5-720p-pro': { fixed: '720p' },
+  })
+  assert.deepEqual(resolveChannelPlan('seedance-2-5@seedance-2-5-720p', {
+    allowedGroups: ['seedance-2-5-480p', 'seedance-2-5-720p'],
+  }).candidates, ['seedance-2-5@seedance-2-5-720p', 'seedance-2-5@seedance-2-5-480p'])
   const calls = []
   const input = videoInput(home, 'legal-first-head')
-  input.allowedGroups = ['720p']
   input.runtime = { async execute(request) {
     calls.push(request)
     return { taskId: 'synthetic-first-head-task-3312', outputs: [] }
@@ -151,14 +154,14 @@ test('3312: the delisted H3 series exposes no channel groups while the listed mu
   assert.equal(calls.length, 1)
   assertVideoCall(calls[0], 'seedance-2-5', 5)
   assert.equal(getMediaTaskRecord(result.taskRef).wireModel, 'seedance-2-5')
-  assert.equal(getMediaTaskRecord(result.taskRef).group, 'desktop-720p')
+  assert.equal(getMediaTaskRecord(result.taskRef).group, 'seedance-2-5-720p')
 }))
 
 test('3312: a 720p request refuses the allowed 480p tail fixed at 480p before a second runtime call rather than rewriting the user resolution', async () => isolated(async (home) => {
   const calls = []
   const input = videoInput(home, 'incompatible-resolution-tail')
-  input.group = '720p'
-  input.allowedGroups = ['480p', '720p']
+  input.group = 'seedance-2-5-720p'
+  input.allowedGroups = ['seedance-2-5-480p', 'seedance-2-5-720p']
   input.strategy = 'cost_first'
   input.runtime = capturedRuntime(calls)
   let rejection
@@ -180,8 +183,8 @@ test('3312: an omitted resolution cannot carry the head default of 720p into a f
   const calls = []
   const input = videoInput(home, 'omitted-resolution-tail')
   delete input.resolution
-  input.group = '720p'
-  input.allowedGroups = ['480p', '720p']
+  input.group = 'seedance-2-5-720p'
+  input.allowedGroups = ['seedance-2-5-480p', 'seedance-2-5-720p']
   input.strategy = 'cost_first'
   input.runtime = capturedRuntime(calls)
   await assert.rejects(() => executeOmnimuxMedia('video', input), { code: 'omnimux-invalid-request' })
@@ -193,7 +196,8 @@ test('3312: an omitted resolution cannot carry the head default of 720p into a f
 test('3312: the default 720p tier keeps a legal submission with the original logical intent and accepted task record', async () => isolated(async (home) => {
   const calls = []
   const input = videoInput(home, 'legal-default-tier')
-  input.duration = 5
+  delete input.allowedGroups
+  delete input.resolution
   input.runtime = { async execute(request) {
     calls.push(request)
     return { taskId: 'synthetic-default-task-3312', outputs: [] }
@@ -207,7 +211,7 @@ test('3312: the default 720p tier keeps a legal submission with the original log
   const record = getMediaTaskRecord(result.taskRef)
   assert.equal(record.model, 'seedance-2-5')
   assert.equal(record.wireModel, 'seedance-2-5')
-  assert.equal(record.group, 'desktop-720p')
+  assert.equal(record.group, 'seedance-2-5-720p')
   assert.equal(record.status, 'submitted')
   assert.equal(record.upstreamTaskId, result.taskId)
 }))
@@ -215,8 +219,8 @@ test('3312: the default 720p tier keeps a legal submission with the original log
 test('3312: the explicitly selected 480p economy tier stays usable with its own fixed resolution', async () => isolated(async (home) => {
   const calls = []
   const input = videoInput(home, 'legal-economy-tier')
-  input.group = '480p'
-  input.allowedGroups = ['480p']
+  input.group = 'seedance-2-5-480p'
+  input.allowedGroups = ['seedance-2-5-480p']
   input.resolution = '480p'
   input.runtime = { async execute(request) {
     calls.push(request)
@@ -230,37 +234,47 @@ test('3312: the explicitly selected 480p economy tier stays usable with its own 
   assert.equal(calls[0].input.resolution, '480p')
   const record = getMediaTaskRecord(result.taskRef)
   assert.equal(record.wireModel, 'seedance-2-5')
-  assert.equal(record.group, 'desktop-480p')
+  assert.equal(record.group, 'seedance-2-5-480p')
 }))
 
 test('3312: each explicit tier sends the exact bare wire model and its own group header with unchanged resolution through synthetic HTTP', async () => isolated(async (home) => {
-  const posts = []
-  const input = videoInput(home, 'legal-wire')
-  input.group = '480p'
-  input.allowedGroups = ['480p']
-  input.resolution = '480p'
-  input.fetcher = async (url, init) => {
-    assert.equal(String(url), 'https://api.omnimux.ai/v1/video/generations')
-    assert.equal(init.method, 'POST')
-    posts.push({ body: JSON.parse(init.body), group: new Headers(init.headers).get('x-omnimux-group') })
-    return new Response(JSON.stringify({ task_id: 'synthetic-wire-task-3312' }),
-      { headers: { 'content-type': 'application/json' } })
+  for (const [group, resolution] of [
+    ['seedance-2-5-480p', '480p'],
+    ['seedance-2-5-480p-pro', '480p'],
+    ['seedance-2-5-720p', '720p'],
+    ['seedance-2-5-720p-pro', '720p'],
+  ]) {
+    const posts = []
+    const input = videoInput(home, `legal-wire-${group}`)
+    input.group = group
+    input.allowedGroups = [group]
+    input.resolution = resolution
+    const baseUrl = 'https://media.example.test/v1'
+    input.env = { ...input.env, OMNIMUX_BASE_URL: baseUrl }
+    input.fetcher = async (url, init) => {
+      assert.equal(String(url), `${baseUrl}/video/generations`)
+      assert.equal(init.method, 'POST')
+      posts.push({ body: JSON.parse(init.body), group: new Headers(init.headers).get('x-omnimux-group') })
+      return new Response(JSON.stringify({ task_id: `synthetic-wire-task-${group}` }),
+        { headers: { 'content-type': 'application/json' } })
+    }
+    const result = await executeOmnimuxMedia('video', input)
+    assert.equal(result.mode, 'submitted')
+    assert.equal(posts.length, 1)
+    assert.equal(posts[0].body.model, 'seedance-2-5')
+    assert.equal(posts[0].group, group)
+    assert.equal(posts[0].body.duration, 5)
+    assert.equal(posts[0].body.resolution, resolution)
+    assert.equal(getMediaTaskRecord(result.taskRef).wireModel, 'seedance-2-5')
+    assert.equal(getMediaTaskRecord(result.taskRef).group, group)
   }
-  const result = await executeOmnimuxMedia('video', input)
-  assert.equal(result.mode, 'submitted')
-  assert.equal(posts.length, 1)
-  // 模型 ID 保持裸产品 ID；分组头与分辨率都来自所选档位。
-  assert.equal(posts[0].body.model, 'seedance-2-5')
-  assert.equal(posts[0].group, 'desktop-480p')
-  assert.equal(posts[0].body.duration, 5)
-  assert.equal(posts[0].body.resolution, '480p')
-  assert.equal(getMediaTaskRecord(result.taskRef).wireModel, 'seedance-2-5')
-  assert.equal(getMediaTaskRecord(result.taskRef).group, 'desktop-480p')
 }))
 
 test('3312: an accepted task followed by channel failure never submits a second candidate and keeps its original handle', async () => isolated(async (home) => {
   const calls = []
   const input = videoInput(home, 'accepted-task-no-resubmit')
+  input.group = 'seedance-2-5-720p'
+  input.allowedGroups = ['seedance-2-5-720p', 'seedance-2-5-720p-pro']
   input.runtime = { async execute(request) {
     calls.push(request)
     request.metadata.onSubmitted('synthetic-already-accepted-3312')
@@ -272,6 +286,7 @@ test('3312: an accepted task followed by channel failure never submits a second 
   assert.equal(record.status, 'submitted')
   assert.equal(record.upstreamTaskId, 'synthetic-already-accepted-3312')
   assert.equal(record.wireModel, 'seedance-2-5')
+  assert.equal(record.group, 'seedance-2-5-720p')
   assert.equal(record.collectionErrorCode, 'CHANNEL_UNAVAILABLE')
 }))
 

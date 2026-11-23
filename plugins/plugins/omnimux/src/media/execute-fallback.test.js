@@ -45,14 +45,16 @@ function customCredentials() {
 
 // gpt-image-2.5 has no documented upstream alias; video retains the Seedance alias contract.
 test('gpt-image-2.5 declares no upstream-recognised alias, so the real protocol sends one request', async (t) => {
-  const bodies = [], signal = new AbortController().signal
+  const bodies = [], groups = [], signal = new AbortController().signal
   const input = inputFor(t, { signal, aspectRatio: '16:9', resolution: '1K', fetcher: async (url, init) => {
     assert.match(String(url), /images\/generations$/); assert.equal(init.method, 'POST'); bodies.push(JSON.parse(init.body))
+    groups.push(new Headers(init.headers).get('X-Omnimux-Group'))
     return json({ data: [{ b64_json: 'cG5n' }] })
   } })
   const result = await executeOmnimuxMedia('image', input)
   assert.equal(result.mode, 'live'); assert.equal(input.model, productId)
   assert.deepEqual(bodies, [{ prompt: 'a lamp', size: '16:9', resolution: '1K', n: 1, model: productId }])
+  assert.deepEqual(groups, ['default'])
   assert.deepEqual(gatewayCandidates(productId), [productId]); assert.equal(readFileSync(input.dest, 'utf8'), 'png')
 })
 test('structured code-only HTTP failures survive runtime-kit message extraction', async (t) => {
@@ -62,11 +64,10 @@ test('structured code-only HTTP failures survive runtime-kit message extraction'
   await assert.rejects(() => executeOmnimuxMedia('image', input), assertChannel); assert.deepEqual(models, [productId])
 })
 test('video failover refuses a resolution-incompatible tier instead of silently switching', async (t) => {
-  // #3516 评审修正：seedance-2-5 每档锁定自己的固定分辨率（480p 经济版 / 720p 标准版默认）。
-  // 用户选择 720p 时，允许池里的 480p 尾档必须在 HTTP 之前 fail-closed，绝不静默改写分辨率。
+  // 用户选择 720p 时，允许池里的 480p 尾档必须在第二次 HTTP 之前被拒绝。
   const bodies = [], groups = []
   const input = inputFor(t, { model: 'seedance-2-5', operation: 'text_to_video', wait: false, resolution: '720p',
-    group: '720p', allowedGroups: ['480p', '720p'], strategy: 'cost_first',
+    group: 'seedance-2-5-720p', allowedGroups: ['seedance-2-5-480p', 'seedance-2-5-720p'], strategy: 'cost_first',
     fetcher: async (url, init) => {
       assert.match(String(url), /video\/generations$/); bodies.push(JSON.parse(init.body))
       groups.push(new Headers(init.headers).get('X-Omnimux-Group'))
@@ -79,7 +80,7 @@ test('video failover refuses a resolution-incompatible tier instead of silently 
   })
   // 头档 720p 只发一次请求；480p 尾档在第二次 HTTP 之前被固定分辨率约束拒绝。
   assert.deepEqual(bodies.map((body) => body.model), ['seedance-2-5'])
-  assert.deepEqual(groups, ['desktop-720p'])
+  assert.deepEqual(groups, ['seedance-2-5-720p'])
   assert.equal(bodies[0].resolution, '720p')
   assert.equal(input.model, 'seedance-2-5')
   assert.equal(input.resolution, '720p')
@@ -90,7 +91,7 @@ test('successful primary sends one request only', async (t) => {
   assert.equal((await executeOmnimuxMedia('image', input)).mode, 'live'); assert.equal(calls, 1)
 })
 test('the single configured video tier surfaces channel unavailability without alias fallback', async (t) => {
-  const models = [], input = inputFor(t, { model: 'seedance-2-5', operation: 'text_to_video', group: '720p', wait: false,
+  const models = [], input = inputFor(t, { model: 'seedance-2-5', operation: 'text_to_video', group: 'seedance-2-5-720p-pro', wait: false,
     runtime: { execute: async (req) => { models.push(req.input.model); throw channelError() } } })
   await assert.rejects(() => executeOmnimuxMedia('video', input), assertChannel)
   assert.deepEqual(models, ['seedance-2-5']); assert.equal(existsSync(input.dest), false)

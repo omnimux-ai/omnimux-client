@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import { readBundledSnapshot } from '../catalog/cloud/bundled.js'
 import { normalizePricingPayload } from '../catalog/cloud/snapshot.js'
 import { OmnimuxError } from './errors.js'
 import { gatewayCandidates, parseMediaConfig, resolveMediaAuth, resolveMediaRoute, toMediaWireModelId } from './route.js'
@@ -8,9 +9,9 @@ import { resetTestNetworkAttempts, testNetworkAttempts } from '../../scripts/tes
 
 const seedanceSnapshot = normalizePricingPayload({ data: [{
   model_name: 'seedance-2-5',
-  enable_groups: ['desktop-480p', 'desktop-720p'],
-  group_order: ['desktop-480p', 'desktop-720p'],
-  default_group: 'desktop-720p',
+  enable_groups: ['seedance-2-5-480p', 'seedance-2-5-720p', 'seedance-2-5-720p-pro'],
+  group_order: ['seedance-2-5-480p', 'seedance-2-5-720p', 'seedance-2-5-720p-pro'],
+  default_group: 'seedance-2-5-720p-pro',
 }] }).snapshot
 
 describe('media route', () => {
@@ -21,28 +22,39 @@ describe('media route', () => {
     assert.equal(route.protocol, 'openai-media')
     assert.equal(route.baseUrl, 'https://api.omnimux.ai/v1')
     assert.equal(route.modelId, 'seedance-2-5')
-    assert.equal(route.group, undefined)
-    assert.deepEqual(route.candidates, gatewayCandidates(route.modelId))
+    const bundled = readBundledSnapshot().snapshot
+    const published = bundled.models.find((model) => model.id === route.modelId).defaultGroup
+    assert.ok(published)
+    assert.equal(route.group, published)
+    assert.deepEqual(route.candidates, [`${route.modelId}@${published}`])
     assert.equal(route.apiKey, '')
     assert.equal(route.authMode, 'auto')
+
+    const legacy = normalizePricingPayload({ data: [{
+      model_name: 'seedance-2-5', enable_groups: ['seedance-2-5-480p', 'seedance-2-5-720p'],
+    }] }).snapshot
+    const bare = resolveMediaRoute('video', {}, media, {}, legacy)
+    assert.equal(bare.group, undefined)
+    assert.deepEqual(bare.candidates, gatewayCandidates(bare.modelId))
   })
 
   it('pins the seedance-2-5 line by the requested resolution before the default tier', () => {
-    // 2026-10-21 评审修正（#3516）：seedance-2-5 的 480p/720p 是两条带固定分辨率约束的线路，
-    // 无显式分组的请求必须按 resolution 参数选线，否则默认 720p 档会在传输前拒绝 480p。
+    // 兼容只传分辨率的请求。已有默认线路与分辨率匹配时继续使用该默认。
     const media = parseMediaConfig(undefined)
     const economy = resolveMediaRoute('video', { model: 'seedance-2-5', resolution: '480p' }, media, {}, seedanceSnapshot)
-    assert.equal(economy.group, 'desktop-480p')
-    assert.deepEqual(economy.candidates, ['seedance-2-5@desktop-480p'])
+    assert.equal(economy.group, 'seedance-2-5-480p')
+    assert.deepEqual(economy.candidates, ['seedance-2-5@seedance-2-5-480p'])
     for (const request of [{ model: 'seedance-2-5', resolution: '720p' }, { model: 'seedance-2-5' }]) {
       const route = resolveMediaRoute('video', request, media, {}, seedanceSnapshot)
-      assert.equal(route.group, 'desktop-720p')
-      assert.deepEqual(route.candidates, ['seedance-2-5@desktop-720p'])
+      assert.equal(route.group, 'seedance-2-5-720p-pro')
+      assert.deepEqual(route.candidates, ['seedance-2-5@seedance-2-5-720p-pro'])
     }
     // 显式分组始终优先于参数派生线路。
-    const explicit = resolveMediaRoute('video', { model: 'seedance-2-5', group: '720p', resolution: '480p' }, media, {}, seedanceSnapshot)
-    assert.equal(explicit.group, '720p')
-    assert.deepEqual(explicit.candidates, ['seedance-2-5@desktop-720p'])
+    const explicit = resolveMediaRoute('video', {
+      model: 'seedance-2-5', group: 'seedance-2-5-720p', resolution: '480p',
+    }, media, {}, seedanceSnapshot)
+    assert.equal(explicit.group, 'seedance-2-5-720p')
+    assert.deepEqual(explicit.candidates, ['seedance-2-5@seedance-2-5-720p'])
   })
 
   it('defaults image to gpt-image-2.5 on the same provider row', () => {
@@ -327,22 +339,26 @@ describe('resolveMediaAuth (dual-track auth)', () => {
 
   it('resolves channel candidates by cost_first and stability_first strategy', () => {
     const media = parseMediaConfig(undefined)
-    // P1b：线路与积分都取自网关快照，seedance-2-5 有 4 条线路，按积分升序
-    // 6.8 / 9.6 / 20.96 / 28.82。
+    // 四条在售线路按 5 秒积分估算排序。
     const costRoute = resolveMediaRoute('video', { model: 'seedance-2-5', strategy: 'cost_first' }, media)
     assert.equal(costRoute.strategy, 'cost_first')
     assert.deepEqual(costRoute.candidates, [
-      'seedance-2-5@desktop-480p',
-      'seedance-2-5@desktop-720p',
       'seedance-2-5@seedance-2-5-480p',
       'seedance-2-5@seedance-2-5-720p',
+      'seedance-2-5@seedance-2-5-480p-pro',
+      'seedance-2-5@seedance-2-5-720p-pro',
     ])
-    assert.equal(costRoute.candidates[0], 'seedance-2-5@desktop-480p')
+    assert.equal(costRoute.candidates[0], 'seedance-2-5@seedance-2-5-480p')
 
-    const stabRoute = resolveMediaRoute('video', { model: 'seedance-2-5', strategy: 'stability_first' }, media)
+    // 标准线有本地 SLA。把无 SLA 的夹具线路排在发布顺序首位，验证策略仍优先选标准线。
+    const stabilitySnapshot = normalizePricingPayload({ data: [{
+      model_name: 'seedance-2-0', enable_groups: ['fixture-no-sla', 'default'],
+      group_order: ['fixture-no-sla', 'default'], default_group: 'default',
+    }] }).snapshot
+    const stabRoute = resolveMediaRoute('video', { model: 'seedance-2-0', strategy: 'stability_first' }, media, {}, stabilitySnapshot)
     assert.equal(stabRoute.strategy, 'stability_first')
-    // 两档 24h 稳定性同为 100%，排序由平均等待时间决定（480p 60s < 720p 70s）。
-    assert.equal(stabRoute.candidates[0], 'seedance-2-5@desktop-480p')
+    assert.equal(stabRoute.candidates[0], 'seedance-2-0@default')
+    assert.deepEqual(stabRoute.candidates, ['seedance-2-0@default', 'seedance-2-0@fixture-no-sla'])
     // 只剩单条线路的 seedance-2-0 在任何策略下都只有 default 一条。
     assert.deepEqual(
       resolveMediaRoute('video', { model: 'seedance-2-0', strategy: 'cost_first' }, media).candidates,
@@ -448,7 +464,7 @@ describe('resolveMediaAuth (dual-track auth)', () => {
     const model = 'seedance-2-5'
     for (const defaultGroup of ['', 'fixture-retired']) {
       const snapshot = normalizePricingPayload({ data: [{
-        model_name: model, enable_groups: ['desktop-480p'], group_order: ['desktop-480p'], default_group: defaultGroup,
+        model_name: model, enable_groups: ['seedance-2-5-480p'], group_order: ['seedance-2-5-480p'], default_group: defaultGroup,
       }] }).snapshot
       for (const request of [{ model }, { model, resolution: '480p' }]) {
         const route = resolveMediaRoute('video', request, parseMediaConfig(), {}, snapshot)

@@ -128,13 +128,13 @@ test('Muse ordered reference slots keep the gateway minimum through catalog and 
   const operation = model.operations.find((entry) => entry.id === 'video_multi_ref')
   const slot = operation.inputs.find((input) => input.slot === 'reference_images')
   assert.equal(slot.min, 2)
-  assert.equal(slot.max, 2)
+  assert.equal(slot.max, 10)
   assert.equal(slot.role, 'reference')
   assert.equal(slot.firstItemRole, 'first_frame')
   assert.deepEqual(slot.allowedMimes, ['image/jpeg', 'image/png', 'image/webp'])
 
   const { index } = getRuntimeContractIndex()
-  const urls = ['https://example.test/z.png', 'https://example.test/a.png']
+  const urls = Array.from({ length: 11 }, (_, i) => `https://example.test/reference-${11 - i}.png`)
   const assets = urls.map((pathOrUrl) => ({ type: 'image', role: 'reference', pathOrUrl, mime: 'image/png' }))
   const submit = (assets) => guardSubmit(
     { model: model.id, operation: 'video_multi_ref', prompt: 'fixture', aspectRatio: '9:16', duration: 5, assets },
@@ -143,14 +143,16 @@ test('Muse ordered reference slots keep the gateway minimum through catalog and 
   for (const insufficientAssets of [[], assets.slice(0, 1)]) {
     assert.equal(submit(insufficientAssets).code, 'min_unsatisfied')
   }
-  assert.equal(submit([...assets, { ...assets[0], pathOrUrl: 'https://example.test/extra.png' }]).code, 'slot_capacity')
+  assert.equal(submit(assets).code, 'slot_capacity')
 
-  const result = submit(assets)
-  assert.equal(result.ok, true, result.message)
-  assert.deepEqual(result.vendorPayload, {
-    prompt: 'fixture', operation: 'video_multi_ref', image_urls: urls,
-    aspect_ratio: '9:16', duration: 5, output_format: 'mp4',
-  })
+  for (const count of [2, 10]) {
+    const result = submit(assets.slice(0, count))
+    assert.equal(result.ok, true, result.message)
+    assert.deepEqual(result.vendorPayload, {
+      prompt: 'fixture', operation: 'video_multi_ref', image_urls: urls.slice(0, count),
+      aspect_ratio: '9:16', duration: 5, output_format: 'mp4',
+    })
+  }
 })
 
 test('Muse accepts the expanded gateway reference range and preserves request order', () => {
