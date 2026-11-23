@@ -150,6 +150,42 @@ test('publish_direct account fetches creator-info and renders Direct Post option
   )
 })
 
+test('mixed draft_only + direct selection sends creator-info only for the direct account', async () => {
+  await withDom(
+    (url) => {
+      if (url.includes('/capabilities')) return jsonResponse({ platforms: { tiktok: { media_types: ['image', 'video'], max_images: 35 } } })
+      if (url.includes('/omnimux/accounts')) {
+        return jsonResponse({
+          accounts: [
+            { id: 'acc_draft', platform: 'tiktok', provider: 'tiktok_direct', display_name: 'Draft First', status: 'active', capabilities: { upload_draft: true, publish_direct: false } },
+            { id: 'acc_direct', platform: 'tiktok', provider: 'tiktok_direct', display_name: 'Direct Second', status: 'active', capabilities: { upload_draft: true, publish_direct: true } },
+          ],
+        })
+      }
+      if (url.includes('/records/detail?id=rec-mixed')) {
+        return jsonResponse({
+          // draft_only 账号刻意排在首位：creator-info 必须按发布模式挑 direct 账号，而不是取 account_ids[0]。
+          record: { id: 'rec-mixed', type: 'video', title: 'Mixed', description: 'Desc', topics: [], media_ids: [], account_ids: ['acc_draft', 'acc_direct'], settings: {} },
+          media: [],
+        })
+      }
+      if (url.includes('creator-info')) {
+        return jsonResponse({ data: { privacy_level_options: ['SELF_ONLY', 'PUBLIC_TO_EVERYONE'], comment_disabled: false } })
+      }
+      return jsonResponse({ ok: true })
+    },
+    () => React.createElement(Composer, { t, draftId: 'rec-mixed', onBack() {}, onSubmitted() {}, onSaved() {} }),
+    (container, calls) => {
+      const infoCalls = calls.filter((c) => c.url.includes('creator-info'))
+      assert.equal(infoCalls.length, 1)
+      assert.match(infoCalls[0].url, /id=acc_direct/)
+      assert.doesNotMatch(infoCalls[0].url, /acc_draft/)
+      assert.ok(container.querySelector('[data-testid="direct-post-options"]'))
+      assert.equal(container.querySelector('[data-testid="draft-mode-banner"]'), null)
+    },
+  )
+})
+
 test('legacy_unknown account defaults to collapsed without creator-info until expanded', async () => {
   await withDom(
     (url) => {

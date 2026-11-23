@@ -32,17 +32,24 @@ const jsonOut = {
 const ACCOUNTS_PROVIDER = 'tiktok_direct'
 
 /**
- * Whitelist-copy account publishing capabilities (`upload_draft`, `publish_direct`).
+ * Whitelist-copy account publishing capabilities, same four keys as the hub
+ * (`upload_draft`, `publish_direct`, `max_media_items`, `max_images`).
  * @param {unknown} raw
- * @returns {{ upload_draft?: boolean, publish_direct?: boolean } | undefined}
+ * @returns {{ upload_draft?: boolean, publish_direct?: boolean, max_media_items?: number, max_images?: number } | undefined}
  */
 function pickCapabilities(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
   const src = /** @type {Record<string, unknown>} */ (raw)
-  /** @type {{ upload_draft?: boolean, publish_direct?: boolean }} */
+  /** @type {{ upload_draft?: boolean, publish_direct?: boolean, max_media_items?: number, max_images?: number }} */
   const out = {}
   if (typeof src.upload_draft === 'boolean') out.upload_draft = src.upload_draft
   if (typeof src.publish_direct === 'boolean') out.publish_direct = src.publish_direct
+  if (typeof src.max_media_items === 'number' && Number.isInteger(src.max_media_items) && src.max_media_items > 0) {
+    out.max_media_items = src.max_media_items
+  }
+  if (typeof src.max_images === 'number' && Number.isInteger(src.max_images) && src.max_images > 0) {
+    out.max_images = src.max_images
+  }
   return Object.keys(out).length > 0 ? out : undefined
 }
 

@@ -1,5 +1,5 @@
 /**
- * status-display.js: 发布中心展示态投影与六态中文单真源。
+ * status-display.js: 发布中心展示态投影与七态（含 `sent_to_inbox`）中文单真源。
  * 状态算法唯一真源为 ../shared/record-status.js（与 Host 同一份纯函数，
  * 浏览器安全、不修改输入），客户端仅保留中文标签与 statusText 文案。
  * 依据 record-status-contract.md 与 spec-ui-client-v2.4.md 规范定义。

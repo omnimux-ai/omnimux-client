@@ -31,7 +31,7 @@ test('omnimux-accounts tools lifecycle', async (t) => {
               return {
                 accounts: [
                   { id: 'acc_1', provider: 'tiktok_direct', platform: 'tiktok', account_name: 'same-name', agent_usable: true, capabilities: { upload_draft: true, publish_direct: false } },
-                  { id: 'acc_2', provider: 'tiktok_direct', platform: 'tiktok', account_name: 'TikTok Official', agent_usable: true, capabilities: { upload_draft: true, publish_direct: true } },
+                  { id: 'acc_2', provider: 'tiktok_direct', platform: 'tiktok', account_name: 'TikTok Official', agent_usable: true, capabilities: { upload_draft: true, publish_direct: true, max_media_items: 12, max_images: 35, unpublished_note: 'drop me' } },
                   { id: 'acc_zernio', provider: 'zernio', platform: 'tiktok', account_name: 'same-name' },
                   { id: 'acc_missing', platform: 'tiktok' },
                   { id: 'acc_unknown', provider: 'unknown', platform: 'tiktok' },
@@ -57,7 +57,8 @@ test('omnimux-accounts tools lifecycle', async (t) => {
   assert.equal(res1.count, 2)
   assert.equal(res1.accounts[0].id, 'acc_1')
   assert.deepEqual(res1.accounts[0].capabilities, { upload_draft: true, publish_direct: false })
-  assert.deepEqual(res1.accounts[1].capabilities, { upload_draft: true, publish_direct: true })
+  // 四键白名单与 hub / omnimux-publish 同源：上限字段透传，未知键剔除
+  assert.deepEqual(res1.accounts[1].capabilities, { upload_draft: true, publish_direct: true, max_media_items: 12, max_images: 35 })
 
   // Owner disables invocation; group changes cannot re-enable it.
   createAccountMetaStore({ home: tmp }).patch('acc_1', { agent_usable: false })

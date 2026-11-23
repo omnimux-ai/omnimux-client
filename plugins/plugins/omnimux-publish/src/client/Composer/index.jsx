@@ -20,7 +20,7 @@ import {
   storeTikTokOptions,
   tiktokOptionProblems,
 } from '../../shared/tiktok-options.js'
-import { resolveSelectionPublishMode } from '../../shared/tiktok-capabilities.js'
+import { accountPublishMode, resolveSelectionPublishMode } from '../../shared/tiktok-capabilities.js'
 import { AccountPanel } from '../AccountPanel.jsx'
 
 /**
@@ -118,6 +118,14 @@ export function Composer({ t, draftId, onBack, onManageAccounts, onSubmitted, on
   const needsCreatorInfo = accountIds.length > 0
     && accountRows.length > 0
     && (publishMode === 'direct' || (publishMode === 'legacy_unknown' && legacyOptionsOpen))
+  // creator-info 只对真正走直发的账号发起：混选 draft_only + direct 时必须命中 direct 账号，
+  // 不能因为 draft_only 排在 accountIds[0] 就对草稿账号发请求；兼容态展开时按需回退首个账号。
+  const creatorInfoAccountId = !needsCreatorInfo
+    ? ''
+    : String((
+      accountRows.find((row) => accountPublishMode(row) === 'direct')
+      ?? (publishMode === 'legacy_unknown' ? accountRows[0] : null)
+    )?.id ?? '')
 
   const images = mediaList.filter((m) => m.kind === 'image')
   const videos = mediaList.filter((m) => m.kind === 'video')
@@ -127,7 +135,7 @@ export function Composer({ t, draftId, onBack, onManageAccounts, onSubmitted, on
   // 账号发布能力（隐私级别/禁用的互动项）——仅直发账号或兼容态手动展开时拉取；draft_only 零请求。
   useEffect(() => {
     if (!needsCreatorInfo) return
-    const accountId = accountIds.length > 0 ? String(accountIds[0]) : ''
+    const accountId = creatorInfoAccountId
     if (accountId === '') return
     if (accountCreator && String(accountCreator.account_id || '') === accountId) return
     let disposed = false
@@ -144,7 +152,7 @@ export function Composer({ t, draftId, onBack, onManageAccounts, onSubmitted, on
       setOptionsLoading(false)
     })
     return () => { disposed = true }
-  }, [accountIds, accountCreator, needsCreatorInfo])
+  }, [accountIds, accountCreator, creatorInfoAccountId, needsCreatorInfo])
 
   useEffect(() => {
     const allowed = privacyChoices(accountCreator)
