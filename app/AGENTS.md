@@ -62,7 +62,7 @@ This desktop product is one part of the OmniMux client: the whole client ships a
 
 ## Upstream sync contract
 
-This fork syncs with upstream weekly. Before any merge from `origin/master`, follow the four-tier merge decision ladder (auto-merge / template-resolve / user-confirm / reject) and record every decision in the sync decision log. A merge without a log entry is not done.
+This fork syncs with upstream weekly. Before any merge from `origin/main`, follow the four-tier merge decision ladder (auto-merge / template-resolve / user-confirm / reject) and record every decision in the sync decision log. A merge without a log entry is not done.
 
 ## Release & R2 Distribution SOP
 
