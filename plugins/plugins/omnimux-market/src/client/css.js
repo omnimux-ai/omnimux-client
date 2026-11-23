@@ -498,27 +498,40 @@ html[data-omnimux-composer-mode='marketing'] .sh-picker-wrap:has([data-omnimux-s
 .expert-market-heading{margin-bottom:24px}
 .expert-market-title{font-size:24px;font-weight:700;color:var(--dsw-alias-label-primary,#ffffff);margin:0 0 6px 0;letter-spacing:-0.01em}
 .expert-market-subtitle{font-size:14px;color:var(--dsw-alias-label-secondary,#9da1ab);margin:0}
+.expert-stage-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:18px}
 .expert-market-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:20px}
 @media (max-width:1200px){.expert-market-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (max-width:900px){.expert-market-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:580px){.expert-market-grid{grid-template-columns:1fr}}
-.expert-card{background:var(--dsw-alias-bg-layer-2,#1e2023);border:1px solid var(--dsw-alias-border-l2,rgba(255,255,255,.07));border-radius:20px;padding:24px;display:flex;flex-direction:column;position:relative;transition:transform .2s ease,border-color .2s ease,background .2s ease;min-height:310px;box-sizing:border-box}
+.expert-card{background:var(--dsw-alias-bg-layer-2,#1e2023);border:1px solid var(--dsw-alias-border-l2,rgba(255,255,255,.07));border-radius:20px;padding:24px;display:flex;flex-direction:column;position:relative;transition:transform .2s ease,border-color .2s ease,background .2s ease;min-height:296px;box-sizing:border-box}
 .expert-card:hover{background:var(--dsw-alias-interactive-bg-hover,#24262b);border-color:var(--dsw-alias-border-subtle,rgba(255,255,255,.14))}
-.expert-card-avatar-wrap{width:68px;height:68px;border-radius:50%;overflow:hidden;margin-bottom:16px;background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.05));display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.expert-card-avatar-wrap{width:64px;height:64px;border-radius:50%;overflow:hidden;margin-bottom:16px;background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.05));display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .expert-card-avatar{width:100%;height:100%;object-fit:cover;border-radius:50%;display:block}
 .expert-card-avatar-fallback{width:100%;height:100%;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:18px;line-height:1;color:var(--dsw-alias-label-secondary,#9da1ab);background:var(--dsw-alias-bg-layer-3,#2a2d33)}
 .expert-card-action{position:absolute;top:24px;right:24px;opacity:0;pointer-events:none;transition:opacity .18s ease,transform .18s ease;transform:translateY(-2px)}
-.expert-card:hover .expert-card-action,.expert-card:focus-within .expert-card-action{opacity:1;pointer-events:auto;transform:translateY(0)}
-.expert-pill-btn{background:var(--dsw-alias-label-primary,#ffffff);color:var(--dsw-alias-label-primary-foreground,#111827);border:none;border-radius:9999px;padding:6px 18px;font-size:13px;font-weight:600;cursor:pointer;transition:opacity .15s ease,transform .15s ease;box-shadow:var(--dsw-alias-shadow-overlay,0 1px 3px rgba(0,0,0,.25));line-height:1.2}
+.expert-card-action.is-visible,.expert-card:hover .expert-card-action,.expert-card:focus-within .expert-card-action{opacity:1;pointer-events:auto;transform:translateY(0)}
+.expert-card-action.is-enabled{opacity:.82;pointer-events:auto;transform:translateY(0)}
+.expert-card:hover .expert-card-action.is-enabled,.expert-card:focus-within .expert-card-action.is-enabled{opacity:1}
+.expert-pill-btn{background:var(--dsw-alias-label-primary,#ffffff);color:var(--dsw-alias-label-primary-foreground,#111827);border:none;border-radius:9999px;padding:6px 16px;font-size:13px;font-weight:600;cursor:pointer;transition:opacity .15s ease,transform .15s ease;box-shadow:var(--dsw-alias-shadow-overlay,0 1px 3px rgba(0,0,0,.25));line-height:1.2}
+.expert-pill-btn.secondary{background:var(--dsw-alias-bg-layer-3,#2a2d33);color:var(--dsw-alias-label-primary,#ffffff);border:1px solid var(--dsw-alias-border-l2,rgba(255,255,255,.12));box-shadow:none}
 .expert-pill-btn:hover{opacity:.92;transform:scale(1.02)}
 .expert-pill-btn:active{transform:scale(.98)}
-.expert-card-status{font-size:13px;font-weight:500;margin-bottom:12px;letter-spacing:.5px}
+.expert-pill-btn:disabled{opacity:.55;cursor:wait;transform:none}
+.expert-card-status{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;font-weight:500;margin-bottom:10px;letter-spacing:.4px}
 .expert-card-status.enabled{color:var(--dsw-color-success,#10b981)}
+.expert-card-status.system{color:var(--dsw-alias-accent-primary,#60a5fa)}
+.expert-card-status.custom{color:var(--dsw-alias-label-secondary,#9da1ab)}
 .expert-card-status.available{color:var(--dsw-alias-label-tertiary,#94a3b8)}
 .expert-card-status.disabled{color:var(--dsw-alias-label-tertiary,#94a3b8)}
 .expert-card-status.coming_soon{color:var(--dsw-alias-label-caption,#6b7280)}
-.expert-card-title{font-size:18px;font-weight:700;color:var(--dsw-alias-label-primary,#ffffff);margin:0 0 10px 0;line-height:1.35}
+.expert-card-stage{font-size:11px;font-weight:500;letter-spacing:0;color:var(--dsw-alias-label-secondary,#9da1ab);background:var(--dsw-alias-bg-layer-3,#2a2d33);padding:2px 8px;border-radius:9999px;white-space:nowrap;flex-shrink:0}
+.expert-card-title{font-size:16px;font-weight:700;color:var(--dsw-alias-label-primary,#ffffff);margin:0 0 8px 0;line-height:1.35}
 .expert-card-desc{font-size:13px;line-height:1.55;color:var(--dsw-alias-label-secondary,#9da1ab);margin:0;flex:1}
+.expert-error-toast{position:fixed;right:24px;bottom:24px;z-index:120;display:flex;align-items:center;gap:10px;max-width:420px;padding:12px 16px;border-radius:12px;background:var(--dsw-alias-bg-layer-1,#1a1c1f);border:1px solid var(--dsw-color-danger,#f87171);box-shadow:var(--dsw-alias-shadow-overlay,0 8px 24px rgba(0,0,0,.35));color:var(--dsw-alias-label-primary,#ffffff);font-size:13px;line-height:1.45}
+.expert-error-dot{width:8px;height:8px;border-radius:50%;background:var(--dsw-color-danger,#f87171);flex-shrink:0}
+.expert-error-msg{flex:1;min-width:0;word-break:break-word}
+.expert-error-close{border:none;background:transparent;color:var(--dsw-alias-label-secondary,#9da1ab);cursor:pointer;font-size:16px;line-height:1;padding:2px 4px}
+.expert-error-close:hover{color:var(--dsw-alias-label-primary,#ffffff)}
 
 /* Hide permission preset selector in composer input bar */
 [data-composer-card] button[aria-label*="访问模式"],

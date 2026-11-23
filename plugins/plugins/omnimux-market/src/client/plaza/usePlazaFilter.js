@@ -77,14 +77,22 @@ export function filterMineItems(installedItems, opts) {
   });
 }
 
-export function filterDisplayedExperts(items, isExpertTab, query) {
+export function filterDisplayedExperts(items, isExpertTab, query, stage = 'all') {
   const list = items && items.length ? items : DEFAULT_MARKET_EXPERTS;
+  if (!isExpertTab) return list;
   const q = (query || '').trim().toLowerCase();
-  if (!isExpertTab || !q) return list;
+  const activeStage = stage || 'all';
   return list.filter((item) => {
-    const namePart = item.name || item.nameEn;
-    const descPart = item.description || item.descriptionEn;
-    const hay = [namePart, descPart].filter(Boolean).join(' ').toLowerCase();
+    if (activeStage !== 'all') {
+      if (activeStage === 'system') {
+        const isSysOrCustom = item.group === 'system' || item.group === 'custom' || item.stage === 'system' || item.stage === 'custom' || item.status === 'system' || item.status === 'custom';
+        if (!isSysOrCustom) return false;
+      } else if (item.stage !== activeStage) {
+        return false;
+      }
+    }
+    if (!q) return true;
+    const hay = [item.id, item.name, item.nameEn, item.description, item.descriptionEn].filter(Boolean).join(' ').toLowerCase();
     return hay.includes(q);
   });
 }
@@ -313,6 +321,8 @@ export function usePlazaState(initialSubmitted, hooks) {
   const [customOrder, setCustomOrder] = stateFn(getCustomOrderDefault);
   const [expertMarketItems, setExpertMarketItems] = stateFn(DEFAULT_MARKET_EXPERTS);
   const [expertMarketToggling, setExpertMarketToggling] = stateFn('');
+  const [expertStage, setExpertStage] = stateFn('all');
+  const [expertMarketError, setExpertMarketError] = stateFn('');
   return {
     mainTab, setMainTab, category, setCategory, page, setPage, searchQuery, setSearchQuery,
     submitted, setSubmitted, uninstalledOnly, setUninstalledOnly, autoUpdate, setAutoUpdate,
@@ -323,6 +333,8 @@ export function usePlazaState(initialSubmitted, hooks) {
     confirmInstallError, setConfirmInstallError, confirmInstalling, setConfirmInstalling,
     customOrder, setCustomOrder, expertMarketItems, setExpertMarketItems,
     expertMarketToggling, setExpertMarketToggling,
+    expertStage, setExpertStage,
+    expertMarketError, setExpertMarketError,
   };
 }
 
