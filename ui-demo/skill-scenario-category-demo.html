@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Skill 分类 · 按场景重构（修改前 / 修改后）</title>
+<style>
+:root, [data-theme="dark"] {
+  color-scheme: dark;
+  --page:#090a0c; --panel:#111215; --panel2:#16181c; --card:#1b1d22; --line:rgba(255,255,255,.09); --line2:rgba(255,255,255,.16);
+  --text:#f2f3f5; --muted:#9a9ea8; --faint:#6f747e; --active:rgba(255,255,255,.13); --hover:rgba(255,255,255,.07);
+  --accent:#8b7bff; --count:rgba(255,255,255,.40); --countbg:rgba(255,255,255,.06); --shadow:0 24px 60px rgba(0,0,0,.42);
+}
+[data-theme="light"] {
+  color-scheme: light;
+  --page:#f2f3f6; --panel:#ffffff; --panel2:#f7f8fa; --card:#eceff3; --line:rgba(17,24,39,.10); --line2:rgba(17,24,39,.18);
+  --text:#15171b; --muted:#5f6570; --faint:#8c929d; --active:#e9ebef; --hover:#f1f3f6;
+  --accent:#5b46e8; --count:#8a909b; --countbg:rgba(17,24,39,.05); --shadow:0 24px 60px rgba(20,28,45,.12);
+}
+* { box-sizing:border-box; }
+html,body { margin:0; padding:0; background:var(--page); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Segoe UI",sans-serif; -webkit-font-smoothing:antialiased; }
+body { padding:34px 30px 56px; }
+.page { max-width:1420px; margin:0 auto; }
+.head { display:flex; justify-content:space-between; align-items:flex-end; gap:24px; margin-bottom:26px; }
+h1 { margin:0 0 8px; font-size:24px; letter-spacing:-.02em; font-weight:700; }
+.lede { margin:0; max-width:820px; color:var(--muted); font-size:13.5px; line-height:1.65; }
+.theme-toggle { display:flex; gap:6px; flex:none; }
+.theme-toggle button { height:34px; padding:0 14px; border-radius:9px; border:1px solid var(--line); background:var(--panel); color:var(--text); font:inherit; font-size:13px; cursor:pointer; }
+.theme-toggle button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); }
+.compare { display:grid; grid-template-columns:1fr 1fr; gap:22px; align-items:start; }
+@media (max-width:1120px) { .compare { grid-template-columns:1fr; } }
+.panel { background:var(--panel); border:1px solid var(--line); border-radius:18px; overflow:hidden; box-shadow:var(--shadow); }
+.panel-head { display:flex; align-items:center; justify-content:space-between; padding:14px 18px; border-bottom:1px solid var(--line); }
+.panel-title { font-size:14px; font-weight:650; }
+.pill { font-size:11px; font-weight:650; border-radius:999px; padding:3px 9px; }
+.pill.before { color:#f87171; background:color-mix(in srgb,#f87171 15%,transparent); }
+.pill.after { color:#34d399; background:color-mix(in srgb,#34d399 15%,transparent); }
+.app { background:var(--panel); padding:20px 24px 24px; min-height:520px; }
+.nav { display:flex; align-items:center; gap:36px; border-bottom:1px solid transparent; margin-bottom:18px; }
+.nav-title { display:inline-flex; align-items:center; gap:6px; font-size:20px; font-weight:700; color:var(--muted); }
+.nav-title.active { color:var(--text); }
+.nav-title.active::after { content:""; position:absolute; left:0; bottom:-1px; width:64px; height:2px; border-radius:2px; background:var(--text); }
+.nav-title { position:relative; padding-bottom:12px; }
+.nav-title .info { width:15px; height:15px; border:1.5px solid var(--faint); border-radius:50%; display:inline-grid; place-items:center; font-size:10px; color:var(--faint); }
+.nav-tab { position:relative; padding:4px 0 12px; font-size:14px; color:var(--muted); cursor:default; white-space:nowrap; }
+.nav-tab.active { color:var(--text); font-weight:650; }
+.nav-tab.active::after { content:""; position:absolute; left:0; right:0; bottom:-1px; height:2px; border-radius:2px; background:var(--text); }
+.filter-label { font-size:12px; color:var(--faint); margin:0 0 8px; letter-spacing:.02em; }
+.chips { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 24px; }
+.chip { display:inline-flex; align-items:center; gap:7px; height:30px; padding:0 12px; border-radius:999px; border:1px solid transparent; background:transparent; color:var(--muted); font:inherit; font-size:12.5px; cursor:pointer; white-space:nowrap; transition:background .15s,color .15s,border-color .15s; }
+.chip:hover { background:var(--hover); color:var(--text); }
+.chip.active { background:var(--active); border-color:var(--line2); color:var(--text); font-weight:650; }
+.count { min-width:20px; height:18px; padding:0 6px; border-radius:999px; background:var(--countbg); color:var(--count); font-size:10.5px; font-weight:600; display:inline-grid; place-items:center; font-variant-numeric:tabular-nums; }
+.chip.active .count { color:var(--text); background:rgba(127,127,127,.18); }
+.section-title { font-size:12px; font-weight:650; letter-spacing:.09em; text-transform:uppercase; color:var(--faint); margin:0 0 12px; }
+.cards { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+@media (max-width:1240px) { .cards { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+.card { border:1px solid var(--line); border-radius:12px; overflow:hidden; background:var(--card); min-width:0; cursor:pointer; transition:transform .18s,border-color .18s; }
+.card:hover { transform:translateY(-2px); border-color:var(--line2); }
+.thumb { aspect-ratio:16/9; position:relative; overflow:hidden; display:flex; align-items:flex-end; padding:12px; }
+.thumb::before { content:""; position:absolute; inset:0; background:var(--thumb); }
+.thumb::after { content:""; position:absolute; width:74%; height:140%; right:-24%; top:-45%; border-radius:50%; border:1px solid rgba(255,255,255,.13); transform:rotate(-18deg); }
+.thumb-tag { position:relative; z-index:1; color:rgba(255,255,255,.92); font-size:11px; font-weight:650; background:rgba(0,0,0,.28); border:1px solid rgba(255,255,255,.16); padding:3px 8px; border-radius:999px; backdrop-filter:blur(4px); }
+.card-body { padding:10px 11px 12px; }
+.card-title { font-size:13px; font-weight:650; line-height:1.35; margin:0 0 4px; overflow:hidden; display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; }
+.card-desc { font-size:11.5px; line-height:1.45; color:var(--muted); margin:0; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+.section-block { margin-top:40px; }
+.section-head { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:16px; }
+h2 { margin:0; font-size:18px; letter-spacing:-.01em; }
+.section-sub { margin:4px 0 0; color:var(--muted); font-size:13px; }
+.map-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+@media (max-width:1120px) { .map-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+.map-card { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px 15px; }
+.map-top { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px; }
+.map-name { font-size:14px; font-weight:700; }
+.map-dot { width:9px; height:9px; border-radius:50%; background:var(--dot); box-shadow:0 0 0 4px color-mix(in srgb,var(--dot) 16%,transparent); }
+.map-count { font-size:11px; color:var(--faint); }
+.map-samples { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:5px; }
+.map-samples li { color:var(--muted); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.map-samples li::before { content:"·"; margin-right:6px; color:var(--faint); }
+.note { margin-top:26px; padding:16px 18px; border:1px solid var(--line); border-radius:14px; background:var(--panel2); color:var(--muted); font-size:12.5px; line-height:1.7; }
+.note b { color:var(--text); font-weight:650; }
+.empty { grid-column:1/-1; padding:40px 0; text-align:center; color:var(--faint); font-size:13px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="head">
+    <div>
+      <h1>Skill 分类 · 按场景重构</h1>
+      <p class="lede">把「按广告形式」的分类换成「按用户要完成的任务」的分类。参照图 1 的场景分类层级，保留「全部」入口与场景数量，让运营同学先选目标，再选内容形式。</p>
+    </div>
+    <div class="theme-toggle">
+      <button id="t-dark" aria-pressed="true">暗色</button>
+      <button id="t-light" aria-pressed="false">亮色</button>
+    </div>
+  </div>
+
+  <section class="compare">
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">修改前 · 现状</span><span class="pill before">Before</span></div>
+      <div class="app">
+        <div class="nav">
+          <span class="nav-title active">Skill <span class="info">i</span></span>
+          <span class="nav-tab">我的 Skill</span>
+          <span class="nav-tab">专家市场</span>
+          <span class="nav-tab">插件专栏</span>
+        </div>
+        <div class="chips" id="oldChips"></div>
+        <div class="section-title">新品上市</div>
+        <div class="cards" id="oldCards"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">修改后 · 建议</span><span class="pill after">After</span></div>
+      <div class="app">
+        <div class="nav">
+          <span class="nav-title active">Skill <span class="info">i</span></span>
+          <span class="nav-tab">我的 Skill</span>
+          <span class="nav-tab">专家市场</span>
+          <span class="nav-tab">插件专栏</span>
+        </div>
+        <p class="filter-label">场景分类</p>
+        <div class="chips" id="newChips"></div>
+        <div class="section-title" id="newSectionTitle">全部场景 · 精选技能</div>
+        <div class="cards" id="newCards"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section-block">
+    <div class="section-head">
+      <div>
+        <h2>分类映射</h2>
+        <p class="section-sub">每个场景对应一组真实技能；数量为目录内的技能条目数，合计 114 条。</p>
+      </div>
+    </div>
+    <div class="map-grid" id="mapGrid"></div>
+  </section>
+
+  <div class="note">
+    <b>说明：</b>「场景」描述用户要完成的营销任务，例如「给新品拍一组商品图」归入「商品展示」，「做一条真人测评」归入「内容种草」。原有 7 个广告形式分类不再作为一级分类，但仍可作为技能详情内的形式标签保留。
+  </div>
+</div>
+<script>
+const DATA = [{"id": "scene-seeding", "zh": "内容种草", "en": "Content Seeding", "count": 27, "samples": [{"title": "UGC 告白", "summary": "第一人称对着镜头倾诉式种草，以自拍机位与真实痛点引发情感共鸣，适合美妆、个护与生活方式类短视频推广。"}, {"title": "UGC 穿搭检查", "summary": "时尚服饰穿搭展示专用，模拟对镜自拍或全身走位镜头，生动展现上身剪裁与材质细节，打造沉浸式种草氛围。"}, {"title": "UGC 好物开箱种草", "summary": "第一人称沉浸式开箱展示，从包装拆封到上手体验全流程特写，快速激发购买欲望。"}, {"title": "UGC 场景化实操演练", "summary": "分步骤展示产品在实际生活场景中的使用方法与操作细节，降低用户学习成本与决策门槛。"}, {"title": "街头随机采访", "summary": "适用于producing street-interview / vox-pop / man-on-the-street style ads — a host approaches real strangers..."}, {"title": "网络模因与梗图广告", "summary": "适用于the ad format is a meme or native-feed remix — image macros, top-text/bottom-text, two-panel reaction..."}, {"title": "UGC 脚本全流程策划", "summary": "根据产品核心卖点与投放时长（15~60秒），系统输出全流程口播脚本、镜头节拍与行动号召，专业易落地。"}, {"title": "梗图文创多格式短视频", "summary": "紧跟社媒热梗与网梗文化，将流行热点与文创周边巧妙融合，打造极具自发传播力的趣味短片。"}, {"title": "痛点共鸣用户真实自述", "summary": "直击用户长期受困的典型痛点，以真诚倾诉与豁然开朗的情感转折，建立深层次品牌共鸣。"}, {"title": "数字人与空镜拼接广告", "summary": "将数字人面对面讲解与丰富的生活实景空镜交替混剪，既具真人温度又兼顾视觉丰富度。"}, {"title": "好奇心驱动神级开场", "summary": "在视频开局 3 秒抛出反常识疑问或视觉悬念，牢牢锁死用户停留时长，大幅提升完播率。"}, {"title": "医疗科技 3D 透视叙事", "summary": "结合专业真实用户讲述与 3D 透视微观机理，深度解析健康医疗产品的作用原理与科研实力。"}, {"title": "街头盲测对比实测广告", "summary": "真实街头随机拦截路人进行盲测试用，以最真实的即兴评价与对比反应击穿受众防备心。"}, {"title": "宝妈育儿好物发现开头", "summary": "以真实宝妈第一视角展现带娃困境与好物解围，快速打动母婴核心消费人群。"}, {"title": "从质疑到真香心路历程", "summary": "真实记录用户从最初的半信半疑到亲身体验后的惊喜安利，以真实心路历程打消顾虑。"}, {"title": "双人爆笑短剧冲突开场", "summary": "双人快节奏爆笑对手戏开场，在冲突与反转中自然引出产品卖点，极富下饭神剧属性。"}, {"title": "时尚穿搭多镜头卡点展示", "summary": "快节奏多机位无声穿搭卡点展示，通过全身、局部与面料细节快速切换，打造沉浸式种草氛围。"}, {"title": "拉美电商混合 UGC 种草短片", "summary": "融合本土化真人实拍与平台促销权益，适合美客多、Shopee 等拉美电商爆款带货。"}, {"title": "西语 UGC 社区发言人黄金开头", "summary": "本土母语创作者面对镜头热情自述，以社区熟人视角在开局3秒建立极强信任背书。"}, {"title": "双屏分屏对话短剧", "summary": "双屏或多屏分屏对话形式，跨越时空展现角色交流或方案对照，节奏紧凑张力十足。"}, {"title": "专家干货数字条列短视频", "summary": "行业顾问或领域达人以条理分明的数字序号分步输出避坑干货，节奏明晰。"}, {"title": "海外同胞第一人称共情开头", "summary": "面向海外华人及特定族群，以乡情与生活痛点直面镜头倾诉，开篇直击目标人群。"}, {"title": "女性创作者真情倾诉种草短片", "summary": "以女性博主闺蜜式视角分享真实使用心得与心路历程，适用于护肤、彩妆与健康好物。"}, {"title": "真实屋主口碑痛点反转视频", "summary": "居家改造与智能家居真实屋主口碑实录，展示从困扰混乱到惬意舒适的戏剧化反转。"}, {"title": "个人自述蜕变揭秘视频广告", "summary": "以主人公自述蜕变历程为主线，层层揭示改变人生的秘密好物，高共鸣强种草。"}, {"title": "街头夜生活采访黄金开头", "summary": "抓拍潮流街头夜生活真实路人随机问答，自带极高好奇心与娱乐属性，秒吸眼球。"}, {"title": "长辈权威视角儿童好物种草", "summary": "祖父母等长辈视角慈爱推荐儿童益智玩具与成长用品，传递满满的关爱与安全可靠感。"}]}, {"id": "scene-brand", "zh": "品牌宣传", "en": "Brand Story", "count": 27, "samples": [{"title": "电影级视觉大片", "summary": "院线级光影质感与高级调色方案，提供大师级镜头语言与氛围感构图，打造高转化品牌形象大片。"}, {"title": "青少年体育宣传片", "summary": "高燃运动混剪与热血分镜，捕捉竞技对抗与热血瞬间，适合运动装备、培训夏令营与青训机构品牌宣传。"}, {"title": "动画故事模式", "summary": "适用于the ad format is animated / cartoon 故事叙述 for any general industry — explainer animations, ani..."}, {"title": "手游与电竞广告", "summary": "适用于the product is a mobile / desktop / console game or game-like app (puzzle, casual, midcore, RPG, hype..."}, {"title": "电影感暗调奢华美食", "summary": "采用暗黑奢华光影与微距特写呈现顶级美食质感，以高帧慢动作与细节声音营造极致食欲诱惑。"}, {"title": "格调生活品牌宣传片", "summary": "精选生活美学与日常仪式感镜头，以高格调调色与人文视角树立品牌高端生活方式形象。"}, {"title": "B2B 高管暗黑商业短片", "summary": "以电影级冷色调与商业精英视角，直击企业管理痛点与数字化转型方案。"}, {"title": "动画 IP 角色广告企划", "summary": "结合原创虚拟形象与品牌吉祥物，打造趣味幽默的情节故事，强化品牌认知。"}, {"title": "日漫连载黄金开头", "summary": "动漫风高燃分镜开头，以悬念与强情节迅速抓住年轻二次元受众目光。"}, {"title": "时尚情绪氛围短片", "summary": "融合情绪张力、时尚走秀光影与个性卡点音乐，传递服装品牌独有的设计灵魂与氛围感。"}, {"title": "吉祥物问题解决型广告", "summary": "让品牌吉祥物化身问题解决专家，用趣味生动的动画情节演绎用户痛点与产品化解方案。"}, {"title": "卡通吉祥物旁白短视频", "summary": "以萌系卡通吉祥物作为全能旁白主播，通过夸张表情与趣味解说快速科普产品核心优势。"}, {"title": "双重人格暗调轻奢大片", "summary": "通过同一角色双重身份的戏剧化反差与暗调光影，营造出奢华神秘的高级叙事质感。"}, {"title": "高端服务品牌视觉大片", "summary": "为高阶定制等无形服务打造电影级视觉隐喻，将专业严谨转化为震撼心智的视听符号。"}, {"title": "Vox 拼贴剪纸深度解说", "summary": "采用新闻纪实拼贴与剪纸动效风格，深度拆解复杂概念与产品商业逻辑，极具知识获得感。"}, {"title": "拟人化暗黑喜剧剧场", "summary": "赋予物品或动物夸张情绪与抓马剧情，用意想不到的幽默冲突快速吸引观众眼球，打造高赞出圈社媒内容。"}, {"title": "双重人格文化反差故事弧", "summary": "以跨文化背景与双重身份冲突切入，结合电影级视听语言展现个人心路历程，适用于高端品牌情感叙事。"}, {"title": "幽默疗愈戏仿短剧弧", "summary": "幽默戏仿专业疗愈与医疗广告风格，以反转剧情化解用户痛点，适合健康护理与生活好物的趣味营销。"}, {"title": "震撼数据与地方自豪感叙事", "summary": "以令人震撼的客观数据为黄金开头，唤醒观众的地方归属感与认同，适合本地服务与文旅品牌重磅发声。"}, {"title": "悬疑惊悚小说多维宣传企划", "summary": "营造高悬念扣人心弦的惊悚氛围，多维适配预告片、分镜海报与社媒短剧，助力图书出版物与IP破圈。"}, {"title": "安全守护冷暖反差叙事弧", "summary": "从日常温暖场景突转危机挑战，最终以可靠安全保障托底，适合保险、安防、母婴与家庭防护品牌。"}, {"title": "海外招聘电影级人物叙事", "summary": "以电影级镜头语言呈现海外高薪岗位的职场成长与生活蜕变，极大提升人才招聘信任感。"}, {"title": "国风宫廷短剧独白", "summary": "Cinematic 3D 国风 (Chinese palace / period drama) short delivered as ONE continuous omni-reference Seedance call..."}, {"title": "手绘插画世界地图构建", "summary": "手绘复古与现代插画风格世界地图设计，生动标示全球业务版图、旅游路线与物流网络。"}, {"title": "折纸微缩立体心路故事", "summary": "以纯手工质感的折纸与微缩立体沙盘作为视觉载体，讲述引人入胜的品牌成长与心路历程。"}, {"title": "营收逆袭蜕变故事弧", "summary": "以跌宕起伏的逆袭故事为主线，完整呈现从业绩低谷到营收爆发的转型历程，震撼吸睛。"}, {"title": "双吉祥物爆笑喜剧广告", "summary": "一对性格迥异的品牌吉祥物逗趣互捧，在捧逗之间寓教于乐地输出产品特性，亲和力拉满。"}]}, {"id": "scene-product", "zh": "商品展示", "en": "Product Showcase", "count": 16, "samples": [{"title": "UGC 产品展示", "summary": "聚焦真实产品特写与动态使用展示，通过四镜头递进展示细节质感，适合数码硬件、美妆护肤与日用好物带货。"}, {"title": "亚马逊商详图设计", "summary": "适用于the user wants Amazon marketplace images from a product photo or product URL — a compliant main image..."}, {"title": "杂志级奢品震撼登场", "summary": "院线级灯光布局与杂志大片式登场镜头，层层揭晓顶级奢侈品工艺细节与尊崇身份象征。"}, {"title": "光影科技产品高光亮相", "summary": "利用科技感 LED 矩阵光效与赛博暗黑空间，为数码潮品与智能硬件打造极具震撼力的首秀。"}, {"title": "高级感婚纱微距开头", "summary": "电影级微距呈现婚纱蕾丝纹理与配饰光泽，营造唯美浪漫的高级仪式感。"}, {"title": "奢侈品级高定登场", "summary": "聚焦高定单品独家工艺、稀缺材质与典雅轮廓，用沉稳慢调镜头展现无可替代的轻奢魅力。"}, {"title": "电商产品影棚精修图", "summary": "AI 生成影棚白底包装图、高阶电商图册与生活场景图，多机位还原产品材质与光影细节。"}, {"title": "产品机制原理解密展示", "summary": "动态拆解与机理动画展示，透视产品内部构造与核心专利技术，以硬核实力促成购买转化。"}, {"title": "大牌单品静默微距解密大片", "summary": "专为豪车、游艇、腕表等高奢单品打造，以电影级微距与参数特写营造极致科技与品质感。"}, {"title": "奢华高端品牌图集短片", "summary": "将顶级品牌棚拍大片通过节奏转场编排为动态短视频，彰显优雅高级的品牌美学。"}, {"title": "对镜换装卡点混剪", "summary": "当需要时使用本技能：the user wants to produce a TikTok-style mirror try-on haul ad — the format where a si..."}, {"title": "镜像图腾商品质感短片", "summary": "利用对称构图、镜像视觉与高级光影衬托商品几何美学，适用于首饰、香水等精致好物。"}, {"title": "展台高光产品特写大片", "summary": "围绕精品展台机位做环绕与光影推拉，凸显产品工业设计与王牌旗舰地位。"}, {"title": "翻新数码好物特写短片", "summary": "真实还原数码产品验机成色、配件细节与高性价比优势，打消用户二手翻新顾虑。"}, {"title": "纯白背景卖点标注展示", "summary": "极简纯白无杂质背景与悬浮发光引线卖点标注，让用户的视觉焦点聚焦于产品本身。"}, {"title": "商品轮播图", "summary": "从商品实拍与已确认信息出发，规划逐页商品轮播图方案与生图提示词。"}]}, {"id": "scene-performance", "zh": "效果广告", "en": "Performance Ads", "count": 20, "samples": [{"title": "电商营销实战", "summary": "专为实体电商爆款打造，快速提炼产品核心卖点与促销钩子，生成高点击率的主图视频与投放分镜方案。"}, {"title": "静态图片广告", "summary": "精细化排版与高转化单图营销方案，融合产品特写、痛点文案与行动呼吁，适配多渠道社媒信息流广告投放。"}, {"title": "轮播图卡片", "summary": "故事递进式多图轮播广告，打造连贯叙事与细节多维拆解，大幅提升用户滑动探索深度与互动留存率。"}, {"title": "联网电视大屏广告", "summary": "适用于producing a Connected TV (CTV / OTT / streaming TV) 视频广告 — Hulu, Disney+, Roku, Samsung TV Plus,..."}, {"title": "参考图生成静态广告", "summary": "当需要时使用本技能：the user uploads a reference image of a static product ad (a competitor's poster, a Pi..."}, {"title": "双屏互动实时反应广告", "summary": "采用双屏实时互动形式，将主角夸张的情绪反应与高光时刻同屏呈现，极具感染力。"}, {"title": "DTC 出海多渠道投放宝典", "summary": "覆盖多版式广告素材策划，专为跨境电商品牌量身定制高转化信息流脚本。"}, {"title": "镜像构图广告排版", "summary": "当需要时使用本技能：the user uploads a reference image ad (a competitor's ad, a designer mockup, an old ve..."}, {"title": "高定时装静态画报", "summary": "适用于the user wants a premium, magazine-grade static fashion / apparel ad (1:1, 4:5, or 9:16) built from a..."}, {"title": "生活方式杂志画报广告", "summary": "复刻高端时尚杂志的图文排版与构图美学，以极简优雅的镜头节奏诠释品质生活态度。"}, {"title": "硬核运动暗调轮播图", "summary": "深色金属冷光与硬朗肌肉线条相呼应的运动轮播海报，凸显热血竞技与装备科技感，适合健身服饰与补剂。"}, {"title": "奢华高端杂志风轮播卡片", "summary": "面向高客单奢侈品与时尚品牌，打造多页高端杂志风排版，突出材质质感与品牌格调。"}, {"title": "认知差痛点科普轮播卡片", "summary": "通过直击认知盲区与痛点反思的严密视觉节奏，分步传递专业干货，实现高收藏与高转化。"}, {"title": "黑金质感巴士海报", "summary": "黑金配色与沉稳排版的户外车身海报，极具视觉冲击力与大牌品质感，适合高曝光线下投放。"}, {"title": "高转化着陆页策划", "summary": "针对高转化直接响应式着陆页，提供从首屏抓眼、信任背书到痛点催化与行动号召的全案策划。"}, {"title": "暗黑奢华风五页轮播卡片", "summary": "采用黑金质感与极简暗黑排版，五页结构层层递进展示高端产品细节与品牌故事。"}, {"title": "照片九宫格印刷传单", "summary": "经典九宫格照片墙传单版式设计，密集陈列热卖爆款与活动单品，视觉冲击强且信息量充实。"}, {"title": "孕期暖粉治愈风静态图广告", "summary": "采用温暖柔和的粉白色调与母婴情感共鸣排版，适合孕产订阅制服务与母婴好物引流。"}, {"title": "合规功效矩阵静态图广告", "summary": "严格遵循广告合规标准的功效说明图谱，科学严谨呈现成分数据与权威背书。"}, {"title": "多规格零售促销轮播卡片", "summary": "适用于多色系、多尺码零售商品的大促轮播，清晰展示款式矩阵与限时立减优惠。"}]}, {"id": "scene-app", "zh": "应用推广", "en": "App Promotion", "count": 9, "samples": [{"title": "从混乱到从容 App 倾诉广告", "summary": "通过生活焦虑混乱到使用产品后井井有条的鲜明对照，引发强烈情感共鸣。"}, {"title": "暗色软件 UI 主图演示", "summary": "高对比暗黑科技风界面动态呈现，多维度展示软件仪表盘与核心功能交互。"}, {"title": "画外音旁白 App 录屏展示", "summary": "真实操作录屏配合亲和力画外音讲解，清晰演示移动应用的使用场景与核心价值。"}, {"title": "喜剧角色首尾呼应演示", "summary": "借由幽默逗趣的职场喜剧人物在首尾制造笑点，在中间丝滑嵌入软件核心操作与提效演示。"}, {"title": "SaaS 职场人物成长弧", "summary": "围绕职场人物在工具前后的效率对比构建真实戏剧冲突，生动直观展现软件解决工作痛点的核心价值。"}, {"title": "跨境印式英语前后对比黄金钩子", "summary": "专为南亚与出海市场打造的痛点对比黄金开头，以戏剧化反差迅速抓住软件目标受众注意力。"}, {"title": "奢华杂志风应用揭秘短片", "summary": "将高端移动端界面与奢华杂志排版相结合，优雅呈现产品的核心功能与尊贵体验。"}, {"title": "真机手机模型样机展示", "summary": "高清拟真手机样机与悬浮视差展示，完美还原应用在各种真实机型中的交互界面与动态效果。"}, {"title": "应用商店界面锚定推广视频", "summary": "将真实软件截图无缝融入移动端交互动态，突出核心功能亮点，提升商店下载转化率。"}]}, {"id": "scene-local", "zh": "本地生活", "en": "Local Services", "count": 5, "samples": [{"title": "本地生活服务广告", "summary": "针对咨询机构、诊所医疗、家政美容等服务类商业场景，以专业信任感和客户见证为核心构建获客引流脚本。"}, {"title": "家政服务多城市电影叙事", "summary": "以多城市生活实景与电影级叙事串联家政上门服务，展现专业可靠的服务细节与家庭温情。"}, {"title": "家政到家服务引流海报", "summary": "针对家庭保洁、家电清洗等本地生活服务，以清晰权益与痛点对比设计高点击率引流海报。"}, {"title": "本地服务批量静态图营销", "summary": "面向本地生活与同城门店服务，批量生成多场景、多卖点的轻量静态营销图阵列。"}, {"title": "房产多版式静态营销广告", "summary": "包含户型亮点、实景航拍与优惠权益的专业地产海报矩阵，契合多平台精准获客。"}]}, {"id": "scene-repurpose", "zh": "内容再制", "en": "Content Repurposing", "count": 5, "samples": [{"title": "课程转短视频", "summary": "长视频课程与干货教学智能浓缩，快速提炼黄金 Hook 与干货要点，批量转化出高传播价值的短剧和短视频脚本。"}, {"title": "播客精彩切片", "summary": "适用于the user wants a podcast-style two-host conversational video — Joe Rogan-style, creator interview, fo..."}, {"title": "爆款视频智能复刻", "summary": "深度解构全网爆款视频的脚本结构、视觉节奏与黄金钩子，一键复刻符合自身品牌的同款神作。"}, {"title": "多画幅跨平台自适应", "summary": "适用于a brief pairs a source video URL (YouTube, TikTok, Instagram reel) with recreate or reproduce or adap..."}, {"title": "图文复刻", "summary": "拆解参考图文案例的视觉结构，为新商品生成原创电商轮播方案。"}]}, {"id": "scene-tools", "zh": "通用工具", "en": "General Tools", "count": 5, "samples": [{"title": "脚本转视频", "summary": "从纯文本营销脚本快速映射生成视频镜头分镜，按时间轴精准规划画面提示词、转场节拍与配音对齐方案。"}, {"title": "音频与音效生成", "summary": "适用于the user wants any audio work on a video — generating a text-to-speech voiceover or narration, clonin..."}, {"title": "动态图形运镜设计", "summary": "规划连贯流畅的镜头推拉摇移、空间透视转换与速度曲线，让静态设计图焕发灵动生命力与高级动态质感。"}, {"title": "客户合作流程指南搭建", "summary": "为 B2B 与专业服务团队梳理清晰、透明的客户合作链路与交付周期表，有效增强初次沟通信任度。"}, {"title": "专业色彩规范说明书", "summary": "输出印刷与屏幕通用的标准化色彩配方表（HEX、RGB、CMYK、Pantone），确保品牌调色在跨媒介中稳定还原。"}]}];
+const PALETTE = {"scene-seeding": "linear-gradient(135deg,#3d1b55,#8a3a67 58%,#b25c7c)", "scene-brand": "linear-gradient(135deg,#151c3d,#33488f 60%,#5d74c9)", "scene-product": "linear-gradient(135deg,#0b2a35,#1d5f74 62%,#3b8fa6)", "scene-performance": "linear-gradient(135deg,#35200d,#7a4a16 60%,#b5772a)", "scene-app": "linear-gradient(135deg,#0c233d,#1c4f80 62%,#3f7fc0)", "scene-local": "linear-gradient(135deg,#0f2a20,#1c5a40 62%,#3b8b66)", "scene-repurpose": "linear-gradient(135deg,#0d2c30,#1d5b60 62%,#3b8f96)", "scene-tools": "linear-gradient(135deg,#23262d,#3a3f4a 62%,#59606e)"};
+const OLD = [
+  ['全部', ''], ['UGC 和用户评价', ''], ['故事讲述和脚本', ''], ['图片和静态广告', ''],
+  ['视频广告', ''], ['产品展示', ''], ['模因与原生', ''], ['其它营销分类', '']
+];
+const oldChips = document.getElementById('oldChips');
+OLD.forEach(([label], i) => {
+  const b = document.createElement('button');
+  b.className = 'chip' + (i === 0 ? ' active' : '');
+  b.textContent = label;
+  oldChips.appendChild(b);
+});
+const featured = DATA.slice(0, 6).map(c => ({...c.samples[0], cat:c.zh, id:c.id}));
+const OLD_FEATURED = [
+  {title:'UGC 告白', summary:'第一人称对着镜头倾诉式种草，以自拍机位与真实痛点引发情感共鸣。', cat:'UGC 和用户评价', id:'scene-seeding'},
+  {title:'电影级视觉大片', summary:'院线级光影质感与高级调色方案，打造高转化品牌形象大片。', cat:'视频广告', id:'scene-brand'},
+  {title:'UGC 产品展示', summary:'聚焦真实产品特写与动态使用展示，通过四镜头递进展示细节质感。', cat:'产品展示', id:'scene-product'}
+];
+function cardHTML(item) {
+  return `<article class="card">
+    <div class="thumb" style="--thumb:${PALETTE[item.id] || PALETTE['scene-tools']}"><span class="thumb-tag">${item.cat}</span></div>
+    <div class="card-body"><p class="card-title">${item.title}</p><p class="card-desc">${item.summary}</p></div>
+  </article>`;
+}
+document.getElementById('oldCards').innerHTML = OLD_FEATURED.map(cardHTML).join('');
+
+let active = 'all';
+const newChips = document.getElementById('newChips');
+function renderNew() {
+  newChips.innerHTML = '';
+  const all = document.createElement('button');
+  all.className = 'chip' + (active === 'all' ? ' active' : '');
+  all.innerHTML = `全部 <span class="count">114</span>`;
+  all.onclick = () => { active = 'all'; renderNew(); };
+  newChips.appendChild(all);
+  DATA.forEach(c => {
+    const b = document.createElement('button');
+    b.className = 'chip' + (active === c.id ? ' active' : '');
+    b.innerHTML = `${c.zh} <span class="count">${c.count}</span>`;
+    b.onclick = () => { active = c.id; renderNew(); };
+    newChips.appendChild(b);
+  });
+  const selected = DATA.find(c => c.id === active);
+  document.getElementById('newSectionTitle').textContent = selected ? selected.zh + ' · 匹配技能' : '全部场景 · 精选技能';
+  const list = selected ? selected.samples.map(s => ({...s, cat:selected.zh, id:selected.id})) : featured;
+  document.getElementById('newCards').innerHTML = list.slice(0,6).map(cardHTML).join('') || '<div class="empty">该场景暂无技能</div>';
+}
+renderNew();
+const mapGrid = document.getElementById('mapGrid');
+DATA.forEach(c => {
+  const el = document.createElement('div');
+  el.className = 'map-card';
+  el.style.setProperty('--dot', (PALETTE[c.id].match(/#[0-9a-f]{6}/i) || ['#888'])[0]);
+  el.innerHTML = `<div class="map-top"><span class="map-name">${c.zh}</span><span class="map-dot"></span></div>
+    <div class="map-count">${c.count} 个技能</div>
+    <ul class="map-samples">${c.samples.slice(0,3).map(s => `<li>${s.title}</li>`).join('')}</ul>`;
+  mapGrid.appendChild(el);
+});
+document.getElementById('t-dark').onclick = () => setTheme('dark');
+document.getElementById('t-light').onclick = () => setTheme('light');
+function setTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  document.getElementById('t-dark').setAttribute('aria-pressed', String(theme === 'dark'));
+  document.getElementById('t-light').setAttribute('aria-pressed', String(theme === 'light'));
+}
+if (new URLSearchParams(location.search).get('theme') === 'light') setTheme('light');
+</script>
+</body>
+</html>

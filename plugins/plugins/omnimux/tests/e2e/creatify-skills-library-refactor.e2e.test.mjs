@@ -41,7 +41,7 @@ describe('E2E: Creatify 112套营销技能库置顶分区与1:1卡片视觉交�
 
     // 1. 验证分类胶囊
     const chips = document.querySelectorAll('.omnimux-skills-chip')
-    assert.equal(chips.length, 8, '应包含 1 个全部胶囊 + 7 个细分类胶囊')
+    assert.equal(chips.length, 9, '应包含 1 个全部胶囊 + 8 个场景分类胶囊')
     assert.equal(chips[0].getAttribute('aria-pressed'), 'true', '默认全选高亮')
 
     // 2. 验证专区结构
