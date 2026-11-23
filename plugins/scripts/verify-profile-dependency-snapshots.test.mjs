@@ -7,11 +7,11 @@
  */
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 
-import { inspectProfile, MANAGED_SNAPSHOT_DIRECTORY, readSupportIdentity } from './verify-profile-dependency-snapshots.mjs'
+import { inspectProfile, MANAGED_SNAPSHOT_DIRECTORY, readSupportIdentity, resolveTargetApp } from './verify-profile-dependency-snapshots.mjs'
 
 /**
  * 造一个 profile 骨架。
@@ -241,4 +241,16 @@ test('真身份文件可读，且版本是精确 semver（单一真源不得缺�
   assert.equal(identity.name, SUPPORT_NAME)
   assert.match(identity.version, /^\d+\.\d+\.\d+$/)
   assert.equal(readSupportIdentity(join(tmpdir(), 'absent-identity.json')), null)
+})
+
+test('resolveTargetApp 只映射受管的 .omnimux-dev / .omnimux，不再推导已退役的 .dsh', () => {
+  const previousEnv = process.env.OMNIMUX_PREFLIGHT_TARGET_APP
+  delete process.env.OMNIMUX_PREFLIGHT_TARGET_APP
+  try {
+    assert.equal(resolveTargetApp(join(homedir(), '.omnimux-dev', 'profiles', 'omnimux')), '/Applications/OmniMux Dev.app')
+    assert.equal(resolveTargetApp(join(homedir(), '.omnimux', 'profiles', 'omnimux')), '/Applications/OmniMux.app')
+    assert.equal(resolveTargetApp(join(homedir(), '.dsh', 'profiles', 'omnimux')), null)
+  } finally {
+    if (previousEnv !== undefined) process.env.OMNIMUX_PREFLIGHT_TARGET_APP = previousEnv
+  }
 })

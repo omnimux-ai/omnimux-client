@@ -64,12 +64,11 @@ function readArchiveBytes(asarPath) {
 }
 
 const HOST_PACKAGE_PREFIX = '@deepseek-ai/';
-// 三个物化目标 home（`<home>/profiles/omnimux`）各自的宿主 App：
-// Dev → OmniMux Dev.app、Prod → OmniMux.app、`--dsh` → 官方 DSH Desktop.app。
+// 两个受管物化目标 home（`<home>/profiles/omnimux`）各自的宿主 App：
+// Dev → OmniMux Dev.app、Prod → OmniMux.app。
 const TARGET_APP_BY_HOME_NAME = new Map([
   ['.omnimux-dev', '/Applications/OmniMux Dev.app'],
   ['.omnimux', '/Applications/OmniMux.app'],
-  ['.dsh', '/Applications/DSH Desktop.app'],
 ]);
 const TARGET_APP_ENV = 'OMNIMUX_PREFLIGHT_TARGET_APP';
 
@@ -128,7 +127,7 @@ const GENERATION_PROBE_PACKAGES = ['@deepseek-ai/dsh', '@deepseek-ai/dsh-setting
 /**
  * 目标应用的宿主代际：
  * 1. 优先 `Contents/Resources/build-info.json` 的 `dsh.packageSpec`；
- * 2. 无 build-info 时（如未打包的官方 DSH Desktop.app）以该 App 自带宿主包的实际版本为准；
+ * 2. 无 build-info 时以该 App 自带宿主包的实际版本为准；
  * 3. 两者都拿不到 → 报错退出，绝不退回替身。
  */
 function readTargetGeneration(appPath, host) {

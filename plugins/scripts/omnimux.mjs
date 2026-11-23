@@ -106,8 +106,8 @@ function printHelp() {
 插件目录: ${pluginsRoot}
 
 命令:
-  sync [插件...] [--prod|--dsh|--all] [--skip-build]
-                                  构建并将插件物化进目标 Profile（默认仅开发版 ~/.omnimux-dev，可用 --prod / --dsh / --all 扩展）
+  sync [插件...] [--prod|--all] [--skip-build]
+                                  构建并将插件物化进目标 Profile（默认仅开发版 ~/.omnimux-dev，可用 --prod / --all 扩展）
   build:all                       并发全量构建产品插件
   lint:i18n                       全量文案/禁词与多语言门禁检查
   analyze:refactor [路径...]       代码重构与简化分析工具 (CRSA: 行数超标与业务逻辑混乱检测)

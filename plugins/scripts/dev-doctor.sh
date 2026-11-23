@@ -8,7 +8,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PLUGINS_ROOT="${OMNIMUX_PLUGINS_DIR:-$REPO_ROOT/plugins}"
-PROD_HOME="${DSH_HOME:-$HOME/.dsh}"
+PROD_HOME="${OMNIMUX_DOCTOR_HOME:-$HOME/.omnimux-dev}"
 PROD_PROFILE="$PROD_HOME/profiles/omnimux"
 PLUGINS=(omnimux omnimux-forms omnimux-accounts omnimux-assets omnimux-products omnimux-market omnimux-workflow omnimux-inspiration omnimux-clip omnimux-video omnimux-analytics omnimux-publish omnimux-avatar)
 fails=0
