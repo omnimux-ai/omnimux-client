@@ -12,8 +12,7 @@ import ReactDOMClient from 'react-dom/client';
 const { act } = ReactDOMTestUtils;
 const { createRoot } = ReactDOMClient;
 
-// Real MediaViewerTab + real store + jsdom DOM. Layout geometry (container
-// queries, drawer width) is proven in the browser evidence, not here.
+// Real MediaViewerTab + real store + jsdom DOM.
 const here = dirname(fileURLToPath(import.meta.url));
 const rootDir = resolve(here, '../../../..');
 let scratch;
@@ -195,38 +194,15 @@ async function withMountedTab(run, options = {}) {
   }
 }
 
-test('历史栏渲染分组卡片、当前项与提示词快照', async () => {
-  await withMountedTab(async ({ text }) => {
-    const cards = document.querySelectorAll('.omx-mv-history__card');
-    assert.equal(cards.length, 5);
-    assert.equal(document.querySelector('.omx-mv-history__title').textContent, '历史');
-    assert.match(text(), /第三张：沙漠柴犬/);
-    assert.match(text(), /×2/);
-    const active = document.querySelector('.omx-mv-history__card[aria-current="true"]');
-    assert.ok(active);
-    assert.match(active.textContent, /第三张：沙漠柴犬/);
-    assert.equal(document.querySelector('.omx-mv-history__list').children.length, 5);
-  });
-});
-
-test('点击历史卡切换舞台素材', async () => {
-  await withMountedTab(async ({ click }) => {
-    const beforeSrc = document.querySelector('.omx-mv-display img').getAttribute('src');
-    await click('.omx-mv-history__list li:nth-child(4) .omx-mv-history__card');
-    const afterSrc = document.querySelector('.omx-mv-display img').getAttribute('src');
-    assert.notEqual(afterSrc, beforeSrc);
-    assert.match(document.querySelector('.omx-mv-history__card[aria-current="true"]').textContent, /第二张：窗边人像/);
-  });
-});
-
-test('复用提示只写入 composer 预填队列，不提交生成', async () => {
-  await withMountedTab(async ({ click, requests }) => {
-    const before = requests.filter((request) => request.method !== 'GET').length;
-    await click('.omx-mv-history__list li:nth-child(4) .omx-mv-history__action');
-    const textarea = document.querySelector('textarea');
-    assert.equal(textarea.value, '第二张：窗边人像');
-    const after = requests.filter((request) => request.method !== 'GET').length;
-    assert.equal(after, before);
+test('右侧历史栏已移除，左侧缩略图栏仍保留', async () => {
+  await withMountedTab(async () => {
+    assert.equal(document.querySelector('.omx-mv-history'), null, '右侧历史栏不得渲染');
+    assert.equal(document.querySelector('.omx-mv-history-toggle'), null, '历史抽屉触发器不得渲染');
+    assert.equal(document.querySelector('.omx-mv-history-scrim'), null, '历史遮罩不得渲染');
+    const root = document.querySelector('.omx-media-viewer');
+    assert.equal(root.getAttribute('data-history-width'), null);
+    assert.equal(root.getAttribute('data-history-open'), null);
+    assert.equal(document.querySelectorAll('.omx-mv-thumbnails-rail__item').length, 6);
   });
 });
 
@@ -243,22 +219,6 @@ test('图像模式显示成本预估，视频模式隐藏', async () => {
   });
 });
 
-test('视频记录的历史缩略图使用 video 元素', async () => {
-  await withMountedTab(async () => {
-    const videoThumb = document.querySelector('.omx-mv-history video');
-    assert.ok(videoThumb);
-    assert.equal(videoThumb.getAttribute('src'), 'data:video/mp4;base64,AAAA');
-  });
-});
-
-test('批量中的非 primary 项选中时卡片仍高亮', async () => {
-  await withMountedTab(async () => {
-    const active = document.querySelector('.omx-mv-history__card[aria-current="true"]');
-    assert.ok(active);
-    assert.match(active.textContent, /批量四张：产品图/);
-  }, { activeId: 'g4:1' });
-});
-
 test('目录加载失败时不显示成本预估', async () => {
   await withMountedTab(async ({ requests }) => {
     assert.ok(requests.some((request) => request.url === '/omnimux/model-catalog'));
@@ -272,69 +232,7 @@ test('目录只返回视频时图像模式仍不显示成本', async () => {
   }, { catalogVideoOnly: true });
 });
 
-test('空会话显示历史空态且不聚合其他会话', async () => {
-  await withMountedTab(async () => {
-    assert.equal(document.querySelectorAll('.omx-mv-history__card').length, 0);
-    assert.match(document.body.textContent, /暂无历史/);
-  }, { sessionId: 's-empty' });
-});
-
-test('无会话时不聚合其他会话的历史', async () => {
-  await withMountedTab(async () => {
-    assert.equal(document.querySelectorAll('.omx-mv-history__card').length, 0);
-  }, { sessionId: null });
-});
-
-test('抽屉打开时方向键不切换背后舞台，关闭按钮可收起', async () => {
-  await withMountedTab(async ({ click, keydown, dom, act }) => {
-    const before = document.querySelector('.omx-mv-display img').getAttribute('src');
-    await click('.omx-mv-history-toggle');
-    if (document.activeElement && typeof document.activeElement.blur === 'function') document.activeElement.blur();
-    await keydown('ArrowDown');
-    const after = document.querySelector('.omx-mv-display img').getAttribute('src');
-    assert.equal(after, before);
-    assert.equal(document.querySelector('.omx-media-viewer').getAttribute('data-history-open'), 'true');
-    await click('.omx-mv-history__close');
-    assert.equal(document.querySelector('.omx-media-viewer').getAttribute('data-history-open'), 'false');
-    await act(async () => { await new Promise((resolvePromise) => setTimeout(resolvePromise, 20)); });
-    assert.equal(document.activeElement, document.querySelector('.omx-mv-history-toggle'));
-  });
-});
-
-test('下载历史卡触发对应素材的 anchor 且使用记录标题', async () => {
-  await withMountedTab(async ({ dom, click }) => {
-    const captured = [];
-    const prototype = dom.window.HTMLAnchorElement.prototype;
-    const original = prototype.click;
-    prototype.click = function capture() {
-      captured.push({ href: this.href, download: this.download });
-    };
-    const firstCard = document.querySelector('.omx-mv-history__list li:nth-child(2)');
-    assert.match(firstCard.textContent, /产品图/, firstCard.textContent);
-    if (document.activeElement && typeof document.activeElement.blur === 'function') document.activeElement.blur();
-    try {
-      await click('.omx-mv-history__list li:nth-child(2) .omx-mv-history__actions button:nth-child(2)');
-    } finally {
-      prototype.click = original;
-    }
-    assert.equal(captured.length, 1);
-    assert.equal(captured[0].download, '批量四张：产品图');
-    assert.match(captured[0].href, /^data:image\/svg\+xml/);
-  });
-});
-
-test('抽屉状态与 Esc 关闭', async () => {
-  await withMountedTab(async ({ click, keydown }) => {
-    const root = document.querySelector('.omx-media-viewer');
-    assert.equal(root.getAttribute('data-history-open'), 'false');
-    await click('.omx-mv-history-toggle');
-    assert.equal(root.getAttribute('data-history-open'), 'true');
-    await keydown('Escape');
-    assert.equal(root.getAttribute('data-history-open'), 'false');
-  });
-});
-
-test('↑/↓ 在单图模式切换历史素材，输入框聚焦时不拦截', async () => {
+test('↑/↓ 在单图模式切换素材，输入框聚焦时不拦截', async () => {
   await withMountedTab(async ({ keydown }) => {
     const before = document.querySelector('.omx-mv-display img').getAttribute('src');
     await keydown('ArrowDown');
