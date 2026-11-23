@@ -85,7 +85,7 @@ test('collectQueries keeps the main keyword and unique synonyms', () => {
   assert.deepEqual(collectQueries('周报', '周报, weekly | 日报'), ['周报', 'weekly', '日报'])
 })
 
-test('mergeBySlug dedupes and prefers higher downloads', () => {
+test('mergeBySlug dedupes and keeps the highest-download representative', () => {
   const a = { slug: 'me-skill', name: 'A', downloads: 10, stars: 1 } as never
   const b = { slug: 'me-skill', name: 'B', downloads: 99, stars: 0 } as never
   const c = { slug: 'other', name: 'C', downloads: 5, stars: 9 } as never
@@ -94,6 +94,44 @@ test('mergeBySlug dedupes and prefers higher downloads', () => {
   assert.equal(merged[0].slug, 'me-skill')
   assert.equal(merged[0].name, 'B')
   assert.equal(merged[1].slug, 'other')
+})
+
+test('mergeBySlug keeps relevance ahead of download noise for sortBy score', () => {
+  // 高相关低下载技能命中 2 个关键词页；低相关高下载噪声只在单页且排位靠后。
+  const strongA = { slug: 'product-research', name: '产品调研', downloads: 12, stars: 1 } as never
+  const strongB = { slug: 'product-research', name: '产品调研', downloads: 12, stars: 1 } as never
+  const noise = { slug: 'bidding-template', name: '招投标模板', downloads: 90000, stars: 400 } as never
+  const merged = mergeBySlug([[strongA, noise], [strongB]])
+  assert.deepEqual(merged.map((it) => it.slug), ['product-research', 'bidding-template'])
+})
+
+test('mergeBySlug honors explicit metric sorting', () => {
+  const strongA = { slug: 'product-research', name: '产品调研', downloads: 12, stars: 1, installs: 2 } as never
+  const strongB = { slug: 'product-research', name: '产品调研', downloads: 12, stars: 1, installs: 2 } as never
+  const noise = { slug: 'bidding-template', name: '招投标模板', downloads: 90000, stars: 400, installs: 800 } as never
+  assert.deepEqual(mergeBySlug([[strongA, noise], [strongB]], 'downloads').map((it) => it.slug), ['bidding-template', 'product-research'])
+  assert.deepEqual(mergeBySlug([[strongA, noise], [strongB]], 'stars').map((it) => it.slug), ['bidding-template', 'product-research'])
+  assert.deepEqual(mergeBySlug([[strongA, noise], [strongB]], 'installs').map((it) => it.slug), ['bidding-template', 'product-research'])
+})
+
+test('searchSkills multi-keyword merge applies relevance by default and downloads when asked', async () => {
+  const cfg = testCfg()
+  const raw = (slug: string, name: string, downloads: number, stars: number) => ({
+    slug, name, downloads, stars, category: 'business-ops',
+  })
+  const pageA = { code: 0, data: { total: 40, skills: [raw('product-research', '产品调研', 12, 1), raw('bidding-template', '招投标模板', 90000, 400)] } } as unknown as SkillHubListResponse
+  const pageB = { code: 0, data: { total: 20, skills: [raw('product-research', '产品调研', 12, 1)] } } as unknown as SkillHubListResponse
+  const fetchJsonImpl = async <T>(url: string) => (String(url).includes('keyword=%E4%BA%A7%E5%93%81%E8%B0%83%E7%A0%94') ? pageA : pageB) as T
+
+  const score = await searchSkills('产品调研', { cfg, queries: ['用户研究'], limit: 12, fetchJsonImpl })
+  assert.equal(score.sortBy, 'score')
+  assert.equal(score.items[0].slug, 'product-research')
+  assert.equal(score.items[1].slug, 'bidding-template')
+
+  const byDownloads = await searchSkills('产品调研', { cfg, queries: ['用户研究'], sortBy: 'downloads', limit: 12, fetchJsonImpl })
+  assert.equal(byDownloads.sortBy, 'downloads')
+  assert.equal(byDownloads.items[0].slug, 'bidding-template')
+  assert.equal(byDownloads.items[1].slug, 'product-research')
 })
 
 test('searchSkills merges extra queries into one result', async () => {
