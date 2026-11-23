@@ -360,7 +360,7 @@ function loadCommitDiffEntries(repoRoot, sha) {
     '--name-status',
     '-z',
     '--find-renames',
-    '--first-parent',
+    '--diff-merges=first-parent',
     '--root',
     sha,
   ])
@@ -387,7 +387,7 @@ function commitHasEffectiveTest(repoRoot, sha, diffEntries) {
     if (!isTestFilePath(entry.newPath)) continue
     const diff = runGit(
       repoRoot,
-      ['show', '--first-parent', '--format=', '-U0', sha, '--', entry.newPath],
+      ['show', '--diff-merges=first-parent', '--format=', '-U0', sha, '--', entry.newPath],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     )
     if (hasMeaningfulAddedCode(diff)) return true
@@ -466,7 +466,7 @@ export function analyzeRepository(options = {}) {
   const headRef = options.head || 'HEAD'
   const headSha = resolveCommitSha(repoRoot, headRef, 'head')
   const headDate = runGit(repoRoot, ['show', '-s', '--format=%cs', headSha]).trim()
-  const asOfDate = options.asOfDate || headDate
+  const asOfDate = options.asOfDate ?? headDate
   assertValidIsoDate(asOfDate, 'asOfDate')
 
   const lessonsRel = options.lessonsPath || 'LESSONS.md'

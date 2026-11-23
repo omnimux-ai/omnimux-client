@@ -454,12 +454,24 @@ test('与 verify-fix-regression-test 同口径：删测试、只加注释、重�
     git(root, ['mv', 'specs/old-waiver.spec.md', 'specs/renamed-waiver.spec.md'])
     commitAt(root, '2026-11-20T10:00:00Z', 'fix(demo): rename existing waiver spec (#12)')
 
+    // 4. --no-ff 合并提交自带真实回归测试 -> 必须识别为已测，不可因 diff-tree 漏掉 merge diff 误报
+    git(root, ['checkout', '-q', '-b', 'fix-merge-branch'])
+    writeRel(root, 'plugins/plugins/demo/src/merge-target.js', 'export const m = 2\n')
+    writeRel(root, 'plugins/plugins/demo/src/merge-target.test.js', 'import assert from "node:assert/strict"\nassert.equal(2, 2)\n')
+    commitAt(root, '2026-11-20T11:00:00Z', 'fix(demo): branch commit with test')
+    git(root, ['checkout', '-q', 'main'])
+    git(root, ['merge', '--no-ff', '-q', 'fix-merge-branch', '-m', 'fix(demo): merge fix PR with full test (#13)'], {
+      GIT_AUTHOR_DATE: '2026-11-20T12:00:00Z',
+      GIT_COMMITTER_DATE: '2026-11-20T12:00:00Z',
+    })
+
     const report = analyzeRepository({ root, asOfDate: '2026-11-20' })
     assert.equal(report.summary.untestedFixCount, 3)
     assert.equal(report.summary.unwaivedUntestedFixCount, 3)
     const prs = report.signals.untestedFixes.map(item => item.pr).sort((x, y) => x - y)
     assert.deepEqual(prs, [10, 11, 12])
     assert.equal(report.signals.untestedFixes.every(item => item.waived === false), true)
+    assert.throws(() => analyzeRepository({ root, asOfDate: '' }), /Invalid asOfDate/)
   })
 })
 
